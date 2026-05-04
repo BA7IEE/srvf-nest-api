@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  test:
+    name: Lint / Typecheck / E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # 与 .env.test 对齐(测试环境配置在仓库公开,值均为非敏感)。
+    # 见 .env.test:1-19。SUPER_ADMIN_EMAIL 故意留空,seed 校验在 APP_ENV=test 下放行默认值。
+    env:
+      APP_ENV: test
+      APP_PORT: '3001'
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app_test?schema=public
+      APP_CORS_ORIGIN: http://localhost:5173
+      ENABLE_SWAGGER: 'true'
+      JWT_SECRET: test-secret-please-keep-this-string-long-enough-32-chars
+      JWT_EXPIRES_IN: 1h
+      SUPER_ADMIN_USERNAME: admin
+      SUPER_ADMIN_PASSWORD: ChangeMe123456
+      SUPER_ADMIN_EMAIL: ''
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 通过项目自带的 docker-compose.yml 启动 postgres:16-alpine。
+      # 容器名固定为 'u-nest-api-postgres'(见 docker-compose.yml#container_name),与
+      # package.json#db:test:init 与 test/setup/test-db.ts 硬编码的 docker exec 目标一致。
+      # 不使用 GitHub Actions 的 services: 字段:services 容器名由 runner 自动生成,
+      # 无法对齐既有 db:test:init 脚本,会导致 'docker exec u-nest-api-postgres' 失败。
+      - name: Start PostgreSQL 16 service container
+        run: docker compose up -d postgres
+
+      - name: Wait for PostgreSQL ready
+        run: |
+          for i in $(seq 1 60); do
+            if docker exec u-nest-api-postgres pg_isready -U postgres -d app >/dev/null 2>&1; then
+              echo "PostgreSQL is ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "PostgreSQL not ready after 60s; dumping logs:"
+          docker compose logs postgres
+          exit 1
+
+      # pnpm/action-setup 必须在 actions/setup-node 之前,
+      # setup-node 的 'cache: pnpm' 需要 pnpm 已可用才能定位 store。
+      # version 不显式声明,从 package.json#packageManager (pnpm@10.14.0) 自动读取。
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Prisma client 不会随 pnpm install 自动生成(项目无 .npmrc / postinstall 钩子,
+      # @prisma/client 的 build script 被 pnpm 默认忽略)。
+      # lint / typecheck / E2E 都依赖 generate 后的类型(如 Role / UserStatus enum),
+      # 因此必须在 lint 前显式生成。
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      # V1.4-1:严格模式(`--max-warnings 0`)写在 package.json#scripts.lint 里,
+      # 本地 / CI 共用同一入口;这里保留 `pnpm lint` 直调,删 flag 时要改 npm script
+      # 而不是改 ci.yml,避免本地放行 / CI 严格的二义状态。
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # 显式跑 nest build,验证 tsconfig.build.json 与构建产物链路;
+      # 防止"typecheck 通过但 build 失败"的隐性回归(例如 nest-cli 配置漂移、
+      # 构建期 import 路径解析与开发期不一致)。
+      - name: Build
+        run: pnpm build
+
+      - name: Initialize test database
+        run: pnpm db:test:init
+
+      # 显式跑一次生产迁移命令,验证 `pnpm prisma:deploy` 脚本存在且可执行。
+      # 复用同一份测试库 DATABASE_URL,不引入新的数据库服务;E2E 的 globalSetup
+      # 之后还会再跑一次 `prisma migrate deploy`,Prisma 对已应用的 migration
+      # 是 no-op,不会重复执行或失败。
+      - name: Verify production migration command
+        run: pnpm prisma:deploy
+
+      # V1.3-5:把 V1.3-1/-2 新增的纯单元测试纳入 CI。
+      # 不依赖数据库,但放在 db setup 之后保持脚本顺序与 docs/v1.3-plan.md 一致;
+      # Jest 启动开销 < 2s,顺序代价可忽略。覆盖:
+      #   - users.policy.spec.ts(canViewUser/canManageUser/canCreateRole/canChangeRole 的 3×3 矩阵)
+      #   - biz-code.constant.spec.ts(BizCode 元属性:key/code 段位/message/httpStatus)
+      - name: Run unit tests
+        run: pnpm test
+
+      # V1.3-5:把 V1.3-3 的 OpenAPI 契约快照纳入 CI。
+      # 复用 e2e 的 globalSetup(已在上一步初始化 / migrate 完成),串行跑 jest-contract.config.ts;
+      # 任何 OpenAPI schema 漂移(路由白名单 / DTO 字段 / 错误响应 schema)都会被快照拦截。
+      - name: Run contract tests
+        run: pnpm test:contract
+
+      - name: Run E2E tests
+        run: pnpm test:e2e
+
+  # 验证 Dockerfile 多阶段构建可成功产出生产镜像。
+  # 与上面的 test job 解耦:test 关注源码质量与运行时行为;docker-build 关注交付物链路。
+  # 不做容器启动 / smoke test:容器启动需要外部 PostgreSQL,与 V1.1.1 收口范围(只验证
+  # build 链路)一致;真正的运行时验证仍由 test job 在 Node 进程内的 E2E 完成。
+  docker-build:
+    name: Docker image build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t u-nest-api-starter:ci .

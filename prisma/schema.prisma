@@ -1,0 +1,40 @@
+// AI 友好 NestJS API 底座 — Prisma schema
+// 本文件按 ARCHITECTURE.md §5 1:1 落地,任何字段调整必须先回到 ARCHITECTURE.md 评审。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String     @id @default(cuid())
+  username     String     @unique
+  email        String?    @unique
+  passwordHash String
+  nickname     String?
+  avatarKey    String?
+  role         Role       @default(USER)
+  status       UserStatus @default(ACTIVE)
+  deletedAt    DateTime?
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([deletedAt])
+  @@index([status])
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  USER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}

@@ -1,0 +1,293 @@
+name: Docker Smoke
+
+# 第二轮自动化(对应 docs/docker-smoke-test.md §7),非 required check。
+# 目标:容器层面回归保护——验证镜像不仅能 build,还能在 production 模式下真实启动、
+# 连库、跑 migration/seed、通过基础 API smoke check、graceful shutdown。
+# 与 ci.yml 的 docker-build job 互补:那个只验证 build 链路,本 workflow 验证运行时行为。
+
+on:
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'prisma/**'
+      - '.github/workflows/docker-smoke.yml'
+      # Production boot 敏感路径:Docker Smoke 依赖容器在 production 模式下的真实启动行为。
+      # 仅列出会影响 production boot / config validation / global prefix / logger /
+      # Prisma shutdown 的路径,**不**纳入整个 src/**(业务模块改动走 ci.yml 的 e2e)。
+      - 'src/main.ts'
+      - 'src/app.module.ts'
+      - 'src/bootstrap/**'
+      - 'src/config/**'
+      - 'src/database/**'
+
+jobs:
+  docker-smoke:
+    name: Container boot + API smoke + graceful shutdown
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # Host 侧 prisma migrate / seed 走 docker-compose published port。
+      HOST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app_smoke?schema=public
+      # 容器侧 app 进程通过 docker network 解析 postgres 服务的 container_name。
+      CONTAINER_DATABASE_URL: postgresql://postgres:postgres@u-nest-api-postgres:5432/app_smoke?schema=public
+      # docker-compose.yml 未声明 name,project name 默认 = workspace 目录名 = repo 名。
+      COMPOSE_NETWORK: u-nest-api-starter_default
+      APP_CONTAINER: u-nest-api-smoke
+      APP_HOST_PORT: '13000'
+      SMOKE_USERNAME: smokeadmin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 与 ci.yml 一致:沿用项目 docker-compose.yml 启动 postgres,容器名固定
+      # u-nest-api-postgres,网络名 u-nest-api-starter_default,与本 workflow 网络
+      # attach 目标对齐。不使用 services.postgres,避免容器名 / 网络名漂移。
+      - name: Start PostgreSQL via docker compose
+        run: docker compose up -d postgres
+
+      - name: Wait for PostgreSQL ready
+        run: |
+          for i in $(seq 1 60); do
+            if docker exec u-nest-api-postgres pg_isready -h 127.0.0.1 -U postgres -d app >/dev/null 2>&1; then
+              echo "PostgreSQL ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "PostgreSQL not ready after 60s; dumping logs:"
+          docker compose logs postgres
+          exit 1
+
+      # 独立 DB,与 app(默认)/ app_test(host e2e)隔离,失败排查不互相干扰。
+      - name: Create app_smoke database
+        run: docker exec u-nest-api-postgres createdb -h 127.0.0.1 -U postgres app_smoke
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      # Migration / seed 在 host 跑(镜像内不带 prisma CLI,与生产部署形态一致)。
+      - name: Apply migrations to app_smoke
+        env:
+          DATABASE_URL: ${{ env.HOST_DATABASE_URL }}
+        run: pnpm prisma:deploy
+
+      # JWT_SECRET 与 SUPER_ADMIN_PASSWORD 仅活在该 job 生命周期,不进 GitHub Secrets。
+      # 写入 GITHUB_ENV 供后续 step 共享;不 echo 到日志(默认 mask 不覆盖 env 写入,
+      # 因此这里手动 add-mask)。
+      - name: Generate ephemeral secrets
+        run: |
+          JWT_SECRET="$(openssl rand -base64 48)"
+          SUPER_ADMIN_PASSWORD="Smoke$(openssl rand -hex 8)A1"
+          echo "::add-mask::$JWT_SECRET"
+          echo "::add-mask::$SUPER_ADMIN_PASSWORD"
+          {
+            echo "JWT_SECRET=$JWT_SECRET"
+            echo "SUPER_ADMIN_PASSWORD=$SUPER_ADMIN_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      # Seed 用 APP_ENV=development 避开 production 下对默认值的额外校验;
+      # SUPER_ADMIN_USERNAME=smokeadmin 与默认 admin 区分,SUPER_ADMIN_EMAIL 显式空串
+      # (空串视为未填写,见 prisma/seed.ts L24-L26)。
+      - name: Seed super admin (first run)
+        env:
+          DATABASE_URL: ${{ env.HOST_DATABASE_URL }}
+          APP_ENV: development
+          SUPER_ADMIN_USERNAME: ${{ env.SMOKE_USERNAME }}
+          SUPER_ADMIN_PASSWORD: ${{ env.SUPER_ADMIN_PASSWORD }}
+          SUPER_ADMIN_EMAIL: ''
+        run: pnpm prisma:seed
+
+      - name: Seed super admin (idempotency check)
+        env:
+          DATABASE_URL: ${{ env.HOST_DATABASE_URL }}
+          APP_ENV: development
+          SUPER_ADMIN_USERNAME: ${{ env.SMOKE_USERNAME }}
+          SUPER_ADMIN_PASSWORD: ${{ env.SUPER_ADMIN_PASSWORD }}
+          SUPER_ADMIN_EMAIL: ''
+        run: pnpm prisma:seed
+
+      - name: Build production image
+        run: docker build -t u-nest-api-starter:smoke .
+
+      # production 模式启动:APP_CORS_ORIGIN 给合法域名(禁空 / 禁 *),
+      # ENABLE_SWAGGER=false 验证 /api/docs 应 404。
+      - name: Start app container
+        run: |
+          docker run -d \
+            --name "$APP_CONTAINER" \
+            --network "$COMPOSE_NETWORK" \
+            -p "$APP_HOST_PORT:3000" \
+            -e APP_ENV=production \
+            -e APP_PORT=3000 \
+            -e APP_CORS_ORIGIN=https://app.example.com \
+            -e ENABLE_SWAGGER=false \
+            -e LOG_LEVEL=info \
+            -e JWT_SECRET="$JWT_SECRET" \
+            -e JWT_EXPIRES_IN=1h \
+            -e DATABASE_URL="$CONTAINER_DATABASE_URL" \
+            u-nest-api-starter:smoke
+
+      - name: Wait for app /api/health/live
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS "http://localhost:${APP_HOST_PORT}/api/health/live" >/dev/null 2>&1; then
+              echo "App ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "App not ready after 60s"
+          exit 1
+
+      # 每次响应 body 落盘到 /tmp/smoke-*.json 供失败诊断 dump。
+      - name: Smoke - health endpoints
+        run: |
+          set -euo pipefail
+          BASE="http://localhost:${APP_HOST_PORT}"
+
+          STATUS=$(curl -sS -o /tmp/smoke-health.json -w '%{http_code}' "$BASE/api/health")
+          test "$STATUS" = "200"
+          test "$(jq -r '.code' /tmp/smoke-health.json)" = "0"
+          test "$(jq -r '.data.status' /tmp/smoke-health.json)" = "ok"
+
+          STATUS=$(curl -sS -o /tmp/smoke-live.json -w '%{http_code}' "$BASE/api/health/live")
+          test "$STATUS" = "200"
+          test "$(jq -r '.data.status' /tmp/smoke-live.json)" = "ok"
+
+          STATUS=$(curl -sS -o /tmp/smoke-ready.json -w '%{http_code}' "$BASE/api/health/ready")
+          test "$STATUS" = "200"
+          test "$(jq -r '.data.db' /tmp/smoke-ready.json)" = "up"
+
+      - name: Smoke - swagger disabled in production
+        run: |
+          set -euo pipefail
+          BASE="http://localhost:${APP_HOST_PORT}"
+
+          STATUS=$(curl -sS -o /tmp/smoke-docs.json -w '%{http_code}' "$BASE/api/docs")
+          test "$STATUS" = "404"
+
+          STATUS=$(curl -sS -o /tmp/smoke-docs-json.json -w '%{http_code}' "$BASE/api/docs-json")
+          test "$STATUS" = "404"
+
+      - name: Smoke - login success
+        env:
+          SUPER_ADMIN_PASSWORD: ${{ env.SUPER_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BASE="http://localhost:${APP_HOST_PORT}"
+
+          BODY=$(jq -nc --arg u "$SMOKE_USERNAME" --arg p "$SUPER_ADMIN_PASSWORD" \
+            '{username:$u, password:$p}')
+          STATUS=$(curl -sS -o /tmp/smoke-login-ok.json -w '%{http_code}' \
+            -H 'content-type: application/json' \
+            -d "$BODY" \
+            "$BASE/api/auth/login")
+          test "$STATUS" = "200"
+          test "$(jq -r '.code' /tmp/smoke-login-ok.json)" = "0"
+          TOKEN=$(jq -r '.data.accessToken' /tmp/smoke-login-ok.json)
+          test -n "$TOKEN"
+          test "$TOKEN" != "null"
+          echo "::add-mask::$TOKEN"
+          echo "ACCESS_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      # 防账号枚举:用户不存在 与 错密码 必须返回完全相同的 body(code 10004)。
+      - name: Smoke - login failure (unknown user vs wrong password)
+        run: |
+          set -euo pipefail
+          BASE="http://localhost:${APP_HOST_PORT}"
+
+          BODY_NOUSER=$(jq -nc '{username:"nosuchuser", password:"WhateverPass1"}')
+          STATUS=$(curl -sS -o /tmp/smoke-login-nouser.json -w '%{http_code}' \
+            -H 'content-type: application/json' \
+            -d "$BODY_NOUSER" \
+            "$BASE/api/auth/login")
+          test "$STATUS" = "401"
+          test "$(jq -r '.code' /tmp/smoke-login-nouser.json)" = "10004"
+
+          BODY_WRONGPW=$(jq -nc --arg u "$SMOKE_USERNAME" \
+            '{username:$u, password:"WrongPass1234"}')
+          STATUS=$(curl -sS -o /tmp/smoke-login-wrongpw.json -w '%{http_code}' \
+            -H 'content-type: application/json' \
+            -d "$BODY_WRONGPW" \
+            "$BASE/api/auth/login")
+          test "$STATUS" = "401"
+          test "$(jq -r '.code' /tmp/smoke-login-wrongpw.json)" = "10004"
+
+          # 两者响应体必须完全相同(防账号枚举);用 jq -S 规范化 key 顺序后 diff。
+          diff <(jq -S . /tmp/smoke-login-nouser.json) \
+               <(jq -S . /tmp/smoke-login-wrongpw.json)
+
+      - name: Smoke - users/me without token
+        run: |
+          set -euo pipefail
+          BASE="http://localhost:${APP_HOST_PORT}"
+
+          STATUS=$(curl -sS -o /tmp/smoke-me-anon.json -w '%{http_code}' "$BASE/api/users/me")
+          test "$STATUS" = "401"
+          test "$(jq -r '.code' /tmp/smoke-me-anon.json)" = "40100"
+
+      - name: Smoke - users/me with token
+        run: |
+          set -euo pipefail
+          BASE="http://localhost:${APP_HOST_PORT}"
+
+          STATUS=$(curl -sS -o /tmp/smoke-me-auth.json -w '%{http_code}' \
+            -H "authorization: Bearer $ACCESS_TOKEN" \
+            "$BASE/api/users/me")
+          test "$STATUS" = "200"
+          test "$(jq -r '.data.username' /tmp/smoke-me-auth.json)" = "$SMOKE_USERNAME"
+          # 响应体不含 passwordHash(userSafeSelect 集中收敛)
+          test "$(jq -r '.data | has("passwordHash")' /tmp/smoke-me-auth.json)" = "false"
+
+      # NestJS enableShutdownHooks() + PrismaService.onModuleDestroy() 应在远短于
+      # 10s 内退出,docker stop 默认 SIGTERM,然后 -t 10 给 10s 宽限,验证 exit code = 0。
+      - name: Smoke - graceful shutdown
+        run: |
+          set -euo pipefail
+          docker stop -t 10 "$APP_CONTAINER"
+          EXIT_CODE=$(docker inspect -f '{{.State.ExitCode}}' "$APP_CONTAINER")
+          echo "App exit code: $EXIT_CODE"
+          test "$EXIT_CODE" = "0"
+
+      - name: Dump diagnostics on failure
+        if: failure()
+        run: |
+          echo "=== docker ps -a ==="
+          docker ps -a || true
+          echo "=== app container logs ==="
+          docker logs "$APP_CONTAINER" 2>&1 || true
+          echo "=== postgres container logs (tail) ==="
+          docker logs u-nest-api-postgres 2>&1 | tail -100 || true
+          echo "=== smoke response bodies ==="
+          for f in /tmp/smoke-*.json; do
+            [ -f "$f" ] || continue
+            echo "--- $f ---"
+            cat "$f" || true
+            echo
+          done
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop "$APP_CONTAINER" 2>/dev/null || true
+          docker rm "$APP_CONTAINER" 2>/dev/null || true
+          docker compose down -v 2>/dev/null || true

@@ -1,0 +1,62 @@
+# V1.1 §15.8 — 最小化 build context,屏蔽宿主机敏感与无关产物
+# .dockerignore 过滤的是 build context;被排除的文件即使 COPY 显式指定也拿不到。
+# 因此本文件**只**屏蔽 Dockerfile 不需要的内容。
+
+# Node / 包管理器产物
+node_modules
+.pnpm-store
+.npm
+
+# 构建产物(builder 阶段会重新生成,避免宿主机 dist 污染镜像)
+dist
+*.tsbuildinfo
+
+# 环境变量(绝对禁止打进镜像)
+.env
+.env.*
+!.env.example
+
+# 测试与覆盖率(运行时不需要)
+coverage
+.nyc_output
+test
+
+# 版本控制 / CI 元数据
+.git
+.gitignore
+.gitattributes
+.github
+
+# IDE / OS / 编辑器
+.vscode
+.idea
+.DS_Store
+*.swp
+*.swo
+
+# 项目协作文档(运行时不需要,避免镜像膨胀)
+README.md
+ARCHITECTURE.md
+AGENTS.md
+CLAUDE.md
+TASKS.md
+.planning
+.claude
+
+# Docker 自身相关(镜像内不再需要)
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+
+# 日志与临时文件
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# 本地工具配置(builder 用 tsconfig*.json / nest-cli.json,这些不要排除)
+.editorconfig
+.prettierrc
+eslint.config.mjs
