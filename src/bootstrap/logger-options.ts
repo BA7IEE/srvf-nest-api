@@ -16,6 +16,14 @@ const LOGGER_FOR_ROUTES: NonNullable<Params['forRoutes']> = [
 // V1.1 §11.2 / §11.4 / TASKS.md 15.2:
 // 敏感字段 redact 清单。命中字段日志输出 `[REDACTED]`,不能仅做长度截断。
 // `*.<name>` 通配匹配任意嵌套对象的同名字段(纵深防御:即使将来日志格式变了也兜底)。
+//
+// V2 baseline §8.2 / §8.4(自 commit 16876fe):字段不存在时无害,字段一旦
+// 落表自动生效;后续新增敏感字段须按 baseline §8.4 同 commit 维护本清单。
+//
+// 关于 baseline §8.2 的"通配规则"(任何字段名包含 secret / credential /
+// private / pwd 子串):pino `redact.paths` **不**支持子串通配,只支持路径
+// 表达式与 `*.<name>` 通配。本清单仅枚举具体字段名;子串约定继续作为团队
+// 规范由 code review 守护,不在 logger 代码内强制实现。
 const LOG_REDACT_PATHS: readonly string[] = [
   // HTTP 头
   'req.headers.authorization',
@@ -27,7 +35,7 @@ const LOG_REDACT_PATHS: readonly string[] = [
   'req.body.token',
   'req.body.accessToken',
   'req.body.refreshToken',
-  // 通配:任意嵌套层级出现的同名字段(响应日志 / 自定义日志)
+  // v1 通配:任意嵌套层级出现的同名字段(响应日志 / 自定义日志)
   '*.password',
   '*.newPassword',
   '*.passwordHash',
@@ -35,6 +43,59 @@ const LOG_REDACT_PATHS: readonly string[] = [
   '*.accessToken',
   '*.refreshToken',
   '*.secret',
+
+  // V2 baseline §8.2 — 个人身份证类
+  '*.idCard',
+  '*.idCardNumber',
+  '*.idNumber',
+  '*.nationalId',
+
+  // V2 baseline §8.2 — 联系方式类
+  '*.phone',
+  '*.phoneNumber',
+  '*.mobile',
+  '*.mobileNumber',
+  '*.tel',
+  '*.emergencyContact',
+  '*.emergencyContactName',
+  '*.emergencyContactPhone',
+  '*.emergencyContactRelation',
+
+  // V2 baseline §8.2 — 医疗健康类
+  '*.medicalInfo',
+  '*.medicalHistory',
+  '*.medicalNotes',
+  '*.allergies',
+  '*.chronicDiseases',
+  '*.bloodType',
+  '*.remarksSensitive',
+
+  // V2 baseline §8.2 — 财务类(v1 / V2 都不存,防御性预扩展)
+  '*.bankAccount',
+  '*.bankCard',
+  '*.bankCardNumber',
+  '*.cardNumber',
+  '*.creditCard',
+  '*.cvv',
+
+  // V2 baseline §8.2 — 地址类
+  '*.homeAddress',
+  '*.address',
+  '*.residenceAddress',
+
+  // V2 baseline §8.2 — 出生 / 身份信息类
+  '*.dateOfBirth',
+  '*.dob',
+  '*.birthDate',
+
+  // V2 baseline §8.2 — 第三方账号 / 凭证标识类
+  '*.wechat',
+  '*.wechatId',
+  '*.openId',
+  '*.unionId',
+  '*.certificateNo',
+  '*.licenseNo',
+  '*.policyNo',
 ];
 
 // V1.1 §17.5 / TASKS.md 15.2:HTTP 自动日志只打 method / url / status / responseTime
