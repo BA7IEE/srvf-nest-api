@@ -1245,6 +1245,7 @@ V2 第一阶段的"暂不做清单"由 [`docs/srvf-foundation-research.md`](./do
 ### 12.5 V2 设计阶段产物
 
 - [`docs/srvf-foundation-research.md`](./docs/srvf-foundation-research.md) — 边界文档(已通过评审,V2 设计阶段冻结)
+- [`docs/srvf-foundation-baseline.md`](./docs/srvf-foundation-baseline.md) — **V2 通用基线规范**(BizCode 段位 / 命名 / DTO / 软删除 / 验收门槛等 13 项 A 档约定);所有 V2 草案与开发的**隐含约束**,**不是数据模型草案**
 - `ARCHITECTURE.md §12` — 本节,蓝图侧的轻量登记
 - `CLAUDE.md §18` / `AGENTS.md §18` — V2 调研 / 设计阶段约束(非执行约束)
 - `TASKS.md` V2 设计任务卡 — 调研 / 建模 / 评审任务,**不含**开发任务

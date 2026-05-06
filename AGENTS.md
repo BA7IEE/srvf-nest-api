@@ -798,6 +798,19 @@ V2 草案文档 / 评审讨论中,**禁止**以下表达:
 - 任何"先占位以后再用""先存着规则以后补"的措辞,在敏感信息场景下视作越权(研究文档 §4.3)
 - 任何 agent 在 V2 设计阶段以非 Claude Code 工具链切入(Cursor / Cline / Aider / API 直调 / 自建 agent 等),**亦受本节全部约束**;工具不同,边界一致
 
+### 18.4.1 baseline 规范的强制读取与遵守
+
+任何 Agent 在 V2 草案 / 开发场景下动手之前,**必须**读取并遵守 [`docs/srvf-foundation-baseline.md`](./docs/srvf-foundation-baseline.md)(自 commit `16876fe` 起锁定)。该文档承载 13 项 A 档基线规范(BizCode 段位、命名、响应包装、DTO 白名单、模块结构、错误码命名、配置归属、日志屏蔽、Guard、软删除、v1 兼容性、时区、验收门槛),与本节(§18)是**互补关系**:
+
+- 本节(§18)= **过程性约束**(调研 / 设计阶段不能做什么)
+- baseline = **规范性约束**(无论何时,V2 代码 / 文档必须如何写)
+
+冲突优先级见 baseline §14.4(v1 §1-§17 > V1.1 §17 > baseline > 草案 > 任务卡)。
+
+**违反 baseline 任一项视作越权**,必须暂停并向用户说明,**禁止**自行调和。
+
+**适用对象**:任何 AI Agent / 自动化工具(Claude Code / Cursor / Cline / Aider / Continue / Copilot / API 直调 / 自建 Agent),不限工具链。
+
 ### 18.5 通用 agent 工具调用约束
 
 不同 agent 工具链有不同动作原语,但 V2 调研期对工具调用的约束按"动作语义"统一:
