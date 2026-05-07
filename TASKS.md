@@ -962,7 +962,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 |---|---|---|---|---|
 | **Step 1** | Prisma schema + migration | ✅ 已完成 (commit `36c0837`) | `prisma/schema.prisma` / `prisma/migrations/20260507181930_v2_foundation/` | **D8 用户最终拍板** |
 | **Step 2** | seed neutral-demo | ✅ 已完成 (commit `53c9a03`) | `prisma/seed.ts` | Step 1 |
-| **Step 3** | dictionaries 模块 | ⏳ 待启动 | `src/modules/dictionaries/` | Step 1-2 |
+| **Step 3** | dictionaries 模块 | ✅ 已完成 (commit `33dbd69`) | `src/modules/dictionaries/` | Step 1-2 |
 | **Step 4** | organizations 模块 | ⏳ 待启动 | `src/modules/organizations/` | Step 3 |
 | **Step 5** | members 模块 + v1 users.memberId hook + v1 auth.service.ts 登录回退 | ⏳ 待启动 | `src/modules/members/` + `src/modules/users/` 服务侧追加 + `src/modules/auth/auth.service.ts`(**唯一受限放开**;memberNo 登录回退查找)| Step 3 |
 | **Step 6** | member_departments 归属能力 | ⏳ 待启动 | `src/modules/member-departments/` 或 members 子能力 | Step 4 + Step 5 |
@@ -1048,7 +1048,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 
 ### 6.4 Step 3 — dictionaries 模块
 
-- **状态**:⏳ 待启动
+- **状态**:✅ 已完成(commit `33dbd69`,2026-05-08)
 - **前置条件**:Step 1-2 完成
 - **允许改动**:
   - 新建 `src/modules/dictionaries/` 4 文件(`module.ts` / `controller.ts` / `service.ts` / `dto.ts`)
@@ -1080,6 +1080,19 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
   - B 档(必跑):`pnpm start:dev` / `curl /api/docs` Swagger UI / `curl /api/docs-json` / dict_types 列表接口 spot check / 错误路径 spot check / SIGTERM
 - **回滚风险**:`git revert <commit>` 模块整体撤回;schema 不动(Step 1 已固化)
 - **建议 commit message**:`feat(dictionaries): add V2 foundation dictionaries module`
+- **完成情况**(2026-05-08):
+  - commit `33dbd69` `feat(dictionaries): add V2 foundation dictionaries module`
+  - 交付:5 新文件(`dictionaries.module.ts` / `dictionaries.dto.ts` / `dictionaries.service.ts` / `dictionaries.controller.ts` + `test/e2e/dictionaries.e2e-spec.ts`)+ 5 改动(`app.module.ts` 注册 / `biz-code.constant.ts` +9 / `test/contract/openapi.contract-spec.ts` + snapshot / `test/setup/reset-db.ts` 扩 TRUNCATE);共 10 files / +4528 / -2
+  - 4 文件铁律:`dictionaries.controller.ts` 单文件双 @Controller 类(DictTypesController + DictItemsController),严格符合 CLAUDE.md §2 / baseline §5.1
+  - 13 接口落地:`/api/v2/dict-types` 6 + `/api/v2/dict-items` 7(含 `/tree` 在 `/:id` 之前定义防 first-match 冲突)
+  - 5 决策点落地:① DELETE 引用查 dict_items + organizations.nodeTypeCode + members.gradeCode(Step 4-5 后无需补)/ ② 不登记 121xx FORBIDDEN_MANAGE_DICTIONARY / ③ DictItemTreeNodeDto 独立类 / ④ tree 深度无限制 / ⑤ 引用检查 + 软删事务原子性
+  - 9 条新 BizCode(120xx + 121xx 段;dict_type=12001-12002/12030,dict_item=12010-12014/12031)
+  - 软删显式封装:`notDeletedWhere` helper / 唯一性预检查 `findUnique` 包含软删 / P2002 兜底转 BizCode
+  - A 档全过:`pnpm lint` / `pnpm typecheck` / `pnpm test`(4 suites / 222 tests,v1 177 + 新增 45 = BizCode 9 × 5 断言)/ `pnpm test:e2e`(20 suites / 197 tests,v1 162 零退化 + V2 35)/ `pnpm test:contract`(51 tests / 2 snapshots,v1 29 + V2 22)
+  - B 档全过:`pnpm start:dev` / `GET /api/docs` 200 / `/api/health/live` 200 / `/api/health/ready` 200(`db: up`)/ `/api/v2/dict-types` 未登录 401(UNAUTHORIZED)/ `/api/docs-json` 含 v1 10 paths + V2 7 paths / SIGTERM 优雅关闭
+  - v1 14 接口 OpenAPI schema + paths **零漂移**:用 inline node 脚本逐个 schema(11 项)/ path(10 项)严格字符串相等比对,全部 OK
+  - 范围合规:仅触碰 `src/modules/dictionaries/` + `src/app.module.ts` + `src/common/exceptions/biz-code.constant.ts` + `test/`(基建 + e2e + contract);schema / migrations / seed / users / auth / health / database / bootstrap / config / package / Docker / CI 全部零改动
+  - Step 4 仍 ⏳ 待启动,等用户单独拍板触发
 
 ### 6.5 Step 4 — organizations 模块
 
