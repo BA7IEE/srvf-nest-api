@@ -16,9 +16,15 @@ import { assertTestDatabaseUrl } from './test-db';
 // - RESTART IDENTITY 对 cuid 主键无效但不报错,留作未来加自增列时的防御
 // - CASCADE 防外键引用阻塞;v1 单表无外键,留作未来防御
 // - 表名 "User" PascalCase 必须双引号,Prisma 默认生成的物理表名大小写敏感
+//
+// V2 第一阶段 Step 3 起追加 V2 字典表(DictItem / DictType);随后 Step 4-6
+// 模块开发时,可按需在此追加 Member / Organization / MemberDepartment 等。
+// 多表 TRUNCATE 用 comma 分隔(PostgreSQL 原生支持)。
 export async function resetDb(app: INestApplication): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 
   const prisma = app.get(PrismaService);
-  await prisma.$executeRawUnsafe('TRUNCATE TABLE "User" RESTART IDENTITY CASCADE');
+  await prisma.$executeRawUnsafe(
+    'TRUNCATE TABLE "User", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+  );
 }

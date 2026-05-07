@@ -60,6 +60,54 @@ export const BizCode = {
     message: '系统必须保留至少一个活跃超级管理员',
     httpStatus: HttpStatus.CONFLICT,
   },
+
+  // dictionaries 模块业务级(120xx + 121xx;dict_type 用 12001-12009 / 12030-12039,
+  // dict_item 用 12010-12019 / 12031-12049)。详见 docs/v2-api-contract.md §2.5。
+  DICT_TYPE_NOT_FOUND: {
+    code: 12001,
+    message: '字典类型不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  DICT_TYPE_CODE_ALREADY_EXISTS: {
+    code: 12002,
+    message: '字典类型 code 已存在',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  DICT_ITEM_NOT_FOUND: {
+    code: 12010,
+    message: '字典项不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  DICT_ITEM_CODE_ALREADY_EXISTS: {
+    code: 12011,
+    message: '同类型下字典项 code 已存在',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  DICT_ITEM_PARENT_TYPE_MISMATCH: {
+    code: 12012,
+    message: '字典项父级跨类型',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  DICT_ITEM_PARENT_CYCLE: {
+    code: 12013,
+    message: '字典项父级形成环',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  DICT_ITEM_PARENT_IMMUTABLE: {
+    code: 12014,
+    message: '字典项父级不允许修改',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  DICT_TYPE_IN_USE: {
+    code: 12030,
+    message: '字典类型仍有项目引用,不能删除',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  DICT_ITEM_IN_USE: {
+    code: 12031,
+    message: '字典项仍被业务表引用,不能删除',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];

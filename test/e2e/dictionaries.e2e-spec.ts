@@ -1,0 +1,484 @@
+import type { INestApplication } from '@nestjs/common';
+import { DictItemStatus, DictTypeStatus, Role } from '@prisma/client';
+import request from 'supertest';
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import { PrismaService } from '../../src/database/prisma.service';
+import { loginAs } from '../fixtures/auth.fixture';
+import { createTestUser } from '../fixtures/users.fixture';
+import { expectBizError } from '../helpers/biz-code.assert';
+import { httpServer } from '../helpers/http-server';
+import { resetDb } from '../setup/reset-db';
+import { createTestApp } from '../setup/test-app';
+
+// V2 Step 3 dictionaries 模块 e2e。
+// 覆盖 13 接口主成功 + 关键失败路径(权限边界 / 唯一冲突 / 父级跨类型 / 引用拒删 / 树形)。
+// 不覆盖:tree 深度极限 / 大批量分页 / 真实业务取值(留运营录入)。
+
+describe('dictionaries 模块', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let superAdminAuth: string;
+  let adminAuth: string;
+  let userAuth: string;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    await resetDb(app);
+    prisma = app.get(PrismaService);
+
+    await createTestUser(app, { username: 'dict-su', role: Role.SUPER_ADMIN });
+    await createTestUser(app, { username: 'dict-adm', role: Role.ADMIN });
+    await createTestUser(app, { username: 'dict-user', role: Role.USER });
+
+    superAdminAuth = (await loginAs(app, 'dict-su')).authHeader;
+    adminAuth = (await loginAs(app, 'dict-adm')).authHeader;
+    userAuth = (await loginAs(app, 'dict-user')).authHeader;
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  // ============ 权限边界 ============
+
+  describe('权限边界', () => {
+    it('未登录 GET dict-types → 401', async () => {
+      const res = await request(httpServer(app)).get('/api/v2/dict-types');
+      expectBizError(res, BizCode.UNAUTHORIZED);
+    });
+
+    it('USER 角色 GET dict-types → 403', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/v2/dict-types')
+        .set('Authorization', userAuth);
+      expectBizError(res, BizCode.FORBIDDEN);
+    });
+
+    it('USER 角色 POST dict-types → 403', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/v2/dict-types')
+        .set('Authorization', userAuth)
+        .send({ code: 'p_user', label: 'x' });
+      expectBizError(res, BizCode.FORBIDDEN);
+    });
+
+    it('ADMIN DELETE dict-type → 403(SUPER_ADMIN 专属)', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'pb_adm_del', label: 'x' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .delete(`/api/v2/dict-types/${t.id}`)
+        .set('Authorization', adminAuth);
+      expectBizError(res, BizCode.FORBIDDEN);
+    });
+
+    it('ADMIN DELETE dict-item → 403(SUPER_ADMIN 专属)', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'pb_adm_di', label: 'x' },
+        select: { id: true },
+      });
+      const i = await prisma.dictItem.create({
+        data: { typeId: t.id, code: 'pb-adm-di-i', label: 'x' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .delete(`/api/v2/dict-items/${i.id}`)
+        .set('Authorization', adminAuth);
+      expectBizError(res, BizCode.FORBIDDEN);
+    });
+  });
+
+  // ============ dict-types CRUD ============
+
+  describe('dict-types CRUD', () => {
+    it('SUPER_ADMIN 创建 dict-type → 201,字段集严格', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/v2/dict-types')
+        .set('Authorization', superAdminAuth)
+        .send({ code: 'crd_t1', label: 'Create Test 1', sortOrder: 5 });
+
+      expect(res.status).toBe(201);
+      expect(res.body.code).toBe(0);
+      expect(res.body.data.code).toBe('crd_t1');
+      expect(res.body.data.label).toBe('Create Test 1');
+      expect(res.body.data.sortOrder).toBe(5);
+      expect(res.body.data.status).toBe(DictTypeStatus.ACTIVE);
+      expect(res.body.data).not.toHaveProperty('deletedAt');
+    });
+
+    it('ADMIN 创建 dict-type → 201', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/v2/dict-types')
+        .set('Authorization', adminAuth)
+        .send({ code: 'crd_t2', label: 'Admin Create' });
+      expect(res.status).toBe(201);
+      expect(res.body.data.sortOrder).toBe(0);
+    });
+
+    it('code 撞唯一 → DICT_TYPE_CODE_ALREADY_EXISTS', async () => {
+      await request(httpServer(app))
+        .post('/api/v2/dict-types')
+        .set('Authorization', superAdminAuth)
+        .send({ code: 'dup_t', label: 'first' });
+
+      const res = await request(httpServer(app))
+        .post('/api/v2/dict-types')
+        .set('Authorization', superAdminAuth)
+        .send({ code: 'dup_t', label: 'second' });
+
+      expectBizError(res, BizCode.DICT_TYPE_CODE_ALREADY_EXISTS);
+    });
+
+    it('code 格式非法(含中横线 / 大写)→ 400', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/v2/dict-types')
+        .set('Authorization', superAdminAuth)
+        .send({ code: 'Has-Dash', label: 'x' });
+      expect(res.status).toBe(400);
+    });
+
+    it('GET 列表分页结构正确', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/v2/dict-types?page=1&pageSize=5')
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveProperty('items');
+      expect(res.body.data).toHaveProperty('total');
+      expect(res.body.data.page).toBe(1);
+      expect(res.body.data.pageSize).toBe(5);
+      expect(Array.isArray(res.body.data.items)).toBe(true);
+    });
+
+    it('GET 列表 status 过滤', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'flt_inactive', label: 'x', status: DictTypeStatus.INACTIVE },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .get('/api/v2/dict-types?status=INACTIVE')
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(200);
+      const codes: string[] = res.body.data.items.map((x: { code: string }) => x.code);
+      expect(codes).toContain('flt_inactive');
+      // 清理
+      await prisma.dictType.delete({ where: { id: t.id } });
+    });
+
+    it('GET 详情 → 200', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'fone_t', label: 'detail' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .get(`/api/v2/dict-types/${t.id}`)
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(200);
+      expect(res.body.data.code).toBe('fone_t');
+    });
+
+    it('GET 详情 NOT_FOUND', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/v2/dict-types/cl0000000000000000000000')
+        .set('Authorization', adminAuth);
+      expectBizError(res, BizCode.DICT_TYPE_NOT_FOUND);
+    });
+
+    it('PATCH 更新 label / sortOrder', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'upd_t1', label: 'orig', sortOrder: 0 },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/dict-types/${t.id}`)
+        .set('Authorization', superAdminAuth)
+        .send({ label: 'updated', sortOrder: 99 });
+      expect(res.status).toBe(200);
+      expect(res.body.data.label).toBe('updated');
+      expect(res.body.data.sortOrder).toBe(99);
+    });
+
+    it('PATCH 拒绝 code 字段(forbidNonWhitelisted)', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'upd_t2', label: 'orig' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/dict-types/${t.id}`)
+        .set('Authorization', superAdminAuth)
+        .send({ code: 'newcode' });
+      expect(res.status).toBe(400);
+    });
+
+    it('PATCH /:id/status 启停', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'sts_t1', label: 'orig' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/dict-types/${t.id}/status`)
+        .set('Authorization', superAdminAuth)
+        .send({ status: DictTypeStatus.INACTIVE });
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe(DictTypeStatus.INACTIVE);
+    });
+
+    it('DELETE 软删 → 200,deletedAt 设值', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'del_t1', label: 'to delete' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .delete(`/api/v2/dict-types/${t.id}`)
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      const after = await prisma.dictType.findUnique({ where: { id: t.id } });
+      expect(after?.deletedAt).not.toBeNull();
+      expect(after?.status).toBe(DictTypeStatus.INACTIVE);
+    });
+
+    it('DELETE 有 dict_items 引用 → DICT_TYPE_IN_USE', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'in_use_t', label: 'parent' },
+      });
+      await prisma.dictItem.create({
+        data: { typeId: t.id, code: 'in-use-item', label: 'child' },
+      });
+      const res = await request(httpServer(app))
+        .delete(`/api/v2/dict-types/${t.id}`)
+        .set('Authorization', superAdminAuth);
+      expectBizError(res, BizCode.DICT_TYPE_IN_USE);
+    });
+  });
+
+  // ============ dict-items CRUD + tree ============
+
+  describe('dict-items CRUD + tree', () => {
+    let typeId: string;
+
+    beforeAll(async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'items_test_type', label: 'Items Test' },
+        select: { id: true },
+      });
+      typeId = t.id;
+    });
+
+    it('POST 创建 dict-item → 201,parentId null', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/v2/dict-items')
+        .set('Authorization', superAdminAuth)
+        .send({ typeId, code: 'item-1', label: 'Item 1' });
+      expect(res.status).toBe(201);
+      expect(res.body.data.typeId).toBe(typeId);
+      expect(res.body.data.code).toBe('item-1');
+      expect(res.body.data.parentId).toBeNull();
+      expect(res.body.data).not.toHaveProperty('deletedAt');
+    });
+
+    it('POST 创建嵌套 item', async () => {
+      const parent = await prisma.dictItem.create({
+        data: { typeId, code: 'parent-item', label: 'Parent' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .post('/api/v2/dict-items')
+        .set('Authorization', superAdminAuth)
+        .send({ typeId, code: 'child-item', label: 'Child', parentId: parent.id });
+      expect(res.status).toBe(201);
+      expect(res.body.data.parentId).toBe(parent.id);
+    });
+
+    it('POST typeId 不存在 → DICT_TYPE_NOT_FOUND', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/v2/dict-items')
+        .set('Authorization', superAdminAuth)
+        .send({ typeId: 'cl0000000000000000000000', code: 'orphan', label: 'x' });
+      expectBizError(res, BizCode.DICT_TYPE_NOT_FOUND);
+    });
+
+    it('POST parent 不存在 → DICT_ITEM_NOT_FOUND', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/v2/dict-items')
+        .set('Authorization', superAdminAuth)
+        .send({
+          typeId,
+          code: 'orphan-parent',
+          label: 'x',
+          parentId: 'cl0000000000000000000000',
+        });
+      expectBizError(res, BizCode.DICT_ITEM_NOT_FOUND);
+    });
+
+    it('POST 父级跨 type → DICT_ITEM_PARENT_TYPE_MISMATCH', async () => {
+      const otherType = await prisma.dictType.create({
+        data: { code: 'cross_type', label: 'Other' },
+        select: { id: true },
+      });
+      const otherItem = await prisma.dictItem.create({
+        data: { typeId: otherType.id, code: 'cross-i', label: 'O' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .post('/api/v2/dict-items')
+        .set('Authorization', superAdminAuth)
+        .send({
+          typeId,
+          code: 'cross-parent-test',
+          label: 'cross',
+          parentId: otherItem.id,
+        });
+      expectBizError(res, BizCode.DICT_ITEM_PARENT_TYPE_MISMATCH);
+    });
+
+    it('POST (typeId, code) 撞唯一 → DICT_ITEM_CODE_ALREADY_EXISTS', async () => {
+      await request(httpServer(app))
+        .post('/api/v2/dict-items')
+        .set('Authorization', superAdminAuth)
+        .send({ typeId, code: 'dup-item', label: 'first' });
+
+      const res = await request(httpServer(app))
+        .post('/api/v2/dict-items')
+        .set('Authorization', superAdminAuth)
+        .send({ typeId, code: 'dup-item', label: 'second' });
+      expectBizError(res, BizCode.DICT_ITEM_CODE_ALREADY_EXISTS);
+    });
+
+    it('GET 列表 typeId 必填 → 400(参数校验)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/v2/dict-items')
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(400);
+    });
+
+    it('GET 列表 typeId 不存在 → DICT_TYPE_NOT_FOUND', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/v2/dict-items?typeId=cl0000000000000000000000')
+        .set('Authorization', adminAuth);
+      expectBizError(res, BizCode.DICT_TYPE_NOT_FOUND);
+    });
+
+    it('GET 列表 parentId 过滤', async () => {
+      const subType = await prisma.dictType.create({
+        data: { code: 'flt_p_type', label: 'x' },
+        select: { id: true },
+      });
+      const root = await prisma.dictItem.create({
+        data: { typeId: subType.id, code: 'flt-root', label: 'root' },
+      });
+      await prisma.dictItem.create({
+        data: { typeId: subType.id, code: 'flt-c1', label: 'c1', parentId: root.id },
+      });
+      await prisma.dictItem.create({
+        data: { typeId: subType.id, code: 'flt-c2', label: 'c2', parentId: root.id },
+      });
+      const res = await request(httpServer(app))
+        .get(`/api/v2/dict-items?typeId=${subType.id}&parentId=${root.id}`)
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(2);
+    });
+
+    it('GET tree 嵌套结构', async () => {
+      const treeType = await prisma.dictType.create({
+        data: { code: 'tree_type', label: 'Tree' },
+      });
+      const root = await prisma.dictItem.create({
+        data: { typeId: treeType.id, code: 'tree-root', label: 'Root', sortOrder: 0 },
+      });
+      await prisma.dictItem.create({
+        data: {
+          typeId: treeType.id,
+          code: 'tree-leaf',
+          label: 'Leaf',
+          parentId: root.id,
+          sortOrder: 0,
+        },
+      });
+      const res = await request(httpServer(app))
+        .get(`/api/v2/dict-items/tree?typeId=${treeType.id}`)
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].code).toBe('tree-root');
+      expect(res.body.data[0].children).toHaveLength(1);
+      expect(res.body.data[0].children[0].code).toBe('tree-leaf');
+    });
+
+    it('GET tree typeId 不存在 → DICT_TYPE_NOT_FOUND', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/v2/dict-items/tree?typeId=cl0000000000000000000000')
+        .set('Authorization', adminAuth);
+      expectBizError(res, BizCode.DICT_TYPE_NOT_FOUND);
+    });
+
+    it('GET /:id NOT_FOUND', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/v2/dict-items/cl0000000000000000000000')
+        .set('Authorization', adminAuth);
+      expectBizError(res, BizCode.DICT_ITEM_NOT_FOUND);
+    });
+
+    it('PATCH 更新 label / sortOrder', async () => {
+      const item = await prisma.dictItem.create({
+        data: { typeId, code: 'upd-i1', label: 'orig', sortOrder: 0 },
+      });
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/dict-items/${item.id}`)
+        .set('Authorization', superAdminAuth)
+        .send({ label: 'updated', sortOrder: 99 });
+      expect(res.status).toBe(200);
+      expect(res.body.data.label).toBe('updated');
+      expect(res.body.data.sortOrder).toBe(99);
+    });
+
+    it('PATCH 拒绝 typeId / code / parentId(forbidNonWhitelisted)', async () => {
+      const item = await prisma.dictItem.create({
+        data: { typeId, code: 'upd-i2', label: 'orig' },
+      });
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/dict-items/${item.id}`)
+        .set('Authorization', superAdminAuth)
+        .send({ code: 'newcode' });
+      expect(res.status).toBe(400);
+    });
+
+    it('PATCH /:id/status 启停', async () => {
+      const item = await prisma.dictItem.create({
+        data: { typeId, code: 'sts-i1', label: 'orig' },
+      });
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/dict-items/${item.id}/status`)
+        .set('Authorization', superAdminAuth)
+        .send({ status: DictItemStatus.INACTIVE });
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe(DictItemStatus.INACTIVE);
+    });
+
+    it('DELETE 软删 dict-item → 200', async () => {
+      const item = await prisma.dictItem.create({
+        data: { typeId, code: 'del-me', label: 'del' },
+      });
+      const res = await request(httpServer(app))
+        .delete(`/api/v2/dict-items/${item.id}`)
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      const after = await prisma.dictItem.findUnique({ where: { id: item.id } });
+      expect(after?.deletedAt).not.toBeNull();
+      expect(after?.status).toBe(DictItemStatus.INACTIVE);
+    });
+
+    it('DELETE 有子节点 → DICT_ITEM_IN_USE', async () => {
+      const parent = await prisma.dictItem.create({
+        data: { typeId, code: 'p-in-use', label: 'p' },
+      });
+      await prisma.dictItem.create({
+        data: { typeId, code: 'c-of-parent', label: 'c', parentId: parent.id },
+      });
+      const res = await request(httpServer(app))
+        .delete(`/api/v2/dict-items/${parent.id}`)
+        .set('Authorization', superAdminAuth);
+      expectBizError(res, BizCode.DICT_ITEM_IN_USE);
+    });
+  });
+});

@@ -40,7 +40,9 @@ interface OpenApiDoc {
   };
 }
 
-// v1 锁定路由清单。新增 / 删除任一路由必须同步本表 + 重新生成快照。
+// v1 锁定路由清单 + V2 第一阶段(Step 3 起)dictionaries。
+// 新增 / 删除任一路由必须同步本表 + 重新生成快照。
+// v1 14 接口 schema 必须**零漂移**(Step 3 引入 V2 路由后,v1 段位 schema 不应被改动)。
 const EXPECTED_ROUTES: ReadonlyArray<
   readonly [Lowercase<'get' | 'post' | 'put' | 'patch' | 'delete'>, string]
 > = [
@@ -60,6 +62,21 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/users/{id}/role'],
   ['patch', '/api/users/{id}/status'],
   ['delete', '/api/users/{id}'],
+
+  // V2 dictionaries (Step 3,2026-05-08)
+  ['get', '/api/v2/dict-types'],
+  ['post', '/api/v2/dict-types'],
+  ['get', '/api/v2/dict-types/{id}'],
+  ['patch', '/api/v2/dict-types/{id}'],
+  ['patch', '/api/v2/dict-types/{id}/status'],
+  ['delete', '/api/v2/dict-types/{id}'],
+  ['get', '/api/v2/dict-items'],
+  ['post', '/api/v2/dict-items'],
+  ['get', '/api/v2/dict-items/tree'],
+  ['get', '/api/v2/dict-items/{id}'],
+  ['patch', '/api/v2/dict-items/{id}'],
+  ['patch', '/api/v2/dict-items/{id}/status'],
+  ['delete', '/api/v2/dict-items/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -75,6 +92,17 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'LoginResponseDto',
   'HealthResponseDto',
   'PageResultDto',
+
+  // V2 dictionaries (Step 3)
+  'CreateDictTypeDto',
+  'UpdateDictTypeDto',
+  'UpdateDictTypeStatusDto',
+  'DictTypeResponseDto',
+  'CreateDictItemDto',
+  'UpdateDictItemDto',
+  'UpdateDictItemStatusDto',
+  'DictItemResponseDto',
+  'DictItemTreeNodeDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
