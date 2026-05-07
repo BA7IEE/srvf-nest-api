@@ -77,6 +77,15 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/v2/dict-items/{id}'],
   ['patch', '/api/v2/dict-items/{id}/status'],
   ['delete', '/api/v2/dict-items/{id}'],
+
+  // V2 organizations (Step 4,2026-05-08)
+  ['get', '/api/v2/organizations'],
+  ['get', '/api/v2/organizations/tree'],
+  ['post', '/api/v2/organizations'],
+  ['get', '/api/v2/organizations/{id}'],
+  ['patch', '/api/v2/organizations/{id}'],
+  ['patch', '/api/v2/organizations/{id}/status'],
+  ['delete', '/api/v2/organizations/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -103,6 +112,13 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'UpdateDictItemStatusDto',
   'DictItemResponseDto',
   'DictItemTreeNodeDto',
+
+  // V2 organizations (Step 4)
+  'CreateOrganizationDto',
+  'UpdateOrganizationDto',
+  'UpdateOrganizationStatusDto',
+  'OrganizationResponseDto',
+  'OrganizationTreeNodeDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

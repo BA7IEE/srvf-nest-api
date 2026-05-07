@@ -17,6 +17,7 @@ import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { DictionariesModule } from './modules/dictionaries/dictionaries.module';
 import { HealthModule } from './modules/health/health.module';
+import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { UsersModule } from './modules/users/users.module';
 
 // V1.2:test/e2e/request-id.e2e-spec.ts 通过本路径白盒断言 buildHttpLogProps,
@@ -56,6 +57,7 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     AuthModule,
     UsersModule,
     DictionariesModule,
+    OrganizationsModule,
   ],
   providers: [
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):

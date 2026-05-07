@@ -61,6 +61,60 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // organizations 模块业务级(110xx + 111xx)。详见 docs/v2-api-contract.md §3.5。
+  // 子段(对齐 baseline §1.3):
+  // - 11001:NOT_FOUND
+  // - 11010-11029:业务级输入校验(parent_not_found / node_type_invalid /
+  //   parent_cycle / parent_change_forbidden)
+  // - 11030-11099:资源状态非法 / 引用约束(has_children / has_members /
+  //   root_already_exists)
+  // - 11103:系统约束保护(last_root_protected)
+  ORGANIZATION_NOT_FOUND: {
+    code: 11001,
+    message: '组织节点不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ORGANIZATION_PARENT_NOT_FOUND: {
+    code: 11010,
+    message: '父级组织节点不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ORGANIZATION_NODE_TYPE_INVALID: {
+    code: 11011,
+    message: '节点类别字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ORGANIZATION_PARENT_CYCLE: {
+    code: 11012,
+    message: '组织节点父级形成环',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ORGANIZATION_PARENT_CHANGE_FORBIDDEN: {
+    code: 11013,
+    message: '不允许修改组织节点父级',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ORGANIZATION_HAS_CHILDREN: {
+    code: 11030,
+    message: '组织节点存在子节点,不能删除',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ORGANIZATION_HAS_MEMBERS: {
+    code: 11031,
+    message: '组织节点存在成员归属,不能删除',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ORGANIZATION_ROOT_ALREADY_EXISTS: {
+    code: 11032,
+    message: '系统已存在活跃根节点',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  LAST_ROOT_ORGANIZATION_PROTECTED: {
+    code: 11103,
+    message: '系统必须保留至少一个活跃根节点',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // dictionaries 模块业务级(120xx + 121xx;dict_type 用 12001-12009 / 12030-12039,
   // dict_item 用 12010-12019 / 12031-12049)。详见 docs/v2-api-contract.md §2.5。
   DICT_TYPE_NOT_FOUND: {
