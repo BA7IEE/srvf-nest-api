@@ -961,7 +961,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 | Step | 任务 | 状态 | 主要文件范围 | 前置 |
 |---|---|---|---|---|
 | **Step 1** | Prisma schema + migration | ✅ 已完成 (commit `36c0837`) | `prisma/schema.prisma` / `prisma/migrations/20260507181930_v2_foundation/` | **D8 用户最终拍板** |
-| **Step 2** | seed neutral-demo | ⏳ 待启动 | `prisma/seed.ts` | Step 1 |
+| **Step 2** | seed neutral-demo | ✅ 已完成 (commit `53c9a03`) | `prisma/seed.ts` | Step 1 |
 | **Step 3** | dictionaries 模块 | ⏳ 待启动 | `src/modules/dictionaries/` | Step 1-2 |
 | **Step 4** | organizations 模块 | ⏳ 待启动 | `src/modules/organizations/` | Step 3 |
 | **Step 5** | members 模块 + v1 users.memberId hook + v1 auth.service.ts 登录回退 | ⏳ 待启动 | `src/modules/members/` + `src/modules/users/` 服务侧追加 + `src/modules/auth/auth.service.ts`(**唯一受限放开**;memberNo 登录回退查找)| Step 3 |
@@ -1014,7 +1014,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 
 ### 6.3 Step 2 — seed neutral-demo
 
-- **状态**:⏳ 待启动
+- **状态**:✅ 已完成(commit `53c9a03`,2026-05-08)
 - **前置条件**:Step 1 完成
 - **允许改动**:
   - 修改 `prisma/seed.ts`,**追加** 2 类字典类型 neutral-demo seed(节点类别 / 队员等级)
@@ -1035,6 +1035,16 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
   - B 档:`pnpm prisma:seed` 跑两次幂等 + `pnpm start:dev` 启动
 - **回滚风险**:`git revert <commit>` + `pnpm prisma:seed`(回到上一版 seed 状态);风险**极低**
 - **建议 commit message**:`chore(seed): add V2 foundation neutral-demo dict seed`
+- **完成情况**(2026-05-08):
+  - commit `53c9a03` `chore(seed): add V2 neutral demo dictionary seeds`
+  - 交付:`prisma/seed.ts` 改动(+88/-21);新增 `V2_DICT_SEED` 常量 + `seedV2Dictionaries()` 函数;SUPER_ADMIN 控制流 `return` → `if/else`,确保 SUPER_ADMIN 已存在时仍续跑字典 seed(创建逻辑代码零改动)
+  - type code 决议(B-2):`node_type` + `member_grade`(snake_case 命名风格对齐);与 `docs/v2-plan.md §2.2` 表 `grade` 的差异留待 Step 2 commit 之后单独评估是否修订草案
+  - 数据清单:dict_types = 2(`node_type` / `member_grade`)+ dict_items = 4(每类 2 个 `demo-*` 抽象占位,全部 `parentId = null` 顶层、`status = ACTIVE`、`sortOrder` 0/1)
+  - 幂等策略:`upsert` + `update: {}` 不覆盖运营运行时手动调整;两次 `pnpm prisma:seed` 后 dict_types / dict_items 行数不变
+  - A 档全过:`pnpm lint` / `pnpm typecheck` / `pnpm test`(177 passed)/ `pnpm test:e2e`(19 suites / 162 tests v1 零退化)/ `pnpm test:contract`(29 tests / 2 snapshots OpenAPI 零漂移)
+  - B 档全过:`pnpm prisma:seed` 跑两次幂等(输出一致 + SQL 验证 dict_types = 2 / dict_items = 4)/ `pnpm start:dev` 启动成功 / `GET /api/health/live` 200 / `GET /api/health/ready` 200(`db: up`)/ SIGTERM 优雅关闭
+  - 范围合规:仅触碰 `prisma/seed.ts`,schema / migration / `src/**` / `package.json` / Docker / CI / config / env 全部零改动
+  - Step 3 仍 ⏳ 待启动,等用户单独拍板触发
 
 ### 6.4 Step 3 — dictionaries 模块
 
