@@ -223,7 +223,7 @@ V2-D8 第一阶段 Step 1 交付:Prisma schema + migration 就位。
 | 字典类型 code | 用途 | seed 内容(neutral-demo) |
 |---|---|---|
 | `node_type` | 节点类别(`organizations.nodeTypeCode` 引用) | 占位 items(例:`demo-type-1` / `demo-type-2`),**不写**真实部门类别名 |
-| `grade` | 队员等级(`members.gradeCode` 引用) | 占位 items(例:`demo-grade-1` / `demo-grade-2`),**不写**真实等级名 |
+| `member_grade` | 队员等级(`members.gradeCode` 引用) | 占位 items(例:`demo-grade-1` / `demo-grade-2`),**不写**真实等级名 |
 
 #### 本步不做
 
@@ -280,7 +280,7 @@ V2-D8 第一阶段 Step 2 交付:字典 neutral-demo seed 就位。
 
 - 新增 2 类字典类型 seed(neutral-demo 占位):
   - node_type(节点类别 — organizations.nodeTypeCode 引用)
-  - grade(队员等级 — members.gradeCode 引用)
+  - member_grade(队员等级 — members.gradeCode 引用)
 - 真实部门类别名 / 真实等级名不进 seed(沿用 R13 红线)
 - 真实取值由运营在部署后通过运营后台 / 私有 seed 录入
 - seed 幂等(跑两次结果一致)

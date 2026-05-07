@@ -1038,7 +1038,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 - **完成情况**(2026-05-08):
   - commit `53c9a03` `chore(seed): add V2 neutral demo dictionary seeds`
   - 交付:`prisma/seed.ts` 改动(+88/-21);新增 `V2_DICT_SEED` 常量 + `seedV2Dictionaries()` 函数;SUPER_ADMIN 控制流 `return` → `if/else`,确保 SUPER_ADMIN 已存在时仍续跑字典 seed(创建逻辑代码零改动)
-  - type code 决议(B-2):`node_type` + `member_grade`(snake_case 命名风格对齐);与 `docs/v2-plan.md §2.2` 表 `grade` 的差异留待 Step 2 commit 之后单独评估是否修订草案
+  - type code 决议(B-2):`node_type` + `member_grade`(snake_case 命名风格对齐);Step 2 commit 时 `docs/v2-plan.md §2.2` 草案与实施 dict_type code 的差异已通过 housekeeping 同步至 `member_grade`
   - 数据清单:dict_types = 2(`node_type` / `member_grade`)+ dict_items = 4(每类 2 个 `demo-*` 抽象占位,全部 `parentId = null` 顶层、`status = ACTIVE`、`sortOrder` 0/1)
   - 幂等策略:`upsert` + `update: {}` 不覆盖运营运行时手动调整;两次 `pnpm prisma:seed` 后 dict_types / dict_items 行数不变
   - A 档全过:`pnpm lint` / `pnpm typecheck` / `pnpm test`(177 passed)/ `pnpm test:e2e`(19 suites / 162 tests v1 零退化)/ `pnpm test:contract`(29 tests / 2 snapshots OpenAPI 零漂移)
