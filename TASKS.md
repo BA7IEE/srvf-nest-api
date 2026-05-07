@@ -960,7 +960,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 
 | Step | 任务 | 状态 | 主要文件范围 | 前置 |
 |---|---|---|---|---|
-| **Step 1** | Prisma schema + migration | ⏳ 待启动 | `prisma/schema.prisma` / `prisma/migrations/<timestamp>_*` | **D8 用户最终拍板** |
+| **Step 1** | Prisma schema + migration | ✅ 已完成 (commit `36c0837`) | `prisma/schema.prisma` / `prisma/migrations/20260507181930_v2_foundation/` | **D8 用户最终拍板** |
 | **Step 2** | seed neutral-demo | ⏳ 待启动 | `prisma/seed.ts` | Step 1 |
 | **Step 3** | dictionaries 模块 | ⏳ 待启动 | `src/modules/dictionaries/` | Step 1-2 |
 | **Step 4** | organizations 模块 | ⏳ 待启动 | `src/modules/organizations/` | Step 3 |
@@ -972,7 +972,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 
 ### 6.2 Step 1 — Prisma schema + migration
 
-- **状态**:⏳ 待启动
+- **状态**:✅ 已完成(commit `36c0837`,2026-05-08)
 - **前置条件**:
   - V2-D8 ✅(已满足)
   - **用户单独拍板"启动 Step 1"**(待满足)
@@ -1003,6 +1003,14 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
   - v1 表结构破坏:**风险极低**,因仅 ADD COLUMN(`users.memberId`)+ 新表,无 ALTER 既有字段
   - 回滚:`git revert <commit>` + `pnpm prisma migrate reset --force --skip-seed`(需用户授权)+ `pnpm prisma:deploy`
 - **建议 commit message**:`chore(prisma): add V2 foundation schema (4 models + users.memberId)`
+- **完成情况**(2026-05-08):
+  - commit `36c0837` `chore(prisma): add V2 foundation schema (4 models + users.memberId)`
+  - 交付:`prisma/schema.prisma` 改动 + `prisma/migrations/20260507181930_v2_foundation/migration.sql` 新增
+  - 决策点 D-1 落地:migration 末尾手动追加 `MemberDepartment_memberId_active_key` partial unique index(`memberId` 在 `deletedAt IS NULL` 范围内唯一)
+  - A 档全过:`pnpm lint` / `pnpm typecheck` / `pnpm test`(177 passed)/ `pnpm test:e2e`(19 suites / 162 tests v1 零退化)/ `pnpm test:contract`(29 tests / 2 snapshots OpenAPI 零漂移)
+  - B 档全过:`pnpm start:dev` 启动成功 / `GET /api/health/live` 200 / `GET /api/health/ready` 200(`db: up`)/ `GET /api/health` v1 兼容 200 / SIGTERM 优雅关闭
+  - 范围合规:仅触碰 `prisma/`,v1 `src/**` / `seed.ts` / `package.json` / Docker / CI / config 全部零改动
+  - Step 2 仍 ⏳ 待启动,等用户单独拍板触发
 
 ### 6.3 Step 2 — seed neutral-demo
 
