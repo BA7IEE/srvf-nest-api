@@ -1,5 +1,7 @@
 // AI 友好 NestJS API 底座 — Prisma schema
 // 本文件按 ARCHITECTURE.md §5 1:1 落地,任何字段调整必须先回到 ARCHITECTURE.md 评审。
+// V2 第一阶段(ARCHITECTURE.md §12.8)新增 5 model + User.memberId 兼容性追加,
+// 详见 docs/v2-data-model.md / docs/v2-plan.md §2.1。
 
 generator client {
   provider = "prisma-client-js"
@@ -24,6 +26,9 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  memberId String? @unique
+  member   Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
   @@index([deletedAt])
   @@index([status])
 }
@@ -37,4 +42,136 @@ enum Role {
 enum UserStatus {
   ACTIVE
   DISABLED
+}
+
+// ===== V2 第一阶段:dictionaries 双表 =====
+
+model DictType {
+  id        String         @id @default(cuid())
+  code      String         @unique
+  label     String
+  status    DictTypeStatus @default(ACTIVE)
+  sortOrder Int            @default(0)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  deletedAt DateTime?
+
+  items DictItem[]
+
+  @@index([status])
+  @@index([deletedAt])
+  @@index([createdAt])
+}
+
+enum DictTypeStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model DictItem {
+  id        String         @id @default(cuid())
+  typeId    String
+  code      String
+  label     String
+  parentId  String?
+  sortOrder Int            @default(0)
+  status    DictItemStatus @default(ACTIVE)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  deletedAt DateTime?
+
+  type     DictType   @relation(fields: [typeId], references: [id], onDelete: Restrict)
+  parent   DictItem?  @relation("DictItemTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children DictItem[] @relation("DictItemTree")
+
+  @@unique([typeId, code])
+  @@index([typeId])
+  @@index([parentId])
+  @@index([status])
+  @@index([deletedAt])
+  @@index([createdAt])
+}
+
+enum DictItemStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// ===== V2 第一阶段:organizations =====
+
+model Organization {
+  id           String             @id @default(cuid())
+  name         String
+  parentId     String?
+  nodeTypeCode String
+  sortOrder    Int                @default(0)
+  status       OrganizationStatus @default(ACTIVE)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  deletedAt    DateTime?
+
+  parent            Organization?      @relation("OrganizationTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children          Organization[]     @relation("OrganizationTree")
+  memberDepartments MemberDepartment[]
+
+  @@index([parentId])
+  @@index([nodeTypeCode])
+  @@index([status])
+  @@index([deletedAt])
+  @@index([createdAt])
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// ===== V2 第一阶段:members =====
+
+model Member {
+  id          String       @id @default(cuid())
+  memberNo    String       @unique
+  displayName String
+  gradeCode   String?
+  status      MemberStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+
+  user              User?
+  memberDepartments MemberDepartment[]
+
+  @@index([gradeCode])
+  @@index([status])
+  @@index([deletedAt])
+  @@index([createdAt])
+}
+
+enum MemberStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// ===== V2 第一阶段:member_departments =====
+//
+// 单归属唯一约束(memberId 在 deletedAt IS NULL 范围内唯一)由 migration.sql
+// 末尾手动追加 partial unique index 实现 — Prisma DSL 至 6.x 不支持
+// 在 @@unique 中表达带 WHERE 的部分唯一索引。详见 docs/v2-data-model.md §6.3
+// 与 docs/v2-plan.md §2.1 决策点 D-1。
+
+model MemberDepartment {
+  id             String    @id @default(cuid())
+  memberId       String
+  organizationId String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  member       Member       @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([memberId])
+  @@index([organizationId])
+  @@index([deletedAt])
+  @@index([createdAt])
 }
