@@ -941,9 +941,9 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 
 ## 6. V2 — srvf-nest-api 第一阶段开发任务卡
 
-> **状态**:V2-D8 立项已完成(5/5 产出物就位),**等待用户最后拍板**进入 Step 1 开发。
-> **范围**:V2 第一阶段 4 模型 + `users.memberId` 可空外键追加(D7-min 决议锁定,详见 `data-model-draft.md` v0.3 §3.x.10)。
-> **依据**:`ARCHITECTURE.md §12.8-§12.11`(commit `85cec75`)/ `docs/v2-plan.md`(commit `bff9c93`)/ `docs/v2-data-model.md`(commit `af236f2`)/ `docs/v2-api-contract.md`(commit `627eda5`)/ baseline(commit `16876fe`)。
+> **状态**:V2-D8 立项已完成(5/5 产出物就位)+ memberNo 决议已纳入(2026-05-08;Q1=A / Q2=B-1 / Q3-Q9 全部锁定);**等待用户最后拍板**进入 Step 1 开发。
+> **范围**:V2 第一阶段 4 模型 + `users.memberId` 可空外键追加 + `Member.memberNo` 业务唯一编号 + v1 `auth.service.ts` 登录查找扩展支持 memberNo 回退(D7-min + memberNo 决议锁定)。
+> **依据**:`ARCHITECTURE.md §12.8-§12.11`(memberNo 决议后修订)/ `docs/v2-plan.md` v0.2 / `docs/v2-data-model.md` v0.2 / `docs/v2-api-contract.md` v0.2(含 §6.6 v1 登录路径 memberNo 回退查找)/ baseline(commit `16876fe`)。
 > **解除条件**:Step 1-7 全部 ✅ 后,V2 第一阶段开发闭环;V2.x 启动需用户单独拍板(对应 §6.11)。
 
 ### 6.0 范围速读
@@ -964,7 +964,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 | **Step 2** | seed neutral-demo | ⏳ 待启动 | `prisma/seed.ts` | Step 1 |
 | **Step 3** | dictionaries 模块 | ⏳ 待启动 | `src/modules/dictionaries/` | Step 1-2 |
 | **Step 4** | organizations 模块 | ⏳ 待启动 | `src/modules/organizations/` | Step 3 |
-| **Step 5** | members 模块 + v1 users.memberId hook | ⏳ 待启动 | `src/modules/members/` + `src/modules/users/` 服务侧追加 | Step 3 |
+| **Step 5** | members 模块 + v1 users.memberId hook + v1 auth.service.ts 登录回退 | ⏳ 待启动 | `src/modules/members/` + `src/modules/users/` 服务侧追加 + `src/modules/auth/auth.service.ts`(**唯一受限放开**;memberNo 登录回退查找)| Step 3 |
 | **Step 6** | member_departments 归属能力 | ⏳ 待启动 | `src/modules/member-departments/` 或 members 子能力 | Step 4 + Step 5 |
 | **Step 7** | E2E + contract + 文档收口 | ⏳ 待启动 | `test/` + `README.md` + `CHANGELOG.md` + `TASKS.md §6` 收尾 | Step 1-6 全部完成 |
 
@@ -979,6 +979,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
   - 工作树干净(无未 commit 改动)
 - **允许改动**:
   - 新增 5 个 Prisma model:`DictType` / `DictItem` / `Organization` / `Member` / `MemberDepartment`
+  - `Member` model 必含 `memberNo` 字段:String / 必填 / **普通全局唯一约束**(不用部分唯一索引;**包含软删记录全表唯一**,软删后不释放)/ 字段长度 1-32 / 字符集 `[A-Za-z0-9-]`(详见 `docs/v2-data-model.md §5.2-§5.3`)
   - 修改 v1 `User` model:**仅**追加可空 `memberId` 字段 + 关系到 `Member`(其他字段 / 索引 / 外键全部不动)
   - 生成 migration 文件(命名 `<timestamp>_v2_foundation` 或拆多个)
   - 跑 `pnpm prisma:generate` / `pnpm prisma:migrate dev`(本地)/ `pnpm prisma:deploy`(CI)
@@ -1103,37 +1104,70 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 - **前置条件**:Step 1-3 完成(依赖字典 gradeCode)
 - **允许改动**:
   - 新建 `src/modules/members/` 4 文件
-  - 实施 members CRUD(对照 `docs/v2-api-contract.md §4`,6 接口)
+  - 实施 members CRUD(对照 `docs/v2-api-contract.md §4`,6 接口);含 `memberNo` 全生命周期:
+    - POST 创建 memberNo 必填 + 弱约束校验(`@MinLength(1)` / `@MaxLength(32)` / `@Matches(/^[A-Za-z0-9-]+$/)`)
+    - 入库前 `trim()` 保留原大小写
+    - 唯一性预检查走 `findUnique` 包含软删记录;撞约束抛 `MEMBER_NO_ALREADY_EXISTS`(150xx,409)
+    - GET 列表支持 `?memberNo=<exact>` 精确查询
+    - GET 详情 + POST/PATCH 响应 MemberResponseDto 必返 memberNo
+    - **UpdateMemberDto 白名单不含 memberNo**(forbidNonWhitelisted 自动拒绝 PATCH 改编号)
   - **修改 v1 `src/modules/users/users.service.ts`** 追加 `memberId` 字段处理逻辑(仅服务侧;v1 接口出参不变)
   - **修改 v1 `src/modules/users/users.dto.ts`**(若 Step 5 决定 v1 接口可选返回 `memberId`,需显式说明 + 更新 OpenAPI 快照;**默认不改**)
+  - ⚠️ **受限放开** 修改 v1 `src/modules/auth/auth.service.ts`:**唯一**允许的扩展是登录查找路径加 `memberNo` 回退查找(对应 ARCHITECTURE.md §12.8.2.4 + `docs/v2-api-contract.md §6.6` 全部硬约束):
+    - 账号枚举相关失败场景防护(响应体 / HTTP status / Timing 完全一致;详见 `docs/v2-api-contract.md §6.6.3`)
+    - 强制扩展 dummy bcrypt 到新路径
+    - 通过 `PrismaService` 直读 `member` 表
+    - 禁止 import `MembersModule` / `MembersService` / V2 BizCode
+    - 复用 `LOGIN_FAILED = 10004`,**禁止**自创新业务码
   - gradeCode 走字典(联动 §6.4)
   - status 切换:`ACTIVE` ↔ `INACTIVE`(独立接口 `PATCH /:id/status`)
-  - BizCode 段位 `150xx + 151xx`
+  - BizCode 段位 `150xx + 151xx`(新增 `MEMBER_NO_ALREADY_EXISTS` 等)
   - `assertCanManageMember` Service 层显式校验(沿用 v1 §13)
   - Swagger 100% 覆盖 + DTO 白名单 + 软删显式封装
-  - e2e 覆盖管理员路径 + 角色边界 + **v1 接口零退化**
+  - e2e 覆盖管理员路径 + 角色边界 + memberNo CRUD + memberNo 登录回退账号枚举相关失败场景(详见 `docs/v2-api-contract.md §6.6.3`)+ Timing 抽样 + **v1 接口零退化** + **v1 LoginDto schema 零漂移**
 - **禁止改动**:
   - ❌ **任何敏感字段**(身份证 / 紧急联系人 / 医疗 / 出生日期 / 住址 / 性别 / 联系方式 等)— DTO 白名单严格拒绝
   - ❌ 不在 members 主表挂 `organizationId`(完全走 §6.7 member_departments)
-  - ❌ 不在 v1 `UserResponseDto` 出参中**新增必返**字段(`memberId` 默认不返回)
-  - ❌ 不修改 v1 `auth.service.ts` / `auth.controller.ts` / `auth.dto.ts`(登录路径不动)
+  - ❌ 不在 v1 `UserResponseDto` 出参中**新增必返**字段(`memberId` / `memberNo` 默认不返回);**禁止**默认改成可选返回 memberNo(对齐 memberNo 决议 Q7;前端展示 memberNo 走 V2 members 接口)
+  - ❌ **不**修改 v1 `auth.controller.ts` / `auth.dto.ts`(LoginDto 字段名 / 类型 / 校验装饰器 / 路径全保留;HTTP 契约零漂移)
+  - ❌ **不**修改 v1 `auth/strategies/*`(JwtStrategy 等)
   - ❌ 不修改 v1 `health/` / `bootstrap/` / `database/prisma.service.ts`
   - ❌ 不实现 member_profiles(已延后)
   - ❌ 不实现资质维度(D5 未触及,延后)
   - ❌ 不实现"用户绑定/解绑 member"接口(留 V2.x)
+  - ❌ 不开发"改 memberNo"独立接口(留 V2.x 评估)
+  - ❌ 不为 memberNo 登录路径自创业务码(必须复用 v1 `LOGIN_FAILED`)
+  - ❌ auth.service **禁止** import `MembersModule` / `MembersService` / V2 BizCode 段位常量
 - **交付物**:
   - 4 文件模块就位
   - v1 `users.service.ts` 追加 memberId 处理(v1 接口契约不变)
-  - 6 接口契约一致
+  - v1 `auth.service.ts` 登录查找扩展(memberNo 回退 + dummy bcrypt 扩展;HTTP 契约 / OpenAPI schema 零漂移)
+  - 6 接口契约一致(含 memberNo 入参 / 出参 / 查询 / 错误码)
   - gradeCode 字典 code 校验
   - status 切换 + 软删显式封装
   - `assertCanManageMember` Service 层校验
-  - Swagger / e2e / OpenAPI 快照(仅 V2 新接口;v1 14 接口不漂移)
+  - Swagger / e2e / OpenAPI 快照(V2 新接口加入;v1 14 接口含 LoginDto schema 全部不漂移)
 - **验收命令**:
-  - A 档:同 §6.4,**重点验证 v1 14 接口零退化**
-  - B 档(必跑):`pnpm start:dev` + 跑 v1 `POST /api/auth/login` 不含 memberId / `GET /api/users/me` 不含 memberId / V2 `GET /api/v2/members` 200(管理员)/ 403(USER)/ v1 用户 CRUD 完整路径 spot check / SIGTERM
-- **回滚风险**:`git revert <commit>` 模块 + v1 users 改动一并撤回;e2e 162 + V2 用例护栏护住回归
-- **建议 commit message**:`feat(members): add V2 foundation members module + v1 users.memberId hook`
+  - A 档:同 §6.4,**重点验证 v1 14 接口零退化 + v1 LoginDto schema 零漂移**
+  - B 档(必跑):
+    - `pnpm start:dev`
+    - v1 `POST /api/auth/login`(username 登录)→ 200,响应不含 memberId / memberNo
+    - v1 `POST /api/auth/login`(memberNo 登录,新功能)→ 200,响应 schema 与 username 登录完全一致
+    - v1 `POST /api/auth/login` 账号枚举相关失败场景防护(输入值两路径均未命中 / member 未绑 user / 账号禁用或软删 / 密码错)→ 401 + LOGIN_FAILED 10004,响应体 / 耗时一致
+    - v1 `GET /api/users/me` → 200,响应不含 memberNo
+    - V2 `GET /api/v2/members` → 200(管理员)+ 详情含 memberNo / 403(USER)
+    - V2 `GET /api/v2/members?memberNo=<value>` → 200 + 精确匹配
+    - V2 `POST /api/v2/members`(无 memberNo / 撞唯一)→ 400 / 409
+    - V2 `PATCH /api/v2/members/:id { memberNo: '...' }` → 400(forbidNonWhitelisted)
+    - `pnpm test:contract` 严格证明 v1 LoginDto schema diff = 0
+    - SIGTERM 关停
+- **回滚风险**:
+  - `git revert <auth-commit>` 单独撤回 auth(因强制拆 2 commit,可独立回滚)
+  - `git revert <members-commit>` 单独撤回 members CRUD
+  - 两 commit 独立可回滚;e2e 护栏护住回归
+- **建议 commit message**(memberNo 决议:**强制拆 2 commit**,见 `docs/v2-plan.md §2.5` commit message 段全文):
+  - Commit 1:`feat(members): add memberNo to member lifecycle`(members CRUD + v1 users.memberId hook)
+  - Commit 2:`feat(auth): support memberNo login fallback`(auth.service.ts 登录回退;**仅含此一处文件改动 + 配套 e2e + 快照对比**;**严禁**与 members CRUD 揉合)
 
 ### 6.7 Step 6 — member_departments 归属能力
 
@@ -1214,8 +1248,10 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 - [ ] `curl /api/docs` Swagger UI 完整含 v1 + V2 接口
 - [ ] `curl /api/docs-json` OpenAPI JSON
 - [ ] **抽查 v1 auth / users 关键接口**(`POST /api/auth/login` / `GET /api/users/me` / `GET /api/users/:id` 等典型路径)— 全部 200 + 响应契约不变
-- [ ] **确认 OpenAPI v1 schema 不漂移**(snapshot diff 仅含新增 V2 / 不含 v1 字段变化)
+- [ ] **确认 OpenAPI v1 schema 不漂移**(snapshot diff 仅含新增 V2 / 不含 v1 字段变化;**`LoginDto` schema 严格零漂移**)
+- [ ] (Step 5 必跑)v1 `POST /api/auth/login` 账号枚举相关失败场景防护(输入值在 username / memberNo 两条路径下均未命中 / memberNo 命中但未绑 user / 账号禁用或软删 / 密码错)— 响应体 / HTTP status / 耗时一致
 - [ ] V2 新接口典型成功路径 + 典型错误路径(权限拒绝 / 资源不存在 / 业务校验失败 等)
+- [ ] (Step 5 必跑)V2 members 接口 memberNo 校验:必填 / trim / 长度 / 字符集 / 全局唯一(撞软删历史抛 `MEMBER_NO_ALREADY_EXISTS`)/ PATCH 拒绝改 memberNo
 - [ ] SIGTERM 优雅关闭
 
 任一未通过 → **不算完成,不能 commit,不能向用户报告"任务完成"**(沿用 V1.1 §17.10 末尾纪律 + V2 §13)。
@@ -1247,6 +1283,12 @@ V2 第一阶段开发期间遇到任何"看起来该顺手做"的事项,**全部
    - **d. 直接放弃**(若不需要)
 
 **禁止**未经用户确认就动作。这是 V2 第一阶段开发最容易破口的地方,纪律与 V1.1 §4 / V2 §5.4 一致。
+
+**v1 兼容性红线下唯一已开口子**(自 memberNo 决议 2026-05-08):
+
+- ⚠️ `src/modules/auth/auth.service.ts` 受限放开 — **唯一**允许的扩展是 memberNo 登录回退查找(详见 ARCHITECTURE.md §12.8.2.4 + `docs/v2-api-contract.md §6.6` + 本节 §6.6 Step 5)
+- ❌ 任何**其他** v1 auth 文件改动(`auth.controller.ts` / `auth.dto.ts` / `strategies/*`)仍属范围外
+- ❌ 任何想"再开第二个口子"的诉求(例如"顺手在 auth.service.ts 加 SSO 登录")必须按本节流程暂停 + 用户拍板,不得援引此唯一已开口子作为先例
 
 ### 6.11 V2.x 复活触发条件
 

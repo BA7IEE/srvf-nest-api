@@ -234,6 +234,7 @@ V2 第一阶段**最小骨架**:身份基础 + 启停 + 时间戳 + 字典关联
 | 字段名 | 类型意图 | 是否可空 | 说明 | 来源 |
 |---|---|---|---|---|
 | `id` | String / cuid | 否 | 主键(**独立 cuid,不复用 `users.id`**)| data-model-draft §3.3.10 M-1 |
+| `memberNo` | String | 否 | 队员业务唯一编号 — 救援队入队时人工分配的固定编号;**非敏感**但**高价值**业务标识;创建必填,**禁止 PATCH 修改**;**全局唯一**(不因软删释放) | memberNo 决议(2026-05-08) |
 | `displayName` | String | 否 | 称呼 / 显示名(业务可读;**不**写真实姓名 — 由运营在系统内录入) | — |
 | `gradeCode` | String | 是 | 引用 `dict_items.code`(隐含 `type code = '队员等级'`)| data-model-draft §3.3.10 M-4 |
 | `status` | enum(`ACTIVE` / `INACTIVE`) | 否 | 在队 / 离队状态;最小集 | data-model-draft §3.3.10 M-5 |
@@ -243,11 +244,14 @@ V2 第一阶段**最小骨架**:身份基础 + 启停 + 时间戳 + 字典关联
 
 ### 5.3 约束与索引意图
 
+- **唯一约束**:`memberNo` **全局唯一**(不在 `deletedAt = null` 范围内,而是包含软删记录的全表唯一)— 确保历史 memberNo 永久绑定历史身份,不复用导致档案歧义
 - **业务校验(service 层)**:
+  - `memberNo` 创建时必填(DTO 层 `@MinLength(1)`);`trim()` 后保存;长度 1-32(DTO 层 `@MaxLength(32)`);允许字母 / 数字 / 连字符(DTO 层 `@Matches(/^[A-Za-z0-9-]+$/)`);**不**写死真实编号规则,**不**把真实编号样例写进代码
+  - `memberNo` 唯一性预检查必须用 `findUnique`(包含软删记录;沿用 `docs/srvf-foundation-baseline.md §10` / `CLAUDE.md §10` 唯一性预检查纪律)— 防止"软删后旧 memberNo 复活创建" 撞约束
   - `gradeCode` 若提供,必须存在于 `dict_items` 中且 type code = '队员等级' 且 `status = ACTIVE`
   - `displayName` 不允许空字符串(DTO 层 `@MinLength(1)`)
-- **索引**:`gradeCode`(按等级筛选)/ `status`(按在队 / 离队筛选)/ `createdAt`
-- **无主表唯一约束**:`displayName` 不强制唯一(同名队员业务可接受);若有业务编号需求,作为后续扩展
+- **索引**:`memberNo`(精确查找 + 登录回退查找路径热点)/ `gradeCode`(按等级筛选)/ `status`(按在队 / 离队筛选)/ `createdAt`
+- **`displayName` 不强制唯一**:同名队员业务可接受(与 memberNo 的角色分工:`memberNo` 是身份,`displayName` 是称呼)
 
 ### 5.4 与 users 的关系
 
@@ -269,12 +273,15 @@ V2 第一阶段**最小骨架**:身份基础 + 启停 + 时间戳 + 字典关联
   - `ACTIVE`(在队)
   - `INACTIVE`(离队 / 退队)
   - 软删 `deletedAt`(整档案逻辑删除,**离队 / 退队后档案完整保留**对应 D5 Q7 ①)
-- **离队处理**:`status = INACTIVE`;**不**软删档案;**不**清理任何字段(D5 Q7 ① "完整保留")
+- **离队处理**:`status = INACTIVE`;**不**软删档案;**不**清理任何字段(D5 Q7 ① "完整保留");`memberNo` 仍然占位,无法被新队员复用
 - **离队后 v1 user 关联**:`users.memberId` 关联保留;不强制解绑;运营可手动解绑或保留(由业务规则决定)
 - **软删时机**:**仅**在档案彻底无效(例如档案误录后清除)时使用 `deletedAt`;不作为离队的常规处理
+- **`memberNo` 软删后唯一性**:**全局唯一,永不复用** — 软删 member 的 memberNo 仍占据全局唯一索引位;新建 member 撞旧 memberNo 抛 `MEMBER_NO_ALREADY_EXISTS`(150xx 段位,409)。这是**有意选择**:救援队"编号即身份印记",历史溯源价值高于编号回收
 - **物理删除**:**禁止**(沿用 baseline §10)
 
 ### 5.7 明确禁止的敏感字段
+
+> **memberNo 不在禁止清单**:`memberNo` 是非敏感、高价值业务标识(类似 v1 `users.username` 的角色但归属 members 域),允许进入 members 主表 + API 出入参 + 日志(不进 V1.1 §17.4 屏蔽清单)。本节仅约束**敏感字段**清单。
 
 V2 第一阶段 members 主表**禁止**包含以下字段(全部延后到 V2.x `member_profiles`,合规材料补齐后启动):
 
@@ -519,8 +526,10 @@ V2 第一阶段预期使用的 BizCode 类型(具体编号由 Step 3-6 实施时
 - `<RESOURCE>_<FIELD>_ALREADY_EXISTS`(唯一冲突)
 - `<RESOURCE>_<RULE>`(业务级输入校验,如 `ORGANIZATION_PARENT_CYCLE` / `ORGANIZATION_PARENT_IMMUTABLE`)
 - `<RESOURCE>_HAS_<DEPENDENT>`(引用约束,如 `ORGANIZATION_HAS_MEMBERS` / `DICT_ITEM_IN_USE`)
+- `MEMBER_NO_ALREADY_EXISTS`(150xx 段位,409 — memberNo 全局唯一冲突;包含撞软删历史 memberNo)
 - `MEMBER_DEPARTMENT_ALREADY_EXISTS`(单归属约束撞)
 - `FORBIDDEN_<ACTION>_<RESOURCE>`(权限拒绝)
+- `LOGIN_FAILED = 10004`:登录账号枚举相关失败场景统一抛(输入值在 `username` / `memberNo` 两条查找路径下均未命中 / `memberNo` 命中但未绑定 user / 账号禁用或软删 / 密码错);**复用** v1 已有错误码,**禁止**为 memberNo 路径自创新业务码(避免账号枚举);详见 `docs/v2-api-contract.md §6.6.3` 失败场景表
 
 ---
 
@@ -611,6 +620,7 @@ V2.x 复活触发条件见 `TASKS.md §5.5.4.3`(待 D8-5 commit 后落地)。
                           ┌──────────────────────┐
                           │ members              │
                           │ - id (独立 cuid)     │
+                          │ - memberNo (全局唯一)│
                           │ - displayName        │
                           │ - gradeCode? ────────┼──── N..1 ───┐
                           │ - status             │             │
@@ -680,6 +690,7 @@ V2.x 复活触发条件见 `TASKS.md §5.5.4.3`(待 D8-5 commit 后落地)。
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v0.1 | 2026-05-07 | 初版,V2-D8 立项 D8-3 产出物;覆盖 4 模型 + `users.memberId` 追加 + 跨模型规则 + BizCode 段位映射 + schema 实现注意事项 + 模型关系文字图 |
+| v0.2 | 2026-05-08 | memberNo 决议(Q1=A / Q2=B-1 / Q3-Q9):§5.2 字段表加 memberNo / §5.3 全局唯一约束 + 弱约束校验 / §5.6 软删后 memberNo 永不复用 / §5.7 明确 memberNo 不属敏感 / §9 BizCode 加 MEMBER_NO_ALREADY_EXISTS + 登录账号枚举相关失败场景统一 LOGIN_FAILED / 附录 A 模型图加 memberNo |
 
 ---
 

@@ -56,9 +56,10 @@
 |---|---|---|
 | 1 | `dictionaries`(`dict_types` + `dict_items`)| 双表 / `<concept>Code` 字符串引用 / `parentId` 自引用父子树形 / 第一阶段 2 类(节点类别 / 队员等级)|
 | 2 | `organizations` | 单根树 / 3 层不写死 / 新增/编辑/停用,不可改父级 / `nodeTypeCode` 走字典 |
-| 3 | `members` | 独立 cuid id / **不**复用 `users.id` / `users.memberId` 可空外键 / 主表不挂 `organizationId` / `gradeCode` 走字典 / status 最小集 ACTIVE/INACTIVE / **任何敏感字段禁止** |
+| 3 | `members` | 独立 cuid id / **不**复用 `users.id` / `users.memberId` 可空外键 / 主表不挂 `organizationId` / `gradeCode` 走字典 / status 最小集 ACTIVE/INACTIVE / **`memberNo` 业务唯一编号 必填 / 全局唯一 / 弱校验 / 禁止 PATCH** / **任何敏感字段禁止** |
 | 4 | `member_departments` | 路径 B / 一人一部门 / 独立代理 id / `(memberId)` 唯一(在 `deletedAt = null` 范围内)/ 不引入 isPrimary/joinedAt/endedAt |
 | — | v1 `users` 表追加 `memberId` 可空外键 | M-2 决议的不可避免后果 |
+| — | v1 `auth.service.ts` 登录查找扩展支持 `memberNo` 回退 | memberNo 决议(2026-05-08);v1 HTTP 契约 / OpenAPI 快照零漂移 |
 
 ### 1.3 延后范围:5 个模型
 
@@ -118,7 +119,8 @@
 
 按 `docs/v2-data-model.md`(D8-3 产出)实施:
 
-- 新增 4 个 Prisma model:`DictType` / `DictItem` / `Organization` / `Member` / `MemberDepartment`(注:`DictType` + `DictItem` = `dictionaries` 模块的 2 张表)
+- 新增 5 个 Prisma model:`DictType` / `DictItem` / `Organization` / `Member` / `MemberDepartment`(注:`DictType` + `DictItem` = `dictionaries` 模块的 2 张表)
+- `Member` model 必含 **`memberNo`** 字段 — 字符串、必填、**普通全局唯一约束**(**不**用部分唯一索引;**包含软删记录全表唯一**,软删后不释放)、长度 1-32、字符集 `[A-Za-z0-9-]`
 - 修改 v1 `User` model:追加可空 `memberId` 字段 + 关系到 `Member`
 - 生成 migration 文件(命名按现有 `prisma/migrations/` 时间戳风格,例如 `<timestamp>_v2_foundation`)
 - 跑 `pnpm prisma:generate` 同步 client 类型
@@ -182,7 +184,7 @@ V2-D8 第一阶段 Step 1 交付:Prisma schema + migration 就位。
 - 新增 5 个 Prisma model(dictionaries 模块拆 2 张):
   - DictType / DictItem(双表字典 + 父子树形)
   - Organization(单根树 + nodeTypeCode 走字典)
-  - Member(独立 id + gradeCode 走字典 + status 最小集)
+  - Member(独立 id + memberNo 全局唯一业务编号 + gradeCode 走字典 + status 最小集)
   - MemberDepartment(路径 B + (memberId) 唯一约束在 deletedAt=null)
 - v1 User model 追加可空 memberId 字段 + 关系到 Member
   - v1 已有字段 / 索引 / 外键完全保留
@@ -505,24 +507,28 @@ V2-D8 第一阶段 Step 4 交付:组织树模块就位。
 
 新建 `src/modules/members/`,4 文件结构。
 
-实施 members CRUD + v1 users 服务侧 memberId 关系处理:
+实施 members CRUD + v1 users 服务侧 memberId 关系处理 + v1 `auth.service.ts` 登录回退查找(受限放开):
 
-- members CRUD:list(管理员)/ detail / create / update / 状态切换(ACTIVE↔INACTIVE)/ 软删
+- members CRUD:list(管理员;支持 `?memberNo=` 精确查询)/ detail(返回 memberNo)/ create(memberNo 必填)/ update(白名单不含 memberNo)/ 状态切换(ACTIVE↔INACTIVE)/ 软删
+- `memberNo` 校验(DTO 层):`@MinLength(1)` + `@MaxLength(32)` + `@Matches(/^[A-Za-z0-9-]+$/)`;入库前 `trim()` 保留原大小写;唯一性预检查走 `findUnique` 包含软删记录;撞约束抛 `MEMBER_NO_ALREADY_EXISTS`(150xx)
 - v1 `users.service.ts` 追加 `memberId` 字段处理逻辑(创建 / 更新 / 查询;**不**改 v1 接口契约)
+- **v1 `auth.service.ts` 登录查找扩展(受限放开)**:支持 memberNo 回退 — 详见 `docs/v2-api-contract.md §6.6` 全部硬约束(账号枚举相关失败场景防护 / Timing dummy bcrypt 扩展 / 通过 `PrismaService` 直读 member 表 / 禁止 import V2 模块)
 - gradeCode 走字典(联动 §3.1 字典模式)
-- BizCode 段位:`150xx + 151xx`
+- BizCode 段位:`150xx + 151xx`(`MEMBER_NOT_FOUND` / `MEMBER_NO_ALREADY_EXISTS` / `MEMBER_GRADE_CODE_INVALID` / `MEMBER_HAS_ACTIVE_DEPARTMENT` / `MEMBER_HAS_LINKED_USER` / `FORBIDDEN_MANAGE_MEMBER` 等;**不**为 memberNo 登录路径自创业务码,统一复用 v1 `LOGIN_FAILED = 10004`)
 - Swagger 100% 覆盖 + DTO 白名单 + 软删显式封装
 - 角色权限:沿用 v1 三层 Role(SUPER_ADMIN / ADMIN / USER)+ Service 层 `assertCanManageMember` 显式校验
-- e2e 测试覆盖
+- e2e 测试覆盖(含 `docs/v2-api-contract.md §6.6.5` 全部 8 项 e2e 验收)
 
 #### 本步不做
 
 - ❌ **不开发任何敏感字段**(身份证 / 紧急联系人 / 医疗 / 出生日期 / 住址 等;m_profiles 已延后)
 - ❌ **不**在 members 主表挂 organizationId(完全走 member_departments,Step 6 实施)
-- ❌ **不**在 v1 `UserResponseDto` 出参中**新增必返**字段
-  - `memberId` 是否作为可选返回:本步**默认不返回**;若决定可选返回,需在 Step 5 内显式说明并更新 OpenAPI 契约快照
-- ❌ **不**修改 v1 `auth.service.ts` / `auth.controller.ts` / `auth.dto.ts`(登录路径不动)
+- ❌ **不**在 v1 `UserResponseDto` 出参中**新增必返**字段;**也禁止**新增 memberNo 可选返回(沿用 §M-2 红线;前端展示 memberNo 走 V2 members 接口)
+  - `memberId` 是否作为可选返回:本步**默认不返回**;**禁止**默认改成可选返回 memberNo(对齐 memberNo 决议 Q7)
+- ❌ **不**修改 v1 `auth.controller.ts` / `auth.dto.ts`(`LoginDto` 字段名 / 类型 / 校验装饰器 / 路径全保留;HTTP 契约零漂移)
+- ⚠️ **受限放开** v1 `auth.service.ts` —— **唯一**允许的扩展是 memberNo 登录回退查找;**禁止**改入参 / 出参 / 错误码 / 响应包装 / Timing 防御 / `JwtService.sign` 调用方式 / `lastLoginAt` 顺手更新策略;`auth.service` **必须**通过 `PrismaService` 直读 `member` 表,**禁止** import `MembersModule` / `MembersService`(详见 ARCHITECTURE.md §12.8.2.4 + v2-api-contract.md §6.6)
 - ❌ **不**修改 v1 `health/` / `bootstrap/` / `database/prisma.service.ts`
+- ❌ **不**开发"改 memberNo"独立接口(留 V2.x 评估)
 - ❌ 不实现资质维度(D5 未触及,延后)
 
 #### 交付物
@@ -541,16 +547,23 @@ V2-D8 第一阶段 Step 4 交付:组织树模块就位。
 
 #### 验收命令
 
-A 档:同 Step 3,**重点验证 v1 14 接口零退化**。
+A 档:同 Step 3,**重点验证 v1 14 接口零退化 + v1 LoginDto schema 零漂移**。
 
 B 档(涉及 v1 兼容性,**必跑**):
 
 ```
 pnpm start:dev
-curl POST /api/auth/login(v1 登录路径)→ 200,响应不含 memberId
-curl GET /api/users/me(v1 用户路径)→ 200,响应不含 memberId(本步默认)
-curl GET /api/members(V2 新接口)→ 200(若管理员)/ 403(若 USER)
+curl POST /api/auth/login(v1 username 登录)→ 200,响应不含 memberId / 不含 memberNo
+curl POST /api/auth/login(v1 memberNo 登录,新功能)→ 200,响应 schema 与 username 登录完全一致
+curl POST /api/auth/login(memberNo 不存在 / member 未绑 user / 密码错)→ 401 + LOGIN_FAILED 10004,响应体一致
+curl GET /api/users/me(v1 用户路径)→ 200,响应不含 memberId / 不含 memberNo(本步默认)
+curl GET /api/v2/members(V2 新接口)→ 200(若管理员)+ 详情含 memberNo / 403(若 USER)
+curl GET /api/v2/members?memberNo=<value>(精确查询)→ 200 + 精确匹配
+curl POST /api/v2/members(无 memberNo)→ 400(forbidNonWhitelisted / @MinLength)
+curl POST /api/v2/members(撞唯一)→ 409 + MEMBER_NO_ALREADY_EXISTS
+curl PATCH /api/v2/members/:id { memberNo: '...' } → 400(forbidNonWhitelisted 拒绝)
 spot check v1 用户 CRUD 完整路径
+pnpm test:contract  # 严格证明 v1 LoginDto schema diff = 0
 SIGTERM 关停
 ```
 
@@ -559,37 +572,96 @@ SIGTERM 关停
 | 风险 | 评估 |
 |---|---|
 | 修改 v1 users.service.ts 引入回归 | e2e + B 档 spot check 即捕获;`git revert` 即可 |
-| memberId 关系污染 v1 接口出参 | 严守 §M-2 红线;OpenAPI 契约快照对比即捕获 |
-| 回滚操作 | `git revert <commit>`(模块 + v1 users 改动一并撤回) |
+| 修改 v1 auth.service.ts 引入登录回归 | e2e + Timing 抽样 + OpenAPI 快照对比即捕获;`git revert` 单独撤回 auth commit(因 §4.3 Step 5 拆 2 commit) |
+| memberId / memberNo 关系污染 v1 接口出参 | 严守 §M-2 红线;OpenAPI 契约快照对比即捕获 |
+| memberNo 登录路径暴露账号枚举 | e2e 账号枚举相关失败场景(详见 `docs/v2-api-contract.md §6.6.3`)断言响应体一致 + Timing 抽样;若发现差异 = §6.6 红线违反,撤回 auth commit 重做 |
+| 回滚操作 | `git revert <auth-commit>`(单独撤回 auth);`git revert <members-commit>`(单独撤回 members CRUD;两 commit 独立可回滚) |
 
-#### 建议 commit message
+#### 建议 commit message(memberNo 决议:**强制拆 2 commit**)
+
+Step 5 实施时,members CRUD 与 auth 登录回退**必须分两次 commit**(沿用 ARCHITECTURE.md §12.8.2.4 末尾纪律 — `auth.service.ts` 受限放开属于"唯一破口",必须独立 commit 便于审计);允许中间穿插 `feat(users): hook memberId` / `test(...)` 子 commit 但不得与下面两个核心 commit 合并。
+
+##### Commit 1:`feat(members): add memberNo to member lifecycle`
 
 ```
-feat(members): add V2 foundation members module + v1 users.memberId hook
+feat(members): add V2 foundation members module + memberNo lifecycle
 
-V2-D8 第一阶段 Step 5 交付:队员模块就位。
+V2-D8 第一阶段 Step 5 交付(1/2):队员模块就位 + memberNo 全生命周期。
 
 - 新建 src/modules/members/ 4 文件结构
 - members CRUD + 状态切换(ACTIVE/INACTIVE)+ 软删
+- memberNo 全局唯一业务编号(必填 / trim / 长度 1-32 / [A-Za-z0-9-])
+- memberNo 唯一性预检查走 findUnique 包含软删(防止撞软删历史)
+- 列表支持 ?memberNo=<exact> 精确查询
+- 详情 / 创建 / 更新返回 memberNo(MemberResponseDto 含 memberNo)
+- UpdateMemberDto 白名单不含 memberNo(严禁 PATCH 改编号)
 - gradeCode 走字典(联动 dictionaries)
-- BizCode 段位 150xx/151xx
+- BizCode 段位 150xx/151xx(MEMBER_NO_ALREADY_EXISTS 等)
 - assertCanManageMember Service 层显式校验(沿用 v1 §13)
 
 v1 兼容性追加:
 - src/modules/users/users.service.ts 追加 memberId 处理
-- v1 UserResponseDto 不新增必返字段(默认不返回 memberId)
-- v1 14 接口契约 / 路径 / DTO 全部不变(e2e 162 tests 零退化)
+- v1 UserResponseDto 不新增必返字段(默认不返回 memberId / memberNo)
+- v1 14 接口契约 / 路径 / DTO 全部不变(e2e 零退化)
 
 红线沿用:
 - 任何敏感字段禁止进入(member_profiles 已延后)
 - 主表不挂 organizationId(走 member_departments,Step 6 实施)
-- v1 auth / health / bootstrap / database 不动
+- v1 auth.controller.ts / auth.dto.ts / health / bootstrap / database 不动
+- 真实 memberNo 样例 / 真实编号规则不进 git(R13)
 
 验收(全过):
 - pnpm lint / typecheck / test / test:e2e / test:contract -u
-- B 档:start:dev / v1 14 接口 spot check / V2 接口 spot check
+- B 档:start:dev / v1 14 接口 spot check / V2 members 接口 spot check
 
 参考:docs/v2-plan.md §2.5 Step 5 / docs/v2-api-contract.md §4
+```
+
+##### Commit 2:`feat(auth): support memberNo login fallback`
+
+```
+feat(auth): support memberNo login fallback (v1 LoginDto schema unchanged)
+
+V2-D8 第一阶段 Step 5 交付(2/2):v1 登录路径 memberNo 回退查找。
+
+ARCHITECTURE.md §12.8.2.4 受限放开 — auth.service.ts 是 V2 第一阶段
+唯一允许的破口,本 commit 仅含此一处文件改动 + 配套 e2e + 快照对比。
+
+服务端语义扩展(对外契约 0 漂移):
+- LoginDto.username 字段服务端含义扩展为"username 或 memberNo"
+- v1 现有路径优先:trim+toLowerCase 后查 users.username
+- 未命中回退:按 trim 后原值精确匹配 members.memberNo,
+  通过 users.memberId 反查 user
+- 任一路径未到 bcrypt.compare:强制跑 dummy bcrypt(沿用 v1 §8 timing 防御)
+- 账号枚举相关失败场景统一抛 LOGIN_FAILED(10004,401):
+  输入值在 username / memberNo 两路径均未命中 /
+  memberNo 命中但未绑 user / 账号禁用或软删 / 密码错
+- 不暴露"编号存在但无账号"
+- auth.service 通过 PrismaService 直读 member 表
+- 严禁 import MembersModule / MembersService / V2 BizCode
+
+HTTP 契约不动:
+- 路径 POST /api/auth/login 不变
+- LoginDto 字段 / 类型 / 校验装饰器不变
+- 出参 schema 不变 / 错误码 LOGIN_FAILED=10004 不变
+- 响应包装 / lastLoginAt 顺手更新策略不变
+- OpenAPI 快照中 v1 LoginDto schema 零漂移(test:contract 严格证明)
+
+e2e 覆盖(对应 v2-api-contract.md §6.6.5):
+- v1 username 登录零退化
+- memberNo 登录成功(member 已绑 user + 密码正确)
+- 账号枚举相关失败场景(详见 v2-api-contract.md §6.6.3 表全部 4 行)防护(响应体 / HTTP status 完全一致)
+- memberNo trim 后查找 / 大小写敏感 / member 软删 / user 禁用 / user 软删
+- Timing 抽样无统计显著差异
+
+验收(全过):
+- pnpm lint / typecheck / test / test:e2e / test:contract
+  (v1 LoginDto schema diff 必须为 0)
+- B 档:start:dev / 账号枚举相关失败场景 curl 响应一致 / SIGTERM
+
+参考:ARCHITECTURE.md §12.8.2.3-§12.8.2.4 /
+       docs/v2-api-contract.md §6.6 /
+       docs/v2-plan.md §2.5 Step 5
 ```
 
 ---
@@ -871,6 +943,10 @@ pnpm test:contract            # OpenAPI 契约快照(若涉及 schema 改动需 
 | **R-6** | 字典 seed 包含真实运营数据 | 低 | R13 红线破口 / 运营数据进 git history | Step 2 review 严守 neutral-demo;PR 时 grep 真实业务名词 |
 | **R-7** | Step 1 migration 反向影响开发库 | 低 | 本地数据丢失 | Step 1 实施前确保开发库无关键数据;Prisma 安全机制需用户授权 reset |
 | **R-8** | 顺手做延后模型 | 中 | 扩大第一阶段范围 / 时间不可控 | §0.3 + §7 显式排除;每步验收清单"本步不做"段把关;code review |
+| **R-9** | memberNo 登录回退 timing oracle 漏掉 / 错误码区分泄漏 | **高** | 账号枚举漏洞回归(攻击者据响应耗时 / code 差异枚举哪些 memberNo 已发放) | Step 5 commit 2 必须 e2e 账号枚举相关失败场景断言响应体一致 + Timing 抽样 + 复用 LOGIN_FAILED;auth.service 强制扩展 dummy bcrypt 到新路径(详见 v2-api-contract.md §6.6.3) |
+| **R-10** | memberNo 软删唯一性策略错置(误用部分唯一索引 / 误允复用) | 中 | 历史档案歧义 / 撞软删 memberNo 抛非预期错误 | Step 1 schema 用**普通全局唯一约束**(包含软删记录全表唯一,软删后不释放);Step 5 service 层唯一性预检查走 `findUnique`(Prisma Client API);e2e 含"软删后撞旧 memberNo"场景 |
+| **R-11** | Step 5 把 members + auth 揉进一个 commit | 中 | 违反 ARCHITECTURE.md §12.8.2.4 末尾"auth 受限放开必须独立 commit"纪律;事后回滚粒度变粗 | §2.5 commit message 段强制拆 2 commit;PR review 阶段把关;若已揉合 → 拒绝合并,要求 rebase 拆开 |
+| **R-12** | auth.service 误 import MembersModule / MembersService 引入 v1→V2 循环依赖 | 中 | 模块启动失败 / 单元测试通过但 e2e 失败 | code review 检查 import;ARCHITECTURE.md §12.8.2.4 显式禁止;Step 5 commit 2 typecheck + e2e 即捕获 |
 
 ### 5.2 回退策略
 
@@ -916,9 +992,11 @@ pnpm test:contract            # OpenAPI 契约快照(若涉及 schema 改动需 
 
 ### 6.4 v1 已交付 src/ 文件修改限制
 
-- [ ] **可修改**:`prisma/schema.prisma`(Step 1 加 memberId)
+- [ ] **可修改**:`prisma/schema.prisma`(Step 1 加 memberId + Member.memberNo 全局唯一)
 - [ ] **可修改**:`src/modules/users/users.service.ts` / `users.dto.ts`(Step 5 追加 memberId 处理)
-- [ ] **禁止修改**:`src/modules/auth/*`(全程)
+- [ ] ⚠️ **受限放开**:`src/modules/auth/auth.service.ts`(**唯一**允许的扩展是 memberNo 登录回退查找;详见 ARCHITECTURE.md §12.8.2.4 + v2-api-contract.md §6.6;Step 5 commit 2 单独 commit;**不**和 members CRUD 揉合)
+- [ ] **禁止修改**:`src/modules/auth/auth.controller.ts` / `auth.dto.ts`(LoginDto schema / 路径 / 装饰器全保留)
+- [ ] **禁止修改**:`src/modules/auth/strategies/*`(JwtStrategy 等)
 - [ ] **禁止修改**:`src/modules/health/*`(全程)
 - [ ] **禁止修改**:`src/bootstrap/*`(全程)
 - [ ] **禁止修改**:`src/config/*`(除非新增 V2 配置文件,本阶段无 V2 配置需求)
@@ -928,6 +1006,7 @@ pnpm test:contract            # OpenAPI 契约快照(若涉及 schema 改动需 
 
 - [ ] V2 新增接口 schema 进入快照(每步增量更新)
 - [ ] v1 14 接口 schema 在快照中保持不变(若发生变化 = §6.1 / §6.3 红线违反)
+- [ ] **v1 `LoginDto` schema 在快照中零漂移**(memberNo 登录回退仅在服务端实现;Step 5 commit 2 必须 `pnpm test:contract` 严格证明 LoginDto schema diff = 0)
 - [ ] Step 7 收口时 `pnpm test:contract` 全过
 
 ---
@@ -1015,6 +1094,7 @@ Step 1: Prisma schema + migration
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v0.1 | 2026-05-07 | 初版,V2-D8 立项 D8-2 产出物;7 步开发顺序 + 每步任务卡 + commit 拆分 + 风险与回退 + v1 兼容性核查清单 |
+| v0.2 | 2026-05-08 | memberNo 决议(Q1=A / Q2=B-1 / Q3-Q9):§1.2 开发范围 Member 行加 memberNo + auth 受限放开行 / §2.1 Step 1 Member model 加 memberNo / §2.5 Step 5 范围加 memberNo CRUD + auth 登录回退;"本步不做"清单中 v1 auth.controller.ts/dto.ts 维持禁止 + auth.service.ts 受限放开;验收命令加 memberNo 账号枚举相关失败场景 spot check + v1 LoginDto schema diff=0;**强制拆 2 commit**(`feat(members)` + `feat(auth)`)/ §5.1 风险表加 R-9 timing oracle / R-10 软删唯一性策略 / R-11 commit 揉合 / R-12 v1→V2 循环依赖 / §6.4 auth.service.ts 标"受限放开" / §6.5 加 v1 LoginDto 零漂移硬约束 |
 
 ---
 

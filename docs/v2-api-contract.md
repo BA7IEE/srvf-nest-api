@@ -96,10 +96,10 @@ V2 第一阶段开发范围共 **4 个新模块** + **1 项 v1 兼容性追加**
 | 18 | PATCH | `/api/v2/organizations/:id` | organizations | 更新组织节点(name / sortOrder / nodeTypeCode);**禁止**改 parentId |
 | 19 | PATCH | `/api/v2/organizations/:id/status` | organizations | 启停组织节点 |
 | 20 | DELETE | `/api/v2/organizations/:id` | organizations | 软删组织节点 |
-| 21 | GET | `/api/v2/members` | members | 列出队员(分页) |
-| 22 | POST | `/api/v2/members` | members | 创建队员 |
-| 23 | GET | `/api/v2/members/:id` | members | 队员详情 |
-| 24 | PATCH | `/api/v2/members/:id` | members | 更新队员(displayName / gradeCode / sortOrder) |
+| 21 | GET | `/api/v2/members` | members | 列出队员(分页;支持 memberNo 精确查询) |
+| 22 | POST | `/api/v2/members` | members | 创建队员(memberNo 必填) |
+| 23 | GET | `/api/v2/members/:id` | members | 队员详情(返回 memberNo) |
+| 24 | PATCH | `/api/v2/members/:id` | members | 更新队员(displayName / gradeCode;**禁止改 memberNo**) |
 | 25 | PATCH | `/api/v2/members/:id/status` | members | 切换队员 status(ACTIVE↔INACTIVE) |
 | 26 | DELETE | `/api/v2/members/:id` | members | 软删队员 |
 | 27 | GET | `/api/v2/members/:memberId/department` | member_departments | 查队员当前部门归属 |
@@ -486,10 +486,10 @@ V2 第一阶段**严格禁止**通过 API 修改 `organizations.parentId`(对应
 
 | # | 方法 | 路径 | 简述 |
 |---|---|---|---|
-| 21 | GET | `/api/v2/members` | 列出队员(分页) |
-| 22 | POST | `/api/v2/members` | 创建队员 |
-| 23 | GET | `/api/v2/members/:id` | 队员详情 |
-| 24 | PATCH | `/api/v2/members/:id` | 更新队员(displayName / gradeCode / sortOrder) |
+| 21 | GET | `/api/v2/members` | 列出队员(分页;支持 `?memberNo=<exact>` 精确查询) |
+| 22 | POST | `/api/v2/members` | 创建队员(`memberNo` 必填) |
+| 23 | GET | `/api/v2/members/:id` | 队员详情(返回 `memberNo`) |
+| 24 | PATCH | `/api/v2/members/:id` | 更新队员(displayName / gradeCode;**禁止改 memberNo**) |
 | 25 | PATCH | `/api/v2/members/:id/status` | 切换队员 status(ACTIVE↔INACTIVE) |
 | 26 | DELETE | `/api/v2/members/:id` | 软删队员 |
 
@@ -497,30 +497,37 @@ V2 第一阶段**严格禁止**通过 API 修改 `organizations.parentId`(对应
 
 ```
 GET /api/v2/members
-  入参:PaginationQueryDto + ?gradeCode=<code> + ?status=...
+  入参:PaginationQueryDto + ?memberNo=<exact> + ?gradeCode=<code> + ?status=...
   出参:PageResultDto<MemberResponseDto>
   权限:ADMIN / SUPER_ADMIN
-  备注:**不**支持按部门查询(部门归属走 member_departments;若需要"按部门查队员"作为运营场景,作为 V2.x 单独优化或在 organization 接口加子接口)
+  备注:
+    - memberNo 走精确查询(完整匹配),不做模糊搜索 — 业务上编号是身份,精确即可
+    - **不**支持按部门查询(部门归属走 member_departments;若需要"按部门查队员"作为运营场景,作为 V2.x 单独优化或在 organization 接口加子接口)
 
 POST /api/v2/members
-  入参:CreateMemberDto { displayName, gradeCode? }
+  入参:CreateMemberDto { memberNo, displayName, gradeCode? }
   出参:MemberResponseDto
   权限:ADMIN / SUPER_ADMIN
   状态:201 Created
-  备注:本接口**不**接收任何敏感字段(身份证 / 紧急联系人 / 医疗 / 出生日期 / 住址 / 性别 / 联系方式 等);DTO 白名单严格拒绝
-  错误码:MEMBER_GRADE_CODE_INVALID(若 gradeCode 提供但不存在)
+  备注:
+    - memberNo **必填**;trim 后保存;长度 1-32;允许字母 / 数字 / 连字符;真实编号规则不写死,真实编号样例不进 git
+    - memberNo 全局唯一(包含软删记录);撞约束抛 MEMBER_NO_ALREADY_EXISTS
+    - 本接口**不**接收任何敏感字段(身份证 / 紧急联系人 / 医疗 / 出生日期 / 住址 / 性别 / 联系方式 等);DTO 白名单严格拒绝
+  错误码:MEMBER_NO_ALREADY_EXISTS / MEMBER_GRADE_CODE_INVALID(若 gradeCode 提供但不存在)
 
 GET /api/v2/members/:id
   入参:IdParamDto
-  出参:MemberResponseDto
+  出参:MemberResponseDto(含 memberNo)
   权限:ADMIN / SUPER_ADMIN
   错误码:MEMBER_NOT_FOUND
 
 PATCH /api/v2/members/:id
-  入参:UpdateMemberDto { displayName?, gradeCode? }(白名单仅这两个字段)
+  入参:UpdateMemberDto { displayName?, gradeCode? }(白名单**仅**这两个字段)
   出参:MemberResponseDto
   权限:ADMIN / SUPER_ADMIN
-  备注:**禁止**通过本接口改 status(走 PATCH /:id/status);**禁止**任何敏感字段;**禁止**改 organizationId(主表无此字段)
+  备注:
+    - **禁止**改 memberNo(白名单不含;若误传 → 400 由 forbidNonWhitelisted 自动拒绝)— memberNo 是稳定身份标识,本期不开发"改编号"接口;真出现改编号场景留 V2.x
+    - **禁止**通过本接口改 status(走 PATCH /:id/status);**禁止**任何敏感字段;**禁止**改 organizationId(主表无此字段)
   错误码:MEMBER_NOT_FOUND / MEMBER_GRADE_CODE_INVALID
 
 PATCH /api/v2/members/:id/status
@@ -543,6 +550,7 @@ DELETE /api/v2/members/:id
 | 字段名 | 类型意图 | 说明 |
 |---|---|---|
 | `id` | String | cuid(独立,**不**复用 users.id) |
+| `memberNo` | String | 队员业务唯一编号(必返;非敏感、高价值业务标识) |
 | `displayName` | String | 称呼 / 显示名 |
 | `gradeCode` | String? | 等级字典 code(可空) |
 | `status` | String enum | ACTIVE / INACTIVE |
@@ -555,20 +563,29 @@ DELETE /api/v2/members/:id
 
 #### 创建
 
-- 必填:`displayName`(显示名)
+- 必填:`memberNo`(业务唯一编号)+ `displayName`(显示名)
 - 可选:`gradeCode`(若提供,必须在"队员等级"字典中存在且 status=ACTIVE)
 - 不接收:`status`(默认 ACTIVE)/ `id`(系统生成)/ 任何敏感字段
+
+`memberNo` 校验:
+
+- DTO 层:`@IsString()` + `@MinLength(1)` + `@MaxLength(32)` + `@Matches(/^[A-Za-z0-9-]+$/)`(允许字母 / 数字 / 连字符)
+- 入库前:`trim()`(保留原大小写,**不**强制 `toLowerCase()` — 与 v1 `username` 规则不同)
+- 唯一性:`findUnique` 包含软删记录预检查(防止撞软删历史 memberNo);撞约束 → `MEMBER_NO_ALREADY_EXISTS`(409)
+- **真实编号规则 / 真实编号样例不进代码 / seed / 测试 fixture**(沿用 R13 红线)
 
 #### 更新(PATCH /:id)
 
 - 仅允许改 `displayName` / `gradeCode`
+- **禁止改 memberNo**:UpdateMemberDto 白名单**不含** memberNo;若误传 → 400(`forbidNonWhitelisted: true` 全局拒绝)
 - 状态切换走独立接口(`PATCH /:id/status`)
 - 任何敏感字段尝试 → 400(全局 ValidationPipe `forbidNonWhitelisted` 自动拒绝)
+- **本期不开发"改编号"独立接口**;真出现改编号场景作为 V2.x 单独评估
 
 #### 查询
 
-- 列表支持按 `gradeCode` / `status` 过滤
-- 详情返回 `MemberResponseDto`(无敏感字段)
+- 列表支持按 `memberNo`(精确匹配)/ `gradeCode` / `status` 过滤
+- 详情返回 `MemberResponseDto`(必返 memberNo;无敏感字段)
 
 ### 4.3 gradeCode 字典校验
 
@@ -628,12 +645,15 @@ V2 第一阶段 members 接口**严格禁止**接收 / 返回以下敏感字段(
 | 错误码 | 段位 | message | httpStatus |
 |---|---|---|---|
 | `MEMBER_NOT_FOUND` | 150xx | 队员不存在 | 404 |
+| `MEMBER_NO_ALREADY_EXISTS` | 150xx | 队员编号已存在 | 409 |
 | `MEMBER_GRADE_CODE_INVALID` | 150xx | 队员等级字典 code 不存在或已停用 | 400 |
 | `MEMBER_HAS_ACTIVE_DEPARTMENT` | 150xx | 队员仍有部门归属,不能删除 | 409 |
 | `MEMBER_HAS_LINKED_USER` | 150xx | 队员已被 user 绑定,不能删除 | 409 |
 | `FORBIDDEN_MANAGE_MEMBER` | 151xx | 无权管理队员 | 403 |
 
 具体编号由 Step 5 实施时分配。
+
+**注意**:登录账号枚举相关失败场景(输入值在 username / memberNo 两条路径下均未命中 / memberNo 命中但未绑 user / 账号禁用或软删 / 密码错)统一抛 v1 `LOGIN_FAILED = 10004`,**禁止**为 memberNo 路径自创新业务码(否则前端能据错误码差异枚举哪些 memberNo 已发放);详见 §6.6.3 失败场景表。
 
 ### 4.8 权限矩阵
 
@@ -807,9 +827,77 @@ V1.3 已建立 `test/contract/openapi.contract-spec.ts` 快照机制:
 | 维度 | V2 第一阶段要求 |
 |---|---|
 | v1 14 接口 schema | 在快照中**保持不变**;若发生变化 = §6.1 红线违反 |
+| v1 `LoginDto` schema | **零漂移硬约束**(memberNo 登录回退**仅**在服务端实现,HTTP 层契约不变;详见 §6.6) |
 | V2 新接口 schema | 由 Step 3-7 各自实施期更新快照(`pnpm test:contract -u`)|
 | 快照 diff 审阅 | 每个 commit 中,quickly inspect snapshot diff 确认仅含**新增** V2 接口 / 不含 v1 接口变动 |
 | Step 7 收口验收 | `pnpm test:contract` 通过 + v1 部分 0 漂移 |
+
+### 6.6 v1 登录路径 memberNo 回退查找(memberNo 决议,2026-05-08)
+
+V2 第一阶段对 v1 `POST /api/auth/login` 路径的**唯一服务端语义扩展**,严守 ARCHITECTURE.md §12.8.2.3 / §12.8.2.4 受限放开条款。
+
+#### 6.6.1 路径与契约不变
+
+| 维度 | 状态 | 说明 |
+|---|---|---|
+| HTTP 路径 | **不变** | `POST /api/auth/login` |
+| HTTP 方法 | **不变** | POST |
+| 入参 schema | **不变** | `LoginDto { username, password }` 字段名 / 类型 / 校验装饰器全保留 |
+| 出参 schema | **不变** | 沿用 v1 登录响应 |
+| 错误码 | **不变** | `LOGIN_FAILED = 10004` |
+| 响应包装 | **不变** | `{ code, message, data }` 三字段 |
+| Swagger / OpenAPI 快照 | **零漂移** | v1 `LoginDto` schema 在 `test/contract/__snapshots__/` 中保持现状;Step 5 commit 后 `pnpm test:contract` 必须证明 v1 部分 0 字段差异 |
+| 前端登录入口 | **单一** | 不新增 `/api/v2/auth/login`;前端无需做"用户类型判断";一律向 v1 路径提交 |
+
+#### 6.6.2 服务端查找路径扩展
+
+`auth.service.ts` 内部查找路径(伪逻辑,**仅描述意图**,不写实现):
+
+```
+1. 取请求体 username 字段值 → trim() + toLowerCase()(沿用 v1 现有归一化)
+2. 按 v1 现有规则查 users.username → 命中:走原有 bcrypt.compare → 沿用 v1 路径
+3. 未命中:按 trim 后原值在 members 表精确匹配 memberNo
+   → 命中 member:通过 users.memberId 反查对应 user → 命中:走 bcrypt.compare
+   → member 未命中 / member 找到但 memberId 为 null / 反查的 user 不存在或异常:
+     一律视为登录失败(不区分原因)
+4. 任一路径未到 bcrypt.compare 步骤:**强制**跑一次 dummy bcrypt.compare(沿用 v1 §8 timing 防御)
+5. 失败统一抛 BizException(BizCode.LOGIN_FAILED) — code 10004,HTTP 401,响应体不变
+```
+
+#### 6.6.3 账号枚举防护失败场景
+
+下表所有失败场景**必须**响应**完全一致**(响应体 / HTTP status / message / 耗时均不可区分):
+
+| # | 场景 | 响应 | 备注 |
+|---|---|---|---|
+| 1 | 输入值在 username 与 memberNo 两条查找路径下均未命中 | `LOGIN_FAILED` 401 | 两条查库都跑 + dummy bcrypt;**禁止** username 路径未命中就早返回 |
+| 2 | memberNo 命中 member,但 member 未绑定 user(`users.memberId` 反查为 null) | `LOGIN_FAILED` 401 | **关键防御** — 不暴露"编号存在但无账号";依然跑 dummy bcrypt |
+| 3 | 命中 user 但账号已禁用(`status = DISABLED`)/ 已软删(`deletedAt != null`) | `LOGIN_FAILED` 401 | 沿用 v1 |
+| 4 | 命中 user 但 `bcrypt.compare(password)` 失败 | `LOGIN_FAILED` 401 | 沿用 v1 |
+
+**响应耗时一致性硬约束**:无论命中哪条路径,**至少跑一次 `bcrypt.compare`**(命中路径用真 hash,未命中路径用预生成的模块级 dummy hash);Timing 差异在 e2e 中应**不可统计区分**。
+
+#### 6.6.4 实现层依赖关系铁律
+
+- `auth.service` **必须**通过注入的 `PrismaService` 直读 `member` 表(`this.prisma.member.findUnique({ where: { memberNo: <trim 后值> } })`)
+- **禁止** import `MembersModule` / `MembersService` 或任何 V2 业务层符号
+- **禁止** import V2 BizCode 段位常量(`MEMBER_NO_ALREADY_EXISTS` 等)— auth.service 抛错统一用 v1 已有的 `LOGIN_FAILED` / `UNAUTHORIZED`
+- `auth.module.ts` 不引入 V2 模块依赖
+- 这是为避免 v1 → V2 模块循环依赖;违反此条 = ARCHITECTURE.md §12.8.2.4 红线破口
+
+#### 6.6.5 e2e 验收硬要求
+
+Step 5 实施 `feat(auth): support memberNo login fallback` commit 时,e2e 必须覆盖:
+
+- ✅ 现有 v1 username 登录路径**零退化**(沿用既有 137+ 用例)
+- ✅ memberNo 登录成功路径(member 已绑 user + 密码正确 → 200 + JWT)
+- ✅ 账号枚举相关失败场景(§6.6.3 表全部 4 行)防护(响应体 / HTTP status 完全一致)
+- ✅ memberNo trim 后查找(前后空格被吃掉)
+- ✅ memberNo 大小写敏感(与 username 的 `toLowerCase()` 行为不同 — 同一字符串大小写不同视为两个不同 memberNo;真实编号样例不进 e2e 测试 fixture,改用 `<placeholder-upper>` / `<placeholder-lower>` 抽象占位)
+- ✅ memberNo 命中但 member 已软删 → 视作未命中,走 dummy bcrypt 路径
+- ✅ memberNo 命中但 user 已禁用 / 已软删 → 沿用 v1 同样表现
+- ✅ Timing 抽样:账号枚举相关失败场景响应耗时无统计显著差异(粗粒度 e2e,不要求严格 ms 级)
+- ✅ OpenAPI 契约快照证明 v1 `LoginDto` schema 零漂移
 
 ---
 
@@ -978,7 +1066,7 @@ Step 3-7 实施期每次接口改动后:
 | 19 | PATCH | `/api/v2/organizations/:id/status` | organizations | ADMIN+ | ORGANIZATION_NOT_FOUND |
 | 20 | DELETE | `/api/v2/organizations/:id` | organizations | SUPER_ADMIN | ORGANIZATION_HAS_CHILDREN / ORGANIZATION_HAS_MEMBERS |
 | 21 | GET | `/api/v2/members` | members | ADMIN+ | — |
-| 22 | POST | `/api/v2/members` | members | ADMIN+ | MEMBER_GRADE_CODE_INVALID |
+| 22 | POST | `/api/v2/members` | members | ADMIN+ | MEMBER_NO_ALREADY_EXISTS / MEMBER_GRADE_CODE_INVALID |
 | 23 | GET | `/api/v2/members/:id` | members | ADMIN+ | MEMBER_NOT_FOUND |
 | 24 | PATCH | `/api/v2/members/:id` | members | ADMIN+ | MEMBER_NOT_FOUND |
 | 25 | PATCH | `/api/v2/members/:id/status` | members | ADMIN+ | MEMBER_NOT_FOUND |
@@ -1022,6 +1110,7 @@ Step 3-7 实施期每次接口改动后:
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v0.1 | 2026-05-07 | 初版,V2-D8 立项 D8-4 产出物;29 个 V2 第一阶段接口契约草案 + v1 兼容性 + 跨模块规范 + OpenAPI 快照协议 + 错误码段位速查 |
+| v0.2 | 2026-05-08 | memberNo 决议(Q1=A / Q2=B-1 / Q3-Q9):§1.2 / §4.1 接口总览补 memberNo 提示 / §4.1 详情速览加 memberNo 入参 / §4.2 创建/更新/查询小节加 memberNo 校验 / §4.6 字段表加 memberNo / §4.7 加 MEMBER_NO_ALREADY_EXISTS + 登录账号枚举相关失败场景统一 LOGIN_FAILED 注解 / §6.5 加 v1 LoginDto 零漂移硬约束 / **新增 §6.6 v1 登录路径 memberNo 回退查找**(§6.6.3 失败场景表 4 行)/ 附录 A 总表错误码追加 |
 
 ---
 
