@@ -964,7 +964,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 | **Step 2** | seed neutral-demo | ✅ 已完成 (commit `53c9a03`) | `prisma/seed.ts` | Step 1 |
 | **Step 3** | dictionaries 模块 | ✅ 已完成 (commit `33dbd69`) | `src/modules/dictionaries/` | Step 1-2 |
 | **Step 4** | organizations 模块 | ✅ 已完成 (commit `da54cf3`) | `src/modules/organizations/` | Step 3 |
-| **Step 5** | members 模块 + v1 users.memberId hook + v1 auth.service.ts 登录回退 | ⏳ 待启动 | `src/modules/members/` + `src/modules/users/` 服务侧追加 + `src/modules/auth/auth.service.ts`(**唯一受限放开**;memberNo 登录回退查找)| Step 3 |
+| **Step 5** | members 模块 + v1 users.memberId hook + v1 auth.service.ts 登录回退 | ✅ 已完成 (commits `1baa6c6` + `c8bc4fd`) | `src/modules/members/` + `src/modules/auth/auth.service.ts`(**唯一受限放开**;memberNo 登录回退查找;v1 users.service / dto 经评估**未改动**)| Step 3 |
 | **Step 6** | member_departments 归属能力 | ⏳ 待启动 | `src/modules/member-departments/` 或 members 子能力 | Step 4 + Step 5 |
 | **Step 7** | E2E + contract + 文档收口 | ⏳ 待启动 | `test/` + `README.md` + `CHANGELOG.md` + `TASKS.md §6` 收尾 | Step 1-6 全部完成 |
 
@@ -1149,7 +1149,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 
 ### 6.6 Step 5 — members 模块
 
-- **状态**:⏳ 待启动
+- **状态**:✅ 已完成(commits `1baa6c6` + `c8bc4fd`,2026-05-08)
 - **前置条件**:Step 1-3 完成(依赖字典 gradeCode)
 - **允许改动**:
   - 新建 `src/modules/members/` 4 文件
@@ -1217,6 +1217,30 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 - **建议 commit message**(memberNo 决议:**强制拆 2 commit**,见 `docs/v2-plan.md §2.5` commit message 段全文):
   - Commit 1:`feat(members): add memberNo to member lifecycle`(members CRUD + v1 users.memberId hook)
   - Commit 2:`feat(auth): support memberNo login fallback`(auth.service.ts 登录回退;**仅含此一处文件改动 + 配套 e2e + 快照对比**;**严禁**与 members CRUD 揉合)
+- **完成情况**(2026-05-08):
+  - **强制拆 2 commit**(ARCHITECTURE.md §12.8.2.4 / docs/v2-plan.md §2.5 / CLAUDE.md §17 红线;严禁揉合;独立可 revert):
+    - **Commit 1** `1baa6c6` `feat(members): add memberNo to member lifecycle`(10 files / +2299 / -1)
+      - 文件范围:`src/app.module.ts` / `src/common/exceptions/biz-code.constant.ts` / `src/modules/members/`(4 文件)/ `test/contract/openapi.contract-spec.ts` + snapshot / `test/e2e/members.e2e-spec.ts` / `test/setup/reset-db.ts`
+      - **不含**:`auth.service.ts` / `auth-memberno-login.e2e-spec.ts`
+    - **Commit 2** `c8bc4fd` `feat(auth): support memberNo login fallback`(2 files / +273 / -10)
+      - 文件范围:`src/modules/auth/auth.service.ts` / `test/e2e/auth-memberno-login.e2e-spec.ts`
+      - **不含**:members / contract / biz-code / app.module / reset-db
+  - members 6 接口落地:`GET /api/v2/members`(列表 + memberNo 精确查询 + gradeCode/status 过滤)/ `POST`(memberNo 必填全局唯一不复用)/ `GET/:id` / `PATCH/:id`(白名单仅 displayName/gradeCode)/ `PATCH/:id/status` / `DELETE/:id`(SA 专属 + active dept + linked user 引用拒删)
+  - memberNo 全生命周期:DTO `@Matches(/^[A-Za-z0-9-]+$/)` + `@MinLength(1)` + `@MaxLength(32)` + service `trim()` 保留大小写 + `findUnique` 包含软删唯一性预检查(不复用)+ P2002 兜底转 `MEMBER_NO_ALREADY_EXISTS` + PATCH 严禁改 memberNo(forbidNonWhitelisted 兜底)
+  - gradeCode 6 项 AND 校验:`dict_type.code='member_grade'` + `status=ACTIVE` + `deletedAt=null` + `dict_item.code=gradeCode` + `status=ACTIVE` + `deletedAt=null`(N:1 关系 filter 一次查询);`MEMBER_GRADE_DICT_CODE` 模块内常量化
+  - **auth.service.ts memberNo 登录回退**(唯一受限放开):
+    - 服务端查找路径扩展(对应 `docs/v2-api-contract.md §6.6.2`):username 未命中 → trim 后(原大小写)按 memberNo 在 member 表 `findUnique` → 含全表手动 `deletedAt === null` 过滤 → 反查 `users.memberId` 找 user
+    - 严守红线:`LoginDto` schema 0 改动 / `LoginResponseDto` schema 0 改动 / `LOGIN_FAILED = 10004` 复用(**禁止**自创业务码)/ Timing dummy bcrypt 强制扩展到 memberNo 路径 / `PrismaService` 直读 member,**禁止** import `MembersModule`/`MembersService`/V2 BizCode(防 v1→V2 循环依赖)/ 不改 `auth.controller.ts`/`auth.dto.ts`/`auth/strategies/*`
+    - 账号枚举防护 4 场景全部统一抛 `LOGIN_FAILED`(响应体 / HTTP / message 完全一致)
+  - **v1 users.memberId hook 评估结果**:本步**未改** `src/modules/users/users.service.ts` / `users.dto.ts` — v1 14 接口契约不需要 memberId 字段(对齐 §12.8.2.1 红线 + memberNo 决议 Q7);`users.memberId` 关联完全由 schema 字段(Step 1 已建)+ V2 members 模块独立维护;用户绑定/解绑接口留 V2.x,运营当前通过 DB 直改(B 档 spot check 已验证)
+  - 5 条新 BizCode(150xx 段位;**不登记** `FORBIDDEN_MANAGE_MEMBER`):15001 NOT_FOUND / 15002 MEMBER_NO_ALREADY_EXISTS / 15010 GRADE_CODE_INVALID / 15030 HAS_ACTIVE_DEPARTMENT / 15031 HAS_LINKED_USER
+  - 软删显式封装(baseline §10):`findFirst + notDeletedWhere`(详情查询禁 `findUnique`)+ 引用检查 + 软删事务原子(`prisma.$transaction`);软删 = `update({ deletedAt, status: INACTIVE })`,**不**自动解除 user 绑定 / **不**自动解除 active dept
+  - **`LoginDto` / `LoginResponseDto` / `UserResponseDto` 严格 zero drift**(memberNo 登录回退是纯 service 层扩展,无 DTO/schema 变化)
+  - A 档全过:`pnpm lint` / `pnpm typecheck` / `pnpm test`(4 suites / 292 tests,267 + 新增 25 = 5 BizCode × 5 断言)/ `pnpm test:e2e`(23 suites / 263 tests,v1 162 零退化 + dict 35 + org 28 + members 25 + memberNo login 13)/ `pnpm test:contract`(73 tests / 2 snapshots)
+  - B 档全过:`pnpm start:dev` / `GET /api/docs` 200 / `/api/health/live` 200 / `/api/health/ready` 200(`db: up`)/ v1 `POST /api/auth/login`(username/admin)200 / v1 `GET /api/users/me` 出参**不含** memberId/memberNo / `POST /api/v2/members` 含 memberNo 不含 deletedAt / DB 直改绑定 admin.memberId / `POST /api/auth/login`(memberNo `demo-spot-001`)200 + accessToken / 账号枚举 3 场景全部 `LOGIN_FAILED 10004` 同 message / `/api/docs-json` v1 10 + V2 14 paths(dict 7 + org 4 + members 3) / SIGTERM 优雅关闭
+  - **v1 + dict + org zero drift**:严格 inline node 比对 v1 11 + dict 9 + org 5 = 25 schemas + v1 10 + dict 7 + org 4 = 21 paths 全部 OK(commit 1 重生成 snap 后即冻结;commit 2 不改 snap)
+  - 范围合规:仅触碰 `src/modules/members/` + `src/modules/auth/auth.service.ts`(唯一受限放开)+ `src/app.module.ts` + `src/common/exceptions/biz-code.constant.ts` + `test/`(基建 + e2e + contract);schema / migrations / seed / users.service / users.dto / users.controller / auth.controller / auth.dto / auth/strategies / health / database / bootstrap / config / package / Docker / CI 全部零改动
+  - Step 6 仍 ⏳ 待启动,等用户单独拍板触发
 
 ### 6.7 Step 6 — member_departments 归属能力
 
