@@ -965,7 +965,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 | **Step 3** | dictionaries 模块 | ✅ 已完成 (commit `33dbd69`) | `src/modules/dictionaries/` | Step 1-2 |
 | **Step 4** | organizations 模块 | ✅ 已完成 (commit `da54cf3`) | `src/modules/organizations/` | Step 3 |
 | **Step 5** | members 模块 + v1 users.memberId hook + v1 auth.service.ts 登录回退 | ✅ 已完成 (commits `1baa6c6` + `c8bc4fd`) | `src/modules/members/` + `src/modules/auth/auth.service.ts`(**唯一受限放开**;memberNo 登录回退查找;v1 users.service / dto 经评估**未改动**)| Step 3 |
-| **Step 6** | member_departments 归属能力 | ⏳ 待启动 | `src/modules/member-departments/` 或 members 子能力 | Step 4 + Step 5 |
+| **Step 6** | member_departments 归属能力 | ✅ 已完成 (commit `54a14e0`) | `src/modules/member-departments/`(独立模块) | Step 4 + Step 5 |
 | **Step 7** | E2E + contract + 文档收口 | ⏳ 待启动 | `test/` + `README.md` + `CHANGELOG.md` + `TASKS.md §6` 收尾 | Step 1-6 全部完成 |
 
 **总览铁律**:Step 1 启动需用户**单独拍板**触发;**不得**因 V2-D8 ✅ 就跳进 Step 1。
@@ -1244,7 +1244,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 
 ### 6.7 Step 6 — member_departments 归属能力
 
-- **状态**:⏳ 待启动
+- **状态**:✅ 已完成(commit `54a14e0`,2026-05-08)
 - **前置条件**:Step 1-5 完成
 - **允许改动**:
   - 部门归属接口(对照 `docs/v2-api-contract.md §5`,3 接口;路径**嵌套**在 `members/:memberId/department/`)
@@ -1272,6 +1272,26 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
   - B 档:`pnpm start:dev` + 一人一部门约束 spot check(尝试给同一 member 挂两个部门 → 应失败) + SIGTERM
 - **回滚风险**:`git revert <commit>`;Prisma 部分唯一索引若不支持需降级路径(详见 `v2-data-model.md §6.3`)
 - **建议 commit message**:`feat(member-departments): add V2 foundation member-departments capability`
+- **完成情况**(2026-05-08):
+  - commit `54a14e0` `feat(member-departments): add V2 foundation member-departments capability`
+  - 交付:5 新文件(`member-departments.module.ts` / `member-departments.dto.ts` / `member-departments.service.ts` / `member-departments.controller.ts` + `test/e2e/member-departments.e2e-spec.ts`)+ 5 改动(`app.module.ts` 注册 / `biz-code.constant.ts` +4 / `test/contract/openapi.contract-spec.ts` + snapshot / `test/setup/reset-db.ts` 显式加 MemberDepartment);共 10 files / +1379 / -1
+  - 4 文件铁律严格符合 CLAUDE.md §2 / baseline §5.1;**独立模块** `src/modules/member-departments/`(非 members 子能力)
+  - 3 接口落地(嵌套在 `members/:memberId/` 下,单数 'department' 表达一人一部门):
+    - `GET /api/v2/members/:memberId/department`(无归属返 `data: null`)
+    - `PUT /api/v2/members/:memberId/department`(幂等设置;同 org 直接返回不更新;不同 org 软删旧 + 创建新单事务)
+    - `DELETE /api/v2/members/:memberId/department`(软删;无归属抛 `MEMBER_DEPARTMENT_NOT_FOUND`)
+  - 4 条新 BizCode(170xx 段位;**不登记** `FORBIDDEN_MANAGE_MEMBER_DEPARTMENT`):17001 NOT_FOUND / 17002 ALREADY_EXISTS(并发兜底)/ 17030 MEMBER_INACTIVE / 17031 ORGANIZATION_INACTIVE;复用 `MEMBER_NOT_FOUND` (15001) / `ORGANIZATION_NOT_FOUND` (11001)
+  - 8 决策点全部按方案落地:① 独立模块 ② BizCode 17001-17031 ③ 不登记 FORBIDDEN_* ④ GET 无归属返 null ⑤ PUT 同 org 幂等无副作用(直接返回现归属,id / 时间戳不变) ⑥ TRUNCATE 顺序显式 `User, MemberDepartment, Organization, Member, DictItem, DictType` ⑦ DELETE Swagger 复用 `MemberDepartmentResponseDto` ⑧ **P2002 兜底不解析 target,任意 P2002 统一转 `MEMBER_DEPARTMENT_ALREADY_EXISTS`**(因 partial unique index 是 Step 1 migration.sql 末尾手动追加,Prisma client target 不可靠)
+  - PUT 不同 org:软删旧 + 创建新在同一 `prisma.$transaction` 原子完成,防撞 partial unique
+  - 软删显式封装(baseline §10):`findFirst + notDeletedWhere`(详情查询禁 `findUnique`);引用检查 + 软删事务原子;软删 = `update({ deletedAt })`
+  - 单归属约束实施:Step 1 migration 末尾手动追加 partial unique index `MemberDepartment_memberId_active_key ON ("memberId") WHERE "deletedAt" IS NULL` 在 DB 层兜底;e2e 验证直接 DB create 第二条 active → P2002 拒绝,软删后再 PUT 同 org → 创建新归属不撞
+  - `test/setup/reset-db.ts` housekeeping 落地(对应 Step 4 完成情况记录的项):TRUNCATE 显式列入 `MemberDepartment`(不再依赖 PostgreSQL CASCADE 自动级联)
+  - A 档全过:`pnpm lint` / `pnpm typecheck` / `pnpm test`(4 suites / 312 tests,292 + 新增 20 = 4 BizCode × 5 断言)/ `pnpm test:e2e`(24 suites / 282 tests,v1 162 零退化 + dict 35 + org 28 + members 25 + auth memberNo 13 + member-dept ~22)/ `pnpm test:contract`(78 tests / 2 snapshots)
+  - B 档全过:`pnpm start:dev` / `GET /api/docs` 200 / `/api/health/live`/`/ready` 200 + `db: up` / `/api/v2/members/abc/department` 未登录 401 / `/api/docs-json` v1 10 + V2 15 paths(dict 7 + org 4 + members 3 + member-dept 1) / v1 admin login + GET 无归属 null + PUT 设置 200 + GET 有归属 + PUT 同 org 幂等 id 不变 + DELETE 200 + DELETE 再次 → `MEMBER_DEPARTMENT_NOT_FOUND` (17001) / SIGTERM 优雅关闭
+  - **v1 + dict + org + members zero drift**:严格 inline node 比对 v1 11 + dict 9 + org 5 + members 4 = 29 schemas + v1 10 + dict 7 + org 4 + members 3 = 24 paths 全部 OK
+  - 范围合规:仅触碰 `src/modules/member-departments/` + `src/app.module.ts` + `src/common/exceptions/biz-code.constant.ts` + `test/`(基建 + e2e + contract);schema / migrations / seed / `auth` / `users` / `health` / `dictionaries` / `organizations` / `members` 已有逻辑 / `database` / `bootstrap` / `config` / `package` / Docker / CI 全部零改动;一人多部门 / `isPrimary` / `joinedAt` / `endedAt` / 进出原因 / 部门变更历史 / `audit_logs` / 延后 5 模型 全部不引入
+  - **后续 housekeeping(不阻塞 Step 6)**:e2e 间歇性 v1 `auth-login.e2e-spec.ts` `'nonexistentuser'` 收到 HTTP 404 而非 401(LOGIN_FAILED)现象;重跑稳定,与 Step 6 改动无关(未改 auth.service.ts 或全局中间件);可能根因 ThrottlerStorage 跨 spec 累计 / NestJS 路由初始化 race;作为独立 task 跟进
+  - Step 7 仍 ⏳ 待启动,等用户单独拍板触发
 
 ### 6.8 Step 7 — E2E + contract + 文档收口
 
