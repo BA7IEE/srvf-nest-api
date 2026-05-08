@@ -963,7 +963,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 | **Step 1** | Prisma schema + migration | ✅ 已完成 (commit `36c0837`) | `prisma/schema.prisma` / `prisma/migrations/20260507181930_v2_foundation/` | **D8 用户最终拍板** |
 | **Step 2** | seed neutral-demo | ✅ 已完成 (commit `53c9a03`) | `prisma/seed.ts` | Step 1 |
 | **Step 3** | dictionaries 模块 | ✅ 已完成 (commit `33dbd69`) | `src/modules/dictionaries/` | Step 1-2 |
-| **Step 4** | organizations 模块 | ⏳ 待启动 | `src/modules/organizations/` | Step 3 |
+| **Step 4** | organizations 模块 | ✅ 已完成 (commit `da54cf3`) | `src/modules/organizations/` | Step 3 |
 | **Step 5** | members 模块 + v1 users.memberId hook + v1 auth.service.ts 登录回退 | ⏳ 待启动 | `src/modules/members/` + `src/modules/users/` 服务侧追加 + `src/modules/auth/auth.service.ts`(**唯一受限放开**;memberNo 登录回退查找)| Step 3 |
 | **Step 6** | member_departments 归属能力 | ⏳ 待启动 | `src/modules/member-departments/` 或 members 子能力 | Step 4 + Step 5 |
 | **Step 7** | E2E + contract + 文档收口 | ⏳ 待启动 | `test/` + `README.md` + `CHANGELOG.md` + `TASKS.md §6` 收尾 | Step 1-6 全部完成 |
@@ -1096,7 +1096,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 
 ### 6.5 Step 4 — organizations 模块
 
-- **状态**:⏳ 待启动
+- **状态**:✅ 已完成(commit `da54cf3`,2026-05-08)
 - **前置条件**:Step 1-3 完成(依赖字典 nodeTypeCode)
 - **允许改动**:
   - 新建 `src/modules/organizations/` 4 文件
@@ -1128,6 +1128,24 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
   - B 档(必跑):`pnpm start:dev` + Swagger + 树形查询 spot check + 不可改父级 spot check + SIGTERM
 - **回滚风险**:同 §6.4(模块整体可 revert)
 - **建议 commit message**:`feat(organizations): add V2 foundation organizations module`
+- **完成情况**(2026-05-08):
+  - commit `da54cf3` `feat(organizations): add V2 foundation organizations module`
+  - 交付:5 新文件(`organizations.module.ts` / `organizations.dto.ts` / `organizations.service.ts` / `organizations.controller.ts` + `test/e2e/organizations.e2e-spec.ts`)+ 5 改动(`app.module.ts` 注册 / `biz-code.constant.ts` +9 / `test/contract/openapi.contract-spec.ts` + snapshot / `test/setup/reset-db.ts` 扩 TRUNCATE);共 10 files / +2738 / -1
+  - 4 文件铁律严格符合 CLAUDE.md §2 / baseline §5.1
+  - 7 接口落地:`GET /api/v2/organizations`(列表;`?parentId=null` 字面值过滤根)/ `GET /tree`(在 `:id` 之前定义;深度无限制)/ `POST` / `GET/PATCH/DELETE /:id` / `PATCH /:id/status`
+  - 8 决策点全部按修订执行:① CYCLE/PARENT_CHANGE_FORBIDDEN 登记备用 ② 不登记 FORBIDDEN_MANAGE_ORGANIZATION ③ 引用查 organizations.parentId + member_departments.organizationId(Step 6 后无需补) ④ **单根上限不区分 status**(`deletedAt=null` 即占位) ⑤ last-root 保护两场景(DELETE 根 + PATCH status=INACTIVE 根)⑥ `'node_type'` 模块内常量化 ⑦ OrganizationTreeNodeDto 独立类(沿用 dictionaries) ⑧ DTO @IsString + service 转换字面值
+  - 9 条新 BizCode(110xx + 111xx 段位):11001 NOT_FOUND / 11010 PARENT_NOT_FOUND / 11011 NODE_TYPE_INVALID / 11012 PARENT_CYCLE / 11013 PARENT_CHANGE_FORBIDDEN(后两条 DTO 兜底登记备用)/ 11030 HAS_CHILDREN / 11031 HAS_MEMBERS / 11032 ROOT_ALREADY_EXISTS / 11103 LAST_ROOT_PROTECTED
+  - nodeTypeCode 6 项 AND 校验:`dict_type.code='node_type'` + `status=ACTIVE` + `deletedAt=null` + `dict_item.code=nodeTypeCode` + `status=ACTIVE` + `deletedAt=null`(N:1 关系 filter 一次查询完成)
+  - 软删显式封装:`findFirst + notDeletedWhere`(详情查询禁 `findUnique`);引用检查 + 软删全部包在 `prisma.$transaction`(决策 5 修订)
+  - PATCH 严格白名单:`UpdateOrganizationDto` 仅 `name / sortOrder / nodeTypeCode`,**绝对不含** `parentId`(D7-min O-1 红线);e2e `PATCH 拒绝 parentId(forbidNonWhitelisted)` 测试覆盖
+  - A 档全过:`pnpm lint` / `pnpm typecheck` / `pnpm test`(4 suites / 267 tests,222 + 新增 45 = 9 BizCode × 5 断言)/ `pnpm test:e2e`(21 suites / 225 tests,v1 162 零退化 + dict 35 零退化 + org 28)/ `pnpm test:contract`(63 tests / 2 snapshots)
+  - B 档全过:`pnpm start:dev` / `GET /api/docs` 200 / `/api/health/live` 200 / `/api/health/ready` 200(`db: up`)/ `/api/v2/organizations` 未登录 401(UNAUTHORIZED)/ `/api/docs-json` v1 10 paths + V2 11 paths(dict 7 + org 4) / SIGTERM 优雅关闭
+  - v1 14 接口 + Step 3 dictionaries OpenAPI schema + paths **零漂移**:用 inline node 脚本逐个 schema(v1 11 + dict 9 = 20 项)/ path(v1 10 + dict 7 = 17 项)严格字符串相等比对,全部 OK
+  - 范围合规:仅触碰 `src/modules/organizations/` + `src/app.module.ts` + `src/common/exceptions/biz-code.constant.ts` + `test/`(基建 + e2e + contract);schema / migrations / seed / users / auth / health / dictionaries / database / bootstrap / config / package / Docker / CI 全部零改动
+  - **后续 housekeeping(不阻塞 Step 4)**:
+    - `ORGANIZATION_ROOT_ALREADY_EXISTS` message 措辞后续可优化为"系统已存在根节点"或"系统已存在未软删除根节点"(当前措辞"活跃根节点"与实现 `deletedAt=null` 不区分 status 略有歧义)
+    - Step 6 落地 `MemberDepartment` 真实归属数据后,统一检查 `test/setup/reset-db.ts` TRUNCATE 顺序(当前依赖 PostgreSQL CASCADE 自动级联,Step 6 后建议显式列入)
+  - Step 5 仍 ⏳ 待启动,等用户单独拍板触发
 
 ### 6.6 Step 5 — members 模块
 
