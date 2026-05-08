@@ -948,6 +948,8 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 
 ### 6.0 范围速读
 
+> **V2 第一阶段 Step 1-7 已全部完成**(2026-05-08),进入维护者复核 / release 决策前状态。详细完成情况见 §6.2-§6.8 各 Step 的"完成情况"事实块。
+
 本区块是 V2 第一阶段开发任务卡,**仅含 7 步开发任务**;**不含**:
 
 - ❌ V2 设计阶段任务(已锁定在 §5)
@@ -966,7 +968,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 | **Step 4** | organizations 模块 | ✅ 已完成 (commit `da54cf3`) | `src/modules/organizations/` | Step 3 |
 | **Step 5** | members 模块 + v1 users.memberId hook + v1 auth.service.ts 登录回退 | ✅ 已完成 (commits `1baa6c6` + `c8bc4fd`) | `src/modules/members/` + `src/modules/auth/auth.service.ts`(**唯一受限放开**;memberNo 登录回退查找;v1 users.service / dto 经评估**未改动**)| Step 3 |
 | **Step 6** | member_departments 归属能力 | ✅ 已完成 (commit `54a14e0`) | `src/modules/member-departments/`(独立模块) | Step 4 + Step 5 |
-| **Step 7** | E2E + contract + 文档收口 | ⏳ 待启动 | `test/` + `README.md` + `CHANGELOG.md` + `TASKS.md §6` 收尾 | Step 1-6 全部完成 |
+| **Step 7** | E2E + contract + 文档收口 | ✅ 已完成 (commit `9f42a9a`) | `README.md` + `CHANGELOG.md`(snapshot Step 6 已锁定;TASKS.md §6 收尾走本 G commit) | Step 1-6 全部完成 |
 
 **总览铁律**:Step 1 启动需用户**单独拍板**触发;**不得**因 V2-D8 ✅ 就跳进 Step 1。
 
@@ -1295,7 +1297,7 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
 
 ### 6.8 Step 7 — E2E + contract + 文档收口
 
-- **状态**:⏳ 待启动
+- **状态**:✅ 已完成(commit `9f42a9a`,2026-05-08)
 - **前置条件**:Step 1-6 全部完成
 - **允许改动**:
   - 全量 e2e 跑通(v1 + V2,确认全绿)
@@ -1320,6 +1322,26 @@ A 档任务**不**适用 §5.3 的"仅文档变更" checklist(A 档涉及代码)
   - B 档:`pnpm start:dev` + Swagger UI 完整含 v1 + V2 接口 + `/api/health/live` + `/api/health/ready` + v1 14 接口典型路径 spot check(全部 200 / 响应契约不变)+ V2 4 模块典型路径 spot check + SIGTERM
 - **回滚风险**:本步纯收口;`git revert <commit>` 仅文档 / 快照,无代码运行时影响
 - **建议 commit message**:`docs+test: V2 first-stage ship-ready (Step 7 wrap-up)`
+- **完成情况**(2026-05-08):
+  - F commit:`9f42a9a` `docs: V2 first-stage ship-ready (Step 7 wrap-up)`(2 files / +56)
+  - 改动范围:`README.md`(+19;必读文档表追加 v2-plan / v2-data-model / v2-api-contract;路由总览追加 V2 第一阶段摘要表 5 行)+ `CHANGELOG.md`(+37;Unreleased 顶部追加 V2 First Stage 分组,列出 Step 1-6 全部 commit hash + 铁律 + 验收数字 + V2.x 复活路径 + 不在本阶段范围 + 非阻塞 housekeeping)
+  - 仅文档收口,**不**改 src / prisma / test / TASKS / docs/v2-* / ARCHITECTURE / baseline / research / data-model-draft / package / Docker / CI / snapshot(Step 6 已锁定)
+  - 表述纪律:用"V2 第一阶段开发已完成,等待维护者按需 release / tag",**未**写"全部最终完成 / 正式发布"过满表述
+  - **A 档全过**:`pnpm lint` / `pnpm typecheck` / `pnpm test`(312 tests)/ `pnpm test:e2e`(24 suites / 282 tests,**两次连续稳定**,v1 162 零退化)/ `pnpm test:contract`(78 tests / 2 snapshots,**无 -u**,验证 snapshot 文件与 HEAD commit 一致)/ `pnpm build`(**首次跑过**,`dist/main.js` + `dist/app.module.js` 等产物完整生成)
+  - **inline node zero drift 全量验证**:`Snapshot 文件与 HEAD 完全一致(无未 commit 漂移)` + 31 schemas + 25 paths 全部 present(v1 11+10 / dict 9+7 / org 5+4 / members 4+3 / member-dept 2+1)
+  - **B 档全过**:`pnpm start:dev` / `GET /api/docs` 200 / `/api/health/live` 200 / `/api/health/ready` 200(`db: up`)/ `/api/docs-json` v1 10 + V2 15 paths(dict 7 + org 4 + members 3 + member-dept 1)/ v1 admin 登录 200 + token len=199 / `GET /api/users/me` 出参**不含** memberId / memberNo(zero drift)/ V2 spot check:`GET /api/v2/dict-types` 200 / `GET /api/v2/organizations/tree` 200 / `GET /api/v2/members` 200 / `PUT /api/v2/members/:id/department` 200 / `GET` 归属 200 + orgId 正确 / `DELETE` 归属 200 / SIGTERM 优雅关闭
+  - **V2 第一阶段 Step 1-7 全部完成**(F + G commits 全部锁定):
+    - Step 1 schema + migration:F=`36c0837` + G=`694a1fa`
+    - Step 2 seed neutral-demo:F=`53c9a03` + G=`1189450`
+    - Step 3 dictionaries:F=`33dbd69` + G=`411cad6`
+    - Step 4 organizations:F=`da54cf3` + G=`88f9c1f`
+    - Step 5 members + auth memberNo 回退:F=`1baa6c6` + `c8bc4fd` + G=`2782e82`
+    - Step 6 member-departments:F=`54a14e0` + G=`2e7ecb4`
+    - Step 7 ship-ready 收口:F=`9f42a9a` + G=本 commit
+  - **后续 housekeeping**(已记录 CHANGELOG / 历次完成情况,**非阻塞**;**不在本 commit 处理**):
+    - e2e 间歇性 v1 `auth-login.e2e-spec.ts` `'nonexistentuser'` 收到 HTTP 404 而非 401 现象(Step 7 两次连续 282/282 稳定,**未复现**;独立 task 跟进)
+    - `ORGANIZATION_ROOT_ALREADY_EXISTS` message 措辞优化候选(当前"活跃根节点" vs 实现 `deletedAt=null` 不区分 status)
+  - **不启动 V2.x**(member_profiles / attachments / audit_logs / events / event_participants 全部保留延后);**不启动 housekeeping**;V2.x 启动需用户单独拍板(对应 §6.11)
 
 ### 6.9 通用验收 checklist
 
