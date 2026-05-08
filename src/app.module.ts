@@ -17,6 +17,7 @@ import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { DictionariesModule } from './modules/dictionaries/dictionaries.module';
 import { HealthModule } from './modules/health/health.module';
+import { MemberDepartmentsModule } from './modules/member-departments/member-departments.module';
 import { MembersModule } from './modules/members/members.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { UsersModule } from './modules/users/users.module';
@@ -60,6 +61,7 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     DictionariesModule,
     OrganizationsModule,
     MembersModule,
+    MemberDepartmentsModule,
   ],
   providers: [
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):

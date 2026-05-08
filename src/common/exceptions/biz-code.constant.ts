@@ -61,6 +61,35 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // member_departments 模块业务级(170xx + 171xx)。详见 docs/v2-api-contract.md §5.4。
+  // 子段(对齐 baseline §1.3):
+  // - 17001:NOT_FOUND(member 当前无 active 归属)
+  // - 17002:唯一约束冲突(并发兜底,partial unique index 撞)
+  // - 17030-17099:资源状态非法(member INACTIVE / organization INACTIVE)
+  //
+  // 复用现有错误码:MEMBER_NOT_FOUND(15001) / ORGANIZATION_NOT_FOUND(11001);
+  // 不登记 FORBIDDEN_MANAGE_MEMBER_DEPARTMENT(沿用 dict/org/members 决策)。
+  MEMBER_DEPARTMENT_NOT_FOUND: {
+    code: 17001,
+    message: '队员当前无部门归属',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  MEMBER_DEPARTMENT_ALREADY_EXISTS: {
+    code: 17002,
+    message: '队员已有活跃部门归属',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  MEMBER_INACTIVE: {
+    code: 17030,
+    message: '队员状态非活跃,不能挂部门',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ORGANIZATION_INACTIVE: {
+    code: 17031,
+    message: '组织节点状态非活跃,不能挂队员',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // members 模块业务级(150xx + 151xx)。详见 docs/v2-api-contract.md §4.7。
   // 子段(对齐 baseline §1.3):
   // - 15001:NOT_FOUND
