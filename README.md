@@ -19,6 +19,9 @@
 | [`CLAUDE.md`](./CLAUDE.md) | Claude Code 协作铁律(从 ARCHITECTURE.md §7 抽取) |
 | [`AGENTS.md`](./AGENTS.md) | 通用 AI Agent 协作铁律(与 CLAUDE.md 内容同步) |
 | [`docs/srvf-foundation-baseline.md`](./docs/srvf-foundation-baseline.md) | **V2 派生项目基线规范**(BizCode 段位 / 命名 / DTO / 软删除 / 验收门槛 13 项);改 V2 代码 / 写 V2 草案前必读 |
+| [`docs/v2-plan.md`](./docs/v2-plan.md) | V2 第一阶段开发执行计划(Step 1-7) |
+| [`docs/v2-data-model.md`](./docs/v2-data-model.md) | V2 第一阶段数据模型说明(4 模型 + `users.memberId`) |
+| [`docs/v2-api-contract.md`](./docs/v2-api-contract.md) | V2 第一阶段接口契约(29 接口) |
 | [`docs/development.md`](./docs/development.md) | 项目结构 / 路由总览 / 环境变量 / 排错 |
 | [`docs/testing.md`](./docs/testing.md) | E2E 测试运行与覆盖范围 |
 | [`docs/deployment.md`](./docs/deployment.md) | Docker 镜像、生产部署、迁移流程 |
@@ -91,6 +94,22 @@ pnpm start:dev
 | `GET` | `/api/docs` | 开发环境默认开启 | Swagger UI(生产需 `ENABLE_SWAGGER=true`) |
 
 完整字段、错误码归属与示例详见 [`docs/development.md`](./docs/development.md) 与 [`ARCHITECTURE.md`](./ARCHITECTURE.md) §6。
+
+### V2 第一阶段(srvf-foundation)
+
+V2 第一阶段开发已完成,等待维护者按需 release / tag。新增 29 个接口,**v1 14 接口契约严格 zero drift**(`LoginDto` / `UserResponseDto` 不漂移)。
+
+| 模块 | 路径前缀 | 接口数 | 关键能力 |
+|---|---|---|---|
+| dictionaries | `/api/v2/dict-types` + `/api/v2/dict-items` | 13 | 双表字典 + 父子树形 + 软删显式封装 |
+| organizations | `/api/v2/organizations` | 7 | 组织树形 + 单根上限 + last-root 保护 + nodeTypeCode 走字典 |
+| members | `/api/v2/members` | 6 | `memberNo` 全局唯一不复用 + `gradeCode` 字典校验 + 严禁敏感字段 |
+| member-departments | `/api/v2/members/:memberId/department` | 3 | 一人一部门 + partial unique index + PUT 幂等 |
+| auth memberNo 登录回退 | `POST /api/auth/login`(契约不变) | — | `username` 字段服务端语义扩展为 username 或 memberNo |
+
+完整字段、错误码、权限矩阵详见 [`docs/v2-api-contract.md`](./docs/v2-api-contract.md);在线调试见 `/api/docs` Swagger UI。
+
+V2.x 复活路径(已延后,不在本阶段):`member_profiles` / `attachments` / `audit_logs` / `events` / `event_participants`。
 
 ---
 
