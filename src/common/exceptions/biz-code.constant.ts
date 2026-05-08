@@ -61,6 +61,41 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // members 模块业务级(150xx + 151xx)。详见 docs/v2-api-contract.md §4.7。
+  // 子段(对齐 baseline §1.3):
+  // - 15001:NOT_FOUND
+  // - 15002-15009:唯一约束冲突(memberNo)
+  // - 15010-15029:业务级输入校验(grade_code_invalid)
+  // - 15030-15099:资源状态非法 / 引用约束(has_active_department / has_linked_user)
+  //
+  // 注:登录账号枚举相关失败场景(memberNo 路径未命中 / 命中但未绑 user 等)
+  // 统一抛 v1 LOGIN_FAILED = 10004,**禁止**在 150xx 段为 memberNo 路径自创业务码。
+  MEMBER_NOT_FOUND: {
+    code: 15001,
+    message: '队员不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  MEMBER_NO_ALREADY_EXISTS: {
+    code: 15002,
+    message: '队员编号已存在',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  MEMBER_GRADE_CODE_INVALID: {
+    code: 15010,
+    message: '队员等级字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  MEMBER_HAS_ACTIVE_DEPARTMENT: {
+    code: 15030,
+    message: '队员仍有部门归属,不能删除',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  MEMBER_HAS_LINKED_USER: {
+    code: 15031,
+    message: '队员已被 user 绑定,不能删除',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // organizations 模块业务级(110xx + 111xx)。详见 docs/v2-api-contract.md §3.5。
   // 子段(对齐 baseline §1.3):
   // - 11001:NOT_FOUND
