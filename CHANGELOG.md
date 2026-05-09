@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+## v0.2.0 - 2026-05-09
+
 ### V2 First Stage (srvf-foundation Step 1-7) — 2026-05-08
 
 V2-D8 第一阶段开发已完成,等待维护者按需 release / tag。基础数据底座 4 模型 + v1 兼容性追加 + auth memberNo 登录回退 全部交付,共 29 个新接口。

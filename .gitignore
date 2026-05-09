@@ -32,3 +32,6 @@ coverage
 # Claude Code local settings (per-machine; .claude/CLAUDE.md is committed)
 .claude/settings.local.json
 .claude/settings.json
+
+# Claude Code worktrees (per-session; auto-created, not part of repo)
+.claude/worktrees/

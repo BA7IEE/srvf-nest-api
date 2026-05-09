@@ -13,7 +13,7 @@ import type { Config } from 'jest';
 const config: Config = {
   rootDir: '..',
   testRegex: '.*\\.contract-spec\\.ts$',
-  testPathIgnorePatterns: ['/node_modules/', '/dist/'],
+  testPathIgnorePatterns: ['/node_modules/', '/dist/', '<rootDir>/.claude/worktrees/'],
   moduleFileExtensions: ['ts', 'js', 'json'],
   transform: {
     '^.+\\.ts$': [
