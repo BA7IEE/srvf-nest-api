@@ -15,8 +15,20 @@ import type { AppConfig } from '../../src/config/app.config';
 // /api/docs* 在测试环境可达,横切 spec(swagger.e2e-spec.ts)需要据此验证
 // ResponseInterceptor 的 SKIP_PREFIXES 跳过逻辑。
 //
+// 关于 app.listen(0)(issue #1 修复,2026-05):
+// supertest 7.x 的 lib/test.js#serverAddress 在 server 未 listen 时会自动调
+// `app.listen(0)` 启动一个临时端口,并在每次 request `end()` 后调 `server.close()`。
+// 整个 spec 的 supertest 调用共享同一个 NestJS httpServer 实例,导致 server 在每个
+// request 之间反复 listen/close,产生 socket race:新 request 撞上正在关闭的 listener,
+// 表现为 `status=404/426 + body={}`、`Parse Error: Expected HTTP/`、`read ECONNRESET`
+// (issue #1 描述的 transport 级抖动)。
+// 修复方法:在 app.init() 之后显式 `app.listen(0)`,让 OS 分配一个临时端口,server
+// 持久监听到 spec 结束;supertest 的 serverAddress 看到 address 不为 null 就跳过
+// 自己的 listen,end() 也不会触碰 server 生命周期,所有 request 共享一个稳定的 listener。
+// app.close() 仍由 spec 的 afterAll 调用,负责优雅关闭(stop accepting → drain →
+// PrismaService.$disconnect),与 detectOpenHandles 兼容。
+//
 // 不做的事:
-// - 不调用 app.listen():supertest 直接通过 app.getHttpServer() 走内存 HTTP
 // - 不注入 fixtures:每个 spec 自行造数据,保证隔离
 export async function createTestApp(): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
@@ -41,5 +53,6 @@ export async function createTestApp(): Promise<INestApplication> {
   applySwagger(app, appCfg);
 
   await app.init();
+  await app.listen(0);
   return app;
 }
