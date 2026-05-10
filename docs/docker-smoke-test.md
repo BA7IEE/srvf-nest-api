@@ -28,7 +28,7 @@
 ## 2. 环境前提
 
 - macOS / Apple Silicon,Docker Desktop 已运行
-- `docker compose up -d postgres` 已起 PostgreSQL,网络名 `u-nest-api-starter_default`(bridge)
+- `docker compose up -d postgres` 已起 PostgreSQL,网络名 `srvf-nest-api_default`(bridge,由 `docker-compose.yml` 顶部 `name: srvf-nest-api` 声明决定)
 - Node 22 + pnpm 10.14(host 侧用于跑 `prisma migrate deploy` / `prisma db seed`)
 - 容器**不**自带 Prisma CLI(Dockerfile 明确把 `prisma` / `@prisma/engines` 等从镜像裁掉),migration/seed 由部署流程在镜像之外执行
 
@@ -91,7 +91,7 @@ SUPER_ADMIN_EMAIL= \
 
 ```bash
 docker run -d --name u-nest-api-smoke \
-  --network u-nest-api-starter_default \
+  --network srvf-nest-api_default \
   -p 13000:3000 \
   -e APP_ENV=production \
   -e APP_PORT=3000 \

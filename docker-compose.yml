@@ -1,3 +1,10 @@
+# 显式声明 compose project name = `srvf-nest-api`,锁定:
+#   - 默认 network 名:srvf-nest-api_default
+#   - 默认 volume 前缀:srvf-nest-api_*
+# fork 自 u-nest-api-starter 后,不依赖 workspace 目录名做 project name 推导
+# (CI runner / 本地 worktree 目录名可能不同,会导致 network 名漂移)。
+name: srvf-nest-api
+
 services:
   postgres:
     image: postgres:16-alpine

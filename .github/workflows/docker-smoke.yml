@@ -34,8 +34,9 @@ jobs:
       HOST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app_smoke?schema=public
       # 容器侧 app 进程通过 docker network 解析 postgres 服务的 container_name。
       CONTAINER_DATABASE_URL: postgresql://postgres:postgres@u-nest-api-postgres:5432/app_smoke?schema=public
-      # docker-compose.yml 未声明 name,project name 默认 = workspace 目录名 = repo 名。
-      COMPOSE_NETWORK: u-nest-api-starter_default
+      # docker-compose.yml 显式声明 `name: srvf-nest-api`,因此 network 名固定为
+      # srvf-nest-api_default,不再依赖 workspace 目录名(避免 fork 改名后漂移)。
+      COMPOSE_NETWORK: srvf-nest-api_default
       APP_CONTAINER: u-nest-api-smoke
       APP_HOST_PORT: '13000'
       SMOKE_USERNAME: smokeadmin
@@ -45,8 +46,9 @@ jobs:
         uses: actions/checkout@v4
 
       # 与 ci.yml 一致:沿用项目 docker-compose.yml 启动 postgres,容器名固定
-      # u-nest-api-postgres,网络名 u-nest-api-starter_default,与本 workflow 网络
-      # attach 目标对齐。不使用 services.postgres,避免容器名 / 网络名漂移。
+      # u-nest-api-postgres,网络名 srvf-nest-api_default(由 compose project name
+      # 声明决定),与本 workflow 网络 attach 目标对齐。不使用 services.postgres,
+      # 避免容器名 / 网络名漂移。
       - name: Start PostgreSQL via docker compose
         run: docker compose up -d postgres
 
