@@ -29,6 +29,15 @@ model User {
   memberId String? @unique
   member   Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
 
+  // V2 第一阶段批次 3 反向 relation(详见 docs:批次3_schema草案_*.md §12.1)
+  // 沿批次 1 / 批次 2 R2 范式:Prisma 关系映射不算业务字段新增。
+  activitiesPublished       Activity[]             @relation("ActivityPublisher")
+  activitiesCancelled       Activity[]             @relation("ActivityCanceller")
+  registrationsReviewed     ActivityRegistration[] @relation("RegistrationReviewer")
+  registrationsCancelled    ActivityRegistration[] @relation("RegistrationCanceller")
+  attendanceSheetsSubmitted AttendanceSheet[]      @relation("SheetSubmitter")
+  attendanceSheetsReviewed  AttendanceSheet[]      @relation("SheetReviewer")
+
   @@index([deletedAt])
   @@index([status])
 }
@@ -114,6 +123,9 @@ model Organization {
   children          Organization[]     @relation("OrganizationTree")
   memberDepartments MemberDepartment[]
 
+  // V2 第一阶段批次 3 反向 relation(沿批次 1 / 批次 2 R2 范式)
+  activities Activity[]
+
   @@index([parentId])
   @@index([nodeTypeCode])
   @@index([status])
@@ -149,6 +161,10 @@ model Member {
   // verifier 角色由 service 层判定,schema 不约束。
   certificates         Certificate[]      @relation("CertificateMember")
   certificatesVerified Certificate[]      @relation("CertificateVerifier")
+
+  // V2 第一阶段批次 3 反向 relation(沿批次 1 / 批次 2 R2 范式)
+  activityRegistrations ActivityRegistration[]
+  attendanceRecords     AttendanceRecord[]
 
   @@index([gradeCode])
   @@index([status])
@@ -358,4 +374,230 @@ model Certificate {
   @@index([deletedAt])
   @@index([createdAt])
   @@index([supersededByCertId])
+}
+
+// ===== V2 第一阶段批次 3:activities =====
+//
+// 详见 docs:
+//   - 批次3_schema前评审.md v0.2.4 修正版
+//   - 批次3_schema前评审决议表.md v1.0 定稿
+//   - 批次3_schema草案_activities_attendances.md v0.5 草案版
+//   - 批次3_schema草案评审决议表.md v1.4
+//
+// 设计选择(沿批次 1 / 批次 2 B 路径):
+// - 字段长度上限不落 @db.VarChar,由 DTO + class-validator 承担。
+// - 字典 code 字段(activityTypeCode / statusCode 等)schema 不做 FK,
+//   业务层校验字典存在性(沿 v0.2.0 范式)。
+//
+// FK(全部 ON DELETE Restrict):
+// - organizationId  → Organization.id  (NOT NULL,service 校验禁根节点 R8 / D17)
+// - publishedBy     → User.id          (可空,Q-S1 audit 字段落表)
+// - cancelledBy     → User.id          (可空)
+//
+// 显式 @db.Decimal 注解(Q-D2 + Q-D19):
+// - locationLongitude / locationLatitude → Decimal(10, 7)(WGS84 ~1.1 cm 精度)
+//
+// description 必须 String?(Q-D14 v1.4 必填性澄清,v0.5 修订):
+// - 从 v0.1 沿用的 NOT NULL 改为 String? 可空
+// - 语义:列表展示短说明 / 摘要;详情页正文走 content
+//
+// 索引:7 单列;v0.2 / v0.4 新增 5 字段(content / galleryImageUrls /
+//   coverImageUrl / locationLongitude / locationLatitude)不加索引(沿 Q-D11/12/13/19)。
+// 无唯一约束。
+
+model Activity {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  title                 String
+  activityTypeCode      String
+  organizationId        String
+  startAt               DateTime
+  endAt                 DateTime
+  location              String
+  description           String? // v0.5 修订(Q-D14 v1.4):NOT NULL → String? 可空
+  capacity              Int?
+  genderRequirementCode String?
+  registrationDeadline  DateTime?
+  registrationNotes     String?
+  statusCode            String
+  publishedBy           String?
+  publishedAt           DateTime?
+  cancelledBy           String?
+  cancelledAt           DateTime?
+  cancelReason          String?
+  isPublicRegistration  Boolean   @default(true)
+  registrationSchema    Json? // v0.2 D12 报名表自定义字段 schema 字段位预留
+
+  // v0.2 展示内容字段(Q-D11 / Q-D12 / Q-D13)
+  coverImageUrl    String?
+  galleryImageUrls Json?
+  content          Json?
+
+  // v0.4 经纬度字段(Q-D19;显式 @db.Decimal(10, 7),WGS84 ~1.1 cm 精度)
+  locationLongitude Decimal? @db.Decimal(10, 7)
+  locationLatitude  Decimal? @db.Decimal(10, 7)
+
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  publisher        User?                  @relation("ActivityPublisher", fields: [publishedBy], references: [id], onDelete: Restrict)
+  canceller        User?                  @relation("ActivityCanceller", fields: [cancelledBy], references: [id], onDelete: Restrict)
+  registrations    ActivityRegistration[]
+  attendanceSheets AttendanceSheet[]
+
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([statusCode])
+  @@index([organizationId])
+  @@index([activityTypeCode])
+  @@index([startAt])
+  @@index([isPublicRegistration])
+}
+
+// ===== V2 第一阶段批次 3:activity_registrations =====
+//
+// statusCode 字典 4 态(Q-D15 v0.3):pending / pass / reject / cancelled
+//
+// FK(全部 ON DELETE Restrict):
+// - activityId         → Activity.id           (NOT NULL)
+// - memberId           → Member.id             (NOT NULL)
+// - reviewedBy         → User.id               (可空,沿 Q-S4)
+// - cancelledByUserId  → User.id               (可空,Q-D16 v0.3)
+//
+// 业务唯一约束(partial unique;Q-D4 + Q-D17 v1.2 修订):
+// - (activityId, memberId) WHERE deleted_at IS NULL AND status_code != 'cancelled'
+// - 索引名 activity_registrations_activity_member_active_unique
+// - Prisma DSL 不支持带 WHERE,migration.sql 末尾手动追加(沿 MemberDepartment 范式)
+//
+// extras Json?(D12 字段位预留)。
+//
+// 索引:6 单列(activityId / memberId / statusCode / deletedAt / createdAt / registeredAt)。
+
+model ActivityRegistration {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  activityId   String
+  memberId     String
+  statusCode   String
+  registeredAt DateTime  @default(now())
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  reviewNote   String?
+  extras       Json?
+
+  // v0.3 新增 取消留痕(Q-D16)
+  cancelledByUserId String?
+  cancelledAt       DateTime?
+  cancelReason      String?
+
+  activity          Activity           @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  member            Member             @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  reviewer          User?              @relation("RegistrationReviewer", fields: [reviewedBy], references: [id], onDelete: Restrict)
+  canceller         User?              @relation("RegistrationCanceller", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
+  attendanceRecords AttendanceRecord[]
+
+  @@index([activityId])
+  @@index([memberId])
+  @@index([statusCode])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([registeredAt])
+}
+
+// ===== V2 第一阶段批次 3:attendance_sheets =====
+//
+// statusCode 字典 3 态(D18):pending / approved / rejected。
+// version Int @default(1)(Q-D8 不做乐观锁,仅展示用)。
+// previousSnapshot Json?(D38 / Q-D1 后端事务内自动生成)。
+//
+// FK(全部 ON DELETE Restrict):
+// - activityId       → Activity.id  (NOT NULL,D47 一 Activity 多 Sheet / R30)
+// - submitterUserId  → User.id      (NOT NULL,Q-S4 系统操作人)
+// - reviewerUserId   → User.id      (可空,APD 审核员)
+//
+// 索引:7 单列。
+
+model AttendanceSheet {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  activityId       String
+  submitterUserId  String
+  submittedAt      DateTime  @default(now())
+  statusCode       String
+  reviewerUserId   String?
+  reviewedAt       DateTime?
+  reviewNote       String?
+  previousSnapshot Json? // D38 后端事务内自动生成
+  version          Int       @default(1) // Q-D8 不做乐观锁;服务端版本号
+
+  activity  Activity           @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  submitter User               @relation("SheetSubmitter", fields: [submitterUserId], references: [id], onDelete: Restrict)
+  reviewer  User?              @relation("SheetReviewer", fields: [reviewerUserId], references: [id], onDelete: Restrict)
+  records   AttendanceRecord[]
+
+  @@index([activityId])
+  @@index([submitterUserId])
+  @@index([reviewerUserId])
+  @@index([statusCode])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([submittedAt])
+}
+
+// ===== V2 第一阶段批次 3:attendance_records =====
+//
+// attendanceStatusCode 字典 3 态(D44 / D51 v0.2.4 撤销 absent / leave):
+//   present / late / early_leave。
+//
+// roleCode 字典 7 项(D13):member / instructor / assistant / coach /
+//   front_command / back_command / info。
+//
+// 显式 @db.Decimal 注解(Q-D2):
+// - serviceHours        → Decimal(5, 2) NOT NULL,业务必填且 > 0,允许 < 跨度(D46)
+// - contributionPoints  → Decimal(5, 2)? 字段层可空,业务 approved 前必填(R31)
+//
+// FK:
+// - sheetId         → AttendanceSheet.id        (NOT NULL, Restrict, R20)
+// - memberId        → Member.id                 (NOT NULL, Restrict)
+// - registrationId  → ActivityRegistration.id   (可空,**Restrict** 不是 SetNull,Q-S21)
+//
+// 索引:7 单列 + 1 复合(memberId, deletedAt)用于时间不重叠校验性能(R16)。
+// 业务唯一约束:无(D8 撤销 v0.1 AT-9)。
+
+model AttendanceRecord {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  sheetId              String
+  memberId             String
+  roleCode             String
+  checkInAt            DateTime
+  checkOutAt           DateTime
+  serviceHours         Decimal   @db.Decimal(5, 2) // Q-D2 显式注解;必填且 > 0(D45/D51)
+  attendanceStatusCode String
+  note                 String?
+  registrationId       String? // Q-D26 / D27 可空(临时参加 / 非公开报名)
+  contributionPoints   Decimal?  @db.Decimal(5, 2) // Q-D2 + R31;字段层可空,APD approved 前必填
+
+  sheet        AttendanceSheet       @relation(fields: [sheetId], references: [id], onDelete: Restrict)
+  member       Member                @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  registration ActivityRegistration? @relation(fields: [registrationId], references: [id], onDelete: Restrict) // Q-S21:Restrict 不是 SetNull
+
+  @@index([sheetId])
+  @@index([memberId])
+  @@index([registrationId])
+  @@index([attendanceStatusCode])
+  @@index([roleCode])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([memberId, deletedAt]) // R16 时间不重叠校验性能
 }

@@ -24,6 +24,16 @@ import { Logger } from '@nestjs/common';
 //   B7 certificate.expire                     占位(系统任务,本批次不实装)
 //   B8 certificate.attachment.read            占位(批次 6a 接入)
 //
+// 批次 3 追加 8 项(详见 docs:批次3_schema草案_activities_attendances.md §20.2 + 决议表 v1.4):
+//   A1 activity.publish                     实装(活动发布 / 修改 / 撤销)
+//   A2 registration.create                  实装(队员报名)
+//   A3 registration.review                  实装(报名审核 pending → pass/reject;沿 Q-D15 v0.3 含 cancel 流转留 service 决定)
+//   A4 attendance-sheet.submit              实装(录入员提交 Sheet)
+//   A5 attendance-sheet.edit                实装(编辑 pending Sheet;version+1,沿 D38)
+//   A6 attendance-sheet.delete              实装(软删 Sheet)
+//   A7 attendance-sheet.read.other          实装(高级管理员查他人考勤)
+//   A8 attendance-sheet.review              实装(APD 审核 approve/reject;触发业务事件 attendance.recorded,沿 §19)
+//
 // 禁止散落 TODO 注释,禁止业务代码内裸 console.log;所有审计意图必须经本函数。
 export type AuditEvent =
   | 'profile.read.self'
@@ -42,7 +52,16 @@ export type AuditEvent =
   | 'certificate.verify'
   | 'certificate.reject'
   | 'certificate.expire'
-  | 'certificate.attachment.read';
+  | 'certificate.attachment.read'
+  // batch 3 新增 8 项
+  | 'activity.publish'
+  | 'registration.create'
+  | 'registration.review'
+  | 'attendance-sheet.submit'
+  | 'attendance-sheet.edit'
+  | 'attendance-sheet.delete'
+  | 'attendance-sheet.read.other'
+  | 'attendance-sheet.review';
 
 const auditLogger = new Logger('Audit');
 

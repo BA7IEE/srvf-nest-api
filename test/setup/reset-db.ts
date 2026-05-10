@@ -28,11 +28,20 @@ import { assertTestDatabaseUrl } from './test-db';
 // V2 第一阶段批次 2 追加(2026-05-10):Certificate 一张扩展表,放在 EmergencyContact
 // 之后的扩展子表段;Certificate.memberId / verifiedBy 引用 Member.id,supersededByCertId
 // 自引用 Certificate.id,全部 ON DELETE Restrict;CASCADE 兜底自引用与跨表依赖。
+//
+// V2 第一阶段批次 3 追加(2026-05-11):4 张新表(Activity / ActivityRegistration /
+// AttendanceSheet / AttendanceRecord);全部 FK ON DELETE Restrict(沿 R20 / Q-S21);
+// 顺序:孙表(AttendanceRecord)→ 子表(AttendanceSheet / ActivityRegistration)→ 父表(Activity)
+// 在前;CASCADE 兜底跨外键依赖。
+//   - AttendanceRecord.sheetId → AttendanceSheet.id
+//   - AttendanceRecord.registrationId → ActivityRegistration.id(Q-S21 Restrict)
+//   - AttendanceSheet.activityId / ActivityRegistration.activityId → Activity.id
+//   - Activity.organizationId → Organization.id
 export async function resetDb(app: INestApplication): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }
