@@ -99,6 +99,17 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/v2/members/{memberId}/department'],
   ['put', '/api/v2/members/{memberId}/department'],
   ['delete', '/api/v2/members/{memberId}/department'],
+
+  // V2 第一阶段批次 1 member-profiles (2026-05-10;1:1 子资源)
+  ['get', '/api/v2/members/{memberId}/profile'],
+  ['post', '/api/v2/members/{memberId}/profile'],
+  ['patch', '/api/v2/members/{memberId}/profile'],
+
+  // V2 第一阶段批次 1 emergency-contacts (2026-05-10;N:1 子资源 + 单条 CRUD)
+  ['get', '/api/v2/members/{memberId}/emergency-contacts'],
+  ['post', '/api/v2/members/{memberId}/emergency-contacts'],
+  ['patch', '/api/v2/members/{memberId}/emergency-contacts/{id}'],
+  ['delete', '/api/v2/members/{memberId}/emergency-contacts/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -142,6 +153,17 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // V2 member-departments (Step 6)
   'SetMemberDepartmentDto',
   'MemberDepartmentResponseDto',
+
+  // V2 第一阶段批次 1 member-profiles
+  'CreateMemberProfileDto',
+  'UpdateMemberProfileDto',
+  'MemberProfileResponseDto',
+  'MedicalNoteItemDto',
+
+  // V2 第一阶段批次 1 emergency-contacts
+  'CreateEmergencyContactDto',
+  'UpdateEmergencyContactDto',
+  'EmergencyContactResponseDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

@@ -90,6 +90,73 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // member_profiles 模块业务级(160xx + 161xx)。批次 1 引入。
+  // 子段(对齐 baseline §1.3):
+  // - 16001:NOT_FOUND
+  // - 16002-16009:唯一约束冲突(memberId 1:1)
+  // - 16010-16029:业务级输入校验(各字典字段 invalid)
+  //
+  // 字典字段无效不收敛为单一码:沿用 members 模块每字典字段一码模式(详见 batch-1
+  // API 前评审 §9.5)。保留 161xx 给后续 USER 自助路由 / 二次校验等权限边界码。
+  MEMBER_PROFILE_NOT_FOUND: {
+    code: 16001,
+    message: '队员档案不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  MEMBER_PROFILE_ALREADY_EXISTS: {
+    code: 16002,
+    message: '队员档案已存在',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  MEMBER_PROFILE_GENDER_CODE_INVALID: {
+    code: 16010,
+    message: '性别字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  MEMBER_PROFILE_DOCUMENT_TYPE_CODE_INVALID: {
+    code: 16011,
+    message: '证件类型字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  MEMBER_PROFILE_POLITICAL_STATUS_CODE_INVALID: {
+    code: 16012,
+    message: '政治面貌字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  MEMBER_PROFILE_BLOOD_TYPE_CODE_INVALID: {
+    code: 16013,
+    message: '血型字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  MEMBER_PROFILE_WORK_NATURE_CODE_INVALID: {
+    code: 16014,
+    message: '工作性质字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+
+  // emergency_contacts 模块业务级(190xx + 191xx)。批次 1 引入。
+  // baseline §1.1 原预留 events / event_participants;批次 1 启动时 emergency_contacts
+  // 单独成模块,占用 190xx;baseline 同步追加一行(member_profiles 仍占 baseline 预留 160xx)。
+  // 子段:
+  // - 19001:NOT_FOUND
+  // - 19010-19029:业务级输入校验(relation_code_invalid)
+  // - 19101:权限边界(NOT_BELONGS_TO_MEMBER)
+  EMERGENCY_CONTACT_NOT_FOUND: {
+    code: 19001,
+    message: '紧急联系人不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  EMERGENCY_CONTACT_RELATION_CODE_INVALID: {
+    code: 19010,
+    message: '紧急联系人关系字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  EMERGENCY_CONTACT_NOT_BELONGS_TO_MEMBER: {
+    code: 19101,
+    message: '紧急联系人不属于该队员',
+    httpStatus: HttpStatus.FORBIDDEN,
+  },
+
   // members 模块业务级(150xx + 151xx)。详见 docs/v2-api-contract.md §4.7。
   // 子段(对齐 baseline §1.3):
   // - 15001:NOT_FOUND
