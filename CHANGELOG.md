@@ -4,11 +4,47 @@
 
 ## Unreleased
 
-- `dbfca6a` chore(prisma): add batch 1 member profile schema
-- `6637733` ci: fix docker smoke compose network name
-- `5d540ce` feat(v2-batch-1): add member-profiles + emergency-contacts modules (#2)
-- `8c86aac` chore(prisma): add v2 batch 2 certificates schema (#5)
-- `ce56018` feat(certificates): add v2 batch 2 certificates module (#6)
+## v0.3.0 - 2026-05-10
+
+V2 第一阶段在 v0.2.0 基础数据底座之上,完成 SRVF 业务批次 1 + 批次 2,共新增 15 接口
+(累计 V2 第一阶段 44 接口),**v1 14 接口 schema + paths 严格 zero drift**。
+
+### V2 Batch 1(member_profiles + emergency_contacts;2026-05-10)
+- `dbfca6a` chore(prisma): add batch 1 member profile schema —
+  MemberProfile(40 字段,1:1 with Member)+ EmergencyContact(8 字段,N:1)+ 6 个字典 seed
+- `5d540ce` feat(v2-batch-1): add member-profiles + emergency-contacts modules (#2) —
+  7 接口(3 profile + 4 emergency-contact)+ 57 e2e + 10 BizCode(160xx / 190xx)+ AuditEvent 6 项
+- `32b03c8` docs(v2-batch-1): correct stale post-merge claims (#4)
+
+### V2 Batch 2(certificates;2026-05-10)
+- `8c86aac` chore(prisma): add v2 batch 2 certificates schema (#5) —
+  Certificate(18 字段,N:1 + 3 ON DELETE Restrict FK;状态机闭集 4 态)+ 3 个字典 seed
+- `ce56018` feat(certificates): add v2 batch 2 certificates module (#6) —
+  8 接口(嵌套子资源 + verify / reject / qualification-flag 动作)+ 66 e2e +
+  5 BizCode(180xx / 181xx)+ AuditEvent 10 项
+- `74f72b4` docs(v2-batch-2): sync facts after schema + API merge (#7)
+
+### CI / Testing
+- `6637733` ci: fix docker smoke compose network name (#3)
+- `2fdf1fc` test(e2e): stabilize supertest server lifecycle
+- `4f4283d` chore: clean up v0.2.0 release housekeeping
+
+### Docs
+- `e68c177` docs: add SRVF business docs pointer
+
+### Boundaries / Validation
+- v1 14 接口 + V2 first stage 29 接口 + 批次 1 7 接口 schema + paths **zero drift**
+- 全部新接口 ADMIN / SUPER_ADMIN 兜底;**未开放** USER 自助路由
+- 软删走 `deletedAt`;禁用 hard delete;FK 全部 ON DELETE Restrict
+- DTO 严格白名单 + 全局 `ValidationPipe`(forbidNonWhitelisted)+ 统一响应包装 + `BizException`
+- AuditEvent union 严格锁死(批次 1 / 批次 2 共 16 项,含 4 项占位)
+- 未实装:attachments / audit_logs 表 / RBAC 表 / 60 天提醒任务 / 自动失效 job /
+  applicants / activities / attendances / honors / USER 自助路由
+- 验收(release 前 main 上 commit `74f72b4` 全量回归):
+  - `pnpm test` unit **387**
+  - `pnpm test:e2e` **405** / 27 suites(v1 162 + 批次 1 57 + V2 first stage 120 + 批次 2 66;零退化)
+  - `pnpm test:contract` **107 + 2 snapshots**(v1 14 + V2 first stage 29 + 批次 1 7 + 批次 2 8 = 58 接口 contract zero drift)
+  - `pnpm lint` 0 warnings / `pnpm typecheck` PASS / `pnpm build` PASS
 
 ## v0.2.0 - 2026-05-09
 
