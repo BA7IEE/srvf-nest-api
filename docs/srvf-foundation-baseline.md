@@ -53,7 +53,7 @@
 | `160xx` + `161xx` | `member_profiles` | 200 | **V2 基线预留** |
 | `170xx` + `171xx` | `member_departments` | 200 | **V2 基线预留** |
 | `180xx` + `181xx` | `events` | 200 | **V2 候选预留**(是否启用待 D5/D6 决议) |
-| `190xx` + `191xx` | `event_participants` | 200 | **V2 候选预留**(是否启用待 D5/D6 决议) |
+| `190xx` + `191xx` | `emergency_contacts` | 200 | **批次 1 已使用**(原预留 `event_participants`,batch 1 启动时让出;`event_participants` 启用时改占 `200xx` 起的下一段) |
 | `200xx` 起 | 未规划模块预留 | — | 训练 / 装备 / 财务 / 通知等真到时候分配 |
 
 **状态说明**:

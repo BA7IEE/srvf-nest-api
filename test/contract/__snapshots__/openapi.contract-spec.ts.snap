@@ -70,6 +70,47 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "CreateEmergencyContactDto": {
+    "properties": {
+      "address": {
+        "description": "联系人地址",
+        "maxLength": 256,
+        "type": "string",
+      },
+      "contactName": {
+        "description": "联系人姓名",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "phoneBackup": {
+        "description": "联系人备用电话",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "phonePrimary": {
+        "description": "联系人主电话(高敏感;弱校验)",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "priority": {
+        "description": "优先级(0 = 最高;允许并列;默认 0)",
+        "maximum": 99,
+        "minimum": 0,
+        "type": "number",
+      },
+      "relationCode": {
+        "description": "关系字典 code(字典 emergency_relation)",
+        "maxLength": 64,
+        "type": "string",
+      },
+    },
+    "required": [
+      "contactName",
+      "relationCode",
+      "phonePrimary",
+    ],
+    "type": "object",
+  },
   "CreateMemberDto": {
     "properties": {
       "displayName": {
@@ -93,6 +134,216 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "memberNo",
       "displayName",
+    ],
+    "type": "object",
+  },
+  "CreateMemberProfileDto": {
+    "properties": {
+      "birthDate": {
+        "description": "出生日期(ISO 8601;业务层规范化为 00:00:00.000Z)",
+        "type": "string",
+      },
+      "bloodTypeCode": {
+        "description": "血型字典 code(字典 blood_type)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "documentNumber": {
+        "description": "证件号(高敏感;弱校验,不锁 18 位身份证正则)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "documentTypeCode": {
+        "description": "证件类型字典 code(字典 document_type)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "educationCode": {
+        "description": "学历字典 code(候选字典 education)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "email": {
+        "description": "邮箱",
+        "maxLength": 256,
+        "type": "string",
+      },
+      "ethnicityCode": {
+        "description": "民族字典 code(候选字典 ethnicity)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "exerciseFrequencyCode": {
+        "description": "运动频率字典 code(候选字典 exercise_frequency)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "exerciseMethods": {
+        "description": "运动方式 codes(字典 exercise_method;每元素 1-64 字符;数组上限 20)",
+        "items": {
+          "maxLength": 64,
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "exerciseSportCode": {
+        "description": "主运动项目字典 code(候选字典 exercise_sport)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "eyesight": {
+        "description": "视力(自由文本)",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "firstAidKnowledgeCode": {
+        "description": "急救知识等级字典 code(候选字典 first_aid_knowledge)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "firstAidSkills": {
+        "description": "急救技能 codes(字典 first_aid_skill)",
+        "items": {
+          "maxLength": 64,
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "genderCode": {
+        "description": "性别字典 code(字典 gender)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "hasVehicle": {
+        "description": "是否拥有车辆",
+        "type": "boolean",
+      },
+      "heightCm": {
+        "description": "身高 cm(高敏感医疗;弱合理性兜底)",
+        "maximum": 999,
+        "minimum": 0,
+        "type": "number",
+      },
+      "isVeteran": {
+        "description": "是否退伍军人",
+        "type": "boolean",
+      },
+      "joinSourceCode": {
+        "description": "加入来源字典 code(候选字典 join_source)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "joinedDate": {
+        "description": "加入日期(ISO 8601)",
+        "type": "string",
+      },
+      "landline": {
+        "description": "座机(选填;弱校验)",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "major": {
+        "description": "所学专业(自由文本)",
+        "maxLength": 128,
+        "type": "string",
+      },
+      "maritalStatusCode": {
+        "description": "婚姻状况字典 code(候选字典 marital_status)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "medicalNotes": {
+        "description": "过往病史 JSON 数组(高敏感医疗;元素 { categoryCode, note })",
+        "items": {
+          "$ref": "#/components/schemas/MedicalNoteItemDto",
+        },
+        "type": "array",
+      },
+      "mobile": {
+        "description": "本人手机(高敏感;弱校验)",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "noCriminalRecordSigned": {
+        "description": "是否签署无违法犯罪声明",
+        "type": "boolean",
+      },
+      "otherSkills": {
+        "description": "其他特长(长文本)",
+        "maxLength": 2000,
+        "type": "string",
+      },
+      "politicalStatusCode": {
+        "description": "政治面貌字典 code(字典 political_status)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "privacyConsentSigned": {
+        "description": "是否授权个人信息使用",
+        "type": "boolean",
+      },
+      "privacyConsentSignedAt": {
+        "description": "隐私授权时间(ISO 8601)",
+        "type": "string",
+      },
+      "qq": {
+        "description": "QQ",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "realName": {
+        "description": "真实姓名",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "residenceArea": {
+        "description": "居住区行政区粒度",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "vehicleType": {
+        "description": "车辆类型(hasVehicle=true 时填)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "volunteerNo": {
+        "description": "义工号(不参与登录 / 权限 / 身份识别)",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "wechat": {
+        "description": "微信",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "weightKg": {
+        "description": "体重 kg(高敏感医疗;弱合理性兜底)",
+        "maximum": 500,
+        "minimum": 0,
+        "type": "number",
+      },
+      "workArea": {
+        "description": "工作区行政区粒度",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "workNatureCode": {
+        "description": "工作性质字典 code(字典 work_nature;只存性质,不存单位)",
+        "maxLength": 64,
+        "type": "string",
+      },
+    },
+    "required": [
+      "realName",
+      "genderCode",
+      "birthDate",
+      "documentTypeCode",
+      "documentNumber",
+      "mobile",
+      "email",
+      "joinedDate",
+      "joinSourceCode",
+      "privacyConsentSigned",
     ],
     "type": "object",
   },
@@ -359,6 +610,66 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "EmergencyContactResponseDto": {
+    "properties": {
+      "address": {
+        "description": "联系人地址(EC-6)",
+        "nullable": true,
+        "type": "object",
+      },
+      "contactName": {
+        "description": "联系人姓名(EC-2;高敏感)",
+        "type": "string",
+      },
+      "createdAt": {
+        "description": "创建时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "description": "主键(cuid)",
+        "example": "cl9z3a8b00000abcd1234efgh",
+        "type": "string",
+      },
+      "memberId": {
+        "description": "关联队员外键(指向 members.id;N:1)",
+        "type": "string",
+      },
+      "phoneBackup": {
+        "description": "联系人备用电话(EC-5)",
+        "nullable": true,
+        "type": "object",
+      },
+      "phonePrimary": {
+        "description": "联系人主电话(EC-4;高敏感)",
+        "type": "string",
+      },
+      "priority": {
+        "description": "优先级(EC-7;0 = 最高;允许并列)",
+        "type": "number",
+      },
+      "relationCode": {
+        "description": "关系字典 code(EC-3;字典 emergency_relation)",
+        "type": "string",
+      },
+      "updatedAt": {
+        "description": "更新时间",
+        "format": "date-time",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "memberId",
+      "contactName",
+      "relationCode",
+      "phonePrimary",
+      "priority",
+      "createdAt",
+      "updatedAt",
+    ],
+    "type": "object",
+  },
   "HealthResponseDto": {
     "properties": {
       "db": {
@@ -430,6 +741,25 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "MedicalNoteItemDto": {
+    "properties": {
+      "categoryCode": {
+        "description": "病史类别字典 code(候选字典 medical_condition_category;运营层后录入)",
+        "example": "demo-medical-cat-1",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "note": {
+        "description": "备注(自由文本)",
+        "maxLength": 500,
+        "type": "string",
+      },
+    },
+    "required": [
+      "categoryCode",
+    ],
+    "type": "object",
+  },
   "MemberDepartmentResponseDto": {
     "properties": {
       "createdAt": {
@@ -460,6 +790,237 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "id",
       "memberId",
       "organizationId",
+      "createdAt",
+      "updatedAt",
+    ],
+    "type": "object",
+  },
+  "MemberProfileResponseDto": {
+    "properties": {
+      "birthDate": {
+        "description": "出生日期(MP-3;ISO 8601)",
+        "format": "date-time",
+        "type": "string",
+      },
+      "bloodTypeCode": {
+        "description": "血型字典 code(MP-19c;字典 blood_type;高敏感医疗)",
+        "nullable": true,
+        "type": "object",
+      },
+      "createdAt": {
+        "description": "创建时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "documentNumber": {
+        "description": "证件号(MP-5;高敏感)",
+        "type": "string",
+      },
+      "documentTypeCode": {
+        "description": "证件类型字典 code(MP-4;字典 document_type)",
+        "type": "string",
+      },
+      "educationCode": {
+        "description": "学历字典 code(MP-10;候选字典 education)",
+        "nullable": true,
+        "type": "object",
+      },
+      "email": {
+        "description": "邮箱(MP-17)",
+        "type": "string",
+      },
+      "ethnicityCode": {
+        "description": "民族字典 code(MP-6;候选字典 ethnicity)",
+        "nullable": true,
+        "type": "object",
+      },
+      "exerciseFrequencyCode": {
+        "description": "运动频率字典 code(MP-23a;候选字典 exercise_frequency)",
+        "nullable": true,
+        "type": "object",
+      },
+      "exerciseMethods": {
+        "description": "运动方式 codes(MP-23c;字典 exercise_method;PG String[])",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "exerciseSportCode": {
+        "description": "主运动项目字典 code(MP-23b;候选字典 exercise_sport)",
+        "nullable": true,
+        "type": "object",
+      },
+      "eyesight": {
+        "description": "视力(MP-20;选填)",
+        "nullable": true,
+        "type": "object",
+      },
+      "firstAidKnowledgeCode": {
+        "description": "急救知识等级字典 code(MP-24;候选字典 first_aid_knowledge)",
+        "nullable": true,
+        "type": "object",
+      },
+      "firstAidSkills": {
+        "description": "急救技能 codes(MP-25;字典 first_aid_skill;PG String[])",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "genderCode": {
+        "description": "性别字典 code(MP-2;字典 gender)",
+        "type": "string",
+      },
+      "hasVehicle": {
+        "description": "是否拥有车辆(MP-22a)",
+        "nullable": true,
+        "type": "object",
+      },
+      "heightCm": {
+        "description": "身高 cm(MP-19a;高敏感医疗)",
+        "nullable": true,
+        "type": "object",
+      },
+      "id": {
+        "description": "主键(cuid)",
+        "example": "cl9z3a8b00000abcd1234efgh",
+        "type": "string",
+      },
+      "isVeteran": {
+        "description": "是否退伍军人(MP-8)",
+        "nullable": true,
+        "type": "object",
+      },
+      "joinSourceCode": {
+        "description": "加入来源字典 code(MP-28;候选字典 join_source)",
+        "type": "string",
+      },
+      "joinedDate": {
+        "description": "加入日期(MP-27;ISO 8601)",
+        "format": "date-time",
+        "type": "string",
+      },
+      "landline": {
+        "description": "座机(MP-16;选填)",
+        "nullable": true,
+        "type": "object",
+      },
+      "major": {
+        "description": "所学专业(MP-11;自由文本)",
+        "nullable": true,
+        "type": "object",
+      },
+      "maritalStatusCode": {
+        "description": "婚姻状况字典 code(MP-9;候选字典 marital_status)",
+        "nullable": true,
+        "type": "object",
+      },
+      "medicalNotes": {
+        "description": "过往病史 JSON 数组(MP-21;高敏感医疗;元素 { categoryCode, note })",
+        "items": {
+          "$ref": "#/components/schemas/MedicalNoteItemDto",
+        },
+        "nullable": true,
+        "type": "array",
+      },
+      "memberId": {
+        "description": "关联队员外键(指向 members.id;1:1)",
+        "type": "string",
+      },
+      "mobile": {
+        "description": "本人手机(MP-15;高敏感)",
+        "type": "string",
+      },
+      "noCriminalRecordSigned": {
+        "description": "是否签署无违法犯罪声明(MP-29)",
+        "nullable": true,
+        "type": "object",
+      },
+      "otherSkills": {
+        "description": "其他特长(MP-26;长文本)",
+        "nullable": true,
+        "type": "object",
+      },
+      "politicalStatusCode": {
+        "description": "政治面貌字典 code(MP-7;字典 political_status)",
+        "nullable": true,
+        "type": "object",
+      },
+      "privacyConsentSigned": {
+        "description": "是否授权个人信息使用(MP-30a)",
+        "type": "boolean",
+      },
+      "privacyConsentSignedAt": {
+        "description": "隐私授权时间(MP-30b)",
+        "nullable": true,
+        "type": "object",
+      },
+      "qq": {
+        "description": "QQ(MP-18a)",
+        "nullable": true,
+        "type": "object",
+      },
+      "realName": {
+        "description": "真实姓名(MP-1)",
+        "type": "string",
+      },
+      "residenceArea": {
+        "description": "居住区行政区粒度(MP-13)",
+        "nullable": true,
+        "type": "object",
+      },
+      "updatedAt": {
+        "description": "更新时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "vehicleType": {
+        "description": "车辆类型(MP-22b;hasVehicle=true 时填)",
+        "nullable": true,
+        "type": "object",
+      },
+      "volunteerNo": {
+        "description": "义工号(MP-31;外部记录;不参与登录 / 权限 / 身份识别)",
+        "nullable": true,
+        "type": "object",
+      },
+      "wechat": {
+        "description": "微信(MP-18b)",
+        "nullable": true,
+        "type": "object",
+      },
+      "weightKg": {
+        "description": "体重 kg(MP-19b;高敏感医疗)",
+        "nullable": true,
+        "type": "object",
+      },
+      "workArea": {
+        "description": "工作区行政区粒度(MP-14)",
+        "nullable": true,
+        "type": "object",
+      },
+      "workNatureCode": {
+        "description": "工作性质字典 code(MP-12;字典 work_nature;只存性质,不存单位)",
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "id",
+      "memberId",
+      "realName",
+      "genderCode",
+      "birthDate",
+      "documentTypeCode",
+      "documentNumber",
+      "mobile",
+      "email",
+      "exerciseMethods",
+      "firstAidSkills",
+      "joinedDate",
+      "joinSourceCode",
+      "privacyConsentSigned",
       "createdAt",
       "updatedAt",
     ],
@@ -763,6 +1324,42 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "UpdateEmergencyContactDto": {
+    "properties": {
+      "address": {
+        "description": "联系人地址",
+        "maxLength": 256,
+        "type": "string",
+      },
+      "contactName": {
+        "description": "联系人姓名",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "phoneBackup": {
+        "description": "联系人备用电话",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "phonePrimary": {
+        "description": "联系人主电话",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "priority": {
+        "description": "优先级",
+        "maximum": 99,
+        "minimum": 0,
+        "type": "number",
+      },
+      "relationCode": {
+        "description": "关系字典 code",
+        "maxLength": 64,
+        "type": "string",
+      },
+    },
+    "type": "object",
+  },
   "UpdateMemberDto": {
     "properties": {
       "displayName": {
@@ -772,6 +1369,204 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       },
       "gradeCode": {
         "description": "等级字典 code",
+        "maxLength": 64,
+        "type": "string",
+      },
+    },
+    "type": "object",
+  },
+  "UpdateMemberProfileDto": {
+    "properties": {
+      "birthDate": {
+        "description": "出生日期(ISO 8601)",
+        "type": "string",
+      },
+      "bloodTypeCode": {
+        "description": "血型字典 code",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "documentNumber": {
+        "description": "证件号(高敏感)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "documentTypeCode": {
+        "description": "证件类型字典 code",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "educationCode": {
+        "description": "学历字典 code",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "email": {
+        "description": "邮箱",
+        "maxLength": 256,
+        "type": "string",
+      },
+      "ethnicityCode": {
+        "description": "民族字典 code",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "exerciseFrequencyCode": {
+        "description": "运动频率字典 code",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "exerciseMethods": {
+        "description": "运动方式 codes(整体替换)",
+        "items": {
+          "maxLength": 64,
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "exerciseSportCode": {
+        "description": "主运动项目字典 code",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "eyesight": {
+        "description": "视力",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "firstAidKnowledgeCode": {
+        "description": "急救知识等级字典 code",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "firstAidSkills": {
+        "description": "急救技能 codes(整体替换)",
+        "items": {
+          "maxLength": 64,
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "genderCode": {
+        "description": "性别字典 code",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "hasVehicle": {
+        "description": "是否拥有车辆",
+        "type": "boolean",
+      },
+      "heightCm": {
+        "description": "身高 cm",
+        "maximum": 999,
+        "minimum": 0,
+        "type": "number",
+      },
+      "isVeteran": {
+        "description": "是否退伍军人",
+        "type": "boolean",
+      },
+      "joinSourceCode": {
+        "description": "加入来源字典 code",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "joinedDate": {
+        "description": "加入日期(ISO 8601)",
+        "type": "string",
+      },
+      "landline": {
+        "description": "座机",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "major": {
+        "description": "所学专业",
+        "maxLength": 128,
+        "type": "string",
+      },
+      "maritalStatusCode": {
+        "description": "婚姻状况字典 code",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "medicalNotes": {
+        "description": "过往病史 JSON 数组(整体替换式更新)",
+        "items": {
+          "$ref": "#/components/schemas/MedicalNoteItemDto",
+        },
+        "type": "array",
+      },
+      "mobile": {
+        "description": "本人手机(高敏感)",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "noCriminalRecordSigned": {
+        "description": "是否签署无违法犯罪声明",
+        "type": "boolean",
+      },
+      "otherSkills": {
+        "description": "其他特长",
+        "maxLength": 2000,
+        "type": "string",
+      },
+      "politicalStatusCode": {
+        "description": "政治面貌字典 code",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "privacyConsentSigned": {
+        "description": "是否授权个人信息使用",
+        "type": "boolean",
+      },
+      "privacyConsentSignedAt": {
+        "description": "隐私授权时间(ISO 8601)",
+        "type": "string",
+      },
+      "qq": {
+        "description": "QQ",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "realName": {
+        "description": "真实姓名",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "residenceArea": {
+        "description": "居住区行政区粒度",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "vehicleType": {
+        "description": "车辆类型",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "volunteerNo": {
+        "description": "义工号",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "wechat": {
+        "description": "微信",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "weightKg": {
+        "description": "体重 kg",
+        "maximum": 500,
+        "minimum": 0,
+        "type": "number",
+      },
+      "workArea": {
+        "description": "工作区行政区粒度",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "workNatureCode": {
+        "description": "工作性质字典 code",
         "maxLength": 64,
         "type": "string",
       },
@@ -7853,6 +8648,1445 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "幂等设置队员正式部门(已有归属时软删旧 + 创建新;同 org 直接返回)",
       "tags": [
         "member-departments",
+      ],
+    },
+  },
+  "/api/v2/members/{memberId}/emergency-contacts": {
+    "get": {
+      "operationId": "EmergencyContactsController_list",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "items": {
+                      "$ref": "#/components/schemas/EmergencyContactResponseDto",
+                    },
+                    "type": "array",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "15001: 队员不存在",
+                    "enum": [
+                      15001,
+                    ],
+                    "example": 15001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "队员不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "队员不存在(code=15001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "列出队员紧急联系人(无分页;按 priority ASC, createdAt ASC 排序;软删项不返回)",
+      "tags": [
+        "emergency-contacts",
+      ],
+    },
+    "post": {
+      "operationId": "EmergencyContactsController_create",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateEmergencyContactDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/EmergencyContactResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 19010: 紧急联系人关系字典 code 不存在或已停用",
+                    "enum": [
+                      40000,
+                      19010,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 紧急联系人关系字典 code 不存在或已停用(code=19010)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "15001: 队员不存在",
+                    "enum": [
+                      15001,
+                    ],
+                    "example": 15001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "队员不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "队员不存在(code=15001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "新增一条紧急联系人",
+      "tags": [
+        "emergency-contacts",
+      ],
+    },
+  },
+  "/api/v2/members/{memberId}/emergency-contacts/{id}": {
+    "delete": {
+      "operationId": "EmergencyContactsController_softDelete",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/EmergencyContactResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 19101: 紧急联系人不属于该队员",
+                    "enum": [
+                      40300,
+                      19101,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 紧急联系人不属于该队员(code=19101)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "15001: 队员不存在; 19001: 紧急联系人不存在",
+                    "enum": [
+                      15001,
+                      19001,
+                    ],
+                    "example": 15001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "队员不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "队员不存在(code=15001) / 紧急联系人不存在(code=19001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "软删一条紧急联系人(写 deletedAt;不物理删除)",
+      "tags": [
+        "emergency-contacts",
+      ],
+    },
+    "patch": {
+      "operationId": "EmergencyContactsController_update",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateEmergencyContactDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/EmergencyContactResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 19010: 紧急联系人关系字典 code 不存在或已停用",
+                    "enum": [
+                      40000,
+                      19010,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 紧急联系人关系字典 code 不存在或已停用(code=19010)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 19101: 紧急联系人不属于该队员",
+                    "enum": [
+                      40300,
+                      19101,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 紧急联系人不属于该队员(code=19101)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "15001: 队员不存在; 19001: 紧急联系人不存在",
+                    "enum": [
+                      15001,
+                      19001,
+                    ],
+                    "example": 15001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "队员不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "队员不存在(code=15001) / 紧急联系人不存在(code=19001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "更新一条紧急联系人(全字段 optional;**禁止** memberId / id 入参)",
+      "tags": [
+        "emergency-contacts",
+      ],
+    },
+  },
+  "/api/v2/members/{memberId}/profile": {
+    "get": {
+      "operationId": "MemberProfilesController_findOne",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/MemberProfileResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "15001: 队员不存在",
+                    "enum": [
+                      15001,
+                    ],
+                    "example": 15001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "队员不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "队员不存在(code=15001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "查队员扩展档案(无则返 data: null)",
+      "tags": [
+        "member-profiles",
+      ],
+    },
+    "patch": {
+      "operationId": "MemberProfilesController_update",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateMemberProfileDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/MemberProfileResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 16010: 性别字典 code 不存在或已停用; 16011: 证件类型字典 code 不存在或已停用; 16012: 政治面貌字典 code 不存在或已停用; 16013: 血型字典 code 不存在或已停用; 16014: 工作性质字典 code 不存在或已停用",
+                    "enum": [
+                      40000,
+                      16010,
+                      16011,
+                      16012,
+                      16013,
+                      16014,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 性别字典 code 不存在或已停用(code=16010) / 证件类型字典 code 不存在或已停用(code=16011) / 政治面貌字典 code 不存在或已停用(code=16012) / 血型字典 code 不存在或已停用(code=16013) / 工作性质字典 code 不存在或已停用(code=16014)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "15001: 队员不存在; 16001: 队员档案不存在",
+                    "enum": [
+                      15001,
+                      16001,
+                    ],
+                    "example": 15001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "队员不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "队员不存在(code=15001) / 队员档案不存在(code=16001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "部分更新队员扩展档案(全字段 optional;**禁止** id / memberId / 系统字段)",
+      "tags": [
+        "member-profiles",
+      ],
+    },
+    "post": {
+      "operationId": "MemberProfilesController_create",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "memberId",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateMemberProfileDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/MemberProfileResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 16010: 性别字典 code 不存在或已停用; 16011: 证件类型字典 code 不存在或已停用; 16012: 政治面貌字典 code 不存在或已停用; 16013: 血型字典 code 不存在或已停用; 16014: 工作性质字典 code 不存在或已停用",
+                    "enum": [
+                      40000,
+                      16010,
+                      16011,
+                      16012,
+                      16013,
+                      16014,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 性别字典 code 不存在或已停用(code=16010) / 证件类型字典 code 不存在或已停用(code=16011) / 政治面貌字典 code 不存在或已停用(code=16012) / 血型字典 code 不存在或已停用(code=16013) / 工作性质字典 code 不存在或已停用(code=16014)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "15001: 队员不存在",
+                    "enum": [
+                      15001,
+                    ],
+                    "example": 15001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "队员不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "队员不存在(code=15001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "16002: 队员档案已存在",
+                    "enum": [
+                      16002,
+                    ],
+                    "example": 16002,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "队员档案已存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "队员档案已存在(code=16002)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "创建队员扩展档案(1:1;重复创建 → MEMBER_PROFILE_ALREADY_EXISTS)",
+      "tags": [
+        "member-profiles",
       ],
     },
   },
