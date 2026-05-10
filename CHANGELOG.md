@@ -6,7 +6,9 @@
 
 - `dbfca6a` chore(prisma): add batch 1 member profile schema
 - `6637733` ci: fix docker smoke compose network name
-- `5d540ce` feat(v2-batch-1): add member-profiles + emergency-contacts modules
+- `5d540ce` feat(v2-batch-1): add member-profiles + emergency-contacts modules (#2)
+- `8c86aac` chore(prisma): add v2 batch 2 certificates schema (#5)
+- `ce56018` feat(certificates): add v2 batch 2 certificates module (#6)
 
 ## v0.2.0 - 2026-05-09
 
