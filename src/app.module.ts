@@ -15,6 +15,7 @@ import databaseConfig from './config/database.config';
 import jwtConfig from './config/jwt.config';
 import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { CertificatesModule } from './modules/certificates/certificates.module';
 import { DictionariesModule } from './modules/dictionaries/dictionaries.module';
 import { EmergencyContactsModule } from './modules/emergency-contacts/emergency-contacts.module';
 import { HealthModule } from './modules/health/health.module';
@@ -66,6 +67,7 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     MemberDepartmentsModule,
     MemberProfilesModule,
     EmergencyContactsModule,
+    CertificatesModule,
   ],
   providers: [
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):

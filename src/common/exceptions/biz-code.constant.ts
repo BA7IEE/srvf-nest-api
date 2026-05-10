@@ -157,6 +157,44 @@ export const BizCode = {
     httpStatus: HttpStatus.FORBIDDEN,
   },
 
+  // certificates 模块业务级(180xx + 181xx)。批次 2 引入(2026-05-10)。
+  // 段位选择:baseline §1.1 中 180xx 是 batch 1 评审时为 member_profiles 预留但实际让位
+  // 160xx 后空出的段位;批次 2 接管。详见 docs:批次2_API前评审_certificates.md §9。
+  // 子段(对齐 baseline §1.3):
+  // - 18001:NOT_FOUND
+  // - 18010-18029:业务级输入校验(cert_type / cert_sub_type 字典 invalid)
+  // - 18030-18099:资源状态非法 / 状态机转移非法
+  // - 18101:权限边界(NOT_BELONGS_TO_MEMBER)
+  //
+  // 复用现有错误码:MEMBER_NOT_FOUND(15001);
+  // 不开 CERTIFICATE_STATUS_CODE_INVALID(DTO 不接收,service 写常量,无外部传入路径);
+  // 不开 P2002 相关码(本批次 schema 无业务唯一约束,草案 §11.2)。
+  CERTIFICATE_NOT_FOUND: {
+    code: 18001,
+    message: '证书不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  CERTIFICATE_TYPE_CODE_INVALID: {
+    code: 18010,
+    message: '证书大类字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  CERTIFICATE_SUB_TYPE_CODE_INVALID: {
+    code: 18011,
+    message: '证书子类型字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  CERTIFICATE_INVALID_STATE_TRANSITION: {
+    code: 18030,
+    message: '证书状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CERTIFICATE_NOT_BELONGS_TO_MEMBER: {
+    code: 18101,
+    message: '证书不属于该队员',
+    httpStatus: HttpStatus.FORBIDDEN,
+  },
+
   // members 模块业务级(150xx + 151xx)。详见 docs/v2-api-contract.md §4.7。
   // 子段(对齐 baseline §1.3):
   // - 15001:NOT_FOUND

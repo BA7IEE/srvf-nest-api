@@ -110,6 +110,18 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/v2/members/{memberId}/emergency-contacts'],
   ['patch', '/api/v2/members/{memberId}/emergency-contacts/{id}'],
   ['delete', '/api/v2/members/{memberId}/emergency-contacts/{id}'],
+
+  // V2 第一阶段批次 2 certificates (2026-05-10;N:1 子资源 + verify / reject / qualification-flag 动作)
+  // 路径顺序:list / create / qualification-flag(必先于 :id)/ detail / update / softDelete /
+  // verify / reject(controller 内方法声明顺序固定;NestJS 字面段优先于 :id 占位段)
+  ['get', '/api/v2/members/{memberId}/certificates'],
+  ['post', '/api/v2/members/{memberId}/certificates'],
+  ['get', '/api/v2/members/{memberId}/certificates/qualification-flag'],
+  ['get', '/api/v2/members/{memberId}/certificates/{id}'],
+  ['patch', '/api/v2/members/{memberId}/certificates/{id}'],
+  ['delete', '/api/v2/members/{memberId}/certificates/{id}'],
+  ['patch', '/api/v2/members/{memberId}/certificates/{id}/verify'],
+  ['patch', '/api/v2/members/{memberId}/certificates/{id}/reject'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -164,6 +176,17 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'CreateEmergencyContactDto',
   'UpdateEmergencyContactDto',
   'EmergencyContactResponseDto',
+
+  // V2 第一阶段批次 2 certificates
+  // 注:QualificationFlagQueryDto 是 @Query() DTO,NestJS Swagger 把其属性内联为
+  // parameters,不进 components.schemas;这里**不列**,与 @Body() / 出参 DTO 区分。
+  'CreateCertificateDto',
+  'UpdateCertificateDto',
+  'VerifyCertificateDto',
+  'RejectCertificateDto',
+  'CertificateResponseDto',
+  'CertificateListItemDto',
+  'QualificationFlagResponseDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
