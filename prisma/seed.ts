@@ -17,6 +17,11 @@ import * as bcrypt from 'bcryptjs';
 // - dict_types: node_type / member_grade
 // - 每类放抽象占位 dict_items;真实部门名 / 等级名 / 队员编号不进 git history(R13)
 // - upsert + update: {} 实现幂等,不覆盖运营在运行时手动调整的取值
+//
+// V2 第一阶段批次 1 追加(详见 docs:批次1_schema草案_member_profiles_emergency_contacts.md
+// v1.0 冻结版 §12.1 + 决议表 Q-S04 / Q-S06):
+// 必开 6 个字典 type:emergency_relation / gender / document_type / political_status /
+// blood_type / work_nature。占位 items 为演示数据;真实运营录入由队部决定。
 
 const DEFAULT_PASSWORD = 'ChangeMe123456';
 const USERNAME_PATTERN = /^[a-z0-9_-]{3,32}$/;
@@ -38,6 +43,60 @@ const V2_DICT_SEED = [
     items: [
       { code: 'demo-member-grade-1', label: 'Demo member grade 1', sortOrder: 0 },
       { code: 'demo-member-grade-2', label: 'Demo member grade 2', sortOrder: 1 },
+    ],
+  },
+  // ===== V2 第一阶段批次 1 追加 6 个字典 =====
+  {
+    type: { code: 'emergency_relation', label: 'Demo emergency contact relation', sortOrder: 2 },
+    items: [
+      { code: 'family', label: 'Demo family', sortOrder: 0 },
+      { code: 'friend', label: 'Demo friend', sortOrder: 1 },
+      { code: 'spouse', label: 'Demo spouse', sortOrder: 2 },
+      { code: 'parent', label: 'Demo parent', sortOrder: 3 },
+      { code: 'child', label: 'Demo child', sortOrder: 4 },
+      { code: 'other', label: 'Demo other', sortOrder: 5 },
+    ],
+  },
+  {
+    type: { code: 'gender', label: 'Demo gender', sortOrder: 3 },
+    items: [
+      { code: 'demo-gender-1', label: 'Demo gender 1', sortOrder: 0 },
+      { code: 'demo-gender-2', label: 'Demo gender 2', sortOrder: 1 },
+    ],
+  },
+  {
+    type: { code: 'document_type', label: 'Demo document type', sortOrder: 4 },
+    items: [
+      { code: 'demo-doc-type-1', label: 'Demo document type 1', sortOrder: 0 },
+      { code: 'demo-doc-type-2', label: 'Demo document type 2', sortOrder: 1 },
+      { code: 'demo-doc-type-3', label: 'Demo document type 3', sortOrder: 2 },
+      { code: 'demo-doc-type-4', label: 'Demo document type 4', sortOrder: 3 },
+    ],
+  },
+  {
+    type: { code: 'political_status', label: 'Demo political status', sortOrder: 5 },
+    items: [
+      { code: 'demo-political-1', label: 'Demo political 1', sortOrder: 0 },
+      { code: 'demo-political-2', label: 'Demo political 2', sortOrder: 1 },
+      { code: 'demo-political-3', label: 'Demo political 3', sortOrder: 2 },
+    ],
+  },
+  {
+    type: { code: 'blood_type', label: 'Demo blood type', sortOrder: 6 },
+    items: [
+      { code: 'demo-blood-A', label: 'Demo A', sortOrder: 0 },
+      { code: 'demo-blood-B', label: 'Demo B', sortOrder: 1 },
+      { code: 'demo-blood-AB', label: 'Demo AB', sortOrder: 2 },
+      { code: 'demo-blood-O', label: 'Demo O', sortOrder: 3 },
+    ],
+  },
+  {
+    type: { code: 'work_nature', label: 'Demo work nature', sortOrder: 7 },
+    items: [
+      { code: 'demo-work-1', label: 'Demo work 1', sortOrder: 0 },
+      { code: 'demo-work-2', label: 'Demo work 2', sortOrder: 1 },
+      { code: 'demo-work-3', label: 'Demo work 3', sortOrder: 2 },
+      { code: 'demo-work-4', label: 'Demo work 4', sortOrder: 3 },
     ],
   },
 ] as const;

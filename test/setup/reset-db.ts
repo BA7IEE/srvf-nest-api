@@ -20,11 +20,15 @@ import { assertTestDatabaseUrl } from './test-db';
 // V2 第一阶段 Step 3 起追加 V2 字典表(DictItem / DictType);随后 Step 4-6
 // 模块开发时,可按需在此追加 Member / Organization / MemberDepartment 等。
 // 多表 TRUNCATE 用 comma 分隔(PostgreSQL 原生支持)。
+//
+// V2 第一阶段批次 1 追加(2026-05-10):MemberProfile / EmergencyContact 两张扩展表。
+// 顺序约束:子表(MemberProfile / EmergencyContact / MemberDepartment / User)在前,
+// Member / Organization / DictItem / DictType 在后;CASCADE 兜底跨外键依赖。
 export async function resetDb(app: INestApplication): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "MemberProfile", "EmergencyContact", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }

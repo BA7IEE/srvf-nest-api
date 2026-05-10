@@ -140,6 +140,10 @@ model Member {
 
   user              User?
   memberDepartments MemberDepartment[]
+  // V2 第一阶段批次 1:扩展模块反向 relation;主表既有业务字段语义不变,
+  // 不在 Member 主表新增任何业务字段(顶层 §11 K1 + 批次 1 schema 草案 R2)。
+  memberProfile     MemberProfile?
+  emergencyContacts EmergencyContact[]
 
   @@index([gradeCode])
   @@index([status])
@@ -172,6 +176,110 @@ model MemberDepartment {
 
   @@index([memberId])
   @@index([organizationId])
+  @@index([deletedAt])
+  @@index([createdAt])
+}
+
+// ===== V2 第一阶段批次 1:member_profiles =====
+//
+// 1:1 with Member;承载实名 / 联系方式 / 医疗类等敏感资料。
+// 详见 docs:批次1_schema草案_member_profiles_emergency_contacts.md (v1.0 冻结版)。
+//
+// 设计选择(B 路径,2026-05-10):
+// - 字段长度上限不落 @db.VarChar,由 DTO + class-validator 承担(与 v0.2.0 现有模型一致)。
+// - 纯日期字段(birthDate / joinedDate / privacyConsentSignedAt)统一 DateTime,
+//   业务层按 00:00:00.000Z 规范化处理(不落 @db.Date)。
+//
+// NOT NULL 字段(草案 §7 第一档):realName / genderCode / birthDate / documentTypeCode /
+//   documentNumber / mobile / email / joinedDate / joinSourceCode / privacyConsentSigned。
+// 其余字段 schema 可空(兼容 3000+ 历史档案缺字段);DTO 层按"业务必填"严格校验。
+
+model MemberProfile {
+  id        String    @id @default(cuid())
+  memberId  String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // ===== 报名表必填基础信息 =====
+  realName            String // MP-1
+  genderCode          String // MP-2 字典 gender
+  birthDate           DateTime // MP-3 业务层按日期 00:00:00.000Z 规范化
+  documentTypeCode    String // MP-4 字典 document_type
+  documentNumber      String // MP-5 高敏感
+  ethnicityCode       String? // MP-6 字典 ethnicity(候选,运营层后录入)
+  politicalStatusCode String? // MP-7 字典 political_status
+  isVeteran           Boolean? // MP-8
+  maritalStatusCode   String? // MP-9 字典 marital_status(候选)
+  educationCode       String? // MP-10 字典 education(候选)
+  major               String? // MP-11 自由文本
+  workNatureCode      String? // MP-12 字典 work_nature(只存性质,不存单位)
+  residenceArea       String? // MP-13 行政区粒度
+  workArea            String? // MP-14 行政区粒度
+  mobile              String // MP-15 高敏感
+  landline            String? // MP-16 报名表选填
+  email               String // MP-17
+  qq                  String? // MP-18a
+  wechat              String? // MP-18b
+
+  // ===== 报名表必填医疗类(高敏感) =====
+  heightCm      Int? // MP-19a 自填,不强制体测核验
+  weightKg      Int? // MP-19b
+  bloodTypeCode String? // MP-19c 字典 blood_type
+  eyesight      String? // MP-20 报名表选填
+  medicalNotes  Json? // MP-21 JSON 数组,元素 {categoryCode, note}(Q-S01)
+
+  // ===== 报名表必填能力特长 =====
+  hasVehicle            Boolean? // MP-22a
+  vehicleType           String? // MP-22b
+  exerciseFrequencyCode String? // MP-23a 字典 exercise_frequency(候选)
+  exerciseSportCode     String? // MP-23b 字典 exercise_sport(候选)
+  exerciseMethods       String[] // MP-23c PG 原生数组,字典 exercise_method codes(Q-S02)
+  firstAidKnowledgeCode String? // MP-24 字典 first_aid_knowledge(候选)
+  firstAidSkills        String[] // MP-25 PG 原生数组,字典 first_aid_skill codes(Q-S03)
+  otherSkills           String? // MP-26 长文本
+
+  // ===== 内部档案补充 =====
+  joinedDate             DateTime // MP-27 加入日期,业务层按日期规范化
+  joinSourceCode         String // MP-28 字典 join_source(候选)
+  noCriminalRecordSigned Boolean? // MP-29 是否签署无违法犯罪声明
+  privacyConsentSigned   Boolean // MP-30a 是否授权(NOT NULL)
+  privacyConsentSignedAt DateTime? // MP-30b 授权时间(Q-S05 保留)
+
+  // ===== 外部记录字段 =====
+  volunteerNo String? // MP-31 义工号,不参与登录/权限/身份识别(草案 §3)
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@index([volunteerNo])
+  @@index([deletedAt])
+  @@index([createdAt])
+}
+
+// ===== V2 第一阶段批次 1:emergency_contacts =====
+//
+// N:1 with Member;不限数量,priority 整数排序(允许并列,Q-S09)。
+// 联系人不视为系统用户,不需联系人单独签授权(EC-8 不做,Q025)。
+// 软删走 deletedAt,不物理删(Q-S10)。
+
+model EmergencyContact {
+  id        String    @id @default(cuid())
+  memberId  String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  contactName  String // EC-2
+  relationCode String // EC-3 字典 emergency_relation
+  phonePrimary String // EC-4
+  phoneBackup  String? // EC-5
+  address      String? // EC-6
+  priority     Int     @default(0) // EC-7 0 = 最高;允许并列
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@index([memberId])
+  @@index([memberId, priority])
   @@index([deletedAt])
   @@index([createdAt])
 }
