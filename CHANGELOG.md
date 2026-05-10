@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+- `dbfca6a` chore(prisma): add batch 1 member profile schema
+- `6637733` ci: fix docker smoke compose network name
+- `5d540ce` feat(v2-batch-1): add member-profiles + emergency-contacts modules
+
 ## v0.2.0 - 2026-05-09
 
 ### V2 First Stage (srvf-foundation Step 1-7) — 2026-05-08

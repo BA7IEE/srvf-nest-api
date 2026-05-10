@@ -70,7 +70,7 @@ V2 第一阶段开发范围共 **4 个新模块** + **1 项 v1 兼容性追加**
 
 **第一阶段不开发**(完整延后清单见 `ARCHITECTURE.md §12.8.1`):
 
-- `member_profiles` / `attachments` / `audit_logs` / `events` / `event_participants` 全部延后,**无任何接口**
+- `member_profiles` 已在批次 1 落地(本契约草案撰写时延后,实际已合并 main;契约信息见 `SRVF/04-Schema设计/批次1_API前评审_member_profiles_emergency_contacts.md`);`attachments` / `audit_logs` / `events` / `event_participants` 仍延后,**无任何接口**
 
 ### 1.2 接口总览表
 
