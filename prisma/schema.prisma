@@ -138,12 +138,17 @@ model Member {
   updatedAt   DateTime     @updatedAt
   deletedAt   DateTime?
 
-  user              User?
-  memberDepartments MemberDepartment[]
+  user                 User?
+  memberDepartments    MemberDepartment[]
   // V2 第一阶段批次 1:扩展模块反向 relation;主表既有业务字段语义不变,
   // 不在 Member 主表新增任何业务字段(顶层 §11 K1 + 批次 1 schema 草案 R2)。
-  memberProfile     MemberProfile?
-  emergencyContacts EmergencyContact[]
+  memberProfile        MemberProfile?
+  emergencyContacts    EmergencyContact[]
+  // V2 第一阶段批次 2:Certificate 两条反向 relation;同样仅 Prisma 关系映射,
+  // 不算业务字段新增(批次 2 schema 草案 v1.0 §7 / R2);
+  // verifier 角色由 service 层判定,schema 不约束。
+  certificates         Certificate[]      @relation("CertificateMember")
+  certificatesVerified Certificate[]      @relation("CertificateVerifier")
 
   @@index([gradeCode])
   @@index([status])
@@ -282,4 +287,75 @@ model EmergencyContact {
   @@index([memberId, priority])
   @@index([deletedAt])
   @@index([createdAt])
+}
+
+// ===== V2 第一阶段批次 2:certificates =====
+//
+// N:1 with Member;承载外部资质 + 本会颁发证书(同表承载,CT-11)。
+// 详见 docs:
+//   - 批次2_schema草案_certificates.md (v1.0 冻结版)
+//   - 批次2_schema草案评审决议表.md (Q-S1~Q-S10)
+//   - 批次2_schema草案评审决议表_v0.1.md (Q-D1~Q-D8)
+//
+// 设计选择(沿批次 1 B 路径):
+// - 字段长度上限不落 @db.VarChar,由 DTO + class-validator 承担。
+// - 纯日期字段(issuedAt / expiredAt / verifiedAt / expireNotifyDueAt)统一 DateTime,
+//   业务层按 00:00:00.000Z 规范化处理(不落 @db.Date)。
+// - 字典 code 字段(certTypeCode / certSubTypeCode / certStatusCode)schema 不做 FK,
+//   业务层校验字典存在性(沿 v0.2.0 gradeCode / nodeTypeCode 模式)。
+//
+// FK(全部 ON DELETE Restrict,与 v0.2.0 + 批次 1 一致):
+// - memberId           → Member.id            (CT-1)
+// - verifiedBy         → Member.id            (CT-9a, Q-D1 已决议)
+// - supersededByCertId → Certificate.id 自引用 (CT-12, Q-D2 已决议)
+//
+// 状态机:4 态闭集 (pending / verified / expired / rejected);
+//   schema 不固化,由 service 层映射代码常量与 cert_status 字典 code。
+//
+// 索引:7 个单列;
+//   Q-D6 不加 (expireNotifyDueAt) 单列索引;
+//   Q-D8 不加 (memberId, certTypeCode, certStatusCode, expiredAt) 4 列复合索引;
+//   Q-S6 不加 (memberId, certTypeCode) 联合索引。
+//
+// 业务唯一约束:无(草案 §11.2);仅 id 主键唯一。
+//
+// 软删:走 deletedAt;禁用 hard delete(R12)。
+//
+// CT-10 attachmentKey 仅占位字段,本批次始终 NULL;批次 6a 协议三要素接入(Q-S10)。
+
+model Certificate {
+  id        String    @id @default(cuid())
+  memberId  String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // ===== 业务字段(CT-2 ~ CT-12 + HK-1) =====
+  certTypeCode       String // CT-2 字典 cert_type
+  certSubTypeCode    String? // CT-3 字典 cert_sub_type;Q-D4 schema 可空
+  issuingOrg         String // CT-4 自由文本;长度 128 由 DTO 约束
+  certNumber         String? // CT-5 Q-D5 schema 可空;长度 128(Q-D3)由 DTO 约束
+  issuedAt           DateTime // CT-6 业务层日期规范化
+  expiredAt          DateTime? // CT-7 NULL = 终身有效(Q-S4)
+  certStatusCode     String // CT-8 字典 cert_status;无 default,service 填 pending
+  verifiedBy         String? // CT-9a FK→Member.id 可空(Q-D1)
+  verifiedAt         DateTime? // CT-9b
+  verifyNote         String? // CT-9c 长度 500(Q-S5)由 DTO 约束
+  attachmentKey      String? // CT-10 长度 256;批次 6a 协议接入,本批次始终 NULL
+  isInternal         Boolean   @default(false) // CT-11 是否本会颁发
+  supersededByCertId String? // CT-12 自引用 FK 可空(Q-D2)
+  expireNotifyDueAt  DateTime? // HK-1 60 天提醒 hook;Q-D6 不加索引
+
+  member       Member        @relation("CertificateMember", fields: [memberId], references: [id], onDelete: Restrict)
+  verifier     Member?       @relation("CertificateVerifier", fields: [verifiedBy], references: [id], onDelete: Restrict)
+  supersededBy Certificate?  @relation("CertificateSupersession", fields: [supersededByCertId], references: [id], onDelete: Restrict)
+  supersedes   Certificate[] @relation("CertificateSupersession")
+
+  @@index([memberId])
+  @@index([certTypeCode])
+  @@index([certStatusCode])
+  @@index([expiredAt])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([supersededByCertId])
 }

@@ -22,6 +22,15 @@ import * as bcrypt from 'bcryptjs';
 // v1.0 冻结版 §12.1 + 决议表 Q-S04 / Q-S06):
 // 必开 6 个字典 type:emergency_relation / gender / document_type / political_status /
 // blood_type / work_nature。占位 items 为演示数据;真实运营录入由队部决定。
+//
+// V2 第一阶段批次 2 追加(详见 docs:批次2_schema草案_certificates.md v1.0 冻结版 §12.1
+// + 决议表 Q-D7):
+// 必开 3 个字典 type:cert_type / cert_sub_type / cert_status。
+// 风格:英文 code + 中文 label(Q-D7 决议),与批次 1 demo label 不同;
+//   - cert_type: 7 项占位(救护员 / BSAFE / 户外 / 教练 / 通讯 / 医疗 / 其他)
+//   - cert_sub_type: 4 项演示占位(BSAFE 一/二级 + 救护员基础/高级)
+//   - cert_status: 4 态闭集(待核验 / 已核验 / 已失效 / 拒绝),新增态需走前评审
+// 真实 items 由队部 / TTD 后续运营层录入(Q-S1)。
 
 const DEFAULT_PASSWORD = 'ChangeMe123456';
 const USERNAME_PATTERN = /^[a-z0-9_-]{3,32}$/;
@@ -97,6 +106,37 @@ const V2_DICT_SEED = [
       { code: 'demo-work-2', label: 'Demo work 2', sortOrder: 1 },
       { code: 'demo-work-3', label: 'Demo work 3', sortOrder: 2 },
       { code: 'demo-work-4', label: 'Demo work 4', sortOrder: 3 },
+    ],
+  },
+  // ===== V2 第一阶段批次 2 追加 3 个字典(英文 code + 中文 label,Q-D7)=====
+  {
+    type: { code: 'cert_type', label: '证书大类', sortOrder: 8 },
+    items: [
+      { code: 'first_aid', label: '救护员', sortOrder: 0 },
+      { code: 'bsafe', label: 'BSAFE', sortOrder: 1 },
+      { code: 'outdoor', label: '户外', sortOrder: 2 },
+      { code: 'coach', label: '教练', sortOrder: 3 },
+      { code: 'comm', label: '通讯', sortOrder: 4 },
+      { code: 'medical', label: '医疗', sortOrder: 5 },
+      { code: 'other', label: '其他', sortOrder: 6 },
+    ],
+  },
+  {
+    type: { code: 'cert_sub_type', label: '证书等级 / 子类型', sortOrder: 9 },
+    items: [
+      { code: 'bsafe_l1', label: 'BSAFE 一级', sortOrder: 0 },
+      { code: 'bsafe_l2', label: 'BSAFE 二级', sortOrder: 1 },
+      { code: 'first_aid_basic', label: '救护员基础', sortOrder: 2 },
+      { code: 'first_aid_advanced', label: '救护员高级', sortOrder: 3 },
+    ],
+  },
+  {
+    type: { code: 'cert_status', label: '核验状态', sortOrder: 10 },
+    items: [
+      { code: 'pending', label: '待核验', sortOrder: 0 },
+      { code: 'verified', label: '已核验', sortOrder: 1 },
+      { code: 'expired', label: '已失效', sortOrder: 2 },
+      { code: 'rejected', label: '拒绝', sortOrder: 3 },
     ],
   },
 ] as const;

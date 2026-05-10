@@ -24,11 +24,15 @@ import { assertTestDatabaseUrl } from './test-db';
 // V2 第一阶段批次 1 追加(2026-05-10):MemberProfile / EmergencyContact 两张扩展表。
 // 顺序约束:子表(MemberProfile / EmergencyContact / MemberDepartment / User)在前,
 // Member / Organization / DictItem / DictType 在后;CASCADE 兜底跨外键依赖。
+//
+// V2 第一阶段批次 2 追加(2026-05-10):Certificate 一张扩展表,放在 EmergencyContact
+// 之后的扩展子表段;Certificate.memberId / verifiedBy 引用 Member.id,supersededByCertId
+// 自引用 Certificate.id,全部 ON DELETE Restrict;CASCADE 兜底自引用与跨表依赖。
 export async function resetDb(app: INestApplication): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "MemberProfile", "EmergencyContact", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }
