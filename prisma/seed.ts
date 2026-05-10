@@ -31,6 +31,22 @@ import * as bcrypt from 'bcryptjs';
 //   - cert_sub_type: 4 项演示占位(BSAFE 一/二级 + 救护员基础/高级)
 //   - cert_status: 4 态闭集(待核验 / 已核验 / 已失效 / 拒绝),新增态需走前评审
 // 真实 items 由队部 / TTD 后续运营层录入(Q-S1)。
+//
+// V2 第一阶段批次 3 追加(详见 docs:批次3_schema草案_activities_attendances.md v0.5 §10
+// + 决议表 v1.4):
+// 必开 6 个字典 type:activity_type / activity_status / registration_status /
+// attendance_sheet_status / attendance_status / attendance_role。
+//   - activity_type: 开放,**二级树**(D11);由独立函数 seedActivityTypeHierarchy 处理
+//     父子 upsert(parentId 引用同 type 父项 id)
+//   - activity_status: 闭集 4 态(D3;Q-D7 保留 completed):draft/published/cancelled/completed
+//   - registration_status: 闭集 **4 态**(F28/Q011 + Q-D15 v0.3 新增 cancelled):
+//     pending/pass/reject/cancelled
+//   - attendance_sheet_status: 闭集 3 态(D18):pending/approved/rejected
+//   - attendance_status: 闭集 **3 态**(D44/D51 v0.2.4 撤销 absent/leave):
+//     present/late/early_leave
+//   - attendance_role: 闭集 7 项(D13):member/instructor/assistant/coach/
+//     front_command/back_command/info
+// 风格沿批次 2:英文 code + 中文 label。
 
 const DEFAULT_PASSWORD = 'ChangeMe123456';
 const USERNAME_PATTERN = /^[a-z0-9_-]{3,32}$/;
@@ -139,6 +155,56 @@ const V2_DICT_SEED = [
       { code: 'rejected', label: '拒绝', sortOrder: 3 },
     ],
   },
+  // ===== V2 第一阶段批次 3 追加 5 个闭集字典 =====
+  // 注:activity_type(sortOrder=11)是二级树,由独立函数 seedActivityTypeHierarchy 处理。
+  {
+    type: { code: 'activity_status', label: '活动状态', sortOrder: 12 },
+    items: [
+      { code: 'draft', label: '草稿', sortOrder: 0 },
+      { code: 'published', label: '已发布', sortOrder: 1 },
+      { code: 'cancelled', label: '已取消', sortOrder: 2 },
+      { code: 'completed', label: '已完成', sortOrder: 3 }, // Q-D7 保留 dict seed
+    ],
+  },
+  {
+    type: { code: 'registration_status', label: '报名状态', sortOrder: 13 },
+    items: [
+      { code: 'pending', label: '待审核', sortOrder: 0 },
+      { code: 'pass', label: '已通过', sortOrder: 1 },
+      { code: 'reject', label: '未通过', sortOrder: 2 },
+      { code: 'cancelled', label: '已取消', sortOrder: 3 }, // Q-D15 v0.3 新增
+    ],
+  },
+  {
+    type: { code: 'attendance_sheet_status', label: '考勤单据状态', sortOrder: 14 },
+    items: [
+      { code: 'pending', label: '待审核', sortOrder: 0 },
+      { code: 'approved', label: '已通过', sortOrder: 1 },
+      { code: 'rejected', label: '已驳回', sortOrder: 2 },
+    ],
+  },
+  {
+    type: { code: 'attendance_status', label: '考勤明细状态', sortOrder: 15 },
+    // v0.2.4 D44 / D51:从 5 态收窄为 3 态;absent / leave 不进 Record(D43)
+    items: [
+      { code: 'present', label: '已到场', sortOrder: 0 },
+      { code: 'late', label: '迟到', sortOrder: 1 },
+      { code: 'early_leave', label: '早退', sortOrder: 2 },
+    ],
+  },
+  {
+    type: { code: 'attendance_role', label: '考勤角色', sortOrder: 16 },
+    // D13:7 项闭集
+    items: [
+      { code: 'member', label: '队员', sortOrder: 0 },
+      { code: 'instructor', label: '讲师', sortOrder: 1 },
+      { code: 'assistant', label: '助教', sortOrder: 2 },
+      { code: 'coach', label: '教练', sortOrder: 3 },
+      { code: 'front_command', label: '前指', sortOrder: 4 },
+      { code: 'back_command', label: '后指', sortOrder: 5 },
+      { code: 'info', label: '信息', sortOrder: 6 },
+    ],
+  },
 ] as const;
 
 async function seedV2Dictionaries(prisma: PrismaClient): Promise<void> {
@@ -178,6 +244,103 @@ async function seedV2Dictionaries(prisma: PrismaClient): Promise<void> {
       `[seed] V2 dict '${entry.type.code}' ensured (${entry.items.length} items, neutral-demo)`,
     );
   }
+}
+
+// V2 第一阶段批次 3:activity_type 二级树字典(D11 / Q-S17;允许挂顶级父项)。
+// 由于父子项需要 parentId 引用,无法走 V2_DICT_SEED 单层 upsert;独立函数处理:
+// ① upsert dict_type 取 id
+// ② upsert 父项取 id(parentMap 缓存)
+// ③ upsert 子项,parentId 从 parentMap 取
+// 幂等性:upsert + update: {} 保证;父子项顺序由本函数控制(先父后子)。
+//
+// 占位 seed 形态(Q-S11):
+// - `demo-` 前缀英文 code + 中文演示 label
+// - 3 父项(演示-轮值 / 演示-培训 / 演示-行动)
+// - 4 子项(演示-梧桐山轮值 / 演示-梅林轮值 / 演示-基础培训 / 演示-初级救援培训)
+// - `demo-action` 父项故意无子项,演示 Q-S17 决议"允许挂顶级"
+// 真实节点名由队部 / 秘书处后续运营层录入。
+async function seedActivityTypeHierarchy(prisma: PrismaClient): Promise<void> {
+  const dictType = await prisma.dictType.upsert({
+    where: { code: 'activity_type' },
+    update: {},
+    create: {
+      code: 'activity_type',
+      label: '活动类型',
+      sortOrder: 11,
+    },
+    select: { id: true },
+  });
+
+  const parents = [
+    { code: 'demo-rotation', label: '演示-轮值', sortOrder: 0 },
+    { code: 'demo-training', label: '演示-培训', sortOrder: 1 },
+    { code: 'demo-action', label: '演示-行动', sortOrder: 2 },
+  ];
+
+  const parentMap = new Map<string, string>();
+  for (const p of parents) {
+    const item = await prisma.dictItem.upsert({
+      where: { typeId_code: { typeId: dictType.id, code: p.code } },
+      update: {},
+      create: {
+        typeId: dictType.id,
+        code: p.code,
+        label: p.label,
+        sortOrder: p.sortOrder,
+      },
+      select: { id: true, code: true },
+    });
+    parentMap.set(item.code, item.id);
+  }
+
+  const children = [
+    {
+      code: 'demo-rotation-wutongshan',
+      label: '演示-梧桐山轮值',
+      sortOrder: 0,
+      parentCode: 'demo-rotation',
+    },
+    {
+      code: 'demo-rotation-meilin',
+      label: '演示-梅林轮值',
+      sortOrder: 1,
+      parentCode: 'demo-rotation',
+    },
+    {
+      code: 'demo-training-basic',
+      label: '演示-基础培训',
+      sortOrder: 0,
+      parentCode: 'demo-training',
+    },
+    {
+      code: 'demo-training-rescue',
+      label: '演示-初级救援培训',
+      sortOrder: 1,
+      parentCode: 'demo-training',
+    },
+  ];
+
+  for (const c of children) {
+    const parentId = parentMap.get(c.parentCode);
+    if (!parentId) {
+      throw new Error(`[seed] activity_type 父项 '${c.parentCode}' 不存在`);
+    }
+    await prisma.dictItem.upsert({
+      where: { typeId_code: { typeId: dictType.id, code: c.code } },
+      update: {},
+      create: {
+        typeId: dictType.id,
+        code: c.code,
+        label: c.label,
+        sortOrder: c.sortOrder,
+        parentId,
+      },
+    });
+  }
+
+  console.log(
+    `[seed] V2 dict 'activity_type' ensured (${parents.length} 父项 + ${children.length} 子项,二级树,demo)`,
+  );
 }
 
 async function main(): Promise<void> {
@@ -252,6 +415,9 @@ async function main(): Promise<void> {
 
     // V2 第一阶段:无论 SUPER_ADMIN 是否新建,都追加 neutral-demo 字典 seed
     await seedV2Dictionaries(prisma);
+
+    // V2 第一阶段批次 3:activity_type 二级树字典(D11)
+    await seedActivityTypeHierarchy(prisma);
   } finally {
     await prisma.$disconnect();
   }
