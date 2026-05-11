@@ -497,6 +497,37 @@ export const BizCode = {
     message: '关联报名记录与考勤活动不一致',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+
+  // V2 第一阶段批次 4-A 引入(2026-05-12)。详见 docs:批次4_贡献值业务规则_schema草案评审决议表 v1.0
+  // D-S11 + 批次4_贡献值业务规则_API草案 v1.0 D-A13。
+  //
+  // 子段沿 v0.4.0 22xxx attendances 段位扩展(D-S11 锁定):
+  // - 22043:FINAL_REJECTED_NOT_EDITABLE(终审驳回 Sheet 不可 edit;与 22040 / 22041 对称)
+  // - 22045:FINAL_REVIEW_STATUS_INVALID(终审操作时 Sheet 状态不是 pending_final_review)
+  // - 22046:FINAL_REVIEW_NOTE_REQUIRED(终审驳回必须填 finalReviewNote;与 reject reviewNote 对称)
+  //
+  // 不开的码(沿 D-S11 / batch 3A 范式):
+  // - 22042:VERSION_CONFLICT(handoff §7.1 永久不做,D37 暂不启用乐观锁)
+  // - 22044:FINAL_REVIEW_FORBIDDEN(D-S2 + batch 3A 不开 FORBIDDEN_* 模块码;
+  //   终审权限不足走通用 FORBIDDEN / 40300 / Guard 机制)
+  // - 22047:APD_REVIEW_STATUS_INVALID(与 22030 STATUS_INVALID 重叠,统一复用 22030)
+  // - 22048:CONTRIBUTION_RULE_NOT_FOUND(无匹配规则时 service 兜底默认值,不抛错)
+  // - 22050:ATTENDANCE_RECORD_NOT_FOUND(handoff §7.1 永久不做,Q-A9 不暴露独立 Record 查询)
+  ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE: {
+    code: 22043,
+    message: '终审驳回的考勤单据不可修改',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID: {
+    code: 22045,
+    message: '考勤单据当前状态不允许终审操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_SHEET_FINAL_REVIEW_NOTE_REQUIRED: {
+    code: 22046,
+    message: '终审驳回须填写终审备注',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];

@@ -37,11 +37,18 @@ import { assertTestDatabaseUrl } from './test-db';
 //   - AttendanceRecord.registrationId → ActivityRegistration.id(Q-S21 Restrict)
 //   - AttendanceSheet.activityId / ActivityRegistration.activityId → Activity.id
 //   - Activity.organizationId → Organization.id
+//   - AttendanceSheet.finalReviewerUserId → User.id(批次 4-A 新增)
+//
+// V2 第一阶段批次 4-A 追加(2026-05-12):ContributionRule 1 张表;
+// 仅持有 3 条审计 FK(createdByUserId / updatedByUserId / deletedByUserId)指向 User,
+// **不被任何其它表 FK 引用**;真实业务关联 activityTypeCode / attendanceRoleCode 是字典 code 字符串,
+// 非外键。因此放在 User 之前即可由 CASCADE 自然清理,放在列首作为独立的小表。
+//   - ContributionRule.createdByUserId / updatedByUserId / deletedByUserId → User.id(Restrict)
 export async function resetDb(app: INestApplication): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }
