@@ -389,6 +389,12 @@ export const BizCode = {
     message: '活动已取消,禁止报名',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 批次 3B 补充(2026-05-11):activities 段 20122,attendances 提交时校验活动状态。
+  ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN: {
+    code: 20122,
+    message: '活动已取消,禁止录入考勤',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
@@ -416,6 +422,80 @@ export const BizCode = {
     code: 21032,
     message: '活动名额已满',
     httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // attendances 模块业务级(220xx + 221xx)。批次 3B 引入(2026-05-11)。
+  // 详见 docs:批次3_API前评审决议表.md v1.0 §1.8 / §1.14 + 批次3_schema草案 §18.2。
+  // 子段(对齐 baseline §1.3):
+  // - 22001-22009:Sheet NOT_FOUND
+  // - 22030-22049:Sheet 状态机 / 资源状态(STATUS_INVALID / APPROVED_NOT_EDITABLE / REJECTED_NOT_EDITABLE)
+  // - 22050-22099:Record 实体级(字典 / 时间 / serviceHours / contributionPoints / registrationId 跨表)
+  // - 221xx:暂留(FORBIDDEN_ATTENDANCE_* 不开,沿 baseline;USER 越权 → 404 沿 §1.7)
+  //
+  // 不开的码:
+  // - 22042 ATTENDANCE_SHEET_VERSION_CONFLICT(D37 暂不启用乐观锁)
+  // - 22050 ATTENDANCE_RECORD_NOT_FOUND(Q-A9 不暴露独立 record 查询;若 service 内部需要,
+  //   走 ATTENDANCE_SHEET_NOT_FOUND 兜底)
+  // - 22101-22104 FORBIDDEN_*(沿 baseline;Guard 拒绝走通用 FORBIDDEN / 40300)
+  ATTENDANCE_SHEET_NOT_FOUND: {
+    code: 22001,
+    message: '考勤单据不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ATTENDANCE_SHEET_STATUS_INVALID: {
+    code: 22030,
+    message: '考勤单据当前状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE: {
+    code: 22040,
+    message: '已审核通过的考勤单据不可修改',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE: {
+    code: 22041,
+    message: '已驳回的考勤单据不可直接编辑',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_ROLE_CODE_INVALID: {
+    code: 22051,
+    message: '考勤角色字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTENDANCE_STATUS_CODE_INVALID: {
+    code: 22052,
+    message: '考勤明细状态字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTENDANCE_TIME_OVERLAP: {
+    code: 22060,
+    message: '出勤时间段与已有记录重叠',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CHECK_OUT_BEFORE_CHECK_IN: {
+    code: 22061,
+    message: '签退时间须晚于签到时间',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTENDANCE_SERVICE_HOURS_INVALID: {
+    code: 22070,
+    message: '服务时长须大于 0',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTENDANCE_SERVICE_HOURS_EXCEEDS_SPAN: {
+    code: 22071,
+    message: '服务时长不可超过签到签退跨度',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTENDANCE_RECORD_CONTRIBUTION_POINTS_REQUIRED: {
+    code: 22072,
+    message: '审核前须为所有出勤记录填写贡献值',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH: {
+    code: 22073,
+    message: '关联报名记录与考勤活动不一致',
+    httpStatus: HttpStatus.BAD_REQUEST,
   },
 } as const;
 

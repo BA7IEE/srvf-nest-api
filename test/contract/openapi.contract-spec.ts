@@ -144,6 +144,20 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/v2/users/me/registrations'],
   ['get', '/api/v2/users/me/registrations/{id}'],
   ['patch', '/api/v2/users/me/registrations/{id}/cancel'],
+
+  // V2 第一阶段批次 3B attendances (2026-05-11;管理端 8 + 队员端 1 = 9 路由)
+  // Sheet 提交 / 列表 / detail / review-detail / edit / delete / approve / reject + /me records
+  // 路径顺序:submit / list / review-detail(字面)/ detail / edit / delete / approve / reject
+  // (字面段优先于 :id 占位段;实装阶段 controller 内方法声明顺序固定)
+  ['post', '/api/v2/activities/{activityId}/attendance-sheets'],
+  ['get', '/api/v2/activities/{activityId}/attendance-sheets'],
+  ['get', '/api/v2/attendance-sheets/{id}/review-detail'],
+  ['get', '/api/v2/attendance-sheets/{id}'],
+  ['patch', '/api/v2/attendance-sheets/{id}'],
+  ['delete', '/api/v2/attendance-sheets/{id}'],
+  ['patch', '/api/v2/attendance-sheets/{id}/approve'],
+  ['patch', '/api/v2/attendance-sheets/{id}/reject'],
+  ['get', '/api/v2/users/me/attendance-records'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -226,6 +240,21 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'CancelRegistrationDto',
   'ActivityRegistrationResponseDto',
   'ActivityRegistrationListItemDto',
+
+  // V2 第一阶段批次 3B attendances
+  // 注:ListAttendanceSheetsQueryDto / MyAttendanceRecordsQueryDto / ActivityIdParamDto
+  //   均为 @Query / @Param DTO,被内联为 parameters,不进 components.schemas。
+  //   AttendanceMemberSummaryDto / AttendanceSheetActivitySummaryDto 仅作为嵌套字段类型,
+  //   Swagger 内联为父 DTO 的 property 而不注册为 named schema(沿 batch 1 / 2 嵌套范式)。
+  'AttendanceRecordInputDto',
+  'CreateAttendanceSheetDto',
+  'UpdateAttendanceSheetDto',
+  'ApproveAttendanceSheetDto',
+  'RejectAttendanceSheetDto',
+  'AttendanceSheetResponseDto',
+  'AttendanceSheetListItemDto',
+  'AttendanceRecordResponseDto',
+  'AttendanceSheetReviewDetailDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
