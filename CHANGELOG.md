@@ -38,28 +38,80 @@
   draft/cancelled → 404)+ partial unique 防重复报名(`取消后允许重报`)+
   capacity 仅统计 `pass`(`cancelled` 自动释放名额)
 
+### V2 Batch 3A Docs(README + CHANGELOG;2026-05-11)
+- `dd040fb` docs(v2-batch-3a): record batch 3 schema + 3A API in README and CHANGELOG (#11) —
+  README V2 路由表接口总数 44 → 61;新增 activities(7)/ activity-registrations(10)两行;
+  CHANGELOG Unreleased 段追加 batch 3 schema(`31c8187`)+ 3A API(`6a9339b`)子段 +
+  Boundaries / Validation 段;3B 落地前的 docs 收口
+
+### V2 Batch 3B API(attendances + APD review + /me/attendance-records;2026-05-11)
+- `5dbd230` feat(attendances): add v2 batch3B attendance sheets and review (#12) —
+  **9 接口**(管理端 8 + 队员端 1):
+  - 管理端:`POST /activities/:activityId/attendance-sheets`(事务内 create Sheet + N records)/
+    `GET /activities/:activityId/attendance-sheets`(列表)/ `GET /attendance-sheets/:id`(简化详情)/
+    **`GET /attendance-sheets/:id/review-detail`**(R25:Activity 8 + Sheet + Records[含 Member 嵌套]
+    APD 完整审核视图)/ `PATCH /attendance-sheets/:id`(D38:后端事务内生成 Q-S16 完整快照
+    `previousSnapshot` + `version+1`;旧 records 软删 + 新 records 创建)/
+    `DELETE /attendance-sheets/:id`(级联软删 records)/ `PATCH /attendance-sheets/:id/approve`
+    (`pending → approved`;R31 所有 records.contributionPoints 必填;**同事务内触发
+    `eventPlaceholder('attendance.recorded')` approved-only**)/ `PATCH /attendance-sheets/:id/reject`
+    (`pending → rejected`;reviewNote 必填)
+  - 队员端:**`GET /api/v2/users/me/attendance-records`**(Q-A14 / R29 / R33 仅 approved Sheet 内
+    records;分页 + 可选 activityId 过滤;不返他人)
+  - **14 BizCode**:`20122 ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN`(activities 段补充)+
+    `220xx` attendances 13 项(22001 NOT_FOUND / 22030 STATUS_INVALID /
+    22040 APPROVED_NOT_EDITABLE / 22041 REJECTED_NOT_EDITABLE / 22051 ROLE_CODE_INVALID /
+    22052 STATUS_CODE_INVALID / 22060 TIME_OVERLAP / 22061 CHECK_OUT_BEFORE_CHECK_IN /
+    22070 SERVICE_HOURS_INVALID / 22071 SERVICE_HOURS_EXCEEDS_SPAN /
+    22072 CONTRIBUTION_POINTS_REQUIRED / 22073 REGISTRATION_ACTIVITY_MISMATCH);不开
+    `FORBIDDEN_*` 模块码(沿基线)/ 22042 VERSION_CONFLICT(D37 暂不启用乐观锁)/
+    22050 RECORD_NOT_FOUND(Q-A9 不暴露独立 Record 查询)
+  - **69 e2e**(attendances.e2e-spec.ts;权限 / 状态机 / 时间不重叠 / serviceHours / R23 / R28
+    previousSnapshot / R31 contributionPoints / Q-A14 /me-records / DTO 白名单 / approved-only 事件)
+  - **65 unit**(BizCode 元属性遍历自动覆盖 14 项新条目)
+  - AuditEvent 5 类调用(`attendance-sheet.submit` / `attendance-sheet.edit` /
+    `attendance-sheet.delete` / `attendance-sheet.read.other` / `attendance-sheet.review`;
+    union 已在 commit `31c8187` 落地,3B 启用其余 5 项,**未动 audit-placeholder.ts**)
+  - BusinessEvent 1 类调用(`attendance.recorded` approved-only;sheet 级 + records 数组
+    9 字段 context;**未动 event-placeholder.ts**;触发位置:approve service 事务内,
+    rejected / submit / edit / delete 均不触发)
+  - 时间不重叠校验(R16 / Q-S15):同 memberId × `[checkInAt, checkOutAt)` 左闭右开;
+    跨 Sheet / 跨 Activity 全局;service 层 `assertNoTimeOverlap` 实装;**不**做 PG EXCLUDE 约束
+  - serviceHours 规则(D14 / D45 / D46 / D51):未传自动 `(checkOut-checkIn)/3600` /
+    `<= 0` 拒(`@Min(0.01)` DTO 兜底 + service 兜底)/ `> 跨度` 拒(22071)/
+    允许 `< 跨度`(D46 吃饭休息不计入)
+  - R23 跨表:`registrationId !== null` 时校验 `registration.activityId === sheet.activityId`;
+    失败 → 22073(`mismatch` 与 `not found` 走同码,沿 §1.7 风格)
+  - 3B PR 未引入新依赖;**未动** schema / migration / seed / reset-db / 3A 模块 /
+    response interceptor / event-placeholder / audit-placeholder / package.json
+
 ### Boundaries / Validation(Unreleased 累计)
-- v1 14 接口 + V2 first stage 29 + 批次 1 7 + 批次 2 8 + 批次 3A 17 接口 schema + paths
-  **zero drift**;累计 **75 接口** 进入 contract snapshot 保护范围
-- 批次 3 schema(commit `31c8187`)已含 4 model + partial unique + 反向 relation;
-  3A / 3B 共享同一份 schema,**3A PR 未动 schema / migration / seed / reset-db**
-- 3A PR 未引入新依赖(CSV 用手写 `escapeCsvField`,UTF-8 BOM 字节 `EF BB BF` 注入)
-- 3A 验收(merge 时本地 + CI 全绿):
-  - `pnpm test` unit **452** / 4 suites
-  - `pnpm test:e2e` **523** / 29 suites(原 405 + 批次 3A 118)
-  - `pnpm test:contract` **136** + 2 snapshots(累计 75 接口 contract zero drift)
+- v1 14 接口 + V2 first stage 29 + 批次 1 7 + 批次 2 8 + 批次 3A 17 + **批次 3B 9** 接口
+  schema + paths **zero drift**;累计 **84 接口** 进入 contract snapshot 保护范围
+- 批次 3 schema(commit `31c8187`)含 4 model + partial unique + 反向 relation,
+  **3A + 3B 共享同一份 schema**;3A / 3B PR **均未动 schema / migration / seed / reset-db**
+- 3A + 3B PR 均**未引入新依赖**(CSV 手写 `escapeCsvField`;previousSnapshot Json passthrough)
+- 累计验收(merge 时本地 + CI 全绿):
+  - `pnpm test` unit **517** / 4 suites(原 452 + 批次 3B 65 BizCode 自动遍历)
+  - `pnpm test:e2e` **592** / 30 suites(原 523 + 批次 3B **69**;无 v1 / batch 1 / batch 2 /
+    batch 3A 退化)
+  - `pnpm test:contract` **154** + 2 snapshots(累计 84 接口 contract zero drift)
   - `pnpm lint` 0 warnings / `pnpm typecheck` PASS / `pnpm build` PASS
-  - CI 3 jobs 全绿(Lint/Typecheck/E2E 2m37s + Docker build 2m15s + Container smoke 1m25s)
-- **不在 3A 范围**(留 3B 独立 PR 或永久不做):
-  - `attendances` 模块所有路由(POST attendance-sheets / GET review-detail / approve /
-    reject / edit / delete / `/api/v2/users/me/attendance-records`)
-  - `BusinessEvent('attendance.recorded')` 调用(3A 仅在 audit-placeholder 落 union,
-    实际触发留 3B)
-  - `GET /api/v2/users/me/service-hours`(Q-A5 永久不做,统计留后续数据模块)
-  - `PATCH /api/v2/activities/:id/complete`(Q-A11 不实装;`completed` 留字典占位)
-  - rejected Sheet "clone for retry" 路径(Q-A4 不实装,前端组装)
-  - 独立 `AttendanceRecord` 查询路径(Q-A9 不暴露;通过 Sheet `review-detail` 提供)
-  - 220xx / 221xx attendances BizCode 段位(本批次未占用,留 3B 一次性追加)
+  - **批次 3B PR #12 CI 3 jobs 全绿**(Lint/Typecheck/E2E 2m47s + Docker build 56s +
+    Container smoke 1m42s)
+- **永久不做 / 不在批次 3 范围**(沿决议表):
+  - `GET /api/v2/users/me/service-hours` **服务时长汇总统计接口**(Q-A5 永久不做,
+    留后续"数据统计 / APP 数据"模块或批次 4 贡献值核算)
+  - `contribution_points` **独立流水表 / cron-job**(D49 / R32;留批次 4 决议)
+  - `POST /attendance-sheets/:id/clone` **rejected Sheet 复制接口**(Q-A4 不实装;
+    前端从 `review-detail` 取字段组装新 POST)
+  - `PATCH /activities/:id/complete` **Activity.complete 接口**(Q-A11 不实装;
+    `completed` 留字典占位,推动机制留批次 4)
+  - **XLSX 名单导出**(Q-A6 第一版仅 CSV;`format=xlsx` 入参直接 400)
+  - **动态表单引擎**(R19;`extras` / `previousSnapshot` / `registrationSchema` 仅
+    `@IsObject()` / Json passthrough,不做嵌套 schema 校验)
+  - 独立 `AttendanceRecord` CRUD 路径(Q-A9 不暴露;通过 Sheet `review-detail` 一次返回)
+  - `220xx` `ATTENDANCE_RECORD_NOT_FOUND` / `22042` `VERSION_CONFLICT` 不开(沿决议表)
 
 ## v0.3.0 - 2026-05-10
 
