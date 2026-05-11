@@ -331,6 +331,92 @@ export const BizCode = {
     message: '字典项仍被业务表引用,不能删除',
     httpStatus: HttpStatus.CONFLICT,
   },
+
+  // activities 模块业务级(200xx + 201xx)。批次 3A 引入(2026-05-11)。
+  // 详见 docs:批次3_API前评审决议表.md v1.0 §1.7-1.12 + §6.1。
+  // 段位选择:沿 baseline §1.1 预留 200xx 段给 activities。
+  // 子段(对齐 baseline §1.3):
+  // - 20001:NOT_FOUND
+  // - 20010-20019:业务级输入校验(根节点 / 字典 / capacity / 起止时间)
+  // - 20030-20099:资源状态非法 / 状态机转移非法 / cancelled 拒改(Q-A12)
+  // - 20120-20129:跨资源约束(报名时 Activity 状态 / isPublicRegistration 校验)
+  //
+  // 复用现有错误码:ORGANIZATION_NOT_FOUND(11001)— update 传入不存在 organizationId 时复用。
+  // 不开 FORBIDDEN_ACTIVITY_PUBLISH / FORBIDDEN_ACTIVITY_CANCEL:沿 baseline 决策,
+  // Guard 拒绝走通用 FORBIDDEN(40300),不为单接口开 FORBIDDEN_* 业务码。
+  ACTIVITY_NOT_FOUND: {
+    code: 20001,
+    message: '活动不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN: {
+    code: 20011,
+    message: '活动不允许挂在组织根节点',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_TYPE_CODE_INVALID: {
+    code: 20012,
+    message: '活动类型字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_GENDER_REQUIREMENT_CODE_INVALID: {
+    code: 20013,
+    message: '活动性别要求字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_CAPACITY_INVALID: {
+    code: 20014,
+    message: '活动名额配置无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_START_END_INVALID: {
+    code: 20015,
+    message: '活动起止时间无效(startAt 必须早于 endAt)',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_STATUS_INVALID: {
+    code: 20030,
+    message: '活动当前状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_NOT_PUBLIC_REGISTRATION: {
+    code: 20120,
+    message: '活动未开放报名',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CANCELLED_REGISTRATION_FORBIDDEN: {
+    code: 20121,
+    message: '活动已取消,禁止报名',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
+  // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
+  // 子段(对齐 baseline §1.3):
+  // - 21001:NOT_FOUND(含 USER 越权访问他人 → 404,沿 §1.7 风格避免存在性泄漏)
+  // - 21002-21009:唯一约束冲突(partial unique:同活动同 member active 报名唯一)
+  // - 21030-21099:状态机转移非法
+  // - 211xx:暂留(USER NOT_OWNED / FORBIDDEN_REGISTRATION_REVIEW 不开,沿 baseline)
+  ACTIVITY_REGISTRATION_NOT_FOUND: {
+    code: 21001,
+    message: '报名记录不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_REGISTRATION_ALREADY_EXISTS: {
+    code: 21002,
+    message: '同一活动同一队员已有有效报名',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_REGISTRATION_STATUS_INVALID: {
+    code: 21030,
+    message: '报名记录当前状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CAPACITY_EXCEEDED: {
+    code: 21032,
+    message: '活动名额已满',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];

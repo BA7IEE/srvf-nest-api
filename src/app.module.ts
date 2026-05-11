@@ -14,6 +14,8 @@ import type { AppConfig } from './config/app.config';
 import databaseConfig from './config/database.config';
 import jwtConfig from './config/jwt.config';
 import { DatabaseModule } from './database/database.module';
+import { ActivitiesModule } from './modules/activities/activities.module';
+import { ActivityRegistrationsModule } from './modules/activity-registrations/activity-registrations.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CertificatesModule } from './modules/certificates/certificates.module';
 import { DictionariesModule } from './modules/dictionaries/dictionaries.module';
@@ -68,6 +70,10 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     MemberProfilesModule,
     EmergencyContactsModule,
     CertificatesModule,
+    // V2 第一阶段批次 3A(2026-05-11):activities + activity-registrations(含 CSV export)。
+    // 3B(attendances)等 3A 合并 main 后单独 PR(沿决议表 v1.0 §3 拆分)。
+    ActivitiesModule,
+    ActivityRegistrationsModule,
   ],
   providers: [
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):

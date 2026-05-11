@@ -122,6 +122,28 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['delete', '/api/v2/members/{memberId}/certificates/{id}'],
   ['patch', '/api/v2/members/{memberId}/certificates/{id}/verify'],
   ['patch', '/api/v2/members/{memberId}/certificates/{id}/reject'],
+
+  // V2 第一阶段批次 3A activities (2026-05-11;7 路由;Q-A7 USER + ADMIN 同路由)
+  ['get', '/api/v2/activities'],
+  ['post', '/api/v2/activities'],
+  ['get', '/api/v2/activities/{id}'],
+  ['patch', '/api/v2/activities/{id}'],
+  ['delete', '/api/v2/activities/{id}'],
+  ['patch', '/api/v2/activities/{id}/publish'],
+  ['patch', '/api/v2/activities/{id}/cancel'],
+
+  // V2 第一阶段批次 3A activity-registrations (2026-05-11;管理端 6 + 队员端 4 = 10 路由)
+  // Q-A3 USER 自助报名与 ADMIN 代报名拆开;Q-A6 CSV 导出(默认 scope=pass / 可选 all)
+  ['post', '/api/v2/activities/{activityId}/registrations'],
+  ['get', '/api/v2/activities/{activityId}/registrations'],
+  ['get', '/api/v2/activities/{activityId}/registrations/export'],
+  ['patch', '/api/v2/activities/{activityId}/registrations/{id}/approve'],
+  ['patch', '/api/v2/activities/{activityId}/registrations/{id}/reject'],
+  ['patch', '/api/v2/activities/{activityId}/registrations/{id}/cancel'],
+  ['post', '/api/v2/users/me/activities/{activityId}/registration'],
+  ['get', '/api/v2/users/me/registrations'],
+  ['get', '/api/v2/users/me/registrations/{id}'],
+  ['patch', '/api/v2/users/me/registrations/{id}/cancel'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -187,6 +209,23 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'CertificateResponseDto',
   'CertificateListItemDto',
   'QualificationFlagResponseDto',
+
+  // V2 第一阶段批次 3A activities + activity-registrations
+  // 注:ListActivitiesQueryDto / ListRegistrationsQueryDto / ListMyRegistrationsQueryDto /
+  //   ExportRegistrationsQueryDto / ActivityIdParamDto / ActivityRegistrationIdParamDto
+  //   均为 @Query / @Param DTO,被内联为 parameters,不进 components.schemas。
+  'CreateActivityDto',
+  'UpdateActivityDto',
+  'CancelActivityDto',
+  'ActivityResponseDto',
+  'ActivityListItemDto',
+  'CreateRegistrationDto',
+  'CreateMyRegistrationDto',
+  'ApproveRegistrationDto',
+  'RejectRegistrationDto',
+  'CancelRegistrationDto',
+  'ActivityRegistrationResponseDto',
+  'ActivityRegistrationListItemDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
