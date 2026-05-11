@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- docs(handoff): add v0.4.0 stage handoff for next AI session
+
 ## v0.4.0 - 2026-05-11
 
 V2 第一阶段在 v0.3.0(批次 1 + 批次 2)基础之上,完成 SRVF 业务**批次 3**(activities +
