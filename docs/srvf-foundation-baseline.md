@@ -52,7 +52,7 @@
 | `150xx` + `151xx` | `members` | 200 | **V2 基线预留** |
 | `160xx` + `161xx` | `member_profiles` | 200 | **V2 基线预留** |
 | `170xx` + `171xx` | `member_departments` | 200 | **V2 基线预留** |
-| `180xx` + `181xx` | ~~`events`~~ | 200 | **废弃保留**(批次 3 命名统一为 `activities`;本槽位**不再启用**,**也不释放**给后续模块,以避免历史 commit / 评审稿引用混淆) |
+| `180xx` + `181xx` | `certificates` | 200 | **批次 2 已实装**(v0.3.0,2026-05-10)|
 | `190xx` + `191xx` | `emergency_contacts` | 200 | **批次 1 已使用**(原预留 `event_participants`,batch 1 启动时让出) |
 | `200xx` + `201xx` | `activities` | 200 | **批次 3 已实装**(v0.4.0,2026-05-11)|
 | `210xx` + `211xx` | `activity_registrations` | 200 | **批次 3 已实装**(v0.4.0,2026-05-11)|
@@ -62,9 +62,10 @@
 **状态说明**:
 
 - **V2 基线预留**:形态级几乎确定会进入 V2(参见 `research.md §2`),段位预留不会浪费;具体字段集仍待 D6/D7
+- **批次 2 已实装**(v0.3.0,2026-05-10):批次 2 schema + API 前评审锁定 `certificates` 占用 `180xx + 181xx` 段位,v0.3.0 release 时 5 个 BizCode 实装落地(`18001` / `18010` / `18011` / `18030` / `18101`;详见 `CHANGELOG.md` v0.3.0 段)
 - **批次 3 已实装**(v0.4.0,2026-05-11):批次 3 schema 前评审收口时锁定 `activities` / `activity_registrations` / `attendances` 三段(评审稿 §7.2),v0.4.0 release 时全部 27 个 BizCode 实装落地(`200xx` 9 / `210xx` 4 / `220xx` 14;详见 `CHANGELOG.md` v0.4.0 段)
-- **V2 候选预留**:研究文档 §2.6 / §4.6 显式给出"通用化失败回退三档"(最小骨架 / 延后参与表 / 整体砍掉),启用与否由 D5/D6 决议;若决议为"砍掉",对应段位**默认**释放给后续未规划模块(`events` 槽位是有意为之的例外,见下条)
-- **废弃保留**:历史曾预留但批次决策时改用其他命名;该段位**不再启用**,**也不释放**给后续模块(避免历史 commit / 评审文档引用混淆);与"V2 候选预留-砍掉则释放"原则的差异是有意为之
+- **V2 候选预留**:研究文档 §2.6 / §4.6 显式给出"通用化失败回退三档"(最小骨架 / 延后参与表 / 整体砍掉),启用与否由 D5/D6 决议;若决议为"砍掉",对应段位释放给后续未规划模块
+- **历史命名废弃**:`events` / `event_participants` 不会以原模块名复活(批次 2 / 批次 3 已按业务语义拆分落地为 `certificates` / `activities` / `activity_registrations` / `attendances`);但 BizCode 段位维度**不存在废弃保留**——所有段位要么已实装,要么基线预留,要么 V2 候选预留,要么未规划预留
 
 **段位预留 ≠ 必须独立 NestJS module**:本节只锁错误码段位;具体 module 边界(例如 `member_profiles` / `member_departments` 是独立 module 还是 `members` 的子目录)由 D6 草案 / D7 评审决议。段位预留是"如果该业务确实独立成模块时,错误码占哪一段",不是"必须独立成模块"。
 
@@ -727,6 +728,7 @@ V2 模块开发任务完成后,按以下两档逐项验证再报告完成:
 |---|---|---|
 | v0.1 | 2026-05-07 | 初版,A 档 13 项 + 与草案 / 开发阶段关系章节 |
 | v0.2 | 2026-05-11 | §1.1 批次 3 段位收口(v0.4.0 release 同步):`180xx` `events` 槽位**废弃保留**(不再启用,不释放);新增 `activities` `200xx/201xx` / `activity_registrations` `210xx/211xx` / `attendances` `220xx/221xx`(均已在 v0.4.0 实装落地,27 BizCode 全部就位);未规划模块从 `230xx` 起 |
+| v0.3 | 2026-05-11 | §1.1 修正 `certificates` 段位归属:批次 2(v0.3.0,2026-05-10)已实装的 `certificates` 占用 `180xx + 181xx`(5 BizCode:`18001` / `18010` / `18011` / `18030` / `18101`,详见 `CHANGELOG.md` v0.3.0 段与 [src/common/exceptions/biz-code.constant.ts](../src/common/exceptions/biz-code.constant.ts) 模块内注释);v0.2 修订时**误将该槽位标记为 `events` 废弃保留**,本次更正为 `certificates` 已实装,并新增"批次 2 已实装"状态说明;`events` / `event_participants` 命名废弃语义保留为"历史命名废弃"状态条目,但 BizCode 段位维度**不存在废弃保留**——所有段位要么已实装,要么基线预留 / V2 候选预留 / 未规划预留 |
 
 ---
 
