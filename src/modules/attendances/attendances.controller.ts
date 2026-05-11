@@ -22,6 +22,8 @@ import {
   AttendanceSheetResponseDto,
   AttendanceSheetReviewDetailDto,
   CreateAttendanceSheetDto,
+  FinalApproveAttendanceSheetDto,
+  FinalRejectAttendanceSheetDto,
   ListAttendanceSheetsQueryDto,
   MyAttendanceRecordsQueryDto,
   RejectAttendanceSheetDto,
@@ -151,7 +153,7 @@ export class AttendanceSheetsResourceController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '编辑 pending Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;approved/rejected 拒绝)',
+      '编辑 pending Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;approved/rejected/pending_final_review/final_rejected 拒绝)',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
@@ -162,6 +164,7 @@ export class AttendanceSheetsResourceController {
     BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
     BizCode.ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE,
     BizCode.ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE,
+    BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.ATTENDANCE_ROLE_CODE_INVALID,
     BizCode.ATTENDANCE_STATUS_CODE_INVALID,
@@ -182,7 +185,8 @@ export class AttendanceSheetsResourceController {
   @Delete(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '软删 pending Sheet(事务内级联软删 records;approved/rejected 拒绝)',
+    summary:
+      '软删 pending Sheet(事务内级联软删 records;approved/rejected/pending_final_review/final_rejected 拒绝)',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
@@ -193,6 +197,7 @@ export class AttendanceSheetsResourceController {
     BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
     BizCode.ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE,
     BizCode.ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE,
+    BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE,
   )
   softDelete(
     @Param() params: IdParamDto,
@@ -205,7 +210,7 @@ export class AttendanceSheetsResourceController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      'APD 通过(pending → approved;R31 所有 records.contributionPoints 必填;触发 attendance.recorded approved-only)',
+      'APD 一级通过(pending → pending_final_review;批次 4-B 升级,沿 D-S6;R31 所有 records.contributionPoints 必填;**不再触发** attendance.recorded — 触发位置移到 final-approve;待 APD 部门部长 / 副部长终审)',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
@@ -226,7 +231,7 @@ export class AttendanceSheetsResourceController {
 
   @Patch(':id/reject')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: 'APD 驳回(pending → rejected;reviewNote 必填)' })
+  @ApiOperation({ summary: 'APD 一级驳回(pending → rejected;reviewNote 必填)' })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -241,6 +246,55 @@ export class AttendanceSheetsResourceController {
     @CurrentUser() currentUser: CurrentUserPayload,
   ): Promise<AttendanceSheetResponseDto> {
     return this.service.reject(params.id, dto, currentUser);
+  }
+
+  // ============ 批次 4-B 新增:终审 final-approve / final-reject ============
+  // 沿 D-A2(沿 baseline §4.4 敏感操作必须独立接口);权限沿 RolesGuard(ADMIN / SUPER_ADMIN),
+  // 不开 22044 模块码(沿 D-S2 / batch 3A 不开 FORBIDDEN_*);终审权限不足走通用 FORBIDDEN(40300)。
+
+  @Patch(':id/final-approve')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({
+    summary:
+      'APD 部门部长 / 副部长终审通过(pending_final_review → approved;贡献值正式生效;**触发** attendance.recorded;沿 D-S5 / D-S7)',
+  })
+  @ApiWrappedOkResponse(AttendanceSheetResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ATTENDANCE_SHEET_NOT_FOUND,
+    BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
+  )
+  finalApprove(
+    @Param() params: IdParamDto,
+    @Body() dto: FinalApproveAttendanceSheetDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ): Promise<AttendanceSheetResponseDto> {
+    return this.service.finalApprove(params.id, dto, currentUser);
+  }
+
+  @Patch(':id/final-reject')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({
+    summary:
+      'APD 部门部长 / 副部长终审驳回(pending_final_review → final_rejected;finalReviewNote 必填;records 跟随软删;**不触发** attendance.recorded)',
+  })
+  @ApiWrappedOkResponse(AttendanceSheetResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ATTENDANCE_SHEET_NOT_FOUND,
+    BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
+    BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_NOTE_REQUIRED,
+  )
+  finalReject(
+    @Param() params: IdParamDto,
+    @Body() dto: FinalRejectAttendanceSheetDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ): Promise<AttendanceSheetResponseDto> {
+    return this.service.finalReject(params.id, dto, currentUser);
   }
 }
 

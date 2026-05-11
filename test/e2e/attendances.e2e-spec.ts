@@ -258,6 +258,49 @@ describe('attendances 模块', () => {
     return res.body.data.id as string;
   }
 
+  // 批次 4-B helper:推到 pending_final_review(APD 一级 approve)。
+  async function approveToPendingFinalReview(sheetId: string): Promise<void> {
+    const res = await request(httpServer(app))
+      .patch(`/api/v2/attendance-sheets/${sheetId}/approve`)
+      .set('Authorization', adminAuth)
+      .send({});
+    if (res.status !== 200) {
+      throw new Error(
+        `approveToPendingFinalReview failed: ${res.status} ${JSON.stringify(res.body)}`,
+      );
+    }
+  }
+
+  // 批次 4-B helper:推到 approved 终态(APD 一级 approve + APD 部门部长 / 副部长 final-approve)。
+  // 沿决议表 v1.0 D5 候选 B + D-S6:approved 语义升级为"终审通过"。
+  async function approveToTerminalApproved(sheetId: string): Promise<void> {
+    await approveToPendingFinalReview(sheetId);
+    const res = await request(httpServer(app))
+      .patch(`/api/v2/attendance-sheets/${sheetId}/final-approve`)
+      .set('Authorization', adminAuth)
+      .send({});
+    if (res.status !== 200) {
+      throw new Error(
+        `approveToTerminalApproved failed: ${res.status} ${JSON.stringify(res.body)}`,
+      );
+    }
+  }
+
+  // 批次 4-B helper:推到 final_rejected 终态(APD 一级 approve + APD 部门部长 / 副部长 final-reject)。
+  async function approveThenFinalReject(
+    sheetId: string,
+    note = 'fixture final reject',
+  ): Promise<void> {
+    await approveToPendingFinalReview(sheetId);
+    const res = await request(httpServer(app))
+      .patch(`/api/v2/attendance-sheets/${sheetId}/final-reject`)
+      .set('Authorization', adminAuth)
+      .send({ finalReviewNote: note });
+    if (res.status !== 200) {
+      throw new Error(`approveThenFinalReject failed: ${res.status} ${JSON.stringify(res.body)}`);
+    }
+  }
+
   // ============ 权限边界 ============
 
   describe('权限边界', () => {
@@ -835,7 +878,8 @@ describe('attendances 模块', () => {
         }),
       ]);
 
-      // approved Sheet:先创建,填 contributionPoints,再 approve
+      // approved Sheet(批次 4-B 升级:approve + finalApprove 才到 approved 终态):
+      // create → fillContributionPoints → approveToTerminalApproved。
       approvedId = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
@@ -844,12 +888,9 @@ describe('attendances 模块', () => {
         }),
       ]);
       await fillContributionPoints(approvedId);
-      await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${approvedId}/approve`)
-        .set('Authorization', adminAuth)
-        .send({});
+      await approveToTerminalApproved(approvedId);
 
-      // rejected Sheet
+      // rejected Sheet(APD 一级驳回)
       rejectedId = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
@@ -1017,7 +1058,7 @@ describe('attendances 模块', () => {
       expectBizError(detail, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
     });
 
-    it('软删 approved Sheet → 22040', async () => {
+    it('软删 approved(终审通过)Sheet → 22040(批次 4-B:approveToTerminalApproved 推到 approved 终态)', async () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
@@ -1026,10 +1067,7 @@ describe('attendances 模块', () => {
         }),
       ]);
       await fillContributionPoints(id);
-      await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/approve`)
-        .set('Authorization', adminAuth)
-        .send({});
+      await approveToTerminalApproved(id);
 
       const res = await request(httpServer(app))
         .delete(`/api/v2/attendance-sheets/${id}`)
@@ -1082,7 +1120,7 @@ describe('attendances 模块', () => {
       expectBizError(res, BizCode.ATTENDANCE_RECORD_CONTRIBUTION_POINTS_REQUIRED);
     });
 
-    it('approve pending Sheet:全部 records contribution 填后 → 200 + statusCode=approved', async () => {
+    it('approve pending Sheet:全部 records contribution 填后 → 200 + statusCode=pending_final_review(批次 4-B 升级,沿 D-S6)', async () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
@@ -1097,13 +1135,18 @@ describe('attendances 模块', () => {
         .set('Authorization', adminAuth)
         .send({ reviewNote: 'looks good' });
       expect(res.status).toBe(200);
-      expect(res.body.data.statusCode).toBe('approved');
+      // 批次 4-B(D-S6 + D-A1):APD 一级 approve 进 pending_final_review,不再终态
+      expect(res.body.data.statusCode).toBe('pending_final_review');
       expect(res.body.data.reviewerUserId).toBeTruthy();
       expect(res.body.data.reviewedAt).toBeTruthy();
       expect(res.body.data.reviewNote).toBe('looks good');
+      // 终审字段尚未填(只有 final-approve / final-reject 后才填)
+      expect(res.body.data.finalReviewerUserId).toBeNull();
+      expect(res.body.data.finalReviewedAt).toBeNull();
+      expect(res.body.data.finalReviewNote).toBeNull();
     });
 
-    it('approve 再次 → 22030(已 approved 非 pending)', async () => {
+    it('approve 再次 → 22030(已 pending_final_review 非 pending,批次 4-B 升级语义)', async () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
@@ -1186,7 +1229,7 @@ describe('attendances 模块', () => {
       expect(res.status).toBe(400);
     });
 
-    it('reject approved Sheet → 22030', async () => {
+    it('reject pending_final_review Sheet → 22030(批次 4-B:APD 一级 approve 后不能再 APD reject)', async () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
@@ -1202,7 +1245,7 @@ describe('attendances 模块', () => {
       const res = await request(httpServer(app))
         .patch(`/api/v2/attendance-sheets/${id}/reject`)
         .set('Authorization', adminAuth)
-        .send({ reviewNote: '试图驳回已通过' });
+        .send({ reviewNote: '试图驳回已 pending_final_review' });
       expectBizError(res, BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
     });
 
@@ -1219,12 +1262,16 @@ describe('attendances 模块', () => {
 
   describe('GET /me/attendance-records', () => {
     let approvedSheetId: string;
+    let pendingFinalReviewSheetId: string;
     let pendingSheetId: string;
     let rejectedSheetId: string;
+    let finalRejectedSheetId: string;
 
     beforeAll(async () => {
-      // memberA(绑定 userWithMember)在多个 Sheet 内有记录;只有 approved 应可见。
-      // 用 activityOtherId 来避开 activityId 主测试段的时间冲突
+      // 批次 4-B(沿 D-S6 + D-A1):approved 语义升级为"终审通过";/me/attendance-records 仅返
+      // approved Sheet 内 records,因此必须 approve + finalApprove 才到 approved 终态。
+      // memberA(绑定 userWithMember)在 5 个 Sheet 状态下有 record(pending / pending_final_review /
+      // approved / rejected / final_rejected);只有 approved 应可见。
       pendingSheetId = await createPendingSheet(activityOtherId, [
         baseRecord({
           memberId: memberAId,
@@ -1232,6 +1279,20 @@ describe('attendances 模块', () => {
           checkOutAt: '2026-07-01T09:00:00.000Z',
         }),
       ]);
+
+      // pending_final_review Sheet:create → fillContrib → approve(到 pending_final_review,不 finalApprove)
+      // 注意时间段错开:pendingSheetId / approvedSheetId / rejectedSheetId 已占用 08-11,本 Sheet 放 12:00
+      pendingFinalReviewSheetId = await createPendingSheet(activityOtherId, [
+        baseRecord({
+          memberId: memberAId,
+          checkInAt: '2026-07-01T12:00:00.000Z',
+          checkOutAt: '2026-07-01T12:30:00.000Z',
+        }),
+      ]);
+      await fillContributionPoints(pendingFinalReviewSheetId, 0.5);
+      await approveToPendingFinalReview(pendingFinalReviewSheetId);
+
+      // approved Sheet(终审通过):create → fillContrib → approve + finalApprove
       approvedSheetId = await createPendingSheet(activityOtherId, [
         baseRecord({
           memberId: memberAId,
@@ -1240,10 +1301,7 @@ describe('attendances 模块', () => {
         }),
       ]);
       await fillContributionPoints(approvedSheetId, 1.5);
-      await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${approvedSheetId}/approve`)
-        .set('Authorization', adminAuth)
-        .send({});
+      await approveToTerminalApproved(approvedSheetId);
 
       rejectedSheetId = await createPendingSheet(activityOtherId, [
         baseRecord({
@@ -1256,6 +1314,18 @@ describe('attendances 模块', () => {
         .patch(`/api/v2/attendance-sheets/${rejectedSheetId}/reject`)
         .set('Authorization', adminAuth)
         .send({ reviewNote: 'reject for /me test' });
+
+      // final_rejected Sheet:create → fillContrib → approve + finalReject(records 跟随软删)
+      // 时间段错开:放 13:00
+      finalRejectedSheetId = await createPendingSheet(activityOtherId, [
+        baseRecord({
+          memberId: memberAId,
+          checkInAt: '2026-07-01T13:00:00.000Z',
+          checkOutAt: '2026-07-01T13:30:00.000Z',
+        }),
+      ]);
+      await fillContributionPoints(finalRejectedSheetId, 0.5);
+      await approveThenFinalReject(finalRejectedSheetId, 'final reject for /me test');
     });
 
     it('USER 未绑 member → MEMBER_NOT_FOUND', async () => {
@@ -1265,7 +1335,7 @@ describe('attendances 模块', () => {
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
     });
 
-    it('USER 绑 member:只见 approved Sheet 内自己的 record(Q-A14)', async () => {
+    it('USER 绑 member:只见终审通过 Sheet 内自己的 record(Q-A14;批次 4-B:approved = 终审通过)', async () => {
       const res = await request(httpServer(app))
         .get('/api/v2/users/me/attendance-records')
         .set('Authorization', userWithMemberAuth);
@@ -1273,7 +1343,10 @@ describe('attendances 模块', () => {
       const sheetIds = (res.body.data.items as Array<{ sheetId: string }>).map((i) => i.sheetId);
       expect(sheetIds).toContain(approvedSheetId);
       expect(sheetIds).not.toContain(pendingSheetId);
+      // 批次 4-B 新增:pending_final_review / final_rejected 也不可见
+      expect(sheetIds).not.toContain(pendingFinalReviewSheetId);
       expect(sheetIds).not.toContain(rejectedSheetId);
+      expect(sheetIds).not.toContain(finalRejectedSheetId);
     });
 
     it('USER 绑 member:每个 record 含 member 摘要 + Decimal 序列化为 string', async () => {
@@ -1318,10 +1391,10 @@ describe('attendances 模块', () => {
 
   // ============ approved-only 事件 / 副作用 ============
 
-  describe('Q-S13 approved-only:eventPlaceholder 仅 approve 触发', () => {
-    // 副作用层面验证:eventPlaceholder 走 logger,e2e 无法直接断言 logger,
-    // 通过"approve 路径 statusCode 正确转移 + reject/submit/edit/delete 不引起后续业务变化"间接覆盖。
-    // 这里测一遍 reject 后 attendance.recorded 不应改变 sheet 状态(若误触发会写日志但不影响 DB)。
+  describe('Q-S13 approved-only:eventPlaceholder 仅终审 approve 触发(批次 4-B 移到 final-approve)', () => {
+    // 批次 4-B(沿 D-S7):attendance.recorded 触发位置从 APD approve 移到 final-approve。
+    // 副作用层面验证:eventPlaceholder 走 logger,e2e 无法直接断言 logger;
+    // 通过"approve / reject / final-reject 路径 statusCode 正确转移 + 不引起后续业务变化"间接覆盖。
     it('reject 后 sheet 仍为 rejected;不触发 approved', async () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
@@ -1336,6 +1409,610 @@ describe('attendances 模块', () => {
         .send({ reviewNote: 'no event' });
       const sheet = await prisma.attendanceSheet.findUnique({ where: { id } });
       expect(sheet?.statusCode).toBe('rejected');
+    });
+
+    it('批次 4-B:APD approve 仅推到 pending_final_review,不触发 attendance.recorded(终态由 final-approve 触发)', async () => {
+      const id = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-06-28T10:00:00.000Z',
+          checkOutAt: '2026-06-28T11:00:00.000Z',
+        }),
+      ]);
+      await fillContributionPoints(id, 1);
+      await request(httpServer(app))
+        .patch(`/api/v2/attendance-sheets/${id}/approve`)
+        .set('Authorization', adminAuth)
+        .send({});
+      const sheet = await prisma.attendanceSheet.findUnique({ where: { id } });
+      // 沿 D-S6 / D-A1:APD approve → pending_final_review,不到 approved 终态
+      expect(sheet?.statusCode).toBe('pending_final_review');
+      // /me/attendance-records 仅返 approved Sheet 内 records → 此 sheet 不可见
+      // (间接验证 attendance.recorded 未触发完整入账;D-S7)
+    });
+  });
+
+  // ============ 批次 4-B 新增:终审 final-approve / final-reject ============
+  // 详见 docs:
+  //   - 批次4_贡献值业务规则_API草案.md v1.0 D-A2 / D-A5
+  //   - 批次4_贡献值业务规则_schema草案评审决议表.md v1.0 D-S5 / D-S7
+
+  describe('PATCH final-approve / final-reject(批次 4-B 终审)', () => {
+    let pendingFinalReviewId: string;
+    let alreadyApprovedId: string;
+    let alreadyFinalRejectedId: string;
+
+    beforeAll(async () => {
+      pendingFinalReviewId = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-06-29T08:00:00.000Z',
+          checkOutAt: '2026-06-29T09:00:00.000Z',
+        }),
+      ]);
+      await fillContributionPoints(pendingFinalReviewId, 1);
+      await approveToPendingFinalReview(pendingFinalReviewId);
+
+      alreadyApprovedId = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-06-29T09:30:00.000Z',
+          checkOutAt: '2026-06-29T10:30:00.000Z',
+        }),
+      ]);
+      await fillContributionPoints(alreadyApprovedId, 1);
+      await approveToTerminalApproved(alreadyApprovedId);
+
+      alreadyFinalRejectedId = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-06-29T11:00:00.000Z',
+          checkOutAt: '2026-06-29T12:00:00.000Z',
+        }),
+      ]);
+      await fillContributionPoints(alreadyFinalRejectedId, 1);
+      await approveThenFinalReject(alreadyFinalRejectedId, 'fixture final reject');
+    });
+
+    it('final-approve pending_final_review Sheet → 200 + statusCode=approved + 写 finalReviewer*', async () => {
+      const id = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-06-29T13:00:00.000Z',
+          checkOutAt: '2026-06-29T14:00:00.000Z',
+        }),
+      ]);
+      await fillContributionPoints(id, 1.5);
+      await approveToPendingFinalReview(id);
+
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/attendance-sheets/${id}/final-approve`)
+        .set('Authorization', adminAuth)
+        .send({ finalReviewNote: 'final ok' });
+      expect(res.status).toBe(200);
+      // 沿 D-S6:approved = 终审通过(贡献值正式生效)
+      expect(res.body.data.statusCode).toBe('approved');
+      expect(res.body.data.finalReviewerUserId).toBeTruthy();
+      expect(res.body.data.finalReviewedAt).toBeTruthy();
+      expect(res.body.data.finalReviewNote).toBe('final ok');
+      // APD 一级 reviewer* 字段仍保留(从 approve 阶段写入)
+      expect(res.body.data.reviewerUserId).toBeTruthy();
+      expect(res.body.data.reviewedAt).toBeTruthy();
+    });
+
+    it('final-approve 后 sheet 在 /me/attendance-records 可见(终审通过即贡献值生效)', async () => {
+      // 已在 beforeAll(/me describe)用 approveToTerminalApproved 验证;此处冗余确保 final-approve 入账
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/attendance-sheets/${pendingFinalReviewId}/final-approve`)
+        .set('Authorization', adminAuth)
+        .send({});
+      expect(res.status).toBe(200);
+      expect(res.body.data.statusCode).toBe('approved');
+      // 注:不再断言 /me 可见(已由 /me describe 段覆盖)
+    });
+
+    it('final-approve 不传 finalReviewNote → 200(可选)', async () => {
+      const id = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-06-29T14:00:00.000Z',
+          checkOutAt: '2026-06-29T15:00:00.000Z',
+        }),
+      ]);
+      await fillContributionPoints(id, 1);
+      await approveToPendingFinalReview(id);
+
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/attendance-sheets/${id}/final-approve`)
+        .set('Authorization', adminAuth)
+        .send({});
+      expect(res.status).toBe(200);
+      expect(res.body.data.finalReviewNote).toBeNull();
+    });
+
+    it('final-approve 状态非 pending_final_review → 22045', async () => {
+      // 直接对 alreadyApprovedId(approved)再 final-approve
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/attendance-sheets/${alreadyApprovedId}/final-approve`)
+        .set('Authorization', adminAuth)
+        .send({});
+      expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
+    });
+
+    it('final-approve pending Sheet(未 approve 过)→ 22045', async () => {
+      const id = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-06-29T15:30:00.000Z',
+          checkOutAt: '2026-06-29T16:00:00.000Z',
+        }),
+      ]);
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/attendance-sheets/${id}/final-approve`)
+        .set('Authorization', adminAuth)
+        .send({});
+      expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
+    });
+
+    it('final-approve 不存在 → 22001', async () => {
+      const res = await request(httpServer(app))
+        .patch('/api/v2/attendance-sheets/cl0000000000000000000000/final-approve')
+        .set('Authorization', adminAuth)
+        .send({});
+      expectBizError(res, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
+    });
+
+    it('final-reject pending_final_review Sheet → 200 + statusCode=final_rejected + records 跟随软删', async () => {
+      const id = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-06-29T16:30:00.000Z',
+          checkOutAt: '2026-06-29T17:30:00.000Z',
+        }),
+      ]);
+      await fillContributionPoints(id, 1);
+      await approveToPendingFinalReview(id);
+
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/attendance-sheets/${id}/final-reject`)
+        .set('Authorization', adminAuth)
+        .send({ finalReviewNote: '终审驳回理由' });
+      expect(res.status).toBe(200);
+      expect(res.body.data.statusCode).toBe('final_rejected');
+      expect(res.body.data.finalReviewerUserId).toBeTruthy();
+      expect(res.body.data.finalReviewedAt).toBeTruthy();
+      expect(res.body.data.finalReviewNote).toBe('终审驳回理由');
+      // records 跟随软删(沿 D8 主路径 + 业务规则文档 §2.3)
+      const records = await prisma.attendanceRecord.findMany({ where: { sheetId: id } });
+      expect(records.length).toBeGreaterThan(0);
+      expect(records.every((r) => r.deletedAt !== null)).toBe(true);
+    });
+
+    it('final-reject 缺 finalReviewNote → 400(DTO 必填校验)', async () => {
+      const id = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-06-29T18:00:00.000Z',
+          checkOutAt: '2026-06-29T18:30:00.000Z',
+        }),
+      ]);
+      await fillContributionPoints(id, 1);
+      await approveToPendingFinalReview(id);
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/attendance-sheets/${id}/final-reject`)
+        .set('Authorization', adminAuth)
+        .send({});
+      expect(res.status).toBe(400);
+    });
+
+    it('final-reject 空白 finalReviewNote → 400(DTO @MinLength(1))', async () => {
+      const id = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-06-29T19:00:00.000Z',
+          checkOutAt: '2026-06-29T19:30:00.000Z',
+        }),
+      ]);
+      await fillContributionPoints(id, 1);
+      await approveToPendingFinalReview(id);
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/attendance-sheets/${id}/final-reject`)
+        .set('Authorization', adminAuth)
+        .send({ finalReviewNote: '' });
+      expect(res.status).toBe(400);
+    });
+
+    it('final-reject 状态非 pending_final_review → 22045', async () => {
+      // alreadyFinalRejectedId 已 final_rejected,再 final-reject 抛 22045
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/attendance-sheets/${alreadyFinalRejectedId}/final-reject`)
+        .set('Authorization', adminAuth)
+        .send({ finalReviewNote: 'noop' });
+      expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
+    });
+
+    it('final_rejected Sheet 不可 edit → 22043', async () => {
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/attendance-sheets/${alreadyFinalRejectedId}`)
+        .set('Authorization', adminAuth)
+        .send({ records: [baseRecord({ memberId: memberCId })] });
+      expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE);
+    });
+
+    it('final_rejected Sheet 不可 delete → 22043', async () => {
+      const res = await request(httpServer(app))
+        .delete(`/api/v2/attendance-sheets/${alreadyFinalRejectedId}`)
+        .set('Authorization', adminAuth);
+      expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE);
+    });
+
+    it('pending_final_review Sheet 不可 edit → 22030(沿 §2.1 业务规则)', async () => {
+      const id = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-06-29T20:00:00.000Z',
+          checkOutAt: '2026-06-29T20:30:00.000Z',
+        }),
+      ]);
+      await fillContributionPoints(id, 1);
+      await approveToPendingFinalReview(id);
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/attendance-sheets/${id}`)
+        .set('Authorization', adminAuth)
+        .send({ records: [baseRecord({ memberId: memberCId })] });
+      expectBizError(res, BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+    });
+
+    it('pending_final_review Sheet 不可 delete → 22030', async () => {
+      const id = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-06-29T21:00:00.000Z',
+          checkOutAt: '2026-06-29T21:30:00.000Z',
+        }),
+      ]);
+      await fillContributionPoints(id, 1);
+      await approveToPendingFinalReview(id);
+      const res = await request(httpServer(app))
+        .delete(`/api/v2/attendance-sheets/${id}`)
+        .set('Authorization', adminAuth);
+      expectBizError(res, BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+    });
+  });
+
+  // ============ 批次 4-B 新增:D14 ContributionRule 预填 ============
+  // 沿 D-S4 / D-A8 / 业务规则文档 §4
+
+  describe('D14 ContributionRule 预填(批次 4-B)', () => {
+    it('ContributionRule 命中(同 activityType × roleCode):POST 时自动预填 contributionPoints', async () => {
+      // 直接造一条 ACTIVE 规则:activityType=att-demo / role=member / >=6h 1.5 / <6h 0.5
+      const rule = await prisma.contributionRule.create({
+        data: {
+          activityTypeCode: 'att-demo',
+          attendanceRoleCode: 'member',
+          durationThreshold: 6,
+          pointsBelow: 0.5,
+          pointsAbove: 1.5,
+          dailyCap: null,
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      });
+      try {
+        const id = await createPendingSheet(activityId, [
+          baseRecord({
+            memberId: memberCId,
+            roleCode: 'member',
+            checkInAt: '2026-07-02T08:00:00.000Z',
+            checkOutAt: '2026-07-02T09:00:00.000Z', // 1h < 6h → 取 pointsBelow=0.5
+            // 不传 contributionPoints → 期望被预填
+          }),
+        ]);
+        const records = await prisma.attendanceRecord.findMany({
+          where: { sheetId: id, deletedAt: null },
+          select: { contributionPoints: true },
+        });
+        expect(records.length).toBe(1);
+        expect(records[0].contributionPoints?.toString()).toBe('0.5');
+      } finally {
+        await prisma.contributionRule.delete({ where: { id: rule.id } });
+      }
+    });
+
+    it('ContributionRule 命中:>=6h 取 pointsAbove + dailyCap 兜底封顶', async () => {
+      const rule = await prisma.contributionRule.create({
+        data: {
+          activityTypeCode: 'att-demo',
+          attendanceRoleCode: 'instructor',
+          durationThreshold: 6,
+          pointsBelow: 1,
+          pointsAbove: 3,
+          dailyCap: 1.5, // 显式上限封顶
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      });
+      try {
+        const id = await createPendingSheet(activityId, [
+          baseRecord({
+            memberId: memberCId,
+            roleCode: 'instructor',
+            checkInAt: '2026-07-02T10:00:00.000Z',
+            checkOutAt: '2026-07-02T18:00:00.000Z', // 8h >= 6h → pointsAbove=3,但被 dailyCap 1.5 封顶
+          }),
+        ]);
+        const records = await prisma.attendanceRecord.findMany({
+          where: { sheetId: id, deletedAt: null },
+          select: { contributionPoints: true },
+        });
+        expect(records[0].contributionPoints?.toString()).toBe('1.5');
+      } finally {
+        await prisma.contributionRule.delete({ where: { id: rule.id } });
+      }
+    });
+
+    it('ContributionRule 未命中:contributionPoints 保持 null(不抛错;沿 D-S11 22048 不开)', async () => {
+      const id = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberCId,
+          roleCode: 'coach', // 未配置规则
+          checkInAt: '2026-07-02T20:00:00.000Z',
+          checkOutAt: '2026-07-02T21:00:00.000Z',
+        }),
+      ]);
+      const records = await prisma.attendanceRecord.findMany({
+        where: { sheetId: id, deletedAt: null },
+        select: { contributionPoints: true },
+      });
+      expect(records[0].contributionPoints).toBeNull();
+    });
+
+    it('调用方传 contributionPoints 时不覆盖(沿 D-A8)', async () => {
+      const rule = await prisma.contributionRule.create({
+        data: {
+          activityTypeCode: 'att-demo',
+          attendanceRoleCode: 'assistant',
+          durationThreshold: null,
+          pointsBelow: 99, // 异常大值,如果被预填会覆盖调用方传的 0.8
+          pointsAbove: null,
+          dailyCap: null,
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      });
+      try {
+        const id = await createPendingSheet(activityId, [
+          baseRecord({
+            memberId: memberCId,
+            roleCode: 'assistant',
+            checkInAt: '2026-07-03T08:00:00.000Z',
+            checkOutAt: '2026-07-03T09:00:00.000Z',
+            contributionPoints: 0.8, // 调用方明确传值
+          }),
+        ]);
+        const records = await prisma.attendanceRecord.findMany({
+          where: { sheetId: id, deletedAt: null },
+          select: { contributionPoints: true },
+        });
+        expect(records[0].contributionPoints?.toString()).toBe('0.8');
+      } finally {
+        await prisma.contributionRule.delete({ where: { id: rule.id } });
+      }
+    });
+
+    it('NULL durationThreshold 多条 ACTIVE 规则 → 按 createdAt ASC 取首条', async () => {
+      // 沿 §3.1 复核结论:NULL durationThreshold 在 partial unique 下不阻止多行 ACTIVE 并存(PG NULL 行为)。
+      // service 兜底:按 createdAt ASC 取首条。
+      const rule1 = await prisma.contributionRule.create({
+        data: {
+          activityTypeCode: 'att-demo',
+          attendanceRoleCode: 'front_command',
+          durationThreshold: null,
+          pointsBelow: 1.0, // 首条
+          pointsAbove: null,
+          dailyCap: null,
+          status: 'ACTIVE',
+          createdAt: new Date('2026-01-01T00:00:00Z'), // 显式更早
+        },
+        select: { id: true },
+      });
+      const rule2 = await prisma.contributionRule.create({
+        data: {
+          activityTypeCode: 'att-demo',
+          attendanceRoleCode: 'front_command',
+          durationThreshold: null,
+          pointsBelow: 0.3, // 次条(若被选中将失败)
+          pointsAbove: null,
+          dailyCap: null,
+          status: 'ACTIVE',
+          createdAt: new Date('2026-02-01T00:00:00Z'),
+        },
+        select: { id: true },
+      });
+      try {
+        const id = await createPendingSheet(activityId, [
+          baseRecord({
+            memberId: memberCId,
+            roleCode: 'front_command',
+            checkInAt: '2026-07-04T08:00:00.000Z',
+            checkOutAt: '2026-07-04T09:00:00.000Z',
+          }),
+        ]);
+        const records = await prisma.attendanceRecord.findMany({
+          where: { sheetId: id, deletedAt: null },
+          select: { contributionPoints: true },
+        });
+        // 取首条(rule1,createdAt 更早,pointsBelow=1.0)
+        expect(records[0].contributionPoints?.toString()).toBe('1');
+      } finally {
+        await prisma.contributionRule.delete({ where: { id: rule1.id } });
+        await prisma.contributionRule.delete({ where: { id: rule2.id } });
+      }
+    });
+  });
+
+  // ============ 批次 4-B 新增:D11 Activity.completed 推动 ============
+  // 沿 D-S10 / D-A7 / 业务规则文档 §3
+
+  describe('D11 Activity.completed 推动(批次 4-B)', () => {
+    it('首张 AttendanceSheet 创建 → Activity.statusCode 从 published 变为 completed', async () => {
+      // 新建一个 published 状态的 activity(沿 fixture 风格)
+      const ti = await prisma.dictItem.findFirstOrThrow({
+        where: { code: 'att-demo' },
+        select: { code: true },
+      });
+      const childOrg = await prisma.organization.findFirstOrThrow({
+        where: { nodeTypeCode: 'att-child' },
+        select: { id: true },
+      });
+      const act = await prisma.activity.create({
+        data: {
+          title: 'D11 推动测试',
+          activityTypeCode: ti.code,
+          organizationId: childOrg.id,
+          startAt: new Date('2026-08-01T08:00:00.000Z'),
+          endAt: new Date('2026-08-01T18:00:00.000Z'),
+          location: '示例',
+          statusCode: 'published',
+        },
+        select: { id: true },
+      });
+
+      await createPendingSheet(act.id, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-08-01T09:00:00.000Z',
+          checkOutAt: '2026-08-01T10:00:00.000Z',
+        }),
+      ]);
+
+      const after = await prisma.activity.findUnique({
+        where: { id: act.id },
+        select: { statusCode: true },
+      });
+      expect(after?.statusCode).toBe('completed');
+    });
+
+    it('多张 Sheet 幂等:第二张 Sheet 创建,Activity 仍 completed', async () => {
+      const ti = await prisma.dictItem.findFirstOrThrow({
+        where: { code: 'att-demo' },
+        select: { code: true },
+      });
+      const childOrg = await prisma.organization.findFirstOrThrow({
+        where: { nodeTypeCode: 'att-child' },
+        select: { id: true },
+      });
+      const act = await prisma.activity.create({
+        data: {
+          title: 'D11 多 Sheet 幂等',
+          activityTypeCode: ti.code,
+          organizationId: childOrg.id,
+          startAt: new Date('2026-08-02T08:00:00.000Z'),
+          endAt: new Date('2026-08-02T18:00:00.000Z'),
+          location: '示例',
+          statusCode: 'published',
+        },
+        select: { id: true },
+      });
+
+      await createPendingSheet(act.id, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-08-02T09:00:00.000Z',
+          checkOutAt: '2026-08-02T10:00:00.000Z',
+        }),
+      ]);
+      // 第二张
+      await createPendingSheet(act.id, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-08-02T11:00:00.000Z',
+          checkOutAt: '2026-08-02T12:00:00.000Z',
+        }),
+      ]);
+      const after = await prisma.activity.findUnique({
+        where: { id: act.id },
+        select: { statusCode: true },
+      });
+      expect(after?.statusCode).toBe('completed');
+    });
+
+    it('reject / final-reject 不回退 Activity.completed(状态机单向,沿 D11 / 业务规则文档 §3.3)', async () => {
+      const ti = await prisma.dictItem.findFirstOrThrow({
+        where: { code: 'att-demo' },
+        select: { code: true },
+      });
+      const childOrg = await prisma.organization.findFirstOrThrow({
+        where: { nodeTypeCode: 'att-child' },
+        select: { id: true },
+      });
+      const act = await prisma.activity.create({
+        data: {
+          title: 'D11 不回退',
+          activityTypeCode: ti.code,
+          organizationId: childOrg.id,
+          startAt: new Date('2026-08-03T08:00:00.000Z'),
+          endAt: new Date('2026-08-03T18:00:00.000Z'),
+          location: '示例',
+          statusCode: 'published',
+        },
+        select: { id: true },
+      });
+
+      const sheetId = await createPendingSheet(act.id, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-08-03T09:00:00.000Z',
+          checkOutAt: '2026-08-03T10:00:00.000Z',
+        }),
+      ]);
+      // 此时 activity 已 completed
+      await fillContributionPoints(sheetId, 1);
+      await approveThenFinalReject(sheetId, '强行驳回');
+
+      // Activity 仍 completed
+      const after = await prisma.activity.findUnique({
+        where: { id: act.id },
+        select: { statusCode: true },
+      });
+      expect(after?.statusCode).toBe('completed');
+    });
+
+    it('Activity 已是 completed 时,POST Sheet 不报错(幂等)', async () => {
+      const ti = await prisma.dictItem.findFirstOrThrow({
+        where: { code: 'att-demo' },
+        select: { code: true },
+      });
+      const childOrg = await prisma.organization.findFirstOrThrow({
+        where: { nodeTypeCode: 'att-child' },
+        select: { id: true },
+      });
+      const act = await prisma.activity.create({
+        data: {
+          title: 'D11 already completed',
+          activityTypeCode: ti.code,
+          organizationId: childOrg.id,
+          startAt: new Date('2026-08-04T08:00:00.000Z'),
+          endAt: new Date('2026-08-04T18:00:00.000Z'),
+          location: '示例',
+          statusCode: 'completed', // 直接 completed
+        },
+        select: { id: true },
+      });
+
+      const id = await createPendingSheet(act.id, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2026-08-04T09:00:00.000Z',
+          checkOutAt: '2026-08-04T10:00:00.000Z',
+        }),
+      ]);
+      expect(id).toBeTruthy();
+      const after = await prisma.activity.findUnique({
+        where: { id: act.id },
+        select: { statusCode: true },
+      });
+      expect(after?.statusCode).toBe('completed');
     });
   });
 });

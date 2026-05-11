@@ -157,6 +157,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['delete', '/api/v2/attendance-sheets/{id}'],
   ['patch', '/api/v2/attendance-sheets/{id}/approve'],
   ['patch', '/api/v2/attendance-sheets/{id}/reject'],
+  // V2 第一阶段批次 4-B(2026-05-12;APD 部门部长 / 副部长终审,沿 D-S5 / D-S7)
+  ['patch', '/api/v2/attendance-sheets/{id}/final-approve'],
+  ['patch', '/api/v2/attendance-sheets/{id}/final-reject'],
   ['get', '/api/v2/users/me/attendance-records'],
 ];
 
@@ -255,6 +258,10 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'AttendanceSheetListItemDto',
   'AttendanceRecordResponseDto',
   'AttendanceSheetReviewDetailDto',
+
+  // V2 第一阶段批次 4-B(APD 部门部长 / 副部长终审)
+  'FinalApproveAttendanceSheetDto',
+  'FinalRejectAttendanceSheetDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
