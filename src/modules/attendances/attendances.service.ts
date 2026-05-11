@@ -18,43 +18,71 @@ import {
   AttendanceSheetResponseDto,
   AttendanceSheetReviewDetailDto,
   CreateAttendanceSheetDto,
+  FinalApproveAttendanceSheetDto,
+  FinalRejectAttendanceSheetDto,
   ListAttendanceSheetsQueryDto,
   MyAttendanceRecordsQueryDto,
   RejectAttendanceSheetDto,
   UpdateAttendanceSheetDto,
 } from './attendances.dto';
 
-// V2 第一阶段批次 3B attendances service。
+// V2 第一阶段批次 3B attendances service(批次 4-B 升级:终审 / D14 预填 / D11 推动)。
 // 详见 docs:
 //   - 批次3_API前评审决议表.md v1.0 §1.8 / §1.9 / §1.14
 //   - 批次3_schema草案_activities_attendances.md v0.5 §13 / §15 / §16 / §19
+//   - 批次4_贡献值业务规则前评审决议表 v1.0(D5 候选 B 终审 / D11 推动 / D14 5.B 预填)
+//   - 批次4_贡献值业务规则_schema草案评审决议表 v1.0(D-S5 / D-S6 / D-S7 / D-S8 / D-S10 / D-S11)
+//   - 批次4_贡献值业务规则_API草案 v1.0(D-A1 ~ D-A13)
+//   - 批次4_贡献值业务规则_实现前业务规则说明 v1.0
 //
 // 关键约定:
-// - 状态机闭集 3 态:pending / approved / rejected
+// - 状态机闭集 5 态(批次 4-B 扩展;沿 D-S6):
+//   pending / pending_final_review / approved / rejected / final_rejected
+//   其中 **approved 业务语义 = 终审通过**(从 v0.4.0 "APD 通过" 升级);
+//   pending_final_review = APD 已审,等 APD 部门部长 / 副部长终审;
+//   final_rejected = 终审驳回(终态,records 跟随软删,沿 D8 主路径)。
 // - submit:事务内一次性 create Sheet + N records;activity statusCode != cancelled
+//   批次 4-B 新增:**D14 5.B 系统预填** contributionPoints(根据 ContributionRule 查表)+
+//   **D11 推动** Activity.statusCode = 'completed'(若当前 published)。
 // - edit:仅 pending → pending;后端生成 previousSnapshot(R28 / Q-S16);version+1;
-//   旧 records 软删 + 新 records 创建(D38);重跑全部校验
+//   旧 records 软删 + 新 records 创建(D38);重跑全部校验。
+//   批次 4-B:pending_final_review / final_rejected 也不可 edit(沿 22030 / 22043)。
 // - delete:仅 pending → 软删 + 级联软删 records(R20)
-// - approve:仅 pending → approved;所有 records.contributionPoints 必填(R31);
-//   写 reviewerUserId/At/Note;**同事务内触发** eventPlaceholder('attendance.recorded')
-// - reject:仅 pending → rejected;reviewNote 必填
+// - approve(APD 一级):**批次 4-B 升级:pending → pending_final_review**(从 v0.4.0 → approved 升级);
+//   所有 records.contributionPoints 必填(R31,沿 D-S8 在 APD approve 时校验);
+//   写 reviewerUserId/At/Note;**不再触发** attendance.recorded(沿 D-S7);触发位置移到 final-approve。
+// - reject(APD 一级):仅 pending → rejected;reviewNote 必填
+// - final-approve(批次 4-B 新增,沿 D-S5):pending_final_review → approved;
+//   写 finalReviewer*;**同事务内触发** eventPlaceholder('attendance.recorded')(沿 D-S7);
+//   audit:attendance-sheet.final-review。终审不重校验逐条 records(沿 D-S8)。
+// - final-reject(批次 4-B 新增,沿 D-S5):pending_final_review → final_rejected;
+//   finalReviewNote 必填(22046);records 跟随软删;**不触发** attendance.recorded(沿 D-S7);
+//   audit:attendance-sheet.final-review。
 // - 时间不重叠:同 memberId × [checkInAt, checkOutAt) 左闭右开;跨 Sheet / 跨 Activity 全局
 //   (R16 / Q-S15);service 层校验(不做 PG EXCLUDE 约束)
 // - serviceHours:未传自动 (checkOutAt-checkInAt)/3600;>0 且 ≤ 跨度(D14 / D45 / D51 / D46)
+// - contributionPoints(批次 4-B 升级):**仅在 record.contributionPoints === null 时**由 ContributionRule
+//   预填;调用方传值不覆盖(沿 D-A8)。无匹配规则时 service 兜底 null(不抛错;沿 D-S11 22048 不开)。
 // - registrationId 跨表:非空时 registration.activityId === sheet.activityId(R23)
 // - registrationId Restrict:删除 registration 时被 FK 阻断(Q-S21;不破坏历史追溯)
-// - audit:submit / edit / delete / read.other / review(approve+reject)
-// - event:attendance.recorded approved-only(rejected / submit / edit / delete 不触发)
+// - audit:submit / edit / delete / read.other / review(approve+reject) / final-review(批次 4-B)
+// - event:**attendance.recorded 触发位置移到 final-approve**(沿 D-S7);submit / edit / delete /
+//   approve / reject / final-reject 均不触发。
 
+const ACTIVITY_STATUS_PUBLISHED = 'published';
 const ACTIVITY_STATUS_CANCELLED = 'cancelled';
+const ACTIVITY_STATUS_COMPLETED = 'completed';
 const SHEET_STATUS_PENDING = 'pending';
+const SHEET_STATUS_PENDING_FINAL_REVIEW = 'pending_final_review';
 const SHEET_STATUS_APPROVED = 'approved';
 const SHEET_STATUS_REJECTED = 'rejected';
+const SHEET_STATUS_FINAL_REJECTED = 'final_rejected';
 
 const DICT_TYPE_ATTENDANCE_ROLE = 'attendance_role';
 const DICT_TYPE_ATTENDANCE_STATUS = 'attendance_status';
 
 // Sheet 简化 select(不含 records 数组 + 不含 previousSnapshot)。
+// 批次 4-B 新增 finalReviewer* 3 字段(D-S5;UserResponseDto 同步,沿 baseline §11.3 可选字段)。
 const sheetSafeSelect = {
   id: true,
   activityId: true,
@@ -64,6 +92,9 @@ const sheetSafeSelect = {
   reviewerUserId: true,
   reviewedAt: true,
   reviewNote: true,
+  finalReviewerUserId: true,
+  finalReviewedAt: true,
+  finalReviewNote: true,
   version: true,
   createdAt: true,
   updatedAt: true,
@@ -139,6 +170,9 @@ export class AttendancesService {
       reviewerUserId: row.reviewerUserId,
       reviewedAt: row.reviewedAt,
       reviewNote: row.reviewNote,
+      finalReviewerUserId: row.finalReviewerUserId,
+      finalReviewedAt: row.finalReviewedAt,
+      finalReviewNote: row.finalReviewNote,
       version: row.version,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -209,22 +243,8 @@ export class AttendancesService {
 
   // ============ helpers:Activity / Sheet / Member 查找 ============
 
-  private async findActivityForSubmission(
-    activityId: string,
-    tx: PrismaTx,
-  ): Promise<{ id: string; statusCode: string }> {
-    const act = await tx.activity.findFirst({
-      where: notDeletedWhere({ id: activityId }),
-      select: { id: true, statusCode: true },
-    });
-    if (!act) {
-      throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-    }
-    if (act.statusCode === ACTIVITY_STATUS_CANCELLED) {
-      throw new BizException(BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN);
-    }
-    return act;
-  }
+  // 批次 4-B 重构:findActivityForSubmission 旧版返回 {id, statusCode} 已被 findActivityForSubmissionFull
+  // (返回 {id, statusCode, activityTypeCode})替代,用于 D14 预填 + D11 推动;旧函数删除。
 
   private async assertActivityExists(activityId: string, tx: PrismaTx): Promise<void> {
     const act = await tx.activity.findFirst({
@@ -386,14 +406,21 @@ export class AttendancesService {
 
   // ============ submit(POST 提交 Sheet)============
 
+  // 批次 4-B 升级:
+  // - D14 5.B 系统预填 contributionPoints(若 record 未传值;沿 D-A8)
+  //   规则匹配维度:activityType × attendanceRole × durationThreshold;
+  //   NULL durationThreshold 多条规则按 createdAt ASC LIMIT 1(明确选取策略,沿 §3.1 复核报告);
+  //   无匹配规则 → service 兜底 null,不抛错(沿 D-S11 22048 不开)。
+  // - D11 推动:Activity.statusCode = 'published' → 'completed'(沿 D-S10);
+  //   多 Sheet 场景下,后续 Sheet 创建时已是 completed,update 不再生效(幂等)。
   async submit(
     activityId: string,
     dto: CreateAttendanceSheetDto,
     currentUser: CurrentUserPayload,
   ): Promise<AttendanceSheetResponseDto> {
     return this.prisma.$transaction(async (tx) => {
-      // 1. activity 存在 + 非 cancelled
-      await this.findActivityForSubmission(activityId, tx);
+      // 1. activity 存在 + 非 cancelled;同时取 activityTypeCode + statusCode 用于 D14 预填 + D11 推动
+      const activity = await this.findActivityForSubmissionFull(activityId, tx);
 
       // 2. 逐条 record 字典校验 + 时间规范化 + serviceHours 校验
       const normalized: ReturnType<AttendancesService['normalizeRecord']>[] = [];
@@ -423,7 +450,15 @@ export class AttendancesService {
         await this.assertNoTimeOverlap(r.memberId, r.checkInAt, r.checkOutAt, undefined, tx);
       }
 
-      // 4. 事务内一次性 create Sheet + N records
+      // 4. D14 5.B 预填:仅当 record.contributionPoints === null 时按规则查表预填;
+      //    传值不覆盖(沿 D-A8);无匹配规则保持 null。
+      const prefilled = await this.applyContributionRulePrefill(
+        normalized,
+        activity.activityTypeCode,
+        tx,
+      );
+
+      // 5. 事务内一次性 create Sheet + N records
       const created = await tx.attendanceSheet.create({
         data: {
           activityId,
@@ -431,7 +466,7 @@ export class AttendancesService {
           statusCode: SHEET_STATUS_PENDING,
           version: 1,
           records: {
-            create: normalized.map((r) => ({
+            create: prefilled.map((r) => ({
               memberId: r.memberId,
               roleCode: r.roleCode,
               checkInAt: r.checkInAt,
@@ -447,15 +482,147 @@ export class AttendancesService {
         select: sheetSafeSelect,
       });
 
+      // 6. D11 推动:首张 Sheet 创建 → Activity.completed(沿 D-S10);
+      //    幂等:若已是 completed,update 不会改 statusCode(但走一次写减少负担,故先判定 published 才动)。
+      //    cancelled 在 step 1 已拒绝;publish 状态机 draft → published → completed 单向。
+      if (activity.statusCode === ACTIVITY_STATUS_PUBLISHED) {
+        await tx.activity.update({
+          where: { id: activityId },
+          data: { statusCode: ACTIVITY_STATUS_COMPLETED },
+        });
+      }
+
       auditPlaceholder('attendance-sheet.submit', {
         operatorUserId: currentUser.id,
         activityId,
         sheetId: created.id,
-        recordsCount: normalized.length,
+        recordsCount: prefilled.length,
       });
 
       return this.toSheetResponseDto(created);
     });
+  }
+
+  // 批次 4-B 新增:findActivityForSubmissionFull,返回 activityTypeCode + statusCode(用于 D14 + D11)。
+  // 与 findActivityForSubmission 复用 22001 / 20122 校验路径,只是 select 字段更多。
+  private async findActivityForSubmissionFull(
+    activityId: string,
+    tx: PrismaTx,
+  ): Promise<{ id: string; statusCode: string; activityTypeCode: string }> {
+    const act = await tx.activity.findFirst({
+      where: notDeletedWhere({ id: activityId }),
+      select: { id: true, statusCode: true, activityTypeCode: true },
+    });
+    if (!act) {
+      throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+    }
+    if (act.statusCode === ACTIVITY_STATUS_CANCELLED) {
+      throw new BizException(BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN);
+    }
+    return act;
+  }
+
+  // 批次 4-B 新增:D14 5.B 预填(沿 D-S4 / D-A8 / 业务规则文档 §4)。
+  // 输入:normalized records + activityTypeCode;
+  // 输出:applied records(contributionPoints 已按规则预填或保持调用方传入值)。
+  //
+  // 规则匹配维度:
+  //   (activityTypeCode, attendanceRoleCode, durationThreshold) WHERE deletedAt IS NULL AND status='ACTIVE'
+  // 服务时长档位(若规则 durationThreshold 非 null):
+  //   record.serviceHours <= rule.durationThreshold → 取 rule.pointsBelow
+  //   record.serviceHours >  rule.durationThreshold → 取 rule.pointsAbove ?? pointsBelow
+  // 服务时长无档位(rule.durationThreshold === null):
+  //   直接取 rule.pointsBelow(pointsAbove 不参与)
+  // 每日上限:rule.dailyCap 兜底 1.5(沿 Q-OPEN-7 / D-S3);
+  //   预填值 = MIN(candidatePoints, effectiveDailyCap)。
+  //
+  // NULL durationThreshold 选取(沿 §3.1 复核报告):
+  //   ORDER BY createdAt ASC LIMIT 1(明确,不随机)。
+  //   TODO(批次 4.x 或后续):若运营后台引入多条 NULL durationThreshold ACTIVE 规则,
+  //   考虑加 service 兜底校验或 BizCode;当前批次只取首条不阻塞创建。
+  //
+  // 无匹配规则:保持 contributionPoints = null(不抛错;沿 D-S11 22048 不开)。
+  private async applyContributionRulePrefill(
+    records: ReturnType<AttendancesService['normalizeRecord']>[],
+    activityTypeCode: string,
+    tx: PrismaTx,
+  ): Promise<ReturnType<AttendancesService['normalizeRecord']>[]> {
+    const result: ReturnType<AttendancesService['normalizeRecord']>[] = [];
+    for (const r of records) {
+      // 调用方传值不覆盖(沿 D-A8)
+      if (r.contributionPoints !== null) {
+        result.push(r);
+        continue;
+      }
+      const points = await this.computePrefilledPoints(
+        activityTypeCode,
+        r.roleCode,
+        r.serviceHours,
+        tx,
+      );
+      result.push({ ...r, contributionPoints: points });
+    }
+    return result;
+  }
+
+  // 默认日上限 1.5(沿 Q-OPEN-7 锁定;ContributionRule.dailyCap === null 时兜底)。
+  private readonly DEFAULT_DAILY_CAP = 1.5;
+
+  private async computePrefilledPoints(
+    activityTypeCode: string,
+    attendanceRoleCode: string,
+    serviceHours: number,
+    tx: PrismaTx,
+  ): Promise<number | null> {
+    const candidates = await tx.contributionRule.findMany({
+      where: {
+        activityTypeCode,
+        attendanceRoleCode,
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+      select: {
+        durationThreshold: true,
+        pointsBelow: true,
+        pointsAbove: true,
+        dailyCap: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (candidates.length === 0) {
+      return null;
+    }
+    // 优先匹配 record.serviceHours 落入档位的规则;若多条候选(同维度多规则)按 createdAt ASC 取首条。
+    // 实际唯一约束(partial unique)已限制非 NULL durationThreshold 唯一;NULL 档位可能多条,沿 §3.1 复核取首条。
+    let chosen: (typeof candidates)[number] | null = null;
+    for (const rule of candidates) {
+      if (rule.durationThreshold === null) {
+        // NULL 档位:无服务时长阈值,优先取首条;若 chosen 未设则赋值
+        if (chosen === null) chosen = rule;
+        continue;
+      }
+      // 非 NULL 档位:按 durationThreshold 匹配;首条匹配即取
+      if (chosen === null) chosen = rule;
+    }
+    if (chosen === null) {
+      chosen = candidates[0];
+    }
+    const threshold = chosen.durationThreshold;
+    let candidatePoints: number;
+    if (threshold === null) {
+      candidatePoints = Number(chosen.pointsBelow);
+    } else if (serviceHours <= Number(threshold)) {
+      candidatePoints = Number(chosen.pointsBelow);
+    } else {
+      candidatePoints =
+        chosen.pointsAbove !== null ? Number(chosen.pointsAbove) : Number(chosen.pointsBelow);
+    }
+    const effectiveCap =
+      chosen.dailyCap !== null ? Number(chosen.dailyCap) : this.DEFAULT_DAILY_CAP;
+    const finalPoints = Math.min(candidatePoints, effectiveCap);
+    // 保留 2 位小数(对齐 Decimal(5,2))
+    return Math.round(finalPoints * 100) / 100;
   }
 
   // ============ list(GET 列表)============
@@ -582,6 +749,15 @@ export class AttendancesService {
       if (sheet.statusCode === SHEET_STATUS_REJECTED) {
         throw new BizException(BizCode.ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE);
       }
+      // 批次 4-B:final_rejected 不可 edit(沿 D-S11 22043;终审驳回是终态,新提走 POST 新建)
+      if (sheet.statusCode === SHEET_STATUS_FINAL_REJECTED) {
+        throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE);
+      }
+      // 批次 4-B:pending_final_review 也不可 edit(沿 D-A1 / 业务规则文档 §2.1;
+      //   APD 一级已审过,R31 已固化,需通过 final-reject 回退或新建 Sheet)
+      if (sheet.statusCode === SHEET_STATUS_PENDING_FINAL_REVIEW) {
+        throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+      }
       if (sheet.statusCode !== SHEET_STATUS_PENDING) {
         throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
       }
@@ -704,6 +880,11 @@ export class AttendancesService {
         reviewerUserId: sheet.reviewerUserId,
         reviewedAt: sheet.reviewedAt?.toISOString() ?? null,
         reviewNote: sheet.reviewNote,
+        // 批次 4-B:edit 路径仅 pending 状态进入,finalReviewer* 必为 null;
+        // 仍写入 snapshot 保完整性(未来 schema 升级保持兼容)。
+        finalReviewerUserId: sheet.finalReviewerUserId,
+        finalReviewedAt: sheet.finalReviewedAt?.toISOString() ?? null,
+        finalReviewNote: sheet.finalReviewNote,
         version: sheet.version,
       },
       records: records.map((r) => ({
@@ -736,6 +917,14 @@ export class AttendancesService {
       if (sheet.statusCode === SHEET_STATUS_REJECTED) {
         throw new BizException(BizCode.ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE);
       }
+      // 批次 4-B:final_rejected 不可软删(records 已在 final-reject 软删;Sheet 主体记录保留作历史)
+      if (sheet.statusCode === SHEET_STATUS_FINAL_REJECTED) {
+        throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE);
+      }
+      // 批次 4-B:pending_final_review 不可软删(沿 edit 路径风格)
+      if (sheet.statusCode === SHEET_STATUS_PENDING_FINAL_REVIEW) {
+        throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+      }
       if (sheet.statusCode !== SHEET_STATUS_PENDING) {
         throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
       }
@@ -761,11 +950,14 @@ export class AttendancesService {
     });
   }
 
-  // ============ approve(PATCH)============
+  // ============ approve(PATCH;APD 一级)============
 
-  // 状态机:pending → approved;非 pending 抛 22030(approved → 22040,rejected → 22041)。
-  // R31:所有 records.contributionPoints !== null;否则 22072。
-  // 触发 eventPlaceholder('attendance.recorded', ...)(approved-only;同事务内)。
+  // 批次 4-B 状态机升级(沿 D-A1 / D-S6 / D-S7 / D-S8):
+  // - 状态机:pending → **pending_final_review**(原 v0.4.0 是 → approved 终态)
+  // - R31 仍在此校验:所有 records.contributionPoints !== null;否则 22072(沿 D-S8)
+  // - 写 reviewerUserId / reviewedAt / reviewNote(APD 一级审核责任人)
+  // - **不再触发** eventPlaceholder('attendance.recorded')(沿 D-S7;触发位置移到 finalApprove)
+  // - audit:沿 attendance-sheet.review,action='approve';nextStatusCode 升级为 pending_final_review
   async approve(
     id: string,
     dto: ApproveAttendanceSheetDto,
@@ -778,7 +970,7 @@ export class AttendancesService {
         throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
       }
 
-      // R31:所有 records contributionPoints 必填
+      // R31:所有 records contributionPoints 必填(沿 D-S8;APD 一级 approve 时校验)
       const recordsForCheck = await tx.attendanceRecord.findMany({
         where: notDeletedWhere({ sheetId: id }),
         select: { id: true, contributionPoints: true },
@@ -791,7 +983,7 @@ export class AttendancesService {
       const updated = await tx.attendanceSheet.update({
         where: { id: sheet.id },
         data: {
-          statusCode: SHEET_STATUS_APPROVED,
+          statusCode: SHEET_STATUS_PENDING_FINAL_REVIEW,
           reviewerUserId: currentUser.id,
           reviewedAt,
           reviewNote: dto.reviewNote ?? null,
@@ -799,44 +991,20 @@ export class AttendancesService {
         select: sheetSafeSelect,
       });
 
-      // 触发 attendance.recorded(approved-only;Q-S13 context schema)
-      const recordsForEvent = await tx.attendanceRecord.findMany({
-        where: notDeletedWhere({ sheetId: id }),
-        select: recordWithMemberSelect,
-        orderBy: { checkInAt: 'asc' },
-      });
-      eventPlaceholder('attendance.recorded', {
-        activityId: updated.activityId,
-        sheetId: updated.id,
-        reviewerUserId: currentUser.id,
-        reviewedAt: reviewedAt.toISOString(),
-        records: recordsForEvent.map((r) => ({
-          recordId: r.id,
-          memberId: r.memberId,
-          roleCode: r.roleCode,
-          attendanceStatusCode: r.attendanceStatusCode,
-          checkInAt: r.checkInAt.toISOString(),
-          checkOutAt: r.checkOutAt.toISOString(),
-          serviceHours: r.serviceHours.toString(),
-          contributionPoints: this.decimalToString(r.contributionPoints),
-          registrationId: r.registrationId,
-        })),
-      });
-
       auditPlaceholder('attendance-sheet.review', {
         operatorUserId: currentUser.id,
         sheetId: id,
         priorStatusCode: sheet.statusCode,
-        nextStatusCode: SHEET_STATUS_APPROVED,
+        nextStatusCode: SHEET_STATUS_PENDING_FINAL_REVIEW,
         action: 'approve',
-        recordsCount: recordsForEvent.length,
+        recordsCount: recordsForCheck.length,
       });
 
       return this.toSheetResponseDto(updated);
     });
   }
 
-  // ============ reject(PATCH)============
+  // ============ reject(PATCH;APD 一级)============
 
   async reject(
     id: string,
@@ -867,6 +1035,138 @@ export class AttendancesService {
         priorStatusCode: sheet.statusCode,
         nextStatusCode: SHEET_STATUS_REJECTED,
         action: 'reject',
+      });
+
+      return this.toSheetResponseDto(updated);
+    });
+  }
+
+  // ============ final-approve(PATCH;批次 4-B 新增 — APD 部门部长 / 副部长终审)============
+
+  // 沿 D-S5 / D-S7 / D-A2:
+  // - 状态机:pending_final_review → approved(贡献值正式生效)
+  // - 状态非 pending_final_review 抛 **22045** ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID
+  // - 写 finalReviewerUserId / finalReviewedAt / finalReviewNote
+  // - **触发** eventPlaceholder('attendance.recorded')(approved-only;同事务内;沿 D-S7)
+  // - audit:attendance-sheet.final-review(action='final-approve');沿 D-S11 / 业务规则文档 §8.4
+  // - **不重校验**逐条 records.contributionPoints(沿 D-S8;R31 在 APD 一级已校验)
+  // - 权限:APD 部门部长 / 副部长,沿 RolesGuard(ADMIN / SUPER_ADMIN);不开 22044 模块码
+  async finalApprove(
+    id: string,
+    dto: FinalApproveAttendanceSheetDto,
+    currentUser: CurrentUserPayload,
+  ): Promise<AttendanceSheetResponseDto> {
+    return this.prisma.$transaction(async (tx) => {
+      const sheet = await this.findSheetOrThrow(id, tx);
+
+      if (sheet.statusCode !== SHEET_STATUS_PENDING_FINAL_REVIEW) {
+        throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
+      }
+
+      const finalReviewedAt = new Date();
+      const updated = await tx.attendanceSheet.update({
+        where: { id: sheet.id },
+        data: {
+          statusCode: SHEET_STATUS_APPROVED,
+          finalReviewerUserId: currentUser.id,
+          finalReviewedAt,
+          finalReviewNote: dto.finalReviewNote ?? null,
+        },
+        select: sheetSafeSelect,
+      });
+
+      // 触发 attendance.recorded(批次 4-B 移到终审通过时;沿 D-S7;Q-S13 context schema 沿用)
+      const recordsForEvent = await tx.attendanceRecord.findMany({
+        where: notDeletedWhere({ sheetId: id }),
+        select: recordWithMemberSelect,
+        orderBy: { checkInAt: 'asc' },
+      });
+      eventPlaceholder('attendance.recorded', {
+        activityId: updated.activityId,
+        sheetId: updated.id,
+        // context 沿 v0.4.0 Q-S13 schema;新增 finalReviewerUserId / finalReviewedAt 兼容字段
+        reviewerUserId: updated.reviewerUserId,
+        reviewedAt: updated.reviewedAt?.toISOString() ?? null,
+        finalReviewerUserId: currentUser.id,
+        finalReviewedAt: finalReviewedAt.toISOString(),
+        records: recordsForEvent.map((r) => ({
+          recordId: r.id,
+          memberId: r.memberId,
+          roleCode: r.roleCode,
+          attendanceStatusCode: r.attendanceStatusCode,
+          checkInAt: r.checkInAt.toISOString(),
+          checkOutAt: r.checkOutAt.toISOString(),
+          serviceHours: r.serviceHours.toString(),
+          contributionPoints: this.decimalToString(r.contributionPoints),
+          registrationId: r.registrationId,
+        })),
+      });
+
+      auditPlaceholder('attendance-sheet.final-review', {
+        operatorUserId: currentUser.id,
+        sheetId: id,
+        priorStatusCode: sheet.statusCode,
+        nextStatusCode: SHEET_STATUS_APPROVED,
+        action: 'final-approve',
+        recordsCount: recordsForEvent.length,
+      });
+
+      return this.toSheetResponseDto(updated);
+    });
+  }
+
+  // ============ final-reject(PATCH;批次 4-B 新增 — APD 部门部长 / 副部长终审驳回)============
+
+  // 沿 D-S5 / D-S7 / D-A2:
+  // - 状态机:pending_final_review → final_rejected
+  // - 状态非 pending_final_review 抛 **22045**
+  // - finalReviewNote 必填(沿 RejectDto 模式;DTO 层 class-validator 已校验;此处仅作冗余日志兜底,
+  //   仍由 service 拒空字符串通过 22046)
+  // - 写 finalReviewerUserId / finalReviewedAt / finalReviewNote
+  // - records **跟随软删**(沿 D8 主路径)
+  // - **不触发** attendance.recorded(沿 D-S7;子项候选 C)
+  // - audit:attendance-sheet.final-review(action='final-reject')
+  async finalReject(
+    id: string,
+    dto: FinalRejectAttendanceSheetDto,
+    currentUser: CurrentUserPayload,
+  ): Promise<AttendanceSheetResponseDto> {
+    return this.prisma.$transaction(async (tx) => {
+      const sheet = await this.findSheetOrThrow(id, tx);
+
+      if (sheet.statusCode !== SHEET_STATUS_PENDING_FINAL_REVIEW) {
+        throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
+      }
+
+      // DTO 层 @MinLength(1) 已确保非空;此处冗余校验防绕过(沿 RejectDto reviewNote 风格)
+      if (dto.finalReviewNote.trim().length === 0) {
+        throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_NOTE_REQUIRED);
+      }
+
+      const finalReviewedAt = new Date();
+      // records 跟随软删(沿 D8 主路径)
+      await tx.attendanceRecord.updateMany({
+        where: { sheetId: id, deletedAt: null },
+        data: { deletedAt: finalReviewedAt },
+      });
+
+      const updated = await tx.attendanceSheet.update({
+        where: { id: sheet.id },
+        data: {
+          statusCode: SHEET_STATUS_FINAL_REJECTED,
+          finalReviewerUserId: currentUser.id,
+          finalReviewedAt,
+          finalReviewNote: dto.finalReviewNote,
+        },
+        select: sheetSafeSelect,
+      });
+
+      auditPlaceholder('attendance-sheet.final-review', {
+        operatorUserId: currentUser.id,
+        sheetId: id,
+        priorStatusCode: sheet.statusCode,
+        nextStatusCode: SHEET_STATUS_FINAL_REJECTED,
+        action: 'final-reject',
       });
 
       return this.toSheetResponseDto(updated);
