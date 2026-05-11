@@ -256,7 +256,7 @@ export class AttendanceSheetsResourceController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      'APD 部门部长 / 副部长终审通过(pending_final_review → approved;贡献值正式生效;**触发** attendance.recorded;沿 D-S5 / D-S7)',
+      '终审通过(当前沿用管理权限,细分权限后置;pending_final_review → approved;贡献值正式生效;**触发** attendance.recorded;沿 D-S5 / D-S7)',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
@@ -278,7 +278,7 @@ export class AttendanceSheetsResourceController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      'APD 部门部长 / 副部长终审驳回(pending_final_review → final_rejected;finalReviewNote 必填;records 跟随软删;**不触发** attendance.recorded)',
+      '终审驳回(当前沿用管理权限,细分权限后置;pending_final_review → final_rejected;finalReviewNote 必填;records 跟随软删;**不触发** attendance.recorded)',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
