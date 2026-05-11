@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+## v0.4.0 - 2026-05-11
+
+V2 第一阶段在 v0.3.0(批次 1 + 批次 2)基础之上,完成 SRVF 业务**批次 3**(activities +
+activity-registrations + attendances 共 3 模块,**26 接口**:批次 3A 17 + 批次 3B 9),
+**v1 14 接口 + 既有 V2 52 接口 schema + paths 严格 zero drift**;**累计 84 接口**
+进入 contract snapshot 保护范围。
+
 ### V2 Batch 3 Schema(activities + attendances 共享 schema;2026-05-10)
 - `31c8187` chore(prisma): add v2 batch3 activities attendances schema (#9) —
   Activity / ActivityRegistration / AttendanceSheet / AttendanceRecord **4 model** 一次入库
@@ -43,6 +50,15 @@
   README V2 路由表接口总数 44 → 61;新增 activities(7)/ activity-registrations(10)两行;
   CHANGELOG Unreleased 段追加 batch 3 schema(`31c8187`)+ 3A API(`6a9339b`)子段 +
   Boundaries / Validation 段;3B 落地前的 docs 收口
+
+### V2 Batch 3B Docs(README + CHANGELOG;2026-05-11)
+- `c1606e8` docs(v2-batch-3b): record attendance API completion (#13) —
+  README V2 路由表接口总数 61 → 70;新增 attendances(批次 3B)9 接口行;
+  落地总结段补充 attendance_sheets / attendance_records 已落地 + 累计 84 接口 zero drift;
+  CHANGELOG Unreleased 段追加 batch 3A docs(`dd040fb`)+ batch 3B API(`5dbd230`)子段;
+  Boundaries / Validation 段累计 75 → 84 接口、unit 452 → 517 / e2e 523 → 592 /
+  contract 136 → 154 + 永久不做清单(`/me/service-hours` / `contribution_points` 流水表 /
+  rejected clone / `Activity.complete` / XLSX / 动态表单引擎);v0.4.0 release 前最后 docs 收口
 
 ### V2 Batch 3B API(attendances + APD review + /me/attendance-records;2026-05-11)
 - `5dbd230` feat(attendances): add v2 batch3B attendance sheets and review (#12) —
