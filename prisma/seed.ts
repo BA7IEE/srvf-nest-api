@@ -41,12 +41,19 @@ import * as bcrypt from 'bcryptjs';
 //   - activity_status: 闭集 4 态(D3;Q-D7 保留 completed):draft/published/cancelled/completed
 //   - registration_status: 闭集 **4 态**(F28/Q011 + Q-D15 v0.3 新增 cancelled):
 //     pending/pass/reject/cancelled
-//   - attendance_sheet_status: 闭集 3 态(D18):pending/approved/rejected
+//   - attendance_sheet_status: 闭集 3 态(D18,v0.4.0):pending/approved/rejected
+//     **v0.5.0 批次 4-A 扩展为 5 态**(D-S6):新增 pending_final_review + final_rejected
 //   - attendance_status: 闭集 **3 态**(D44/D51 v0.2.4 撤销 absent/leave):
 //     present/late/early_leave
 //   - attendance_role: 闭集 7 项(D13):member/instructor/assistant/coach/
 //     front_command/back_command/info
 // 风格沿批次 2:英文 code + 中文 label。
+//
+// V2 第一阶段批次 4-A 追加(详见 docs:批次4_贡献值业务规则_schema草案评审决议表 v1.0 D-S6 + 字典扩展决议表 v1.0):
+// - attendance_sheet_status 字典扩展 3 → 5 态(D-S6);见 V2_DICT_SEED 内对应条目
+// - ContributionRule **不在 seed 中预填真实规则**(字典扩展决议 §4.1 选项 A);
+//   运营后台 / 私有 seed 录入,真实计分规则不进 git history(沿 baseline §0.3 / R13)
+// - activity_type / attendance_role **沿 v0.4.0 neutral-demo 占位**;真实子项 / 角色由运营后台维护
 
 const DEFAULT_PASSWORD = 'ChangeMe123456';
 const USERNAME_PATTERN = /^[a-z0-9_-]{3,32}$/;
@@ -176,11 +183,17 @@ const V2_DICT_SEED = [
     ],
   },
   {
+    // V2 第一阶段批次 4-A 扩展(D-S6):3 态 → 5 态,新增 pending_final_review / final_rejected。
+    // approved 语义升级为"终审通过"(从原"APD 通过"升级);字段字符串值不变,仅业务语义升级,
+    // 走 PR C CHANGELOG announcement;OpenAPI snapshot 中 statusCode enum 扩展为 non-breaking。
+    // 详见 docs/批次4_贡献值业务规则_schema草案评审决议表.md v1.0 D-S6。
     type: { code: 'attendance_sheet_status', label: '考勤单据状态', sortOrder: 14 },
     items: [
-      { code: 'pending', label: '待审核', sortOrder: 0 },
-      { code: 'approved', label: '已通过', sortOrder: 1 },
-      { code: 'rejected', label: '已驳回', sortOrder: 2 },
+      { code: 'pending', label: '待 APD 审核', sortOrder: 0 },
+      { code: 'pending_final_review', label: 'APD 已审,待终审', sortOrder: 1 },
+      { code: 'approved', label: '终审通过', sortOrder: 2 },
+      { code: 'rejected', label: 'APD 驳回', sortOrder: 3 },
+      { code: 'final_rejected', label: '终审驳回', sortOrder: 4 },
     ],
   },
   {

@@ -31,12 +31,20 @@ model User {
 
   // V2 第一阶段批次 3 反向 relation(详见 docs:批次3_schema草案_*.md §12.1)
   // 沿批次 1 / 批次 2 R2 范式:Prisma 关系映射不算业务字段新增。
-  activitiesPublished       Activity[]             @relation("ActivityPublisher")
-  activitiesCancelled       Activity[]             @relation("ActivityCanceller")
-  registrationsReviewed     ActivityRegistration[] @relation("RegistrationReviewer")
-  registrationsCancelled    ActivityRegistration[] @relation("RegistrationCanceller")
-  attendanceSheetsSubmitted AttendanceSheet[]      @relation("SheetSubmitter")
-  attendanceSheetsReviewed  AttendanceSheet[]      @relation("SheetReviewer")
+  activitiesPublished           Activity[]             @relation("ActivityPublisher")
+  activitiesCancelled           Activity[]             @relation("ActivityCanceller")
+  registrationsReviewed         ActivityRegistration[] @relation("RegistrationReviewer")
+  registrationsCancelled        ActivityRegistration[] @relation("RegistrationCanceller")
+  attendanceSheetsSubmitted     AttendanceSheet[]      @relation("SheetSubmitter")
+  attendanceSheetsReviewed      AttendanceSheet[]      @relation("SheetReviewer")
+  // V2 第一阶段批次 4-A:终审反向 relation。详见 docs/批次4_贡献值业务规则_schema草案评审决议表 D-S5。
+  // APD 部门部长 / 副部长终审通过 / 驳回时填入 AttendanceSheet.finalReviewerUserId。
+  attendanceSheetsFinalReviewed AttendanceSheet[]      @relation("SheetFinalReviewer")
+  // V2 第一阶段批次 4-A:ContributionRule 审计字段反向 relation(沿 baseline §2.1 createdByUserId 等)。
+  // 三条均为可空 + Restrict,运营后台审计责任字段。
+  contributionRulesCreated      ContributionRule[]     @relation("ContributionRuleCreator")
+  contributionRulesUpdated      ContributionRule[]     @relation("ContributionRuleUpdater")
+  contributionRulesDeleted      ContributionRule[]     @relation("ContributionRuleDeleter")
 
   @@index([deletedAt])
   @@index([status])
@@ -527,24 +535,33 @@ model AttendanceSheet {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  activityId       String
-  submitterUserId  String
-  submittedAt      DateTime  @default(now())
-  statusCode       String
-  reviewerUserId   String?
-  reviewedAt       DateTime?
-  reviewNote       String?
-  previousSnapshot Json? // D38 后端事务内自动生成
-  version          Int       @default(1) // Q-D8 不做乐观锁;服务端版本号
+  activityId            String
+  submitterUserId       String
+  submittedAt           DateTime  @default(now())
+  statusCode            String
+  reviewerUserId        String?
+  reviewedAt            DateTime?
+  reviewNote            String?
+  // V2 第一阶段批次 4-A 新增三字段(D-S5):APD 部门部长 / 副部长终审。
+  // 与 reviewer* 系列对称(沿 baseline §2.1 命名);均可空,在 final-approve / final-reject
+  // service 内事务填入。APD 一级 approve 时 statusCode 进入 pending_final_review;
+  // 终审通过 → approved(贡献值正式生效,触发 attendance.recorded);终审驳回 → final_rejected。
+  finalReviewerUserId   String?
+  finalReviewedAt       DateTime?
+  finalReviewNote       String?
+  previousSnapshot      Json? // D38 后端事务内自动生成
+  version               Int       @default(1) // Q-D8 不做乐观锁;服务端版本号
 
-  activity  Activity           @relation(fields: [activityId], references: [id], onDelete: Restrict)
-  submitter User               @relation("SheetSubmitter", fields: [submitterUserId], references: [id], onDelete: Restrict)
-  reviewer  User?              @relation("SheetReviewer", fields: [reviewerUserId], references: [id], onDelete: Restrict)
-  records   AttendanceRecord[]
+  activity      Activity           @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  submitter     User               @relation("SheetSubmitter", fields: [submitterUserId], references: [id], onDelete: Restrict)
+  reviewer      User?              @relation("SheetReviewer", fields: [reviewerUserId], references: [id], onDelete: Restrict)
+  finalReviewer User?              @relation("SheetFinalReviewer", fields: [finalReviewerUserId], references: [id], onDelete: Restrict)
+  records       AttendanceRecord[]
 
   @@index([activityId])
   @@index([submitterUserId])
   @@index([reviewerUserId])
+  @@index([finalReviewerUserId])
   @@index([statusCode])
   @@index([deletedAt])
   @@index([createdAt])
@@ -600,4 +617,76 @@ model AttendanceRecord {
   @@index([deletedAt])
   @@index([createdAt])
   @@index([memberId, deletedAt]) // R16 时间不重叠校验性能
+}
+
+// ===== V2 第一阶段批次 4-A:contribution_rules =====
+//
+// 详见 docs:
+// - 批次4_贡献值业务规则前评审决议表.md v1.0 D14 候选 5.B
+// - 批次4_贡献值业务规则_schema草案评审决议表.md v1.0 D-S1 / D-S3 / D-S4
+// - 批次4_贡献值业务规则_字典扩展决议表.md v1.0 D-D5
+// - 批次4_贡献值业务规则_API草案.md v1.0 D-A8
+//
+// 模型用途:承载 D14 5.B 系统预填 contributionPoints 的规则映射。
+// service 在 POST /attendance-sheets 事务内查表预填;APD 一级 approve 时 R31 必填校验;
+// APD 可现场修订(沿 D4 终决权)。第一版不暴露管理 API(D-A9),seed/运营后台维护。
+//
+// 关联(D-D5):
+// - activityTypeCode → activity_type 字典 code(2 级树;关联叶子或无子父节点,运营自治)
+// - attendanceRoleCode → attendance_role 字典 code(扁平结构)
+// - 不引外键 FK(字典 code 字符串关联,运营后台决定取值;沿 v0.4.0 *Code 字段风格)
+//
+// 时长档位(D-S3 简化档位):
+// - durationThreshold?:时长阈值(小时);null 表示无档位,直接按 pointsBelow 取值
+// - pointsBelow:≤ durationThreshold(或无档位)的预填分值
+// - pointsAbove?:> durationThreshold 的预填分值;无档位时不填
+// - 救援 / 救助后方人员的"每 6h 0.5"线性公式不通过本字段集精确表达(D-S3 / D-A8 §5);
+//   后方角色按简化档位预填(<6h = pointsBelow / >=6h = pointsAbove),APD 现场修订。
+//
+// 每日上限(D-S3 / D-D5):
+// - dailyCap?:每日上限;null 时由 service 兜底默认 1.5(Q-OPEN-7 锁定);
+//   R22 类应填 0(明示零上限,沿 D-S9 业务规则文档 §6.3)。
+//
+// 启停字段(D-S1):沿 baseline §2.2.3 + v0.4.0 现有 enum 风格,用大写 ACTIVE/INACTIVE;
+// 禁止使用 isActive / isEnabled / enabled。
+//
+// 审计字段:createdByUserId / updatedByUserId / deletedByUserId 可空 FK,运营后台维护时填入。
+//
+// 唯一约束(D-D5):(activityTypeCode, attendanceRoleCode, durationThreshold) 在
+// deletedAt IS NULL AND status = 'ACTIVE' 范围内唯一。Prisma DSL 至 6.x 不支持
+// @@unique 内表达 WHERE 子句的 partial unique;沿 batch 3 active_unique 范式手动
+// 追加 migration SQL(参见 migration.sql 末尾)。schema 仅声明普通 @@index。
+
+model ContributionRule {
+  id                String                 @id @default(cuid())
+  activityTypeCode  String
+  attendanceRoleCode String
+  durationThreshold Decimal?               @db.Decimal(5, 2) // 时长档位阈值(小时);null 表示无档位
+  pointsBelow       Decimal                @db.Decimal(5, 2) // ≤ 阈值(或无档位)的预填分值
+  pointsAbove       Decimal?               @db.Decimal(5, 2) // > 阈值的预填分值;无档位时不填
+  dailyCap          Decimal?               @db.Decimal(5, 2) // 每日上限;null 时 service 兜底 1.5
+  status            ContributionRuleStatus @default(ACTIVE)
+  remark            String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  deletedAt         DateTime?
+  createdByUserId   String?
+  updatedByUserId   String?
+  deletedByUserId   String?
+
+  createdBy User? @relation("ContributionRuleCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedBy User? @relation("ContributionRuleUpdater", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+  deletedBy User? @relation("ContributionRuleDeleter", fields: [deletedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([activityTypeCode])
+  @@index([attendanceRoleCode])
+  @@index([activityTypeCode, attendanceRoleCode]) // 查表预填走 (activityTypeCode × attendanceRoleCode) 主路径
+  @@index([status])
+  @@index([deletedAt])
+  @@index([createdAt])
+}
+
+enum ContributionRuleStatus {
+  ACTIVE
+  INACTIVE
 }
