@@ -4,6 +4,63 @@
 
 ## Unreleased
 
+### V2 Batch 3 Schema(activities + attendances 共享 schema;2026-05-10)
+- `31c8187` chore(prisma): add v2 batch3 activities attendances schema (#9) —
+  Activity / ActivityRegistration / AttendanceSheet / AttendanceRecord **4 model** 一次入库
+  (共享 schema,3A / 3B PR 不再动 schema)+ User / Organization / Member 9 反向 relation
+  (沿批次 1 / 批次 2 R2 范式)+ partial unique index
+  `activity_registrations_activity_member_active_unique`
+  (`WHERE deleted_at IS NULL AND statusCode != 'cancelled'`,手工 SQL 追加)+
+  显式 `@db.Decimal` 注解(`AttendanceRecord.serviceHours / contributionPoints` `Decimal(5,2)`,
+  `Activity.locationLongitude / locationLatitude` `Decimal(10,7)`)+ 5 个闭集字典 seed
+  (`activity_status` 4 态 / `registration_status` 4 态 / `attendance_sheet_status` 3 态 /
+  `attendance_status` 3 态 / `attendance_role` 7 项)+ `activity_type` 2 级树占位(3 父 + 4 子;
+  `seedActivityTypeHierarchy`)+ `reset-db.ts` TRUNCATE 顺序更新(孙→子→父依赖)+
+  `AuditEvent` union 追加批次 3 8 项(`activity.publish` / `registration.create` /
+  `registration.review` / `attendance-sheet.{submit,edit,delete,read.other,review}`)+
+  新增 `BusinessEvent` union(`attendance.recorded`;3A 暂不调用,留 3B)
+
+### V2 Batch 3A API(activities + activity-registrations + CSV export;2026-05-11)
+- `6a9339b` feat(activities): add v2 batch3A activities and registrations (#10) —
+  **17 接口**(activities 7 + registrations 管理端 6 + 队员端 4;
+  Q-A3 USER 自助 `POST /api/v2/users/me/activities/:activityId/registration` 与
+  ADMIN 代报名 `POST /api/v2/activities/:activityId/registrations` 拆开)+
+  **118 e2e**(activities 57 + registrations 61)+
+  **13 BizCode**(activities `200xx` 9 个 + registrations `210xx` 4 个;不开 `FORBIDDEN_*`
+  模块码;USER 越权一律 404 沿 §1.7 风格)+
+  AuditEvent 3 类调用(`activity.publish` / `registration.create` / `registration.review`)+
+  Q-A6 CSV 名单导出走 `StreamableFile`(`ResponseInterceptor` 已通过 `instanceof` 自动跳过,
+  **未改 interceptor**;默认 `scope=pass` 仅返审核通过 / 可选 `scope=all` 返全部;
+  XLSX 直接 400;**不落 export_logs / 不生成 AttendanceRecord;副作用 0**)+
+  Q-A12 cancelled Activity 拒改(`update` / `publish` 抛 20030;`delete` 允许,沿 D3)+
+  Q-A7 USER + ADMIN `activities` 同路由 service 按 Role 过滤(USER 列表强制
+  `statusCode ∈ {published, completed}` 并忽略入参 `statusCode`;USER detail
+  draft/cancelled → 404)+ partial unique 防重复报名(`取消后允许重报`)+
+  capacity 仅统计 `pass`(`cancelled` 自动释放名额)
+
+### Boundaries / Validation(Unreleased 累计)
+- v1 14 接口 + V2 first stage 29 + 批次 1 7 + 批次 2 8 + 批次 3A 17 接口 schema + paths
+  **zero drift**;累计 **75 接口** 进入 contract snapshot 保护范围
+- 批次 3 schema(commit `31c8187`)已含 4 model + partial unique + 反向 relation;
+  3A / 3B 共享同一份 schema,**3A PR 未动 schema / migration / seed / reset-db**
+- 3A PR 未引入新依赖(CSV 用手写 `escapeCsvField`,UTF-8 BOM 字节 `EF BB BF` 注入)
+- 3A 验收(merge 时本地 + CI 全绿):
+  - `pnpm test` unit **452** / 4 suites
+  - `pnpm test:e2e` **523** / 29 suites(原 405 + 批次 3A 118)
+  - `pnpm test:contract` **136** + 2 snapshots(累计 75 接口 contract zero drift)
+  - `pnpm lint` 0 warnings / `pnpm typecheck` PASS / `pnpm build` PASS
+  - CI 3 jobs 全绿(Lint/Typecheck/E2E 2m37s + Docker build 2m15s + Container smoke 1m25s)
+- **不在 3A 范围**(留 3B 独立 PR 或永久不做):
+  - `attendances` 模块所有路由(POST attendance-sheets / GET review-detail / approve /
+    reject / edit / delete / `/api/v2/users/me/attendance-records`)
+  - `BusinessEvent('attendance.recorded')` 调用(3A 仅在 audit-placeholder 落 union,
+    实际触发留 3B)
+  - `GET /api/v2/users/me/service-hours`(Q-A5 永久不做,统计留后续数据模块)
+  - `PATCH /api/v2/activities/:id/complete`(Q-A11 不实装;`completed` 留字典占位)
+  - rejected Sheet "clone for retry" 路径(Q-A4 不实装,前端组装)
+  - 独立 `AttendanceRecord` 查询路径(Q-A9 不暴露;通过 Sheet `review-detail` 提供)
+  - 220xx / 221xx attendances BizCode 段位(本批次未占用,留 3B 一次性追加)
+
 ## v0.3.0 - 2026-05-10
 
 V2 第一阶段在 v0.2.0 基础数据底座之上,完成 SRVF 业务批次 1 + 批次 2,共新增 15 接口
