@@ -48,7 +48,7 @@
 | `110xx` + `111xx` | `organizations` | 200 | **V2 基线预留** |
 | `120xx` + `121xx` | `dictionaries` | 200 | **V2 基线预留** |
 | `130xx` + `131xx` | `attachments` | 200 | **V2 基线预留** |
-| `140xx` + `141xx` | `audit_logs` | 200 | **V2 基线预留** |
+| `140xx` + `141xx` | `audit_logs` | 200 | **批次 6 已实装**(v0.6.x post-release,2026-05-12;`140xx` 段 1 BizCode + `141xx` 段 1 BizCode,**不开** `14002+` / `14010+` / `14102+`)|
 | `150xx` + `151xx` | `members` | 200 | **V2 基线预留** |
 | `160xx` + `161xx` | `member_profiles` | 200 | **V2 基线预留** |
 | `170xx` + `171xx` | `member_departments` | 200 | **V2 基线预留** |
@@ -67,6 +67,7 @@
 - **批次 3 已实装**(v0.4.0,2026-05-11):批次 3 schema 前评审收口时锁定 `activities` / `activity_registrations` / `attendances` 三段(评审稿 §7.2),v0.4.0 release 时全部 27 个 BizCode 实装落地(`200xx` 9 / `210xx` 4 / `220xx` 14;详见 `CHANGELOG.md` v0.4.0 段)
 - **批次 4-A 已实装**(v0.4.0 post-release,2026-05-11):批次 4-A schema PR(`2190803` PR #18)在 `220xx` attendances 段**补充** 3 个 BizCode(`22043` `ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE` / `22045` `ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID` / `22046` `ATTENDANCE_SHEET_FINAL_REVIEW_NOTE_REQUIRED`),配合 `AttendanceSheet` 5 态状态机扩展;**沿 batch 3B 段位**(`220xx`),**不新开模块码**;APD 部门部长 / 副部长专属权限沿 D-S2 **不开** `22044` `FORBIDDEN_*`,权限不足走通用 `40300`
 - **批次 5-A 已实装**(v0.5.0 post-release,2026-05-12):批次 5-A 实施 PR(`cfa396d` PR #24)新开 `230xx` `contribution_rules` 模块段位,5 个 BizCode 实装落地(`23001` `CONTRIBUTION_RULE_NOT_FOUND` / `23002` `CONTRIBUTION_RULE_ACTIVE_DUPLICATE` / `23010` `CONTRIBUTION_RULE_POINTS_INVALID` / `23011` `CONTRIBUTION_RULE_ACTIVITY_TYPE_INVALID` / `23012` `CONTRIBUTION_RULE_ROLE_CODE_INVALID`);**不开** `23030` `CONTRIBUTION_RULE_KEY_FIELDS_NOT_EDITABLE`(沿 D6 v1.1 E8,PATCH 维度禁改交给 `UpdateContributionRuleDto` 白名单 + ValidationPipe `forbidNonWhitelisted` 拦截 → 通用 `BAD_REQUEST` / 40000);**不开** `23101~23104` `FORBIDDEN_*`(沿 baseline,权限不足走通用 `FORBIDDEN` / 40300;APD 部门部长 / 副部长细分权限留 5-B);未规划模块从 `240xx` 起
+- **批次 6 已实装**(v0.6.x post-release,2026-05-12):批次 6 实施 PR #1(`9aac9d0` PR #29)+ PR #2(`aeb2ea8` PR #30)新开 `140xx + 141xx` `audit_logs` 模块段位,2 个 BizCode 实装落地(`14001` `AUDIT_LOG_NOT_FOUND` / `14101` `FORBIDDEN_AUDIT_LOG_READ`);**不开** `14002+`(`audit_logs` 写入后不可改不可删 / 无唯一约束 / 无 P2002 场景)/ `14010+`(`AuditLogQueryDto` 由 ValidationPipe 兜底走 `BAD_REQUEST` / 40000)/ `14102+`(沿 baseline,USER 越权由 Guard 拒绝走通用 `FORBIDDEN` / 40300;`14101` 仅用于 service 层"已通过 Guard、但 detail 越级"场景,详见 D6 v1.1 §6.4 / D-D 决议);**审计行为约束**(沿 D6 v1.1 §3 / 业务确认稿 Q1-Q5):不记查看行为 / 不做失败操作审计 / 不审计 `audit_logs` 自身 / `auditPlaceholder` 28 项 union 与 `AuditLogEvent` 6 项 union 物理隔离(D2),后续批次按需迁出
 - **V2 候选预留**:研究文档 §2.6 / §4.6 显式给出"通用化失败回退三档"(最小骨架 / 延后参与表 / 整体砍掉),启用与否由 D5/D6 决议;若决议为"砍掉",对应段位释放给后续未规划模块
 - **历史命名废弃**:`events` / `event_participants` 不会以原模块名复活(批次 2 / 批次 3 已按业务语义拆分落地为 `certificates` / `activities` / `activity_registrations` / `attendances`);但 BizCode 段位维度**不存在废弃保留**——所有段位要么已实装,要么基线预留,要么 V2 候选预留,要么未规划预留
 
