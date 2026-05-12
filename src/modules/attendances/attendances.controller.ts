@@ -210,7 +210,7 @@ export class AttendanceSheetsResourceController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      'APD 一级通过(pending → pending_final_review;批次 4-B 升级,沿 D-S6;R31 所有 records.contributionPoints 必填;**不再触发** attendance.recorded — 触发位置移到 final-approve;待 APD 部门部长 / 副部长终审)',
+      'APD 一级通过(pending → pending_final_review;批次 4-B 升级,沿 D-S6;R31 所有 records.contributionPoints 必填;**不再触发** attendance.recorded — 触发位置移到 final-approve;待终审)',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(

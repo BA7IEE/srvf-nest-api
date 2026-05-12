@@ -63,9 +63,11 @@ export type AuditEvent =
   | 'attendance-sheet.read.other'
   | 'attendance-sheet.review'
   // batch 4-B 新增 1 项(沿 D-S11 / 业务规则文档 §8.4):
-  //   APD 部门部长 / 副部长终审 final-approve / final-reject;
+  //   终审 final-approve / final-reject;
   //   action='final-approve' / 'final-reject' 在 context 中区分;
   //   触发位置:AttendancesService.finalApprove / finalReject(同事务内)。
+  //   注:终审业务角色为"APD 部门部长 / 副部长",当前实装权限仍沿用管理权限
+  //   (ADMIN / SUPER_ADMIN),细分终审权限将在后续批次实现。
   | 'attendance-sheet.final-review';
 
 const auditLogger = new Logger('Audit');
