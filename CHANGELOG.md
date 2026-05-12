@@ -4,6 +4,110 @@
 
 ## Unreleased
 
+V2 第一阶段在 v0.5.0(批次 4 全部落地,V2 72 接口)基础之上,完成 SRVF 业务 **批次 5-A**
+(ContributionRule CRUD:5 个管理接口 + 230xx BizCode 段位收口 + AuditEvent +3 +
+attendance e2e P2-1 缺口补齐),**累计 V2 77 接口**(原 72 + 批次 5-A 5);**累计 91 接口**
+contract snapshot 保护;v1 14 + V2 既有 72 接口 schema + paths 严格 **zero drift**。
+
+**SemVer 预判**(下一独立 PR `chore: bump version to 0.6.0` 时拍板):0.5.0 → 0.6.0 **minor**
+(向后兼容的功能新增,沿 v0.4.0 → v0.5.0 风格)。
+
+**重要业务能力**(前端 / 接入方必读):
+
+- 新增 `/api/v2/contribution-rules` 5 个 CRUD 接口,统一 `@Roles(SUPER_ADMIN, ADMIN)`;
+  APD 部门部长 / 副部长专属权限**未做**(留 5-B 独立批次)
+- `durationThreshold = NULL` 多条 ACTIVE 由 service 层在 create / update 时**直接拒绝**抛
+  `23002 CONTRIBUTION_RULE_ACTIVE_DUPLICATE`(DB partial unique 在 PG NULL 行为下不约束 NULL
+  多条,**业务层兜底是唯一来源**)
+- PATCH 禁改 `activityTypeCode` / `attendanceRoleCode` / `durationThreshold` 三元组,改维度
+  必须停用旧规则后新建;由 `UpdateContributionRuleDto` 白名单 + 全局 `ValidationPipe
+  forbidNonWhitelisted` 拦截抛 `BAD_REQUEST` / 40000(**不开** `23030`)
+- 规则修改**只影响新提交** AttendanceSheet,**不重算**历史 / pending / pending_final_review
+  / rejected / final_rejected Sheet(沿 batch 4-B "submit 时同事务内预填,之后不再读" 语义)
+- `softDelete` 写 `deletedAt + deletedByUserId`(schema 已在 batch 4-A 包含字段),
+  `status` 不强制改 `INACTIVE`;**注意**:`AttendanceRecord` 的软删字段集与
+  `ContributionRule` 不同,5-A 不复用 / 不混淆 / 不抽公共工具
+
+详见 [`docs/批次5-A_贡献值规则CRUD_API前评审.md`](docs/批次5-A_贡献值规则CRUD_API前评审.md) v1.1
+(D6 评审稿,33 项决议)与下方批次 5-A 子段。
+
+### V2 Batch 5-A Implementation(2026-05-12)
+
+- `cfa396d` feat(contribution-rules): add v2 batch5-A contribution rule CRUD (#24) —
+  **新增 `src/modules/contribution-rules/` 模块**(主体 4 文件 +
+  `contribution-rules.select.ts` 安全字段 select 辅助文件,共 5 文件;沿 v1
+  `users.select.ts` 范式,D6 v1.1 决议 E2);
+  **新增 5 接口**(全部 `@Roles(SUPER_ADMIN, ADMIN)`):`GET /api/v2/contribution-rules` /
+  `GET /api/v2/contribution-rules/:id` / `POST /api/v2/contribution-rules` /
+  `PATCH /api/v2/contribution-rules/:id` / `DELETE /api/v2/contribution-rules/:id`;
+  **新增 BizCode `230xx`** 段位 5 码:`23001` `CONTRIBUTION_RULE_NOT_FOUND` /
+  `23002` `CONTRIBUTION_RULE_ACTIVE_DUPLICATE` / `23010` `CONTRIBUTION_RULE_POINTS_INVALID` /
+  `23011` `CONTRIBUTION_RULE_ACTIVITY_TYPE_INVALID` / `23012` `CONTRIBUTION_RULE_ROLE_CODE_INVALID`;
+  **不开**(沿 D6 v1.1 §5 / §2.2 E8 锁定):`23030` `KEY_FIELDS_NOT_EDITABLE`(PATCH 维度
+  禁改交给 DTO 白名单 + ValidationPipe `forbidNonWhitelisted` 拦截)/ `23101~23104`
+  `FORBIDDEN_*`(沿 baseline,Guard 拒绝走通用 `40300`)/ `23103` `LAST_RULE_PROTECTED`
+  (无最后一条规则保护需求,沿 batch 4-B `22048` 不抛错路径);
+  **service 行为**:`create` / `update` 同事务 ACTIVE 唯一性兜底(含 `durationThreshold = NULL`
+  维度;`excludeId` 排除自身);Prisma P2002 兜底转 `23002`(沿 member-departments /
+  member-profiles 范式,Prisma 6.x P2002 `meta.target` 不可靠 → 直接抛 `ACTIVE_DUPLICATE`);
+  字典 `activity_type` + `attendance_role` active 校验沿 batch 3 activities 范式 inline
+  `assertDictItemValid`;`update` 仅传 `pointsBelow` / `pointsAbove` / `dailyCap` / `status` /
+  `remark` 5 字段(白名单 + ValidationPipe `forbidNonWhitelisted` 双重防护);`softDelete`
+  写 `deletedAt + deletedByUserId`,`status` 不强制改(沿 D6 v1.1 E5);
+  **AuditEvent union 新增 3 项**:`contribution-rule.create` / `contribution-rule.update` /
+  `contribution-rule.delete`(`list` / `findOne` 不 hook,沿 batch 3 写操作 hook 范式;
+  `auditPlaceholder` 实现仍为 pino log,**不落 `audit_logs` 表**,沿 D6 v1.1 F7);
+  **e2e**:新增 `test/e2e/contribution-rules.e2e-spec.ts` 43 用例覆盖 D6 §7.1 全矩阵
+  (list 7 / detail 3 / create 17 / update 10 / delete 4 / perm 2);
+  **补 attendance e2e** `contributionPoints: null` 显式入参跳过预填用例(P2-1 缺口收口,
+  沿 PR #22 范式;`test/e2e/attendances.e2e-spec.ts:1816`);
+  **OpenAPI contract snapshot 更新**:新增 5 paths + 3 named schemas
+  (`CreateContributionRuleDto` / `UpdateContributionRuleDto` / `ContributionRuleResponseDto`);
+  `ContributionRuleQueryDto` 沿 batch 3 `@Query` 内联范式不入 `components.schemas`;
+  v1 14 + batch 1-4 既有 schemas / paths **零漂移**
+
+### Docs(2026-05-12)
+
+- `1e09135` docs(v2-batch-5a): archive contribution rule CRUD API review (D6 v1.1) (#23) —
+  `docs/批次5-A_贡献值规则CRUD_API前评审.md` v1.1 评审稿归档,作为 5-A 实施 PR 的前置依据
+- (本 PR)`docs(v2-batch5a-landing)`:CHANGELOG `Unreleased` 段批次 5-A 落地记录 +
+  `docs/srvf-foundation-baseline.md §1.1` v0.5 修订(`230xx` `contribution_rules` 段位收口,
+  未规划模块从 `240xx` 起)+ `docs/handoff/v0.5.0.md` 新建(批次 5-A 落地后下一会话交接)
+
+### 本批次不包含(沿 D6 v1.1 §2.4 F1-F10)
+
+- **F1** 不改 `prisma/schema.prisma`(ContributionRule schema 与 partial unique 已在 batch 4-A 落地)
+- **F2** 不新增 migration
+- **F3** 不做 APD 部门部长 / 副部长权限细分(留 5-B)
+- **F4** 5-A 不做 `dryRun` / 试算接口;若运营强需求,**作为独立批次评审立项后再做**
+- **F5** 5-A 不做批量重算 attendance Sheet;默认不做,除非后续独立评审
+- **F6** 不做 `contribution_points` 独立流水表 / cron-job(handoff §7.1 / `ARCHITECTURE.md §9` 升级路径锁定,**永久不做**)
+- **F7** 不做 `audit_logs` 落库(留独立形态评审)
+- **F8** 不改 attendance 状态机(5 态闭集 + APD 终审流程不动)
+- **F9** 不改 `attendance.recorded` 触发点(仍仅 final-approve)
+- **F10** 不改 v1 14 接口 + batch 1-4 schemas / paths(零漂移)
+
+### 验证基线(本 Unreleased 段)
+
+| 维度 | v0.5.0 | 批次 5-A 后 |
+|---|---|---|
+| `pnpm test`(unit) | 532 / 4 suites | **557** / 4 suites |
+| `pnpm test:e2e` | 617 / 30 suites(含 PR #22 +1) | **661** / 31 suites |
+| `pnpm test:contract` | 158 + 2 snapshots | **166** + 2 snapshots |
+| `pnpm lint` / `pnpm typecheck` / `pnpm build` | 0 warnings / PASS / PASS | 0 warnings / PASS / PASS |
+| CI(PR #24) | — | 3 jobs 全绿:Lint/Typecheck/E2E ~2m47s + Docker image build ~1m7s + Container boot + API smoke + graceful shutdown ~1m37s |
+
+### 非阻塞事项(转交后续 PR)
+
+- **NB-1** `detail` / `create` / `update` 出参字段保护断言可后续增强:显式断言
+  `expect(res.body.data).not.toHaveProperty('deletedAt' / 'deletedByUserId')`,沿
+  `detail-1` 既有模式(可放 v0.6.x 小 PR 或 5-B 实施 PR 顺手补)
+- **NB-2** `audit-1` 用例:`create` / `update` / `delete` 触发 `auditPlaceholder` log 的硬验证
+  (沿 batch 2 / 3 e2e audit 测法)可后续增强
+- **NB-3** Swagger UI 手工验收(`/api/docs` 打开试调 5 接口的典型成功 / 错误路径)在
+  **下一独立 PR `chore: bump version to 0.6.0`** 或 **v0.6.0 release 前**补一次记录
+  (B 档 baseline §14 验收门槛)
+
 ## v0.5.0 - 2026-05-12
 
 V2 第一阶段在 v0.4.0(批次 3A + 批次 3B,V2 70 接口)基础之上,完成 SRVF 业务**批次 4**
