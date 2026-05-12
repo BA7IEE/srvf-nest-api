@@ -11,6 +11,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
@@ -30,6 +31,42 @@ import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 //   finalReviewNote 仅通过 FinalApproveAttendanceSheetDto / FinalRejectAttendanceSheetDto)
 // - previousSnapshot(R28 / R27:后端事务内自动生成;前端不上传)
 // - version(D41:服务端版本号;前端不上传)
+
+// ============ AttendanceSheet 状态机闭集(批次 4-B 升级为 5 态;沿 D-S6)============
+//
+// 单一来源:DTO 层 export,service.ts / e2e / 未来运营后台均 import,**禁止**手写字符串。
+// 与字典 `attendance_sheet_status` 5 项闭集保持一致;字典层 seed 由 batch 4-A migration 落地。
+//
+// 5 态语义:
+//   pending              录入员提交 / APD 一级未审
+//   pending_final_review APD 一级已通过,等终审(批次 4-B 新增中间态)
+//   approved             终审通过(批次 4-B 起语义升级为"贡献值正式生效";非"APD 一级已通过")
+//   rejected             APD 一级驳回
+//   final_rejected       终审驳回(批次 4-B 新增终态;records 跟随软删)
+//
+// 注:终审业务角色为"APD 部门部长 / 副部长",但当前实装权限仍沿用管理权限
+// (ADMIN / SUPER_ADMIN),细分终审权限将在后续批次实现。
+export const ATTENDANCE_SHEET_STATUS = {
+  PENDING: 'pending',
+  PENDING_FINAL_REVIEW: 'pending_final_review',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+  FINAL_REJECTED: 'final_rejected',
+} as const;
+
+// OpenAPI `enum` 元数据;与字典 `attendance_sheet_status` 5 项闭集 1:1 对应。
+// 注:DTO 字段层类型保留 `string`,与 Prisma `AttendanceSheet.statusCode: String` 对齐;
+// 收紧到 union 会导致 service / Prisma row → DTO 序列化处全是 type assertion 噪声。
+export const ATTENDANCE_SHEET_STATUS_VALUES: readonly string[] = [
+  ATTENDANCE_SHEET_STATUS.PENDING,
+  ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW,
+  ATTENDANCE_SHEET_STATUS.APPROVED,
+  ATTENDANCE_SHEET_STATUS.REJECTED,
+  ATTENDANCE_SHEET_STATUS.FINAL_REJECTED,
+];
+
+export type AttendanceSheetStatusCode =
+  (typeof ATTENDANCE_SHEET_STATUS)[keyof typeof ATTENDANCE_SHEET_STATUS];
 
 // ============ 入参:AttendanceRecord 嵌套 ============
 
@@ -92,12 +129,18 @@ export class AttendanceRecordInputDto {
   registrationId?: string;
 
   @ApiPropertyOptional({
-    description: '贡献值(Decimal(5,2);字段层可空;Sheet approve 前所有 records 必填,R31)',
+    description:
+      '贡献值(Decimal(5,2);字段层可空;Sheet approve 前所有 records 必填,R31)。' +
+      '入参语义:omit = 走 ContributionRule 系统预填(D14 5.B);显式传 null = 强制清空 / 不预填,' +
+      '由 APD 在 approve 前现场填入。',
+    nullable: true,
+    type: 'number',
   })
   @IsOptional()
+  @ValidateIf((_, value) => value !== null)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
-  contributionPoints?: number;
+  contributionPoints?: number | null;
 }
 
 // ============ 入参:Create / Update Sheet ============
@@ -152,8 +195,10 @@ export class RejectAttendanceSheetDto {
 //   - 批次4_贡献值业务规则_API草案.md v1.0 D-A2
 //   - 批次4_贡献值业务规则_schema草案评审决议表.md v1.0 D-S5
 //
-// 流程:APD 一级 approve(pending → pending_final_review)→ APD 部门部长 / 副部长
-// 终审 final-approve(→ approved + 触发 attendance.recorded)/ final-reject(→ final_rejected)。
+// 流程:APD 一级 approve(pending → pending_final_review)→ 终审
+// final-approve(→ approved + 触发 attendance.recorded)/ final-reject(→ final_rejected)。
+// 注:终审业务角色为"APD 部门部长 / 副部长",当前实装权限仍沿用管理权限
+// (ADMIN / SUPER_ADMIN),细分终审权限将在后续批次实现。
 // **绝对禁止**字段(沿 ApproveDto / RejectDto 风格):
 // - finalReviewerUserId / finalReviewedAt / statusCode(由 service 注入)
 
@@ -235,7 +280,8 @@ export class AttendanceSheetResponseDto {
 
   @ApiProperty({
     description:
-      '审核状态字典 code(attendance_sheet_status,批次 4-B 升级为 5 态:pending / pending_final_review / approved / rejected / final_rejected;**approved 语义为终审通过**)',
+      '审核状态字典 code(attendance_sheet_status,批次 4-B 升级为 5 态;**approved 语义为终审通过**)',
+    enum: ATTENDANCE_SHEET_STATUS_VALUES,
   })
   statusCode!: string;
 
@@ -248,10 +294,10 @@ export class AttendanceSheetResponseDto {
   @ApiPropertyOptional({ description: 'APD 一级审核备注 / 驳回理由', nullable: true })
   reviewNote!: string | null;
 
-  // 批次 4-B 新增:终审字段(D-S5);APD 部门部长 / 副部长终审通过 / 驳回时填入。
+  // 批次 4-B 新增:终审字段(D-S5);终审通过 / 驳回时由 service 填入。
+  // 注:终审权限当前沿用管理权限(ADMIN / SUPER_ADMIN);细分终审权限将在后续批次实现。
   @ApiPropertyOptional({
-    description:
-      '终审人 User.id(APD 部门部长 / 副部长;pending / pending_final_review / rejected 时 null)',
+    description: '终审人 User.id(pending / pending_final_review / rejected 时 null)',
     nullable: true,
   })
   finalReviewerUserId!: string | null;

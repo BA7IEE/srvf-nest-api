@@ -10,6 +10,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import {
   ApproveAttendanceSheetDto,
+  ATTENDANCE_SHEET_STATUS,
   AttendanceMemberSummaryDto,
   AttendanceRecordInputDto,
   AttendanceRecordResponseDto,
@@ -38,9 +39,13 @@ import {
 // 关键约定:
 // - 状态机闭集 5 态(批次 4-B 扩展;沿 D-S6):
 //   pending / pending_final_review / approved / rejected / final_rejected
+//   字符串常量集中维护在 attendances.dto.ts 的 ATTENDANCE_SHEET_STATUS;
+//   service 内部 SHEET_STATUS_* 别名仅作可读性兜底,**禁止**手写裸字符串。
 //   其中 **approved 业务语义 = 终审通过**(从 v0.4.0 "APD 通过" 升级);
-//   pending_final_review = APD 已审,等 APD 部门部长 / 副部长终审;
+//   pending_final_review = APD 一级已审,等终审;
 //   final_rejected = 终审驳回(终态,records 跟随软删,沿 D8 主路径)。
+//   注:终审业务角色为"APD 部门部长 / 副部长",当前实装权限仍沿用管理权限
+//   (ADMIN / SUPER_ADMIN),细分终审权限将在后续批次实现。
 // - submit:事务内一次性 create Sheet + N records;activity statusCode != cancelled
 //   批次 4-B 新增:**D14 5.B 系统预填** contributionPoints(根据 ContributionRule 查表)+
 //   **D11 推动** Activity.statusCode = 'completed'(若当前 published)。
@@ -72,11 +77,13 @@ import {
 const ACTIVITY_STATUS_PUBLISHED = 'published';
 const ACTIVITY_STATUS_CANCELLED = 'cancelled';
 const ACTIVITY_STATUS_COMPLETED = 'completed';
-const SHEET_STATUS_PENDING = 'pending';
-const SHEET_STATUS_PENDING_FINAL_REVIEW = 'pending_final_review';
-const SHEET_STATUS_APPROVED = 'approved';
-const SHEET_STATUS_REJECTED = 'rejected';
-const SHEET_STATUS_FINAL_REJECTED = 'final_rejected';
+
+// Sheet 状态机闭集别名(单一来源:ATTENDANCE_SHEET_STATUS,定义在 attendances.dto.ts)。
+const SHEET_STATUS_PENDING = ATTENDANCE_SHEET_STATUS.PENDING;
+const SHEET_STATUS_PENDING_FINAL_REVIEW = ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW;
+const SHEET_STATUS_APPROVED = ATTENDANCE_SHEET_STATUS.APPROVED;
+const SHEET_STATUS_REJECTED = ATTENDANCE_SHEET_STATUS.REJECTED;
+const SHEET_STATUS_FINAL_REJECTED = ATTENDANCE_SHEET_STATUS.FINAL_REJECTED;
 
 const DICT_TYPE_ATTENDANCE_ROLE = 'attendance_role';
 const DICT_TYPE_ATTENDANCE_STATUS = 'attendance_status';
@@ -313,6 +320,11 @@ export class AttendancesService {
 
   // 规范化一条 record:校验时间 + 自动计算 / 校验 serviceHours。
   // 返回 normalize 后的入库形态(serviceHours 显式 number,后续在创建时转 Decimal)。
+  //
+  // contributionPoints 入参三态(沿 D-A8 / D14 5.B):
+  //   omit / undefined → normalized 为 undefined → 走 ContributionRule 系统预填
+  //   显式 null        → normalized 为 null      → 跳过预填,落库为 null,APD 在 approve 前现场填入
+  //   number           → normalized 为 number    → 调用方已传值,不预填,不覆盖
   private normalizeRecord(input: AttendanceRecordInputDto): {
     memberId: string;
     roleCode: string;
@@ -322,7 +334,7 @@ export class AttendancesService {
     attendanceStatusCode: string;
     note: string | null;
     registrationId: string | null;
-    contributionPoints: number | null;
+    contributionPoints: number | null | undefined;
   } {
     const checkInAt = new Date(input.checkInAt);
     const checkOutAt = new Date(input.checkOutAt);
@@ -357,7 +369,8 @@ export class AttendancesService {
       attendanceStatusCode: input.attendanceStatusCode,
       note: input.note ?? null,
       registrationId: input.registrationId ?? null,
-      contributionPoints: input.contributionPoints ?? null,
+      // 保留三态:undefined / null / number;由 applyContributionRulePrefill 区分处理。
+      contributionPoints: input.contributionPoints,
     };
   }
 
@@ -526,6 +539,11 @@ export class AttendancesService {
   // 输入:normalized records + activityTypeCode;
   // 输出:applied records(contributionPoints 已按规则预填或保持调用方传入值)。
   //
+  // 入参三态处理(沿 D-A8 + v0.6 契约小修复):
+  //   undefined → 走预填(匹配规则取值;无匹配规则 → null)
+  //   null      → 调用方显式清空,跳过预填,保持 null(APD 在 approve 前现场填入)
+  //   number    → 调用方已传值,不覆盖
+  //
   // 规则匹配维度:
   //   (activityTypeCode, attendanceRoleCode, durationThreshold) WHERE deletedAt IS NULL AND status='ACTIVE'
   // 服务时长档位(若规则 durationThreshold 非 null):
@@ -549,11 +567,12 @@ export class AttendancesService {
   ): Promise<ReturnType<AttendancesService['normalizeRecord']>[]> {
     const result: ReturnType<AttendancesService['normalizeRecord']>[] = [];
     for (const r of records) {
-      // 调用方传值不覆盖(沿 D-A8)
-      if (r.contributionPoints !== null) {
+      // 显式 null = 跳过预填(v0.6 契约小修复);number = 已传值,不覆盖
+      if (r.contributionPoints !== undefined) {
         result.push(r);
         continue;
       }
+      // undefined = 走预填
       const points = await this.computePrefilledPoints(
         activityTypeCode,
         r.roleCode,
@@ -1041,16 +1060,19 @@ export class AttendancesService {
     });
   }
 
-  // ============ final-approve(PATCH;批次 4-B 新增 — APD 部门部长 / 副部长终审)============
+  // ============ final-approve(PATCH;批次 4-B 新增 — 终审通过)============
 
   // 沿 D-S5 / D-S7 / D-A2:
   // - 状态机:pending_final_review → approved(贡献值正式生效)
   // - 状态非 pending_final_review 抛 **22045** ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID
+  //   (终态 approved / rejected / final_rejected 再次调用一律走此码)
   // - 写 finalReviewerUserId / finalReviewedAt / finalReviewNote
   // - **触发** eventPlaceholder('attendance.recorded')(approved-only;同事务内;沿 D-S7)
   // - audit:attendance-sheet.final-review(action='final-approve');沿 D-S11 / 业务规则文档 §8.4
   // - **不重校验**逐条 records.contributionPoints(沿 D-S8;R31 在 APD 一级已校验)
-  // - 权限:APD 部门部长 / 副部长,沿 RolesGuard(ADMIN / SUPER_ADMIN);不开 22044 模块码
+  // - 权限:终审业务角色为"APD 部门部长 / 副部长",当前实装权限仍沿用管理权限
+  //   (RolesGuard ADMIN / SUPER_ADMIN),细分终审权限将在后续批次实现;
+  //   不开 22044 模块码,权限不足走通用 40300。
   async finalApprove(
     id: string,
     dto: FinalApproveAttendanceSheetDto,
@@ -1115,7 +1137,7 @@ export class AttendancesService {
     });
   }
 
-  // ============ final-reject(PATCH;批次 4-B 新增 — APD 部门部长 / 副部长终审驳回)============
+  // ============ final-reject(PATCH;批次 4-B 新增 — 终审驳回)============
 
   // 沿 D-S5 / D-S7 / D-A2:
   // - 状态机:pending_final_review → final_rejected
@@ -1126,6 +1148,7 @@ export class AttendancesService {
   // - records **跟随软删**(沿 D8 主路径)
   // - **不触发** attendance.recorded(沿 D-S7;子项候选 C)
   // - audit:attendance-sheet.final-review(action='final-reject')
+  // - 权限同 finalApprove:当前实装沿 ADMIN / SUPER_ADMIN,细分终审权限后置。
   async finalReject(
     id: string,
     dto: FinalRejectAttendanceSheetDto,

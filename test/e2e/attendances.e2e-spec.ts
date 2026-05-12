@@ -1554,6 +1554,19 @@ describe('attendances 模块', () => {
       expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
     });
 
+    it('final-approve 状态为 final_rejected → 22045(状态机回归矩阵闭合;v0.6 契约小修复)', async () => {
+      // alreadyFinalRejectedId 已 final_rejected(terminal 终态);再次调用 final-approve
+      // 不应"复活"成 approved;统一抛 22045 ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID。
+      // 补齐 final-approve 非法源态矩阵:approved / pending / final_rejected;
+      // 与 final-reject 段的同向用例(`final-reject 状态非 pending_final_review → 22045`)对称,
+      // 防止"终审驳回 → 改主意 → 终审通过"的悄默路径(沿 D-S5 / D-S6 终态不可逆)。
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/attendance-sheets/${alreadyFinalRejectedId}/final-approve`)
+        .set('Authorization', adminAuth)
+        .send({});
+      expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
+    });
+
     it('final-approve 不存在 → 22001', async () => {
       const res = await request(httpServer(app))
         .patch('/api/v2/attendance-sheets/cl0000000000000000000000/final-approve')
