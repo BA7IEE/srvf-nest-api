@@ -57,7 +57,8 @@
 | `200xx` + `201xx` | `activities` | 200 | **批次 3 已实装**(v0.4.0,2026-05-11)|
 | `210xx` + `211xx` | `activity_registrations` | 200 | **批次 3 已实装**(v0.4.0,2026-05-11)|
 | `220xx` + `221xx` | `attendances` | 200 | **批次 3 + 批次 4-A 已实装**(v0.4.0 14 BizCode + v0.4.0 post-release 批次 4-A 追加 3 BizCode = 17;沿批次 3B 段位补,**不新开模块码**)|
-| `230xx` 起 | 未规划模块预留 | — | 训练 / 装备 / 财务 / 通知等真到时候分配 |
+| `230xx` + `231xx` | `contribution_rules` | 200 | **批次 5-A 已实装**(v0.5.0 post-release,2026-05-12;`230xx` 段 5 BizCode,**不开** `23030` / `231xx`)|
+| `240xx` 起 | 未规划模块预留 | — | 训练 / 装备 / 财务 / 通知等真到时候分配 |
 
 **状态说明**:
 
@@ -65,6 +66,7 @@
 - **批次 2 已实装**(v0.3.0,2026-05-10):批次 2 schema + API 前评审锁定 `certificates` 占用 `180xx + 181xx` 段位,v0.3.0 release 时 5 个 BizCode 实装落地(`18001` / `18010` / `18011` / `18030` / `18101`;详见 `CHANGELOG.md` v0.3.0 段)
 - **批次 3 已实装**(v0.4.0,2026-05-11):批次 3 schema 前评审收口时锁定 `activities` / `activity_registrations` / `attendances` 三段(评审稿 §7.2),v0.4.0 release 时全部 27 个 BizCode 实装落地(`200xx` 9 / `210xx` 4 / `220xx` 14;详见 `CHANGELOG.md` v0.4.0 段)
 - **批次 4-A 已实装**(v0.4.0 post-release,2026-05-11):批次 4-A schema PR(`2190803` PR #18)在 `220xx` attendances 段**补充** 3 个 BizCode(`22043` `ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE` / `22045` `ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID` / `22046` `ATTENDANCE_SHEET_FINAL_REVIEW_NOTE_REQUIRED`),配合 `AttendanceSheet` 5 态状态机扩展;**沿 batch 3B 段位**(`220xx`),**不新开模块码**;APD 部门部长 / 副部长专属权限沿 D-S2 **不开** `22044` `FORBIDDEN_*`,权限不足走通用 `40300`
+- **批次 5-A 已实装**(v0.5.0 post-release,2026-05-12):批次 5-A 实施 PR(`cfa396d` PR #24)新开 `230xx` `contribution_rules` 模块段位,5 个 BizCode 实装落地(`23001` `CONTRIBUTION_RULE_NOT_FOUND` / `23002` `CONTRIBUTION_RULE_ACTIVE_DUPLICATE` / `23010` `CONTRIBUTION_RULE_POINTS_INVALID` / `23011` `CONTRIBUTION_RULE_ACTIVITY_TYPE_INVALID` / `23012` `CONTRIBUTION_RULE_ROLE_CODE_INVALID`);**不开** `23030` `CONTRIBUTION_RULE_KEY_FIELDS_NOT_EDITABLE`(沿 D6 v1.1 E8,PATCH 维度禁改交给 `UpdateContributionRuleDto` 白名单 + ValidationPipe `forbidNonWhitelisted` 拦截 → 通用 `BAD_REQUEST` / 40000);**不开** `23101~23104` `FORBIDDEN_*`(沿 baseline,权限不足走通用 `FORBIDDEN` / 40300;APD 部门部长 / 副部长细分权限留 5-B);未规划模块从 `240xx` 起
 - **V2 候选预留**:研究文档 §2.6 / §4.6 显式给出"通用化失败回退三档"(最小骨架 / 延后参与表 / 整体砍掉),启用与否由 D5/D6 决议;若决议为"砍掉",对应段位释放给后续未规划模块
 - **历史命名废弃**:`events` / `event_participants` 不会以原模块名复活(批次 2 / 批次 3 已按业务语义拆分落地为 `certificates` / `activities` / `activity_registrations` / `attendances`);但 BizCode 段位维度**不存在废弃保留**——所有段位要么已实装,要么基线预留,要么 V2 候选预留,要么未规划预留
 
@@ -731,6 +733,7 @@ V2 模块开发任务完成后,按以下两档逐项验证再报告完成:
 | v0.2 | 2026-05-11 | §1.1 批次 3 段位收口(v0.4.0 release 同步):`180xx` `events` 槽位**废弃保留**(不再启用,不释放);新增 `activities` `200xx/201xx` / `activity_registrations` `210xx/211xx` / `attendances` `220xx/221xx`(均已在 v0.4.0 实装落地,27 BizCode 全部就位);未规划模块从 `230xx` 起 |
 | v0.3 | 2026-05-11 | §1.1 修正 `certificates` 段位归属:批次 2(v0.3.0,2026-05-10)已实装的 `certificates` 占用 `180xx + 181xx`(5 BizCode:`18001` / `18010` / `18011` / `18030` / `18101`,详见 `CHANGELOG.md` v0.3.0 段与 [src/common/exceptions/biz-code.constant.ts](../src/common/exceptions/biz-code.constant.ts) 模块内注释);v0.2 修订时**误将该槽位标记为 `events` 废弃保留**,本次更正为 `certificates` 已实装,并新增"批次 2 已实装"状态说明;`events` / `event_participants` 命名废弃语义保留为"历史命名废弃"状态条目,但 BizCode 段位维度**不存在废弃保留**——所有段位要么已实装,要么基线预留 / V2 候选预留 / 未规划预留 |
 | v0.4 | 2026-05-12 | §1.1 批次 4-A 段位补充(v0.4.0 post-release,**未 bump version**):`220xx` `attendances` 段位由批次 3B 14 BizCode 扩展为 17(沿段位补 `22043` / `22045` / `22046`,**不新开模块码**),配合 `AttendanceSheet` 5 态状态机(`pending` / `pending_final_review` / `approved` / `rejected` / `final_rejected`)+ APD 终审 + ContributionRule 系统预填;沿 D-S2 **不开** `22044` `FORBIDDEN_*`(APD 部门部长 / 副部长专属权限留后续 RBAC 批次);未规划模块仍从 `230xx` 起 |
+| v0.5 | 2026-05-12 | §1.1 批次 5-A 段位收口(v0.5.0 post-release,**未 bump version**):新开 `230xx` + `231xx` `contribution_rules` 模块段位,`230xx` 实装 5 BizCode(`23001` / `23002` / `23010` / `23011` / `23012`);**不开** `23030` `KEY_FIELDS_NOT_EDITABLE`(PATCH 维度禁改交给 DTO 白名单 + ValidationPipe `forbidNonWhitelisted` 拦截抛 40000;沿 D6 v1.1 §2.2 E8);**不开** `23101~23104` `FORBIDDEN_*`(沿 baseline 风格,Guard 拒绝走通用 40300);**不开** `23103` `LAST_RULE_PROTECTED`(无最后一条规则保护需求,沿 batch 4-B `22048` 不抛错路径);本批次 schema 影响 0(batch 4-A 已落地完整 model + partial unique + 审计字段);未规划模块从 `240xx` 起 |
 
 ---
 
