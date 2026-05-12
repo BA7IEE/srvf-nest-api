@@ -26,6 +26,9 @@
 
 ### 0.3 严守的边界
 
+> **适用范围**:本节锁定的是 **V2 第一阶段 Step 1-7 开发期**;Step 1-7 已于 v0.2.0 全部完成,本节作为开发期硬约束的历史快照保留。
+> **当前状态**(v0.7.0 后):`audit_logs` 已作为 V2.x 第一个增量于 v0.7.0 局部启动(批次 6 经业务确认稿 + D6 评审 + 用户拍板;符合 `ARCHITECTURE.md §12.11.2`);`member_profiles` / `attachments` / `events` / `event_participants` 仍延后。当前阶段红线 / 复活路径以 [`docs/V2红线与复活路径.md`](V2红线与复活路径.md) 为单一权威源。
+
 继承 `ARCHITECTURE.md §12.8.4` 第一阶段绝对禁止清单:
 
 - ❌ 不开发 `member_profiles` / `attachments` / `audit_logs` / `events` / `event_participants` 任一模型
@@ -1013,6 +1016,9 @@ pnpm test:contract            # OpenAPI 契约快照(若涉及 schema 改动需 
 
 ## 7. 不在本计划范围
 
+> **适用范围**:本节锁定的是 **V2 第一阶段 Step 1-7 开发期**;Step 1-7 已于 v0.2.0 全部完成,本节作为开发期硬约束的历史快照保留。
+> **当前状态**(v0.7.0 后):`audit_logs` 已作为 V2.x 第一个增量于 v0.7.0 局部启动;`member_profiles` / `attachments` / `events` / `event_participants` 仍延后。当前阶段红线 / 复活路径以 [`docs/V2红线与复活路径.md`](V2红线与复活路径.md) 为单一权威源;新批次范围以对应批次评审稿为准。
+
 ### 7.1 不开发的模型
 
 - ❌ `member_profiles`(任何敏感字段 — 身份证 / 紧急联系人 / 医疗 / 出生日期 / 住址 / 性别 / 第三方账号 / 凭证标识 等)
@@ -1042,7 +1048,7 @@ V2.x 复活触发条件见 `TASKS.md §5.5.4.3`。
 - ❌ 在第一阶段绕过 §3.1 字典 seed 红线(真实业务取值进入 git history)
 - ❌ 在第一阶段绕过 §6.1 v1 接口契约(v1 14 接口任一发生变化)
 - ❌ 在第一阶段把 `member_profiles` 敏感字段"先占位"到任何 model
-- ❌ 在第一阶段把 `audit_logs` 接入到任何 V2 写操作("既然要做就先做"反模式)
+- ❌ 在第一阶段把 `audit_logs` 接入到任何 V2 写操作("既然要做就先做"反模式)— **本条范围 = Step 1-7 开发期;Step 1-7 已完成,`audit_logs` 已于 v0.7.0 经评审 + 用户拍板 + 批次 6 PR 实施作为 V2.x 增量局部启动,沿 [`docs/V2红线与复活路径.md`](V2红线与复活路径.md) §5**
 - ❌ 修改 `docker-compose.yml` / `.github/workflows/*`(除非 D8 立项后单独评估)
 - ❌ 引入未在任务卡声明的新依赖
 
