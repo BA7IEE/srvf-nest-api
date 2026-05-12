@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
@@ -12,6 +13,7 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   CertificateListItemDto,
   CertificateResponseDto,
@@ -44,6 +46,16 @@ import { CertificatesService } from './certificates.service';
 @Controller('v2/members/:memberId/certificates')
 export class CertificatesController {
   constructor(private readonly service: CertificatesService) {}
+
+  // V2 批次 6 PR #2:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
+  // 不引入 cls-rs / AsyncLocalStorage)。仅供本 controller 写操作内部复用。
+  private buildAuditMeta(req: Request): AuditMeta {
+    return {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    };
+  }
 
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
@@ -82,8 +94,9 @@ export class CertificatesController {
     @Param('memberId') memberId: string,
     @Body() dto: CreateCertificateDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<CertificateResponseDto> {
-    return this.service.create(memberId, dto, currentUser);
+    return this.service.create(memberId, dto, currentUser, this.buildAuditMeta(req));
   }
 
   // 必须先于 @Get(':id') 声明,否则 NestJS 将 'qualification-flag' 字面值视作 :id 占位。
@@ -152,8 +165,9 @@ export class CertificatesController {
     @Param('id') id: string,
     @Body() dto: UpdateCertificateDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<CertificateResponseDto> {
-    return this.service.update(memberId, id, dto, currentUser);
+    return this.service.update(memberId, id, dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Delete(':id')
@@ -172,8 +186,9 @@ export class CertificatesController {
     @Param('memberId') memberId: string,
     @Param('id') id: string,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<CertificateResponseDto> {
-    return this.service.softDelete(memberId, id, currentUser);
+    return this.service.softDelete(memberId, id, currentUser, this.buildAuditMeta(req));
   }
 
   @Patch(':id/verify')
@@ -197,8 +212,9 @@ export class CertificatesController {
     @Param('id') id: string,
     @Body() dto: VerifyCertificateDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<CertificateResponseDto> {
-    return this.service.verify(memberId, id, dto, currentUser);
+    return this.service.verify(memberId, id, dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Patch(':id/reject')
@@ -221,7 +237,8 @@ export class CertificatesController {
     @Param('id') id: string,
     @Body() dto: RejectCertificateDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<CertificateResponseDto> {
-    return this.service.reject(memberId, id, dto, currentUser);
+    return this.service.reject(memberId, id, dto, currentUser, this.buildAuditMeta(req));
   }
 }

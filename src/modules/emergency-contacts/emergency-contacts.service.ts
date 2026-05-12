@@ -1,11 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import { auditPlaceholder } from '../../common/audit/audit-placeholder';
+import { maskAddress, maskName, maskPhone } from '../../common/audit/mask-pii.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   CreateEmergencyContactDto,
   EmergencyContactResponseDto,
@@ -21,7 +24,10 @@ import {
 // - 软删走 deletedAt(Q-S10);列表自动过滤已软删
 // - relationCode 字典校验(emergency_relation type)
 // - 跨 member 校验:contact 属于其他 member 时抛 EMERGENCY_CONTACT_NOT_BELONGS_TO_MEMBER
-// - audit:list / create / update / softDelete 均调 hook(A5 / A6)
+// - audit:
+//   - list  → auditPlaceholder('emergency-contact.read.other', ...)  pino-only(批次 6 PR #2 未迁移,沿 F2)
+//   - create / update / softDelete → AuditLogsService.log({ event: 'emergency-contact.write', ... })
+//     批次 6 PR #2 迁移(D-A 修订 / D6 v1.1 §8.2),敏感字段经 maskName / maskPhone / maskAddress 打码
 
 const EMERGENCY_RELATION_DICT_CODE = 'emergency_relation';
 
@@ -38,11 +44,18 @@ const emergencyContactSafeSelect = {
   updatedAt: true,
 } as const satisfies Prisma.EmergencyContactSelect;
 
+type SafeEmergencyContact = Prisma.EmergencyContactGetPayload<{
+  select: typeof emergencyContactSafeSelect;
+}>;
+
 type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
 export class EmergencyContactsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogs: AuditLogsService,
+  ) {}
 
   // ============ helpers ============
 
@@ -77,15 +90,19 @@ export class EmergencyContactsService {
 
   // 找 contact + 校验归属(memberId 匹配 + notDeleted)。
   // 找不到 → EMERGENCY_CONTACT_NOT_FOUND;找到但 memberId 不匹配 → EMERGENCY_CONTACT_NOT_BELONGS_TO_MEMBER。
+  //
+  // V2 批次 6 PR #2 修订:select 由 { id, memberId } 扩展为 emergencyContactSafeSelect(全字段),
+  // 让 update / softDelete 不再额外查一次拿 before 数据(D6 v1.1 §8.2)。
+  // 调用方仅取 cert.id / cert.memberId 的语义兼容(返回类型是超集)。
   private async findContactInMemberOrThrow(
     memberId: string,
     contactId: string,
     tx?: PrismaTx,
-  ): Promise<{ id: string; memberId: string }> {
+  ): Promise<SafeEmergencyContact> {
     const client = tx ?? this.prisma;
     const contact = await client.emergencyContact.findFirst({
       where: notDeletedWhere({ id: contactId }),
-      select: { id: true, memberId: true },
+      select: emergencyContactSafeSelect,
     });
     if (!contact) throw new BizException(BizCode.EMERGENCY_CONTACT_NOT_FOUND);
     if (contact.memberId !== memberId) {
@@ -94,10 +111,25 @@ export class EmergencyContactsService {
     return contact;
   }
 
+  // 把完整 EmergencyContact 转成"打码后可入 audit context"的 snapshot(D6 v1.1 §7.3)。
+  // 敏感字段:contactName / phonePrimary / phoneBackup / address;非敏感:relationCode / priority。
+  // 不含 id / memberId / createdAt / updatedAt(audit_logs 自带 resourceId / createdAt / actorUser)。
+  private toMaskedContactSnapshot(c: SafeEmergencyContact): Record<string, unknown> {
+    return {
+      contactName: maskName(c.contactName),
+      relationCode: c.relationCode,
+      phonePrimary: maskPhone(c.phonePrimary),
+      phoneBackup: maskPhone(c.phoneBackup),
+      address: maskAddress(c.address),
+      priority: c.priority,
+    };
+  }
+
   // ============ list ============
 
   // 决策:返完整数组(无分页;演示规模 ≤ 5 / 人)。排序 priority ASC, createdAt ASC。
   // hook A5 emergency-contact.read.other:本批次仅 ADMIN/SUPER_ADMIN 路由,记一次"看他人"。
+  // 注:本调用是 pino-only 占位(批次 6 PR #2 未迁移,沿 F2)。
   async list(
     memberId: string,
     currentUser: CurrentUserPayload,
@@ -125,6 +157,7 @@ export class EmergencyContactsService {
     memberId: string,
     dto: CreateEmergencyContactDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<EmergencyContactResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
@@ -144,11 +177,16 @@ export class EmergencyContactsService {
         select: emergencyContactSafeSelect,
       });
 
-      auditPlaceholder('emergency-contact.write', {
-        operatorUserId: currentUser.id,
-        targetMemberId: memberId,
-        operation: 'create',
-        contactId: created.id,
+      await this.auditLogs.log({
+        event: 'emergency-contact.write',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'emergency_contact',
+        resourceId: created.id,
+        meta: auditMeta,
+        after: this.toMaskedContactSnapshot(created),
+        extra: { targetMemberId: memberId, operation: 'create' },
+        tx,
       });
 
       return created;
@@ -162,10 +200,11 @@ export class EmergencyContactsService {
     contactId: string,
     dto: UpdateEmergencyContactDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<EmergencyContactResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
-      const contact = await this.findContactInMemberOrThrow(memberId, contactId, tx);
+      const before = await this.findContactInMemberOrThrow(memberId, contactId, tx);
 
       if (dto.relationCode !== undefined) {
         await this.assertRelationCodeValid(dto.relationCode, tx);
@@ -180,16 +219,22 @@ export class EmergencyContactsService {
       if (dto.priority !== undefined) data.priority = dto.priority;
 
       const updated = await tx.emergencyContact.update({
-        where: { id: contact.id },
+        where: { id: before.id },
         data,
         select: emergencyContactSafeSelect,
       });
 
-      auditPlaceholder('emergency-contact.write', {
-        operatorUserId: currentUser.id,
-        targetMemberId: memberId,
-        operation: 'update',
-        contactId: contact.id,
+      await this.auditLogs.log({
+        event: 'emergency-contact.write',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'emergency_contact',
+        resourceId: before.id,
+        meta: auditMeta,
+        before: this.toMaskedContactSnapshot(before),
+        after: this.toMaskedContactSnapshot(updated),
+        extra: { targetMemberId: memberId, operation: 'update' },
+        tx,
       });
 
       return updated;
@@ -204,22 +249,28 @@ export class EmergencyContactsService {
     memberId: string,
     contactId: string,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<EmergencyContactResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
-      const contact = await this.findContactInMemberOrThrow(memberId, contactId, tx);
+      const before = await this.findContactInMemberOrThrow(memberId, contactId, tx);
 
       const removed = await tx.emergencyContact.update({
-        where: { id: contact.id },
+        where: { id: before.id },
         data: { deletedAt: new Date() },
         select: emergencyContactSafeSelect,
       });
 
-      auditPlaceholder('emergency-contact.write', {
-        operatorUserId: currentUser.id,
-        targetMemberId: memberId,
-        operation: 'softDelete',
-        contactId: contact.id,
+      await this.auditLogs.log({
+        event: 'emergency-contact.write',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'emergency_contact',
+        resourceId: before.id,
+        meta: auditMeta,
+        before: this.toMaskedContactSnapshot(before),
+        extra: { targetMemberId: memberId, operation: 'softDelete' },
+        tx,
       });
 
       return removed;
