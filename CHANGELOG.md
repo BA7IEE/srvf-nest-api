@@ -4,7 +4,122 @@
 
 ## Unreleased
 
-- docs(handoff): add v0.4.0 stage handoff for next AI session
+v0.4.0 release 之后追加的 docs / 批次 4 内容尚未单独发布;`package.json#version` /
+Swagger `setVersion(...)` 仍为 **0.4.0**。建议在批次 4-C 评审通过后另起独立 PR
+bump 到 0.5.0(沿 v0.3.0 / v0.4.0 节奏:批次落地 → docs 收口 → 独立 bump version PR
+→ tag + release),**不在本 docs PR 内擅自 bump**。
+
+### Docs(v0.4.0 release 之后,2026-05-11 ~ 2026-05-12)
+- `dd13291` docs(handoff): add v0.4.0 stage handoff for next AI session — `docs/handoff/v0.4.0.md` 落档,
+  作为 v0.4.0 release 后"下一会话交接"入口;后续在批次 4-C 中追加批次 4 完成事实
+- `0cde221` docs(baseline): fix certificates BizCode segment ownership (#17) — `docs/srvf-foundation-baseline.md`
+  §1.1 段位归属修正
+
+### V2 Batch 4-A Schema(ContributionRule + AttendanceSheet 终审 3 字段;2026-05-11)
+- `2190803` chore(prisma): add batch4 contribution rule schema (#18) —
+  **新增 `ContributionRule` model**(13 字段:`activityTypeCode` / `attendanceRoleCode` /
+  `durationThreshold` Decimal(5,2) 可空 / `pointsBelow` Decimal(5,2) / `pointsAbove` Decimal(5,2) 可空 /
+  `dailyCap` Decimal(5,2) 可空 / `note` / `status` ContributionRuleStatus enum / `createdByUserId` /
+  `updatedByUserId` / `deletedByUserId` 3 个审计 FK + `createdAt` / `updatedAt` / `deletedAt`)+
+  **新增 `ContributionRuleStatus` enum**(`ACTIVE` / `INACTIVE`,baseline §2.2.3 ENUM 命名)+
+  **AttendanceSheet 加 3 字段终审**(`finalReviewerUserId?` / `finalReviewedAt?` / `finalReviewNote?`,
+  D-S5;`SheetFinalReviewer` relation 反挂 User)+
+  **partial unique index `contribution_rules_activity_role_threshold_active_unique`**
+  (手工 SQL 追加:`WHERE deletedAt IS NULL AND status = 'ACTIVE'`;
+  注:PostgreSQL NULL 语义不阻止 `durationThreshold = NULL` 多条 ACTIVE 并存,
+  service 层按 `ORDER BY createdAt ASC LIMIT 1` 兜底,见 §6 已知缺口)+
+  **3 个新 BizCode**(`220xx` attendances 段位补 3 项,**复用 batch 3B 段位,不新开模块码**):
+  `22043 ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE` /
+  `22045 ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID` /
+  `22046 ATTENDANCE_SHEET_FINAL_REVIEW_NOTE_REQUIRED`(沿 D-S2 / batch 3A 不开 `FORBIDDEN_*` 模块码,
+  权限不足走通用 `40300`)+
+  **`attendance_sheet_status` 字典扩展为 5 态**(原 `pending` / `approved` / `rejected` +
+  新 `pending_final_review` / `final_rejected`;字段层仍是 `String`,**未引 Prisma enum**)+
+  本 PR 不动 service / DTO / controller / e2e / contract / OpenAPI snapshot,**纯 schema + BizCode 落地**
+
+### V2 Batch 4-B Service / API(终审 + 贡献值预填 + Activity 推动;2026-05-12)
+- `6812db9` feat(attendances): add v2 batch4-B final review and contribution prefill (#19) —
+  **2 个新路由**(累计 attendances 9 → 11,V2 接口 84 → 86):
+  - `PATCH /api/v2/attendance-sheets/:id/final-approve` — APD 终审通过
+    (`pending_final_review → approved`;**触发** `attendance.recorded`;沿 D-S5 / D-S7)
+  - `PATCH /api/v2/attendance-sheets/:id/final-reject` — APD 终审驳回
+    (`pending_final_review → final_rejected`;`finalReviewNote` 必填;records **跟随软删**;
+    **不触发** `attendance.recorded`)
+  - 两路由 Swagger summary 文案:"终审通过 / 驳回(当前沿用管理权限,细分权限后置;...)" —
+    避免暗示已实装 "APD 部门部长 / 副部长" 专属权限(沿 D-S2 不开 `22044`,见 §8 权限边界)
+  - **状态机 3 态 → 5 态**(D-S6):
+    `pending → rejected`(一级驳回)/ `pending → pending_final_review → approved`(终审通过)/
+    `pending → pending_final_review → final_rejected`(终审驳回);
+    `pending_final_review` / `final_rejected` 一律不可 `edit` / `softDelete`
+    (沿 §2.1 业务规则,`22030` / `22043`)
+  - **`approved` 语义升级**:v0.4.0 之前 = "APD approve 后即 approved";
+    批次 4 后 = **"终审通过"**(贡献值正式生效);
+    `pending_final_review` = "APD 一级审核通过,待 APD 部门部长 / 副部长终审"
+  - **`attendance.recorded` 触发位置切换**(沿 D-S7):
+    从 `approve` 后移到 `final-approve`;
+    `approve` / `reject` / `final-reject` / `submit` / `edit` / `delete` **均不触发**
+  - **D14 ContributionRule 预填**(沿 D-A8 候选 5.B):
+    POST `/attendance-sheets` 事务内按 `(activityTypeCode, attendanceRoleCode, durationMinutes)` 匹配规则,
+    预填 `contributionPoints`;调用方传值**不覆盖**;
+    无匹配规则 → 保持 `null`(不抛错;沿 D-S11 `22048` 不开);
+    每日上限 `dailyCap` 默认 1.5(沿 Q-OPEN-7 锁定);
+    **不暴露** `ContributionRule` CRUD 接口,**不引** `contribution_points` 流水表(均留后续批次)
+  - **D11 Activity.completed 推动**(沿 D-S10 / 业务规则文档 §3):
+    首张 AttendanceSheet 提交时,事务内 `Activity.statusCode published → completed`,
+    单向不可逆;后续 Sheet 提交幂等(已 completed → 无操作);
+    `approve` / `reject` / `final-reject` 均**不回退** `Activity.completed`;
+    `completed` 在批次 4 语义 = "活动已进入考勤提交阶段",**不**代表"全部终审通过"
+    (沿业务规则文档 §3.4:运营可通过 `AttendanceSheet` 列表观察"虽 completed 但无通过考勤")
+  - **DTO 变更**:
+    新增 `FinalApproveAttendanceSheetDto`(optional `finalReviewNote`,@MaxLength 500)+
+    `FinalRejectAttendanceSheetDto`(required `finalReviewNote`,@MinLength 1 / @MaxLength 500);
+    `AttendanceSheetResponseDto` 追加 3 字段(`finalReviewerUserId?` / `finalReviewedAt?` /
+    `finalReviewNote?`);`reviewNote` / `reviewedAt` / `reviewerUserId` 描述加 "APD 一级" 前缀;
+    `statusCode` 描述升级为 5 态文字(注:字段仍是 OpenAPI `string` 类型,**非 enum 数组**,
+    见 §6 已知缺口)
+  - **AuditEvent union 追加 1 项**:`attendance-sheet.final-review`
+    (`action='final-approve' | 'final-reject'`,触发于 finalApprove / finalReject service 同事务内)
+  - **e2e 累计**:attendances 69 → 93(+24 用例:终审 / D14 预填 / D11 推动 / 5 态边界);
+    全量 e2e 592 → **616**;无 v1 / batch 1 / batch 2 / batch 3 退化
+  - **contract 累计**:154 + 2 snapshots → **158 + 2 snapshots**(routes +2 + DTO +2 +
+    AttendanceSheetResponseDto +3 字段 + summary 文案锁定);v1 14 + V2 86 接口 zero drift
+  - **本 PR 边界**:
+    - 不动 `prisma/schema.prisma`(批次 4-A 已一次入库)
+    - 不动 migration / seed / reset-db
+    - 不暴露 `ContributionRule` CRUD 接口
+    - 不引入 `contribution_points` 流水表
+    - 不复活 `audit_logs` 表
+    - 不引入新依赖
+    - APD 部门部长 / 副部长**专属权限未实装**(沿 ADMIN / SUPER_ADMIN;细分权限后置)
+
+### V2 Batch 4-C Docs Release Prep(批次 4 文档收口;2026-05-12)
+- 本 PR:`docs(...): batch 4-C docs release prep` — `CHANGELOG.md` Unreleased 段全量补齐
+  批次 4 三子段(本段)+ `README.md` V2 attendances 行更新(3 态 → 5 态,9 → 11 接口,
+  累计 84 → 86 V2)+ `docs/srvf-foundation-baseline.md` §1.1 段位表 `220xx` 行
+  追加批次 4-A "3 BizCode" 事实 + `docs/handoff/v0.4.0.md` 追加批次 4 完成状态与
+  9 项核心语义清单;**未** bump version(留独立 PR);**未** 改 src / prisma / e2e /
+  contract / OpenAPI snapshot
+
+### Boundaries / Validation(Unreleased 累计;批次 4-A + 4-B 后)
+- v1 14 接口 + V2 first stage 29 + 批次 1 7 + 批次 2 8 + 批次 3A 17 + 批次 3B 9 +
+  **批次 4-B 2** 接口 schema + paths **zero drift**;累计 **86 接口** 进入 contract snapshot
+- v1 14 接口 schema + paths 严格 zero drift(LoginDto / UserResponseDto 不漂移)
+- 批次 4-A schema(commit `2190803`)+ 批次 4-B service/API(commit `6812db9`)+ 批次 4-C docs(本 PR)
+  形成 **schema → service → docs** 三 PR 拆分,沿 v0.3.0 / v0.4.0 节奏
+- 累计验收(merge 时本地 + CI 全绿):
+  - `pnpm test` unit 532 / 4 suites(原 517 + 批次 4-A 15 BizCode 元属性遍历自动覆盖)
+  - `pnpm test:e2e` **616** / 30 suites(原 592 + 批次 4-B **24**;无退化)
+  - `pnpm test:contract` **158 + 2 snapshots**(累计 86 接口 contract zero drift)
+  - `pnpm lint` 0 warnings / `pnpm typecheck` PASS / `pnpm build` PASS
+  - 批次 4-A PR #18 CI 全绿;批次 4-B PR #19 CI 全绿(Docker + Lint/Typecheck/E2E 双绿)
+- **批次 4 永久不做 / 留后续批次**(沿决议表 v1.0):
+  - **不暴露** `ContributionRule` CRUD 接口(留运营后台或单独管理 PR)
+  - **不引** `contribution_points` 独立流水表 / cron-job(D49 / R32 永久不做,沿 v0.4.0 / 业务规则文档)
+  - **不复活** `audit_logs` 表(沿 batch 1 占位)
+  - **不实装** APD 部门部长 / 副部长专属权限(沿 D-S2 不开 `22044`;留后续 RBAC 批次)
+  - **不开** `BizCode 22044`(权限不足走通用 `40300`)
+  - **不引** Prisma enum 锁 `attendance_sheet_status`(字段仍是 `String`,5 态走字典闭集)
+  - **`Activity.complete` 独立接口形态**(Q-A11 永久不做;推动机制由 D11 在 `submit` 内触发)
 
 ## v0.4.0 - 2026-05-11
 
