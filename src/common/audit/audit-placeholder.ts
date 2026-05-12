@@ -68,7 +68,16 @@ export type AuditEvent =
   //   触发位置:AttendancesService.finalApprove / finalReject(同事务内)。
   //   注:终审业务角色为"APD 部门部长 / 副部长",当前实装权限仍沿用管理权限
   //   (ADMIN / SUPER_ADMIN),细分终审权限将在后续批次实现。
-  | 'attendance-sheet.final-review';
+  | 'attendance-sheet.final-review'
+  // batch 5-A 新增 3 项(沿 D6 v1.1 §2.2 E6 / §4.7;沿 batch 2 / batch 3 写操作 hook 范式):
+  //   contribution-rule.create  实装(POST /api/v2/contribution-rules)
+  //   contribution-rule.update  实装(PATCH /api/v2/contribution-rules/:id)
+  //   contribution-rule.delete  实装(DELETE /api/v2/contribution-rules/:id)
+  // list / findOne 不 hook(规则是配置数据,非个人敏感信息)。
+  // auditPlaceholder 实现仍是 pino log,不落 audit_logs 表(D6 v1.1 F7 留独立批次)。
+  | 'contribution-rule.create'
+  | 'contribution-rule.update'
+  | 'contribution-rule.delete';
 
 const auditLogger = new Logger('Audit');
 

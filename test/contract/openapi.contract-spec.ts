@@ -161,6 +161,12 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/v2/attendance-sheets/{id}/final-approve'],
   ['patch', '/api/v2/attendance-sheets/{id}/final-reject'],
   ['get', '/api/v2/users/me/attendance-records'],
+  // V2 第一阶段批次 5-A(2026-05-12;ContributionRule CRUD,沿 D6 v1.1)
+  ['get', '/api/v2/contribution-rules'],
+  ['post', '/api/v2/contribution-rules'],
+  ['get', '/api/v2/contribution-rules/{id}'],
+  ['patch', '/api/v2/contribution-rules/{id}'],
+  ['delete', '/api/v2/contribution-rules/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -262,6 +268,13 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // V2 第一阶段批次 4-B(APD 部门部长 / 副部长终审)
   'FinalApproveAttendanceSheetDto',
   'FinalRejectAttendanceSheetDto',
+
+  // V2 第一阶段批次 5-A contribution-rules
+  // 注:ContributionRuleQueryDto 是 @Query() DTO,NestJS Swagger 把其属性内联为
+  //   parameters,不进 components.schemas(沿 batch 3 ListActivities / Attendance 范式)。
+  'CreateContributionRuleDto',
+  'UpdateContributionRuleDto',
+  'ContributionRuleResponseDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

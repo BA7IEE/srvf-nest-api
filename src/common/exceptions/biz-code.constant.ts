@@ -528,6 +528,48 @@ export const BizCode = {
     message: '终审驳回须填写终审备注',
     httpStatus: HttpStatus.CONFLICT,
   },
+
+  // contribution_rules 模块业务级(230xx + 231xx)。批次 5-A 引入(2026-05-12)。
+  // 详见 docs:批次5-A_贡献值规则CRUD_API前评审.md v1.1 §5(BizCode 锁定 紧凑版)+ §2.2 E3。
+  // 段位选择:baseline §1.1 v0.4 "未规划模块从 230xx 起" → v0.5 收口段位归属为 contribution_rules。
+  // 与 attendances 段(220xx)解耦:contribution_rules 是配置表 / 独立 module,不与 attendance 业务码混淆。
+  //
+  // 子段(对齐 baseline §1.3 紧凑使用):
+  // - 23001:NOT_FOUND
+  // - 23002:唯一约束冲突(`(activityTypeCode, attendanceRoleCode, durationThreshold)` ACTIVE 维度)
+  // - 23010-23012:业务级输入校验(分值组合 / 活动类型字典 / 考勤角色字典)
+  //
+  // 不开的码(D6 v1.1 §5 明确):
+  // - 23004~23009:无单字段唯一约束
+  // - 23030 CONTRIBUTION_RULE_KEY_FIELDS_NOT_EDITABLE:决议 E8,PATCH 禁改字段交给
+  //   UpdateContributionRuleDto 白名单 + 全局 ValidationPipe forbidNonWhitelisted 拦截
+  // - 23101~23104 FORBIDDEN_*:沿 baseline,权限不足走通用 FORBIDDEN(40300)
+  // - 23103 LAST_RULE_PROTECTED:沿 batch 4-B 22048 不抛错路径,删完该维度 attendance 预填走 null
+  CONTRIBUTION_RULE_NOT_FOUND: {
+    code: 23001,
+    message: '贡献值规则不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  CONTRIBUTION_RULE_ACTIVE_DUPLICATE: {
+    code: 23002,
+    message: '该维度已存在生效中的规则',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CONTRIBUTION_RULE_POINTS_INVALID: {
+    code: 23010,
+    message: '分值字段组合非法',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  CONTRIBUTION_RULE_ACTIVITY_TYPE_INVALID: {
+    code: 23011,
+    message: '活动类型字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  CONTRIBUTION_RULE_ROLE_CODE_INVALID: {
+    code: 23012,
+    message: '考勤角色字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];

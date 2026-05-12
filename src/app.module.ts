@@ -19,6 +19,7 @@ import { ActivityRegistrationsModule } from './modules/activity-registrations/ac
 import { AttendancesModule } from './modules/attendances/attendances.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CertificatesModule } from './modules/certificates/certificates.module';
+import { ContributionRulesModule } from './modules/contribution-rules/contribution-rules.module';
 import { DictionariesModule } from './modules/dictionaries/dictionaries.module';
 import { EmergencyContactsModule } from './modules/emergency-contacts/emergency-contacts.module';
 import { HealthModule } from './modules/health/health.module';
@@ -77,6 +78,10 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     ActivitiesModule,
     ActivityRegistrationsModule,
     AttendancesModule,
+    // V2 第一阶段批次 5-A(2026-05-12):contribution-rules CRUD
+    //   (沿 D6 v1.1;path /api/v2/contribution-rules;230xx 段位;
+    //    attendance 预填仍由 AttendancesService.applyContributionRulePrefill 完成,本模块不动 attendance)
+    ContributionRulesModule,
   ],
   providers: [
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):
