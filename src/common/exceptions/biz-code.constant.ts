@@ -570,6 +570,30 @@ export const BizCode = {
     message: '考勤角色字典 code 不存在或已停用',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+
+  // audit_logs 模块业务级(140xx + 141xx)。批次 6 PR #1 引入(2026-05-12)。
+  // 详见 docs:批次6_audit_logs_API前评审.md(D6 v1.1)§9。
+  // 段位选择:baseline §1.1 v0.5 "audit_logs 140xx + 141xx" 基线预留,本批次实装收口。
+  //
+  // 子段(对齐 baseline §1.3 紧凑使用):
+  // - 14001:NOT_FOUND(GET /:id 命中但不存在)
+  // - 14101:权限边界(ADMIN 越级查 SUPER_ADMIN 的 detail;D-D 拍板)
+  //
+  // 不开的码(D6 v1.1 §9 明确):
+  // - 14002+:无唯一约束(audit_logs 写入后不可改不可删,无 P2002 场景)
+  // - 14010+:无入参业务级校验(QueryDto 由 ValidationPipe 兜底走 BAD_REQUEST / 40000)
+  // - 14102+:沿 baseline,USER 越权由 Guard 拒绝走通用 FORBIDDEN / 40300;
+  //          14101 仅用于 Service 层"已通过 Guard、但 detail 越级"场景
+  AUDIT_LOG_NOT_FOUND: {
+    code: 14001,
+    message: '审计记录不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  FORBIDDEN_AUDIT_LOG_READ: {
+    code: 14101,
+    message: '无权查看该审计记录',
+    httpStatus: HttpStatus.FORBIDDEN,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];

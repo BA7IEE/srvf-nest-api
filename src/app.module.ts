@@ -17,6 +17,7 @@ import { DatabaseModule } from './database/database.module';
 import { ActivitiesModule } from './modules/activities/activities.module';
 import { ActivityRegistrationsModule } from './modules/activity-registrations/activity-registrations.module';
 import { AttendancesModule } from './modules/attendances/attendances.module';
+import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CertificatesModule } from './modules/certificates/certificates.module';
 import { ContributionRulesModule } from './modules/contribution-rules/contribution-rules.module';
@@ -82,6 +83,11 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   (沿 D6 v1.1;path /api/v2/contribution-rules;230xx 段位;
     //    attendance 预填仍由 AttendancesService.applyContributionRulePrefill 完成,本模块不动 attendance)
     ContributionRulesModule,
+    // V2 第一阶段批次 6 PR #1(2026-05-12):audit_logs 基础设施
+    //   (D6 v1.1 §4 / §5 / §6;path /api/v2/audit-logs;140xx + 141xx 段位)。
+    //   仅 schema + module + AuditLogsService.log + 2 个查询接口;
+    //   8 处 emergency-contacts / certificates 写操作迁移留 PR #2(D-A 修订)。
+    AuditLogsModule,
   ],
   providers: [
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):
