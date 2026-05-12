@@ -1813,6 +1813,41 @@ describe('attendances 模块', () => {
       }
     });
 
+    it('调用方显式传 contributionPoints: null 时跳过预填(P2-1 三态语义;沿 PR #22)', async () => {
+      // 命中规则,但调用方显式传 null → service 跳过预填,落库 null。
+      // 与 "调用方传 contributionPoints 时不覆盖"(number 路径)成对覆盖三态语义。
+      const rule = await prisma.contributionRule.create({
+        data: {
+          activityTypeCode: 'att-demo',
+          attendanceRoleCode: 'back_command',
+          durationThreshold: null,
+          pointsBelow: 1.0, // 若被预填会覆盖 null
+          pointsAbove: null,
+          dailyCap: null,
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      });
+      try {
+        const id = await createPendingSheet(activityId, [
+          baseRecord({
+            memberId: memberCId,
+            roleCode: 'back_command',
+            checkInAt: '2026-07-03T10:00:00.000Z',
+            checkOutAt: '2026-07-03T11:00:00.000Z',
+            contributionPoints: null, // 显式 null:强制清空 / 不预填
+          }),
+        ]);
+        const records = await prisma.attendanceRecord.findMany({
+          where: { sheetId: id, deletedAt: null },
+          select: { contributionPoints: true },
+        });
+        expect(records[0].contributionPoints).toBeNull();
+      } finally {
+        await prisma.contributionRule.delete({ where: { id: rule.id } });
+      }
+    });
+
     it('NULL durationThreshold 多条 ACTIVE 规则 → 按 createdAt ASC 取首条', async () => {
       // 沿 §3.1 复核结论:NULL durationThreshold 在 partial unique 下不阻止多行 ACTIVE 并存(PG NULL 行为)。
       // service 兜底:按 createdAt ASC 取首条。
