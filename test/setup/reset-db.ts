@@ -44,11 +44,16 @@ import { assertTestDatabaseUrl } from './test-db';
 // **不被任何其它表 FK 引用**;真实业务关联 activityTypeCode / attendanceRoleCode 是字典 code 字符串,
 // 非外键。因此放在 User 之前即可由 CASCADE 自然清理,放在列首作为独立的小表。
 //   - ContributionRule.createdByUserId / updatedByUserId / deletedByUserId → User.id(Restrict)
+//
+// V2 第一阶段批次 6 追加(2026-05-12):audit_logs 1 张表(物理名小写,Prisma `@@map`);
+// 仅持有 1 条 FK actorUserId → User.id(Restrict);**不被任何其它表 FK 引用**;
+// 放在 User 之前,确保 TRUNCATE User 时不被 Restrict FK 阻塞(CASCADE 兜底亦可)。
+// 单 spec 内频繁清表用 test/helpers/audit-logs-cleanup.ts(truncateAuditLogsTestOnly)。
 export async function resetDb(app: INestApplication): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "audit_logs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }

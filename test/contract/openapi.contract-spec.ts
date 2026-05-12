@@ -167,6 +167,11 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/v2/contribution-rules/{id}'],
   ['patch', '/api/v2/contribution-rules/{id}'],
   ['delete', '/api/v2/contribution-rules/{id}'],
+
+  // V2 第一阶段批次 6 PR #1(2026-05-12;audit_logs 查询接口,沿 D6 v1.1 §5)
+  // 不开放 POST / PATCH / PUT / DELETE / export(F5;写入后不可改不可删,红线)
+  ['get', '/api/v2/audit-logs'],
+  ['get', '/api/v2/audit-logs/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -275,6 +280,12 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'CreateContributionRuleDto',
   'UpdateContributionRuleDto',
   'ContributionRuleResponseDto',
+
+  // V2 第一阶段批次 6 PR #1 audit-logs
+  // 注:AuditLogQueryDto 是 @Query() DTO,被内联为 parameters,不进 components.schemas。
+  //   AuditContextDto 是嵌套 DTO(AuditLogResponseDto.context 字段引用),Swagger 注册为 named schema。
+  'AuditContextDto',
+  'AuditLogResponseDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

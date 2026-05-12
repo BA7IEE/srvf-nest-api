@@ -771,6 +771,116 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AuditContextDto": {
+    "properties": {
+      "after": {
+        "additionalProperties": true,
+        "description": "操作后的资源快照(softDelete 场景无;敏感字段已由 service 调用方打码)",
+        "nullable": true,
+        "type": "object",
+      },
+      "before": {
+        "additionalProperties": true,
+        "description": "操作前的资源快照(create 场景无;敏感字段已由 service 调用方打码)",
+        "nullable": true,
+        "type": "object",
+      },
+      "extra": {
+        "additionalProperties": true,
+        "description": "调用方自定义 metadata(targetMemberId / operation 等;非敏感字段)",
+        "nullable": true,
+        "type": "object",
+      },
+      "ip": {
+        "description": "请求来源 IP(request.ip;测试 / 内部调用可能为 null)",
+        "example": "127.0.0.1",
+        "nullable": true,
+        "type": "object",
+      },
+      "requestId": {
+        "description": "请求 ID(nestjs-pino req.id;非空字符串),用于跨日志关联",
+        "example": "c1xqgkb0000001abcdef234567",
+        "type": "string",
+      },
+      "ua": {
+        "description": "User-Agent(request.headers["user-agent"];curl / 内部调用可能为 null)",
+        "example": "Mozilla/5.0 ...",
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "requestId",
+    ],
+    "type": "object",
+  },
+  "AuditLogResponseDto": {
+    "properties": {
+      "actorRoleSnap": {
+        "description": "操作时的角色快照(Role enum;事后查 user 表取最新角色不可靠,审计取快照)",
+        "enum": [
+          "SUPER_ADMIN",
+          "ADMIN",
+          "USER",
+        ],
+        "nullable": true,
+        "type": "string",
+      },
+      "actorUserId": {
+        "description": "操作人 User.id;系统操作 / 未登录场景为 null",
+        "nullable": true,
+        "type": "object",
+      },
+      "context": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AuditContextDto",
+          },
+        ],
+        "description": "审计上下文(AuditContext 锁形 6 字段:3 必填 + 3 可选)",
+      },
+      "createdAt": {
+        "description": "审计记录写入时间(=操作发生时间,审计记录不可改不可删)",
+        "format": "date-time",
+        "type": "string",
+      },
+      "event": {
+        "description": "审计事件(AuditLogEvent union 同值;String 不用 Prisma enum)",
+        "example": "emergency-contact.write",
+        "type": "string",
+      },
+      "id": {
+        "description": "主键(cuid)",
+        "example": "cl9z3a8b00000abcd1234efgh",
+        "type": "string",
+      },
+      "resourceId": {
+        "description": "资源 ID(create 失败时可为 null)",
+        "example": "cl9z3a8b00000abcd1234efgh",
+        "nullable": true,
+        "type": "object",
+      },
+      "resourceType": {
+        "description": "资源类型(第一批枚举值:emergency_contact / certificate;String,不用 Prisma enum)",
+        "example": "emergency_contact",
+        "type": "string",
+      },
+      "success": {
+        "description": "操作是否成功(D-B fail-fast:audit 与业务同事务,失败回滚整体;现仅 true)",
+        "example": true,
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "id",
+      "createdAt",
+      "resourceType",
+      "event",
+      "context",
+      "success",
+    ],
+    "type": "object",
+  },
   "CancelActivityDto": {
     "properties": {
       "cancelReason": {
@@ -10838,6 +10948,457 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "APD 审核完整视图(R25):Activity 摘要 + Sheet 详情 + Records[含 Member 嵌套]",
       "tags": [
         "attendances",
+      ],
+    },
+  },
+  "/api/v2/audit-logs": {
+    "get": {
+      "operationId": "AuditLogsController_list",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "按资源类型过滤(emergency_contact / certificate)",
+          "in": "query",
+          "name": "resourceType",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按资源 ID 过滤(配合 resourceType 查某条资源的全部审计记录)",
+          "in": "query",
+          "name": "resourceId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按事件名过滤(AuditLogEvent union 值)",
+          "in": "query",
+          "name": "event",
+          "required": false,
+          "schema": {
+            "maxLength": 128,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按操作人 User.id 过滤(管理员查自己时填 currentUser.id)",
+          "in": "query",
+          "name": "actorUserId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "时间窗起点(ISO 8601;createdAt >= startDate)",
+          "in": "query",
+          "name": "startDate",
+          "required": false,
+          "schema": {
+            "example": "2026-05-01T00:00:00.000Z",
+            "type": "string",
+          },
+        },
+        {
+          "description": "时间窗终点(ISO 8601;createdAt <= endDate)",
+          "in": "query",
+          "name": "endDate",
+          "required": false,
+          "schema": {
+            "example": "2026-05-31T23:59:59.999Z",
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AuditLogResponseDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "列出审计记录(分页 + 过滤 resourceType / resourceId / event / actorUserId / startDate / endDate;ADMIN 仅看自己 OR USER 操作的记录;稳定排序 createdAt desc + id desc)",
+      "tags": [
+        "audit-logs",
+      ],
+    },
+  },
+  "/api/v2/audit-logs/{id}": {
+    "get": {
+      "operationId": "AuditLogsController_findOne",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AuditLogResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 14101: 无权查看该审计记录",
+                    "enum": [
+                      40300,
+                      14101,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权查看该审计记录(code=14101)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "14001: 审计记录不存在",
+                    "enum": [
+                      14001,
+                    ],
+                    "example": 14001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "审计记录不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "审计记录不存在(code=14001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "审计记录详情(ADMIN 越级查 SUPER_ADMIN 操作记录 → 14101;不存在 → 14001;无 update / delete 接口)",
+      "tags": [
+        "audit-logs",
       ],
     },
   },
