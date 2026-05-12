@@ -6,6 +6,8 @@ import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.con
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   CertificateListItemDto,
   CertificateResponseDto,
@@ -84,11 +86,16 @@ const certificateListItemSelect = {
   updatedAt: true,
 } as const satisfies Prisma.CertificateSelect;
 
+type SafeCertificate = Prisma.CertificateGetPayload<{ select: typeof certificateSafeSelect }>;
+
 type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
 export class CertificatesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogs: AuditLogsService,
+  ) {}
 
   // ============ helpers ============
 
@@ -127,21 +134,47 @@ export class CertificatesService {
   }
 
   // 找 cert + 校验归属 + notDeleted。返回 status 给状态机用。
+  //
+  // V2 批次 6 PR #2 修订:select 扩展为 certificateSafeSelect(全字段),让
+  // update / softDelete / verify / reject 不再额外查一次拿 before 数据(D6 v1.1 §8.2)。
+  // 调用方仅取 cert.id / cert.memberId / cert.certStatusCode 的语义兼容(返回类型是超集)。
   private async findCertificateInMemberOrThrow(
     memberId: string,
     certificateId: string,
     tx?: PrismaTx,
-  ): Promise<{ id: string; memberId: string; certStatusCode: string }> {
+  ): Promise<SafeCertificate> {
     const client = tx ?? this.prisma;
     const cert = await client.certificate.findFirst({
       where: notDeletedWhere({ id: certificateId }),
-      select: { id: true, memberId: true, certStatusCode: true },
+      select: certificateSafeSelect,
     });
     if (!cert) throw new BizException(BizCode.CERTIFICATE_NOT_FOUND);
     if (cert.memberId !== memberId) {
       throw new BizException(BizCode.CERTIFICATE_NOT_BELONGS_TO_MEMBER);
     }
     return cert;
+  }
+
+  // 把完整 Certificate 转成"JSON-safe 可入 audit context"的 snapshot(D6 v1.1 §8.2)。
+  // certificates 字段全部非敏感(Q4 矩阵未勾选),不打码;但 Date 字段必须 toISOString 避免
+  // Prisma InputJsonValue 拒绝 Date 对象(D6 v1.1 §R5)。
+  // 不含 id / memberId / createdAt / updatedAt(audit_logs 自带 resourceId / createdAt / actorUser)。
+  private toCertSnapshot(c: SafeCertificate): Record<string, unknown> {
+    return {
+      certTypeCode: c.certTypeCode,
+      certSubTypeCode: c.certSubTypeCode,
+      issuingOrg: c.issuingOrg,
+      certNumber: c.certNumber,
+      issuedAt: c.issuedAt.toISOString(),
+      expiredAt: c.expiredAt ? c.expiredAt.toISOString() : null,
+      certStatusCode: c.certStatusCode,
+      verifiedBy: c.verifiedBy,
+      verifiedAt: c.verifiedAt ? c.verifiedAt.toISOString() : null,
+      verifyNote: c.verifyNote,
+      attachmentKey: c.attachmentKey,
+      isInternal: c.isInternal,
+      supersededByCertId: c.supersededByCertId,
+    };
   }
 
   // 把 ISO 8601 字符串规范化为 UTC 00:00:00.000(纯日期语义,B 路径)。
@@ -220,6 +253,7 @@ export class CertificatesService {
     memberId: string,
     dto: CreateCertificateDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
@@ -256,11 +290,16 @@ export class CertificatesService {
         select: certificateSafeSelect,
       });
 
-      auditPlaceholder('certificate.create', {
-        operatorUserId: currentUser.id,
-        targetMemberId: memberId,
-        certificateId: created.id,
-        certTypeCode: created.certTypeCode,
+      await this.auditLogs.log({
+        event: 'certificate.create',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'certificate',
+        resourceId: created.id,
+        meta: auditMeta,
+        after: this.toCertSnapshot(created),
+        extra: { targetMemberId: memberId, operation: 'create' },
+        tx,
       });
 
       return created;
@@ -278,10 +317,11 @@ export class CertificatesService {
     certificateId: string,
     dto: UpdateCertificateDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
-      const cert = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
+      const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
 
       if (dto.certTypeCode !== undefined) {
         await this.assertDictItemValid(
@@ -309,16 +349,22 @@ export class CertificatesService {
       if (dto.expiredAt !== undefined) data.expiredAt = this.normalizeDateOnly(dto.expiredAt);
 
       const updated = await tx.certificate.update({
-        where: { id: cert.id },
+        where: { id: before.id },
         data,
         select: certificateSafeSelect,
       });
 
-      auditPlaceholder('certificate.update', {
-        operatorUserId: currentUser.id,
-        targetMemberId: memberId,
-        certificateId: cert.id,
-        operation: 'update',
+      await this.auditLogs.log({
+        event: 'certificate.update',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'certificate',
+        resourceId: before.id,
+        meta: auditMeta,
+        before: this.toCertSnapshot(before),
+        after: this.toCertSnapshot(updated),
+        extra: { targetMemberId: memberId, operation: 'update' },
+        tx,
       });
 
       return updated;
@@ -333,22 +379,32 @@ export class CertificatesService {
     memberId: string,
     certificateId: string,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
-      const cert = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
+      const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
 
       const removed = await tx.certificate.update({
-        where: { id: cert.id },
+        where: { id: before.id },
         data: { deletedAt: new Date() },
         select: certificateSafeSelect,
       });
 
-      auditPlaceholder('certificate.delete', {
-        operatorUserId: currentUser.id,
-        targetMemberId: memberId,
-        certificateId: cert.id,
-        priorStatusCode: cert.certStatusCode,
+      await this.auditLogs.log({
+        event: 'certificate.delete',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'certificate',
+        resourceId: before.id,
+        meta: auditMeta,
+        before: this.toCertSnapshot(before),
+        extra: {
+          targetMemberId: memberId,
+          operation: 'softDelete',
+          priorStatusCode: before.certStatusCode,
+        },
+        tx,
       });
 
       return removed;
@@ -365,19 +421,20 @@ export class CertificatesService {
     certificateId: string,
     dto: VerifyCertificateDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
-      const cert = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
+      const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
 
-      if (cert.certStatusCode !== CERT_STATUS_PENDING) {
+      if (before.certStatusCode !== CERT_STATUS_PENDING) {
         throw new BizException(BizCode.CERTIFICATE_INVALID_STATE_TRANSITION);
       }
 
       const verifierMemberId = await this.getVerifierMemberId(currentUser.id, tx);
 
       const updated = await tx.certificate.update({
-        where: { id: cert.id },
+        where: { id: before.id },
         data: {
           certStatusCode: CERT_STATUS_VERIFIED,
           verifiedBy: verifierMemberId,
@@ -387,13 +444,18 @@ export class CertificatesService {
         select: certificateSafeSelect,
       });
 
-      auditPlaceholder('certificate.verify', {
-        operatorUserId: currentUser.id,
-        verifierMemberId,
-        targetMemberId: memberId,
-        certificateId: cert.id,
-        priorStatusCode: cert.certStatusCode,
-        nextStatusCode: CERT_STATUS_VERIFIED,
+      // verify/reject 的 before/after 仅状态相关字段(D6 v1.1 §8.2),非完整快照
+      await this.auditLogs.log({
+        event: 'certificate.verify',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'certificate',
+        resourceId: before.id,
+        meta: auditMeta,
+        before: { status: before.certStatusCode },
+        after: { status: updated.certStatusCode, verifyNote: updated.verifyNote },
+        extra: { targetMemberId: memberId, verifierMemberId },
+        tx,
       });
 
       return updated;
@@ -409,19 +471,20 @@ export class CertificatesService {
     certificateId: string,
     dto: RejectCertificateDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
-      const cert = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
+      const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
 
-      if (cert.certStatusCode !== CERT_STATUS_PENDING) {
+      if (before.certStatusCode !== CERT_STATUS_PENDING) {
         throw new BizException(BizCode.CERTIFICATE_INVALID_STATE_TRANSITION);
       }
 
       const verifierMemberId = await this.getVerifierMemberId(currentUser.id, tx);
 
       const updated = await tx.certificate.update({
-        where: { id: cert.id },
+        where: { id: before.id },
         data: {
           certStatusCode: CERT_STATUS_REJECTED,
           verifiedBy: verifierMemberId,
@@ -431,13 +494,18 @@ export class CertificatesService {
         select: certificateSafeSelect,
       });
 
-      auditPlaceholder('certificate.reject', {
-        operatorUserId: currentUser.id,
-        verifierMemberId,
-        targetMemberId: memberId,
-        certificateId: cert.id,
-        priorStatusCode: cert.certStatusCode,
-        nextStatusCode: CERT_STATUS_REJECTED,
+      // verify/reject 的 before/after 仅状态相关字段(D6 v1.1 §8.2),非完整快照
+      await this.auditLogs.log({
+        event: 'certificate.reject',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'certificate',
+        resourceId: before.id,
+        meta: auditMeta,
+        before: { status: before.certStatusCode },
+        after: { status: updated.certStatusCode, verifyNote: updated.verifyNote },
+        extra: { targetMemberId: memberId, verifierMemberId },
+        tx,
       });
 
       return updated;

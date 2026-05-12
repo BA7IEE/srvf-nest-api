@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
@@ -12,6 +13,7 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   CreateEmergencyContactDto,
   EmergencyContactResponseDto,
@@ -29,6 +31,16 @@ import { EmergencyContactsService } from './emergency-contacts.service';
 @Controller('v2/members/:memberId/emergency-contacts')
 export class EmergencyContactsController {
   constructor(private readonly service: EmergencyContactsService) {}
+
+  // V2 批次 6 PR #2:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
+  // 不引入 cls-rs / AsyncLocalStorage)。仅供本 controller 写操作内部复用。
+  private buildAuditMeta(req: Request): AuditMeta {
+    return {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    };
+  }
 
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
@@ -64,8 +76,9 @@ export class EmergencyContactsController {
     @Param('memberId') memberId: string,
     @Body() dto: CreateEmergencyContactDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<EmergencyContactResponseDto> {
-    return this.service.create(memberId, dto, currentUser);
+    return this.service.create(memberId, dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Patch(':id')
@@ -88,8 +101,9 @@ export class EmergencyContactsController {
     @Param('id') id: string,
     @Body() dto: UpdateEmergencyContactDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<EmergencyContactResponseDto> {
-    return this.service.update(memberId, id, dto, currentUser);
+    return this.service.update(memberId, id, dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Delete(':id')
@@ -108,7 +122,8 @@ export class EmergencyContactsController {
     @Param('memberId') memberId: string,
     @Param('id') id: string,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<EmergencyContactResponseDto> {
-    return this.service.softDelete(memberId, id, currentUser);
+    return this.service.softDelete(memberId, id, currentUser, this.buildAuditMeta(req));
   }
 }
