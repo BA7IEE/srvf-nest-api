@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
@@ -14,6 +15,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   ActivityIdParamDto,
   ApproveAttendanceSheetDto,
@@ -30,6 +32,17 @@ import {
   UpdateAttendanceSheetDto,
 } from './attendances.dto';
 import { AttendancesService } from './attendances.service';
+
+// V2 批次 6 PR #6 共享 helper:从 @Req() 构造 AuditMeta(D6 v1.1 §11.2 / D8 拍板;
+// 不引入 cls-rs / AsyncLocalStorage)。本模块有 3 个 controller,提到模块级函数以避免
+// 重复定义(沿 PR #5 activity-registrations 范式)。
+function buildAuditMeta(req: Request): AuditMeta {
+  return {
+    requestId: req.id as string,
+    ip: req.ip ?? null,
+    ua: req.headers['user-agent'] ?? null,
+  };
+}
 
 // V2 第一阶段批次 3B attendances controllers(9 路由)。
 //
@@ -80,8 +93,9 @@ export class AttendanceSheetsCollectionController {
     @Param() params: ActivityIdParamDto,
     @Body() dto: CreateAttendanceSheetDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AttendanceSheetResponseDto> {
-    return this.service.submit(params.activityId, dto, currentUser);
+    return this.service.submit(params.activityId, dto, currentUser, buildAuditMeta(req));
   }
 
   @Get()
@@ -178,8 +192,9 @@ export class AttendanceSheetsResourceController {
     @Param() params: IdParamDto,
     @Body() dto: UpdateAttendanceSheetDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AttendanceSheetResponseDto> {
-    return this.service.edit(params.id, dto, currentUser);
+    return this.service.edit(params.id, dto, currentUser, buildAuditMeta(req));
   }
 
   @Delete(':id')
@@ -202,8 +217,9 @@ export class AttendanceSheetsResourceController {
   softDelete(
     @Param() params: IdParamDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AttendanceSheetResponseDto> {
-    return this.service.softDelete(params.id, currentUser);
+    return this.service.softDelete(params.id, currentUser, buildAuditMeta(req));
   }
 
   @Patch(':id/approve')
@@ -225,8 +241,9 @@ export class AttendanceSheetsResourceController {
     @Param() params: IdParamDto,
     @Body() dto: ApproveAttendanceSheetDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AttendanceSheetResponseDto> {
-    return this.service.approve(params.id, dto, currentUser);
+    return this.service.approve(params.id, dto, currentUser, buildAuditMeta(req));
   }
 
   @Patch(':id/reject')
@@ -244,8 +261,9 @@ export class AttendanceSheetsResourceController {
     @Param() params: IdParamDto,
     @Body() dto: RejectAttendanceSheetDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AttendanceSheetResponseDto> {
-    return this.service.reject(params.id, dto, currentUser);
+    return this.service.reject(params.id, dto, currentUser, buildAuditMeta(req));
   }
 
   // ============ 批次 4-B 新增:终审 final-approve / final-reject ============
@@ -270,8 +288,9 @@ export class AttendanceSheetsResourceController {
     @Param() params: IdParamDto,
     @Body() dto: FinalApproveAttendanceSheetDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AttendanceSheetResponseDto> {
-    return this.service.finalApprove(params.id, dto, currentUser);
+    return this.service.finalApprove(params.id, dto, currentUser, buildAuditMeta(req));
   }
 
   @Patch(':id/final-reject')
@@ -293,8 +312,9 @@ export class AttendanceSheetsResourceController {
     @Param() params: IdParamDto,
     @Body() dto: FinalRejectAttendanceSheetDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AttendanceSheetResponseDto> {
-    return this.service.finalReject(params.id, dto, currentUser);
+    return this.service.finalReject(params.id, dto, currentUser, buildAuditMeta(req));
   }
 }
 

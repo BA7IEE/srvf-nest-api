@@ -8,6 +8,8 @@ import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.con
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   ApproveAttendanceSheetDto,
   ATTENDANCE_SHEET_STATUS,
@@ -73,6 +75,18 @@ import {
 // - audit:submit / edit / delete / read.other / review(approve+reject) / final-review(批次 4-B)
 // - event:**attendance.recorded 触发位置移到 final-approve**(沿 D-S7);submit / edit / delete /
 //   approve / reject / final-reject 均不触发。
+//
+// V2 批次 6 PR #6(第二波最后一批):8 处 write hook 从 `auditPlaceholder` 迁移到
+// `AuditLogsService.log()` 同事务落库;5 个事件名(`attendance-sheet.{submit, edit, delete, review, final-review}`)
+// 共承担 8 处 operation,通过 `extra.operation` / `extra.action` 区分(沿 PR #4 / PR #5 范式,
+// D2 同值挪字符串);resourceType 固定 `attendance_sheet`;**3 处 read.other 调用保持 pino-only
+// 不迁移**(沿 Q1=A 当前阶段不记录查看行为);**`eventPlaceholder('attendance.recorded')` 与
+// audit 是两套独立机制,不动**(沿 D-S7;final-approve 同事务触发业务事件,audit 同事务记录;
+// 若 audit 写失败 → 整个事务回滚 → 业务事件随之回滚,由 DB 事务原子性保证)。
+// records 全字段快照入 audit context:submit / edit × 2 / softDelete / finalReject 必含;
+// approve / reject / finalApprove 只放 sheet 快照,`extra.recordsCount` 元数据(records 不变,
+// 通过 sheet.previousSnapshot 或 finalReject 的 records 软删时间回溯)。
+// 字段非敏感(打码矩阵未命中,沿 PR #3 / PR #4 / PR #5 不打码范式)。
 
 const ACTIVITY_STATUS_PUBLISHED = 'published';
 const ACTIVITY_STATUS_CANCELLED = 'cancelled';
@@ -87,6 +101,7 @@ const SHEET_STATUS_FINAL_REJECTED = ATTENDANCE_SHEET_STATUS.FINAL_REJECTED;
 
 const DICT_TYPE_ATTENDANCE_ROLE = 'attendance_role';
 const DICT_TYPE_ATTENDANCE_STATUS = 'attendance_status';
+const AUDIT_RESOURCE_TYPE = 'attendance_sheet';
 
 // Sheet 简化 select(不含 records 数组 + 不含 previousSnapshot)。
 // 批次 4-B 新增 finalReviewer* 3 字段(D-S5;UserResponseDto 同步,沿 baseline §11.3 可选字段)。
@@ -159,7 +174,10 @@ type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
 export class AttendancesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogs: AuditLogsService,
+  ) {}
 
   // ============ helpers:序列化 ============
 
@@ -430,6 +448,7 @@ export class AttendancesService {
     activityId: string,
     dto: CreateAttendanceSheetDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       // 1. activity 存在 + 非 cancelled;同时取 activityTypeCode + statusCode 用于 D14 预填 + D11 推动
@@ -498,18 +517,35 @@ export class AttendancesService {
       // 6. D11 推动:首张 Sheet 创建 → Activity.completed(沿 D-S10);
       //    幂等:若已是 completed,update 不会改 statusCode(但走一次写减少负担,故先判定 published 才动)。
       //    cancelled 在 step 1 已拒绝;publish 状态机 draft → published → completed 单向。
-      if (activity.statusCode === ACTIVITY_STATUS_PUBLISHED) {
+      const activityPushedToCompleted = activity.statusCode === ACTIVITY_STATUS_PUBLISHED;
+      if (activityPushedToCompleted) {
         await tx.activity.update({
           where: { id: activityId },
           data: { statusCode: ACTIVITY_STATUS_COMPLETED },
         });
       }
 
-      auditPlaceholder('attendance-sheet.submit', {
-        operatorUserId: currentUser.id,
-        activityId,
-        sheetId: created.id,
-        recordsCount: prefilled.length,
+      // PR #6 audit:after 含 sheet + records 完整快照(records 创建后回查一次取完整字段)
+      const createdRecords = await tx.attendanceRecord.findMany({
+        where: { sheetId: created.id, deletedAt: null },
+        select: recordWithMemberSelect,
+        orderBy: { checkInAt: 'asc' },
+      });
+      await this.auditLogs.log({
+        event: 'attendance-sheet.submit',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: created.id,
+        meta: auditMeta,
+        after: this.toSheetAuditSnapshot(created, createdRecords),
+        extra: {
+          operation: 'submit',
+          activityId,
+          recordsCount: createdRecords.length,
+          activityPushedToCompleted,
+        },
+        tx,
       });
 
       return this.toSheetResponseDto(created);
@@ -758,6 +794,7 @@ export class AttendancesService {
     id: string,
     dto: UpdateAttendanceSheetDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
@@ -797,12 +834,21 @@ export class AttendancesService {
           },
           select: sheetSafeSelect,
         });
-        auditPlaceholder('attendance-sheet.edit', {
-          operatorUserId: currentUser.id,
-          sheetId: id,
-          recordsCount: currentRecords.length,
-          newVersion: updated.version,
-          operation: 'edit-no-records',
+        await this.auditLogs.log({
+          event: 'attendance-sheet.edit',
+          actorUserId: currentUser.id,
+          actorRoleSnap: currentUser.role,
+          resourceType: AUDIT_RESOURCE_TYPE,
+          resourceId: id,
+          meta: auditMeta,
+          before: this.toSheetAuditSnapshot(sheet, currentRecords),
+          after: this.toSheetAuditSnapshot(updated, currentRecords),
+          extra: {
+            operation: 'edit-no-records',
+            recordsCount: currentRecords.length,
+            newVersion: updated.version,
+          },
+          tx,
         });
         return this.toSheetResponseDto(updated);
       }
@@ -873,16 +919,74 @@ export class AttendancesService {
         select: sheetSafeSelect,
       });
 
-      auditPlaceholder('attendance-sheet.edit', {
-        operatorUserId: currentUser.id,
-        sheetId: id,
-        oldRecordsCount: currentRecords.length,
-        newRecordsCount: normalized.length,
-        newVersion: updated.version,
+      // PR #6 audit:after 含新 records 完整快照(createMany 不返 id,回查一次)
+      const newRecords = await tx.attendanceRecord.findMany({
+        where: { sheetId: id, deletedAt: null },
+        select: recordWithMemberSelect,
+        orderBy: { checkInAt: 'asc' },
+      });
+      await this.auditLogs.log({
+        event: 'attendance-sheet.edit',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: id,
+        meta: auditMeta,
+        before: this.toSheetAuditSnapshot(sheet, currentRecords),
+        after: this.toSheetAuditSnapshot(updated, newRecords),
+        extra: {
+          operation: 'edit',
+          oldRecordsCount: currentRecords.length,
+          newRecordsCount: newRecords.length,
+          newVersion: updated.version,
+        },
+        tx,
       });
 
       return this.toSheetResponseDto(updated);
     });
+  }
+
+  // PR #6 audit snapshot:用于 AuditLogsService.log() before/after 的 JSON-safe 快照。
+  // 与 buildSnapshot 平行存在(语义分离:buildSnapshot 服务于 sheet.previousSnapshot 业务列;
+  // toSheetAuditSnapshot 服务于 audit_logs.context;字段输出格式一致以便后续可比对)。
+  // records 可选:approve / reject / finalApprove 场景 records 不变,只需 sheet 快照 +
+  //   extra.recordsCount 即可;submit / edit × 2 / softDelete / finalReject 必传 records。
+  // 字段全非敏感(打码矩阵未命中,沿 PR #3 / PR #4 / PR #5 不打码范式)。
+  private toSheetAuditSnapshot(
+    sheet: SheetSafeRow,
+    records?: RecordWithMemberRow[],
+  ): Record<string, unknown> {
+    const snapshot: Record<string, unknown> = {
+      sheet: {
+        activityId: sheet.activityId,
+        submitterUserId: sheet.submitterUserId,
+        submittedAt: sheet.submittedAt.toISOString(),
+        statusCode: sheet.statusCode,
+        reviewerUserId: sheet.reviewerUserId,
+        reviewedAt: sheet.reviewedAt?.toISOString() ?? null,
+        reviewNote: sheet.reviewNote,
+        finalReviewerUserId: sheet.finalReviewerUserId,
+        finalReviewedAt: sheet.finalReviewedAt?.toISOString() ?? null,
+        finalReviewNote: sheet.finalReviewNote,
+        version: sheet.version,
+      },
+    };
+    if (records !== undefined) {
+      snapshot.records = records.map((r) => ({
+        id: r.id,
+        memberId: r.memberId,
+        roleCode: r.roleCode,
+        checkInAt: r.checkInAt.toISOString(),
+        checkOutAt: r.checkOutAt.toISOString(),
+        serviceHours: r.serviceHours.toString(),
+        attendanceStatusCode: r.attendanceStatusCode,
+        note: r.note,
+        registrationId: r.registrationId,
+        contributionPoints: this.decimalToString(r.contributionPoints),
+      }));
+    }
+    return snapshot;
   }
 
   // Q-S16 snapshot 结构:Sheet 主字段 + records 完整快照(全字段,日期 ISO 8601,Decimal 序列化为 string)。
@@ -926,6 +1030,7 @@ export class AttendancesService {
   async softDelete(
     id: string,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
@@ -948,6 +1053,13 @@ export class AttendancesService {
         throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
       }
 
+      // PR #6 audit:before 需要 records 完整快照(软删之前抓取)
+      const currentRecords = await tx.attendanceRecord.findMany({
+        where: { sheetId: id, deletedAt: null },
+        select: recordWithMemberSelect,
+        orderBy: { checkInAt: 'asc' },
+      });
+
       const now = new Date();
       await tx.attendanceRecord.updateMany({
         where: { sheetId: id, deletedAt: null },
@@ -959,10 +1071,20 @@ export class AttendancesService {
         select: sheetSafeSelect,
       });
 
-      auditPlaceholder('attendance-sheet.delete', {
-        operatorUserId: currentUser.id,
-        sheetId: id,
-        priorStatusCode: sheet.statusCode,
+      await this.auditLogs.log({
+        event: 'attendance-sheet.delete',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: id,
+        meta: auditMeta,
+        before: this.toSheetAuditSnapshot(sheet, currentRecords),
+        extra: {
+          operation: 'delete',
+          priorStatusCode: sheet.statusCode,
+          recordsCount: currentRecords.length,
+        },
+        tx,
       });
 
       return this.toSheetResponseDto(removed);
@@ -981,6 +1103,7 @@ export class AttendancesService {
     id: string,
     dto: ApproveAttendanceSheetDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
@@ -1010,13 +1133,23 @@ export class AttendancesService {
         select: sheetSafeSelect,
       });
 
-      auditPlaceholder('attendance-sheet.review', {
-        operatorUserId: currentUser.id,
-        sheetId: id,
-        priorStatusCode: sheet.statusCode,
-        nextStatusCode: SHEET_STATUS_PENDING_FINAL_REVIEW,
-        action: 'approve',
-        recordsCount: recordsForCheck.length,
+      await this.auditLogs.log({
+        event: 'attendance-sheet.review',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: id,
+        meta: auditMeta,
+        before: this.toSheetAuditSnapshot(sheet),
+        after: this.toSheetAuditSnapshot(updated),
+        extra: {
+          operation: 'review',
+          action: 'approve',
+          priorStatusCode: sheet.statusCode,
+          nextStatusCode: SHEET_STATUS_PENDING_FINAL_REVIEW,
+          recordsCount: recordsForCheck.length,
+        },
+        tx,
       });
 
       return this.toSheetResponseDto(updated);
@@ -1029,6 +1162,7 @@ export class AttendancesService {
     id: string,
     dto: RejectAttendanceSheetDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
@@ -1048,12 +1182,22 @@ export class AttendancesService {
         select: sheetSafeSelect,
       });
 
-      auditPlaceholder('attendance-sheet.review', {
-        operatorUserId: currentUser.id,
-        sheetId: id,
-        priorStatusCode: sheet.statusCode,
-        nextStatusCode: SHEET_STATUS_REJECTED,
-        action: 'reject',
+      await this.auditLogs.log({
+        event: 'attendance-sheet.review',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: id,
+        meta: auditMeta,
+        before: this.toSheetAuditSnapshot(sheet),
+        after: this.toSheetAuditSnapshot(updated),
+        extra: {
+          operation: 'review',
+          action: 'reject',
+          priorStatusCode: sheet.statusCode,
+          nextStatusCode: SHEET_STATUS_REJECTED,
+        },
+        tx,
       });
 
       return this.toSheetResponseDto(updated);
@@ -1077,6 +1221,7 @@ export class AttendancesService {
     id: string,
     dto: FinalApproveAttendanceSheetDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
@@ -1124,13 +1269,24 @@ export class AttendancesService {
         })),
       });
 
-      auditPlaceholder('attendance-sheet.final-review', {
-        operatorUserId: currentUser.id,
-        sheetId: id,
-        priorStatusCode: sheet.statusCode,
-        nextStatusCode: SHEET_STATUS_APPROVED,
-        action: 'final-approve',
-        recordsCount: recordsForEvent.length,
+      await this.auditLogs.log({
+        event: 'attendance-sheet.final-review',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: id,
+        meta: auditMeta,
+        before: this.toSheetAuditSnapshot(sheet),
+        after: this.toSheetAuditSnapshot(updated),
+        extra: {
+          operation: 'final-review',
+          action: 'final-approve',
+          priorStatusCode: sheet.statusCode,
+          nextStatusCode: SHEET_STATUS_APPROVED,
+          recordsCount: recordsForEvent.length,
+          eventTriggered: true,
+        },
+        tx,
       });
 
       return this.toSheetResponseDto(updated);
@@ -1153,6 +1309,7 @@ export class AttendancesService {
     id: string,
     dto: FinalRejectAttendanceSheetDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
@@ -1165,6 +1322,13 @@ export class AttendancesService {
       if (dto.finalReviewNote.trim().length === 0) {
         throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_NOTE_REQUIRED);
       }
+
+      // PR #6 audit:before 需要 records 完整快照(records 跟随软删之前抓取)
+      const currentRecords = await tx.attendanceRecord.findMany({
+        where: { sheetId: id, deletedAt: null },
+        select: recordWithMemberSelect,
+        orderBy: { checkInAt: 'asc' },
+      });
 
       const finalReviewedAt = new Date();
       // records 跟随软删(沿 D8 主路径)
@@ -1184,12 +1348,24 @@ export class AttendancesService {
         select: sheetSafeSelect,
       });
 
-      auditPlaceholder('attendance-sheet.final-review', {
-        operatorUserId: currentUser.id,
-        sheetId: id,
-        priorStatusCode: sheet.statusCode,
-        nextStatusCode: SHEET_STATUS_FINAL_REJECTED,
-        action: 'final-reject',
+      await this.auditLogs.log({
+        event: 'attendance-sheet.final-review',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: id,
+        meta: auditMeta,
+        before: this.toSheetAuditSnapshot(sheet, currentRecords),
+        after: this.toSheetAuditSnapshot(updated),
+        extra: {
+          operation: 'final-review',
+          action: 'final-reject',
+          priorStatusCode: sheet.statusCode,
+          nextStatusCode: SHEET_STATUS_FINAL_REJECTED,
+          recordsCount: currentRecords.length,
+          finalReviewNote: dto.finalReviewNote,
+        },
+        tx,
       });
 
       return this.toSheetResponseDto(updated);
