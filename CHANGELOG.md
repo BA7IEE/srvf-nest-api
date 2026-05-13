@@ -4,6 +4,73 @@
 
 ## Unreleased
 
+### V2 Batch 6 PR #4 Implementation(2026-05-13)
+
+- `e6fc079` feat(audit-logs): migrate activities write events to AuditLogsService (#36) —
+  **`audit_logs` 第二波第二步**(D-A 修订渐进迁出策略,沿 D6 v1.1 §8 / §16.3 F2 触发条件;
+  紧接 PR #3 contribution-rules 迁移之后):
+  activities 模块 **5 处写操作**(`create` / `update` / `softDelete` / `publish` / `cancel`)
+  从 pino-only `auditPlaceholder` 迁移到 `AuditLogsService.log()` **同事务落库**;
+  **事件名沿 D2 同值零变更**(从旧 `AuditEvent` union 挪到 `AuditLogEvent` union),
+  且 5 个 operation **共用同一事件名** `activity.publish`(沿 batch3 草案 §20.2 A1 有意设计;
+  路线 A:不拆 `activity.create / activity.update / ...`):
+  - `activity.publish`(`activities.service.ts:create`,`extra.operation='create'` + `extra.nextStatusCode='draft'`)
+  - `activity.publish`(`activities.service.ts:update`,`extra.operation='update'` + `extra.priorStatusCode` + `extra.changedFields=Object.keys(dto)`)
+  - `activity.publish`(`activities.service.ts:softDelete`,`extra.operation='softDelete'` + `extra.priorStatusCode`)
+  - `activity.publish`(`activities.service.ts:publish`,`extra.operation='publish'` + `extra.priorStatusCode` + `extra.nextStatusCode='published'`)
+  - `activity.publish`(`activities.service.ts:cancel`,`extra.operation='cancel'` + `extra.priorStatusCode` + `extra.nextStatusCode='cancelled'` + `extra.cancelReason`)
+  - 调用样式从 `auditPlaceholder(event, ctx)` 改为 `await this.auditLogs.log({ ..., tx })`,
+    `tx` 来自业务 `prisma.$transaction` 内,**audit 与业务同事务、同回滚**(沿 D-B fail-fast / D9);
+  **`AuditLogEvent` union 从 9 项扩展为 10 项**(`emergency-contact.write` × 1 +
+  `certificate.{create,update,delete,verify,reject}` × 5 + `contribution-rule.{create,update,delete}` × 3 +
+  `activity.publish` × 1);与 `auditPlaceholder` 28 项 union 仍**物理隔离**(A-16 红线 / D2);
+  **5 个 service 写操作共用 1 个事件字符串**(`activity.publish`),按 `event` 字段筛选无法直接区分
+  5 种 operation,需用 `event='activity.publish' AND context->'extra'->>'operation'='xxx'` 组合查询;
+  **剩余 18 处**写/读事件继续 pino-only,等后续批次按需迁出;
+  **activities.controller.ts 改造**:5 个写方法(`create` / `update` / `softDelete` / `publish` / `cancel`)
+  各加 `@Req() req: Request` 参数,controller 内 `buildAuditMeta(req)` 私有方法从
+  nestjs-pino `req.id` + `req.ip` + `req.headers['user-agent']` 显式构造 `AuditMeta` 传给
+  service(沿第一波 emergency-contacts / certificates 与 PR #3 contribution-rules 范式;
+  D8:不引入 cls-rs / AsyncLocalStorage);`list` / `findOne` 两个 read 接口**完全不动**;
+  **activities.module.ts 改造**:`imports: [DatabaseModule, AuditLogsModule]`,
+  注入 `AuditLogsService`;
+  **新增 `toAuditSnapshot()` helper**(沿 contribution-rules `toAuditSnapshot` 范式):
+  字段集 = `activitySafeSelect` 剔除 `id` / `createdAt` / `updatedAt`(audit_logs 自带);
+  Decimal 字段(`locationLongitude` / `locationLatitude`)经 `decimalToString` 转 string;
+  Json 字段(`registrationSchema` / `galleryImageUrls` / `content`)经
+  `jsonAsObject` / `jsonAsStringArray` 取强类型;Date 字段(`startAt` / `endAt` /
+  `registrationDeadline` / `publishedAt` / `cancelledAt`)由 Prisma JsonValue 写入时
+  自动调 `Date.toJSON()` → ISO string;字段全部非敏感
+  (D6 v1.1 §7.3 打码矩阵未命中),**不打码,原值入审计**;
+  **audit context 结构**:`create` = `after` 完整 snapshot + `extra.{operation:'create', nextStatusCode:'draft'}`;
+  `update` = `before` + `after` + `extra.{operation:'update', priorStatusCode, changedFields:Object.keys(dto)}`;
+  `softDelete` = `before` + `extra.{operation:'softDelete', priorStatusCode}`;
+  `publish` = `before` + `after` + `extra.{operation:'publish', priorStatusCode, nextStatusCode:'published'}`;
+  `cancel` = `before` + `after` + `extra.{operation:'cancel', priorStatusCode, nextStatusCode:'cancelled', cancelReason}`;
+  `resourceType` 固定 `activity`(单数,对齐第一波 `emergency_contact` / `certificate` 与 PR #3 `contribution_rule` 风格);
+  **activities 模块内实际 `auditPlaceholder` 调用 = 0**(仅余 2 处注释字面量描述迁移历史:
+  `activities.service.ts:32` 顶部注释 + `audit-placeholder.ts:30` AuditEvent union 注释);
+  **e2e 扩展**:`test/e2e/audit-logs-migrations.e2e-spec.ts` 加 1 个 describe(13 个 it):
+  触发断言 ×5(create / update / softDelete / publish / cancel 各 1)+ context 锁形
+  (`requestId` 非空 / `ip` `ua` 字段存在)+ before/after 结构 ×4(create only after / update before+after /
+  softDelete only before / publish before+after)+ 同事务回滚(`activityTypeCode invalid` →
+  audit + 业务都不入表)+ 未迁移 read 路径不入库 ×2(`GET list` / `GET detail` 不写 audit_logs);
+  累计 e2e 用例 **747**(PR #3 后 734,+13);
+  **OpenAPI contract snapshot 零漂移**:本批次不改 controller 响应 / Swagger 结构 / paths;
+  v1 14 + V2 既有 79 schemas / paths 全部不变(controller 增 `@Req()` 参数不进 OpenAPI);
+  **累计 V2 79 接口**(与 v0.7.0 一致);**累计 93 接口 contract snapshot 保护**;
+  本批次**不做**(范围严控):
+  - 不改 `prisma/schema.prisma` / 不新增 migration
+  - 不改 `auditPlaceholder` 函数体(F1 保持;占位定义仍在 `src/common/audit/audit-placeholder.ts`)
+  - 不改 `AuditEvent` union(28 项原样)
+  - 不迁移 read 类查看事件(沿 Q1=A 业务确认稿决议,F3 保持;**当前批次不做**,非"永久不做")
+  - 不动 `activity-registrations`(7 处写) / `attendances`(写 8 处) 模块的写操作 `auditPlaceholder` 调用
+    (F4 保持;**仍待后续独立批次按需迁出**,非"永久不做";剩余写 hook 共 15 处)
+  - 不动 read 类残留 8 处调用(`member-profiles` 1 / `emergency-contacts` read 1 /
+    `certificates` read 3 / `attendances` read 3;沿 Q1=A,**当前阶段不迁移**)
+  - 不 bump `package.json#version` / 不改 Swagger `setVersion`(仍 `0.7.0`)
+  - 不打 tag / 不发 GitHub Release
+
 ### V2 Batch 6 PR #3 Implementation(2026-05-13)
 
 - `e8fefe0` feat(audit-logs): migrate contribution-rules write events to AuditLogsService (#34) —
