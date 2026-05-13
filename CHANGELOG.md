@@ -4,6 +4,123 @@
 
 ## Unreleased
 
+## v0.8.0 - 2026-05-13
+
+V2 第一阶段在 v0.7.0(批次 6 PR #1 + PR #2 落地,`audit_logs` 基础设施 + 第一批 8 处
+写操作迁移)基础之上,完成 SRVF 业务 **批次 6 PR #3 / #4 / #5 / #6**(`audit_logs` 第二波
+写操作渐进迁移),覆盖 **4 个 v2 业务模块 / 22 处写 hook**;**累计 V2 79 接口**(与
+v0.7.0 一致,本版本不新增接口);**累计 93 接口** contract snapshot 保护;v1 14 + V2
+既有 79 接口 schema + paths 严格 **zero drift**。
+
+**SemVer 拍板**:0.7.0 → 0.8.0 **minor**(向后兼容的内部能力增强:22 处业务写操作
+audit 落库;无新增接口 / 字段 / 状态机变化 / schema 改动;沿 v0.6.0 → v0.7.0 风格)。
+
+**重要业务能力**(前端 / 运营 / 接入方必读):
+
+- **`audit_logs` 第二波写操作迁移全部完成**(沿 D-A 修订渐进迁出策略):
+  - **contribution-rules**(3 处:`create` / `update` / `softDelete`)
+  - **activities**(5 处:`create` / `update` / `softDelete` / `publish` / `cancel`)
+  - **activity-registrations**(6 处:`create` / `createMy` / `approve` / `reject` /
+    `cancelAdmin` / `cancelMy`)
+  - **attendances**(8 处:`submit` / `edit` × 2 / `softDelete` / `approve` / `reject` /
+    `finalApprove` / `finalReject`)
+- **累计 22 处写 hook 全部接入 `AuditLogsService.log()` 同事务落库**;`AuditLogEvent`
+  union **从 6 项扩展到 17 项**(+11 项:`contribution-rule.{create, update, delete}` × 3 +
+  `activity.publish` × 1 + `registration.{create, review}` × 2 +
+  `attendance-sheet.{submit, edit, delete, review, final-review}` × 5)
+- **路线 A 事件命名策略**:多个相关 operation 共用单一事件名,通过 `context.extra`
+  字段细分语义(沿 batch3 草案 §20.2 有意设计;D2 same-value 同值挪字符串):
+  - `activity.publish` 承载 5 个 operation(create / update / softDelete / publish / cancel,
+    `extra.operation` 区分)
+  - `registration.create` 承载 2 个 viaPath(admin / self,`extra.viaPath` 区分)
+  - `registration.review` 承载 4 个 action(approve / reject / cancelAdmin / cancelMy,
+    `extra.action` 区分;cancel 再用 `extra.cancelledByPath` 细分)
+  - `attendance-sheet.edit` 承载 2 个 operation(edit / edit-no-records,`extra.operation` 区分)
+  - `attendance-sheet.review` 承载 2 个 action(approve / reject,`extra.action` 区分)
+  - `attendance-sheet.final-review` 承载 2 个 action(final-approve / final-reject,
+    `extra.action` 区分)
+- 写操作返回结构、HTTP status、路径**完全不变**,前端无需调整;controller 仅新增
+  `@Req()` 参数构造 `AuditMeta`(不进 OpenAPI;contract snapshot zero drift)
+- **read 类查看行为仍按 Q1=A 决议不迁移**:`auditPlaceholder` 28 项 union 中
+  剩余 **8 处 read 类调用**继续 pino-only(`member-profiles` 1 / `emergency-contacts` read 1 /
+  `certificates` read 3 / `attendances` read 3 / `activity-registrations` exportCsv 1);
+  当前阶段不写入 `audit_logs` 表,仅 pino 结构化日志保留
+- **同事务 fail-fast 不可降级**(沿 D-B 红线):业务 `BizException` 回滚整个
+  `prisma.$transaction`,`audit_logs` 与业务表同时入 / 同时不入;e2e 显式覆盖
+  字典 invalid / R31 失败 / 重复报名等回滚路径,确保审计与业务原子绑定
+- **`eventPlaceholder('attendance.recorded')` 业务事件机制独立**(沿 D-S7):
+  `finalApprove` 同事务触发业务事件,与 audit 是两套机制并存;DB 事务原子性保证
+  audit 失败 → 事务回滚 → 业务事件随之回滚
+
+**实施铁律 / 范式锁定**:
+
+- **A-16 红线刷新**:`AuditEvent`(`auditPlaceholder` 28 项)与 `AuditLogEvent`
+  (`AuditLogsService` 17 项)**物理隔离**;事件名同值;新增审计事件须先经评审稿决议;
+  本版本严格遵守"D2 same-value 同值挪字符串"路径
+- **resourceType 命名规约**:snake_case 单数(`contribution_rule` / `activity` /
+  `activity_registration` / `attendance_sheet`),沿 v0.7.0 第一波 `emergency_contact` /
+  `certificate` 风格
+- **`toAuditSnapshot` helper 范式**:每个迁移模块新增 `toAuditSnapshot` /
+  `toSheetAuditSnapshot` 私有方法,从 service safe row 输出 JSON-safe 快照
+  (Date → ISO string / Decimal → string / Json 经类型守卫);字段全部非敏感
+  (打码矩阵 §4.3 未命中),沿 v0.7.0 不打码范式
+- **controller `buildAuditMeta` 范式**:单 controller 模块沿用 controller 类内
+  私有方法(contribution-rules / activities);**多 controller 模块**(activity-registrations
+  双 controller / attendances 三 controller)提升到模块级函数,避免重复定义
+- **不补 `changedFields`**:状态机流转模块(activity-registrations approve/reject/cancel /
+  attendances approve/reject/final-*)与 records 全量替换模块(attendances edit)统一
+  不引入 `Object.keys(dto)` 的 changedFields;仅 contribution-rules / activities `update`
+  作为通用 update 接口提供 changedFields
+- **records 快照策略**(attendances 模块):
+  - 涉及 records 集合变更的操作(`submit` / `edit` × 2 / `softDelete` / `finalReject`)
+    必含 records 完整快照
+  - 仅改 sheet 字段的操作(`approve` / `reject` / `finalApprove`)只放 sheet 快照 +
+    `extra.recordsCount` 元数据
+
+**OpenAPI contract snapshot**:本版本不改 controller 响应 / Swagger 结构 / paths;
+v1 14 + V2 既有 79 schemas / paths 全部不变;controller 增 `@Req()` 参数不进 OpenAPI;
+**累计 V2 79 接口**(与 v0.7.0 一致);**累计 93 接口** contract snapshot 保护。
+
+**e2e 覆盖**:
+
+- 累计 e2e 用例 **778**(v0.7.0 release 时 724,+54):
+  - PR #3 contribution-rules:+10(`audit-logs-migrations.e2e-spec.ts` +9 it + 1 fix)
+  - PR #4 activities:+13
+  - PR #5 activity-registrations:+12
+  - PR #6 attendances:+19
+- 既有 emergency-contacts / certificates / contribution-rules / activities /
+  activity-registrations / attendances 业务 e2e **零退化**
+- contract snapshot 6 次连续验证零漂移(代码 PR ×4 + docs PR ×4 全部跑过 contract 测试)
+
+### PR 全景表
+
+| PR | 类型 | 模块 / 主题 | 写 hook | union 增量 | merge commit |
+|---|---|---|---|---|---|
+| #34 | feat | contribution-rules | 3 | +3 | `e8fefe0` |
+| #35 | docs | record audit_logs contribution-rules migration | — | — | `a99dd3e` |
+| #36 | feat | activities | 5 | +1 | `e6fc079` |
+| #37 | docs | record audit_logs activities migration | — | — | `eb2cc33` |
+| #38 | feat | activity-registrations | 6 | +2 | `cdd4794` |
+| #39 | docs | record audit_logs registration migration | — | — | `9909d97` |
+| #40 | feat | attendances | 8 | +5 | `13db2cc` |
+| #41 | docs | record audit_logs attendances migration | — | — | `b10a338` |
+| **合计** | **4 + 4** | **4 模块** | **22 处** | **+11**(union 6 → 17) | — |
+
+### v0.8.0 范围严控 — 未做项
+
+- **不改 `prisma/schema.prisma`** / 不新增 migration
+- **不改 `auditPlaceholder` 函数体**(`src/common/audit/audit-placeholder.ts` 28 项 union
+  原样保留;8 处 read 类仍依赖 pino-only 占位)
+- **不改 `AuditEvent` union**(28 项原样;新增 11 项仅在 `AuditLogEvent` 中,D2 同值并存)
+- **不启动 read 类审计**(沿 Q1=A;业务确认稿升级到 Q1=B 或 C 时另开评审)
+- **不启动新业务模块**(attachments / member_profiles / events / event_participants
+  仍延后,见 docs/V2红线与复活路径.md §4.3)
+- **不引入 RBAC / APD 部门部长细分权限**(attendances final-review 仍 ADMIN/SUPER_ADMIN)
+- **不引入 Redis / 队列 / 定时任务 / cls-rs / AsyncLocalStorage**(沿 V1.1 §11.3)
+- **不引入 records / extras 字段打码**(沿 v0.7.0 不打码范式;后续业务需打码须独立评审)
+
+---
+
 ### V2 Batch 6 PR #6 Implementation(2026-05-13;audit_logs 第二波写操作迁移收官)
 
 - `13db2cc` feat(audit-logs): migrate attendances write events to AuditLogsService (#40) —
