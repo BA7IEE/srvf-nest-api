@@ -4,6 +4,26 @@
 
 ## Unreleased
 
+### Docs
+
+- 新增 [`docs/handoff/v0.8.0.md`](docs/handoff/v0.8.0.md):v0.8.0 阶段交接说明
+  (批次 6 `audit_logs` 第二波写操作迁移收官 + 当前 pino-only 调用点精确口径
+  + 下一会话启动提示词)。接续 `docs/handoff/v0.5.0.md`;v0.6.0 / v0.7.0 未单独
+  建 handoff,本文件直接补 v0.8.0 后归档。
+- 修正 [`docs/V2红线与复活路径.md`](docs/V2红线与复活路径.md) `audit_logs` 剩余
+  pino-only 调用点口径表述:统一为"**9 个 pino-only 调用点**(grep 实际数);
+  按业务类别口径 = **8 类 read / 查看边界 + 1 个 exportCsv 借用
+  `registration.review` 字符串**"。涉及 §3.1c-F2 / §3.1c-F3 /
+  §3.1c PR #5 范围本身 / §3.1d-F2 / §3.1d-F3 / §3.1d 收官里程碑 / §4 C-1
+  共 7 处累计视角段位 + 附录 A v0.6 修订记录。
+  §3.1-F3 / §3.1b-F3 PR #3 / PR #4 时段历史快照视角保留"8 处"不动
+  (那时段尚无 exportCsv 残留,8 处为正确历史快照)。
+- **不动 Q1=A 决议**,**不暗示马上迁移 read 类**,**不把当前阶段不做写成永久不做**。
+- **CHANGELOG v0.8.0 已发布段保持不变**(纯文档表述修正,不回改已发布历史段;
+  新口径仅在 V2 红线 + 本 handoff 体现)。
+- 纯文档变更,沿 baseline §13.3:**不改 schema / migration / 代码 / 测试 /
+  version / tag / release**。
+
 ## v0.8.0 - 2026-05-13
 
 V2 第一阶段在 v0.7.0(批次 6 PR #1 + PR #2 落地,`audit_logs` 基础设施 + 第一批 8 处
