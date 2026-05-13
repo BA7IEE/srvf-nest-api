@@ -1013,4 +1013,382 @@ describe('audit-logs 写入迁移', () => {
       expect(await prisma.auditLog.count()).toBe(0);
     });
   });
+
+  // ============ PR #5:activity-registrations 写操作迁移(第二波第三步) ============
+
+  describe('activity-registrations 写操作迁移(PR #5)', () => {
+    let regChildOrgId: string;
+    let regMemberAdminTargetId: string; // ADMIN 代报名的目标 member(无绑 user)
+    let userWithMemberAuth: string;
+    let userWithMemberId: string;
+    let userMemberId: string; // USER 绑定的 member
+
+    // PR #5 fixtures:复用外层 activityTypeCode;新建 USER+绑 member、child org、target member
+    beforeAll(async () => {
+      const nodeType = await prisma.dictType.create({
+        data: { code: 'reg-mig-node', label: 'Reg Mig Node' },
+        select: { id: true },
+      });
+      await prisma.dictItem.create({
+        data: { typeId: nodeType.id, code: 'reg-mig-root', label: 'Root' },
+      });
+      await prisma.dictItem.create({
+        data: { typeId: nodeType.id, code: 'reg-mig-child', label: 'Child' },
+      });
+      const rootOrg = await prisma.organization.create({
+        data: { name: 'Reg Mig Root', nodeTypeCode: 'reg-mig-root', parentId: null },
+        select: { id: true },
+      });
+      const childOrg = await prisma.organization.create({
+        data: {
+          name: 'Reg Mig Child',
+          nodeTypeCode: 'reg-mig-child',
+          parentId: rootOrg.id,
+        },
+        select: { id: true },
+      });
+      regChildOrgId = childOrg.id;
+
+      // ADMIN 代报名目标 member(无绑 user,纯被代报名)
+      const targetMember = await prisma.member.create({
+        data: { memberNo: 'reg-mig-target', displayName: 'Target Member' },
+        select: { id: true },
+      });
+      regMemberAdminTargetId = targetMember.id;
+
+      // USER + 绑 member(自助报名 / cancelMy 路径)
+      const userMember = await prisma.member.create({
+        data: { memberNo: 'reg-mig-user-mem', displayName: 'User Member' },
+        select: { id: true },
+      });
+      userMemberId = userMember.id;
+      const userWithMember = await createTestUser(app, {
+        username: 'al-mig-user-mem',
+        role: Role.USER,
+      });
+      userWithMemberId = userWithMember.id;
+      await prisma.user.update({
+        where: { id: userWithMember.id },
+        data: { memberId: userMember.id },
+      });
+      userWithMemberAuth = (await loginAs(app, 'al-mig-user-mem')).authHeader;
+    });
+
+    // 每个 it 前清 registration / activity,避免相互干扰;外层 beforeEach 已清 audit_logs
+    beforeEach(async () => {
+      await prisma.activityRegistration.deleteMany({});
+      await prisma.activity.deleteMany({});
+    });
+
+    // 创建 published 状态、公开报名的活动;返回 id
+    const createPublishedActivity = async (
+      overrides: { capacity?: number; isPublic?: boolean } = {},
+    ): Promise<string> => {
+      const created = await prisma.activity.create({
+        data: {
+          title: 'Reg Mig Activity',
+          activityTypeCode,
+          organizationId: regChildOrgId,
+          startAt: new Date('2026-06-01T08:00:00.000Z'),
+          endAt: new Date('2026-06-01T12:00:00.000Z'),
+          location: 'Demo',
+          statusCode: 'published',
+          isPublicRegistration: overrides.isPublic ?? true,
+          ...(overrides.capacity !== undefined ? { capacity: overrides.capacity } : {}),
+        },
+        select: { id: true },
+      });
+      return created.id;
+    };
+
+    it('ADMIN POST 代报名触发 → audit_logs +1 registration.create(viaPath=admin)', async () => {
+      const actId = await createPublishedActivity();
+      const res = await request(httpServer(app))
+        .post(`/api/v2/activities/${actId}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: regMemberAdminTargetId });
+      expect(res.status).toBe(201);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      const log = logs[0];
+      expect(log.event).toBe('registration.create');
+      expect(log.resourceType).toBe('activity_registration');
+      expect(log.resourceId).toBe(res.body.data.id);
+      expect(log.actorUserId).toBe(adminId);
+      expect(log.actorRoleSnap).toBe(Role.ADMIN);
+      expect(log.success).toBe(true);
+      const extra = (
+        log.context as {
+          extra: {
+            operation: string;
+            viaPath: string;
+            activityId: string;
+            targetMemberId: string;
+          };
+        }
+      ).extra;
+      expect(extra.operation).toBe('create');
+      expect(extra.viaPath).toBe('admin');
+      expect(extra.activityId).toBe(actId);
+      expect(extra.targetMemberId).toBe(regMemberAdminTargetId);
+    });
+
+    it('USER POST 自助报名触发 → audit_logs +1 registration.create(viaPath=self,targetMemberId=USER 绑定的 member)', async () => {
+      const actId = await createPublishedActivity();
+      const res = await request(httpServer(app))
+        .post(`/api/v2/users/me/activities/${actId}/registration`)
+        .set('Authorization', userWithMemberAuth)
+        .send({});
+      expect(res.status).toBe(201);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      const log = logs[0];
+      expect(log.event).toBe('registration.create');
+      expect(log.actorUserId).toBe(userWithMemberId);
+      expect(log.actorRoleSnap).toBe(Role.USER);
+      const extra = (log.context as { extra: { viaPath: string; targetMemberId: string } }).extra;
+      expect(extra.viaPath).toBe('self');
+      expect(extra.targetMemberId).toBe(userMemberId);
+    });
+
+    it('PATCH approve 触发 → audit_logs +1 registration.review(action=approve,priorStatusCode=pending → pass)', async () => {
+      const actId = await createPublishedActivity();
+      const createRes = await request(httpServer(app))
+        .post(`/api/v2/activities/${actId}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: regMemberAdminTargetId });
+      const regId: string = createRes.body.data.id;
+      await truncateAuditLogsTestOnly(app);
+
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/activities/${actId}/registrations/${regId}/approve`)
+        .set('Authorization', adminAuth)
+        .send({});
+      expect(res.status).toBe(200);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0].event).toBe('registration.review');
+      const extra = (
+        logs[0].context as {
+          extra: {
+            operation: string;
+            action: string;
+            priorStatusCode: string;
+            nextStatusCode: string;
+          };
+        }
+      ).extra;
+      expect(extra.operation).toBe('review');
+      expect(extra.action).toBe('approve');
+      expect(extra.priorStatusCode).toBe('pending');
+      expect(extra.nextStatusCode).toBe('pass');
+    });
+
+    it('PATCH reject 触发 → audit_logs +1 registration.review(action=reject)', async () => {
+      const actId = await createPublishedActivity();
+      const createRes = await request(httpServer(app))
+        .post(`/api/v2/activities/${actId}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: regMemberAdminTargetId });
+      const regId: string = createRes.body.data.id;
+      await truncateAuditLogsTestOnly(app);
+
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/activities/${actId}/registrations/${regId}/reject`)
+        .set('Authorization', adminAuth)
+        .send({ reviewNote: '不符合条件' });
+      expect(res.status).toBe(200);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0].event).toBe('registration.review');
+      const extra = (logs[0].context as { extra: { action: string; nextStatusCode: string } })
+        .extra;
+      expect(extra.action).toBe('reject');
+      expect(extra.nextStatusCode).toBe('reject');
+    });
+
+    it('PATCH cancel(admin)触发 → audit_logs +1(action=cancel,cancelledByPath=admin,cancelReason)', async () => {
+      const actId = await createPublishedActivity();
+      const createRes = await request(httpServer(app))
+        .post(`/api/v2/activities/${actId}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: regMemberAdminTargetId });
+      const regId: string = createRes.body.data.id;
+      await truncateAuditLogsTestOnly(app);
+
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/activities/${actId}/registrations/${regId}/cancel`)
+        .set('Authorization', adminAuth)
+        .send({ cancelReason: '活动调整' });
+      expect(res.status).toBe(200);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      const extra = (
+        logs[0].context as {
+          extra: {
+            action: string;
+            cancelledByPath: string;
+            cancelReason: string;
+            nextStatusCode: string;
+          };
+        }
+      ).extra;
+      expect(extra.action).toBe('cancel');
+      expect(extra.cancelledByPath).toBe('admin');
+      expect(extra.cancelReason).toBe('活动调整');
+      expect(extra.nextStatusCode).toBe('cancelled');
+    });
+
+    it('PATCH cancelMy(self)触发 → audit_logs +1(cancelledByPath=self)', async () => {
+      const actId = await createPublishedActivity();
+      // USER 自助报名先建一个 registration
+      const createRes = await request(httpServer(app))
+        .post(`/api/v2/users/me/activities/${actId}/registration`)
+        .set('Authorization', userWithMemberAuth)
+        .send({});
+      const regId: string = createRes.body.data.id;
+      await truncateAuditLogsTestOnly(app);
+
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/users/me/registrations/${regId}/cancel`)
+        .set('Authorization', userWithMemberAuth)
+        .send({ cancelReason: '临时有事' });
+      expect(res.status).toBe(200);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0].event).toBe('registration.review');
+      expect(logs[0].actorUserId).toBe(userWithMemberId);
+      expect(logs[0].actorRoleSnap).toBe(Role.USER);
+      const extra = (
+        logs[0].context as {
+          extra: { action: string; cancelledByPath: string; cancelReason: string };
+        }
+      ).extra;
+      expect(extra.action).toBe('cancel');
+      expect(extra.cancelledByPath).toBe('self');
+      expect(extra.cancelReason).toBe('临时有事');
+    });
+
+    it('context 锁形:requestId 非空字符串,ip / ua 字段存在', async () => {
+      const actId = await createPublishedActivity();
+      const res = await request(httpServer(app))
+        .post(`/api/v2/activities/${actId}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: regMemberAdminTargetId });
+      expect(res.status).toBe(201);
+
+      const log = (await prisma.auditLog.findFirst({ where: { resourceId: res.body.data.id } }))!;
+      const ctx = log.context as Record<string, unknown>;
+      expect(typeof ctx.requestId).toBe('string');
+      expect((ctx.requestId as string).length).toBeGreaterThan(0);
+      expect('ip' in ctx).toBe(true);
+      expect('ua' in ctx).toBe(true);
+    });
+
+    it('create:context 含 after 不含 before;approve:同时含 before+after,statusCode 流转', async () => {
+      const actId = await createPublishedActivity();
+      // create 阶段
+      const createRes = await request(httpServer(app))
+        .post(`/api/v2/activities/${actId}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: regMemberAdminTargetId });
+      const regId: string = createRes.body.data.id;
+      const createLog = (await prisma.auditLog.findFirst({ where: { resourceId: regId } }))!;
+      const createCtx = createLog.context as Record<string, unknown>;
+      expect(createCtx.before).toBeUndefined();
+      expect(createCtx.after).toBeDefined();
+      const createAfter = createCtx.after as { statusCode: string; memberId: string };
+      expect(createAfter.statusCode).toBe('pending');
+      expect(createAfter.memberId).toBe(regMemberAdminTargetId);
+
+      await truncateAuditLogsTestOnly(app);
+
+      // approve 阶段:before.statusCode=pending → after.statusCode=pass
+      await request(httpServer(app))
+        .patch(`/api/v2/activities/${actId}/registrations/${regId}/approve`)
+        .set('Authorization', adminAuth)
+        .send({})
+        .expect(200);
+      const approveLog = (await prisma.auditLog.findFirst({ where: { resourceId: regId } }))!;
+      const approveCtx = approveLog.context as {
+        before: { statusCode: string };
+        after: { statusCode: string; reviewedBy: string };
+      };
+      expect(approveCtx.before.statusCode).toBe('pending');
+      expect(approveCtx.after.statusCode).toBe('pass');
+      expect(approveCtx.after.reviewedBy).toBe(adminId);
+    });
+
+    it('同事务回滚:重复报名 → ACTIVITY_REGISTRATION_ALREADY_EXISTS → audit 不入表 + registration 不新增', async () => {
+      const actId = await createPublishedActivity();
+      // 先建一条 active registration
+      await request(httpServer(app))
+        .post(`/api/v2/activities/${actId}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: regMemberAdminTargetId })
+        .expect(201);
+      await truncateAuditLogsTestOnly(app);
+      const regCountBefore = await prisma.activityRegistration.count();
+
+      // 同 activity + 同 member 再报 → 21002
+      const res = await request(httpServer(app))
+        .post(`/api/v2/activities/${actId}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: regMemberAdminTargetId });
+      expect(res.status).toBe(409);
+
+      expect(await prisma.activityRegistration.count()).toBe(regCountBefore);
+      expect(await prisma.auditLog.count()).toBe(0);
+    });
+
+    it('exportCsv 不入库(read/export 路径仍 pino-only,Q1=A)', async () => {
+      const actId = await createPublishedActivity();
+      await request(httpServer(app))
+        .post(`/api/v2/activities/${actId}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: regMemberAdminTargetId })
+        .expect(201);
+      await truncateAuditLogsTestOnly(app);
+
+      const res = await request(httpServer(app))
+        .get(`/api/v2/activities/${actId}/registrations/export`)
+        .query({ scope: 'all' })
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(200);
+
+      expect(await prisma.auditLog.count()).toBe(0);
+    });
+
+    it('GET list:audit_logs 无新记录(未迁移 read 路径)', async () => {
+      const actId = await createPublishedActivity();
+      await truncateAuditLogsTestOnly(app);
+      await request(httpServer(app))
+        .get(`/api/v2/activities/${actId}/registrations`)
+        .set('Authorization', adminAuth)
+        .expect(200);
+      expect(await prisma.auditLog.count()).toBe(0);
+    });
+
+    it('GET detail(me):audit_logs 无新记录(未迁移 read 路径)', async () => {
+      const actId = await createPublishedActivity();
+      const createRes = await request(httpServer(app))
+        .post(`/api/v2/users/me/activities/${actId}/registration`)
+        .set('Authorization', userWithMemberAuth)
+        .send({});
+      const regId: string = createRes.body.data.id;
+      await truncateAuditLogsTestOnly(app);
+
+      await request(httpServer(app))
+        .get(`/api/v2/users/me/registrations/${regId}`)
+        .set('Authorization', userWithMemberAuth)
+        .expect(200);
+      expect(await prisma.auditLog.count()).toBe(0);
+    });
+  });
 });
