@@ -4,6 +4,143 @@
 
 ## Unreleased
 
+### V2 Batch 6 PR #6 Implementation(2026-05-13;audit_logs 第二波写操作迁移收官)
+
+- `13db2cc` feat(audit-logs): migrate attendances write events to AuditLogsService (#40) —
+  **`audit_logs` 第二波最后一批**(D-A 修订渐进迁出策略,沿 D6 v1.1 §8 / §16.3 F2 触发条件;
+  紧接 PR #5 activity-registrations 之后):
+  attendances 模块 **8 处写操作**(`submit` / `edit` × 2 / `softDelete` / `approve` /
+  `reject` / `finalApprove` / `finalReject`)从 pino-only `auditPlaceholder`
+  迁移到 `AuditLogsService.log()` **同事务落库**;
+  **事件名沿 D2 同值零变更**(从旧 `AuditEvent` union 挪到 `AuditLogEvent` union),
+  且 **5 个事件名共承担 8 处 operation**(沿 batch3 草案 §20.2 A4-A8 + batch 4-B 终审有意设计;
+  路线 A:不拆 `attendance-sheet.approve / .reject / .final-approve / .final-reject` 等新事件名):
+  - `attendance-sheet.submit`(1 处,`attendances.service.ts:submit`;Sheet + N records 一次性
+    入库,D11 推动 Activity → completed)
+  - `attendance-sheet.edit`(2 处共用,`extra.operation ∈ {edit, edit-no-records}` 区分):
+    - `attendances.service.ts:edit`(主路径,旧 records 软删 + 新 records 创建,version+1)
+    - `attendances.service.ts:edit`(no-records 分支,仅 version+1 + previousSnapshot)
+  - `attendance-sheet.delete`(1 处,`attendances.service.ts:softDelete`;pending Sheet 软删
+    + records 级联软删)
+  - `attendance-sheet.review`(2 处共用,`extra.action ∈ {approve, reject}` 区分):
+    - `attendances.service.ts:approve`(`pending → pending_final_review`,R31 校验;
+      批次 4-B 状态机升级,**不再触发** `attendance.recorded` — 触发位置移到 final-approve)
+    - `attendances.service.ts:reject`(`pending → rejected`,reviewNote 必填)
+  - `attendance-sheet.final-review`(2 处共用,`extra.action ∈ {final-approve, final-reject}` 区分):
+    - `attendances.service.ts:finalApprove`(`pending_final_review → approved`;**触发**
+      `attendance.recorded` 业务事件;贡献值正式生效;`extra.eventTriggered=true` 标识)
+    - `attendances.service.ts:finalReject`(`pending_final_review → final_rejected`;
+      records 跟随软删;finalReviewNote 必填)
+  - 调用样式从 `auditPlaceholder(event, ctx)` 改为 `await this.auditLogs.log({ ..., tx })`,
+    `tx` 来自业务 `prisma.$transaction` 内,**audit 与业务同事务、同回滚**(沿 D-B fail-fast / D9);
+  **`AuditLogEvent` union 从 12 项扩展为 17 项**;与 `auditPlaceholder` 28 项 union 仍
+  **物理隔离**(A-16 红线 / D2);**`attendance-sheet.read.other` 字符串同时存在于
+  `AuditEvent`(pino-only:3 处 read.other 残留)与 `AuditLogEvent` 不重叠**(read 路径
+  仍走 pino-only);
+  **5 个 service 写操作通过 extra 字段细分语义**,按 `event` 字段筛选无法直接区分 8 种 operation,
+  需用 `event='attendance-sheet.<name>' AND context->'extra'->>'operation'='xxx'` 组合查询;
+  **3 处 read.other 不迁移**(line 710 `list` / line 730 `findOne` / line 772 `reviewDetail`):
+  read/list/detail 行为,无 DB mutation,**保持 pino-only**;沿 Q1=A "当前阶段不记录查看行为"
+  严格执行;e2e 显式断言"GET list / detail / review-detail 不入库"3 个用例;
+  service 内 `auditPlaceholder` import **保留**(read.other 仍依赖);
+  **`eventPlaceholder('attendance.recorded')` 不动**(line 1251,`finalApprove` 同事务内
+  触发业务事件;**与 audit 是两套独立机制**,沿 D-S7;两者同事务并存,audit 写失败 →
+  整个事务回滚 → 业务事件随之回滚,由 DB 事务原子性保证;e2e 用例 "finalApprove 与
+  attendance.recorded 业务事件并存" 显式验证);
+  **final-review 权限未改**:仍保持 `@Roles(SUPER_ADMIN, ADMIN)`(行 274 / 296);
+  **APD 部门部长/副部长细分权限尚未实装**,后置(本批次纯 audit 迁移,不动权限语义);
+  **contribution rule 预填(D14 5.B)/ R31 校验(approve 时所有 `records.contributionPoints` 必填)
+  逻辑未改**(本批次只动 audit hook 调用样式,不动业务规则);
+  **attendances.controller.ts 改造**:3 个 controller(`AttendanceSheetsCollectionController` +
+  `AttendanceSheetsResourceController` + `AttendanceRecordsMeController`)共用**模块级
+  `buildAuditMeta()`** 函数(沿 PR #5 activity-registrations 模块级范式;3 个 controller
+  共享避免重复定义);7 个写方法各加 `@Req() req: Request` 参数,显式构造 `AuditMeta`
+  传给 service;`list` / `findOne` / `reviewDetail` / `listMyRecords` 4 个 read 接口**完全不动**;
+  **attendances.module.ts 改造**:`imports: [DatabaseModule, AuditLogsModule]`,
+  注入 `AuditLogsService`;
+  **新增 `toSheetAuditSnapshot()` helper**(与现有 `buildSnapshot` 语义分离:`buildSnapshot`
+  服务于 `sheet.previousSnapshot` 业务列,`toSheetAuditSnapshot` 服务于 `audit_logs.context`):
+  字段集 = `sheetSafeSelect` + 可选 `RecordWithMemberRow[]`;Date 经 `.toISOString()`,
+  Decimal 经 `.toString()` / `decimalToString`;字段全部非敏感(打码矩阵 §4.3 未命中,沿
+  PR #3 / PR #4 / PR #5 不打码范式;`reviewNote` / `finalReviewNote` 文本字段保持原值);
+  **records 快照策略**(submit / edit × 2 / softDelete / finalReject 必含 records;
+  approve / reject / finalApprove 只放 sheet + `extra.recordsCount`):
+  - `submit`:`after` 含 `sheet + records` 完整快照 / `extra.{operation:'submit', activityId, recordsCount, activityPushedToCompleted}`
+  - `edit`(主路径):`before` 含 sheet + 旧 records / `after` 含 sheet + 新 records / `extra.{operation:'edit', oldRecordsCount, newRecordsCount, newVersion}`
+  - `edit`(no-records):`before` / `after` 各含 sheet + currentRecords(records 不变,仅 version+1) / `extra.{operation:'edit-no-records', recordsCount, newVersion}`
+  - `softDelete`:`before` 含 sheet + records / 不传 `after` / `extra.{operation:'delete', priorStatusCode, recordsCount}`
+  - `approve`:`before` / `after` 仅含 sheet / `extra.{operation:'review', action:'approve', priorStatusCode, nextStatusCode:'pending_final_review', recordsCount}`
+  - `reject`:`before` / `after` 仅含 sheet / `extra.{operation:'review', action:'reject', priorStatusCode, nextStatusCode:'rejected'}`
+  - `finalApprove`:`before` / `after` 仅含 sheet / `extra.{operation:'final-review', action:'final-approve', priorStatusCode, nextStatusCode:'approved', recordsCount, eventTriggered:true}`
+  - `finalReject`:`before` 含 sheet + records / `after` 仅含 sheet(records 已软删) / `extra.{operation:'final-review', action:'final-reject', priorStatusCode, nextStatusCode:'final_rejected', recordsCount, finalReviewNote}`
+  `resourceType` 固定 `attendance_sheet`(snake_case 单数,对齐前 5 个迁移模块的
+  resourceType 风格:`emergency_contact` / `certificate` / `contribution_rule` / `activity` /
+  `activity_registration`);
+  `finalApprove` 复用 `recordsForEvent` 变量避免重复查 records(与 `eventPlaceholder` 共享同一
+  `recordWithMemberSelect` 查询结果);
+  **不补 `changedFields`**(本模块 `edit` 是 records 全量替换不是字段 update;approve /
+  reject / final-* 是状态机流转,无字段 update);沿 PR #5 activity-registrations 不补范式;
+  **attendances 模块内实际 `auditPlaceholder` 调用 = 3**(line 710 / 730 / 772 全部 read.other,
+  read/list/detail/review-detail 保持 pino-only;沿 Q1=A 边界);
+  **e2e 扩展**:`test/e2e/audit-logs-migrations.e2e-spec.ts` 加 1 个 describe(19 个 it):
+  - 8 处 hook 触发 ×8(`submit` / `edit` 主路径 / `edit-no-records` / `softDelete` /
+    `approve` / `reject` / `finalApprove` / `finalReject` 各 1)
+  - context 锁形(`requestId` 非空 / `ip` `ua` 字段存在)×1
+  - before/after 结构 ×4(`submit` only after / `edit` before+after with version 跳变 /
+    `softDelete` only before / `finalReject` before 含 records / after 仅 sheet)
+  - 同事务回滚 ×2(`submit` 字典 invalid → audit 不入表 + sheet 不入表;
+    `approve` R31 失败 → 22072 CONFLICT → audit 不入表 + 状态不变)
+  - read.other 不入库 ×3(`GET list` / `GET detail` / `GET review-detail` 显式边界断言)
+  - `finalApprove` 与 `attendance.recorded` 业务事件并存 ×1(两套机制独立验证)
+  累计 e2e 用例 **778**(PR #5 后 759,+19);
+  **OpenAPI contract snapshot 零漂移**:本批次不改 controller 响应 / Swagger 结构 / paths;
+  v1 14 + V2 既有 79 schemas / paths 全部不变(controller 增 `@Req()` 参数不进 OpenAPI);
+  **累计 V2 79 接口**(与 v0.7.0 一致);**累计 93 接口 contract snapshot 保护**;
+  本批次**不做**(范围严控):
+  - 不改 `prisma/schema.prisma` / 不新增 migration
+  - 不改 `auditPlaceholder` 函数体(F1 保持;3 处 read.other 仍依赖)
+  - 不改 `AuditEvent` union(28 项原样;`attendance-sheet.*` 5 项在 `AuditEvent`
+    与 `AuditLogEvent` 中同值并存,D2 设计意图)
+  - 不迁移 3 处 read.other(沿 Q1=A 边界 #3,**当前批次不做**,非"永久不做")
+  - 不动 `eventPlaceholder('attendance.recorded')`(沿 D-S7;两套机制独立)
+  - 不动 final-review 权限(APD 细分仍后置)
+  - 不动 contribution rule 预填 / R31 校验逻辑(纯 audit 迁移,不动业务规则)
+  - 不引入 records 字段打码(本次纯迁移)
+  - 不补 `changedFields`(本模块无通用 update)
+  - 不动 attendances.e2e-spec.ts ~80 业务 e2e(业务 e2e 零退化)
+  - 不 bump `package.json#version` / 不改 Swagger `setVersion`(仍 `0.7.0`)
+  - 不打 tag / 不发 GitHub Release
+
+#### audit_logs 第二波写操作迁移收官里程碑
+
+**PR #34 / PR #36 / PR #38 / PR #40 四个代码 PR 合并后,audit_logs 第二波所有写操作
+迁移工作全部完成**:
+
+| PR | 模块 | 写 hook | union 增量 |
+|---|---|---|---|
+| #34 | contribution-rules | 3 | +3(`contribution-rule.{create, update, delete}`) |
+| #36 | activities | 5 | +1(`activity.publish` 共用) |
+| #38 | activity-registrations | 6 | +2(`registration.{create, review}` 共用) |
+| #40 | attendances | 8 | +5(`attendance-sheet.{submit, edit, delete, review, final-review}`) |
+| **合计** | **4 模块** | **22 处写** | **+11**(`AuditLogEvent` union 6 → 17) |
+
+**剩余 8 处 read 类 `auditPlaceholder` 调用**继续 pino-only(沿 Q1=A 业务确认稿
+"当前阶段不记录查看行为"决议):
+
+- `member-profiles` 1 处(`profile.read.other`)
+- `emergency-contacts` 1 处(`emergency-contact.read.other`)
+- `certificates` 3 处(`certificate.read.other` × 2 / `certificate.read.qualification-flag` × 1)
+- `attendances` 3 处(`attendance-sheet.read.other`)— PR #6 显式确认不迁移
+- `activity-registrations` 1 处(`exportCsv` 的 `registration.review`)— PR #5 显式确认不迁移
+
+**未做**(沿前面 4 个 PR 收口边界):
+
+- 不改 `prisma/schema.prisma` / 不新增 migration
+- 不改 `auditPlaceholder` 函数体 / 不改 `AuditEvent` union(28 项原样)
+- 不迁移 8 处 read.other(沿 Q1=A;**当前阶段不做**,非"永久不做")
+- 不 bump `package.json#version` / 不改 Swagger `setVersion`(仍 `0.7.0`)
+- 不打 tag / 不发 GitHub Release
+
 ### V2 Batch 6 PR #5 Implementation(2026-05-13)
 
 - `cdd4794` feat(audit-logs): migrate activity-registrations write events to AuditLogsService (#38) —
