@@ -7,6 +7,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   ActivityRegistrationListItemDto,
   ActivityRegistrationResponseDto,
@@ -42,12 +44,22 @@ import {
 // - 默认 scope=pass;可选 scope=all
 // - 输出 UTF-8 + BOM(让 Excel 自动识别中文)
 // - 不写库 / 不落 export_logs / 不生成 AttendanceRecord(Q-A6 三条副作用禁止)
+//
+// V2 批次 6 PR #5(第二波第三步):6 处 write hook 从 `auditPlaceholder` 迁移到
+// `AuditLogsService.log()` 同事务落库;2 个事件名 `registration.create` / `registration.review`
+// 共用 6 个 operation,通过 `extra.viaPath` / `extra.action` 区分(沿 batch3 草案 §20.2 A2 / A3
+// 有意设计,D2 同值挪字符串);resourceType 固定 `activity_registration`,字段全部非敏感
+// (打码矩阵未命中,与 PR #3 / PR #4 范式一致;extras 字段是用户自定义 JSON,本次纯迁移
+// 不引入打码,若后续业务认为含敏感字段需独立批次评审)。
+// **`exportCsv` 的 `auditPlaceholder('registration.review', ...)` 调用保持 pino-only 不迁移**
+// (read/export 行为,无 DB mutation,沿 Q1=A 当前阶段不记录查看行为)。
 
 const ACTIVITY_STATUS_CANCELLED = 'cancelled';
 const REGISTRATION_STATUS_PENDING = 'pending';
 const REGISTRATION_STATUS_PASS = 'pass';
 const REGISTRATION_STATUS_REJECT = 'reject';
 const REGISTRATION_STATUS_CANCELLED = 'cancelled';
+const AUDIT_RESOURCE_TYPE = 'activity_registration';
 
 const registrationSafeSelect = {
   id: true,
@@ -94,13 +106,38 @@ type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
 export class ActivityRegistrationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogs: AuditLogsService,
+  ) {}
 
   // ============ helpers ============
 
   private jsonAsObject(v: Prisma.JsonValue | null): Record<string, unknown> | null {
     if (v === null || typeof v !== 'object' || Array.isArray(v)) return null;
     return v;
+  }
+
+  // PR #5 audit snapshot:把 RegistrationFullRow 转成 JSON-safe 入 audit context。
+  // 字段集 = registrationSafeSelect 剔除 id / createdAt / updatedAt(audit_logs 自带 resourceId /
+  // createdAt / actorUserId);extras 经 jsonAsObject 取强类型;字段全部非敏感
+  // (打码矩阵 §4.3 未命中,extras 是用户自定义 JSON,本次纯迁移不引入打码);
+  // Date 字段(registeredAt / reviewedAt / cancelledAt)由 Prisma JsonValue 写入时自动
+  // 调 Date.toJSON() → ISO string,沿 PR #4 范式。
+  private toAuditSnapshot(row: RegistrationFullRow): Record<string, unknown> {
+    return {
+      activityId: row.activityId,
+      memberId: row.memberId,
+      statusCode: row.statusCode,
+      registeredAt: row.registeredAt,
+      reviewedBy: row.reviewedBy,
+      reviewedAt: row.reviewedAt,
+      reviewNote: row.reviewNote,
+      extras: this.jsonAsObject(row.extras),
+      cancelledByUserId: row.cancelledByUserId,
+      cancelledAt: row.cancelledAt,
+      cancelReason: row.cancelReason,
+    };
   }
 
   private toResponseDto(row: RegistrationFullRow): ActivityRegistrationResponseDto {
@@ -304,6 +341,7 @@ export class ActivityRegistrationsService {
     activityId: string,
     dto: CreateRegistrationDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const act = await this.assertActivityRegistrable(activityId, tx);
@@ -323,12 +361,21 @@ export class ActivityRegistrationsService {
         }),
       );
 
-      auditPlaceholder('registration.create', {
-        operatorUserId: currentUser.id,
-        activityId,
-        registrationId: created.id,
-        targetMemberId: dto.memberId,
-        viaPath: 'admin',
+      await this.auditLogs.log({
+        event: 'registration.create',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: created.id,
+        meta: auditMeta,
+        after: this.toAuditSnapshot(created),
+        extra: {
+          operation: 'create',
+          viaPath: 'admin',
+          activityId,
+          targetMemberId: dto.memberId,
+        },
+        tx,
       });
 
       return this.toResponseDto(created);
@@ -341,6 +388,7 @@ export class ActivityRegistrationsService {
     activityId: string,
     dto: CreateMyRegistrationDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const memberId = await this.resolveUserMemberIdOrThrow(currentUser.id, tx);
@@ -360,12 +408,21 @@ export class ActivityRegistrationsService {
         }),
       );
 
-      auditPlaceholder('registration.create', {
-        operatorUserId: currentUser.id,
-        activityId,
-        registrationId: created.id,
-        targetMemberId: memberId,
-        viaPath: 'self',
+      await this.auditLogs.log({
+        event: 'registration.create',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: created.id,
+        meta: auditMeta,
+        after: this.toAuditSnapshot(created),
+        extra: {
+          operation: 'create',
+          viaPath: 'self',
+          activityId,
+          targetMemberId: memberId,
+        },
+        tx,
       });
 
       return this.toResponseDto(created);
@@ -379,6 +436,7 @@ export class ActivityRegistrationsService {
     id: string,
     dto: ApproveRegistrationDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
@@ -402,14 +460,24 @@ export class ActivityRegistrationsService {
         select: registrationSafeSelect,
       });
 
-      auditPlaceholder('registration.review', {
-        operatorUserId: currentUser.id,
-        activityId,
-        registrationId: reg.id,
-        targetMemberId: reg.memberId,
-        priorStatusCode: reg.statusCode,
-        nextStatusCode: REGISTRATION_STATUS_PASS,
-        action: 'approve',
+      await this.auditLogs.log({
+        event: 'registration.review',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: reg.id,
+        meta: auditMeta,
+        before: this.toAuditSnapshot(reg),
+        after: this.toAuditSnapshot(updated),
+        extra: {
+          operation: 'review',
+          action: 'approve',
+          priorStatusCode: reg.statusCode,
+          nextStatusCode: REGISTRATION_STATUS_PASS,
+          activityId,
+          targetMemberId: reg.memberId,
+        },
+        tx,
       });
 
       return this.toResponseDto(updated);
@@ -423,6 +491,7 @@ export class ActivityRegistrationsService {
     id: string,
     dto: RejectRegistrationDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
@@ -442,14 +511,24 @@ export class ActivityRegistrationsService {
         select: registrationSafeSelect,
       });
 
-      auditPlaceholder('registration.review', {
-        operatorUserId: currentUser.id,
-        activityId,
-        registrationId: reg.id,
-        targetMemberId: reg.memberId,
-        priorStatusCode: reg.statusCode,
-        nextStatusCode: REGISTRATION_STATUS_REJECT,
-        action: 'reject',
+      await this.auditLogs.log({
+        event: 'registration.review',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: reg.id,
+        meta: auditMeta,
+        before: this.toAuditSnapshot(reg),
+        after: this.toAuditSnapshot(updated),
+        extra: {
+          operation: 'review',
+          action: 'reject',
+          priorStatusCode: reg.statusCode,
+          nextStatusCode: REGISTRATION_STATUS_REJECT,
+          activityId,
+          targetMemberId: reg.memberId,
+        },
+        tx,
       });
 
       return this.toResponseDto(updated);
@@ -463,6 +542,7 @@ export class ActivityRegistrationsService {
     id: string,
     dto: CancelRegistrationDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
@@ -485,16 +565,26 @@ export class ActivityRegistrationsService {
         select: registrationSafeSelect,
       });
 
-      auditPlaceholder('registration.review', {
-        operatorUserId: currentUser.id,
-        activityId,
-        registrationId: reg.id,
-        targetMemberId: reg.memberId,
-        priorStatusCode: reg.statusCode,
-        nextStatusCode: REGISTRATION_STATUS_CANCELLED,
-        action: 'cancel',
-        cancelledByPath: 'admin',
-        cancelReason: dto.cancelReason ?? null,
+      await this.auditLogs.log({
+        event: 'registration.review',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: reg.id,
+        meta: auditMeta,
+        before: this.toAuditSnapshot(reg),
+        after: this.toAuditSnapshot(updated),
+        extra: {
+          operation: 'review',
+          action: 'cancel',
+          priorStatusCode: reg.statusCode,
+          nextStatusCode: REGISTRATION_STATUS_CANCELLED,
+          cancelledByPath: 'admin',
+          cancelReason: dto.cancelReason ?? null,
+          activityId,
+          targetMemberId: reg.memberId,
+        },
+        tx,
       });
 
       return this.toResponseDto(updated);
@@ -558,6 +648,7 @@ export class ActivityRegistrationsService {
     id: string,
     dto: CancelRegistrationDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const memberId = await this.resolveUserMemberIdOrThrow(currentUser.id, tx);
@@ -588,16 +679,26 @@ export class ActivityRegistrationsService {
         select: registrationSafeSelect,
       });
 
-      auditPlaceholder('registration.review', {
-        operatorUserId: currentUser.id,
-        activityId: reg.activityId,
-        registrationId: reg.id,
-        targetMemberId: reg.memberId,
-        priorStatusCode: reg.statusCode,
-        nextStatusCode: REGISTRATION_STATUS_CANCELLED,
-        action: 'cancel',
-        cancelledByPath: 'self',
-        cancelReason: dto.cancelReason ?? null,
+      await this.auditLogs.log({
+        event: 'registration.review',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: reg.id,
+        meta: auditMeta,
+        before: this.toAuditSnapshot(reg),
+        after: this.toAuditSnapshot(updated),
+        extra: {
+          operation: 'review',
+          action: 'cancel',
+          priorStatusCode: reg.statusCode,
+          nextStatusCode: REGISTRATION_STATUS_CANCELLED,
+          cancelledByPath: 'self',
+          cancelReason: dto.cancelReason ?? null,
+          activityId: reg.activityId,
+          targetMemberId: reg.memberId,
+        },
+        tx,
       });
 
       return this.toResponseDto(updated);

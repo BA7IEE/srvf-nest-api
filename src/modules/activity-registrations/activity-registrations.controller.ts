@@ -6,12 +6,13 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   Res,
   StreamableFile,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
@@ -25,6 +26,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   ActivityIdParamDto,
   ActivityRegistrationIdParamDto,
@@ -40,6 +42,18 @@ import {
   RejectRegistrationDto,
 } from './activity-registrations.dto';
 import { ActivityRegistrationsService } from './activity-registrations.service';
+
+// V2 批次 6 PR #5 共享 helper:从 @Req() 构造 AuditMeta(D6 v1.1 §11.2 / D8 拍板;
+// 不引入 cls-rs / AsyncLocalStorage)。两个 controller 共用此函数(模块级私有,沿
+// contribution-rules / activities 单 controller 类内私有方法的范式;activity-registrations
+// 模块有 2 个 controller 同需此 helper,提到模块级以避免重复)。
+function buildAuditMeta(req: Request): AuditMeta {
+  return {
+    requestId: req.id as string,
+    ip: req.ip ?? null,
+    ua: req.headers['user-agent'] ?? null,
+  };
+}
 
 // V2 第一阶段批次 3A activity-registrations controllers(10 路由)。
 //
@@ -108,8 +122,9 @@ export class ActivityRegistrationsAdminController {
     @Param() params: ActivityIdParamDto,
     @Body() dto: CreateRegistrationDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<ActivityRegistrationResponseDto> {
-    return this.service.create(params.activityId, dto, currentUser);
+    return this.service.create(params.activityId, dto, currentUser, buildAuditMeta(req));
   }
 
   // 必须先于 :id/<action> 声明:export 是字面段。
@@ -158,8 +173,15 @@ export class ActivityRegistrationsAdminController {
     @Param() params: ActivityRegistrationIdParamDto,
     @Body() dto: ApproveRegistrationDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<ActivityRegistrationResponseDto> {
-    return this.service.approve(params.activityId, params.id, dto, currentUser);
+    return this.service.approve(
+      params.activityId,
+      params.id,
+      dto,
+      currentUser,
+      buildAuditMeta(req),
+    );
   }
 
   @Patch(':id/reject')
@@ -178,8 +200,9 @@ export class ActivityRegistrationsAdminController {
     @Param() params: ActivityRegistrationIdParamDto,
     @Body() dto: RejectRegistrationDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<ActivityRegistrationResponseDto> {
-    return this.service.reject(params.activityId, params.id, dto, currentUser);
+    return this.service.reject(params.activityId, params.id, dto, currentUser, buildAuditMeta(req));
   }
 
   @Patch(':id/cancel')
@@ -200,8 +223,15 @@ export class ActivityRegistrationsAdminController {
     @Param() params: ActivityRegistrationIdParamDto,
     @Body() dto: CancelRegistrationDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<ActivityRegistrationResponseDto> {
-    return this.service.cancelAdmin(params.activityId, params.id, dto, currentUser);
+    return this.service.cancelAdmin(
+      params.activityId,
+      params.id,
+      dto,
+      currentUser,
+      buildAuditMeta(req),
+    );
   }
 }
 
@@ -235,8 +265,9 @@ export class ActivityRegistrationsMeController {
     @Param() params: ActivityIdParamDto,
     @Body() dto: CreateMyRegistrationDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<ActivityRegistrationResponseDto> {
-    return this.service.createMy(params.activityId, dto, currentUser);
+    return this.service.createMy(params.activityId, dto, currentUser, buildAuditMeta(req));
   }
 
   @Get('registrations')
@@ -292,7 +323,8 @@ export class ActivityRegistrationsMeController {
     @Param() params: IdParamDto,
     @Body() dto: CancelRegistrationDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<ActivityRegistrationResponseDto> {
-    return this.service.cancelMy(params.id, dto, currentUser);
+    return this.service.cancelMy(params.id, dto, currentUser, buildAuditMeta(req));
   }
 }
