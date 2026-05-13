@@ -9,15 +9,16 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// V2 第一阶段批次 6 PR #2 e2e:
-// 验证 8 处 emergency-contacts / certificates 写操作迁移到 AuditLogsService.log()
-// 的实际写库行为(D6 v1.1 §12 矩阵)。
+// V2 第一阶段批次 6 PR #2 / PR #3 e2e:
+// PR #2:验证 8 处 emergency-contacts / certificates 写操作迁移到 AuditLogsService.log()
+// PR #3(第二波第一步):验证 3 处 contribution-rules 写操作迁移到 AuditLogsService.log()
+// 的实际写库行为(D6 v1.1 §12 矩阵 / §8.4 未迁移清单)。
 //
 // 与 audit-logs.e2e-spec.ts(PR #1)互补:
 // - PR #1 spec:通过 AuditLogsService.log() 直接造数据,测查询接口 + 权限 + 不审计自身
-// - PR #2 spec:通过 HTTP 调用业务 controller,测 8 处迁移 hook 实际写入 audit_logs
+// - 本 spec :通过 HTTP 调用业务 controller,测迁移 hook 实际写入 audit_logs
 
-describe('audit-logs PR #2 迁移', () => {
+describe('audit-logs 写入迁移', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let adminAuth: string;
@@ -26,6 +27,10 @@ describe('audit-logs PR #2 迁移', () => {
   let memberId: string;
   let relationCode: string;
   let certTypeCode: string;
+
+  // PR #3 fixtures
+  let activityTypeCode: string;
+  let roleCode: string;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -74,6 +79,38 @@ describe('audit-logs PR #2 迁移', () => {
       select: { id: true },
     });
     memberId = m.id;
+
+    // PR #3 fixtures:activity_type 字典(contribution-rule.create / update / delete 校验依赖)
+    const actType = await prisma.dictType.create({
+      data: { code: 'activity_type', label: 'Activity Type' },
+      select: { id: true },
+    });
+    const actItem = await prisma.dictItem.create({
+      data: {
+        typeId: actType.id,
+        code: 'demo-act-search',
+        label: 'Search',
+        status: DictItemStatus.ACTIVE,
+      },
+      select: { code: true },
+    });
+    activityTypeCode = actItem.code;
+
+    // PR #3 fixtures:attendance_role 字典
+    const roleType = await prisma.dictType.create({
+      data: { code: 'attendance_role', label: 'Attendance Role' },
+      select: { id: true },
+    });
+    const roleItem = await prisma.dictItem.create({
+      data: {
+        typeId: roleType.id,
+        code: 'demo-role-lead',
+        label: 'Lead',
+        status: DictItemStatus.ACTIVE,
+      },
+      select: { code: true },
+    });
+    roleCode = roleItem.code;
   });
 
   afterAll(async () => {
@@ -116,6 +153,23 @@ describe('audit-logs PR #2 迁移', () => {
         issuingOrg: 'Demo Issuing Org',
         certNumber: 'CN-2026-0001',
         issuedAt: '2026-01-01T00:00:00.000Z',
+      });
+    expect(res.status).toBe(201);
+    return res.body.data;
+  };
+
+  // PR #3:创建一条 ACTIVE contribution-rule,返回 id;用于 update / softDelete 前置数据
+  const createRule = async (
+    overrides: Record<string, unknown> = {},
+  ): Promise<{ id: string; pointsBelow: number; remark: string | null; status: string }> => {
+    const res = await request(httpServer(app))
+      .post('/api/v2/contribution-rules')
+      .set('Authorization', adminAuth)
+      .send({
+        activityTypeCode,
+        attendanceRoleCode: roleCode,
+        pointsBelow: 1.5,
+        ...overrides,
       });
     expect(res.status).toBe(201);
     return res.body.data;
@@ -487,6 +541,176 @@ describe('audit-logs PR #2 迁移', () => {
         .expect(200);
       const logs = await prisma.auditLog.count();
       expect(logs).toBe(0);
+    });
+  });
+
+  // ============ PR #3:contribution-rules 写操作迁移(第二波第一步) ============
+
+  describe('contribution-rules 写操作迁移(PR #3)', () => {
+    // 每个 it 前清贡献规则,避免 ACTIVE 唯一性冲突;外层 beforeEach 已清 audit_logs
+    beforeEach(async () => {
+      await prisma.contributionRule.deleteMany({});
+    });
+
+    it('POST 触发 → audit_logs +1 contribution-rule.create', async () => {
+      const r = await createRule();
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      const log = logs[0];
+      expect(log.event).toBe('contribution-rule.create');
+      expect(log.resourceType).toBe('contribution_rule');
+      expect(log.resourceId).toBe(r.id);
+      expect(log.actorUserId).toBe(adminId);
+      expect(log.actorRoleSnap).toBe(Role.ADMIN);
+      expect(log.success).toBe(true);
+    });
+
+    it('PATCH 触发 → audit_logs +1 contribution-rule.update', async () => {
+      const r = await createRule();
+      await truncateAuditLogsTestOnly(app); // 清掉 create 的 audit,仅看 update
+
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/contribution-rules/${r.id}`)
+        .set('Authorization', adminAuth)
+        .send({ remark: 'updated remark' });
+      expect(res.status).toBe(200);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0].event).toBe('contribution-rule.update');
+      expect(logs[0].resourceId).toBe(r.id);
+    });
+
+    it('DELETE 触发 → audit_logs +1 contribution-rule.delete (204)', async () => {
+      const r = await createRule();
+      await truncateAuditLogsTestOnly(app);
+
+      const res = await request(httpServer(app))
+        .delete(`/api/v2/contribution-rules/${r.id}`)
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(204); // controller @HttpCode(NO_CONTENT)
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0].event).toBe('contribution-rule.delete');
+      expect(logs[0].resourceId).toBe(r.id);
+    });
+
+    it('context 锁形:requestId 非空字符串,ip / ua 字段存在', async () => {
+      const r = await createRule();
+      const log = (await prisma.auditLog.findFirst({ where: { resourceId: r.id } }))!;
+      const ctx = log.context as Record<string, unknown>;
+      expect(typeof ctx.requestId).toBe('string');
+      expect((ctx.requestId as string).length).toBeGreaterThan(0);
+      expect('ip' in ctx).toBe(true);
+      expect('ua' in ctx).toBe(true);
+    });
+
+    it('create:context 含 after,不含 before;after 含完整 8 字段;extra.operation=create', async () => {
+      const r = await createRule({ pointsBelow: 2.0, durationThreshold: 3, pointsAbove: 5 });
+      const log = (await prisma.auditLog.findFirst({ where: { resourceId: r.id } }))!;
+      const ctx = log.context as Record<string, unknown>;
+      expect(ctx.before).toBeUndefined();
+      expect(ctx.after).toBeDefined();
+      const after = ctx.after as Record<string, unknown>;
+      expect(after.activityTypeCode).toBe(activityTypeCode);
+      expect(after.attendanceRoleCode).toBe(roleCode);
+      expect(after.durationThreshold).toBe(3);
+      expect(after.pointsBelow).toBe(2);
+      expect(after.pointsAbove).toBe(5);
+      expect(after.dailyCap).toBeNull();
+      expect(after.status).toBe('ACTIVE');
+      expect(after.remark).toBeNull();
+      const extra = ctx.extra as { operation: string };
+      expect(extra.operation).toBe('create');
+    });
+
+    it('update:context 同时含 before / after,extra.changedFields = Object.keys(dto)', async () => {
+      const r = await createRule();
+      await truncateAuditLogsTestOnly(app);
+
+      await request(httpServer(app))
+        .patch(`/api/v2/contribution-rules/${r.id}`)
+        .set('Authorization', adminAuth)
+        .send({ pointsBelow: 3, remark: 'rev' })
+        .expect(200);
+
+      const log = (await prisma.auditLog.findFirst({ where: { resourceId: r.id } }))!;
+      const ctx = log.context as {
+        before: Record<string, unknown>;
+        after: Record<string, unknown>;
+        extra: { operation: string; changedFields: string[] };
+      };
+      expect(ctx.before.pointsBelow).toBe(1.5);
+      expect(ctx.before.remark).toBeNull();
+      expect(ctx.after.pointsBelow).toBe(3);
+      expect(ctx.after.remark).toBe('rev');
+      expect(ctx.extra.operation).toBe('update');
+      // changedFields = Object.keys(dto):ValidationPipe transform=true 后,
+      // UpdateContributionRuleDto 所有 @IsOptional() 字段都会出现在 instance own keys
+      // (值可能是 undefined)。本批次是"迁移"非"改语义",沿用 PR #3 之前 auditPlaceholder
+      // 写下的 Object.keys(dto) 行为不变。e2e 仅断言"客户端实际传的字段"必在,不收紧总集。
+      expect(ctx.extra.changedFields).toEqual(expect.arrayContaining(['pointsBelow', 'remark']));
+    });
+
+    it('delete:context 含 before 完整,不含 after;extra.priorStatus=ACTIVE', async () => {
+      const r = await createRule({ remark: 'pre-delete' });
+      await truncateAuditLogsTestOnly(app);
+
+      await request(httpServer(app))
+        .delete(`/api/v2/contribution-rules/${r.id}`)
+        .set('Authorization', adminAuth)
+        .expect(204);
+
+      const log = (await prisma.auditLog.findFirst({ where: { resourceId: r.id } }))!;
+      const ctx = log.context as {
+        before: Record<string, unknown>;
+        after?: unknown;
+        extra: { operation: string; priorStatus: string };
+      };
+      expect(ctx.before.remark).toBe('pre-delete');
+      expect(ctx.before.status).toBe('ACTIVE');
+      expect(ctx.after).toBeUndefined();
+      expect(ctx.extra.operation).toBe('softDelete');
+      expect(ctx.extra.priorStatus).toBe('ACTIVE');
+    });
+
+    it('同事务回滚:activityTypeCode invalid → audit 不入表 + contribution_rule 不入表', async () => {
+      const crBefore = await prisma.contributionRule.count();
+      const auditBefore = await prisma.auditLog.count();
+
+      const res = await request(httpServer(app))
+        .post('/api/v2/contribution-rules')
+        .set('Authorization', adminAuth)
+        .send({
+          activityTypeCode: 'non-existent-code',
+          attendanceRoleCode: roleCode,
+          pointsBelow: 1.5,
+        });
+      expect(res.status).toBe(400);
+
+      expect(await prisma.contributionRule.count()).toBe(crBefore);
+      expect(await prisma.auditLog.count()).toBe(auditBefore);
+    });
+
+    it('GET list:audit_logs 无新记录(未迁移 read 路径)', async () => {
+      await createRule();
+      await truncateAuditLogsTestOnly(app);
+      await request(httpServer(app))
+        .get('/api/v2/contribution-rules')
+        .set('Authorization', adminAuth)
+        .expect(200);
+      expect(await prisma.auditLog.count()).toBe(0);
+    });
+
+    it('GET detail:audit_logs 无新记录(未迁移 read 路径)', async () => {
+      const r = await createRule();
+      await truncateAuditLogsTestOnly(app);
+      await request(httpServer(app))
+        .get(`/api/v2/contribution-rules/${r.id}`)
+        .set('Authorization', adminAuth)
+        .expect(200);
+      expect(await prisma.auditLog.count()).toBe(0);
     });
   });
 });

@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { ContributionRuleStatus, DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
-import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   ContributionRuleQueryDto,
   ContributionRuleResponseDto,
@@ -30,20 +31,45 @@ import { contributionRuleSafeSelect, type SafeContributionRule } from './contrib
 // - 排序契约:(activityTypeCode ASC, attendanceRoleCode ASC, durationThreshold ASC 辅助, createdAt ASC)
 //   durationThreshold NULL 顺位由 PG 默认行为决定,不作硬契约(D6 v1.1 §4.4 修订)
 // - dailyCap 落库保持 null(B5);attendance 预填走 DEFAULT_DAILY_CAP=1.5 兜底(本模块不动)
+//
+// V2 批次 6 PR #3(第二波第一步):3 处 write hook 从 `auditPlaceholder` 迁移到
+// `AuditLogsService.log()` 同事务落库;字段全部非敏感(无打码矩阵命中);
+// resourceType 固定 `contribution_rule`,事件名沿 D2 同值零变更。
 
 const DICT_TYPE_ACTIVITY_TYPE = 'activity_type';
 const DICT_TYPE_ATTENDANCE_ROLE = 'attendance_role';
+const AUDIT_RESOURCE_TYPE = 'contribution_rule';
 
 type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
 export class ContributionRulesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogs: AuditLogsService,
+  ) {}
 
   // ============ helpers ============
 
   private decimalToNumber(d: Prisma.Decimal | null): number | null {
     return d === null ? null : Number(d);
+  }
+
+  // PR #3 audit snapshot:把 SafeContributionRule 转成 JSON-safe 入 audit context。
+  // Decimal 全部经 decimalToNumber 转 number;字段全非敏感,不打码(D6 v1.1 §7.3 矩阵未命中)。
+  // 不含 id / createdAt / updatedAt / createdByUserId / updatedByUserId(audit_logs 自带 resourceId /
+  // createdAt / actorUserId,沿 toCertSnapshot 范式)。
+  private toAuditSnapshot(row: SafeContributionRule): Record<string, unknown> {
+    return {
+      activityTypeCode: row.activityTypeCode,
+      attendanceRoleCode: row.attendanceRoleCode,
+      durationThreshold: this.decimalToNumber(row.durationThreshold),
+      pointsBelow: Number(row.pointsBelow),
+      pointsAbove: this.decimalToNumber(row.pointsAbove),
+      dailyCap: this.decimalToNumber(row.dailyCap),
+      status: row.status,
+      remark: row.remark,
+    };
   }
 
   private toResponseDto(row: SafeContributionRule): ContributionRuleResponseDto {
@@ -186,6 +212,7 @@ export class ContributionRulesService {
   async create(
     dto: CreateContributionRuleDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<ContributionRuleResponseDto> {
     const normalizedStatus = dto.status ?? ContributionRuleStatus.ACTIVE;
     const durationThreshold = dto.durationThreshold ?? null;
@@ -250,13 +277,16 @@ export class ContributionRulesService {
         throw err;
       }
 
-      auditPlaceholder('contribution-rule.create', {
+      await this.auditLogs.log({
+        event: 'contribution-rule.create',
         actorUserId: currentUser.id,
-        ruleId: created.id,
-        activityTypeCode: created.activityTypeCode,
-        attendanceRoleCode: created.attendanceRoleCode,
-        durationThreshold: this.decimalToNumber(created.durationThreshold),
-        status: created.status,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: created.id,
+        meta: auditMeta,
+        after: this.toAuditSnapshot(created),
+        extra: { operation: 'create' },
+        tx,
       });
 
       return this.toResponseDto(created);
@@ -269,6 +299,7 @@ export class ContributionRulesService {
     id: string,
     dto: UpdateContributionRuleDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<ContributionRuleResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.contributionRule.findFirst({
@@ -329,10 +360,17 @@ export class ContributionRulesService {
         throw err;
       }
 
-      auditPlaceholder('contribution-rule.update', {
+      await this.auditLogs.log({
+        event: 'contribution-rule.update',
         actorUserId: currentUser.id,
-        ruleId: updated.id,
-        changedFields: Object.keys(dto),
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: updated.id,
+        meta: auditMeta,
+        before: this.toAuditSnapshot(existing),
+        after: this.toAuditSnapshot(updated),
+        extra: { operation: 'update', changedFields: Object.keys(dto) },
+        tx,
       });
 
       return this.toResponseDto(updated);
@@ -341,11 +379,17 @@ export class ContributionRulesService {
 
   // ============ softDelete ============
 
-  async softDelete(id: string, currentUser: CurrentUserPayload): Promise<void> {
+  async softDelete(
+    id: string,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
+      // PR #3 audit:softDelete 需要 before 完整快照(沿 certificates.softDelete 范式),
+      // 因此 select 从 { id: true } 扩展为 contributionRuleSafeSelect。
       const existing = await tx.contributionRule.findFirst({
         where: notDeletedWhere({ id }),
-        select: { id: true },
+        select: contributionRuleSafeSelect,
       });
       if (!existing) throw new BizException(BizCode.CONTRIBUTION_RULE_NOT_FOUND);
 
@@ -360,9 +404,16 @@ export class ContributionRulesService {
         },
       });
 
-      auditPlaceholder('contribution-rule.delete', {
+      await this.auditLogs.log({
+        event: 'contribution-rule.delete',
         actorUserId: currentUser.id,
-        ruleId: id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: id,
+        meta: auditMeta,
+        before: this.toAuditSnapshot(existing),
+        extra: { operation: 'softDelete', priorStatus: existing.status },
+        tx,
       });
     });
   }

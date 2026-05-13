@@ -9,9 +9,11 @@ import {
   Patch,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
@@ -25,6 +27,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   ContributionRuleQueryDto,
   ContributionRuleResponseDto,
@@ -45,6 +48,16 @@ import { ContributionRulesService } from './contribution-rules.service';
 @Controller('v2/contribution-rules')
 export class ContributionRulesController {
   constructor(private readonly service: ContributionRulesService) {}
+
+  // V2 批次 6 PR #3:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
+  // 不引入 cls-rs / AsyncLocalStorage)。仅供本 controller 写操作内部复用。
+  private buildAuditMeta(req: Request): AuditMeta {
+    return {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    };
+  }
 
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
@@ -78,8 +91,9 @@ export class ContributionRulesController {
   create(
     @Body() dto: CreateContributionRuleDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<ContributionRuleResponseDto> {
-    return this.service.create(dto, currentUser);
+    return this.service.create(dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Get(':id')
@@ -115,8 +129,9 @@ export class ContributionRulesController {
     @Param() params: IdParamDto,
     @Body() dto: UpdateContributionRuleDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<ContributionRuleResponseDto> {
-    return this.service.update(params.id, dto, currentUser);
+    return this.service.update(params.id, dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Delete(':id')
@@ -135,7 +150,8 @@ export class ContributionRulesController {
   softDelete(
     @Param() params: IdParamDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<void> {
-    return this.service.softDelete(params.id, currentUser);
+    return this.service.softDelete(params.id, currentUser, this.buildAuditMeta(req));
   }
 }

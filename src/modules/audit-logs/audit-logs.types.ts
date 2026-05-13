@@ -8,8 +8,9 @@
 // 与 src/common/audit/audit-placeholder.ts(AuditEvent,28 项)的关系(D-A 修订核心):
 // - 两套 union 物理隔离(D2):AuditEvent 留 pino-only 占位,AuditLogEvent 走 DB 落库
 // - 事件名同值:AuditLogEvent ⊆ AuditEvent(同字符串值,后续批次迁移时**仅是把字符串从一个 union 挪到另一个**)
-// - 第一批仅 6 项 落库(emergency-contact.write × 3 service 上下文 + certificate.{create,update,delete,verify,reject});
-//   其余 22 项继续 pino-only,等后续批次按需迁出(D1 决议)
+// - 第一波(PR #2)6 项落库:emergency-contact.write × 3 service 上下文 + certificate.{create,update,delete,verify,reject}
+// - 第二波(PR #3)+3 项落库:contribution-rule.{create,update,delete};沿 D-A 修订渐进迁出
+// - 其余 19 项继续 pino-only,等后续批次按需迁出(D1 决议)
 // - **绝对禁止**:在本 union 自行新增字符串值;新增审计事件必须先经评审稿决议(D6 v1.1 §8.1 / §16)
 
 export type AuditLogEvent =
@@ -18,7 +19,10 @@ export type AuditLogEvent =
   | 'certificate.update' // PR #2 接入(certificates.service: update)
   | 'certificate.delete' // PR #2 接入(certificates.service: softDelete)
   | 'certificate.verify' // PR #2 接入(certificates.service: verify)
-  | 'certificate.reject'; // PR #2 接入(certificates.service: reject)
+  | 'certificate.reject' // PR #2 接入(certificates.service: reject)
+  | 'contribution-rule.create' // PR #3 接入(contribution-rules.service: create)
+  | 'contribution-rule.update' // PR #3 接入(contribution-rules.service: update)
+  | 'contribution-rule.delete'; // PR #3 接入(contribution-rules.service: softDelete)
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit
