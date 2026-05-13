@@ -650,9 +650,7 @@ describe('audit-logs 写入迁移', () => {
       // UpdateContributionRuleDto 所有 @IsOptional() 字段都会出现在 instance own keys
       // (值可能是 undefined)。本批次是"迁移"非"改语义",沿用 PR #3 之前 auditPlaceholder
       // 写下的 Object.keys(dto) 行为不变。e2e 仅断言"客户端实际传的字段"必在,不收紧总集。
-      expect(ctx.extra.changedFields).toEqual(
-        expect.arrayContaining(['pointsBelow', 'remark']),
-      );
+      expect(ctx.extra.changedFields).toEqual(expect.arrayContaining(['pointsBelow', 'remark']));
     });
 
     it('delete:context 含 before 完整,不含 after;extra.priorStatus=ACTIVE', async () => {
