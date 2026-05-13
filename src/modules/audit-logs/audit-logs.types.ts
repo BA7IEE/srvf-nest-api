@@ -12,6 +12,7 @@
 // - 第二波第一步(PR #3)+3 项落库:contribution-rule.{create,update,delete};沿 D-A 修订渐进迁出
 // - 第二波第二步(PR #4)+1 项落库:activity.publish(activities.service: create / update / softDelete / publish / cancel 共 5 处共用同一事件名,operation 在 extra 区分,沿 batch3 草案有意设计)
 // - 第二波第三步(PR #5)+2 项落库:registration.create / registration.review(activity-registrations.service: 6 处写;2 个事件名共用,extra.viaPath / extra.action 区分;exportCsv 仍 pino-only 不迁移)
+// - 第二波最后一批(PR #6)+5 项落库:attendance-sheet.{submit,edit,delete,review,final-review}(attendances.service: 8 处写;5 个事件名共用,extra.operation / extra.action 区分;3 处 read.other 仍 pino-only)
 // - 其余继续 pino-only,等后续批次按需迁出(D1 决议)
 // - **绝对禁止**:在本 union 自行新增字符串值;新增审计事件必须先经评审稿决议(D6 v1.1 §8.1 / §16)
 
@@ -27,7 +28,12 @@ export type AuditLogEvent =
   | 'contribution-rule.delete' // PR #3 接入(contribution-rules.service: softDelete)
   | 'activity.publish' // PR #4 接入(activities.service: create / update / softDelete / publish / cancel 共 5 处;5 个 operation 通过 extra.operation 区分,沿 batch3 草案 §20.2 A1 同名设计)
   | 'registration.create' // PR #5 接入(activity-registrations.service: create [ADMIN 代报名] / createMy [USER 自助] 共 2 处;extra.viaPath ∈ {admin, self} 区分)
-  | 'registration.review'; // PR #5 接入(activity-registrations.service: approve / reject / cancelAdmin / cancelMy 共 4 处写;extra.action ∈ {approve, reject, cancel} 区分;cancel 再用 extra.cancelledByPath ∈ {admin, self} 细分;exportCsv 仍 pino-only,read 不迁移)
+  | 'registration.review' // PR #5 接入(activity-registrations.service: approve / reject / cancelAdmin / cancelMy 共 4 处写;extra.action ∈ {approve, reject, cancel} 区分;cancel 再用 extra.cancelledByPath ∈ {admin, self} 细分;exportCsv 仍 pino-only,read 不迁移)
+  | 'attendance-sheet.submit' // PR #6 接入(attendances.service: submit 1 处;Sheet+N records 一次性入库,D11 推动 Activity completed)
+  | 'attendance-sheet.edit' // PR #6 接入(attendances.service: edit 2 处共用;extra.operation ∈ {edit, edit-no-records} 区分;version+1 + previousSnapshot)
+  | 'attendance-sheet.delete' // PR #6 接入(attendances.service: softDelete 1 处;pending Sheet 软删 + records 级联软删)
+  | 'attendance-sheet.review' // PR #6 接入(attendances.service: approve / reject 共 2 处;extra.action ∈ {approve, reject} 区分;approve 走 pending → pending_final_review)
+  | 'attendance-sheet.final-review'; // PR #6 接入(attendances.service: finalApprove / finalReject 共 2 处;extra.action ∈ {final-approve, final-reject} 区分;final-approve 触发 attendance.recorded 业务事件,final-reject records 跟随软删;APD 细分权限后置)
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit
