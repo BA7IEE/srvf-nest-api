@@ -23,6 +23,12 @@
   新口径仅在 V2 红线 + 本 handoff 体现)。
 - 纯文档变更,沿 baseline §13.3:**不改 schema / migration / 代码 / 测试 /
   version / tag / release**。
+- 新增 [`docs/批次7_attachments_业务访谈提纲.md`](docs/批次7_attachments_业务访谈提纲.md):
+  C-7 attachments 业务访谈**前置提纲** v0.1(11 个待业务方确认的问题 + 硬边界
+  + 不覆盖范围 + 引用)。**非业务确认稿**;答案收齐后才升级为 D6 业务确认稿,
+  再进 D7 评审稿。**不写 Provider 选型 / schema / API / RBAC 方案 / 字典 seed
+  真实值**(沿 V2 §18.2 / §18.3 / handoff §5.3 Slow-2 硬前置)。**批次号 7 暂定**,
+  正式编号以 D7 评审通过 + V2.x 立项 commit 为准。共用上一条"纯文档变更"边界声明。
 
 ## v0.8.0 - 2026-05-13
 
