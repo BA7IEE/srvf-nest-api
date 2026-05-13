@@ -4,6 +4,98 @@
 
 ## Unreleased
 
+### V2 Batch 6 PR #5 Implementation(2026-05-13)
+
+- `cdd4794` feat(audit-logs): migrate activity-registrations write events to AuditLogsService (#38) —
+  **`audit_logs` 第二波第三步**(D-A 修订渐进迁出策略,沿 D6 v1.1 §8 / §16.3 F2 触发条件;
+  紧接 PR #4 activities 迁移之后):
+  activity-registrations 模块 **6 处写操作**(管理端 `create` / `approve` / `reject` /
+  `cancelAdmin` + 队员端 `createMy` / `cancelMy`)从 pino-only `auditPlaceholder`
+  迁移到 `AuditLogsService.log()` **同事务落库**;
+  **事件名沿 D2 同值零变更**(从旧 `AuditEvent` union 挪到 `AuditLogEvent` union),
+  且 **2 个事件名共承担 6 个 operation**(沿 batch3 草案 §20.2 A2 / A3 有意设计;
+  路线 A:不拆 `registration.approve` / `registration.reject` / `registration.cancel` 等新事件名):
+  - `registration.create`(2 处):
+    - `activity-registrations.service.ts:create`(ADMIN 代报名,`extra.viaPath='admin'`)
+    - `activity-registrations.service.ts:createMy`(USER 自助,`extra.viaPath='self'`,
+      `extra.targetMemberId` = USER 绑定的 memberId)
+  - `registration.review`(4 处):
+    - `activity-registrations.service.ts:approve`(`extra.action='approve'` + `extra.priorStatusCode='pending'` + `extra.nextStatusCode='pass'`)
+    - `activity-registrations.service.ts:reject`(`extra.action='reject'` + `extra.nextStatusCode='reject'`)
+    - `activity-registrations.service.ts:cancelAdmin`(`extra.action='cancel'` + `extra.cancelledByPath='admin'` + `extra.cancelReason`)
+    - `activity-registrations.service.ts:cancelMy`(`extra.action='cancel'` + `extra.cancelledByPath='self'` + `extra.cancelReason`)
+  - 调用样式从 `auditPlaceholder(event, ctx)` 改为 `await this.auditLogs.log({ ..., tx })`,
+    `tx` 来自业务 `prisma.$transaction` 内,**audit 与业务同事务、同回滚**(沿 D-B fail-fast / D9);
+  **`AuditLogEvent` union 从 10 项扩展为 12 项**(`emergency-contact.write` × 1 +
+  `certificate.{create,update,delete,verify,reject}` × 5 + `contribution-rule.{create,update,delete}` × 3 +
+  `activity.publish` × 1 + `registration.create` × 1 + `registration.review` × 1);
+  与 `auditPlaceholder` 28 项 union 仍**物理隔离**(A-16 红线 / D2);
+  **`registration.create` / `registration.review` 字符串同时存在于 `AuditEvent`(pino-only
+  exportCsv 残留)与 `AuditLogEvent`(DB write × 6)**:这是 D2 same-value 设计意图,
+  not bug;`exportCsv` 调用走 `AuditEvent` 路径,其他 6 处写走 `AuditLogEvent` 路径;
+  **5 个 service 写操作通过 extra 字段细分语义**,按 `event` 字段筛选无法直接区分 6 种 operation,
+  需用 `event='registration.review' AND context->'extra'->>'action'='xxx'` 组合查询;
+  **剩余 16 处**写/读事件继续 pino-only,等后续批次按需迁出(activity-registrations 模块内
+  仅剩 `exportCsv` 1 处 pino-only);
+  **`exportCsv` 不迁移**(line 742,`auditPlaceholder('registration.review', ...)` 保留):
+  这是 **read/export 行为**(无 DB mutation,不在 `prisma.$transaction` 内),
+  按 Q1=A "当前阶段不记录查看行为" 严格执行,**保持 pino-only**;e2e 显式断言"exportCsv 不入库";
+  **service 内 `auditPlaceholder` import 保留**(exportCsv 仍依赖);
+  **activity-registrations.controller.ts 改造**:模块级 `buildAuditMeta()` 私有函数
+  (沿 contribution-rules / activities 范式,但因本模块有 **2 个 controller** 共享 audit meta 构造,
+  提取到模块级以避免双 controller 重复定义);6 个写方法(`create` / `approve` / `reject` /
+  `cancel` + `createMy` / `cancelMy`)各加 `@Req() req: Request` 参数,显式构造 `AuditMeta`
+  传给 service(D8:不引入 cls-rs / AsyncLocalStorage);`list` / `listMy` / `findMy` /
+  `exportRegistrations` 4 个 read 接口**完全不动**;
+  **activity-registrations.module.ts 改造**:`imports: [DatabaseModule, AuditLogsModule]`,
+  注入 `AuditLogsService`;
+  **新增 `toAuditSnapshot()` helper**(沿 contribution-rules / activities `toAuditSnapshot` 范式):
+  字段集 = `registrationSafeSelect` 剔除 `id` / `createdAt` / `updatedAt`(audit_logs 自带);
+  `extras` 字段经 `jsonAsObject` 取强类型;Date 字段(`registeredAt` / `reviewedAt` /
+  `cancelledAt`)由 Prisma JsonValue 写入时自动调 `Date.toJSON()` → ISO string;
+  字段全部非敏感(D6 v1.1 §7.3 打码矩阵未命中),**不打码,原值入审计**;
+  **注意**:`extras` 是用户自定义 JSON,可能包含报名时填写的个人信息(紧急联系人 / 偏好等),
+  **本次纯迁移不引入打码**(沿原 `auditPlaceholder` 无打码行为 + 沿 PR #3 / PR #4 不打码范式);
+  若后续业务认为 `extras` 含敏感字段需独立批次评审打码策略;
+  **audit context 结构**:
+  - `create`(admin/self):`after` 完整 snapshot + `extra.{operation:'create', viaPath, activityId, targetMemberId}`
+  - `approve`:`before` + `after` + `extra.{operation:'review', action:'approve', priorStatusCode, nextStatusCode:'pass', activityId, targetMemberId}`
+  - `reject`:`before` + `after` + `extra.{operation:'review', action:'reject', priorStatusCode, nextStatusCode:'reject', activityId, targetMemberId}`
+  - `cancelAdmin`:`before` + `after` + `extra.{operation:'review', action:'cancel', priorStatusCode, nextStatusCode:'cancelled', cancelledByPath:'admin', cancelReason, activityId, targetMemberId}`
+  - `cancelMy`:`before` + `after` + `extra.{operation:'review', action:'cancel', priorStatusCode, nextStatusCode:'cancelled', cancelledByPath:'self', cancelReason, activityId, targetMemberId}`
+  `resourceType` 固定 `activity_registration`(snake_case 单数,对齐第一波 `emergency_contact` /
+  `certificate` 与 PR #3 `contribution_rule` 与 PR #4 `activity` 风格);
+  **不补 `changedFields`**:本模块无通用 update 接口(approve/reject/cancel 都是状态机
+  流转,不是字段更新),不引入 `Object.keys(dto)` 的 changedFields(差异于 PR #3 contribution-rules /
+  PR #4 activities `update`);
+  **activity-registrations 模块内实际 `auditPlaceholder` 调用 = 1**(line 742,exportCsv,
+  read/export 保持 pino-only;沿 Q1=A 边界);
+  **e2e 扩展**:`test/e2e/audit-logs-migrations.e2e-spec.ts` 加 1 个 describe(12 个 it):
+  6 处 hook 触发 ×6(admin create / self create / approve / reject / admin cancel / self cancel)+
+  context 锁形(`requestId` 非空 / `ip` `ua` 字段存在)+ before/after 结构(create only after / approve before+after)+
+  同事务回滚(重复报名 `ACTIVITY_REGISTRATION_ALREADY_EXISTS` → audit + 业务都不入表)+
+  **exportCsv 不入库**(显式边界断言,验证 read/export 路径继续 pino-only)+
+  未迁移 read 路径不入库 ×2(`GET list` / `GET detail/me` 不写 audit_logs);
+  累计 e2e 用例 **759**(PR #4 后 747,+12);
+  **OpenAPI contract snapshot 零漂移**:本批次不改 controller 响应 / Swagger 结构 / paths;
+  v1 14 + V2 既有 79 schemas / paths 全部不变(controller 增 `@Req()` 参数不进 OpenAPI);
+  **累计 V2 79 接口**(与 v0.7.0 一致);**累计 93 接口 contract snapshot 保护**;
+  本批次**不做**(范围严控):
+  - 不改 `prisma/schema.prisma` / 不新增 migration
+  - 不改 `auditPlaceholder` 函数体(F1 保持;占位定义仍在 `src/common/audit/audit-placeholder.ts`;
+    exportCsv 仍依赖)
+  - 不改 `AuditEvent` union(28 项原样)
+  - 不迁移 read 类查看事件(沿 Q1=A 业务确认稿决议,F3 保持;**当前批次不做**,非"永久不做")
+  - 不迁移 `exportCsv` 的 `registration.review` pino 调用(read/export 行为,沿 Q1=A 边界)
+  - 不动 `attendances`(写 8 处)模块的写操作 `auditPlaceholder` 调用
+    (F4 保持;**仍待后续独立批次按需迁出**,非"永久不做";剩余写 hook 共 8 处)
+  - 不动 read 类残留 8 处调用(`member-profiles` 1 / `emergency-contacts` read 1 /
+    `certificates` read 3 / `attendances` read 3;沿 Q1=A,**当前阶段不迁移**)
+  - 不引入 `extras` 字段打码(本次纯迁移)
+  - 不补 `changedFields`(本模块无通用 update)
+  - 不 bump `package.json#version` / 不改 Swagger `setVersion`(仍 `0.7.0`)
+  - 不打 tag / 不发 GitHub Release
+
 ### V2 Batch 6 PR #4 Implementation(2026-05-13)
 
 - `e6fc079` feat(audit-logs): migrate activities write events to AuditLogsService (#36) —
