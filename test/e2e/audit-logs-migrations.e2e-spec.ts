@@ -713,4 +713,304 @@ describe('audit-logs 写入迁移', () => {
       expect(await prisma.auditLog.count()).toBe(0);
     });
   });
+
+  // ============ PR #4:activities 写操作迁移(第二波第二步) ============
+
+  describe('activities 写操作迁移(PR #4)', () => {
+    let childOrgId: string;
+
+    // PR #4 fixtures:node_type 字典 + root / child organization(activity 必须挂非根节点)
+    beforeAll(async () => {
+      const nodeType = await prisma.dictType.create({
+        data: { code: 'node_type', label: 'Node Type' },
+        select: { id: true },
+      });
+      await prisma.dictItem.create({
+        data: { typeId: nodeType.id, code: 'al-mig-root', label: 'Root' },
+      });
+      await prisma.dictItem.create({
+        data: { typeId: nodeType.id, code: 'al-mig-child', label: 'Child' },
+      });
+      const rootOrg = await prisma.organization.create({
+        data: { name: 'AL Mig Root', nodeTypeCode: 'al-mig-root', parentId: null },
+        select: { id: true },
+      });
+      const childOrg = await prisma.organization.create({
+        data: {
+          name: 'AL Mig Child',
+          nodeTypeCode: 'al-mig-child',
+          parentId: rootOrg.id,
+        },
+        select: { id: true },
+      });
+      childOrgId = childOrg.id;
+    });
+
+    // 每个 it 前清 activity,避免相互干扰;外层 beforeEach 已清 audit_logs
+    beforeEach(async () => {
+      await prisma.activity.deleteMany({});
+    });
+
+    // 创建一条 draft 活动,返回 id;用于 update / publish / cancel / softDelete 前置数据
+    const createActivity = async (
+      overrides: Record<string, unknown> = {},
+    ): Promise<{ id: string; statusCode: string }> => {
+      const res = await request(httpServer(app))
+        .post('/api/v2/activities')
+        .set('Authorization', adminAuth)
+        .send({
+          title: '梧桐山轮值演练',
+          activityTypeCode,
+          organizationId: childOrgId,
+          startAt: '2026-06-01T08:00:00.000Z',
+          endAt: '2026-06-01T12:00:00.000Z',
+          location: '梧桐山',
+          ...overrides,
+        });
+      expect(res.status).toBe(201);
+      return res.body.data;
+    };
+
+    it('POST 触发 → audit_logs +1 activity.publish(operation=create)', async () => {
+      const a = await createActivity();
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      const log = logs[0];
+      expect(log.event).toBe('activity.publish');
+      expect(log.resourceType).toBe('activity');
+      expect(log.resourceId).toBe(a.id);
+      expect(log.actorUserId).toBe(adminId);
+      expect(log.actorRoleSnap).toBe(Role.ADMIN);
+      expect(log.success).toBe(true);
+      const extra = (log.context as { extra: { operation: string; nextStatusCode: string } }).extra;
+      expect(extra.operation).toBe('create');
+      expect(extra.nextStatusCode).toBe('draft');
+    });
+
+    it('PATCH 触发 → audit_logs +1(operation=update,extra 含 priorStatusCode + changedFields)', async () => {
+      const a = await createActivity();
+      await truncateAuditLogsTestOnly(app); // 清 create 留下的 audit
+
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/activities/${a.id}`)
+        .set('Authorization', adminAuth)
+        .send({ title: '更新标题' });
+      expect(res.status).toBe(200);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0].event).toBe('activity.publish');
+      expect(logs[0].resourceId).toBe(a.id);
+      const extra = (
+        logs[0].context as {
+          extra: { operation: string; priorStatusCode: string; changedFields: string[] };
+        }
+      ).extra;
+      expect(extra.operation).toBe('update');
+      expect(extra.priorStatusCode).toBe('draft');
+      // changedFields = Object.keys(dto):ValidationPipe transform=true 后,DTO 所有
+      // @IsOptional() 字段都会出现在 instance own keys(值可能是 undefined)。沿 PR #3 范式,
+      // 仅断言"客户端实际传的字段必在",不收紧总集。
+      expect(extra.changedFields).toEqual(expect.arrayContaining(['title']));
+    });
+
+    it('DELETE 软删触发 → audit_logs +1(operation=softDelete,priorStatusCode=draft)', async () => {
+      const a = await createActivity();
+      await truncateAuditLogsTestOnly(app);
+
+      const res = await request(httpServer(app))
+        .delete(`/api/v2/activities/${a.id}`)
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(200);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0].event).toBe('activity.publish');
+      expect(logs[0].resourceId).toBe(a.id);
+      const extra = (logs[0].context as { extra: { operation: string; priorStatusCode: string } })
+        .extra;
+      expect(extra.operation).toBe('softDelete');
+      expect(extra.priorStatusCode).toBe('draft');
+    });
+
+    it('PATCH /:id/publish 触发 → audit_logs +1(operation=publish,draft → published)', async () => {
+      const a = await createActivity();
+      await truncateAuditLogsTestOnly(app);
+
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/activities/${a.id}/publish`)
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(200);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0].event).toBe('activity.publish');
+      const extra = (
+        logs[0].context as {
+          extra: { operation: string; priorStatusCode: string; nextStatusCode: string };
+        }
+      ).extra;
+      expect(extra.operation).toBe('publish');
+      expect(extra.priorStatusCode).toBe('draft');
+      expect(extra.nextStatusCode).toBe('published');
+    });
+
+    it('PATCH /:id/cancel 触发 → audit_logs +1(operation=cancel,nextStatusCode=cancelled,带 cancelReason)', async () => {
+      const a = await createActivity();
+      await truncateAuditLogsTestOnly(app);
+
+      const res = await request(httpServer(app))
+        .patch(`/api/v2/activities/${a.id}/cancel`)
+        .set('Authorization', adminAuth)
+        .send({ cancelReason: '雨天延期' });
+      expect(res.status).toBe(200);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0].event).toBe('activity.publish');
+      const extra = (
+        logs[0].context as {
+          extra: {
+            operation: string;
+            priorStatusCode: string;
+            nextStatusCode: string;
+            cancelReason: string;
+          };
+        }
+      ).extra;
+      expect(extra.operation).toBe('cancel');
+      expect(extra.priorStatusCode).toBe('draft');
+      expect(extra.nextStatusCode).toBe('cancelled');
+      expect(extra.cancelReason).toBe('雨天延期');
+    });
+
+    it('context 锁形:requestId 非空字符串,ip / ua 字段存在', async () => {
+      const a = await createActivity();
+      const log = (await prisma.auditLog.findFirst({ where: { resourceId: a.id } }))!;
+      const ctx = log.context as Record<string, unknown>;
+      expect(typeof ctx.requestId).toBe('string');
+      expect((ctx.requestId as string).length).toBeGreaterThan(0);
+      expect('ip' in ctx).toBe(true);
+      expect('ua' in ctx).toBe(true);
+    });
+
+    it('create:context 含 after,不含 before;after 含完整字段集', async () => {
+      const a = await createActivity({ description: 'demo desc' });
+      const log = (await prisma.auditLog.findFirst({ where: { resourceId: a.id } }))!;
+      const ctx = log.context as Record<string, unknown>;
+      expect(ctx.before).toBeUndefined();
+      expect(ctx.after).toBeDefined();
+      const after = ctx.after as Record<string, unknown>;
+      expect(after.title).toBe('梧桐山轮值演练');
+      expect(after.activityTypeCode).toBe(activityTypeCode);
+      expect(after.organizationId).toBe(childOrgId);
+      expect(after.location).toBe('梧桐山');
+      expect(after.description).toBe('demo desc');
+      expect(after.statusCode).toBe('draft');
+      expect(after.publishedBy).toBeNull();
+      expect(after.publishedAt).toBeNull();
+      expect(after.cancelledBy).toBeNull();
+      expect(after.cancelledAt).toBeNull();
+      expect(after.cancelReason).toBeNull();
+    });
+
+    it('update:context 同时含 before 与 after,扣后 before.title 是原值', async () => {
+      const a = await createActivity({ description: '原描述' });
+      await truncateAuditLogsTestOnly(app);
+
+      await request(httpServer(app))
+        .patch(`/api/v2/activities/${a.id}`)
+        .set('Authorization', adminAuth)
+        .send({ description: '新描述' })
+        .expect(200);
+
+      const log = (await prisma.auditLog.findFirst({ where: { resourceId: a.id } }))!;
+      const ctx = log.context as {
+        before: Record<string, unknown>;
+        after: Record<string, unknown>;
+      };
+      expect(ctx.before.description).toBe('原描述');
+      expect(ctx.after.description).toBe('新描述');
+      expect(ctx.before.statusCode).toBe('draft');
+      expect(ctx.after.statusCode).toBe('draft');
+    });
+
+    it('softDelete:context 含 before,不含 after;before.statusCode=draft', async () => {
+      const a = await createActivity();
+      await truncateAuditLogsTestOnly(app);
+
+      await request(httpServer(app))
+        .delete(`/api/v2/activities/${a.id}`)
+        .set('Authorization', adminAuth)
+        .expect(200);
+
+      const log = (await prisma.auditLog.findFirst({ where: { resourceId: a.id } }))!;
+      const ctx = log.context as { before: Record<string, unknown>; after?: unknown };
+      expect(ctx.before).toBeDefined();
+      expect(ctx.before.statusCode).toBe('draft');
+      expect(ctx.after).toBeUndefined();
+    });
+
+    it('publish:after.publishedBy / publishedAt 已写入', async () => {
+      const a = await createActivity();
+      await truncateAuditLogsTestOnly(app);
+
+      await request(httpServer(app))
+        .patch(`/api/v2/activities/${a.id}/publish`)
+        .set('Authorization', adminAuth)
+        .expect(200);
+
+      const log = (await prisma.auditLog.findFirst({ where: { resourceId: a.id } }))!;
+      const ctx = log.context as {
+        before: Record<string, unknown>;
+        after: Record<string, unknown>;
+      };
+      expect(ctx.before.statusCode).toBe('draft');
+      expect(ctx.before.publishedBy).toBeNull();
+      expect(ctx.after.statusCode).toBe('published');
+      expect(ctx.after.publishedBy).toBe(adminId);
+      expect(ctx.after.publishedAt).not.toBeNull();
+    });
+
+    it('同事务回滚:activityTypeCode invalid → audit 不入表 + activity 不入表', async () => {
+      const actBefore = await prisma.activity.count();
+      const auditBefore = await prisma.auditLog.count();
+
+      const res = await request(httpServer(app))
+        .post('/api/v2/activities')
+        .set('Authorization', adminAuth)
+        .send({
+          title: '回滚测试',
+          activityTypeCode: 'non-existent-code',
+          organizationId: childOrgId,
+          startAt: '2026-06-01T08:00:00.000Z',
+          endAt: '2026-06-01T12:00:00.000Z',
+          location: 'X',
+        });
+      expect(res.status).toBe(400);
+
+      expect(await prisma.activity.count()).toBe(actBefore);
+      expect(await prisma.auditLog.count()).toBe(auditBefore);
+    });
+
+    it('GET list:audit_logs 无新记录(未迁移 read 路径)', async () => {
+      await createActivity();
+      await truncateAuditLogsTestOnly(app);
+      await request(httpServer(app))
+        .get('/api/v2/activities')
+        .set('Authorization', adminAuth)
+        .expect(200);
+      expect(await prisma.auditLog.count()).toBe(0);
+    });
+
+    it('GET detail:audit_logs 无新记录(未迁移 read 路径)', async () => {
+      const a = await createActivity();
+      await truncateAuditLogsTestOnly(app);
+      await request(httpServer(app))
+        .get(`/api/v2/activities/${a.id}`)
+        .set('Authorization', adminAuth)
+        .expect(200);
+      expect(await prisma.auditLog.count()).toBe(0);
+    });
+  });
 });

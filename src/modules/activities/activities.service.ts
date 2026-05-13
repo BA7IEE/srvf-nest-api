@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, Prisma, Role } from '@prisma/client';
-import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   ActivityListItemDto,
   ActivityResponseDto,
@@ -31,9 +32,15 @@ import {
 // - 起止时间:startAt < endAt(创建必校;更新时若涉及任一字段则用合并后值复校)
 // - audit:create / update / publish / cancel / softDelete 全部 hook activity.publish
 // - Decimal 序列化:locationLongitude / locationLatitude 显式 toString()
+//
+// V2 批次 6 PR #4(第二波第二步):5 处 write hook 从 `auditPlaceholder` 迁移到
+// `AuditLogsService.log()` 同事务落库;5 个 operation 共用 `activity.publish` 事件名,
+// 通过 `extra.operation` 区分(沿 batch3 草案 §20.2 A1 有意设计,D2 同值挪字符串);
+// resourceType 固定 `activity`,字段全部非敏感(打码矩阵未命中)。
 
 const DICT_TYPE_ACTIVITY_TYPE = 'activity_type';
 const DICT_TYPE_GENDER_REQUIREMENT = 'gender_requirement';
+const AUDIT_RESOURCE_TYPE = 'activity';
 
 const ACTIVITY_STATUS_DRAFT = 'draft';
 const ACTIVITY_STATUS_PUBLISHED = 'published';
@@ -103,13 +110,50 @@ type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
 export class ActivitiesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogs: AuditLogsService,
+  ) {}
 
   // ============ helpers ============
 
   // Prisma Decimal 字段 → string;null 透传。NaN 不会出现(@db.Decimal 兜底)。
   private decimalToString(d: Prisma.Decimal | null): string | null {
     return d === null ? null : d.toString();
+  }
+
+  // PR #4 audit snapshot:把 ActivityFullRow 转成 JSON-safe 入 audit context。
+  // 字段集 = activitySafeSelect 剔除 id / createdAt / updatedAt(audit_logs 自带 resourceId /
+  // createdAt / actorUserId,沿 toAuditSnapshot 范式);Decimal 经 decimalToString 转 string;
+  // Json 经 jsonAsObject / jsonAsStringArray 取强类型;Date 由 Prisma JsonValue 写入时
+  // 自动调 Date.toJSON() → ISO string;字段全非敏感(打码矩阵 §4.3 未命中)。
+  private toAuditSnapshot(row: ActivityFullRow): Record<string, unknown> {
+    return {
+      title: row.title,
+      activityTypeCode: row.activityTypeCode,
+      organizationId: row.organizationId,
+      startAt: row.startAt,
+      endAt: row.endAt,
+      location: row.location,
+      description: row.description,
+      capacity: row.capacity,
+      genderRequirementCode: row.genderRequirementCode,
+      registrationDeadline: row.registrationDeadline,
+      registrationNotes: row.registrationNotes,
+      statusCode: row.statusCode,
+      publishedBy: row.publishedBy,
+      publishedAt: row.publishedAt,
+      cancelledBy: row.cancelledBy,
+      cancelledAt: row.cancelledAt,
+      cancelReason: row.cancelReason,
+      isPublicRegistration: row.isPublicRegistration,
+      registrationSchema: this.jsonAsObject(row.registrationSchema),
+      coverImageUrl: row.coverImageUrl,
+      galleryImageUrls: this.jsonAsStringArray(row.galleryImageUrls),
+      content: this.jsonAsObject(row.content),
+      locationLongitude: this.decimalToString(row.locationLongitude),
+      locationLatitude: this.decimalToString(row.locationLatitude),
+    };
   }
 
   // Json 字段 → 强类型;Prisma 返回 JsonValue,DTO 用 Record<string, unknown> / string[]。
@@ -300,6 +344,7 @@ export class ActivitiesService {
   async create(
     dto: CreateActivityDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
     const startAt = new Date(dto.startAt);
     const endAt = new Date(dto.endAt);
@@ -361,11 +406,16 @@ export class ActivitiesService {
         select: activitySafeSelect,
       });
 
-      auditPlaceholder('activity.publish', {
-        operatorUserId: currentUser.id,
-        activityId: created.id,
-        operation: 'create',
-        nextStatusCode: ACTIVITY_STATUS_DRAFT,
+      await this.auditLogs.log({
+        event: 'activity.publish',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: created.id,
+        meta: auditMeta,
+        after: this.toAuditSnapshot(created),
+        extra: { operation: 'create', nextStatusCode: ACTIVITY_STATUS_DRAFT },
+        tx,
       });
 
       return this.toResponseDto(created);
@@ -378,6 +428,7 @@ export class ActivitiesService {
     id: string,
     dto: UpdateActivityDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
@@ -455,11 +506,21 @@ export class ActivitiesService {
         select: activitySafeSelect,
       });
 
-      auditPlaceholder('activity.publish', {
-        operatorUserId: currentUser.id,
-        activityId: current.id,
-        operation: 'update',
-        priorStatusCode: current.statusCode,
+      await this.auditLogs.log({
+        event: 'activity.publish',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: current.id,
+        meta: auditMeta,
+        before: this.toAuditSnapshot(current),
+        after: this.toAuditSnapshot(updated),
+        extra: {
+          operation: 'update',
+          priorStatusCode: current.statusCode,
+          changedFields: Object.keys(dto),
+        },
+        tx,
       });
 
       return this.toResponseDto(updated);
@@ -468,7 +529,11 @@ export class ActivitiesService {
 
   // ============ softDelete ============
 
-  async softDelete(id: string, currentUser: CurrentUserPayload): Promise<ActivityResponseDto> {
+  async softDelete(
+    id: string,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<ActivityResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 
@@ -478,11 +543,16 @@ export class ActivitiesService {
         select: activitySafeSelect,
       });
 
-      auditPlaceholder('activity.publish', {
-        operatorUserId: currentUser.id,
-        activityId: current.id,
-        operation: 'softDelete',
-        priorStatusCode: current.statusCode,
+      await this.auditLogs.log({
+        event: 'activity.publish',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: current.id,
+        meta: auditMeta,
+        before: this.toAuditSnapshot(current),
+        extra: { operation: 'softDelete', priorStatusCode: current.statusCode },
+        tx,
       });
 
       return this.toResponseDto(removed);
@@ -492,7 +562,11 @@ export class ActivitiesService {
   // ============ publish ============
 
   // 状态机:draft → published;其他状态 → 20030(含 cancelled 拒改,Q-A12)。
-  async publish(id: string, currentUser: CurrentUserPayload): Promise<ActivityResponseDto> {
+  async publish(
+    id: string,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<ActivityResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 
@@ -510,12 +584,21 @@ export class ActivitiesService {
         select: activitySafeSelect,
       });
 
-      auditPlaceholder('activity.publish', {
-        operatorUserId: currentUser.id,
-        activityId: current.id,
-        operation: 'publish',
-        priorStatusCode: current.statusCode,
-        nextStatusCode: ACTIVITY_STATUS_PUBLISHED,
+      await this.auditLogs.log({
+        event: 'activity.publish',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: current.id,
+        meta: auditMeta,
+        before: this.toAuditSnapshot(current),
+        after: this.toAuditSnapshot(updated),
+        extra: {
+          operation: 'publish',
+          priorStatusCode: current.statusCode,
+          nextStatusCode: ACTIVITY_STATUS_PUBLISHED,
+        },
+        tx,
       });
 
       return this.toResponseDto(updated);
@@ -529,6 +612,7 @@ export class ActivitiesService {
     id: string,
     dto: CancelActivityDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
@@ -548,13 +632,22 @@ export class ActivitiesService {
         select: activitySafeSelect,
       });
 
-      auditPlaceholder('activity.publish', {
-        operatorUserId: currentUser.id,
-        activityId: current.id,
-        operation: 'cancel',
-        priorStatusCode: current.statusCode,
-        nextStatusCode: ACTIVITY_STATUS_CANCELLED,
-        cancelReason: dto.cancelReason ?? null,
+      await this.auditLogs.log({
+        event: 'activity.publish',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: current.id,
+        meta: auditMeta,
+        before: this.toAuditSnapshot(current),
+        after: this.toAuditSnapshot(updated),
+        extra: {
+          operation: 'cancel',
+          priorStatusCode: current.statusCode,
+          nextStatusCode: ACTIVITY_STATUS_CANCELLED,
+          cancelReason: dto.cancelReason ?? null,
+        },
+        tx,
       });
 
       return this.toResponseDto(updated);
