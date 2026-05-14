@@ -218,6 +218,22 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // userId / roleId 不存在 → 200 静默成功(沿用户拍板四项决策);
   // 出参恒为 { reloaded: true };RBAC_FORBIDDEN 业务模块接入留后续 PR。
   ['post', '/api/v2/rbac/reload'],
+
+  // V2.x C-7 attachments 实施 PR #3(2026-05-15;AttachmentTypeConfig CRUD,沿 D7 v1.0 §4.2 / §16 Q1-Q7)
+  // 6 个端点:list / create / detail / update / updateStatus / softDelete;
+  // 入口 @Roles(SUPER_ADMIN, ADMIN);**不接 rbac.can()**(F4 v1.0:配置三表是系统配置 / 运维能力);
+  // BizCode 13020 ATTACHMENT_TYPE_CONFIG_NOT_FOUND / 13021 ATTACHMENT_TYPE_CONFIG_CODE_ALREADY_EXISTS /
+  // 13023 INVALID_ATTACHMENT_TYPE_CONFIG_CODE_FORMAT;
+  // PATCH /:id 严禁 code(Q1)/ status(Q5 走独立 status 端点)/ deletedAt / id;
+  // 软删 deletedAt = now() + 同步置 status=INACTIVE;
+  // **本 PR 不实装**:AttachmentMimeConfig CRUD(PR #4)/ AttachmentSizeLimitConfig CRUD(PR #5)/
+  // attachments 主模块 / Provider / audit / RBAC 业务判权 / ATTACHMENT_TYPE_CONFIG_IN_USE(13030)。
+  ['get', '/api/v2/attachment-type-configs'],
+  ['post', '/api/v2/attachment-type-configs'],
+  ['get', '/api/v2/attachment-type-configs/{id}'],
+  ['patch', '/api/v2/attachment-type-configs/{id}'],
+  ['patch', '/api/v2/attachment-type-configs/{id}/status'],
+  ['delete', '/api/v2/attachment-type-configs/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -370,6 +386,16 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // ReloadRbacDto 是 @Body() DTO + ReloadRbacResponseDto 是出参,均注册为 named schema。
   'ReloadRbacDto',
   'ReloadRbacResponseDto',
+
+  // V2.x C-7 attachments 实施 PR #3 attachment-type-configs(2026-05-15;沿 D7 v1.0 §4.2 / §16 Q1-Q7)
+  // CreateAttachmentTypeConfigDto / UpdateAttachmentTypeConfigDto / UpdateAttachmentTypeConfigStatusDto
+  // 是 @Body() DTO;AttachmentTypeConfigResponseDto 是出参;均注册为 named schema。
+  // 注:ListAttachmentTypeConfigsQueryDto 是 @Query() DTO 继承 PaginationQueryDto,
+  //   NestJS swagger 反射时不一定独立 schema(若反射出来则也加入本表;否则保持注释即可)。
+  'CreateAttachmentTypeConfigDto',
+  'UpdateAttachmentTypeConfigDto',
+  'UpdateAttachmentTypeConfigStatusDto',
+  'AttachmentTypeConfigResponseDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

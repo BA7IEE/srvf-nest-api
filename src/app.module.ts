@@ -25,6 +25,7 @@ import { DictionariesModule } from './modules/dictionaries/dictionaries.module';
 import { EmergencyContactsModule } from './modules/emergency-contacts/emergency-contacts.module';
 import { HealthModule } from './modules/health/health.module';
 import { MemberDepartmentsModule } from './modules/member-departments/member-departments.module';
+import { AttachmentConfigsModule } from './modules/attachment-configs/attachment-configs.module';
 import { MemberProfilesModule } from './modules/member-profiles/member-profiles.module';
 import { MembersModule } from './modules/members/members.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
@@ -95,6 +96,12 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   接入由后续 PR #3-#6 完成。沿 D12 永不切换 + F9:本 PR 沿用 @Roles(Role.SUPER_ADMIN, Role.ADMIN)
     //   入口 Guard,**不接 RBAC 判权**;v1 14 + V2 79 接口 zero drift。
     PermissionsModule,
+    // V2.x C-7 attachments 实施 PR #3(2026-05-15):attachment-configs CRUD
+    //   (D7 v1.0 §4.2 / §16 Q1-Q7;path /api/v2/attachment-type-configs;130xx 段位实装 13020 / 13021 / 13023)。
+    //   仅 AttachmentTypeConfig CRUD(6 端点);Mime / Size 子表 CRUD 留 PR #4 / #5;
+    //   attachments 主模块 / Provider / audit / rbac.can() 接入留更后续 PR。
+    //   沿 F4 v1.0:入口 @Roles(SUPER_ADMIN, ADMIN),不接 RBAC 业务判权。
+    AttachmentConfigsModule,
   ],
   providers: [
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):

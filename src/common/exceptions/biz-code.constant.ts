@@ -734,6 +734,28 @@ export const BizCode = {
     message: '无权执行此操作',
     httpStatus: HttpStatus.FORBIDDEN,
   },
+
+  // V2.x C-7 attachments 实施 PR #3(2026-05-15):AttachmentTypeConfig CRUD 段位。
+  //
+  // 沿 D7 v1.0 §8.1 子段位规划 + baseline §1.1 attachments 模块预留 `130xx + 131xx`。
+  // 13020-13029 子段为配置三表通用段;本 PR 实装 3 项(13020 NOT_FOUND / 13021 CODE_ALREADY_EXISTS /
+  // 13023 INVALID_CODE_FORMAT);mime / size 子表段位号留 PR #4 / PR #5 增量(13022 / 13024-13026);
+  // 跨表 IN_USE 引用约束(13030)由 attachments 主模块 PR 触发时再实装(沿 D7 v1.0 §16 Q7 拍板)。
+  ATTACHMENT_TYPE_CONFIG_NOT_FOUND: {
+    code: 13020,
+    message: '附件类型配置不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ATTACHMENT_TYPE_CONFIG_CODE_ALREADY_EXISTS: {
+    code: 13021,
+    message: '附件类型配置 code 已存在',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  INVALID_ATTACHMENT_TYPE_CONFIG_CODE_FORMAT: {
+    code: 13023,
+    message: '附件类型配置 code 格式不合法',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];
