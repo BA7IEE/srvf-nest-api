@@ -1,0 +1,123 @@
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import {
+  ApiBizErrorResponse,
+  ApiWrappedOkResponse,
+  ApiWrappedPageResponse,
+} from '../../common/decorators/api-response.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { IdParamDto } from '../../common/dto/id-param.dto';
+import { PageResultDto } from '../../common/dto/pagination.dto';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
+import { PermissionResponseDto } from './permissions.dto';
+import {
+  CreateRbacRoleDto,
+  ListRbacRolesQueryDto,
+  RbacRoleDetailResponseDto,
+  RbacRoleResponseDto,
+  UpdateRbacRoleDto,
+} from './rbac-roles.dto';
+import { RbacRolesService } from './rbac-roles.service';
+
+// V2.x C-6 RBAC 实施 PR #3:RbacRole 模块 Controller。
+// 5 个端点(沿 D7 v1.1 §5.1 5-9):
+//   GET    /api/v2/roles          列表(分页 + code 模糊过滤)
+//   GET    /api/v2/roles/:id      详情(含已分配 permissions 数组)
+//   POST   /api/v2/roles          创建
+//   PATCH  /api/v2/roles/:id      更新(仅 displayName / description)
+//   DELETE /api/v2/roles/:id      软删(D4 v1.0;deletedAt;user_roles 不联动)
+//
+// **权限标注**(沿任务边界 #7):**先沿用 @Roles(Role.SUPER_ADMIN, Role.ADMIN)**,
+// 不接 RBAC 判权(rbac.can() / @RbacRequired);RBAC judge 由后续 PR #6 实施。
+//
+// **30003 / 30005 区分**(沿用户拍板):
+// - GET /:id:不存在返 30003 / 已软删返 30005(410 Gone)
+// - PATCH / DELETE /:id:不存在 + 已软删统一返 30003(信息泄漏防御)
+
+@ApiTags('rbac-roles')
+@ApiBearerAuth()
+@ApiExtraModels(RbacRoleResponseDto, RbacRoleDetailResponseDto, PermissionResponseDto)
+@Controller('v2/roles')
+export class RbacRolesController {
+  constructor(private readonly service: RbacRolesService) {}
+
+  @Get()
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({ summary: '列出角色(分页;按 code 模糊过滤;排除已软删)' })
+  @ApiWrappedPageResponse(RbacRoleResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
+  list(@Query() query: ListRbacRolesQueryDto): Promise<PageResultDto<RbacRoleResponseDto>> {
+    return this.service.list(query);
+  }
+
+  @Get(':id')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({
+    summary: '角色详情(含已分配 permissions 数组;不存在返 30003 / 已软删返 30005)',
+  })
+  @ApiWrappedOkResponse(RbacRoleDetailResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ROLE_NOT_FOUND,
+    BizCode.ROLE_DELETED,
+  )
+  findOne(@Param() params: IdParamDto): Promise<RbacRoleDetailResponseDto> {
+    return this.service.findOne(params.id);
+  }
+
+  @Post()
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({
+    summary: '创建角色(code 格式 kebab-case 3-32 字符;失败抛 30009;含软删历史撞唯一抛 30004)',
+  })
+  @ApiWrappedOkResponse(RbacRoleResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.INVALID_ROLE_CODE_FORMAT,
+    BizCode.ROLE_CODE_ALREADY_EXISTS,
+  )
+  create(@Body() dto: CreateRbacRoleDto): Promise<RbacRoleResponseDto> {
+    return this.service.create(dto);
+  }
+
+  @Patch(':id')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({
+    summary: '更新角色(仅 displayName / description;code 不可改;不存在或已软删返 30003)',
+  })
+  @ApiWrappedOkResponse(RbacRoleResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ROLE_NOT_FOUND,
+  )
+  update(
+    @Param() params: IdParamDto,
+    @Body() dto: UpdateRbacRoleDto,
+  ): Promise<RbacRoleResponseDto> {
+    return this.service.update(params.id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @ApiOperation({
+    summary:
+      '软删角色(D4 v1.0;update deletedAt;user_roles / role_permissions 不联动;不存在或已软删返 30003)',
+  })
+  @ApiWrappedOkResponse(RbacRoleResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ROLE_NOT_FOUND,
+  )
+  delete(@Param() params: IdParamDto): Promise<RbacRoleResponseDto> {
+    return this.service.softDelete(params.id);
+  }
+}

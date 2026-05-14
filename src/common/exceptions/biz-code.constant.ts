@@ -627,6 +627,41 @@ export const BizCode = {
     message: '权限点 code 格式不合法',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+
+  // V2.x C-6 RBAC 实施 PR #3(2026-05-14):RbacRole CRUD 段 3 码实装。
+  //
+  // 30003 / 30004 / 30005 实装规则(沿 D7 v1.1 §12.1 + 用户拍板):
+  // - GET /api/v2/roles/:id:
+  //   - 完全不存在 id → 30003 ROLE_NOT_FOUND
+  //   - 存在但 deletedAt != null → 30005 ROLE_DELETED(410 Gone;detail 精确告知"曾在已删")
+  // - PATCH / DELETE /api/v2/roles/:id:
+  //   - 不存在 + 已软删统一返 30003(沿 v1 §10 信息泄漏防御,不告知曾在过)
+  // - POST /api/v2/roles:code 撞唯一约束(含软删历史)→ 30004(P2002 兜底 + 预检查)
+  //
+  // 不开的码(留后续 PR 实装):
+  // - 30006 USER_ROLE_ALREADY_EXISTS / 30007 USER_ROLE_NOT_FOUND(留 PR #5 UserRole CRUD)
+  // - 30009 INVALID_ROLE_CODE_FORMAT(本 PR 沿 30008 范式:Service regex 校验失败抛 30009)
+  //   → 实装于本 PR,sole code 格式校验
+  ROLE_NOT_FOUND: {
+    code: 30003,
+    message: '角色不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ROLE_CODE_ALREADY_EXISTS: {
+    code: 30004,
+    message: '角色 code 已存在',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ROLE_DELETED: {
+    code: 30005,
+    message: '角色已删除',
+    httpStatus: HttpStatus.GONE,
+  },
+  INVALID_ROLE_CODE_FORMAT: {
+    code: 30009,
+    message: '角色 code 格式不合法',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];

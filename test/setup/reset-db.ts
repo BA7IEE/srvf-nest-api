@@ -49,11 +49,25 @@ import { assertTestDatabaseUrl } from './test-db';
 // 仅持有 1 条 FK actorUserId → User.id(Restrict);**不被任何其它表 FK 引用**;
 // 放在 User 之前,确保 TRUNCATE User 时不被 Restrict FK 阻塞(CASCADE 兜底亦可)。
 // 单 spec 内频繁清表用 test/helpers/audit-logs-cleanup.ts(truncateAuditLogsTestOnly)。
+//
+// V2.x C-6 RBAC 追加(2026-05-14;实施 PR #3):4 张 RBAC 表(物理名小写,Prisma `@@map`):
+//   user_roles / role_permissions / roles / permissions
+// FK 关系(沿 D7 v1.1 §4.3 / §4.4):
+//   - user_roles.userId / createdBy → User.id(Cascade / SetNull)
+//   - user_roles.roleId → roles.id(Cascade)
+//   - role_permissions.roleId → roles.id(Cascade)
+//   - role_permissions.permissionId → permissions.id(Cascade)
+//   - role_permissions.createdBy → User.id(SetNull)
+// 顺序:孙表(user_roles / role_permissions)→ 父表(roles / permissions);
+// roles / permissions 放 audit_logs 之前(都是 User 之前的子表段);CASCADE 兜底跨表依赖。
+//
+// 取代了 permissions.e2e-spec.ts 中的 spec-local TRUNCATE workaround
+// (PR #2 临时方案;PR #3 公共基建统一处理)。
 export async function resetDb(app: INestApplication): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "audit_logs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "user_roles", "role_permissions", "roles", "permissions", "audit_logs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }
