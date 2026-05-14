@@ -1,10 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsIn, IsOptional, IsString, Length } from 'class-validator';
 
-// V2.x C-6 RBAC 实施 PR #6:RBAC me/permissions 出参 DTO。
-// 沿 D7 v1.1 §5.2.6 `MyPermissionsResponseDto` + §5.3 详解。
+// V2.x C-6 RBAC 实施 PR #6 + PR #7:RBAC 端点 15 + 16 共用 DTO 集中点。
+// 沿 D7 v1.1 §5.2.5 ReloadRbacDto + §5.2.6 MyPermissionsResponseDto + §5.3 + §5.4 详解。
 //
-// **本 PR 仅承载端点 15**(`GET /api/v2/rbac/me/permissions`);
-// 端点 16 `POST /api/v2/rbac/reload` 留 PR #7,DTO 暂不在本文件落地。
+// **PR #6 端点 15**(`GET /api/v2/rbac/me/permissions`):MyPermissionsResponseDto + EffectiveRoleDto
+// **PR #7 端点 16**(`POST /api/v2/rbac/reload`):ReloadRbacDto + ReloadRbacResponseDto
 //
 // **`permissions` 字段语义**(沿用户拍板方案 B):
 // - 普通角色 / ADMIN / USER:返回 user_roles → role_permissions → permissions 聚合后的 code 集
@@ -40,4 +41,61 @@ export class MyPermissionsResponseDto {
     type: [EffectiveRoleDto],
   })
   effectiveRoles!: EffectiveRoleDto[];
+}
+
+// ============ PR #7 端点 16 reload ============
+//
+// 沿 D7 v1.1 §5.2.5 / §5.4 / F4(v1.0 锁定):
+// - scope 三档:'all'(默认)/ 'user'(配 userId)/ 'role'(配 roleId)
+// - userId / roleId 在 DTO 层标 @IsOptional;**Service 层做组合校验**:
+//     scope='user' 必须有 userId、scope='role' 必须有 roleId,否则 BAD_REQUEST(40000)
+// - userId / roleId 不存在 → Service 静默成功(reload 是"清缓存"语义,与 v1 §10
+//     信息泄漏防御一致)
+// - 沿用户拍板:本 PR 权限入口为 `@Roles(SUPER_ADMIN, ADMIN)`,**不接 `rbac.can()`**;
+//   D7 §5.4 中标的 `rbac.config.reload` 权限点,留 PR #8 seed + 后续 PR 接业务判权时一并接入。
+
+export const RELOAD_RBAC_SCOPES = ['all', 'user', 'role'] as const;
+export type ReloadRbacScope = (typeof RELOAD_RBAC_SCOPES)[number];
+
+export class ReloadRbacDto {
+  @ApiPropertyOptional({
+    description: 'reload 范围;默认 all',
+    enum: RELOAD_RBAC_SCOPES,
+    example: 'all',
+  })
+  @IsOptional()
+  @IsIn(RELOAD_RBAC_SCOPES)
+  scope?: ReloadRbacScope;
+
+  @ApiPropertyOptional({
+    description: 'scope=user 时必传:目标用户 id(cuid)',
+    example: 'cl9z3a8b00000abcd1234efgh',
+    minLength: 8,
+    maxLength: 64,
+  })
+  @IsOptional()
+  @IsString()
+  @Length(8, 64)
+  userId?: string;
+
+  @ApiPropertyOptional({
+    description: 'scope=role 时必传:目标 RbacRole.id(cuid)',
+    example: 'cl9z3a8b00000abcd1234efgh',
+    minLength: 8,
+    maxLength: 64,
+  })
+  @IsOptional()
+  @IsString()
+  @Length(8, 64)
+  roleId?: string;
+}
+
+// 出参(沿用户拍板方案 A):固定 `{ reloaded: true }`;为未来扩展字段预留单对象包装。
+export class ReloadRbacResponseDto {
+  @ApiProperty({
+    description:
+      'reload 是否成功;reload 是"尽力清缓存"语义,DB 故障由后端 logger 暴露给运维,本字段对外恒为 true',
+    example: true,
+  })
+  reloaded!: true;
 }

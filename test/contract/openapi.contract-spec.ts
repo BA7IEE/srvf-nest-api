@@ -210,8 +210,14 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // V2.x C-6 RBAC 实施 PR #6(2026-05-14;RbacService + me/permissions,沿 D7 v1.1 §5.1 端点 15)
   // 任何登录用户(@Roles(USER, ADMIN, SUPER_ADMIN));SUPER_ADMIN 返 Permission.code 全集
   //(沿用户拍板方案 B);其它角色返 user_roles → role_permissions → permissions 聚合后的并集。
-  // 仅本 PR 端点 15;端点 16 reload + RBAC_FORBIDDEN(30100)业务模块接入 留 PR #7-#8。
   ['get', '/api/v2/rbac/me/permissions'],
+
+  // V2.x C-6 RBAC 实施 PR #7(2026-05-14;RBAC reload 接口,沿 D7 v1.1 §5.1 端点 16 + §5.4)
+  // 三档 scope:all(默认)/ user(+ userId)/ role(+ roleId);
+  // 入口 @Roles(SUPER_ADMIN, ADMIN);scope=user 缺 userId / scope=role 缺 roleId → 400;
+  // userId / roleId 不存在 → 200 静默成功(沿用户拍板四项决策);
+  // 出参恒为 { reloaded: true };RBAC_FORBIDDEN 业务模块接入留后续 PR。
+  ['post', '/api/v2/rbac/reload'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -359,6 +365,11 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // 注册为独立 named schema)。
   'MyPermissionsResponseDto',
   'EffectiveRoleDto',
+
+  // V2.x C-6 RBAC 实施 PR #7 rbac reload(2026-05-14;沿 D7 v1.1 §5.2.5 / §5.4)
+  // ReloadRbacDto 是 @Body() DTO + ReloadRbacResponseDto 是出参,均注册为 named schema。
+  'ReloadRbacDto',
+  'ReloadRbacResponseDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
