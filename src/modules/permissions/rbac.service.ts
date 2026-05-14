@@ -1,8 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
+import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
-import type { EffectiveRoleDto, MyPermissionsResponseDto } from './rbac.dto';
+import type {
+  EffectiveRoleDto,
+  MyPermissionsResponseDto,
+  ReloadRbacDto,
+  ReloadRbacResponseDto,
+} from './rbac.dto';
 import { RbacCacheService } from './rbac-cache.service';
 
 // V2.x C-6 RBAC 实施 PR #6:RbacService 判权核心。
@@ -154,6 +161,31 @@ export class RbacService {
     const effectiveRoles = await this.getEffectiveRoles(user.id);
 
     return { permissions, effectiveRoles };
+  }
+
+  // PR #7:POST /api/v2/rbac/reload 入口(沿 D7 v1.1 §5.4 + 用户拍板四项决策)。
+  //
+  // - scope 默认 'all';三档 all / user / role 与 RbacCacheService 三个 invalidate 方法 1:1
+  // - scope='user' 缺 userId / scope='role' 缺 roleId → BAD_REQUEST(40000;沿用户决策方案 A)
+  // - userId / roleId 不存在 → 静默成功(invalidateUser 是 Map.delete,no-op;
+  //     invalidateAllUsersWithRole 内部已 try-catch + logger.warn,不抛)
+  // - 出参恒为 `{ reloaded: true }`(沿用户决策方案 A;为未来扩展字段预留单对象包装)
+  async reload(dto: ReloadRbacDto): Promise<ReloadRbacResponseDto> {
+    const scope = dto.scope ?? 'all';
+
+    if (scope === 'user') {
+      if (!dto.userId) throw new BizException(BizCode.BAD_REQUEST);
+      this.cache.invalidateUser(dto.userId);
+    } else if (scope === 'role') {
+      if (!dto.roleId) throw new BizException(BizCode.BAD_REQUEST);
+      // 沿用 invalidateAllUsersWithRole 内部 swallow + logger.warn 语义:
+      // DB 故障由 logger 暴露给运维,reload 对外恒返 reloaded=true
+      await this.cache.invalidateAllUsersWithRole(dto.roleId);
+    } else {
+      this.cache.invalidateAll();
+    }
+
+    return { reloaded: true };
   }
 
   // ============ 内部 helpers ============

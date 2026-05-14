@@ -27,9 +27,12 @@ import { UserRolesService } from './user-roles.service';
 // - PR #6(2026-05-14):RbacService + GET /api/v2/rbac/me/permissions(端点 15;
 //   BizCode 30100 段位预留)+ RbacCacheService 接入 RBAC_CACHE_TTL_SECONDS env +
 //   CurrentUserPayload.memberId 扩展
+// - PR #7(2026-05-14):POST /api/v2/rbac/reload(端点 16;沿 D7 §5.4 三档 scope
+//   all / user(+userId) / role(+roleId);入口 @Roles(SUPER_ADMIN, ADMIN),
+//   rbac.can() 接入留后续 PR)
 //
 // 仍未做(留后续 PR):
-// - reload 接口(端点 16;留 PR #7)+ 14 个 RBAC CRUD 接 `rbac.can()`(沿用户拍板 PR #6 范围)
+// - 14 个 RBAC CRUD 接 `rbac.can()`(沿用户拍板,留 PR #8 seed 后另起 PR)
 // - seed migration + bootstrap + ADMIN 内置角色配 USER 级权限(留 PR #8)
 //
 // 本模块归口设计(沿 dictionaries 单模块多 controller 范式):
