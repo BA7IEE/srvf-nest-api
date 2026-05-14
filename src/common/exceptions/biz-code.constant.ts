@@ -681,6 +681,44 @@ export const BizCode = {
     message: '角色未持有此权限点',
     httpStatus: HttpStatus.NOT_FOUND,
   },
+
+  // V2.x C-6 RBAC 实施 PR #5(2026-05-14):UserRole CRUD + Q7 角色分级 + ops-admin 保护。
+  //
+  // 30006 / 30007 实装规则(沿 D7 v1.1 §12.1 + 用户拍板):
+  // - POST /api/v2/users/:userId/roles:
+  //   - (userId, roleId) 已存在 → 30006 USER_ROLE_ALREADY_EXISTS(沿 D7 决议**报错**而非幂等,
+  //     与 RolePermission 批量幂等不同 — 单次单角色,报错给前端更精确)
+  // - DELETE /api/v2/users/:userId/roles/:roleId:
+  //   - (userId, roleId) 关系不存在 → 30007 USER_ROLE_NOT_FOUND
+  //
+  // 30101 / 30102 实装规则(沿 D7 v1.1 §12.2 + §6.2 + §6.3):
+  // - 30101 LAST_OPS_ADMIN_PROTECTED:DELETE 撤销 ops-admin 角色时,事务内 count 剩余活跃
+  //   ops-admin 持有者数 ≥ 1,否则抛 30101(沿 v1 §13 最后一个 SUPER_ADMIN 保护范式)
+  // - 30102 CANNOT_ASSIGN_HIGHER_ROLE:沿 §6.2 Q7 角色分级 C2 中庸方案:
+  //   - SUPER_ADMIN(系统级)→ 通过任何
+  //   - actor 持有 ops-admin(RBAC 角色)→ 可分配/撤销非 ops-admin 目标
+  //   - 其他(ADMIN / 仅业务角色 / USER)→ 30102
+  //   - dept-chief / dept-deputy 层级 placeholder seed 下不实施,留 PR #6 + seed 真实名落地
+  USER_ROLE_ALREADY_EXISTS: {
+    code: 30006,
+    message: '该用户已持有此角色',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  USER_ROLE_NOT_FOUND: {
+    code: 30007,
+    message: '该用户未持有此角色',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  LAST_OPS_ADMIN_PROTECTED: {
+    code: 30101,
+    message: '系统必须保留至少一个活跃运营管理员',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  CANNOT_ASSIGN_HIGHER_ROLE: {
+    code: 30102,
+    message: '无权分配或撤销该角色',
+    httpStatus: HttpStatus.FORBIDDEN,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];
