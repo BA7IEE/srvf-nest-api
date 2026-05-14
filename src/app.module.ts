@@ -28,6 +28,7 @@ import { MemberDepartmentsModule } from './modules/member-departments/member-dep
 import { MemberProfilesModule } from './modules/member-profiles/member-profiles.module';
 import { MembersModule } from './modules/members/members.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
+import { PermissionsModule } from './modules/permissions/permissions.module';
 import { UsersModule } from './modules/users/users.module';
 
 // V1.2:test/e2e/request-id.e2e-spec.ts 通过本路径白盒断言 buildHttpLogProps,
@@ -88,6 +89,12 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   仅 schema + module + AuditLogsService.log + 2 个查询接口;
     //   8 处 emergency-contacts / certificates 写操作迁移留 PR #2(D-A 修订)。
     AuditLogsModule,
+    // V2.x C-6 RBAC 实施 PR #2(2026-05-14):permissions CRUD
+    //   (沿 D7 v1.1 §4.2 / §5.1 端点 1-4;path /api/v2/permissions;300xx 段位)。
+    //   仅 Permission CRUD;Role / RolePermission / UserRole / RbacService / 判权
+    //   接入由后续 PR #3-#6 完成。沿 D12 永不切换 + F9:本 PR 沿用 @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+    //   入口 Guard,**不接 RBAC 判权**;v1 14 + V2 79 接口 zero drift。
+    PermissionsModule,
   ],
   providers: [
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):
