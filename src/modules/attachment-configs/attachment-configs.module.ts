@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { AttachmentMimeConfigsController } from './attachment-mime-configs.controller';
 import { AttachmentMimeConfigsService } from './attachment-mime-configs.service';
+import { AttachmentSizeLimitConfigsController } from './attachment-size-limit-configs.controller';
+import { AttachmentSizeLimitConfigsService } from './attachment-size-limit-configs.service';
 import { AttachmentTypeConfigsController } from './attachment-type-configs.controller';
 import { AttachmentTypeConfigsService } from './attachment-type-configs.service';
 
@@ -18,14 +20,26 @@ import { AttachmentTypeConfigsService } from './attachment-type-configs.service'
 // - PR #4(2026-05-15):AttachmentMimeConfig CRUD(6 端点 path /api/v2/attachment-mime-configs[/:id[/status]];
 //   BizCode 13022 / 13024 / 13025 + 复用 13020;沿 D7 v1.0 §4.3 / §16 + Q1-Q8;入口 @Roles(SUPER_ADMIN, ADMIN);
 //   不接 rbac.can();不接 audit_logs;依赖 typeConfigId FK Restrict)
+// - PR #5(2026-05-15):AttachmentSizeLimitConfig CRUD(**5 端点** path /api/v2/attachment-size-limit-configs[/:id];
+//   BizCode 13026 / 13027 + 复用 13020;沿 D7 v1.0 §4.4 / §16 + Q1-Q8;入口 @Roles(SUPER_ADMIN, ADMIN);
+//   不接 rbac.can();不接 audit_logs;依赖 typeConfigId FK Restrict;
+//   **本表无 status 字段**,5 端点不含独立 status 端点;1:1 关系)
 //
-// 待实装(留后续 PR):
-// - PR #5:AttachmentSizeLimitConfig CRUD(沿 D7 v1.0 §4.4;依赖 typeConfigId;1:1)
-// - 跨表引用约束(ATTACHMENT_TYPE_CONFIG_IN_USE / ATTACHMENT_MIME_CONFIG_IN_USE)等 attachments 主模块
-//   引用逻辑落地后再触发实装(沿 Q6 / Q7 v1.0 拍板)
+// 配置三表 CRUD 完整落地;后续(留 attachments 主模块 PR / 独立专项评审 PR):
+// - 跨表引用约束(ATTACHMENT_TYPE_CONFIG_IN_USE / ATTACHMENT_MIME_CONFIG_IN_USE /
+//   ATTACHMENT_SIZE_LIMIT_CONFIG_IN_USE)等 attachments 主模块引用逻辑落地后再触发实装
+//   (沿 Q2 / Q6 / Q7 v1.0 拍板)
 @Module({
   imports: [DatabaseModule],
-  controllers: [AttachmentTypeConfigsController, AttachmentMimeConfigsController],
-  providers: [AttachmentTypeConfigsService, AttachmentMimeConfigsService],
+  controllers: [
+    AttachmentTypeConfigsController,
+    AttachmentMimeConfigsController,
+    AttachmentSizeLimitConfigsController,
+  ],
+  providers: [
+    AttachmentTypeConfigsService,
+    AttachmentMimeConfigsService,
+    AttachmentSizeLimitConfigsService,
+  ],
 })
 export class AttachmentConfigsModule {}
