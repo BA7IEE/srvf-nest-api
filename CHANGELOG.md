@@ -29,6 +29,16 @@
   再进 D7 评审稿。**不写 Provider 选型 / schema / API / RBAC 方案 / 字典 seed
   真实值**(沿 V2 §18.2 / §18.3 / handoff §5.3 Slow-2 硬前置)。**批次号 7 暂定**,
   正式编号以 D7 评审通过 + V2.x 立项 commit 为准。共用上一条"纯文档变更"边界声明。
+- 新增 [`docs/handoff/v0.8.1.md`](docs/handoff/v0.8.1.md):v0.8.0 后 V2 设计文档
+  阶段交接说明(13 章节;含 C-7 attachments 2 件 + C-6 RBAC 3 件文档归档 + D7 v0.1
+  草稿待评审 / 微调 / 冻结 + 下一会话启动提示词 + worktree 工作流速查)。接续
+  `docs/handoff/v0.8.0.md`;**v0.8.0 → 现在零代码 / 零 schema 改动**;package version /
+  Swagger setVersion 仍 0.8.0;v0.8.0 tag / release 仍 Latest。**v0.8.1 是阶段标识,
+  不是 SemVer**。详见 [`v0.8.1.md §3 全景表`](docs/handoff/v0.8.1.md)(PR #43-#48
+  6 个 docs PR 累计变更)。本 PR 沿 PR #43 v0.8.0 handoff 风格(handoff + CHANGELOG
+  同时改);PR #45-#48(D6 业务确认稿 + D7 评审稿)**不补登 changelog**
+  (沿"D6 / D7 中间产物不进 changelog"风格;本 handoff §3 链式总结即可)。
+  共用上方"纯文档变更"边界声明。
 
 ## v0.8.0 - 2026-05-13
 
