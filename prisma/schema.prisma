@@ -62,6 +62,11 @@ model User {
   userRolesCreated       UserRole[]       @relation("UserRoleCreator")
   rolePermissionsCreated RolePermission[] @relation("RolePermissionCreator")
 
+  // V2.x C-7 attachments 反向 relation(D7 v1.0 §4.5)。
+  // 仅 Prisma 关系映射,不算业务字段新增(沿 batch 1 / 2 / 3 / 6 / 8 R2 范式;A-2 zero drift)。
+  // uploadedBy FK 在 Attachment 侧用 onDelete: Restrict(沿 D7 v1.0 §4.1 Q4)。
+  attachmentsUploaded Attachment[] @relation("AttachmentUploader")
+
   @@index([deletedAt])
   @@index([status])
 }
@@ -361,7 +366,8 @@ model EmergencyContact {
 //
 // 软删:走 deletedAt;禁用 hard delete(R12)。
 //
-// CT-10 attachmentKey 仅占位字段,本批次始终 NULL;批次 6a 协议三要素接入(Q-S10)。
+// CT-10 attachmentKey 字段已于 V2.x C-7 attachments 批次废弃(沿 D6 Q10 B / D7 v1.0 §4.6);
+// 多态附件统一走 `attachments` 表(ownerType='certificate' + ownerId=certificate.id)。
 
 model Certificate {
   id        String    @id @default(cuid())
@@ -381,7 +387,6 @@ model Certificate {
   verifiedBy         String? // CT-9a FK→Member.id 可空(Q-D1)
   verifiedAt         DateTime? // CT-9b
   verifyNote         String? // CT-9c 长度 500(Q-S5)由 DTO 约束
-  attachmentKey      String? // CT-10 长度 256;批次 6a 协议接入,本批次始终 NULL
   isInternal         Boolean   @default(false) // CT-11 是否本会颁发
   supersededByCertId String? // CT-12 自引用 FK 可空(Q-D2)
   expireNotifyDueAt  DateTime? // HK-1 60 天提醒 hook;Q-D6 不加索引
@@ -837,4 +842,135 @@ model UserRole {
   @@index([userId])
   @@index([roleId])
   @@map("user_roles")
+}
+
+// ===== V2.x C-7 attachments 4 表(沿 D7 v1.0 §4 schema 草案) =====
+//
+// 段位 BizCode 130xx + 131xx(F5 锁;baseline §1.1 已预留)。
+// attachments 是 0 → 1 接入 RBAC 的业务范本(F3:入口仅 JwtAuthGuard,
+//   判权全部在 Service 层 rbac.can())。
+// Permission code 正则已于 v1.2(PR #66)/ C-7 实施 PR #1(PR #70) 放宽至 3-4 段,
+//   支持 attachment.upload.cert.self 等 4 段权限点(D7 v1.0 Q11)。
+// 实施仅本 PR 落地 schema + migration + Certificate.attachmentKey drop column;
+// service / controller / DTO / RBAC 集成 / audit 集成 / 配置三表 CRUD 由后续 PR 完成。
+// 详见:
+//   - docs/批次7_attachments_API前评审.md §4(schema 草案;v1.0 冻结稿)
+//   - docs/批次7_attachments_V2x立项记录.md §二(立项内容)
+//
+// 设计选择(沿批次 1/2/3 B 路径):
+// - 字段长度上限不落 @db.VarChar,由 DTO + class-validator 承担
+// - 硬删除(D6 Q5 B):主表无 deletedAt;配置三表沿 baseline §2.1 软删
+// - 多态外键(D6 Q4 A):ownerType + ownerId,无 DB FK,Service 层校验
+// - tags = String[] PG 原生数组(Q3 v1.0;沿 MemberProfile.exerciseMethods 范式)
+// - accessLevel hint + 索引(Q2 v1.0);RBAC 仍是单一权威源
+
+model Attachment {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // 沿 D6 Q5 B 硬删除:无 deletedAt
+
+  // ===== 基础字段(D7 v1.0 §4.1) =====
+  key          String // Provider 侧文件唯一引用;长度由 DTO @MaxLength(256)
+  originalName String // 原始文件名;长度由 DTO @MaxLength(255)
+  mime         String // MIME 类型;长度由 DTO @MaxLength(128);走 attachment_mime_configs 白名单
+  size         Int // 文件大小(字节);非负;走 attachment_size_limit_configs 上限
+  uploadedBy   String // Q4 v1.0:User.id(沿 V2 createdBy / publishedBy 风格)
+  uploadedAt   DateTime @default(now())
+
+  // ===== 多态归属(D6 Q3 A + Q4 A;无 DB FK,Service 层校验) =====
+  ownerType String // 归属业务对象类型;走 attachment_type_configs 白名单
+  ownerId   String // 归属对象 cuid
+
+  // ===== 额外字段(D6 Q2 全字段) =====
+  checksum             String? // SHA-256(64 hex);本期不做 unique
+  etag                 String? // Provider 侧版本号;本期仅存,不约束格式
+  description          String? // 用户备注;长度由 DTO @MaxLength(500)
+  accessLevel          AttachmentAccessLevel? // Q2 v1.0:hint + 索引;权限走 RBAC 单一权威
+  tags                 String[] // Q3 v1.0:PG 原生数组;不建关联表
+  originalUploaderName String? // 冗余存上传者人名;长度由 DTO @MaxLength(50)
+  expireAt             DateTime? // 附件本身有效期;本期不做主动清理
+
+  uploader User @relation("AttachmentUploader", fields: [uploadedBy], references: [id], onDelete: Restrict)
+
+  @@index([ownerType, ownerId]) // 业务查询主路径:列出某业务对象的所有附件
+  @@index([uploadedBy])
+  @@index([mime]) // 按 MIME 筛选(后台用)
+  @@index([createdAt])
+  @@index([accessLevel]) // Q2 v1.0:hint 索引保留
+  @@map("attachments")
+}
+
+enum AttachmentAccessLevel {
+  PUBLIC // 公开;沿 Q7 活动封面 / 培训资料
+  INTERNAL // 内部;沿 Q7 活动现场照
+  SENSITIVE // 敏感;沿 Q7 队员证件照
+}
+
+model AttachmentTypeConfig {
+  id          String  @id @default(cuid())
+  code        String  @unique // ownerType code;如 'member' / 'certificate' / 'activity'
+  displayName String // 后台 UI 显示名
+  description String?
+  // ===== 关联业务表名(用于 Service 层 ownerId 真实性校验) =====
+  ownerTable String // 业务表名小写;如 'member' / 'certificate' / 'activity'
+  // ===== 默认配置(覆盖至 mime / size 表为空时的兜底) =====
+  defaultMaxSizeBytes  Int? // 默认单文件大小上限;null 走全局兜底
+  defaultMimeWhitelist String[] // 默认允许 MIME 列表
+  // ===== 启停(沿 baseline §2.2.3) =====
+  status    AttachmentTypeConfigStatus @default(ACTIVE)
+  createdAt DateTime                   @default(now())
+  updatedAt DateTime                   @updatedAt
+  deletedAt DateTime? // 沿 baseline §2.1 软删
+
+  mimeOverrides AttachmentMimeConfig[]
+  sizeOverrides AttachmentSizeLimitConfig[]
+
+  @@index([status])
+  @@index([deletedAt])
+  @@map("attachment_type_configs")
+}
+
+enum AttachmentTypeConfigStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model AttachmentMimeConfig {
+  id           String                     @id @default(cuid())
+  typeConfigId String
+  mime         String // 如 'image/jpeg' / 'application/pdf'
+  status       AttachmentMimeConfigStatus @default(ACTIVE)
+  remark       String?
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+  deletedAt    DateTime?
+
+  typeConfig AttachmentTypeConfig @relation(fields: [typeConfigId], references: [id], onDelete: Restrict)
+
+  @@unique([typeConfigId, mime]) // 同一 type 下 mime 不重复
+  @@index([typeConfigId])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("attachment_mime_configs")
+}
+
+enum AttachmentMimeConfigStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model AttachmentSizeLimitConfig {
+  id           String    @id @default(cuid())
+  typeConfigId String    @unique // 1:1 with AttachmentTypeConfig(每 type 至多一条 override)
+  maxSizeBytes Int // 覆盖 AttachmentTypeConfig.defaultMaxSizeBytes
+  remark       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  typeConfig AttachmentTypeConfig @relation(fields: [typeConfigId], references: [id], onDelete: Restrict)
+
+  @@index([deletedAt])
+  @@map("attachment_size_limit_configs")
 }

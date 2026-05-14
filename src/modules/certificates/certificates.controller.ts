@@ -147,7 +147,7 @@ export class CertificatesController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '部分更新证书(全字段 optional;**禁止** id / memberId / certStatusCode / verifiedBy / verifiedAt / verifyNote / isInternal / supersededByCertId / attachmentKey / expireNotifyDueAt)',
+      '部分更新证书(全字段 optional;**禁止** id / memberId / certStatusCode / verifiedBy / verifiedAt / verifyNote / isInternal / supersededByCertId / expireNotifyDueAt)',
   })
   @ApiWrappedOkResponse(CertificateResponseDto)
   @ApiBizErrorResponse(

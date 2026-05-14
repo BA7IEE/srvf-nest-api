@@ -218,7 +218,7 @@ describe('certificates 模块', () => {
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
     });
 
-    it('ADMIN 创建仅必填 → 201,status=pending,isInternal=false,attachmentKey=null,不返 deletedAt', async () => {
+    it('ADMIN 创建仅必填 → 201,status=pending,isInternal=false,不返 deletedAt / attachmentKey', async () => {
       const res = await request(httpServer(app))
         .post(`/api/v2/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
@@ -229,7 +229,6 @@ describe('certificates 模块', () => {
       expect(res.body.data.certTypeCode).toBe(activeCertTypeCode);
       expect(res.body.data.certStatusCode).toBe('pending');
       expect(res.body.data.isInternal).toBe(false);
-      expect(res.body.data.attachmentKey).toBeNull();
       expect(res.body.data.verifiedBy).toBeNull();
       expect(res.body.data.verifiedAt).toBeNull();
       expect(res.body.data.verifyNote).toBeNull();
@@ -237,6 +236,8 @@ describe('certificates 模块', () => {
       expect(res.body.data.supersededByCertId).toBeNull();
       expect(res.body.data).not.toHaveProperty('deletedAt');
       expect(res.body.data).not.toHaveProperty('expireNotifyDueAt');
+      // V2.x C-7 attachments PR #2:attachmentKey 字段已删除,出参不再包含
+      expect(res.body.data).not.toHaveProperty('attachmentKey');
     });
 
     it('SUPER_ADMIN 创建完整字段 → 201', async () => {
@@ -343,13 +344,8 @@ describe('certificates 模块', () => {
       expect(res.status).toBe(400);
     });
 
-    it('non-whitelisted attachmentKey → 400', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
-        .set('Authorization', adminAuth)
-        .send(baseCreatePayload({ attachmentKey: 'demo-key' }));
-      expect(res.status).toBe(400);
-    });
+    // V2.x C-7 attachments PR #2:attachmentKey 字段已删除,原 `non-whitelisted attachmentKey → 400`
+    // 测试整段删除(沿 D7 v1.0 §4.6;字段不再存在,白名单拒绝语义由其他禁字段如 supersededByCertId / verifiedBy 等覆盖)。
 
     it('non-whitelisted memberId → 400', async () => {
       const res = await request(httpServer(app))
@@ -378,8 +374,8 @@ describe('certificates 模块', () => {
       expect(res.status).toBe(200);
       const items: Array<Record<string, unknown>> = res.body.data;
       expect(items.length).toBeGreaterThanOrEqual(2);
-      // 列表项**不含** certNumber / verifyNote / verifiedBy / verifiedAt / attachmentKey /
-      //   supersededByCertId(草案 §13.1)
+      // 列表项**不含** certNumber / verifyNote / verifiedBy / verifiedAt / supersededByCertId(草案 §13.1)
+      // attachmentKey 字段已于 V2.x C-7 attachments PR #2 删除(沿 D7 v1.0 §4.6),全局不再返回
       for (const item of items) {
         expect(item).not.toHaveProperty('certNumber');
         expect(item).not.toHaveProperty('verifyNote');
@@ -420,16 +416,17 @@ describe('certificates 模块', () => {
       expectBizError(res, BizCode.CERTIFICATE_NOT_BELONGS_TO_MEMBER);
     });
 
-    it('200 完整字段 + attachmentKey null + 不返 deletedAt', async () => {
+    it('200 完整字段 + 不返 deletedAt / attachmentKey', async () => {
       const res = await request(httpServer(app))
         .get(`/api/v2/members/${memberA}/certificates/${certIdA}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.id).toBe(certIdA);
       expect(res.body.data.certNumber).toBe('DETAIL-CERT-001');
-      expect(res.body.data.attachmentKey).toBeNull();
       expect(res.body.data).not.toHaveProperty('deletedAt');
       expect(res.body.data).not.toHaveProperty('expireNotifyDueAt');
+      // V2.x C-7 attachments PR #2:attachmentKey 字段已删除
+      expect(res.body.data).not.toHaveProperty('attachmentKey');
     });
   });
 

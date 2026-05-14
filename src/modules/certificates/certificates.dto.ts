@@ -9,7 +9,6 @@ import { IsDateString, IsOptional, IsString, MaxLength, MinLength } from 'class-
 // - certStatusCode / verifiedBy / verifiedAt / verifyNote(状态机内部;通过 verify/reject 动作接口写)
 // - isInternal(Q-S7 + Q-A3:本批次 service 始终写 false,DTO 不接受)
 // - supersededByCertId(本批次零 API 暴露;假数据走 prisma.create)
-// - attachmentKey(批次 6a 协议占位;响应永远 null)
 // - expireNotifyDueAt(后台任务字段,本批次不实装)
 //
 // 字段长度上限对齐草案 v1.0 §5.1:
@@ -71,12 +70,6 @@ export class CertificateResponseDto {
   })
   verifyNote!: string | null;
 
-  @ApiPropertyOptional({
-    description: '证书扫描件存储 key(CT-10;批次 6a 协议占位,本批次永远 null)',
-    nullable: true,
-  })
-  attachmentKey!: string | null;
-
   @ApiProperty({ description: '是否本会颁发(CT-11;本批次 service 始终写 false)' })
   isInternal!: boolean;
 
@@ -94,7 +87,7 @@ export class CertificateResponseDto {
 }
 
 // 列表项 DTO:精简版(草案 §13.1 默认隐藏)。
-// 不返:certNumber / verifyNote / verifiedBy / verifiedAt / attachmentKey / supersededByCertId。
+// 不返:certNumber / verifyNote / verifiedBy / verifiedAt / supersededByCertId。
 export class CertificateListItemDto {
   @ApiProperty({ description: '主键(cuid)' })
   id!: string;
@@ -186,7 +179,7 @@ export class CreateCertificateDto {
 // ============ 入参:Update ============
 
 // PATCH 语义:全字段 optional;**绝对禁止** certStatusCode / verifiedBy / verifiedAt / verifyNote /
-//   isInternal / supersededByCertId / attachmentKey / expireNotifyDueAt(forbidNonWhitelisted 兜底)。
+//   isInternal / supersededByCertId / expireNotifyDueAt(forbidNonWhitelisted 兜底)。
 // Q-A4 决议:接受 issuedAt / expiredAt 资料修正。
 export class UpdateCertificateDto {
   @ApiPropertyOptional({ description: '证书大类字典 code', maxLength: 64 })
