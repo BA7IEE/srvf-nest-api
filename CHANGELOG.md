@@ -78,6 +78,23 @@
   BizCode 实装由 C-6 V2.x 立项后实施 PR 完成。本 PR 仅修订 `docs/批次8_RBAC_API前评审.md`
   + `CHANGELOG.md`;**不**修订 baseline / ARCHITECTURE.md(段位 + §9 v0.2 已锁,
   v1.0 沿用)/ V2红线 / handoff / TASKS.md。共用上方"纯文档变更"边界声明。
+- 新增 [`docs/批次8_RBAC_V2x立项记录.md`](docs/批次8_RBAC_V2x立项记录.md)
+  + `TASKS.md` 追加 §7 V2.x C-6 RBAC 立项准备:**C-6 RBAC 已从 D7 v1.0 冻结
+  (PR #51 / `b301da8`)进入 V2.x 立项准备**;25 项决议全部锁定;RBAC 4 表模型
+  (`Role` / `Permission` / `RolePermission` / `UserRole`)+ BizCode 段位
+  `300xx + 301xx`(baseline §1.1 已预留)+ `users.policy.ts` 永久共存(D12 永不
+  切换;不迁出 v1 14 + 既有 V2 79 接口)+ Service 层显式 `rbac.can()`(F5;**不**做
+  Guard 装饰器);**不引入 casl / Redis / 队列 / 定时任务**;**不扩 Role enum**
+  (沿 A-4);**不改 v1 14 接口**(沿 A-2 zero drift);**C-7 attachments 必须等
+  C-6 上线后再进入 D7-attachments 评审**(沿 PR #45 决议 1)。**本 PR 仅立项,
+  不实施**:不动 `src/**` / `prisma/**` / `test/**` / `package.json` /
+  `pnpm-lock.yaml`;不新增 migration / 不改 seed;不 bump version / 不 tag /
+  不 release;**不启动 RBAC 实施**。合并后下一步必须是实施 PR #1
+  (`chore(prisma): add RBAC schema and migration`),实施 PR 仍需单独启动 +
+  用户授权;实施 PR 拆分见立项记录 §四(11 PR:9 feat + 1 bump + 1 v0.9.0
+  handoff;实施周期 2-3 周参考 batch6)。**不**修订 baseline / ARCHITECTURE.md /
+  V2 红线 / handoff(均已在 v0.2 / v1.0 阶段就位,v2.x 立项沿用);共用上方
+  "纯文档变更"边界声明。
 
 ## v0.8.0 - 2026-05-13
 
