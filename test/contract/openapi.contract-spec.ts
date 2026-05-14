@@ -197,6 +197,15 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 沿 D7 §9.4 缓存失效:授权/撤权后清所有持有该角色的 user cache。
   ['post', '/api/v2/roles/{id}/permissions'],
   ['delete', '/api/v2/roles/{id}/permissions/{permissionId}'],
+
+  // V2.x C-6 RBAC 实施 PR #5(2026-05-14;UserRole CRUD,沿 D7 v1.1 §5.1 端点 12-14)
+  // GET / POST / DELETE 用户角色;POST 入参 roleCode 单 code(沿 D7 §5.2.4);
+  // BizCode 30006/30007/30101/30102;
+  // Q7 C2 中庸角色分级(SUPER_ADMIN 通过 / 持 ops-admin 通过非 ops-admin / 其他 30102);
+  // 最后一个 ops-admin 保护(沿 D7 §6.3;事务内 count + delete)。
+  ['get', '/api/v2/users/{userId}/roles'],
+  ['post', '/api/v2/users/{userId}/roles'],
+  ['delete', '/api/v2/users/{userId}/roles/{roleId}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -331,6 +340,13 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // 注:RevokeRolePermissionParamDto 是 @Param() DTO,被内联为 parameters,不进 components.schemas。
   //   出参复用 RbacRoleDetailResponseDto(沿 RbacRole detail 范式)。
   'AssignRolePermissionsDto',
+
+  // V2.x C-6 RBAC 实施 PR #5 user-roles(2026-05-14;沿 D7 v1.1 §5.2.4 / §5.2.6)
+  // 注:UserIdParamDto / RevokeUserRoleParamDto 是 @Param() DTO,被内联为 parameters,
+  //   不进 components.schemas。
+  //   AssignUserRoleDto 是 @Body() 单字段 DTO,UserRoleResponseDto 是出参,均注册为 named schema。
+  'AssignUserRoleDto',
+  'UserRoleResponseDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
