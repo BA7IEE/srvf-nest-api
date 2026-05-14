@@ -1,10 +1,10 @@
-# 《批次7_attachments_API前评审稿》(D7-attachments v0.2 局部收口稿)
+# 《批次7_attachments_API前评审稿》(D7-attachments v1.0 冻结稿)
 
-> **状态**:**v0.2 局部收口稿**(2026-05-14)— **修订原因**:v0.1 草稿([PR #65](https://github.com/BA7IEE/srvf-nest-api/pull/65),squash commit `ebb530e`,2026-05-14)落地 5 项 F 锁 + 9 项 B 锁(沿 D6)+ 16 项 Q 以"本稿建议 / 待评审"形式承载;用户在 v0.1 合并后逐项拍板 16 项,**v0.2 局部收口**结果:**13 项 Q 锁定 / 1 项 Q 挂起(Q12 ADMIN 内置角色)/ 2 项 Q 挂起待 Provider 选型评审(Q14 / Q15)/ 1 项 Q 不冻结建议(Q16 PR 拆分)**;**v1.0 暂不冻结**(留入队同意书条款 / N 时长等业务方进一步澄清后再冻结)。**本 PR 同时修订** `docs/批次7_attachments_API前评审.md` + `CHANGELOG.md` Unreleased 追加一行(沿 D7-RBAC v0.2 / v1.0 / v1.1 收口类 PR 范式;PR #66 未记 CHANGELOG 视为小疏漏不在本 PR 顺手补,避免混入 D7-RBAC 历史修正)。
-> **性质**:**D7-attachments 评审稿 v0.2 局部收口**(基于 [批次7_attachments_业务确认稿](批次7_attachments_业务确认稿.md) 11 题 + 5 决议 + C-6 RBAC 已落地能力 + v0.1 草稿撰写 + v0.2 用户逐项拍板 Q1-Q16,锁定 13 项 / 挂起 3 项 / 建议 1 项)。
+> **状态**:**v1.0 冻结稿**(2026-05-14)— **冻结原因**:v0.2 局部收口稿([PR #67](https://github.com/BA7IEE/srvf-nest-api/pull/67),squash commit `e4ff48f`,2026-05-14)锁定 13 项 Q + 挂起 3 项 + 建议 1 项后,用户拍板**v1.0 冻结剩余决议**:Q12(ADMIN 内置角色)**继续挂起,留独立"RBAC 内置角色 / ADMIN 默认附件权限"专项评审 PR**(不阻塞 attachments 主体冻结);Q14 / Q15(Provider 上传 / 删除策略)**沿用挂起,等 Provider 选型评审稿**(Provider 选型决定签名 URL / STS / 中转代理 / 删除失败处理 / 生命周期策略,提前锁定易返工);Q16(PR 拆分)**保持建议,实施期可按风险微调**;入队同意书条款 **v1.0 锁最低原则**(上传授权 / 用途 / 保存 / 访问四锚点;**正式文本由业务方提供后 v1.1 修订**,不写入本系统仓库);退队清理 N **v1.0 锁配置项语义**(`disabled` 后 N 天后台提示 + 系统不自动删除 + N 不在 schema 硬编码;**具体 N 由队里管理层 / 合规口径确认后 v1.1 修订**)。**本 PR 同时修订** `docs/批次7_attachments_API前评审.md` + `CHANGELOG.md` Unreleased 追加一行(沿 D7-RBAC v0.2 / v1.0 / v1.1 收口类 PR 范式)。
+> **性质**:**D7-attachments 评审稿 v1.0 冻结稿**(基于 [批次7_attachments_业务确认稿](批次7_attachments_业务确认稿.md) 11 题 + 5 决议 + C-6 RBAC 已落地能力 + v0.1 草稿 + v0.2 局部收口 + v1.0 用户拍板剩余决议,锁定 27 项 + 挂起 3 项 + 建议 1 项;**C-7 attachments V2.x 立项 PR 在本 v1.0 PR 合并后才允许启动**)。
 > **批次号**:批次 7 暂定;正式编号以 **C-7 V2.x 立项 commit** 为准。
-> **撰写日期**:2026-05-14(v0.1 / **v0.2**)
-> **修订历程**(只在本说明区出现历史措辞):v0.1 草稿(PR #65,squash commit `ebb530e`,2026-05-14)→ **v0.2 局部收口稿**(本 PR,锁定 13 项 Q / 挂起 3 项 / 建议 1 项;不冻结 v1.0)。
+> **撰写日期**:2026-05-14(v0.1 / v0.2 / **v1.0**)
+> **修订历程**(只在本说明区出现历史措辞):v0.1 草稿(PR #65,squash commit `ebb530e`,2026-05-14)→ v0.2 局部收口稿(PR #67,squash commit `e4ff48f`,2026-05-14,锁定 13 项 Q / 挂起 3 项 / 建议 1 项)→ **v1.0 冻结稿**(本 PR,Q12 / Q14 / Q15 沿用挂起 + Q16 建议不冻结;入队同意书最低原则锁 + 退队清理 N 配置项语义锁;**正式条款文本 + N 具体值 v1.1 由业务方提供**)。
 > **拍板准绳**:沿 D6 业务确认稿"**不考虑时间周期,只考虑项目稳定和长久**"(D6 §1.2)。
 > **接续**:
 > - [D6 业务确认稿(PR #45, squash commit `08aa4d7` 的延续)](批次7_attachments_业务确认稿.md)
@@ -15,16 +15,17 @@
 > - [docs/srvf-foundation-baseline.md §1.1](srvf-foundation-baseline.md)(BizCode 段位 `130xx` + `131xx` 已预留)
 > - [ARCHITECTURE.md §9 / §12](../ARCHITECTURE.md)(升级路径与 V2 蓝图)
 > **风格参照**:[批次8_RBAC_API前评审.md](批次8_RBAC_API前评审.md)(D7 评审稿正典)/ [批次6_audit_logs_API前评审.md](批次6_audit_logs_API前评审.md)
-> **核心**(v0.2 局部收口;5 项 F + 9 项 B + 13 项 Q 已锁;3 项 Q 挂起;1 项 Q 建议不冻结):
+> **核心**(v1.0 冻结;5 项 F + 9 项 B + 13 项 Q 已锁;3 项 Q 挂起;1 项 Q 建议不冻结;v1.1 留待业务方 2 项):
 > - **F1 锁** Permission code 正则放宽到 **3-4 段**(`/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2,3}$/`);D7-RBAC v1.2 修订 PR 已合入(PR #66, squash commit `2b934c5`);**本稿不改代码**(实际 `CODE_PATTERN` 放宽留 C-7 实施 PR #1)
 > - **F2 锁** Provider **不实装**(D7 仅落地元数据 + API 契约;Provider 选型独立评审稿同期推进)
 > - **F3 锁** attachments 入口 Guard = **仅 `JwtAuthGuard`**;判权全部在 Service 层 `rbac.can()`(attachments 是 0 → 1 接入 RBAC 的范本)
 > - **F4 锁** 配置三表 CRUD 入口 = **`@Roles(SUPER_ADMIN, ADMIN)`**(不为配置三表新增 `rbac.config.*` 权限点)
 > - **F5 锁** 段位沿 baseline §1.1 = **`130xx` + `131xx`**(attachments 主模块 + 配置三表共用 200 个号位)
-> - **v0.2 新锁 13 项 Q**:Q1 复用 attachments + ownerType=activity + subType 标识 cover(不改 Activity schema)/ Q2 accessLevel = hint+索引(RBAC 单一权威)/ Q3 tags = `String[]`(不建关联表)/ Q4 uploadedBy = User.id / Q5 ownerType 双层校验(**业务层 enum 硬编码作为代码防错边界 + 配置表作为运行时可配置白名单**)/ Q6 checksum/etag 不进普通出参 / Q7 PATCH metadata 不审计 / Q8 退队 `status=DISABLED ≥ N + 后台提示`(**N 待业务确认**,不自动删除)/ Q9 `ATTACHMENT_PII_DETECTED=13015` 预留 / Q10 activity 不分 self/other / Q11 **20 条 `attachment.*` 权限点清单 v0.2 锁定**(实际 seed 留实施 PR)/ Q13 系统级 MIME 黑名单(**D7 设计清单,不在 v0.2 承诺最终安全清单;后续 Provider 选型/安全评审可追加**)
-> - **v0.2 挂起 1 项**:Q12 ADMIN 内置角色自动持所有 `.other`(影响 RBAC seed/bootstrap + 业务管理员默认能力,待权限点清单 + 业务管理员边界确认后再锁)
-> - **v0.2 挂起待 Provider 选型 2 项**:Q14 上传策略 / Q15 删除策略
-> - **v0.2 不冻结 1 项**:Q16 PR 拆分(沿 §13 9-11 PR 建议,不冻结最终数量)
+> - **🔒 v0.2/v1.0 锁定 13 项 Q**:Q1 复用 attachments + ownerType=activity + subType 标识 cover(不改 Activity schema)/ Q2 accessLevel = hint+索引(RBAC 单一权威)/ Q3 tags = `String[]`(不建关联表)/ Q4 uploadedBy = User.id / Q5 ownerType 双层校验(**业务层 enum 硬编码作为代码防错边界 + 配置表作为运行时可配置白名单**)/ Q6 checksum/etag 不进普通出参 / Q7 PATCH metadata 不审计 / Q8 退队 `status=DISABLED ≥ N + 后台提示`(**N v1.1 由业务方确认**,不自动删除)/ Q9 `ATTACHMENT_PII_DETECTED=13015` 预留 / Q10 activity 不分 self/other / Q11 **20 条 `attachment.*` 权限点清单**(实际 seed 留实施 PR)/ Q13 系统级 MIME 黑名单(**D7 设计清单;后续 Provider 选型/安全评审可追加**)
+> - **🔄 v1.0 挂起 1 项**:Q12 ADMIN 内置角色自动持所有 `.other` — **留独立"RBAC 内置角色 / ADMIN 默认附件权限"专项评审 PR**(不阻塞 attachments 主体冻结;v1.0 中明确"接口走 `rbac.can()`,是否给 ADMIN 默认附件权限留 seed/内置角色专项评审")
+> - **⏸ v1.0 挂起待 Provider 选型 2 项**:Q14 上传策略 / Q15 删除策略(Provider 选型决定签名 URL / STS / 中转代理 / 删除失败处理 / 生命周期策略;提前锁定易返工)
+> - **📋 v1.0 建议不冻结 1 项**:Q16 PR 拆分(沿 §13 **建议 9-11 PR;实施期允许按风险拆分或合并**;只锁实施顺序原则,不锁死 PR 数量)
+> - **⏳ v1.0 → v1.1 留待业务方 2 项**:**入队同意书条款正式文本**(v1.0 仅锁最低原则四锚点:上传授权 / 用途 / 保存 / 访问;正式文本不写入本仓库,避免混入真实组织合规文本)/ **退队清理 N 具体值**(v1.0 仅锁配置项语义:`disabled` 后 N 天后台提示 + 系统不自动删除 + N 不在 schema 硬编码;具体 N 由队里管理层 / 合规口径确认)
 
 ---
 
@@ -92,7 +93,7 @@
 | Q8a:各类型初始默认尺寸阈值 | §4.4 / §10 配置三表初始 seed(沿 D6 表初始候选阈值;运行时可改) | 🔒 v0.2 锁初始候选;运行时由配置三表 CRUD 调整 |
 | Q8b:`attachment_mime_config` 表 schema | §4.3 | 🔒 v0.2 锁 schema 草案;具体字段 v1.0 / 实施期细化 |
 | Q8b:"永久禁"清单 | §6.6 系统级 MIME 黑名单(代码硬编码) | 🔒 v0.2 锁(Q13):D7 设计清单;Provider 选型 / 安全评审可追加 |
-| Q9:入队同意书条款草案 | §9.6(v0.1 占位;v1.0 由维护者提供后冻结) | ⏳ 留 v1.0 冻结(维护者提供条款) |
+| Q9:入队同意书条款草案 | §9.6(v1.0 锁最低原则四锚点;⏳ 正式文本 v1.1 由业务方提供) | 🔒 v1.0 锁最低原则(上传授权 / 用途 / 保存 / 访问);⏳ 正式条款文本 v1.1 由业务方提供,**不写入本仓库** |
 | Q10:Certificate.attachmentKey 废弃 migration | §4.6 | 🔒 v0.2 锁(沿 D6 Q10 B) |
 | Q11:attachments 不为 `member_profiles` / `events` 预留特殊字段 | ✅ 沿决议(§3 本批次不做;`ownerType` 通过配置表扩展) | 🔒 v0.2 锁(沿 D6 Q11 A) |
 
@@ -791,10 +792,10 @@ export type AuditLogEvent =
 
 ### 9.3 保存期限
 
-| 场景 | 期限 | 触发清理条件(🔒 Q8 v0.2 锁:`status=DISABLED ≥ N` + 后台提示;N 待业务确认) |
+| 场景 | 期限 | 触发清理条件(🔒 Q8 v1.0 锁:`status=DISABLED ≥ N` + 后台提示;⏳ N 具体值 v1.1 由队里管理层 / 合规口径确认) |
 |---|---|---|
-| 队员证件照(身份证) | 在队期间永久 + 退队后 N(暂候 6 个月)由 ADMIN 触发清理评估 | `Member.status=DISABLED` ≥ N → 后台 UI 提示 ADMIN 清理;**N 配置项 / 待业务确认**,不自动删除 |
-| 队员证件照(急救/潜水/培训证) | 在队期间永久 + 退队后 N(暂候 2 年)由 ADMIN 触发清理评估 | `Member.status=DISABLED` ≥ N → 后台 UI 提示;**N 配置项 / 待业务确认** |
+| 队员证件照(身份证) | 在队期间永久 + 退队后 N 天由 ADMIN 触发清理评估(暂候参考 6 个月) | `Member.status=DISABLED` ≥ N → 后台 UI 提示 ADMIN 清理;**N 配置项,不在 schema 硬编码**;v1.1 由业务方确认具体值 |
+| 队员证件照(急救/潜水/培训证) | 在队期间永久 + 退队后 N 天由 ADMIN 触发清理评估(暂候参考 2 年) | `Member.status=DISABLED` ≥ N → 后台 UI 提示;**N 配置项**;v1.1 由业务方确认 |
 | 活动现场照 | 永久(队组织数据资产) | 不清理 |
 | 活动封面 | 永久(跟随 Activity 生命周期) | Activity 软删时附件不动(沿 §6.4 矩阵) |
 
@@ -804,30 +805,28 @@ export type AuditLogEvent =
 
 **Service 层校验铁律**:`originalName` / `description` 字段如检测含身份证号正则模式(`\d{17}[\dXx]`),Service 层**拒绝**入库;🔒 Q9 v0.2 锁:**预留 `ATTACHMENT_PII_DETECTED=13015` BizCode**(沿 §8.1 子段位预留;实施期落地)。
 
-### 9.5 退队触发清理(🔒 Q8 v0.2 锁)
+### 9.5 退队触发清理(🔒 Q8 v1.0 锁配置项语义;⏳ N 具体值 v1.1)
 
-**v0.2 锁定(Q8)**:`Member.status=DISABLED` ≥ N + 后台提示,**不自动删除**;**N 按附件类型分级,作为配置项,待业务方进一步确认**(沿 §9.3 表)。
+**v1.0 锁定(Q8)配置项语义**:`Member.status=DISABLED` ≥ N + 后台提示,**系统不自动删除**;**N 按附件类型分级,作为配置项**;**N 不在 schema 硬编码**;**⏳ 具体 N 由队里管理层 / 合规口径确认后 v1.1 修订**。
 
-- 主触发条件:**`Member.status=DISABLED` 且持续 ≥ N 时长**(N 按附件类型表;**N 配置项 / 待业务确认**)
+- 主触发条件:**`Member.status=DISABLED` 且持续 ≥ N 时长**(N 按附件类型表;参见 §9.3)
 - 备用触发条件:**`Member.deletedAt` 设置**(立即提示)
-- 实现方式:后台 UI 提示 ADMIN 手动清理(**不主动执行**)
-- 具体后台 UI 行为由后台对接前端项目决定;本期后端 API **仅提供** `GET /api/v2/attachments?ownerType=member&ownerId=<退队 member.id>` 列表能力
+- 实现方式:**后台 UI 提示 ADMIN 手动清理**;**系统不主动执行清理**
+- N 落地位置(v1.1 实施期决议):候选 a)`attachment_size_limit_config` 表追加 `retentionDaysAfterDisable: Int?` 列;b)新建 `attachment_retention_config` 专用配置表;c)`AttachmentTypeConfig.retentionDaysAfterDisable` 字段
+- 具体后台 UI 行为由后台对接前端项目决定;本期后端 API **仅提供** `GET /api/v2/attachments?ownerType=member&ownerId=<退队 member.id>` 列表能力,前端按 `disabled` + `disabledAt` 计算"建议清理"提示
 
-### 9.6 入队同意书条款(v0.1 占位)
+### 9.6 入队同意书条款(🔒 v1.0 锁最低原则;⏳ 正式文本 v1.1 由业务方提供)
 
-> **v0.1 占位**;具体条款 **v0.2 由维护者提供** 后冻结。
+**v1.0 锁定最低原则四锚点**(规范层面冻结,不写正式法律措辞;**正式条款文本不写入本系统仓库,避免混入真实组织合规文本**):
 
-候选措辞框架(沿决议 4):
+1. **上传授权**:上传证件 / 资格材料前,**应在招新 / 入队流程中取得授权**(签署纸质或电子同意书)
+2. **明确用途**:**资格审核 + 队内管理 + 活动 / 保险 / 资质证明**(不超出救援队业务必要范围)
+3. **明确保存**:**在队期间保存**;退队后按 §9.5 清理策略处理
+4. **明确访问**:**仅授权管理员或具备对应 RBAC 权限的人员**可访问(沿 §6 RBAC 接入方案;实际权限走 RBAC 单一权威源)
 
-> "本人同意贵会(深圳市公益救援志愿者联合会)出于队员管理、活动派遣、资质核验、应急联络等合理目的,采集、存储、使用本人提供的身份证图像、证书图像、紧急联系人信息、医疗信息等个人信息。
->
-> 本人理解:
-> - 此类信息储存于贵会自营 / 委托第三方云存储服务,经服务端透明加密保护;
-> - 查看权限仅授予 SUPER_ADMIN / ADMIN / 业务相关部门部长(如 APD)等经贵会授权的角色;
-> - 退队后,身份证类附件由 ADMIN 在 6 个月内手动清理;其他证件类附件由 ADMIN 在 2 年内手动清理;
-> - 本同意符合《中华人民共和国个人信息保护法》第 13 条规定的'订立、履行个人作为一方当事人的合同所必需'与'救援活动派遣合理范围'的合法性基础。"
+**⏳ v1.1 由业务方提供**:正式法律条款文本(含《个保法》第 13 条 / 第 14 条合法性基础引用、具体保存期限、撤回授权流程等);文本**保存在队组织自有合规文档系统**,不进入本系统 git 仓库。
 
-具体措辞维护者 v0.2 提供。
+**说明**:本节冻结后,系统层面**不**对外暴露具体条款文本;前端 / 后台 UI 显示同意书走业务方提供的链接(URL 或 CDN 静态资源)。系统仅落库"同意书签署状态"(沿 `MemberProfile.privacyConsentSigned` / `privacyConsentSignedAt` 现有字段)。
 
 ---
 
@@ -856,15 +855,24 @@ await prisma.attachmentTypeConfig.createMany({
 - USER 内置角色 placeholder("member"):配 9 条 `.self` 权限点 + `attachment.view.activity`(沿 §6.1 表)
 - `role-a..role-f` 真实角色的 `.other` 映射走 `.env.seed.local`(沿 D7-RBAC F6 / R13)
 
-### 10.4 ADMIN 内置角色(🔄 Q12 v0.2 挂起)
+### 10.4 ADMIN 内置角色(🔄 Q12 v1.0 沿用挂起;留独立专项评审 PR)
 
-**Q12 v0.2 挂起**:沿 v0.9.0 §5"未创建 ADMIN 内置角色";attachments 实施期是否创建 ADMIN 内置角色映射所有 `.other` 权限点 — 此项影响 RBAC seed/bootstrap 与业务管理员默认能力;**等 attachment 权限点清单(已锁,§6.1)+ 业务管理员边界进一步确认后再锁**。v0.2 不锁,v1.0 / 实施期再决议。
+**Q12 v1.0 沿用挂起**:沿 v0.9.0 §5"未创建 ADMIN 内置角色";v1.0 **不在本批次决议**,**留独立"RBAC 内置角色 / ADMIN 默认附件权限"专项评审 PR**。
 
-候选方案(挂起,供后续评审参考):
+**原因**:
+- ADMIN 默认持所有 `.other` 或部分 `.other`,会**直接影响附件业务安全边界**(管理员误操作 / 越权风险)
+- 这是**权限策略**,不是**附件 schema 必要条件**
+- **不应阻塞 attachments 主体 D7 v1.0 冻结**
+- v1.0 中明确:**attachments 接口走 `rbac.can()`**,但**是否给 ADMIN 默认分配附件权限**,留 seed / 内置角色专项评审
 
-- 方案 A:创建 ADMIN 内置角色,自动持所有 `.other` 权限点;ADMIN 默认可全权管理任何成员附件(沿 D7-RBAC §7.1 step 2 ADMIN 自动继承 USER 权限的延伸)
-- 方案 B:不创建 ADMIN 内置角色,ADMIN 默认无业务权限,需运营管理员通过 `POST /api/v2/users/:userId/roles` 显式分配(沿 v0.9.0 §5 现状)
+**实施期默认行为**(v1.0 未决议导致的过渡):attachments 实施 PR 期间,**沿 v0.9.0 §5 现状**(ADMIN 默认无 RBAC 业务角色;需 ops-admin 显式通过 `POST /api/v2/users/:userId/roles` 分配)— 直到独立专项评审 PR 决议后再调整 seed。
+
+候选方案(挂起,供独立专项评审参考):
+
+- 方案 A:创建 ADMIN 内置角色,自动持所有 `.other` 权限点;ADMIN 默认可全权管理任何成员附件
+- 方案 B:不创建 ADMIN 内置角色,ADMIN 默认无业务权限,需运营管理员显式分配(沿 v0.9.0 §5 现状;**v1.0 实施期默认按此走**)
 - 方案 C:创建 ADMIN 内置角色,但仅持 `.view.*` / `.delete.*`,不持 `.upload.*` / `.update.*`(读写分离)
+- 方案 D / E / 业务方未来提出的其他方案(留专项评审)
 
 ---
 
@@ -1004,53 +1012,54 @@ D7-RBAC v1.2 修订 PR(纯 docs;Permission code 正则放宽到 3-4 段)已于 P
 
 ---
 
-## 16. 决议表(D7-attachments v0.2 局部收口;5 项 F + 9 项 B + 13 项 Q 已锁 + 1 项 Q 挂起 + 2 项 Q 挂起待 Provider + 1 项 Q 建议不冻结)
+## 16. 决议表(D7-attachments v1.0 冻结;30 项决议全部就位)
 
 > **状态历程**(修订日志,只在本说明区出现历史措辞):
 > - **v0.1 草稿**(PR #65,2026-05-14):5 项 F 锁(用户拍板 Q0-Q5)+ 9 项 B 锁(沿 D6 业务确认稿)+ 16 项 Q 以"本稿建议 / 待评审"承载
-> - **v0.2 局部收口**(本 PR,2026-05-14):用户逐项拍板 Q1-Q16;**13 项 Q 锁定**(Q1 / Q2 / Q3 / Q4 / Q5 / Q6 / Q7 / Q8 / Q9 / Q10 / Q11 / Q13;**注意**:仅 12 项是"AI 推荐照单全锁",Q11 是"锁清单但 seed 留实施 PR")+ **1 项 Q 挂起**(Q12 ADMIN 内置角色:影响 RBAC seed/bootstrap + 业务管理员默认能力,待权限点清单 + 业务管理员边界确认)+ **2 项 Q 挂起待 Provider 选型评审**(Q14 上传策略 / Q15 删除策略)+ **1 项 Q 建议不冻结**(Q16 PR 拆分:沿 §13 9-11 PR 建议,实施期微调)
-> - 🔒 = v0.1 / v0.2 冻结决议;🔄 = v0.2 挂起;⏸ = v0.2 挂起待 Provider 选型;📋 = v0.2 建议不冻结
-> - **v1.0 暂不冻结**:留入队同意书条款 + N 时长 + Q12 ADMIN 内置角色等业务方 / 评审进一步澄清后再冻结
+> - **v0.2 局部收口**(PR #67,2026-05-14):用户逐项拍板 Q1-Q16;13 项 Q 锁定 + 1 项挂起(Q12)+ 2 项挂起待 Provider 选型(Q14/Q15)+ 1 项建议不冻结(Q16);v1.0 暂不冻结
+> - **v1.0 冻结**(本 PR,2026-05-14):用户拍板**v1.0 冻结剩余决议** — Q12 沿用挂起,**留独立"RBAC 内置角色 / ADMIN 默认附件权限"专项评审 PR**(不阻塞 attachments 主体冻结);Q14 / Q15 沿用挂起,**等 Provider 选型评审稿**;Q16 沿用建议不冻结(实施期按风险拆分);**入队同意书 v1.0 锁最低原则四锚点**(上传授权 / 用途 / 保存 / 访问;正式文本不写入本仓库,v1.1 由业务方提供);**退队清理 N v1.0 锁配置项语义**(disabled 后 N 天后台提示 + 系统不自动删除 + N 不在 schema 硬编码,具体值 v1.1 由业务方确认)
+> - 🔒 = v0.1 / v0.2 / v1.0 冻结决议;🔄 = v1.0 沿用挂起(留独立专项评审);⏸ = v1.0 沿用挂起待 Provider 选型;📋 = v1.0 沿用建议不冻结;⏳ = v1.0 锁最低原则,正式文本 / 具体值 v1.1 由业务方提供
 
-| # | 决议 | v0.2 状态 | 来源 / 章节 |
+| # | 决议 | v1.0 状态 | 来源 / 章节 |
 |---|---|---|---|
-| F1 | Permission code 正则放宽到 **3-4 段**(`/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2,3}$/`);D7-RBAC v1.2 修订 PR 已合入(PR #66, squash commit `2b934c5`);本稿不改代码,实际 `CODE_PATTERN` 放宽留 C-7 实施 PR #1 | 🔒 v0.1 锁(用户拍板)| 用户拍板 |
-| F2 | Provider **不实装**;D7 仅覆盖元数据 + API 契约 + RBAC + audit + 配置三表 | 🔒 v0.1 锁(用户拍板) | 用户拍板 |
-| F3 | attachments 入口 Guard = **仅 `JwtAuthGuard`**;判权全部在 Service 层 `rbac.can()`;attachments 是 0 → 1 接入 RBAC 的范本 | 🔒 v0.1 锁(用户拍板) | 用户拍板 |
-| F4 | 配置三表 CRUD 入口 = **`@Roles(SUPER_ADMIN, ADMIN)`**;不为配置三表新增 `rbac.config.*` 权限点 | 🔒 v0.1 锁(用户拍板) | 用户拍板 |
-| F5 | BizCode 段位 = **`130xx` + `131xx`**(沿 baseline §1.1 v0.5.0 预留;子段位 §8.1 v0.2 已展开,实施期微调)| 🔒 v0.1 锁 | baseline §1.1 |
-| B1 | 启用场景 1-4(沿 D6 Q1);场景 5-6 延后 | 🔒 v0.1 锁(沿 D6) | D6 Q1 |
-| B2 | 单归属 1:N(沿 D6 Q3 A)| 🔒 v0.1 锁(沿 D6) | D6 Q3 |
-| B3 | 多态外键 `ownerType` + `ownerId`(沿 D6 Q4 A);Service 层手写校验;无 DB FK | 🔒 v0.1 锁(沿 D6) | D6 Q4 |
-| B4 | 硬删除(沿 D6 Q5 B);删除矩阵沿 §6.4 | 🔒 v0.1 锁(沿 D6) | D6 Q5 |
-| B5 | 13 字段全加(沿 D6 Q2);具体字段细节沿 §4.1 | 🔒 v0.1 锁字段集;字段细节(可空性 / 默认值)v1.0 / 实施期细化 | D6 Q2 |
-| B6 | 不做病毒扫描(沿 D6 Q8c A);本批次不做 | 🔒 v0.1 锁(沿 D6) | D6 Q8c |
-| B7 | 配置三表与 attachments 主模块同批次(沿 D6 决议 3)| 🔒 v0.1 锁(沿 D6) | D6 决议 3 |
-| B8 | 最低合规版(沿 D6 决议 4 + §9)| 🔒 v0.1 锁措辞框架;入队同意书具体条款 v1.0 由维护者提供 | D6 决议 4 |
-| B9 | Provider 选型独立评审(沿 D6 决议 5)| 🔒 v0.1 锁(沿 D6) | D6 决议 5 |
-| Q1 | 活动封面与 Activity 模型字段关联方案 | 🔒 **v0.2 锁**:**复用 attachments + ownerType=activity + `attachmentSubType` 标识 cover**;**不改 Activity schema**(沿 A-2);Activity.coverImageUrl 现有字段保留,新建活动时由 attachments 系统生成 URL 后回填(v1.0 / 实施期细化具体回填路径) | §15.2 |
-| Q2 | accessLevel 与 RBAC 关系 | 🔒 **v0.2 锁**:**hint + 索引**,实际权限**完全走 RBAC 单一权威源** | §6.5 |
-| Q3 | tags 实现 | 🔒 **v0.2 锁**:`String[]` PG 原生数组(沿 MemberProfile.exerciseMethods 范式);**不建 tag 关联表**;不开 tag 全局 CRUD | §15.3 |
-| Q4 | uploadedBy 指向 | 🔒 **v0.2 锁**:**User.id**(沿 V2 createdBy / publishedBy 风格;管理员账号上传时也能落库;`originalUploaderName` 冗余存人名) | §15.4 |
-| Q5 | ownerType 枚举来源 | 🔒 **v0.2 锁**:**双层校验** — 业务层 `AttachmentOwnerType` TS enum **作为代码防错边界**(编译期已知);配置表 `attachment_type_config.code` **作为运行时可配置白名单**(权威源);两者必须保持同步,新增 ownerType 需同时改 enum + 配置表 seed | §4.2 / §6.3 |
-| Q6 | checksum / etag 出参可见性 | 🔒 **v0.2 锁**:**不进普通出参 DTO**;作为内部字段保留;管理员详情 / 调试接口若需可见,**留 v1.0 / 实施期再评审** | §5.4.4 |
-| Q7 | PATCH 元数据更新是否审计(`attachment.update` 是否进 audit union)| 🔒 **v0.2 锁**:**不审计 PATCH metadata**(沿"只审高价值写操作"原则;`description` / `tags` 等元数据变更价值低)| §7.1 |
-| Q8 | 退队触发清理条件 | 🔒 **v0.2 锁**:**`Member.status=DISABLED` ≥ N + 后台提示**;**不自动删除**;**N 配置项 / 待业务确认**(暂候身份证类 6 个月、其他证件类 2 年) | §9.3 / §9.5 |
-| Q9 | 身份证号 PII 检测拒绝是否专门开 BizCode | 🔒 **v0.2 锁**:**预留 `ATTACHMENT_PII_DETECTED=13015`**(沿 §8.1 子段位;实施期落地) | §9.4 |
-| Q10 | activity 场景是否要 self/other 区分 | 🔒 **v0.2 锁**:**不区分**(粗粒度活动级权限;沿 §6.1 设计) | §6.1 |
-| Q11 | attachment.* 权限点完整穷举 | 🔒 **v0.2 锁清单**:**20 条**(沿 §6.1 表);**实际 seed 落地由 C-7 实施 PR 完成**(不在 v0.2 PR 内 seed) | §6.1 |
-| Q12 | 是否在 attachments 实施期创建 "ADMIN 内置角色" 自动持所有 `.other` 权限点 | 🔄 **v0.2 挂起**:影响 RBAC seed/bootstrap + 业务管理员默认能力;**等 attachment 权限点清单(已锁,§6.1)+ 业务管理员边界进一步确认后再锁**;候选方案 A/B/C 见 §10.4 | §10.4 |
-| Q13 | 系统级 MIME 黑名单完整清单(代码硬编码) | 🔒 **v0.2 锁(D7 设计清单)**:沿 §6.6 候选;**不在 v0.2 承诺最终安全清单**;后续 Provider 选型 / 安全评审可追加 | §6.6 |
-| Q14 | Provider 接通后上传策略(multipart / 直传签名 URL / 中转)| ⏸ **v0.2 挂起待 Provider 选型评审**;沿 D6 决议 5 独立评审稿同期推进 | §5.5 |
-| Q15 | Provider 接通后删除策略(同步阻塞 / 异步重试 / 仅记录告警)| ⏸ **v0.2 挂起待 Provider 选型评审** | §6.4 |
-| Q16 | PR 拆分顺序(9-11 PR;§13) | 📋 **v0.2 建议不冻结**:沿 §13 表作为 v0.2 建议,**不冻结最终数量**(实施期可微调) | §13 |
+| F1 | Permission code 正则放宽到 **3-4 段**(`/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2,3}$/`);D7-RBAC v1.2 修订 PR 已合入(PR #66, squash commit `2b934c5`);本稿不改代码,实际 `CODE_PATTERN` 放宽留 C-7 实施 PR #1 | 🔒 v0.1 → v1.0 锁 | 用户拍板 |
+| F2 | Provider **不实装**;D7 仅覆盖元数据 + API 契约 + RBAC + audit + 配置三表 | 🔒 v0.1 → v1.0 锁 | 用户拍板 |
+| F3 | attachments 入口 Guard = **仅 `JwtAuthGuard`**;判权全部在 Service 层 `rbac.can()`;attachments 是 0 → 1 接入 RBAC 的范本 | 🔒 v0.1 → v1.0 锁 | 用户拍板 |
+| F4 | 配置三表 CRUD 入口 = **`@Roles(SUPER_ADMIN, ADMIN)`**;不为配置三表新增 `rbac.config.*` 权限点 | 🔒 v0.1 → v1.0 锁 | 用户拍板 |
+| F5 | BizCode 段位 = **`130xx` + `131xx`**(沿 baseline §1.1 v0.5.0 预留;子段位 §8.1 已展开,实施期微调)| 🔒 v0.1 → v1.0 锁 | baseline §1.1 |
+| B1 | 启用场景 1-4(沿 D6 Q1);场景 5-6 延后 | 🔒 v0.1 → v1.0 锁 | D6 Q1 |
+| B2 | 单归属 1:N(沿 D6 Q3 A)| 🔒 v0.1 → v1.0 锁 | D6 Q3 |
+| B3 | 多态外键 `ownerType` + `ownerId`(沿 D6 Q4 A);Service 层手写校验;无 DB FK | 🔒 v0.1 → v1.0 锁 | D6 Q4 |
+| B4 | 硬删除(沿 D6 Q5 B);删除矩阵沿 §6.4 | 🔒 v0.1 → v1.0 锁 | D6 Q5 |
+| B5 | 13 字段全加(沿 D6 Q2);具体字段细节沿 §4.1 | 🔒 v0.1 锁字段集 + v1.0 锁字段细节(可空性 / 默认值 / 长度);实施期最多微调长度 | D6 Q2 |
+| B6 | 不做病毒扫描(沿 D6 Q8c A);本批次不做 | 🔒 v0.1 → v1.0 锁 | D6 Q8c |
+| B7 | 配置三表与 attachments 主模块同批次(沿 D6 决议 3)| 🔒 v0.1 → v1.0 锁 | D6 决议 3 |
+| B8 | 最低合规版(沿 D6 决议 4 + §9)| 🔒 v1.0 锁最低原则四锚点;⏳ 正式条款文本 v1.1 由业务方提供 | D6 决议 4 |
+| B9 | Provider 选型独立评审(沿 D6 决议 5)| 🔒 v0.1 → v1.0 锁 | D6 决议 5 |
+| Q1 | 活动封面与 Activity 模型字段关联方案 | 🔒 v0.2 → v1.0 锁:**复用 attachments + ownerType=activity + `attachmentSubType` 标识 cover**;**不改 Activity schema**(沿 A-2);Activity.coverImageUrl 现有字段保留 | §15.2 |
+| Q2 | accessLevel 与 RBAC 关系 | 🔒 v0.2 → v1.0 锁:**hint + 索引**,实际权限**完全走 RBAC 单一权威源** | §6.5 |
+| Q3 | tags 实现 | 🔒 v0.2 → v1.0 锁:`String[]` PG 原生数组;**不建 tag 关联表** | §15.3 |
+| Q4 | uploadedBy 指向 | 🔒 v0.2 → v1.0 锁:**User.id** | §15.4 |
+| Q5 | ownerType 枚举来源 | 🔒 v0.2 → v1.0 锁:**双层校验**(业务层 enum 硬编码 + 配置表运行时白名单)| §4.2 / §6.3 |
+| Q6 | checksum / etag 出参可见性 | 🔒 v0.2 → v1.0 锁:**不进普通出参 DTO** | §5.4.4 |
+| Q7 | PATCH 元数据更新是否审计 | 🔒 v0.2 → v1.0 锁:**不审计 PATCH metadata** | §7.1 |
+| Q8 | 退队触发清理条件 | 🔒 v1.0 锁配置项语义:**`Member.status=DISABLED` ≥ N + 后台提示**;**系统不自动删除**;**N 不在 schema 硬编码**;⏳ 具体 N 值 v1.1 由队里管理层 / 合规口径确认 | §9.3 / §9.5 |
+| Q9 | 身份证号 PII 检测 BizCode | 🔒 v0.2 → v1.0 锁:预留 `ATTACHMENT_PII_DETECTED=13015` | §9.4 |
+| Q10 | activity 场景是否要 self/other 区分 | 🔒 v0.2 → v1.0 锁:**不区分**(粗粒度活动级) | §6.1 |
+| Q11 | attachment.* 权限点完整穷举 | 🔒 v0.2 → v1.0 锁清单(**20 条**;沿 §6.1 表);实际 seed 落地由 C-7 实施 PR 完成 | §6.1 |
+| **Q12** | 是否创建 "ADMIN 内置角色" 自动持所有 `.other` 权限点 | 🔄 **v1.0 沿用挂起**:**留独立"RBAC 内置角色 / ADMIN 默认附件权限"专项评审 PR**;**不阻塞 attachments 主体冻结**;v1.0 明确"接口走 `rbac.can()`,是否给 ADMIN 默认附件权限留 seed/内置角色专项评审";实施期默认按方案 B(沿 v0.9.0 §5 现状)走 | §10.4 |
+| Q13 | 系统级 MIME 黑名单(D7 设计清单)| 🔒 v0.2 → v1.0 锁(D7 设计清单);后续 Provider 选型 / 安全评审可追加 | §6.6 |
+| **Q14** | Provider 接通后上传策略 | ⏸ **v1.0 沿用挂起待 Provider 选型评审**;Provider 选型决定签名 URL / STS / 中转代理,**不提前锁定**(易返工);v1.0 明确"Provider 选型独立评审稿未完成前,不实装真实文件上传 / 下载 / 删除"| §5.5 |
+| **Q15** | Provider 接通后删除策略(同步阻塞 / 异步重试 / 仅记录告警)| ⏸ **v1.0 沿用挂起待 Provider 选型评审**;Provider 选型决定删除失败处理 + 生命周期策略 | §6.4 |
+| **Q16** | PR 拆分顺序 | 📋 **v1.0 沿用建议不冻结**:沿 §13 表 **建议 9-11 PR**;**实施期允许按风险拆分或合并**;**只锁实施顺序原则,不锁死 PR 数量** | §13 |
 
 **总计**:**F 5 + B 9 + Q 16 = 30 项**
-- **🔒 v0.2 已锁**:**F 5 + B 9 + Q 13 = 27 项**(Q1 / Q2 / Q3 / Q4 / Q5 / Q6 / Q7 / Q8 / Q9 / Q10 / Q11 / Q13 共 12 项 AI 推荐照单全锁 + Q11 锁清单但 seed 留实施 PR)
-- **🔄 v0.2 挂起**:**1 项**(Q12 ADMIN 内置角色)
-- **⏸ v0.2 挂起待 Provider 选型**:**2 项**(Q14 / Q15)
-- **📋 v0.2 建议不冻结**:**1 项**(Q16 PR 拆分)
-- **v1.0 暂不冻结**(留入队同意书条款 + N 时长 + Q12 决议)
+- **🔒 v1.0 已锁**:**F 5 + B 9 + Q 13 = 27 项**
+- **🔄 v1.0 沿用挂起(留独立专项评审)**:**1 项**(Q12 ADMIN 内置角色)
+- **⏸ v1.0 沿用挂起待 Provider 选型**:**2 项**(Q14 / Q15)
+- **📋 v1.0 沿用建议不冻结**:**1 项**(Q16 PR 拆分)
+- **⏳ v1.0 锁最低原则,正式文本 / 具体值 v1.1 由业务方提供**:**2 项**(B8 入队同意书正式条款 / Q8 退队清理 N 具体值)
+- **v1.0 冻结完成,可进入 C-7 V2.x 立项**
 
 ---
 
@@ -1058,56 +1067,70 @@ D7-RBAC v1.2 修订 PR(纯 docs;Permission code 正则放宽到 3-4 段)已于 P
 
 1. ~~**D7-attachments v0.1 草稿 PR**~~ → ✅ 已落地(PR #65,squash commit `ebb530e`,2026-05-14)
 2. ~~**D7-RBAC v1.2 修订 PR**(纯 docs;Permission code 正则 3 段 → 3-4 段)~~ → ✅ 已落地(PR #66,squash commit `2b934c5`,2026-05-14)
-3. **本 PR(D7-attachments v0.2 局部收口)** → 🔄 锁定 13 项 Q + 挂起 3 项 + 不冻结 1 项;v1.0 暂不冻结
-4. **D7-attachments v1.0 冻结 PR**(剩余项全部冻结;含入队同意书条款 + N 时长 + Q12 决议)→ 用户授权
-5. **C-7 attachments V2.x 立项 PR**(沿 D7-RBAC 立项 PR #52 风格)→ 用户授权
-6. **实施 PR #1 ~ #11**(沿 §13)→ 逐 PR 用户授权
-7. **Provider 选型独立评审稿**(与 attachments 实施期同期推进;沿 D6 决议 5)→ 独立评审
-8. **C-7 上线 / bump version 0.9.0 → 0.10.0** → 沿 batch6 / batch8 收口范式
+3. ~~**D7-attachments v0.2 局部收口 PR**~~ → ✅ 已落地(PR #67,squash commit `e4ff48f`,2026-05-14)
+4. **本 PR(D7-attachments v1.0 冻结)** → 🔄 27 项锁 + 1 项挂起留独立专项评审(Q12) + 2 项挂起待 Provider 选型(Q14/Q15) + 1 项建议不冻结(Q16) + 2 项 v1.1 由业务方提供(B8 同意书正式文本 / Q8 N 具体值)
+5. **C-7 attachments V2.x 立项 PR**(沿 D7-RBAC 立项 PR #52 风格)→ 用户授权(本 v1.0 PR 合并后即可启动)
+6. **C-7 实施 PR #1 ~ #N**(沿 §13 建议 9-11 PR)→ 逐 PR 用户授权
+7. **Provider 选型独立评审稿**(与 attachments 实施期同期推进;沿 D6 决议 5)→ 独立评审 → 决议落地后接通 Q14 / Q15
+8. **"RBAC 内置角色 / ADMIN 默认附件权限"专项评审 PR**(决议 Q12)→ 独立评审(可与 C-7 实施期并行;不阻塞)
+9. **D7-attachments v1.1 修订 PR**(锁入队同意书正式文本接入路径 + 退队清理 N 具体值)→ 业务方提供后用户授权
+10. **C-7 上线 / bump version 0.9.0 → 0.10.0** → 沿 batch6 / batch8 收口范式
 
-### 17.1 v0.2 局部收口结论(本 PR 新增)
+### 17.1 v0.2 局部收口结论(沿用)
 
 - **触发**:v0.1 草稿(PR #65)合并后,用户按"一次性批量拍板"模式逐项拍板 Q1-Q16
+- **决议结果**:**锁定 13 项 Q**(Q1 / Q2 / Q3 / Q4 / Q5 / Q6 / Q7 / Q8 / Q9 / Q10 / Q11 / Q13) + **挂起 1 项**(Q12 ADMIN 内置角色) + **挂起待 Provider 选型 2 项**(Q14 / Q15) + **建议不冻结 1 项**(Q16 PR 拆分)
+- v0.2 PR #67 仅文档修订,未动代码 / schema / migration
+
+### 17.2 v1.0 冻结结论(本 PR 新增)
+
+- **触发**:v0.2 局部收口(PR #67)合并后,用户拍板**v1.0 冻结剩余决议**
 - **决议结果**(沿 §16 总计):
-  - **锁定 13 项 Q**:Q1 / Q2 / Q3 / Q4 / Q5 / Q6 / Q7 / Q8 / Q9 / Q10 / Q11 / Q13(其中 Q11 锁清单但 seed 留实施 PR)
-  - **挂起 1 项**:Q12 ADMIN 内置角色(影响 RBAC seed/bootstrap + 业务管理员默认能力)
-  - **挂起待 Provider 选型 2 项**:Q14 上传策略 / Q15 删除策略
-  - **建议不冻结 1 项**:Q16 PR 拆分(沿 §13 9-11 PR)
-- **v1.0 暂不冻结**:留入队同意书条款 + N 时长 + Q12 ADMIN 内置角色 + 其他业务方进一步澄清后再冻结
+  - **🔒 v1.0 已锁 27 项**:F 5 + B 9 + Q 13(Q12 / Q14 / Q15 / Q16 除外)
+  - **🔄 v1.0 沿用挂起 1 项**:Q12 ADMIN 内置角色(留独立"RBAC 内置角色 / ADMIN 默认附件权限"专项评审 PR;不阻塞主体冻结)
+  - **⏸ v1.0 沿用挂起待 Provider 选型 2 项**:Q14 / Q15(Provider 选型决定签名 URL / STS / 中转代理 / 删除失败处理 / 生命周期策略)
+  - **📋 v1.0 沿用建议不冻结 1 项**:Q16 PR 拆分(只锁实施顺序原则,不锁死 PR 数量)
+  - **⏳ v1.0 锁最低原则,正式文本 / 具体值 v1.1 由业务方提供 2 项**:B8 入队同意书正式条款(锁四锚点:上传授权 / 用途 / 保存 / 访问;正式文本不写入本仓库)/ Q8 退队清理 N 具体值(锁配置项语义:`disabled` 后 N 天后台提示 + 系统不自动删除 + N 不在 schema 硬编码;具体值由队里管理层 / 合规口径确认)
 - **本 PR 仅文档修订**,不动代码 / schema / migration / 测试 / package.json / pnpm-lock.yaml
-- **不启动 C-7 attachments 实施**(实施 PR 在 v1.0 冻结 + 立项 PR 后才允许启动)
+- **不启动 C-7 attachments 实施**(实施 PR 在 v1.0 冻结合并 + 立项 PR 后才允许启动)
+- **v1.0 冻结完成,可进入 C-7 V2.x 立项**(由维护者授权后启动立项 PR)
 
 ---
 
 ## 18. 撰写元信息
 
-- **状态标签**:**v0.2 局部收口稿**;5 项 F 锁 + 9 项 B 锁 + 13 项 Q 锁定 + 1 项 Q 挂起(Q12)+ 2 项 Q 挂起待 Provider 选型(Q14/Q15)+ 1 项 Q 建议不冻结(Q16);**v1.0 暂不冻结**
-- **commit 风格**(两段历史):
+- **状态标签**:**v1.0 冻结稿**;**27 项锁定** + 1 项挂起(Q12 留独立专项评审) + 2 项挂起待 Provider 选型(Q14/Q15) + 1 项建议不冻结(Q16) + 2 项 v1.1 由业务方提供(B8 同意书正式文本 / Q8 N 具体值);**v1.0 冻结完成,可进入 C-7 V2.x 立项**
+- **commit 风格**(三段历史):
   - v0.1:`docs(v2-design): add attachments API review draft v0.1`(已落地 PR #65,squash commit `ebb530e`)
-  - v0.2:`docs(v2-design): refine attachments API review decisions v0.2`(本 PR)
-- **未做项**(v0.2 沿 v0.1 + 强化):
+  - v0.2:`docs(v2-design): refine attachments API review decisions v0.2`(已落地 PR #67,squash commit `e4ff48f`)
+  - v1.0:`docs(v2-design): freeze attachments API review v1.0`(本 PR)
+- **未做项**(v1.0 沿 v0.2 + 强化):
   - 不动 `prisma/schema.prisma` 文件本身(本稿 Prisma DSL 仅 markdown 草案)
   - 不动 `src/**` / `prisma/**` / `prisma/migrations/**` / `test/**` / `package.json` / `pnpm-lock.yaml`
   - 不新增 migration
-  - **特别强调**:不动 `src/modules/permissions/permissions.service.ts` 中 `CODE_PATTERN`(实际放宽留 C-7 实施 PR #1;D7-RBAC v1.2 已在 PR #66 文档层面打开)
-  - 不修改 `docs/批次8_RBAC_API前评审.md`(D7-RBAC v1.2 已合入 PR #66;v0.2 不补 PR #66 漏记 CHANGELOG 的小疏漏,避免混入历史修正)
+  - **特别强调**:不动 `src/modules/permissions/permissions.service.ts` 中 `CODE_PATTERN`(实际放宽留 C-7 实施 PR #1)
+  - 不修改 `docs/批次8_RBAC_API前评审.md`(D7-RBAC v1.2 已合入 PR #66;v1.0 不补 PR #66 漏记 CHANGELOG 的小疏漏)
   - 不修改 `docs/srvf-foundation-baseline.md`(段位早已预留)
-  - 不修改 `docs/V2红线与复活路径.md`(留本评审稿 v1.0 冻结后由立项 PR 更新)
+  - 不修改 `docs/V2红线与复活路径.md`(留 C-7 V2.x 立项 PR 更新 C-7 行)
   - 不修改 `docs/handoff/v0.9.0.md` / 其他历史 handoff(沿 V2 红线 §5.1 历史 handoff 不回改)
   - 不 bump version / 不打 tag / 不发 Release
-  - 不启动 attachments 实施(实施 PR 在 v1.0 冻结 + 立项 PR 后才允许启动)
+  - 不启动 C-7 attachments 实施(实施 PR 在 V2.x 立项 PR 合并后才允许启动)
   - 不启动 Provider 选型评审稿(独立 PR;沿 D6 决议 5)
+  - 不启动"RBAC 内置角色 / ADMIN 默认附件权限"专项评审 PR(独立 PR)
   - 不动 RBAC 14 RBAC CRUD 入口 Guard(沿 v0.9.0 §7.3 Slow-4)
-- **v0.2 修订范围**(本 PR;纯文档措辞修订):
-  - 本评审稿:状态升 v0.1 → v0.2;顶部 metadata + 修订历程 + 核心一句话同步 + §1.3 D6 留 D7 细化项表 + §2.2 实施物清单 + §4.1 字段注释 + §4.1 校验铁律表 checksum/etag 行 + §5.1 PATCH 行 + §5.4.4 出参注释 + §6.1 标题(Q11 锁清单)+ §6.1 RBAC 角色映射 placeholder 说明 + §6.3 加 Q5 双层校验段 + §6.4 删除矩阵 Provider 删失败处理标 Q15 挂起 + §6.5 标题(Q2 锁)+ §6.6 标题与正文(Q13 锁 + 设计清单措辞)+ §7.1 PATCH 审计标 Q7 锁不审计 + §8.1 标题(实施期微调)+ §9.3 保存期限表头(Q8 锁)+ §9.4 PII BizCode(Q9 锁)+ §9.5 退队清理(Q8 锁)+ §10.2 标题(Q11 锁清单)+ §10.4 改为 ADMIN 内置角色挂起(Q12 + 候选 ABC 方案)+ §11 风险表(7/8/9 v0.2 锁)+ §15.1 D7-RBAC v1.2 改为已合入 + §15.2 标题(Q1 锁)+ §15.3 标题(Q3 锁)+ §15.4 标题(Q4 锁)+ §15.6 D7 v0.1 → v0.2 沿用 + §16 决议表整段重写(状态历程 + 表格 + 总计)+ §17 落地节奏 + §17.1 加 v0.2 局部收口结论 + §18 元信息
-  - `CHANGELOG.md` Unreleased:追加一行 v0.2 局部收口说明(沿 D7-RBAC v0.2 / v1.0 / v1.1 收口类 PR 范式)
-  - **不**修订 `docs/批次8_RBAC_API前评审.md`(D7-RBAC v1.2 修订属独立 PR;PR #66 漏记 CHANGELOG 视为小疏漏不在本 PR 顺手补)
-  - **不**修订 `docs/srvf-foundation-baseline.md` / `ARCHITECTURE.md` / 任何 handoff / V2 红线 / 立项记录
-- **本评审稿 v0.2 修订后的下一动作**(由用户拍板):
-  - 启动 **D7-attachments v1.0 冻结 PR**(等入队同意书条款 + N 时长 + Q12 ADMIN 内置角色等业务方 / 评审进一步澄清后)
-  - **不**自动启动实施 PR;实施 PR 在 v1.0 冻结 + 立项 PR 后才允许启动
-- **撰写者签名**:Claude Code(v0.1 基于 D6 业务确认稿 11 题 + 5 决议 + 5 项用户 v0.1 拍板 Q0-Q5 + C-6 RBAC 已落地能力 + v0.9.0 收口现状;v0.2 基于用户一次性批量拍板 Q1-Q16(13 锁 + 1 挂起 + 2 挂起待 Provider + 1 不冻结)的纯文档措辞修订;**v0.1 / v0.2 均未动任何代码 / schema / migration**)
+  - 不把入队同意书正式文本写入仓库(沿 v1.0 锁定四锚点;正式文本 v1.1 由业务方提供;保存在队组织自有合规文档系统)
+  - 不在 schema 硬编码退队清理 N 时长(沿 v1.0 配置项语义;具体值 v1.1 由业务方确认)
+- **v1.0 修订范围**(本 PR;纯文档措辞修订):
+  - 本评审稿:状态升 v0.2 → **v1.0 冻结稿**;顶部 metadata + 修订历程 + 核心段同步 + §9.3 保存期限表头(N 具体值 v1.1)+ §9.5 退队清理(配置项语义锁 + N v1.1 + 落地位置候选)+ §9.6 入队同意书条款(锁最低原则四锚点 + 正式文本 v1.1 + 不写入仓库)+ §10.4 ADMIN 内置角色(沿用挂起 + 留独立专项评审 PR + 实施期默认按方案 B)+ §1.3 D6 留 D7 细化项表(Q9 入队同意书行)+ §16 决议表整段重写(状态历程加 v1.0 段 + 全表 v1.0 状态 + 总计 27 锁 / 1 挂 / 2 待 Provider / 1 不冻结 / 2 v1.1)+ §17 落地节奏(v0.2 标已落地 + 加本 v1.0 + 加 v1.1 修订 + 加专项评审 PR)+ §17.2 加 v1.0 冻结结论 + §18 元信息(状态 v1.0 + 三段 commit 历史 + v1.0 修订范围)
+  - `CHANGELOG.md` Unreleased:追加一行 v1.0 冻结说明(沿 D7-RBAC v0.2 / v1.0 / v1.1 收口类 PR 范式)
+  - **不**修订 `docs/批次8_RBAC_API前评审.md`(D7-RBAC v1.2 已合入 PR #66;v1.0 不补 PR #66 漏记 CHANGELOG 的小疏漏,避免混入历史修正)
+  - **不**修订 `docs/srvf-foundation-baseline.md` / `ARCHITECTURE.md` / 任何 handoff / V2 红线 / 立项记录(留 C-7 V2.x 立项 PR 时回写 V2 红线 C-7 行 + 立项记录文件;沿 batch6 / batch8 立项范式)
+- **本评审稿 v1.0 冻结后的下一动作**(由用户拍板):
+  - 启动 **C-7 attachments V2.x 立项 PR**(沿 D7-RBAC 立项 PR #52 风格;含立项记录文件 + V2 红线 C-7 行更新 + TASKS.md 更新)
+  - **不**自动启动实施 PR;实施 PR 在立项 PR 合并后才允许启动
+  - 并行可启动:**Provider 选型独立评审稿** / **"RBAC 内置角色 / ADMIN 默认附件权限"专项评审 PR**(均独立,不阻塞立项 / 实施前几个 PR)
+- **撰写者签名**:Claude Code(v0.1 基于 D6 业务确认稿 11 题 + 5 决议 + 5 项用户 v0.1 拍板 Q0-Q5 + C-6 RBAC 已落地能力 + v0.9.0 收口现状;v0.2 基于用户一次性批量拍板 Q1-Q16(13 锁 + 1 挂起 + 2 挂起待 Provider + 1 不冻结)的纯文档措辞修订;v1.0 基于用户拍板冻结剩余决议(Q12 沿用挂起 + Q14/Q15 沿用挂起 + Q16 沿用建议不冻结 + 入队同意书锁最低原则 + 退队清理 N 锁配置项语义,正式文本 / 具体值 v1.1)的纯文档措辞修订;**v0.1 / v0.2 / v1.0 均未动任何代码 / schema / migration**)
 
 ---
 
-**End of D7-attachments v0.2 draft.** 下一动作请按 §17 推进。
+**End of D7-attachments v1.0 freeze.** 下一动作请按 §17 推进 C-7 V2.x 立项。
