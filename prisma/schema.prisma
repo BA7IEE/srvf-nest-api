@@ -52,6 +52,16 @@ model User {
   // (user 永远软删 deletedAt,不物理删除,引用悬空仅理论风险)。
   auditLogs AuditLog[]
 
+  // V2.x C-6 RBAC 反向 relation(D7 v1.1 §4.5)。
+  // 仅 Prisma 关系映射,不算业务字段新增(沿批次 1 / 2 / 3 / 6 R2 范式;A-2 zero drift)。
+  // userRoles = 本人持有的角色;userRolesCreated / rolePermissionsCreated = 由本人分配的审计字段反向。
+  // userRoles 必须 @relation("UserRoleHolder") 消歧:User 上对 UserRole 有 2 个反向(holder + creator)。
+  // User 软删走 deletedAt,Cascade 实际不会触发(D13 disable 时 user_roles 不动)。
+  // v1.1 命名:RBAC model 名为 RbacRole(避开 v1 enum Role 冲突;DB 表名仍 roles 沿 @@map)。
+  userRoles              UserRole[]       @relation("UserRoleHolder")
+  userRolesCreated       UserRole[]       @relation("UserRoleCreator")
+  rolePermissionsCreated RolePermission[] @relation("RolePermissionCreator")
+
   @@index([deletedAt])
   @@index([status])
 }
@@ -745,4 +755,86 @@ model AuditLog {
   @@index([actorUserId, createdAt])
   @@index([event, createdAt])
   @@map("audit_logs")
+}
+
+// ===== V2.x C-6 RBAC 4 表(沿 D7 v1.1 §4 schema 草案) =====
+//
+// 段位 BizCode 300xx + 301xx(F1 锁;baseline §1.1 已预留)。
+// users.policy.ts 永久共存(D12 永不切换);RBAC 仅作新增 V2 接口业务级补充(F9)。
+// v1 enum Role 保持不动(SUPER_ADMIN / ADMIN / USER 三层永远不变;沿 A-2 + A-4 红线)。
+// v1.1 命名:RBAC role model 名为 RbacRole(避开 v1 enum Role 冲突);
+//   DB 表名仍 @@map("roles") / @@map("permissions") / @@map("role_permissions") / @@map("user_roles")
+//   保持 snake_case 复数风格(沿 audit_logs / API 路径风格)。
+// 实施仅本 PR(C-6 实施 PR #1)落地 schema + migration;
+// service / controller / DTO / seed / 判权由后续 PR #2-#8 完成。
+// 详见:
+//   - docs/批次8_RBAC_API前评审.md §4(schema 草案;v1.1 修订稿)
+//   - docs/批次8_RBAC_V2x立项记录.md §二(立项内容)
+
+model RbacRole {
+  id          String    @id @default(cuid())
+  code        String    @unique // 业务 code,kebab-case;F7 锁定 3-32 字符
+  displayName String // 显示名;真实名走 .env.seed.local(F6 / R13)
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime? // D4:RbacRole 软删
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@index([deletedAt])
+  @@map("roles")
+}
+
+model Permission {
+  id           String   @id @default(cuid())
+  code         String   @unique // <module>.<action>.<resource_type>(D2 锁定;kebab-case)
+  module       String // 模块名(冗余,方便后台 UI 按 module 分组)
+  action       String // 动作
+  resourceType String // 资源类型
+  description  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  // D4:Permission 物理删,无 deletedAt(seed-driven;运营不主动删)
+
+  rolePermissions RolePermission[]
+
+  @@index([module])
+  @@index([resourceType])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String   @id @default(cuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+  createdBy    String? // User.id;沿 D11 audit 字段
+
+  role          RbacRole   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission    Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  createdByUser User?      @relation("RolePermissionCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+  createdBy String? // User.id;沿 D11 audit 字段
+
+  user          User     @relation("UserRoleHolder", fields: [userId], references: [id], onDelete: Cascade)
+  role          RbacRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdByUser User?    @relation("UserRoleCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("user_roles")
 }
