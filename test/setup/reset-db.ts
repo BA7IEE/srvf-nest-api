@@ -63,11 +63,23 @@ import { assertTestDatabaseUrl } from './test-db';
 //
 // 取代了 permissions.e2e-spec.ts 中的 spec-local TRUNCATE workaround
 // (PR #2 临时方案;PR #3 公共基建统一处理)。
+//
+// V2.x C-7 attachments 追加(2026-05-15;实施 PR #4):4 张 attachment 表(物理名小写,Prisma `@@map`):
+//   attachment_mime_configs / attachment_size_limit_configs / attachments / attachment_type_configs
+// FK 关系(沿 D7 v1.0 §4.1-§4.4):
+//   - attachments.uploadedBy → User.id(Restrict)
+//   - attachment_mime_configs.typeConfigId → attachment_type_configs.id(Restrict)
+//   - attachment_size_limit_configs.typeConfigId → attachment_type_configs.id(Restrict)
+// 顺序:子表(mime / size)→ 独立表(attachments)→ 根表(type_configs);CASCADE 兜底跨表依赖。
+// attachments 表与 type_configs 无 DB FK(多态外键;沿 D6 Q4 A),独立位置即可。
+//
+// 取代了 attachment-type-configs.e2e-spec.ts 中的 spec-local TRUNCATE workaround
+// (PR #3 临时方案;PR #4 公共基建统一处理;沿 PR #2 / PR #3 公共基建迁移范式)。
 export async function resetDb(app: INestApplication): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "user_roles", "role_permissions", "roles", "permissions", "audit_logs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "user_roles", "role_permissions", "roles", "permissions", "audit_logs", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }

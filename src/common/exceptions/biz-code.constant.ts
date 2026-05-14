@@ -756,6 +756,28 @@ export const BizCode = {
     message: '附件类型配置 code 格式不合法',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+
+  // V2.x C-7 attachments 实施 PR #4(2026-05-15):AttachmentMimeConfig CRUD 段位。
+  //
+  // 沿 D7 v1.0 §8.1 子段位 13020-13029 配置三表通用段;PR #3 已实装 13020 / 13021 / 13023(type config),
+  // 本 PR 继续 13022 / 13024 / 13025(mime config)。typeConfigId 不存在场景**复用 13020**(Q5 v1.0 拍板:
+  // 沿信息泄漏防御 + 不开多余 _TYPE_NOT_FOUND 镜像码;沿 v1 §10)。
+  // size config 段位号留 PR #5(13026 / 13027 等)。
+  ATTACHMENT_MIME_CONFIG_NOT_FOUND: {
+    code: 13022,
+    message: '附件 MIME 配置不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ATTACHMENT_MIME_CONFIG_DUPLICATE: {
+    code: 13024,
+    message: '该附件类型下 MIME 已存在',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  INVALID_ATTACHMENT_MIME_FORMAT: {
+    code: 13025,
+    message: '附件 MIME 格式不合法',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];
