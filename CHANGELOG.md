@@ -57,6 +57,27 @@
   **不**修订 `docs/handoff/v0.8.1.md`(沿 V2 红线 §5.1 历史 handoff 不回改;
   过期段位号表述以本评审稿 + baseline + 本 CHANGELOG 段为准)。共用上方"纯文档
   变更"边界声明:**不改 schema / migration / 代码 / 测试 / version / tag / release**。
+- 修订 [`docs/批次8_RBAC_API前评审.md`](docs/批次8_RBAC_API前评审.md) v0.2 局部收口稿
+  → **v1.0 冻结稿**(本 PR;沿用户冻结指令一次性锁定剩余 20 项决议)。**25 项决议
+  全部 🔒 v1.0 冻结**:**B1-B3 / D1-D11 / D12(沿 v0.2)/ F1(沿 v0.2)/ F2-F4 /
+  F5(沿 v0.2)/ F6-F10**。冻结要点:(D2)权限点 code 命名 `<module>.<action>.<resource_type>`
+  kebab-case;(D3)资源所有权 user.id + Member.id 混合,Service 层显式构造
+  `RbacResource`;(D4)RBAC 4 model 软删策略 = Role 软删 / Permission/RolePermission/UserRole
+  物理删;(D5/D6/F8)进程内 short TTL + 显式 reload + 默认 30 分钟(`RBAC_CACHE_TTL_SECONDS`
+  env 可调);(D7)角色层级三级 SUPER_ADMIN > ops-admin > 业务部门角色;(D8)角色
+  可分配性代码硬编码,**不**引入 `role_assignable_targets` 配置表;(D9)bootstrap =
+  `RBAC_INITIAL_OPS_ADMIN_USER_ID` 优先 + SUPER_ADMIN fallback;(D10)"最后一个
+  ops-admin 保护"4 个触发场景;(D11)`AuditLogEvent` 新增 9 项 union(路线 A 多
+  operation 共用单一事件名 + `extra.operation` 区分;沿 audit_logs v0.8.0 收官范式
+  + A-17 同事务 fail-fast);(F2-F4)16 端点路径 + me/permissions / reload 字段 +
+  reload scope 三种;(F6/F7)seed 真实角色名走 `.env.seed.local`(R13) + `Role.code`
+  3-32 字符;(F9)`rbac.can()` 仅在新增 V2 接口启用,沿 A-2 红线;(F10)9 个 feat PR
+  + 1 bump + 1 docs 收口。**v1.0 冻结结论**:C-6 RBAC 可进入 V2.x 立项准备,**但
+  仍不得直接实施**;下一步必须是 **C-6 V2.x 立项 commit / docs PR**,实施 PR 仍需
+  单独启动;段位预留 ≠ 段位实装;`300xx + 301xx` 仅在 baseline §1.1 段位预留,14 个
+  BizCode 实装由 C-6 V2.x 立项后实施 PR 完成。本 PR 仅修订 `docs/批次8_RBAC_API前评审.md`
+  + `CHANGELOG.md`;**不**修订 baseline / ARCHITECTURE.md(段位 + §9 v0.2 已锁,
+  v1.0 沿用)/ V2红线 / handoff / TASKS.md。共用上方"纯文档变更"边界声明。
 
 ## v0.8.0 - 2026-05-13
 
