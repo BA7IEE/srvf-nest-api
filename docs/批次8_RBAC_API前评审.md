@@ -1,18 +1,20 @@
-# 《批次8_RBAC_API前评审稿》(D7-RBAC v1.0 冻结稿)
+# 《批次8_RBAC_API前评审稿》(D7-RBAC v1.1 修订稿)
 
-> **状态**:**v1.0 冻结稿**(2026-05-14)— 25 项决议全部锁定,C-6 RBAC 可进入 V2.x 立项准备;**仍不得直接实施**;下一步必须是 **C-6 V2.x 立项 commit / docs PR**,实施 PR 仍需单独启动。
-> **修订历程**(只在本说明区出现历史措辞):v0.1 草稿(PR #48)→ v0.2 局部收口稿(PR #50,锁定 5 项:D12 / F5 / F1 + baseline §1.1 段位追加 + `ARCHITECTURE.md` §9 升级路径修订)→ **v1.0 冻结稿**(本 PR,剩余 20 项全部冻结)。
+> **状态**:**v1.1 修订稿**(2026-05-14)— **修订原因**:v1.0 冻结后启动实施 PR #1 时,跑 `pnpm prisma generate` 发现 **`model Role` 与 v1 已有 `enum Role { SUPER_ADMIN, ADMIN, USER }` 名称冲突**(Prisma 不允许 model 与 enum 同名);v1.0 评审过程未捕获此纸面 vs 实际差异(D7 v0.1 / v0.2 / v1.0 三段 Prisma DSL 仅作设计草案展示,未真正跑过 `prisma generate` 验证)。**v1.1 修订决议**:RBAC 模型中的 Prisma model 名 `Role` → **`RbacRole`**;DB 表名仍 `@@map("roles")`(沿 D7 §4.1);API 路径仍 `/api/v2/roles/...`(沿 D7 §5.1 F2);业务概念仍叫"角色"(中文表述不变);Prisma client 用法 `prisma.role.xxx` → **`prisma.rbacRole.xxx`**;User 反向 relation 按 `RbacRole` / `UserRole` 消歧命名;**v1 enum Role 保持不动**(仍为 `SUPER_ADMIN / ADMIN / USER`,沿 A-2 + A-4 红线)。25 项决议除 B1 命名调整外**全部沿 v1.0**;C-6 RBAC 仍可进入 V2.x 实施,**实施 PR #1 在本 v1.1 PR 合并后才允许重新启动**。
+> **修订历程**(只在本说明区出现历史措辞):v0.1 草稿(PR #48)→ v0.2 局部收口稿(PR #50,锁定 5 项:D12 / F5 / F1 + baseline §1.1 段位追加 + `ARCHITECTURE.md` §9 升级路径修订)→ v1.0 冻结稿(PR #51,剩余 20 项全部冻结)→ **v1.1 修订稿**(本 PR,纯命名修订:`model Role` → `RbacRole`,因 enum 重名;25 项决议除 B1 命名外不变)。
 > **性质**:**D7-RBAC 评审稿**(基于 D6 业务确认稿 13 题 + 4 决议 + 4 处留 D7 细化,落地完整 schema + API + judge 函数 + seed + 集成方案)。
-> **批次号**:批次 8 暂定;正式编号以 **C-6 V2.x 立项 commit** 为准。
-> **撰写日期**:2026-05-14(v0.1)/ 2026-05-14(v0.2 局部收口)/ 2026-05-14(v1.0 冻结)
+> **批次号**:批次 8 暂定;正式编号以 **C-6 V2.x 立项 commit** 为准(PR #52,squash commit `172b684`)。
+> **撰写日期**:2026-05-14(v0.1 / v0.2 / v1.0 / **v1.1**)
 > **接续**:
 > - [D6 业务确认稿(PR #47, squash commit `44e1326`)](批次8_RBAC_业务确认稿.md)
 > - [访谈提纲(PR #46, squash commit `1b33c4e`)](批次8_RBAC_业务访谈提纲.md)
 > - [PR #45 attachments 业务确认稿 §三 决议 1 / 决议 2](批次7_attachments_业务确认稿.md)
 > - [v0.8.1 handoff §10 启动 Fast-1](handoff/v0.8.1.md)(局部收口的触发源)
 > - PR #50 v0.2 局部收口稿 squash commit `6d54ec3`
+> - PR #51 v1.0 冻结稿 squash commit `b301da8`
+> - PR #52 V2.x C-6 立项记录 squash commit `172b684`
 > **风格参照**:[docs/批次6_audit_logs_API前评审.md](批次6_audit_logs_API前评审.md)
-> **核心**(v1.0 冻结):落地 RBAC **4 个 model**(`Role` / `Permission` / `RolePermission` / `UserRole`)+ **16 个 API 端点** + **judge 函数 `rbac.can()`**(F5 锁:Service 层显式调用,**不**做 Guard 装饰器)+ **进程内 short TTL 缓存(默认 30 分钟)+ 显式 reload 接口** + **seed migration 框架(`ops-admin` + 业务角色 placeholder + 权限点全集 + 角色权限映射 + bootstrap)** + **audit_logs 集成 9 项 union** + **BizCode 段位 `300xx` / `301xx`**(F1 锁;baseline §1.1 已同步追加)
+> **核心**(v1.1 修订;命名同步):落地 RBAC **4 个 model**(**`RbacRole`** / `Permission` / `RolePermission` / `UserRole`)+ **16 个 API 端点**(API 路径 `/api/v2/roles/...` 不变)+ **judge 函数 `rbac.can()`**(F5 锁:Service 层显式调用,**不**做 Guard 装饰器)+ **进程内 short TTL 缓存(默认 30 分钟)+ 显式 reload 接口** + **seed migration 框架(`ops-admin` + 业务角色 placeholder + 权限点全集 + 角色权限映射 + bootstrap)** + **audit_logs 集成 9 项 union** + **BizCode 段位 `300xx` / `301xx`**(F1 锁;baseline §1.1 已同步追加)+ **Prisma client 用法 `prisma.rbacRole.xxx` / `prisma.permission.xxx` / `prisma.rolePermission.xxx` / `prisma.userRole.xxx`**(沿 v1.1 命名)+ **`@@map("roles")`** DB 表名不变(API / DB / 业务概念三层独立于 Prisma model 名)
 
 ---
 
@@ -22,7 +24,7 @@
 
 | Q | 内容 | 拍板 | 本稿落地章节 |
 |---|---|---|---|
-| 1 | 业务角色清单 | D 全套预置 + 后台 CRUD 自定义 | §4.1 Role / §10 seed |
+| 1 | 业务角色清单 | D 全套预置 + 后台 CRUD 自定义 | §4.1 RbacRole / §10 seed |
 | 2 | 角色组合 | B 多 RBAC 角色 | §4.4 UserRole 多对多 |
 | ★ 3 | 权限点粒度 | B resource type 级 | §4.2 Permission / §10 权限点 |
 | 4 | 资源所有权 | C 混合(user.id + Member.id) | §8.3 owner 字段映射 |
@@ -90,10 +92,12 @@
 
 ## 4. schema 草案
 
-### 4.1 Role model(自定义角色表;沿 D6 Q1)
+### 4.1 RbacRole model(自定义角色表;沿 D6 Q1;**v1.1 改名**)
+
+> **v1.1 改名**:Prisma model 名从 `Role` 改为 **`RbacRole`**(避开 v1 enum Role 名称冲突);**DB 表名仍 `@@map("roles")`**;**API 路径仍 `/api/v2/roles`**;**业务概念仍叫"角色"**;Prisma client 用法 `prisma.rbacRole.xxx`。详见 v1.1 修订原因(顶部 metadata)。
 
 ```prisma
-model Role {
+model RbacRole {
   id          String   @id @default(cuid())
   code        String   @unique // 业务 code,kebab-case;如 'apd-chief' / 'equipment-manager'
   displayName String   // 显示名(脱敏 placeholder;真实名 seed 时填)
@@ -106,6 +110,7 @@ model Role {
   userRoles       UserRole[]
 
   @@index([deletedAt])
+  @@map("roles") // v1.1:DB 表名仍 roles,与 API 路径 / 业务概念对齐
 }
 ```
 
@@ -115,6 +120,7 @@ model Role {
 - `displayName`:对外显示名;**真实名 user 私下提供 seed**,v1.0 冻结使用 placeholder(沿 F6 / R13)
 - `deletedAt`:沿 v1 软删除;角色被软删后 `user_roles` / `role_permissions` **不联动**(沿 §6.3 "最后一个运营管理员保护" 同事务检查)
 - **没有 `isSystem` 字段**(运营管理员也走普通角色,bootstrap 在 seed 阶段处理)
+- **`@@map("roles")`**(v1.1 新增):DB 表名 `roles`(snake_case 复数,与 API 路径 / 业务概念对齐;Prisma model 名 `RbacRole` 仅为避开 enum 冲突的内部命名)
 
 ### 4.2 Permission model(权限点表;沿 D6 Q3 B resource type 级)
 
@@ -133,6 +139,7 @@ model Permission {
 
   @@index([module])
   @@index([resourceType])
+  @@map("permissions") // v1.1 同步追加:DB 表名 permissions
 }
 ```
 
@@ -153,20 +160,21 @@ model RolePermission {
   createdAt    DateTime @default(now())
   createdBy    String?  // User.id;沿 Q12 A audit 字段
 
-  role          Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  role          RbacRole    @relation(fields: [roleId], references: [id], onDelete: Cascade) // v1.1:Role → RbacRole
   permission    Permission  @relation(fields: [permissionId], references: [id], onDelete: Cascade)
   createdByUser User?       @relation("RolePermissionCreator", fields: [createdBy], references: [id], onDelete: SetNull)
 
   @@unique([roleId, permissionId])
   @@index([roleId])
   @@index([permissionId])
+  @@map("role_permissions") // v1.1 同步追加
 }
 ```
 
 **字段说明**:
 
 - 复合 UNIQUE(`roleId, permissionId`):防止重复授权
-- FK Cascade:Role / Permission 删除时 RolePermission 联级清理
+- FK Cascade:RbacRole / Permission 删除时 RolePermission 联级清理(v1.1:Role → RbacRole)
 - `createdBy` 保留为可空 + `onDelete: SetNull`:上传者软删后保留授权关系记录
 - **没有 `deletedAt`**(撤权 = 物理删,沿 Q12 A audit 记录)
 
@@ -180,13 +188,14 @@ model UserRole {
   createdAt DateTime @default(now())
   createdBy String?  // User.id;沿 Q12 A audit 字段
 
-  user          User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role          Role  @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  createdByUser User? @relation("UserRoleCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  user          User     @relation("UserRoleHolder", fields: [userId], references: [id], onDelete: Cascade) // v1.1:消歧 relation name
+  role          RbacRole @relation(fields: [roleId], references: [id], onDelete: Cascade) // v1.1:Role → RbacRole
+  createdByUser User?    @relation("UserRoleCreator", fields: [createdBy], references: [id], onDelete: SetNull)
 
   @@unique([userId, roleId])
   @@index([userId])
   @@index([roleId])
+  @@map("user_roles") // v1.1 同步追加
 }
 ```
 
@@ -195,31 +204,36 @@ model UserRole {
 - 复合 UNIQUE(`userId, roleId`):防止重复分配
 - **沿 Q13 A:不加 `deletedAt`**(disable 时 user_roles 不动,disable 阻断登录即可)
 - FK Cascade:User 物理删除时 UserRole 联级(但 User 走软删,实际 Cascade 不触发,沿 §13 失效场景)
-- Role 软删时 UserRole **不**联级清理(留给 §6.3 "最后一个运营管理员保护" 决策)
+- RbacRole 软删时 UserRole **不**联级清理(留给 §6.3 "最后一个运营管理员保护" 决策;v1.1:Role → RbacRole)
+- **`user` 关系显式 `@relation("UserRoleHolder")`**(v1.1):User 上对 UserRole 有 2 个反向 relation(holder + creator),Prisma 必须显式 relation name 消歧
 
 ### 4.5 与现有 `User` model 的关系
 
 ```prisma
 model User {
-  // 现有字段不变(A-2 红线;不修改 v1 已交付字段)
+  // 现有字段不变(A-2 红线;不修改 v1 已交付字段;v1 enum Role 不动)
 
   // 新增反向关系(Prisma DSL 层面,DB 层无 schema 变更)
-  userRoles               UserRole[]
+  // v1.1 命名:userRoles 必须 @relation("UserRoleHolder") 消歧(因 User 上对 UserRole 有 2 个反向)
+  userRoles               UserRole[]       @relation("UserRoleHolder")
   userRolesCreated        UserRole[]       @relation("UserRoleCreator")
   rolePermissionsCreated  RolePermission[] @relation("RolePermissionCreator")
 }
 ```
 
-**关键说明**:**不**修改 User 表字段(沿 A-2 红线;v1 14 接口出参不变)。
+**关键说明**:
+- **不**修改 User 表字段(沿 A-2 红线;v1 14 接口出参不变)
+- **v1 enum Role 保持不动**(`SUPER_ADMIN / ADMIN / USER` 三层永远不变;沿 A-4 红线);Prisma model 名 `RbacRole` 仅为避开此 enum 名称冲突
+- User 上**没有** `rbacRoles` 之类的字段(避免与"持有的角色"语义重复;`userRoles` 即是"持有的角色"反向)
 
 ### 4.6 索引 / FK / 约束总结
 
-| 表 | 索引 | UNIQUE | FK |
-|---|---|---|---|
-| Role | deletedAt | code | — |
-| Permission | module / resourceType | code | — |
-| RolePermission | roleId / permissionId | (roleId, permissionId) | role / permission Cascade;createdBy SetNull |
-| UserRole | userId / roleId | (userId, roleId) | user / role Cascade;createdBy SetNull |
+| Prisma model | DB 表名(`@@map`) | 索引 | UNIQUE | FK |
+|---|---|---|---|---|
+| **`RbacRole`**(v1.1 改名) | `roles` | `deletedAt` | `code` | — |
+| `Permission` | `permissions` | `module` / `resourceType` | `code` | — |
+| `RolePermission` | `role_permissions` | `roleId` / `permissionId` | `(roleId, permissionId)` | `role`(→ `RbacRole`)/ `permission` Cascade;`createdBy` SetNull |
+| `UserRole` | `user_roles` | `userId` / `roleId` | `(userId, roleId)` | `user`(`@relation("UserRoleHolder")`)/ `role`(→ `RbacRole`) Cascade;`createdBy` SetNull |
 
 ---
 
@@ -451,7 +465,7 @@ export class ReloadRbacDto {
 **触发场景**:
 
 1. `DELETE /api/v2/users/:userId/roles/:roleId`(撤运营管理员角色)
-2. `DELETE /api/v2/roles/:id`(软删运营管理员角色)— 实际 Role 软删时 `user_roles` 不联动,但仍需检查
+2. `DELETE /api/v2/roles/:id`(软删运营管理员角色)— 实际 RbacRole 软删时 `user_roles` 不联动,但仍需检查
 3. `PATCH /api/v2/users/:id/status`(disable 运营管理员)— 触发 v1 接口,需要在 `users.service.ts` 内补"如该用户是最后一个运营管理员则拒绝"
 4. `PATCH /api/v2/users/:id/role`(降级 SUPER_ADMIN 到 ADMIN/USER 时)— 若该 SUPER_ADMIN 是唯一通过自动继承拥有运营管理员权限的人,需检查
 
@@ -708,8 +722,8 @@ async function seed() {
   // 1. seed Permission 表(沿 §10.2 全集)
   await prisma.permission.createMany({ data: [...] });
 
-  // 2. seed Role 表(`ops-admin` + 业务角色 placeholder)
-  await prisma.role.createMany({ data: [...] });
+  // 2. seed RbacRole 表(`ops-admin` + 业务角色 placeholder;v1.1:Role → RbacRole)
+  await prisma.rbacRole.createMany({ data: [...] });
 
   // 3. seed RolePermission 表(沿 §10.3 映射)
   await prisma.rolePermission.createMany({ data: [...] });
@@ -862,7 +876,7 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
 ### 14.1 RBAC CRUD 覆盖(目标 ~40 用例)
 
 - Permission CRUD × 4 端点 × (成功 / 权限不足 / 不存在 / 重复 code 等):**~12 用例**
-- Role CRUD × 5 端点(含详情)× 各场景:**~15 用例**
+- RbacRole(角色)CRUD × 5 端点(含详情)× 各场景:**~15 用例**
 - RolePermission × 2 端点 × 各场景:**~6 用例**
 - UserRole × 3 端点 × 各场景:**~6 用例**
 - reload × 1 端点 × 各 scope:**~3 用例**
@@ -918,9 +932,9 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
 
 | PR | 类型 | 主题 | 改动量 |
 |---|---|---|---|
-| 1 | chore(prisma) | 4 个 model + migration(`Role` / `Permission` / `RolePermission` / `UserRole`)| 中 |
+| 1 | chore(prisma) | 4 个 model + migration(`RbacRole` / `Permission` / `RolePermission` / `UserRole`;v1.1 命名)| 中 |
 | 2 | feat(permissions) | Permission CRUD 模块(端点 1-4) | 中 |
-| 3 | feat(permissions) | Role CRUD 模块(端点 5-9) | 中 |
+| 3 | feat(permissions) | RbacRole(角色)CRUD 模块(端点 5-9) | 中 |
 | 4 | feat(permissions) | RolePermission CRUD(端点 10-11)+ 缓存集成 | 中 |
 | 5 | feat(permissions) | UserRole CRUD(端点 12-14)+ §6.2 角色层级判定 | 中-大 |
 | 6 | feat(permissions) | `rbac.can()` + `RbacService` + `RbacGuard`(可选)+ me/permissions(端点 15) | 大(核心 judge 函数) |
@@ -957,31 +971,32 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
 
 ---
 
-## 18. 决议表(D7 v1.0 已冻结;25 项全部锁定)
+## 18. 决议表(D7 v1.1 已修订;25 项全部锁定;B1 命名修订)
 
 > **状态历程**(修订日志,只在本说明区出现历史措辞):
 > - **v0.1 草稿**(PR #48,2026-05-14):25 项决议提出;5 项 D6 已确认沿用 + 20 项标"待评审"
 > - **v0.2 局部收口**(PR #50,2026-05-14):局部锁定 5 项 — D12 / F5 / F1 + baseline §1.1 段位追加 + ARCHITECTURE.md §9 升级路径修订;其余 20 项保持待评审
-> - **v1.0 冻结**(本 PR,2026-05-14):剩余 20 项全部冻结;25 项全部锁定;后续修订需另起 v1.x PR + 用户拍板
-> - 🔒 = v1.0 冻结决议;**25 项全部** 🔒
+> - **v1.0 冻结**(PR #51,2026-05-14):剩余 20 项全部冻结;25 项全部锁定
+> - **v1.1 命名修订**(本 PR,2026-05-14):**纯命名修订** — B1 模型命名 `Role` → `RbacRole`(避开 v1 enum Role 名称冲突);其余 24 项 v1.0 决议**全部沿用不变**;F7 `Role.code` → `RbacRole.code` 同步命名修订;DB 表名 / API 路径 / 业务概念全部不变
+> - 🔒 = v1.0 / v1.1 冻结决议;**25 项全部** 🔒
 > - **段位本身已锁,跨段位调整需另起 v2.x 修订 PR**
 
-| # | 决议 | 来源 | v1.0 决议 | 状态 |
+| # | 决议 | 来源 | v1.0 / v1.1 决议 | 状态 |
 |---|---|---|---|---|
-| B1 | RBAC 模型 = 完整 4 表(`Role` + `Permission` + `RolePermission` + `UserRole`) | D6 §三 决议 2 | 完整 4 表 + 沿用三层 Role 并存 | 🔒 v1.0 |
+| B1 | RBAC 模型 = 完整 4 表(**`RbacRole`** + `Permission` + `RolePermission` + `UserRole`;v1.1 命名修订:`Role` → `RbacRole` 避开 v1 enum 冲突;DB 表名 `@@map("roles")` 不变;API `/api/v2/roles` 不变) | D6 §三 决议 2 | 完整 4 表 + 沿用三层 Role enum 并存(v1 enum Role 不动,沿 A-4) | 🔒 v1.0 → v1.1 命名修订 |
 | B2 | 三层 Role 自动继承(SUPER_ADMIN > ADMIN > USER) | D6 Q5 B | 自动继承(SUPER_ADMIN 短路通过任何 RBAC 判权;ADMIN 自动持有 USER 级权限) | 🔒 v1.0 |
 | B3 | RBAC 业务角色**无**显式继承 | D6 Q5 B | 无显式继承(seed 显式映射;沿 §6.2 角色层级) | 🔒 v1.0 |
 | D1 | 权限点粒度 = resource type 级 | D6 Q3 B | resource type 级(沿 §4.2 / §10.2) | 🔒 v1.0 |
 | D2 | 权限点 code 命名 = `<module>.<action>.<resource_type>` | §4.2 / §10.2 | `<module>.<action>.<resource_type>`(kebab-case;`@Matches(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2}$/)`) | 🔒 v1.0 |
 | D3 | 资源所有权 = user.id + Member.id 混合(`.self` / `.other` 后缀区分) | D6 Q4 C / §8.3 | 混合 owner;Service 层显式构造 `RbacResource`(沿 §8.3 owner 字段映射表) | 🔒 v1.0 |
-| D4 | RBAC 4 model 软删策略 | §4 | Role 软删 / Permission 物理删 / RolePermission 物理删 / UserRole 物理删;Role 软删后撤回**不**自动恢复 user_roles 关联(沿 §4.4 + §13) | 🔒 v1.0 |
+| D4 | RBAC 4 model 软删策略 | §4 | RbacRole 软删 / Permission 物理删 / RolePermission 物理删 / UserRole 物理删;RbacRole 软删后撤回**不**自动恢复 user_roles 关联(沿 §4.4 + §13;v1.1:Role → RbacRole) | 🔒 v1.0 / v1.1 沿用 |
 | D5 | 缓存策略 = 进程内 short TTL + 显式 reload | D6 Q9 B + §9 | 进程内 short TTL + 显式 reload(单实例,沿 V1.1 §17.3 不引入 Redis) | 🔒 v1.0 |
 | D6 | 缓存 TTL 默认 = 30 分钟 | §9.1 | 30 分钟(`RBAC_CACHE_TTL_SECONDS=1800`,env 可调) | 🔒 v1.0 |
 | D7 | 角色层级 = 三级 | §6.2 | 三级:SUPER_ADMIN > ops-admin > 业务部门角色(部门部长 / 副部长 无角色分配权,仅持业务权限点) | 🔒 v1.0 |
 | D8 | 角色可分配性 = 代码硬编码 | §6.2 | 代码硬编码;**不**引入 `role_assignable_targets` 配置表 | 🔒 v1.0 |
 | D9 | bootstrap = `RBAC_INITIAL_OPS_ADMIN_USER_ID` 优先 + SUPER_ADMIN fallback | §10.4 | env 优先 + SUPER_ADMIN 自动 fallback;seed 完成后强校验"至少 1 个 ops-admin user_roles 必须存在",未通过则 throw 退出(沿 §6.3 最后一个保护) | 🔒 v1.0 |
 | D10 | "最后一个 ops-admin 保护"触发场景 = 4 个 | §6.3 | 4 个场景(撤角色 / 软删角色 / disable user / 降级 SUPER_ADMIN);事务内 count + 操作 | 🔒 v1.0 |
-| D11 | AuditLogEvent 新增 9 项(路线 A) | §11.1 | 9 项 union(`rbac.permission.{create,update,delete}` × 3 / `rbac.role.{create,update,delete}` × 3 / `rbac.role-permission.change` 1 / `rbac.user-role.change` 1 / `rbac.config.reload` 1);路线 A 多 operation 共用单一事件名 + `extra.operation` 区分;同事务 fail-fast(A-17 红线) | 🔒 v1.0 |
+| D11 | AuditLogEvent 新增 9 项(路线 A) | §11.1 | 9 项 union(`rbac.permission.{create,update,delete}` × 3 / `rbac.role.{create,update,delete}` × 3 / `rbac.role-permission.change` 1 / `rbac.user-role.change` 1 / `rbac.config.reload` 1);路线 A 多 operation 共用单一事件名 + `extra.operation` 区分;同事务 fail-fast(A-17 红线);**事件名沿业务概念命名 `rbac.role.*`,不跟 Prisma model 名 RbacRole**(v1.1 仅改 model 名,union 不变) | 🔒 v1.0 / v1.1 沿用 |
 | D12 | 过渡终止条件(D6 Q11)= (c) 永不切换;`users.policy.ts` 永久共存 + RBAC 业务级补充 | §7.3 | 永不切换;`users.policy.ts` 永久共存 + RBAC 业务级补充 | 🔒 v0.2 → v1.0 沿用 |
 | F1 | BizCode 段位 = `300xx` 通用 / `301xx` 权限边界(避开 `140xx + 141xx` audit_logs 已占用段位;中间留 `240xx-290xx` 给未来未规划模块) | §12 | `300xx` / `301xx`;baseline §1.1 已同步追加 | 🔒 v0.2 → v1.0 沿用 |
 | F2 | 16 API 端点路径 | §5.1 | 16 个端点(permissions × 4 / roles × 5 / role-permissions × 2 / user-roles × 3 / me-permissions × 1 / reload × 1);全部 `@ApiBearerAuth()` | 🔒 v1.0 |
@@ -989,12 +1004,12 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
 | F4 | reload scope | §5.4 | 三种:`all` / `user`(+ userId)/ `role`(+ roleId);默认 `all` | 🔒 v1.0 |
 | F5 | judge 调用方式 = Service 层显式 `rbac.can()` 调用,**不**做 `RbacGuard` 装饰器 | §8 | Service 层显式;失败抛 `BizException(BizCode.RBAC_FORBIDDEN)`(`30100`) | 🔒 v0.2 → v1.0 沿用 |
 | F6 | seed 真实角色名 / 部门名走 `.env.seed.local`(R13) | §10.1 | `.env.seed.local` 注入,不进 git history(沿 research §5.1 / §7-R13) | 🔒 v1.0 |
-| F7 | `Role.code` 长度 = 3-32(`@Matches(/^[a-z][a-z0-9-]{2,32}$/)`)| §5.2.2 | 3-32 字符;首字母小写;允许 `[a-z0-9-]` | 🔒 v1.0 |
+| F7 | `RbacRole.code` 长度 = 3-32(`@Matches(/^[a-z][a-z0-9-]{2,32}$/)`;v1.1:`Role.code` → `RbacRole.code`)| §5.2.2 | 3-32 字符;首字母小写;允许 `[a-z0-9-]` | 🔒 v1.0 / v1.1 沿用 |
 | F8 | RBAC 缓存允许多 TTL(`RBAC_CACHE_TTL_SECONDS` env) | §9.1 / R10 | env 可调;默认 1800 秒(30 分钟);归 `src/config/app.config.ts` | 🔒 v1.0 |
 | F9 | `rbac.can()` 仅在新增 V2 接口启用;v1 14 + V2 79 接口走 `users.policy.ts` | §7.2 | 仅新增 V2 接口启用;沿 A-2 红线;v1 14 + V2 79 接口 schema + paths zero drift | 🔒 v1.0 |
 | F10 | PR 拆分 = 9 个 PR(沿 batch6 范式) | §16 | 9 个 PR + 1 个 bump version PR + 1 个 docs 收口 PR;实施周期 2-3 周 | 🔒 v1.0 |
 
-**总计**:**B 3 + D 12 + F 10 = 25 项,全部 🔒 v1.0 冻结**(沿 batch6 D7 v1.1 25 项规模)
+**总计**:**B 3 + D 12 + F 10 = 25 项,全部 🔒 v1.0 / v1.1 冻结**(v1.1 仅 B1 / D4 / D11 / F7 命名修订;实质决议无变化;沿 batch6 D7 v1.1 25 项规模)
 
 ---
 
@@ -1002,45 +1017,64 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
 
 1. ~~**D7-RBAC v0.1 草稿 PR**~~ → ✅ 已落地(PR #48,2026-05-14)
 2. ~~**D7-RBAC v0.2 局部收口 PR**~~ → ✅ 已落地(PR #50,2026-05-14;锁定 D12 / F5 / F1 + baseline §1.1 + ARCHITECTURE.md §9)
-3. **本 PR(D7-RBAC v1.0 冻结)** → ✅ 25 项决议全部锁定
-4. **下一步**:**C-6 RBAC V2.x 立项 commit / docs PR**(单独 PR;等用户拍板启动);**实施 PR 仍需单独启动**,本稿不授权直接进入实施
-5. 立项后按 §16 PR 拆分顺序实施(9 个 feat PR + 1 个 bump version PR + 1 个 docs 收口 PR)
-6. 实施周期参考 batch6 audit_logs(2-3 周)
-7. C-6 上线 → **C-7 attachments D7 评审稿启动**(沿 PR #45 决议 1)
+3. ~~**D7-RBAC v1.0 冻结 PR**~~ → ✅ 已落地(PR #51,2026-05-14;25 项决议全部锁定)
+4. ~~**C-6 RBAC V2.x 立项 PR**~~ → ✅ 已落地(PR #52,2026-05-14;立项记录 + TASKS.md §7)
+5. **本 PR(D7-RBAC v1.1 修订)** → 🔄 命名修订 model `Role` → `RbacRole`(避开 v1 enum 冲突);实质决议无变化
+6. **下一步**:**C-6 实施 PR #1**(`chore(prisma): add RBAC schema and migration`)— 在 v1.1 PR 合并后才允许重新启动;**实施 PR 仍需单独启动 + 用户授权**
+7. 立项后按 §16 PR 拆分顺序实施(9 个 feat PR + 1 个 bump version PR + 1 个 docs 收口 PR)
+8. 实施周期参考 batch6 audit_logs(2-3 周)
+9. C-6 上线 → **C-7 attachments D7 评审稿启动**(沿 PR #45 决议 1)
 
-### 19.1 v1.0 冻结结论
+### 19.1 v1.0 冻结结论(沿用)
 
 - **C-6 RBAC 可进入 V2.x 立项准备**(D7 v1.0 已锁定 25 项决议,设计方案完整可实施)
-- **但仍不得直接实施**:本 PR 仅完成 D7 评审稿冻结;C-6 实施前必须先有 V2.x 立项 commit / docs PR
+- **但仍不得直接实施**:D7 评审稿冻结 ≠ 立项;立项已由 PR #52 完成
 - **实施 PR 仍需单独启动**:沿 §16 PR 拆分(9 个 feat + 1 bump + 1 docs);每个 PR 独立评审 + 用户授权
 - **段位预留 ≠ 段位实装**:`300xx + 301xx` 仅在 baseline §1.1 段位预留;14 个 BizCode 实装由 C-6 V2.x 立项后实施 PR 完成
-- **本 PR 不动代码 / 不动 schema / 不 bump version / 不 tag / 不 release / 不启动 RBAC 实施**
+
+### 19.2 v1.1 修订结论(本 PR 新增)
+
+- **触发**:v1.0 冻结后启动实施 PR #1 时,跑 `pnpm prisma generate` 发现 `model Role` 与 v1 `enum Role` 名称冲突
+- **根因**:D7 v0.1 / v0.2 / v1.0 三段 Prisma DSL 仅作设计草案展示,未真正跑过 `prisma generate` 验证
+- **修订范围**(纯命名,无实质决议变化):
+  - Prisma model `Role` → **`RbacRole`**
+  - DB 表名仍 **`@@map("roles")`**(D7 §4.1 已锁,未变)
+  - API 路径仍 **`/api/v2/roles`**(D7 §5.1 F2 已锁,未变)
+  - 业务概念仍叫"**角色**"(中文表述未变)
+  - Prisma client 用法 `prisma.role.xxx` → **`prisma.rbacRole.xxx`**
+  - User 反向 relation `userRoles` 加 **`@relation("UserRoleHolder")`** 消歧(因 User 上对 UserRole 有 2 个反向)
+  - 决议表 B1 / D4 / D11 / F7 命名同步;其余 21 项决议不变
+- **v1 enum Role 保持不动**(`SUPER_ADMIN / ADMIN / USER` 三层永远不变;沿 A-2 + A-4 红线)
+- **本 PR 仅文档修订**,不动代码 / 不动 schema / 不新增 migration / 不 bump version / 不 tag / 不 release / **不启动 RBAC 实施**
+- **下一步**:本 PR 合并后,**实施 PR #1 才允许重新启动**(`chore(prisma): add RBAC schema and migration`,基于本 v1.1 命名)
 
 ---
 
 ## 20. 撰写元信息
 
-- **状态标签**:**v1.0 冻结稿**;25 项决议全部锁定;**C-6 RBAC 可进入 V2.x 立项准备,但仍不得直接实施**
-- **commit 风格**(三段历史):
+- **状态标签**:**v1.1 修订稿**;25 项决议全部锁定;v1.1 仅纯命名修订(`Role` model → `RbacRole`,因 enum 重名);**C-6 RBAC 实施 PR #1 在本 v1.1 PR 合并后才允许重新启动**
+- **commit 风格**(四段历史):
   - v0.1:`docs(v2-design): 批次8 RBAC API 前评审 v0.1`(已落地 PR #48,squash commit `b892a7e`)
   - v0.2:`docs(v2-design): 批次8 RBAC API 前评审 v0.2 局部收口`(已落地 PR #50,squash commit `6d54ec3`)
-  - v1.0:`docs(v2-design): freeze RBAC API review v1.0`(本 PR)
-- **未做项**(v1.0 沿 v0.1 / v0.2 + 强化):
+  - v1.0:`docs(v2-design): freeze RBAC API review v1.0`(已落地 PR #51,squash commit `b301da8`)
+  - v1.1:`docs(v2-design): revise RBAC role model naming`(本 PR)
+- **未做项**(v1.1 沿 v0.1 / v0.2 / v1.0 + 强化):
   - 不动 `prisma/schema.prisma` 文件本身(本稿 Prisma DSL 是设计草案,在 markdown 中展示;不修改 schema 文件)
   - 不动 `src/**` / `prisma/**` / `test/**` / `package.json` / `pnpm-lock.yaml` / `src/bootstrap/apply-swagger.ts`
   - 不新增 migration
   - 不 bump version / 不打 tag / 不发 Release
-  - **不启动 RBAC 实施**(D7 冻结 ≠ 立项;C-6 实施需单独 V2.x 立项 commit / docs PR + 用户拍板)
+  - **不启动 RBAC 实施**(本 PR 是命名修订文档;实施 PR #1 在本 PR 合并后才允许重新启动)
   - 不启动 attachments 任何动作
-- **v1.0 修订范围**(本 PR):
-  - 本评审稿:状态升 v0.2 → v1.0;§1.3 标题 / §2 / §3 / §4.1 / §6.2 / §7.3 / §8.3 / §9.1 / §9.3 / §10.2 / §10.3 / §12 段后 / §13 / §15 R8 / §18 决议表整段 / §19 落地节奏 / §20 元信息 — **冻结剩余 20 项决议**(D2 / D3 / D4 / D5 / D6 / D7 / D8 / D9 / D10 / D11 / B1 / B2 / B3 / D1 / F2 / F3 / F4 / F6 / F7 / F8 / F9 / F10);D12 / F5 / F1 沿 v0.2 已锁
-  - `CHANGELOG.md` Unreleased:追加一行 v1.0 冻结说明
-  - **不**修订 `docs/srvf-foundation-baseline.md`(段位 v0.2 已锁,v1.0 沿用;无段位变化)
-  - **不**修订 `ARCHITECTURE.md`(§9 v0.2 已修订,v1.0 沿用)
+- **v1.1 修订范围**(本 PR;纯命名修订):
+  - 本评审稿:状态升 v1.0 → v1.1;顶部 metadata + §1.1 章节引用 + §4.1 整段(`model Role` → `model RbacRole` + `@@map("roles")`)+ §4.2-§4.4 同步追加 `@@map(...)` + §4.3 / §4.4 内 `role: Role` FK 类型改 `RbacRole` + §4.5 整段(`userRoles` 加 `@relation("UserRoleHolder")` 消歧;反向 relation 注释更新)+ §4.6 表(model / DB 表名两列)+ §6.3 / §10.4 prisma 调用 + §14.1 / §16 描述 + §18 决议表 B1 / D4 / D11 / F7 命名同步 + §19 加 v1.1 修订结论 + §20 元信息
+  - `CHANGELOG.md` Unreleased:追加一行 v1.1 修订说明
+  - **不**修订 `docs/srvf-foundation-baseline.md`(段位 v0.2 已锁,v1.0 / v1.1 沿用;无段位变化)
+  - **不**修订 `ARCHITECTURE.md`(§9 v0.2 已修订,v1.0 / v1.1 沿用;条目内 model 名 `Role` 在文档措辞中可能保留,实施 PR #1 落地时同步)
   - **不**修订 `docs/handoff/v0.8.1.md`(沿 V2 红线 §5.1 历史 handoff 不回改)
-  - **不**修订 `docs/V2红线与复活路径.md`(C-6 / Slow-1 状态在 V2.x 立项 commit 时再更新)
-  - **不**新建 `TASKS.md` C-6 立项条目(立项动作由独立 PR 完成)
-- **本评审稿冻结后的下一动作**(由用户拍板):
-  - 启动 **C-6 V2.x 立项 commit / docs PR**(独立 PR;等用户授权);沿 §19.1 v1.0 冻结结论
-  - 立项 PR 完成后才启动 §16 第一个实施 PR(`chore(prisma): 4 model + migration`)
-- **撰写者签名**:Claude Code(v0.1 基于 D6 业务确认稿 13 题 + 4 决议 + 4 处留 D7 细化;v0.2 基于用户 Fast-1 拍板局部收口 5 项;v1.0 基于用户冻结指令一次性锁定剩余 20 项;**v0.1 / v0.2 / v1.0 均未动任何代码 / schema 文件**)
+  - **不**修订 `docs/V2红线与复活路径.md`(命名修订属内部技术细节,不上升到红线层)
+  - **不**修订 `docs/批次8_RBAC_V2x立项记录.md`(已锁,实施 PR #1 落地时按 v1.1 命名同步;立项记录历史快照不回改)
+  - **不**修订 `TASKS.md` §7(同上)
+- **本评审稿 v1.1 修订后的下一动作**(由用户拍板):
+  - 启动 **C-6 实施 PR #1**(`chore(prisma): add RBAC schema and migration`;基于本 v1.1 命名)
+  - 实施 PR 仍需单独启动 + 用户授权;沿 §16 PR 拆分推进
+- **撰写者签名**:Claude Code(v0.1 基于 D6 业务确认稿 13 题 + 4 决议 + 4 处留 D7 细化;v0.2 基于用户 Fast-1 拍板局部收口 5 项;v1.0 基于用户冻结指令一次性锁定剩余 20 项;v1.1 基于实施 PR #1 启动时跑 `pnpm prisma generate` 发现 enum 重名冲突 + 用户拍板方案 A 的纯命名修订;**v0.1 / v0.2 / v1.0 / v1.1 均未动任何代码 / schema 文件**)
