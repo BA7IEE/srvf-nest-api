@@ -39,6 +39,24 @@
   同时改);PR #45-#48(D6 业务确认稿 + D7 评审稿)**不补登 changelog**
   (沿"D6 / D7 中间产物不进 changelog"风格;本 handoff §3 链式总结即可)。
   共用上方"纯文档变更"边界声明。
+- 修订 [`docs/批次8_RBAC_API前评审.md`](docs/批次8_RBAC_API前评审.md) v0.1 草稿
+  → **v0.2 局部收口稿**(沿 v0.8.1 handoff §10 启动后 Fast-1 任务);**局部锁定
+  5 项**:(1) D12 过渡终止条件 = (c) 永不切换,`users.policy.ts` 永久共存 + RBAC
+  业务级补充;(2) F5 判权调用方式 = Service 层显式 `rbac.can()`,**不**做
+  `RbacGuard` 装饰器;(3) F1 BizCode 段位 = `300xx` 通用 / `301xx` 权限边界
+  (避开 `140xx + 141xx`,该段已被 audit_logs 批次 6 v0.7.0 占用;中间留
+  `240xx-290xx` 给未来未规划业务模块);(4) [`docs/srvf-foundation-baseline.md`](docs/srvf-foundation-baseline.md)
+  §1.1 同步追加 `300xx + 301xx` `permissions`(C-6 RBAC)模块段位预留 + 附录 A
+  v0.6;(5) [`ARCHITECTURE.md`](ARCHITECTURE.md) §9 升级路径修订:原"权限点到
+  按钮级"条目去 `casl` 库 + 改触发条件描述为"按钮级 / resource type 级 RBAC
+  (C-6 D7 v0.2 局部收口)" + 加 4 表 + 自实现 `RbacService` + Service 层显式
+  `rbac.can()` + BizCode 段位 `300xx + 301xx` 链路。**其他 20 项决议保持 v0.1
+  待评审状态**(D2 / D3 / D4 / D5 / D6 / D7 / D8 / D9 / D10 / D11 / B1-B3 /
+  D1 / F2-F4 / F6-F10),v1.0 冻结另起 PR + 用户拍板。**段位预留 ≠ 段位实装**,
+  RBAC 4 model + ~14 个 BizCode 实装由 C-6 RBAC V2.x 立项后实施 PR 完成。
+  **不**修订 `docs/handoff/v0.8.1.md`(沿 V2 红线 §5.1 历史 handoff 不回改;
+  过期段位号表述以本评审稿 + baseline + 本 CHANGELOG 段为准)。共用上方"纯文档
+  变更"边界声明:**不改 schema / migration / 代码 / 测试 / version / tag / release**。
 
 ## v0.8.0 - 2026-05-13
 

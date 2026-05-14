@@ -993,7 +993,7 @@ ENABLE_SWAGGER=
 | 第一个产品要传文件 | 再注册 storage provider,实现 `LocalStorageProvider` 或 `OssStorageProvider` | `src/common/storage/providers/` |
 | 救援队系统启动 | `modules/orgs/`(组织/部门),`User` 加 `orgId` 字段 | `src/modules/orgs/` |
 | 出现"A 队不能看 B 队数据" | 引入 `tenantId`,所有 service 显式按租户过滤 | 各业务 `src/modules/<name>/<name>.service.ts` |
-| 真要做"权限点到按钮级" | 加 `permissions` 表 + `casl` 库 | `src/modules/permissions/` |
+| 真要做"按钮级 / resource type 级 RBAC"(C-6 D7 v0.2 局部收口) | 加 `Role` / `Permission` / `RolePermission` / `UserRole` 4 表 + 自实现 `RbacService`(沿 [`docs/批次8_RBAC_API前评审.md`](docs/批次8_RBAC_API前评审.md) D7 v0.2 决议;**不**用 `casl` 库;Service 层显式 `rbac.can()` 调用,不做 Guard 装饰器;BizCode 段位 `300xx + 301xx`)| `src/modules/permissions/` |
 | 第一个小程序产品要接 | 加微信登录策略 | `src/modules/auth/strategies/wechat-mini.strategy.ts` |
 | 真有"无感续期"诉求 | 加 refresh token 表 + 接口 | `src/modules/auth/` |
 | 出现"普通用户自助改密码"产品 | 加 `PUT /api/users/me/password` + `ChangeMyPasswordDto` + 防爆破;是否吊销其他设备 token 由该产品安全策略决定 | `src/modules/auth/` + `src/modules/users/` |

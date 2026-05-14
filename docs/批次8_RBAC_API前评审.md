@@ -1,15 +1,16 @@
-# 《批次8_RBAC_API前评审稿》(D7-RBAC v0.1 草稿)
+# 《批次8_RBAC_API前评审稿》(D7-RBAC v0.2 局部收口稿)
 
-> **状态**:**v0.1 草稿**(D7-RBAC 评审稿初版;等业务方 / 用户评审通过 → 冻结为 v1.0 → C-6 V2.x 立项)
+> **状态**:**v0.2 局部收口稿**(在 v0.1 草稿基础上,2026-05-14 用户在 v0.8.1 handoff §10 启动后 Fast-1 轮**局部收口 5 项**:D12 过渡终止条件 / F5 判权调用方式 / F1 BizCode 段位 / baseline §1.1 段位追加 / `ARCHITECTURE.md` §9 升级路径修订;**其他 20 项决议保持 v0.1 待评审状态**;v1.0 冻结另起 PR)
 > **性质**:**D7-RBAC 评审稿**(基于 D6 业务确认稿 13 题 + 4 决议 + 4 处留 D7 细化,落地完整 schema + API + judge 函数 + seed + 集成方案)
-> **批次号**:批次 8 暂定;正式编号以 D7-RBAC 评审通过 + V2.x 立项 commit 为准
-> **撰写日期**:2026-05-14
+> **批次号**:批次 8 暂定;正式编号以 D7-RBAC v1.0 冻结 + V2.x 立项 commit 为准
+> **撰写日期**:2026-05-14(v0.1)/ 2026-05-14(v0.2 局部收口)
 > **接续**:
 > - [D6 业务确认稿(PR #47, squash commit `44e1326`)](批次8_RBAC_业务确认稿.md)
 > - [访谈提纲(PR #46, squash commit `1b33c4e`)](批次8_RBAC_业务访谈提纲.md)
 > - [PR #45 attachments 业务确认稿 §三 决议 1 / 决议 2](批次7_attachments_业务确认稿.md)
+> - [v0.8.1 handoff §10 启动 Fast-1](handoff/v0.8.1.md)(本次局部收口的触发源)
 > **风格参照**:[docs/批次6_audit_logs_API前评审.md](批次6_audit_logs_API前评审.md)
-> **核心**:落地 RBAC **4 个 model**(`Role` / `Permission` / `RolePermission` / `UserRole`)+ **~16 个 API 端点** + **judge 函数 `rbac.can()`** + **进程内缓存 + reload 接口** + **seed migration 框架** + **audit_logs 集成 ~9 项 union** + **BizCode 段位 `140xx` / `141xx`**
+> **核心**:落地 RBAC **4 个 model**(`Role` / `Permission` / `RolePermission` / `UserRole`)+ **~16 个 API 端点** + **judge 函数 `rbac.can()`**(F5 v0.2 锁:Service 层显式调用,**不**做 Guard 装饰器)+ **进程内缓存 + reload 接口** + **seed migration 框架** + **audit_logs 集成 ~9 项 union** + **BizCode 段位 `300xx` / `301xx`**(F1 v0.2 锁;baseline §1.1 已同步追加)
 
 ---
 
@@ -39,7 +40,7 @@
 |---|---|---|
 | 1 | 启动顺序:C-6 先行 → C-7 跟进 | 沿用,本稿是 C-6 D7 评审稿 |
 | 2 | RBAC 模型:完整三表 + 三层 Role 并存 | 本稿落地 §4 |
-| 3 | 实施前置:§9 升级路径 + BizCode 段位 `140xx` / `141xx` | §12 BizCode |
+| 3 | 实施前置:§9 升级路径 + BizCode 段位 `300xx` / `301xx` | §12 BizCode(段位 v0.2 已锁) |
 | 4 | v1 / V2 既有接口 zero drift | §15 风险 + §17 验收 |
 
 ### 1.3 D6 4 处留 D7 细化(本稿落地)
@@ -64,7 +65,7 @@
 6. 新增进程内 RBAC 缓存(short TTL)+ `POST /api/v2/rbac/reload` 显式失效接口
 7. 新增 seed migration(全套预置:角色 + 权限点 + 角色权限映射)
 8. 新增 `AuditLogEvent` union 项 ~9 项(`rbac.*` 系列)
-9. 新增 BizCode 段位 `140xx` / `141xx`(待 baseline §1.1 评审追加;**业务级**)
+9. 新增 BizCode 段位 `300xx` / `301xx`(**v0.2 已锁**;baseline §1.1 已同步追加;**业务级**)
 10. **v1 14 接口 + V2 既有 79 接口 zero drift**(A-2 红线);`users.policy.ts` 保留
 
 ---
@@ -441,7 +442,7 @@ export class ReloadRbacDto {
 
 ### 6.3 "最后一个运营管理员保护"(类比 v1 §13 最后一个 SUPER_ADMIN 保护)
 
-**决议**:任何"剥夺最后一个运营管理员权限"操作前,在同一 `prisma.$transaction` 内检查剩余活跃运营管理员数,**确保操作后剩余 ≥ 1**,否则抛 `BizException(BizCode.LAST_OPS_ADMIN_PROTECTED)`(段位 `140xx` 候选)
+**决议**:任何"剥夺最后一个运营管理员权限"操作前,在同一 `prisma.$transaction` 内检查剩余活跃运营管理员数,**确保操作后剩余 ≥ 1**,否则抛 `BizException(BizCode.LAST_OPS_ADMIN_PROTECTED)`(段位 `30101`,**v0.2 已锁**)
 
 **触发场景**:
 
@@ -474,7 +475,8 @@ export class ReloadRbacDto {
 
 ### 7.3 过渡终止条件(沿 D6 Q11;三选一决议)
 
-**本稿建议**:**(c) 永不切换** — 三层 Role 永远存在作为"系统级身份分层";RBAC 作为业务级补充长期共存
+> **状态**:**D12 v0.2 已锁**(2026-05-14 用户拍板)
+> **决议**:**(c) 永不切换** — 三层 Role 永远存在作为"系统级身份分层";RBAC 作为业务级补充长期共存
 
 **理由**:
 
@@ -482,16 +484,22 @@ export class ReloadRbacDto {
 - 三层 Role 自动继承(Q5 B)+ RBAC 业务角色双层模型清晰且稳定
 - "迁移到完全走 RBAC" 收益不明显(三层 Role 简洁;ADMIN 系统级身份是显式的)
 - 维护负担小(没有"何时迁完"的时间压力)
+- `users.policy.ts` 永久共存 + RBAC 业务级补充,V2 现有 79 接口 + 未来新增接口走 RBAC 时,v1 14 接口仍按 v1 契约工作
 
-**业务方在 D7 评审时可调整为**:
+**已否决候选**(2026-05-14):
 
-- (a) 某 N 模块全走 RBAC 后启动 v1 接口迁出 — 需明确 N 数 / 触发条件
-- (b) 时间硬截止(如 V3.0)— 强制切换,但破坏 v1 兼容性,需 §9 升级路径
-- (c) 永不切换 — 本稿建议
+- (a) 某 N 模块全走 RBAC 后启动 v1 接口迁出 — **不采用**;v1 接口契约长期稳定
+- (b) 时间硬截止(如 V3.0)— **不采用**;强制切换会破坏 v1 兼容性,且无明确收益
+
+**修订边界**:本节决议为 v0.2 锁定结果,如需调整需另起 v1.x 修订 PR + 用户拍板。
 
 ---
 
 ## 8. judge 函数 `rbac.can()`
+
+> **F5 v0.2 已锁**(2026-05-14 用户拍板):**Service 层显式 `rbac.can()` 调用**,**不**实现 `RbacGuard` 装饰器或 `@RbacRequired(...)` 装饰器形式。
+> **理由**:Service 层显式调用便于审计 / 调试 / 资源 owner 上下文构造(沿 §8.3 各业务表本人判定字段映射);Guard 装饰器在装饰器作用域内难以注入资源对象。
+> **影响**:§5.1 16 端点路径不变;每个 controller 在 Service 层入口显式调 `await this.rbac.can(currentUser, action, resource)`,失败抛 `BizException(BizCode.RBAC_FORBIDDEN)`(`30100`)。
 
 ### 8.1 函数签名
 
@@ -791,36 +799,42 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
 
 ---
 
-## 12. BizCode 建议(段位 `140xx` / `141xx`)
+## 12. BizCode 建议(段位 `300xx` / `301xx`,**v0.2 已锁**)
 
-**说明**:`140xx` / `141xx` 是 V2 基线预留段位,待 baseline §1.1 评审追加。本稿建议如下:
+**说明**(F1 v0.2 已锁,2026-05-14 用户拍板):**`300xx` / `301xx`** 是新增 V2 模块段位,中间留 `240xx-290xx` 缓冲(未来训练 / 装备 / 财务 / 通知等模块预留),RBAC 是项目骨架级模块,占独立段位空间。`baseline §1.1` 已同步追加(本 PR 内交付)。
 
-### 12.1 `140xx`(RBAC 模块通用错误)
+**段位选择对照**:
 
-| code | name | message | httpStatus | 用途 |
-|---|---|---|---|---|
-| 14000 | RBAC_BAD_REQUEST | RBAC 参数错误 | 400 | 通用 |
-| 14001 | PERMISSION_NOT_FOUND | 权限点不存在 | 404 | — |
-| 14002 | PERMISSION_CODE_ALREADY_EXISTS | 权限点 code 已存在 | 409 | — |
-| 14003 | ROLE_NOT_FOUND | 角色不存在 | 404 | — |
-| 14004 | ROLE_CODE_ALREADY_EXISTS | 角色 code 已存在 | 409 | — |
-| 14005 | ROLE_DELETED | 角色已删除 | 410 Gone | — |
-| 14006 | USER_ROLE_ALREADY_EXISTS | 该用户已持有此角色 | 409 | — |
-| 14007 | USER_ROLE_NOT_FOUND | 该用户未持有此角色 | 404 | — |
-| 14008 | INVALID_PERMISSION_CODE_FORMAT | 权限点 code 格式不合法 | 400 | — |
-| 14009 | INVALID_ROLE_CODE_FORMAT | 角色 code 格式不合法 | 400 | — |
+- `140xx` / `141xx` 段位**已被 audit_logs 占用**(批次 6 v0.7.0 实装 `14001 AUDIT_LOG_NOT_FOUND` / `14101 FORBIDDEN_AUDIT_LOG_READ`),不可与 RBAC 共用
+- `240xx-290xx` 留给未来未规划业务模块(训练 / 装备 / 财务 / 通知等)
+- RBAC 占 `300xx` / `301xx`,不与现有段位冲突
 
-### 12.2 `141xx`(RBAC 权限 / 边界错误)
+### 12.1 `300xx`(RBAC 模块通用错误)
 
 | code | name | message | httpStatus | 用途 |
 |---|---|---|---|---|
-| 14100 | RBAC_FORBIDDEN | 无权限执行 RBAC 配置变更 | 403 | 沿 §6.1 / §6.2 |
-| 14101 | LAST_OPS_ADMIN_PROTECTED | 系统必须保留至少一个活跃运营管理员 | 409 | 沿 §6.3 |
-| 14102 | CANNOT_ASSIGN_HIGHER_ROLE | 无权分配高于自身的角色 | 403 | 沿 §6.2 角色层级 |
-| 14103 | CANNOT_DELETE_SYSTEM_PERMISSION | 系统级权限点不可删 | 403 | 防止误删 `rbac.*` 权限点 |
-| 14104 | CANNOT_DELETE_OPS_ADMIN_ROLE | `ops-admin` 角色不可删 | 403 | 类比 14101 |
+| 30000 | RBAC_BAD_REQUEST | RBAC 参数错误 | 400 | 通用 |
+| 30001 | PERMISSION_NOT_FOUND | 权限点不存在 | 404 | — |
+| 30002 | PERMISSION_CODE_ALREADY_EXISTS | 权限点 code 已存在 | 409 | — |
+| 30003 | ROLE_NOT_FOUND | 角色不存在 | 404 | — |
+| 30004 | ROLE_CODE_ALREADY_EXISTS | 角色 code 已存在 | 409 | — |
+| 30005 | ROLE_DELETED | 角色已删除 | 410 Gone | — |
+| 30006 | USER_ROLE_ALREADY_EXISTS | 该用户已持有此角色 | 409 | — |
+| 30007 | USER_ROLE_NOT_FOUND | 该用户未持有此角色 | 404 | — |
+| 30008 | INVALID_PERMISSION_CODE_FORMAT | 权限点 code 格式不合法 | 400 | — |
+| 30009 | INVALID_ROLE_CODE_FORMAT | 角色 code 格式不合法 | 400 | — |
 
-**待 D7 v0.2 微调 / 追加**(如 RBAC 配置初始化错误 / migration 失败提示等)
+### 12.2 `301xx`(RBAC 权限 / 边界错误)
+
+| code | name | message | httpStatus | 用途 |
+|---|---|---|---|---|
+| 30100 | RBAC_FORBIDDEN | 无权限执行 RBAC 配置变更 | 403 | 沿 §6.1 / §6.2 |
+| 30101 | LAST_OPS_ADMIN_PROTECTED | 系统必须保留至少一个活跃运营管理员 | 409 | 沿 §6.3 |
+| 30102 | CANNOT_ASSIGN_HIGHER_ROLE | 无权分配高于自身的角色 | 403 | 沿 §6.2 角色层级 |
+| 30103 | CANNOT_DELETE_SYSTEM_PERMISSION | 系统级权限点不可删 | 403 | 防止误删 `rbac.*` 权限点 |
+| 30104 | CANNOT_DELETE_OPS_ADMIN_ROLE | `ops-admin` 角色不可删 | 403 | 类比 30101 |
+
+**待 v1.0 冻结时微调 / 追加**(如 RBAC 配置初始化错误 / migration 失败提示等);**段位本身 v0.2 已锁,只在该段内追加**。
 
 ---
 
@@ -864,8 +878,8 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
 
 ### 14.4 "最后一个运营管理员保护"测试
 
-- 单 ops-admin 不可被 disable(14101)
-- 单 ops-admin 不可被撤角色(14101)
+- 单 ops-admin 不可被 disable(30101)
+- 单 ops-admin 不可被撤角色(30101)
 - 多 ops-admin 时允许操作
 
 ### 14.5 contract snapshot(zero drift 验证)
@@ -882,10 +896,10 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
 | R1 | RBAC seed 内容大,migration 文件膨胀 | seed 拆分多个 prisma migration / 用 `prisma db seed` 而非 migration |
 | R2 | `rbac.can()` 缓存 miss 时 DB 查询慢(多表 join) | 预估 < 50ms;TTL 30 分钟覆盖;真出现瓶颈再加 Redis(§9 升级路径) |
 | R3 | 多实例部署时 reload 不一致 | 当前单实例 OK;V1.1 §17.3 锁;未来 §9 升级路径 |
-| R4 | "运营管理员"角色被误删 | §6.3 + 14101 保护 + 14104 防误删 ops-admin 角色 |
+| R4 | "运营管理员"角色被误删 | §6.3 + 30101 保护 + 30104 防误删 ops-admin 角色 |
 | R5 | 权限点 seed 漏配,业务模块判权 false negative | e2e 全覆盖 + 灰度上线 |
 | R6 | v1 14 接口出参 zero drift 失守(A-2) | contract snapshot CI |
-| R7 | Q11 过渡终止条件本稿建议 c(永不切换)但业务方未拍 | D7 评审通过前可调整;选 a/b 时本稿需重写 §7 |
+| R7 | ~~Q11 过渡终止条件本稿建议 c(永不切换)但业务方未拍~~ — **v0.2 已解除**(D12 已锁 c 永不切换;沿 §7.3) | — |
 | R8 | 角色层级(§6.2)本稿建议三级,业务方可能要五级 / 扁平 | D7 评审时业务方拍 |
 | R9 | `.env.seed.local` 真实角色名不在 git 历史,新人难以本地起 dev | 文档化 seed 步骤;`.env.seed.example` 给 placeholder |
 | R10 | RBAC 缓存 TTL 30 分钟 vs reload 即时性的平衡 | 提供 `RBAC_CACHE_TTL_SECONDS` env 配置 |
@@ -939,7 +953,12 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
 
 ## 18. 决议表(本评审稿待业务方 / 用户评审拍板;D7 v1.0 冻结)
 
-| # | 决议 | 来源 | 本稿建议 | 待业务方 / 用户拍板 |
+> **v0.2 局部收口标注**(2026-05-14):
+> - 🔒 = 本次 v0.2 已锁的 5 项(D12 / F5 / F1 + baseline §1.1 + ARCHITECTURE.md §9 修订)
+> - ✓ = 保持 v0.1 待评审状态(20 项),v1.0 冻结时一次性拍板;期间业务方可微调本稿建议
+> - 修订需另起 v1.x PR + 用户拍板
+
+| # | 决议 | 来源 | 本稿建议 | 状态 |
 |---|---|---|---|---|
 | B1 | RBAC 模型 = 完整三表(`Role` + `Permission` + `RolePermission` + `UserRole` 4 表) | D6 §三 决议 2 | 沿 D6 | ✓ |
 | B2 | 三层 Role 自动继承(SUPER_ADMIN > ADMIN > USER) | D6 Q5 B | 沿 D6 | ✓ |
@@ -955,12 +974,12 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
 | D9 | bootstrap = `process.env.RBAC_INITIAL_OPS_ADMIN_USER_ID` 优先 + SUPER_ADMIN 自动 fallback | 本稿 §10.4 | **待评审** | ✓ |
 | D10 | "最后一个 ops-admin 保护"触发场景 = §6.3 列出 4 个 | 本稿 §6.3 | **待评审** | ✓ |
 | D11 | AuditLogEvent 新增 9 项(路线 A 路径) | 本稿 §11.1 | **待评审** | ✓ |
-| D12 | 过渡终止条件(D6 Q11)= **(c) 永不切换** | 本稿 §7.3 | **待评审**(业务方可改 a/b) | ✓ |
-| F1 | BizCode 段位 `140xx` 通用 / `141xx` 权限边界 | 本稿 §12 | **待 baseline 评审追加** | ✓ |
+| D12 | 过渡终止条件(D6 Q11)= **(c) 永不切换**;`users.policy.ts` 永久共存 + RBAC 业务级补充 | 本稿 §7.3 | **🔒 v0.2 已锁(2026-05-14 用户拍板)** |
+| F1 | BizCode 段位 = **`300xx` 通用 / `301xx` 权限边界**(避开 `140xx/141xx` audit_logs 已占用段位;中间留 `240xx-290xx` 给未来未规划模块) | 本稿 §12 | **🔒 v0.2 已锁(2026-05-14 用户拍板)+ baseline §1.1 已同步追加** |
 | F2 | 16 API 端点路径(`/api/v2/permissions/...` / `/api/v2/roles/...` / `/api/v2/users/:userId/roles` / `/api/v2/rbac/me/permissions` + reload) | 本稿 §5.1 | **待评审** | ✓ |
 | F3 | `me/permissions` 返回 `permissions: string[]` + `effectiveRoles: object[]` | 本稿 §5.2.6 / §5.3 | **待评审** | ✓ |
 | F4 | reload scope = `all` / `user:userId` / `role:roleId` 三种 | 本稿 §5.4 | **待评审** | ✓ |
-| F5 | `RbacGuard` 装饰器 vs Service 层显式 `rbac.can()` 调用 | 本稿 §8 | **待评审**(本稿建议 Service 显式) | ✓ |
+| F5 | judge 调用方式 = **Service 层显式 `rbac.can()` 调用**,**不**做 `RbacGuard` 装饰器 | 本稿 §8 | **🔒 v0.2 已锁(2026-05-14 用户拍板)** |
 | F6 | seed 真实角色名 / 部门名走 `.env.seed.local`(R13) | 本稿 §10.1 | 沿 research | ✓ |
 | F7 | `Role.code` 长度 = 3-32(`@Matches(/^[a-z][a-z0-9-]{2,32}$/)`)| 本稿 §5.2.2 | **待评审** | ✓ |
 | F8 | RBAC 缓存允许多 TTL(`RBAC_CACHE_TTL_SECONDS` env) | 本稿 §9.1 / R10 | **待评审** | ✓ |
@@ -973,22 +992,31 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
 
 ## 19. 落地节奏
 
-1. **本稿 D7-RBAC v0.1 PR** → 业务方 / 用户评审 → 微调 → **冻结为 D7-RBAC v1.0**
-2. D7-RBAC v1.0 评审通过 → **C-6 RBAC V2.x 立项 commit**
-3. 立项后按 §16 PR 拆分顺序实施(预估 9 个 PR + 1 个 bump version PR + 1 个 docs 收口 PR)
-4. 实施周期参考 batch6 audit_logs(2-3 周)
-5. C-6 上线 → **C-7 attachments D7 评审稿启动**(沿 PR #45 决议 1)
+1. ~~**本稿 D7-RBAC v0.1 PR**~~ → ✅ 已落地(PR #48)
+2. **本 PR(D7-RBAC v0.2 局部收口)** → 用户评审 → 锁定 5 项(D12 / F5 / F1 + baseline §1.1 + ARCHITECTURE.md §9)
+3. **D7-RBAC v1.0 冻结 PR**(后续另起)→ 业务方 / 用户评审剩余 20 项 → 微调 → **冻结为 D7-RBAC v1.0**
+4. D7-RBAC v1.0 冻结 → **C-6 RBAC V2.x 立项 commit**
+5. 立项后按 §16 PR 拆分顺序实施(预估 9 个 PR + 1 个 bump version PR + 1 个 docs 收口 PR)
+6. 实施周期参考 batch6 audit_logs(2-3 周)
+7. C-6 上线 → **C-7 attachments D7 评审稿启动**(沿 PR #45 决议 1)
 
 ---
 
 ## 20. 撰写元信息
 
-- **状态标签**:**v0.1 草稿**;等业务方 / 用户评审 → 微调 → v1.0 冻结
-- **commit 风格**:`docs(v2-design): 批次8 RBAC API 前评审 v0.1`(沿 V2 §18.5 风格)
-- **未做项**(确认):
+- **状态标签**:**v0.2 局部收口稿**;等用户评审 v0.2 改动 → 后续另起 v1.0 冻结 PR
+- **commit 风格**:
+  - v0.1:`docs(v2-design): 批次8 RBAC API 前评审 v0.1`(已落地 PR #48)
+  - v0.2:`docs(v2-design): 批次8 RBAC API 前评审 v0.2 局部收口`(本 PR;沿 V2 §18.5 风格)
+- **未做项**(v0.2 沿 v0.1 + 强化):
   - 不动 `prisma/schema.prisma` 文件本身(本稿 Prisma DSL 是设计草案,在 markdown 中展示;不修改 schema 文件)
   - 不动 `src/**` / `test/**` / `package.json` / `pnpm-lock.yaml` / `src/bootstrap/apply-swagger.ts`
-  - 不动 `docs/V2红线与复活路径.md` / `CHANGELOG.md`
   - 不 bump version / 不打 tag / 不发 Release
   - 不启动 RBAC 实施 / 不启动 attachments 任何动作 / 不执行 migration
-- **撰写者签名**:Claude Code(基于 D6 业务确认稿 13 题 + 4 决议 + 4 处留 D7 细化;**未动任何代码 / schema 文件**)
+- **v0.2 修订范围**(本 PR;沿 v0.8.1 handoff §10 启动后 Fast-1 任务):
+  - 本评审稿:状态升 v0.2 + §1.2 / §3 / §6.3 / §7.3 / §8 / §12 / §15 / §18 / §19 / §20 锁定 5 项
+  - `docs/srvf-foundation-baseline.md` §1.1:追加 `300xx + 301xx` permissions 段位 + 附录 A v0.7
+  - `ARCHITECTURE.md` §9:现有"权限点到按钮级"条目去 casl + 改触发条件描述
+  - `CHANGELOG.md` Unreleased:追加一行 v0.2 局部收口说明
+  - **不**修订 `docs/handoff/v0.8.1.md`(沿 V2 红线 §5.1 历史 handoff 不回改;过期段位号表述以本评审稿 + baseline + CHANGELOG 为准)
+- **撰写者签名**:Claude Code(v0.1 基于 D6 业务确认稿 13 题 + 4 决议 + 4 处留 D7 细化;v0.2 基于用户 Fast-1 拍板局部收口 5 项;**v0.1 / v0.2 均未动任何代码 / schema 文件**)
