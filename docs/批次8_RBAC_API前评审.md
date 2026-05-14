@@ -1,10 +1,10 @@
-# 《批次8_RBAC_API前评审稿》(D7-RBAC v1.1 修订稿)
+# 《批次8_RBAC_API前评审稿》(D7-RBAC v1.2 修订稿)
 
-> **状态**:**v1.1 修订稿**(2026-05-14)— **修订原因**:v1.0 冻结后启动实施 PR #1 时,跑 `pnpm prisma generate` 发现 **`model Role` 与 v1 已有 `enum Role { SUPER_ADMIN, ADMIN, USER }` 名称冲突**(Prisma 不允许 model 与 enum 同名);v1.0 评审过程未捕获此纸面 vs 实际差异(D7 v0.1 / v0.2 / v1.0 三段 Prisma DSL 仅作设计草案展示,未真正跑过 `prisma generate` 验证)。**v1.1 修订决议**:RBAC 模型中的 Prisma model 名 `Role` → **`RbacRole`**;DB 表名仍 `@@map("roles")`(沿 D7 §4.1);API 路径仍 `/api/v2/roles/...`(沿 D7 §5.1 F2);业务概念仍叫"角色"(中文表述不变);Prisma client 用法 `prisma.role.xxx` → **`prisma.rbacRole.xxx`**;User 反向 relation 按 `RbacRole` / `UserRole` 消歧命名;**v1 enum Role 保持不动**(仍为 `SUPER_ADMIN / ADMIN / USER`,沿 A-2 + A-4 红线)。25 项决议除 B1 命名调整外**全部沿 v1.0**;C-6 RBAC 仍可进入 V2.x 实施,**实施 PR #1 在本 v1.1 PR 合并后才允许重新启动**。
-> **修订历程**(只在本说明区出现历史措辞):v0.1 草稿(PR #48)→ v0.2 局部收口稿(PR #50,锁定 5 项:D12 / F5 / F1 + baseline §1.1 段位追加 + `ARCHITECTURE.md` §9 升级路径修订)→ v1.0 冻结稿(PR #51,剩余 20 项全部冻结)→ **v1.1 修订稿**(本 PR,纯命名修订:`model Role` → `RbacRole`,因 enum 重名;25 项决议除 B1 命名外不变)。
+> **状态**:**v1.2 修订稿**(2026-05-14)— **修订原因**:[C-7 attachments D7 v0.1 草稿](批次7_attachments_API前评审.md)(PR #65,squash commit `ebb530e`)§2.2 / F1 锁要求 Permission code 支持 **4 段命名**以承载 `attachment.upload.cert.self` 类带 `.self` / `.other` ownership scope 后缀的权限点;v1.1 锁定的 3 段正则 `/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2}$/` 与此冲突(沿 [v0.9.0 handoff §5](handoff/v0.9.0.md):"未 seed 4 条 `attachment.*` 权限点;D7 §10.2 锁定 4 段 code 与 PR #2 实装的 Permission code 3 段正则冲突")。**v1.2 修订决议**(纯文档措辞):D2 命名规则从严格 3 段 `<module>.<action>.<resource_type>` 修订为 **3-4 段 `<module>.<action>.<resource_type>[.<scope>]`**(scope 可选,当前用于 `.self` / `.other` ownership 后缀;沿 §8.2 `action.endsWith('.self')` 触发 ownership 判定);Permission code 正则文档措辞从 `/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2}$/` 修订为 **`/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2,3}$/`**;`@@map("roles")` / API 路径 / 业务概念 / Prisma model 名 / 25 项决议中除 D2 外**全部沿 v1.1**;**本 PR 不动 `src/modules/permissions/permissions.service.ts` 的实际 `CODE_PATTERN` 常量**,实际代码正则放宽留 C-7 attachments 实施 PR #1(沿 [批次7_API前评审 §13 PR #0 / PR #1](批次7_attachments_API前评审.md))。25 项决议除 D2 命名修订外**全部沿 v1.1**;C-6 RBAC 仍可继续 V2.x 实施;**C-7 attachments 实施 PR #1 在本 v1.2 PR 合并后才允许启动**。
+> **修订历程**(只在本说明区出现历史措辞):v0.1 草稿(PR #48)→ v0.2 局部收口稿(PR #50,锁定 5 项:D12 / F5 / F1 + baseline §1.1 段位追加 + `ARCHITECTURE.md` §9 升级路径修订)→ v1.0 冻结稿(PR #51,剩余 20 项全部冻结)→ v1.1 修订稿(PR #53,纯命名修订:`model Role` → `RbacRole`,因 enum 重名;25 项决议除 B1 命名外不变)→ **v1.2 修订稿**(本 PR,纯文档措辞修订:D2 Permission code 命名规则 3 段 → 3-4 段,scope 可选;为 C-7 attachments 4 段权限点 `attachment.upload.cert.{self,other}` 提供文档先决条件;25 项决议除 D2 外不变;**不动代码常量**)。
 > **性质**:**D7-RBAC 评审稿**(基于 D6 业务确认稿 13 题 + 4 决议 + 4 处留 D7 细化,落地完整 schema + API + judge 函数 + seed + 集成方案)。
 > **批次号**:批次 8 暂定;正式编号以 **C-6 V2.x 立项 commit** 为准(PR #52,squash commit `172b684`)。
-> **撰写日期**:2026-05-14(v0.1 / v0.2 / v1.0 / **v1.1**)
+> **撰写日期**:2026-05-14(v0.1 / v0.2 / v1.0 / v1.1 / **v1.2**)
 > **接续**:
 > - [D6 业务确认稿(PR #47, squash commit `44e1326`)](批次8_RBAC_业务确认稿.md)
 > - [访谈提纲(PR #46, squash commit `1b33c4e`)](批次8_RBAC_业务访谈提纲.md)
@@ -14,7 +14,7 @@
 > - PR #51 v1.0 冻结稿 squash commit `b301da8`
 > - PR #52 V2.x C-6 立项记录 squash commit `172b684`
 > **风格参照**:[docs/批次6_audit_logs_API前评审.md](批次6_audit_logs_API前评审.md)
-> **核心**(v1.1 修订;命名同步):落地 RBAC **4 个 model**(**`RbacRole`** / `Permission` / `RolePermission` / `UserRole`)+ **16 个 API 端点**(API 路径 `/api/v2/roles/...` 不变)+ **judge 函数 `rbac.can()`**(F5 锁:Service 层显式调用,**不**做 Guard 装饰器)+ **进程内 short TTL 缓存(默认 30 分钟)+ 显式 reload 接口** + **seed migration 框架(`ops-admin` + 业务角色 placeholder + 权限点全集 + 角色权限映射 + bootstrap)** + **audit_logs 集成 9 项 union** + **BizCode 段位 `300xx` / `301xx`**(F1 锁;baseline §1.1 已同步追加)+ **Prisma client 用法 `prisma.rbacRole.xxx` / `prisma.permission.xxx` / `prisma.rolePermission.xxx` / `prisma.userRole.xxx`**(沿 v1.1 命名)+ **`@@map("roles")`** DB 表名不变(API / DB / 业务概念三层独立于 Prisma model 名)
+> **核心**(v1.2 修订;Permission code 命名规则措辞同步):落地 RBAC **4 个 model**(**`RbacRole`** / `Permission` / `RolePermission` / `UserRole`;沿 v1.1)+ **16 个 API 端点**(API 路径 `/api/v2/roles/...` 不变)+ **judge 函数 `rbac.can()`**(F5 锁:Service 层显式调用,**不**做 Guard 装饰器)+ **进程内 short TTL 缓存(默认 30 分钟)+ 显式 reload 接口** + **seed migration 框架(`ops-admin` + 业务角色 placeholder + 权限点全集 + 角色权限映射 + bootstrap)** + **audit_logs 集成 9 项 union** + **BizCode 段位 `300xx` / `301xx`**(F1 锁;baseline §1.1 已同步追加)+ **Prisma client 用法 `prisma.rbacRole.xxx` / `prisma.permission.xxx` / `prisma.rolePermission.xxx` / `prisma.userRole.xxx`**(沿 v1.1 命名)+ **`@@map("roles")`** DB 表名不变(API / DB / 业务概念三层独立于 Prisma model 名)+ **v1.2 新增**:Permission code 命名规则放宽到 **3-4 段 `<module>.<action>.<resource_type>[.<scope>]`**,scope 可选(用于 `.self` / `.other` ownership 后缀;沿 §8.2);正则 `/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2,3}$/`(文档措辞,实际代码 `CODE_PATTERN` 留 C-7 attachments 实施 PR #1 同步);为 C-7 attachments 4 段权限点(`attachment.upload.cert.self` 等)提供文档先决条件
 
 ---
 
@@ -127,7 +127,7 @@ model RbacRole {
 ```prisma
 model Permission {
   id           String   @id @default(cuid())
-  code         String   @unique // <module>.<action>.<resource_type>
+  code         String   @unique // <module>.<action>.<resource_type>[.<scope>](v1.2:3-4 段,scope 可选,沿 D2)
   module       String   // 模块名,如 'attachment' / 'member' / 'activity' / 'rbac'
   action       String   // 动作,如 'upload' / 'view' / 'create' / 'delete'
   resourceType String   // 资源类型,如 'cert' / 'activity' / 'self' / 'other'
@@ -145,7 +145,7 @@ model Permission {
 
 **字段说明**:
 
-- `code` 命名规范:`<module>.<action>.<resource_type>`(沿 Q3 B);具体规则见 §10.2
+- `code` 命名规范(v1.2 修订):`<module>.<action>.<resource_type>[.<scope>]`(3-4 段,scope 可选用于 `.self` / `.other` ownership 后缀;沿 D2 v1.2 + §8.2 `action.endsWith('.self')` 触发 ownership 判定);具体规则见 §10.2
 - `code` UNIQUE 防止重复定义
 - **无软删字段**(Permission 是 seed-driven;运营不主动删,真有"误加权限点"通过 RBAC 配置撤销而非删表)
 - 三个分类字段(`module` / `action` / `resourceType`)冗余存储,方便后台 UI 按 module / type 分组展示
@@ -268,9 +268,12 @@ model User {
 
 ```typescript
 export class CreatePermissionDto {
-  @ApiProperty({ description: '权限点 code', example: 'attachment.upload.cert' })
+  @ApiProperty({ description: '权限点 code(v1.2:3-4 段,scope 可选)', example: 'attachment.upload.cert.self' })
   @IsString()
-  @Matches(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2}$/)
+  // v1.2 修订:从 {2} 严格 3 段放宽为 {2,3} 3-4 段,scope 可选;
+  // 实际 src 代码中 CODE_PATTERN 常量放宽留 C-7 attachments 实施 PR #1 同步修订;
+  // DTO 层 v1.1 起本就不放 @Matches(沿 src 现状,format 校验在 Service 层显式跑,失败抛 30008)。
+  @Matches(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2,3}$/)
   code!: string;
 
   @ApiProperty({ description: '模块名' })
@@ -681,6 +684,8 @@ private checkOwnership(user, resource) {
 
 ### 10.2 预置权限点清单(D7 v1.0 锁定 18 条示例 + 完整穷举由 C-6 V2.x 立项后实施 PR 完成)
 
+> **v1.2 修订说明**:本表 14 条 `rbac.*`(3 段)+ 4 条 `attachment.*`(4 段)示例**全部符合** v1.2 修订后的 3-4 段正则 `/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2,3}$/`;v1.1 阶段因 3 段正则限制导致的"`attachment.*` 4 段示例 vs 实装正则冲突 / seed 跳过"问题在 v1.2 文档层面解除,**实际代码 `CODE_PATTERN` 放宽 + `attachment.*` seed 落地由 C-7 attachments 实施 PR #1 同步完成**(沿 [批次7_API前评审 §13 PR #1](批次7_attachments_API前评审.md))。表中"`resourceType`" 列 4 段示例的填法(如 `upload.cert.self`)是为兼容现有表式展示;**实际 Prisma 字段 `resourceType` 仅存 `cert` 一段**,scope `.self` / `.other` 是 code 的第 4 段后缀,具体字段切分由实施 PR 决议(沿 §4.2 `resourceType` 字段说明)。
+
 | 权限点 code | module | action | resourceType | 描述 |
 |---|---|---|---|---|
 | `rbac.permission.read` | rbac | permission.read | — | 查看权限点 |
@@ -971,23 +976,24 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
 
 ---
 
-## 18. 决议表(D7 v1.1 已修订;25 项全部锁定;B1 命名修订)
+## 18. 决议表(D7 v1.2 已修订;25 项全部锁定;D2 命名规则修订)
 
 > **状态历程**(修订日志,只在本说明区出现历史措辞):
 > - **v0.1 草稿**(PR #48,2026-05-14):25 项决议提出;5 项 D6 已确认沿用 + 20 项标"待评审"
 > - **v0.2 局部收口**(PR #50,2026-05-14):局部锁定 5 项 — D12 / F5 / F1 + baseline §1.1 段位追加 + ARCHITECTURE.md §9 升级路径修订;其余 20 项保持待评审
 > - **v1.0 冻结**(PR #51,2026-05-14):剩余 20 项全部冻结;25 项全部锁定
-> - **v1.1 命名修订**(本 PR,2026-05-14):**纯命名修订** — B1 模型命名 `Role` → `RbacRole`(避开 v1 enum Role 名称冲突);其余 24 项 v1.0 决议**全部沿用不变**;F7 `Role.code` → `RbacRole.code` 同步命名修订;DB 表名 / API 路径 / 业务概念全部不变
-> - 🔒 = v1.0 / v1.1 冻结决议;**25 项全部** 🔒
+> - **v1.1 命名修订**(PR #53,2026-05-14):**纯命名修订** — B1 模型命名 `Role` → `RbacRole`(避开 v1 enum Role 名称冲突);其余 24 项 v1.0 决议**全部沿用不变**;F7 `Role.code` → `RbacRole.code` 同步命名修订;DB 表名 / API 路径 / 业务概念全部不变
+> - **v1.2 命名规则修订**(本 PR,2026-05-14):**纯文档措辞修订** — D2 Permission code 命名规则 `<module>.<action>.<resource_type>` → `<module>.<action>.<resource_type>[.<scope>]`(3-4 段,scope 可选用于 `.self` / `.other` ownership 后缀);Permission code 正则文档措辞 `{2}$/` → `{2,3}$/`;为 C-7 attachments 4 段权限点提供文档先决条件;**不动代码** `CODE_PATTERN` 常量,实际放宽留 C-7 attachments 实施 PR #1;其余 24 项 v1.1 决议**全部沿用不变**
+> - 🔒 = v1.0 / v1.1 / v1.2 冻结决议;**25 项全部** 🔒
 > - **段位本身已锁,跨段位调整需另起 v2.x 修订 PR**
 
-| # | 决议 | 来源 | v1.0 / v1.1 决议 | 状态 |
+| # | 决议 | 来源 | v1.0 / v1.1 / v1.2 决议 | 状态 |
 |---|---|---|---|---|
 | B1 | RBAC 模型 = 完整 4 表(**`RbacRole`** + `Permission` + `RolePermission` + `UserRole`;v1.1 命名修订:`Role` → `RbacRole` 避开 v1 enum 冲突;DB 表名 `@@map("roles")` 不变;API `/api/v2/roles` 不变) | D6 §三 决议 2 | 完整 4 表 + 沿用三层 Role enum 并存(v1 enum Role 不动,沿 A-4) | 🔒 v1.0 → v1.1 命名修订 |
 | B2 | 三层 Role 自动继承(SUPER_ADMIN > ADMIN > USER) | D6 Q5 B | 自动继承(SUPER_ADMIN 短路通过任何 RBAC 判权;ADMIN 自动持有 USER 级权限) | 🔒 v1.0 |
 | B3 | RBAC 业务角色**无**显式继承 | D6 Q5 B | 无显式继承(seed 显式映射;沿 §6.2 角色层级) | 🔒 v1.0 |
 | D1 | 权限点粒度 = resource type 级 | D6 Q3 B | resource type 级(沿 §4.2 / §10.2) | 🔒 v1.0 |
-| D2 | 权限点 code 命名 = `<module>.<action>.<resource_type>` | §4.2 / §10.2 | `<module>.<action>.<resource_type>`(kebab-case;`@Matches(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2}$/)`) | 🔒 v1.0 |
+| D2 | 权限点 code 命名 = `<module>.<action>.<resource_type>[.<scope>]`(v1.2 修订:3-4 段,scope 可选) | §4.2 / §10.2 | **v1.2**:`<module>.<action>.<resource_type>[.<scope>]`(kebab-case;3-4 段;scope 可选,当前用于 `.self` / `.other` ownership 后缀;沿 §8.2 `action.endsWith('.self')` 触发 ownership 判定;`@Matches(/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2,3}$/)` 文档措辞;**实际 `CODE_PATTERN` 代码常量放宽留 C-7 attachments 实施 PR #1**) | 🔒 v1.0 → v1.2 命名规则修订 |
 | D3 | 资源所有权 = user.id + Member.id 混合(`.self` / `.other` 后缀区分) | D6 Q4 C / §8.3 | 混合 owner;Service 层显式构造 `RbacResource`(沿 §8.3 owner 字段映射表) | 🔒 v1.0 |
 | D4 | RBAC 4 model 软删策略 | §4 | RbacRole 软删 / Permission 物理删 / RolePermission 物理删 / UserRole 物理删;RbacRole 软删后撤回**不**自动恢复 user_roles 关联(沿 §4.4 + §13;v1.1:Role → RbacRole) | 🔒 v1.0 / v1.1 沿用 |
 | D5 | 缓存策略 = 进程内 short TTL + 显式 reload | D6 Q9 B + §9 | 进程内 short TTL + 显式 reload(单实例,沿 V1.1 §17.3 不引入 Redis) | 🔒 v1.0 |
@@ -1009,7 +1015,7 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
 | F9 | `rbac.can()` 仅在新增 V2 接口启用;v1 14 + V2 79 接口走 `users.policy.ts` | §7.2 | 仅新增 V2 接口启用;沿 A-2 红线;v1 14 + V2 79 接口 schema + paths zero drift | 🔒 v1.0 |
 | F10 | PR 拆分 = 9 个 PR(沿 batch6 范式) | §16 | 9 个 PR + 1 个 bump version PR + 1 个 docs 收口 PR;实施周期 2-3 周 | 🔒 v1.0 |
 
-**总计**:**B 3 + D 12 + F 10 = 25 项,全部 🔒 v1.0 / v1.1 冻结**(v1.1 仅 B1 / D4 / D11 / F7 命名修订;实质决议无变化;沿 batch6 D7 v1.1 25 项规模)
+**总计**:**B 3 + D 12 + F 10 = 25 项,全部 🔒 v1.0 / v1.1 / v1.2 冻结**(v1.1 仅 B1 / D4 / D11 / F7 纯命名修订;v1.2 仅 **D2** 纯命名规则措辞修订(3 段 → 3-4 段);两轮修订实质决议无变化;沿 batch6 / batch8 修订风格)
 
 ---
 
@@ -1019,11 +1025,11 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
 2. ~~**D7-RBAC v0.2 局部收口 PR**~~ → ✅ 已落地(PR #50,2026-05-14;锁定 D12 / F5 / F1 + baseline §1.1 + ARCHITECTURE.md §9)
 3. ~~**D7-RBAC v1.0 冻结 PR**~~ → ✅ 已落地(PR #51,2026-05-14;25 项决议全部锁定)
 4. ~~**C-6 RBAC V2.x 立项 PR**~~ → ✅ 已落地(PR #52,2026-05-14;立项记录 + TASKS.md §7)
-5. **本 PR(D7-RBAC v1.1 修订)** → 🔄 命名修订 model `Role` → `RbacRole`(避开 v1 enum 冲突);实质决议无变化
-6. **下一步**:**C-6 实施 PR #1**(`chore(prisma): add RBAC schema and migration`)— 在 v1.1 PR 合并后才允许重新启动;**实施 PR 仍需单独启动 + 用户授权**
-7. 立项后按 §16 PR 拆分顺序实施(9 个 feat PR + 1 个 bump version PR + 1 个 docs 收口 PR)
-8. 实施周期参考 batch6 audit_logs(2-3 周)
-9. C-6 上线 → **C-7 attachments D7 评审稿启动**(沿 PR #45 决议 1)
+5. ~~**D7-RBAC v1.1 命名修订 PR**~~ → ✅ 已落地(PR #53,2026-05-14;B1 `Role` → `RbacRole` 命名修订)
+6. ~~**C-6 实施 PR #1-#8 + 收口 PR #9-#11**~~ → ✅ 已落地(v0.9.0 收口,2026-05-14;4 张 RBAC 表 + 16 端点 + judge 函数 + 缓存 + seed/bootstrap)
+7. ~~**C-7 attachments D7 v0.1 草稿 PR**~~ → ✅ 已落地(PR #65,2026-05-14;C-6 落地后第一个业务接入评审稿;触发本 v1.2 修订)
+8. **本 PR(D7-RBAC v1.2 命名规则修订)** → 🔄 D2 Permission code 3 段 → 3-4 段(scope 可选);为 C-7 attachments 4 段权限点提供文档先决条件;**不动代码** `CODE_PATTERN`;实质决议无变化
+9. **下一步**:**C-7 attachments 实施 PR #1**(`chore(prisma): add Attachment schema + Permission code regex relax`)— 在本 v1.2 PR 合并后才允许启动;**实施 PR 仍需单独启动 + 用户授权**;按 [批次7_API前评审 §13](批次7_attachments_API前评审.md) 顺序推进 9-11 个 PR
 
 ### 19.1 v1.0 冻结结论(沿用)
 
@@ -1032,7 +1038,7 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
 - **实施 PR 仍需单独启动**:沿 §16 PR 拆分(9 个 feat + 1 bump + 1 docs);每个 PR 独立评审 + 用户授权
 - **段位预留 ≠ 段位实装**:`300xx + 301xx` 仅在 baseline §1.1 段位预留;14 个 BizCode 实装由 C-6 V2.x 立项后实施 PR 完成
 
-### 19.2 v1.1 修订结论(本 PR 新增)
+### 19.2 v1.1 修订结论(PR #53 历史结论;沿用)
 
 - **触发**:v1.0 冻结后启动实施 PR #1 时,跑 `pnpm prisma generate` 发现 `model Role` 与 v1 `enum Role` 名称冲突
 - **根因**:D7 v0.1 / v0.2 / v1.0 三段 Prisma DSL 仅作设计草案展示,未真正跑过 `prisma generate` 验证
@@ -1045,36 +1051,58 @@ async addPermissionsToRole(roleId, permissionCodes, currentUser, meta) {
   - User 反向 relation `userRoles` 加 **`@relation("UserRoleHolder")`** 消歧(因 User 上对 UserRole 有 2 个反向)
   - 决议表 B1 / D4 / D11 / F7 命名同步;其余 21 项决议不变
 - **v1 enum Role 保持不动**(`SUPER_ADMIN / ADMIN / USER` 三层永远不变;沿 A-2 + A-4 红线)
-- **本 PR 仅文档修订**,不动代码 / 不动 schema / 不新增 migration / 不 bump version / 不 tag / 不 release / **不启动 RBAC 实施**
-- **下一步**:本 PR 合并后,**实施 PR #1 才允许重新启动**(`chore(prisma): add RBAC schema and migration`,基于本 v1.1 命名)
+- **PR #53 仅文档修订**,不动代码 / 不动 schema / 不新增 migration / 不 bump version / 不 tag / 不 release / **不启动 RBAC 实施**
+- v1.1 合并后,C-6 实施 PR #1 重新启动并最终于 v0.9.0(2026-05-14)收口落地
+
+### 19.3 v1.2 修订结论(本 PR 新增)
+
+- **触发**:[C-7 attachments D7 v0.1 草稿](批次7_attachments_API前评审.md)(PR #65,squash commit `ebb530e`,2026-05-14)§2.2 实施物清单 + F1 锁要求 Permission code 支持 **4 段命名**(`attachment.upload.cert.self` / `attachment.upload.cert.other` / `attachment.view.cert.self` / `attachment.view.cert.other` 等)以承载 `.self` / `.other` ownership scope 后缀
+- **根因**:v1.1(沿 v1.0)D2 锁定的 3 段命名规则与 C-7 attachments 4 段权限点设计冲突;v0.9.0 handoff §5 已明示"未 seed 4 条 `attachment.*` 权限点"是因正则 mismatch;C-7 D7 v0.1 §F1 锁正则放宽到 3-4 段
+- **修订范围**(纯文档措辞,无实质决议变化):
+  - **D2** 命名规则:`<module>.<action>.<resource_type>` → **`<module>.<action>.<resource_type>[.<scope>]`**(3-4 段,scope 可选)
+  - Permission code 正则文档措辞:`/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2}$/` → **`/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2,3}$/`**
+  - scope 后缀语义:`.self` / `.other` ownership 后缀;沿 §8.2 `action.endsWith('.self')` 触发 `checkOwnership(user, resource)` 判定(本逻辑已在 `RbacService.judge()` 实装,**无需改动**)
+  - §4.2 / §5.2.1 / §10.2 文档措辞同步
+  - 决议表 D2 修订;其余 24 项决议不变
+- **`@@map("roles")` / API 路径 / 业务概念 / Prisma model 名 / scope ownership 判定逻辑全部不变**
+- **本 PR 仅文档措辞修订**,**不动**:
+  - `src/modules/permissions/permissions.service.ts` 的实际 `CODE_PATTERN` 常量(仍是 `/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2}$/`;**留 C-7 attachments 实施 PR #1 同步放宽 + 加 e2e 4 段用例**)
+  - 任何代码 / schema / migration / 测试
+  - baseline §1.1(段位预留 `300xx + 301xx` 不变)
+  - V2 红线 / handoff(历史不回改)
+  - `src/modules/permissions/permissions.dto.ts`(DTO 层 v1.1 起本就不放 `@Matches`,沿现状)
+- **下一步**:本 PR 合并后,**C-7 attachments 实施 PR #1 才允许启动**(`chore(prisma): add Attachment schema + Permission code regex relax`,基于本 v1.2 命名规则);实施 PR 仍需单独启动 + 用户授权;按 [批次7_API前评审 §13](批次7_attachments_API前评审.md) 9-11 PR 顺序推进
 
 ---
 
 ## 20. 撰写元信息
 
-- **状态标签**:**v1.1 修订稿**;25 项决议全部锁定;v1.1 仅纯命名修订(`Role` model → `RbacRole`,因 enum 重名);**C-6 RBAC 实施 PR #1 在本 v1.1 PR 合并后才允许重新启动**
-- **commit 风格**(四段历史):
+- **状态标签**:**v1.2 修订稿**;25 项决议全部锁定;v1.2 仅 D2 纯命名规则措辞修订(3 段 → 3-4 段,scope 可选);**C-7 attachments 实施 PR #1 在本 v1.2 PR 合并后才允许启动**
+- **commit 风格**(五段历史):
   - v0.1:`docs(v2-design): 批次8 RBAC API 前评审 v0.1`(已落地 PR #48,squash commit `b892a7e`)
   - v0.2:`docs(v2-design): 批次8 RBAC API 前评审 v0.2 局部收口`(已落地 PR #50,squash commit `6d54ec3`)
   - v1.0:`docs(v2-design): freeze RBAC API review v1.0`(已落地 PR #51,squash commit `b301da8`)
-  - v1.1:`docs(v2-design): revise RBAC role model naming`(本 PR)
-- **未做项**(v1.1 沿 v0.1 / v0.2 / v1.0 + 强化):
-  - 不动 `prisma/schema.prisma` 文件本身(本稿 Prisma DSL 是设计草案,在 markdown 中展示;不修改 schema 文件)
-  - 不动 `src/**` / `prisma/**` / `test/**` / `package.json` / `pnpm-lock.yaml` / `src/bootstrap/apply-swagger.ts`
+  - v1.1:`docs(v2-design): revise RBAC role model naming`(已落地 PR #53,squash commit `569771b`)
+  - v1.2:`docs(v2-design): revise RBAC permission code format for attachments`(本 PR)
+- **未做项**(v1.2 沿 v1.1 + 强化):
+  - 不动 `prisma/schema.prisma` 文件本身(本稿 Prisma DSL 是设计草案,markdown 展示;不修改 schema 文件)
+  - 不动 `src/**` / `prisma/**` / `test/**` / `package.json` / `pnpm-lock.yaml` / `src/bootstrap/apply-swagger.ts` / `CHANGELOG.md`
+  - **特别强调**:不动 `src/modules/permissions/permissions.service.ts` 的 `CODE_PATTERN` 常量(实际正则放宽留 C-7 attachments 实施 PR #1)
+  - 不动 `src/modules/permissions/permissions.dto.ts`(DTO 层 v1.1 起本就不放 `@Matches`,沿现状)
   - 不新增 migration
   - 不 bump version / 不打 tag / 不发 Release
-  - **不启动 RBAC 实施**(本 PR 是命名修订文档;实施 PR #1 在本 PR 合并后才允许重新启动)
-  - 不启动 attachments 任何动作
-- **v1.1 修订范围**(本 PR;纯命名修订):
-  - 本评审稿:状态升 v1.0 → v1.1;顶部 metadata + §1.1 章节引用 + §4.1 整段(`model Role` → `model RbacRole` + `@@map("roles")`)+ §4.2-§4.4 同步追加 `@@map(...)` + §4.3 / §4.4 内 `role: Role` FK 类型改 `RbacRole` + §4.5 整段(`userRoles` 加 `@relation("UserRoleHolder")` 消歧;反向 relation 注释更新)+ §4.6 表(model / DB 表名两列)+ §6.3 / §10.4 prisma 调用 + §14.1 / §16 描述 + §18 决议表 B1 / D4 / D11 / F7 命名同步 + §19 加 v1.1 修订结论 + §20 元信息
-  - `CHANGELOG.md` Unreleased:追加一行 v1.1 修订说明
-  - **不**修订 `docs/srvf-foundation-baseline.md`(段位 v0.2 已锁,v1.0 / v1.1 沿用;无段位变化)
-  - **不**修订 `ARCHITECTURE.md`(§9 v0.2 已修订,v1.0 / v1.1 沿用;条目内 model 名 `Role` 在文档措辞中可能保留,实施 PR #1 落地时同步)
-  - **不**修订 `docs/handoff/v0.8.1.md`(沿 V2 红线 §5.1 历史 handoff 不回改)
-  - **不**修订 `docs/V2红线与复活路径.md`(命名修订属内部技术细节,不上升到红线层)
-  - **不**修订 `docs/批次8_RBAC_V2x立项记录.md`(已锁,实施 PR #1 落地时按 v1.1 命名同步;立项记录历史快照不回改)
-  - **不**修订 `TASKS.md` §7(同上)
-- **本评审稿 v1.1 修订后的下一动作**(由用户拍板):
-  - 启动 **C-6 实施 PR #1**(`chore(prisma): add RBAC schema and migration`;基于本 v1.1 命名)
-  - 实施 PR 仍需单独启动 + 用户授权;沿 §16 PR 拆分推进
-- **撰写者签名**:Claude Code(v0.1 基于 D6 业务确认稿 13 题 + 4 决议 + 4 处留 D7 细化;v0.2 基于用户 Fast-1 拍板局部收口 5 项;v1.0 基于用户冻结指令一次性锁定剩余 20 项;v1.1 基于实施 PR #1 启动时跑 `pnpm prisma generate` 发现 enum 重名冲突 + 用户拍板方案 A 的纯命名修订;**v0.1 / v0.2 / v1.0 / v1.1 均未动任何代码 / schema 文件**)
+  - **不启动 C-7 attachments 实施**(本 PR 是文档修订;实施 PR #1 在本 PR 合并后才允许启动)
+  - 不动 `docs/批次7_attachments_API前评审.md`(C-7 D7 v0.1 已合入 PR #65,本稿仅引用;不回改)
+- **v1.2 修订范围**(本 PR;纯文档措辞修订):
+  - 本评审稿:状态升 v1.1 → v1.2;顶部 metadata + 撰写日期 + 核心段 + §4.2 model `code` 注释 + §4.2 字段说明 + §5.2.1 DTO 正则文档措辞 + example + §10.2 表头说明段 + §18 决议表 D2 命名规则修订 + §18 总计行 + §19 落地节奏 + §19.3 加 v1.2 修订结论 + §20 元信息
+  - **不**修订 `docs/srvf-foundation-baseline.md`(段位早已预留,v1.2 无段位变化)
+  - **不**修订 `ARCHITECTURE.md`(§9 历史段位修订与 v1.2 命名规则无关)
+  - **不**修订 `docs/handoff/v0.9.0.md`(历史 handoff 不回改;沿 V2 红线 §5.1)
+  - **不**修订 `docs/V2红线与复活路径.md`(命名规则修订属内部技术细节,不上升到红线层)
+  - **不**修订 `docs/批次8_RBAC_V2x立项记录.md`(已锁;立项记录历史快照不回改)
+  - **不**修订 `docs/批次7_attachments_API前评审.md`(C-7 D7 v0.1 已合入 PR #65,本稿仅引用)
+  - **不**修订 `TASKS.md`
+- **本评审稿 v1.2 修订后的下一动作**(由用户拍板):
+  - 启动 **C-7 attachments 实施 PR #1**(`chore(prisma): add Attachment schema + Permission code regex relax`;含 schema 新增 + `CODE_PATTERN` 放宽 + 4 段 e2e 用例;沿 [批次7_API前评审 §13](批次7_attachments_API前评审.md))
+  - 实施 PR 仍需单独启动 + 用户授权
+- **撰写者签名**:Claude Code(v0.1 基于 D6 业务确认稿 13 题 + 4 决议 + 4 处留 D7 细化;v0.2 基于用户 Fast-1 拍板局部收口 5 项;v1.0 基于用户冻结指令一次性锁定剩余 20 项;v1.1 基于实施 PR #1 启动时跑 `pnpm prisma generate` 发现 enum 重名冲突 + 用户拍板方案 A 的纯命名修订;v1.2 基于 C-7 attachments D7 v0.1 §F1 锁要求 + 用户 Q1 / Q2 拍板的 Permission code 3-4 段放宽 + D7-RBAC v1.2 修订 PR 先行的纯文档措辞修订;**v0.1 / v0.2 / v1.0 / v1.1 / v1.2 均未动任何代码 / schema 文件**)
