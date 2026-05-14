@@ -234,6 +234,23 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/v2/attachment-type-configs/{id}'],
   ['patch', '/api/v2/attachment-type-configs/{id}/status'],
   ['delete', '/api/v2/attachment-type-configs/{id}'],
+
+  // V2.x C-7 attachments 实施 PR #4(2026-05-15;AttachmentMimeConfig CRUD,沿 D7 v1.0 §4.3 / §16 + Q1-Q8)
+  // 6 个端点:list / create / detail / update / updateStatus / softDelete;
+  // 入口 @Roles(SUPER_ADMIN, ADMIN);**不接 rbac.can()**(F4 v1.0);
+  // BizCode 13022 ATTACHMENT_MIME_CONFIG_NOT_FOUND / 13024 ATTACHMENT_MIME_CONFIG_DUPLICATE /
+  // 13025 INVALID_ATTACHMENT_MIME_FORMAT + 复用 13020 ATTACHMENT_TYPE_CONFIG_NOT_FOUND(Q5 v1.0);
+  // PATCH /:id 仅 remark(Q3:mime 不可改 / Q4:typeConfigId 不可改 / Q5:status 走独立端点);
+  // 出参嵌套 typeConfig: { id, code, displayName }(Q2 v1.0);
+  // (typeConfigId, mime) UNIQUE 含软删历史(Q8 v1.0);软删 deletedAt = now() + 同步 INACTIVE;
+  // **本 PR 不实装**:AttachmentSizeLimitConfig CRUD(PR #5)/ attachments 主模块 /
+  // Provider / audit / RBAC 业务判权 / IN_USE 跨表约束(Q6 v1.0)。
+  ['get', '/api/v2/attachment-mime-configs'],
+  ['post', '/api/v2/attachment-mime-configs'],
+  ['get', '/api/v2/attachment-mime-configs/{id}'],
+  ['patch', '/api/v2/attachment-mime-configs/{id}'],
+  ['patch', '/api/v2/attachment-mime-configs/{id}/status'],
+  ['delete', '/api/v2/attachment-mime-configs/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -396,6 +413,17 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'UpdateAttachmentTypeConfigDto',
   'UpdateAttachmentTypeConfigStatusDto',
   'AttachmentTypeConfigResponseDto',
+
+  // V2.x C-7 attachments 实施 PR #4 attachment-mime-configs(2026-05-15;沿 D7 v1.0 §4.3 + Q1-Q8)
+  // CreateAttachmentMimeConfigDto / UpdateAttachmentMimeConfigDto / UpdateAttachmentMimeConfigStatusDto
+  // 是 @Body() DTO;AttachmentMimeConfigResponseDto 是出参;
+  // AttachmentMimeConfigTypeConfigSummaryDto 是嵌套 typeConfig 摘要(@ApiExtraModels 显式注册);
+  // 均注册为 named schema。
+  'CreateAttachmentMimeConfigDto',
+  'UpdateAttachmentMimeConfigDto',
+  'UpdateAttachmentMimeConfigStatusDto',
+  'AttachmentMimeConfigResponseDto',
+  'AttachmentMimeConfigTypeConfigSummaryDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
