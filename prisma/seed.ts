@@ -54,6 +54,21 @@ import * as bcrypt from 'bcryptjs';
 // - ContributionRule **不在 seed 中预填真实规则**(字典扩展决议 §4.1 选项 A);
 //   运营后台 / 私有 seed 录入,真实计分规则不进 git history(沿 baseline §0.3 / R13)
 // - activity_type / attendance_role **沿 v0.4.0 neutral-demo 占位**;真实子项 / 角色由运营后台维护
+//
+// V2.x C-6 RBAC 实施 PR #8 追加(2026-05-14;沿 D7 v1.1 §10 + 用户拍板六项决策):
+// 1. 14 条 rbac.* Permission 全集 upsert(D7 §10.2;**跳过 4 条 attachment.***,
+//    因 D7 §10.2 attachment.* 是 4 段 code,与 PR #2 实装的 Permission code 3 段正则冲突,
+//    留 C-7 attachments 启动时另行评审正则或 code 命名 — 用户拍板方案 A)
+// 2. 公开 seed 只创建 `ops-admin` RbacRole(用户拍板方案 A);**不**写真实部门名 / 真实职务名 /
+//    role-a..role-f placeholder;业务角色由后续运营通过 API 创建,或 .env.seed.local 私有 seed
+// 3. RolePermission 映射:ops-admin → 全部 14 条 rbac.*(D7 §10.3)
+// 4. bootstrap user_role(D7 §10.4):
+//    - `RBAC_INITIAL_OPS_ADMIN_USER_ID` env 优先指定首个 ops-admin 持有者
+//    - 无 env 时 fallback 到现有 SUPER_ADMIN(seed 阶段刚创建的或已存在的)
+//    - 强校验:seed 完成后 **至少 1 个 user_role 持有 ops-admin**,否则 throw 退出
+// 5. **不** 写 audit_logs(seed 是 bootstrap 离线工具;D7 §11 audit 是运行时 API 写操作审计)
+// 6. **不** 创建"ADMIN 内置角色"(用户拍板方案 A;留业务模块 RBAC 接入 PR 落地)
+// 7. 全部 upsert 幂等:重复跑不重复创建 / 不覆盖运营运行时调整
 
 const DEFAULT_PASSWORD = 'ChangeMe123456';
 const USERNAME_PATTERN = /^[a-z0-9_-]{3,32}$/;
@@ -356,6 +371,258 @@ async function seedActivityTypeHierarchy(prisma: PrismaClient): Promise<void> {
   );
 }
 
+// V2.x C-6 RBAC 实施 PR #8(2026-05-14):14 条 rbac.* 权限点全集(沿 D7 v1.1 §10.2)。
+// 跳过 4 条 attachment.*(沿用户拍板方案 A;留 C-7 attachments)。
+// 注:code 必须满足 PR #2 实装的 Permission code 正则 `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2}$`
+// (固定 3 段;首段小写字母开头);本表全部 14 条均符合。
+interface RbacPermissionSeed {
+  code: string;
+  module: string;
+  action: string;
+  resourceType: string;
+  description: string;
+}
+
+const RBAC_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  // rbac.permission.* (4):权限点 CRUD(沿 D7 §10.2)
+  {
+    code: 'rbac.permission.read',
+    module: 'rbac',
+    action: 'read',
+    resourceType: 'permission',
+    description: '查看权限点',
+  },
+  {
+    code: 'rbac.permission.create',
+    module: 'rbac',
+    action: 'create',
+    resourceType: 'permission',
+    description: '创建权限点',
+  },
+  {
+    code: 'rbac.permission.update',
+    module: 'rbac',
+    action: 'update',
+    resourceType: 'permission',
+    description: '更新权限点',
+  },
+  {
+    code: 'rbac.permission.delete',
+    module: 'rbac',
+    action: 'delete',
+    resourceType: 'permission',
+    description: '删除权限点',
+  },
+  // rbac.role.* (4)
+  {
+    code: 'rbac.role.read',
+    module: 'rbac',
+    action: 'read',
+    resourceType: 'role',
+    description: '查看角色',
+  },
+  {
+    code: 'rbac.role.create',
+    module: 'rbac',
+    action: 'create',
+    resourceType: 'role',
+    description: '创建角色',
+  },
+  {
+    code: 'rbac.role.update',
+    module: 'rbac',
+    action: 'update',
+    resourceType: 'role',
+    description: '更新角色',
+  },
+  {
+    code: 'rbac.role.delete',
+    module: 'rbac',
+    action: 'delete',
+    resourceType: 'role',
+    description: '软删角色',
+  },
+  // rbac.role-permission.* (2)
+  {
+    code: 'rbac.role-permission.create',
+    module: 'rbac',
+    action: 'create',
+    resourceType: 'role-permission',
+    description: '角色加权限点',
+  },
+  {
+    code: 'rbac.role-permission.delete',
+    module: 'rbac',
+    action: 'delete',
+    resourceType: 'role-permission',
+    description: '撤角色权限点',
+  },
+  // rbac.user-role.* (3)
+  {
+    code: 'rbac.user-role.read',
+    module: 'rbac',
+    action: 'read',
+    resourceType: 'user-role',
+    description: '查看用户角色',
+  },
+  {
+    code: 'rbac.user-role.create',
+    module: 'rbac',
+    action: 'create',
+    resourceType: 'user-role',
+    description: '分配用户角色',
+  },
+  {
+    code: 'rbac.user-role.delete',
+    module: 'rbac',
+    action: 'delete',
+    resourceType: 'user-role',
+    description: '撤用户角色',
+  },
+  // rbac.config.* (1)
+  {
+    code: 'rbac.config.reload',
+    module: 'rbac',
+    action: 'reload',
+    resourceType: 'config',
+    description: '触发 RBAC 缓存失效',
+  },
+];
+
+// 运营管理员角色 code(沿 D7 §10.1 / §10.3 ops-admin 唯一公开 placeholder)
+const OPS_ADMIN_ROLE_CODE = 'ops-admin';
+const OPS_ADMIN_DISPLAY_NAME = '运营管理员';
+const OPS_ADMIN_DESCRIPTION = 'RBAC 自身配置 + 用户角色分配的 meta 角色;首批 14 条 rbac.* 权限点';
+
+// V2.x C-6 RBAC 实施 PR #8:RBAC seed/bootstrap 主函数。
+// 沿 D7 v1.1 §10 + 用户拍板六项决策。
+// 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 复合唯一键 /
+// UserRole 复合唯一键),重复跑不重复创建。
+async function seedRbac(prisma: PrismaClient): Promise<void> {
+  // 1. upsert Permission 全集(14 条 rbac.*;沿 D7 §10.2)
+  for (const perm of RBAC_PERMISSION_SEED) {
+    await prisma.permission.upsert({
+      where: { code: perm.code },
+      // 已存在不覆盖 description / module / action / resourceType(防止运营运行时调整被 seed 回退;
+      // 沿 V2 dictionaries seed 范式)
+      update: {},
+      create: {
+        code: perm.code,
+        module: perm.module,
+        action: perm.action,
+        resourceType: perm.resourceType,
+        description: perm.description,
+      },
+    });
+  }
+  console.log(`[seed] RBAC permissions ensured (${RBAC_PERMISSION_SEED.length} entries)`);
+
+  // 2. upsert ops-admin RbacRole(公开 seed 唯一角色;沿用户拍板方案 A)
+  const opsAdminRole = await prisma.rbacRole.upsert({
+    where: { code: OPS_ADMIN_ROLE_CODE },
+    update: {},
+    create: {
+      code: OPS_ADMIN_ROLE_CODE,
+      displayName: OPS_ADMIN_DISPLAY_NAME,
+      description: OPS_ADMIN_DESCRIPTION,
+    },
+    select: { id: true, code: true },
+  });
+  console.log(`[seed] RBAC role '${opsAdminRole.code}' ensured`);
+
+  // 3. upsert RolePermission 映射:ops-admin → 全部 14 条 rbac.*(沿 D7 §10.3)
+  //    复合唯一键 roleId_permissionId(schema @@unique([roleId, permissionId]))
+  const allPermissions = await prisma.permission.findMany({
+    where: { code: { in: RBAC_PERMISSION_SEED.map((p) => p.code) } },
+    select: { id: true, code: true },
+  });
+  for (const perm of allPermissions) {
+    await prisma.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: opsAdminRole.id, permissionId: perm.id } },
+      update: {},
+      create: { roleId: opsAdminRole.id, permissionId: perm.id },
+    });
+  }
+  console.log(
+    `[seed] RBAC role-permissions ensured ('${opsAdminRole.code}' ↔ ${allPermissions.length} rbac.* permissions)`,
+  );
+
+  // 4. bootstrap user_role(沿 D7 §10.4 + 用户拍板方案 A):
+  //    - RBAC_INITIAL_OPS_ADMIN_USER_ID env 优先
+  //    - 无 env 时 fallback 到现有 SUPER_ADMIN(seed 阶段刚创建的或已存在的)
+  //    - upsert 复合唯一键 userId_roleId(schema @@unique([userId, roleId]))保证幂等
+  const envOpsAdminId = (process.env.RBAC_INITIAL_OPS_ADMIN_USER_ID ?? '').trim();
+  let targetUserId: string | null = null;
+  let bootstrapSource: 'env' | 'fallback' | 'skipped' = 'skipped';
+
+  if (envOpsAdminId !== '') {
+    // env 路径:校验该 user 存在 + 未软删 + ACTIVE
+    const user = await prisma.user.findFirst({
+      where: { id: envOpsAdminId, deletedAt: null, status: UserStatus.ACTIVE },
+      select: { id: true, username: true },
+    });
+    if (!user) {
+      throw new Error(
+        `[seed] RBAC_INITIAL_OPS_ADMIN_USER_ID='${envOpsAdminId}' 指定的用户不存在 / 已禁用 / 已软删;` +
+          'bootstrap 中止',
+      );
+    }
+    targetUserId = user.id;
+    bootstrapSource = 'env';
+    console.log(
+      `[seed] RBAC bootstrap target = ${user.username} (id=${user.id}, source=env RBAC_INITIAL_OPS_ADMIN_USER_ID)`,
+    );
+  } else {
+    // fallback:第一个活跃 SUPER_ADMIN(沿 D7 §10.4;findFirst orderBy createdAt asc 保证可复现)
+    const superAdmin = await prisma.user.findFirst({
+      where: { role: Role.SUPER_ADMIN, deletedAt: null, status: UserStatus.ACTIVE },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, username: true },
+    });
+    if (superAdmin) {
+      targetUserId = superAdmin.id;
+      bootstrapSource = 'fallback';
+      console.log(
+        `[seed] RBAC bootstrap target = ${superAdmin.username} (id=${superAdmin.id}, source=SUPER_ADMIN fallback)`,
+      );
+    } else {
+      console.log(
+        '[seed] RBAC bootstrap: 无 RBAC_INITIAL_OPS_ADMIN_USER_ID 且未找到活跃 SUPER_ADMIN;' +
+          '跳过 user_role 自动分配(强校验将检测最终状态)',
+      );
+    }
+  }
+
+  if (targetUserId) {
+    await prisma.userRole.upsert({
+      where: { userId_roleId: { userId: targetUserId, roleId: opsAdminRole.id } },
+      update: {},
+      create: { userId: targetUserId, roleId: opsAdminRole.id },
+    });
+  }
+
+  // 5. 强校验(沿 D7 §10.4 + §6.3 最后一个 ops-admin 保护范式):
+  //    seed 完成后 **至少 1 个活跃 user_role 持有 ops-admin**,否则 throw 退出。
+  //    检查范围:user 活跃 + ops-admin 角色未软删(理论本 seed 刚 upsert 应满足,
+  //    但若 fallback 路径没找到 SUPER_ADMIN 且无 env,此处会 throw — 这是设计预期)。
+  const activeOpsAdminCount = await prisma.userRole.count({
+    where: {
+      role: { code: OPS_ADMIN_ROLE_CODE, deletedAt: null },
+      user: { deletedAt: null, status: UserStatus.ACTIVE },
+    },
+  });
+  if (activeOpsAdminCount < 1) {
+    throw new Error(
+      `[seed] RBAC bootstrap 强校验失败:活跃 ops-admin 持有者数 = ${activeOpsAdminCount},` +
+        '系统必须至少保留 1 个活跃运营管理员(沿 D7 §10.4 + §6.3)。' +
+        '请通过 RBAC_INITIAL_OPS_ADMIN_USER_ID env 指定首个 ops-admin,或确保 seed 先创建 SUPER_ADMIN。',
+    );
+  }
+  console.log(
+    `[seed] RBAC bootstrap done (source=${bootstrapSource}, active ops-admin holders=${activeOpsAdminCount})`,
+  );
+}
+
 async function main(): Promise<void> {
   const usernameRaw = process.env.SUPER_ADMIN_USERNAME ?? '';
   const username = usernameRaw.trim().toLowerCase();
@@ -431,6 +698,9 @@ async function main(): Promise<void> {
 
     // V2 第一阶段批次 3:activity_type 二级树字典(D11)
     await seedActivityTypeHierarchy(prisma);
+
+    // V2.x C-6 RBAC 实施 PR #8(沿 D7 v1.1 §10):14 条 rbac.* + ops-admin + bootstrap
+    await seedRbac(prisma);
   } finally {
     await prisma.$disconnect();
   }
