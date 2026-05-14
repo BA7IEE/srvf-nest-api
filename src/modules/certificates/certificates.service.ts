@@ -28,7 +28,7 @@ import {
 // 关键约定:
 // - N:1 with Member;list 无分页(演示规模 ≤ 10 / 人,Plan §4.3)
 // - 列表排序:certStatusCode ASC, createdAt DESC(状态分组 + 同状态下新证书在前)
-// - 列表精简:不返 certNumber / verifyNote / verifiedBy / verifiedAt / attachmentKey /
+// - 列表精简:不返 certNumber / verifyNote / verifiedBy / verifiedAt /
 //   supersededByCertId(草案 §13.1)
 // - 软删走 deletedAt(草案 §9.2);列表自动过滤已软删
 // - 字典校验:cert_type 必填,cert_sub_type 提供时校验;cert_status 由 service 内部写常量,不接外部
@@ -63,7 +63,6 @@ const certificateSafeSelect = {
   verifiedBy: true,
   verifiedAt: true,
   verifyNote: true,
-  attachmentKey: true,
   isInternal: true,
   supersededByCertId: true,
   createdAt: true,
@@ -171,7 +170,6 @@ export class CertificatesService {
       verifiedBy: c.verifiedBy,
       verifiedAt: c.verifiedAt ? c.verifiedAt.toISOString() : null,
       verifyNote: c.verifyNote,
-      attachmentKey: c.attachmentKey,
       isInternal: c.isInternal,
       supersededByCertId: c.supersededByCertId,
     };
@@ -310,7 +308,7 @@ export class CertificatesService {
 
   // PATCH 接受 6 字段(Q-A4:含 issuedAt / expiredAt 资料修正)。
   // **绝对不接收** certStatusCode / verifiedBy / verifiedAt / verifyNote / isInternal /
-  // supersededByCertId / attachmentKey / expireNotifyDueAt(由 forbidNonWhitelisted 兜底)。
+  // supersededByCertId / expireNotifyDueAt(由 forbidNonWhitelisted 兜底)。
   // hook B5 不含 verify / reject / softDelete / expire(各有独立 hook)。
   async update(
     memberId: string,
