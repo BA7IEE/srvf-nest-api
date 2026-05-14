@@ -180,6 +180,16 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/v2/permissions'],
   ['patch', '/api/v2/permissions/{id}'],
   ['delete', '/api/v2/permissions/{id}'],
+
+  // V2.x C-6 RBAC 实施 PR #3(2026-05-14;RbacRole CRUD,沿 D7 v1.1 §5.1 端点 5-9)
+  // 软删(D4 v1.0;deletedAt);GET /:id 区分 30003(不存在)/ 30005 ROLE_DELETED(已软删);
+  // detail 含 permissions 数组(D7 §5.2.6;RolePermission CRUD 未实施时永远空数组)。
+  // PATCH / DELETE 不存在或已软删统一返 30003(沿 v1 §10 信息泄漏防御)。
+  ['get', '/api/v2/roles'],
+  ['post', '/api/v2/roles'],
+  ['get', '/api/v2/roles/{id}'],
+  ['patch', '/api/v2/roles/{id}'],
+  ['delete', '/api/v2/roles/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -300,6 +310,15 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'CreatePermissionDto',
   'UpdatePermissionDto',
   'PermissionResponseDto',
+
+  // V2.x C-6 RBAC 实施 PR #3 rbac-roles(2026-05-14;沿 D7 v1.1 §5.2.2 / §5.2.6)
+  // 注:ListRbacRolesQueryDto 是 @Query() DTO,被内联为 parameters,不进 components.schemas。
+  //   RbacRoleDetailResponseDto extends RbacRoleResponseDto + 含 permissions: PermissionResponseDto[]
+  //   字段;Swagger 注册为独立 named schema。
+  'CreateRbacRoleDto',
+  'UpdateRbacRoleDto',
+  'RbacRoleResponseDto',
+  'RbacRoleDetailResponseDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
