@@ -1426,3 +1426,80 @@ D7-min 决议时刻锁定 5 个延后模型,V2.x 复活触发条件如下(指向
 | `event_participants` | **跟随 events** 复活路径 |
 
 完整复活流程见 `TASKS.md §5.5.4.3`(D7-min 锁定的延后触发清单)。
+
+---
+
+## 7. V2.x C-6 RBAC 立项准备(批次 8)
+
+> **状态**:🔄 **已立项,等用户授权启动实施 PR #1**(`chore(prisma): add RBAC schema and migration`)
+> **入口文档**:[`docs/批次8_RBAC_V2x立项记录.md`](docs/批次8_RBAC_V2x立项记录.md)
+> **D7 v1.0 冻结**:PR #51(squash commit `b301da8`)
+> **本立项 PR 不动代码**;实施 PR 仍需单独启动 + 用户授权。
+
+### 7.1 立项时间线
+
+| 阶段 | PR | squash commit | 状态 |
+|---|---|---|---|
+| 业务访谈提纲 | #46 | `1b33c4e` | ✅ |
+| D6 业务确认稿 | #47 | `44e1326` | ✅ |
+| D7 v0.1 草稿 | #48 | `b892a7e` | ✅ |
+| D7 v0.2 局部收口 | #50 | `6d54ec3` | ✅ |
+| D7 v1.0 冻结 | #51 | `b301da8` | ✅ |
+| **V2.x 立项 PR** | 本 PR | — | 🔄 **本 PR** |
+| 实施 PR #1 | 待启动 | — | ⏳ 等用户授权 |
+
+### 7.2 决议锁定
+
+25 项决议全部 🔒 v1.0 冻结(B 3 + D 12 + F 10)。详见 [`docs/批次8_RBAC_API前评审.md §18`](docs/批次8_RBAC_API前评审.md) D7 v1.0 冻结决议表。
+
+### 7.3 实施前置硬约束(沿 §7 立项记录 §三)
+
+- ❌ 不引入 `casl` / Redis / 队列 / 定时任务
+- ❌ 不扩 `Role` enum(沿 A-4 红线;`SUPER_ADMIN / ADMIN / USER` 三层永远不变)
+- ❌ 不改 v1 14 + 既有 V2 79 接口(沿 A-2 红线 zero drift)
+- ❌ 不动 `users.policy.ts`(沿 D12 永久共存)
+- ⏸️ C-7 attachments 必须等 C-6 上线后再进入 D7-attachments 评审(沿 PR #45 决议 1)
+
+### 7.4 实施 PR 拆分(11 个 PR;沿 §7 立项记录 §四)
+
+| PR | 类型 | 主题 |
+|---|---|---|
+| **1** | `chore(prisma)` | **add RBAC schema and migration**(本立项 PR 合并后启动) |
+| 2 | `feat(permissions)` | Permission CRUD |
+| 3 | `feat(permissions)` | Role CRUD |
+| 4 | `feat(permissions)` | RolePermission CRUD + 缓存集成 |
+| 5 | `feat(permissions)` | UserRole CRUD + 角色层级判定 |
+| 6 | `feat(permissions)` | `rbac.can()` + `RbacService` + me/permissions |
+| 7 | `feat(permissions)` | reload 接口 + 缓存失效 |
+| 8 | `feat(permissions)` | seed migration + bootstrap |
+| 9 | `docs(v2-batch8-landing)` | docs 收口 |
+| 10 | `chore` | bump version 0.8.0 → 0.9.0(SemVer minor) |
+| 11 | `docs(v2)` | v0.9.0 handoff |
+
+实施周期 **2-3 周**(参考 batch6 audit_logs 第二波)。
+
+### 7.5 本立项 PR 边界
+
+仅文档(3 处):
+
+- ✅ 新增 [`docs/批次8_RBAC_V2x立项记录.md`](docs/批次8_RBAC_V2x立项记录.md)
+- ✅ `TASKS.md` 追加 §7(本节)
+- ✅ `CHANGELOG.md` Unreleased 追加一行
+
+不动:
+
+- ❌ `src/**` / `prisma/**` / `test/**` / `package.json` / `pnpm-lock.yaml`
+- ❌ 不新增 migration / 不改 seed
+- ❌ 不 bump version / 不 tag / 不 release
+- ❌ 不启动 RBAC 实施(实施 PR #1 必须单独启动 + 用户授权)
+- ❌ 不改 `docs/srvf-foundation-baseline.md` / `ARCHITECTURE.md` / `docs/V2红线与复活路径.md` / `docs/handoff/v0.8.1.md`
+
+### 7.6 合并后下一步
+
+本立项 PR 合并后,**下一步必须是实施 PR #1**:
+
+```
+chore(prisma): add RBAC schema and migration
+```
+
+详见 [`docs/批次8_RBAC_V2x立项记录.md §六`](docs/批次8_RBAC_V2x立项记录.md)。**禁止**未经用户授权就启动实施 PR。
