@@ -4,6 +4,106 @@
 
 ## Unreleased
 
+(无;待下一波 V2 / V2.x 增量或文档变更登记)
+
+## v0.9.0 - 2026-05-14
+
+V2 第一阶段在 v0.8.0(批次 6 `audit_logs` 第二波写操作迁移收官)基础之上,完成 **V2.x
+C-6 RBAC 全模块实施**(批次 8;沿 D7 v1.1 25 项决议;**11 PR 累计**:#52 立项 + #53
+v1.1 命名修订 + #54 schema/migration + #55-#61 7 个 feat PR + #62 docs 收口 + 本 PR
+bump version);**新增 16 个 RBAC 端点 + 4 张 RBAC 表 + 14 条 BizCode + `RbacService`
+判权核心 + `RbacCacheService` 进程内 TTL 缓存 + seed/bootstrap**;**v1 14 + V2 79 既有
+接口 schema + paths 严格 zero drift**(contract snapshot CI 守护);**累计 95 接口**
+(原 79 + 16 RBAC);累计 contract snapshot **200 个用例**(原 184 + 16 路由 + 22 DTO 增量)。
+
+**SemVer 拍板**:0.8.0 → 0.9.0 **minor**(向后兼容的能力扩展:新增 16 个 V2 接口 +
+4 张表 + 1 个 migration + `CurrentUserPayload.memberId` 服务端扩展;v1 14 + V2 79 既有
+接口零字段 / 路径 / 错误码改动;无 breaking change;沿 v0.7.0 → v0.8.0 minor 风格)。
+
+**重要业务能力**(前端 / 运营 / 接入方必读):
+
+- **RBAC 4 表模型全部就位**(沿 D7 v1.1 §4):`RbacRole`(`@@map("roles")`,软删)/
+  `Permission`(`@@map("permissions")`,物理删)/ `RolePermission`(`@@map("role_permissions")`,
+  物理删,`@@unique([roleId, permissionId])`)/ `UserRole`(`@@map("user_roles")`,物理删,
+  `@@unique([userId, roleId])`)。**v1 enum Role 保持不动**(沿 D7 v1.1 命名修订 B1 +
+  A-4 红线);RBAC 4 表作为业务级权限点,与三层 Role 并存(沿 D12 永不切换)。
+- **16 个 RBAC 端点全部就位**(沿 D7 v1.1 §5.1 F2):
+  - `/api/v2/permissions` × 4(GET 列表 / POST 创建 / PATCH 更新 / DELETE 删除)
+  - `/api/v2/roles` × 5(GET 列表 / GET 详情含 permissions / POST / PATCH / DELETE 软删)
+  - `/api/v2/roles/:id/permissions[/:permissionId]` × 2(POST 批量授权 / DELETE 撤权)
+  - `/api/v2/users/:userId/roles[/:roleId]` × 3(GET 查 / POST 分配 / DELETE 撤销)
+  - `/api/v2/rbac/me/permissions` × 1(任何登录用户;SUPER_ADMIN 返 Permission.code 全集)
+  - `/api/v2/rbac/reload` × 1(3 档 scope:all / user(+userId) / role(+roleId))
+- **入口权限标注**:全部 16 端点入口仍 `@Roles(Role.SUPER_ADMIN, Role.ADMIN)`(me/permissions
+  额外加 USER);**Service 层显式 `rbac.can()` 在业务模块的实际接入留后续 PR**(沿 F5 + F9 +
+  用户拍板;本批次 0 处业务调用 `rbac.can()`;`RBAC_FORBIDDEN=30100` 段位预留)。
+- **`RbacService` 判权核心**:`getUserPermissionCodes` / `can` / `judge` / `checkOwnership` /
+  `getMyPermissions` / `reload`;判权优先级 SUPER_ADMIN 短路 → user_roles → role_permissions →
+  permissions 聚合 → 精确匹配 → `.self` ownership(沿 D7 §7.1 / §8.2;`user.id` / `user.memberId`
+  混合 owner)。
+- **`RbacCacheService` 进程内 TTL 缓存**:Map + setTimeout 等价进程内 TTL;3 个 invalidate 入口
+  (单 user / 持某 role 所有 user 批量 / 全量);`RBAC_CACHE_TTL_SECONDS` env 可调(默认 1800 秒,
+  推荐区间 [60, 86400])。**不引入 Redis / node-cache / lru-cache**(沿 V1.1 §17.3 + D5 v1.0 锁)。
+- **`CurrentUserPayload` 扩展**:`+memberId: string | null`(沿 D7 §8.3 owner 判定);
+  `JwtStrategy.validate()` select 同步追加;**v1 14 接口 response 契约 zero drift**
+  (memberId **不**进 `UserResponseDto` / `userSafeSelect`,仅服务端内部使用)。
+- **14 条 BizCode 段位 `300xx + 301xx` 实装**(沿 D7 §12 + F1):
+  - `300xx` 通用:`PERMISSION_NOT_FOUND` / `PERMISSION_CODE_ALREADY_EXISTS` /
+    `INVALID_PERMISSION_CODE_FORMAT` / `ROLE_NOT_FOUND` / `ROLE_CODE_ALREADY_EXISTS` /
+    `ROLE_DELETED` / `INVALID_ROLE_CODE_FORMAT` / `ROLE_PERMISSION_NOT_FOUND` /
+    `USER_ROLE_ALREADY_EXISTS` / `USER_ROLE_NOT_FOUND`(10 项)
+  - `301xx` 权限 / 边界:`RBAC_FORBIDDEN`(段位预留)/ `LAST_OPS_ADMIN_PROTECTED` /
+    `CANNOT_ASSIGN_HIGHER_ROLE`(3 项)
+  - 沿 baseline §1.1 段位锁定(避开 `140xx + 141xx` audit_logs;中间留 `240xx-290xx`)
+- **Q7 角色分级 C2 中庸方案**(沿 D7 v1.1 §6.2 + 用户拍板;UserRolesService 内 inline
+  `canAssignRole` 私有 helper):SUPER_ADMIN 通过任何 / 持 ops-admin 可分配非 ops-admin /
+  其他(包括 ADMIN 单独)抛 `CANNOT_ASSIGN_HIGHER_ROLE`(30102);**dept-chief / dept-deputy
+  实际层级未实装**(留业务模块 RBAC 接入 PR)。
+- **最后一个 ops-admin 保护**(沿 D7 §6.3 + v1 §13 最后一个 SUPER_ADMIN 保护范式):
+  撤 ops-admin 角色时事务内 count 剩余活跃持有者 ≥ 1,否则抛 `LAST_OPS_ADMIN_PROTECTED`(30101)。
+- **seed/bootstrap**(沿 D7 v1.1 §10):`prisma/seed.ts` 追加 `seedRbac()`,upsert 14 条
+  `rbac.*` Permission 全集 + `ops-admin` RbacRole + 14 条 RolePermission 映射;
+  bootstrap 走 `RBAC_INITIAL_OPS_ADMIN_USER_ID` env 优先 → SUPER_ADMIN fallback;
+  强校验"至少 1 个活跃 user_role 持有 ops-admin",否则 throw;**全部幂等**(重复跑零增量)。
+- **测试覆盖**:7 e2e suites(`permissions` / `rbac-roles` / `role-permissions` / `user-roles` /
+  `rbac-me-permissions` / `rbac-reload` / `seed-rbac`)+ 1 unit spec(`rbac.service.spec.ts`);
+  contract snapshot 200 个用例(增量 16 路由 + 22 DTO;v1 14 + V2 79 既有接口 zero drift)。
+
+**仍未做项**(沿 D7 决议 + 用户拍板任务边界):
+
+- ❌ **未接入任何业务模块判权**(0 处 `rbac.can()` 业务调用;`RBAC_FORBIDDEN=30100`
+  仅段位预留)
+- ❌ **未把 14 个 RBAC CRUD 端点接 `rbac.can()`**(入口仍 `@Roles(SUPER_ADMIN, ADMIN)`;
+  留 C-7 attachments 启动时或专项 PR 接入)
+- ❌ **未 seed 4 条 `attachment.*` 权限点**(D7 §10.2 锁定 4 段 code 与 PR #2 实装
+  Permission code 3 段正则 `/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2}$/` 冲突;
+  留 C-7 attachments 启动时另议正则放宽或 code 命名)
+- ❌ **未 seed `role-a..role-f` placeholder 业务角色**(不写真实部门名 / 职务名 /
+  队内角色名;由后续运营通过 API 创建,或 `.env.seed.local` 私有 seed 处理)
+- ❌ **未实装 dept-chief / dept-deputy 层级**(D7 §6.2 层级表锁定但本批次 seed 不实装)
+- ❌ **未创建 "ADMIN 内置角色"**(ADMIN 自动继承 USER 权限 D7 §7.1 / §8.2 描述
+  通过 seed 实现,留真实业务权限点落地后再处理;14 条 rbac.* 均为管理类权限)
+- ❌ **未启动 C-7 attachments D7 评审稿**(沿 PR #45 决议 1:必须等 C-6 完整收口 +
+  v0.9.0 release 后才启动)
+
+**实施 PR 时间线**(沿 D7 §16 / TASKS.md §7):
+
+| PR | 实际 # | 类型 | squash | 主题 |
+|---|---|---|---|---|
+| 立项 | #52 | docs(v2-design) | `172b684` | start C-6 RBAC V2.x implementation track |
+| v1.1 命名修订 | #53 | docs(v2-design) | `569771b` | revise RBAC role model naming(`Role` → `RbacRole`) |
+| **1** | #54 | chore(prisma) | `88cb4d1` | add RBAC schema and migration |
+| 2 | #55 | feat(permissions) | `6ff55b6` | add Permission CRUD module |
+| 3 | #56 | feat(permissions) | `edcb91e` | add RbacRole CRUD module |
+| 4 | #57 | feat(permissions) | `0d50c99` | add RolePermission assignment module and cache skeleton |
+| 5 | #58 | feat(permissions) | `affc1e8` | add UserRole CRUD module |
+| 6 | #59 | feat(permissions) | `46664c7` | add RbacService and me permissions endpoint |
+| 7 | #60 | feat(permissions) | `6de6f64` | add RBAC reload endpoint |
+| 8 | #61 | feat(permissions) | `43db185` | add RBAC seed/bootstrap |
+| 9 | #62 | docs(v2) | `7e97dac` | record C-6 RBAC implementation landing |
+| **10 (本 PR)** | — | chore | — | bump version to 0.9.0 |
+| 11 | 待启动 | docs(v2) | — | v0.9.0 handoff |
+
 ### Added
 
 - **V2.x C-6 RBAC 实施 PR #1-#8 全部合入 main**(沿 [`docs/批次8_RBAC_API前评审.md`](docs/批次8_RBAC_API前评审.md) D7 v1.1 + [`docs/批次8_RBAC_V2x立项记录.md`](docs/批次8_RBAC_V2x立项记录.md));包括:
