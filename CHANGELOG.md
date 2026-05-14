@@ -95,6 +95,26 @@
   handoff;实施周期 2-3 周参考 batch6)。**不**修订 baseline / ARCHITECTURE.md /
   V2 红线 / handoff(均已在 v0.2 / v1.0 阶段就位,v2.x 立项沿用);共用上方
   "纯文档变更"边界声明。
+- 修订 [`docs/批次8_RBAC_API前评审.md`](docs/批次8_RBAC_API前评审.md) v1.0 冻结稿
+  → **v1.1 修订稿**(纯命名修订)。**触发**:实施 PR #1 启动时跑
+  `pnpm prisma generate` 发现 `model Role` 与 v1 已有 `enum Role { SUPER_ADMIN,
+  ADMIN, USER }` 名称冲突(Prisma 不允许 model 与 enum 同名);v1.0 评审过程
+  未捕获此纸面 vs 实际差异(D7 v0.1 / v0.2 / v1.0 三段 Prisma DSL 仅作设计草案
+  展示,未真正跑过 `prisma generate` 验证)。**用户拍板方案 A**:RBAC 模型 Prisma
+  model `Role` → **`RbacRole`**;DB 表名仍 **`@@map("roles")`** ;API 路径仍
+  **`/api/v2/roles`**;业务概念仍叫"角色";Prisma client 用法 `prisma.role.xxx` →
+  **`prisma.rbacRole.xxx`**;User 反向 relation `userRoles` 加
+  **`@relation("UserRoleHolder")`** 消歧(因 User 上对 UserRole 有 2 个反向);
+  **v1 enum Role 保持不动**(`SUPER_ADMIN / ADMIN / USER` 三层永远不变;沿 A-2 +
+  A-4 红线)。**修订范围**:25 项决议除 B1 / D4 / D11 / F7 命名同步外,其余 21 项
+  全部沿 v1.0 不变;其余 3 model(`Permission` / `RolePermission` / `UserRole`)
+  顺手追加 `@@map("permissions")` / `@@map("role_permissions")` / `@@map("user_roles")`
+  保持 DB 表名 snake_case 复数风格(沿 audit_logs / API 路径风格)。**本 PR 仅
+  文档修订**:不动 `src/**` / `prisma/**` / `test/**` / `package.json` /
+  `pnpm-lock.yaml`;不新增 migration / 不改 seed;不 bump version / 不 tag /
+  不 release;**不启动 RBAC 实施**(本 PR 合并后,实施 PR #1 才允许重新启动)。
+  **不**修订 baseline / ARCHITECTURE.md / V2 红线 / handoff / 立项记录 / TASKS.md
+  §7(均已锁,实施 PR #1 落地时按 v1.1 命名同步)。共用上方"纯文档变更"边界声明。
 
 ## v0.8.0 - 2026-05-13
 
