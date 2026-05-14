@@ -594,6 +594,39 @@ export const BizCode = {
     message: '无权查看该审计记录',
     httpStatus: HttpStatus.FORBIDDEN,
   },
+
+  // V2.x C-6 RBAC 实施 PR #2(2026-05-14):permissions 模块段位 300xx 实装。
+  //
+  // 段位归属(沿 baseline §1.1 / D7 v1.1 §12 / F1 v0.2 锁):
+  // - 300xx:RBAC 模块通用错误(本 PR 实装 3 个:30001 / 30002 / 30008)
+  // - 301xx:RBAC 权限 / 边界错误(本 PR 不实装,留 PR #5 角色分配 / PR #6 judge 实施时按需追加)
+  //
+  // 本 PR 实装的码(D7 v1.1 §12.1):
+  // - 30001:权限点不存在(NOT_FOUND;findFirst → null 时抛)
+  // - 30002:code 撞唯一约束(CONFLICT;P2002 兜底,DTO @MaxLength + Service @Matches 已前置拦截大部分)
+  // - 30008:code 格式不合法(BAD_REQUEST;Service 层显式 regex 校验,
+  //         不依赖 DTO @Matches — 让本码真正可触发并被 e2e 覆盖)
+  //
+  // 不开的码(留后续 PR 实装):
+  // - 30000 RBAC_BAD_REQUEST(通用,留 PR #6 judge 用)
+  // - 30003-30007 / 30009 Role/UserRole 相关(留 PR #3-#5 实装)
+  // - 30010+ 其他(本 PR 不预占)
+  // - 301xx 全段(留 PR #5 / PR #6 按需追加;沿 baseline §1.1 段内增量,无需重新冻结)
+  PERMISSION_NOT_FOUND: {
+    code: 30001,
+    message: '权限点不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  PERMISSION_CODE_ALREADY_EXISTS: {
+    code: 30002,
+    message: '权限点 code 已存在',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  INVALID_PERMISSION_CODE_FORMAT: {
+    code: 30008,
+    message: '权限点 code 格式不合法',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];

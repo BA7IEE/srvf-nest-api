@@ -172,6 +172,14 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 不开放 POST / PATCH / PUT / DELETE / export(F5;写入后不可改不可删,红线)
   ['get', '/api/v2/audit-logs'],
   ['get', '/api/v2/audit-logs/{id}'],
+
+  // V2.x C-6 RBAC 实施 PR #2(2026-05-14;permissions CRUD,沿 D7 v1.1 §5.1 端点 1-4)
+  // 仅 Permission CRUD;Role / RolePermission / UserRole / RbacService / 判权
+  // 接入由后续 PR #3-#6 完成。沿 F9:本 PR 接入仅入口 Guard @Roles,不接 RBAC 判权。
+  ['get', '/api/v2/permissions'],
+  ['post', '/api/v2/permissions'],
+  ['patch', '/api/v2/permissions/{id}'],
+  ['delete', '/api/v2/permissions/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -286,6 +294,12 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   //   AuditContextDto 是嵌套 DTO(AuditLogResponseDto.context 字段引用),Swagger 注册为 named schema。
   'AuditContextDto',
   'AuditLogResponseDto',
+
+  // V2.x C-6 RBAC 实施 PR #2 permissions(2026-05-14;沿 D7 v1.1 §5.2)
+  // 注:ListPermissionsQueryDto 是 @Query() DTO,被内联为 parameters,不进 components.schemas。
+  'CreatePermissionDto',
+  'UpdatePermissionDto',
+  'PermissionResponseDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
