@@ -78,6 +78,14 @@ export interface LoginThrottleConfig {
   ttlSeconds: number;
 }
 
+// V2.x C-6 RBAC 实施 PR #6:RBAC 进程内缓存配置(沿 D7 v1.1 §9.1 / D6 v1.0 / F8 v1.0)。
+// TTL 默认 30 分钟(1800 秒);env `RBAC_CACHE_TTL_SECONDS` 可调;归 app.config.ts(沿 baseline §7)。
+// 推荐区间 [60, 86400](1 分钟到 1 天;过短会让 invalidate 失去意义,过长会让"撤角色"延迟生效);
+// 单实例(沿 V1.1 §17.3 不引入 Redis);多实例升级路径见 D7 §9.3。
+export interface RbacCacheConfig {
+  ttlSeconds: number;
+}
+
 export interface AppConfig {
   env: AppEnv;
   port: number;
@@ -85,6 +93,7 @@ export interface AppConfig {
   swaggerEnabled: boolean;
   logLevel: LogLevel;
   loginThrottle: LoginThrottleConfig;
+  rbacCache: RbacCacheConfig;
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -124,5 +133,14 @@ export default registerAs('app', (): AppConfig => {
     ),
   };
 
-  return { env, port, corsOrigin, swaggerEnabled, logLevel, loginThrottle };
+  const rbacCache: RbacCacheConfig = {
+    ttlSeconds: parsePositiveInt(
+      process.env.RBAC_CACHE_TTL_SECONDS,
+      1800,
+      'RBAC_CACHE_TTL_SECONDS',
+      { min: 60, max: 86400 },
+    ),
+  };
+
+  return { env, port, corsOrigin, swaggerEnabled, logLevel, loginThrottle, rbacCache };
 });

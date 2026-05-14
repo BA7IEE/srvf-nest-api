@@ -206,6 +206,12 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/v2/users/{userId}/roles'],
   ['post', '/api/v2/users/{userId}/roles'],
   ['delete', '/api/v2/users/{userId}/roles/{roleId}'],
+
+  // V2.x C-6 RBAC 实施 PR #6(2026-05-14;RbacService + me/permissions,沿 D7 v1.1 §5.1 端点 15)
+  // 任何登录用户(@Roles(USER, ADMIN, SUPER_ADMIN));SUPER_ADMIN 返 Permission.code 全集
+  //(沿用户拍板方案 B);其它角色返 user_roles → role_permissions → permissions 聚合后的并集。
+  // 仅本 PR 端点 15;端点 16 reload + RBAC_FORBIDDEN(30100)业务模块接入 留 PR #7-#8。
+  ['get', '/api/v2/rbac/me/permissions'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -347,6 +353,12 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   //   AssignUserRoleDto 是 @Body() 单字段 DTO,UserRoleResponseDto 是出参,均注册为 named schema。
   'AssignUserRoleDto',
   'UserRoleResponseDto',
+
+  // V2.x C-6 RBAC 实施 PR #6 rbac me/permissions(2026-05-14;沿 D7 v1.1 §5.2.6 / §5.3)
+  // MyPermissionsResponseDto 出参 + EffectiveRoleDto 嵌套 DTO(@ApiExtraModels 显式声明
+  // 注册为独立 named schema)。
+  'MyPermissionsResponseDto',
+  'EffectiveRoleDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

@@ -14,6 +14,7 @@ const fakeAppCfg: AppConfig = {
   swaggerEnabled: true,
   logLevel: 'info',
   loginThrottle: { limit: 5, ttlSeconds: 60 },
+  rbacCache: { ttlSeconds: 1800 },
 };
 
 function getRedactPaths(): readonly string[] {

@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { AppConfig } from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 
 // V2.x C-6 RBAC 实施 PR #4:RBAC 缓存骨架(skeleton)。
@@ -16,10 +18,9 @@ import { PrismaService } from '../../database/prisma.service';
 // - cache state 实际为空(因为没有 set);invalidate 调用是 no-op,但代码路径已串联,
 //   PR #6 实施 rbac.can() 时无需返工调用链
 //
-// **TTL**:本 PR 硬编码默认 30 分钟(沿 D6 v1.0 锁;`RBAC_CACHE_TTL_SECONDS=1800`);
-// 后续 PR #6 接入 rbac.can() 时把 TTL 改为从 `RBAC_CACHE_TTL_SECONDS` env 读
-// (沿 baseline §7 配置归属归 `src/config/app.config.ts`)。
-const DEFAULT_TTL_MS = 30 * 60 * 1000;
+// **TTL**(PR #6 更新,2026-05-14):从 `RBAC_CACHE_TTL_SECONDS` env 读
+// (沿 baseline §7 配置归属归 `src/config/app.config.ts` / D6 v1.0 默认 1800 秒)。
+// 默认 1800 秒(30 分钟);推荐区间 [60, 86400](1 分钟到 1 天)。
 
 interface CacheEntry {
   permissions: Set<string>;
@@ -32,9 +33,16 @@ export class RbacCacheService {
   private readonly cache = new Map<string, CacheEntry>();
   private readonly ttlMs: number;
 
-  constructor(private readonly prisma: PrismaService) {
-    // TODO(PR #6):从 RBAC_CACHE_TTL_SECONDS env 读(沿 baseline §7 + D6 v1.0)
-    this.ttlMs = DEFAULT_TTL_MS;
+  constructor(
+    private readonly prisma: PrismaService,
+    configService: ConfigService,
+  ) {
+    // PR #6:RBAC_CACHE_TTL_SECONDS env(沿 app.config.ts rbacCache.ttlSeconds;D6 v1.0 默认 1800)
+    const appCfg = configService.get<AppConfig>('app');
+    if (!appCfg) {
+      throw new Error('app.config 未加载,RbacCacheService 无法读取 RBAC_CACHE_TTL_SECONDS');
+    }
+    this.ttlMs = appCfg.rbacCache.ttlSeconds * 1000;
   }
 
   // ============ get / set(skeleton;由 PR #6 rbac.can() 调用)============

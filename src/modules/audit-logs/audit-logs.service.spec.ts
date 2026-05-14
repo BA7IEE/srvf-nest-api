@@ -26,6 +26,7 @@ function makeCurrentUser(overrides: Partial<CurrentUserPayload> = {}): CurrentUs
     username: 'self',
     role: Role.ADMIN,
     status: UserStatus.ACTIVE,
+    memberId: null,
     ...overrides,
   };
 }

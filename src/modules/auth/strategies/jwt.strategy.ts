@@ -39,9 +39,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload): Promise<CurrentUserPayload> {
+    // V2.x C-6 RBAC 实施 PR #6:select 追加 memberId(沿 D7 v1.1 §8.2 / §8.3 owner 判定)。
+    // 用户未绑定 member 时返 null。其它 v1 字段(id/username/role/status)不变,
+    // v1 14 接口 response 契约 zero drift。
     const user = await this.prisma.user.findFirst({
       where: { id: payload.sub, deletedAt: null },
-      select: { id: true, username: true, role: true, status: true },
+      select: { id: true, username: true, role: true, status: true, memberId: true },
     });
     if (!user || user.status !== UserStatus.ACTIVE) {
       throw new BizException(BizCode.UNAUTHORIZED);

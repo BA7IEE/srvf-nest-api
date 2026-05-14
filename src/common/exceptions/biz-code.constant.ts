@@ -719,6 +719,21 @@ export const BizCode = {
     message: '无权分配或撤销该角色',
     httpStatus: HttpStatus.FORBIDDEN,
   },
+
+  // V2.x C-6 RBAC 实施 PR #6(2026-05-14):RbacService.can() 配套统一拒绝码。
+  //
+  // 沿 D7 v1.1 §F5 / §12.2 锁定:Service 层显式 `rbac.can(actor, action, resource?)` 调用,
+  // 失败由**调用方**抛 `BizException(BizCode.RBAC_FORBIDDEN)`(`30100`);
+  // RbacService 自身只返 boolean / RbacJudgeResult,不抛异常。
+  //
+  // **本 PR 使用范围**:GET /api/v2/rbac/me/permissions 入口本身不抛(任何登录用户均可访问);
+  // RBAC_FORBIDDEN 段位预留,供后续 PR 接入业务模块判权时使用(沿 F9 仅新增 V2 接口启用)。
+  // 暴露段位 + message 文案在本 PR 落地,**调用点**留后续 PR。
+  RBAC_FORBIDDEN: {
+    code: 30100,
+    message: '无权执行此操作',
+    httpStatus: HttpStatus.FORBIDDEN,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];
