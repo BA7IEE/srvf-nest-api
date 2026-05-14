@@ -25,8 +25,9 @@ export class PermissionResponseDto {
   id!: string;
 
   @ApiProperty({
-    description: '权限点 code,格式 <module>.<action>.<resource_type>(D2 v1.0;kebab-case 三段)',
-    example: 'attachment.upload.cert',
+    description:
+      '权限点 code,格式 <module>.<action>.<resource_type>[.<scope>](D2 v1.2;kebab-case 3-4 段,scope 可选)',
+    example: 'attachment.upload.cert.self',
   })
   code!: string;
 
@@ -54,8 +55,8 @@ export class PermissionResponseDto {
 export class CreatePermissionDto {
   @ApiProperty({
     description:
-      'code,格式 <module>.<action>.<resource_type>(D2 v1.0 锁定 kebab-case;三段点分隔;详见 service 层 regex 校验 / 失败抛 30008)',
-    example: 'attachment.upload.cert',
+      'code,格式 <module>.<action>.<resource_type>[.<scope>](D2 v1.2 锁定 kebab-case;3-4 段点分隔,scope 可选;详见 service 层 regex 校验 / 失败抛 30008)',
+    example: 'attachment.upload.cert.self',
     minLength: 1,
     maxLength: 80,
   })
