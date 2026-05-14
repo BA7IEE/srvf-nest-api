@@ -190,6 +190,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/v2/roles/{id}'],
   ['patch', '/api/v2/roles/{id}'],
   ['delete', '/api/v2/roles/{id}'],
+
+  // V2.x C-6 RBAC 实施 PR #4(2026-05-14;RolePermission 关联表,沿 D7 v1.1 §5.1 端点 10-11)
+  // POST 批量授权(幂等;入参 permissionCodes[]);DELETE 撤权(精确 :permissionId);
+  // BizCode 30011 ROLE_PERMISSION_NOT_FOUND(关系不存在);
+  // 沿 D7 §9.4 缓存失效:授权/撤权后清所有持有该角色的 user cache。
+  ['post', '/api/v2/roles/{id}/permissions'],
+  ['delete', '/api/v2/roles/{id}/permissions/{permissionId}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -319,6 +326,11 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'UpdateRbacRoleDto',
   'RbacRoleResponseDto',
   'RbacRoleDetailResponseDto',
+
+  // V2.x C-6 RBAC 实施 PR #4 role-permissions(2026-05-14;沿 D7 v1.1 §5.2.3)
+  // 注:RevokeRolePermissionParamDto 是 @Param() DTO,被内联为 parameters,不进 components.schemas。
+  //   出参复用 RbacRoleDetailResponseDto(沿 RbacRole detail 范式)。
+  'AssignRolePermissionsDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
