@@ -662,6 +662,25 @@ export const BizCode = {
     message: '角色 code 格式不合法',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+
+  // V2.x C-6 RBAC 实施 PR #4(2026-05-14):RolePermission 关联表段 1 码实装。
+  //
+  // 30011 实装规则(沿用户拍板;D7 v1.1 §12 未定义,本 PR 段内增量,沿 baseline §1.3
+  // XX010-XX029 业务级输入校验段位语义):
+  // - DELETE /api/v2/roles/:id/permissions/:permissionId:
+  //   - role 不存在 / 已软删 → 30003 / 30005(沿 RbacRole CRUD;复用)
+  //   - permission 不存在 → 30001(沿 Permission CRUD;复用)
+  //   - role 与 permission 都存在,但 (roleId, permissionId) 关系不存在 → 30011(新增)
+  // - POST /api/v2/roles/:id/permissions:沿用户拍板**幂等成功**,
+  //   重复授权静默跳过,**不**抛 30010 ROLE_PERMISSION_ALREADY_EXISTS
+  //
+  // 30010-30019 子段位预留 RolePermission 业务级输入校验(本 PR 仅占 30011;
+  // 30010 不开,留未来"严格模式重复授权报错"等场景按需追加)
+  ROLE_PERMISSION_NOT_FOUND: {
+    code: 30011,
+    message: '角色未持有此权限点',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];
