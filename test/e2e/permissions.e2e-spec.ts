@@ -291,14 +291,21 @@ describe('permissions 模块', () => {
   // ============ 非法 code 格式(30008) ============
 
   describe('非法 code 格式(30008 INVALID_PERMISSION_CODE_FORMAT)', () => {
+    // v1.2 修订(C-7 attachments 实施 PR #1):正则 `{2}$` → `{2,3}$`,支持 3-4 段(scope 可选)。
+    // - 4 段(`a.b.c.d` / `attachment.upload.cert.self` 等)现在是**合法**,从非法挪到合法
+    // - **5 段**(`a.b.c.d.e` / `attachment.upload.cert.self.extra`)继续非法,作为新反例
     it.each([
-      ['no_dots', 'nodots'], // 0 个点
-      ['one_dot', 'a.b'], // 只 1 个点(需要 2 个)
-      ['four_dots', 'a.b.c.d'], // 4 段(超过 3 段)
+      ['no_dots', 'nodots'], // 0 个点(1 段;`attachment` 等同)
+      ['one_dot', 'a.b'], // 1 个点(2 段;`attachment.upload` 等同)
+      ['five_dots', 'a.b.c.d.e'], // 5 段(超过 4 段;v1.2 上限)
+      ['attachment_5_segments', 'attachment.upload.cert.self.extra'], // 5 段命中场景
       ['uppercase', 'A.B.C'], // 大写
+      ['attachment_uppercase', 'Attachment.upload.cert'], // 大写场景
       ['leading_digit', '1a.b.c'], // 首字母数字
       ['underscore', 'a_b.c.d'], // 下划线(只允许 -)
-      ['empty_segment', 'a..c'], // 空段
+      ['empty_segment_3seg', 'a..c'], // 3 段空段
+      ['empty_segment_4seg', 'attachment..cert.self'], // 4 段中间空段
+      ['empty_scope', 'attachment.upload..self'], // 4 段第三段空
       ['trailing_dot', 'a.b.c.'], // 末尾点
       ['leading_dot', '.a.b.c'], // 开头点
     ])('POST code = %s 形如 %s → 30008', async (_name, code) => {
@@ -315,9 +322,16 @@ describe('permissions 模块', () => {
     });
 
     it.each([
-      ['simple', 'a.b.c'],
-      ['with_dashes', 'attachment-mod.upload-action.cert-type'],
-      ['with_digits', 'mod1.action2.type3'],
+      ['simple_3seg', 'a.b.c'],
+      ['with_dashes_3seg', 'attachment-mod.upload-action.cert-type'],
+      ['with_digits_3seg', 'mod1.action2.type3'],
+      ['rbac_3seg_read', 'rbac.permission.read'], // 沿 D7-RBAC §10.2 rbac.* 3 段示例
+      ['rbac_3seg_create', 'rbac.role.create'],
+      // ===== v1.2 新增 4 段合法 case(attachment.* 4 段 scope 后缀) =====
+      ['attachment_4seg_upload_self', 'attachment.upload.cert.self'],
+      ['attachment_4seg_upload_other', 'attachment.upload.cert.other'],
+      ['attachment_4seg_view_self', 'attachment.view.cert.self'],
+      ['attachment_4seg_view_other', 'attachment.view.cert.other'],
     ])('POST code = %s 合法形如 %s → 201', async (_name, code) => {
       const res = await request(httpServer(app))
         .post('/api/v2/permissions')

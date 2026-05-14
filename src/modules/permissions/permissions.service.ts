@@ -15,11 +15,12 @@ import { permissionSelect } from './permissions.select';
 // V2.x C-6 RBAC 实施 PR #2:permissions 模块业务逻辑。
 // 沿 D7 v1.1 §4.2 / §5.1 / §12.1。
 //
-// **D2 v1.0 code 格式正则**(沿 D7 §5.2.1):
-// `<module>.<action>.<resource_type>` — kebab-case 三段点分隔;
-// 每段:首字母小写 + 后续 [a-z0-9-] 任意长度;三段间用 `.` 严格分隔。
+// **D2 v1.2 code 格式正则**(沿 D7-RBAC v1.2 修订 PR #66 `2b934c5`):
+// `<module>.<action>.<resource_type>[.<scope>]` — kebab-case 3-4 段;scope 可选,
+// 当前用于 `.self` / `.other` ownership 后缀(沿 §8.2 `action.endsWith('.self')` 触发 ownership 判定)。
+// 每段:首字母小写 + 后续 [a-z0-9-] 任意长度;段间用 `.` 严格分隔。
 // 校验失败抛 BizException(BizCode.INVALID_PERMISSION_CODE_FORMAT)(30008)。
-const CODE_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2}$/;
+const CODE_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2,3}$/;
 
 type SafePermission = Prisma.PermissionGetPayload<{ select: typeof permissionSelect }>;
 
