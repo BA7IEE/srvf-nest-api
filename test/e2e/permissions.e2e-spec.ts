@@ -42,9 +42,7 @@ describe('permissions 模块', () => {
     // resetDb 当前未含 RBAC 4 表(留 PR #3-#5 添加 roles / role_permissions / user_roles 时
     // 一次性更新 reset-db.ts;本 PR 只清 permissions 即可,Role CRUD 尚未实施)。
     // 本 spec beforeAll 显式 TRUNCATE,确保跑多次不撞 code unique。
-    await prisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "permissions" RESTART IDENTITY CASCADE',
-    );
+    await prisma.$executeRawUnsafe('TRUNCATE TABLE "permissions" RESTART IDENTITY CASCADE');
 
     await createTestUser(app, { username: 'perm-su', role: Role.SUPER_ADMIN });
     await createTestUser(app, { username: 'perm-adm', role: Role.ADMIN });
