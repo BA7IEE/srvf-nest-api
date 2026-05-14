@@ -4,6 +4,31 @@
 
 ## Unreleased
 
+### Added
+
+- **V2.x C-6 RBAC 实施 PR #1-#8 全部合入 main**(沿 [`docs/批次8_RBAC_API前评审.md`](docs/批次8_RBAC_API前评审.md) D7 v1.1 + [`docs/批次8_RBAC_V2x立项记录.md`](docs/批次8_RBAC_V2x立项记录.md));包括:
+  - **schema**(PR #54 `chore(prisma)`):4 张 RBAC 表 `RbacRole` / `Permission` / `RolePermission` / `UserRole`(DB 表名 `@@map("roles")` / `permissions` / `role_permissions` / `user_roles`);沿 D7 v1.1 B1 命名修订(避 v1 enum Role 冲突)+ D4 软删策略(RbacRole 软删,其余 3 表物理删)
+  - **16 个端点全部就位**(`/api/v2/permissions/*` × 4 + `/api/v2/roles/*` × 5 + `/api/v2/roles/:id/permissions[/:permissionId]` × 2 + `/api/v2/users/:userId/roles[/:roleId]` × 3 + `/api/v2/rbac/me/permissions` × 1 + `/api/v2/rbac/reload` × 1):
+    - PR #55 `feat(permissions): add Permission CRUD module`(端点 1-4;BizCode 30001 / 30002 / 30008)
+    - PR #56 `feat(permissions): add RbacRole CRUD module`(端点 5-9;BizCode 30003 / 30004 / 30005 / 30009)
+    - PR #57 `feat(permissions): add RolePermission assignment module and cache skeleton`(端点 10-11;BizCode 30011 + `RbacCacheService` Map+TTL 骨架)
+    - PR #58 `feat(permissions): add UserRole CRUD module`(端点 12-14;BizCode 30006 / 30007 / 30101 / 30102 + Q7 C2 中庸角色分级 + 最后一个 ops-admin 保护)
+    - PR #59 `feat(permissions): add RbacService and me permissions endpoint`(端点 15;`RbacService.{getUserPermissionCodes, can, judge, checkOwnership, getMyPermissions}` + `CurrentUserPayload.memberId` 扩展 + `RBAC_CACHE_TTL_SECONDS` env + BizCode 30100 段位预留)
+    - PR #60 `feat(permissions): add RBAC reload endpoint`(端点 16;3 档 scope `all` / `user` / `role`)
+  - **seed/bootstrap**(PR #61 `feat(permissions): add RBAC seed/bootstrap`):`prisma/seed.ts` 追加 `seedRbac()` — 14 条 `rbac.*` Permission upsert + `ops-admin` RbacRole upsert + 14 条 RolePermission 映射 + `RBAC_INITIAL_OPS_ADMIN_USER_ID` env 优先 / SUPER_ADMIN fallback bootstrap + 强校验至少 1 个活跃 ops-admin 持有者;全部幂等
+  - **`CurrentUserPayload` 扩展**:`+memberId: string | null`(沿 D7 §8.3 owner 判定);JwtStrategy select 同步追加;**v1 14 接口 response 契约 zero drift**(memberId 不进 UserResponseDto / userSafeSelect)
+  - **BizCode 段位 `300xx + 301xx` 实装**:14 个错误码全部落地(`PERMISSION_NOT_FOUND` / `PERMISSION_CODE_ALREADY_EXISTS` / `INVALID_PERMISSION_CODE_FORMAT` / `ROLE_NOT_FOUND` / `ROLE_CODE_ALREADY_EXISTS` / `ROLE_DELETED` / `INVALID_ROLE_CODE_FORMAT` / `ROLE_PERMISSION_NOT_FOUND` / `USER_ROLE_ALREADY_EXISTS` / `USER_ROLE_NOT_FOUND` / `RBAC_FORBIDDEN`(段位预留)/ `LAST_OPS_ADMIN_PROTECTED` / `CANNOT_ASSIGN_HIGHER_ROLE`)
+  - **测试覆盖**:7 suites unit + 40 suites e2e + contract snapshot 16 路由 + 22 DTO(沿 PR #55-#61 累计);v1 14 + V2 79 既有接口 schema / paths **zero drift**
+  - **明确未做项**(沿用户拍板任务边界 / D7 决议 + PR #1-#8 累计):
+    - ❌ **未接入任何业务模块判权**(0 处 `rbac.can()` 业务调用;`RBAC_FORBIDDEN=30100` 仅段位预留,等真实业务模块接入时再使用)
+    - ❌ **未把 14 个 RBAC CRUD 端点接 `rbac.can()`**(沿 F9 + 用户拍板;留 PR #8 seed 后另起 PR 或 C-7 attachments 启动时一并接入)
+    - ❌ **未 seed 4 条 `attachment.*`**(D7 §10.2 锁定 4 段 code 与 PR #2 实装 Permission code 3 段正则冲突;留 C-7 attachments 启动时另议)
+    - ❌ **未 seed `role-a..role-f` placeholder 业务角色**(不写真实部门名 / 职务名 / 队内角色名;由后续运营通过 API 创建或 `.env.seed.local` 私有 seed 处理)
+    - ❌ **未实装 dept-chief / dept-deputy 层级**(seed 真实名留 PR #8 已收口;实际业务层级判定留业务模块 RBAC 接入 PR)
+    - ❌ **未创建"ADMIN 内置角色"**(ADMIN 自动继承 USER 权限留真实业务权限点落地后再处理;14 条 rbac.* 均为管理类权限)
+    - ❌ **未 bump version / 未 tag / 未 release**(version 仍 `0.8.0`;bump 留 PR #10 + release 留 PR #11 v0.9.0 handoff)
+- 沿 baseline §13.3:**纯 docs 收口 PR 不动 schema / migration / 代码 / 测试 / version / tag / release**(本 changelog 段位身为收口 PR 自身,不动以上路径)。
+
 ### Docs
 
 - 新增 [`docs/handoff/v0.8.0.md`](docs/handoff/v0.8.0.md):v0.8.0 阶段交接说明

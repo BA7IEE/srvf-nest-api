@@ -1429,14 +1429,14 @@ D7-min 决议时刻锁定 5 个延后模型,V2.x 复活触发条件如下(指向
 
 ---
 
-## 7. V2.x C-6 RBAC 立项准备(批次 8)
+## 7. V2.x C-6 RBAC(批次 8)
 
-> **状态**:🔄 **已立项,等用户授权启动实施 PR #1**(`chore(prisma): add RBAC schema and migration`)
+> **状态(2026-05-14 PR #9 docs 收口)**:🎯 **设计 + schema + CRUD + service + seed/bootstrap 全部完成**(PR #54-#61 实施 PR #1-#8 + 本 docs 收口 PR #9);docs 收口进行中;**bump version + v0.9.0 handoff 待用户授权启动**。
 > **入口文档**:[`docs/批次8_RBAC_V2x立项记录.md`](docs/批次8_RBAC_V2x立项记录.md)
-> **D7 v1.0 冻结**:PR #51(squash commit `b301da8`)
-> **本立项 PR 不动代码**;实施 PR 仍需单独启动 + 用户授权。
+> **D7 v1.1 冻结**:PR #51 v1.0 → PR #53 v1.1 命名修订(squash commit `569771b`)
+> **业务模块判权接入仍待后续批次**(0 处 `rbac.can()` 业务调用;14 RBAC CRUD 入口仍 `@Roles(SUPER_ADMIN, ADMIN)`)。
 
-### 7.1 立项时间线
+### 7.1 时间线(设计 + 立项 + 实施 + 收口)
 
 | 阶段 | PR | squash commit | 状态 |
 |---|---|---|---|
@@ -1445,61 +1445,68 @@ D7-min 决议时刻锁定 5 个延后模型,V2.x 复活触发条件如下(指向
 | D7 v0.1 草稿 | #48 | `b892a7e` | ✅ |
 | D7 v0.2 局部收口 | #50 | `6d54ec3` | ✅ |
 | D7 v1.0 冻结 | #51 | `b301da8` | ✅ |
-| **V2.x 立项 PR** | 本 PR | — | 🔄 **本 PR** |
-| 实施 PR #1 | 待启动 | — | ⏳ 等用户授权 |
+| V2.x 立项 PR | #52 | `172b684` | ✅ |
+| D7 v1.1 命名修订 | #53 | `569771b` | ✅ |
+| 实施 PR #1 schema + migration | #54 | `88cb4d1` | ✅ |
+| 实施 PR #2 Permission CRUD | #55 | `6ff55b6` | ✅ |
+| 实施 PR #3 RbacRole CRUD | #56 | `edcb91e` | ✅ |
+| 实施 PR #4 RolePermission + cache skeleton | #57 | `0d50c99` | ✅ |
+| 实施 PR #5 UserRole CRUD + Q7 + ops-admin 保护 | #58 | `affc1e8` | ✅ |
+| 实施 PR #6 RbacService + me/permissions + memberId | #59 | `46664c7` | ✅ |
+| 实施 PR #7 reload endpoint | #60 | `6de6f64` | ✅ |
+| 实施 PR #8 seed/bootstrap | #61 | `43db185` | ✅ |
+| **PR #9 docs 收口** | 本 PR | — | 🔄 **本 PR** |
+| PR #10 bump version 0.8.0 → 0.9.0 | 待启动 | — | ⏳ 等用户授权 |
+| PR #11 v0.9.0 handoff | 待启动 | — | ⏳ 等用户授权 |
 
 ### 7.2 决议锁定
 
-25 项决议全部 🔒 v1.0 冻结(B 3 + D 12 + F 10)。详见 [`docs/批次8_RBAC_API前评审.md §18`](docs/批次8_RBAC_API前评审.md) D7 v1.0 冻结决议表。
+25 项决议全部 🔒 v1.0 冻结 + v1.1 命名修订(B 3 + D 12 + F 10)。详见 [`docs/批次8_RBAC_API前评审.md §18`](docs/批次8_RBAC_API前评审.md) D7 v1.1 决议表。
 
 ### 7.3 实施前置硬约束(沿 §7 立项记录 §三)
 
-- ❌ 不引入 `casl` / Redis / 队列 / 定时任务
-- ❌ 不扩 `Role` enum(沿 A-4 红线;`SUPER_ADMIN / ADMIN / USER` 三层永远不变)
-- ❌ 不改 v1 14 + 既有 V2 79 接口(沿 A-2 红线 zero drift)
-- ❌ 不动 `users.policy.ts`(沿 D12 永久共存)
-- ⏸️ C-7 attachments 必须等 C-6 上线后再进入 D7-attachments 评审(沿 PR #45 决议 1)
+- ✅ 不引入 `casl` / Redis / 队列 / 定时任务(已落地;`RbacCacheService` 用 Map + setTimeout 等价进程内 TTL)
+- ✅ 不扩 `Role` enum(沿 A-4 红线;`SUPER_ADMIN / ADMIN / USER` 三层永远不变)
+- ✅ 不改 v1 14 + 既有 V2 79 接口(沿 A-2 红线 zero drift;contract snapshot 守护)
+- ✅ 不动 `users.policy.ts`(沿 D12 永久共存)
+- ⏸️ C-7 attachments 仍等 PR #10 / #11 收口完成后才进入 D7-attachments 评审(沿 PR #45 决议 1)
 
-### 7.4 实施 PR 拆分(11 个 PR;沿 §7 立项记录 §四)
+### 7.4 实施 PR 落地(沿 §7 立项记录 §四)
 
-| PR | 类型 | 主题 |
-|---|---|---|
-| **1** | `chore(prisma)` | **add RBAC schema and migration**(本立项 PR 合并后启动) |
-| 2 | `feat(permissions)` | Permission CRUD |
-| 3 | `feat(permissions)` | Role CRUD |
-| 4 | `feat(permissions)` | RolePermission CRUD + 缓存集成 |
-| 5 | `feat(permissions)` | UserRole CRUD + 角色层级判定 |
-| 6 | `feat(permissions)` | `rbac.can()` + `RbacService` + me/permissions |
-| 7 | `feat(permissions)` | reload 接口 + 缓存失效 |
-| 8 | `feat(permissions)` | seed migration + bootstrap |
-| 9 | `docs(v2-batch8-landing)` | docs 收口 |
-| 10 | `chore` | bump version 0.8.0 → 0.9.0(SemVer minor) |
-| 11 | `docs(v2)` | v0.9.0 handoff |
+参见 §7.1 时间线表 PR #54-#61 + 本 PR #9。
 
-实施周期 **2-3 周**(参考 batch6 audit_logs 第二波)。
+**累计基础能力**(2026-05-14 实测):
+- 4 张 RBAC 表 + 1 个 migration(`add_rbac`)
+- 16 个 RBAC 端点(全部 `@ApiBearerAuth()` + Swagger 注册;**contract snapshot 增量 16 路由 + 22 DTO**)
+- 14 个 BizCode(`300xx` × 9 + `301xx` × 3 段位实装 + `RBAC_FORBIDDEN=30100` 段位预留 + 30011 `ROLE_PERMISSION_NOT_FOUND`)
+- 1 个 `RbacService`(`getUserPermissionCodes` / `can` / `judge` / `checkOwnership` / `getMyPermissions` / `reload`)
+- 1 个 `RbacCacheService`(Map + TTL + 3 个 invalidate 入口;`RBAC_CACHE_TTL_SECONDS` env 可调)
+- 1 个 seed 拓展(14 条 rbac.* + ops-admin RbacRole + 14 条 RolePermission + bootstrap with env / SUPER_ADMIN fallback + 强校验)
+- `CurrentUserPayload.memberId` 扩展(沿 D7 §8.3 owner 判定;v1 14 接口 response zero drift)
+- 7 个 e2e spec(`permissions` / `rbac-roles` / `role-permissions` / `user-roles` / `rbac-me-permissions` / `rbac-reload` / `seed-rbac`)+ 1 个 unit spec(`rbac.service.spec.ts`)
 
-### 7.5 本立项 PR 边界
+### 7.5 本 PR #9 docs 收口边界
 
-仅文档(3 处):
+仅 docs(4 处):
 
-- ✅ 新增 [`docs/批次8_RBAC_V2x立项记录.md`](docs/批次8_RBAC_V2x立项记录.md)
-- ✅ `TASKS.md` 追加 §7(本节)
-- ✅ `CHANGELOG.md` Unreleased 追加一行
+- ✅ 更新 [`docs/批次8_RBAC_V2x立项记录.md`](docs/批次8_RBAC_V2x立项记录.md):状态头部 + §四 PR 拆分表标记 PR #1-#8 已合入 + §六 合并后下一步重写
+- ✅ 更新 [`CHANGELOG.md`](CHANGELOG.md) Unreleased `### Added`:记录 PR #1-#8 累计 + 明确未做项
+- ✅ 更新 [`docs/V2红线与复活路径.md`](docs/V2红线与复活路径.md):C-6 行 + Slow-1 行状态修订
+- ✅ 更新本 `TASKS.md §7`(本节)
 
 不动:
 
 - ❌ `src/**` / `prisma/**` / `test/**` / `package.json` / `pnpm-lock.yaml`
-- ❌ 不新增 migration / 不改 seed
+- ❌ 不新增 migration / 不改 seed.ts
 - ❌ 不 bump version / 不 tag / 不 release
-- ❌ 不启动 RBAC 实施(实施 PR #1 必须单独启动 + 用户授权)
-- ❌ 不改 `docs/srvf-foundation-baseline.md` / `ARCHITECTURE.md` / `docs/V2红线与复活路径.md` / `docs/handoff/v0.8.1.md`
+- ❌ 不启动 C-7 attachments / 不接业务模块判权 / 不实装 dept-chief / 不 seed `attachment.*` / 不 seed `role-a..role-f` / 不创建 ADMIN 内置角色
 
 ### 7.6 合并后下一步
 
-本立项 PR 合并后,**下一步必须是实施 PR #1**:
+本 PR #9 合并后,**下一步是 PR #10 bump version 0.8.0 → 0.9.0**(SemVer minor;新模块 + 新表 + 16 接口),需用户明确授权。
 
-```
-chore(prisma): add RBAC schema and migration
-```
+PR #10 合入后,启动 PR #11 v0.9.0 handoff(13 章节范式;包括下一会话提示词)。
 
-详见 [`docs/批次8_RBAC_V2x立项记录.md §六`](docs/批次8_RBAC_V2x立项记录.md)。**禁止**未经用户授权就启动实施 PR。
+PR #11 release tag v0.9.0 后,**才**启动 C-7 attachments D7 评审稿(沿 PR #45 决议 1)。
+
+**禁止**:未经用户授权,**不**启动 PR #10 / PR #11 / C-7 attachments / 业务模块判权接入。
