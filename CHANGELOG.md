@@ -4,7 +4,9 @@
 
 ## Unreleased
 
-(无;待下一波 V2 / V2.x 增量或文档变更登记)
+### Docs
+
+- `docs(v2-design): refine attachments API review decisions v0.2`(本 PR):D7-attachments 评审稿 v0.1 → **v0.2 局部收口稿**;基于用户一次性批量拍板 Q1-Q16;**锁定 13 项 Q**(Q1 复用 attachments + ownerType=activity + subType=cover / Q2 accessLevel = hint+索引(RBAC 单一权威)/ Q3 tags = `String[]`(不建关联表)/ Q4 uploadedBy = User.id / Q5 ownerType 双层校验(业务层 enum 硬编码 + 配置表运行时白名单)/ Q6 checksum/etag 不进普通出参 / Q7 PATCH metadata 不审计 / Q8 退队 `status=DISABLED ≥ N + 后台提示`(N 待业务确认)/ Q9 预留 `ATTACHMENT_PII_DETECTED=13015` / Q10 activity 不分 self/other / Q11 锁定 20 条 `attachment.*` 权限点清单(seed 留实施 PR)/ Q13 系统级 MIME 黑名单(D7 设计清单)) + **挂起 1 项**(Q12 ADMIN 内置角色,影响 RBAC seed/bootstrap + 业务管理员默认能力) + **挂起 2 项待 Provider 选型**(Q14 上传策略 / Q15 删除策略) + **不冻结 1 项**(Q16 PR 拆分,沿 §13 9-11 PR 建议);**v1.0 暂不冻结**(留入队同意书条款 + N 时长 + Q12 等业务方进一步澄清);沿 D7-RBAC v0.2 / v1.0 / v1.1 收口类 PR 范式在 Unreleased 登记;**本 PR 仅文档修订**,不动代码 / schema / migration / 测试 / package.json / pnpm-lock.yaml
 
 ## v0.9.0 - 2026-05-14
 
