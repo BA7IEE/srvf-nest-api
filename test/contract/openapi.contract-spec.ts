@@ -251,6 +251,21 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/v2/attachment-mime-configs/{id}'],
   ['patch', '/api/v2/attachment-mime-configs/{id}/status'],
   ['delete', '/api/v2/attachment-mime-configs/{id}'],
+
+  // V2.x C-7 attachments 实施 PR #5(2026-05-15;AttachmentSizeLimitConfig CRUD,沿 D7 v1.0 §4.4 + Q1-Q8)
+  // **5 个端点**(Q1 v1.0:本表无 status 字段,无独立 status 端点):list / create / detail / update / softDelete;
+  // 入口 @Roles(SUPER_ADMIN, ADMIN);**不接 rbac.can()**(F4 v1.0);
+  // BizCode 13026 ATTACHMENT_SIZE_LIMIT_CONFIG_NOT_FOUND / 13027 ATTACHMENT_SIZE_LIMIT_CONFIG_ALREADY_EXISTS +
+  // 复用 13020 ATTACHMENT_TYPE_CONFIG_NOT_FOUND(Q5 PR #4);
+  // PATCH /:id 仅 maxSizeBytes / remark(Q4 PR #4:typeConfigId 不可改;Q5 v1.0:maxSizeBytes 不允许 null);
+  // 出参嵌套独立 AttachmentSizeLimitConfigTypeConfigSummaryDto(Q4 v1.0:不复用 mime 的 summary DTO);
+  // typeConfigId 1:1 UNIQUE 含软删历史(Q3 v1.0);软删 deletedAt = now()(Q7 v1.0:本表无 status,不同步置);
+  // **本 PR 不实装**:attachments 主模块 / Provider / audit / RBAC 业务判权 / IN_USE 跨表约束 / status 字段。
+  ['get', '/api/v2/attachment-size-limit-configs'],
+  ['post', '/api/v2/attachment-size-limit-configs'],
+  ['get', '/api/v2/attachment-size-limit-configs/{id}'],
+  ['patch', '/api/v2/attachment-size-limit-configs/{id}'],
+  ['delete', '/api/v2/attachment-size-limit-configs/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -424,6 +439,17 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'UpdateAttachmentMimeConfigStatusDto',
   'AttachmentMimeConfigResponseDto',
   'AttachmentMimeConfigTypeConfigSummaryDto',
+
+  // V2.x C-7 attachments 实施 PR #5 attachment-size-limit-configs(2026-05-15;沿 D7 v1.0 §4.4 + Q1-Q8)
+  // CreateAttachmentSizeLimitConfigDto / UpdateAttachmentSizeLimitConfigDto 是 @Body() DTO;
+  // AttachmentSizeLimitConfigResponseDto 是出参;
+  // AttachmentSizeLimitConfigTypeConfigSummaryDto 是嵌套 typeConfig 摘要(Q4 v1.0:独立 DTO,
+  //   不复用 mime 的 summary;@ApiExtraModels 显式注册);均注册为 named schema。
+  // **本表无 UpdateStatusDto**(Q1 v1.0:本表无 status 字段;无独立 status 端点)。
+  'CreateAttachmentSizeLimitConfigDto',
+  'UpdateAttachmentSizeLimitConfigDto',
+  'AttachmentSizeLimitConfigResponseDto',
+  'AttachmentSizeLimitConfigTypeConfigSummaryDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
