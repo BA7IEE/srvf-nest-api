@@ -105,9 +105,9 @@ export class AttachmentResponseDto {
   @ApiProperty({ description: '更新时间' })
   updatedAt!: Date;
 
-  // Q14 v1.0:Provider 接通前恒返 null;Provider 接通后由独立 PR 接通签名短链
+  // Q14 v1.0 + PR #90:由 storage Provider 生成的签名短链;Provider 不可用时降级为 null
   @ApiPropertyOptional({
-    description: '签名访问短链(Provider 接通前恒为 null;沿 D7 §5.5 / §5.6)',
+    description: '签名访问短链(由 storage Provider 生成;Provider 不可用时降级为 null)',
     nullable: true,
   })
   accessUrl?: string | null;
