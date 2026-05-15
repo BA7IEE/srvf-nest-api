@@ -797,10 +797,10 @@ export class AttachmentsService {
     let row: SafeAttachment;
     try {
       row = await this.prisma.$transaction(async (tx) => {
-        // 沿 Q-10-8:二次提交防御(同 key 重复 confirm)
-        // schema 中 attachment.key 当前**未加 @unique** 约束;P2002 不会触发兜底
-        // → 事务内 findFirst 预检 + 命中 → 13001(沿 Q13 信息泄漏防御)
-        // race condition:两请求并发可能各自看不到对方;低频边界,沿 V1.1 §17.3 不引入分布式锁
+        // 沿 Q-10-8 + attachment_key_unique migration:二次提交防御(同 key 重复 confirm)
+        // schema 已加 attachment.key @unique(沿评审 §8.4.4);双层防御:
+        // - 串行场景:findFirst 早返 13001(省一次 INSERT 尝试 + tx ROLLBACK 开销)
+        // - 并发 race:findFirst 都看不到对方时,由 P2002 catch 兜底返 13001(沿 catch 块)
         const exists = await tx.attachment.findFirst({
           where: { key: claims.key },
           select: { id: true },
