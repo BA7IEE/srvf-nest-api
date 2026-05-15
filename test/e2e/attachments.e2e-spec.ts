@@ -262,7 +262,10 @@ describe('attachments 主模块', () => {
         .send(buildBody());
       expect(res.status).toBe(201);
       expect(res.body.data.ownerType).toBe('member');
-      expect(res.body.data.accessUrl).toBeNull();
+      // PR #90:accessUrl 由 storage Provider 生成;e2e 走 LocalProvider(storage_settings DB 空 → Router fallback)
+      // → 返 `/uploads/<key>?expires=<ts>` 字符串(沿 PR #88 LocalProvider.generateDownloadUrl)
+      expect(typeof res.body.data.accessUrl).toBe('string');
+      expect(res.body.data.accessUrl).toMatch(/^\/uploads\//);
     });
 
     it('ADMIN 无 attachment.upload.*:被拒 30100 RBAC_FORBIDDEN', async () => {
@@ -470,7 +473,7 @@ describe('attachments 主模块', () => {
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
     });
 
-    it('成功路径返完整 DTO(含 accessUrl: null;不含 checksum / etag)', async () => {
+    it('成功路径返完整 DTO(含 accessUrl: string 走 LocalProvider;不含 checksum / etag)', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/attachments')
         .set('Authorization', superAuth)
@@ -490,8 +493,10 @@ describe('attachments 主模块', () => {
         accessLevel: AttachmentAccessLevel.INTERNAL,
         tags: ['t1', 't2'],
         description: 'desc',
-        accessUrl: null,
       });
+      // PR #90:accessUrl 由 storage Provider 生成;e2e 走 LocalProvider → `/uploads/<key>?expires=<ts>`
+      expect(typeof d.accessUrl).toBe('string');
+      expect(d.accessUrl).toMatch(/^\/uploads\//);
       expect(d.checksum).toBeUndefined();
       expect(d.etag).toBeUndefined();
       expect(d.uploadedBy).toBeTruthy();

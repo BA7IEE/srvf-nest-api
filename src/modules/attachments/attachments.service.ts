@@ -1,10 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { AttachmentMimeConfigStatus, AttachmentTypeConfigStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
+import { CosProviderUnavailableError } from '../../common/storage/providers/cos.provider';
+import { StorageSettingsService } from '../../common/storage/storage-settings.service';
+import { STORAGE_PROVIDER } from '../../common/storage/storage.constants';
+import type { StorageProvider } from '../../common/storage/storage.interface';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -50,18 +54,56 @@ import { attachmentSelect } from './attachments.select';
 
 type SafeAttachment = Prisma.AttachmentGetPayload<{ select: typeof attachmentSelect }>;
 
-// Q14 v1.0:accessUrl 占位恒返 null(Provider 接通前)。
-function toResponseDto(row: SafeAttachment): AttachmentResponseDto {
-  return { ...row, accessUrl: null };
-}
-
 @Injectable()
 export class AttachmentsService {
+  private readonly logger = new Logger(AttachmentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
+    @Inject(STORAGE_PROVIDER) private readonly provider: StorageProvider,
+    private readonly storageSettings: StorageSettingsService,
   ) {}
+
+  // Q14 v1.0 + PR #90:Provider 接通后 accessUrl 由 generateDownloadUrl 生成;
+  // Provider 不可用(凭证缺失 / 网络抖动 / settings invalid)→ 降级 null(沿 §6.6.3 信息泄漏防御)。
+  // toResponseDto 改为实例 async method(沿 Q-90-1;访问 this.provider / this.storageSettings)。
+  private async toResponseDto(row: SafeAttachment): Promise<AttachmentResponseDto> {
+    const accessUrl = await this.resolveAccessUrl(row.key);
+    return { ...row, accessUrl };
+  }
+
+  // PR #90:accessUrl 解析失败统一降级 null;不向 client 抛凭证状态(沿 Q13 / §6.6 安全边界)
+  private async resolveAccessUrl(key: string): Promise<string | null> {
+    try {
+      // TTL 来源:storage_settings.downloadUrlTtlSeconds(沿 Q8 + Q-90-2);
+      // settings null(DB 空 / Router fallback Local)→ 兜底 300s
+      const settings = await this.storageSettings.getActiveSettings();
+      const expiresIn = settings?.downloadUrlTtlSeconds ?? 300;
+      const result = await this.provider.generateDownloadUrl({ key, expiresIn });
+      return result.url;
+    } catch (err) {
+      if (err instanceof CosProviderUnavailableError) {
+        // 不在日志中暴露凭证细节(err.message 已经按 §6.6.2 过滤;只透露状态名)
+        this.logger.warn(`accessUrl unavailable (cos): ${err.message}`);
+      } else {
+        this.logger.warn(`accessUrl generation failed: ${(err as Error).message}; key=${key}`);
+      }
+      return null;
+    }
+  }
+
+  // PR #90:事务外同步尝试 Provider 删除(沿 F4 + Q3 路线 C);
+  // 失败 logger.warn,不回滚 DB / audit;依赖 Provider lifecycle 30 天兜底(沿 §6.4.5 / Q11)。
+  // Q3 audit extra.providerDeleteStatus 留 v1.1+ 评审(沿 Q-90-4)。
+  private async tryDeleteFromProvider(key: string): Promise<void> {
+    try {
+      await this.provider.deleteObject(key);
+    } catch (err) {
+      this.logger.warn(`provider deleteObject failed; key=${key}; ${(err as Error).message}`);
+    }
+  }
 
   // PR #6c Q3 拍板:audit snapshot 完整字段(沿 cert toCertSnapshot 范式)。
   // - 包含 DB 字段:落库字段全保留(uploadedBy / originalUploaderName / accessLevel / tags / expireAt 等)
@@ -381,7 +423,7 @@ export class AttachmentsService {
 
       return created;
     });
-    return toResponseDto(row);
+    return this.toResponseDto(row);
   }
 
   // GET /api/v2/attachments(管理后台列表;按入参 query 过滤;逐条 ownership 过滤)。
@@ -417,7 +459,9 @@ export class AttachmentsService {
     }
     const total = visible.length;
     const start = (page - 1) * pageSize;
-    const items = visible.slice(start, start + pageSize).map(toResponseDto);
+    const items = await Promise.all(
+      visible.slice(start, start + pageSize).map((row) => this.toResponseDto(row)),
+    );
     return { items, total, page, pageSize };
   }
 
@@ -435,7 +479,7 @@ export class AttachmentsService {
     const action = `attachment.view.${row.ownerType}${scope ? '.' + scope : ''}`;
     await this.assertReadAllowedOrThrowNotFound(user, action, resource);
 
-    return toResponseDto(row);
+    return this.toResponseDto(row);
   }
 
   // PATCH /api/v2/attachments/:id
@@ -479,7 +523,7 @@ export class AttachmentsService {
       },
       select: attachmentSelect,
     });
-    return toResponseDto(updated);
+    return this.toResponseDto(updated);
   }
 
   // DELETE /api/v2/attachments/:id(Q11 v1.0:物理删,不查跨表引用)。
@@ -528,7 +572,12 @@ export class AttachmentsService {
         tx,
       });
     });
-    return toResponseDto(row);
+
+    // PR #90 + F4 + Q3 路线 C:事务外同步尝试 Provider 删除;失败不回滚 DB / audit
+    // 沿 Q-90-4:audit extra.providerDeleteStatus 不写(留 v1.1+);依赖 Provider lifecycle 兜底
+    await this.tryDeleteFromProvider(row.key);
+
+    return this.toResponseDto(row);
   }
 
   // GET /api/v2/attachments/by-owner?ownerType=&ownerId=
@@ -557,7 +606,9 @@ export class AttachmentsService {
     }
     const total = visible.length;
     const start = (query.page - 1) * query.pageSize;
-    const items = visible.slice(start, start + query.pageSize).map(toResponseDto);
+    const items = await Promise.all(
+      visible.slice(start, start + query.pageSize).map((row) => this.toResponseDto(row)),
+    );
     return { items, total, page: query.page, pageSize: query.pageSize };
   }
 
@@ -580,8 +631,9 @@ export class AttachmentsService {
       }),
       this.prisma.attachment.count({ where }),
     ]);
+    const items = await Promise.all(rows.map((row) => this.toResponseDto(row)));
     return {
-      items: rows.map(toResponseDto),
+      items,
       total,
       page,
       pageSize,
