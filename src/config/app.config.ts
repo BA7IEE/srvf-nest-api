@@ -90,8 +90,21 @@ export interface RbacCacheConfig {
 // AES-256-GCM 需 32 字节 key;运行时由 StorageCryptoService 派生(scrypt)。
 // production 严禁默认值 / 严禁留空(沿 v1 §14 JWT_SECRET 范式)。
 // dev / test 允许留空 → StorageCryptoService.isAvailable() === false,凭证字段读写均抛。
+//
+// V2.x C-7.5 实施 PR #7:LocalStorageProvider 根目录(沿 Q-88-1 拍板 A)。
+// production 不应使用 LocalProvider(沿 F2),本字段不做 production fail-fast;
+// LocalProvider 实例化时若 providerType !== LOCAL 不会被调用(沿 PR #8 切换逻辑)。
 export interface StorageConfig {
   encryptionKey: string; // 空字符串 = 未配置(dev / test 允许;production 启动已 fail)
+  localRoot: string; // LocalProvider 根目录(env STORAGE_LOCAL_ROOT;default './tmp/storage')
+}
+
+// V2.x C-7.5 实施 PR #7:LocalStorageProvider 根目录(沿 Q-88-1 拍板 A)。
+// 留空默认 './tmp/storage'(相对仓库根目录;.gitignore 已排除 tmp/);
+// 显式可以是绝对路径或相对路径;由 LocalStorageProvider 调 path.resolve 归一化。
+function parseStorageLocalRoot(raw: string | undefined): string {
+  const trimmed = (raw ?? '').trim();
+  return trimmed || './tmp/storage';
 }
 
 // V2.x C-7.5 实施 PR #6:沿 Q-87-4(宽松校验)。
@@ -174,6 +187,7 @@ export default registerAs('app', (): AppConfig => {
 
   const storage: StorageConfig = {
     encryptionKey: parseStorageEncryptionKey(process.env.STORAGE_ENCRYPTION_KEY, env),
+    localRoot: parseStorageLocalRoot(process.env.STORAGE_LOCAL_ROOT),
   };
 
   return {

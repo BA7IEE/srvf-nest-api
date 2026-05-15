@@ -29,7 +29,7 @@ function makeCfg(encryptionKey: string): AppCfg {
     logLevel: 'silent' as never,
     loginThrottle: { limit: 5, ttlSeconds: 60 },
     rbacCache: { ttlSeconds: 1800 },
-    storage: { encryptionKey },
+    storage: { encryptionKey, localRoot: './tmp/storage' },
   } as unknown as AppCfg;
 }
 
