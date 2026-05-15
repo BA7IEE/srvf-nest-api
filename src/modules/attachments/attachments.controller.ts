@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
@@ -12,6 +13,7 @@ import {
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   AttachmentResponseDto,
   CreateAttachmentDto,
@@ -44,6 +46,17 @@ import { AttachmentsService } from './attachments.service';
 export class AttachmentsController {
   constructor(private readonly service: AttachmentsService) {}
 
+  // V2.x C-7 PR #6c:从 @Req() 构造 AuditMeta 显式传给 service(沿 cert / emergency-contacts /
+  // activities 范式;D6 v1.1 §11.2 / D8 拍板:不引入 cls-rs / AsyncLocalStorage)。
+  // 仅 create / delete 两个写端点需要(PR #6c 边界)。
+  private buildAuditMeta(req: Request): AuditMeta {
+    return {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    };
+  }
+
   @Post()
   @ApiOperation({
     summary:
@@ -63,8 +76,9 @@ export class AttachmentsController {
   create(
     @Body() dto: CreateAttachmentDto,
     @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AttachmentResponseDto> {
-    return this.service.create(dto, user);
+    return this.service.create(dto, user, this.buildAuditMeta(req));
   }
 
   @Get()
@@ -161,7 +175,8 @@ export class AttachmentsController {
   delete(
     @Param() params: IdParamDto,
     @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AttachmentResponseDto> {
-    return this.service.delete(params.id, user);
+    return this.service.delete(params.id, user, this.buildAuditMeta(req));
   }
 }
