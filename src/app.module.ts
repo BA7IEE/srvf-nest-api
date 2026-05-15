@@ -26,6 +26,7 @@ import { EmergencyContactsModule } from './modules/emergency-contacts/emergency-
 import { HealthModule } from './modules/health/health.module';
 import { MemberDepartmentsModule } from './modules/member-departments/member-departments.module';
 import { AttachmentConfigsModule } from './modules/attachment-configs/attachment-configs.module';
+import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { MemberProfilesModule } from './modules/member-profiles/member-profiles.module';
 import { MembersModule } from './modules/members/members.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
@@ -102,6 +103,12 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   attachments 主模块 / Provider / audit / rbac.can() 接入留更后续 PR。
     //   沿 F4 v1.0:入口 @Roles(SUPER_ADMIN, ADMIN),不接 RBAC 业务判权。
     AttachmentConfigsModule,
+    // V2.x C-7 attachments 实施 PR #6b(2026-05-15):attachments 主模块
+    //   (D7-attachments v1.0 §5.1 / §6;path /api/v2/attachments;7 端点;
+    //    130xx 业务段实装 13001 / 13010-13013 / 13015;复用 30100 RBAC_FORBIDDEN)。
+    //   首次业务模块接入 rbac.can();入口仅 JwtAuthGuard(F3 v1.0;不加 @Roles)。
+    //   audit_logs 接入留 PR #6c;Provider 文件层接入留 Q15 评审。
+    AttachmentsModule,
   ],
   providers: [
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):
