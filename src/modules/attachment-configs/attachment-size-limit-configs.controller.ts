@@ -1,15 +1,21 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
 } from '../../common/decorators/api-response.decorator';
+import {
+  CurrentUser,
+  type CurrentUserPayload,
+} from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   AttachmentSizeLimitConfigResponseDto,
   AttachmentSizeLimitConfigTypeConfigSummaryDto,
@@ -35,6 +41,16 @@ import { AttachmentSizeLimitConfigsService } from './attachment-size-limit-confi
 @Controller('v2/attachment-size-limit-configs')
 export class AttachmentSizeLimitConfigsController {
   constructor(private readonly service: AttachmentSizeLimitConfigsService) {}
+
+  // PR #6d:沿 type-configs / mime-configs.controller / cert / emergency 范式
+  // (D6 v1.1 §11.2 / D8 锁:不引入 cls-rs / AsyncLocalStorage)。
+  private buildAuditMeta(req: Request): AuditMeta {
+    return {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    };
+  }
 
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
@@ -65,8 +81,10 @@ export class AttachmentSizeLimitConfigsController {
   )
   create(
     @Body() dto: CreateAttachmentSizeLimitConfigDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AttachmentSizeLimitConfigResponseDto> {
-    return this.service.create(dto);
+    return this.service.create(dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Get(':id')
@@ -99,8 +117,10 @@ export class AttachmentSizeLimitConfigsController {
   update(
     @Param() params: IdParamDto,
     @Body() dto: UpdateAttachmentSizeLimitConfigDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AttachmentSizeLimitConfigResponseDto> {
-    return this.service.update(params.id, dto);
+    return this.service.update(params.id, dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Delete(':id')
@@ -116,7 +136,11 @@ export class AttachmentSizeLimitConfigsController {
     BizCode.FORBIDDEN,
     BizCode.ATTACHMENT_SIZE_LIMIT_CONFIG_NOT_FOUND,
   )
-  softDelete(@Param() params: IdParamDto): Promise<AttachmentSizeLimitConfigResponseDto> {
-    return this.service.softDelete(params.id);
+  softDelete(
+    @Param() params: IdParamDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<AttachmentSizeLimitConfigResponseDto> {
+    return this.service.softDelete(params.id, currentUser, this.buildAuditMeta(req));
   }
 }

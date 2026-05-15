@@ -1,15 +1,21 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
 } from '../../common/decorators/api-response.decorator';
+import {
+  CurrentUser,
+  type CurrentUserPayload,
+} from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   AttachmentMimeConfigResponseDto,
   AttachmentMimeConfigTypeConfigSummaryDto,
@@ -38,6 +44,15 @@ import { AttachmentMimeConfigsService } from './attachment-mime-configs.service'
 @Controller('v2/attachment-mime-configs')
 export class AttachmentMimeConfigsController {
   constructor(private readonly service: AttachmentMimeConfigsService) {}
+
+  // PR #6d:沿 type-configs.controller / cert / emergency 范式(D6 v1.1 §11.2 / D8 锁)。
+  private buildAuditMeta(req: Request): AuditMeta {
+    return {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    };
+  }
 
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
@@ -68,8 +83,12 @@ export class AttachmentMimeConfigsController {
     BizCode.INVALID_ATTACHMENT_MIME_FORMAT,
     BizCode.ATTACHMENT_MIME_CONFIG_DUPLICATE,
   )
-  create(@Body() dto: CreateAttachmentMimeConfigDto): Promise<AttachmentMimeConfigResponseDto> {
-    return this.service.create(dto);
+  create(
+    @Body() dto: CreateAttachmentMimeConfigDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<AttachmentMimeConfigResponseDto> {
+    return this.service.create(dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Get(':id')
@@ -102,8 +121,10 @@ export class AttachmentMimeConfigsController {
   update(
     @Param() params: IdParamDto,
     @Body() dto: UpdateAttachmentMimeConfigDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AttachmentMimeConfigResponseDto> {
-    return this.service.update(params.id, dto);
+    return this.service.update(params.id, dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Patch(':id/status')
@@ -121,8 +142,10 @@ export class AttachmentMimeConfigsController {
   updateStatus(
     @Param() params: IdParamDto,
     @Body() dto: UpdateAttachmentMimeConfigStatusDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AttachmentMimeConfigResponseDto> {
-    return this.service.updateStatus(params.id, dto);
+    return this.service.updateStatus(params.id, dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Delete(':id')
@@ -138,7 +161,11 @@ export class AttachmentMimeConfigsController {
     BizCode.FORBIDDEN,
     BizCode.ATTACHMENT_MIME_CONFIG_NOT_FOUND,
   )
-  softDelete(@Param() params: IdParamDto): Promise<AttachmentMimeConfigResponseDto> {
-    return this.service.softDelete(params.id);
+  softDelete(
+    @Param() params: IdParamDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<AttachmentMimeConfigResponseDto> {
+    return this.service.softDelete(params.id, currentUser, this.buildAuditMeta(req));
   }
 }

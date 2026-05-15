@@ -1,10 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   AttachmentSizeLimitConfigResponseDto,
   CreateAttachmentSizeLimitConfigDto,
@@ -13,13 +16,19 @@ import {
 } from './attachment-size-limit-configs.dto';
 import { attachmentSizeLimitConfigSelect } from './attachment-size-limit-configs.select';
 
-// V2.x C-7 attachments 实施 PR #5(2026-05-15):AttachmentSizeLimitConfig 业务逻辑。
-// 沿 D7 v1.0 §4.4 + 用户 Step 1 拍板 Q1-Q8 + PR #3 / PR #4 范式。
+// V2.x C-7 attachments 实施 PR #5 / PR #6d(2026-05-15):AttachmentSizeLimitConfig 业务逻辑。
+// 沿 D7 v1.0 §4.4 + 用户 Step 1 拍板 Q1-Q8 + PR #6d Q1-Q8 audit 接入。
 //
 // **关键差异**(沿 D7 v1.0 §4.4 schema 现状):
 // - **本表无 status 字段**(Q1 v1.0:不加)→ 5 端点(无 status 端点);软删只置 deletedAt = now()
 // - 1:1 关系:typeConfigId UNIQUE(每 type 至多一条 override)
 // - 无 mime 格式校验(本表只存 size 数值);DTO @Min/@Max 兜底 1 ~ 10 GiB
+//
+// **PR #6d audit 接入**:3 个写端点(create / update / softDelete);**无 updateStatus**
+//(本表无 status 字段);extra.configType='sizeLimit'。
+
+// PR #6d:audit resourceType 按表区分(Q2 拍板)
+const AUDIT_RESOURCE_TYPE = 'attachment_size_limit_config';
 
 type SafeSizeLimitConfig = Prisma.AttachmentSizeLimitConfigGetPayload<{
   select: typeof attachmentSizeLimitConfigSelect;
@@ -27,7 +36,22 @@ type SafeSizeLimitConfig = Prisma.AttachmentSizeLimitConfigGetPayload<{
 
 @Injectable()
 export class AttachmentSizeLimitConfigsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogs: AuditLogsService,
+  ) {}
+
+  // PR #6d Q3 拍板:audit snapshot 不含 id / 时间戳 / deletedAt;沿 cert / emergency 范式。
+  // size limit 字段全部非敏感,不打码;无 Date 字段,不需 toISOString。
+  // attachmentSizeLimitConfigSelect 包含 typeConfig 嵌套(Q4 v1.0 size 出参摘要),audit
+  // snapshot 只取扁平字段;typeConfigId 进 extra 便于跨表关联追溯。
+  private toSizeLimitConfigAuditSnapshot(c: SafeSizeLimitConfig): Record<string, unknown> {
+    return {
+      typeConfigId: c.typeConfigId,
+      maxSizeBytes: c.maxSizeBytes,
+      remark: c.remark,
+    };
+  }
 
   // ============ helpers ============
 
@@ -98,8 +122,10 @@ export class AttachmentSizeLimitConfigsService {
 
   async create(
     dto: CreateAttachmentSizeLimitConfigDto,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<AttachmentSizeLimitConfigResponseDto> {
-    // 1. typeConfigId FK 真实性校验(Q5 PR #4 复用:不存在或软删 → 13020)
+    // 1. typeConfigId FK 真实性校验(Q5 PR #4 复用:不存在或软删 → 13020;校验链留事务外)
     await this.assertTypeConfigActive(dto.typeConfigId);
 
     // 2. typeConfigId 1:1 UNIQUE 预检查(含软删历史;Q3 v1.0:软删后不可复用;沿 CLAUDE.md §10)
@@ -111,16 +137,37 @@ export class AttachmentSizeLimitConfigsService {
       throw new BizException(BizCode.ATTACHMENT_SIZE_LIMIT_CONFIG_ALREADY_EXISTS);
     }
 
-    // 3. 写入(P2002 兜底处理并发)
+    // 3. 同事务:写主表 + audit;P2002 兜底外层包(沿 PR #6d Q8 拍板)。
     return this.runUniqueGuard(() =>
-      this.prisma.attachmentSizeLimitConfig.create({
-        data: {
-          typeConfigId: dto.typeConfigId,
-          maxSizeBytes: dto.maxSizeBytes,
-          remark: dto.remark,
-          // 本表无 status 字段(Q1 v1.0);Prisma schema 无此列
-        },
-        select: attachmentSizeLimitConfigSelect,
+      this.prisma.$transaction(async (tx) => {
+        const created = await tx.attachmentSizeLimitConfig.create({
+          data: {
+            typeConfigId: dto.typeConfigId,
+            maxSizeBytes: dto.maxSizeBytes,
+            remark: dto.remark,
+            // 本表无 status 字段(Q1 v1.0);Prisma schema 无此列
+          },
+          select: attachmentSizeLimitConfigSelect,
+        });
+
+        await this.auditLogs.log({
+          event: 'attachment.config.change',
+          actorUserId: currentUser.id,
+          actorRoleSnap: currentUser.role,
+          resourceType: AUDIT_RESOURCE_TYPE,
+          resourceId: created.id,
+          meta: auditMeta,
+          after: this.toSizeLimitConfigAuditSnapshot(created),
+          extra: {
+            configType: 'sizeLimit',
+            operation: 'create',
+            typeConfigId: created.typeConfigId,
+            maxSizeBytes: created.maxSizeBytes,
+          },
+          tx,
+        });
+
+        return created;
       }),
     );
   }
@@ -128,9 +175,11 @@ export class AttachmentSizeLimitConfigsService {
   async update(
     id: string,
     dto: UpdateAttachmentSizeLimitConfigDto,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<AttachmentSizeLimitConfigResponseDto> {
-    // 1. 先确认活跃(不存在或已软删统一返 13026)
-    await this.findActiveByIdOrThrow(id);
+    // 1. 先确认活跃(不存在或已软删统一返 13026;校验链留事务外)
+    const before = await this.findActiveByIdOrThrow(id);
 
     // 2. Q5 v1.0 显式拒绝 maxSizeBytes = null(class-validator @IsOptional 不拒 null;
     //    Prisma 收到 null 撞 NOT NULL 约束会走 500;在 service 入口提前拒)
@@ -139,28 +188,74 @@ export class AttachmentSizeLimitConfigsService {
       throw new BizException(BizCode.BAD_REQUEST);
     }
 
-    // 3. 仅更新 maxSizeBytes / remark
-    //    Q4 PR #4 范式:typeConfigId 不可改(DTO 已白名单);
-    //    forbidNonWhitelisted 兜底其他字段(包括不存在的 status)
-    return this.prisma.attachmentSizeLimitConfig.update({
-      where: { id },
-      data: {
-        maxSizeBytes: dto.maxSizeBytes,
-        remark: dto.remark,
-      },
-      select: attachmentSizeLimitConfigSelect,
+    // 3. 事务内:更新 + audit(Q4 PR #4 范式:typeConfigId 不可改;
+    //    forbidNonWhitelisted 兜底其他字段(包括不存在的 status))
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.attachmentSizeLimitConfig.update({
+        where: { id },
+        data: {
+          maxSizeBytes: dto.maxSizeBytes,
+          remark: dto.remark,
+        },
+        select: attachmentSizeLimitConfigSelect,
+      });
+
+      await this.auditLogs.log({
+        event: 'attachment.config.change',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: updated.id,
+        meta: auditMeta,
+        before: this.toSizeLimitConfigAuditSnapshot(before),
+        after: this.toSizeLimitConfigAuditSnapshot(updated),
+        extra: {
+          configType: 'sizeLimit',
+          operation: 'update',
+          typeConfigId: updated.typeConfigId,
+          maxSizeBytes: updated.maxSizeBytes,
+        },
+        tx,
+      });
+
+      return updated;
     });
   }
 
-  async softDelete(id: string): Promise<AttachmentSizeLimitConfigResponseDto> {
+  async softDelete(
+    id: string,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<AttachmentSizeLimitConfigResponseDto> {
     // 1. 先确认活跃(沿 PR #4 mime softDelete 范式;沿 v1 §10 信息泄漏防御)
     const existing = await this.findActiveByIdOrThrow(id);
 
-    // 2. 软删(Q7 v1.0:本表无 status 字段,只置 deletedAt = now();不同步置任何其他字段)
+    // 2. 事务内:软删 + audit(Q7 v1.0:本表无 status 字段,只置 deletedAt = now();
+    //    不同步置任何其他字段)。
     //    Q2 v1.0:本 PR 不查 attachments 主表跨表引用;留主模块 PR 触发时再加 IN_USE 检查
-    await this.prisma.attachmentSizeLimitConfig.update({
-      where: { id },
-      data: { deletedAt: new Date() },
+    //    PR #6d Q5:resourceId=existing.id(软删 id 不变;沿 cert / emergency softDelete 范式)
+    await this.prisma.$transaction(async (tx) => {
+      await tx.attachmentSizeLimitConfig.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
+
+      await this.auditLogs.log({
+        event: 'attachment.config.change',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: existing.id,
+        meta: auditMeta,
+        before: this.toSizeLimitConfigAuditSnapshot(existing),
+        extra: {
+          configType: 'sizeLimit',
+          operation: 'delete',
+          typeConfigId: existing.typeConfigId,
+          maxSizeBytes: existing.maxSizeBytes,
+        },
+        tx,
+      });
     });
     return existing;
   }
