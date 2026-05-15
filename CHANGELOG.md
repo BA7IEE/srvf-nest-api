@@ -4,7 +4,9 @@
 
 ## Unreleased
 
-(无;待下一波 V2 / V2.x 增量或文档变更登记)
+### Docs
+
+- `docs(v2-design): start C-7.5 provider V2.x implementation track`(本 PR):C-7.5 Provider 选型 V2.x 立项准备;4 处文档修订(新增 [`docs/批次7_provider选型_V2x立项记录.md`](docs/批次7_provider选型_V2x立项记录.md) 9 章节 + [`TASKS.md §9`](TASKS.md) V2.x C-7.5 任务清单 + [`docs/V2红线与复活路径.md`](docs/V2红线与复活路径.md) §4.3 C-10 行 + 本 CHANGELOG `Unreleased` `### Docs`);**仅 docs**,不动代码 / schema / migration / 测试 / package.json / pnpm-lock.yaml / src/** / prisma/** / test/** / .github/** / [`docs/批次7_provider选型_API前评审.md`](docs/批次7_provider选型_API前评审.md)(C-7.5 v1.0 冻结文档)/ [`docs/批次7_attachments_API前评审.md`](docs/批次7_attachments_API前评审.md)(D7 v1.0 冻结文档)/ [`docs/批次7_attachments_V2x立项记录.md`](docs/批次7_attachments_V2x立项记录.md)(C-7 实施收口)/ [`docs/handoff/v0.10.0.md`](docs/handoff/v0.10.0.md)(历史 handoff)/ README.md / ARCHITECTURE.md / CLAUDE.md / AGENTS.md;**不 bump version / 不打 tag / 不发 Release / 不启动 C-7.5 实施 PR #5-11**(留独立 PR 由用户授权);**承接 C-7.5 v1.0 冻结**(PR #84 `f8b357d`;35 项决议:F 5 + B 5 + Q 25);**承接 D7-attachments Q14 / Q15 挂起项**;沿 C-7 attachments 立项 PR #69 范式 + D7-RBAC 立项 PR #52 范式
 
 ## v0.10.0 - 2026-05-15
 
