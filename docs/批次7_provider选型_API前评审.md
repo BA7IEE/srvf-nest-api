@@ -1,13 +1,13 @@
 # 《批次7_provider选型_API前评审稿》(C-7.5 Provider 选型 D7-provider v0.2 局部收口稿)
 
-> **状态**:**v0.2 局部收口稿**(2026-05-15)— **收口原因**:v0.1 草稿([PR #82](https://github.com/BA7IEE/srvf-nest-api/pull/82),squash commit `6dbdbed`,2026-05-15)10 项 v0.1 拍板(F 5 + B 5)+ 15 项 Q 留评审后,用户拍板**v0.2 局部收口**:**正式 Provider 锁定为腾讯云 COS**(不再 OSS / COS 二选一);沿用 v0.1 锁定的 F1-F5 / B1-B5;**Q1 / Q4 锁定**(业务方既有云资源 + 存储后端具体选择)+ **Q8 / Q9 / Q10 / Q11 / Q12 / Q13 / Q14 / Q15 锁定**(TTL / uploadState / PII 重做 / versioning / 加密 / multipart / CORS / 迁移)+ **新增 Q16-Q19 锁定**(私有桶 / key 命名 / 环境隔离 / STS);**留 v1.0 / 实施期决议 3 项**(Q5 接口签名细化 / Q6 upload-url 字段集 / Q7 confirm-upload 字段集 — 实施 PR 期落地)。
+> **状态**:**v0.2 局部收口稿**(2026-05-15;**含 v0.2 架构修订**)— **收口原因**:v0.1 草稿([PR #82](https://github.com/BA7IEE/srvf-nest-api/pull/82),squash commit `6dbdbed`,2026-05-15)10 项 v0.1 拍板(F 5 + B 5)+ 15 项 Q 留评审后,用户拍板**v0.2 局部收口**:**正式 Provider 锁定为腾讯云 COS**(不再 OSS / COS 二选一);**COS 运行参数支持后台配置 + 凭证安全存储**(Q20 / Q21 / Q22 / Q23 新增锁定;**不长期依赖 env**;env 仅作 bootstrap fallback / dev / test 兜底);**底层 `storage_settings` schema 一次设计完整,实施可分批**(Q24 / Q25 新增锁定;原则:**字段允许闲置,不允许未来推翻 schema**);沿用 v0.1 锁定的 F1-F5 / B1-B5;**Q1 / Q4 锁定**(业务方既有云资源 + 存储后端具体选择)+ **Q8 / Q9 / Q10 / Q11 / Q12 / Q13 / Q14 / Q15 锁定**(TTL / uploadState / PII 重做 / versioning / 加密 / multipart / CORS / 迁移)+ **新增 Q16-Q25 锁定**(私有桶 / key 命名 / 环境隔离 / STS / 后台配置 / 凭证加密 / 不回显 / 不依赖 env / schema 一次设计 / 实施分批);**留 v1.0 / 实施期决议 3 项**(Q5 接口签名细化 / Q6 upload-url 字段集 / Q7 confirm-upload 字段集 — 实施 PR 期落地)。
 >
 > **触发条件**:C-7 attachments 全模块实施已收口(v0.10.0;沿 [`docs/handoff/v0.10.0.md`](handoff/v0.10.0.md));D7-attachments v1.0 冻结稿(PR #68,squash commit `5da801f`)挂起 Q14 / Q15 Provider 上传 / 删除策略,**留 Provider 选型评审稿**;C-7 attachments **9 个实施 PR(#70-#78)+ landing(#79) + bump(#80) + handoff(#81)** 共 17 PR 已全部入 main;`v0.10.0` tag + Latest GitHub Release 已发(`2f4b89d` → `1db905e`,2026-05-15)。本 PR 推进 **C-7.5 Provider 选型 v0.2 局部收口**,沿 D7-attachments v0.2 局部收口稿 / D7-RBAC v0.2 局部收口稿范式。
 >
 > **性质**:**C-7.5 Provider 选型评审 v0.2 局部收口稿**(基于 v0.1 草稿 + 用户拍板腾讯云 COS 锁定 + 9 项 v0.2 锁定决策;**沿 D7-attachments v1.0 冻结稿不回改**)。
 > **批次号**:批次 7.5 暂定;正式编号以 **C-7.5 V2.x 立项 commit** 为准。
 > **撰写日期**:2026-05-15(v0.1 / **v0.2**)
-> **修订历程**(只在本说明区出现历史措辞):**v0.1 草稿**(PR #82,squash commit `6dbdbed`,2026-05-15,5 项 F 锁 + 5 项 B 锁 + 15 项 Q 待评审)→ **v0.2 局部收口稿**(本 PR,用户拍板**正式 Provider = 腾讯云 COS**;锁定 Q1 / Q4 / Q8 / Q9 / Q10 / Q11 / Q12 / Q13 / Q14 / Q15 共 10 项 Q + 新增 Q16 / Q17 / Q18 / Q19 共 4 项 Q = **v0.2 共锁 14 项 Q**;留 3 项 Q 待 v1.0 / 实施期决议;**不回改 D7-attachments v1.0 冻结稿**)。
+> **修订历程**(只在本说明区出现历史措辞):**v0.1 草稿**(PR #82,squash commit `6dbdbed`,2026-05-15,5 项 F 锁 + 5 项 B 锁 + 15 项 Q 待评审)→ **v0.2 局部收口稿(初版)**(本 PR commit 1,用户拍板**正式 Provider = 腾讯云 COS**;锁定 Q1 / Q4 / Q8-Q15 共 10 项 Q + 新增 Q16-Q19 共 4 项 Q = 共锁 14 项 Q;留 3 项 Q 待 v1.0 / 实施期决议)→ **v0.2 架构修订**(本 PR commit 2,用户拍板**COS 配置后台化 + 凭证加密存储**;不长期依赖 env;新增 Q20-Q25 共 6 项 Q + 新增 §6.5 Storage Settings 架构设计 + §6.6 凭证安全边界 + §16 PR 拆分 13 → 14 PR 节奏;**原则:底层模型一次设计对,实施可分批,字段允许闲置不允许推翻 schema**;**不回改 D7-attachments v1.0 冻结稿**)。
 > **拍板准绳**:沿 D6 / D7-attachments / D7-RBAC 业务确认稿"**不考虑时间周期,只考虑项目稳定和长久**"(沿 D6 §1.2)。
 > **接续**:
 > - [D7-attachments v1.0 冻结稿](批次7_attachments_API前评审.md)(PR #68,squash commit `5da801f`;**Q14 / Q15 沿用挂起待本评审决议**)
@@ -18,24 +18,30 @@
 > - [`src/common/storage/storage.interface.ts`](../src/common/storage/storage.interface.ts)(v1 极简 interface;`putObject` + `deleteObject` 两动作;留待 Provider 接入时扩展)
 > - [`src/modules/attachments/attachments.service.ts`](../src/modules/attachments/attachments.service.ts) `toResponseDto`(`accessUrl: null` 占位;Provider 接入唯一改动点)
 > **风格参照**:[批次7_attachments_API前评审.md](批次7_attachments_API前评审.md)(D7 评审稿正典)/ [批次8_RBAC_API前评审.md](批次8_RBAC_API前评审.md)
-> **核心**(v0.2 局部收口;5 项 F 锁 + 5 项 B 锁 + 14 项 Q 锁 + 3 项 Q 留 v1.0 / 实施期):
+> **核心**(v0.2 局部收口含架构修订;5 项 F 锁 + 5 项 B 锁 + 20 项 Q 锁 + 3 项 Q 留 v1.0 / 实施期):
 > - **F1-F5 沿 v0.1 锁**(独立评审 / signed URL 模式 / 国内合规优先 / 同步删除 + lifecycle / 6 方法接口)
-> - **B1-B5 沿 v0.1 锁**(不新增 schema / +2 API / 不新增 RBAC / 不新增 event / 13 PR 节奏)
-> - **🔒 v0.2 新锁 14 项 Q**:
+> - **B1-B5 沿 v0.1 锁**(不新增**业务** schema(沿 D7-attachments 4 表)/ +2 API / 不新增 RBAC / 不新增 event / **PR 节奏 13 → 14**;⚠️ B1 仅约束 attachments 业务表;**`storage_settings` 是配置表,Q24 单独锁**)
+> - **🔒 v0.2 锁 20 项 Q**:
 >   - **Q1 锁**:业务方已锁腾讯云资源(用户拍板)
 >   - **Q4 锁**:正式 Provider = **腾讯云 COS**(国内合规 + 已有云资源;不再 OSS 候选)
->   - **Q8 锁**:`accessUrl` TTL = upload 600s / download 300s(沿 v0.1 倾向)
+>   - **Q8 锁**:`accessUrl` TTL = upload 600s / download 300s(沿 v0.1 倾向;**实际值可后台调整**;沿 Q20)
 >   - **Q9 锁**:不新增 `uploadState` schema 字段(沿 v0.1 倾向 A;客户端由 upload-url 拿 signed token,confirm-upload 一次性落库)
 >   - **Q10 锁**:PII 不在 confirm-upload 重做(upload-url 已检;沿 v0.1 倾向 A)
->   - **Q11 锁**:COS versioning 启用 + lifecycle 30 天 expire 旧版本
+>   - **Q11 锁**:COS versioning 启用 + lifecycle 30 天 expire 旧版本(**`lifecycleDays` 后台可改**;沿 Q20)
 >   - **Q12 锁**:加密 = **COS 服务端加密 SSE-COS**(腾讯云原生;等价 AWS SSE-S3;不启用 SSE-KMS)
 >   - **Q13 锁**:本批次不实施大文件 multipart upload(留 v1.1 / 实施期;客户端单文件 ≤ 5GB 走 PUT signed URL)
->   - **Q14 锁**:COS CORS 配置(AllowedOrigins / AllowedMethods / AllowedHeaders / MaxAge)
+>   - **Q14 锁**:COS CORS 配置(AllowedOrigins / AllowedMethods / AllowedHeaders / MaxAge;**`corsAllowedOrigins` JSON 后台可改**;沿 Q20)
 >   - **Q15 锁**:COS 暂不迁移(若未来跨 Provider,沿 S3 兼容协议;`StorageProvider` 接口抽象保证可平移)
 >   - **Q16 锁**(新增):**私有桶** + signed URL 唯一访问路径;**永不开放公有读**
 >   - **Q17 锁**(新增):key 命名规范 = `attachments/<env>/<yyyy>/<mm>/<dd>/<cuid>.<ext>`
->   - **Q18 锁**(新增):bucket 环境隔离 = **单 bucket + key 前缀**(沿 Q17;`attachments/dev/...` / `attachments/test/...` / `attachments/prod/...`)
+>   - **Q18 锁**(新增):bucket 环境隔离 = **单 bucket + key 前缀**(沿 Q17;**`envPrefix` 后台可改**;沿 Q20)
 >   - **Q19 锁**(新增):**不采用 STS 临时凭证**(沿 F2 模式 B + Q13 暂不 multipart;multipart upload 需要时 v1.1 / 实施期再启用)
+>   - **🆕 Q20 锁**(v0.2 架构修订):**COS Provider 运行参数支持后台配置**(bucket / region / TTL / lifecycle / CORS / envPrefix 等;**不长期依赖 env**;env 仅作 bootstrap fallback + dev / test 兜底;**主路径 = 后台配置读取**)
+>   - **🆕 Q21 锁**(v0.2 架构修订):**SecretId / SecretKey 允许后台录入,但必须加密存储**(`secretIdEncrypted` / `secretKeyEncrypted` 列;encrypted at rest)
+>   - **🆕 Q22 锁**(v0.2 架构修订):**凭证 API 不返回明文 / UI 永不回显**;只支持 reset / replace;`credentialStatus ∈ {configured, missing, invalid}` 状态化展示
+>   - **🆕 Q23 锁**(v0.2 架构修订):**不长期依赖 env**;env 仅允许 bootstrap fallback / 首次系统未初始化兜底 / 本地开发环境;生产主路径 = 后台配置读取
+>   - **🆕 Q24 锁**(v0.2 架构修订):**`storage_settings` schema 一次设计完整**(15+ 字段;允许首期闲置部分字段;**不允许未来推翻 schema 重做 migration**)
+>   - **🆕 Q25 锁**(v0.2 架构修订):**实施分批**(不一次做完;沿 §16 PR 6-14 共 9 个实施 / 收口 PR 节奏)
 > - **本 v0.2 留 v1.0 / 实施期决议 3 项 Q**:Q5 `StorageProvider` 接口签名细化 / Q6 upload-url DTO 字段集 / Q7 confirm-upload DTO 字段集
 
 ---
@@ -359,7 +365,7 @@ attachments/<env>/<yyyy>/<mm>/<dd>/<cuid>.<ext>
 
 **🔒 v0.2 锁**:**COS 服务端加密 SSE-COS**(腾讯云原生;等价 AWS SSE-S3)。
 
-- **启用方式**:bucket 默认加密策略 = `AES256`(COS 控制台 / Terraform 配置;**不在系统侧硬编码**)
+- **启用方式**:bucket 默认加密策略 = `AES256`;**配置在 COS 控制台侧设置**(队组织运维操作;**`storage_settings` 不承载加密策略细节**,仅承载 `providerType` / `bucket` / `region` 等运行参数;沿 Q20 / Q24)
 - **客户端透明**:上传时无需指定加密参数;COS 自动加密落盘
 - **❌ 不启用 SSE-KMS**(沿 D6 决议 4 最低合规版;KMS 复杂度 + 成本不必要;沿 D7-attachments §11 风险 3 接受)
 - **❌ 不启用 SSE-C**(客户端管理密钥;复杂度过高)
@@ -379,11 +385,11 @@ attachments/<env>/<yyyy>/<mm>/<dd>/<cuid>.<ext>
 | **❌ 不启用** glacier / 冷归档 | — | 沿决议 4 最低合规版;访问频率低但延迟敏感 |
 | **❌ 不启用** lifecycle 删活动版本 | — | 沿 D7-attachments §9.2 不做自动清理 |
 
-**实际配置由运维在 COS 控制台 / Terraform 设置;**系统侧不写入**(沿 §6.4.4 加密同范式)。
+**实际配置由运维在 COS 控制台 / Terraform 设置**(系统侧不承载 lifecycle 规则本身);**但 `lifecycleDays` 数值作为业务侧引用值,存入 `storage_settings.lifecycleDays`**(沿 Q11 + Q20 + §6.5);两侧由运维保持一致(运维 SOP 文档锁定流程)。
 
 #### 6.4.6 CORS(Q14 v0.2 锁)
 
-**🔒 v0.2 锁定 CORS 规则**(COS 控制台 / Terraform 配置):
+**🔒 v0.2 锁定 CORS 规则**(COS bucket 侧 + `storage_settings.corsAllowedOrigins` 双侧维护):
 
 ```json
 {
@@ -394,6 +400,11 @@ attachments/<env>/<yyyy>/<mm>/<dd>/<cuid>.<ext>
   "MaxAgeSeconds": 3600
 }
 ```
+
+**配置位置**:
+- COS bucket 侧实际 CORS Rule(运维在 COS 控制台 / Terraform 配置)
+- 业务侧 `storage_settings.corsAllowedOrigins`(JSON;沿 Q20 + §6.5)— 用于业务层日志展示 / 排障 + 后续 v1.1+ 若需要 Service 层校验前置 origin
+- 两侧由运维 SOP 保持一致(沿 §6.4.5 lifecycle 同范式)
 
 **字段释义**:
 - `AllowedOrigins`:**生产域名白名单**(具体域名由前端项目方提供;**❌ 不允许 `*` 通配**)
@@ -431,6 +442,220 @@ attachments/<env>/<yyyy>/<mm>/<dd>/<cuid>.<ext>
 | CORS | 生产白名单 + PUT/GET/HEAD + 3600s preflight(沿 Q14) |
 | STS | 不采用(沿 Q19) |
 | Multipart | 暂不实施(沿 Q13) |
+
+### 6.5 Storage Settings 架构设计(🔒 v0.2 架构修订;Q20 / Q24 锁)
+
+#### 6.5.1 设计原则
+
+**🔒 v0.2 锁定原则**(沿用户拍板):
+
+1. **底层模型一次设计对**:`storage_settings` schema 一次性设计完整(15+ 字段);后续扩展只**新增**字段,**绝不推翻 / 重命名 / 删除既有字段**
+2. **实施可分批**:首期允许大部分字段闲置(`null` 默认值);后续 PR 逐步启用
+3. **字段允许闲置,不允许未来推翻 schema**(沿 Q24)
+4. **主路径 = 后台配置读取**;生产环境**不长期依赖 env**(沿 Q20 + Q23)
+5. **凭证安全存储**:`secretIdEncrypted` / `secretKeyEncrypted` 加密落库(沿 Q21);API / UI 不回显明文(沿 Q22)
+
+#### 6.5.2 候选 schema(完整 15 字段;实施期由 prisma 落地)
+
+> ⚠️ **本节是 schema 设计草案**;**实施 PR 6 才创建实际 Prisma model + migration**;本评审仅锁定字段集 / 约束 / 默认值方向。
+
+```prisma
+// V2.x C-7.5 Provider 选型实施期落地(PR 6;本评审仅设计,不落代码)
+//
+// 设计原则:一次设计完整(沿 D7-provider Q24);允许首期闲置部分字段
+// 但严禁未来推翻 schema 重新设计(沿用户拍板"底层模型一次设计对")。
+//
+// 单条记录(singleton row;运营通过 GET / PATCH 维护;不支持多 Provider 并存,
+// 沿 Q4 锁腾讯 COS + Q18 单 bucket)。
+model StorageSettings {
+  id String @id @default(cuid())
+
+  // ===== Provider 选型(沿 Q4)=====
+  providerType    StorageProviderType  // 'local' | 'cos'(实施期补 enum)
+  enabled         Boolean              @default(true)
+
+  // ===== 运行参数(沿 Q11 / Q17 / Q18 / Q20)=====
+  bucket          String?              // COS bucket 名;Local 留空
+  region          String?              // COS region;Local 留空
+  envPrefix       String?              // 沿 Q17 / Q18:'dev' | 'test' | 'prod';key 前缀
+  uploadUrlTtlSeconds   Int            @default(600)   // 沿 Q8
+  downloadUrlTtlSeconds Int            @default(300)   // 沿 Q8
+  lifecycleDays         Int            @default(30)    // 沿 Q11
+
+  // ===== 能力开关(允许闲置;首期可不启用)=====
+  enableSignedUrl       Boolean        @default(true)  // 沿 F2;LocalProvider 仍走静态 URL
+  enableVersioning      Boolean        @default(true)  // 沿 Q11
+
+  // ===== CORS / 大小 / MIME 策略 =====
+  corsAllowedOrigins    Json?          // 沿 Q14:string[];业务侧引用 + 运维 SOP 维护
+  maxObjectSizeBytes    BigInt?        // 沿 D7-attachments §6 兜底;默认 null = 不限(由 attachment_size_limit_configs 管业务侧)
+  allowedMimePolicyMode StorageMimePolicyMode? // 'inherit-attachment-configs' | 'override';沿 D7-attachments §6.6 + Q13 黑名单;首期 = 'inherit'
+
+  // ===== 凭证(加密存储;沿 Q21 / Q22)=====
+  // 实际加密算法 + key 派生策略由实施 PR 期决议(候选:AES-256-GCM + KMS / 应用层 key 派生)
+  secretIdEncrypted     String?        // 加密后的密文;明文永不入库
+  secretKeyEncrypted    String?        // 同上
+  credentialConfigured  Boolean        @default(false) // 是否已配置凭证(沿 Q22 credentialStatus)
+
+  // ===== 元信息 =====
+  remarks               String?        // 运维备注
+  updatedBy             String?        // User.id(沿 V2 updatedBy 范式)
+  updatedAt             DateTime       @updatedAt
+  createdAt             DateTime       @default(now())
+
+  // ===== 关系(若需要)=====
+  // updater User? @relation(fields: [updatedBy], references: [id], onDelete: SetNull)
+
+  @@map("storage_settings")
+}
+
+enum StorageProviderType {
+  LOCAL
+  COS
+}
+
+enum StorageMimePolicyMode {
+  INHERIT          // 沿 attachment_mime_configs(默认;首期锁定)
+  OVERRIDE         // 由 storage_settings 直接限定(留 v1.1+ 启用;v0.2 不实施)
+}
+```
+
+#### 6.5.3 字段释义 + 首期启用清单
+
+| 字段 | 含义 | 首期启用?(实施 PR 6-10) | 来源决议 |
+|---|---|---|---|
+| `id` | 主键 cuid | ✅ 启用 | 沿 V2 范式 |
+| `providerType` | Provider 类型 enum | ✅ 启用(枚举 `LOCAL` / `COS`) | Q4 + Q24 |
+| `enabled` | 全局启用开关 | ✅ 启用 | Q20 |
+| `bucket` | COS bucket 名 | ✅ 启用 | Q20 |
+| `region` | COS region | ✅ 启用 | Q20 |
+| `envPrefix` | key 环境前缀 | ✅ 启用 | Q17 / Q18 |
+| `uploadUrlTtlSeconds` | 上传 signed URL TTL | ✅ 启用 | Q8 |
+| `downloadUrlTtlSeconds` | 下载 signed URL TTL | ✅ 启用 | Q8 |
+| `lifecycleDays` | 旧版本 expire 天数 | ✅ 启用(业务侧引用值;不写 COS API)| Q11 |
+| `enableSignedUrl` | 是否启用 signed URL | ✅ 启用(`true`;LocalProvider 自行覆盖) | F2 |
+| `enableVersioning` | versioning 业务侧引用 | ✅ 启用 | Q11 |
+| `corsAllowedOrigins` | 业务侧引用 CORS origins | ⏳ 首期允许 `null`(运维 SOP 维护;v1.1+ 启用业务校验) | Q14 |
+| `maxObjectSizeBytes` | 全局 size 兜底 | ⏳ 首期允许 `null`(由 `attachment_size_limit_configs` 管) | D7-attachments §6 |
+| `allowedMimePolicyMode` | mime 策略模式 | 🔒 首期固定 `INHERIT` | D7-attachments §6.6 |
+| `secretIdEncrypted` | 加密 SecretId | ✅ 启用(沿 Q21) | Q21 |
+| `secretKeyEncrypted` | 加密 SecretKey | ✅ 启用(沿 Q21) | Q21 |
+| `credentialConfigured` | 凭证状态 | ✅ 启用(沿 Q22) | Q22 |
+| `remarks` | 运维备注 | ✅ 启用 | 通用 |
+| `updatedBy` / `updatedAt` / `createdAt` | 审计字段 | ✅ 启用 | V2 范式 |
+
+**首期闲置字段**(沿 Q24 一次设计;允许 `null` 默认值):
+- `corsAllowedOrigins`(业务侧暂不引用 CORS 校验;运维 SOP 维护 COS bucket 侧 + 业务侧仅做日志展示)
+- `maxObjectSizeBytes`(由 `attachment_size_limit_configs` 表承载;`storage_settings` 仅作全局兜底,首期不启用)
+
+**闲置字段语义**:**字段在 schema 中已就位;首期 PR 不读不写**(默认 `null`);未来需要时**仅启用代码**(零 schema 改动)。
+
+#### 6.5.4 单条记录约束(singleton row)
+
+- 表名 `storage_settings`;**全局单条记录**(系统级配置);**不支持多 Provider 并存**(沿 Q4 + Q18)
+- 首次启动若表为空:运维通过 `POST /api/v2/storage-settings` 创建首条记录(沿 PR 11 后台 CRUD)
+- bootstrap fallback:**首次启动且 DB 无记录时,从 env 兜底读取 + 创建首条记录**(沿 Q23);**仅一次**;后续修改通过后台
+- 后续访问:`GET /api/v2/storage-settings`(返单条;`credentialStatus` 状态化;不返加密密文)
+
+#### 6.5.5 配置读取层(实施 PR 6)
+
+**Service 范式**(沿 D7-RBAC `RbacService` / `RbacCacheService` 缓存范式):
+
+```typescript
+@Injectable()
+export class StorageSettingsService {
+  // 读取当前生效配置(缓存;TTL 60s 或 invalidate 主动失效)
+  async getActiveSettings(): Promise<StorageSettingsResolved> {
+    // 1. 查 DB(主路径)
+    // 2. DB 空且非生产环境 → env fallback(沿 Q23)
+    // 3. 缓存命中直接返
+    // 4. 解密 secretIdEncrypted / secretKeyEncrypted(沿 Q21)→ 返 resolved
+  }
+}
+```
+
+`StorageSettingsResolved` 形态(运行时类型;**不进 API DTO**):
+
+```typescript
+export interface StorageSettingsResolved {
+  providerType: 'LOCAL' | 'COS';
+  enabled: boolean;
+  bucket: string | null;
+  region: string | null;
+  envPrefix: string | null;
+  uploadUrlTtlSeconds: number;
+  downloadUrlTtlSeconds: number;
+  lifecycleDays: number;
+  enableSignedUrl: boolean;
+  enableVersioning: boolean;
+  corsAllowedOrigins: string[] | null;
+  maxObjectSizeBytes: bigint | null;
+  allowedMimePolicyMode: 'INHERIT' | 'OVERRIDE';
+  credentials: { secretId: string; secretKey: string } | null;  // 明文;仅在 Service 内部使用
+  credentialStatus: 'configured' | 'missing' | 'invalid';
+}
+```
+
+⚠️ **`credentials` 在 API DTO 中永不出现**(沿 Q22)。
+
+---
+
+### 6.6 凭证安全边界(🔒 v0.2 架构修订;Q21 / Q22 锁)
+
+#### 6.6.1 凭证存储
+
+**🔒 v0.2 锁**:**SecretId / SecretKey 加密存储**(沿 Q21);**明文永不入 DB / 永不入日志 / 永不入 audit_logs**。
+
+| 项 | 锁定值 |
+|---|---|
+| 存储列 | `storage_settings.secretIdEncrypted` / `secretKeyEncrypted`(String 类型,密文) |
+| 加密算法 | **AES-256-GCM**(候选;实施 PR 期最终决议;不在 v0.2 锁具体算法,但锁"对称加密 + Authenticated Encryption + nonce") |
+| 加密 key 来源 | **环境变量** `STORAGE_ENCRYPTION_KEY`(或等价 KMS 派生)+ 应用层 key derivation;**Key 自身 ≠ 凭证,可长期存 env**(沿 Q23 例外:env 可承载加密 key,但不承载凭证本身) |
+| Key 轮换 | v1.1+ 启用;实施期不强制(留 SOP) |
+| 解密时机 | **仅 `StorageSettingsService.getActiveSettings()` 内部解密**;返 `StorageSettingsResolved.credentials`(明文运行时对象);**不传出 Service 层** |
+
+#### 6.6.2 API 边界(沿 Q22)
+
+**🔒 v0.2 锁 4 项**:
+
+1. **API 不返加密密文**:`GET /api/v2/storage-settings` 出参 **不含** `secretIdEncrypted` / `secretKeyEncrypted` 字段;仅返 `credentialStatus`(枚举)
+2. **API 不返明文**:**永不**通过任何端点回显 SecretId / SecretKey 的明文
+3. **UI 永不回显**:前端展示形如 `SecretId: 已配置 ✅` + `SecretKey: ********`(不显示前几位 / 后几位)
+4. **只允许 reset / replace**:运维想更新凭证 → `POST /api/v2/storage-settings/reset-credentials`(入参 `{ secretId, secretKey }`;Service 层加密后落库;不返回任何凭证字段)
+
+#### 6.6.3 凭证状态枚举 `credentialStatus`(沿 Q22)
+
+```typescript
+export enum CredentialStatus {
+  CONFIGURED = 'configured', // secretIdEncrypted / secretKeyEncrypted 都已配置且解密成功
+  MISSING = 'missing',       // 任一列为 null;系统未初始化
+  INVALID = 'invalid',       // 配置存在但解密失败 / Provider 校验失败(沿 Q22 三档状态)
+}
+```
+
+**UI 表现**:
+
+```
+SecretId:  已配置 ✅
+SecretKey: ********
+状态:      configured
+[重新设置凭证]   [测试连接]
+```
+
+#### 6.6.4 DB 泄漏防御
+
+沿 Q21 加密 at rest:
+
+- DB dump / 备份泄漏 → 攻击者拿到密文 + 不知 `STORAGE_ENCRYPTION_KEY` → 无法解密
+- `STORAGE_ENCRYPTION_KEY` 单独存 env(沿 v1 / V1.1 `JWT_SECRET` 范式;不进仓库;沿 ARCHITECTURE.md §13 / `.env.example` 注释)
+- **双因素**:DB dump + env 文件 同时泄漏 → 凭证暴露;此风险**接受**(同 `JWT_SECRET` 同等防护级别;沿 D7-attachments §11 风险声明)
+
+#### 6.6.5 audit 行为(沿 D7-attachments B4 + 本评审 B4)
+
+- ❌ **凭证写操作不记 audit**(沿 D7-attachments §7.3 R4 read 不审计 + 沿 v0.2 B4 不新增 event;`POST /reset-credentials` 是配置维护,**不**触发 `attachment.*` 事件)
+- ❌ **audit_logs `extra` 不记凭证字段**(沿 Q21 / Q22 明文永不出现)
+- ✅ 仅在系统日志(pino;沿 V1.1 §17.4)记 reset 动作 + actorUserId + 不含密文 / 明文
+- ⏳ 未来若需配置变更 audit(C-7.5 范围外),留独立"配置变更审计"专项评审 PR
 
 ---
 
@@ -846,52 +1071,66 @@ async confirmUpload(dto: ConfirmUploadDto, user: CurrentUserPayload, auditMeta: 
 
 ---
 
-## 16. PR 拆分建议(沿 B5 v0.1 拍板;Q16 留实施期微调)
+## 16. PR 拆分建议(🔒 v0.2 架构修订;Q25 锁分批;原 13 PR → 14 PR)
 
-### 16.1 13 PR 节奏
+### 16.1 14 PR 节奏(v0.2 架构修订)
+
+> **v0.2 架构修订**:新增 PR 6 设计 `storage_settings` schema + DTO + 配置读取层(沿 Q24);新增 PR 11 后台 Storage Settings CRUD + credential reset(沿 Q20-Q22);PR 8 改为 **COS Provider 读 `storage_settings`**(不直接读 env)。
 
 | PR # | 类型 | 主题 | 范围 | 风险 |
 |---|---|---|---|---|
-| **设计** PR 1 | `docs(v2-design)` | **本 PR**:add provider selection review draft v0.1 | 新建 `docs/批次7_provider选型_API前评审.md` | 低 |
-| 设计 PR 2 | `docs(v2-design)` | refine provider selection v0.2 局部收口 | 用户拍板 Q1-Q15 后 | 中 |
-| 设计 PR 3 | `docs(v2-design)` | freeze provider selection v1.0 | 全部决议锁定 | 中 |
+| **设计** PR 1 | `docs(v2-design)` | add provider selection review draft v0.1 | 新建 `docs/批次7_provider选型_API前评审.md`(已合 PR #82,squash commit `6dbdbed`) | 低 |
+| 设计 PR 2 | `docs(v2-design)` | refine provider selection v0.2 局部收口 + 架构修订 | **本 PR**(含初版 + 架构修订;Q20-Q25 新增锁) | 中 |
+| 设计 PR 3 | `docs(v2-design)` | freeze provider selection v1.0 | 用户拍板剩余 Q5 / Q6 / Q7 后 | 中 |
 | 设计 PR 4 | `docs(v2-design)` | start C-7.5 provider V2.x implementation track | 立项 PR | 低 |
 | **实施** PR 5 | `chore` | extend StorageProvider interface(+ 4 method + types) | 仅 interface + types;0 实现 | **零运行时改动** |
-| 实施 PR 6 | `feat(storage)` | LocalStorageProvider 实装(dev / test) | `src/common/storage/providers/local.provider.ts` + unit | 低(本地;无云) |
-| 实施 PR 7 | `feat(storage)` | <真实 Provider> 实装(按 Q4 选型) | `src/common/storage/providers/<provider>.provider.ts` + 配置 + unit | 中(引入云 SDK) |
-| 实施 PR 8 | `feat(attachments)` | wire Provider into attachments.service(accessUrl + delete 同步 Provider 删) | 改 `toResponseDto` / `delete` 2 处 | **中**(contract snapshot 微调) |
-| 实施 PR 9 | `feat(attachments)` | add upload-url + confirm-upload API(模式 B) | 新增 2 个端点 + DTOs + RBAC + audit extra + e2e | 中(contract +2 paths) |
-| **landing** PR 10 | `docs(v2)` | record provider selection + implementation landing | CHANGELOG + V2 红线 §C-10 → 已落地 + TASKS + 立项记录 | 低 |
-| **bump** PR 11 | `chore` | bump version to v0.11.0(或 v0.10.1) | package + Swagger + CHANGELOG | 低 |
-| **handoff** PR 12 | `docs(v2)` | add v0.11.0(/v0.10.1) handoff | `docs/handoff/v0.11.0.md` | 低 |
-| **tag/release** PR 13 | 维护者手动 | git tag + GitHub Release | 沿 v0.9.0 / v0.10.0 范式 | 低 |
+| **实施** PR 6 | `chore(prisma)` | **add `storage_settings` schema + DTO + 配置读取层**(不接 COS SDK)| `prisma/schema.prisma` +1 model(15 字段;沿 §6.5)+ migration + `src/common/storage/storage-settings.service.ts` + DTO + e2e + bootstrap fallback(沿 Q23)| **中**(schema migration + 加密 key 装载) |
+| 实施 PR 7 | `feat(storage)` | LocalStorageProvider 实装(dev / test;读 `storage_settings`)| `src/common/storage/providers/local.provider.ts` + unit | 低(本地;无云) |
+| 实施 PR 8 | `feat(storage)` | **COS Provider 实装**(读 `storage_settings` 不依赖 env;沿 Q23)| `src/common/storage/providers/cos.provider.ts` + 引入 `cos-nodejs-sdk-v5` + unit | 中(引入云 SDK + 加密凭证读取) |
+| 实施 PR 9 | `feat(attachments)` | wire attachments.service(`accessUrl` 真实化 + delete 同步 Provider 删) | 改 `toResponseDto` / `delete` 2 处 | **中**(contract snapshot 微调) |
+| 实施 PR 10 | `feat(attachments)` | add upload-url + confirm-upload API(模式 B) | 新增 2 个端点 + DTOs + RBAC + audit extra + e2e | 中(contract +2 paths) |
+| **实施** PR 11 | `feat(storage)` | **后台 Storage Settings CRUD + credential reset**(沿 Q20-Q22)| 新增 `/api/v2/storage-settings` × 2(GET + PATCH)+ `/api/v2/storage-settings/reset-credentials` × 1 + DTO + Service(凭证加密 / `credentialStatus`)+ e2e | 中(后台 UI 接口;凭证加密落库) |
+| **landing** PR 12 | `docs(v2)` | record provider selection + implementation landing | CHANGELOG + V2 红线 §C-10 → 已落地 + TASKS + 立项记录 | 低 |
+| **bump** PR 13 | `chore` | bump version to v0.11.0(SemVer minor;新增 1 model + 3 API + 加密凭证存储) | package + Swagger + CHANGELOG | 低 |
+| **handoff** PR 14 | `docs(v2)` | add v0.11.0 handoff | `docs/handoff/v0.11.0.md` | 低 |
+| **tag/release** | 维护者手动 | git tag + GitHub Release | 沿 v0.9.0 / v0.10.0 范式;由维护者执行 | 低 |
 
-**累计**:**13 PR**(4 设计 + 5 实施 + 1 landing + 1 bump + 1 handoff + 1 维护者收尾)。
+**累计**:**14 PR**(4 设计 + 7 实施 + 1 landing + 1 bump + 1 handoff + 维护者收尾)。
 
-### 16.2 与 D7-attachments(C-7)节奏对比
+### 16.2 v0.2 架构修订关键改动(相比 v0.2 初版 13 PR)
 
-| 维度 | C-7 attachments | C-7.5 Provider 选型 |
+| 改动 | v0.2 初版(13 PR) | v0.2 架构修订(14 PR) |
 |---|---|---|
-| 设计 PR | 5(#65-#69) | 4(D7-provider v0.1 → v0.2 → v1.0 → 立项) |
-| 实施 PR | 9(#70-#78) | 5(interface + Local + 真实 Provider + 接通 + 新 API) |
-| docs | landing + bump + handoff = 3 | landing + bump + handoff + tag/release = 4 |
-| **累计** | **17** | **13** |
-
-**实施密度差异**:C-7 是新建主模块 + 配置三表 + RBAC + audit 全栈;C-7.5 是在 C-7 基础上**仅接通 Provider 实现**,接入面极小(2 处 service 改动 + 2 新 API)。
+| PR 6 范围 | LocalProvider 实装 | **改为** `storage_settings` schema + 配置读取层(LocalProvider 后移 PR 7) |
+| PR 8 范围 | <真实 Provider> 实装(读 env) | **改为** COS Provider 读 `storage_settings`(沿 Q23) |
+| PR 11 | (无;原 11 是 bump) | **新增** 后台 Storage Settings CRUD + credential reset |
+| PR 12 / 13 / 14 | landing / bump / handoff | 整体后移(原 PR 10 → 12 / 11 → 13 / 12 → 14) |
 
 ### 16.3 实施 PR 间依赖
 
 ```
 PR 5(interface 扩展) ← 不依赖
-PR 6(LocalProvider) ← 依赖 PR 5
-PR 7(真实 Provider) ← 依赖 PR 5(可与 PR 6 并行)
-PR 8(接通 attachments.service)← 依赖 PR 5 + 6(LocalProvider 接通即可;PR 7 真实 Provider 切换由配置控)
-PR 9(新 API)← 依赖 PR 5 + 6 + 8
-PR 10(landing)← 依赖全部
-PR 11(bump)← 依赖 10
-PR 12(handoff)← 依赖 11
-PR 13(tag/release)← 依赖 11 / 12
+PR 6(storage_settings schema + 配置读取层) ← 依赖 PR 5(用 interface 类型)
+PR 7(LocalProvider) ← 依赖 PR 5 + 6
+PR 8(COS Provider 读 storage_settings) ← 依赖 PR 5 + 6(可与 PR 7 并行)
+PR 9(接通 attachments.service) ← 依赖 PR 5 + 6 + 7(LocalProvider 接通即可走 e2e)
+PR 10(新 API upload-url + confirm-upload) ← 依赖 PR 5 + 6 + 7 + 9
+PR 11(后台 CRUD + credential reset) ← 依赖 PR 6(用 StorageSettingsService;可与 PR 8-10 并行)
+PR 12(landing) ← 依赖全部
+PR 13(bump) ← 依赖 12
+PR 14(handoff) ← 依赖 13
 ```
+
+### 16.4 与 D7-attachments(C-7)节奏对比
+
+| 维度 | C-7 attachments | C-7.5 Provider 选型(v0.2 架构修订)|
+|---|---|---|
+| 设计 PR | 5(#65-#69) | 4(D7-provider v0.1 → v0.2 含架构修订 → v1.0 → 立项) |
+| 实施 PR | 9(#70-#78) | 7(interface + storage_settings + Local + COS + 接通 + 新 API + 后台 CRUD) |
+| docs | landing + bump + handoff = 3 | landing + bump + handoff + 维护者 tag/release = 3 + 1 |
+| **累计** | **17** | **14** |
+
+**实施密度差异**:C-7 是新建主模块 + 配置三表 + RBAC + audit 全栈;C-7.5 是在 C-7 基础上**接通 Provider + 引入 `storage_settings` 配置表 + 加密凭证存储 + 后台 CRUD**;比 v0.2 初版多 1 PR(后台 CRUD),但**底层架构一次设计对**(Q24)。
 
 ---
 
@@ -951,8 +1190,9 @@ PR 13(tag/release)← 依赖 11 / 12
 
 > **状态历程**(修订日志,只在本说明区出现历史措辞):
 > - **v0.1 草稿**(PR #82,squash commit `6dbdbed`,2026-05-15):5 项 F 锁 + 5 项 B 锁(沿用户启动 v0.1 时拍板)+ **15 项 Q 以"⏳ 待评审"承载**
-> - **v0.2 局部收口**(本 PR,2026-05-15):用户拍板 **正式 Provider = 腾讯云 COS**(Q1 / Q4 锁定);沿用 v0.1 的 F1-F5 + B1-B5;**v0.2 新锁 14 项 Q**(Q1 / Q4 / Q8 / Q9 / Q10 / Q11 / Q12 / Q13 / Q14 / Q15 + 新增 Q16 / Q17 / Q18 / Q19);**留 3 项 Q 待 v1.0 / 实施期决议**(Q5 / Q6 / Q7;接口与 DTO 字段集);v1.0 暂不冻结(留 Q5 / Q6 / Q7 实施期细化或评审锁定)
-> - 🔒 = v0.1 / v0.2 锁;⏳ = v1.0 / 实施期待决议
+> - **v0.2 局部收口(初版)**(本 PR commit 1,2026-05-15):用户拍板 **正式 Provider = 腾讯云 COS**(Q1 / Q4 锁定);沿用 v0.1 的 F1-F5 + B1-B5;**新锁 14 项 Q**(Q1 / Q4 / Q8 / Q9 / Q10 / Q11 / Q12 / Q13 / Q14 / Q15 + 新增 Q16 / Q17 / Q18 / Q19)
+> - **v0.2 架构修订**(本 PR commit 2,2026-05-15):用户拍板 **COS 配置后台化 + 凭证加密存储**;**不长期依赖 env**;**新增 Q20-Q25 共 6 项 Q**(后台配置 / 凭证加密 / 不回显 / 不依赖 env / schema 一次设计 / 实施分批);**新增 §6.5 Storage Settings 架构设计 + §6.6 凭证安全边界**;**§16 PR 拆分 13 → 14 PR**(沿用户拍板原则:底层模型一次设计对,实施可分批);**留 3 项 Q 待 v1.0 / 实施期决议**(Q5 / Q6 / Q7;接口与 DTO 字段集);v1.0 暂不冻结
+> - 🔒 = v0.1 / v0.2 锁;⏳ = v1.0 / 实施期待决议;🆕 = v0.2 架构修订新增
 
 | # | 决议 | v0.2 状态 | 来源 / 章节 |
 |---|---|---|---|
@@ -985,13 +1225,20 @@ PR 13(tag/release)← 依赖 11 / 12
 | **Q17**(新增) | key 命名规范 | 🔒 **v0.2 锁**:`attachments/<env>/<yyyy>/<mm>/<dd>/<cuid>.<ext>` | §6.4.2 |
 | **Q18**(新增) | bucket 环境隔离 | 🔒 **v0.2 锁**:**单 bucket + key 前缀**(`dev` / `test` / `prod`);多 bucket 备选留 v1.0 / 实施期 | §6.4.3 |
 | **Q19**(新增) | 是否采用 STS 临时凭证 | 🔒 **v0.2 锁**:**不采用 STS**(沿 F2 模式 B + Q13);未来 multipart 需要时 v1.1 / 实施期再评估 | §6.4.7 |
+| **🆕 Q20** | COS 是否支持后台配置? | 🔒 **v0.2 架构修订锁**:**✅ 是**;**主路径 = `storage_settings` 后台配置读取**;env 仅作 bootstrap fallback / dev / test 兜底;**不长期依赖 env**(沿 Q23) | §6.5 |
+| **🆕 Q21** | 凭证 SecretId / SecretKey 是否允许后台录入? | 🔒 **v0.2 架构修订锁**:**✅ 是**;**必须加密存储**(`secretIdEncrypted` / `secretKeyEncrypted` 列;AES-256-GCM 候选;加密 key 单独存 env);**明文永不入 DB / 日志 / audit_logs** | §6.6.1 |
+| **🆕 Q22** | 凭证是否允许 API 明文返回 / UI 回显? | 🔒 **v0.2 架构修订锁**:**❌ 否**;API 不返加密密文;API 不返明文;UI 形如 `已配置 ✅` / `********`;只允许 reset / replace;`credentialStatus ∈ {configured, missing, invalid}` 状态化 | §6.6.2 / §6.6.3 |
+| **🆕 Q23** | 是否长期依赖 env? | 🔒 **v0.2 架构修订锁**:**❌ 否**;env **仅允许** bootstrap fallback / 首次系统未初始化时兜底 / 本地开发环境;**例外**:加密 key(`STORAGE_ENCRYPTION_KEY`)允许长期存 env(沿 v1 `JWT_SECRET` 范式;加密 key ≠ 凭证) | §6.5.4 / §6.6.4 |
+| **🆕 Q24** | `storage_settings` schema 是否一次设计完整? | 🔒 **v0.2 架构修订锁**:**✅ 是**;15 字段一次性设计完整(沿 §6.5.2);**允许首期闲置部分字段**(`corsAllowedOrigins` / `maxObjectSizeBytes`);**严禁未来推翻 schema 重做 migration**(允许新增,不允许重命名 / 删除既有字段;沿用户拍板"底层模型一次设计对") | §6.5.1 / §6.5.2 / §6.5.3 |
+| **🆕 Q25** | 是否首期一次做完? | 🔒 **v0.2 架构修订锁**:**❌ 否**;**实施分批**(沿 §16 PR 6-14 共 9 个实施 / 收口 PR);PR 6 先做 schema + 配置读取层(不接 SDK)→ PR 7-10 逐步接入 → PR 11 后台 CRUD | §16.1 / §16.2 |
 
-**总计**:**F 5 + B 5 + Q 19 = 29 项**
+**总计**:**F 5 + B 5 + Q 25 = 35 项**
 
-- **🔒 v0.2 已锁**:**F 5 + B 5 + Q 16 = 26 项**
+- **🔒 v0.2 已锁**:**F 5 + B 5 + Q 22 = 32 项**(初版 26 项 + 架构修订 6 项 Q20-Q25)
 - **⏳ v1.0 / 实施期待决议**:**Q 3 项**(Q5 接口签名细化 / Q6 upload-url 字段集 / Q7 confirm-upload 字段集 — 实施 PR 期细化)
-- **v0.2 局部收口完成**:Provider 选型核心决议全部就位(腾讯云 COS + 私有桶 + signed URL + SSE-COS + versioning 30d + 不 STS / 不 multipart);**剩余 3 项 Q 是 API 与 interface 字段集,可在 v1.0 冻结前补 + 实施 PR 期细化**
-- **沿 D7-attachments v0.2 局部收口范式**:13 项 Q 锁 + 1 项挂起 + 2 项挂起待 Provider + 1 项不冻结 = 16 项 Q;本评审 v0.2 锁 16 项 Q 节奏一致
+- **v0.2 局部收口完成**:Provider 选型核心决议 + 架构设计全部就位(腾讯云 COS + 私有桶 + signed URL + SSE-COS + versioning 30d + 不 STS / 不 multipart + **`storage_settings` 配置表一次设计** + **凭证加密存储** + **后台 CRUD** + **不长期依赖 env**);**剩余 3 项 Q 是 API 与 interface 字段集,可在 v1.0 冻结前补 + 实施 PR 期细化**
+- **沿 D7-attachments v0.2 局部收口范式**:本评审 v0.2 锁 22 项 Q,超过 D7-attachments v0.2 的 13 项 Q,但仍属"局部收口"性质(留 3 项 Q 待决议)
+- **架构修订原则确立**:**底层模型一次设计对,实施可分批,字段允许闲置不允许推翻 schema**(沿 Q24 + Q25)
 
 ---
 
