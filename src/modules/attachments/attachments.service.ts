@@ -6,6 +6,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
 import {
   ATTACHMENT_OWNER_TYPES,
@@ -23,9 +25,9 @@ import {
 } from './attachments.dto';
 import { attachmentSelect } from './attachments.select';
 
-// V2.x C-7 attachments 实施 PR #6b(2026-05-15):attachments 主模块业务逻辑。
+// V2.x C-7 attachments 实施 PR #6b / #6c:attachments 主模块业务逻辑。
 //
-// 沿 D7-attachments v1.0 §5 / §6 + 用户 PR #6b 14 项 Q 拍板:
+// 沿 D7-attachments v1.0 §5 / §6 / §7 + 用户 PR #6b 14 项 Q + PR #6c 8 项 Q 拍板:
 // - F3 v1.0:Controller 入口仅 @UseGuards JwtAuthGuard;**所有判权在 Service 层** rbac.can()
 // - F5 v1.0:RBAC 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100)
 // - Q1 v1.0:ownerType 双层校验 — 先查 attachment_type_configs(权威);enum 兜底
@@ -35,7 +37,13 @@ import { attachmentSelect } from './attachments.select';
 // - Q13 v1.0:RBAC 写失败复用 30100;读路径用 13001 信息泄漏防御
 // - Q14 v1.0:accessUrl 占位恒返 null(Provider 接通前;沿 D7 §5.5 / §5.6)
 //
-// **本 PR 不接入 audit_logs**(沿用户 Step 2 拍板:留 PR #6c 单独接入)。
+// **PR #6c audit_logs 集成**(沿 D7 §7.1 / §7.2 + 用户 Q1-Q8 拍板):
+// - 仅接入 2 个写端点:POST create → 'attachment.upload' / DELETE delete → 'attachment.delete'
+// - 不审计 PATCH metadata(Q7 v0.2 锁:沿"只审高价值写操作")
+// - 不审计 view / list(沿 D6 R4)
+// - 不审计失败操作(沿 D6 F6 fail-fast:RBAC / mime / size / PII 拒绝时事务未开,自然无 audit)
+// - 同事务 wrap:校验链留事务外(Q7 PR #6c);事务内只 tx.attachment.{create,delete} + auditLogs.log({ tx })
+// - 配置三表 'attachment.config.change' **不在本 PR**(留 PR #6d)
 
 // 全局兜底:无 mime 配置 + type 无 defaultMimeWhitelist 时,**不允许**任何 mime
 // (fail-close;沿 v1 §10 / baseline 安全默认拒绝;由 13012 命中)
@@ -52,7 +60,32 @@ export class AttachmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
+    private readonly auditLogs: AuditLogsService,
   ) {}
+
+  // PR #6c Q3 拍板:audit snapshot 完整字段(沿 cert toCertSnapshot 范式)。
+  // - 包含 DB 字段:落库字段全保留(uploadedBy / originalUploaderName / accessLevel / tags / expireAt 等)
+  // - **不**包含 accessUrl(非 DB 字段,Service 层附加的占位)
+  // - Date / null 字段 toISOString;Prisma InputJsonValue 拒绝 Date 对象(沿 D6 §R5)
+  // - attachments 字段全部非敏感(D7 §9.4 / §9.2;身份证号在 PII 检测 Service 层已拒);不打码
+  // - 沿 attachmentSelect 不选 checksum / etag(出参 Q6 v1.0 不暴露),audit 同步不写入
+  private toAttachmentAuditSnapshot(row: SafeAttachment): Record<string, unknown> {
+    return {
+      key: row.key,
+      originalName: row.originalName,
+      mime: row.mime,
+      size: row.size,
+      uploadedBy: row.uploadedBy,
+      uploadedAt: row.uploadedAt.toISOString(),
+      ownerType: row.ownerType,
+      ownerId: row.ownerId,
+      description: row.description,
+      accessLevel: row.accessLevel,
+      tags: row.tags,
+      originalUploaderName: row.originalUploaderName,
+      expireAt: row.expireAt ? row.expireAt.toISOString() : null,
+    };
+  }
 
   // ============ helpers:校验链(沿 D7 v1.0 §6.2 9 步)============
 
@@ -272,14 +305,18 @@ export class AttachmentsService {
   // ============ 7 端点业务逻辑 ============
 
   // POST /api/v2/attachments
-  async create(dto: CreateAttachmentDto, user: CurrentUserPayload): Promise<AttachmentResponseDto> {
-    // 1. ownerType 双层校验
-    await this.assertOwnerTypeAllowed(dto.ownerType);
+  async create(
+    dto: CreateAttachmentDto,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<AttachmentResponseDto> {
+    // 1. ownerType 双层校验(返 ownerTable;PR #6c 进 audit extra)
+    const { ownerTable } = await this.assertOwnerTypeAllowed(dto.ownerType);
 
     // 2. ownerId 真实性校验
     await this.assertOwnerExists(dto.ownerType as AttachmentOwnerType, dto.ownerId);
 
-    // 3. 构造 RBAC resource + scope
+    // 3. 构造 RBAC resource + scope(scope ∈ {'self', 'other', null};null=activity 粗粒度)
     const { resource, scope } = await this.buildRbacResourceAndScope(
       dto.ownerType as AttachmentOwnerType,
       dto.ownerId,
@@ -299,24 +336,50 @@ export class AttachmentsService {
     // 7. PII 检测(13015)
     this.assertNoPii(dto);
 
-    // 8. 写入(originalUploaderName 从 currentUser 冗余存;Q14 v1.0)。
-    //    本 PR 不接 audit_logs(留 PR #6c;沿 Step 2 拍板)。
-    const row = await this.prisma.attachment.create({
-      data: {
-        key: dto.key,
-        originalName: dto.originalName,
-        mime: dto.mime,
-        size: dto.size,
-        uploadedBy: user.id,
-        ownerType: dto.ownerType,
-        ownerId: dto.ownerId,
-        description: dto.description,
-        accessLevel: dto.accessLevel,
-        tags: dto.tags ?? [],
-        originalUploaderName: user.username,
-        expireAt: dto.expireAt ? new Date(dto.expireAt) : undefined,
-      },
-      select: attachmentSelect,
+    // 8. 事务内:写主表 + audit 落库(沿 D7 §7.2 同事务 fail-fast)。
+    //    校验链(步骤 1-7)留事务外(PR #6c Q7 拍板;读不需事务);
+    //    auditLogs.log 失败 → $transaction 自动回滚 attachment.create。
+    const row = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.attachment.create({
+        data: {
+          key: dto.key,
+          originalName: dto.originalName,
+          mime: dto.mime,
+          size: dto.size,
+          uploadedBy: user.id,
+          ownerType: dto.ownerType,
+          ownerId: dto.ownerId,
+          description: dto.description,
+          accessLevel: dto.accessLevel,
+          tags: dto.tags ?? [],
+          originalUploaderName: user.username,
+          expireAt: dto.expireAt ? new Date(dto.expireAt) : undefined,
+        },
+        select: attachmentSelect,
+      });
+
+      await this.auditLogs.log({
+        event: 'attachment.upload',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: 'attachment',
+        resourceId: created.id,
+        meta: auditMeta,
+        after: this.toAttachmentAuditSnapshot(created),
+        extra: {
+          operation: 'upload',
+          attachmentType: created.ownerType,
+          ownerType: created.ownerType,
+          ownerId: created.ownerId,
+          mime: created.mime,
+          size: created.size,
+          scope,
+          ownerTable,
+        },
+        tx,
+      });
+
+      return created;
     });
     return toResponseDto(row);
   }
@@ -420,7 +483,11 @@ export class AttachmentsService {
   }
 
   // DELETE /api/v2/attachments/:id(Q11 v1.0:物理删,不查跨表引用)。
-  async delete(id: string, user: CurrentUserPayload): Promise<AttachmentResponseDto> {
+  async delete(
+    id: string,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<AttachmentResponseDto> {
     // 1. 查活跃记录(不存在 → 13001)
     const row = await this.findByIdOrThrow(id);
 
@@ -433,9 +500,34 @@ export class AttachmentsService {
     const action = `attachment.delete.${row.ownerType}${scope ? '.' + scope : ''}`;
     await this.assertRbacAllowed(user, action, resource);
 
-    // 3. 物理删(沿 D6 Q5 B / 删除矩阵 §6.4;不查 IN_USE)。
-    //    本 PR 不接 Provider 文件删除(Q15 挂起待 Provider 评审;沿 Step 2 拍板)。
-    await this.prisma.attachment.delete({ where: { id } });
+    // 3. 事务内:物理删主表 + audit 落库(沿 D7 §7.2 同事务 fail-fast)。
+    //    Q11 v1.0:不查跨表引用 IN_USE;Q15 挂起:Provider 文件删除留 Provider 评审。
+    //    deletedByPath:沿 Q5 PR #6c 拍板,以 uploadedBy 为基准(currentUser 删自己上传的 → 'owner',
+    //    否则 → 'admin';SUPER_ADMIN 删自己上传的也算 owner)。
+    await this.prisma.$transaction(async (tx) => {
+      await tx.attachment.delete({ where: { id } });
+
+      await this.auditLogs.log({
+        event: 'attachment.delete',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: 'attachment',
+        resourceId: row.id,
+        meta: auditMeta,
+        before: this.toAttachmentAuditSnapshot(row),
+        extra: {
+          operation: 'delete',
+          attachmentType: row.ownerType,
+          ownerType: row.ownerType,
+          ownerId: row.ownerId,
+          mime: row.mime,
+          size: row.size,
+          scope,
+          deletedByPath: user.id === row.uploadedBy ? 'owner' : 'admin',
+        },
+        tx,
+      });
+    });
     return toResponseDto(row);
   }
 
