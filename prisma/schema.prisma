@@ -974,3 +974,61 @@ model AttachmentSizeLimitConfig {
   @@index([deletedAt])
   @@map("attachment_size_limit_configs")
 }
+
+// =============================================================================
+// V2.x C-7.5 Provider 选型实施 PR #6:storage_settings(沿 §6.5.2 + Q24)
+//
+// 单条记录(singleton row);系统级 Provider 配置;沿 Q4 锁腾讯 COS + Q18 单 bucket。
+// 一次设计 15+ 字段;首期允许部分字段闲置(`null`);**严禁未来推翻 schema**。
+// 加密字段 `secretIdEncrypted` / `secretKeyEncrypted` 由 StorageCryptoService 处理;
+// 明文永不入库(沿 Q21 / Q22)。
+// singleton 约束 Prisma 层不强制;由 Service 层保证(留 PR #11 后台 CRUD POST 时检 count)。
+// =============================================================================
+model StorageSettings {
+  id String @id @default(cuid())
+
+  // Provider 选型(沿 Q4)
+  providerType StorageProviderType
+  enabled      Boolean             @default(true)
+
+  // 运行参数(沿 Q11 / Q17 / Q18 / Q20)
+  bucket                String?
+  region                String?
+  envPrefix             String?
+  uploadUrlTtlSeconds   Int     @default(600)
+  downloadUrlTtlSeconds Int     @default(300)
+  lifecycleDays         Int     @default(30)
+
+  // 能力开关(允许闲置;首期默认 true)
+  enableSignedUrl  Boolean @default(true)
+  enableVersioning Boolean @default(true)
+
+  // CORS / 大小 / MIME 策略(沿 §6.5.3)
+  corsAllowedOrigins    Json? // 首期闲置;运维 SOP 维护 COS bucket 侧
+  maxObjectSizeBytes    BigInt? // 首期闲置;由 attachment_size_limit_configs 管业务侧
+  allowedMimePolicyMode StorageMimePolicyMode @default(INHERIT) // 沿 Q-87-1 锁:首期固定 INHERIT
+
+  // 凭证(加密存储;沿 Q21 / Q22)
+  // 实际加密 = AES-256-GCM(沿 §6.6.1 + 立项记录 §四;Node 原生 crypto;0 新依赖)
+  secretIdEncrypted    String? // 加密后的密文;明文永不入库
+  secretKeyEncrypted   String? // 同上
+  credentialConfigured Boolean @default(false) // DB 层简单事实;运行时 credentialStatus 三态由 Service 合成
+
+  // 元信息
+  remarks   String?
+  updatedBy String? // User.id;沿 V2 范式;不建外键(沿 v1 软删 / RBAC 范式)
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@map("storage_settings")
+}
+
+enum StorageProviderType {
+  LOCAL
+  COS
+}
+
+enum StorageMimePolicyMode {
+  INHERIT // 沿 attachment_mime_configs(默认;首期锁定)
+  OVERRIDE // 由 storage_settings 直接限定;留 v1.1+ 启用
+}
