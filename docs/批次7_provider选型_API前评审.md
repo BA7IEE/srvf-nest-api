@@ -1,11 +1,13 @@
-# 《批次7_provider选型_API前评审稿》(C-7.5 Provider 选型 D7-provider v0.1 草稿)
+# 《批次7_provider选型_API前评审稿》(C-7.5 Provider 选型 D7-provider v0.2 局部收口稿)
 
-> **状态**:**v0.1 草稿**(2026-05-15)— **触发条件**:C-7 attachments 全模块实施已收口(v0.10.0;沿 [`docs/handoff/v0.10.0.md`](handoff/v0.10.0.md));D7-attachments v1.0 冻结稿(PR #68,squash commit `5da801f`)挂起 Q14 / Q15 Provider 上传 / 删除策略,**留 Provider 选型评审稿**;C-7 attachments **9 个实施 PR(#70-#78)+ landing(#79) + bump(#80) + handoff(#81)** 共 17 PR 已全部入 main;`v0.10.0` tag + Latest GitHub Release 已发(`2f4b89d` → `1db905e`,2026-05-15)。本 PR 启动 **C-7.5 Provider 选型独立评审**,沿 D7-attachments v0.1 草稿 / D7-RBAC v0.1 草稿范式。
+> **状态**:**v0.2 局部收口稿**(2026-05-15)— **收口原因**:v0.1 草稿([PR #82](https://github.com/BA7IEE/srvf-nest-api/pull/82),squash commit `6dbdbed`,2026-05-15)10 项 v0.1 拍板(F 5 + B 5)+ 15 项 Q 留评审后,用户拍板**v0.2 局部收口**:**正式 Provider 锁定为腾讯云 COS**(不再 OSS / COS 二选一);沿用 v0.1 锁定的 F1-F5 / B1-B5;**Q1 / Q4 锁定**(业务方既有云资源 + 存储后端具体选择)+ **Q8 / Q9 / Q10 / Q11 / Q12 / Q13 / Q14 / Q15 锁定**(TTL / uploadState / PII 重做 / versioning / 加密 / multipart / CORS / 迁移)+ **新增 Q16-Q19 锁定**(私有桶 / key 命名 / 环境隔离 / STS);**留 v1.0 / 实施期决议 3 项**(Q5 接口签名细化 / Q6 upload-url 字段集 / Q7 confirm-upload 字段集 — 实施 PR 期落地)。
 >
-> **性质**:**C-7.5 Provider 选型评审 v0.1 草稿**(基于 C-7 attachments 落地后的现状 + V2 红线 §4 C-10 行 "文件上传 Provider 实装"复活路径 + 用户拍板 10 项 v0.1 拍板项;**沿 D7-attachments v1.0 冻结稿不回改**)。
+> **触发条件**:C-7 attachments 全模块实施已收口(v0.10.0;沿 [`docs/handoff/v0.10.0.md`](handoff/v0.10.0.md));D7-attachments v1.0 冻结稿(PR #68,squash commit `5da801f`)挂起 Q14 / Q15 Provider 上传 / 删除策略,**留 Provider 选型评审稿**;C-7 attachments **9 个实施 PR(#70-#78)+ landing(#79) + bump(#80) + handoff(#81)** 共 17 PR 已全部入 main;`v0.10.0` tag + Latest GitHub Release 已发(`2f4b89d` → `1db905e`,2026-05-15)。本 PR 推进 **C-7.5 Provider 选型 v0.2 局部收口**,沿 D7-attachments v0.2 局部收口稿 / D7-RBAC v0.2 局部收口稿范式。
+>
+> **性质**:**C-7.5 Provider 选型评审 v0.2 局部收口稿**(基于 v0.1 草稿 + 用户拍板腾讯云 COS 锁定 + 9 项 v0.2 锁定决策;**沿 D7-attachments v1.0 冻结稿不回改**)。
 > **批次号**:批次 7.5 暂定;正式编号以 **C-7.5 V2.x 立项 commit** 为准。
-> **撰写日期**:2026-05-15(v0.1)
-> **修订历程**(只在本说明区出现历史措辞):**v0.1 草稿**(本 PR,沿 D7-attachments v0.1 草稿范式;5 项 F 锁 + 3 项 B 锁 + 15 项 Q 待评审;**不回改 D7-attachments v1.0 冻结稿**)。
+> **撰写日期**:2026-05-15(v0.1 / **v0.2**)
+> **修订历程**(只在本说明区出现历史措辞):**v0.1 草稿**(PR #82,squash commit `6dbdbed`,2026-05-15,5 项 F 锁 + 5 项 B 锁 + 15 项 Q 待评审)→ **v0.2 局部收口稿**(本 PR,用户拍板**正式 Provider = 腾讯云 COS**;锁定 Q1 / Q4 / Q8 / Q9 / Q10 / Q11 / Q12 / Q13 / Q14 / Q15 共 10 项 Q + 新增 Q16 / Q17 / Q18 / Q19 共 4 项 Q = **v0.2 共锁 14 项 Q**;留 3 项 Q 待 v1.0 / 实施期决议;**不回改 D7-attachments v1.0 冻结稿**)。
 > **拍板准绳**:沿 D6 / D7-attachments / D7-RBAC 业务确认稿"**不考虑时间周期,只考虑项目稳定和长久**"(沿 D6 §1.2)。
 > **接续**:
 > - [D7-attachments v1.0 冻结稿](批次7_attachments_API前评审.md)(PR #68,squash commit `5da801f`;**Q14 / Q15 沿用挂起待本评审决议**)
@@ -16,14 +18,25 @@
 > - [`src/common/storage/storage.interface.ts`](../src/common/storage/storage.interface.ts)(v1 极简 interface;`putObject` + `deleteObject` 两动作;留待 Provider 接入时扩展)
 > - [`src/modules/attachments/attachments.service.ts`](../src/modules/attachments/attachments.service.ts) `toResponseDto`(`accessUrl: null` 占位;Provider 接入唯一改动点)
 > **风格参照**:[批次7_attachments_API前评审.md](批次7_attachments_API前评审.md)(D7 评审稿正典)/ [批次8_RBAC_API前评审.md](批次8_RBAC_API前评审.md)
-> **核心**(v0.1 草稿;5 项 F 锁 + 3 项 B 锁 + 15 项 Q 待评审;沿用户启动本 PR 时拍板的 10 项 v0.1 锁):
-> - **F1 锁** 本 Provider 选型评审 **独立进行**,**不回改 D7-attachments v1.0 冻结稿**(沿 D7-attachments §16 决议表 Q14 / Q15 挂起范式;v1.0 冻结后由本评审承接)
-> - **F2 锁** 生产推荐 **signed URL 模式**(沿 D7-attachments §5.5 模式 B);dev / test 推荐 **LocalProvider**(沿 ARCHITECTURE.md §9 升级路径范式)
-> - **F3 锁** 存储后端 **国内合规优先**(阿里 OSS / 腾讯 COS 二选一);**若队组织已有云资源,优先复用**(避免选型脱离实际)
-> - **F4 锁** 删除策略 = **同步尝试删除 + 失败 logger.warn**(Provider lifecycle / versioning 兜底);**不引入消息队列 / Redis / 异步 worker**(沿 V1.1 §17.3)
-> - **F5 锁** `StorageProvider` 接口扩展方向 = **6 方法**(`putObject` / `deleteObject` 沿用 + `generateUploadUrl` / `generateDownloadUrl` / `headObject` 新增);`getStream` / `range` 不收录(走 signed URL 直传 / 直下,沿 F2)
-> - **🔒 v0.1 拍板 5 项 B**:B1 暂不新增 schema 字段(沿 D7-attachments v1.0 `key` / `etag` / `checksum` / `accessLevel` / `expireAt` 够用)/ B2 API 候选新增 **upload-url + confirm-upload** 2 个端点 / B3 RBAC 不新增权限点(沿现有 20 条 `attachment.*`)/ B4 audit 不新增 event(仅 `attachment.upload` / `attachment.delete` 的 `extra` 扩展 Provider 信息)/ B5 PR 拆分先按 13 PR 设计节奏(沿用户启动本 PR 时拍板)
-> - **本 v0.1 草稿待评审 15 项 Q**:Q1 业务方既有云资源 / Q2 上传模式 A/B/C/D 终选 / Q3 删除策略 A/B/C/D 终选 / Q4 存储后端 7 选项 / Q5 `StorageProvider` 接口签名细化 / Q6 `upload-url` API 字段集 / Q7 `confirm-upload` API 字段集 / Q8 `accessUrl` 短期过期 TTL / Q9 是否需要 `uploadState` schema 字段 / Q10 PII 检测是否在 confirm-upload 重做 / Q11 是否启用 Provider versioning / Q12 加密 SSE-S3 vs SSE-KMS / Q13 大文件 multipart upload 支持 / Q14 跨域 CORS 配置 / Q15 Provider 切换 / 迁移路径
+> **核心**(v0.2 局部收口;5 项 F 锁 + 5 项 B 锁 + 14 项 Q 锁 + 3 项 Q 留 v1.0 / 实施期):
+> - **F1-F5 沿 v0.1 锁**(独立评审 / signed URL 模式 / 国内合规优先 / 同步删除 + lifecycle / 6 方法接口)
+> - **B1-B5 沿 v0.1 锁**(不新增 schema / +2 API / 不新增 RBAC / 不新增 event / 13 PR 节奏)
+> - **🔒 v0.2 新锁 14 项 Q**:
+>   - **Q1 锁**:业务方已锁腾讯云资源(用户拍板)
+>   - **Q4 锁**:正式 Provider = **腾讯云 COS**(国内合规 + 已有云资源;不再 OSS 候选)
+>   - **Q8 锁**:`accessUrl` TTL = upload 600s / download 300s(沿 v0.1 倾向)
+>   - **Q9 锁**:不新增 `uploadState` schema 字段(沿 v0.1 倾向 A;客户端由 upload-url 拿 signed token,confirm-upload 一次性落库)
+>   - **Q10 锁**:PII 不在 confirm-upload 重做(upload-url 已检;沿 v0.1 倾向 A)
+>   - **Q11 锁**:COS versioning 启用 + lifecycle 30 天 expire 旧版本
+>   - **Q12 锁**:加密 = **COS 服务端加密 SSE-COS**(腾讯云原生;等价 AWS SSE-S3;不启用 SSE-KMS)
+>   - **Q13 锁**:本批次不实施大文件 multipart upload(留 v1.1 / 实施期;客户端单文件 ≤ 5GB 走 PUT signed URL)
+>   - **Q14 锁**:COS CORS 配置(AllowedOrigins / AllowedMethods / AllowedHeaders / MaxAge)
+>   - **Q15 锁**:COS 暂不迁移(若未来跨 Provider,沿 S3 兼容协议;`StorageProvider` 接口抽象保证可平移)
+>   - **Q16 锁**(新增):**私有桶** + signed URL 唯一访问路径;**永不开放公有读**
+>   - **Q17 锁**(新增):key 命名规范 = `attachments/<env>/<yyyy>/<mm>/<dd>/<cuid>.<ext>`
+>   - **Q18 锁**(新增):bucket 环境隔离 = **单 bucket + key 前缀**(沿 Q17;`attachments/dev/...` / `attachments/test/...` / `attachments/prod/...`)
+>   - **Q19 锁**(新增):**不采用 STS 临时凭证**(沿 F2 模式 B + Q13 暂不 multipart;multipart upload 需要时 v1.1 / 实施期再启用)
+> - **本 v0.2 留 v1.0 / 实施期决议 3 项 Q**:Q5 `StorageProvider` 接口签名细化 / Q6 upload-url DTO 字段集 / Q7 confirm-upload DTO 字段集
 
 ---
 
@@ -34,8 +47,10 @@
 - ✅ Q14 / Q15 已锁"挂起待 Provider 选型评审"(沿 D7-attachments §16 决议表)
 - ✅ V2 红线 §4 C-10 "文件上传 Provider 实装"已列入可复活项
 - ✅ v0.10.0 tag + Latest GitHub Release 已发(`2f4b89d`,2026-05-15)
-- ⏳ **业务方提供既有云资源信息**(Q1 待评审;若已有阿里 / 腾讯 / AWS / Cloudflare / 自部署,优先复用)
-- ⏳ **用户拍板 v0.1 待评审 15 项 Q** → 进入 v0.2 局部收口阶段
+- ✅ **v0.1 草稿已合**(PR #82,squash commit `6dbdbed`,2026-05-15;5 项 F 锁 + 5 项 B 锁 + 15 项 Q 待评审)
+- ✅ **业务方既有云资源 = 腾讯云**(用户拍板;Q1 v0.2 锁定)
+- ✅ **正式 Provider = 腾讯云 COS**(Q4 v0.2 锁定;不再 OSS / COS 二选一)
+- ⏳ **用户拍板剩余 3 项 Q**(Q5 / Q6 / Q7;接口与 DTO 字段集)→ 进入 v1.0 冻结阶段
 
 ---
 
@@ -262,28 +277,160 @@ async delete(id: string, user: CurrentUserPayload, auditMeta: AuditMeta) {
 | **MinIO**(自托管 S3) | 中小规模 / 自部署 | 服务器成本 | ✅ 完全自主 | signed URL | 自配 lifecycle | 易(S3 兼容) |
 | **七牛 Kodo** | 中小规模 / 国内 | 低 | ✅ 国内合规 | signed URL | versioning(Beta) | 中 |
 
-### 6.2 v0.1 候选推荐(沿 F3)
+### 6.2 v0.2 锁定后端(沿 F3 + 用户拍板)
 
-**国内合规优先**(SRVF 业务全部在国内深圳;队员个人信息合规口径):
+**🔒 v0.2 锁定**:**正式 Provider = 腾讯云 COS**(国内合规 + 业务方已有腾讯云资源)+ **LocalProvider(dev / test 用)**。
 
-1. **阿里 OSS**(候选 1;若队组织已有阿里云资源)
-2. **腾讯 COS**(候选 2;若队组织已有腾讯云资源)
-3. **MinIO 自托管**(候选 3;若队组织有自有服务器 / 云资源)
-4. **LocalProvider**(必选;dev / test 用)
-5. ❌ AWS S3 / Cloudflare R2(国内合规风险;v0.1 不推荐;若有跨境业务诉求另议)
-6. ❌ 七牛 Kodo(候选不强;Beta versioning 风险)
+| Provider | v0.2 状态 |
+|---|---|
+| **腾讯云 COS** | ✅ **生产正式 Provider**(Q1 / Q4 v0.2 锁) |
+| **LocalProvider** | ✅ **dev / test 必选**(沿 F2;ARCHITECTURE.md §9 升级路径范式) |
+| 阿里 OSS | ❌ 不采用(同等国内合规,但业务方已锁腾讯生态) |
+| MinIO | ❌ 不采用(队组织无自建 IDC 诉求) |
+| AWS S3 / Cloudflare R2 / 七牛 Kodo | ❌ 不采用(国内合规风险 / 已锁腾讯生态) |
 
-### 6.3 Q1 业务方先决条件待评审
+### 6.3 Q1 业务方先决条件(✅ v0.2 锁)
 
-**Q1**(本 v0.1 草稿待评审):**队组织已有的云资源**?
+**🔒 v0.2 锁**:业务方既有云资源 = **腾讯云**(用户拍板);沿 F3 国内合规优先原则,优先复用既有云生态。
 
-- 选项 A:已有阿里云账号 → **OSS 优先**
-- 选项 B:已有腾讯云账号 → **COS 优先**
-- 选项 C:有自有服务器 / 自建 IDC → **MinIO 优先**
-- 选项 D:全新选型 → 用户拍板二选一(OSS / COS)+ LocalProvider(dev)
-- 选项 E:其他(请说明)
+**Q1 历史候选**(已锁定 B 腾讯;留作历史参考):
+- ~~选项 A:已有阿里云账号 → OSS 优先~~ ❌ 未采用
+- ✅ **选项 B:已有腾讯云账号 → COS 优先**(v0.2 锁)
+- ~~选项 C / D / E~~ 不适用
 
-**v0.2 局部收口前必须先决议 Q1**。
+### 6.4 COS 落地技术细节(🔒 v0.2 锁 Q11 / Q12 / Q14 / Q16 / Q17 / Q18 / Q19)
+
+#### 6.4.1 私有桶 + signed URL(Q16 v0.2 锁)
+
+**🔒 v0.2 锁**:**所有 attachments bucket 强制私有桶**(`Bucket ACL = private`);**永不开放公有读**;**所有访问 100% 走 signed URL**(沿 F2 模式 B)。
+
+- 上传:`PUT signed URL`(600s 过期;沿 Q8)
+- 下载:`GET signed URL`(300s 过期;沿 Q8)
+- 列表:**不暴露 Provider 端列表能力**;业务层走 DB 查 `attachments` 表(沿 §7.2 接口扩展;`StorageProvider` 不收录 `listObjects`)
+- **客户端不可直接拼 URL 访问 Provider**(沿 D7-attachments §6.5 accessLevel + RBAC 单一权威源)
+
+**绕过 RBAC 风险**:由于 signed URL 是短期有效的(300/600s),即使被 XSS 截获,过期后自动失效(沿 §14 风险 8 + Q13 信息泄漏防御)。
+
+#### 6.4.2 key 命名规范(Q17 v0.2 锁)
+
+**🔒 v0.2 锁定 key 命名 schema**:
+
+```
+attachments/<env>/<yyyy>/<mm>/<dd>/<cuid>.<ext>
+```
+
+**字段释义**:
+
+| 字段 | 取值规则 | 例 |
+|---|---|---|
+| `attachments/` | 固定前缀(沿 D7-attachments `key` 字段语义;§5.4.1) | `attachments/` |
+| `<env>` | 环境前缀:`dev` / `test` / `prod`(沿 Q18 bucket 环境隔离)| `prod/` |
+| `<yyyy>/<mm>/<dd>` | 上传日期(UTC;按 `uploadedAt` 计算)| `2026/05/15/` |
+| `<cuid>` | 复用 `attachment.id` cuid(沿现有 Prisma `@id @default(cuid())`)| `cl9z3a8b...` |
+| `<ext>` | MIME 推断的扩展名(`image/jpeg → .jpg` / `application/pdf → .pdf` 等)| `.jpg` |
+
+**完整例**:`attachments/prod/2026/05/15/cl9z3a8b00000abcd1234efgh.jpg`
+
+**为什么不用 `originalName`?**:
+- 沿 D7-attachments Q9 + §9.4 PII 铁律:**`originalName` 可能含身份证号正则模式**(已 Service 层拒;但额外防御);**key 不复用 originalName** 避免 Provider 侧路径含 PII
+- 沿 storage.interface.ts `key` 字段语义(Provider 侧唯一引用,非用户可见字符串)
+- 用 `attachment.id` cuid 保证全局唯一 + 短期不可猜测
+
+**冲突避免**:cuid 已全局唯一(沿 v1 §3 命名铁律 `cuid()` 字符串)+ 日期前缀防同日撞库;实际 collision 概率 < 10⁻¹⁵。
+
+#### 6.4.3 bucket 环境隔离(Q18 v0.2 锁)
+
+**🔒 v0.2 锁**:**单 bucket + key 前缀环境隔离**(沿 Q17 `<env>` 前缀)。
+
+| 环境 | Bucket 名(候选) | key 前缀 | 用途 |
+|---|---|---|---|
+| dev | `srvf-attachments` | `attachments/dev/...` | 本地 LocalProvider 主用;偶尔接 COS 联调 |
+| test | `srvf-attachments` | `attachments/test/...` | CI / e2e |
+| prod | `srvf-attachments` | `attachments/prod/...` | 生产 |
+
+**为什么不多 bucket?**:
+- 单 bucket 简化运维(IAM / 计费 / lifecycle 配置统一)
+- 沿 Q17 key 前缀已天然隔离;权限通过 IAM Policy 限制访问范围
+- 沿 D7-attachments F4 配置三表入口固定 `@Roles(SUPER_ADMIN, ADMIN)`,运维操作可控
+
+**多 bucket 备选(留 v1.0 / 实施期决议)**:若 dev / test / prod 完全隔离 + 跨环境数据不可读取诉求,可改为 3 bucket(`srvf-attachments-dev` / `srvf-attachments-test` / `srvf-attachments-prod`);沿 ARCHITECTURE.md §9 升级路径。
+
+#### 6.4.4 加密(Q12 v0.2 锁)
+
+**🔒 v0.2 锁**:**COS 服务端加密 SSE-COS**(腾讯云原生;等价 AWS SSE-S3)。
+
+- **启用方式**:bucket 默认加密策略 = `AES256`(COS 控制台 / Terraform 配置;**不在系统侧硬编码**)
+- **客户端透明**:上传时无需指定加密参数;COS 自动加密落盘
+- **❌ 不启用 SSE-KMS**(沿 D6 决议 4 最低合规版;KMS 复杂度 + 成本不必要;沿 D7-attachments §11 风险 3 接受)
+- **❌ 不启用 SSE-C**(客户端管理密钥;复杂度过高)
+
+**合规依据**:沿 D7-attachments §9.1 "Provider 侧 SSE-S3 等价默认透明加密"(已锁)。
+
+#### 6.4.5 versioning + lifecycle(Q11 v0.2 锁)
+
+**🔒 v0.2 锁**:
+
+| 项 | 配置 | 用途 |
+|---|---|---|
+| **多版本控制(versioning)** | ✅ 启用 | 误删兜底(沿 D6 §六.1 风险接受) |
+| **生命周期规则 1**:旧版本 30 天 expire | `NoncurrentVersionExpiration.NoncurrentDays = 30` | 误删 30 天内可恢复;30 天后 COS 自动清理 |
+| **生命周期规则 2**:删除标记 expire 即清除 | `Expiration.ExpiredObjectDeleteMarker = true` | 防"已删但有 DeleteMarker"占用 list 结果 |
+| **生命周期规则 3**:incomplete multipart upload 7 天 abort | `AbortIncompleteMultipartUpload.DaysAfterInitiation = 7` | 防 confirm-upload 失败留下的孤儿分片(沿 Q13 暂不实施 multipart,但此规则提前兜底) |
+| **❌ 不启用** glacier / 冷归档 | — | 沿决议 4 最低合规版;访问频率低但延迟敏感 |
+| **❌ 不启用** lifecycle 删活动版本 | — | 沿 D7-attachments §9.2 不做自动清理 |
+
+**实际配置由运维在 COS 控制台 / Terraform 设置;**系统侧不写入**(沿 §6.4.4 加密同范式)。
+
+#### 6.4.6 CORS(Q14 v0.2 锁)
+
+**🔒 v0.2 锁定 CORS 规则**(COS 控制台 / Terraform 配置):
+
+```json
+{
+  "AllowedOrigins": ["https://<your-frontend-domain>"],
+  "AllowedMethods": ["PUT", "GET", "HEAD"],
+  "AllowedHeaders": ["Content-Type", "Content-MD5", "x-cos-*"],
+  "ExposeHeaders": ["ETag", "x-cos-request-id"],
+  "MaxAgeSeconds": 3600
+}
+```
+
+**字段释义**:
+- `AllowedOrigins`:**生产域名白名单**(具体域名由前端项目方提供;**❌ 不允许 `*` 通配**)
+- `AllowedMethods`:`PUT`(上传)+ `GET`(下载)+ `HEAD`(headObject 校验);**不开放 `POST` / `DELETE`**(沿 §6.4.1 私有桶 + signed URL)
+- `AllowedHeaders`:必填 `Content-Type` + 可选 `Content-MD5`(checksum 校验)+ COS 私有 `x-cos-*` 头
+- `ExposeHeaders`:暴露 `ETag` 给客户端(confirm-upload 时校验)+ `x-cos-request-id`(排障)
+- `MaxAgeSeconds`:`3600`(1 小时 preflight 缓存)
+
+**dev / test 环境**:CORS 允许 `http://localhost:*`(沿 v1 / V1.1 既有 CORS 配置范式)。
+
+#### 6.4.7 不采用 STS 临时凭证(Q19 v0.2 锁)
+
+**🔒 v0.2 锁**:**不采用 STS**(沿 F2 模式 B + Q13 暂不实施 multipart)。
+
+**理由**:
+- STS 主要解决**大文件 multipart upload**(SDK 端 multipart 分片上传需要持续凭证);沿 Q13 v0.2 锁"本批次不实施 multipart",STS 暂无必要
+- signed URL(模式 B)单文件 ≤ 5GB(腾讯 COS PUT API 上限);足够 attachments 业务场景(身份证 / 证件 / 活动照片普遍 < 10MB)
+- STS 引入额外 SDK 依赖 + 客户端复杂度;暂不引入(沿 V1.1 §17.3 / D6 决议 5 最小集)
+
+**未来启用条件**(留 v1.1 / 实施期评估):
+- 出现单文件 > 5GB 的业务诉求(C-7 4 个 ownerType 场景预期无此需求)
+- 客户端需要 multipart 分片上传(大文件 / 弱网络)
+
+#### 6.4.8 路径规范汇总(沿 Q16-Q19)
+
+| 维度 | 规则 |
+|---|---|
+| Bucket 访问 | 私有(沿 Q16);永不公有读 |
+| Bucket 数量 | 单 bucket(沿 Q18) |
+| Key 格式 | `attachments/<env>/<yyyy>/<mm>/<dd>/<cuid>.<ext>`(沿 Q17) |
+| 上传方式 | PUT signed URL(沿 F2 + Q19);TTL 600s(沿 Q8) |
+| 下载方式 | GET signed URL(沿 F2);TTL 300s(沿 Q8) |
+| 加密 | SSE-COS(沿 Q12) |
+| versioning | 启用 + 30 天 expire 旧版本(沿 Q11) |
+| CORS | 生产白名单 + PUT/GET/HEAD + 3600s preflight(沿 Q14) |
+| STS | 不采用(沿 Q19) |
+| Multipart | 暂不实施(沿 Q13) |
 
 ---
 
@@ -477,17 +624,26 @@ async confirmUpload(dto: ConfirmUploadDto, user: CurrentUserPayload, auditMeta: 
 
 **出参候选**:`AttachmentResponseDto`(沿现有;`accessUrl` 由 `generateDownloadUrl` 填)
 
-### 8.5 Q8 accessUrl TTL 待评审
+### 8.5 Q8 accessUrl TTL(🔒 v0.2 锁)
 
-**Q8**(本 v0.1 草稿):`accessUrl` 签名过期时间(TTL)?
+**🔒 v0.2 锁定 TTL**:
 
-| 场景 | TTL 候选 | 说明 |
+| 场景 | TTL | 说明 |
 |---|---|---|
-| **upload-url** | 600 秒(10 分钟) | 给客户端预留上传时间 |
-| **download-url**(详情 / 列表) | 300 秒(5 分钟) | 短期访问;过期后客户端可重新拉详情拿新 URL |
-| **download-url**(预览 / batch) | 60-1800 秒 | 待评审;依赖前端使用场景 |
+| **upload-url** | **600 秒**(10 分钟) | 给客户端预留上传时间;网络抖动 / 重试场景足够 |
+| **download-url**(详情 / 列表) | **300 秒**(5 分钟) | 短期访问;过期后客户端可重新拉详情拿新 URL |
+| **download-url**(预览 / batch) | **300 秒** | 沿 detail TTL;前端通过 detail 端点刷新 |
 
-**v0.1 倾向**:upload-url = 600,download-url = 300。
+**为什么不更长?**:
+- 越长越易被 XSS 截获后滥用(沿 §14 风险 8)
+- 沿 D7-attachments §6.5 accessLevel + RBAC 单一权威:每次访问都经过后端判权 + 短期签名;权限变更后,旧签名 5 分钟内失效
+- 前端按需通过 GET `:id` 端点刷新 URL(不影响体验;沿 Q15)
+
+**为什么不更短?**:
+- 上传 600s:覆盖弱网络上传 10MB 文件(测试 4G 网络下普遍 < 5 分钟)
+- 下载 300s:覆盖单次 PDF / 图片预览;长会话场景刷新成本可接受
+
+**Q5 子项**(`expiresIn` API 参数类型):**留 v1.0 / 实施期决议**(候选:秒数 vs Date 对象;本 v0.2 倾向"秒数",简单)。
 
 ---
 
@@ -505,17 +661,22 @@ async confirmUpload(dto: ConfirmUploadDto, user: CurrentUserPayload, auditMeta: 
 | `accessLevel` | `AttachmentAccessLevel?` | ✅ 够用(沿 D7-attachments Q2 锁) | ❌ 不动 |
 | `expireAt` | `DateTime?` | ✅ 够用 | ❌ 不动 |
 
-### 9.2 Q9 是否需要 `uploadState` 字段(沿 B1 暂不新增,Q9 待评审)
+### 9.2 Q9 是否需要 `uploadState` 字段(🔒 v0.2 锁:不新增)
 
-**Q9**(本 v0.1 草稿):是否在 `Attachment` 上新增 `uploadState` 字段(枚举 `pending` / `confirmed`)?
+**🔒 v0.2 锁**:**选项 A — 不新增 `uploadState` 字段**(沿 B1 + v0.1 倾向)。
 
-| 选项 | 含义 | 影响 | v0.1 倾向 |
-|---|---|---|---|
-| **A. 不新增** | upload-url 不落库 pending row;confirm-upload 时一次性落库 | upload-url 阶段无 row;客户端必须自行携带 ownerType/Id/size/mime;**Service 层用 signed token 防伪造**(JWT-like) | ✅ v0.1 倾向(B1 锁;最小改动) |
-| B. 新增 `uploadState` enum | upload-url 落 pending row;confirm-upload 改 confirmed | Schema +1 字段 + 1 migration | ❌ 留 Q9 评审 |
-| C. 新增独立 `attachment_upload_tokens` 表 | 单独存 pending 状态 + signed token | Schema +1 表 + migration | ❌ 复杂度高 |
+| 选项 | 含义 | v0.2 状态 |
+|---|---|---|
+| **✅ A. 不新增** | upload-url 不落库 pending row;confirm-upload 时一次性落库 | **v0.2 锁** |
+| ~~B. 新增 `uploadState` enum~~ | upload-url 落 pending row;confirm-upload 改 confirmed | ❌ 不采用 |
+| ~~C. 新增独立 `attachment_upload_tokens` 表~~ | 单独存 pending 状态 + signed token | ❌ 不采用(复杂度过高) |
 
-**v0.1 拍板 A**:**不新增**(沿 B1);具体待评审 Q9 决议。
+**v0.2 拍板理由**:
+- 沿 B1 锁定"暂不新增 schema 字段"
+- upload-url 端点用 **signed token**(JWT-like;或直接用 COS signed URL 自带的签名信息)防伪造;客户端必须**重传** ownerType/Id/size/mime 在 confirm-upload(同 signed token 验证)
+- **最小改动**:零 schema diff;零 migration;沿 v0.10.0 终态 zero drift
+
+**Q6 / Q7 子项**:upload-url 是否落 pending row(Q6b)/ confirm-upload 是否需要 attachmentId 入参(Q7)— **留 v1.0 / 实施期决议**(沿 Q9 锁定 A 后,默认 confirm-upload 一次性落库,不需要 attachmentId 入参,但具体字段集留 PR 细化)。
 
 ### 9.3 不动 schema 的运行时含义
 
@@ -562,32 +723,39 @@ async confirmUpload(dto: ConfirmUploadDto, user: CurrentUserPayload, auditMeta: 
 
 **总结**:`AuditLogEvent` union **保持 17 项不动**;仅 extra 微调。
 
-### 11.3 Q10 PII 检测在 confirm-upload 是否重做?
+### 11.3 Q10 PII 检测在 confirm-upload 是否重做?(🔒 v0.2 锁:不重做)
 
-**Q10**(本 v0.1 草稿):upload-url 阶段已做 PII 检测(沿 Q6e);confirm-upload 是否需要重做?
+**🔒 v0.2 锁**:**选项 A — 不在 confirm-upload 重做 PII 检测**(沿 v0.1 倾向)。
 
-| 选项 | 理由 | v0.1 倾向 |
+| 选项 | 理由 | v0.2 状态 |
 |---|---|---|
-| A. **不重做** | upload-url 已检;客户端不可能在上传过程中修改 originalName / description / tags;省一次正则 | ✅ v0.1 倾向 |
-| B. **重做一次** | 防客户端篡改 originalName(实际不会,因为 confirm-upload 不接受 originalName 入参) | ❌ 冗余 |
+| **✅ A. 不重做** | upload-url 已检;客户端不可能在上传过程中修改 originalName / description / tags;省一次正则 | **v0.2 锁** |
+| ~~B. 重做一次~~ | 防客户端篡改 originalName(实际不会,因为 confirm-upload 不接受 originalName 入参) | ❌ 冗余 |
 
-**v0.1 拍板 A**;留 Q10 评审。
+**v0.2 拍板理由**:
+- upload-url 阶段已完整做 PII 检测(沿 Q6e + D7-attachments §9.4 身份证号正则)
+- confirm-upload 入参仅 `{ key }` 或 signed token(不接受 originalName / description / tags 重传;沿 Q9 锁定 A)
+- 沿 Q9 锁定 A 后,客户端无篡改 PII 字段的注入面;重做仅是无意义性能损耗
 
 ---
 
-## 12. 合规 / 加密 / versioning(沿 D7-attachments §9 + 用户拍板 v0.1)
+## 12. 合规 / 加密 / versioning(🔒 v0.2 锁 COS 落地配置)
 
-### 12.1 加密(沿 D7-attachments §9.1)
+### 12.1 加密(🔒 v0.2 锁 Q12;详见 §6.4.4)
 
-- ✅ Provider 侧 **SSE-S3 等价默认透明加密**(沿 D7-attachments §9.1)
-- ❌ **不做 KMS 主动加密**(沿 D6 决议 4 最低合规版)
-- **Q12 待评审**:具体加密配置 SSE-S3 vs SSE-KMS vs SSE-C(各 Provider 等价能力差异;本 v0.1 倾向 SSE-S3 等价默认)
+- ✅ **COS SSE-COS**(腾讯云原生服务端加密;等价 AWS SSE-S3;沿 D7-attachments §9.1)
+- ❌ **不启用 SSE-KMS**(沿 D6 决议 4 最低合规版)
+- ❌ **不启用 SSE-C**(复杂度过高)
+- 启用方式:COS 控制台 / Terraform 配置 bucket 默认加密策略 = `AES256`(**不在系统侧硬编码**)
 
-### 12.2 versioning(沿 D6 §六.1 + D7-attachments §9.3)
+### 12.2 versioning + lifecycle(🔒 v0.2 锁 Q11;详见 §6.4.5)
 
-- ✅ Provider 启用 versioning(误删兜底;沿 D6 风险接受范式)
-- ✅ 30 天 expire 旧版本(沿 F4)
-- **Q11 待评审**:具体 lifecycle 规则(过期时间 / 转 glacier / 永久保留 等)
+- ✅ **COS 多版本控制启用**(误删兜底;沿 D6 §六.1 风险接受)
+- ✅ **lifecycle 旧版本 30 天 expire**(`NoncurrentVersionExpiration.NoncurrentDays = 30`)
+- ✅ **DeleteMarker 即清除**(`Expiration.ExpiredObjectDeleteMarker = true`)
+- ✅ **incomplete multipart 7 天 abort**(沿 Q13 兜底)
+- ❌ 不启用 glacier / 冷归档(沿决议 4)
+- 实际配置由运维在 COS 控制台 / Terraform 设置(**不写入系统**)
 
 ### 12.3 入队同意书 / 退队清理(沿 D7-attachments §9.5 / §9.6)
 
@@ -595,16 +763,21 @@ async confirmUpload(dto: ConfirmUploadDto, user: CurrentUserPayload, auditMeta: 
 - 沿 D7-attachments **Q8 退队清理 N 配置项语义**(本评审不动;由业务方 v1.1 提供 N 具体值)
 - **Provider 不参与同意书 / 退队清理决策**(系统侧承载)
 
-### 12.4 跨域 CORS(Q14 待评审)
+### 12.4 跨域 CORS(🔒 v0.2 锁 Q14;详见 §6.4.6)
 
-**Q14**(本 v0.1 草稿):Provider bucket CORS 如何配置?
+```json
+{
+  "AllowedOrigins": ["https://<your-frontend-domain>"],
+  "AllowedMethods": ["PUT", "GET", "HEAD"],
+  "AllowedHeaders": ["Content-Type", "Content-MD5", "x-cos-*"],
+  "ExposeHeaders": ["ETag", "x-cos-request-id"],
+  "MaxAgeSeconds": 3600
+}
+```
 
-- 候选:允许 `https://*.your-frontend.com`(具体域名待定)
-- AllowedMethods:`PUT`(upload)+ `GET`(download)
-- AllowedHeaders:`Content-Type` / `Authorization`(沿 Provider 文档)
-- MaxAgeSeconds:3600
-
-留 Q14 评审决议。
+- ❌ **不允许 `*` 通配 origin**(生产域名白名单)
+- ❌ **不开放 `POST` / `DELETE` 方法**(沿 §6.4.1 私有桶 + signed URL;只允许 PUT 上传 / GET 下载 / HEAD 校验)
+- dev / test 环境追加 `http://localhost:*`(沿 v1 / V1.1 既有 CORS 配置范式)
 
 ---
 
@@ -774,44 +947,51 @@ PR 13(tag/release)← 依赖 11 / 12
 
 ---
 
-## 19. 决议表(C-7.5 Provider 选型 v0.1 草稿)
+## 19. 决议表(C-7.5 Provider 选型 v0.2 局部收口)
 
-> **状态历程**(修订日志):
-> - **v0.1 草稿**(本 PR,2026-05-15):**5 项 F 锁**(用户启动本 PR 时拍板 10 项 v0.1 的核心 5 项)+ **3 项 B 锁**(沿用户启动本 PR 时拍板的 B1 / B2 / B3 / B4 / B5)+ **15 项 Q 以"本稿建议 / 待评审"承载**
+> **状态历程**(修订日志,只在本说明区出现历史措辞):
+> - **v0.1 草稿**(PR #82,squash commit `6dbdbed`,2026-05-15):5 项 F 锁 + 5 项 B 锁(沿用户启动 v0.1 时拍板)+ **15 项 Q 以"⏳ 待评审"承载**
+> - **v0.2 局部收口**(本 PR,2026-05-15):用户拍板 **正式 Provider = 腾讯云 COS**(Q1 / Q4 锁定);沿用 v0.1 的 F1-F5 + B1-B5;**v0.2 新锁 14 项 Q**(Q1 / Q4 / Q8 / Q9 / Q10 / Q11 / Q12 / Q13 / Q14 / Q15 + 新增 Q16 / Q17 / Q18 / Q19);**留 3 项 Q 待 v1.0 / 实施期决议**(Q5 / Q6 / Q7;接口与 DTO 字段集);v1.0 暂不冻结(留 Q5 / Q6 / Q7 实施期细化或评审锁定)
+> - 🔒 = v0.1 / v0.2 锁;⏳ = v1.0 / 实施期待决议
 
-| # | 决议 | v0.1 状态 | 来源 / 章节 |
+| # | 决议 | v0.2 状态 | 来源 / 章节 |
 |---|---|---|---|
-| F1 | 本 Provider 选型评审独立进行,**不回改 D7-attachments v1.0 冻结稿** | 🔒 v0.1 锁 | 用户拍板 |
-| F2 | 生产推荐 **signed URL 模式(B)**;dev / test 推荐 **LocalProvider(D)** | 🔒 v0.1 锁 | 用户拍板 / §4 |
-| F3 | 存储后端 **国内合规优先**(阿里 OSS / 腾讯 COS 二选一);**若队组织已有云资源,优先复用** | 🔒 v0.1 锁 | 用户拍板 / §6 |
-| F4 | 删除策略 = **同步尝试 + 失败 logger.warn + Provider lifecycle / versioning 兜底**;**不引入队列**(沿 V1.1 §17.3) | 🔒 v0.1 锁 | 用户拍板 / §5 |
-| F5 | `StorageProvider` 接口扩展方向 = **6 方法**(`putObject` / `deleteObject` 沿用 + `generateUploadUrl` / `generateDownloadUrl` / `headObject` 新增) | 🔒 v0.1 锁 | 用户拍板 / §7 |
-| B1 | **暂不新增 schema 字段**(沿 D7-attachments v1.0 `key` / `etag` / `checksum` / `accessLevel` / `expireAt` 够用) | 🔒 v0.1 锁 | 用户拍板 / §9 |
-| B2 | API 候选新增 **upload-url + confirm-upload** 2 个端点;**不动现有 7 个 attachments 端点 paths / 入参 / 出参 schema** | 🔒 v0.1 锁 | 用户拍板 / §8 |
-| B3 | **RBAC 不新增权限点**;沿现有 20 条 `attachment.*`(沿 D7-attachments Q11) | 🔒 v0.1 锁 | 用户拍板 / §10 |
-| B4 | **audit 不新增 event**;仅 `attachment.upload` / `attachment.delete` 的 `extra` 扩展 Provider 信息(沿 D11 路线 A 单事件 + extra) | 🔒 v0.1 锁 | 用户拍板 / §11 |
-| B5 | PR 拆分先按 **13 PR 设计节奏**(4 设计 + 5 实施 + 1 landing + 1 bump + 1 handoff + 1 维护者 tag/release)| 🔒 v0.1 锁(建议;实施期允许微调,沿 D7-attachments Q16 范式) | 用户拍板 / §16 |
-| Q1 | 业务方既有云资源 | ⏳ v0.1 待评审(候选 A 阿里 / B 腾讯 / C 自建 / D 全新 / E 其他)| §6.3 |
-| Q2 | 上传模式 A 中转 / B 签名 URL / C STS / D 本地 终选 | 🔒 v0.1 拍板生产 = B + dev = D;**Q2** 是否启用 C STS 大文件 multipart 留 Q13 | §4 |
-| Q3 | 删除策略 A 同步事务 / B 异步队列 / C 同步 + 告警 / D 仅 versioning 终选 | 🔒 v0.1 拍板 = C + D;**Q3 子项**(audit 中 providerDeleteStatus 字段写法)待评审 | §5 |
-| Q4 | 存储后端具体选择(阿里 OSS / 腾讯 COS / R2 / S3 / MinIO / 七牛 / LocalProvider) | ⏳ v0.1 待评审(依赖 Q1) | §6 |
-| Q5 | `StorageProvider` 接口签名细化(`expiresIn` 类型 / `headers` 必填性 / `method` 是否含 POST 候选) | ⏳ v0.1 待评审 | §7.4 |
-| Q6 | `POST /upload-url` 字段集 + Q6a-Q6e 子项(key 谁生成 / 是否落 pending row / 校验链 / mime / size / PII 是否做) | ⏳ v0.1 待评审 | §8.3 |
-| Q7 | `POST /confirm-upload` 字段集 + Q9 联动(是否需要 attachmentId 入参) | ⏳ v0.1 待评审 | §8.4 |
-| Q8 | `accessUrl` 签名过期 TTL(upload = 600s / download = 300s 倾向) | ⏳ v0.1 待评审 | §8.5 |
-| Q9 | 是否新增 `uploadState` schema 字段 / 独立 `attachment_upload_tokens` 表 | 🔒 v0.1 拍板 A 不新增(沿 B1);**留 Q9 评审**(若 Q6b 决议落 pending row,Q9 必须新增) | §9.2 |
-| Q10 | PII 检测是否在 confirm-upload 重做 | 🔒 v0.1 拍板 A 不重做(upload-url 已检) | §11.3 |
-| Q11 | Provider versioning + lifecycle 具体配置(30 天 expire / glacier / 永久 等) | ⏳ v0.1 待评审 | §12.2 |
-| Q12 | 加密 SSE-S3 / SSE-KMS / SSE-C(具体 Provider 配置) | ⏳ v0.1 待评审 | §12.1 |
-| Q13 | 大文件 multipart upload 支持(沿 STS 模式 C);是否本批次实施 | ⏳ v0.1 待评审(本 v0.1 倾向"暂不";留 v1.1 / 实施期) | §4 + §7.2 |
-| Q14 | 跨域 CORS 配置(AllowedOrigins / AllowedMethods / MaxAge) | ⏳ v0.1 待评审 | §12.4 |
-| Q15 | Provider 切换 / 跨 Provider 迁移路径(运行时切换 / 迁移脚本 / 数据保留策略) | ⏳ v0.1 待评审 | §15.4 |
+| F1 | 本 Provider 选型评审独立进行,**不回改 D7-attachments v1.0 冻结稿** | 🔒 v0.1 → v0.2 锁 | 用户拍板 |
+| F2 | 生产推荐 **signed URL 模式(B)**;dev / test 推荐 **LocalProvider(D)** | 🔒 v0.1 → v0.2 锁 | 用户拍板 / §4 |
+| F3 | 存储后端 **国内合规优先**(腾讯 COS / 阿里 OSS 二选一);**若队组织已有云资源,优先复用** | 🔒 v0.1 → v0.2 锁;Q4 已具体化为腾讯 COS | 用户拍板 / §6 |
+| F4 | 删除策略 = **同步尝试 + 失败 logger.warn + Provider lifecycle / versioning 兜底**;**不引入队列**(沿 V1.1 §17.3) | 🔒 v0.1 → v0.2 锁 | 用户拍板 / §5 |
+| F5 | `StorageProvider` 接口扩展方向 = **6 方法**(`putObject` / `deleteObject` 沿用 + `generateUploadUrl` / `generateDownloadUrl` / `headObject` 新增) | 🔒 v0.1 → v0.2 锁 | 用户拍板 / §7 |
+| B1 | **暂不新增 schema 字段**(沿 D7-attachments v1.0 `key` / `etag` / `checksum` / `accessLevel` / `expireAt` 够用) | 🔒 v0.1 → v0.2 锁 | 用户拍板 / §9 |
+| B2 | API 候选新增 **upload-url + confirm-upload** 2 个端点;**不动现有 7 个 attachments 端点 paths / 入参 / 出参 schema** | 🔒 v0.1 → v0.2 锁 | 用户拍板 / §8 |
+| B3 | **RBAC 不新增权限点**;沿现有 20 条 `attachment.*`(沿 D7-attachments Q11) | 🔒 v0.1 → v0.2 锁 | 用户拍板 / §10 |
+| B4 | **audit 不新增 event**;仅 `attachment.upload` / `attachment.delete` 的 `extra` 扩展 Provider 信息(`providerDeleteStatus` / `uploadConfirmedAt`;沿 D11 路线 A 单事件 + extra) | 🔒 v0.1 → v0.2 锁 | 用户拍板 / §11 |
+| B5 | PR 拆分先按 **13 PR 设计节奏**(4 设计 + 5 实施 + 1 landing + 1 bump + 1 handoff + 1 维护者 tag/release)| 🔒 v0.1 → v0.2 锁(建议;实施期允许微调,沿 D7-attachments Q16 范式) | 用户拍板 / §16 |
+| **Q1** | 业务方既有云资源 | 🔒 **v0.2 锁**:**腾讯云**(用户拍板) | §6.3 |
+| Q2 | 上传模式 A 中转 / B 签名 URL / C STS / D 本地 终选 | 🔒 v0.1 → v0.2 锁:生产 = B + dev = D;C STS 不采用(沿 Q19) | §4 |
+| Q3 | 删除策略 A 同步事务 / B 异步队列 / C 同步 + 告警 / D 仅 versioning 终选 | 🔒 v0.1 → v0.2 锁:**C + D**(同步 + 告警 + COS lifecycle 兜底) | §5 |
+| **Q4** | 存储后端具体选择 | 🔒 **v0.2 锁**:**腾讯云 COS**(沿 Q1;不再 OSS 候选) | §6.2 |
+| Q5 | `StorageProvider` 接口签名细化(`expiresIn` 类型 / `headers` 必填性 / `method` 是否含 POST 候选) | ⏳ **v1.0 / 实施期决议**(本 v0.2 不锁;留 PR 5 interface 扩展实施期落地) | §7.4 / §8.5 |
+| Q6 | `POST /upload-url` DTO 字段集 + Q6a-Q6e 子项 | ⏳ **v1.0 / 实施期决议**(本 v0.2 不锁;留 PR 9 实施期落地;沿 Q9 锁定后 attachmentId 字段去留) | §8.3 |
+| Q7 | `POST /confirm-upload` DTO 字段集 | ⏳ **v1.0 / 实施期决议**(本 v0.2 不锁;留 PR 9 实施期落地) | §8.4 |
+| **Q8** | `accessUrl` 签名过期 TTL | 🔒 **v0.2 锁**:upload = 600s / download = 300s | §8.5 |
+| **Q9** | 是否新增 `uploadState` schema 字段 / 独立 `attachment_upload_tokens` 表 | 🔒 **v0.2 锁**:**A 不新增**(沿 B1;客户端用 signed token + confirm-upload 一次性落库) | §9.2 |
+| **Q10** | PII 检测是否在 confirm-upload 重做 | 🔒 **v0.2 锁**:**A 不重做**(upload-url 已检;confirm-upload 不接受 originalName 等 PII 字段重传) | §11.3 |
+| **Q11** | Provider versioning + lifecycle 具体配置 | 🔒 **v0.2 锁**:COS versioning 启用 + 旧版本 30 天 expire + DeleteMarker 即清除 + 7 天 abort incomplete multipart | §6.4.5 / §12.2 |
+| **Q12** | 加密配置 | 🔒 **v0.2 锁**:**COS SSE-COS**(腾讯云原生;`AES256`);❌ 不启用 SSE-KMS / SSE-C | §6.4.4 / §12.1 |
+| **Q13** | 大文件 multipart upload 支持 | 🔒 **v0.2 锁**:**本批次不实施**(单文件 ≤ 5GB 走 PUT signed URL);留 v1.1 / 实施期评估 | §4 / §6.4.7 |
+| **Q14** | 跨域 CORS 配置 | 🔒 **v0.2 锁**:生产白名单 origin + `PUT/GET/HEAD` + `MaxAge=3600`;❌ 不允许 `*` 通配 | §6.4.6 / §12.4 |
+| **Q15** | Provider 切换 / 跨 Provider 迁移路径 | 🔒 **v0.2 锁**:**COS 暂不迁移**;`StorageProvider` 接口抽象保证未来可平移(沿 S3 兼容协议) | §15.4 / §18 |
+| **Q16**(新增) | 私有桶 vs 公有桶 | 🔒 **v0.2 锁**:**私有桶**;所有访问 100% 走 signed URL;**永不开放公有读** | §6.4.1 |
+| **Q17**(新增) | key 命名规范 | 🔒 **v0.2 锁**:`attachments/<env>/<yyyy>/<mm>/<dd>/<cuid>.<ext>` | §6.4.2 |
+| **Q18**(新增) | bucket 环境隔离 | 🔒 **v0.2 锁**:**单 bucket + key 前缀**(`dev` / `test` / `prod`);多 bucket 备选留 v1.0 / 实施期 | §6.4.3 |
+| **Q19**(新增) | 是否采用 STS 临时凭证 | 🔒 **v0.2 锁**:**不采用 STS**(沿 F2 模式 B + Q13);未来 multipart 需要时 v1.1 / 实施期再评估 | §6.4.7 |
 
-**总计**:**F 5 + B 5 + Q 15 = 25 项**
+**总计**:**F 5 + B 5 + Q 19 = 29 项**
 
-- **🔒 v0.1 已锁**:**F 5 + B 5 = 10 项**(沿用户启动本 PR 时拍板)
-- **⏳ v0.1 待评审**:**Q 15 项**(全部 Q 待用户拍板)
-- **沿 D7-attachments v0.1 草稿 16 项 Q + 5 项 F + 9 项 B = 30 项**节奏(本评审 25 项;少了 5 项,因为部分决议已被 D7-attachments v1.0 锁定)
+- **🔒 v0.2 已锁**:**F 5 + B 5 + Q 16 = 26 项**
+- **⏳ v1.0 / 实施期待决议**:**Q 3 项**(Q5 接口签名细化 / Q6 upload-url 字段集 / Q7 confirm-upload 字段集 — 实施 PR 期细化)
+- **v0.2 局部收口完成**:Provider 选型核心决议全部就位(腾讯云 COS + 私有桶 + signed URL + SSE-COS + versioning 30d + 不 STS / 不 multipart);**剩余 3 项 Q 是 API 与 interface 字段集,可在 v1.0 冻结前补 + 实施 PR 期细化**
+- **沿 D7-attachments v0.2 局部收口范式**:13 项 Q 锁 + 1 项挂起 + 2 项挂起待 Provider + 1 项不冻结 = 16 项 Q;本评审 v0.2 锁 16 项 Q 节奏一致
 
 ---
 
@@ -819,9 +999,9 @@ PR 13(tag/release)← 依赖 11 / 12
 
 1. ✅ **C-7 attachments 全模块**(PR #65-#81 17 个;v0.10.0 段内全部 squash merge)
 2. ✅ **v0.10.0 tag + GitHub Release**(2026-05-15;Latest)
-3. **本 PR(C-7.5 Provider 选型 v0.1 草稿)** → 🔄 进行中;新建本文件
-4. **C-7.5 v0.2 局部收口 PR** → 用户拍板 Q1-Q15 后启动
-5. **C-7.5 v1.0 冻结 PR** → 全部决议锁定后启动
+3. ✅ **C-7.5 v0.1 草稿 PR**(PR #82,squash commit `6dbdbed`,2026-05-15)
+4. **本 PR(C-7.5 v0.2 局部收口)** → 🔄 进行中;沿用户拍板 **腾讯云 COS** 锁 + 14 项 Q 锁
+5. **C-7.5 v1.0 冻结 PR** → 用户拍板剩余 Q5 / Q6 / Q7 后启动(或决定推迟到实施 PR 期细化)
 6. **C-7.5 V2.x 立项 PR**(沿 D7-attachments 立项 PR #69 / D7-RBAC 立项 PR #52 范式)→ 用户授权
 7. **C-7.5 实施 PR 5-9**(沿 §16 13 PR 节奏)→ 逐 PR 用户授权
 8. **C-7.5 landing PR 10** → 收口 docs(CHANGELOG / V2 红线 §C-10 / TASKS / 立项记录)
@@ -833,16 +1013,16 @@ PR 13(tag/release)← 依赖 11 / 12
 
 ## 21. 撰写元信息
 
-- **状态**:C-7.5 Provider 选型评审 **v0.1 草稿**(撰写完成;入库待用户授权 squash merge 本 PR)
-- **本评审稿自身的版本含义**:沿 D7-attachments v0.1 → v0.2 → v1.0 范式;**本 v0.1 是草稿**,**v1.0 由用户拍板全部 15 项 Q 后冻结**
+- **状态**:C-7.5 Provider 选型评审 **v0.2 局部收口稿**(撰写完成;入库待用户授权 squash merge 本 PR)
+- **本评审稿自身的版本含义**:沿 D7-attachments v0.1 → v0.2 → v1.0 范式;**本 v0.2 是局部收口稿**;**v1.0 冻结由用户拍板剩余 Q5 / Q6 / Q7 后启动**(或决定推迟到实施 PR 期细化)
 - **不在本评审范围**:
   - 任何代码 / schema / migration / Provider 实装(由对应实施 PR 承载)
   - D7-attachments v1.0 冻结稿任何回改(沿 F1)
   - C-7 attachments 7 端点 / 配置三表 15 端点 / 4 表 / 20 permission / 3 audit event(已锁;沿 D7-attachments v1.0 + v0.10.0 终态)
-  - 业务方既有云资源决策(Q1 待用户提供)
-  - 真实 Provider 选择(Q4 待用户拍板)
+  - 腾讯云账号 / IAM / API key 等运维细节(由队组织运维侧承载;**不写入本仓库**)
+  - COS 控制台 / Terraform 实际配置(沿 §6.4.4 / §6.4.5 / §6.4.6:运维手段配置,系统侧不硬编码)
   - tag + Release(沿 v0.10.0 维护者权限边界)
-- **撰写者签名**:Claude Code(基于 C-7 attachments 17 PR 全程实施经验 + Step 1 调研报告 + 用户启动本 PR 时拍板 10 项 v0.1 决策;**未动任何代码 / schema 文件**)
-- **commit 风格**:`docs(v2-design): add provider selection review draft v0.1`(沿 D7-attachments v0.1 PR #65 `docs(v2-design): add attachments API review draft v0.1` 命名风格)
+- **撰写者签名**:Claude Code(基于 C-7 attachments 17 PR 全程实施经验 + Step 1 调研报告 + v0.1 草稿 + 用户启动 v0.2 时拍板 9 项核心决议 + 腾讯云 COS 锁定;**未动任何代码 / schema 文件 / SDK 依赖**)
+- **commit 风格**:`docs(v2-design): refine provider selection review decisions v0.2`(沿 D7-attachments v0.2 PR #67 `docs(v2-design): refine attachments API review decisions v0.2` 命名风格)
 
 ---
