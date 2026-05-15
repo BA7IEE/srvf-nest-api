@@ -277,6 +277,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // **本 PR 不实装**:audit_logs 接入(留 PR #6c)/ Provider 文件层(Q15 挂起)。
   ['post', '/api/v2/attachments'],
   ['get', '/api/v2/attachments'],
+  // V2.x C-7.5 实施 PR #10:upload-url + confirm-upload(沿评审 §8.1 / §8.2 / §8.3 / §8.4)
+  // 路径顺序铁律:字面段优先,必须放在 :id 之前(沿 §8.2)
+  ['post', '/api/v2/attachments/upload-url'],
+  ['post', '/api/v2/attachments/confirm-upload'],
   ['get', '/api/v2/attachments/by-owner'],
   ['get', '/api/v2/attachments/me/uploaded'],
   ['get', '/api/v2/attachments/{id}'],
@@ -476,6 +480,14 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'CreateAttachmentDto',
   'UpdateAttachmentDto',
   'AttachmentResponseDto',
+
+  // V2.x C-7.5 实施 PR #10:upload-url + confirm-upload DTO(沿评审 §8.3 / §8.4 + Q-10-14)
+  // GenerateUploadUrlDto:upload-url 入参(5 字段;沿 §8.3.1)
+  // UploadUrlResponseDto:upload-url 出参(6 字段含 uploadToken;沿 §8.3.2)
+  // ConfirmUploadDto:confirm-upload 入参(1 必填 + 1 可选;沿 §8.4.1)
+  'GenerateUploadUrlDto',
+  'UploadUrlResponseDto',
+  'ConfirmUploadDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
