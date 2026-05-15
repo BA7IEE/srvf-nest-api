@@ -871,7 +871,9 @@ model Attachment {
   // 沿 D6 Q5 B 硬删除:无 deletedAt
 
   // ===== 基础字段(D7 v1.0 §4.1) =====
-  key          String // Provider 侧文件唯一引用;长度由 DTO @MaxLength(256)
+  // V2.x C-7.5 PR(attachment_key_unique):key 加 @unique(沿评审 §8.4.4 + PR #91 已知偏差修复)
+  // confirm-upload 二次提交:findFirst 串行早返 13001 + P2002 catch 并发兜底(双层防御)
+  key          String   @unique // Provider 侧文件唯一引用;长度由 DTO @MaxLength(256);@unique 全局唯一
   originalName String // 原始文件名;长度由 DTO @MaxLength(255)
   mime         String // MIME 类型;长度由 DTO @MaxLength(128);走 attachment_mime_configs 白名单
   size         Int // 文件大小(字节);非负;走 attachment_size_limit_configs 上限
