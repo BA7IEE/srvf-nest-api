@@ -1515,89 +1515,94 @@ PR #11 release tag v0.9.0 后,**才**启动 C-7 attachments D7 评审稿(沿 PR 
 
 ## 8. V2.x C-7 attachments(批次 7)
 
-> **状态(2026-05-14 V2.x 立项 PR)**:🎯 **D7 v1.0 冻结完成,V2.x implementation track 启动**;**实施 PR #1 待用户授权 + schema diff/migration SQL 双确认**。
+> **状态(2026-05-15 实施收口)**:✅ **C-7 attachments 实施已完成**;9 个实施 PR 全部 squash merge(#70-#78);主模块 7 端点 + 配置三表 15 端点 + RBAC + audit 全部就位。
 > **入口文档**:[`docs/批次7_attachments_V2x立项记录.md`](docs/批次7_attachments_V2x立项记录.md)
 > **D7 v1.0 冻结**:PR #68 `5da801f`(27 项锁定 + 1 挂起 + 2 挂起待 Provider + 1 不冻结 + 2 v1.1)
 > **文档先决条件**:D7-RBAC v1.2 已合(PR #66 `2b934c5`;Permission code 正则文档 3-4 段)
+> **当前不做**:版本号 bump / git tag / GitHub Release / 新版本 handoff(留独立 PR 由维护者拍板)
 
-### 8.1 设计 + 立项时间线
+### 8.1 设计 + 立项 + 实施时间线
 
 | 阶段 | PR | squash commit | 状态 |
 |---|---|---|---|
 | 业务访谈提纲 | #44 | `08aa4d7` | ✅ |
-| D6 业务确认稿 | #45 | 沿 PR #44 后续 | ✅ |
+| D6 业务确认稿 | #45 | `0642d36` | ✅ |
 | D7 v0.1 草稿 | #65 | `ebb530e` | ✅ |
-| D7-RBAC v1.2 修订(Permission code 正则 3-4 段) | #66 | `2b934c5` | ✅(为本批次提供文档先决条件) |
+| D7-RBAC v1.2 修订(Permission code 正则 3-4 段) | #66 | `2b934c5` | ✅(文档先决条件) |
 | D7 v0.2 局部收口 | #67 | `e4ff48f` | ✅ |
 | D7 v1.0 冻结 | #68 | `5da801f` | ✅ |
-| **V2.x 立项 PR** | **本 PR** | — | 🔄 **本 PR** |
-| 实施 PR #1 schema + migration + CODE_PATTERN 放宽 + Certificate.attachmentKey drop | 待启动 | — | ⏳ 等用户授权 + schema diff/migration SQL 双确认 |
-| 实施 PR #2-#9 / bump / handoff | 待启动 | — | ⏳ 等用户授权(每 PR 独立) |
+| V2.x 立项 PR | #69 | `e620a2c` | ✅ |
+| **collateral 适配**:`feat(permissions): support 4-segment permission codes` | #70 | `4d9332e` | ✅(2026-05-15) |
+| **实施 #1**:`chore(prisma): add attachments schema and config tables`(4 model + migration + Certificate.attachmentKey drop column) | #71 | `ce37ffe` | ✅(2026-05-15) |
+| **实施 #2**:`feat(attachments): add attachment type config module`(6 端点) | #72 | `663506d` | ✅(2026-05-15) |
+| **实施 #3**:`feat(attachments): add attachment mime config module`(6 端点) | #73 | `579429b` | ✅(2026-05-15) |
+| **实施 #4**:`feat(attachments): add attachment size limit config module`(5 端点) | #74 | `81c9bff` | ✅(2026-05-15) |
+| **实施 #5a**:`feat(permissions): seed attachment permissions and member role` | #75 | `ff34616` | ✅(2026-05-15) |
+| **实施 #5b**:`feat(attachments): add attachments main module with RBAC integration`(7 端点;首次业务 `rbac.can()`)| #76 | `308d6d9` | ✅(2026-05-15) |
+| **实施 #6**:`feat(attachments): integrate audit logs`(主模块 audit;2 events) | #77 | `abd9b32` | ✅(2026-05-15) |
+| **实施 #6+**:`feat(attachments): integrate attachment config audit logs`(配置三表 audit;1 event;11 端点) | #78 | `8ee24e2` | ✅(2026-05-15) |
+| **Landing PR**:`docs(v2): record C-7 attachments implementation landing` | 本 PR | — | 🔄 **本 PR** |
+| 版本号 bump(SemVer 由维护者拍板) | TBD | — | ⏳ 留独立后续 PR |
+| 新版本 handoff(类比 v0.8.0 / v0.8.1 / v0.9.0)| TBD | — | ⏳ 留独立后续 PR |
 
-### 8.2 决议锁定
+### 8.2 决议锁定 + 实施状态
 
-**27 项决议 🔒 v1.0 冻结**(F 5 + B 9 + Q 13)+ **🔄 Q12 挂起**(留独立 ADMIN 内置角色专项评审 PR)+ **⏸ Q14 / Q15 挂起待 Provider 选型评审** + **📋 Q16 建议不冻结(PR 拆分)** + **⏳ B8 同意书正式文本 + Q8 N 具体值 v1.1 由业务方提供**。
+**27 项 v1.0 冻结决议**(F 5 + B 9 + Q 13)实施情况:**全部已落地**(F1-F5 / B1-B9 / Q1-Q11 / Q13 全部在 #70-#78 中实装)。
+
+**仍挂起项**:
+
+- 🔄 **Q12 ADMIN 内置角色 / ADMIN 自动持 .other 全集**:沿用挂起;实施期默认按方案 B(沿 v0.9.0 现状;ADMIN 默认无 RBAC 业务角色;需 ops-admin 显式分配);留独立"RBAC 内置角色 / ADMIN 默认附件权限"专项评审 PR
+- ⏸ **Q14 / Q15 Provider 选型**:签名 URL / STS / 中转代理 / 删除失败处理 / 生命周期由 Provider 选型独立评审决定;`accessUrl` 占位字段恒返 null
+- 📋 **Q16 PR 拆分**:实施期实际为 9 PR(原建议 9-11)
+- ⏳ **B8 同意书正式条款文本**:v1.1 由业务方提供;**不写入本系统仓库**(保存在队组织自有合规文档系统;系统侧仅链接 URL)
+- ⏳ **Q8 退队清理 N 具体值**:v1.1 由业务方提供;`Member.status=DISABLED ≥ N` + 后台提示语义已锁,N 不在 schema 硬编码
 
 详见 [`docs/批次7_attachments_API前评审.md §16`](docs/批次7_attachments_API前评审.md) D7 v1.0 决议表 + [`docs/批次7_attachments_V2x立项记录.md §一`](docs/批次7_attachments_V2x立项记录.md)。
 
-### 8.3 实施前置硬约束(沿 §8 立项记录 §三)
+### 8.3 实施成果摘要
 
-- ❌ Provider 不实装(F2 锁;Provider 选型独立评审稿同期推进)
-- ❌ 不实装真上传 / 真下载(D7 实施期接口落库元数据 + 占位 URL)
-- ❌ 不做病毒扫描 / 加密 KMS / 自动清理 / OCR / 秒传(沿 D6 + 决议 4)
-- ❌ 不引入 Redis / 队列 / 定时任务(沿 V1.1 §17.3)
-- ❌ 不动 v1 14 + V2 79 + RBAC 16 既有接口(沿 A-2 红线 zero drift)
-- ❌ 不动 `users.policy.ts`(沿 D7-RBAC D12 永久共存)
-- ⏳ **实施 PR #1 启动前必须先展示 schema diff + migration SQL**,等用户明确确认后才执行 `prisma migrate dev`(沿 CLAUDE.md §0 铁律)
-- ⏳ Q12 ADMIN 内置角色实施期默认按方案 B(沿 v0.9.0 §5 现状,ADMIN 默认无 RBAC 业务角色;需 ops-admin 显式分配)
+| 维度 | 数量 |
+|---|---|
+| Prisma 表 | +4(`attachments` / `attachment_type_configs` / `attachment_mime_configs` / `attachment_size_limit_configs`) |
+| API 端点 | +22(主 7 + type 6 + mime 6 + size 5) |
+| BizCode(130xx) | +13(13001 / 13010-13013 / 13015 / 13020-13027) |
+| Permission seed | +20 条 `attachment.*` |
+| RbacRole 内置角色 | +1(`member` + 9 条 RolePermission) |
+| AuditLogEvent | +3(`attachment.upload` / `attachment.delete` / `attachment.config.change`) |
+| 实施 PR | 9 个(#70-#78) |
+| e2e 增量 | +91 用例(主 51 + 主 audit 19 + 配置 audit 21) |
 
-### 8.4 实施 PR 拆分建议(Q16 不冻结)
+### 8.4 关键里程碑
 
-参见 [`docs/批次7_attachments_V2x立项记录.md §四`](docs/批次7_attachments_V2x立项记录.md) 11 PR 建议表。
+- **首次业务模块接入 `rbac.can()`**(沿 D7 F3 + F5):attachments 主模块 7 个端点入口仅 `JwtAuthGuard`,Service 层显式调 `rbac.can()`;PermissionsModule `exports: [RbacService]` 首次外露
+- **首批主模块 + 配置模块都接入 audit_logs**(沿 D7 F6 + D6 同事务 fail-fast):路线 A 单事件 + extra 区分;校验链留事务外;写入 + audit 同 `$transaction` 提交,失败一起回滚
+- **首次接入 RBAC 4 段 code**(`attachment.<action>.<resourceType>.<scope>`):collateral PR #70 把 `CODE_PATTERN` 从 3 段放宽到 3-4 段
+- **v1 14 + V2 79 + RBAC 16 接口 zero drift**:Contract snapshot CI 守护
 
-**关键 PR**:
-- **PR #1**(`chore(prisma)`):4 model + migration + `CODE_PATTERN` 放宽 + Certificate.attachmentKey drop column;**破坏性 schema 变更**,启动前展示 diff/SQL 双确认
-- **PR #2-#5**(`feat(attachments)` / `feat(attachment-configs)`):主模块 CRUD + 配置三表 CRUD
-- **PR #6**(`feat(attachments)`):RBAC 集成 + `attachment.*` 20 条权限点 seed + USER 内置角色 placeholder seed
-- **PR #7**(`feat(attachments)`):audit_logs 集成(3 项 union + 同事务 wrap)
-- **PR #8**(`feat(certificates)`):Certificate.attachmentKey 引用清理
-- **PR #9**(`docs(v2-batch7-landing)`):docs 收口
-- **PR #10**(`chore`):bump version 0.9.0 → 0.10.0
-- **PR #11**(`docs(v2)`):v0.10.0 handoff
+### 8.5 当前不做项(landing 后边界)
 
-**新增依赖预期 0 个**(沿 D7-RBAC `RbacCacheService` Map + setTimeout 范式)。
-
-### 8.5 本 V2.x 立项 PR 边界
-
-仅 docs(4 处):
-
-- ✅ 新增 [`docs/批次7_attachments_V2x立项记录.md`](docs/批次7_attachments_V2x立项记录.md)
-- ✅ 更新本 `TASKS.md §8`(本节)
-- ✅ 更新 [`docs/V2红线与复活路径.md`](docs/V2红线与复活路径.md):C-7 行从"D7 attachments 评审 → V2.x 立项"改为"D7 v1.0 已冻结,V2.x implementation track 启动";Provider 仍挂起;attachments 作为业务判权接入首个范本
-- ✅ 更新 [`CHANGELOG.md`](CHANGELOG.md) Unreleased 追加一行
-
-不动:
-
-- ❌ `src/**` / `prisma/**` / `test/**` / `package.json` / `pnpm-lock.yaml`
-- ❌ 不放宽 `CODE_PATTERN` 常量(留实施 PR #1)
-- ❌ 不新增 migration / 不改 seed.ts
-- ❌ 不 bump version / 不 tag / 不 release
-- ❌ 不启动 C-7 实施 PR / Provider 选型评审稿 / ADMIN 内置角色专项评审 PR
-- ❌ 不改 D7-RBAC / D7-attachments 已冻结文档 / 历史 handoff
+- ❌ 版本号 bump(`package.json#version` 仍 `0.9.0` / Swagger 仍 `0.9.0`;SemVer 由维护者评估:`0.9.0 → 0.9.1` patch 或 `0.9.0 → 0.10.0` minor)
+- ❌ 打 git tag / 发 GitHub Release
+- ❌ 新版本 handoff
+- ❌ Provider 实装(沿 F2 + Q14 / Q15;待 Provider 选型独立评审)
+- ❌ ADMIN 内置角色实装(沿 Q12 沿用挂起)
+- ❌ B8 / Q8 v1.1 由业务方提供后再触发独立 PR
+- ❌ 跨表引用约束(13030 `ATTACHMENT_TYPE_IN_USE` 等;Q2 / Q6 / Q7 v1.0:本 C-7 不查跨表)
+- ❌ 业务模块全面接入 `rbac.can()`(超 C-7 范围;留独立"V2 全面 RBAC 接入"评审 PR)
 
 ### 8.6 合并后下一步
 
-本立项 PR 合并后,**解除 V2 §18 调研期硬禁止**;**下一步是 C-7 实施 PR #1**(`chore(prisma): add Attachment schema + Permission code regex relax`),需:
+本 landing PR 合并后,**下一步由维护者拍板**:
 
-1. **用户明确授权启动**
-2. **AI 先展示 schema diff + migration SQL + Certificate 出参 contract snapshot 预期变更**
-3. **等用户明确"破坏性变更已经过评审"后才执行 `prisma migrate dev`**(沿 CLAUDE.md §0 铁律)
+1. **SemVer 决策 PR**:`0.9.0 → 0.9.1`(patch)还是 `0.9.0 → 0.10.0`(minor)由维护者评估;`chore: bump version` 独立 PR
+2. **新版本 handoff PR**:bump 完成后,类比 v0.8.0 / v0.8.1 / v0.9.0 范式撰写 handoff
+3. **git tag + GitHub Release**:维护者手动操作(沿 v0.9.0 终态:tag 由维护者按需打)
 
 **并行可启动**(独立 PR;均需用户明确授权):
 
 - Provider 选型独立评审稿(决议 Q14 / Q15;沿 D6 决议 5)
 - "RBAC 内置角色 / ADMIN 默认附件权限"专项评审 PR(决议 Q12)
+- D7-attachments v1.1 修订 PR(等业务方提供 B8 同意书正式文本 + Q8 N 具体值)
+- 跨表引用约束评审 PR(13030 `ATTACHMENT_TYPE_IN_USE` 等)
 
-**v1.1 修订 PR**:等业务方提供 B8 同意书正式文本 + Q8 N 具体值后启动。
-
-**禁止**:未经用户授权,**不**启动实施 PR #1 / Provider 选型评审稿 / ADMIN 内置角色专项评审 PR / v1.1 修订 PR。
+**禁止**:未经用户授权,**不**启动 bump / handoff / Provider 选型评审稿 / ADMIN 内置角色专项评审 PR / v1.1 修订 PR / 跨表引用约束评审 PR。
