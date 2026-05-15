@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { AttachmentMimeConfigsController } from './attachment-mime-configs.controller';
 import { AttachmentMimeConfigsService } from './attachment-mime-configs.service';
 import { AttachmentSizeLimitConfigsController } from './attachment-size-limit-configs.controller';
@@ -29,8 +30,11 @@ import { AttachmentTypeConfigsService } from './attachment-type-configs.service'
 // - 跨表引用约束(ATTACHMENT_TYPE_CONFIG_IN_USE / ATTACHMENT_MIME_CONFIG_IN_USE /
 //   ATTACHMENT_SIZE_LIMIT_CONFIG_IN_USE)等 attachments 主模块引用逻辑落地后再触发实装
 //   (沿 Q2 / Q6 / Q7 v1.0 拍板)
+// V2.x C-7 attachments 实施 PR #6d(2026-05-15):imports AuditLogsModule 供 3 个
+// config service 注入 AuditLogsService;11 个写端点同事务 fail-fast 落 audit
+// (event=attachment.config.change;沿 D7-attachments v1.0 §7.1 / §7.2)。
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, AuditLogsModule],
   controllers: [
     AttachmentTypeConfigsController,
     AttachmentMimeConfigsController,
