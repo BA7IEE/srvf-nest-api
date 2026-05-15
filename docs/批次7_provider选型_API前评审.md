@@ -1,13 +1,17 @@
-# 《批次7_provider选型_API前评审稿》(C-7.5 Provider 选型 D7-provider v0.2 局部收口稿)
+# 《批次7_provider选型_API前评审稿》(C-7.5 Provider 选型 D7-provider v1.0 冻结稿)
 
-> **状态**:**v0.2 局部收口稿**(2026-05-15;**含 v0.2 架构修订**)— **收口原因**:v0.1 草稿([PR #82](https://github.com/BA7IEE/srvf-nest-api/pull/82),squash commit `6dbdbed`,2026-05-15)10 项 v0.1 拍板(F 5 + B 5)+ 15 项 Q 留评审后,用户拍板**v0.2 局部收口**:**正式 Provider 锁定为腾讯云 COS**(不再 OSS / COS 二选一);**COS 运行参数支持后台配置 + 凭证安全存储**(Q20 / Q21 / Q22 / Q23 新增锁定;**不长期依赖 env**;env 仅作 bootstrap fallback / dev / test 兜底);**底层 `storage_settings` schema 一次设计完整,实施可分批**(Q24 / Q25 新增锁定;原则:**字段允许闲置,不允许未来推翻 schema**);沿用 v0.1 锁定的 F1-F5 / B1-B5;**Q1 / Q4 锁定**(业务方既有云资源 + 存储后端具体选择)+ **Q8 / Q9 / Q10 / Q11 / Q12 / Q13 / Q14 / Q15 锁定**(TTL / uploadState / PII 重做 / versioning / 加密 / multipart / CORS / 迁移)+ **新增 Q16-Q25 锁定**(私有桶 / key 命名 / 环境隔离 / STS / 后台配置 / 凭证加密 / 不回显 / 不依赖 env / schema 一次设计 / 实施分批);**留 v1.0 / 实施期决议 3 项**(Q5 接口签名细化 / Q6 upload-url 字段集 / Q7 confirm-upload 字段集 — 实施 PR 期落地)。
+> **状态**:**v1.0 冻结稿**(2026-05-16)— **冻结原因**:v0.2 局部收口稿([PR #83](https://github.com/BA7IEE/srvf-nest-api/pull/83),squash commit `8d19a07`,2026-05-15)初版 + 架构修订共 22 项 Q 锁定后,用户拍板 **v1.0 冻结剩余 3 项 Q**:**Q5 `StorageProvider` 接口签名细化**(`expiresIn` = 秒数 / `headers` 必填 / `method = 'PUT' | 'POST'` 联合保留)+ **Q6 `POST /upload-url` DTO 字段集**(5 入参 + 6 出参含 `uploadToken` HMAC 签名)+ **Q7 `POST /confirm-upload` DTO 字段集**(1 必填 + 1 可选;消费 `uploadToken`);**顺手锁 Q8 TTL**(由 v0.2 倾向升级为 v1.0 默认值:upload = 600s / download = 300s;实际值由 `storage_settings` 后台配置)。**全部 25 项 Q 已锁;F 5 + B 5 + Q 25 = 35 项决议全部就位**;**C-7.5 V2.x 立项 PR 在本 v1.0 PR 合并后才允许启动**。
 >
 > **触发条件**:C-7 attachments 全模块实施已收口(v0.10.0;沿 [`docs/handoff/v0.10.0.md`](handoff/v0.10.0.md));D7-attachments v1.0 冻结稿(PR #68,squash commit `5da801f`)挂起 Q14 / Q15 Provider 上传 / 删除策略,**留 Provider 选型评审稿**;C-7 attachments **9 个实施 PR(#70-#78)+ landing(#79) + bump(#80) + handoff(#81)** 共 17 PR 已全部入 main;`v0.10.0` tag + Latest GitHub Release 已发(`2f4b89d` → `1db905e`,2026-05-15)。本 PR 推进 **C-7.5 Provider 选型 v0.2 局部收口**,沿 D7-attachments v0.2 局部收口稿 / D7-RBAC v0.2 局部收口稿范式。
 >
-> **性质**:**C-7.5 Provider 选型评审 v0.2 局部收口稿**(基于 v0.1 草稿 + 用户拍板腾讯云 COS 锁定 + 9 项 v0.2 锁定决策;**沿 D7-attachments v1.0 冻结稿不回改**)。
+> **性质**:**C-7.5 Provider 选型评审 v1.0 冻结稿**(基于 v0.1 草稿 + v0.2 局部收口 + v0.2 架构修订 + v1.0 用户拍板剩余 Q5/Q6/Q7 接口与 DTO 字段集 + 顺手锁 Q8 TTL;**沿 D7-attachments v1.0 冻结稿不回改**;**C-7.5 V2.x 立项 PR 在本 v1.0 PR 合并后才允许启动**)。
 > **批次号**:批次 7.5 暂定;正式编号以 **C-7.5 V2.x 立项 commit** 为准。
-> **撰写日期**:2026-05-15(v0.1 / **v0.2**)
-> **修订历程**(只在本说明区出现历史措辞):**v0.1 草稿**(PR #82,squash commit `6dbdbed`,2026-05-15,5 项 F 锁 + 5 项 B 锁 + 15 项 Q 待评审)→ **v0.2 局部收口稿(初版)**(本 PR commit 1,用户拍板**正式 Provider = 腾讯云 COS**;锁定 Q1 / Q4 / Q8-Q15 共 10 项 Q + 新增 Q16-Q19 共 4 项 Q = 共锁 14 项 Q;留 3 项 Q 待 v1.0 / 实施期决议)→ **v0.2 架构修订**(本 PR commit 2,用户拍板**COS 配置后台化 + 凭证加密存储**;不长期依赖 env;新增 Q20-Q25 共 6 项 Q + 新增 §6.5 Storage Settings 架构设计 + §6.6 凭证安全边界 + §16 PR 拆分 13 → 14 PR 节奏;**原则:底层模型一次设计对,实施可分批,字段允许闲置不允许推翻 schema**;**不回改 D7-attachments v1.0 冻结稿**)。
+> **撰写日期**:2026-05-15(v0.1 / v0.2)/ **2026-05-16(v1.0)**
+> **修订历程**(只在本说明区出现历史措辞):
+> - **v0.1 草稿**(PR #82,squash commit `6dbdbed`,2026-05-15):5 项 F 锁 + 5 项 B 锁 + 15 项 Q 待评审
+> - **v0.2 局部收口(初版)**(PR #83 commit `67f7f64`,2026-05-15):用户拍板**正式 Provider = 腾讯云 COS**;锁定 Q1 / Q4 / Q8-Q15 共 10 项 Q + 新增 Q16-Q19 共 4 项 Q = 共锁 14 项 Q
+> - **v0.2 架构修订**(PR #83 commit `a13eb06`,2026-05-15):用户拍板**COS 配置后台化 + 凭证加密存储**;不长期依赖 env;新增 Q20-Q25 共 6 项 Q + 新增 §6.5 Storage Settings 架构设计 + §6.6 凭证安全边界 + §16 PR 拆分 13 → 14 PR 节奏;原则:**底层模型一次设计对,实施可分批,字段允许闲置不允许推翻 schema**
+> - **v1.0 冻结稿**(本 PR,2026-05-16):用户拍板**剩余 Q5 / Q6 / Q7 + 顺手锁 Q8 TTL**;**禁止扩 scope**(不新增 Q26+);**目标 = v1.0 冻结后直接可进入立项 PR**;原则:**一次定够,避免实施期返工**;**不回改 D7-attachments v1.0 冻结稿**
 > **拍板准绳**:沿 D6 / D7-attachments / D7-RBAC 业务确认稿"**不考虑时间周期,只考虑项目稳定和长久**"(沿 D6 §1.2)。
 > **接续**:
 > - [D7-attachments v1.0 冻结稿](批次7_attachments_API前评审.md)(PR #68,squash commit `5da801f`;**Q14 / Q15 沿用挂起待本评审决议**)
@@ -18,7 +22,7 @@
 > - [`src/common/storage/storage.interface.ts`](../src/common/storage/storage.interface.ts)(v1 极简 interface;`putObject` + `deleteObject` 两动作;留待 Provider 接入时扩展)
 > - [`src/modules/attachments/attachments.service.ts`](../src/modules/attachments/attachments.service.ts) `toResponseDto`(`accessUrl: null` 占位;Provider 接入唯一改动点)
 > **风格参照**:[批次7_attachments_API前评审.md](批次7_attachments_API前评审.md)(D7 评审稿正典)/ [批次8_RBAC_API前评审.md](批次8_RBAC_API前评审.md)
-> **核心**(v0.2 局部收口含架构修订;5 项 F 锁 + 5 项 B 锁 + 20 项 Q 锁 + 3 项 Q 留 v1.0 / 实施期):
+> **核心**(v1.0 冻结;5 项 F 锁 + 5 项 B 锁 + 25 项 Q 锁 = **35 项决议全部就位**):
 > - **F1-F5 沿 v0.1 锁**(独立评审 / signed URL 模式 / 国内合规优先 / 同步删除 + lifecycle / 6 方法接口)
 > - **B1-B5 沿 v0.1 锁**(不新增**业务** schema(沿 D7-attachments 4 表)/ +2 API / 不新增 RBAC / 不新增 event / **PR 节奏 13 → 14**;⚠️ B1 仅约束 attachments 业务表;**`storage_settings` 是配置表,Q24 单独锁**)
 > - **🔒 v0.2 锁 20 项 Q**:
@@ -42,7 +46,11 @@
 >   - **🆕 Q23 锁**(v0.2 架构修订):**不长期依赖 env**;env 仅允许 bootstrap fallback / 首次系统未初始化兜底 / 本地开发环境;生产主路径 = 后台配置读取
 >   - **🆕 Q24 锁**(v0.2 架构修订):**`storage_settings` schema 一次设计完整**(15+ 字段;允许首期闲置部分字段;**不允许未来推翻 schema 重做 migration**)
 >   - **🆕 Q25 锁**(v0.2 架构修订):**实施分批**(不一次做完;沿 §16 PR 6-14 共 9 个实施 / 收口 PR 节奏)
-> - **本 v0.2 留 v1.0 / 实施期决议 3 项 Q**:Q5 `StorageProvider` 接口签名细化 / Q6 upload-url DTO 字段集 / Q7 confirm-upload DTO 字段集
+> - **🆕 v1.0 锁 3 项 Q**(本 PR;**禁止扩 scope**):
+>   - **Q5 锁**:`StorageProvider` 接口签名细化 — `expiresIn = number(秒)` / `headers: Record<string, string>` 必填(可空对象) / `UploadUrlResult.method = 'PUT' | 'POST'` 联合保留(默认 PUT;POST 留 multipart 未来)
+>   - **Q6 锁**:`POST /upload-url` DTO — 入参 5 字段(`ownerType` / `ownerId` / `originalName` / `mime` / `sizeBytes`)+ 出参 6 字段(`key` / `uploadUrl` / `uploadHeaders` / `uploadMethod` / `expiresAt` / **`uploadToken` HMAC-SHA256**);Q6a-Q6e 子项全部锁(key 后端生成 / 不落 pending row / 校验链做 / mime+size 做 / PII 做)
+>   - **Q7 锁**:`POST /confirm-upload` DTO — 入参 1 必填(`uploadToken`)+ 1 可选(`checksum`);出参 = `AttachmentResponseDto`(沿现有 PR #6b);消费 token + headObject 校验 + 落库 + audit
+>   - **Q8 升级锁**(顺手锁):upload TTL = **600 秒**(默认值)/ download TTL = **300 秒**(默认值);**实际值由 `storage_settings.uploadUrlTtlSeconds` / `downloadUrlTtlSeconds` 后台配置**(沿 Q20 + §6.5)
 
 ---
 
@@ -747,11 +755,73 @@ export interface HeadObjectResult {
 }
 ```
 
-### 7.4 Q5 接口签名细化(本 v0.1 待评审)
+### 7.4 Q5 接口签名细化(🔒 v1.0 锁)
 
-- **Q5a**:`expiresIn` 用秒还是 Date?(本 v0.1 倾向秒,简单)
-- **Q5b**:`headers` 是否必返还是可选?(本 v0.1 倾向可选,留 Provider 决定)
-- **Q5c**:`UploadUrlResult.method` 是否需要 `POST`(multipart)候选?(本 v0.1 留预留,但本 PR 不实施)
+**🔒 v1.0 锁定 3 个子项**:
+
+| 子项 | 决议 | 理由 |
+|---|---|---|
+| **Q5a** `expiresIn` 类型 | **`number`(秒数)** | 沿腾讯 COS SDK / AWS S3 SDK 范式;`Date` 易因时钟偏差出错;秒数语义清晰 |
+| **Q5b** `UploadUrlResult.headers` 必填性 | **必填**(`Record<string, string>`;可空对象 `{}`)| 调用方无需 `undefined` 分支;Provider 必返;LocalProvider 返 `{}`;COS 返 `{ 'Content-Type': mime, ... }` |
+| **Q5c** `UploadUrlResult.method` | **`'PUT' \| 'POST'` 联合保留**(默认 `'PUT'`)| 当前 v1.0 全部返 `'PUT'`(沿 Q19 不采用 STS + Q13 不实施 multipart);`'POST'` 为未来 multipart upload 留余地(沿 Q24 一次设计完整);**实施 PR 期不实施 `'POST'` 路径** |
+
+**v1.0 锁定的接口完整签名**(实施 PR 5 落地):
+
+```typescript
+// src/common/storage/storage.interface.ts(实施 PR 5 扩展)
+export interface StorageProvider {
+  // v1 已有(沿用)
+  putObject(input: PutObjectInput): Promise<StoredObject>;
+  deleteObject(key: string): Promise<void>;
+
+  // v0.2 + v1.0 新增(F5 锁 6 方法)
+  generateUploadUrl(input: GenerateUploadUrlInput): Promise<UploadUrlResult>;
+  generateDownloadUrl(input: GenerateDownloadUrlInput): Promise<DownloadUrlResult>;
+  headObject(key: string): Promise<HeadObjectResult>;
+}
+
+// 输入类型(实施 PR 5 落地)
+export interface GenerateUploadUrlInput {
+  key: string;                // 后端生成(沿 Q6a + Q17)
+  contentType: string;        // MIME 类型(沿 Q6d)
+  sizeBytes?: number;         // 可选;Content-Length pinning 留 v1.1 验证启用
+  expiresIn: number;          // 🔒 Q5a:秒数
+}
+
+export interface GenerateDownloadUrlInput {
+  key: string;
+  expiresIn: number;          // 🔒 Q5a:秒数
+  contentDisposition?: string; // 可选;`attachment; filename="..."`
+}
+
+// 输出类型(实施 PR 5 落地)
+export interface UploadUrlResult {
+  url: string;
+  method: 'PUT' | 'POST';     // 🔒 Q5c:联合保留;v1.0 全返 'PUT'
+  headers: Record<string, string>;  // 🔒 Q5b:必填;LocalProvider 可返 {}
+  expiresAt: Date;
+}
+
+export interface DownloadUrlResult {
+  url: string;
+  expiresAt: Date;
+}
+
+export interface HeadObjectResult {
+  exists: boolean;
+  size?: number;
+  etag?: string;
+  contentType?: string;
+  lastModified?: Date;
+}
+```
+
+**Q5 锁定的运行时不变式**:
+
+- **不变式 1**:`expiresIn > 0`(Service 层校验;DTO 层 `@IsInt() @Min(1)`)
+- **不变式 2**:`UploadUrlResult.expiresAt > Date.now()`(Provider 实装必须保证)
+- **不变式 3**:`UploadUrlResult.method` 当前必返 `'PUT'`(`'POST'` 路径在 v1.1+ 启用时再实施)
+- **不变式 4**:`UploadUrlResult.headers` 至少应含 `Content-Type`(若 Provider 校验 mime)
 
 ---
 
@@ -781,94 +851,325 @@ export interface HeadObjectResult {
 /api/v2/attachments/:id/...
 ```
 
-### 8.3 Q6 upload-url 字段集待评审
+### 8.3 Q6 upload-url DTO 字段集(🔒 v1.0 锁)
 
-**Q6**(本 v0.1 草稿):`POST /api/v2/attachments/upload-url` 入参 / 出参字段集?
+**🔒 v1.0 锁定 DTO 字段集 + Q6a-Q6e 子项**:
 
-**入参候选(本 v0.1 倾向)**:
+#### 8.3.1 入参 DTO(5 字段)
 
 ```typescript
-class GenerateUploadUrlDto {
-  @IsString() @MinLength(1) @MaxLength(64) ownerType!: string;
-  @IsString() @Length(8, 64) ownerId!: string;
-  @IsString() @MinLength(1) @MaxLength(255) originalName!: string;
-  @IsString() @MinLength(1) @MaxLength(128) mime!: string;
-  @IsInt() @Min(0) sizeBytes!: number;
-  // 沿 D7-attachments DTO 字段集;不接受 key(由后端生成,沿 Q5 v0.1 倾向)
+// src/modules/attachments/attachments.dto.ts(实施 PR 10 落地)
+export class GenerateUploadUrlDto {
+  @ApiProperty({ description: '附件归属业务对象类型', maxLength: 64 })
+  @IsString() @MinLength(1) @MaxLength(64)
+  ownerType!: string;
+
+  @ApiProperty({ description: '附件归属业务对象 ID', minLength: 8, maxLength: 64 })
+  @IsString() @Length(8, 64)
+  ownerId!: string;
+
+  @ApiProperty({ description: '原始文件名(用于 PII 检测 + originalUploaderName)', maxLength: 255 })
+  @IsString() @MinLength(1) @MaxLength(255)
+  originalName!: string;
+
+  @ApiProperty({ description: 'MIME 类型(走 attachment_mime_configs 白名单)', maxLength: 128 })
+  @IsString() @MinLength(1) @MaxLength(128)
+  mime!: string;
+
+  @ApiProperty({ description: '文件大小(字节;走 attachment_size_limit_configs 上限)' })
+  @IsInt() @Min(0)
+  sizeBytes!: number;
+
+  // 🔒 Q6a 锁:**不接受 key**(由后端按 Q17 规范生成;`attachments/<env>/<yyyy>/<mm>/<dd>/<cuid>.<ext>`)
+  // 🔒 Q6b 锁:**不接受 attachmentId**(沿 Q9 锁不落 pending row;一次性落库由 confirm-upload 完成)
 }
 ```
 
-**出参候选(本 v0.1 倾向)**:
+#### 8.3.2 出参 DTO(6 字段;含 `uploadToken`)
 
 ```typescript
-class UploadUrlResponseDto {
-  key!: string;                              // 后端生成(防客户端控制 key)
-  uploadUrl!: string;                        // signed PUT URL
-  uploadHeaders!: Record<string, string>;    // 必填 Content-Type 等
-  expiresAt!: Date;                          // ISO8601
-  // 可选:attachmentId(若 Q9 拍板"写入 pending row")
-  attachmentId?: string;
+export class UploadUrlResponseDto {
+  @ApiProperty({ description: 'Provider 侧文件唯一引用(后端按 Q17 生成)', maxLength: 256 })
+  key!: string;
+
+  @ApiProperty({ description: 'signed upload URL(直传 Provider)' })
+  uploadUrl!: string;
+
+  @ApiProperty({
+    description: '上传时必传的 HTTP headers(Provider 决定);LocalProvider 可返 {}',
+    type: 'object',
+    additionalProperties: { type: 'string' },
+  })
+  uploadHeaders!: Record<string, string>;
+
+  @ApiProperty({
+    description: '上传 HTTP 方法(沿 Q5c 联合保留;当前默认 PUT;POST 留 multipart 未来)',
+    enum: ['PUT', 'POST'],
+    default: 'PUT',
+  })
+  uploadMethod!: 'PUT' | 'POST';
+
+  @ApiProperty({ description: 'signed URL 过期时间(ISO8601;upload TTL = 600s)' })
+  expiresAt!: Date;
+
+  @ApiProperty({
+    description:
+      'HMAC-SHA256 签名 token;confirm-upload 必传;承载 key/ownerType/ownerId/originalName/mime/sizeBytes/uploadedBy/iat/exp claims',
+  })
+  uploadToken!: string;
 }
 ```
 
-**Q6a-Q6e 子项待评审**:
+#### 8.3.3 Q6a-Q6e 子项决议
 
-- Q6a:`key` 由谁生成?(本 v0.1 倾向后端;沿 Provider 命名规范)
-- Q6b:是否同时落库 `attachment` row(状态 pending)?(本 v0.1 倾向"否";由 confirm-upload 落库;**否则 Q9 必须加 schema 字段 `uploadState`**)
-- Q6c:upload-url 命中 ownerType / ownerId 校验是否在本端点执行?(本 v0.1 倾向"是";沿 D7-attachments §6.2 校验链)
-- Q6d:upload-url 是否做 mime / size 白名单校验?(本 v0.1 倾向"是";沿 D7-attachments §6.2 mime / size 校验)
-- Q6e:upload-url 是否做 PII 检测?(本 v0.1 倾向"是";沿 §9.4 身份证号正则)
-
-### 8.4 Q7 confirm-upload 字段集待评审
-
-**Q7**(本 v0.1 草稿):`POST /api/v2/attachments/confirm-upload` 入参 / 出参字段集?
-
-**入参候选(本 v0.1 倾向)**:
-
-```typescript
-class ConfirmUploadDto {
-  @IsString() @MinLength(1) @MaxLength(256) key!: string;  // upload-url 阶段返回的 key
-  // 沿 Q6b 拍板:若 upload-url 已落库 pending row,这里加 @IsString() attachmentId
-  // 若 upload-url 未落库,这里需要重复传 ownerType / ownerId 等
-}
-```
-
-**Service 层逻辑**:
-
-```typescript
-async confirmUpload(dto: ConfirmUploadDto, user: CurrentUserPayload, auditMeta: AuditMeta) {
-  // 1. 沿 Q6b:从 upload-url 阶段恢复 ownerType / ownerId / size / mime / ...
-  //    候选 A:DB 查 pending row(若 Q6b = 落库)
-  //    候选 B:JWT-like signed token 解码(若 Q6b = 不落库;upload-url 返 signed token)
-  // 2. Provider.headObject(key) → 校验文件已上传 + 拿真实 size + etag
-  // 3. PII 检测(沿 Q9):若 originalName / metadata 含身份证号 → 13015 + 删 Provider 文件
-  // 4. 落库 attachment(状态 confirmed)+ audit attachment.upload(沿现有 PR #6c)
-  // 5. 返 AttachmentResponseDto(含真实 accessUrl)
-}
-```
-
-**出参候选**:`AttachmentResponseDto`(沿现有;`accessUrl` 由 `generateDownloadUrl` 填)
-
-### 8.5 Q8 accessUrl TTL(🔒 v0.2 锁)
-
-**🔒 v0.2 锁定 TTL**:
-
-| 场景 | TTL | 说明 |
+| 子项 | 决议 | 实施细节 |
 |---|---|---|
-| **upload-url** | **600 秒**(10 分钟) | 给客户端预留上传时间;网络抖动 / 重试场景足够 |
-| **download-url**(详情 / 列表) | **300 秒**(5 分钟) | 短期访问;过期后客户端可重新拉详情拿新 URL |
-| **download-url**(预览 / batch) | **300 秒** | 沿 detail TTL;前端通过 detail 端点刷新 |
+| **Q6a** `key` 由谁生成? | 🔒 **后端**(沿 Q17 命名规范)| Service 层调 `crypto.randomBytes` 生成 cuid + 按 Q17 拼前缀 |
+| **Q6b** 是否落 pending row? | 🔒 **否**(沿 Q9 锁;不新增 `uploadState`)| upload-url 阶段**不**写 attachments 表;客户端持 `uploadToken` 在 confirm-upload 时一次性落库 |
+| **Q6c** ownerType / ownerId 校验? | 🔒 **是**(沿 D7-attachments §6.2 / PR #6b)| 命中 §6.2 step 1-3:`assertOwnerTypeAllowed` + `assertOwnerExists` + `buildRbacResourceAndScope` + `assertRbacAllowed` |
+| **Q6d** mime / size 校验? | 🔒 **是**(沿 D7-attachments §6.2 / PR #6b)| 命中 §6.2 step 5-6:`assertMimeAllowed` + `assertSizeAllowed`(沿 attachment_mime_configs + attachment_size_limit_configs) |
+| **Q6e** PII 检测? | 🔒 **是**(沿 §9.4 + Q10)| 命中 §6.2 step 7:`assertNoPii({ originalName, description?, tags? })`;只检 `originalName`(upload-url 不接受 description / tags 入参) |
 
-**为什么不更长?**:
+#### 8.3.4 `uploadToken` HMAC-SHA256 设计(沿 Q9 + Q21)
+
+**Claims 内容**(Service 层构造;HMAC 签名;客户端不可篡改):
+
+```typescript
+interface UploadTokenClaims {
+  key: string;                  // 后端生成的 key
+  ownerType: string;            // 沿 DTO 入参
+  ownerId: string;
+  originalName: string;         // PII 已过检
+  mime: string;
+  sizeBytes: number;
+  uploadedByUserId: string;     // currentUser.id;沿 D7-attachments Q4
+  iat: number;                  // unix seconds
+  exp: number;                  // iat + uploadUrlTtlSeconds(沿 Q8;默认 600s)
+}
+```
+
+**HMAC 签名**:
+
+- 算法:**HMAC-SHA256**(沿 v1 / V1.1 既有 JWT 范式;Node `crypto.createHmac`)
+- key 来源:**复用 `STORAGE_ENCRYPTION_KEY`**(沿 Q21;加密 key 单独存 env,长度 ≥ 32 字符;沿 v1 JWT_SECRET 范式)
+- 编码:`<base64url(claims)>.<base64url(hmac)>`(沿 JWT 紧凑格式;**但不是标准 JWT**;不引入 `jsonwebtoken` 依赖,沿 V1.1 §17.3 不引入额外 SDK)
+- 实装位置:`src/common/storage/upload-token.util.ts`(实施 PR 10 落地;Service 层用)
+
+**验证**(confirm-upload 阶段):
+
+1. 拆 `<base64url(claims)>.<base64url(hmac)>` → 解 base64url
+2. HMAC-SHA256 重算 → 与传入 hmac 严格比对(防篡改)
+3. 检 `exp > now` → 防过期
+4. 检 `uploadedByUserId === currentUser.id` → 防换用户(不允许 token 跨 user 使用)
+
+#### 8.3.5 API 路径(沿 D7-attachments §5.1 路径顺序铁律)
+
+```
+POST /api/v2/attachments/upload-url     ← 新增(在 :id 之前;字面段优先)
+```
+
+**入口 Guard**:`JwtAuthGuard`(沿 D7-attachments F3;**不加** `@Roles(...)`)
+**Service 判权**:`rbac.can('attachment.upload.<type>.{self,other}', resource)`(沿 D7-attachments §6.2 + PR #6b)
+**错误码**:沿现有 BizCode 13010 / 13011 / 13012 / 13013 / 13015 / 30100 / 40100;**不新增 BizCode**(沿 v0.2 B3 + B4)
+
+### 8.4 Q7 confirm-upload DTO 字段集(🔒 v1.0 锁)
+
+**🔒 v1.0 锁定 DTO 字段集 + Service 层流程**:
+
+#### 8.4.1 入参 DTO(1 必填 + 1 可选)
+
+```typescript
+// src/modules/attachments/attachments.dto.ts(实施 PR 10 落地)
+export class ConfirmUploadDto {
+  @ApiProperty({
+    description:
+      'upload-url 端点签发的 HMAC-SHA256 token;承载 key/ownerType/ownerId/originalName/mime/sizeBytes 等 claims',
+  })
+  @IsString() @MinLength(1) @MaxLength(2048)
+  uploadToken!: string;
+
+  @ApiPropertyOptional({
+    description:
+      '客户端计算的 SHA-256 checksum(64 hex);可选;若提供则存 Attachment.checksum;沿 D7-attachments Q6 内部字段语义',
+    minLength: 64,
+    maxLength: 64,
+  })
+  @IsOptional() @IsString() @Length(64, 64) @Matches(/^[a-f0-9]{64}$/i)
+  checksum?: string;
+
+  // 🔒 Q9 锁:**不接受 ownerType / ownerId / originalName / mime / sizeBytes**
+  //   (这些已在 uploadToken claims;客户端不可篡改)
+  // 🔒 Q10 锁:**不接受 description / tags / expireAt**
+  //   (沿 D7-attachments Q7 锁:PATCH metadata 不在 upload 路径承载;走独立 PATCH /:id)
+  // 🔒 Q22 锁:**不接受任何凭证字段**
+}
+```
+
+#### 8.4.2 出参 DTO(沿现有 `AttachmentResponseDto`)
+
+```typescript
+// 沿 D7-attachments §5.4.4 + PR #6b(已实装)
+export class AttachmentResponseDto {
+  // ... 沿现有 13 字段 ...
+  accessUrl?: string | null;  // 🔒 v1.0 锁:由 Provider.generateDownloadUrl(key) 填(沿 §2);**不再是 null**
+}
+```
+
+**accessUrl 在 confirm-upload 出参中的值**:由 Service 层 `generateDownloadUrl(key, downloadUrlTtlSeconds=300)` 填(沿 Q8;实际 TTL 由 `storage_settings` 后台配置)。
+
+#### 8.4.3 Service 层流程(🔒 v1.0 锁;实施 PR 10 落地)
+
+```typescript
+// src/modules/attachments/attachments.service.ts(实施 PR 10 新增)
+async confirmUpload(
+  dto: ConfirmUploadDto,
+  user: CurrentUserPayload,
+  auditMeta: AuditMeta,
+): Promise<AttachmentResponseDto> {
+  // === Step 1: 验证 uploadToken(沿 Q6 HMAC-SHA256) ===
+  // 1.1 拆 token + base64url 解码 claims + 重算 HMAC + 严格比对
+  // 1.2 检 exp > now;过期 → BizException(BizCode.RBAC_FORBIDDEN)
+  //     ↑ 沿 D7-attachments PR #6b 错误码;**不新增 BizCode**
+  // 1.3 检 claims.uploadedByUserId === user.id;不一致 → RBAC_FORBIDDEN
+  const claims = await this.verifyUploadToken(dto.uploadToken, user);
+
+  // === Step 2: Provider.headObject(key) 校验文件已上传 ===
+  const head = await this.storage.headObject(claims.key);
+  if (!head.exists) {
+    throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    // ↑ 沿 D7-attachments Q13 信息泄漏防御;**不新增 BizCode**
+  }
+
+  // === Step 3: size 一致性校验 ===
+  // claims.sizeBytes 是客户端声明 + upload-url 阶段已通过 assertSizeAllowed;
+  // head.size 是 Provider 真实 size;不一致(±0 严格)→ ATTACHMENT_SIZE_EXCEEDED
+  if (head.size !== undefined && head.size !== claims.sizeBytes) {
+    throw new BizException(BizCode.ATTACHMENT_SIZE_EXCEEDED);
+  }
+
+  // === Step 4: PII 不重做(沿 Q10 锁定 A;upload-url 已检) ===
+  // === Step 5: 落库 attachment(同事务 + audit;沿 D7-attachments §7.2 + PR #6c) ===
+  const row = await this.prisma.$transaction(async (tx) => {
+    const created = await tx.attachment.create({
+      data: {
+        key: claims.key,
+        originalName: claims.originalName,
+        mime: claims.mime,
+        size: claims.sizeBytes,
+        uploadedBy: user.id,
+        ownerType: claims.ownerType,
+        ownerId: claims.ownerId,
+        originalUploaderName: user.username,
+        checksum: dto.checksum ?? null,  // 可选
+        etag: head.etag ?? null,         // Provider 真实 ETag
+      },
+      select: attachmentSelect,
+    });
+
+    await this.auditLogs.log({
+      event: 'attachment.upload',  // 沿现有 AuditLogEvent(B4 锁)
+      actorUserId: user.id,
+      actorRoleSnap: user.role,
+      resourceType: 'attachment',
+      resourceId: created.id,
+      meta: auditMeta,
+      after: this.toAttachmentAuditSnapshot(created),
+      extra: {
+        operation: 'upload',                           // 沿现有
+        attachmentType: created.ownerType,
+        ownerType: created.ownerType,
+        ownerId: created.ownerId,
+        mime: created.mime,
+        size: created.size,
+        scope: <self|other|null>,
+        ownerTable: <typeConfig.ownerTable>,
+        // 🆕 v1.0 锁 audit extra 增量(沿 v0.2 B4)
+        uploadConfirmedAt: new Date().toISOString(),   // 沿 v0.2 B4
+        uploadVia: 'direct',                            // sm:'direct'(B 模式) | 'local'(D 模式;LocalProvider)
+      },
+      tx,
+    });
+
+    return created;
+  });
+
+  // === Step 6: 生成 download accessUrl(沿 Q8 TTL = 300s)===
+  const downloadResult = await this.storage.generateDownloadUrl({
+    key: row.key,
+    expiresIn: settings.downloadUrlTtlSeconds,  // 沿 §6.5 storage_settings
+  });
+
+  return { ...toResponseDto(row), accessUrl: downloadResult.url };
+}
+```
+
+#### 8.4.4 Q7 关键约束
+
+| 约束 | 决议 |
+|---|---|
+| **不复用 D7-attachments POST `/api/v2/attachments`** | ⚠️ confirm-upload **不调用** 现有 `attachments.service.create`(避免重做 ownerType/mime/size/PII 校验;那些已在 upload-url 阶段过了) |
+| **uploadToken 一次性消费** | ❌ **本 v1.0 不实施 token 黑名单 / 重放防御**;依赖客户端正常流程(沿 V1.1 §17.3 不引入 Redis;重复 confirm 会被 `attachment.key` UNIQUE 撞库 / P2002 兜底;**留 v1.1+ 评审强重放防御**)|
+| **checksum 不强制** | 客户端可选;Service 层不校验(仅存);沿 D7-attachments Q6 内部字段语义 |
+| **失败回滚 Provider 文件** | ❌ **本 v1.0 不实施**:Service 层若落库失败,**不主动删 Provider 文件**(沿 V1.1 §17.3 + Q15 简化原则;Provider lifecycle 30 天兜底;沿 §6.4.5)|
+
+#### 8.4.5 API 路径
+
+```
+POST /api/v2/attachments/confirm-upload   ← 新增(在 :id 之前)
+```
+
+**入口 Guard**:`JwtAuthGuard`(沿 F3)
+**Service 判权**:**不重做 RBAC**(claims 已携 uploadedByUserId + 验签 + user.id 比对;等价 RBAC 通过)
+**错误码**:`ATTACHMENT_NOT_FOUND`(13001;headObject 失败 / token 过期 / 验签失败 — 信息泄漏防御)/ `ATTACHMENT_SIZE_EXCEEDED`(13013;size 一致性失败)/ `RBAC_FORBIDDEN`(30100;`uploadedByUserId !== user.id`)/ `UNAUTHORIZED`(40100;无 token);**不新增 BizCode**(沿 v0.2 B4)
+
+### 8.5 Q8 accessUrl TTL(🔒 v1.0 锁;顺手锁默认值)
+
+**🔒 v1.0 锁定**:**默认 TTL 值 + 后台可配**(沿 Q8 v0.2 倾向升级为 v1.0 锁;沿 Q20 + §6.5 `storage_settings`)。
+
+#### 8.5.1 v1.0 锁定默认 TTL
+
+| 场景 | 默认值 | `storage_settings` 字段 | 后台可改? |
+|---|---|---|---|
+| **upload-url** | **600 秒**(10 分钟) | `uploadUrlTtlSeconds` | ✅ 是(沿 Q20)|
+| **download-url**(详情 / 列表 / 预览 / batch) | **300 秒**(5 分钟) | `downloadUrlTtlSeconds` | ✅ 是(沿 Q20)|
+
+#### 8.5.2 v1.0 实施期落地
+
+```typescript
+// src/modules/attachments/attachments.service.ts(实施 PR 9 / 10 落地)
+const settings = await this.storageSettings.getActiveSettings();
+// upload-url 端点
+const uploadResult = await this.storage.generateUploadUrl({
+  key,
+  contentType: dto.mime,
+  expiresIn: settings.uploadUrlTtlSeconds,  // 🔒 默认 600;后台可改
+});
+// confirm-upload 出参 / detail 出参 / list 出参
+const downloadResult = await this.storage.generateDownloadUrl({
+  key: row.key,
+  expiresIn: settings.downloadUrlTtlSeconds,  // 🔒 默认 300;后台可改
+});
+```
+
+#### 8.5.3 TTL 约束(运维侧)
+
+| 约束 | 锁定值 |
+|---|---|
+| 上传 TTL 范围 | 60 ≤ `uploadUrlTtlSeconds` ≤ 3600;DTO 层 `@Min(60) @Max(3600)`(实施 PR 11 后台 CRUD 校验)|
+| 下载 TTL 范围 | 60 ≤ `downloadUrlTtlSeconds` ≤ 1800;DTO 层 `@Min(60) @Max(1800)`(实施 PR 11)|
+| 默认值不可低于 60s | 防极短 TTL 客户端来不及上传 / 下载 |
+| 默认值不可高于 1h | 防 XSS 截获后长期滥用(沿 §14 风险 8)|
+
+#### 8.5.4 为什么不更长 / 不更短?
+
+**为什么不更长**:
 - 越长越易被 XSS 截获后滥用(沿 §14 风险 8)
-- 沿 D7-attachments §6.5 accessLevel + RBAC 单一权威:每次访问都经过后端判权 + 短期签名;权限变更后,旧签名 5 分钟内失效
+- 沿 D7-attachments §6.5 accessLevel + RBAC 单一权威:每次访问经过后端判权 + 短期签名;权限变更后,旧签名 5 分钟内失效
 - 前端按需通过 GET `:id` 端点刷新 URL(不影响体验;沿 Q15)
 
-**为什么不更短?**:
+**为什么不更短**:
 - 上传 600s:覆盖弱网络上传 10MB 文件(测试 4G 网络下普遍 < 5 分钟)
 - 下载 300s:覆盖单次 PDF / 图片预览;长会话场景刷新成本可接受
-
-**Q5 子项**(`expiresIn` API 参数类型):**留 v1.0 / 实施期决议**(候选:秒数 vs Date 对象;本 v0.2 倾向"秒数",简单)。
 
 ---
 
@@ -1186,13 +1487,14 @@ PR 14(handoff) ← 依赖 13
 
 ---
 
-## 19. 决议表(C-7.5 Provider 选型 v0.2 局部收口)
+## 19. 决议表(C-7.5 Provider 选型 v1.0 冻结)
 
 > **状态历程**(修订日志,只在本说明区出现历史措辞):
 > - **v0.1 草稿**(PR #82,squash commit `6dbdbed`,2026-05-15):5 项 F 锁 + 5 项 B 锁(沿用户启动 v0.1 时拍板)+ **15 项 Q 以"⏳ 待评审"承载**
-> - **v0.2 局部收口(初版)**(本 PR commit 1,2026-05-15):用户拍板 **正式 Provider = 腾讯云 COS**(Q1 / Q4 锁定);沿用 v0.1 的 F1-F5 + B1-B5;**新锁 14 项 Q**(Q1 / Q4 / Q8 / Q9 / Q10 / Q11 / Q12 / Q13 / Q14 / Q15 + 新增 Q16 / Q17 / Q18 / Q19)
-> - **v0.2 架构修订**(本 PR commit 2,2026-05-15):用户拍板 **COS 配置后台化 + 凭证加密存储**;**不长期依赖 env**;**新增 Q20-Q25 共 6 项 Q**(后台配置 / 凭证加密 / 不回显 / 不依赖 env / schema 一次设计 / 实施分批);**新增 §6.5 Storage Settings 架构设计 + §6.6 凭证安全边界**;**§16 PR 拆分 13 → 14 PR**(沿用户拍板原则:底层模型一次设计对,实施可分批);**留 3 项 Q 待 v1.0 / 实施期决议**(Q5 / Q6 / Q7;接口与 DTO 字段集);v1.0 暂不冻结
-> - 🔒 = v0.1 / v0.2 锁;⏳ = v1.0 / 实施期待决议;🆕 = v0.2 架构修订新增
+> - **v0.2 局部收口(初版)**(PR #83 commit `67f7f64`,2026-05-15):用户拍板 **正式 Provider = 腾讯云 COS**(Q1 / Q4 锁定);沿用 v0.1 的 F1-F5 + B1-B5;**新锁 14 项 Q**(Q1 / Q4 / Q8 / Q9 / Q10 / Q11 / Q12 / Q13 / Q14 / Q15 + 新增 Q16 / Q17 / Q18 / Q19)
+> - **v0.2 架构修订**(PR #83 commit `a13eb06`,2026-05-15):用户拍板 **COS 配置后台化 + 凭证加密存储**;**不长期依赖 env**;**新增 Q20-Q25 共 6 项 Q**(后台配置 / 凭证加密 / 不回显 / 不依赖 env / schema 一次设计 / 实施分批);**新增 §6.5 Storage Settings 架构设计 + §6.6 凭证安全边界**;**§16 PR 拆分 13 → 14 PR**
+> - **v1.0 冻结**(本 PR,2026-05-16):用户拍板**剩余 Q5 / Q6 / Q7 + 顺手锁 Q8 TTL**;**禁止扩 scope**(不新增 Q26+);Q5 锁接口签名(`expiresIn = number(秒)` / `headers` 必填 / `method` 联合保留)+ Q6 锁 upload-url DTO(5 入参 + 6 出参含 `uploadToken` HMAC)+ Q7 锁 confirm-upload DTO(1 必填 + 1 可选)+ Q8 升级锁(后台配置默认值 600 / 300);**目标 = v1.0 冻结后直接可进入立项 PR**;**原则:一次定够,避免实施期返工**;**不回改 D7-attachments v1.0 冻结稿**
+> - 🔒 = 已锁;🆕 = 本版本新增锁定
 
 | # | 决议 | v0.2 状态 | 来源 / 章节 |
 |---|---|---|---|
@@ -1210,10 +1512,10 @@ PR 14(handoff) ← 依赖 13
 | Q2 | 上传模式 A 中转 / B 签名 URL / C STS / D 本地 终选 | 🔒 v0.1 → v0.2 锁:生产 = B + dev = D;C STS 不采用(沿 Q19) | §4 |
 | Q3 | 删除策略 A 同步事务 / B 异步队列 / C 同步 + 告警 / D 仅 versioning 终选 | 🔒 v0.1 → v0.2 锁:**C + D**(同步 + 告警 + COS lifecycle 兜底) | §5 |
 | **Q4** | 存储后端具体选择 | 🔒 **v0.2 锁**:**腾讯云 COS**(沿 Q1;不再 OSS 候选) | §6.2 |
-| Q5 | `StorageProvider` 接口签名细化(`expiresIn` 类型 / `headers` 必填性 / `method` 是否含 POST 候选) | ⏳ **v1.0 / 实施期决议**(本 v0.2 不锁;留 PR 5 interface 扩展实施期落地) | §7.4 / §8.5 |
-| Q6 | `POST /upload-url` DTO 字段集 + Q6a-Q6e 子项 | ⏳ **v1.0 / 实施期决议**(本 v0.2 不锁;留 PR 9 实施期落地;沿 Q9 锁定后 attachmentId 字段去留) | §8.3 |
-| Q7 | `POST /confirm-upload` DTO 字段集 | ⏳ **v1.0 / 实施期决议**(本 v0.2 不锁;留 PR 9 实施期落地) | §8.4 |
-| **Q8** | `accessUrl` 签名过期 TTL | 🔒 **v0.2 锁**:upload = 600s / download = 300s | §8.5 |
+| **🆕 Q5** | `StorageProvider` 接口签名细化 | 🔒 **v1.0 锁**:`expiresIn = number(秒)`(Q5a)/ `headers: Record<string, string>` 必填可空对象(Q5b)/ `UploadUrlResult.method = 'PUT' \| 'POST'` 联合保留默认 `'PUT'`(Q5c) | §7.4 |
+| **🆕 Q6** | `POST /upload-url` DTO 字段集 + Q6a-Q6e 子项 | 🔒 **v1.0 锁**:入参 5 字段(ownerType / ownerId / originalName / mime / sizeBytes)+ 出参 6 字段(key / uploadUrl / uploadHeaders / uploadMethod / expiresAt / **uploadToken** HMAC-SHA256);Q6a key 后端生成 / Q6b 不落 pending row / Q6c-Q6e ownerType+mime+size+PII 校验全做 | §8.3 |
+| **🆕 Q7** | `POST /confirm-upload` DTO 字段集 | 🔒 **v1.0 锁**:入参 1 必填(uploadToken)+ 1 可选(checksum sha256 64-hex);出参 `AttachmentResponseDto`(沿现有 PR #6b);Service 流程 6 步(验签 / headObject / size 一致性 / PII 不重做 / 落库 + audit / generateDownloadUrl 填 accessUrl)| §8.4 |
+| **🆕 Q8 升级** | `accessUrl` 签名过期 TTL(顺手锁默认值) | 🔒 **v0.2 锁 → v1.0 升级锁**:默认值 upload = 600s / download = 300s;**实际值由 `storage_settings.uploadUrlTtlSeconds` / `downloadUrlTtlSeconds` 后台配置**(沿 Q20);取值范围:60 ≤ uploadTtl ≤ 3600;60 ≤ downloadTtl ≤ 1800 | §8.5 |
 | **Q9** | 是否新增 `uploadState` schema 字段 / 独立 `attachment_upload_tokens` 表 | 🔒 **v0.2 锁**:**A 不新增**(沿 B1;客户端用 signed token + confirm-upload 一次性落库) | §9.2 |
 | **Q10** | PII 检测是否在 confirm-upload 重做 | 🔒 **v0.2 锁**:**A 不重做**(upload-url 已检;confirm-upload 不接受 originalName 等 PII 字段重传) | §11.3 |
 | **Q11** | Provider versioning + lifecycle 具体配置 | 🔒 **v0.2 锁**:COS versioning 启用 + 旧版本 30 天 expire + DeleteMarker 即清除 + 7 天 abort incomplete multipart | §6.4.5 / §12.2 |
@@ -1232,13 +1534,18 @@ PR 14(handoff) ← 依赖 13
 | **🆕 Q24** | `storage_settings` schema 是否一次设计完整? | 🔒 **v0.2 架构修订锁**:**✅ 是**;15 字段一次性设计完整(沿 §6.5.2);**允许首期闲置部分字段**(`corsAllowedOrigins` / `maxObjectSizeBytes`);**严禁未来推翻 schema 重做 migration**(允许新增,不允许重命名 / 删除既有字段;沿用户拍板"底层模型一次设计对") | §6.5.1 / §6.5.2 / §6.5.3 |
 | **🆕 Q25** | 是否首期一次做完? | 🔒 **v0.2 架构修订锁**:**❌ 否**;**实施分批**(沿 §16 PR 6-14 共 9 个实施 / 收口 PR);PR 6 先做 schema + 配置读取层(不接 SDK)→ PR 7-10 逐步接入 → PR 11 后台 CRUD | §16.1 / §16.2 |
 
-**总计**:**F 5 + B 5 + Q 25 = 35 项**
+**总计**:**F 5 + B 5 + Q 25 = 35 项决议全部就位**
 
-- **🔒 v0.2 已锁**:**F 5 + B 5 + Q 22 = 32 项**(初版 26 项 + 架构修订 6 项 Q20-Q25)
-- **⏳ v1.0 / 实施期待决议**:**Q 3 项**(Q5 接口签名细化 / Q6 upload-url 字段集 / Q7 confirm-upload 字段集 — 实施 PR 期细化)
-- **v0.2 局部收口完成**:Provider 选型核心决议 + 架构设计全部就位(腾讯云 COS + 私有桶 + signed URL + SSE-COS + versioning 30d + 不 STS / 不 multipart + **`storage_settings` 配置表一次设计** + **凭证加密存储** + **后台 CRUD** + **不长期依赖 env**);**剩余 3 项 Q 是 API 与 interface 字段集,可在 v1.0 冻结前补 + 实施 PR 期细化**
-- **沿 D7-attachments v0.2 局部收口范式**:本评审 v0.2 锁 22 项 Q,超过 D7-attachments v0.2 的 13 项 Q,但仍属"局部收口"性质(留 3 项 Q 待决议)
-- **架构修订原则确立**:**底层模型一次设计对,实施可分批,字段允许闲置不允许推翻 schema**(沿 Q24 + Q25)
+- **🔒 v1.0 已锁**:**F 5 + B 5 + Q 25 = 35 项**(v0.2 锁 22 项 + v1.0 新锁 3 项 Q5/Q6/Q7 + v0.2 → v1.0 升级 Q8 TTL = 已全部锁定)
+- **⏳ 待决议**:**0 项**(v1.0 冻结完成)
+- **v1.0 冻结完成**:Provider 选型核心 + 架构设计 + 接口 + DTO + TTL 全部就位
+  - **Provider 选型**(沿 v0.2):腾讯云 COS + 私有桶 + signed URL + SSE-COS + versioning 30d + 不 STS / 不 multipart
+  - **架构设计**(沿 v0.2):`storage_settings` 配置表 15 字段 + 凭证加密存储 + 后台 CRUD + 不长期依赖 env
+  - **接口与 DTO**(本 v1.0):`StorageProvider` 6 方法签名锁 + upload-url 5 入参 / 6 出参锁 + confirm-upload 1 必填 / 1 可选锁 + uploadToken HMAC-SHA256 设计
+  - **TTL**(本 v1.0 顺手锁):upload 默认 600s / download 默认 300s + 后台可配
+- **沿 D7-attachments v1.0 冻结范式**:本评审 v1.0 锁 25 项 Q,超过 D7-attachments v1.0 的 13 项 Q + 1 挂起 + 2 待 Provider + 1 不冻结(本评审承接 D7-attachments Q14/Q15)
+- **C-7.5 V2.x 立项 PR 启动条件就位**:v1.0 冻结 PR 合入后即可启动立项 PR(沿 D7-attachments PR #69 范式)
+- **架构修订原则确立**:**底层模型一次设计对,实施可分批,字段允许闲置不允许推翻 schema**(沿 Q24 + Q25;沿用户启动 v1.0 拍板"一次定够,避免实施期返工")
 
 ---
 
@@ -1247,29 +1554,31 @@ PR 14(handoff) ← 依赖 13
 1. ✅ **C-7 attachments 全模块**(PR #65-#81 17 个;v0.10.0 段内全部 squash merge)
 2. ✅ **v0.10.0 tag + GitHub Release**(2026-05-15;Latest)
 3. ✅ **C-7.5 v0.1 草稿 PR**(PR #82,squash commit `6dbdbed`,2026-05-15)
-4. **本 PR(C-7.5 v0.2 局部收口)** → 🔄 进行中;沿用户拍板 **腾讯云 COS** 锁 + 14 项 Q 锁
-5. **C-7.5 v1.0 冻结 PR** → 用户拍板剩余 Q5 / Q6 / Q7 后启动(或决定推迟到实施 PR 期细化)
-6. **C-7.5 V2.x 立项 PR**(沿 D7-attachments 立项 PR #69 / D7-RBAC 立项 PR #52 范式)→ 用户授权
-7. **C-7.5 实施 PR 5-9**(沿 §16 13 PR 节奏)→ 逐 PR 用户授权
-8. **C-7.5 landing PR 10** → 收口 docs(CHANGELOG / V2 红线 §C-10 / TASKS / 立项记录)
-9. **C-7.5 bump PR 11**(沿 v0.10.0 / v0.9.0 bump 范式)→ `chore: bump version to v0.11.0`(或 v0.10.1)
-10. **C-7.5 handoff PR 12** → `docs/handoff/v0.11.0.md`(或 v0.10.1)
+4. ✅ **C-7.5 v0.2 局部收口 + 架构修订 PR**(PR #83,squash commit `8d19a07`,2026-05-15)
+5. **本 PR(C-7.5 v1.0 冻结)** → 🔄 进行中;沿用户拍板 **Q5 / Q6 / Q7 接口与 DTO + Q8 TTL 升级**
+6. **C-7.5 V2.x 立项 PR**(沿 D7-attachments 立项 PR #69 / D7-RBAC 立项 PR #52 范式)→ 用户授权(**本 v1.0 PR 合并后即可启动**)
+7. **C-7.5 实施 PR 5-11**(沿 §16 14 PR 节奏的实施段)→ 逐 PR 用户授权
+8. **C-7.5 landing PR 12** → 收口 docs(CHANGELOG / V2 红线 §C-10 / TASKS / 立项记录)
+9. **C-7.5 bump PR 13**(沿 v0.10.0 / v0.9.0 bump 范式)→ `chore: bump version to v0.11.0`
+10. **C-7.5 handoff PR 14** → `docs/handoff/v0.11.0.md`
 11. **C-7.5 tag + Release**(维护者手动;沿 v0.10.0 维护者实际范式 = tag → handoff commit)
 
 ---
 
 ## 21. 撰写元信息
 
-- **状态**:C-7.5 Provider 选型评审 **v0.2 局部收口稿**(撰写完成;入库待用户授权 squash merge 本 PR)
-- **本评审稿自身的版本含义**:沿 D7-attachments v0.1 → v0.2 → v1.0 范式;**本 v0.2 是局部收口稿**;**v1.0 冻结由用户拍板剩余 Q5 / Q6 / Q7 后启动**(或决定推迟到实施 PR 期细化)
+- **状态**:C-7.5 Provider 选型评审 **v1.0 冻结稿**(撰写完成;入库待用户授权 squash merge 本 PR)
+- **本评审稿自身的版本含义**:沿 D7-attachments v0.1 → v0.2 → v1.0 范式;**本 v1.0 是冻结稿**;**全部 35 项决议(F 5 + B 5 + Q 25)就位;立项 PR 启动条件已满足**
 - **不在本评审范围**:
-  - 任何代码 / schema / migration / Provider 实装(由对应实施 PR 承载)
+  - 任何代码 / schema / migration / Provider 实装(由对应实施 PR 5-11 承载)
   - D7-attachments v1.0 冻结稿任何回改(沿 F1)
   - C-7 attachments 7 端点 / 配置三表 15 端点 / 4 表 / 20 permission / 3 audit event(已锁;沿 D7-attachments v1.0 + v0.10.0 终态)
   - 腾讯云账号 / IAM / API key 等运维细节(由队组织运维侧承载;**不写入本仓库**)
   - COS 控制台 / Terraform 实际配置(沿 §6.4.4 / §6.4.5 / §6.4.6:运维手段配置,系统侧不硬编码)
   - tag + Release(沿 v0.10.0 维护者权限边界)
-- **撰写者签名**:Claude Code(基于 C-7 attachments 17 PR 全程实施经验 + Step 1 调研报告 + v0.1 草稿 + 用户启动 v0.2 时拍板 9 项核心决议 + 腾讯云 COS 锁定;**未动任何代码 / schema 文件 / SDK 依赖**)
-- **commit 风格**:`docs(v2-design): refine provider selection review decisions v0.2`(沿 D7-attachments v0.2 PR #67 `docs(v2-design): refine attachments API review decisions v0.2` 命名风格)
+  - **uploadToken 重放防御 / 黑名单 / 双因素**(沿 §8.4.4 Q7 关键约束:**留 v1.1+ 评审**;v1.0 不实施;依赖 `attachment.key` UNIQUE + P2002 兜底)
+  - **失败回滚 Provider 文件**(沿 §8.4.4 Q7 关键约束:Provider lifecycle 30 天兜底;**留 v1.1+ 评审**)
+- **撰写者签名**:Claude Code(基于 C-7 attachments 17 PR 全程实施经验 + Step 1 调研报告 + v0.1 草稿 + v0.2 局部收口 + v0.2 架构修订 + 用户启动 v1.0 时拍板"一次定够,避免实施期返工" + Q5/Q6/Q7/Q8 升级锁定;**未动任何代码 / schema 文件 / SDK 依赖**)
+- **commit 风格**:`docs(v2-design): freeze provider selection review v1.0`(沿 D7-attachments v1.0 PR #68 `docs(v2-design): freeze attachments API review v1.0` 命名风格)
 
 ---
