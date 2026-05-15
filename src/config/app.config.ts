@@ -86,6 +86,35 @@ export interface RbacCacheConfig {
   ttlSeconds: number;
 }
 
+// V2.x C-7.5 Provider 选型实施 PR #6:storage 凭证加密 key(沿 §6.6.1 + Q23 例外)。
+// AES-256-GCM 需 32 字节 key;运行时由 StorageCryptoService 派生(scrypt)。
+// production 严禁默认值 / 严禁留空(沿 v1 §14 JWT_SECRET 范式)。
+// dev / test 允许留空 → StorageCryptoService.isAvailable() === false,凭证字段读写均抛。
+export interface StorageConfig {
+  encryptionKey: string; // 空字符串 = 未配置(dev / test 允许;production 启动已 fail)
+}
+
+// V2.x C-7.5 实施 PR #6:沿 Q-87-4(宽松校验)。
+// 启动校验只挡明显短(< 32 字符);具体派生留 StorageCryptoService;
+// 推荐 `openssl rand -base64 32`(44 字符 base64 = 32 字节)。
+function parseStorageEncryptionKey(raw: string | undefined, env: AppEnv): string {
+  if (!raw || raw.trim() === '') {
+    if (env === 'production') {
+      throw new Error(
+        'STORAGE_ENCRYPTION_KEY 不能为空(production);推荐 openssl rand -base64 32 生成 32 字节 key',
+      );
+    }
+    return '';
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length < 32) {
+    throw new Error(
+      `STORAGE_ENCRYPTION_KEY 太短:长度 ${trimmed.length}(至少 32 字符;推荐 openssl rand -base64 32)`,
+    );
+  }
+  return trimmed;
+}
+
 export interface AppConfig {
   env: AppEnv;
   port: number;
@@ -94,6 +123,7 @@ export interface AppConfig {
   logLevel: LogLevel;
   loginThrottle: LoginThrottleConfig;
   rbacCache: RbacCacheConfig;
+  storage: StorageConfig;
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -142,5 +172,18 @@ export default registerAs('app', (): AppConfig => {
     ),
   };
 
-  return { env, port, corsOrigin, swaggerEnabled, logLevel, loginThrottle, rbacCache };
+  const storage: StorageConfig = {
+    encryptionKey: parseStorageEncryptionKey(process.env.STORAGE_ENCRYPTION_KEY, env),
+  };
+
+  return {
+    env,
+    port,
+    corsOrigin,
+    swaggerEnabled,
+    logLevel,
+    loginThrottle,
+    rbacCache,
+    storage,
+  };
 });

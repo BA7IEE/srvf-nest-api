@@ -9,6 +9,7 @@ import { buildThrottlerOptions } from './bootstrap/throttle-options';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { ThrottlerBizGuard } from './common/guards/throttler-biz.guard';
+import { StorageModule } from './common/storage/storage.module';
 import appConfig from './config/app.config';
 import type { AppConfig } from './config/app.config';
 import databaseConfig from './config/database.config';
@@ -109,6 +110,11 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   首次业务模块接入 rbac.can();入口仅 JwtAuthGuard(F3 v1.0;不加 @Roles)。
     //   audit_logs 接入留 PR #6c;Provider 文件层接入留 Q15 评审。
     AttachmentsModule,
+    // V2.x C-7.5 Provider 选型实施 PR #6(2026-05-16):storage_settings 读取层 + 加密 helper
+    //   (沿 §6.5.5 + §6.6.1;Q5 / Q20-Q25;**不**注册 STORAGE_PROVIDER DI token)。
+    //   导出 StorageSettingsService(60s 缓存)+ StorageCryptoService(AES-256-GCM)。
+    //   LocalProvider / COS Provider 实装留 PR #7-8;后台 CRUD 留 PR #11。
+    StorageModule,
   ],
   providers: [
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):
