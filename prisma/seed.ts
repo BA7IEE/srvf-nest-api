@@ -494,6 +494,186 @@ const OPS_ADMIN_ROLE_CODE = 'ops-admin';
 const OPS_ADMIN_DISPLAY_NAME = '运营管理员';
 const OPS_ADMIN_DESCRIPTION = 'RBAC 自身配置 + 用户角色分配的 meta 角色;首批 14 条 rbac.* 权限点';
 
+// V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集
+// (沿 D7-attachments v1.0 §6.1 + Q11 v1.0 锁清单 + 用户 PR #6a 拍板)。
+//
+// **code 格式**:沿 D7-RBAC v1.2 修订正则 `/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2,3}$/`
+// (3-4 段;scope 可选;PR #70 实装);本表 4 段 16 条 + 3 段 4 条 = 20 条全部合法。
+//
+// **scope 语义**:`.self` / `.other` 后缀触发 RbacService.judge() 的 ownership 判定
+// (`action.endsWith('.self')` 触发 `checkOwnership(user, resource)`);3 段 activity 无 scope。
+//
+// **不实装的项**(沿用户 PR #6a 拍板):
+// - ADMIN 内置角色(Q12 v1.0 沿用挂起;不创建)
+// - 自动给 user 绑定 member 角色(Q2 v1.0:仍走 POST /api/v2/users/:userId/roles 显式)
+// - .other 给 member 角色(member 仅持 .self + activity.view)
+// - activity.upload / .update / .delete 给 member 角色(member 仅 view activity)
+const ATTACHMENT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  // ============ member 8 条(4 段) ============
+  {
+    code: 'attachment.upload.member.self',
+    module: 'attachment',
+    action: 'upload',
+    resourceType: 'member',
+    description: '上传本人的身份证类附件',
+  },
+  {
+    code: 'attachment.upload.member.other',
+    module: 'attachment',
+    action: 'upload',
+    resourceType: 'member',
+    description: '上传他人的身份证类附件',
+  },
+  {
+    code: 'attachment.view.member.self',
+    module: 'attachment',
+    action: 'view',
+    resourceType: 'member',
+    description: '查看本人身份证类附件',
+  },
+  {
+    code: 'attachment.view.member.other',
+    module: 'attachment',
+    action: 'view',
+    resourceType: 'member',
+    description: '查看他人身份证类附件',
+  },
+  {
+    code: 'attachment.update.member.self',
+    module: 'attachment',
+    action: 'update',
+    resourceType: 'member',
+    description: '更新本人身份证类附件元数据',
+  },
+  {
+    code: 'attachment.update.member.other',
+    module: 'attachment',
+    action: 'update',
+    resourceType: 'member',
+    description: '更新他人身份证类附件元数据',
+  },
+  {
+    code: 'attachment.delete.member.self',
+    module: 'attachment',
+    action: 'delete',
+    resourceType: 'member',
+    description: '删除本人身份证类附件',
+  },
+  {
+    code: 'attachment.delete.member.other',
+    module: 'attachment',
+    action: 'delete',
+    resourceType: 'member',
+    description: '删除他人身份证类附件',
+  },
+  // ============ certificate 8 条(4 段) ============
+  {
+    code: 'attachment.upload.certificate.self',
+    module: 'attachment',
+    action: 'upload',
+    resourceType: 'certificate',
+    description: '上传本人的证书类附件',
+  },
+  {
+    code: 'attachment.upload.certificate.other',
+    module: 'attachment',
+    action: 'upload',
+    resourceType: 'certificate',
+    description: '上传他人证书类附件',
+  },
+  {
+    code: 'attachment.view.certificate.self',
+    module: 'attachment',
+    action: 'view',
+    resourceType: 'certificate',
+    description: '查看本人证书附件',
+  },
+  {
+    code: 'attachment.view.certificate.other',
+    module: 'attachment',
+    action: 'view',
+    resourceType: 'certificate',
+    description: '查看他人证书附件',
+  },
+  {
+    code: 'attachment.update.certificate.self',
+    module: 'attachment',
+    action: 'update',
+    resourceType: 'certificate',
+    description: '更新本人证书附件元数据',
+  },
+  {
+    code: 'attachment.update.certificate.other',
+    module: 'attachment',
+    action: 'update',
+    resourceType: 'certificate',
+    description: '更新他人证书附件元数据',
+  },
+  {
+    code: 'attachment.delete.certificate.self',
+    module: 'attachment',
+    action: 'delete',
+    resourceType: 'certificate',
+    description: '删除本人证书附件',
+  },
+  {
+    code: 'attachment.delete.certificate.other',
+    module: 'attachment',
+    action: 'delete',
+    resourceType: 'certificate',
+    description: '删除他人证书附件',
+  },
+  // ============ activity 4 条(3 段;粗粒度,无 self/other;沿 D7 v1.0 Q10) ============
+  {
+    code: 'attachment.upload.activity',
+    module: 'attachment',
+    action: 'upload',
+    resourceType: 'activity',
+    description: '上传活动现场照 / 封面',
+  },
+  {
+    code: 'attachment.view.activity',
+    module: 'attachment',
+    action: 'view',
+    resourceType: 'activity',
+    description: '查看活动现场照 / 封面',
+  },
+  {
+    code: 'attachment.update.activity',
+    module: 'attachment',
+    action: 'update',
+    resourceType: 'activity',
+    description: '更新活动附件元数据',
+  },
+  {
+    code: 'attachment.delete.activity',
+    module: 'attachment',
+    action: 'delete',
+    resourceType: 'activity',
+    description: '删除活动附件',
+  },
+];
+
+// member 内置角色 placeholder(沿 D7-attachments v1.0 §10.1 / §6.1 + 用户 PR #6a Q1:hardcoded)
+const MEMBER_ROLE_CODE = 'member';
+const MEMBER_ROLE_DISPLAY_NAME = '队员(USER 内置;运营可重命名)';
+const MEMBER_ROLE_DESCRIPTION = 'USER 内置角色 placeholder;持有本人附件权限与 activity.view 权限';
+
+// member 角色持有的 9 条权限点 code(沿 D7-attachments v1.0 §6.1 + 用户 PR #6a 拍板):
+// - 8 条 .self(member × 4 + certificate × 4)
+// - 1 条 activity.view(粗粒度活动级 view;不含 upload/update/delete)
+const MEMBER_ROLE_PERMISSION_CODES: ReadonlyArray<string> = [
+  'attachment.upload.member.self',
+  'attachment.view.member.self',
+  'attachment.update.member.self',
+  'attachment.delete.member.self',
+  'attachment.upload.certificate.self',
+  'attachment.view.certificate.self',
+  'attachment.update.certificate.self',
+  'attachment.delete.certificate.self',
+  'attachment.view.activity',
+];
+
 // V2.x C-6 RBAC 实施 PR #8:RBAC seed/bootstrap 主函数。
 // 沿 D7 v1.1 §10 + 用户拍板六项决策。
 // 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 复合唯一键 /
@@ -623,6 +803,80 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
   );
 }
 
+// V2.x C-7 attachments 实施 PR #6a(2026-05-15):attachment.* 权限点 + member 内置角色 seed。
+// 沿 D7-attachments v1.0 §6.1 / §10.3 + 用户 PR #6a Q1-Q5 拍板。
+//
+// 顺序:
+// 1. upsert 20 条 attachment.* Permission(沿 §6.1 表)
+// 2. upsert `member` RbacRole(placeholder;沿 Q1:hardcoded)
+// 3. upsert 9 条 RolePermission 映射(member → 8 条 .self + 1 条 activity.view;沿 Q5)
+//
+// **不做项**(沿 Q2 / Q5 v1.0 拍板):
+// - **不**自动给任何 user 绑定 member 角色(Q2:仍走 POST /api/v2/users/:userId/roles 显式)
+// - **不**给 member 角色分配任何 .other 权限点
+// - **不**给 member 角色分配 activity.upload / .update / .delete
+// - **不**实装 ADMIN 内置角色(Q12 沿用挂起)
+//
+// **幂等性**(沿 Q3):全部 upsert(Permission.code / RbacRole.code / RolePermission 复合唯一键),
+// 连续跑两次数量稳定。
+async function seedAttachmentPermissions(prisma: PrismaClient): Promise<void> {
+  // 1. upsert 20 条 attachment.* Permission(沿 D7 §6.1)
+  for (const perm of ATTACHMENT_PERMISSION_SEED) {
+    await prisma.permission.upsert({
+      where: { code: perm.code },
+      // 已存在不覆盖(防止运营运行时调整被 seed 回退;沿 seedRbac 范式)
+      update: {},
+      create: {
+        code: perm.code,
+        module: perm.module,
+        action: perm.action,
+        resourceType: perm.resourceType,
+        description: perm.description,
+      },
+    });
+  }
+  console.log(
+    `[seed] attachment permissions ensured (${ATTACHMENT_PERMISSION_SEED.length} entries)`,
+  );
+
+  // 2. upsert member RbacRole(placeholder;沿 D7 §10.1 + Q1 hardcoded)
+  const memberRole = await prisma.rbacRole.upsert({
+    where: { code: MEMBER_ROLE_CODE },
+    update: {},
+    create: {
+      code: MEMBER_ROLE_CODE,
+      displayName: MEMBER_ROLE_DISPLAY_NAME,
+      description: MEMBER_ROLE_DESCRIPTION,
+    },
+    select: { id: true, code: true },
+  });
+  console.log(`[seed] RBAC role '${memberRole.code}' ensured`);
+
+  // 3. upsert RolePermission 映射:member → 9 条(8 条 .self + activity.view;沿 Q5)
+  //    复合唯一键 roleId_permissionId(schema @@unique([roleId, permissionId]))
+  const memberPermissions = await prisma.permission.findMany({
+    where: { code: { in: [...MEMBER_ROLE_PERMISSION_CODES] } },
+    select: { id: true, code: true },
+  });
+  if (memberPermissions.length !== MEMBER_ROLE_PERMISSION_CODES.length) {
+    throw new Error(
+      `[seed] attachment seed 强校验失败:期望找到 ${MEMBER_ROLE_PERMISSION_CODES.length} 条 ` +
+        `member 角色 Permission,实际查到 ${memberPermissions.length} 条;` +
+        '可能 ATTACHMENT_PERMISSION_SEED 与 MEMBER_ROLE_PERMISSION_CODES 不同步',
+    );
+  }
+  for (const perm of memberPermissions) {
+    await prisma.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: memberRole.id, permissionId: perm.id } },
+      update: {},
+      create: { roleId: memberRole.id, permissionId: perm.id },
+    });
+  }
+  console.log(
+    `[seed] attachment role-permissions ensured ('${memberRole.code}' ↔ ${memberPermissions.length} attachment.* permissions)`,
+  );
+}
+
 async function main(): Promise<void> {
   const usernameRaw = process.env.SUPER_ADMIN_USERNAME ?? '';
   const username = usernameRaw.trim().toLowerCase();
@@ -701,6 +955,12 @@ async function main(): Promise<void> {
 
     // V2.x C-6 RBAC 实施 PR #8(沿 D7 v1.1 §10):14 条 rbac.* + ops-admin + bootstrap
     await seedRbac(prisma);
+
+    // V2.x C-7 attachments 实施 PR #6a(沿 D7-attachments v1.0 §6.1 / §10.3):
+    //   20 条 attachment.* + member 内置角色 + 9 条 RolePermission 映射
+    //   注:依赖 seedRbac 已完成(本函数自身只 upsert Permission / RbacRole / RolePermission,
+    //   不依赖任何 ops-admin 状态;但放在 seedRbac 之后保持"先 RBAC meta 再业务权限点"语义顺序)
+    await seedAttachmentPermissions(prisma);
   } finally {
     await prisma.$disconnect();
   }
