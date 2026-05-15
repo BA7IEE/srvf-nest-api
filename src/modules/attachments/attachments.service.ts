@@ -1,4 +1,7 @@
+import { randomBytes } from 'node:crypto';
+
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigType } from '@nestjs/config';
 import { AttachmentMimeConfigStatus, AttachmentTypeConfigStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
@@ -9,6 +12,13 @@ import { CosProviderUnavailableError } from '../../common/storage/providers/cos.
 import { StorageSettingsService } from '../../common/storage/storage-settings.service';
 import { STORAGE_PROVIDER } from '../../common/storage/storage.constants';
 import type { StorageProvider } from '../../common/storage/storage.interface';
+import {
+  signUploadToken,
+  UploadTokenExpiredError,
+  UploadTokenInvalidError,
+  verifyUploadToken,
+} from '../../common/storage/upload-token.util';
+import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -22,12 +32,16 @@ import {
 } from './attachment-validation';
 import {
   AttachmentResponseDto,
+  ConfirmUploadDto,
   CreateAttachmentDto,
+  GenerateUploadUrlDto,
   ListAttachmentsByOwnerQueryDto,
   ListAttachmentsQueryDto,
   UpdateAttachmentDto,
+  UploadUrlResponseDto,
 } from './attachments.dto';
 import { attachmentSelect } from './attachments.select';
+import { mimeToExt } from './mime-to-ext';
 
 // V2.x C-7 attachments 实施 PR #6b / #6c:attachments 主模块业务逻辑。
 //
@@ -64,6 +78,8 @@ export class AttachmentsService {
     private readonly auditLogs: AuditLogsService,
     @Inject(STORAGE_PROVIDER) private readonly provider: StorageProvider,
     private readonly storageSettings: StorageSettingsService,
+    @Inject(appConfig.KEY)
+    private readonly cfg: ConfigType<typeof appConfig>,
   ) {}
 
   // Q14 v1.0 + PR #90:Provider 接通后 accessUrl 由 generateDownloadUrl 生成;
@@ -655,5 +671,212 @@ export class AttachmentsService {
     );
     const action = `attachment.view.${row.ownerType}${scope ? '.' + scope : ''}`;
     return this.rbac.can(user, action, resource);
+  }
+
+  // ============ V2.x C-7.5 PR #10:upload-url + confirm-upload ============
+  //
+  // 沿评审 §8.3 + §8.4 + Q-10-1 到 Q-10-15 拍板:
+  // - upload-url:校验 owner/RBAC/mime/size/PII → 生成 key + signed URL + uploadToken;**不落库 / 不审计**
+  // - confirm-upload:验 token + headObject + size 一致 → 落库 + audit `attachment.upload`(沿 B4)
+  // - 0 新 BizCode(沿 §8.3.5 + §8.4.5;复用 13001/13010-13013/13015/30100/40100)
+  // - 0 新 AuditLogEvent(沿 B4)
+  // - 0 新 RBAC 权限点(沿 B3;复用 attachment.upload.<type>.<scope>)
+
+  // POST /api/v2/attachments/upload-url
+  async createUploadUrl(
+    dto: GenerateUploadUrlDto,
+    user: CurrentUserPayload,
+  ): Promise<UploadUrlResponseDto> {
+    // === Step 1-7:沿现有 create() 校验链(§6.2 9 步) ===
+    await this.assertOwnerTypeAllowed(dto.ownerType);
+    await this.assertOwnerExists(dto.ownerType as AttachmentOwnerType, dto.ownerId);
+    const { resource, scope } = await this.buildRbacResourceAndScope(
+      dto.ownerType as AttachmentOwnerType,
+      dto.ownerId,
+      user,
+    );
+    const action = `attachment.upload.${dto.ownerType}${scope ? '.' + scope : ''}`;
+    await this.assertRbacAllowed(user, action, resource);
+    await this.assertMimeAllowed(dto.ownerType, dto.mime);
+    await this.assertSizeAllowed(dto.ownerType, dto.sizeBytes);
+    // PII 检测:upload-url 仅检 originalName(Q-10-5 不接受 description / tags)
+    this.assertNoPii({ originalName: dto.originalName });
+
+    // === Step 8:生成 key(沿 §6.4.2 + Q-10-3 + Q-10-4 + Q-10-15) ===
+    const settings = await this.storageSettings.getActiveSettings();
+    const envPrefix = settings?.envPrefix ?? this.cfg.env;
+    const key = this.generateAttachmentKey(envPrefix, dto.mime);
+
+    // === Step 9:生成 uploadToken(沿 §8.3.4 + Q-10-2 复用 STORAGE_ENCRYPTION_KEY) ===
+    const uploadUrlTtlSeconds = settings?.uploadUrlTtlSeconds ?? 600;
+    const iat = Math.floor(Date.now() / 1000);
+    const exp = iat + uploadUrlTtlSeconds;
+    const uploadToken = signUploadToken(
+      {
+        key,
+        ownerType: dto.ownerType,
+        ownerId: dto.ownerId,
+        originalName: dto.originalName,
+        mime: dto.mime,
+        sizeBytes: dto.sizeBytes,
+        uploadedByUserId: user.id,
+        iat,
+        exp,
+      },
+      this.cfg.storage.encryptionKey,
+    );
+
+    // === Step 10:调 provider.generateUploadUrl ===
+    const uploadResult = await this.provider.generateUploadUrl({
+      key,
+      contentType: dto.mime,
+      sizeBytes: dto.sizeBytes,
+      expiresIn: uploadUrlTtlSeconds,
+    });
+
+    return {
+      key,
+      uploadUrl: uploadResult.url,
+      uploadHeaders: uploadResult.headers,
+      uploadMethod: uploadResult.method,
+      expiresAt: uploadResult.expiresAt,
+      uploadToken,
+    };
+  }
+
+  // POST /api/v2/attachments/confirm-upload
+  async confirmUpload(
+    dto: ConfirmUploadDto,
+    user: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<AttachmentResponseDto> {
+    // === Step 1-3:验 token + exp + uploadedByUserId === user.id(沿 §8.4.3 + Q-10-7) ===
+    let claims;
+    try {
+      claims = verifyUploadToken(dto.uploadToken, this.cfg.storage.encryptionKey);
+    } catch (err) {
+      if (err instanceof UploadTokenInvalidError || err instanceof UploadTokenExpiredError) {
+        // 沿 Q13 信息泄漏防御 + Q-10-11 不新增 BizCode → 统一返 13001
+        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+      }
+      throw err;
+    }
+    if (claims.uploadedByUserId !== user.id) {
+      // 沿 §8.4.5 + Q-10-7:claims 已携 uploadedByUserId,不重做 RBAC;
+      // 只校验 user 比对;不一致返 30100(写路径)
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+
+    // === Step 4:provider.headObject 校验文件已上传 ===
+    const head = await this.provider.headObject(claims.key);
+    if (!head.exists) {
+      // 沿 Q13 信息泄漏防御:不存在统一返 13001(沿 §8.4.5)
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
+
+    // === Step 5:size 一致性校验(沿 §8.4.3 Step 3) ===
+    // head.size === undefined(LocalProvider 不持久化时也会返 size;COS 走 content-length)
+    // 严格 ===;不一致返 13013
+    if (head.size !== undefined && head.size !== claims.sizeBytes) {
+      throw new BizException(BizCode.ATTACHMENT_SIZE_EXCEEDED);
+    }
+
+    // === Step 6:contentType 不校验(沿 Q-10-9) ===
+    // === Step 7:PII 不重做(沿 §8.4 Q10 + Q-10-X) ===
+
+    // === Step 8:落库 + audit(同事务 fail-fast;沿 §8.4.3 Step 5 + PR #6c F6) ===
+    // 需要 ownerTable 进 audit extra(沿现有 create);重查 typeConfig 拿 ownerTable
+    const { ownerTable } = await this.assertOwnerTypeAllowed(claims.ownerType);
+    // 重新 build scope 给 audit(沿 §8.4.3 Step 5 extra.scope)
+    const { scope } = await this.buildRbacResourceAndScope(
+      claims.ownerType as AttachmentOwnerType,
+      claims.ownerId,
+      user,
+    );
+
+    let row: SafeAttachment;
+    try {
+      row = await this.prisma.$transaction(async (tx) => {
+        // 沿 Q-10-8:二次提交防御(同 key 重复 confirm)
+        // schema 中 attachment.key 当前**未加 @unique** 约束;P2002 不会触发兜底
+        // → 事务内 findFirst 预检 + 命中 → 13001(沿 Q13 信息泄漏防御)
+        // race condition:两请求并发可能各自看不到对方;低频边界,沿 V1.1 §17.3 不引入分布式锁
+        const exists = await tx.attachment.findFirst({
+          where: { key: claims.key },
+          select: { id: true },
+        });
+        if (exists) {
+          throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+        }
+
+        const created = await tx.attachment.create({
+          data: {
+            key: claims.key,
+            originalName: claims.originalName,
+            mime: claims.mime,
+            size: claims.sizeBytes,
+            uploadedBy: user.id,
+            ownerType: claims.ownerType,
+            ownerId: claims.ownerId,
+            originalUploaderName: user.username,
+            checksum: dto.checksum ?? null,
+            etag: head.etag ?? null,
+          },
+          select: attachmentSelect,
+        });
+
+        await this.auditLogs.log({
+          event: 'attachment.upload',
+          actorUserId: user.id,
+          actorRoleSnap: user.role,
+          resourceType: 'attachment',
+          resourceId: created.id,
+          meta: auditMeta,
+          after: this.toAttachmentAuditSnapshot(created),
+          extra: {
+            operation: 'upload',
+            attachmentType: created.ownerType,
+            ownerType: created.ownerType,
+            ownerId: created.ownerId,
+            mime: created.mime,
+            size: created.size,
+            scope,
+            ownerTable,
+            // 🆕 v1.0 锁 extra 增量(沿 B4 + Q-10-10):仅 confirm-upload 路径加;既有 create 路径不动
+            uploadConfirmedAt: new Date().toISOString(),
+            uploadVia: 'direct',
+          },
+          tx,
+        });
+
+        return created;
+      });
+    } catch (err) {
+      // 双层兜底:若未来 schema 加 @unique → P2002 也走信息泄漏防御
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002' &&
+        ((err.meta?.target as string[] | undefined) ?? []).includes('key')
+      ) {
+        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+      }
+      throw err;
+    }
+
+    // === Step 9-10:返完整 dto(toResponseDto 内已调 generateDownloadUrl 填 accessUrl;沿 PR #90) ===
+    return this.toResponseDto(row);
+  }
+
+  // 沿 §6.4.2 + Q-10-3 + Q-10-4:`attachments/<env>/<yyyy>/<mm>/<dd>/<random>.<ext>`
+  // random:crypto.randomBytes(12).toString('base64url')(16 字符;0 新依赖;沿 Q-10-3)
+  // ext:从 MIME 推断;未命中 fallback `.bin`(沿 Q-10-4)
+  private generateAttachmentKey(envPrefix: string, mime: string): string {
+    const d = new Date();
+    const yyyy = String(d.getUTCFullYear()).padStart(4, '0');
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    const random = randomBytes(12).toString('base64url');
+    const ext = mimeToExt(mime);
+    return `attachments/${envPrefix}/${yyyy}/${mm}/${dd}/${random}${ext}`;
   }
 }

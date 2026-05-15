@@ -16,10 +16,13 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   AttachmentResponseDto,
+  ConfirmUploadDto,
   CreateAttachmentDto,
+  GenerateUploadUrlDto,
   ListAttachmentsByOwnerQueryDto,
   ListAttachmentsQueryDto,
   UpdateAttachmentDto,
+  UploadUrlResponseDto,
 } from './attachments.dto';
 import { AttachmentsService } from './attachments.service';
 
@@ -41,7 +44,7 @@ import { AttachmentsService } from './attachments.service';
 
 @ApiTags('attachments')
 @ApiBearerAuth()
-@ApiExtraModels(AttachmentResponseDto)
+@ApiExtraModels(AttachmentResponseDto, UploadUrlResponseDto)
 @Controller('v2/attachments')
 export class AttachmentsController {
   constructor(private readonly service: AttachmentsService) {}
@@ -93,6 +96,52 @@ export class AttachmentsController {
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<PageResultDto<AttachmentResponseDto>> {
     return this.service.list(query, user);
+  }
+
+  // V2.x C-7.5 PR #10:upload-url + confirm-upload(沿评审 §8.1 / §8.2 / §8.3 / §8.4)
+  // 路径顺序铁律:字面段优先,必须放在 `:id` 之前(沿 §8.2)
+  @Post('upload-url')
+  @ApiOperation({
+    summary:
+      '申请 signed upload URL(模式 B;校验 ownerType/ownerId/mime/size/PII/RBAC;返 uploadUrl + uploadToken;不落库;不审计;沿 §8.3 v1.0)',
+  })
+  @ApiWrappedOkResponse(UploadUrlResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ATTACHMENT_OWNER_TYPE_INVALID,
+    BizCode.ATTACHMENT_OWNER_NOT_FOUND,
+    BizCode.ATTACHMENT_MIME_NOT_ALLOWED,
+    BizCode.ATTACHMENT_SIZE_EXCEEDED,
+    BizCode.ATTACHMENT_PII_DETECTED,
+  )
+  createUploadUrl(
+    @Body() dto: GenerateUploadUrlDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<UploadUrlResponseDto> {
+    return this.service.createUploadUrl(dto, user);
+  }
+
+  @Post('confirm-upload')
+  @ApiOperation({
+    summary:
+      '确认上传完成(模式 B;验 uploadToken + headObject + size 一致 → 落库 + audit attachment.upload;沿 §8.4 v1.0)',
+  })
+  @ApiWrappedOkResponse(AttachmentResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ATTACHMENT_NOT_FOUND,
+    BizCode.ATTACHMENT_SIZE_EXCEEDED,
+  )
+  confirmUpload(
+    @Body() dto: ConfirmUploadDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<AttachmentResponseDto> {
+    return this.service.confirmUpload(dto, user, this.buildAuditMeta(req));
   }
 
   @Get('by-owner')
