@@ -22,6 +22,9 @@ lerna-debug.log*
 coverage
 .nyc_output
 
+# V2.x C-7.5 PR #7:LocalStorageProvider 默认根目录(STORAGE_LOCAL_ROOT default './tmp/storage')
+tmp
+
 # IDE / OS
 .DS_Store
 .idea

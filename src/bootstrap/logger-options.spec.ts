@@ -15,7 +15,7 @@ const fakeAppCfg: AppConfig = {
   logLevel: 'info',
   loginThrottle: { limit: 5, ttlSeconds: 60 },
   rbacCache: { ttlSeconds: 1800 },
-  storage: { encryptionKey: '' },
+  storage: { encryptionKey: '', localRoot: './tmp/storage' },
 };
 
 function getRedactPaths(): readonly string[] {
