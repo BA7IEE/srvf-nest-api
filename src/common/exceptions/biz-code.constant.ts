@@ -796,6 +796,45 @@ export const BizCode = {
     message: '该附件类型已有尺寸限制配置',
     httpStatus: HttpStatus.CONFLICT,
   },
+
+  // V2.x C-7 attachments 实施 PR #6b(2026-05-15):attachments 主模块业务级错误段位。
+  //
+  // 沿 D7-attachments v1.0 §8.1 子段位规划 + 用户 PR #6b 拍板 Q1-Q14:
+  // - 13001 主表实体不存在(沿 v1 §10 信息泄漏防御:detail / update / delete 不存在或无权统一返此码)
+  // - 13010-13013 业务级输入校验(ownerType / ownerId / mime / size)
+  // - 13015 PII 检测拒绝(身份证号);13014 跳过(沿 v0.2 决议 DTO @MaxLength 走 40000)
+  // - 13101 不实装(Q13 拍板:写路径 RBAC 失败复用 30100,读路径用 13001 信息泄漏防御)
+  // - 13030 IN_USE 不实装(Q11 拍板:DELETE 物理删,不查跨表引用)
+  ATTACHMENT_NOT_FOUND: {
+    code: 13001,
+    message: '附件不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ATTACHMENT_OWNER_TYPE_INVALID: {
+    code: 13010,
+    message: '附件归属类型不合法',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTACHMENT_OWNER_NOT_FOUND: {
+    code: 13011,
+    message: '附件归属对象不存在或已软删',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTACHMENT_MIME_NOT_ALLOWED: {
+    code: 13012,
+    message: '附件 MIME 类型不在白名单',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTACHMENT_SIZE_EXCEEDED: {
+    code: 13013,
+    message: '附件大小超过上限',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ATTACHMENT_PII_DETECTED: {
+    code: 13015,
+    message: '附件元数据包含个人敏感信息(身份证号),已拒绝',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];

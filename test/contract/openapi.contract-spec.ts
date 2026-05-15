@@ -266,6 +266,22 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/v2/attachment-size-limit-configs/{id}'],
   ['patch', '/api/v2/attachment-size-limit-configs/{id}'],
   ['delete', '/api/v2/attachment-size-limit-configs/{id}'],
+
+  // V2.x C-7 attachments 实施 PR #6b(2026-05-15;attachments 主模块 7 端点,沿 D7 v1.0 §5.1)
+  // 入口仅 JwtAuthGuard(F3 v1.0;**不加** @Roles);全部判权在 Service 层 rbac.can()。
+  // BizCode 13001 ATTACHMENT_NOT_FOUND / 13010 ATTACHMENT_OWNER_TYPE_INVALID /
+  // 13011 ATTACHMENT_OWNER_NOT_FOUND / 13012 ATTACHMENT_MIME_NOT_ALLOWED /
+  // 13013 ATTACHMENT_SIZE_EXCEEDED / 13015 ATTACHMENT_PII_DETECTED;
+  // 复用 30100 RBAC_FORBIDDEN(写路径)+ 信息泄漏防御 13001(读路径)。
+  // 路径顺序铁律:/by-owner / /me/uploaded 字面段在 /:id 之前(NestJS 字面段优先 :id)。
+  // **本 PR 不实装**:audit_logs 接入(留 PR #6c)/ Provider 文件层(Q15 挂起)。
+  ['post', '/api/v2/attachments'],
+  ['get', '/api/v2/attachments'],
+  ['get', '/api/v2/attachments/by-owner'],
+  ['get', '/api/v2/attachments/me/uploaded'],
+  ['get', '/api/v2/attachments/{id}'],
+  ['patch', '/api/v2/attachments/{id}'],
+  ['delete', '/api/v2/attachments/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -450,6 +466,16 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'UpdateAttachmentSizeLimitConfigDto',
   'AttachmentSizeLimitConfigResponseDto',
   'AttachmentSizeLimitConfigTypeConfigSummaryDto',
+
+  // V2.x C-7 attachments 实施 PR #6b attachments 主模块(2026-05-15;沿 D7 v1.0 §5.4)
+  // CreateAttachmentDto / UpdateAttachmentDto 是 @Body() DTO;
+  // AttachmentResponseDto 是出参(含 accessUrl 占位字段;Q14 v1.0 恒返 null);
+  // 注:ListAttachmentsQueryDto / ListAttachmentsByOwnerQueryDto / PaginationQueryDto(me/uploaded)
+  //   均为 @Query() DTO,被内联为 parameters,不进 components.schemas。
+  //   IdParamDto 复用 common/dto/id-param.dto,不重复注册。
+  'CreateAttachmentDto',
+  'UpdateAttachmentDto',
+  'AttachmentResponseDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

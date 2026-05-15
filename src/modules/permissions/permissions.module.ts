@@ -58,5 +58,8 @@ import { UserRolesService } from './user-roles.service';
     RbacCacheService,
     RbacService,
   ],
+  // V2.x C-7 attachments 实施 PR #6b(2026-05-15):export RbacService 供业务模块
+  // (本期:AttachmentsModule)接入 rbac.can();沿 D7 v1.1 §8 / D7-attachments §6.2。
+  exports: [RbacService],
 })
 export class PermissionsModule {}
