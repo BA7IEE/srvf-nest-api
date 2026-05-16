@@ -14,10 +14,10 @@ import type {
 //      + docs/批次7_provider选型_V2x立项记录.md §二.2
 //
 // **本 PR(C-7.5 实施 PR #5)仅扩展接口 + 类型,不实装任何 Provider**:
-// - 不新建 providers/local.provider.ts(留 PR #7)
-// - 不新建 providers/cos.provider.ts(留 PR #8)
-// - 不新建 storage.module.ts / 不定义 DI token(留 PR #7-8 接通时一起)
-// - 不引入 cos-nodejs-sdk-v5(留 PR #8)
+// 以下能力在 C-7.5 后续 PR 落地后已可用:
+// - LocalStorageProvider / CosStorageProvider(src/common/storage/providers/)
+// - StorageModule + StorageProviderRouter(src/common/storage/storage.module.ts)
+// - cos-nodejs-sdk-v5(已在 package.json 引入)
 // 0 runtime impact / 0 callsite / 0 module wiring。
 //
 // Q5 锁定 3 子项(沿 §7.4):
