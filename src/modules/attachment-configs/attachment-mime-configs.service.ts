@@ -242,7 +242,15 @@ export class AttachmentMimeConfigsService {
     // 1. 先确认活跃(沿 PR #3 type config status 范式;校验链留事务外)
     const before = await this.findActiveByIdOrThrow(id);
 
-    // 2. 事务内:仅改 status + audit
+    // 2. V2.x Slow-6:仅 ACTIVE → INACTIVE 触发跨表引用检查(沿 Q-cross-3 A 对称防绕过)
+    if (
+      dto.status === AttachmentMimeConfigStatus.INACTIVE &&
+      before.status === AttachmentMimeConfigStatus.ACTIVE
+    ) {
+      await this.assertMimeNotInUse(before.typeConfigId, before.mime);
+    }
+
+    // 3. 事务内:仅改 status + audit
     //    PR #6d Q4 拍板:before/after 仅 status 字段
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.attachmentMimeConfig.update({
@@ -281,8 +289,12 @@ export class AttachmentMimeConfigsService {
     // 1. 先确认活跃(沿 PR #3 type config softDelete 范式;沿 v1 §10 信息泄漏防御)
     const existing = await this.findActiveByIdOrThrow(id);
 
-    // 2. 事务内:软删 + 同步置 INACTIVE + audit(沿 PR #3 dictionaries 双置范式)
-    //    Q6 v1.0:本 PR 不查 attachments 主表跨表引用;留主模块 PR 触发时再加 IN_USE 检查
+    // 2. V2.x Slow-6:跨表引用检查(对称在 updateStatus 也加;沿 Q-cross-3 A)
+    //    校验链留事务外:减小事务体积,失败回滚廉价
+    await this.assertMimeNotInUse(existing.typeConfigId, existing.mime);
+
+    // 3. 事务内:软删 + 同步置 INACTIVE + audit(沿 PR #3 dictionaries 双置范式)
+    //    Q6 v1.0 + V2.x Slow-6:跨表引用检查已在事务外完成(assertMimeNotInUse;沿评审 §8.1)
     //    PR #6d Q5:resourceId=existing.id(软删 id 不变;沿 cert / emergency softDelete 范式)
     await this.prisma.$transaction(async (tx) => {
       await tx.attachmentMimeConfig.update({
@@ -311,5 +323,31 @@ export class AttachmentMimeConfigsService {
       });
     });
     return existing;
+  }
+
+  /**
+   * V2.x Slow-6 跨表引用检查:mime config 是否仍被 attachment 引用。
+   *
+   * 检查路径:typeConfigId → typeConfig.code → count attachments where ownerType+mime。
+   * 注意 mime 字段比较精确到字符串级别,同 type 不同 mime 不视为引用。
+   * 信息泄漏防御:不在异常 message / extra 暴露引用数(沿 Q-cross-impl-4 A + v1 §10)。
+   */
+  private async assertMimeNotInUse(typeConfigId: string, mime: string): Promise<void> {
+    const typeConfig = await this.prisma.attachmentTypeConfig.findUnique({
+      where: { id: typeConfigId },
+      select: { code: true },
+    });
+    // 极端边界:typeConfig 不存在(FK Restrict 应保证不发生);fail-safe 跳过引用检查
+    if (!typeConfig) return;
+
+    const refCount = await this.prisma.attachment.count({
+      where: {
+        ownerType: typeConfig.code,
+        mime,
+      },
+    });
+    if (refCount > 0) {
+      throw new BizException(BizCode.ATTACHMENT_MIME_CONFIG_IN_USE);
+    }
   }
 }

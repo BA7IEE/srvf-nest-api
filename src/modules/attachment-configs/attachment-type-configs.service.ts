@@ -232,7 +232,16 @@ export class AttachmentTypeConfigsService {
     // 1. 先确认活跃(沿 dictionaries `PATCH /:id/status` 范式;校验链留事务外)
     const before = await this.findActiveByIdOrThrow(id);
 
-    // 2. 事务内:改 status + audit
+    // 2. V2.x Slow-6:仅 ACTIVE → INACTIVE 触发跨表引用检查(沿 Q-cross-3 A 对称防绕过)
+    //    INACTIVE → ACTIVE / 同状态等不检查(只挡破坏性变更)
+    if (
+      dto.status === AttachmentTypeConfigStatus.INACTIVE &&
+      before.status === AttachmentTypeConfigStatus.ACTIVE
+    ) {
+      await this.assertTypeNotInUse(before.code);
+    }
+
+    // 3. 事务内:改 status + audit
     //    PR #6d Q4 拍板:before/after 仅 status 字段(状态机审计范式;沿 cert.verify/reject)
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.attachmentTypeConfig.update({
@@ -271,9 +280,14 @@ export class AttachmentTypeConfigsService {
     //    第二次软删撞 findActiveByIdOrThrow,统一返 13020,不开 13024)
     const existing = await this.findActiveByIdOrThrow(id);
 
-    // 2. 事务内:软删 + 同步置 INACTIVE + audit
-    //    Q7 v1.0:本 PR 不查跨表引用;mime / size override 引用与 attachments 主表 ownerType
-    //    引用的检查由后续 PR 触发时再加(13030 ATTACHMENT_TYPE_CONFIG_IN_USE 暂不实装)。
+    // 2. V2.x Slow-6:跨表引用检查(对称在 updateStatus 也加;沿 Q-cross-3 A)
+    //    校验链留事务外:减小事务体积,失败回滚廉价(沿 attachments.service 范式)
+    await this.assertTypeNotInUse(existing.code);
+
+    // 3. 事务内:软删 + 同步置 INACTIVE + audit
+    //    Q7 v1.0 + V2.x Slow-6:跨表引用检查已在事务外完成(assertTypeNotInUse;沿评审 §8.1)。
+    //    mime / size override 引用通过 typeConfigId Restrict FK 隐式约束(物理删被阻止;
+    //    软删允许,Service 层不强制清理 override,沿 PR #4 / PR #5 现状)。
     //    PR #6d Q5:resourceId=existing.id(软删 id 不变;沿 cert/emergency softDelete 范式)
     await this.prisma.$transaction(async (tx) => {
       await tx.attachmentTypeConfig.update({
@@ -302,5 +316,21 @@ export class AttachmentTypeConfigsService {
       });
     });
     return existing;
+  }
+
+  /**
+   * V2.x Slow-6 跨表引用检查:type config 是否仍被 attachment 引用。
+   *
+   * 触发点:softDelete + updateStatus(仅 ACTIVE → INACTIVE)双路径对称(沿 Q-cross-3 A)。
+   * 计数语义:Attachment 是硬删(无 deletedAt),count 即活跃数。
+   * 信息泄漏防御:不在异常 message / extra 暴露引用数(沿 Q-cross-impl-4 A + v1 §10)。
+   */
+  private async assertTypeNotInUse(code: string): Promise<void> {
+    const refCount = await this.prisma.attachment.count({
+      where: { ownerType: code },
+    });
+    if (refCount > 0) {
+      throw new BizException(BizCode.ATTACHMENT_TYPE_IN_USE);
+    }
   }
 }

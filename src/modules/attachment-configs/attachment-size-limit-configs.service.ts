@@ -230,9 +230,14 @@ export class AttachmentSizeLimitConfigsService {
     // 1. 先确认活跃(沿 PR #4 mime softDelete 范式;沿 v1 §10 信息泄漏防御)
     const existing = await this.findActiveByIdOrThrow(id);
 
-    // 2. 事务内:软删 + audit(Q7 v1.0:本表无 status 字段,只置 deletedAt = now();
+    // 2. V2.x Slow-6:跨表引用检查(沿 Q-cross-4 A:size 1:1 with type;
+    //    通过 typeConfig.code 反查 attachments;同 type 有引用即视为 size config IN_USE)
+    //    校验链留事务外:减小事务体积,失败回滚廉价
+    await this.assertSizeNotInUse(existing.typeConfigId);
+
+    // 3. 事务内:软删 + audit(Q7 v1.0:本表无 status 字段,只置 deletedAt = now();
     //    不同步置任何其他字段)。
-    //    Q2 v1.0:本 PR 不查 attachments 主表跨表引用;留主模块 PR 触发时再加 IN_USE 检查
+    //    Q2 v1.0 + V2.x Slow-6:跨表引用检查已在事务外完成(assertSizeNotInUse;沿评审 §8.1)。
     //    PR #6d Q5:resourceId=existing.id(软删 id 不变;沿 cert / emergency softDelete 范式)
     await this.prisma.$transaction(async (tx) => {
       await tx.attachmentSizeLimitConfig.update({
@@ -258,5 +263,29 @@ export class AttachmentSizeLimitConfigsService {
       });
     });
     return existing;
+  }
+
+  /**
+   * V2.x Slow-6 跨表引用检查:size config 是否仍被 attachment 引用(通过 typeConfig.code)。
+   *
+   * 检查路径:typeConfigId → typeConfig.code → count attachments where ownerType。
+   * 沿 Q-cross-4 A:size 是 type 的 1:1 覆盖;删除 size 会让既有 type 的 attachment 走兜底,
+   * 视作"语义破坏",故同 type 任意 attachment 即视为 size config IN_USE。
+   * 信息泄漏防御:不在异常 message / extra 暴露引用数(沿 Q-cross-impl-4 A + v1 §10)。
+   */
+  private async assertSizeNotInUse(typeConfigId: string): Promise<void> {
+    const typeConfig = await this.prisma.attachmentTypeConfig.findUnique({
+      where: { id: typeConfigId },
+      select: { code: true },
+    });
+    // 极端边界:typeConfig 不存在(FK Restrict 应保证不发生);fail-safe 跳过引用检查
+    if (!typeConfig) return;
+
+    const refCount = await this.prisma.attachment.count({
+      where: { ownerType: typeConfig.code },
+    });
+    if (refCount > 0) {
+      throw new BizException(BizCode.ATTACHMENT_SIZE_LIMIT_CONFIG_IN_USE);
+    }
   }
 }

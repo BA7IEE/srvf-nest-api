@@ -130,7 +130,8 @@ export class AttachmentMimeConfigsController {
   @Patch(':id/status')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '更新附件 MIME 配置启停状态(沿 PR #3 type config status 端点范式)',
+    summary:
+      '更新附件 MIME 配置启停状态(沿 PR #3 type config status 端点范式;V2.x Slow-6:ACTIVE → INACTIVE 仍被附件引用时返 13031)',
   })
   @ApiWrappedOkResponse(AttachmentMimeConfigResponseDto)
   @ApiBizErrorResponse(
@@ -138,6 +139,7 @@ export class AttachmentMimeConfigsController {
     BizCode.UNAUTHORIZED,
     BizCode.FORBIDDEN,
     BizCode.ATTACHMENT_MIME_CONFIG_NOT_FOUND,
+    BizCode.ATTACHMENT_MIME_CONFIG_IN_USE,
   )
   updateStatus(
     @Param() params: IdParamDto,
@@ -152,7 +154,7 @@ export class AttachmentMimeConfigsController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '软删附件 MIME 配置(deletedAt = now() + 同步置 status=INACTIVE;Q6 v1.0:本 PR 不查 attachments 主表跨表引用)',
+      '软删附件 MIME 配置(deletedAt = now() + 同步置 status=INACTIVE;V2.x Slow-6:仍被附件引用时返 13031)',
   })
   @ApiWrappedOkResponse(AttachmentMimeConfigResponseDto)
   @ApiBizErrorResponse(
@@ -160,6 +162,7 @@ export class AttachmentMimeConfigsController {
     BizCode.UNAUTHORIZED,
     BizCode.FORBIDDEN,
     BizCode.ATTACHMENT_MIME_CONFIG_NOT_FOUND,
+    BizCode.ATTACHMENT_MIME_CONFIG_IN_USE,
   )
   softDelete(
     @Param() params: IdParamDto,

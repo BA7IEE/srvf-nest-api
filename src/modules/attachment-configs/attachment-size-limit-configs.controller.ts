@@ -127,7 +127,7 @@ export class AttachmentSizeLimitConfigsController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '软删附件尺寸限制配置(deletedAt = now();本表无 status 字段不需要同步置;Q2 v1.0:不查 attachments 主表跨表引用)',
+      '软删附件尺寸限制配置(deletedAt = now();本表无 status 字段不需要同步置;V2.x Slow-6:同 type 仍被附件引用时返 13032)',
   })
   @ApiWrappedOkResponse(AttachmentSizeLimitConfigResponseDto)
   @ApiBizErrorResponse(
@@ -135,6 +135,7 @@ export class AttachmentSizeLimitConfigsController {
     BizCode.UNAUTHORIZED,
     BizCode.FORBIDDEN,
     BizCode.ATTACHMENT_SIZE_LIMIT_CONFIG_NOT_FOUND,
+    BizCode.ATTACHMENT_SIZE_LIMIT_CONFIG_IN_USE,
   )
   softDelete(
     @Param() params: IdParamDto,
