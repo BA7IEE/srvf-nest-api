@@ -1,6 +1,6 @@
 import { RequestMethod } from '@nestjs/common';
 import type { Params } from 'nestjs-pino';
-import type { AppConfig } from '../config/app.config';
+import { isProductionLike, type AppConfig } from '../config/app.config';
 import { buildHttpLogProps, genReqId } from './request-id';
 
 // nestjs-pino 默认 forRoutes 是 `[{ path: '*', method: RequestMethod.ALL }]`,与
@@ -103,7 +103,8 @@ const LOG_REDACT_PATHS: readonly string[] = [
 export function buildLoggerModuleParams(appCfg: AppConfig): Params {
   // test 环境强制 silent:e2e 跑 162 用例,任何日志都会污染 jest 输出。
   const isTest = appCfg.env === 'test';
-  const isProd = appCfg.env === 'production';
+  // production-like(production / smoke):JSON 输出 + 不开 pino-pretty(沿生产环境行为)
+  const isProd = isProductionLike(appCfg.env);
   const level = isTest ? 'silent' : appCfg.logLevel;
 
   return {

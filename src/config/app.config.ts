@@ -1,7 +1,20 @@
 import { registerAs } from '@nestjs/config';
 
-const VALID_APP_ENVS = ['development', 'test', 'production'] as const;
+// V2.x production storage_settings fail-fast(2026-05-16):
+// 'smoke' 是 CI Docker smoke job 专用 AppEnv;除 storage_settings fail-fast 外,
+// 行为尽量贴近 production(JSON 日志 / 严格 CORS / 默认禁 Swagger /
+// STORAGE_ENCRYPTION_KEY 必填 / 隐藏异常 message)。
+// **不得用于真实部署**;真实部署必须 APP_ENV=production。
+const VALID_APP_ENVS = ['development', 'test', 'production', 'smoke'] as const;
 export type AppEnv = (typeof VALID_APP_ENVS)[number];
+
+// V2.x production storage_settings fail-fast:production-like 联合判断 helper。
+// 沿评审 §11 + 用户拍板 Q-pff-3 / Q-pff-4:smoke 几乎全部沿 production 行为,
+// **唯一例外** = storage_settings fail-fast(在 storage-settings.service.ts 内
+// 直接判 `env === 'production'`,**不**用本 helper)。
+export function isProductionLike(env: AppEnv): boolean {
+  return env === 'production' || env === 'smoke';
+}
 
 // V1.1 §11.5:LOG_LEVEL 允许值固定六个,silent 不在此清单(运行时为 test 环境兜底用)。
 const VALID_LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as const;
@@ -31,11 +44,11 @@ function parseCorsOrigin(raw: string | undefined): string[] {
     .filter(Boolean);
 }
 
-// V1.1 §11.5:LOG_LEVEL 留空时默认按 APP_ENV 推断;production=info,非 production=debug。
+// V1.1 §11.5:LOG_LEVEL 留空时默认按 APP_ENV 推断;production-like(production / smoke)=info,其他=debug。
 // 显式赋值时必须 ∈ VALID_LOG_LEVELS,否则启动 fail-fast(.env.example 应留空,不写默认值)。
 function parseLogLevel(raw: string | undefined, env: AppEnv): LogLevel {
   if (!raw || raw.trim() === '') {
-    return env === 'production' ? 'info' : 'debug';
+    return isProductionLike(env) ? 'info' : 'debug';
   }
   const value = raw.trim();
   if (!isLogLevel(value)) {
@@ -112,9 +125,9 @@ function parseStorageLocalRoot(raw: string | undefined): string {
 // 推荐 `openssl rand -base64 32`(44 字符 base64 = 32 字节)。
 function parseStorageEncryptionKey(raw: string | undefined, env: AppEnv): string {
   if (!raw || raw.trim() === '') {
-    if (env === 'production') {
+    if (isProductionLike(env)) {
       throw new Error(
-        'STORAGE_ENCRYPTION_KEY 不能为空(production);推荐 openssl rand -base64 32 生成 32 字节 key',
+        'STORAGE_ENCRYPTION_KEY 不能为空(production / smoke);推荐 openssl rand -base64 32 生成 32 字节 key',
       );
     }
     return '';
@@ -148,18 +161,19 @@ export default registerAs('app', (): AppConfig => {
   const port = parsePort(process.env.APP_PORT);
   const corsOrigin = parseCorsOrigin(process.env.APP_CORS_ORIGIN);
 
-  if (env === 'production') {
+  if (isProductionLike(env)) {
     if (corsOrigin.length === 0) {
-      throw new Error('生产环境 APP_CORS_ORIGIN 不能为空');
+      throw new Error('生产 / smoke 环境 APP_CORS_ORIGIN 不能为空');
     }
     if (corsOrigin.includes('*')) {
-      throw new Error('生产环境 APP_CORS_ORIGIN 禁止使用 *,必须显式列出前端域名');
+      throw new Error('生产 / smoke 环境 APP_CORS_ORIGIN 禁止使用 *,必须显式列出前端域名');
     }
   }
 
   // ENABLE_SWAGGER 必须严格字符串判断 === 'true'
   // 禁止 Boolean(process.env.ENABLE_SWAGGER) 等 truthy 判断,否则字符串 'false' 会被误判为开启
-  const swaggerEnabled = env !== 'production' || process.env.ENABLE_SWAGGER === 'true';
+  // production-like(production / smoke)默认禁,显式 ENABLE_SWAGGER=true 才开。
+  const swaggerEnabled = !isProductionLike(env) || process.env.ENABLE_SWAGGER === 'true';
 
   const logLevel = parseLogLevel(process.env.LOG_LEVEL, env);
 

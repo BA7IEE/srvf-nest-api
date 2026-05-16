@@ -1,7 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
+import { ConfigType } from '@nestjs/config';
 import { Prisma, type StorageSettings as StorageSettingsRow } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../decorators/current-user.decorator';
+import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import { StorageCryptoDecryptError, StorageCryptoService } from './storage-crypto.service';
 import type {
@@ -31,7 +33,7 @@ import { CredentialStatus, type StorageSettingsResolved } from './storage-settin
 const CACHE_TTL_MS = 60_000;
 
 @Injectable()
-export class StorageSettingsService {
+export class StorageSettingsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(StorageSettingsService.name);
 
   private cache: {
@@ -42,7 +44,82 @@ export class StorageSettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly crypto: StorageCryptoService,
+    @Inject(appConfig.KEY)
+    private readonly cfg: ConfigType<typeof appConfig>,
   ) {}
+
+  /**
+   * V2.x production storage_settings fail-fast(2026-05-16):
+   * production 启动期严格校验 storage_settings 必须真实初始化为可用 COS。
+   *
+   * **仅 production 触发**(沿用户拍板修正版第 4 项 + Q-pff-2 / Q-pff-3 / Q-pff-4):
+   * - smoke / development / test 全部跳过(smoke 是 CI 专用,docker-smoke job 不预接真实 COS)
+   * - 此处直接判 `env === 'production'`,**不**用 isProductionLike(smoke 必须跳过)
+   *
+   * **5 项严格校验**(缺一启动失败,沿评审 §6.5.4 + 修正版第 3 项):
+   * 1. settings 存在(运维真实 PATCH 创建过 row)
+   * 2. enabled === true
+   * 3. providerType === 'COS'(production 拒绝 LOCAL;沿 F2)
+   * 4. bucket / region 非空
+   * 5. credentialStatus === CONFIGURED(凭证已录入 + 解密成功)
+   *
+   * 错误消息含修复指引(指向 ops SOP §7 / §8);
+   * **永不**包含凭证 secret 明文 / 密文(沿 §6.6 信息泄漏防御)。
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    if (this.cfg.env !== 'production') return;
+
+    const r = await this.getActiveSettings();
+
+    // 校验 1: settings 存在
+    if (!r) {
+      throw new Error(
+        'production fail-fast: storage_settings 未初始化。' +
+          '请按 docs/ops/cos-production-rollout-checklist.md §7 通过 ' +
+          'PATCH /api/v2/storage-settings 创建 row。',
+      );
+    }
+
+    // 校验 2: enabled=true
+    if (!r.enabled) {
+      throw new Error(
+        'production fail-fast: storage_settings.enabled=false。' +
+          '请通过 PATCH /api/v2/storage-settings 设 enabled=true。',
+      );
+    }
+
+    // 校验 3: providerType=COS(production 拒绝 LOCAL;沿 F2)
+    if (r.providerType !== 'COS') {
+      throw new Error(
+        `production fail-fast: providerType=${r.providerType},production 必须是 COS(沿 F2)。` +
+          '请通过 PATCH /api/v2/storage-settings 设 providerType=COS。',
+      );
+    }
+
+    // 校验 4: bucket / region 非空
+    if (!r.bucket || !r.region) {
+      throw new Error(
+        'production fail-fast: storage_settings.bucket / region 不能为空。' +
+          '请按 ops SOP §2 / §7 完整配置 bucket 与 region。',
+      );
+    }
+
+    // 校验 5: credentialStatus=CONFIGURED
+    if (r.credentialStatus !== CredentialStatus.CONFIGURED) {
+      throw new Error(
+        `production fail-fast: credentialStatus=${r.credentialStatus},必须是 ${CredentialStatus.CONFIGURED}。` +
+          '请按 ops SOP §8 通过 POST /api/v2/storage-settings/reset-credentials 录入凭证;' +
+          `若 ${CredentialStatus.INVALID},检查 STORAGE_ENCRYPTION_KEY 是否被轮换。`,
+      );
+    }
+
+    // 全部通过(成功日志不含凭证 secret 字段)
+    this.logger.log(
+      `production fail-fast: storage_settings OK ` +
+        `(providerType=${r.providerType}, bucket=${r.bucket}, region=${r.region}, ` +
+        `credentialStatus=${r.credentialStatus})`,
+    );
+  }
 
   /**
    * 读取当前生效配置(单条 singleton row;沿 §6.5.4)

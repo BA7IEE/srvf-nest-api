@@ -1,6 +1,8 @@
 import { Logger } from '@nestjs/common';
+import { ConfigType } from '@nestjs/config';
 import type { StorageSettings as StorageSettingsRow } from '@prisma/client';
 
+import appConfig, { type AppEnv } from '../../config/app.config';
 import type { PrismaService } from '../../database/prisma.service';
 import { StorageCryptoDecryptError, StorageCryptoService } from './storage-crypto.service';
 import { StorageSettingsService } from './storage-settings.service';
@@ -73,6 +75,15 @@ function makeCryptoMock(options: { decrypt?: (payload: string) => string }): Sto
   } as unknown as StorageCryptoService;
 }
 
+// V2.x production storage_settings fail-fast(2026-05-16):env mock helper
+// 仅用于注入 ConfigType<typeof appConfig>;只关心 env 字段,其他字段 cast 兜底
+function makeCfg(env: AppEnv): ConfigType<typeof appConfig> {
+  return { env } as ConfigType<typeof appConfig>;
+}
+
+// 默认 cfg(development);既有非 fail-fast 用例使用
+const DEV_CFG = makeCfg('development');
+
 describe('StorageSettingsService', () => {
   let warnSpy: jest.SpyInstance;
 
@@ -88,7 +99,7 @@ describe('StorageSettingsService', () => {
     it('返 null', async () => {
       const { prisma } = makePrismaMock([]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto);
+      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
 
       const result = await svc.getActiveSettings();
       expect(result).toBeNull();
@@ -99,7 +110,7 @@ describe('StorageSettingsService', () => {
     it('返 resolved + credentialStatus=MISSING + credentials=null', async () => {
       const { prisma } = makePrismaMock([makeRow({ credentialConfigured: false })]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto);
+      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
 
       const result = await svc.getActiveSettings();
       expect(result).not.toBeNull();
@@ -122,7 +133,7 @@ describe('StorageSettingsService', () => {
       const crypto = makeCryptoMock({
         decrypt: (p) => p.replace(/^ENC\(|\)$/g, ''),
       });
-      const svc = new StorageSettingsService(prisma, crypto);
+      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
 
       const result = await svc.getActiveSettings();
       expect(result!.credentialStatus).toBe(CredentialStatus.CONFIGURED);
@@ -147,7 +158,7 @@ describe('StorageSettingsService', () => {
           throw new StorageCryptoDecryptError('auth tag mismatch');
         },
       });
-      const svc = new StorageSettingsService(prisma, crypto);
+      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
 
       const result = await svc.getActiveSettings();
       expect(result!.credentialStatus).toBe(CredentialStatus.INVALID);
@@ -166,7 +177,7 @@ describe('StorageSettingsService', () => {
         }),
       ]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto);
+      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
 
       const result = await svc.getActiveSettings();
       expect(result!.credentialStatus).toBe(CredentialStatus.MISSING);
@@ -190,7 +201,7 @@ describe('StorageSettingsService', () => {
       // findMany orderBy=asc,所以传入顺序就是 [earlier, later]
       const { prisma } = makePrismaMock([earlier, later]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto);
+      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
 
       const result = await svc.getActiveSettings();
       expect(result!.id).toBe('cuid-earlier');
@@ -205,7 +216,7 @@ describe('StorageSettingsService', () => {
     it('60s 内第二次调用不查 DB', async () => {
       const { prisma, findManyMock } = makePrismaMock([makeRow()]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto);
+      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
 
       await svc.getActiveSettings();
       await svc.getActiveSettings();
@@ -216,7 +227,7 @@ describe('StorageSettingsService', () => {
     it('DB 空时也缓存 null', async () => {
       const { prisma, findManyMock } = makePrismaMock([]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto);
+      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
 
       const r1 = await svc.getActiveSettings();
       const r2 = await svc.getActiveSettings();
@@ -228,12 +239,168 @@ describe('StorageSettingsService', () => {
     it('invalidate() 后再查 DB', async () => {
       const { prisma, findManyMock } = makePrismaMock([makeRow()]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto);
+      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
 
       await svc.getActiveSettings();
       svc.invalidate();
       await svc.getActiveSettings();
       expect(findManyMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // V2.x production storage_settings fail-fast(2026-05-16):
+  // production 启动期严格 5 项校验;smoke / development / test 跳过。
+  // 沿用户 Step 2 实施指令第 6 项要求覆盖至少 11 个用例。
+  describe('onApplicationBootstrap (production fail-fast)', () => {
+    let logSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    });
+
+    afterEach(() => {
+      logSpy.mockRestore();
+    });
+
+    // 用例 1-3:非 production 全部跳过(空表也不抛)
+    it('用例 1: env=development + settings null → 不抛', async () => {
+      const { prisma } = makePrismaMock([]);
+      const crypto = makeCryptoMock({});
+      const svc = new StorageSettingsService(prisma, crypto, makeCfg('development'));
+      await expect(svc.onApplicationBootstrap()).resolves.toBeUndefined();
+    });
+
+    it('用例 2: env=test + settings null → 不抛', async () => {
+      const { prisma } = makePrismaMock([]);
+      const crypto = makeCryptoMock({});
+      const svc = new StorageSettingsService(prisma, crypto, makeCfg('test'));
+      await expect(svc.onApplicationBootstrap()).resolves.toBeUndefined();
+    });
+
+    it('用例 3: env=smoke + settings null → 不抛(CI Docker smoke 不预接 COS)', async () => {
+      const { prisma } = makePrismaMock([]);
+      const crypto = makeCryptoMock({});
+      const svc = new StorageSettingsService(prisma, crypto, makeCfg('smoke'));
+      await expect(svc.onApplicationBootstrap()).resolves.toBeUndefined();
+    });
+
+    // 用例 4-10:production 5 项校验逐一失败
+    it('用例 4: env=production + settings null → throw "未初始化"', async () => {
+      const { prisma } = makePrismaMock([]);
+      const crypto = makeCryptoMock({});
+      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      await expect(svc.onApplicationBootstrap()).rejects.toThrow(/未初始化/);
+    });
+
+    it('用例 5: env=production + enabled=false → throw 含 enabled=false', async () => {
+      const { prisma } = makePrismaMock([
+        makeRow({
+          enabled: false,
+          credentialConfigured: true,
+          secretIdEncrypted: 'ENC(id)',
+          secretKeyEncrypted: 'ENC(key)',
+        }),
+      ]);
+      const crypto = makeCryptoMock({ decrypt: (p) => p.replace(/^ENC\(|\)$/g, '') });
+      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      await expect(svc.onApplicationBootstrap()).rejects.toThrow(/enabled=false/);
+    });
+
+    it('用例 6: env=production + providerType=LOCAL → throw 含 production 必须是 COS', async () => {
+      const { prisma } = makePrismaMock([
+        makeRow({
+          providerType: 'LOCAL',
+          credentialConfigured: true,
+          secretIdEncrypted: 'ENC(id)',
+          secretKeyEncrypted: 'ENC(key)',
+        }),
+      ]);
+      const crypto = makeCryptoMock({ decrypt: (p) => p.replace(/^ENC\(|\)$/g, '') });
+      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      await expect(svc.onApplicationBootstrap()).rejects.toThrow(/production 必须是 COS/);
+    });
+
+    it('用例 7: env=production + bucket=null → throw 含 bucket / region', async () => {
+      const { prisma } = makePrismaMock([
+        makeRow({
+          bucket: null,
+          credentialConfigured: true,
+          secretIdEncrypted: 'ENC(id)',
+          secretKeyEncrypted: 'ENC(key)',
+        }),
+      ]);
+      const crypto = makeCryptoMock({ decrypt: (p) => p.replace(/^ENC\(|\)$/g, '') });
+      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      await expect(svc.onApplicationBootstrap()).rejects.toThrow(/bucket \/ region/);
+    });
+
+    it('用例 8: env=production + region=null → throw 含 bucket / region', async () => {
+      const { prisma } = makePrismaMock([
+        makeRow({
+          region: null,
+          credentialConfigured: true,
+          secretIdEncrypted: 'ENC(id)',
+          secretKeyEncrypted: 'ENC(key)',
+        }),
+      ]);
+      const crypto = makeCryptoMock({ decrypt: (p) => p.replace(/^ENC\(|\)$/g, '') });
+      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      await expect(svc.onApplicationBootstrap()).rejects.toThrow(/bucket \/ region/);
+    });
+
+    it('用例 9: env=production + credentialStatus=MISSING → throw 含 missing', async () => {
+      const { prisma } = makePrismaMock([makeRow({ credentialConfigured: false })]);
+      const crypto = makeCryptoMock({});
+      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      await expect(svc.onApplicationBootstrap()).rejects.toThrow(/credentialStatus=missing/);
+    });
+
+    it('用例 10: env=production + credentialStatus=INVALID → throw 含 invalid', async () => {
+      const { prisma } = makePrismaMock([
+        makeRow({
+          credentialConfigured: true,
+          secretIdEncrypted: 'BAD_CIPHER',
+          secretKeyEncrypted: 'BAD_CIPHER',
+        }),
+      ]);
+      const crypto = makeCryptoMock({
+        decrypt: () => {
+          throw new StorageCryptoDecryptError('auth tag mismatch');
+        },
+      });
+      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      await expect(svc.onApplicationBootstrap()).rejects.toThrow(/credentialStatus=invalid/);
+    });
+
+    // 用例 11:全部 5 项校验通过(成功路径)
+    it('用例 11: env=production + COS + enabled + bucket/region + CONFIGURED → 不抛 + log 成功摘要', async () => {
+      const { prisma } = makePrismaMock([
+        makeRow({
+          providerType: 'COS',
+          enabled: true,
+          bucket: 'srvf-attachments',
+          region: 'ap-shanghai',
+          credentialConfigured: true,
+          secretIdEncrypted: 'ENC(id)',
+          secretKeyEncrypted: 'ENC(key)',
+        }),
+      ]);
+      const crypto = makeCryptoMock({ decrypt: (p) => p.replace(/^ENC\(|\)$/g, '') });
+      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      await expect(svc.onApplicationBootstrap()).resolves.toBeUndefined();
+      // 成功 log 仅含状态字段(providerType / bucket / region / credentialStatus),不含 secret
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('production fail-fast: storage_settings OK'),
+      );
+      const firstCall = logSpy.mock.calls[0] as unknown[];
+      const logMsg = String(firstCall[0]);
+      expect(logMsg).toContain('providerType=COS');
+      expect(logMsg).toContain('bucket=srvf-attachments');
+      expect(logMsg).toContain('region=ap-shanghai');
+      expect(logMsg).toContain('credentialStatus=configured');
+      // 防御:成功 log 不含 secret 明文 / 密文
+      expect(logMsg).not.toContain('AKID');
+      expect(logMsg).not.toContain('ENC(');
     });
   });
 });
