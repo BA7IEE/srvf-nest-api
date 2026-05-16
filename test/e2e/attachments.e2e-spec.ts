@@ -385,20 +385,20 @@ describe('attachments 主模块', () => {
       expectBizError(res, BizCode.ATTACHMENT_OWNER_NOT_FOUND);
     });
 
-    it('mime 系统级黑名单 application/zip → 13012', async () => {
+    it('mime 系统级黑名单 application/zip → 13033', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ mime: 'application/zip' }));
-      expectBizError(res, BizCode.ATTACHMENT_MIME_NOT_ALLOWED);
+      expectBizError(res, BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED);
     });
 
-    it('mime 系统级黑名单通配 video/mp4 → 13012', async () => {
+    it('mime 系统级黑名单通配 video/mp4 → 13033', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ mime: 'video/mp4' }));
-      expectBizError(res, BizCode.ATTACHMENT_MIME_NOT_ALLOWED);
+      expectBizError(res, BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED);
     });
 
     it('mime 不在 typeConfig.defaultMimeWhitelist → 13012', async () => {

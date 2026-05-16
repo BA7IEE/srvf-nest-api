@@ -821,6 +821,20 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // V2.x L-1 系统级 MIME 黑名单显式 BizCode(2026-05-16):
+  // 沿 D7-attachments v1.0 §8.1 设计 + §6.6 + Q3 v1.0 SYSTEM_MIME_BLOCKLIST + 用户 L-1 拍板。
+  // 段位说明:评审稿 §8.1 原本规划 13031;因 V2.x Slow-6 PR #99 已占用 13031
+  // 给 ATTACHMENT_MIME_CONFIG_IN_USE,故顺延至 13033(连续 13030/31/32 跨表 IN_USE 之后)。
+  // 解决问题:13012 ATTACHMENT_MIME_NOT_ALLOWED 一码多义(系统级永久禁 vs 白名单未命中);
+  // 拆出 13033 后,前端 / 运营可精确区分两种拒绝原因。
+  // 实施范围(沿 L-1 方案 A):仅 attachments 上传校验链(create + upload-url)单独抛 13033;
+  // **配置三表 attachment_mime_configs CRUD 不变**(沿 §6.6 + Q3 v1.0 fail-close 原设计)。
+  ATTACHMENT_SYSTEM_MIME_BLOCKED: {
+    code: 13033,
+    message: '附件 MIME 类型在系统级黑名单中,不允许上传',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+
   // V2.x C-7 attachments 实施 PR #6b(2026-05-15):attachments 主模块业务级错误段位。
   //
   // 沿 D7-attachments v1.0 §8.1 子段位规划 + 用户 PR #6b 拍板 Q1-Q14:

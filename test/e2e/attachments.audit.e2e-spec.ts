@@ -421,12 +421,12 @@ describe('attachments audit_logs 集成', () => {
       expect(logs).toHaveLength(0);
     });
 
-    it('case 9: upload MIME 拒绝(13012;系统级黑名单)→ 无 audit', async () => {
+    it('case 9: upload MIME 拒绝(13033;系统级黑名单)→ 无 audit', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ mime: 'application/zip' }));
-      expectBizError(res, BizCode.ATTACHMENT_MIME_NOT_ALLOWED);
+      expectBizError(res, BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED);
 
       const logs = await prisma.auditLog.findMany();
       expect(logs).toHaveLength(0);
