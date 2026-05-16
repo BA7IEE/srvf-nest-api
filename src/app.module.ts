@@ -87,33 +87,31 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   (沿 D6 v1.1;path /api/v2/contribution-rules;230xx 段位;
     //    attendance 预填仍由 AttendancesService.applyContributionRulePrefill 完成,本模块不动 attendance)
     ContributionRulesModule,
-    // V2 第一阶段批次 6 PR #1(2026-05-12):audit_logs 基础设施
+    // V2 第一阶段批次 6:audit_logs 基础设施
     //   (D6 v1.1 §4 / §5 / §6;path /api/v2/audit-logs;140xx + 141xx 段位)。
-    //   仅 schema + module + AuditLogsService.log + 2 个查询接口;
-    //   8 处 emergency-contacts / certificates 写操作迁移留 PR #2(D-A 修订)。
+    //   schema + module + AuditLogsService.log + 2 个查询接口;
+    //   emergency-contacts / certificates 写操作已迁移至 AuditLogsService。
     AuditLogsModule,
-    // V2.x C-6 RBAC 实施 PR #2(2026-05-14):permissions CRUD
-    //   (沿 D7 v1.1 §4.2 / §5.1 端点 1-4;path /api/v2/permissions;300xx 段位)。
-    //   仅 Permission CRUD;Role / RolePermission / UserRole / RbacService / 判权
-    //   接入由后续 PR #3-#6 完成。沿 D12 永不切换 + F9:本 PR 沿用 @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-    //   入口 Guard,**不接 RBAC 判权**;v1 14 + V2 79 接口 zero drift。
+    // V2.x C-6 RBAC:permissions / RbacRole / RolePermission / UserRole / RbacService 全套 CRUD
+    //   (沿 D7 v1.1 §4.2 / §5.1;path /api/v2/permissions、/roles、/users/:id/roles 等;300xx 段位)。
+    //   沿 D12 永不切换 + F9:**入口 Guard 仍是 @Roles(Role.SUPER_ADMIN, Role.ADMIN)**,
+    //   RBAC 业务判权目前仅在 attachments 接入(沿 F3 v1.0);v1 14 + V2 79 接口 zero drift。
     PermissionsModule,
-    // V2.x C-7 attachments 实施 PR #3(2026-05-15):attachment-configs CRUD
-    //   (D7 v1.0 §4.2 / §16 Q1-Q7;path /api/v2/attachment-type-configs;130xx 段位实装 13020 / 13021 / 13023)。
-    //   仅 AttachmentTypeConfig CRUD(6 端点);Mime / Size 子表 CRUD 留 PR #4 / #5;
-    //   attachments 主模块 / Provider / audit / rbac.can() 接入留更后续 PR。
+    // V2.x C-7 attachments:attachment-configs 三子模块 CRUD
+    //   (D7 v1.0 §4.2 / §16 Q1-Q7;path /api/v2/attachment-{type,mime,size-limit}-configs;130xx 段位)。
+    //   AttachmentTypeConfig / Mime / Size 三子表 CRUD 全部实装。
     //   沿 F4 v1.0:入口 @Roles(SUPER_ADMIN, ADMIN),不接 RBAC 业务判权。
     AttachmentConfigsModule,
-    // V2.x C-7 attachments 实施 PR #6b(2026-05-15):attachments 主模块
+    // V2.x C-7 attachments 主模块
     //   (D7-attachments v1.0 §5.1 / §6;path /api/v2/attachments;7 端点;
     //    130xx 业务段实装 13001 / 13010-13013 / 13015;复用 30100 RBAC_FORBIDDEN)。
     //   首次业务模块接入 rbac.can();入口仅 JwtAuthGuard(F3 v1.0;不加 @Roles)。
-    //   audit_logs 接入留 PR #6c;Provider 文件层接入留 Q15 评审。
+    //   audit_logs 已集成;Provider 文件层经 StorageModule 接通。
     AttachmentsModule,
-    // V2.x C-7.5 Provider 选型实施 PR #6(2026-05-16):storage_settings 读取层 + 加密 helper
-    //   (沿 §6.5.5 + §6.6.1;Q5 / Q20-Q25;**不**注册 STORAGE_PROVIDER DI token)。
-    //   导出 StorageSettingsService(60s 缓存)+ StorageCryptoService(AES-256-GCM)。
-    //   LocalProvider / COS Provider 实装留 PR #7-8;后台 CRUD 留 PR #11。
+    // V2.x C-7.5 Provider:storage_settings 读取层 + 加密 helper + Provider 实装
+    //   (沿 §6.5.5 + §6.6.1;Q5 / Q20-Q25)。
+    //   导出 StorageSettingsService(60s 缓存)+ StorageCryptoService(AES-256-GCM);
+    //   LocalProvider / CosProvider 已实装;storage-settings 后台 CRUD 已落地。
     StorageModule,
   ],
   providers: [

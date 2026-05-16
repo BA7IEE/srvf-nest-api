@@ -25,15 +25,15 @@ import { createTestApp } from '../setup/test-app';
 // - 软删后行为(不出现在 list / code 不可复用 → 13021)
 // - status 走独立端点(Q5 v1.0)
 //
-// 不覆盖(超本 PR 范围):
-// - mime / size config CRUD(留 PR #4 / PR #5)
-// - attachments 主模块(留 PR #6+)
+// 不覆盖(分散在其它 spec 文件):
+// - mime / size config CRUD(详见 attachment-mime-configs.e2e-spec.ts / attachment-size-limit-configs.e2e-spec.ts)
+// - attachments 主模块(详见 attachments.e2e-spec.ts)
 // - RBAC 业务判权 rbac.can()(F4 v1.0:不接;沿 D7 v1.0)
 // - audit_logs 集成(沿 PR #71 边界;本 PR 不动 AuditLogEvent union)
 // - ATTACHMENT_TYPE_CONFIG_IN_USE 跨表引用约束(Q7 v1.0 暂不实装)
 //
 // 测试隔离:spec-local TRUNCATE `attachment_type_configs`
-//   (沿 permissions PR #2 临时方案范式;reset-db.ts 集中迁移留 PR #4 / PR #5 合并 mime / size 表时统一处理)
+//   (沿 permissions PR #2 范式;reset-db.ts 已追加 4 张 attachment 表 TRUNCATE,spec-local 是否仍需保留由后续评估)
 
 describe('attachment-type-configs 模块', () => {
   let app: INestApplication;
@@ -47,9 +47,9 @@ describe('attachment-type-configs 模块', () => {
     await resetDb(app);
     prisma = app.get(PrismaService);
 
-    // V2.x C-7 实施 PR #3 临时:spec-local TRUNCATE attachment_type_configs
-    // (PR #71 已落地 4 张 attachment 表,但 reset-db.ts 尚未追加 — 沿 permissions PR #2 范式,
-    //  留 PR #4 / PR #5 合并 mime / size 表时迁移到公共 reset-db.ts)
+    // spec-local TRUNCATE attachment_type_configs
+    // (沿 permissions PR #2 范式;reset-db.ts 已追加 4 张 attachment 表 TRUNCATE,
+    //  spec-local 是否仍需保留由后续评估)
     await prisma.$executeRawUnsafe(
       'TRUNCATE TABLE "attachment_type_configs" RESTART IDENTITY CASCADE',
     );

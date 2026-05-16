@@ -609,9 +609,9 @@ export const BizCode = {
   //
   // 不开的码(留后续 PR 实装):
   // - 30000 RBAC_BAD_REQUEST(通用,留 PR #6 judge 用)
-  // - 30003-30007 / 30009 Role/UserRole 相关(留 PR #3-#5 实装)
+  // - (30003-30007 / 30009 Role/UserRole 相关已在 RBAC PR #3-#5 实装,详见下方对应段)
   // - 30010+ 其他(本 PR 不预占)
-  // - 301xx 全段(留 PR #5 / PR #6 按需追加;沿 baseline §1.1 段内增量,无需重新冻结)
+  // - (301xx 全段:30100 RBAC_FORBIDDEN / 30101 LAST_OPS_ADMIN_PROTECTED 已实装,详见下方对应段)
   PERMISSION_NOT_FOUND: {
     code: 30001,
     message: '权限点不存在',
@@ -638,8 +638,8 @@ export const BizCode = {
   //   - 不存在 + 已软删统一返 30003(沿 v1 §10 信息泄漏防御,不告知曾在过)
   // - POST /api/v2/roles:code 撞唯一约束(含软删历史)→ 30004(P2002 兜底 + 预检查)
   //
-  // 不开的码(留后续 PR 实装):
-  // - 30006 USER_ROLE_ALREADY_EXISTS / 30007 USER_ROLE_NOT_FOUND(留 PR #5 UserRole CRUD)
+  // 已在 RBAC 后续 PR 实装的相关码:
+  // - (30006 USER_ROLE_ALREADY_EXISTS / 30007 USER_ROLE_NOT_FOUND 已在 UserRole CRUD 实装,详见下方对应段)
   // - 30009 INVALID_ROLE_CODE_FORMAT(本 PR 沿 30008 范式:Service regex 校验失败抛 30009)
   //   → 实装于本 PR,sole code 格式校验
   ROLE_NOT_FOUND: {
@@ -739,7 +739,7 @@ export const BizCode = {
   //
   // 沿 D7 v1.0 §8.1 子段位规划 + baseline §1.1 attachments 模块预留 `130xx + 131xx`。
   // 13020-13029 子段为配置三表通用段;本 PR 实装 3 项(13020 NOT_FOUND / 13021 CODE_ALREADY_EXISTS /
-  // 13023 INVALID_CODE_FORMAT);mime / size 子表段位号留 PR #4 / PR #5 增量(13022 / 13024-13026)。
+  // 13023 INVALID_CODE_FORMAT);mime / size 子表段位号 13022 / 13024-13026 已实装(详见下方对应段)。
   // 跨表 IN_USE 引用约束(13030-13032)已由 V2.x Slow-6 PR 实装(详见下方 13030-13032 段)。
   ATTACHMENT_TYPE_CONFIG_NOT_FOUND: {
     code: 13020,
@@ -762,7 +762,7 @@ export const BizCode = {
   // 沿 D7 v1.0 §8.1 子段位 13020-13029 配置三表通用段;PR #3 已实装 13020 / 13021 / 13023(type config),
   // 本 PR 继续 13022 / 13024 / 13025(mime config)。typeConfigId 不存在场景**复用 13020**(Q5 v1.0 拍板:
   // 沿信息泄漏防御 + 不开多余 _TYPE_NOT_FOUND 镜像码;沿 v1 §10)。
-  // size config 段位号留 PR #5(13026 / 13027 等)。
+  // size config 段位号 13026 / 13027 已实装(详见下方对应段)。
   ATTACHMENT_MIME_CONFIG_NOT_FOUND: {
     code: 13022,
     message: '附件 MIME 配置不存在',

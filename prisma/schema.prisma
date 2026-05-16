@@ -771,7 +771,7 @@ model AuditLog {
 //   DB 表名仍 @@map("roles") / @@map("permissions") / @@map("role_permissions") / @@map("user_roles")
 //   保持 snake_case 复数风格(沿 audit_logs / API 路径风格)。
 // 实施仅本 PR(C-6 实施 PR #1)落地 schema + migration;
-// service / controller / DTO / seed / 判权由后续 PR #2-#8 完成。
+// service / controller / DTO / seed / 判权已在 C-6 后续 PR(#2-#8)全部实装。
 // 详见:
 //   - docs/批次8_RBAC_API前评审.md §4(schema 草案;v1.1 修订稿)
 //   - docs/批次8_RBAC_V2x立项记录.md §二(立项内容)
@@ -852,7 +852,7 @@ model UserRole {
 // Permission code 正则已于 v1.2(PR #66)/ C-7 实施 PR #1(PR #70) 放宽至 3-4 段,
 //   支持 attachment.upload.cert.self 等 4 段权限点(D7 v1.0 Q11)。
 // 实施仅本 PR 落地 schema + migration + Certificate.attachmentKey drop column;
-// service / controller / DTO / RBAC 集成 / audit 集成 / 配置三表 CRUD 由后续 PR 完成。
+// service / controller / DTO / RBAC 集成 / audit 集成 / 配置三表 CRUD 已在 C-7 后续 PR 全部实装。
 // 详见:
 //   - docs/批次7_attachments_API前评审.md §4(schema 草案;v1.0 冻结稿)
 //   - docs/批次7_attachments_V2x立项记录.md §二(立项内容)

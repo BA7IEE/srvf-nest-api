@@ -18,10 +18,10 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 7. seed 不自动给任意 user 分配 member 角色(Q2 v1.0)
 // 8. seed 连续执行两次完全幂等:permissions count / role id / role-permissions count 不变
 //
-// 不覆盖(超本 PR 范围):
-// - attachments 主模块(留 PR #6b)
-// - audit_logs 集成(留 PR #6c)
-// - RBAC 业务接入 rbac.can()(留 PR #6b 用此 seed 验证)
+// 不覆盖(分散在其它 spec 文件):
+// - attachments 主模块(详见 attachments.e2e-spec.ts)
+// - audit_logs 集成(详见 attachments.audit.e2e-spec.ts)
+// - RBAC 业务接入 rbac.can()(详见 attachments.e2e-spec.ts)
 // - 真实角色名(.env.seed.local;沿 D7-RBAC F6 / R13)
 
 interface SeedRunResult {
