@@ -15,6 +15,8 @@
 
 | 文档 | 作用 |
 |---|---|
+| [`docs/current-state.md`](./docs/current-state.md) | **当前状态入口**:新会话 / AI 开工前第一读物,记录当前版本、open PR、最新 handoff、当前未做与开工门禁 |
+| [`docs/process.md`](./docs/process.md) | 开发流程与协作制度:开工前 checklist、PR 分级、release 收口、文档权威源与 AI 协作规则 |
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | v1 蓝图,数据模型 / 接口清单 / 命名铁律 / 升级路径,**所有规则的唯一来源** |
 | [`CLAUDE.md`](./CLAUDE.md) | Claude Code 协作铁律(从 ARCHITECTURE.md §7 抽取) |
 | [`AGENTS.md`](./AGENTS.md) | 通用 AI Agent 协作铁律(与 CLAUDE.md 内容同步) |
@@ -26,7 +28,7 @@
 | [`docs/testing.md`](./docs/testing.md) | E2E 测试运行与覆盖范围 |
 | [`docs/deployment.md`](./docs/deployment.md) | Docker 镜像、生产部署、迁移流程 |
 | [`docs/security.md`](./docs/security.md) | 已落地安全策略、软删除策略、token 吊销升级路径 |
-| [`docs/handoff/v0.12.0.md`](./docs/handoff/v0.12.0.md) | v0.12.0 阶段交接说明(最新 handoff / 下一会话启动入口) |
+| [`docs/handoff/v0.12.0.md`](./docs/handoff/v0.12.0.md) | v0.12.0 阶段历史 handoff;用于追溯 release 时刻状态,当前事实以 [`docs/current-state.md`](./docs/current-state.md) 为准 |
 
 冲突时**以 `ARCHITECTURE.md` 为准**。除非用户明确要求,AI 不得修改 `ARCHITECTURE.md`。
 
