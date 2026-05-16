@@ -739,8 +739,8 @@ export const BizCode = {
   //
   // 沿 D7 v1.0 §8.1 子段位规划 + baseline §1.1 attachments 模块预留 `130xx + 131xx`。
   // 13020-13029 子段为配置三表通用段;本 PR 实装 3 项(13020 NOT_FOUND / 13021 CODE_ALREADY_EXISTS /
-  // 13023 INVALID_CODE_FORMAT);mime / size 子表段位号留 PR #4 / PR #5 增量(13022 / 13024-13026);
-  // 跨表 IN_USE 引用约束(13030)由 attachments 主模块 PR 触发时再实装(沿 D7 v1.0 §16 Q7 拍板)。
+  // 13023 INVALID_CODE_FORMAT);mime / size 子表段位号留 PR #4 / PR #5 增量(13022 / 13024-13026)。
+  // 跨表 IN_USE 引用约束(13030-13032)已由 V2.x Slow-6 PR 实装(详见下方 13030-13032 段)。
   ATTACHMENT_TYPE_CONFIG_NOT_FOUND: {
     code: 13020,
     message: '附件类型配置不存在',
@@ -784,7 +784,7 @@ export const BizCode = {
   // 沿 D7 v1.0 §8.1 子段位 13020-13029 配置三表通用段;PR #3 已实装 13020 / 13021 / 13023(type config),
   // PR #4 已实装 13022 / 13024 / 13025(mime config),本 PR 继续 13026 / 13027(size limit config)。
   // typeConfigId 不存在场景**复用 13020**(沿 Q5 PR #4 + v1 §10 信息泄漏防御)。
-  // 跨表 IN_USE 引用约束(13030)由 attachments 主模块 PR 触发时再实装(沿 Q2 v1.0 拍板)。
+  // 跨表 IN_USE 引用约束(13030-13032)已由 V2.x Slow-6 PR 实装(详见下方 13030-13032 段)。
   // 13028 / 13029 段位预留给本表未来扩展。
   ATTACHMENT_SIZE_LIMIT_CONFIG_NOT_FOUND: {
     code: 13026,
@@ -797,6 +797,30 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // V2.x Slow-6 跨表引用约束(2026-05-16):配置三表 softDelete / updateStatus → INACTIVE
+  // 时禁止破坏既有 attachment 引用;沿 D7 v1.0 §8.1 段位预留 + 评审 §8.1 设计。
+  // - 13030: type config IN_USE(由 attachment.ownerType = type.code 引用)
+  // - 13031: mime config IN_USE(由 attachment.ownerType = type.code AND attachment.mime = mime 引用)
+  // - 13032: size limit config IN_USE(通过 typeConfigId → typeConfig.code 由 attachment.ownerType 引用)
+  // 检查范围:softDelete + updateStatus → INACTIVE 双路径对称(沿 Q-cross-3 A);
+  // 普通 update(改文案 / 数值)不检查(沿 Q-cross-6 A)。
+  // refCount > 0 时统一抛对应 BizCode;不在 message / extra 暴露引用数(沿 Q-cross-impl-4 A;v1 §10 信息泄漏防御)。
+  ATTACHMENT_TYPE_IN_USE: {
+    code: 13030,
+    message: '附件类型仍被附件引用,无法删除或停用',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTACHMENT_MIME_CONFIG_IN_USE: {
+    code: 13031,
+    message: '附件 MIME 配置仍被附件引用,无法删除或停用',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ATTACHMENT_SIZE_LIMIT_CONFIG_IN_USE: {
+    code: 13032,
+    message: '附件尺寸限制配置仍被附件引用,无法删除',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // V2.x C-7 attachments 实施 PR #6b(2026-05-15):attachments 主模块业务级错误段位。
   //
   // 沿 D7-attachments v1.0 §8.1 子段位规划 + 用户 PR #6b 拍板 Q1-Q14:
@@ -804,7 +828,7 @@ export const BizCode = {
   // - 13010-13013 业务级输入校验(ownerType / ownerId / mime / size)
   // - 13015 PII 检测拒绝(身份证号);13014 跳过(沿 v0.2 决议 DTO @MaxLength 走 40000)
   // - 13101 不实装(Q13 拍板:写路径 RBAC 失败复用 30100,读路径用 13001 信息泄漏防御)
-  // - 13030 IN_USE 不实装(Q11 拍板:DELETE 物理删,不查跨表引用)
+  // - 13030 IN_USE 已由 V2.x Slow-6 PR 实装(详见上方 13030-13032)
   ATTACHMENT_NOT_FOUND: {
     code: 13001,
     message: '附件不存在',

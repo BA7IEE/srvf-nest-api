@@ -127,13 +127,17 @@ export class AttachmentTypeConfigsController {
 
   @Patch(':id/status')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '更新附件类型配置启停状态(沿 dictionaries 独立 status 端点范式)' })
+  @ApiOperation({
+    summary:
+      '更新附件类型配置启停状态(沿 dictionaries 独立 status 端点范式;V2.x Slow-6:ACTIVE → INACTIVE 仍被附件引用时返 13030)',
+  })
   @ApiWrappedOkResponse(AttachmentTypeConfigResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
     BizCode.FORBIDDEN,
     BizCode.ATTACHMENT_TYPE_CONFIG_NOT_FOUND,
+    BizCode.ATTACHMENT_TYPE_IN_USE,
   )
   updateStatus(
     @Param() params: IdParamDto,
@@ -147,7 +151,8 @@ export class AttachmentTypeConfigsController {
   @Delete(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '软删附件类型配置(deletedAt = now() + 同步置 status=INACTIVE;Q7 v1.0:不查跨表引用)',
+    summary:
+      '软删附件类型配置(deletedAt = now() + 同步置 status=INACTIVE;V2.x Slow-6:仍被附件引用时返 13030)',
   })
   @ApiWrappedOkResponse(AttachmentTypeConfigResponseDto)
   @ApiBizErrorResponse(
@@ -155,6 +160,7 @@ export class AttachmentTypeConfigsController {
     BizCode.UNAUTHORIZED,
     BizCode.FORBIDDEN,
     BizCode.ATTACHMENT_TYPE_CONFIG_NOT_FOUND,
+    BizCode.ATTACHMENT_TYPE_IN_USE,
   )
   softDelete(
     @Param() params: IdParamDto,
