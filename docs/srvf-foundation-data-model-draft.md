@@ -1,5 +1,13 @@
 # SRVF 基础数据底座 — 候选模型草案
 
+> ⚠️ **历史草案说明**
+>
+> 本文件是 V2 foundation 调研 / 草案阶段文档,**不是当前数据库 schema 的权威来源**。
+> 当前已落地数据模型以 [`prisma/schema.prisma`](../prisma/schema.prisma) 为准;当前状态以 [`docs/current-state.md`](current-state.md) 为准;接口契约以 [`docs/v2-api-contract.md`](v2-api-contract.md) 与 OpenAPI contract snapshot 为准。
+> 本文件仅用于追溯设计取舍和调研背景,后续开发**不得**直接按本文草案改 schema。
+
+---
+
 > 派生项目:**srvf-nest-api**
 > 文档定位:**候选模型草案骨架**(V2-D6 起草中)
 > 阶段:**V2 设计阶段**(`ARCHITECTURE.md §12` / `CLAUDE.md §18` / `AGENTS.md §18`)
