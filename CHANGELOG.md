@@ -4,9 +4,80 @@
 
 ## Unreleased
 
+V2 第一阶段在 v0.10.0(批次 7 C-7 attachments 全模块实施收官)基础之上,完成 **V2.x C-7.5 Provider 选型评审 + 实施全栈落地**(批次 7.5 ≈ C-7 的 Provider 接通 + 后台凭证管理;沿 D7-provider v1.0 35 项决议;**12 个 PR 累计**:#82-#85 设计/立项 4 PR + #86-#93 实施 7 PR + 1 P1 技术债)。**新增 1 张表 + 5 个 API + 3 个 StorageProvider 方法 + 2 个 enum + 1 个 unique 约束**;**腾讯云 COS Provider + LocalProvider + 动态路由 + AES-256-GCM 凭证加密 + signed URL 直传 + 后台凭证管理**全部就绪。**v1 14 + V2 117 + RBAC 16 + attachments 主 7 + 配置三表 15 既有接口 schema + paths 严格 zero drift**(contract snapshot CI 守护;`AttachmentResponseDto.accessUrl.description` 文案微调 1 行,字段类型 `string | null` 不变,**不算 schema drift**)。**累计 122 接口**(原 117 + 5 storage)。**累计 Prisma 表 23 张**(原 22 + 1 storage_settings)。**0 新 BizCode / 0 新 RBAC Permission / 0 新 AuditLogEvent**(沿评审 B3 / B4 / §6.6.5)。**新增 1 个运行时依赖**:`cos-nodejs-sdk-v5@^2.15.4`(Q-89-8;加密辅助沿 Node 原生 crypto,0 新依赖)。
+
+**SemVer 推荐**:0.10.0 → 0.11.0 **minor**(向后兼容的能力扩展:新增 5 V2 接口 + 1 表 + 2 migrations + 1 runtime 依赖 + 2 enum + 3 StorageProvider 方法;v1 14 + V2 117 + RBAC 16 既有接口零字段 / 路径 / 错误码改动;无 breaking change;`AttachmentResponseDto.accessUrl` 字段值由"恒返 null"变为"成功 URL / 失败 null",字段类型 `string | null` 不变,**不构成 breaking change**;`Attachment.key` 加 `@unique` 约束在 v0.10.0 release 前未有生产数据写入,**不构成 breaking change**;沿 v0.6.0 → v0.7.0 → v0.8.0 → v0.9.0 → v0.10.0 minor 风格)。**bump 留独立 PR #13**(沿 v0.10.0 PR #79 → PR #80 范式;本 landing PR 不动 `package.json#version` / Swagger `setVersion`)。
+
+### Added
+
+C-7.5 Provider **完整能力全部落地**(沿 D7-provider v1.0 35 项决议 + Q-87 / Q-89 / Q-90 / Q-10 / Q-11 / Q-UK 全部子项拍板;**8 个实施 PR 累计**:#86 interface + #87 schema + reader + #88 LocalProvider + #89 CosProvider + Router + #90 wire attachments + #91 upload-url + confirm-upload + #92 P1 技术债 + #93 后台 admin API):
+
+| 维度 | 数量 |
+|---|---|
+| Prisma 表 | **+1**(`storage_settings` 15 字段;沿 Q24 一次设计完整)|
+| Prisma enum | **+2**(`StorageProviderType` LOCAL/COS / `StorageMimePolicyMode` INHERIT/OVERRIDE)|
+| Prisma migrations | **+2**(`v2_c75_storage_settings` + `attachment_key_unique`)|
+| Prisma unique 约束 | **+1**(`attachments.key @unique`;P1 技术债 #92;并发 replay 防御)|
+| API 端点 | **+5**(主模块 +2:`POST /attachments/upload-url` + `POST /attachments/confirm-upload`;后台 +3:`GET /storage-settings` + `PATCH /storage-settings` + `POST /storage-settings/reset-credentials`)|
+| StorageProvider 方法 | **+3**(`generateUploadUrl` / `generateDownloadUrl` / `headObject`;沿 F5 6 方法)|
+| StorageProvider 类型 | **+5**(`GenerateUploadUrlInput` / `UploadUrlResult` / `GenerateDownloadUrlInput` / `DownloadUrlResult` / `HeadObjectResult`)|
+| Provider 实现 | **+2**(`LocalStorageProvider` dev/test + `CosStorageProvider` 生产 COS)|
+| Provider 路由 | **+1**(`StorageProviderRouter` 动态;每次方法调用 resolve;沿 settings 60s cache)|
+| Service | **+2**(`StorageSettingsService` 读取层 + `StorageCryptoService` AES-256-GCM 加密 helper)|
+| HMAC token util | **+1**(`upload-token.util.ts` HMAC-SHA256 紧凑格式;0 jsonwebtoken 依赖)|
+| BizCode | **0 新增**(沿 B3 / Q-10-11 / Q-11-4;复用 13001/13010-13013/13015/30100/40100/INTERNAL_ERROR)|
+| RBAC Permission seed | **0 新增**(沿 B3;upload-url / confirm-upload 复用 `attachment.upload.<type>.<scope>`;后台 CRUD 走 `@Roles(SUPER_ADMIN, ADMIN)`)|
+| AuditLogEvent union | **0 新增**(沿 B4 + §6.6.5;`attachment.upload` extra 加 `uploadConfirmedAt + uploadVia: 'direct'`;storage_settings 0 audit)|
+| 运行时依赖 | **+1**(`cos-nodejs-sdk-v5@^2.15.4`;加密辅助沿 Node 原生 crypto / scrypt / randomBytes,0 新依赖)|
+| env 变量 | **+2**(`STORAGE_ENCRYPTION_KEY` 必填 prod / `STORAGE_LOCAL_ROOT` LocalProvider 根目录)|
+| 实施 PR | **8 个**(#86-#93;集中 2026-05-15 ~ 2026-05-16 落地)|
+| Unit 增量 | **+88**(原 764 → 852;含 storage 22 + LocalProvider 16 + cos+router 32 + upload-token 18)|
+| E2E 增量 | **+58**(原 1163 → 1221;含 28 upload + 30 storage-settings)|
+| Contract 增量 | **+11**(原 240 → 251;5 paths + 6 DTO schemas)|
+
+**关键里程碑**:
+
+- **腾讯云 COS Provider 实装**(沿 F3 / Q1 / Q4):`cos-nodejs-sdk-v5@^2.15.4`;读 `storage_settings` 不依赖 env(沿 Q23);每次方法调用 `requireCosContext()`(不缓存 SDK;沿 Q-89-2);4 档守护(settings null / providerType 错配 / credentialStatus 非 CONFIGURED / bucket+region 缺失)
+- **LocalStorageProvider 实装**(沿 F2;dev / test 主路径):fs.writeFile + 路径安全防御(防 `../` 逃逸);ENOENT 幂等
+- **StorageProviderRouter 动态路由**(沿 Q-89-1):每次方法调用 `resolve()`;`STORAGE_PROVIDER` DI token = `useExisting StorageProviderRouter`;运维改 `storage_settings.providerType` ≤ 60s 内自动切换;无需重启
+- **`storage_settings` 表 + 配置读取层**(沿 §6.5 + Q24):一次设计 15 字段(首期闲置 2 字段;沿 §6.5.3);Service 60s 缓存 + 解密 + 三档状态合成
+- **AES-256-GCM 凭证加密**(沿 §6.6.1 + Q21):scrypt 派生 32 字节 key + 随机 12B IV + 16B authTag;复用 `STORAGE_ENCRYPTION_KEY` env(沿 v1 `JWT_SECRET` 范式);**明文永不入 DB / 日志 / audit / response**
+- **`accessUrl` 真实化**(沿 Q14 + PR #90):由恒返 null 改为 `provider.generateDownloadUrl()` 返签名 URL;Provider 不可用时降级 null + WARN 日志(沿 §6.6.3 信息泄漏防御)
+- **`POST /upload-url` + `POST /confirm-upload`**(沿 §8.3 + §8.4 + Q5/Q6/Q7):模式 B 签名直传;`uploadToken` HMAC-SHA256 紧凑格式(类 JWT 不引入 jsonwebtoken;沿 §8.3.4);Service 流程 6 步(验签 → headObject → size 一致 → PII 不重做 → 落库 + audit fail-fast → generateDownloadUrl 填 accessUrl)
+- **后台 Storage Settings CRUD + reset-credentials**(沿 §6.5 + §6.6 + Q-11):`@Roles(SUPER_ADMIN, ADMIN)` 入口;PATCH upsert(不存在创建 default;沿 Q-11-1);凭证只允许 reset 替换(沿 §6.6.2);`credentialStatus` 三态化(configured / missing / invalid;沿 §6.6.3);`StorageSettingsService.invalidate()` 缓存主动失效
+- **`Attachment.key @unique` P1 技术债修复**(PR #92;承接 PR #91 已知偏差):双层防御 = Service 层 `findFirst` 早返(串行场景省事务开销)+ DB UNIQUE 强制 + P2002 catch(并发 race 兜底)
+- **0 新依赖加密路径**:Node 原生 `crypto`(AES-256-GCM / HMAC-SHA256 / scrypt / randomBytes / timingSafeEqual);沿 V1.1 §17.3 严控
+- **v1 14 + V2 117 + RBAC 16 接口 zero drift**:Contract snapshot CI 守护
+
+**未做项 / 仍挂起项**(沿 v1.0 已锁挂起 + Q-11-3 / Q-11-6 / §6.6.5;**留 v1.1+ 或独立后续 PR**):
+
+- uploadToken 重放防御 / 黑名单(沿 §8.4.4;依赖 `attachment.key UNIQUE` + P2002,已由 PR #92 强化)
+- 失败回滚 Provider 文件(沿 §8.4.4;依赖 Provider lifecycle 30 天兜底)
+- multipart upload 支持(沿 Q13;单文件 ≤ 5GB 走 PUT signed URL)
+- STS 临时凭证(沿 Q19;不采用)
+- 跨 Provider 迁移路径(沿 Q15;COS 暂不迁移)
+- bootstrap fallback(env 兜底自动创建 row;沿 Q-11-3;留 v1.1+ 专项 PR)
+- test-connection API(沿 Q-11-6;留 COS 真实凭证联调专项)
+- Storage Settings 配置变更 audit_logs(沿 §6.6.5;留独立专项 PR)
+- **生产侧 COS bucket / IAM / CORS / lifecycle / versioning / SSE-COS 配置**(由队组织运维侧承载;系统侧不硬编码;沿 §6.4)
+- **生产凭证录入**(运维通过 `POST /storage-settings/reset-credentials` + `STORAGE_ENCRYPTION_KEY` env;沿 §6.6.2)
+- **版本号 bump / git tag / GitHub Release / v0.11.0 handoff**(留独立 PR #13 / #14 + 维护者手动;本 landing **不动** `package.json` / Swagger version)
+
 ### Docs
 
-- `docs(v2-design): start C-7.5 provider V2.x implementation track`(本 PR):C-7.5 Provider 选型 V2.x 立项准备;4 处文档修订(新增 [`docs/批次7_provider选型_V2x立项记录.md`](docs/批次7_provider选型_V2x立项记录.md) 9 章节 + [`TASKS.md §9`](TASKS.md) V2.x C-7.5 任务清单 + [`docs/V2红线与复活路径.md`](docs/V2红线与复活路径.md) §4.3 C-10 行 + 本 CHANGELOG `Unreleased` `### Docs`);**仅 docs**,不动代码 / schema / migration / 测试 / package.json / pnpm-lock.yaml / src/** / prisma/** / test/** / .github/** / [`docs/批次7_provider选型_API前评审.md`](docs/批次7_provider选型_API前评审.md)(C-7.5 v1.0 冻结文档)/ [`docs/批次7_attachments_API前评审.md`](docs/批次7_attachments_API前评审.md)(D7 v1.0 冻结文档)/ [`docs/批次7_attachments_V2x立项记录.md`](docs/批次7_attachments_V2x立项记录.md)(C-7 实施收口)/ [`docs/handoff/v0.10.0.md`](docs/handoff/v0.10.0.md)(历史 handoff)/ README.md / ARCHITECTURE.md / CLAUDE.md / AGENTS.md;**不 bump version / 不打 tag / 不发 Release / 不启动 C-7.5 实施 PR #5-11**(留独立 PR 由用户授权);**承接 C-7.5 v1.0 冻结**(PR #84 `f8b357d`;35 项决议:F 5 + B 5 + Q 25);**承接 D7-attachments Q14 / Q15 挂起项**;沿 C-7 attachments 立项 PR #69 范式 + D7-RBAC 立项 PR #52 范式
+- `docs(v2): record C-7.5 provider implementation landing`(本 PR):C-7.5 Provider 实施收口文档登记;4 处文档修订(本 CHANGELOG `Unreleased` `### Added` 段 + [`TASKS.md §9`](TASKS.md) C-7.5 任务清单 + [`docs/V2红线与复活路径.md`](docs/V2红线与复活路径.md) §4.3 C-10 行 + [`docs/批次7_provider选型_V2x立项记录.md`](docs/批次7_provider选型_V2x立项记录.md) §四 PR 拆分实际完成清单 + §六合并后下一步);**仅 docs**,不动代码 / schema / migration / 测试 / package.json / pnpm-lock.yaml / src/** / prisma/** / test/** / .github/** / [`docs/批次7_provider选型_API前评审.md`](docs/批次7_provider选型_API前评审.md)(v1.0 冻结稿;沿 §18.7)/ [`docs/handoff/v0.10.0.md`](docs/handoff/v0.10.0.md)(历史 handoff;沿 V2 红线 §5.1)/ README.md / ARCHITECTURE.md / CLAUDE.md / AGENTS.md;**不 bump version / 不打 tag / 不发 Release / 不启动 bump PR #13 / handoff PR #14**(留独立 PR);沿 C-7 attachments landing PR #79 范式
+- `feat(storage): add Storage Settings admin APIs and credential reset`(PR #93,squash commit `85cae45`):Storage Settings 后台管理 API 全部落地;3 端点(`GET /storage-settings` + `PATCH /storage-settings` upsert + `POST /storage-settings/reset-credentials`);3 DTO(`StorageSettingsResponseDto` / `UpdateStorageSettingsDto` / `ResetStorageCredentialsDto`);凭证 6 层防护(response / 日志 / DB 密文 / IV 随机 / forbidNonWhitelisted / 出参 DTO 字段集);credentialStatus 三态全覆盖;Q-11-1 到 Q-11-19 全部 19 项拍板落地;30 e2e + 0 新 BizCode / 0 audit / 0 prisma / 0 package(沿 §6.5 / §6.6 + Q-11)
+- `chore(prisma): add unique constraint for attachment key`(PR #92,squash commit `fc08d17`):P1 技术债修复(承接 PR #91 已知偏差);Attachment.key 加 @unique;1 migration(单条 CREATE UNIQUE INDEX;0 ALTER / 0 DROP);Service 注释更新("@unique + findFirst + P2002 双层兜底");dev DB 重复 key 自检 0 行;沿评审 §8.4.4 原始设计 + Q-UK-1 到 Q-UK-10 拍板
+- `feat(attachments): add upload-url and confirm-upload APIs`(PR #91,squash commit `527aa47`):attachments 模式 B 签名直传 API 落地;2 端点(`POST /upload-url` + `POST /confirm-upload`);3 DTO + uploadToken HMAC-SHA256 紧凑格式(0 jsonwebtoken 依赖;复用 STORAGE_ENCRYPTION_KEY);Service 流程 6 步(验签 → headObject → size 一致 → PII 不重做 → 落库 + audit fail-fast → generateDownloadUrl 填 accessUrl);28 e2e + 18 upload-token unit;0 新 BizCode(复用 13001/13010-13013/13015/30100;信息泄漏防御);audit extra 加 `uploadConfirmedAt + uploadVia:'direct'`(沿 B4);Q-10-1 到 Q-10-15 全部拍板落地
+- `feat(attachments): wire storage provider into attachment accessUrl and delete flow`(PR #90,squash commit `119778c`):attachments 接通 storage Provider;`accessUrl` 由恒返 null → `provider.generateDownloadUrl()` 真实 URL(失败降级 null + WARN);7 调用点全部 await `this.toResponseDto`;`delete` 末尾事务外 `tryDeleteFromProvider`(失败 warn 不回滚 DB / audit;沿 F4 + Q3 路线 C);contract snapshot 仅 `accessUrl.description` 1 行文案微调(字段类型不变;不算 schema drift);Q-90-1 到 Q-90-9 全部拍板落地
+- `feat(storage): add CosStorageProvider with dynamic router for C-7.5 v1.0`(PR #89,squash commit `f44310c`):CosStorageProvider 5 方法实装(`cos-nodejs-sdk-v5@^2.15.4`;每次方法调用 `requireCosContext()` 不缓存 SDK;4 档守护);StorageProviderRouter 动态路由(`STORAGE_PROVIDER` DI token = `useExisting StorageProviderRouter`;运维改 settings ≤ 60s 自动切换;0 重启);CosProviderUnavailableError 单独 export;jest.mock 整包 SDK(0 真实联网);32 unit + 1 新依赖;Q-89-1 到 Q-89-8 全部拍板落地
+- `feat(storage): add LocalStorageProvider for C-7.5 v1.0`(PR #88,squash commit `bceba0f`):LocalStorageProvider 5 方法实装(fs 读写 + 路径安全防御 / `../` 逃逸 throw / ENOENT 幂等 / generateUploadUrl 返 stub URL / generateDownloadUrl 返相对 URL);`storage.constants.ts` Symbol DI token;`storage.module.ts` providers 注册;`STORAGE_LOCAL_ROOT` env(default `./tmp/storage`);`.gitignore` 加 `tmp`;16 unit;Q-88-1 到 Q-88-7 全部拍板落地(0 Provider 实装外溢)
+- `chore(prisma): add storage_settings schema and config reader for C-7.5 v1.0`(PR #87,squash commit `45ae871`):storage_settings schema(15 字段一次设计完整;沿 Q24)+ 2 enum(`StorageProviderType` / `StorageMimePolicyMode`)+ 1 migration;StorageSettingsService(60s 缓存 + 解密 + 三态合成 + singleton 防御)+ StorageCryptoService(AES-256-GCM;Node 原生 crypto + scrypt;0 新依赖)+ StorageModule 装载;`STORAGE_ENCRYPTION_KEY` env 启动校验(production fail-fast);28 unit;`.env.example` 同步;sync `.env.test` STORAGE_ENCRYPTION_KEY 由后续 PR #91 补;Q-87-1 到 Q-87-6 全部拍板落地
+- `chore(storage): extend StorageProvider interface for C-7.5 v1.0`(PR #86,squash commit `fc8241d`):StorageProvider interface 扩展 +3 方法(`generateUploadUrl` / `generateDownloadUrl` / `headObject`;沿 F5 6 方法)+5 类型;0 实装 / 0 callsite / 0 module wiring(沿评审 §7.4 v1.0 锁;Q5a expiresIn=number 秒 / Q5b headers Record<string,string> 必填 / Q5c method 'PUT'|'POST' 联合保留默认 'PUT')
+- `docs(v2-design): start C-7.5 provider V2.x implementation track`(PR #85,squash commit `5e12511`):C-7.5 Provider 选型 V2.x 立项 PR;新建 [`docs/批次7_provider选型_V2x立项记录.md`](docs/批次7_provider选型_V2x立项记录.md) 9 章节(沿 D7-attachments 立项 PR #69 范式);TASKS §9 + V2 红线 §4.3 C-10 行 + 本 CHANGELOG Unreleased;**仅 docs**,不动代码;承接 v1.0 冻结(PR #84 `f8b357d`)+ D7-attachments Q14/Q15 挂起项
+- `docs(v2-design): freeze provider selection review v1.0`(PR #84,squash commit `f8b357d`):C-7.5 v1.0 冻结稿(35 项决议:F 5 + B 5 + Q 25;Q5/Q6/Q7 接口与 DTO 锁 + Q8 TTL 升级锁;**禁止扩 scope**;**目标 = v1.0 冻结后直接可进入立项 PR**)
+- `docs(v2-design): refine provider selection review decisions v0.2`(PR #83,squash commit `8d19a07`):C-7.5 v0.2 局部收口 + 架构修订(锁腾讯 COS Q1/Q4 + 14 项 Q;**新增 Q20-Q25 后台配置 + 凭证加密架构修订**;13 PR → 14 PR)
+- `docs(v2-design): add provider selection review draft v0.1`(PR #82,squash commit `6dbdbed`):C-7.5 Provider 选型评审 v0.1 草稿(5 项 F 锁 + 5 项 B 锁 + 15 项 Q 待评审;承接 D7-attachments Q14/Q15 挂起项 + D6 决议 5)
 
 ## v0.10.0 - 2026-05-15
 
