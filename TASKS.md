@@ -4,6 +4,8 @@
 > 与上述文档冲突时,**以 `ARCHITECTURE.md` §11 为准**。
 > 任务编号沿用仓库现有"阶段.子任务"风格(v1 收尾在 14.9,V1.1 从 15.1 起)。
 
+> **适用范围说明**(2026-05-16 Fast-1 段头补充):本文件 §0 / §1 / §2(15.1-15.9 任务卡)锁定的是 **V1.1 工程加固阶段**(v0.1.5 → v0.1.6),该阶段已收口。**当前 V2.x 段已通过独立评审 + 立项 PR 解锁部分项**:`audit_logs`(批次 6,v0.7.0)/ RBAC(批次 8 C-6,v0.9.0)/ `attachments` 元数据(批次 7 C-7,v0.10.0)/ 文件上传 Provider 实装(批次 7.5 C-7.5,v0.11.0)。本节(§0-§2)作为 V1.1 历史快照保留,**不删原文**(沿 [`docs/V2红线与复活路径.md`](docs/V2红线与复活路径.md) §5.4 最小修订原则)。当前红线以 `docs/V2红线与复活路径.md` §4 为权威源;V2.x 进度见 §8(C-7)+ §9(C-7.5);v0.11.0 阶段交接见 [`docs/handoff/v0.11.0.md`](docs/handoff/v0.11.0.md)。
+
 ---
 
 ## 0. V1.1 范围速读
@@ -1552,7 +1554,7 @@ PR #11 release tag v0.9.0 后,**才**启动 C-7 attachments D7 评审稿(沿 PR 
 **仍挂起项**:
 
 - 🔄 **Q12 ADMIN 内置角色 / ADMIN 自动持 .other 全集**:沿用挂起;实施期默认按方案 B(沿 v0.9.0 现状;ADMIN 默认无 RBAC 业务角色;需 ops-admin 显式分配);留独立"RBAC 内置角色 / ADMIN 默认附件权限"专项评审 PR
-- ⏸ **Q14 / Q15 Provider 选型**:签名 URL / STS / 中转代理 / 删除失败处理 / 生命周期由 Provider 选型独立评审决定;`accessUrl` 占位字段恒返 null
+- ✅ **Q14 / Q15 Provider 选型**:已由 C-7.5 PR #82-#93 实装;签名 URL / STS / 中转代理 / 删除策略 / 生命周期全部决议落地;`accessUrl` 已真实化(沿 PR #90;Provider 不可用降级 null + WARN);详见 §9
 - 📋 **Q16 PR 拆分**:实施期实际为 9 PR(原建议 9-11)
 - ⏳ **B8 同意书正式条款文本**:v1.1 由业务方提供;**不写入本系统仓库**(保存在队组织自有合规文档系统;系统侧仅链接 URL)
 - ⏳ **Q8 退队清理 N 具体值**:v1.1 由业务方提供;`Member.status=DISABLED ≥ N` + 后台提示语义已锁,N 不在 schema 硬编码
@@ -1584,7 +1586,7 @@ PR #11 release tag v0.9.0 后,**才**启动 C-7 attachments D7 评审稿(沿 PR 
 - ❌ 版本号 bump(`package.json#version` 仍 `0.9.0` / Swagger 仍 `0.9.0`;SemVer 由维护者评估:`0.9.0 → 0.9.1` patch 或 `0.9.0 → 0.10.0` minor)
 - ❌ 打 git tag / 发 GitHub Release
 - ❌ 新版本 handoff
-- ❌ Provider 实装(沿 F2 + Q14 / Q15;待 Provider 选型独立评审)
+- ✅ Provider 实装已完成(C-7.5 PR #86-#93;LocalProvider + CosProvider + 动态 Router + AES-256-GCM 凭证加密 + signed URL 直传 + 后台 Storage Settings 管理;详见 §9 + [`docs/handoff/v0.11.0.md §4`](docs/handoff/v0.11.0.md))
 - ❌ ADMIN 内置角色实装(沿 Q12 沿用挂起)
 - ❌ B8 / Q8 v1.1 由业务方提供后再触发独立 PR
 - ❌ 跨表引用约束(13030 `ATTACHMENT_TYPE_IN_USE` 等;Q2 / Q6 / Q7 v1.0:本 C-7 不查跨表)
