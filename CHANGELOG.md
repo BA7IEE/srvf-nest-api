@@ -4,7 +4,15 @@
 
 ## Unreleased
 
-(无;待下一波 V2 / V2.x 增量或文档变更登记)
+### Added
+
+- `feat(attachments): enforce IN_USE constraint on config soft-delete (Slow-6)`(#99,squash commit `7acb2cf`):
+  - 为附件类型配置、MIME 配置、尺寸限制配置的 soft-delete / 停用路径补齐跨表引用保护;沿评审稿 §8.1 段位预留 + Step 1 调研报告 + 用户 Q-cross / Q-cross-impl 全 A 拍板。
+  - 新增 3 个 BizCode(全部 HTTP 409):`ATTACHMENT_TYPE_IN_USE`(13030)/ `ATTACHMENT_MIME_CONFIG_IN_USE`(13031)/ `ATTACHMENT_SIZE_LIMIT_CONFIG_IN_USE`(13032)。
+  - 3 个 service 各加 1 个 `private async assertXxxNotInUse()`;5 个调用点(type / mime 各 softDelete + updateStatus → INACTIVE 双路径对称 + size softDelete);refCount > 0 即拒绝;不在 message / extra 暴露引用数(沿 v1 §10 信息泄漏防御)。
+  - 5 个端点受影响(0 path / 0 DTO / 0 主响应字段 drift);仅 `@ApiBizErrorResponse` 追加对应 BizCode + `@ApiOperation.summary` 加 IN_USE 提示;contract snapshot 仅 errorCode enum + summary 文案增量。
+  - 8 e2e 用例覆盖(test/e2e/attachment-configs.in-use.e2e-spec.ts);全套 e2e 50 suites / 1229 tests 通过。
+  - **不改 API path / DTO / Prisma schema / migration / 主模块 7 端点行为**;不实装 `ATTACHMENT_SYSTEM_MIME_BLOCKED`(留独立 PR);不引入 FK(沿 D6 Q3 A 多态外键决议)。
 
 ## v0.11.0 - 2026-05-16
 
