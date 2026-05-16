@@ -4,6 +4,14 @@
 
 ## Unreleased
 
+(无;待下一波 V2 / V2.x 增量或文档变更登记)
+
+## v0.12.0 - 2026-05-16
+
+V2 第一阶段在 v0.11.0(批次 7.5 C-7.5 Provider 全栈实施)基础之上,完成 **C-7.5 治理收口 + production storage_settings fail-fast + smoke env**(6 个 PR 累计:#97 ops SOP + #98 Fast-1 措辞清理 + #99 Slow-6 IN_USE 跨表引用约束 + #100 Slow-6 CHANGELOG 登记 + #101 L-1 system MIME blocked 拆码 + #102 production storage_settings fail-fast + APP_ENV=smoke for docker-smoke)。**新增 4 个 BizCode**(13030 / 13031 / 13032 / 13033)+ **AppEnv 新增 'smoke'** + **`isProductionLike` helper** + **6 处 production-like 守护改造**;**v1 14 + V2 117 + RBAC 16 + attachments 主 7 + 配置三表 15 + storage 5 既有接口路径 / 入参 / 主响应字段严格 zero drift**(contract snapshot CI 守护;7 端点 errorCode enum 增量;`@ApiOperation.summary` 文案微调,**不算 schema drift**);**累计 152 接口**(沿 v0.11.0);**累计 Prisma 表 24 张**(沿 v0.11.0);**0 schema / 0 migration / 0 新依赖 / 0 新 Permission seed / 0 新 AuditLogEvent**。
+
+**SemVer 拍板**:0.11.0 → 0.12.0 **minor**(向后兼容的能力扩展:新增 4 个 BizCode + 3 端点 errorCode enum 增量(IN_USE)+ 2 端点 errorCode enum 增量(SYSTEM_MIME_BLOCKED)+ AppEnv 扩展 'smoke' + production 启动守护;**0 schema / 0 migration / 0 新依赖**;v1 14 + V2 117 + RBAC 16 既有接口零字段 / 路径 / 主响应字段改动;**无 breaking change**:`ATTACHMENT_MIME_NOT_ALLOWED`(13012)的系统级 MIME 黑名单子集被拆分到 13033,但同一拒绝场景从客户端"显示提示"层面看是更精准的语义,**不构成 breaking**;沿 v0.6.0 → v0.7.0 → v0.8.0 → v0.9.0 → v0.10.0 → v0.11.0 minor 风格)。
+
 ### Added
 
 - `feat(attachments): enforce IN_USE constraint on config soft-delete (Slow-6)`(#99,squash commit `7acb2cf`):
@@ -13,6 +21,31 @@
   - 5 个端点受影响(0 path / 0 DTO / 0 主响应字段 drift);仅 `@ApiBizErrorResponse` 追加对应 BizCode + `@ApiOperation.summary` 加 IN_USE 提示;contract snapshot 仅 errorCode enum + summary 文案增量。
   - 8 e2e 用例覆盖(test/e2e/attachment-configs.in-use.e2e-spec.ts);全套 e2e 50 suites / 1229 tests 通过。
   - **不改 API path / DTO / Prisma schema / migration / 主模块 7 端点行为**;不实装 `ATTACHMENT_SYSTEM_MIME_BLOCKED`(留独立 PR);不引入 FK(沿 D6 Q3 A 多态外键决议)。
+
+- `feat(attachments): split system MIME blocklist error code`(#101,squash commit `200fd1e`):
+  - V2.x L-1:把系统级 MIME 黑名单(`SYSTEM_MIME_BLOCKLIST`)从复用 `13012 ATTACHMENT_MIME_NOT_ALLOWED` 拆出独立 BizCode `13033 ATTACHMENT_SYSTEM_MIME_BLOCKED`(400);沿评审稿 §6.6 + §8.1 + Q3 v1.0 + Q-mb 全 A 拍板。
+  - 段位说明:评审稿 §8.1 原本规划 `13031`,因 V2.x Slow-6 PR #99 已占用 `13031` 给 `ATTACHMENT_MIME_CONFIG_IN_USE`,故顺延至 `13033`(连续 13030/31/32 跨表 IN_USE 之后)。
+  - 实施范围(方案 A):仅 attachments 上传校验链(`create` + `upload-url`)的 `isMimeBlocked` 命中点单独抛 13033;**`assertMimeAllowed` 保留"白名单未命中"路径继续抛 13012**(语义保留)。**配置三表 `attachment_mime_configs` CRUD 行为不变**(沿 §6.6 + Q3 v1.0 fail-close 原设计)。
+  - 2 端点受影响(`POST /api/v2/attachments` + `POST /api/v2/attachments/upload-url`;0 path / 0 DTO / 0 主响应字段 drift);仅 `@ApiBizErrorResponse` 追加 + `@ApiOperation.summary` 微调。
+  - 4 处 e2e 断言更新(`application/zip` / `video/mp4` 等系统级黑名单 13012 → 13033;`image/svg+xml` / `image/gif` 等"白名单未命中"场景**保留 13012**)。
+  - **不改 prisma / migration / package / lockfile / docs 主线**;**不实装** `ATTACHMENT_SYSTEM_MIME_BLOCKED` 在配置三表层(沿方案 A 不破坏 §6.6 fail-close 哲学)。
+
+- `feat(storage): production storage_settings fail-fast + APP_ENV=smoke for docker-smoke`(#102,squash commit `3a25a2c`):
+  - V2.x production fail-fast:production 启动期**强制校验** `storage_settings` 必须真实初始化为可用 COS;**拒绝 LOCAL** / **拒绝缺凭证** / **拒绝缺 bucket/region** / **拒绝 disabled**。沿 Step 1 调研报告修正版 + 用户拍板修正版 1-9 项。
+  - **AppEnv 扩展 `'smoke'`**(`src/config/app.config.ts` `VALID_APP_ENVS`):CI Docker smoke job 专用 AppEnv;**不得用于真实部署**。
+  - **新增 `isProductionLike(env)` helper**:smoke + production 联合判断;**6 处守护改造**(`LOG_LEVEL` 默认 / `STORAGE_ENCRYPTION_KEY` 必填 / CORS 严格 / `swaggerEnabled` 默认禁 / `AllExceptionsFilter` 隐藏 message / logger `isProd` JSON 输出)→ smoke 行为完全沿 production。
+  - **`StorageSettingsService.onApplicationBootstrap` 严格 5 项校验**(`env === 'production'` 严格守卫;smoke 跳过):settings 存在 + enabled=true + providerType=COS + bucket/region 非空 + credentialStatus=CONFIGURED;任一失败 throw Error → Pod CrashLoop;错误消息含 `docs/ops/cos-production-rollout-checklist.md §7 / §8` 修复指引;**永不**包含凭证 secret 明文 / 密文。
+  - `docker-smoke.yml` `APP_ENV=production → smoke` + 详细注释。
+  - Unit 新增 11 用例覆盖(env=dev/test/smoke 跳过 + env=production 5 校验逐一 + 成功路径);**0 e2e 新增**(沿"production env e2e 成本高 + 扰动既有 fixture"原则)。
+  - **不改 schema / migration / Router / Provider / attachments / audit-logs / permissions / BizCode**;**不引入** 凭证 env / bootstrap env / LOCAL seed row。
+
+### Docs
+
+- `docs(ops): add COS production rollout checklist`(#97,squash commit `b87a4fb`):新建 `docs/ops/cos-production-rollout-checklist.md`(13 章节,766 行)— 运维 SOP 文档,用于 v0.11.0 C-7.5 Provider 全栈实施收口后,**队组织运维侧 + 维护者**协作将腾讯云 COS 接入生产链路。覆盖:bucket 创建 / IAM 最小 Policy 模板(CAM 控制台校验)/ CORS / lifecycle + versioning + SSE-COS / `STORAGE_ENCRYPTION_KEY` 生成与注入(K8s/Docker/Systemd 三种)/ Storage Settings 后台初始化 / reset-credentials 凭证录入(防 history 留痕)/ upload-url → PUT → confirm-upload → accessUrl 下载 → DELETE 5 步闭环验收 / 5 种回滚场景 / 15 条集中安全禁止项。新建子目录 `docs/ops/`;0 凭证 / bucket / APPID / 域名实值。
+
+- `docs: clean up stale wording for v0.11.0(Fast-1)`(#98,squash commit `3775ade`):清理 v0.11.0 发布后散落在主线文档的过期措辞;沿 V2 红线 §5.4 最小修订原则(不删原文 / 不重写整段 / 段头补范围)。7 处变更(4 文件,+9/-5 行):TASKS.md §8.2 Q14/Q15 状态更新 + TASKS.md §8.5 Provider 实装状态更新 + V2 红线 C-7 行 `accessUrl 占位` → `accessUrl 已真实化` + README.md "v0.7.0 后状态" → "v0.11.0 后状态" + 3 处段头适用范围注脚(TASKS §0 / ARCHITECTURE §11.3 / §12.4)。
+
+- `docs(changelog): record Slow-6 IN_USE constraint in Unreleased`(#100,squash commit `e81458f`):补记 PR #99 Slow-6 IN_USE 跨表引用约束到 `CHANGELOG.md` 的 `## Unreleased` 段(作为下一版本候选内容);**不回改 `## v0.11.0 - 2026-05-16` 段**(沿 release notes 不回改原则)。
 
 ## v0.11.0 - 2026-05-16
 
