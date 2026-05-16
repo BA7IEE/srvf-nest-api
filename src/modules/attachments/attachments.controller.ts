@@ -63,7 +63,7 @@ export class AttachmentsController {
   @Post()
   @ApiOperation({
     summary:
-      '创建附件元数据(校验:ownerType 13010 / ownerId 13011 / RBAC 30100 / mime 13012 / size 13013 / PII 13015;Q14 v1.0:Provider 接通前不接受文件流)',
+      '创建附件元数据(校验:ownerType 13010 / ownerId 13011 / RBAC 30100 / 系统级 MIME 黑名单 13033 / mime 白名单未命中 13012 / size 13013 / PII 13015;V2.x L-1:系统级黑名单与白名单未命中拆码)',
   })
   @ApiWrappedOkResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(
@@ -72,6 +72,7 @@ export class AttachmentsController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.ATTACHMENT_OWNER_TYPE_INVALID,
     BizCode.ATTACHMENT_OWNER_NOT_FOUND,
+    BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED,
     BizCode.ATTACHMENT_MIME_NOT_ALLOWED,
     BizCode.ATTACHMENT_SIZE_EXCEEDED,
     BizCode.ATTACHMENT_PII_DETECTED,
@@ -103,7 +104,7 @@ export class AttachmentsController {
   @Post('upload-url')
   @ApiOperation({
     summary:
-      '申请 signed upload URL(模式 B;校验 ownerType/ownerId/mime/size/PII/RBAC;返 uploadUrl + uploadToken;不落库;不审计;沿 §8.3 v1.0)',
+      '申请 signed upload URL(模式 B;校验 ownerType/ownerId/mime/size/PII/RBAC;系统级 MIME 黑名单 → 13033 / 白名单未命中 → 13012;返 uploadUrl + uploadToken;不落库;不审计;沿 §8.3 v1.0 + V2.x L-1)',
   })
   @ApiWrappedOkResponse(UploadUrlResponseDto)
   @ApiBizErrorResponse(
@@ -112,6 +113,7 @@ export class AttachmentsController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.ATTACHMENT_OWNER_TYPE_INVALID,
     BizCode.ATTACHMENT_OWNER_NOT_FOUND,
+    BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED,
     BizCode.ATTACHMENT_MIME_NOT_ALLOWED,
     BizCode.ATTACHMENT_SIZE_EXCEEDED,
     BizCode.ATTACHMENT_PII_DETECTED,

@@ -317,12 +317,12 @@ describe('attachments upload-url + confirm-upload', () => {
       expectBizError(res, BizCode.ATTACHMENT_OWNER_NOT_FOUND);
     });
 
-    it('9. mime 系统级黑名单(application/zip)→ 13012', async () => {
+    it('9. mime 系统级黑名单(application/zip)→ 13033', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/attachments/upload-url')
         .set('Authorization', superAuth)
         .send(buildUploadUrlBody({ mime: 'application/zip' }));
-      expectBizError(res, BizCode.ATTACHMENT_MIME_NOT_ALLOWED);
+      expectBizError(res, BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED);
     });
 
     it('10. mime 不在白名单(image/svg+xml 不在 member typeConfig)→ 13012', async () => {

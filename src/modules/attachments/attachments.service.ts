@@ -235,14 +235,17 @@ export class AttachmentsService {
   }
 
   // 4. mime 白名单校验(D7 §6.2 step 6):
-  //    - 先检系统级黑名单(沿 §6.6;命中即 fail-close,**任何配置都不能放行**;失败抛 13012)
+  //    - 先检系统级黑名单(沿 §6.6;命中即 fail-close,**任何配置都不能放行**;失败抛 13033;沿 V2.x L-1)
   //    - 查 attachment_mime_configs(typeConfigId × mime 复合;ACTIVE + 未软删);若有 → 通过
   //    - 否则走 typeConfig.defaultMimeWhitelist 兜底
   //    - 全部未命中 → 抛 13012 ATTACHMENT_MIME_NOT_ALLOWED
+  // V2.x L-1(2026-05-16):系统级黑名单与白名单未命中拆码,前端 / 运营可精确区分两种拒绝。
   private async assertMimeAllowed(ownerType: string, mime: string): Promise<void> {
     if (isMimeBlocked(mime)) {
-      // 沿 D7 §6.6 + Q3 v1.0:系统级黑名单永久禁;Service 层显式兜底
-      throw new BizException(BizCode.ATTACHMENT_MIME_NOT_ALLOWED);
+      // 沿 D7 §6.6 + Q3 v1.0:系统级黑名单永久禁;Service 层显式兜底。
+      // V2.x L-1:从复用 13012 拆为 13033 ATTACHMENT_SYSTEM_MIME_BLOCKED(沿 L-1 方案 A;
+      // 评审稿 §8.1 原设计 13031,因 PR #99 占用顺延至 13033)。
+      throw new BizException(BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED);
     }
 
     const typeConfig = await this.prisma.attachmentTypeConfig.findFirst({
