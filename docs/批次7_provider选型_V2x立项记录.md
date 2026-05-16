@@ -1,16 +1,28 @@
 # 《C-7.5 Provider 选型 V2.x 立项记录(批次 7.5)》
 
-> **状态(2026-05-16 立项)**:🎯 **C-7.5 Provider 选型 v1.0 已冻结**(PR #84 `f8b357d`),V2.x implementation track 启动。立项 PR 合并即**解除 V2 §18 调研期硬禁止**(针对 Provider 实装范围);**实施 PR #5 仍需单独启动 + 用户授权**(沿 CLAUDE.md §0)。
+> **状态(2026-05-16 实施收口)**:✅ **C-7.5 Provider 实施已完成,待 v0.11.0 版本收口**。8 个实施 PR 全部 squash merge(#86-#93,含 P1 技术债 PR #92);腾讯云 COS Provider + LocalProvider + 动态路由 + AES-256-GCM 凭证加密 + signed URL 直传 + 后台凭证管理全部就位;`accessUrl` 已真实化;upload-url + confirm-upload + storage-settings 5 端点全部落地;**版本号 bump / git tag / GitHub Release / handoff 留独立 PR + 维护者手动**。
+>
+> **历史状态(2026-05-16 立项)**:🎯 C-7.5 Provider 选型 v1.0 已冻结(PR #84 `f8b357d`),V2.x implementation track 启动。立项 PR #85 合并即解除 V2 §18 调研期硬禁止(针对 Provider 实装范围)。
 >
 > **批次号**:C-7.5 Provider 选型(批次 7.5;接续 C-7 attachments 的 Q14 / Q15 挂起项)
-> **撰写日期**:2026-05-16(立项 PR)
+> **撰写日期**:2026-05-16(立项 PR #85;实施收口 landing PR 本 PR)
 > **接续(设计阶段)**:
 > - PR #82 C-7.5 v0.1 草稿(squash commit `6dbdbed`,2026-05-15;5 项 F + 5 项 B 锁 + 15 项 Q 待评审)
 > - PR #83 C-7.5 v0.2 局部收口 + 架构修订(squash commit `8d19a07`,2026-05-15;锁腾讯 COS + 14 项 Q;新增 Q20-Q25 架构修订;13 PR → 14 PR)
-> - **PR #84 C-7.5 v1.0 冻结**(squash commit `f8b357d`,2026-05-16;**35 项决议全部就位**:F 5 + B 5 + Q 25;Q5 / Q6 / Q7 接口与 DTO 锁 + Q8 TTL 升级锁)
-> - **PR #85 V2.x 立项 PR**(本文件初始版本)
+> - PR #84 C-7.5 v1.0 冻结(squash commit `f8b357d`,2026-05-16;**35 项决议全部就位**:F 5 + B 5 + Q 25;Q5 / Q6 / Q7 接口与 DTO 锁 + Q8 TTL 升级锁)
+> - PR #85 V2.x 立项 PR(squash commit `5e12511`,2026-05-16;本文件初始版本)
 >
-> **本立项 PR 边界**:仅文档 4 处(本立项记录 + TASKS.md §9 + V2 红线 §4.3 C-10 行 + CHANGELOG Unreleased)。**不动代码 / schema / migration / 依赖 / 版本号 / git tag / Release**。
+> **接续(实施阶段;8 PR 累计;2026-05-15 ~ 2026-05-16 集中落地)**:
+> - PR #86 实施 #5:`chore(storage): extend StorageProvider interface for C-7.5 v1.0`(squash commit `fc8241d`;F5 落地 +3 方法 +5 类型;0 实装)
+> - PR #87 实施 #6:`chore(prisma): add storage_settings schema and config reader for C-7.5 v1.0`(squash commit `45ae871`;15 字段 + 2 enum + 1 migration + StorageSettingsService + StorageCryptoService AES-256-GCM)
+> - PR #88 实施 #7:`feat(storage): add LocalStorageProvider for C-7.5 v1.0`(squash commit `bceba0f`;5 方法 + 16 unit + Symbol DI token)
+> - PR #89 实施 #8:`feat(storage): add CosStorageProvider with dynamic router for C-7.5 v1.0`(squash commit `f44310c`;5 方法 + Router 动态路由 + 32 unit + 引入 `cos-nodejs-sdk-v5@^2.15.4`)
+> - PR #90 实施 #9:`feat(attachments): wire storage provider into attachment accessUrl and delete flow`(squash commit `119778c`;7 调用点 await + delete 事务外 tryDeleteFromProvider + accessUrl description 微调)
+> - PR #91 实施 #10:`feat(attachments): add upload-url and confirm-upload APIs`(squash commit `527aa47`;2 端点 + 3 DTO + uploadToken HMAC-SHA256 + 28 e2e + 18 upload-token unit)
+> - PR #92 P1 技术债:`chore(prisma): add unique constraint for attachment key`(squash commit `fc08d17`;承接 PR #91 已知偏差;1 migration;并发 replay 防御)
+> - PR #93 实施 #11:`feat(storage): add Storage Settings admin APIs and credential reset`(squash commit `85cae45`;3 端点 + 3 DTO + 30 e2e;0 BizCode / 0 audit;Q-11-1 到 Q-11-19 全落地)
+>
+> **本 landing PR 边界**:仅文档 4 处(本立项记录 §状态头 + §四 PR 拆分实际完成清单 + §六合并后下一步状态更新 + TASKS.md §9 + V2 红线 §4.3 C-10 行 + CHANGELOG `Unreleased` `### Added` + `### Docs`)。**不动代码 / schema / migration / 依赖 / 版本号 / git tag / Release**。
 
 ---
 
@@ -202,47 +214,46 @@ C-7.5 Provider 选型的设计阶段已**全部完成**(沿 PR #82 → #83 → #
 
 ---
 
-## 四、实施 PR 拆分建议(沿 §16.1 14 PR 节奏)
+## 四、实施 PR 拆分(实际完成清单)
 
-> **📋 Q25 v1.0 锁:实施分批;Q16 v1.0 沿用建议不冻结**(实施期允许微调);累计 14 PR(4 设计 + 7 实施 + 1 landing + 1 bump + 1 handoff + 1 维护者 tag/release)。
+> **📋 Q25 v1.0 锁:实施分批;Q16 v1.0 沿用建议不冻结**(实施期允许微调)→ **实际累计 13 PR**(4 设计 + 7 实施 + 1 P1 技术债 + 1 landing 本 PR;bump / handoff / tag-release 留维护者)。
 
 | PR # | GitHub PR | squash commit | 类型 | 主题 | 状态 |
 |---|---|---|---|---|---|
 | 设计 1 | #82 | `6dbdbed` | `docs(v2-design)` | add provider selection review draft v0.1 | ✅ |
 | 设计 2 | #83 | `8d19a07` | `docs(v2-design)` | refine provider selection review decisions v0.2(含架构修订) | ✅ |
 | 设计 3 | #84 | `f8b357d` | `docs(v2-design)` | freeze provider selection review v1.0(35 项决议全部就位) | ✅ |
-| **设计 4(本 PR)** | #85 | TBD | `docs(v2-design)` | start C-7.5 provider V2.x implementation track | 🔄 进行中 |
-| **实施 5** | TBD | TBD | `chore` | extend StorageProvider interface(+ 3 method + types) | ⏳ |
-| **实施 6** | TBD | TBD | `chore(prisma)` | add `storage_settings` schema + DTO + 配置读取层(不接 COS SDK) | ⏳ |
-| 实施 7 | TBD | TBD | `feat(storage)` | LocalStorageProvider 实装(dev / test;读 `storage_settings`) | ⏳ |
-| 实施 8 | TBD | TBD | `feat(storage)` | COS Provider 实装(读 `storage_settings` 不依赖 env)| ⏳ |
-| 实施 9 | TBD | TBD | `feat(attachments)` | wire attachments.service(`accessUrl` 真实化 + delete 同步 Provider 删) | ⏳ |
-| 实施 10 | TBD | TBD | `feat(attachments)` | add upload-url + confirm-upload API(模式 B)| ⏳ |
-| 实施 11 | TBD | TBD | `feat(storage)` | 后台 Storage Settings CRUD + credential reset(沿 Q20-Q22) | ⏳ |
-| landing 12 | TBD | TBD | `docs(v2)` | record provider selection + implementation landing | ⏳ |
-| bump 13 | TBD | TBD | `chore` | bump version to v0.11.0(SemVer minor)| ⏳ |
-| handoff 14 | TBD | TBD | `docs(v2)` | add v0.11.0 handoff | ⏳ |
-| tag/release | 维护者手动 | — | — | git tag + GitHub Release(沿 v0.9.0 / v0.10.0 范式) | ⏳ |
+| 设计 4 | #85 | `5e12511` | `docs(v2-design)` | start C-7.5 provider V2.x implementation track | ✅(2026-05-16)|
+| **实施 5** | #86 | `fc8241d` | `chore(storage)` | extend StorageProvider interface for C-7.5 v1.0(+3 方法 +5 类型;0 实装) | ✅(2026-05-15)|
+| **实施 6** | #87 | `45ae871` | `chore(prisma)` | add storage_settings schema and config reader for C-7.5 v1.0(15 字段 + 2 enum + 1 migration + StorageSettingsService + StorageCryptoService AES-256-GCM)| ✅(2026-05-15)|
+| 实施 7 | #88 | `bceba0f` | `feat(storage)` | add LocalStorageProvider for C-7.5 v1.0(5 方法 + 16 unit + Symbol DI token)| ✅(2026-05-15)|
+| 实施 8 | #89 | `f44310c` | `feat(storage)` | add CosStorageProvider with dynamic router for C-7.5 v1.0(5 方法 + Router + 32 unit + 引入 `cos-nodejs-sdk-v5@^2.15.4`)| ✅(2026-05-15)|
+| 实施 9 | #90 | `119778c` | `feat(attachments)` | wire storage provider into attachment accessUrl and delete flow(7 调用点 + delete 事务外 + accessUrl description 微调)| ✅(2026-05-15)|
+| 实施 10 | #91 | `527aa47` | `feat(attachments)` | add upload-url and confirm-upload APIs(2 端点 + 3 DTO + uploadToken HMAC-SHA256 + 28 e2e + 18 upload-token unit)| ✅(2026-05-15)|
+| **P1 技术债**(实施段额外)| #92 | `fc08d17` | `chore(prisma)` | add unique constraint for attachment key(承接 PR #91 已知偏差;1 migration;并发 replay 防御)| ✅(2026-05-15)|
+| 实施 11 | #93 | `85cae45` | `feat(storage)` | add Storage Settings admin APIs and credential reset(3 端点 + 3 DTO + 30 e2e;0 BizCode / 0 audit;Q-11-1 到 Q-11-19 全落地)| ✅(2026-05-16)|
+| **landing 12(本 PR)**| TBD | TBD | `docs(v2)` | record C-7.5 provider implementation landing | 🔄 进行中 |
+| bump 13 | TBD | TBD | `chore` | bump version to v0.11.0(SemVer minor)| ⏳ 留独立后续 PR |
+| handoff 14 | TBD | TBD | `docs(v2)` | add v0.11.0 handoff | ⏳ 留独立后续 PR |
+| tag/release | 维护者手动 | — | — | git tag + GitHub Release(沿 v0.9.0 / v0.10.0 范式)| ⏳ 维护者拍板 |
 
-**实施 PR 间依赖**(沿 §16.3):
+**实际实施周期**:**约 1 天**(2026-05-15 ~ 2026-05-16;7 实施 PR 集中落地,沿 D7-attachments v0.10.0 段同天落地 9 PR 节奏)。
 
-```
-PR 5(interface 扩展) ← 不依赖
-PR 6(storage_settings schema + 配置读取层) ← 依赖 PR 5(用 interface 类型)
-PR 7(LocalProvider) ← 依赖 PR 5 + 6
-PR 8(COS Provider 读 storage_settings) ← 依赖 PR 5 + 6(可与 PR 7 并行)
-PR 9(接通 attachments.service) ← 依赖 PR 5 + 6 + 7
-PR 10(新 API upload-url + confirm-upload) ← 依赖 PR 5 + 6 + 7 + 9
-PR 11(后台 CRUD + credential reset) ← 依赖 PR 6(可与 PR 8-10 并行)
-PR 12(landing) ← 依赖全部
-PR 13(bump) ← 依赖 12
-PR 14(handoff) ← 依赖 13
-```
+**实际偏离原 14 PR 计划**:
 
-**预期新增依赖**:**2 个**(沿 v1 §1 + V1.1 §17 严控)
+- **新增 P1 技术债 PR #92**(`attachment.key @unique`;承接 PR #91 已知并发 replay 偏差;评审 §8.4.4 "依赖 attachment.key UNIQUE + P2002 兜底" 实施时发现 schema 缺 @unique 约束;补 1 migration + 修复双层防御)
+- 实施 5-11 全部落地;**0 项 PR 缺失 / 顺延**
+- 沿 §16.3 依赖序无偏离
 
-- `cos-nodejs-sdk-v5`(腾讯云 COS SDK;实施 PR 8 引入)
-- 加密候选:`crypto` Node 原生 module(0 新依赖;AES-256-GCM)或 `node-forge`(实施 PR 6 决议;**优先 Node 原生**)
+**实际新增依赖**:**1 个**(预期 2 个;实际 1 个)
+
+- `cos-nodejs-sdk-v5@^2.15.4`(腾讯云 COS SDK;实施 PR #89 引入)
+- 加密辅助:**0 新依赖**(全部沿 Node 原生 `crypto`:AES-256-GCM / HMAC-SHA256 / scrypt / randomBytes / timingSafeEqual / `cos-nodejs-sdk-v5` 是唯一新增;沿评审 §四 立项记录"优先 Node 原生 crypto")
+
+**实际新增 env 变量**:**2 个**
+
+- `STORAGE_ENCRYPTION_KEY`(production 必填;dev/test 留空允许 → StorageCryptoService isAvailable=false;沿 v1 §14 JWT_SECRET 范式;PR #87 引入)
+- `STORAGE_LOCAL_ROOT`(LocalProvider 根目录;default `./tmp/storage`;PR #88 引入)
 
 ---
 
@@ -274,48 +285,64 @@ PR 14(handoff) ← 依赖 13
 
 ---
 
-## 六、合并后的下一步(立项后状态)
+## 六、合并后的下一步(landing 后状态)
 
-### 6.1 实施 PR 5(extend StorageProvider interface)启动条件
+### 6.1 C-7.5 implementation landing 已完成 ✅
 
-- ✅ 本立项 PR 合并 → 解除 V2 §18 调研期硬禁止(针对 Provider 实装范围)
-- ✅ C-7.5 v1.0 决议表 35 项就位(F 5 + B 5 + Q 25)
-- ⏳ 用户明确授权启动
-- ⏳ AI 先展示 `src/common/storage/storage.interface.ts` + `storage.types.ts` 扩展 diff(沿 Q5a / Q5b / Q5c)
-- ⏳ 用户确认接口签名后才进入实施
+| 阶段 | 状态 | 备注 |
+|---|---|---|
+| C-7.5 v1.0 冻结(PR #84 `f8b357d`)| ✅ 已合 | 2026-05-16 |
+| V2.x 立项(PR #85 `5e12511`)| ✅ 已合 | 2026-05-16 |
+| 实施 PR #86-#93(8 PR;含 P1 技术债 #92)| ✅ 全部已合 | 2026-05-15 ~ 2026-05-16 集中落地 |
+| Landing PR(本 PR `docs(v2): record C-7.5 provider implementation landing`)| 🔄 进行中 | 4 处 docs 修订(本立项记录 + V2 红线 + TASKS + CHANGELOG)|
 
-### 6.2 实施 PR 6(storage_settings schema)启动条件
+### 6.2 后续 PR(留独立 PR;不在本 landing PR 范围)
 
-- ✅ 实施 PR 5 已合
-- ⏳ 用户明确授权启动
-- ⏳ AI 先展示 `prisma/schema.prisma` + migration SQL diff(`storage_settings` 表 15 字段 + 加密候选)
-- ⏳ AI 先展示 `STORAGE_ENCRYPTION_KEY` env 装载逻辑 + 启动校验(沿 v1 §14 / CLAUDE.md §0)
-- ⏳ 用户确认"破坏性变更已经过评审"后才执行 `prisma migrate dev`(沿 CLAUDE.md §0 铁律)
+| PR | 性质 | 用途 | 时机 |
+|---|---|---|---|
+| **bump PR #13** | `chore` | bump `package.json#version` + Swagger `setVersion(...)`;**SemVer 推荐 minor**:`0.10.0 → 0.11.0`(+1 表 / +5 API / +2 enum / +1 unique / +2 migrations / +1 runtime 依赖 `cos-nodejs-sdk-v5`;无 breaking change) | landing 合并后由维护者评估 |
+| **handoff PR #14** | `docs(v2)` | 类比 v0.10.0 / v0.9.0 / v0.8.0 范式;13 章节;**下次会话启动必读** | bump 之后 |
+| **GitHub Release / git tag** | 维护者手动 | 沿 v0.10.0 终态范式(handoff 后维护者打 tag + 发 Release) | 跟随 bump |
 
-### 6.3 实施 PR 7-11 启动条件
+**Claude Code 在 landing 合并后不应自动启动**版本 bump / handoff;由维护者明确授权后再开。
 
-按 §16.3 依赖序逐 PR 启动;每个 PR 启动前均需用户明确授权 + 展示对应 diff(unit / contract / e2e 影响)。
+### 6.3 生产侧 COS 运维配置(系统侧不承载;由队组织运维侧执行)
 
-**Claude Code 在本立项 PR 合并后不应自动启动**任何实施 PR;由用户明确授权后再开。
+| # | 项 | 评估 |
+|---|---|---|
+| 1 | 真实腾讯云 COS bucket 创建(`srvf-attachments-<APPID>`)| 由运维 |
+| 2 | 真实 IAM 子账号 + Secret 生成 | 由运维 |
+| 3 | bucket CORS 规则配置(沿 §6.4.6;生产域名白名单 + PUT/GET/HEAD + MaxAge=3600)| 由运维(腾讯云控制台 / Terraform) |
+| 4 | bucket lifecycle 规则(沿 §6.4.5;旧版本 30 天 expire + DeleteMarker 即清除 + 7 天 abort multipart)| 由运维 |
+| 5 | bucket versioning 启用(沿 §6.4.5)| 由运维 |
+| 6 | bucket SSE-COS 加密配置(沿 §6.4.4)| 由运维 |
+| 7 | 真实生产凭证录入(通过 `POST /storage-settings/reset-credentials`)| 由运维 |
+| 8 | 生产环境 `STORAGE_ENCRYPTION_KEY` 注入(`openssl rand -base64 32`)| 由运维 / 部署平台 |
 
 ### 6.4 并行可启动的独立 PR(不阻塞 C-7.5 收口;由用户授权)
 
 | PR | 性质 | 用途 | 状态 |
 |---|---|---|---|
-| "RBAC 内置角色 / ADMIN 默认附件权限"专项评审 PR | docs-only | 决议 D7-attachments Q12;实施期默认按方案 B(沿 v0.9.0 现状) | ⏳ 用户未授权 |
+| "RBAC 内置角色 / ADMIN 默认附件权限"专项评审 PR | docs-only | 决议 D7-attachments Q12;实施期默认按方案 B(沿 v0.9.0 现状)| ⏳ 用户未授权 |
 | D7-attachments v1.1 修订 PR | docs-only | 等业务方提供 B8 同意书正式文本 + Q8 退队清理 N 具体值后启动 | ⏳ 用户未授权 |
-| 跨表引用约束评审 PR(13030 `ATTACHMENT_TYPE_IN_USE` 等) | docs-only | C-7 v1.0 未覆盖;留专项 PR | ⏳ 用户未授权 |
+| 跨表引用约束评审 PR(13030 `ATTACHMENT_TYPE_IN_USE` 等)| docs-only | C-7 v1.0 未覆盖;留专项 PR | ⏳ 用户未授权 |
 | 业务模块全面 RBAC 接入评审 PR | docs-only | 14 RBAC CRUD 自身接入 + 既有 V2 117 接口接入 `rbac.can()` | ⏳ 用户未授权 |
+| bootstrap fallback 专项 PR | feat | sec env 兜底自动创建 row(沿 Q-11-3 留 v1.1+)| ⏳ 用户未授权 |
+| test-connection API 专项 PR | feat | COS 真实联调时启动(沿 Q-11-6) | ⏳ 用户未授权 |
+| multipart upload 专项 PR | feat | 大文件需求触发时启动(沿 Q13)| ⏳ 用户未授权 |
 
 均需用户明确授权后启动。
 
-### 6.5 v1.1+ 留待评估(沿 §21 不在本评审范围)
+### 6.5 v1.1+ 留待评估(沿 §21 不在 v1.0 评审范围)
 
-- uploadToken 重放防御 / 黑名单 / 双因素(v1.0 依赖 `attachment.key` UNIQUE + P2002 兜底)
+- uploadToken 重放防御 / 黑名单 / 双因素(v1.0 依赖 `attachment.key` UNIQUE + P2002 兜底,已由 PR #92 强化)
 - 失败回滚 Provider 文件(v1.0 依赖 Provider lifecycle 30 天兜底)
 - multipart upload 支持(沿 Q13;大文件需求未触发)
 - STS 临时凭证(沿 Q19;模式 C 不采用;multipart 触发时再评估)
 - 跨 Provider 迁移路径(沿 Q15;COS 暂不迁移)
+- bootstrap fallback(env 兜底自动创建 row;沿 Q-11-3)
+- test-connection API(沿 Q-11-6)
+- Storage Settings 配置变更 audit_logs(沿 §6.6.5)
 
 ---
 
