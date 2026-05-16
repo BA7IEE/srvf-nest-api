@@ -1,8 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { StorageSettings as StorageSettingsRow } from '@prisma/client';
+import { Prisma, type StorageSettings as StorageSettingsRow } from '@prisma/client';
 
+import type { CurrentUserPayload } from '../decorators/current-user.decorator';
 import { PrismaService } from '../../database/prisma.service';
 import { StorageCryptoDecryptError, StorageCryptoService } from './storage-crypto.service';
+import type {
+  ResetStorageCredentialsDto,
+  StorageSettingsResponseDto,
+  UpdateStorageSettingsDto,
+} from './storage-settings.dto';
 import { CredentialStatus, type StorageSettingsResolved } from './storage-settings.types';
 
 // V2.x C-7.5 Provider 选型实施 PR #6:storage_settings 读取层(沿 §6.5.5 + Q24 / Q25)
@@ -151,6 +157,180 @@ export class StorageSettingsService {
       );
       return { credentials: null, credentialStatus: CredentialStatus.INVALID };
     }
+  }
+
+  // ============ V2.x C-7.5 PR #11:后台 Admin CRUD + reset-credentials ============
+  //
+  // 沿评审 §6.5 / §6.6 + Q-11 拍板:
+  // - getForAdmin():singleton row 不存在返 null(沿 Q-11-1;不强行构造空 DTO)
+  // - updateSettings(dto, user):upsert(不存在创建 default;沿 Q-11-1 + Q-11-17)
+  // - resetCredentials(dto, user):AES-256-GCM 加密 SecretId/SecretKey 落库;不写日志凭证(沿 §6.6.2)
+  // - 0 audit_logs(沿 §6.6.5;凭证写不审计;配置变更 audit 留独立专项 PR)
+  // - 0 新 BizCode(沿 Q-11-4;复用 BAD_REQUEST / UNAUTHORIZED / FORBIDDEN / INTERNAL_ERROR)
+  // - PATCH / reset 末尾 invalidate() 清缓存(沿 Q-11-8 / Q-11-17)
+
+  // GET /api/v2/storage-settings(admin 视图)
+  // 单 singleton row 不存在 → 返 null(沿 Q-11-1);不抛 BizCode
+  async getForAdmin(): Promise<StorageSettingsResponseDto | null> {
+    const rows = await this.prisma.storageSettings.findMany({
+      orderBy: { createdAt: 'asc' },
+      take: 2,
+    });
+    if (rows.length === 0) return null;
+    if (rows.length > 1) {
+      this.logger.warn(
+        `storage_settings singleton violated: found ${rows.length}+ rows; returning earliest (id=${rows[0].id})`,
+      );
+    }
+    return this.toResponseDto(rows[0]);
+  }
+
+  // PATCH /api/v2/storage-settings(upsert;沿 Q-11-1 + Q-11-17)
+  // 不存在 → create with default(providerType=LOCAL;沿 Q-11-2);
+  // 存在 → update + updatedBy = user.id
+  // 末尾 invalidate() 清缓存(沿 Q-11-8 / Q-11-17)
+  async updateSettings(
+    dto: UpdateStorageSettingsDto,
+    user: CurrentUserPayload,
+  ): Promise<StorageSettingsResponseDto> {
+    const existing = await this.prisma.storageSettings.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+
+    // 字段转换(maxObjectSizeBytes string → BigInt;沿 Q-11-10)
+    const data = this.buildUpdateData(dto);
+
+    let row: StorageSettingsRow;
+    if (existing) {
+      row = await this.prisma.storageSettings.update({
+        where: { id: existing.id },
+        data: { ...data, updatedBy: user.id },
+      });
+    } else {
+      // upsert 创建 default;providerType 缺省 LOCAL(沿 Q-11-2)
+      // create input 类型严格;data 是 update input,字段子集兼容,as 转通用 record
+      row = await this.prisma.storageSettings.create({
+        data: {
+          ...(data as Prisma.StorageSettingsCreateInput),
+          providerType: dto.providerType ?? 'LOCAL',
+          updatedBy: user.id,
+        },
+      });
+    }
+
+    this.invalidate();
+    return this.toResponseDto(row);
+  }
+
+  // POST /api/v2/storage-settings/reset-credentials(沿 §6.6.2 + Q-11-1 + Q-11-2)
+  // 不存在 → upsert 创建 default;providerType=COS(沿 Q-11-2:reset 默认 COS)
+  // 加密 SecretId / SecretKey + 写 credentialConfigured=true
+  // **永不**在 response / 日志 / audit 中暴露明文 / 密文(沿 §6.6.2 / §6.6.5)
+  async resetCredentials(
+    dto: ResetStorageCredentialsDto,
+    user: CurrentUserPayload,
+  ): Promise<StorageSettingsResponseDto> {
+    // 加密(沿 §6.6.1 AES-256-GCM;StorageCryptoService.encrypt 内部检查 isAvailable)
+    // STORAGE_ENCRYPTION_KEY 缺失时 → 抛 StorageCryptoUnavailableError → 全局过滤器返 500 INTERNAL_ERROR
+    const secretIdEncrypted = this.crypto.encrypt(dto.secretId);
+    const secretKeyEncrypted = this.crypto.encrypt(dto.secretKey);
+
+    const existing = await this.prisma.storageSettings.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+
+    let row: StorageSettingsRow;
+    if (existing) {
+      row = await this.prisma.storageSettings.update({
+        where: { id: existing.id },
+        data: {
+          secretIdEncrypted,
+          secretKeyEncrypted,
+          credentialConfigured: true,
+          updatedBy: user.id,
+        },
+      });
+    } else {
+      // upsert 创建 default;providerType=COS(沿 Q-11-2:reset 场景默认 COS)
+      row = await this.prisma.storageSettings.create({
+        data: {
+          providerType: 'COS',
+          secretIdEncrypted,
+          secretKeyEncrypted,
+          credentialConfigured: true,
+          updatedBy: user.id,
+        },
+      });
+    }
+
+    // 仅 pino 日志记 reset 动作 + actorUserId(沿 §6.6.5);不含 secret 明文 / 密文
+    this.logger.log(`storage_settings credentials reset by user.id=${user.id}; row.id=${row.id}`);
+
+    this.invalidate();
+    return this.toResponseDto(row);
+  }
+
+  // === helpers ===
+
+  // DTO → Prisma data 字段转换(maxObjectSizeBytes string → BigInt;沿 Q-11-10)
+  // 仅转换 dto 已提供字段(沿 PATCH 部分更新语义)
+  private buildUpdateData(dto: UpdateStorageSettingsDto): Prisma.StorageSettingsUpdateInput {
+    const data: Prisma.StorageSettingsUpdateInput = {};
+    if (dto.providerType !== undefined) data.providerType = dto.providerType;
+    if (dto.enabled !== undefined) data.enabled = dto.enabled;
+    if (dto.bucket !== undefined) data.bucket = dto.bucket;
+    if (dto.region !== undefined) data.region = dto.region;
+    if (dto.envPrefix !== undefined) data.envPrefix = dto.envPrefix;
+    if (dto.uploadUrlTtlSeconds !== undefined) data.uploadUrlTtlSeconds = dto.uploadUrlTtlSeconds;
+    if (dto.downloadUrlTtlSeconds !== undefined)
+      data.downloadUrlTtlSeconds = dto.downloadUrlTtlSeconds;
+    if (dto.lifecycleDays !== undefined) data.lifecycleDays = dto.lifecycleDays;
+    if (dto.enableSignedUrl !== undefined) data.enableSignedUrl = dto.enableSignedUrl;
+    if (dto.enableVersioning !== undefined) data.enableVersioning = dto.enableVersioning;
+    if (dto.corsAllowedOrigins !== undefined) {
+      data.corsAllowedOrigins =
+        dto.corsAllowedOrigins === null ? Prisma.JsonNull : dto.corsAllowedOrigins;
+    }
+    if (dto.maxObjectSizeBytes !== undefined) {
+      data.maxObjectSizeBytes =
+        dto.maxObjectSizeBytes === null ? null : BigInt(dto.maxObjectSizeBytes);
+    }
+    if (dto.allowedMimePolicyMode !== undefined)
+      data.allowedMimePolicyMode = dto.allowedMimePolicyMode;
+    if (dto.remarks !== undefined) data.remarks = dto.remarks;
+    return data;
+  }
+
+  // Prisma row → ResponseDto(出参不含 secretIdEncrypted / secretKeyEncrypted / credentials;沿 §6.6.2)
+  private toResponseDto(row: StorageSettingsRow): StorageSettingsResponseDto {
+    // 复用 credentialStatus 合成(三态;不暴露 credentials 明文)
+    const { credentialStatus } = this.resolveCredentials(row);
+    return {
+      id: row.id,
+      providerType: row.providerType,
+      enabled: row.enabled,
+      bucket: row.bucket,
+      region: row.region,
+      envPrefix: row.envPrefix,
+      uploadUrlTtlSeconds: row.uploadUrlTtlSeconds,
+      downloadUrlTtlSeconds: row.downloadUrlTtlSeconds,
+      lifecycleDays: row.lifecycleDays,
+      enableSignedUrl: row.enableSignedUrl,
+      enableVersioning: row.enableVersioning,
+      corsAllowedOrigins: parseCorsOrigins(row.corsAllowedOrigins),
+      // BigInt → string(沿 Q-11-10)
+      maxObjectSizeBytes:
+        row.maxObjectSizeBytes === null ? null : row.maxObjectSizeBytes.toString(),
+      allowedMimePolicyMode: row.allowedMimePolicyMode,
+      credentialStatus,
+      credentialConfigured: row.credentialConfigured,
+      remarks: row.remarks,
+      updatedBy: row.updatedBy,
+      updatedAt: row.updatedAt,
+      createdAt: row.createdAt,
+    };
   }
 }
 

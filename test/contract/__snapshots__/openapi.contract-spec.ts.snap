@@ -3609,6 +3609,27 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "ResetStorageCredentialsDto": {
+    "properties": {
+      "secretId": {
+        "description": "腾讯云 SecretId 明文;Service 层 AES-256-GCM 加密后落库;**永不回显**",
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string",
+      },
+      "secretKey": {
+        "description": "腾讯云 SecretKey 明文;Service 层 AES-256-GCM 加密后落库;**永不回显**",
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "secretId",
+      "secretKey",
+    ],
+    "type": "object",
+  },
   "ResetUserPasswordDto": {
     "properties": {
       "newPassword": {
@@ -3636,6 +3657,136 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "required": [
       "organizationId",
+    ],
+    "type": "object",
+  },
+  "StorageSettingsResponseDto": {
+    "properties": {
+      "allowedMimePolicyMode": {
+        "description": "mime 策略模式(沿 D7-attachments §6.6)",
+        "enum": [
+          "INHERIT",
+          "OVERRIDE",
+        ],
+        "type": "string",
+      },
+      "bucket": {
+        "description": "COS bucket 名;Local 留空",
+        "nullable": true,
+        "type": "object",
+      },
+      "corsAllowedOrigins": {
+        "description": "业务侧引用 CORS origins(沿 Q14;运维 SOP 维护)",
+        "items": {
+          "type": "string",
+        },
+        "nullable": true,
+        "type": "array",
+      },
+      "createdAt": {
+        "description": "创建时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "credentialConfigured": {
+        "description": "DB 层是否已配置凭证(沿 §6.5.2)",
+        "type": "boolean",
+      },
+      "credentialStatus": {
+        "description": "凭证三态(沿 §6.6.3):configured=已配置+解密成功 / missing=未配置 / invalid=已配置但解密失败",
+        "enum": [
+          "configured",
+          "missing",
+          "invalid",
+        ],
+        "type": "string",
+      },
+      "downloadUrlTtlSeconds": {
+        "description": "下载 signed URL TTL(秒;沿 Q8)",
+        "maximum": 1800,
+        "minimum": 60,
+        "type": "number",
+      },
+      "enableSignedUrl": {
+        "description": "是否启用 signed URL(沿 F2)",
+        "type": "boolean",
+      },
+      "enableVersioning": {
+        "description": "versioning 业务侧引用(沿 Q11)",
+        "type": "boolean",
+      },
+      "enabled": {
+        "description": "全局启用开关",
+        "type": "boolean",
+      },
+      "envPrefix": {
+        "description": "key 环境前缀(dev / test / prod;沿 Q17 / Q18)",
+        "nullable": true,
+        "type": "object",
+      },
+      "id": {
+        "description": "cuid 主键",
+        "type": "string",
+      },
+      "lifecycleDays": {
+        "description": "旧版本 expire 天数(沿 Q11;运维侧引用值)",
+        "type": "number",
+      },
+      "maxObjectSizeBytes": {
+        "description": "全局 size 兜底(BigInt 序列化为 string;沿 Q-11-10);null = 不限",
+        "example": "104857600",
+        "nullable": true,
+        "type": "object",
+      },
+      "providerType": {
+        "description": "Provider 类型",
+        "enum": [
+          "LOCAL",
+          "COS",
+        ],
+        "type": "string",
+      },
+      "region": {
+        "description": "COS region;Local 留空",
+        "nullable": true,
+        "type": "object",
+      },
+      "remarks": {
+        "description": "运维备注",
+        "nullable": true,
+        "type": "object",
+      },
+      "updatedAt": {
+        "description": "更新时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "updatedBy": {
+        "description": "最近更新者 User.id(沿 §6.5.3 + V2 范式)",
+        "nullable": true,
+        "type": "object",
+      },
+      "uploadUrlTtlSeconds": {
+        "description": "上传 signed URL TTL(秒;沿 Q8)",
+        "maximum": 3600,
+        "minimum": 60,
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "providerType",
+      "enabled",
+      "uploadUrlTtlSeconds",
+      "downloadUrlTtlSeconds",
+      "lifecycleDays",
+      "enableSignedUrl",
+      "enableVersioning",
+      "allowedMimePolicyMode",
+      "credentialStatus",
+      "credentialConfigured",
+      "updatedAt",
+      "createdAt",
     ],
     "type": "object",
   },
@@ -4336,6 +4487,91 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "显示名",
         "maxLength": 50,
         "type": "string",
+      },
+    },
+    "type": "object",
+  },
+  "UpdateStorageSettingsDto": {
+    "properties": {
+      "allowedMimePolicyMode": {
+        "description": "mime 策略模式(INHERIT / OVERRIDE;沿 Q-11-12)",
+        "enum": [
+          "INHERIT",
+          "OVERRIDE",
+        ],
+        "type": "string",
+      },
+      "bucket": {
+        "description": "COS bucket 名;Local 留空",
+        "nullable": true,
+        "type": "object",
+      },
+      "corsAllowedOrigins": {
+        "description": "CORS origins(沿 Q-11-9:仅 string + maxLength;不做 URL 校验)",
+        "items": {
+          "type": "string",
+        },
+        "nullable": true,
+        "type": "array",
+      },
+      "downloadUrlTtlSeconds": {
+        "description": "下载 signed URL TTL",
+        "maximum": 1800,
+        "minimum": 60,
+        "type": "number",
+      },
+      "enableSignedUrl": {
+        "description": "是否启用 signed URL",
+        "type": "boolean",
+      },
+      "enableVersioning": {
+        "description": "versioning 业务侧引用",
+        "type": "boolean",
+      },
+      "enabled": {
+        "description": "全局启用开关",
+        "type": "boolean",
+      },
+      "envPrefix": {
+        "description": "key 环境前缀",
+        "nullable": true,
+        "type": "object",
+      },
+      "lifecycleDays": {
+        "description": "旧版本 expire 天数",
+        "maximum": 365,
+        "minimum": 0,
+        "type": "number",
+      },
+      "maxObjectSizeBytes": {
+        "description": "全局 size 兜底(BigInt 用 string 入参;沿 Q-11-10;非负整数字符串 ^\\d+$;null 清空)",
+        "example": "104857600",
+        "nullable": true,
+        "type": "object",
+      },
+      "providerType": {
+        "description": "Provider 类型;PATCH 后 Router 动态切换(沿 Q-11-8;沿 PR #89 动态路由)",
+        "enum": [
+          "LOCAL",
+          "COS",
+        ],
+        "type": "string",
+      },
+      "region": {
+        "description": "COS region",
+        "nullable": true,
+        "type": "object",
+      },
+      "remarks": {
+        "description": "运维备注",
+        "nullable": true,
+        "type": "object",
+      },
+      "uploadUrlTtlSeconds": {
+        "description": "上传 signed URL TTL",
+        "maximum": 3600,
+        "minimum": 60,
+        "type": "number",
       },
     },
     "type": "object",
@@ -30524,6 +30760,434 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "撤销角色的某个权限点(精确路径 :permissionId 是 permission.id 非 code;关系不存在返 30011)",
       "tags": [
         "role-permissions",
+      ],
+    },
+  },
+  "/api/v2/storage-settings": {
+    "get": {
+      "operationId": "StorageSettingsController_get",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/StorageSettingsResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "读 Storage Settings singleton row(沿 Q-11-1:不存在返 data=null;不抛 BizCode;不回显凭证)",
+      "tags": [
+        "storage-settings",
+      ],
+    },
+    "patch": {
+      "operationId": "StorageSettingsController_update",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateStorageSettingsDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/StorageSettingsResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "upsert 更新 Storage Settings(沿 Q-11-1 + Q-11-17:不存在则创建 default;providerType 缺省 LOCAL;**拒绝**任何凭证字段;成功后 invalidate cache)",
+      "tags": [
+        "storage-settings",
+      ],
+    },
+  },
+  "/api/v2/storage-settings/reset-credentials": {
+    "post": {
+      "operationId": "StorageSettingsController_resetCredentials",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ResetStorageCredentialsDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/StorageSettingsResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "重置 SecretId / SecretKey(沿 §6.6.2 / Q-11-1 / Q-11-5:只允许 replace;AES-256-GCM 加密落库;响应不回显;不存在则 upsert 创建 default providerType=COS;成功后 invalidate cache)",
+      "tags": [
+        "storage-settings",
       ],
     },
   },

@@ -286,6 +286,11 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/v2/attachments/{id}'],
   ['patch', '/api/v2/attachments/{id}'],
   ['delete', '/api/v2/attachments/{id}'],
+
+  // V2.x C-7.5 实施 PR #11:Storage Settings admin Controller(沿评审 §6.5 / §6.6 + Q-11)
+  ['get', '/api/v2/storage-settings'],
+  ['patch', '/api/v2/storage-settings'],
+  ['post', '/api/v2/storage-settings/reset-credentials'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -488,6 +493,14 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'GenerateUploadUrlDto',
   'UploadUrlResponseDto',
   'ConfirmUploadDto',
+
+  // V2.x C-7.5 实施 PR #11:Storage Settings admin DTO(沿评审 §6.5 / §6.6 + Q-11)
+  // StorageSettingsResponseDto:出参(永不含 secret/Encrypted/credentials;沿 §6.6.2)
+  // UpdateStorageSettingsDto:PATCH 入参(白名单;严禁凭证字段)
+  // ResetStorageCredentialsDto:reset 入参(仅 secretId + secretKey)
+  'StorageSettingsResponseDto',
+  'UpdateStorageSettingsDto',
+  'ResetStorageCredentialsDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
