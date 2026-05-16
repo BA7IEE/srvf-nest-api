@@ -138,12 +138,18 @@ jobs:
       # production 模式启动:APP_CORS_ORIGIN 给合法域名(禁空 / 禁 *),
       # ENABLE_SWAGGER=false 验证 /api/docs 应 404。
       - name: Start app container
+        # V2.x production storage_settings fail-fast(2026-05-16):
+        # APP_ENV=smoke 是 CI Docker smoke job 专用 AppEnv;除 storage_settings fail-fast 外,
+        # 行为尽量保持 production-like(JSON 日志 / 严格 CORS / 默认禁 Swagger /
+        # STORAGE_ENCRYPTION_KEY 必填 / 隐藏异常 message)。
+        # docker-smoke 不预接真实 COS,故跳过 storage_settings 5 项校验;
+        # **不得用于真实部署**,真实部署必须 APP_ENV=production。
         run: |
           docker run -d \
             --name "$APP_CONTAINER" \
             --network "$COMPOSE_NETWORK" \
             -p "$APP_HOST_PORT:3000" \
-            -e APP_ENV=production \
+            -e APP_ENV=smoke \
             -e APP_PORT=3000 \
             -e APP_CORS_ORIGIN=https://app.example.com \
             -e ENABLE_SWAGGER=false \

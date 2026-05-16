@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { AllExceptionsFilter } from '../common/filters/all-exceptions.filter';
 import { ResponseInterceptor } from '../common/interceptors/response.interceptor';
-import type { AppConfig } from '../config/app.config';
+import { isProductionLike, type AppConfig } from '../config/app.config';
 
 // 应用全局启动配置(helmet 安全头 / 全局前缀 / CORS / ValidationPipe / 全局异常过滤器 / 全局响应拦截器)。
 // main.ts 与 test 套件 (createTestApp) 共用此函数,保证测试与运行时行为 1:1 一致;
@@ -44,7 +44,8 @@ export function applyGlobalSetup(app: INestApplication, appCfg: AppConfig): void
     }),
   );
 
-  app.useGlobalFilters(new AllExceptionsFilter(appCfg.env === 'production'));
+  // production-like(production / smoke)隐藏异常 message;sanitize 沿 production 行为
+  app.useGlobalFilters(new AllExceptionsFilter(isProductionLike(appCfg.env)));
   app.useGlobalInterceptors(new ResponseInterceptor());
 
   app.enableCors({ origin: appCfg.corsOrigin });
