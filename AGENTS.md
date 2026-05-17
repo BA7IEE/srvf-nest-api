@@ -43,21 +43,25 @@
 - RBAC 部分(批次 8;attachments 已接 `rbac.can()`,其它最小权限闭环归 P0-F)
 - 本人自助改密 `PUT /api/users/me/password`(P0-D + v0.13.0;详细铁律见 §9)
 - first-release 前端联调包(起步包 51 路由;见 [`docs/first-release-frontend-scope.md`](docs/first-release-frontend-scope.md))
+- refresh token / logout / logout-all(P0-E + 评审稿 v1 已冻结于 [`docs/first-release-p0e-refresh-token-review.md`](docs/first-release-p0e-refresh-token-review.md);代码实现仍待 PR-3 落地,**所有实现必须严格遵守评审稿 + §9 P0-E 铁律子节**)
 
 ### B. 默认不做,可评审解锁(真实需求触发评审)
 
-- refresh token / logout / `tokenVersion` / token revoke(归 **P0-E**;不预承诺 `tokenVersion` 一定要做)
+- `tokenVersion` 字段(P0-E v1 D-4 已明确**本期不做**;沿 [`docs/security.md` Token 吊销升级路径](docs/security.md);access token 即时吊销诉求出现时单独立项)
+- access token blacklist / JWT revoke list(P0-E v1 已明确**本期不做**;沿 D-4 改密 / 禁用 / 删除事件靠 refresh 撤销 + 15m access TTL 自然过期承接)
 - RBAC 全面收紧(关键接口最小权限闭环归 **P0-F**)
 - 上传下载真实闭环(运维验收归 **P0-B**)
 - 微信登录 / 小程序登录(业务明确需要时单独评审)
 - 多租户(真实业务出现跨队隔离诉求时单独架构评审)
-- Redis / queue / cron(异步任务 / refresh token 等触发时评审,需评估运维承接)
+- Redis / queue / cron(异步任务诉求触发时评审,需评估运维承接;**P0-E refresh token 撤销不引入 Redis**,沿 DB 主键索引 sub-ms 查询承接)
 
 ### C. 当前阶段仍不做
 
 - LLM / 向量检索 / pgvector(`modules/ai/` 保持 README 占位)
 - 完整动态权限平台(permission 表 + 后台可配权限点 + casl)
-- 复杂 session 管理 UI(多设备登录列表 / 强制下线设备)
+- 复杂 session 管理 UI(多设备登录列表 / 强制下线某设备 / device fingerprint;沿 P0-E v1 D-9)
+- refresh_tokens 查询接口(`GET /api/auth/refresh-tokens` 列本人活跃 token;沿 P0-E v1 D-9)
+- 完整 OAuth 2.0 / OIDC / refresh token tree 复杂度(沿 P0-E v1 D-9)
 - 无真实需求的多租户提前设计
 - 无运维承接能力的基础设施提前引入(Redis / queue / cron)
 
@@ -203,7 +207,9 @@ throw new BizException({ code: 10099, ... });     // ✗ 临时对象禁止
 - `101xx`:`users` 权限 / 操作边界错误
 - `110xx`+:后续业务模块按 `orgs:110xx/111xx` / `missions:120xx/121xx` 平铺,每模块 200 个号段
 
-**通用 token / 鉴权失败统一复用 `UNAUTHORIZED=40100`,不另起编号**:`JwtStrategy.validate()` 中 token 无效 / 已过期 / 用户被禁 / 用户被软删全部抛 `UNAUTHORIZED`。这类是 HTTP 401 通用语义,不是业务级错误;AI **禁止**为 `TOKEN_INVALID` / `TOKEN_EXPIRED` 之类自创 `100xx` 业务码。只有真出现 refresh token 这类需细分原因(`REFRESH_TOKEN_EXPIRED` vs `REFRESH_TOKEN_REVOKED`)的需求时,才在 `100xx` 段新增。
+**通用 token / 鉴权失败统一复用 `UNAUTHORIZED=40100`,不另起编号**:`JwtStrategy.validate()` 中 token 无效 / 已过期 / 用户被禁 / 用户被软删全部抛 `UNAUTHORIZED`。这类是 HTTP 401 通用语义,不是业务级错误;AI **禁止**为 `TOKEN_INVALID` / `TOKEN_EXPIRED` 之类自创 `100xx` 业务码。
+
+**P0-E refresh token 段位登记**(2026-05-17 由评审稿 v1 锁定):`100xx` 段位实数已用 10001-10006(P0-D 占 10005 / 10006);P0-E 占 **`REFRESH_TOKEN_INVALID = 10007`**(HTTP 401;沿 [`docs/first-release-p0e-refresh-token-review.md §5.7`](docs/first-release-p0e-refresh-token-review.md))。P0-E v1 D-6 已明确**仅占 1 个号位**:refresh 失败的 4 种子原因(不存在 / 已撤销 / 已过期 / 重放命中)统一返 `10007`,**禁止**拆 `REFRESH_TOKEN_EXPIRED` / `REFRESH_TOKEN_REVOKED` / `REFRESH_TOKEN_REPLAY`(沿 v1 §8 防账号枚举铁律精神;细分让攻击者据错误码反推 token 状态)。
 
 新增 BizCode 必须先说明使用场景与前端提示价值,确认后加入,显式声明 `httpStatus`。
 
@@ -386,15 +392,101 @@ export interface CurrentUser {
 - 响应 DTO 通过 `userSafeSelect` 排除 `passwordHash`,任何接口响应里都不应出现该字段
 - `POST /api/users` **必须由调用方传 `password`**,禁止后端生成默认密码或留空
 - `PUT /api/users/:id/password` 接收 `ResetUserPasswordDto { newPassword }`,**不需要 `oldPassword`**,但必须走 `assertCanManageUser`
-- 管理员重置密码后**不主动吊销旧 token**;如需立即阻断,由管理员把目标用户 `status` 改 `DISABLED`
+- 管理员重置密码后**不主动吊销 access token**(access ≤ 15m 自然过期);**必须主动撤销目标用户全部 refresh token**(`revokedReason='admin-password-reset'`,P0-E PR-3 落地;沿 [`docs/first-release-p0e-refresh-token-review.md §7.2`](docs/first-release-p0e-refresh-token-review.md));如需立即阻断 access token,由管理员把目标用户 `status` 改 `DISABLED`(经每请求查库即时生效)
 - **本人自助改密只能通过独立接口** `PUT /api/users/me/password`,**不得**在 `PATCH /api/users/me` 或其他资料更新接口里夹带"顺手改密码"逻辑
 - `PUT /api/users/me/password` 仅允许在 P0-D 评审稿 `docs/first-release-p0d-change-my-password-review.md` 冻结后由独立 PR 实现,**实现必须严格遵守该评审稿**(行为契约 / 错误码 / 鉴权 / 限流 / audit 全部以评审稿为准);**不接管理员重置他人密码接口** `PUT /api/users/:id/password`,该接口契约保持不变
 - 本人改密接口入参固定 `ChangeMyPasswordDto { oldPassword, newPassword }`,`oldPassword` 必填(与管理员重置无 `oldPassword` 的语义对称区分);`newPassword` 校验沿 `ResetUserPasswordDto.newPassword` 范式(至少 8 位 + 含数字 + 含字母);严格白名单,**禁止**夹带 `username` / `email` / `role` / `status` / `passwordHash` / `id` 等任何其他字段
 - 本人改密接口新增 BizCode:`OLD_PASSWORD_INVALID = 10005`(`当前密码不正确`,HTTP 401)、`NEW_PASSWORD_SAME_AS_OLD = 10006`(`新密码不能与当前密码相同`,HTTP 400);**禁止**复用 `LOGIN_FAILED` 或 `BAD_REQUEST` 兜底语义
 - 本人改密接口必须挂 `@PasswordChangeThrottle()`:5 次 / 60 秒,第一版固定 IP 维度;沿 V1.1 §17.7 `@nestjs/throttler` 内存 storage,**禁止** Redis storage;限流参数从 `src/config/app.config.ts` 注入,**禁止**硬编码在装饰器
 - 本人改密成功必须写 audit:`AuditLogEvent.UserPasswordChangedSelf`(命名风格代码 PR 前与既有事件逐字对齐);**禁止**把 `oldPassword` / `newPassword` / `passwordHash` 任何明文或 hash 写入 audit log
-- 本人改密成功后**不主动吊销旧 token**;`tokenVersion` / refresh token / token revoke 仍归 P0-E,本接口**不预实现**
+- 本人改密成功后**不主动吊销 access token**(沿 P0-E v1 D-4;access ≤ 15m 自然过期);**必须主动撤销该用户全部 refresh token**(`revokedReason='self-password-change'`,P0-E PR-3 落地;沿 [`docs/first-release-p0e-refresh-token-review.md §7.1`](docs/first-release-p0e-refresh-token-review.md));`tokenVersion` 仍**本期不做**,沿 P0-E v1 D-4
+- 用户被 `DISABLED`(`PATCH /api/users/:id/status` → `DISABLED`)或被软删(`DELETE /api/users/:id`)时,**必须**主动撤销目标用户全部 refresh token(`revokedReason='admin-disable'` / `'admin-delete'`,P0-E PR-3 落地;沿 P0-E v1 §7.3 / §7.4);access token 由 `JwtStrategy.validate` 每请求查库即时失效(沿现状)
 - 本人改密接口**不做**首次登录强制改密、忘记密码 / 邮箱找回、user-member 绑定能力,这些越界诉求出现时必须暂停说明
+
+### P0-E refresh token 鉴权铁律(2026-05-17 由 P0-E 评审稿 v1 解锁)
+
+> 本子节是 P0-E 代码 PR-3 实施的硬约束。任何偏离视为越权。详细设计见 [`docs/first-release-p0e-refresh-token-review.md`](docs/first-release-p0e-refresh-token-review.md);冲突时以评审稿为准,本节让步。
+
+**refresh token 生成与存储**:
+- refresh token 必须由 `crypto.randomBytes(32).toString('base64url')` 生成(256 bit 熵);**禁止**用 JWT、UUID、自增 ID、`Math.random`
+- refresh token 是 **opaque random token**,**不是 JWT**;客户端不应也不能解析其中信息
+- refresh token **明文绝不入库**;DB 仅存 `tokenHash = crypto.createHash('sha256').update(raw).digest('hex')`(64 字符 hex);字段 `tokenHash @unique`
+- **禁止**用 bcrypt / argon2 哈希 refresh token(高熵随机串无暴破语义,sha256 sub-ms 性能远优)
+- refresh token 明文**绝不**进入:日志、audit `context.*`、OpenAPI 示例(`@ApiProperty` example 字段)、测试 fixture、测试快照、文档示例、handoff、release notes;只在 login / refresh 接口响应体 `data.refreshToken` 中出现一次
+
+**JWT payload 严格 zero drift**:
+- `JwtPayload` 严格保持 `{ sub, username }`(`+iat / +exp / +nbf` 标准字段);**禁止**新增 `role` / `permissions` / `tokenVersion` / `tv` / `jti` / `email` / 任何业务字段
+- `auth-login.e2e-spec.ts` 已硬断言 payload 字段集恰好为 `{ sub, username, iat, exp, nbf }`(沿评审稿 §1.1);P0-E PR-3 实施**禁止**改此断言
+- `JwtStrategy.validate` 严格保持 `select: { id, username, role, status, memberId }`;**禁止**读 `passwordHash` / `tokenVersion`(后者本期不存在);校验仅 `deletedAt === null && status === ACTIVE`
+
+**DTO / Response 契约**:
+- `LoginDto` 入参 schema 严格 **zero drift**(字段名 / 类型 / `@Matches` / `@MinLength` / `@MaxLength` 全保留);**禁止**新增任何字段(包括 `rememberMe` / `deviceId` / `clientId` / `keepSignedIn`)
+- `LoginResponseDto` 允许扩展 `refreshToken: string` + `refreshExpiresAt: string`(向后兼容);字段集变为恰好 5 项;扩展后**禁止**再增字段
+- `refreshExpiresAt` 是 **ISO 8601 UTC 时间字符串**(`new Date(...).toISOString()` 输出格式,带毫秒 + `Z` 后缀;示例 `"2026-08-16T00:00:00.000Z"`),**不是 TTL 字符串**(如 `"90d"`);语义是 **refresh token family 的 absolute expiration 时刻**;rotation 后新 refresh token **继承同一个 `refreshExpiresAt`**,响应里返回**相同的 ISO 时刻字符串**,**禁止** sliding expiration / refresh-on-use 延期(沿评审稿 §3.1 D-1 + §4.2);客户端读 `refreshExpiresAt` 即知 family 何时过期,**无需**信任本地时钟做 `now + TTL` 计算
+- **TTL 配置 ≠ 响应字段**:服务端 env `JWT_REFRESH_EXPIRES_IN`(代表 TTL,如 `"90d"`)与 `jwt.config.ts` 内部 TTL 字段沿 v1 `expiresIn` 范式;**响应字段**叫 `refreshExpiresAt`(ISO 8601 UTC),在 service 内 `new Date(now + ttlMs).toISOString()` 计算后返给客户端;两者职责分离
+- `RefreshTokenDto` / `LogoutDto` 严格白名单 1 字段(`refreshToken`);**禁止**夹带 `deviceId` / `userId` / 任何其他字段
+
+**rotation 与 expiration 三不变式**:
+- **rotation always**:每次 `POST /api/auth/refresh` 必发新 refresh token + 旧 refresh 同事务内标 `rotatedAt + revokedAt + replacedById`
+- **absolute expiration**:rotation 产生的新 refresh token `expiresAt` **不延长**,严格继承原 family 首个 token 的 `expiresAt`;refresh TTL `90d`(P0-E v1 docs hotfix 2026-05-18 由 30d 调整,降低内部系统低频用户频繁重登的不便;沿评审稿 §3.5 D-5);**禁止** sliding expiration / refresh-on-use 延期;**达到 `refreshExpiresAt` 后必须重新登录**(`POST /api/auth/login`),refresh 接口对已过期 family 返 `REFRESH_TOKEN_INVALID=10007`
+- **reuse detection 触发 family revoke**:`refresh` 接口收到 `rotatedAt != null` 的 row(旧 raw 被重放)→ 同事务内 `updateMany({ where: { familyId, revokedAt: null }, data: { revokedAt: now(), revokedReason: 'family-revoked' } })`,然后抛 `REFRESH_TOKEN_INVALID`
+
+**logout 行为契约**:
+- `POST /api/auth/logout` 只撤销**当前** refresh token(`revokedReason='logout'`);同 family 其他 rotation 链 token 不动
+- `POST /api/auth/logout` 走 `@Public()`(refresh token 自身即凭证;允许 access token 过期后 logout 自己)
+- `POST /api/auth/logout` **幂等**:不存在 / 已撤销 / 已过期 → 仍返 200(沿 RFC 7009 §2.2);**不**抛业务码
+- `POST /api/auth/logout` access token 若随头传入,**不**校验、**不**消费、**不**吊销
+- `POST /api/auth/logout-all` 走 `JwtAuthGuard`,撤销当前 user **全部**未过期且未撤销的 refresh token(`updateMany revokedReason='logout'`);返 `{ revokedCount }`
+
+**联动撤销四场景(沿 §9 主条目)**:
+- 本人改密(`PUT /api/users/me/password`)→ 撤销该 user 全部 refresh,`revokedReason='self-password-change'`
+- 管理员重置(`PUT /api/users/:id/password`)→ 撤销目标 user 全部 refresh,`revokedReason='admin-password-reset'`
+- 用户禁用(`PATCH /api/users/:id/status` → `DISABLED`)→ 撤销目标 user 全部 refresh,`revokedReason='admin-disable'`
+- 用户软删(`DELETE /api/users/:id`)→ 撤销目标 user 全部 refresh,`revokedReason='admin-delete'`
+- 上述四场景的 `updateMany` 必须在**同事务**内与主写操作执行(沿 P0-D `prisma.$transaction` 范式);audit `extra.refreshTokensRevoked: count` 必写
+
+**access token 行为锁定**:
+- access token **本期不主动吊销**(沿 P0-E v1 D-4);依赖 `JWT_EXPIRES_IN=15m` 自然过期 + `JwtStrategy.validate` 每请求查库阻断 `DISABLED` / 软删用户
+- `JWT_EXPIRES_IN` 由当前 `7d` 收敛到 `15m`(P0-E PR-3 改 `.env.example`;运维侧上线时同步)
+- access token blacklist / JWT revoke list **本期不做**(§1 C 档);未来真出现"改密后所有 access 立即失效"诉求时,沿 §1 B 档 `tokenVersion` 路径单独评审
+- e2e `users-change-my-password.e2e-spec.ts` §7.5 "改密后旧 access token 仍可调 `/me`" 反向锁定断言**继续保留**(P0-E 不破)
+
+**限流契约(refresh / logout / logout-all)**:
+- `POST /api/auth/refresh`:**新建独立 throttler 实例** `'refresh'`,IP 维度 **30 次 / 60 秒**;装饰器 `@RefreshThrottle()`(沿 `@PasswordChangeThrottle` 范式实现:纯 metadata 标记,limit / ttl 在 `throttle-options.ts` 从 `app.config.ts` 注入)
+- `POST /api/auth/logout`:**无限流**(刻意;避免攻击者吃光合法用户 logout 配额)
+- `POST /api/auth/logout-all`:**复用** P0-D `'password-change'` throttler(IP 维度 5/60);沿"高危操作低频限流"语义
+- 三 throttler 实例(`default` / `password-change` / `refresh`)在 `throttle-options.ts` `throttlers[]` 注册,**物理隔离**:登录失败爆破不消耗 refresh / logout-all 配额,反之亦然
+- 全部命中走统一 `BizException(BizCode.TOO_MANY_REQUESTS)` + HTTP 429;**不暴露** `Retry-After` / `X-RateLimit-*` 头(沿 [`src/bootstrap/throttle-options.ts`](src/bootstrap/throttle-options.ts) `setHeaders: false`)
+
+**audit 写入(4 新事件 + 1 隐含新增)**:
+- `auth.login`(login 成功路径写入;`resourceType='user'`,`extra.familyId`)
+- `auth.refresh`(refresh 成功 + family revoke 路径;`resourceType='refresh_token'`,`extra.familyId / replayDetected / familyRevoked?`)
+- `auth.logout`(logout 含幂等命中均写;`extra.found: boolean`)
+- `auth.logout-all`(logout-all;`extra.revokedCount: number`)
+- `password.reset.by-admin`(管理员重置今未写 audit,P0-E PR-3 顺手补;命名 PR-3 启动前与既有 18 项事件逐字复核)
+- 命名风格沿 P0-D `password.change.self` kebab-case `<resource>.<action>` / `<resource>.<action>.<scope>`;PR-3 启动前再次 grep [`src/modules/audit-logs/audit-logs.types.ts`](src/modules/audit-logs/audit-logs.types.ts) 复核 `logout-all` 段内 dash 是否符合 `attendance-sheet.final-review` 范式
+- audit `extra` **禁止**写:refresh token 明文 / `tokenHash` / `passwordHash` / IP 完整段(IP 已在 `AuditContext.ip` 字段)
+- audit `extra` **允许**写:`familyId`(cuid,不是凭证)/ `replayDetected: boolean` / `revokedCount: number` / `revokedReason` 字符串 / `found: boolean`
+
+**BizCode 段位(锁死)**:
+- 仅新增 `REFRESH_TOKEN_INVALID = 10007`(HTTP 401);沿 100xx users 段,LOGIN_FAILED=10004 / OLD_PASSWORD_INVALID=10005 / NEW_PASSWORD_SAME_AS_OLD=10006 之后下一可用号位
+- **禁止**拆 `REFRESH_TOKEN_EXPIRED` / `REFRESH_TOKEN_REVOKED` / `REFRESH_TOKEN_REPLAY`;沿评审稿 v1 D-6 + §5 BizCode 段位登记段
+- logout / logout-all 接口**不**抛业务码(logout 幂等;logout-all 走通用 40100 / 42900)
+
+**不做清单(沿 P0-E v1 D-9)**:
+- ❌ `tokenVersion` 字段(§1 B 档;改 `User` schema 风险与回报不匹配)
+- ❌ access token blacklist / JWT revoke list(§1 C 档)
+- ❌ refresh_tokens 查询接口(§1 C 档)
+- ❌ 已登录设备列表 UI / 单设备管理 / device fingerprint(§1 C 档)
+- ❌ Redis / Queue / Cron(§1 B 档;refresh token 撤销靠 DB 主键索引 sub-ms 查询)
+- ❌ 完整 OAuth 2.0 / OIDC / refresh token tree(§1 C 档)
+- ❌ httpOnly cookie 传 refresh token(多端 Web + 小程序 + APP 统一 body 传)
+- ❌ 改 `LoginDto` 入参 schema / `JwtPayload` / `JwtStrategy` 查库字段(沿 v2-api-contract §6.5 + 本节铁律)
+- ❌ refresh token 失败码细分 / 微信小程序 / OAuth 第三方登录(沿评审稿 v1 D-9)
+
+**实施前置(沿 P0-D 4-PR 串行范式)**:
+- P0-E PR-3 代码 PR 在 `prisma migrate dev` 前**必须**先 `--create-only` 生成 SQL,贴回对话等用户拍板再 apply(沿 §0)
+- PR-3 启动前必须按评审稿 §11 5 项复核点逐项 grep:`AuditLogEvent` 命名、throttler 实例风格、`@ApiBizErrorResponse` 风格、10007 段位无抢号、`prisma migrate dev` 预生成 SQL
 
 ---
 
@@ -659,7 +751,7 @@ V1.1 阶段**仍然不做**(等价于 §1 v1 不做的事 + ARCHITECTURE.md §11
 - 不做操作日志 / 审计日志的**数据库持久化**
 - 不接入 OpenTelemetry / Tracing / Sentry / Datadog / APM
 - 不暴露 `/metrics` 端点(若未来需要,必须同步加入 `ResponseInterceptor` 跳过列表)
-- 不做 refresh token / 微信登录 / RBAC / 多租户 / 文件上传 Provider / pgvector / LLM(本人自助改密 `PUT /api/users/me/password` 由 P0-D 评审稿冻结后开放,铁律见 §9;**不**通过 V1.1 工程加固通道实现)
+- 不做微信登录 / RBAC / 多租户 / 文件上传 Provider / pgvector / LLM(本人自助改密 `PUT /api/users/me/password` 由 P0-D 评审稿冻结后开放,铁律见 §9;**refresh token / logout / logout-all** 由 P0-E 评审稿 v1 冻结后开放,铁律见 §9 P0-E 子节;**两者均不通过** V1.1 工程加固通道实现)
 - 不修改 `prisma/schema.prisma`(不加日志字段、不加请求统计字段)
 - 不修改 `src/modules/auth/` 与 `src/modules/users/` 的业务路由、入参、出参、HTTP 方法、权限标注
 - 不修改 §6 接口清单的任何已有接口

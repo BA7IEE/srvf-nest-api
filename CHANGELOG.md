@@ -4,7 +4,92 @@
 
 ## Unreleased
 
-- `docs(handoff): backfill P0-B test-bucket verification completion`(本 PR;沿 P0-D PR-4 #118 状态回填范式):
+### Docs
+
+- `docs(p0e): adjust refresh token TTL 30d → 90d`(本 PR;PR-2.x-2 docs hotfix,A 档 docs-only):
+  - **TTL 修正**:在 PR-1 评审稿 v1 ([`docs/first-release-p0e-refresh-token-review.md`](docs/first-release-p0e-refresh-token-review.md)) merge 前修订 refresh token absolute expiration 时长;就地更新 PR-1 / PR-2 / PR-2.x 既有 Unreleased 条目,无需另起评审稿 v2(沿 §14.3 merged 前可改原则)。
+  - 调整面:**仅** refresh token TTL(`JWT_REFRESH_EXPIRES_IN`)从 `30d` 改为 **`90d`**;**access token TTL 仍为 `15m`**(`JWT_EXPIRES_IN=15m`,不动)
+  - **三铁律不变**:
+    - **absolute expiration 仍坚守**(rotation 出来的新 refresh token `expiresAt` **不延长**,严格继承原 family 首个 token 的 `expiresAt`;沿 OWASP)
+    - **sliding expiration 仍禁止**(任何形式的 refresh-on-use 延期都视为违反 D-5)
+    - **rotation always 仍坚守**(每次 `POST /api/auth/refresh` 必发新 refresh + 旧 refresh 同事务内标 `rotatedAt + revokedAt + replacedById`)
+  - **达到 `refreshExpiresAt` 后必须重新登录**(`POST /api/auth/login`);refresh 接口对已过期 family 返 `REFRESH_TOKEN_INVALID=10007`(沿 §6.5);客户端不应也不能"自动续期"绕过此约束
+  - **为什么 90d**:本系统是**深圳救援队内部管理系统**,主要用户是队员与管理员(沿 [`.claude/CLAUDE.md` Project Background](.claude/CLAUDE.md));内部系统使用频次比公网 SaaS 低,30d 会让低频使用者(如月度 / 季度参与活动的志愿队员)频繁触发 absolute expiration → 跳登录页 → 误以为账号失效;90d 把"必须重登"周期对齐到"季度"心智,与队员实际使用节奏相符;**仍避免无限续期**(沿 OWASP absolute expiration 红线);若未来切换为公网 SaaS / 高频应用 / 多租户场景,**必须**重新评估
+  - 安全侧:rotation always + family revoke + 改密 / 禁用 / 删除联动撤销四道防线仍生效;90d 仅放宽 absolute 上限,**不**放宽其他任一防线
+  - 运维侧:`refresh_tokens` 表数据量可能膨胀 3x(rotation 每次 +1 行,90d 窗口),由评审稿 §5.4 顺手清理策略缓解;若量级失控再立项 cron(沿 §13.3 反模式表"不做 cron 定时任务")
+  - 可回退性:`JWT_REFRESH_EXPIRES_IN` 是 env,运维可在不发版的情况下回调(例如真出现频发被盗 refresh 事件时改回 30d);**但**调整后已签发的 refresh token 仍按其 `expiresAt` 计算,**不**回溯
+  - 改动文件 4 个:
+    - [`docs/first-release-p0e-refresh-token-review.md`](docs/first-release-p0e-refresh-token-review.md):§2 偏差段(行 112)+ §3.1 D-1(2 处 TTL 字符串举例)+ §3.5 D-5(标题 + 具体值 + env + **新增"为什么 90d"长段** + 新增"达到 refreshExpiresAt 后必须重新登录"行)+ §4.1 行为补充(`now + 30d` → `now + 90d`)+ §4.2 refresh 伪逻辑返回行(`'30d'` → `row.expiresAt.toISOString()`,显式表达 absolute expiration + ISO 8601)+ §9 影响清单(jwt.config.ts 行 + `.env.example` 行)+ §12 风险表(refresh_tokens 表膨胀风险等级注释)
+    - [`CLAUDE.md`](CLAUDE.md) §9 P0-E 子节(3 处:`refreshExpiresAt` 段 ISO 示例日期 + TTL 字符串举例 + `absolute expiration` 段 TTL 值锁定 + 新增"达到 refreshExpiresAt 后必须重新登录"约束)
+    - [`AGENTS.md`](AGENTS.md):同 CLAUDE.md 镜像
+    - [`CHANGELOG.md`](CHANGELOG.md):就地修正 PR-1 / PR-2 条目里 2 处 `30d` → `90d` 表述 + 本 hotfix 条目登记
+  - **`LoginDto` 入参 schema 仍严格 zero drift**(沿评审稿 v1 D-1;TTL 调整与入参无关)
+  - **JWT payload 仍严格 zero drift**(`{ sub, username }`;沿评审稿 v1 D-4)
+  - **0 src / 0 prisma / 0 migration / 0 test / 0 OpenAPI snapshot / 0 新依赖** 变更
+  - 命中替换:评审稿 9 处实际 TTL 值 + 4 处 TTL 字符串举例同步 / CLAUDE.md 3 处 / AGENTS.md 3 处 / CHANGELOG 2 处(PR-1 / PR-2 条目就地修正),累计 **21 处**(保留 1 处 CHANGELOG hotfix 自身条目里的 "30d → 90d" 事实陈述作为 audit trail)
+
+- `docs(p0e): rename refreshExpiresIn → refreshExpiresAt`(PR-2.x docs hotfix,A 档 docs-only):
+  - **语义修正**:在 PR-1 评审稿 v1 ([`docs/first-release-p0e-refresh-token-review.md`](docs/first-release-p0e-refresh-token-review.md)) merge 前修订 `LoginResponseDto` 新增字段名;就地更新 PR-1 / PR-2 既有 Unreleased 条目,无需另起评审稿 v2。
+  - 字段名:`refreshExpiresIn` → **`refreshExpiresAt`**(LoginResponseDto / RefreshResponseDto 响应字段)
+  - 语义升级:从"原样回传 TTL 字符串(如 `"30d"`)"改为"**ISO 8601 UTC 时间字符串**(`new Date(...).toISOString()` 格式,如 `"2026-06-17T00:00:00.000Z"`),表示 **refresh token family 的 absolute expiration 时刻**;rotation 后新 refresh token **继承同一个 `refreshExpiresAt`**,响应里返回**相同的 ISO 时刻字符串**;**禁止** sliding expiration / refresh-on-use 延期"
+  - 设计理由:TTL 形态让客户端必须信任本地时钟做 `now + TTL` 计算,跨设备时钟漂移会导致 family 续期失败;ISO 时刻形态消除此风险;客户端读 `refreshExpiresAt` 即知 family 何时过期,无需本地时钟参与计算
+  - **TTL 配置 ≠ 响应字段**:服务端 env `JWT_REFRESH_EXPIRES_IN` 与 `jwt.config.ts` 内部 TTL 字段沿 v1 `expiresIn` 范式不变;响应字段 `refreshExpiresAt` 在 service 内 `new Date(now + ttlMs).toISOString()` 计算
+  - 改动文件 4 个:
+    - [`docs/first-release-p0e-refresh-token-review.md`](docs/first-release-p0e-refresh-token-review.md):§3.1 D-1(决策段重写,补 7 条语义说明)+ §4.1(响应示例 JSON)+ §4.2(refresh 接口响应描述)+ §8.2(e2e 断言文案 + 新增 rotation 同一时刻字符串相等硬断言)+ §9 影响清单(jwt.config.ts 行重写,明示 TTL 配置 ≠ 响应字段)
+    - [`CLAUDE.md`](CLAUDE.md) §9 P0-E 子节 "DTO / Response 契约" 段:`refreshExpiresAt` 行替换 + 新增 2 行铁律(ISO 8601 UTC 语义 + TTL 配置 ≠ 响应字段)
+    - [`AGENTS.md`](AGENTS.md):同 CLAUDE.md 镜像
+    - [`CHANGELOG.md`](CHANGELOG.md) Unreleased PR-1 条目第 1 条就地修正 + 本条目登记
+  - **`LoginDto` 入参 schema 仍严格 zero drift**(沿评审稿 v1 D-1)
+  - **JWT payload 仍严格 zero drift**(`{ sub, username }`;沿评审稿 v1 D-4 + §3.1 不变)
+  - **0 src / 0 prisma / 0 migration / 0 test / 0 OpenAPI snapshot / 0 新依赖** 变更
+  - 命中替换:评审稿 7 处(5 处字段名替换 + 2 处刻意保留为反向声明 / 不暴露 config 字段名,改写为等价表达)/ CLAUDE.md 1 处 / AGENTS.md 1 处 / CHANGELOG.md 1 处(PR-1 条目第 1 条),累计 **10 处**
+
+- `docs(p0e): allow refresh token / logout`(PR-2,A 档 docs-only):
+  - 修订 [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md) 4 处段落 + 新增 1 个 §9 子节,让后续 P0-E 代码实现(PR-3)不再被旧"不做 refresh token / logout"误挡;**不**修改 [`docs/first-release-p0e-refresh-token-review.md`](docs/first-release-p0e-refresh-token-review.md)(评审稿冻结后不回改,沿 process.md §6)。
+  - 改动点 1 — §1 SRVF 三档解锁拆分:
+    - A 档**新增** 1 条:`refresh token / logout / logout-all`(P0-E + 评审稿 v1 已冻结;代码实现仍待 PR-3 落地)
+    - B 档**移除**旧"refresh token / logout / `tokenVersion` / token revoke"合并行;**拆分**为 `tokenVersion` 字段(本期不做)/ access token blacklist(本期不做)两行;Redis 行措辞更新("P0-E refresh token 撤销不引入 Redis")
+    - C 档**新增** 3 条:复杂 session 管理 UI / refresh_tokens 查询接口 / 完整 OAuth 2.0 复杂度(沿 P0-E v1 D-9)
+  - 改动点 2 — §5 BizCode 编码段:补"**P0-E refresh token 段位登记**"段,登记 `REFRESH_TOKEN_INVALID = 10007`(HTTP 401);明示**禁止**拆 `EXPIRED` / `REVOKED` / `REPLAY`(沿 v1 §8 防账号枚举铁律)。
+  - 改动点 3 — §9 密码处理铁律 2 行升级:
+    - 旧"管理员重置密码后不主动吊销旧 token"→ 升级为"不主动吊销 access token + **必须**主动撤销目标全部 refresh token(`revokedReason='admin-password-reset'`)"
+    - 旧"本人改密成功后不主动吊销旧 token;`tokenVersion` / refresh token / token revoke 仍归 P0-E,本接口不预实现"→ 升级为"不主动吊销 access token + **必须**主动撤销该 user 全部 refresh token(`revokedReason='self-password-change'`);`tokenVersion` 仍本期不做(沿 P0-E v1 D-4)"
+    - **新增** 1 行:用户被 `DISABLED` / 软删时**必须**主动撤销目标全部 refresh token(`revokedReason='admin-disable'` / `'admin-delete'`)
+  - 改动点 4 — §9 末追加新子节 **"P0-E refresh token 鉴权铁律"**(2026-05-17 由 P0-E 评审稿 v1 解锁;共 16 类硬约束):
+    - refresh token 生成与存储(`crypto.randomBytes(32).base64url`;opaque random token;**明文绝不入库**,只存 `sha256(raw)`;**禁止** bcrypt;明文绝不入日志 / audit / OpenAPI 示例 / 测试 fixture / 测试快照 / 文档示例 / handoff / release notes)
+    - JWT payload 严格 zero drift(`{ sub, username }`;**禁止**新增 `role` / `permissions` / `tokenVersion` / `tv` / `jti` / `email`)
+    - DTO / Response 契约(`LoginDto` zero drift;`LoginResponseDto` 允许 +2 字段共 5 项;`RefreshTokenDto` / `LogoutDto` 严格 1 字段白名单)
+    - rotation 与 expiration 三不变式(rotation always + absolute expiration 90d 不滑动 + reuse detection 触发 family revoke;**90d** 由 PR-2.x-2 docs hotfix 从 30d 调整,沿评审稿 §3.5 D-5)
+    - logout 行为契约(只撤销当前 + `@Public()` + 幂等 + access token 不消费)
+    - logout-all 行为契约(走 `JwtAuthGuard` + 撤销该 user 全部 + 返 `{ revokedCount }`)
+    - 联动撤销四场景(本人改密 / 管理员重置 / 用户禁用 / 用户软删 → `updateMany` 同事务 + audit `extra.refreshTokensRevoked` 必写)
+    - access token 行为锁定(不主动吊销 + 15m TTL 自然过期 + `JwtStrategy` 每请求查库阻断 DISABLED / 软删 + e2e §7.5 反向锁定断言继续保留)
+    - 限流契约(`refresh` 新建独立 throttler 30/60 IP / `logout` 无限流 / `logout-all` 复用 `password-change` 5/60 IP;三 throttler 物理隔离;不暴露 `Retry-After` / `X-RateLimit-*` 头)
+    - audit 4 新事件 + 1 隐含新增(`auth.login` / `auth.refresh` / `auth.logout` / `auth.logout-all` + `password.reset.by-admin`;命名 PR-3 启动前与既有 18 项逐字复核;`extra` 禁止写 refresh 明文 / `tokenHash` / `passwordHash`)
+    - BizCode 段位锁死(仅 10007;**禁止**拆细)
+    - 不做清单(`tokenVersion` / access blacklist / 查询接口 / 设备列表 / Redis / Queue / Cron / OAuth tree / httpOnly cookie / 改 `LoginDto` 入参 / 微信 OAuth)
+    - 实施前置(`prisma migrate dev` 前必须先 `--create-only` 贴 SQL 等用户拍板;PR-3 启动前必须按评审稿 §11 五项复核点逐项 grep)
+  - 改动点 5 — §17.3(V1.1 仍然不做):把"不做 refresh token / 微信登录..."行修订:`refresh token / logout / logout-all 由 P0-E 评审稿 v1 冻结后开放(铁律见 §9 P0-E 子节);两者均不通过 V1.1 工程加固通道实现`。
+  - 改动点 6 — §17.1(CLAUDE.md only;V1.1 范围一句话总结):在历史段后追加 1 行 SRVF v0.13.0 注,明示 P0-E 走独立通道,与 V1.1 历史陈述不冲突。
+  - **0 src / 0 prisma / 0 migration / 0 test / 0 OpenAPI snapshot / 0 新依赖 / 0 修改评审稿** 变更;`CLAUDE.md` / `AGENTS.md` P0-E 解锁面镜像对齐(两文件历史性差异段不在本期修订范围)。
+
+- `docs(review): P0-E refresh token strategy v1`(本 PR 之前的 PR-1 评审稿,A 档 docs-only;条目随 PR-1 commit 已在 Unreleased 落地):
+  - 新增 [`docs/first-release-p0e-refresh-token-review.md`](docs/first-release-p0e-refresh-token-review.md)(D 档前置评审稿 v1 正式版;沿 [P0-D 评审稿 4-PR 串行范式](docs/first-release-p0d-change-my-password-review.md) #115 → #116 → #117 → #118)。
+  - 冻结 P0-E refresh token / logout / logout-all 设计决策 9 条(已由用户拍板):
+    1. `LoginResponseDto` 扩展 `refreshToken` + `refreshExpiresAt` 2 字段(`LoginDto` 入参 schema 严格 zero drift;`refreshExpiresAt` 是 ISO 8601 UTC 字符串,表示 refresh token family 的 absolute expiration,rotation 继承同一时刻不滑动 — 沿评审稿 v1 §3.1 D-1 与 PR-2.x docs hotfix)
+    2. 本期落地 `POST /api/auth/refresh`(rotation always + family revoke + absolute expiration)/ `POST /api/auth/logout`(幂等)/ `POST /api/auth/logout-all`(撤销该 user 全部 refresh)
+    3. 本人改密 / 管理员重置密码 / 用户禁用 / 用户软删 → 主动撤销目标用户全部 refresh token(`updateMany` + `revokedReason`);access token **仍不主动吊销**(沿 D-4)
+    4. **不**做 `tokenVersion`;JWT payload 严格 zero drift(`{ sub, username }`);`JwtStrategy.validate` 仍只看 `deletedAt + status === ACTIVE`,**不读** `passwordHash`
+    5. access TTL `15m`(由当前 7d 收敛)/ refresh TTL `90d`(PR-2.x-2 docs hotfix 从 30d 调整,降低内部系统低频用户频繁重登的不便,沿评审稿 §3.5 D-5)/ **absolute expiration**(rotation 不延长 expiresAt;达到 `refreshExpiresAt` 后必须重新登录);不做 sliding expiration
+    6. 新增 1 个 BizCode:`REFRESH_TOKEN_INVALID = 10007`(HTTP 401;沿 100xx users 段位,LOGIN_FAILED=10004 / 10005 / 10006 之后下一可用号位);**不拆** `EXPIRED` / `REVOKED` / `REPLAY`(沿 v1 §8 防账号枚举铁律)
+    7. `refresh` 限流走新建独立 throttler 实例 `refresh`(IP 维度 30/60);`logout` 不限流;`logout-all` 复用 P0-D `password-change` throttler(IP 维度 5/60);全部命中走统一 42900,不暴露 `Retry-After` / `X-RateLimit-*` 头
+    8. 新增 4 个 audit event:`auth.login` / `auth.refresh` / `auth.logout` / `auth.logout-all`(命名风格沿 P0-D `password.change.self` kebab-case;命名 PR-3 启动前再次复核);**隐含范围扩展**新增 `password.reset.by-admin`(管理员重置今未写 audit,PR-3 顺手补)
+    9. 本期**不做**:refresh_tokens 查询接口 / 已登录设备列表 UI / 单设备管理 / 完整 OAuth tree / device fingerprint / httpOnly cookie / Redis / Queue / Cron / access token 黑名单 / `LoginDto` schema 变更 / `tokenVersion` / 微信小程序 OAuth
+  - 评审稿含 §0 用途与定位 / §1 当前事实盘点(带文件+行号引用)/ §2 文档偏差修正 / §3 已决策 9 条 / §4 接口契约总览 / §5 安全规则(refresh token 生成与存储 / 数据模型 RefreshToken 草案 / 索引 / 清理策略 / timing 防御 / 日志-audit 敏感字段 / BizCode 段位 / 限流 / audit 4 事件)/ §6 rotation 流程 / §7 改密-禁用-删除联动 refresh 撤销 / §8 验收标准(新建 4 e2e spec + 修改 4 e2e spec + 新建 3 unit spec)/ §9 API/DTO/service/OpenAPI 影响清单 / §10 PR 拆分(强串行 PR-1 → PR-2 → PR-3 → PR-4)/ §11 代码 PR 前 5 项复核点 / §12 migration 风险与回滚策略(含 access TTL 7d → 15m 回滚口子)/ §13 D 档判定与降速依据(含禁止"顺手做"清单)/ §14 元信息与撰写边界。
+  - 本评审稿**是评审稿,不代表已经允许直接写代码**;PR-2(`CLAUDE.md` / `AGENTS.md` 铁律解锁)merged 之前**禁止**开 PR-3;PR-3 在 `prisma migrate dev` 前**必须**先回到对话贴预生成 SQL 等用户确认(沿 [`CLAUDE.md §0`](CLAUDE.md))。
+  - **0 src / 0 prisma / 0 migration / 0 test / 0 OpenAPI snapshot / 0 新依赖** 变更;**0 修改** `CLAUDE.md` / `AGENTS.md`(铁律解锁归下一 PR)。
+
+- `docs(handoff): backfill P0-B test-bucket verification completion`(#125,合入于 2026-05-17;沿 P0-D PR-4 #118 状态回填范式):
   - 反映 **2026-05-17 测试 COS bucket(`ap-guangzhou`)5 步闭环验收已通过** 的事实;**未发现需要修改代码的问题**;代码层 attachments / storage / Provider / audit / 信息泄漏防御全部符合 v0.13.0 评审稿;代码层附件链路可进入第一版前端联调。
   - 修订 [`docs/handoff/v0.13.0.md`](docs/handoff/v0.13.0.md):§5.3 P0-B 行 ⏳ → ✅;新增 §5.5 详细验收回填段(验收日期 / 验收环境 / 验收链路 / 结论 / 保留说明);§7.2 表格行 P0-B 同步。
   - 修订 [`docs/first-release-readiness-plan.md`](docs/first-release-readiness-plan.md):§3.1 P0-B 段加 **状态** 头部 + 标记 ✅(测试 bucket);§4 / §5 表格行 P0-B 同步;§8 收尾段 P0-B 措辞同步。
