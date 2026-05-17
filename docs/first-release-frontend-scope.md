@@ -396,8 +396,8 @@ sequenceDiagram
 
 - [x] **本文档**(P0-A:起步包 50 + P1 后接 42 + 第一版不接 46)
 - [x] **P0-G** BizCode 完整翻译表 — [`first-release-bizcode-mapping.md`](first-release-bizcode-mapping.md)(#111,2026-05-17;覆盖 122 条 BizCode)
-- [ ] **P0-C** bootstrap SOP — 字典 `dict_type` seed 清单与 item 真实内容(§9 的 14 个 type 均需 seed)
-- [ ] **P0-C** bootstrap SOP — 测试账号矩阵实际创建(§10 的 ≥ 3 个账号)
+- [x] **P0-C** bootstrap SOP — [`first-release-bootstrap-sop.md`](first-release-bootstrap-sop.md)(#113,2026-05-17;含字典 `dict_type` 清单 + 测试账号矩阵创建路径 + dev/staging/prod 三档差异 + 5 分钟 dry-run)
+- [ ] **运营 / 维护者侧 SOP 执行**:按 SOP §6 / §8.2 / §9 录入字典真实 items + 三张附件配置表 + 创建测试账号矩阵(SOP 已落地,实际录入与账号创建仍待运维侧执行)
 - [ ] **P0-B** 上传下载闭环验收(真实 Storage Provider 上 5 步流程跑通;沿 [`ops/cos-production-rollout-checklist.md §9`](ops/cos-production-rollout-checklist.md))
 
 齐备前,前端可对照本文 §3 / §4 做接口契约 review 与本地 mock 联调,**但不大规模铺设业务接入**。
