@@ -18,7 +18,7 @@
 
 第一版**完全不接**:RBAC CRUD、storage-settings 凭证、attachment 配置三表、audit-logs 后台、contribution-rules、health 端点等(§6)。
 
-后端真实总路由数 **138**;本文分类:起步包 **50** / P1 后接 **42** / 第一版不接 **46**。
+后端真实总路由数 **139**;本文分类:起步包 **51** / P1 后接 **42** / 第一版不接 **46**(51 + 42 + 46 = 139)。P0-D PR-3(#117)新增 `PUT /api/users/me/password`(沿 [P0-D 评审稿](first-release-p0d-change-my-password-review.md)),纳入起步包 §4.2。
 
 ---
 
@@ -49,6 +49,7 @@
   - `LOGIN_FAILED`(10004):登录失败(账号/密码 / 状态 / 软删四场景统一返;沿 [`CLAUDE.md §8`](../CLAUDE.md) 防账号枚举)
   - `UNAUTHORIZED`(40100):已登录但 token 无效 / 已过期 / 用户被禁用 / 已软删
 - 前端**必须**按 `code` 区分二者(管理员重置密码后旧 token 失效,前端不能误判为登录表单密码错)
+- 本人改密走独立接口 `PUT /api/users/me/password`(需 `oldPassword`;沿 §4.2);改密成功后**旧 token 仍有效**,前端**不需要**强制重登(沿 [P0-D 评审稿 §5.7](first-release-p0d-change-my-password-review.md));`tokenVersion` / refresh token / token revoke 仍归 [P0-E](first-release-readiness-plan.md) 统一评审
 
 ### 3.3 统一响应格式
 
@@ -87,7 +88,7 @@
 
 ---
 
-## 4. 联调起步包接口清单(50 路由)
+## 4. 联调起步包接口清单(51 路由)
 
 > 字段稳定标:✅ 稳定(契约 zero drift,字段不变)| ⚠️ 需前端联调复核(可能微调字段语义或扩展可选项)
 > 分页:Y/N。鉴权:`PUB`(无需登录)/ `USER`(任意登录)/ `ADMIN`(`@Roles(SUPER_ADMIN, ADMIN)`)
@@ -99,12 +100,13 @@
 |---|---|---|---|---|---|
 | POST | `/auth/login` | 登录(`username + password`;`memberNo` 也可作为 username 兜底) | N | PUB | ✅ |
 
-### 4.2 users(6)
+### 4.2 users(7)
 
 | Method | Path | 描述 | 分页 | 鉴权 | 稳定 |
 |---|---|---|---|---|---|
 | GET | `/users/me` | 本人资料 | N | USER | ✅ |
 | PATCH | `/users/me` | 本人改资料(仅 `nickname` / `avatarKey`) | N | USER | ✅ |
+| PUT | `/users/me/password` | 本人自助改密(需 `oldPassword`;改密后旧 token 仍有效;独立 throttler `password-change` 5/60 IP 维度;P0-D 评审稿) | N | USER | ✅ |
 | GET | `/users` | 用户列表 | Y | ADMIN | ✅ |
 | POST | `/users` | 创建用户(role 透传受边界保护) | N | ADMIN | ✅ |
 | GET | `/users/:id` | 用户详情 | N | ADMIN | ✅ |
@@ -201,7 +203,7 @@
 
 > 起步包**只走模式 B**(预签名上传链);模式 A(`POST /v2/attachments` 直接创建元数据)在 P1 后接(§5)。
 
-**起步包小计:1+6+3+5+12+4+5+6+3+5 = 50**(等于 50 上限)。
+**起步包小计:1+7+3+5+12+4+5+6+3+5 = 51**(P0-D PR-3 #117 新增 `PUT /users/me/password`,users 段从 6 扩至 7)。
 
 ---
 
@@ -211,7 +213,7 @@
 
 | 模块 | 路由数 | 接口 | 推到 P1 原因 |
 |---|---|---|---|
-| users 管理 | 4 | `PUT /users/:id/password` / `PATCH /users/:id/role` / `PATCH /users/:id/status` / `DELETE /users/:id` | role/status 变更与软删属"高危管理动作";密码重置端点存在但本人改密接口 v1 不做(沿 P0-D 评审) |
+| users 管理 | 4 | `PUT /users/:id/password` / `PATCH /users/:id/role` / `PATCH /users/:id/status` / `DELETE /users/:id` | role/status 变更与软删属"高危管理动作";本人改密接口 `PUT /users/me/password` 已落地于起步包 §4.2(P0-D PR-3 #117) |
 | dict-types 余下端点 | 5 | `POST` / `GET :id` / `PATCH :id` / `PATCH :id/status` / `DELETE :id` | 字典初始化由 P0-C 运维侧 seed 完成;前端写字典在 P1 视后台需求决定是否接入。`GET :id` 详情接口前端高频度低,起步包靠 list 已覆盖 |
 | dict-items 余下端点 | 5 | `POST` / `GET :id` / `PATCH :id` / `PATCH :id/status` / `DELETE :id` | 同上。`GET :id` 详情接口前端高频度低,起步包靠 list/tree 已覆盖 |
 | organizations 管理 | 2 | `PATCH /v2/organizations/:id/status` / `DELETE /v2/organizations/:id` | last-root 保护 + 子树存在保护属高危;P1 视后台需求接入 |
@@ -314,7 +316,7 @@ sequenceDiagram
 
 > 仅列起步包接口范围内会撞到的 BizCode;完整翻译表与前端文案映射留 [`readiness-plan P0-G`](first-release-readiness-plan.md)。
 >
-> **本节为起步包子集;完整 122 条 BizCode 翻译表(含 P1 后接 / 暂不接段)见 [`first-release-bizcode-mapping.md`](first-release-bizcode-mapping.md)**。
+> **本节为起步包子集;完整 124 条 BizCode 翻译表(含 P1 后接 / 暂不接段)见 [`first-release-bizcode-mapping.md`](first-release-bizcode-mapping.md)**(P0-G 撰写时为 122 条;经 P0-D PR-3 #117 新增 10005 / 10006 后实数 124)。
 
 ### 8.1 通用段(`4xxxx` / `5xxxx`)
 
@@ -331,7 +333,7 @@ sequenceDiagram
 
 | 模块 | 段位 | 起步包会撞的码举例 |
 |---|---|---|
-| users | `100xx` / `101xx` | `LOGIN_FAILED`(10004) / `USERNAME_ALREADY_EXISTS`(10002) / `EMAIL_ALREADY_EXISTS`(10003) / `USER_NOT_FOUND`(10001) |
+| users | `100xx` / `101xx` | `LOGIN_FAILED`(10004) / `USERNAME_ALREADY_EXISTS`(10002) / `EMAIL_ALREADY_EXISTS`(10003) / `USER_NOT_FOUND`(10001) / `OLD_PASSWORD_INVALID`(10005;PUT `/users/me/password` 时 oldPassword 错)/ `NEW_PASSWORD_SAME_AS_OLD`(10006;新密码与当前密码相同) |
 | organizations | `110xx` / `111xx` | `ORGANIZATION_NOT_FOUND`(11001) / `ORGANIZATION_PARENT_NOT_FOUND`(11010) / `ORGANIZATION_NODE_TYPE_INVALID`(11011) / `ORGANIZATION_ROOT_ALREADY_EXISTS`(11032) |
 | dictionaries | `120xx` | 起步包只读;主要可能撞 `DICT_TYPE_NOT_FOUND`(12001) / `DICT_ITEM_NOT_FOUND`(12010) |
 | attachments | `130xx` | 详见 §7.3 失败路径表 |
@@ -394,8 +396,8 @@ sequenceDiagram
 
 第一版"前端联调包"由以下文档与产物共同构成,**全部齐备**前端才宜大规模接入起步包:
 
-- [x] **本文档**(P0-A:起步包 50 + P1 后接 42 + 第一版不接 46)
-- [x] **P0-G** BizCode 完整翻译表 — [`first-release-bizcode-mapping.md`](first-release-bizcode-mapping.md)(#111,2026-05-17;覆盖 122 条 BizCode)
+- [x] **本文档**(P0-A:起步包 51 + P1 后接 42 + 第一版不接 46;P0-D PR-3 #117 后)
+- [x] **P0-G** BizCode 完整翻译表 — [`first-release-bizcode-mapping.md`](first-release-bizcode-mapping.md)(#111,2026-05-17;P0-G 撰写时覆盖 122 条,P0-D PR-3 #117 新增 10005 / 10006 后实数 124,P0-D PR-4 同步)
 - [x] **P0-C** bootstrap SOP — [`first-release-bootstrap-sop.md`](first-release-bootstrap-sop.md)(#113,2026-05-17;含字典 `dict_type` 清单 + 测试账号矩阵创建路径 + dev/staging/prod 三档差异 + 5 分钟 dry-run)
 - [ ] **运营 / 维护者侧 SOP 执行**:按 SOP §6 / §8.2 / §9 录入字典真实 items + 三张附件配置表 + 创建测试账号矩阵(SOP 已落地,实际录入与账号创建仍待运维侧执行)
 - [ ] **P0-B** 上传下载闭环验收(真实 Storage Provider 上 5 步流程跑通;沿 [`ops/cos-production-rollout-checklist.md §9`](ops/cos-production-rollout-checklist.md))

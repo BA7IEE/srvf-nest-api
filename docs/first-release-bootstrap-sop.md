@@ -45,7 +45,7 @@
 - ❌ 不写 nginx / Caddy / K8s manifests / Helm chart / Docker compose 生产形态
 - ❌ 不新增 seed 数据 / dict_item 真实取值 / 测试账号具体凭据 / 组织节点
 - ❌ 不修改 schema / src / env 字段 / Provider 实现
-- ❌ 不解决 P0-D(修改密码)/ P0-E(refresh token)/ P0-F(RBAC 收紧)的评审议题
+- ❌ 不解决 P0-E(refresh token)/ P0-F(RBAC 收紧)的评审议题(P0-D 修改密码已落地于 #115 / #116 / #117;入口见 §9.1)
 
 ---
 
@@ -85,8 +85,8 @@ git status --short                               # 期望:空
 | [`docs/deployment.md`](deployment.md) | Docker 镜像 / 生产 env / migration 触发原则 |
 | [`docs/security.md`](security.md) | 已落地安全策略 / 密码 / 软删除 |
 | [`docs/first-release-readiness-plan.md`](first-release-readiness-plan.md) | 第一版剩余账本(P0-A..I) |
-| [`docs/first-release-frontend-scope.md`](first-release-frontend-scope.md) | 前端联调起步包 50 接口 |
-| [`docs/first-release-bizcode-mapping.md`](first-release-bizcode-mapping.md) | BizCode 122 条翻译 |
+| [`docs/first-release-frontend-scope.md`](first-release-frontend-scope.md) | 前端联调起步包 51 接口(P0-D PR-3 #117 后)|
+| [`docs/first-release-bizcode-mapping.md`](first-release-bizcode-mapping.md) | BizCode 124 条翻译(含 P0-D 新增 10005 / 10006)|
 | [`docs/ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md) | 仅 staging / prod 走 COS 时必读 |
 
 ---
@@ -361,6 +361,13 @@ seed 额外创建的 3 个闭集 status 字典(`cert_status` / `activity_status`
 
 由 `pnpm prisma:seed` 创建;用 `.env` 中 `SUPER_ADMIN_USERNAME` / `SUPER_ADMIN_PASSWORD` 登录。
 
+**建议**(P0-D PR-3 #117 起):SUPER_ADMIN 登录后立即调 `PUT /api/users/me/password`(入参 `{ oldPassword, newPassword }`),改掉 `.env` 中的默认占位密码(production 启动校验已拒绝 `ChangeMe123456`,但仍建议在线轮换为新强口令)。接口特性:
+
+- 鉴权:任意登录用户均可改自己的密码
+- 限流:独立 throttler `password-change`,IP 维度 5 次 / 60 秒(`PASSWORD_CHANGE_THROTTLE_LIMIT` / `PASSWORD_CHANGE_THROTTLE_TTL_SECONDS` 可配)
+- audit:成功写 `password.change.self` 事件(不含 `oldPassword` / `newPassword` / `passwordHash` 任何明文或 hash)
+- token 行为:**改密后旧 token 仍有效**(沿 [`security.md` Token 吊销升级路径](security.md));如需立即阻断,沿用管理员把目标用户 `status` 改 `DISABLED` 的现有机制;`tokenVersion` / refresh token / token revoke 仍归 **P0-E** 统一评审,本接口**不**预实现
+
 ### 9.2 ADMIN 创建(SUPER_ADMIN 登录后调 API)
 
 ```bash
@@ -628,7 +635,9 @@ curl '<api-base-url>/api/v2/organizations' \
 | `/api/docs` 返 404 | `APP_ENV` + `ENABLE_SWAGGER` 组合(沿 [`development.md §排错`](development.md))|
 | 登录返 `LOGIN_FAILED`(10004)| 防账号枚举四场景统一(沿 [`first-release-frontend-scope.md §3.2`](first-release-frontend-scope.md));前端不能据响应区分原因 |
 | 登录返 `TOO_MANY_REQUESTS`(42900)| IP 维度限流命中(默认 5/60s);等过 TTL 或换 IP;**不**会暴露阈值 / 剩余配额 / `Retry-After` |
-| 已登录后续请求返 `UNAUTHORIZED`(40100)| token 失效 / 用户被禁 / 已软删;**与 10004 区分**,管理员重置密码不会自动吊销旧 token(沿 [`security.md §Token 吊销升级路径`](security.md))|
+| 已登录后续请求返 `UNAUTHORIZED`(40100)| token 失效 / 用户被禁 / 已软删;**与 10004 区分**,管理员重置密码与本人自助改密(`PUT /api/users/me/password`)**均不主动吊销旧 token**(沿 [`security.md §Token 吊销升级路径`](security.md);改密后立即阻断需把目标 `status` 改 `DISABLED`,tokenVersion / revoke 归 P0-E)|
+| 本人改密返 `OLD_PASSWORD_INVALID`(10005)| `PUT /api/users/me/password` 时 `oldPassword` 与当前 `passwordHash` 不匹配;**不要**当成 10004 LOGIN_FAILED 错误重登(已登录态,沿 [`first-release-bizcode-mapping.md §4.2`](first-release-bizcode-mapping.md))|
+| 本人改密返 `NEW_PASSWORD_SAME_AS_OLD`(10006)| `newPassword === oldPassword`(严格 === 比较;不 trim/toLowerCase);要求新密码与当前密码不同 |
 | `POST /api/v2/attachments/upload-url` 返 13010 | §8.2 `attachment_type_configs` 未录入对应 ownerType |
 | 返 13012 | `attachment_mime_configs` 未录入对应 MIME |
 | 返 13013 | size 超 `attachment_size_limit_configs` 上限 |
@@ -647,8 +656,8 @@ curl '<api-base-url>/api/v2/organizations' \
 |---|---|
 | 接口字段 / OpenAPI / 完整入参出参 | [`docs/v2-api-contract.md`](v2-api-contract.md) + Swagger `/api/docs` |
 | 数据模型 / 字段约束 / 索引 | [`prisma/schema.prisma`](../prisma/schema.prisma) + [`docs/v2-data-model.md`](v2-data-model.md) |
-| 完整 BizCode 翻译(122 条)| [`docs/first-release-bizcode-mapping.md`](first-release-bizcode-mapping.md) |
-| 前端联调起步包 50 接口 | [`docs/first-release-frontend-scope.md`](first-release-frontend-scope.md) |
+| 完整 BizCode 翻译(124 条;含 P0-D 新增 10005 / 10006)| [`docs/first-release-bizcode-mapping.md`](first-release-bizcode-mapping.md) |
+| 前端联调起步包 51 接口(P0-D PR-3 #117 后)| [`docs/first-release-frontend-scope.md`](first-release-frontend-scope.md) |
 | 第一版剩余账本 P0/P1/P2 | [`docs/first-release-readiness-plan.md`](first-release-readiness-plan.md) |
 | COS 生产链路 12 节运维清单 | [`docs/ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md) |
 | 部署 / Docker 镜像 / migration 触发 | [`docs/deployment.md`](deployment.md) |
@@ -658,7 +667,7 @@ curl '<api-base-url>/api/v2/organizations' \
 | 协作流程 / PR 分级 / D 档降速 | [`docs/process.md`](process.md) |
 | 字典 / RBAC / Attachment seed 行为 | [`prisma/seed.ts`](../prisma/seed.ts) 文件头注释 |
 | K8s manifests / Helm / nginx / Caddy / docker-compose.prod | **本仓库不持有**;由部署平台另行维护 |
-| Refresh token / logout / 本人改密 / RBAC 收紧 | 留 P0-D / P0-E / P0-F 评审(沿 [`readiness-plan §3.1`](first-release-readiness-plan.md))|
+| Refresh token / logout / RBAC 收紧 | 留 P0-E / P0-F 评审(沿 [`readiness-plan §3.1`](first-release-readiness-plan.md));P0-D 本人改密已落地(见 §9.1)|
 
 ### 14.2 引用来源(完整列表)
 
