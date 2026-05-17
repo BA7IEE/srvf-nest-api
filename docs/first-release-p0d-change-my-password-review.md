@@ -1,5 +1,7 @@
 # P0-D 本人自助改密评审稿(PR-1 评审稿,非执行稿)
 
+> **回填注(2026-05-17 / v0.13.0)**:本评审稿的结论**已通过 PR #115 / #116 / #117 / #118 落地**(`PUT /api/users/me/password` + 新增 BizCode `OLD_PASSWORD_INVALID=10005` / `NEW_PASSWORD_SAME_AS_OLD=10006` + `@PasswordChangeThrottle` 5 次/60 秒 + audit event `password.change.self`),**已随 v0.13.0 发布**(2026-05-17T08:08:36Z)。**当前实现以代码、[`security.md`](security.md)、first-release 系列([readiness-plan](first-release-readiness-plan.md) / [bizcode-mapping](first-release-bizcode-mapping.md))与 [`docs/handoff/v0.13.0.md`](handoff/v0.13.0.md) §4 为准**。**本评审稿保留作历史评审快照,不再表示"待实施"**;下方"D 档前置评审稿 / 待 PR-2 / PR-3 / PR-4 落地"等表述是评审定稿时刻的阶段状态。
+
 > **状态**:**D 档前置评审稿,非执行稿**。
 > 本文档**不是**代码实现说明,**不是**铁律修订(铁律修订归 PR-2)。
 > 本文档只用于**冻结 P0-D 本人自助改密的设计决策**,供后续 PR-2 / PR-3 / PR-4 严格按本评审稿落地。

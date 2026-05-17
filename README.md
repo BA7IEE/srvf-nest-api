@@ -100,7 +100,7 @@ pnpm start:dev
 
 ### V2 第一阶段(srvf-foundation)
 
-V2 第一阶段开发已完成,等待维护者按需 release / tag。新增 72 个接口(原 70 + 批次 4-B 终审 2),**v1 14 接口契约严格 zero drift**(`LoginDto` / `UserResponseDto` 不漂移)。
+V2 第一阶段开发已完成并随 v0.13.0 发布。**第一版前端联调起步包 = 51 路由**;**P1 后接 = 42 路由**;**第一版暂不接 = 46 路由**(完整起步包 / P1 后接 / 暂不接的口径以 [`docs/first-release-frontend-scope.md`](./docs/first-release-frontend-scope.md) 为准,**不在 README 维护详细路由表**)。本表下方按模块列出 V2 第一阶段已实装接口,**v1 14 接口契约严格 zero drift**(`LoginDto` / `UserResponseDto` 不漂移)。
 
 | 模块 | 路径前缀 | 接口数 | 关键能力 |
 |---|---|---|---|
