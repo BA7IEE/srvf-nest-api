@@ -145,7 +145,9 @@
 
 **直接开发?**:**必须先 D 档评审**(评审稿:列出 18 个非 attachments 模块的当前 `@Roles` 标注 + 第一版要不要收紧 + 哪些必须收紧 + 哪些可以延后);**禁止**自行扩散接入 rbac.can()。
 
-#### P0-G 前端 BizCode / API 契约冻结
+#### P0-G 前端 BizCode / API 契约冻结 ✅
+
+**状态**:已由 PR #111 落地为 [`docs/first-release-bizcode-mapping.md`](first-release-bizcode-mapping.md)(2026-05-17;覆盖 122 条 BizCode 全量);上传 / 下载流程图沿用 [`first-release-frontend-scope.md §7`](first-release-frontend-scope.md),本 PR 不重复。
 
 **为什么是 P0**:接口契约虽然 zero drift,但"前端要知道每个 BizCode 怎么翻"是另一回事。如果不冻结,前端会做出与后端不一致的提示。
 
@@ -218,8 +220,8 @@
 
 | # | 名称 | 类型 | 先评审? | 建议 PR 数 | 为什么排这里 |
 |---|---|---|---|---|---|
-| 1 | P0-A 前端联调范围清单 | Docs-only | ❌ | 1 | 没有它,后续工作都没方向;前端先看到"要接什么",才有反馈 |
-| 2 | P0-G 前端 BizCode / 契约冻结 | Docs-only | ❌ | 1 | 紧接 A,前端开始联调前必须有 |
+| 1 | P0-A 前端联调范围清单 ✅(#110) | Docs-only | ❌ | 1 | 没有它,后续工作都没方向;前端先看到"要接什么",才有反馈 |
+| 2 | P0-G 前端 BizCode / 契约冻结 ✅(#111) | Docs-only | ❌ | 1 | 紧接 A,前端开始联调前必须有 |
 | 3 | P0-B 上传下载闭环验收 | Ops演练 + 可能 Mixed | ❌(运维清单已就位) | 0(纯演练)+ ≤2 修复 PR | 代码就绪,执行风险最高,先跑一次找问题 |
 | 4 | P0-C 初始化 / bootstrap SOP | Docs-only | ❌ | 1 | B 演练副产物可同步落到 C |
 | 5 | P0-H 部署演练 | Ops演练 + 可能 Mixed | ❌ | 0(纯演练)+ ≤1 修复 PR | 同 B,执行前置;C 写好 SOP 后再演练更顺 |
@@ -239,8 +241,8 @@
 
 | P0 项 | 推荐 PR | 内容 | 禁止范围 | 验收标准 |
 |---|---|---|---|---|
-| P0-A | `docs(first-release): frontend integration scope` | 前端要接的接口清单 + 不接的列表 + 上传流程图 | 不动 src/* | 前端 review 通过;清单 ≤ 50 接口 |
-| P0-G | `docs(first-release): bizcode mapping for frontend` | BizCode 翻译表 + 错误响应说明 + 前后端约定 | 不动 src/*;**不**新增 BizCode | 前端 review 通过;覆盖现有所有 BizCode |
+| P0-A ✅ | `docs(first-release): frontend integration scope`(#110) | 前端要接的接口清单 + 不接的列表 + 上传流程图 | 不动 src/* | ✅ 已落地(2026-05-16) |
+| P0-G ✅ | `docs(first-release): bizcode mapping for frontend`(#111) | BizCode 翻译表 + 错误响应说明 + 前后端约定 | 不动 src/*;**不**新增 BizCode | ✅ 已落地(2026-05-17;覆盖 122 条 BizCode) |
 | P0-B | (0 PR;仅 Ops 演练)+ 视情况 `fix(storage): ...` | 演练记录入 [`ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md) 附录;发现的代码 bug 单独 PR | **演练**不动 src/*;修复 PR 范围严格限定演练发现的问题 | 5 步闭环全部 ✅(沿 ops §9.7) |
 | P0-C | `docs(deployment): zero-to-login bootstrap sop` | 从零部署到第一个账号能登录的串行 SOP | 不动 src/* | 一个没接触过本仓库的开发能照着跑通 |
 | P0-H | (0 PR;仅 Ops 演练)+ 视情况 `docs(deployment): ...` | 部署演练记录入 [`deployment.md`](deployment.md) 附录 | **演练**不动 src/* | 真实环境从空机器到 health/ready 200 |

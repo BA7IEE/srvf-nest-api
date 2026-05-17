@@ -395,7 +395,7 @@ sequenceDiagram
 第一版"前端联调包"由以下文档与产物共同构成,**全部齐备**前端才宜大规模接入起步包:
 
 - [x] **本文档**(P0-A:起步包 50 + P1 后接 42 + 第一版不接 46)
-- [ ] **P0-G** BizCode 完整翻译表(前端文案映射;沿 [`readiness-plan §3.1`](first-release-readiness-plan.md))
+- [x] **P0-G** BizCode 完整翻译表 — [`first-release-bizcode-mapping.md`](first-release-bizcode-mapping.md)(#111,2026-05-17;覆盖 122 条 BizCode)
 - [ ] **P0-C** bootstrap SOP — 字典 `dict_type` seed 清单与 item 真实内容(§9 的 14 个 type 均需 seed)
 - [ ] **P0-C** bootstrap SOP — 测试账号矩阵实际创建(§10 的 ≥ 3 个账号)
 - [ ] **P0-B** 上传下载闭环验收(真实 Storage Provider 上 5 步流程跑通;沿 [`ops/cos-production-rollout-checklist.md §9`](ops/cos-production-rollout-checklist.md))
