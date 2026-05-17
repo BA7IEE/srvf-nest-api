@@ -90,7 +90,9 @@
 
 **直接开发?**:**先 Ops 演练,后开 PR**。运维清单已经在仓库里,只欠真实环境跑一次。
 
-#### P0-C 初始化配置 / bootstrap SOP
+#### P0-C 初始化配置 / bootstrap SOP ✅
+
+**状态**:已由 PR #113 落地为 [`docs/first-release-bootstrap-sop.md`](first-release-bootstrap-sop.md)(2026-05-17;702 行,docs-only;覆盖 dev / staging / prod 三档环境前置 / 数据库初始化 / seed 落地内容 / RBAC 初始状态 / 14 个字典 type 清单 / 组织树初始 / 附件配置初始 / 测试账号矩阵创建路径 / 前端联调前置检查 / 5 分钟 dry-run / 13 行失败排查表)。
 
 **为什么是 P0**:当前 `README.md` 只写了本地起服务,生产环境从空数据库到"队员能登录"需要的步骤分散在 7 个文档里。换一个人来部署一定会卡。
 
@@ -244,7 +246,7 @@
 | P0-A ✅ | `docs(first-release): frontend integration scope`(#110) | 前端要接的接口清单 + 不接的列表 + 上传流程图 | 不动 src/* | ✅ 已落地(2026-05-16) |
 | P0-G ✅ | `docs(first-release): bizcode mapping for frontend`(#111) | BizCode 翻译表 + 错误响应说明 + 前后端约定 | 不动 src/*;**不**新增 BizCode | ✅ 已落地(2026-05-17;覆盖 122 条 BizCode) |
 | P0-B | (0 PR;仅 Ops 演练)+ 视情况 `fix(storage): ...` | 演练记录入 [`ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md) 附录;发现的代码 bug 单独 PR | **演练**不动 src/*;修复 PR 范围严格限定演练发现的问题 | 5 步闭环全部 ✅(沿 ops §9.7) |
-| P0-C | `docs(deployment): zero-to-login bootstrap sop` | 从零部署到第一个账号能登录的串行 SOP | 不动 src/* | 一个没接触过本仓库的开发能照着跑通 |
+| P0-C ✅ | `docs(first-release): add bootstrap SOP`(#113) | 从零部署到第一个账号能登录的串行 SOP — [`docs/first-release-bootstrap-sop.md`](first-release-bootstrap-sop.md) | 不动 src/* | ✅ 已落地(2026-05-17;702 行;dev/staging/prod 三档;含 14 dict_type 清单 + 测试账号矩阵路径 + 5 分钟 dry-run)|
 | P0-H | (0 PR;仅 Ops 演练)+ 视情况 `docs(deployment): ...` | 部署演练记录入 [`deployment.md`](deployment.md) 附录 | **演练**不动 src/* | 真实环境从空机器到 health/ready 200 |
 | P0-I | `docs(deployment): troubleshooting sop` | 5 类典型故障的排错路径 | 不动 src/* | 维护者按文档能定位 P0-B / P0-H 演练中的所有问题 |
 | P0-D | (评审)`docs(review): change-my-password review` + (代码)`feat(users): add change my password` | 评审稿先冻结(密码策略 / 错误码 / 是否吊销 token / 防爆破 / 审计);代码 PR 严格按评审范围实施 | **评审 PR** 不动 src/*;**代码 PR** 严格按评审范围实施;不夹带 schema 变更;不夹带 token 吊销 | 评审通过 + 代码 PR contract 不漂移 |

@@ -15,7 +15,7 @@
 | Swagger `setVersion(...)` | `0.12.0` |
 | 最新 git tag | `v0.12.0`(2026-05-16T09:10:47Z) |
 | GitHub Latest Release | `v0.12.0`(标 Latest) |
-| `main` HEAD | `3e021fd` `docs(first-release): add bizcode mapping for frontend (#111)` |
+| `main` HEAD | `f516ae8` `docs(first-release): add bootstrap SOP (#113)` |
 | open PR | **0** |
 | 工作树状态 | clean |
 | 最新 handoff | [`docs/handoff/v0.12.0.md`](handoff/v0.12.0.md)(历史快照,不回改) |
@@ -79,7 +79,7 @@
 | P0 | 权限体系双轨并存(Guard `@Roles(...)` + Service `rbac.can()`),只有 `attachments` 一个业务模块真正接入 RBAC | 等用户拍板 Slow-3 后再启动 Slow-4 全面接入 |
 | P0 | release 后 docs 回填无明确 checklist | 已沉淀进 [`docs/process.md §5`](process.md) |
 | P0 | `FINAL_REPORT.md` 在根目录顶层但内容是 v0.1.3 时代 | 后续单独 docs PR 加段头或归档,**本 PR 不动** |
-| P0 | 第一版前端联调包待齐备 | P0-A 起步包(#110)+ P0-G BizCode 翻译表(#111)已落地;P0-B 上传下载闭环验收 / P0-C bootstrap SOP 仍待立项,前端在齐备前不宜大规模铺设业务接入 |
+| P0 | 第一版前端联调包待齐备 | P0-A 起步包(#110)+ P0-G BizCode 翻译表(#111)+ P0-C bootstrap SOP(#113)已落地;P0-B 上传下载闭环验收 / P0-D 改密评审 等仍待立项,前端在齐备前不宜大规模铺设业务接入 |
 | P1 | docs/ 体系庞大(根 6 大文档 + docs/ 30+ 文件) | 长期逐步归档(`docs/v1.3-plan.md` / `v1.4-prisma7-evaluation.md` / `srvf-foundation-data-model-draft.md` 等老草案) |
 | P1 | `docs/V2红线与复活路径.md` 顶部"基线版本 v0.7.0"严重滞后于实际 v0.12.0 | 改为滚动维护或明示最后核对版本 |
 | P1 | `TASKS.md` 单文件 1742 行,V1.1 历史与 V2.x 当前混排 | 已加范围说明,长期可拆 |
@@ -121,6 +121,7 @@
    - 对应批次评审稿 `docs/批次*.md`(冻结决议)
    - 历史 handoff `docs/handoff/v*.md`(release 时刻快照)
    - 运行 SOP:[`development.md`](development.md) / [`testing.md`](testing.md) / [`deployment.md`](deployment.md) / [`security.md`](security.md) / [`ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md)
+   - 第一版联调前置 SOP:[`first-release-bootstrap-sop.md`](first-release-bootstrap-sop.md)(zero-to-login 串行清单;P0-C 落地于 #113)
 
 ---
 
