@@ -60,6 +60,21 @@ export const BizCode = {
     httpStatus: HttpStatus.BAD_REQUEST,
   },
 
+  // P0-E PR-3(2026-05-18):refresh token 接口失败统一码(沿
+  // docs/first-release-p0e-refresh-token-review.md §5.7 + §6.5)。
+  // 段位归属:沿 v1 §5 BizCode 编码段:100xx 为 users 模块业务级(含 auth);
+  // 已用 10001-10006(LOGIN_FAILED=10004 / OLD_PASSWORD_INVALID=10005 /
+  // NEW_PASSWORD_SAME_AS_OLD=10006),10007 为下一可用号位。
+  //
+  // **不**拆 REFRESH_TOKEN_EXPIRED / REVOKED / REPLAY(沿评审稿 D-6 + v1 §8 防账号枚举):
+  // refresh 失败的 4 种子原因(不存在 / 已撤销 / 已过期 / 重放命中)统一返 10007,
+  // 响应体 / HTTP status / message 完全一致(防止攻击者据错误码反推 token 状态)。
+  REFRESH_TOKEN_INVALID: {
+    code: 10007,
+    message: 'refresh token 无效或已过期',
+    httpStatus: HttpStatus.UNAUTHORIZED,
+  },
+
   // users 模块权限/操作边界(101xx)
   FORBIDDEN_ROLE_OPERATION: {
     code: 10101,

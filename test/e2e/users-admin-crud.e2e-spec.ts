@@ -458,6 +458,35 @@ describe('users 管理接口 CRUD 基础路径', () => {
       expect(dbUser?.deletedAt).not.toBeNull();
       expect(dbUser?.status).toBe('DISABLED');
     });
+
+    // P0-E PR-3:PATCH /:id/status → DISABLED 联动撤销目标 user 全部 refresh(沿评审稿 §7.3)。
+    // ACTIVE → ACTIVE 不动 refresh(避免无意义清理;沿 D-PR3-2 用户拍板 §7.5)。
+    // 本 PR **不**为 status 改动写 audit(沿 D-PR3-2)。
+    it('PATCH /:id/status → DISABLED 后目标 user 全部 refresh 撤销 + revokedReason=admin-disable', async () => {
+      await createTestUser(app, { username: 'disablesuper1', role: Role.SUPER_ADMIN });
+      const target = await createTestUser(app, { username: 'disabletarget1' });
+      const { authHeader } = await loginAs(app, 'disablesuper1');
+      // target 自己 login 产生 refresh
+      await request(httpServer(app))
+        .post('/api/auth/login')
+        .send({ username: 'disabletarget1', password: TEST_PASSWORD });
+
+      const before = await prisma.refreshToken.findMany({
+        where: { userId: target.id, revokedAt: null },
+      });
+      expect(before.length).toBe(1);
+
+      await request(httpServer(app))
+        .patch(`/api/users/${target.id}/status`)
+        .set('Authorization', authHeader)
+        .send({ status: 'DISABLED' });
+
+      const after = await prisma.refreshToken.findMany({ where: { userId: target.id } });
+      for (const r of after) {
+        expect(r.revokedAt).not.toBeNull();
+        expect(r.revokedReason).toBe('admin-disable');
+      }
+    });
   });
 
   describe('PATCH /:id/role / PATCH /:id/status / PUT /:id/password DTO 校验', () => {

@@ -67,6 +67,12 @@ model User {
   // uploadedBy FK 在 Attachment 侧用 onDelete: Restrict(沿 D7 v1.0 §4.1 Q4)。
   attachmentsUploaded Attachment[] @relation("AttachmentUploader")
 
+  // V2.x P0-E PR-3 反向 relation(沿 docs/first-release-p0e-refresh-token-review.md §5.2)。
+  // 仅 Prisma 关系映射,不算业务字段新增(沿 batch 1 / 2 / 3 / 6 / 7 / 8 R2 范式;A-2 zero drift)。
+  // 撤销路径:logout / logout-all / 改密 / 重置 / 禁用 / 软删 → updateMany;
+  // User 软删走 deletedAt 不物理删除,refresh_tokens.userId FK Restrict 仅理论风险。
+  refreshTokens RefreshToken[]
+
   @@index([deletedAt])
   @@index([status])
 }
@@ -556,22 +562,22 @@ model AttendanceSheet {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  activityId            String
-  submitterUserId       String
-  submittedAt           DateTime  @default(now())
-  statusCode            String
-  reviewerUserId        String?
-  reviewedAt            DateTime?
-  reviewNote            String?
+  activityId          String
+  submitterUserId     String
+  submittedAt         DateTime  @default(now())
+  statusCode          String
+  reviewerUserId      String?
+  reviewedAt          DateTime?
+  reviewNote          String?
   // V2 第一阶段批次 4-A 新增三字段(D-S5):APD 部门部长 / 副部长终审。
   // 与 reviewer* 系列对称(沿 baseline §2.1 命名);均可空,在 final-approve / final-reject
   // service 内事务填入。APD 一级 approve 时 statusCode 进入 pending_final_review;
   // 终审通过 → approved(贡献值正式生效,触发 attendance.recorded);终审驳回 → final_rejected。
-  finalReviewerUserId   String?
-  finalReviewedAt       DateTime?
-  finalReviewNote       String?
-  previousSnapshot      Json? // D38 后端事务内自动生成
-  version               Int       @default(1) // Q-D8 不做乐观锁;服务端版本号
+  finalReviewerUserId String?
+  finalReviewedAt     DateTime?
+  finalReviewNote     String?
+  previousSnapshot    Json? // D38 后端事务内自动生成
+  version             Int       @default(1) // Q-D8 不做乐观锁;服务端版本号
 
   activity      Activity           @relation(fields: [activityId], references: [id], onDelete: Restrict)
   submitter     User               @relation("SheetSubmitter", fields: [submitterUserId], references: [id], onDelete: Restrict)
@@ -620,11 +626,11 @@ model AttendanceRecord {
   roleCode             String
   checkInAt            DateTime
   checkOutAt           DateTime
-  serviceHours         Decimal   @db.Decimal(5, 2) // Q-D2 显式注解;必填且 > 0(D45/D51)
+  serviceHours         Decimal  @db.Decimal(5, 2) // Q-D2 显式注解;必填且 > 0(D45/D51)
   attendanceStatusCode String
   note                 String?
   registrationId       String? // Q-D26 / D27 可空(临时参加 / 非公开报名)
-  contributionPoints   Decimal?  @db.Decimal(5, 2) // Q-D2 + R31;字段层可空,APD approved 前必填
+  contributionPoints   Decimal? @db.Decimal(5, 2) // Q-D2 + R31;字段层可空,APD approved 前必填
 
   sheet        AttendanceSheet       @relation(fields: [sheetId], references: [id], onDelete: Restrict)
   member       Member                @relation(fields: [memberId], references: [id], onDelete: Restrict)
@@ -679,21 +685,21 @@ model AttendanceRecord {
 // 追加 migration SQL(参见 migration.sql 末尾)。schema 仅声明普通 @@index。
 
 model ContributionRule {
-  id                String                 @id @default(cuid())
-  activityTypeCode  String
+  id                 String                 @id @default(cuid())
+  activityTypeCode   String
   attendanceRoleCode String
-  durationThreshold Decimal?               @db.Decimal(5, 2) // 时长档位阈值(小时);null 表示无档位
-  pointsBelow       Decimal                @db.Decimal(5, 2) // ≤ 阈值(或无档位)的预填分值
-  pointsAbove       Decimal?               @db.Decimal(5, 2) // > 阈值的预填分值;无档位时不填
-  dailyCap          Decimal?               @db.Decimal(5, 2) // 每日上限;null 时 service 兜底 1.5
-  status            ContributionRuleStatus @default(ACTIVE)
-  remark            String?
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  deletedAt         DateTime?
-  createdByUserId   String?
-  updatedByUserId   String?
-  deletedByUserId   String?
+  durationThreshold  Decimal?               @db.Decimal(5, 2) // 时长档位阈值(小时);null 表示无档位
+  pointsBelow        Decimal                @db.Decimal(5, 2) // ≤ 阈值(或无档位)的预填分值
+  pointsAbove        Decimal?               @db.Decimal(5, 2) // > 阈值的预填分值;无档位时不填
+  dailyCap           Decimal?               @db.Decimal(5, 2) // 每日上限;null 时 service 兜底 1.5
+  status             ContributionRuleStatus @default(ACTIVE)
+  remark             String?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  deletedAt          DateTime?
+  createdByUserId    String?
+  updatedByUserId    String?
+  deletedByUserId    String?
 
   createdBy User? @relation("ContributionRuleCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
   updatedBy User? @relation("ContributionRuleUpdater", fields: [updatedByUserId], references: [id], onDelete: Restrict)
@@ -910,20 +916,20 @@ enum AttachmentAccessLevel {
 }
 
 model AttachmentTypeConfig {
-  id          String  @id @default(cuid())
-  code        String  @unique // ownerType code;如 'member' / 'certificate' / 'activity'
-  displayName String // 后台 UI 显示名
-  description String?
+  id                   String                     @id @default(cuid())
+  code                 String                     @unique // ownerType code;如 'member' / 'certificate' / 'activity'
+  displayName          String // 后台 UI 显示名
+  description          String?
   // ===== 关联业务表名(用于 Service 层 ownerId 真实性校验) =====
-  ownerTable String // 业务表名小写;如 'member' / 'certificate' / 'activity'
+  ownerTable           String // 业务表名小写;如 'member' / 'certificate' / 'activity'
   // ===== 默认配置(覆盖至 mime / size 表为空时的兜底) =====
   defaultMaxSizeBytes  Int? // 默认单文件大小上限;null 走全局兜底
   defaultMimeWhitelist String[] // 默认允许 MIME 列表
   // ===== 启停(沿 baseline §2.2.3) =====
-  status    AttachmentTypeConfigStatus @default(ACTIVE)
-  createdAt DateTime                   @default(now())
-  updatedAt DateTime                   @updatedAt
-  deletedAt DateTime? // 沿 baseline §2.1 软删
+  status               AttachmentTypeConfigStatus @default(ACTIVE)
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  deletedAt            DateTime? // 沿 baseline §2.1 软删
 
   mimeOverrides AttachmentMimeConfig[]
   sizeOverrides AttachmentSizeLimitConfig[]
@@ -1033,4 +1039,45 @@ enum StorageProviderType {
 enum StorageMimePolicyMode {
   INHERIT // 沿 attachment_mime_configs(默认;首期锁定)
   OVERRIDE // 由 storage_settings 直接限定;留 v1.1+ 启用
+}
+
+// ===== V2.x P0-E PR-3 refresh_tokens 表 =====
+//
+// 沿 docs/first-release-p0e-refresh-token-review.md §5.2 schema 草案。
+// rotation always + family revoke + absolute expiration(90d 不滑动);
+// refresh token 明文绝不入库,只存 sha256 hash(沿 §5.1)。
+//
+// 撤销路径:
+//   - rotation        → revokedReason='rotated' + replacedById 指向新 token
+//   - logout          → revokedReason='logout'(只杀当前 row)
+//   - logout-all      → revokedReason='logout'(updateMany where userId)
+//   - 重放命中         → revokedReason='family-revoked'(updateMany where familyId)
+//   - 改密 / 重置      → revokedReason='self-password-change' / 'admin-password-reset'
+//   - 禁用 / 软删       → revokedReason='admin-disable' / 'admin-delete'
+//
+// revokedReason 不上 Prisma enum(沿 audit event 字符串风格;允许后续扩展不破坏 migration)。
+// ipFirstSeen / uaFirstSeen 仅供审计,不出对外 API(沿 v1 §10 信息泄漏防御)。
+model RefreshToken {
+  id            String    @id @default(cuid())
+  userId        String
+  tokenHash     String    @unique // sha256(rawRefresh) hex 64 字符
+  familyId      String // 同一登录链 rotation 串关联 id;login 时 cuid() 生成,rotation 继承
+  expiresAt     DateTime // 绝对过期时刻;rotation 继承原 family 首个 token 的 expiresAt(不延长)
+  createdAt     DateTime  @default(now())
+  rotatedAt     DateTime? // 被 rotation 替换的时间
+  revokedAt     DateTime? // 撤销时间;null = 仍有效
+  revokedReason String? // 撤销原因(字符串枚举)
+  replacedById  String?   @unique // rotation 后产生的新 token id
+  ipFirstSeen   String? // 仅供审计;login 时写入,不对外
+  uaFirstSeen   String? // 仅供审计;login 时写入,不对外
+
+  user       User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  replacedBy RefreshToken? @relation("ReplacedBy", fields: [replacedById], references: [id], onDelete: SetNull)
+  replaces   RefreshToken? @relation("ReplacedBy")
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("refresh_tokens")
 }

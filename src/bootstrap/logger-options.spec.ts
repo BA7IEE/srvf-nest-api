@@ -14,9 +14,10 @@ const fakeAppCfg: AppConfig = {
   swaggerEnabled: true,
   logLevel: 'info',
   loginThrottle: { limit: 5, ttlSeconds: 60 },
-  // P0-D PR-3:新增独立 throttler 配置(沿 LoginThrottleConfig 结构);
+  // P0-D PR-3 / P0-E PR-3:新增独立 throttler 配置(沿 LoginThrottleConfig 结构);
   // 本 unit test 不关心限流参数,仅满足 AppConfig 接口字段。
   passwordChangeThrottle: { limit: 5, ttlSeconds: 60 },
+  refreshThrottle: { limit: 30, ttlSeconds: 60 },
   rbacCache: { ttlSeconds: 1800 },
   storage: { encryptionKey: '', localRoot: './tmp/storage' },
 };

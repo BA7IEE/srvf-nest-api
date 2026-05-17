@@ -47,6 +47,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   readonly [Lowercase<'get' | 'post' | 'put' | 'patch' | 'delete'>, string]
 > = [
   ['post', '/api/auth/login'],
+  // P0-E PR-3(2026-05-18):refresh token / logout / logout-all 三新端点
+  ['post', '/api/auth/refresh'],
+  ['post', '/api/auth/logout'],
+  ['post', '/api/auth/logout-all'],
 
   ['get', '/api/health'],
   ['get', '/api/health/live'],

@@ -42,6 +42,20 @@ describe('POST /api/auth/login', () => {
       expect(res.body.data.tokenType).toBe('Bearer');
       expect(typeof res.body.data.expiresIn).toBe('string');
       expect(res.body.data.expiresIn.length).toBeGreaterThan(0);
+      // P0-E PR-3:LoginResponseDto 扩展 refreshToken + refreshExpiresAt;字段集恰好 5 项
+      // (沿评审稿 §3.1 D-1;扩展后禁止再增字段)。
+      const data = res.body.data as Record<string, unknown>;
+      expect(typeof data.refreshToken).toBe('string');
+      expect((data.refreshToken as string).length).toBeGreaterThan(0);
+      expect(typeof data.refreshExpiresAt).toBe('string');
+      // refreshExpiresAt 是 ISO 8601 UTC 可被 Date 解析
+      const refreshExpiresAt = data.refreshExpiresAt as string;
+      expect(refreshExpiresAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      expect(Number.isFinite(new Date(refreshExpiresAt).getTime())).toBe(true);
+      // 字段集恰好 5 项(沿 D-1;扩展后禁止再增字段)
+      expect(Object.keys(data).sort()).toEqual(
+        ['accessToken', 'expiresIn', 'refreshExpiresAt', 'refreshToken', 'tokenType'].sort(),
+      );
     });
 
     it('accessToken payload 仅含 sub + username + 标准 jwt 字段(无 role / passwordHash)', async () => {

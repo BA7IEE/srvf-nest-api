@@ -5,28 +5,34 @@ import {
   PASSWORD_CHANGE_THROTTLE_KEY,
   PASSWORD_CHANGE_THROTTLER_NAME,
 } from '../decorators/password-change-throttle.decorator';
+import {
+  REFRESH_THROTTLE_KEY,
+  REFRESH_THROTTLER_NAME,
+} from '../decorators/refresh-throttle.decorator';
 import { BizCode } from '../exceptions/biz-code.constant';
 import { BizException } from '../exceptions/biz.exception';
 
 // V1.1 §11.4 / TASKS.md 15.7:登录限流入口(metadata = LOGIN_THROTTLE_KEY,走 throttler `default`)。
 // P0-D PR-3(2026-05-17):本人改密限流入口(metadata = PASSWORD_CHANGE_THROTTLE_KEY,走 throttler `password-change`)。
+// P0-E PR-3(2026-05-18):refresh 限流入口(metadata = REFRESH_THROTTLE_KEY,走 throttler `refresh`)。
 //
-// 两个 throttler 实例在 ThrottlerModule.forRootAsync 中注册(详见 bootstrap/throttle-options.ts),
-// 物理隔离:登录失败爆破不消耗改密配额,反之亦然。
+// 三个 throttler 实例在 ThrottlerModule.forRootAsync 中注册(详见 bootstrap/throttle-options.ts),
+// 物理隔离:登录失败爆破不消耗改密 / refresh 配额,反之亦然。
 //
 // 与 ThrottlerGuard 的三点定制:
 //   1. shouldSkip 默认 true:全局 APP_GUARD 注册后,所有未标 @LoginThrottle() / @PasswordChangeThrottle()
-//      的方法直接跳过限流(反向白名单)。
+//      / @RefreshThrottle() 的方法直接跳过限流(反向白名单)。
 //   2. handleRequest 按 throttler.name 与当前 metadata 匹配:
 //      - throttler `default` 仅对标 @LoginThrottle() 的方法生效
 //      - throttler `password-change` 仅对标 @PasswordChangeThrottle() 的方法生效
+//      - throttler `refresh` 仅对标 @RefreshThrottle() 的方法生效
 //      - 其他组合直接 return true(不消耗配额、不抛异常)
 //   3. throwThrottlingException 重写:抛 BizException(BizCode.TOO_MANY_REQUESTS),
 //      经 AllExceptionsFilter 输出统一 { code: 42900, message, data: null } + HTTP 429。
 //      不抛 throttler 默认的 ThrottlerException(后者会绕过统一错误码体系)。
 //
 // 不暴露阈值/剩余配额/重置时间:通过 ThrottlerModule.forRootAsync 顶层 setHeaders: false 关闭
-// X-RateLimit-* / Retry-After 头(沿 V1.1 §17.7 / 评审稿 §5.4)。
+// X-RateLimit-* / Retry-After 头(沿 V1.1 §17.7 / 评审稿 §5.4 / §5.8)。
 //
 // 全局 APP_GUARD 顺序:ThrottlerBizGuard → JwtAuthGuard → RolesGuard。
 @Injectable()
@@ -42,9 +48,15 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       PASSWORD_CHANGE_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const refreshEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      REFRESH_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     // 未标任何一种 metadata 时全部跳过;任一 metadata 命中即进入限流逻辑,
     // 由 handleRequest 按 throttler.name 决定具体走哪个 throttler。
-    return Promise.resolve(!(loginEnabled === true || passwordChangeEnabled === true));
+    return Promise.resolve(
+      !(loginEnabled === true || passwordChangeEnabled === true || refreshEnabled === true),
+    );
   }
 
   // 父类签名为 protected handleRequest(req: ThrottlerRequest): Promise<boolean>。
@@ -60,6 +72,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       PASSWORD_CHANGE_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const refreshEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      REFRESH_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     // throttler `default` 仅服务 LoginThrottle;否则直接放过
     if (throttler.name === 'default' && loginEnabled !== true) {
@@ -67,6 +83,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
     }
     // throttler `password-change` 仅服务 PasswordChangeThrottle;否则直接放过
     if (throttler.name === PASSWORD_CHANGE_THROTTLER_NAME && passwordChangeEnabled !== true) {
+      return Promise.resolve(true);
+    }
+    // throttler `refresh` 仅服务 RefreshThrottle;否则直接放过
+    if (throttler.name === REFRESH_THROTTLER_NAME && refreshEnabled !== true) {
       return Promise.resolve(true);
     }
 
