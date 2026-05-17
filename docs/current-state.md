@@ -10,15 +10,15 @@
 
 | 项 | 当前值 |
 |---|---|
-| 当前版本 | **v0.12.0** |
-| `package.json#version` | `0.12.0` |
-| Swagger `setVersion(...)` | `0.12.0` |
-| 最新 git tag | `v0.12.0`(2026-05-16T09:10:47Z) |
-| GitHub Latest Release | `v0.12.0`(标 Latest) |
-| `main` HEAD | `8a70573` `feat(users): add self-service password change (#117)` |
+| 当前版本 | **v0.13.0** |
+| `package.json#version` | `0.13.0` |
+| Swagger `setVersion(...)` | `0.13.0` |
+| 最新 git tag | `v0.13.0`(2026-05-17;指向 `5fba386` = PR #121 handoff squash commit) |
+| GitHub Latest Release | `v0.13.0`(标 Latest;Notes 自 `CHANGELOG.md ## v0.13.0 - 2026-05-17` 段抽取) |
+| `main` HEAD | `5fba386` `docs(handoff): add v0.13.0 handoff (#121)` |
 | open PR | **0** |
 | 工作树状态 | clean |
-| 最新 handoff | [`docs/handoff/v0.12.0.md`](handoff/v0.12.0.md)(历史快照,不回改) |
+| 最新 handoff | [`docs/handoff/v0.13.0.md`](handoff/v0.13.0.md)(历史快照,不回改) |
 
 > **复核命令**(任何会话开工前都可以一行跑完):
 >
@@ -45,6 +45,7 @@
 - **V2 批次 3A**:`activities`(状态机 4 态)/ `activity_registrations`(4 态 + partial unique + CSV export)
 - **V2 批次 3B / 4-A / 4-B**:`attendance_sheets`(5 态;含终审)/ `attendance_records` / `contribution_rules`(D14 预填规则;无 CRUD 流水表)
 - **V2 批次 6**:`audit_logs` 写入即不可改不可删(A-1 红线);`AuditLogEvent` 各业务写路径已全部接入(含 P0-D 本人改密 `password.change.self`,#117)
+- **v0.13.0 P0-D 本人自助改密**:`PUT /api/users/me/password`(`ChangeMyPasswordDto { oldPassword, newPassword }`)+ 2 BizCode(`OLD_PASSWORD_INVALID=10005` / `NEW_PASSWORD_SAME_AS_OLD=10006`)+ 独立 throttler `password-change`(IP 5次/60秒,与登录限流物理隔离)+ audit `password.change.self`;**不主动吊销旧 token**(`tokenVersion` / refresh token / token revoke 仍归 P0-E 统一处理)
 - **V2.x C-6 RBAC**:`RbacRole` / `Permission` / `RolePermission` / `UserRole` 4 表 + `RbacService.can()` + 14 条 `rbac.*` 权限点 + `ops-admin` 内置角色 + bootstrap user_role
 - **V2.x C-7 attachments**:多态附件主模块(`@unique` key 已加)+ 配置三表(type / mime / size)+ 业务级 `rbac.can()` 首批接入(目前唯一)
 - **V2.x C-7.5 storage**:`StorageSettings` singleton + `LocalStorageProvider` + `CosStorageProvider` + 动态 Router + AES-256-GCM 凭证加密 + 后台 admin API + production fail-fast hook + `APP_ENV=smoke` 专用 CI 形态
@@ -79,7 +80,7 @@
 | P0 | 权限体系双轨并存(Guard `@Roles(...)` + Service `rbac.can()`),只有 `attachments` 一个业务模块真正接入 RBAC | 等用户拍板 Slow-3 后再启动 Slow-4 全面接入 |
 | P0 | release 后 docs 回填无明确 checklist | 已沉淀进 [`docs/process.md §5`](process.md) |
 | P0 | `FINAL_REPORT.md` 在根目录顶层但内容是 v0.1.3 时代 | 后续单独 docs PR 加段头或归档,**本 PR 不动** |
-| P0 | 第一版前端联调包待齐备 | P0-A 起步包(#110)+ P0-G BizCode 翻译表(#111)+ P0-C bootstrap SOP(#113)+ P0-D 本人自助改密(评审稿 #115 / 铁律修订 #116 / 代码实现 #117)已落地;P0-B 上传下载闭环验收 / P0-E refresh token / P0-F RBAC 收紧 / P0-H 部署演练 / P0-I 排错 SOP 仍待立项,前端在齐备前不宜大规模铺设业务接入 |
+| P0 | 第一版前端联调包待齐备 | ✅ P0-A 起步包(#110)+ ✅ P0-G BizCode 翻译表(#111)+ ✅ P0-C bootstrap SOP(#113)+ ✅ P0-D 本人自助改密(评审稿 #115 / 铁律修订 #116 / 代码实现 #117 / 状态回填 #118)已全部落地;v0.13.0 release 收口已完成(#119 CHANGELOG + #120 bump + #121 handoff + tag/Release 已发布,2026-05-17);**仍待立项**:P0-B 上传下载闭环验收(运维侧)/ P0-E refresh token D 档评审 / P0-F RBAC 收紧 D 档评审 / P0-H 部署演练 / P0-I 排错 SOP;运营 / 运维侧 SOP 执行(字典 items 录入 + 三张附件配置表 + 测试账号矩阵创建)仍待运维侧 |
 | P1 | docs/ 体系庞大(根 6 大文档 + docs/ 30+ 文件) | 长期逐步归档(`docs/v1.3-plan.md` / `v1.4-prisma7-evaluation.md` / `srvf-foundation-data-model-draft.md` 等老草案) |
 | P1 | `docs/V2红线与复活路径.md` 顶部"基线版本 v0.7.0"严重滞后于实际 v0.12.0 | 改为滚动维护或明示最后核对版本 |
 | P1 | `TASKS.md` 单文件 1742 行,V1.1 历史与 V2.x 当前混排 | 已加范围说明,长期可拆 |
@@ -119,9 +120,10 @@
 7. [`docs/V2红线与复活路径.md`](V2红线与复活路径.md) — V2 五档红线(A/B/C/D/E)
 8. **仅在相关时**:
    - 对应批次评审稿 `docs/批次*.md`(冻结决议)
-   - 历史 handoff `docs/handoff/v*.md`(release 时刻快照)
+   - 历史 handoff `docs/handoff/v*.md`(release 时刻快照;**最新入口** [`v0.13.0.md`](handoff/v0.13.0.md);上一版 [`v0.12.0.md`](handoff/v0.12.0.md))
    - 运行 SOP:[`development.md`](development.md) / [`testing.md`](testing.md) / [`deployment.md`](deployment.md) / [`security.md`](security.md) / [`ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md)
    - 第一版联调前置 SOP:[`first-release-bootstrap-sop.md`](first-release-bootstrap-sop.md)(zero-to-login 串行清单;P0-C 落地于 #113)
+   - 第一版 P0-D 评审稿:[`first-release-p0d-change-my-password-review.md`](first-release-p0d-change-my-password-review.md)(本人自助改密;v0.13.0 已按评审稿全部落地)
 
 ---
 
