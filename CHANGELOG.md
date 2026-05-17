@@ -4,9 +4,13 @@
 
 ## Unreleased
 
+(无;待下一波 V2 / V2.x 增量或文档变更登记)
+
+## v0.13.0 - 2026-05-17
+
 v0.12.0 之后主线增量:P0-D 本人自助改密完整闭环(评审稿 → 铁律修订 → 代码实现 → 状态回填 4-PR 序列)+ 第一版前端联调包配套文档系列(P0-A 起步包 / P0-G BizCode mapping / P0-C bootstrap SOP / P0-D 状态回填)。**唯一运行时代码变更**为 P0-D PR-3 #117(`PUT /api/users/me/password`);其余 12 个 commit 均为 docs-only 或 chore。**0 schema / 0 migration / 0 新依赖 / 0 新 Permission seed**;**v1 已有 14 接口 + V2 117 + RBAC 16 + attachments 主 7 + 配置三表 15 + storage 5 既有路径 / 入参 / 主响应字段严格 zero drift**(contract snapshot 仅新增 1 路由 + 1 DTO + 2 BizCode 出现在错误码字段)。
 
-**预期 SemVer**(0.12.0 → 0.13.0 **minor**;待 bump PR 拍板):向后兼容的能力扩展(新增 1 个本人接口 + 2 个 BizCode + 1 个 audit event + 1 个独立 throttler + 2 个 env);无 breaking;沿 v0.6.0 → v0.7.0 → ... → v0.12.0 全部 minor 节奏。
+**SemVer 拍板**:0.12.0 → 0.13.0 **minor**(向后兼容的能力扩展:新增 1 个本人接口 + 2 个 BizCode + 1 个 audit event + 1 个独立 throttler + 2 个 env);无 breaking;沿 v0.6.0 → v0.7.0 → v0.8.0 → v0.9.0 → v0.10.0 → v0.11.0 → v0.12.0 全部 minor 节奏。
 
 ### Added
 
