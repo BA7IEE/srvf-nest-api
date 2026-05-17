@@ -4,9 +4,19 @@
 
 ## Unreleased
 
+(无;待下一波 V2 / V2.x 增量或文档变更登记)
+
+## v0.14.0 - 2026-05-18
+
+v0.13.0 之后主线增量:**P0-E refresh token / logout / logout-all 完整闭环**(评审稿 + 铁律解锁 + 2 hotfix → 代码实现 → 状态回填 4-PR 串行;沿 P0-D 范式)。**唯一运行时代码变更**为 P0-E PR-3 #127(`POST /api/auth/{refresh,logout,logout-all}` + `LoginResponseDto` 扩 2 字段 + `refresh_tokens` 表 + 联动撤销 4 场景 + 5 audit + `REFRESH_TOKEN_INVALID=10007`);其余 docs-only / ci(smoke) workflow env 修复。**1 schema migration**(`20260517165220_add_refresh_tokens`;0 修改既有表 / 0 数据回填 / 0 DROP)/ **0 新依赖**;**v1 14 路由 schema 严格 zero drift**(snapshot diff 仅新增 +3 路由 / +2 DTO / +2 LoginResponseDto 字段 / +1 BizCode;删除项仅 LoginDto/Response summary 与 expiresIn example "7d" → "15m" 文案细化非字段变更)。
+
+**SemVer 拍板**:0.13.0 → 0.14.0 **minor**(向后兼容能力扩展:新增 3 个 auth 接口 + 1 个 BizCode + 5 个 audit event + 1 个独立 throttler + 3 个 env;`LoginDto` 入参 zero drift / JWT payload zero drift,无 breaking);沿 v0.6.0 → v0.7.0 → ... → v0.13.0 全部 minor 节奏。
+
+**为什么 refresh TTL 90d**:本系统是深圳救援队内部管理系统,使用频次比公网 SaaS 低,30d 会让低频用户(月度 / 季度参与活动的志愿队员)频繁触发 absolute expiration 误以为账号失效;90d 把"必须重登"周期对齐到"季度"心智;**仍坚守** absolute expiration(沿 OWASP)+ rotation always + family revoke + 联动撤销四防线。
+
 ### Docs
 
-- `docs(first-release): backfill P0-E completion status`(本 PR;P0-E PR-4 状态回填,A 档 docs-only):
+- `docs(first-release): backfill P0-E completion status`(#128,squash commit `96e4c85`;P0-E PR-4 状态回填,A 档 docs-only):
   - 沿 P0-E 4-PR 串行范式(#126 评审稿+铁律解锁+2 hotfix → #127 代码实现 → 本 PR 回填),把 P0-E 已落地事实同步到 7 个文档,不动 src / prisma / test / package / workflow。
   - [`docs/first-release-readiness-plan.md`](docs/first-release-readiness-plan.md):§3.1 P0-E 标题加 ✅;详细列出已落地能力(3 接口 + LoginResponseDto +2 字段 + refresh_tokens 表 + 联动撤销 4 场景 + 5 audit + 10007);§4 P0 推荐顺序行 / §5 PR 拆分行 / §8 最终建议行同步标 ✅。
   - [`docs/first-release-frontend-scope.md`](docs/first-release-frontend-scope.md):起步包 51 → **54 路由**(auth 段 1 → 4 加 refresh / logout / logout-all);总路由 139 → 142;§3.2 鉴权段加 access 15m + refresh 90d + REFRESH_TOKEN_INVALID=10007 三阶段错误码区分;**新增 §3.2.1 token 生命周期段**(login → refresh → logout / logout-all 完整伪流;前端关键铁律 4 条:access 401 先 refresh / refresh 10007 跳登录不重试 / refresh token 存储等级 = password / refreshExpiresAt 是 ISO 8601 UTC)。
