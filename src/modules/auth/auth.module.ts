@@ -4,6 +4,7 @@ import { JwtModule, type JwtModuleOptions, type JwtSignOptions } from '@nestjs/j
 import { PassportModule } from '@nestjs/passport';
 import type { JwtConfig } from '../../config/jwt.config';
 import { DatabaseModule } from '../../database/database.module';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -12,6 +13,10 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   imports: [
     // DatabaseModule 不带 @Global(),AuthService / JwtStrategy 注入 PrismaService 必须显式 import
     DatabaseModule,
+    // P0-E PR-3(2026-05-18):AuthService.login / refresh / logout / logoutAll 在事务内写 audit
+    // 'auth.login' / 'auth.refresh' / 'auth.logout' / 'auth.logout-all'(沿评审稿 §5.9);
+    // 沿 P0-D UsersModule.imports: AuditLogsModule 范式。
+    AuditLogsModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

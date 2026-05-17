@@ -99,4 +99,34 @@ describe('软删用户的副作用矩阵', () => {
 
     expectBizError(res, BizCode.LOGIN_FAILED);
   });
+
+  // P0-E PR-3:DELETE 软删 → 主动撤销目标 user 全部 refresh token(revokedReason=admin-delete)。
+  // 沿评审稿 §7.4 + CLAUDE/AGENTS §9 P0-E 联动撤销 4 场景之一。
+  // 本 PR **不**为软删写 audit(沿 D-PR3-2 用户拍板;仅撤销 refresh)。
+  describe('P0-E PR-3 软删联动 refresh 撤销', () => {
+    it('DELETE 后目标 user 全部 refresh 被撤销 + revokedReason=admin-delete', async () => {
+      // 新建一个 user + login 拿 refresh,然后 SUPER_ADMIN DELETE
+      const target = await createTestUser(app, { username: 'sdrefresh1' });
+      await request(httpServer(app))
+        .post('/api/auth/login')
+        .send({ username: 'sdrefresh1', password: TEST_PASSWORD });
+
+      const before = await prisma.refreshToken.findMany({
+        where: { userId: target.id, revokedAt: null },
+      });
+      expect(before.length).toBe(1);
+
+      const del = await request(httpServer(app))
+        .delete(`/api/users/${target.id}`)
+        .set('Authorization', authHeader);
+      expect(del.status).toBe(200);
+
+      const after = await prisma.refreshToken.findMany({ where: { userId: target.id } });
+      expect(after.length).toBeGreaterThan(0);
+      for (const r of after) {
+        expect(r.revokedAt).not.toBeNull();
+        expect(r.revokedReason).toBe('admin-delete');
+      }
+    });
+  });
 });

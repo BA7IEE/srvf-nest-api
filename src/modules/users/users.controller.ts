@@ -193,8 +193,9 @@ export class UsersController {
     @CurrentUser() currentUser: CurrentUserPayload,
     @Param() params: IdParamDto,
     @Body() dto: ResetUserPasswordDto,
+    @Req() req: Request,
   ): Promise<UserResponseDto> {
-    return this.usersService.resetPassword(currentUser, params.id, dto);
+    return this.usersService.resetPassword(currentUser, params.id, dto, this.buildAuditMeta(req));
   }
 
   @Patch(':id/role')

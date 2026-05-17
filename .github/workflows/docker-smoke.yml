@@ -155,7 +155,8 @@ jobs:
             -e ENABLE_SWAGGER=false \
             -e LOG_LEVEL=info \
             -e JWT_SECRET="$JWT_SECRET" \
-            -e JWT_EXPIRES_IN=1h \
+            -e JWT_EXPIRES_IN=15m \
+            -e JWT_REFRESH_EXPIRES_IN=90d \
             -e STORAGE_ENCRYPTION_KEY="$STORAGE_ENCRYPTION_KEY" \
             -e DATABASE_URL="$CONTAINER_DATABASE_URL" \
             u-nest-api-starter:smoke

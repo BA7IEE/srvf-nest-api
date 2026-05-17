@@ -178,4 +178,64 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
     expect(after.body.code).toBe(0);
     expect(after.body.data.username).toBe('pwtokenstay1');
   });
+
+  // ============ P0-E PR-3:管理员重置 → 主动撤销目标全部 refresh + 新 audit ============
+  describe('P0-E PR-3 重置联动 refresh 撤销 + audit', () => {
+    it('重置后目标 user 全部 refresh 被撤销 + revokedReason=admin-password-reset', async () => {
+      const target = await createTestUser(app, { username: 'pwrefresh1' });
+      await loginAs(app, 'pwrefresh1'); // target login,产生 refresh token
+
+      await request(httpServer(app))
+        .put(`/api/users/${target.id}/password`)
+        .set('Authorization', superAuth)
+        .send({ newPassword: NEW_PASSWORD });
+
+      const rows = await prisma.refreshToken.findMany({ where: { userId: target.id } });
+      expect(rows.length).toBeGreaterThan(0);
+      for (const r of rows) {
+        expect(r.revokedAt).not.toBeNull();
+        expect(r.revokedReason).toBe('admin-password-reset');
+      }
+    });
+
+    it('重置前的 refresh token 不能再换 access → 10007', async () => {
+      const target = await createTestUser(app, { username: 'pwrefresh2' });
+      const lb = await request(httpServer(app))
+        .post('/api/auth/login')
+        .send({ username: 'pwrefresh2', password: TEST_PASSWORD });
+      const refreshRaw = lb.body.data.refreshToken;
+
+      await request(httpServer(app))
+        .put(`/api/users/${target.id}/password`)
+        .set('Authorization', superAuth)
+        .send({ newPassword: NEW_PASSWORD });
+
+      const refreshRes = await request(httpServer(app))
+        .post('/api/auth/refresh')
+        .send({ refreshToken: refreshRaw });
+      expect(refreshRes.status).toBe(401);
+      expect(refreshRes.body.code).toBe(10007);
+    });
+
+    it('audit password.reset.by-admin 写入(actorUserId = SUPER_ADMIN,extra.refreshTokensRevoked)', async () => {
+      const target = await createTestUser(app, { username: 'pwrefresh3' });
+      await loginAs(app, 'pwrefresh3');
+
+      await request(httpServer(app))
+        .put(`/api/users/${target.id}/password`)
+        .set('Authorization', superAuth)
+        .send({ newPassword: NEW_PASSWORD });
+
+      const audit = await prisma.auditLog.findFirst({
+        where: { event: 'password.reset.by-admin', resourceId: target.id },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(audit).not.toBeNull();
+      expect(audit?.resourceType).toBe('user');
+      // actorUserId 应为 SUPER_ADMIN(pwsuper1),不是 target
+      expect(audit?.actorUserId).not.toBe(target.id);
+      const ctx = audit?.context as { extra?: { refreshTokensRevoked?: number } } | null;
+      expect(ctx?.extra?.refreshTokensRevoked).toBe(1);
+    });
+  });
 });

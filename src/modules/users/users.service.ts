@@ -218,7 +218,7 @@ export class UsersService {
       throw new BizException(BizCode.NEW_PASSWORD_SAME_AS_OLD);
     }
 
-    // 4. 哈希新密码;在事务内 update + audit log 原子(沿 emergency-contacts / certificates 范式)。
+    // 4. 哈希新密码;在事务内 update + 撤销 refresh + audit log 原子(沿 P0-E PR-3 §7.1)。
     const passwordHash = await this.hashPassword(dto.newPassword);
 
     return this.prisma.$transaction(async (tx) => {
@@ -226,6 +226,16 @@ export class UsersService {
         where: { id: currentUser.id },
         data: { passwordHash },
         select: userSafeSelect,
+      });
+
+      // P0-E PR-3(2026-05-18):本人改密后**主动撤销**该 user 全部未过期且未撤销的 refresh token
+      // (沿评审稿 §7.1 + CLAUDE.md §9 P0-E 子节)。access token 仍不主动吊销(沿 D-4),
+      // 由 JWT_EXPIRES_IN=15m 自然过期 + JwtStrategy 每请求查库阻断 DISABLED / 软删用户。
+      // e2e users-change-my-password.e2e-spec.ts §7.5 反向锁定断言(改密后旧 access 仍可调 /me)
+      // 继续保留。
+      const refreshRevoke = await tx.refreshToken.updateMany({
+        where: { userId: currentUser.id, revokedAt: null, expiresAt: { gt: new Date() } },
+        data: { revokedAt: new Date(), revokedReason: 'self-password-change' },
       });
 
       await this.auditLogs.log({
@@ -236,7 +246,9 @@ export class UsersService {
         resourceId: currentUser.id,
         meta: auditMeta,
         // 评审稿 §5.6 / §7.6:audit 字段不含 oldPassword / newPassword / passwordHash
-        // 任何明文或 hash。extra 仅记录与本事件相关的、不泄露密码的元信息;此处不写 extra。
+        // 任何明文或 hash。P0-E PR-3 extra 加 refreshTokensRevoked: count(沿 §9 / §5.9
+        // audit extra 允许字段)。
+        extra: { refreshTokensRevoked: refreshRevoke.count },
         tx,
       });
 
@@ -356,17 +368,44 @@ export class UsersService {
     currentUser: CurrentUserPayload,
     id: string,
     dto: ResetUserPasswordDto,
+    auditMeta: AuditMeta,
   ): Promise<UserResponseDto> {
     const target = await this.findRawByIdOrThrow(id);
     this.assertCanManageUser(currentUser, target);
 
-    // 管理员重置密码后 v1 不主动吊销旧 token(§7.7);
-    // 如需立即阻断,管理员同步把目标 status 改 DISABLED。
+    // 管理员重置密码后:
+    //   - access token v1 仍不主动吊销(沿 §7.7 + D-4;access ≤ 15m 自然过期);
+    //     如需立即阻断,管理员同步把目标 status 改 DISABLED。
+    //   - P0-E PR-3(2026-05-18):**主动撤销**目标 user 全部 refresh token
+    //     (revokedReason='admin-password-reset';沿评审稿 §7.2 + §9 联动撤销 4 场景)。
+    //   - P0-E PR-3 同步补 audit 'password.reset.by-admin'(隐含范围扩展;沿评审稿 §3.8
+    //     D-8 + §5.9;管理员重置之前从未写 audit,本 PR 顺手补对称)。
     const passwordHash = await this.hashPassword(dto.newPassword);
-    return this.prisma.user.update({
-      where: { id },
-      data: { passwordHash },
-      select: userSafeSelect,
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id },
+        data: { passwordHash },
+        select: userSafeSelect,
+      });
+
+      const refreshRevoke = await tx.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null, expiresAt: { gt: new Date() } },
+        data: { revokedAt: new Date(), revokedReason: 'admin-password-reset' },
+      });
+
+      await this.auditLogs.log({
+        event: 'password.reset.by-admin',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'user',
+        resourceId: id,
+        meta: auditMeta,
+        extra: { refreshTokensRevoked: refreshRevoke.count },
+        tx,
+      });
+
+      return updated;
     });
   }
 
@@ -421,11 +460,26 @@ export class UsersService {
       if (target.role === Role.SUPER_ADMIN && dto.status === UserStatus.DISABLED) {
         await this.assertNotLastSuperAdmin(tx, id);
       }
-      return tx.user.update({
+      const updated = await tx.user.update({
         where: { id },
         data: { status: dto.status },
         select: userSafeSelect,
       });
+
+      // P0-E PR-3(2026-05-18):用户被 DISABLED 时**主动撤销**目标 user 全部 refresh token
+      // (revokedReason='admin-disable';沿评审稿 §7.3 + §9 联动撤销 4 场景之一)。
+      // 仅当 dto.status === DISABLED 时撤销;ACTIVE → ACTIVE 不动 refresh(沿评审稿 §7.5);
+      // access token 由 JwtStrategy 每请求查库即时阻断(沿现状)。
+      // 本 PR 范围:**不**为 status 改动写 audit(沿评审稿 D-PR3-2 用户拍板 §7.3 不补 audit;
+      // 仅撤销 refresh,audit 由独立 PR 处理)。
+      if (dto.status === UserStatus.DISABLED) {
+        await tx.refreshToken.updateMany({
+          where: { userId: id, revokedAt: null, expiresAt: { gt: new Date() } },
+          data: { revokedAt: new Date(), revokedReason: 'admin-disable' },
+        });
+      }
+
+      return updated;
     });
   }
 
@@ -442,7 +496,7 @@ export class UsersService {
       if (target.role === Role.SUPER_ADMIN) {
         await this.assertNotLastSuperAdmin(tx, id);
       }
-      return tx.user.update({
+      const updated = await tx.user.update({
         where: { id },
         data: {
           deletedAt: new Date(),
@@ -450,6 +504,17 @@ export class UsersService {
         },
         select: userSafeSelect,
       });
+
+      // P0-E PR-3(2026-05-18):用户被软删时**主动撤销**目标 user 全部 refresh token
+      // (revokedReason='admin-delete';沿评审稿 §7.4 + §9 联动撤销 4 场景之一)。
+      // access token 由 JwtStrategy 每请求查库即时阻断(deletedAt != null;沿现状)。
+      // 本 PR 范围:**不**为软删写 audit(沿 D-PR3-2 用户拍板;仅撤销 refresh)。
+      await tx.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null, expiresAt: { gt: new Date() } },
+        data: { revokedAt: new Date(), revokedReason: 'admin-delete' },
+      });
+
+      return updated;
     });
   }
 }

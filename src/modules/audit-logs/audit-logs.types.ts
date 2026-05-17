@@ -37,7 +37,18 @@ export type AuditLogEvent =
   | 'attachment.upload' // V2.x C-7 PR #6c 接入(attachments.service: create 1 处;沿 D7-attachments v1.0 §7.1)
   | 'attachment.delete' // V2.x C-7 PR #6c 接入(attachments.service: delete 1 处;extra.deletedByPath ∈ {owner, admin} 区分;沿 D7-attachments v1.0 §7.1)
   | 'attachment.config.change' // V2.x C-7 PR #6d 接入(配置三表 11 处写共用单事件;沿 D7-attachments v1.0 §7.1 路线 A:extra.configType ∈ {type, mime, sizeLimit} + extra.operation ∈ {create, update, update-status, delete} 区分;updateStatus 沿 Q1 PR #6d 拍板细分独立 operation)
-  | 'password.change.self'; // P0-D PR-3(2026-05-17)接入(users.service: changeMyPassword 1 处;沿 docs/first-release-p0d-change-my-password-review.md §5.6 + §9.1 复核 #1:与现有 kebab-case `<res>.<action>.<scope>` 风格对齐 + 与 `profile.update.self` 对称)。resourceType='user' / resourceId=currentUser.id;不写 oldPassword / newPassword / passwordHash 任何明文或 hash
+  | 'password.change.self' // P0-D PR-3(2026-05-17)接入(users.service: changeMyPassword 1 处;沿 docs/first-release-p0d-change-my-password-review.md §5.6 + §9.1 复核 #1:与现有 kebab-case `<res>.<action>.<scope>` 风格对齐 + 与 `profile.update.self` 对称)。resourceType='user' / resourceId=currentUser.id;不写 oldPassword / newPassword / passwordHash 任何明文或 hash
+  // P0-E PR-3(2026-05-18)接入(沿 docs/first-release-p0e-refresh-token-review.md §3.8 D-8 + §5.9 audit 写入表)。
+  // 5 项命名沿 P0-D `password.change.self` kebab-case `<resource>.<action>` / `<resource>.<action>.<scope>` 范式;
+  // `auth.logout-all` action 段含 dash 沿 `attendance-sheet.final-review` 范式。
+  // `extra` 禁止写:refresh token 明文 / `tokenHash` / `passwordHash` / IP 完整段(IP 已在 AuditContext.ip 字段)。
+  // `extra` 允许写:`familyId`(cuid)/ `replayDetected: boolean` / `familyRevoked?: boolean` /
+  //   `revokedCount: number` / `found: boolean` / `refreshTokensRevoked: number`。
+  | 'auth.login' // P0-E PR-3 接入(auth.service.login 成功路径 1 处;resourceType='user' / resourceId=user.id;extra.familyId)
+  | 'auth.refresh' // P0-E PR-3 接入(auth.service.refresh 成功 + family revoke 路径共 1 处;extra.familyId / replayDetected / familyRevoked?)
+  | 'auth.logout' // P0-E PR-3 接入(auth.service.logout 含幂等命中均写;extra.found: boolean)
+  | 'auth.logout-all' // P0-E PR-3 接入(auth.service.logoutAll 1 处;extra.revokedCount: number)
+  | 'password.reset.by-admin'; // P0-E PR-3 隐含范围扩展(users.service.resetPassword 1 处;沿 P0-D `password.change.self` 对称范式;extra.refreshTokensRevoked: number)
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

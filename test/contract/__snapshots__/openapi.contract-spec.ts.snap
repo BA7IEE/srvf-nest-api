@@ -2852,7 +2852,16 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       },
       "expiresIn": {
         "description": "过期时间,原样回传 JWT_EXPIRES_IN 配置值",
-        "example": "7d",
+        "example": "15m",
+        "type": "string",
+      },
+      "refreshExpiresAt": {
+        "description": "refresh token family absolute expiration 时刻(ISO 8601 UTC);rotation 后新 token 继承同一时刻;达到此时刻后必须重新登录;客户端读此字段即知 family 何时过期,无需本地时钟参与",
+        "example": "2026-08-16T00:00:00.000Z",
+        "type": "string",
+      },
+      "refreshToken": {
+        "description": "refresh token(opaque random;不是 JWT);用于 POST /api/auth/refresh 换 access",
         "type": "string",
       },
       "tokenType": {
@@ -2865,6 +2874,33 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "accessToken",
       "tokenType",
       "expiresIn",
+      "refreshToken",
+      "refreshExpiresAt",
+    ],
+    "type": "object",
+  },
+  "LogoutAllResponseDto": {
+    "properties": {
+      "revokedCount": {
+        "description": "本次撤销的 refresh token 行数(未过期且未撤销的总数)",
+        "example": 3,
+        "type": "number",
+      },
+    },
+    "required": [
+      "revokedCount",
+    ],
+    "type": "object",
+  },
+  "LogoutDto": {
+    "properties": {
+      "refreshToken": {
+        "description": "要撤销的 refresh token 明文;幂等(不存在 / 已撤销 / 已过期 → 仍返 200)",
+        "type": "string",
+      },
+    },
+    "required": [
+      "refreshToken",
     ],
     "type": "object",
   },
@@ -3546,6 +3582,18 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "displayName",
       "createdAt",
       "updatedAt",
+    ],
+    "type": "object",
+  },
+  "RefreshTokenDto": {
+    "properties": {
+      "refreshToken": {
+        "description": "refresh token 明文(login / 上一次 refresh 接口响应里拿到的 data.refreshToken)",
+        "type": "string",
+      },
+    },
+    "required": [
+      "refreshToken",
     ],
     "type": "object",
   },
@@ -4975,7 +5023,359 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "description": "请求过于频繁，请稍后再试(code=42900)",
         },
       },
-      "summary": "用户名 + 密码登录,返回 JWT",
+      "summary": "用户名 + 密码登录,返回 JWT + refresh token(family absolute expiration)",
+      "tags": [
+        "auth",
+      ],
+    },
+  },
+  "/api/auth/logout": {
+    "post": {
+      "operationId": "AuthController_logout",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/LogoutDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/LogoutAllResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+      },
+      "summary": "撤销当前 refresh token(幂等;不吊销 access)",
+      "tags": [
+        "auth",
+      ],
+    },
+  },
+  "/api/auth/logout-all": {
+    "post": {
+      "operationId": "AuthController_logoutAll",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/LogoutAllResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "429": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "42900: 请求过于频繁，请稍后再试",
+                    "enum": [
+                      42900,
+                    ],
+                    "example": 42900,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求过于频繁，请稍后再试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求过于频繁，请稍后再试(code=42900)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "撤销该用户全部未过期且未撤销的 refresh token(本人调;不吊销 access)",
+      "tags": [
+        "auth",
+      ],
+    },
+  },
+  "/api/auth/refresh": {
+    "post": {
+      "operationId": "AuthController_refresh",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RefreshTokenDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/LoginResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "10007: refresh token 无效或已过期",
+                    "enum": [
+                      10007,
+                    ],
+                    "example": 10007,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "refresh token 无效或已过期",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "refresh token 无效或已过期(code=10007)",
+        },
+        "429": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "42900: 请求过于频繁，请稍后再试",
+                    "enum": [
+                      42900,
+                    ],
+                    "example": 42900,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求过于频繁，请稍后再试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求过于频繁，请稍后再试(code=42900)",
+        },
+      },
+      "summary": "refresh access token(rotation always;family revoke;absolute expiration;返回新 access + 新 refresh)",
       "tags": [
         "auth",
       ],

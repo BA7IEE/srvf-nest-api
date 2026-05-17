@@ -100,6 +100,16 @@ export interface PasswordChangeThrottleConfig {
   ttlSeconds: number;
 }
 
+// P0-E PR-3(2026-05-18):POST /api/auth/refresh IP 维度限流配置。
+// 与 LoginThrottleConfig / PasswordChangeThrottleConfig 结构相同但物理隔离:throttler.module
+// 注册独立 throttler 实例(name: 'refresh'),计数器互不影响。第一版固定 IP 维度,
+// 默认 30 次 / 60 秒(沿 docs/first-release-p0e-refresh-token-review.md §3.7 D-7;
+// 比登录 / 改密放宽,允许多 tab 并发 refresh,但仍挡爆破)。
+export interface RefreshThrottleConfig {
+  limit: number;
+  ttlSeconds: number;
+}
+
 // V2.x C-6 RBAC 实施 PR #6:RBAC 进程内缓存配置(沿 D7 v1.1 §9.1 / D6 v1.0 / F8 v1.0)。
 // TTL 默认 30 分钟(1800 秒);env `RBAC_CACHE_TTL_SECONDS` 可调;归 app.config.ts(沿 baseline §7)。
 // 推荐区间 [60, 86400](1 分钟到 1 天;过短会让 invalidate 失去意义,过长会让"撤角色"延迟生效);
@@ -158,6 +168,7 @@ export interface AppConfig {
   logLevel: LogLevel;
   loginThrottle: LoginThrottleConfig;
   passwordChangeThrottle: PasswordChangeThrottleConfig;
+  refreshThrottle: RefreshThrottleConfig;
   rbacCache: RbacCacheConfig;
   storage: StorageConfig;
 }
@@ -217,6 +228,22 @@ export default registerAs('app', (): AppConfig => {
     ),
   };
 
+  // P0-E PR-3(2026-05-18):refresh 接口限流配置。
+  // 推荐区间沿 LOGIN_THROTTLE_*;默认 30/60(沿 docs/first-release-p0e-refresh-token-review.md §3.7 D-7;
+  // 比登录 / 改密放宽,允许多 tab 并发 refresh)。
+  const refreshThrottle: RefreshThrottleConfig = {
+    limit: parsePositiveInt(process.env.REFRESH_THROTTLE_LIMIT, 30, 'REFRESH_THROTTLE_LIMIT', {
+      min: 1,
+      max: 100,
+    }),
+    ttlSeconds: parsePositiveInt(
+      process.env.REFRESH_THROTTLE_TTL_SECONDS,
+      60,
+      'REFRESH_THROTTLE_TTL_SECONDS',
+      { min: 1, max: 3600 },
+    ),
+  };
+
   const rbacCache: RbacCacheConfig = {
     ttlSeconds: parsePositiveInt(
       process.env.RBAC_CACHE_TTL_SECONDS,
@@ -239,6 +266,7 @@ export default registerAs('app', (): AppConfig => {
     logLevel,
     loginThrottle,
     passwordChangeThrottle,
+    refreshThrottle,
     rbacCache,
     storage,
   };

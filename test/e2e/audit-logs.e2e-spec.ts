@@ -65,6 +65,12 @@ describe('audit-logs 模块(PR #1)', () => {
     admin2Auth = (await loginAs(app, 'al-adm2')).authHeader;
     userAuth = (await loginAs(app, 'al-user')).authHeader;
 
+    // P0-E PR-3:loginAs 现在写 'auth.login' audit(沿 P0-E 评审稿 §5.9 / D-8);
+    // 本 spec 通过 AuditLogsService.log() 直接预设 5 条 audit 验证分页 / 过滤 /
+    // 排序契约;loginAs 引入的 4 条 audit 污染 total/items,需 TRUNCATE 清理。
+    // truncate 不破坏审计写入即不可改的红线(沿 audit-logs-cleanup.ts test-only 豁免)。
+    await truncateAuditLogsTestOnly(app);
+
     // 通过 AuditLogsService.log() 写入 5 条预设审计记录
     await auditLogs.log({
       event: 'emergency-contact.write',

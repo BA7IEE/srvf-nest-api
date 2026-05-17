@@ -109,6 +109,64 @@ describe('本人自助改密 PUT /api/users/me/password', () => {
     });
   });
 
+  // ============ P0-E PR-3:本人改密 → 主动撤销 refresh token ============
+  describe('P0-E PR-3 改密联动 refresh 撤销', () => {
+    it('改密后该 user 全部 refresh 被撤销 + revokedReason=self-password-change', async () => {
+      const user = await createTestUser(app, { username: 'cmprefresh1' });
+      const { authHeader } = await loginAs(app, 'cmprefresh1');
+
+      await request(httpServer(app))
+        .put('/api/users/me/password')
+        .set('Authorization', authHeader)
+        .send({ oldPassword: TEST_PASSWORD, newPassword: NEW_PASSWORD });
+
+      const rows = await prisma.refreshToken.findMany({ where: { userId: user.id } });
+      expect(rows.length).toBeGreaterThan(0);
+      for (const r of rows) {
+        expect(r.revokedAt).not.toBeNull();
+        expect(r.revokedReason).toBe('self-password-change');
+      }
+    });
+
+    it('改密前的 refresh token 不能再换 access → 10007', async () => {
+      await createTestUser(app, { username: 'cmprefresh2' });
+      const lb = await request(httpServer(app))
+        .post('/api/auth/login')
+        .send({ username: 'cmprefresh2', password: TEST_PASSWORD });
+      const refreshRaw = lb.body.data.refreshToken;
+      const authHeader = `Bearer ${lb.body.data.accessToken}`;
+
+      await request(httpServer(app))
+        .put('/api/users/me/password')
+        .set('Authorization', authHeader)
+        .send({ oldPassword: TEST_PASSWORD, newPassword: NEW_PASSWORD });
+
+      const refreshRes = await request(httpServer(app))
+        .post('/api/auth/refresh')
+        .send({ refreshToken: refreshRaw });
+      expect(refreshRes.status).toBe(401);
+      expect(refreshRes.body.code).toBe(10007);
+    });
+
+    it('audit password.change.self 含 extra.refreshTokensRevoked: 1', async () => {
+      const user = await createTestUser(app, { username: 'cmprefresh3' });
+      const { authHeader } = await loginAs(app, 'cmprefresh3');
+
+      await request(httpServer(app))
+        .put('/api/users/me/password')
+        .set('Authorization', authHeader)
+        .send({ oldPassword: TEST_PASSWORD, newPassword: NEW_PASSWORD });
+
+      const audit = await prisma.auditLog.findFirst({
+        where: { actorUserId: user.id, event: 'password.change.self' },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(audit).not.toBeNull();
+      const ctx = audit?.context as { extra?: { refreshTokensRevoked?: number } } | null;
+      expect(ctx?.extra?.refreshTokensRevoked).toBe(1);
+    });
+  });
+
   // ============ 7.2 错误码 ============
   describe('错误码', () => {
     it('oldPassword 错 → OLD_PASSWORD_INVALID + HTTP 401', async () => {
