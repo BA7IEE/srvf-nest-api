@@ -100,20 +100,36 @@ git status --short                               # 期望:空
 | 类别 | 字段 | 说明 |
 |---|---|---|
 | **一次性 / 装机后不轻易换** | `JWT_SECRET` / `STORAGE_ENCRYPTION_KEY` / `SUPER_ADMIN_USERNAME` / `SUPER_ADMIN_PASSWORD` | 密钥 / 默认账号;换 = 等同密钥轮换(沿 [`ops §6.4`](ops/cos-production-rollout-checklist.md))|
-| **会变 / 部署后可改** | `APP_CORS_ORIGIN` / `DATABASE_URL` / `LOG_LEVEL` / `LOGIN_THROTTLE_*` / `RBAC_CACHE_TTL_SECONDS` | 前端域名变更 / DB 切换 / 日志调档需更新 |
+| **会变 / 部署后可改** | `APP_CORS_ORIGIN` / `DATABASE_URL` / `LOG_LEVEL` / `LOGIN_THROTTLE_*` / `PASSWORD_CHANGE_THROTTLE_*` / `REFRESH_THROTTLE_*` / `JWT_EXPIRES_IN` / `JWT_REFRESH_EXPIRES_IN` / `RBAC_CACHE_TTL_SECONDS` | 前端域名变更 / DB 切换 / 日志调档 / 限流参数微调 / token TTL 调整需更新 |
 | **运行时可改(不在 env)** | Storage Settings(`providerType` / `bucket` / `region` / `keyPrefix` / TTL / 凭证)| 经 `PATCH /api/v2/storage-settings` + `POST /api/v2/storage-settings/reset-credentials`,详见 §8 / [`ops §7-§8`](ops/cos-production-rollout-checklist.md) |
+
+**P0-E PR-3(#127)token env 锁定值**(沿 [P0-E 评审稿 §3.5 D-5](first-release-p0e-refresh-token-review.md);上线 / 升级时必须同步):
+
+```env
+JWT_EXPIRES_IN=15m            # access token TTL(由原 7d 收敛;P0-E PR-3 锁定)
+JWT_REFRESH_EXPIRES_IN=90d    # refresh token family absolute expiration(沿评审稿 D-5)
+REFRESH_THROTTLE_LIMIT=       # 可选;留空 → app.config 默认 30 次
+REFRESH_THROTTLE_TTL_SECONDS= # 可选;留空 → app.config 默认 60 秒
+```
+
+- `JWT_EXPIRES_IN` 与 `JWT_REFRESH_EXPIRES_IN` 改值**立即生效**(下次 login 起新签的 token 用新 TTL);**已签发**的 access / refresh 仍按原 TTL 计算,**不**回溯。
+- `REFRESH_THROTTLE_LIMIT` / `REFRESH_THROTTLE_TTL_SECONDS` 留空使用 `app.config.ts` 默认(30/60);显式赋值必须为正整数且 ∈ `[1, 100]` / `[1, 3600]`,越界 fail-fast。
 
 ### 2.2 production 启动强校验红线
 
 `APP_ENV=production` 启动时,以下任一不满足 = **立即抛错退出,不 fallback**(沿 [`CLAUDE.md §14`](../CLAUDE.md)):
 
 - `JWT_SECRET` 长度 < 32 或等于 `.env.example` 默认占位
+- `JWT_EXPIRES_IN` 未设置(必填)
+- **`JWT_REFRESH_EXPIRES_IN` 未设置**(P0-E PR-3 新增必填校验;沿 [`src/config/jwt.config.ts`](../src/config/jwt.config.ts))
 - `APP_CORS_ORIGIN` 为空或 `*`
 - `ENABLE_SWAGGER` 误写为 `'TRUE'` / `'1'`(必须严格 `=== 'true'`)
 - `STORAGE_ENCRYPTION_KEY` 缺失或长度 < 32
 - seed 阶段:`SUPER_ADMIN_USERNAME` = `admin` 或 `SUPER_ADMIN_PASSWORD` 等于 `.env.example` 默认占位
 
 完整列表见 [`.env.example`](../.env.example) 注释 + [`CLAUDE.md §14`](../CLAUDE.md);本文不复制。
+
+**注意**:若 `.env` 未设置 `JWT_REFRESH_EXPIRES_IN`,production / smoke 启动会立即抛 `Error: JWT_REFRESH_EXPIRES_IN 未设置` 退出;升级既有 prod 时**必须**先在 `.env` 注入此值(`90d` 推荐)再重启。
 
 ### 2.3 .env 生成防留痕(production)
 
@@ -158,6 +174,9 @@ pnpm prisma:migrate                     # 应用 migration + 自动 generate Pri
 ### 3.3 migration 触发方式
 
 应用 runner 镜像**不会**在启动时自动执行 migration(详见 [`deployment.md §生产数据库迁移原则`](deployment.md))。可选触发方式:
+
+> **P0-E PR-3(#127)上线 migration 提示**:`prisma migrate deploy` 会顺序应用 12 个 migration,**最新一个**是 `20260517165220_add_refresh_tokens`(新建 `refresh_tokens` 表 + 6 索引 + 2 FK;**0 修改既有表 / 0 数据回填 / 0 DROP**;沿 [P0-E 评审稿 §12](first-release-p0e-refresh-token-review.md))。升级既有 production / staging 时**必须**在 `prisma migrate deploy` 之前 / 同时 把 `JWT_REFRESH_EXPIRES_IN=90d`(+ 可选 `REFRESH_THROTTLE_*`)注入 `.env`,否则应用启动 fail-fast(沿 §2.2)。
+
 
 - CI/CD pipeline 在应用副本启动**前**独立步骤跑 `pnpm prisma:deploy`
 - K8s `Job` / `initContainer` / Helm pre-upgrade hook(本仓库不提供具体 manifest)

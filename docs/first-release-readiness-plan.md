@@ -123,19 +123,25 @@
 
 **仍不做**(沿评审稿 §4):忘记密码 / 邮箱找回(归 P2)/ refresh token / tokenVersion / 主动吊销旧 token / user-member 绑定能力(归 P0-E / P1 / P2 / 另立项)。
 
-#### P0-E refresh token / logout / 登录续期策略
+#### P0-E refresh token / logout / 登录续期策略 ✅
 
-**为什么是 P0**:当前 JWT 一签发就在 `JWT_EXPIRES_IN`(默认 7d)内有效,没有 logout 接口,也没有强制下线机制。安全 / 体验都需要明确策略:
-- **安全**:管理员被解雇 → 只能改 `status=DISABLED` 间接阻断,旧 token 在下一次请求才失效(因为 JwtStrategy 每请求查库)
-- **体验**:前端如果让用户"长在线",但 JWT 过期就要重登;给个 refresh token 体验会顺一些
-- **历史**:v1 / V1.1 明确不做 refresh token([`security.md`](security.md))。但第一版上线意味着真实使用,需要重新评估
+**状态**:已由 P0-E 评审稿 v1(#126)+ CLAUDE.md / AGENTS.md 铁律解锁(同 #126 合并)+ 代码实现 PR #127(squash merge commit `25f03fb`,2026-05-18)落地;严格按 [P0-E 评审稿 v1 §3-§9](first-release-p0e-refresh-token-review.md) 9 条已决策实施。
 
-**关键判断**:
-- 第一版**不一定**做 refresh token,但**必须**明确"用户体验上 token 过期怎么办"(前端处理重登 vs 后端发 refresh token)
-- logout 接口要不要做?如果不做 refresh token,可以"前端清掉本地 token = logout";如果做,要配合 revoke 列表
-- 这是 v1 / V1.1 已经明文拒绝的能力,**第一版重新评估**
+**已落地内容**:
+- **新增 3 个 API 端点**:`POST /api/auth/refresh`(rotation always + family revoke + absolute expiration)/ `POST /api/auth/logout`(幂等;只撤销当前 row)/ `POST /api/auth/logout-all`(撤销该 user 全部未过期未撤销 refresh,返 `{ revokedCount }`)
+- **扩展 `POST /api/auth/login`**:`LoginResponseDto` 新增 `refreshToken` + `refreshExpiresAt`(字段集恰好 5 项;`LoginDto` 入参 schema 严格 zero drift)
+- **TTL 锁定**:`JWT_EXPIRES_IN=15m`(由原 7d 收敛)/ `JWT_REFRESH_EXPIRES_IN=90d`(family **absolute expiration**;rotation 后新 refresh token 继承同一 `refreshExpiresAt` 不延长;**禁止** sliding expiration;达到时刻后必须重新登录)
+- **新增 schema**:`refresh_tokens` 表(`tokenHash @unique` 只存 sha256 hash,明文绝不入库;migration `20260517165220_add_refresh_tokens`)
+- **联动撤销 4 场景**(同事务原子):本人改密 `self-password-change` / 管理员重置 `admin-password-reset`(顺手补 audit `password.reset.by-admin`)/ 用户禁用 `admin-disable` / 用户软删 `admin-delete`
+- **access token 仍不主动吊销**(沿 D-4):依赖 15m TTL 自然过期 + `JwtStrategy.validate` 每请求查库阻断 DISABLED / 软删 user;e2e §7.5 反向锁定断言(改密后旧 access 仍可调 `/me`)保留
+- **JWT payload 严格 zero drift**:仍 `{ sub, username }`;**不**做 `tokenVersion`(沿 D-4)
+- **新增 1 BizCode**:`REFRESH_TOKEN_INVALID = 10007`(HTTP 401;**不**拆 EXPIRED/REVOKED/REPLAY)
+- **新增 5 audit event**:`auth.login` / `auth.refresh` / `auth.logout` / `auth.logout-all` / `password.reset.by-admin`
+- **新增独立 throttler** `refresh`(30/60 IP;与 `default` / `password-change` 物理隔离)
 
-**直接开发?**:**必须先 D 档评审**(评审稿:三选一 — 不做 / 做 logout only / 做 refresh token + logout + revoke;含 schema 变更与 token revoke 方案对比)。**禁止**直接动代码。
+**仍不做**(沿 P0-E v1 D-9):`tokenVersion` 字段 / access token blacklist / refresh_tokens 查询接口 / 已登录设备列表 UI / 单设备管理 / device fingerprint / Redis / Queue / Cron / 完整 OAuth tree / httpOnly cookie / 改 `LoginDto` 入参 / 微信小程序 OAuth。
+
+**为什么 refresh TTL 90d**(沿评审稿 §3.5 D-5):本系统是深圳救援队内部管理系统,使用频次比公网 SaaS 低,30d 会让低频用户(月度 / 季度参与活动的志愿队员)频繁触发 absolute expiration 误以为账号失效;90d 把"必须重登"周期对齐到季度心智;**仍坚守** absolute expiration(沿 OWASP)+ rotation always + family revoke + 联动撤销四防线。
 
 #### P0-F 关键业务接口权限最小闭环
 
@@ -233,7 +239,7 @@
 | 5 | P0-H 部署演练 | Ops演练 + 可能 Mixed | ❌ | 0(纯演练)+ ≤1 修复 PR | 同 B,执行前置;C 写好 SOP 后再演练更顺 |
 | 6 | P0-I 排错 SOP | Docs-only | ❌ | 1 | H 演练副产物可同步落到 I |
 | 7 | P0-D 修改密码 ✅(#115 评审稿 / #116 铁律修订 / #117 代码实现 / 本 PR 状态回填)| D档评审 → Code → Docs | ✅ | 1 评审 + 1 铁律 + 1 代码 + 1 回填(已完成)| 单点改动,影响面可控,先评审再实现;沿 [P0-D 评审稿](first-release-p0d-change-my-password-review.md) 4-PR 串行 |
-| 8 | P0-E refresh token / logout | D档评审 | ✅(可能只评审不开发) | 1 评审 + (0-1) 代码 | 历史明文不做,评审可能得出"第一版仍不做"结论 |
+| 8 | P0-E refresh token / logout ✅(#126 评审稿 + 铁律解锁 / #127 代码实现 / 本 PR 状态回填)| D档评审 → Code → Docs | ✅(已落地)| 1 评审 + 1 代码 + 1 回填(已完成)| 3 新接口 + LoginResponseDto +2 字段 + 1 新表 + 1 新 BizCode + 5 新 audit + 联动撤销 4 场景;沿 [P0-E 评审稿](first-release-p0e-refresh-token-review.md) 9 决策 |
 | 9 | P0-F 权限最小闭环 | D档评审 | ✅(可能只评审不开发) | 1 评审 + (0-3) 代码 | 涉及面最广,评审可能得出"第一版默认延续 ADMIN 全权"结论;有结论再决定要不要做 |
 
 **整体节奏建议**:
@@ -254,7 +260,7 @@
 | P0-H | (0 PR;仅 Ops 演练)+ 视情况 `docs(deployment): ...` | 部署演练记录入 [`deployment.md`](deployment.md) 附录 | **演练**不动 src/* | 真实环境从空机器到 health/ready 200 |
 | P0-I | `docs(deployment): troubleshooting sop` | 5 类典型故障的排错路径 | 不动 src/* | 维护者按文档能定位 P0-B / P0-H 演练中的所有问题 |
 | P0-D ✅ | (评审)`docs(review): change-my-password review`(#115)+ (铁律)`docs(p0d): allow self-service password change`(#116)+ (代码)`feat(users): add self-service password change`(#117)+ (回填)本 PR | 评审稿先冻结(密码策略 / 错误码 / 是否吊销 token / 防爆破 / 审计);铁律修订 `CLAUDE.md` / `AGENTS.md`;代码 PR 严格按评审范围实施;状态回填同步文档 | **评审 / 铁律 / 回填 PR** 不动 src/*;**代码 PR** 严格按评审范围实施;不夹带 schema 变更;不夹带 token 吊销 | ✅ 评审通过 + 代码 PR contract 零漂移(snapshot diff 仅新增,无删除) |
-| P0-E | (评审)`docs(review): refresh token strategy` + (视拍板)代码 PR | 评审稿三选一(不做 / logout only / 完整 refresh)+ 含 schema 变更评估 | **评审 PR** 不动 src/*、不动 prisma/*;**禁止** AI 自行决定方向 | 评审通过 + 用户拍板;代码 PR 严格按拍板 |
+| P0-E ✅ | (评审 + 铁律 + hotfix)`docs(p0e): define refresh token and logout strategy`(#126)+ (代码)`feat(auth): add refresh token + logout + logout-all`(#127)+ (回填)本 PR | 评审稿 v1 9 条决策(LoginResponseDto +2 / 3 新接口 / 联动撤销 4 场景 / 不做 tokenVersion / access 15m + refresh 90d absolute / 10007 / refresh throttler / 5 audit / 不做 D-9 清单)→ 代码实施(34 文件 +2269/-88)→ 状态回填 | **评审 / 回填 PR** 不动 src/*;**代码 PR** 严格按评审范围实施 | ✅ 评审通过 + 用户拍板 + 代码 PR contract 仅新增(v1 14 路由 schema 零漂移);CI 全绿;55 e2e spec / 1291 用例 |
 | P0-F | (评审)`docs(review): minimum rbac closure` + (视拍板)代码 PR | 评审稿列 18 个非 attachments 模块当前 `@Roles` + 第一版收紧建议 | **评审 PR** 不动 src/*;**禁止** AI 自行扩散 rbac.can() | 评审通过 + 用户拍板;不引发 Slow-3 / Slow-4 提前启动 |
 
 **特别要求**:
@@ -313,7 +319,7 @@
 **3. 哪些必须先评审,不能直接开发?**
 
 - **P0-D 修改密码 ✅**:已落地于 #115 评审稿 / #116 铁律修订 / #117 代码实现 / 本 PR 状态回填
-- **P0-E refresh token / logout**:历史明文不做,方向未定,必须评审
+- **P0-E refresh token / logout ✅**:已落地于 #126 评审稿 + 铁律解锁 / #127 代码实现 / 本 PR 状态回填(access 15m + refresh 90d absolute expiration + rotation always + family revoke + 联动撤销 4 场景)
 - **P0-F RBAC 关键接口最小闭环**:影响 18 个模块,涉及 Slow-3 / Slow-4,必须评审
 
 **4. 哪些可以第一版后置?**
