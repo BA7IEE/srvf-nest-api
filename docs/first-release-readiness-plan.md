@@ -56,7 +56,7 @@
 **关键现状判断**(决定后续优先级):
 
 - 双轨权限并存:**只有 attachments 一个业务模块真正接入 `rbac.can()`**,其余 18 个业务模块仍走 `@Roles(Role.SUPER_ADMIN, Role.ADMIN)`(沿 [`docs/current-state.md §4`](current-state.md))
-- 没有 refresh token / logout / 本人改密码接口(沿 [`security.md`](security.md))
+- 没有 refresh token / logout;**本人改密接口 `PUT /api/users/me/password` 已落地于 #117**(沿 [`security.md` 已落地策略表](security.md) + [P0-D 评审稿](first-release-p0d-change-my-password-review.md))
 - 上传 / 下载代码全栈就绪,但**真实 COS 生产链路未做端到端验收**(代码 + 运维清单都有,缺执行)
 - v1 14 接口契约 zero drift,V2 86 接口 contract snapshot 也 zero drift;前端可对接的契约面是稳定的
 
@@ -105,19 +105,21 @@
 
 **直接开发?**:**docs-only**。可能引用现有 [`deployment.md`](deployment.md) / [`security.md`](security.md) / [`ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md),做"导航 + 串行清单"层。
 
-#### P0-D 账号安全:修改密码
+#### P0-D 账号安全:修改密码 ✅
 
-**为什么是 P0**:当前**没有任何"改密码"接口**(包括管理员和本人)。管理员能"重置他人密码"但不能"改自己的密码"。第一版上线后:
+**状态**:已由 #115 评审稿 + #116 铁律修订(`CLAUDE.md` / `AGENTS.md` §1 + §9 + §11 + §17.3)+ #117 代码实现(`PUT /api/users/me/password` + `ChangeMyPasswordDto` + `OLD_PASSWORD_INVALID=10005` / `NEW_PASSWORD_SAME_AS_OLD=10006` + `@PasswordChangeThrottle` 独立 throttler + `password.change.self` audit + 事务原子写)落地;严格按 [P0-D 评审稿 §5 / §7](first-release-p0d-change-my-password-review.md) 全部覆盖。
+
+**为什么是 P0**(保留作为档案):第一版上线前**没有任何"改密码"接口**(包括管理员和本人)。管理员能"重置他人密码"但不能"改自己的密码"。第一版上线后:
 - 默认 super admin 密码 `ChangeMe123456` 必须能改
 - 真实管理员账号要能改密码而不依赖数据库直改
 - 普通用户(未来)有自助改密诉求
 
-**关键判断**:
-- 第一版至少要补 **`PUT /api/users/me/password`**(本人改密码,需 oldPassword)
-- 是否做"首次登录强制改密"作为单独功能?**留到 P1**
-- 改密后是否吊销旧 token?**留到 refresh token 评审一起拍板**(见 P0-E)
+**关键判断**(已落实):
+- 第一版补了 **`PUT /api/users/me/password`**(本人改密码,需 oldPassword;沿 P0-D 评审稿)
+- "首次登录强制改密"作为单独功能 → **仍归 P1**(需 schema 字段与登录流程改造)
+- 改密后是否吊销旧 token? → **仍不吊销**,与管理员重置一致;tokenVersion / refresh token / token revoke 仍归 **P0-E** 统一处理
 
-**直接开发?**:**先 D 档评审**(密码策略 / 错误码 / 是否吊销 token / 是否记审计 / 防爆破),再开代码 PR。
+**仍不做**(沿评审稿 §4):忘记密码 / 邮箱找回(归 P2)/ refresh token / tokenVersion / 主动吊销旧 token / user-member 绑定能力(归 P0-E / P1 / P2 / 另立项)。
 
 #### P0-E refresh token / logout / 登录续期策略
 
@@ -149,7 +151,7 @@
 
 #### P0-G 前端 BizCode / API 契约冻结 ✅
 
-**状态**:已由 PR #111 落地为 [`docs/first-release-bizcode-mapping.md`](first-release-bizcode-mapping.md)(2026-05-17;覆盖 122 条 BizCode 全量);上传 / 下载流程图沿用 [`first-release-frontend-scope.md §7`](first-release-frontend-scope.md),本 PR 不重复。
+**状态**:已由 PR #111 落地为 [`docs/first-release-bizcode-mapping.md`](first-release-bizcode-mapping.md)(2026-05-17;P0-G 撰写时覆盖 122 条 BizCode 全量;经 P0-D PR-3 #117 新增 10005 / 10006 后,经 P0-D PR-4 同步本文为 124 条);上传 / 下载流程图沿用 [`first-release-frontend-scope.md §7`](first-release-frontend-scope.md),本 PR 不重复。
 
 **为什么是 P0**:接口契约虽然 zero drift,但"前端要知道每个 BizCode 怎么翻"是另一回事。如果不冻结,前端会做出与后端不一致的提示。
 
@@ -228,7 +230,7 @@
 | 4 | P0-C 初始化 / bootstrap SOP | Docs-only | ❌ | 1 | B 演练副产物可同步落到 C |
 | 5 | P0-H 部署演练 | Ops演练 + 可能 Mixed | ❌ | 0(纯演练)+ ≤1 修复 PR | 同 B,执行前置;C 写好 SOP 后再演练更顺 |
 | 6 | P0-I 排错 SOP | Docs-only | ❌ | 1 | H 演练副产物可同步落到 I |
-| 7 | P0-D 修改密码 | D档评审 → Code | ✅ | 1 评审 + 1 代码 | 单点改动,影响面可控,先评审再实现 |
+| 7 | P0-D 修改密码 ✅(#115 评审稿 / #116 铁律修订 / #117 代码实现 / 本 PR 状态回填)| D档评审 → Code → Docs | ✅ | 1 评审 + 1 铁律 + 1 代码 + 1 回填(已完成)| 单点改动,影响面可控,先评审再实现;沿 [P0-D 评审稿](first-release-p0d-change-my-password-review.md) 4-PR 串行 |
 | 8 | P0-E refresh token / logout | D档评审 | ✅(可能只评审不开发) | 1 评审 + (0-1) 代码 | 历史明文不做,评审可能得出"第一版仍不做"结论 |
 | 9 | P0-F 权限最小闭环 | D档评审 | ✅(可能只评审不开发) | 1 评审 + (0-3) 代码 | 涉及面最广,评审可能得出"第一版默认延续 ADMIN 全权"结论;有结论再决定要不要做 |
 
@@ -244,12 +246,12 @@
 | P0 项 | 推荐 PR | 内容 | 禁止范围 | 验收标准 |
 |---|---|---|---|---|
 | P0-A ✅ | `docs(first-release): frontend integration scope`(#110) | 前端要接的接口清单 + 不接的列表 + 上传流程图 | 不动 src/* | ✅ 已落地(2026-05-16) |
-| P0-G ✅ | `docs(first-release): bizcode mapping for frontend`(#111) | BizCode 翻译表 + 错误响应说明 + 前后端约定 | 不动 src/*;**不**新增 BizCode | ✅ 已落地(2026-05-17;覆盖 122 条 BizCode) |
+| P0-G ✅ | `docs(first-release): bizcode mapping for frontend`(#111) | BizCode 翻译表 + 错误响应说明 + 前后端约定 | 不动 src/*;**不**新增 BizCode | ✅ 已落地(2026-05-17;P0-G 撰写时覆盖 122 条;P0-D PR-3 新增 10005 / 10006 后实数 124,P0-D PR-4 同步本文) |
 | P0-B | (0 PR;仅 Ops 演练)+ 视情况 `fix(storage): ...` | 演练记录入 [`ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md) 附录;发现的代码 bug 单独 PR | **演练**不动 src/*;修复 PR 范围严格限定演练发现的问题 | 5 步闭环全部 ✅(沿 ops §9.7) |
 | P0-C ✅ | `docs(first-release): add bootstrap SOP`(#113) | 从零部署到第一个账号能登录的串行 SOP — [`docs/first-release-bootstrap-sop.md`](first-release-bootstrap-sop.md) | 不动 src/* | ✅ 已落地(2026-05-17;702 行;dev/staging/prod 三档;含 14 dict_type 清单 + 测试账号矩阵路径 + 5 分钟 dry-run)|
 | P0-H | (0 PR;仅 Ops 演练)+ 视情况 `docs(deployment): ...` | 部署演练记录入 [`deployment.md`](deployment.md) 附录 | **演练**不动 src/* | 真实环境从空机器到 health/ready 200 |
 | P0-I | `docs(deployment): troubleshooting sop` | 5 类典型故障的排错路径 | 不动 src/* | 维护者按文档能定位 P0-B / P0-H 演练中的所有问题 |
-| P0-D | (评审)`docs(review): change-my-password review` + (代码)`feat(users): add change my password` | 评审稿先冻结(密码策略 / 错误码 / 是否吊销 token / 防爆破 / 审计);代码 PR 严格按评审范围实施 | **评审 PR** 不动 src/*;**代码 PR** 严格按评审范围实施;不夹带 schema 变更;不夹带 token 吊销 | 评审通过 + 代码 PR contract 不漂移 |
+| P0-D ✅ | (评审)`docs(review): change-my-password review`(#115)+ (铁律)`docs(p0d): allow self-service password change`(#116)+ (代码)`feat(users): add self-service password change`(#117)+ (回填)本 PR | 评审稿先冻结(密码策略 / 错误码 / 是否吊销 token / 防爆破 / 审计);铁律修订 `CLAUDE.md` / `AGENTS.md`;代码 PR 严格按评审范围实施;状态回填同步文档 | **评审 / 铁律 / 回填 PR** 不动 src/*;**代码 PR** 严格按评审范围实施;不夹带 schema 变更;不夹带 token 吊销 | ✅ 评审通过 + 代码 PR contract 零漂移(snapshot diff 仅新增,无删除) |
 | P0-E | (评审)`docs(review): refresh token strategy` + (视拍板)代码 PR | 评审稿三选一(不做 / logout only / 完整 refresh)+ 含 schema 变更评估 | **评审 PR** 不动 src/*、不动 prisma/*;**禁止** AI 自行决定方向 | 评审通过 + 用户拍板;代码 PR 严格按拍板 |
 | P0-F | (评审)`docs(review): minimum rbac closure` + (视拍板)代码 PR | 评审稿列 18 个非 attachments 模块当前 `@Roles` + 第一版收紧建议 | **评审 PR** 不动 src/*;**禁止** AI 自行扩散 rbac.can() | 评审通过 + 用户拍板;不引发 Slow-3 / Slow-4 提前启动 |
 
@@ -258,7 +260,7 @@
 - **refresh token**:必须标为 D 档评审先行。原因:v1 / V1.1 / V2 早期均明文不做(沿 [`security.md`](security.md) / [`v2-api-contract.md`](v2-api-contract.md) §1.3 / [`current-state.md`](current-state.md));涉及 token 存储 / revoke / logout / 前端登录流程,可能改 auth 契约。**禁止**直接开发。
 - **RBAC 关键接口**:必须标为 D 档评审先行。原因:现有是 F3(Guard 入口)/ F4(Service 判权)双轨;attachments 已接 rbac.can();其它模块多为 @Roles。需要先定义第一版角色矩阵;**禁止**直接全系统接 RBAC(那是 Slow-4 79 接口工作量)。
 - **上传下载闭环**:可以先做"验收文档 + curl 流程",不要先改代码。只有验收发现缺口才开代码 PR。
-- **修改密码**:可以先做 API 评审小文档再开发。涉及密码策略、错误码、是否吊销 token、防爆破、审计。
+- **修改密码 ✅**:已按 P0-D 评审稿(#115)→ 铁律修订(#116)→ 代码实现(#117)→ 状态回填(本 PR)四步骤落地。涉及的密码策略、错误码(10005 / 10006)、是否吊销 token(沿用现状不吊销)、防爆破(独立 throttler `password-change` 5/60)、审计(`password.change.self`)全部按评审稿覆盖。
 
 ---
 
@@ -268,7 +270,7 @@
 |---|---|---|---|
 | refresh token / logout | 安全 + 影响 auth 契约 + 可能改 schema | 历史明文不做;方向未定 | 评审稿:三选一对比 + schema 变更评估 + 前端配合度评估 |
 | RBAC 关键业务接口最小闭环 | 影响 18 个业务模块 + 双轨切换 | 没有"第一版角色矩阵";可能引发 Slow-3 / Slow-4 提前启动 | 评审稿:18 模块现状表 + 收紧建议 + 第一版边界 |
-| 修改密码 / 首次改密策略 | 密码策略 + 是否吊销 token + 审计 + 防爆破 | 涉及前后端契约 + 安全策略 | 评审稿:DTO / 错误码 / 限流 / 审计事件 / 是否触发 token revoke |
+| 修改密码 ✅(本人自助改密;首次改密策略仍归 P1)| 密码策略 + 是否吊销 token + 审计 + 防爆破 | 涉及前后端契约 + 安全策略 | ✅ 已产物:[P0-D 评审稿](first-release-p0d-change-my-password-review.md)(DTO / 错误码 / 限流 / 审计事件 / 不触发 token revoke) |
 | production COS 真实上线 | 凭证 + 真实数据 + 不可逆 | 凭证错误 / CORS 错配可能引发数据全量泄漏 | 已有 [`ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md);演练前再做一次 review |
 | storage-settings 权限收紧 | 凭证读写权限 | 当前是 `SUPER_ADMIN, ADMIN`;ADMIN 边界未定义 | 含在 P0-F 评审稿内 |
 | schema / migration 相关 | 不可逆;沿 [`process.md §3-4`](process.md) D 档铁律 | 任何 schema 变更必须 D 档 | 对应批次评审稿 |
@@ -308,7 +310,7 @@
 
 **3. 哪些必须先评审,不能直接开发?**
 
-- **P0-D 修改密码**:密码策略 / 是否吊销 token / 审计需评审
+- **P0-D 修改密码 ✅**:已落地于 #115 评审稿 / #116 铁律修订 / #117 代码实现 / 本 PR 状态回填
 - **P0-E refresh token / logout**:历史明文不做,方向未定,必须评审
 - **P0-F RBAC 关键接口最小闭环**:影响 18 个模块,涉及 Slow-3 / Slow-4,必须评审
 

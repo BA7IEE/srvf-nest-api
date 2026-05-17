@@ -20,6 +20,8 @@
 | 登录限流 | `@nestjs/throttler` 内存 storage | 仅 `POST /api/auth/login`,IP 维度 5 次 / 60 秒(可配),不暴露阈值 |
 | 日志敏感字段 redact | `bootstrap/logger-options.ts` | 命中字段日志显示为 `[REDACTED]`,**不仅仅是长度截断** |
 | 启动强校验 | `config/app.config.ts` + `prisma/seed.ts` | `APP_ENV=production` 下拒绝默认值的 `JWT_SECRET` / `APP_CORS_ORIGIN=*` / `SUPER_ADMIN_PASSWORD` / `SUPER_ADMIN_USERNAME=admin` |
+| 本人自助改密 | `users.controller.ts` + `users.service.ts` + `audit-logs.service.ts` | `PUT /api/users/me/password`(`ChangeMyPasswordDto { oldPassword, newPassword }`);严格事务内顺序:`bcrypt.compare(oldPassword)` → 严格 `===` 比较 oldPassword/newPassword → `bcrypt.hash(newPassword)` → 写 audit log `password.change.self`;响应 `userSafeSelect`(永不含 `passwordHash`);**不**主动吊销旧 token(沿 Token 吊销升级路径) |
+| 改密接口防爆破 | `@PasswordChangeThrottle` + `throttler-biz.guard.ts` | 独立 throttler 实例 `password-change`,与登录限流物理隔离;IP 维度 5 次 / 60 秒(`PASSWORD_CHANGE_THROTTLE_LIMIT` / `PASSWORD_CHANGE_THROTTLE_TTL_SECONDS` 可配);内存 storage(不引入 Redis);不暴露阈值 / `Retry-After` / `X-RateLimit-*` |
 
 ### 日志 redact 清单
 
@@ -28,11 +30,13 @@ req.headers.authorization
 req.headers.cookie
 res.headers["set-cookie"]
 req.body.password
+req.body.oldPassword
 req.body.newPassword
 req.body.token
 req.body.accessToken
 req.body.refreshToken
 *.password
+*.oldPassword
 *.newPassword
 *.passwordHash
 *.token
@@ -66,6 +70,8 @@ req.body.refreshToken
 ## Token 吊销升级路径
 
 当前版本 **不实现 refresh token,不引入 Redis blacklist**:JWT 一经签发即在 `JWT_EXPIRES_IN` 内有效;管理员重置密码后**不主动**吊销旧 token,只能通过把目标用户 `status` 改 `DISABLED` 间接阻断(`JwtStrategy.validate()` 每请求查库)。
+
+P0-D **本人自助改密**(`PUT /api/users/me/password`,沿 [`docs/first-release-p0d-change-my-password-review.md §5.7`](first-release-p0d-change-my-password-review.md))同样保留"**不主动吊销旧 token**"的设计:`JwtStrategy.validate()` 只看 `deletedAt === null && status === UserStatus.ACTIVE`,不读 `passwordHash`,因此 `passwordHash` 变化不影响已签发 token。如需改密后立即阻断,沿用管理员把目标用户 `status` 改 `DISABLED` 的现有机制;`tokenVersion` / refresh token / token revoke 等真正的"立即吊销"能力归 **P0-E** 统一评审,本接口不预实现。
 
 后续真出现"重置密码 / 强制下线必须立即生效"诉求时,**推荐升级路径**(按顺序施工):
 
