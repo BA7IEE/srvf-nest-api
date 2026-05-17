@@ -36,7 +36,8 @@ export type AuditLogEvent =
   | 'attendance-sheet.final-review' // PR #6 接入(attendances.service: finalApprove / finalReject 共 2 处;extra.action ∈ {final-approve, final-reject} 区分;final-approve 触发 attendance.recorded 业务事件,final-reject records 跟随软删;APD 细分权限后置)
   | 'attachment.upload' // V2.x C-7 PR #6c 接入(attachments.service: create 1 处;沿 D7-attachments v1.0 §7.1)
   | 'attachment.delete' // V2.x C-7 PR #6c 接入(attachments.service: delete 1 处;extra.deletedByPath ∈ {owner, admin} 区分;沿 D7-attachments v1.0 §7.1)
-  | 'attachment.config.change'; // V2.x C-7 PR #6d 接入(配置三表 11 处写共用单事件;沿 D7-attachments v1.0 §7.1 路线 A:extra.configType ∈ {type, mime, sizeLimit} + extra.operation ∈ {create, update, update-status, delete} 区分;updateStatus 沿 Q1 PR #6d 拍板细分独立 operation)
+  | 'attachment.config.change' // V2.x C-7 PR #6d 接入(配置三表 11 处写共用单事件;沿 D7-attachments v1.0 §7.1 路线 A:extra.configType ∈ {type, mime, sizeLimit} + extra.operation ∈ {create, update, update-status, delete} 区分;updateStatus 沿 Q1 PR #6d 拍板细分独立 operation)
+  | 'password.change.self'; // P0-D PR-3(2026-05-17)接入(users.service: changeMyPassword 1 处;沿 docs/first-release-p0d-change-my-password-review.md §5.6 + §9.1 复核 #1:与现有 kebab-case `<res>.<action>.<scope>` 风格对齐 + 与 `profile.update.self` 对称)。resourceType='user' / resourceId=currentUser.id;不写 oldPassword / newPassword / passwordHash 任何明文或 hash
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

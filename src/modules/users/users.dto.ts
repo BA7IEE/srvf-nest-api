@@ -169,6 +169,36 @@ export class ResetUserPasswordDto {
   newPassword!: string;
 }
 
+// P0-D 本人自助改密 DTO(沿 docs/first-release-p0d-change-my-password-review.md §5.1)。
+// 严格白名单只允许 oldPassword + newPassword;额外字段被全局 forbidNonWhitelisted 兜底拒绝。
+// oldPassword 仅做 @IsString + @IsNotEmpty(不暴露强度规则,与 LoginDto.password 对齐;
+// 详见评审稿 §5.1)。newPassword 强度规则与 ResetUserPasswordDto.newPassword 完全一致。
+export class ChangeMyPasswordDto {
+  @ApiProperty({
+    description: '当前密码;校验失败抛 OLD_PASSWORD_INVALID(10005)',
+    format: 'password',
+  })
+  @IsString()
+  @IsNotEmpty()
+  oldPassword!: string;
+
+  @ApiProperty({
+    description:
+      '新密码(至少 8 位,需含字母+数字);若与 oldPassword 完全相同抛 NEW_PASSWORD_SAME_AS_OLD(10006)',
+    format: 'password',
+    minLength: 8,
+    maxLength: 128,
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(8)
+  @MaxLength(128)
+  @Matches(/^(?=.*[a-zA-Z])(?=.*\d).+$/, {
+    message: 'password 至少 8 位,且必须包含字母和数字',
+  })
+  newPassword!: string;
+}
+
 export class UpdateUserRoleDto {
   @ApiProperty({
     description: '目标角色;不允许 SUPER_ADMIN(只有 seed 能创建)',

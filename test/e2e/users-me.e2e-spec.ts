@@ -29,12 +29,16 @@ const EXPECTED_USER_RESPONSE_KEYS = [
 
 // CLAUDE.md §11 明确禁止 PATCH /me 接受这些字段。样本值给"合理类型",
 // 证明拒是因 forbidNonWhitelisted 而非类型校验。
+// P0-D PR-3(2026-05-17)追加 oldPassword / newPassword:本人自助改密必须走独立接口
+// PUT /api/users/me/password,不得在 PATCH /me 资料更新接口里夹带(CLAUDE.md §9 / §11)。
 const FORBIDDEN_FIELDS: Array<[string, unknown]> = [
   ['username', 'newname'],
   ['email', 'foo@example.com'],
   ['role', 'USER'],
   ['password', 'Passw0rd1!'],
   ['passwordHash', '$2a$10$abc'],
+  ['oldPassword', 'Passw0rd1!'],
+  ['newPassword', 'BrandNew1!'],
   ['status', 'ACTIVE'],
   ['deletedAt', null],
   ['id', 'cl0000000000000000000000'],

@@ -1,6 +1,20 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
@@ -11,10 +25,13 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+import { PasswordChangeThrottle } from '../../common/decorators/password-change-throttle.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
+  ChangeMyPasswordDto,
   CreateUserDto,
   ListUsersQueryDto,
   ResetUserPasswordDto,
@@ -51,6 +68,41 @@ export class UsersController {
     @Body() dto: UpdateMyProfileDto,
   ): Promise<UserResponseDto> {
     return this.usersService.updateMyProfile(currentUser, dto);
+  }
+
+  // P0-D PR-3(2026-05-17):本人自助改密。
+  // 沿 docs/first-release-p0d-change-my-password-review.md §3.1 / §5;
+  // @PasswordChangeThrottle 启用独立 throttler `password-change` 限流(5 次 / 60 秒 IP 维度)。
+  // 与管理员重置接口 PUT /:id/password 行为对称区分:本接口需 oldPassword,管理员重置不需。
+  @PasswordChangeThrottle()
+  @Put('me/password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '本人自助改密(需 oldPassword);不主动吊销旧 token' })
+  @ApiWrappedOkResponse(UserResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.USER_NOT_FOUND,
+    BizCode.OLD_PASSWORD_INVALID,
+    BizCode.NEW_PASSWORD_SAME_AS_OLD,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  changeMyPassword(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Body() dto: ChangeMyPasswordDto,
+    @Req() req: Request,
+  ): Promise<UserResponseDto> {
+    return this.usersService.changeMyPassword(currentUser, dto, this.buildAuditMeta(req));
+  }
+
+  // P0-D PR-3:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
+  // 不引入 cls-rs / AsyncLocalStorage)。沿 emergency-contacts.controller.ts 范式。
+  private buildAuditMeta(req: Request): AuditMeta {
+    return {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    };
   }
 
   // ===== 管理接口 =====
