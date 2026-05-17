@@ -25,7 +25,8 @@
 - 不做 RBAC(permission 表 / 按钮级权限 / casl)——三层 `Role` 不算 RBAC
 - 不做文件上传具体实现(本地 / OSS / R2)
 - 不做 Redis / 队列 / 定时任务
-- 不做注册接口、刷新 token、**本人改密码接口** `PUT /api/users/me/password`
+- 不做注册接口、刷新 token
+- v1 原本**不做**"本人自助改密码";P0-D 评审稿 `docs/first-release-p0d-change-my-password-review.md` 已冻结后,允许后续 PR 严格按评审稿实现 `PUT /api/users/me/password`(详细铁律见 §9);仍**禁止**首次登录强制改密、忘记密码 / 邮箱找回、refresh token、tokenVersion、旧 token 主动吊销等评审稿明确归口 P0-E / P1 / P2 的越界内容
 - 不做微信小程序登录、多租户、组织树
 - 不做 LLM / 向量检索——`modules/ai/` 只放 `README.md` 占位
 - 不做操作日志 / 登录日志、字典管理
@@ -359,7 +360,14 @@ export interface CurrentUser {
 - `POST /api/users` **必须由调用方传 `password`**,禁止后端生成默认密码或留空
 - `PUT /api/users/:id/password` 接收 `ResetUserPasswordDto { newPassword }`,**不需要 `oldPassword`**,但必须走 `assertCanManageUser`
 - 管理员重置密码后**不主动吊销旧 token**;如需立即阻断,由管理员把目标用户 `status` 改 `DISABLED`
-- **v1 不实现"本人改密码"接口**,不要在其他接口里夹带"顺手改密码"逻辑
+- **本人自助改密只能通过独立接口** `PUT /api/users/me/password`,**不得**在 `PATCH /api/users/me` 或其他资料更新接口里夹带"顺手改密码"逻辑
+- `PUT /api/users/me/password` 仅允许在 P0-D 评审稿 `docs/first-release-p0d-change-my-password-review.md` 冻结后由独立 PR 实现,**实现必须严格遵守该评审稿**(行为契约 / 错误码 / 鉴权 / 限流 / audit 全部以评审稿为准);**不接管理员重置他人密码接口** `PUT /api/users/:id/password`,该接口契约保持不变
+- 本人改密接口入参固定 `ChangeMyPasswordDto { oldPassword, newPassword }`,`oldPassword` 必填(与管理员重置无 `oldPassword` 的语义对称区分);`newPassword` 校验沿 `ResetUserPasswordDto.newPassword` 范式(至少 8 位 + 含数字 + 含字母);严格白名单,**禁止**夹带 `username` / `email` / `role` / `status` / `passwordHash` / `id` 等任何其他字段
+- 本人改密接口新增 BizCode:`OLD_PASSWORD_INVALID = 10005`(`当前密码不正确`,HTTP 401)、`NEW_PASSWORD_SAME_AS_OLD = 10006`(`新密码不能与当前密码相同`,HTTP 400);**禁止**复用 `LOGIN_FAILED` 或 `BAD_REQUEST` 兜底语义
+- 本人改密接口必须挂 `@PasswordChangeThrottle()`:5 次 / 60 秒,第一版固定 IP 维度;沿 V1.1 §17.7 `@nestjs/throttler` 内存 storage,**禁止** Redis storage;限流参数从 `src/config/app.config.ts` 注入,**禁止**硬编码在装饰器
+- 本人改密成功必须写 audit:`AuditLogEvent.UserPasswordChangedSelf`(命名风格代码 PR 前与既有事件逐字对齐);**禁止**把 `oldPassword` / `newPassword` / `passwordHash` 任何明文或 hash 写入 audit log
+- 本人改密成功后**不主动吊销旧 token**;`tokenVersion` / refresh token / token revoke 仍归 P0-E,本接口**不预实现**
+- 本人改密接口**不做**首次登录强制改密、忘记密码 / 邮箱找回、user-member 绑定能力,这些越界诉求出现时必须暂停说明
 
 ---
 
@@ -397,7 +405,7 @@ private notDeletedWhere<T extends object>(where: T = {} as T) {
 
 `forbidNonWhitelisted: true` 是兜底,DTO 自身白名单是第一道防线;一旦 DTO 多声明一个字段,纵深防御直接破口。
 
-- **`UpdateMyProfileDto`**(`PATCH /api/users/me`):仅允许 `nickname` / `avatarKey`。**禁止**包含 `username` / `email` / `passwordHash` / `role` / `status` / `deletedAt` / `id` / `lastLoginAt` 等任何字段
+- **`UpdateMyProfileDto`**(`PATCH /api/users/me`):仅允许 `nickname` / `avatarKey`。**禁止**包含 `username` / `email` / `password` / `newPassword` / `oldPassword` / `passwordHash` / `role` / `status` / `deletedAt` / `id` / `lastLoginAt` 等任何字段;本人自助改密必须走独立接口 `PUT /api/users/me/password`(铁律见 §9)
 - **`UpdateUserDto`**(`PATCH /api/users/:id`,管理员改用户资料):**禁止**包含 `role` / `password` / `passwordHash` / `status` / `deletedAt` / `id`。角色修改走 `PATCH /api/users/:id/role`,密码重置走 `PUT /api/users/:id/password`,启用 / 禁用走 `PATCH /api/users/:id/status`,软删除走 `DELETE /api/users/:id`,**绝不在更新资料接口里夹带**
 - **`CreateUserDto.role`** 可选,**禁止**直接透传给 Prisma;必须经业务层根据当前用户角色校验后再决定写入值(见 §13)
 
@@ -622,7 +630,7 @@ V1.1 阶段**仍然不做**(等价于 §1 v1 不做的事 + ARCHITECTURE.md §11
 - 不做操作日志 / 审计日志的**数据库持久化**
 - 不接入 OpenTelemetry / Tracing / Sentry / Datadog / APM
 - 不暴露 `/metrics` 端点(若未来需要,必须同步加入 `ResponseInterceptor` 跳过列表)
-- 不做 refresh token / 本人改密码 / 微信登录 / RBAC / 多租户 / 文件上传 Provider / pgvector / LLM
+- 不做 refresh token / 微信登录 / RBAC / 多租户 / 文件上传 Provider / pgvector / LLM(本人自助改密 `PUT /api/users/me/password` 由 P0-D 评审稿冻结后开放,铁律见 §9;**不**通过 V1.1 工程加固通道实现)
 - 不修改 `prisma/schema.prisma`(不加日志字段、不加请求统计字段)
 - 不修改 `src/modules/auth/` 与 `src/modules/users/` 的业务路由、入参、出参、HTTP 方法、权限标注
 - 不修改 §6 接口清单的任何已有接口
