@@ -4,7 +4,59 @@
 
 ## Unreleased
 
-(无;待下一波 V2 / V2.x 增量或文档变更登记)
+v0.12.0 之后主线增量:P0-D 本人自助改密完整闭环(评审稿 → 铁律修订 → 代码实现 → 状态回填 4-PR 序列)+ 第一版前端联调包配套文档系列(P0-A 起步包 / P0-G BizCode mapping / P0-C bootstrap SOP / P0-D 状态回填)。**唯一运行时代码变更**为 P0-D PR-3 #117(`PUT /api/users/me/password`);其余 12 个 commit 均为 docs-only 或 chore。**0 schema / 0 migration / 0 新依赖 / 0 新 Permission seed**;**v1 已有 14 接口 + V2 117 + RBAC 16 + attachments 主 7 + 配置三表 15 + storage 5 既有路径 / 入参 / 主响应字段严格 zero drift**(contract snapshot 仅新增 1 路由 + 1 DTO + 2 BizCode 出现在错误码字段)。
+
+**预期 SemVer**(0.12.0 → 0.13.0 **minor**;待 bump PR 拍板):向后兼容的能力扩展(新增 1 个本人接口 + 2 个 BizCode + 1 个 audit event + 1 个独立 throttler + 2 个 env);无 breaking;沿 v0.6.0 → v0.7.0 → ... → v0.12.0 全部 minor 节奏。
+
+### Added
+
+- `feat(users): add self-service password change`(#117,squash commit `8a70573`):
+  - P0-D 本人自助改密代码实现;严格按 [P0-D 评审稿](docs/first-release-p0d-change-my-password-review.md)(#115)§5 / §7 全部覆盖。
+  - 新增 1 个 API 端点:`PUT /api/users/me/password`(任意登录用户;入参 `ChangeMyPasswordDto { oldPassword, newPassword }`,严格白名单 2 字段;响应沿 `userSafeSelect`,永不含 `passwordHash`)。
+  - 新增 2 个 BizCode(沿 100xx users 业务级段位,LOGIN_FAILED=10004 之后下两个号位):`OLD_PASSWORD_INVALID = 10005`(HTTP 401;沿评审稿 §5.3:本人改密无账号枚举攻击面,不复用 10004 的模糊语义)/ `NEW_PASSWORD_SAME_AS_OLD = 10006`(HTTP 400;业务级语义校验)。
+  - 新增 1 个独立 throttler 实例:`name: 'password-change'`,IP 维度 5 次 / 60 秒(`PASSWORD_CHANGE_THROTTLE_LIMIT` / `PASSWORD_CHANGE_THROTTLE_TTL_SECONDS` 可配),与登录限流物理隔离(登录失败爆破不消耗改密配额,反之亦然);沿 V1.1 内存 storage,不引入 Redis;不暴露阈值 / `Retry-After` / `X-RateLimit-*` 头。
+  - 新增 1 个装饰器:`@PasswordChangeThrottle()`(metadata 标记型,沿 `@LoginThrottle` 范式);新增 metadata key `PASSWORD_CHANGE_THROTTLE_KEY` 与 throttler name 常量 `PASSWORD_CHANGE_THROTTLER_NAME = 'password-change'`。
+  - 新增 1 个 audit event:`'password.change.self'`(写入 `AuditLogsService.log()` 落库;`resourceType='user'` / `resourceId=currentUser.id`;严格不写入 `oldPassword` / `newPassword` / `passwordHash` 任何明文或 hash;沿评审稿 §5.6)。
+  - 新增 2 个 env 变量:`PASSWORD_CHANGE_THROTTLE_LIMIT`(默认 5,推荐区间 [1, 100])/ `PASSWORD_CHANGE_THROTTLE_TTL_SECONDS`(默认 60,推荐区间 [1, 3600]);任一非正整数或越界,启动 fail-fast。
+  - 业务流程严格按评审稿 §5.2 顺序 1→5:`findFirst(notDeletedWhere)` 取当前 `passwordHash` → `bcrypt.compare(oldPassword)` → 严格 `===` 比较 oldPassword/newPassword(不 trim / toLowerCase)→ `bcrypt.hash(newPassword)` → `prisma.$transaction` 内 `user.update + auditLogs.log` 原子(沿 emergency-contacts / certificates 范式)。timing 防御:禁止"先比对 oldPassword === newPassword 跳过 bcrypt"的优化(避免泄漏 newPassword 与 oldPassword 是否相同信息)。
+  - `UsersModule` 新增 `imports: AuditLogsModule`(供注入 `AuditLogsService`)。
+  - **不主动吊销旧 token**:改密成功后 `JwtStrategy.validate` 仅看 `deletedAt + status === ACTIVE`,不读 `passwordHash`,已签发 token 仍有效;如需立即阻断,管理员把目标用户 `status` 改 `DISABLED`;`tokenVersion` / refresh token / token revoke 归 **P0-E** 统一评审,本接口**不**预实现。
+  - 通过 e2e 21 用例覆盖评审稿 §7.1-§7.7(核心成功路径 / 错误码 / DTO 校验 / 跨角色 / 反向锁定旧 token / audit log 写入 + 不含敏感字段 / DB 状态 / 限流 6 连击);全量 e2e 1252/1252 通过(51 suites);contract snapshot diff 仅新增 1 路由 + 1 DTO + 2 BizCode 出现在错误码字段,**v1 已有路由 schema 零漂移**。
+  - `users-me.e2e-spec.ts` FORBIDDEN_FIELDS 追加 `oldPassword` / `newPassword`,锁死 `PATCH /api/users/me` 仍不得接受密码字段。
+
+### Changed
+
+- `docs(p0d): allow self-service password change`(#116,squash commit `faf01ee`):
+  - 修订 `CLAUDE.md` / `AGENTS.md` §1(v1 不做的事)/ §9(密码处理铁律)/ §11(`UpdateMyProfileDto` 白名单)/ §17.3(V1.1 禁止项):把 v1 原本"不实现本人改密码接口"明文升级为"P0-D 评审稿冻结后允许实现 `PUT /api/users/me/password`(铁律见 §9)";新增 8 条 §9 铁律覆盖接口路径 / 入参 DTO 严格白名单 / 错误码 / 限流 / audit / 不主动吊销旧 token / 不做首次登录强制改密 / 不做忘记密码;`UpdateMyProfileDto` 禁用字段扩到含 `oldPassword` / `newPassword`。
+
+- `docs(first-release): backfill P0-D completion status`(#118,squash commit `b9c13d7`):
+  - 同步 `docs/current-state.md` / `docs/first-release-readiness-plan.md` / `docs/first-release-frontend-scope.md` / `docs/first-release-bizcode-mapping.md` / `docs/first-release-bootstrap-sop.md` / `docs/security.md` 6 个文档,反映 P0-D 已落地事实。
+  - 前端联调起步包总数:**总路由 138 → 139,起步包 50 → 51**(算式 51 + 42 + 46 = 139);新增 `PUT /users/me/password` 行;§5 P1 后接 users 行注释修订;§8.2 BizCode 起步包子集追加 10005 / 10006。
+  - BizCode 全量表:`100xx + 101xx` users / auth 段从 **7 条 → 9 条**(新增 10005 / 10006);全量从 **122 条 → 124 条**(保留 P0-G 时刻 122 条为历史档案)。
+  - `security.md` 已落地策略表追加 2 行(本人自助改密 + 改密接口防爆破);日志 redact 清单追加 `req.body.oldPassword` / `*.oldPassword`;Token 吊销升级路径补充本人改密同样不主动吊销旧 token,归 P0-E。
+  - `bootstrap-sop.md` §9.1 默认 SUPER_ADMIN 创建段后追加"建议立即调 `PUT /api/users/me/password` 改默认占位密码"完整段(含接口特性 / 限流 / audit / token 行为);§13 排错表追加 10005 / 10006 两行。
+
+### Docs
+
+- `docs: add current-state and process entrypoints`(squash commit `55979a5`):新增 `docs/current-state.md`(当前事实入口)与 `docs/process.md`(协作流程 / PR 分级 / D 档降速 / release 收口制度)2 个权威源文档;`docs/current-state.md` 后续在每次 release / handoff / 状态回填后滚动维护。
+
+- `docs: clarify archived documentation status`(squash commit `6880695`):在多个老草案 / 历史评审稿文档顶部添加"归档状态"段头,与"当前事实"文档区分。
+
+- `chore: remove stale landed-pr comments`(squash commit `83d4764`):清理散落在主线文档的过期 PR 评论链接。
+
+- `docs(first-release): add readiness plan`(squash commit `3b70934`):新建 `docs/first-release-readiness-plan.md`(第一版上线前总账,P0/P1/P2 三档剩余事项;P0-A/B/C/D/E/F/G/H/I 各项立项说明)。
+
+- `docs(first-release): frontend integration scope`(squash commit `a240e0a`):新建 `docs/first-release-frontend-scope.md`(P0-A 前端联调范围清单,起步包 50 路由 + P1 后接 42 + 第一版不接 46;第 P0-D 落地后扩到起步包 51)。
+
+- `docs(first-release): add bizcode mapping for frontend`(#111,squash commit `3e021fd`):新建 `docs/first-release-bizcode-mapping.md`(P0-G BizCode 翻译表,撰写时 122 条全量;经 P0-D #117 新增 10005 / 10006 后实数 124 条,P0-D PR-4 #118 同步本文)。
+
+- `docs(first-release): backfill P0-G completion status`(#112,squash commit `231958b`):P0-G 落地状态回填到 readiness-plan / frontend-scope 等文档。
+
+- `docs(first-release): add bootstrap SOP`(#113,squash commit `f516ae8`):新建 `docs/first-release-bootstrap-sop.md`(P0-C 从空仓库 / 空数据库 → 第一个真实账号可登录的 zero-to-login 串行 SOP;dev / staging / prod 三档差异;14 dict_type 清单 + 测试账号矩阵创建路径 + 5 分钟 dry-run + 13 行失败排查表;702 行)。
+
+- `docs(first-release): backfill P0-C completion status`(#114,squash commit `92b1c77`):P0-C 落地状态回填到 readiness-plan 等文档。
+
+- `docs(first-release): add change my password review`(#115,squash commit `842450e`):新建 `docs/first-release-p0d-change-my-password-review.md`(P0-D 评审稿,A 档 docs-only;冻结密码策略 / 错误码段位 / 限流参数 / audit 事件 / 不吊销旧 token / 4-PR 拆分;为 PR-2 / PR-3 / PR-4 提供严格落地依据)。
 
 ## v0.12.0 - 2026-05-16
 
