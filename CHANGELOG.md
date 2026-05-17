@@ -4,7 +4,12 @@
 
 ## Unreleased
 
-(无;待下一波 V2 / V2.x 增量或文档变更登记)
+- `docs(handoff): backfill P0-B test-bucket verification completion`(本 PR;沿 P0-D PR-4 #118 状态回填范式):
+  - 反映 **2026-05-17 测试 COS bucket(`ap-guangzhou`)5 步闭环验收已通过** 的事实;**未发现需要修改代码的问题**;代码层 attachments / storage / Provider / audit / 信息泄漏防御全部符合 v0.13.0 评审稿;代码层附件链路可进入第一版前端联调。
+  - 修订 [`docs/handoff/v0.13.0.md`](docs/handoff/v0.13.0.md):§5.3 P0-B 行 ⏳ → ✅;新增 §5.5 详细验收回填段(验收日期 / 验收环境 / 验收链路 / 结论 / 保留说明);§7.2 表格行 P0-B 同步。
+  - 修订 [`docs/first-release-readiness-plan.md`](docs/first-release-readiness-plan.md):§3.1 P0-B 段加 **状态** 头部 + 标记 ✅(测试 bucket);§4 / §5 表格行 P0-B 同步;§8 收尾段 P0-B 措辞同步。
+  - **保留**:本次为**测试 COS 账号**(用户已做消耗限制,上线前会关闭);**生产上线前必须**更换为正式 bucket / IAM 子账号 / 独立 `STORAGE_ENCRYPTION_KEY`,并重新按 [`docs/ops/cos-production-rollout-checklist.md`](docs/ops/cos-production-rollout-checklist.md) §1-§9 全套跑 production 验收;归 **P0-H 部署演练** 范畴,本次**不**视为 P0-H 完成;P0-E / P0-F / P0-I 仍 ⏳ 未启动。
+  - 0 代码 / schema / migration / 测试 / 依赖变更;0 secret / bucket 名 / APPID / signed URL / JWT 落仓库。
 
 ## v0.13.0 - 2026-05-17
 

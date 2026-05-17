@@ -78,9 +78,11 @@
 
 **直接开发?**:**docs-only**。本文档可以由 AI 主导起草,前端 review。
 
-#### P0-B 真实文件上传 / 下载闭环验收
+#### P0-B 真实文件上传 / 下载闭环验收 ✅(测试 bucket)
 
-**为什么是 P0**:代码 + 运维清单都有,但**没人在真实生产 COS 上跑过端到端**。前端联调的第一个"卡点"很可能就是上传失败找不到原因。
+**状态**:测试 COS bucket(`ap-guangzhou`)5 步闭环验收 **2026-05-17 已通过**(沿 [`handoff/v0.13.0.md §5.5`](handoff/v0.13.0.md));未发现需要修改代码的问题;代码层 attachments / storage / Provider / audit / 信息泄漏防御全部符合 v0.13.0 评审稿;**代码层附件链路可进入第一版前端联调**。**生产 bucket 验收**(独立凭证 / bucket / `STORAGE_ENCRYPTION_KEY` + ops SOP §1-§9 全套)归 **P0-H 部署演练** 范畴,**仍待执行**;本次**不**视为 P0-H 完成。
+
+**为什么是 P0**(保留作为档案):代码 + 运维清单都有,但**没人在真实生产 COS 上跑过端到端**。前端联调的第一个"卡点"很可能就是上传失败找不到原因。
 
 **内容**:
 - 按 [`docs/ops/cos-production-rollout-checklist.md §9`](ops/cos-production-rollout-checklist.md) 在真实生产 COS bucket 跑一次小文件端到端
@@ -226,7 +228,7 @@
 |---|---|---|---|---|---|
 | 1 | P0-A 前端联调范围清单 ✅(#110) | Docs-only | ❌ | 1 | 没有它,后续工作都没方向;前端先看到"要接什么",才有反馈 |
 | 2 | P0-G 前端 BizCode / 契约冻结 ✅(#111) | Docs-only | ❌ | 1 | 紧接 A,前端开始联调前必须有 |
-| 3 | P0-B 上传下载闭环验收 | Ops演练 + 可能 Mixed | ❌(运维清单已就位) | 0(纯演练)+ ≤2 修复 PR | 代码就绪,执行风险最高,先跑一次找问题 |
+| 3 | P0-B 上传下载闭环验收 ✅(测试 bucket 2026-05-17) | Ops演练 + 可能 Mixed | ❌(运维清单已就位) | 0(纯演练;本次无修复 PR) | 测试 bucket 通过(沿 [`handoff/v0.13.0.md §5.5`](handoff/v0.13.0.md));生产 bucket 验收归 P0-H |
 | 4 | P0-C 初始化 / bootstrap SOP | Docs-only | ❌ | 1 | B 演练副产物可同步落到 C |
 | 5 | P0-H 部署演练 | Ops演练 + 可能 Mixed | ❌ | 0(纯演练)+ ≤1 修复 PR | 同 B,执行前置;C 写好 SOP 后再演练更顺 |
 | 6 | P0-I 排错 SOP | Docs-only | ❌ | 1 | H 演练副产物可同步落到 I |
@@ -247,7 +249,7 @@
 |---|---|---|---|---|
 | P0-A ✅ | `docs(first-release): frontend integration scope`(#110) | 前端要接的接口清单 + 不接的列表 + 上传流程图 | 不动 src/* | ✅ 已落地(2026-05-16) |
 | P0-G ✅ | `docs(first-release): bizcode mapping for frontend`(#111) | BizCode 翻译表 + 错误响应说明 + 前后端约定 | 不动 src/*;**不**新增 BizCode | ✅ 已落地(2026-05-17;P0-G 撰写时覆盖 122 条;P0-D PR-3 新增 10005 / 10006 后实数 124,P0-D PR-4 同步本文) |
-| P0-B | (0 PR;仅 Ops 演练)+ 视情况 `fix(storage): ...` | 演练记录入 [`ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md) 附录;发现的代码 bug 单独 PR | **演练**不动 src/*;修复 PR 范围严格限定演练发现的问题 | 5 步闭环全部 ✅(沿 ops §9.7) |
+| P0-B ✅(测试 bucket) | (0 PR;仅 Ops 演练)— 本次测试 bucket 验收**无代码 bug**,**无需** `fix(storage): ...` | 测试 bucket 验收记录入 [`handoff/v0.13.0.md §5.5`](handoff/v0.13.0.md);生产 bucket 验收记录留 P0-H | **演练**不动 src/*;本次确认**无修复 PR** | 5 步闭环全部 ✅(沿 ops §9.7;2026-05-17 测试 bucket 通过)|
 | P0-C ✅ | `docs(first-release): add bootstrap SOP`(#113) | 从零部署到第一个账号能登录的串行 SOP — [`docs/first-release-bootstrap-sop.md`](first-release-bootstrap-sop.md) | 不动 src/* | ✅ 已落地(2026-05-17;702 行;dev/staging/prod 三档;含 14 dict_type 清单 + 测试账号矩阵路径 + 5 分钟 dry-run)|
 | P0-H | (0 PR;仅 Ops 演练)+ 视情况 `docs(deployment): ...` | 部署演练记录入 [`deployment.md`](deployment.md) 附录 | **演练**不动 src/* | 真实环境从空机器到 health/ready 200 |
 | P0-I | `docs(deployment): troubleshooting sop` | 5 类典型故障的排错路径 | 不动 src/* | 维护者按文档能定位 P0-B / P0-H 演练中的所有问题 |
@@ -259,7 +261,7 @@
 
 - **refresh token**:必须标为 D 档评审先行。原因:v1 / V1.1 / V2 早期均明文不做(沿 [`security.md`](security.md) / [`v2-api-contract.md`](v2-api-contract.md) §1.3 / [`current-state.md`](current-state.md));涉及 token 存储 / revoke / logout / 前端登录流程,可能改 auth 契约。**禁止**直接开发。
 - **RBAC 关键接口**:必须标为 D 档评审先行。原因:现有是 F3(Guard 入口)/ F4(Service 判权)双轨;attachments 已接 rbac.can();其它模块多为 @Roles。需要先定义第一版角色矩阵;**禁止**直接全系统接 RBAC(那是 Slow-4 79 接口工作量)。
-- **上传下载闭环**:可以先做"验收文档 + curl 流程",不要先改代码。只有验收发现缺口才开代码 PR。
+- **上传下载闭环 ✅(测试 bucket)**:可以先做"验收文档 + curl 流程",不要先改代码。只有验收发现缺口才开代码 PR。**2026-05-17 测试 COS bucket 验收已完成,5 步闭环全部通过,无代码缺陷**(沿 [`handoff/v0.13.0.md §5.5`](handoff/v0.13.0.md));**生产 bucket 验收**待 P0-H 部署演练同步推进。
 - **修改密码 ✅**:已按 P0-D 评审稿(#115)→ 铁律修订(#116)→ 代码实现(#117)→ 状态回填(本 PR)四步骤落地。涉及的密码策略、错误码(10005 / 10006)、是否吊销 token(沿用现状不吊销)、防爆破(独立 throttler `password-change` 5/60)、审计(`password.change.self`)全部按评审稿覆盖。
 
 ---
@@ -306,7 +308,7 @@
 
 - **P0-A** 前端联调范围清单(没有它,前端不知道接什么)
 - **P0-G** BizCode / 契约冻结(没有它,前端会做出与后端不一致的提示)
-- **P0-B** 上传下载闭环验收(代码就绪,但生产 COS 没跑过)
+- **P0-B** 上传下载闭环验收 ✅(测试 bucket 2026-05-17 通过;**生产 bucket** 验收归 P0-H 部署演练,仍待执行)
 
 **3. 哪些必须先评审,不能直接开发?**
 
