@@ -28,7 +28,7 @@
 | [`docs/testing.md`](./docs/testing.md) | E2E 测试运行与覆盖范围 |
 | [`docs/deployment.md`](./docs/deployment.md) | Docker 镜像、生产部署、迁移流程 |
 | [`docs/security.md`](./docs/security.md) | 已落地安全策略、软删除策略、token 吊销升级路径 |
-| [`docs/handoff/v0.12.0.md`](./docs/handoff/v0.12.0.md) | v0.12.0 阶段历史 handoff;用于追溯 release 时刻状态,当前事实以 [`docs/current-state.md`](./docs/current-state.md) 为准 |
+| [`docs/handoff/v0.14.0.md`](./docs/handoff/v0.14.0.md) | v0.14.0 阶段历史 handoff(P0-E refresh token / logout / logout-all 完整闭环);用于追溯 release 时刻状态,当前事实以 [`docs/current-state.md`](./docs/current-state.md) 为准 |
 
 冲突时**以 `ARCHITECTURE.md` 为准**。除非用户明确要求,AI 不得修改 `ARCHITECTURE.md`。
 
