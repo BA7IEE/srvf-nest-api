@@ -4,9 +4,23 @@
 
 ## Unreleased
 
+### Docs
+
+- `docs(first-release): backfill P0-E completion status`(本 PR;P0-E PR-4 状态回填,A 档 docs-only):
+  - 沿 P0-E 4-PR 串行范式(#126 评审稿+铁律解锁+2 hotfix → #127 代码实现 → 本 PR 回填),把 P0-E 已落地事实同步到 7 个文档,不动 src / prisma / test / package / workflow。
+  - [`docs/first-release-readiness-plan.md`](docs/first-release-readiness-plan.md):§3.1 P0-E 标题加 ✅;详细列出已落地能力(3 接口 + LoginResponseDto +2 字段 + refresh_tokens 表 + 联动撤销 4 场景 + 5 audit + 10007);§4 P0 推荐顺序行 / §5 PR 拆分行 / §8 最终建议行同步标 ✅。
+  - [`docs/first-release-frontend-scope.md`](docs/first-release-frontend-scope.md):起步包 51 → **54 路由**(auth 段 1 → 4 加 refresh / logout / logout-all);总路由 139 → 142;§3.2 鉴权段加 access 15m + refresh 90d + REFRESH_TOKEN_INVALID=10007 三阶段错误码区分;**新增 §3.2.1 token 生命周期段**(login → refresh → logout / logout-all 完整伪流;前端关键铁律 4 条:access 401 先 refresh / refresh 10007 跳登录不重试 / refresh token 存储等级 = password / refreshExpiresAt 是 ISO 8601 UTC)。
+  - [`docs/first-release-bizcode-mapping.md`](docs/first-release-bizcode-mapping.md):BizCode 总数 124 → **125**;§4 表加 `10007 REFRESH_TOKEN_INVALID`(失败 4 子原因统一返;前端处理:**清本地 token 跳登录,不重试 refresh**);§1.3 实数说明追加 PR-3 #127 +10007 记账;§4 行 178 / §5 行 529 总数更新。
+  - [`docs/first-release-bootstrap-sop.md`](docs/first-release-bootstrap-sop.md):§2.1 会变 env 列表加 `PASSWORD_CHANGE_THROTTLE_*` / `REFRESH_THROTTLE_*` / `JWT_EXPIRES_IN` / `JWT_REFRESH_EXPIRES_IN`;**新增 P0-E PR-3 token env 锁定值段**(`JWT_EXPIRES_IN=15m` / `JWT_REFRESH_EXPIRES_IN=90d` / `REFRESH_THROTTLE_*` 默认 30/60 可选);§2.2 production 启动强校验红线段加 `JWT_REFRESH_EXPIRES_IN` 必填(P0-E PR-3 jwt.config fail-fast);§3.3 migration 触发段加 P0-E PR-3 上线 migration 提示(`20260517165220_add_refresh_tokens` + 必须先注入 env 再 deploy 否则 fail-fast)。
+  - [`docs/current-state.md`](docs/current-state.md):§1 main HEAD `5fba386` → **`25f03fb`** + Unreleased 累计 P0-E 系列;§2 加 Unreleased P0-E 能力清单(3 接口 + refresh_tokens 表 + 4 联动撤销场景 + 5 audit + 10007 + 独立 throttler);测试与契约更新为 unit 14 spec/922 用例 + e2e 55 spec/1291 用例(原 13/13 + 51/1252);§4 P0 行 P0-E 状态从"待立项"改为 ✅(同 P0-B 测试 COS 闭环验收 #125 标 ✅);仍待立项收敛为 P0-F / P0-H / P0-I。
+  - [`docs/security.md`](docs/security.md):**Token 吊销升级路径段重写**——开头从"当前版本不实现 refresh token"改为"P0-E PR-3 已落地";加 P0-E 已落地能力表(refresh / logout / logout-all / LoginResponseDto / refresh_tokens 表 / 联动撤销 4 场景 / TTL / 限流 / audit)+ P0-E 仍不做清单(tokenVersion / access blacklist / Redis / cookie / 查询接口 / 设备列表)+ refresh token 安全策略表(生成 / 存储 / 哈希 / 日志-audit-OpenAPI-测试-handoff redact / 入参出参 / TTL / rotation / reuse / logout / logout-all / 失败统一码 / 限流)+ tokenVersion 升级路径(本期不做,触发条件 + 6 步施工 + 不做理由);已落地策略表追加 3 行(refresh + logout 接口 / refresh 限流 / 改密-重置-禁用-软删联动撤销 refresh)。
+  - [`CHANGELOG.md`](CHANGELOG.md):Unreleased 顶部新增本 docs 回填条目;P0-E PR-3 feat 条目原样保留;P0-E PR-2 / hotfix-1 / hotfix-2 docs 条目原样保留(沿 keep-a-changelog reverse-chrono 范式)。
+  - 明确**不改**:[`docs/handoff/v0.13.0.md`](docs/handoff/v0.13.0.md)(历史快照,沿 process.md §6)/ 不 bump version / 不创建 tag / Release / 不清理分支 / worktree。
+  - **0 src / 0 prisma / 0 test / 0 package.json / 0 pnpm-lock.yaml / 0 workflow / 0 .env.example / 0 migration** 变更;仅 7 个 docs + 1 CHANGELOG = 8 文件 docs-only。
+
 ### Added
 
-- `feat(auth): add refresh token + logout + logout-all`(本 PR;P0-E PR-3,D 档代码):
+- `feat(auth): add refresh token + logout + logout-all`(P0-E PR-3,D 档代码):
   - 沿 [P0-E 评审稿 v1](docs/first-release-p0e-refresh-token-review.md) §3-§9 9 条已决策实施;沿 [CLAUDE.md §9 P0-E refresh token 鉴权铁律](CLAUDE.md) 16 类硬约束。
   - **新增 3 个 API 端点**:
     - `POST /api/auth/refresh`(`@Public()` + `@RefreshThrottle()` 30/60 IP;入参 `RefreshTokenDto { refreshToken }`;rotation always + family revoke + absolute expiration;失败统一 `REFRESH_TOKEN_INVALID=10007`)

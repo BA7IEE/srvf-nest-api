@@ -10,15 +10,16 @@
 
 | 项 | 当前值 |
 |---|---|
-| 当前版本 | **v0.13.0** |
+| 当前版本 | **v0.13.0**(`package.json#version` 不变;Unreleased 累计 P0-E 系列,待 v0.14.0 release 收口) |
 | `package.json#version` | `0.13.0` |
 | Swagger `setVersion(...)` | `0.13.0` |
 | 最新 git tag | `v0.13.0`(2026-05-17;指向 `5fba386` = PR #121 handoff squash commit) |
 | GitHub Latest Release | `v0.13.0`(标 Latest;Notes 自 `CHANGELOG.md ## v0.13.0 - 2026-05-17` 段抽取) |
-| `main` HEAD | `5fba386` `docs(handoff): add v0.13.0 handoff (#121)` |
-| open PR | **0** |
+| `main` HEAD | **`25f03fb`** `feat(auth): add refresh token + logout + logout-all (#127)`(P0-E PR-3 squash merge,2026-05-18) |
+| open PR | **0**(本回填 PR 合并后) |
 | 工作树状态 | clean |
 | 最新 handoff | [`docs/handoff/v0.13.0.md`](handoff/v0.13.0.md)(历史快照,不回改) |
+| Unreleased 累计 | P0-E 系列:#126 评审稿 v1 + 铁律解锁 + 2 docs hotfix(refreshExpiresIn → refreshExpiresAt;TTL 30d → 90d)/ #127 代码实现 + ci(smoke) env 修复 / 本 PR 状态回填 |
 
 > **复核命令**(任何会话开工前都可以一行跑完):
 >
@@ -45,11 +46,12 @@
 - **V2 批次 3A**:`activities`(状态机 4 态)/ `activity_registrations`(4 态 + partial unique + CSV export)
 - **V2 批次 3B / 4-A / 4-B**:`attendance_sheets`(5 态;含终审)/ `attendance_records` / `contribution_rules`(D14 预填规则;无 CRUD 流水表)
 - **V2 批次 6**:`audit_logs` 写入即不可改不可删(A-1 红线);`AuditLogEvent` 各业务写路径已全部接入(含 P0-D 本人改密 `password.change.self`,#117)
-- **v0.13.0 P0-D 本人自助改密**:`PUT /api/users/me/password`(`ChangeMyPasswordDto { oldPassword, newPassword }`)+ 2 BizCode(`OLD_PASSWORD_INVALID=10005` / `NEW_PASSWORD_SAME_AS_OLD=10006`)+ 独立 throttler `password-change`(IP 5次/60秒,与登录限流物理隔离)+ audit `password.change.self`;**不主动吊销旧 token**(`tokenVersion` / refresh token / token revoke 仍归 P0-E 统一处理)
+- **v0.13.0 P0-D 本人自助改密**:`PUT /api/users/me/password`(`ChangeMyPasswordDto { oldPassword, newPassword }`)+ 2 BizCode(`OLD_PASSWORD_INVALID=10005` / `NEW_PASSWORD_SAME_AS_OLD=10006`)+ 独立 throttler `password-change`(IP 5次/60秒,与登录限流物理隔离)+ audit `password.change.self`;**不主动吊销 access token**(沿 D-4);P0-E PR-3 落地后**联动撤销 refresh token**(`self-password-change`)
+- **Unreleased P0-E refresh token / logout / logout-all**(#127,2026-05-18):新增 3 个 API 端点(`POST /api/auth/refresh` rotation always + family revoke + absolute expiration / `POST /api/auth/logout` 幂等 / `POST /api/auth/logout-all` 撤销该 user 全部 refresh)+ `LoginResponseDto` 扩 `refreshToken` + `refreshExpiresAt` 字段(`LoginDto` 入参 zero drift)+ **新表** `refresh_tokens`(`tokenHash @unique` 只存 sha256 hash + family 关联 + replacedById 链)+ `JWT_EXPIRES_IN=15m`(由 7d 收敛)/ `JWT_REFRESH_EXPIRES_IN=90d`(family absolute expiration 不滑动)+ 新 BizCode `REFRESH_TOKEN_INVALID=10007`(失败 4 子原因统一码)+ 独立 throttler `refresh`(IP 30/60)+ 联动撤销 4 场景(本人改密 / 管理员重置 / 用户禁用 / 用户软删 → `updateMany` 同事务)+ 新 5 audit event(`auth.login` / `auth.refresh` / `auth.logout` / `auth.logout-all` / `password.reset.by-admin`);**access token 仍不主动吊销**(沿 D-4 + 15m TTL + JwtStrategy 每请求查库);**JWT payload 严格 zero drift** `{ sub, username }`;**不**做 tokenVersion / access blacklist / Redis / refresh 查询接口 / 设备列表(沿 D-9)
 - **V2.x C-6 RBAC**:`RbacRole` / `Permission` / `RolePermission` / `UserRole` 4 表 + `RbacService.can()` + 14 条 `rbac.*` 权限点 + `ops-admin` 内置角色 + bootstrap user_role
 - **V2.x C-7 attachments**:多态附件主模块(`@unique` key 已加)+ 配置三表(type / mime / size)+ 业务级 `rbac.can()` 首批接入(目前唯一)
 - **V2.x C-7.5 storage**:`StorageSettings` singleton + `LocalStorageProvider` + `CosStorageProvider` + 动态 Router + AES-256-GCM 凭证加密 + 后台 admin API + production fail-fast hook + `APP_ENV=smoke` 专用 CI 形态
-- **测试与契约**:Unit 13 spec / Contract OpenAPI snapshot zero drift(单文件 958 KB)/ E2E 51 spec;`ci.yml` 全套 + `docker-smoke.yml` 真实启动回归
+- **测试与契约**:Unit **14 spec / 922 用例** / Contract OpenAPI snapshot(P0-E PR-3 仅新增,v1 14 路由 schema 严格 zero drift)/ E2E **55 spec / 1291 用例**(原 51 spec/1252 → +4 P0-E spec +39 用例);`ci.yml` 全套 + `docker-smoke.yml` 真实启动回归(P0-E PR-3 同步注入 `JWT_EXPIRES_IN=15m` + `JWT_REFRESH_EXPIRES_IN=90d`)
 
 ---
 
@@ -80,7 +82,7 @@
 | P0 | 权限体系双轨并存(Guard `@Roles(...)` + Service `rbac.can()`),只有 `attachments` 一个业务模块真正接入 RBAC | 等用户拍板 Slow-3 后再启动 Slow-4 全面接入 |
 | P0 | release 后 docs 回填无明确 checklist | 已沉淀进 [`docs/process.md §5`](process.md) |
 | P0 | `FINAL_REPORT.md` 在根目录顶层但内容是 v0.1.3 时代 | 后续单独 docs PR 加段头或归档,**本 PR 不动** |
-| P0 | 第一版前端联调包待齐备 | ✅ P0-A 起步包(#110)+ ✅ P0-G BizCode 翻译表(#111)+ ✅ P0-C bootstrap SOP(#113)+ ✅ P0-D 本人自助改密(评审稿 #115 / 铁律修订 #116 / 代码实现 #117 / 状态回填 #118)已全部落地;v0.13.0 release 收口已完成(#119 CHANGELOG + #120 bump + #121 handoff + tag/Release 已发布,2026-05-17);**仍待立项**:P0-B 上传下载闭环验收(运维侧)/ P0-E refresh token D 档评审 / P0-F RBAC 收紧 D 档评审 / P0-H 部署演练 / P0-I 排错 SOP;运营 / 运维侧 SOP 执行(字典 items 录入 + 三张附件配置表 + 测试账号矩阵创建)仍待运维侧 |
+| P0 | 第一版前端联调包待齐备 | ✅ P0-A 起步包(#110)+ ✅ P0-G BizCode 翻译表(#111)+ ✅ P0-C bootstrap SOP(#113)+ ✅ P0-D 本人自助改密(评审稿 #115 / 铁律修订 #116 / 代码实现 #117 / 状态回填 #118)+ ✅ P0-B 测试 COS 闭环验收(#125)+ ✅ **P0-E refresh token / logout / logout-all**(评审稿 + 铁律解锁 + 2 hotfix #126 / 代码实现 #127 / 本 PR 状态回填)全部落地;v0.13.0 release 收口已完成(#119 CHANGELOG + #120 bump + #121 handoff + tag/Release 已发布,2026-05-17);**仍待立项**:P0-F RBAC 收紧 D 档评审 / P0-H 部署演练(prod COS bucket / IAM / 真实凭证)/ P0-I 排错 SOP;运营 / 运维侧 SOP 执行(字典 items 录入 + 三张附件配置表 + 测试账号矩阵创建)仍待运维侧 |
 | P1 | docs/ 体系庞大(根 6 大文档 + docs/ 30+ 文件) | 长期逐步归档(`docs/v1.3-plan.md` / `v1.4-prisma7-evaluation.md` / `srvf-foundation-data-model-draft.md` 等老草案) |
 | P1 | `docs/V2红线与复活路径.md` 顶部"基线版本 v0.7.0"严重滞后于实际 v0.12.0 | 改为滚动维护或明示最后核对版本 |
 | P1 | `TASKS.md` 单文件 1742 行,V1.1 历史与 V2.x 当前混排 | 已加范围说明,长期可拆 |

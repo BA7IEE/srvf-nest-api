@@ -18,7 +18,9 @@
 
 第一版**完全不接**:RBAC CRUD、storage-settings 凭证、attachment 配置三表、audit-logs 后台、contribution-rules、health 端点等(§6)。
 
-后端真实总路由数 **139**;本文分类:起步包 **51** / P1 后接 **42** / 第一版不接 **46**(51 + 42 + 46 = 139)。P0-D PR-3(#117)新增 `PUT /api/users/me/password`(沿 [P0-D 评审稿](first-release-p0d-change-my-password-review.md)),纳入起步包 §4.2。
+后端真实总路由数 **142**(原 139 + P0-E PR-3 新增 3 个 auth 接口);本文分类:起步包 **54** / P1 后接 **42** / 第一版不接 **46**(54 + 42 + 46 = 142)。
+- P0-D PR-3(#117)新增 `PUT /api/users/me/password`(沿 [P0-D 评审稿](first-release-p0d-change-my-password-review.md)),纳入起步包 §4.2
+- P0-E PR-3(#127)新增 `POST /api/auth/{refresh,logout,logout-all}`(沿 [P0-E 评审稿](first-release-p0e-refresh-token-review.md)),纳入起步包 §4.1(auth 从 1 扩到 4)
 
 ---
 
@@ -43,13 +45,64 @@
 
 ### 3.2 鉴权
 
-- 鉴权方式:`Authorization: Bearer <jwt>`(沿 [`CLAUDE.md §8`](../CLAUDE.md))
-- `JWT_EXPIRES_IN` 默认 7d;过期后必须重新登录(第一版**不**做 refresh token,沿 [`readiness-plan §3.1 P0-E`](first-release-readiness-plan.md))
+- 鉴权方式:`Authorization: Bearer <accessToken>`(沿 [`CLAUDE.md §8`](../CLAUDE.md))
+- **access token TTL**:`15m`(P0-E PR-3 由原 7d 收敛;沿 [P0-E 评审稿 §3.5 D-5](first-release-p0e-refresh-token-review.md));过期后**调 `POST /api/auth/refresh`** 续期(沿 §3.2.1 token 生命周期)
+- **refresh token TTL**:`90d` family **absolute expiration**(rotation 后新 refresh token 继承同一 `refreshExpiresAt` ISO 字符串不延长;**禁止** sliding expiration;达到时刻后**必须**重新登录)
 - HTTP 401 两阶段错误码区分:
   - `LOGIN_FAILED`(10004):登录失败(账号/密码 / 状态 / 软删四场景统一返;沿 [`CLAUDE.md §8`](../CLAUDE.md) 防账号枚举)
-  - `UNAUTHORIZED`(40100):已登录但 token 无效 / 已过期 / 用户被禁用 / 已软删
-- 前端**必须**按 `code` 区分二者(管理员重置密码后旧 token 失效,前端不能误判为登录表单密码错)
-- 本人改密走独立接口 `PUT /api/users/me/password`(需 `oldPassword`;沿 §4.2);改密成功后**旧 token 仍有效**,前端**不需要**强制重登(沿 [P0-D 评审稿 §5.7](first-release-p0d-change-my-password-review.md));`tokenVersion` / refresh token / token revoke 仍归 [P0-E](first-release-readiness-plan.md) 统一评审
+  - `UNAUTHORIZED`(40100):已登录但 access token 无效 / 已过期 / 用户被禁用 / 已软删 → 前端调 refresh 续期
+  - `REFRESH_TOKEN_INVALID`(10007;P0-E PR-3 新增):refresh token 无效 / 已撤销 / 已过期 / 重放命中(4 场景统一返;沿 v1 §8 防账号枚举铁律不拆细)→ **清本地 token 跳登录页,不重试 refresh**
+- 前端**必须**按 `code` 区分(管理员重置密码后旧 token 失效,前端不能误判为登录表单密码错)
+- 本人改密走独立接口 `PUT /api/users/me/password`(需 `oldPassword`;沿 §4.2);改密成功后 **access token 仍有效**(沿 D-4 不主动吊销;15m 自然过期)/ **refresh token 全部撤销**(P0-E PR-3 联动);前端无需强制重登,但**下次 access 401 时 refresh 会返 10007**,届时跳登录页
+
+### 3.2.1 token 生命周期(P0-E PR-3 新增)
+
+沿 [P0-E 评审稿 v1 §3 / §4](first-release-p0e-refresh-token-review.md) + [`CLAUDE.md §9` P0-E refresh token 鉴权铁律](../CLAUDE.md):
+
+```
+[login]
+  POST /api/auth/login { username, password }
+  → 200 + { accessToken, tokenType: 'Bearer', expiresIn: '15m',
+            refreshToken: '<opaque-256bit-base64url>',
+            refreshExpiresAt: '2026-08-16T00:00:00.000Z' }
+  前端存:accessToken / refreshToken / refreshExpiresAt
+
+[业务请求]
+  Authorization: Bearer <accessToken>
+  → 200(正常)
+  → 401 UNAUTHORIZED(40100;access 过期 / 用户被禁 / 已软删)→ 调 refresh
+
+[access 过期 → 续期]
+  POST /api/auth/refresh { refreshToken }
+  → 200 + { accessToken: 新, refreshToken: 新, refreshExpiresAt: 同原 } (rotation always)
+       └ 前端覆盖 accessToken / refreshToken;refreshExpiresAt 应等于 login 首次返回(absolute expiration)
+  → 401 REFRESH_TOKEN_INVALID(10007;refresh 不存在 / 已撤销 / 已过期 / 重放命中,4 场景统一码不拆细)
+       └ 前端清本地 token(access + refresh)+ 跳登录页;**不重试 refresh**
+
+[本人主动登出]
+  POST /api/auth/logout { refreshToken }
+  → 200 + data:null(幂等;不存在 / 已撤销 / 已过期均返 200)
+       └ 前端清本地 token + 跳登录页;同 family 其他链(如其他设备上的 refresh)不动
+
+[本人一键登出所有设备]
+  POST /api/auth/logout-all  (需要 Authorization: Bearer access)
+  → 200 + { revokedCount: N }
+       └ 撤销该 user 全部未过期且未撤销 refresh;access token 仍 15m 内可用(沿 D-4)
+
+[refreshExpiresAt 到达 → 必须重新登录]
+  refresh 调用返 10007 → 跳登录页 → POST /api/auth/login → 重新拿 family
+       └ 客户端可读 refreshExpiresAt 提前提示用户"几月几日需重新登录"
+
+[安全联动撤销]
+  本人改密 / 管理员重置 / 用户禁用 / 用户软删 → 服务端在事务内 updateMany 撤销目标 user 全部 refresh
+       └ 改密后下一次 refresh 即返 10007;access token 在剩余 15m 内仍可用(沿 D-4)
+```
+
+**前端关键铁律**:
+- access 401 → **先 refresh**(并发请求队列化,避免一次失败触发多次 refresh)
+- refresh 10007 → **直接跳登录页,不重试**(沿 v1 §8 防账号枚举铁律;refresh 失败 4 子原因前端不应也不能分辨)
+- refresh token 必须存"安全程度等于 password 的位置"(localStorage / Keychain;沿 [`CLAUDE.md §9` P0-E 铁律](../CLAUDE.md);**绝不**打印到日志 / 监控 / 错误上报)
+- `refreshExpiresAt` 是 **ISO 8601 UTC** 字符串(`new Date(...).toISOString()` 格式),客户端**直接** `new Date(refreshExpiresAt)` 即可;**无需** `now + TTL` 计算,**无需**信任本地时钟
 
 ### 3.3 统一响应格式
 
@@ -88,17 +141,20 @@
 
 ---
 
-## 4. 联调起步包接口清单(51 路由)
+## 4. 联调起步包接口清单(54 路由)
 
 > 字段稳定标:✅ 稳定(契约 zero drift,字段不变)| ⚠️ 需前端联调复核(可能微调字段语义或扩展可选项)
 > 分页:Y/N。鉴权:`PUB`(无需登录)/ `USER`(任意登录)/ `ADMIN`(`@Roles(SUPER_ADMIN, ADMIN)`)
 > 路径中省略 `/api` 前缀。
 
-### 4.1 auth(1)
+### 4.1 auth(4)
 
 | Method | Path | 描述 | 分页 | 鉴权 | 稳定 |
 |---|---|---|---|---|---|
-| POST | `/auth/login` | 登录(`username + password`;`memberNo` 也可作为 username 兜底) | N | PUB | ✅ |
+| POST | `/auth/login` | 登录(`username + password`;`memberNo` 也可作为 username 兜底);响应 `{ accessToken, tokenType: 'Bearer', expiresIn: '15m', refreshToken, refreshExpiresAt }`(字段集恰好 5 项;P0-E PR-3 #127 新增 refresh) | N | PUB | ✅ |
+| POST | `/auth/refresh` | refresh access token(rotation always + family revoke + absolute expiration;返新 access + 新 refresh + 同一 `refreshExpiresAt` ISO 字符串);独立 throttler `refresh` 30/60 IP;P0-E PR-3 | N | PUB | ✅ |
+| POST | `/auth/logout` | 撤销当前 refresh token(幂等;响应 `data:null`;无限流;不吊销 access token);P0-E PR-3 | N | PUB | ✅ |
+| POST | `/auth/logout-all` | 撤销该用户全部未过期未撤销 refresh(返 `{ revokedCount }`);复用 `password-change` throttler 5/60 IP;P0-E PR-3 | N | USER | ✅ |
 
 ### 4.2 users(7)
 
@@ -203,7 +259,7 @@
 
 > 起步包**只走模式 B**(预签名上传链);模式 A(`POST /v2/attachments` 直接创建元数据)在 P1 后接(§5)。
 
-**起步包小计:1+7+3+5+12+4+5+6+3+5 = 51**(P0-D PR-3 #117 新增 `PUT /users/me/password`,users 段从 6 扩至 7)。
+**起步包小计:4+7+3+5+12+4+5+6+3+5 = 54**(P0-D PR-3 #117 新增 `PUT /users/me/password` users 段从 6 扩至 7;P0-E PR-3 #127 新增 `POST /auth/{refresh,logout,logout-all}` auth 段从 1 扩至 4)。
 
 ---
 
