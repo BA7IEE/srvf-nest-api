@@ -313,6 +313,8 @@ sequenceDiagram
 ## 8. BizCode 起步包子集
 
 > 仅列起步包接口范围内会撞到的 BizCode;完整翻译表与前端文案映射留 [`readiness-plan P0-G`](first-release-readiness-plan.md)。
+>
+> **本节为起步包子集;完整 122 条 BizCode 翻译表(含 P1 后接 / 暂不接段)见 [`first-release-bizcode-mapping.md`](first-release-bizcode-mapping.md)**。
 
 ### 8.1 通用段(`4xxxx` / `5xxxx`)
 
