@@ -17,7 +17,7 @@ export function applySwagger(app: INestApplication, appCfg: AppConfig): void {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('U Nest API Starter')
     .setDescription('AI-friendly TypeScript API base — NestJS + Prisma + PostgreSQL')
-    .setVersion('0.13.0')
+    .setVersion('0.14.0')
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
