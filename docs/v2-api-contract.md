@@ -1,5 +1,7 @@
 # V2 第一阶段 API 契约草案
 
+> **回填注(2026-05-17 / v0.13.0)**:本文起源于 V2-D8 立项阶段的 API 契约**草案**。**当前 V2 第一阶段及后续批次接口已实施并随 v0.10.0 / v0.11.0 / v0.12.0 / v0.13.0 发布**,通过 OpenAPI contract snapshot(`pnpm test:contract`)+ zero drift 机制约束。**当前完整前端联调口径以 [`docs/first-release-frontend-scope.md`](first-release-frontend-scope.md) + Swagger UI(`/api/docs`)+ OpenAPI snapshot 为准**;本文保留为契约草案历史快照,字段级细节如与代码不一致**以代码 / OpenAPI 为准**。下方"初稿 / 草案 / V2-D8 立项中"等表述是文档定稿时刻的阶段状态,不再代表当前。
+
 > 派生项目:**srvf-nest-api**
 > 文档定位:**V2 第一阶段 API 契约草案**(D8-4 立项产出物)
 > 阶段:**V2-D8 立项中**(2026-05-07)
