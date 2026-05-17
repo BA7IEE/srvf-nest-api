@@ -54,6 +54,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
 
   ['get', '/api/users/me'],
   ['patch', '/api/users/me'],
+  // P0-D PR-3(2026-05-17):本人自助改密
+  ['put', '/api/users/me/password'],
   ['get', '/api/users'],
   ['post', '/api/users'],
   ['get', '/api/users/{id}'],

@@ -6,7 +6,10 @@ import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.d
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
+  ChangeMyPasswordDto,
   CreateUserDto,
   ResetUserPasswordDto,
   UpdateMyProfileDto,
@@ -24,7 +27,10 @@ type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogs: AuditLogsService,
+  ) {}
 
   // ============ helpers ============
 
@@ -173,6 +179,68 @@ export class UsersService {
         avatarKey: dto.avatarKey,
       },
       select: userSafeSelect,
+    });
+  }
+
+  // ============ /me/password(P0-D PR-3 本人自助改密)============
+  // 沿 docs/first-release-p0d-change-my-password-review.md §5.2 流程顺序:
+  //   1. findFirst(notDeletedWhere) 拿当前 passwordHash;找不到 → USER_NOT_FOUND
+  //   2. bcrypt.compare(dto.oldPassword, user.passwordHash);失败 → OLD_PASSWORD_INVALID
+  //   3. 严格 === 比较 oldPassword / newPassword(密码大小写敏感、空白显著,不 trim / toLowerCase);
+  //      相同 → NEW_PASSWORD_SAME_AS_OLD
+  //   4. bcrypt.hash(newPassword) → tx.user.update + auditLogs.log 原子(D-4 决议)
+  //   5. 返回 userSafeSelect(永不含 passwordHash)
+  //
+  // 严禁(沿评审稿 §4 / §5.5 / §5.7):
+  //   - 调换步骤 2 与 3(timing oracle:先比较会泄漏"新密码是否等于旧密码"信息)
+  //   - 主动吊销旧 token / 修改 lastLoginAt / 写 password 明文或 hash 到 audit
+  //   - 经其他接口(PATCH /me)夹带改密
+  async changeMyPassword(
+    currentUser: CurrentUserPayload,
+    dto: ChangeMyPasswordDto,
+    auditMeta: AuditMeta,
+  ): Promise<UserResponseDto> {
+    // 1. 取 passwordHash 走原生 findFirst(userSafeSelect 不含 passwordHash;
+    //    本接口必须读 hash 做 bcrypt.compare,故单独 select)。
+    const user = await this.prisma.user.findFirst({
+      where: this.notDeletedWhere({ id: currentUser.id }),
+      select: { id: true, passwordHash: true },
+    });
+    if (!user) throw new BizException(BizCode.USER_NOT_FOUND);
+
+    // 2. bcrypt.compare 完整跑完(评审稿 §5.5:禁止"先比对 oldPassword === newPassword
+    //    跳过 bcrypt"的优化,避免泄漏"newPassword 与 oldPassword 是否相同"信息)。
+    const oldPasswordOk = await bcrypt.compare(dto.oldPassword, user.passwordHash);
+    if (!oldPasswordOk) throw new BizException(BizCode.OLD_PASSWORD_INVALID);
+
+    // 3. 严格 === 比较;不 trim / toLowerCase(评审稿 §5.2 步骤 4)。
+    if (dto.oldPassword === dto.newPassword) {
+      throw new BizException(BizCode.NEW_PASSWORD_SAME_AS_OLD);
+    }
+
+    // 4. 哈希新密码;在事务内 update + audit log 原子(沿 emergency-contacts / certificates 范式)。
+    const passwordHash = await this.hashPassword(dto.newPassword);
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id: currentUser.id },
+        data: { passwordHash },
+        select: userSafeSelect,
+      });
+
+      await this.auditLogs.log({
+        event: 'password.change.self',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'user',
+        resourceId: currentUser.id,
+        meta: auditMeta,
+        // 评审稿 §5.6 / §7.6:audit 字段不含 oldPassword / newPassword / passwordHash
+        // 任何明文或 hash。extra 仅记录与本事件相关的、不泄露密码的元信息;此处不写 extra。
+        tx,
+      });
+
+      return updated;
     });
   }
 

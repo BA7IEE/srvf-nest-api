@@ -44,6 +44,22 @@ export const BizCode = {
     httpStatus: HttpStatus.UNAUTHORIZED,
   },
 
+  // P0-D 本人自助改密(2026-05-17 引入;详见 docs/first-release-p0d-change-my-password-review.md §5.3)。
+  // 段位归属:沿 100xx users 模块业务级;10005 / 10006 为 LOGIN_FAILED(10004)之后下两个可用号位。
+  // - 10005 OLD_PASSWORD_INVALID:本人改密 oldPassword 错(本人接口,无账号枚举攻击面,
+  //   不复用 LOGIN_FAILED;前端可精确提示"当前密码不正确")
+  // - 10006 NEW_PASSWORD_SAME_AS_OLD:newPassword === oldPassword(业务级语义校验,不复用 BAD_REQUEST)
+  OLD_PASSWORD_INVALID: {
+    code: 10005,
+    message: '当前密码不正确',
+    httpStatus: HttpStatus.UNAUTHORIZED,
+  },
+  NEW_PASSWORD_SAME_AS_OLD: {
+    code: 10006,
+    message: '新密码不能与当前密码相同',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+
   // users 模块权限/操作边界(101xx)
   FORBIDDEN_ROLE_OPERATION: {
     code: 10101,
