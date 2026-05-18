@@ -795,26 +795,108 @@ const PR_2B_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 // D2=A:`storage-setting.reset.credentials` 不绑 ops-admin(凭证仅 SUPER_ADMIN 短路)
 const PR_2B_RESET_CREDENTIALS_CODE = 'storage-setting.reset.credentials';
 
-// Permission 全集(用于 step 1 upsert;14 rbac.* + 19 PR-2A + 15 PR-2B = 48 条)
+// =========================================================================
+// P0-F PR-3B(2026-05-18):users 模块 RBAC 接入新增 7 条 user.* permission。
+// 沿评审稿 docs/first-release-p0f-pr3-users-rbac-review.md §4.2 + §6.2 + D1=A / D2=B / D3=A。
+//
+// 端点 → permission 映射(沿评审稿 §4 / §6 / §8):
+//   GET    /api/users              → user.read.account
+//   POST   /api/users              → user.create.account
+//   GET    /api/users/:id          → user.read.account(list / findOne 共享)
+//   PATCH  /api/users/:id          → user.update.account
+//   PUT    /api/users/:id/password → user.reset.password
+//   PATCH  /api/users/:id/role     → user.update.role(D1=A:不绑 ops-admin,仅 SA 短路)
+//   PATCH  /api/users/:id/status   → user.update.status
+//   DELETE /api/users/:id          → user.delete.account
+//
+// ops-admin 绑定(D1=A / D2=B / D3=A):6 条(过滤 user.update.role)。
+// service 内 6 项业务护栏全保留:canViewUser / canManageUser / canCreateRole /
+// canChangeRole / assertNotSelf / assertNotLastSuperAdmin(沿评审稿 §8.3)。
+// =========================================================================
+
+// D1=A:`user.update.role` 不绑 ops-admin(角色修改仅 SUPER_ADMIN 短路;
+// service 层 canChangeRole 仍要求 actor=SA + 永禁升 SA)
+const PR_3B_USER_UPDATE_ROLE_CODE = 'user.update.role';
+
+const USER_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'user.read.account',
+    module: 'user',
+    action: 'read',
+    resourceType: 'account',
+    description: '查看用户列表与详情(list + findOne 共享;service 内 canViewUser 收窄范围)',
+  },
+  {
+    code: 'user.create.account',
+    module: 'user',
+    action: 'create',
+    resourceType: 'account',
+    description: '创建用户(service 内 canCreateRole 永禁创建 SUPER_ADMIN)',
+  },
+  {
+    code: 'user.update.account',
+    module: 'user',
+    action: 'update',
+    resourceType: 'account',
+    description: '修改用户资料(email / nickname / avatarKey;service 内 assertCanManageUser)',
+  },
+  {
+    code: 'user.reset.password',
+    module: 'user',
+    action: 'reset',
+    resourceType: 'password',
+    description:
+      '管理员重置用户密码(D2=B 绑 ops-admin;service 内 assertCanManageUser + 撤 refresh)',
+  },
+  {
+    code: PR_3B_USER_UPDATE_ROLE_CODE,
+    module: 'user',
+    action: 'update',
+    resourceType: 'role',
+    description:
+      '修改用户角色(D1=A:仅 SUPER_ADMIN 短路;不绑 ops-admin;service 内 canChangeRole 永禁升 SA + assertNotSelf + assertNotLastSuperAdmin)',
+  },
+  {
+    code: 'user.update.status',
+    module: 'user',
+    action: 'update',
+    resourceType: 'status',
+    description:
+      '启用 / 禁用用户(service 内 assertCanManageUser + assertNotSelf(DISABLED) + assertNotLastSuperAdmin + 撤 refresh)',
+  },
+  {
+    code: 'user.delete.account',
+    module: 'user',
+    action: 'delete',
+    resourceType: 'account',
+    description:
+      '软删除用户(service 内 assertNotSelf + assertCanManageUser + assertNotLastSuperAdmin + 撤 refresh)',
+  },
+];
+
+// Permission 全集(用于 step 1 upsert;14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B = 55 条)
 const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
   ...PR_2B_PERMISSION_SEED,
+  ...USER_PERMISSION_SEED,
 ];
 
-// ops-admin 完整绑定集合(14 rbac.* + 19 PR-2A + 14 PR-2B = 47 条;沿 D1=A)
-// 注:`storage-setting.reset.credentials` 从 PR_2B_PERMISSION_SEED 过滤掉(沿 D2=A;§6.2)
+// ops-admin 完整绑定集合(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B = 53 条;沿 D1=A / D2=B / D3=A)
+// 注:`storage-setting.reset.credentials` 从 PR_2B_PERMISSION_SEED 过滤掉(沿 PR-2 D2=A;§6.2)
+// 注:`user.update.role` 从 USER_PERMISSION_SEED 过滤掉(沿 PR-3 D1=A;§6.2)
 const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
   ...PR_2B_PERMISSION_SEED.filter((p) => p.code !== PR_2B_RESET_CREDENTIALS_CODE),
+  ...USER_PERMISSION_SEED.filter((p) => p.code !== PR_3B_USER_UPDATE_ROLE_CODE),
 ];
 
 // 运营管理员角色 code(沿 D7 §10.1 / §10.3 ops-admin 唯一公开 placeholder)
 const OPS_ADMIN_ROLE_CODE = 'ops-admin';
 const OPS_ADMIN_DISPLAY_NAME = '运营管理员';
 const OPS_ADMIN_DESCRIPTION =
-  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / contribution-rule + PR-2B: attachment-config / storage-setting)的 meta 角色;14 rbac.* + 19 PR-2A + 14 PR-2B = 47 条权限点;凭证 reset 仅 SUPER_ADMIN';
+  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / contribution-rule + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条)的 meta 角色;14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B = 53 条权限点;凭证 reset 与 user 角色修改仅 SUPER_ADMIN';
 
 // V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集
 // (沿 D7-attachments v1.0 §6.1 + Q11 v1.0 锁清单 + 用户 PR #6a 拍板)。
@@ -1001,9 +1083,10 @@ const MEMBER_ROLE_PERMISSION_CODES: ReadonlyArray<string> = [
 // 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 复合唯一键 /
 // UserRole 复合唯一键),重复跑不重复创建。
 async function seedRbac(prisma: PrismaClient): Promise<void> {
-  // 1. upsert Permission 全集(14 rbac.* + 19 PR-2A + 15 PR-2B = 48 条;
-  //    沿 D7 §10.2 + P0-F PR-2A 2026-05-18 + P0-F PR-2B 2026-05-18)
-  //    全部 48 条都进 Permission 表(含 reset.credentials);ops-admin 仅绑 47 条(沿 D2=A)
+  // 1. upsert Permission 全集(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B = 55 条;
+  //    沿 D7 §10.2 + P0-F PR-2A 2026-05-18 + P0-F PR-2B 2026-05-18 + P0-F PR-3B 2026-05-18)
+  //    全部 55 条都进 Permission 表(含 reset.credentials + user.update.role);
+  //    ops-admin 仅绑 53 条(沿 PR-2 D2=A + PR-3 D1=A 双重过滤)
   for (const perm of ALL_PERMISSION_SEED) {
     await prisma.permission.upsert({
       where: { code: perm.code },
@@ -1020,7 +1103,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     });
   }
   console.log(
-    `[seed] RBAC + PR-2A + PR-2B permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A + ${PR_2B_PERMISSION_SEED.length} PR-2B = ${ALL_PERMISSION_SEED.length} entries)`,
+    `[seed] RBAC + PR-2A + PR-2B + PR-3B permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A + ${PR_2B_PERMISSION_SEED.length} PR-2B + ${USER_PERMISSION_SEED.length} PR-3B = ${ALL_PERMISSION_SEED.length} entries)`,
   );
 
   // 2. upsert ops-admin RbacRole(公开 seed 唯一角色;沿用户拍板方案 A)
@@ -1036,10 +1119,13 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
   });
   console.log(`[seed] RBAC role '${opsAdminRole.code}' ensured`);
 
-  // 3. upsert RolePermission 映射:ops-admin → 14 rbac.* + 19 PR-2A + 14 PR-2B = 47 条
-  //    (沿 D7 §10.3 + P0-F PR-2A 2026-05-18 D1=A 全绑 + D3=A 软删放宽 + PR-2B D1=A + D2=A 凭证收紧)
+  // 3. upsert RolePermission 映射:ops-admin → 14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B = 53 条
+  //    (沿 D7 §10.3 + P0-F PR-2A 2026-05-18 D1=A 全绑 + D3=A 软删放宽 + PR-2B D1=A + D2=A 凭证收紧
+  //     + P0-F PR-3B 2026-05-18 D1=A user.update.role 收紧 + D2=B user.reset.password 放宽 + D3=A 其余 5 条全绑)
   //    复合唯一键 roleId_permissionId(schema @@unique([roleId, permissionId]))
-  //    OPS_ADMIN_PERMISSION_SEED 已在常量定义处过滤 `storage-setting.reset.credentials`(D2=A)
+  //    OPS_ADMIN_PERMISSION_SEED 已在常量定义处过滤:
+  //      - `storage-setting.reset.credentials`(PR-2 D2=A)
+  //      - `user.update.role`(PR-3 D1=A)
   const allPermissions = await prisma.permission.findMany({
     where: { code: { in: OPS_ADMIN_PERMISSION_SEED.map((p) => p.code) } },
     select: { id: true, code: true },
@@ -1052,7 +1138,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     });
   }
   console.log(
-    `[seed] RBAC role-permissions ensured ('${opsAdminRole.code}' ↔ ${allPermissions.length} permissions: rbac.* + PR-2A + PR-2B; '${PR_2B_RESET_CREDENTIALS_CODE}' skipped per D2=A)`,
+    `[seed] RBAC role-permissions ensured ('${opsAdminRole.code}' ↔ ${allPermissions.length} permissions: rbac.* + PR-2A + PR-2B + PR-3B; '${PR_2B_RESET_CREDENTIALS_CODE}' skipped per PR-2 D2=A; '${PR_3B_USER_UPDATE_ROLE_CODE}' skipped per PR-3 D1=A)`,
   );
 
   // 4. bootstrap user_role(沿 D7 §10.4 + 用户拍板方案 A):

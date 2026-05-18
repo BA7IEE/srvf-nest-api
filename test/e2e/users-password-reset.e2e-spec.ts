@@ -5,13 +5,22 @@ import { httpServer } from '../helpers/http-server';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import {
+  grantOpsAdminToUser,
+  seedRbacPermissionsAndOpsAdmin,
+} from '../fixtures/rbac.fixture';
 import { TEST_PASSWORD, createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// 14.7.4 password-reset spec(9 用例)
+// 14.7.4 password-reset spec(9 用例 + P0-F PR-3B D2=B 验证)
 // 系统化覆盖管理员重置密码的完整流程 + DTO 校验 + 反向断言。
+//
+// P0-F PR-3B(2026-05-18):PUT /api/users/:id/password 走 rbac.can('user.reset.password')。
+// D2=B 拍板:ops-admin **绑定** user.reset.password(运营高频协助找回);
+// service 内 assertCanManageUser 仍生效(ADMIN+ops-admin 仅能 reset USER)。
+// 沿评审稿 §5.2 + §9.3。
 
 const NEW_PASSWORD = 'BrandNew1!';
 
@@ -26,11 +35,13 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let superAuth: string;
+  let opsAdminRoleId: string;
 
   beforeAll(async () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
+    ({ opsAdminRoleId } = await seedRbacPermissionsAndOpsAdmin(app));
 
     await createTestUser(app, { username: 'pwsuper1', role: Role.SUPER_ADMIN });
     ({ authHeader: superAuth } = await loginAs(app, 'pwsuper1'));
@@ -177,6 +188,73 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
     expect(after.status).toBe(200);
     expect(after.body.code).toBe(0);
     expect(after.body.data.username).toBe('pwtokenstay1');
+  });
+
+  // ============ P0-F PR-3B D2=B:ops-admin 绑定 user.reset.password ============
+  describe('P0-F PR-3B D2=B RBAC 矩阵', () => {
+    it('USER 调 PUT /:id/password → 30100(无 user.reset.password)', async () => {
+      const plain = await createTestUser(app, {
+        username: 'pwrbacplain1',
+        role: Role.USER,
+      });
+      const target = await createTestUser(app, { username: 'pwrbacutarget1' });
+      const { authHeader: plainAuth } = await loginAs(app, 'pwrbacplain1');
+
+      const res = await request(httpServer(app))
+        .put(`/api/users/${target.id}/password`)
+        .set('Authorization', plainAuth)
+        .send({ newPassword: NEW_PASSWORD });
+
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+      expect(plain.id).toBeDefined();
+    });
+
+    it('ADMIN 默认(未 grant ops-admin)调 PUT /:id/password → 30100', async () => {
+      await createTestUser(app, { username: 'pwrbacadmindef1', role: Role.ADMIN });
+      const target = await createTestUser(app, { username: 'pwrbacadtarget1' });
+      const { authHeader: adminDefaultAuth } = await loginAs(app, 'pwrbacadmindef1');
+
+      const res = await request(httpServer(app))
+        .put(`/api/users/${target.id}/password`)
+        .set('Authorization', adminDefaultAuth)
+        .send({ newPassword: NEW_PASSWORD });
+
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    it('ADMIN+ops-admin reset USER 密码 → 200(D2=B 放宽;service 内 assertCanManageUser 允许)', async () => {
+      const admin = await createTestUser(app, { username: 'pwrbacadmops1', role: Role.ADMIN });
+      await grantOpsAdminToUser(app, admin.id, opsAdminRoleId);
+      const target = await createTestUser(app, { username: 'pwrbacoptarget1' });
+      const { authHeader: adminOpsAuth } = await loginAs(app, 'pwrbacadmops1');
+
+      const res = await request(httpServer(app))
+        .put(`/api/users/${target.id}/password`)
+        .set('Authorization', adminOpsAuth)
+        .send({ newPassword: NEW_PASSWORD });
+
+      expect(res.status).toBe(200);
+      expect(res.body.code).toBe(0);
+    });
+
+    it('ADMIN+ops-admin reset ADMIN 密码 → 10101(service 层 assertCanManageUser 拒;ADMIN 仅能管 USER)', async () => {
+      const admin = await createTestUser(app, { username: 'pwrbacadmops2', role: Role.ADMIN });
+      await grantOpsAdminToUser(app, admin.id, opsAdminRoleId);
+      const target = await createTestUser(app, {
+        username: 'pwrbacadmtarget1',
+        role: Role.ADMIN,
+      });
+      const { authHeader: adminOpsAuth } = await loginAs(app, 'pwrbacadmops2');
+
+      const res = await request(httpServer(app))
+        .put(`/api/users/${target.id}/password`)
+        .set('Authorization', adminOpsAuth)
+        .send({ newPassword: NEW_PASSWORD });
+
+      // ADMIN+ops-admin RBAC 通过(持 user.reset.password)→ 进 service;
+      // assertCanManageUser(ADMIN, ADMIN) 返 false → 10101
+      expectBizError(res, BizCode.FORBIDDEN_ROLE_OPERATION);
+    });
   });
 
   // ============ P0-E PR-3:管理员重置 → 主动撤销目标全部 refresh + 新 audit ============
