@@ -1,6 +1,5 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
@@ -10,7 +9,6 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -22,9 +20,13 @@ import { AuditLogsService } from './audit-logs.service';
 // 仅 2 个 GET 接口:list / detail。
 // **禁止**新增 POST / PATCH / PUT / DELETE / export / 聚合接口(F5;红线:写入后不可改不可删)。
 //
-// 权限统一(§6.1):2 接口均 @Roles(SUPER_ADMIN, ADMIN);
-// USER 越权 → 通用 FORBIDDEN(40300),不开 14102 模块码(沿 baseline §1.3 / D6 v1.1 §9)。
-// ADMIN 越级查 SUPER_ADMIN 的 detail → 14101 FORBIDDEN_AUDIT_LOG_READ(§6.4 / D-D)。
+// 权限统一(沿 P0-F PR-4B 评审稿 §8.1,2026-05-18 落地):
+// - controller 仅留 JwtAuthGuard;@Roles 装饰器已移除
+// - 入口判权迁移到 Service 层 rbac.can('audit-log.read.entry')(沿评审稿 §4.2 / §6.1 / §8.2)
+// - 入口拒返 RBAC_FORBIDDEN(30100)
+// - **数据范围 service 层全部保留**:list ADMIN where 注入(actorUserId=self OR actorRoleSnap=USER)
+// - detail 业务级越级码 FORBIDDEN_AUDIT_LOG_READ(14101)完全保留(ADMIN 越级查 SUPER_ADMIN;§6.4 / D-D)
+// - AUDIT_LOG_NOT_FOUND(14001)完全保留(findOne 命中但不存在)
 
 @ApiTags('audit-logs')
 @ApiBearerAuth()
@@ -33,13 +35,12 @@ export class AuditLogsController {
   constructor(private readonly service: AuditLogsService) {}
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
       '列出审计记录(分页 + 过滤 resourceType / resourceId / event / actorUserId / startDate / endDate;ADMIN 仅看自己 OR USER 操作的记录;稳定排序 createdAt desc + id desc)',
   })
   @ApiWrappedPageResponse(AuditLogResponseDto)
-  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   list(
     @Query() query: AuditLogQueryDto,
     @CurrentUser() currentUser: CurrentUserPayload,
@@ -48,7 +49,6 @@ export class AuditLogsController {
   }
 
   @Get(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
       '审计记录详情(ADMIN 越级查 SUPER_ADMIN 操作记录 → 14101;不存在 → 14001;无 update / delete 接口)',
@@ -57,7 +57,7 @@ export class AuditLogsController {
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.AUDIT_LOG_NOT_FOUND,
     BizCode.FORBIDDEN_AUDIT_LOG_READ,
   )
