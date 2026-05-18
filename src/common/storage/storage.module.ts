@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { DatabaseModule } from '../../database/database.module';
+import { PermissionsModule } from '../../modules/permissions/permissions.module';
 import { CosStorageProvider } from './providers/cos.provider';
 import { LocalStorageProvider } from './providers/local.provider';
 import { StorageCryptoService } from './storage-crypto.service';
@@ -15,15 +16,17 @@ import { StorageSettingsService } from './storage-settings.service';
 // PR #6 范围(已合):导出 StorageSettingsService + StorageCryptoService
 // PR #7 范围(已合):注册 LocalStorageProvider
 // PR #8 范围(已合):新增 CosStorageProvider + StorageProviderRouter(动态路由;沿 Q-89-1)
-// PR #11 范围(本 PR;沿评审 §6.5 / §6.6 + Q-11 拍板):
+// PR #11 范围(已合;沿评审 §6.5 / §6.6 + Q-11 拍板):
 // - 新增 StorageSettingsController(GET / PATCH / POST reset-credentials)
-// - 端点入口 @Roles(SUPER_ADMIN, ADMIN);**不**接 rbac.can();**不**新增 BizCode / AuditLogEvent
 // - StorageSettingsService 新增 getForAdmin / updateSettings / resetCredentials
 //
-// **本 PR 不做**:
-// - 不引入新依赖 / 不改 prisma / 不动 Provider 实现 / 不动 attachments
+// P0-F PR-2B 范围(2026-05-18;沿评审稿 §4.3 + 用户拍板 D1=A / D2=A):
+// - imports PermissionsModule 供 StorageSettingsService 注入 RbacService(沿 PR-2A 范本)
+// - 入口 @Roles 移除;Service 内 rbac.can();失败抛 RBAC_FORBIDDEN(30100)
+// - 映射 seed 新增 3 条 storage-setting.* 权限点
+// - D2=A:`storage-setting.reset.credentials` 不绑 ops-admin(仅 SUPER_ADMIN 短路通过)
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, PermissionsModule],
   controllers: [StorageSettingsController],
   providers: [
     StorageSettingsService,

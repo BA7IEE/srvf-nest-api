@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -14,7 +15,9 @@ import { createTestApp } from '../setup/test-app';
 // 沿 D7 v1.0 §4.3 / §16 + 用户 Step 1 拍板 Q1-Q8 + PR #3 attachment-type-configs.e2e 范式。
 //
 // 覆盖:
-// - 权限边界(未登录 401 / USER 403 / ADMIN / SUPER_ADMIN allowed)
+// - 权限边界(P0-F PR-2B:RBAC_FORBIDDEN=30100;沿 PR-2A contrib-rules 范本):
+//   - 未登录 → 40100;USER → 30100;ADMIN 默认无 ops-admin → 30100;
+//   - ADMIN+ops-admin → 200;SUPER_ADMIN 短路 → 200
 // - CRUD 主成功路径(GET list / GET detail / POST create / PATCH update / PATCH status / DELETE)
 // - status 默认 ACTIVE(沿 Prisma schema default)
 // - typeConfigId 不存在 → 13020(Q5 v1.0:复用 type config 码)
@@ -29,21 +32,22 @@ import { createTestApp } from '../setup/test-app';
 // - 软删后行为(不出现在 list)
 // - status 走独立端点(Q5 v1.0)
 //
+// P0-F PR-2B(2026-05-18):入口切到 service 层 rbac.can();失败统一 RBAC_FORBIDDEN(30100)。
+// `adminAuth` 在 beforeAll 全局 grant ops-admin(沿 contrib-rules e2e 范式);
+// 单独建 `adminDefaultAuth` 做"ADMIN 默认 30100"反向断言。
+//
 // 不覆盖(超本 PR 范围):
 // - size config CRUD(留 PR #5)
 // - attachments 主模块(留 PR #6+)
-// - RBAC 业务判权 rbac.can()(F4 v1.0:不接)
 // - audit_logs 集成(沿 PR #71 边界)
 // - ATTACHMENT_MIME_CONFIG_IN_USE 跨表引用约束(Q6 v1.0 暂不实装)
-//
-// 测试隔离:reset-db.ts 已迁入 4 张 attachment 表 TRUNCATE(Q7 v1.0;PR #3 spec-local 临时方案
-// 同步迁出到公共 reset-db.ts;沿 permissions PR #2 / PR #3 公共基建迁移范式)。
 
 describe('attachment-mime-configs 模块', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let superAdminAuth: string;
   let adminAuth: string;
+  let adminDefaultAuth: string;
   let userAuth: string;
   let typeConfigA: { id: string; code: string };
   let typeConfigB: { id: string; code: string };
@@ -54,12 +58,18 @@ describe('attachment-mime-configs 模块', () => {
     prisma = app.get(PrismaService);
 
     await createTestUser(app, { username: 'amc-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'amc-adm', role: Role.ADMIN });
+    const admin = await createTestUser(app, { username: 'amc-adm', role: Role.ADMIN });
+    await createTestUser(app, { username: 'amc-adm-default', role: Role.ADMIN });
     await createTestUser(app, { username: 'amc-user', role: Role.USER });
 
     superAdminAuth = (await loginAs(app, 'amc-su')).authHeader;
     adminAuth = (await loginAs(app, 'amc-adm')).authHeader;
+    adminDefaultAuth = (await loginAs(app, 'amc-adm-default')).authHeader;
     userAuth = (await loginAs(app, 'amc-user')).authHeader;
+
+    // P0-F PR-2B:seed 48 条 RBAC + ops-admin;给 amc-adm 全局 grant ops-admin
+    const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    await grantOpsAdminToUser(app, admin.id, seed.opsAdminRoleId);
 
     // 准备 2 个 type config 作为 FK 锚点(沿 D7 v1.0 §4.2 ownerTable 范式)
     typeConfigA = await prisma.attachmentTypeConfig.create({
@@ -93,32 +103,39 @@ describe('attachment-mime-configs 模块', () => {
     );
   };
 
-  // ============ 权限边界 ============
+  // ============ 权限边界(P0-F PR-2B 5 用例矩阵 + 反向 ADMIN 默认 30100)============
 
   describe('权限边界', () => {
     beforeAll(truncateMimeConfigs);
 
-    it('未登录 GET → 401', async () => {
+    it('perm-1 未登录 GET → 40100', async () => {
       const res = await request(httpServer(app)).get('/api/v2/attachment-mime-configs');
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER 角色 GET → 403', async () => {
+    it('perm-2 USER 角色 GET → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get('/api/v2/attachment-mime-configs')
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER 角色 POST → 403', async () => {
+    it('perm-2 USER 角色 POST → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/attachment-mime-configs')
         .set('Authorization', userAuth)
         .send({ typeConfigId: typeConfigA.id, mime: 'image/jpeg' });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('ADMIN GET → 200', async () => {
+    it('perm-3 ADMIN 默认无 ops-admin GET → 30100 RBAC_FORBIDDEN', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/v2/attachment-mime-configs')
+        .set('Authorization', adminDefaultAuth);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    it('perm-4 ADMIN+ops-admin GET → 200', async () => {
       const res = await request(httpServer(app))
         .get('/api/v2/attachment-mime-configs')
         .set('Authorization', adminAuth);
@@ -126,7 +143,7 @@ describe('attachment-mime-configs 模块', () => {
       expect(res.body.code).toBe(0);
     });
 
-    it('SUPER_ADMIN GET → 200', async () => {
+    it('perm-5 SUPER_ADMIN 短路通过(无需 ops-admin grant)GET → 200', async () => {
       const res = await request(httpServer(app))
         .get('/api/v2/attachment-mime-configs')
         .set('Authorization', superAdminAuth);

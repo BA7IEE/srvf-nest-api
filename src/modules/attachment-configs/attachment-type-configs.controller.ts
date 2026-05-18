@@ -1,6 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
@@ -11,7 +10,6 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -34,8 +32,11 @@ import { AttachmentTypeConfigsService } from './attachment-type-configs.service'
 //   PATCH  /api/v2/attachment-type-configs/:id/status   独立改 status(沿 dictionaries 范式)
 //   DELETE /api/v2/attachment-type-configs/:id          软删 + 同步置 INACTIVE
 //
-// **权限标注**(F4 v1.0 锁):全部使用 @Roles(Role.SUPER_ADMIN, Role.ADMIN);**不接 rbac.can()**
-//(配置三表是系统配置 / 运维能力,不为其单设 rbac.config.* 权限点;详见 D7 v1.0 §5.2 + §16 F4)。
+// **权限标注**(P0-F PR-2B,2026-05-18;撤销 F4 v1.0 "不接 rbac.can()" 锁):
+// 入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;全部判权迁移到 Service 内 `rbac.can()`,
+// 失败抛 BizException(BizCode.RBAC_FORBIDDEN)(30100)。沿 PR-2A dict / org / contrib-rule 范本。
+// 映射 seed 新增 4 条权限点:attachment-config.{read,create,update,delete}.type。
+// (status 端点共用 attachment-config.update.type;沿 PR-2A dict-type update.* 范式)
 
 @ApiTags('attachment-configs')
 @ApiBearerAuth()
@@ -55,20 +56,19 @@ export class AttachmentTypeConfigsController {
   }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary: '列出附件类型配置(分页;可选 status / ownerTable 过滤;默认排序 createdAt DESC)',
   })
   @ApiWrappedPageResponse(AttachmentTypeConfigResponseDto)
-  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   list(
+    @CurrentUser() currentUser: CurrentUserPayload,
     @Query() query: ListAttachmentTypeConfigsQueryDto,
   ): Promise<PageResultDto<AttachmentTypeConfigResponseDto>> {
-    return this.service.list(query);
+    return this.service.list(currentUser, query);
   }
 
   @Post()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
       '创建附件类型配置(code 全局唯一 / kebab-case 3-32;失败抛 13023 / 13021;status 默认 ACTIVE)',
@@ -77,7 +77,7 @@ export class AttachmentTypeConfigsController {
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.INVALID_ATTACHMENT_TYPE_CONFIG_CODE_FORMAT,
     BizCode.ATTACHMENT_TYPE_CONFIG_CODE_ALREADY_EXISTS,
   )
@@ -90,21 +90,22 @@ export class AttachmentTypeConfigsController {
   }
 
   @Get(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: '附件类型配置详情(不存在 / 已软删统一返 13020)' })
   @ApiWrappedOkResponse(AttachmentTypeConfigResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ATTACHMENT_TYPE_CONFIG_NOT_FOUND,
   )
-  getById(@Param() params: IdParamDto): Promise<AttachmentTypeConfigResponseDto> {
-    return this.service.getById(params.id);
+  getById(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Param() params: IdParamDto,
+  ): Promise<AttachmentTypeConfigResponseDto> {
+    return this.service.getById(currentUser, params.id);
   }
 
   @Patch(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
       '更新附件类型配置(仅 displayName / description / ownerTable / defaultMaxSizeBytes / defaultMimeWhitelist;**禁止** code / status / deletedAt / id)',
@@ -113,7 +114,7 @@ export class AttachmentTypeConfigsController {
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ATTACHMENT_TYPE_CONFIG_NOT_FOUND,
   )
   update(
@@ -126,7 +127,6 @@ export class AttachmentTypeConfigsController {
   }
 
   @Patch(':id/status')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
       '更新附件类型配置启停状态(沿 dictionaries 独立 status 端点范式;V2.x Slow-6:ACTIVE → INACTIVE 仍被附件引用时返 13030)',
@@ -135,7 +135,7 @@ export class AttachmentTypeConfigsController {
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ATTACHMENT_TYPE_CONFIG_NOT_FOUND,
     BizCode.ATTACHMENT_TYPE_IN_USE,
   )
@@ -149,7 +149,6 @@ export class AttachmentTypeConfigsController {
   }
 
   @Delete(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
       '软删附件类型配置(deletedAt = now() + 同步置 status=INACTIVE;V2.x Slow-6:仍被附件引用时返 13030)',
@@ -158,7 +157,7 @@ export class AttachmentTypeConfigsController {
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ATTACHMENT_TYPE_CONFIG_NOT_FOUND,
     BizCode.ATTACHMENT_TYPE_IN_USE,
   )

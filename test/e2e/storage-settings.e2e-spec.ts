@@ -2,9 +2,12 @@ import type { INestApplication } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import request from 'supertest';
 
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
+import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -12,9 +15,15 @@ import { createTestApp } from '../setup/test-app';
 // V2.x C-7.5 实施 PR #11:Storage Settings admin e2e(沿评审 §6.5 / §6.6 + Q-11 拍板)
 // 30+ 用例;凭证不回显 / 加密落库 / credentialStatus 三态(missing / configured / invalid)/
 // upsert / TTL 边界 / forbidNonWhitelisted 拒凭证字段 / invalidate 生效 / IV 随机性
+//
+// P0-F PR-2B(2026-05-18):入口切到 service 层 rbac.can();失败统一 RBAC_FORBIDDEN(30100)。
+// D2=A 凭证收紧:`storage-setting.reset.credentials` 不绑 ops-admin;ADMIN+ops-admin 调
+// reset-credentials → 30100;仅 SUPER_ADMIN 短路通过(沿评审稿 §5.2 / §9.3 D2 特殊用例)。
+// `adminAuth` 在 beforeAll 全局 grant ops-admin(可调 read / update;不可调 reset-credentials)。
 
 const SUPER_USERNAME = 'st-su';
 const ADMIN_USERNAME = 'st-adm';
+const ADMIN_DEFAULT_USERNAME = 'st-adm-default';
 const USER_USERNAME = 'st-user';
 
 const SECRET_ID_PLAIN = 'AKIDtestsecretid000000000000000000ABC';
@@ -25,6 +34,7 @@ describe('storage-settings admin', () => {
   let prisma: PrismaService;
   let superAuth: string;
   let adminAuth: string;
+  let adminDefaultAuth: string;
   let userAuth: string;
 
   beforeAll(async () => {
@@ -33,12 +43,19 @@ describe('storage-settings admin', () => {
     prisma = app.get(PrismaService);
 
     await createTestUser(app, { username: SUPER_USERNAME, role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: ADMIN_USERNAME, role: Role.ADMIN });
+    const admin = await createTestUser(app, { username: ADMIN_USERNAME, role: Role.ADMIN });
+    await createTestUser(app, { username: ADMIN_DEFAULT_USERNAME, role: Role.ADMIN });
     await createTestUser(app, { username: USER_USERNAME }); // role=USER 默认
 
     superAuth = (await loginAs(app, SUPER_USERNAME)).authHeader;
     adminAuth = (await loginAs(app, ADMIN_USERNAME)).authHeader;
+    adminDefaultAuth = (await loginAs(app, ADMIN_DEFAULT_USERNAME)).authHeader;
     userAuth = (await loginAs(app, USER_USERNAME)).authHeader;
+
+    // P0-F PR-2B:seed 48 条 RBAC + ops-admin;给 st-adm 全局 grant ops-admin
+    // (D2=A:ops-admin **不**绑 storage-setting.reset.credentials;仅 SA 短路通过)
+    const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    await grantOpsAdminToUser(app, admin.id, seed.opsAdminRoleId);
   });
 
   afterAll(async () => {
@@ -67,19 +84,26 @@ describe('storage-settings admin', () => {
   describe('GET /api/v2/storage-settings', () => {
     beforeEach(truncate);
 
-    it('1. 未登录 → 401', async () => {
+    it('1. 未登录 → 401 (UNAUTHORIZED=40100)', async () => {
       const res = await request(httpServer(app)).get('/api/v2/storage-settings');
-      expect(res.status).toBe(401);
+      expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('2. USER → 403', async () => {
+    it('2. USER → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get('/api/v2/storage-settings')
         .set('Authorization', userAuth);
-      expect(res.status).toBe(403);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('3. ADMIN GET singleton row 不存在 → data=null', async () => {
+    it('2b. ADMIN 默认无 ops-admin → 30100 RBAC_FORBIDDEN', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/v2/storage-settings')
+        .set('Authorization', adminDefaultAuth);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    it('3. ADMIN+ops-admin GET singleton row 不存在 → data=null', async () => {
       const res = await request(httpServer(app))
         .get('/api/v2/storage-settings')
         .set('Authorization', adminAuth);
@@ -94,19 +118,27 @@ describe('storage-settings admin', () => {
   describe('PATCH /api/v2/storage-settings', () => {
     beforeEach(truncate);
 
-    it('4. 未登录 → 401', async () => {
+    it('4. 未登录 → 401 (UNAUTHORIZED=40100)', async () => {
       const res = await request(httpServer(app))
         .patch('/api/v2/storage-settings')
         .send({ enabled: true });
-      expect(res.status).toBe(401);
+      expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('5. USER → 403', async () => {
+    it('5. USER → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .patch('/api/v2/storage-settings')
         .set('Authorization', userAuth)
         .send({ enabled: true });
-      expect(res.status).toBe(403);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    it('5b. ADMIN 默认无 ops-admin PATCH → 30100 RBAC_FORBIDDEN', async () => {
+      const res = await request(httpServer(app))
+        .patch('/api/v2/storage-settings')
+        .set('Authorization', adminDefaultAuth)
+        .send({ enabled: true });
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('6. PATCH upsert 创建 singleton row(不存在 → 创建 default;providerType 缺省 LOCAL)', async () => {
@@ -251,25 +283,44 @@ describe('storage-settings admin', () => {
   describe('POST /api/v2/storage-settings/reset-credentials', () => {
     beforeEach(truncate);
 
-    it('17. 未登录 → 401', async () => {
+    it('17. 未登录 → 401 (UNAUTHORIZED=40100)', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/storage-settings/reset-credentials')
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
-      expect(res.status).toBe(401);
+      expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('18. USER → 403', async () => {
+    it('18. USER → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/storage-settings/reset-credentials')
         .set('Authorization', userAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
-      expect(res.status).toBe(403);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('19. reset 不存在时 upsert 创建 row + providerType=COS', async () => {
+    // P0-F PR-2B D2=A 凭证收紧验证(沿评审稿 §9.3):
+    // `storage-setting.reset.credentials` 不绑 ops-admin;
+    // ADMIN+ops-admin(adminAuth)调 reset-credentials → 30100;仅 SUPER_ADMIN 短路通过
+    it('18a. D2=A:ADMIN+ops-admin 调 reset-credentials → 30100 RBAC_FORBIDDEN(凭证 SA-only)', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/storage-settings/reset-credentials')
-        .set('Authorization', adminAuth)
+        .set('Authorization', adminAuth) // 持 ops-admin,但 reset.credentials 不绑给 ops-admin
+        .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    it('18b. D2=A:ADMIN 默认无 ops-admin 调 reset-credentials → 30100 RBAC_FORBIDDEN', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/v2/storage-settings/reset-credentials')
+        .set('Authorization', adminDefaultAuth)
+        .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    it('19. SUPER_ADMIN reset 不存在时 upsert 创建 row + providerType=COS(D2=A 仅 SA 通过)', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/v2/storage-settings/reset-credentials')
+        .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       expect(res.status).toBe(201);
       const d = res.body.data;
@@ -279,34 +330,34 @@ describe('storage-settings admin', () => {
       assertNoSecret(res.body);
     });
 
-    it('20. reset 成功后 credentialStatus=configured', async () => {
+    it('20. SUPER_ADMIN reset 成功后 credentialStatus=configured', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/storage-settings/reset-credentials')
-        .set('Authorization', adminAuth)
+        .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       expect(res.body.data.credentialStatus).toBe('configured');
     });
 
-    it('21. reset 成功后 credentialConfigured=true', async () => {
+    it('21. SUPER_ADMIN reset 成功后 credentialConfigured=true', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/storage-settings/reset-credentials')
-        .set('Authorization', adminAuth)
+        .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       expect(res.body.data.credentialConfigured).toBe(true);
     });
 
-    it('22. reset 响应不含 secretId / secretKey / Encrypted / credentials', async () => {
+    it('22. SUPER_ADMIN reset 响应不含 secretId / secretKey / Encrypted / credentials', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/storage-settings/reset-credentials')
-        .set('Authorization', adminAuth)
+        .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       assertNoSecret(res.body);
     });
 
-    it('23. reset 后 DB 中 secretIdEncrypted / secretKeyEncrypted 非 null', async () => {
+    it('23. SUPER_ADMIN reset 后 DB 中 secretIdEncrypted / secretKeyEncrypted 非 null', async () => {
       await request(httpServer(app))
         .post('/api/v2/storage-settings/reset-credentials')
-        .set('Authorization', adminAuth)
+        .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       const row = await prisma.storageSettings.findFirstOrThrow({
         select: { secretIdEncrypted: true, secretKeyEncrypted: true },
@@ -315,10 +366,10 @@ describe('storage-settings admin', () => {
       expect(row.secretKeyEncrypted).not.toBeNull();
     });
 
-    it('24. reset 后 DB 密文不等于明文', async () => {
+    it('24. SUPER_ADMIN reset 后 DB 密文不等于明文', async () => {
       await request(httpServer(app))
         .post('/api/v2/storage-settings/reset-credentials')
-        .set('Authorization', adminAuth)
+        .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       const row = await prisma.storageSettings.findFirstOrThrow({
         select: { secretIdEncrypted: true, secretKeyEncrypted: true },
@@ -327,17 +378,17 @@ describe('storage-settings admin', () => {
       expect(row.secretKeyEncrypted).not.toBe(SECRET_KEY_PLAIN);
     });
 
-    it('25. reset 两次密文不同(IV 随机性)', async () => {
+    it('25. SUPER_ADMIN reset 两次密文不同(IV 随机性)', async () => {
       await request(httpServer(app))
         .post('/api/v2/storage-settings/reset-credentials')
-        .set('Authorization', adminAuth)
+        .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       const row1 = await prisma.storageSettings.findFirstOrThrow({
         select: { id: true, secretIdEncrypted: true },
       });
       await request(httpServer(app))
         .post('/api/v2/storage-settings/reset-credentials')
-        .set('Authorization', adminAuth)
+        .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       const row2 = await prisma.storageSettings.findFirstOrThrow({
         where: { id: row1.id },
@@ -355,7 +406,7 @@ describe('storage-settings admin', () => {
     it('26. GET reset 后 credentialStatus=configured', async () => {
       await request(httpServer(app))
         .post('/api/v2/storage-settings/reset-credentials')
-        .set('Authorization', adminAuth)
+        .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       const res = await request(httpServer(app))
         .get('/api/v2/storage-settings')
@@ -365,10 +416,10 @@ describe('storage-settings admin', () => {
     });
 
     it('27. 手工写坏密文后 GET credentialStatus=invalid', async () => {
-      // 先 reset 创建一条配置
+      // 先 reset 创建一条配置(D2=A:reset 走 SA)
       await request(httpServer(app))
         .post('/api/v2/storage-settings/reset-credentials')
-        .set('Authorization', adminAuth)
+        .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       // 手工写入无效 base64(无法解密)→ credentialStatus=invalid
       // 同时 invalidate StorageSettingsService 的 60s 缓存(沿 PR #87)
@@ -409,9 +460,10 @@ describe('storage-settings admin', () => {
     });
 
     it('29. reset 后 PATCH bucket 不影响 credentialStatus', async () => {
+      // D2=A:reset 走 SA;PATCH 走 ADMIN+ops-admin
       await request(httpServer(app))
         .post('/api/v2/storage-settings/reset-credentials')
-        .set('Authorization', adminAuth)
+        .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       const res = await request(httpServer(app))
         .patch('/api/v2/storage-settings')

@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { truncateAuditLogsTestOnly } from '../helpers/audit-logs-cleanup';
 import { expectBizError } from '../helpers/biz-code.assert';
@@ -59,6 +60,11 @@ describe('attachment-configs audit_logs 集成', () => {
     superAuth = (await loginAs(app, SUPER_USERNAME)).authHeader;
     adminAuth = (await loginAs(app, ADMIN_USERNAME)).authHeader;
     userAuth = (await loginAs(app, USER_USERNAME)).authHeader;
+
+    // P0-F PR-2B(2026-05-18):入口切到 service 层 rbac.can();失败统一 RBAC_FORBIDDEN(30100)。
+    // 写操作 audit 验证需 ADMIN 持 ops-admin;否则 30100 在 service 层拦截后 audit 不写。
+    const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    await grantOpsAdminToUser(app, adminId, seed.opsAdminRoleId);
   });
 
   afterAll(async () => {
@@ -434,12 +440,12 @@ describe('attachment-configs audit_logs 集成', () => {
       expect(logs).toHaveLength(0);
     });
 
-    it('case 18: USER FORBIDDEN POST → 无 audit', async () => {
+    it('case 18: USER RBAC_FORBIDDEN POST → 无 audit(P0-F PR-2B:40300 → 30100)', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/attachment-type-configs')
         .set('Authorization', userAuth)
         .send({ code: 'member', displayName: '队员', ownerTable: 'member' });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
       const logs = await prisma.auditLog.findMany();
       expect(logs).toHaveLength(0);
     });

@@ -8,6 +8,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { RbacService } from '../permissions/rbac.service';
 import {
   AttachmentSizeLimitConfigResponseDto,
   CreateAttachmentSizeLimitConfigDto,
@@ -39,7 +40,17 @@ export class AttachmentSizeLimitConfigsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
+    private readonly rbac: RbacService,
   ) {}
+
+  // P0-F PR-2B(2026-05-18):RBAC 判权(沿 PR-2A dict / org / contrib-rule 范本)。
+  // 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100);RbacService.can 内部
+  // 已实现 SUPER_ADMIN 短路 + cache + ownership(.self);本模块无 .self 后缀。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   // PR #6d Q3 拍板:audit snapshot 不含 id / 时间戳 / deletedAt;沿 cert / emergency 范式。
   // size limit 字段全部非敏感,不打码;无 Date 字段,不需 toISOString。
@@ -95,8 +106,10 @@ export class AttachmentSizeLimitConfigsService {
   // ============ 5 端点业务逻辑 ============
 
   async list(
+    user: CurrentUserPayload,
     query: ListAttachmentSizeLimitConfigsQueryDto,
   ): Promise<PageResultDto<AttachmentSizeLimitConfigResponseDto>> {
+    await this.assertCanOrThrow(user, 'attachment-config.read.size-limit');
     const { page, pageSize, typeConfigId } = query;
     const where: Prisma.AttachmentSizeLimitConfigWhereInput = notDeletedWhere({
       ...(typeConfigId !== undefined ? { typeConfigId } : {}),
@@ -116,7 +129,11 @@ export class AttachmentSizeLimitConfigsService {
     return { items, total, page, pageSize };
   }
 
-  async getById(id: string): Promise<AttachmentSizeLimitConfigResponseDto> {
+  async getById(
+    user: CurrentUserPayload,
+    id: string,
+  ): Promise<AttachmentSizeLimitConfigResponseDto> {
+    await this.assertCanOrThrow(user, 'attachment-config.read.size-limit');
     return this.findActiveByIdOrThrow(id);
   }
 
@@ -125,6 +142,7 @@ export class AttachmentSizeLimitConfigsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttachmentSizeLimitConfigResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'attachment-config.create.size-limit');
     // 1. typeConfigId FK 真实性校验(Q5 PR #4 复用:不存在或软删 → 13020;校验链留事务外)
     await this.assertTypeConfigActive(dto.typeConfigId);
 
@@ -178,6 +196,7 @@ export class AttachmentSizeLimitConfigsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttachmentSizeLimitConfigResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'attachment-config.update.size-limit');
     // 1. 先确认活跃(不存在或已软删统一返 13026;校验链留事务外)
     const before = await this.findActiveByIdOrThrow(id);
 
@@ -227,6 +246,7 @@ export class AttachmentSizeLimitConfigsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttachmentSizeLimitConfigResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'attachment-config.delete.size-limit');
     // 1. 先确认活跃(沿 PR #4 mime softDelete 范式;沿 v1 §10 信息泄漏防御)
     const existing = await this.findActiveByIdOrThrow(id);
 

@@ -4,6 +4,7 @@ import type { StorageSettings as StorageSettingsRow } from '@prisma/client';
 
 import appConfig, { type AppEnv } from '../../config/app.config';
 import type { PrismaService } from '../../database/prisma.service';
+import type { RbacService } from '../../modules/permissions/rbac.service';
 import { StorageCryptoDecryptError, StorageCryptoService } from './storage-crypto.service';
 import { StorageSettingsService } from './storage-settings.service';
 import { CredentialStatus } from './storage-settings.types';
@@ -75,6 +76,15 @@ function makeCryptoMock(options: { decrypt?: (payload: string) => string }): Sto
   } as unknown as StorageCryptoService;
 }
 
+// P0-F PR-2B(2026-05-18):RbacService mock — 单元测试覆盖 getActiveSettings() 等非 admin 路径,
+// 不触发 assertCanOrThrow;mock 仅为满足 constructor 签名(3 → 4 参数;沿 PR-2A 范本)。
+// admin 路径(getForAdmin / updateSettings / resetCredentials)的 RBAC 行为由 e2e 覆盖。
+function makeRbacMock(): RbacService {
+  return {
+    can: () => Promise.resolve(true),
+  } as unknown as RbacService;
+}
+
 // V2.x production storage_settings fail-fast(2026-05-16):env mock helper
 // 仅用于注入 ConfigType<typeof appConfig>;只关心 env 字段,其他字段 cast 兜底
 function makeCfg(env: AppEnv): ConfigType<typeof appConfig> {
@@ -99,7 +109,7 @@ describe('StorageSettingsService', () => {
     it('返 null', async () => {
       const { prisma } = makePrismaMock([]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), DEV_CFG);
 
       const result = await svc.getActiveSettings();
       expect(result).toBeNull();
@@ -110,7 +120,7 @@ describe('StorageSettingsService', () => {
     it('返 resolved + credentialStatus=MISSING + credentials=null', async () => {
       const { prisma } = makePrismaMock([makeRow({ credentialConfigured: false })]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), DEV_CFG);
 
       const result = await svc.getActiveSettings();
       expect(result).not.toBeNull();
@@ -133,7 +143,7 @@ describe('StorageSettingsService', () => {
       const crypto = makeCryptoMock({
         decrypt: (p) => p.replace(/^ENC\(|\)$/g, ''),
       });
-      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), DEV_CFG);
 
       const result = await svc.getActiveSettings();
       expect(result!.credentialStatus).toBe(CredentialStatus.CONFIGURED);
@@ -158,7 +168,7 @@ describe('StorageSettingsService', () => {
           throw new StorageCryptoDecryptError('auth tag mismatch');
         },
       });
-      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), DEV_CFG);
 
       const result = await svc.getActiveSettings();
       expect(result!.credentialStatus).toBe(CredentialStatus.INVALID);
@@ -177,7 +187,7 @@ describe('StorageSettingsService', () => {
         }),
       ]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), DEV_CFG);
 
       const result = await svc.getActiveSettings();
       expect(result!.credentialStatus).toBe(CredentialStatus.MISSING);
@@ -201,7 +211,7 @@ describe('StorageSettingsService', () => {
       // findMany orderBy=asc,所以传入顺序就是 [earlier, later]
       const { prisma } = makePrismaMock([earlier, later]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), DEV_CFG);
 
       const result = await svc.getActiveSettings();
       expect(result!.id).toBe('cuid-earlier');
@@ -216,7 +226,7 @@ describe('StorageSettingsService', () => {
     it('60s 内第二次调用不查 DB', async () => {
       const { prisma, findManyMock } = makePrismaMock([makeRow()]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), DEV_CFG);
 
       await svc.getActiveSettings();
       await svc.getActiveSettings();
@@ -227,7 +237,7 @@ describe('StorageSettingsService', () => {
     it('DB 空时也缓存 null', async () => {
       const { prisma, findManyMock } = makePrismaMock([]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), DEV_CFG);
 
       const r1 = await svc.getActiveSettings();
       const r2 = await svc.getActiveSettings();
@@ -239,7 +249,7 @@ describe('StorageSettingsService', () => {
     it('invalidate() 后再查 DB', async () => {
       const { prisma, findManyMock } = makePrismaMock([makeRow()]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto, DEV_CFG);
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), DEV_CFG);
 
       await svc.getActiveSettings();
       svc.invalidate();
@@ -266,21 +276,26 @@ describe('StorageSettingsService', () => {
     it('用例 1: env=development + settings null → 不抛', async () => {
       const { prisma } = makePrismaMock([]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto, makeCfg('development'));
+      const svc = new StorageSettingsService(
+        prisma,
+        crypto,
+        makeRbacMock(),
+        makeCfg('development'),
+      );
       await expect(svc.onApplicationBootstrap()).resolves.toBeUndefined();
     });
 
     it('用例 2: env=test + settings null → 不抛', async () => {
       const { prisma } = makePrismaMock([]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto, makeCfg('test'));
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), makeCfg('test'));
       await expect(svc.onApplicationBootstrap()).resolves.toBeUndefined();
     });
 
     it('用例 3: env=smoke + settings null → 不抛(CI Docker smoke 不预接 COS)', async () => {
       const { prisma } = makePrismaMock([]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto, makeCfg('smoke'));
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), makeCfg('smoke'));
       await expect(svc.onApplicationBootstrap()).resolves.toBeUndefined();
     });
 
@@ -288,7 +303,7 @@ describe('StorageSettingsService', () => {
     it('用例 4: env=production + settings null → throw "未初始化"', async () => {
       const { prisma } = makePrismaMock([]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), makeCfg('production'));
       await expect(svc.onApplicationBootstrap()).rejects.toThrow(/未初始化/);
     });
 
@@ -302,7 +317,7 @@ describe('StorageSettingsService', () => {
         }),
       ]);
       const crypto = makeCryptoMock({ decrypt: (p) => p.replace(/^ENC\(|\)$/g, '') });
-      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), makeCfg('production'));
       await expect(svc.onApplicationBootstrap()).rejects.toThrow(/enabled=false/);
     });
 
@@ -316,7 +331,7 @@ describe('StorageSettingsService', () => {
         }),
       ]);
       const crypto = makeCryptoMock({ decrypt: (p) => p.replace(/^ENC\(|\)$/g, '') });
-      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), makeCfg('production'));
       await expect(svc.onApplicationBootstrap()).rejects.toThrow(/production 必须是 COS/);
     });
 
@@ -330,7 +345,7 @@ describe('StorageSettingsService', () => {
         }),
       ]);
       const crypto = makeCryptoMock({ decrypt: (p) => p.replace(/^ENC\(|\)$/g, '') });
-      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), makeCfg('production'));
       await expect(svc.onApplicationBootstrap()).rejects.toThrow(/bucket \/ region/);
     });
 
@@ -344,14 +359,14 @@ describe('StorageSettingsService', () => {
         }),
       ]);
       const crypto = makeCryptoMock({ decrypt: (p) => p.replace(/^ENC\(|\)$/g, '') });
-      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), makeCfg('production'));
       await expect(svc.onApplicationBootstrap()).rejects.toThrow(/bucket \/ region/);
     });
 
     it('用例 9: env=production + credentialStatus=MISSING → throw 含 missing', async () => {
       const { prisma } = makePrismaMock([makeRow({ credentialConfigured: false })]);
       const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), makeCfg('production'));
       await expect(svc.onApplicationBootstrap()).rejects.toThrow(/credentialStatus=missing/);
     });
 
@@ -368,7 +383,7 @@ describe('StorageSettingsService', () => {
           throw new StorageCryptoDecryptError('auth tag mismatch');
         },
       });
-      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), makeCfg('production'));
       await expect(svc.onApplicationBootstrap()).rejects.toThrow(/credentialStatus=invalid/);
     });
 
@@ -386,7 +401,7 @@ describe('StorageSettingsService', () => {
         }),
       ]);
       const crypto = makeCryptoMock({ decrypt: (p) => p.replace(/^ENC\(|\)$/g, '') });
-      const svc = new StorageSettingsService(prisma, crypto, makeCfg('production'));
+      const svc = new StorageSettingsService(prisma, crypto, makeRbacMock(), makeCfg('production'));
       await expect(svc.onApplicationBootstrap()).resolves.toBeUndefined();
       // 成功 log 仅含状态字段(providerType / bucket / region / credentialStatus),不含 secret
       expect(logSpy).toHaveBeenCalledWith(
