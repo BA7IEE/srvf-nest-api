@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, OrganizationStatus, Prisma } from '@prisma/client';
+import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { RbacService } from '../permissions/rbac.service';
 import {
   CreateOrganizationDto,
   ListOrganizationsQueryDto,
@@ -36,9 +38,19 @@ type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
 export class OrganizationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rbac: RbacService,
+  ) {}
 
   // ============ helpers ============
+
+  // P0-F PR-2A(2026-05-18):RBAC 判权(沿 PR-1 attachments F5 v1.0 范本)。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   private async findOrganizationOrThrow(id: string, tx?: PrismaTx): Promise<SafeOrganization> {
     const client = tx ?? this.prisma;
@@ -105,7 +117,11 @@ export class OrganizationsService {
 
   // ============ list ============
 
-  async list(query: ListOrganizationsQueryDto): Promise<PageResultDto<OrganizationResponseDto>> {
+  async list(
+    user: CurrentUserPayload,
+    query: ListOrganizationsQueryDto,
+  ): Promise<PageResultDto<OrganizationResponseDto>> {
+    await this.assertCanOrThrow(user, 'org.read.node');
     const { page, pageSize, parentId, nodeTypeCode, status } = query;
 
     const filters: Prisma.OrganizationWhereInput = {};
@@ -133,7 +149,11 @@ export class OrganizationsService {
 
   // ============ tree ============
 
-  async getTree(query: OrganizationTreeQueryDto): Promise<OrganizationTreeNodeDto[]> {
+  async getTree(
+    user: CurrentUserPayload,
+    query: OrganizationTreeQueryDto,
+  ): Promise<OrganizationTreeNodeDto[]> {
+    await this.assertCanOrThrow(user, 'org.read.node');
     const items = await this.prisma.organization.findMany({
       where: notDeletedWhere(query.status !== undefined ? { status: query.status } : {}),
       select: organizationSelect,
@@ -166,7 +186,11 @@ export class OrganizationsService {
 
   // ============ create ============
 
-  async create(dto: CreateOrganizationDto): Promise<OrganizationResponseDto> {
+  async create(
+    user: CurrentUserPayload,
+    dto: CreateOrganizationDto,
+  ): Promise<OrganizationResponseDto> {
+    await this.assertCanOrThrow(user, 'org.create.node');
     return this.prisma.$transaction(async (tx) => {
       // 1. nodeTypeCode 必须有效(6 项 AND 校验)
       await this.assertNodeTypeCodeValid(dto.nodeTypeCode, tx);
@@ -197,13 +221,19 @@ export class OrganizationsService {
 
   // ============ findOne ============
 
-  findOne(id: string): Promise<OrganizationResponseDto> {
+  async findOne(user: CurrentUserPayload, id: string): Promise<OrganizationResponseDto> {
+    await this.assertCanOrThrow(user, 'org.read.node');
     return this.findOrganizationOrThrow(id);
   }
 
   // ============ update ============
 
-  async update(id: string, dto: UpdateOrganizationDto): Promise<OrganizationResponseDto> {
+  async update(
+    user: CurrentUserPayload,
+    id: string,
+    dto: UpdateOrganizationDto,
+  ): Promise<OrganizationResponseDto> {
+    await this.assertCanOrThrow(user, 'org.update.node');
     return this.prisma.$transaction(async (tx) => {
       await this.findOrganizationOrThrow(id, tx);
 
@@ -227,9 +257,11 @@ export class OrganizationsService {
   // ============ updateStatus ============
 
   async updateStatus(
+    user: CurrentUserPayload,
     id: string,
     dto: UpdateOrganizationStatusDto,
   ): Promise<OrganizationResponseDto> {
+    await this.assertCanOrThrow(user, 'org.update.node');
     return this.prisma.$transaction(async (tx) => {
       const target = await this.findOrganizationOrThrow(id, tx);
 
@@ -249,7 +281,10 @@ export class OrganizationsService {
   // ============ softDelete ============
 
   // 决策 5:事务原子。决策 3=A:同时查 dict 范围外的 member_departments(Step 6 落地后无需补)。
-  async softDelete(id: string): Promise<OrganizationResponseDto> {
+  // P0-F PR-2A D3=A:从 v1 @Roles(SUPER_ADMIN) 单角色放宽至 ops-admin 可调
+  // (sub-protection 仍由本方法事务内 HAS_CHILDREN / HAS_MEMBERS / LAST_ROOT_PROTECTED 兜底)。
+  async softDelete(user: CurrentUserPayload, id: string): Promise<OrganizationResponseDto> {
+    await this.assertCanOrThrow(user, 'org.delete.node');
     return this.prisma.$transaction(async (tx) => {
       const target = await this.findOrganizationOrThrow(id, tx);
 

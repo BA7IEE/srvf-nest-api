@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { MemberStatus, OrganizationStatus, Prisma } from '@prisma/client';
+import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { RbacService } from '../permissions/rbac.service';
 import { MemberDepartmentResponseDto, SetMemberDepartmentDto } from './member-departments.dto';
 
 // 集中定义对外 select。永不包含 deletedAt(软删除内部状态)。
@@ -19,9 +21,19 @@ type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
 export class MemberDepartmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rbac: RbacService,
+  ) {}
 
   // ============ helpers ============
+
+  // P0-F PR-2A(2026-05-18):RBAC 判权(沿 PR-1 attachments F5 v1.0 范本)。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   // 校验 member 存在且未软删(返回 status 用于 INACTIVE 校验)。
   private async findMemberOrThrow(
@@ -68,7 +80,11 @@ export class MemberDepartmentsService {
   // ============ GET /api/v2/members/:memberId/department ============
 
   // 决策 4:member 存在但无归属返 null(不抛 NOT_FOUND);member 不存在抛 MEMBER_NOT_FOUND。
-  async findCurrent(memberId: string): Promise<MemberDepartmentResponseDto | null> {
+  async findCurrent(
+    user: CurrentUserPayload,
+    memberId: string,
+  ): Promise<MemberDepartmentResponseDto | null> {
+    await this.assertCanOrThrow(user, 'member-department.read.current');
     await this.findMemberOrThrow(memberId);
     const current = await this.prisma.memberDepartment.findFirst({
       where: { memberId, deletedAt: null },
@@ -87,7 +103,12 @@ export class MemberDepartmentsService {
   //      - 已存在且 organizationId 相同 → 直接返回(决策 5:无副作用,不更新时间)
   //      - 已存在但 organizationId 不同 → 软删旧 + 创建新(单事务原子)
   //   4. P2002 兜底转 MEMBER_DEPARTMENT_ALREADY_EXISTS(并发场景)
-  async set(memberId: string, dto: SetMemberDepartmentDto): Promise<MemberDepartmentResponseDto> {
+  async set(
+    user: CurrentUserPayload,
+    memberId: string,
+    dto: SetMemberDepartmentDto,
+  ): Promise<MemberDepartmentResponseDto> {
+    await this.assertCanOrThrow(user, 'member-department.set.current');
     return this.prisma.$transaction(async (tx) => {
       // 1. member 校验
       const member = await this.findMemberOrThrow(memberId, tx);
@@ -136,7 +157,8 @@ export class MemberDepartmentsService {
 
   // 解除当前 active 归属(软删中间表行)。
   // 若 member 无 active 归属 → MEMBER_DEPARTMENT_NOT_FOUND。
-  async remove(memberId: string): Promise<MemberDepartmentResponseDto> {
+  async remove(user: CurrentUserPayload, memberId: string): Promise<MemberDepartmentResponseDto> {
+    await this.assertCanOrThrow(user, 'member-department.clear.current');
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
 

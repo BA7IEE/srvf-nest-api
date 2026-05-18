@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -13,12 +14,18 @@ import { createTestApp } from '../setup/test-app';
 // V2 Step 3 dictionaries 模块 e2e。
 // 覆盖 13 接口主成功 + 关键失败路径(权限边界 / 唯一冲突 / 父级跨类型 / 引用拒删 / 树形)。
 // 不覆盖:tree 深度极限 / 大批量分页 / 真实业务取值(留运营录入)。
+//
+// P0-F PR-2A(2026-05-18):入口切到 service 层 rbac.can();失败统一 RBAC_FORBIDDEN(30100)。
+// `adminAuth` 在 beforeAll 全局 grant ops-admin(模拟运维上线 SOP),保留现有 ADMIN CRUD 用例;
+// 单独建 `adminDefaultAuth`(未 grant)做"ADMIN 默认 30100"反向断言。
+// D3=A:dict-type / dict-item softDelete 从 v1 仅 SA 放宽至 ops-admin 可调,沿评审稿 §6.1。
 
 describe('dictionaries 模块', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let superAdminAuth: string;
   let adminAuth: string;
+  let adminDefaultAuth: string;
   let userAuth: string;
 
   beforeAll(async () => {
@@ -27,12 +34,19 @@ describe('dictionaries 模块', () => {
     prisma = app.get(PrismaService);
 
     await createTestUser(app, { username: 'dict-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'dict-adm', role: Role.ADMIN });
+    const admin = await createTestUser(app, { username: 'dict-adm', role: Role.ADMIN });
+    await createTestUser(app, { username: 'dict-adm-default', role: Role.ADMIN });
     await createTestUser(app, { username: 'dict-user', role: Role.USER });
 
     superAdminAuth = (await loginAs(app, 'dict-su')).authHeader;
     adminAuth = (await loginAs(app, 'dict-adm')).authHeader;
+    adminDefaultAuth = (await loginAs(app, 'dict-adm-default')).authHeader;
     userAuth = (await loginAs(app, 'dict-user')).authHeader;
+
+    // P0-F PR-2A:seed 33 条 RBAC + ops-admin;给 dict-adm 全局 grant ops-admin
+    // (sa 走短路,user / adminDefault 不 grant)
+    const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    await grantOpsAdminToUser(app, admin.id, seed.opsAdminRoleId);
   });
 
   afterAll(async () => {
@@ -47,45 +61,60 @@ describe('dictionaries 模块', () => {
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER 角色 GET dict-types → 403', async () => {
+    it('USER 角色 GET dict-types → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get('/api/v2/dict-types')
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER 角色 POST dict-types → 403', async () => {
+    it('USER 角色 POST dict-types → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/dict-types')
         .set('Authorization', userAuth)
         .send({ code: 'p_user', label: 'x' });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('ADMIN DELETE dict-type → 403(SUPER_ADMIN 专属)', async () => {
+    // P0-F PR-2A:ADMIN 默认无 ops-admin → 30100(v1 ADMIN 全权变收紧,显式反向断言)
+    it('ADMIN 默认无 ops-admin → 30100 RBAC_FORBIDDEN', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/v2/dict-types')
+        .set('Authorization', adminDefaultAuth)
+        .send({ code: 'p_adm_default', label: 'x' });
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    // P0-F PR-2A D3=A:ADMIN+ops-admin 可调 dict-type softDelete(从 v1 仅 SA 放宽)
+    it('ADMIN+ops-admin DELETE dict-type → 200(D3=A 放宽至 ops-admin)', async () => {
       const t = await prisma.dictType.create({
-        data: { code: 'pb_adm_del', label: 'x' },
+        data: { code: 'pb_adm_del_ok', label: 'x' },
         select: { id: true },
       });
       const res = await request(httpServer(app))
         .delete(`/api/v2/dict-types/${t.id}`)
         .set('Authorization', adminAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expect(res.status).toBe(200);
+      expect(res.body.code).toBe(0);
+      expect(res.body.data.id).toBe(t.id);
     });
 
-    it('ADMIN DELETE dict-item → 403(SUPER_ADMIN 专属)', async () => {
+    // P0-F PR-2A D3=A:ADMIN+ops-admin 可调 dict-item softDelete(从 v1 仅 SA 放宽)
+    it('ADMIN+ops-admin DELETE dict-item → 200(D3=A 放宽至 ops-admin)', async () => {
       const t = await prisma.dictType.create({
-        data: { code: 'pb_adm_di', label: 'x' },
+        data: { code: 'pb_adm_di_ok', label: 'x' },
         select: { id: true },
       });
       const i = await prisma.dictItem.create({
-        data: { typeId: t.id, code: 'pb-adm-di-i', label: 'x' },
+        data: { typeId: t.id, code: 'pb-adm-di-i-ok', label: 'x' },
         select: { id: true },
       });
       const res = await request(httpServer(app))
         .delete(`/api/v2/dict-items/${i.id}`)
         .set('Authorization', adminAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expect(res.status).toBe(200);
+      expect(res.body.code).toBe(0);
+      expect(res.body.data.id).toBe(i.id);
     });
   });
 

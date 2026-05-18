@@ -3,6 +3,7 @@ import { DictItemStatus, Role } from '@prisma/client';
 import request from 'supertest';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { truncateAuditLogsTestOnly } from '../helpers/audit-logs-cleanup';
 import { httpServer } from '../helpers/http-server';
@@ -40,6 +41,12 @@ describe('audit-logs 写入迁移', () => {
     const admin = await createTestUser(app, { username: 'al-mig-adm', role: Role.ADMIN });
     adminId = admin.id;
     adminAuth = (await loginAs(app, 'al-mig-adm')).authHeader;
+
+    // P0-F PR-2A:contribution-rules 写操作入口已切到 rbac.can();ADMIN 默认无 ops-admin
+    // 会被 30100 拦下,导致 audit log 不会写;此处给 adminId grant ops-admin(模拟运维 SOP)。
+    // PR #2 emergency-contacts / certificates 写操作仍走 @Roles,不受 PR-2A 影响。
+    const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    await grantOpsAdminToUser(app, adminId, seed.opsAdminRoleId);
 
     // emergency_relation 字典
     const relType = await prisma.dictType.create({

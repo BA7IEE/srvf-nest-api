@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -13,12 +14,17 @@ import { createTestApp } from '../setup/test-app';
 // V2 Step 4 organizations 模块 e2e。
 // 覆盖 7 接口主成功 + 关键失败:权限边界 / 字典校验 / parent 不存在 / 单根上限 /
 // last-root 保护 / 引用拒删 / tree 嵌套 / PATCH 拒 parentId & status。
+//
+// P0-F PR-2A(2026-05-18):入口切到 service 层 rbac.can();失败统一 RBAC_FORBIDDEN(30100)。
+// `adminAuth` 在 beforeAll 全局 grant ops-admin(沿 dict e2e 范式);单独建 `adminDefaultAuth`
+// 做"ADMIN 默认 30100"反向断言。D3=A:org softDelete 从 v1 仅 SA 放宽至 ops-admin 可调。
 
 describe('organizations 模块', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let superAdminAuth: string;
   let adminAuth: string;
+  let adminDefaultAuth: string;
   let userAuth: string;
 
   let activeNodeTypeCode: string;
@@ -31,11 +37,17 @@ describe('organizations 模块', () => {
     prisma = app.get(PrismaService);
 
     await createTestUser(app, { username: 'org-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'org-adm', role: Role.ADMIN });
+    const admin = await createTestUser(app, { username: 'org-adm', role: Role.ADMIN });
+    await createTestUser(app, { username: 'org-adm-default', role: Role.ADMIN });
     await createTestUser(app, { username: 'org-user', role: Role.USER });
     superAdminAuth = (await loginAs(app, 'org-su')).authHeader;
     adminAuth = (await loginAs(app, 'org-adm')).authHeader;
+    adminDefaultAuth = (await loginAs(app, 'org-adm-default')).authHeader;
     userAuth = (await loginAs(app, 'org-user')).authHeader;
+
+    // P0-F PR-2A:seed 33 条 RBAC + ops-admin;给 org-adm 全局 grant ops-admin
+    const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    await grantOpsAdminToUser(app, admin.id, seed.opsAdminRoleId);
 
     // 准备 node_type 字典 + 1 ACTIVE / 1 INACTIVE item(供 nodeTypeCode 校验测试)
     const nodeType = await prisma.dictType.create({
@@ -83,30 +95,39 @@ describe('organizations 模块', () => {
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER GET → 403', async () => {
+    it('USER GET → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get('/api/v2/organizations')
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER POST → 403', async () => {
+    it('USER POST → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/organizations')
         .set('Authorization', userAuth)
         .send({ name: 'x', nodeTypeCode: activeNodeTypeCode });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('ADMIN DELETE → 403(SUPER_ADMIN 专属)', async () => {
-      // 先用 SA 创建一个根用作目标
+    // P0-F PR-2A:ADMIN 默认无 ops-admin → 30100(v1 ADMIN 全权变收紧,显式反向断言)
+    it('ADMIN 默认无 ops-admin → 30100 RBAC_FORBIDDEN', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/v2/organizations')
+        .set('Authorization', adminDefaultAuth);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    // P0-F PR-2A D3=A:ADMIN+ops-admin DELETE root 触发 LAST_ROOT_PROTECTED(权限放行,业务护栏拦下;
+    // 反向证明:权限层不再是 v1 SA-only 拦截点,业务层仍在守护)
+    it('ADMIN+ops-admin DELETE root → LAST_ROOT_PROTECTED(D3=A 权限放行 + 业务护栏兜底)', async () => {
       const root = await prisma.organization.create({
         data: { name: 'pb-adm-del', nodeTypeCode: activeNodeTypeCode },
       });
       const res = await request(httpServer(app))
         .delete(`/api/v2/organizations/${root.id}`)
         .set('Authorization', adminAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.LAST_ROOT_ORGANIZATION_PROTECTED);
       // 清理:跳过 LAST_ROOT_PROTECTED 走直接 DB 软删
       await prisma.organization.update({
         where: { id: root.id },
