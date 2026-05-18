@@ -2,6 +2,7 @@
 
 > **状态**:**Phase 0.6 专项评审 v0**(2026-05-19)
 > **定位**:[Phase 0 客户端边界](api-client-boundary.md) + [Phase 0.5 App 身份 / 权限](app-permission-boundary-review.md) 之后,**Phase 1A / 1B / Phase 2 之前**的"数据治理"专项 — 锁定 endpoint surface 分类、字段敏感等级、数据范围(scope)、状态机、User / Member 生命周期。
+> **配套实施边界**:[`docs/code-architecture-boundary-review.md`](code-architecture-boundary-review.md) — **Phase 0.7 代码架构边界专项评审**;承载本评审稿规则的代码分层方案(Controller / DTO / Presenter / QueryService / CommandService / PolicyService / StateMachine / AuditRecorder / Effect / Reporting),**Phase 2 实施前必读**。两份文档关系:**本评审稿定义"是什么 / 谁能看到什么",Phase 0.7 定义"代码如何承载这些规则"**。
 > **配套设计文档**:
 >   - [`docs/api-client-boundary.md`](api-client-boundary.md)
 >   - [`docs/api-client-boundary-inventory.md`](api-client-boundary-inventory.md)

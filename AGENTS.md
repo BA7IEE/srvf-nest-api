@@ -1116,4 +1116,26 @@ Agents must **not** implement App DTOs, data scopes, or lifecycle checks by:
 - 跳过状态机校验直接执行写动作(沿 Phase 0.6 §4 + §6.4)
 - 在响应 DTO 中暴露 **L3 Credential** 字段(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*`)— 任何 PR snapshot 测试出现这些字段直接拒合并(沿 Phase 0.6 §2.2 + §6.5)
 
+**D-7**:Code architecture boundary before App API implementation(2026-05-19 立项)
+
+Before implementing any `/api/app/v1/*` endpoint or refactoring large services, agents **must read and respect** [`docs/code-architecture-boundary-review.md`](docs/code-architecture-boundary-review.md)。
+
+Agents must **not** continue adding complex **surface-specific** DTO / scope / field masking / state transition / export / audit / effect logic directly into large services **without first identifying whether** the following implementation boundaries are required:
+
+- **Presenter**(沿 Phase 0.7 §2):entity → DTO/View 转换 + FieldPolicy 协同
+- **QueryService**(沿 Phase 0.7 §4):列表 / 筛选 / scope / 分页 / 导出字段;Mobile 默认 `scope = self`
+- **PolicyService**(沿 Phase 0.7 §6):业务合法性判断;**不**塞进 `rbac.can(...)`
+- **StateMachine**(沿 Phase 0.7 §7):显式 transition 定义;**不**继续零散 if/else 扩张
+- **AuditRecorder**(沿 Phase 0.7 §8):统一审计构造;**不**散落手写;mask 敏感字段
+- **Effect / Workflow boundary**(沿 Phase 0.7 §9):副作用 post-commit;**不**和主交易混为一团
+
+**本规则不要求立即大规模重构**(沿 Phase 0.7 §6 不立即重构清单;[`attendances.service.ts:1413`](src/modules/attendances/attendances.service.ts) 等不动);**它要求新工作 boundary-aware,并在扩张既有大 service 前显式 review**:
+
+- 新增 mobile endpoint → 必须新 Mobile Controller + App DTO + Presenter(沿 Phase 0.7 §11 Refactor Triggers)
+- 新增高敏字段 → 必须同步 FieldPolicy
+- 新增导出 → 必须走 ExportService + AuditRecorder
+- 新增审批状态 → 必须抽 StateMachine
+- 新增 `department` / `activity` / `managed` scope → 必须走 ScopeResolver + QueryService
+- 新增通知 / 短信 → 必须走 Effect / Workflow
+
 **违反铁律**:发现本节决策与新任务诉求冲突 → **必须暂停说明**,不擅自调和;不主动建议"重新评估方案 A/B"或"把 contribution-rules 改归 Admin"等回滚动作。

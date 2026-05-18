@@ -5,8 +5,9 @@
 > **配套专项评审**:
 >   - [`docs/app-permission-boundary-review.md`](app-permission-boundary-review.md) — **Phase 0.5 App 身份 / 权限 / 数据可见性专项评审**,**Phase 2 启动前必读**(身份 × 能力 × 字段三维矩阵)
 >   - [`docs/data-access-lifecycle-boundary-review.md`](data-access-lifecycle-boundary-review.md) — **Phase 0.6 数据访问与生命周期边界专项评审**,**Phase 2 App API DTO 与数据访问实施前必读**(surface 分类 + 字段敏感等级 + scope 策略 + 状态机矩阵 + User/Member 生命周期)
+>   - [`docs/code-architecture-boundary-review.md`](code-architecture-boundary-review.md) — **Phase 0.7 代码架构边界专项评审**,**Phase 2 App API 实施与未来大 service 重构前必读**(Controller / DTO / Presenter / QueryService / CommandService / PolicyService / StateMachine / AuditRecorder / Effect / Reporting 10 个 implementation boundary + 触发重构条件)
 >
-> Phase 0.5 / Phase 0.6 与本顶层规范冲突时,以本顶层规范为准。
+> Phase 0.5 / Phase 0.6 / Phase 0.7 与本顶层规范冲突时,以本顶层规范为准。
 > **解除条件**:本文档 + [`docs/api-client-boundary-inventory.md`](api-client-boundary-inventory.md) + [`docs/api-client-boundary-migration-plan.md`](api-client-boundary-migration-plan.md) 评审通过,
 > 且后续 Phase 1+ 任务在 [`docs/process.md`](process.md) 流程内单独立项后,本文档才作为正式蓝图引用。
 > **冲突优先级**:
