@@ -5,6 +5,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { RbacCacheService } from './rbac-cache.service';
+import { RbacService } from './rbac.service';
 import { AssignUserRoleDto, UserRoleResponseDto } from './user-roles.dto';
 
 // V2.x C-6 RBAC 实施 PR #5:UserRole 模块业务逻辑。
@@ -35,9 +36,20 @@ export class UserRolesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: RbacCacheService,
+    private readonly rbac: RbacService,
   ) {}
 
   // ============ helpers ============
+
+  // P0-F PR-1:RBAC 元接口入口判权(沿 attachments F5 v1.0 范本)。
+  // 与 canAssignRole(Q7 角色分级业务保护)是两层独立校验:
+  // - 本 helper 拦"actor 是否有权进入 user-role 管理接口"(rbac.* permission)
+  // - canAssignRole 拦"actor 能分配 / 撤销哪些 RBAC 角色"(目标角色分级)
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   // 沿 v1 §10:user 不存在 / disabled / 已软删 统一抛 USER_NOT_FOUND(10001),
   // 信息泄漏防御(避免告知"该 user id 曾存在 / 已被禁用 / 已软删")。
@@ -80,10 +92,10 @@ export class UserRolesService {
   }
 
   // Q7 角色分级 C2 中庸方案(沿用户拍板;inline private helper)。
-  // PR #6 实施 RbacService.canAssignRole 时再考虑迁移(沿任务 #3)。
   //
-  // 注:Guard @Roles(SUPER_ADMIN, ADMIN) 已挡 USER 系统级,所以 actor.role
-  // 只能是 SUPER_ADMIN 或 ADMIN(系统级)。
+  // 注:P0-F PR-1 起入口 Guard `@Roles` 已撤;`assertCanOrThrow('rbac.user-role.*')`
+  // 已挡 v1 USER 系统级(USER 默认无 rbac.* permission)。本函数仅做"角色目标 vs 来源"
+  // 的二次业务级判定,**不再依赖 Guard 前置**。
   private async canAssignRole(actor: CurrentUserPayload, targetRoleCode: string): Promise<boolean> {
     // 1. SUPER_ADMIN(系统级)→ 通过任何
     if (actor.role === Role.SUPER_ADMIN) return true;
@@ -107,7 +119,8 @@ export class UserRolesService {
 
   // ============ 3 端点 ============
 
-  async list(userId: string): Promise<UserRoleResponseDto[]> {
+  async list(actor: CurrentUserPayload, userId: string): Promise<UserRoleResponseDto[]> {
+    await this.assertCanOrThrow(actor, 'rbac.user-role.read');
     // 1. user 必须存在 + 未 disabled + 未软删
     await this.assertUserAccessibleOrThrow(userId);
 
@@ -143,7 +156,10 @@ export class UserRolesService {
     targetUserId: string,
     dto: AssignUserRoleDto,
   ): Promise<UserRoleResponseDto> {
-    // 1. Q7 角色分级判定(canAssignRole)— 优先,降低后续无效查询成本
+    // 0. RBAC 入口判权(P0-F PR-1):actor 是否能进入 user-role 分配接口
+    await this.assertCanOrThrow(actor, 'rbac.user-role.create');
+
+    // 1. Q7 角色分级判定(canAssignRole)— 进入接口后的二次业务级保护
     const canAssign = await this.canAssignRole(actor, dto.roleCode);
     if (!canAssign) throw new BizException(BizCode.CANNOT_ASSIGN_HIGHER_ROLE);
 
@@ -193,6 +209,9 @@ export class UserRolesService {
     targetUserId: string,
     targetRoleId: string,
   ): Promise<UserRoleResponseDto> {
+    // 0. RBAC 入口判权(P0-F PR-1):actor 是否能进入 user-role 撤销接口
+    await this.assertCanOrThrow(actor, 'rbac.user-role.delete');
+
     // 1. target user 必须存在 + 未 disabled + 未软删
     await this.assertUserAccessibleOrThrow(targetUserId);
 

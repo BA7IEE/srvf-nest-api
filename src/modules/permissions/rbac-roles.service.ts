@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { permissionSelect } from './permissions.select';
+import { RbacService } from './rbac.service';
 import {
   CreateRbacRoleDto,
   ListRbacRolesQueryDto,
@@ -27,9 +29,19 @@ type SafeRbacRole = Prisma.RbacRoleGetPayload<{ select: typeof rbacRoleSelect }>
 
 @Injectable()
 export class RbacRolesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rbac: RbacService,
+  ) {}
 
   // ============ helpers ============
+
+  // P0-F PR-1:RBAC 元接口判权(沿 attachments F5 v1.0 范本)。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   // 30005 vs 30003 区分(沿用户拍板):
   // - GET /:id 用本 helper:
@@ -88,7 +100,11 @@ export class RbacRolesService {
 
   // ============ 5 端点业务逻辑 ============
 
-  async list(query: ListRbacRolesQueryDto): Promise<PageResultDto<RbacRoleResponseDto>> {
+  async list(
+    user: CurrentUserPayload,
+    query: ListRbacRolesQueryDto,
+  ): Promise<PageResultDto<RbacRoleResponseDto>> {
+    await this.assertCanOrThrow(user, 'rbac.role.read');
     const { page, pageSize, code } = query;
     // 列表默认排除软删(沿 v1 §10 / baseline §10);code 过滤走 contains(模糊匹配)
     const where: Prisma.RbacRoleWhereInput = notDeletedWhere(
@@ -109,7 +125,8 @@ export class RbacRolesService {
     return { items, total, page, pageSize };
   }
 
-  async findOne(id: string): Promise<RbacRoleDetailResponseDto> {
+  async findOne(user: CurrentUserPayload, id: string): Promise<RbacRoleDetailResponseDto> {
+    await this.assertCanOrThrow(user, 'rbac.role.read');
     // 1. 查角色(区分 30003 / 30005)
     const role = await this.findByIdForDetailOrThrow(id);
 
@@ -128,7 +145,8 @@ export class RbacRolesService {
     return { ...role, permissions };
   }
 
-  async create(dto: CreateRbacRoleDto): Promise<RbacRoleResponseDto> {
+  async create(user: CurrentUserPayload, dto: CreateRbacRoleDto): Promise<RbacRoleResponseDto> {
+    await this.assertCanOrThrow(user, 'rbac.role.create');
     // 1. 显式格式校验(30009)
     this.assertCodeFormatValid(dto.code);
 
@@ -156,7 +174,12 @@ export class RbacRolesService {
     );
   }
 
-  async update(id: string, dto: UpdateRbacRoleDto): Promise<RbacRoleResponseDto> {
+  async update(
+    user: CurrentUserPayload,
+    id: string,
+    dto: UpdateRbacRoleDto,
+  ): Promise<RbacRoleResponseDto> {
+    await this.assertCanOrThrow(user, 'rbac.role.update');
     // 1. 先确认活跃(不存在 + 已软删都返 30003,沿 v1 §10 信息泄漏防御)
     await this.findActiveByIdOrThrow(id);
 
@@ -172,7 +195,8 @@ export class RbacRolesService {
     });
   }
 
-  async softDelete(id: string): Promise<RbacRoleResponseDto> {
+  async softDelete(user: CurrentUserPayload, id: string): Promise<RbacRoleResponseDto> {
+    await this.assertCanOrThrow(user, 'rbac.role.delete');
     // 1. 先确认活跃(不存在 + 已软删都返 30003)
     const existing = await this.findActiveByIdOrThrow(id);
 

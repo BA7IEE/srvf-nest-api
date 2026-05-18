@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.service';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
@@ -55,6 +56,14 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
     adminAuth = (await loginAs(app, 'reload-adm')).authHeader;
     userAuth = (await loginAs(app, 'reload-user')).authHeader;
 
+    // P0-F PR-1(2026-05-18):reload 入口已切 rbac.config.reload;
+    //   resetDb 把 permissions 表清空;e2e 自行 seed 14 条 rbac.* + ops-admin
+    //   全量绑定(沿 test/fixtures/rbac.fixture.ts)+ 给 ADMIN 绑 ops-admin
+    //   (让"ADMIN 持 ops-admin → 200"用例 + 与 me/permissions 串联用例继续工作)。
+    const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    const admin = await prisma.user.findUniqueOrThrow({ where: { username: 'reload-adm' } });
+    await grantOpsAdminToUser(app, admin.id, seed.opsAdminRoleId);
+
     // seed:1 RbacRole 给 user1 + user2(scope=role 测试需要 invalidateAllUsersWithRole 命中 2 个)
     const roleA = await prisma.rbacRole.create({
       data: { code: 'reload-role-a', displayName: '业务角色 A' },
@@ -84,15 +93,17 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER → 403', async () => {
+    it('USER → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/rbac/reload')
         .set('Authorization', userAuth)
         .send({});
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('ADMIN → 200', async () => {
+    // P0-F PR-1(2026-05-18):入口已切 rbac.config.reload;
+    // ADMIN 持 ops-admin(setUp 已绑)→ 通过。
+    it('ADMIN 持 ops-admin → 200', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/rbac/reload')
         .set('Authorization', adminAuth)

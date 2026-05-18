@@ -5,6 +5,11 @@ import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import {
+  grantOpsAdminToUser,
+  revokeOpsAdminFromUser,
+  seedRbacPermissionsAndOpsAdmin,
+} from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -34,6 +39,8 @@ describe('role-permissions 模块 + cache skeleton', () => {
   let superAdminAuth: string;
   let adminAuth: string;
   let userAuth: string;
+  let rpOpsAdminRoleId: string;
+  let rpAdminUserId: string;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -42,12 +49,17 @@ describe('role-permissions 模块 + cache skeleton', () => {
     cache = app.get(RbacCacheService);
 
     await createTestUser(app, { username: 'rp-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'rp-adm', role: Role.ADMIN });
+    const adm = await createTestUser(app, { username: 'rp-adm', role: Role.ADMIN });
+    rpAdminUserId = adm.id;
     await createTestUser(app, { username: 'rp-user', role: Role.USER });
 
     superAdminAuth = (await loginAs(app, 'rp-su')).authHeader;
     adminAuth = (await loginAs(app, 'rp-adm')).authHeader;
     userAuth = (await loginAs(app, 'rp-user')).authHeader;
+
+    // P0-F PR-1:resetDb 已清 RBAC 表;e2e 自行 seed 14 条 rbac.* + ops-admin。
+    const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    rpOpsAdminRoleId = seed.opsAdminRoleId;
   });
 
   afterAll(async () => {
@@ -94,33 +106,52 @@ describe('role-permissions 模块 + cache skeleton', () => {
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER POST → 403', async () => {
+    it('USER POST → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/roles/nonexistent000000000000000000/permissions')
         .set('Authorization', userAuth)
         .send({ permissionCodes: ['x.y.z'] });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER DELETE → 403', async () => {
+    it('USER DELETE → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .delete(
           '/api/v2/roles/nonexistent000000000000000000/permissions/abc-perm-00000000000000000000',
         )
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('ADMIN POST 成功(沿 @Roles(SUPER_ADMIN, ADMIN);本 PR 不接 RBAC 判权)', async () => {
+    // P0-F PR-1(2026-05-18):v1 ADMIN 不再自动放行 RBAC 元接口;必须持 RBAC 角色。
+    it('ADMIN 默认无 RBAC 权限 → 30100 RBAC_FORBIDDEN', async () => {
       const { roleId, perms } = await setupRoleAndPermissions({
-        roleCode: 'admin-pb-post',
-        permCodes: ['adm.test.a'],
+        roleCode: 'admin-no-rbac-rp',
+        permCodes: ['adm.norbac.a'],
       });
       const res = await request(httpServer(app))
         .post(`/api/v2/roles/${roleId}/permissions`)
         .set('Authorization', adminAuth)
         .send({ permissionCodes: [perms[0].code] });
-      expect(res.status).toBe(201);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    // P0-F PR-1:ADMIN 持 ops-admin 后能通过(seed 14 条 rbac.* 含 rbac.role-permission.create)。
+    it('ADMIN 持 ops-admin 角色 → POST 201', async () => {
+      await grantOpsAdminToUser(app, rpAdminUserId, rpOpsAdminRoleId);
+      try {
+        const { roleId, perms } = await setupRoleAndPermissions({
+          roleCode: 'admin-with-ops-rp',
+          permCodes: ['adm.ops.b'],
+        });
+        const res = await request(httpServer(app))
+          .post(`/api/v2/roles/${roleId}/permissions`)
+          .set('Authorization', adminAuth)
+          .send({ permissionCodes: [perms[0].code] });
+        expect(res.status).toBe(201);
+      } finally {
+        await revokeOpsAdminFromUser(app, rpAdminUserId, rpOpsAdminRoleId);
+      }
     });
   });
 

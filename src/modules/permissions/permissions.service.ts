@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -11,6 +12,7 @@ import {
   UpdatePermissionDto,
 } from './permissions.dto';
 import { permissionSelect } from './permissions.select';
+import { RbacService } from './rbac.service';
 
 // V2.x C-6 RBAC 实施 PR #2:permissions 模块业务逻辑。
 // 沿 D7 v1.1 §4.2 / §5.1 / §12.1。
@@ -26,9 +28,21 @@ type SafePermission = Prisma.PermissionGetPayload<{ select: typeof permissionSel
 
 @Injectable()
 export class PermissionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rbac: RbacService,
+  ) {}
 
   // ============ helpers ============
+
+  // P0-F PR-1:RBAC 元接口判权(沿 attachments F5 v1.0 范本)。
+  // 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100);RbacService.can 内部
+  // 已实现 SUPER_ADMIN 短路 + cache + ownership(.self),元接口粗粒度无 resource。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   // 业务详情查询:Permission 物理删(D4 v1.0;无 deletedAt),直接 findUnique by id;
   // 找不到统一抛 PERMISSION_NOT_FOUND(30001)。
@@ -68,7 +82,11 @@ export class PermissionsService {
 
   // ============ 4 端点业务逻辑 ============
 
-  async list(query: ListPermissionsQueryDto): Promise<PageResultDto<PermissionResponseDto>> {
+  async list(
+    user: CurrentUserPayload,
+    query: ListPermissionsQueryDto,
+  ): Promise<PageResultDto<PermissionResponseDto>> {
+    await this.assertCanOrThrow(user, 'rbac.permission.read');
     const { page, pageSize, module, resourceType } = query;
     const where: Prisma.PermissionWhereInput = {
       ...(module !== undefined ? { module } : {}),
@@ -89,7 +107,8 @@ export class PermissionsService {
     return { items, total, page, pageSize };
   }
 
-  async create(dto: CreatePermissionDto): Promise<PermissionResponseDto> {
+  async create(user: CurrentUserPayload, dto: CreatePermissionDto): Promise<PermissionResponseDto> {
+    await this.assertCanOrThrow(user, 'rbac.permission.create');
     // 1. 显式格式校验(30008)
     this.assertCodeFormatValid(dto.code);
 
@@ -117,7 +136,12 @@ export class PermissionsService {
     );
   }
 
-  async update(id: string, dto: UpdatePermissionDto): Promise<PermissionResponseDto> {
+  async update(
+    user: CurrentUserPayload,
+    id: string,
+    dto: UpdatePermissionDto,
+  ): Promise<PermissionResponseDto> {
+    await this.assertCanOrThrow(user, 'rbac.permission.update');
     // 1. 先确认存在(30001)
     await this.findByIdOrThrow(id);
 
@@ -129,7 +153,8 @@ export class PermissionsService {
     });
   }
 
-  async delete(id: string): Promise<PermissionResponseDto> {
+  async delete(user: CurrentUserPayload, id: string): Promise<PermissionResponseDto> {
+    await this.assertCanOrThrow(user, 'rbac.permission.delete');
     // 1. 先确认存在(30001)
     const existing = await this.findByIdOrThrow(id);
 

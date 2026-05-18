@@ -5,6 +5,7 @@ import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -56,12 +57,11 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
     adminAuth = (await loginAs(app, 'ur-adm')).authHeader;
     userAuth = (await loginAs(app, 'ur-user')).authHeader;
 
-    // 全局 seed:ops-admin 角色 + 一个业务角色
-    const opsAdmin = await prisma.rbacRole.create({
-      data: { code: 'ops-admin', displayName: '运营管理员' },
-      select: { id: true },
-    });
-    opsAdminRoleId = opsAdmin.id;
+    // P0-F PR-1(2026-05-18):resetDb 把 permissions 表清空;e2e 自行 seed
+    //   14 条 rbac.* + ops-admin 全量绑定(沿 test/fixtures/rbac.fixture.ts)。
+    //   后续 Q7 用例临时给 ADMIN 配 ops-admin 时才能通过 rbac.user-role.* 入口判权。
+    const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    opsAdminRoleId = seed.opsAdminRoleId;
     const biz = await prisma.rbacRole.create({
       data: { code: 'role-a', displayName: '业务角色 A' },
       select: { id: true },
@@ -90,14 +90,14 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
       ['get', 'get', `/api/v2/users/${'x'.repeat(25)}/roles`],
       ['post', 'post', `/api/v2/users/${'x'.repeat(25)}/roles`],
       ['delete', 'delete', `/api/v2/users/${'x'.repeat(25)}/roles/${'y'.repeat(25)}`],
-    ])('USER 角色 %s → 403', async (_name, method, path) => {
+    ])('USER 角色 %s → 30100 RBAC_FORBIDDEN', async (_name, method, path) => {
       const req = request(httpServer(app));
       let res;
       if (method === 'get') res = await req.get(path).set('Authorization', userAuth);
       else if (method === 'post')
         res = await req.post(path).set('Authorization', userAuth).send({ roleCode: 'role-a' });
       else res = await req.delete(path).set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
   });
 
@@ -261,19 +261,21 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
       expectBizError(res, BizCode.USER_NOT_FOUND);
     });
 
-    // Q7 C2 中庸
-    it('Q7 C2 — ADMIN 不持 ops-admin 分配业务角色 → 30102', async () => {
-      const target = await createTargetUser('q7-admin-deny');
+    // P0-F PR-1(2026-05-18):入口已切 rbac.user-role.create;
+    // ADMIN 不持 ops-admin → 入口直接 30100 RBAC_FORBIDDEN,不会到 Q7 30102。
+    it('ADMIN 不持 ops-admin 分配 → 30100 RBAC_FORBIDDEN(入口拦)', async () => {
+      const target = await createTargetUser('q7-admin-no-rbac');
       const res = await request(httpServer(app))
         .post(`/api/v2/users/${target.id}/roles`)
         .set('Authorization', adminAuth)
         .send({ roleCode: 'role-a' });
-      expectBizError(res, BizCode.CANNOT_ASSIGN_HIGHER_ROLE);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('Q7 C2 — ADMIN 持 ops-admin 分配业务角色 → 201', async () => {
-      // 给 admin 配 ops-admin 角色
+      // 给 admin 配 ops-admin 角色;P0-F PR-1:必须 invalidateUser 让 cache 失效
       await prisma.userRole.create({ data: { userId: adminId, roleId: opsAdminRoleId } });
+      cache.invalidateUser(adminId);
       const target = await createTargetUser('q7-admin-with-ops');
       const res = await request(httpServer(app))
         .post(`/api/v2/users/${target.id}/roles`)
@@ -284,10 +286,12 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
       await prisma.userRole.delete({
         where: { userId_roleId: { userId: adminId, roleId: opsAdminRoleId } },
       });
+      cache.invalidateUser(adminId);
     });
 
     it('Q7 C2 — ADMIN 持 ops-admin **分配 ops-admin** → 30102', async () => {
       await prisma.userRole.create({ data: { userId: adminId, roleId: opsAdminRoleId } });
+      cache.invalidateUser(adminId);
       const target = await createTargetUser('q7-admin-with-ops-assign-ops');
       const res = await request(httpServer(app))
         .post(`/api/v2/users/${target.id}/roles`)
@@ -297,6 +301,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
       await prisma.userRole.delete({
         where: { userId_roleId: { userId: adminId, roleId: opsAdminRoleId } },
       });
+      cache.invalidateUser(adminId);
     });
 
     it('缓存失效:POST 后 invalidateUser 被调用', async () => {
@@ -368,14 +373,15 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
       expectBizError(res, BizCode.USER_NOT_FOUND);
     });
 
-    // Q7 C2
-    it('Q7 C2 — ADMIN 不持 ops-admin 撤销业务角色 → 30102', async () => {
-      const target = await createTargetUser('revoke-q7-admin-deny');
+    // P0-F PR-1(2026-05-18):入口已切 rbac.user-role.delete;
+    // ADMIN 不持 ops-admin → 入口直接 30100,不会到 Q7 30102。
+    it('ADMIN 不持 ops-admin 撤销 → 30100 RBAC_FORBIDDEN(入口拦)', async () => {
+      const target = await createTargetUser('revoke-q7-admin-no-rbac');
       await prisma.userRole.create({ data: { userId: target.id, roleId: bizRoleId } });
       const res = await request(httpServer(app))
         .delete(`/api/v2/users/${target.id}/roles/${bizRoleId}`)
         .set('Authorization', adminAuth);
-      expectBizError(res, BizCode.CANNOT_ASSIGN_HIGHER_ROLE);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('最后一个 ops-admin 保护 → 30101', async () => {

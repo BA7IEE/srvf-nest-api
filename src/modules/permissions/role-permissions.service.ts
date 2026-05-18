@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { permissionSelect } from './permissions.select';
 import { RbacCacheService } from './rbac-cache.service';
+import { RbacService } from './rbac.service';
 import { RbacRoleDetailResponseDto } from './rbac-roles.dto';
 import { rbacRoleSelect } from './rbac-roles.select';
 import { AssignRolePermissionsDto } from './role-permissions.dto';
@@ -37,9 +39,17 @@ export class RolePermissionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: RbacCacheService,
+    private readonly rbac: RbacService,
   ) {}
 
   // ============ helpers ============
+
+  // P0-F PR-1:RBAC 元接口判权(沿 attachments F5 v1.0 范本)。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   // 沿 PR #3 rbac-roles 范式:区分不存在(30003)vs 已软删(30005);
   // 写操作(授权/撤权)沿 D7 §6.1 决议管理者已知角色明细 → 披露 30005 不构成信息泄漏。
@@ -74,7 +84,12 @@ export class RolePermissionsService {
 
   // ============ 2 端点 ============
 
-  async assign(roleId: string, dto: AssignRolePermissionsDto): Promise<RbacRoleDetailResponseDto> {
+  async assign(
+    user: CurrentUserPayload,
+    roleId: string,
+    dto: AssignRolePermissionsDto,
+  ): Promise<RbacRoleDetailResponseDto> {
+    await this.assertCanOrThrow(user, 'rbac.role-permission.create');
     // 1. role 必须存在 + 未软删
     await this.assertRoleAccessibleOrThrow(roleId);
 
@@ -105,7 +120,12 @@ export class RolePermissionsService {
     return this.buildDetailResponse(roleId);
   }
 
-  async revoke(roleId: string, permissionId: string): Promise<RbacRoleDetailResponseDto> {
+  async revoke(
+    user: CurrentUserPayload,
+    roleId: string,
+    permissionId: string,
+  ): Promise<RbacRoleDetailResponseDto> {
+    await this.assertCanOrThrow(user, 'rbac.role-permission.delete');
     // 1. role 必须存在 + 未软删
     await this.assertRoleAccessibleOrThrow(roleId);
 
