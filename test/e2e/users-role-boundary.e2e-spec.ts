@@ -4,10 +4,7 @@ import request from 'supertest';
 import { httpServer } from '../helpers/http-server';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { loginAs } from '../fixtures/auth.fixture';
-import {
-  grantOpsAdminToUser,
-  seedRbacPermissionsAndOpsAdmin,
-} from '../fixtures/rbac.fixture';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { TEST_PASSWORD, createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { type AdminEndpoint, callEndpoint } from '../helpers/call-endpoint';

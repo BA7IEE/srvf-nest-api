@@ -5,10 +5,7 @@ import { httpServer } from '../helpers/http-server';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
-import {
-  grantOpsAdminToUser,
-  seedRbacPermissionsAndOpsAdmin,
-} from '../fixtures/rbac.fixture';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { TEST_PASSWORD, createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { resetDb } from '../setup/reset-db';
