@@ -5,6 +5,7 @@ import { httpServer } from '../helpers/http-server';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { TEST_PASSWORD, createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { resetDb } from '../setup/reset-db';
@@ -13,6 +14,12 @@ import { createTestApp } from '../setup/test-app';
 // 14.6.2 admin-crud spec(36 jest tests)
 // 覆盖管理接口的基础路径:POST/GET/PATCH/PUT/DELETE 成功 + 字段校验 + 唯一约束。
 // **不**覆盖:自我保护、最后 SUPER_ADMIN 保护、软删完整副作用、密码重置完整流程(留 14.7)。
+//
+// P0-F PR-3B(2026-05-18):users 8 个管理端点入口移除 @Roles,走 rbac.can()。
+// SUPER_ADMIN 经 RbacService 短路通过(`user.role === SUPER_ADMIN`),无需 grant ops-admin。
+// ADMIN 必须 grant ops-admin 才能调管理接口(D3=A 5 条 + D2=B password reset = 6 条绑定);
+// `user.update.role` 不绑 ops-admin(D1=A)。
+// 沿评审稿 docs/first-release-p0f-pr3-users-rbac-review.md §6.2 + §8。
 const EXPECTED_USER_RESPONSE_KEYS = [
   'avatarKey',
   'createdAt',
@@ -41,11 +48,15 @@ const FORBIDDEN_PATCH_FIELDS: Array<[string, unknown]> = [
 describe('users 管理接口 CRUD 基础路径', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let opsAdminRoleId: string;
 
   beforeAll(async () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
+    // P0-F PR-3B:seed RBAC permissions(55 条)+ ops-admin 角色(53 条绑定)。
+    // ADMIN 用例需调 grantOpsAdminToUser(app, adminId, opsAdminRoleId) 才能进 service。
+    ({ opsAdminRoleId } = await seedRbacPermissionsAndOpsAdmin(app));
   });
 
   afterAll(async () => {
@@ -90,7 +101,9 @@ describe('users 管理接口 CRUD 基础路径', () => {
     });
 
     it('ADMIN 不传 role(默认 USER) → 200,role=USER', async () => {
-      await createTestUser(app, { username: 'cradm1', role: Role.ADMIN });
+      const admin = await createTestUser(app, { username: 'cradm1', role: Role.ADMIN });
+      // P0-F PR-3B:ADMIN 需 grant ops-admin 才能进 service(否则 30100)
+      await grantOpsAdminToUser(app, admin.id, opsAdminRoleId);
       const { authHeader } = await loginAs(app, 'cradm1');
 
       const res = await request(httpServer(app))
@@ -121,7 +134,9 @@ describe('users 管理接口 CRUD 基础路径', () => {
     });
 
     it('ADMIN 传 role=ADMIN → FORBIDDEN_ROLE_OPERATION', async () => {
-      await createTestUser(app, { username: 'roletra2', role: Role.ADMIN });
+      const admin = await createTestUser(app, { username: 'roletra2', role: Role.ADMIN });
+      // P0-F PR-3B:ADMIN+ops-admin 进入 service 后由 canCreateRole 拦(永禁 ADMIN 创建 ADMIN/SA)
+      await grantOpsAdminToUser(app, admin.id, opsAdminRoleId);
       const { authHeader } = await loginAs(app, 'roletra2');
 
       const res = await request(httpServer(app))
@@ -133,7 +148,8 @@ describe('users 管理接口 CRUD 基础路径', () => {
     });
 
     it('ADMIN 传 role=SUPER_ADMIN → FORBIDDEN_ROLE_OPERATION', async () => {
-      await createTestUser(app, { username: 'roletra3', role: Role.ADMIN });
+      const admin = await createTestUser(app, { username: 'roletra3', role: Role.ADMIN });
+      await grantOpsAdminToUser(app, admin.id, opsAdminRoleId);
       const { authHeader } = await loginAs(app, 'roletra3');
 
       const res = await request(httpServer(app))

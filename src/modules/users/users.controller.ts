@@ -13,7 +13,6 @@ import {
   Req,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
@@ -26,7 +25,6 @@ import {
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
 import { PasswordChangeThrottle } from '../../common/decorators/password-change-throttle.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -43,13 +41,27 @@ import {
 } from './users.dto';
 import { UsersService } from './users.service';
 
+// **权限标注**(P0-F PR-3B,2026-05-18):8 个管理端点入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;
+// 全部判权迁移到 Service 内 `rbac.can()`,失败抛 `RBAC_FORBIDDEN(30100)`。
+// 沿评审稿 docs/first-release-p0f-pr3-users-rbac-review.md §4 / §8 + D1=A / D2=B / D3=A:
+//   GET    /api/users              → user.read.account     (绑 ops-admin)
+//   POST   /api/users              → user.create.account   (绑 ops-admin)
+//   GET    /api/users/:id          → user.read.account     (绑 ops-admin)
+//   PATCH  /api/users/:id          → user.update.account   (绑 ops-admin)
+//   PUT    /api/users/:id/password → user.reset.password   (绑 ops-admin;D2=B)
+//   PATCH  /api/users/:id/role     → user.update.role      (**不绑 ops-admin**;D1=A,仅 SA 短路)
+//   PATCH  /api/users/:id/status   → user.update.status    (绑 ops-admin)
+//   DELETE /api/users/:id          → user.delete.account   (绑 ops-admin)
+// service 内 6 项业务护栏全保留:canViewUser / canManageUser / canCreateRole /
+// canChangeRole / assertNotSelf / assertNotLastSuperAdmin(沿评审稿 §8.3)。
+// `/me` 3 端点保持任意登录用户可访问,**不**进 RBAC 范围(沿评审稿 §2.2)。
 @ApiTags('users')
 @ApiBearerAuth()
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  // ===== /me(本人接口,不标 @Roles,任何登录用户均可访问)=====
+  // ===== /me(本人接口,任何登录用户均可访问;**不**进 RBAC 范围)=====
 
   @Get('me')
   @ApiOperation({ summary: '获取本人资料' })
@@ -105,13 +117,12 @@ export class UsersController {
     };
   }
 
-  // ===== 管理接口 =====
+  // ===== 管理接口(P0-F PR-3B:走 rbac.can();失败 30100)=====
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: '用户列表(分页;ADMIN 仅能看到 USER)' })
   @ApiWrappedPageResponse(UserResponseDto)
-  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   list(
     @CurrentUser() currentUser: CurrentUserPayload,
     @Query() query: ListUsersQueryDto,
@@ -120,7 +131,6 @@ export class UsersController {
   }
 
   @Post()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary: '创建用户;SUPER_ADMIN 可创建 ADMIN/USER,ADMIN 只能创建 USER',
   })
@@ -128,7 +138,7 @@ export class UsersController {
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.FORBIDDEN_ROLE_OPERATION,
     BizCode.USERNAME_ALREADY_EXISTS,
     BizCode.EMAIL_ALREADY_EXISTS,
@@ -141,13 +151,12 @@ export class UsersController {
   }
 
   @Get(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: '用户详情(ADMIN 仅能查看 USER)' })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.FORBIDDEN_ROLE_OPERATION,
     BizCode.USER_NOT_FOUND,
   )
@@ -159,13 +168,12 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: '修改用户资料(不含 username / 密码 / 角色 / 状态)' })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.FORBIDDEN_ROLE_OPERATION,
     BizCode.USER_NOT_FOUND,
     BizCode.EMAIL_ALREADY_EXISTS,
@@ -179,13 +187,12 @@ export class UsersController {
   }
 
   @Put(':id/password')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: '管理员重置用户密码(无需 oldPassword)' })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.FORBIDDEN_ROLE_OPERATION,
     BizCode.USER_NOT_FOUND,
   )
@@ -199,13 +206,14 @@ export class UsersController {
   }
 
   @Patch(':id/role')
-  @Roles(Role.SUPER_ADMIN)
-  @ApiOperation({ summary: '修改用户角色(只有 SUPER_ADMIN 能调用)' })
+  @ApiOperation({
+    summary: '修改用户角色(D1=A:仅 SUPER_ADMIN 短路;ops-admin 不绑 user.update.role)',
+  })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.FORBIDDEN_ROLE_OPERATION,
     BizCode.CANNOT_OPERATE_SELF,
     BizCode.USER_NOT_FOUND,
@@ -220,13 +228,12 @@ export class UsersController {
   }
 
   @Patch(':id/status')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: '启用/禁用用户(只改 status)' })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.FORBIDDEN_ROLE_OPERATION,
     BizCode.CANNOT_OPERATE_SELF,
     BizCode.USER_NOT_FOUND,
@@ -241,13 +248,12 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: '软删除用户(同时置 deletedAt 与 status=DISABLED)' })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.FORBIDDEN_ROLE_OPERATION,
     BizCode.CANNOT_OPERATE_SELF,
     BizCode.USER_NOT_FOUND,

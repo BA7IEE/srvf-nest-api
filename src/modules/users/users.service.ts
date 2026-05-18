@@ -8,6 +8,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { RbacService } from '../permissions/rbac.service';
 import {
   ChangeMyPasswordDto,
   CreateUserDto,
@@ -30,9 +31,21 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
+    private readonly rbac: RbacService,
   ) {}
 
   // ============ helpers ============
+
+  // P0-F PR-3B(2026-05-18):RBAC 业务模块判权(沿 PR-1 permissions.service.ts:41-45 字面范式)。
+  // 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100);RbacService.can 内部已实现
+  // SUPER_ADMIN 短路 + cache + ownership(.self),users 8 端点粗粒度无 resource。
+  // service 内 6 项业务护栏(canViewUser / canManageUser / canCreateRole / canChangeRole /
+  // assertNotSelf / assertNotLastSuperAdmin)在 assertCanOrThrow 之后保留并执行,**不挪动**。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   // 软删除显式过滤(详见 §7.8):所有非"管理员看回收站"查询经此过滤
   private notDeletedWhere<T extends Prisma.UserWhereInput>(
@@ -262,6 +275,7 @@ export class UsersService {
     currentUser: CurrentUserPayload,
     query: PaginationQueryDto,
   ): Promise<PageResultDto<UserResponseDto>> {
+    await this.assertCanOrThrow(currentUser, 'user.read.account');
     const { page, pageSize } = query;
     const where: Prisma.UserWhereInput = this.notDeletedWhere({});
 
@@ -294,6 +308,7 @@ export class UsersService {
   // ============ admin: create ============
 
   async create(currentUser: CurrentUserPayload, dto: CreateUserDto): Promise<UserResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'user.create.account');
     // role 透传安全(§7.11):策略集中在 users.policy.canCreateRole。
     const targetRole = dto.role ?? Role.USER;
     if (!canCreateRole(currentUser.role, targetRole)) {
@@ -326,6 +341,7 @@ export class UsersService {
   // ============ admin: read ============
 
   async findOne(currentUser: CurrentUserPayload, id: string): Promise<UserResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'user.read.account');
     const target = await this.findRawByIdOrThrow(id);
     // 详情查看走 canViewUser(V1.3-1):与管理类操作的 canManageUser 在语义上拆开。
     this.assertCanViewUser(currentUser, target);
@@ -339,6 +355,7 @@ export class UsersService {
     id: string,
     dto: UpdateUserDto,
   ): Promise<UserResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'user.update.account');
     const target = await this.findRawByIdOrThrow(id);
     this.assertCanManageUser(currentUser, target);
 
@@ -370,6 +387,7 @@ export class UsersService {
     dto: ResetUserPasswordDto,
     auditMeta: AuditMeta,
   ): Promise<UserResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'user.reset.password');
     const target = await this.findRawByIdOrThrow(id);
     this.assertCanManageUser(currentUser, target);
 
@@ -416,6 +434,10 @@ export class UsersService {
     id: string,
     dto: UpdateUserRoleDto,
   ): Promise<UserResponseDto> {
+    // P0-F PR-3B D1=A:user.update.role 不绑 ops-admin;仅 SUPER_ADMIN 经 RbacService 短路通过。
+    // RBAC 通过后仍走 service 内 4 项业务护栏(assertNotSelf + assertCanManageUser +
+    // canChangeRole 永禁升 SA + assertNotLastSuperAdmin 降级时);全部保留不动。
+    await this.assertCanOrThrow(currentUser, 'user.update.role');
     // 自我保护(§7.11):自改 role 永远拦
     this.assertNotSelf(currentUser, id);
 
@@ -447,6 +469,7 @@ export class UsersService {
     id: string,
     dto: UpdateUserStatusDto,
   ): Promise<UserResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'user.update.status');
     const target = await this.findRawByIdOrThrow(id);
     this.assertCanManageUser(currentUser, target);
 
@@ -486,6 +509,7 @@ export class UsersService {
   // ============ admin: soft delete ============
 
   async softDelete(currentUser: CurrentUserPayload, id: string): Promise<UserResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'user.delete.account');
     this.assertNotSelf(currentUser, id);
 
     const target = await this.findRawByIdOrThrow(id);

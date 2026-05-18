@@ -5,6 +5,7 @@ import { httpServer } from '../helpers/http-server';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { resetDb } from '../setup/reset-db';
@@ -12,16 +13,22 @@ import { createTestApp } from '../setup/test-app';
 
 // 14.6.1 admin-list spec(10 用例)
 // 覆盖:分页参数、排序(createdAt desc)、角色可见范围、软删过滤
+//
+// P0-F PR-3B(2026-05-18):GET /api/users 走 rbac.can('user.read.account')。
+// ADMIN 必须 grant ops-admin 才能进 service;USER → 30100 RBAC_FORBIDDEN(沿评审稿 §9)。
+// service 内 canViewUser 仍生效(ADMIN 列表只见 USER 角色,不因 RBAC 通过而扩大范围)。
 const EXPECTED_PAGE_KEYS = ['items', 'page', 'pageSize', 'total'].sort();
 
 describe('GET /api/users(管理列表)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let opsAdminRoleId: string;
 
   beforeAll(async () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
+    ({ opsAdminRoleId } = await seedRbacPermissionsAndOpsAdmin(app));
   });
 
   afterAll(async () => {
@@ -144,10 +151,12 @@ describe('GET /api/users(管理列表)', () => {
       expect(visibleSet.has('visibleuser1')).toBe(true);
     });
 
-    it('ADMIN 只看到 USER(SUPER_ADMIN/ADMIN 不可见)', async () => {
+    it('ADMIN+ops-admin 只看到 USER(SUPER_ADMIN/ADMIN 不可见;canViewUser 收窄,不因 RBAC 通过扩大范围)', async () => {
       await createTestUser(app, { username: 'admvisuper1', role: Role.SUPER_ADMIN });
-      await createTestUser(app, { username: 'admviadmin1', role: Role.ADMIN });
+      const admin = await createTestUser(app, { username: 'admviadmin1', role: Role.ADMIN });
       await createTestUser(app, { username: 'admviuser1', role: Role.USER });
+      // P0-F PR-3B:ADMIN 需 grant ops-admin 才能调 GET /api/users(走 rbac.can)
+      await grantOpsAdminToUser(app, admin.id, opsAdminRoleId);
 
       const { authHeader } = await loginAs(app, 'admviadmin1');
       const res = await request(httpServer(app))
@@ -166,13 +175,22 @@ describe('GET /api/users(管理列表)', () => {
       expect(visibleSet.has('admvisuper1')).toBe(false);
     });
 
-    it('USER 调用 → FORBIDDEN(40300,Guard 层拒)', async () => {
+    it('USER 调用 → RBAC_FORBIDDEN(30100;P0-F PR-3B 入口走 rbac.can,USER 无 user.read.account)', async () => {
       await createTestUser(app, { username: 'plainuser1', role: Role.USER });
       const { authHeader } = await loginAs(app, 'plainuser1');
 
       const res = await request(httpServer(app)).get('/api/users').set('Authorization', authHeader);
 
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    it('ADMIN 默认(未 grant ops-admin)调用 → RBAC_FORBIDDEN(30100;P0-F PR-3B 入口判权)', async () => {
+      await createTestUser(app, { username: 'admindefaultlist1', role: Role.ADMIN });
+      const { authHeader } = await loginAs(app, 'admindefaultlist1');
+
+      const res = await request(httpServer(app)).get('/api/users').set('Authorization', authHeader);
+
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
   });
 
