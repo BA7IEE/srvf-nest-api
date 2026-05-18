@@ -2,6 +2,7 @@
 
 > **状态**:**设计期 v0**(2026-05-19)。**仅文档锁定,不是开发执行约束。**
 > **生效范围**:`srvf-nest-api` 派生项目;不回流 `u-nest-api-starter`。
+> **配套专项评审**:[`docs/app-permission-boundary-review.md`](app-permission-boundary-review.md) — **Phase 0.5 App 身份 / 权限 / 数据可见性专项评审**,**Phase 2 启动前必读**(本文档关于 App API 的字段铁律、`/me` 视角等,在该专项中按"身份 × 能力 × 字段"三维矩阵展开;两份文档冲突时,以本顶层规范为准)
 > **解除条件**:本文档 + [`docs/api-client-boundary-inventory.md`](api-client-boundary-inventory.md) + [`docs/api-client-boundary-migration-plan.md`](api-client-boundary-migration-plan.md) 评审通过,
 > 且后续 Phase 1+ 任务在 [`docs/process.md`](process.md) 流程内单独立项后,本文档才作为正式蓝图引用。
 > **冲突优先级**:

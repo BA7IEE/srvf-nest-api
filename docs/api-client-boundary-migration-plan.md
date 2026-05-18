@@ -121,7 +121,10 @@
 
 ## 4. Phase 2:新增 `/api/app/v1/me/*` 队员端基础接口(规划中)
 
-### 4.1 目标
+> **Phase 2 启动前置**:[`docs/app-permission-boundary-review.md`](app-permission-boundary-review.md)(Phase 0.5 App 身份 / 权限 / 数据可见性专项评审)
+> **必读**。该专项对本节 P0 接口提出 §8 重新评估建议(`me` 拆 `account`/`profile`、`me/*` 与 `my/*` 拆分、`/me/permissions` 改返 App capability、`tasks/*` 与 `managed/*` 命名空间预留),Phase 2 立项评审稿启动时**必须**先消化该专项,**不**照搬本节 P0 清单字面值。
+
+### 4.1 目标(P0 清单,以 Phase 0.5 评审 §8 调整意见为准)
 
 按 [`docs/api-client-boundary-inventory.md §4`](api-client-boundary-inventory.md) "App 端缺失接口清单 P0 段",新增队员端基础接口:
 
