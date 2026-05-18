@@ -970,3 +970,109 @@ V2 草案文档 / 评审讨论中,**禁止**以下表达:
 ### 18.7 解除时机与边界声明
 
 V2 调研 / 设计阶段完成 → **不自动**进入开发阶段。开发阶段的执行铁律(类比 v1 §1-§17 / V1.1 §17)在草案评审通过后**另起新章节**(`ARCHITECTURE.md §12.7+` / 本文 §19+)落地,**不**通过修订本节(§18)实现。本节(§18)在开发阶段开始后保留作为"V2 调研期历史约束"不删除,但效力被新章节覆盖。
+
+---
+
+## 19. API Client Boundary 设计期约束(srvf-nest-api 派生项目专属)
+
+> **状态**:**设计期 v0**(2026-05-19 起)。
+> **生效范围**:仅 `srvf-nest-api`;不回流 `u-nest-api-starter`。
+> **配套设计文档**:[`docs/api-client-boundary.md`](docs/api-client-boundary.md)(顶层规范)+ [`docs/api-client-boundary-inventory.md`](docs/api-client-boundary-inventory.md)(现状盘点)+ [`docs/api-client-boundary-migration-plan.md`](docs/api-client-boundary-migration-plan.md)(分阶段路线)。
+> **与既有规则关系**:本节是**纯增补**,**不修改** §1-§18 任何既有规则语义。冲突时本节让步给 §1-§18 + baseline + V2 红线;冲突顺序见 §18.4.1 / [`docs/srvf-foundation-baseline.md §14.4`](docs/srvf-foundation-baseline.md)。
+> **解除条件**:三份设计文档评审通过且后续 Phase 1+ 任务在 [`docs/process.md`](docs/process.md) 流程内**单独立项**后,本节作为正式蓝图引用。
+
+### 19.1 客户端边界设计期硬禁止(行为级)
+
+本设计期(Phase 0)**禁止**以下任意一项动作,即使"看起来顺手就能做":
+
+- ❌ 修改任何 `*.controller.ts` 的 `@Controller(...)` 前缀
+- ❌ 修改任何 controller 的 HTTP method 装饰器 path 参数
+- ❌ 新增 / 修改 / 删除任何 HTTP endpoint
+- ❌ 新增 `app-*.controller.ts` / `admin-*.controller.ts` / `system-*.controller.ts`
+- ❌ 修改任何 `@ApiTags(...)` / `@Roles(...)` / `@Public()` / `@RequirePermission(...)`
+- ❌ 修改任何入参 DTO / 响应 DTO 字段
+- ❌ 新增 `dto/app/` / `dto/admin/` / `dto/internal/` 目录与文件
+- ❌ 移动 controller 文件物理位置(如 `src/common/storage/` → `src/system/storage/`)
+- ❌ 修改 `prisma/schema.prisma` / 生成 migration / 执行 `prisma migrate dev`(沿 §0 + §18.1)
+- ❌ 安装新依赖 / 修改 `package.json` / `pnpm-lock.yaml`
+- ❌ 修改 `apply-swagger.ts` / `apply-global-setup.ts` 等 bootstrap 文件
+- ❌ 编写本设计期相关 unit / E2E / contract / smoke 测试代码
+- ❌ 修改 `CHANGELOG.md` / `docs/current-state.md` / `docs/handoff/*` 写"v0.15.0 计划做 client boundary 改造"等任何前瞻性内容
+
+### 19.2 客户端边界设计期允许的动作(动作级白名单)
+
+| 动作 | 允许? | 备注 |
+|---|---|---|
+| 读 `*.controller.ts` / `*.dto.ts` / `*.service.ts` / `src/bootstrap/*` | ✅ | 调研用途 |
+| 读 / 写 `docs/api-client-boundary*.md` | ✅ | 本设计期核心产物 |
+| 读 / 写 `docs/api-client-boundary-migration-plan.md` | ✅ | 同上 |
+| 读 / 增补 `CLAUDE.md §19+` / `AGENTS.md §19+` | ✅ | 仅增补,不修改 §1-§18 |
+| 修改 `CLAUDE.md` / `AGENTS.md` §1-§18 任何字符 | ❌ | 沿 §18 不动既有规则 |
+| 运行 `find` / `grep` / `git log` / `git diff` | ✅ | 只读盘点 |
+| 运行 `pnpm lint` / `pnpm typecheck` / `pnpm test:*` | ✅ | 只读式验收 |
+| 运行 `pnpm prisma migrate dev` / `db push` / `seed` | ❌ | 沿 §0 + §18.1 |
+| 提交 commit / push 远程 | ⚠️ | 仅 `docs/api-client-boundary*.md` + 本节 §19+ 增补;混入其它视作越权 |
+
+### 19.3 与既有铁律的关系(冲突时让步表)
+
+| 维度 | 优先级 |
+|---|---|
+| v1 §1-§16 / V1.1 §17 / V2 §18 | **最高**;本节让步 |
+| `docs/srvf-foundation-baseline.md` 13 项基线 | **第二**;本节让步 |
+| `docs/V2红线与复活路径.md` 五档红线 A/B/C/D/E | **第三**;本节让步 |
+| 各批次评审稿(`docs/批次*.md` / `docs/first-release-*.md`) | **第四**;本节让步 |
+| 本节(§19 API Client Boundary 设计期约束) | **第五**;让步给上方 |
+| 设计文档(`docs/api-client-boundary*.md`) | 同上 |
+
+**冲突铁律**:发现本节(§19)与上方任意一档冲突 → **必须暂停说明**,不擅自调和。
+
+### 19.4 客户端边界设计期 Claude Code 工具链约束
+
+- **TodoWrite**:允许使用,任务内容只能是"读 / 写 / 评审 / 提问 / 文档增补"类动作;**禁止**出现"实现 controller / 改 path / 改 DTO / 新增 endpoint"等执行词
+- **Plan(ExitPlanMode)**:任何**疑似越界**到代码改动的动作(改 controller / 新增 endpoint / 拆 DTO)**必须**先出 Plan 经用户确认,且默认应当被否决到 Phase 1+ 立项
+- **Agent(subagent)**:允许用 Explore / general-purpose 调研 controller 现状,产出必须落到 [`docs/api-client-boundary-inventory.md`](docs/api-client-boundary-inventory.md) 或对话总结,**不得**直接产出代码
+- **Skill**:本设计期不调用任何会修改仓库代码的 skill
+- **Commit**:本设计期每次 commit 仅含 `docs/api-client-boundary*.md` + `CLAUDE.md §19+` + `AGENTS.md §19+` 增补;**禁止**把文档与代码 / schema / 依赖变更混进同一 commit;commit message 前缀建议 `docs(boundary): <章节> <简述>`
+
+### 19.5 客户端边界设计期"顺手做"反模式清单
+
+| 反模式 | 为什么禁止 |
+|---|---|
+| 写规范文档时顺手新建一个 `src/modules/xxx/controllers/app-*.controller.ts` 空文件 | 违反 §19.1;占位文件是隐性范围扩张 |
+| 看到 `UserResponseDto` 含 `lastLoginAt` → 顺手 omit 出 `AppMyUserResponseDto` | 违反 §19.1 + §18.1;DTO 拆分是 Phase 5 范围 |
+| 看到 `/api/users/me` 与 `/api/v2/users/me/*` 双前缀不统一 → 顺手统一改一个 | 违反 §19.1;路径迁移是 Phase 2+ 范围 |
+| 看到 `activities` `list` 含 `@Roles(USER)` → 顺手改 `@Roles(SUPER_ADMIN, ADMIN)` "收紧" | 违反 §19.1 + §1 v1 不做清单;权限收紧是 Phase 5 范围 |
+| 写盘点表时顺手"修正"某个 `@ApiOperation` summary 文案 | 违反 §19.1;非设计期产物变更 |
+| 顺手在 `apply-swagger.ts` 加 `/api-docs/app` 拆分 | 违反 §19.1;多份 Swagger 是 Phase 1 末期或 Phase 4 范围 |
+| 在草案文档里画"App 视角 `MemberDto`" 字段全表 | 违反 §19.1 间接;字段级 DTO 设计是 Phase 2 评审稿范围,设计期 v0 只锁顶层规范 |
+| 看到 P0-E refresh token `/api/auth/login` 没在 `/v1` 前缀下 → 顺手加双 path 别名 | 违反 §19.1;双写 path 是 Phase 1 范围 |
+
+### 19.6 解除时机与边界声明
+
+设计期 v0(Phase 0)完成 → **不自动**进入 Phase 1+ 任何代码改造阶段。
+Phase 1+ 任务必须**单独立项**、**单独评审稿**、**单独 PR**(沿 [`docs/api-client-boundary-migration-plan.md §1 + §10`](docs/api-client-boundary-migration-plan.md))。
+
+Phase 1+ 开始后,本节(§19)**继续生效**作为"客户端边界长期约束";后续若需新增"客户端边界执行铁律"(类比 v1 §1-§17 / V1.1 §17),应**新增** §20+,**不**修订本节(§19)。
+
+### 19.7 已锁定决策(不再重开讨论)
+
+> 本子节记录 2026-05-19 设计期 v0 + Phase 1 评审稿轮中**用户已拍板**的决策。
+> AI 在未来会话中**禁止**重新质疑、重新评估、或建议变更以下决策;若用户主动要求重开,**必须**先暂停说明本节存在再讨论。
+
+**D-1**:`contribution-rules` 客户端边界归 **System**(2026-05-19 拍板)
+- 详细理由见 [`docs/api-client-boundary-inventory.md §2.25`](docs/api-client-boundary-inventory.md)
+- 目标路径 `/api/system/v1/contribution-rules/*`
+- 普通 ADMIN 如需使用,通过 `contribution-rule.*` 权限点明确授权,**不**归 Admin API
+
+**D-2**:Phase 3 路径策略 = **方案 C**(`/api/v2/*` 长期保留为 Admin Legacy)(2026-05-19 拍板)
+- 旧 `/api/v2/*` **不**主动 deprecated,**不**强制迁移,**不**做大面积老接口双写
+- 新 App API 默认 `/api/app/v1/*`;新 System API 默认 `/api/system/v1/*`;新 Admin API 默认 `/api/admin/v1/*`
+- PC 管理后台联调口径**不**因 Phase 3 破坏
+- 详细理由见 [`docs/api-client-boundary-migration-plan.md §5`](docs/api-client-boundary-migration-plan.md)
+
+**D-3**:Phase 1 拆分 = **1A(Tag 改名)+ 1B(Public/Auth path alias)两个独立 PR**(2026-05-19 评审稿)
+- Phase 1 整体为 **C 档**(不是 A 档 docs-only);1A 与 1B 各自单独走 C 档验收
+- 详细评审稿见 [`docs/api-client-boundary-phase-1-review.md`](docs/api-client-boundary-phase-1-review.md)
+- AI **禁止**自行启动 Phase 1A / 1B 代码改造;必须用户在 [`docs/process.md`](docs/process.md) 流程内单独立项
+
+**违反铁律**:发现本节决策与新任务诉求冲突 → **必须暂停说明**,不擅自调和;不主动建议"重新评估方案 A/B"或"把 contribution-rules 改归 Admin"等回滚动作。
