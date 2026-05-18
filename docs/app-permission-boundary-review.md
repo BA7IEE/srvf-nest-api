@@ -499,7 +499,96 @@ src/modules/activity-registrations/dto/
 | 10.1.5 | 数据可见性矩阵 §5.1 中标 **?** 的 5 行(临时编号 / 职务 / 离队原因 / 血型在 AppManaged 可见性 / 贡献值排行)| 业务方 | ⚠️ 部分(影响 DTO 字段集,但 P0 接口可避开) |
 | 10.1.6 | App API 是否暴露身份证号给本人(完整 vs 后 4 位掩码;沿 §5.2 铁律 5) | 业务方 + 合规 | ⚠️ 影响 AppSelfProfileDto 字段集 |
 
-### 10.2 可以延后到 Phase 3 / 4 / 5 的事项
+### 10.2 User Decisions Locked on 2026-05-19
+
+> **状态**:本节由用户拍板,**4 条决策已锁定**;未来会话**禁止**自行重新评估或建议回滚,除非用户主动要求重开。
+> 本节 4 条 D-N 仅是 §10.2 节内编号,**与** [`CLAUDE.md §19.7`](../CLAUDE.md) / [`AGENTS.md §19.7`](../AGENTS.md) 中的 D-1 / D-2 / D-3 / D-4 / D-5 **互不干扰**(两套编号空间各自独立)。
+> 本节 4 条决策对应解锁 §10.1 中 4 项 ✅ 阻塞决议(§10.1.1 / §10.1.2 / §10.1.3 / §10.1.4)。
+
+#### D-1 Phase 2 does not support candidate / temporary-number volunteer App login
+
+Phase 2 App APIs only support users who are linked to an existing formal member:
+
+- `User.memberId != null`
+- `User.status = ACTIVE`
+- `User.deletedAt IS NULL`
+- `Member.status = ACTIVE`
+
+Candidate volunteers and temporary-number volunteers are **not modeled in the current schema**. They must be handled by a future Recruiting / Onboarding design track, **not** by Phase 2 App API implementation.
+
+**对应 §10.1.1 阻塞项**:候选 / 临时编号志愿者**不进** Phase 2 App 登录范围。
+
+#### D-2 Admin-as-member uses App self perspective
+
+When an `ADMIN` / `SUPER_ADMIN` account is **linked to a member**, `/api/app/v1/*` must behave from the linked member's **self perspective**.
+
+`ADMIN` / `SUPER_ADMIN` role **must not expand** AppSelf field visibility.
+
+When an `ADMIN` / `SUPER_ADMIN` account is **not linked to a member**, App capabilities should return `canUseApp = false` with a `MEMBER_NOT_LINKED`-style reason. Whether this becomes a formal `BizCode` is **deferred to Phase 2 implementation review**.
+
+**对应 §10.1.2 阻塞项**:Admin 兼队员视角锁定为本人 member 范围,**不**因 role 扩大可见性。
+
+#### D-3 App exposes capabilities, not raw RBAC permission codes
+
+**Do not implement**:
+
+```txt
+GET /api/app/v1/me/permissions
+```
+
+as a raw RBAC permission-code endpoint.
+
+**Phase 2 should implement or plan**:
+
+```txt
+GET /api/app/v1/me/capabilities
+```
+
+The response should expose **product-level App capabilities** such as:
+
+- `canUseApp`
+- `canEditProfile`
+- `canRegisterActivity`
+- `canCancelOwnRegistration`
+- `canViewOwnAttendance`
+- `canViewOwnCertificates`
+- `canViewTasks`
+- `canViewManagedActivities`
+- `canReviewManagedRegistrations`
+- `canReviewManagedAttendance`
+
+**Backend still must re-check authorization on every write endpoint.** Capabilities are **UI hints**, not authorization proof.
+
+**对应 §10.1.3 阻塞项**:App 暴露 product-level capability,**禁止**直接暴露 RBAC `permission code`。
+
+#### D-4 `/me/*` and `/my/*` are physically separated
+
+Phase 2 App API design must use:
+
+```txt
+/api/app/v1/me/*  = identity, account, profile, capability
+/api/app/v1/my/*  = business records owned by the current member
+```
+
+**Examples**:
+
+```txt
+GET   /api/app/v1/me
+GET   /api/app/v1/me/account
+GET   /api/app/v1/me/profile
+PATCH /api/app/v1/me/profile
+PUT   /api/app/v1/me/password
+GET   /api/app/v1/me/capabilities
+
+GET   /api/app/v1/my/registrations
+GET   /api/app/v1/my/attendance-records
+GET   /api/app/v1/my/certificates
+GET   /api/app/v1/my/activities
+```
+
+**对应 §10.1.4 阻塞项**:`/me/*` 与 `/my/*` **物理拆分**(沿 §3.1 四段分层提案前两段)。
+
+### 10.3 可以延后到 Phase 3 / 4 / 5 的事项
 
 - §3 `tasks/*` / `managed/*` 命名空间预留 → Phase 3+
 - §4 移动端管理能力(活动负责人 / 考勤负责人 / 部门负责人 / 中队负责人) → Phase 3+ 或独立专项
@@ -507,7 +596,7 @@ src/modules/activity-registrations/dto/
 - §7 任何 Guard 实现 → 触发条件出现时单独立项
 - §5.20 离队 / 退队原因字段建模 → 独立 D 档
 
-### 10.3 暂不考虑的事项
+### 10.4 暂不考虑的事项
 
 - 多组织 / 跨队隔离的 App API(沿 [批次 8 RBAC Q8=A 不切片](批次8_RBAC_业务确认稿.md))
 - 通用 ABAC 权限引擎 / casl(沿 [`CLAUDE.md §1` v1 不做清单](../CLAUDE.md))
@@ -515,16 +604,16 @@ src/modules/activity-registrations/dto/
 - App 端推送通知 / WebSocket 实时消息(`tasks/*` 实时部分)
 - 多客户端 SDK 分别生成(沿 [Phase 1 评审稿 §1.2](api-client-boundary-phase-1-review.md))
 
-### 10.4 高风险返工点
+### 10.5 高风险返工点
 
 | # | 风险 | 影响 | 缓解 |
 |---|---|---|---|
-| 10.4.1 | Phase 2 实施 `/me/permissions` 直接返 permission code,App 上线后再改 capability,**前端必须升版** | **高** | 评审稿 §10.1.3 决议前**不**启动 Phase 2 该接口实施 |
-| 10.4.2 | Phase 2 复用 Admin DTO 给 App,App 上线后再拆,**敏感字段已泄漏一段时间** | **高(合规风险)** | DTO 类型隔离铁律(§6.2)必须在 Phase 2 评审稿冻结时一并锁定 |
-| 10.4.3 | Phase 2 不预留 `tasks/*` / `managed/*` 命名空间,后续 App 上消息中心 / 管理能力时**架构图破** | **中** | 沿 §4.2 与 §3.2,**仅预留命名空间不实现 endpoint** |
-| 10.4.4 | App 端假设"`Role.USER` 才是队员",Admin 兼队员登录 App 出现 403 | **中** | §1.4 铁律必须在 Phase 2 评审稿明确;E2E 必须覆盖"Admin 登录 App" 用例 |
-| 10.4.5 | 业务方将来加"候选志愿者 / 临时编号"概念,触发 `MemberStatus` enum 扩展,**已上线 App 端假设 ACTIVE / INACTIVE 二值的代码全需复审** | **高** | 评审稿 §10.1.1 决议前 Phase 2 **不**做关于"候选 / 临时"的任何假设 |
-| 10.4.6 | App 端身份证号默认返完整,后续合规收紧,前端必须重新处理掩码 | **中** | §5.2 铁律 5 在 Phase 2 评审稿冻结,**默认掩码**,完整号走独立审计接口 |
+| 10.5.1 | Phase 2 实施 `/me/permissions` 直接返 permission code,App 上线后再改 capability,**前端必须升版** | **高** | 已由 §10.2 D-3 锁定:Phase 2 走 `/me/capabilities`,**禁止**返 raw permission code |
+| 10.5.2 | Phase 2 复用 Admin DTO 给 App,App 上线后再拆,**敏感字段已泄漏一段时间** | **高(合规风险)** | DTO 类型隔离铁律(§6.2)必须在 Phase 2 评审稿冻结时一并锁定 |
+| 10.5.3 | Phase 2 不预留 `tasks/*` / `managed/*` 命名空间,后续 App 上消息中心 / 管理能力时**架构图破** | **中** | 沿 §4.2 与 §3.2,**仅预留命名空间不实现 endpoint** |
+| 10.5.4 | App 端假设"`Role.USER` 才是队员",Admin 兼队员登录 App 出现 403 | **中** | 已由 §10.2 D-2 锁定:Admin 兼队员用 App 自视角;E2E 必须覆盖"Admin 登录 App" 用例 |
+| 10.5.5 | 业务方将来加"候选志愿者 / 临时编号"概念,触发 `MemberStatus` enum 扩展,**已上线 App 端假设 ACTIVE / INACTIVE 二值的代码全需复审** | **高** | 已由 §10.2 D-1 锁定:候选 / 临时编号**不进** Phase 2 范围;`MemberStatus` 扩展走独立 Recruiting / Onboarding 设计线 |
+| 10.5.6 | App 端身份证号默认返完整,后续合规收紧,前端必须重新处理掩码 | **中** | §5.2 铁律 5 在 Phase 2 评审稿冻结,**默认掩码**,完整号走独立审计接口 |
 
 ---
 
@@ -549,10 +638,9 @@ src/modules/activity-registrations/dto/
 
 ### 12.1 本评审稿生效顺序
 
-1. **当前(2026-05-19)**:本评审稿 v0 创建;**不**改任何代码
-2. **用户评审**:用户拍板 §10.1 6 项决议(其中 4 项标 ✅ 阻塞 Phase 2 启动)
-3. **决议后**:补充评审稿 v1(决议结果回写本文档,**不**新建文档)
-4. **Phase 2 立项评审稿启动**:沿 [migration-plan.md §4](api-client-boundary-migration-plan.md) 单独立项;本评审稿作为输入
+1. **2026-05-19 v0 创建**:本评审稿 v0 创建;**不**改任何代码
+2. **2026-05-19 v0.1 决策锁定**:用户拍板 §10.1 中 4 项 ✅ 阻塞决议,结果回写 §10.2(D-1 / D-2 / D-3 / D-4);§10.1.5 / §10.1.6 仍待决议(影响 DTO 字段集,但**不**阻塞 Phase 2 启动)
+3. **Phase 2 立项评审稿启动**:沿 [migration-plan.md §4](api-client-boundary-migration-plan.md) 单独立项;本评审稿 §10.2 作为输入硬约束
 
 ### 12.2 本评审稿不解决的问题
 
@@ -568,5 +656,5 @@ src/modules/activity-registrations/dto/
 ---
 
 > **本评审稿生效时间**:2026-05-19(Phase 0.5 v0)。
-> **冻结条件**:用户拍板 §10.1 阻塞项后进入"Phase 2 前置文档"状态。
+> **当前状态**:✅ "Phase 2 前置文档" — 4 项阻塞决议已锁定(2026-05-19 §10.2 D-1 ~ D-4);Phase 2 立项时本评审稿 §10.2 为硬约束。
 > **过期条件**:Phase 2 全部落地后,本评审稿降为"历史评审"。

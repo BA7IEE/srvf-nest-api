@@ -123,6 +123,8 @@
 
 > **Phase 2 启动前置**:[`docs/app-permission-boundary-review.md`](app-permission-boundary-review.md)(Phase 0.5 App 身份 / 权限 / 数据可见性专项评审)
 > **必读**。该专项对本节 P0 接口提出 §8 重新评估建议(`me` 拆 `account`/`profile`、`me/*` 与 `my/*` 拆分、`/me/permissions` 改返 App capability、`tasks/*` 与 `managed/*` 命名空间预留),Phase 2 立项评审稿启动时**必须**先消化该专项,**不**照搬本节 P0 清单字面值。
+>
+> **决策已锁定**(2026-05-19 用户拍板):该专项 [§10.2](app-permission-boundary-review.md) 4 条 D-N 决策已锁定,包括:候选 / 临时编号志愿者**不进** Phase 2 范围、Admin 兼队员走 App 自视角、App 暴露 `capabilities` 而非 raw RBAC permission code、`/me/*` 与 `/my/*` **物理拆分**。Phase 2 实施时必须严格遵守,**不**作为开放讨论项。
 
 ### 4.1 目标(P0 清单,以 Phase 0.5 评审 §8 调整意见为准)
 
