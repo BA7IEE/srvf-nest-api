@@ -3,8 +3,11 @@ import { ConfigType } from '@nestjs/config';
 import { Prisma, type StorageSettings as StorageSettingsRow } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../decorators/current-user.decorator';
+import { BizCode } from '../exceptions/biz-code.constant';
+import { BizException } from '../exceptions/biz.exception';
 import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
+import { RbacService } from '../../modules/permissions/rbac.service';
 import { StorageCryptoDecryptError, StorageCryptoService } from './storage-crypto.service';
 import type {
   ResetStorageCredentialsDto,
@@ -44,9 +47,21 @@ export class StorageSettingsService implements OnApplicationBootstrap {
   constructor(
     private readonly prisma: PrismaService,
     private readonly crypto: StorageCryptoService,
+    private readonly rbac: RbacService,
     @Inject(appConfig.KEY)
     private readonly cfg: ConfigType<typeof appConfig>,
   ) {}
+
+  // P0-F PR-2B(2026-05-18):RBAC 判权(沿 PR-2A 范本)。
+  // 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100);RbacService.can 内部
+  // 已实现 SUPER_ADMIN 短路 + cache + ownership(.self);本模块无 .self 后缀。
+  // 注:`storage-setting.reset.credentials` 不绑 ops-admin(沿 D2=A),
+  //     SUPER_ADMIN 经 RbacService.can 短路通过;ADMIN+ops-admin → RBAC_FORBIDDEN。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   /**
    * V2.x production storage_settings fail-fast(2026-05-16):
@@ -248,7 +263,8 @@ export class StorageSettingsService implements OnApplicationBootstrap {
 
   // GET /api/v2/storage-settings(admin 视图)
   // 单 singleton row 不存在 → 返 null(沿 Q-11-1);不抛 BizCode
-  async getForAdmin(): Promise<StorageSettingsResponseDto | null> {
+  async getForAdmin(user: CurrentUserPayload): Promise<StorageSettingsResponseDto | null> {
+    await this.assertCanOrThrow(user, 'storage-setting.read.singleton');
     const rows = await this.prisma.storageSettings.findMany({
       orderBy: { createdAt: 'asc' },
       take: 2,
@@ -270,6 +286,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
     dto: UpdateStorageSettingsDto,
     user: CurrentUserPayload,
   ): Promise<StorageSettingsResponseDto> {
+    await this.assertCanOrThrow(user, 'storage-setting.update.singleton');
     const existing = await this.prisma.storageSettings.findFirst({
       orderBy: { createdAt: 'asc' },
       select: { id: true },
@@ -308,6 +325,9 @@ export class StorageSettingsService implements OnApplicationBootstrap {
     dto: ResetStorageCredentialsDto,
     user: CurrentUserPayload,
   ): Promise<StorageSettingsResponseDto> {
+    // P0-F PR-2B D2=A:`storage-setting.reset.credentials` 不绑 ops-admin;
+    // SUPER_ADMIN 经 RbacService.can 短路通过;ADMIN+ops-admin → RBAC_FORBIDDEN(30100)
+    await this.assertCanOrThrow(user, 'storage-setting.reset.credentials');
     // 加密(沿 §6.6.1 AES-256-GCM;StorageCryptoService.encrypt 内部检查 isAvailable)
     // STORAGE_ENCRYPTION_KEY 缺失时 → 抛 StorageCryptoUnavailableError → 全局过滤器返 500 INTERNAL_ERROR
     const secretIdEncrypted = this.crypto.encrypt(dto.secretId);

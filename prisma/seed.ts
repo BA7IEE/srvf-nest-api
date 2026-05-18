@@ -660,18 +660,161 @@ const PR_2A_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...CONTRIBUTION_PERMISSION_SEED,
 ];
 
-// ops-admin 完整绑定集合(14 rbac.* + 19 PR-2A = 33 条;沿 D1=A)
-// PR-2B 评审通过后再扩 14 条(attachment-config 12 + storage-setting 2,除 reset.credentials)
+// P0-F PR-2B(2026-05-18):配置类接口 RBAC 接入第二批(15 条)。
+// 沿评审稿 [`docs/first-release-p0f-pr2-config-rbac-review.md`](../docs/first-release-p0f-pr2-config-rbac-review.md)
+// §4.3 + 用户拍板 D1=A / D2=A。
+//
+// **code 命名规则**:3 段 kebab-case `module.action.resource_type`;沿 D7-RBAC v1.2 正则
+// `/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2,3}$/`(3-4 段;PR-2B 全 3 段无 scope)。
+//
+// **D2=A 凭证收紧**:`storage-setting.reset.credentials` 仅 SUPER_ADMIN 短路通过;
+// 该 permission **加入 Permission 全集 upsert**(供未来真实需求触发解锁),
+// 但**不绑** `ops-admin`(沿 §5.2 + §6.2 ops-admin 最终绑定矩阵)。
+
+// attachment-config.* 12 条(type 4 + mime 4 + size-limit 4)
+const ATTACHMENT_CONFIG_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'attachment-config.read.type',
+    module: 'attachment-config',
+    action: 'read',
+    resourceType: 'type',
+    description: '查看附件类型配置(列表 / 详情)',
+  },
+  {
+    code: 'attachment-config.create.type',
+    module: 'attachment-config',
+    action: 'create',
+    resourceType: 'type',
+    description: '创建附件类型配置',
+  },
+  {
+    code: 'attachment-config.update.type',
+    module: 'attachment-config',
+    action: 'update',
+    resourceType: 'type',
+    description: '更新附件类型配置(含启停)',
+  },
+  {
+    code: 'attachment-config.delete.type',
+    module: 'attachment-config',
+    action: 'delete',
+    resourceType: 'type',
+    description: '软删附件类型配置',
+  },
+  {
+    code: 'attachment-config.read.mime',
+    module: 'attachment-config',
+    action: 'read',
+    resourceType: 'mime',
+    description: '查看附件 MIME 配置(列表 / 详情)',
+  },
+  {
+    code: 'attachment-config.create.mime',
+    module: 'attachment-config',
+    action: 'create',
+    resourceType: 'mime',
+    description: '创建附件 MIME 配置',
+  },
+  {
+    code: 'attachment-config.update.mime',
+    module: 'attachment-config',
+    action: 'update',
+    resourceType: 'mime',
+    description: '更新附件 MIME 配置(含启停)',
+  },
+  {
+    code: 'attachment-config.delete.mime',
+    module: 'attachment-config',
+    action: 'delete',
+    resourceType: 'mime',
+    description: '软删附件 MIME 配置',
+  },
+  {
+    code: 'attachment-config.read.size-limit',
+    module: 'attachment-config',
+    action: 'read',
+    resourceType: 'size-limit',
+    description: '查看附件尺寸限制配置(列表 / 详情)',
+  },
+  {
+    code: 'attachment-config.create.size-limit',
+    module: 'attachment-config',
+    action: 'create',
+    resourceType: 'size-limit',
+    description: '创建附件尺寸限制配置',
+  },
+  {
+    code: 'attachment-config.update.size-limit',
+    module: 'attachment-config',
+    action: 'update',
+    resourceType: 'size-limit',
+    description: '更新附件尺寸限制配置',
+  },
+  {
+    code: 'attachment-config.delete.size-limit',
+    module: 'attachment-config',
+    action: 'delete',
+    resourceType: 'size-limit',
+    description: '软删附件尺寸限制配置',
+  },
+];
+
+// storage-setting.* 3 条(read / update singleton + reset credentials)
+const STORAGE_SETTING_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'storage-setting.read.singleton',
+    module: 'storage-setting',
+    action: 'read',
+    resourceType: 'singleton',
+    description: '读 Storage Settings singleton row',
+  },
+  {
+    code: 'storage-setting.update.singleton',
+    module: 'storage-setting',
+    action: 'update',
+    resourceType: 'singleton',
+    description: '更新 Storage Settings(upsert;不含凭证)',
+  },
+  {
+    code: 'storage-setting.reset.credentials',
+    module: 'storage-setting',
+    action: 'reset',
+    resourceType: 'credentials',
+    description: '重置 COS SecretId / SecretKey(D2=A 仅 SUPER_ADMIN;不绑 ops-admin)',
+  },
+];
+
+// PR-2B 聚合(15 条:attachment-config 12 + storage-setting 3)
+// 注意:全部 15 条 upsert 进 Permission 表;但 ops-admin 仅绑 14 条
+//(`storage-setting.reset.credentials` 沿 D2=A 跳过)。
+const PR_2B_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  ...ATTACHMENT_CONFIG_PERMISSION_SEED,
+  ...STORAGE_SETTING_PERMISSION_SEED,
+];
+
+// D2=A:`storage-setting.reset.credentials` 不绑 ops-admin(凭证仅 SUPER_ADMIN 短路)
+const PR_2B_RESET_CREDENTIALS_CODE = 'storage-setting.reset.credentials';
+
+// Permission 全集(用于 step 1 upsert;14 rbac.* + 19 PR-2A + 15 PR-2B = 48 条)
+const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  ...RBAC_PERMISSION_SEED,
+  ...PR_2A_PERMISSION_SEED,
+  ...PR_2B_PERMISSION_SEED,
+];
+
+// ops-admin 完整绑定集合(14 rbac.* + 19 PR-2A + 14 PR-2B = 47 条;沿 D1=A)
+// 注:`storage-setting.reset.credentials` 从 PR_2B_PERMISSION_SEED 过滤掉(沿 D2=A;§6.2)
 const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
+  ...PR_2B_PERMISSION_SEED.filter((p) => p.code !== PR_2B_RESET_CREDENTIALS_CODE),
 ];
 
 // 运营管理员角色 code(沿 D7 §10.1 / §10.3 ops-admin 唯一公开 placeholder)
 const OPS_ADMIN_ROLE_CODE = 'ops-admin';
 const OPS_ADMIN_DISPLAY_NAME = '运营管理员';
 const OPS_ADMIN_DESCRIPTION =
-  'RBAC 自身配置 + 用户角色分配 + PR-2A 配置类(dict / org / member-department / contribution-rule)的 meta 角色;14 rbac.* + 19 PR-2A = 33 条权限点';
+  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / contribution-rule + PR-2B: attachment-config / storage-setting)的 meta 角色;14 rbac.* + 19 PR-2A + 14 PR-2B = 47 条权限点;凭证 reset 仅 SUPER_ADMIN';
 
 // V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集
 // (沿 D7-attachments v1.0 §6.1 + Q11 v1.0 锁清单 + 用户 PR #6a 拍板)。
@@ -858,8 +1001,10 @@ const MEMBER_ROLE_PERMISSION_CODES: ReadonlyArray<string> = [
 // 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 复合唯一键 /
 // UserRole 复合唯一键),重复跑不重复创建。
 async function seedRbac(prisma: PrismaClient): Promise<void> {
-  // 1. upsert Permission 全集(14 rbac.* + 19 PR-2A = 33 条;沿 D7 §10.2 + P0-F PR-2A 2026-05-18)
-  for (const perm of OPS_ADMIN_PERMISSION_SEED) {
+  // 1. upsert Permission 全集(14 rbac.* + 19 PR-2A + 15 PR-2B = 48 条;
+  //    沿 D7 §10.2 + P0-F PR-2A 2026-05-18 + P0-F PR-2B 2026-05-18)
+  //    全部 48 条都进 Permission 表(含 reset.credentials);ops-admin 仅绑 47 条(沿 D2=A)
+  for (const perm of ALL_PERMISSION_SEED) {
     await prisma.permission.upsert({
       where: { code: perm.code },
       // 已存在不覆盖 description / module / action / resourceType(防止运营运行时调整被 seed 回退;
@@ -875,7 +1020,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     });
   }
   console.log(
-    `[seed] RBAC + PR-2A permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A = ${OPS_ADMIN_PERMISSION_SEED.length} entries)`,
+    `[seed] RBAC + PR-2A + PR-2B permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A + ${PR_2B_PERMISSION_SEED.length} PR-2B = ${ALL_PERMISSION_SEED.length} entries)`,
   );
 
   // 2. upsert ops-admin RbacRole(公开 seed 唯一角色;沿用户拍板方案 A)
@@ -891,9 +1036,10 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
   });
   console.log(`[seed] RBAC role '${opsAdminRole.code}' ensured`);
 
-  // 3. upsert RolePermission 映射:ops-admin → 14 rbac.* + 19 PR-2A = 33 条
-  //    (沿 D7 §10.3 + P0-F PR-2A 2026-05-18 D1=A 全绑 + D3=A 软删放宽)
+  // 3. upsert RolePermission 映射:ops-admin → 14 rbac.* + 19 PR-2A + 14 PR-2B = 47 条
+  //    (沿 D7 §10.3 + P0-F PR-2A 2026-05-18 D1=A 全绑 + D3=A 软删放宽 + PR-2B D1=A + D2=A 凭证收紧)
   //    复合唯一键 roleId_permissionId(schema @@unique([roleId, permissionId]))
+  //    OPS_ADMIN_PERMISSION_SEED 已在常量定义处过滤 `storage-setting.reset.credentials`(D2=A)
   const allPermissions = await prisma.permission.findMany({
     where: { code: { in: OPS_ADMIN_PERMISSION_SEED.map((p) => p.code) } },
     select: { id: true, code: true },
@@ -906,7 +1052,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     });
   }
   console.log(
-    `[seed] RBAC role-permissions ensured ('${opsAdminRole.code}' ↔ ${allPermissions.length} permissions: rbac.* + PR-2A)`,
+    `[seed] RBAC role-permissions ensured ('${opsAdminRole.code}' ↔ ${allPermissions.length} permissions: rbac.* + PR-2A + PR-2B; '${PR_2B_RESET_CREDENTIALS_CODE}' skipped per D2=A)`,
   );
 
   // 4. bootstrap user_role(沿 D7 §10.4 + 用户拍板方案 A):

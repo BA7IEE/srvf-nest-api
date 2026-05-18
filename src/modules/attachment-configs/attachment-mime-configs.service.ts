@@ -8,6 +8,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { RbacService } from '../permissions/rbac.service';
 import {
   AttachmentMimeConfigResponseDto,
   CreateAttachmentMimeConfigDto,
@@ -40,7 +41,17 @@ export class AttachmentMimeConfigsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
+    private readonly rbac: RbacService,
   ) {}
+
+  // P0-F PR-2B(2026-05-18):RBAC 判权(沿 PR-2A dict / org / contrib-rule 范本)。
+  // 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100);RbacService.can 内部
+  // 已实现 SUPER_ADMIN 短路 + cache + ownership(.self);本模块无 .self 后缀。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   // PR #6d Q3 拍板:audit snapshot 不含 id / 时间戳 / deletedAt;沿 cert / emergency 范式。
   // mime 字段全部非敏感,不打码;无 Date 字段,不需 toISOString。
@@ -106,8 +117,10 @@ export class AttachmentMimeConfigsService {
   // ============ 6 端点业务逻辑 ============
 
   async list(
+    user: CurrentUserPayload,
     query: ListAttachmentMimeConfigsQueryDto,
   ): Promise<PageResultDto<AttachmentMimeConfigResponseDto>> {
+    await this.assertCanOrThrow(user, 'attachment-config.read.mime');
     const { page, pageSize, typeConfigId, status, mime } = query;
     const where: Prisma.AttachmentMimeConfigWhereInput = notDeletedWhere({
       ...(typeConfigId !== undefined ? { typeConfigId } : {}),
@@ -129,7 +142,8 @@ export class AttachmentMimeConfigsService {
     return { items, total, page, pageSize };
   }
 
-  async getById(id: string): Promise<AttachmentMimeConfigResponseDto> {
+  async getById(user: CurrentUserPayload, id: string): Promise<AttachmentMimeConfigResponseDto> {
+    await this.assertCanOrThrow(user, 'attachment-config.read.mime');
     return this.findActiveByIdOrThrow(id);
   }
 
@@ -138,6 +152,7 @@ export class AttachmentMimeConfigsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttachmentMimeConfigResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'attachment-config.create.mime');
     // 1. typeConfigId FK 真实性校验(Q5 v1.0:不存在或软删 → 13020;校验链留事务外)
     await this.assertTypeConfigActive(dto.typeConfigId);
 
@@ -199,6 +214,7 @@ export class AttachmentMimeConfigsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttachmentMimeConfigResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'attachment-config.update.mime');
     // 1. 先确认活跃(不存在或已软删统一返 13022;校验链留事务外)
     const before = await this.findActiveByIdOrThrow(id);
 
@@ -239,6 +255,8 @@ export class AttachmentMimeConfigsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttachmentMimeConfigResponseDto> {
+    // status 端点共用 update.mime 权限点(沿 PR-2A dict-item update.* 范式)
+    await this.assertCanOrThrow(currentUser, 'attachment-config.update.mime');
     // 1. 先确认活跃(沿 PR #3 type config status 范式;校验链留事务外)
     const before = await this.findActiveByIdOrThrow(id);
 
@@ -286,6 +304,7 @@ export class AttachmentMimeConfigsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttachmentMimeConfigResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'attachment-config.delete.mime');
     // 1. 先确认活跃(沿 PR #3 type config softDelete 范式;沿 v1 §10 信息泄漏防御)
     const existing = await this.findActiveByIdOrThrow(id);
 

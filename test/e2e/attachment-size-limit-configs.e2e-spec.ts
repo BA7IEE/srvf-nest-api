@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -14,7 +15,9 @@ import { createTestApp } from '../setup/test-app';
 // 沿 D7 v1.0 §4.4 + 用户 Step 1 拍板 Q1-Q8 + PR #3 / PR #4 e2e 范式。
 //
 // 覆盖:
-// - 权限边界(未登录 401 / USER 403 / ADMIN / SUPER_ADMIN allowed)
+// - 权限边界(P0-F PR-2B:RBAC_FORBIDDEN=30100;沿 PR-2A contrib-rules 范本):
+//   - 未登录 → 40100;USER → 30100;ADMIN 默认无 ops-admin → 30100;
+//   - ADMIN+ops-admin → 200;SUPER_ADMIN 短路 → 200
 // - CRUD 主成功路径(GET list / GET detail / POST create / PATCH update / DELETE;**无 status 端点**)
 // - typeConfigId 不存在 / 已软删 → 13020(沿 Q5 PR #4 复用)
 // - duplicate typeConfigId → 13027(P2002 + 预检查双层防护)
@@ -27,13 +30,14 @@ import { createTestApp } from '../setup/test-app';
 // - 出参嵌套 typeConfig 独立摘要 DTO(Q4 v1.0)
 // - 软删后行为(不出现 list / 软删后 GET / PATCH → 13026)
 //
+// P0-F PR-2B(2026-05-18):入口切到 service 层 rbac.can();失败统一 RBAC_FORBIDDEN(30100)。
+// `adminAuth` 在 beforeAll 全局 grant ops-admin(沿 contrib-rules e2e 范式);
+// 单独建 `adminDefaultAuth` 做"ADMIN 默认 30100"反向断言。
+//
 // 不覆盖(超本 PR 范围):
 // - attachments 主模块(留 PR #6+)
-// - RBAC 业务判权 rbac.can()(F4 v1.0:不接)
 // - audit_logs 集成
 // - ATTACHMENT_SIZE_LIMIT_CONFIG_IN_USE 跨表引用约束(Q2 v1.0 暂不实装)
-//
-// 测试隔离:reset-db.ts 已含 attachment_size_limit_configs TRUNCATE(PR #4 已迁入)。
 
 const MAX_SIZE_BYTES_HARD_LIMIT = 10_737_418_240; // 10 GiB(沿 PR #3 / DTO @Max)
 
@@ -42,6 +46,7 @@ describe('attachment-size-limit-configs 模块', () => {
   let prisma: PrismaService;
   let superAdminAuth: string;
   let adminAuth: string;
+  let adminDefaultAuth: string;
   let userAuth: string;
   let typeConfigA: { id: string; code: string };
   let typeConfigB: { id: string; code: string };
@@ -52,12 +57,18 @@ describe('attachment-size-limit-configs 模块', () => {
     prisma = app.get(PrismaService);
 
     await createTestUser(app, { username: 'aslc-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'aslc-adm', role: Role.ADMIN });
+    const admin = await createTestUser(app, { username: 'aslc-adm', role: Role.ADMIN });
+    await createTestUser(app, { username: 'aslc-adm-default', role: Role.ADMIN });
     await createTestUser(app, { username: 'aslc-user', role: Role.USER });
 
     superAdminAuth = (await loginAs(app, 'aslc-su')).authHeader;
     adminAuth = (await loginAs(app, 'aslc-adm')).authHeader;
+    adminDefaultAuth = (await loginAs(app, 'aslc-adm-default')).authHeader;
     userAuth = (await loginAs(app, 'aslc-user')).authHeader;
+
+    // P0-F PR-2B:seed 48 条 RBAC + ops-admin;给 aslc-adm 全局 grant ops-admin
+    const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    await grantOpsAdminToUser(app, admin.id, seed.opsAdminRoleId);
 
     // 准备 2 个 type config 作为 FK 锚点
     typeConfigA = await prisma.attachmentTypeConfig.create({
@@ -91,32 +102,39 @@ describe('attachment-size-limit-configs 模块', () => {
     );
   };
 
-  // ============ 权限边界 ============
+  // ============ 权限边界(P0-F PR-2B 5 用例矩阵 + 反向 ADMIN 默认 30100)============
 
   describe('权限边界', () => {
     beforeAll(truncateSizeLimits);
 
-    it('未登录 GET → 401', async () => {
+    it('perm-1 未登录 GET → 40100', async () => {
       const res = await request(httpServer(app)).get('/api/v2/attachment-size-limit-configs');
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER 角色 GET → 403', async () => {
+    it('perm-2 USER 角色 GET → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get('/api/v2/attachment-size-limit-configs')
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER 角色 POST → 403', async () => {
+    it('perm-2 USER 角色 POST → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/attachment-size-limit-configs')
         .set('Authorization', userAuth)
         .send({ typeConfigId: typeConfigA.id, maxSizeBytes: 1024 });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('ADMIN GET → 200', async () => {
+    it('perm-3 ADMIN 默认无 ops-admin GET → 30100 RBAC_FORBIDDEN', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/v2/attachment-size-limit-configs')
+        .set('Authorization', adminDefaultAuth);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    it('perm-4 ADMIN+ops-admin GET → 200', async () => {
       const res = await request(httpServer(app))
         .get('/api/v2/attachment-size-limit-configs')
         .set('Authorization', adminAuth);
@@ -124,7 +142,7 @@ describe('attachment-size-limit-configs 模块', () => {
       expect(res.body.code).toBe(0);
     });
 
-    it('SUPER_ADMIN GET → 200', async () => {
+    it('perm-5 SUPER_ADMIN 短路通过(无需 ops-admin grant)GET → 200', async () => {
       const res = await request(httpServer(app))
         .get('/api/v2/attachment-size-limit-configs')
         .set('Authorization', superAdminAuth);
