@@ -728,3 +728,208 @@ curl '<api-base-url>/api/v2/organizations' \
 - 本文档**不引入新事实**;所有数据 / 命令 / 字段名均来自已合入 main 的代码与文档
 - 本文档**不调和**已存在的双源描述差异(发现差异原样标注,不擅自统一)
 - 本文档**不替代** [`first-release-readiness-plan.md`](first-release-readiness-plan.md) 中其他 P0 项(P0-B / P0-D / P0-E / P0-F / P0-H / P0-I)的独立产物
+
+---
+
+## §15 P0-F PR-2A 后 ops-admin 授权 SOP
+
+> **何时执行**:在生产 / staging 环境完成 PR-2A(commit `31b7e55`,2026-05-18)部署**之后**立即执行;**不**在 dev 演练前置。
+>
+> **谁执行**:运维侧 SUPER_ADMIN 凭据持有者;**不**走前端 UI(v1 前端不接 user-roles 接口)。
+>
+> **沿引**:PR #134 评审稿冻结于 [`docs/first-release-p0f-pr2-config-rbac-review.md`](first-release-p0f-pr2-config-rbac-review.md);用户拍板 D1/D2/D3/D4 = A;实施细节沿 PR #132 attachments F3/F5 v1.0 范本。
+
+### 15.1 背景:为什么 PR-2A 后 ADMIN 需要 ops-admin
+
+PR #134(commit `31b7e55`)合并后,**4 模块 28 端点**(dictionaries 13 / organizations 7 / member-departments 3 / contribution-rules 5)的入口从 v1 三层 `@Roles(SUPER_ADMIN, ADMIN)` 切换到 service 层 `rbac.can()`,失败统一抛 `BizException(BizCode.RBAC_FORBIDDEN)`(`30100`)。
+
+行为反转(沿评审稿 §12.1):
+
+- **v1 现状**:ADMIN 默认自动通过这 28 端点(Guard 入口放行)
+- **PR-2A 后**:ADMIN 默认无 ops-admin → **全部** 28 端点返 `30100 RBAC_FORBIDDEN`(HTTP 403)
+- **后果**:若未提前 grant 即上线,所有 ADMIN 当天对字典 / 组织 / 队员部门 / 贡献值规则**全部失能**,运营瘫痪
+
+逃生口(沿 [`src/modules/permissions/rbac.service.ts:118-121`](../src/modules/permissions/rbac.service.ts:118)):**SUPER_ADMIN 短路始终生效**,与 ops-admin grant 无关。只要 SA 在职可登录,系统始终可运维。
+
+### 15.2 seed 事实(只读盘点)
+
+| 实体 | seed 行为 | 来源 |
+|---|---|---|
+| SUPER_ADMIN(env `SUPER_ADMIN_USERNAME` / `_PASSWORD` / `_EMAIL`) | **自动 upsert 创建**;已存在不覆盖密码 / 角色 / 邮箱 | [`prisma/seed.ts:1063-1104`](../prisma/seed.ts) |
+| `ops-admin` RbacRole(`displayName='运营管理员'`) | **自动 upsert 创建**(沿 D7 §10.1 唯一公开 placeholder) | [`prisma/seed.ts seedRbac step 2`](../prisma/seed.ts) |
+| Permission 33 条(14 rbac.* + 19 PR-2A) | **自动 upsert 全集**(PR-2A 后扩到 33) | [`prisma/seed.ts seedRbac step 1`](../prisma/seed.ts) |
+| RolePermission 33 条(`ops-admin` ↔ 33) | **自动 upsert 全绑**(D1=A 沿评审稿) | [`prisma/seed.ts seedRbac step 3`](../prisma/seed.ts) |
+| UserRole(首个活跃 SUPER_ADMIN ↔ ops-admin) | **自动 bootstrap**(env `RBAC_INITIAL_OPS_ADMIN_USER_ID` 优先,否则 fallback 到首个活跃 SUPER_ADMIN) | [`prisma/seed.ts:912-984`](../prisma/seed.ts) |
+| **ADMIN ↔ ops-admin** | **❌ seed 不创建** | — |
+| **USER ↔ ops-admin** | **❌ seed 不创建** | — |
+
+**关键结论**:seed 只让 SUPER_ADMIN 默认持有 ops-admin。**所有现役 ADMIN 必须由运维手工 grant**。
+
+### 15.3 授权前置条件
+
+| 条件 | 验证方式 |
+|---|---|
+| SUPER_ADMIN 可登录 | `POST /api/auth/login` 凭据正确;响应 200 + `data.accessToken` 非空 |
+| 目标环境已部署 PR-2A | 检查 `git rev-parse HEAD` ≥ `31b7e55`(main);或 OpenAPI `/api/docs-json` 中 dict-types `403` 段 `code` = `30100`(不再是 `40300`) |
+| API 服务 ready | `GET /api/health/ready` 返 200 |
+| 运维已盘点 ADMIN 用户清单 | 见 §15.4 |
+
+### 15.4 盘点活跃 ADMIN 用户
+
+`GET /api/users` 当前**不支持 role 查询过滤**(沿 [`src/modules/users/users.dto.ts ListUsersQueryDto`](../src/modules/users/users.dto.ts);仅含分页字段)。两条路径任选:
+
+#### 方式 A:API + 前端筛选(走 v1 业务接口)
+
+```bash
+# Step 1:SA 登录拿 token
+SA_TOKEN=$(curl -s -X POST https://<api-host>/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"<SA_USERNAME>","password":"<SA_PASSWORD>"}' \
+  | jq -r '.data.accessToken')
+
+# Step 2:拉用户列表 + 客户端筛 role=ADMIN
+curl -s "https://<api-host>/api/users?pageSize=100" \
+  -H "Authorization: Bearer $SA_TOKEN" \
+  | jq '.data.items[] | select(.role == "ADMIN" and .status == "ACTIVE" and .deletedAt == null) | {id, username}'
+```
+
+#### 方式 B:DB SQL(运维直查)
+
+```sql
+SELECT id, username, email
+FROM users
+WHERE role = 'ADMIN'
+  AND status = 'ACTIVE'
+  AND "deletedAt" IS NULL
+ORDER BY "createdAt" ASC;
+```
+
+### 15.5 推荐授权方式
+
+#### 接口签名
+
+| 接口 | path | body | cache 行为 |
+|---|---|---|---|
+| 单 grant | `POST /api/v2/users/:userId/roles` | `{"roleCode":"ops-admin"}` | **自动** `cache.invalidateUser(targetUserId)`(沿 [`user-roles.service.ts:195`](../src/modules/permissions/user-roles.service.ts:195)) |
+| 单 revoke | `DELETE /api/v2/users/:userId/roles/:roleId` | — | **自动** invalidate(注意 path 用 `RbacRole.id`,**非** `roleCode`) |
+
+#### 调用者权限边界(沿 [`user-roles.controller.ts:59`](../src/modules/permissions/user-roles.controller.ts:59) Q7 角色分级 C2)
+
+- **SUPER_ADMIN**:短路通过任何 grant ✅
+- **持 ops-admin 的 ADMIN**:可 grant 非 ops-admin 目标;**不能** grant ops-admin(避免水平提权)
+- **其他**:`30102 CANNOT_ASSIGN_HIGHER_ROLE`
+
+**结论**:首批 grant 必须由 **SUPER_ADMIN 执行**。
+
+#### 批量脚本(zsh + psql + curl)
+
+```bash
+# 前置:$SA_TOKEN 已就位(见 §15.4 方式 A Step 1)
+for uid in $(psql -At -c "SELECT id FROM users WHERE role='ADMIN' AND status='ACTIVE' AND \"deletedAt\" IS NULL"); do
+  echo "[grant] $uid"
+  curl -s -X POST "https://<api-host>/api/v2/users/$uid/roles" \
+    -H "Authorization: Bearer $SA_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"roleCode":"ops-admin"}' \
+    | jq '.code, .message'
+done
+```
+
+**幂等性**:重复 grant 返 `30006 USER_ROLE_ALREADY_EXISTS`(已持有该角色),可安全忽略。
+
+### 15.6 授权后验证
+
+#### Test 1:ADMIN 调 dict-types list 应 `code=0`
+
+```bash
+ADMIN_TOKEN=$(curl -s -X POST https://<api-host>/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"<ADMIN_USERNAME>","password":"<ADMIN_PASSWORD>"}' \
+  | jq -r '.data.accessToken')
+
+curl -s https://<api-host>/api/v2/dict-types \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  | jq '.code'
+# 期望:0
+# 反例:30100 → grant 未生效(见 §15.7 cache reload / §15.8 回滚)
+```
+
+#### Test 2:ADMIN 调 me/permissions 应包含 33 条权限
+
+```bash
+curl -s https://<api-host>/api/v2/rbac/me/permissions \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  | jq '.data.permissions | length'
+# 期望:33(含 14 rbac.* + 19 PR-2A)
+# 反例:0 → 未 grant ops-admin / 14 → 仅持 rbac.* 未含 PR-2A(seed 未跑 PR-2A 后版本)
+```
+
+### 15.7 RBAC cache reload
+
+#### 默认情况:无需手工 reload
+
+走 §15.5 业务 API 时,`UserRolesService.assign` 自动 `cache.invalidateUser(targetUserId)` → 该 user 下次请求即刻 cache miss → DB join → 生效。
+
+#### 何时需手工 reload
+
+| 场景 | 原因 |
+|---|---|
+| DB 直写 `user_roles` 表(绕过 API) | RbacCacheService 是内存 Map,不监听 DB |
+| 改 ops-admin 角色 RolePermission 映射后 seed re-run | seed 不自动调 reload |
+| 多实例怀疑 cache 不一致 | 单实例无此问题;多实例需逐实例 reload |
+
+#### reload 接口三档(沿 [`rbac.controller.ts:47`](../src/modules/permissions/rbac.controller.ts:47))
+
+```bash
+# 1. 全失效(粗粒度;清整个内存 cache Map)
+curl -X POST https://<api-host>/api/v2/rbac/reload \
+  -H "Authorization: Bearer $SA_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"scope":"all"}'
+
+# 2. 单 user 失效(粒度最细;DB 直写后用这个)
+curl -X POST https://<api-host>/api/v2/rbac/reload \
+  -H "Authorization: Bearer $SA_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"scope":"user","userId":"<USER_ID>"}'
+
+# 3. 单角色失效(改角色权限映射后用;失效所有持该角色的 user cache)
+curl -X POST https://<api-host>/api/v2/rbac/reload \
+  -H "Authorization: Bearer $SA_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"scope":"role","roleId":"<OPS_ADMIN_ROLE_ID>"}'
+
+# 返回(三档统一):{ code: 0, data: { reloaded: true } }
+```
+
+#### Cache TTL 兜底
+
+`RBAC_CACHE_TTL_SECONDS` env 默认 **1800 秒(30 分钟)**(沿 [`src/config/app.config.ts:114`](../src/config/app.config.ts:114))。即使忘记 reload,最多 30 分钟 cache 自然过期 → 下次请求 miss → 取最新。
+
+### 15.8 回滚方案(按严重度递增)
+
+| 等级 | 场景 | 操作 | 不变式 |
+|---|---|---|---|
+| **L0** | 单用户误授 ops-admin | `DELETE /api/v2/users/<USER_ID>/roles/<OPS_ADMIN_ROLE_ID>`(注意路径用 `RbacRole.id`) | 触发 `30101 LAST_OPS_ADMIN_PROTECTED` 保护若该用户是唯一 ops-admin |
+| **L1** | 批量误授 | 循环 DELETE;**必须保留 ≥ 1 个 ops-admin**(通常是 SA bootstrap 的那个);随后 `POST /api/v2/rbac/reload {scope:"all"}` | LAST_OPS_ADMIN_PROTECTED 兜底 |
+| **L2** | PR-2A 决议反转 | 改 seed 撤 19 条 + re-seed;或对所有 ADMIN 全量 grant(评审稿已锁,**不推荐**) | 沿评审稿 §11.1 |
+| **L3** | PR-2A 整体回退 | `git revert 31b7e55` + 紧急 hotfix PR + 重新部署;OpenAPI `30100 → 40300` 反转;ops-admin 多绑权限留 DB 无害(新代码不查 PR-2A 19 条) | 沿评审稿 §12 风险表 |
+| **L4** | 灾难恢复:无任何 ops-admin 持有者 | `RBAC_INITIAL_OPS_ADMIN_USER_ID=<SA-userId>` 重跑 `pnpm prisma:seed` 触发 bootstrap;或 DB 直写 `user_roles` 给 SA 补绑 + reload | seed §4.3 强校验 ≥ 1 |
+
+#### 紧急逃生口
+
+SUPER_ADMIN 永远短路通过 `rbac.can()`(沿 [`rbac.service.ts:118-121`](../src/modules/permissions/rbac.service.ts:118) `user.role === Role.SUPER_ADMIN` 直接 `allowed: true`),与 ops-admin grant 无关。**只要 SA 凭据在手且账号未被禁,系统始终可运维**。
+
+**双重保险建议**:PR-2A 上线前由 SA-1 通过 `PATCH /api/users/:id/role` 把至少 1 个 ADMIN 升级到 SUPER_ADMIN 作为备用,避免 SA-1 凭据丢失时无人可登录。
+
+### 15.9 风险提示
+
+| 风险 | 说明 |
+|---|---|
+| ⚠️ ADMIN 未授权 → 30100 | dict / org / member-department / contribution-rules 4 模块 28 端点全部 RBAC_FORBIDDEN(HTTP 403);前端按 BizCode 处理需识别 30100(沿 [`first-release-bizcode-mapping.md`](first-release-bizcode-mapping.md)) |
+| ⚠️ 多实例 cache 不一致 | 本仓库 RbacCacheService 是**单实例内存 Map**(沿 [`ARCHITECTURE.md §9`](../ARCHITECTURE.md);v1 无 Redis);多实例部署时 reload 需逐实例广播,或等 TTL 30 分钟自然过期 |
+| ⚠️ DB 直写不推荐 | 绕过 API → cache 不自动失效;且容易漏写 cuid id / createdAt / updatedAt;**首选业务 API**,DB 直写仅限灾难恢复且必须配合手工 reload |
+| ⚠️ 重复 grant 返 30006 | 已持有该角色;**正常**幂等响应,可忽略;**不要**当成错误重试 |
+| ⚠️ SA 凭据丢失 | seed `User.upsert` 已存在不覆盖密码 / 角色 / 邮箱(沿 §4.2);无法靠重跑 seed 重置 SA 密码,必须 DB 直改 `passwordHash` 或先 DB 软删该 SA 再修改 `.env` 后重跑 seed(高危,建议事前 SA 凭据多人备份) |
+| ⚠️ `DELETE /api/v2/users/:userId/roles/:roleId` path 用 RbacRole.id | **不是** `roleCode`;先 `GET /api/v2/rbac-roles?code=ops-admin` 取 id |
+| ⚠️ 不绑 PR-2B 范围 | `storage-setting.reset.credentials`(D2=A 凭证 SA-only)与 PR-2B 12 条 attachment-config.* 仍待评审;**本 SOP 仅覆盖 PR-2A 19 条** |
