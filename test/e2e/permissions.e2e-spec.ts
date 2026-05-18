@@ -3,6 +3,11 @@ import { Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import {
+  grantOpsAdminToUser,
+  revokeOpsAdminFromUser,
+  seedRbacPermissionsAndOpsAdmin,
+} from '../fixtures/rbac.fixture';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
@@ -33,6 +38,8 @@ describe('permissions 模块', () => {
   let superAdminAuth: string;
   let adminAuth: string;
   let userAuth: string;
+  let opsAdminRoleId: string;
+  let adminUserId: string;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -42,12 +49,17 @@ describe('permissions 模块', () => {
     prisma = app.get(PrismaService);
 
     await createTestUser(app, { username: 'perm-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'perm-adm', role: Role.ADMIN });
+    const adminUser = await createTestUser(app, { username: 'perm-adm', role: Role.ADMIN });
+    adminUserId = adminUser.id;
     await createTestUser(app, { username: 'perm-user', role: Role.USER });
 
     superAdminAuth = (await loginAs(app, 'perm-su')).authHeader;
     adminAuth = (await loginAs(app, 'perm-adm')).authHeader;
     userAuth = (await loginAs(app, 'perm-user')).authHeader;
+
+    // P0-F PR-1:resetDb 已清 RBAC 表;e2e 自行 seed 14 条 rbac.* + ops-admin。
+    const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    opsAdminRoleId = seed.opsAdminRoleId;
   });
 
   afterAll(async () => {
@@ -62,11 +74,13 @@ describe('permissions 模块', () => {
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
+    // P0-F PR-1:前一 it 触发 rbac.can() 时会把 admin 的空权限集写进 RbacCacheService;
+    // ADMIN 持 ops-admin 用例需先 invalidate 清掉(沿真实运行时:绑 ops-admin 后必须 reload)
     it('USER 角色 GET → 403', async () => {
       const res = await request(httpServer(app))
         .get('/api/v2/permissions')
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('USER 角色 POST → 403', async () => {
@@ -79,7 +93,7 @@ describe('permissions 模块', () => {
           action: 'upload',
           resourceType: 'cert',
         });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('USER 角色 PATCH → 403', async () => {
@@ -96,7 +110,7 @@ describe('permissions 模块', () => {
         .patch(`/api/v2/permissions/${created.id}`)
         .set('Authorization', userAuth)
         .send({ description: 'try' });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('USER 角色 DELETE → 403', async () => {
@@ -112,10 +126,12 @@ describe('permissions 模块', () => {
       const res = await request(httpServer(app))
         .delete(`/api/v2/permissions/${created.id}`)
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('ADMIN POST → 201(沿 @Roles(SUPER_ADMIN, ADMIN);本 PR 不接 RBAC 判权)', async () => {
+    // P0-F PR-1(2026-05-18):入口已切到 RBAC `rbac.permission.*`;v1 ADMIN 系统级身份
+    // 不再自动放行,必须显式持有 RBAC 角色(ops-admin 或自定角色)才能通过。
+    it('ADMIN 默认无 RBAC 权限 → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/permissions')
         .set('Authorization', adminAuth)
@@ -125,9 +141,29 @@ describe('permissions 模块', () => {
           action: 'admin',
           resourceType: 'create',
         });
-      expect(res.status).toBe(201);
-      expect(res.body.code).toBe(0);
-      expect(res.body.data.code).toBe('pb.admin.create');
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    // P0-F PR-1:ADMIN 持 ops-admin 后能通过(seed 14 条 rbac.* 全集含 rbac.permission.create)。
+    // SUPER_ADMIN 短路在 CRUD 主成功路径已覆盖。
+    it('ADMIN 持 ops-admin 角色 → POST 201(RBAC 入口通过)', async () => {
+      await grantOpsAdminToUser(app, adminUserId, opsAdminRoleId);
+      try {
+        const res = await request(httpServer(app))
+          .post('/api/v2/permissions')
+          .set('Authorization', adminAuth)
+          .send({
+            code: 'pb.adm-ok.create',
+            module: 'pb',
+            action: 'adm-ok',
+            resourceType: 'create',
+          });
+        expect(res.status).toBe(201);
+        expect(res.body.code).toBe(0);
+        expect(res.body.data.code).toBe('pb.adm-ok.create');
+      } finally {
+        await revokeOpsAdminFromUser(app, adminUserId, opsAdminRoleId);
+      }
     });
   });
 
@@ -325,8 +361,10 @@ describe('permissions 模块', () => {
       ['simple_3seg', 'a.b.c'],
       ['with_dashes_3seg', 'attachment-mod.upload-action.cert-type'],
       ['with_digits_3seg', 'mod1.action2.type3'],
-      ['rbac_3seg_read', 'rbac.permission.read'], // 沿 D7-RBAC §10.2 rbac.* 3 段示例
-      ['rbac_3seg_create', 'rbac.role.create'],
+      // P0-F PR-1:rbac.* 14 条已在 seedRbacPermissionsAndOpsAdmin 落库,POST 撞 409;
+      // 改用 spec.* 命名空间保留"3 段合法格式"语义,与 seed 不冲突。
+      ['spec_3seg_read', 'spec.permission.read'],
+      ['spec_3seg_create', 'spec.role.create'],
       // ===== v1.2 新增 4 段合法 case(attachment.* 4 段 scope 后缀) =====
       ['attachment_4seg_upload_self', 'attachment.upload.cert.self'],
       ['attachment_4seg_upload_other', 'attachment.upload.cert.other'],

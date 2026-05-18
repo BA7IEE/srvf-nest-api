@@ -3,6 +3,11 @@ import { Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import {
+  grantOpsAdminToUser,
+  revokeOpsAdminFromUser,
+  seedRbacPermissionsAndOpsAdmin,
+} from '../fixtures/rbac.fixture';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
@@ -33,6 +38,8 @@ describe('rbac-roles 模块', () => {
   let superAdminAuth: string;
   let adminAuth: string;
   let userAuth: string;
+  let opsAdminRoleId: string;
+  let adminUserId: string;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -40,12 +47,17 @@ describe('rbac-roles 模块', () => {
     prisma = app.get(PrismaService);
 
     await createTestUser(app, { username: 'role-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'role-adm', role: Role.ADMIN });
+    const adm = await createTestUser(app, { username: 'role-adm', role: Role.ADMIN });
+    adminUserId = adm.id;
     await createTestUser(app, { username: 'role-user', role: Role.USER });
 
     superAdminAuth = (await loginAs(app, 'role-su')).authHeader;
     adminAuth = (await loginAs(app, 'role-adm')).authHeader;
     userAuth = (await loginAs(app, 'role-user')).authHeader;
+
+    // P0-F PR-1:resetDb 已清 RBAC 表;e2e 自行 seed 14 条 rbac.* + ops-admin。
+    const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    opsAdminRoleId = seed.opsAdminRoleId;
   });
 
   afterAll(async () => {
@@ -95,19 +107,34 @@ describe('rbac-roles 模块', () => {
             .delete('/api/v2/roles/some-id-00000000000000000000')
             .set('Authorization', userAuth),
       ],
-    ])('USER 角色 %s → 403', async (_name, mkReq) => {
+    ])('USER 角色 %s → 30100 RBAC_FORBIDDEN', async (_name, mkReq) => {
       const res = await mkReq();
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('ADMIN POST → 201(沿 @Roles(SUPER_ADMIN, ADMIN);本 PR 不接 RBAC 判权)', async () => {
+    // P0-F PR-1(2026-05-18):v1 ADMIN 不再自动放行 RBAC 元接口,必须显式持 RBAC 角色。
+    it('ADMIN 默认无 RBAC 权限 → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post('/api/v2/roles')
         .set('Authorization', adminAuth)
-        .send({ code: 'admin-create-role', displayName: 'admin 创建' });
-      expect(res.status).toBe(201);
-      expect(res.body.code).toBe(0);
-      expect(res.body.data.code).toBe('admin-create-role');
+        .send({ code: 'admin-no-rbac', displayName: 'admin 无权' });
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    // P0-F PR-1:ADMIN 持 ops-admin 后能通过(seed 14 条 rbac.* 包含 rbac.role.create)。
+    it('ADMIN 持 ops-admin 角色 → POST 201(RBAC 入口通过)', async () => {
+      await grantOpsAdminToUser(app, adminUserId, opsAdminRoleId);
+      try {
+        const res = await request(httpServer(app))
+          .post('/api/v2/roles')
+          .set('Authorization', adminAuth)
+          .send({ code: 'admin-with-ops-admin', displayName: 'ADMIN with ops-admin' });
+        expect(res.status).toBe(201);
+        expect(res.body.code).toBe(0);
+        expect(res.body.data.code).toBe('admin-with-ops-admin');
+      } finally {
+        await revokeOpsAdminFromUser(app, adminUserId, opsAdminRoleId);
+      }
     });
   });
 

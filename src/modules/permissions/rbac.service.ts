@@ -170,7 +170,13 @@ export class RbacService {
   // - userId / roleId 不存在 → 静默成功(invalidateUser 是 Map.delete,no-op;
   //     invalidateAllUsersWithRole 内部已 try-catch + logger.warn,不抛)
   // - 出参恒为 `{ reloaded: true }`(沿用户决策方案 A;为未来扩展字段预留单对象包装)
-  async reload(dto: ReloadRbacDto): Promise<ReloadRbacResponseDto> {
+  //
+  // P0-F PR-1(2026-05-18):入口判权迁移到 RBAC `rbac.config.reload` permission;
+  // 失败抛 BizException(BizCode.RBAC_FORBIDDEN)(30100)。
+  async reload(user: CurrentUserPayload, dto: ReloadRbacDto): Promise<ReloadRbacResponseDto> {
+    if (!(await this.can(user, 'rbac.config.reload'))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
     const scope = dto.scope ?? 'all';
 
     if (scope === 'user') {
