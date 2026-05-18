@@ -5,6 +5,7 @@ import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -19,13 +20,14 @@ import { createTestApp } from '../setup/test-app';
 // PR #1 没业务 service 调用方,所以本 spec 通过 app.get(AuditLogsService).log()
 // 直接写入预设数据,验证查询接口、权限、AuditContext 锁形、不可改不可删、不审计自身。
 
-describe('audit-logs 模块(PR #1)', () => {
+describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let auditLogs: AuditLogsService;
   let superAdminAuth: string;
   let admin1Auth: string;
   let admin2Auth: string;
+  let adminNoOpsAuth: string;
   let userAuth: string;
 
   let superAdminId: string;
@@ -55,6 +57,8 @@ describe('audit-logs 模块(PR #1)', () => {
     const su = await createTestUser(app, { username: 'al-su', role: Role.SUPER_ADMIN });
     const a1 = await createTestUser(app, { username: 'al-adm1', role: Role.ADMIN });
     const a2 = await createTestUser(app, { username: 'al-adm2', role: Role.ADMIN });
+    // P0-F PR-4B:专用 ADMIN 用户,**不**绑 ops-admin,用于验证默认 ADMIN → 30100
+    await createTestUser(app, { username: 'al-adm-no-ops', role: Role.ADMIN });
     const u = await createTestUser(app, { username: 'al-user', role: Role.USER });
     superAdminId = su.id;
     admin1Id = a1.id;
@@ -63,11 +67,20 @@ describe('audit-logs 模块(PR #1)', () => {
     superAdminAuth = (await loginAs(app, 'al-su')).authHeader;
     admin1Auth = (await loginAs(app, 'al-adm1')).authHeader;
     admin2Auth = (await loginAs(app, 'al-adm2')).authHeader;
+    adminNoOpsAuth = (await loginAs(app, 'al-adm-no-ops')).authHeader;
     userAuth = (await loginAs(app, 'al-user')).authHeader;
+
+    // P0-F PR-4B(2026-05-18):seed RBAC 56 条 permission + ops-admin 角色 + 54 条 RolePermission
+    // (audit-log.read.entry 整条加入 ops-admin;沿评审稿 §4.2 / §6.2 / D2=B)。
+    // 给 admin1 / admin2 grant ops-admin(用于 list where 注入 / detail 权限段保留行为);
+    // **不** grant 给 adminNoOps(用于验证默认 ADMIN → 30100)。
+    const { opsAdminRoleId } = await seedRbacPermissionsAndOpsAdmin(app);
+    await grantOpsAdminToUser(app, admin1Id, opsAdminRoleId);
+    await grantOpsAdminToUser(app, admin2Id, opsAdminRoleId);
 
     // P0-E PR-3:loginAs 现在写 'auth.login' audit(沿 P0-E 评审稿 §5.9 / D-8);
     // 本 spec 通过 AuditLogsService.log() 直接预设 5 条 audit 验证分页 / 过滤 /
-    // 排序契约;loginAs 引入的 4 条 audit 污染 total/items,需 TRUNCATE 清理。
+    // 排序契约;loginAs 引入的 5 条 audit 污染 total/items,需 TRUNCATE 清理。
     // truncate 不破坏审计写入即不可改的红线(沿 audit-logs-cleanup.ts test-only 豁免)。
     await truncateAuditLogsTestOnly(app);
 
@@ -138,7 +151,7 @@ describe('audit-logs 模块(PR #1)', () => {
 
   // ============ 权限边界 ============
 
-  describe('权限边界', () => {
+  describe('权限边界(P0-F PR-4B RBAC)', () => {
     it('未登录 GET list → 401', async () => {
       const res = await request(httpServer(app)).get('/api/v2/audit-logs');
       expectBizError(res, BizCode.UNAUTHORIZED);
@@ -149,18 +162,78 @@ describe('audit-logs 模块(PR #1)', () => {
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER GET list → 403', async () => {
+    it('USER GET list → 30100 RBAC_FORBIDDEN(沿 P0-F PR-4B,USER 未持 audit-log.read.entry)', async () => {
       const res = await request(httpServer(app))
         .get('/api/v2/audit-logs')
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER GET detail → 403', async () => {
+    it('USER GET detail → 30100 RBAC_FORBIDDEN(沿 P0-F PR-4B,USER 未持 audit-log.read.entry)', async () => {
       const res = await request(httpServer(app))
         .get(`/api/v2/audit-logs/${logBySuper}`)
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    it('ADMIN 默认(未持 ops-admin)GET list → 30100 RBAC_FORBIDDEN', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/v2/audit-logs')
+        .set('Authorization', adminNoOpsAuth);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    it('ADMIN 默认(未持 ops-admin)GET detail → 30100 RBAC_FORBIDDEN', async () => {
+      const res = await request(httpServer(app))
+        .get(`/api/v2/audit-logs/${logBySuper}`)
+        .set('Authorization', adminNoOpsAuth);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+  });
+
+  // ============ ADMIN+ops-admin 数据范围保留(P0-F PR-4B 关键反向验证) ============
+  // 验证 RBAC 入口通过后,service 层数据范围仍生效(沿评审稿 §9.2)。
+  // ADMIN+ops-admin 仍只能看自己 OR USER 操作的记录;越级查 SA / 其它 ADMIN → 14101。
+
+  describe('ADMIN+ops-admin 数据范围保留(P0-F PR-4B)', () => {
+    it('ADMIN+ops-admin GET list → 200,数据范围仍受 list ADMIN where 注入限制(自己 + USER 操作 = 3 条)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/v2/audit-logs')
+        .set('Authorization', admin1Auth);
+      expect(res.status).toBe(200);
+      expect(res.body.code).toBe(0);
+      // ADMIN1 看到自己 2 条 + USER 1 条 = 3 条(沿 list where 注入段同款断言;数据范围不因 RBAC 通过而扩大)
+      expect(res.body.data.total).toBe(3);
+    });
+
+    it('ADMIN+ops-admin GET findOne 自己操作的 → 200', async () => {
+      const res = await request(httpServer(app))
+        .get(`/api/v2/audit-logs/${logByAdmin1}`)
+        .set('Authorization', admin1Auth);
+      expect(res.status).toBe(200);
+      expect(res.body.data.actorUserId).toBe(admin1Id);
+    });
+
+    it('ADMIN+ops-admin GET findOne USER 操作的 → 200', async () => {
+      const res = await request(httpServer(app))
+        .get(`/api/v2/audit-logs/${logByUser}`)
+        .set('Authorization', admin1Auth);
+      expect(res.status).toBe(200);
+      expect(res.body.data.actorRoleSnap).toBe(Role.USER);
+    });
+
+    it('ADMIN+ops-admin GET findOne SA 操作的 → 14101(护栏保留,RBAC 通过 ≠ 数据范围放开)', async () => {
+      const res = await request(httpServer(app))
+        .get(`/api/v2/audit-logs/${logBySuper}`)
+        .set('Authorization', admin1Auth);
+      expectBizError(res, BizCode.FORBIDDEN_AUDIT_LOG_READ);
+    });
+
+    it('ADMIN+ops-admin GET findOne 其它 ADMIN 操作的 → 14101(护栏保留)', async () => {
+      const res = await request(httpServer(app))
+        .get(`/api/v2/audit-logs/${logByAdmin2}`)
+        .set('Authorization', admin1Auth);
+      expectBizError(res, BizCode.FORBIDDEN_AUDIT_LOG_READ);
     });
   });
 

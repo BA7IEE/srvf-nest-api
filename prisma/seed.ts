@@ -874,29 +874,55 @@ const USER_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
-// Permission 全集(用于 step 1 upsert;14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B = 55 条)
+// =========================================================================
+// P0-F PR-4B(2026-05-18):audit-logs 模块 RBAC 接入新增 1 条 audit-log.* permission。
+// 沿评审稿 docs/first-release-p0f-pr4-audit-logs-rbac-review.md §4.2 + §6.2 + D1=A / D2=B / D3=A / D4=A / D5=A。
+//
+// 端点 → permission 映射(沿评审稿 §4 / §7):
+//   GET /api/v2/audit-logs        → audit-log.read.entry(list)
+//   GET /api/v2/audit-logs/:id    → audit-log.read.entry(findOne;list / findOne 共享 read,D4=A)
+//
+// ops-admin 绑定(D2=B):整条加入,不过滤(沿评审稿 §5.2 推荐;数据范围 service 层兜底)。
+// service 内现有数据范围 + assertCanReadAuditLog + 14101 越级码全部保留(沿评审稿 §8.3)。
+// =========================================================================
+
+const AUDIT_LOG_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'audit-log.read.entry',
+    module: 'audit-log',
+    action: 'read',
+    resourceType: 'entry',
+    description:
+      '查看审计记录(list + findOne 共享;service 内 list ADMIN where 注入 + detail assertCanReadAuditLog + 14101 越级码全部保留)',
+  },
+];
+
+// Permission 全集(用于 step 1 upsert;14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B = 56 条)
 const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
   ...PR_2B_PERMISSION_SEED,
   ...USER_PERMISSION_SEED,
+  ...AUDIT_LOG_PERMISSION_SEED,
 ];
 
-// ops-admin 完整绑定集合(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B = 53 条;沿 D1=A / D2=B / D3=A)
+// ops-admin 完整绑定集合(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B = 54 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B)
 // 注:`storage-setting.reset.credentials` 从 PR_2B_PERMISSION_SEED 过滤掉(沿 PR-2 D2=A;§6.2)
 // 注:`user.update.role` 从 USER_PERMISSION_SEED 过滤掉(沿 PR-3 D1=A;§6.2)
+// 注:`audit-log.read.entry` 整条加入,不过滤(沿 PR-4 D2=B;§6.2)
 const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
   ...PR_2B_PERMISSION_SEED.filter((p) => p.code !== PR_2B_RESET_CREDENTIALS_CODE),
   ...USER_PERMISSION_SEED.filter((p) => p.code !== PR_3B_USER_UPDATE_ROLE_CODE),
+  ...AUDIT_LOG_PERMISSION_SEED,
 ];
 
 // 运营管理员角色 code(沿 D7 §10.1 / §10.3 ops-admin 唯一公开 placeholder)
 const OPS_ADMIN_ROLE_CODE = 'ops-admin';
 const OPS_ADMIN_DISPLAY_NAME = '运营管理员';
 const OPS_ADMIN_DESCRIPTION =
-  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / contribution-rule + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条)的 meta 角色;14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B = 53 条权限点;凭证 reset 与 user 角色修改仅 SUPER_ADMIN';
+  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / contribution-rule + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条)的 meta 角色;14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B = 54 条权限点;凭证 reset 与 user 角色修改仅 SUPER_ADMIN';
 
 // V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集
 // (沿 D7-attachments v1.0 §6.1 + Q11 v1.0 锁清单 + 用户 PR #6a 拍板)。
@@ -1083,10 +1109,10 @@ const MEMBER_ROLE_PERMISSION_CODES: ReadonlyArray<string> = [
 // 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 复合唯一键 /
 // UserRole 复合唯一键),重复跑不重复创建。
 async function seedRbac(prisma: PrismaClient): Promise<void> {
-  // 1. upsert Permission 全集(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B = 55 条;
-  //    沿 D7 §10.2 + P0-F PR-2A 2026-05-18 + P0-F PR-2B 2026-05-18 + P0-F PR-3B 2026-05-18)
-  //    全部 55 条都进 Permission 表(含 reset.credentials + user.update.role);
-  //    ops-admin 仅绑 53 条(沿 PR-2 D2=A + PR-3 D1=A 双重过滤)
+  // 1. upsert Permission 全集(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B = 56 条;
+  //    沿 D7 §10.2 + P0-F PR-2A 2026-05-18 + P0-F PR-2B 2026-05-18 + P0-F PR-3B 2026-05-18 + P0-F PR-4B 2026-05-18)
+  //    全部 56 条都进 Permission 表(含 reset.credentials + user.update.role);
+  //    ops-admin 仅绑 54 条(沿 PR-2 D2=A + PR-3 D1=A 双重过滤;PR-4 D2=B audit-log 整条加入)
   for (const perm of ALL_PERMISSION_SEED) {
     await prisma.permission.upsert({
       where: { code: perm.code },
@@ -1103,7 +1129,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     });
   }
   console.log(
-    `[seed] RBAC + PR-2A + PR-2B + PR-3B permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A + ${PR_2B_PERMISSION_SEED.length} PR-2B + ${USER_PERMISSION_SEED.length} PR-3B = ${ALL_PERMISSION_SEED.length} entries)`,
+    `[seed] RBAC + PR-2A + PR-2B + PR-3B + PR-4B permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A + ${PR_2B_PERMISSION_SEED.length} PR-2B + ${USER_PERMISSION_SEED.length} PR-3B + ${AUDIT_LOG_PERMISSION_SEED.length} PR-4B = ${ALL_PERMISSION_SEED.length} entries)`,
   );
 
   // 2. upsert ops-admin RbacRole(公开 seed 唯一角色;沿用户拍板方案 A)
@@ -1119,13 +1145,15 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
   });
   console.log(`[seed] RBAC role '${opsAdminRole.code}' ensured`);
 
-  // 3. upsert RolePermission 映射:ops-admin → 14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B = 53 条
+  // 3. upsert RolePermission 映射:ops-admin → 14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B = 54 条
   //    (沿 D7 §10.3 + P0-F PR-2A 2026-05-18 D1=A 全绑 + D3=A 软删放宽 + PR-2B D1=A + D2=A 凭证收紧
-  //     + P0-F PR-3B 2026-05-18 D1=A user.update.role 收紧 + D2=B user.reset.password 放宽 + D3=A 其余 5 条全绑)
+  //     + P0-F PR-3B 2026-05-18 D1=A user.update.role 收紧 + D2=B user.reset.password 放宽 + D3=A 其余 5 条全绑
+  //     + P0-F PR-4B 2026-05-18 D2=B audit-log.read.entry 整条加入)
   //    复合唯一键 roleId_permissionId(schema @@unique([roleId, permissionId]))
   //    OPS_ADMIN_PERMISSION_SEED 已在常量定义处过滤:
   //      - `storage-setting.reset.credentials`(PR-2 D2=A)
   //      - `user.update.role`(PR-3 D1=A)
+  //      - `audit-log.read.entry`(PR-4 D2=B,不过滤,整条加入)
   const allPermissions = await prisma.permission.findMany({
     where: { code: { in: OPS_ADMIN_PERMISSION_SEED.map((p) => p.code) } },
     select: { id: true, code: true },
@@ -1138,7 +1166,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     });
   }
   console.log(
-    `[seed] RBAC role-permissions ensured ('${opsAdminRole.code}' ↔ ${allPermissions.length} permissions: rbac.* + PR-2A + PR-2B + PR-3B; '${PR_2B_RESET_CREDENTIALS_CODE}' skipped per PR-2 D2=A; '${PR_3B_USER_UPDATE_ROLE_CODE}' skipped per PR-3 D1=A)`,
+    `[seed] RBAC role-permissions ensured ('${opsAdminRole.code}' ↔ ${allPermissions.length} permissions: rbac.* + PR-2A + PR-2B + PR-3B + PR-4B; '${PR_2B_RESET_CREDENTIALS_CODE}' skipped per PR-2 D2=A; '${PR_3B_USER_UPDATE_ROLE_CODE}' skipped per PR-3 D1=A)`,
   );
 
   // 4. bootstrap user_role(沿 D7 §10.4 + 用户拍板方案 A):

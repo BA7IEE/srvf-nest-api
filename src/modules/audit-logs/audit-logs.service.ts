@@ -5,6 +5,7 @@ import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
+import { RbacService } from '../permissions/rbac.service';
 import { AuditContextDto, AuditLogQueryDto, AuditLogResponseDto } from './audit-logs.dto';
 import { auditLogSafeSelect, type SafeAuditLog } from './audit-logs.select';
 import type { AuditContext, AuditLogEvent, AuditMeta } from './audit-logs.types';
@@ -42,7 +43,19 @@ export interface AuditLogInput {
 
 @Injectable()
 export class AuditLogsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rbac: RbacService,
+  ) {}
+
+  // 沿 P0-F PR-1 范式(permissions.service.ts:41-45)+ PR-4B 评审稿 §8.2:
+  // 业务方法首句调用,RBAC 拒抛 RBAC_FORBIDDEN(30100,HTTP 403)。
+  // **仅** list / findOne 调用;`log()` 写入路径绝对不接 rbac.can()(沿 PR-4B 评审稿 §8.5 + 批次 6 R1 红线)。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   // ============ 落库入口(PR #2 起被业务 service 调用) ============
 
@@ -79,6 +92,10 @@ export class AuditLogsService {
     query: AuditLogQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<AuditLogResponseDto>> {
+    // P0-F PR-4B RBAC 入口判权(沿评审稿 §4.2 / §8.2;D1=A / D4=A list/findOne 共用 code)。
+    // 数据范围 ADMIN where 注入仍在下方(§2 步骤 2),业务护栏 service 层保留(沿评审稿 §8.3)。
+    await this.assertCanOrThrow(currentUser, 'audit-log.read.entry');
+
     const { page, pageSize, resourceType, resourceId, event, actorUserId, startDate, endDate } =
       query;
 
@@ -128,6 +145,10 @@ export class AuditLogsService {
   // ============ findOne(detail + 二次权限校验) ============
 
   async findOne(id: string, currentUser: CurrentUserPayload): Promise<AuditLogResponseDto> {
+    // P0-F PR-4B RBAC 入口判权(沿评审稿 §4.2 / §8.2;D1=A / D4=A list/findOne 共用 code)。
+    // detail 业务级越级码 14101 在 assertCanReadAuditLog 二次校验中保留(沿评审稿 §8.3)。
+    await this.assertCanOrThrow(currentUser, 'audit-log.read.entry');
+
     const row = await this.prisma.auditLog.findUnique({
       where: { id },
       select: auditLogSafeSelect,
