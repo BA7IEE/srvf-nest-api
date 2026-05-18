@@ -1092,4 +1092,19 @@ Before implementing any `/api/app/v1/*` endpoint, agents must respect [`docs/app
 
 Agents must **not reintroduce** `/api/app/v1/me/permissions` as a raw RBAC code endpoint **unless the user explicitly reopens this decision**.
 
+**D-6**:Data access and lifecycle boundary is a Phase 2 precondition(2026-05-19 立项)
+
+Before implementing any `/api/app/v1/*` endpoint, agents **must read and respect both**:
+
+- [`docs/app-permission-boundary-review.md`](docs/app-permission-boundary-review.md)
+- [`docs/data-access-lifecycle-boundary-review.md`](docs/data-access-lifecycle-boundary-review.md)
+
+Agents must **not** implement App DTOs, data scopes, or lifecycle checks by:
+
+- Reusing Admin DTOs(沿 Phase 0.6 §6.1 高风险返工点;`extends` / `Pick` / `Omit` 一个 Admin DTO 构造 App DTO 视作越权)
+- Assuming `Role.USER` equals "mobile access"(沿 Phase 0.5 §1.4 + §10.2 D-2;Admin 兼队员也走 App self perspective)
+- 在 Mobile endpoint 内默认 `scope = all`(沿 Phase 0.6 §3.3;Mobile 默认 `scope = self`)
+- 跳过状态机校验直接执行写动作(沿 Phase 0.6 §4 + §6.4)
+- 在响应 DTO 中暴露 **L3 Credential** 字段(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*`)— 任何 PR snapshot 测试出现这些字段直接拒合并(沿 Phase 0.6 §2.2 + §6.5)
+
 **违反铁律**:发现本节决策与新任务诉求冲突 → **必须暂停说明**,不擅自调和;不主动建议"重新评估方案 A/B"或"把 contribution-rules 改归 Admin"等回滚动作。

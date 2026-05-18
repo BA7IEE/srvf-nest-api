@@ -3,6 +3,7 @@
 > **状态**:**Phase 0.5 专项评审 v0**(2026-05-19)
 > **定位**:[Phase 0 客户端边界设计](api-client-boundary.md) 与 [Phase 1A / 1B 实施评审稿](api-client-boundary-phase-1-review.md) 之间的**前置专项**,
 > **专门**评估移动端 / 小程序 / 队员端的**身份模型、权限边界、数据可见性**,避免后续 Phase 2 落地 App API 时返工。
+> **配套兄弟评审**:[`docs/data-access-lifecycle-boundary-review.md`](data-access-lifecycle-boundary-review.md) — **Phase 0.6 数据访问与生命周期边界专项**(surface 分类 / 字段敏感等级 / scope 策略 / 状态机矩阵 / User-Member 生命周期);**Phase 2 启动前两份必须一起读**,本文档聚焦"谁能用 App + 看什么字段",Phase 0.6 聚焦"数据访问范围 + 状态机 + 生命周期"。
 > **配套文档**:
 >   - [`docs/api-client-boundary.md`](api-client-boundary.md)(顶层规范)
 >   - [`docs/api-client-boundary-inventory.md`](api-client-boundary-inventory.md)(现状盘点)

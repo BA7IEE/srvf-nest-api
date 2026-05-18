@@ -121,10 +121,13 @@
 
 ## 4. Phase 2:新增 `/api/app/v1/me/*` 队员端基础接口(规划中)
 
-> **Phase 2 启动前置**:[`docs/app-permission-boundary-review.md`](app-permission-boundary-review.md)(Phase 0.5 App 身份 / 权限 / 数据可见性专项评审)
-> **必读**。该专项对本节 P0 接口提出 §8 重新评估建议(`me` 拆 `account`/`profile`、`me/*` 与 `my/*` 拆分、`/me/permissions` 改返 App capability、`tasks/*` 与 `managed/*` 命名空间预留),Phase 2 立项评审稿启动时**必须**先消化该专项,**不**照搬本节 P0 清单字面值。
+> **Phase 2 启动前置(两份)必读**:
+>   - [`docs/app-permission-boundary-review.md`](app-permission-boundary-review.md) — **Phase 0.5 App 身份 / 权限 / 数据可见性**
+>   - [`docs/data-access-lifecycle-boundary-review.md`](data-access-lifecycle-boundary-review.md) — **Phase 0.6 数据访问与生命周期边界**(surface 分类 + 字段敏感等级 + scope 策略 + 状态机矩阵 + User/Member 生命周期 + 高风险返工点)
 >
-> **决策已锁定**(2026-05-19 用户拍板):该专项 [§10.2](app-permission-boundary-review.md) 4 条 D-N 决策已锁定,包括:候选 / 临时编号志愿者**不进** Phase 2 范围、Admin 兼队员走 App 自视角、App 暴露 `capabilities` 而非 raw RBAC permission code、`/me/*` 与 `/my/*` **物理拆分**。Phase 2 实施时必须严格遵守,**不**作为开放讨论项。
+> Phase 2 立项评审稿启动时**必须**先消化以上两份专项,**不**照搬本节 P0 清单字面值。Phase 0.5 提出 §8 重新评估建议(`me` 拆 `account`/`profile`、`me/*` 与 `my/*` 拆分、`/me/permissions` 改返 App capability、`tasks/*` 与 `managed/*` 命名空间预留)。Phase 0.6 锁定 surface / scope / field / state 四维正交模型与 §6 高风险返工点清单。
+>
+> **决策已锁定**(2026-05-19 用户拍板):Phase 0.5 [§10.2](app-permission-boundary-review.md) 4 条 D-N 决策已锁定,包括:候选 / 临时编号志愿者**不进** Phase 2 范围、Admin 兼队员走 App 自视角、App 暴露 `capabilities` 而非 raw RBAC permission code、`/me/*` 与 `/my/*` **物理拆分**。Phase 2 实施时必须严格遵守,**不**作为开放讨论项。
 
 ### 4.1 目标(P0 清单,以 Phase 0.5 评审 §8 调整意见为准)
 
