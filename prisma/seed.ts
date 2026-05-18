@@ -489,10 +489,189 @@ const RBAC_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
+// P0-F PR-2A(2026-05-18):配置类接口 RBAC 接入第一批(19 条)。
+// 沿评审稿 [`docs/first-release-p0f-pr2-config-rbac-review.md`](../docs/first-release-p0f-pr2-config-rbac-review.md)
+// §4.2 + 用户拍板 D1=A / D3=A / D4=A。
+//
+// **code 命名规则**:3 段 kebab-case `module.action.resource_type`;沿 D7-RBAC v1.2 正则
+// `/^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2,3}$/`(3-4 段;PR-2A 全 3 段无 scope)。
+//
+// **D3=A**:dict.delete.type / dict.delete.item / org.delete.node 放宽给 ops-admin
+// (v1 原 @Roles(SUPER_ADMIN) 单角色;sub-protection 仍在 service 内:DICT_TYPE_IN_USE /
+// ORGANIZATION_HAS_CHILDREN / LAST_ROOT_ORGANIZATION_PROTECTED 等不变)。
+//
+// **D4=A**:member-department 采用 set.current / clear.current 自定义动词
+// (沿 PR-1 rbac.config.reload 范式;业务语义清晰优先)。
+
+// dict.* 8 条(dict_types 4 + dict_items 4)
+const DICT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'dict.read.type',
+    module: 'dict',
+    action: 'read',
+    resourceType: 'type',
+    description: '查看字典类型(列表 / 详情)',
+  },
+  {
+    code: 'dict.create.type',
+    module: 'dict',
+    action: 'create',
+    resourceType: 'type',
+    description: '创建字典类型',
+  },
+  {
+    code: 'dict.update.type',
+    module: 'dict',
+    action: 'update',
+    resourceType: 'type',
+    description: '更新字典类型(含启停)',
+  },
+  {
+    code: 'dict.delete.type',
+    module: 'dict',
+    action: 'delete',
+    resourceType: 'type',
+    description: '软删字典类型(D3=A 放宽至 ops-admin)',
+  },
+  {
+    code: 'dict.read.item',
+    module: 'dict',
+    action: 'read',
+    resourceType: 'item',
+    description: '查看字典项(列表 / 树形 / 详情)',
+  },
+  {
+    code: 'dict.create.item',
+    module: 'dict',
+    action: 'create',
+    resourceType: 'item',
+    description: '创建字典项',
+  },
+  {
+    code: 'dict.update.item',
+    module: 'dict',
+    action: 'update',
+    resourceType: 'item',
+    description: '更新字典项(含启停)',
+  },
+  {
+    code: 'dict.delete.item',
+    module: 'dict',
+    action: 'delete',
+    resourceType: 'item',
+    description: '软删字典项(D3=A 放宽至 ops-admin)',
+  },
+];
+
+// org.* 4 条(organizations R/C/U/D)
+const ORG_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'org.read.node',
+    module: 'org',
+    action: 'read',
+    resourceType: 'node',
+    description: '查看组织节点(列表 / 树形 / 详情)',
+  },
+  {
+    code: 'org.create.node',
+    module: 'org',
+    action: 'create',
+    resourceType: 'node',
+    description: '创建组织节点',
+  },
+  {
+    code: 'org.update.node',
+    module: 'org',
+    action: 'update',
+    resourceType: 'node',
+    description: '更新组织节点(含启停)',
+  },
+  {
+    code: 'org.delete.node',
+    module: 'org',
+    action: 'delete',
+    resourceType: 'node',
+    description: '软删组织节点(D3=A 放宽至 ops-admin)',
+  },
+];
+
+// member-department.* 3 条(member-departments read / set / clear;D4=A)
+const MEMBER_DEPARTMENT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'member-department.read.current',
+    module: 'member-department',
+    action: 'read',
+    resourceType: 'current',
+    description: '查队员当前部门归属',
+  },
+  {
+    code: 'member-department.set.current',
+    module: 'member-department',
+    action: 'set',
+    resourceType: 'current',
+    description: '幂等设置队员正式部门',
+  },
+  {
+    code: 'member-department.clear.current',
+    module: 'member-department',
+    action: 'clear',
+    resourceType: 'current',
+    description: '解除队员当前部门归属',
+  },
+];
+
+// contribution.* 4 条(contribution-rules R/C/U/D)
+const CONTRIBUTION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'contribution.read.rule',
+    module: 'contribution',
+    action: 'read',
+    resourceType: 'rule',
+    description: '查看贡献值规则(列表 / 详情)',
+  },
+  {
+    code: 'contribution.create.rule',
+    module: 'contribution',
+    action: 'create',
+    resourceType: 'rule',
+    description: '创建贡献值规则',
+  },
+  {
+    code: 'contribution.update.rule',
+    module: 'contribution',
+    action: 'update',
+    resourceType: 'rule',
+    description: '更新贡献值规则',
+  },
+  {
+    code: 'contribution.delete.rule',
+    module: 'contribution',
+    action: 'delete',
+    resourceType: 'rule',
+    description: '软删贡献值规则',
+  },
+];
+
+// PR-2A 聚合(19 条:dict 8 + org 4 + member-department 3 + contribution 4)
+const PR_2A_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  ...DICT_PERMISSION_SEED,
+  ...ORG_PERMISSION_SEED,
+  ...MEMBER_DEPARTMENT_PERMISSION_SEED,
+  ...CONTRIBUTION_PERMISSION_SEED,
+];
+
+// ops-admin 完整绑定集合(14 rbac.* + 19 PR-2A = 33 条;沿 D1=A)
+// PR-2B 评审通过后再扩 14 条(attachment-config 12 + storage-setting 2,除 reset.credentials)
+const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  ...RBAC_PERMISSION_SEED,
+  ...PR_2A_PERMISSION_SEED,
+];
+
 // 运营管理员角色 code(沿 D7 §10.1 / §10.3 ops-admin 唯一公开 placeholder)
 const OPS_ADMIN_ROLE_CODE = 'ops-admin';
 const OPS_ADMIN_DISPLAY_NAME = '运营管理员';
-const OPS_ADMIN_DESCRIPTION = 'RBAC 自身配置 + 用户角色分配的 meta 角色;首批 14 条 rbac.* 权限点';
+const OPS_ADMIN_DESCRIPTION =
+  'RBAC 自身配置 + 用户角色分配 + PR-2A 配置类(dict / org / member-department / contribution-rule)的 meta 角色;14 rbac.* + 19 PR-2A = 33 条权限点';
 
 // V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集
 // (沿 D7-attachments v1.0 §6.1 + Q11 v1.0 锁清单 + 用户 PR #6a 拍板)。
@@ -679,8 +858,8 @@ const MEMBER_ROLE_PERMISSION_CODES: ReadonlyArray<string> = [
 // 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 复合唯一键 /
 // UserRole 复合唯一键),重复跑不重复创建。
 async function seedRbac(prisma: PrismaClient): Promise<void> {
-  // 1. upsert Permission 全集(14 条 rbac.*;沿 D7 §10.2)
-  for (const perm of RBAC_PERMISSION_SEED) {
+  // 1. upsert Permission 全集(14 rbac.* + 19 PR-2A = 33 条;沿 D7 §10.2 + P0-F PR-2A 2026-05-18)
+  for (const perm of OPS_ADMIN_PERMISSION_SEED) {
     await prisma.permission.upsert({
       where: { code: perm.code },
       // 已存在不覆盖 description / module / action / resourceType(防止运营运行时调整被 seed 回退;
@@ -695,7 +874,9 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
       },
     });
   }
-  console.log(`[seed] RBAC permissions ensured (${RBAC_PERMISSION_SEED.length} entries)`);
+  console.log(
+    `[seed] RBAC + PR-2A permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A = ${OPS_ADMIN_PERMISSION_SEED.length} entries)`,
+  );
 
   // 2. upsert ops-admin RbacRole(公开 seed 唯一角色;沿用户拍板方案 A)
   const opsAdminRole = await prisma.rbacRole.upsert({
@@ -710,10 +891,11 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
   });
   console.log(`[seed] RBAC role '${opsAdminRole.code}' ensured`);
 
-  // 3. upsert RolePermission 映射:ops-admin → 全部 14 条 rbac.*(沿 D7 §10.3)
+  // 3. upsert RolePermission 映射:ops-admin → 14 rbac.* + 19 PR-2A = 33 条
+  //    (沿 D7 §10.3 + P0-F PR-2A 2026-05-18 D1=A 全绑 + D3=A 软删放宽)
   //    复合唯一键 roleId_permissionId(schema @@unique([roleId, permissionId]))
   const allPermissions = await prisma.permission.findMany({
-    where: { code: { in: RBAC_PERMISSION_SEED.map((p) => p.code) } },
+    where: { code: { in: OPS_ADMIN_PERMISSION_SEED.map((p) => p.code) } },
     select: { id: true, code: true },
   });
   for (const perm of allPermissions) {
@@ -724,7 +906,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     });
   }
   console.log(
-    `[seed] RBAC role-permissions ensured ('${opsAdminRole.code}' ↔ ${allPermissions.length} rbac.* permissions)`,
+    `[seed] RBAC role-permissions ensured ('${opsAdminRole.code}' ↔ ${allPermissions.length} permissions: rbac.* + PR-2A)`,
   );
 
   // 4. bootstrap user_role(沿 D7 §10.4 + 用户拍板方案 A):

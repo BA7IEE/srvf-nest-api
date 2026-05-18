@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -13,12 +14,18 @@ import { createTestApp } from '../setup/test-app';
 // V2 Step 6 member_departments 归属能力 e2e。
 // 覆盖 3 接口主成功 + 关键失败:权限边界 / GET 无归属返 null / PUT 幂等 + 事务原子 /
 // DELETE 解除 / 单归属约束(partial unique index DB 层兜底) / 软删后重新归属。
+//
+// P0-F PR-2A(2026-05-18):入口切到 service 层 rbac.can();失败统一 RBAC_FORBIDDEN(30100)。
+// `adminAuth` 在 beforeAll 全局 grant ops-admin(沿 dict / org e2e 范式);单独建 `adminDefaultAuth`
+// 做"ADMIN 默认 30100"反向断言。D4=A:member-department 使用 set.current / clear.current
+// (沿 seed permission code 命名)。
 
 describe('member-departments 归属能力', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let superAdminAuth: string;
   let adminAuth: string;
+  let adminDefaultAuth: string;
   let userAuth: string;
 
   let nodeTypeCode: string;
@@ -32,11 +39,17 @@ describe('member-departments 归属能力', () => {
     prisma = app.get(PrismaService);
 
     await createTestUser(app, { username: 'md-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'md-adm', role: Role.ADMIN });
+    const admin = await createTestUser(app, { username: 'md-adm', role: Role.ADMIN });
+    await createTestUser(app, { username: 'md-adm-default', role: Role.ADMIN });
     await createTestUser(app, { username: 'md-user', role: Role.USER });
     superAdminAuth = (await loginAs(app, 'md-su')).authHeader;
     adminAuth = (await loginAs(app, 'md-adm')).authHeader;
+    adminDefaultAuth = (await loginAs(app, 'md-adm-default')).authHeader;
     userAuth = (await loginAs(app, 'md-user')).authHeader;
+
+    // P0-F PR-2A:seed 33 条 RBAC + ops-admin;给 md-adm 全局 grant ops-admin
+    const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    await grantOpsAdminToUser(app, admin.id, seed.opsAdminRoleId);
 
     // 准备字典:node_type 用于 organizations
     const nodeType = await prisma.dictType.create({
@@ -94,26 +107,34 @@ describe('member-departments 归属能力', () => {
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER GET → 403', async () => {
+    it('USER GET → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get(`/api/v2/members/${memberId}/department`)
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER PUT → 403', async () => {
+    it('USER PUT → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .put(`/api/v2/members/${memberId}/department`)
         .set('Authorization', userAuth)
         .send({ organizationId: activeOrgIdA });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER DELETE → 403', async () => {
+    it('USER DELETE → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .delete(`/api/v2/members/${memberId}/department`)
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    // P0-F PR-2A:ADMIN 默认无 ops-admin → 30100(显式反向断言)
+    it('ADMIN 默认无 ops-admin → 30100 RBAC_FORBIDDEN', async () => {
+      const res = await request(httpServer(app))
+        .get(`/api/v2/members/${memberId}/department`)
+        .set('Authorization', adminDefaultAuth);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
   });
 

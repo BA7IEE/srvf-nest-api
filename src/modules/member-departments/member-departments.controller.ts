@@ -1,11 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
 } from '../../common/decorators/api-response.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { MemberDepartmentResponseDto, SetMemberDepartmentDto } from './member-departments.dto';
 import { MemberDepartmentsService } from './member-departments.service';
@@ -17,6 +17,12 @@ import { MemberDepartmentsService } from './member-departments.service';
 //
 // 路径参数 memberId 由 NestJS 自动绑定;不通过 IdParamDto(因为 IdParamDto 字段名固定 'id'),
 // 直接 @Param('memberId') 拿值,DTO 校验由 service 层 findMemberOrThrow 兜底。
+//
+// **权限标注**(P0-F PR-2A,2026-05-18):入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;
+// 全部判权迁移到 MemberDepartmentsService 内 `rbac.can()`,失败抛
+// BizException(BizCode.RBAC_FORBIDDEN)(30100)。沿 PR-1 attachments F3 v1.0 范本。
+// D4=A:动词采用 set.current / clear.current(业务语义清晰优先;沿 PR-1 rbac.config.reload 范式)。
+// 映射 seed 新增 3 条权限点:member-department.{read,set,clear}.current。
 
 @ApiTags('member-departments')
 @ApiBearerAuth()
@@ -25,22 +31,23 @@ export class MemberDepartmentsController {
   constructor(private readonly service: MemberDepartmentsService) {}
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: '查队员当前部门归属(无归属返 data: null)' })
   @ApiWrappedOkResponse(MemberDepartmentResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
   )
-  findCurrent(@Param('memberId') memberId: string): Promise<MemberDepartmentResponseDto | null> {
-    return this.service.findCurrent(memberId);
+  findCurrent(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('memberId') memberId: string,
+  ): Promise<MemberDepartmentResponseDto | null> {
+    return this.service.findCurrent(user, memberId);
   }
 
   @Put()
   @HttpCode(HttpStatus.OK)
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary: '幂等设置队员正式部门(已有归属时软删旧 + 创建新;同 org 直接返回)',
   })
@@ -48,7 +55,7 @@ export class MemberDepartmentsController {
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.ORGANIZATION_NOT_FOUND,
     BizCode.MEMBER_INACTIVE,
@@ -56,24 +63,27 @@ export class MemberDepartmentsController {
     BizCode.MEMBER_DEPARTMENT_ALREADY_EXISTS,
   )
   set(
+    @CurrentUser() user: CurrentUserPayload,
     @Param('memberId') memberId: string,
     @Body() dto: SetMemberDepartmentDto,
   ): Promise<MemberDepartmentResponseDto> {
-    return this.service.set(memberId, dto);
+    return this.service.set(user, memberId, dto);
   }
 
   @Delete()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: '解除当前部门归属(软删中间表行;非 SA 也可)' })
   @ApiWrappedOkResponse(MemberDepartmentResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.MEMBER_DEPARTMENT_NOT_FOUND,
   )
-  remove(@Param('memberId') memberId: string): Promise<MemberDepartmentResponseDto> {
-    return this.service.remove(memberId);
+  remove(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('memberId') memberId: string,
+  ): Promise<MemberDepartmentResponseDto> {
+    return this.service.remove(user, memberId);
   }
 }

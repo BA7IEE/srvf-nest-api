@@ -8,6 +8,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { RbacService } from '../permissions/rbac.service';
 import {
   ContributionRuleQueryDto,
   ContributionRuleResponseDto,
@@ -47,9 +48,17 @@ export class ContributionRulesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
+    private readonly rbac: RbacService,
   ) {}
 
   // ============ helpers ============
+
+  // P0-F PR-2A(2026-05-18):RBAC 判权(沿 PR-1 attachments F5 v1.0 范本)。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   private decimalToNumber(d: Prisma.Decimal | null): number | null {
     return d === null ? null : Number(d);
@@ -160,7 +169,11 @@ export class ContributionRulesService {
 
   // ============ list ============
 
-  async list(query: ContributionRuleQueryDto): Promise<PageResultDto<ContributionRuleResponseDto>> {
+  async list(
+    user: CurrentUserPayload,
+    query: ContributionRuleQueryDto,
+  ): Promise<PageResultDto<ContributionRuleResponseDto>> {
+    await this.assertCanOrThrow(user, 'contribution.read.rule');
     const { page, pageSize, activityTypeCode, attendanceRoleCode, status } = query;
     const filters: Prisma.ContributionRuleWhereInput = {};
     if (activityTypeCode !== undefined) filters.activityTypeCode = activityTypeCode;
@@ -198,7 +211,8 @@ export class ContributionRulesService {
 
   // ============ findOne ============
 
-  async findOne(id: string): Promise<ContributionRuleResponseDto> {
+  async findOne(user: CurrentUserPayload, id: string): Promise<ContributionRuleResponseDto> {
+    await this.assertCanOrThrow(user, 'contribution.read.rule');
     const row = await this.prisma.contributionRule.findFirst({
       where: notDeletedWhere({ id }),
       select: contributionRuleSafeSelect,
@@ -214,6 +228,7 @@ export class ContributionRulesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ContributionRuleResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'contribution.create.rule');
     const normalizedStatus = dto.status ?? ContributionRuleStatus.ACTIVE;
     const durationThreshold = dto.durationThreshold ?? null;
     const pointsAbove = dto.pointsAbove ?? null;
@@ -301,6 +316,7 @@ export class ContributionRulesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ContributionRuleResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'contribution.update.rule');
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.contributionRule.findFirst({
         where: notDeletedWhere({ id }),
@@ -384,6 +400,7 @@ export class ContributionRulesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<void> {
+    await this.assertCanOrThrow(currentUser, 'contribution.delete.rule');
     await this.prisma.$transaction(async (tx) => {
       // PR #3 audit:softDelete 需要 before 完整快照(沿 certificates.softDelete 范式),
       // 因此 select 从 { id: true } 扩展为 contributionRuleSafeSelect。

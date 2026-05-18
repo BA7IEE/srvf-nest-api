@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
+import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { RbacService } from '../permissions/rbac.service';
 import {
   CreateDictItemDto,
   CreateDictTypeDto,
@@ -50,9 +52,21 @@ type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
 export class DictionariesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rbac: RbacService,
+  ) {}
 
   // ============ helpers ============
+
+  // P0-F PR-2A(2026-05-18):RBAC 判权(沿 PR-1 attachments F5 v1.0 范本)。
+  // 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100);RbacService.can 内部
+  // 已实现 SUPER_ADMIN 短路 + cache + ownership(.self);本模块无 .self 后缀。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   // 业务详情查询:findFirst + notDeletedWhere(softDelete.util.ts);找不到 / 已软删
   // 统一抛 NOT_FOUND。tx 可选,事务内调用方可传入 tx。
@@ -108,7 +122,11 @@ export class DictionariesService {
 
   // ============ dict_types ============
 
-  async listDictTypes(query: ListDictTypesQueryDto): Promise<PageResultDto<DictTypeResponseDto>> {
+  async listDictTypes(
+    user: CurrentUserPayload,
+    query: ListDictTypesQueryDto,
+  ): Promise<PageResultDto<DictTypeResponseDto>> {
+    await this.assertCanOrThrow(user, 'dict.read.type');
     const { page, pageSize, status } = query;
     const where: Prisma.DictTypeWhereInput = notDeletedWhere(
       status !== undefined ? { status } : {},
@@ -128,7 +146,11 @@ export class DictionariesService {
     return { items, total, page, pageSize };
   }
 
-  async createDictType(dto: CreateDictTypeDto): Promise<DictTypeResponseDto> {
+  async createDictType(
+    user: CurrentUserPayload,
+    dto: CreateDictTypeDto,
+  ): Promise<DictTypeResponseDto> {
+    await this.assertCanOrThrow(user, 'dict.create.type');
     // 唯一性预检查(包含软删):findUnique;沿用 v1 §10 / baseline §10。
     // dict_type.code 是普通 @unique(全表唯一不复用,与 memberNo 同语义),
     // 软删后 code 仍占位,新建撞 code 直接拒绝。
@@ -150,11 +172,17 @@ export class DictionariesService {
     );
   }
 
-  findDictTypeById(id: string): Promise<DictTypeResponseDto> {
+  async findDictTypeById(user: CurrentUserPayload, id: string): Promise<DictTypeResponseDto> {
+    await this.assertCanOrThrow(user, 'dict.read.type');
     return this.findDictTypeOrThrow(id);
   }
 
-  async updateDictType(id: string, dto: UpdateDictTypeDto): Promise<DictTypeResponseDto> {
+  async updateDictType(
+    user: CurrentUserPayload,
+    id: string,
+    dto: UpdateDictTypeDto,
+  ): Promise<DictTypeResponseDto> {
+    await this.assertCanOrThrow(user, 'dict.update.type');
     await this.findDictTypeOrThrow(id);
 
     const data: Prisma.DictTypeUpdateInput = {};
@@ -169,9 +197,11 @@ export class DictionariesService {
   }
 
   async updateDictTypeStatus(
+    user: CurrentUserPayload,
     id: string,
     dto: UpdateDictTypeStatusDto,
   ): Promise<DictTypeResponseDto> {
+    await this.assertCanOrThrow(user, 'dict.update.type');
     await this.findDictTypeOrThrow(id);
     return this.prisma.dictType.update({
       where: { id },
@@ -182,7 +212,10 @@ export class DictionariesService {
 
   // 软删 dict_type:决策 1=A,引用检查 dict_items + organizations.nodeTypeCode +
   // members.gradeCode;决策 5,事务内完成检查 + 软删,避免并发新建撞约束。
-  async softDeleteDictType(id: string): Promise<DictTypeResponseDto> {
+  // P0-F PR-2A D3=A:从 v1 @Roles(SUPER_ADMIN) 单角色放宽至 ops-admin 可调
+  // (sub-protection 仍由本方法事务内 IN_USE 引用检查兜底)。
+  async softDeleteDictType(user: CurrentUserPayload, id: string): Promise<DictTypeResponseDto> {
+    await this.assertCanOrThrow(user, 'dict.delete.type');
     return this.prisma.$transaction(async (tx) => {
       const target = await this.findDictTypeOrThrow(id, tx);
 
@@ -205,7 +238,11 @@ export class DictionariesService {
 
   // ============ dict_items ============
 
-  async listDictItems(query: ListDictItemsQueryDto): Promise<PageResultDto<DictItemResponseDto>> {
+  async listDictItems(
+    user: CurrentUserPayload,
+    query: ListDictItemsQueryDto,
+  ): Promise<PageResultDto<DictItemResponseDto>> {
+    await this.assertCanOrThrow(user, 'dict.read.item');
     const { page, pageSize, typeId, parentId, status } = query;
 
     // typeId 必填且必须存在(不存在 → DICT_TYPE_NOT_FOUND)
@@ -230,7 +267,11 @@ export class DictionariesService {
     return { items, total, page, pageSize };
   }
 
-  async createDictItem(dto: CreateDictItemDto): Promise<DictItemResponseDto> {
+  async createDictItem(
+    user: CurrentUserPayload,
+    dto: CreateDictItemDto,
+  ): Promise<DictItemResponseDto> {
+    await this.assertCanOrThrow(user, 'dict.create.item');
     return this.prisma.$transaction(async (tx) => {
       // 1. typeId 必须存在
       await this.findDictTypeOrThrow(dto.typeId, tx);
@@ -269,11 +310,17 @@ export class DictionariesService {
     });
   }
 
-  findDictItemById(id: string): Promise<DictItemResponseDto> {
+  async findDictItemById(user: CurrentUserPayload, id: string): Promise<DictItemResponseDto> {
+    await this.assertCanOrThrow(user, 'dict.read.item');
     return this.findDictItemOrThrow(id);
   }
 
-  async updateDictItem(id: string, dto: UpdateDictItemDto): Promise<DictItemResponseDto> {
+  async updateDictItem(
+    user: CurrentUserPayload,
+    id: string,
+    dto: UpdateDictItemDto,
+  ): Promise<DictItemResponseDto> {
+    await this.assertCanOrThrow(user, 'dict.update.item');
     await this.findDictItemOrThrow(id);
 
     const data: Prisma.DictItemUpdateInput = {};
@@ -288,9 +335,11 @@ export class DictionariesService {
   }
 
   async updateDictItemStatus(
+    user: CurrentUserPayload,
     id: string,
     dto: UpdateDictItemStatusDto,
   ): Promise<DictItemResponseDto> {
+    await this.assertCanOrThrow(user, 'dict.update.item');
     await this.findDictItemOrThrow(id);
     return this.prisma.dictItem.update({
       where: { id },
@@ -301,7 +350,10 @@ export class DictionariesService {
 
   // 软删 dict_item:决策 1=A,引用检查 子 items + organizations.nodeTypeCode +
   // members.gradeCode;决策 5,事务内完成检查 + 软删。
-  async softDeleteDictItem(id: string): Promise<DictItemResponseDto> {
+  // P0-F PR-2A D3=A:从 v1 @Roles(SUPER_ADMIN) 单角色放宽至 ops-admin 可调
+  // (sub-protection 仍由本方法事务内 IN_USE 引用检查兜底)。
+  async softDeleteDictItem(user: CurrentUserPayload, id: string): Promise<DictItemResponseDto> {
+    await this.assertCanOrThrow(user, 'dict.delete.item');
     return this.prisma.$transaction(async (tx) => {
       const target = await this.findDictItemOrThrow(id, tx);
 
@@ -325,9 +377,11 @@ export class DictionariesService {
   // ============ tree ============
 
   async getDictItemTree(
+    user: CurrentUserPayload,
     typeId: string,
     statusFilter?: DictItemStatus,
   ): Promise<DictItemTreeNodeDto[]> {
+    await this.assertCanOrThrow(user, 'dict.read.item');
     await this.findDictTypeOrThrow(typeId);
 
     const items = await this.prisma.dictItem.findMany({

@@ -12,7 +12,6 @@ import {
   Req,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
@@ -23,7 +22,6 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -39,8 +37,10 @@ import { ContributionRulesService } from './contribution-rules.service';
 // V2 第一阶段批次 5-A contribution_rules controller(5 路由)。
 // 路径前缀:全局 /api(main.ts)+ 'v2/contribution-rules'(决议 E1)。
 //
-// 权限统一(决议 E4):所有 5 接口 @Roles(SUPER_ADMIN, ADMIN);
-// USER 越权 → 通用 FORBIDDEN(40300),不开 23101 模块码(沿 baseline)。
+// **权限标注**(P0-F PR-2A,2026-05-18):入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;
+// 全部判权迁移到 ContributionRulesService 内 `rbac.can()`,失败抛
+// BizException(BizCode.RBAC_FORBIDDEN)(30100)。沿 PR-1 attachments F3 v1.0 范本。
+// 映射 seed 新增 4 条权限点:contribution.{read,create,update,delete}.rule。
 // APD 部门部长 / 副部长专属权限留 5-B 独立批次(F3)。
 
 @ApiTags('contribution-rules')
@@ -60,21 +60,20 @@ export class ContributionRulesController {
   }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
       '列出贡献值规则(分页 + 过滤 activityTypeCode / attendanceRoleCode / status;沿基础稳定排序)',
   })
   @ApiWrappedPageResponse(ContributionRuleResponseDto)
-  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   list(
+    @CurrentUser() currentUser: CurrentUserPayload,
     @Query() query: ContributionRuleQueryDto,
   ): Promise<PageResultDto<ContributionRuleResponseDto>> {
-    return this.service.list(query);
+    return this.service.list(currentUser, query);
   }
 
   @Post()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary: '创建贡献值规则(字典校验 + 字段语义 + ACTIVE 唯一性兜底含 NULL durationThreshold)',
   })
@@ -82,7 +81,7 @@ export class ContributionRulesController {
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.CONTRIBUTION_RULE_ACTIVE_DUPLICATE,
     BizCode.CONTRIBUTION_RULE_POINTS_INVALID,
     BizCode.CONTRIBUTION_RULE_ACTIVITY_TYPE_INVALID,
@@ -97,21 +96,22 @@ export class ContributionRulesController {
   }
 
   @Get(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({ summary: '贡献值规则详情(含软删返 404)' })
   @ApiWrappedOkResponse(ContributionRuleResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.CONTRIBUTION_RULE_NOT_FOUND,
   )
-  findOne(@Param() params: IdParamDto): Promise<ContributionRuleResponseDto> {
-    return this.service.findOne(params.id);
+  findOne(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Param() params: IdParamDto,
+  ): Promise<ContributionRuleResponseDto> {
+    return this.service.findOne(currentUser, params.id);
   }
 
   @Patch(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
       '部分更新贡献值规则(白名单仅 pointsBelow / pointsAbove / dailyCap / status / remark;禁改 activityTypeCode / attendanceRoleCode / durationThreshold,由 ValidationPipe 拦截抛 40000)',
@@ -120,7 +120,7 @@ export class ContributionRulesController {
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.CONTRIBUTION_RULE_NOT_FOUND,
     BizCode.CONTRIBUTION_RULE_ACTIVE_DUPLICATE,
     BizCode.CONTRIBUTION_RULE_POINTS_INVALID,
@@ -136,7 +136,6 @@ export class ContributionRulesController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
       '软删贡献值规则(写 deletedAt + deletedByUserId;不强制改 status;删完该维度 attendance 预填走 22048 不抛错路径)',
@@ -144,7 +143,7 @@ export class ContributionRulesController {
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.CONTRIBUTION_RULE_NOT_FOUND,
   )
   softDelete(

@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -13,12 +14,17 @@ import { createTestApp } from '../setup/test-app';
 // V2 第一阶段批次 5-A contribution-rules 模块 e2e。
 // 覆盖 D6 v1.1 §7.1 矩阵:list(7) / detail(3) / create(17) / update(10) / delete(4) /
 // perm(2) = 43 条。
+//
+// P0-F PR-2A(2026-05-18):入口切到 service 层 rbac.can();失败统一 RBAC_FORBIDDEN(30100)。
+// `adminAuth` 在 beforeAll 全局 grant ops-admin(沿 dict / org / member-dept e2e 范式);
+// 单独建 `adminDefaultAuth` 做"ADMIN 默认 30100"反向断言。
 
 describe('contribution-rules 模块', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let superAdminAuth: string;
   let adminAuth: string;
+  let adminDefaultAuth: string;
   let userAuth: string;
   let superAdminUserId: string;
 
@@ -38,16 +44,22 @@ describe('contribution-rules 模块', () => {
     prisma = app.get(PrismaService);
 
     await createTestUser(app, { username: 'cr-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'cr-adm', role: Role.ADMIN });
+    const admin = await createTestUser(app, { username: 'cr-adm', role: Role.ADMIN });
+    await createTestUser(app, { username: 'cr-adm-default', role: Role.ADMIN });
     await createTestUser(app, { username: 'cr-user', role: Role.USER });
     superAdminAuth = (await loginAs(app, 'cr-su')).authHeader;
     adminAuth = (await loginAs(app, 'cr-adm')).authHeader;
+    adminDefaultAuth = (await loginAs(app, 'cr-adm-default')).authHeader;
     userAuth = (await loginAs(app, 'cr-user')).authHeader;
     const suRow = await prisma.user.findUniqueOrThrow({
       where: { username: 'cr-su' },
       select: { id: true },
     });
     superAdminUserId = suRow.id;
+
+    // P0-F PR-2A:seed 33 条 RBAC + ops-admin;给 cr-adm 全局 grant ops-admin
+    const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    await grantOpsAdminToUser(app, admin.id, seed.opsAdminRoleId);
 
     // 字典:activity_type
     const activityTypeDict = await prisma.dictType.create({
@@ -548,25 +560,25 @@ describe('contribution-rules 模块', () => {
   // ============ perm(2) ============
 
   describe('权限边界', () => {
-    it('perm-1 USER 调用 list / detail / POST / PATCH / DELETE 全部 → 40300', async () => {
+    it('perm-1 USER 调用 list / detail / POST / PATCH / DELETE 全部 → 30100 RBAC_FORBIDDEN', async () => {
       const id = await seedRule({});
       const listRes = await request(httpServer(app)).get(URL).set('Authorization', userAuth);
-      expectBizError(listRes, BizCode.FORBIDDEN);
+      expectBizError(listRes, BizCode.RBAC_FORBIDDEN);
       const detailRes = await request(httpServer(app))
         .get(`${URL}/${id}`)
         .set('Authorization', userAuth);
-      expectBizError(detailRes, BizCode.FORBIDDEN);
+      expectBizError(detailRes, BizCode.RBAC_FORBIDDEN);
       const postRes = await postCreate(createRule({}), userAuth);
-      expectBizError(postRes, BizCode.FORBIDDEN);
+      expectBizError(postRes, BizCode.RBAC_FORBIDDEN);
       const patchRes = await request(httpServer(app))
         .patch(`${URL}/${id}`)
         .set('Authorization', userAuth)
         .send({ pointsBelow: 1 });
-      expectBizError(patchRes, BizCode.FORBIDDEN);
+      expectBizError(patchRes, BizCode.RBAC_FORBIDDEN);
       const delRes = await request(httpServer(app))
         .delete(`${URL}/${id}`)
         .set('Authorization', userAuth);
-      expectBizError(delRes, BizCode.FORBIDDEN);
+      expectBizError(delRes, BizCode.RBAC_FORBIDDEN);
     });
 
     it('perm-2 未登录 → 40100', async () => {
@@ -574,6 +586,23 @@ describe('contribution-rules 模块', () => {
       expectBizError(listRes, BizCode.UNAUTHORIZED);
       const postRes = await request(httpServer(app)).post(URL).send(createRule({}));
       expectBizError(postRes, BizCode.UNAUTHORIZED);
+    });
+
+    // P0-F PR-2A:ADMIN 默认无 ops-admin → 30100(显式反向断言)
+    it('perm-3 ADMIN 默认无 ops-admin 调用 list / POST → 30100 RBAC_FORBIDDEN', async () => {
+      const listRes = await request(httpServer(app))
+        .get(URL)
+        .set('Authorization', adminDefaultAuth);
+      expectBizError(listRes, BizCode.RBAC_FORBIDDEN);
+      const postRes = await postCreate(createRule({}), adminDefaultAuth);
+      expectBizError(postRes, BizCode.RBAC_FORBIDDEN);
+    });
+
+    // P0-F PR-2A:SUPER_ADMIN 短路验证(已在主成功路径多处隐含;此处补显式断言)
+    it('perm-4 SUPER_ADMIN 短路通过(无需 ops-admin grant) → list 200', async () => {
+      const listRes = await request(httpServer(app)).get(URL).set('Authorization', superAdminAuth);
+      expect(listRes.status).toBe(200);
+      expect(listRes.body.code).toBe(0);
     });
   });
 });
