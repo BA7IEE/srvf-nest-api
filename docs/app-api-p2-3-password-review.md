@@ -22,7 +22,7 @@
 1. **范围严格**:仅 1 个 endpoint(`PUT /api/app/v1/me/password`),**0 个新 DTO**(沿 Phase 2 review §2 + P0-D zero drift,直接复用 `ChangeMyPasswordDto`),**0 个新 service**(直接复用 `UsersService.changeMyPassword`),**0 个新 BizCode**,**0 个新 audit event**,**0 个新 throttler 实例**。
 2. **入参 DTO 零漂移**:复用 `ChangeMyPasswordDto { oldPassword, newPassword }`(沿 Phase 2 review §2 line 97 + [`users.dto.ts:176-200`](../src/modules/users/users.dto.ts) zero drift)。**禁止**新建 `UpdateAppSelfPasswordDto` / `AppChangePasswordDto`;**禁止**从 `ChangeMyPasswordDto` `extends` / `Pick` / `Omit` 衍生 App DTO(P2-2 §7.4 范式适用前提是 Admin DTO,本 DTO 是 Mixed 共享 P0-D DTO,沿 zero drift 直接复用)。
 3. **返回沿 P0-D zero drift**:返回 `UserResponseDto`(由 `userSafeSelect` 保证永不含 `passwordHash`)。**不**新建 `AppPasswordChangeResponseDto`(沿 §3);**不**返 204 No Content(P0-D 已锁定为 200 + UserResponseDto,zero drift)。
-4. **准入决策(沿 Phase 2 review §6.2 line 340 锁定 + 本评审稿 §4 拍板)**:`PUT /me/password` 是 Phase 2 P0 范围内**唯一****不**强约 `canUseApp=true` 的端点 — `memberId != null` 与 `Member.status=ACTIVE` 均 ⚠️ 可选;**Admin without member 允许通过 App endpoint 改密码**(沿 P0-D zero drift + Phase 2 review §6.2);否则 admin 兼运维场景将失去 App 端改密路径,破坏 P0-D `ADMIN 走 me/password 改自己` 现有承诺。**与用户起初建议的"P2-3 仍要求 canUseApp=true"不同**,本决策必须在 §4 单独由用户拍板确认。
+4. **准入决策(✅ 2026-05-20 v0.1 用户拍板锁定 D-P2-3-1 = X)**:`PUT /me/password` 是 Phase 2 P0 范围内**唯一****不**强约 `canUseApp=true` 的端点 — `memberId != null` 与 `Member.status=ACTIVE` 均 ⚠️ 可选;**Admin without member 允许通过 App endpoint 改密码**(沿 P0-D zero drift + Phase 2 review §6.2)。理由:**改密是账号级自助操作,不是 member-domain 数据访问;不暴露 member 业务数据;安全由旧密码校验 + `@PasswordChangeThrottle()` + refresh token 撤销 + `password.change.self` audit 四道闭合控制**。**例外边界严格**:该豁免**仅**适用于 `PUT /api/app/v1/me/password`,**禁止**被 `/me/profile` / `/activities/*` / `/my/*` / `/tasks/*` / `/managed/*` 复用(沿 §4.6 锁定列表)。
 5. **复用 P0-E PR-3 全套联动撤销**:撤销该 user 全部 refresh token(`revokedReason='self-password-change'`)+ 写 audit `password.change.self`(含 `extra.refreshTokensRevoked` count);**access token 不主动吊销**(沿 P0-D §5.7 + P0-E v1 D-4)。e2e 必须沿 [`users-change-my-password.e2e-spec.ts`](../test/e2e/users-change-my-password.e2e-spec.ts) §7.5 反向锁定断言"改密后旧 access 仍可调 `/me`"逐字复制到 App 路径,**不**破。
 6. **限流复用 P0-D**:`@PasswordChangeThrottle()` + `password-change` throttler 实例(5/60 IP);**不**新建 `'app-password-change'` throttler。**严禁**与 `'refresh'` / `default`(login)/ `'logout-all'` 混用。
 7. **Controller 落地**:在已有 [`AppMeController`](../src/modules/users/controllers/app-me.controller.ts) 增加 `@Put('password')` method,**不**新建 `AppPasswordController`;controller 内**必须显式构造 safeDto**(沿 P2-2 §7.4 风险表 10.11a 范式)再传给 `UsersService.changeMyPassword`,**禁止**透传 raw request body。
@@ -193,19 +193,34 @@
 3. **若强制走旧 path 改密**:意味着 admin 必须先有 PC 端访问能力 → 与"我们要给运维 mobile-friendly 体验"的初衷冲突。
 4. **审计审查不增益**:audit `password.change.self` 已包含 actor 完整身份(`actorUserId` / `actorRoleSnap`);限流由 `@PasswordChangeThrottle` 兜底;无额外越权面。
 
-### 4.3 决议建议:**采用选项 X**(沿 Phase 2 review §6.2 锁定)
+### 4.3 决议结果:✅ **D-P2-3-1 = X(2026-05-20 v0.1 用户拍板锁定)**
 
-请用户在拍板时显式选择 X 或 Y。**默认建议 X**。
+**最终决策**:
 
-### 4.4 拒绝路径(无论选 X 或 Y)
+```txt
+D-P2-3-1 = X
+Admin without member is allowed to use PUT /api/app/v1/me/password.
+```
 
-| 场景 | 选项 X 行为 | 选项 Y 行为 |
+**锁定理由(写入正文,不再开放重评估)**:
+
+- Password change is **account-level self-service**, not member-domain access.
+- It **does not expose member business data**.
+- Security is controlled by **old password verification, `@PasswordChangeThrottle()`, refresh-token revocation, and `password.change.self` audit**.
+
+**未来会话铁律**:本决策**已锁定**;P2-3 实施 PR 与后续会话**禁止**自行重新评估、建议回滚、或以"App 端默认要求 linked active member"为由收紧 `/api/app/v1/me/password` 准入。若用户主动要求重开,**必须**先暂停说明本节存在再讨论。
+
+### 4.4 拒绝路径(实施选项 X;选项 Y 列保留作历史对照,**不实施**)
+
+> **状态**:D-P2-3-1 = X 已锁(§4.3)。"选项 Y 行为" 列仅作历史评估对照保留,**不**作为 P2-3 实施目标;P2-3 e2e **只**断言"选项 X 行为"列。
+
+| 场景 | 选项 X 行为(✅ 实施) | 选项 Y 行为(❌ 不实施,历史对照) |
 |---|---|---|
 | 未登录 / 过期 token | `UNAUTHORIZED=40100` + HTTP 401(`JwtStrategy.validate`) | 同 X |
 | `User.status=DISABLED` 或软删 | `UNAUTHORIZED=40100` + HTTP 401(`JwtStrategy.validate` 阻断) | 同 X |
-| `User.memberId=null`(admin / 未绑队员)| ✅ **通过**(沿 §4.2.1) | ❌ **拒绝**:`FORBIDDEN=40300` + message "App 功能不可用:未绑定队员档案"(沿 Phase 2 review §6.3 临时复用 + P2-2 §6.1) |
-| `Member.status=INACTIVE` | ✅ **通过** | ❌ **拒绝**:`FORBIDDEN=40300` + message "App 功能不可用:队员档案已停用" |
-| `Member` 软删 | ✅ **通过** | ❌ **拒绝**:`FORBIDDEN=40300` + message "App 功能不可用:队员档案已删除" |
+| `User.memberId=null`(admin / 未绑队员)| ✅ **通过**(沿 §4.2.1 / §4.3 锁定) | (历史对照)`FORBIDDEN=40300` + message "App 功能不可用:未绑定队员档案" |
+| `Member.status=INACTIVE` | ✅ **通过** | (历史对照)`FORBIDDEN=40300` + message "App 功能不可用:队员档案已停用" |
+| `Member` 软删 | ✅ **通过** | (历史对照)`FORBIDDEN=40300` + message "App 功能不可用:队员档案已删除" |
 | `oldPassword` 错误 | `OLD_PASSWORD_INVALID=10005` + HTTP 401(沿 P0-D §5.3) | 同 X |
 | `oldPassword === newPassword`(严格 `===`,**不** trim / toLowerCase)| `NEW_PASSWORD_SAME_AS_OLD=10006` + HTTP 400(沿 P0-D §5.3 + [`users.service.ts:226-232`](../src/modules/users/users.service.ts))| 同 X |
 | `newPassword` 弱(< 8 / 缺字母 / 缺数字)| `BAD_REQUEST=40000` + HTTP 400 + message 含 `password` 关键词(沿 `ChangeMyPasswordDto` 装饰器)| 同 X |
@@ -218,6 +233,35 @@
 - 旧 path 行为**逐字不变**(沿 Phase 2 review §3.2 不动旧 path + §9.2 #9 path stability)
 - e2e [`users-change-my-password.e2e-spec.ts`](../test/e2e/users-change-my-password.e2e-spec.ts) 全部 21 用例**继续通过**(`pnpm test:e2e` 验收强约)
 - 旧 path **不** deprecate / **不** 加 301 redirect / **不** 加 dual-write 兼容层(沿 Phase 3 方案 C);两 path 并存
+
+### 4.6 例外边界:`canUseApp=true` 豁免**仅**适用本端点(沿 D-P2-3-1 锁定)
+
+> **核心铁律**:D-P2-3-1 = X 锁定的"Admin without member 允许使用"**仅**是 `PUT /api/app/v1/me/password` **单一端点**的特例豁免;**不是** App API 整体准入规则的松绑。任何把该豁免外推到其他 App endpoint 的行为**均视作越权**,PR review 强制拒绝。
+
+**This exception applies only to** `PUT /api/app/v1/me/password`.
+
+**It must not be reused by**:
+
+- ❌ `/api/app/v1/me/profile`(GET + PATCH;P2-2 已锁 `canUseApp=true` 必需;沿 [`docs/app-api-p2-2-profile-review.md §5.4`](app-api-p2-2-profile-review.md))
+- ❌ `/api/app/v1/activities/*`(P2-4 范围;`activities/available` + `activities/:id`;沿 Phase 2 review §6.2 `Member.status=ACTIVE` **必填**)
+- ❌ `/api/app/v1/my/*`(P2-5 / P2-6 / P2-7 范围;`my/activities` + `my/registrations*` + `my/attendance-records` + `my/certificates`;沿 Phase 2 review §6.2 `Member.status=ACTIVE` **必填** + scope owner 双重校验)
+- ❌ `/api/app/v1/tasks/*`(Phase 2 不实施;命名空间预留;沿 Phase 0.5 §3.2 / §4.1;未来实施时**必须** `canUseApp=true`)
+- ❌ `/api/app/v1/managed/*`(Phase 2 不实施;命名空间预留;沿 Phase 0.5 §3.2 / §4.4;未来实施时**必须** `canUseApp=true` + 业务级负责人身份校验)
+
+**为什么仅本端点豁免**:
+
+1. **改密不读 / 不写 member 业务字段**:`UsersService.changeMyPassword` 的 service 闭包([`users.service.ts:211-270`](../src/modules/users/users.service.ts))**仅**访问 `User.passwordHash` 与 `RefreshToken` 表,**完全不**触碰 `Member` / `MemberProfile` / `MemberDepartment` / `Activity` / `ActivityRegistration` / `AttendanceRecord` / `Certificate` 等业务表 — 与 D-5.2 字段可见性铁律严格正交。
+2. **改密的安全闭环已就位且独立**:旧密码 `bcrypt.compare` + `@PasswordChangeThrottle()` IP 限流(5/60)+ refresh token 全部撤销(P0-E)+ `password.change.self` audit(含 actor + `extra.refreshTokensRevoked`)四道控制完全在账号层闭合,不依赖 member 状态。
+3. **其他 App endpoint 都触及 member-domain 数据**:`/me/profile` 读 member 摘要;`/activities/*` 读活动可参加性(依赖 member 在岗状态);`/my/*` 读 member 持有的业务对象;`/tasks/*` 与 `/managed/*` 触发管理 / 负责场景 — 全部**必须** `Member.status=ACTIVE`。
+4. **若未来出现新"账号级自助"端点**(如绑定 / 解绑 OAuth 账号 / 改 username / 改 email),**必须**单独立项评审,**禁止**默认继承本豁免;每个新账号级端点都要独立论证"不读 / 不写 member 业务字段"才能复用本豁免语义。
+
+**PR review 强制检查**:
+
+P2-3 实施 PR 内,reviewer **必须** grep 确认:
+
+- ✅ controller 内**仅** `PUT /me/password` method**不**调 `appIdentity.resolve + assertCanUseApp`(沿选项 X)
+- ❌ 其他任何 App method(`getMe` / `getMeAccount` / `getMeCapabilities` / `getMyProfile` / `updateMyProfile` / 未来 P2-4+ 端点)**仍必须**保留各自的 `canUseApp` 判定路径(P2-2 `AppProfileService.assertCanUseApp` 等)
+- ❌ **禁止**为图省事抽 `AppAccessOptional` / `AppAccessSkipped` 等公共 helper 把本豁免泛化为可复用机制
 
 ---
 
@@ -743,7 +787,7 @@ P2-3 **不**夹带以下任一项(违反 = PR review 拒绝):
 
 ## 15. 决策记录 / 验收 / 修订
 
-### 15.1 已锁定决策(沿前序评审稿)
+### 15.1 已锁定决策(沿前序评审稿 + 本评审稿 v0.1)
 
 - ✅ 候选 / 临时编号志愿者**不进** Phase 2 App 登录范围(D-5.1)
 - ✅ Admin 兼队员走 linked-member self perspective(D-5.2)
@@ -756,16 +800,17 @@ P2-3 **不**夹带以下任一项(违反 = PR review 拒绝):
 - ✅ `PUT /me/password` 独立 PR(P2-3;沿 Phase 2 review §8.1 v0.1)
 - ✅ P0-D zero drift(DTO / service / audit / throttle / BizCode / token 行为全沿用)
 - ✅ P0-E zero drift(refresh 撤销 / access 行为锁定)
+- ✅ **D-P2-3-1 = X**(2026-05-20 v0.1 用户拍板):Admin without member 允许使用 `PUT /api/app/v1/me/password`;**例外边界严格**仅本端点(沿 §4.3 / §4.6 锁定列表)
 
 ### 15.2 本评审稿决议项(用户拍板时回答)
 
-| # | 决议项 | 默认建议 | 阻塞 P2-3 启动? |
+| # | 决议项 | 状态 | 阻塞 P2-3 启动? |
 |---|---|---|---|
-| **D-P2-3-1** | **Admin / SUPER_ADMIN without member 是否允许通过 `/api/app/v1/me/password` 改密?** | **选项 X(沿 Phase 2 review §6.2 line 340 锁定;允许)** | ✅ 是(影响准入逻辑 + e2e §10.2.10 用例)|
-| **D-P2-3-2** | 限流 throttler 实例归属:共享 `'password-change'` vs 新建 `'app-password-change'` | **A 档(共享;沿 §8.3)** | ⚠️ 影响代码(若选 B 档,需新增 `app.config.ts` + `throttle-options.ts` + decorator)|
-| D-P2-3-3 | `buildAuditMeta` helper 归属:`AppMeController` 内复制 vs 抽 `app-controller-helpers.ts` | α(复制;沿 §9.5)| ⚠️ 影响代码(若选 β,需新增 1 个 file)|
-| D-P2-3-4 | `CLAUDE.md` / `AGENTS.md` §19.7 是否增补 D-9 | **不增补**(沿 §14.1)| ⚠️ 影响 PR-0 docs PR diff 行数 |
-| D-P2-3-5 | OpenAPI snapshot 旧 path `PUT /api/users/me/password` 是否在 P2-3 PR 描述中显式列为"行为锁定"对照 | **是**(沿 §11.2 + Phase 2 review §9.2 #9 path stability)| ⚠️ 影响 PR 描述模板;**不**影响代码 |
+| **D-P2-3-1** | **Admin / SUPER_ADMIN without member 是否允许通过 `/api/app/v1/me/password` 改密?** | **✅ 已锁定 = X**(2026-05-20 v0.1 用户拍板;沿 §4.3 + §4.6 例外边界)| ✅ 是(已解锁,P2-3 e2e §10.2.10 按 X 锁定;选项 Y 不实施)|
+| **D-P2-3-2** | 限流 throttler 实例归属:共享 `'password-change'` vs 新建 `'app-password-change'` | ⏳ 待拍板(默认 A 档共享;沿 §8.3)| ⚠️ 影响代码(若选 B 档,需新增 `app.config.ts` + `throttle-options.ts` + decorator)|
+| D-P2-3-3 | `buildAuditMeta` helper 归属:`AppMeController` 内复制 vs 抽 `app-controller-helpers.ts` | ⏳ 待拍板(默认 α 复制;沿 §9.5)| ⚠️ 影响代码(若选 β,需新增 1 个 file)|
+| D-P2-3-4 | `CLAUDE.md` / `AGENTS.md` §19.7 是否增补 D-9 | ⏳ 待拍板(默认不增补;沿 §14.1)| ⚠️ 影响 PR-0 docs PR diff 行数 |
+| D-P2-3-5 | OpenAPI snapshot 旧 path `PUT /api/users/me/password` 是否在 P2-3 PR 描述中显式列为"行为锁定"对照 | ⏳ 待拍板(默认是;沿 §11.2 + Phase 2 review §9.2 #9 path stability)| ⚠️ 影响 PR 描述模板;**不**影响代码 |
 
 ### 15.3 修订规则
 
@@ -787,6 +832,7 @@ P2-3 **不**夹带以下任一项(违反 = PR review 拒绝):
 | 日期 | 版本 | 摘要 |
 |---|---|---|
 | 2026-05-20 | v0 | 本评审稿 v0 创建;1 个 endpoint + 0 新 DTO + 0 新 service + 0 新 BizCode + 0 新 audit + 0 新 throttler;沿 Phase 2 review §8.1 v0.1 P2-3 独立 PR 决议 + P0-D / P0-E zero drift;13 节(范围 / DTO / 返回 / identity / BizCode / token / audit / throttle / service / 测试 / contract / PR / 风险 + 引用 + 决议);5 个决议项(D-P2-3-1 ~ D-P2-3-5);17 条风险表 |
+| 2026-05-20 | v0.1 | **D-P2-3-1 用户拍板锁定 = X**:Admin without member 允许使用 `PUT /api/app/v1/me/password`。理由:改密是账号级自助操作,不是 member-domain 数据访问;不暴露 member 业务数据;安全由旧密码校验 + `@PasswordChangeThrottle()` + refresh-token 撤销 + `password.change.self` audit 四道闭合控制。**新增 §4.6 例外边界**:豁免严格仅适用 `PUT /api/app/v1/me/password`,**禁止**被 `/me/profile` / `/activities/*` / `/my/*` / `/tasks/*` / `/managed/*` 复用;PR review 强制 grep 检查。同步更新 §0 TL;DR #4 / §4.3(锁定 X + 三条理由 + 未来会话铁律)/ §4.4(选项 Y 列降级为"历史对照,不实施")/ §15.1(添加 D-P2-3-1 = X 到锁定列表)/ §15.2(D-P2-3-1 状态从"默认建议"改"✅ 已锁定")/ 文末"当前状态"段落。保留:`ChangeMyPasswordDto` / `UsersService.changeMyPassword` / `@PasswordChangeThrottle()` / `password.change.self` audit / 现有 BizCode 不新增 / refresh revoke 现有行为 / safeDto 强制不透传 raw body 全部不变 |
 
 ---
 
@@ -816,6 +862,6 @@ P2-3 **不**夹带以下任一项(违反 = PR review 拒绝):
 
 ---
 
-> **本评审稿生效时间**:2026-05-20(P2-3 实施前评审稿 v0)。
-> **当前状态**:⏳ 待用户对 §15.2 中 5 项决议拍板冻结;**特别**关注 D-P2-3-1(Admin without member 准入)。
+> **本评审稿生效时间**:2026-05-20(P2-3 实施前评审稿 v0 / v0.1)。
+> **当前状态**:✅ **D-P2-3-1 已锁定为 X**(2026-05-20 v0.1;沿 §4.3 + §4.6);⏳ §15.2 中余 4 项决议(D-P2-3-2 ~ D-P2-3-5)默认建议待用户拍板;**不**阻塞 P2-3 启动(余 4 项均为代码 / PR 描述层级,可在 P2-3 PR 启动评审时一并决议)。
 > **过期条件**:P2-3 实施 PR 合并后,本评审稿降为"历史评审"性质;沿 Phase 2 review §12.3 修订规则。
