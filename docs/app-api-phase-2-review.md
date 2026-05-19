@@ -21,7 +21,7 @@
 2. **不照搬 [`migration-plan §4.1`](api-client-boundary-migration-plan.md) 的旧 11 个 P0 清单**:按 [Phase 0.5 §10.2 D-1 ~ D-4 锁定决策](app-permission-boundary-review.md) 重新校准 — `/me/permissions` → `/me/capabilities`、`/me/registrations*` → `/my/registrations*`、`/me/attendance-records` → `/my/attendance-records`、`/me` 拆 `me + me/account + me/profile`、`activities` 拆 `activities/available + my/activities`(沿 §1.2)。
 3. **Phase 2 不支持候选 / 临时编号志愿者** App 登录(沿 D-5.1):仅 `User.memberId != null && User.status=ACTIVE && User.deletedAt IS NULL && Member.status=ACTIVE` 的正式队员可用 App;Admin 兼队员走 linked-member self perspective,**不**扩大字段可见性(沿 D-5.2)。
 4. **Phase 2 暴露 `capabilities` 不暴露 raw RBAC permission code**(沿 D-5.3):`GET /api/app/v1/me/capabilities` 返 `canUseApp` / `canRegisterActivity` / `canCancelOwnRegistration` 等 product-level 字段;后端**仍必须**在每个写端点重新做授权校验。
-5. **Phase 2 PR 拆分 = P2-0 docs-freeze + P2-1 ~ P2-6 业务 + P2-7 收尾** 共 **8 个 PR**(沿 §8);每个 PR diff **< 500 行**(超 500 行必须拆);**P2-0 不动代码**,P2-1 ~ P2-6 均为 **C 档**(新 endpoint + 新 DTO + contract / e2e 变化)。
+5. **Phase 2 PR 拆分 = P2-0 docs-freeze + P2-1 ~ P2-7 业务 + P2-8 收尾** 共 **9 个 PR**(沿 §8;**v0.1 修订** 把 `PUT /me/password` 独立拆出为 P2-3);每个 PR diff **< 500 行**(超 500 行必须拆);**P2-0 不动代码**,P2-1 ~ P2-7 均为 **C 档**(新 endpoint + 新 DTO + contract / e2e 变化)。
 6. **Phase 2 不动**:`prisma/schema.prisma` / migration / Role enum / MemberStatus enum / Permission seed / 旧 `/api/v2/*` 行为 / 旧 `/api/users/me*` 行为 / Phase 1B alias / 多份 Swagger 拆分 / `tasks/*` / `managed/*`(沿 §3)。
 7. **Phase 2 启动硬前置**:本评审稿冻结 + Phase 0.5 §10.2 / Phase 0.6 / Phase 0.7 已被用户拍板;若 §10.1.5 / §10.1.6 待业务方决议项尚未拍板,Phase 2 P0 端点**仍可启动**(因 P0 范围避开 §10.1.5/6 影响面);**仅** `/me/profile` 中身份证号字段是否暴露给本人完整号会触发 §10.1.6,**默认走后 4 位掩码**(沿 [Phase 0.6 §2.3 / §6.5](data-access-lifecycle-boundary-review.md))。
 
@@ -84,26 +84,26 @@ GET   /api/app/v1/activities/:id
 
 ## 2. Phase 2 最终建议接口清单
 
-> **状态**:**实施候选**(由 Phase 2 P2-1 ~ P2-6 各自 PR 评审稿在启动时再次对齐)。
-> 本表为**强制基线**;Phase 2 各 PR 评审稿允许**收窄**(如 P2-5 暂缓某接口),**禁止**扩张(新增本表外端点必须用户拍板)。
+> **状态**:**实施候选**(由 Phase 2 P2-1 ~ P2-7 各自 PR 评审稿在启动时再次对齐)。
+> 本表为**强制基线**;Phase 2 各 PR 评审稿允许**收窄**(如 P2-6 暂缓某接口),**禁止**扩张(新增本表外端点必须用户拍板)。
 
 | Method | Path | Purpose | Surface | Scope | Auth | DTO(命名草案) | Service 复用 | Risk | PR Batch |
 |---|---|---|---|---|---|---|---|---|---|
 | GET | `/api/app/v1/me` | 本人 user + member 摘要 + `canUseApp` 标志 | mobile | self | JwtAuthGuard(任意登录用户)| `AppMeResponseDto` | `users.service.findMe` + 新 `AppIdentityResolver`(可内嵌 users.service 内一个 method)| 中 | **P2-1** |
 | GET | `/api/app/v1/me/account` | 仅账号信息(username / role / lastLoginAt / canUseApp / `memberLinked` 标志)| mobile | self | JwtAuthGuard | `AppMeAccountDto` | 同上 | 低 | P2-1 |
-| GET | `/api/app/v1/me/profile` | 本人 member 详情(App 视角字段;**身份证号默认掩码**)| mobile | self | JwtAuthGuard + Member.status=ACTIVE | `AppSelfProfileDto` | 新 method `getMemberProfileForSelf(memberId)`(可在 `members.service` 新增,**不**复用 admin `getProfile`)| **高(L2)** | **P2-2** |
-| PATCH | `/api/app/v1/me/profile` | 改 nickname / avatarKey 等(白名单严格)| mobile | self | JwtAuthGuard + Member.status=ACTIVE | `UpdateAppSelfProfileDto` | 新 method;**禁止**夹带 `username` / `email` / `role` / `status` / `password*` / `memberNo` / `id` / `displayName` 等任何其他字段 | 中(白名单)| P2-2 |
-| PUT | `/api/app/v1/me/password` | 本人改密 | mobile | self | JwtAuthGuard + `@PasswordChangeThrottle()` | `ChangeMyPasswordDto`(沿 P0-D zero drift) | 复用 `users.service.changeMyPassword` | **高(沿 P0-D + P0-E)**| **P2-1** |
 | GET | `/api/app/v1/me/capabilities` | 本人 App capability map(product-level) | mobile | self | JwtAuthGuard | `AppCapabilityResponseDto` | 新 `AppCapabilityService.resolve(currentUser)` | **高(D-5.3)** | **P2-1** |
-| GET | `/api/app/v1/activities/available` | 我可参加的活动列表(published + 报名窗内 + 未满 + 未被本人报过)| mobile | self(隐式) | JwtAuthGuard + Member.status=ACTIVE | `AppAvailableActivityListItemDto` | 新 method `activities.service.listAvailableForMember(memberId, query)`;**不**复用 `list(currentUser, query)` | **高(新逻辑)** | **P2-3** |
-| GET | `/api/app/v1/activities/:id` | 活动详情(App 视角)| mobile | self(隐式) | JwtAuthGuard + Member.status=ACTIVE | `AppActivityDetailDto` | 复用 `activities.service.findOne` + 新 `AppActivityPresenter` | 中(DTO 隔离) | P2-3 |
-| GET | `/api/app/v1/my/activities` | 我已报名 / 已参与的活动列表(汇总视图)| mobile | self | JwtAuthGuard + Member.status=ACTIVE | `AppMyActivityListItemDto` | 新 method(可在 `activity-registrations.service` 内,**返 activity 摘要而非 registration**)| 中 | P2-4 |
-| GET | `/api/app/v1/my/registrations` | 我的报名记录列表 | mobile | self | JwtAuthGuard + Member.status=ACTIVE | `AppMyRegistrationListItemDto` | 复用 `activity-registrations.service.listMyRegistrations` + 新 Presenter | 中 | P2-4 |
-| GET | `/api/app/v1/my/registrations/:id` | 我的某条报名详情 | mobile | self | JwtAuthGuard + 资源 owner 校验(`registration.memberId == currentUser.memberId`)| `AppMyRegistrationDto` | 复用 `activity-registrations.service.findMyRegistration` + 新 Presenter | 中(scope 双重校验) | P2-4 |
-| POST | `/api/app/v1/my/registrations` | 本人报名某活动(入参 `activityId` + 自定义表单数据)| mobile | self | JwtAuthGuard + Member.status=ACTIVE + Policy(活动状态 / 报名窗 / 上限 / 已报过 / 资格)| `CreateAppMyRegistrationDto` | 复用 `activity-registrations.service.registerMe` + Phase 0.7 Policy 显式 transition guard | **高(状态机 + Policy)** | **P2-4** |
-| PATCH | `/api/app/v1/my/registrations/:id/cancel` | 取消本人报名 | mobile | self | JwtAuthGuard + Member.status=ACTIVE + 资源 owner + Policy(状态可取消 + 取消窗) | (无 body 或 `CancelAppMyRegistrationDto` 仅可选备注)| 复用 `activity-registrations.service.cancelMyRegistration` + Phase 0.7 transition guard | **高(状态机)** | P2-4 |
-| GET | `/api/app/v1/my/attendance-records` | 我的考勤记录(汇总;按活动)| mobile | self | JwtAuthGuard + Member.status=ACTIVE | `AppMyAttendanceRecordDto` | 复用 `attendances.service.listMyRecords` + 新 Presenter | 中 | **P2-5** |
-| GET | `/api/app/v1/my/certificates` | 我的证书列表(本人;含未通过的让本人自查;但**禁止**返其他 member 字段)| mobile | self | JwtAuthGuard + Member.status=ACTIVE | `AppMyCertificateDto` | 新 method `certificates.service.listForMember(memberId, query)` | 中(新 method) | **P2-6** |
+| GET | `/api/app/v1/me/profile` | 本人 member 详情(App 视角字段;**身份证号默认掩码**)| mobile | self | JwtAuthGuard + Member.status=ACTIVE | `AppSelfProfileDto` | 新 method `getMemberProfileForSelf(memberId)`(可在 `members.service` 新增,**不**复用 admin `getProfile`)| **高(L2)** | **P2-2** |
+| PATCH | `/api/app/v1/me/profile` | 改 `nickname` / `avatarKey`(严格白名单 2 字段;沿 §5.2 #5 锁定列表) | mobile | self | JwtAuthGuard + Member.status=ACTIVE | `UpdateAppSelfProfileDto`(仅 `nickname` + `avatarKey`) | 新 method;**禁止**夹带 §5.2 #5 列出的任何其他字段 | 中(白名单严格)| P2-2 |
+| PUT | `/api/app/v1/me/password` | 本人改密(P0-D 全套铁律继承;独立 PR) | mobile | self | JwtAuthGuard + `@PasswordChangeThrottle()` | `ChangeMyPasswordDto`(沿 P0-D zero drift) | 复用 `users.service.changeMyPassword` | **高(沿 P0-D + P0-E)** | **P2-3** |
+| GET | `/api/app/v1/activities/available` | 我可参加的活动列表(published + 报名窗内 + 未满 + 未被本人报过)| mobile | self(隐式) | JwtAuthGuard + Member.status=ACTIVE | `AppAvailableActivityListItemDto` | 新 method `activities.service.listAvailableForMember(memberId, query)`;**不**复用 `list(currentUser, query)` | **高(新逻辑)** | **P2-4** |
+| GET | `/api/app/v1/activities/:id` | 活动详情(App 视角)| mobile | self(隐式) | JwtAuthGuard + Member.status=ACTIVE | `AppActivityDetailDto` | 复用 `activities.service.findOne` + 新 `AppActivityPresenter` | 中(DTO 隔离) | P2-4 |
+| GET | `/api/app/v1/my/activities` | 我已报名 / 已参与的活动列表(汇总视图)| mobile | self | JwtAuthGuard + Member.status=ACTIVE | `AppMyActivityListItemDto` | 新 method(可在 `activity-registrations.service` 内,**返 activity 摘要而非 registration**)| 中 | **P2-5** |
+| GET | `/api/app/v1/my/registrations` | 我的报名记录列表 | mobile | self | JwtAuthGuard + Member.status=ACTIVE | `AppMyRegistrationListItemDto` | 复用 `activity-registrations.service.listMyRegistrations` + 新 Presenter | 中 | P2-5 |
+| GET | `/api/app/v1/my/registrations/:id` | 我的某条报名详情 | mobile | self | JwtAuthGuard + 资源 owner 校验(`registration.memberId == currentUser.memberId`)| `AppMyRegistrationDto` | 复用 `activity-registrations.service.findMyRegistration` + 新 Presenter | 中(scope 双重校验) | P2-5 |
+| POST | `/api/app/v1/my/registrations` | 本人报名某活动(入参 `activityId` + 自定义表单数据)| mobile | self | JwtAuthGuard + Member.status=ACTIVE + Policy(活动状态 / 报名窗 / 上限 / 已报过 / 资格)| `CreateAppMyRegistrationDto` | 复用 `activity-registrations.service.registerMe` + Phase 0.7 Policy 显式 transition guard | **高(状态机 + Policy)** | **P2-5** |
+| PATCH | `/api/app/v1/my/registrations/:id/cancel` | 取消本人报名 | mobile | self | JwtAuthGuard + Member.status=ACTIVE + 资源 owner + Policy(状态可取消 + 取消窗) | (无 body 或 `CancelAppMyRegistrationDto` 仅可选备注)| 复用 `activity-registrations.service.cancelMyRegistration` + Phase 0.7 transition guard | **高(状态机)** | P2-5 |
+| GET | `/api/app/v1/my/attendance-records` | 我的考勤记录(汇总;按活动)| mobile | self | JwtAuthGuard + Member.status=ACTIVE | `AppMyAttendanceRecordDto` | 复用 `attendances.service.listMyRecords` + 新 Presenter | 中 | **P2-6** |
+| GET | `/api/app/v1/my/certificates` | 我的证书列表(本人;含未通过的让本人自查;但**禁止**返其他 member 字段)| mobile | self | JwtAuthGuard + Member.status=ACTIVE | `AppMyCertificateDto` | 新 method `certificates.service.listForMember(memberId, query)` | 中(新 method) | **P2-7** |
 
 ### 2.1 路径设计校验(沿 Phase 0.5 §10.2 D-4)
 
@@ -262,7 +262,7 @@ P2-1 PR 评审稿启动时**必须**对齐:
 | `AppMyRegistrationListItemDto` | `GET /my/registrations` | AppSelf | L0 + L1 |
 | `AppMyRegistrationDto` | `GET /my/registrations/:id` | AppSelf | L0 + L1(含本人被 reject 的 `rejectReason` — L1 对本人) |
 | `CreateAppMyRegistrationDto` | `POST /my/registrations` 入参 | AppSelf | 严格白名单:`activityId` + `registrationData?`(可选自定义表单数据) |
-| `CancelAppMyRegistrationDto` | `PATCH /my/registrations/:id/cancel` 入参 | AppSelf | 严格白名单:可选 `note`(P2-4 评审稿决议是否必填) |
+| `CancelAppMyRegistrationDto` | `PATCH /my/registrations/:id/cancel` 入参 | AppSelf | 严格白名单:可选 `note`(P2-5 评审稿决议是否必填) |
 | `AppMyAttendanceRecordDto` | `GET /my/attendance-records` | AppSelf | L0 + L1 |
 | `AppMyCertificateDto` | `GET /my/certificates` | AppSelf | L0 + L1(含本人未通过的 `rejectionReason` — L1 对本人) |
 | (预留命名,**不实施**)`AppPeer*Dto` | — | AppPeer | 沿 Phase 0.5 §6.1;Phase 2 不实施 |
@@ -274,7 +274,22 @@ P2-1 PR 评审稿启动时**必须**对齐:
 2. **禁止把 Prisma model 直接作为 App response contract**:`User` / `Member` / `Activity` / `ActivityRegistration` / `AttendanceRecord` / `Certificate` Prisma 类型**仅在** service 内使用,**绝不**返给 controller
 3. **AppSelf DTO 字段集 ≤ L2(本人)**;L3 字段(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / 完整 signed URL)**永远不出现**;snapshot 测试若出现 L3 → PR 拒合并(沿 [Phase 0.6 §6.5](data-access-lifecycle-boundary-review.md))
 4. **`AppSelfProfileDto` 中身份证号默认后 4 位掩码**(沿 [Phase 0.6 §2.3](data-access-lifecycle-boundary-review.md));完整号走独立审计接口(**Phase 2 不实施**)
-5. **`UpdateAppSelfProfileDto` 严格白名单**:仅允许 `nickname` / `avatarKey`(沿 [`CLAUDE.md §11`](../CLAUDE.md));**禁止**包含 `username` / `email` / `password` / `newPassword` / `oldPassword` / `passwordHash` / `role` / `status` / `deletedAt` / `id` / `lastLoginAt` / `memberId` / `memberNo` / `displayName` / `gradeCode` / `realName` / `mobile` / `documentNumber` / `bloodTypeCode` / `medicalNotes`;若 P2-2 评审稿决议 App 端允许本人改 member 字段(如 `realName` / `mobile`),**必须**与 Admin 改 member 接口拉齐审计 + 限流,**不**夹带到本接口
+5. **`UpdateAppSelfProfileDto` 严格白名单**(Phase 2 锁定;沿 [`CLAUDE.md §11`](../CLAUDE.md)):
+
+   **仅允许 2 个字段**:
+   - `nickname`(本人昵称;`@MaxLength(50)`)
+   - `avatarKey`(本人头像 attachment key;`@MaxLength(255)`)
+
+   **明确禁止**(以下任一字段进入 DTO 视作越权;`forbidNonWhitelisted: true` 兜底,DTO 自身白名单是第一道防线):
+
+   - **Member 业务字段**:`realName` / `mobile` / `documentNumber`(身份证号)/ `bloodType` / `bloodTypeCode` / `medicalNotes`(健康信息 / 医疗备注)/ `memberNo` / `displayName` / `gradeCode`
+   - **Emergency contacts**:任何 `emergencyContact*` / `contactName` / `contactPhone` / `relation` / `emergencyContacts[]` 字段(沿 [inventory §2.6](api-client-boundary-inventory.md);App 端"看 / 改自己的紧急联系人"应**独立** endpoint `PATCH /api/app/v1/me/emergency-contacts/*`,**Phase 2 不实施**;若纳入需独立立项 + 独立 DTO + audit + 限流)
+   - **Organization / Department**:`organizationId` / `departmentId` / `organizationName` / `departmentName` / `memberDepartment*` 字段(沿 [inventory §2.12](api-client-boundary-inventory.md);部门归属由管理员维护,**Phase 2 不开放本人改**)
+   - **Account 字段**:`username` / `email` / `password` / `newPassword` / `oldPassword` / `passwordHash` / `lastLoginAt` / `id` / `memberId` / `userId`(本人改密走独立 endpoint `PUT /api/app/v1/me/password`,沿 P2-3;**禁止**在本接口夹带)
+   - **Role / Permission / Status**:`role` / `roles[]` / `permissions[]` / `permissionCodes[]` / `status` / `deletedAt`(系统字段;沿 [`CLAUDE.md §13`](../CLAUDE.md);**禁止**通过资料接口提权)
+   - **审批 / 内部字段**:`reviewerNote` / `verifiedBy` / `verifiedAt` / `internalNote` / `cancelledBy*` / `publishedBy*` / 任何 Admin 视角内部字段
+
+   若 P2-2 评审稿决议 App 端允许本人改某项 Member 业务字段(如 `realName` / `mobile`),**必须**独立立项,**不**夹带到本接口;独立立项时需:与 Admin 改 member 接口拉齐**审计** + **限流** + **字段级 BizException** + **L2 字段处理策略**(沿 [Phase 0.6 §2.3 / §6.5](data-access-lifecycle-boundary-review.md)),并在新评审稿中明确单字段授权链路。
 6. **`CreateAppMyRegistrationDto` 严格白名单**:仅允许 `activityId` + 可选 `registrationData`(JSON);**禁止**包含 `memberId` / `userId` / `submittedAt` / `statusCode` / `reviewedBy` / `reviewedAt` 等任何系统字段
 7. **`AppMyRegistrationDto` 状态字段语义化**:`statusCode` 若返字符串(沿现状字典 4 态 `pending` / `pass` / `reject` / `cancelled`),**前端按字符串映射**;**禁止**返内部审批语义字段(如 `pending_internal_review`);沿 [Phase 0.6 §4.4](data-access-lifecycle-boundary-review.md)
 8. **物理目录**(沿 [Phase 0.7 §2.3 / §6.3](code-architecture-boundary-review.md)):每个模块独立 `dto/app/` 目录;**禁止**跨模块共用 `dto/app/`;**禁止**新建项目级 `dto/app/` 公共目录
@@ -398,27 +413,32 @@ Phase 2 **不**拆以下大 service(各拆分时机沿 §12 表);Phase 2 新增 
 
 > 沿 [`process.md §3`](process.md):每个 PR 单独立项,**不混档**,**不混 PR**;每 PR diff < 500 行(超 500 必须拆)。
 
-### 8.1 PR 串(P2-0 ~ P2-7)
+### 8.1 PR 串(P2-0 ~ P2-8)
+
+> **v0.1 修订(2026-05-19)**:`PUT /me/password` 从原 P2-1 中**拆出**为**独立 PR P2-3**;原 P2-3 ~ P2-7 编号顺延一位为 P2-4 ~ P2-8。
+> **拆分理由**:改密涉及限流(`@PasswordChangeThrottle()`)/ access token 行为 / 联动撤本人全部 refresh token / audit(`password.change.self`)/ 错误码 10005 / 10006 / P0-E zero drift 等**安全敏感面**,必须**独立评审 + 独立 e2e + 独立 contract snapshot**,**不**与基础身份 / 资料 endpoint 混在同一 PR。
 
 | PR | 范围 | 档位 | 依赖 | 预估 diff |
 |---|---|---|---|---|
 | **P2-0** | **docs-freeze**:本评审稿用户拍板冻结 + Phase 2 同步引用 + `CLAUDE.md` / `AGENTS.md` §19.7 D-8 增补 | **A 档** | — | < 200 行(纯 docs)|
-| **P2-1** | `/api/app/v1/me` + `/me/account` + `/me/capabilities` + `/me/password`(共 4 endpoint)+ `AppMeResponseDto` / `AppMeAccountDto` / `AppCapabilityResponseDto` + `AppIdentityResolver` + `AppCapabilityService` + e2e | **C 档** | P2-0 | < 500 行 |
-| **P2-2** | `/me/profile`(GET + PATCH;2 endpoint)+ `AppSelfProfileDto` / `UpdateAppSelfProfileDto` + member-profile self perspective method + e2e | **C 档** | P2-1 | < 500 行 |
-| **P2-3** | `/activities/available` + `/activities/:id`(2 endpoint)+ `AppAvailableActivityListItemDto` / `AppActivityDetailDto` + `activities.service.listAvailableForMember` + `AppActivityPresenter` + e2e | **C 档** | P2-1 | < 500 行 |
-| **P2-4** | `/my/registrations` × 4(list / detail / create / cancel)+ `/my/activities`(1 endpoint;共 5 endpoint)+ App DTO × 4 + Presenter + Policy / StateMachine 内嵌 + e2e | **C 档** | P2-1 + P2-3 | **可能 > 500 行,**P2-4 PR 评审稿可考虑拆 P2-4a(读 3 endpoint)+ P2-4b(写 2 endpoint) |
-| **P2-5** | `/my/attendance-records`(1 endpoint)+ `AppMyAttendanceRecordDto` + Presenter + e2e | **C 档** | P2-1 | < 300 行 |
-| **P2-6** | `/my/certificates`(1 endpoint)+ `AppMyCertificateDto` + `certificates.service.listForMember` + Presenter + e2e | **C 档** | P2-1 | < 400 行 |
-| **P2-7** | **收尾**:`docs/current-state.md` 回填 + handoff 段(若到 release 节奏)+ `CHANGELOG.md` Unreleased + Swagger Tag 复核 | **A 档** | P2-1 ~ P2-6 全合入 | < 200 行(docs)|
+| **P2-1** | `/api/app/v1/me` + `/me/account` + `/me/capabilities`(共 3 endpoint)+ `AppMeResponseDto` / `AppMeAccountDto` / `AppCapabilityResponseDto` + `AppIdentityResolver` + `AppCapabilityService` + e2e | **C 档** | P2-0 | < 500 行 |
+| **P2-2** | `/me/profile`(GET + PATCH;2 endpoint;沿 §5.2 #5 严格白名单 2 字段)+ `AppSelfProfileDto` / `UpdateAppSelfProfileDto` + member-profile self perspective method + e2e | **C 档** | P2-1 | < 500 行 |
+| **P2-3** | **`PUT /api/app/v1/me/password`**(独立 PR;P0-D 全套铁律继承)+ `ChangeMyPasswordDto`(沿 P0-D zero drift)+ `@PasswordChangeThrottle()` 限流接入 + audit `password.change.self` + 联动撤本人全部 refresh token(`revokedReason='self-password-change'`)+ e2e(P0-D 全套 + 沿 §9.3 #14)| **C 档(沿 P0-D / P0-E)** | P2-1 | < 500 行 |
+| **P2-4** | `/activities/available` + `/activities/:id`(2 endpoint)+ `AppAvailableActivityListItemDto` / `AppActivityDetailDto` + `activities.service.listAvailableForMember` + `AppActivityPresenter` + e2e | **C 档** | P2-1 | < 500 行 |
+| **P2-5** | `/my/registrations` × 4(list / detail / create / cancel)+ `/my/activities`(1 endpoint;共 5 endpoint)+ App DTO × 4 + Presenter + Policy / StateMachine 内嵌 + e2e | **C 档** | P2-1 + P2-4 | **可能 > 500 行,**P2-5 PR 评审稿可考虑拆 P2-5a(读 3 endpoint)+ P2-5b(写 2 endpoint) |
+| **P2-6** | `/my/attendance-records`(1 endpoint)+ `AppMyAttendanceRecordDto` + Presenter + e2e | **C 档** | P2-1 | < 300 行 |
+| **P2-7** | `/my/certificates`(1 endpoint)+ `AppMyCertificateDto` + `certificates.service.listForMember` + Presenter + e2e | **C 档** | P2-1 | < 400 行 |
+| **P2-8** | **收尾**:`docs/current-state.md` 回填 + handoff 段(若到 release 节奏)+ `CHANGELOG.md` Unreleased + Swagger Tag 复核 | **A 档** | P2-1 ~ P2-7 全合入 | < 200 行(docs)|
 
 ### 8.2 PR 串铁律
 
 1. **P2-0 docs-only**:不动代码;仅文档冻结;A 档
-2. **P2-1 是其余所有 PR 的硬前置**:`/me/capabilities` 与 `AppIdentityResolver` 是后续所有 endpoint 的准入基础设施;P2-1 不合入,P2-2 ~ P2-6 **不得**立项
-3. **P2-3 / P2-4 顺序耦合**:P2-3 引入 `/activities/available` 与 `AppActivityPresenter`;P2-4 写动作(`POST /my/registrations`)依赖活动可用性判断(沿 §6.4 状态机),P2-3 不合入 P2-4 不立项
-4. **P2-5 / P2-6 可并行**:互不依赖
-5. **每 PR 完成后必须用户拍板才进下一个**(沿 [`process.md §7`](process.md))
-6. **每 PR 评审稿单独立项**:本评审稿**不替代** P2-N 各 PR 的独立评审稿;每 PR 启动前**必须**:
+2. **P2-1 是其余所有 PR 的硬前置**:`/me/capabilities` 与 `AppIdentityResolver` 是后续所有 endpoint 的准入基础设施;P2-1 不合入,P2-2 ~ P2-7 **不得**立项
+3. **P2-3(`/me/password`)独立 PR**:虽 service 已存在 P0-D 实现,但路径迁 `/api/app/v1/me/password` 涉及限流装饰器 / audit 命名 / 联动撤 refresh 的复用与 zero drift 验证;**禁止**与 P2-1 / P2-2 合并;e2e 必须沿 P0-D 全套断言(沿 §9.3 #14)
+4. **P2-4 / P2-5 顺序耦合**:P2-4 引入 `/activities/available` 与 `AppActivityPresenter`;P2-5 写动作(`POST /my/registrations`)依赖活动可用性判断(沿 §6.4 状态机),P2-4 不合入 P2-5 不立项
+5. **P2-2 / P2-3 / P2-4 / P2-6 / P2-7 互不依赖**(都仅依赖 P2-1):可在 P2-1 合入后**并行**评审稿起草;**但**合入仍按用户拍板逐个串行
+6. **每 PR 完成后必须用户拍板才进下一个**(沿 [`process.md §7`](process.md))
+7. **每 PR 评审稿单独立项**:本评审稿**不替代** P2-N 各 PR 的独立评审稿;每 PR 启动前**必须**:
    - 复核本评审稿 + Phase 0.5 §10.2 + Phase 0.6 §1-§6 + Phase 0.7 §1-§13
    - 列出 OpenAPI snapshot diff 摘要(沿 [Phase 1 评审稿 §5](api-client-boundary-phase-1-review.md) 范式)
    - 列出**严格不做**清单(沿本评审稿 §3)
@@ -480,7 +500,7 @@ git revert 即可;新增 path 删除不影响旧 path
 
 ## 9. 测试要求
 
-> 每个 Phase 2 实施 PR(P2-1 ~ P2-6)必须满足。
+> 每个 Phase 2 实施 PR(P2-1 ~ P2-7)必须满足。
 
 ### 9.1 通用质量门槛(沿 [`process.md §3` C 档](process.md))
 
@@ -516,7 +536,7 @@ pnpm test:e2e        # 含本 PR 新增 endpoint 与旧 path 兼容性
 11. **invalid state**:状态机不允许的动作(报名已 cancel 的活动 / 取消已 pass 的报名)抛 `INVALID_STATE_TRANSITION` 类 BizException(沿 [Phase 0.7 §7.4](code-architecture-boundary-review.md));**禁止**默默 no-op
 12. **not owner / not self**:访问 / 修改其他 member 持有的资源(如 `PATCH /my/registrations/:id/cancel` 用别人的 registration id)返 404(沿 [`CLAUDE.md §10`](../CLAUDE.md) 软删除 / scope 一致返"用户不存在")或 403;**禁止**透出资源存在性
 13. **audit**:本写动作沿 P0-D / P0-E / P0-F 范式写 audit;`auditLog.actor` = `currentUser`;`extra` mask 敏感字段(沿 [Phase 0.6 §6.5](data-access-lifecycle-boundary-review.md))
-14. **`PUT /me/password` 沿 P0-D 完整覆盖**:`OLD_PASSWORD_INVALID=10005` / `NEW_PASSWORD_SAME_AS_OLD=10006` / `@PasswordChangeThrottle()` / 改密成功撤本人全部 refresh / audit 写 `password.change.self`(沿 [`CLAUDE.md §9 P0-D / P0-E 子节`](../CLAUDE.md));P2-1 PR e2e 必须沿 P0-D e2e 范式逐项断言
+14. **`PUT /me/password` 沿 P0-D 完整覆盖**:`OLD_PASSWORD_INVALID=10005` / `NEW_PASSWORD_SAME_AS_OLD=10006` / `@PasswordChangeThrottle()` / 改密成功撤本人全部 refresh / audit 写 `password.change.self`(沿 [`CLAUDE.md §9 P0-D / P0-E 子节`](../CLAUDE.md));**P2-3 PR**(改密独立 PR)e2e 必须沿 P0-D e2e 范式逐项断言
 
 ### 9.4 P2-0 测试要求
 
@@ -536,13 +556,14 @@ P2-0 是 **A 档 docs-only**;**不**要求跑 e2e;**仅**要求:
 | 10.2 | capability 被误当作授权证明 | 前端 / 后端任一方"信 capability,不再 check"| **极高(越权)** | 沿 §4.3 铁律 2 + D-5.3;每个写端点 service 入口**重新做完整四维校验**;PR review 强制 grep 写动作内是否有 `if (capabilities.canXxx)` 等"信前端"模式 | ✅ 是 |
 | 10.3 | Admin 兼队员越权看他人数据 | service 内 `if (user.role === ADMIN) return allData` 短路 | **极高(越权 + 合规)** | 沿 §6.4 / D-5.2 / Phase 0.7 §3.3;App API where 子句**永远** `memberId = currentUser.memberId`;e2e 必含 "ADMIN 调 `/my/registrations` 期待仅本人" 用例 | ✅ 是 |
 | 10.4 | 未绑定 member 的账号行为不清 | admin 未绑 / 候选未转正 / 临时编号未建模 | 中(用户体验)| 沿 §6.3 拒绝路径;P2-1 评审稿明确 `MEMBER_NOT_LINKED` 文案 / 是否上 BizCode | ⚠️ 部分(影响 P2-1 PR 评审稿)|
-| 10.5 | `activities/available` 复用 admin list 逻辑 | 实施者直接调 `activities.service.list(currentUser, query)`,内部按 role 裁字段 | 高(Mixed 扩张)| 沿 §2.2;P2-3 必须**新增独立 method** `listAvailableForMember(memberId, query)`;PR review 强制查 `activities.service.list` 与 `listAvailableForMember` 是否**不同 method** | ✅ 是 |
-| 10.6 | 报名 create / cancel 状态机不清 | service 内零散 if (`if (status === 'pending') {...}`)| 高(数据一致性)| 沿 §7.2 / Phase 0.7 §7.4;P2-4 service 内**显式抛** `INVALID_STATE_TRANSITION` 类 BizException;每条非法 transition e2e 覆盖 | ✅ 是 |
+| 10.5 | `activities/available` 复用 admin list 逻辑 | 实施者直接调 `activities.service.list(currentUser, query)`,内部按 role 裁字段 | 高(Mixed 扩张)| 沿 §2.2;**P2-4** 必须**新增独立 method** `listAvailableForMember(memberId, query)`;PR review 强制查 `activities.service.list` 与 `listAvailableForMember` 是否**不同 method** | ✅ 是 |
+| 10.6 | 报名 create / cancel 状态机不清 | service 内零散 if (`if (status === 'pending') {...}`)| 高(数据一致性)| 沿 §7.2 / Phase 0.7 §7.4;**P2-5** service 内**显式抛** `INVALID_STATE_TRANSITION` 类 BizException;每条非法 transition e2e 覆盖 | ✅ 是 |
 | 10.7 | L3 敏感字段泄露 | response DTO / audit context / log 出现 `passwordHash` / `refreshToken` / `tokenHash` / `secret*` / 完整 signed URL | **极高(安全事故)** | 沿 §5.2 #3 / Phase 0.6 §2.4 / Phase 0.7 §2.2 #6;每 PR contract snapshot 自动检测;auditMeta context **永远不**写 raw L3 | ✅ 是 |
 | 10.8 | User / Member 生命周期混淆 | 实施者把 `User.status=DISABLED` 与 `Member.status=INACTIVE` 当同一概念 | 高 | 沿 §6.4 / Phase 0.6 §5;P2-1 实施 `AppIdentityResolver` 时严格按 §6.1 闭包写;e2e 必含 L1 / L3 / L7 / L8 矩阵行 | ✅ 是 |
 | 10.9 | contract diff 超范围 | PR 内意外改 admin DTO / 旧 path schema | 高(契约破坏)| 沿 [Phase 1 评审稿 §5](api-client-boundary-phase-1-review.md);PR 描述强制列 snapshot diff 摘要;**仅允许**新增 path / 新增 DTO;**禁止**改任何旧 path key / 旧 DTO 字段 | ✅ 是 |
-| 10.10 | PR 过大难审查 | P2-4 写 + 读 5 endpoint 一起合 | 中(review 质量)| 沿 §8.2;P2-4 评审稿可考虑拆 P2-4a + P2-4b;每 PR < 500 行 | ⚠️ P2-4 启动前决议 |
+| 10.10 | PR 过大难审查 | P2-5 写 + 读 5 endpoint 一起合 | 中(review 质量)| 沿 §8.2;P2-5 评审稿可考虑拆 P2-5a + P2-5b;每 PR < 500 行 | ⚠️ P2-5 启动前决议 |
 | 10.11 | `/me/profile` 身份证号字段默认完整暴露 | 实施者直接返 `documentNumber` 字段 | **极高(合规)** | 沿 §5.2 #4 / Phase 0.6 §2.3;P2-2 PR 评审稿明确 `AppSelfProfileDto` 字段集**含掩码版本**(后 4 位);完整号走独立审计接口(Phase 2 不实施) | ✅ 是 |
+| 10.11a | `PATCH /me/profile` 入参夹带 Member 业务字段 / Emergency contacts / Organization / Role / Permission | 实施者图省事在 `UpdateAppSelfProfileDto` 加 `realName` / `mobile` / `documentNumber` / `bloodType` / `medicalNotes` / `emergencyContact*` / `organizationId` / `departmentId` / `role` / `permissions[]` 等任一字段 | **极高(合规 + 越权)**;一旦 App 上线本人可改自己身份证 / 部门 / 角色,**安全事故**;`forbidNonWhitelisted` 兜底不足,**DTO 自身白名单**是第一道防线 | 沿 §5.2 #5 锁定的 2 字段白名单 + 完整禁止列表;PR review **强制**:① grep `UpdateAppSelfProfileDto` 类定义,断言字段集**恰好** `{nickname, avatarKey}`;② contract snapshot 中 `UpdateAppSelfProfileDto` 字段集**恰好** 2 个;③ e2e 必含"传 `documentNumber` / `realName` / `role` 任一字段 → 期待 `BAD_REQUEST` 40000"用例;独立改 Member 业务字段必须**单独立项**(沿 §5.2 #5 尾段)| ✅ 是 |
 | 10.12 | 旧 path 被意外改动 | PR 内顺手调 `/api/v2/users/me/registrations` 或 `/api/users/me` 的 controller / DTO / service signature | 高(向后兼容)| 沿 §3.2;PR review 强制查 `git diff` 中是否含旧 controller 文件修改;旧 path e2e 必须**逐字通过** | ✅ 是 |
 | 10.13 | 候选 / 临时编号志愿者逻辑被偷偷塞进 Phase 2 | 实施者新增 `MemberStatus` 值或在 `User.role` 之外加 status 字段 | **极高(沿 D-5.1)** | 沿 §3.2;PR review 强制查 `prisma/schema.prisma` diff;**任何** schema 改动 = D 档 = 单独立项 | ✅ 是 |
 | 10.14 | Phase 2 顺手做 Phase 1B alias | 实施者觉得 `/api/auth/v1/*` 自然在 Phase 2 一起做 | 中(范围扩张)| Phase 1B 独立 PR(沿 [Phase 1 评审稿 §2.3](api-client-boundary-phase-1-review.md));Phase 2 **不**碰 `/api/auth/*` / `/api/health/*` 任何 path | ✅ 是 |
@@ -572,8 +593,8 @@ P2-0 是 **A 档 docs-only**;**不**要求跑 e2e;**仅**要求:
 - [`docs/app-permission-boundary-review.md`](app-permission-boundary-review.md) — Phase 0.5(身份 / 权限 / D-1 ~ D-4)
 - [`docs/data-access-lifecycle-boundary-review.md`](data-access-lifecycle-boundary-review.md) — Phase 0.6(surface / field / scope / state / lifecycle)
 - [`docs/code-architecture-boundary-review.md`](code-architecture-boundary-review.md) — Phase 0.7(代码分层 10 边界)
-- [`docs/first-release-p0d-change-my-password-review.md`](first-release-p0d-change-my-password-review.md) — P0-D 改密(P2-1 `/me/password` 沿用)
-- [`docs/first-release-p0e-refresh-token-review.md`](first-release-p0e-refresh-token-review.md) — P0-E refresh token(P2-1 改密成功撤 refresh 沿用)
+- [`docs/first-release-p0d-change-my-password-review.md`](first-release-p0d-change-my-password-review.md) — P0-D 改密(**P2-3** `/me/password` 沿用)
+- [`docs/first-release-p0e-refresh-token-review.md`](first-release-p0e-refresh-token-review.md) — P0-E refresh token(**P2-3** 改密成功撤 refresh 沿用)
 - [`docs/process.md`](process.md) — PR 分级 + D 档降速规则
 
 ---
@@ -596,19 +617,19 @@ P2-0 是 **A 档 docs-only**;**不**要求跑 e2e;**仅**要求:
 | # | 决议项 | 默认建议(沿前序评审稿) |
 |---|---|---|
 | 12.2.1 | Phase 2 最终接口清单是否接受 §2 表(15 个 endpoint) | ✅ 接受 |
-| 12.2.2 | PR 拆分 P2-0 ~ P2-7 是否接受(§8.1)| ✅ 接受 |
-| 12.2.3 | P2-4 是否预拆 P2-4a / P2-4b | ⏳ P2-4 启动前再决议(基于实际 diff 行数) |
+| 12.2.2 | PR 拆分 P2-0 ~ P2-8 是否接受(§8.1;**v0.1** 把 `/me/password` 独立拆为 P2-3)| ✅ 接受 |
+| 12.2.3 | P2-5 是否预拆 P2-5a / P2-5b | ⏳ P2-5 启动前再决议(基于实际 diff 行数) |
 | 12.2.4 | `/me/profile` 身份证号默认掩码(沿 §5.2 #4 / §10.11) | ✅ 接受(完整号走独立审计接口,Phase 2 不实施) |
 | 12.2.5 | `MEMBER_NOT_LINKED` / `MEMBER_INACTIVE` 是否新增 BizCode(沿 §4.3 #8 / §6.3) | ⏳ P2-1 评审稿决议 |
 | 12.2.6 | `/me/profile` 写接口允许哪些 member 字段被本人改(沿 §5.2 #5) | ⏳ P2-2 评审稿决议 |
-| 12.2.7 | `CancelAppMyRegistrationDto.note` 是否必填(沿 §5.1 表) | ⏳ P2-4 评审稿决议 |
+| 12.2.7 | `CancelAppMyRegistrationDto.note` 是否必填(沿 §5.1 表) | ⏳ P2-5 评审稿决议 |
 | 12.2.8 | `/my/certificates` 是否含 `pending` / `rejected` 状态条目(让本人看自己的未通过)(沿 §5.1 `AppMyCertificateDto`) | ✅ 含(沿 Phase 0.6 §2 #2.11 AppSelf 视角"含未通过") |
 
 ### 12.3 修订规则
 
 - 本评审稿 v0 用户拍板冻结后,**就地**修订(沿 [Phase 1 评审稿 §10](api-client-boundary-phase-1-review.md));**不**新建 v1 / v2 文档
 - 每次修订记录修订时间 + 变更摘要(在本节末追加)
-- P2-1 ~ P2-6 各 PR 评审稿是**独立文档**,**不**修订本评审稿;若实施过程发现本评审稿与代码冲突,**暂停**并向用户汇报
+- P2-1 ~ P2-7 各 PR 评审稿是**独立文档**,**不**修订本评审稿;若实施过程发现本评审稿与代码冲突,**暂停**并向用户汇报
 
 ### 12.4 验收锚点
 
@@ -618,17 +639,18 @@ P2-0 是 **A 档 docs-only**;**不**要求跑 e2e;**仅**要求:
 | `CLAUDE.md §19.7` / `AGENTS.md §19.7` 新增 D-8 | ⏳ 与 P2-0 同 PR |
 | 4 份相邻评审稿同步引用 | ⏳ 与 P2-0 同 PR |
 | P2-0 docs-freeze PR | ⏳ 待立项 |
-| P2-1 ~ P2-6 实施 PR | ⏳ 串行落地 |
-| P2-7 收尾(current-state / CHANGELOG)| ⏳ 全合入后 |
+| P2-1 ~ P2-7 实施 PR | ⏳ 串行落地 |
+| P2-8 收尾(current-state / CHANGELOG)| ⏳ 全合入后 |
 
 ### 12.5 修订历史
 
 | 日期 | 版本 | 摘要 |
 |---|---|---|
 | 2026-05-19 | v0 | 本评审稿 v0 创建;15 个候选 endpoint + 8 PR 串 + 15 条风险表;沿 Phase 0.5 §10.2 / Phase 0.6 / Phase 0.7 全套约束 |
+| 2026-05-19 | v0.1 | **修正 1**:`PUT /me/password` 从 P2-1 拆出为**独立 PR P2-3**(原 P2-3 ~ P2-7 顺延为 P2-4 ~ P2-8),沿 P0-D / P0-E 安全敏感面独立评审 + 独立 e2e;§2 PR Batch 列、§8.1 PR 串、§8.2 依赖链、§9.3 #14、§10.5 / §10.6 / §10.10、§11.2、§12.2.2 / §12.2.3 / §12.2.7、§12.3、§12.4 验收锚点、文末"过期条件"全部同步;TL;DR 第 5 条 "8 个 PR" 改为 "9 个 PR"。**修正 2**:`PATCH /me/profile` 字段白名单显式锁定 — §5.2 #5 重写为**仅允许 2 字段**(`nickname` / `avatarKey`)+ **明确禁止 6 大类**(Member 业务字段 / Emergency contacts / Organization / Department / Account / Role / Permission / Status / 审批内部字段);§10 风险表新增 10.11a(profile 字段越界,PR review 强断言 DTO 字段集恰好 2 个 + e2e 反向用例)|
 
 ---
 
 > **本评审稿生效时间**:2026-05-19(Phase 2 实施前评审稿 v0)。
 > **当前状态**:⏳ 待用户拍板冻结。
-> **过期条件**:Phase 2 P2-1 ~ P2-7 全部落地后,本评审稿降为"历史评审"性质;沿 [Phase 1 评审稿 §10 / V2 红线 §5.1 handoff 历史规则](V2红线与复活路径.md)。
+> **过期条件**:Phase 2 P2-1 ~ P2-8 全部落地后,本评审稿降为"历史评审"性质;沿 [Phase 1 评审稿 §10 / V2 红线 §5.1 handoff 历史规则](V2红线与复活路径.md)。
