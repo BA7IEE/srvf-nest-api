@@ -443,18 +443,37 @@ P2-3 实施**不**触碰 logout-all。
 | Throttler | 接口 | Limit / TTL | 与 P2-3 关系 |
 |---|---|---|---|
 | `'default'`(login) | `POST /api/auth/login` | `LOGIN_THROTTLE_LIMIT` / `LOGIN_THROTTLE_TTL_SECONDS`(默认 5/60)| 物理隔离;登录失败爆破**不**消耗 P2-3 配额 |
-| `'password-change'` | `PUT /api/users/me/password` + **`PUT /api/app/v1/me/password`**(P2-3 新增)| 5/60 | **两 path 共享同一 throttler 实例**(沿 §8.3 决议)|
+| `'password-change'` | `PUT /api/users/me/password` + **`PUT /api/app/v1/me/password`**(P2-3 新增)| 5/60 | **复用同一 throttler 实例 + 同一 limit/ttl 配置**(沿 §8.3 决议);**但**默认 `@nestjs/throttler` key 含 class+method 维度,两 path 的 storage counter key 不同,**非物理共享**(详见 §8.3 v0.2 修订)|
 | `'refresh'` | `POST /api/auth/refresh` | `REFRESH_THROTTLE_LIMIT` / `REFRESH_THROTTLE_TTL_SECONDS`(默认 30/60)| 物理隔离 |
-| `'password-change'`(复用)| `POST /api/auth/logout-all` | 同 5/60(沿 P0-E v1 §5.8)| 物理共享 |
+| `'password-change'`(复用)| `POST /api/auth/logout-all` | 同 5/60(沿 P0-E v1 §5.8)| 同一 throttler 实例 + 同一 limit/ttl 配置(同上注:counter key 含 class+method)|
 
 ### 8.3 决议项 D-P2-3-2:两 path 共享 `'password-change'` throttler 实例 vs 新建 `'app-password-change'` 实例?
 
+> **v0.2 修订(2026-05-20,P2-3 实施时事实校正)**:本节原文(v0 / v0.1)写"共享 `'password-change'` throttler **物理上**是同一计数器"。该陈述与 `@nestjs/throttler` 默认实现不符。修订后**结论不变**(仍推荐 A 档:复用 `'password-change'` 实例 + 不新建),但事实表述更正如下:
+
+**事实陈述(v0.2)**:
+
+- P2-3 复用 `@PasswordChangeThrottle()` + `'password-change'` throttler 实例 + 现有 limit / ttl 配置(`PASSWORD_CHANGE_THROTTLE_LIMIT=5` / `PASSWORD_CHANGE_THROTTLE_TTL_SECONDS=60`)。
+- 在 NestJS `@nestjs/throttler` 默认 key 生成下,App 与 Legacy 改密 endpoint 的物理 storage counter key 包含 **method-scoped**(`class+method`)维度,因此两 endpoint 的 counter **在 storage 层是独立的**,虽然它们绑定到同一个 throttler 实例并共用 limit / ttl。
+- P2-3 实施 PR **禁止**自定义 throttler key 生成(`getTracker` / `generateKey`)。
+- 若产品 / 安全方未来明确要求"App + Legacy 两 path 共享同一物理 counter(IP 在 60 秒内对任一 path 的改密尝试总数 ≤ 5)",**必须**作为独立 throttler 评审 PR 处理(沿 V1.1 §17.7 限流体系),**不**在 P2-3 范围内合并。
+
+**P2-3 范围严格不动项**(沿 v0 + v0.1 不变):
+
+- ❌ 不新增 throttler 实例
+- ❌ 不新增 throttle decorator
+- ❌ 不修改 `throttle-options.ts`
+- ❌ 不修改 `app.config.ts` throttle 字段
+- ❌ 不修改 `.env.test`
+- ❌ 不修改 legacy `/api/users/me/password` 限流行为
+- ❌ 不为本 PR 实现 custom `generateKey`
+
 | 选项 | 行为 | 利 | 弊 |
 |---|---|---|---|
-| **A 档(推荐)**:共享 `'password-change'` | 同一 IP 在 60 秒内 5 次改密**无论走哪 path 都计入同一计数器** | 沿 V1.1 §17.9 反模式禁止"接了 throttler 就顺手对所有接口加限流" + Phase 2 review §3.2 不引入新 throttler;实施零增量 | 攻击者可在 PC + App 两 path 间分摊配额(各 5 次)需要客观看是单一计数器;**共享下不存在**该问题 |
-| B 档:新建 `'app-password-change'` | App path 独立 5/60 配额 | 与 PC path 物理隔离 | 攻击者**可获得双倍配额**(PC 5 次 + App 5 次 = 10 次 / 60 秒,IP 维度);新增 `app.config.ts` 字段 + `throttle-options.ts` 数组项 + `app-password-change-throttle.decorator.ts` 全部仪式代码,纯仪式 |
+| **A 档(推荐)**:复用 `'password-change'` throttler 实例 + 同一 limit/ttl 配置 | App / Legacy 两 endpoint 都挂 `@PasswordChangeThrottle()`;运维侧"只调一处 LIMIT 数字即同步影响两 path 阈值";物理 counter key 仍 method-scoped(默认 throttler key)| 沿 V1.1 §17.9 反模式禁止"接了 throttler 就顺手对所有接口加限流" + Phase 2 review §3.2 不引入新 throttler;实施零增量;统一 limit/ttl 配置管理 | 单一 IP 在 60 秒内通过分摊 path 可累计触发 2 × LIMIT 次尝试(IP 维度物理 storage counter 独立)— 若产品要求严格 IP-level 总数限制,本档**不**满足,需另立 PR 自定义 key 策略 |
+| B 档:新建 `'app-password-change'` | App path 独立 throttler 实例 + 独立 limit/ttl 配置 | 配置层完全独立(可分别调阈值) | 与 A 档比无安全增益(物理 counter 反正都是 method-scoped);新增 `app.config.ts` 字段 + `throttle-options.ts` 数组项 + `app-password-change-throttle.decorator.ts` 全部仪式代码,纯仪式 |
 
-**推荐 A**:共享 `'password-change'` throttler **物理上**是同一计数器(`@nestjs/throttler` IP 维度),无论 path 怎么分都按"该 IP 在 60 秒内改密尝试总数"计算,**直接挡爆破**。
+**推荐 A**:P2-3 选 A 档**仅**意味着"复用 throttler 实例名 + limit/ttl 配置统一管理";**并不**意味着两 path 共享物理 counter。统一物理 counter 需独立 PR(沿 §8.3 v0.2 修订)。
 
 ### 8.4 限流响应行为锁定(沿 V1.1 §17.7 + P0-D §5.4 zero drift)
 
@@ -807,7 +826,7 @@ P2-3 **不**夹带以下任一项(违反 = PR review 拒绝):
 | # | 决议项 | 状态 | 阻塞 P2-3 启动? |
 |---|---|---|---|
 | **D-P2-3-1** | **Admin / SUPER_ADMIN without member 是否允许通过 `/api/app/v1/me/password` 改密?** | **✅ 已锁定 = X**(2026-05-20 v0.1 用户拍板;沿 §4.3 + §4.6 例外边界)| ✅ 是(已解锁,P2-3 e2e §10.2.10 按 X 锁定;选项 Y 不实施)|
-| **D-P2-3-2** | 限流 throttler 实例归属:共享 `'password-change'` vs 新建 `'app-password-change'` | ⏳ 待拍板(默认 A 档共享;沿 §8.3)| ⚠️ 影响代码(若选 B 档,需新增 `app.config.ts` + `throttle-options.ts` + decorator)|
+| **D-P2-3-2** | 限流 throttler 实例归属:复用 `'password-change'` vs 新建 `'app-password-change'` | ✅ **已锁定 = A 档**(2026-05-20 v0.2 P2-3 实施时事实校正后保留 A 档结论):**复用** `@PasswordChangeThrottle()` + `'password-change'` throttler 实例 + 现有 limit/ttl 配置;**注意**默认 `@nestjs/throttler` key 含 class+method 维度,App / Legacy 两 path 物理 counter key **不同**(沿 §8.3 v0.2);P2-3 实施 PR **禁止**自定义 throttler key 生成;若产品 / 安全方未来明确要求两 path 共享同一物理 counter,**必须**作为独立 throttler 评审 PR 处理(沿 V1.1 §17.7),**不**在 P2-3 范围内合并 | ⚠️ 影响 PR 描述(已锁,无代码改动)|
 | D-P2-3-3 | `buildAuditMeta` helper 归属:`AppMeController` 内复制 vs 抽 `app-controller-helpers.ts` | ⏳ 待拍板(默认 α 复制;沿 §9.5)| ⚠️ 影响代码(若选 β,需新增 1 个 file)|
 | D-P2-3-4 | `CLAUDE.md` / `AGENTS.md` §19.7 是否增补 D-9 | ⏳ 待拍板(默认不增补;沿 §14.1)| ⚠️ 影响 PR-0 docs PR diff 行数 |
 | D-P2-3-5 | OpenAPI snapshot 旧 path `PUT /api/users/me/password` 是否在 P2-3 PR 描述中显式列为"行为锁定"对照 | ⏳ 待拍板(默认是;沿 §11.2 + Phase 2 review §9.2 #9 path stability)| ⚠️ 影响 PR 描述模板;**不**影响代码 |
@@ -833,6 +852,7 @@ P2-3 **不**夹带以下任一项(违反 = PR review 拒绝):
 |---|---|---|
 | 2026-05-20 | v0 | 本评审稿 v0 创建;1 个 endpoint + 0 新 DTO + 0 新 service + 0 新 BizCode + 0 新 audit + 0 新 throttler;沿 Phase 2 review §8.1 v0.1 P2-3 独立 PR 决议 + P0-D / P0-E zero drift;13 节(范围 / DTO / 返回 / identity / BizCode / token / audit / throttle / service / 测试 / contract / PR / 风险 + 引用 + 决议);5 个决议项(D-P2-3-1 ~ D-P2-3-5);17 条风险表 |
 | 2026-05-20 | v0.1 | **D-P2-3-1 用户拍板锁定 = X**:Admin without member 允许使用 `PUT /api/app/v1/me/password`。理由:改密是账号级自助操作,不是 member-domain 数据访问;不暴露 member 业务数据;安全由旧密码校验 + `@PasswordChangeThrottle()` + refresh-token 撤销 + `password.change.self` audit 四道闭合控制。**新增 §4.6 例外边界**:豁免严格仅适用 `PUT /api/app/v1/me/password`,**禁止**被 `/me/profile` / `/activities/*` / `/my/*` / `/tasks/*` / `/managed/*` 复用;PR review 强制 grep 检查。同步更新 §0 TL;DR #4 / §4.3(锁定 X + 三条理由 + 未来会话铁律)/ §4.4(选项 Y 列降级为"历史对照,不实施")/ §15.1(添加 D-P2-3-1 = X 到锁定列表)/ §15.2(D-P2-3-1 状态从"默认建议"改"✅ 已锁定")/ 文末"当前状态"段落。保留:`ChangeMyPasswordDto` / `UsersService.changeMyPassword` / `@PasswordChangeThrottle()` / `password.change.self` audit / 现有 BizCode 不新增 / refresh revoke 现有行为 / safeDto 强制不透传 raw body 全部不变 |
+| 2026-05-20 | v0.2 | **§8.3 D-P2-3-2 throttler 事实校正(P2-3 implementation 提交前)**。v0 / v0.1 原文写"共享 `'password-change'` throttler **物理上**是同一计数器(`@nestjs/throttler` IP 维度)",该陈述与 `@nestjs/throttler` 默认 key 生成实现**不符** — 默认 `generateKey` 包含 `class+method` 维度,App / Legacy 两 endpoint 在绑定到**同一** throttler 实例 + 共用 limit/ttl 配置的同时,**物理 storage counter key 仍互相隔离**。**结论不变**:仍推荐 A 档(复用 `'password-change'` 实例,不新建);**事实陈述更正**:见 §8.2 表格末列 + §8.3 v0.2 修订段。**P2-3 实施 PR 严格禁止**:自定义 `getTracker` / `generateKey`、新增 throttler 实例 / 装饰器、改 `throttle-options.ts` / `app.config.ts` throttle 字段、改 legacy endpoint、改 `.env.test`。若产品 / 安全方未来要求两 path 共享同一物理 counter,**必须**作为独立 throttler 评审 PR 处理(沿 V1.1 §17.7),**不**在 P2-3 范围内合并。同步更新:§8.2 表格末列两行;§8.3 全节(新增 v0.2 修订段 + 选项表 A 档"利 / 弊"列重写);§15.2 D-P2-3-2 状态从"⏳ 待拍板默认 A 档共享"改"✅ 已锁定 = A 档(事实校正后保留)";文末"当前状态"段落。**未触动**:§0 TL;DR(throttler 描述不涉及"物理共享")/ §4 / §5 / §6 / §7 / §9 / §10 / §11 / §12 / §13 风险表 / §14 / §16。e2e / contract / 代码层面**无任何修改**(无需 src 改动) |
 
 ---
 
@@ -862,6 +882,9 @@ P2-3 **不**夹带以下任一项(违反 = PR review 拒绝):
 
 ---
 
-> **本评审稿生效时间**:2026-05-20(P2-3 实施前评审稿 v0 / v0.1)。
-> **当前状态**:✅ **D-P2-3-1 已锁定为 X**(2026-05-20 v0.1;沿 §4.3 + §4.6);⏳ §15.2 中余 4 项决议(D-P2-3-2 ~ D-P2-3-5)默认建议待用户拍板;**不**阻塞 P2-3 启动(余 4 项均为代码 / PR 描述层级,可在 P2-3 PR 启动评审时一并决议)。
+> **本评审稿生效时间**:2026-05-20(P2-3 实施前评审稿 v0 / v0.1 / v0.2)。
+> **当前状态**:
+>   - ✅ **D-P2-3-1 已锁定为 X**(2026-05-20 v0.1;沿 §4.3 + §4.6):Admin without member 允许使用 `PUT /api/app/v1/me/password`,豁免严格仅本端点
+>   - ✅ **D-P2-3-2 已锁定为 A 档**(2026-05-20 v0.2;沿 §8.3 v0.2):**复用** `'password-change'` throttler 实例 + 现有 limit/ttl 配置;**注意** NestJS throttler 默认 key 含 class+method,App / Legacy 物理 counter key **互相独立**;真正跨 path 物理共享 counter 需独立 PR
+>   - ⏳ §15.2 余 3 项决议(D-P2-3-3 ~ D-P2-3-5)默认建议待用户拍板;**不**阻塞 P2-3 启动
 > **过期条件**:P2-3 实施 PR 合并后,本评审稿降为"历史评审"性质;沿 Phase 2 review §12.3 修订规则。
