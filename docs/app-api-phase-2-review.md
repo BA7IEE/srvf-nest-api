@@ -597,6 +597,13 @@ P2-0 是 **A 档 docs-only**;**不**要求跑 e2e;**仅**要求:
 - [`docs/first-release-p0e-refresh-token-review.md`](first-release-p0e-refresh-token-review.md) — P0-E refresh token(**P2-3** 改密成功撤 refresh 沿用)
 - [`docs/process.md`](process.md) — PR 分级 + D 档降速规则
 
+### 11.3 下位评审稿(P2-N 各 PR 启动前必读)
+
+本评审稿冻结后,P2-1 ~ P2-7 各 PR 启动前**必须**先读对应下位评审稿(若已存在);P2-N **implementation must read** 对应文件 **before code changes**:
+
+- **P2-2** `/api/app/v1/me/profile` GET / PATCH → [`docs/app-api-p2-2-profile-review.md`](app-api-p2-2-profile-review.md)(2026-05-19 v0)
+- P2-1 / P2-3 / P2-4 / P2-5 / P2-6 / P2-7 — 各 PR 启动前由用户决议是否需要独立评审稿;不需独立评审稿的 PR 直接沿本评审稿 §2 ~ §10 实施
+
 ---
 
 ## 12. 决策记录 / 验收 / 修订
