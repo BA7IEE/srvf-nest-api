@@ -654,6 +654,10 @@ GET   /api/app/v1/my/activities
 - 本评审稿评审通过后,后续修订必须**记录修订时间 + 变更摘要**
 - §10 决议项决议后,在本文档**就地**更新,**不**新建 v1 / v2 文档(沿 [Phase 1 评审稿 §10](api-client-boundary-phase-1-review.md))
 
+### 12.4 Phase 2 实施引用
+
+**Phase 2 implementation must read** [`docs/app-api-phase-2-review.md`](app-api-phase-2-review.md) **before any `/api/app/v1/*` endpoint PR**。本评审稿 §10.2 D-1 ~ D-4 已锁决策由该评审稿继承并具体化为 15 个候选 endpoint + PR 拆分 + DTO 命名 + 风险表。
+
 ---
 
 > **本评审稿生效时间**:2026-05-19(Phase 0.5 v0)。
