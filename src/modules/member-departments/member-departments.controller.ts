@@ -24,7 +24,7 @@ import { MemberDepartmentsService } from './member-departments.service';
 // D4=A:动词采用 set.current / clear.current(业务语义清晰优先;沿 PR-1 rbac.config.reload 范式)。
 // 映射 seed 新增 3 条权限点:member-department.{read,set,clear}.current。
 
-@ApiTags('member-departments')
+@ApiTags('Admin - Member Departments')
 @ApiBearerAuth()
 @Controller('v2/members/:memberId/department')
 export class MemberDepartmentsController {

@@ -42,7 +42,12 @@ import { AttachmentsService } from './attachments.service';
 //
 // **路径顺序铁律**:`/by-owner` / `/me/uploaded` 必须放在 `/:id` 之前,避免被 :id 通配匹配。
 
-@ApiTags('attachments')
+// Phase 1A(2026-05-19):Mixed Controller — class-level @ApiTags 用占多数的 surface
+// ('Admin - Attachments';8/9 端点);/me/uploaded method-level 追加 'Mobile - Attachments'。
+// 因 NestJS Swagger 11 method-level @ApiTags 是 append 不是 replace,/me/uploaded 最终
+// 会被同时归入 ['Admin - Attachments', 'Mobile - Attachments'] 两个 tag(dual tag),
+// 这是预期内的 Mixed 边界视觉信号;App 端独立链路拆 Phase 2/3 评审。
+@ApiTags('Admin - Attachments')
 @ApiBearerAuth()
 @ApiExtraModels(AttachmentResponseDto, UploadUrlResponseDto)
 @Controller('v2/attachments')
@@ -166,6 +171,7 @@ export class AttachmentsController {
   }
 
   @Get('me/uploaded')
+  @ApiTags('Mobile - Attachments')
   @ApiOperation({
     summary: '列出本人上传的附件(自动按 uploadedBy=currentUser.id 筛;不走 RBAC;沿"本人查自己"豁免)',
   })

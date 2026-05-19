@@ -43,7 +43,7 @@ import { ContributionRulesService } from './contribution-rules.service';
 // 映射 seed 新增 4 条权限点:contribution.{read,create,update,delete}.rule。
 // APD 部门部长 / 副部长专属权限留 5-B 独立批次(F3)。
 
-@ApiTags('contribution-rules')
+@ApiTags('Ops - Contribution Rules')
 @ApiBearerAuth()
 @Controller('v2/contribution-rules')
 export class ContributionRulesController {

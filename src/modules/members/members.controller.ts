@@ -22,7 +22,7 @@ import { MembersService } from './members.service';
 // /api/v2/members(6 接口);路径前缀:全局 /api(main.ts)+ 'v2/members'。
 // 权限:GET/POST/PATCH = ADMIN/SUPER_ADMIN;DELETE = SUPER_ADMIN 专属(高危)。
 
-@ApiTags('members')
+@ApiTags('Admin - Members')
 @ApiBearerAuth()
 @Controller('v2/members')
 export class MembersController {

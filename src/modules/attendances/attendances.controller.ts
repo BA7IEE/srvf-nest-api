@@ -61,7 +61,7 @@ function buildAuditMeta(req: Request): AuditMeta {
 
 // ============ 管理端 Controller(挂 /v2/activities/:activityId/attendance-sheets)============
 
-@ApiTags('attendances')
+@ApiTags('Admin - Attendances')
 @ApiBearerAuth()
 @Controller('v2/activities/:activityId/attendance-sheets')
 export class AttendanceSheetsCollectionController {
@@ -119,7 +119,7 @@ export class AttendanceSheetsCollectionController {
 
 // ============ 管理端 Controller(挂 /v2/attendance-sheets/:id)============
 
-@ApiTags('attendances')
+@ApiTags('Admin - Attendances')
 @ApiBearerAuth()
 @Controller('v2/attendance-sheets')
 export class AttendanceSheetsResourceController {
@@ -320,7 +320,7 @@ export class AttendanceSheetsResourceController {
 
 // ============ 队员端 Controller(/v2/users/me/attendance-records)============
 
-@ApiTags('attendances')
+@ApiTags('Mobile - Attendance')
 @ApiBearerAuth()
 @Controller('v2/users/me/attendance-records')
 export class AttendanceRecordsMeController {

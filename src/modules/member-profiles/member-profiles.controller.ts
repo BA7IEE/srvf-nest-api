@@ -28,7 +28,7 @@ import { MemberProfilesService } from './member-profiles.service';
 //
 // memberId 为路径参数(@Param('memberId') 直接读;不通过 IdParamDto,与 member-departments 同款)。
 
-@ApiTags('member-profiles')
+@ApiTags('Admin - Member Profiles')
 @ApiBearerAuth()
 @Controller('v2/members/:memberId/profile')
 export class MemberProfilesController {

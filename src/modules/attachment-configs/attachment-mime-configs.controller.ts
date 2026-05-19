@@ -39,7 +39,7 @@ import { AttachmentMimeConfigsService } from './attachment-mime-configs.service'
 // 映射 seed 新增 4 条权限点:attachment-config.{read,create,update,delete}.mime。
 // (status 端点共用 attachment-config.update.mime;沿 PR-2A dict-item update.* 范式)
 
-@ApiTags('attachment-configs')
+@ApiTags('Ops - Attachment Configs')
 @ApiBearerAuth()
 @ApiExtraModels(AttachmentMimeConfigResponseDto, AttachmentMimeConfigTypeConfigSummaryDto)
 @Controller('v2/attachment-mime-configs')

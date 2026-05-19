@@ -31,7 +31,7 @@ import { RolePermissionsService } from './role-permissions.service';
 // BizException(BizCode.RBAC_FORBIDDEN)(30100)。沿 attachments F3 v1.0 范本。
 // 映射 seed 现有 2 条权限点:rbac.role-permission.{create,delete}。
 
-@ApiTags('role-permissions')
+@ApiTags('Ops - Role Permissions')
 @ApiBearerAuth()
 @ApiExtraModels(RbacRoleResponseDto, RbacRoleDetailResponseDto, PermissionResponseDto)
 @Controller('v2/roles/:id/permissions')

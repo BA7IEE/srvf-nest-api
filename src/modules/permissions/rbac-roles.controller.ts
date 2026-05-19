@@ -37,7 +37,7 @@ import { RbacRolesService } from './rbac-roles.service';
 // - GET /:id:不存在返 30003 / 已软删返 30005(410 Gone)
 // - PATCH / DELETE /:id:不存在 + 已软删统一返 30003(信息泄漏防御)
 
-@ApiTags('rbac-roles')
+@ApiTags('Ops - Roles')
 @ApiBearerAuth()
 @ApiExtraModels(RbacRoleResponseDto, RbacRoleDetailResponseDto, PermissionResponseDto)
 @Controller('v2/roles')

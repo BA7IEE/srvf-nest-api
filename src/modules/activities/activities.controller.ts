@@ -36,7 +36,7 @@ import { ActivitiesService } from './activities.service';
 // 路由声明顺序(NestJS 优先级要求,字面段优先于 :id 占位段):
 //   list / create / detail / update / softDelete / publish / cancel(后两个挂 :id/<action>)
 
-@ApiTags('activities')
+@ApiTags('Admin - Activities')
 @ApiBearerAuth()
 @Controller('v2/activities')
 export class ActivitiesController {

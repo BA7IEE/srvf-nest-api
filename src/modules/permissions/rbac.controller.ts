@@ -26,7 +26,14 @@ import { RbacService } from './rbac.service';
 // - GET /me/permissions:任何登录用户(沿 D7 §5.3;RBAC 元接口里**唯一**无 RBAC permission 要求的)
 // - POST /reload:RbacService.reload 入口判权 `rbac.config.reload`,失败抛 30100。
 
-@ApiTags('rbac')
+// Phase 1A(2026-05-19):Mixed Controller — class-level @ApiTags 用 'Ops - RBAC'
+// (/reload 是更典型的运营治理操作);/me/permissions method-level 追加 'Mobile - Capabilities'
+// (沿 Phase 0.5 §10.2 D-3:App 暴露 capabilities,而非 raw RBAC permission code;
+// tag 层语义先到位,raw code → capability 的 DTO 拆分留 Phase 2+)。
+// 因 NestJS Swagger 11 method-level @ApiTags 是 append 不是 replace,/me/permissions 最终
+// 会被同时归入 ['Ops - RBAC', 'Mobile - Capabilities'] 两个 tag(dual tag),这是预期内的
+// Mixed 边界视觉信号;物理拆 Controller 留 Phase 5。
+@ApiTags('Ops - RBAC')
 @ApiBearerAuth()
 @ApiExtraModels(MyPermissionsResponseDto, EffectiveRoleDto, ReloadRbacResponseDto)
 @Controller('v2/rbac')
@@ -34,6 +41,7 @@ export class RbacController {
   constructor(private readonly service: RbacService) {}
 
   @Get('me/permissions')
+  @ApiTags('Mobile - Capabilities')
   @ApiOperation({
     summary:
       '查当前用户的有效权限点集 + 业务角色摘要(SUPER_ADMIN 返 Permission.code 全集;沿 D7 v1.1 §5.3)',
