@@ -14,6 +14,11 @@ import { createTestApp } from '../setup/test-app';
 // 沿 docs/app-api-phase-2-review.md §9.2 至少 9 类用例:success / unauthenticated /
 // member-not-linked / member-inactive / member-deleted / scope-self / sensitive-field /
 // admin-as-member / contract snapshot(由 openapi.contract-spec.ts 兜底)/ path-stability。
+//
+// Phase 2 P2-2(2026-05-20)追加 GET / PATCH /me/profile 用例(沿
+// docs/app-api-p2-2-profile-review.md §9):GET 8 + PATCH 12 + path stability 1。
+// 字段集恰好 9(沿 §2.4);PATCH 白名单恰好 2(沿 §3.1);空 body / forbidden field → 400;
+// canUseApp=false → 403;P2-2 不新增 BizCode(沿 §6.1)。
 
 interface ResBody {
   code: number;
@@ -81,6 +86,102 @@ function assertNoForbiddenKeys(obj: Record<string, unknown>): void {
     expect(obj).not.toHaveProperty(key);
   }
 }
+
+// Phase 2 P2-2:AppSelfProfileDto 字段集**恰好 9**(沿评审稿 §2.4 v0.1 锁定)。
+const APP_PROFILE_KEYS = [
+  'avatarKey',
+  'displayName',
+  'hasMemberProfile',
+  'memberId',
+  'memberNo',
+  'memberStatus',
+  'nickname',
+  'userId',
+  'username',
+].sort();
+
+// Phase 2 P2-2 GET /me/profile / PATCH /me/profile 严禁出现字段(沿评审稿 §2.4 + §3.3)。
+// 含 L3 / L2 完整 / L2 医疗 / 紧急联系人 / 组织部门 / Admin 内部审批 / 系统字段 /
+// 派生 canUseApp / appAccessReason / profileCompletion。
+const PROFILE_FORBIDDEN_KEYS = [
+  ...FORBIDDEN_KEYS,
+  'email',
+  'role',
+  'status',
+  'roles',
+  'gradeCode',
+  'realName',
+  'mobile',
+  'mobileMasked',
+  'documentNumber',
+  'documentNumberMasked',
+  'bloodType',
+  'bloodTypeCode',
+  'medicalNotes',
+  'emergencyContacts',
+  'organizationId',
+  'organizationName',
+  'departmentId',
+  'departmentName',
+  'joinedDate',
+  'canUseApp',
+  'appAccessReason',
+  'profileCompletion',
+  'reviewerNote',
+  'verifiedBy',
+  'verifiedAt',
+  'createdAt',
+  'updatedAt',
+  'lastLoginAt',
+];
+
+function assertNoProfileForbiddenKeys(obj: Record<string, unknown>): void {
+  for (const key of PROFILE_FORBIDDEN_KEYS) {
+    expect(obj).not.toHaveProperty(key);
+  }
+}
+
+// Phase 2 P2-2 PATCH 禁止字段按类别参数化(沿评审稿 §9.2.5 ~ §9.2.8;每类 ≥ 3 字段)。
+// 字段一律带合法类型值,挑战"DTO 白名单 + 全局 ValidationPipe forbidNonWhitelisted"双重防御。
+const FORBIDDEN_FIELD_CATEGORIES: ReadonlyArray<{
+  category: string;
+  field: string;
+  value: unknown;
+}> = [
+  // Member 业务字段(沿 §3.3 第 1 组)
+  { category: 'member', field: 'realName', value: '王小明' },
+  { category: 'member', field: 'mobile', value: '13800000000' },
+  { category: 'member', field: 'documentNumber', value: '440300199001011234' },
+  { category: 'member', field: 'bloodTypeCode', value: 'A' },
+  { category: 'member', field: 'medicalNotes', value: '过敏史' },
+  { category: 'member', field: 'memberNo', value: 'V9999' },
+  { category: 'member', field: 'displayName', value: '改个名' },
+  { category: 'member', field: 'gradeCode', value: 'L2' },
+  // Account 字段(沿 §3.3 第 4 组;走独立 endpoint)
+  { category: 'account', field: 'username', value: 'newname' },
+  { category: 'account', field: 'email', value: 'new@example.com' },
+  { category: 'account', field: 'password', value: 'Passw0rd2!' },
+  { category: 'account', field: 'newPassword', value: 'Passw0rd2!' },
+  { category: 'account', field: 'id', value: 'fake-id' },
+  { category: 'account', field: 'userId', value: 'fake-user-id' },
+  { category: 'account', field: 'memberId', value: 'fake-member-id' },
+  { category: 'account', field: 'lastLoginAt', value: new Date().toISOString() },
+  // Role / Permission / Status / 审批字段(沿 §3.3 第 5 / 第 6 组)
+  { category: 'role', field: 'role', value: 'ADMIN' },
+  { category: 'role', field: 'permissions', value: ['user.read.account'] },
+  { category: 'role', field: 'status', value: 'DISABLED' },
+  { category: 'role', field: 'deletedAt', value: new Date().toISOString() },
+  { category: 'role', field: 'reviewerNote', value: 'note' },
+  { category: 'role', field: 'verifiedBy', value: 'admin' },
+  { category: 'role', field: 'verifiedAt', value: new Date().toISOString() },
+  { category: 'role', field: 'internalNote', value: 'internal' },
+  // Emergency contacts / Organization / Department(沿 §3.3 第 2 / 第 3 组)
+  { category: 'org', field: 'emergencyContacts', value: [{ contactName: 'Alice' }] },
+  { category: 'org', field: 'contactName', value: 'Alice' },
+  { category: 'org', field: 'contactPhone', value: '13900000000' },
+  { category: 'org', field: 'organizationId', value: 'cl9z3a8b00000orgxxxxxxxx' },
+  { category: 'org', field: 'departmentId', value: 'cl9z3a8b00000deptxxxxxxx' },
+];
 
 // canUseApp=true 时全业务 cap=true;tasks / managed 恒 false(命名空间预留)
 const ALL_CAPS_WHEN_USABLE = {
@@ -426,10 +527,322 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
   });
 
   // =====================================================
+  // GET /api/app/v1/me/profile(Phase 2 P2-2;沿评审稿 §9.1)
+  // =====================================================
+
+  describe('GET /api/app/v1/me/profile (P2-2)', () => {
+    async function createMemberProfile(memberId: string): Promise<void> {
+      // 单字段写入仅为派生 hasMemberProfile=true(沿评审稿 §8.2 单字段 select 派生);
+      // 业务字段一律填占位值,不在 P2-2 GET 返回。
+      await prisma.memberProfile.create({
+        data: {
+          memberId,
+          realName: '真实姓名',
+          genderCode: 'male',
+          birthDate: new Date('1990-01-01'),
+          documentTypeCode: 'id_card',
+          documentNumber: '440300199001011234',
+          mobile: '13800000000',
+          email: 'profile@example.com',
+          exerciseMethods: [],
+          firstAidSkills: [],
+          joinedDate: new Date('2020-01-01'),
+          joinSourceCode: 'recommend',
+          privacyConsentSigned: true,
+        },
+      });
+    }
+
+    it('success(有 MemberProfile)→ 200,字段集 = 9 + hasMemberProfile=true', async () => {
+      const { userId, memberId, authHeader } = await setupLinkedUser({
+        username: 'p22_get_with_profile',
+        memberNo: 'P22-G1',
+        displayName: '阿明队员',
+        nickname: '阿明',
+      });
+      await createMemberProfile(memberId);
+
+      const res = await get('/api/app/v1/me/profile', authHeader);
+      expect(res.status).toBe(200);
+      const body = res.body as ResBody;
+      expect(body.code).toBe(0);
+      expect(body.message).toBe('ok');
+      expect(Object.keys(body.data).sort()).toEqual(APP_PROFILE_KEYS);
+      expect(body.data.userId).toBe(userId);
+      expect(body.data.memberId).toBe(memberId);
+      expect(body.data.memberNo).toBe('P22-G1');
+      expect(body.data.displayName).toBe('阿明队员');
+      expect(body.data.nickname).toBe('阿明');
+      expect(body.data.memberStatus).toBe('ACTIVE');
+      expect(body.data.hasMemberProfile).toBe(true);
+      assertNoProfileForbiddenKeys(body.data);
+    });
+
+    it('success(无 MemberProfile)→ 200,hasMemberProfile=false', async () => {
+      const { authHeader } = await setupLinkedUser({
+        username: 'p22_get_no_profile',
+        memberNo: 'P22-G2',
+      });
+
+      const res = await get('/api/app/v1/me/profile', authHeader);
+      expect(res.status).toBe(200);
+      const body = res.body as ResBody;
+      expect(Object.keys(body.data).sort()).toEqual(APP_PROFILE_KEYS);
+      expect(body.data.hasMemberProfile).toBe(false);
+      assertNoProfileForbiddenKeys(body.data);
+    });
+
+    it.each([
+      ['no token', undefined],
+      ['bad token', 'Bearer not-a-real-token'],
+    ])('unauthenticated: %s → 401', async (_label, authHeader) => {
+      expectBizError(await get('/api/app/v1/me/profile', authHeader), BizCode.UNAUTHORIZED);
+    });
+
+    it('member not linked: User.memberId=null → 403 FORBIDDEN', async () => {
+      const { authHeader } = await setupUnlinkedUser('p22_get_not_linked');
+      expectBizError(await get('/api/app/v1/me/profile', authHeader), BizCode.FORBIDDEN);
+    });
+
+    it('member inactive: Member.status=INACTIVE → 403 FORBIDDEN', async () => {
+      const { memberId, authHeader } = await setupLinkedUser({
+        username: 'p22_get_inactive',
+        memberNo: 'P22-G3',
+      });
+      await prisma.member.update({
+        where: { id: memberId },
+        data: { status: MemberStatus.INACTIVE },
+      });
+      expectBizError(await get('/api/app/v1/me/profile', authHeader), BizCode.FORBIDDEN);
+    });
+
+    it('member deleted: Member.deletedAt!=null → 403 FORBIDDEN', async () => {
+      const { memberId, authHeader } = await setupLinkedUser({
+        username: 'p22_get_deleted',
+        memberNo: 'P22-G4',
+      });
+      await prisma.member.update({ where: { id: memberId }, data: { deletedAt: new Date() } });
+      expectBizError(await get('/api/app/v1/me/profile', authHeader), BizCode.FORBIDDEN);
+    });
+
+    it('admin-as-member: ADMIN + linked active → 字段集与 USER 完全一致(不扩大)', async () => {
+      // 沿 D-5.2:Admin 不因 role 扩大 AppSelf 字段可见性
+      const { memberId, authHeader } = await setupLinkedUser({
+        username: 'p22_get_admin',
+        role: Role.ADMIN,
+        memberNo: 'P22-G5',
+      });
+      const res = await get('/api/app/v1/me/profile', authHeader);
+      expect(res.status).toBe(200);
+      const { data } = res.body as ResBody;
+      expect(Object.keys(data).sort()).toEqual(APP_PROFILE_KEYS);
+      expect(data.memberId).toBe(memberId);
+      expect(data).not.toHaveProperty('role');
+      assertNoProfileForbiddenKeys(data);
+    });
+
+    it('scope self: 仅返本人 profile(造他人 active member,登录 A 调 /me/profile)', async () => {
+      const { memberId: memberA, authHeader: authHeaderA } = await setupLinkedUser({
+        username: 'p22_get_scope_a',
+        memberNo: 'P22-G6-A',
+        displayName: 'A 队员',
+      });
+      // 造他人 active member B 但不绑定登录用户;调用应仅返 A 自身
+      const memberB = await createActiveMember('P22-G6-B', 'B 队员');
+      expect(memberB.id).not.toBe(memberA);
+
+      const res = await get('/api/app/v1/me/profile', authHeaderA);
+      expect(res.status).toBe(200);
+      const { data } = res.body as ResBody;
+      expect(data.memberId).toBe(memberA);
+      expect(data.memberNo).toBe('P22-G6-A');
+      expect(data.displayName).toBe('A 队员');
+    });
+  });
+
+  // =====================================================
+  // PATCH /api/app/v1/me/profile(Phase 2 P2-2;沿评审稿 §9.2)
+  // =====================================================
+
+  describe('PATCH /api/app/v1/me/profile (P2-2)', () => {
+    const patch = (
+      path: string,
+      body: Record<string, unknown>,
+      authHeader?: string,
+    ): request.Test => {
+      const r = request(httpServer(app)).patch(path).send(body);
+      return authHeader ? r.set('Authorization', authHeader) : r;
+    };
+
+    it('success: update nickname only → 200 + DB user.nickname 已写', async () => {
+      const { userId, authHeader } = await setupLinkedUser({
+        username: 'p22_patch_nick',
+        memberNo: 'P22-P1',
+        nickname: '旧昵称',
+      });
+      const res = await patch('/api/app/v1/me/profile', { nickname: '新昵称' }, authHeader);
+      expect(res.status).toBe(200);
+      const { data } = res.body as ResBody;
+      expect(Object.keys(data).sort()).toEqual(APP_PROFILE_KEYS);
+      expect(data.nickname).toBe('新昵称');
+      assertNoProfileForbiddenKeys(data);
+
+      const dbUser = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+      expect(dbUser.nickname).toBe('新昵称');
+    });
+
+    it('success: update avatarKey only → 200 + DB user.avatarKey 已写', async () => {
+      const { userId, authHeader } = await setupLinkedUser({
+        username: 'p22_patch_avatar',
+        memberNo: 'P22-P2',
+      });
+      const res = await patch(
+        '/api/app/v1/me/profile',
+        { avatarKey: 'user/avatars/clxxx.png' },
+        authHeader,
+      );
+      expect(res.status).toBe(200);
+      const { data } = res.body as ResBody;
+      expect(data.avatarKey).toBe('user/avatars/clxxx.png');
+      assertNoProfileForbiddenKeys(data);
+
+      const dbUser = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+      expect(dbUser.avatarKey).toBe('user/avatars/clxxx.png');
+    });
+
+    it('success: update both → 200 + 两字段都已写', async () => {
+      const { userId, authHeader } = await setupLinkedUser({
+        username: 'p22_patch_both',
+        memberNo: 'P22-P3',
+      });
+      const res = await patch(
+        '/api/app/v1/me/profile',
+        { nickname: 'NN', avatarKey: 'a/b/c.png' },
+        authHeader,
+      );
+      expect(res.status).toBe(200);
+      const dbUser = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+      expect(dbUser.nickname).toBe('NN');
+      expect(dbUser.avatarKey).toBe('a/b/c.png');
+    });
+
+    it('empty body → 400 BAD_REQUEST(沿 §3.4 A 档)', async () => {
+      const { authHeader } = await setupLinkedUser({
+        username: 'p22_patch_empty',
+        memberNo: 'P22-P4',
+      });
+      const res = await patch('/api/app/v1/me/profile', {}, authHeader);
+      expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
+    });
+
+    describe('forbidden field by category → 400 BAD_REQUEST(参数化;沿 §3.3 + §9.2.5 ~ §9.2.8)', () => {
+      // 参数化 case 共享单一 user(沿 .env.test LOGIN_THROTTLE_LIMIT=50 不超阈值)。
+      // 每次请求都被 ValidationPipe 拦在 controller 之前,DB 写入路径永远走不到,所以
+      // 共享 user 不影响"forbidden field 不写入 DB"的反向断言语义。
+      let sharedAuthHeader: string;
+      let sharedUserId: string;
+
+      beforeAll(async () => {
+        const setup = await setupLinkedUser({
+          username: 'p22_patch_forbidden_shared',
+          memberNo: 'P22-FF-SHARED',
+          nickname: '原昵称',
+        });
+        sharedAuthHeader = setup.authHeader;
+        sharedUserId = setup.userId;
+      });
+
+      it.each(FORBIDDEN_FIELD_CATEGORIES)(
+        '$category/$field 单独传入应被拒绝',
+        async ({ field, value }) => {
+          const res = await patch(
+            '/api/app/v1/me/profile',
+            { [field]: value, nickname: '应该不会被写入' },
+            sharedAuthHeader,
+          );
+          expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
+
+          // 反向断言:即使带了合法的 nickname,因为禁字段拒整笔请求,nickname 也不应被写入
+          const dbUser = await prisma.user.findUniqueOrThrow({ where: { id: sharedUserId } });
+          expect(dbUser.nickname).toBe('原昵称');
+        },
+      );
+    });
+
+    it('unauthenticated → 401', async () => {
+      expectBizError(
+        await patch('/api/app/v1/me/profile', { nickname: 'x' }),
+        BizCode.UNAUTHORIZED,
+      );
+    });
+
+    it('member not linked → 403 FORBIDDEN', async () => {
+      const { authHeader } = await setupUnlinkedUser('p22_patch_not_linked');
+      expectBizError(
+        await patch('/api/app/v1/me/profile', { nickname: 'x' }, authHeader),
+        BizCode.FORBIDDEN,
+      );
+    });
+
+    it('member inactive → 403 FORBIDDEN', async () => {
+      const { memberId, authHeader } = await setupLinkedUser({
+        username: 'p22_patch_inactive',
+        memberNo: 'P22-P5',
+      });
+      await prisma.member.update({
+        where: { id: memberId },
+        data: { status: MemberStatus.INACTIVE },
+      });
+      expectBizError(
+        await patch('/api/app/v1/me/profile', { nickname: 'x' }, authHeader),
+        BizCode.FORBIDDEN,
+      );
+    });
+
+    it('member deleted → 403 FORBIDDEN', async () => {
+      const { memberId, authHeader } = await setupLinkedUser({
+        username: 'p22_patch_deleted',
+        memberNo: 'P22-P6',
+      });
+      await prisma.member.update({ where: { id: memberId }, data: { deletedAt: new Date() } });
+      expectBizError(
+        await patch('/api/app/v1/me/profile', { nickname: 'x' }, authHeader),
+        BizCode.FORBIDDEN,
+      );
+    });
+
+    it('admin-as-member: ADMIN + linked → 改 nickname 成功;sensitive 字段不返(沿 D-5.2)', async () => {
+      const { userId, authHeader } = await setupLinkedUser({
+        username: 'p22_patch_admin',
+        role: Role.ADMIN,
+        memberNo: 'P22-P7',
+      });
+      const res = await patch('/api/app/v1/me/profile', { nickname: 'AdminNick' }, authHeader);
+      expect(res.status).toBe(200);
+      const { data } = res.body as ResBody;
+      expect(Object.keys(data).sort()).toEqual(APP_PROFILE_KEYS);
+      expect(data.nickname).toBe('AdminNick');
+      expect(data).not.toHaveProperty('role');
+      assertNoProfileForbiddenKeys(data);
+
+      const dbUser = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+      expect(dbUser.nickname).toBe('AdminNick');
+      expect(dbUser.role).toBe(Role.ADMIN); // role 不被改
+    });
+  });
+
+  // =====================================================
   // path stability:旧 /api/users/me 行为不受影响(沿 §9.2 #9 + §3.2)
   // =====================================================
 
   describe('path stability', () => {
+    const patchRaw = (
+      path: string,
+      body: Record<string, unknown>,
+      authHeader: string,
+    ): request.Test =>
+      request(httpServer(app)).patch(path).send(body).set('Authorization', authHeader);
+
     it('同一登录态:旧 /api/users/me 与新 /api/app/v1/me 共存,响应字段集互不影响', async () => {
       const { authHeader } = await setupLinkedUser({
         username: 'path_stability_user',
@@ -451,6 +864,26 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
       expect(legacyData).not.toHaveProperty('canUseApp');
       expect(legacyData).not.toHaveProperty('memberId');
       expect(legacyData).not.toHaveProperty('memberNo');
+    });
+
+    it('P2-2 path stability: 旧 PATCH /api/users/me 改 nickname → 仍按 UserResponseDto 返(沿 §9.2.12)', async () => {
+      const { authHeader } = await setupLinkedUser({
+        username: 'p22_path_legacy_patch',
+        memberNo: 'PS-2',
+        nickname: '旧',
+      });
+      const res = await patchRaw('/api/users/me', { nickname: '改' }, authHeader);
+      expect(res.status).toBe(200);
+      const { data } = res.body as ResBody;
+      // 旧 contract UserResponseDto:id / username / email / nickname / avatarKey / role /
+      // status / createdAt / lastLoginAt / updatedAt;不应返 App 字段(memberId / memberNo 等)
+      expect(data).toHaveProperty('id');
+      expect(data).toHaveProperty('role');
+      expect(data).toHaveProperty('status');
+      expect(data.nickname).toBe('改');
+      expect(data).not.toHaveProperty('memberId');
+      expect(data).not.toHaveProperty('memberNo');
+      expect(data).not.toHaveProperty('hasMemberProfile');
     });
   });
 });

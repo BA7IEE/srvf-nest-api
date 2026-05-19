@@ -4,6 +4,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AppCapabilityService } from './app-capability.service';
 import { AppIdentityResolver } from './app-identity.resolver';
+import { AppProfileService } from './app-profile.service';
 import { AppMeController } from './controllers/app-me.controller';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
@@ -20,9 +21,15 @@ import { UsersService } from './users.service';
 // Phase 2 P2-1(2026-05-19):新增 AppMeController(/api/app/v1/me*)+ AppIdentityResolver
 // + AppCapabilityService。沿 docs/app-api-phase-2-review.md §2 / §7.1;
 // 旧 UsersController + UsersService 行为**逐字不变**(沿 §3.2 不动 v1 legacy + §9.2 #9 path stability)。
+//
+// Phase 2 P2-2(2026-05-20):新增 AppProfileService 供 AppMeController 的 GET / PATCH
+// /me/profile 使用(沿 docs/app-api-p2-2-profile-review.md §7.2)。
+// AppProfileService 注入 PrismaService(派生 hasMemberProfile 单字段 select)+ UsersService
+// (PATCH 复用 updateMyProfile;沿 §7.4 显式 safeDto)+ AppIdentityResolver(P2-1 复用)。
+// **不**注入 MemberProfilesService(避免跨模块耦合;沿 §7.2 + 风险表 11.15)。
 @Module({
   imports: [DatabaseModule, AuditLogsModule, PermissionsModule],
   controllers: [UsersController, AppMeController],
-  providers: [UsersService, AppIdentityResolver, AppCapabilityService],
+  providers: [UsersService, AppIdentityResolver, AppCapabilityService, AppProfileService],
 })
 export class UsersModule {}
