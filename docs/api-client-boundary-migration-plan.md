@@ -121,10 +121,11 @@
 
 ## 4. Phase 2:新增 `/api/app/v1/me/*` 队员端基础接口(规划中)
 
-> **Phase 2 启动前置(三份)必读**:
+> **Phase 2 启动前置(四份)必读**:
 >   - [`docs/app-permission-boundary-review.md`](app-permission-boundary-review.md) — **Phase 0.5 App 身份 / 权限 / 数据可见性**
 >   - [`docs/data-access-lifecycle-boundary-review.md`](data-access-lifecycle-boundary-review.md) — **Phase 0.6 数据访问与生命周期边界**(surface / field / scope / state / lifecycle)
 >   - [`docs/code-architecture-boundary-review.md`](code-architecture-boundary-review.md) — **Phase 0.7 代码架构边界**(Controller / DTO / Presenter / QueryService / CommandService / PolicyService / StateMachine / AuditRecorder / Effect / Reporting 10 个 implementation boundary;Phase 2 实施 PR review 拒绝信号清单)
+>   - [`docs/app-api-phase-2-review.md`](app-api-phase-2-review.md) — **Phase 2 实施前评审稿**(15 个候选 endpoint + 9 PR 串 + DTO 命名 + capabilities 设计 + identity/access 矩阵 + 风险表;Phase 2 实施必须先消化本节并按 P2-0 ~ P2-8 串行落地;**v0.1** 把 `PUT /me/password` 独立拆为 P2-3)
 >
 > Phase 2 立项评审稿启动时**必须**先消化以上三份专项,**不**照搬本节 P0 清单字面值。Phase 0.5 提出 §8 重新评估建议;Phase 0.6 锁定 surface / scope / field / state 四维正交模型;Phase 0.7 锁定后续代码实现时的分层承载边界。
 >
@@ -176,6 +177,8 @@ GET   /api/app/v1/activities/:id
 | PR #N8 | `POST /api/app/v1/me/activities/:id/registrations` | N5 + N6 |
 
 > 每个 PR **不要超过** 1 个 endpoint 系列(典型 1-2 个 endpoint + DTO + E2E + Swagger);**不超过** 500 lines diff。
+>
+> **2026-05-19 校准**:本节 PR #N1 ~ #N8 是 v0 规划期表达;实际 PR 拆分以 [`docs/app-api-phase-2-review.md §8.1`](app-api-phase-2-review.md) **P2-0 ~ P2-8** 为准(v0.1:`PUT /me/password` 独立为 **P2-3**;路径名按 Phase 0.5 §10.2 D-4 `/me/*` + `/my/*` 拆分;`/me/permissions` 改为 `/me/capabilities`)。本节保留作为 Phase 0 规划期历史记录,不作为实施依据。
 
 ### 4.4 不做清单
 

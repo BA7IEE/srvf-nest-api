@@ -617,6 +617,10 @@ UserCommandService            # changePassword / resetPassword / updateRole / di
 - 本评审稿评审通过后,修订必须**记录修订时间 + 变更摘要**
 - 各 §1-§10 的"建议未来命名"在实际落地 service 时**就地**对齐,**不**强制按本评审稿字面值;允许更友好的命名,但**必须**保持本评审稿提出的边界语义
 
+### 15.4 Phase 2 实施引用
+
+**Phase 2 implementation must read** [`docs/app-api-phase-2-review.md`](app-api-phase-2-review.md) **before any `/api/app/v1/*` endpoint PR**。本评审稿 §1-§10 边界(尤其 §2 DTO/Presenter / §3 三层授权 / §4 QueryService / §7 StateMachine / §8 AuditRecorder)由该评审稿 §7 锁定为 Phase 2 最小落地范围(新增 Mobile Controller + App DTO + Presenter + AppIdentityResolver + AppCapabilityService;其余分层在触发时单独立项)。
+
 ---
 
 > **本评审稿生效时间**:2026-05-19(Phase 0.7 v0)。

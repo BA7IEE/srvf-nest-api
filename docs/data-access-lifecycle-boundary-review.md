@@ -482,6 +482,10 @@ Linkage(User.memberId):
 - 本评审稿评审通过后,修订必须**记录修订时间 + 变更摘要**
 - §4 状态机表格在 Phase 2 / Phase 5 实施时**就地**补充字典 code 真实取值,**不**新建 v1 / v2 文档(沿 [Phase 1 评审稿 §10](api-client-boundary-phase-1-review.md))
 
+### 8.4 Phase 2 实施引用
+
+**Phase 2 implementation must read** [`docs/app-api-phase-2-review.md`](app-api-phase-2-review.md) **before any `/api/app/v1/*` endpoint PR**。本评审稿 §1(surface)/ §2(field)/ §3(scope)/ §4(state)/ §5(lifecycle)/ §6(高风险返工点)由该评审稿在 Phase 2 范围内具体化为 endpoint 表 / DTO 命名 / identity-access 矩阵 / 风险表。
+
 ---
 
 > **本评审稿生效时间**:2026-05-19(Phase 0.6 v0)。

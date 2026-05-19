@@ -1129,4 +1129,23 @@ Agents must **not** continue adding complex **surface-specific** DTO / scope / f
 - 新增 `department` / `activity` / `managed` scope → 必须走 ScopeResolver + QueryService
 - 新增通知 / 短信 → 必须走 Effect / Workflow
 
+**D-8**:Phase 2 App API implementation requires Phase 2 review(2026-05-19 立项)
+
+Before implementing any `/api/app/v1/*` endpoint, agents **must read and follow**:
+
+- [`docs/app-api-phase-2-review.md`](docs/app-api-phase-2-review.md)
+- [`docs/app-permission-boundary-review.md`](docs/app-permission-boundary-review.md)
+- [`docs/data-access-lifecycle-boundary-review.md`](docs/data-access-lifecycle-boundary-review.md)
+- [`docs/code-architecture-boundary-review.md`](docs/code-architecture-boundary-review.md)
+
+Agents must **not** implement Phase 2 endpoints from the old 11-endpoint list in [`docs/api-client-boundary-migration-plan.md §4.1`](docs/api-client-boundary-migration-plan.md) **without applying the Phase 0.5 / 0.6 / 0.7 decisions**, especially:
+
+- `/me/permissions` must become `/me/capabilities`(沿 D-5.3;product-level capability map,**禁止** raw RBAC permission code)
+- `/me/*` and `/my/*` must be **physically separated**(沿 D-5.4;`/me/*` = identity / account / profile / capability,`/my/*` = business records owned by current member)
+- App DTOs must **not** reuse Admin DTOs(沿 D-6;`extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 一个 Admin DTO 构造 App DTO 视作越权)
+- Mobile scope **defaults to `self`**(沿 D-6;App API where 子句永远用 `currentUser.memberId` 锁定本人,**禁止**用 `role` 短路决定数据范围)
+- L3 字段(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / 完整 signed URL)**永远不返回**(沿 D-6;snapshot 测试出现直接拒合并)
+
+Phase 2 实施按 [`docs/app-api-phase-2-review.md §8.1`](docs/app-api-phase-2-review.md) P2-0 ~ P2-7 串行落地;agents **禁止**自行启动 P2-N 代码改造,必须用户在 [`docs/process.md`](docs/process.md) 流程内逐个立项。
+
 **违反铁律**:发现本节决策与新任务诉求冲突 → **必须暂停说明**,不擅自调和;不主动建议"重新评估方案 A/B"或"把 contribution-rules 改归 Admin"等回滚动作。
