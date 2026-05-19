@@ -766,6 +766,73 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppSelfProfileDto": {
+    "properties": {
+      "avatarKey": {
+        "description": "头像 attachment key(不返 signed URL)",
+        "example": "user/avatars/clxxx.png",
+        "nullable": true,
+        "type": "object",
+      },
+      "displayName": {
+        "description": "队员展示名",
+        "example": "王小明",
+        "type": "string",
+      },
+      "hasMemberProfile": {
+        "description": "是否已有 MemberProfile 档案(派生;单字段 select)",
+        "example": true,
+        "type": "boolean",
+      },
+      "memberId": {
+        "description": "已绑定 member id(canUseApp=true 时非空)",
+        "example": "cl9z3a8b00000mxxxxxxxxxx",
+        "type": "string",
+      },
+      "memberNo": {
+        "description": "队员编号(终身不变)",
+        "example": "V0001",
+        "type": "string",
+      },
+      "memberStatus": {
+        "description": "队员状态(P2-2 进入时强约 ACTIVE)",
+        "enum": [
+          "ACTIVE",
+          "INACTIVE",
+        ],
+        "example": "ACTIVE",
+        "type": "string",
+      },
+      "nickname": {
+        "description": "昵称",
+        "example": "阿明",
+        "nullable": true,
+        "type": "object",
+      },
+      "userId": {
+        "description": "当前登录用户 id",
+        "example": "cl9z3a8b00000abcd1234efgh",
+        "type": "string",
+      },
+      "username": {
+        "description": "账号名(归一化后小写)",
+        "example": "volunteer001",
+        "type": "string",
+      },
+    },
+    "required": [
+      "userId",
+      "memberId",
+      "username",
+      "nickname",
+      "avatarKey",
+      "memberNo",
+      "displayName",
+      "memberStatus",
+      "hasMemberProfile",
+    ],
+    "type": "object",
+  },
   "ApproveAttendanceSheetDto": {
     "properties": {
       "reviewNote": {
@@ -4319,6 +4386,21 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "type": "object",
   },
+  "UpdateAppSelfProfileDto": {
+    "properties": {
+      "avatarKey": {
+        "description": "头像 attachment key",
+        "maxLength": 255,
+        "type": "string",
+      },
+      "nickname": {
+        "description": "昵称",
+        "maxLength": 50,
+        "type": "string",
+      },
+    },
+    "type": "object",
+  },
   "UpdateAttachmentDto": {
     "properties": {
       "accessLevel": {
@@ -5551,6 +5633,276 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "tags": [
         "Mobile - Me",
         "Mobile - Capabilities",
+      ],
+    },
+  },
+  "/api/app/v1/me/profile": {
+    "get": {
+      "operationId": "AppMeController_getMyProfile",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppSelfProfileDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 视角本人 profile(User + Member 基础摘要 + hasMemberProfile 派生;canUseApp=true 必要)",
+      "tags": [
+        "Mobile - Me",
+      ],
+    },
+    "patch": {
+      "operationId": "AppMeController_updateMyProfile",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateAppSelfProfileDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppSelfProfileDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 视角本人改 profile(严格白名单 nickname / avatarKey)",
+      "tags": [
+        "Mobile - Me",
       ],
     },
   },

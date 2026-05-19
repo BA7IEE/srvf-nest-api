@@ -305,6 +305,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/me'],
   ['get', '/api/app/v1/me/account'],
   ['get', '/api/app/v1/me/capabilities'],
+
+  // Phase 2 P2-2(2026-05-20):App /api/app/v1/me/profile GET + PATCH
+  // 沿 docs/app-api-p2-2-profile-review.md §7.3 + §9.3;字段集恰好 9(GET 出参)/ 2(PATCH 入参);
+  // canUseApp=false → FORBIDDEN(40300);empty body / forbidden field → BAD_REQUEST(40000);
+  // P2-2 不新增 BizCode(沿 §6.1);旧 /api/users/me 行为**逐字不变**(沿 §10.3 + §14.2)。
+  ['get', '/api/app/v1/me/profile'],
+  ['patch', '/api/app/v1/me/profile'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -531,6 +538,13 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'AppCapabilityCertificatesDto',
   'AppCapabilityTasksDto',
   'AppCapabilityManagedDto',
+
+  // Phase 2 P2-2(2026-05-20):App /api/app/v1/me/profile DTO
+  // AppSelfProfileDto:GET / PATCH 共用出参,字段恰好 9(沿 §2.4 v0.1 锁定)。
+  // UpdateAppSelfProfileDto:PATCH 入参,字段恰好 2(`nickname` / `avatarKey`;沿 §3.1)。
+  // 两 DTO 均独立注册为 named schema;**禁止**继承 / Pick / Omit Admin DTO(沿 §4.3 + Phase 0.7 §2.2)。
+  'AppSelfProfileDto',
+  'UpdateAppSelfProfileDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
