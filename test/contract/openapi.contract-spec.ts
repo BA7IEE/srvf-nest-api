@@ -312,6 +312,15 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // P2-2 不新增 BizCode(沿 §6.1);旧 /api/users/me 行为**逐字不变**(沿 §10.3 + §14.2)。
   ['get', '/api/app/v1/me/profile'],
   ['patch', '/api/app/v1/me/profile'],
+
+  // Phase 2 P2-3(2026-05-20):App /api/app/v1/me/password
+  // 沿 docs/app-api-p2-3-password-review.md §1 + §11;**复用** ChangeMyPasswordDto +
+  // UserResponseDto(0 新 DTO 注册到 components.schemas);**复用** UsersService.changeMyPassword +
+  // @PasswordChangeThrottle() + password.change.self audit + refresh token 撤销
+  // (revokedReason='self-password-change');**0 新 BizCode**;
+  // **D-P2-3-1 = X**(沿评审稿 §4.3 锁定):admin without member 允许使用,
+  // 该豁免**严格仅本端点**适用(沿 §4.6);旧 /api/users/me/password 行为**逐字不变**。
+  ['put', '/api/app/v1/me/password'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
