@@ -33,7 +33,7 @@ import { UserRolesService } from './user-roles.service';
 // Service 层 canAssignRole 私有 helper 显式判定;P0-F PR-1 起 USER 系统级由 RBAC 入口
 // 判权拦截(无 rbac.user-role.* permission),不再依赖 Guard 前置。
 
-@ApiTags('user-roles')
+@ApiTags('Ops - User Roles')
 @ApiBearerAuth()
 @ApiExtraModels(UserRoleResponseDto)
 @Controller('v2/users/:userId/roles')

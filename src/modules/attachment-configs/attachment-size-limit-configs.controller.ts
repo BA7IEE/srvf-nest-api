@@ -37,7 +37,7 @@ import { AttachmentSizeLimitConfigsService } from './attachment-size-limit-confi
 // 映射 seed 新增 4 条权限点:attachment-config.{read,create,update,delete}.size-limit。
 // (本表无 status 端点;5 端点共用 4 个 permission code)
 
-@ApiTags('attachment-configs')
+@ApiTags('Ops - Attachment Configs')
 @ApiBearerAuth()
 @ApiExtraModels(AttachmentSizeLimitConfigResponseDto, AttachmentSizeLimitConfigTypeConfigSummaryDto)
 @Controller('v2/attachment-size-limit-configs')

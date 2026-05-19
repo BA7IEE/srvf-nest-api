@@ -39,7 +39,7 @@ import { DictionariesService } from './dictionaries.service';
 
 // ============ /api/v2/dict-types ============
 
-@ApiTags('dictionaries')
+@ApiTags('Ops - Dictionaries')
 @ApiBearerAuth()
 @Controller('v2/dict-types')
 export class DictTypesController {
@@ -145,7 +145,7 @@ export class DictTypesController {
 
 // ============ /api/v2/dict-items ============
 
-@ApiTags('dictionaries')
+@ApiTags('Ops - Dictionaries')
 @ApiBearerAuth()
 @Controller('v2/dict-items')
 export class DictItemsController {

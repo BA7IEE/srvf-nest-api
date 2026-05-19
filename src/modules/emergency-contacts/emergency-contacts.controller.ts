@@ -26,7 +26,7 @@ import { EmergencyContactsService } from './emergency-contacts.service';
 //
 // 临时权限(批次 1 评审 §5.1):全部 ADMIN / SUPER_ADMIN 兜底,**不开放** USER 自助。
 
-@ApiTags('emergency-contacts')
+@ApiTags('Admin - Emergency Contacts')
 @ApiBearerAuth()
 @Controller('v2/members/:memberId/emergency-contacts')
 export class EmergencyContactsController {

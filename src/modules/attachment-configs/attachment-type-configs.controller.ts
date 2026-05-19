@@ -38,7 +38,7 @@ import { AttachmentTypeConfigsService } from './attachment-type-configs.service'
 // 映射 seed 新增 4 条权限点:attachment-config.{read,create,update,delete}.type。
 // (status 端点共用 attachment-config.update.type;沿 PR-2A dict-type update.* 范式)
 
-@ApiTags('attachment-configs')
+@ApiTags('Ops - Attachment Configs')
 @ApiBearerAuth()
 @ApiExtraModels(AttachmentTypeConfigResponseDto)
 @Controller('v2/attachment-type-configs')

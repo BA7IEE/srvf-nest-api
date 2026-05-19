@@ -30,7 +30,7 @@ import { PermissionsService } from './permissions.service';
 // BizException(BizCode.RBAC_FORBIDDEN)(30100)。沿 attachments F3 v1.0 范本。
 // 映射 seed 现有 4 条权限点:rbac.permission.{read,create,update,delete}。
 
-@ApiTags('permissions')
+@ApiTags('Ops - Permissions')
 @ApiBearerAuth()
 @ApiExtraModels(PermissionResponseDto)
 @Controller('v2/permissions')

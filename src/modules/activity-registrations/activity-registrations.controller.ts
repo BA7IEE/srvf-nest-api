@@ -78,7 +78,7 @@ function buildAuditMeta(req: Request): AuditMeta {
 
 // ============ 管理端 Controller ============
 
-@ApiTags('activity-registrations')
+@ApiTags('Admin - Registrations')
 @ApiBearerAuth()
 @Controller('v2/activities/:activityId/registrations')
 export class ActivityRegistrationsAdminController {
@@ -237,7 +237,7 @@ export class ActivityRegistrationsAdminController {
 
 // ============ 队员端 Controller(/v2/users/me)============
 
-@ApiTags('activity-registrations')
+@ApiTags('Mobile - Registrations')
 @ApiBearerAuth()
 @Controller('v2/users/me')
 export class ActivityRegistrationsMeController {

@@ -28,7 +28,7 @@ import { AuditLogsService } from './audit-logs.service';
 // - detail 业务级越级码 FORBIDDEN_AUDIT_LOG_READ(14101)完全保留(ADMIN 越级查 SUPER_ADMIN;§6.4 / D-D)
 // - AUDIT_LOG_NOT_FOUND(14001)完全保留(findOne 命中但不存在)
 
-@ApiTags('audit-logs')
+@ApiTags('Ops - Audit Logs')
 @ApiBearerAuth()
 @Controller('v2/audit-logs')
 export class AuditLogsController {

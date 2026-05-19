@@ -41,7 +41,7 @@ import { CertificatesService } from './certificates.service';
 //   7. PATCH ':id/verify'          verify(Q-A1:用 PATCH 而非 POST)
 //   8. PATCH ':id/reject'          reject(Q-A1:用 PATCH 而非 POST)
 
-@ApiTags('certificates')
+@ApiTags('Admin - Certificates')
 @ApiBearerAuth()
 @Controller('v2/members/:memberId/certificates')
 export class CertificatesController {

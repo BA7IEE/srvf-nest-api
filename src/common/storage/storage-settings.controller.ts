@@ -29,7 +29,7 @@ import { StorageSettingsService } from './storage-settings.service';
 //   - response **永不**包含 secretId / secretKey / secretIdEncrypted / secretKeyEncrypted / credentials
 //   - 0 audit_logs(沿 §6.6.5);pino 日志仅记 user.id + reset 动作,不含 secret 明文 / 密文
 
-@ApiTags('storage-settings')
+@ApiTags('Ops - Storage Settings')
 @ApiBearerAuth()
 @ApiExtraModels(StorageSettingsResponseDto)
 @Controller('v2/storage-settings')

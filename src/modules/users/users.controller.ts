@@ -55,7 +55,13 @@ import { UsersService } from './users.service';
 // service 内 6 项业务护栏全保留:canViewUser / canManageUser / canCreateRole /
 // canChangeRole / assertNotSelf / assertNotLastSuperAdmin(沿评审稿 §8.3)。
 // `/me` 3 端点保持任意登录用户可访问,**不**进 RBAC 范围(沿评审稿 §2.2)。
-@ApiTags('users')
+//
+// Phase 1A(2026-05-19):Mixed Controller — class-level @ApiTags 用占多数的 surface
+// ('Admin - Users';8/11 端点为管理面);3 个 /me 端点 method-level 追加 'Mobile - Me'。
+// 因 NestJS Swagger 11 method-level @ApiTags 是 append 不是 replace,/me 端点最终
+// 会被同时归入 ['Admin - Users', 'Mobile - Me'] 两个 tag(dual tag),这是预期内的
+// Mixed 边界视觉信号;物理拆 Controller 留 Phase 5(沿 docs/api-client-boundary-phase-1-review.md §2.2)。
+@ApiTags('Admin - Users')
 @ApiBearerAuth()
 @Controller('users')
 export class UsersController {
@@ -64,6 +70,7 @@ export class UsersController {
   // ===== /me(本人接口,任何登录用户均可访问;**不**进 RBAC 范围)=====
 
   @Get('me')
+  @ApiTags('Mobile - Me')
   @ApiOperation({ summary: '获取本人资料' })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED)
@@ -72,6 +79,7 @@ export class UsersController {
   }
 
   @Patch('me')
+  @ApiTags('Mobile - Me')
   @ApiOperation({ summary: '修改本人非敏感资料(仅 nickname / avatarKey)' })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED)
@@ -88,6 +96,7 @@ export class UsersController {
   // 与管理员重置接口 PUT /:id/password 行为对称区分:本接口需 oldPassword,管理员重置不需。
   @PasswordChangeThrottle()
   @Put('me/password')
+  @ApiTags('Mobile - Me')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '本人自助改密(需 oldPassword);不主动吊销旧 token' })
   @ApiWrappedOkResponse(UserResponseDto)

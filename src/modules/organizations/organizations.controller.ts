@@ -31,7 +31,7 @@ import { OrganizationsService } from './organizations.service';
 // D3=A:org softDelete 从 v1 仅 SUPER_ADMIN 放宽至 ops-admin 可调
 // (sub-protection 仍在 service 内:HAS_CHILDREN / HAS_MEMBERS / LAST_ROOT_PROTECTED)。
 
-@ApiTags('organizations')
+@ApiTags('Admin - Organizations')
 @ApiBearerAuth()
 @Controller('v2/organizations')
 export class OrganizationsController {

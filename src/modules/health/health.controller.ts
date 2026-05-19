@@ -39,7 +39,7 @@ import { HealthResponseDto } from './health.dto';
 //   两者都不符合本项目接口契约,因此本 controller 把 terminus 仅用作"探测引擎",
 //   把成功结果重写成简洁的 HealthResponseDto,把失败统一转成 BizException,
 //   既保住 ResponseInterceptor 包装,也保住统一错误处理。
-@ApiTags('health')
+@ApiTags('Public')
 @Controller('health')
 export class HealthController {
   constructor(
