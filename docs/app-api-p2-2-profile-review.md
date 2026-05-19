@@ -18,13 +18,17 @@
 
 1. **范围严格**:仅 2 个 endpoint(`GET /api/app/v1/me/profile` + `PATCH /api/app/v1/me/profile`),仅 2 个新 DTO(`AppSelfProfileDto` + `UpdateAppSelfProfileDto`),仅 1 个新 service(`AppProfileService`)。
 2. **PATCH 白名单恰好 2 字段**:`nickname` + `avatarKey`(沿 Phase 2 review §5.2 #5 锁定字段集 + §10.11a 风险表)。**禁止**任何 Member 业务字段 / Emergency contacts / Organization / Department / Role / Permission / Status / 账号字段 / 审批字段进入入参 DTO。
-3. **GET 字段建议保守档**:`User + Member` 摘要 + **可选**`MemberProfile` 低敏字段(`email` / `realName`)+ 默认掩码 L2(`mobile` / `documentNumber` 后 4 位);**默认不返**身份证号完整值 / 健康信息 / 紧急联系人 / 组织部门只读字段。
+3. **GET 字段恰好 9 个**(v0.1 收窄):`userId / memberId / username / nickname / avatarKey / memberNo / displayName / memberStatus / hasMemberProfile`;**P2-2 不读 `MemberProfile` 任何字段**,`email` 由 `/api/app/v1/me/account` 承载不重复返;`gradeCode` / `joinedDate` / `realName` / `mobileMasked` / `documentNumberMasked` 全部**移出 P2-2**,留独立评审稿。
 4. **复用 P2-1 准入闭包**:`AppIdentityResolver.resolve(currentUser)` 直接复用;**不**新建 `MemberStatusGuard`;两 endpoint 必须 `canUseApp=true`,否则按拒绝路径走(沿 Phase 2 review §6.3)。
-5. **PATCH 复用 P0-D `UsersService.updateMyProfile`**:`nickname` / `avatarKey` 是 `User` 表字段,沿用 P0-D 现有 method;**不**改 `UsersService` 签名;**不**走 `MemberProfile` 写路径。
+5. **PATCH 复用 P0-D `UsersService.updateMyProfile`**:`nickname` / `avatarKey` 是 `User` 表字段,沿用 P0-D 现有 method;**不**改 `UsersService` 签名;**不**走 `MemberProfile` 写路径。**`AppProfileService` 必须**先用 `UpdateAppSelfProfileDto` 把 body 限制为 `nickname` / `avatarKey` 两字段后**再传给** `UsersService.updateMyProfile`;**禁止**把原始 request body 透传到 `UsersService`(沿 §7.4)。
 6. **GET 在 `canUseApp=false` 时**:沿 P2-1 capability-aware 拒绝路径**反例** — 业务 endpoint 必须**显式拒绝**(走 `FORBIDDEN` 临时复用 + reason 文案;P2-2 评审稿明确**不**改业务 endpoint 返"空 profile")。
-7. **不新增 BizCode**:`MEMBER_NOT_LINKED` / `MEMBER_INACTIVE` / `MEMBER_DELETED` 沿 Phase 2 review §6.3 临时复用 `FORBIDDEN=40300` + reason 字符串;若 P2-2 评审稿决议升正式 BizCode,沿 100xx 段位 10008 / 10009 / 10010(需用户拍板,详见 §6)。
-8. **PR 大小**:预计 < 400 行 diff(2 endpoint + 2 DTO + 1 service + e2e + contract snapshot);**不**触发 P2-5 拆分级别。
-9. **未启动**:P2-2 implementation / P2-3(`/me/password`)/ Phase 1B(`/api/auth/v1` / `/api/public/v1` alias)/ Phase 2.x(emergency contacts / member profile 完整改资料)— 全部留独立评审稿。
+7. **P2-2 不新增 BizCode**(锁定):
+   - `canUseApp=false` → `FORBIDDEN=40300`(沿 Phase 2 review §6.3;reason 由 message 文案区分)
+   - 空 body → `BAD_REQUEST=40000`
+   - forbidden field → `BAD_REQUEST=40000`(`forbidNonWhitelisted: true` 自动生成 class-validator message)
+   - 不开 `MEMBER_NOT_LINKED` / `APP_MEMBER_INACTIVE` / `APP_MEMBER_DELETED` / `APP_PROFILE_UPDATE_EMPTY` / `APP_PROFILE_FIELD_FORBIDDEN` 任一新号位;真业务诉求出现时独立立项(沿 [`CLAUDE.md §5`](../CLAUDE.md))
+8. **PR 大小**:预计 < 300 行 diff(2 endpoint + 2 DTO + 1 service + 20-25 e2e + contract snapshot;沿 v0.1 收窄);**不**触发 P2-5 拆分级别。
+9. **未启动**:P2-2 implementation / P2-3(`/me/password`)/ Phase 1B(`/api/auth/v1` / `/api/public/v1` alias)/ Phase 2.x(emergency contacts / member profile 完整 read 含 realName / mobileMasked / documentNumberMasked / gradeCode / joinedDate)— 全部留独立评审稿。
 
 ---
 
@@ -34,8 +38,8 @@
 
 | Method | Path | Purpose | Surface | Scope | Auth | DTO | Service / Resolver reuse | Risk |
 |---|---|---|---|---|---|---|---|---|
-| GET | `/api/app/v1/me/profile` | 本人 member 摘要 + User 资料(沿 §3 字段集) | mobile | self | `JwtAuthGuard` + `canUseApp=true` | `AppSelfProfileDto`(出参) | `AppIdentityResolver`(P2-1)+ 新 `AppProfileService` 私有方法(可调 Prisma 拼字段 / 可选调 `MemberProfilesService.findOne` 仅读) | **高(L2 掩码)** |
-| PATCH | `/api/app/v1/me/profile` | 本人改 `nickname` / `avatarKey`(严格 2 字段白名单) | mobile | self | `JwtAuthGuard` + `canUseApp=true` | `UpdateAppSelfProfileDto`(入参)+ `AppSelfProfileDto`(出参) | `AppIdentityResolver`(P2-1)+ 新 `AppProfileService.updateMyProfile()`(内部调 `UsersService.updateMyProfile`) | 中(白名单严格) |
+| GET | `/api/app/v1/me/profile` | 本人 User + Member 基础摘要(9 字段;沿 §2.4 v0.1 收窄基线) | mobile | self | `JwtAuthGuard` + `canUseApp=true` | `AppSelfProfileDto`(出参) | `AppIdentityResolver`(P2-1)+ 新 `AppProfileService.getMyProfile`(纯派生,不读 MemberProfile)| 中(派生 `hasMemberProfile` 标志) |
+| PATCH | `/api/app/v1/me/profile` | 本人改 `nickname` / `avatarKey`(严格 2 字段白名单) | mobile | self | `JwtAuthGuard` + `canUseApp=true` | `UpdateAppSelfProfileDto`(入参)+ `AppSelfProfileDto`(出参) | `AppIdentityResolver`(P2-1)+ 新 `AppProfileService.updateMyProfile`(内部**先**用 DTO 限制 body 后**再**调 `UsersService.updateMyProfile`;沿 §7.4)| 中(白名单严格) |
 
 ### 1.2 路径归属(沿 D-5.4)
 
@@ -47,19 +51,19 @@
 
 ### 1.3 实施可行性
 
-- **GET**:`AppIdentityResolver.loadUserForApp` + `AppIdentityResolver.resolve` 已在 P2-1 提供 User 安全字段 + Member 完整字段。若 §3 决议 B 档(含 MemberProfile),需新读 `MemberProfile`(通过 `notDeletedWhere({ memberId })`)
-- **PATCH**:`nickname` / `avatarKey` 是 `User` 表字段(沿 [schema.prisma:20-21](../prisma/schema.prisma)),复用 `UsersService.updateMyProfile`(沿 [users.service.ts:findMe / updateMyProfile](../src/modules/users/users.service.ts))
+- **GET**:`AppIdentityResolver.loadUserForApp` + `AppIdentityResolver.resolve` 已在 P2-1 提供 User 安全字段 + Member 完整字段;P2-2 v0.1 收窄后**不**读 `MemberProfile`,`hasMemberProfile` 通过 `prisma.memberProfile.findFirst({ where: notDeletedWhere({ memberId }), select: { id: true } })` 仅读派生(单字段 select)
+- **PATCH**:`nickname` / `avatarKey` 是 `User` 表字段(沿 [schema.prisma:20-21](../prisma/schema.prisma)),复用 `UsersService.updateMyProfile`(沿 [users.service.ts:findMe / updateMyProfile](../src/modules/users/users.service.ts));**`AppProfileService` 必须**用 `UpdateAppSelfProfileDto` 把 body 拦下后**显式构造** `{ nickname, avatarKey }` 再传入,**禁止**透传原始 request body(沿 §7.4)
 - **响应**:PATCH 成功后**返新的 `AppSelfProfileDto`**(与 GET 字段集一致,前端方便单次响应即可刷新本地缓存)
 
 ---
 
 ## 2. GET `/me/profile` 返回字段设计
 
-### 2.1 字段集 3 档对比
+### 2.1 v0.1 收窄基线(2026-05-19 用户拍板)
 
-> 字段分类标 `(L0/L1/L2/L3)` 沿 [Phase 0.6 §2.1](data-access-lifecycle-boundary-review.md);AppSelf 默认上限 = L2 本人 + 掩码(沿 [Phase 0.6 §2.3](data-access-lifecycle-boundary-review.md))。
+> 字段分类标 `(L0/L1/L2/L3)` 沿 [Phase 0.6 §2.1](data-access-lifecycle-boundary-review.md)。
 
-#### A 档 — 极小返(沿 P2-2 范围最保守)
+**P2-2 GET /profile 字段恰好 9 个**:
 
 ```txt
 userId                     L0
@@ -69,113 +73,130 @@ nickname                   L0(可空)
 avatarKey                  L0(可空;沿 P2-1 现状不返 signed URL)
 memberNo                   L1
 displayName                L1
-gradeCode                  L1(队员等级 dict code)
-memberStatus               L0(枚举)
-canUseApp                  L0(派生)
-hasMemberProfile           L0(派生;指示 MemberProfile 是否存在)
+memberStatus               L0(枚举;P2-2 进入时强约 ACTIVE)
+hasMemberProfile           L0(派生;`MemberProfile` 是否存在)
 ```
 
-**优点**:零 `MemberProfile` 依赖;不触 §10.1.5 / §10.1.6 任何决议;PR 实施风险最低。
-**缺点**:与 `GET /me` 字段重叠度高(P2-1 已返 userId / memberId / username / nickname / avatarKey / memberNo / displayName / gradeCode / memberStatus / canUseApp),P2-2 唯一新增的只有 `hasMemberProfile`,**业务价值低**。
+**字段总数:9**。
 
-#### B 档 — 含 MemberProfile 低敏摘要(**推荐**)
+**为什么是这 9 个 / 不是更多**:
+
+- `email`:**已由** `/api/app/v1/me/account` 承载,P2-2 profile 不重复返回(沿 v0.1 修订)
+- `gradeCode`:暂不进入 P2-2 — 队员等级语义涉及 dict code 字典依赖,留独立评审
+- `joinedDate`:暂不进入 P2-2 — `MemberProfile` 字段,需读 `MemberProfile`,留独立评审
+- `realName` / `mobileMasked` / `documentNumberMasked`:**全部暂不进入** P2-2 — `MemberProfile` L1 / L2 字段,涉及掩码语义 / 完整号决议(沿 [Phase 0.6 §2.3](data-access-lifecycle-boundary-review.md) 铁律 5),留 Phase 2.x 完整 member profile read PR
+- `canUseApp`:**不在** GET /profile 返回 — P2-2 走显式拒绝路径(沿 §5.4),已是 200 即表示 `canUseApp=true`;前端可继续依赖 `/api/app/v1/me` / `/api/app/v1/me/account` / `/api/app/v1/me/capabilities` 拿 `canUseApp` 标志
+
+### 2.2 历史 3 档参考(分析过程,**不再为推荐档**)
+
+> v0 初稿曾对比 A / B / C 三档;v0.1 收窄后,**实际基线**比 v0 初稿 A 档**还窄**(剔除 `gradeCode` / `canUseApp`)。
+> 三档定义保留作为"为什么不更多"的分析过程参考,**不再**用作"推荐档"。
+
+#### A 档(v0 初稿;含 `gradeCode` / `canUseApp`)
 
 ```txt
-A 档全部字段
-+ email                    L1   ← 数据源:User.email(P2-1 已返 User.email,可视为对齐)
-                                   或 MemberProfile.email(若 §2.3 决议优先取该处)
-+ realName                 L1   ← 数据源:MemberProfile.realName;无 profile 时 null
-+ mobileMasked             L2 masked  ← 数据源:MemberProfile.mobile;后 4 位掩码(如 `***1234`)
-+ documentNumberMasked     L2 masked  ← 数据源:MemberProfile.documentNumber;后 4 位掩码
-+ joinedDate               L0   ← 数据源:MemberProfile.joinedDate;ISO 字符串
+userId / memberId / username / nickname / avatarKey
+memberNo / displayName / gradeCode / memberStatus
+canUseApp / hasMemberProfile
 ```
 
-**优点**:与 PATCH 字段集对偶(PATCH 仅 `nickname` / `avatarKey`,GET 多展示几个常用低敏字段);掩码 L2 字段满足"本人可见但默认不暴露完整"的合规要求;字段数 12 + 5 = 17,体积合理。
-**缺点**:需要决议:`mobile` 完整号 / 完整身份证号是否需要 — 推荐**不**返(沿 §2.3.1);需要决议 `email` 数据源(User.email vs MemberProfile.email — 推荐 User.email,P2-1 已返,语义一致)。
+**v0.1 调整**:剔除 `gradeCode`(独立评审)/ `canUseApp`(其它 me/* endpoint 已承载)→ **v0.1 基线 9 字段(沿 §2.1)**。
 
-#### C 档 — 含 MemberProfile 完整资料
+#### B 档(v0 初稿;含 MemberProfile 低敏摘要)
 
 ```txt
-B 档全部字段
-+ 完整 mobile(L2)
-+ 完整 documentNumber(L2)
-+ documentTypeCode(L1)
-+ genderCode(L1)
-+ birthDate(L1)
-+ ethnicityCode / politicalStatusCode / educationCode / maritalStatusCode(L1)
-+ workNatureCode / residenceArea / workArea(L1)
-+ landline / qq / wechat(L1)
-+ heightCm / weightKg(L2 医疗)
-+ bloodTypeCode(L2 医疗)
-+ eyesight / medicalNotes(L2 医疗)
-+ hasVehicle / vehicleType(L1)
+A 档全部 + email / realName / mobileMasked / documentNumberMasked / joinedDate
+```
+
+**v0.1 拒绝**:`MemberProfile` 字段全部移出 P2-2,留 Phase 2.x 完整 member profile read PR 独立评审。
+
+#### C 档(v0 初稿;含 MemberProfile 完整资料)
+
+```txt
+B 档全部 +
+完整 mobile(L2) / 完整 documentNumber(L2) /
+documentTypeCode / genderCode / birthDate(L1) /
+ethnicityCode / politicalStatusCode / educationCode / maritalStatusCode(L1) /
+workNatureCode / residenceArea / workArea(L1) /
+landline / qq / wechat(L1) /
+heightCm / weightKg(L2 医疗) /
+bloodTypeCode(L2 医疗) /
+eyesight / medicalNotes(L2 医疗) /
+hasVehicle / vehicleType(L1)
 + exerciseFrequencyCode / exerciseSportCode / exerciseMethods / firstAidKnowledgeCode / firstAidSkills(L1)
 + otherSkills(L1)
 + noCriminalRecordSigned / privacyConsentSigned / privacyConsentSignedAt(L0/L1)
 + volunteerNo(L1)
 ```
 
-**优点**:本人可看到自己的完整档案。
-**缺点**:**大量 L2 字段触发 §10.1.6 决议**(身份证号 / 手机号是否对本人完整可见 / 健康信息是否对本人可见 / 紧急联系人是否在 profile 接口暴露);触发"完整资料导出走独立审计接口"决策(沿 Phase 0.6 §2.3 铁律 5);**P2-2 范围拒绝**。
-**结论**:**C 档不在 P2-2 范围**。若业务要求实现"App 端完整 member 资料查看",**必须**单独立项 Phase 2.x 评审稿,届时一并决议:身份证号 / 手机号默认掩码 vs 完整、医疗信息可见性、紧急联系人在何处暴露、记录"查看完整资料"的 audit 行为。
+**结论**:**C 档不在 P2-2 范围**。沿 v0.1 收窄,**B 档也不在 P2-2 范围**;若业务要求实现"App 端完整 member 资料查看"(含 `realName` / `mobileMasked` / `documentNumberMasked` / `gradeCode` / `joinedDate` 等),**必须**单独立项 Phase 2.x 评审稿,届时一并决议:身份证号 / 手机号默认掩码 vs 完整、医疗信息可见性、紧急联系人在何处暴露、记录"查看完整资料"的 audit 行为。
 
-### 2.2 推荐档:B 档(可降为 A 档)
+### 2.3 未来扩展字段决议(均不在 P2-2)
 
-| 决议项 | 推荐 | 备选 |
-|---|---|---|
-| GET /profile 字段档位 | **B 档(含 MemberProfile 低敏摘要 + 掩码 L2)** | A 档(零 MemberProfile);C 档拒绝 |
+> 本节字段**全部移出** P2-2;每条说明字段在未来评审稿中的预期归属与默认建议。
+> 决议:Phase 2.x 完整 member profile read PR 启动时一并对齐;P2-2 范围拒绝。
 
-**降为 A 档的条件**:用户在评审时认为 P2-2 不应触 `MemberProfile` 任何字段,GET 只是 `GET /me` 的扩展视角。**实施 PR 评审稿启动时再次确认**。
+#### 2.3.1 `realName` — **不在 P2-2**
 
-### 2.3 单字段决议(B 档前提下)
+- L1(本人可见;沿 Phase 0.6 §2.2 #2.1)
+- 留 Phase 2.x 完整 member profile read PR
 
-#### 2.3.1 `documentNumber`(身份证号)— **默认掩码后 4 位**
+#### 2.3.2 `mobileMasked`(手机号后 4 位掩码)— **不在 P2-2**
+
+- 沿 Phase 0.6 §2.2 #2.2(L2);沿 §2.3.3 同款掩码语义
+- 未来字段名:`mobileMasked`(明确语义,与 PATCH 白名单 `mobile` 严禁字段名错开)
+- 掩码格式建议:示例 `"***5678"`(后 4 位 + 前置 `***`);若原值长度 < 4,统一 `"****"`(避免漏 timing)
+- **完整号永不在任何 me/profile 视角返回**;走独立审计接口(Phase 2 范围全不实施)
+
+#### 2.3.3 `documentNumberMasked`(身份证号后 4 位掩码)— **不在 P2-2**
 
 - 沿 Phase 2 review §5.2 #4 / §10.11 / Phase 0.6 §2.3 铁律 5
-- 字段名:`documentNumberMasked`(明确语义)
-- 掩码格式:示例 `"***1234"`(原值后 4 位 + 前置 `***` 占位);若原值长度 < 4,统一 `"****"`(避免漏 timing)
-- **完整号永不在 P2-2 返回**;走独立审计接口(Phase 2 不实施)
+- 未来字段名:`documentNumberMasked`
+- 掩码格式:示例 `"***1234"`;短值兜底 `"****"`
+- **完整号永不在 P2-2 / Phase 2.x 完整 read 视角返回**;走独立审计接口
 
-#### 2.3.2 `mobile`(手机号)— **默认掩码后 4 位**
+#### 2.3.4 `gradeCode` / `joinedDate` — **不在 P2-2**
 
-- 沿 Phase 0.6 §2.2 #2.2(L2);沿 §2.3.1 同款掩码风格
-- 字段名:`mobileMasked`
-- 掩码格式:示例 `"***5678"`
-- **完整号永不在 P2-2 返回**;Phase 2.x 单独决议
+- `gradeCode` L1(Member 表;队员等级 dict code);P2-2 收窄拒绝
+- `joinedDate` L0(MemberProfile 表);需读 MemberProfile,P2-2 不读 MemberProfile 整字段
+- 留 Phase 2.x 一并评审
 
-#### 2.3.3 `bloodTypeCode`(血型)— **B 档不返,留 C 档**
+#### 2.3.5 `bloodTypeCode`(血型)— **不在 P2-2**
 
 - 沿 Phase 0.6 §2.2 #2.9:L2;AppSelf 本人可见 ✅,但救援场景对 AppManaged 有特殊语义
-- P2-2 评审:本人对自己血型可见无合规问题,但**P2-2 范围以"摘要"为主,血型属于医疗维度**,留给 Phase 2.x 完整资料接口
-- 结论:**B 档不返**;若用户决议强制要求 P2-2 返,字段名 `bloodTypeCode`(只读;沿 PATCH 白名单**严禁** `bloodType*`)
+- 留 Phase 2.x 完整资料接口
 
-#### 2.3.4 `medicalNotes` / `medicalNotesEnabled` — **不返**
+#### 2.3.6 `medicalNotes` / `eyesight` / `heightCm` / `weightKg` — **永禁 P2-2**
 
-- 沿 Phase 0.6 §2.2 #2.10:L2 + JSON
-- **P2-2 拒绝任何医疗字段返回**(包括 `eyesight` / `heightCm` / `weightKg`);留 Phase 2.x
+- 沿 Phase 0.6 §2.2 #2.10:L2 + JSON / L2 医疗
+- **P2-2 拒绝任何医疗字段返回**;留 Phase 2.x
 
-#### 2.3.5 `emergencyContacts` / `contactName` / `contactPhone` 等 — **不返**
+#### 2.3.7 `emergencyContacts` / `contactName` / `contactPhone` 等 — **永禁 P2-2**
 
 - 沿 Phase 0.6 §2.2 #2.8 / #2.8.1:L1 / L2
 - **P2-2 拒绝紧急联系人字段**;**App 端紧急联系人独立 endpoint** `/api/app/v1/me/emergency-contacts/*` 留 Phase 2.x 单独立项(沿 Phase 2 review §5.2 #5 中段)
 
-#### 2.3.6 `organizationName` / `departmentName` 等只读组织信息 — **不返**
+#### 2.3.8 `organizationName` / `departmentName` 等只读组织信息 — **不在 P2-2**
 
 - 沿 Phase 0.6 §2.2 #2.6:L0(组织名)+ L1(组织架构);本人可见 ✅
-- **P2-2 拒绝**:数据源跨表(`MemberDepartment` + `Organization`),实施复杂度增加;留 Phase 2.x 评审时一并决议(配合"我的部门" `/api/app/v1/me/department` 端点设计)
-- 若用户决议 P2-2 必须返,字段名 `organizationName: string | null`(只读;只显示当前 active 部门所属组织名)
+- 数据源跨表(`MemberDepartment` + `Organization`),实施复杂度增加;留 Phase 2.x 评审时一并决议(配合"我的部门" `/api/app/v1/me/department` 端点设计)
 
-#### 2.3.7 `profileCompletion`(派生指标 0-100)— **不返**
+#### 2.3.9 `profileCompletion`(派生指标 0-100)— **不在 P2-2**
 
 - 沿 Phase 0.7 §10 派生指标边界
-- **P2-2 拒绝**:派生指标需明确口径(哪些字段计入 / 权重),需独立设计;留 Phase 2.x
+- 派生指标需明确口径(哪些字段计入 / 权重),需独立设计;留 Phase 2.x
 
-#### 2.3.8 `internalNote` / `reviewerNote` / `verifiedBy` / `verifiedAt` — **永禁**
+#### 2.3.10 `internalNote` / `reviewerNote` / `verifiedBy` / `verifiedAt` — **永禁**
 
 - 沿 Phase 0.6 §2.2 #2.17 + Phase 2 review §5.2 #9 / #10:Admin 内部审批字段
 - **任何视角下** AppSelf 都**不可见**;PR review 强制 grep 拒绝
 
-### 2.4 推荐 B 档字段集(冻结草案)
+#### 2.3.11 `email` — **不在 P2-2 profile**(由 `/me/account` 承载)
+
+- 沿 v0.1 收窄;P2-1 `/api/app/v1/me/account` `AppMeAccountDto.email` 已承载
+- 不在 P2-2 profile 重复返回,避免双数据源(沿 [Phase 0.7 §2.2 #6](code-architecture-boundary-review.md) DTO 类型隔离)
+
+### 2.4 v0.1 字段集冻结(基线)
 
 ```txt
 AppSelfProfileDto {
@@ -184,48 +205,41 @@ AppSelfProfileDto {
   username:                  string                 // User.username
   nickname:                  string | null          // User.nickname(P2-2 PATCH 可改)
   avatarKey:                 string | null          // User.avatarKey(P2-2 PATCH 可改;沿 P2-1 不返 signed URL)
-  email:                     string | null          // User.email(沿 P2-1 现状)
 
   memberNo:                  string                 // Member.memberNo(终身不变)
   displayName:               string                 // Member.displayName
-  gradeCode:                 string | null          // Member.gradeCode(可空)
   memberStatus:              MemberStatus           // Member.status(枚举;P2-2 GET 进入时强约 ACTIVE)
 
-  realName:                  string | null          // MemberProfile.realName;无 profile 时 null
-  mobileMasked:              string | null          // MemberProfile.mobile 后 4 位掩码;无 profile 时 null
-  documentNumberMasked:      string | null          // MemberProfile.documentNumber 后 4 位掩码;无 profile 时 null
-  joinedDate:                string | null          // MemberProfile.joinedDate ISO 字符串;无 profile 时 null
-
-  hasMemberProfile:          boolean                // 派生;MemberProfile 是否存在
+  hasMemberProfile:          boolean                // 派生;MemberProfile 是否存在(单字段 select 派生)
 }
 ```
 
-**字段总数:15**。
+**字段总数:9**(沿 §2.1 v0.1 收窄基线)。
 
 **严禁出现的字段(snapshot 拒合并信号)**:
 - L3:`passwordHash` / `refreshToken` / `tokenHash` / `secretId*` / `secretKey*` / 完整 signed URL
 - 完整 L2:**完整** `mobile` / **完整** `documentNumber`
+- L2 字段(掩码版本):`mobileMasked` / `documentNumberMasked`(沿 §2.3.2 / §2.3.3 移出 P2-2)
+- L1 摘要字段:`realName` / `gradeCode` / `joinedDate` / `email`(沿 §2.3.1 / §2.3.4 / §2.3.11 移出 P2-2)
 - L2 医疗:`bloodTypeCode` / `eyesight` / `heightCm` / `weightKg` / `medicalNotes`
 - 紧急联系人:任何 `emergencyContact*` 字段
 - 组织部门:`organizationId` / `organizationName` / `departmentId` / `departmentName` / `memberDepartments`
 - Admin 内部审批:`reviewerNote` / `verifiedBy` / `verifiedAt` / `internalNote`
-- 系统字段:`deletedAt` / `role` / `status`(User.status;沿 P2-1 `me/account` 已返,profile 不重复;若必须返 status 沿 P2-1 范式)/ `permissions[]` / `permissionCodes[]` / `roles[]`
-- 审计内部:`createdAt` / `updatedAt`(P2-2 范围内不返;若用户决议必返,沿 P2-1 现状)
+- 系统字段:`deletedAt` / `role` / `status`(User.status;沿 P2-1 `me/account` 已返,profile 不重复)/ `permissions[]` / `permissionCodes[]` / `roles[]`
+- 审计内部:`createdAt` / `updatedAt`
+- 派生字段:`canUseApp`(`/me` / `/me/account` / `/me/capabilities` 已承载;profile 200 即表示 `canUseApp=true`,沿 §2.1)/ `appAccessReason` / `profileCompletion`
 
 ### 2.5 数据源决议表
 
 | 字段 | 数据源 | 备注 |
 |---|---|---|
-| userId / username / nickname / avatarKey / email | `User` 表 | 沿 P2-1 `loadUserForApp` 现有 select |
-| memberId / memberNo / displayName / gradeCode / memberStatus | `Member` 表 | 沿 P2-1 `AppIdentityResolver.resolve` 返回的 `member` |
-| realName / joinedDate | `MemberProfile` 表 | **新增**;通过 `prisma.memberProfile.findFirst({ where: notDeletedWhere({ memberId }) })` |
-| mobileMasked | `MemberProfile.mobile` + 掩码函数 | **新增**;在 `AppProfileService` 内私有 helper `maskTail4(value)` |
-| documentNumberMasked | `MemberProfile.documentNumber` + 掩码函数 | 同上 |
-| hasMemberProfile | 派生 | `MemberProfile` 查询结果非 null 即 true |
+| userId / username / nickname / avatarKey | `User` 表 | 沿 P2-1 `loadUserForApp` 现有 select(`email` / `role` / `status` / `lastLoginAt` / `memberId` 已 select 但本 DTO 不返) |
+| memberId / memberNo / displayName / memberStatus | `Member` 表 | 沿 P2-1 `AppIdentityResolver.resolve` 返回的 `member` |
+| hasMemberProfile | 派生 | 单字段 select `prisma.memberProfile.findFirst({ where: notDeletedWhere({ memberId }), select: { id: true } })`,结果非 null 即派生 true;**不**读其它字段 |
 
 **MemberProfile 查询失败处理**:
-- `findFirst` 返 null(member 存在但无 profile)→ `hasMemberProfile=false`;`realName` / `mobileMasked` / `documentNumberMasked` / `joinedDate` 全部 `null`
-- **不**抛 `MEMBER_PROFILE_NOT_FOUND`(16001);该错误码语义是"管理后台读队员 profile 失败",P2-2 App 视角应 graceful degrade 显示空字段
+- `findFirst` 返 null(member 存在但无 profile)→ `hasMemberProfile=false`
+- **不**抛 `MEMBER_PROFILE_NOT_FOUND`(16001);该错误码语义是"管理后台读队员 profile 失败",P2-2 App 视角应 graceful degrade 显示 `hasMemberProfile=false`
 
 ---
 
@@ -342,10 +356,12 @@ src/modules/users/dto/app/
 // src/modules/users/dto/app/app-self-profile.dto.ts
 //
 // Phase 2 P2-2 App /me/profile GET / PATCH 共用出参。
-// 沿 docs/app-api-p2-2-profile-review.md §2.4 字段集(15 字段);
+// 沿 docs/app-api-p2-2-profile-review.md §2.4 v0.1 字段集**恰好 9 个**;
 // **严禁**继承 / Pick / Omit / Mapped Types Admin DTO(沿 Phase 0.7 §2.2 + Phase 2 review §5.2 #1)。
-// L2 字段(mobile / documentNumber)默认掩码后 4 位;完整值 P2-2 范围**永不返回**。
-// 不含 medical / emergency contacts / organization / department / role / permissions(沿 §2.3 决议)。
+// 不含 MemberProfile 任何字段(P2-2 v0.1 收窄;沿 §2.3 决议);
+// 不含 email(由 /api/app/v1/me/account 承载);
+// 不含 medical / emergency contacts / organization / department / role / permissions /
+// gradeCode / joinedDate / realName / mobileMasked / documentNumberMasked / canUseApp / appAccessReason。
 export class AppSelfProfileDto {
   @ApiProperty({ description: '当前登录用户 id', example: 'cl9z3a8b00000abcd1234efgh' })
   userId!: string;
@@ -362,42 +378,16 @@ export class AppSelfProfileDto {
   @ApiProperty({ description: '头像 attachment key(不返 signed URL)', nullable: true })
   avatarKey!: string | null;
 
-  @ApiProperty({ description: '邮箱(数据源:User.email)', nullable: true })
-  email!: string | null;
-
   @ApiProperty({ description: '队员编号(终身不变)', example: 'V0001' })
   memberNo!: string;
 
   @ApiProperty({ description: '队员展示名', example: '王小明' })
   displayName!: string;
 
-  @ApiProperty({ description: '队员等级 dict code', nullable: true, example: 'L1' })
-  gradeCode!: string | null;
-
   @ApiProperty({ description: '队员状态(P2-2 进入时强约 ACTIVE)', enum: MemberStatus })
   memberStatus!: MemberStatus;
 
-  @ApiProperty({ description: '真实姓名(数据源:MemberProfile.realName;无 profile 时 null)', nullable: true })
-  realName!: string | null;
-
-  @ApiProperty({
-    description: '手机号后 4 位掩码(L2 默认掩码;完整号 P2-2 范围不返;无 profile 时 null)',
-    nullable: true,
-    example: '***5678',
-  })
-  mobileMasked!: string | null;
-
-  @ApiProperty({
-    description: '证件号后 4 位掩码(L2 默认掩码;完整号 P2-2 范围不返;无 profile 时 null)',
-    nullable: true,
-    example: '***1234',
-  })
-  documentNumberMasked!: string | null;
-
-  @ApiProperty({ description: '加入日期 ISO 字符串(无 profile 时 null)', nullable: true })
-  joinedDate!: string | null;
-
-  @ApiProperty({ description: '是否已有 MemberProfile 档案', example: true })
+  @ApiProperty({ description: '是否已有 MemberProfile 档案(派生;单字段 select)', example: true })
   hasMemberProfile!: boolean;
 }
 ```
@@ -431,7 +421,7 @@ export class UpdateAppSelfProfileDto {
 - ✅ `UpdateAppSelfProfileDto` 沿"动作 + 视角 + 资源 + Dto"风格
 - ✅ **不**继承任何 Admin DTO(`MemberProfileResponseDto` / `UpdateMemberProfileDto` / `UserResponseDto` / `UpdateUserDto` / `UpdateMyProfileDto`)
 - ✅ **不**继承 Prisma 类型
-- ✅ 字段集与 PATCH 入参字段集**不一致**(GET 15 字段 > PATCH 2 字段;这是 AppSelf 视角"可读 ≠ 可写"的语义,正确)
+- ✅ 字段集与 PATCH 入参字段集**不一致**(GET 9 字段 > PATCH 2 字段;这是 AppSelf 视角"可读 ≠ 可写"的语义,正确)
 
 ---
 
@@ -547,32 +537,57 @@ if (!access.canUseApp) {
 
 ---
 
-## 6. 是否新增 BizCode
+## 6. BizCode 策略(v0.1 锁定)
 
-### 6.1 评估表
+### 6.1 P2-2 不新增 BizCode
 
-| 候选 BizCode | 推荐 | 备注 |
-|---|---|---|
-| `APP_ACCESS_DENIED` | **不新增** | 与 `FORBIDDEN` 语义重叠;沿 §5.4 方案 A 复用 `FORBIDDEN=40300` |
-| `MEMBER_NOT_LINKED` | **不新增** | 沿 §5.4 方案 A;message 文案区分 |
-| `APP_MEMBER_INACTIVE` | **不新增** | 沿 §5.4 方案 A;**不**复用 `MEMBER_INACTIVE=17030`(member_departments 模块语义) |
-| `APP_MEMBER_DELETED` | **不新增** | 沿 §5.4 方案 A |
-| `APP_PROFILE_UPDATE_EMPTY` | **不新增** | 沿 §3.4 A 档;空 body 复用 `BAD_REQUEST=40000` + message `"PATCH 请求至少需要 1 个字段"` |
-| `APP_PROFILE_FIELD_FORBIDDEN` | **不新增** | 禁止字段由 `forbidNonWhitelisted: true` 兜底返 `BAD_REQUEST=40000` + class-validator 自动生成 message |
+**P2-2 实施 PR 严格遵守以下 4 条策略**:
 
-### 6.2 决议项汇总
+```txt
+P2-2 不新增 BizCode
+canUseApp=false   → FORBIDDEN=40300
+empty body        → BAD_REQUEST=40000
+forbidden field   → BAD_REQUEST=40000
+```
 
-| 决议项 | 推荐 | 备选 | 待用户拍板 |
+详细说明:
+
+| 场景 | HTTP | code | 处理路径 |
 |---|---|---|---|
-| **D1**:GET /profile 字段档位 | **B 档(含 MemberProfile 低敏摘要)** | A 档(零 MemberProfile)/ C 档(拒绝) | ⚠️ 是 |
-| **D2**:PATCH /profile 空 body 行为 | **A 档(400)** | B 档(200 沿旧) | ⚠️ 是 |
-| **D3**:拒绝路径方案 | **方案 A(复用 FORBIDDEN)** | 方案 B(新增 10008-10010 BizCode) | ⚠️ 是 |
-| **D4**:`hasMemberProfile` 字段是否保留 | **保留** | 移除(简化) | ⚠️ 是 |
-| **D5**:GET 是否返 `bloodTypeCode` | **不返**(留 Phase 2.x) | 返(只读) | 推荐不返;若用户决议需返,字段名 `bloodTypeCode` 只读 |
-| **D6**:GET 是否返 `organizationName` / `departmentName` | **不返**(留 Phase 2.x) | 返(只读) | 推荐不返;若返,字段名 `organizationName: string \| null` |
-| **D7**:PATCH 后是否返新 `AppSelfProfileDto` | **返**(单次响应) | 返 204 NoContent | 推荐返;沿 [users.controller.ts updateMyProfile](../src/modules/users/users.controller.ts) |
+| `canUseApp=false`(3 种 reason 任一)| 403 | `FORBIDDEN=40300` | service 入口 `assertCanUseApp` 抛 `BizException(BizCode.FORBIDDEN)`;reason 由 message 文案区分(沿 §5.4 方案 A;**不**改 `BizException` 类型签名,沿用现有 `BizCode.FORBIDDEN` 入参,**不**注入自定义 message) |
+| empty body(`nickname` / `avatarKey` 都 undefined)| 400 | `BAD_REQUEST=40000` | `AppProfileService.updateMyProfile` 入口校验后抛 `BizException(BizCode.BAD_REQUEST)`(沿 §3.4 A 档) |
+| forbidden field(传 `realName` / `mobile` / `role` / 任一禁止字段)| 400 | `BAD_REQUEST=40000` | 全局 `ValidationPipe` `forbidNonWhitelisted: true` 自动生成 message(沿 [`CLAUDE.md §7`](../CLAUDE.md));`AppProfileService` 不参与 |
 
-**若 D3 选方案 B,10008 / 10009 / 10010 段位锁定**(沿 [`CLAUDE.md §5` 段位登记](../CLAUDE.md);P0-E refresh token 已占 10007,下一可用 10008)。
+### 6.2 不开任何新号位的候选 BizCode
+
+| 候选 BizCode | 状态 |
+|---|---|
+| `APP_ACCESS_DENIED` | ❌ 不开;与 `FORBIDDEN` 重叠 |
+| `MEMBER_NOT_LINKED` | ❌ 不开;沿 §6.1 复用 `FORBIDDEN` |
+| `APP_MEMBER_INACTIVE` | ❌ 不开;**不**复用既有 `MEMBER_INACTIVE=17030`(member_departments 模块语义,不通用) |
+| `APP_MEMBER_DELETED` | ❌ 不开;沿 §6.1 |
+| `APP_PROFILE_UPDATE_EMPTY` | ❌ 不开;沿 §3.4 A 档,空 body 复用 `BAD_REQUEST=40000`(可在 BizException 抛出时 message 文案明确"至少需要 1 个字段") |
+| `APP_PROFILE_FIELD_FORBIDDEN` | ❌ 不开;沿 `forbidNonWhitelisted: true` 自动兜底 |
+
+### 6.3 锁定理由
+
+1. P2-2 v0.1 范围最小化;BizCode 段位归属是跨 PR 决策面,留 Phase 2 整体收尾时一并决议(沿 Phase 2 review §12.2.5)
+2. P2-1 已建立"`AppIdentityResolver` + capability-aware 拒绝路径"范式;P2-2 是首个**业务 endpoint** 拒绝路径,作为试点验证 §6.1 策略
+3. 沿"不预先新增"原则(沿 [`CLAUDE.md §5`](../CLAUDE.md) "新增 BizCode 必须先说明使用场景与前端提示价值")
+4. **若**方案 A 上线后前端反馈"message 解析不便",再立独立 PR 升 BizCode(沿 100xx 段位 10008 / 10009 / 10010,**不**复用 17030);此为 P2-2 之外的独立决策面
+
+### 6.4 决议项汇总(v0.1 已锁定)
+
+| 决议项 | v0.1 锁定 | v0 备选(历史)| 状态 |
+|---|---|---|---|
+| **D1**:GET /profile 字段档位 | **9 字段基线**(沿 §2.1) | A 档 11 字段 / B 档 16 字段 / C 档 30+ 字段 | ✅ v0.1 锁定 |
+| **D2**:PATCH /profile 空 body 行为 | **400 BAD_REQUEST=40000** | 200 沿旧 | ✅ v0.1 锁定 |
+| **D3**:拒绝路径 BizCode 策略 | **复用 FORBIDDEN=40300** | 新增 10008-10010 | ✅ v0.1 锁定 |
+| **D4**:`hasMemberProfile` 派生字段保留 | **保留** | 移除 | ✅ v0.1 锁定 |
+| **D5**:GET 返 `bloodTypeCode` | **不返**(留 Phase 2.x) | 返 | ✅ v0.1 锁定 |
+| **D6**:GET 返 `organizationName` / `departmentName` | **不返**(留 Phase 2.x) | 返 | ✅ v0.1 锁定 |
+| **D7**:PATCH 后返新 `AppSelfProfileDto` | **返**(单响应) | 204 NoContent | ✅ v0.1 锁定 |
+| **D8**:PR 是否拆 P2-2a / P2-2b | **不拆**(单 PR) | 拆 | ✅ v0.1 锁定 |
 
 ---
 
@@ -611,14 +626,14 @@ src/modules/users/
 // Phase 2 P2-2 App /me/profile GET / PATCH 业务 service。
 // 沿 docs/app-api-p2-2-profile-review.md §7;
 // 准入沿 P2-1 AppIdentityResolver(沿 Phase 0.7 §13.2 不抽 AppIdentityService);
-// PATCH 复用 P0-D UsersService.updateMyProfile(字段都是 User 表;不动 P0-D 行为);
-// GET 自读 MemberProfile(若 D1 选 B 档);掩码 helper 在本 service 内私有。
+// PATCH 复用 P0-D UsersService.updateMyProfile(字段都是 User 表;不动 P0-D 行为)。
+// GET 仅派生 hasMemberProfile(单字段 select);**不**读 MemberProfile 任何业务字段。
 @Injectable()
 export class AppProfileService {
   constructor(
     private readonly appIdentity: AppIdentityResolver,
     private readonly usersService: UsersService,
-    private readonly prisma: PrismaService,  // 仅用于读 MemberProfile;不写
+    private readonly prisma: PrismaService,  // 仅用于派生 hasMemberProfile(单字段 select);不读 MemberProfile 业务字段;不写
   ) {}
 
   async getMyProfile(currentUser: CurrentUserPayload): Promise<AppSelfProfileDto> { /* ... */ }
@@ -626,18 +641,32 @@ export class AppProfileService {
   async updateMyProfile(
     currentUser: CurrentUserPayload,
     dto: UpdateAppSelfProfileDto,
-  ): Promise<AppSelfProfileDto> { /* ... */ }
+  ): Promise<AppSelfProfileDto> {
+    // 1) 准入校验
+    const access = await this.appIdentity.resolve(currentUser);
+    this.assertCanUseApp(access);
+
+    // 2) 空 body 拦截(沿 §3.4 A 档)
+    if (dto.nickname === undefined && dto.avatarKey === undefined) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+
+    // 3) **白名单显式重构**:从 dto **逐字段**取 nickname / avatarKey 重组,
+    //    **禁止**透传 raw `dto` / `req.body` 给 UsersService(沿 §7.4 铁律)
+    const safeDto: UpdateMyProfileDto = {
+      nickname: dto.nickname,
+      avatarKey: dto.avatarKey,
+    };
+    await this.usersService.updateMyProfile(currentUser, safeDto);
+
+    // 4) 返新 AppSelfProfileDto(沿 §3.5)
+    return this.getMyProfile(currentUser);
+  }
 
   private assertCanUseApp(access: AppAccessResult): asserts access is { canUseApp: true; member: Member } {
     if (!access.canUseApp) {
-      throw new BizException(BizCode.FORBIDDEN);  // §5.4 方案 A
+      throw new BizException(BizCode.FORBIDDEN);  // §6.1 复用 FORBIDDEN
     }
-  }
-
-  private maskTail4(value: string | null): string | null {
-    if (value === null) return null;
-    if (value.length < 4) return '****';
-    return `***${value.slice(-4)}`;
   }
 }
 ```
@@ -660,8 +689,9 @@ export class UsersModule {}
 
 **注意**:
 - `AppProfileService` 注入 `UsersService` 时,**只调** `updateMyProfile`(已有 P0-D method);**不**调 admin 路径 method(`list` / `findOne` / `update` / `resetPassword` / `updateRole` / `updateStatus` / `softDelete` / `create`)
-- `AppProfileService` 不写 `MemberProfile`(P2-2 PATCH 仅改 User);**只读** `MemberProfile`(GET 拼字段)
-- 不引入 `MemberProfilesService` 注入(避免跨模块耦合;`MemberProfile` 数据走 `PrismaService` 直读;读 select 字段集白名单在 `AppProfileService` 内私有)
+- `AppProfileService` 不写 `MemberProfile`(P2-2 PATCH 仅改 User);**仅派生** `MemberProfile.id` 单字段(无业务字段读取)
+- 不引入 `MemberProfilesService` 注入(避免跨模块耦合;`MemberProfile.id` 派生走 `PrismaService` 直读;`select: { id: true }` 白名单)
+- 沿 v0.1 收窄,**不**实现 `maskTail4` 等掩码 helper(P2-2 范围零 L2 字段返回;留 Phase 2.x 完整 read PR)
 
 ### 7.3 AppMeController 追加 2 个 method(沿 P2-1 文件)
 
@@ -669,7 +699,7 @@ export class UsersModule {}
 // src/modules/users/controllers/app-me.controller.ts(P2-1 已存在文件,追加方法)
 
 @Get('profile')
-@ApiOperation({ summary: 'App 视角本人 profile(member 摘要 + L2 掩码;canUseApp=true 必要)' })
+@ApiOperation({ summary: 'App 视角本人 profile(User + Member 基础摘要 + hasMemberProfile 派生;canUseApp=true 必要)' })
 @ApiWrappedOkResponse(AppSelfProfileDto)
 @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
 async getMyProfile(@CurrentUser() currentUser: CurrentUserPayload): Promise<AppSelfProfileDto> {
@@ -694,18 +724,28 @@ async updateMyProfile(
 - `@Controller('app/v1/me')` 沿 P2-1
 - **不**新建 `AppMeProfileController`(避免 controller 数膨胀)
 
-### 7.4 PATCH 中复用 `UsersService.updateMyProfile` 的注意
+### 7.4 PATCH 中复用 `UsersService.updateMyProfile` 的白名单要求(铁律)
 
 [`UsersService.updateMyProfile`](../src/modules/users/users.service.ts):
 - 入参 `currentUser: CurrentUserPayload` + `dto: UpdateMyProfileDto`(P0-D 现成 DTO)
 - 返回 `UserResponseDto`
 - 内部:`prisma.user.update({ where: { id: currentUser.id, deletedAt: null }, data: { nickname, avatarKey }, select: userSafeSelect })`
 
-P2-2 复用时需要:
-- **类型转换**:`UpdateAppSelfProfileDto` 字段集 `{nickname, avatarKey}` 与 `UpdateMyProfileDto` 完全一致 — **直接传值**;`as unknown as UpdateMyProfileDto` 类型 cast(或 explicit literal `{ nickname: dto.nickname, avatarKey: dto.avatarKey }`)
+**白名单铁律**:
+即使复用 `UsersService.updateMyProfile`,**P2-2 也必须通过 `UpdateAppSelfProfileDto` 先把 body 限制为 `nickname` / `avatarKey`,再传给 `UsersService`**。
+**不得**把原始 request body / `dto` 整体引用透传给 `UsersService`。
+
+实施要求:
+- **入参验证两道防线**:
+  1. controller `@Body() dto: UpdateAppSelfProfileDto` + 全局 `ValidationPipe` `forbidNonWhitelisted: true` 阻挡禁止字段(沿 [`CLAUDE.md §7`](../CLAUDE.md))
+  2. `AppProfileService.updateMyProfile` 内部**显式重构**`safeDto`,逐字段从 `dto.nickname` / `dto.avatarKey` 取值,**禁止** `as unknown as UpdateMyProfileDto` cast 透传,**禁止** `{ ...dto }` 透传,**禁止** `dto as UpdateMyProfileDto` 透传(沿 §7.2 service 代码示例)
 - **不**新建 service method(`UsersService.updateMyProfileFromApp` 之类);沿用现有 `updateMyProfile`,体现"业务能力跨 surface 复用"(沿 Phase 0.7 §1.2 #1)
 - **不**改 `UsersService.updateMyProfile` 签名 / 行为(沿 Phase 2 review §3.2 不动 P0-D 行为)
 - PATCH 完成后,丢弃 `UserResponseDto`(P0-D 返的),用 `AppProfileService.getMyProfile()` 再拼一次 `AppSelfProfileDto`(避免 DTO 跨视角混用;沿 Phase 0.7 §2.2 #6)
+
+**PR review 强断言**:
+- grep `AppProfileService` 的 `updateMyProfile` 实现内,**必须**含 `{ nickname: dto.nickname, avatarKey: dto.avatarKey }` 显式字段重构;**禁止**出现 `as unknown` / `as UpdateMyProfileDto` / `{ ...dto }` 任一模式
+- e2e `forbidden field` 用例(沿 §9.2 参数化测试)逐字段反向断言:即使绕过 controller 层 `ValidationPipe` 注入 `realName` / `mobile` 等字段,`UsersService.updateMyProfile` 最终也**只**收到 `{ nickname, avatarKey }`(可通过 jest spy 验证)— 这是"DTO 是第一道防线,白名单显式重构是第二道防线"的双重保护(沿 [`CLAUDE.md §11` 纵深防御](../CLAUDE.md))
 
 ---
 
@@ -719,89 +759,86 @@ P2-2 复用时需要:
 | username | `User.username` | ✅ | 复用 |
 | nickname | `User.nickname` | ✅ | 复用 |
 | avatarKey | `User.avatarKey` | ✅ | 复用 |
-| email | `User.email` | ✅ | 复用 |
 | memberId | `User.memberId` | ✅(`AppAccessResult.member.id`) | 复用 |
 | memberNo | `Member.memberNo` | ✅(`AppAccessResult.member`) | 复用 |
 | displayName | `Member.displayName` | ✅ | 复用 |
-| gradeCode | `Member.gradeCode` | ✅ | 复用 |
 | memberStatus | `Member.status` | ✅ | 复用 |
-| realName | `MemberProfile.realName` | ❌ | **新读** |
-| mobileMasked | `MemberProfile.mobile` + 掩码 | ❌ | **新读** |
-| documentNumberMasked | `MemberProfile.documentNumber` + 掩码 | ❌ | **新读** |
-| joinedDate | `MemberProfile.joinedDate` | ❌ | **新读** |
-| hasMemberProfile | 派生 | ❌ | **新读**(任一 MemberProfile select 非空即派生) |
+| hasMemberProfile | 派生(单字段 select)| ❌ | **新读**(仅 `select: { id: true }`)|
 
-### 8.2 MemberProfile 查询策略
+**剔除字段(沿 v0.1 收窄)**:
+- `email`(P2-1 `/me/account` 已承载;P2-2 profile 不重复)
+- `gradeCode`(留 Phase 2.x)
+- `realName` / `mobileMasked` / `documentNumberMasked` / `joinedDate`(留 Phase 2.x 完整 read PR)
+
+### 8.2 MemberProfile 查询策略(派生 `hasMemberProfile`)
 
 ```ts
-const profile = await this.prisma.memberProfile.findFirst({
+const probe = await this.prisma.memberProfile.findFirst({
   where: notDeletedWhere({ memberId: access.member.id }),
-  select: {
-    realName: true,
-    mobile: true,
-    documentNumber: true,
-    joinedDate: true,
-  },
+  select: { id: true },  // **单字段**白名单;不读任何业务字段
 });
-// profile === null 即 hasMemberProfile = false
+const hasMemberProfile = probe !== null;
 ```
 
 **关键约束**:
-- `select` 字段集**白名单**;**禁止** `select: undefined`(防全字段泄露 L2 / L3)
+- `select` 严格白名单 `{ id: true }`;**禁止** `select: undefined` / 多字段 select(防全字段或单字段意外暴露 L1 / L2 / L3)
 - **沿 `notDeletedWhere`**(沿 [`CLAUDE.md §10`](../CLAUDE.md) 软删除)
-- **不**读 emergency contacts / certificates / member-departments(沿 §2.3)
+- **不**读 `realName` / `mobile` / `documentNumber` / `joinedDate` 等业务字段(沿 v0.1 收窄;留 Phase 2.x)
+- **不**读 emergency contacts / certificates / member-departments
 - **不**在 `AppIdentityResolver` 内引入 MemberProfile join(避免 P2-1 已冻结的 resolve 签名变化;沿 Phase 2 review §3.2)
 
 ---
 
 ## 9. 测试要求
 
-### 9.1 GET `/api/app/v1/me/profile` e2e 用例
+### 9.1 GET `/api/app/v1/me/profile` e2e 用例(8 个)
 
-> 沿 Phase 2 review §9.2 9 类用例 + 本评审稿补充:
-
-| # | 用例 | 期待 |
-|---|---|---|
-| 9.1.1 | success: linked active member + 有 MemberProfile | 200 + 字段集 15 + `hasMemberProfile=true` + `realName` 非空 + `mobileMasked` / `documentNumberMasked` 带 `***` 前缀 |
-| 9.1.2 | success: linked active member + 无 MemberProfile(member 存在但 profile 未创建)| 200 + `hasMemberProfile=false` + `realName / mobileMasked / documentNumberMasked / joinedDate` 全 null |
-| 9.1.3 | unauthenticated: 无 token | 401 + `UNAUTHORIZED=40100` |
-| 9.1.4 | unauthenticated: 错误 token | 401 + `UNAUTHORIZED=40100` |
-| 9.1.5 | member not linked: User 无 memberId | 403 + `FORBIDDEN=40300`(沿 §5.4 方案 A);message 含 "未绑定" 关键字 |
-| 9.1.6 | member inactive: linked + `Member.status=INACTIVE` | 403 + `FORBIDDEN=40300`;message 含 "停用" 关键字 |
-| 9.1.7 | member deleted: linked + `Member.deletedAt!=null` | 403 + `FORBIDDEN=40300`;message 含 "不存在" 关键字 |
-| 9.1.8 | admin-as-member: ADMIN + linked active member | 200 + 字段集与 USER 视角**完全一致**(沿 D-5.2 不扩大);特别断言 response **不**含 `role` / `permissions[]` / `permissionCodes[]` |
-| 9.1.9 | sensitive field not returned: 任何返回都不含 `mobile`(完整)/ `documentNumber`(完整)/ `passwordHash` / `refreshToken` / `tokenHash` / `medicalNotes` / `emergencyContacts` / `bloodTypeCode` / `organizationName` / `departmentName` | 沿 P2-1 `assertNoForbiddenKeys` helper 复用 |
-| 9.1.10 | scope self: 制造另一个 active member B(memberNo=V-OTHER),登录人 A 调 `/me/profile` 期待返 A 的数据,**不**返 B | 验证 `where memberId = currentUser.memberId` 隔离 |
-| 9.1.11 | masked format: `documentNumber='110105199001011234'`(18 位)→ `documentNumberMasked='***1234'` | 掩码格式断言 |
-| 9.1.12 | masked format short value: `mobile='123'`(< 4)→ `mobileMasked='****'` | 沿 §2.3.1 短值兜底 |
-
-### 9.2 PATCH `/api/app/v1/me/profile` e2e 用例
+> 沿 Phase 2 review §9.2 9 类用例,但因 v0.1 收窄(无 L2 / L1 摘要字段、无掩码),GET 用例可大幅压缩:
+> - 移除"sensitive field not returned"独立用例 → 合并到每个 success 用例的 `assertNoForbiddenKeys` 共享断言
+> - 移除"masked format"两个用例(`***1234` / `****` 兜底)→ v0.1 不返 masked 字段
+> - 移除"无 MemberProfile 时其他字段为 null"用例 → v0.1 仅 `hasMemberProfile` 派生,无其他依赖
 
 | # | 用例 | 期待 |
 |---|---|---|
-| 9.2.1 | update nickname success | 200 + 返新 AppSelfProfileDto + `nickname` 已更新 + DB user.nickname 已写入 |
-| 9.2.2 | update avatarKey success | 200 + `avatarKey` 已更新 |
-| 9.2.3 | update both success | 200 + 两字段都已更新 |
+| 9.1.1 | success(有 MemberProfile) | 200 + 字段集**恰好 9** + `hasMemberProfile=true` + `assertNoForbiddenKeys` 通过 |
+| 9.1.2 | success(无 MemberProfile;member 存在但 profile 未创建)| 200 + `hasMemberProfile=false` + 其他 8 字段正常返 |
+| 9.1.3 | unauthenticated(无 token / 错 token 合 1 用例,参数化 2 case)| 401 + `UNAUTHORIZED=40100` |
+| 9.1.4 | member not linked(`User.memberId=null`)| 403 + `FORBIDDEN=40300` |
+| 9.1.5 | member inactive(`Member.status=INACTIVE`)| 403 + `FORBIDDEN=40300` |
+| 9.1.6 | member deleted(`Member.deletedAt!=null`)| 403 + `FORBIDDEN=40300` |
+| 9.1.7 | admin-as-member(ADMIN + linked active)| 200 + 字段集**与 USER 视角完全一致**;response **不**含 `role` / `permissions[]` / `permissionCodes[]`(沿 D-5.2)|
+| 9.1.8 | scope self(造他人 active member B,登录 A 调 `/me/profile` 仅返 A) | 验证 `where memberId = currentUser.memberId` 隔离 |
+
+> 共享断言 `assertNoForbiddenKeys`(沿 P2-1 helper 复用):每个 success 用例的 response **不**含 L3 / L2 完整 / L2 医疗 / 紧急联系人 / 组织部门 / Admin 内部审批 / 系统字段 / 派生 `canUseApp` / `appAccessReason` / `profileCompletion`(完整禁字段沿 §2.4)。
+
+### 9.2 PATCH `/api/app/v1/me/profile` e2e 用例(12 个)
+
+> 沿 Phase 2 review §9.2 + 用户拍板"参数化测试 / 按类别覆盖,不要求每禁止字段单独 e2e":
+
+| # | 用例 | 期待 |
+|---|---|---|
+| 9.2.1 | success: update nickname | 200 + 返新 `AppSelfProfileDto`(9 字段)+ DB `user.nickname` 已写入 |
+| 9.2.2 | success: update avatarKey | 200 + DB `user.avatarKey` 已写入 |
+| 9.2.3 | success: update both | 200 + 两字段都已写入 |
 | 9.2.4 | empty body | **400 + `BAD_REQUEST=40000`**(沿 §3.4 A 档) |
-| 9.2.5 | forbidden field: `realName` | 400 + `BAD_REQUEST=40000` + class-validator forbidden message |
-| 9.2.6 | forbidden field: `mobile` | 同上 |
-| 9.2.7 | forbidden field: `documentNumber` | 同上 |
-| 9.2.8 | forbidden field: `role` | 同上 |
-| 9.2.9 | forbidden field: `password` / `newPassword` | 同上 |
-| 9.2.10 | forbidden field: `email` | 同上(P2-2 不允许改 email;P0-D `UpdateMyProfileDto` 也不允许) |
-| 9.2.11 | forbidden field: `id` / `userId` / `memberId` | 同上 |
-| 9.2.12 | forbidden field: `status` / `deletedAt` | 同上 |
-| 9.2.13 | forbidden field: `lastLoginAt` | 同上 |
-| 9.2.14 | forbidden field: `emergencyContacts[]` | 同上 |
-| 9.2.15 | forbidden field: `organizationId` / `departmentId` | 同上 |
-| 9.2.16 | forbidden field: `bloodTypeCode` / `medicalNotes` | 同上 |
-| 9.2.17 | unauthenticated | 401 |
-| 9.2.18 | member not linked | 403(同 §9.1.5) |
-| 9.2.19 | member inactive | 403(同 §9.1.6) |
-| 9.2.20 | admin-as-member: ADMIN + linked → 改 nickname / avatarKey 成功 | 200;sensitive 字段不返;Admin 不扩大字段集 |
-| 9.2.21 | old /api/users/me PATCH 行为不变:对**同一 user** 调旧 `PATCH /api/users/me` 改 nickname → 仍然 200 + `UserResponseDto` | 沿 Phase 2 review §9.2 #9 path stability;**逐字不变** |
-| 9.2.22 | scope: 攻击者 A 调 PATCH /me/profile 改 `nickname='hack'` → 仅 A 的 user.nickname 改变,B / C 的 user 不动 | 验证 `where userId = currentUser.id` 隔离(实际由 P0-D `UsersService.updateMyProfile` 现有逻辑保证) |
-| 9.2.23 | sensitive field not returned in PATCH response | 沿 §9.1.9 |
+| 9.2.5 | **参数化** forbidden field by **类别**:Member 业务字段(`realName` / `mobile` / `documentNumber` / `bloodTypeCode` / `medicalNotes` / `memberNo` / `displayName` / `gradeCode` 等)| 400 + `BAD_REQUEST=40000`;Jest `it.each` / `describe.each` 参数化覆盖 ≥ 6 字段 |
+| 9.2.6 | **参数化** forbidden field by **类别**:Account 字段(`username` / `email` / `password` / `newPassword` / `id` / `userId` / `memberId` / `lastLoginAt`)| 同上;参数化 ≥ 4 字段 |
+| 9.2.7 | **参数化** forbidden field by **类别**:Role / Permission / Status / 审批字段(`role` / `permissions` / `status` / `deletedAt` / `reviewerNote` / `verifiedBy`)| 同上;参数化 ≥ 3 字段 |
+| 9.2.8 | **参数化** forbidden field by **类别**:Emergency contacts / Organization / Department(`emergencyContacts` / `contactName` / `organizationId` / `departmentId`)| 同上;参数化 ≥ 3 字段 |
+| 9.2.9 | unauthenticated | 401 |
+| 9.2.10 | member not linked / inactive / deleted(参数化 3 case)| 403 + `FORBIDDEN=40300` |
+| 9.2.11 | admin-as-member: ADMIN + linked → 改 nickname / avatarKey 成功 | 200;sensitive 字段不返;Admin 不扩大字段集(沿 D-5.2) |
+| 9.2.12 | path stability:对同一 user 调旧 `PATCH /api/users/me` 改 nickname → 仍然 200 + `UserResponseDto`(沿 Phase 2 review §9.2 #9;**逐字不变**)|
+
+> **参数化策略**(沿用户拍板):
+> - §9.2.5 ~ §9.2.8 共 4 个 `describe.each` block,每 block 含 3-6 个参数化 case;**总 e2e block 数 4 个**,**实际 assertion case 数 ~16**
+> - 实现 PR 可用 Jest `it.each(forbiddenFieldsTable)` 或 `describe.each(categoryTable)` 实现;PR review 仅断言 4 个类别 block 各自 ≥ 3 个 case 即可
+> - **不要求**每个禁止字段单独写 it,**实施 PR 用参数化保证**字段白名单的纵深防御
+> - **明确实现 PR 路径**:`UpdateAppSelfProfileDto` 类定义 + Jest 参数化 cases 共同构成"DTO 是第一道防线 + 参数化 e2e 是第二道防线"
+>
+> **scope self 已合并到 §9.1.8**(GET 验过 scope 后 PATCH 同共享 `where userId = currentUser.id` 由 P0-D 保证,无需重复 e2e)
+>
+> **sensitive field not returned in PATCH response 已合并**到 §9.2.1 / §9.2.2 / §9.2.3 共享 `assertNoForbiddenKeys`
 
 ### 9.3 Contract snapshot
 
@@ -809,7 +846,7 @@ const profile = await this.prisma.memberProfile.findFirst({
 |---|---|
 | 新增 path `GET /api/app/v1/me/profile` | 出现在 OpenAPI snapshot |
 | 新增 path `PATCH /api/app/v1/me/profile` | 出现 |
-| 新增 schema `AppSelfProfileDto` | 字段集恰好 15 个(沿 §2.4) |
+| 新增 schema `AppSelfProfileDto` | 字段集**恰好 9 个**(沿 §2.4 v0.1 锁定) |
 | 新增 schema `UpdateAppSelfProfileDto` | 字段集**恰好 2 个**(`nickname` / `avatarKey`)— **强断言**;沿 §10.11a 风险表 |
 | 旧 path `GET /api/users/me` / `PATCH /api/users/me` schema | **逐字不变** |
 | 旧 path `GET /api/v2/members/:memberId/profile` / `PATCH` / `POST` | **逐字不变** |
@@ -828,36 +865,37 @@ test/contract/openapi.contract-spec.ts       # P2-1 修改;EXPECTED_ROUTES +2 + 
 
 ### 9.5 测试用例总数
 
-| 维度 | 数量 |
+| 维度 | 数量(v0.1 收窄)|
 |---|---|
-| GET 用例 | 12 |
-| PATCH 用例 | 23 |
-| Contract 断言 | 9 项 |
-| **合计** | **44 个 e2e + 9 contract 断言** |
+| GET 用例 | **8** |
+| PATCH 用例 block | **12**(含 4 个参数化 block × 3-6 case ≈ 16 assertion cases) |
+| Contract 断言 | 8 项 |
+| **合计 it block** | **20**(8 GET + 12 PATCH;符合用户拍板 20-25 区间)|
+| **合计 assertion cases**(含参数化展开)| **~33**(8 + 25)|
 
 ---
 
 ## 10. PR 拆分与大小
 
-### 10.1 PR 范围
+### 10.1 PR 范围(v0.1 收窄)
 
 | 范围 | 行数估计 |
 |---|---|
-| `AppSelfProfileDto` + `UpdateAppSelfProfileDto` | ~80 |
-| `AppProfileService` | ~120 |
+| `AppSelfProfileDto`(9 字段)+ `UpdateAppSelfProfileDto`(2 字段)| ~55 |
+| `AppProfileService`(无掩码 helper,无 MemberProfile 业务读)| ~80 |
 | `AppMeController` 追加 2 method | ~30 |
 | `UsersModule` providers 注入 | ~5 |
-| `test/e2e/app-me-profile.e2e-spec.ts` | ~280(44 用例) |
+| `test/e2e/app-me-profile.e2e-spec.ts`(20 个 it block + 参数化展开 ~33 cases)| ~170 |
 | `test/contract/openapi.contract-spec.ts` 改 + snapshot diff | ~30 |
 | docs 同步引用 / `current-state.md` / `CHANGELOG.md`(P2-8 收尾) | 不计 |
-| **合计** | **~545 行** |
+| **合计** | **~370 行** |
 
 ### 10.2 是否拆 PR
 
 | 选项 | 备注 |
 |---|---|
-| **不拆**(推荐)| 545 行接近 500 行阈值但仍可控;GET + PATCH 强语义耦合(同 DTO 同 service 同 controller);拆开评审反而增加 review 负担 |
-| 拆 P2-2a(GET)+ P2-2b(PATCH)| 优点:每 PR < 300 行;缺点:GET 完成后 DTO 已冻结,PATCH 又改一次 contract snapshot,review 噪音大 |
+| **不拆**(推荐)| 370 行远低于 500 行阈值;GET + PATCH 强语义耦合(同 DTO 同 service 同 controller);拆开评审反而增加 review 负担 |
+| 拆 P2-2a(GET)+ P2-2b(PATCH)| 拒绝;沿 v0.1 收窄,单 PR < 400 行已无拆分必要 |
 
 **推荐:不拆**;P2-2 PR 单 PR 完成。
 
@@ -886,27 +924,26 @@ P2-2 PR **绝对不**包含:
 ## 11. 风险表
 
 > 风险等级:**极高** / **高** / **中** / **低**。每条对应 P2-2 PR review 拒绝信号 + 缓解方案 + 是否阻塞。
+> v0.1 收窄后,GET 字段集 9 个无 MemberProfile / 无掩码,部分原风险已沿决议消除。
 
 | # | 风险 | 触发条件 | 影响 | 缓解 | 阻塞 P2-2? |
 |---|---|---|---|---|---|
-| 11.1 | **PATCH 白名单放宽** | 实施者在 `UpdateAppSelfProfileDto` 加除 `nickname` / `avatarKey` 之外的字段 | **极高(合规 + 越权)**;一旦 App 上线本人可改自己 身份证 / 部门 / 角色,**安全事故**;`forbidNonWhitelisted` 兜底**不**足以挡住已声明白名单字段 | PR review 强制 grep `class UpdateAppSelfProfileDto`,断言字段集恰好 `{nickname, avatarKey}`;contract snapshot 强断言 schema 字段数 = 2;e2e §9.2.5 ~ §9.2.16 全部覆盖 forbidden 字段反例 | ✅ 是 |
-| 11.2 | **GET 返完整 `documentNumber` / `mobile`** | 实施者直接 `select: { documentNumber, mobile }` + 返完整值 | **极高(合规)**;身份证号 / 手机号是 L2 高敏字段;一旦 App 客户端缓存可重放 | 沿 §2.3.1 / §2.3.2 + §10.11(Phase 2 风险表);`AppSelfProfileDto` 类型字段名**显式**带 `Masked` 后缀;`AppProfileService` 内**集中**掩码,**禁止** Controller / DTO 内直接拼字段;e2e §9.1.11 / §9.1.12 强断言掩码格式 | ✅ 是 |
-| 11.3 | **GET 返 `medicalNotes` / `emergencyContacts` / `bloodTypeCode`** | 实施者认为本人对自己医疗信息可见,**自行**扩字段集 | **极高(合规);**沿 §2.3.3 ~ §2.3.5 拒绝 | DTO 字段集 §2.4 冻结;PR review 强制检查 `AppSelfProfileDto` 字段集**恰好 15 个**;e2e §9.1.9 反向断言 response 不含禁字段 | ✅ 是 |
-| 11.4 | **复用 Admin DTO** | 实施者 `class AppSelfProfileDto extends MemberProfileResponseDto`(裁剪)/ `PickType MemberProfileResponseDto` / `OmitType UpdateMemberProfileDto` | **极高(合规 + 字段集污染)** | 沿 Phase 0.5 §6.2 + Phase 0.7 §2.2 + Phase 2 review §5.2 #1;PR review 强制 grep `extends.*Dto` / `PickType\|OmitType\|IntersectionType\|PartialType.*Dto` 全模式 | ✅ 是 |
-| 11.5 | **Admin-as-member 越权看他人数据** | service 内 `if (user.role === ADMIN) return prisma.memberProfile.findMany(...)` 短路 | **极高(越权)** | 沿 Phase 0.5 §10.2 D-5.2;`AppProfileService` 内**永远**用 `currentUser.id` / `currentUser.memberId`,**禁止** `role` 短路;e2e §9.1.8 / §9.2.20 admin-as-member 自视角断言 | ✅ 是 |
-| 11.6 | **member inactive 仍可改资料** | service 内未拦 `Member.status=INACTIVE` 路径 | 高(数据合规);离队队员仍可改本人资料违反 Phase 0.6 §5.4 L3 行 | `AppProfileService.assertCanUseApp` 在所有 method 入口调用;e2e §9.1.6 / §9.2.19 反向断言 | ✅ 是 |
-| 11.7 | **空 body 行为不清** | 实施者沿用旧 `PATCH /api/users/me` 200 行为 | 中(语义不清) | 沿 §3.4 A 档;`AppProfileService.updateMyProfile` 入口先校验 `dto.nickname === undefined && dto.avatarKey === undefined` 抛 BAD_REQUEST;e2e §9.2.4 断言 400 | ⚠️ 由 D2 决议 |
-| 11.8 | **新增 BizCode 破坏段位** | 实施者私自新建 `MEMBER_NOT_LINKED=10008` / `APP_MEMBER_INACTIVE=10009` 等 | 中(段位规划) | 沿 §5.4 方案 A 推荐**不新增**;若用户拍板 D3 选方案 B,P2-2 PR 中**显式**在 [`CLAUDE.md §5`](../CLAUDE.md) 段位登记表追加新行;PR review 强制对齐 | ⚠️ 由 D3 决议 |
-| 11.9 | **修改旧 `/api/users/me` 行为** | 实施者图省事改 `UsersService.updateMyProfile` 签名 / 返回类型 / 内部逻辑 | 高(向后兼容破坏) | 沿 Phase 2 review §3.2;PR review 强制 git diff 中**无** `users.service.ts` / `users.controller.ts` / `users.dto.ts` 业务逻辑改动(仅允许 import 新增);e2e §9.2.21 path stability 用例 | ✅ 是 |
-| 11.10 | **直接操作 MemberProfile 敏感字段** | PATCH 路径意外触及 `prisma.memberProfile.update(...)` | **极高(写敏感数据)** | `AppProfileService.updateMyProfile` **只**调 `UsersService.updateMyProfile`(改 User 表);**禁止**调 `prisma.memberProfile.*` 任何写方法;PR review 强制 grep `prisma.memberProfile.update\|create\|delete` 在 `AppProfileService` 内**不出现** | ✅ 是 |
-| 11.11 | **`hasMemberProfile` 派生字段误判** | helper 内逻辑判断 `null` / `undefined` 不一致 | 低(展示错) | 沿 §8.2 `findFirst select 白名单` 范式;返回 `profile === null` 即派生 false;e2e §9.1.2 反向断言 | 否 |
-| 11.12 | **`UpdateAppSelfProfileDto` 字段 type cast 错** | 实施者用 `as unknown as UpdateMyProfileDto` 跳过 strict mode | 低(typecheck 兜底) | 推荐 explicit literal `{ nickname: dto.nickname, avatarKey: dto.avatarKey }`(沿 §7.4);PR review 检查 cast 写法 | 否 |
-| 11.13 | **PATCH 后 GET 字段不一致** | PATCH 返 `AppSelfProfileDto`,GET 也返 `AppSelfProfileDto`,但 PATCH 内私自拼字段,字段集与 GET 不同 | 中(契约破坏) | `AppProfileService.updateMyProfile` 内部先调 `UsersService.updateMyProfile` 完成写入,然后调 `this.getMyProfile(currentUser)` 拼返;两路径共享 DTO 构造 helper | ✅ 是 |
-| 11.14 | **e2e 路径稳定性测试缺失** | PR 未覆盖旧 `/api/users/me*` / `/api/v2/members/:memberId/profile*` 路径回归 | 中(契约破坏)| sequence:e2e 必须包含 §9.2.21 + 旧 contract snapshot 通过 | ✅ 是 |
-| 11.15 | **PR 行数超 500** | DTO 校验装饰器 + Service 完整版 + e2e 44 用例 + contract 累计可能 > 500 | 中(review 质量)| 沿 §10.2 推荐不拆;若实际 > 600 行考虑拆 P2-2a(GET + DTO + GET 用例)+ P2-2b(PATCH + UpdateDto + PATCH 用例);PR 启动前 estimate 一次 | ⚠️ PR 启动前再评估 |
-| 11.16 | **掩码 helper 行为不一致** | 实施者对 `null` / `undefined` / 短值处理不一致 | 低(展示错)| 沿 §2.4 + §7.2 helper:`null → null` / 短值 → `'****'` / 正常 → `'***' + slice(-4)`;e2e §9.1.11 / §9.1.12 双向覆盖 | 否 |
-| 11.17 | **跨模块耦合 MemberProfilesService** | `AppProfileService` 注入 `MemberProfilesService`,触发"管理后台 admin 路径在 App service 内可调用"风险 | 中(架构污染)| 沿 §7.2:`AppProfileService` 注入 `PrismaService` 直读 MemberProfile,**不**注入 `MemberProfilesService`;PR review 强制 import 检查 | ✅ 是 |
-| 11.18 | **D1 选 A 档但 DTO 仍声明 5 个 MemberProfile 字段(null)** | 用户决议 A 档但实施者照 §2.4 B 档写 DTO | 中(契约不一致) | D1 决议在评审稿冻结前明确;DTO 实施按决议结果重写;contract snapshot 字段数据 D1 选档动态 | ⚠️ 由 D1 决议 |
+| 11.1 | **PATCH 白名单放宽** | 实施者在 `UpdateAppSelfProfileDto` 加除 `nickname` / `avatarKey` 之外的字段 | **极高(合规 + 越权)**;一旦 App 上线本人可改自己身份证 / 部门 / 角色,**安全事故**;`forbidNonWhitelisted` 兜底**不**足以挡住已声明白名单字段 | PR review 强制 grep `class UpdateAppSelfProfileDto`,断言字段集恰好 `{nickname, avatarKey}`;contract snapshot 强断言 schema 字段数 = 2;e2e §9.2.5 ~ §9.2.8 4 个参数化 block 共覆盖各类禁止字段 | ✅ 是 |
+| 11.2 | **PATCH 服务层透传 raw body** | `AppProfileService.updateMyProfile` 内用 `as unknown as UpdateMyProfileDto` / `{ ...dto }` / `dto as UpdateMyProfileDto` 把入参整体传给 `UsersService` | **极高(纵深防御失守)**;一旦 controller `ValidationPipe` 被绕过(JSON.parse + reflect-metadata 边界情况),禁止字段会落到 P0-D `UsersService.updateMyProfile`,可能写 `User` 任意字段(实际 P0-D `prisma.user.update({ data: { nickname, avatarKey }})` 已限白名单,但 service 层默认应是**纵深第二道防线**)| **沿 §7.4 铁律**:`AppProfileService.updateMyProfile` **必须**显式重构 `safeDto = { nickname: dto.nickname, avatarKey: dto.avatarKey }` 后再传给 `UsersService`;PR review 强制 grep,**禁止**出现 `as unknown` / `as UpdateMyProfileDto` / `{ ...dto }` 任一模式;e2e §9.2.5 ~ §9.2.8 参数化反例兜底 | ✅ 是 |
+| 11.3 | **GET 返 MemberProfile 业务字段** | 实施者读 `MemberProfile.realName` / `mobile` / `documentNumber` / `medicalNotes` / `emergencyContacts` / `bloodTypeCode` 任一字段并返出 | **极高(合规)**;P2-2 v0.1 已明确不读 MemberProfile 业务字段 | DTO 字段集 §2.4 冻结**恰好 9 个**;§8.2 MemberProfile 查询 `select` 严格 `{ id: true }` 单字段白名单;PR review 强制 grep `AppProfileService` 内**禁止**出现 `realName` / `mobile` / `documentNumber` / `medicalNotes` / `bloodTypeCode` / `emergencyContact*` 任一标识符;contract snapshot 强断言 schema 字段数 = 9 | ✅ 是 |
+| 11.4 | **复用 Admin DTO** | 实施者 `class AppSelfProfileDto extends UserResponseDto`(裁剪)/ `PickType MemberProfileResponseDto` / `OmitType UpdateMemberProfileDto` | **极高(合规 + 字段集污染)** | 沿 Phase 0.5 §6.2 + Phase 0.7 §2.2 + Phase 2 review §5.2 #1;PR review 强制 grep `extends.*Dto` / `PickType\|OmitType\|IntersectionType\|PartialType.*Dto` 全模式 | ✅ 是 |
+| 11.5 | **Admin-as-member 越权看他人数据** | service 内 `if (user.role === ADMIN) return prisma.member.findMany(...)` 短路 | **极高(越权)** | 沿 Phase 0.5 §10.2 D-5.2;`AppProfileService` 内**永远**用 `currentUser.id` / `currentUser.memberId`,**禁止** `role` 短路;e2e §9.1.7 / §9.2.11 admin-as-member 自视角断言 | ✅ 是 |
+| 11.6 | **member inactive 仍可改资料** | service 内未拦 `Member.status=INACTIVE` 路径 | 高(数据合规);离队队员仍可改本人资料违反 Phase 0.6 §5.4 L3 行 | `AppProfileService.assertCanUseApp` 在所有 method 入口调用;e2e §9.1.5 / §9.2.10 反向断言 | ✅ 是 |
+| 11.7 | **空 body 行为不清** | 实施者沿用旧 `PATCH /api/users/me` 200 行为 | 中(语义不清) | 沿 §3.4 / §6.1;`AppProfileService.updateMyProfile` 入口先校验 `dto.nickname === undefined && dto.avatarKey === undefined` 抛 BAD_REQUEST;e2e §9.2.4 断言 400 | ✅ 是(v0.1 锁定) |
+| 11.8 | **私自新增 BizCode** | 实施者私自新建 `MEMBER_NOT_LINKED=10008` / `APP_MEMBER_INACTIVE=10009` 等 | 中(段位规划) | 沿 §6.1 锁定:**P2-2 不新增 BizCode**;PR review 强制 grep [`src/common/exceptions/biz-code.constant.ts`](../src/common/exceptions/biz-code.constant.ts) 中**无新增** key | ✅ 是(v0.1 锁定) |
+| 11.9 | **修改旧 `/api/users/me` 行为** | 实施者图省事改 `UsersService.updateMyProfile` 签名 / 返回类型 / 内部逻辑 | 高(向后兼容破坏) | 沿 Phase 2 review §3.2;PR review 强制 git diff 中**无** `users.service.ts` / `users.controller.ts` / `users.dto.ts` 业务逻辑改动(仅允许 import 新增);e2e §9.2.12 path stability 用例 | ✅ 是 |
+| 11.10 | **直接操作 MemberProfile** | PATCH 路径意外触及 `prisma.memberProfile.update(...)`,或 GET 路径读 `MemberProfile.*` 业务字段 | **极高(写敏感数据 / 越权读)** | `AppProfileService.updateMyProfile` **只**调 `UsersService.updateMyProfile`(改 User 表);`AppProfileService.getMyProfile` 仅派生 `hasMemberProfile`(`select: { id: true }` 单字段);PR review 强制 grep `prisma.memberProfile.update\|create\|delete\|upsert` 在 `AppProfileService` 内**不出现**;`prisma.memberProfile.findFirst` 在 `AppProfileService` 内出现时,`select` 必须严格 `{ id: true }` | ✅ 是 |
+| 11.11 | **`hasMemberProfile` 派生字段误判** | 实施者用 `await prisma.memberProfile.count(...)` / `findUnique` 等非 `findFirst + notDeletedWhere` 路径 | 低(展示错;软删 profile 被误计为存在) | 沿 §8.2:严格 `findFirst({ where: notDeletedWhere({ memberId }), select: { id: true } })`;e2e §9.1.2 反向断言 | 否 |
+| 11.12 | **PATCH 后 GET 字段不一致** | PATCH 返 `AppSelfProfileDto`,GET 也返 `AppSelfProfileDto`,但 PATCH 内私自拼字段,字段集与 GET 不同 | 中(契约破坏) | `AppProfileService.updateMyProfile` 内部先调 `UsersService.updateMyProfile` 完成写入,然后调 `this.getMyProfile(currentUser)` 拼返;两路径共享 DTO 构造逻辑 | ✅ 是 |
+| 11.13 | **e2e 路径稳定性测试缺失** | PR 未覆盖旧 `/api/users/me*` / `/api/v2/members/:memberId/profile*` 路径回归 | 中(契约破坏)| e2e 必须包含 §9.2.12 + 旧 contract snapshot 通过 | ✅ 是 |
+| 11.14 | **PR 行数超阈值** | DTO 校验装饰器 + Service 完整版 + e2e + contract 累计可能 > 400 | 低(review 质量;v0.1 收窄后预计 ~370 行,余量充足)| 沿 §10.2 不拆;若实际 > 500 行才考虑拆 P2-2a(GET)+ P2-2b(PATCH)| ⚠️ PR 启动前 estimate |
+| 11.15 | **跨模块耦合 MemberProfilesService** | `AppProfileService` 注入 `MemberProfilesService`,触发"管理后台 admin 路径在 App service 内可调用"风险 | 中(架构污染)| 沿 §7.2:`AppProfileService` 注入 `PrismaService` 直读 `MemberProfile.id`,**不**注入 `MemberProfilesService`;PR review 强制 import 检查 | ✅ 是 |
+| 11.16 | **canUseApp / appAccessReason 字段意外出现在 profile response** | 实施者从 `AppMeResponseDto` 复制字段时把 `canUseApp` / `appAccessReason` 也带过来 | 中(契约不一致;profile 200 已隐含 canUseApp=true)| 沿 §2.4 字段集**恰好 9 个**;contract snapshot 强断言;PR review 检查 `AppSelfProfileDto` 字段名清单 | ✅ 是 |
 
 ---
 
@@ -952,18 +989,20 @@ P2-2 PR **绝对不**包含:
 - ✅ 不夹带 P2-3(`/me/password`)/ P2-4 ~ P2-7 / Phase 1B / Phase 2.x 任何 endpoint
 - ✅ 不动旧 `/api/users/me*` 行为(沿 Phase 2 review §3.2 + §9.2 #9)
 
-### 13.2 本评审稿决议项(用户拍板)
+### 13.2 本评审稿决议项(2026-05-19 v0.1 已锁定)
 
-| # | 决议项 | 推荐 | 备选 |
+> 沿 §6.4 决议项汇总;v0.1 修订后全部 8 项决议已由用户拍板锁定,**禁止**重开讨论(除非用户主动 reopen)。
+
+| # | 决议项 | v0.1 锁定 | 备选(已拒绝) |
 |---|---|---|---|
-| **D1** | GET /profile 字段档位 | **B 档**(15 字段含 MemberProfile 低敏摘要 + 掩码) | A 档(10 字段);C 档拒绝 |
-| **D2** | PATCH /profile 空 body 行为 | **A 档**(400) | B 档(200 沿旧) |
-| **D3** | 拒绝路径方案 | **方案 A**(复用 FORBIDDEN=40300) | 方案 B(新增 10008/10009/10010) |
-| **D4** | `hasMemberProfile` 派生字段保留? | **保留** | 移除 |
-| **D5** | GET 返 `bloodTypeCode`? | **不返** | 返(只读) |
-| **D6** | GET 返 `organizationName` / `departmentName`? | **不返** | 返(只读) |
-| **D7** | PATCH 后返新 `AppSelfProfileDto`? | **返**(单响应) | 204 NoContent |
-| **D8** | PR 是否拆 P2-2a / P2-2b? | **不拆**(单 PR ~545 行) | 拆(GET / PATCH 各一个 PR) |
+| **D1** | GET /profile 字段档位 | **v0.1 收窄基线 9 字段**(沿 §2.1) | A 档 11 / B 档 16 / C 档 30+ |
+| **D2** | PATCH /profile 空 body 行为 | **400 BAD_REQUEST=40000** | 200 沿旧 |
+| **D3** | 拒绝路径 BizCode 策略 | **复用 FORBIDDEN=40300** | 新增 10008-10010 |
+| **D4** | `hasMemberProfile` 派生字段保留 | **保留** | 移除 |
+| **D5** | GET 返 `bloodTypeCode` | **不返**(留 Phase 2.x) | 返(只读) |
+| **D6** | GET 返 `organizationName` / `departmentName` | **不返**(留 Phase 2.x) | 返(只读) |
+| **D7** | PATCH 后返新 `AppSelfProfileDto` | **返**(单响应)| 204 NoContent |
+| **D8** | PR 是否拆 P2-2a / P2-2b | **不拆**(单 PR ~370 行)| 拆(GET / PATCH) |
 
 ### 13.3 修订规则
 
@@ -984,6 +1023,7 @@ P2-2 PR **绝对不**包含:
 | 日期 | 版本 | 摘要 |
 |---|---|---|
 | 2026-05-19 | v0 | 本评审稿 v0 创建;2 个 endpoint + 2 个 DTO + 1 个 service + 35 e2e 用例 + 18 条风险表;沿 Phase 2 review v0.1 + Phase 0.5 / 0.6 / 0.7 全套约束 |
+| 2026-05-19 | v0.1 | **v0.1 收窄修订**(用户拍板锁定 D1 ~ D8 八项决议):① GET 字段集**收窄到 9 个**(剔除 `email` / `gradeCode` / `joinedDate` / `realName` / `mobileMasked` / `documentNumberMasked` / `canUseApp` / `appAccessReason`),`email` 由 `/me/account` 承载,MemberProfile 业务字段全部留 Phase 2.x 完整 read PR;② PATCH 白名单保留 2 字段(`nickname` / `avatarKey`);③ §6 重构为"P2-2 不新增 BizCode"硬锁(`canUseApp=false → FORBIDDEN=40300` / `empty body → BAD_REQUEST=40000` / `forbidden field → BAD_REQUEST=40000`);④ §7.4 强化"`AppProfileService` 必须先用 `UpdateAppSelfProfileDto` 拦截 body 再传给 `UsersService`,禁止透传 raw body";⑤ §9 e2e **压缩到 20 个 it block**(GET 8 + PATCH 12,含 4 个参数化禁字段 block);⑥ §11 风险表沿 v0.1 收窄重组(剔除 mobileMasked / 掩码 helper / D1 备选等;新增 11.2 透传 raw body 风险 + 11.16 canUseApp 字段意外出现);⑦ §10 PR 行数估计从 ~545 行降到 ~370 行 |
 
 ---
 
