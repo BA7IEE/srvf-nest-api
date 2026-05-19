@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
+import { AppCapabilityService } from './app-capability.service';
+import { AppIdentityResolver } from './app-identity.resolver';
+import { AppMeController } from './controllers/app-me.controller';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 
@@ -13,9 +16,13 @@ import { UsersService } from './users.service';
 // 8 个管理方法首句 `await this.assertCanOrThrow(currentUser, '<permission.code>')`。
 // 沿 PR-1 permissions / PR-2A dict / org / member-department / contribution-rule /
 // PR-2B attachment-config / storage-setting 接入范式。
+//
+// Phase 2 P2-1(2026-05-19):新增 AppMeController(/api/app/v1/me*)+ AppIdentityResolver
+// + AppCapabilityService。沿 docs/app-api-phase-2-review.md §2 / §7.1;
+// 旧 UsersController + UsersService 行为**逐字不变**(沿 §3.2 不动 v1 legacy + §9.2 #9 path stability)。
 @Module({
   imports: [DatabaseModule, AuditLogsModule, PermissionsModule],
-  controllers: [UsersController],
-  providers: [UsersService],
+  controllers: [UsersController, AppMeController],
+  providers: [UsersService, AppIdentityResolver, AppCapabilityService],
 })
 export class UsersModule {}

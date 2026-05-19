@@ -297,6 +297,14 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/v2/storage-settings'],
   ['patch', '/api/v2/storage-settings'],
   ['post', '/api/v2/storage-settings/reset-credentials'],
+
+  // Phase 2 P2-1(2026-05-19):App /api/app/v1/me* 三 endpoint
+  // 沿 docs/app-api-phase-2-review.md §2 接口清单;新 path 默认 /api/app/v1/*(沿
+  // docs/api-client-boundary-migration-plan.md §5 Phase 3 方案 C);旧 /api/users/me*
+  // 行为**逐字不变**(沿 §3.2 + §9.2 #9 path stability)。
+  ['get', '/api/app/v1/me'],
+  ['get', '/api/app/v1/me/account'],
+  ['get', '/api/app/v1/me/capabilities'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -507,6 +515,22 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'StorageSettingsResponseDto',
   'UpdateStorageSettingsDto',
   'ResetStorageCredentialsDto',
+
+  // Phase 2 P2-1(2026-05-19):App /api/app/v1/me* DTO
+  // AppMeResponseDto / AppMeAccountDto:GET /me + /me/account 出参,均独立注册为 named schema
+  // (沿 Phase 0.7 §2.2 #1-#2:**禁止**继承 / Pick / Omit Admin DTO,DTO 物理隔离)。
+  // AppCapabilityResponseDto + 6 个 namespace 子 DTO(account / activities / attendance /
+  // certificates / tasks / managed):嵌套结构,均独立注册为 named schema(沿 §4.2 冻结结构)。
+  // 沿 §4.3 #7:reason 字段是展示字符串,**不**绑定 BizCode 段位;P2-1 不新增 BizCode。
+  'AppMeResponseDto',
+  'AppMeAccountDto',
+  'AppCapabilityResponseDto',
+  'AppCapabilityAccountDto',
+  'AppCapabilityActivitiesDto',
+  'AppCapabilityAttendanceDto',
+  'AppCapabilityCertificatesDto',
+  'AppCapabilityTasksDto',
+  'AppCapabilityManagedDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
