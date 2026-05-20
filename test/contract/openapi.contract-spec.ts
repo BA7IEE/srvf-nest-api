@@ -349,6 +349,15 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/my/registrations'],
   ['get', '/api/app/v1/my/registrations/{id}'],
   ['get', '/api/app/v1/my/activities'],
+
+  // Phase 2 P2-5b(2026-05-20):App /api/app/v1/my/registrations 2 写 endpoint
+  // 沿 docs/app-api-p2-5-registrations-review.md §13.7 + D-P2-5-5 / D-P2-5-8 / D-P2-5-9 /
+  // D-P2-5-10;两 endpoint 挂在同一 AppMyRegistrationsController(P2-5a 已建)。
+  // 准入沿 §7.1(canUseApp 前置);D-P2-5-8 锁定 cancelled/draft/completed/soft-deleted 活动
+  // 统一抛 ACTIVITY_NOT_FOUND=20001 防侧信道;复用既有 audit event registration.create /
+  // registration.review;0 新 BizCode;0 schema 变更;旧 admin / me write path 行为不变。
+  ['post', '/api/app/v1/my/registrations'],
+  ['patch', '/api/app/v1/my/registrations/{id}/cancel'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -606,6 +615,15 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'AppMyRegistrationListItemDto',
   'AppMyRegistrationDto',
   'AppMyActivityListItemDto',
+
+  // Phase 2 P2-5b(2026-05-20):App /my/registrations 2 入参 DTO
+  // 字段集严格沿 §8.2.4:CreateAppMyRegistrationDto 严格 2 字段(activityId + 可选 extras);
+  // CancelAppMyRegistrationDto 严格 1 字段(可选 cancelReason;沿 D-P2-5-9 不必填)。
+  // **禁止**继承 / Pick / Omit / IntersectionType / PartialType / OmitType / Mapped Types
+  // admin CreateRegistrationDto / CreateMyRegistrationDto / CancelRegistrationDto
+  // (沿 D-P2-5-6 + §8.1 + 风险 14.1)。
+  'CreateAppMyRegistrationDto',
+  'CancelAppMyRegistrationDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

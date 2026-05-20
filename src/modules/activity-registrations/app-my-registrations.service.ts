@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -8,11 +9,14 @@ import { PrismaService } from '../../database/prisma.service';
 import { AppMyActivitiesService } from '../activities/app-my-activities.service';
 import { ListAppMyActivitiesQueryDto } from '../activities/dto/app/list-app-my-activities-query.dto';
 import { AppMyActivityListItemDto } from '../activities/dto/app/app-my-activity-list-item.dto';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
 import { ActivityRegistrationsService } from './activity-registrations.service';
 import { ListMyRegistrationsQueryDto } from './activity-registrations.dto';
 import { AppMyRegistrationListItemDto } from './dto/app/app-my-registration-list-item.dto';
 import { AppMyRegistrationDto } from './dto/app/app-my-registration.dto';
+import { CancelAppMyRegistrationDto } from './dto/app/cancel-app-my-registration.dto';
+import { CreateAppMyRegistrationDto } from './dto/app/create-app-my-registration.dto';
 import { ListAppMyRegistrationsQueryDto } from './dto/app/list-app-my-registrations-query.dto';
 
 // Phase 2 P2-5a App /api/app/v1/my/* registrations 薄壳 service。
@@ -105,6 +109,73 @@ export class AppMyRegistrationsService {
     return this.appMyActivities.listForMember(access.member.id, query);
   }
 
+  // ============ POST /api/app/v1/my/registrations(P2-5b)============
+  //
+  // 沿 docs/app-api-p2-5-registrations-review.md §6.4 + §9.3 + §16.B.6 默认锁定方案 B:
+  //   1. 准入:`assertCanUseAppOrThrow`(沿 §7.1 + §7.3;canUseApp=false → 403)
+  //   2. **薄壳内 inline** `assertActivityPublishedOrThrow`(沿 D-P2-5-8 + §9.3):
+  //      只有 published 活动可报名,其它(draft / cancelled / completed / 软删 / 不存在)
+  //      **统一抛** ACTIVITY_NOT_FOUND=20001 / 404 防侧信道(沿 P2-4 D-P2-4-3 范式)
+  //   3. thin-wrap 既有 `ActivityRegistrationsService.createMy`(沿 §6.2 不改签名):
+  //      事务内 resolveUserMemberIdOrThrow + assertActivityRegistrable(剩余只触发 20120)
+  //      + assertCapacityNotExceeded + assertNoActiveRegistration + create + audit
+  //   4. 出参经私有 mapper 转 AppMyRegistrationDto(沿 §8.2.2 字段集 11 项不返 memberId)
+  //
+  // 铁律:
+  //   - **不**改 ActivityRegistrationsService 公共 API(沿 §6.2 + §16.B.6 方案 B)
+  //   - **不**新增 BizCode(沿 D-P2-5-10)
+  //   - **不**新增 audit event(沿 §12.1 复用 registration.create + viaPath='self')
+  //   - admin-as-member 走 linked-member self perspective(沿 D-5.2 + §7.5);
+  //     既有 createMy 内 resolveUserMemberIdOrThrow 用 currentUser.id 锁本人,
+  //     **禁止** role 短路 / 接收 body memberId(DTO 严格白名单已挡)
+  async createMyForApp(
+    currentUser: CurrentUserPayload,
+    dto: CreateAppMyRegistrationDto,
+    auditMeta: AuditMeta,
+  ): Promise<AppMyRegistrationDto> {
+    await this.assertCanUseAppOrThrow(currentUser);
+    await this.assertActivityPublishedOrThrow(dto.activityId);
+
+    // thin-wrap 既有 createMy(沿 §6.2 不改签名);extras 可选透传
+    const reg = await this.registrationsService.createMy(
+      dto.activityId,
+      { ...(dto.extras !== undefined ? { extras: dto.extras } : {}) },
+      currentUser,
+      auditMeta,
+    );
+    return AppMyRegistrationsService.toAppDetailDto(reg);
+  }
+
+  // ============ PATCH /api/app/v1/my/registrations/:id/cancel(P2-5b)============
+  //
+  // 沿评审稿 §10.2 状态机 + §7.7 owner 校验 + §12.1 audit:
+  //   1. 准入:`assertCanUseAppOrThrow`(沿 §7.1)
+  //   2. thin-wrap 既有 `ActivityRegistrationsService.cancelMy`(沿 §6.2):
+  //      事务内:resolveUserMemberIdOrThrow + 反查 registration(本人 + 未软删) →
+  //      404 防侧信道(他人 / 不存在 / 软删统一 ACTIVITY_REGISTRATION_NOT_FOUND=21001)→
+  //      状态机校验 pending|pass → cancelled,其它态 → ACTIVITY_REGISTRATION_STATUS_INVALID=21030
+  //      + update + audit registration.review (action='cancel', cancelledByPath='self')
+  //   3. 出参经私有 mapper 转 AppMyRegistrationDto
+  //
+  // 取消他人 / 不存在 / 软删 statusCode==reject / cancelled 全部由既有 cancelMy 兜底,
+  // 与 P2-5a `findMy` 防侧信道范式对齐(沿 §7.7)。
+  async cancelMyForApp(
+    currentUser: CurrentUserPayload,
+    id: string,
+    dto: CancelAppMyRegistrationDto,
+    auditMeta: AuditMeta,
+  ): Promise<AppMyRegistrationDto> {
+    await this.assertCanUseAppOrThrow(currentUser);
+
+    const reg = await this.registrationsService.cancelMy(
+      id,
+      { ...(dto.cancelReason !== undefined ? { cancelReason: dto.cancelReason } : {}) },
+      currentUser,
+      auditMeta,
+    );
+    return AppMyRegistrationsService.toAppDetailDto(reg);
+  }
+
   // ============ 内部 helpers ============
 
   // 沿 §7.1 / §7.3 准入硬约束:canUseApp=false → FORBIDDEN(member 未关联 / INACTIVE /
@@ -114,6 +185,21 @@ export class AppMyRegistrationsService {
     const access = await this.appIdentity.resolve(currentUser);
     if (!access.canUseApp || access.member === null) {
       throw new BizException(BizCode.FORBIDDEN);
+    }
+  }
+
+  // 沿 D-P2-5-8 + §9.3 + §16.B.6 默认方案 B:报名前置 published 校验薄壳内 inline。
+  // 非 published(draft / cancelled / completed / 软删 / 不存在)统一抛 ACTIVITY_NOT_FOUND=20001
+  // 防侧信道(沿 P2-4 D-P2-4-3 范式);**不**改 ActivityRegistrationsService 公共 API。
+  // 与 admin path 行为故意不同:admin POST cancelled 活动仍抛 ACTIVITY_CANCELLED_REGISTRATION_FORBIDDEN=20121,
+  // App path 该 21121 因前置 ACTIVITY_NOT_FOUND 拦截**永不触达**(沿评审稿 §9.3 结果矩阵)。
+  private async assertActivityPublishedOrThrow(activityId: string): Promise<void> {
+    const act = await this.prisma.activity.findFirst({
+      where: notDeletedWhere({ id: activityId, statusCode: 'published' }),
+      select: { id: true },
+    });
+    if (!act) {
+      throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     }
   }
 
