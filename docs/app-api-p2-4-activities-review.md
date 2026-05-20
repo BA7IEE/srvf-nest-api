@@ -709,9 +709,9 @@ P2-4 implementation must read:
 | 编号 | 决议项 | 决议值 | 状态 |
 |---|---|---|---|
 | **D-P2-4-1** | App 可见状态白名单 | **= A**:仅 `statusCode='published' AND deletedAt IS NULL`;`draft / cancelled / completed / 软删` 一律 App 不可见;`/:id` 命中不可见 → 404;completed / cancelled 历史归 P2-5 `/api/app/v1/my/activities` | ✅ **v0.1 锁定**(2026-05-20);备选方案 C 关闭 |
-| **D-P2-4-2** | P2-4 是否返回报名状态 / hint / capabilities / registeredCount | **= A**:全部不返(纯浏览;报名相关属 P2-5) | ⏳ 待拍板 |
-| **D-P2-4-3** | 不可见活动 404 vs 403 | **= 404**(沿 v2 USER `findOne` Q-A7 范式;避免存在性泄漏) | ⏳ 待拍板 |
-| **D-P2-4-4** | Service / Presenter 落地形态 | **= 方案 B**:`AppActivitiesService` 新建 + 私有 mapper(不新建独立 `AppActivityPresenter` class) | ⏳ 待拍板;备选方案 D(同时建独立 Presenter class) |
+| **D-P2-4-2** | P2-4 是否返回报名状态 / hint / capabilities / registeredCount | **= A**:全部不返(纯浏览;`canRegister` / `myRegistrationStatus` / `myRegistrationId` / `registeredCount` 等派生字段一律不返;报名相关属 P2-5) | ✅ **v0.1 锁定**(2026-05-20);备选方案 B / C 关闭 |
+| **D-P2-4-3** | 不可见活动 404 vs 403 | **= 404**(沿 v2 USER `findOne` Q-A7 范式;避免存在性泄漏;P2-4a list 直接在 where 子句过滤天然不返,P2-4b detail 命中不可见统一 `ACTIVITY_NOT_FOUND=20001 / HTTP 404`) | ✅ **v0.1 锁定**(2026-05-20);备选方案 403 关闭 |
+| **D-P2-4-4** | Service / Presenter 落地形态 | **= 方案 B**:`AppActivitiesService` 新建 + 私有 mapper(不复用 `ActivitiesService.list` / `ActivitiesService.findOne`;不新建独立 `AppActivityPresenter` class) | ✅ **v0.1 锁定**(2026-05-20);备选方案 A / C / D 关闭 |
 | **D-P2-4-5** | PR 拆分 | **= split**:强制拆 P2-4a(GET `/api/app/v1/activities/available`) + P2-4b(GET `/api/app/v1/activities/:id`)两 PR;各自走 C 档 < 500 行;P2-4a 先于 P2-4b | ✅ **v0.1 锁定**(2026-05-20);备选方案 A(单 PR)关闭 |
 
 ---
