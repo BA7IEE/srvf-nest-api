@@ -1077,6 +1077,79 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppMyCertificateDto": {
+    "properties": {
+      "certNumber": {
+        "description": "证书编号(中敏感;本人完整可见)",
+        "nullable": true,
+        "type": "object",
+      },
+      "certStatusCode": {
+        "description": "核验状态字典 code(cert_status;4 态闭集 pending / verified / expired / rejected;只返持久态,不做 expiredAt<now() 实时映射)",
+        "example": "verified",
+        "type": "string",
+      },
+      "certSubTypeCode": {
+        "description": "证书子类型 / 等级字典 code(cert_sub_type;NULL 表示无子类型)",
+        "nullable": true,
+        "type": "object",
+      },
+      "certTypeCode": {
+        "description": "证书大类字典 code(cert_type)",
+        "example": "first_aid",
+        "type": "string",
+      },
+      "createdAt": {
+        "description": "创建时间(排序参考)",
+        "format": "date-time",
+        "type": "string",
+      },
+      "expiredAt": {
+        "description": "到期日(ISO 8601;NULL = 终身有效)",
+        "nullable": true,
+        "type": "object",
+      },
+      "id": {
+        "description": "证书主键(cuid)",
+        "example": "cl9z3a8b00000abcd1234efgh",
+        "type": "string",
+      },
+      "isInternal": {
+        "description": "是否本会颁发",
+        "type": "boolean",
+      },
+      "issuedAt": {
+        "description": "颁发日期(ISO 8601)",
+        "format": "date-time",
+        "type": "string",
+      },
+      "issuingOrg": {
+        "description": "颁发机构(自由文本)",
+        "example": "深圳市红十字会",
+        "type": "string",
+      },
+      "verifiedAt": {
+        "description": "核验时间(L1 对本人可见;待核验态为 NULL)",
+        "nullable": true,
+        "type": "object",
+      },
+      "verifyNote": {
+        "description": "审核备注 / 拒绝原因(L1 对本人可见;字段名沿 Prisma schema)",
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "id",
+      "certTypeCode",
+      "issuingOrg",
+      "issuedAt",
+      "certStatusCode",
+      "isInternal",
+      "createdAt",
+    ],
+    "type": "object",
+  },
   "AppMyRegistrationDto": {
     "properties": {
       "activityId": {
@@ -7376,6 +7449,260 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "我的考勤记录列表(仅 approved Sheet 内 records;分页 + 可选 activityId 过滤;含 activity 派生字段)",
       "tags": [
         "Mobile - My Attendance",
+      ],
+    },
+  },
+  "/api/app/v1/my/certificates": {
+    "get": {
+      "operationId": "AppMyCertificatesController_listMyCertificates",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "按核验状态过滤(可选;cert_status 4 态闭集);默认全集",
+          "in": "query",
+          "name": "certStatusCode",
+          "required": false,
+          "schema": {
+            "enum": [
+              "pending",
+              "verified",
+              "expired",
+              "rejected",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "按证书大类 code 过滤(可选;cert_type 字典 code);默认全集",
+          "in": "query",
+          "name": "certTypeCode",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AppMyCertificateDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "500": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "50000: 服务器内部错误",
+                    "enum": [
+                      50000,
+                    ],
+                    "example": 50000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "服务器内部错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "服务器内部错误(code=50000)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "我的证书列表(本人 pending / verified / expired / rejected 全部可见;分页 + 可选 certStatusCode / certTypeCode 过滤)",
+      "tags": [
+        "Mobile - My Certificates",
       ],
     },
   },

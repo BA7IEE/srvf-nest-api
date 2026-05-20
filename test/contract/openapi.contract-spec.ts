@@ -366,6 +366,15 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 0 新 BizCode / 0 schema / 0 migration / 0 新依赖;
   // 旧 /api/v2/users/me/attendance-records 行为**逐字不变**(沿 D-P2-6-15 + §11.1 path stability)。
   ['get', '/api/app/v1/my/attendance-records'],
+
+  // Phase 2 P2-7(2026-05-20):App /api/app/v1/my/certificates 1 endpoint
+  // 沿 docs/app-api-p2-7-my-certificates-review.md §4 endpoint 契约 + §5 字段集恰好 12;
+  // 独立 AppMyCertificatesService(沿 D-P2-7-9;**不** thin-wrap certificates.service.list;
+  // **不**新增 listForMember);PrismaService 直查 Certificate(memberId + deletedAt:null + 可选
+  // certStatusCode / certTypeCode filter;orderBy createdAt desc);
+  // 0 新 BizCode / 0 schema / 0 migration / 0 新依赖;
+  // 旧 /api/v2/members/:memberId/certificates/* 8 endpoint 行为**逐字不变**(沿 D-P2-7-15 + §11.1)。
+  ['get', '/api/app/v1/my/certificates'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -639,6 +648,15 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // 注:ListAppMyAttendanceRecordsQueryDto 是 @Query() DTO,被 NestJS Swagger 内联为
   // parameters,**不**注册到 components.schemas(沿 P2-5a query DTO 同范式)。
   'AppMyAttendanceRecordDto',
+
+  // Phase 2 P2-7(2026-05-20):App /my/certificates 出参 DTO
+  // 字段集严格沿 docs/app-api-p2-7-my-certificates-review.md §5.1 v0.1 锁定 12 项;
+  // 独立 class,**禁止**继承 / Pick / Omit / IntersectionType / PartialType / OmitType /
+  // Mapped Types admin CertificateResponseDto / CertificateListItemDto
+  // (沿 D-P2-7-3 + Phase 0.6 §1.3 + Phase 0.7 §2.2)。
+  // 注:ListAppMyCertificatesQueryDto 是 @Query() DTO,被 NestJS Swagger 内联为
+  // parameters,**不**注册到 components.schemas(沿 P2-5a / P2-6 query DTO 同范式)。
+  'AppMyCertificateDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
