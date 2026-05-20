@@ -321,6 +321,14 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // **D-P2-3-1 = X**(沿评审稿 §4.3 锁定):admin without member 允许使用,
   // 该豁免**严格仅本端点**适用(沿 §4.6);旧 /api/users/me/password 行为**逐字不变**。
   ['put', '/api/app/v1/me/password'],
+
+  // Phase 2 P2-4a(2026-05-20):App /api/app/v1/activities/available 列表
+  // 沿 docs/app-api-p2-4-activities-review.md §1 接口清单 + §4.1 字段集恰好 11 项;
+  // 可见性沿 D-P2-4-1 = A:仅 statusCode='published' AND deletedAt IS NULL;
+  // canUseApp=false → FORBIDDEN(40300);不沿 P2-3 admin-without-member 例外(沿 §6.2);
+  // 0 新 BizCode;0 schema 变更;旧 /api/v2/activities* 行为**逐字不变**(沿 §11.4)。
+  // **D-P2-4-5 = split**:P2-4b `GET /:id` 详情独立 PR(本 spec 不含 detail 路径)。
+  ['get', '/api/app/v1/activities/available'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -554,6 +562,12 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // 两 DTO 均独立注册为 named schema;**禁止**继承 / Pick / Omit Admin DTO(沿 §4.3 + Phase 0.7 §2.2)。
   'AppSelfProfileDto',
   'UpdateAppSelfProfileDto',
+
+  // Phase 2 P2-4a(2026-05-20):App /api/app/v1/activities/available 列表 DTO
+  // AppAvailableActivityListItemDto:列表 item 出参,字段恰好 11(沿 §4.1 v0.1 锁定);
+  // 独立 class,**禁止**继承 / Pick / Omit / Mapped Types Admin DTO(沿 §4.3 + Phase 0.7 §2.2)。
+  // 分页外层走 @ApiWrappedPageResponse(已注册 PageResultDto + AppAvailableActivityListItemDto)。
+  'AppAvailableActivityListItemDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
