@@ -27,9 +27,15 @@ import { UsersService } from './users.service';
 // AppProfileService 注入 PrismaService(派生 hasMemberProfile 单字段 select)+ UsersService
 // (PATCH 复用 updateMyProfile;沿 §7.4 显式 safeDto)+ AppIdentityResolver(P2-1 复用)。
 // **不**注入 MemberProfilesService(避免跨模块耦合;沿 §7.2 + 风险表 11.15)。
+//
+// Phase 2 P2-4a(2026-05-20):exports AppIdentityResolver 供 ActivitiesModule 注入
+// (沿 docs/app-api-p2-4-activities-review.md §6.1 准入复用 P2-1 范式)。
+// 仅 exports resolver,**不** exports UsersService / AppCapabilityService / AppProfileService
+// (避免下游模块隐式扩散对 users 内部能力的依赖)。
 @Module({
   imports: [DatabaseModule, AuditLogsModule, PermissionsModule],
   controllers: [UsersController, AppMeController],
   providers: [UsersService, AppIdentityResolver, AppCapabilityService, AppProfileService],
+  exports: [AppIdentityResolver],
 })
 export class UsersModule {}
