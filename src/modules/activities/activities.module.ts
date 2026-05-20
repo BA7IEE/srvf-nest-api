@@ -5,6 +5,7 @@ import { UsersModule } from '../users/users.module';
 import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
 import { AppActivitiesService } from './app-activities.service';
+import { AppMyActivitiesService } from './app-my-activities.service';
 import { AppActivitiesController } from './controllers/app-activities.controller';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
@@ -16,10 +17,19 @@ import { AppActivitiesController } from './controllers/app-activities.controller
 // 导入 UsersModule 获取已 exports 的 AppIdentityResolver(沿 §8.4 复用既有基础设施);
 // **不**新建 AppActivitiesModule(避免模块爆炸;沿 §1 模块归属决议)。
 // 既有 ActivitiesController / ActivitiesService 行为**逐字不变**(沿 §11.4 + 风险表 13.12)。
+//
+// Phase 2 P2-5a(2026-05-20):追加 AppMyActivitiesService。沿
+// docs/app-api-p2-5-registrations-review.md §6.2 + §6.3.2 + D-P2-5-4:
+//   - 物理位置归 src/modules/activities/(语义"我的活动";沿 P2-4 AppActivitiesService
+//     同模块隔离范式)
+//   - 用于 `/api/app/v1/my/activities` 汇总查询(沿 §11 + §16.B.1 方案 A 两阶段)
+//   - exports 供 ActivityRegistrationsModule 内 AppMyRegistrationsService 注入(沿
+//     §6.3.1;**不**新建 AppMyActivitiesController,该 endpoint 挂在
+//     AppMyRegistrationsController 上)
 @Module({
   imports: [DatabaseModule, AuditLogsModule, UsersModule],
   controllers: [ActivitiesController, AppActivitiesController],
-  providers: [ActivitiesService, AppActivitiesService],
-  exports: [ActivitiesService],
+  providers: [ActivitiesService, AppActivitiesService, AppMyActivitiesService],
+  exports: [ActivitiesService, AppMyActivitiesService],
 })
 export class ActivitiesModule {}

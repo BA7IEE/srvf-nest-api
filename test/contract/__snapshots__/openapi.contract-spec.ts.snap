@@ -918,6 +918,214 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppMyActivityListItemDto": {
+    "properties": {
+      "activityId": {
+        "description": "活动主键(Activity.id;**不是** registration id;前端可点跳 P2-4 详情)",
+        "example": "cl9z3a8b00000abcd1234efgh",
+        "type": "string",
+      },
+      "activityTypeCode": {
+        "description": "活动类型字典 code(typeCode=activity_type)",
+        "example": "training",
+        "type": "string",
+      },
+      "coverImageUrl": {
+        "description": "封面图片 URL(裸 URL 字符串,非 signed URL)",
+        "nullable": true,
+        "type": "object",
+      },
+      "endAt": {
+        "description": "活动结束时间(ISO 8601)",
+        "format": "date-time",
+        "type": "string",
+      },
+      "location": {
+        "description": "活动地点(自由文本)",
+        "example": "梧桐山东门",
+        "type": "string",
+      },
+      "myRegisteredAt": {
+        "description": "我在该活动的最新报名时间(派生)",
+        "format": "date-time",
+        "type": "string",
+      },
+      "myRegistrationId": {
+        "description": "我在该活动的最新有效 registration id(派生取值:active > reject > cancelled)",
+        "type": "string",
+      },
+      "myRegistrationStatusCode": {
+        "description": "我在该活动的报名状态字典 code(派生;active > reject > cancelled 取值规则)",
+        "example": "pending",
+        "type": "string",
+      },
+      "startAt": {
+        "description": "活动开始时间(ISO 8601)",
+        "format": "date-time",
+        "type": "string",
+      },
+      "statusCode": {
+        "description": "活动状态字典 code(可包含 draft / published / cancelled / completed 全 4 态)",
+        "example": "published",
+        "type": "string",
+      },
+      "title": {
+        "description": "活动标题",
+        "example": "梧桐山轮值演练",
+        "type": "string",
+      },
+    },
+    "required": [
+      "activityId",
+      "title",
+      "activityTypeCode",
+      "statusCode",
+      "startAt",
+      "endAt",
+      "location",
+      "myRegistrationId",
+      "myRegistrationStatusCode",
+      "myRegisteredAt",
+    ],
+    "type": "object",
+  },
+  "AppMyRegistrationDto": {
+    "properties": {
+      "activityId": {
+        "description": "活动外键(Activity.id;前端可拿此 id 走 P2-4 详情)",
+        "type": "string",
+      },
+      "cancelReason": {
+        "description": "取消原因(L1 对本人)",
+        "nullable": true,
+        "type": "object",
+      },
+      "cancelledAt": {
+        "description": "取消时间",
+        "nullable": true,
+        "type": "object",
+      },
+      "createdAt": {
+        "description": "创建时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "extras": {
+        "additionalProperties": true,
+        "description": "扩展字段(用户自定义 JSON;沿 v2 Q-A13 不嵌套校验)",
+        "nullable": true,
+        "type": "object",
+      },
+      "id": {
+        "description": "报名记录主键(cuid)",
+        "example": "cl9z3a8b00000abcd1234efgh",
+        "type": "string",
+      },
+      "registeredAt": {
+        "description": "报名时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "reviewNote": {
+        "description": "审核备注 / 拒绝理由(L1 对本人;本人 reject 解释)",
+        "nullable": true,
+        "type": "object",
+      },
+      "reviewedAt": {
+        "description": "审核时间",
+        "nullable": true,
+        "type": "object",
+      },
+      "statusCode": {
+        "description": "报名状态字典 code(registration_status:pending / pass / reject / cancelled)",
+        "example": "pending",
+        "type": "string",
+      },
+      "updatedAt": {
+        "description": "更新时间",
+        "format": "date-time",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "activityId",
+      "statusCode",
+      "registeredAt",
+      "createdAt",
+      "updatedAt",
+    ],
+    "type": "object",
+  },
+  "AppMyRegistrationListItemDto": {
+    "properties": {
+      "activityCoverImageUrl": {
+        "description": "活动封面图片 URL(join Activity.coverImageUrl;裸 URL 字符串)",
+        "nullable": true,
+        "type": "object",
+      },
+      "activityEndAt": {
+        "description": "活动结束时间(join Activity.endAt;列表派生)",
+        "format": "date-time",
+        "type": "string",
+      },
+      "activityId": {
+        "description": "活动外键(Activity.id;前端可点跳 P2-4 详情)",
+        "type": "string",
+      },
+      "activityStartAt": {
+        "description": "活动开始时间(join Activity.startAt;列表派生)",
+        "format": "date-time",
+        "type": "string",
+      },
+      "activityTitle": {
+        "description": "活动标题(join Activity.title;列表派生)",
+        "example": "梧桐山轮值演练",
+        "type": "string",
+      },
+      "cancelledAt": {
+        "description": "取消时间",
+        "nullable": true,
+        "type": "object",
+      },
+      "createdAt": {
+        "description": "创建时间(排序参考)",
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "description": "报名记录主键(cuid)",
+        "example": "cl9z3a8b00000abcd1234efgh",
+        "type": "string",
+      },
+      "registeredAt": {
+        "description": "报名时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "reviewedAt": {
+        "description": "审核时间",
+        "nullable": true,
+        "type": "object",
+      },
+      "statusCode": {
+        "description": "报名状态字典 code(registration_status:pending / pass / reject / cancelled)",
+        "example": "pending",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "activityId",
+      "activityTitle",
+      "activityStartAt",
+      "activityEndAt",
+      "statusCode",
+      "registeredAt",
+      "createdAt",
+    ],
+    "type": "object",
+  },
   "AppSelfProfileDto": {
     "properties": {
       "avatarKey": {
@@ -6639,6 +6847,612 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "App 视角本人改 profile(严格白名单 nickname / avatarKey)",
       "tags": [
         "Mobile - Me",
+      ],
+    },
+  },
+  "/api/app/v1/my/activities": {
+    "get": {
+      "operationId": "AppMyRegistrationsController_listMyActivities",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "按本人 registration 状态过滤(pending / pass / reject / cancelled);默认全集",
+          "in": "query",
+          "name": "registrationStatusCode",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AppMyActivityListItemDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "我已建立 registration 关系的活动汇总(分页 + 可选 registrationStatusCode 过滤;每活动一行,含本人最新有效 registration 摘要)",
+      "tags": [
+        "Mobile - My Registrations",
+        "Mobile - My Activities",
+      ],
+    },
+  },
+  "/api/app/v1/my/registrations": {
+    "get": {
+      "operationId": "AppMyRegistrationsController_listMy",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "按报名状态过滤(pending / pass / reject / cancelled);默认全集",
+          "in": "query",
+          "name": "statusCode",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AppMyRegistrationListItemDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "我的报名列表(分页 + 可选 statusCode 过滤;sensitive admin 字段不返)",
+      "tags": [
+        "Mobile - My Registrations",
+      ],
+    },
+  },
+  "/api/app/v1/my/registrations/{id}": {
+    "get": {
+      "operationId": "AppMyRegistrationsController_findMy",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppMyRegistrationDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "21001: 报名记录不存在",
+                    "enum": [
+                      21001,
+                    ],
+                    "example": 21001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "报名记录不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "报名记录不存在(code=21001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "我的报名详情(owner 校验:memberId !== currentUser.memberId 统一返 404 防侧信道)",
+      "tags": [
+        "Mobile - My Registrations",
       ],
     },
   },
