@@ -269,9 +269,7 @@ describe('App /api/app/v1/my/* (P2-5a 只读 3 endpoint)', () => {
         statusCode: opts.statusCode,
         reviewNote: opts.reviewNote ?? null,
         cancelReason: opts.cancelReason ?? null,
-        ...(opts.extras !== undefined
-          ? { extras: opts.extras as Prisma.InputJsonValue }
-          : {}),
+        ...(opts.extras !== undefined ? { extras: opts.extras as Prisma.InputJsonValue } : {}),
         deletedAt: opts.deleted === true ? new Date() : null,
         ...(opts.statusCode === 'cancelled' ? { cancelledAt: new Date() } : {}),
         ...(opts.statusCode === 'pass' || opts.statusCode === 'reject'
