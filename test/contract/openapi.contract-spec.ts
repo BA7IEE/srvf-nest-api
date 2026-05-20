@@ -327,8 +327,16 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 可见性沿 D-P2-4-1 = A:仅 statusCode='published' AND deletedAt IS NULL;
   // canUseApp=false → FORBIDDEN(40300);不沿 P2-3 admin-without-member 例外(沿 §6.2);
   // 0 新 BizCode;0 schema 变更;旧 /api/v2/activities* 行为**逐字不变**(沿 §11.4)。
-  // **D-P2-4-5 = split**:P2-4b `GET /:id` 详情独立 PR(本 spec 不含 detail 路径)。
   ['get', '/api/app/v1/activities/available'],
+
+  // Phase 2 P2-4b(2026-05-20):App /api/app/v1/activities/{id} 详情
+  // 沿 docs/app-api-p2-4-activities-review.md §1 接口清单 + §5.1 字段集恰好 13 项;
+  // 可见性沿 D-P2-4-1 = A:仅 statusCode='published' AND deletedAt IS NULL;
+  // 不可见(draft / cancelled / completed / 软删 / 不存在)统一 → 404 ACTIVITY_NOT_FOUND
+  // (沿 D-P2-4-3 v0.1 锁定;避免存在性侧信道);
+  // 0 新 BizCode(复用既有 ACTIVITY_NOT_FOUND=20001);0 schema 变更;
+  // 旧 /api/v2/activities/{id} 行为**逐字不变**(沿 §11.4)。
+  ['get', '/api/app/v1/activities/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -568,6 +576,12 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // 独立 class,**禁止**继承 / Pick / Omit / Mapped Types Admin DTO(沿 §4.3 + Phase 0.7 §2.2)。
   // 分页外层走 @ApiWrappedPageResponse(已注册 PageResultDto + AppAvailableActivityListItemDto)。
   'AppAvailableActivityListItemDto',
+
+  // Phase 2 P2-4b(2026-05-20):App /api/app/v1/activities/{id} 详情 DTO
+  // AppActivityDetailDto:详情出参,字段恰好 13(沿 §5.1 v0.1 锁定);在 list 11 项
+  // 基础上追加 description + registrationNotes;独立 class,**禁止**继承 / Pick / Omit
+  // Admin DTO(沿 §5.4 + Phase 0.7 §2.2)。@ApiWrappedOkResponse 自动注册到 schemas。
+  'AppActivityDetailDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
