@@ -10,16 +10,16 @@
 
 | 项 | 当前值 |
 |---|---|
-| 当前版本 | **v0.14.0**(P0-E refresh token / logout / logout-all 完整闭环;release 收口已完成 2026-05-17T19:16:06Z);**v0.14.0 之后 main 已累计 P0-F RBAC 收紧、Phase 1A Swagger Tag 重命名、App API Phase 2 P2-0 ~ P2-7;尚未发 v0.15.0** |
-| `package.json#version` | `0.14.0`(v0.14.0 之后未 bump) |
-| Swagger `setVersion(...)` | `0.14.0`(v0.14.0 之后未 bump) |
-| 最新 git tag | `v0.14.0`(2026-05-17T19:16:06Z;指向 `72763f5` = PR #130 handoff squash commit) |
-| GitHub Latest Release | `v0.14.0`(标 Latest;publishedAt 2026-05-17T19:16:06Z;Notes 自 `CHANGELOG.md ## v0.14.0 - 2026-05-18` 段抽取) |
-| `main` HEAD | **`a327c7b`** `feat(app): add App my-certificates endpoint (P2-7) (#160)`(App API Phase 2 P2-7 落地,2026-05-20) |
-| open PR | **0**(本 P2-8 docs-only PR 合并后) |
+| 当前版本 | **v0.15.0**(P0-F 管理面 RBAC 收紧 + Phase 1A Swagger Tag 重命名 + App API Phase 2 完整 15 endpoint;release 收口已完成 2026-05-20T17:07:09Z) |
+| `package.json#version` | `0.15.0` |
+| Swagger `setVersion(...)` | `0.15.0` |
+| 最新 git tag | `v0.15.0`(2026-05-20T17:07:09Z;指向 `089499d` = PR #163 handoff squash commit) |
+| GitHub Latest Release | `v0.15.0`(标 Latest;publishedAt 2026-05-20T17:07:09Z;Notes 自 `CHANGELOG.md ## v0.15.0 - 2026-05-20` 段抽取) |
+| `main` HEAD | **`089499d`** `docs(handoff): add v0.15.0 handoff index (#163)`(v0.15.0 handoff index 已合入,2026-05-20) |
+| open PR | **0**(本入口刷新 PR 合并前) |
 | 工作树状态 | clean |
-| 最新 handoff | [`docs/handoff/v0.14.0.md`](handoff/v0.14.0.md)(v0.14.0 历史快照,不回改;v0.14.0 之后无 release,无新 handoff) |
-| Unreleased 累计 | **非空**:P0-F RBAC 收紧 4 PR(#132 / #134 / #136 / #138 / #140;含 #133 / #135 / #137 / #139 评审稿)+ Phase 0/1 边界评审稿(#141)+ Phase 1A Swagger Tag 重命名(#142)+ App API Phase 2 完整 9-PR 串 P2-0 ~ P2-7(#143 ~ #160);**等 P2-8 docs-only 合入后** Unreleased 完成回填,**仍不打 v0.15.0**(本 PR 不到 release 节奏)|
+| 最新 handoff | [`docs/handoff/v0.15.0.md`](handoff/v0.15.0.md)(v0.15.0 release closeout index;上一版 [`v0.14.0.md`](handoff/v0.14.0.md),历史快照不回改) |
+| Unreleased 累计 | **(无;待下一波 V2 / V2.x 增量或文档变更登记)** |
 
 > **复核命令**(任何会话开工前都可以一行跑完):
 >
@@ -31,6 +31,8 @@
 > gh release list --limit 1 && \
 > git status --short
 > ```
+
+> **下一步建议**:`docs/` 体系庞大债务(§4 P1 首行)的第一步,启动 **Governance-1A 只读审计**;**Phase 1B path alias**(`/api/auth/v1/*` + `/api/public/v1/*`)暂缓,等 Governance-1A 审计后再立项。本入口刷新 PR **不**启动以上任一项,**仅刷状态**。
 
 ---
 
@@ -51,10 +53,10 @@
 - **V2.x C-6 RBAC**:`RbacRole` / `Permission` / `RolePermission` / `UserRole` 4 表 + `RbacService.can()` + 14 条 `rbac.*` 权限点 + `ops-admin` 内置角色 + bootstrap user_role
 - **V2.x C-7 attachments**:多态附件主模块(`@unique` key 已加)+ 配置三表(type / mime / size)+ 业务级 `rbac.can()` 首批接入(目前唯一)
 - **V2.x C-7.5 storage**:`StorageSettings` singleton + `LocalStorageProvider` + `CosStorageProvider` + 动态 Router + AES-256-GCM 凭证加密 + 后台 admin API + production fail-fast hook + `APP_ENV=smoke` 专用 CI 形态
-- **v0.14.0 之后 Unreleased 累计能力**(尚未发 v0.15.0):
+- **v0.15.0 已发布能力**(release 收口已完成 2026-05-20T17:07:09Z;tag `v0.15.0` 指向 `089499d` = PR #163 handoff squash commit;GitHub Release Latest = `v0.15.0`):
   - **P0-F RBAC 收紧 4 PR**(评审稿 + 实施):管理面(`rbac/*` 接入 `rbac.can()`,#132)/ 配置面(`config/*` PR-2 + PR-2A + PR-2B,#133 / #134 / #135 / #136)/ 用户管理面(`users/*` 接入 `rbac.can()`,#137 / #138)/ 审计日志面(`audit-logs/*` 接入,#139 / #140);完成"Guard `@Roles(...)` + Service `rbac.can()`" 双轨在管理面的统一收紧
   - **Phase 0/1 客户端边界评审 + Phase 1A Swagger Tag 重命名**(#141 评审 / #142 重命名):Swagger Tag 向 `surface-module` 分类体系收敛(App / Admin / System / Public 4 surface × module);**0 endpoint 变更**(仅 `@ApiTags` 重命名);Phase 1B path alias `/api/auth/v1/*` + `/api/public/v1/*` **本期未启动**
-  - **App API Phase 2 完整 9-PR 串 P2-0 ~ P2-7 全部合入**(#143 ~ #160;沿 [`docs/app-api-phase-2-review.md`](app-api-phase-2-review.md)):**15 个新 endpoint** 全部落地,5 个新 Controller(均以 `@Controller('app/v1/...')` 前缀,沿 [Phase 0.5 §10.2 D-4](app-permission-boundary-review.md) `/me/*` 与 `/my/*` 物理分离):
+  - **App API Phase 2 完整 9-PR 串 P2-0 ~ P2-8 全部合入**(#143 ~ #161;沿 [`docs/app-api-phase-2-review.md`](app-api-phase-2-review.md);P2-8 #161 = docs closeout):**15 个新 endpoint** 全部落地,5 个新 Controller(均以 `@Controller('app/v1/...')` 前缀,沿 [Phase 0.5 §10.2 D-4](app-permission-boundary-review.md) `/me/*` 与 `/my/*` 物理分离):
     - **身份 / 账号 / 能力**(P2-1):`GET /api/app/v1/me` / `GET /api/app/v1/me/account` / `GET /api/app/v1/me/capabilities`(暴露 product-level capability 而非 raw RBAC permission code,沿 D-5.3)
     - **个人资料**(P2-2):`GET /api/app/v1/me/profile` / `PATCH /api/app/v1/me/profile`(白名单严格 2 字段 `nickname` + `avatarKey`;身份证号默认掩码后 4 位)
     - **本人改密**(P2-3):`PUT /api/app/v1/me/password`(继承 P0-D / P0-E 全套铁律:`@PasswordChangeThrottle()` / 10005 / 10006 / 联动撤 refresh / audit `password.change.self`)
@@ -87,6 +89,7 @@
 - **不**自动接入运维侧真实 COS(bucket / IAM / CORS / lifecycle / SSE-COS / 真实凭证录入)— 由队组织运维侧执行,系统侧 SOP 见 [`docs/ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md)
 - **不**自动回改历史 handoff(沿 [`docs/V2红线与复活路径.md §5.1`](V2红线与复活路径.md))
 - **不**把历史评审稿(`docs/批次*.md`)当作"当前事实"— 它们是各批次冻结时刻的决策依据
+- **不**自动启动 **Phase 1B path alias**(`/api/auth/v1/*` + `/api/public/v1/*`)— 暂缓,等 Governance-1A 只读审计后再立项(沿 §1 下一步建议)
 
 ---
 
@@ -99,7 +102,7 @@
 | P0 | 权限体系双轨并存(Guard `@Roles(...)` + Service `rbac.can()`);P0-F 之后**管理面已收紧**(rbac / config / users / audit-logs 4 PR 接入 `rbac.can()`,#132 / #134 / #136 / #138 / #140);**业务模块**(attachments 之外)RBAC 全面接入仍归 Slow-4 范围 | 管理面收紧已完成;业务面等用户拍板 Slow-3 后再启动 Slow-4 |
 | P0 | release 后 docs 回填无明确 checklist | 已沉淀进 [`docs/process.md §5`](process.md) |
 | P0 | `FINAL_REPORT.md` 在根目录顶层但内容是 v0.1.3 时代 | 后续单独 docs PR 加段头或归档,**本 PR 不动** |
-| P0 | 第一版前端联调包待齐备 | ✅ P0-A 起步包(#110)+ ✅ P0-G BizCode 翻译表(#111)+ ✅ P0-C bootstrap SOP(#113)+ ✅ P0-D 本人自助改密(评审稿 #115 / 铁律修订 #116 / 代码实现 #117 / 状态回填 #118)+ ✅ P0-B 测试 COS 闭环验收(#125)+ ✅ **P0-E refresh token / logout / logout-all**(评审稿 + 铁律解锁 + 2 hotfix #126 / 代码实现 #127 / 状态回填 #128)+ ✅ **P0-F RBAC 收紧 4 PR**(#132 / #134 / #136 / #138 / #140;含 #133 / #135 / #137 / #139 评审稿;管理面 / 配置面 / 用户管理面 / 审计日志面全部接入 `rbac.can()`)全部落地;**v0.14.0 release 收口已完成**(#129 bump + #130 handoff + tag `v0.14.0` 指向 `72763f5` + GitHub Release Latest 已发布,2026-05-17T19:16:06Z);v0.13.0 release 收口在前已完成(#119 CHANGELOG + #120 bump + #121 handoff + tag/Release 已发布,2026-05-17);**仍待立项**:P0-H 部署演练(prod COS bucket / IAM / 真实凭证)/ P0-I 排错 SOP;运营 / 运维侧 SOP 执行(字典 items 录入 + 三张附件配置表 + 测试账号矩阵创建)仍待运维侧 |
+| P0 | 第一版前端联调包待齐备 | ✅ P0-A 起步包(#110)+ ✅ P0-G BizCode 翻译表(#111)+ ✅ P0-C bootstrap SOP(#113)+ ✅ P0-D 本人自助改密(#115 / #116 / #117 / #118)+ ✅ P0-B 测试 COS 闭环验收(#125)+ ✅ P0-E refresh token / logout / logout-all(#126 / #127 / #128)+ ✅ P0-F RBAC 收紧 4 PR(#132 ~ #140)全部落地;**v0.15.0 release 收口已完成**(#162 bump + #163 handoff + tag `v0.15.0` 指向 `089499d` + GitHub Release Latest 已发布 2026-05-20T17:07:09Z;v0.15.0 入口刷新由本 PR 完成);v0.14.0 release 收口在前已完成(2026-05-17T19:16:06Z);v0.13.0 release 收口在前已完成(2026-05-17);**仍待立项**:P0-H 部署演练 / P0-I 排错 SOP;运营 / 运维侧 SOP 执行仍待运维侧;**下一步建议**:Governance-1A 只读审计(沿 §1 下一步建议) |
 | P1 | docs/ 体系庞大(根 6 大文档 + docs/ 30+ 文件) | 长期逐步归档(`docs/v1.3-plan.md` / `v1.4-prisma7-evaluation.md` / `srvf-foundation-data-model-draft.md` 等老草案) |
 | P1 | `docs/V2红线与复活路径.md` 顶部"基线版本 v0.7.0"严重滞后于实际 v0.12.0 | 改为滚动维护或明示最后核对版本 |
 | P1 | `TASKS.md` 单文件 1742 行,V1.1 历史与 V2.x 当前混排 | 已加范围说明,长期可拆 |
@@ -139,7 +142,7 @@
 7. [`docs/V2红线与复活路径.md`](V2红线与复活路径.md) — V2 五档红线(A/B/C/D/E)
 8. **仅在相关时**:
    - 对应批次评审稿 `docs/批次*.md`(冻结决议)
-   - 历史 handoff `docs/handoff/v*.md`(release 时刻快照;**最新入口** [`v0.14.0.md`](handoff/v0.14.0.md);上一版 [`v0.13.0.md`](handoff/v0.13.0.md))
+   - 历史 handoff `docs/handoff/v*.md`(release 时刻快照;**最新入口** [`v0.15.0.md`](handoff/v0.15.0.md);上一版 [`v0.14.0.md`](handoff/v0.14.0.md))
    - 运行 SOP:[`development.md`](development.md) / [`testing.md`](testing.md) / [`deployment.md`](deployment.md) / [`security.md`](security.md) / [`ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md)
    - 第一版联调前置 SOP:[`first-release-bootstrap-sop.md`](first-release-bootstrap-sop.md)(zero-to-login 串行清单;P0-C 落地于 #113)
    - 第一版 P0-D 评审稿:[`first-release-p0d-change-my-password-review.md`](first-release-p0d-change-my-password-review.md)(本人自助改密;v0.13.0 已按评审稿全部落地)
