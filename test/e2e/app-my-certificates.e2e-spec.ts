@@ -681,7 +681,11 @@ describe('App /api/app/v1/my/certificates (P2-7)', () => {
       .get(`/api/v2/members/${memberAId}/certificates`)
       .set('Authorization', adminWithMemberAuth);
     expect(res.status).toBe(200);
-    const body = res.body as { code: number; message: string; data: Array<Record<string, unknown>> };
+    const body = res.body as {
+      code: number;
+      message: string;
+      data: Array<Record<string, unknown>>;
+    };
     expect(Array.isArray(body.data)).toBe(true);
     expect(body.data.length).toBeGreaterThan(0);
     // admin DTO 含 memberId / updatedAt(确认 App DTO 字段隔离不影响 admin)
