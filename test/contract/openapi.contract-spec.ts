@@ -358,6 +358,14 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // registration.review;0 新 BizCode;0 schema 变更;旧 admin / me write path 行为不变。
   ['post', '/api/app/v1/my/registrations'],
   ['patch', '/api/app/v1/my/registrations/{id}/cancel'],
+
+  // Phase 2 P2-6(2026-05-20):App /api/app/v1/my/attendance-records 1 endpoint
+  // 沿 docs/app-api-p2-6-attendance-records-review.md §4 endpoint 契约 + §5 字段集恰好 14;
+  // 复用 attendances.service.listMyRecords(沿 D-P2-6-2 thin-wrap;0 service diff);
+  // AppMy service 内 2 次 IN 批量查 AttendanceSheet + Activity(沿 D-P2-6-6 + §7.4 默认方案);
+  // 0 新 BizCode / 0 schema / 0 migration / 0 新依赖;
+  // 旧 /api/v2/users/me/attendance-records 行为**逐字不变**(沿 D-P2-6-15 + §11.1 path stability)。
+  ['get', '/api/app/v1/my/attendance-records'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -624,6 +632,13 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // (沿 D-P2-5-6 + §8.1 + 风险 14.1)。
   'CreateAppMyRegistrationDto',
   'CancelAppMyRegistrationDto',
+
+  // Phase 2 P2-6(2026-05-20):App /my/attendance-records 出参 DTO
+  // 字段集严格沿 §5.1 v0.1 锁定 14 项;独立 class,**禁止**继承 / Pick / Omit / Mapped Types
+  // admin AttendanceRecordResponseDto(沿 D-P2-6-4 + Phase 0.7 §2.2)。
+  // 注:ListAppMyAttendanceRecordsQueryDto 是 @Query() DTO,被 NestJS Swagger 内联为
+  // parameters,**不**注册到 components.schemas(沿 P2-5a query DTO 同范式)。
+  'AppMyAttendanceRecordDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
