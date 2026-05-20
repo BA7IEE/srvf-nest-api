@@ -4,9 +4,11 @@
 
 ## Unreleased
 
-> v0.14.0 之后主线累计:**P0-F RBAC 收紧 4 PR**(管理面 / 配置面 / 用户管理面 / 审计日志面接入 `rbac.can()`)+ **Phase 0/1 客户端边界评审 + Phase 1A Swagger Tag 重命名**(0 endpoint 变更)+ **App API Phase 2 完整 9-PR 串 P2-0 ~ P2-7**(15 个 `/api/app/v1/*` 端点 + 5 个新 Controller + 8 个 e2e spec)。
->
-> **不打 v0.15.0**:本 P2-8 docs-only PR **不到 release 节奏**;后续真正打 v0.15.0 时,本段整体迁入 `## v0.15.0 - YYYY-MM-DD` 历史段(沿 [`docs/process.md §5`](docs/process.md) release 收口范式)。
+- (无;待下一波 V2 / V2.x 增量或文档变更登记)
+
+## v0.15.0 - 2026-05-20
+
+> SemVer 拍板:`0.14.0 → 0.15.0` 归类为 **minor**。本版本新增 App API Phase 2 mobile surface 15 个 `/api/app/v1/*` endpoint,完成 P0-F 管理面 RBAC 收紧,并完成 Phase 1A Swagger surface-module tag 重命名;旧 `/api/v2/*` / Admin / Ops / Auth 路径保持兼容,0 schema migration,0 新依赖。
 
 ### Added
 
