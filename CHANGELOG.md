@@ -4,7 +4,50 @@
 
 ## Unreleased
 
-(无;待下一波 V2 / V2.x 增量或文档变更登记)
+> v0.14.0 之后主线累计:**P0-F RBAC 收紧 4 PR**(管理面 / 配置面 / 用户管理面 / 审计日志面接入 `rbac.can()`)+ **Phase 0/1 客户端边界评审 + Phase 1A Swagger Tag 重命名**(0 endpoint 变更)+ **App API Phase 2 完整 9-PR 串 P2-0 ~ P2-7**(15 个 `/api/app/v1/*` 端点 + 5 个新 Controller + 8 个 e2e spec)。
+>
+> **不打 v0.15.0**:本 P2-8 docs-only PR **不到 release 节奏**;后续真正打 v0.15.0 时,本段整体迁入 `## v0.15.0 - YYYY-MM-DD` 历史段(沿 [`docs/process.md §5`](docs/process.md) release 收口范式)。
+
+### Added
+
+- **App API Phase 2 mobile surface — 15 个新 endpoint + 5 个新 Controller**(沿 [`docs/app-api-phase-2-review.md`](docs/app-api-phase-2-review.md) + Phase 0.5 / 0.6 / 0.7 全套约束):
+  - **P2-1**(#144):`GET /api/app/v1/me` / `GET /api/app/v1/me/account` / `GET /api/app/v1/me/capabilities`(新 `app-me.controller.ts`;`@Controller('app/v1/me')`;暴露 **product-level capability** 而非 raw RBAC permission code,沿 [`CLAUDE.md §19.7 D-5.3`](CLAUDE.md))
+  - **P2-2**(#146 实施 / #145 评审):`GET /api/app/v1/me/profile` / `PATCH /api/app/v1/me/profile`(白名单严格 **2 字段** `nickname` + `avatarKey`;`PATCH` **禁止**夹带 Member 业务字段 / Emergency contacts / Organization / Department / Account / Role / Permission / Status / 审批内部字段;身份证号默认掩码后 4 位)
+  - **P2-3**(#148 实施 / #147 评审):`PUT /api/app/v1/me/password`(独立 PR;继承 P0-D / P0-E 全套铁律 `@PasswordChangeThrottle()` + `OLD_PASSWORD_INVALID=10005` + `NEW_PASSWORD_SAME_AS_OLD=10006` + 联动撤本人全部 refresh token + audit `password.change.self`)
+  - **P2-4a**(#153 实施 / #149 + #152 评审 lock):`GET /api/app/v1/activities/available`(我可参加的活动列表:published + 报名窗内 + 未满 + 未被本人报过;新 method `activities.service.listAvailableForMember(memberId, query)`,**不**复用 admin `list`)
+  - **P2-4b**(#154 实施):`GET /api/app/v1/activities/{id}`(App 视角详情 DTO;复用 `findOne` + 新 `AppActivityPresenter`,与 admin DTO 物理隔离)
+  - **P2-5a**(#155 实施 / #150 + #151 评审):`GET /api/app/v1/my/registrations` / `GET /api/app/v1/my/registrations/{id}` / `GET /api/app/v1/my/activities`(新 `app-my-registrations.controller.ts`;`@Controller('app/v1/my')`;资源 owner 双重校验)
+  - **P2-5b**(#156 实施):`POST /api/app/v1/my/registrations`(入参带 `activityId`;Policy 检查活动状态 / 报名窗 / 上限 / 已报过 / 资格)/ `PATCH /api/app/v1/my/registrations/{id}/cancel`(状态机 transition guard + 取消窗校验)
+  - **P2-6**(#158 实施 / #157 评审):`GET /api/app/v1/my/attendance-records`(本人考勤记录汇总;新 `app-my-attendance-records.controller.ts` + `AppMyAttendanceRecordDto` + `app-my-attendance-records.service.ts` + 新 Presenter)
+  - **P2-7**(#160 实施 / #159 评审):`GET /api/app/v1/my/certificates`(本人证书列表;新 `app-my-certificates.controller.ts` + `AppMyCertificateDto` + `app-my-certificates.service.ts` + `certificates.service.listForMember(memberId, query)`)
+- **App API 准入语义**(沿 [`docs/app-permission-boundary-review.md §10.2`](docs/app-permission-boundary-review.md) D-5):仅 `User.memberId != null && User.status=ACTIVE && User.deletedAt IS NULL && Member.status=ACTIVE` 的正式队员可用 App;候选 / 临时编号志愿者**本期不支持**;Admin 兼队员走 linked-member self perspective,**不**扩大字段可见性
+- **App API DTO 严格 Mobile 隔离**:Phase 2 全部 DTO 均新建 `dto/app/` 子目录承载;**禁止** `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 一个 Admin DTO 构造 App DTO(沿 [Phase 0.6 §6.1](docs/data-access-lifecycle-boundary-review.md) + [Phase 0.7 §2.2](docs/code-architecture-boundary-review.md));App API where 子句永远用 `currentUser.memberId` 锁定本人(`scope = self`);**永不返回 L3 字段**(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / 完整 signed URL)
+- **P0-F RBAC 收紧 4 PR**(管理面收紧;沿 [first-release P0-F 评审范式](docs/first-release-readiness-plan.md)):
+  - **PR-1**(#132):RBAC 管理面 `rbac/*` 接入 `rbac.can()`
+  - **PR-2 / PR-2A / PR-2B**(#133 评审 / #134 + #135 + #136 实施):config 管理面接入 `rbac.can()`(分 PR-2A 与 PR-2B 两步;含 #135 `ops-admin` 角色 grant SOP)
+  - **PR-3**(#137 评审 / #138 实施):users 管理面接入 `rbac.can()`
+  - **PR-4**(#139 评审 / #140 实施):audit-logs 管理面接入 `rbac.can()`
+- **App API E2E 覆盖扩张**:Phase 2 新增 **8 个 App API e2e spec**(`test/e2e/app-me.e2e-spec.ts` / `app-me-password.e2e-spec.ts` / `app-activities-available.e2e-spec.ts` / `app-activities-detail.e2e-spec.ts` / `app-my-registrations-read.e2e-spec.ts` / `app-my-registrations-write.e2e-spec.ts` / `app-my-attendance-records.e2e-spec.ts` / `app-my-certificates.e2e-spec.ts`);E2E spec 总数 55 → **63**
+
+### Changed
+
+- **Phase 1A Swagger Tag 重命名**(#142;沿 [`docs/api-client-boundary-phase-1-review.md`](docs/api-client-boundary-phase-1-review.md)):Swagger `@ApiTags` 向 `surface-module` 分类体系收敛(App / Admin / System / Public 4 surface × module 命名);**0 endpoint 变更 / 0 path 变更 / 0 DTO 变更 / 0 行为变更**;仅 controller `@ApiTags(...)` 字符串调整
+- **Contract OpenAPI snapshot 覆盖面扩张**:`test/contract/openapi.contract-spec.ts` `EXPECTED_ROUTES` 新增 **15 个 `/api/app/v1/*` 端点白名单**(P2-1 ~ P2-7 全部);snapshot 同步更新覆盖全部新增 endpoint 与 DTO
+
+### Docs
+
+- **App API Phase 2 评审稿系列**(8 份评审稿,沿 P2-N 串行立项范式):
+  - [`docs/app-api-phase-2-review.md`](docs/app-api-phase-2-review.md):Phase 2 总评审稿(#143 / P2-0;15 endpoint + 9 PR 串 + 15 条风险表)
+  - [`docs/app-api-p2-2-profile-review.md`](docs/app-api-p2-2-profile-review.md)(#145):P2-2 profile read/update 实施评审
+  - [`docs/app-api-p2-3-password-review.md`](docs/app-api-p2-3-password-review.md)(#147):P2-3 password 实施评审
+  - [`docs/app-api-p2-4-activities-review.md`](docs/app-api-p2-4-activities-review.md)(#149 / #152 lock):P2-4 activities 实施评审
+  - [`docs/app-api-p2-5-registrations-review.md`](docs/app-api-p2-5-registrations-review.md)(#150 / #151 index sync):P2-5 registrations 实施评审
+  - [`docs/app-api-p2-6-attendance-records-review.md`](docs/app-api-p2-6-attendance-records-review.md)(#157):P2-6 attendance-records 实施评审
+  - [`docs/app-api-p2-7-my-certificates-review.md`](docs/app-api-p2-7-my-certificates-review.md)(#159):P2-7 my-certificates 实施评审
+- **Phase 0/1 客户端边界评审**(#141):新增顶层规范 [`docs/api-client-boundary.md`](docs/api-client-boundary.md) + 现状盘点 [`docs/api-client-boundary-inventory.md`](docs/api-client-boundary-inventory.md) + 分阶段路线 [`docs/api-client-boundary-migration-plan.md`](docs/api-client-boundary-migration-plan.md) + Phase 1 评审 [`docs/api-client-boundary-phase-1-review.md`](docs/api-client-boundary-phase-1-review.md) + 4 份 App 边界配套评审(`app-permission-boundary-review.md` / `data-access-lifecycle-boundary-review.md` / `code-architecture-boundary-review.md`)
+- **P0-F RBAC 评审稿系列**:#133(config PR-2 评审)/ #135(ops-admin grant SOP)/ #137(users PR-3 评审)/ #139(audit-logs PR-4 评审)
+- **v0.14.0 handoff entrypoint 刷新**(#131):`docs/current-state.md` v0.14.0 release 后入口刷新
+- **P2-8 docs-only 收尾**(本 PR):`docs/current-state.md` §1 + §2 + §4 回填(HEAD `72763f5` → `a327c7b`,Unreleased 累计能力段)/ `CHANGELOG.md` Unreleased 段填充本段 / `docs/app-api-phase-2-review.md` §12.4 验收锚点 P2-0 ~ P2-7 标 ✅,P2-8 标本 PR;**0 src / 0 prisma / 0 test / 0 contract snapshot / 0 package / 0 workflow / 0 .env.example / 0 README / 0 handoff / 0 CLAUDE.md / 0 AGENTS.md / 0 ARCHITECTURE.md** 变更
 
 ## v0.14.0 - 2026-05-18
 
