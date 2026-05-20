@@ -604,7 +604,8 @@ P2-0 是 **A 档 docs-only**;**不**要求跑 e2e;**仅**要求:
 - **P2-2** `/api/app/v1/me/profile` GET / PATCH → [`docs/app-api-p2-2-profile-review.md`](app-api-p2-2-profile-review.md)(2026-05-19 v0)
 - **P2-3** `PUT /api/app/v1/me/password` → [`docs/app-api-p2-3-password-review.md`](app-api-p2-3-password-review.md)(2026-05-20 v0)。**P2-3 implementation must read `docs/app-api-p2-3-password-review.md` before code changes.**
 - **P2-4** `GET /api/app/v1/activities/available` + `GET /api/app/v1/activities/:id` → [`docs/app-api-p2-4-activities-review.md`](app-api-p2-4-activities-review.md)(2026-05-20 v0)。**P2-4 implementation must read `docs/app-api-p2-4-activities-review.md` before code changes.**
-- P2-1 / P2-5 / P2-6 / P2-7 — 各 PR 启动前由用户决议是否需要独立评审稿;不需独立评审稿的 PR 直接沿本评审稿 §2 ~ §10 实施
+- **P2-5** `GET /api/app/v1/my/activities` + `/my/registrations` × 4 → [`docs/app-api-p2-5-registrations-review.md`](app-api-p2-5-registrations-review.md)(2026-05-20 v0)。**P2-5 implementation must read `docs/app-api-p2-5-registrations-review.md` before code changes.** P2-5 拆 P2-5a(读 3 endpoint)+ P2-5b(写 2 endpoint);P2-5 implementation 必须等待 P2-4a + P2-4b 全部合入。
+- P2-1 / P2-6 / P2-7 — 各 PR 启动前由用户决议是否需要独立评审稿;不需独立评审稿的 PR 直接沿本评审稿 §2 ~ §10 实施
 
 ---
 
