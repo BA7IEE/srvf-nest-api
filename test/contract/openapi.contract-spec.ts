@@ -337,6 +337,18 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 0 新 BizCode(复用既有 ACTIVITY_NOT_FOUND=20001);0 schema 变更;
   // 旧 /api/v2/activities/{id} 行为**逐字不变**(沿 §11.4)。
   ['get', '/api/app/v1/activities/{id}'],
+
+  // Phase 2 P2-5a(2026-05-20):App /api/app/v1/my/* 3 只读 endpoint
+  // 沿 docs/app-api-p2-5-registrations-review.md §13.7 + D-P2-5-5;5 endpoint 全部
+  // 挂在 AppMyRegistrationsController @Controller('app/v1/my');本 PR 仅落 3 GET,
+  // 写 2 endpoint(POST / PATCH cancel)留 P2-5b。
+  // 准入沿 §7.1 / §7.3 + D-5.2:5 endpoint 全部前置 AppIdentityResolver.resolve +
+  // canUseApp;**不**沿 D-P2-3-1 admin-without-member 例外。
+  // 0 新 BizCode(D-P2-5-10);0 schema 变更;旧 /api/v2/users/me/registrations* 4 path
+  // 行为**逐字不变**(沿 §5.3 + §15.2 + 风险 14.13;PR review 强查 controller.ts 无 diff)。
+  ['get', '/api/app/v1/my/registrations'],
+  ['get', '/api/app/v1/my/registrations/{id}'],
+  ['get', '/api/app/v1/my/activities'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -582,6 +594,18 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // 基础上追加 description + registrationNotes;独立 class,**禁止**继承 / Pick / Omit
   // Admin DTO(沿 §5.4 + Phase 0.7 §2.2)。@ApiWrappedOkResponse 自动注册到 schemas。
   'AppActivityDetailDto',
+
+  // Phase 2 P2-5a(2026-05-20):App /my/* registrations DTO(3 核心出参)
+  // 字段集严格沿 docs/app-api-p2-5-registrations-review.md §8.2.1 (11 项) / §8.2.2
+  // (12 项 - §16.B.2 不返 memberId = 11 项) / §8.2.3 (11 项)。
+  // **禁止**继承 / Pick / Omit / IntersectionType / PartialType / OmitType / Mapped Types
+  // admin DTO(沿 D-P2-5-6 + §8.1 + 风险 14.1)。
+  // 注:ListAppMyRegistrationsQueryDto / ListAppMyActivitiesQueryDto 是 @Query() DTO
+  // 继承 PaginationQueryDto,被 NestJS Swagger 内联为 parameters,**不**注册到
+  // components.schemas(沿 batch 3 / P2-4 query DTO 同范式)。
+  'AppMyRegistrationListItemDto',
+  'AppMyRegistrationDto',
+  'AppMyActivityListItemDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
