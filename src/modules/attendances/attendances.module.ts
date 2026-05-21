@@ -3,6 +3,7 @@ import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { UsersModule } from '../users/users.module';
 import { AppMyAttendanceRecordsService } from './app-my-attendance-records.service';
+import { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import {
   AttendanceRecordsMeController,
   AttendanceSheetsCollectionController,
@@ -41,6 +42,7 @@ import { AppMyAttendanceRecordsController } from './controllers/app-my-attendanc
     ContributionCalculator,
     TimeOverlapPolicy,
     AttendanceSheetStateMachine,
+    AttendanceAuditRecorder,
   ],
 })
 export class AttendancesModule {}
