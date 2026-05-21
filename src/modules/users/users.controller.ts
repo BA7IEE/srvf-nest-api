@@ -1,17 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Patch,
-  Post,
-  Put,
-  Query,
-  Req,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
@@ -24,16 +11,13 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
-import { PasswordChangeThrottle } from '../../common/decorators/password-change-throttle.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
-  ChangeMyPasswordDto,
   CreateUserDto,
   ListUsersQueryDto,
   ResetUserPasswordDto,
-  UpdateMyProfileDto,
   UpdateUserDto,
   UpdateUserRoleDto,
   UpdateUserStatusDto,
@@ -43,7 +27,7 @@ import { UsersService } from './users.service';
 
 // **权限标注**(P0-F PR-3B,2026-05-18):8 个管理端点入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;
 // 全部判权迁移到 Service 内 `rbac.can()`,失败抛 `RBAC_FORBIDDEN(30100)`。
-// 沿评审稿 docs/first-release-p0f-pr3-users-rbac-review.md §4 / §8 + D1=A / D2=B / D3=A:
+// 沿评审稿 docs/archive/reviews/first-release-p0f-pr3-users-rbac-review.md §4 / §8 + D1=A / D2=B / D3=A:
 //   GET    /api/users              → user.read.account     (绑 ops-admin)
 //   POST   /api/users              → user.create.account   (绑 ops-admin)
 //   GET    /api/users/:id          → user.read.account     (绑 ops-admin)
@@ -54,77 +38,17 @@ import { UsersService } from './users.service';
 //   DELETE /api/users/:id          → user.delete.account   (绑 ops-admin)
 // service 内 6 项业务护栏全保留:canViewUser / canManageUser / canCreateRole /
 // canChangeRole / assertNotSelf / assertNotLastSuperAdmin(沿评审稿 §8.3)。
-// `/me` 3 端点保持任意登录用户可访问,**不**进 RBAC 范围(沿评审稿 §2.2)。
 //
-// Phase 1A(2026-05-19):Mixed Controller — class-level @ApiTags 用占多数的 surface
-// ('Admin - Users';8/11 端点为管理面);3 个 /me 端点 method-level 追加 'Mobile - Me'。
-// 因 NestJS Swagger 11 method-level @ApiTags 是 append 不是 replace,/me 端点最终
-// 会被同时归入 ['Admin - Users', 'Mobile - Me'] 两个 tag(dual tag),这是预期内的
-// Mixed 边界视觉信号;物理拆 Controller 留 Phase 5(沿 docs/api-client-boundary-phase-1-review.md §2.2)。
+// P1-C step 1(2026-05-21):Mixed Controller 物理拆分,把原 3 个 Root Legacy `/me*`
+// 端点(GET / PATCH /me + PUT /me/password)迁出到 UsersMeLegacyController
+// (controllers/users-me-legacy.controller.ts),沿 docs/api-surface-policy.md §5 项 1 +
+// §7 P1-C step 1;**endpoint path / DTO / service / Guard / RBAC / throttler / Swagger Tag 全部 zero drift**。
+// 本 Controller 拆分后仅承载 8 个 Admin 管理端点,class-level @ApiTags 不再与 Mobile - Me 同存。
 @ApiTags('Admin - Users')
 @ApiBearerAuth()
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
-
-  // ===== /me(本人接口,任何登录用户均可访问;**不**进 RBAC 范围)=====
-
-  @Get('me')
-  @ApiTags('Mobile - Me')
-  @ApiOperation({ summary: '获取本人资料' })
-  @ApiWrappedOkResponse(UserResponseDto)
-  @ApiBizErrorResponse(BizCode.UNAUTHORIZED)
-  findMe(@CurrentUser() currentUser: CurrentUserPayload): Promise<UserResponseDto> {
-    return this.usersService.findMe(currentUser);
-  }
-
-  @Patch('me')
-  @ApiTags('Mobile - Me')
-  @ApiOperation({ summary: '修改本人非敏感资料(仅 nickname / avatarKey)' })
-  @ApiWrappedOkResponse(UserResponseDto)
-  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED)
-  updateMyProfile(
-    @CurrentUser() currentUser: CurrentUserPayload,
-    @Body() dto: UpdateMyProfileDto,
-  ): Promise<UserResponseDto> {
-    return this.usersService.updateMyProfile(currentUser, dto);
-  }
-
-  // P0-D PR-3(2026-05-17):本人自助改密。
-  // 沿 docs/first-release-p0d-change-my-password-review.md §3.1 / §5;
-  // @PasswordChangeThrottle 启用独立 throttler `password-change` 限流(5 次 / 60 秒 IP 维度)。
-  // 与管理员重置接口 PUT /:id/password 行为对称区分:本接口需 oldPassword,管理员重置不需。
-  @PasswordChangeThrottle()
-  @Put('me/password')
-  @ApiTags('Mobile - Me')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '本人自助改密(需 oldPassword);不主动吊销旧 token' })
-  @ApiWrappedOkResponse(UserResponseDto)
-  @ApiBizErrorResponse(
-    BizCode.BAD_REQUEST,
-    BizCode.UNAUTHORIZED,
-    BizCode.USER_NOT_FOUND,
-    BizCode.OLD_PASSWORD_INVALID,
-    BizCode.NEW_PASSWORD_SAME_AS_OLD,
-    BizCode.TOO_MANY_REQUESTS,
-  )
-  changeMyPassword(
-    @CurrentUser() currentUser: CurrentUserPayload,
-    @Body() dto: ChangeMyPasswordDto,
-    @Req() req: Request,
-  ): Promise<UserResponseDto> {
-    return this.usersService.changeMyPassword(currentUser, dto, this.buildAuditMeta(req));
-  }
-
-  // P0-D PR-3:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
-  // 不引入 cls-rs / AsyncLocalStorage)。沿 emergency-contacts.controller.ts 范式。
-  private buildAuditMeta(req: Request): AuditMeta {
-    return {
-      requestId: req.id as string,
-      ip: req.ip ?? null,
-      ua: req.headers['user-agent'] ?? null,
-    };
-  }
 
   // ===== 管理接口(P0-F PR-3B:走 rbac.can();失败 30100)=====
 
@@ -273,5 +197,17 @@ export class UsersController {
     @Param() params: IdParamDto,
   ): Promise<UserResponseDto> {
     return this.usersService.softDelete(currentUser, params.id);
+  }
+
+  // P0-D PR-3:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
+  // 不引入 cls-rs / AsyncLocalStorage)。沿 emergency-contacts.controller.ts 范式。
+  // P1-C step 1(2026-05-21):本 helper 由 UsersMeLegacyController 持有独立副本,本类
+  // 保留以服务 resetPassword(管理员重置密码端点;沿"物理拆分零行为变更"原则)。
+  private buildAuditMeta(req: Request): AuditMeta {
+    return {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    };
   }
 }
