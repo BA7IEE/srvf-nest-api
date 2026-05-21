@@ -5,7 +5,7 @@
 承载内容:队员档案、任务派遣、训练 / 出勤、装备、值班排班等公益救援队内部管理能力。
 
 > **Derived from [`u-nest-api-starter`](https://github.com/BA7IEE/u-nest-api-starter) `v0.1.6`** (派生日期 2026-05-04)。
-> 模板提供的所有规范文档(`ARCHITECTURE.md` / `CLAUDE.md` / `AGENTS.md`)与工程基础设施(认证 / 用户 / 健康检查 / 错误码 / 日志 / 限流)继续生效;SRVF 业务模块在 `src/modules/` 下平铺新增,不修改模板已锁定的 `auth/` 与 `users/` 路由契约。
+> 长期 AI 协作规则以 [`AGENTS.md`](./AGENTS.md) 为主入口;[`CLAUDE.md`](./CLAUDE.md) 仅作为 Claude Code 转发入口。架构背景以 [`ARCHITECTURE.md`](./ARCHITECTURE.md) 为准(请先读其顶部"§0 当前阶段说明"),**当前事实以 [`docs/current-state.md`](./docs/current-state.md) 为准**。模板沉淀的工程基础设施(认证 / 用户 / 健康检查 / 错误码 / 日志 / 限流)继续生效;SRVF 业务模块在 `src/modules/` 下平铺新增,不修改模板已锁定的 `auth/` 与 `users/` 路由契约。
 >
 > 工程基础设施(Docker 容器名、CI workflow、测试数据库脚本)沿用模板的 `u-nest-api-*` 命名,这是稳定的工程契约,**不要改名**。
 
@@ -117,7 +117,7 @@ V2 第一阶段开发已完成并随 v0.13.0 发布;v0.14.0(P0-E refresh / logou
 
 完整字段、错误码、权限矩阵详见 [`docs/v2-api-contract.md`](./docs/v2-api-contract.md);在线调试见 `/api/docs` Swagger UI。
 
-`member_profiles` / `emergency_contacts`(批次 1)+ `certificates`(批次 2)+ `activities` / `activity_registrations`(批次 3A)+ **`attendance_sheets` / `attendance_records`(批次 3B)**+ **`ContributionRule` schema + AttendanceSheet 终审 3 字段(批次 4-A)**+ **终审 / D14 ContributionRule 预填 / D11 Activity.completed 推动(批次 4-B)**已全部落地(详见上表)。批次 3 schema 含 4 model 已 commit(`31c8187`);批次 3A API(`6a9339b`)+ 批次 3B API(`5dbd230`)+ 批次 4-A schema(`2190803`)+ 批次 4-B service/API(`6812db9`)接续交付,**累计 86 接口** contract zero drift(86 = v1 14 + V2 first stage 29 + 批次 1 7 + 批次 2 8 + 批次 3A 17 + 批次 3B 9 + 批次 4-B 2)。V2.x 复活路径(当前 v0.11.0 后状态;权威源 [`docs/V2红线与复活路径.md`](docs/V2红线与复活路径.md) §4):**`audit_logs` 已于 v0.7.0 第一波局部启动**(8 处写迁移 + 2 接口;余 22 处 `auditPlaceholder` 调用继续 pino-only,按业务诉求渐进迁出);**仍延后**:`events` / `event_participants` / `member_profiles`(`attachments` 元数据已实装于 v0.10.0;Provider + signed URL 直传 + 后台凭证管理已实装于 v0.11.0);`ContributionRule` CRUD 接口、`contribution_points` 流水表、APD 部门部长 / 副部长专属权限均不在批次 4 范围。
+`member_profiles` / `emergency_contacts`(批次 1)+ `certificates`(批次 2)+ `activities` / `activity_registrations`(批次 3A)+ **`attendance_sheets` / `attendance_records`(批次 3B)**+ **`ContributionRule` schema + AttendanceSheet 终审 3 字段(批次 4-A)**+ **终审 / D14 ContributionRule 预填 / D11 Activity.completed 推动(批次 4-B)**已全部落地(详见上表)。批次 3 schema 含 4 model 已 commit(`31c8187`);批次 3A API(`6a9339b`)+ 批次 3B API(`5dbd230`)+ 批次 4-A schema(`2190803`)+ 批次 4-B service/API(`6812db9`)接续交付。**当前 V2.x 复活路径与当前解锁状态以 [`docs/current-state.md`](./docs/current-state.md) 与 [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) 为准**;READ ME 不再维护批次级累计接口数与逐版本快照。
 
 ---
 
