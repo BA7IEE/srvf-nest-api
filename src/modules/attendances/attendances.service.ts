@@ -11,6 +11,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ContributionCalculator } from './contribution-calculator';
+import { TimeOverlapPolicy } from './time-overlap-policy';
 import {
   ApproveAttendanceSheetDto,
   ATTENDANCE_SHEET_STATUS,
@@ -179,6 +180,7 @@ export class AttendancesService {
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
     private readonly contributionCalculator: ContributionCalculator,
+    private readonly timeOverlapPolicy: TimeOverlapPolicy,
   ) {}
 
   // ============ helpers:序列化 ============
@@ -394,48 +396,11 @@ export class AttendancesService {
     };
   }
 
-  // 时间不重叠校验(R16 / Q-S15):同 memberId × [checkInAt, checkOutAt) 左闭右开
-  // 跨 Sheet / 跨 Activity 全局,deletedAt IS NULL。
-  // excludeSheetId:edit 时排除旧 Sheet 的 records(因为它们将被替换)。
-  private async assertNoTimeOverlap(
-    memberId: string,
-    checkInAt: Date,
-    checkOutAt: Date,
-    excludeSheetId: string | undefined,
-    tx: PrismaTx,
-  ): Promise<void> {
-    const conflicts = await tx.attendanceRecord.findMany({
-      where: notDeletedWhere({
-        memberId,
-        ...(excludeSheetId !== undefined ? { sheetId: { not: excludeSheetId } } : {}),
-        AND: [{ checkInAt: { lt: checkOutAt } }, { checkOutAt: { gt: checkInAt } }],
-      }),
-      select: { id: true },
-      take: 1,
-    });
-    if (conflicts.length > 0) {
-      throw new BizException(BizCode.ATTENDANCE_TIME_OVERLAP);
-    }
-  }
-
-  // 同一 records 数组内自检不重叠(R16:同 batch 也不能内部冲突)。
-  private assertNoInternalOverlap(
-    records: ReturnType<AttendancesService['normalizeRecord']>[],
-  ): void {
-    const byMember = new Map<string, Array<{ start: number; end: number }>>();
-    for (const r of records) {
-      const arr = byMember.get(r.memberId) ?? [];
-      const start = r.checkInAt.getTime();
-      const end = r.checkOutAt.getTime();
-      for (const e of arr) {
-        if (start < e.end && end > e.start) {
-          throw new BizException(BizCode.ATTENDANCE_TIME_OVERLAP);
-        }
-      }
-      arr.push({ start, end });
-      byMember.set(r.memberId, arr);
-    }
-  }
+  // 时间不重叠校验(R16 / Q-S15)已抽至 `time-overlap-policy.ts` 的 `TimeOverlapPolicy`
+  // (refactor PR;沿 PR #179 9 个 characterization case 锁定的现状行为零变化)。
+  // submit(...) / edit(...) 内通过 `this.timeOverlapPolicy.assertNoInternalOverlap(...)` +
+  // `this.timeOverlapPolicy.assertNoTimeOverlap(...)` 委托,事务边界保持在
+  // `this.prisma.$transaction(...)` 内(tx 透传;excludeSheetId 语义不变)。
 
   // ============ submit(POST 提交 Sheet)============
 
@@ -479,9 +444,16 @@ export class AttendancesService {
       }
 
       // 3. 数组内部时间不重叠 + 与已有跨 Sheet 全局不重叠
-      this.assertNoInternalOverlap(normalized);
+      // 抽出至 TimeOverlapPolicy(refactor PR;算法 / 边界 / excludeSheetId 语义零变化)。
+      this.timeOverlapPolicy.assertNoInternalOverlap(normalized);
       for (const r of normalized) {
-        await this.assertNoTimeOverlap(r.memberId, r.checkInAt, r.checkOutAt, undefined, tx);
+        await this.timeOverlapPolicy.assertNoTimeOverlap(
+          r.memberId,
+          r.checkInAt,
+          r.checkOutAt,
+          undefined,
+          tx,
+        );
       }
 
       // 4. D14 5.B 预填:仅当 record.contributionPoints === null 时按规则查表预填;
@@ -774,10 +746,17 @@ export class AttendancesService {
         normalized.push(this.normalizeRecord(input));
       }
 
-      this.assertNoInternalOverlap(normalized);
+      // 抽出至 TimeOverlapPolicy(refactor PR;edit 路径透传 excludeSheetId=id 语义不变)。
+      this.timeOverlapPolicy.assertNoInternalOverlap(normalized);
       for (const r of normalized) {
         // edit 路径:排除本 Sheet 旧 records(它们将被软删)
-        await this.assertNoTimeOverlap(r.memberId, r.checkInAt, r.checkOutAt, id, tx);
+        await this.timeOverlapPolicy.assertNoTimeOverlap(
+          r.memberId,
+          r.checkInAt,
+          r.checkOutAt,
+          id,
+          tx,
+        );
       }
 
       // 2. 生成 previousSnapshot(在旧 records 软删之前抓取)

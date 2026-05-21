@@ -10,6 +10,7 @@ import {
 } from './attendances.controller';
 import { AttendancesService } from './attendances.service';
 import { ContributionCalculator } from './contribution-calculator';
+import { TimeOverlapPolicy } from './time-overlap-policy';
 import { AppMyAttendanceRecordsController } from './controllers/app-my-attendance-records.controller';
 
 // V2 批次 6 PR #6(D6 v1.1 §8 / 第二波最后一批):导入 AuditLogsModule 以注入 AuditLogsService,
@@ -33,6 +34,11 @@ import { AppMyAttendanceRecordsController } from './controllers/app-my-attendanc
     AttendanceRecordsMeController,
     AppMyAttendanceRecordsController,
   ],
-  providers: [AttendancesService, AppMyAttendanceRecordsService, ContributionCalculator],
+  providers: [
+    AttendancesService,
+    AppMyAttendanceRecordsService,
+    ContributionCalculator,
+    TimeOverlapPolicy,
+  ],
 })
 export class AttendancesModule {}
