@@ -16,6 +16,7 @@
 | **开发 / PR 分级 / release 收口流程** | [`docs/process.md`](./docs/process.md) |
 | **API surface 长期边界**(/api/app/v1 / /api/v2 / root legacy) | [`docs/api-surface-policy.md`](./docs/api-surface-policy.md) |
 | **客户端边界设计期顶层规范** | [`docs/api-client-boundary.md`](./docs/api-client-boundary.md) |
+| **Participation 业务上下文边界图**(activities / activity-registrations / attendances / contribution-rules 4 模块;不含 certificates) | [`docs/participation-bounded-context.md`](./docs/participation-bounded-context.md) |
 | **V2 基线规范 / 红线** | [`docs/srvf-foundation-baseline.md`](./docs/srvf-foundation-baseline.md) / [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) |
 | **安全 / 部署 / 测试 / 排错** | [`docs/security.md`](./docs/security.md) / [`docs/deployment.md`](./docs/deployment.md) / [`docs/testing.md`](./docs/testing.md) / [`docs/development.md`](./docs/development.md) |
 | **历史 handoff / 评审稿 / 批次 / first-release 过程档案** | [`docs/archive/`](./docs/archive/) — **历史证据,不再作为当前执行约束** |

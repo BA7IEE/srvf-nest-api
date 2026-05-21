@@ -187,6 +187,7 @@
 9. [`docs/V2红线与复活路径.md`](V2红线与复活路径.md) — V2 五档红线(A/B/C/D/E)
 10. **仅在相关时**:
     - 运行 SOP:[`development.md`](development.md) / [`testing.md`](testing.md) / [`deployment.md`](deployment.md) / [`security.md`](security.md) / [`ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md)
+    - 业务上下文边界图:[`participation-bounded-context.md`](participation-bounded-context.md)(activities / activity-registrations / attendances / contribution-rules 4 模块的状态链条与跨模块耦合;**不**含 certificates)
     - 历史 handoff:[`archive/handoff/v0.15.0.md`](archive/handoff/v0.15.0.md)(最新)/ [`v0.14.0.md`](archive/handoff/v0.14.0.md) / 更早版本均在 [`archive/handoff/`](archive/handoff/)
     - 历史评审稿 / 批次决议:[`archive/reviews/`](archive/reviews/) / [`archive/batches/`](archive/batches/)
     - 历史阶段计划:[`archive/plans/`](archive/plans/)(含 `first-release-bootstrap-sop.md` / `first-release-p0d-change-my-password-review.md` 在 `archive/reviews/`)
