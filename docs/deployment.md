@@ -41,7 +41,7 @@ docker run --rm -p 3000:3000 \
   -e APP_ENV=production \
   -e DATABASE_URL='postgresql://USER:PASSWORD@HOST:5432/app?schema=public' \
   -e JWT_SECRET="$(openssl rand -base64 48)" \
-  -e JWT_EXPIRES_IN=7d \
+  -e JWT_EXPIRES_IN=15m \
   -e APP_CORS_ORIGIN=https://app.example.com \
   -e ENABLE_SWAGGER=false \
   u-nest-api-starter:v1.2
