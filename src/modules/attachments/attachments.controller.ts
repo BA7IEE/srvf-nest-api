@@ -11,7 +11,7 @@ import {
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
-import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
@@ -28,11 +28,12 @@ import { AttachmentsService } from './attachments.service';
 
 // V2.x C-7 attachments 实施 PR #6b(2026-05-15):attachments 主模块 Controller。
 //
-// 7 个端点(沿 D7-attachments v1.0 §5.1):
+// 端点(沿 D7-attachments v1.0 §5.1;**本 Controller 拆分后仅承载 8 个 Admin 端点**):
 //   POST   /api/v2/attachments                创建附件元数据
 //   GET    /api/v2/attachments                列表(分页;管理后台用;逐条 ownership 过滤)
+//   POST   /api/v2/attachments/upload-url     申请 signed upload URL(模式 B)
+//   POST   /api/v2/attachments/confirm-upload 确认上传完成(模式 B)
 //   GET    /api/v2/attachments/by-owner       按 ownerType+ownerId 列出(业务模块常用)
-//   GET    /api/v2/attachments/me/uploaded    本人上传列表
 //   GET    /api/v2/attachments/:id            详情
 //   PATCH  /api/v2/attachments/:id            更新 description / accessLevel / tags / expireAt
 //   DELETE /api/v2/attachments/:id            物理删(Q11 v1.0)
@@ -40,13 +41,13 @@ import { AttachmentsService } from './attachments.service';
 // **入口 Guard 统一 JwtAuthGuard**(F3 v1.0 锁;**不加** `@Roles(...)`):全部判权
 //   在 Service 层 rbac.can();失败抛 30100 RBAC_FORBIDDEN(写) / 13001 ATTACHMENT_NOT_FOUND(读)。
 //
-// **路径顺序铁律**:`/by-owner` / `/me/uploaded` 必须放在 `/:id` 之前,避免被 :id 通配匹配。
-
-// Phase 1A(2026-05-19):Mixed Controller — class-level @ApiTags 用占多数的 surface
-// ('Admin - Attachments';8/9 端点);/me/uploaded method-level 追加 'Mobile - Attachments'。
-// 因 NestJS Swagger 11 method-level @ApiTags 是 append 不是 replace,/me/uploaded 最终
-// 会被同时归入 ['Admin - Attachments', 'Mobile - Attachments'] 两个 tag(dual tag),
-// 这是预期内的 Mixed 边界视觉信号;App 端独立链路拆 Phase 2/3 评审。
+// **路径顺序铁律**:`/by-owner` / `/upload-url` / `/confirm-upload` 必须放在 `/:id` 之前,避免被 :id 通配匹配。
+//
+// P1-C step 2(2026-05-21):Mixed Controller 物理拆分,把原 `GET /me/uploaded`(method-level
+// 挂 `Mobile - Attachments` tag 的唯一端点)迁出到 AttachmentsMeLegacyController
+// (controllers/attachments-me-legacy.controller.ts),沿 docs/api-surface-policy.md §5 项 4 +
+// §7 P1-C step 2;endpoint path / DTO / service / Guard / RBAC / Swagger Tag 全部 zero drift。
+// 本 Controller 拆分后 class-level @ApiTags 不再与 Mobile - Attachments 同存。
 @ApiTags('Admin - Attachments')
 @ApiBearerAuth()
 @ApiExtraModels(AttachmentResponseDto, UploadUrlResponseDto)
@@ -168,20 +169,6 @@ export class AttachmentsController {
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<PageResultDto<AttachmentResponseDto>> {
     return this.service.listByOwner(query, user);
-  }
-
-  @Get('me/uploaded')
-  @ApiTags('Mobile - Attachments')
-  @ApiOperation({
-    summary: '列出本人上传的附件(自动按 uploadedBy=currentUser.id 筛;不走 RBAC;沿"本人查自己"豁免)',
-  })
-  @ApiWrappedPageResponse(AttachmentResponseDto)
-  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED)
-  listMyUploaded(
-    @Query() query: PaginationQueryDto,
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<PageResultDto<AttachmentResponseDto>> {
-    return this.service.listMyUploaded(query, user);
   }
 
   @Get(':id')
