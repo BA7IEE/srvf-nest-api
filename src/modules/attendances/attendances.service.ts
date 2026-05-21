@@ -10,6 +10,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { ContributionCalculator } from './contribution-calculator';
 import {
   ApproveAttendanceSheetDto,
   ATTENDANCE_SHEET_STATUS,
@@ -177,6 +178,7 @@ export class AttendancesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
+    private readonly contributionCalculator: ContributionCalculator,
   ) {}
 
   // ============ helpers:序列化 ============
@@ -484,7 +486,8 @@ export class AttendancesService {
 
       // 4. D14 5.B 预填:仅当 record.contributionPoints === null 时按规则查表预填;
       //    传值不覆盖(沿 D-A8);无匹配规则保持 null。
-      const prefilled = await this.applyContributionRulePrefill(
+      // 抽出至 ContributionCalculator(refactor PR;算法 / 三态 / cap / 排序均零行为变化)。
+      const prefilled = await this.contributionCalculator.applyContributionRulePrefill(
         normalized,
         activity.activityTypeCode,
         tx,
@@ -571,114 +574,10 @@ export class AttendancesService {
     return act;
   }
 
-  // 批次 4-B 新增:D14 5.B 预填(沿 D-S4 / D-A8 / 业务规则文档 §4)。
-  // 输入:normalized records + activityTypeCode;
-  // 输出:applied records(contributionPoints 已按规则预填或保持调用方传入值)。
-  //
-  // 入参三态处理(沿 D-A8 + v0.6 契约小修复):
-  //   undefined → 走预填(匹配规则取值;无匹配规则 → null)
-  //   null      → 调用方显式清空,跳过预填,保持 null(APD 在 approve 前现场填入)
-  //   number    → 调用方已传值,不覆盖
-  //
-  // 规则匹配维度:
-  //   (activityTypeCode, attendanceRoleCode, durationThreshold) WHERE deletedAt IS NULL AND status='ACTIVE'
-  // 服务时长档位(若规则 durationThreshold 非 null):
-  //   record.serviceHours <= rule.durationThreshold → 取 rule.pointsBelow
-  //   record.serviceHours >  rule.durationThreshold → 取 rule.pointsAbove ?? pointsBelow
-  // 服务时长无档位(rule.durationThreshold === null):
-  //   直接取 rule.pointsBelow(pointsAbove 不参与)
-  // 每日上限:rule.dailyCap 兜底 1.5(沿 Q-OPEN-7 / D-S3);
-  //   预填值 = MIN(candidatePoints, effectiveDailyCap)。
-  //
-  // NULL durationThreshold 选取(沿 §3.1 复核报告):
-  //   ORDER BY createdAt ASC LIMIT 1(明确,不随机)。
-  //   TODO(批次 4.x 或后续):若运营后台引入多条 NULL durationThreshold ACTIVE 规则,
-  //   考虑加 service 兜底校验或 BizCode;当前批次只取首条不阻塞创建。
-  //
-  // 无匹配规则:保持 contributionPoints = null(不抛错;沿 D-S11 22048 不开)。
-  private async applyContributionRulePrefill(
-    records: ReturnType<AttendancesService['normalizeRecord']>[],
-    activityTypeCode: string,
-    tx: PrismaTx,
-  ): Promise<ReturnType<AttendancesService['normalizeRecord']>[]> {
-    const result: ReturnType<AttendancesService['normalizeRecord']>[] = [];
-    for (const r of records) {
-      // 显式 null = 跳过预填(v0.6 契约小修复);number = 已传值,不覆盖
-      if (r.contributionPoints !== undefined) {
-        result.push(r);
-        continue;
-      }
-      // undefined = 走预填
-      const points = await this.computePrefilledPoints(
-        activityTypeCode,
-        r.roleCode,
-        r.serviceHours,
-        tx,
-      );
-      result.push({ ...r, contributionPoints: points });
-    }
-    return result;
-  }
-
-  // 默认日上限 1.5(沿 Q-OPEN-7 锁定;ContributionRule.dailyCap === null 时兜底)。
-  private readonly DEFAULT_DAILY_CAP = 1.5;
-
-  private async computePrefilledPoints(
-    activityTypeCode: string,
-    attendanceRoleCode: string,
-    serviceHours: number,
-    tx: PrismaTx,
-  ): Promise<number | null> {
-    const candidates = await tx.contributionRule.findMany({
-      where: {
-        activityTypeCode,
-        attendanceRoleCode,
-        status: 'ACTIVE',
-        deletedAt: null,
-      },
-      select: {
-        durationThreshold: true,
-        pointsBelow: true,
-        pointsAbove: true,
-        dailyCap: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'asc' },
-    });
-    if (candidates.length === 0) {
-      return null;
-    }
-    // 优先匹配 record.serviceHours 落入档位的规则;若多条候选(同维度多规则)按 createdAt ASC 取首条。
-    // 实际唯一约束(partial unique)已限制非 NULL durationThreshold 唯一;NULL 档位可能多条,沿 §3.1 复核取首条。
-    let chosen: (typeof candidates)[number] | null = null;
-    for (const rule of candidates) {
-      if (rule.durationThreshold === null) {
-        // NULL 档位:无服务时长阈值,优先取首条;若 chosen 未设则赋值
-        if (chosen === null) chosen = rule;
-        continue;
-      }
-      // 非 NULL 档位:按 durationThreshold 匹配;首条匹配即取
-      if (chosen === null) chosen = rule;
-    }
-    if (chosen === null) {
-      chosen = candidates[0];
-    }
-    const threshold = chosen.durationThreshold;
-    let candidatePoints: number;
-    if (threshold === null) {
-      candidatePoints = Number(chosen.pointsBelow);
-    } else if (serviceHours <= Number(threshold)) {
-      candidatePoints = Number(chosen.pointsBelow);
-    } else {
-      candidatePoints =
-        chosen.pointsAbove !== null ? Number(chosen.pointsAbove) : Number(chosen.pointsBelow);
-    }
-    const effectiveCap =
-      chosen.dailyCap !== null ? Number(chosen.dailyCap) : this.DEFAULT_DAILY_CAP;
-    const finalPoints = Math.min(candidatePoints, effectiveCap);
-    // 保留 2 位小数(对齐 Decimal(5,2))
-    return Math.round(finalPoints * 100) / 100;
-  }
+  // 批次 4-B D14 5.B contribution prefill 已抽至 `contribution-calculator.ts` 的
+  // `ContributionCalculator`(refactor PR;沿 D-S4 / D-A8 / D-S11 / §3.1)。
+  // submit(...) 内通过 `this.contributionCalculator.applyContributionRulePrefill(...)` 委托,
+  // 事务边界保持在 `this.prisma.$transaction(...)` 内(tx 透传)。
 
   // ============ list(GET 列表)============
 
