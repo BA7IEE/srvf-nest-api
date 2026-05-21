@@ -6,6 +6,7 @@ import { AppCapabilityService } from './app-capability.service';
 import { AppIdentityResolver } from './app-identity.resolver';
 import { AppProfileService } from './app-profile.service';
 import { AppMeController } from './controllers/app-me.controller';
+import { UsersMeLegacyController } from './controllers/users-me-legacy.controller';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 
@@ -29,12 +30,24 @@ import { UsersService } from './users.service';
 // **不**注入 MemberProfilesService(避免跨模块耦合;沿 §7.2 + 风险表 11.15)。
 //
 // Phase 2 P2-4a(2026-05-20):exports AppIdentityResolver 供 ActivitiesModule 注入
-// (沿 docs/app-api-p2-4-activities-review.md §6.1 准入复用 P2-1 范式)。
+// (沿 docs/archive/reviews/app-api-p2-4-activities-review.md §6.1 准入复用 P2-1 范式)。
 // 仅 exports resolver,**不** exports UsersService / AppCapabilityService / AppProfileService
 // (避免下游模块隐式扩散对 users 内部能力的依赖)。
+//
+// P1-C step 1(2026-05-21):新增 UsersMeLegacyController(`/api/users/me*` 3 个 Root Legacy
+// mobile-like 端点)。endpoint path / DTO / service / Guard / RBAC / throttler / Swagger
+// Tag 全部 zero drift(沿 docs/api-surface-policy.md §5 项 1 + §7 P1-C step 1 + §8 P1
+// 禁止事项)。
+//
+// **controllers 数组顺序硬约束**:`UsersMeLegacyController` 必须**先于** `UsersController`
+// 注册。两者共用 `@Controller('users')` 前缀;`UsersController` 含 `@Get(':id')` /
+// `@Patch(':id')` 等通配方法,NestJS / Express 按注册顺序匹配路由,若 UsersController
+// 在前,`/users/me` 会被匹配为 `findOne({ id: 'me' })`,`me` 因 IdParamDto 长度 8-64
+// 校验失败 → 400 BAD_REQUEST。沿"物理拆分零行为变更"原则,通过注册顺序保 `/users/me`
+// 命中字面段 `me`。AppMeController 走独立 `app/v1/me` 前缀,顺序不影响。
 @Module({
   imports: [DatabaseModule, AuditLogsModule, PermissionsModule],
-  controllers: [UsersController, AppMeController],
+  controllers: [UsersMeLegacyController, UsersController, AppMeController],
   providers: [UsersService, AppIdentityResolver, AppCapabilityService, AppProfileService],
   exports: [AppIdentityResolver],
 })
