@@ -23,7 +23,6 @@ import {
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -34,19 +33,19 @@ import {
   ActivityRegistrationResponseDto,
   ApproveRegistrationDto,
   CancelRegistrationDto,
-  CreateMyRegistrationDto,
   CreateRegistrationDto,
   ExportRegistrationsQueryDto,
-  ListMyRegistrationsQueryDto,
   ListRegistrationsQueryDto,
   RejectRegistrationDto,
 } from './activity-registrations.dto';
 import { ActivityRegistrationsService } from './activity-registrations.service';
 
-// V2 批次 6 PR #5 共享 helper:从 @Req() 构造 AuditMeta(D6 v1.1 §11.2 / D8 拍板;
-// 不引入 cls-rs / AsyncLocalStorage)。两个 controller 共用此函数(模块级私有,沿
-// contribution-rules / activities 单 controller 类内私有方法的范式;activity-registrations
-// 模块有 2 个 controller 同需此 helper,提到模块级以避免重复)。
+// V2 批次 6 PR #5 helper:从 @Req() 构造 AuditMeta(D6 v1.1 §11.2 / D8 拍板;
+// 不引入 cls-rs / AsyncLocalStorage)。
+//
+// P1-C step 3(2026-05-21):Mobile class `ActivityRegistrationsMeController` 已物理拆出到
+// `controllers/activity-registrations-me-legacy.controller.ts`,该文件持有独立副本(沿
+// "物理拆分零跨文件耦合"原则)。本文件保留此模块级函数供 Admin class 使用。
 function buildAuditMeta(req: Request): AuditMeta {
   return {
     requestId: req.id as string,
@@ -55,21 +54,20 @@ function buildAuditMeta(req: Request): AuditMeta {
   };
 }
 
-// V2 第一阶段批次 3A activity-registrations controllers(10 路由)。
+// V2 第一阶段批次 3A activity-registrations admin controller(6 路由)。
 //
 // 管理端(/v2/activities/:activityId/registrations,6 路由):
 //   GET '' list / POST '' 代报名 / GET 'export' / PATCH ':id/approve' /
 //   PATCH ':id/reject' / PATCH ':id/cancel'
 //
-// 队员端(/v2/users/me,4 路由,Q-A2 + Q-A3 拆开):
-//   POST 'activities/:activityId/registration'(USER 自助;单数 registration)
-//   GET  'registrations'(我的报名列表)
-//   GET  'registrations/:id'(我的报名详情)
-//   PATCH 'registrations/:id/cancel'(我取消报名)
+// P1-C step 3(2026-05-21):队员端 4 路由(`POST activities/:activityId/registration` /
+// `GET registrations` / `GET registrations/:id` / `PATCH registrations/:id/cancel`)已物理
+// 迁出到 `controllers/activity-registrations-me-legacy.controller.ts`;endpoint path /
+// DTO / service / Guard / RBAC / Swagger Tag 全部 zero drift(沿 docs/api-surface-policy.md
+// §5 项 3 + §7 P1-C step 3 + §8 P1 禁止事项)。
 //
 // 路由声明顺序(NestJS 字面段优先于 :id 占位段):
-//   admin controller:list / create / export(字面)/ approve / reject / cancel(均挂 :id/<action>)
-//   me controller:POST 单数 registration / GET list / GET detail / PATCH cancel
+//   list / create / export(字面)/ approve / reject / cancel(均挂 :id/<action>)
 //
 // Q-A6 CSV export:
 //   - Controller 返回 StreamableFile;ResponseInterceptor 已自动跳过(instanceof 判断)
@@ -235,96 +233,6 @@ export class ActivityRegistrationsAdminController {
   }
 }
 
-// ============ 队员端 Controller(/v2/users/me)============
-
-@ApiTags('Mobile - Registrations')
-@ApiBearerAuth()
-@Controller('v2/users/me')
-export class ActivityRegistrationsMeController {
-  constructor(private readonly service: ActivityRegistrationsService) {}
-
-  @Post('activities/:activityId/registration')
-  @Roles(Role.USER, Role.ADMIN, Role.SUPER_ADMIN)
-  @ApiOperation({
-    summary:
-      'USER 自助报名(Q-A3 与 ADMIN 代报名拆开;单数 registration;memberId 强制注入 currentUser.user.memberId)',
-  })
-  @ApiWrappedOkResponse(ActivityRegistrationResponseDto)
-  @ApiBizErrorResponse(
-    BizCode.BAD_REQUEST,
-    BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
-    BizCode.ACTIVITY_NOT_FOUND,
-    BizCode.MEMBER_NOT_FOUND,
-    BizCode.ACTIVITY_NOT_PUBLIC_REGISTRATION,
-    BizCode.ACTIVITY_CANCELLED_REGISTRATION_FORBIDDEN,
-    BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS,
-    BizCode.ACTIVITY_CAPACITY_EXCEEDED,
-  )
-  createMy(
-    @Param() params: ActivityIdParamDto,
-    @Body() dto: CreateMyRegistrationDto,
-    @CurrentUser() currentUser: CurrentUserPayload,
-    @Req() req: Request,
-  ): Promise<ActivityRegistrationResponseDto> {
-    return this.service.createMy(params.activityId, dto, currentUser, buildAuditMeta(req));
-  }
-
-  @Get('registrations')
-  @Roles(Role.USER, Role.ADMIN, Role.SUPER_ADMIN)
-  @ApiOperation({ summary: '我的报名列表(分页;含 cancelled)' })
-  @ApiWrappedPageResponse(ActivityRegistrationListItemDto)
-  @ApiBizErrorResponse(
-    BizCode.BAD_REQUEST,
-    BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
-    BizCode.MEMBER_NOT_FOUND,
-  )
-  listMy(
-    @Query() query: ListMyRegistrationsQueryDto,
-    @CurrentUser() currentUser: CurrentUserPayload,
-  ): Promise<PageResultDto<ActivityRegistrationListItemDto>> {
-    return this.service.listMy(query, currentUser);
-  }
-
-  @Get('registrations/:id')
-  @Roles(Role.USER, Role.ADMIN, Role.SUPER_ADMIN)
-  @ApiOperation({
-    summary: '我的报名详情(强制 memberId === currentUser.user.memberId,否则 404)',
-  })
-  @ApiWrappedOkResponse(ActivityRegistrationResponseDto)
-  @ApiBizErrorResponse(
-    BizCode.BAD_REQUEST,
-    BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
-    BizCode.MEMBER_NOT_FOUND,
-    BizCode.ACTIVITY_REGISTRATION_NOT_FOUND,
-  )
-  findMy(
-    @Param() params: IdParamDto,
-    @CurrentUser() currentUser: CurrentUserPayload,
-  ): Promise<ActivityRegistrationResponseDto> {
-    return this.service.findMy(params.id, currentUser);
-  }
-
-  @Patch('registrations/:id/cancel')
-  @Roles(Role.USER, Role.ADMIN, Role.SUPER_ADMIN)
-  @ApiOperation({ summary: '我取消报名(pending|pass → cancelled)' })
-  @ApiWrappedOkResponse(ActivityRegistrationResponseDto)
-  @ApiBizErrorResponse(
-    BizCode.BAD_REQUEST,
-    BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
-    BizCode.MEMBER_NOT_FOUND,
-    BizCode.ACTIVITY_REGISTRATION_NOT_FOUND,
-    BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
-  )
-  cancelMy(
-    @Param() params: IdParamDto,
-    @Body() dto: CancelRegistrationDto,
-    @CurrentUser() currentUser: CurrentUserPayload,
-    @Req() req: Request,
-  ): Promise<ActivityRegistrationResponseDto> {
-    return this.service.cancelMy(params.id, dto, currentUser, buildAuditMeta(req));
-  }
-}
+// P1-C step 3(2026-05-21):队员端 Controller(`ActivityRegistrationsMeController`,
+// @Controller('v2/users/me'),4 路由)已迁出到
+// `controllers/activity-registrations-me-legacy.controller.ts`。
