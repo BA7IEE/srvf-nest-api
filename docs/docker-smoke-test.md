@@ -38,7 +38,7 @@
 
 | 变量 | 取值 | 备注 |
 |---|---|---|
-| `APP_ENV` | `production` | 强校验:必须 ∈ `{development, test, production}` |
+| `APP_ENV` | `production` | 强校验:必须 ∈ `{development, test, production, smoke}` |
 | `APP_PORT` | `3000` | 容器内端口 |
 | `APP_CORS_ORIGIN` | `https://app.example.com` | production 下禁止为空 / 禁止 `*` |
 | `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/app_smoke?schema=public` | 容器内通过 docker network 解析 `postgres` 服务名 |

@@ -176,7 +176,7 @@ export interface AppConfig {
 export default registerAs('app', (): AppConfig => {
   const env = process.env.APP_ENV;
   if (!isAppEnv(env)) {
-    throw new Error(`APP_ENV 无效:"${env ?? ''}",必须是 development | test | production`);
+    throw new Error(`APP_ENV 无效:"${env ?? ''}",必须是 development | test | production | smoke`);
   }
 
   const port = parsePort(process.env.APP_PORT);
