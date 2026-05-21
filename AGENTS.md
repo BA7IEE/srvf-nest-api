@@ -1,23 +1,45 @@
-# AGENTS.md — 通用 AI Agent 项目协作铁律
+# AGENTS.md — 长期 AI 协作铁律主入口
 
-> 给所有 **AI 编码助手 / Agent**(Cursor、GitHub Copilot Chat、Continue、Cline、其他 CLI / IDE Agent)看的项目工作铁律,从 `ARCHITECTURE.md` §7 与附录抽取。
-> 修改本仓库代码前必须读完:`ARCHITECTURE.md`(v1 蓝图)+ `AGENTS.md`;如使用 Claude Code,还必须读 `CLAUDE.md`。
-> 本文与 `CLAUDE.md` 内容**保持同步、并存**,差异仅在入口表述。如本文与 `ARCHITECTURE.md` 表述冲突,**以 `ARCHITECTURE.md` 为准**。
-> 除非用户明确要求,AI 不得修改 `ARCHITECTURE.md`;实现过程中发现文档与代码冲突时,必须先暂停并说明。
+> 给所有 **AI 编码助手 / Agent**(Claude Code、Cursor、GitHub Copilot Chat、Continue、Cline、其他 CLI / IDE Agent)看的项目工作铁律,从 `ARCHITECTURE.md` §7 与附录抽取并随 SRVF 派生演进。
+>
+> **本文件是长期 AI 协作铁律唯一主入口**。`CLAUDE.md` 自 v0.15.0 docs 治理收口起已收口为入口转发(≤80 行),不再维护独立规则副本。
 
 ---
 
-## SRVF 派生项目规则解释(v0.13.0 适用)
+## 权威源分层(冲突时按此顺序判定)
 
-> 本仓库 `srvf-nest-api` 是 `u-nest-api-starter` 的派生项目,**当前已演进到 v0.13.0**(first-release 起步包 51 路由)。
+| 你想知道的事 | 第一时间读 |
+|---|---|
+| **当前事实**(版本、open PR、最新 release、surface 状态、当前债务) | [`docs/current-state.md`](docs/current-state.md) |
+| **长期 AI 协作铁律**(本文件 §1-§19) | **本文件 `AGENTS.md`** |
+| **API surface 长期边界** | [`docs/api-surface-policy.md`](docs/api-surface-policy.md) |
+| **客户端边界顶层规范** | [`docs/api-client-boundary.md`](docs/api-client-boundary.md) |
+| **V2 基线规范 / 红线** | [`docs/srvf-foundation-baseline.md`](docs/srvf-foundation-baseline.md) / [`docs/V2红线与复活路径.md`](docs/V2红线与复活路径.md) |
+| **流程制度**(开工 checklist / PR 五档 / release 收口) | [`docs/process.md`](docs/process.md) |
+| **架构设计背景**(v1 蓝图 / V1.1 工程加固 / V2 §12) | [`ARCHITECTURE.md`](ARCHITECTURE.md)(请先读其顶部"当前阶段说明") |
+| **历史 handoff / 评审稿 / 批次 / first-release 过程档案** | [`docs/archive/`](docs/archive/) — **历史证据,不再作为当前执行约束** |
+
+**冲突顺序**(从高到低):
+1. **当前事实**:[`docs/current-state.md`](docs/current-state.md) + 代码 + GitHub 当前状态
+2. **长期铁律**:本文件 > [`srvf-foundation-baseline.md`](docs/srvf-foundation-baseline.md) > [`V2红线与复活路径.md`](docs/V2红线与复活路径.md) > [`api-surface-policy.md`](docs/api-surface-policy.md)
+3. **流程制度**:[`docs/process.md`](docs/process.md)
+4. **架构设计背景**:[`ARCHITECTURE.md`](ARCHITECTURE.md)
+5. **历史证据**:[`docs/archive/`](docs/archive/) — 仅作为"为什么这么决议"的可追溯性参考
+
+**铁律**:
+- 除非用户明确要求,AI **不得**修改 `ARCHITECTURE.md`、`AGENTS.md`、`docs/srvf-foundation-baseline.md`、`docs/V2红线与复活路径.md`、`docs/api-surface-policy.md`
+- 实现过程中发现文档与代码冲突时,**必须先暂停并说明**,不得擅自调和
+- `archive/**` 内文档只代表归档时刻的决议;当前代码已演进,以 `src/**` + `docs/current-state.md` 为准
+
+---
+
+## SRVF 派生项目规则解释
+
+> 本仓库 `srvf-nest-api` 是 `u-nest-api-starter` 的派生项目,当前版本以 [`package.json`](package.json) `version` 字段为准、当前能力与 surface 状态以 [`docs/current-state.md`](docs/current-state.md) 为准。
 >
-> **当前事实优先读** [`docs/current-state.md`](docs/current-state.md) / [`docs/process.md`](docs/process.md) / [`docs/handoff/v0.13.0.md`](docs/handoff/v0.13.0.md) / first-release 系列(`docs/first-release-*.md`)/ 批次评审稿(`docs/批次N_*.md`)。本文 §0-§18 的母模板原文,只作为**历史来源与通用工程参考**。
->
-> §1 的"v1 不做清单" **不是永久禁令**——按 §1 内 A / B / C 三档读取。
+> §1 的"v1 不做清单" **不是永久禁令**——按 §1 内 A / B / C 三档读取。许多原属"不预先做"的条目(RBAC / refresh token / App API / 附件 Provider / audit_logs)已在 SRVF 派生过程中由真实业务诉求驱动解锁;具体已解锁清单见 [`docs/current-state.md §2`](docs/current-state.md)。
 >
 > 当用户提出**真实业务需求 / 联调需求 / 上线风险 / 安全风险**时,AI **不得仅凭旧条目直接拒绝**,应进入评审解锁(说明状态 → 列出影响面 → 判断档位 → 给出最小评审方案 → 等用户拍板)。
->
-> 本节与 [`CLAUDE.md`](CLAUDE.md) 同步;冲突按 `ARCHITECTURE.md` > `CLAUDE.md` / `AGENTS.md` > 本节 顺序处理。
 
 ---
 
