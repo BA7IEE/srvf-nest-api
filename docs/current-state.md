@@ -50,7 +50,7 @@
 > git status --short
 > ```
 
-> **下一步建议**:Governance-1A 只读审计已于 2026-05-21 落地为本 docs PR(文档权威源收口 + 过程档案归档 + CLAUDE.md 转发化 + `api-surface-policy.md` 新增);**Phase 1B path alias**(`/api/auth/v1/*` + `/api/public/v1/*`)继续暂缓,等运维侧 / 业务方拍板后单独立项;**Mixed Controller 物理拆分**与 **service god-object 拆分**(`attendances.service.ts` / `attachments.service.ts` / `activity-registrations.service.ts`)按 §4 P2 / §6 顺序处理。
+> **下一步建议**:Governance-1A 只读审计已于 2026-05-21 落地为 PR #165(文档权威源收口 + 过程档案归档 + CLAUDE.md 转发化 + `api-surface-policy.md` 新增);**P1 API surface / Mixed Controller 只读评审已完成,结论为**:先 P1-A docs-only 决策锁(本 PR;补齐 6 项 Mixed Controller 存量清单 + 8 项 mobile-like endpoint 处置矩阵 + P1-A/B/C/D 顺序),沿 [`api-surface-policy.md §5-§8`](api-surface-policy.md);**Phase 1B path alias**(`/api/auth/v1/*` + `/api/public/v1/*`)**继续暂缓**(沿 §7 P1-D);**第一优先 Mixed Controller 拆分目标 = [`users.controller.ts`](../src/modules/users/users.controller.ts)**(沿 §7 P1-C);P1-B characterization tests 在 P1-C 拆分前必须先补。**本 PR 只锁决策,不改代码**。
 
 ---
 
