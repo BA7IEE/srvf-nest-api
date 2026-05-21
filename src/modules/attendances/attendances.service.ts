@@ -10,6 +10,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { AttendanceSheetStateMachine } from './attendance-sheet-state-machine';
 import { ContributionCalculator } from './contribution-calculator';
 import { TimeOverlapPolicy } from './time-overlap-policy';
 import {
@@ -96,10 +97,7 @@ const ACTIVITY_STATUS_COMPLETED = 'completed';
 
 // Sheet 状态机闭集别名(单一来源:ATTENDANCE_SHEET_STATUS,定义在 attendances.dto.ts)。
 const SHEET_STATUS_PENDING = ATTENDANCE_SHEET_STATUS.PENDING;
-const SHEET_STATUS_PENDING_FINAL_REVIEW = ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW;
 const SHEET_STATUS_APPROVED = ATTENDANCE_SHEET_STATUS.APPROVED;
-const SHEET_STATUS_REJECTED = ATTENDANCE_SHEET_STATUS.REJECTED;
-const SHEET_STATUS_FINAL_REJECTED = ATTENDANCE_SHEET_STATUS.FINAL_REJECTED;
 
 const DICT_TYPE_ATTENDANCE_ROLE = 'attendance_role';
 const DICT_TYPE_ATTENDANCE_STATUS = 'attendance_status';
@@ -181,6 +179,7 @@ export class AttendancesService {
     private readonly auditLogs: AuditLogsService,
     private readonly contributionCalculator: ContributionCalculator,
     private readonly timeOverlapPolicy: TimeOverlapPolicy,
+    private readonly sheetStateMachine: AttendanceSheetStateMachine,
   ) {}
 
   // ============ helpers:序列化 ============
@@ -670,23 +669,9 @@ export class AttendancesService {
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
-      if (sheet.statusCode === SHEET_STATUS_APPROVED) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE);
-      }
-      if (sheet.statusCode === SHEET_STATUS_REJECTED) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE);
-      }
-      // 批次 4-B:final_rejected 不可 edit(沿 D-S11 22043;终审驳回是终态,新提走 POST 新建)
-      if (sheet.statusCode === SHEET_STATUS_FINAL_REJECTED) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE);
-      }
-      // 批次 4-B:pending_final_review 也不可 edit(沿 D-A1 / 业务规则文档 §2.1;
-      //   APD 一级已审过,R31 已固化,需通过 final-reject 回退或新建 Sheet)
-      if (sheet.statusCode === SHEET_STATUS_PENDING_FINAL_REVIEW) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
-      }
-      if (sheet.statusCode !== SHEET_STATUS_PENDING) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+      const editTransition = this.sheetStateMachine.decide('edit', sheet.statusCode);
+      if (!editTransition.allowed) {
+        throw new BizException(editTransition.biz);
       }
 
       // 没有 records 字段 → 等同于 no-op(不动 records,仍生成 snapshot + version+1)
@@ -913,22 +898,9 @@ export class AttendancesService {
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
-      if (sheet.statusCode === SHEET_STATUS_APPROVED) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE);
-      }
-      if (sheet.statusCode === SHEET_STATUS_REJECTED) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE);
-      }
-      // 批次 4-B:final_rejected 不可软删(records 已在 final-reject 软删;Sheet 主体记录保留作历史)
-      if (sheet.statusCode === SHEET_STATUS_FINAL_REJECTED) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE);
-      }
-      // 批次 4-B:pending_final_review 不可软删(沿 edit 路径风格)
-      if (sheet.statusCode === SHEET_STATUS_PENDING_FINAL_REVIEW) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
-      }
-      if (sheet.statusCode !== SHEET_STATUS_PENDING) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+      const deleteTransition = this.sheetStateMachine.decide('softDelete', sheet.statusCode);
+      if (!deleteTransition.allowed) {
+        throw new BizException(deleteTransition.biz);
       }
 
       // PR #6 audit:before 需要 records 完整快照(软删之前抓取)
@@ -986,8 +958,9 @@ export class AttendancesService {
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
-      if (sheet.statusCode !== SHEET_STATUS_PENDING) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+      const approveTransition = this.sheetStateMachine.decide('approve', sheet.statusCode);
+      if (!approveTransition.allowed) {
+        throw new BizException(approveTransition.biz);
       }
 
       // R31:所有 records contributionPoints 必填(沿 D-S8;APD 一级 approve 时校验)
@@ -1003,7 +976,7 @@ export class AttendancesService {
       const updated = await tx.attendanceSheet.update({
         where: { id: sheet.id },
         data: {
-          statusCode: SHEET_STATUS_PENDING_FINAL_REVIEW,
+          statusCode: approveTransition.nextStatusCode,
           reviewerUserId: currentUser.id,
           reviewedAt,
           reviewNote: dto.reviewNote ?? null,
@@ -1024,7 +997,7 @@ export class AttendancesService {
           operation: 'review',
           action: 'approve',
           priorStatusCode: sheet.statusCode,
-          nextStatusCode: SHEET_STATUS_PENDING_FINAL_REVIEW,
+          nextStatusCode: approveTransition.nextStatusCode,
           recordsCount: recordsForCheck.length,
         },
         tx,
@@ -1045,14 +1018,15 @@ export class AttendancesService {
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
-      if (sheet.statusCode !== SHEET_STATUS_PENDING) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+      const rejectTransition = this.sheetStateMachine.decide('reject', sheet.statusCode);
+      if (!rejectTransition.allowed) {
+        throw new BizException(rejectTransition.biz);
       }
 
       const updated = await tx.attendanceSheet.update({
         where: { id: sheet.id },
         data: {
-          statusCode: SHEET_STATUS_REJECTED,
+          statusCode: rejectTransition.nextStatusCode,
           reviewerUserId: currentUser.id,
           reviewedAt: new Date(),
           reviewNote: dto.reviewNote,
@@ -1073,7 +1047,7 @@ export class AttendancesService {
           operation: 'review',
           action: 'reject',
           priorStatusCode: sheet.statusCode,
-          nextStatusCode: SHEET_STATUS_REJECTED,
+          nextStatusCode: rejectTransition.nextStatusCode,
         },
         tx,
       });
@@ -1104,15 +1078,19 @@ export class AttendancesService {
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
-      if (sheet.statusCode !== SHEET_STATUS_PENDING_FINAL_REVIEW) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
+      const finalApproveTransition = this.sheetStateMachine.decide(
+        'finalApprove',
+        sheet.statusCode,
+      );
+      if (!finalApproveTransition.allowed) {
+        throw new BizException(finalApproveTransition.biz);
       }
 
       const finalReviewedAt = new Date();
       const updated = await tx.attendanceSheet.update({
         where: { id: sheet.id },
         data: {
-          statusCode: SHEET_STATUS_APPROVED,
+          statusCode: finalApproveTransition.nextStatusCode,
           finalReviewerUserId: currentUser.id,
           finalReviewedAt,
           finalReviewNote: dto.finalReviewNote ?? null,
@@ -1160,7 +1138,7 @@ export class AttendancesService {
           operation: 'final-review',
           action: 'final-approve',
           priorStatusCode: sheet.statusCode,
-          nextStatusCode: SHEET_STATUS_APPROVED,
+          nextStatusCode: finalApproveTransition.nextStatusCode,
           recordsCount: recordsForEvent.length,
           eventTriggered: true,
         },
@@ -1192,8 +1170,9 @@ export class AttendancesService {
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
-      if (sheet.statusCode !== SHEET_STATUS_PENDING_FINAL_REVIEW) {
-        throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
+      const finalRejectTransition = this.sheetStateMachine.decide('finalReject', sheet.statusCode);
+      if (!finalRejectTransition.allowed) {
+        throw new BizException(finalRejectTransition.biz);
       }
 
       // DTO 层 @MinLength(1) 已确保非空;此处冗余校验防绕过(沿 RejectDto reviewNote 风格)
@@ -1218,7 +1197,7 @@ export class AttendancesService {
       const updated = await tx.attendanceSheet.update({
         where: { id: sheet.id },
         data: {
-          statusCode: SHEET_STATUS_FINAL_REJECTED,
+          statusCode: finalRejectTransition.nextStatusCode,
           finalReviewerUserId: currentUser.id,
           finalReviewedAt,
           finalReviewNote: dto.finalReviewNote,
@@ -1239,7 +1218,7 @@ export class AttendancesService {
           operation: 'final-review',
           action: 'final-reject',
           priorStatusCode: sheet.statusCode,
-          nextStatusCode: SHEET_STATUS_FINAL_REJECTED,
+          nextStatusCode: finalRejectTransition.nextStatusCode,
           recordsCount: currentRecords.length,
           finalReviewNote: dto.finalReviewNote,
         },

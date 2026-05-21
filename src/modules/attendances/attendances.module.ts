@@ -8,6 +8,7 @@ import {
   AttendanceSheetsCollectionController,
   AttendanceSheetsResourceController,
 } from './attendances.controller';
+import { AttendanceSheetStateMachine } from './attendance-sheet-state-machine';
 import { AttendancesService } from './attendances.service';
 import { ContributionCalculator } from './contribution-calculator';
 import { TimeOverlapPolicy } from './time-overlap-policy';
@@ -39,6 +40,7 @@ import { AppMyAttendanceRecordsController } from './controllers/app-my-attendanc
     AppMyAttendanceRecordsService,
     ContributionCalculator,
     TimeOverlapPolicy,
+    AttendanceSheetStateMachine,
   ],
 })
 export class AttendancesModule {}
