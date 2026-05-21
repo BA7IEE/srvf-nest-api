@@ -33,11 +33,11 @@
 | Swagger `setVersion(...)` | `0.15.0` |
 | 最新 git tag | `v0.15.0`(2026-05-20T17:07:09Z;指向 `089499d` = PR #163 handoff squash commit) |
 | GitHub Latest Release | `v0.15.0`(标 Latest;publishedAt 2026-05-20T17:07:09Z;Notes 自 `CHANGELOG.md ## v0.15.0 - 2026-05-20` 段抽取) |
-| `main` HEAD | **`089499d`** `docs(handoff): add v0.15.0 handoff index (#163)`(v0.15.0 handoff index 已合入,2026-05-20) |
+| `main` HEAD | **`ef1ea3b`** `fix: align APP_ENV smoke documentation (#187)`(post-v0.15.0 drift cleanup;v0.15.0 release tag 仍指向 `089499d` = PR #163 handoff squash commit,2026-05-21 核对) |
 | open PR | **0**(本入口刷新 PR 合并前) |
 | 工作树状态 | clean |
 | 最新 handoff | [`docs/archive/handoff/v0.15.0.md`](archive/handoff/v0.15.0.md)(v0.15.0 release closeout index;上一版 [`v0.14.0.md`](archive/handoff/v0.14.0.md));自 v0.15.0 docs 治理收口起,handoff 统一归档于 `archive/handoff/`,历史快照不回改 |
-| Unreleased 累计 | **(无;待下一波 V2 / V2.x 增量或文档变更登记)** |
+| Unreleased 累计 | **post-v0.15.0 共 3 个 PR**(#185 refactor: extract attendances audit recorder / #186 docs: align JWT expiration examples / #187 fix: align APP_ENV smoke documentation;attendances characterization 收口 + JWT / APP_ENV smoke docs+config drift cleanup;**均不构成 minor bump 触发条件**) |
 
 > **复核命令**(任何会话开工前都可以一行跑完):
 >
