@@ -43,7 +43,7 @@
 | `APP_CORS_ORIGIN` | `https://app.example.com` | production 下禁止为空 / 禁止 `*` |
 | `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/app_smoke?schema=public` | 容器内通过 docker network 解析 `postgres` 服务名 |
 | `JWT_SECRET` | `openssl rand -base64 48`(64 字符) | 强校验:≥32 字符 + 不等于 `.env.example` 默认值 |
-| `JWT_EXPIRES_IN` | `7d` | |
+| `JWT_EXPIRES_IN` | `15m` | 与 `.env.example` 一致 |
 | `ENABLE_SWAGGER` | `false` | production 默认关;严格 `=== 'true'` 才开 |
 | `LOG_LEVEL` | `info` | 留空亦可,production 默认 `info` |
 
@@ -98,7 +98,7 @@ docker run -d --name u-nest-api-smoke \
   -e APP_CORS_ORIGIN=https://app.example.com \
   -e DATABASE_URL="postgresql://postgres:postgres@postgres:5432/app_smoke?schema=public" \
   -e JWT_SECRET="$(openssl rand -base64 48)" \
-  -e JWT_EXPIRES_IN=7d \
+  -e JWT_EXPIRES_IN=15m \
   -e ENABLE_SWAGGER=false \
   -e LOG_LEVEL=info \
   u-nest-api-starter:smoke
@@ -121,7 +121,7 @@ docker run -d --name u-nest-api-smoke \
 | `GET /api/health/ready` | 200 | `{code:0, data:{status:"ok", db:"up"}}` | ✔ DB 连通 |
 | `GET /api/docs` | 404 | — | ✔ production + `ENABLE_SWAGGER=false` 预期关闭 |
 | `GET /api/docs-json` | 404 | — | ✔ 同上 |
-| `POST /api/auth/login`(正确) | 200 | `{code:0, data:{accessToken, tokenType:"Bearer", expiresIn:"7d"}}` | ✔ |
+| `POST /api/auth/login`(正确) | 200 | `{code:0, data:{accessToken, tokenType:"Bearer", expiresIn:"15m"}}` | ✔ |
 | `POST /api/auth/login`(错密码) | 401 | `{code:10004, message:"账号或密码错误"}` | ✔ §8 防枚举 |
 | `POST /api/auth/login`(用户不存在) | 401 | `{code:10004, message:"账号或密码错误"}` | ✔ 与错密码完全相同 |
 | `GET /api/users/me`(带 token) | 200 | 含 `lastLoginAt`、不含 `passwordHash` | ✔ §11 `userSafeSelect` |
