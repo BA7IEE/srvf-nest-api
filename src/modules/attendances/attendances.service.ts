@@ -8,8 +8,8 @@ import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.con
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import { AttendanceSheetStateMachine } from './attendance-sheet-state-machine';
 import { ContributionCalculator } from './contribution-calculator';
 import { TimeOverlapPolicy } from './time-overlap-policy';
@@ -101,7 +101,6 @@ const SHEET_STATUS_APPROVED = ATTENDANCE_SHEET_STATUS.APPROVED;
 
 const DICT_TYPE_ATTENDANCE_ROLE = 'attendance_role';
 const DICT_TYPE_ATTENDANCE_STATUS = 'attendance_status';
-const AUDIT_RESOURCE_TYPE = 'attendance_sheet';
 
 // Sheet 简化 select(不含 records 数组 + 不含 previousSnapshot)。
 // 批次 4-B 新增 finalReviewer* 3 字段(D-S5;UserResponseDto 同步,沿 baseline §11.3 可选字段)。
@@ -176,7 +175,7 @@ type PrismaTx = Prisma.TransactionClient;
 export class AttendancesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogs: AuditLogsService,
+    private readonly attendanceAuditRecorder: AttendanceAuditRecorder,
     private readonly contributionCalculator: ContributionCalculator,
     private readonly timeOverlapPolicy: TimeOverlapPolicy,
     private readonly sheetStateMachine: AttendanceSheetStateMachine,
@@ -505,20 +504,16 @@ export class AttendancesService {
         select: recordWithMemberSelect,
         orderBy: { checkInAt: 'asc' },
       });
-      await this.auditLogs.log({
-        event: 'attendance-sheet.submit',
+      await this.attendanceAuditRecorder.logSubmit({
+        sheetId: created.id,
+        sheet: created,
+        records: createdRecords,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: created.id,
-        meta: auditMeta,
-        after: this.toSheetAuditSnapshot(created, createdRecords),
-        extra: {
-          operation: 'submit',
-          activityId,
-          recordsCount: createdRecords.length,
-          activityPushedToCompleted,
-        },
+        activityId,
+        recordsCount: createdRecords.length,
+        activityPushedToCompleted,
+        auditMeta,
         tx,
       });
 
@@ -681,7 +676,7 @@ export class AttendancesService {
           where: notDeletedWhere({ sheetId: id }),
           select: recordWithMemberSelect,
         });
-        const snapshot = this.buildSnapshot(sheet, currentRecords);
+        const snapshot = this.attendanceAuditRecorder.buildPreviousSnapshot(sheet, currentRecords);
         const updated = await tx.attendanceSheet.update({
           where: { id: sheet.id },
           data: {
@@ -690,20 +685,16 @@ export class AttendancesService {
           },
           select: sheetSafeSelect,
         });
-        await this.auditLogs.log({
-          event: 'attendance-sheet.edit',
+        await this.attendanceAuditRecorder.logEditNoRecords({
+          sheetId: id,
+          beforeSheet: sheet,
+          afterSheet: updated,
+          records: currentRecords,
           actorUserId: currentUser.id,
           actorRoleSnap: currentUser.role,
-          resourceType: AUDIT_RESOURCE_TYPE,
-          resourceId: id,
-          meta: auditMeta,
-          before: this.toSheetAuditSnapshot(sheet, currentRecords),
-          after: this.toSheetAuditSnapshot(updated, currentRecords),
-          extra: {
-            operation: 'edit-no-records',
-            recordsCount: currentRecords.length,
-            newVersion: updated.version,
-          },
+          recordsCount: currentRecords.length,
+          newVersion: updated.version,
+          auditMeta,
           tx,
         });
         return this.toSheetResponseDto(updated);
@@ -749,7 +740,7 @@ export class AttendancesService {
         where: notDeletedWhere({ sheetId: id }),
         select: recordWithMemberSelect,
       });
-      const snapshot = this.buildSnapshot(sheet, currentRecords);
+      const snapshot = this.attendanceAuditRecorder.buildPreviousSnapshot(sheet, currentRecords);
 
       // 3. 软删旧 records + 创建新 records(D38)
       const now = new Date();
@@ -788,104 +779,23 @@ export class AttendancesService {
         select: recordWithMemberSelect,
         orderBy: { checkInAt: 'asc' },
       });
-      await this.auditLogs.log({
-        event: 'attendance-sheet.edit',
+      await this.attendanceAuditRecorder.logEdit({
+        sheetId: id,
+        beforeSheet: sheet,
+        beforeRecords: currentRecords,
+        afterSheet: updated,
+        afterRecords: newRecords,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: id,
-        meta: auditMeta,
-        before: this.toSheetAuditSnapshot(sheet, currentRecords),
-        after: this.toSheetAuditSnapshot(updated, newRecords),
-        extra: {
-          operation: 'edit',
-          oldRecordsCount: currentRecords.length,
-          newRecordsCount: newRecords.length,
-          newVersion: updated.version,
-        },
+        oldRecordsCount: currentRecords.length,
+        newRecordsCount: newRecords.length,
+        newVersion: updated.version,
+        auditMeta,
         tx,
       });
 
       return this.toSheetResponseDto(updated);
     });
-  }
-
-  // PR #6 audit snapshot:用于 AuditLogsService.log() before/after 的 JSON-safe 快照。
-  // 与 buildSnapshot 平行存在(语义分离:buildSnapshot 服务于 sheet.previousSnapshot 业务列;
-  // toSheetAuditSnapshot 服务于 audit_logs.context;字段输出格式一致以便后续可比对)。
-  // records 可选:approve / reject / finalApprove 场景 records 不变,只需 sheet 快照 +
-  //   extra.recordsCount 即可;submit / edit × 2 / softDelete / finalReject 必传 records。
-  // 字段全非敏感(打码矩阵未命中,沿 PR #3 / PR #4 / PR #5 不打码范式)。
-  private toSheetAuditSnapshot(
-    sheet: SheetSafeRow,
-    records?: RecordWithMemberRow[],
-  ): Record<string, unknown> {
-    const snapshot: Record<string, unknown> = {
-      sheet: {
-        activityId: sheet.activityId,
-        submitterUserId: sheet.submitterUserId,
-        submittedAt: sheet.submittedAt.toISOString(),
-        statusCode: sheet.statusCode,
-        reviewerUserId: sheet.reviewerUserId,
-        reviewedAt: sheet.reviewedAt?.toISOString() ?? null,
-        reviewNote: sheet.reviewNote,
-        finalReviewerUserId: sheet.finalReviewerUserId,
-        finalReviewedAt: sheet.finalReviewedAt?.toISOString() ?? null,
-        finalReviewNote: sheet.finalReviewNote,
-        version: sheet.version,
-      },
-    };
-    if (records !== undefined) {
-      snapshot.records = records.map((r) => ({
-        id: r.id,
-        memberId: r.memberId,
-        roleCode: r.roleCode,
-        checkInAt: r.checkInAt.toISOString(),
-        checkOutAt: r.checkOutAt.toISOString(),
-        serviceHours: r.serviceHours.toString(),
-        attendanceStatusCode: r.attendanceStatusCode,
-        note: r.note,
-        registrationId: r.registrationId,
-        contributionPoints: this.decimalToString(r.contributionPoints),
-      }));
-    }
-    return snapshot;
-  }
-
-  // Q-S16 snapshot 结构:Sheet 主字段 + records 完整快照(全字段,日期 ISO 8601,Decimal 序列化为 string)。
-  private buildSnapshot(
-    sheet: Prisma.AttendanceSheetGetPayload<{ select: typeof sheetFullSelect }>,
-    records: RecordWithMemberRow[],
-  ): Record<string, unknown> {
-    return {
-      sheet: {
-        activityId: sheet.activityId,
-        submitterUserId: sheet.submitterUserId,
-        submittedAt: sheet.submittedAt.toISOString(),
-        statusCode: sheet.statusCode,
-        reviewerUserId: sheet.reviewerUserId,
-        reviewedAt: sheet.reviewedAt?.toISOString() ?? null,
-        reviewNote: sheet.reviewNote,
-        // 批次 4-B:edit 路径仅 pending 状态进入,finalReviewer* 必为 null;
-        // 仍写入 snapshot 保完整性(未来 schema 升级保持兼容)。
-        finalReviewerUserId: sheet.finalReviewerUserId,
-        finalReviewedAt: sheet.finalReviewedAt?.toISOString() ?? null,
-        finalReviewNote: sheet.finalReviewNote,
-        version: sheet.version,
-      },
-      records: records.map((r) => ({
-        id: r.id,
-        memberId: r.memberId,
-        roleCode: r.roleCode,
-        checkInAt: r.checkInAt.toISOString(),
-        checkOutAt: r.checkOutAt.toISOString(),
-        serviceHours: r.serviceHours.toString(),
-        attendanceStatusCode: r.attendanceStatusCode,
-        note: r.note,
-        registrationId: r.registrationId,
-        contributionPoints: this.decimalToString(r.contributionPoints),
-      })),
-    };
   }
 
   // ============ softDelete(DELETE)============
@@ -921,19 +831,15 @@ export class AttendancesService {
         select: sheetSafeSelect,
       });
 
-      await this.auditLogs.log({
-        event: 'attendance-sheet.delete',
+      await this.attendanceAuditRecorder.logDelete({
+        sheetId: id,
+        beforeSheet: sheet,
+        beforeRecords: currentRecords,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: id,
-        meta: auditMeta,
-        before: this.toSheetAuditSnapshot(sheet, currentRecords),
-        extra: {
-          operation: 'delete',
-          priorStatusCode: sheet.statusCode,
-          recordsCount: currentRecords.length,
-        },
+        priorStatusCode: sheet.statusCode,
+        recordsCount: currentRecords.length,
+        auditMeta,
         tx,
       });
 
@@ -984,22 +890,17 @@ export class AttendancesService {
         select: sheetSafeSelect,
       });
 
-      await this.auditLogs.log({
-        event: 'attendance-sheet.review',
+      await this.attendanceAuditRecorder.logReview({
+        sheetId: id,
+        beforeSheet: sheet,
+        afterSheet: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: id,
-        meta: auditMeta,
-        before: this.toSheetAuditSnapshot(sheet),
-        after: this.toSheetAuditSnapshot(updated),
-        extra: {
-          operation: 'review',
-          action: 'approve',
-          priorStatusCode: sheet.statusCode,
-          nextStatusCode: approveTransition.nextStatusCode,
-          recordsCount: recordsForCheck.length,
-        },
+        action: 'approve',
+        priorStatusCode: sheet.statusCode,
+        nextStatusCode: approveTransition.nextStatusCode,
+        recordsCount: recordsForCheck.length,
+        auditMeta,
         tx,
       });
 
@@ -1034,21 +935,16 @@ export class AttendancesService {
         select: sheetSafeSelect,
       });
 
-      await this.auditLogs.log({
-        event: 'attendance-sheet.review',
+      await this.attendanceAuditRecorder.logReview({
+        sheetId: id,
+        beforeSheet: sheet,
+        afterSheet: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: id,
-        meta: auditMeta,
-        before: this.toSheetAuditSnapshot(sheet),
-        after: this.toSheetAuditSnapshot(updated),
-        extra: {
-          operation: 'review',
-          action: 'reject',
-          priorStatusCode: sheet.statusCode,
-          nextStatusCode: rejectTransition.nextStatusCode,
-        },
+        action: 'reject',
+        priorStatusCode: sheet.statusCode,
+        nextStatusCode: rejectTransition.nextStatusCode,
+        auditMeta,
         tx,
       });
 
@@ -1125,23 +1021,18 @@ export class AttendancesService {
         })),
       });
 
-      await this.auditLogs.log({
-        event: 'attendance-sheet.final-review',
+      await this.attendanceAuditRecorder.logFinalReview({
+        sheetId: id,
+        beforeSheet: sheet,
+        afterSheet: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: id,
-        meta: auditMeta,
-        before: this.toSheetAuditSnapshot(sheet),
-        after: this.toSheetAuditSnapshot(updated),
-        extra: {
-          operation: 'final-review',
-          action: 'final-approve',
-          priorStatusCode: sheet.statusCode,
-          nextStatusCode: finalApproveTransition.nextStatusCode,
-          recordsCount: recordsForEvent.length,
-          eventTriggered: true,
-        },
+        action: 'final-approve',
+        priorStatusCode: sheet.statusCode,
+        nextStatusCode: finalApproveTransition.nextStatusCode,
+        recordsCount: recordsForEvent.length,
+        eventTriggered: true,
+        auditMeta,
         tx,
       });
 
@@ -1205,23 +1096,19 @@ export class AttendancesService {
         select: sheetSafeSelect,
       });
 
-      await this.auditLogs.log({
-        event: 'attendance-sheet.final-review',
+      await this.attendanceAuditRecorder.logFinalReview({
+        sheetId: id,
+        beforeSheet: sheet,
+        beforeRecords: currentRecords,
+        afterSheet: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: id,
-        meta: auditMeta,
-        before: this.toSheetAuditSnapshot(sheet, currentRecords),
-        after: this.toSheetAuditSnapshot(updated),
-        extra: {
-          operation: 'final-review',
-          action: 'final-reject',
-          priorStatusCode: sheet.statusCode,
-          nextStatusCode: finalRejectTransition.nextStatusCode,
-          recordsCount: currentRecords.length,
-          finalReviewNote: dto.finalReviewNote,
-        },
+        action: 'final-reject',
+        priorStatusCode: sheet.statusCode,
+        nextStatusCode: finalRejectTransition.nextStatusCode,
+        recordsCount: currentRecords.length,
+        finalReviewNote: dto.finalReviewNote,
+        auditMeta,
         tx,
       });
 
