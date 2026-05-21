@@ -1,11 +1,39 @@
 import { HttpStatus } from '@nestjs/common';
 
-// 完整 12 个 BizCode,1:1 对齐 ARCHITECTURE.md §7.3。
-// 段位规则:4xxxx/5xxxx 通用 HTTP 级,100xx users 业务,101xx users 权限/边界,
-// 后续模块按 110xx+ 平铺(见文档表)。
+// BizCode 常量表
 //
-// 注:BizCode 是公共常量,不绑定具体业务模块,这一阶段一次性落地是合理的;
-// 各业务码的实际 throw 点仍按"每次只实现一个阶段"在第 7/8 阶段补上。
+// 当前状态(随实施滚动维护;每次新增模块码后校对):
+// - 约 125 个 BizCode,覆盖 19 个编号段
+// - 编号段权威说明以 `docs/srvf-foundation-baseline.md §1.1` 为准;
+//   ARCHITECTURE.md §7.3 是早期蓝图,模块命名已演进(missions→dictionaries、
+//   files→attachments、devices→audit_logs 等),遇分歧以 baseline §1.1 + 本文件实际常量为准
+// - 本文件是运行时代码唯一导出源(全仓 BizException throw 与 test 引用共 ~1700 处),
+//   无明确迁移计划前不得拆分
+//
+// 治理约束:
+// - 禁止复用已存在 code(新增前先 grep 数字是否撞段)
+// - 禁止为同一语义新开重复码(优先复用既有码;沿 v1 §10 信息泄漏防御)
+// - 新增模块码必须先确认编号段归属(baseline §1.1 表)
+// - 不在本文件记录接口路径(`GET /api/...` 之类语义留在 controller / docs / OpenAPI contract)
+//
+// 编号段索引(只读索引,以下方实际常量为准;每段位 200 个号段:XX0xx 普通业务 / XX1xx 权限边界):
+// - 10xxx + 101xx: users + auth(含 P0-D 改密 / P0-E refresh token)
+// - 11xxx + 111xx: organizations
+// - 12xxx + 121xx: dictionaries(dict_type + dict_item 双子段)
+// - 13xxx + 131xx: attachments + attachment-configs(三表)+ Slow-6 跨表 IN_USE + L-1 system MIME 黑名单
+// - 14xxx + 141xx: audit_logs(写入不可改不可删,故仅 14001 / 14101)
+// - 15xxx + 151xx: members
+// - 16xxx + 161xx: member_profiles
+// - 17xxx + 171xx: member_departments
+// - 18xxx + 181xx: certificates
+// - 19xxx + 191xx: emergency_contacts
+// - 20xxx + 201xx: activities
+// - 21xxx + 211xx: activity_registrations
+// - 22xxx + 221xx: attendances(批次 3B + 4-A APD 终审)
+// - 23xxx + 231xx: contribution_rules
+// - 30xxx + 301xx: permissions(C-6 RBAC)
+// - 40xxx / 42xxx / 50xxx: 通用 HTTP / infrastructure(BAD_REQUEST / UNAUTHORIZED / FORBIDDEN / NOT_FOUND / TOO_MANY_REQUESTS / INTERNAL_ERROR)
+// - 240xx-290xx: 未规划模块预留(训练 / 装备 / 财务 / 通知等)
 export const BizCode = {
   // 通用 HTTP 级
   BAD_REQUEST: { code: 40000, message: '请求参数错误', httpStatus: HttpStatus.BAD_REQUEST },
