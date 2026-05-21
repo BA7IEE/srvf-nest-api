@@ -11,26 +11,25 @@
 
 ---
 
-## 必读文档(改代码前请先读)
+## 文档地图(2026-05-21 治理收口后)
 
-| 文档 | 作用 |
-|---|---|
-| [`docs/current-state.md`](./docs/current-state.md) | **当前状态入口**:新会话 / AI 开工前第一读物,记录当前版本、open PR、最新 handoff、当前未做与开工门禁 |
-| [`docs/process.md`](./docs/process.md) | 开发流程与协作制度:开工前 checklist、PR 分级、release 收口、文档权威源与 AI 协作规则 |
-| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | v1 蓝图,数据模型 / 接口清单 / 命名铁律 / 升级路径,**所有规则的唯一来源** |
-| [`CLAUDE.md`](./CLAUDE.md) | Claude Code 协作铁律(从 ARCHITECTURE.md §7 抽取) |
-| [`AGENTS.md`](./AGENTS.md) | 通用 AI Agent 协作铁律(与 CLAUDE.md 内容同步) |
-| [`docs/srvf-foundation-baseline.md`](./docs/srvf-foundation-baseline.md) | **V2 派生项目基线规范**(BizCode 段位 / 命名 / DTO / 软删除 / 验收门槛 13 项);改 V2 代码 / 写 V2 草案前必读 |
-| [`docs/v2-plan.md`](./docs/v2-plan.md) | V2 第一阶段开发执行计划(Step 1-7) |
-| [`docs/v2-data-model.md`](./docs/v2-data-model.md) | V2 第一阶段数据模型说明(4 模型 + `users.memberId`) |
-| [`docs/v2-api-contract.md`](./docs/v2-api-contract.md) | V2 第一阶段接口契约(29 接口) |
-| [`docs/development.md`](./docs/development.md) | 项目结构 / 路由总览 / 环境变量 / 排错 |
-| [`docs/testing.md`](./docs/testing.md) | E2E 测试运行与覆盖范围 |
-| [`docs/deployment.md`](./docs/deployment.md) | Docker 镜像、生产部署、迁移流程 |
-| [`docs/security.md`](./docs/security.md) | 已落地安全策略、软删除策略、token 吊销升级路径 |
-| [`docs/handoff/v0.14.0.md`](./docs/handoff/v0.14.0.md) | v0.14.0 阶段历史 handoff(P0-E refresh token / logout / logout-all 完整闭环);用于追溯 release 时刻状态,当前事实以 [`docs/current-state.md`](./docs/current-state.md) 为准 |
+| 文档 | 作用 | 权威等级 |
+|---|---|---|
+| [`docs/current-state.md`](./docs/current-state.md) | **当前事实唯一入口**:版本、open PR、最新 release、surface 状态、当前债务 | 当前事实 |
+| [`AGENTS.md`](./AGENTS.md) | **长期 AI 协作铁律主入口**:命名 / 目录 / 错误码 / Guard / 软删除 / RBAC / refresh token / App API 边界 / §19 决策 | 长期铁律 |
+| [`CLAUDE.md`](./CLAUDE.md) | Claude Code 入口转发(≤80 行;不复制 `AGENTS.md` 全文) | 入口转发 |
+| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | v1 / V1.1 / V2 架构蓝图与设计背景;**请先读顶部"当前阶段说明"** | 设计背景 |
+| [`docs/process.md`](./docs/process.md) | 开发流程与协作制度:开工 checklist、PR 五档分级、release 收口、AI 协作纪律 | 流程制度 |
+| [`docs/api-surface-policy.md`](./docs/api-surface-policy.md) | API surface 长期边界:Mobile App / Admin Legacy / Root Legacy 三层 + 新增 / 迁移规则 | 长期铁律 |
+| [`docs/api-client-boundary.md`](./docs/api-client-boundary.md) | 客户端边界顶层规范(Phase 0/1 设计意图) | 设计背景 |
+| [`docs/srvf-foundation-baseline.md`](./docs/srvf-foundation-baseline.md) | V2 派生项目基线规范(13 项 A 档) | 长期铁律 |
+| [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) | V2 五档红线(A/B/C/D/E)与解锁触发条件 | 长期铁律 |
+| [`docs/security.md`](./docs/security.md) / [`docs/deployment.md`](./docs/deployment.md) / [`docs/development.md`](./docs/development.md) / [`docs/testing.md`](./docs/testing.md) | 安全 / 部署 / 排错 / 测试 SOP | 运行指引 |
+| [`docs/archive/`](./docs/archive/) | 历史 handoff / 评审稿 / 批次 / first-release 过程档案 | 历史证据 |
 
-冲突时**以 `ARCHITECTURE.md` 为准**。除非用户明确要求,AI 不得修改 `ARCHITECTURE.md`。
+详细分层与冲突处理见 [`docs/README.md`](./docs/README.md)。
+
+**冲突处理**:当前事实 > 长期铁律 > 流程 > 设计背景 > 历史证据。历史 handoff、批次评审稿、Phase reviews 已统一归档至 `docs/archive/**`,**不再作为当前执行约束**。除非用户明确要求,AI 不得修改 `ARCHITECTURE.md`。
 
 ---
 
@@ -100,7 +99,7 @@ pnpm start:dev
 
 ### V2 第一阶段(srvf-foundation)
 
-V2 第一阶段开发已完成并随 v0.13.0 发布。**第一版前端联调起步包 = 51 路由**;**P1 后接 = 42 路由**;**第一版暂不接 = 46 路由**(完整起步包 / P1 后接 / 暂不接的口径以 [`docs/first-release-frontend-scope.md`](./docs/first-release-frontend-scope.md) 为准,**不在 README 维护详细路由表**)。本表下方按模块列出 V2 第一阶段已实装接口,**v1 14 接口契约严格 zero drift**(`LoginDto` / `UserResponseDto` 不漂移)。
+V2 第一阶段开发已完成并随 v0.13.0 发布;v0.14.0(P0-E refresh / logout 闭环)与 v0.15.0(P0-F RBAC 收紧 + App API Phase 2 完整 15 endpoint)随后续 release 落地。完整起步包 / P1 后接 / 暂不接的历史口径见 [`docs/archive/plans/first-release-frontend-scope.md`](./docs/archive/plans/first-release-frontend-scope.md);**当前事实以 [`docs/current-state.md`](./docs/current-state.md) §2 为准**,不在 README 维护详细路由表。本表下方按模块列出 V2 第一阶段已实装接口,**v1 14 接口契约严格 zero drift**(`LoginDto` / `UserResponseDto` 不漂移)。
 
 | 模块 | 路径前缀 | 接口数 | 关键能力 |
 |---|---|---|---|

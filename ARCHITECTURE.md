@@ -6,6 +6,52 @@
 
 ---
 
+## 0. 当前阶段说明(2026-05-21 docs 治理收口添加)
+
+> **本文件是架构蓝图与设计背景,不是"当前事实"。**
+> 当前事实(版本、能力清单、open PR、surface 状态、当前债务)**唯一权威源**是 [`docs/current-state.md`](docs/current-state.md);
+> 长期 AI 协作铁律唯一权威源是 [`AGENTS.md`](AGENTS.md);
+> 本文件保留作为设计思路、阶段背景、升级路径的参考资料。
+
+### 0.1 早期 v1 蓝图的阶段定位
+
+本文件的 §1-§10 写于 v1 阶段(2026-05 之前)。其中部分"v1 不预先做"的条目,**在 SRVF 派生项目的后续版本中已经被业务诉求驱动解锁**,例如:
+
+| 早期 v1 蓝图条目 | 当前状态 |
+|---|---|
+| "不预先做 RBAC" | SRVF v0.13.0+ 已实装 `RbacRole` / `Permission` / `RolePermission` / `UserRole` 4 表 + `rbac.can()` + 14 条 `rbac.*` 权限点 + `ops-admin` 内置角色;管理面接入已于 v0.15.0 P0-F 4 PR 完成 |
+| "不预先做刷新 token" | SRVF v0.14.0 已实装 `refresh_tokens` 表 + `POST /api/auth/refresh` / `POST /api/auth/logout` / `POST /api/auth/logout-all` + rotation always + family revoke + absolute expiration |
+| "不预先做附件上传 Provider" | SRVF v0.10.0 ~ v0.12.0 已实装 `attachments` 多态主模块 + `attachment-configs` 三表 + `StorageSettings` singleton + `LocalStorageProvider` + `CosStorageProvider` |
+| "不预先做 App API / Mobile 边界" | SRVF v0.15.0 已实装 App API Phase 2 完整 15 个 `/api/app/v1/*` endpoint + `dto/app/` 子目录 + L3 字段 zero leak |
+| "不引入 audit_logs" | SRVF v0.7.0+ 已实装 `audit_logs` 表(A 红线"写入即不可改不可删") + `AuditLogEvent` 已接入多个写路径 |
+
+`ARCHITECTURE.md §1` 中"v1 不做的事"清单**不再压过 `docs/current-state.md`**。冲突时,以 `docs/current-state.md` 描述的当前事实为准;本文件相关条目仅作为"当时为什么这么选"的设计背景。
+
+### 0.2 仍然生效的长期架构原则
+
+本文件以下条目**作为长期架构原则继续生效**,与当前事实不冲突:
+
+- **API-only**:前端永远独立项目,绝不混在一起(§1)
+- **强约定 > 灵活配置**:统一返回格式、统一错误处理、统一模块结构、统一命名(§1)
+- **命名即文档**:`passwordHash` / `key` / `Role.SUPER_ADMIN` 等命名铁律(§7)
+- **统一返回格式**:`{ code, message, data }` + `ResponseInterceptor`(§7)
+- **BizException + BizCode 三字段对象**:错误码集中,HTTP status 由 `httpStatus` 决定(§7)
+- **§9 升级路径表**:Redis / queue / cron / APM / pgvector 等基础设施的触发条件
+- **§11 V1.1 工程加固**:pino / helmet / throttler / terminus / Dockerfile / CI 工程能力清单
+- **§12 V2 架构增量**:V2 派生项目的模块边界、字典 / 组织 / 队员 / 部门 / 软删 / 审计模式
+
+### 0.3 与现状冲突时的判定
+
+- 当前事实 vs 本文件 → 以 [`docs/current-state.md`](docs/current-state.md) 为准
+- 长期铁律 vs 本文件 → 以 [`AGENTS.md`](AGENTS.md) 为准
+- 流程制度 vs 本文件 → 以 [`docs/process.md`](docs/process.md) 为准
+- API surface 边界 vs 本文件 → 以 [`docs/api-surface-policy.md`](docs/api-surface-policy.md) 为准
+- 本文件**不被删除大段历史内容**,以保留"为什么 v1 这么设计"的可追溯性;具体条目是否"仍是当前铁律"以上述四份文档为最终判定
+
+历史 release handoff / 评审稿 / 批次决议 / Phase reviews / first-release 过程档案现统一归档于 [`docs/archive/`](docs/archive/),不再作为当前执行约束。
+
+---
+
 ## 目录
 
 1. [设计原则](#1-设计原则)
