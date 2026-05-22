@@ -7,8 +7,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
 import {
   ActivityRegistrationListItemDto,
@@ -59,7 +59,6 @@ const ACTIVITY_STATUS_CANCELLED = 'cancelled';
 const REGISTRATION_STATUS_PENDING = 'pending';
 const REGISTRATION_STATUS_PASS = 'pass';
 const REGISTRATION_STATUS_CANCELLED = 'cancelled';
-const AUDIT_RESOURCE_TYPE = 'activity_registration';
 
 const registrationSafeSelect = {
   id: true,
@@ -108,7 +107,7 @@ type PrismaTx = Prisma.TransactionClient;
 export class ActivityRegistrationsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogs: AuditLogsService,
+    private readonly registrationAuditRecorder: ActivityRegistrationAuditRecorder,
     private readonly registrationStateMachine: ActivityRegistrationStateMachine,
   ) {}
 
@@ -117,28 +116,6 @@ export class ActivityRegistrationsService {
   private jsonAsObject(v: Prisma.JsonValue | null): Record<string, unknown> | null {
     if (v === null || typeof v !== 'object' || Array.isArray(v)) return null;
     return v;
-  }
-
-  // PR #5 audit snapshot:把 RegistrationFullRow 转成 JSON-safe 入 audit context。
-  // 字段集 = registrationSafeSelect 剔除 id / createdAt / updatedAt(audit_logs 自带 resourceId /
-  // createdAt / actorUserId);extras 经 jsonAsObject 取强类型;字段全部非敏感
-  // (打码矩阵 §4.3 未命中,extras 是用户自定义 JSON,本次纯迁移不引入打码);
-  // Date 字段(registeredAt / reviewedAt / cancelledAt)由 Prisma JsonValue 写入时自动
-  // 调 Date.toJSON() → ISO string,沿 PR #4 范式。
-  private toAuditSnapshot(row: RegistrationFullRow): Record<string, unknown> {
-    return {
-      activityId: row.activityId,
-      memberId: row.memberId,
-      statusCode: row.statusCode,
-      registeredAt: row.registeredAt,
-      reviewedBy: row.reviewedBy,
-      reviewedAt: row.reviewedAt,
-      reviewNote: row.reviewNote,
-      extras: this.jsonAsObject(row.extras),
-      cancelledByUserId: row.cancelledByUserId,
-      cancelledAt: row.cancelledAt,
-      cancelReason: row.cancelReason,
-    };
   }
 
   private toResponseDto(row: RegistrationFullRow): ActivityRegistrationResponseDto {
@@ -362,20 +339,14 @@ export class ActivityRegistrationsService {
         }),
       );
 
-      await this.auditLogs.log({
-        event: 'registration.create',
+      await this.registrationAuditRecorder.logCreate({
+        created,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: created.id,
-        meta: auditMeta,
-        after: this.toAuditSnapshot(created),
-        extra: {
-          operation: 'create',
-          viaPath: 'admin',
-          activityId,
-          targetMemberId: dto.memberId,
-        },
+        viaPath: 'admin',
+        activityId,
+        targetMemberId: dto.memberId,
+        auditMeta,
         tx,
       });
 
@@ -409,20 +380,14 @@ export class ActivityRegistrationsService {
         }),
       );
 
-      await this.auditLogs.log({
-        event: 'registration.create',
+      await this.registrationAuditRecorder.logCreate({
+        created,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: created.id,
-        meta: auditMeta,
-        after: this.toAuditSnapshot(created),
-        extra: {
-          operation: 'create',
-          viaPath: 'self',
-          activityId,
-          targetMemberId: memberId,
-        },
+        viaPath: 'self',
+        activityId,
+        targetMemberId: memberId,
+        auditMeta,
         tx,
       });
 
@@ -462,23 +427,18 @@ export class ActivityRegistrationsService {
         select: registrationSafeSelect,
       });
 
-      await this.auditLogs.log({
-        event: 'registration.review',
+      await this.registrationAuditRecorder.logReview({
+        registrationId: reg.id,
+        before: reg,
+        after: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: reg.id,
-        meta: auditMeta,
-        before: this.toAuditSnapshot(reg),
-        after: this.toAuditSnapshot(updated),
-        extra: {
-          operation: 'review',
-          action: 'approve',
-          priorStatusCode: reg.statusCode,
-          nextStatusCode: transition.nextStatusCode,
-          activityId,
-          targetMemberId: reg.memberId,
-        },
+        action: 'approve',
+        priorStatusCode: reg.statusCode,
+        nextStatusCode: transition.nextStatusCode,
+        activityId,
+        targetMemberId: reg.memberId,
+        auditMeta,
         tx,
       });
 
@@ -514,23 +474,18 @@ export class ActivityRegistrationsService {
         select: registrationSafeSelect,
       });
 
-      await this.auditLogs.log({
-        event: 'registration.review',
+      await this.registrationAuditRecorder.logReview({
+        registrationId: reg.id,
+        before: reg,
+        after: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: reg.id,
-        meta: auditMeta,
-        before: this.toAuditSnapshot(reg),
-        after: this.toAuditSnapshot(updated),
-        extra: {
-          operation: 'review',
-          action: 'reject',
-          priorStatusCode: reg.statusCode,
-          nextStatusCode: transition.nextStatusCode,
-          activityId,
-          targetMemberId: reg.memberId,
-        },
+        action: 'reject',
+        priorStatusCode: reg.statusCode,
+        nextStatusCode: transition.nextStatusCode,
+        activityId,
+        targetMemberId: reg.memberId,
+        auditMeta,
         tx,
       });
 
@@ -566,25 +521,19 @@ export class ActivityRegistrationsService {
         select: registrationSafeSelect,
       });
 
-      await this.auditLogs.log({
-        event: 'registration.review',
+      await this.registrationAuditRecorder.logCancel({
+        registrationId: reg.id,
+        before: reg,
+        after: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: reg.id,
-        meta: auditMeta,
-        before: this.toAuditSnapshot(reg),
-        after: this.toAuditSnapshot(updated),
-        extra: {
-          operation: 'review',
-          action: 'cancel',
-          priorStatusCode: reg.statusCode,
-          nextStatusCode: transition.nextStatusCode,
-          cancelledByPath: 'admin',
-          cancelReason: dto.cancelReason ?? null,
-          activityId,
-          targetMemberId: reg.memberId,
-        },
+        priorStatusCode: reg.statusCode,
+        nextStatusCode: transition.nextStatusCode,
+        cancelledByPath: 'admin',
+        cancelReason: dto.cancelReason ?? null,
+        activityId,
+        targetMemberId: reg.memberId,
+        auditMeta,
         tx,
       });
 
@@ -678,25 +627,19 @@ export class ActivityRegistrationsService {
         select: registrationSafeSelect,
       });
 
-      await this.auditLogs.log({
-        event: 'registration.review',
+      await this.registrationAuditRecorder.logCancel({
+        registrationId: reg.id,
+        before: reg,
+        after: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: reg.id,
-        meta: auditMeta,
-        before: this.toAuditSnapshot(reg),
-        after: this.toAuditSnapshot(updated),
-        extra: {
-          operation: 'review',
-          action: 'cancel',
-          priorStatusCode: reg.statusCode,
-          nextStatusCode: transition.nextStatusCode,
-          cancelledByPath: 'self',
-          cancelReason: dto.cancelReason ?? null,
-          activityId: reg.activityId,
-          targetMemberId: reg.memberId,
-        },
+        priorStatusCode: reg.statusCode,
+        nextStatusCode: transition.nextStatusCode,
+        cancelledByPath: 'self',
+        cancelReason: dto.cancelReason ?? null,
+        activityId: reg.activityId,
+        targetMemberId: reg.memberId,
+        auditMeta,
         tx,
       });
 

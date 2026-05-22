@@ -3,6 +3,7 @@ import { DatabaseModule } from '../../database/database.module';
 import { ActivitiesModule } from '../activities/activities.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { UsersModule } from '../users/users.module';
+import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
 import { ActivityRegistrationsAdminController } from './activity-registrations.controller';
 import { ActivityRegistrationsService } from './activity-registrations.service';
@@ -39,6 +40,7 @@ import { AppMyRegistrationsController } from './controllers/app-my-registrations
     ActivityRegistrationsService,
     AppMyRegistrationsService,
     ActivityRegistrationStateMachine,
+    ActivityRegistrationAuditRecorder,
   ],
 })
 export class ActivityRegistrationsModule {}
