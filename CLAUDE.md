@@ -14,8 +14,7 @@
 | **长期 AI 协作铁律**(命名、目录、错误码、Guard、软删除、RBAC、refresh token、App API 边界、§19 决策) | [`AGENTS.md`](./AGENTS.md) |
 | **架构蓝图与早期阶段背景** | [`ARCHITECTURE.md`](./ARCHITECTURE.md)(请先读其顶部"当前阶段说明") |
 | **开发 / PR 分级 / release 收口流程** | [`docs/process.md`](./docs/process.md) |
-| **API surface 长期边界**(/api/app/v1 / /api/v2 / root legacy) | [`docs/api-surface-policy.md`](./docs/api-surface-policy.md) |
-| **客户端边界设计期顶层规范** | [`docs/api-client-boundary.md`](./docs/api-client-boundary.md) |
+| **API surface 长期边界**(/api/app/v1 / /api/v2 / root legacy) | [`docs/api-surface-policy.md`](./docs/api-surface-policy.md)(归档的设计期顶层规范见 [`docs/archive/plans/api-client-boundary-design-period.md`](./docs/archive/plans/api-client-boundary-design-period.md)) |
 | **Participation 业务上下文边界图**(activities / activity-registrations / attendances / contribution-rules 4 模块;不含 certificates) | [`docs/participation-bounded-context.md`](./docs/participation-bounded-context.md) |
 | **附件配置三表边界**(`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig` override-with-default;不合表 / 不抽 facade) | [`docs/attachment-config-boundary.md`](./docs/attachment-config-boundary.md) |
 | **架构边界铁律**(Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect 抽离决策;承接 `AGENTS.md §19.7 D-7`) | [`docs/architecture-boundary.md`](./docs/architecture-boundary.md) |
