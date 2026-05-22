@@ -1,3 +1,30 @@
+> **归档说明**(2026-05-22 PR-4 `docs: archive srvf foundation design-period docs` 起)
+>
+> 本文件已于 PR-4 归档。
+>
+> - **原路径**:`docs/srvf-foundation-interview-brief.md`
+> - **新路径**:`docs/archive/plans/v2-design-phase/srvf-foundation-interview-brief.md`(本文件)
+>
+> **归档原因**:V2-D5 设计期产物(轻量访谈版调研清单,18 题,用于 2026-05-07 用户访谈)。访谈答案已回填至 `srvf-foundation-research.md §4` 与 `srvf-foundation-data-model-draft.md` v0.2;V2-D8 已完成。
+>
+> **active 替代阅读路径**:
+> - **当前事实** → [`docs/current-state.md`](../../../current-state.md)
+> - **V2 数据模型说明** → [`docs/v2-data-model.md`](../../../v2-data-model.md)
+> - **V2 接口契约** → [`docs/v2-api-contract.md`](../../../v2-api-contract.md)
+> - **V2 派生项目基线规范** → [`docs/srvf-foundation-baseline.md`](../../../srvf-foundation-baseline.md)
+> - **当前任务卡入口** → [`TASKS.md`](../../../../TASKS.md)
+>
+> **同期归档兄弟文件**(均在 `docs/archive/plans/v2-design-phase/`):
+> - `srvf-foundation-research.md`(V2-D1 研究文档;访谈结论已回填于 §4)
+> - `srvf-foundation-data-model-draft.md`(V2-D6 草案;访谈结论已联动至 §3 / §4 / §6)
+> - `tasks.md`(V2-D 设计期任务卡,PR-1 已归档)
+>
+> **正文状态**:**历史快照,verbatim 保留**(除本 banner 外不维护)。
+>
+> 冲突时:**当前事实 / active 文档优先**,本归档让步。
+
+---
+
 # SRVF 基础数据底座 — V2-D5 负责人访谈版调研清单
 
 > 派生项目:**srvf-nest-api**

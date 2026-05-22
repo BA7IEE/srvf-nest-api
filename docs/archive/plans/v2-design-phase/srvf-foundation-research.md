@@ -1,3 +1,31 @@
+> **归档说明**(2026-05-22 PR-4 `docs: archive srvf foundation design-period docs` 起)
+>
+> 本文件已于 PR-4 归档。
+>
+> - **原路径**:`docs/srvf-foundation-research.md`
+> - **新路径**:`docs/archive/plans/v2-design-phase/srvf-foundation-research.md`(本文件)
+>
+> **归档原因**:V2-D1 设计期产物(研究文档,2026-05-07 评审通过)。V2-D8 立项已于 2026-05-08 完成;V2 第一阶段 4 模型(`dictionaries` / `organizations` / `members` / `member_departments`)Step 1-7 已全部 ✅ 交付。当前实现事实以下方 active 文档为准,不再由本研究文档锁定边界。
+>
+> **active 替代阅读路径**:
+> - **当前事实** → [`docs/current-state.md`](../../../current-state.md)
+> - **V2 数据模型说明** → [`docs/v2-data-model.md`](../../../v2-data-model.md)
+> - **V2 接口契约** → [`docs/v2-api-contract.md`](../../../v2-api-contract.md)
+> - **V2 派生项目基线规范** → [`docs/srvf-foundation-baseline.md`](../../../srvf-foundation-baseline.md)
+> - **V2.x 复活触发条件 + 五档红线** → [`docs/V2红线与复活路径.md`](../../../V2红线与复活路径.md)
+> - **当前任务卡入口** → [`TASKS.md`](../../../../TASKS.md)
+>
+> **同期归档兄弟文件**(均在 `docs/archive/plans/v2-design-phase/`):
+> - `srvf-foundation-data-model-draft.md`(V2-D6 草案)
+> - `srvf-foundation-interview-brief.md`(V2-D5 访谈提纲)
+> - `tasks.md`(V2-D 设计期任务卡,PR-1 已归档)
+>
+> **正文状态**:**历史快照,verbatim 保留**(除本 banner 外不维护);文件内对其他 `docs/` 文档的相对路径未做 rewrite,沿用原 `docs/` 视角写法 — 读者沿上方 active 文档链接即可,无需依赖正文内的旧链接。
+>
+> 冲突时:**当前事实 / active 文档优先**,本归档让步。
+
+---
+
 # SRVF 基础数据底座 — 研究文档
 
 > 派生项目:**srvf-nest-api**(深圳公益救援队内部系统)

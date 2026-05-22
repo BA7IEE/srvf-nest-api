@@ -18,13 +18,13 @@
 
 ### 0.2 这份文件不是什么
 
-- **不是** schema 设计 — schema 由后续 `srvf-foundation-data-model-draft.md` 草案承载
+- **不是** schema 设计 — schema 当前以 `prisma/schema.prisma` + `docs/v2-data-model.md` 为权威源(历史草案 `srvf-foundation-data-model-draft.md` 已归档于 `docs/archive/plans/v2-design-phase/`)
 - **不是** API 契约 — API 路径 / 入参出参由具体模块开发阶段交付
 - **不是**实施计划 — 实施顺序由 `TASKS.md` 承载
 
 ### 0.3 与 V2 三档分类的关系
 
-`docs/srvf-foundation-research.md §5` 把 V2 基建分三档:
+`docs/archive/plans/v2-design-phase/srvf-foundation-research.md §5`(原 `docs/srvf-foundation-research.md`,PR-4 已归档)把 V2 基建分三档:
 
 - **A 档**(完全不依赖调研)→ **本文件**承载
 - **B 档**(形态稳但字段待定)→ 后续草案承载,但其**通用基建**(时间字段、软删、命名)沿用本文件
@@ -694,7 +694,7 @@ V2 模块开发任务完成后,按以下两档逐项验证再报告完成:
 
 ### 14.1 草案文档的隐含约束
 
-`docs/srvf-foundation-data-model-draft.md` 草案及未来 `docs/v2-plan.md` / `docs/v2-data-model.md` / `docs/v2-api-contract.md` 等开发级文档:
+`docs/v2-plan.md` / `docs/v2-data-model.md` / `docs/v2-api-contract.md` 等开发级文档(以及历史草案 `docs/archive/plans/v2-design-phase/srvf-foundation-data-model-draft.md`,PR-4 已归档):
 
 - **默认遵守**本规范,**无需逐项重述**
 - 草案中可显式援引"基线规范 §X.Y",但不重抄具体内容
@@ -744,7 +744,7 @@ V2 模块开发任务完成后,按以下两档逐项验证再报告完成:
 
 ## 附录 B:本规范覆盖的"A 档 13 项"溯源
 
-对照 `docs/srvf-foundation-research.md` §5 与本对话设计的 A 档清单:
+对照 `docs/archive/plans/v2-design-phase/srvf-foundation-research.md` §5(原 `docs/srvf-foundation-research.md`,PR-4 已归档)与本对话设计的 A 档清单:
 
 | A 档项 | 本文档章节 |
 |---|---|
