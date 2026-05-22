@@ -30,7 +30,7 @@
 ### 0.2 V2 设计期任务卡(原 §5,含 V2-D1~D8 + A 档快车道 §5.5)
 
 - **归档位置**:[`docs/archive/plans/v2-design-phase/tasks.md`](docs/archive/plans/v2-design-phase/tasks.md)
-- **覆盖任务**:V2-D1(研究文档)/ V2-D2(`ARCHITECTURE.md §12`)/ V2-D3(`CLAUDE.md §18` / `AGENTS.md §18`)/ V2-D4(`TASKS.md §5`)/ V2-D5(调研访谈)/ V2-D6(数据模型草案)/ V2-D7(模型评审 D7-min)/ V2-D8(开发立项)+ A1 / A2(✅ 已完成)+ A3(⏸️ 暂缓)+ A4 / A5(❌ 不做)
+- **覆盖任务**:V2-D1(研究文档)/ V2-D2(`docs/archive/plans/architecture-v2-first-stage-blueprint.md §12`,原 `ARCHITECTURE.md §12`,PR-6 已归档)/ V2-D3(`CLAUDE.md §18` / `AGENTS.md §18`)/ V2-D4(`TASKS.md §5`)/ V2-D5(调研访谈)/ V2-D6(数据模型草案)/ V2-D7(模型评审 D7-min)/ V2-D8(开发立项)+ A1 / A2(✅ 已完成)+ A3(⏸️ 暂缓)+ A4 / A5(❌ 不做)
 - **收口于**:V2-D8 立项完成 2026-05-08;V2 第一阶段开发任务卡(本文件 §6)已 ✅ 全部交付
 - **承接当前事实**:
   - V2 第一阶段已交付能力 → [`docs/current-state.md §2`](docs/current-state.md) "V2 数据底座" / "V2 批次"段
@@ -71,7 +71,7 @@
 
 > **状态**:V2-D8 立项已完成(5/5 产出物就位)+ memberNo 决议已纳入(2026-05-08;Q1=A / Q2=B-1 / Q3-Q9 全部锁定);**等待用户最后拍板**进入 Step 1 开发。
 > **范围**:V2 第一阶段 4 模型 + `users.memberId` 可空外键追加 + `Member.memberNo` 业务唯一编号 + v1 `auth.service.ts` 登录查找扩展支持 memberNo 回退(D7-min + memberNo 决议锁定)。
-> **依据**:`ARCHITECTURE.md §12.8-§12.11`(memberNo 决议后修订)/ `docs/archive/plans/v2-first-stage-plan.md` v0.2(原 `docs/v2-plan.md`,PR-5 已归档)/ `docs/v2-data-model.md` v0.2 / `docs/v2-api-contract.md` v0.2(含 §6.6 v1 登录路径 memberNo 回退查找)/ baseline(commit `16876fe`)。
+> **依据**:`docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.8-§12.11`(原 `ARCHITECTURE.md §12.8-§12.11`,memberNo 决议后修订;PR-6 已归档)/ `docs/archive/plans/v2-first-stage-plan.md` v0.2(原 `docs/v2-plan.md`,PR-5 已归档)/ `docs/v2-data-model.md` v0.2 / `docs/v2-api-contract.md` v0.2(含 §6.6 v1 登录路径 memberNo 回退查找)/ baseline(commit `16876fe`)。
 > **解除条件**:Step 1-7 全部 ✅ 后,V2 第一阶段开发闭环;V2.x 启动需用户单独拍板(对应 §6.11)。
 
 ### 6.0 范围速读
@@ -84,7 +84,7 @@
 - ❌ V2.x 后续阶段任务(待用户单独拍板)
 - ❌ 任何延后模型(`member_profiles` / `attachments` / `audit_logs` / `events` / `event_participants`)的开发任务
 
-> **范围说明**:上述"延后模型"清单是 D7-min 决议时刻(2026-05-07)的快照;`audit_logs` 已于 v0.7.0 作为 V2.x 第一个增量局部启动(经业务确认稿 + D6 评审 + 用户拍板),沿 `ARCHITECTURE.md §12.11.2`;当前仍延后的是 `member_profiles` / `attachments` / `events` / `event_participants` 共 4 个;`audit_logs` 剩余 22 处迁移见 [`docs/V2红线与复活路径.md`](../docs/V2红线与复活路径.md) §4.1 C-1。
+> **范围说明**:上述"延后模型"清单是 D7-min 决议时刻(2026-05-07)的快照;`audit_logs` 已于 v0.7.0 作为 V2.x 第一个增量局部启动(经业务确认稿 + D6 评审 + 用户拍板),沿 `docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.11.2`(原 `ARCHITECTURE.md §12.11.2`,PR-6 已归档);当前仍延后的是 `member_profiles` / `attachments` / `events` / `event_participants` 共 4 个;`audit_logs` 剩余 22 处迁移见 [`docs/V2红线与复活路径.md`](../docs/V2红线与复活路径.md) §4.1 C-1。
 
 **任何"看起来该顺手做"的事项**(包括延后模型、暂不做项、未登记新依赖等),按 §6.10 范围外统一处理流程,**禁止**未经用户确认就动作。
 
@@ -294,7 +294,7 @@
     - **UpdateMemberDto 白名单不含 memberNo**(forbidNonWhitelisted 自动拒绝 PATCH 改编号)
   - **修改 v1 `src/modules/users/users.service.ts`** 追加 `memberId` 字段处理逻辑(仅服务侧;v1 接口出参不变)
   - **修改 v1 `src/modules/users/users.dto.ts`**(若 Step 5 决定 v1 接口可选返回 `memberId`,需显式说明 + 更新 OpenAPI 快照;**默认不改**)
-  - ⚠️ **受限放开** 修改 v1 `src/modules/auth/auth.service.ts`:**唯一**允许的扩展是登录查找路径加 `memberNo` 回退查找(对应 ARCHITECTURE.md §12.8.2.4 + `docs/v2-api-contract.md §6.6` 全部硬约束):
+  - ⚠️ **受限放开** 修改 v1 `src/modules/auth/auth.service.ts`:**唯一**允许的扩展是登录查找路径加 `memberNo` 回退查找(对应 `docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.8.2.4`(原 `ARCHITECTURE.md §12.8.2.4`,PR-6 已归档)+ `docs/v2-api-contract.md §6.6` 全部硬约束):
     - 账号枚举相关失败场景防护(响应体 / HTTP status / Timing 完全一致;详见 `docs/v2-api-contract.md §6.6.3`)
     - 强制扩展 dummy bcrypt 到新路径
     - 通过 `PrismaService` 直读 `member` 表
@@ -350,7 +350,7 @@
   - Commit 1:`feat(members): add memberNo to member lifecycle`(members CRUD + v1 users.memberId hook)
   - Commit 2:`feat(auth): support memberNo login fallback`(auth.service.ts 登录回退;**仅含此一处文件改动 + 配套 e2e + 快照对比**;**严禁**与 members CRUD 揉合)
 - **完成情况**(2026-05-08):
-  - **强制拆 2 commit**(ARCHITECTURE.md §12.8.2.4 / docs/archive/plans/v2-first-stage-plan.md §2.5(原 docs/v2-plan.md §2.5,PR-5 已归档)/ CLAUDE.md §17 红线;严禁揉合;独立可 revert):
+  - **强制拆 2 commit**(`docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.8.2.4`(原 ARCHITECTURE.md §12.8.2.4,PR-6 已归档)/ docs/archive/plans/v2-first-stage-plan.md §2.5(原 docs/v2-plan.md §2.5,PR-5 已归档)/ CLAUDE.md §17 红线;严禁揉合;独立可 revert):
     - **Commit 1** `1baa6c6` `feat(members): add memberNo to member lifecycle`(10 files / +2299 / -1)
       - 文件范围:`src/app.module.ts` / `src/common/exceptions/biz-code.constant.ts` / `src/modules/members/`(4 文件)/ `test/contract/openapi.contract-spec.ts` + snapshot / `test/e2e/members.e2e-spec.ts` / `test/setup/reset-db.ts`
       - **不含**:`auth.service.ts` / `auth-memberno-login.e2e-spec.ts`
@@ -436,7 +436,7 @@
   - 更新 `CHANGELOG.md`:V2 第一阶段开发完成的发布说明
   - 更新 `TASKS.md §6` Step 1-7 标 ✅ 已完成 + V2-D8 二级状态收尾(可选标"已 ship")
   - 同步 `data-model-draft.md` v0.4(可选,标记 4 模型已实施;非必须)
-  - **不**更新 `ARCHITECTURE.md §12.7+` 内容(蓝图级,已锁;状态由 TASKS.md 反映)
+  - **不**更新 `docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.7+` 内容(原 `ARCHITECTURE.md §12.7+`,PR-6 已归档;蓝图级,已锁;状态由 TASKS.md 反映)
 - **禁止改动**:
   - ❌ 新功能开发(本步纯收口)
   - ❌ schema 改动 / migration 改动
@@ -531,7 +531,7 @@ V2 第一阶段开发期间遇到任何"看起来该顺手做"的事项,**全部
 
 **v1 兼容性红线下唯一已开口子**(自 memberNo 决议 2026-05-08):
 
-- ⚠️ `src/modules/auth/auth.service.ts` 受限放开 — **唯一**允许的扩展是 memberNo 登录回退查找(详见 ARCHITECTURE.md §12.8.2.4 + `docs/v2-api-contract.md §6.6` + 本节 §6.6 Step 5)
+- ⚠️ `src/modules/auth/auth.service.ts` 受限放开 — **唯一**允许的扩展是 memberNo 登录回退查找(详见 `docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.8.2.4`(原 `ARCHITECTURE.md §12.8.2.4`,PR-6 已归档)+ `docs/v2-api-contract.md §6.6` + 本节 §6.6 Step 5)
 - ❌ 任何**其他** v1 auth 文件改动(`auth.controller.ts` / `auth.dto.ts` / `strategies/*`)仍属范围外
 - ❌ 任何想"再开第二个口子"的诉求(例如"顺手在 auth.service.ts 加 SSO 登录")必须按本节流程暂停 + 用户拍板,不得援引此唯一已开口子作为先例
 
@@ -894,7 +894,8 @@ PR #11 release tag v0.9.0 后,**才**启动 C-7 attachments D7 评审稿(沿 PR 
 - ✅ **docs 治理 PR-3**(已完成):`docs/api-client-boundary.md` 归档至 `docs/archive/plans/api-client-boundary-design-period.md`;`api-surface-policy.md` 承接为 surface 边界 active 单一权威源(`AGENTS.md` / `CLAUDE.md` 内的旧引用刷新留后续 PR)
 - ✅ **docs 治理 PR-4**(已完成):3 个 V2 设计期产物归档至 `docs/archive/plans/v2-design-phase/`(`srvf-foundation-research.md` / `srvf-foundation-data-model-draft.md` / `srvf-foundation-interview-brief.md`);7 个 active 文档对应引用同步刷新
 - ✅ **docs 治理 PR-5**(已完成):`docs/v2-plan.md` 归档至 `docs/archive/plans/v2-first-stage-plan.md`(V2 第一阶段 Step 1-7 已全部交付,计划文档转历史快照);7 个 active 文档对应引用同步刷新
-- ⏸️ **docs 治理后续 PR**:AGENTS.md 重写 / ARCHITECTURE.md §1-§10 v1 蓝图归档 等
+- ✅ **docs 治理 PR-6**(已完成):ARCHITECTURE.md 顶层架构入口重写(1547 行 → ~294 行);§1-§10 + 附录归档至 `docs/archive/legacy/architecture-v1-blueprint.md`;§11 归档至 `docs/archive/legacy/architecture-v1-1-hardening.md`(新版保留精简 §11 摘要作为 active 锚点);§12 归档至 `docs/archive/plans/architecture-v2-first-stage-blueprint.md`;§9 升级路径表 verbatim 保留在新版 active;active 文档对 `ARCHITECTURE.md §12.X` 引用全部刷新指向归档,对 `§9` / `§11` 引用保持不动
+- ⏸️ **docs 治理后续 PR**:AGENTS.md 重写 等
 
 ### 10.2 启动新任务的流程(沿 [`docs/process.md §2-§4`](docs/process.md))
 

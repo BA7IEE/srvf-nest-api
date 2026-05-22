@@ -55,7 +55,7 @@
 | `DELETE` | `/api/users/:id` | super admin / admin | 软删除用户 |
 | `GET` | `/api/docs` | 开发环境默认开启 | Swagger UI(生产需 `ENABLE_SWAGGER=true`) |
 
-完整字段、入参 / 出参 DTO、错误码归属详见 [`ARCHITECTURE.md`](../ARCHITECTURE.md) §6。
+完整字段、入参 / 出参 DTO、错误码归属详见 [`docs/archive/legacy/architecture-v1-blueprint.md §6`](archive/legacy/architecture-v1-blueprint.md)(原 `ARCHITECTURE.md §6`,PR-6 已归档)。
 
 ---
 
@@ -72,7 +72,7 @@ TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
 curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/users/me
 ```
 
-成功响应统一为 `{ "code": 0, "message": "ok", "data": ... }`,错误响应为 `{ "code": <BizCode>, "message": <提示>, "data": null }`。详见 [`ARCHITECTURE.md`](../ARCHITECTURE.md) §7.3。
+成功响应统一为 `{ "code": 0, "message": "ok", "data": ... }`,错误响应为 `{ "code": <BizCode>, "message": <提示>, "data": null }`。详见 [`AGENTS.md`](../AGENTS.md) §4 / §5(长期铁律 active)与 [`docs/archive/legacy/architecture-v1-blueprint.md §7.3`](archive/legacy/architecture-v1-blueprint.md)(原 `ARCHITECTURE.md §7.3`,PR-6 已归档)。
 
 ---
 
@@ -89,7 +89,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/users/me
 | `LOG_LEVEL` | pino 日志级别(`fatal`/`error`/`warn`/`info`/`debug`/`trace`),留空时按 `APP_ENV` 自动推断 | V1.1 §15.2 |
 | `LOGIN_THROTTLE_LIMIT` / `LOGIN_THROTTLE_TTL_SECONDS` | 登录接口 IP 维度限流参数,留空默认 `5` / `60` | V1.1 §15.7 |
 
-启动强校验细则见 [`ARCHITECTURE.md`](../ARCHITECTURE.md) §8 / §11.5 + [`CLAUDE.md`](../CLAUDE.md) §14 / §17。
+启动强校验细则见 [`AGENTS.md`](../AGENTS.md) §14(active) + [`docs/archive/legacy/architecture-v1-blueprint.md §8`](archive/legacy/architecture-v1-blueprint.md) / [`docs/archive/legacy/architecture-v1-1-hardening.md §11.5`](archive/legacy/architecture-v1-1-hardening.md)(原 `ARCHITECTURE.md §8` / `§11.5`,PR-6 已归档)+ [`CLAUDE.md`](../CLAUDE.md)。
 
 ---
 

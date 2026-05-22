@@ -4,7 +4,7 @@
 > 文档定位:**V2 第一阶段正式数据模型说明**(D8-3 立项产出物)
 > 阶段:**V2-D8 立项中**(2026-05-07)
 > 状态:**初稿**,待 D8 立项 5 份产出物全部就位 + 用户拍板才能启动 Step 1
-> 依据:`ARCHITECTURE.md §12.8-§12.11`(commit `85cec75`)+ `docs/archive/plans/v2-first-stage-plan.md`(原 `docs/v2-plan.md`,commit `bff9c93`,PR-5 已归档)+ `data-model-draft.md` v0.3 D7-min 决议(commit `4333c31`)+ baseline(commit `16876fe`)
+> 依据:`docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.8-§12.11`(原 `ARCHITECTURE.md §12.8-§12.11`,commit `85cec75`,PR-6 已归档)+ `docs/archive/plans/v2-first-stage-plan.md`(原 `docs/v2-plan.md`,commit `bff9c93`,PR-5 已归档)+ `data-model-draft.md` v0.3 D7-min 决议(commit `4333c31`)+ baseline(commit `16876fe`)
 
 ---
 
@@ -28,7 +28,7 @@
 
 ### 0.3 严守的边界
 
-继承 `ARCHITECTURE.md §12.8.4` + `docs/archive/plans/v2-first-stage-plan.md §0.3`(原 `v2-plan.md §0.3`,PR-5 已归档):
+继承 `docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.8.4`(原 `ARCHITECTURE.md §12.8.4`,PR-6 已归档)+ `docs/archive/plans/v2-first-stage-plan.md §0.3`(原 `v2-plan.md §0.3`,PR-5 已归档):
 
 - ❌ 不写 Prisma DSL(`@id` / `@default` / `@relation` / `@@unique` / `@@map` 等装饰器)
 - ❌ 不写完整 Prisma `model Xxx { ... }` 块
@@ -58,7 +58,7 @@ V2 第一阶段开发范围由 D7-min 决议锁定为 **4 个新模型 + 1 项 v
 | 5 | `member_departments` | §6 | `170xx + 171xx` | `deletedAt`(单归属约束在 `deletedAt = null` 范围内) |
 | — | v1 `users` 表追加 `memberId` 可空外键 | §7 | 复用 v1 `100xx + 101xx` | 沿用 v1 |
 
-**第一阶段不开发**(完整延后清单见 `ARCHITECTURE.md §12.8.1`):
+**第一阶段不开发**(完整延后清单见 `docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.8.1`,原 `ARCHITECTURE.md §12.8.1`,PR-6 已归档):
 
 - `member_profiles` / `attachments` / `audit_logs` / `events` / `event_participants`
 
@@ -372,7 +372,7 @@ V2 第一阶段**业务规则**(对应 D7-min MD-2 / MD-6):
 
 实施 `data-model-draft.md` v0.3 §3.3.10 M-2 + §4.2.6 决议:在 v1 `users` 表追加可空 `memberId` 字段,作为 v1 user 与 V2 member 的关联点。
 
-### 7.2 v1 兼容性红线(对齐 ARCHITECTURE.md §12.8.2)
+### 7.2 v1 兼容性红线(对齐 `docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.8.2`,原 `ARCHITECTURE.md §12.8.2`,PR-6 已归档)
 
 | 维度 | 红线 |
 |---|---|
@@ -694,5 +694,5 @@ V2.x 复活触发条件见 [`docs/V2红线与复活路径.md §4.3`](V2红线与
 
 ---
 
-> **本文是 D8-3 立项产出物**;V2-D8 标记完成需 5 份立项产出物全部就位(对应 `ARCHITECTURE.md §12.11.1`)。
+> **本文是 D8-3 立项产出物**;V2-D8 标记完成需 5 份立项产出物全部就位(对应 `docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.11.1`,原 `ARCHITECTURE.md §12.11.1`,PR-6 已归档)。
 > Step 1 启动需 V2-D8 ✅ + 用户单独拍板;**禁止**绕过 D8 直接进入开发。
