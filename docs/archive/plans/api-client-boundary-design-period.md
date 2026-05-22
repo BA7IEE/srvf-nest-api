@@ -1,3 +1,33 @@
+> **归档说明**(2026-05-22 PR-3 `docs: archive api-client-boundary.md as design-period doc` 起)
+>
+> 本文件原位于 `docs/api-client-boundary.md`,作为 Phase 0 客户端边界设计期顶层规范。
+>
+> **当前状态**:
+> - Phase 0 / Phase 1A 评审与落地已收口于 v0.15.0(Phase 1A Swagger Tag 重命名 PR #142 已合并);Phase 2 完整 15 endpoint 全部落地;Phase 1B path alias 仍暂缓
+> - 本文件**只作历史证据**,不再作为当前执行约束
+>
+> **承接当前事实**(active 权威源):
+> - **API surface 长期边界** → [`docs/api-surface-policy.md`](../../api-surface-policy.md)(active 滚动维护;承接 v0.15.0 Phase 1A 后的稳定边界)
+> - **§19.7 D-1 ~ D-8 客户端边界长期决策锁** → [`AGENTS.md §19`](../../../AGENTS.md)
+> - **架构边界铁律**(Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect 抽离决策) → [`docs/architecture-boundary.md`](../../architecture-boundary.md)
+> - **Participation 上下文** → [`docs/participation-bounded-context.md`](../../participation-bounded-context.md)
+> - **附件配置三表边界** → [`docs/attachment-config-boundary.md`](../../attachment-config-boundary.md)
+>
+> **同期归档的配套设计期产物**(均在 `docs/archive/`):
+> - `docs/archive/reviews/api-client-boundary-inventory.md`(现状盘点)
+> - `docs/archive/plans/api-client-boundary-migration-plan.md`(分阶段路线)
+> - `docs/archive/reviews/api-client-boundary-phase-1-review.md`(Phase 1 评审稿)
+> - `docs/archive/reviews/app-permission-boundary-review.md` / `data-access-lifecycle-boundary-review.md` / `code-architecture-boundary-review.md`(Phase 0.5 / 0.6 / 0.7)
+> - `docs/archive/reviews/app-api-phase-2-review.md`(Phase 2 启动评审)
+>
+> **内部相对链接说明**:本文件内的相对路径写法(`api-client-boundary-inventory.md` / `api-client-boundary-migration-plan.md` / `current-state.md` 等)仍按 **原位置**(`docs/`)的相对路径保留 verbatim,**未做编辑**;读者沿上方"承接当前事实"的链接进入 active 文档即可,无需依赖本文件内的旧链接。
+>
+> **PR-3 归档边界**:`docs/api-client-boundary.md` 经 `git mv` 整体迁出,文件正文 verbatim 保留(仅追加本归档说明 banner);active 文档对本文件的引用已在 PR-3 同步刷新(`README.md` / `docs/api-surface-policy.md` §4 / `docs/README.md` §1 / `TASKS.md §10.1`);`AGENTS.md` / `CLAUDE.md` 内的旧引用沿用户 PR-3 范围限定**留给后续 PR**(AGENTS.md 重写时一并处理)。
+>
+> 冲突时:**当前事实 / active 文档优先**,本归档让步。
+
+---
+
 # SRVF API Client Boundary(顶层规范 / 设计期 v0)
 
 > **状态**:**设计期 v0**(2026-05-19)。**仅文档锁定,不是开发执行约束。**
