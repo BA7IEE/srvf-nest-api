@@ -694,7 +694,7 @@ V2 模块开发任务完成后,按以下两档逐项验证再报告完成:
 
 ### 14.1 草案文档的隐含约束
 
-`docs/v2-plan.md` / `docs/v2-data-model.md` / `docs/v2-api-contract.md` 等开发级文档(以及历史草案 `docs/archive/plans/v2-design-phase/srvf-foundation-data-model-draft.md`,PR-4 已归档):
+`docs/v2-data-model.md` / `docs/v2-api-contract.md` 等开发级文档(以及历史计划 `docs/archive/plans/v2-first-stage-plan.md`,原 `docs/v2-plan.md`,PR-5 已归档;历史草案 `docs/archive/plans/v2-design-phase/srvf-foundation-data-model-draft.md`,PR-4 已归档):
 
 - **默认遵守**本规范,**无需逐项重述**
 - 草案中可显式援引"基线规范 §X.Y",但不重抄具体内容

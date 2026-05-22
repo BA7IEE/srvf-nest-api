@@ -4,7 +4,7 @@
 > 文档定位:**V2 第一阶段正式数据模型说明**(D8-3 立项产出物)
 > 阶段:**V2-D8 立项中**(2026-05-07)
 > 状态:**初稿**,待 D8 立项 5 份产出物全部就位 + 用户拍板才能启动 Step 1
-> 依据:`ARCHITECTURE.md §12.8-§12.11`(commit `85cec75`)+ `docs/v2-plan.md`(commit `bff9c93`)+ `data-model-draft.md` v0.3 D7-min 决议(commit `4333c31`)+ baseline(commit `16876fe`)
+> 依据:`ARCHITECTURE.md §12.8-§12.11`(commit `85cec75`)+ `docs/archive/plans/v2-first-stage-plan.md`(原 `docs/v2-plan.md`,commit `bff9c93`,PR-5 已归档)+ `data-model-draft.md` v0.3 D7-min 决议(commit `4333c31`)+ baseline(commit `16876fe`)
 
 ---
 
@@ -15,7 +15,7 @@
 - V2 第一阶段**正式数据模型说明**:覆盖 4 个 V2 新模型 + 1 项 v1 兼容性追加
 - 字段级粒度:字段名 + 类型意图 + 可空性 + 用途 + 来源
 - 索引与约束意图:全文用**形态级**描述,**不**写 Prisma DSL / SQL
-- 配合 `docs/v2-plan.md` Step 1 任务卡 + `docs/v2-api-contract.md`(D8-4 待产出)+ `TASKS.md §6` 任务卡(D8-5 待产出)使用
+- 配合 `docs/archive/plans/v2-first-stage-plan.md` Step 1 任务卡(原 `docs/v2-plan.md`,PR-5 已归档)+ `docs/v2-api-contract.md`(D8-4 待产出)+ `TASKS.md §6` 任务卡(D8-5 待产出)使用
 
 ### 0.2 这份文件不是什么
 
@@ -28,7 +28,7 @@
 
 ### 0.3 严守的边界
 
-继承 `ARCHITECTURE.md §12.8.4` + `v2-plan.md §0.3`:
+继承 `ARCHITECTURE.md §12.8.4` + `docs/archive/plans/v2-first-stage-plan.md §0.3`(原 `v2-plan.md §0.3`,PR-5 已归档):
 
 - ❌ 不写 Prisma DSL(`@id` / `@default` / `@relation` / `@@unique` / `@@map` 等装饰器)
 - ❌ 不写完整 Prisma `model Xxx { ... }` 块
@@ -70,7 +70,7 @@ V2 第一阶段开发范围由 D7-min 决议锁定为 **4 个新模型 + 1 项 v
 
 承载 V2 字典的**类型层**(对应 `data-model-draft.md` v0.3 §3.1.10 D-1 双表方案的上层);第一阶段仅 2 类语义:**节点类别**(`organizations.nodeTypeCode` 引用)+ **队员等级**(`members.gradeCode` 引用)。
 
-**业务真实取值不进 git history**(沿用 R13);seed 仅 neutral-demo 占位(对应 `v2-plan.md §2.2 Step 2`)。
+**业务真实取值不进 git history**(沿用 R13);seed 仅 neutral-demo 占位(对应 `docs/archive/plans/v2-first-stage-plan.md §2.2 Step 2`,原 `v2-plan.md §2.2 Step 2`,PR-5 已归档)。
 
 ### 2.2 字段说明
 
@@ -115,7 +115,7 @@ V2 第一阶段开发范围由 D7-min 决议锁定为 **4 个新模型 + 1 项 v
 
 承载 V2 字典的**项目层**(对应 D-1 双表方案的下层);每个 `dict_item` 隶属一个 `dict_type`;支持 `parentId` 自引用父子树形(对应 D-3 `parentId` 自引用)。
 
-第一阶段实际 items 内容:仅 neutral-demo 占位(`v2-plan.md §2.2`);真实业务取值由运营在部署后通过运营后台 / 私有 seed 录入。
+第一阶段实际 items 内容:仅 neutral-demo 占位(`docs/archive/plans/v2-first-stage-plan.md §2.2`,原 `v2-plan.md §2.2`,PR-5 已归档);真实业务取值由运营在部署后通过运营后台 / 私有 seed 录入。
 
 ### 3.2 字段说明
 
@@ -388,7 +388,7 @@ V2 第一阶段**业务规则**(对应 D7-min MD-2 / MD-6):
 | 维度 | 规则 |
 |---|---|
 | **必返字段**:**不**新增 | v1 `UserResponseDto` 字段集**不变**;`memberId` **不进**必返字段 |
-| **可选返回**:由开发任务决定 | `memberId` 是否作为可选返回字段(用 `?` 标记 / `nullable: true` Swagger 标注),由 `v2-plan.md §2.5 Step 5` 实施时**显式决定**;**默认不返回** |
+| **可选返回**:由开发任务决定 | `memberId` 是否作为可选返回字段(用 `?` 标记 / `nullable: true` Swagger 标注),由 `docs/archive/plans/v2-first-stage-plan.md §2.5 Step 5`(原 `v2-plan.md §2.5 Step 5`,PR-5 已归档)实施时**显式决定**;**默认不返回** |
 | OpenAPI 契约快照 | v1 `UserResponseDto` schema 在快照中保持不变;若 Step 5 决定可选返回,V2 step 在快照中显式更新 |
 | 倒灌禁止 | `members.*` 字段**禁止**倒灌进 `UserResponseDto`(沿用 `research.md §5.6` 红线);如需返回 member 信息,通过独立 `MemberResponseDto` 响应 |
 
@@ -398,7 +398,7 @@ V2 第一阶段**业务规则**(对应 D7-min MD-2 / MD-6):
 |---|---|
 | SUPER_ADMIN 创建 | v1 `seed.ts` 创建 SUPER_ADMIN 的逻辑**完全不动**(`SUPER_ADMIN_USERNAME` / `SUPER_ADMIN_PASSWORD` / `SUPER_ADMIN_EMAIL` 等环境变量读取 / bcrypt 哈希 / 创建逻辑均保留) |
 | SUPER_ADMIN.memberId | 默认 `null`(不绑 member);若运营后续要绑,通过运营后台或独立接口操作 |
-| seed 新增内容 | 仅追加字典 neutral-demo seed(`v2-plan.md §2.2 Step 2`);**不**新增 organizations / members / member_departments seed |
+| seed 新增内容 | 仅追加字典 neutral-demo seed(`docs/archive/plans/v2-first-stage-plan.md §2.2 Step 2`,原 `v2-plan.md §2.2 Step 2`,PR-5 已归档);**不**新增 organizations / members / member_departments seed |
 
 ### 7.5 字段说明(仅追加部分)
 

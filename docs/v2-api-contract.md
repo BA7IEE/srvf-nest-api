@@ -6,7 +6,7 @@
 > 文档定位:**V2 第一阶段 API 契约草案**(D8-4 立项产出物)
 > 阶段:**V2-D8 立项中**(2026-05-07)
 > 状态:**初稿**,待 D8 立项 5 份产出物全部就位 + 用户拍板才能启动 Step 1
-> 依据:`ARCHITECTURE.md §12.8-§12.11`(commit `85cec75`)+ `docs/v2-plan.md`(commit `bff9c93`)+ `docs/v2-data-model.md`(commit `af236f2`)+ `data-model-draft.md` v0.3 D7-min(commit `4333c31`)+ baseline(commit `16876fe`)
+> 依据:`ARCHITECTURE.md §12.8-§12.11`(commit `85cec75`)+ `docs/archive/plans/v2-first-stage-plan.md`(原 `docs/v2-plan.md`,commit `bff9c93`,PR-5 已归档)+ `docs/v2-data-model.md`(commit `af236f2`)+ `data-model-draft.md` v0.3 D7-min(commit `4333c31`)+ baseline(commit `16876fe`)
 
 ---
 
@@ -15,7 +15,7 @@
 ### 0.1 本文是什么
 
 - V2 第一阶段 API **契约级**草案:HTTP 方法 / 路径 / 入参字段类别 / 出参字段类别 / 权限角色 / 主要错误码 / OpenAPI 快照协议
-- 配合 `docs/v2-plan.md` Step 3-6 任务卡 + `docs/v2-data-model.md` 数据模型 + `TASKS.md §6` 任务卡(D8-5 待产出)使用
+- 配合 `docs/archive/plans/v2-first-stage-plan.md` Step 3-6 任务卡(原 `docs/v2-plan.md`,PR-5 已归档)+ `docs/v2-data-model.md` 数据模型 + `TASKS.md §6` 任务卡(D8-5 待产出)使用
 
 ### 0.2 本文不是什么
 
@@ -31,7 +31,7 @@
 
 本契约为**草案**,接口数量与签名待 V2-D8 立项 commit 完整后 + Step 3-6 实施期可能微调。重大调整(新增 / 删除 / 改路径 / 改方法)需:
 
-1. 在 v2-plan.md / v2-data-model.md / 本文同步更新
+1. 在 `docs/archive/plans/v2-first-stage-plan.md`(原 v2-plan.md,PR-5 已归档)/ v2-data-model.md / 本文同步更新
 2. 通过 OpenAPI 契约快照对比对比(`pnpm test:contract`)
 3. 用户拍板
 

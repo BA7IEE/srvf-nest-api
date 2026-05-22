@@ -57,7 +57,7 @@
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md):引用 `TASKS.md §6` / `§6.10`(原 `§5.5.4.3` 引用已在 PR-2 刷新至 `docs/V2红线与复活路径.md §4.3`;原 `§6.4` 引用为 pre-existing bug,PR-2 已修正为 `§6.10`)
 - [`docs/V2红线与复活路径.md`](docs/V2红线与复活路径.md):引用 `§6.0` / `§6.9` / `§6.10` / `§6.11`(原 `§5.5.4.3` 引用已在 PR-2 刷新为指向本文件 §4.3 或归档快照;原 `§6.4` 引用为 pre-existing bug,PR-2 已修正为 `§6.9`)
-- [`docs/v2-plan.md`](docs/v2-plan.md):引用 `§6`(原 `§5.5.4.3` 引用已在 PR-2 刷新至 `V2红线 §4.3`)
+- [`docs/archive/plans/v2-first-stage-plan.md`](docs/archive/plans/v2-first-stage-plan.md):引用 `§6`(原 `docs/v2-plan.md`,PR-5 已归档;原 `§5.5.4.3` 引用已在 PR-2 刷新至 `V2红线 §4.3`)
 - [`docs/v2-data-model.md`](docs/v2-data-model.md):引用 `§6`(原 `§5.5.4.3` 引用已在 PR-2 刷新至 `V2红线 §4.3`)
 - [`docs/v2-api-contract.md`](docs/v2-api-contract.md):引用 `§6`
 - [`docs/archive/plans/v2-design-phase/srvf-foundation-research.md`](docs/archive/plans/v2-design-phase/srvf-foundation-research.md) / [`docs/archive/plans/v2-design-phase/srvf-foundation-data-model-draft.md`](docs/archive/plans/v2-design-phase/srvf-foundation-data-model-draft.md):原引用 V2 设计任务卡(PR-2 已标注归档指针;PR-4 已将这两个文件整体归档至 `docs/archive/plans/v2-design-phase/`)
@@ -71,7 +71,7 @@
 
 > **状态**:V2-D8 立项已完成(5/5 产出物就位)+ memberNo 决议已纳入(2026-05-08;Q1=A / Q2=B-1 / Q3-Q9 全部锁定);**等待用户最后拍板**进入 Step 1 开发。
 > **范围**:V2 第一阶段 4 模型 + `users.memberId` 可空外键追加 + `Member.memberNo` 业务唯一编号 + v1 `auth.service.ts` 登录查找扩展支持 memberNo 回退(D7-min + memberNo 决议锁定)。
-> **依据**:`ARCHITECTURE.md §12.8-§12.11`(memberNo 决议后修订)/ `docs/v2-plan.md` v0.2 / `docs/v2-data-model.md` v0.2 / `docs/v2-api-contract.md` v0.2(含 §6.6 v1 登录路径 memberNo 回退查找)/ baseline(commit `16876fe`)。
+> **依据**:`ARCHITECTURE.md §12.8-§12.11`(memberNo 决议后修订)/ `docs/archive/plans/v2-first-stage-plan.md` v0.2(原 `docs/v2-plan.md`,PR-5 已归档)/ `docs/v2-data-model.md` v0.2 / `docs/v2-api-contract.md` v0.2(含 §6.6 v1 登录路径 memberNo 回退查找)/ baseline(commit `16876fe`)。
 > **解除条件**:Step 1-7 全部 ✅ 后,V2 第一阶段开发闭环;V2.x 启动需用户单独拍板(对应 §6.11)。
 
 ### 6.0 范围速读
@@ -170,7 +170,7 @@
 - **完成情况**(2026-05-08):
   - commit `53c9a03` `chore(seed): add V2 neutral demo dictionary seeds`
   - 交付:`prisma/seed.ts` 改动(+88/-21);新增 `V2_DICT_SEED` 常量 + `seedV2Dictionaries()` 函数;SUPER_ADMIN 控制流 `return` → `if/else`,确保 SUPER_ADMIN 已存在时仍续跑字典 seed(创建逻辑代码零改动)
-  - type code 决议(B-2):`node_type` + `member_grade`(snake_case 命名风格对齐);Step 2 commit 时 `docs/v2-plan.md §2.2` 草案与实施 dict_type code 的差异已通过 housekeeping 同步至 `member_grade`
+  - type code 决议(B-2):`node_type` + `member_grade`(snake_case 命名风格对齐);Step 2 commit 时 `docs/archive/plans/v2-first-stage-plan.md §2.2`(原 `docs/v2-plan.md §2.2`,PR-5 已归档)草案与实施 dict_type code 的差异已通过 housekeeping 同步至 `member_grade`
   - 数据清单:dict_types = 2(`node_type` / `member_grade`)+ dict_items = 4(每类 2 个 `demo-*` 抽象占位,全部 `parentId = null` 顶层、`status = ACTIVE`、`sortOrder` 0/1)
   - 幂等策略:`upsert` + `update: {}` 不覆盖运营运行时手动调整;两次 `pnpm prisma:seed` 后 dict_types / dict_items 行数不变
   - A 档全过:`pnpm lint` / `pnpm typecheck` / `pnpm test`(177 passed)/ `pnpm test:e2e`(19 suites / 162 tests v1 零退化)/ `pnpm test:contract`(29 tests / 2 snapshots OpenAPI 零漂移)
@@ -346,11 +346,11 @@
   - `git revert <auth-commit>` 单独撤回 auth(因强制拆 2 commit,可独立回滚)
   - `git revert <members-commit>` 单独撤回 members CRUD
   - 两 commit 独立可回滚;e2e 护栏护住回归
-- **建议 commit message**(memberNo 决议:**强制拆 2 commit**,见 `docs/v2-plan.md §2.5` commit message 段全文):
+- **建议 commit message**(memberNo 决议:**强制拆 2 commit**,见 `docs/archive/plans/v2-first-stage-plan.md §2.5`(原 `docs/v2-plan.md §2.5`,PR-5 已归档)commit message 段全文):
   - Commit 1:`feat(members): add memberNo to member lifecycle`(members CRUD + v1 users.memberId hook)
   - Commit 2:`feat(auth): support memberNo login fallback`(auth.service.ts 登录回退;**仅含此一处文件改动 + 配套 e2e + 快照对比**;**严禁**与 members CRUD 揉合)
 - **完成情况**(2026-05-08):
-  - **强制拆 2 commit**(ARCHITECTURE.md §12.8.2.4 / docs/v2-plan.md §2.5 / CLAUDE.md §17 红线;严禁揉合;独立可 revert):
+  - **强制拆 2 commit**(ARCHITECTURE.md §12.8.2.4 / docs/archive/plans/v2-first-stage-plan.md §2.5(原 docs/v2-plan.md §2.5,PR-5 已归档)/ CLAUDE.md §17 红线;严禁揉合;独立可 revert):
     - **Commit 1** `1baa6c6` `feat(members): add memberNo to member lifecycle`(10 files / +2299 / -1)
       - 文件范围:`src/app.module.ts` / `src/common/exceptions/biz-code.constant.ts` / `src/modules/members/`(4 文件)/ `test/contract/openapi.contract-spec.ts` + snapshot / `test/e2e/members.e2e-spec.ts` / `test/setup/reset-db.ts`
       - **不含**:`auth.service.ts` / `auth-memberno-login.e2e-spec.ts`
@@ -893,7 +893,8 @@ PR #11 release tag v0.9.0 后,**才**启动 C-7 attachments D7 评审稿(沿 PR 
 - ✅ **docs 治理 PR-2**(已完成):TASKS.md 外部引用刷新(`ARCHITECTURE.md` / `V2红线` / `v2-plan` / `v2-data-model` / `srvf-foundation-research` / `srvf-foundation-data-model-draft` 中指向 `§5.5.4.3` / `§6.4` 等旧引用全部刷新)
 - ✅ **docs 治理 PR-3**(已完成):`docs/api-client-boundary.md` 归档至 `docs/archive/plans/api-client-boundary-design-period.md`;`api-surface-policy.md` 承接为 surface 边界 active 单一权威源(`AGENTS.md` / `CLAUDE.md` 内的旧引用刷新留后续 PR)
 - ✅ **docs 治理 PR-4**(已完成):3 个 V2 设计期产物归档至 `docs/archive/plans/v2-design-phase/`(`srvf-foundation-research.md` / `srvf-foundation-data-model-draft.md` / `srvf-foundation-interview-brief.md`);7 个 active 文档对应引用同步刷新
-- ⏸️ **docs 治理后续 PR**:AGENTS.md 重写 / v2-plan.md 归档 / ARCHITECTURE.md §1-§10 v1 蓝图归档 等
+- ✅ **docs 治理 PR-5**(已完成):`docs/v2-plan.md` 归档至 `docs/archive/plans/v2-first-stage-plan.md`(V2 第一阶段 Step 1-7 已全部交付,计划文档转历史快照);7 个 active 文档对应引用同步刷新
+- ⏸️ **docs 治理后续 PR**:AGENTS.md 重写 / ARCHITECTURE.md §1-§10 v1 蓝图归档 等
 
 ### 10.2 启动新任务的流程(沿 [`docs/process.md §2-§4`](docs/process.md))
 

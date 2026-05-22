@@ -1,3 +1,32 @@
+> **归档说明**(2026-05-22 PR-5 `docs: archive V2 first-stage plan` 起)
+>
+> 本文件已于 PR-5 归档。
+>
+> - **原路径**:`docs/v2-plan.md`
+> - **新路径**:`docs/archive/plans/v2-first-stage-plan.md`(本文件)
+>
+> **归档原因**:V2 第一阶段开发执行计划(D8-2 立项产出物,2026-05-07/08;7 步顺序 + 每步任务卡)。V2-D8 立项已完成于 2026-05-08;V2 第一阶段 Step 1-7 已全部 ✅ 交付。当前实现事实由 Prisma schema + 当前事实 / 数据模型 / 接口契约 文档承载,**不再依赖本计划文档**。
+>
+> **active 替代阅读路径**:
+> - **当前事实**(版本 / open PR / 已落地能力 / 当前债务)→ [`docs/current-state.md`](../../current-state.md)
+> - **当前 V2 数据模型** → [`docs/v2-data-model.md`](../../v2-data-model.md)
+> - **当前 V2 接口契约** → [`docs/v2-api-contract.md`](../../v2-api-contract.md)
+> - **当前 Prisma schema**(权威源)→ [`prisma/schema.prisma`](../../../prisma/schema.prisma)
+> - **后续任务入口** → [`TASKS.md`](../../../TASKS.md)
+> - **V2.x 复活触发条件** → [`docs/V2红线与复活路径.md §4.3`](../../V2红线与复活路径.md)
+>
+> **同期归档兄弟文件**(均在 `docs/archive/plans/v2-design-phase/`):
+> - `srvf-foundation-research.md`(V2-D1 研究文档;PR-4 已归档)
+> - `srvf-foundation-data-model-draft.md`(V2-D6 草案;PR-4 已归档)
+> - `srvf-foundation-interview-brief.md`(V2-D5 访谈提纲;PR-4 已归档)
+> - `tasks.md`(V2-D 设计期任务卡;PR-1 已归档)
+>
+> **正文状态**:**历史快照,verbatim 保留**(除本 banner 外不维护)。文件内对其他 `docs/` 文档的相对路径未做 rewrite,沿用原 `docs/` 视角写法 — 读者沿上方 active 文档链接即可,无需依赖正文内的旧链接。
+>
+> 冲突时:**当前事实 / active 文档优先**,本归档让步。
+
+---
+
 # V2 第一阶段开发执行计划
 
 > 派生项目:**srvf-nest-api**
