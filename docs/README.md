@@ -28,7 +28,6 @@ V2 设计期产物(仍在使用,但属于"参考级"):
 
 | 文件 | 用途 |
 |---|---|
-| [`v2-plan.md`](./v2-plan.md) | V2 第一阶段开发执行计划(Step 1-7 已完成) |
 | [`v2-data-model.md`](./v2-data-model.md) | V2 第一阶段数据模型说明 |
 | [`v2-api-contract.md`](./v2-api-contract.md) | V2 第一阶段接口契约(完整字段 / 错误码 / 权限矩阵) |
 | [`srvf-business-docs.md`](./srvf-business-docs.md) | 外部业务文档库路径索引(不在本仓库内) |
