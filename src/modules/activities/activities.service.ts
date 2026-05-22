@@ -6,7 +6,6 @@ import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.con
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   ActivityListItemDto,
@@ -16,6 +15,7 @@ import {
   ListActivitiesQueryDto,
   UpdateActivityDto,
 } from './activities.dto';
+import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ActivityStateMachine } from './activity-state-machine';
 
 // V2 第一阶段批次 3A activities service。
@@ -41,7 +41,6 @@ import { ActivityStateMachine } from './activity-state-machine';
 
 const DICT_TYPE_ACTIVITY_TYPE = 'activity_type';
 const DICT_TYPE_GENDER_REQUIREMENT = 'gender_requirement';
-const AUDIT_RESOURCE_TYPE = 'activity';
 
 const ACTIVITY_STATUS_DRAFT = 'draft';
 const ACTIVITY_STATUS_PUBLISHED = 'published';
@@ -112,8 +111,8 @@ type PrismaTx = Prisma.TransactionClient;
 export class ActivitiesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogs: AuditLogsService,
     private readonly activityStateMachine: ActivityStateMachine,
+    private readonly activityAuditRecorder: ActivityAuditRecorder,
   ) {}
 
   // ============ helpers ============
@@ -121,40 +120,6 @@ export class ActivitiesService {
   // Prisma Decimal 字段 → string;null 透传。NaN 不会出现(@db.Decimal 兜底)。
   private decimalToString(d: Prisma.Decimal | null): string | null {
     return d === null ? null : d.toString();
-  }
-
-  // PR #4 audit snapshot:把 ActivityFullRow 转成 JSON-safe 入 audit context。
-  // 字段集 = activitySafeSelect 剔除 id / createdAt / updatedAt(audit_logs 自带 resourceId /
-  // createdAt / actorUserId,沿 toAuditSnapshot 范式);Decimal 经 decimalToString 转 string;
-  // Json 经 jsonAsObject / jsonAsStringArray 取强类型;Date 由 Prisma JsonValue 写入时
-  // 自动调 Date.toJSON() → ISO string;字段全非敏感(打码矩阵 §4.3 未命中)。
-  private toAuditSnapshot(row: ActivityFullRow): Record<string, unknown> {
-    return {
-      title: row.title,
-      activityTypeCode: row.activityTypeCode,
-      organizationId: row.organizationId,
-      startAt: row.startAt,
-      endAt: row.endAt,
-      location: row.location,
-      description: row.description,
-      capacity: row.capacity,
-      genderRequirementCode: row.genderRequirementCode,
-      registrationDeadline: row.registrationDeadline,
-      registrationNotes: row.registrationNotes,
-      statusCode: row.statusCode,
-      publishedBy: row.publishedBy,
-      publishedAt: row.publishedAt,
-      cancelledBy: row.cancelledBy,
-      cancelledAt: row.cancelledAt,
-      cancelReason: row.cancelReason,
-      isPublicRegistration: row.isPublicRegistration,
-      registrationSchema: this.jsonAsObject(row.registrationSchema),
-      coverImageUrl: row.coverImageUrl,
-      galleryImageUrls: this.jsonAsStringArray(row.galleryImageUrls),
-      content: this.jsonAsObject(row.content),
-      locationLongitude: this.decimalToString(row.locationLongitude),
-      locationLatitude: this.decimalToString(row.locationLatitude),
-    };
   }
 
   // Json 字段 → 强类型;Prisma 返回 JsonValue,DTO 用 Record<string, unknown> / string[]。
@@ -407,15 +372,12 @@ export class ActivitiesService {
         select: activitySafeSelect,
       });
 
-      await this.auditLogs.log({
-        event: 'activity.publish',
+      await this.activityAuditRecorder.logCreate({
+        created,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: created.id,
-        meta: auditMeta,
-        after: this.toAuditSnapshot(created),
-        extra: { operation: 'create', nextStatusCode: ACTIVITY_STATUS_DRAFT },
+        nextStatusCode: ACTIVITY_STATUS_DRAFT,
+        auditMeta,
         tx,
       });
 
@@ -508,20 +470,15 @@ export class ActivitiesService {
         select: activitySafeSelect,
       });
 
-      await this.auditLogs.log({
-        event: 'activity.publish',
+      await this.activityAuditRecorder.logUpdate({
+        activityId: current.id,
+        before: current,
+        after: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: current.id,
-        meta: auditMeta,
-        before: this.toAuditSnapshot(current),
-        after: this.toAuditSnapshot(updated),
-        extra: {
-          operation: 'update',
-          priorStatusCode: current.statusCode,
-          changedFields: Object.keys(dto),
-        },
+        priorStatusCode: current.statusCode,
+        changedFields: Object.keys(dto),
+        auditMeta,
         tx,
       });
 
@@ -545,15 +502,13 @@ export class ActivitiesService {
         select: activitySafeSelect,
       });
 
-      await this.auditLogs.log({
-        event: 'activity.publish',
+      await this.activityAuditRecorder.logSoftDelete({
+        activityId: current.id,
+        before: current,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: current.id,
-        meta: auditMeta,
-        before: this.toAuditSnapshot(current),
-        extra: { operation: 'softDelete', priorStatusCode: current.statusCode },
+        priorStatusCode: current.statusCode,
+        auditMeta,
         tx,
       });
 
@@ -588,20 +543,15 @@ export class ActivitiesService {
         select: activitySafeSelect,
       });
 
-      await this.auditLogs.log({
-        event: 'activity.publish',
+      await this.activityAuditRecorder.logPublish({
+        activityId: current.id,
+        before: current,
+        after: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: current.id,
-        meta: auditMeta,
-        before: this.toAuditSnapshot(current),
-        after: this.toAuditSnapshot(updated),
-        extra: {
-          operation: 'publish',
-          priorStatusCode: current.statusCode,
-          nextStatusCode,
-        },
+        priorStatusCode: current.statusCode,
+        nextStatusCode,
+        auditMeta,
         tx,
       });
 
@@ -638,21 +588,16 @@ export class ActivitiesService {
         select: activitySafeSelect,
       });
 
-      await this.auditLogs.log({
-        event: 'activity.publish',
+      await this.activityAuditRecorder.logCancel({
+        activityId: current.id,
+        before: current,
+        after: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: current.id,
-        meta: auditMeta,
-        before: this.toAuditSnapshot(current),
-        after: this.toAuditSnapshot(updated),
-        extra: {
-          operation: 'cancel',
-          priorStatusCode: current.statusCode,
-          nextStatusCode,
-          cancelReason: dto.cancelReason ?? null,
-        },
+        priorStatusCode: current.statusCode,
+        nextStatusCode,
+        cancelReason: dto.cancelReason ?? null,
+        auditMeta,
         tx,
       });
 
