@@ -68,7 +68,7 @@
 
 | # | 模型 | V2.x 复活触发条件 |
 |---|---|---|
-| 5 | `member_profiles` | 合规依据补齐(详见 `TASKS.md §5.5.4.3`) |
+| 5 | `member_profiles` | 合规依据补齐(详见 [`docs/V2红线与复活路径.md §4.3`](V2红线与复活路径.md)) |
 | 6 | `attachments` | profiles / events 解锁 / 用户拍板独立诉求(任一即可) |
 | 7 | `audit_logs` | V2.x 第一个增量,接入 V2 第一阶段 4 模型关键写操作 |
 | 8 | `events` | 用户拍板需求 → D7-4 评审 |
@@ -1027,7 +1027,7 @@ pnpm test:contract            # OpenAPI 契约快照(若涉及 schema 改动需 
 - ❌ `events`(活动事件)
 - ❌ `event_participants`(参与状态)
 
-V2.x 复活触发条件见 `TASKS.md §5.5.4.3`。
+V2.x 复活触发条件见 [`docs/V2红线与复活路径.md §4.3`](V2红线与复活路径.md)。
 
 ### 7.2 不实施的能力
 

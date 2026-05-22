@@ -55,14 +55,15 @@
 
 为保留以下 active 文档对 `TASKS.md §6 / §7 / §8 / §9` 的现有引用,**本 PR 不重新编号本文件章节**;§1-§5 留作历史归档占位:
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md):引用 `TASKS.md §6` / `§6.4` / `§5.5.4.3`(后者已 redirect,见 §0.2.1)
-- [`docs/V2红线与复活路径.md`](docs/V2红线与复活路径.md):引用 `§5.5.4.3` / `§6.0` / `§6.4` / `§6.10` / `§6.11` / `§9`
-- [`docs/v2-plan.md`](docs/v2-plan.md):引用 `§6` / `§5.5.4.3`
-- [`docs/v2-data-model.md`](docs/v2-data-model.md):引用 `§5.5.4.3`
+- [`ARCHITECTURE.md`](ARCHITECTURE.md):引用 `TASKS.md §6` / `§6.10`(原 `§5.5.4.3` 引用已在 PR-2 刷新至 `docs/V2红线与复活路径.md §4.3`;原 `§6.4` 引用为 pre-existing bug,PR-2 已修正为 `§6.10`)
+- [`docs/V2红线与复活路径.md`](docs/V2红线与复活路径.md):引用 `§6.0` / `§6.9` / `§6.10` / `§6.11`(原 `§5.5.4.3` 引用已在 PR-2 刷新为指向本文件 §4.3 或归档快照;原 `§6.4` 引用为 pre-existing bug,PR-2 已修正为 `§6.9`)
+- [`docs/v2-plan.md`](docs/v2-plan.md):引用 `§6`(原 `§5.5.4.3` 引用已在 PR-2 刷新至 `V2红线 §4.3`)
+- [`docs/v2-data-model.md`](docs/v2-data-model.md):引用 `§6`(原 `§5.5.4.3` 引用已在 PR-2 刷新至 `V2红线 §4.3`)
 - [`docs/v2-api-contract.md`](docs/v2-api-contract.md):引用 `§6`
+- [`docs/srvf-foundation-research.md`](docs/srvf-foundation-research.md) / [`docs/srvf-foundation-data-model-draft.md`](docs/srvf-foundation-data-model-draft.md):引用 V2 设计任务卡(已在 PR-2 标注归档指针)
 - [`docs/archive/handoff/v0.9.0.md`](docs/archive/handoff/v0.9.0.md) / `v0.10.0.md` / `v0.11.0.md` / `v0.12.0.md`:引用 `§7` / `§8` / `§9`(frozen handoff,沿铁律不回改)
 
-**外部引用更新留给后续治理 PR**;读者遇到指向 `§1-§5` 的旧引用时,以本 §0 归档索引 + redirect 提示为准。
+**外部引用刷新已在 PR-2 完成**;读者遇到指向 `§1-§5` 的旧引用时,以本 §0 归档索引 + redirect 提示为准。
 
 ---
 
@@ -538,19 +539,19 @@ V2 第一阶段开发期间遇到任何"看起来该顺手做"的事项,**全部
 
 V2 第一阶段开发完成 → **不自动**进入 V2.x;V2.x 启动需用户单独拍板。
 
-D7-min 决议时刻锁定 5 个延后模型,V2.x 复活触发条件如下(指向 §5.5.4.3 完整版,本节简写):
+D7-min 决议时刻锁定 5 个延后模型,V2.x 复活触发条件如下(指向 [`docs/V2红线与复活路径.md §4.3`](docs/V2红线与复活路径.md) 完整版,本节简写):
 
 > **当前状态**(v0.7.0 后):`audit_logs` 已局部启动;**仍延后 4 个**:`member_profiles` / `attachments` / `events` / `event_participants`。
 
 | 模型 | V2.x 复活触发(简写) |
 |---|---|
-| `member_profiles` | **合规材料补齐**(详见 §5.5.4.3) |
+| `member_profiles` | **合规材料补齐**(详见 [`docs/V2红线与复活路径.md §4.3`](docs/V2红线与复活路径.md)) |
 | `attachments` | profiles 或 events 解锁 / 用户单独拍板附件需求 |
 | `audit_logs` | ✅ **v0.7.0 第一波已实施**;剩余 22 处迁移属可复活项,见 [`docs/V2红线与复活路径.md`](../docs/V2红线与复活路径.md) §4.1 C-1 |
 | `events` | 用户拍板需求(救援队需要在系统中记录哪些类型的活动 / 事件成为强诉求) |
 | `event_participants` | **跟随 events** 复活路径 |
 
-完整复活流程见 `TASKS.md §5.5.4.3`(D7-min 锁定的延后触发清单)。
+完整复活流程见 [`docs/V2红线与复活路径.md §4.3`](docs/V2红线与复活路径.md)(active 滚动维护);D7-min 决议时刻历史快照见 [`docs/archive/plans/v2-design-phase/tasks.md`](docs/archive/plans/v2-design-phase/tasks.md) §5.5.4.3。
 
 ---
 
@@ -889,7 +890,8 @@ PR #11 release tag v0.9.0 后,**才**启动 C-7 attachments D7 评审稿(沿 PR 
   - `member_profiles`(等合规材料)
   - `attachments` 二次扩展(等 profiles / events 解锁 或 独立需求)
   - `events` / `event_participants`(等业务方拍板需求)
-- ⏸️ **docs 治理后续 PR**(沿本 PR-1 后续):TASKS.md 外部引用刷新(`ARCHITECTURE.md` / `V2红线` / `v2-plan` / `v2-data-model` 中指向 `§5.5.4.3` 等旧引用)/ AGENTS.md 重写 / api-client-boundary.md 归档 / srvf-foundation-* 4 文件归档 等
+- ✅ **docs 治理 PR-2**(已完成):TASKS.md 外部引用刷新(`ARCHITECTURE.md` / `V2红线` / `v2-plan` / `v2-data-model` / `srvf-foundation-research` / `srvf-foundation-data-model-draft` 中指向 `§5.5.4.3` / `§6.4` 等旧引用全部刷新)
+- ⏸️ **docs 治理后续 PR**:AGENTS.md 重写 / api-client-boundary.md 归档 / srvf-foundation-* 4 文件归档 等
 
 ### 10.2 启动新任务的流程(沿 [`docs/process.md §2-§4`](docs/process.md))
 

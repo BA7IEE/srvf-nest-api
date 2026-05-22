@@ -816,4 +816,4 @@ TASKS.md V2 开发任务卡(含 migration / service / controller / E2E)
 ---
 
 > **当前文档版本**:初稿 v0.1
-> **下一步**:用户审阅本文 → 逐条标记 §3 / §4 / §5 / §6 / §7 → 反馈修订点 → 进入第二步(`ARCHITECTURE.md §12` / `CLAUDE.md §18` / `AGENTS.md §18` / `TASKS.md` V2 设计任务卡 同步追加)。
+> **下一步**:用户审阅本文 → 逐条标记 §3 / §4 / §5 / §6 / §7 → 反馈修订点 → 进入第二步(`ARCHITECTURE.md §12` / `CLAUDE.md §18` / `AGENTS.md §18` / `TASKS.md` V2 设计任务卡 同步追加;后者现归档于 [`docs/archive/plans/v2-design-phase/tasks.md`](archive/plans/v2-design-phase/tasks.md))。
