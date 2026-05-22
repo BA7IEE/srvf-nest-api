@@ -9,6 +9,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
 import {
   ActivityRegistrationListItemDto,
   ActivityRegistrationResponseDto,
@@ -57,7 +58,6 @@ import {
 const ACTIVITY_STATUS_CANCELLED = 'cancelled';
 const REGISTRATION_STATUS_PENDING = 'pending';
 const REGISTRATION_STATUS_PASS = 'pass';
-const REGISTRATION_STATUS_REJECT = 'reject';
 const REGISTRATION_STATUS_CANCELLED = 'cancelled';
 const AUDIT_RESOURCE_TYPE = 'activity_registration';
 
@@ -109,6 +109,7 @@ export class ActivityRegistrationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
+    private readonly registrationStateMachine: ActivityRegistrationStateMachine,
   ) {}
 
   // ============ helpers ============
@@ -441,8 +442,9 @@ export class ActivityRegistrationsService {
     return this.prisma.$transaction(async (tx) => {
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
-      if (reg.statusCode !== REGISTRATION_STATUS_PENDING) {
-        throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+      const transition = this.registrationStateMachine.decide('approve', reg.statusCode);
+      if (!transition.allowed) {
+        throw new BizException(transition.biz);
       }
 
       // capacity 复核(approve 转 pass 占名额,事务内重新计数避免 race)。
@@ -452,7 +454,7 @@ export class ActivityRegistrationsService {
       const updated = await tx.activityRegistration.update({
         where: { id: reg.id },
         data: {
-          statusCode: REGISTRATION_STATUS_PASS,
+          statusCode: transition.nextStatusCode,
           reviewedBy: currentUser.id,
           reviewedAt: new Date(),
           reviewNote: dto.reviewNote ?? null,
@@ -473,7 +475,7 @@ export class ActivityRegistrationsService {
           operation: 'review',
           action: 'approve',
           priorStatusCode: reg.statusCode,
-          nextStatusCode: REGISTRATION_STATUS_PASS,
+          nextStatusCode: transition.nextStatusCode,
           activityId,
           targetMemberId: reg.memberId,
         },
@@ -496,14 +498,15 @@ export class ActivityRegistrationsService {
     return this.prisma.$transaction(async (tx) => {
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
-      if (reg.statusCode !== REGISTRATION_STATUS_PENDING) {
-        throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+      const transition = this.registrationStateMachine.decide('reject', reg.statusCode);
+      if (!transition.allowed) {
+        throw new BizException(transition.biz);
       }
 
       const updated = await tx.activityRegistration.update({
         where: { id: reg.id },
         data: {
-          statusCode: REGISTRATION_STATUS_REJECT,
+          statusCode: transition.nextStatusCode,
           reviewedBy: currentUser.id,
           reviewedAt: new Date(),
           reviewNote: dto.reviewNote,
@@ -524,7 +527,7 @@ export class ActivityRegistrationsService {
           operation: 'review',
           action: 'reject',
           priorStatusCode: reg.statusCode,
-          nextStatusCode: REGISTRATION_STATUS_REJECT,
+          nextStatusCode: transition.nextStatusCode,
           activityId,
           targetMemberId: reg.memberId,
         },
@@ -547,17 +550,15 @@ export class ActivityRegistrationsService {
     return this.prisma.$transaction(async (tx) => {
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
-      if (
-        reg.statusCode !== REGISTRATION_STATUS_PENDING &&
-        reg.statusCode !== REGISTRATION_STATUS_PASS
-      ) {
-        throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+      const transition = this.registrationStateMachine.decide('cancel', reg.statusCode);
+      if (!transition.allowed) {
+        throw new BizException(transition.biz);
       }
 
       const updated = await tx.activityRegistration.update({
         where: { id: reg.id },
         data: {
-          statusCode: REGISTRATION_STATUS_CANCELLED,
+          statusCode: transition.nextStatusCode,
           cancelledByUserId: currentUser.id,
           cancelledAt: new Date(),
           cancelReason: dto.cancelReason ?? null,
@@ -578,7 +579,7 @@ export class ActivityRegistrationsService {
           operation: 'review',
           action: 'cancel',
           priorStatusCode: reg.statusCode,
-          nextStatusCode: REGISTRATION_STATUS_CANCELLED,
+          nextStatusCode: transition.nextStatusCode,
           cancelledByPath: 'admin',
           cancelReason: dto.cancelReason ?? null,
           activityId,
@@ -661,17 +662,15 @@ export class ActivityRegistrationsService {
         throw new BizException(BizCode.ACTIVITY_REGISTRATION_NOT_FOUND);
       }
 
-      if (
-        reg.statusCode !== REGISTRATION_STATUS_PENDING &&
-        reg.statusCode !== REGISTRATION_STATUS_PASS
-      ) {
-        throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+      const transition = this.registrationStateMachine.decide('cancel', reg.statusCode);
+      if (!transition.allowed) {
+        throw new BizException(transition.biz);
       }
 
       const updated = await tx.activityRegistration.update({
         where: { id: reg.id },
         data: {
-          statusCode: REGISTRATION_STATUS_CANCELLED,
+          statusCode: transition.nextStatusCode,
           cancelledByUserId: currentUser.id,
           cancelledAt: new Date(),
           cancelReason: dto.cancelReason ?? null,
@@ -692,7 +691,7 @@ export class ActivityRegistrationsService {
           operation: 'review',
           action: 'cancel',
           priorStatusCode: reg.statusCode,
-          nextStatusCode: REGISTRATION_STATUS_CANCELLED,
+          nextStatusCode: transition.nextStatusCode,
           cancelledByPath: 'self',
           cancelReason: dto.cancelReason ?? null,
           activityId: reg.activityId,
