@@ -6,7 +6,7 @@
 > 文档定位:**V2 第一阶段 API 契约草案**(D8-4 立项产出物)
 > 阶段:**V2-D8 立项中**(2026-05-07)
 > 状态:**初稿**,待 D8 立项 5 份产出物全部就位 + 用户拍板才能启动 Step 1
-> 依据:`ARCHITECTURE.md §12.8-§12.11`(commit `85cec75`)+ `docs/archive/plans/v2-first-stage-plan.md`(原 `docs/v2-plan.md`,commit `bff9c93`,PR-5 已归档)+ `docs/v2-data-model.md`(commit `af236f2`)+ `data-model-draft.md` v0.3 D7-min(commit `4333c31`)+ baseline(commit `16876fe`)
+> 依据:`docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.8-§12.11`(原 `ARCHITECTURE.md §12.8-§12.11`,commit `85cec75`,PR-6 已归档)+ `docs/archive/plans/v2-first-stage-plan.md`(原 `docs/v2-plan.md`,commit `bff9c93`,PR-5 已归档)+ `docs/v2-data-model.md`(commit `af236f2`)+ `data-model-draft.md` v0.3 D7-min(commit `4333c31`)+ baseline(commit `16876fe`)
 
 ---
 
@@ -70,7 +70,7 @@ V2 第一阶段开发范围共 **4 个新模块** + **1 项 v1 兼容性追加**
 | 4 | `member_departments` | 3 | §5 |
 | — | v1 `users` 兼容性追加(无新接口)| 0 | §6 |
 
-**第一阶段不开发**(完整延后清单见 `ARCHITECTURE.md §12.8.1`):
+**第一阶段不开发**(完整延后清单见 `docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.8.1`,原 `ARCHITECTURE.md §12.8.1`,PR-6 已归档):
 
 - `member_profiles` 已在批次 1 落地(本契约草案撰写时延后,实际已合并 main;契约信息见 `SRVF/04-Schema设计/批次1_API前评审_member_profiles_emergency_contacts.md`);`attachments` / `audit_logs` / `events` / `event_participants` 仍延后,**无任何接口**
 
@@ -793,7 +793,7 @@ V2 第一阶段**不修改** v1 §6 已交付的 14 个接口的:
 
 | 字段 | 状态 | 说明 |
 |---|---|---|
-| 现有 v1 字段(id / username / email / nickname / avatarKey / role / status / lastLoginAt / createdAt / updatedAt)| **保留不变** | v1 13 个核心字段(具体清单以 ARCHITECTURE.md §6 为准)全部保留 |
+| 现有 v1 字段(id / username / email / nickname / avatarKey / role / status / lastLoginAt / createdAt / updatedAt)| **保留不变** | v1 13 个核心字段(具体清单以 `docs/archive/legacy/architecture-v1-blueprint.md §6`,原 `ARCHITECTURE.md §6`,PR-6 已归档 为准)全部保留 |
 | `memberId` | **不**进必返字段 | 默认**不**返回;若 Step 5 实施时决定可选返回(用于前端关联展示),需:1. 在本节显式声明;2. 更新 OpenAPI 契约快照;3. 标 `nullable: true` |
 | `members.*` 字段 | **禁止倒灌** | 任何 V2 members 字段(displayName / gradeCode / status 等)**禁止**倒灌进 v1 UserResponseDto(沿用 `research.md §5.6`) |
 
@@ -836,7 +836,7 @@ V1.3 已建立 `test/contract/openapi.contract-spec.ts` 快照机制:
 
 ### 6.6 v1 登录路径 memberNo 回退查找(memberNo 决议,2026-05-08)
 
-V2 第一阶段对 v1 `POST /api/auth/login` 路径的**唯一服务端语义扩展**,严守 ARCHITECTURE.md §12.8.2.3 / §12.8.2.4 受限放开条款。
+V2 第一阶段对 v1 `POST /api/auth/login` 路径的**唯一服务端语义扩展**,严守 `docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.8.2.3 / §12.8.2.4`(原 `ARCHITECTURE.md §12.8.2.3 / §12.8.2.4`,PR-6 已归档)受限放开条款。
 
 #### 6.6.1 路径与契约不变
 
@@ -885,7 +885,7 @@ V2 第一阶段对 v1 `POST /api/auth/login` 路径的**唯一服务端语义扩
 - **禁止** import `MembersModule` / `MembersService` 或任何 V2 业务层符号
 - **禁止** import V2 BizCode 段位常量(`MEMBER_NO_ALREADY_EXISTS` 等)— auth.service 抛错统一用 v1 已有的 `LOGIN_FAILED` / `UNAUTHORIZED`
 - `auth.module.ts` 不引入 V2 模块依赖
-- 这是为避免 v1 → V2 模块循环依赖;违反此条 = ARCHITECTURE.md §12.8.2.4 红线破口
+- 这是为避免 v1 → V2 模块循环依赖;违反此条 = `docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.8.2.4`(原 `ARCHITECTURE.md §12.8.2.4`,PR-6 已归档)红线破口
 
 #### 6.6.5 e2e 验收硬要求
 
@@ -1116,6 +1116,6 @@ Step 3-7 实施期每次接口改动后:
 
 ---
 
-> **本文是 D8-4 立项产出物**;V2-D8 标记完成需 5 份立项产出物全部就位(对应 `ARCHITECTURE.md §12.11.1`)。
+> **本文是 D8-4 立项产出物**;V2-D8 标记完成需 5 份立项产出物全部就位(对应 `docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.11.1`,原 `ARCHITECTURE.md §12.11.1`,PR-6 已归档)。
 > Step 1 启动需 V2-D8 ✅ + 用户单独拍板;**禁止**绕过 D8 直接进入开发。
 > 路径前缀 `/api/v2/` 为契约草案占位;最终路径前缀(是否真带 `/v2/`)在 Step 3 启动前由用户单独拍板,届时全文统一替换(纯文档修订)。

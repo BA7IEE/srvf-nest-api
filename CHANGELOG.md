@@ -4,7 +4,15 @@
 
 ## Unreleased
 
-- (无;待下一波 V2 / V2.x 增量或文档变更登记)
+### Docs
+
+- **docs 治理 PR-6**:`ARCHITECTURE.md` 顶层架构入口重写(原 1547 行 → 294 行),设计期蓝图按章节归档至 `docs/archive/**`,active 引用同步刷新(沿 [`docs/process.md §3` A 档](docs/process.md) + [`docs/srvf-foundation-baseline.md §13.3` 纯文档变更](docs/srvf-foundation-baseline.md))
+  - **归档新增 3 个文件**:`docs/archive/legacy/architecture-v1-blueprint.md`(原 §1-§10 + 附录,verbatim;§9 升级路径表副本作历史记录,active 锚点已迁新版 §9)/ `docs/archive/legacy/architecture-v1-1-hardening.md`(原 §11.1-§11.7,verbatim;active 摘要锚点已迁新版 §11)/ `docs/archive/plans/architecture-v2-first-stage-blueprint.md`(原 §12.1-§12.11,verbatim;V2 第一阶段开发期硬约束历史快照)
+  - **`ARCHITECTURE.md` 重写为顶层入口**:保留 §9 升级路径表 verbatim(active 单一权威源)+ §11 V1.1 工程加固摘要(active 锚点);新增文档权威源地图(§0.1 / §13)+ 历史架构归档索引(§14)+ 本文不维护事项声明(§15);删除已被 AGENTS.md / baseline / current-state / api-surface-policy / architecture-boundary 承接的重复铁律细节
+  - **active 引用同步刷新**:`docs/current-state.md §2` v1 基础能力 / `TASKS.md` V2-D2 / Step 5 §12.8.2.4 受限放开 / `docs/v2-data-model.md` §0.1 / §3 / §7.2 / §A / `docs/v2-api-contract.md` §0.1 / §3 / §6.1 / §6.6 / §A / `docs/V2红线与复活路径.md` A-2 / A-3 / §5.2 / §5.3 / §5.4 / §6.A / `docs/srvf-foundation-baseline.md` §0.1 / §11.1 / §11.2 / `docs/development.md` API 接口表 / 统一响应格式 / 环境变量启动强校验 / `README.md` API 路由表 等共 ~20 处指向 `ARCHITECTURE.md §12.X` 或 `§6` 的引用统一改指向对应归档文件;指向 `§9` 升级路径与 `§11` V1.1 工程加固的 active 引用保持不动;`TASKS.md §10.1` 显式补登 "docs 治理 PR-6 已完成" 状态行
+  - **零代码改动**:不动 `src/**` / `prisma/**` / `test/**` / `package.json` / `.github/**` / Dockerfile / tsconfig 等任何运行时或配置文件;不修改 `AGENTS.md` / `CLAUDE.md` 任一字节(AGENTS.md 重写归后续独立 PR)
+
+
 
 ## v0.15.0 - 2026-05-20
 

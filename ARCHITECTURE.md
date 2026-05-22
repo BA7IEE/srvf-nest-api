@@ -1,1036 +1,162 @@
-# AI 友好的 TypeScript API 底座 — v1 蓝图
+# ARCHITECTURE.md — SRVF API 顶层架构入口
 
-> NestJS + Prisma + PostgreSQL 的 API-only 后端底座,为 AI 辅助开发优化。
+> 本文是 SRVF API 的**顶层架构入口与升级路径权威源**。
 >
-> 未来承载:公益救援队内部管理系统、U Studio 内部系统、客户项目二开、各类小程序后台。
+> - **当前事实**(版本 / open PR / 已发能力 / surface 状态)见 [`docs/current-state.md`](./docs/current-state.md)
+> - **长期 AI 协作铁律**(命名 / 错误码 / Guard / 软删 / App API 边界 / §19.7 D-series 决策锁)见 [`AGENTS.md`](./AGENTS.md)
+> - **流程与 PR 分级**见 [`docs/process.md`](./docs/process.md)
+> - **本文** 聚焦长期生效的设计哲学、升级路径(§9)、V1.1 工程加固摘要(§11)、文档权威源地图,以及历史架构归档索引
+>
+> 历史 v1 / V1.1 / V2 第一阶段设计期蓝图原文(原 §1-§12,共 1547 行)自 PR-6 起归档至 `docs/archive/**`,见本文 §14。
 
 ---
 
-## 0. 当前阶段说明(2026-05-21 docs 治理收口添加)
+## 0. 当前阶段说明
 
-> **本文件是架构蓝图与设计背景,不是"当前事实"。**
-> 当前事实(版本、能力清单、open PR、surface 状态、当前债务)**唯一权威源**是 [`docs/current-state.md`](docs/current-state.md);
-> 长期 AI 协作铁律唯一权威源是 [`AGENTS.md`](AGENTS.md);
-> 本文件保留作为设计思路、阶段背景、升级路径的参考资料。
+本文于 2026-05-22 由 PR-6 从设计期蓝图(原 1547 行)收口为顶层架构入口,原 §1-§10 + 附录 / §11 / §12 全部归档至 `docs/archive/**`(见 §14)。本文**保留原 §9(升级路径)/ §11(V1.1 工程加固)的章节编号**,以确保 [`AGENTS.md`](./AGENTS.md) / [`docs/current-state.md`](./docs/current-state.md) / [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) / [`docs/security.md`](./docs/security.md) 等 active 文档对 "ARCHITECTURE.md §9 / §11" 的现有引用持续可达。
 
-### 0.1 早期 v1 蓝图的阶段定位
+### 0.1 文档权威源分层(冲突时按此顺序)
 
-本文件的 §1-§10 写于 v1 阶段(2026-05 之前)。其中部分"v1 不预先做"的条目,**在 SRVF 派生项目的后续版本中已经被业务诉求驱动解锁**,例如:
-
-| 早期 v1 蓝图条目 | 当前状态 |
+| 维度 | 权威源 |
 |---|---|
-| "不预先做 RBAC" | SRVF v0.13.0+ 已实装 `RbacRole` / `Permission` / `RolePermission` / `UserRole` 4 表 + `rbac.can()` + 14 条 `rbac.*` 权限点 + `ops-admin` 内置角色;管理面接入已于 v0.15.0 P0-F 4 PR 完成 |
-| "不预先做刷新 token" | SRVF v0.14.0 已实装 `refresh_tokens` 表 + `POST /api/auth/refresh` / `POST /api/auth/logout` / `POST /api/auth/logout-all` + rotation always + family revoke + absolute expiration |
-| "不预先做附件上传 Provider" | SRVF v0.10.0 ~ v0.12.0 已实装 `attachments` 多态主模块 + `attachment-configs` 三表 + `StorageSettings` singleton + `LocalStorageProvider` + `CosStorageProvider` |
-| "不预先做 App API / Mobile 边界" | SRVF v0.15.0 已实装 App API Phase 2 完整 15 个 `/api/app/v1/*` endpoint + `dto/app/` 子目录 + L3 字段 zero leak |
-| "不引入 audit_logs" | SRVF v0.7.0+ 已实装 `audit_logs` 表(A 红线"写入即不可改不可删") + `AuditLogEvent` 已接入多个写路径 |
+| **当前事实**(版本 / open PR / 已发能力 / surface 状态 / 当前债务) | [`docs/current-state.md`](./docs/current-state.md) |
+| **长期 AI 协作铁律**(命名 / 错误码 / Guard / 软删 / 密码 / DTO 分离 / 角色层级 / refresh token / §19.7 D-series 决策锁) | [`AGENTS.md`](./AGENTS.md) §1-§19 |
+| **流程制度**(开工 checklist / PR 五档 / D 档降速 / release 收口 / AI 协作纪律) | [`docs/process.md`](./docs/process.md) |
+| **本文(顶层架构入口)** | 设计哲学(§1)+ 技术栈快照(§2)+ 升级路径(§9 active)+ V1.1 摘要(§11 active)+ 权威源地图(§13)+ 归档索引(§14) |
+| **V2 基线 / 红线** | [`docs/srvf-foundation-baseline.md`](./docs/srvf-foundation-baseline.md) / [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) |
+| **API surface 边界** | [`docs/api-surface-policy.md`](./docs/api-surface-policy.md) |
+| **架构边界铁律** | [`docs/architecture-boundary.md`](./docs/architecture-boundary.md) |
+| **历史架构蓝图原文** | [`docs/archive/legacy/architecture-v1-blueprint.md`](./docs/archive/legacy/architecture-v1-blueprint.md) / [`docs/archive/legacy/architecture-v1-1-hardening.md`](./docs/archive/legacy/architecture-v1-1-hardening.md) / [`docs/archive/plans/architecture-v2-first-stage-blueprint.md`](./docs/archive/plans/architecture-v2-first-stage-blueprint.md) |
 
-`ARCHITECTURE.md §1` 中"v1 不做的事"清单**不再压过 `docs/current-state.md`**。冲突时,以 `docs/current-state.md` 描述的当前事实为准;本文件相关条目仅作为"当时为什么这么选"的设计背景。
-
-### 0.2 仍然生效的长期架构原则
-
-本文件以下条目**作为长期架构原则继续生效**,与当前事实不冲突:
-
-- **API-only**:前端永远独立项目,绝不混在一起(§1)
-- **强约定 > 灵活配置**:统一返回格式、统一错误处理、统一模块结构、统一命名(§1)
-- **命名即文档**:`passwordHash` / `key` / `Role.SUPER_ADMIN` 等命名铁律(§7)
-- **统一返回格式**:`{ code, message, data }` + `ResponseInterceptor`(§7)
-- **BizException + BizCode 三字段对象**:错误码集中,HTTP status 由 `httpStatus` 决定(§7)
-- **§9 升级路径表**:Redis / queue / cron / APM / pgvector 等基础设施的触发条件
-- **§11 V1.1 工程加固**:pino / helmet / throttler / terminus / Dockerfile / CI 工程能力清单
-- **§12 V2 架构增量**:V2 派生项目的模块边界、字典 / 组织 / 队员 / 部门 / 软删 / 审计模式
-
-### 0.3 与现状冲突时的判定
-
-- 当前事实 vs 本文件 → 以 [`docs/current-state.md`](docs/current-state.md) 为准
-- 长期铁律 vs 本文件 → 以 [`AGENTS.md`](AGENTS.md) 为准
-- 流程制度 vs 本文件 → 以 [`docs/process.md`](docs/process.md) 为准
-- API surface 边界 vs 本文件 → 以 [`docs/api-surface-policy.md`](docs/api-surface-policy.md) 为准
-- 本文件**不被删除大段历史内容**,以保留"为什么 v1 这么设计"的可追溯性;具体条目是否"仍是当前铁律"以上述四份文档为最终判定
-
-历史 release handoff / 评审稿 / 批次决议 / Phase reviews / first-release 过程档案现统一归档于 [`docs/archive/`](docs/archive/),不再作为当前执行约束。
+**铁律**:
+- 当前事实与本文冲突 → 以 [`docs/current-state.md`](./docs/current-state.md) 为准
+- 长期铁律与本文冲突 → 以 [`AGENTS.md`](./AGENTS.md) 为准
+- 归档目录(`docs/archive/**`)内文档**只代表归档时刻的决议**,不再作为当前规则依据;active 引用应指向上表 active 权威源,而非 archive
 
 ---
 
-## 目录
+## 1. 设计哲学
 
-1. [设计原则](#1-设计原则)
-2. [技术栈](#2-技术栈)
-3. [项目结构](#3-项目结构)
-4. [v1 范围:做什么、不做什么](#4-v1-范围)
-5. [数据模型](#5-数据模型)
-6. [API 接口清单](#6-api-接口清单)
-7. [命名与编码约定(AI 铁律)](#7-命名与编码约定)
-8. [环境变量](#8-环境变量)
-9. [升级路径(什么时候加什么)](#9-升级路径)
-10. [部署](#10-部署)
-11. [V1.1 Engineering Hardening](#11-v11-engineering-hardening)
-
----
-
-## 1. 设计原则
-
-底座的存在意义是"让 AI 在新业务场景下少出错、少返工"。所有决策围绕这条主线:
+底座的存在意义是"让 AI 在新业务场景下少出错、少返工"。以下 4 条是长期生效的核心设计哲学:
 
 - **API-only**:前端永远独立项目,绝不混在一起。AI 在全栈混合项目里最容易搞蒙。
-- **v1 极致精简**:任何"未来可能用到"的功能先砍掉,需要时再加。复杂度上去,AI 改起来就慢、错、乱。
-- **接口稳定先于实现完整**:storage 先定极简接口不实现;ai 模块先占位且 v1 不接 LLM。命名签名一次到位,免得后面改 API 牵动全身。
 - **强约定 > 灵活配置**:统一返回格式、统一错误处理、统一模块结构、统一命名。让 AI 不靠猜。
 - **命名即文档**:`passwordHash` 不叫 `password`,`key` 不叫 `path`,`@Roles(Role.SUPER_ADMIN)` 不写 `'admin'` 字符串。读代码不用猜语义。
-- **不预先做 RBAC、多租户、刷新 token**:它们都是"以为以后用得到"的过度设计。真到那一步,看具体业务再加才合身。
+- **极简主义优先**:任何"未来可能用到"的功能先砍掉,需要时再加。复杂度上去,AI 改起来就慢、错、乱。真有诉求按 §9 升级路径走,**禁止**"以为以后会用得到"提前实装。
+
+历史 v1 设计原则原文(`Interface stability > implementation completeness` / `不预先做 RBAC / 多租户 / 刷新 token` 等)见归档 [`architecture-v1-blueprint.md §1`](./docs/archive/legacy/architecture-v1-blueprint.md)。注意:原文中"v1 不预先做 RBAC / refresh token / 附件 Provider / App API / audit_logs"等条目**已被 SRVF 业务驱动解锁**,当前 A/B/C 三档读取规则以 [`AGENTS.md §1`](./AGENTS.md) 为准。
 
 ---
 
-## 2. 技术栈
+## 2. 当前技术栈
 
-| 层 | 选型 | 版本 | 理由 |
+| 层 | 选型 | 当前版本(以 `package.json` 为准) | 用途 |
 |---|---|---|---|
-| 框架 | **NestJS** | ^11 | 强约定,AI 不会乱写;模块化天然适合"底座+业务"复用 |
-| 运行时 | **Node.js** | 22 LTS | 稳,生态全。Bun 暂不上,免兼容坑 |
-| 数据库 | **PostgreSQL** | 16 | 关系数据 + JSON + 向量(pgvector)一把梭,未来 AI 不用换库 |
+| 框架 | **NestJS** | ^11 | 强约定 + 模块化适合"底座 + 业务"复用 |
+| 运行时 | **Node.js** | 22 LTS | 稳,生态全 |
+| 数据库 | **PostgreSQL** | 16 | 关系数据 + JSON + 向量(pgvector 触发后)一把梭 |
 | ORM | **Prisma** | ^6 | schema-first,类型安全,AI 训练语料最多 |
-| 鉴权 | **@nestjs/jwt** + **passport-jwt** | — | JWT 登录与请求鉴权;v1 只实现账号密码登录 + JWT 校验,不预留多策略抽象 |
-| 密码哈希 | **bcryptjs** | 当前稳定版 | v1 默认 bcryptjs,优先保证跨平台部署稳定;正式生产、用户规模扩大或安全要求提高时优先评估 argon2;native bcrypt 只在部署环境完全可控时使用 |
-| API 文档 | **@nestjs/swagger** | peer dependency 兼容版本 | 按 `@nestjs/swagger` 的 `peerDependencies` 选择与当前 NestJS 主版本兼容的版本,不要手动钉死主版本号 |
+| 鉴权 | **@nestjs/jwt** + **passport-jwt** | — | JWT 登录与请求鉴权;refresh token(P0-E)见 [`AGENTS.md §9`](./AGENTS.md) |
+| 密码哈希 | **bcryptjs** | salt rounds 10 | 跨平台部署稳定 |
+| API 文档 | **@nestjs/swagger** | 按 `peerDependencies` 选 | **禁止**手动钉死主版本号 |
 | 校验 | **class-validator** + **class-transformer** | — | NestJS 标配 |
-| 容器化 | **Docker Compose** | — | 本地一键起 PostgreSQL |
-| 包管理 | **pnpm** | 固定版本 | pnpm-only,在 `packageManager` 中固定具体版本(如 `pnpm@9.x.x`);禁止使用 npm / yarn / bun,避免不同工具生成不一致 lockfile |
+| 日志 | **nestjs-pino** + **pino** | V1.1 落地 | 结构化 JSON + 敏感字段自动屏蔽(详 §11) |
+| 限流 | **@nestjs/throttler** | 内存 storage | `login` / `password-change` / `refresh` 三 throttler 物理隔离 |
+| 健康检查 | **@nestjs/terminus** | — | `/api/health` / `/live` / `/ready` 三端点(详 §11) |
+| 容器化 | **Docker Compose** | — | 本地 PostgreSQL;运维 SOP 见 [`docs/deployment.md`](./docs/deployment.md) |
+| 包管理 | **pnpm** | `packageManager` 字段钉死 | **禁止** npm / yarn / bun |
+
+历史 v1 技术栈原表(含选型理由 / Prisma 6 vs 7 决策等)见归档 [`architecture-v1-blueprint.md §2`](./docs/archive/legacy/architecture-v1-blueprint.md)。
 
 ---
 
-## 3. 项目结构
+## 3. 项目结构 / 模块边界
 
-```
-u-nest-api-starter/                  # 项目根
-├── ARCHITECTURE.md                  # ⬅ 本文档,AI 协作的锚点
-├── README.md                        # 快速开始(代码完成后再写)
-├── CLAUDE.md                        # Claude Code 协作铁律(从本文档第 7 节抽取)
-├── AGENTS.md                        # 通用 AI Agent 协作铁律(与 CLAUDE.md 并存)
-├── docker-compose.yml               # 本地 PostgreSQL
-├── .env.example                     # 环境变量模板
-├── .env                             # 本地环境变量(gitignore)
-├── package.json
-├── pnpm-lock.yaml
-├── tsconfig.json
-├── nest-cli.json
-│
-├── prisma/                          # Prisma 工具链地盘
-│   ├── schema.prisma                # 数据模型
-│   ├── migrations/                  # 迁移文件(自动生成)
-│   └── seed.ts                      # 数据库初始化脚本
-│
-└── src/
-    ├── main.ts                      # 应用入口
-    ├── app.module.ts                # 根模块
-    │
-    ├── config/                      # 集中配置
-    │   ├── app.config.ts
-    │   ├── database.config.ts
-    │   └── jwt.config.ts
-    │
-    ├── common/                      # 跨模块基础设施
-    │   ├── decorators/
-    │   │   ├── public.decorator.ts          # @Public
-    │   │   ├── current-user.decorator.ts    # @CurrentUser
-    │   │   ├── roles.decorator.ts           # @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-    │   │   └── api-response.decorator.ts    # Swagger 统一响应包装
-    │   ├── filters/
-    │   │   └── all-exceptions.filter.ts     # 全局异常 → 统一返回格式
-    │   ├── guards/
-    │   │   ├── jwt-auth.guard.ts
-    │   │   └── roles.guard.ts
-    │   ├── interceptors/
-    │   │   └── response.interceptor.ts      # { code, message, data } 包装
-    │   ├── exceptions/
-    │   │   ├── biz.exception.ts             # BizException
-    │   │   └── biz-code.constant.ts         # 错误码集中
-    │   ├── dto/
-    │   │   ├── pagination.dto.ts
-    │   │   └── id-param.dto.ts
-    │   └── storage/                         # ⬅ v1 只放极简接口,不实现 Provider,不需要 .module.ts
-    │       ├── storage.interface.ts         #    等 §9 升级路径触发后再补 storage.module.ts 与 providers/
-    │       └── storage.types.ts
-    │
-    ├── database/                    # 运行时数据库代码
-    │   ├── database.module.ts
-    │   └── prisma.service.ts
-    │
-    └── modules/
-        ├── auth/                    # 认证
-        │   ├── auth.module.ts
-        │   ├── auth.controller.ts
-        │   ├── auth.service.ts
-        │   ├── auth.dto.ts
-        │   └── strategies/
-        │       └── jwt.strategy.ts
-        │
-        ├── health/                  # 健康检查
-        │   ├── health.module.ts
-        │   └── health.controller.ts
-        │
-        ├── users/                   # 用户(本人 + 管理员)
-        │   ├── users.module.ts
-        │   ├── users.controller.ts
-        │   ├── users.service.ts
-        │   ├── users.dto.ts
-        │   └── users.select.ts       # userSafeSelect,统一控制对外字段
-        │
-        └── ai/                      # ⬅ v1 占位,只 README.md,不注册模块/Provider
-            └── README.md
-```
+当前 `src/modules/` 已远超 v1 蓝图阶段的 4 模块,实际目录与历史 v1 蓝图原文(归档于 [`architecture-v1-blueprint.md §3`](./docs/archive/legacy/architecture-v1-blueprint.md))已显著漂移。本文**不再**维护具体目录树,改由以下 active 文档承接:
 
-**模块扩展原则**:未来加新业务模块,**平铺**加在 `src/modules/` 下,**不要嵌套**进 `system/` 子目录。如:
+- **当前 active 项目结构** / 路由总览 / 环境变量索引:[`docs/development.md`](./docs/development.md)
+- **模块结构铁律**(4 文件默认基线 + 已解锁例外:Surface-specific Controller / `dto/app/` 子目录 / 同模块内职责类抽出):[`AGENTS.md §2`](./AGENTS.md)
+- **API surface 三前缀边界**(`/api/app/v1/*` / `/api/v2/*` / Root Legacy):[`docs/api-surface-policy.md`](./docs/api-surface-policy.md)
+- **架构边界铁律**(Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect 6 类抽离决策;承接 [`AGENTS.md §19.7 D-7`](./AGENTS.md)):[`docs/architecture-boundary.md`](./docs/architecture-boundary.md)
 
-- `src/modules/orgs/` — 救援队/组织(救援队系统启动时)
-- `src/modules/files/` — 文件管理(接 OSS 时启用)
-- `src/modules/missions/` — 任务(救援队业务)
-- `src/modules/devices/` — 装备(救援队业务)
+**模块扩展铁律**:新业务模块**平铺**加在 `src/modules/` 下,**禁止**嵌套 `system/` / `business/` / `core/` 等子目录;**禁止** `*.entity.ts`(本项目不是 TypeORM)。
 
 ---
 
-## 4. v1 范围
+## 4. v1 范围 / 不做清单(已演进)
 
-### 做(只做这些)
+历史 v1 蓝图阶段对"v1 不做的事"的清单原文见归档 [`architecture-v1-blueprint.md §4`](./docs/archive/legacy/architecture-v1-blueprint.md)。**该清单中的多数项目已被 SRVF 业务驱动解锁**(RBAC v0.13.0+ / refresh token v0.14.0+ / 附件 Provider v0.10.0~v0.12.0 / App API Phase 2 v0.15.0 / audit_logs v0.7.0+ / 本人改密 v0.13.0)。
 
-- NestJS 项目骨架 + Prisma + PostgreSQL + Docker Compose 本地起
-- 全局基础件:统一返回格式、全局异常、`BizException` + 错误码常量
-- 全局 API 前缀固定为 `/api`,健康检查接口 `/api/health`
-- JWT 登录策略(v1 仅支持 `username + password`)
-- `modules/users` — 基础 CRUD,粗粒度 `role: SUPER_ADMIN | ADMIN | USER`,软删除
-- `common/storage/` — 只放 `storage.interface.ts` 和 `storage.types.ts`;v1 不定义注入 token,不注册 `StorageModule`,不实现任何 Provider,不做签名 URL、分片上传、直传策略等高级能力
-- `modules/ai/` — 只放 `README.md` 占位,v1 不注册 NestJS module,不实现 Provider,禁止实现 AI 能力
-- Swagger 装饰器全覆盖,开发环境默认可用;生产环境仅 `ENABLE_SWAGGER=true` 时 `/api/docs` 可用
-- `prisma/seed.ts` 写默认 super admin 账号(从 `.env` 读凭据)
+**当前** 解锁 / 未解锁的清单以以下 active 文档为准:
 
-### 不做(刻意砍,需要时再加)
-
-| 砍掉的功能 | 什么时候再加 |
-|---|---|
-| RBAC(permission 表 / 按钮级权限 / casl) | 真出现"按钮级 / 资源级权限"诉求时(三层 Role 不算 RBAC,详见 §7.11) |
-| 文件上传具体实现(本地/OSS/R2) | 第一个产品真要传文件时 |
-| Redis / 队列 / 定时任务 | 真有异步任务、限流、缓存需求时 |
-| 注册接口 | 几乎不会加(都是管理员创建账号) |
-| 刷新 token | 真有"无感续期"诉求时 |
-| **本人改密码接口**(`PUT /api/users/me/password`) | 真出现"普通用户用账密登录、需要自助改密码"产品时 |
-| 微信小程序登录 | 第一个小程序产品要接时 |
-| 多租户、组织树 | 救援队系统启动时 |
-| LLM/向量检索 | 第一个用到 AI 的产品启动时 |
-| 操作日志 / 登录日志 | 真有审计需求时 |
-| 字典管理 | 真有"前端枚举要后台可配"诉求时 |
+- **A/B/C 三档读取**(已解锁 / 评审解锁 / 仍不做):[`AGENTS.md §1`](./AGENTS.md)
+- **V2 五档红线 / V2.x 复活路径**(A 不可破 / B 当前批次禁止 / C 可复活 / D 历史过期 / E 待业务确认):[`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md)
+- **当前已落地能力清单**:[`docs/current-state.md §2`](./docs/current-state.md)
 
 ---
 
 ## 5. 数据模型
 
-v1 只有一张表:`User`。
+历史 v1 单 `User` 表模型 + 字段约定原文见归档 [`architecture-v1-blueprint.md §5`](./docs/archive/legacy/architecture-v1-blueprint.md)。当前 schema 已远超 v1 单表,以以下 active 权威源为准:
 
-```prisma
-// prisma/schema.prisma
-
-generator client {
-  provider = "prisma-client-js"
-}
-
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-model User {
-  id           String     @id @default(cuid())
-  username     String     @unique
-  email        String?    @unique
-  passwordHash String                                  // ⬅ 永远是 bcryptjs 哈希
-  nickname     String?
-  avatarKey    String?                                 // ⬅ 对齐 storage.key 命名
-  role         Role       @default(USER)
-  status       UserStatus @default(ACTIVE)             // ⬅ 启用/禁用,与软删独立
-  deletedAt    DateTime?                               // ⬅ 软删除,不物理删
-  lastLoginAt  DateTime?                               // ⬅ 最近一次登录成功时间
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-
-  @@index([deletedAt])
-  @@index([status])
-}
-
-enum Role {
-  SUPER_ADMIN
-  ADMIN
-  USER
-}
-
-enum UserStatus {
-  ACTIVE
-  DISABLED
-}
-```
-
-**字段约定**:
-
-- 主键统一用 `cuid()`,不用自增整数(分布式友好,前端展示也不暴露记录数量)
-- 时间戳统一 `createdAt` / `updatedAt`,不用 `created_at`(Prisma 默认 camelCase)
-- `username` 格式固定为小写字母、数字、下划线、中横线,长度 3-32;入库前和登录查询前统一 `trim()` + `toLowerCase()`,禁止大小写账号或首尾空格账号并存
-- `email String? @unique` 在 PostgreSQL 中允许多条 `NULL`,所以 email 可为空;email 入库前统一 `trim()` + `toLowerCase()`,空字符串按未填写处理;如未来切 MySQL,必须重新确认唯一索引对 `NULL` 的行为
-- 软删除后 `username` / `email` 不复用。即使 `deletedAt != null`,原账号标识仍视为被占用,避免审计、恢复和历史引用混乱
-- `SUPER_ADMIN_EMAIL` 可选;为空字符串时 seed 不写入 email 字段,不要写成空字符串入库
-- `lastLoginAt` 登录成功后顺手更新,用于管理后台查看账号活跃度;更新失败只记录日志,不阻断登录;v1 不做 `login_logs` 表
-- `nickname` DTO 使用 `@MaxLength(50)`,`avatarKey` DTO 使用 `@MaxLength(255)`,禁止接收超长字符串塞入数据库
-- 软删除统一 `deletedAt: DateTime?`,所有查询**显式过滤**(详见 §7.8)
-- `status` 与 `deletedAt` 语义独立:
-  - `deletedAt != null` = 逻辑删除,不出现在正常列表里
-  - `status = DISABLED` = 临时禁用,仍在列表中但无法登录
-  - `DELETE /api/users/:id` 同时置二者(纵深防御);`PATCH /api/users/:id/status` 只动 status
-  - 登录校验:`deletedAt = null AND status = ACTIVE`
-- 字段命名忠诚于业务语义,密码字段叫 `passwordHash` 强提醒"绝非明文"
+- **当前 Prisma schema**:[`prisma/schema.prisma`](./prisma/schema.prisma)(单一权威源)
+- **字段命名 / 时间戳 / 主键 / 软删除 / 密码 / 角色枚举铁律**:[`AGENTS.md §3 / §9 / §10`](./AGENTS.md)
+- **V2 命名约定**(外键 / 中间表 / 启停字段 / 字典关联):[`docs/srvf-foundation-baseline.md §2`](./docs/srvf-foundation-baseline.md)
+- **V2 第一阶段数据模型说明**(4 模型 + `users.memberId`):[`docs/v2-data-model.md`](./docs/v2-data-model.md)
+- **敏感字段三问**(身份证 / 紧急联系人 / 医疗等纳入 schema 的前置条件):[`AGENTS.md §18.4`](./AGENTS.md) + [`docs/srvf-foundation-baseline.md §8`](./docs/srvf-foundation-baseline.md)(屏蔽清单)
 
 ---
 
 ## 6. API 接口清单
 
-全局 API 前缀固定为 `/api`,业务 controller 不要重复写 `/api`。
+历史 v1 14 接口清单 + HTTP 方法规则原文见归档 [`architecture-v1-blueprint.md §6`](./docs/archive/legacy/architecture-v1-blueprint.md)。当前接口数已远超 v1 14 个;v1 14 接口 schema **严格 zero drift** 是 V2 红线 A-2(见 [`docs/V2红线与复活路径.md §A-2`](./docs/V2红线与复活路径.md))。
 
-| 方法 | 路径 | 说明 | 权限 | 模块 |
-|---|---|---|---|---|
-| `GET` | `/api/health` | 健康检查,返回服务状态,必须 `@Public()` | 公开 | health |
-| `POST` | `/api/auth/login` | `username + password` 登录,返回 JWT | 公开 | auth |
-| `GET` | `/api/users/me` | 获取本人资料 | 登录 | users |
-| `PATCH` | `/api/users/me` | 修改本人非敏感资料(昵称、头像 key) | 登录 | users |
-| `GET` | `/api/users` | 用户列表(分页,返回 `PageResultDto<UserResponseDto>`) | super admin / admin(按角色层级过滤可见范围) | users |
-| `POST` | `/api/users` | 创建用户 | super admin / admin(v1 只有 seed 能创建 SUPER_ADMIN;业务 API 禁止创建 SUPER_ADMIN;SUPER_ADMIN 可创建 ADMIN / USER;ADMIN 只能创建 USER) | users |
-| `GET` | `/api/users/:id` | 用户详情 | super admin / admin(ADMIN 只能查看 USER) | users |
-| `PATCH` | `/api/users/:id` | 修改用户资料(**不含密码、不含角色**) | super admin / admin(ADMIN 只能操作 USER) | users |
-| `PUT` | `/api/users/:id/password` | 管理员重置用户密码 | super admin / admin(ADMIN 只能操作 USER) | users |
-| `PATCH` | `/api/users/:id/role` | 修改用户角色 | super admin(只有 SUPER_ADMIN 能修改角色) | users |
-| `PATCH` | `/api/users/:id/status` | 启用/禁用用户(只改 `status`) | super admin / admin(ADMIN 只能操作 USER) | users |
-| `DELETE` | `/api/users/:id` | 软删除用户(同时置 `deletedAt` 和 `status=DISABLED`) | super admin / admin(ADMIN 只能删除 USER) | users |
-| `GET` | `/api/docs` | Swagger 文档 | 开发环境默认公开;生产环境仅 `ENABLE_SWAGGER=true` 时公开 | — |
+当前 API 接口以以下 active 权威源为准:
 
-`PATCH /api/users/me` 的 `UpdateMyProfileDto` 字段白名单固定为 `nickname`、`avatarKey`;`username` / `email` / `passwordHash` / `role` / `status` / `deletedAt` 一律不接受。`email` 属于账号信息修改,需要验证邮箱归属、防止抢注等配套风控,不在 v1 范围。
-
-**HTTP 方法选择规则**:
-
-- `POST` — 创建新资源 / 不易归类的操作(如 login)
-- `GET` — 读取
-- `PATCH` — 部分更新(改昵称等单字段或局部字段)
-- `PUT` — 完全替换(如密码,本质是用新值替换旧值)
-- `DELETE` — 删除(本项目里恒为软删除)
-
-**v1 故意不提供"本人改密码"接口**(`PUT /api/users/me/password`),**不是漏掉**。任何 AI 或新加入者看到这条都不要"补全":
-
-- 内部管理系统的密码运维由管理员承担,用户忘密码走 `PUT /api/users/:id/password` 让管理员重置
-- 小程序后台用 `wx.login`,本来就无密码概念
-- 加这一个接口要带 `oldPassword` 校验、防爆破、密码复杂度二次提醒、修改后是否吊销其他设备 token 等配套决策,不属于 v1 极简骨架的范围
-
-未来出现"普通用户用账密登录、需要自助改密码"的产品时再加,见 §9 升级路径。
-
-管理员重置密码固定使用 `PUT /api/users/:id/password`。本项目把 `password` 视为一个独立子资源,因此使用 `PUT` 表示整体替换该子资源;不要混用 `PATCH`,也不要在其他用户资料接口里夹带修改密码。
-
-管理员重置密码后,v1 **不主动吊销目标用户旧 token**,接受旧 token 在过期前继续可用的窗口期。若管理员需要立即阻断目标用户访问,必须同时调用 `PATCH /api/users/:id/status` 将其改为 `DISABLED`;后续由管理员重新启用后,目标用户再重新登录。只有当真实产品不能接受该窗口期时,才按 §9 升级路径引入 token 吊销机制。
+- **OpenAPI / Swagger 实时文档**:`/api/docs`(运行时);`test/contract/__snapshots__/openapi.contract-spec.ts.snap`(契约快照)
+- **API surface 三前缀策略 + Mixed Controller 存量 + mobile-like endpoint 处置矩阵**:[`docs/api-surface-policy.md`](./docs/api-surface-policy.md)
+- **V2 第一阶段接口契约**(含 §6.6 memberNo 登录回退):[`docs/v2-api-contract.md`](./docs/v2-api-contract.md)
+- **Participation 业务上下文边界图**(activities / activity-registrations / attendances / contribution-rules):[`docs/participation-bounded-context.md`](./docs/participation-bounded-context.md)
+- **HTTP 方法选择 / 统一返回格式 / 错误处理**:[`AGENTS.md §4 / §5 / §8`](./AGENTS.md)
 
 ---
 
 ## 7. 命名与编码约定
 
-> 这一节是 AI 协作的核心。每条都是"AI 容易写错的地方提前写死"。
-> 实施时要把这一节抽到 `CLAUDE.md` 里,让 AI 每次读 session 就能看到。
+历史 v1 §7(11 个子节,600+ 行铁律)原文见归档 [`architecture-v1-blueprint.md §7`](./docs/archive/legacy/architecture-v1-blueprint.md)。**长期铁律已全部承接到** [`AGENTS.md`](./AGENTS.md):
 
-### 7.1 模块结构(业务模块固定 4 文件)
-
-```
-modules/<name>/
-├── <name>.module.ts        # NestJS 模块声明
-├── <name>.controller.ts    # HTTP 路由层
-├── <name>.service.ts       # 业务逻辑层
-└── <name>.dto.ts           # 请求/响应数据结构
-```
-
-例外:`health/` 只保留 `health.module.ts` 和 `health.controller.ts`,不要为了凑齐结构硬造 `health.service.ts` 或 `health.dto.ts`。
-
-Prisma 项目不引入 Entity 概念,不要创建 `<name>.entity.ts`。复制粘贴一个模块改改就是新业务模块。AI 不会迷路。
-
-DTO 文件升级规则:`<name>.dto.ts` 第一版允许集中放;当单个 DTO 文件超过 300 行时,允许拆成同模块内的 `dto/` 目录,但必须保持模块内聚,不要把 DTO 放到跨模块公共目录。
-
-### 7.2 命名铁律
-
-| 场景 | 错误示范 | 正确做法 | 原因 |
-|---|---|---|---|
-| 密码字段 | `password` | `passwordHash` | 防止误泄、误存明文 |
-| 文件标识 | `path` / `filename` / `url` | `key` | 对齐 S3 生态,本地实现内部转 path |
-| 角色判断 | `if (user.role === 'admin')` | `if (user.role === Role.ADMIN)` / `Role.SUPER_ADMIN` | 单一来源,改一个地方 |
-| 角色装饰器 | `@Roles('admin')` | `@Roles(Role.SUPER_ADMIN, Role.ADMIN)` | 同上 |
-| 错误抛出 | `throw new Error('用户不存在')` | `throw new BizException(BizCode.USER_NOT_FOUND)` | 错误码集中,前端可枚举 |
-| 时间字段 | `create_time` / `createTime` | `createdAt` | Prisma 默认 + JS 惯例 |
-| ID 类型 | 自增 int | `cuid()` 字符串 | 分布式友好,不暴露记录量 |
-| 角色/状态枚举 | 手写 `users.enum.ts` | 从 `@prisma/client` 导入 `Role` / `UserStatus` | Prisma schema 是唯一来源,避免 TS enum 与 DB enum 漂移 |
-
-**Role / UserStatus 统一从 Prisma 导出,禁止手写 enum**:
-
-```typescript
-import { Role, UserStatus } from '@prisma/client';
-```
-
-Prisma schema 是角色和状态枚举的唯一来源。业务代码、DTO、guard、seed 都使用 `@prisma/client` 生成的 `Role` / `UserStatus`,不要再创建 `modules/users/users.enum.ts`。
-
-### 7.3 统一返回格式
-
-所有接口经 `ResponseInterceptor` 包装为:
-
-```json
-{
-  "code": 0,
-  "message": "ok",
-  "data": { ... }
-}
-```
-
-业务代码只 `return data`,**永远不要**手动包 `{ code, message, data }`。
-
-分页接口统一使用 `PaginationQueryDto` 接收入参,并返回 `PageResultDto<T>` 作为 `data`:
-
-```typescript
-// common/dto/pagination.dto.ts
-import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
-
-export class PaginationQueryDto {
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page: number = 1;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  pageSize: number = 20;
-}
-
-export class PageResultDto<T> {
-  items!: T[];
-  total!: number;
-  page!: number;
-  pageSize!: number;
-}
-```
-
-分页入参固定使用 `page` / `pageSize`;默认 `page=1`,`pageSize=20`,`pageSize` 最大 100。禁止在 v1 中使用 `limit` / `offset`、`skip` / `take`、`cursor` 等分页参数变体。Prisma 查询时统一换算为 `skip = (page - 1) * pageSize`,`take = pageSize`。
-
-例如 `GET /api/users` 的业务返回值必须是 `PageResultDto<UserResponseDto>`,不要返回裸数组,也不要使用 `{ list, count }`、`{ rows, total }` 等变体。分页列表默认排序固定为 `orderBy: { createdAt: 'desc' }`,除非接口文档明确声明其他排序。
-
-`GET /api/health` 必须标记 `@Public()`,并且也走统一响应包装。controller 只返回 `{ status: 'ok' }`,最终响应为 `{ code: 0, message: 'ok', data: { status: 'ok' } }`。不要为了健康检查绕过 `ResponseInterceptor`。
-
-错误经 `AllExceptionsFilter` 包装为:
-
-```json
-{
-  "code": 10001,
-  "message": "用户不存在",
-  "data": null
-}
-```
-
-`code = 0` 表示成功,非 0 都是错误。具体错误码在 `common/exceptions/biz-code.constant.ts` 集中维护,每个 BizCode 必须是一个对象,**同时携带 `code`、`message`、`httpStatus` 三个字段**:
-
-```typescript
-// common/exceptions/biz-code.constant.ts
-import { HttpStatus } from '@nestjs/common';
-
-export const BizCode = {
-  BAD_REQUEST:              { code: 40000, message: '请求参数错误',   httpStatus: HttpStatus.BAD_REQUEST },
-  UNAUTHORIZED:             { code: 40100, message: '未登录或登录已失效', httpStatus: HttpStatus.UNAUTHORIZED },
-  FORBIDDEN:                { code: 40300, message: '无权限访问',     httpStatus: HttpStatus.FORBIDDEN },
-  NOT_FOUND:                { code: 40400, message: '资源不存在',     httpStatus: HttpStatus.NOT_FOUND },
-  INTERNAL_ERROR:           { code: 50000, message: '服务器内部错误', httpStatus: HttpStatus.INTERNAL_SERVER_ERROR },
-
-  USER_NOT_FOUND:           { code: 10001, message: '用户不存在',     httpStatus: HttpStatus.NOT_FOUND },
-  USERNAME_ALREADY_EXISTS:  { code: 10002, message: 'username 已存在', httpStatus: HttpStatus.CONFLICT },
-  EMAIL_ALREADY_EXISTS:     { code: 10003, message: 'email 已存在',    httpStatus: HttpStatus.CONFLICT },
-  LOGIN_FAILED:             { code: 10004, message: '账号或密码错误',  httpStatus: HttpStatus.UNAUTHORIZED },
-  FORBIDDEN_ROLE_OPERATION: { code: 10101, message: '无权对该用户执行此操作', httpStatus: HttpStatus.FORBIDDEN },
-  CANNOT_OPERATE_SELF:      { code: 10102, message: '不能对自己执行此操作',   httpStatus: HttpStatus.FORBIDDEN },
-  LAST_SUPER_ADMIN_PROTECTED:{ code: 10103, message: '系统必须保留至少一个活跃超级管理员', httpStatus: HttpStatus.CONFLICT },
-} as const;
-```
-
-`BizException` 接收一个 BizCode 对象,**不接收裸数字 / 字符串**。构造参数类型必须锁死为 `BizCode` 联合类型,不要写成宽泛的 `{ code: number; message: string; httpStatus: number }`,否则临时对象也能通过类型检查:
-
-```typescript
-type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];
-
-export class BizException extends Error {
-  constructor(public readonly biz: BizCodeEntry) {
-    super(biz.message);
-  }
-}
-
-// 正确
-throw new BizException(BizCode.USER_NOT_FOUND);
-
-// ❌ 禁止
-throw new BizException(10001);
-throw new BizException('USER_ERROR');
-throw new BizException({ code: 10099, message: '临时错误' });
-```
-
-`AllExceptionsFilter` 的处理规则:
-
-- 捕获到 `BizException` 时,从其携带的 BizCode 对象读 `httpStatus`,以该 HTTP 状态码返回;响应体写 `{ code, message, data: null }`
-- 捕获到 NestJS `HttpException`(如 `UnauthorizedException`、`ForbiddenException`、`BadRequestException`、`NotFoundException`)时,沿用其 HTTP status,响应体的 `code` 字段使用约定的通用错误码(参数错误 / 未登录 / 无权限 / 不存在 / 服务错误各对应一个固定 BizCode,放在 `BizCode` 顶部)
-- 捕获到其他未知异常时,HTTP status `500`,响应体 `code` 为通用 `INTERNAL_ERROR`,生产环境不暴露原始 `error.message`
-
-业务响应体始终是 `{ code, message, data }` 三字段;HTTP status 始终保持语义(参数错误 400 / 未登录 401 / 无权限 403 / 不存在 404 / 冲突 409 / 服务错误 500),禁止为了"统一"把所有错误返回 HTTP 200。
-
-BizCode v1 控制在十几个以内,只覆盖真实会被前端识别和提示的稳定业务错误;不要为每个临时分支都新增错误码。AI 禁止自创 BizCode:任何新增错误码必须先说明使用场景、前端提示价值和是否已有错误码可复用,确认后再加入 `biz-code.constant.ts`,且必须显式声明对应的 `httpStatus`。
-
-BizCode 编码分段固定如下,后续新增模块按段位平铺递增,禁止随手编 `99999`、`10500` 这类无归属编号:
-
-| 段位 | 用途 |
+| 历史 §7.X 子节 | 当前 active 权威源 |
 |---|---|
-| `4xxxx` / `5xxxx` | 通用错误,与 HTTP status 段对齐:`40xxx` 对应 4xx,`50xxx` 对应 5xx |
-| `100xx` | `users` 模块普通业务错误 |
-| `101xx` | `users` 模块权限 / 操作边界错误 |
-| `110xx` | `orgs` 模块普通业务错误 |
-| `111xx` | `orgs` 模块权限 / 操作边界错误 |
-| `120xx` | `missions` 模块普通业务错误 |
-| `121xx` | `missions` 模块权限 / 操作边界错误 |
-| `130xx` | `files` 模块普通业务错误 |
-| `131xx` | `files` 模块权限 / 操作边界错误 |
-| `140xx` | `devices` 模块普通业务错误 |
-| `141xx` | `devices` 模块权限 / 操作边界错误 |
-
-> 当前实际 BizCode 编号段以 [`docs/srvf-foundation-baseline.md §1.1`](docs/srvf-foundation-baseline.md) 与 [`src/common/exceptions/biz-code.constant.ts`](src/common/exceptions/biz-code.constant.ts) 文件头部索引为准;本节保留为早期架构蓝图,模块命名已演进(`missions`→`dictionaries`、`files`→`attachments`、`devices`→`audit_logs` 等)。
-
-每个业务模块预留 200 个号段:前 100 个用于普通业务错误,后 100 个用于权限 / 操作边界错误。新增模块时按 `15xxx` 起继续平铺递增。
-
-`auth` 模块**不单开段**。`auth` **业务级**错误(登录失败、密码冲突等)归入 `users` 段:普通业务归 `100xx`,权限 / 边界归 `101xx`(如 `LOGIN_FAILED=10004`)。
-
-但**通用 token / 鉴权失败**(token 无效 / 已过期 / 用户被禁 / 用户被软删)统一复用通用 `UNAUTHORIZED=40100`,**不在 `100xx` 自创新码**。这类是 HTTP 401 通用语义,不是业务级错误;与 `LOGIN_FAILED` 同 HTTP 401 但 `code` 不同,前端按 `code` 区分(详见 §7.6 两阶段错误码)。
-
-只有真出现"必须给前端区分细分原因"的需求(如 refresh token 接口需明确 `REFRESH_TOKEN_EXPIRED` vs `REFRESH_TOKEN_REVOKED`)时,才在 `100xx` 段新增,而不是为每个 token 失败原因都自创编号。
-
-Prisma `P2002` 唯一约束错误必须转换为业务错误,禁止把 Prisma 原始错误直接返回给前端:
-
-- `username` 冲突:`BizException(BizCode.USERNAME_ALREADY_EXISTS)`
-- `email` 冲突:`BizException(BizCode.EMAIL_ALREADY_EXISTS)`
-
-v1 优先在 `users.service.ts` 的创建/更新逻辑里显式捕获 `PrismaClientKnownRequestError`,根据 `error.meta?.target` 判断冲突字段后转换为对应 `BizException`;不要把这类用户可预期错误留给全局异常过滤器兜底。
-
-**注意 `error.meta?.target` 是 `string[]` 而非 `string`**,判断时必须用数组方法,禁止写 `target === 'username'`(在多列复合唯一约束场景会漏判):
-
-```typescript
-import { Prisma } from '@prisma/client';
-
-try {
-  await this.prisma.user.create({ data });
-} catch (err) {
-  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-    const target = (err.meta?.target as string[] | undefined) ?? [];
-    if (target.includes('username')) throw new BizException(BizCode.USERNAME_ALREADY_EXISTS);
-    if (target.includes('email'))    throw new BizException(BizCode.EMAIL_ALREADY_EXISTS);
-  }
-  throw err;
-}
-```
-
-**ResponseInterceptor 必须跳过的路径**——以下路径返回非业务 JSON(HTML、OpenAPI spec、二进制流等),无差别包装会破坏内容:
-
-| 路径前缀 | 内容类型 | 跳过原因 |
-|---|---|---|
-| `/api/docs` | HTML(Swagger UI) | 包装后 HTML 被塞进 `data` 字段,UI 直接坏掉 |
-| `/api/docs-json` | JSON(OpenAPI spec) | OpenAPI 规范不允许外层包装,前端 SDK 生成器读不了 |
-| `/api/docs-yaml` | YAML(OpenAPI spec) | OpenAPI 规范不允许外层包装 |
-| `/favicon.ico` | image/x-icon | 浏览器自动请求,不属于业务响应 |
-| `/metrics` | text/plain(Prometheus) | 指标采集格式不能套业务 JSON |
-| 文件下载流响应 | binary / octet-stream | 流式响应不能 `JSON.stringify` |
-
-实现思路:`ResponseInterceptor` 内判断 `request.url` 是否对跳过前缀命中 `startsWith(prefix)`,匹配则 `return next.handle()` 不动响应体。表中 `/api/docs`、`/api/docs-json`、`/api/docs-yaml` 分开列出仅为说明影响范围;代码里既可以只写 `/api/docs` 一条(自动覆盖 JSON / YAML),也可以分开三条提高可读性,效果等价。**铁律是 Swagger UI 与 OpenAPI JSON / YAML 永远不能被业务响应包装**——实现完成后必须实际访问 `/api/docs` 与 `/api/docs-json` 验收,响应体不能套外层 `{ code, message, data }`。后续加 metrics 等非业务 JSON 端点时同此处理。
-
-### 7.4 Swagger 装饰器 100% 覆盖
-
-- 每个 Controller 方法必须有 `@ApiOperation({ summary: '...' })`
-- 每个 DTO 字段必须有 `@ApiProperty({ description: '...' })`
-- 需鉴权的方法加 `@ApiBearerAuth()`
-- 响应类型统一用自定义包装装饰器,根据返回结构选用:
-  - 单对象:`@ApiWrappedOkResponse(UserResponseDto)`
-  - 数组:`@ApiWrappedArrayResponse(UserResponseDto)`
-  - **分页:`@ApiWrappedPageResponse(UserResponseDto)`**(必须使用,见下)
-  - 不要直接裸写 `@ApiOkResponse({ type: UserResponseDto })`
-- 自定义包装装饰器集中放在 `common/decorators/api-response.decorator.ts`,负责把 Swagger schema 描述成 `{ code, message, data }` 外层结构
-- `PageResultDto<T>` 是 TS 泛型,`@nestjs/swagger` 无法 reflect 泛型参数,因此分页接口**必须**使用 `@ApiWrappedPageResponse(Dto)`。装饰器内部用 `getSchemaPath(Dto)` + `allOf` 显式描述 `data: { items: Dto[], total, page, pageSize }`,否则前端 SDK 生成器拿到的是单对象 schema,Swagger UI 也显示错。所有用了 `@ApiWrappedPageResponse(Dto)` 的接口,在主类上还需要 `@ApiExtraModels(Dto, PageResultDto)` 才能让 Swagger 找到泛型实参 schema
-
-不达标的接口,等于没写。
-
-### 7.5 全局 ValidationPipe 铁律
-
-`main.ts` 必须注册全局 `ValidationPipe`,配置固定如下:
-
-```typescript
-app.useGlobalPipes(
-  new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-  }),
-);
-```
-
-铁律:
-
-- `whitelist: true`:DTO 未声明字段自动剔除
-- `forbidNonWhitelisted: true`:请求包含多余字段时直接报错,防止 AI 或前端悄悄传入未设计字段
-- `transform: true`:启用 DTO 类型转换,配合分页参数等基础 DTO 使用
-- 禁止在单个 controller 里重复配置局部 `ValidationPipe`,除非有明确例外并写清原因
-
-### 7.6 权限标注
-
-```typescript
-@Roles(Role.SUPER_ADMIN, Role.ADMIN)
-@Get()
-async list() { ... }
-
-@Public()                    // 不需要登录
-@Post('login')
-async login() { ... }
-```
-
-未标注 `@Public()` 的接口默认需要登录(全局 `JwtAuthGuard`)。
-
-`JwtAuthGuard` 与 `RolesGuard` 都必须通过 `AppModule.providers` 中的 `APP_GUARD` 全局注册,顺序固定为 `JwtAuthGuard` → `RolesGuard`:先验证登录,再验证角色。禁止在每个 controller 上重复写 `@UseGuards(JwtAuthGuard)` 或 `@UseGuards(RolesGuard)`;`@Public()` / `@Roles(...)` 通过 `Reflector` 读取 metadata 决定是否放行。
-
-```typescript
-providers: [
-  {
-    provide: APP_GUARD,
-    useClass: JwtAuthGuard,
-  },
-  {
-    provide: APP_GUARD,
-    useClass: RolesGuard,
-  },
-]
-```
-
-`@Public()` 与 `@Roles(...)` **互斥**:标了 `@Public()` 的接口不应再标 `@Roles(...)`,语义上自相矛盾。`RolesGuard` 的实现规则:
-
-- 接口未标 `@Roles(...)` → 直接放行(只要 `JwtAuthGuard` 通过即可)
-- 接口标了 `@Roles(...)` 但 `request.user` 为空 → **拒绝访问**(抛 `BizException(BizCode.UNAUTHORIZED)`),不要因为没拿到 user 就放行,避免 `@Public()` + `@Roles(...)` 的错配组合默默泄露权限接口
-
-`POST /api/auth/login` 的 v1 入参固定为 `username + password`,不支持 email 登录、手机号登录、验证码登录或注册式字段。`username` 入库和登录查询前都统一 `trim()` + `toLowerCase()`。
-
-登录失败统一抛 `BizException(BizCode.LOGIN_FAILED)`。`username` 不存在、`password` 错误、用户已禁用、用户已软删除都返回同一个错误:HTTP 401,响应体 `{ code: 10004, message: '账号或密码错误', data: null }`。禁止在登录接口区分提示“账号不存在”“密码错误”“账号被禁用”,避免账号枚举;管理员需要查看账号状态时走后台用户列表。
-
-**Timing 防御铁律**:`username` 不存在时**也必须**跑一次 `bcrypt.compare(password, dummyHash)`(用一个预先生成、模块级常量化的固定 dummy hash),保证四场景的响应耗时一致。**禁止** `if (!user) throw LoginFailed` 这类早返回——`bcrypt.compare` 是慢操作(~50ms 量级),早返回会让"账号不存在"明显比"密码错误"快几十毫秒,攻击者据此可枚举有效账号(timing oracle 攻击)。E2E 不一定能稳定捕获 timing 差异,但代码层面必须按"无早返回"模式实现。
-
-登录成功后**顺手更新** `lastLoginAt = new Date()`;更新失败只 `logger.warn`,**不阻断登录响应**(避免一次写库失败把登录链路挂掉);v1 不做 `login_logs` 表。`userSafeSelect` 与 `UserResponseDto` 必须包含 `lastLoginAt` 字段,管理后台用于查看账号活跃度。
-
-v1 **不引入** `LocalStrategy`: `username + password` 校验在 `auth.service.ts` 内手写(`findFirst` → `bcrypt.compare` → `JwtService.sign`),`strategies/` 目录只放 token 校验策略。`passport-local` 只为统一接口而存在,对单一登录方式是无谓的间接层,不要主动新增 `local.strategy.ts`。
-
-JWT payload 固定为最小结构,不要塞完整用户对象,也不要塞 `role`:
-
-```typescript
-export interface JwtPayload {
-  sub: string;      // user.id
-  username: string;
-}
-```
-
-查库的唯一位置是 `JwtStrategy.validate()`:每次请求都必须根据 `payload.sub` 查库,并校验 `deletedAt === null` 且 `status === UserStatus.ACTIVE`。`validate()` 返回的对象会被 passport 自动挂到 `request.user`,`JwtAuthGuard` 只负责把 `@Public()` 标记的接口放行、未通过校验的请求拒绝,**不要**在 Guard 里再写一份查库逻辑。
-
-`JwtStrategy.validate()` 校验失败(token 无效 / 已过期 / 用户不存在 / 用户被禁用 / 用户已软删除)统一抛 `BizException(BizCode.UNAUTHORIZED)`,响应 `{ code: 40100, message: '未登录或登录已失效', data: null }` + HTTP 401。这与登录阶段的 `LOGIN_FAILED`(`10004`,HTTP 401)是**不同错误码**:
-
-| 阶段 | 触发位置 | 错误码 | message | 前端处理 |
-|---|---|---|---|---|
-| 登录阶段 | `auth.service.ts` 校验 `username + password` 失败 | `LOGIN_FAILED` (10004) | 账号或密码错误 | 留在登录页,提示密码错 |
-| 已登录请求 | `JwtStrategy.validate()` 校验 token / 用户状态失败 | `UNAUTHORIZED` (40100) | 未登录或登录已失效 | 跳回登录页,清掉本地 token |
-
-两者 HTTP status 都是 401,但 `code` 不同。前端必须按 `code` 区分,避免"已登录用户密码被管理员重置后旧 token 失效"被前端当成"登录表单密码错"处理。
-
-`JwtAuthGuard` 通过 `Reflector` 识别 `@Public()`,override `canActivate()` 实现:
-
-```typescript
-import { ExecutionContext, Injectable } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { AuthGuard } from '@nestjs/passport';
-import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
-
-@Injectable()
-export class JwtAuthGuard extends AuthGuard('jwt') {
-  constructor(private readonly reflector: Reflector) {
-    super();
-  }
-
-  canActivate(context: ExecutionContext) {
-    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-    if (isPublic) return true;
-    return super.canActivate(context);
-  }
-}
-```
-
-`@Public()` 装饰器使用 `SetMetadata(IS_PUBLIC_KEY, true)` 写入 metadata,`IS_PUBLIC_KEY` 常量与装饰器同文件导出。`getAllAndOverride` 同时读 method 与 class 级 metadata,允许在 controller 类上整类标注 `@Public()`。
-
-JWT 只证明"令牌由本系统签发过",不能替代当前用户状态校验;被禁用或软删除的用户即使 token 未过期也必须返回未登录或无效 token 错误。权限判断必须使用本次查库得到的用户 `role`,不得信任 token payload 中的角色信息。
-
-查库结果通过 `@CurrentUser()` 装饰器注入 controller / service,类型固定为:
-
-```typescript
-export interface CurrentUser {
-  id: string;
-  username: string;
-  role: Role;
-  status: UserStatus;
-}
-```
-
-**关于"每请求查库"的明确声明**:v1 选择每请求查库是**有意设计,不是没考虑性能**。AI 或新人看到这条不要主动加缓存"优化":
-
-- 主键索引查询在低 QPS 场景(内部管理系统、小型小程序)是 sub-millisecond 级别,远不是瓶颈
-- 换来的是"被禁用户即时失效"的强一致性保证,审计无窗口期
-- 任何缓存方案都会引入"用户被禁但 token 还能用 X 秒"的窗口,需要配套设计主动失效逻辑,不属于 v1 范围
-
-升级条件量化在 §9:用户校验耗时占请求 >20% 或单表 QPS > 1000,才考虑引入 Redis 短 TTL 缓存。
-
-### 7.7 密码处理铁律
-
-按"出现位置"分四层管控,执行起来不别扭:
-
-| 出现位置 | 是否允许 `password` 字段名 | 是否允许 `passwordHash` |
-|---|---|---|
-| Prisma model | ❌ 禁止 | ✅ 唯一允许 |
-| 响应 DTO | ❌ 禁止 | ❌ 禁止 |
-| 请求 DTO | ✅ 允许(`password` / `newPassword`) | ❌ 禁止 |
-| service 内部 | ✅ 允许(只能从请求 DTO 读取,落库前必须哈希) | ✅ 允许 |
-
-配套规则:
-
-- v1 默认使用 `bcryptjs`,salt rounds 固定 10,优先保证跨平台部署稳定
-- 安装命令:`pnpm add bcryptjs`
-- 如 TypeScript 提示缺少类型,再执行:`pnpm add -D @types/bcryptjs`
-- 统一 import:`import * as bcrypt from 'bcryptjs'`
-- 如系统进入正式生产、用户规模扩大或安全要求提高,优先评估 `argon2`
-- `native bcrypt` 只在部署环境完全可控时使用;不要在 v1 默认实现里为了“更专业”提前切换
-- DTO 校验:密码至少 8 位,需含数字 + 字母
-- service 接收 `password` 后,**入库前必须**调用 `bcrypt.hash()` 转为 `passwordHash`,绝不裸传 Prisma
-- 响应必须通过 Prisma `userSafeSelect` 显式排除 `passwordHash`,**禁止依赖 `class-transformer` 的 `@Exclude()` 作为主要防泄漏手段**(`@Exclude()` 只在 service 错传整条 Prisma `User` 时兜底,且容易被 `JSON.stringify` 直接绕过);任何接口响应里都不应出现 `passwordHash` 字段,详见 §7.9
-- **`POST /api/users` 必须由调用方传 `password` 字段**,不允许后端生成默认密码或留空。理由:默认密码是漏洞高发区,后端生成又没有邮件通道告知用户,任何"省事"的做法都比强制传更糟
-- **管理员重置 `PUT /api/users/:id/password`**:`ResetUserPasswordDto { newPassword: string }`,不需要 `oldPassword`(管理员重置就是为"用户忘密码"场景设计),但必须走 §7.11 `assertCanManageUser()` 角色边界校验
-- 管理员重置密码后 v1 不主动吊销旧 token;如需立即阻断访问,由管理员把目标用户 `status` 改为 `DISABLED`
-- **v1 不实现"本人改密码"接口**,详见 §6 说明。AI 不要主动补这个接口,更不要在其他接口里夹带"顺手改密码"的逻辑
-
-### 7.8 软删除(显式过滤,不用全局中间件)
-
-**v1 不使用 Prisma 全局软删除中间件 / client extension**。原因:
-
-- 软删除中间件通常需要拦截 `findUnique` / `findFirst` / `findMany` 等查询并改写 `where` 条件,容易破坏原本清晰的查询语义
-- 在 relation、唯一查询、管理员回收站等场景里容易产生隐藏行为,AI 后续维护时不容易看出来
-- 管理员要看"已删除用户"时,反而要绕过中间件,设计变扭
-
-替代方案:在 `users.service.ts` 内封装基础 where,所有查询显式过滤:
-
-```typescript
-// users.service.ts
-private notDeletedWhere<T extends object>(where: T = {} as T) {
-  return { ...where, deletedAt: null };
-}
-
-async findById(id: string) {
-  return this.prisma.user.findFirst({
-    where: this.notDeletedWhere({ id }),
-  });
-}
-```
-
-铁律:
-
-- **禁止调用 `prisma.user.delete()`**,删除接口只能 `update({ deletedAt: new Date(), status: UserStatus.DISABLED })`
-- v1 不提供恢复接口;如未来增加恢复接口,恢复时只清空 `deletedAt`,不自动把 `status` 改回 `ACTIVE`,必须由管理员显式启用
-- 所有非"管理员看回收站"类查询都必须经 `notDeletedWhere()` 过滤
-- 用户正常业务查询禁止使用 `prisma.user.findUnique()`,统一使用 `findFirst({ where: notDeletedWhere(...) })`,避免绕过 `deletedAt` 过滤
-- `seed`、创建 / 更新用户时的 `username` / `email` 唯一性预检查**必须**使用 `findUnique`(包含软删记录),**禁止**使用 `findFirst + notDeletedWhere`——软删后 `username` / `email` 不复用(见 §5),唯一性预检查的目的就是检测**包含软删在内**的全部占用;若用 `notDeletedWhere` 过滤,会让软删占用通过预检查,落库时撞 unique index 报 P2002,前端会拿到一个本可前置友好提示的服务器侧异常
-- `findById` 找不到(包括已软删)统一抛 `BizException(BizCode.USER_NOT_FOUND)`
-- 访问已删除用户的详情、修改、重置密码、改角色、改状态、删除接口,统一表现为用户不存在,抛 `BizException(BizCode.USER_NOT_FOUND)`
-- 登录路径额外校验 `user.status === UserStatus.ACTIVE`,不只是 `deletedAt === null`
-
-### 7.9 DTO 与 Prisma 类型严格分离
-
-- **入参 DTO**:`CreateUserDto`、`UpdateUserDto`、`ResetUserPasswordDto`、`UpdateUserRoleDto` 等,带 `class-validator` 装饰器
-- **出参 DTO**:`UserResponseDto`,显式列出对外暴露的字段(永不含 `passwordHash`)
-- Prisma 生成的 `User` 类型仅在 service 内部用,**绝不直接返给 controller / 前端**
-- 禁止任何 controller / service 直接返回未 `select` 的 Prisma `User` 对象,尤其禁止 `return this.prisma.user.findMany()` 这类写法
-- `User` 对外返回必须使用集中定义的 `userSafeSelect`,禁止在多个 service 方法里手写不同的 `select`
-- `userSafeSelect` 至少排除 `passwordHash`,并作为 `UserResponseDto` 字段来源的唯一依据
-- `UserResponseDto` 与 `userSafeSelect` 必须同步维护:新增、删除或重命名任何对外用户字段时,必须同时修改 DTO 和 select,禁止出现 DTO 声明了但 select 不返回、或 select 返回了但 DTO 未声明的字段
-- **禁止**创建 `*.entity.ts`;本项目不是 TypeORM 项目,不要引入 Entity 概念
-
-```typescript
-// modules/users/users.select.ts
-import { Prisma } from '@prisma/client';
-
-export const userSafeSelect = {
-  id: true,
-  username: true,
-  email: true,
-  nickname: true,
-  avatarKey: true,
-  role: true,
-  status: true,
-  createdAt: true,
-  lastLoginAt: true,
-  updatedAt: true,
-} as const satisfies Prisma.UserSelect;
-```
-
-#### IdParamDto 必须按字符串校验,不要写死 cuid 正则
-
-主键当前用 `cuid()` 字符串(见 §5),但路径参数 `:id` 的校验只约束为合理长度的字符串,避免把 DTO 和具体 ID 生成算法过度绑定;同时**绝不能**写成 int:
-
-```typescript
-// common/dto/id-param.dto.ts
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, Length } from 'class-validator';
-
-export class IdParamDto {
-  @ApiProperty({ example: 'cl9z3a8b00000abcd1234efgh' })
-  @IsString()
-  @Length(8, 64, { message: 'id 必须是 8-64 位字符串' })
-  id!: string;
-}
-```
-
-铁律:
-
-- **禁止** `@Param('id', ParseIntPipe)`、`id: number`、`@IsInt()`——NestJS 教程里大量这种写法,AI 容易直接抄
-- **禁止**在 `IdParamDto` 中写过死的 cuid 正则;优先使用字符串长度校验,或只在确有必要时使用宽松正则
-- 所有 `:id` 路径参数都通过 `IdParamDto` 校验,不要每个 controller 重写一遍
-- 校验失败由全局异常过滤器统一处理,返回 `code != 0` 的标准错误格式
-
-### 7.10 事务使用规则
-
-v1 不滥用事务,但涉及一致性边界时必须使用 `prisma.$transaction`。
-
-必须使用事务的场景:
-
-- 涉及多个写操作
-- 先检查再写入的关键业务
-- 管理员保护类操作,例如删除 super admin、禁用 super admin、把 super admin 降级为 ADMIN 或 USER
-
-管理员保护类操作必须把“检查剩余活跃 super admin 数”和“执行更新”放在同一个 transaction 中完成,避免并发请求同时通过检查后破坏“至少一个活跃 super admin”的不变式。
-
-不需要事务的场景:
-
-- 单表单次只读查询
-- 单条普通资料更新,且不依赖更新前检查结果维护业务不变式
-
-### 7.11 角色层级与管理员保护
-
-> **重要声明:本项目的三层角色是"粗粒度角色等级",不是 RBAC(基于角色的访问控制)。**
->
-> AI 或新人看到 `Role` 枚举不要把它当作"已经在做 RBAC 的起点"逐步扩展(加 permission 表、加 user_roles 多对多、加 casl/ability 库),也不要追加按钮级、字段级、资源级权限点。这是一次架构升级,不是渐进改造,触发条件见 §9 升级路径。
->
-> | 维度 | 本项目(角色等级) | RBAC |
-> |---|---|---|
-> | 角色定义 | Prisma `enum Role` 三层固定 | `roles` 表 + 数据库可配 |
-> | 用户-角色关系 | `User.role` 单值字段 | `user_roles` 多对多表,可多角色 |
-> | 权限粒度 | 接口级(`@Roles(...)`)+ service 层目标用户校验 | 按钮级 / 字段级 / 资源级权限点 |
-> | 权限存储 | 硬编码在 `users.service.ts`(`assertCanManageUser`) | `permissions` 表 + 角色-权限映射 |
-> | 适用场景 | 内管系统"管理员管员工"这种简单层级 | 复杂多团队、多产品、多租户、按钮可配的中后台 |
->
-> 之所以选这条路:99% 的内部管理系统、小程序后台、客户项目二开都不需要 RBAC,Role 三层够用且 AI 写起来不会乱。
-
-角色层级固定为:`SUPER_ADMIN > ADMIN > USER`。
-
-管理边界:
-
-- `SUPER_ADMIN` 可以管理 `SUPER_ADMIN`、`ADMIN`、`USER`,但受自我保护和最后一个 SUPER_ADMIN 保护约束
-- v1 只有 `prisma/seed.ts` 能创建 `SUPER_ADMIN`;所有业务 API 都禁止创建 `SUPER_ADMIN`
-- `CreateUserDto.role` 可选;不传默认 `USER`,禁止把 role 从 DTO 直接透传给 Prisma
-- `SUPER_ADMIN` 通过业务 API 创建用户时只允许 `role=ADMIN` 或 `role=USER`
-- `ADMIN` 调用创建接口时,不论传不传 `role`,最终只能创建 `USER`;若显式传 `ADMIN` / `SUPER_ADMIN`,抛 `BizException(BizCode.FORBIDDEN_ROLE_OPERATION)`
-- `ADMIN` 只能管理 `USER`,只能创建 `USER`,不能查看、修改、禁用、删除、降级或创建 `ADMIN` / `SUPER_ADMIN`;违反时抛 `BizException(BizCode.FORBIDDEN_ROLE_OPERATION)`
-- `USER` 只能访问本人接口,不能访问管理接口
-
-v1 不做复杂 permission 表,所有管理边界集中写在 `users.service.ts`,不要提前引入 Ability / CASL。只有真出现按钮级、资源级权限需求时,才按升级路径评估权限模块。
-
-权限分层铁律:
-
-- Guard 管入口权限:`@Roles(Role.SUPER_ADMIN, Role.ADMIN)` 只表示谁能进入管理接口
-- Service 管业务权限:`users.service.ts` 必须根据当前用户角色和目标用户角色再次校验“能操作谁”
-- 禁止只写 `@Roles` 就直接执行管理操作;所有读取详情、修改资料、重置密码、启用/禁用、软删除等管理接口都必须先校验目标用户角色
-
-```text
-SUPER_ADMIN: 可以操作 SUPER_ADMIN / ADMIN / USER
-ADMIN: 只能操作 USER
-USER: 不能进入管理接口
-```
-
-`users.service.ts` 必须集中实现目标用户权限判断,不要在各方法里散写 if:
-
-```typescript
-private assertCanManageUser(currentUser: CurrentUser, targetUser: User) {
-  if (currentUser.role === Role.SUPER_ADMIN) return;
-
-  if (currentUser.role === Role.ADMIN && targetUser.role === Role.USER) return;
-
-  throw new BizException(BizCode.FORBIDDEN_ROLE_OPERATION);
-}
-```
-
-以下接口必须先查出目标用户,再调用 `assertCanManageUser(currentUser, targetUser)`:
-
-- `GET /api/users/:id`
-- `PATCH /api/users/:id`
-- `PUT /api/users/:id/password`
-- `PATCH /api/users/:id/role`
-- `PATCH /api/users/:id/status`
-- `DELETE /api/users/:id`
-
-用户列表必须按当前用户角色过滤可见范围:
-
-```text
-SUPER_ADMIN: 可看 SUPER_ADMIN / ADMIN / USER
-ADMIN: 只能看 USER
-USER: 不能进入管理列表
-```
-
-系统必须始终保证至少有一个**活跃超级管理员**(`role=SUPER_ADMIN` AND `status=ACTIVE` AND `deletedAt=null`)。最后一个 SUPER_ADMIN 保护必须保留。
-
-#### 第一层:自我保护
-
-超级管理员和管理员**不允许**对自己执行以下操作,触发即抛 `BizException(BizCode.CANNOT_OPERATE_SELF)`。
-
-角色修改必须走 `PATCH /api/users/:id/role`,且禁止自改 role;`PATCH /api/users/:id` 永远不接受 role 字段。
-
-| 接口 | 拦截条件 | 防止的事故 |
-|---|---|---|
-| `DELETE /api/users/:id` | `id === currentUser.id` | 误删自己,丢失访问 |
-| `PATCH /api/users/:id/status` | `id === currentUser.id` 且改成 DISABLED | 把自己禁用,无人能再启用 |
-| `PATCH /api/users/:id/role` | `id === currentUser.id` | 自改角色,失去当前管理权限或制造权限语义混乱 |
-
-#### 第二层:最后一个 SUPER_ADMIN 保护
-
-任何"剥夺超级管理员权限"类操作前,必须在同一个 `prisma.$transaction` 中查询剩余活跃 super admin 数并执行更新,确保**操作后剩余 ≥ 1**,否则抛 `BizException(BizCode.LAST_SUPER_ADMIN_PROTECTED)`。
-
-适用接口:`DELETE /api/users/:id`、`PATCH /api/users/:id/status`(改 DISABLED)、`PATCH /api/users/:id/role`(role 改 ADMIN 或 USER)——当且仅当目标用户当前是 super admin 时检查。
-
-```typescript
-// users.service.ts(示意)
-private async assertNotLastSuperAdmin(userIdAffected: string) {
-  const remaining = await this.prisma.user.count({
-    where: this.notDeletedWhere({
-      role: Role.SUPER_ADMIN,
-      status: UserStatus.ACTIVE,
-      id: { not: userIdAffected },
-    }),
-  });
-  if (remaining === 0) {
-    throw new BizException(BizCode.LAST_SUPER_ADMIN_PROTECTED);
-  }
-}
-```
-
-#### 为什么两层都要
-
-- 自我保护是"防误操作"——挡住 99% 因匆忙点错按钮的事故
-- 最后一个 SUPER_ADMIN 保护是"防代码漏洞"——以后某个新接口、迁移脚本、批量操作可能绕过自我保护,这层还能兜底
-- 业务正确的不变式表述是"系统永远至少有一个活跃 super admin",而不是"不能操作自己"。后者只是前者在单 super admin 场景下的特例
-
-#### SUPER_ADMIN 之间的互操作(v1 设计选择)
-
-v1 允许 `SUPER_ADMIN` **互相管理**:重置密码、禁用、改角色、软删除均可,仅受**自我保护**和**最后一个 SUPER_ADMIN 保护**两层约束。
-
-| 场景 | v1 行为 | 命中保护 |
-|---|---|---|
-| `SUPER_ADMIN A` 重置 `SUPER_ADMIN B` 的密码 | ✅ 允许 | 不命中(密码重置不剥夺权限) |
-| `SUPER_ADMIN A` 把 `SUPER_ADMIN B` 改成 `DISABLED` | ✅ 允许(剩余活跃 super admin ≥ 1) | 命中最后一个保护 |
-| `SUPER_ADMIN A` 把 `SUPER_ADMIN B` 降级为 `ADMIN` / `USER` | ✅ 允许(剩余活跃 super admin ≥ 1) | 命中最后一个保护 |
-| `SUPER_ADMIN A` 软删 `SUPER_ADMIN B` | ✅ 允许(剩余活跃 super admin ≥ 1) | 命中最后一个保护 |
-| `SUPER_ADMIN A` 对自己执行上述任一操作 | ❌ 拒绝 | 命中自我保护 |
-
-这是 v1 的**明确选择,不是疏漏**:
-
-- v1 默认只有一个 SUPER_ADMIN(`prisma/seed.ts` 创建),互操作是低频运维场景
-- 若禁止互操作,会出现"前任 SUPER_ADMIN 离职后无法被接任者接管"的死锁
-- 真出现"SUPER_ADMIN 互不可操作"诉求(如多团队联合管理同一系统、多组织间相互隔离)时按 §9 升级路径处理,**作为权限模型升级**,不是渐进改造
-
-AI 实施时不要凭直觉额外加一层"SUPER_ADMIN 互不可操作"校验,也不要在 `assertCanManageUser` 里把 `targetUser.role === Role.SUPER_ADMIN` 列为禁止条件。
+| §7.1 模块结构(4 文件) | [`AGENTS.md §2`](./AGENTS.md) |
+| §7.2 命名铁律 | [`AGENTS.md §3`](./AGENTS.md) |
+| §7.3 统一返回格式 + BizCode + BizException + ResponseInterceptor 跳过路径 | [`AGENTS.md §4 / §5`](./AGENTS.md) |
+| §7.4 Swagger 100% 覆盖 | [`AGENTS.md §6`](./AGENTS.md) |
+| §7.5 全局 ValidationPipe | [`AGENTS.md §7`](./AGENTS.md) |
+| §7.6 权限标注 + JWT + 登录防账号枚举 + Timing 防御 | [`AGENTS.md §8`](./AGENTS.md) |
+| §7.7 密码处理 | [`AGENTS.md §9`](./AGENTS.md) |
+| §7.8 软删除 | [`AGENTS.md §10`](./AGENTS.md) |
+| §7.9 DTO 与 Prisma 分离 + IdParamDto | [`AGENTS.md §11`](./AGENTS.md) |
+| §7.10 事务使用规则 | [`AGENTS.md §12`](./AGENTS.md) |
+| §7.11 角色层级与管理员保护 | [`AGENTS.md §13`](./AGENTS.md) |
 
 ---
 
 ## 8. 环境变量
 
-```bash
-# .env.example
+历史 v1 §8 `.env.example` 模板 + 配置归属表原文见归档 [`architecture-v1-blueprint.md §8`](./docs/archive/legacy/architecture-v1-blueprint.md)。当前 env 已新增 `JWT_REFRESH_EXPIRES_IN` / `LOG_LEVEL` / `LOGIN_THROTTLE_LIMIT` / `LOGIN_THROTTLE_TTL_SECONDS` / `PASSWORD_CHANGE_THROTTLE_*` / `REFRESH_THROTTLE_*` / `STORAGE_ENCRYPTION_KEY` 等多项。
 
-# 数据库
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/app
+当前 env 与配置归属以以下 active 权威源为准:
 
-# JWT
-JWT_SECRET=please-change-me-in-production-min-32-chars
-JWT_EXPIRES_IN=7d
-
-# 默认超级管理员(仅首次 seed 使用)
-SUPER_ADMIN_USERNAME=admin
-SUPER_ADMIN_PASSWORD=ChangeMe123456
-SUPER_ADMIN_EMAIL=admin@example.com
-
-# 应用
-APP_PORT=3000
-# APP_ENV 可选值: development | test | production
-APP_ENV=development
-# 多个 origin 用英文逗号分隔
-APP_CORS_ORIGIN=http://localhost:5173
-# 留空表示:开发环境开启,生产环境关闭;production 下设 true 才开启 /api/docs
-ENABLE_SWAGGER=
-```
-
-**安全约定**:
-
-- `.env` 必须 gitignore,只提交 `.env.example`
-- `seed.ts` 必须从 env 读超级管理员凭据,**不允许硬编码**
-- `seed.ts` 只在不存在 `SUPER_ADMIN_USERNAME` 对应用户时创建;如果用户已存在,不覆盖密码、不覆盖角色、不覆盖邮箱,只打印提示
-- `prisma/seed.ts` 启动时必须强校验:`SUPER_ADMIN_USERNAME` 必须符合 username 格式(小写字母、数字、下划线、中横线,长度 3-32);`APP_ENV=production` 时禁止 `SUPER_ADMIN_USERNAME=admin`,也禁止 `SUPER_ADMIN_PASSWORD` 为 `.env.example` 中的默认值(`ChangeMe123456`),否则直接抛错退出,不写入数据库
-- 本项目只使用 `APP_ENV` 表示应用运行环境,不要混用 `NODE_ENV` 做业务配置判断;`NODE_ENV` 只留给框架和工具链内部使用
-- 应用启动时强校验(任一不满足直接抛错退出):
-  - `APP_ENV` 仅允许 `development` / `test` / `production`
-  - `JWT_SECRET` 至少 32 字符
-  - 当 `APP_ENV=production` 时:
-    - `JWT_SECRET` 不允许为 `.env.example` 中的默认值(`please-change-me-in-production-min-32-chars`)
-    - `JWT_SECRET` 推荐用 `openssl rand -base64 48` 生成
-  - `test` 环境允许使用默认 `JWT_SECRET`;`production` 必须使用随机强密钥
-- 默认值刻意写成 `ChangeMe...` 形式,既能本地直接跑,又自带"必须改"的视觉提醒
-- `APP_CORS_ORIGIN` 配置允许访问 API 的前端 origin;本地默认 Vite 端口 `http://localhost:5173`,生产必须改成真实前端域名
-- `APP_CORS_ORIGIN` 支持英文逗号分隔多个 origin,启动时按 `split(',').map(trim).filter(Boolean)` 解析
-- `APP_ENV=production` 时,`APP_CORS_ORIGIN` 禁止为空,禁止使用 `*`;不要为了方便把生产 CORS 全放开
-- Swagger 开关逻辑固定为:`APP_ENV !== 'production' || ENABLE_SWAGGER === 'true'`
-- `ENABLE_SWAGGER` 必须用严格字符串判断 `=== 'true'`,禁止用 `Boolean(process.env.ENABLE_SWAGGER)` 或 truthy 判断,否则字符串 `'false'` 会被误判为开启
-- `.env.example` 中 `ENABLE_SWAGGER` 留空,避免写成 `false` 后让人误以为开发环境也会关闭 Swagger
-- 生产环境默认不注册 `/api/docs` 和 `/api/docs-json`;如需临时开放,显式设置 `ENABLE_SWAGGER=true`
-- 如生产需要给前端生成 SDK,优先在 CI 中导出 `openapi.json`,不建议长期开放 `/api/docs-json`
-
-**配置文件归属(避免 AI 新建无谓的 config 文件)**:
-
-| 环境变量 | 归属 | 说明 |
-|---|---|---|
-| `APP_PORT` / `APP_ENV` / `APP_CORS_ORIGIN` / `ENABLE_SWAGGER` | `src/config/app.config.ts` | 应用层运行参数,集中读取并做启动强校验 |
-| `DATABASE_URL` | `src/config/database.config.ts` | 仅暴露给 `PrismaService` / `DatabaseModule` |
-| `JWT_SECRET` / `JWT_EXPIRES_IN` | `src/config/jwt.config.ts` | 仅暴露给 `auth/` 模块 |
-| `SUPER_ADMIN_USERNAME` / `SUPER_ADMIN_PASSWORD` / `SUPER_ADMIN_EMAIL` | **不进 config**,仅在 `prisma/seed.ts` 内 `process.env` 直读 | 避免运行时被业务代码误读,也避免默认凭据在生产环境意外暴露到 ConfigService |
-
-铁律:
-
-- 不要为 CORS / Swagger / 单一开关再单独建 `cors.config.ts`、`swagger.config.ts`,统一归 `app.config.ts`
-- 业务代码和 service 不直接 `process.env.XXX`,统一通过对应 `*.config.ts` 注入(`SUPER_ADMIN_*` 是显式例外,因为只 seed 用一次)
-- 新增环境变量时,先决定归属哪个 `*.config.ts`,再同步加进 `.env.example` 和启动强校验
+- **`.env.example`** 实时模板:[`.env.example`](./.env.example)(运行时)
+- **配置归属规则 + 启动强校验铁律**:[`AGENTS.md §14`](./AGENTS.md)
+- **V2 配置归属决策模板**(应用级 / 数据库 / JWT / 模块特有 / seed 一次性):[`docs/srvf-foundation-baseline.md §7`](./docs/srvf-foundation-baseline.md)
+- **运行环境变量索引**:[`docs/development.md §6`](./docs/development.md)
 
 ---
 
-## 9. 升级路径
+## 9. 升级路径(active)
+
+> 本节是本文的**核心 active 章节**,完整保留自原 ARCHITECTURE.md §9。[`AGENTS.md`](./AGENTS.md) / [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) / [`docs/security.md`](./docs/security.md) 等 active 文档均以 "ARCHITECTURE.md §9 升级路径" 作为基础设施扩张的触发条件单一权威源,引用锚点不变。
 
 底座是活的,但不要预先做。下表是"何时该加什么":
 
@@ -1052,495 +178,117 @@ ENABLE_SWAGGER=
 
 **判定原则**:不是"觉得以后会用",而是"现在的产品需求里出现了这个明确诉求"。
 
+> **当前已解锁能力**(由真实业务诉求驱动经独立评审解锁,对应本表多条已落地):RBAC(v0.13.0+ / v0.15.0 P0-F 管理面收紧)/ refresh token + logout + logout-all(v0.14.0+)/ attachments 元数据 + 配置三表 + COS Provider(v0.10.0~v0.12.0)/ App API Phase 2 15 endpoint(v0.15.0)/ audit_logs(v0.7.0+ / 第二波 22 处写迁移已完成)/ 本人改密 P0-D(v0.13.0)。详 [`docs/current-state.md §2`](./docs/current-state.md)。仍未解锁的项目(Redis / BullMQ / 微信小程序登录 / pgvector / LLM / 多租户 / `tokenVersion` 字段 / access token blacklist)继续遵守本表触发条件。
+
 ---
 
 ## 10. 部署
 
-### v1 默认:本地 Docker Compose
+历史 v1 §10 部署原文(Docker Compose / 生产部署候选 / 迁移流程)见归档 [`architecture-v1-blueprint.md §10`](./docs/archive/legacy/architecture-v1-blueprint.md)。当前部署 SOP 以以下 active 文档为准:
 
-```yaml
-# docker-compose.yml(简化示意)
-services:
-  postgres:
-    image: postgres:16-alpine
-    ports: ["5432:5432"]
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: app
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-volumes:
-  postgres_data:
-```
-
-v1 的 `docker-compose.yml` **只起 PostgreSQL,不构建应用镜像**;应用本身用 `pnpm run start:dev` 跑在宿主机,数据库跑在容器里,开发调试最快。`Dockerfile` 与应用容器化在首次生产部署前再补,避免 v1 阶段维护一份从未被实际验证过的 Dockerfile 配置。
-
-### 生产部署
-
-v1 不预先决定,但 Dockerfile 会写得通用,以下任一方式可直接部:
-
-- 自己买云服务器(阿里云 / 腾讯云)+ Docker Compose
-- 托管平台:Railway / Sealos / Zeabur
-- 容器服务:阿里云 ACK / 腾讯云 TKE
-
-v1 开发阶段不强制提供应用 `Dockerfile`;进入首次生产部署前再补 `Dockerfile` 和 `docker-compose.prod.yml`。
-
-生产数据库迁移必须独立、克制执行。生产环境禁止使用 `prisma migrate dev`,只能执行已提交、已审查 migration 文件对应的 `prisma migrate deploy`。如果没有 CI/CD 流水线,也必须把迁移作为单独步骤处理:先备份数据库,确认目标环境和 `DATABASE_URL`,查看待执行 migration,再手动运行 deploy。AI 不得建议直接连接生产库执行开发态迁移命令。
+- **运行时部署 SOP** / Docker 镜像 / 生产部署 / 迁移流程:[`docs/deployment.md`](./docs/deployment.md)
+- **docker smoke CI 形态**:[`docs/docker-smoke-test.md`](./docs/docker-smoke-test.md)
+- **运维侧真实 COS 上线 SOP**:[`docs/ops/cos-production-rollout-checklist.md`](./docs/ops/cos-production-rollout-checklist.md)
+- **生产 `prisma migrate deploy` 铁律 / 禁止 `prisma migrate dev` 直连生产**:[`AGENTS.md §0`](./AGENTS.md) + V2 红线 A-12
 
 ---
 
-## 11. V1.1 Engineering Hardening
+## 11. V1.1 工程加固摘要(active 锚点)
 
-> **定位**:V1.1 是 v1 完成后的"工程加固增量",不是新版本的功能升级,也不是 §9 升级路径的提前触发。本章节给出的能力**全部围绕底座侧的可观测性、运维基础、安全加固**展开,不新增任何业务接口、不修改任何业务路由、不改动业务数据模型。
->
-> **与 v1 的关系**:§1-§10 是 v1 蓝图,**保持不变**;V1.1 只在底座之上增量补充。任何 V1.1 条目与 v1 已有铁律冲突时,**以 v1 铁律为准**,V1.1 让步。
->
-> **与 §9 升级路径的关系**:§9 列出的所有"升级触发条件"在 V1.1 阶段**仍然不触发**;V1.1 不引入 Redis、不引入 BullMQ、不引入 RBAC、不引入 refresh token、不引入文件上传 Provider、不引入 LLM、不引入审计日志表、不引入用户状态缓存。
+> V1.1 工程加固("能上生产"的最小工程基线)已于 v0.1.5 / v0.1.6 收口。本节是 active 摘要锚点,保证 [`AGENTS.md §17`](./AGENTS.md) / [`docs/current-state.md`](./docs/current-state.md) / [`docs/deployment.md`](./docs/deployment.md) 对 "ARCHITECTURE.md §11" 的现有引用持续可达。原 §11.1-§11.7 详细约束见归档 [`architecture-v1-1-hardening.md`](./docs/archive/legacy/architecture-v1-1-hardening.md)。
 
-### 11.1 V1.1 目标
+### 11.1 V1.1 覆盖能力
 
-为 v1 骨架补足"能上生产"的最小工程基线,具体覆盖三件事:
+V1.1 在 v1 业务接口与数据模型不变的前提下补齐以下基础工程能力:
 
-1. **可观测性**:把"出了问题查不到"变成"出了问题能在 5 分钟内定位"——结构化日志 + 请求 ID 贯通。
-2. **运维基础**:把"本地能跑"变成"容器能起、CI 能跑、SIGTERM 能优雅退出"——Dockerfile + GitHub Actions + graceful shutdown + 健康检查分层。
-3. **安全加固**:把"裸跑在公网会被扫死"变成"基线防护到位"——helmet HTTP 头 + 登录接口限流。
+- **结构化日志**:`nestjs-pino` + `pino`(开发可叠 `pino-pretty`);**自动屏蔽敏感字段** `password` / `newPassword` / `passwordHash` / `authorization` / `cookie` / `token` / `accessToken` / `refreshToken` / `secret`(V2 屏蔽清单预扩展见 [`docs/srvf-foundation-baseline.md §8`](./docs/srvf-foundation-baseline.md))
+- **请求 ID 追踪**:读 `x-request-id` 请求头,缺失则用 `cuid()` 生成;同时写回响应头;贯穿同一请求所有日志的 `requestId` 字段
+- **优雅关闭**:`app.enableShutdownHooks()` + `OnModuleDestroy`;`PrismaService` 在 `onModuleDestroy()` 内 `await this.$disconnect()`
+- **HTTP 安全头**:`helmet` 全局启用;仅对 `/api/docs` 路径关闭 `contentSecurityPolicy`(Swagger UI 兼容)
+- **登录限流**:`@nestjs/throttler` 内存 storage;仅作用于 `POST /api/auth/login`,默认 `5 次 / 60 秒 / per IP`;超限抛 `BizException(BizCode.TOO_MANY_REQUESTS)`(`code: 42900` / HTTP 429);**不暴露**阈值数字、剩余配额、重置时间到 message
+- **健康检查分层**:`@nestjs/terminus`;`/api/health/live`(进程存活)+ `/api/health/ready`(DB 连通)+ `/api/health`(向后兼容,等同 `/live`);三者都 `@Public()`,都走统一响应包装
+- **Dockerfile 多阶段**:`node:22-alpine` deps → builder → runner;runner 切换到非 root 用户(优先用 `node` 用户);`prisma migrate deploy` 在 entrypoint 显式执行,**不能**在镜像构建阶段执行
+- **CI 流水线**:`.github/workflows/ci.yml`;`push` 到 `main` + 所有 PR 触发;步骤 checkout → setup-node 22 → pnpm install(带 store 缓存)→ lint → typecheck → 起 PostgreSQL service container → `db:test:init` → `test:e2e`
 
-V1.1 不追求完备,只求把"裸 v1 直接上线"的几个最常见塌方点补上。任何超出这三件事的能力(指标采集、APM 接入、tracing、审计日志持久化、性能 profile)都不属于 V1.1。
+### 11.2 V1.1 阶段不做 → V2.x 已部分解锁
 
-### 11.2 V1.1 允许做的事
+V1.1 阶段**不引入** Redis / BullMQ / OpenTelemetry / Sentry / APM / Prometheus / RBAC / refresh token / 多租户 / 文件上传 Provider / LLM / 审计日志持久化 / 用户状态缓存。**当前 V2.x 已通过独立评审解锁**:`audit_logs`(v0.7.0)/ RBAC(v0.13.0)/ refresh token(v0.14.0)/ attachments + COS Provider(v0.10.0~v0.12.0)/ 本人改密(v0.13.0)/ App API Phase 2(v0.15.0)。当前仍未解锁项继续遵守 §9 升级路径。详 [`docs/current-state.md §2`](./docs/current-state.md) + [`docs/V2红线与复活路径.md §4`](./docs/V2红线与复活路径.md)。
 
-| 能力 | 选型 | 范围 |
-|---|---|---|
-| **结构化日志** | `nestjs-pino` + `pino`(开发可叠 `pino-pretty`) | 替换 NestJS 默认 Logger;输出 JSON;**自动屏蔽敏感字段** `password` / `newPassword` / `passwordHash` / `authorization` / `cookie` / `token` / `accessToken` / `refreshToken` / `secret` |
-| **请求 ID 追踪** | `nestjs-pino` 内置或自写中间件 | 读 `x-request-id` 请求头,缺失则用 `cuid()` 生成;同时写回响应头 `x-request-id`;贯穿同一请求所有日志的 `requestId` 字段 |
-| **优雅关闭** | NestJS `app.enableShutdownHooks()` + `OnModuleDestroy` | `PrismaService` 实现 `OnModuleDestroy`,在 `onModuleDestroy()` 内 `await this.$disconnect()`;监听 SIGTERM / SIGINT 后等待 in-flight 请求完成 |
-| **HTTP 安全头** | `helmet` | `app.use(helmet())`,默认配置;若与 Swagger UI 的 inline script CSP 冲突,**仅对 `/api/docs` 路径**关闭 `contentSecurityPolicy`,**禁止全局关闭** |
-| **登录接口限流** | `@nestjs/throttler` 内存 storage | **仅作用于 `POST /api/auth/login`**(基于路径或 controller 装饰器);默认 `5 次 / 60 秒 / per IP`(具体参数走 `app.config.ts`);超限抛新增的 `BizException(BizCode.TOO_MANY_REQUESTS)` |
-| **健康检查升级** | `@nestjs/terminus` | 在 `health/` 模块下新增 `GET /api/health/live`(进程存活)与 `GET /api/health/ready`(DB 连通);保留原 `GET /api/health` 作向后兼容,响应等同 `/live`;三者都 `@Public()`,都走统一响应包装 |
-| **Dockerfile** | 多阶段:deps → builder → runner | 基于 `node:22-alpine`;runner 阶段切换到非 root 用户(优先用 `node` 用户);`prisma migrate deploy` 在容器入口 entrypoint 里显式执行,**不能**在镜像构建阶段执行 |
-| **CI 流水线** | GitHub Actions(`.github/workflows/ci.yml`) | 触发:`push` 到 `main` + 所有 PR;步骤:checkout → setup-node 22 → pnpm install(带 store 缓存)→ lint → typecheck → 起 PostgreSQL service container → `db:test:init` → `test:e2e` |
-| **新增错误码** | `BizCode.TOO_MANY_REQUESTS` | `code: 42900`,`message: '请求过于频繁，请稍后再试'`,`httpStatus: HttpStatus.TOO_MANY_REQUESTS`(429);**不暴露阈值数字、剩余配额、重置时间到 message** |
-| **新增环境变量** | 见 §11.5 | `LOG_LEVEL` / `LOGIN_THROTTLE_LIMIT` / `LOGIN_THROTTLE_TTL_SECONDS`;统一归 `app.config.ts`,启动强校验 |
+### 11.3 V1.1 新增环境变量
 
-### 11.3 V1.1 禁止做的事
+`LOG_LEVEL` / `LOGIN_THROTTLE_LIMIT` / `LOGIN_THROTTLE_TTL_SECONDS` 统一归 `src/config/app.config.ts`,启动强校验。详细取值范围 / 启动强校验规则见归档 [`architecture-v1-1-hardening.md §11.5`](./docs/archive/legacy/architecture-v1-1-hardening.md)。
 
-V1.1 仍然**不做**以下事项,任何 AI 看到 V1.1 章节不要把它当成"放开口子"的信号(**适用范围**:V1.1 工程加固阶段;V2.x 已通过独立评审解锁 RBAC / `attachments` 元数据 / 文件上传 Provider 等;详见 §12 + [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) §4):
+### 11.4 V1.1 与 §9 升级路径的边界声明
 
-- 不引入 Redis(包括限流的 Redis storage、用户状态缓存、JWT 黑名单)——限流只用 `@nestjs/throttler` 内存 storage
-- 不引入 BullMQ / 任务队列 / 定时任务
-- 不做操作日志 / 审计日志的**数据库持久化**——只做结构化日志输出到 stdout
-- 不接入 OpenTelemetry / Jaeger / Zipkin 等 tracing 系统
-- 不接入 Sentry / Datadog / New Relic 等 APM
-- 不暴露 Prometheus `/metrics` 端点(若未来需要,按 §9 升级路径处理,且 `/metrics` 必须加入 `ResponseInterceptor` 跳过列表)
-- 不做 refresh token / 本人改密码接口 / 微信小程序登录 / RBAC 权限表 / 多租户 / 文件上传 Provider / pgvector / LLM
-- 不在 v1 业务模块(`auth` / `users` / `health`)里夹带新业务字段、新业务路由
-- 不修改 §6 API 接口清单中已有接口的入参 / 出参 / HTTP 方法 / 权限标注
-- 不修改 Prisma `User` 模型(不加日志相关字段、不加请求统计字段)
-- 不修改 §1-§10 任何 v1 铁律的语义;V1.1 只能在已有铁律之上**追加**约束,不能**放宽**已有约束
+V1.1 完成后,多实例配额共享 / 用户禁用即时失效 / Sentry 上报 / OpenTelemetry tracing / Prometheus P95/P99 等场景**仍然走 §9 升级路径**;V1.1 不替代。详见归档 [`architecture-v1-1-hardening.md §11.6`](./docs/archive/legacy/architecture-v1-1-hardening.md)。
 
-### 11.4 V1.1 与 v1 铁律的衔接
+### 11.5 ESLint TypeScript Project 覆盖规则
 
-V1.1 新增能力必须复用 v1 已建立的基础设施,**禁止另起炉灶**:
-
-- **错误处理**:限流、健康检查 ready 失败等异常**必须**走 `BizException` + `AllExceptionsFilter`,响应体仍然是 `{ code, message, data: null }`,HTTP status 由 BizCode 的 `httpStatus` 决定;**禁止**直接 `throw new HttpException` 绕过统一错误码
-- **响应格式**:健康检查升级后的三个端点(`/api/health` / `/api/health/live` / `/api/health/ready`)**继续走** `ResponseInterceptor` 包装,响应体形如 `{ code: 0, message: 'ok', data: { status: 'ok', ... } }`;**不要**为了对齐 `@nestjs/terminus` 的原生输出绕过包装
-- **Swagger 覆盖**:`/api/health/live` 与 `/api/health/ready` 必须 `@ApiOperation` + `@ApiWrappedOkResponse(...)`,与 v1 的 Swagger 100% 覆盖铁律一致
-- **配置归属**:V1.1 新增的 `LOG_LEVEL` / `LOGIN_THROTTLE_LIMIT` / `LOGIN_THROTTLE_TTL_SECONDS` 全部归 `src/config/app.config.ts`,**禁止**为日志或限流单独建 `logger.config.ts` / `throttler.config.ts`
-- **错误码段位**:`TOO_MANY_REQUESTS = 42900` 落在 `4xxxx` 通用 HTTP 段,**不**占用业务模块的 `100xx` / `110xx` 段位
-- **日志屏蔽**:敏感字段屏蔽列表必须与 §7.7 / §9 密码处理铁律对齐,至少包含 `password` / `newPassword` / `passwordHash` / `authorization` / `cookie` / `token` / `accessToken` / `refreshToken` / `secret`;DTO 字段一旦命中此清单,日志中**必须**显示为 `[REDACTED]`,**不能**仅做长度截断
-- **限流防绕过**:`POST /api/auth/login` 限流后,**不要**在 `auth.service.ts` 内自写 `setTimeout` 之类的伪限流;限流统一由 `@nestjs/throttler` 提供,绕过它就等于关掉限流
-
-### 11.5 V1.1 新增环境变量
-
-| 变量 | 默认值 | 归属 | 说明 |
-|---|---|---|---|
-| `LOG_LEVEL` | `info`(生产) / `debug`(非生产) | `src/config/app.config.ts` | pino 日志级别;允许值 `fatal` / `error` / `warn` / `info` / `debug` / `trace` |
-| `LOGIN_THROTTLE_LIMIT` | `5` | `src/config/app.config.ts` | `POST /api/auth/login` 每 TTL 窗口允许的最大尝试次数 |
-| `LOGIN_THROTTLE_TTL_SECONDS` | `60` | `src/config/app.config.ts` | `POST /api/auth/login` 限流 TTL,单位秒;最小 1,最大 3600 |
-
-启动强校验追加:
-
-- `LOG_LEVEL` 必须 ∈ `{ fatal, error, warn, info, debug, trace }`
-- `LOGIN_THROTTLE_LIMIT` 必须为正整数,推荐范围 `[1, 100]`
-- `LOGIN_THROTTLE_TTL_SECONDS` 必须为正整数,推荐范围 `[1, 3600]`
-- 任一不满足直接抛错退出,**禁止**用 fallback 默认值在生产环境兜底
-
-`.env.example` 必须同步追加以上三项,值留空或写注释默认,**不允许**在 `.env.example` 中写敏感值。
-
-### 11.6 V1.1 与 §9 升级路径的边界声明
-
-V1.1 完成后,以下场景**仍然走 §9 升级路径**,V1.1 不替代:
-
-| 真实诉求 | V1.1 是否解决 | 应走的升级路径 |
-|---|---|---|
-| 单实例 QPS 上升后限流要在多实例间共享配额 | ❌ 不解决(V1.1 用内存 storage,多实例不共享) | §9 引入 Redis + `@nestjs/throttler` Redis storage |
-| 用户登录被禁用后,旧 token 必须立即失效 | ❌ 不解决 | §9 引入用户状态 Redis 缓存 + 主动失效 |
-| 需要把所有 4xx / 5xx 异常上报到 Sentry | ❌ 不解决 | §9 升级条目"接入 APM" |
-| 需要查"某次错误对应的完整调用链" | ❌ 不解决(V1.1 只有日志,没 tracing) | §9 升级条目"引入 OpenTelemetry" |
-| 需要按用户 / 接口维度采集 P95 / P99 延迟 | ❌ 不解决 | §9 升级条目"引入 Prometheus / Grafana" |
-
-V1.1 完成后,**不要**因为"日志已经接进来了"就顺手把上面任一条带做;每一条都需要重新评估业务诉求与 §9 升级路径。
+新增任何 TypeScript 源码目录(`scripts/` / `tools/` / `migrations/` 等)时,**必须**同步更新 `eslint.config.mjs` 的 `parserOptions.project` 数组;**禁止**未覆盖的 `.ts` 文件破坏 lint 闭环。详细操作步骤见归档 [`architecture-v1-1-hardening.md §11.7`](./docs/archive/legacy/architecture-v1-1-hardening.md)。
 
 ---
 
-### 11.7 ESLint TypeScript Project 覆盖规则
+## 12. V2 派生项目方向(已归档)
 
-项目使用显式 `parserOptions.project` 列表覆盖 `src` / `test` / `prisma` 三处 TypeScript 源码(不使用 `projectService` 自动发现,因为 `prisma/` 目录不在任何运行时 tsconfig 的 `include` 中)。
+历史 §12 V2 派生项目方向原文(§12.1-§12.11,含 V2 第一阶段开发蓝图 / Step 1-7 / v1 兼容性红线 / 绝对禁止清单 / D8 解除条件 / V2.x 复活路径)整段归档至 [`docs/archive/plans/architecture-v2-first-stage-blueprint.md`](./docs/archive/plans/architecture-v2-first-stage-blueprint.md)。
 
-新增任何 TypeScript 源码目录(如 `scripts/`、`tools/`、`migrations/` 等)时,维护者必须按以下顺序执行:
+**V2 第一阶段开发(Step 1-7)已于 v0.2.0 全部完成**。当前 V2 / V2.x 状态以以下 active 权威源为准:
 
-1. 为新目录新增或更新对应的 `tsconfig` 文件(若不希望进入运行时构建,参考 `prisma/tsconfig.eslint.json` 模式,只供 ESLint 解析使用)
-2. 在 `eslint.config.mjs` 的 `parserOptions.project` 数组中追加新 `tsconfig` 路径
-3. 确认 `pnpm lint` 通过
+- **V2.x 复活触发条件 / 延后模型当前清单 / A/B/C/D/E 五档红线**:[`docs/V2红线与复活路径.md §4`](./docs/V2红线与复活路径.md)(滚动维护)
+- **V2 基线规范**(BizCode 段位 / 命名 / DTO 白名单 / 软删 / v1 兼容 / 时区 / 验收门槛 13 项 A 档):[`docs/srvf-foundation-baseline.md`](./docs/srvf-foundation-baseline.md)
+- **V2 数据模型**(4 模型 + `users.memberId`):[`docs/v2-data-model.md`](./docs/v2-data-model.md)
+- **V2 第一阶段接口契约**(含 §6.6 memberNo 登录回退):[`docs/v2-api-contract.md`](./docs/v2-api-contract.md)
+- **V2 第一阶段执行计划历史快照**(原 `docs/v2-plan.md`):[`docs/archive/plans/v2-first-stage-plan.md`](./docs/archive/plans/v2-first-stage-plan.md)
+- **当前 V2 / V2.x 已落地能力清单**:[`docs/current-state.md §2`](./docs/current-state.md) "V2 数据底座" / "V2 批次" / "V2.x C-6/C-7/C-7.5" 段
 
-**禁止**新增 TypeScript 目录但不同步更新 ESLint project 覆盖 — 未覆盖的 `.ts` 文件会被 typescript-eslint 抛 `was not found by the project service` 解析错误,直接破坏 lint 闭环。
-
----
-
-## 附录:实施顺序
-
-### 实施规则
-
-- 每次只实现一个阶段,不跨阶段提前写后续模块。
-- 每个阶段完成后必须运行 lint、typecheck、test,或至少启动服务验证。
-- pnpm-only:所有依赖安装和脚本执行都使用 `pnpm`;禁止使用 `npm`、`yarn`、`bun`。
-- 执行 Prisma Migrate 前必须先说明将生成/执行的迁移内容并等待确认,不得直接运行迁移命令。本规则适用于 AI 本地开发和人工协作场景;CI/CD 中的 `prisma migrate deploy` 只允许执行已提交、已审查的 migration 文件。
-- AI 修改代码前必须先读取 `ARCHITECTURE.md`、`CLAUDE.md` 和 `AGENTS.md`。
-- 任何新增功能如果不在 v1 范围内,必须先暂停并说明原因,不得擅自实现。
-
-### 测试策略
-
-- v1 初始搭建不强制引入 E2E 测试,不因 E2E 缺失阻塞骨架搭建。
-- `auth` / `users` 稳定后优先引入 E2E 测试。
-- 不追求单元测试覆盖率数字,只测试关键接口行为。
-- E2E 优先覆盖登录、JWT 鉴权、用户 CRUD、角色边界、软删除、禁用用户、最后一个 SUPER_ADMIN 保护、唯一约束冲突。
-- 登录失败必须覆盖**防账号枚举四场景**:`username` 不存在、`password` 错误、账号已禁用(`status=DISABLED`)、账号已软删除(`deletedAt != null`)。四个场景的响应体与 HTTP status 必须**完全相同**——`{ code: 10004, message: '账号或密码错误', data: null }` + HTTP 401,任何字段差异(包括 message 文案、错误码细分、响应耗时显著差异)都视为账号枚举漏洞。
-- E2E 必须断言统一响应格式:成功响应检查 `{ code: 0, message: 'ok', data }`,错误响应检查 `{ code, message, data: null }`;分页接口额外检查 `data.items` / `data.total` / `data.page` / `data.pageSize` 结构,避免 controller 绕过 `ResponseInterceptor` 或返回裸数组。
-- 错误响应必须**同时断言** HTTP status code 与 `BizCode.httpStatus` 一致(例如 `USER_NOT_FOUND` → `expect(res.status).toBe(404)`,`LOGIN_FAILED` → `expect(res.status).toBe(401)`,`USERNAME_ALREADY_EXISTS` → `expect(res.status).toBe(409)`),防止 `AllExceptionsFilter` 漏读 `httpStatus` 后退化为统一 500 或 200。
-
-确认后按此顺序搭建,每一步都能跑、能验:
-
-1. **项目初始化**:`pnpm` + NestJS CLI 起骨架,配 `tsconfig`、`eslint`、`prettier`
-2. **Docker Compose**:本地 PostgreSQL 跑起来
-3. **Prisma 接入**:`schema.prisma` + 第一次 migration + `PrismaService`
-4. **公共基础件**:全局 `/api` 前缀、CORS、异常过滤器、响应拦截器、`BizException`、`@Public`、`@CurrentUser`、`@Roles`
-5. **`health/` 健康检查**:`GET /api/health` 必须 `@Public()`,并能返回服务状态
-6. **Swagger 接入**:开发环境 `/api/docs` 能打开,生产环境默认不注册
-7. **`auth/` 登录**:`POST /api/auth/login`,返回 JWT,Swagger 上能调通
-8. **`users/` 模块**:本人接口 + 管理员接口,分页返回 `PageResultDto<T>`,对外返回统一走 `userSafeSelect`,显式软删除过滤(`notDeletedWhere()` 帮助方法),管理员自我保护拦截 + 最后一个 SUPER_ADMIN 保护
-9. **`prisma/seed.ts`**:从 `.env` 读 `SUPER_ADMIN_*`,bcryptjs 哈希后写入默认 super admin
-10. **`common/storage/` 接口落地**:只放 `storage.interface.ts` 和 `storage.types.ts`;v1 不定义注入 token,不注册 `StorageModule`,不实现任何 Provider,不做签名 URL、分片上传、直传策略等高级能力
-11. **`modules/ai/README.md`** 占位,不注册 `AiModule`,不实现 Provider,明确 v1 禁止实现 AI 能力,等第一个 AI 产品启动时再填
-12. **`CLAUDE.md` + `AGENTS.md`**:从本文档第 7 节抽出 AI 协作铁律,两者并存
-13. **`README.md`**:写"如何启动本地开发"
-
-完成标准:本地 Docker PostgreSQL + NestJS 服务能一键启动;Swagger 上能完整验证 v1 所有接口;`GET /api/health`、登录、用户 CRUD、管理员保护、统一异常与统一响应格式都能按预期工作。
+外部对 `ARCHITECTURE.md §12.X` 的引用(§12.6 / §12.8 / §12.8.1 / §12.8.2 / §12.8.2.1 / §12.8.2.2 / §12.8.2.3 / §12.8.2.4 / §12.8.2.5 / §12.8.3 / §12.8.4 / §12.9 / §12.10 / §12.11 等)自 PR-6 起统一指向归档文件 `docs/archive/plans/architecture-v2-first-stage-blueprint.md §12.X`;新文档建议引用上面 "active 权威源" 列表,而非归档文件。
 
 ---
 
-## 12. V2 派生项目方向(srvf-nest-api 基础数据底座)
+## 13. 其它 active 权威源(不在本文维护)
 
-> **适用范围**:本节**仅适用于派生项目 `srvf-nest-api`(深圳公益救援队内部系统)**,不是 `u-nest-api-starter` 模板仓的强制升级。
-> **不破坏** `u-nest-api-starter` v0.1.6 起的 main 分支 template-freeze 约束(只允许 docs / CI 触发路径变更)。
-> **状态**:**调研与设计阶段**,**未进入开发**。
-> **本节定位**:**仅引用边界**,不锁 schema、不锁字段、不锁 API 路径、不锁实施顺序。具体边界以 [`docs/archive/plans/v2-design-phase/srvf-foundation-research.md`](./docs/archive/plans/v2-design-phase/srvf-foundation-research.md)(原 `docs/srvf-foundation-research.md`,PR-4 已归档)为准。
-
-### 12.1 一句话目标
-
-为 `srvf-nest-api` 沉淀**人员主数据 / 组织 / 字典 / 附件元数据 / 审计**五大基建,**不预先实现**任何具体救援业务流程。
-
-### 12.2 与 v1 / V1.1 / 模板 freeze 的关系
-
-- **v1**(本文 §1-§10):全部保留生效
-- **V1.1**(本文 §11):全部保留生效
-- **模板 freeze**(`u-nest-api-starter` v0.1.6):派生项目的 V2 工作**不回流**到模板仓 main 分支
-- **本节(§12)**:派生项目侧的扩张登记,与模板仓解耦
-
-### 12.3 V2 解锁项(相对 v1 §1)
-
-以下四项在 v1 §1 的"v1 不做的事"中被冻结,V2 在派生项目侧**有限解锁**(具体边界见研究文档对应章节):
-
-- **字典管理**(参考 [`docs/archive/plans/v2-design-phase/srvf-foundation-research.md`](./docs/archive/plans/v2-design-phase/srvf-foundation-research.md) §2.3 / §5.1)
-- **操作日志的"基础设施"**(表与写入入口,**不**强制全模块覆盖,参考研究文档 §2.5)
-- **组织树**(单一层级根,**不**做多租户;参考研究文档 §2.2)
-- **通用附件元数据表**(**仅元数据**,**不**实装 Provider;参考研究文档 §2.4 / §3.10)
-
-### 12.4 V2 仍不做项(继承 v1 §1,完整清单见研究文档 §3)
-
-V2 第一阶段的"暂不做清单"由 [`docs/archive/plans/v2-design-phase/srvf-foundation-research.md`](./docs/archive/plans/v2-design-phase/srvf-foundation-research.md)(原 `docs/srvf-foundation-research.md`,PR-4 已归档)§3.1 - §3.16 共 16 条统一锁定,本节不重复罗列。任何与该清单冲突的诉求,必须先回到研究文档评审,再决定是否调整。
-
-> **适用范围说明**(2026-05-16 Fast-1 段头补充):本节(§12.4 + 下方要点提示)锁定的是 **V2 第一阶段 Step 1-7 开发期硬约束**(已于 v0.2.0 全部完成);本节作为开发期硬约束历史快照保留。**当前 V2.x 段已通过独立评审 + 立项 PR 解锁部分项**:`audit_logs`(批次 6,v0.7.0)/ RBAC(批次 8 C-6,v0.9.0)/ `attachments` 元数据(批次 7 C-7,v0.10.0)/ 文件上传 Provider 实装(批次 7.5 C-7.5,v0.11.0)。本节 **不删原文**(沿 [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) §5.4 最小修订原则)。当前红线以 `docs/V2红线与复活路径.md` §4 为权威源;v0.11.0 阶段交接见 [`docs/handoff/v0.11.0.md`](./docs/handoff/v0.11.0.md)。
-
-要点提示(完整清单以研究文档为准):
-
-- 不做装备 / 仓库 / 车辆 / 船艇管理(§3.1)
-- 不做财务 / 报销 / 捐赠(§3.2)
-- 不做救援任务调度 / 实时定位(§3.3)
-- 不做大屏 / BI / 复杂报表(§3.4)
-- 不做积分 / 评优 / 奖惩(§3.5)
-- 不做通用审批流引擎(§3.6)
-- 不做微信 / 公众号 / 企业微信深度集成(§3.7)
-- 不做短信 / 邮件 / 站内消息(§3.8)
-- 不做证件 / 保险自动校验与到期提醒(§3.9)
-- 不做文件上传 Provider 实装(§3.10)
-- 不做 RBAC / 通用数据范围权限引擎(§3.11)
-- 不做 Redis / 队列 / 定时任务(§3.12)
-- 不做 LLM / 向量检索(§3.13)
-- 不做多租户(§3.14)
-- 不做历史数据导入工具(§3.15)
-- 考勤业务流程 / 训练业务模块**业务实现**暂不做(§3.16),但允许研究 events / event_participants 是否能作为底座承载
-
-### 12.5 V2 设计阶段产物
-
-- [`docs/archive/plans/v2-design-phase/srvf-foundation-research.md`](./docs/archive/plans/v2-design-phase/srvf-foundation-research.md) — 边界文档(已通过评审,V2 设计阶段冻结;原 `docs/srvf-foundation-research.md`,PR-4 已归档)
-- [`docs/srvf-foundation-baseline.md`](./docs/srvf-foundation-baseline.md) — **V2 通用基线规范**(BizCode 段位 / 命名 / DTO / 软删除 / 验收门槛等 13 项 A 档约定);所有 V2 草案与开发的**隐含约束**,**不是数据模型草案**
-- `ARCHITECTURE.md §12` — 本节,蓝图侧的轻量登记
-- `CLAUDE.md §18` / `AGENTS.md §18` — V2 调研 / 设计阶段约束(非执行约束)
-- `TASKS.md` V2 设计任务卡 — 调研 / 建模 / 评审任务,**不含**开发任务(已归档至 [`docs/archive/plans/v2-design-phase/tasks.md`](docs/archive/plans/v2-design-phase/tasks.md))
-- [`docs/archive/plans/v2-design-phase/srvf-foundation-data-model-draft.md`](./docs/archive/plans/v2-design-phase/srvf-foundation-data-model-draft.md) — **候选模型草案**(待第二步通过后,作为第三步产出;原 `docs/srvf-foundation-data-model-draft.md`,PR-4 已归档)
-
-### 12.6 进入开发的前置条件(硬约束)
-
-V2 任何 Prisma schema 变更、migration、新建 `src/modules/<业务>` 之前,**必须**完成:
-
-1. `docs/archive/plans/v2-design-phase/srvf-foundation-research.md` 评审通过 ✅(已通过;原 `docs/srvf-foundation-research.md`,PR-4 已归档)
-2. `ARCHITECTURE.md §12` 追加(本节)+ `CLAUDE.md §18` + `AGENTS.md §18` + `TASKS.md` V2 设计任务卡 同步追加(第二步产物;现归档于 [`docs/archive/plans/v2-design-phase/tasks.md`](docs/archive/plans/v2-design-phase/tasks.md))
-3. `docs/archive/plans/v2-design-phase/srvf-foundation-data-model-draft.md` 候选模型草案完成并评审通过(第三步产物;原 `docs/srvf-foundation-data-model-draft.md`,PR-4 已归档)
-4. 本节(§12)升级为带 schema 锁定的开发蓝图(届时另起 §12.7+ 子节,**不破坏** §12.1-§12.6 的边界声明)
-
-未走完上述四步 → **禁止**任何 schema / migration / 业务模块代码 / 新依赖动作。
-
-### 12.7 与 v1 §6 接口清单的关系
-
-V2 **不修改** v1 §6 已交付的 14 个接口的路径 / HTTP 方法 / 入参 / 出参 / 权限标注。V2 仅**追加**新模块的接口;具体接口清单在本节**不锁定**,留给未来开发蓝图与 v2-api-contract.md。
-
-兼容性红线见研究文档 §5.6:不删 / 不改 / 不重命名 v1 `users` 已有字段,不破坏 `UserResponseDto`,不在 v1 接口响应中新增"必返"字段。
-
-### 12.8 V2 第一阶段开发蓝图(自 D8 决议起锁定)
-
-> **状态**:**V2-D8 立项中**(2026-05-07);本节自 D8 决议起锁定 V2 第一阶段开发范围与红线。
-> **依据**:`docs/archive/plans/v2-design-phase/srvf-foundation-data-model-draft.md` v0.3 D7-min 决议版(commit `4333c31`;原 `docs/srvf-foundation-data-model-draft.md`,PR-4 已归档)+ `TASKS.md` D7-min 同步(commit `281abc0`)+ baseline(commit `16876fe`)。
-> **本节性质**:开发蓝图,**仅锁范围与红线**;具体计划 / 模型 / 接口契约由 `docs/archive/plans/v2-first-stage-plan.md`(原 `docs/v2-plan.md`,PR-5 已归档)/ `docs/v2-data-model.md` / `docs/v2-api-contract.md` 承载,本节不重抄。
-
-#### 12.8.1 V2 第一阶段开发范围
-
-V2 第一阶段开发范围由 D7-min 决议锁定为 **4 个模型 + 1 项 v1 兼容性追加**:
-
-| # | 模型 | 决议(D7-min,commit `4333c31`)| 草案对应章节 |
-|---|---|---|---|
-| 1 | `dictionaries`(`dict_types` + `dict_items`)| ✅ 进入 V2 第一阶段 | data-model-draft v0.3 §3.1.10 |
-| 2 | `organizations` | ✅ 进入 V2 第一阶段 | §3.2.10 |
-| 3 | `members` | ✅ 进入 V2 第一阶段 — 含 `memberNo` 业务唯一标识(非敏感、必填、全局唯一、不允许 PATCH;支持登录回退查找)| §3.3.10 + memberNo 决议(2026-05-08) |
-| 4 | `member_departments` | ✅ 进入 V2 第一阶段 | §3.5.10 |
-| — | v1 `users` 表追加 `memberId` 可空外键 | M-2 决议的不可避免后果 | §3.3.10 / §4.2.6 |
-| — | v1 `auth.service.ts` 登录查找扩展支持 `memberNo` 回退 | memberNo 决议(2026-05-08)| §12.8.2.3 / §12.8.2.4 / `docs/v2-api-contract.md §6.6` |
-
-**第一阶段不开发**(全部延后到 V2.x,无砍掉):
-
-| # | 模型 | 决议(D7-min)| V2.x 复活触发条件 |
-|---|---|---|---|
-| 5 | `member_profiles` | ⏸️ 延后 | 合规依据补齐(详见 [`docs/V2红线与复活路径.md §4.3`](docs/V2红线与复活路径.md)) |
-| 6 | `attachments` | ⏸️ 延后 | profiles / events 解锁 / 用户拍板独立诉求(任一即可)|
-| 7 | `audit_logs` | ⏸️ 延后 | V2.x 第一个增量,接入 V2 第一阶段 4 模型关键写操作 |
-| 8 | `events` | ⏸️ 延后 | 用户拍板需求 → D7-4 评审 |
-| 9 | `event_participants` | ⏸️ 延后(跟随 events)| 跟随 events 复活路径 |
-
-V2.x 复活触发条件清单见 [`docs/V2红线与复活路径.md §4.3`](docs/V2红线与复活路径.md),本节不重抄。
-
-#### 12.8.2 v1 兼容性红线(开发期硬约束)
-
-V2 第一阶段开发**全程**遵守以下兼容性红线(对齐 baseline §11):
-
-##### 12.8.2.1 v1 接口契约
-
-- v1 §6 已交付的 14 个接口的**路径 / HTTP 方法 / 入参 DTO / 出参 DTO / 错误码 / 权限标注 / 响应包装**全部保留不变
-- v1 `UserResponseDto` **不**新增必返字段
-- `memberId` 是否作为 v1 接口的**可选返回**字段,留到具体开发任务中再评估;**默认不改 v1 出参**
-
-##### 12.8.2.2 v1 表与 Prisma model 兼容性
-
-- v1 `users` 表新增**可空** `memberId` 字段(unique 约束)— 为 M-2 决议的不可避免后果
-- v1 `users` 已有字段 / 已有索引 / 已有外键**不动**
-- Prisma `User` model 仅追加 `memberId` 可空字段 + 关系到 `Member` model;**不改**已有字段类型 / 命名 / 默认值
-
-##### 12.8.2.3 v1 业务逻辑兼容性
-
-- v1 用户登录路径(`POST /api/auth/login`)**对外契约不动**:HTTP 路径 / 方法 / `LoginDto` schema(`username` + `password` 字段名 / 类型 / 校验装饰器不变)/ 出参 / 错误码(`LOGIN_FAILED = 10004`)/ 响应包装 / Timing 防御机制 全部保留;OpenAPI 快照中 v1 `LoginDto` schema **零漂移**
-  - v1 `LoginDto.username` 字段在 V2 第一阶段的**服务端查找语义**允许扩展为"username 或 memberNo"(由 `auth.service.ts` 内部回退查找实现;详见 §12.8.2.4 受限放开条款 + `docs/v2-api-contract.md §6.6`)
-  - 扩展**仅在服务端**:不改字段名 / 类型 / 入参 schema;不新增 `/api/v2/auth/login` 路径;前端登录入口仍是单一的 `POST /api/auth/login`
-  - 账号枚举防护场景**扩展**:输入值在 `username` 与 `memberNo` 两条查找路径下均未命中 / `memberNo` 命中但未绑定 user / 账号已禁用或已软删除 / 密码错误 — 全部统一抛 `LOGIN_FAILED`,响应包装 / 错误码 / message / HTTP status / Timing 防御机制保持一致;**禁止**暴露"编号存在但无账号"等可区分提示
-- v1 用户创建 / 查询 / 更新 / 软删除路径**不动**
-- v1 `seed.ts` 创建 SUPER_ADMIN 的逻辑**不动**(SUPER_ADMIN 默认 `memberId = null`,不强制绑 member)
-- v1 既有 e2e 用例(19 suites / 162 tests,A4-1 时确认基线)**全部保留**且全部通过
-
-##### 12.8.2.4 v1 已交付 src/ 文件修改限制
-
-按 `CLAUDE.md §18.1` / D7-min 决议授权 + memberNo 登录回退决议(2026-05-08):
-
-- ✅ **可以**修改 `prisma/schema.prisma` 追加 `memberId` 可空外键(M-2 决议授权)+ `Member.memberNo` 全局唯一字段
-- ✅ **可以**修改 v1 `users.service.ts` / `users.dto.ts` 追加 `memberId` 字段处理逻辑(若开发任务需要)
-- ⚠️ **受限放开** v1 `auth.service.ts`:**唯一**允许的扩展是登录查找路径追加 `memberNo` 回退(`username` 查找失败后,按 `memberNo` 在 `member` 表精确匹配,再通过 `users.memberId` 反查 user,照常走 `bcrypt.compare`)。**严格禁止**修改:
-  - 入参 / 出参 DTO 字段集(`LoginDto` / 登录响应 schema 必须零漂移)
-  - 错误码常量与文案(`LOGIN_FAILED = 10004` 等)
-  - 响应包装链路 / `JwtService.sign` 调用方式 / `lastLoginAt` 顺手更新策略
-  - Timing 防御机制 — 现有 dummy `bcrypt.compare` 必须保留,且**强制扩展**到新增 `memberNo` 路径,确保账号枚举相关失败场景(见 §12.8.2.3 + `docs/v2-api-contract.md §6.6.3`)耗时一致
-  - 实现层依赖关系 — `auth.service` 必须通过 `PrismaService` 直读 `member` 表(`this.prisma.member.findUnique({ where: { memberNo } })`),**禁止** import `MembersModule` / `MembersService` 或任何 V2 业务层符号(避免 v1 → V2 循环依赖)
-- ❌ **禁止**修改 v1 `auth.controller.ts` / `auth.dto.ts`(`LoginDto` 字段名 / 类型 / 校验装饰器 / 路径全保留)
-- ❌ **禁止**修改 v1 `health/` 模块
-- ❌ **禁止**修改 v1 `bootstrap/` 模块的全局中间件 / 拦截器 / 异常过滤器
-- ❌ **禁止**修改 v1 `config/` 模块(除非新增 V2 配置文件)
-- ❌ **禁止**修改 v1 `database/prisma.service.ts`
-
-每次修改 v1 已交付 src/ 文件**必须**在 commit message 显式说明涉及哪个 v1 文件 + 跑完整 baseline §13 A 档 + B 档。`auth.service.ts` 受限放开属于**唯一破口**,Step 5 实施时必须独立 commit(`feat(auth): support memberNo login fallback`),单 commit 仅含 `auth.service.ts` 改动 + 配套 e2e + OpenAPI 快照对比证据;**严禁**与 members CRUD 揉进同一 commit。
-
-##### 12.8.2.5 v1 OpenAPI 契约快照
-
-沿用 V1.3 已建立的 `test/contract/openapi.contract-spec.ts` 快照机制:
-
-- V2 4 模块开发后,**新增**接口的 schema 进入快照
-- v1 14 接口 schema 在快照中**保持不变**(若发生变化,视作 v1 兼容性破坏,等同于 §12.8.2.1 红线违反)
-
-#### 12.8.3 跨模型形态约束(对齐 baseline + D7-min)
-
-V2 第一阶段 4 模型**全程**遵守以下跨模型形态约束:
-
-| # | 约束 | 来源 |
-|---|---|---|
-| **X-1** | 字典引用方式**全模块统一**为 `<concept>Code` 字符串字段(如 `gradeCode` / `nodeTypeCode`)| D-2 / O-2 / M-4 决议(data-model-draft v0.3 §3.1.10 / §3.2.10 / §3.3.10) |
-| **X-2** | 软删除按 baseline §10:`deletedAt: Date \| null` + `notDeletedWhere` helper(commit `d8fd444` 已就位) | baseline §10 |
-| **X-3** | 启停字段命名按 baseline §2.2.3:统一 `status` enum | baseline §2.2.3 |
-| **X-4** | 多对多中间表命名按 baseline §2.2.2:`member_departments` 业务序 | baseline §2.2.2 |
-| **X-5** | 通用字段全模块一致:`id`(cuid)/ `createdAt` / `updatedAt` / `deletedAt` | baseline §2.1 |
-| **X-6** | BizCode 段位:`organizations`=`110xx`/`111xx` / `dictionaries`=`120xx`/`121xx` / `members`=`150xx`/`151xx` / `member_profiles`=`160xx`/`161xx`(本阶段不用,保留)/ `member_departments`=`170xx`/`171xx`| baseline §1.1 |
-| **X-7** | 命名遵守 baseline §2.1 / §2.2 全部红线(时间字段 / 主键 / 软删标记 / 文件 key 等)| baseline §2 |
-| **X-8** | 响应包装 / 异常 / Swagger 100% 覆盖 / DTO 白名单 / 模块结构 / 错误码命名规范 / 配置归属 / Guard 链 全部沿用 baseline §3-§9 | baseline §3-§9 |
-| **X-9** | 时区全栈 UTC,前端转本地;**禁止**后端按"中国时区"提前转换 | baseline §12 |
-| **X-10** | 验收按 baseline §13 A 档 + B 档(涉及 HTTP 行为 / 全局中间件 / 拦截器 / Guard / Controller / Swagger 时追加 B 档)| baseline §13 |
-
-#### 12.8.4 第一阶段绝对禁止清单(继承 + 强化)
-
-> **适用范围**:本节锁定的是 **V2 第一阶段 Step 1-7 开发期**(对应 §12.9.1 的 7 步开发)。Step 1-7 已于 v0.2.0 全部完成,本节作为开发期硬约束的历史快照保留。
-> **当前状态**(v0.7.0 后):
-> - `audit_logs` 已作为 V2.x 第一个增量于 v0.7.0 局部启动(批次 6 PR #29 / PR #30 实施;经业务确认稿 + D6 评审 + 用户拍板;符合 §12.11.2 V2.x 复活路径);剩余 22 处 `auditPlaceholder` 调用按业务诉求渐进迁出。
-> - `member_profiles` / `attachments` / `events` / `event_participants` **仍延后**(沿 §12.11.2 / [`docs/V2红线与复活路径.md §4.3`](docs/V2红线与复活路径.md))。
-> - 当前阶段红线 / 复活路径以 [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) 为单一权威源;新批次范围限制以对应批次评审稿为准。
-
-V2 第一阶段开发期间**严禁**:
-
-- ❌ 开发 `member_profiles`(任何敏感字段 — 身份证 / 紧急联系人 / 医疗 / 出生日期 / 住址 / 性别 / 第三方账号 / 凭证标识 等)
-- ❌ 开发 `events` / `event_participants`(活动事件 / 参与状态)
-- ❌ 开发 `attachments`(附件元数据 / 上传 Provider)
-- ❌ 开发 `audit_logs`(审计基础设施 / 任何接入)
-- ❌ 实装文件上传 Provider(本地 / OSS / R2 / 其他;沿用 `research.md §3.10`)
-- ❌ 引入 RBAC / permission 表 / casl(沿用 v1 §1)
-- ❌ 引入 Redis / 队列 / 定时任务(沿用 v1 §1 / V1.1 §11.3)
-- ❌ 实现读审计 / 完整状态机 / 流程引擎(沿用 `research.md §3.6` / §3.16)
-- ❌ 引入新依赖(除非 v2-plan 任务卡显式登记)
-- ❌ 修改 `docker-compose.yml` / `.github/workflows/ci.yml`(除非 D8 立项后单独评估)
-
----
-
-### 12.9 V2 第一阶段开发顺序
-
-V2 第一阶段开发按 7 步顺序推进,**逐步独立交付,逐步独立 commit**;具体任务卡见 `TASKS.md §6` / 计划详情见 `docs/archive/plans/v2-first-stage-plan.md`(原 `docs/v2-plan.md`,PR-5 已归档)。
-
-#### 12.9.1 7 步开发顺序
-
-| Step | 内容 | 关键依赖 |
-|---|---|---|
-| **Step 1** | Prisma schema + migration:4 模型 + `users.memberId` 可空外键 | baseline + v1 schema 不破坏 |
-| **Step 2** | seed neutral-demo 字典类型(节点类别 / 队员等级 2 类),**仅占位**;真实取值不进 git history(R13)| Step 1 完成 |
-| **Step 3** | `dictionaries` 模块(`dict_types` + `dict_items` controller / service / dto / e2e)| Step 1-2 完成 |
-| **Step 4** | `organizations` 模块(树形 controller / service / dto / e2e)| Step 1-3 完成(依赖字典) |
-| **Step 5** | `members` 模块(controller / service / dto / e2e)+ v1 `users` 服务侧追加 `memberId` 关系处理 | Step 1-4 完成 |
-| **Step 6** | `member_departments` 归属能力(嵌套或独立 controller / service / dto / e2e + 单归属约束业务规则)| Step 1-5 完成 |
-| **Step 7** | E2E 全量回归 + 契约快照更新 + 文档收口(README / CHANGELOG / TASKS.md 收尾)| Step 1-6 全部完成 |
-
-#### 12.9.2 每步必须交付物
-
-| Step | 交付物清单 |
+| 你想知道的事 | active 权威源 |
 |---|---|
-| Step 1 | Prisma schema 改动 + migration 文件 + `pnpm prisma:generate` 通过 + `pnpm prisma:migrate dev`(本地)/ `pnpm prisma:deploy`(CI)通过 |
-| Step 2 | `prisma/seed.ts` 改动 + neutral-demo 字典类型 + 幂等(跑两次结果一致)|
-| Step 3-6 | 4 文件结构(`<name>.module.ts` / `.controller.ts` / `.service.ts` / `.dto.ts`)+ `<name>.e2e-spec.ts` + Swagger 100% 覆盖 |
-| Step 7 | OpenAPI 契约快照更新 + e2e 全量通过 + README / CHANGELOG 增量 + TASKS.md §6 状态收尾 |
-
-#### 12.9.3 每步验收门槛(对齐 baseline §13)
-
-每步完成前必须跑:
-
-**A 档(必跑)**:
-
-- `pnpm lint`(0 warnings / 0 errors)
-- `pnpm typecheck`
-- `pnpm test`(unit)
-- `pnpm test:e2e`(v1 既有 19 suites / 162 tests **零退化** + V2 新增 e2e 通过)
-- `pnpm test:contract`(若涉及 OpenAPI schema 变更,显式更新快照)
-
-**B 档(涉及 HTTP 行为 / 全局中间件 / 拦截器 / Guard / Controller / Swagger 时追加)**:
-
-- 启动服务,确认 `/api/docs` 仍正常打开
-- 确认 v1 `GET /api/health` / `/api/health/live` / `/api/health/ready` 三端点向后兼容
-- 任意 v1 14 接口典型路径不退化(管理员可手工 spot check)
-- V2 新接口典型成功路径 + 典型错误路径
-
-任一未通过 → **不算完成,不能 commit,不能向用户报告"任务完成"**(沿用 V1.1 §17.10 末尾纪律)。
+| **当前事实**(版本 / open PR / 已发能力 / surface 状态 / 当前债务 / 不做清单) | [`docs/current-state.md`](./docs/current-state.md) |
+| **长期 AI 协作铁律**(命名 / Guard / 软删 / 错误码 / 密码 / DTO 分离 / 角色层级 / refresh token / §19.7 D-series 决策锁) | [`AGENTS.md`](./AGENTS.md) §1-§19 |
+| **流程制度**(开工 checklist / PR 五档 / D 档降速 / release 收口 / AI 协作纪律 / 收尾报告) | [`docs/process.md`](./docs/process.md) |
+| **V2 基线规范**(13 项 A 档) | [`docs/srvf-foundation-baseline.md`](./docs/srvf-foundation-baseline.md) |
+| **V2 五档红线 / V2.x 复活路径** | [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) |
+| **API surface 长期边界** | [`docs/api-surface-policy.md`](./docs/api-surface-policy.md) |
+| **架构边界 / 服务抽离决策**(Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect) | [`docs/architecture-boundary.md`](./docs/architecture-boundary.md) |
+| **Participation 业务上下文边界图** | [`docs/participation-bounded-context.md`](./docs/participation-bounded-context.md) |
+| **附件配置三表边界** | [`docs/attachment-config-boundary.md`](./docs/attachment-config-boundary.md) |
+| **V2 数据模型** / **V2 接口契约** | [`docs/v2-data-model.md`](./docs/v2-data-model.md) / [`docs/v2-api-contract.md`](./docs/v2-api-contract.md) |
+| **运行 / 部署 / 测试 / 安全 / 排错 SOP** | [`docs/development.md`](./docs/development.md) / [`docs/deployment.md`](./docs/deployment.md) / [`docs/testing.md`](./docs/testing.md) / [`docs/security.md`](./docs/security.md) / [`docs/ops/cos-production-rollout-checklist.md`](./docs/ops/cos-production-rollout-checklist.md) |
+| **Claude Code 入口转发** | [`CLAUDE.md`](./CLAUDE.md)(收口为 ≤80 行入口转发) |
 
 ---
 
-### 12.10 V2 第一阶段开发产出物清单
+## 14. 历史架构归档索引
 
-#### 12.10.1 必须产出
+PR-6(2026-05-22)将原 ARCHITECTURE.md 1547 行设计期蓝图拆解归档,统一存于 `docs/archive/**`。归档文件**只代表归档时刻的决议**,不再作为当前规则依据;active 引用应指向 §13 列出的 active 权威源,而非以下归档文件。
 
-| # | 产出物 | 状态 |
+| 归档文件 | 内容 | 原 ARCHITECTURE.md 章节 |
 |---|---|---|
-| 1 | `ARCHITECTURE.md §12.8-§12.11`(本节及后续)| ⏳ 待 D8 立项首批 commit 后落地 |
-| 2 | `docs/archive/plans/v2-first-stage-plan.md`(开发执行计划;原 `docs/v2-plan.md`,PR-5 已归档)| ⏳ 待 D8 立项中产出 |
-| 3 | `docs/v2-data-model.md`(4 模型 + `users.memberId` 数据模型说明)| ⏳ 待 D8 立项中产出 |
-| 4 | `docs/v2-api-contract.md`(接口契约草案)| ⏳ 待 D8 立项中产出 |
-| 5 | `TASKS.md §6` V2 第一阶段开发任务卡(7 个 Step 任务卡)| ⏳ 待 D8 立项中产出 |
-| 6 | Prisma schema + migration(4 模型 + `users.memberId`)| 由 Step 1 交付,**不在本节范围** |
-| 7 | 4 个 NestJS 模块代码 + e2e | 由 Step 3-6 交付,**不在本节范围** |
-| 8 | OpenAPI 契约快照更新 | 由 Step 7 交付,**不在本节范围** |
+| [`docs/archive/legacy/architecture-v1-blueprint.md`](./docs/archive/legacy/architecture-v1-blueprint.md) | v1 蓝图原文 + 实施顺序附录 | §1 设计原则 / §2 技术栈 / §3 项目结构 / §4 v1 范围 / §5 数据模型 / §6 API 接口清单 / §7 命名与编码约定(7.1-7.11)/ §8 环境变量 / §9 升级路径(active 锚点已迁本文 §9)/ §10 部署 / 附录 实施顺序 |
+| [`docs/archive/legacy/architecture-v1-1-hardening.md`](./docs/archive/legacy/architecture-v1-1-hardening.md) | V1.1 工程加固原文 | §11.1 - §11.7(active 摘要锚点已迁本文 §11) |
+| [`docs/archive/plans/architecture-v2-first-stage-blueprint.md`](./docs/archive/plans/architecture-v2-first-stage-blueprint.md) | V2 派生项目方向原文 | §12.1 - §12.11(V2 第一阶段 Step 1-7 已于 v0.2.0 全部完成) |
 
-#### 12.10.2 不在产出范围
-
-- ❌ `member_profiles` / `attachments` / `audit_logs` / `events` / `event_participants` 任何代码 / schema / 测试
-- ❌ 文件上传 Provider 实装
-- ❌ RBAC / permission 表 / casl
-- ❌ Redis / 队列 / 定时任务
-- ❌ AI / 向量检索
-- ❌ 多租户 / 复杂审批流 / 通知系统
-- ❌ 任何 v1 §1 / V2 §3 已锁定的"不做"项的破口
+历史 release handoff / 评审稿 / 批次决议 / Phase reviews / first-release 过程档案另存于 [`docs/archive/handoff/`](./docs/archive/handoff/) / [`docs/archive/reviews/`](./docs/archive/reviews/) / [`docs/archive/batches/`](./docs/archive/batches/) / [`docs/archive/plans/`](./docs/archive/plans/) / [`docs/archive/legacy/`](./docs/archive/legacy/),不再作为当前执行约束。
 
 ---
 
-### 12.11 D8 解除条件与 V2.x 路径
+## 15. 本文不维护的事
 
-#### 12.11.1 D8 解除条件(进入 V2 第一阶段开发的硬前置)
+- ❌ **不维护**当前版本号 / open PR / release 状态 / 已发能力清单(那是 [`docs/current-state.md`](./docs/current-state.md) 的职能)
+- ❌ **不复制** [`AGENTS.md`](./AGENTS.md) 全文铁律(命名 / Guard / 软删 / 密码 / DTO / 角色层级 / refresh token / §19.7 决策锁全部在 AGENTS.md)
+- ❌ **不维护**单批次评审稿 / 历史 handoff / PR 编号(那是 [`docs/archive/`](./docs/archive/) 的职能)
+- ❌ **不维护**当前项目目录结构 / 模块清单(那是 [`docs/development.md`](./docs/development.md) + `src/modules/` 实际状态)
+- ❌ **不维护**当前 API surface endpoint 清单(那是 [`docs/api-surface-policy.md`](./docs/api-surface-policy.md) + Swagger `/api/docs`)
+- ❌ **不维护**V2 schema / 接口契约细节(那是 [`docs/v2-data-model.md`](./docs/v2-data-model.md) / [`docs/v2-api-contract.md`](./docs/v2-api-contract.md))
+- ❌ **不维护**PR 分级 / 流程制度(那是 [`docs/process.md`](./docs/process.md))
+- ❌ **不维护**Claude Code 入口转发(那是 [`CLAUDE.md`](./CLAUDE.md))
 
-V2 第一阶段开发(Step 1-7 任一启动)前**必须**完成以下立项产出物:
+本文**只维护**:文档权威源分层(§0)/ 长期设计哲学(§1)/ 当前技术栈快照(§2)/ 项目结构与模块边界跳转(§3)/ v1 范围演进说明(§4)/ 数据模型权威源跳转(§5)/ API 接口清单跳转(§6)/ 命名与编码约定跳转表(§7)/ 环境变量跳转(§8)/ **升级路径触发表(§9,active 单一权威源)**/ 部署跳转(§10)/ **V1.1 工程加固摘要(§11,active 锚点)**/ V2 派生项目方向跳转(§12)/ 其它 active 权威源地图(§13)/ 历史架构归档索引(§14)/ 本文边界声明(§15)。
 
-1. ✅ `ARCHITECTURE.md §12.8-§12.11`(本节)— D8 立项首批 commit
-2. ⏳ `docs/archive/plans/v2-first-stage-plan.md`(原 `docs/v2-plan.md`,PR-5 已归档)— D8 立项第 2 批 commit
-3. ⏳ `docs/v2-data-model.md` — D8 立项第 3 批 commit
-4. ⏳ `docs/v2-api-contract.md` — D8 立项第 4 批 commit
-5. ⏳ `TASKS.md §6` — D8 立项第 5 批 commit
-
-5 份产出物**全部就位**后,V2-D8 标记为 ✅ 已完成,V2 第一阶段开发(Step 1-7)进入待启动状态。
-
-每份产出物**单独 commit**;每份完成后**单独审过**;沿用 V2-D5 三阶段拆分模式。
-
-#### 12.11.2 V2.x 复活路径
-
-5 个延后模型(`member_profiles` / `attachments` / `audit_logs` / `events` / `event_participants`)的 V2.x 复活触发条件以 [`docs/V2红线与复活路径.md §4.3`](docs/V2红线与复活路径.md) 为 active 权威源(原 `TASKS.md §5.5.4.3` 现存于 [`docs/archive/plans/v2-design-phase/tasks.md`](docs/archive/plans/v2-design-phase/tasks.md) §5.5.4.3),本节不重抄。
-
-V2.x 启动节奏由用户拍板;**禁止**在 V2 第一阶段开发期间偷偷把延后模型的代码 / schema / 测试塞进 commit。
-
-#### 12.11.3 边界声明
-
-V2 第一阶段开发完成后,**不自动**进入 V2.x;V2.x 启动需用户单独拍板,**等同于 D8 第二轮立项决策**。
-
-V2 第一阶段开发期间发现的任何"看起来该顺手做"事项(包括延后模型 / 暂不做项 / 未登记新依赖等),**全部**走 [`TASKS.md §6.10`](TASKS.md) 范围外统一处理流程,**禁止**未经用户确认就动作。
+如本文与 [`docs/current-state.md`](./docs/current-state.md) / [`AGENTS.md`](./AGENTS.md) / [`docs/process.md`](./docs/process.md) 表述冲突,按 §0.1 权威源分层让步,**不**擅自调和;遇冲突先向用户汇报。

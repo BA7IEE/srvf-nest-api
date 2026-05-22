@@ -94,7 +94,7 @@ pnpm start:dev
 | `PATCH` | `/api/users/:id/status` | super admin / admin | 启用/禁用用户 |
 | `GET` | `/api/docs` | 开发环境默认开启 | Swagger UI(生产需 `ENABLE_SWAGGER=true`) |
 
-完整字段、错误码归属与示例详见 [`docs/development.md`](./docs/development.md) 与 [`ARCHITECTURE.md`](./ARCHITECTURE.md) §6。
+完整字段、错误码归属与示例详见 [`docs/development.md`](./docs/development.md) 与 [`docs/archive/legacy/architecture-v1-blueprint.md §6`](./docs/archive/legacy/architecture-v1-blueprint.md)(原 `ARCHITECTURE.md §6`,PR-6 已归档)。
 
 ### V2 第一阶段(srvf-foundation)
 
