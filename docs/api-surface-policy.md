@@ -186,3 +186,68 @@
 - ❌ **不在未补 characterization tests 前拆 [`attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts)**(沿 §7 P1-B 硬前置)
 - ❌ **不改 OpenAPI snapshot / contract 测试期望值**(P1-C 拆分必须保证 snapshot zero drift)
 - ❌ **不改任何 audit log 事件命名 / 字段**
+
+---
+
+## 9. App / System surface semantic locks
+
+> 本节把 `AGENTS.md §19.7` 中与 API surface 相关的 D-series 决策正式承接到本 active policy。
+> `AGENTS.md §19.7` 仍是 decision-lock record(出处 / 拍板时间 / 不再重开讨论);本节是 execution policy(常规 PR 直接引用)。
+> 冲突时:沿 §4 现有规则,`AGENTS.md §19.7` > 本节;本节 > 归档评审稿。
+
+### 9.1 contribution-rules belongs to the System / Ops surface
+
+- `contribution-rules` is a participation-context configuration / rule resource, not a normal Admin business CRUD resource.
+- Current implementation remains under `/api/v2/contribution-rules` with an Ops-oriented Swagger tag (`Ops - Contribution Rules`).
+- If promoted to a new prefix in the future, the target surface is System / Ops, for example `/api/system/v1/contribution-rules/*`.
+- Normal ADMIN users may be authorized through `contribution-rule.*` permission codes, but that does not change the surface classification.
+- 常规 PR **不得**把 `contribution-rules` 重新归 Admin / App / Public 任一其他 surface;若需重开,必须单独立项并先回到 `AGENTS.md §19.7 D-1`。
+- This section executes `AGENTS.md §19.7 D-1`.
+
+### 9.2 App access requires a linked active member
+
+- Candidate users and temporary-number users are outside the current App login scope.
+- App access requires:
+  - `User.memberId != null`
+  - `User.status = ACTIVE`
+  - `User.deletedAt IS NULL`
+  - linked `Member.status = ACTIVE`
+- ADMIN / SUPER_ADMIN accounts without a linked member remain backend accounts only; they do not automatically get an App self perspective.
+- `canUseApp = false` means the identity / member binding does not satisfy App access requirements; it is **not** a substitute for endpoint authorization — backend write endpoints must still re-check RBAC / service-level guards regardless of `canUseApp` value.
+- 新增任何接受 candidate / temporary-number 进入 App 的能力,**必须**单独立项并先回到 `AGENTS.md §19.7 D-5.1 / D-5.2`。
+- This section executes `AGENTS.md §19.7 D-5.1 / D-5.2`.
+
+### 9.3 Admin-as-member uses linked-member self perspective
+
+- When an ADMIN / SUPER_ADMIN account has a linked member (`User.memberId != null`), the App surface only exposes the linked member's self perspective.
+- Backend role (ADMIN / SUPER_ADMIN) **does not** expand AppSelf field visibility — App responses are field-identical to a regular USER linked-member would see.
+- App endpoints must still apply `scope = self` semantics (沿 §2.1 `currentUser.memberId` 锁定本人) and must not infer broader data access from backend role.
+- 任何 App endpoint 出现 `if (role === ADMIN) { 返回扩展字段 / 扩展数据范围 }` 之类的分支视作越权,**必须**回退并回到 `AGENTS.md §19.7 D-5.2`。
+- This section executes `AGENTS.md §19.7 D-5.2`.
+
+### 9.4 capability is not raw RBAC permission
+
+- `/api/app/v1/me/capabilities` returns **product-level** capabilities (e.g. `canUseApp` / `canRegisterActivity`) for App UX and entry control.
+- It must **not** expose raw RBAC permission codes.
+- `/api/v2/rbac/me/permissions` remains the backend / PC / raw permission-code view; the two endpoints are **semantically not equivalent** and must not be merged or deprecated against each other (沿 §5.1 项 5 与 §6 项 7)。
+- Capabilities are **not** authorization proof — every write endpoint must still perform backend authorization through RBAC and / or service-level checks.
+- **禁止**把 `/api/app/v1/me/capabilities` 改回返回 raw RBAC permission code,或在 App surface 新增任何返回 raw permission code 的端点;若需重开,必须单独立项并先回到 `AGENTS.md §19.7 D-5.3`。
+- This section executes `AGENTS.md §19.7 D-5.3`.
+
+### 9.5 `/me/*` and `/my/*` are physically separated
+
+- `/me/*` is for **identity / account / profile / capability** resources(身份与账号本体)。
+- `/my/*` is for **business records owned by the current linked member**(本人持有的业务记录)。
+- New App endpoints must choose `/me` or `/my` before implementation; **do not mix** identity resources and owned business records under one path family。
+- Current examples(沿 v0.15.0 Phase 2 P2-0 ~ P2-7 落地):
+  - `/api/app/v1/me`
+  - `/api/app/v1/me/account`
+  - `/api/app/v1/me/profile`
+  - `/api/app/v1/me/password`
+  - `/api/app/v1/me/capabilities`
+  - `/api/app/v1/my/activities`
+  - `/api/app/v1/my/registrations`
+  - `/api/app/v1/my/attendance-records`
+  - `/api/app/v1/my/certificates`
+- 新增 `/api/app/v1/me/<owned-business-record>` 或 `/api/app/v1/my/<identity-or-capability>` 这种语义错配的路径视作越权,**必须**回退并回到 `AGENTS.md §19.7 D-5.4`。
+- This section executes `AGENTS.md §19.7 D-5.4`.
