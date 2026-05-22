@@ -16,6 +16,7 @@
 | **客户端边界顶层规范** | [`docs/api-client-boundary.md`](docs/api-client-boundary.md) |
 | **Participation 业务上下文边界图**(activities / activity-registrations / attendances / contribution-rules 4 模块;不含 certificates) | [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
 | **附件配置三表边界**(`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig` override-with-default;不合表 / 不抽 facade) | [`docs/attachment-config-boundary.md`](docs/attachment-config-boundary.md) |
+| **架构边界铁律**(Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect 抽离决策;承接 §19.7 D-7 的 active execution policy) | [`docs/architecture-boundary.md`](docs/architecture-boundary.md) |
 | **V2 基线规范 / 红线** | [`docs/srvf-foundation-baseline.md`](docs/srvf-foundation-baseline.md) / [`docs/V2红线与复活路径.md`](docs/V2红线与复活路径.md) |
 | **流程制度**(开工 checklist / PR 五档 / release 收口) | [`docs/process.md`](docs/process.md) |
 | **架构设计背景**(v1 蓝图 / V1.1 工程加固 / V2 §12) | [`ARCHITECTURE.md`](ARCHITECTURE.md)(请先读其顶部"当前阶段说明") |
