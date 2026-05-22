@@ -28,9 +28,6 @@ V2 设计期产物(仍在使用,但属于"参考级"):
 
 | 文件 | 用途 |
 |---|---|
-| [`srvf-foundation-research.md`](./srvf-foundation-research.md) | V2 调研报告(三档分类 A/B/C) |
-| [`srvf-foundation-data-model-draft.md`](./srvf-foundation-data-model-draft.md) | V2 数据模型草案 |
-| [`srvf-foundation-interview-brief.md`](./srvf-foundation-interview-brief.md) | V2 业务访谈提纲 |
 | [`v2-plan.md`](./v2-plan.md) | V2 第一阶段开发执行计划(Step 1-7 已完成) |
 | [`v2-data-model.md`](./v2-data-model.md) | V2 第一阶段数据模型说明 |
 | [`v2-api-contract.md`](./v2-api-contract.md) | V2 第一阶段接口契约(完整字段 / 错误码 / 权限矩阵) |

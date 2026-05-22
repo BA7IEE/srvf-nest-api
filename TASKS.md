@@ -60,7 +60,7 @@
 - [`docs/v2-plan.md`](docs/v2-plan.md):引用 `§6`(原 `§5.5.4.3` 引用已在 PR-2 刷新至 `V2红线 §4.3`)
 - [`docs/v2-data-model.md`](docs/v2-data-model.md):引用 `§6`(原 `§5.5.4.3` 引用已在 PR-2 刷新至 `V2红线 §4.3`)
 - [`docs/v2-api-contract.md`](docs/v2-api-contract.md):引用 `§6`
-- [`docs/srvf-foundation-research.md`](docs/srvf-foundation-research.md) / [`docs/srvf-foundation-data-model-draft.md`](docs/srvf-foundation-data-model-draft.md):引用 V2 设计任务卡(已在 PR-2 标注归档指针)
+- [`docs/archive/plans/v2-design-phase/srvf-foundation-research.md`](docs/archive/plans/v2-design-phase/srvf-foundation-research.md) / [`docs/archive/plans/v2-design-phase/srvf-foundation-data-model-draft.md`](docs/archive/plans/v2-design-phase/srvf-foundation-data-model-draft.md):原引用 V2 设计任务卡(PR-2 已标注归档指针;PR-4 已将这两个文件整体归档至 `docs/archive/plans/v2-design-phase/`)
 - [`docs/archive/handoff/v0.9.0.md`](docs/archive/handoff/v0.9.0.md) / `v0.10.0.md` / `v0.11.0.md` / `v0.12.0.md`:引用 `§7` / `§8` / `§9`(frozen handoff,沿铁律不回改)
 
 **外部引用刷新已在 PR-2 完成**;读者遇到指向 `§1-§5` 的旧引用时,以本 §0 归档索引 + redirect 提示为准。
@@ -892,7 +892,8 @@ PR #11 release tag v0.9.0 后,**才**启动 C-7 attachments D7 评审稿(沿 PR 
   - `events` / `event_participants`(等业务方拍板需求)
 - ✅ **docs 治理 PR-2**(已完成):TASKS.md 外部引用刷新(`ARCHITECTURE.md` / `V2红线` / `v2-plan` / `v2-data-model` / `srvf-foundation-research` / `srvf-foundation-data-model-draft` 中指向 `§5.5.4.3` / `§6.4` 等旧引用全部刷新)
 - ✅ **docs 治理 PR-3**(已完成):`docs/api-client-boundary.md` 归档至 `docs/archive/plans/api-client-boundary-design-period.md`;`api-surface-policy.md` 承接为 surface 边界 active 单一权威源(`AGENTS.md` / `CLAUDE.md` 内的旧引用刷新留后续 PR)
-- ⏸️ **docs 治理后续 PR**:AGENTS.md 重写 / srvf-foundation-* 4 文件归档 / v2-plan.md 归档 / ARCHITECTURE.md §1-§10 v1 蓝图归档 等
+- ✅ **docs 治理 PR-4**(已完成):3 个 V2 设计期产物归档至 `docs/archive/plans/v2-design-phase/`(`srvf-foundation-research.md` / `srvf-foundation-data-model-draft.md` / `srvf-foundation-interview-brief.md`);7 个 active 文档对应引用同步刷新
+- ⏸️ **docs 治理后续 PR**:AGENTS.md 重写 / v2-plan.md 归档 / ARCHITECTURE.md §1-§10 v1 蓝图归档 等
 
 ### 10.2 启动新任务的流程(沿 [`docs/process.md §2-§4`](docs/process.md))
 
