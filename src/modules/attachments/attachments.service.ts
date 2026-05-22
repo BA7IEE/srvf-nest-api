@@ -20,9 +20,9 @@ import {
 } from '../../common/storage/upload-token.util';
 import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
+import { AttachmentAuditRecorder } from './attachment-audit-recorder';
 import {
   ATTACHMENT_OWNER_TYPES,
   AttachmentOwnerType,
@@ -75,7 +75,7 @@ export class AttachmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
-    private readonly auditLogs: AuditLogsService,
+    private readonly attachmentAuditRecorder: AttachmentAuditRecorder,
     @Inject(STORAGE_PROVIDER) private readonly provider: StorageProvider,
     private readonly storageSettings: StorageSettingsService,
     @Inject(appConfig.KEY)
@@ -119,30 +119,6 @@ export class AttachmentsService {
     } catch (err) {
       this.logger.warn(`provider deleteObject failed; key=${key}; ${(err as Error).message}`);
     }
-  }
-
-  // PR #6c Q3 拍板:audit snapshot 完整字段(沿 cert toCertSnapshot 范式)。
-  // - 包含 DB 字段:落库字段全保留(uploadedBy / originalUploaderName / accessLevel / tags / expireAt 等)
-  // - **不**包含 accessUrl(非 DB 字段,Service 层附加的占位)
-  // - Date / null 字段 toISOString;Prisma InputJsonValue 拒绝 Date 对象(沿 D6 §R5)
-  // - attachments 字段全部非敏感(D7 §9.4 / §9.2;身份证号在 PII 检测 Service 层已拒);不打码
-  // - 沿 attachmentSelect 不选 checksum / etag(出参 Q6 v1.0 不暴露),audit 同步不写入
-  private toAttachmentAuditSnapshot(row: SafeAttachment): Record<string, unknown> {
-    return {
-      key: row.key,
-      originalName: row.originalName,
-      mime: row.mime,
-      size: row.size,
-      uploadedBy: row.uploadedBy,
-      uploadedAt: row.uploadedAt.toISOString(),
-      ownerType: row.ownerType,
-      ownerId: row.ownerId,
-      description: row.description,
-      accessLevel: row.accessLevel,
-      tags: row.tags,
-      originalUploaderName: row.originalUploaderName,
-      expireAt: row.expireAt ? row.expireAt.toISOString() : null,
-    };
   }
 
   // ============ helpers:校验链(沿 D7 v1.0 §6.2 9 步)============
@@ -419,24 +395,13 @@ export class AttachmentsService {
         select: attachmentSelect,
       });
 
-      await this.auditLogs.log({
-        event: 'attachment.upload',
+      await this.attachmentAuditRecorder.logUpload({
+        created,
         actorUserId: user.id,
         actorRoleSnap: user.role,
-        resourceType: 'attachment',
-        resourceId: created.id,
-        meta: auditMeta,
-        after: this.toAttachmentAuditSnapshot(created),
-        extra: {
-          operation: 'upload',
-          attachmentType: created.ownerType,
-          ownerType: created.ownerType,
-          ownerId: created.ownerId,
-          mime: created.mime,
-          size: created.size,
-          scope,
-          ownerTable,
-        },
+        scope,
+        ownerTable,
+        auditMeta,
         tx,
       });
 
@@ -570,24 +535,14 @@ export class AttachmentsService {
     await this.prisma.$transaction(async (tx) => {
       await tx.attachment.delete({ where: { id } });
 
-      await this.auditLogs.log({
-        event: 'attachment.delete',
+      await this.attachmentAuditRecorder.logDelete({
+        attachmentId: row.id,
+        before: row,
         actorUserId: user.id,
         actorRoleSnap: user.role,
-        resourceType: 'attachment',
-        resourceId: row.id,
-        meta: auditMeta,
-        before: this.toAttachmentAuditSnapshot(row),
-        extra: {
-          operation: 'delete',
-          attachmentType: row.ownerType,
-          ownerType: row.ownerType,
-          ownerId: row.ownerId,
-          mime: row.mime,
-          size: row.size,
-          scope,
-          deletedByPath: user.id === row.uploadedBy ? 'owner' : 'admin',
-        },
+        scope,
+        deletedByPath: user.id === row.uploadedBy ? 'owner' : 'admin',
+        auditMeta,
         tx,
       });
     });
@@ -828,27 +783,13 @@ export class AttachmentsService {
           select: attachmentSelect,
         });
 
-        await this.auditLogs.log({
-          event: 'attachment.upload',
+        await this.attachmentAuditRecorder.logUploadConfirmed({
+          created,
           actorUserId: user.id,
           actorRoleSnap: user.role,
-          resourceType: 'attachment',
-          resourceId: created.id,
-          meta: auditMeta,
-          after: this.toAttachmentAuditSnapshot(created),
-          extra: {
-            operation: 'upload',
-            attachmentType: created.ownerType,
-            ownerType: created.ownerType,
-            ownerId: created.ownerId,
-            mime: created.mime,
-            size: created.size,
-            scope,
-            ownerTable,
-            // 🆕 v1.0 锁 extra 增量(沿 B4 + Q-10-10):仅 confirm-upload 路径加;既有 create 路径不动
-            uploadConfirmedAt: new Date().toISOString(),
-            uploadVia: 'direct',
-          },
+          scope,
+          ownerTable,
+          auditMeta,
           tx,
         });
 

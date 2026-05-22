@@ -3,6 +3,7 @@ import { StorageModule } from '../../common/storage/storage.module';
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
+import { AttachmentAuditRecorder } from './attachment-audit-recorder';
 import { AttachmentsController } from './attachments.controller';
 import { AttachmentsService } from './attachments.service';
 import { AttachmentsMeLegacyController } from './controllers/attachments-me-legacy.controller';
@@ -30,6 +31,6 @@ import { AttachmentsMeLegacyController } from './controllers/attachments-me-lega
 @Module({
   imports: [DatabaseModule, PermissionsModule, AuditLogsModule, StorageModule],
   controllers: [AttachmentsMeLegacyController, AttachmentsController],
-  providers: [AttachmentsService],
+  providers: [AttachmentsService, AttachmentAuditRecorder],
 })
 export class AttachmentsModule {}
