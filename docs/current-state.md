@@ -189,6 +189,7 @@
     - 运行 SOP:[`development.md`](development.md) / [`testing.md`](testing.md) / [`deployment.md`](deployment.md) / [`security.md`](security.md) / [`ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md)
     - 业务上下文边界图:[`participation-bounded-context.md`](participation-bounded-context.md)(activities / activity-registrations / attendances / contribution-rules 4 模块的状态链条与跨模块耦合;**不**含 certificates)
     - 附件配置三表边界:[`attachment-config-boundary.md`](attachment-config-boundary.md)(`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig` 的 override-with-default 模式、运行时读点、不合表/不抽 facade 的理由)
+    - 架构边界 / service 抽离:[`architecture-boundary.md`](architecture-boundary.md)(Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect 6 类抽离决策与触发条件;承接 `AGENTS.md §19.7 D-7`)
     - 历史 handoff:[`archive/handoff/v0.15.0.md`](archive/handoff/v0.15.0.md)(最新)/ [`v0.14.0.md`](archive/handoff/v0.14.0.md) / 更早版本均在 [`archive/handoff/`](archive/handoff/)
     - 历史评审稿 / 批次决议:[`archive/reviews/`](archive/reviews/) / [`archive/batches/`](archive/batches/)
     - 历史阶段计划:[`archive/plans/`](archive/plans/)(含 `first-release-bootstrap-sop.md` / `first-release-p0d-change-my-password-review.md` 在 `archive/reviews/`)

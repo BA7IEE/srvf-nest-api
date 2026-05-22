@@ -15,6 +15,7 @@
 | [`api-client-boundary.md`](./api-client-boundary.md) | 客户端边界顶层规范(Phase 0/1 设计意图、Surface × Module 分类原则) |
 | [`participation-bounded-context.md`](./participation-bounded-context.md) | Participation 业务上下文边界图:`activities` / `activity-registrations` / `attendances` / `contribution-rules` 4 模块的状态链条、跨模块耦合、API surface 与 governance;**不**含 `certificates`(独立 member-qualifications 上下文) |
 | [`attachment-config-boundary.md`](./attachment-config-boundary.md) | 附件配置三表(`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig`)的 override-with-default 边界说明:为什么不合表、为什么不抽 facade、新增规则落点 |
+| [`architecture-boundary.md`](./architecture-boundary.md) | 架构边界铁律 / active architecture boundary policy for Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect extraction decisions;承接 `AGENTS.md §19.7 D-7` |
 | [`srvf-foundation-baseline.md`](./srvf-foundation-baseline.md) | V2 派生项目基线规范(BizCode 段位 / 命名 / DTO / 软删除 / 验收门槛 13 项) |
 | [`V2红线与复活路径.md`](./V2红线与复活路径.md) | V2 五档红线 A/B/C/D/E 与解锁触发条件 |
 | [`security.md`](./security.md) | 已落地安全策略、软删除策略、token 吊销升级路径 |
