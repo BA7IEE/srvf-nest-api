@@ -21,7 +21,6 @@
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | v1 / V1.1 / V2 架构蓝图与设计背景;**请先读顶部"当前阶段说明"** | 设计背景 |
 | [`docs/process.md`](./docs/process.md) | 开发流程与协作制度:开工 checklist、PR 五档分级、release 收口、AI 协作纪律 | 流程制度 |
 | [`docs/api-surface-policy.md`](./docs/api-surface-policy.md) | API surface 长期边界:Mobile App / Admin Legacy / Root Legacy 三层 + 新增 / 迁移规则 | 长期铁律 |
-| [`docs/api-client-boundary.md`](./docs/api-client-boundary.md) | 客户端边界顶层规范(Phase 0/1 设计意图) | 设计背景 |
 | [`docs/srvf-foundation-baseline.md`](./docs/srvf-foundation-baseline.md) | V2 派生项目基线规范(13 项 A 档) | 长期铁律 |
 | [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) | V2 五档红线(A/B/C/D/E)与解锁触发条件 | 长期铁律 |
 | [`docs/security.md`](./docs/security.md) / [`docs/deployment.md`](./docs/deployment.md) / [`docs/development.md`](./docs/development.md) / [`docs/testing.md`](./docs/testing.md) | 安全 / 部署 / 排错 / 测试 SOP | 运行指引 |

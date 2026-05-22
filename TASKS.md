@@ -891,7 +891,8 @@ PR #11 release tag v0.9.0 后,**才**启动 C-7 attachments D7 评审稿(沿 PR 
   - `attachments` 二次扩展(等 profiles / events 解锁 或 独立需求)
   - `events` / `event_participants`(等业务方拍板需求)
 - ✅ **docs 治理 PR-2**(已完成):TASKS.md 外部引用刷新(`ARCHITECTURE.md` / `V2红线` / `v2-plan` / `v2-data-model` / `srvf-foundation-research` / `srvf-foundation-data-model-draft` 中指向 `§5.5.4.3` / `§6.4` 等旧引用全部刷新)
-- ⏸️ **docs 治理后续 PR**:AGENTS.md 重写 / api-client-boundary.md 归档 / srvf-foundation-* 4 文件归档 等
+- ✅ **docs 治理 PR-3**(已完成):`docs/api-client-boundary.md` 归档至 `docs/archive/plans/api-client-boundary-design-period.md`;`api-surface-policy.md` 承接为 surface 边界 active 单一权威源(`AGENTS.md` / `CLAUDE.md` 内的旧引用刷新留后续 PR)
+- ⏸️ **docs 治理后续 PR**:AGENTS.md 重写 / srvf-foundation-* 4 文件归档 / v2-plan.md 归档 / ARCHITECTURE.md §1-§10 v1 蓝图归档 等
 
 ### 10.2 启动新任务的流程(沿 [`docs/process.md §2-§4`](docs/process.md))
 

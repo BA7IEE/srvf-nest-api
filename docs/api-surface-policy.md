@@ -1,7 +1,7 @@
 # API Surface Policy
 
 > **目的**:锁定 SRVF API 当前对外提供的 surface(客户端面)分类与新增规则。
-> **配套文档**:[`api-client-boundary.md`](./api-client-boundary.md)(顶层规范) / [`current-state.md`](./current-state.md)(当前事实)。
+> **配套文档**:[`current-state.md`](./current-state.md)(当前事实)。设计期顶层规范 `api-client-boundary.md` 已归档至 [`docs/archive/plans/api-client-boundary-design-period.md`](./archive/plans/api-client-boundary-design-period.md);本文件已承接为 surface 边界的 active 单一权威源。
 > **本 PR 不修改 controller 路径、不删 v2、不动 OpenAPI snapshot;仅以文档形式登记长期边界**。
 
 ---
@@ -64,13 +64,13 @@
 
 ---
 
-## 4. 与 `api-client-boundary.md` 的关系
+## 4. 与设计期归档文档的关系
 
-- `api-client-boundary.md`:顶层规范("Surface × Module × Resource" 三元组分类原则、Phase 0/1 设计意图、Phase 1A Swagger Tag 改名结论)
-- `api-surface-policy.md`(本文件):**长期生效的新增/扩展铁律**,无须依赖任何具体 Phase 评审稿即可独立适用
-- 旧 Phase 评审稿(`api-client-boundary-inventory.md` / `-migration-plan.md` / `-phase-1-review.md`)已归档到 [`archive/reviews/`](./archive/reviews/) 与 [`archive/plans/`](./archive/plans/),作为历史证据保留
+- `api-surface-policy.md`(本文件):**surface 边界的 active 单一权威源** — 长期生效的新增 / 扩展铁律,无须依赖任何具体 Phase 评审稿即可独立适用
+- 原设计期顶层规范 `docs/api-client-boundary.md` 已于 PR-3 归档至 [`docs/archive/plans/api-client-boundary-design-period.md`](./archive/plans/api-client-boundary-design-period.md)("Surface × Module × Resource" 三元组分类原则、Phase 0/1 设计意图、Phase 1A Swagger Tag 改名结论的历史快照)
+- 配套设计期评审稿(`api-client-boundary-inventory.md` / `-migration-plan.md` / `-phase-1-review.md`)同期归档于 [`archive/reviews/`](./archive/reviews/) 与 [`archive/plans/`](./archive/plans/),作为历史证据保留
 
-冲突时:**本文件 > 归档评审稿**;**当前事实(`current-state.md`) > 本文件**(若现状已超出本文件锁定的边界,先以 current-state 描述为准并升级本文件)。
+冲突时:**本文件 > 归档设计期文档 / 评审稿**;**当前事实(`current-state.md`) > 本文件**(若现状已超出本文件锁定的边界,先以 current-state 描述为准并升级本文件)。
 
 ---
 

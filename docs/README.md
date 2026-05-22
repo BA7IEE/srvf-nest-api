@@ -11,8 +11,7 @@
 |---|---|
 | [`current-state.md`](./current-state.md) | **当前事实唯一入口**:版本、open PR、最新 release、surface 状态、当前债务、不做清单 |
 | [`process.md`](./process.md) | 开发流程与协作制度:开工 checklist、PR 五档分级、release 收口、AI 协作纪律 |
-| [`api-surface-policy.md`](./api-surface-policy.md) | API surface 长期边界:Mobile App / Admin Legacy / Root Legacy 三层 + 新增/迁移规则 |
-| [`api-client-boundary.md`](./api-client-boundary.md) | 客户端边界顶层规范(Phase 0/1 设计意图、Surface × Module 分类原则) |
+| [`api-surface-policy.md`](./api-surface-policy.md) | API surface 长期边界(active 单一权威源):Mobile App / Admin Legacy / Root Legacy 三层 + 新增/迁移规则;原设计期顶层规范 `api-client-boundary.md` 已归档至 `archive/plans/api-client-boundary-design-period.md` |
 | [`participation-bounded-context.md`](./participation-bounded-context.md) | Participation 业务上下文边界图:`activities` / `activity-registrations` / `attendances` / `contribution-rules` 4 模块的状态链条、跨模块耦合、API surface 与 governance;**不**含 `certificates`(独立 member-qualifications 上下文) |
 | [`attachment-config-boundary.md`](./attachment-config-boundary.md) | 附件配置三表(`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig`)的 override-with-default 边界说明:为什么不合表、为什么不抽 facade、新增规则落点 |
 | [`architecture-boundary.md`](./architecture-boundary.md) | 架构边界铁律 / active architecture boundary policy for Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect extraction decisions;承接 `AGENTS.md §19.7 D-7` |
