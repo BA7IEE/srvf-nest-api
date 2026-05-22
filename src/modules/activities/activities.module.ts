@@ -4,6 +4,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { UsersModule } from '../users/users.module';
 import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
+import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ActivityStateMachine } from './activity-state-machine';
 import { AppActivitiesService } from './app-activities.service';
 import { AppMyActivitiesService } from './app-my-activities.service';
@@ -32,6 +33,7 @@ import { AppActivitiesController } from './controllers/app-activities.controller
   controllers: [ActivitiesController, AppActivitiesController],
   providers: [
     ActivitiesService,
+    ActivityAuditRecorder,
     ActivityStateMachine,
     AppActivitiesService,
     AppMyActivitiesService,
