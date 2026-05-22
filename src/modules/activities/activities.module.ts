@@ -4,6 +4,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { UsersModule } from '../users/users.module';
 import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
+import { ActivityStateMachine } from './activity-state-machine';
 import { AppActivitiesService } from './app-activities.service';
 import { AppMyActivitiesService } from './app-my-activities.service';
 import { AppActivitiesController } from './controllers/app-activities.controller';
@@ -29,7 +30,12 @@ import { AppActivitiesController } from './controllers/app-activities.controller
 @Module({
   imports: [DatabaseModule, AuditLogsModule, UsersModule],
   controllers: [ActivitiesController, AppActivitiesController],
-  providers: [ActivitiesService, AppActivitiesService, AppMyActivitiesService],
+  providers: [
+    ActivitiesService,
+    ActivityStateMachine,
+    AppActivitiesService,
+    AppMyActivitiesService,
+  ],
   exports: [ActivitiesService, AppMyActivitiesService],
 })
 export class ActivitiesModule {}
