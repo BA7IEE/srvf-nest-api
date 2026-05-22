@@ -16,6 +16,7 @@ import {
   ListActivitiesQueryDto,
   UpdateActivityDto,
 } from './activities.dto';
+import { ActivityStateMachine } from './activity-state-machine';
 
 // V2 第一阶段批次 3A activities service。
 // 详见 docs:
@@ -44,7 +45,6 @@ const AUDIT_RESOURCE_TYPE = 'activity';
 
 const ACTIVITY_STATUS_DRAFT = 'draft';
 const ACTIVITY_STATUS_PUBLISHED = 'published';
-const ACTIVITY_STATUS_CANCELLED = 'cancelled';
 const ACTIVITY_STATUS_COMPLETED = 'completed';
 
 // USER 角色可见的状态白名单(Q-A7)。
@@ -113,6 +113,7 @@ export class ActivitiesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
+    private readonly activityStateMachine: ActivityStateMachine,
   ) {}
 
   // ============ helpers ============
@@ -433,9 +434,10 @@ export class ActivitiesService {
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 
-      // Q-A12:cancelled 拒改。
-      if (current.statusCode === ACTIVITY_STATUS_CANCELLED) {
-        throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+      // Q-A12:cancelled 拒改(沿 ActivityStateMachine update decision)。
+      const transition = this.activityStateMachine.decide('update', current.statusCode);
+      if (!transition.allowed) {
+        throw new BizException(transition.biz);
       }
 
       // 字典校验(传入时)
@@ -561,7 +563,7 @@ export class ActivitiesService {
 
   // ============ publish ============
 
-  // 状态机:draft → published;其他状态 → 20030(含 cancelled 拒改,Q-A12)。
+  // 状态机:draft → published;其他状态 → 20030(沿 ActivityStateMachine publish decision)。
   async publish(
     id: string,
     currentUser: CurrentUserPayload,
@@ -570,14 +572,16 @@ export class ActivitiesService {
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 
-      if (current.statusCode !== ACTIVITY_STATUS_DRAFT) {
-        throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+      const transition = this.activityStateMachine.decide('publish', current.statusCode);
+      if (!transition.allowed) {
+        throw new BizException(transition.biz);
       }
+      const { nextStatusCode } = transition;
 
       const updated = await tx.activity.update({
         where: { id: current.id },
         data: {
-          statusCode: ACTIVITY_STATUS_PUBLISHED,
+          statusCode: nextStatusCode,
           publishedBy: currentUser.id,
           publishedAt: new Date(),
         },
@@ -596,7 +600,7 @@ export class ActivitiesService {
         extra: {
           operation: 'publish',
           priorStatusCode: current.statusCode,
-          nextStatusCode: ACTIVITY_STATUS_PUBLISHED,
+          nextStatusCode,
         },
         tx,
       });
@@ -607,7 +611,7 @@ export class ActivitiesService {
 
   // ============ cancel ============
 
-  // 状态机:* → cancelled;已 cancelled 拒重复(20030;Q-A12)。
+  // 状态机:* → cancelled;已 cancelled 拒重复(20030;沿 ActivityStateMachine cancel decision)。
   async cancel(
     id: string,
     dto: CancelActivityDto,
@@ -617,14 +621,16 @@ export class ActivitiesService {
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 
-      if (current.statusCode === ACTIVITY_STATUS_CANCELLED) {
-        throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+      const transition = this.activityStateMachine.decide('cancel', current.statusCode);
+      if (!transition.allowed) {
+        throw new BizException(transition.biz);
       }
+      const { nextStatusCode } = transition;
 
       const updated = await tx.activity.update({
         where: { id: current.id },
         data: {
-          statusCode: ACTIVITY_STATUS_CANCELLED,
+          statusCode: nextStatusCode,
           cancelledBy: currentUser.id,
           cancelledAt: new Date(),
           cancelReason: dto.cancelReason ?? null,
@@ -644,7 +650,7 @@ export class ActivitiesService {
         extra: {
           operation: 'cancel',
           priorStatusCode: current.statusCode,
-          nextStatusCode: ACTIVITY_STATUS_CANCELLED,
+          nextStatusCode,
           cancelReason: dto.cancelReason ?? null,
         },
         tx,
