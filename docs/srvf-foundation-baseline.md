@@ -1,10 +1,9 @@
 # SRVF 基础数据底座 — V2 基线规范
 
 > 派生项目:**srvf-nest-api**
-> 文档定位:V2 派生项目的"**基线规范**" — 锁定**不依赖业务调研**的通用约定,作为后续所有 V2 草案 / 开发的**隐含约束**。
-> 阶段:**V2 设计阶段**(`docs/archive/plans/architecture-v2-first-stage-blueprint.md §12`,原 `ARCHITECTURE.md §12`,PR-6 已归档 / `CLAUDE.md §18` / `AGENTS.md §18`)。
-> **不引入** schema / migration / 模块代码 / 新依赖 — 因此**不需要** D6/D7 gates。
-> **解除条件**:任何修订需用户拍板,commit message 前缀 `v2-design:`。
+> 文档定位:V2 派生项目的"**基线规范**" — 锁定**不依赖业务调研**的通用约定;**长期 active**,13 项 A 档铁律(§2-§13)自 v0.2.0 起持续生效。
+> **状态注**(2026-05-23 Phase G1 校准):本文头部 §0 与 §1.1 的部分定性措辞源自 V2 设计期(初版 v0.1 / 2026-05-07,当时 Step 1 尚未启动)。**当前各模块实装状态以 §1.1 段位表 + [`docs/current-state.md §2`](current-state.md) + [`prisma/schema.prisma`](../prisma/schema.prisma) 为准**;头部"V2 设计阶段 / 不引入 schema / 不需要 D6/D7 gates"等措辞仅作历史背景,**不**作为当前节奏依据。
+> **修订纪律**:任何修订需用户拍板,commit message 前缀沿 §0.4;长期铁律(§2-§13)非用户拍板不动。
 
 ---
 
@@ -45,13 +44,13 @@
 | 段位 | 模块 | 容量 | 状态 |
 |---|---|---|---|
 | `100xx` + `101xx` | `auth` + `users` | 200 | v1 已锁,不动 |
-| `110xx` + `111xx` | `organizations` | 200 | **V2 基线预留** |
-| `120xx` + `121xx` | `dictionaries` | 200 | **V2 基线预留** |
-| `130xx` + `131xx` | `attachments` | 200 | **V2 基线预留** |
+| `110xx` + `111xx` | `organizations` | 200 | **V2 第一阶段已实装**(v0.2.0;Step 4) |
+| `120xx` + `121xx` | `dictionaries` | 200 | **V2 第一阶段已实装**(v0.2.0;Step 3) |
+| `130xx` + `131xx` | `attachments` | 200 | **V2.x C-7 已实装**(v0.10.0 主模块 + 配置三表;v0.11.0 Provider) |
 | `140xx` + `141xx` | `audit_logs` | 200 | **批次 6 已实装**(v0.6.x post-release,2026-05-12;`140xx` 段 1 BizCode + `141xx` 段 1 BizCode,**不开** `14002+` / `14010+` / `14102+`)|
-| `150xx` + `151xx` | `members` | 200 | **V2 基线预留** |
-| `160xx` + `161xx` | `member_profiles` | 200 | **V2 基线预留** |
-| `170xx` + `171xx` | `member_departments` | 200 | **V2 基线预留** |
+| `150xx` + `151xx` | `members` | 200 | **V2 第一阶段已实装**(v0.2.0;Step 5;含 `memberNo` 全局唯一不复用) |
+| `160xx` + `161xx` | `member_profiles` | 200 | **批次 1 已实装**(1:1 子资源,含敏感字段;沿日志屏蔽清单 §8.2) |
+| `170xx` + `171xx` | `member_departments` | 200 | **V2 第一阶段已实装**(v0.2.0;Step 6;partial unique on `memberId`) |
 | `180xx` + `181xx` | `certificates` | 200 | **批次 2 已实装**(v0.3.0,2026-05-10)|
 | `190xx` + `191xx` | `emergency_contacts` | 200 | **批次 1 已使用**(原预留 `event_participants`,batch 1 启动时让出) |
 | `200xx` + `201xx` | `activities` | 200 | **批次 3 已实装**(v0.4.0,2026-05-11)|
@@ -59,18 +58,18 @@
 | `220xx` + `221xx` | `attendances` | 200 | **批次 3 + 批次 4-A 已实装**(v0.4.0 14 BizCode + v0.4.0 post-release 批次 4-A 追加 3 BizCode = 17;沿批次 3B 段位补,**不新开模块码**)|
 | `230xx` + `231xx` | `contribution_rules` | 200 | **批次 5-A 已实装**(v0.5.0 post-release,2026-05-12;`230xx` 段 5 BizCode,**不开** `23030` / `231xx`)|
 | `240xx`-`290xx` | 未规划模块预留 | — | 训练 / 装备 / 财务 / 通知等真到时候分配(中间留缓冲) |
-| `300xx` + `301xx` | `permissions`(C-6 RBAC) | 200 | **C-6 D7 v0.2 局部收口段位预留**(2026-05-14 用户拍板;详见 [docs/批次8_RBAC_API前评审.md §12](批次8_RBAC_API前评审.md);**段位预留 ≠ 段位实装**,实装由 C-6 RBAC V2.x 立项后实施 PR 完成)|
+| `300xx` + `301xx` | `permissions`(C-6 RBAC) | 200 | **V2.x C-6 RBAC 已实装**(v0.9.0;4 表 schema + 16 端点 + 14 BizCode;沿 D7-RBAC v1.1 冻结 / PR #51 + #53;详见 [`docs/current-state.md §2`](current-state.md)) |
 | `310xx` 起 | 未规划模块预留 | — | RBAC 之后未规划模块 |
 
 **状态说明**:
 
-- **V2 基线预留**:形态级几乎确定会进入 V2(参见 `research.md §2`),段位预留不会浪费;具体字段集仍待 D6/D7
+- **V2 基线预留**(历史措辞,适用于初版 v0.1 / 2026-05-07 时态):形态级几乎确定会进入 V2,段位预留不会浪费,具体字段集待 D6/D7;**当前**:`dictionaries` / `organizations` / `members` / `member_departments` / `member_profiles` / `attachments` / `permissions` 均已实装(详见各模块"已实装"行 + [`docs/current-state.md §2`](current-state.md));仅 `240xx-290xx` + `310xx` 起仍属未规划预留
 - **批次 2 已实装**(v0.3.0,2026-05-10):批次 2 schema + API 前评审锁定 `certificates` 占用 `180xx + 181xx` 段位,v0.3.0 release 时 5 个 BizCode 实装落地(`18001` / `18010` / `18011` / `18030` / `18101`;详见 `CHANGELOG.md` v0.3.0 段)
 - **批次 3 已实装**(v0.4.0,2026-05-11):批次 3 schema 前评审收口时锁定 `activities` / `activity_registrations` / `attendances` 三段(评审稿 §7.2),v0.4.0 release 时全部 27 个 BizCode 实装落地(`200xx` 9 / `210xx` 4 / `220xx` 14;详见 `CHANGELOG.md` v0.4.0 段)
 - **批次 4-A 已实装**(v0.4.0 post-release,2026-05-11):批次 4-A schema PR(`2190803` PR #18)在 `220xx` attendances 段**补充** 3 个 BizCode(`22043` `ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE` / `22045` `ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID` / `22046` `ATTENDANCE_SHEET_FINAL_REVIEW_NOTE_REQUIRED`),配合 `AttendanceSheet` 5 态状态机扩展;**沿 batch 3B 段位**(`220xx`),**不新开模块码**;APD 部门部长 / 副部长专属权限沿 D-S2 **不开** `22044` `FORBIDDEN_*`,权限不足走通用 `40300`
 - **批次 5-A 已实装**(v0.5.0 post-release,2026-05-12):批次 5-A 实施 PR(`cfa396d` PR #24)新开 `230xx` `contribution_rules` 模块段位,5 个 BizCode 实装落地(`23001` `CONTRIBUTION_RULE_NOT_FOUND` / `23002` `CONTRIBUTION_RULE_ACTIVE_DUPLICATE` / `23010` `CONTRIBUTION_RULE_POINTS_INVALID` / `23011` `CONTRIBUTION_RULE_ACTIVITY_TYPE_INVALID` / `23012` `CONTRIBUTION_RULE_ROLE_CODE_INVALID`);**不开** `23030` `CONTRIBUTION_RULE_KEY_FIELDS_NOT_EDITABLE`(沿 D6 v1.1 E8,PATCH 维度禁改交给 `UpdateContributionRuleDto` 白名单 + ValidationPipe `forbidNonWhitelisted` 拦截 → 通用 `BAD_REQUEST` / 40000);**不开** `23101~23104` `FORBIDDEN_*`(沿 baseline,权限不足走通用 `FORBIDDEN` / 40300;APD 部门部长 / 副部长细分权限留 5-B);未规划模块从 `240xx` 起
 - **批次 6 已实装**(v0.6.x post-release,2026-05-12):批次 6 实施 PR #1(`9aac9d0` PR #29)+ PR #2(`aeb2ea8` PR #30)新开 `140xx + 141xx` `audit_logs` 模块段位,2 个 BizCode 实装落地(`14001` `AUDIT_LOG_NOT_FOUND` / `14101` `FORBIDDEN_AUDIT_LOG_READ`);**不开** `14002+`(`audit_logs` 写入后不可改不可删 / 无唯一约束 / 无 P2002 场景)/ `14010+`(`AuditLogQueryDto` 由 ValidationPipe 兜底走 `BAD_REQUEST` / 40000)/ `14102+`(沿 baseline,USER 越权由 Guard 拒绝走通用 `FORBIDDEN` / 40300;`14101` 仅用于 service 层"已通过 Guard、但 detail 越级"场景,详见 D6 v1.1 §6.4 / D-D 决议);**审计行为约束**(沿 D6 v1.1 §3 / 业务确认稿 Q1-Q5):不记查看行为 / 不做失败操作审计 / 不审计 `audit_logs` 自身 / `auditPlaceholder` 28 项 union 与 `AuditLogEvent` 6 项 union 物理隔离(D2),后续批次按需迁出
-- **C-6 D7 v0.2 局部收口段位预留**(2026-05-14):D7-RBAC 评审稿 v0.2 局部收口锁定 `300xx + 301xx` 为 `permissions`(RBAC)模块预留段位;**避开 `140xx + 141xx`**(已被 audit_logs 占用,不可与 RBAC 共用);**中间留 `240xx-290xx`** 给未来未规划业务模块(训练 / 装备 / 财务 / 通知等);RBAC 是项目骨架级模块,值得占独立段位空间;**段位预留 ≠ 段位实装**,本次仅 baseline 段位锁定,RBAC 4 model + ~14 个 BizCode 实装由 C-6 RBAC V2.x 立项后实施 PR 完成(预估 9 个 PR);详见 [docs/批次8_RBAC_API前评审.md §12](批次8_RBAC_API前评审.md)
+- **C-6 RBAC 已实装**(v0.9.0):`300xx + 301xx` `permissions` 模块全部落地(4 表 schema + 16 端点 + 14 BizCode;沿 D7-RBAC v1.1 冻结 / PR #51 + #53 + 实施 PR #54-#61);段位选择避开 `140xx + 141xx`(audit_logs)与 `240xx-290xx`(未规划业务);**v0.15.0 后管理面已收紧**(P0-F 4 PR:rbac / config / users / audit-logs 接入 `rbac.can()`);详见 [`docs/current-state.md §2`](current-state.md) 与历史评审稿 `docs/archive/batches/批次8_RBAC_API前评审.md`
 - **V2 候选预留**:研究文档 §2.6 / §4.6 显式给出"通用化失败回退三档"(最小骨架 / 延后参与表 / 整体砍掉),启用与否由 D5/D6 决议;若决议为"砍掉",对应段位释放给后续未规划模块
 - **历史命名废弃**:`events` / `event_participants` 不会以原模块名复活(批次 2 / 批次 3 已按业务语义拆分落地为 `certificates` / `activities` / `activity_registrations` / `attendances`);但 BizCode 段位维度**不存在废弃保留**——所有段位要么已实装,要么基线预留,要么 V2 候选预留,要么未规划预留
 
@@ -739,6 +738,7 @@ V2 模块开发任务完成后,按以下两档逐项验证再报告完成:
 | v0.4 | 2026-05-12 | §1.1 批次 4-A 段位补充(v0.4.0 post-release,**未 bump version**):`220xx` `attendances` 段位由批次 3B 14 BizCode 扩展为 17(沿段位补 `22043` / `22045` / `22046`,**不新开模块码**),配合 `AttendanceSheet` 5 态状态机(`pending` / `pending_final_review` / `approved` / `rejected` / `final_rejected`)+ APD 终审 + ContributionRule 系统预填;沿 D-S2 **不开** `22044` `FORBIDDEN_*`(APD 部门部长 / 副部长专属权限留后续 RBAC 批次);未规划模块仍从 `230xx` 起 |
 | v0.5 | 2026-05-12 | §1.1 批次 5-A 段位收口(v0.5.0 post-release,**未 bump version**):新开 `230xx` + `231xx` `contribution_rules` 模块段位,`230xx` 实装 5 BizCode(`23001` / `23002` / `23010` / `23011` / `23012`);**不开** `23030` `KEY_FIELDS_NOT_EDITABLE`(PATCH 维度禁改交给 DTO 白名单 + ValidationPipe `forbidNonWhitelisted` 拦截抛 40000;沿 D6 v1.1 §2.2 E8);**不开** `23101~23104` `FORBIDDEN_*`(沿 baseline 风格,Guard 拒绝走通用 40300);**不开** `23103` `LAST_RULE_PROTECTED`(无最后一条规则保护需求,沿 batch 4-B `22048` 不抛错路径);本批次 schema 影响 0(batch 4-A 已落地完整 model + partial unique + 审计字段);未规划模块从 `240xx` 起 |
 | v0.6 | 2026-05-14 | §1.1 C-6 D7 v0.2 局部收口段位预留(沿 [`docs/批次8_RBAC_API前评审.md`](批次8_RBAC_API前评审.md) v0.2 局部收口稿同步;v0.8.1 handoff §10 启动后 Fast-1 任务):新增 `300xx + 301xx` `permissions`(C-6 RBAC)模块段位预留,**避开 `140xx + 141xx`**(已被 audit_logs 批次 6 v0.7.0 占用,不可与 RBAC 共用);**中间留 `240xx-290xx`** 给未来未规划业务模块(训练 / 装备 / 财务 / 通知等);RBAC 是项目骨架级模块,值得占独立段位空间;原"`240xx` 起 未规划模块预留" 拆分为 "`240xx-290xx` 未规划" + "`300xx + 301xx` permissions" + "`310xx` 起 未规划";**段位预留 ≠ 段位实装**,本次仅 baseline 段位锁定,RBAC 4 model + ~14 个 BizCode 实装由 C-6 RBAC V2.x 立项后实施 PR 完成(预估 9 个 PR);本次纯文档变更,沿 baseline §13.3:**不改 schema / migration / 代码 / 测试 / version / tag / release** |
+| v0.7 | 2026-05-23 | **Phase G1 stale 状态校准**(治理期 G1-PR-A):头部加状态注释,明确"V2 设计阶段 / 不引入 schema / 不需要 D6/D7 gates"措辞仅作历史背景,当前实装状态以 §1.1 + [`docs/current-state.md §2`](current-state.md) + `prisma/schema.prisma` 为准。§1.1 段位表把 `organizations` / `dictionaries` / `attachments` / `members` / `member_profiles` / `member_departments` / `permissions` 7 条"V2 基线预留 / C-6 段位预留"刷新为对应批次或 V2.x **已实装**。状态说明段同步刷新"V2 基线预留"与"C-6"两条注释。不动 §2-§13 长期铁律;沿 §13.3 纯文档变更通道:**不改 schema / migration / 代码 / 测试 / version / tag / release** |
 
 ---
 
