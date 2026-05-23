@@ -189,7 +189,12 @@ The service should **not** become a dumping ground for:
 | Boundary | Current file | Status |
 |---|---|---|
 | StateMachine | [`src/modules/attendances/attendance-sheet-state-machine.ts`](../src/modules/attendances/attendance-sheet-state-machine.ts) | **active**(PR #183 抽出) |
+| StateMachine | [`src/modules/activities/activity-state-machine.ts`](../src/modules/activities/activity-state-machine.ts) | **active**(PR #200 抽出) |
+| StateMachine | [`src/modules/activity-registrations/activity-registration-state-machine.ts`](../src/modules/activity-registrations/activity-registration-state-machine.ts) | **active**(PR #197 抽出) |
 | AuditRecorder | [`src/modules/attendances/attendance-audit-recorder.ts`](../src/modules/attendances/attendance-audit-recorder.ts) | **active**(PR #185 抽出) |
+| AuditRecorder | [`src/modules/activities/activity-audit-recorder.ts`](../src/modules/activities/activity-audit-recorder.ts) | **active**(PR #201 抽出) |
+| AuditRecorder | [`src/modules/activity-registrations/activity-registration-audit-recorder.ts`](../src/modules/activity-registrations/activity-registration-audit-recorder.ts) | **active**(PR #198 抽出) |
+| AuditRecorder | [`src/modules/attachments/attachment-audit-recorder.ts`](../src/modules/attachments/attachment-audit-recorder.ts) | **active**(PR #203 抽出) |
 | Policy | [`src/modules/attendances/time-overlap-policy.ts`](../src/modules/attendances/time-overlap-policy.ts) | **active** |
 | Policy | [`src/modules/users/users.policy.ts`](../src/modules/users/users.policy.ts) | **active** |
 | Calculator | [`src/modules/attendances/contribution-calculator.ts`](../src/modules/attendances/contribution-calculator.ts) | **active**:accepted adjacent pattern;not one of the six D-7 names but follows the same extraction discipline(纯计算、无 Prisma 写、无 audit) |
@@ -239,7 +244,7 @@ Prefer a named boundary class when **any** of the following is true:
 - **Do not** extract Presenter / QueryService / Effect until a concrete trigger appears(沿 §6 Trigger rules)。
 - **Do not** rename existing extracted classes just to match this document(`contribution-calculator.ts` 保留现名,不强行改为 "Service" / "Policy" 等)。
 - **Do not** move participation / attachment / permissions module directories as part of this policy(沿 [`docs/participation-bounded-context.md §8`](participation-bounded-context.md) "禁止大搬目录" 铁律)。
-- **Do not** alter `attendances.service.ts`(1413 LOC)/ `attachments.service.ts`(885 LOC)/ `activity-registrations.service.ts`(808 LOC)/ `activities.service.ts`(656 LOC)行为 — 拆分需先补 characterization tests + 单独立项(沿 [`docs/current-state.md §3 / §4`](current-state.md))。
+- **Do not** alter `attendances.service.ts`(1157 LOC)/ `attachments.service.ts`(826 LOC)/ `activity-registrations.service.ts`(750 LOC)/ `activities.service.ts`(607 LOC)行为 — 拆分需先补 characterization tests + 单独立项(沿 [`docs/current-state.md §3 / §4`](current-state.md));LOC 为 2026-05-23 实测,已计入 §5 state-machine + audit-recorder 抽离后的余量。
 
 ---
 

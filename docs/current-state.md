@@ -33,7 +33,7 @@
 | Swagger `setVersion(...)` | `0.15.0` |
 | 最新 git tag | `v0.15.0`(2026-05-20T17:07:09Z;指向 `089499d` = PR #163 handoff squash commit) |
 | GitHub Latest Release | `v0.15.0`(标 Latest;publishedAt 2026-05-20T17:07:09Z;Notes 自 `CHANGELOG.md ## v0.15.0 - 2026-05-20` 段抽取) |
-| `main` HEAD | **`8b2378e`** `docs: compress AGENTS governance rules and fix stale references (#210)`(post-v0.15.0 docs 治理 + 架构边界抽离串累计落地;v0.15.0 release tag 仍指向 `089499d` = PR #163 handoff squash commit,2026-05-22 核对) |
+| `main` HEAD | **`922f1cb`** `docs(claude): trim stale v1 scope from project context (#212)`(post-v0.15.0 docs 治理 + 架构边界抽离串累计落地;v0.15.0 release tag 仍指向 `089499d` = PR #163 handoff squash commit,2026-05-23 核对) |
 | open PR | **0**(本入口刷新 PR 合并前) |
 | 工作树状态 | clean |
 | 最新 handoff | [`docs/archive/handoff/v0.15.0.md`](archive/handoff/v0.15.0.md)(v0.15.0 release closeout index;上一版 [`v0.14.0.md`](archive/handoff/v0.14.0.md));自 v0.15.0 docs 治理收口起,handoff 统一归档于 `archive/handoff/`,历史快照不回改 |
@@ -50,7 +50,7 @@
 > git status --short
 > ```
 
-> **下一步建议**:Governance-1A 已于 2026-05-21 落地为 PR #165(文档权威源收口 + 过程档案归档 + CLAUDE.md 转发化 + `api-surface-policy.md` 新增);之后陆续合入 PR-1 ~ PR-6(#204-#209 docs 治理压缩)+ #210(AGENTS.md 压缩与死链修)+ attendances / activities / activity-registrations / attachments 的 characterization tests + state machine / audit recorder 抽离串(沿 [`architecture-boundary.md`](architecture-boundary.md))。**P1-A 决策锁已落地**(沿 [`api-surface-policy.md §5-§8`](api-surface-policy.md));**P1-B characterization tests 4 个 god-service(attendances / activities / activity-registrations / attachments)已覆盖**;**P1-C Mixed Controller 物理拆分仍未启动**(第一优先目标 [`users.controller.ts`](../src/modules/users/users.controller.ts) 三个 `/me*` 端点迁出未做,沿 [`api-surface-policy.md §7 P1-C`](api-surface-policy.md));**Phase 1B path alias**(`/api/auth/v1/*` + `/api/public/v1/*`)**继续暂缓**(沿 [`api-surface-policy.md §7 P1-D`](api-surface-policy.md))。
+> **下一步建议**:Governance-1A 已于 2026-05-21 落地为 PR #165(文档权威源收口 + 过程档案归档 + CLAUDE.md 转发化 + `api-surface-policy.md` 新增);之后陆续合入 PR-1 ~ PR-6(#204-#209 docs 治理压缩)+ #210(AGENTS.md 压缩与死链修)+ #211(current-state HEAD refresh + 入口表死链修)+ #212(CLAUDE.md 项目背景 v1 范围裁剪)+ attendances / activities / activity-registrations / attachments 的 characterization tests + state machine / audit recorder 抽离串(沿 [`architecture-boundary.md`](architecture-boundary.md))。**P1-A 决策锁已落地**(沿 [`api-surface-policy.md §5-§8`](api-surface-policy.md));**P1-B characterization tests 4 个 god-service(attendances / activities / activity-registrations / attachments)已覆盖**;**P1-C step 1/2/3 已完成**([`users.controller.ts`](../src/modules/users/users.controller.ts) `/me*` 三端点 / [`attachments.controller.ts`](../src/modules/attachments/attachments.controller.ts) `me/uploaded` / [`activity-registrations.controller.ts`](../src/modules/activity-registrations/activity-registrations.controller.ts) 同文件 Mobile class 已分别迁出至 `controllers/*-legacy.controller.ts`;详 [`api-surface-policy.md §5.1 / §7 P1-C`](api-surface-policy.md));**P1-C 第四步**([`attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts) 同文件 3 controller 拆分)**仍未启动**(沿 [`api-surface-policy.md §7 P1-C 项 4`](api-surface-policy.md));**Phase 1B path alias**(`/api/auth/v1/*` + `/api/public/v1/*`)**继续暂缓**(沿 [`api-surface-policy.md §7 P1-D`](api-surface-policy.md))。
 
 ---
 
@@ -86,7 +86,7 @@
   - **App API 准入语义**(沿 [`docs/archive/reviews/app-permission-boundary-review.md §10.2`](archive/reviews/app-permission-boundary-review.md) D-5):仅 `User.memberId != null && User.status=ACTIVE && User.deletedAt IS NULL && Member.status=ACTIVE` 的正式队员可用 App;候选 / 临时编号志愿者本期**不**支持;Admin 兼队员走 linked-member self perspective,**不**扩大字段可见性
 - **测试与契约**:
   - Unit / E2E 实数以最近 main 合入 PR(#160)CI 记录为准,本 P2-8 docs-only PR **未重跑**
-  - E2E spec 总数自 v0.14.0 的 55 spec 增至 **63 spec**(Phase 2 新增 **8 个 App API e2e spec**:`app-me` / `app-me-password` / `app-activities-available` / `app-activities-detail` / `app-my-registrations-read` / `app-my-registrations-write` / `app-my-attendance-records` / `app-my-certificates`)
+  - E2E spec 总数自 v0.14.0 的 55 spec 增至 **78 spec**(其中 Phase 2 新增 **8 个 App API e2e spec**:`app-me` / `app-me-password` / `app-activities-available` / `app-activities-detail` / `app-my-registrations-read` / `app-my-registrations-write` / `app-my-attendance-records` / `app-my-certificates`;v0.15.0 后续累计 characterization / state-transition / legacy split 相关 spec 共 15 个,沿 #196 / #199 / #202 等 PR 合入)
   - Contract OpenAPI snapshot 已覆盖 **15 个 `/api/app/v1/*` 端点**(沿 [`test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) `EXPECTED_ROUTES`)
   - `ci.yml` 全套 + `docker-smoke.yml` 真实启动回归继续生效,env 锁定值与 v0.14.0 一致(`JWT_EXPIRES_IN=15m` + `JWT_REFRESH_EXPIRES_IN=90d`)
 
@@ -104,7 +104,7 @@
 | **Public / Auth path alias** | (与 Root Legacy 重合,无独立前缀) | Phase 1B 暂缓 | `/api/auth/v1/*` + `/api/public/v1/*` **不**启动 |
 
 **铁律**:
-- ❌ **不再新增 Mixed Controller**(class-level `@ApiTags('Admin - X')` + 方法级追加 `Mobile - X`);现存 6 处作为存量保留(沿 [`api-surface-policy.md §5.1`](api-surface-policy.md):`users` / `attendances` / `activity-registrations` / `attachments` / `permissions/rbac` 5 处为 surface Mixed;`dictionaries.controller.ts` 经 P1-A 修正为**非 surface Mixed**,仅同 surface 同文件双 class,作为文件结构问题保留)
+- ❌ **不再新增 Mixed Controller**(class-level `@ApiTags('Admin - X')` + 方法级追加 `Mobile - X`);v0.15.0 之前已落地的 6 项存量已部分清零(沿 [`api-surface-policy.md §5.1`](api-surface-policy.md)):`users.controller.ts` / `attachments.controller.ts` / `activity-registrations.controller.ts` 三项**已完成 P1-C step 1/2/3 物理拆分**(原 Mobile class 或方法级 Mobile tag 已迁出至独立 `controllers/*-legacy.controller.ts`,主 controller 不再 surface Mixed);`attendances.controller.ts` 仍为 same-file 3 controller surface Mixed(P1-C 第四步,未启动);`permissions/rbac.controller.ts` `me/permissions` 单方法仍 method-level Mixed(P1-A 暂不拆,沿 §5.1 项 5);`dictionaries.controller.ts` 为**非 surface Mixed**(同 surface 双 class,文件结构问题)
 - ❌ 旧 mobile-like endpoint(`/api/users/me/*`)**只维护兼容、不扩展**;新移动端能力进 `/api/app/v1/*`
 - ❌ App API **永远不返回** L3 字段(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / 完整 signed URL)
 
@@ -126,8 +126,8 @@
 - **不**自动回改历史 handoff(沿 [`docs/V2红线与复活路径.md §5.1`](V2红线与复活路径.md))
 - **不**把历史评审稿([`docs/archive/batches/`](archive/batches/) / [`docs/archive/reviews/`](archive/reviews/))当作"当前事实"— 它们是各批次冻结时刻的决策依据
 - **不**自动启动 **Phase 1B path alias**(`/api/auth/v1/*` + `/api/public/v1/*`)— Governance-1A 已完成,Phase 1B 仍暂缓等业务方 / 运维侧拍板
-- **不**自动启动 Mixed Controller 物理拆分(`users.controller.ts` `/me` 三端点拆出到独立 Mobile Controller)— 走独立立项
-- **不**自动拆分 `attendances.service.ts`(1413 行)/ `attachments.service.ts`(885 行)/ `activity-registrations.service.ts`(808 行)等 god-service — 拆前**必须先补 characterization tests**
+- **不**自动启动 `attendances.controller.ts` 同文件 3 controller 物理拆分(P1-C 第四步)— 走独立立项;`users.controller.ts` / `attachments.controller.ts` / `activity-registrations.controller.ts` 三项 P1-C step 1/2/3 已完成
+- **不**自动拆分 `attendances.service.ts`(1157 行)/ `attachments.service.ts`(826 行)/ `activity-registrations.service.ts`(750 行)等 god-service — characterization tests 已落地一批(沿 [`architecture-boundary.md §5`](architecture-boundary.md));拆 service 行为本身仍需单独立项
 - **不**自动引入 repository / `*.repository.ts` 抽象层 — service 直连 Prisma 沿用
 - **不**自动改 controller path / 不动 `/api/v2/*` / 不改 OpenAPI snapshot
 
@@ -146,11 +146,11 @@
 | P1 | docs/ 体系庞大(根 6 大文档 + docs/ 50+ 文件) | ✅ 2026-05-21 治理收口 PR 已将 49 份历史 handoff / 评审稿 / 批次 / first-release 过程档案 / FINAL_REPORT 迁至 [`archive/`](archive/);✅ PR-4(2026-05-22)将 `srvf-foundation-research.md` / `srvf-foundation-data-model-draft.md` / `srvf-foundation-interview-brief.md` 3 个 V2 设计期产物归档至 [`archive/plans/v2-design-phase/`](archive/plans/v2-design-phase/) |
 | P1 | `docs/V2红线与复活路径.md` 顶部"基线版本 v0.7.0"严重滞后于实际 v0.12.0 | 改为滚动维护或明示最后核对版本 |
 | P1 | `TASKS.md` 单文件 1742 行,V1.1 历史与 V2.x 当前混排 | 已加范围说明,长期可拆 |
-| P2 | `attendances.service.ts` 1413 行(单文件) | **拆前必须先补 characterization tests**;后续按 StateMachine / Policy / Calculator 边界评估拆分,本期不动 |
-| P2 | `attachments.service.ts` 885 行 / `activity-registrations.service.ts` 808 行 / `activities.service.ts` 656 行 | 核心 service 缺 `*.service.spec.ts` 单测;建议先补 service spec,再做任何重构 |
-| P2 | service 单测偏少(`src/` 内仅 14 个 `*.spec.ts` / 196 个源文件 ≈ 7%) | E2E 63 spec 覆盖回归,但单元层缺位;建议为 god-service 优先补 spec |
-| P2 | Mixed Controller 存量(`users.controller.ts` `/me` 三端点 / `activity-registrations.controller.ts` 同文件双 `@Controller` / `dictionaries.controller.ts` 同文件双 `@Controller`) | 仅兼容,不再新增;物理拆分走独立立项 |
-| P2 | Contract snapshot 单文件 958 KB,review 困难 | 接受;PR review 时用 diff 工具看 |
+| P2 | `attendances.service.ts` 1157 行(单文件;state-machine + audit-recorder + time-overlap-policy + contribution-calculator 已抽离) | characterization tests 已落地(沿 [`architecture-boundary.md §5`](architecture-boundary.md));后续 Presenter / QueryService 边界拆分需单独立项,本期不动 |
+| P2 | `attachments.service.ts` 826 行 / `activity-registrations.service.ts` 750 行 / `activities.service.ts` 607 行 | audit-recorder / state-machine 已抽离;核心 service 仍缺 `*.service.spec.ts` 单测;建议先补 service spec,再做任何重构 |
+| P2 | service 单测偏少(`src/` 内仅 14 个 `*.spec.ts` / 208 个源文件 ≈ 6.7%) | E2E 78 spec 覆盖回归,但单元层缺位;建议为 god-service 优先补 spec |
+| P2 | Mixed Controller 存量(`attendances.controller.ts` 同文件 3 controller(P1-C 第四步,未拆)/ `permissions/rbac.controller.ts` `me/permissions` 方法级 Mobile - Capabilities(P1-A 暂不拆)/ `dictionaries.controller.ts` 同 surface 双 controller(非 surface Mixed);`users.controller.ts` / `attachments.controller.ts` / `activity-registrations.controller.ts` 三项 P1-C step 1/2/3 已完成) | 仅兼容,不再新增;剩余 attendances 物理拆分走独立立项 |
+| P2 | Contract snapshot 单文件约 1,083,564 字节 / 37,517 行(~1058 KB),review 困难 | 接受;PR review 时用 diff 工具看 |
 | P3 | `common/storage/` 已承载完整 module + controller(超出原 "common = 跨模块基础设施" 语义) | 长期可迁到 `src/modules/storage/`;本期不动 |
 
 ---
