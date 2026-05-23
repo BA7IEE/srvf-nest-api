@@ -33,11 +33,11 @@
 | Swagger `setVersion(...)` | `0.15.0` |
 | 最新 git tag | `v0.15.0`(2026-05-20T17:07:09Z;指向 `089499d` = PR #163 handoff squash commit) |
 | GitHub Latest Release | `v0.15.0`(标 Latest;publishedAt 2026-05-20T17:07:09Z;Notes 自 `CHANGELOG.md ## v0.15.0 - 2026-05-20` 段抽取) |
-| `main` HEAD | **`ef1ea3b`** `fix: align APP_ENV smoke documentation (#187)`(post-v0.15.0 drift cleanup;v0.15.0 release tag 仍指向 `089499d` = PR #163 handoff squash commit,2026-05-21 核对) |
+| `main` HEAD | **`8b2378e`** `docs: compress AGENTS governance rules and fix stale references (#210)`(post-v0.15.0 docs 治理 + 架构边界抽离串累计落地;v0.15.0 release tag 仍指向 `089499d` = PR #163 handoff squash commit,2026-05-22 核对) |
 | open PR | **0**(本入口刷新 PR 合并前) |
 | 工作树状态 | clean |
 | 最新 handoff | [`docs/archive/handoff/v0.15.0.md`](archive/handoff/v0.15.0.md)(v0.15.0 release closeout index;上一版 [`v0.14.0.md`](archive/handoff/v0.14.0.md));自 v0.15.0 docs 治理收口起,handoff 统一归档于 `archive/handoff/`,历史快照不回改 |
-| Unreleased 累计 | **post-v0.15.0 共 3 个 PR**(#185 refactor: extract attendances audit recorder / #186 docs: align JWT expiration examples / #187 fix: align APP_ENV smoke documentation;attendances characterization 收口 + JWT / APP_ENV smoke docs+config drift cleanup;**均不构成 minor bump 触发条件**) |
+| Unreleased 累计 | **post-v0.15.0 已累计多轮治理、characterization、state-machine / audit-recorder 抽离与 drift cleanup PR**;当前 HEAD 以本表为准,完整历史以 GitHub PR / git log 为准;**均不构成 minor bump 触发条件**。 |
 
 > **复核命令**(任何会话开工前都可以一行跑完):
 >
@@ -50,7 +50,7 @@
 > git status --short
 > ```
 
-> **下一步建议**:Governance-1A 只读审计已于 2026-05-21 落地为 PR #165(文档权威源收口 + 过程档案归档 + CLAUDE.md 转发化 + `api-surface-policy.md` 新增);**P1 API surface / Mixed Controller 只读评审已完成,结论为**:先 P1-A docs-only 决策锁(本 PR;补齐 6 项 Mixed Controller 存量清单 + 8 项 mobile-like endpoint 处置矩阵 + P1-A/B/C/D 顺序),沿 [`api-surface-policy.md §5-§8`](api-surface-policy.md);**Phase 1B path alias**(`/api/auth/v1/*` + `/api/public/v1/*`)**继续暂缓**(沿 §7 P1-D);**第一优先 Mixed Controller 拆分目标 = [`users.controller.ts`](../src/modules/users/users.controller.ts)**(沿 §7 P1-C);P1-B characterization tests 在 P1-C 拆分前必须先补。**本 PR 只锁决策,不改代码**。
+> **下一步建议**:Governance-1A 已于 2026-05-21 落地为 PR #165(文档权威源收口 + 过程档案归档 + CLAUDE.md 转发化 + `api-surface-policy.md` 新增);之后陆续合入 PR-1 ~ PR-6(#204-#209 docs 治理压缩)+ #210(AGENTS.md 压缩与死链修)+ attendances / activities / activity-registrations / attachments 的 characterization tests + state machine / audit recorder 抽离串(沿 [`architecture-boundary.md`](architecture-boundary.md))。**P1-A 决策锁已落地**(沿 [`api-surface-policy.md §5-§8`](api-surface-policy.md));**P1-B characterization tests 4 个 god-service(attendances / activities / activity-registrations / attachments)已覆盖**;**P1-C Mixed Controller 物理拆分仍未启动**(第一优先目标 [`users.controller.ts`](../src/modules/users/users.controller.ts) 三个 `/me*` 端点迁出未做,沿 [`api-surface-policy.md §7 P1-C`](api-surface-policy.md));**Phase 1B path alias**(`/api/auth/v1/*` + `/api/public/v1/*`)**继续暂缓**(沿 [`api-surface-policy.md §7 P1-D`](api-surface-policy.md))。
 
 ---
 
@@ -104,7 +104,7 @@
 | **Public / Auth path alias** | (与 Root Legacy 重合,无独立前缀) | Phase 1B 暂缓 | `/api/auth/v1/*` + `/api/public/v1/*` **不**启动 |
 
 **铁律**:
-- ❌ **不再新增 Mixed Controller**(class-level `@ApiTags('Admin - X')` + 方法级追加 `Mobile - X`);现存 3 处(`users.controller.ts` / `activity-registrations.controller.ts` / `dictionaries.controller.ts` 同文件双 Controller)作为存量保留
+- ❌ **不再新增 Mixed Controller**(class-level `@ApiTags('Admin - X')` + 方法级追加 `Mobile - X`);现存 6 处作为存量保留(沿 [`api-surface-policy.md §5.1`](api-surface-policy.md):`users` / `attendances` / `activity-registrations` / `attachments` / `permissions/rbac` 5 处为 surface Mixed;`dictionaries.controller.ts` 经 P1-A 修正为**非 surface Mixed**,仅同 surface 同文件双 class,作为文件结构问题保留)
 - ❌ 旧 mobile-like endpoint(`/api/users/me/*`)**只维护兼容、不扩展**;新移动端能力进 `/api/app/v1/*`
 - ❌ App API **永远不返回** L3 字段(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / 完整 signed URL)
 
