@@ -10,6 +10,7 @@
 | 文件 | 用途 |
 |---|---|
 | [`current-state.md`](./current-state.md) | **当前事实唯一入口**:版本、open PR、最新 release、surface 状态、当前债务、不做清单 |
+| [`system-foundation-governance.md`](./system-foundation-governance.md) | **治理期入口 / 需求碰撞前置入口**(2026-05-23 启动):本阶段暂停项、G-1 ~ G-12 顶层规则缺口摘要、RCT 需求碰撞前置模板、Phase G0 → G4 治理路线图、退场条件 |
 | [`process.md`](./process.md) | 开发流程与协作制度:开工 checklist、PR 五档分级、release 收口、AI 协作纪律 |
 | [`api-surface-policy.md`](./api-surface-policy.md) | API surface 长期边界(active 单一权威源):Mobile App / Admin Legacy / Root Legacy 三层 + 新增/迁移规则;原设计期顶层规范 `api-client-boundary.md` 已归档至 `archive/plans/api-client-boundary-design-period.md` |
 | [`participation-bounded-context.md`](./participation-bounded-context.md) | Participation 业务上下文边界图:`activities` / `activity-registrations` / `attendances` / `contribution-rules` 4 模块的状态链条、跨模块耦合、API surface 与 governance;**不**含 `certificates`(独立 member-qualifications 上下文) |
