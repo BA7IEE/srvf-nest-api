@@ -1,5 +1,7 @@
 # V2 第一阶段正式数据模型说明
 
+> **回填注(2026-05-23 / G1-PR-B 治理刷新,v0.15.0+ 口径)**:本文起源于 V2-D8 立项阶段(2026-05-07)的**数据模型 draft**。**V2 第一阶段 4 模型(`dict_types` / `dict_items` / `organizations` / `members` / `member_departments`)+ `users.memberId` 追加早已实装并随 v0.10.0 ~ v0.12.0 发布**;此后批次 1(`member_profiles` / `emergency_contacts`)/ 批次 2(`certificates`)/ 批次 3A(`activities` / `activity_registrations`)/ 批次 3B + 4-A + 4-B(`attendance_sheets` / `attendance_records` / `contribution_rules`)/ 批次 6(`audit_logs`)/ V2.x C-6 RBAC 四表(`rbac_roles` / `permissions` / `role_permissions` / `user_roles`)/ V2.x C-7 `attachments` + 配置三表(`attachment_type_configs` / `attachment_mime_configs` / `attachment_size_limit_configs`)/ V2.x C-7.5 `storage_settings` / P0-E `refresh_tokens` 等均已落地,详见 [`docs/current-state.md §2`](current-state.md) 与 [`../prisma/schema.prisma`](../prisma/schema.prisma)(25+ model)。**当前字段 / 类型 / 可空性 / 约束 / 索引的事实权威源以 [`../prisma/schema.prisma`](../prisma/schema.prisma) 为准**;本文保留为 V2-D8 立项时刻的 draft 历史快照,正文(含 §0 文档定位 / §1 模型清单"不开发" / §9 BizCode 段位映射"V2.x 复活" / §11 "不覆盖的模型"等)中"**V2-D8 立项中 / 初稿 / 待 D8 立项 5 份产出物全部就位 / 待用户拍板才能启动 Step 1 / 不覆盖 `member_profiles` / `attachments` / `audit_logs`**"等表述属于**文档定稿时刻的阶段状态,不代表当前事实**;字段级细节如与代码不一致**以 `prisma/schema.prisma` 为准**。
+
 > 派生项目:**srvf-nest-api**
 > 文档定位:**V2 第一阶段正式数据模型说明**(D8-3 立项产出物)
 > 阶段:**V2-D8 立项中**(2026-05-07)
@@ -691,6 +693,7 @@ V2.x 复活触发条件见 [`docs/V2红线与复活路径.md §4.3`](V2红线与
 |---|---|---|
 | v0.1 | 2026-05-07 | 初版,V2-D8 立项 D8-3 产出物;覆盖 4 模型 + `users.memberId` 追加 + 跨模型规则 + BizCode 段位映射 + schema 实现注意事项 + 模型关系文字图 |
 | v0.2 | 2026-05-08 | memberNo 决议(Q1=A / Q2=B-1 / Q3-Q9):§5.2 字段表加 memberNo / §5.3 全局唯一约束 + 弱约束校验 / §5.6 软删后 memberNo 永不复用 / §5.7 明确 memberNo 不属敏感 / §9 BizCode 加 MEMBER_NO_ALREADY_EXISTS + 登录账号枚举相关失败场景统一 LOGIN_FAILED / 附录 A 模型图加 memberNo |
+| v0.3 | 2026-05-23 | G1-PR-B 治理刷新:头部追加 v0.15.0+ 治理回填声明 — 明确本文为 V2-D8 立项时刻 draft 历史快照,V2 第一阶段 4 模型 + `users.memberId` 追加 + 批次 1/2/3A/3B/4-A/4-B/6 + RBAC 四表 + attachments 三表 + storage_settings + refresh_tokens 已实装;字段 / 类型 / 约束 / 索引事实权威源以 `prisma/schema.prisma` 为准;正文(含 §0 阶段状态 / §1 模型清单 / §9 BizCode 段位映射 / §11 "不覆盖的模型")中"V2-D8 立项中 / 初稿 / 待 Step 1 启动 / 不覆盖 `member_profiles` / `attachments` / `audit_logs`"等表述属文档定稿时刻状态,**不代表当前事实**;正文未逐行重写,保留为历史 draft 快照 |
 
 ---
 

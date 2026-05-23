@@ -1,6 +1,6 @@
 # V2 第一阶段 API 契约草案
 
-> **回填注(2026-05-17 / v0.13.0)**:本文起源于 V2-D8 立项阶段的 API 契约**草案**。**当前 V2 第一阶段及后续批次接口已实施并随 v0.10.0 / v0.11.0 / v0.12.0 / v0.13.0 发布**,通过 OpenAPI contract snapshot(`pnpm test:contract`)+ zero drift 机制约束。**当前完整前端联调口径以 [`docs/first-release-frontend-scope.md`](first-release-frontend-scope.md) + Swagger UI(`/api/docs`)+ OpenAPI snapshot 为准**;本文保留为契约草案历史快照,字段级细节如与代码不一致**以代码 / OpenAPI 为准**。下方"初稿 / 草案 / V2-D8 立项中"等表述是文档定稿时刻的阶段状态,不再代表当前。
+> **回填注(2026-05-23 / G1-PR-B 治理刷新,v0.15.0+ 口径;前一版 2026-05-17 / v0.13.0)**:本文起源于 V2-D8 立项阶段(2026-05-07)的 API 契约**草案**(29 接口口径)。**V2 第一阶段及批次 1 / 2 / 3A / 3B / 4-A / 4-B / 6 接口已实施并随 v0.10.0 ~ v0.13.0 发布**;此后 v0.14.0(P0-E `POST /api/auth/refresh` + `/logout` + `/logout-all` 3 新端点 + `refresh_tokens` 表)/ v0.15.0(P0-F 管理面 RBAC 收紧 4 PR + Phase 1A Swagger Tag 重命名 + **App API Phase 2 完整 15 endpoint** 落地于 `/api/app/v1/*`)亦已合入,均通过 [`../test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) + OpenAPI snapshot + zero drift 机制约束。**当前接口事实权威源 = Swagger UI(`/api/docs`)+ [`../test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) `EXPECTED_ROUTES` + OpenAPI snapshot**;**当前 surface 长期边界与新增 / 迁移规则 = [`api-surface-policy.md`](api-surface-policy.md)**(本回填注上一版指向的 `first-release-frontend-scope.md` 已于 2026-05-21 治理收口 PR 归档至 [`archive/plans/first-release-frontend-scope.md`](archive/plans/first-release-frontend-scope.md),仅作历史证据;**当前 active 等价物 = [`api-surface-policy.md`](api-surface-policy.md)**)。本文保留为契约草案历史快照,字段级 / 错误码 / 权限矩阵细节如与代码不一致**以代码 / OpenAPI / `api-surface-policy.md` 为准**;下方"**初稿 / 草案 / V2-D8 立项中 / 待用户拍板才能启动 Step 1 / Step 3-7 实施期 / Step 1 启动前最终拍板**"等表述属于**文档定稿时刻的阶段状态,不再代表当前事实**。
 
 > 派生项目:**srvf-nest-api**
 > 文档定位:**V2 第一阶段 API 契约草案**(D8-4 立项产出物)
@@ -1113,6 +1113,7 @@ Step 3-7 实施期每次接口改动后:
 |---|---|---|
 | v0.1 | 2026-05-07 | 初版,V2-D8 立项 D8-4 产出物;29 个 V2 第一阶段接口契约草案 + v1 兼容性 + 跨模块规范 + OpenAPI 快照协议 + 错误码段位速查 |
 | v0.2 | 2026-05-08 | memberNo 决议(Q1=A / Q2=B-1 / Q3-Q9):§1.2 / §4.1 接口总览补 memberNo 提示 / §4.1 详情速览加 memberNo 入参 / §4.2 创建/更新/查询小节加 memberNo 校验 / §4.6 字段表加 memberNo / §4.7 加 MEMBER_NO_ALREADY_EXISTS + 登录账号枚举相关失败场景统一 LOGIN_FAILED 注解 / §6.5 加 v1 LoginDto 零漂移硬约束 / **新增 §6.6 v1 登录路径 memberNo 回退查找**(§6.6.3 失败场景表 4 行)/ 附录 A 总表错误码追加 |
+| v0.3 | 2026-05-23 | G1-PR-B 治理刷新:头部回填注更新至 v0.15.0+ 口径(2026-05-17 / v0.13.0 一版上挤,补 v0.14.0 P0-E refresh token / logout / logout-all + v0.15.0 P0-F 管理面 RBAC 收紧 4 PR + Phase 1A Swagger Tag 重命名 + App API Phase 2 完整 15 endpoint);修复 `first-release-frontend-scope.md` 死链 — 同时指向 [`archive/plans/first-release-frontend-scope.md`](archive/plans/first-release-frontend-scope.md)(历史物理位置)与 [`api-surface-policy.md`](api-surface-policy.md)(当前 active 等价物);明确当前接口事实权威源 = Swagger UI(`/api/docs`)+ [`../test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) + OpenAPI snapshot;正文(含 §0.3 契约状态 / §0.4 路径前缀待拍板 / §6.5-§6.6 / §8 OpenAPI 快照协议 "Step 3-7 实施期" / §1.1 不覆盖批次 1/2/3A 等)未逐行重写,保留为 V2-D8 立项时刻 draft 历史快照 |
 
 ---
 
