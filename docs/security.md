@@ -72,7 +72,7 @@ req.body.refreshToken
 
 ## Token 吊销升级路径
 
-**当前版本 P0-E PR-3(#127,2026-05-18)已落地 refresh token / logout / logout-all**(沿 [`first-release-p0e-refresh-token-review.md` v1](first-release-p0e-refresh-token-review.md) 9 条已决策);**不引入 Redis blacklist**(refresh 撤销靠 DB 主键索引 sub-ms 查询;沿 D-9)。
+**当前版本 P0-E PR-3(#127,2026-05-18)已落地 refresh token / logout / logout-all**(沿 [`docs/archive/reviews/first-release-p0e-refresh-token-review.md` v1](archive/reviews/first-release-p0e-refresh-token-review.md) 9 条已决策);**不引入 Redis blacklist**(refresh 撤销靠 DB 主键索引 sub-ms 查询;沿 D-9)。
 
 ### P0-E 已落地能力(2026-05-18)
 
@@ -94,7 +94,7 @@ req.body.refreshToken
 - **access token 不主动吊销**:改密 / 禁用 / 删除后,access 在剩余 ≤ 15m TTL 内仍可用;`JwtStrategy.validate()` 只看 `deletedAt === null && status === UserStatus.ACTIVE`,**不读** `passwordHash` / `tokenVersion`
 - access token blacklist / JWT revoke list / Redis / Queue / Cron / 完整 OAuth tree / httpOnly cookie / refresh_tokens 查询接口 / 已登录设备列表 UI / 单设备管理 / device fingerprint / 微信小程序 OAuth
 
-### refresh token 安全策略(P0-E PR-3 锁定;沿 [`CLAUDE.md §9` P0-E 子节](../CLAUDE.md))
+### refresh token 安全策略(P0-E PR-3 锁定;沿 [`AGENTS.md §9` P0-E 子节](../AGENTS.md))
 
 | 维度 | 锁定值 |
 |---|---|
@@ -121,6 +121,6 @@ req.body.refreshToken
 3. **JwtStrategy.validate()**:除现有 `deletedAt === null && status === ACTIVE` 校验外,追加 `payload.tv === user.tokenVersion`,不一致抛 `UNAUTHORIZED`
 4. **吊销触发点**:重置密码 / 禁用用户 / 显式"踢下线"等场景,在写库事务内 `tokenVersion: { increment: 1 }`(与 P0-E 联动撤销 refresh 形成"refresh 撤销 + access 失效"双重保险)
 5. **不引入 Redis**:每请求多读一个字段,与现有 `JwtStrategy` 单次查库合并,无新增 IO
-6. **升级条件**:见 [`ARCHITECTURE.md`](../ARCHITECTURE.md) §9。**AI 不得在 P0-E 范围内实现**,需用户明确确认升级后单独立项(沿 P0-E v1 D-4 + [`CLAUDE.md §1` B 档](../CLAUDE.md))
+6. **升级条件**:见 [`ARCHITECTURE.md`](../ARCHITECTURE.md) §9。**AI 不得在 P0-E 范围内实现**,需用户明确确认升级后单独立项(沿 P0-E v1 D-4 + [`AGENTS.md §1 B 档`](../AGENTS.md) "默认不做,可评审解锁")
 
 **为什么 P0-E 没做**:`status=DISABLED` 即时阻断 + access TTL 15m 自然过期 + refresh 撤销联动已覆盖绝大多数场景;`tokenVersion` 增加 schema 维护与 JWT payload 字段(破坏 zero drift),投入 / 回报不匹配。仅在出现"5s 内必须失效"硬性诉求时再立项。
