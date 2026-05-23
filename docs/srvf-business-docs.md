@@ -7,28 +7,29 @@
 
 ## 路径
 
-业务文档库位置：
+业务文档库位置（占位符 `<business-docs-repo-root>` 指向该仓库根；实际路径由维护者在本地工作站配置，不在本仓库内固化）：
 
 ```
-/Users/dengwang/Documents/coding/SRVF
+<business-docs-repo-root>
 ```
 
 入口文件：
 
 ```
-/Users/dengwang/Documents/coding/SRVF/README.md
+<business-docs-repo-root>/README.md
 ```
 
 > README.md 中含完整文档地图与 AI 优先读取顺序（按场景 A-F）。
+> 占位符约定：`<business-docs-repo-root>` = 业务文档库根；`<repo-root>` = 本代码仓库（`srvf-nest-api`）根。
 
 ---
 
 ## 仓库分工
 
-| 仓库 | 路径 | 定位 |
+| 仓库 | 路径占位符 | 定位 |
 |---|---|---|
-| **代码仓库**（本仓库）| `/Users/dengwang/Documents/coding/srvf-nest-api` | 工程文档：`ARCHITECTURE.md` / `CLAUDE.md` / `AGENTS.md` / `TASKS.md` / `docs/v1.x-*.md` / `docs/v2-*.md` / `docs/srvf-foundation-*.md` / 部署 / 测试 / 安全等工程铁律 |
-| **业务文档库** | `/Users/dengwang/Documents/coding/SRVF` | 业务资料、顶层设计、Plan、Schema 草案、决议表、访谈记录、审查报告 |
+| **代码仓库**（本仓库）| `<repo-root>` | 工程文档：`ARCHITECTURE.md` / `CLAUDE.md` / `AGENTS.md` / `TASKS.md` / `docs/v1.x-*.md` / `docs/v2-*.md` / `docs/srvf-foundation-*.md` / 部署 / 测试 / 安全等工程铁律 |
+| **业务文档库** | `<business-docs-repo-root>` | 业务资料、顶层设计、Plan、Schema 草案、决议表、访谈记录、审查报告 |
 
 > **冲突优先级**：代码仓库内的文档**优先级高于** SRVF 目录；业务文档是设计输入，工程文档是落地铁律；两者冲突时**以代码仓库的为准**。
 
@@ -54,7 +55,7 @@ SRVF/
 
 ### 新任务开始前
 
-**先读** `/Users/dengwang/Documents/coding/SRVF/README.md`，按其中的"AI 优先读取顺序"决定要读哪些目录。
+**先读** `<business-docs-repo-root>/README.md`，按其中的"AI 优先读取顺序"决定要读哪些目录。
 
 最常见路径：
 
@@ -75,3 +76,18 @@ SRVF/
 - 本仓库**不复制** SRVF 业务文档内容；
 - SRVF 文档**不移动**到本仓库；
 - 任何业务规则修订发生在 SRVF 仓库；本仓库代码改动按已冻结的 SRVF Plan / Schema 草案 / 决议表执行。
+
+---
+
+## 双仓库协作规则占位（G-10 / Phase G2）
+
+> **本节是占位**，不展开完整规则。完整双仓库协作规则归 [`system-foundation-governance.md §4`](system-foundation-governance.md) G-10 缺口，按 Phase G2 优先级 P2 单独立项落地。
+
+- 本文档当前**仅**记录本仓库（`<repo-root>`）对业务文档库（`<business-docs-repo-root>`）的**引用边界与读取顺序**；
+- 业务文档库与代码仓库之间的**正式协作规则尚未在本阶段展开**；
+- 后续 G-10 / Phase G2 落地时，需在目标 active 文档内单独定义：
+  - 两仓职责边界（哪些内容进代码仓库 / 哪些内容进业务文档仓库）；
+  - 跨仓引用格式（路径占位符约定 / 锚点 / 版本快照引用）；
+  - 变更同步节奏与仲裁路径；
+  - 业务原始材料（访谈录音、原始凭证、未脱敏决议）**禁止**直接进代码仓库历史；
+- 在 G-10 正式条款落地前，本文件 §仓库分工 + §边界 是双仓库协作的**最小工作约束**；遇到本节未覆盖场景，按 [`AGENTS.md`](../AGENTS.md) 冲突暂停铁律先暂停说明。
