@@ -56,7 +56,7 @@
 
 ## 2. 当前系统已具备能力
 
-> 仅做"清单级"罗列,字段 / 接口 / 错误码细节请回到 [`docs/v2-api-contract.md`](v2-api-contract.md) 与 [`CHANGELOG.md`](../CHANGELOG.md)。
+> 仅做"清单级"罗列。**当前字段 / 接口 / 错误码事实权威源**:字段 / 类型 / 约束 / 索引以 [`../prisma/schema.prisma`](../prisma/schema.prisma) 为准;接口路径 / DTO / 权限矩阵以 Swagger UI(`/api/docs`)+ [`../test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) `EXPECTED_ROUTES` + OpenAPI snapshot 为准;BizCode 编号 / message / httpStatus 以 [`../src/common/exceptions/biz-code.constant.ts`](../src/common/exceptions/biz-code.constant.ts) 常量与 [`../CHANGELOG.md`](../CHANGELOG.md) 累计为准。[`docs/v2-api-contract.md`](v2-api-contract.md) 仅作为 V2-D8 立项时刻 draft 参考,**不再作为当前字段 / 接口 / 错误码的执行依据**。
 
 - **v1 基础能力**:NestJS + Prisma + PostgreSQL + JWT 登录 + 三层 `Role` + 用户 CRUD + 软删除 + 统一返回格式 + Swagger 100%(沿 [docs/archive/legacy/architecture-v1-blueprint.md §1-§10](archive/legacy/architecture-v1-blueprint.md);原 `ARCHITECTURE.md §1-§10`,PR-6 已归档)
 - **V1.1 工程加固**:`nestjs-pino` 结构化日志 + 请求 ID + helmet + 登录限流 + 健康检查分层 + 优雅关闭 + Dockerfile 多阶段 + GitHub Actions CI(沿 [ARCHITECTURE.md §11](../ARCHITECTURE.md))

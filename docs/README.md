@@ -25,12 +25,19 @@
 | [`docker-smoke-test.md`](./docker-smoke-test.md) | docker smoke CI 形态说明 |
 | [`ops/cos-production-rollout-checklist.md`](./ops/cos-production-rollout-checklist.md) | 运维侧真实 COS 上线 SOP |
 
-V2 设计期产物(仍在使用,但属于"参考级"):
+V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威源**):
+
+> **当前字段 / 接口 / 错误码事实权威源 ≠ 本区块文档**;以下列三项为准:
+> 1. **数据模型(字段 / 类型 / 约束 / 索引)** → [`../prisma/schema.prisma`](../prisma/schema.prisma)
+> 2. **接口契约(路径 / DTO / 权限 / 错误码 schema)** → Swagger UI(`/api/docs`)+ [`../test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) `EXPECTED_ROUTES` + OpenAPI snapshot
+> 3. **长期 API surface 边界与新增 / 迁移规则** → [`api-surface-policy.md`](./api-surface-policy.md)
+>
+> [`v2-data-model.md`](./v2-data-model.md) / [`v2-api-contract.md`](./v2-api-contract.md) 是 V2-D8 立项(2026-05-07)时刻的设计快照;V2 第一阶段及后续批次实装后**正文未逐行回填**,阅读它们仅用于了解 V2 第一阶段最初的设计意图,**不能作为字段 / 接口 / 错误码的执行依据**。
 
 | 文件 | 用途 |
 |---|---|
-| [`v2-data-model.md`](./v2-data-model.md) | V2 第一阶段数据模型说明 |
-| [`v2-api-contract.md`](./v2-api-contract.md) | V2 第一阶段接口契约(完整字段 / 错误码 / 权限矩阵) |
+| [`v2-data-model.md`](./v2-data-model.md) | V2-D8 立项时刻的数据模型 draft(覆盖 `dict_types` / `dict_items` / `organizations` / `members` / `member_departments` + `users.memberId` 追加)— **字段事实以 [`../prisma/schema.prisma`](../prisma/schema.prisma) 为准** |
+| [`v2-api-contract.md`](./v2-api-contract.md) | V2-D8 立项时刻的 API 契约 draft(29 接口口径)— **接口事实以 Swagger UI(`/api/docs`)+ [`../test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) + OpenAPI snapshot 为准** |
 | [`srvf-business-docs.md`](./srvf-business-docs.md) | 外部业务文档库路径索引(不在本仓库内) |
 
 ---
