@@ -11,7 +11,7 @@
 | 你想知道的事 | 第一时间读 |
 |---|---|
 | **当前事实**(版本、open PR、最新 release、surface 状态、当前债务) | [`docs/current-state.md`](docs/current-state.md) |
-| **长期 AI 协作铁律**(本文件 §1-§19) | **本文件 `AGENTS.md`** |
+| **长期 AI 协作铁律**(本文件 §1-§20) | **本文件 `AGENTS.md`** |
 | **API surface 长期边界**(/api/app/v1 / /api/v2 / root legacy + Mixed Controller 存量) | [`docs/api-surface-policy.md`](docs/api-surface-policy.md)(归档的设计期顶层规范见 [`docs/archive/plans/api-client-boundary-design-period.md`](docs/archive/plans/api-client-boundary-design-period.md)) |
 | **Participation 业务上下文边界图**(activities / activity-registrations / attendances / contribution-rules 4 模块;不含 certificates) | [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
 | **附件配置三表边界**(`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig` override-with-default;不合表 / 不抽 facade) | [`docs/attachment-config-boundary.md`](docs/attachment-config-boundary.md) |
@@ -575,3 +575,15 @@ API Client Boundary 设计期(Phase 0)过程性约束(原 §19.1 ~ §19.6)已随
 **D-8**:Phase 2 App API implementation requires Phase 2 review(详 [`app-api-phase-2-review.md`](docs/archive/reviews/app-api-phase-2-review.md) + Phase 0.5/0.6/0.7 评审稿)。Agents **不得**实现 Phase 2 endpoints from [`api-client-boundary-migration-plan.md §4.1`](docs/archive/plans/api-client-boundary-migration-plan.md) 旧 11-endpoint list 而不应用 Phase 0.5/0.6/0.7 决策。关键约束:`/me/permissions` → `/me/capabilities`(沿 D-5.3);`/me/*` 与 `/my/*` 物理分离(沿 D-5.4);App DTOs **不得** reuse Admin DTOs(沿 D-6;`extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 视作越权);Mobile scope defaults to `self`(沿 D-6;App where 子句永远 `currentUser.memberId` 锁定本人,**禁止**用 `role` 短路);L3 字段(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / 完整 signed URL)**永远不返回**(snapshot 测试出现直接拒合并)。Phase 2 实施按 [`app-api-phase-2-review.md §8.1`](docs/archive/reviews/app-api-phase-2-review.md) P2-0 ~ P2-7 串行;agents **禁止**自行启动 P2-N,必须用户在 [`docs/process.md`](docs/process.md) 流程内逐个立项。
 
 **违反铁律**:发现本节决策与新任务诉求冲突 → **必须暂停说明**,不擅自调和;不主动建议"重新评估方案 A/B"或"把 contribution-rules 改归 Admin"等回滚动作。
+
+---
+
+## 20. Git 安全与 worktree 收尾铁律
+
+> 承接 G-11(worktree / 并行任务协作);完整 SOP 见 [`docs/process.md §5.4`](docs/process.md)。本节只列硬约束,**不**展开 SOP 全文。
+
+- **禁止**未经用户授权执行 `git reset --hard` / `git push --force` / `git worktree remove --force` / 批量 `git branch -D`;任一动作必须先说明风险并等用户拍板。
+- Squash merge 后若 `git branch -d` 报 `not fully merged`,**必须**先按 [`docs/process.md §5.4.6`](docs/process.md) 做 patch-equivalence 核验,再允许对**目标分支**(仅本次任务对应分支)使用 `-D`。
+- 清理 worktree 前**必须**先确认目标 worktree clean(`git -C <worktree> status --short` 为空);dirty / untracked 时只能停下报告,不得 `--force`。
+- 任何 cleanup 只能作用于**当前任务目标分支 / worktree**;**禁止**顺手清理 unrelated worktree 或本地孤立 `claude/*` 分支。
+- `gh pr merge --squash --delete-branch` 与 `git ls-remote --heads origin` 的 exit code 不能单独作为成败依据;必须按 [`docs/process.md §5.4.2 / §5.4.4`](docs/process.md) 复核 PR state 与 stdout。
