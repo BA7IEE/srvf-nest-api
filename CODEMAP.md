@@ -1,0 +1,82 @@
+# CODEMAP — 源码模块导航
+
+> 给 AI 的**源码地图**。文档地图请读 [`docs/README.md`](docs/README.md);当前事实读 [`docs/current-state.md`](docs/current-state.md);长期铁律读 [`AGENTS.md`](AGENTS.md)。
+> 本文件**不**列 HTTP endpoint(那是 Swagger `/api/docs` 与 [`README.md`](README.md) 路由总览的事),**不**复制 `AGENTS.md` 规则。
+
+**体量级别**:`S` <500 行 / `M` 500–1500 / `L` 1500–2500 / `⚠G` god-service(service 单文件 >700 行)
+
+---
+
+## src/modules/(19 个业务模块,平铺,**禁止嵌套 system/business/core 子目录**)
+
+| 路径 | 体量 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
+|---|---|---|---|---|
+| `activities/` | L (2393L) | 活动主资源,4 态状态机(`activity-state-machine.ts`) | service 607L 偏厚;participation 上下文核心 | [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
+| `activity-registrations/` | L (2354L) | 活动报名,4 态 + partial unique + CSV export | service 750L;Mixed Controller P1-C step 3 已拆完 | [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
+| `ai/` | S (placeholder) | LLM / 向量占位 | **本期不实现**;README 占位 | [`AGENTS.md §1 C`](AGENTS.md) |
+| `attachment-configs/` | L (2175L) | 附件配置三表(type / mime / size) | **不合表、不抽 facade、override-with-default** | [`docs/attachment-config-boundary.md`](docs/attachment-config-boundary.md) |
+| `attachments/` | ⚠G (service 826L) | 多态附件主模块 + RBAC 业务面首批接入 | accessUrl / signed URL 永不返回;L3 字段隔离 | [`CLAUDE.md`](src/modules/attachments/CLAUDE.md) · [`docs/attachment-config-boundary.md`](docs/attachment-config-boundary.md) |
+| `attendances/` | ⚠G (service 1157L) | 考勤主表 5 态(含终审)+ contribution 计算 | **同文件 3 controller Mixed 未拆 (P1-C 第四步)**;god-service 不主动拆 | [`CLAUDE.md`](src/modules/attendances/CLAUDE.md) · [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
+| `audit-logs/` | M (594L) | 写入即不可改不可删(A-1 红线) | 各业务写路径已全接入 `AuditLogEvent` | [`AGENTS.md §9`](AGENTS.md) |
+| `auth/` | M (787L) | 登录 / refresh / logout / logout-all | **不引入 `LocalStrategy`**;`username+password` 在 service 内手写 | [`AGENTS.md §1 永久铁律`](AGENTS.md) · [`docs/security.md`](docs/security.md) |
+| `certificates/` | M (1410L) | 证书 N:1 + 4 态闭集 + verify/reject | **不**属 participation 上下文(独立 member-qualifications) | [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md)(明确排除) |
+| `contribution-rules/` | M (914L) | D14 预填规则 | **无 CRUD 流水表** | [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
+| `dictionaries/` | M (968L) | 字典双表 + 父子树 | 同 surface 双 controller(**非 surface Mixed**) | [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
+| `emergency-contacts/` | S (571L) | N:1 紧急联系人 | 子资源 | — |
+| `health/` | S (137L) | 健康检查(live / ready) | **模块结构例外**:只有 module + controller,**无 service** | [`AGENTS.md §2`](AGENTS.md) |
+| `member-departments/` | S (329L) | 一人一部门 partial unique | partial unique 在 schema 显式 | — |
+| `member-profiles/` | M (1258L) | 1:1 子资源,含敏感字段(身份证默认掩码后 4 位) | **L3 字段不外暴**;白名单严格 | [`docs/security.md`](docs/security.md) |
+| `members/` | S (501L) | 全局 `memberNo` **不复用** | memberNo 唯一性铁律 | [`docs/srvf-foundation-baseline.md`](docs/srvf-foundation-baseline.md) |
+| `organizations/` | M (654L) | 组织树 | 树形结构 | — |
+| `permissions/` | L (2213L) | RBAC 4 表 + `RbacService.can()` + `RbacCacheService` | `rbac.*` 14 条权限点;**`rbac/me/permissions` 方法级 Mixed 暂不拆 (P1-A)** | [`AGENTS.md §8 / §13`](AGENTS.md) · [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
+| `users/` | L (1934L) | 用户 CRUD + `/me*` + 改密 + refresh 联动撤销 | Mixed Controller P1-C step 1 已拆完;P0-D / P0-E 全套铁律 | [`AGENTS.md §9`](AGENTS.md) · [`docs/security.md`](docs/security.md) |
+
+> **缺位**:`activities` / `activity-registrations` 暂无本地 CLAUDE.md — 状态机与 partial unique 在代码中显式可见(`*-state-machine.ts` 文件名 / `prisma/schema.prisma` partial unique),按需追加。
+
+---
+
+## src/common/(基础设施,**禁止跨模块 utils grab-bag**)
+
+| 路径 | 体量 | 职责 | 主要风险 |
+|---|---|---|---|
+| `audit/` | S (147L) | `AuditLogEvent` 事件总线 | A-1 写入即不可改 |
+| `decorators/` | S (242L) | `@Roles` / `@CurrentUser` / `@PasswordChangeThrottle` 等 | 与 Guard 配套,不单独使用 |
+| `dto/` | S (74L) | 跨模块共享 DTO(列表分页基类等) | **禁止**业务 DTO 入此目录 |
+| `event/` | S (26L) | 应用事件基础 | — |
+| `exceptions/` | M (947L) | BizCode 常量 + 业务异常类 | **`biz-code.constant.ts` 是 BizCode 唯一权威源**;新增段位前先查 [`AGENTS.md §9`](AGENTS.md) |
+| `filters/` | S (86L) | 全局异常过滤器 + 统一返回 | 错误响应 schema 不动 |
+| `guards/` | S (181L) | `JwtAuthGuard` / `RolesGuard` | Guard `@Roles(...)` + Service `rbac.can()` 双轨 |
+| `interceptors/` | S (40L) | 统一返回包装等 | — |
+| `prisma/` | S (22L) | PrismaService 注入 | **不**使用全局软删中间件 / client extension |
+| `storage/` | L (1720L) | LocalStorageProvider + CosStorageProvider + 动态 Router + AES-256-GCM | 本期承载完整 module + controller(超出"common"原始语义);长期可迁 `src/modules/storage/`,**本期不动** | [`docs/current-state.md §4 P3`](docs/current-state.md) |
+
+---
+
+## prisma/
+
+| 路径 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
+|---|---|---|---|
+| `schema.prisma` | **数据模型唯一权威源**(字段 / 类型 / 约束 / 索引) | 修改前必先说明影响面 | [`CLAUDE.md`](prisma/CLAUDE.md) |
+| `migrations/` | 13 个 migration(2026-05-02 init → C-7.5 storage) | **禁止** `prisma migrate dev` / `reset` / `db push` 自动跑 | [`CLAUDE.md`](prisma/CLAUDE.md) · [`AGENTS.md §0`](AGENTS.md) |
+| `seed.ts` | 默认 super admin + bootstrap user_role | 生产环境强校验启动(`SUPER_ADMIN_*` / `JWT_SECRET` / `APP_CORS_ORIGIN`) | [`docs/deployment.md`](docs/deployment.md) |
+
+---
+
+## src/bootstrap/(应用启动装配)
+
+`apply-global-setup.ts` / `apply-swagger.ts` / `logger-options.ts` / `request-id.ts` / `throttle-options.ts` — `main.ts` 与 `test/setup/test-app.ts` **共用**这些文件,避免双份装配漂移。改其中任何一个之前先确认两边都被覆盖。
+
+---
+
+## test/
+
+| 路径 | 职责 |
+|---|---|
+| `contract/` | OpenAPI snapshot + `EXPECTED_ROUTES`(接口契约权威源) |
+| `e2e/` | E2E spec(v0.15.0 时 78 spec) |
+| `fixtures/` / `helpers/` / `setup/` | 测试工具 |
+| `jest-unit.config.ts` / `jest-e2e.config.ts` / `jest-contract.config.ts` | 三套独立 jest 配置 |
+
+---
+
+**冲突处理**:本表与代码冲突 → 以 `src/**` 与 `docs/current-state.md` 为准,本文件需回头修正;**不得**用本表否决 [`AGENTS.md`](AGENTS.md) 与 [`docs/api-surface-policy.md`](docs/api-surface-policy.md)。
