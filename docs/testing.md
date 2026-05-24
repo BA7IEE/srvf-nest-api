@@ -2,7 +2,10 @@
 
 E2E 跑在独立的 `app_test` 物理库,与开发库 `app` 完全隔离,**不污染开发数据**。配置由 [`.env.test`](../.env.test) 驱动,Jest globalSetup 与 setupFiles 双层加载并强制 `override: true`,防止 shell 中已 export 的 `DATABASE_URL` 误打开发库。
 
-当前覆盖 **19 spec / 162 用例**,本机 macOS 双跑 ~16s,串行执行(`--runInBand`),`detectOpenHandles: true` 启用,无连接泄漏。
+> 测试数量属于高频变化信息。本文不维护固定 spec / case 总数;
+> 当前数量以 `find test/e2e -name '*.ts'`、`pnpm test:e2e` 输出末尾汇总、CI 结果,以及 [`docs/current-state.md`](current-state.md) §2 "测试与契约" 段为准。
+
+E2E 串行执行(`--runInBand`),`detectOpenHandles: true` 启用,无连接泄漏。
 
 ---
 
@@ -30,6 +33,8 @@ pnpm db:test:reset
 ---
 
 ## 覆盖范围一览
+
+> 下表为早期代表性 spec 列举(v0.7 / v0.8 时代锁定),**非全集**;当前完整 spec 清单以 `find test/e2e -name '*.ts'` 实际输出为准。
 
 | spec 文件 | 覆盖内容 |
 |---|---|
