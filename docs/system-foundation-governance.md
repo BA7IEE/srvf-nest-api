@@ -55,7 +55,7 @@
 | **G-8** | 字典治理规则 | 字典码值变更的同步与影响面通知 |
 | **G-9** | 已锁决策解锁路径 | [`AGENTS.md §19.7`](../AGENTS.md) D-x 决策重开的最小入参 |
 | **G-10** | 双仓库协作规则 | 业务文档库与代码仓库的引用 / 同步 / 仲裁 |
-| **G-11** | worktree / 并行任务协作 | 多 worktree 下 "open PR=0" 门禁与协作纪律 — ✅ **G2-PR-A 已闭环**:完整 SOP 落于 [`process.md §5.4`](process.md);硬约束短铁律落于 [`../AGENTS.md §20`](../AGENTS.md) |
+| **G-11** | worktree / 并行任务协作 | 多 worktree 下 "open PR=0" 门禁与协作纪律 — ✅ **G2-PR-A 已闭环**:完整 SOP 落于 [`process.md §5.4`](process.md);硬约束短铁律落于 [`../AGENTS.md §20`](../AGENTS.md);**G2-PR-A 后续微调(docs-only A 档)**:补充 §5.4.5 macOS `.DS_Store` 元数据处置特例 + §5.4.6 ancestry vs patch-equivalence 原理说明 + 视觉锚强化 + §5.4.4 local/remote 对称表述(状态保持 ✅,不新增 Phase) |
 | **G-12** | 依赖升级 / 安全更新节奏 | `pnpm audit` / Renovate / 周期性 patch 触发条件 |
 
 ---

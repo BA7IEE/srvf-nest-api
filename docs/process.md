@@ -243,6 +243,7 @@ git -C <main-repo-path> ls-remote --heads origin <head-branch>
 
 - **禁止** `git push --force` / `git push --force-with-lease` 处理残留(那是"覆盖远端历史",不是"删分支");
 - **禁止**对 main 或受保护分支(如未来可能加保护的 release/* 命名空间)执行 `--delete`;
+- **禁止**对非本任务 head 的远端分支(包括其它本地孤立任务对应的 `origin/claude/*`)执行 `push origin --delete`;每轮 cleanup 只允许作用于**本任务目标 head 分支**,与 §5.4.5 / §5.4.7 中"本地孤立 `claude/*` 不允许顺手删"的边界对称(本地、远端同标准);
 - 删除后再跑一次 `git ls-remote --heads origin <head-branch>` 确认 stdout 为空。
 
 ### 5.4.5 worktree-bound 本地分支清理
@@ -263,10 +264,13 @@ git -C <main-repo-path> branch -d <branch>
 写明硬约束:
 
 - 步骤 1 输出**非空**(有 unstaged / staged / untracked 文件) → 立即**停下报告**;**禁止** `git worktree remove --force`,除非用户看到具体 dirty 内容后再次明确授权;
+  - **特例(且仅此特例)**:若 `status --short` 输出**仅**为 macOS Finder 元数据(典型形态 `?? .DS_Store`;Finder 浏览 worktree 目录时自动生成,非业务文件),允许**就地**执行 `rm <worktree-path>/.DS_Store` 后**重新执行** `git -C <worktree-path> status --short` 确认为空,再继续步骤 2。这**不**算扩大授权,**不**得借此顺带处理任何其它 untracked 文件(包括但不限于 `.env.local` / `*.log` / 编辑器 swap / 构建产物 / 调试残留);其它 dirty / untracked 一律仍按主条款"立即停下报告"处理。
 - `worktree list` 中其它 worktree(如别的并行任务、独立调研 worktree) → **禁止**顺手清理;每次 cleanup 只允许作用于本任务目标 worktree;
 - `worktree remove` 成功后,worktree 目录会被物理删除;此时分支仍存在,继续走 §5.4.6 决定 `-d` 还是 `-D`。
 
 ### 5.4.6 squash merge 后 `branch -d` 失败处理
+
+> **原理(必读)**:`git branch -d` 判定的是 **commit ancestry**(分支 tip 是否已在 main 的祖先链中),**不是** patch 内容是否等价。squash merge 会把分支上的 N 个 commit 压成 1 个**新** squash commit 落到 main;原 N 个 commit 仍处于 main 祖先链**外**,因此**即便文件级 patch 已完全等价**,`-d` 仍会报 `not fully merged`。这时唯一允许的回收路径是:确认 PR `state=MERGED` + 完成下方 patch-equivalence 全套核验 + **仅**对本任务目标分支使用 `-D`;**不**得跳过核验、**不**得借此放宽到批量 / 通配符 `-D`。
 
 `git branch -d` 在以下情况会报 `error: the branch '<x>' is not fully merged`:
 
@@ -290,7 +294,9 @@ git -C <main-repo-path> ls-tree main -- <changed-files>
 git -C <main-repo-path> ls-tree <branch> -- <changed-files>
 ```
 
-允许对**目标分支**(且仅对目标分支)执行 `git branch -D <branch>` 的条件(必须全部满足):
+允许对**目标分支**(且仅对目标分支)执行 `git branch -D <branch>` 的前置条件:
+
+> **以下 5 项必须全部满足,缺一不可。任一项未满足 → 停下报告,不得 `-D`。**
 
 1. PR 已 `state=MERGED`;
 2. `git diff --stat main..<branch>` 输出为空,或仅显示 "main 多了若干 commit"(本分支 0 新增);
@@ -307,7 +313,7 @@ git -C <main-repo-path> branch -D <branch>
 写明硬约束:
 
 - **禁止**在未核验前直接 `-D`;
-- **禁止**对非本任务目标分支执行 `-D`(`branch -D` 不接受批量参数;**不**做 `git branch -D claude/*` 或循环批删);
+- **`-D` 只能作用于本任务目标分支**;`git branch -D` 不接受通配符,**禁止** `git branch -D claude/*` / `git branch -D feat/*` / shell glob 展开 / `for` 循环批删 / `xargs` 批删等任何形态的批量 `-D`(`§5.4.7` 同步列入禁止清单);
 - 核验过程发现 `>` 方向 commit 含"本地未推送的实际改动"(非 squash 残影) → 立即停下报告;那是被忽视的工作,**不**强删。
 
 ### 5.4.7 禁止动作

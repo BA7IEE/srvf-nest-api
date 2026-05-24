@@ -585,5 +585,6 @@ API Client Boundary 设计期(Phase 0)过程性约束(原 §19.1 ~ §19.6)已随
 - **禁止**未经用户授权执行 `git reset --hard` / `git push --force` / `git worktree remove --force` / 批量 `git branch -D`;任一动作必须先说明风险并等用户拍板。
 - Squash merge 后若 `git branch -d` 报 `not fully merged`,**必须**先按 [`docs/process.md §5.4.6`](docs/process.md) 做 patch-equivalence 核验,再允许对**目标分支**(仅本次任务对应分支)使用 `-D`。
 - 清理 worktree 前**必须**先确认目标 worktree clean(`git -C <worktree> status --short` 为空);dirty / untracked 时只能停下报告,不得 `--force`。
-- 任何 cleanup 只能作用于**当前任务目标分支 / worktree**;**禁止**顺手清理 unrelated worktree 或本地孤立 `claude/*` 分支。
+- 任何 cleanup 只能作用于**当前任务目标分支 / worktree**;**禁止**顺手清理 unrelated worktree、本地孤立 `claude/*` 分支、或非本任务 head 的 `origin/claude/*` 远端分支(本地、远端同标准)。
+- `.DS_Store` 等 macOS Finder 元数据按 [`docs/process.md §5.4.5`](docs/process.md) 处置(仅允许就地 `rm` 后重核 `status`);**不得**借此顺带清理其它 untracked 文件。
 - `gh pr merge --squash --delete-branch` 与 `git ls-remote --heads origin` 的 exit code 不能单独作为成败依据;必须按 [`docs/process.md §5.4.2 / §5.4.4`](docs/process.md) 复核 PR state 与 stdout。
