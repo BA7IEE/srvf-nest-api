@@ -145,7 +145,7 @@
 | P1 | `TASKS.md` 历史体量与 V1.1 / V2.x 任务混排(原始单文件历史任务堆积) | ✅ G1-PR-D(#218)已闭环:根目录 `TASKS.md` 已入口化为 **166 行入口索引**;V2 第一阶段 Step 1-7 + V2.x C-6 RBAC / C-7 attachments / C-7.5 Provider / §10 后续任务 全文已 verbatim 归档至 [`archive/legacy/tasks-v2-first-stage-historical.md`](archive/legacy/tasks-v2-first-stage-historical.md);根目录保留 §6/§7/§8/§9/§10 章节锚点供 active(V2 红线 / v2-api-contract 等)+ frozen handoff(v0.9.0/v0.10.0/v0.11.0/v0.12.0)历史引用解析 |
 | P2 | `attendances.service.ts` 1157 行(单文件;state-machine + audit-recorder + time-overlap-policy + contribution-calculator 已抽离) | characterization tests 已落地(沿 [`architecture-boundary.md §5`](architecture-boundary.md));后续 Presenter / QueryService 边界拆分需单独立项,本期不动 |
 | P2 | `attachments.service.ts` 826 行 / `activity-registrations.service.ts` 750 行 / `activities.service.ts` 607 行 | audit-recorder / state-machine 已抽离;核心 service 仍缺 `*.service.spec.ts` 单测;建议先补 service spec,再做任何重构 |
-| P2 | service 单测偏少(`src/` 内仅 14 个 `*.spec.ts` / 194 个源文件 ≈ 7.2%) | E2E 78 spec 覆盖回归,但单元层缺位;建议为 god-service 优先补 spec |
+| P2 | service 单测偏少(`src/` 内仅 14 个 `*.spec.ts` / 208 个源文件 ≈ 6.7%) | E2E 78 spec 覆盖回归,但单元层缺位;建议为 god-service 优先补 spec |
 | P2 | Mixed Controller 存量(`attendances.controller.ts` 同文件 3 controller(P1-C 第四步,未拆)/ `permissions/rbac.controller.ts` `me/permissions` 方法级 Mobile - Capabilities(P1-A 暂不拆)/ `dictionaries.controller.ts` 同 surface 双 controller(非 surface Mixed);`users.controller.ts` / `attachments.controller.ts` / `activity-registrations.controller.ts` 三项 P1-C step 1/2/3 已完成) | 仅兼容,不再新增;剩余 attendances 物理拆分走独立立项 |
 | P2 | Contract snapshot 单文件约 1,083,564 字节 / 37,517 行(~1058 KB),review 困难 | 接受;PR review 时用 diff 工具看 |
 | P3 | `common/storage/` 已承载完整 module + controller(超出原 "common = 跨模块基础设施" 语义) | 长期可迁到 `src/modules/storage/`;本期不动 |
