@@ -107,10 +107,10 @@
 
 ### Phase G1 — 文档 stale 与状态错位清理(逐 PR / A 档 docs-only)
 
-- G1-1 [`srvf-foundation-baseline.md §1`](srvf-foundation-baseline.md) 段位表"V2 基线预留"状态刷新
-- G1-2 [`V2红线与复活路径.md`](V2红线与复活路径.md) 头部"初始基线 v0.7.0 / 最后核对 v0.15.0" 表述合并
-- G1-3 [`v2-data-model.md`](v2-data-model.md) + [`v2-api-contract.md`](v2-api-contract.md) 头部加"设计期产物 / 字段权威源以 schema 与 OpenAPI 为准"
-- G1-4 [`srvf-business-docs.md`](srvf-business-docs.md) 硬编码本机路径泛化 + 沉淀双仓库协作规则(关联 G-10)
+- G1-1 ✅ 已完成(PR #215):[`srvf-foundation-baseline.md §1`](srvf-foundation-baseline.md) 段位表"V2 基线预留"状态已校准,头部加"2026-05-23 Phase G1 校准"批注,明确头部 §0 / §1.1 部分定性措辞源自 V2 设计期,当前各模块实装状态以 §1.1 段位表 + [`current-state.md §2`](current-state.md) + [`../prisma/schema.prisma`](../prisma/schema.prisma) 为准
+- G1-2 ✅ 已完成(PR #215):[`V2红线与复活路径.md`](V2红线与复活路径.md) 头部"初始基线 v0.7.0 / 最后核对 v0.15.0" 表述已合并校准,头部加"2026-05-23 Phase G1 校准"批注,明确完整版本号 / open PR / HEAD / 最新 handoff 以 [`current-state.md`](current-state.md) 为准
+- G1-3 ✅ 已完成(PR #216):[`v2-data-model.md`](v2-data-model.md) + [`v2-api-contract.md`](v2-api-contract.md) 头部加"回填注(2026-05-23 / G1-PR-B 治理刷新,v0.15.0+ 口径)",显式标注为 V2-D8 立项时刻 draft 历史快照,字段 / 接口 / 错误码事实权威源以 [`../prisma/schema.prisma`](../prisma/schema.prisma) + Swagger UI + [`../test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) `EXPECTED_ROUTES` 为准
+- G1-4 ✅ 已完成(PR #217):[`srvf-business-docs.md`](srvf-business-docs.md) 硬编码本机路径已泛化为 `<business-docs-repo-root>` / `<repo-root>` 占位符,沉淀双仓库协作规则(占位符约定 + 仓库分工表;关联 G-10 后续在 [`AGENTS.md`](../AGENTS.md) / [`current-state.md`](current-state.md) 展开正式条款)
 - G1-5 ✅ 已完成(PR #218):[`TASKS.md`](../TASKS.md) 已入口化为 166 行入口索引;V2 第一阶段 Step 1-7 与 V2.x C-6 RBAC / C-7 attachments / C-7.5 Provider / §10 后续任务全文 verbatim 迁档至 [`docs/archive/legacy/tasks-v2-first-stage-historical.md`](archive/legacy/tasks-v2-first-stage-historical.md);根目录 §6 / §7 / §8 / §9 / §10 锚点保留,供 active 与历史 handoff 引用解析
 - G1-6 ✅ 已完成(PR #219 + PR #221):[`current-state.md §4`](current-state.md) 已释放闭环 P0/P1 行(P0 入口锚点 / P0 handoff 双重身份 / P1 RBAC 管理面收紧 / P1 第一版前端联调包 等),并修正 TASKS / spec drift(service spec 比例修订为 `14 / 208 ≈ 6.7%`)
 - G1-7 ✅ 已完成(PR #220):[`docs/development.md`](development.md) / [`docs/security.md`](security.md) 与 [`AGENTS.md §8 / §9`](../AGENTS.md) cross-check 完成,采用**指针式维护**(铁律以 `AGENTS.md` 为准,本文档仅作 surface 操作指引),`development.md` / `security.md` 不复制 AGENTS 全文规则
