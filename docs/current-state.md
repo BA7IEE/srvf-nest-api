@@ -33,7 +33,7 @@
 | Swagger `setVersion(...)` | `0.15.0` |
 | 最新 git tag | `v0.15.0`(2026-05-20T17:07:09Z;指向 `089499d` = PR #163 handoff squash commit) |
 | GitHub Latest Release | `v0.15.0`(标 Latest;publishedAt 2026-05-20T17:07:09Z;Notes 自 `CHANGELOG.md ## v0.15.0 - 2026-05-20` 段抽取) |
-| `main` HEAD | **`813d7c2`** `docs(governance): Phase G1-PR-H — mark G1 closeout items complete (#222)`(post-v0.15.0 docs 治理 + 架构边界抽离串 + Governance-1A Phase G1-PR-A ~ G1-PR-H 串累计落地;v0.15.0 release tag 仍指向 `089499d` = PR #163 handoff squash commit,2026-05-24 核对) |
+| `main` HEAD | **`a18e101`** `docs(governance): Phase G2-PR-A — add worktree cleanup SOP (#224)`(post-v0.15.0 docs 治理 + 架构边界抽离串 + Governance-1A Phase G1-PR-A ~ G1-PR-I 串累计落地 + **G2-PR-A / G-11 worktree cleanup SOP 已落地**;v0.15.0 release tag 仍指向 `089499d` = PR #163 handoff squash commit,2026-05-24 核对) |
 | open PR | **0**(本入口刷新 PR 合并前) |
 | 工作树状态 | clean |
 | 最新 handoff | [`docs/archive/handoff/v0.15.0.md`](archive/handoff/v0.15.0.md)(v0.15.0 release closeout index;上一版 [`v0.14.0.md`](archive/handoff/v0.14.0.md));自 v0.15.0 docs 治理收口起,handoff 统一归档于 `archive/handoff/`,历史快照不回改 |
