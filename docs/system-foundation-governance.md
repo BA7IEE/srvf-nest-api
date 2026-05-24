@@ -111,9 +111,9 @@
 - G1-2 [`V2红线与复活路径.md`](V2红线与复活路径.md) 头部"初始基线 v0.7.0 / 最后核对 v0.15.0" 表述合并
 - G1-3 [`v2-data-model.md`](v2-data-model.md) + [`v2-api-contract.md`](v2-api-contract.md) 头部加"设计期产物 / 字段权威源以 schema 与 OpenAPI 为准"
 - G1-4 [`srvf-business-docs.md`](srvf-business-docs.md) 硬编码本机路径泛化 + 沉淀双仓库协作规则(关联 G-10)
-- G1-5 [`TASKS.md`](../TASKS.md) §6 V2 第一阶段任务卡迁档;§10 简化或并入 current-state
-- G1-6 [`current-state.md §4`](current-state.md) 释放已 ✅ 的 P0 行
-- G1-7 [`development.md`](development.md) / [`security.md`](security.md) 抽样核对与 AGENTS.md §8 / §9 是否 in-sync
+- G1-5 ✅ 已完成(PR #218):[`TASKS.md`](../TASKS.md) 已入口化为 166 行入口索引;V2 第一阶段 Step 1-7 与 V2.x C-6 RBAC / C-7 attachments / C-7.5 Provider / §10 后续任务全文 verbatim 迁档至 [`docs/archive/legacy/tasks-v2-first-stage-historical.md`](archive/legacy/tasks-v2-first-stage-historical.md);根目录 §6 / §7 / §8 / §9 / §10 锚点保留,供 active 与历史 handoff 引用解析
+- G1-6 ✅ 已完成(PR #219 + PR #221):[`current-state.md §4`](current-state.md) 已释放闭环 P0/P1 行(P0 入口锚点 / P0 handoff 双重身份 / P1 RBAC 管理面收紧 / P1 第一版前端联调包 等),并修正 TASKS / spec drift(service spec 比例修订为 `14 / 208 ≈ 6.7%`)
+- G1-7 ✅ 已完成(PR #220):[`docs/development.md`](development.md) / [`docs/security.md`](security.md) 与 [`AGENTS.md §8 / §9`](../AGENTS.md) cross-check 完成,采用**指针式维护**(铁律以 `AGENTS.md` 为准,本文档仅作 surface 操作指引),`development.md` / `security.md` 不复制 AGENTS 全文规则
 
 ### Phase G2 — 顶层规则缺口逐项立项(独立 PR / A 或 C 档)
 
