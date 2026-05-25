@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(npm *)",
+      "Bash(yarn *)",
+      "Bash(bun *)",
+      "Bash(prisma migrate reset*)",
+      "Bash(prisma db push*)",
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)",
+      "Bash(rm -rf*)"
+    ],
+    "ask": [
+      "Bash(prisma migrate dev*)",
+      "Bash(pnpm add*)",
+      "Bash(pnpm remove*)",
+      "Bash(gh pr merge*)"
+    ],
+    "allow": [
+      "Bash(pnpm lint*)",
+      "Bash(pnpm typecheck*)",
+      "Bash(pnpm test*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git branch*)",
+      "Bash(git tag*)",
+      "Bash(git worktree list*)",
+      "Bash(gh pr list*)",
+      "Bash(gh pr view*)"
+    ]
+  }
+}
