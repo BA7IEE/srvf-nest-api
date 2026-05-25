@@ -54,4 +54,4 @@ pnpm db:test:reset
 - 登录失败必须覆盖防账号枚举四场景(`username` 不存在 / `password` 错 / 已禁用 / 已软删除),响应体与 HTTP status 完全相同
 - 任何破坏性 SQL 与 migration 命令统一通过 [`test/setup/test-db.ts`](../test/setup/test-db.ts) 调度,禁止在 spec 内 inline 执行,以保证 `app_test` 子串护栏始终命中
 
-详见 [`CLAUDE.md`](../CLAUDE.md) §16。
+详见 [`AGENTS.md`](../AGENTS.md) §16。

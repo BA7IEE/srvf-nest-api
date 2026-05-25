@@ -31,7 +31,7 @@
 | `permissions/` | L (2213L) | RBAC 4 表 + `RbacService.can()` + `RbacCacheService` | `rbac.*` 14 条权限点;**`rbac/me/permissions` 方法级 Mixed 暂不拆 (P1-A)** | [`AGENTS.md §8 / §13`](AGENTS.md) · [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
 | `users/` | L (1934L) | 用户 CRUD + `/me*` + 改密 + refresh 联动撤销 | Mixed Controller P1-C step 1 已拆完;P0-D / P0-E 全套铁律 | [`AGENTS.md §9`](AGENTS.md) · [`docs/security.md`](docs/security.md) |
 
-> **缺位**:`activities` / `activity-registrations` 暂无本地 CLAUDE.md — 状态机与 partial unique 在代码中显式可见(`*-state-machine.ts` 文件名 / `prisma/schema.prisma` partial unique),按需追加。
+> `activities` / `activity-registrations` 已补 module-local CLAUDE.md;后续高风险模块可按需继续补充。
 
 ---
 
