@@ -32,9 +32,8 @@ tmp
 *.swp
 *.swo
 
-# Claude Code local settings (per-machine; .claude/CLAUDE.md is committed)
+# Claude Code local settings (per-machine; .claude/CLAUDE.md and .claude/settings.json are committed)
 .claude/settings.local.json
-.claude/settings.json
 
 # Claude Code worktrees (per-session; auto-created, not part of repo)
 .claude/worktrees/
