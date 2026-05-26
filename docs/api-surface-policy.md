@@ -85,7 +85,7 @@
 | # | 文件 | 类型 | 现状 | 涉及端点 | 处置 |
 |---|---|---|---|---|---|
 | 1 | [`src/modules/users/users.controller.ts`](../src/modules/users/users.controller.ts) | ~~method-level Mixed~~ → **P1-C step 1 已拆**(2026-05;详 §7) | 主 controller 当前仅 class-level `@ApiTags('Admin - Users')` + `@Controller('users')`(8 个 `/:id*` 管理端点);原 3 个 `/me*` 端点已迁出至独立 [`users-me-legacy.controller.ts`](../src/modules/users/controllers/users-me-legacy.controller.ts)(同 `@Controller('users')` 前缀 + Tag `Mobile - Me`) | `GET /api/users/me` / `PATCH /api/users/me` / `PUT /api/users/me/password` | endpoint zero drift;主 controller 不再 surface Mixed;legacy 只兼容、不扩展 |
-| 2 | [`src/modules/attendances/attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts) | **same-file Mixed**(surface 混合) | 同文件 3 个 `@Controller` class:Admin × 2(`v2/activities/:activityId/attendance-sheets` + `v2/attendance-sheets`)+ Mobile × 1(`v2/users/me/attendance-records`) | `GET /api/v2/users/me/attendance-records` | 保留;**P1-C 第四步,未启动**;characterization tests 已落地(沿 §7 P1-B),`attendances.service.ts` 1157 LOC 拆 service 仍需单独立项 |
+| 2 | [`src/modules/attendances/attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts) | ~~same-file Mixed~~ → **P1-C step 4 已拆**(2026-05;详 §7) | 主 controller 仅剩 2 个 Admin class(`v2/activities/:activityId/attendance-sheets` + `v2/attendance-sheets`,Tag `Admin - Attendances`);原同文件 Mobile class `AttendanceRecordsMeController`(`v2/users/me/attendance-records`,1 路由,Tag `Mobile - Attendance`)已迁出至 [`attendances-me-records-legacy.controller.ts`](../src/modules/attendances/controllers/attendances-me-records-legacy.controller.ts) | `GET /api/v2/users/me/attendance-records` | endpoint zero drift;主 controller 不再 surface Mixed;已有 `/api/app/v1/my/attendance-records` 对等(P2-6);legacy 未来 deprecate 候选,本阶段不删;`attendances.service.ts` 1157 LOC 拆 service 仍需单独立项 |
 | 3 | [`src/modules/activity-registrations/activity-registrations.controller.ts`](../src/modules/activity-registrations/activity-registrations.controller.ts) | ~~same-file Mixed~~ → **P1-C step 3 已拆**(2026-05;详 §7) | 主 controller 仅剩 Admin class(`v2/activities/:activityId/registrations`,Tag `Admin - Registrations`);原同文件 Mobile class(`v2/users/me`,4 路由)已迁出至 [`activity-registrations-me-legacy.controller.ts`](../src/modules/activity-registrations/controllers/activity-registrations-me-legacy.controller.ts)(Tag `Mobile - Registrations`) | `POST /api/v2/users/me/activities/:activityId/registration` / `GET /api/v2/users/me/registrations` | endpoint zero drift;主 controller 不再 surface Mixed;已有 `/api/app/v1/my/registrations` 对等(P2-5);legacy 未来 deprecate 候选,本阶段不删 |
 | 4 | [`src/modules/attachments/attachments.controller.ts`](../src/modules/attachments/attachments.controller.ts) | ~~method-level Mixed~~ → **P1-C step 2 已拆**(2026-05;详 §7) | 主 controller 当前仅 class-level `@ApiTags('Admin - Attachments')` + `@Controller('v2/attachments')`(8 个 admin 端点);原 `me/uploaded` 单方法已迁出至 [`attachments-me-legacy.controller.ts`](../src/modules/attachments/controllers/attachments-me-legacy.controller.ts)(同 `@Controller('v2/attachments')` 前缀 + Tag `Mobile - Attachments`) | `GET /api/v2/attachments/me/uploaded` | endpoint zero drift;主 controller 不再 surface Mixed;**仍无 `/api/app/v1/my/attachments` 对等端点**,legacy 只兼容、不扩展 |
 | 5 | [`src/modules/permissions/rbac.controller.ts`](../src/modules/permissions/rbac.controller.ts) | **method-level Mixed**(P1-A 补登) | class-level `@ApiTags('Ops - RBAC')` + `@Controller('v2/rbac')`,内含 1 个方法 `me/permissions` 追加 `@ApiTags('Mobile - Capabilities')` | `GET /api/v2/rbac/me/permissions` | **必须保留**;与 `/api/app/v1/me/capabilities` **语义不等价**(`me/permissions` 返 raw RBAC permission code,`me/capabilities` 返 product-level capability;沿 D-5.3);**不作为近期拆分目标** |
@@ -96,7 +96,7 @@
 - PR #165 初版 §5 登记 3 项:`users.controller.ts` / `activity-registrations.controller.ts` / `dictionaries.controller.ts`
 - 2026-05-21 P1 只读评审发现实际存量为 6 项;P1-A 决策锁补登 3 项:`attendances.controller.ts` / `attachments.controller.ts` / `rbac.controller.ts`
 - 同时修正 `dictionaries.controller.ts` 的分类:**不是 surface Mixed**,只是同 surface 同文件双 class
-- **截至 2026-05-23**:6 项中 `users.controller.ts` / `attachments.controller.ts` / `activity-registrations.controller.ts` 三项已完成 P1-C step 1/2/3 物理拆分(legacy controller 迁出至独立文件,主 controller 不再 surface Mixed,endpoint 全部 zero drift);实际仍为 surface Mixed 的存量降至 **attendances.controller.ts**(P1-C 第四步,未启动)+ **rbac.controller.ts**(P1-A 决策暂不拆);**dictionaries.controller.ts** 仍按非 surface Mixed 保留
+- **截至 2026-05-26**:6 项中 `users.controller.ts` / `attachments.controller.ts` / `activity-registrations.controller.ts` / `attendances.controller.ts` 四项已完成 P1-C step 1/2/3/4 物理拆分(legacy controller 迁出至独立文件,主 controller 不再 surface Mixed,endpoint 全部 zero drift;`attendances` 拆分见 PR #236,merge commit `bfb93b9`);实际仍为 surface Mixed 的存量降至 **rbac.controller.ts**(P1-A 决策暂不拆);**dictionaries.controller.ts** 仍按非 surface Mixed 保留
 
 ---
 
@@ -111,7 +111,7 @@
 | 3 | `PUT /api/users/me/password` | Root Legacy `users` | ✅ `PUT /api/app/v1/me/password`(共享同 throttler / 同 service / 同 DTO) | **只兼容,不扩展**;两端点共享 service 与 DTO 现状沿用 |
 | 4 | `POST /api/v2/users/me/activities/:activityId/registration` | Admin Legacy(内 Mobile class) | ✅ `POST /api/app/v1/my/registrations`(P2-5b) | **已有 app/v1 对等,未来 deprecate 候选**;本阶段不删 |
 | 5 | `GET /api/v2/users/me/registrations` | Admin Legacy(内 Mobile class) | ✅ `GET /api/app/v1/my/registrations`(P2-5a) | **已有 app/v1 对等,未来 deprecate 候选**;本阶段不删 |
-| 6 | `GET /api/v2/users/me/attendance-records` | Admin Legacy(内 Mobile class) | ✅ `GET /api/app/v1/my/attendance-records`(P2-6) | **已有 app/v1 对等,未来 deprecate 候选**;**必须先补 characterization tests**(沿 §7 P1-B);本阶段不删 |
+| 6 | `GET /api/v2/users/me/attendance-records` | Admin Legacy(已物理迁出至独立 [`attendances-me-records-legacy.controller.ts`](../src/modules/attendances/controllers/attendances-me-records-legacy.controller.ts);P1-C step 4 已拆,PR #236) | ✅ `GET /api/app/v1/my/attendance-records`(P2-6) | **已有 app/v1 对等,未来 deprecate 候选**;characterization tests 已落地(沿 §7 P1-B);本阶段不删 |
 | 7 | `GET /api/v2/rbac/me/permissions` | Ops(method-level Mobile) | ⚠️ **不等价**:`/api/app/v1/me/capabilities` 返 product-level capability,不返 raw RBAC permission code(沿 D-5.3 故意) | **必须保留**;PC 管理后台还要靠它显示按钮可见性;**不 deprecate** |
 | 8 | `GET /api/v2/attachments/me/uploaded` | Admin Legacy(method-level Mobile) | ❌ 无 `/api/app/v1/my/attachments` 对应端点 | **保留**;未来可单独立项新建 `/api/app/v1/my/attachments` 与现 endpoint 并存;本阶段不删 |
 
@@ -150,16 +150,16 @@
 检测点:HTTP status / response shape / role guard / throttler / audit log 字段
 **不改任何 controller / service / DTO 行为**;仅添加 spec。
 
-**当前状态(2026-05-23 回填)**:characterization tests 已经覆盖 attendances / activities / activity-registrations / attachments 4 个 god-service(沿 #196 / #199 / #202 / #203 系列 PR 合入;详 [`docs/current-state.md §1`](current-state.md) 与 [`architecture-boundary.md §5`](architecture-boundary.md));attendances controller / service 拆分的硬前置已满足。剩余 §5 项 1 / 4 / 5 端点的额外 characterization spec 可按需补,**不作为本节策略变更**。
+**当前状态(2026-05-26 回填)**:characterization tests 已经覆盖 attendances / activities / activity-registrations / attachments 4 个 god-service(沿 #196 / #199 / #202 / #203 系列 PR 合入;详 [`docs/current-state.md §1`](current-state.md) 与 [`architecture-boundary.md §5`](architecture-boundary.md));attendances controller 物理拆分硬前置已满足且 P1-C step 4 已落地(PR #236,merge commit `bfb93b9`);attendances service 拆分硬前置同样已满足,但 service 行为本身仍需单独立项。剩余 §5 项 1 / 4 / 5 端点的额外 characterization spec 可按需补,**不作为本节策略变更**。
 
 ### P1-C:Mixed Controller physical split(逐 PR 串行)
 
-拆分顺序(从低风险到高风险);截至 2026-05-23 回填,step 1/2/3 已完成,step 4 仍未启动,step 5/6 仍按 P1-A 暂不拆:
+拆分顺序(从低风险到高风险);截至 2026-05-26 回填,step 1/2/3/4 已完成,step 5/6 仍按 P1-A 暂不拆:
 
 1. ✅ **P1-C step 1 已完成**:[`src/modules/users/users.controller.ts`](../src/modules/users/users.controller.ts) — 3 个 `/me*` 方法物理迁出至 [`users-me-legacy.controller.ts`](../src/modules/users/controllers/users-me-legacy.controller.ts);`users.service.ts` 544 LOC,风险可控;endpoint zero drift
 2. ✅ **P1-C step 2 已完成**:[`src/modules/attachments/attachments.controller.ts`](../src/modules/attachments/attachments.controller.ts) — `me/uploaded` 单方法迁出至 [`attachments-me-legacy.controller.ts`](../src/modules/attachments/controllers/attachments-me-legacy.controller.ts);endpoint zero drift
 3. ✅ **P1-C step 3 已完成**:[`src/modules/activity-registrations/activity-registrations.controller.ts`](../src/modules/activity-registrations/activity-registrations.controller.ts) — 同文件 Mobile class 迁出至 [`activity-registrations-me-legacy.controller.ts`](../src/modules/activity-registrations/controllers/activity-registrations-me-legacy.controller.ts);endpoint zero drift
-4. **P1-C 第四步(未启动)**:[`src/modules/attendances/attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts) — 同文件 3 controller 拆 Mobile class;characterization tests 已就绪(沿 P1-B 当前状态);[`attendances.service.ts`](../src/modules/attendances/attendances.service.ts) 1157 LOC 拆 service 行为本身仍需单独立项
+4. ✅ **P1-C step 4 已完成**(PR #236,merge commit `bfb93b9`):[`src/modules/attendances/attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts) — 原同文件 Mobile class `AttendanceRecordsMeController` 已迁出至 [`attendances-me-records-legacy.controller.ts`](../src/modules/attendances/controllers/attendances-me-records-legacy.controller.ts);主 controller 仅剩 2 个 Admin class;path / method / tag / roles / DTO / service call / operationId 全部 zero drift,OpenAPI snapshot zero drift;[`attendances.service.ts`](../src/modules/attendances/attendances.service.ts) 1157 LOC 拆 service 行为本身仍需单独立项
 5. **暂不拆**:[`src/modules/permissions/rbac.controller.ts`](../src/modules/permissions/rbac.controller.ts) — `me/permissions` 语义独特(双端共用),拆分性价比低
 6. **暂不拆**:[`src/modules/dictionaries/dictionaries.controller.ts`](../src/modules/dictionaries/dictionaries.controller.ts) — 同 surface 双 class,风险低,拆分性价比低
 
@@ -186,7 +186,7 @@
 - ❌ **不启动 Phase 1B path alias**(沿 §7 P1-D)
 - ❌ **不引入 repository 抽象层**
 - ❌ **不拆 god-service 业务逻辑**([`attendances.service.ts`](../src/modules/attendances/attendances.service.ts) 1157 LOC / [`attachments.service.ts`](../src/modules/attachments/attachments.service.ts) 826 LOC / [`activity-registrations.service.ts`](../src/modules/activity-registrations/activity-registrations.service.ts) 750 LOC / [`activities.service.ts`](../src/modules/activities/activities.service.ts) 607 LOC 行为零变更;LOC 数为 2026-05-23 实测,已计入 state-machine + audit-recorder 抽离后的余量)
-- ❌ **不在未补 characterization tests 前拆 [`attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts)**(沿 §7 P1-B 硬前置)
+- ❌ **P1-C step 4 已完成(PR #236)后不得顺手 deprecate `/api/v2/users/me/attendance-records` / 改 [`attendances.service.ts`](../src/modules/attendances/attendances.service.ts) / 改 DTO / 改 OpenAPI snapshot / 启动 Phase 1B alias**(沿 §7 P1-C 项 4 / §7 P1-D / §6 项 6;若需推进必须单独立项)
 - ❌ **不改 OpenAPI snapshot / contract 测试期望值**(P1-C 拆分必须保证 snapshot zero drift)
 - ❌ **不改任何 audit log 事件命名 / 字段**
 
