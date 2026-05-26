@@ -30,7 +30,8 @@
     "agent:preflight": "bash scripts/agent-preflight.sh",
     "agent:check:quick": "pnpm lint && pnpm typecheck && pnpm test",
     "agent:check:api": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:contract",
-    "agent:check:full": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:contract && pnpm test:e2e"
+    "agent:check:full": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:contract && pnpm test:e2e",
+    "docs:codemap:check": "tsx scripts/check-codemap.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
