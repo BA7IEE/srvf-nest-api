@@ -19,7 +19,6 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   ActivityIdParamDto,
   ApproveAttendanceSheetDto,
-  AttendanceRecordResponseDto,
   AttendanceSheetListItemDto,
   AttendanceSheetResponseDto,
   AttendanceSheetReviewDetailDto,
@@ -27,15 +26,18 @@ import {
   FinalApproveAttendanceSheetDto,
   FinalRejectAttendanceSheetDto,
   ListAttendanceSheetsQueryDto,
-  MyAttendanceRecordsQueryDto,
   RejectAttendanceSheetDto,
   UpdateAttendanceSheetDto,
 } from './attendances.dto';
 import { AttendancesService } from './attendances.service';
 
 // V2 批次 6 PR #6 共享 helper:从 @Req() 构造 AuditMeta(D6 v1.1 §11.2 / D8 拍板;
-// 不引入 cls-rs / AsyncLocalStorage)。本模块有 3 个 controller,提到模块级函数以避免
-// 重复定义(沿 PR #5 activity-registrations 范式)。
+// 不引入 cls-rs / AsyncLocalStorage)。
+//
+// P1-C step 4(2026-05-26):Mobile class `AttendanceRecordsMeController` 已物理拆出到
+// `controllers/attendances-me-records-legacy.controller.ts`(该端点为纯读路径,不引用
+// buildAuditMeta;沿 "物理拆分零跨文件耦合" 原则,不跨文件共享 audit helper)。本文件
+// 保留此模块级函数供 Admin 两 class 使用(共 6 处调用)。
 function buildAuditMeta(req: Request): AuditMeta {
   return {
     requestId: req.id as string,
@@ -44,20 +46,24 @@ function buildAuditMeta(req: Request): AuditMeta {
   };
 }
 
-// V2 第一阶段批次 3B attendances controllers(9 路由)。
+// V2 第一阶段批次 3B attendances admin controllers(8 路由)。
 //
-// 三组路径前缀:
+// 两组路径前缀:
 //   1. /v2/activities/:activityId/attendance-sheets(提交 + 列表;2 路由)
-//   2. /v2/attendance-sheets/:id(详情 / review-detail / edit / delete / approve / reject;6 路由)
-//   3. /v2/users/me/attendance-records(USER 自己的考勤;1 路由)
+//   2. /v2/attendance-sheets/:id(详情 / review-detail / edit / delete / approve / reject /
+//      final-approve / final-reject;6 路由)
 //
 // 路由声明顺序(NestJS 字面段优先于 :id 占位段):
-//   shet controller:list/create / detail / review-detail(字面)/ edit / softDelete / approve / reject
-//   me controller:GET attendance-records
+//   sheet controller:list / create / review-detail(字面)/ detail / edit / softDelete /
+//   approve / reject / final-approve / final-reject
+//
+// P1-C step 4(2026-05-26):队员端 1 路由(`GET /v2/users/me/attendance-records`)已物理
+// 迁出到 `controllers/attendances-me-records-legacy.controller.ts`;endpoint path / DTO /
+// service / Guard / RBAC / Swagger Tag 全部 zero drift(沿 docs/api-surface-policy.md §5 项
+// 2 + §6 项 6 + §7 P1-C step 4 + §8 P1 禁止事项)。
 //
 // 权限策略(沿决议表 v1.0):
 // - 全部管理端 8 路由:ADMIN / SUPER_ADMIN(D16 兜底业务角色)
-// - 队员端 1 路由:USER + ADMIN + SUPER_ADMIN(自己看自己的 approved records)
 
 // ============ 管理端 Controller(挂 /v2/activities/:activityId/attendance-sheets)============
 
@@ -315,34 +321,5 @@ export class AttendanceSheetsResourceController {
     @Req() req: Request,
   ): Promise<AttendanceSheetResponseDto> {
     return this.service.finalReject(params.id, dto, currentUser, buildAuditMeta(req));
-  }
-}
-
-// ============ 队员端 Controller(/v2/users/me/attendance-records)============
-
-@ApiTags('Mobile - Attendance')
-@ApiBearerAuth()
-@Controller('v2/users/me/attendance-records')
-export class AttendanceRecordsMeController {
-  constructor(private readonly service: AttendancesService) {}
-
-  @Get()
-  @Roles(Role.USER, Role.ADMIN, Role.SUPER_ADMIN)
-  @ApiOperation({
-    summary:
-      '我的考勤记录(仅 approved Sheet 内 records;Q-A14 / R29 / R33;分页 + 可选 activityId 过滤)',
-  })
-  @ApiWrappedPageResponse(AttendanceRecordResponseDto)
-  @ApiBizErrorResponse(
-    BizCode.BAD_REQUEST,
-    BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
-    BizCode.MEMBER_NOT_FOUND,
-  )
-  listMyRecords(
-    @Query() query: MyAttendanceRecordsQueryDto,
-    @CurrentUser() currentUser: CurrentUserPayload,
-  ): Promise<PageResultDto<AttendanceRecordResponseDto>> {
-    return this.service.listMyRecords(query, currentUser);
   }
 }

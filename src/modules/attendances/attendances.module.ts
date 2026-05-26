@@ -5,7 +5,6 @@ import { UsersModule } from '../users/users.module';
 import { AppMyAttendanceRecordsService } from './app-my-attendance-records.service';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import {
-  AttendanceRecordsMeController,
   AttendanceSheetsCollectionController,
   AttendanceSheetsResourceController,
 } from './attendances.controller';
@@ -14,6 +13,7 @@ import { AttendancesService } from './attendances.service';
 import { ContributionCalculator } from './contribution-calculator';
 import { TimeOverlapPolicy } from './time-overlap-policy';
 import { AppMyAttendanceRecordsController } from './controllers/app-my-attendance-records.controller';
+import { AttendanceRecordsMeController } from './controllers/attendances-me-records-legacy.controller';
 
 // V2 批次 6 PR #6(D6 v1.1 §8 / 第二波最后一批):导入 AuditLogsModule 以注入 AuditLogsService,
 // attendances 8 处写操作(submit / edit × 2 / softDelete / approve / reject / finalApprove / finalReject)
