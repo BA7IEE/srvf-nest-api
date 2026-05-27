@@ -11,15 +11,15 @@
 
 | 路径 | 体量 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
 |---|---|---|---|---|
-| `activities/` | L (2393L) | 活动主资源,4 态状态机(`activity-state-machine.ts`) | service 607L 偏厚;participation 上下文核心 | [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
-| `activity-registrations/` | L (2354L) | 活动报名,4 态 + partial unique + CSV export | service 750L;Mixed Controller P1-C step 3 已拆完 | [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
+| `activities/` | L (2393L) | 活动主资源,4 态状态机(`activity-state-machine.ts`) | service 607L 偏厚;participation 上下文核心 | [`CLAUDE.md`](src/modules/activities/CLAUDE.md) · [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
+| `activity-registrations/` | L (2354L) | 活动报名,4 态 + partial unique + CSV export | service 750L;Mixed Controller P1-C step 3 已拆完 | [`CLAUDE.md`](src/modules/activity-registrations/CLAUDE.md) · [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
 | `ai/` | S (placeholder) | LLM / 向量占位 | **本期不实现**;README 占位 | [`AGENTS.md §1 C`](AGENTS.md) |
 | `attachment-configs/` | L (2175L) | 附件配置三表(type / mime / size) | **不合表、不抽 facade、override-with-default** | [`docs/attachment-config-boundary.md`](docs/attachment-config-boundary.md) |
 | `attachments/` | ⚠G (service 826L) | 多态附件主模块 + RBAC 业务面首批接入 | accessUrl / signed URL 永不返回;L3 字段隔离 | [`CLAUDE.md`](src/modules/attachments/CLAUDE.md) · [`docs/attachment-config-boundary.md`](docs/attachment-config-boundary.md) |
 | `attendances/` | ⚠G (service 1157L) | 考勤主表 5 态(含终审)+ contribution 计算 | **同文件 3 controller Mixed 未拆 (P1-C 第四步)**;god-service 不主动拆 | [`CLAUDE.md`](src/modules/attendances/CLAUDE.md) · [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
 | `audit-logs/` | M (594L) | 写入即不可改不可删(A-1 红线) | 各业务写路径已全接入 `AuditLogEvent` | [`AGENTS.md §9`](AGENTS.md) |
-| `auth/` | M (787L) | 登录 / refresh / logout / logout-all | **不引入 `LocalStrategy`**;`username+password` 在 service 内手写 | [`AGENTS.md §1 永久铁律`](AGENTS.md) · [`docs/security.md`](docs/security.md) |
-| `certificates/` | M (1410L) | 证书 N:1 + 4 态闭集 + verify/reject | **不**属 participation 上下文(独立 member-qualifications) | [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md)(明确排除) |
+| `auth/` | M (787L) | 登录 / refresh / logout / logout-all | **不引入 `LocalStrategy`**;`username+password` 在 service 内手写 | [`CLAUDE.md`](src/modules/auth/CLAUDE.md) · [`AGENTS.md §1 永久铁律`](AGENTS.md) · [`docs/security.md`](docs/security.md) |
+| `certificates/` | M (1410L) | 证书 N:1 + 4 态闭集 + verify/reject | service 556L (large-service watch);**不**属 participation 上下文(独立 member-qualifications) | [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md)(明确排除) |
 | `contribution-rules/` | M (914L) | D14 预填规则 | **无 CRUD 流水表** | [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
 | `dictionaries/` | M (968L) | 字典双表 + 父子树 | 同 surface 双 controller(**非 surface Mixed**) | [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
 | `emergency-contacts/` | S (571L) | N:1 紧急联系人 | 子资源 | — |
@@ -28,10 +28,10 @@
 | `member-profiles/` | M (1258L) | 1:1 子资源,含敏感字段(身份证默认掩码后 4 位) | **L3 字段不外暴**;白名单严格 | [`docs/security.md`](docs/security.md) |
 | `members/` | S (501L) | 全局 `memberNo` **不复用** | memberNo 唯一性铁律 | [`docs/srvf-foundation-baseline.md`](docs/srvf-foundation-baseline.md) |
 | `organizations/` | M (654L) | 组织树 | 树形结构 | — |
-| `permissions/` | L (2213L) | RBAC 4 表 + `RbacService.can()` + `RbacCacheService` | `rbac.*` 14 条权限点;**`rbac/me/permissions` 方法级 Mixed 暂不拆 (P1-A)** | [`AGENTS.md §8 / §13`](AGENTS.md) · [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
-| `users/` | L (1934L) | 用户 CRUD + `/me*` + 改密 + refresh 联动撤销 | Mixed Controller P1-C step 1 已拆完;P0-D / P0-E 全套铁律 | [`AGENTS.md §9`](AGENTS.md) · [`docs/security.md`](docs/security.md) |
+| `permissions/` | L (2213L) | RBAC 4 表 + `RbacService.can()` + `RbacCacheService` | `rbac.*` 14 条权限点;**`rbac/me/permissions` 方法级 Mixed 暂不拆 (P1-A)** | [`CLAUDE.md`](src/modules/permissions/CLAUDE.md) · [`AGENTS.md §8 / §13`](AGENTS.md) · [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
+| `users/` | L (1934L) | 用户 CRUD + `/me*` + 改密 + refresh 联动撤销 | service 544L (large-service watch);Mixed Controller P1-C step 1 已拆完;P0-D / P0-E 全套铁律 | [`AGENTS.md §9`](AGENTS.md) · [`docs/security.md`](docs/security.md) |
 
-> `activities` / `activity-registrations` 已补 module-local CLAUDE.md;后续高风险模块可按需继续补充。
+> 已存在的 module/common-local CLAUDE.md 均应在本表行内引用,避免 AI 导航漂移(可由 `pnpm docs:codemap:check` 检出)。
 
 ---
 
@@ -48,7 +48,7 @@
 | `guards/` | S (181L) | `JwtAuthGuard` / `RolesGuard` | Guard `@Roles(...)` + Service `rbac.can()` 双轨 |
 | `interceptors/` | S (40L) | 统一返回包装等 | — |
 | `prisma/` | S (22L) | PrismaService 注入 | **不**使用全局软删中间件 / client extension |
-| `storage/` | L (1720L) | LocalStorageProvider + CosStorageProvider + 动态 Router + AES-256-GCM | 本期承载完整 module + controller(超出"common"原始语义);长期可迁 `src/modules/storage/`,**本期不动** | [`docs/current-state.md §4 P3`](docs/current-state.md) |
+| `storage/` | L (1720L) | LocalStorageProvider + CosStorageProvider + 动态 Router + AES-256-GCM | 本期承载完整 module + controller(超出"common"原始语义);长期可迁 `src/modules/storage/`,**本期不动** | [`CLAUDE.md`](src/common/storage/CLAUDE.md) · [`docs/current-state.md §4 P3`](docs/current-state.md) |
 
 ---
 
