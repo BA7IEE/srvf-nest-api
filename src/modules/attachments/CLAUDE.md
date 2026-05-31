@@ -6,7 +6,7 @@
 
 - `attachments.service.ts` 是 **god-service(826 行)**;`attachment-audit-recorder.ts` / `attachment-validation.ts` / `mime-to-ext.ts` 已抽离。
 - 多态附件主模块;`@unique key` 已加。
-- **业务级 `rbac.can()` 接入的首批(且目前唯一)模块**。
+- **首个业务模块接入 `rbac.can()`**(管理面 rbac / config / users / audit-logs 已于 P0-F / v0.15.0 收紧;业务面除本模块外细粒度 RBAC 仍归 Slow-4;接入边界以 [`/docs/current-state.md`](../../../docs/current-state.md) §3 / §4 为准)。
 - 配置三表在独立模块 `attachment-configs/`:`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig`。
 
 ## 不要做(踩雷区)
