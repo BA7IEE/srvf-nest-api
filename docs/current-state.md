@@ -165,6 +165,15 @@
 - [ ] 本次任务是否涉及 **D 档**(schema / migration / 权限 / 安全 / 存储 / audit / 不可逆变更);若是,先按 [`docs/process.md §4`](process.md) 降速
 - [ ] 本次任务是否需要用户拍板(C / D / E 档);若是,先回到对话等用户确认,**不动代码**
 
+> **fresh worktree 前置**(新建 worktree / 新克隆后,首次运行任何 `typecheck` / `lint` / `test` 之前必做):
+>
+> ```bash
+> pnpm install --frozen-lockfile   # worktree 不共享 node_modules,需各自安装依赖
+> pnpm prisma generate             # 生成 Prisma Client
+> ```
+>
+> 未生成 Prisma Client 时,`pnpm typecheck` 会报大量 `@prisma/client has no exported member 'Role'` / `'UserStatus'` 之类**假错误**——这不是代码错误,而是环境准备不足。先跑上面两条,再判断红绿。
+
 详细流程见 [`docs/process.md §2`](process.md)。
 
 ---
