@@ -22,11 +22,13 @@ import { RbacCacheService } from './rbac-cache.service';
 // - checkOwnership(user, resource):.self 路径 ownership 判定(沿 D7 §8.3 字段映射)
 // - getMyPermissions(user) → MyPermissionsResponseDto:GET /me/permissions 入口
 //
-// **本 PR 不做**(沿用户拍板):
-// - 不实现 reload 接口(留 PR #7;`POST /api/v2/rbac/reload`)
-// - 不实现 `GET /api/v2/users/:userId/permissions`(管理员查他人;非 D7 §5.1 端点)
-// - 不接入 dept-chief / dept-deputy 层级(seed 真实名留 PR #8)
-// - 不在任何业务模块(14 个 RBAC CRUD + V2 79 接口)上接 `rbac.can()`(沿 F9 + PR 边界)
+// 历史阶段边界(PR #6 实装时的"本 PR 不做";部分已被后续 PR 收口,勿据以判断当前事实):
+// - reload 接口:已于 PR #7 + P0-F 落地(`POST /api/v2/rbac/reload`,Service 层 rbac.can())
+// - 业务模块接入 `rbac.can()`:已于 P0-F(v0.15.0)完成,不再限于 attachments
+// 仍未做(留后续 PR):
+// - `GET /api/v2/users/:userId/permissions`(管理员查他人;非 D7 §5.1 端点)
+// - dept-chief / dept-deputy 层级真实名 seed(PR #8 仅种 ops-admin)
+// 当前事实以 docs/current-state.md 与本目录 CLAUDE.md 为准。
 //
 // **判权优先级**(沿 D7 v1.1 §7.1):
 //   1. SUPER_ADMIN 短路(`user.role === SUPER_ADMIN` → 自动通过)

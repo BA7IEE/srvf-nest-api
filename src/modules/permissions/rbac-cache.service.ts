@@ -12,11 +12,10 @@ import { PrismaService } from '../../database/prisma.service';
 // - **不**接 reload 接口(留 PR #7)
 // - **不**引入新依赖(node-cache / lru-cache 等;沿任务边界)
 //
-// 当前阶段:
-// - get / set 接口已定义但**实际不被任何上层调用**(RbacService.can() 未实施)
-// - invalidate 接口由 RolePermissionsService 在授权/撤权后调用
-// - cache state 实际为空(因为没有 set);invalidate 调用是 no-op,但代码路径已串联,
-//   PR #6 实施 rbac.can() 时无需返工调用链
+// 当前阶段(PR #6 后;上方"本 PR 范围"为骨架阶段历史记录):
+// - get / set 已被 RbacService.can() 调用(miss 查 DB 后 set;见 rbac.service.ts)
+// - invalidate 由 RolePermissionsService / UserRolesService / rbac reload 在授权变更后调用
+// - 当前事实以本目录 CLAUDE.md 与 docs/current-state.md 为准
 //
 // **TTL**(PR #6 更新,2026-05-14):从 `RBAC_CACHE_TTL_SECONDS` env 读
 // (沿 baseline §7 配置归属归 `src/config/app.config.ts` / D6 v1.0 默认 1800 秒)。

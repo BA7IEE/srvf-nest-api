@@ -6,6 +6,8 @@
 
 ### Docs
 
+- **注释 true-up:RBAC 模块历史注释对齐 `docs/current-state.md`**(B 档;沿 [`docs/process.md §3` B 档](docs/process.md)):修正 5 文件 6 处滞后注释——`src/app.module.ts`(RBAC 业务判权"仅 attachments 接入" → P0-F 后已扩展管理面 rbac / config / users / audit-logs)/ `src/modules/permissions/permissions.module.ts`(14 RBAC CRUD 接入 + seed 标"仍未做" → 已于 P0-F / PR #8 完成,仅 ADMIN 内置角色 Slow-3 未做;export 注释"本期 AttachmentsModule" → 已扩展多模块)/ `rbac.service.ts`(PR #6"本 PR 不做"reload + 业务模块接入 → 已收口)/ `rbac-cache.service.ts`("get/set 不被任何上层调用 / cache 为空 / invalidate no-op" → 已被 `can()` 实际调用)/ `rbac.dto.ts`(reload"不接 `rbac.can()`" → P0-F PR-1 已迁移 `rbac.can('rbac.config.reload')`)
+  - **改写一律指针式**:保留历史叙事,只中和与现状冲突的"现在时陈述",易变枚举统一指向 `docs/current-state.md` + 模块 `CLAUDE.md`;**零行为改动**(不动 Guard / RbacService / seed / export / 测试);`pnpm lint` + `pnpm typecheck` 绿
 - **docs 治理 PR-6**:`ARCHITECTURE.md` 顶层架构入口重写(原 1547 行 → 294 行),设计期蓝图按章节归档至 `docs/archive/**`,active 引用同步刷新(沿 [`docs/process.md §3` A 档](docs/process.md) + [`docs/srvf-foundation-baseline.md §13.3` 纯文档变更](docs/srvf-foundation-baseline.md))
   - **归档新增 3 个文件**:`docs/archive/legacy/architecture-v1-blueprint.md`(原 §1-§10 + 附录,verbatim;§9 升级路径表副本作历史记录,active 锚点已迁新版 §9)/ `docs/archive/legacy/architecture-v1-1-hardening.md`(原 §11.1-§11.7,verbatim;active 摘要锚点已迁新版 §11)/ `docs/archive/plans/architecture-v2-first-stage-blueprint.md`(原 §12.1-§12.11,verbatim;V2 第一阶段开发期硬约束历史快照)
   - **`ARCHITECTURE.md` 重写为顶层入口**:保留 §9 升级路径表 verbatim(active 单一权威源)+ §11 V1.1 工程加固摘要(active 锚点);新增文档权威源地图(§0.1 / §13)+ 历史架构归档索引(§14)+ 本文不维护事项声明(§15);删除已被 AGENTS.md / baseline / current-state / api-surface-policy / architecture-boundary 承接的重复铁律细节
