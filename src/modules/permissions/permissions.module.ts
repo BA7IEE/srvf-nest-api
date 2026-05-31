@@ -31,9 +31,12 @@ import { UserRolesService } from './user-roles.service';
 //   all / user(+userId) / role(+roleId);入口 @Roles(SUPER_ADMIN, ADMIN),
 //   rbac.can() 接入留后续 PR)
 //
+// RBAC 业务判权 / seed 接入进度(上方逐 PR 注释为历史记录,勿据以判断当前事实):
+// - 14 个 RBAC CRUD 接 `rbac.can()`:**已于 P0-F(v0.15.0)完成**
+// - 14 条 rbac.* permission seed + `ops-admin` 角色 + bootstrap:**已于 PR #8 完成**
 // 仍未做(留后续 PR):
-// - 14 个 RBAC CRUD 接 `rbac.can()`(沿用户拍板,留 PR #8 seed 后另起 PR)
-// - seed migration + bootstrap + ADMIN 内置角色配 USER 级权限(留 PR #8)
+// - ADMIN 内置角色配 USER 级权限(Slow-3;等业务方拍板)
+// 当前事实以 docs/current-state.md 与本目录 CLAUDE.md 为准。
 //
 // 本模块归口设计(沿 dictionaries 单模块多 controller 范式):
 // - 同一 PermissionsModule 同时管理 Permission + RbacRole + RolePermission + UserRole + RbacService
@@ -58,8 +61,8 @@ import { UserRolesService } from './user-roles.service';
     RbacCacheService,
     RbacService,
   ],
-  // V2.x C-7 attachments 实施 PR #6b(2026-05-15):export RbacService 供业务模块
-  // (本期:AttachmentsModule)接入 rbac.can();沿 D7 v1.1 §8 / D7-attachments §6.2。
+  // export RbacService 供业务模块在 Service 层接入 rbac.can()
+  // (D7 v1.1 §8 / D7-attachments §6.2;首个消费方 AttachmentsModule,P0-F 后已扩展到管理面等多模块)。
   exports: [RbacService],
 })
 export class PermissionsModule {}

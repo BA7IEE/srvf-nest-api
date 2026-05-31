@@ -51,8 +51,8 @@ export class MyPermissionsResponseDto {
 //     scope='user' 必须有 userId、scope='role' 必须有 roleId,否则 BAD_REQUEST(40000)
 // - userId / roleId 不存在 → Service 静默成功(reload 是"清缓存"语义,与 v1 §10
 //     信息泄漏防御一致)
-// - 沿用户拍板:本 PR 权限入口为 `@Roles(SUPER_ADMIN, ADMIN)`,**不接 `rbac.can()`**;
-//   D7 §5.4 中标的 `rbac.config.reload` 权限点,留 PR #8 seed + 后续 PR 接业务判权时一并接入。
+// - reload 入口判权已于 P0-F PR-1(2026-05-18)迁移到 Service 层 `rbac.can('rbac.config.reload')`;
+//   早期为 `@Roles(SUPER_ADMIN, ADMIN)` 入口 Guard;当前以 docs/current-state.md 为准。
 
 export const RELOAD_RBAC_SCOPES = ['all', 'user', 'role'] as const;
 export type ReloadRbacScope = (typeof RELOAD_RBAC_SCOPES)[number];

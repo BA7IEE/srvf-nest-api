@@ -93,9 +93,10 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   emergency-contacts / certificates 写操作已迁移至 AuditLogsService。
     AuditLogsModule,
     // V2.x C-6 RBAC:permissions / RbacRole / RolePermission / UserRole / RbacService 全套 CRUD
-    //   (沿 D7 v1.1 §4.2 / §5.1;path /api/v2/permissions、/roles、/users/:id/roles 等;300xx 段位)。
-    //   沿 D12 永不切换 + F9:**入口 Guard 仍是 @Roles(Role.SUPER_ADMIN, Role.ADMIN)**,
-    //   RBAC 业务判权目前仅在 attachments 接入(沿 F3 v1.0);v1 14 + V2 79 接口 zero drift。
+    //   (沿 D7 v1.1 §4.2 / §5.1;path /api/v2/permissions、/roles 等;300xx 段位)。
+    //   判权双轨:入口 Guard @Roles + Service 层 rbac.can()。
+    //   P0-F(v0.15.0)后 rbac.can() 已从 attachments 扩展到管理面(rbac / config / users / audit-logs);
+    //   当前接入边界以 docs/current-state.md 与 src/modules/permissions/CLAUDE.md 为准。
     PermissionsModule,
     // V2.x C-7 attachments:attachment-configs 三子模块 CRUD
     //   (D7 v1.0 §4.2 / §16 Q1-Q7;path /api/v2/attachment-{type,mime,size-limit}-configs;130xx 段位)。
