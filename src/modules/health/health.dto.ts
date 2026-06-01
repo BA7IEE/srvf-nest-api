@@ -4,9 +4,9 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 //
 // 三端点共用此 DTO,经 ResponseInterceptor 包装后响应外层始终是
 // `{ code: 0, message: 'ok', data: HealthResponseDto }`:
-// - GET /api/health        → data: { status: 'ok' }            (向后兼容,等同 /live)
-// - GET /api/health/live   → data: { status: 'ok' }            (K8s liveness)
-// - GET /api/health/ready  → data: { status: 'ok', db: 'up' }  (K8s readiness 成功路径)
+// - GET /api/system/v1/health        → data: { status: 'ok' }            (向后兼容,等同 /live)
+// - GET /api/system/v1/health/live   → data: { status: 'ok' }            (K8s liveness)
+// - GET /api/system/v1/health/ready  → data: { status: 'ok', db: 'up' }  (K8s readiness 成功路径)
 //
 // /ready 失败路径走 BizException(BizCode.INTERNAL_ERROR) → AllExceptionsFilter,
 // 响应体由 filter 直出 `{ code: 50000, message, data: null }`,**不会**包装本 DTO,
@@ -21,7 +21,7 @@ export class HealthResponseDto {
   status!: 'ok';
 
   @ApiPropertyOptional({
-    description: '数据库连通状态(仅 /api/health/ready 成功路径返回 up)',
+    description: '数据库连通状态(仅 /api/system/v1/health/ready 成功路径返回 up)',
     enum: ['up', 'down'],
     example: 'up',
   })

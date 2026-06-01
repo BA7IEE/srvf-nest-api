@@ -18,9 +18,9 @@ import { HealthResponseDto } from './health.dto';
 // 详见 ARCHITECTURE.md §6 + §11.4。
 //
 // 设计选择(15.5 与用户决策):
-// 1) /api/health 保留 v1 契约,实现等同 /live,不破坏 health.e2e-spec.ts
-// 2) /api/health/live 进程存活探针(K8s liveness),不查任何外部依赖
-// 3) /api/health/ready 就绪探针(K8s readiness),通过 @nestjs/terminus 的
+// 1) /api/system/v1/health 根端点,实现等同 /live(health.e2e-spec.ts 锁定)
+// 2) /api/system/v1/health/live 进程存活探针(K8s liveness),不查任何外部依赖
+// 3) /api/system/v1/health/ready 就绪探针(K8s readiness),通过 @nestjs/terminus 的
 //    PrismaHealthIndicator 探测 DB 连通(SELECT 1 等价)
 //    - 成功:返回 { status: 'ok', db: 'up' }
 //    - 失败:抛 BizException(BizCode.INTERNAL_ERROR) → AllExceptionsFilter
@@ -40,10 +40,9 @@ import { HealthResponseDto } from './health.dto';
 //   把成功结果重写成简洁的 HealthResponseDto,把失败统一转成 BizException,
 //   既保住 ResponseInterceptor 包装,也保住统一错误处理。
 @ApiTags('Public')
-// Route B Phase 1a(alias 双挂;沿 docs/api-surface-migration-plan.md §3):
-// 老 path 'health' 与新 path 'system/v1/health' 并存;两路径均不在 ResponseInterceptor
-// SKIP_PREFIXES,包装行为一致,零 drift;老 path 待 Phase 4 删除。
-@Controller(['health', 'system/v1/health'])
+// Route B Phase 4(2026-06-01;沿 docs/api-surface-migration-plan.md §6 Phase 4):
+// 老 path 'health' 已删除(无生产消费者,直接收口);canonical 单一前缀 'system/v1/health'。
+@Controller('system/v1/health')
 export class HealthController {
   constructor(
     private readonly health: HealthCheckService,
@@ -54,7 +53,7 @@ export class HealthController {
   @Public()
   @Get()
   @ApiOperation({
-    summary: '服务健康检查(向后兼容,实现等同 /api/health/live)',
+    summary: '服务健康检查(根端点,实现等同 /api/system/v1/health/live)',
   })
   @ApiWrappedOkResponse(HealthResponseDto)
   check(): HealthResponseDto {

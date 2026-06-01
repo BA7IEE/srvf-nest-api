@@ -17,7 +17,7 @@ import { SetMetadata } from '@nestjs/common';
 //   @Post('refresh')
 //   ...
 //
-// 仅打算用于 POST /api/auth/refresh。其他接口若未来要限流,应单独评估业务需求
+// 仅打算用于 POST /api/auth/v1/refresh。其他接口若未来要限流,应单独评估业务需求
 // (CLAUDE.md §17.9 禁止"接了 throttler 就顺手对所有接口加限流"),不要复用本装饰器。
 export const REFRESH_THROTTLE_KEY = 'refresh-throttle:enabled';
 

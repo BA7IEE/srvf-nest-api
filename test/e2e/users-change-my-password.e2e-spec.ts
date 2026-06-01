@@ -84,7 +84,7 @@ describe('本人自助改密 PUT /api/users/me/password', () => {
         .send({ oldPassword: TEST_PASSWORD, newPassword: NEW_PASSWORD });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'cmpoldfail1', password: TEST_PASSWORD });
 
       expectBizError(res, BizCode.LOGIN_FAILED);
@@ -100,7 +100,7 @@ describe('本人自助改密 PUT /api/users/me/password', () => {
         .send({ oldPassword: TEST_PASSWORD, newPassword: NEW_PASSWORD });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'cmpnewok1', password: NEW_PASSWORD });
 
       expect(res.status).toBe(200);
@@ -131,7 +131,7 @@ describe('本人自助改密 PUT /api/users/me/password', () => {
     it('改密前的 refresh token 不能再换 access → 10007', async () => {
       await createTestUser(app, { username: 'cmprefresh2' });
       const lb = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'cmprefresh2', password: TEST_PASSWORD });
       const refreshRaw = lb.body.data.refreshToken;
       const authHeader = `Bearer ${lb.body.data.accessToken}`;
@@ -142,7 +142,7 @@ describe('本人自助改密 PUT /api/users/me/password', () => {
         .send({ oldPassword: TEST_PASSWORD, newPassword: NEW_PASSWORD });
 
       const refreshRes = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: refreshRaw });
       expect(refreshRes.status).toBe(401);
       expect(refreshRes.body.code).toBe(10007);
@@ -282,7 +282,7 @@ describe('本人自助改密 PUT /api/users/me/password', () => {
       expect(res.body.data.role).toBe(Role.SUPER_ADMIN);
 
       const login = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'cmpsuper1', password: NEW_PASSWORD });
       expect(login.status).toBe(200);
       expect(typeof login.body.data.accessToken).toBe('string');
@@ -301,7 +301,7 @@ describe('本人自助改密 PUT /api/users/me/password', () => {
       expect(res.body.data.role).toBe(Role.ADMIN);
 
       const login = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'cmpadmin1', password: NEW_PASSWORD });
       expect(login.status).toBe(200);
       expect(typeof login.body.data.accessToken).toBe('string');

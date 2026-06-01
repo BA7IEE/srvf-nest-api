@@ -3787,7 +3787,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   "HealthResponseDto": {
     "properties": {
       "db": {
-        "description": "数据库连通状态(仅 /api/health/ready 成功路径返回 up)",
+        "description": "数据库连通状态(仅 /api/system/v1/health/ready 成功路径返回 up)",
         "enum": [
           "up",
           "down",
@@ -3848,7 +3848,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "refreshToken": {
-        "description": "refresh token(opaque random;不是 JWT);用于 POST /api/auth/refresh 换 access",
+        "description": "refresh token(opaque random;不是 JWT);用于 POST /api/auth/v1/refresh 换 access",
         "type": "string",
       },
       "tokenType": {
@@ -23572,518 +23572,9 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
-  "/api/auth/login": {
-    "post": {
-      "deprecated": true,
-      "operationId": "AuthController_login[0]",
-      "parameters": [],
-      "requestBody": {
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/LoginDto",
-            },
-          },
-        },
-        "required": true,
-      },
-      "responses": {
-        "200": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "业务码,0 表示成功",
-                    "example": 0,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "$ref": "#/components/schemas/LoginResponseDto",
-                  },
-                  "message": {
-                    "example": "ok",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "",
-        },
-        "400": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "40000: 请求参数错误",
-                    "enum": [
-                      40000,
-                    ],
-                    "example": 40000,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "example": null,
-                    "nullable": true,
-                    "type": "object",
-                  },
-                  "message": {
-                    "example": "请求参数错误",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "请求参数错误(code=40000)",
-        },
-        "401": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "10004: 账号或密码错误",
-                    "enum": [
-                      10004,
-                    ],
-                    "example": 10004,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "example": null,
-                    "nullable": true,
-                    "type": "object",
-                  },
-                  "message": {
-                    "example": "账号或密码错误",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "账号或密码错误(code=10004)",
-        },
-        "429": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "42900: 请求过于频繁，请稍后再试",
-                    "enum": [
-                      42900,
-                    ],
-                    "example": 42900,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "example": null,
-                    "nullable": true,
-                    "type": "object",
-                  },
-                  "message": {
-                    "example": "请求过于频繁，请稍后再试",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "请求过于频繁，请稍后再试(code=42900)",
-        },
-      },
-      "summary": "用户名 + 密码登录,返回 JWT + refresh token(family absolute expiration)",
-      "tags": [
-        "Auth",
-      ],
-    },
-  },
-  "/api/auth/logout": {
-    "post": {
-      "deprecated": true,
-      "operationId": "AuthController_logout[0]",
-      "parameters": [],
-      "requestBody": {
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/LogoutDto",
-            },
-          },
-        },
-        "required": true,
-      },
-      "responses": {
-        "200": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "业务码,0 表示成功",
-                    "example": 0,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "$ref": "#/components/schemas/LogoutAllResponseDto",
-                  },
-                  "message": {
-                    "example": "ok",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "",
-        },
-        "400": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "40000: 请求参数错误",
-                    "enum": [
-                      40000,
-                    ],
-                    "example": 40000,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "example": null,
-                    "nullable": true,
-                    "type": "object",
-                  },
-                  "message": {
-                    "example": "请求参数错误",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "请求参数错误(code=40000)",
-        },
-      },
-      "summary": "撤销当前 refresh token(幂等;不吊销 access)",
-      "tags": [
-        "Auth",
-      ],
-    },
-  },
-  "/api/auth/logout-all": {
-    "post": {
-      "deprecated": true,
-      "operationId": "AuthController_logoutAll[0]",
-      "parameters": [],
-      "responses": {
-        "200": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "业务码,0 表示成功",
-                    "example": 0,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "$ref": "#/components/schemas/LogoutAllResponseDto",
-                  },
-                  "message": {
-                    "example": "ok",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "",
-        },
-        "401": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "40100: 未登录或登录已失效",
-                    "enum": [
-                      40100,
-                    ],
-                    "example": 40100,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "example": null,
-                    "nullable": true,
-                    "type": "object",
-                  },
-                  "message": {
-                    "example": "未登录或登录已失效",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "未登录或登录已失效(code=40100)",
-        },
-        "429": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "42900: 请求过于频繁，请稍后再试",
-                    "enum": [
-                      42900,
-                    ],
-                    "example": 42900,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "example": null,
-                    "nullable": true,
-                    "type": "object",
-                  },
-                  "message": {
-                    "example": "请求过于频繁，请稍后再试",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "请求过于频繁，请稍后再试(code=42900)",
-        },
-      },
-      "security": [
-        {
-          "bearer": [],
-        },
-      ],
-      "summary": "撤销该用户全部未过期且未撤销的 refresh token(本人调;不吊销 access)",
-      "tags": [
-        "Auth",
-      ],
-    },
-  },
-  "/api/auth/refresh": {
-    "post": {
-      "deprecated": true,
-      "operationId": "AuthController_refresh[0]",
-      "parameters": [],
-      "requestBody": {
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/RefreshTokenDto",
-            },
-          },
-        },
-        "required": true,
-      },
-      "responses": {
-        "200": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "业务码,0 表示成功",
-                    "example": 0,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "$ref": "#/components/schemas/LoginResponseDto",
-                  },
-                  "message": {
-                    "example": "ok",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "",
-        },
-        "400": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "40000: 请求参数错误",
-                    "enum": [
-                      40000,
-                    ],
-                    "example": 40000,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "example": null,
-                    "nullable": true,
-                    "type": "object",
-                  },
-                  "message": {
-                    "example": "请求参数错误",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "请求参数错误(code=40000)",
-        },
-        "401": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "10007: refresh token 无效或已过期",
-                    "enum": [
-                      10007,
-                    ],
-                    "example": 10007,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "example": null,
-                    "nullable": true,
-                    "type": "object",
-                  },
-                  "message": {
-                    "example": "refresh token 无效或已过期",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "refresh token 无效或已过期(code=10007)",
-        },
-        "429": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "42900: 请求过于频繁，请稍后再试",
-                    "enum": [
-                      42900,
-                    ],
-                    "example": 42900,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "example": null,
-                    "nullable": true,
-                    "type": "object",
-                  },
-                  "message": {
-                    "example": "请求过于频繁，请稍后再试",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "请求过于频繁，请稍后再试(code=42900)",
-        },
-      },
-      "summary": "refresh access token(rotation always;family revoke;absolute expiration;返回新 access + 新 refresh)",
-      "tags": [
-        "Auth",
-      ],
-    },
-  },
   "/api/auth/v1/login": {
     "post": {
-      "operationId": "AuthController_login[1]",
+      "operationId": "AuthController_login",
       "parameters": [],
       "requestBody": {
         "content": {
@@ -24236,7 +23727,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
   },
   "/api/auth/v1/logout": {
     "post": {
-      "operationId": "AuthController_logout[1]",
+      "operationId": "AuthController_logout",
       "parameters": [],
       "requestBody": {
         "content": {
@@ -24321,7 +23812,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
   },
   "/api/auth/v1/logout-all": {
     "post": {
-      "operationId": "AuthController_logoutAll[1]",
+      "operationId": "AuthController_logoutAll",
       "parameters": [],
       "responses": {
         "200": {
@@ -24435,7 +23926,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
   },
   "/api/auth/v1/refresh": {
     "post": {
-      "operationId": "AuthController_refresh[1]",
+      "operationId": "AuthController_refresh",
       "parameters": [],
       "requestBody": {
         "content": {
@@ -24583,166 +24074,6 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "refresh access token(rotation always;family revoke;absolute expiration;返回新 access + 新 refresh)",
       "tags": [
         "Auth",
-      ],
-    },
-  },
-  "/api/health": {
-    "get": {
-      "deprecated": true,
-      "operationId": "HealthController_check[0]",
-      "parameters": [],
-      "responses": {
-        "200": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "业务码,0 表示成功",
-                    "example": 0,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "$ref": "#/components/schemas/HealthResponseDto",
-                  },
-                  "message": {
-                    "example": "ok",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "",
-        },
-      },
-      "summary": "服务健康检查(向后兼容,实现等同 /api/health/live)",
-      "tags": [
-        "Public",
-      ],
-    },
-  },
-  "/api/health/live": {
-    "get": {
-      "deprecated": true,
-      "operationId": "HealthController_live[0]",
-      "parameters": [],
-      "responses": {
-        "200": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "业务码,0 表示成功",
-                    "example": 0,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "$ref": "#/components/schemas/HealthResponseDto",
-                  },
-                  "message": {
-                    "example": "ok",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "",
-        },
-      },
-      "summary": "存活探针(K8s liveness)— 仅证明进程在跑,不查外部依赖",
-      "tags": [
-        "Public",
-      ],
-    },
-  },
-  "/api/health/ready": {
-    "get": {
-      "deprecated": true,
-      "operationId": "HealthController_ready[0]",
-      "parameters": [],
-      "responses": {
-        "200": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "业务码,0 表示成功",
-                    "example": 0,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "$ref": "#/components/schemas/HealthResponseDto",
-                  },
-                  "message": {
-                    "example": "ok",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "",
-        },
-        "500": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "properties": {
-                  "code": {
-                    "description": "50000: 服务器内部错误",
-                    "enum": [
-                      50000,
-                    ],
-                    "example": 50000,
-                    "type": "integer",
-                  },
-                  "data": {
-                    "example": null,
-                    "nullable": true,
-                    "type": "object",
-                  },
-                  "message": {
-                    "example": "服务器内部错误",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "data",
-                ],
-                "type": "object",
-              },
-            },
-          },
-          "description": "服务器内部错误(code=50000)",
-        },
-      },
-      "summary": "就绪探针(K8s readiness)— 含数据库连通检查;DB 不可用时 HTTP 500 + code 50000",
-      "tags": [
-        "Public",
       ],
     },
   },
@@ -32622,7 +31953,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
   },
   "/api/system/v1/health": {
     "get": {
-      "operationId": "HealthController_check[1]",
+      "operationId": "HealthController_check",
       "parameters": [],
       "responses": {
         "200": {
@@ -32655,7 +31986,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "description": "",
         },
       },
-      "summary": "服务健康检查(向后兼容,实现等同 /api/health/live)",
+      "summary": "服务健康检查(根端点,实现等同 /api/system/v1/health/live)",
       "tags": [
         "Public",
       ],
@@ -32663,7 +31994,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
   },
   "/api/system/v1/health/live": {
     "get": {
-      "operationId": "HealthController_live[1]",
+      "operationId": "HealthController_live",
       "parameters": [],
       "responses": {
         "200": {
@@ -32704,7 +32035,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
   },
   "/api/system/v1/health/ready": {
     "get": {
-      "operationId": "HealthController_ready[1]",
+      "operationId": "HealthController_ready",
       "parameters": [],
       "responses": {
         "200": {

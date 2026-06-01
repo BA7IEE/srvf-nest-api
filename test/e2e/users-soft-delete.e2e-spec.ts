@@ -94,7 +94,7 @@ describe('软删用户的副作用矩阵', () => {
 
   it('软删后用该 username + 正确密码登录 → LOGIN_FAILED(防账号枚举,与"用户不存在"响应一致)', async () => {
     const res = await request(httpServer(app))
-      .post('/api/auth/login')
+      .post('/api/auth/v1/login')
       .send({ username: 'sdghost1', password: TEST_PASSWORD });
 
     expectBizError(res, BizCode.LOGIN_FAILED);
@@ -108,7 +108,7 @@ describe('软删用户的副作用矩阵', () => {
       // 新建一个 user + login 拿 refresh,然后 SUPER_ADMIN DELETE
       const target = await createTestUser(app, { username: 'sdrefresh1' });
       await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'sdrefresh1', password: TEST_PASSWORD });
 
       const before = await prisma.refreshToken.findMany({

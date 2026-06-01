@@ -7,7 +7,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// V1.1 TASKS.md 15.5:GET /api/health/ready(K8s readiness probe)
+// V1.1 TASKS.md 15.5:GET /api/system/v1/health/ready(K8s readiness probe)
 //
 // 覆盖三条核心路径:
 //   1. 成功路径:DB 连通 → 200 + { status: 'ok', db: 'up' }
@@ -20,7 +20,7 @@ import { createTestApp } from '../setup/test-app';
 //
 // 失败路径用 jest.spyOn 把 PrismaHealthIndicator.pingCheck 临时换成抛错版,
 // 不实际断 DB 连接(避免污染其它 spec 与并行测试)。afterEach 还原。
-describe('GET /api/health/ready (K8s readiness)', () => {
+describe('GET /api/system/v1/health/ready (K8s readiness)', () => {
   let app: INestApplication;
   let prismaIndicator: PrismaHealthIndicator;
 
@@ -39,7 +39,7 @@ describe('GET /api/health/ready (K8s readiness)', () => {
   });
 
   it('DB 连通时返回 200 + wrapped { data: { status: "ok", db: "up" } }', async () => {
-    const res = await request(httpServer(app)).get('/api/health/ready');
+    const res = await request(httpServer(app)).get('/api/system/v1/health/ready');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -50,7 +50,7 @@ describe('GET /api/health/ready (K8s readiness)', () => {
   });
 
   it('成功路径:data 不暴露 terminus 原生 info / error / details', async () => {
-    const res = await request(httpServer(app)).get('/api/health/ready');
+    const res = await request(httpServer(app)).get('/api/system/v1/health/ready');
 
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ status: 'ok', db: 'up' });
@@ -65,7 +65,7 @@ describe('GET /api/health/ready (K8s readiness)', () => {
     // 被 controller 的 try/catch 接住,转抛 BizException(BizCode.INTERNAL_ERROR)。
     jest.spyOn(prismaIndicator, 'pingCheck').mockRejectedValue(new Error('simulated DB outage'));
 
-    const res = await request(httpServer(app)).get('/api/health/ready');
+    const res = await request(httpServer(app)).get('/api/system/v1/health/ready');
 
     // expectBizError 会同时断言 HTTP status === BizCode.httpStatus(500)
     // 与 body.code === BizCode.code(50000) 和 body.data === null。
@@ -73,7 +73,7 @@ describe('GET /api/health/ready (K8s readiness)', () => {
   });
 
   it('@Public 生效:即便客户端不带任何 Authorization 也能访问', async () => {
-    const res = await request(httpServer(app)).get('/api/health/ready');
+    const res = await request(httpServer(app)).get('/api/system/v1/health/ready');
 
     expect(res.status).toBe(200);
     expect(res.body.code).toBe(0);

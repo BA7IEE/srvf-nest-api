@@ -47,19 +47,9 @@ interface OpenApiDoc {
 const EXPECTED_ROUTES: ReadonlyArray<
   readonly [Lowercase<'get' | 'post' | 'put' | 'patch' | 'delete'>, string]
 > = [
-  ['post', '/api/auth/login'],
-  // P0-E PR-3(2026-05-18):refresh token / logout / logout-all 三新端点
-  ['post', '/api/auth/refresh'],
-  ['post', '/api/auth/logout'],
-  ['post', '/api/auth/logout-all'],
-
-  ['get', '/api/health'],
-  ['get', '/api/health/live'],
-  ['get', '/api/health/ready'],
-
-  // Route B Phase 1a alias(2026-06-01;沿 docs/api-surface-migration-plan.md §3 / §6 Phase 1):
-  // auth → auth/v1、health → system/v1/health 双挂;老 path 上方保留,新 path 在此登记。
-  // 老 path 待 Phase 4 删除时,本块与上方对应老 path 一并清理。
+  // Route B Phase 4(2026-06-01;沿 docs/api-surface-migration-plan.md §6 Phase 4):
+  // auth → auth/v1、health → system/v1/health 的老 path 已删除(无生产消费者,直接收口);
+  // 下列为 canonical 单一前缀。
   ['post', '/api/auth/v1/login'],
   ['post', '/api/auth/v1/refresh'],
   ['post', '/api/auth/v1/logout'],

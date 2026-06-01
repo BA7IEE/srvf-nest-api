@@ -41,7 +41,7 @@ describe('BizCode httpStatus ↔ HTTP status 一致性(抽样)', () => {
   });
 
   it('BAD_REQUEST:ValidationPipe 失败 → res.status === BizCode.BAD_REQUEST.httpStatus', async () => {
-    const res = await request(httpServer(app)).post('/api/auth/login').send({});
+    const res = await request(httpServer(app)).post('/api/auth/v1/login').send({});
 
     expect(res.status).toBe(BizCode.BAD_REQUEST.httpStatus);
     expect(res.body.code).toBe(BizCode.BAD_REQUEST.code);

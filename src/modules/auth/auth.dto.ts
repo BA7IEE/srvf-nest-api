@@ -57,16 +57,16 @@ export class LoginResponseDto {
 
   // P0-E PR-3:refresh token(opaque random 256bit base64url;不是 JWT)。
   // 客户端不应也不能解析其中信息;明文绝不入日志 / audit / OpenAPI 示例 / 测试快照。
-  // 前端调 POST /api/auth/refresh 用此 token 换取新的 access + refresh(rotation always)。
+  // 前端调 POST /api/auth/v1/refresh 用此 token 换取新的 access + refresh(rotation always)。
   @ApiProperty({
-    description: 'refresh token(opaque random;不是 JWT);用于 POST /api/auth/refresh 换 access',
+    description: 'refresh token(opaque random;不是 JWT);用于 POST /api/auth/v1/refresh 换 access',
   })
   refreshToken!: string;
 
   // P0-E PR-3:refresh token family absolute expiration 时刻
   // (ISO 8601 UTC 字符串;new Date(...).toISOString() 格式)。
   // rotation 后所有新 refresh token 继承同一个 refreshExpiresAt,不延长;
-  // 达到此时刻后必须重新登录(POST /api/auth/login);refresh 接口对已过期 family
+  // 达到此时刻后必须重新登录(POST /api/auth/v1/login);refresh 接口对已过期 family
   // 返 REFRESH_TOKEN_INVALID=10007。客户端无需信任本地时钟做 now + TTL 计算。
   @ApiProperty({
     description:
@@ -77,7 +77,7 @@ export class LoginResponseDto {
   refreshExpiresAt!: string;
 }
 
-// P0-E PR-3:POST /api/auth/refresh 入参(沿评审稿 §4.2;严格白名单 1 字段)。
+// P0-E PR-3:POST /api/auth/v1/refresh 入参(沿评审稿 §4.2;严格白名单 1 字段)。
 export class RefreshTokenDto {
   @ApiProperty({
     description: 'refresh token 明文(login / 上一次 refresh 接口响应里拿到的 data.refreshToken)',
@@ -87,7 +87,7 @@ export class RefreshTokenDto {
   refreshToken!: string;
 }
 
-// P0-E PR-3:POST /api/auth/logout 入参(沿评审稿 §4.3;严格白名单 1 字段)。
+// P0-E PR-3:POST /api/auth/v1/logout 入参(沿评审稿 §4.3;严格白名单 1 字段)。
 // 与 RefreshTokenDto 字段结构相同;独立类型用于 OpenAPI 区分 + 未来分化可能。
 export class LogoutDto {
   @ApiProperty({
@@ -98,7 +98,7 @@ export class LogoutDto {
   refreshToken!: string;
 }
 
-// P0-E PR-3:POST /api/auth/logout-all 响应 data(沿评审稿 §4.4)。
+// P0-E PR-3:POST /api/auth/v1/logout-all 响应 data(沿评审稿 §4.4)。
 export class LogoutAllResponseDto {
   @ApiProperty({
     description: '本次撤销的 refresh token 行数(未过期且未撤销的总数)',

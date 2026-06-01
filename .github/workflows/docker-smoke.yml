@@ -161,10 +161,10 @@ jobs:
             -e DATABASE_URL="$CONTAINER_DATABASE_URL" \
             u-nest-api-starter:smoke
 
-      - name: Wait for app /api/health/live
+      - name: Wait for app /api/system/v1/health/live
         run: |
           for i in $(seq 1 60); do
-            if curl -fsS "http://localhost:${APP_HOST_PORT}/api/health/live" >/dev/null 2>&1; then
+            if curl -fsS "http://localhost:${APP_HOST_PORT}/api/system/v1/health/live" >/dev/null 2>&1; then
               echo "App ready after ${i}s"
               exit 0
             fi
@@ -179,16 +179,16 @@ jobs:
           set -euo pipefail
           BASE="http://localhost:${APP_HOST_PORT}"
 
-          STATUS=$(curl -sS -o /tmp/smoke-health.json -w '%{http_code}' "$BASE/api/health")
+          STATUS=$(curl -sS -o /tmp/smoke-health.json -w '%{http_code}' "$BASE/api/system/v1/health")
           test "$STATUS" = "200"
           test "$(jq -r '.code' /tmp/smoke-health.json)" = "0"
           test "$(jq -r '.data.status' /tmp/smoke-health.json)" = "ok"
 
-          STATUS=$(curl -sS -o /tmp/smoke-live.json -w '%{http_code}' "$BASE/api/health/live")
+          STATUS=$(curl -sS -o /tmp/smoke-live.json -w '%{http_code}' "$BASE/api/system/v1/health/live")
           test "$STATUS" = "200"
           test "$(jq -r '.data.status' /tmp/smoke-live.json)" = "ok"
 
-          STATUS=$(curl -sS -o /tmp/smoke-ready.json -w '%{http_code}' "$BASE/api/health/ready")
+          STATUS=$(curl -sS -o /tmp/smoke-ready.json -w '%{http_code}' "$BASE/api/system/v1/health/ready")
           test "$STATUS" = "200"
           test "$(jq -r '.data.db' /tmp/smoke-ready.json)" = "up"
 
@@ -215,7 +215,7 @@ jobs:
           STATUS=$(curl -sS -o /tmp/smoke-login-ok.json -w '%{http_code}' \
             -H 'content-type: application/json' \
             -d "$BODY" \
-            "$BASE/api/auth/login")
+            "$BASE/api/auth/v1/login")
           test "$STATUS" = "200"
           test "$(jq -r '.code' /tmp/smoke-login-ok.json)" = "0"
           TOKEN=$(jq -r '.data.accessToken' /tmp/smoke-login-ok.json)
@@ -234,7 +234,7 @@ jobs:
           STATUS=$(curl -sS -o /tmp/smoke-login-nouser.json -w '%{http_code}' \
             -H 'content-type: application/json' \
             -d "$BODY_NOUSER" \
-            "$BASE/api/auth/login")
+            "$BASE/api/auth/v1/login")
           test "$STATUS" = "401"
           test "$(jq -r '.code' /tmp/smoke-login-nouser.json)" = "10004"
 
@@ -243,7 +243,7 @@ jobs:
           STATUS=$(curl -sS -o /tmp/smoke-login-wrongpw.json -w '%{http_code}' \
             -H 'content-type: application/json' \
             -d "$BODY_WRONGPW" \
-            "$BASE/api/auth/login")
+            "$BASE/api/auth/v1/login")
           test "$STATUS" = "401"
           test "$(jq -r '.code' /tmp/smoke-login-wrongpw.json)" = "10004"
 

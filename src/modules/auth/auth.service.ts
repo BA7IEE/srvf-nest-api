@@ -154,7 +154,7 @@ export class AuthService {
     };
   }
 
-  // P0-E PR-3:POST /api/auth/refresh(沿评审稿 §4.2 + §6 伪逻辑)。
+  // P0-E PR-3:POST /api/auth/v1/refresh(沿评审稿 §4.2 + §6 伪逻辑)。
   // rotation always + family revoke + absolute expiration;失败统一返 REFRESH_TOKEN_INVALID。
   //
   // 流程:
@@ -312,7 +312,7 @@ export class AuthService {
     return result;
   }
 
-  // P0-E PR-3:POST /api/auth/logout(沿评审稿 §4.3 + §7.1)。
+  // P0-E PR-3:POST /api/auth/v1/logout(沿评审稿 §4.3 + §7.1)。
   // 幂等:不存在 / 已撤销 / 已过期 → 仍返 200;只撤销当前 row(同 family 其他链不动)。
   // access token 不消费 / 不吊销(沿 D-4);写 audit extra.found 区分真撤销 vs 幂等命中。
   async logout(dto: LogoutDto, meta: AuditMeta): Promise<null> {
@@ -349,7 +349,7 @@ export class AuthService {
     return null;
   }
 
-  // P0-E PR-3:POST /api/auth/logout-all(沿评审稿 §4.4 + §7.2)。
+  // P0-E PR-3:POST /api/auth/v1/logout-all(沿评审稿 §4.4 + §7.2)。
   // 走 JwtAuthGuard;撤销该 user 全部未过期且未撤销的 refresh token。
   // access token 不主动吊销(沿 D-4);返 { revokedCount }(0 也写 audit,幂等场景)。
   async logoutAll(

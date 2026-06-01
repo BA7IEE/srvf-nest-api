@@ -25,14 +25,13 @@ import {
 } from './auth.dto';
 
 @ApiTags('Auth')
-// Route B Phase 1a(alias 双挂;沿 docs/api-surface-migration-plan.md §3):
-// 老 path 'auth' 与新 path 'auth/v1' 并存,行为/限流/@Public/audit 双路径同等;
-// 老 path 待 Phase 4 deprecation 窗口满后删除。endpoint zero behavior drift。
-@Controller(['auth', 'auth/v1'])
+// Route B Phase 4(2026-06-01;沿 docs/api-surface-migration-plan.md §6 Phase 4):
+// 老 path 'auth' 已删除(无生产消费者,直接收口);canonical 单一前缀 'auth/v1'。
+@Controller('auth/v1')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  // POST /api/auth/login(@Public 跳过 JwtAuthGuard)。
+  // POST /api/auth/v1/login(@Public 跳过 JwtAuthGuard)。
   // 默认 POST 返回 201,登录场景没有创建资源,显式 200。
   // V1.1 §11.4 / TASKS.md 15.7:加 @LoginThrottle() 启用 IP 维度限流(参数走 app.config),
   // 命中后 ThrottlerBizGuard 抛 BizException(BizCode.TOO_MANY_REQUESTS) → HTTP 429 +
@@ -54,7 +53,7 @@ export class AuthController {
     return this.authService.login(dto, this.buildAuditMeta(req));
   }
 
-  // P0-E PR-3:POST /api/auth/refresh(沿评审稿 §4.2)。
+  // P0-E PR-3:POST /api/auth/v1/refresh(沿评审稿 §4.2)。
   // @Public()(refresh 时 access token 通常已过期,不能走 JwtAuthGuard)。
   // @RefreshThrottle() → throttler 实例 'refresh'(30/60 IP;与 default / password-change 物理隔离)。
   // 失败(不存在 / 已撤销 / 已过期 / 重放)统一返 REFRESH_TOKEN_INVALID=10007(不区分子原因)。
@@ -76,7 +75,7 @@ export class AuthController {
     return this.authService.refresh(dto, this.buildAuditMeta(req));
   }
 
-  // P0-E PR-3:POST /api/auth/logout(沿评审稿 §4.3)。
+  // P0-E PR-3:POST /api/auth/v1/logout(沿评审稿 §4.3)。
   // @Public()(refresh token 自身即凭证;允许 access token 过期后 logout)。
   // 幂等:不存在 / 已撤销 / 已过期 → 仍返 200 + data:null。
   // 只撤销当前 refresh token,同 family 其他 rotation 链不动;不吊销 access token。
@@ -91,7 +90,7 @@ export class AuthController {
     return this.authService.logout(dto, this.buildAuditMeta(req));
   }
 
-  // P0-E PR-3:POST /api/auth/logout-all(沿评审稿 §4.4)。
+  // P0-E PR-3:POST /api/auth/v1/logout-all(沿评审稿 §4.4)。
   // 走 JwtAuthGuard(需知道哪个 user;controller 不标 @Roles,任意登录用户可调)。
   // 复用 @PasswordChangeThrottle() throttler 'password-change' 5/60 IP(高危操作低频限流);
   // 不吊销 access token(沿 D-4);返 { revokedCount }。

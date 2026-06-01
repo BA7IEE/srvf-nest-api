@@ -142,5 +142,5 @@
 | Phase 0 映射表 | ✅ 已签字冻结(2026-06-01;见 §3) | (本 PR) | 156 路由全映射 + 终态验收基线;tag→surface 无遗留灰区 |
 | Phase 1 alias | ✅ **完成** | 1a #259 / 1b #260 / 1c PR | **全 133 非-app 路由双挂完成**:1a auth+health(7)/ 1b system(56)/ 1c admin(70);contract 423 + e2e 双路径绿;老路径零回归 |
 | Phase 2 canonical | 🔄 进行中 | Phase 2 PR | **仓内 deprecate 已落地**(apply-swagger 后处理:142 老前缀 operation 标 `deprecated`;canonical 新前缀不标;contract 425 断言锁定);**余前端/移动端切流 + old-path 流量观测(仓外,作为 Phase 3→4 gate)** |
-| Phase 3 deprecation | ⬜ 未启动 | — | — |
-| Phase 4 removal | ⬜ 未启动 | — | 不可逆,单独 gated |
+| Phase 3 deprecation | ⏭️ **豁免** | — | **无生产消费者**(用户 2026-06-01 确认),deprecation 窗口 / 前端切流 / 流量观测 gate 均不适用,直接进 Phase 4 |
+| Phase 4 removal | 🔄 进行中 | 4a PR… | **4a auth+health 老路径已删**(收为单一前缀 `auth/v1` + `system/v1/health`;contract 418 + full e2e 1800 绿);余 4b system / 4c admin / 4d orphan(建 `app/v1/my/attachments`)+ 收尾(删 deprecation 后处理 + 终态断言) |

@@ -10,11 +10,11 @@ import { createTestApp } from '../setup/test-app';
 // V1.1 TASKS.md 15.7:登录接口限流(@nestjs/throttler 内存 storage)。
 //
 // 关键约束验证:
-//   1. POST /api/auth/login 触发限流后返回 BizCode.TOO_MANY_REQUESTS(HTTP 429)
+//   1. POST /api/auth/v1/login 触发限流后返回 BizCode.TOO_MANY_REQUESTS(HTTP 429)
 //      + 统一错误体,经 AllExceptionsFilter 输出
 //   2. 限流响应**不含** Retry-After / X-RateLimit-Limit / X-RateLimit-Remaining /
 //      X-RateLimit-Reset 头(setHeaders: false 顶层关闭)
-//   3. 其他接口(GET /api/health/live)不受限流影响——验证"反向白名单":
+//   3. 其他接口(GET /api/system/v1/health/live)不受限流影响——验证"反向白名单":
 //      ThrottlerBizGuard.shouldSkip 默认 true,只对标 @LoginThrottle() 的方法启用
 //   4. 限流不区分成功/失败:正确密码在窗口内被 block 也返回 429
 //
@@ -26,7 +26,7 @@ import { createTestApp } from '../setup/test-app';
 //
 // storage 隔离:每个 spec 走 createTestApp() 新建 NestApplication,
 //             ThrottlerStorageService 是 module scope,实例独立,跨 spec 不共享计数器。
-describe('POST /api/auth/login throttling (V1.1 §15.7)', () => {
+describe('POST /api/auth/v1/login throttling (V1.1 §15.7)', () => {
   let app: INestApplication;
   // 保存 .env.test 加载后的原值,afterAll 还原,避免跨 spec 污染。
   const originalLimit = process.env.LOGIN_THROTTLE_LIMIT;
@@ -64,13 +64,13 @@ describe('POST /api/auth/login throttling (V1.1 §15.7)', () => {
   it('limit 内的失败登录返回 LOGIN_FAILED,超过即返回 TOO_MANY_REQUESTS', async () => {
     for (let i = 1; i <= 5; i++) {
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'throttletest', password: 'WrongPwd1!' });
       expectBizError(res, BizCode.LOGIN_FAILED);
     }
 
     const blocked = await request(httpServer(app))
-      .post('/api/auth/login')
+      .post('/api/auth/v1/login')
       .send({ username: 'throttletest', password: 'WrongPwd1!' });
     expectBizError(blocked, BizCode.TOO_MANY_REQUESTS);
     expect(blocked.body).toEqual({
@@ -83,7 +83,7 @@ describe('POST /api/auth/login throttling (V1.1 §15.7)', () => {
   it('限流响应不暴露 Retry-After / X-RateLimit-* 头', async () => {
     // 接续上一 it,storage 仍处 block 状态;再发一次直接拿 429
     const res = await request(httpServer(app))
-      .post('/api/auth/login')
+      .post('/api/auth/v1/login')
       .send({ username: 'throttletest', password: 'WrongPwd1!' });
     expect(res.status).toBe(BizCode.TOO_MANY_REQUESTS.httpStatus);
 
@@ -100,17 +100,17 @@ describe('POST /api/auth/login throttling (V1.1 §15.7)', () => {
   it('正确密码在窗口内同样被限流(限流不区分成功/失败)', async () => {
     // 接续:发用户的正确密码,因为 IP-method 维度计数仍处 block,返回 429
     const res = await request(httpServer(app))
-      .post('/api/auth/login')
+      .post('/api/auth/v1/login')
       .send({ username: 'throttletest', password: TEST_PASSWORD });
     expectBizError(res, BizCode.TOO_MANY_REQUESTS);
   });
 
-  it('其他接口(GET /api/health/live)不被登录限流影响', async () => {
+  it('其他接口(GET /api/system/v1/health/live)不被登录限流影响', async () => {
     // 即使 /login 已被 block,health 端点完全独立(ThrottlerBizGuard.shouldSkip
     // 对未标 @LoginThrottle() 的方法直接返回 true 跳过)。
     // 连续 10 次请求都应 200,不会触发任何限流。
     for (let i = 0; i < 10; i++) {
-      const res = await request(httpServer(app)).get('/api/health/live');
+      const res = await request(httpServer(app)).get('/api/system/v1/health/live');
       expect(res.status).toBe(200);
       expect(res.body).toEqual({
         code: 0,

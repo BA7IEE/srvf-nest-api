@@ -10,10 +10,10 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// P0-E PR-3 e2e:POST /api/auth/refresh(沿评审稿 §8.1 + §3.5 D-5 + §6 rotation 流程)。
+// P0-E PR-3 e2e:POST /api/auth/v1/refresh(沿评审稿 §8.1 + §3.5 D-5 + §6 rotation 流程)。
 // 关键不变式:rotation always + family revoke + absolute expiration + 失败统一 10007 不分原因。
 
-describe('POST /api/auth/refresh', () => {
+describe('POST /api/auth/v1/refresh', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -31,14 +31,14 @@ describe('POST /api/auth/refresh', () => {
     it('正常 refresh → 200 + 新 access + 新 refresh + 字段集恰好 5 项', async () => {
       await createTestUser(app, { username: 'refreshok1' });
       const { body: loginBody } = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'refreshok1', password: 'Passw0rd1!' });
 
       const refreshRaw = loginBody.data.refreshToken;
       const refreshExpiresAtFirst = loginBody.data.refreshExpiresAt;
 
       const res = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: refreshRaw });
 
       expect(res.status).toBe(200);
@@ -58,7 +58,7 @@ describe('POST /api/auth/refresh', () => {
     it('refreshExpiresAt 是 ISO 8601 UTC 可被 Date 解析', async () => {
       await createTestUser(app, { username: 'refreshiso1' });
       const { body: loginBody } = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'refreshiso1', password: 'Passw0rd1!' });
 
       const iso: string = loginBody.data.refreshExpiresAt;
@@ -69,12 +69,12 @@ describe('POST /api/auth/refresh', () => {
     it('JWT payload 字段集恰好 { sub, username, iat, exp, nbf }(zero drift)', async () => {
       const user = await createTestUser(app, { username: 'refreshpld1' });
       const { body: loginBody } = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'refreshpld1', password: 'Passw0rd1!' });
       const refreshRaw = loginBody.data.refreshToken;
 
       const res = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: refreshRaw });
 
       const token: string = res.body.data.accessToken;
@@ -95,26 +95,26 @@ describe('POST /api/auth/refresh', () => {
     it('重复用同一 raw 第二次 refresh → 10007 + family 全部撤销', async () => {
       const user = await createTestUser(app, { username: 'refreshreuse1' });
       const { body: loginBody } = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'refreshreuse1', password: 'Passw0rd1!' });
       const refreshRaw = loginBody.data.refreshToken;
 
       // 第 1 次 rotation:成功
       const ok = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: refreshRaw });
       expect(ok.status).toBe(200);
       const newRefresh = ok.body.data.refreshToken;
 
       // 第 2 次用旧 raw → 重放命中
       const replay = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: refreshRaw });
       expectBizError(replay, BizCode.REFRESH_TOKEN_INVALID);
 
       // family 全部撤销:rotation 出来的新 refresh 也不能再换 access
       const newRefreshAfter = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: newRefresh });
       expectBizError(newRefreshAfter, BizCode.REFRESH_TOKEN_INVALID);
 
@@ -137,45 +137,45 @@ describe('POST /api/auth/refresh', () => {
     beforeAll(async () => {
       // 1. 不存在
       resNotFound = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: 'nonexistent-token-raw' });
 
       // 2. 已撤销(走 logout 来撤销)
       await createTestUser(app, { username: 'refreshrev1' });
       const { body: lb1 } = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'refreshrev1', password: 'Passw0rd1!' });
       await request(httpServer(app))
-        .post('/api/auth/logout')
+        .post('/api/auth/v1/logout')
         .send({ refreshToken: lb1.data.refreshToken });
       resRevoked = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: lb1.data.refreshToken });
 
       // 3. 已过期(手工把 DB 里 expiresAt 改为过去)
       const user2 = await createTestUser(app, { username: 'refreshexp1' });
       const { body: lb2 } = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'refreshexp1', password: 'Passw0rd1!' });
       await prisma.refreshToken.updateMany({
         where: { userId: user2.id },
         data: { expiresAt: new Date(Date.now() - 1000) },
       });
       resExpired = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: lb2.data.refreshToken });
 
       // 4. user 被禁
       const user3 = await createTestUser(app, { username: 'refreshdis1' });
       const { body: lb3 } = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'refreshdis1', password: 'Passw0rd1!' });
       await prisma.user.update({
         where: { id: user3.id },
         data: { status: UserStatus.DISABLED },
       });
       resUserDisabled = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: lb3.data.refreshToken });
     });
 
@@ -195,13 +195,13 @@ describe('POST /api/auth/refresh', () => {
 
   describe('DTO 校验', () => {
     it('缺 refreshToken → BAD_REQUEST', async () => {
-      const res = await request(httpServer(app)).post('/api/auth/refresh').send({});
+      const res = await request(httpServer(app)).post('/api/auth/v1/refresh').send({});
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
     });
 
     it('额外字段(forbidNonWhitelisted)→ BAD_REQUEST', async () => {
       const res = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: 'x', extra: 'y' });
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
     });

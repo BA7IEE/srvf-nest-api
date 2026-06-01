@@ -9,11 +9,11 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// P0-E PR-3 e2e:POST /api/auth/logout-all(沿评审稿 §8.1 / §4.4 / §7.2)。
+// P0-E PR-3 e2e:POST /api/auth/v1/logout-all(沿评审稿 §8.1 / §4.4 / §7.2)。
 // 走 JwtAuthGuard;撤销该 user 全部未过期且未撤销的 refresh token;返 { revokedCount }。
 // 复用 password-change throttler(5/60 IP)。
 
-describe('POST /api/auth/logout-all', () => {
+describe('POST /api/auth/v1/logout-all', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -33,7 +33,7 @@ describe('POST /api/auth/logout-all', () => {
       const { authHeader } = await loginAs(app, 'logoutallok1');
 
       const res = await request(httpServer(app))
-        .post('/api/auth/logout-all')
+        .post('/api/auth/v1/logout-all')
         .set('Authorization', authHeader);
 
       expect(res.status).toBe(200);
@@ -47,7 +47,7 @@ describe('POST /api/auth/logout-all', () => {
       // 模拟 3 个设备 login
       for (let i = 0; i < 3; i++) {
         await request(httpServer(app))
-          .post('/api/auth/login')
+          .post('/api/auth/v1/login')
           .send({ username: 'logoutallmulti1', password: 'Passw0rd1!' });
       }
       const before = await prisma.refreshToken.findMany({
@@ -57,7 +57,7 @@ describe('POST /api/auth/logout-all', () => {
 
       const { authHeader } = await loginAs(app, 'logoutallmulti1'); // 第 4 次 login
       const res = await request(httpServer(app))
-        .post('/api/auth/logout-all')
+        .post('/api/auth/v1/logout-all')
         .set('Authorization', authHeader);
 
       expect(res.status).toBe(200);
@@ -73,15 +73,17 @@ describe('POST /api/auth/logout-all', () => {
     it('logout-all 后所有 refresh 都不能再换 access', async () => {
       await createTestUser(app, { username: 'logoutallinv1' });
       const lb = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'logoutallinv1', password: 'Passw0rd1!' });
       const refreshRaw = lb.body.data.refreshToken;
       const authHeader = `Bearer ${lb.body.data.accessToken}`;
 
-      await request(httpServer(app)).post('/api/auth/logout-all').set('Authorization', authHeader);
+      await request(httpServer(app))
+        .post('/api/auth/v1/logout-all')
+        .set('Authorization', authHeader);
 
       const refreshRes = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: refreshRaw });
       expectBizError(refreshRes, BizCode.REFRESH_TOKEN_INVALID);
     });
@@ -92,9 +94,11 @@ describe('POST /api/auth/logout-all', () => {
       await createTestUser(app, { username: 'logoutallidem1' });
       const { authHeader } = await loginAs(app, 'logoutallidem1');
 
-      await request(httpServer(app)).post('/api/auth/logout-all').set('Authorization', authHeader);
+      await request(httpServer(app))
+        .post('/api/auth/v1/logout-all')
+        .set('Authorization', authHeader);
       const res = await request(httpServer(app))
-        .post('/api/auth/logout-all')
+        .post('/api/auth/v1/logout-all')
         .set('Authorization', authHeader);
 
       expect(res.status).toBe(200);
@@ -104,7 +108,7 @@ describe('POST /api/auth/logout-all', () => {
 
   describe('未登录 → 40100', () => {
     it('无 Authorization 头 → UNAUTHORIZED', async () => {
-      const res = await request(httpServer(app)).post('/api/auth/logout-all');
+      const res = await request(httpServer(app)).post('/api/auth/v1/logout-all');
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
   });
@@ -114,7 +118,9 @@ describe('POST /api/auth/logout-all', () => {
       const u = await createTestUser(app, { username: 'logoutallaudit1' });
       const { authHeader } = await loginAs(app, 'logoutallaudit1');
 
-      await request(httpServer(app)).post('/api/auth/logout-all').set('Authorization', authHeader);
+      await request(httpServer(app))
+        .post('/api/auth/v1/logout-all')
+        .set('Authorization', authHeader);
 
       const audit = await prisma.auditLog.findFirst({
         where: { actorUserId: u.id, event: 'auth.logout-all' },
@@ -131,7 +137,9 @@ describe('POST /api/auth/logout-all', () => {
       await createTestUser(app, { username: 'logoutallaccess1' });
       const { authHeader } = await loginAs(app, 'logoutallaccess1');
 
-      await request(httpServer(app)).post('/api/auth/logout-all').set('Authorization', authHeader);
+      await request(httpServer(app))
+        .post('/api/auth/v1/logout-all')
+        .set('Authorization', authHeader);
 
       const me = await request(httpServer(app))
         .get('/api/users/me')

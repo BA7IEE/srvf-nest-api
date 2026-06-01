@@ -26,7 +26,7 @@ describe('Response format (横切)', () => {
   });
 
   it('成功响应外层固定为 { code: 0, message: "ok", data }', async () => {
-    const res = await request(httpServer(app)).get('/api/health');
+    const res = await request(httpServer(app)).get('/api/system/v1/health');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -53,7 +53,7 @@ describe('Response format (横切)', () => {
   });
 
   it('POST 缺字段 → BAD_REQUEST,message 由 ValidationPipe 透传字段错误', async () => {
-    const res = await request(httpServer(app)).post('/api/auth/login').send({});
+    const res = await request(httpServer(app)).post('/api/auth/v1/login').send({});
 
     // strictMessage:false:ValidationPipe 错误细节会拼成多条消息,
     // 不是 BizCode.BAD_REQUEST.message 字面量。
@@ -64,7 +64,7 @@ describe('Response format (横切)', () => {
 
   it('POST 多余字段 → BAD_REQUEST,message 必须包含字段名(forbidNonWhitelisted 生效)', async () => {
     const res = await request(httpServer(app))
-      .post('/api/auth/login')
+      .post('/api/auth/v1/login')
       .send({ username: 'admin1', password: 'whatever', extra: 'y' });
 
     expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });

@@ -76,7 +76,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
 
       // 用旧密码登录
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'pwoldfail1', password: TEST_PASSWORD });
 
       expectBizError(res, BizCode.LOGIN_FAILED);
@@ -91,7 +91,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
         .send({ newPassword: NEW_PASSWORD });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'pwnewok1', password: NEW_PASSWORD });
 
       expect(res.status).toBe(200);
@@ -276,7 +276,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
     it('重置前的 refresh token 不能再换 access → 10007', async () => {
       const target = await createTestUser(app, { username: 'pwrefresh2' });
       const lb = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'pwrefresh2', password: TEST_PASSWORD });
       const refreshRaw = lb.body.data.refreshToken;
 
@@ -286,7 +286,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
         .send({ newPassword: NEW_PASSWORD });
 
       const refreshRes = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: refreshRaw });
       expect(refreshRes.status).toBe(401);
       expect(refreshRes.body.code).toBe(10007);

@@ -107,7 +107,7 @@ docker run -d --name u-nest-api-smoke \
 容器启动日志:
 
 - `ConfigModule` / `TerminusModule` / `HealthModule` / `UsersModule` / `ThrottlerModule` / `JwtModule` / `LoggerModule` / `AppModule` / `AuthModule` 全部 initialized
-- 路由全部 mapped:`/api/health`、`/api/health/live`、`/api/health/ready`、`/api/auth/login`、`/api/users/*`
+- 路由全部 mapped:`/api/system/v1/health`、`/api/system/v1/health/live`、`/api/system/v1/health/ready`、`/api/auth/v1/login`、`/api/users/*`
 - `Nest application successfully started`
 
 ---
@@ -116,14 +116,14 @@ docker run -d --name u-nest-api-smoke \
 
 | 接口 | HTTP | 响应体(摘) | 结论 |
 |---|---|---|---|
-| `GET /api/health` | 200 | `{code:0, data:{status:"ok"}}` | ✔ 向后兼容契约 |
-| `GET /api/health/live` | 200 | `{code:0, data:{status:"ok"}}` | ✔ K8s liveness |
-| `GET /api/health/ready` | 200 | `{code:0, data:{status:"ok", db:"up"}}` | ✔ DB 连通 |
+| `GET /api/system/v1/health` | 200 | `{code:0, data:{status:"ok"}}` | ✔ 健康根端点(等同 /live) |
+| `GET /api/system/v1/health/live` | 200 | `{code:0, data:{status:"ok"}}` | ✔ K8s liveness |
+| `GET /api/system/v1/health/ready` | 200 | `{code:0, data:{status:"ok", db:"up"}}` | ✔ DB 连通 |
 | `GET /api/docs` | 404 | — | ✔ production + `ENABLE_SWAGGER=false` 预期关闭 |
 | `GET /api/docs-json` | 404 | — | ✔ 同上 |
-| `POST /api/auth/login`(正确) | 200 | `{code:0, data:{accessToken, tokenType:"Bearer", expiresIn:"15m"}}` | ✔ |
-| `POST /api/auth/login`(错密码) | 401 | `{code:10004, message:"账号或密码错误"}` | ✔ §8 防枚举 |
-| `POST /api/auth/login`(用户不存在) | 401 | `{code:10004, message:"账号或密码错误"}` | ✔ 与错密码完全相同 |
+| `POST /api/auth/v1/login`(正确) | 200 | `{code:0, data:{accessToken, tokenType:"Bearer", expiresIn:"15m"}}` | ✔ |
+| `POST /api/auth/v1/login`(错密码) | 401 | `{code:10004, message:"账号或密码错误"}` | ✔ §8 防枚举 |
+| `POST /api/auth/v1/login`(用户不存在) | 401 | `{code:10004, message:"账号或密码错误"}` | ✔ 与错密码完全相同 |
 | `GET /api/users/me`(带 token) | 200 | 含 `lastLoginAt`、不含 `passwordHash` | ✔ §11 `userSafeSelect` |
 | `GET /api/users/me`(无 token) | 401 | `{code:40100, message:"未登录或登录已失效"}` | ✔ §8 两阶段错误码区分 |
 
@@ -194,11 +194,11 @@ job 步骤:
 3. `docker build -t u-nest-api-starter:ci .`(无 cache 时 ~3-4 分钟,可加 `actions/cache` 缓存 buildx layer)
 4. host 侧 `pnpm install --frozen-lockfile && pnpm exec prisma migrate deploy && pnpm exec prisma db seed`(注入 CI 专用 super admin 凭据)
 5. `docker run -d --name app ... u-nest-api-starter:ci`(production 模式,DATABASE_URL 走 service container hostname)
-6. `curl --retry 10 --retry-delay 2 --retry-connrefused` 探测 `/api/health` → 200
+6. `curl --retry 10 --retry-delay 2 --retry-connrefused` 探测 `/api/system/v1/health` → 200
 7. 断言:
-   - `GET /api/health/ready` → 200 + `db:"up"`
-   - `POST /api/auth/login`(对) → 200 + 含 `accessToken`
-   - `POST /api/auth/login`(错) → 401 + `code:10004`
+   - `GET /api/system/v1/health/ready` → 200 + `db:"up"`
+   - `POST /api/auth/v1/login`(对) → 200 + 含 `accessToken`
+   - `POST /api/auth/v1/login`(错) → 401 + `code:10004`
    - `GET /api/docs` → 404(production)
    - `docker exec app id` → `uid=1000`
 8. `docker stop -t 10 app && [ $(docker inspect app --format '{{.State.ExitCode}}') = 0 ]` 断言优雅关闭

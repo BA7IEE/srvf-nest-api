@@ -10,7 +10,7 @@ import { SetMetadata } from '@nestjs/common';
 //   - 因此采用"功能等价"方案:本装饰器只做纯 metadata 标记,limit / ttl 集中在
 //     ThrottlerModule.forRootAsync 由 ConfigService 注入(单一事实源)。
 //     ThrottlerBizGuard.shouldSkip 默认 true,看到本 metadata 才返回 false 启用限流。
-//   - 同样满足任务卡核心约束:仅 POST /api/auth/login 限流;不污染其它 controller;
+//   - 同样满足任务卡核心约束:仅 POST /api/auth/v1/login 限流;不污染其它 controller;
 //     limit / ttl 走 app.config.ts;不在 controller 上 @UseGuards(违反 ARCHITECTURE.md §7.6)。
 //
 // 用法:
@@ -19,7 +19,7 @@ import { SetMetadata } from '@nestjs/common';
 //   @Post('login')
 //   ...
 //
-// 仅打算用于 POST /api/auth/login。其他接口若未来要限流,应单独评估业务需求(
+// 仅打算用于 POST /api/auth/v1/login。其他接口若未来要限流,应单独评估业务需求(
 // CLAUDE.md §17.9 禁止"接了 throttler 就顺手对所有接口加限流"),不要复用本装饰器。
 export const LOGIN_THROTTLE_KEY = 'login-throttle:enabled';
 

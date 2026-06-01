@@ -100,7 +100,7 @@ export interface PasswordChangeThrottleConfig {
   ttlSeconds: number;
 }
 
-// P0-E PR-3(2026-05-18):POST /api/auth/refresh IP 维度限流配置。
+// P0-E PR-3(2026-05-18):POST /api/auth/v1/refresh IP 维度限流配置。
 // 与 LoginThrottleConfig / PasswordChangeThrottleConfig 结构相同但物理隔离:throttler.module
 // 注册独立 throttler 实例(name: 'refresh'),计数器互不影响。第一版固定 IP 维度,
 // 默认 30 次 / 60 秒(沿 docs/first-release-p0e-refresh-token-review.md §3.7 D-7;
