@@ -8,11 +8,11 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// P0-E PR-3 e2e:POST /api/auth/logout(沿评审稿 §8.1 / §4.3 / §7.1)。
+// P0-E PR-3 e2e:POST /api/auth/v1/logout(沿评审稿 §8.1 / §4.3 / §7.1)。
 // 幂等:不存在 / 已撤销 / 已过期 → 仍 200 + data:null。
 // 只撤销当前 row;不吊销 access token(沿 D-4)。
 
-describe('POST /api/auth/logout', () => {
+describe('POST /api/auth/v1/logout', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -30,11 +30,11 @@ describe('POST /api/auth/logout', () => {
     it('正常 logout → 200 + DB 内 revokedAt != null + revokedReason="logout"', async () => {
       const u = await createTestUser(app, { username: 'logoutok1' });
       const { body: lb } = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'logoutok1', password: 'Passw0rd1!' });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/logout')
+        .post('/api/auth/v1/logout')
         .send({ refreshToken: lb.data.refreshToken });
 
       expect(res.status).toBe(200);
@@ -48,14 +48,14 @@ describe('POST /api/auth/logout', () => {
     it('logout 后同一 refresh 再 refresh → 10007', async () => {
       await createTestUser(app, { username: 'logoutreuse1' });
       const { body: lb } = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'logoutreuse1', password: 'Passw0rd1!' });
       await request(httpServer(app))
-        .post('/api/auth/logout')
+        .post('/api/auth/v1/logout')
         .send({ refreshToken: lb.data.refreshToken });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: lb.data.refreshToken });
       expectBizError(res, BizCode.REFRESH_TOKEN_INVALID);
     });
@@ -64,7 +64,7 @@ describe('POST /api/auth/logout', () => {
   describe('幂等', () => {
     it('不存在的 refresh → 仍 200', async () => {
       const res = await request(httpServer(app))
-        .post('/api/auth/logout')
+        .post('/api/auth/v1/logout')
         .send({ refreshToken: 'nonexistent-raw' });
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ code: 0, message: 'ok', data: null });
@@ -73,14 +73,14 @@ describe('POST /api/auth/logout', () => {
     it('已撤销的 refresh → 仍 200(幂等)', async () => {
       await createTestUser(app, { username: 'logoutidem1' });
       const { body: lb } = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'logoutidem1', password: 'Passw0rd1!' });
       await request(httpServer(app))
-        .post('/api/auth/logout')
+        .post('/api/auth/v1/logout')
         .send({ refreshToken: lb.data.refreshToken });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/logout')
+        .post('/api/auth/v1/logout')
         .send({ refreshToken: lb.data.refreshToken });
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ code: 0, message: 'ok', data: null });
@@ -89,7 +89,7 @@ describe('POST /api/auth/logout', () => {
     it('已过期的 refresh → 仍 200', async () => {
       const u = await createTestUser(app, { username: 'logoutexp1' });
       const { body: lb } = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'logoutexp1', password: 'Passw0rd1!' });
       await prisma.refreshToken.updateMany({
         where: { userId: u.id },
@@ -97,7 +97,7 @@ describe('POST /api/auth/logout', () => {
       });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/logout')
+        .post('/api/auth/v1/logout')
         .send({ refreshToken: lb.data.refreshToken });
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ code: 0, message: 'ok', data: null });
@@ -108,12 +108,12 @@ describe('POST /api/auth/logout', () => {
     it('logout 后旧 access token 仍可调 GET /me', async () => {
       await createTestUser(app, { username: 'logoutaccess1' });
       const { body: lb } = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'logoutaccess1', password: 'Passw0rd1!' });
 
       const authHeader = `Bearer ${lb.data.accessToken}`;
       await request(httpServer(app))
-        .post('/api/auth/logout')
+        .post('/api/auth/v1/logout')
         .send({ refreshToken: lb.data.refreshToken });
 
       const meRes = await request(httpServer(app))
@@ -129,11 +129,11 @@ describe('POST /api/auth/logout', () => {
     it('不带 Authorization 头也能 logout(refresh token 自身即凭证)', async () => {
       await createTestUser(app, { username: 'logoutpub1' });
       const { body: lb } = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'logoutpub1', password: 'Passw0rd1!' });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/logout')
+        .post('/api/auth/v1/logout')
         .send({ refreshToken: lb.data.refreshToken });
       expect(res.status).toBe(200);
     });
@@ -141,7 +141,7 @@ describe('POST /api/auth/logout', () => {
 
   describe('DTO 校验', () => {
     it('缺 refreshToken → BAD_REQUEST', async () => {
-      const res = await request(httpServer(app)).post('/api/auth/logout').send({});
+      const res = await request(httpServer(app)).post('/api/auth/v1/logout').send({});
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
     });
   });
@@ -150,12 +150,12 @@ describe('POST /api/auth/logout', () => {
     it('rotation 后 logout 旧 token → 旧已 rotated,新 refresh 仍可用', async () => {
       const u = await createTestUser(app, { username: 'logoutfam1' });
       const { body: lb } = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'logoutfam1', password: 'Passw0rd1!' });
       const r1 = lb.data.refreshToken;
 
       const ok = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: r1 });
       expect(ok.status).toBe(200);
       const r2 = ok.body.data.refreshToken;
@@ -163,13 +163,13 @@ describe('POST /api/auth/logout', () => {
       // logout 旧 r1(已经 rotated;按设计逻辑,旧 row.revokedAt != null,logout 路径
       // 走幂等;不会再额外撤销 r2)
       const logoutRes = await request(httpServer(app))
-        .post('/api/auth/logout')
+        .post('/api/auth/v1/logout')
         .send({ refreshToken: r1 });
       expect(logoutRes.status).toBe(200);
 
       // r2 仍可用
       const r2use = await request(httpServer(app))
-        .post('/api/auth/refresh')
+        .post('/api/auth/v1/refresh')
         .send({ refreshToken: r2 });
       expect(r2use.status).toBe(200);
 

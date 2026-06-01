@@ -13,7 +13,7 @@ import { createTestApp } from '../setup/test-app';
 // 让任何未来 spec 默认有干净表面。
 //
 // 完整 health / response-format / swagger 等用例集见 14.3。
-describe('GET /api/health (smoke)', () => {
+describe('GET /api/system/v1/health (smoke)', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
@@ -26,7 +26,7 @@ describe('GET /api/health (smoke)', () => {
   });
 
   it('returns 200 with wrapped { code: 0, message: "ok", data: { status: "ok" } }', async () => {
-    const res = await request(httpServer(app)).get('/api/health');
+    const res = await request(httpServer(app)).get('/api/system/v1/health');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({

@@ -12,7 +12,7 @@ import { createTestApp } from '../setup/test-app';
 
 // 14.4 auth-login spec(11 用例,跨 4 块)。
 // 防账号枚举四场景一致性是核心:用户要求 body 完全一致,不只断 code。
-describe('POST /api/auth/login', () => {
+describe('POST /api/auth/v1/login', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -31,7 +31,7 @@ describe('POST /api/auth/login', () => {
       await createTestUser(app, { username: 'logintest1' });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'logintest1', password: TEST_PASSWORD });
 
       expect(res.status).toBe(200);
@@ -62,7 +62,7 @@ describe('POST /api/auth/login', () => {
       const user = await createTestUser(app, { username: 'logintest2' });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'logintest2', password: TEST_PASSWORD });
 
       expect(res.status).toBe(200);
@@ -85,7 +85,7 @@ describe('POST /api/auth/login', () => {
       await createTestUser(app, { username: 'admintest' });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'AdminTest', password: TEST_PASSWORD });
 
       expect(res.status).toBe(200);
@@ -101,7 +101,7 @@ describe('POST /api/auth/login', () => {
       await new Promise((r) => setTimeout(r, 5));
 
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'lastloginat1', password: TEST_PASSWORD });
       expect(res.status).toBe(200);
 
@@ -139,7 +139,7 @@ describe('POST /api/auth/login', () => {
       });
 
       const send = (username: string, password: string): Promise<Response> =>
-        request(httpServer(app)).post('/api/auth/login').send({ username, password });
+        request(httpServer(app)).post('/api/auth/v1/login').send({ username, password });
 
       resNoUser = await send('nonexistentuser', TEST_PASSWORD);
       resWrongPwd = await send('enumactive', 'WrongPwd1!');
@@ -174,7 +174,7 @@ describe('POST /api/auth/login', () => {
 
   describe('ValidationPipe 边界(直接走 BAD_REQUEST,不查库)', () => {
     it('空 body → BAD_REQUEST,message 含 username 与 password', async () => {
-      const res = await request(httpServer(app)).post('/api/auth/login').send({});
+      const res = await request(httpServer(app)).post('/api/auth/v1/login').send({});
 
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
       expect(res.body.message).toContain('username');
@@ -183,13 +183,13 @@ describe('POST /api/auth/login', () => {
 
     it('username 太短(2 字符)或含非法字符 → BAD_REQUEST', async () => {
       const resTooShort = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'ab', password: TEST_PASSWORD });
       expectBizError(resTooShort, BizCode.BAD_REQUEST, { strictMessage: false });
       expect(resTooShort.body.message).toContain('username');
 
       const resBadChar = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'bad!@#', password: TEST_PASSWORD });
       expectBizError(resBadChar, BizCode.BAD_REQUEST, { strictMessage: false });
       expect(resBadChar.body.message).toContain('username');

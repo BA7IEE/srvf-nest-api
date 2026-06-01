@@ -74,7 +74,7 @@ describe('auth memberNo 登录回退', () => {
       });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'demo-MN-100', password: TEST_PASSWORD });
 
       expect(res.status).toBe(200);
@@ -90,7 +90,7 @@ describe('auth memberNo 登录回退', () => {
       // 完全一致(LoginDto schema 严格 zero drift,不能加 @Transform)。运营对带空格
       // 输入需在前端裁剪,API 层视为非法输入。
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: '  demo-MN-100  ', password: TEST_PASSWORD });
 
       expect(res.status).toBe(400);
@@ -102,7 +102,7 @@ describe('auth memberNo 登录回退', () => {
   describe('账号枚举防护:响应体 / HTTP status / message 完全一致', () => {
     it('场景 1:输入值 username 与 memberNo 两路径均未命中 → LOGIN_FAILED 401', async () => {
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'demo-no-such-user', password: TEST_PASSWORD });
       expectBizError(res, BizCode.LOGIN_FAILED);
     });
@@ -114,7 +114,7 @@ describe('auth memberNo 登录回退', () => {
       });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'demo-MN-200', password: TEST_PASSWORD });
       expectBizError(res, BizCode.LOGIN_FAILED);
     });
@@ -130,7 +130,7 @@ describe('auth memberNo 登录回退', () => {
       });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'demo-MN-300', password: TEST_PASSWORD });
       expectBizError(res, BizCode.LOGIN_FAILED);
     });
@@ -146,7 +146,7 @@ describe('auth memberNo 登录回退', () => {
       });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'demo-MN-310', password: TEST_PASSWORD });
       expectBizError(res, BizCode.LOGIN_FAILED);
     });
@@ -154,7 +154,7 @@ describe('auth memberNo 登录回退', () => {
     it('场景 4:命中 user + 密码错 → LOGIN_FAILED', async () => {
       // 复用最早 mnologin1 / demo-MN-100
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'demo-MN-100', password: 'WrongPassw0rd' });
       expectBizError(res, BizCode.LOGIN_FAILED);
     });
@@ -174,7 +174,7 @@ describe('auth memberNo 登录回退', () => {
       });
 
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'demo-MN-400', password: TEST_PASSWORD });
       expectBizError(res, BizCode.LOGIN_FAILED);
     });
@@ -183,7 +183,7 @@ describe('auth memberNo 登录回退', () => {
       // demo-MN-100 已存在(大写 MN);用 demo-mn-100 登录应失败
       // (member.findUnique by memberNo 严格匹配,大小写敏感)
       const res = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'demo-mn-100', password: TEST_PASSWORD });
       expectBizError(res, BizCode.LOGIN_FAILED);
     });
@@ -211,7 +211,7 @@ describe('auth memberNo 登录回退', () => {
         for (let i = 0; i < SAMPLES; i++) {
           const t0 = Date.now();
           await request(httpServer(app))
-            .post('/api/auth/login')
+            .post('/api/auth/v1/login')
             .send({ username: c.username, password: 'WrongPassw0rd' });
           samples.push(Date.now() - t0);
         }

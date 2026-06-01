@@ -24,7 +24,7 @@ import { createTestApp } from '../setup/test-app';
 //
 // 手工日志验证(silent 模式压制了真实日志输出,需用非 silent 启动 dev server 复核):
 //   1. APP_ENV=development LOG_LEVEL=info pnpm start(其余环境变量参考 .env.example)
-//   2. curl -i -H "x-request-id: my-trace-123" http://localhost:3000/api/health
+//   2. curl -i -H "x-request-id: my-trace-123" http://localhost:3000/api/system/v1/health
 //   3. server stdout 中的 "request completed" 日志条目应同时出现:
 //        - 顶层 reqId: "my-trace-123"(本次新增,由 buildHttpLogProps 注入)
 //        - req.id: "my-trace-123"(pino-http 默认行为)
@@ -32,7 +32,7 @@ import { createTestApp } from '../setup/test-app';
 //      三处值相同 = 单一来源(genReqId),日志与响应头不会漂移。
 //
 // 选用接口:
-//   - GET /api/health(@Public,无需 token):覆盖 GET 路径
+//   - GET /api/system/v1/health(@Public,无需 token):覆盖 GET 路径
 //   - GET /api/users/me(受保护,无 token → 401):覆盖异常路径(确认错误响应也带 reqId 头)
 const REQUEST_ID_HEADER = 'x-request-id';
 // 后端生成的 ID 形态:`c` 前缀 + base36 时间戳(>=8 字符) + 24 字符 hex,长度 >=33。
@@ -54,7 +54,7 @@ describe('Request ID 贯通(x-request-id)', () => {
 
   describe('客户端未传 x-request-id', () => {
     it('成功响应:响应头携带后端生成的 cuid-like ID', async () => {
-      const res = await request(httpServer(app)).get('/api/health');
+      const res = await request(httpServer(app)).get('/api/system/v1/health');
 
       expect(res.status).toBe(200);
       const id = res.headers[REQUEST_ID_HEADER];
@@ -72,8 +72,8 @@ describe('Request ID 贯通(x-request-id)', () => {
     });
 
     it('两次独立请求生成的 ID 必须不同(随机性)', async () => {
-      const r1 = await request(httpServer(app)).get('/api/health');
-      const r2 = await request(httpServer(app)).get('/api/health');
+      const r1 = await request(httpServer(app)).get('/api/system/v1/health');
+      const r2 = await request(httpServer(app)).get('/api/system/v1/health');
 
       const id1 = r1.headers[REQUEST_ID_HEADER];
       const id2 = r2.headers[REQUEST_ID_HEADER];
@@ -86,7 +86,9 @@ describe('Request ID 贯通(x-request-id)', () => {
   describe('客户端传入 x-request-id', () => {
     it('合法值原样回显', async () => {
       const traceId = 'my-trace-123';
-      const res = await request(httpServer(app)).get('/api/health').set(REQUEST_ID_HEADER, traceId);
+      const res = await request(httpServer(app))
+        .get('/api/system/v1/health')
+        .set(REQUEST_ID_HEADER, traceId);
 
       expect(res.status).toBe(200);
       expect(res.headers[REQUEST_ID_HEADER]).toBe(traceId);
@@ -94,21 +96,27 @@ describe('Request ID 贯通(x-request-id)', () => {
 
     it('合法 cuid 格式原样回显', async () => {
       const traceId = 'cl9z3a8b00000abcd1234efgh';
-      const res = await request(httpServer(app)).get('/api/health').set(REQUEST_ID_HEADER, traceId);
+      const res = await request(httpServer(app))
+        .get('/api/system/v1/health')
+        .set(REQUEST_ID_HEADER, traceId);
 
       expect(res.headers[REQUEST_ID_HEADER]).toBe(traceId);
     });
 
     it('合法 UUID 格式原样回显(允许字符集兼容前端常用 UUID 透传)', async () => {
       const traceId = '550e8400-e29b-41d4-a716-446655440000';
-      const res = await request(httpServer(app)).get('/api/health').set(REQUEST_ID_HEADER, traceId);
+      const res = await request(httpServer(app))
+        .get('/api/system/v1/health')
+        .set(REQUEST_ID_HEADER, traceId);
 
       expect(res.headers[REQUEST_ID_HEADER]).toBe(traceId);
     });
 
     it('超长值(>128 字符)被忽略,改用后端生成的 ID', async () => {
       const tooLong = 'a'.repeat(200);
-      const res = await request(httpServer(app)).get('/api/health').set(REQUEST_ID_HEADER, tooLong);
+      const res = await request(httpServer(app))
+        .get('/api/system/v1/health')
+        .set(REQUEST_ID_HEADER, tooLong);
 
       const id = res.headers[REQUEST_ID_HEADER];
       expect(id).not.toBe(tooLong);
@@ -119,7 +127,7 @@ describe('Request ID 贯通(x-request-id)', () => {
       // 空格 + 引号是常见 header 注入风险点,REQUEST_ID_PATTERN 不允许
       const malicious = 'evil "header" injection';
       const res = await request(httpServer(app))
-        .get('/api/health')
+        .get('/api/system/v1/health')
         .set(REQUEST_ID_HEADER, malicious);
 
       const id = res.headers[REQUEST_ID_HEADER];
@@ -163,7 +171,7 @@ describe('Request ID 贯通(x-request-id)', () => {
 
   describe('响应体永不暴露 requestId', () => {
     it('成功响应体严格只有 { code, message, data } 三字段', async () => {
-      const res = await request(httpServer(app)).get('/api/health');
+      const res = await request(httpServer(app)).get('/api/system/v1/health');
 
       expect(res.body).toEqual({
         code: 0,

@@ -242,7 +242,7 @@ describe('Root Legacy users/me endpoints (P1-B characterization)', () => {
 
       // 新密码可登录(锁定改密生效)
       const reLogin = await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'p1bcontract1', password: NEW_PASSWORD });
       expect(reLogin.status).toBe(200);
       expect(typeof reLogin.body.data.accessToken).toBe('string');

@@ -484,7 +484,7 @@ describe('users 管理接口 CRUD 基础路径', () => {
       const { authHeader } = await loginAs(app, 'disablesuper1');
       // target 自己 login 产生 refresh
       await request(httpServer(app))
-        .post('/api/auth/login')
+        .post('/api/auth/v1/login')
         .send({ username: 'disabletarget1', password: TEST_PASSWORD });
 
       const before = await prisma.refreshToken.findMany({
