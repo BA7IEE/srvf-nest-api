@@ -119,7 +119,7 @@
 | **Phase 3** | deprecation 窗口:维持双挂 ≥ 2 release;监测老 path 流量 → 0;发 deprecated 公告 | D | ✅ | Phase 2 切流确认 |
 | **Phase 4** | removal:删除老 path + 历史 mobile-like 重复端点;OpenAPI snapshot 收口为单一新前缀(达成 §3.4 终态) | D | ❌ | 老 path 零流量 + 公告期满 + `/api/app/v1/my/attachments` 已建成(§3.3 项 3) |
 
-> **NestJS 数组 path spike(Phase 1 硬前置)**:alias 拟用 `@Controller([old, new])` 双挂(§5 方案 A);NestJS 11 支持数组 path,但需在装好依赖后跑一个最小 spike 确认与 path-to-regexp v8 无冲突(见 [`src/bootstrap/logger-options.ts`](../src/bootstrap/logger-options.ts))。**当前 worktree 无 `node_modules`,本轮未跑**;Phase 1 立项时先跑。
+> **NestJS 数组 path spike(Phase 1 硬前置)= ✅ 已验证(2026-06-01)**:`@Controller([old, new])` 双挂(§5 方案 A)在 NestJS 11 + path-to-regexp v8 下,老+新前缀路由均注册;OpenAPI **operationId 自动 `[0]`/`[1]` 消歧,无重复**(Phase 4 删旧后恢复无后缀)。spike + Phase 1a(auth/health)实测均通过。
 
 ---
 
@@ -139,7 +139,7 @@
 |---|---|---|---|
 | 立项冻结 | ✅ 本稿(2026-06-01) | — | docs-only;重开 D-2 → §21 D-9 |
 | Phase 0 映射表 | ✅ 已签字冻结(2026-06-01;见 §3) | (本 PR) | 156 路由全映射 + 终态验收基线;tag→surface 无遗留灰区 |
-| Phase 1 alias | ⬜ 未启动(下一立项) | — | 硬前置:NestJS 数组 path spike(§6 注) |
+| Phase 1 alias | 🔄 进行中 | Phase 1a PR | spike ✅;**Phase 1a(auth+health,7 路由)已落地**(`auth`→`auth/v1`、`health`→`system/v1/health` 双挂,contract+e2e 双路径绿);余 system(59)/ admin(69)切片待续 |
 | Phase 2 canonical | ⬜ 未启动 | — | — |
 | Phase 3 deprecation | ⬜ 未启动 | — | — |
 | Phase 4 removal | ⬜ 未启动 | — | 不可逆,单独 gated |

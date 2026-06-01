@@ -40,7 +40,10 @@ import { HealthResponseDto } from './health.dto';
 //   把成功结果重写成简洁的 HealthResponseDto,把失败统一转成 BizException,
 //   既保住 ResponseInterceptor 包装,也保住统一错误处理。
 @ApiTags('Public')
-@Controller('health')
+// Route B Phase 1a(alias 双挂;沿 docs/api-surface-migration-plan.md §3):
+// 老 path 'health' 与新 path 'system/v1/health' 并存;两路径均不在 ResponseInterceptor
+// SKIP_PREFIXES,包装行为一致,零 drift;老 path 待 Phase 4 删除。
+@Controller(['health', 'system/v1/health'])
 export class HealthController {
   constructor(
     private readonly health: HealthCheckService,
