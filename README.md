@@ -20,7 +20,7 @@
 | [`CLAUDE.md`](./CLAUDE.md) | Claude Code 入口转发(≤80 行;不复制 `AGENTS.md` 全文) | 入口转发 |
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | v1 / V1.1 / V2 架构蓝图与设计背景;**请先读顶部"当前阶段说明"** | 设计背景 |
 | [`docs/process.md`](./docs/process.md) | 开发流程与协作制度:开工 checklist、PR 五档分级、release 收口、AI 协作纪律 | 流程制度 |
-| [`docs/api-surface-policy.md`](./docs/api-surface-policy.md) | API surface 长期边界:Mobile App / Admin Legacy / Root Legacy 三层 + 新增 / 迁移规则 | 长期铁律 |
+| [`docs/api-surface-policy.md`](./docs/api-surface-policy.md) · [`docs/api-surface-migration-plan.md`](./docs/api-surface-migration-plan.md) | API surface 长期边界:**Route B 四分**(Admin `/api/admin/v1` · App `/api/app/v1` · Auth `/api/auth/v1` · System `/api/system/v1`,预留 Open)+ 全量迁移计划(2026-06-01 立项;取代旧"方案 C / 三层") | 长期铁律 |
 | [`docs/srvf-foundation-baseline.md`](./docs/srvf-foundation-baseline.md) | V2 派生项目基线规范(13 项 A 档) | 长期铁律 |
 | [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) | V2 五档红线(A/B/C/D/E)与解锁触发条件 | 长期铁律 |
 | [`docs/security.md`](./docs/security.md) / [`docs/deployment.md`](./docs/deployment.md) / [`docs/development.md`](./docs/development.md) / [`docs/testing.md`](./docs/testing.md) | 安全 / 部署 / 排错 / 测试 SOP | 运行指引 |

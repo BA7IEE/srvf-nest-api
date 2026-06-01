@@ -557,6 +557,7 @@ API Client Boundary 设计期(Phase 0)过程性约束(原 §19.1 ~ §19.6)已随
 **D-1**:`contribution-rules` 客户端边界归 **System**(2026-05-19 拍板;详 [`api-client-boundary-inventory.md §2.25`](docs/archive/reviews/api-client-boundary-inventory.md))。目标路径 `/api/system/v1/contribution-rules/*`;普通 ADMIN 如需使用通过 `contribution-rule.*` 权限点明确授权,**不**归 Admin API。
 
 **D-2**:Phase 3 路径策略 = **方案 C**(`/api/v2/*` 长期保留为 Admin Legacy;2026-05-19 拍板;详 [`api-client-boundary-migration-plan.md §5`](docs/archive/plans/api-client-boundary-migration-plan.md))。旧 `/api/v2/*` **不**主动 deprecated / **不**强制迁移 / **不**做大面积老接口双写;新 App API 默认 `/api/app/v1/*` / 新 System API 默认 `/api/system/v1/*` / 新 Admin API 默认 `/api/admin/v1/*`;PC 管理后台联调口径**不**因 Phase 3 破坏。
+> ⚠️ **2026-06-01 已重开并被 §21 D-9 取代**:用户主动要求重开本条(已按本节 preamble"暂停说明后再讨论"履行),拍板放弃"方案 C",改为 **Route B 全量物理迁移**。**本条"不强制迁移 / 不做大面积双写"自 2026-06-01 起不再作为执行约束**;新 App / System / Admin 默认前缀的部分仍有效。当前执行权威源:§21 D-9 + [`docs/api-surface-migration-plan.md`](docs/api-surface-migration-plan.md)。D-1 / D-3 ~ D-8 不受影响。
 
 **D-3**:Phase 1 拆分 = **1A(Tag 改名)+ 1B(Public/Auth path alias)两个独立 PR**(2026-05-19 评审稿;详 [`api-client-boundary-phase-1-review.md`](docs/archive/reviews/api-client-boundary-phase-1-review.md))。Phase 1 整体为 **C 档**(非 A 档 docs-only),1A 与 1B 各自单独走 C 档验收;AI **禁止**自行启动 Phase 1A / 1B 代码改造,必须用户在 [`docs/process.md`](docs/process.md) 流程内单独立项。
 
@@ -588,3 +589,28 @@ API Client Boundary 设计期(Phase 0)过程性约束(原 §19.1 ~ §19.6)已随
 - 任何 cleanup 只能作用于**当前任务目标分支 / worktree**;**禁止**顺手清理 unrelated worktree、本地孤立 `claude/*` 分支、或非本任务 head 的 `origin/claude/*` 远端分支(本地、远端同标准)。
 - `.DS_Store` 等 macOS Finder 元数据按 [`docs/process.md §5.4.5`](docs/process.md) 处置(仅允许就地 `rm` 后重核 `status`);**不得**借此顺带清理其它 untracked 文件。
 - `gh pr merge --squash --delete-branch` 与 `git ls-remote --heads origin` 的 exit code 不能单独作为成败依据;必须按 [`docs/process.md §5.4.2 / §5.4.4`](docs/process.md) 复核 PR state 与 stdout。
+
+---
+
+## 21. API Surface 全量迁移决策(Route B;承接并取代 §19.7 D-2)
+
+> 本节是 §19.7 决策锁的**后续层**:沿 §19 开头"新增'客户端边界执行铁律'应**新增 §20+,不修订本节(§19)**"的 append-only 规则;§20 已被"Git 安全"占用,故顺延至本节。**D-series 编号在本节延续**(D-9),保持与 §19.7 D-1 ~ D-8 的交叉引用连续性。
+> 2026-06-01 用户主动要求重开 §19.7 D-2(已按 §19.7 preamble"暂停说明本节存在后再讨论"履行),拍板放弃"方案 C(`/api/v2/*` 长期保留)",改为 **Route B 全量物理迁移**。
+
+**D-9(2026-06-01 拍板;取代 D-2 的"不迁移"部分)**:API surface 改为**按客户端 / 使用场景四分 + 预留开放平台**:
+
+| Surface | 前缀 | 用途 |
+|---|---|---|
+| Admin | `/api/admin/v1/*` | 管理后台 / 运维后台业务 |
+| App | `/api/app/v1/*` | App / 小程序 / 队员端(**已建成,不迁移**) |
+| Auth | `/api/auth/v1/*` | 登录 / 刷新 / 登出 / 认证会话 |
+| System | `/api/system/v1/*` | 健康检查 / 运行状态 / 系统元信息 / ops 配置(承接 D-1 `contribution-rules` → System) |
+| Open | `/api/open/v1/*` | **预留**,本期不实现、不占用 |
+
+存量 `/api/v2/*` / `/api/auth/*` / `/api/users/*` / `/api/health/*` **将按 alias → 灰度 → deprecate → 删除分阶段全量迁移**(取代 D-2 的"不强制迁移 / 不做大面积老接口双写")。执行细节、逐 endpoint 归属、阶段顺序、回退条件以 active 权威源 [`docs/api-surface-migration-plan.md`](docs/api-surface-migration-plan.md) + [`docs/api-surface-policy.md §0`](docs/api-surface-policy.md) 为准。
+
+约束:
+- 迁移是 **D 档**:严格分阶段、分 PR、串行;每阶段先评审稿冻结再动代码;AI **禁止**自行启动任一阶段代码改造,必须用户逐阶段立项(沿 [`docs/process.md §4`](docs/process.md))。
+- **alias 阶段只加不删**(老 + 新 path 并存),保证零破坏;删除老 path 只能在 deprecation 窗口 ≥ 2 release + 前端/移动端切流确认 + 单独公告后执行。
+- **D-1**(`contribution-rules` → System)、**D-3** Phase 1A(Tag 改名,已完成)、**D-4 ~ D-8**(App 身份/权限/DTO/数据访问/架构边界)**继续完全有效**,本节不触碰;raw permission code ≠ app capability(D-5.3)在迁移中继续保持。
+- 灰区归属(audit-logs / storage / RBAC 系 / dictionaries / attachment-configs 归 Admin 还是 System)由迁移计划 Phase 0 产出映射表并经用户签字冻结,本节**不**预先拍板。
