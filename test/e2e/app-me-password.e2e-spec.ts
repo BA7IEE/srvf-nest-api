@@ -27,7 +27,6 @@ import { createTestApp } from '../setup/test-app';
 
 const NEW_PASSWORD = 'BrandNew1!';
 const APP_PATH = '/api/app/v1/me/password';
-const LEGACY_PATH = '/api/users/me/password';
 
 const WEAK_PASSWORDS: Array<[string, string]> = [
   ['短(7 字符,< MinLength(8))', 'Pass1!a'],
@@ -419,78 +418,8 @@ describe('App 视角本人自助改密 PUT /api/app/v1/me/password (P2-3)', () =
     });
   });
 
-  // ============ 10.2.9 path stability ============
-  // 评审稿 §4.5 + §11.2:旧 /api/users/me/password 行为**逐字不变**;
-  // 两 path 在同一 app 内共存,字段集 / DB 状态对齐;两次改密互不互相干扰。
-  describe('path stability(沿评审稿 §4.5 + §11.2)', () => {
-    it('App path 与 legacy path 行为字面对齐:返回 UserResponseDto 字段集相同', async () => {
-      // 两个不同用户独立走两个 path 改密;断言响应字段集相同。
-      const u1 = await createTestUser(app, { username: 'appcmppath1' });
-      const { authHeader: h1 } = await loginAs(app, 'appcmppath1');
-      const u2 = await createTestUser(app, { username: 'appcmppath2' });
-      const { authHeader: h2 } = await loginAs(app, 'appcmppath2');
-
-      const [appRes, legacyRes] = await Promise.all([
-        request(httpServer(app))
-          .put(APP_PATH)
-          .set('Authorization', h1)
-          .send({ oldPassword: TEST_PASSWORD, newPassword: NEW_PASSWORD }),
-        request(httpServer(app))
-          .put(LEGACY_PATH)
-          .set('Authorization', h2)
-          .send({ oldPassword: TEST_PASSWORD, newPassword: NEW_PASSWORD }),
-      ]);
-
-      expect(appRes.status).toBe(200);
-      expect(legacyRes.status).toBe(200);
-
-      const appData = appRes.body.data as Record<string, unknown>;
-      const legacyData = legacyRes.body.data as Record<string, unknown>;
-
-      // 字段集完全等价(沿 UserResponseDto zero drift)
-      expect(Object.keys(appData).sort()).toEqual(Object.keys(legacyData).sort());
-      expect(appData.id).toBe(u1.id);
-      expect(legacyData.id).toBe(u2.id);
-
-      // 两路径都不返敏感字段
-      for (const data of [appData, legacyData]) {
-        expect(data).not.toHaveProperty('passwordHash');
-        expect(data).not.toHaveProperty('refreshToken');
-        expect(data).not.toHaveProperty('accessToken');
-      }
-
-      // DB 状态对齐:两 user passwordHash 都已变化
-      const after1 = await prisma.user.findUnique({ where: { id: u1.id } });
-      const after2 = await prisma.user.findUnique({ where: { id: u2.id } });
-      expect(after1?.passwordHash).toBeDefined();
-      expect(after2?.passwordHash).toBeDefined();
-    });
-
-    it('改 App path 不影响 legacy path 后续可用:同用户 App 改一次 → 用 legacy path 再改回(可链式)', async () => {
-      await createTestUser(app, { username: 'appcmppath3' });
-      const { authHeader } = await loginAs(app, 'appcmppath3');
-
-      // 第一次:App path 改成 NEW_PASSWORD
-      const first = await request(httpServer(app))
-        .put(APP_PATH)
-        .set('Authorization', authHeader)
-        .send({ oldPassword: TEST_PASSWORD, newPassword: NEW_PASSWORD });
-      expect(first.status).toBe(200);
-
-      // App 改完旧 access token 仍有效(沿 §6.2);用同一 token 走 legacy path 再改回 TEST_PASSWORD
-      const second = await request(httpServer(app))
-        .put(LEGACY_PATH)
-        .set('Authorization', authHeader)
-        .send({ oldPassword: NEW_PASSWORD, newPassword: TEST_PASSWORD });
-      expect(second.status).toBe(200);
-
-      // 新密码登录可用
-      const login = await request(httpServer(app))
-        .post('/api/auth/v1/login')
-        .send({ username: 'appcmppath3', password: TEST_PASSWORD });
-      expect(login.status).toBe(200);
-    });
-  });
+  // Route B Phase 4d(2026-06-01):旧 /api/users/me/password path-stability 共存测试已删除
+  // (legacy controller 已移除;app/v1/me/password 行为由本 spec 其余用例覆盖)。
 
   // ============ 10.2.10 Admin without member 行为锁定(D-P2-3-1 = X) ============
   // 评审稿 §4.2.1 / §4.3 锁定:Admin / SUPER_ADMIN without member 允许使用 App 改密。

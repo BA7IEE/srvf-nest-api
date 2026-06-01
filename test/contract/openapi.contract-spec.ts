@@ -58,10 +58,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/system/v1/health/live'],
   ['get', '/api/system/v1/health/ready'],
 
-  ['get', '/api/users/me'],
-  ['patch', '/api/users/me'],
   // P0-D PR-3(2026-05-17):本人自助改密
-  ['put', '/api/users/me/password'],
 
   // V2 dictionaries (Step 3,2026-05-08)
 
@@ -401,7 +398,6 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'LoginDto',
   'CreateUserDto',
   'UpdateUserDto',
-  'UpdateMyProfileDto',
   'UpdateUserRoleDto',
   'UpdateUserStatusDto',
   'ResetUserPasswordDto',

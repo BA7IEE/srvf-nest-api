@@ -37,7 +37,7 @@ describe('Response format (横切)', () => {
   });
 
   it('未带 token 访问受保护接口 → UNAUTHORIZED 严格 message', async () => {
-    const res = await request(httpServer(app)).get('/api/users/me');
+    const res = await request(httpServer(app)).get('/api/admin/v1/users');
 
     expectBizError(res, BizCode.UNAUTHORIZED);
   });

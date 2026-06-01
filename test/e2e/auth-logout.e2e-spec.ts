@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { Role } from '@prisma/client';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -106,7 +107,7 @@ describe('POST /api/auth/v1/logout', () => {
 
   describe('access token 不被吊销(沿 D-4)', () => {
     it('logout 后旧 access token 仍可调 GET /me', async () => {
-      await createTestUser(app, { username: 'logoutaccess1' });
+      await createTestUser(app, { username: 'logoutaccess1', role: Role.SUPER_ADMIN });
       const { body: lb } = await request(httpServer(app))
         .post('/api/auth/v1/login')
         .send({ username: 'logoutaccess1', password: 'Passw0rd1!' });
@@ -117,11 +118,11 @@ describe('POST /api/auth/v1/logout', () => {
         .send({ refreshToken: lb.data.refreshToken });
 
       const meRes = await request(httpServer(app))
-        .get('/api/users/me')
+        .get('/api/admin/v1/users')
         .set('Authorization', authHeader);
       // access token 15m 内仍有效(P0-E v1 D-4:不主动吊销 access;CLAUDE/AGENTS §9)
       expect(meRes.status).toBe(200);
-      expect(meRes.body.data.username).toBe('logoutaccess1');
+      expect(meRes.body.code).toBe(0);
     });
   });
 

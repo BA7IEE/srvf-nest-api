@@ -27,7 +27,7 @@ describe('BizCode httpStatus ↔ HTTP status 一致性(抽样)', () => {
   });
 
   it('UNAUTHORIZED:无 token 访问受保护接口 → res.status === BizCode.UNAUTHORIZED.httpStatus', async () => {
-    const res = await request(httpServer(app)).get('/api/users/me');
+    const res = await request(httpServer(app)).get('/api/admin/v1/users');
 
     expect(res.status).toBe(BizCode.UNAUTHORIZED.httpStatus);
     expect(res.body.code).toBe(BizCode.UNAUTHORIZED.code);
