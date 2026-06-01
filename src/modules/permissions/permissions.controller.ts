@@ -33,7 +33,7 @@ import { PermissionsService } from './permissions.service';
 @ApiTags('Ops - Permissions')
 @ApiBearerAuth()
 @ApiExtraModels(PermissionResponseDto)
-@Controller('v2/permissions')
+@Controller(['v2/permissions', 'system/v1/permissions'])
 export class PermissionsController {
   constructor(private readonly service: PermissionsService) {}
 

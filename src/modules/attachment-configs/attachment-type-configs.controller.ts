@@ -41,7 +41,7 @@ import { AttachmentTypeConfigsService } from './attachment-type-configs.service'
 @ApiTags('Ops - Attachment Configs')
 @ApiBearerAuth()
 @ApiExtraModels(AttachmentTypeConfigResponseDto)
-@Controller('v2/attachment-type-configs')
+@Controller(['v2/attachment-type-configs', 'system/v1/attachment-type-configs'])
 export class AttachmentTypeConfigsController {
   constructor(private readonly service: AttachmentTypeConfigsService) {}
 

@@ -40,7 +40,7 @@ import { RbacRolesService } from './rbac-roles.service';
 @ApiTags('Ops - Roles')
 @ApiBearerAuth()
 @ApiExtraModels(RbacRoleResponseDto, RbacRoleDetailResponseDto, PermissionResponseDto)
-@Controller('v2/roles')
+@Controller(['v2/roles', 'system/v1/roles'])
 export class RbacRolesController {
   constructor(private readonly service: RbacRolesService) {}
 

@@ -32,7 +32,7 @@ import { StorageSettingsService } from './storage-settings.service';
 @ApiTags('Ops - Storage Settings')
 @ApiBearerAuth()
 @ApiExtraModels(StorageSettingsResponseDto)
-@Controller('v2/storage-settings')
+@Controller(['v2/storage-settings', 'system/v1/storage-settings'])
 export class StorageSettingsController {
   constructor(private readonly service: StorageSettingsService) {}
 

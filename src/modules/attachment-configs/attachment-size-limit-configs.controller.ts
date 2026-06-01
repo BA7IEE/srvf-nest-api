@@ -40,7 +40,7 @@ import { AttachmentSizeLimitConfigsService } from './attachment-size-limit-confi
 @ApiTags('Ops - Attachment Configs')
 @ApiBearerAuth()
 @ApiExtraModels(AttachmentSizeLimitConfigResponseDto, AttachmentSizeLimitConfigTypeConfigSummaryDto)
-@Controller('v2/attachment-size-limit-configs')
+@Controller(['v2/attachment-size-limit-configs', 'system/v1/attachment-size-limit-configs'])
 export class AttachmentSizeLimitConfigsController {
   constructor(private readonly service: AttachmentSizeLimitConfigsService) {}
 
