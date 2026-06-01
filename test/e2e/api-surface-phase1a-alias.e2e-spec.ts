@@ -71,7 +71,9 @@ describe('Route B Phase 1a alias(auth/v1 + system/v1/health)', () => {
       expect(newRes.status).toBe(200);
       expect(newRes.body.code).toBe(oldRes.body.code);
       // 两路径返回的字段集一致(都是 5 项 LoginResponse)
-      expect(Object.keys(newRes.body.data).sort()).toEqual(Object.keys(oldRes.body.data).sort());
+      const newData = newRes.body.data as Record<string, unknown>;
+      const oldData = oldRes.body.data as Record<string, unknown>;
+      expect(Object.keys(newData).sort()).toEqual(Object.keys(oldData).sort());
     });
   });
 });
