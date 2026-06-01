@@ -350,7 +350,7 @@ export class UpdateAttachmentDto {
 
 // ============ 列表入参 ============
 
-// GET /api/v2/attachments(管理后台列表;沿 D7 v1.0 §5.4.3)。
+// GET /api/admin/v1/attachments(管理后台列表;沿 D7 v1.0 §5.4.3)。
 export class ListAttachmentsQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     description: '按 ownerType 过滤(精确匹配)',
@@ -405,7 +405,7 @@ export class ListAttachmentsQueryDto extends PaginationQueryDto {
   tags?: string[];
 }
 
-// GET /api/v2/attachments/by-owner(业务模块常用入口;沿 D7 v1.0 §5.1 端点 6)。
+// GET /api/admin/v1/attachments/by-owner(业务模块常用入口;沿 D7 v1.0 §5.1 端点 6)。
 // ownerType + ownerId **必填**。
 export class ListAttachmentsByOwnerQueryDto extends PaginationQueryDto {
   @ApiProperty({
@@ -427,7 +427,7 @@ export class ListAttachmentsByOwnerQueryDto extends PaginationQueryDto {
   ownerId!: string;
 }
 
-// GET /api/v2/attachments/me/uploaded(本人上传列表;沿 D7 v1.0 §5.1 端点 7)。
+// GET /api/admin/v1/attachments/me/uploaded(本人上传列表;沿 D7 v1.0 §5.1 端点 7)。
 // 仅分页;uploadedBy 自动按 currentUser.id 注入(不接受入参覆盖)。
 // **直接复用 PaginationQueryDto**;controller 直接 @Query() query: PaginationQueryDto。
 

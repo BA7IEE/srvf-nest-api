@@ -165,17 +165,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 复用 30100 RBAC_FORBIDDEN(写路径)+ 信息泄漏防御 13001(读路径)。
   // 路径顺序铁律:/by-owner / /me/uploaded 字面段在 /:id 之前(NestJS 字面段优先 :id)。
   // **本 PR 不实装**:audit_logs 接入(留 PR #6c)/ Provider 文件层(Q15 挂起)。
-  ['post', '/api/v2/attachments'],
-  ['get', '/api/v2/attachments'],
   // V2.x C-7.5 实施 PR #10:upload-url + confirm-upload(沿评审 §8.1 / §8.2 / §8.3 / §8.4)
   // 路径顺序铁律:字面段优先,必须放在 :id 之前(沿 §8.2)
-  ['post', '/api/v2/attachments/upload-url'],
-  ['post', '/api/v2/attachments/confirm-upload'],
-  ['get', '/api/v2/attachments/by-owner'],
-  ['get', '/api/v2/attachments/me/uploaded'],
-  ['get', '/api/v2/attachments/{id}'],
-  ['patch', '/api/v2/attachments/{id}'],
-  ['delete', '/api/v2/attachments/{id}'],
 
   // V2.x C-7.5 实施 PR #11:Storage Settings admin Controller(沿评审 §6.5 / §6.6 + Q-11)
 

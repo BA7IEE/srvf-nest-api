@@ -178,10 +178,10 @@ describe('attachments audit_logs 集成', () => {
 
   // ============ upload 成功路径 ============
 
-  describe('POST /api/v2/attachments → attachment.upload', () => {
+  describe('POST /api/admin/v1/attachments → attachment.upload', () => {
     it('case 1: upload 成功 → attachment.upload audit 落库 1 条(基本字段)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(
           buildBody({
@@ -206,7 +206,7 @@ describe('attachments audit_logs 集成', () => {
 
     it('case 2: upload audit after snapshot 完整字段(含 originalUploaderName;不含 accessUrl / checksum / etag)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(
           buildBody({
@@ -248,7 +248,7 @@ describe('attachments audit_logs 集成', () => {
 
     it('case 3: upload audit extra 包含 operation / attachmentType / ownerType / ownerId / mime / size / scope / ownerTable', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', selfAuth)
         .send(buildBody({ mime: 'image/png', size: 200_000 }));
       expect(res.status).toBe(201);
@@ -270,7 +270,7 @@ describe('attachments audit_logs 集成', () => {
 
     it('case 4: upload audit context 含 requestId / ip / ua 三字段(沿 D6 §12)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .set('User-Agent', 'attach-audit-spec/1.0')
         .send(buildBody());
@@ -288,7 +288,7 @@ describe('attachments audit_logs 集成', () => {
 
     it('case 3b: scope=other 场景(SUPER_ADMIN 上传 memberB 附件;user.memberId=null → other)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ ownerId: memberB.id }));
       expect(res.status).toBe(201);
@@ -302,11 +302,11 @@ describe('attachments audit_logs 集成', () => {
 
   // ============ delete 成功路径 ============
 
-  describe('DELETE /api/v2/attachments/:id → attachment.delete', () => {
+  describe('DELETE /api/admin/v1/attachments/:id → attachment.delete', () => {
     it('case 5: delete 成功 → attachment.delete audit 落库 1 条(基本字段)', async () => {
       // 先 upload(会产生 1 条 upload audit)
       const upload = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody());
       expect(upload.status).toBe(201);
@@ -314,7 +314,7 @@ describe('attachments audit_logs 集成', () => {
       await truncateAuditLogsTestOnly(app); // 清掉 upload audit,只留 delete
 
       const del = await request(httpServer(app))
-        .delete(`/api/v2/attachments/${attId}`)
+        .delete(`/api/admin/v1/attachments/${attId}`)
         .set('Authorization', superAuth);
       expect(del.status).toBe(200);
 
@@ -331,7 +331,7 @@ describe('attachments audit_logs 集成', () => {
 
     it('case 6: delete audit before snapshot 完整字段(物理删后留快照便于追溯)', async () => {
       const upload = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ description: 'delete-before', tags: ['del'] }));
       const attId: string = upload.body.data.id;
@@ -339,7 +339,7 @@ describe('attachments audit_logs 集成', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .delete(`/api/v2/attachments/${attId}`)
+        .delete(`/api/admin/v1/attachments/${attId}`)
         .set('Authorization', superAuth);
 
       const log = (await prisma.auditLog.findFirst())!;
@@ -363,14 +363,14 @@ describe('attachments audit_logs 集成', () => {
     it('case 7a: delete extra deletedByPath=owner(currentUser = uploadedBy)', async () => {
       // selfUser 上传(memberA);selfUser 再删
       const upload = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', selfAuth)
         .send(buildBody());
       const attId: string = upload.body.data.id;
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .delete(`/api/v2/attachments/${attId}`)
+        .delete(`/api/admin/v1/attachments/${attId}`)
         .set('Authorization', selfAuth);
 
       const log = (await prisma.auditLog.findFirst())!;
@@ -389,14 +389,14 @@ describe('attachments audit_logs 集成', () => {
     it('case 7b: delete extra deletedByPath=admin(SUPER_ADMIN 删别人上传的)', async () => {
       // selfUser 上传(uploadedBy = selfId);SUPER_ADMIN 删
       const upload = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', selfAuth)
         .send(buildBody());
       const attId: string = upload.body.data.id;
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .delete(`/api/v2/attachments/${attId}`)
+        .delete(`/api/admin/v1/attachments/${attId}`)
         .set('Authorization', superAuth);
 
       const log = (await prisma.auditLog.findFirst())!;
@@ -412,7 +412,7 @@ describe('attachments audit_logs 集成', () => {
     it('case 8: upload RBAC 拒绝(30100)→ 无 audit', async () => {
       // selfUser(member 角色)上传 memberB 附件:无 .other 权限 → 30100
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', selfAuth)
         .send(buildBody({ ownerId: memberB.id }));
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -423,7 +423,7 @@ describe('attachments audit_logs 集成', () => {
 
     it('case 9: upload MIME 拒绝(13033;系统级黑名单)→ 无 audit', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ mime: 'application/zip' }));
       expectBizError(res, BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED);
@@ -434,7 +434,7 @@ describe('attachments audit_logs 集成', () => {
 
     it('case 10: upload size 拒绝(13013)→ 无 audit', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ size: 100_000_000 }));
       expectBizError(res, BizCode.ATTACHMENT_SIZE_EXCEEDED);
@@ -445,7 +445,7 @@ describe('attachments audit_logs 集成', () => {
 
     it('case 11: upload PII 拒绝(13015;身份证号)→ 无 audit', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ description: '身份证 11010119900101123X' }));
       expectBizError(res, BizCode.ATTACHMENT_PII_DETECTED);
@@ -457,14 +457,14 @@ describe('attachments audit_logs 集成', () => {
     it('case 12: delete RBAC 拒绝(30100)→ 无 audit', async () => {
       // superAdmin 先上传 memberB 附件(短路通过);selfUser 删:无 .other 权限 → 30100
       const upload = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ ownerId: memberB.id }));
       const attId: string = upload.body.data.id;
       await truncateAuditLogsTestOnly(app);
 
       const del = await request(httpServer(app))
-        .delete(`/api/v2/attachments/${attId}`)
+        .delete(`/api/admin/v1/attachments/${attId}`)
         .set('Authorization', selfAuth);
       expectBizError(del, BizCode.RBAC_FORBIDDEN);
 
@@ -474,7 +474,7 @@ describe('attachments audit_logs 集成', () => {
 
     it('case 13: delete 不存在(13001)→ 无 audit', async () => {
       const res = await request(httpServer(app))
-        .delete('/api/v2/attachments/cl9z3a8b00000abcd1234efgh')
+        .delete('/api/admin/v1/attachments/cl9z3a8b00000abcd1234efgh')
         .set('Authorization', superAuth);
       expectBizError(res, BizCode.ATTACHMENT_NOT_FOUND);
 
@@ -488,14 +488,14 @@ describe('attachments audit_logs 集成', () => {
   describe('PATCH metadata 不审计(沿 D7 §7.1 / Q7 v0.2 锁)', () => {
     it('case 14: PATCH 成功更新 description / tags / accessLevel / expireAt → 无 audit', async () => {
       const upload = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody());
       const attId: string = upload.body.data.id;
       await truncateAuditLogsTestOnly(app); // 清掉 upload audit
 
       const patch = await request(httpServer(app))
-        .patch(`/api/v2/attachments/${attId}`)
+        .patch(`/api/admin/v1/attachments/${attId}`)
         .set('Authorization', superAuth)
         .send({
           description: 'updated metadata',
@@ -515,7 +515,7 @@ describe('attachments audit_logs 集成', () => {
   describe('同事务 fail-fast(沿 D7 §7.2)', () => {
     it('case 15: upload 成功 → attachment + audit 同事务可见(count 都 = 1)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody());
       expect(res.status).toBe(201);
@@ -529,14 +529,14 @@ describe('attachments audit_logs 集成', () => {
     it('case 16: delete 成功 → attachment 物理删除,且 audit attachment.delete 落库', async () => {
       // 别用 typeConfigMemberId,直接用 superAuth 上传
       const upload = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody());
       const attId: string = upload.body.data.id;
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .delete(`/api/v2/attachments/${attId}`)
+        .delete(`/api/admin/v1/attachments/${attId}`)
         .set('Authorization', superAuth);
 
       // 物理删:Attachment row 不存在

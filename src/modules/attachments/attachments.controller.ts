@@ -29,14 +29,14 @@ import { AttachmentsService } from './attachments.service';
 // V2.x C-7 attachments 实施 PR #6b(2026-05-15):attachments 主模块 Controller。
 //
 // 端点(沿 D7-attachments v1.0 §5.1;**本 Controller 拆分后仅承载 8 个 Admin 端点**):
-//   POST   /api/v2/attachments                创建附件元数据
-//   GET    /api/v2/attachments                列表(分页;管理后台用;逐条 ownership 过滤)
-//   POST   /api/v2/attachments/upload-url     申请 signed upload URL(模式 B)
-//   POST   /api/v2/attachments/confirm-upload 确认上传完成(模式 B)
-//   GET    /api/v2/attachments/by-owner       按 ownerType+ownerId 列出(业务模块常用)
-//   GET    /api/v2/attachments/:id            详情
-//   PATCH  /api/v2/attachments/:id            更新 description / accessLevel / tags / expireAt
-//   DELETE /api/v2/attachments/:id            物理删(Q11 v1.0)
+//   POST   /api/admin/v1/attachments                创建附件元数据
+//   GET    /api/admin/v1/attachments                列表(分页;管理后台用;逐条 ownership 过滤)
+//   POST   /api/admin/v1/attachments/upload-url     申请 signed upload URL(模式 B)
+//   POST   /api/admin/v1/attachments/confirm-upload 确认上传完成(模式 B)
+//   GET    /api/admin/v1/attachments/by-owner       按 ownerType+ownerId 列出(业务模块常用)
+//   GET    /api/admin/v1/attachments/:id            详情
+//   PATCH  /api/admin/v1/attachments/:id            更新 description / accessLevel / tags / expireAt
+//   DELETE /api/admin/v1/attachments/:id            物理删(Q11 v1.0)
 //
 // **入口 Guard 统一 JwtAuthGuard**(F3 v1.0 锁;**不加** `@Roles(...)`):全部判权
 //   在 Service 层 rbac.can();失败抛 30100 RBAC_FORBIDDEN(写) / 13001 ATTACHMENT_NOT_FOUND(读)。
@@ -51,7 +51,7 @@ import { AttachmentsService } from './attachments.service';
 @ApiTags('Admin - Attachments')
 @ApiBearerAuth()
 @ApiExtraModels(AttachmentResponseDto, UploadUrlResponseDto)
-@Controller(['v2/attachments', 'admin/v1/attachments'])
+@Controller('admin/v1/attachments')
 export class AttachmentsController {
   constructor(private readonly service: AttachmentsService) {}
 

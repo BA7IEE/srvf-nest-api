@@ -69,7 +69,7 @@ export class LocalStorageProvider implements StorageProvider {
   }
 
   // LocalProvider 不接 client direct PUT;返 stub URL
-  // dev/test 主路径走模式 D(POST /api/v2/attachments 直传 putObject);
+  // dev/test 主路径走模式 D(POST /api/admin/v1/attachments 直传 putObject);
   // 此处仅保留接口对称性 + expiresAt 计算(沿 Q5b headers 必填可空 / Q5c method PUT 默认)
   // 非 async:无 await 调用(沿 require-await lint);保持接口签名 Promise<T>
   generateUploadUrl(input: GenerateUploadUrlInput): Promise<UploadUrlResult> {

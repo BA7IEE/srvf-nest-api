@@ -341,7 +341,7 @@ export class AttachmentsService {
 
   // ============ 7 端点业务逻辑 ============
 
-  // POST /api/v2/attachments
+  // POST /api/admin/v1/attachments
   async create(
     dto: CreateAttachmentDto,
     user: CurrentUserPayload,
@@ -410,7 +410,7 @@ export class AttachmentsService {
     return this.toResponseDto(row);
   }
 
-  // GET /api/v2/attachments(管理后台列表;按入参 query 过滤;逐条 ownership 过滤)。
+  // GET /api/admin/v1/attachments(管理后台列表;按入参 query 过滤;逐条 ownership 过滤)。
   async list(
     query: ListAttachmentsQueryDto,
     user: CurrentUserPayload,
@@ -449,7 +449,7 @@ export class AttachmentsService {
     return { items, total, page, pageSize };
   }
 
-  // GET /api/v2/attachments/:id
+  // GET /api/admin/v1/attachments/:id
   async getById(id: string, user: CurrentUserPayload): Promise<AttachmentResponseDto> {
     // 1. 查活跃记录(不存在 → 13001)
     const row = await this.findByIdOrThrow(id);
@@ -466,7 +466,7 @@ export class AttachmentsService {
     return this.toResponseDto(row);
   }
 
-  // PATCH /api/v2/attachments/:id
+  // PATCH /api/admin/v1/attachments/:id
   async update(
     id: string,
     dto: UpdateAttachmentDto,
@@ -510,7 +510,7 @@ export class AttachmentsService {
     return this.toResponseDto(updated);
   }
 
-  // DELETE /api/v2/attachments/:id(Q11 v1.0:物理删,不查跨表引用)。
+  // DELETE /api/admin/v1/attachments/:id(Q11 v1.0:物理删,不查跨表引用)。
   async delete(
     id: string,
     user: CurrentUserPayload,
@@ -554,7 +554,7 @@ export class AttachmentsService {
     return this.toResponseDto(row);
   }
 
-  // GET /api/v2/attachments/by-owner?ownerType=&ownerId=
+  // GET /api/admin/v1/attachments/by-owner?ownerType=&ownerId=
   // 逐条 ownership 过滤;total 按可见数量返(沿 list 范式)。
   async listByOwner(
     query: ListAttachmentsByOwnerQueryDto,
@@ -586,7 +586,7 @@ export class AttachmentsService {
     return { items, total, page: query.page, pageSize: query.pageSize };
   }
 
-  // GET /api/v2/attachments/me/uploaded — 本人上传列表(uploadedBy = currentUser.id)。
+  // GET /api/admin/v1/attachments/me/uploaded — 本人上传列表(uploadedBy = currentUser.id)。
   // 沿 D7 §5.1 端点 7:**自动按 uploadedBy 筛**,不需要 RBAC(本人查自己豁免)。
   async listMyUploaded(
     query: PaginationQueryDto,
@@ -640,7 +640,7 @@ export class AttachmentsService {
   // - 0 新 AuditLogEvent(沿 B4)
   // - 0 新 RBAC 权限点(沿 B3;复用 attachment.upload.<type>.<scope>)
 
-  // POST /api/v2/attachments/upload-url
+  // POST /api/admin/v1/attachments/upload-url
   async createUploadUrl(
     dto: GenerateUploadUrlDto,
     user: CurrentUserPayload,
@@ -702,7 +702,7 @@ export class AttachmentsService {
     };
   }
 
-  // POST /api/v2/attachments/confirm-upload
+  // POST /api/admin/v1/attachments/confirm-upload
   async confirmUpload(
     dto: ConfirmUploadDto,
     user: CurrentUserPayload,

@@ -251,13 +251,13 @@ describe('attachments 主模块', () => {
     beforeAll(truncateAttachments);
 
     it('未登录 → 40100 UNAUTHORIZED', async () => {
-      const res = await request(httpServer(app)).get('/api/v2/attachments');
+      const res = await request(httpServer(app)).get('/api/admin/v1/attachments');
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('SUPER_ADMIN 短路:可创建 member 类附件(无须 RBAC 权限点)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody());
       expect(res.status).toBe(201);
@@ -270,7 +270,7 @@ describe('attachments 主模块', () => {
 
     it('ADMIN 无 attachment.upload.*:被拒 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', adminAuth)
         .send(buildBody());
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -278,7 +278,7 @@ describe('attachments 主模块', () => {
 
     it('member 角色用户上传本人(memberA)附件:.self 命中 → 成功', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', selfAuth)
         .send(buildBody());
       expect(res.status).toBe(201);
@@ -286,7 +286,7 @@ describe('attachments 主模块', () => {
 
     it('member 角色用户上传他人(memberB)附件:无 .other 权限 → 30100', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', selfAuth)
         .send(buildBody({ ownerId: memberB.id }));
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -294,7 +294,7 @@ describe('attachments 主模块', () => {
 
     it('无 memberId 绑定的 USER 上传本人附件:user.memberId=null,scope 退化为 other → 30100', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', noMemberAuth)
         .send(buildBody({ ownerId: memberA.id }));
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -303,12 +303,12 @@ describe('attachments 主模块', () => {
 
   // ============ POST create ============
 
-  describe('POST /api/v2/attachments', () => {
+  describe('POST /api/admin/v1/attachments', () => {
     beforeEach(truncateAttachments);
 
     it('member 上传 certificate 类附件:Service 层先查 cert.memberId → .self 命中', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', selfAuth)
         .send(
           buildBody({
@@ -323,7 +323,7 @@ describe('attachments 主模块', () => {
 
     it('other(memberB)上传 certificateA(memberA)附件:Service 层 cert.memberId=memberA ≠ user.memberId=B → other → 30100', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', otherAuth)
         .send(
           buildBody({
@@ -337,7 +337,7 @@ describe('attachments 主模块', () => {
 
     it('activity 类附件:member 角色持 attachment.view.activity 但**无 upload** → 30100', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', selfAuth)
         .send(buildBody({ ownerType: 'activity', ownerId: activity.id }));
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -345,7 +345,7 @@ describe('attachments 主模块', () => {
 
     it('SUPER_ADMIN 上传 activity 附件:短路通过', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ ownerType: 'activity', ownerId: activity.id }));
       expect(res.status).toBe(201);
@@ -353,7 +353,7 @@ describe('attachments 主模块', () => {
 
     it('ownerType 非法字符串 → 13010 ATTACHMENT_OWNER_TYPE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ ownerType: 'nonexistent' }));
       expectBizError(res, BizCode.ATTACHMENT_OWNER_TYPE_INVALID);
@@ -366,7 +366,7 @@ describe('attachments 主模块', () => {
         data: { deletedAt: new Date() },
       });
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ ownerType: 'certificate', ownerId: certificateA.id }));
       expectBizError(res, BizCode.ATTACHMENT_OWNER_TYPE_INVALID);
@@ -379,7 +379,7 @@ describe('attachments 主模块', () => {
 
     it('ownerId 不存在的 cuid → 13011 ATTACHMENT_OWNER_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ ownerId: 'cl9z3a8b00000abcd1234efgh' }));
       expectBizError(res, BizCode.ATTACHMENT_OWNER_NOT_FOUND);
@@ -387,7 +387,7 @@ describe('attachments 主模块', () => {
 
     it('mime 系统级黑名单 application/zip → 13033', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ mime: 'application/zip' }));
       expectBizError(res, BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED);
@@ -395,7 +395,7 @@ describe('attachments 主模块', () => {
 
     it('mime 系统级黑名单通配 video/mp4 → 13033', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ mime: 'video/mp4' }));
       expectBizError(res, BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED);
@@ -403,7 +403,7 @@ describe('attachments 主模块', () => {
 
     it('mime 不在 typeConfig.defaultMimeWhitelist → 13012', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ mime: 'image/gif' }));
       expectBizError(res, BizCode.ATTACHMENT_MIME_NOT_ALLOWED);
@@ -414,7 +414,7 @@ describe('attachments 主模块', () => {
         data: { typeConfigId: typeConfigMember.id, mime: 'image/webp' },
       });
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ mime: 'image/webp' }));
       expect(res.status).toBe(201);
@@ -423,7 +423,7 @@ describe('attachments 主模块', () => {
 
     it('size 超过 typeConfig.defaultMaxSizeBytes(5MB) → 13013', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ size: 10_000_000 }));
       expectBizError(res, BizCode.ATTACHMENT_SIZE_EXCEEDED);
@@ -434,7 +434,7 @@ describe('attachments 主模块', () => {
         data: { typeConfigId: typeConfigMember.id, maxSizeBytes: 1_000_000 },
       });
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ size: 2_000_000 }));
       expectBizError(res, BizCode.ATTACHMENT_SIZE_EXCEEDED);
@@ -443,7 +443,7 @@ describe('attachments 主模块', () => {
 
     it('PII 在 originalName(身份证号 18 位)→ 13015', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ originalName: '110101199001011234.jpg' }));
       expectBizError(res, BizCode.ATTACHMENT_PII_DETECTED);
@@ -451,7 +451,7 @@ describe('attachments 主模块', () => {
 
     it('PII 在 description → 13015', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ description: '身份证 11010119900101123X 已校对' }));
       expectBizError(res, BizCode.ATTACHMENT_PII_DETECTED);
@@ -459,7 +459,7 @@ describe('attachments 主模块', () => {
 
     it('PII 在 tags[*] → 13015', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(buildBody({ tags: ['ok', '110101199001011234'] }));
       expectBizError(res, BizCode.ATTACHMENT_PII_DETECTED);
@@ -467,7 +467,7 @@ describe('attachments 主模块', () => {
 
     it('DTO forbidNonWhitelisted 拒绝 uploadedBy / id → 40000', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send({ ...buildBody(), uploadedBy: 'fake', id: 'fake' });
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
@@ -475,7 +475,7 @@ describe('attachments 主模块', () => {
 
     it('成功路径返完整 DTO(含 accessUrl: string 走 LocalProvider;不含 checksum / etag)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments')
+        .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
         .send(
           buildBody({
@@ -506,7 +506,7 @@ describe('attachments 主模块', () => {
 
   // ============ GET list ============
 
-  describe('GET /api/v2/attachments', () => {
+  describe('GET /api/admin/v1/attachments', () => {
     let memberAtt: { id: string }; // memberA 附件
     let memberBAtt: { id: string }; // memberB 附件
     let certAtt: { id: string }; // memberA 的 certificate 附件
@@ -568,7 +568,7 @@ describe('attachments 主模块', () => {
 
     it('SUPER_ADMIN 看到全部 4 条', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachments')
+        .get('/api/admin/v1/attachments')
         .set('Authorization', superAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.total).toBe(4);
@@ -576,7 +576,7 @@ describe('attachments 主模块', () => {
 
     it('selfUser(memberA)只看到 .self 命中条 + activity.view 命中 = memberAtt + certAtt + activityAtt(3 条;Q12 v1.0 total 按可见数量)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachments')
+        .get('/api/admin/v1/attachments')
         .set('Authorization', selfAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.total).toBe(3);
@@ -589,7 +589,7 @@ describe('attachments 主模块', () => {
 
     it('list filter ownerType=activity:SUPER_ADMIN 仅看到 activityAtt', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachments?ownerType=activity')
+        .get('/api/admin/v1/attachments?ownerType=activity')
         .set('Authorization', superAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.total).toBe(1);
@@ -598,7 +598,7 @@ describe('attachments 主模块', () => {
 
     it('list filter mime=application/pdf:SUPER_ADMIN 仅看到 certAtt', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachments?mime=application/pdf')
+        .get('/api/admin/v1/attachments?mime=application/pdf')
         .set('Authorization', superAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.total).toBe(1);
@@ -607,7 +607,7 @@ describe('attachments 主模块', () => {
 
     it('list filter tags=shared:OR 语义命中 memberAtt', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachments?tags=shared')
+        .get('/api/admin/v1/attachments?tags=shared')
         .set('Authorization', superAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.total).toBe(1);
@@ -615,7 +615,7 @@ describe('attachments 主模块', () => {
 
     it('list 分页 page=1&pageSize=2', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachments?page=1&pageSize=2')
+        .get('/api/admin/v1/attachments?page=1&pageSize=2')
         .set('Authorization', superAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.items.length).toBe(2);
@@ -625,7 +625,7 @@ describe('attachments 主模块', () => {
 
   // ============ GET by-owner ============
 
-  describe('GET /api/v2/attachments/by-owner', () => {
+  describe('GET /api/admin/v1/attachments/by-owner', () => {
     beforeAll(async () => {
       await truncateAttachments();
       // 给 memberA 创 2 条;memberB 创 1 条
@@ -665,7 +665,7 @@ describe('attachments 主模块', () => {
 
     it('SUPER_ADMIN 查 memberA → 2 条', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/attachments/by-owner?ownerType=member&ownerId=${memberA.id}`)
+        .get(`/api/admin/v1/attachments/by-owner?ownerType=member&ownerId=${memberA.id}`)
         .set('Authorization', superAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.total).toBe(2);
@@ -673,7 +673,7 @@ describe('attachments 主模块', () => {
 
     it('selfUser 查 memberA → .self 命中 → 2 条', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/attachments/by-owner?ownerType=member&ownerId=${memberA.id}`)
+        .get(`/api/admin/v1/attachments/by-owner?ownerType=member&ownerId=${memberA.id}`)
         .set('Authorization', selfAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.total).toBe(2);
@@ -681,7 +681,7 @@ describe('attachments 主模块', () => {
 
     it('selfUser 查 memberB → .other 缺失 → total=0(Q12 v1.0)', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/attachments/by-owner?ownerType=member&ownerId=${memberB.id}`)
+        .get(`/api/admin/v1/attachments/by-owner?ownerType=member&ownerId=${memberB.id}`)
         .set('Authorization', selfAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.total).toBe(0);
@@ -689,90 +689,35 @@ describe('attachments 主模块', () => {
 
     it('缺 ownerType → BAD_REQUEST', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/attachments/by-owner?ownerId=${memberA.id}`)
+        .get(`/api/admin/v1/attachments/by-owner?ownerId=${memberA.id}`)
         .set('Authorization', superAuth);
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
     });
 
     it('ownerId 不存在 → 13011', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachments/by-owner?ownerType=member&ownerId=cl9z3a8b00000abcd1234efgh')
+        .get(
+          '/api/admin/v1/attachments/by-owner?ownerType=member&ownerId=cl9z3a8b00000abcd1234efgh',
+        )
         .set('Authorization', superAuth);
       expectBizError(res, BizCode.ATTACHMENT_OWNER_NOT_FOUND);
     });
 
     it('ownerType 非法 → 13010', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/attachments/by-owner?ownerType=invalid&ownerId=${memberA.id}`)
+        .get(`/api/admin/v1/attachments/by-owner?ownerType=invalid&ownerId=${memberA.id}`)
         .set('Authorization', superAuth);
       expectBizError(res, BizCode.ATTACHMENT_OWNER_TYPE_INVALID);
     });
   });
 
-  // ============ GET me/uploaded ============
-
-  describe('GET /api/v2/attachments/me/uploaded', () => {
-    let superId: string;
-    let selfId: string;
-
-    beforeAll(async () => {
-      await truncateAttachments();
-      superId = (await prisma.user.findFirst({ where: { username: SUPER_USERNAME } }))!.id;
-      selfId = (await prisma.user.findFirst({ where: { username: SELF_USERNAME } }))!.id;
-      await prisma.attachment.createMany({
-        data: [
-          {
-            key: 'mu1',
-            originalName: 'a.jpg',
-            mime: 'image/jpeg',
-            size: 100,
-            uploadedBy: superId,
-            ownerType: 'member',
-            ownerId: memberA.id,
-          },
-          {
-            key: 'mu2',
-            originalName: 'a2.jpg',
-            mime: 'image/jpeg',
-            size: 100,
-            uploadedBy: superId,
-            ownerType: 'member',
-            ownerId: memberA.id,
-          },
-          {
-            key: 'mu3',
-            originalName: 'self.jpg',
-            mime: 'image/jpeg',
-            size: 100,
-            uploadedBy: selfId,
-            ownerType: 'member',
-            ownerId: memberA.id,
-          },
-        ],
-      });
-    });
-
-    it('SUPER_ADMIN /me/uploaded:自动按 uploadedBy=superId 筛 → 2 条', async () => {
-      const res = await request(httpServer(app))
-        .get('/api/v2/attachments/me/uploaded')
-        .set('Authorization', superAuth);
-      expect(res.status).toBe(200);
-      expect(res.body.data.total).toBe(2);
-    });
-
-    it('selfUser /me/uploaded:不走 RBAC,自动按 uploadedBy=selfId 筛 → 1 条', async () => {
-      const res = await request(httpServer(app))
-        .get('/api/v2/attachments/me/uploaded')
-        .set('Authorization', selfAuth);
-      expect(res.status).toBe(200);
-      expect(res.body.data.total).toBe(1);
-      expect(res.body.data.items[0].uploadedBy).toBe(selfId);
-    });
-  });
+  // Route B Phase 4e(2026-06-01):legacy GET /api/admin/v1/attachments/me/uploaded(orphan)已删除
+  // (无生产消费者,未建 app/v1 替代;`listMyUploaded` service 保留为未来 app/v1/my/attachments
+  // building block)。沿 docs/api-surface-migration-plan.md §3.3。
 
   // ============ GET /:id ============
 
-  describe('GET /api/v2/attachments/:id', () => {
+  describe('GET /api/admin/v1/attachments/:id', () => {
     let memberAtt: { id: string };
     let memberBAtt: { id: string };
 
@@ -807,7 +752,7 @@ describe('attachments 主模块', () => {
 
     it('SUPER_ADMIN 查任意附件 → 成功', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/attachments/${memberAtt.id}`)
+        .get(`/api/admin/v1/attachments/${memberAtt.id}`)
         .set('Authorization', superAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.id).toBe(memberAtt.id);
@@ -815,21 +760,21 @@ describe('attachments 主模块', () => {
 
     it('selfUser 查本人附件 → 成功', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/attachments/${memberAtt.id}`)
+        .get(`/api/admin/v1/attachments/${memberAtt.id}`)
         .set('Authorization', selfAuth);
       expect(res.status).toBe(200);
     });
 
     it('selfUser 查他人附件 → Q13 信息泄漏防御:返 13001', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/attachments/${memberBAtt.id}`)
+        .get(`/api/admin/v1/attachments/${memberBAtt.id}`)
         .set('Authorization', selfAuth);
       expectBizError(res, BizCode.ATTACHMENT_NOT_FOUND);
     });
 
     it('id 不存在 → 13001', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachments/cl9z3a8b00000abcd1234efgh')
+        .get('/api/admin/v1/attachments/cl9z3a8b00000abcd1234efgh')
         .set('Authorization', superAuth);
       expectBizError(res, BizCode.ATTACHMENT_NOT_FOUND);
     });
@@ -837,7 +782,7 @@ describe('attachments 主模块', () => {
 
   // ============ PATCH /:id ============
 
-  describe('PATCH /api/v2/attachments/:id', () => {
+  describe('PATCH /api/admin/v1/attachments/:id', () => {
     let memberAtt: { id: string };
     let memberBAtt: { id: string };
 
@@ -872,7 +817,7 @@ describe('attachments 主模块', () => {
 
     it('selfUser 更新本人附件(description / tags / accessLevel / expireAt)→ 成功', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachments/${memberAtt.id}`)
+        .patch(`/api/admin/v1/attachments/${memberAtt.id}`)
         .set('Authorization', selfAuth)
         .send({
           description: 'updated',
@@ -888,7 +833,7 @@ describe('attachments 主模块', () => {
 
     it('selfUser 更新他人附件 → 30100 RBAC_FORBIDDEN(写路径)', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachments/${memberBAtt.id}`)
+        .patch(`/api/admin/v1/attachments/${memberBAtt.id}`)
         .set('Authorization', selfAuth)
         .send({ description: 'hack' });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -896,7 +841,7 @@ describe('attachments 主模块', () => {
 
     it('id 不存在 → 13001', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/attachments/cl9z3a8b00000abcd1234efgh')
+        .patch('/api/admin/v1/attachments/cl9z3a8b00000abcd1234efgh')
         .set('Authorization', superAuth)
         .send({ description: 'x' });
       expectBizError(res, BizCode.ATTACHMENT_NOT_FOUND);
@@ -904,7 +849,7 @@ describe('attachments 主模块', () => {
 
     it('PATCH 拒绝 key / ownerType / ownerId / uploadedBy → 40000', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachments/${memberAtt.id}`)
+        .patch(`/api/admin/v1/attachments/${memberAtt.id}`)
         .set('Authorization', superAuth)
         .send({ key: 'new', ownerType: 'activity' });
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
@@ -912,7 +857,7 @@ describe('attachments 主模块', () => {
 
     it('PATCH description 命中身份证号 → 13015', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachments/${memberAtt.id}`)
+        .patch(`/api/admin/v1/attachments/${memberAtt.id}`)
         .set('Authorization', superAuth)
         .send({ description: '110101199001011234' });
       expectBizError(res, BizCode.ATTACHMENT_PII_DETECTED);
@@ -921,7 +866,7 @@ describe('attachments 主模块', () => {
 
   // ============ DELETE /:id ============
 
-  describe('DELETE /api/v2/attachments/:id', () => {
+  describe('DELETE /api/admin/v1/attachments/:id', () => {
     let memberAtt: { id: string };
     let memberBAtt: { id: string };
 
@@ -956,32 +901,34 @@ describe('attachments 主模块', () => {
 
     it('selfUser 删本人附件 → 成功(物理删;Q11 v1.0)', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attachments/${memberAtt.id}`)
+        .delete(`/api/admin/v1/attachments/${memberAtt.id}`)
         .set('Authorization', selfAuth);
       expect(res.status).toBe(200);
       // 物理删:再次 GET 返 13001
       const get = await request(httpServer(app))
-        .get(`/api/v2/attachments/${memberAtt.id}`)
+        .get(`/api/admin/v1/attachments/${memberAtt.id}`)
         .set('Authorization', superAuth);
       expectBizError(get, BizCode.ATTACHMENT_NOT_FOUND);
     });
 
     it('selfUser 删他人附件 → 30100', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attachments/${memberBAtt.id}`)
+        .delete(`/api/admin/v1/attachments/${memberBAtt.id}`)
         .set('Authorization', selfAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('id 不存在 → 13001', async () => {
       const res = await request(httpServer(app))
-        .delete('/api/v2/attachments/cl9z3a8b00000abcd1234efgh')
+        .delete('/api/admin/v1/attachments/cl9z3a8b00000abcd1234efgh')
         .set('Authorization', superAuth);
       expectBizError(res, BizCode.ATTACHMENT_NOT_FOUND);
     });
 
     it('未登录 → 40100', async () => {
-      const res = await request(httpServer(app)).delete(`/api/v2/attachments/${memberAtt.id}`);
+      const res = await request(httpServer(app)).delete(
+        `/api/admin/v1/attachments/${memberAtt.id}`,
+      );
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
   });
