@@ -33,16 +33,56 @@
 
 ---
 
-## 3. 当前 → 目标 surface 映射(原则冻结;逐条归属待 Phase 0 用户签字)
+## 3. 现状 → 目标 surface 映射(Phase 0;2026-06-01 用户签字冻结)
 
-**分流原则**:
-- **业务 CRUD 资源** → `Admin`(`/api/admin/v1/*`):members / organizations / activities / activity-registrations / attendances / certificates / emergency-contacts / member-profiles / member-departments / users(管理 CRUD)。
-- **ops / 配置 / 可观测 / 平台基础设施资源** → `System`(`/api/system/v1/*`):`contribution-rules`(**D-1 已锁**)、rbac / roles / permissions / user-roles / role-permissions(现 Tag `Ops - RBAC`)、dictionaries(现 Tag `Ops - Dictionaries`)、audit-logs、storage-settings、attachment-{type,mime,size-limit}-configs。
-- **认证会话** → `Auth`(`/api/auth/v1/*`):login / refresh / logout / logout-all。
-- **健康/系统元信息** → `System`(`/api/system/v1/health` 等)。
-- **历史 mobile-like 重复端点**(`/api/users/me/*`、`/api/v2/users/me/*`、`/api/v2/attachments/me/uploaded`、`/api/v2/rbac/me/permissions`)→ **不迁移**:已有 `/api/app/v1/*` 对等者进入 Phase 4 删除候选;**例外** `/api/v2/rbac/me/permissions`(raw RBAC code,与 `/me/capabilities` 语义不等价,沿 D-5.3)需单独决议是否保留为 System 端点,**默认保留**。
+> **签字记录**:2026-06-01 用户授权按下述规则全量冻结,并确认 8 个 legacy mobile-like 端点纳入 Phase 4 删除;明确约束"**不留后遗症 / 终态彻底干净**"。本节自此为 **Phase 0 冻结产物,不回改**;逐 route 权威清单见 [`test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) `EXPECTED_ROUTES`(**156 路由**)。后续任何 Phase 1+ PR **不得偏离**本映射。
 
-> ⚠️ 上述为**原则**,不是最终归属。`audit-logs` / `storage-settings` / RBAC 系 / `dictionaries` / `attachment-configs` 归 Admin 还是 System 存在真实灰区,**必须**在 Phase 0 产出逐 endpoint 映射表并经用户签字后冻结;本稿**不**预先拍板灰区归属。
+### 3.1 冻结规则
+
+1. **只换前缀,不改路径结构**(endpoint zero drift;仅 `@Controller` 前缀段变化,方法 path / param / 段顺序全不动)。
+2. **tag 即 surface**:`Admin - *` → Admin;`Ops - *` + `Public`(health)→ System;`Auth` → Auth;`Mobile - *` → App(已就位)/ legacy 删除。surface 分类沿 v0.15.0 Phase 1A Swagger Tag(#141/#142,已评审),不重新讨论。
+
+### 3.2 controller → 目标映射(全 37 controller / 156 路由)
+
+| 现 tag / controller | 现前缀 | 目标前缀 | surface | 路由 |
+|---|---|---|---|---|
+| Auth / auth | `auth/*` | `auth/v1/*` | **Auth** | 4 |
+| Public / health | `health/*` | `system/v1/health*` | **System** | 3 |
+| Admin - Users / users(管理 CRUD) | `users`(`/:id*`) | `admin/v1/users` | **Admin** | 8 |
+| Admin - Organizations | `v2/organizations` | `admin/v1/organizations` | Admin | 7 |
+| Admin - Members | `v2/members` | `admin/v1/members` | Admin | 6 |
+| Admin - Member Departments | `v2/members/:id/department` | `admin/v1/members/:id/department` | Admin | 3 |
+| Admin - Member Profiles | `v2/members/:id/profile` | `admin/v1/members/:id/profile` | Admin | 3 |
+| Admin - Emergency Contacts | `v2/members/:id/emergency-contacts` | `admin/v1/…` | Admin | 4 |
+| Admin - Certificates | `v2/members/:id/certificates` | `admin/v1/…` | Admin | 8 |
+| Admin - Activities | `v2/activities` | `admin/v1/activities` | Admin | 7 |
+| Admin - Registrations | `v2/activities/:id/registrations` | `admin/v1/…` | Admin | 6 |
+| Admin - Attendances | `v2/attendance-sheets` + `v2/activities/:id/attendance-sheets` | `admin/v1/…` | Admin | 10 |
+| Admin - Attachments | `v2/attachments`(7 admin 端点) | `admin/v1/attachments` | Admin | 7 |
+| Ops - Dictionaries | `v2/dict-types` + `v2/dict-items` | `system/v1/…` | **System** | 13 |
+| Ops - Contribution Rules(D-1) | `v2/contribution-rules` | `system/v1/contribution-rules` | System | 5 |
+| Ops - Audit Logs | `v2/audit-logs` | `system/v1/audit-logs` | System | 2 |
+| Ops - Permissions | `v2/permissions` | `system/v1/permissions` | System | 4 |
+| Ops - Roles | `v2/roles` | `system/v1/roles` | System | 5 |
+| Ops - Role Permissions | `v2/roles/:id/permissions` | `system/v1/…` | System | 2 |
+| Ops - User Roles | `v2/users/:userId/roles` | `system/v1/users/:userId/roles` | System | 3 |
+| Ops - RBAC | `v2/rbac`(reload + me/permissions) | `system/v1/rbac` | System | 2 |
+| Ops - Attachment Configs | `v2/attachment-{type,mime,size-limit}-configs` | `system/v1/…` | System | 17 |
+| Ops - Storage Settings | `v2/storage-settings` | `system/v1/storage-settings` | System | 3 |
+| Mobile - *(App) | `app/v1/*` | **不变** | **App** | 15 |
+| Mobile - *(legacy 重复) | `users/me*` + `v2/users/me/*` | **删除(Phase 4)** | — | 8 |
+
+合计:Admin **69** / System **59** / Auth **4** / App **15**(不迁移)/ legacy 删除 **8** + `attachments/me/uploaded` 特殊 **1** = **156**。
+
+### 3.3 特殊项处置(2026-06-01 拍板)
+
+1. **8 个 legacy mobile-like → Phase 4 删除**(均已有 app/v1 对等):`GET`/`PATCH /api/users/me` + `PUT /api/users/me/password`(3;对 `app/v1/me*`)、`/api/v2/users/me/registrations*` 系 4(对 `app/v1/my/registrations`)、`GET /api/v2/users/me/attendance-records`(1;对 `app/v1/my/attendance-records`)。
+2. **`GET /api/v2/rbac/me/permissions` → `GET /api/system/v1/rbac/me/permissions`**:raw RBAC code,PC 后台靠它显示按钮可见性,与 `app/v1/me/capabilities` 语义不等价(D-5.3),**不删**,随 Ops 迁 System。
+3. **`GET /api/v2/attachments/me/uploaded`(无 app/v1 对等)→ 不留孤儿**:删除该端点的**硬前置 = 先单独立项新建 `GET /api/app/v1/my/attachments`**(App surface + Mobile DTO,C 档,可与 alias 阶段并行);新端点上线 + 切流后,旧端点随 Phase 4 删除。该 App 端点建成前,旧端点保留(**不**进 Admin、**不**算迁移完成)。
+
+### 3.4 终态声明(无后遗症验收基线)
+
+迁移全部完成后,`EXPECTED_ROUTES` 中**只允许**出现 4 个前缀:`/api/admin/v1/*`、`/api/app/v1/*`、`/api/auth/v1/*`、`/api/system/v1/*`。**零** `/api/v2/*`、**零**裸 `/api/auth/*` / `/api/health/*` / `/api/users/*`、**零** legacy mobile-like 重复端点、**零**孤儿 mobile-like 端点。`/api/open/v1/*` 仍仅预留。**此为 Phase 4 收口的验收基线**(可写成 contract 断言:非四前缀路由数 = 0)。
 
 ---
 
@@ -73,11 +113,13 @@
 
 | Phase | 内容 | 档 | 可逆 | 硬前置 |
 |---|---|---|---|---|
-| **Phase 0** | 逐 endpoint 现状 → 目标映射表(admin/system 灰区归属);用户签字冻结 | D(立项 docs) | ✅ | 本立项稿 + NestJS 数组 path spike |
+| **Phase 0** | ✅ **已完成(2026-06-01 签字冻结;见 §3)**:全 156 路由现状→目标映射 + 终态验收基线 | D(立项 docs) | ✅ | 本立项稿 |
 | **Phase 1** | additive alias:每个 controller 双挂老+新 path;contract snapshot 显式扩为双路径;e2e 双路径回归 | D | ✅ | Phase 0 映射冻结 |
 | **Phase 2** | canonical 切换:新 path 为 Swagger 正统、老 path 标 `@deprecated`;前端/移动端切流;接入 old-path 流量观测 | D | ✅ | Phase 1 全绿 |
 | **Phase 3** | deprecation 窗口:维持双挂 ≥ 2 release;监测老 path 流量 → 0;发 deprecated 公告 | D | ✅ | Phase 2 切流确认 |
-| **Phase 4** | removal:删除老 path + 历史 mobile-like 重复端点;OpenAPI snapshot 收口为单一新前缀 | D | ❌ | 老 path 零流量 + 公告期满 |
+| **Phase 4** | removal:删除老 path + 历史 mobile-like 重复端点;OpenAPI snapshot 收口为单一新前缀(达成 §3.4 终态) | D | ❌ | 老 path 零流量 + 公告期满 + `/api/app/v1/my/attachments` 已建成(§3.3 项 3) |
+
+> **NestJS 数组 path spike(Phase 1 硬前置)**:alias 拟用 `@Controller([old, new])` 双挂(§5 方案 A);NestJS 11 支持数组 path,但需在装好依赖后跑一个最小 spike 确认与 path-to-regexp v8 无冲突(见 [`src/bootstrap/logger-options.ts`](../src/bootstrap/logger-options.ts))。**当前 worktree 无 `node_modules`,本轮未跑**;Phase 1 立项时先跑。
 
 ---
 
@@ -86,7 +128,7 @@
 - ❌ 不在迁移 PR 内拆 god-service(`attendances.service.ts` 等)/ 改 DTO 字段 / 改 BizCode / 改 RBAC / 改 schema / migration。
 - ❌ 不实现 `/api/open/v1/*`(仅预留命名,不占用、不建 controller)。
 - ❌ 不改 App 边界铁律(D-4 ~ D-8);App surface 已就位,**不**参与本迁移。
-- ❌ 不擅自拍板 audit-logs / storage / RBAC / dictionaries / attachment-configs 的 admin↔system 灰区归属(Phase 0 用户签字)。
+- ✅ admin↔system 归属**已于 Phase 0 冻结**(§3,全部按 `tag→surface`,无遗留灰区);后续 PR **不得偏离 §3 映射**,如需调整须重新立项。
 - ❌ AI 不自动推进下一 Phase;每 Phase 收口后停下等用户立项。
 
 ---
@@ -96,8 +138,8 @@
 | Phase | 状态 | PR | 备注 |
 |---|---|---|---|
 | 立项冻结 | ✅ 本稿(2026-06-01) | — | docs-only;重开 D-2 → §21 D-9 |
-| Phase 0 映射表 | ⬜ 未启动 | — | 需用户签字 |
-| Phase 1 alias | ⬜ 未启动 | — | — |
+| Phase 0 映射表 | ✅ 已签字冻结(2026-06-01;见 §3) | (本 PR) | 156 路由全映射 + 终态验收基线;tag→surface 无遗留灰区 |
+| Phase 1 alias | ⬜ 未启动(下一立项) | — | 硬前置:NestJS 数组 path spike(§6 注) |
 | Phase 2 canonical | ⬜ 未启动 | — | — |
 | Phase 3 deprecation | ⬜ 未启动 | — | — |
 | Phase 4 removal | ⬜ 未启动 | — | 不可逆,单独 gated |
