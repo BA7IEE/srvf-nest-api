@@ -33,7 +33,7 @@ import { OrganizationsService } from './organizations.service';
 
 @ApiTags('Admin - Organizations')
 @ApiBearerAuth()
-@Controller('v2/organizations')
+@Controller(['v2/organizations', 'admin/v1/organizations'])
 export class OrganizationsController {
   constructor(private readonly service: OrganizationsService) {}
 

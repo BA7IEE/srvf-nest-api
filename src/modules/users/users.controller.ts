@@ -46,7 +46,7 @@ import { UsersService } from './users.service';
 // 本 Controller 拆分后仅承载 8 个 Admin 管理端点,class-level @ApiTags 不再与 Mobile - Me 同存。
 @ApiTags('Admin - Users')
 @ApiBearerAuth()
-@Controller('users')
+@Controller(['users', 'admin/v1/users'])
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 

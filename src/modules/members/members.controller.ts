@@ -24,7 +24,7 @@ import { MembersService } from './members.service';
 
 @ApiTags('Admin - Members')
 @ApiBearerAuth()
-@Controller('v2/members')
+@Controller(['v2/members', 'admin/v1/members'])
 export class MembersController {
   constructor(private readonly service: MembersService) {}
 
