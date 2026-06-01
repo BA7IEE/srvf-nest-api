@@ -1,6 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { UserStatus } from '@prisma/client';
+import { Role, UserStatus } from '@prisma/client';
 import request from 'supertest';
 import { httpServer } from '../helpers/http-server';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -41,14 +41,14 @@ describe('JwtAuthGuard / JwtStrategy.validate 失效路径', () => {
 
   it('Authorization 头格式错(非 Bearer 前缀) → 40100', async () => {
     const res = await request(httpServer(app))
-      .get('/api/users/me')
+      .get('/api/admin/v1/users')
       .set('Authorization', 'Token abc');
     expectBizError(res, BizCode.UNAUTHORIZED);
   });
 
   it('token 是乱字符串(非三段 base64) → 40100', async () => {
     const res = await request(httpServer(app))
-      .get('/api/users/me')
+      .get('/api/admin/v1/users')
       .set('Authorization', 'Bearer not-a-real-jwt');
     expectBizError(res, BizCode.UNAUTHORIZED);
   });
@@ -59,7 +59,7 @@ describe('JwtAuthGuard / JwtStrategy.validate 失效路径', () => {
     const broken = token.slice(0, -2) + 'xx';
 
     const res = await request(httpServer(app))
-      .get('/api/users/me')
+      .get('/api/admin/v1/users')
       .set('Authorization', `Bearer ${broken}`);
     expectBizError(res, BizCode.UNAUTHORIZED);
   });
@@ -70,18 +70,18 @@ describe('JwtAuthGuard / JwtStrategy.validate 失效路径', () => {
     const token = await jwtService.signAsync({ sub: fakeCuid, username: 'ghost' });
 
     const res = await request(httpServer(app))
-      .get('/api/users/me')
+      .get('/api/admin/v1/users')
       .set('Authorization', `Bearer ${token}`);
     expectBizError(res, BizCode.UNAUTHORIZED);
   });
 
   it('登录拿 token 后用户被改 status=DISABLED → 旧 token 立即失效(每请求查库)', async () => {
-    const user = await createTestUser(app, { username: 'jwtdisable1' });
+    const user = await createTestUser(app, { username: 'jwtdisable1', role: Role.SUPER_ADMIN });
     const { authHeader } = await loginAs(app, 'jwtdisable1');
 
     // 先确认 token 现在有效——证明用例失败时不是 token 本身就坏的
     const before = await request(httpServer(app))
-      .get('/api/users/me')
+      .get('/api/admin/v1/users')
       .set('Authorization', authHeader);
     expect(before.status).toBe(200);
 
@@ -91,7 +91,7 @@ describe('JwtAuthGuard / JwtStrategy.validate 失效路径', () => {
     });
 
     const after = await request(httpServer(app))
-      .get('/api/users/me')
+      .get('/api/admin/v1/users')
       .set('Authorization', authHeader);
     expectBizError(after, BizCode.UNAUTHORIZED);
 
@@ -111,7 +111,7 @@ describe('JwtAuthGuard / JwtStrategy.validate 失效路径', () => {
     });
 
     const res = await request(httpServer(app))
-      .get('/api/users/me')
+      .get('/api/admin/v1/users')
       .set('Authorization', authHeader);
     expectBizError(res, BizCode.UNAUTHORIZED);
   });
@@ -125,7 +125,7 @@ describe('JwtAuthGuard / JwtStrategy.validate 失效路径', () => {
     await new Promise((r) => setTimeout(r, 50));
 
     const res = await request(httpServer(app))
-      .get('/api/users/me')
+      .get('/api/admin/v1/users')
       .set('Authorization', `Bearer ${expiredToken}`);
     expectBizError(res, BizCode.UNAUTHORIZED);
   });

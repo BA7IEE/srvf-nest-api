@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { Role } from '@prisma/client';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
@@ -134,7 +135,7 @@ describe('POST /api/auth/v1/logout-all', () => {
 
   describe('access token 不被吊销(沿 D-4)', () => {
     it('logout-all 后 access token 仍可调 GET /me', async () => {
-      await createTestUser(app, { username: 'logoutallaccess1' });
+      await createTestUser(app, { username: 'logoutallaccess1', role: Role.SUPER_ADMIN });
       const { authHeader } = await loginAs(app, 'logoutallaccess1');
 
       await request(httpServer(app))
@@ -142,7 +143,7 @@ describe('POST /api/auth/v1/logout-all', () => {
         .set('Authorization', authHeader);
 
       const me = await request(httpServer(app))
-        .get('/api/users/me')
+        .get('/api/admin/v1/users')
         .set('Authorization', authHeader);
       expect(me.status).toBe(200);
     });

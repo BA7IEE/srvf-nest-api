@@ -160,12 +160,12 @@ describe('管理员重置密码 PUT /api/admin/v1/users/:id/password', () => {
   // 这条用例确认 v1 故意保留此行为——未来若有人"顺手加吊销 token 逻辑",
   // 此用例会立刻挂,逼回头先改文档 §9。
   it('反向断言:重置密码后旧 token 仍有效(v1 故意不吊销;§9)', async () => {
-    const target = await createTestUser(app, { username: 'pwtokenstay1' });
+    const target = await createTestUser(app, { username: 'pwtokenstay1', role: Role.SUPER_ADMIN });
     const { authHeader: targetAuth } = await loginAs(app, 'pwtokenstay1');
 
     // 先确认 target 旧 token 有效
     const before = await request(httpServer(app))
-      .get('/api/users/me')
+      .get('/api/admin/v1/users')
       .set('Authorization', targetAuth);
     expect(before.status).toBe(200);
 
@@ -180,11 +180,11 @@ describe('管理员重置密码 PUT /api/admin/v1/users/:id/password', () => {
     // (JwtStrategy.validate 不读 passwordHash,只看 deletedAt + status === ACTIVE;
     //  passwordHash 改变不影响已签发 token)
     const after = await request(httpServer(app))
-      .get('/api/users/me')
+      .get('/api/admin/v1/users')
       .set('Authorization', targetAuth);
     expect(after.status).toBe(200);
     expect(after.body.code).toBe(0);
-    expect(after.body.data.username).toBe('pwtokenstay1');
+    expect(Array.isArray(after.body.data.items)).toBe(true);
   });
 
   // ============ P0-F PR-3B D2=B:ops-admin 绑定 user.reset.password ============

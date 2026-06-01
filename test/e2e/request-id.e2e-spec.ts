@@ -33,7 +33,7 @@ import { createTestApp } from '../setup/test-app';
 //
 // 选用接口:
 //   - GET /api/system/v1/health(@Public,无需 token):覆盖 GET 路径
-//   - GET /api/users/me(受保护,无 token → 401):覆盖异常路径(确认错误响应也带 reqId 头)
+//   - GET /api/admin/v1/users(受保护,无 token → 401):覆盖异常路径(确认错误响应也带 reqId 头)
 const REQUEST_ID_HEADER = 'x-request-id';
 // 后端生成的 ID 形态:`c` 前缀 + base36 时间戳(>=8 字符) + 24 字符 hex,长度 >=33。
 // 这里只验证语义形态(c 开头 + alphanumeric + 长度合理),不锁死长度上限,避免 base36
@@ -63,7 +63,7 @@ describe('Request ID 贯通(x-request-id)', () => {
     });
 
     it('错误响应:401 也必须带 x-request-id 头', async () => {
-      const res = await request(httpServer(app)).get('/api/users/me');
+      const res = await request(httpServer(app)).get('/api/admin/v1/users');
 
       expect(res.status).toBe(401);
       const id = res.headers[REQUEST_ID_HEADER];
@@ -186,7 +186,7 @@ describe('Request ID 贯通(x-request-id)', () => {
     });
 
     it('错误响应体严格只有 { code, message, data: null }', async () => {
-      const res = await request(httpServer(app)).get('/api/users/me');
+      const res = await request(httpServer(app)).get('/api/admin/v1/users');
 
       expect(res.body).toEqual({
         code: expect.any(Number),

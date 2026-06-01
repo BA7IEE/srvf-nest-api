@@ -6,7 +6,6 @@ import { AppCapabilityService } from './app-capability.service';
 import { AppIdentityResolver } from './app-identity.resolver';
 import { AppProfileService } from './app-profile.service';
 import { AppMeController } from './controllers/app-me.controller';
-import { UsersMeLegacyController } from './controllers/users-me-legacy.controller';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 
@@ -34,20 +33,13 @@ import { UsersService } from './users.service';
 // 仅 exports resolver,**不** exports UsersService / AppCapabilityService / AppProfileService
 // (避免下游模块隐式扩散对 users 内部能力的依赖)。
 //
-// P1-C step 1(2026-05-21):新增 UsersMeLegacyController(`/api/users/me*` 3 个 Root Legacy
-// mobile-like 端点)。endpoint path / DTO / service / Guard / RBAC / throttler / Swagger
-// Tag 全部 zero drift(沿 docs/api-surface-policy.md §5 项 1 + §7 P1-C step 1 + §8 P1
-// 禁止事项)。
-//
-// **controllers 数组顺序硬约束**:`UsersMeLegacyController` 必须**先于** `UsersController`
-// 注册。两者共用 `@Controller('users')` 前缀;`UsersController` 含 `@Get(':id')` /
-// `@Patch(':id')` 等通配方法,NestJS / Express 按注册顺序匹配路由,若 UsersController
-// 在前,`/users/me` 会被匹配为 `findOne({ id: 'me' })`,`me` 因 IdParamDto 长度 8-64
-// 校验失败 → 400 BAD_REQUEST。沿"物理拆分零行为变更"原则,通过注册顺序保 `/users/me`
-// 命中字面段 `me`。AppMeController 走独立 `app/v1/me` 前缀,顺序不影响。
+// Route B Phase 4d(2026-06-01):`UsersMeLegacyController`(`/api/users/me*`)已删除
+// (app/v1/me* 对等存在;沿 docs/api-surface-migration-plan.md §6 Phase 4)。`UsersController`
+// 已收为 `@Controller('admin/v1/users')`,与 `AppMeController`(`app/v1/me`)前缀独立,
+// 不再有 `@Controller('users')` 前缀共享,故无注册顺序约束。
 @Module({
   imports: [DatabaseModule, AuditLogsModule, PermissionsModule],
-  controllers: [UsersMeLegacyController, UsersController, AppMeController],
+  controllers: [UsersController, AppMeController],
   providers: [UsersService, AppIdentityResolver, AppCapabilityService, AppProfileService],
   exports: [AppIdentityResolver],
 })

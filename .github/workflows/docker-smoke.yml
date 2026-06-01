@@ -251,27 +251,30 @@ jobs:
           diff <(jq -S . /tmp/smoke-login-nouser.json) \
                <(jq -S . /tmp/smoke-login-wrongpw.json)
 
-      - name: Smoke - users/me without token
+      # Route B Phase 4d(2026-06-01):/api/users/me 已删,改探 /api/admin/v1/users(super-admin)
+      - name: Smoke - admin/v1/users without token
         run: |
           set -euo pipefail
           BASE="http://localhost:${APP_HOST_PORT}"
 
-          STATUS=$(curl -sS -o /tmp/smoke-me-anon.json -w '%{http_code}' "$BASE/api/users/me")
+          STATUS=$(curl -sS -o /tmp/smoke-me-anon.json -w '%{http_code}' "$BASE/api/admin/v1/users")
           test "$STATUS" = "401"
           test "$(jq -r '.code' /tmp/smoke-me-anon.json)" = "40100"
 
-      - name: Smoke - users/me with token
+      - name: Smoke - admin/v1/users with token
         run: |
           set -euo pipefail
           BASE="http://localhost:${APP_HOST_PORT}"
 
           STATUS=$(curl -sS -o /tmp/smoke-me-auth.json -w '%{http_code}' \
             -H "authorization: Bearer $ACCESS_TOKEN" \
-            "$BASE/api/users/me")
+            "$BASE/api/admin/v1/users")
           test "$STATUS" = "200"
-          test "$(jq -r '.data.username' /tmp/smoke-me-auth.json)" = "$SMOKE_USERNAME"
-          # 响应体不含 passwordHash(userSafeSelect 集中收敛)
-          test "$(jq -r '.data | has("passwordHash")' /tmp/smoke-me-auth.json)" = "false"
+          test "$(jq -r '.code' /tmp/smoke-me-auth.json)" = "0"
+          # 列表含登录的 super-admin 用户
+          test "$(jq -r --arg u "$SMOKE_USERNAME" '.data.items | map(.username) | index($u) != null' /tmp/smoke-me-auth.json)" = "true"
+          # userSafeSelect:响应任何层级都不含 passwordHash
+          test "$(jq '[.. | objects | has("passwordHash")] | any' /tmp/smoke-me-auth.json)" = "false"
 
       # NestJS enableShutdownHooks() + PrismaService.onModuleDestroy() 应在远短于
       # 10s 内退出,docker stop 默认 SIGTERM,然后 -t 10 给 10s 宽限,验证 exit code = 0。

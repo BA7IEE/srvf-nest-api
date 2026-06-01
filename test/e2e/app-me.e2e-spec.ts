@@ -831,59 +831,6 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
     });
   });
 
-  // =====================================================
-  // path stability:旧 /api/users/me 行为不受影响(沿 §9.2 #9 + §3.2)
-  // =====================================================
-
-  describe('path stability', () => {
-    const patchRaw = (
-      path: string,
-      body: Record<string, unknown>,
-      authHeader: string,
-    ): request.Test =>
-      request(httpServer(app)).patch(path).send(body).set('Authorization', authHeader);
-
-    it('同一登录态:旧 /api/users/me 与新 /api/app/v1/me 共存,响应字段集互不影响', async () => {
-      const { authHeader } = await setupLinkedUser({
-        username: 'path_stability_user',
-        memberNo: 'PS-1',
-      });
-
-      const [legacy, appMe] = await Promise.all([
-        get('/api/users/me', authHeader),
-        get('/api/app/v1/me', authHeader),
-      ]);
-      expect(legacy.status).toBe(200);
-      expect(appMe.status).toBe(200);
-
-      // 旧 path 字段集严格 = UserResponseDto(由 users-me.e2e-spec 已断言),
-      // 本 spec 仅复核新旧字段集不相同 + 旧 path 不返 App 字段
-      const legacyData = (legacy.body as ResBody).data;
-      const appData = (appMe.body as ResBody).data;
-      expect(Object.keys(legacyData).sort()).not.toEqual(Object.keys(appData).sort());
-      expect(legacyData).not.toHaveProperty('canUseApp');
-      expect(legacyData).not.toHaveProperty('memberId');
-      expect(legacyData).not.toHaveProperty('memberNo');
-    });
-
-    it('P2-2 path stability: 旧 PATCH /api/users/me 改 nickname → 仍按 UserResponseDto 返(沿 §9.2.12)', async () => {
-      const { authHeader } = await setupLinkedUser({
-        username: 'p22_path_legacy_patch',
-        memberNo: 'PS-2',
-        nickname: '旧',
-      });
-      const res = await patchRaw('/api/users/me', { nickname: '改' }, authHeader);
-      expect(res.status).toBe(200);
-      const { data } = res.body as ResBody;
-      // 旧 contract UserResponseDto:id / username / email / nickname / avatarKey / role /
-      // status / createdAt / lastLoginAt / updatedAt;不应返 App 字段(memberId / memberNo 等)
-      expect(data).toHaveProperty('id');
-      expect(data).toHaveProperty('role');
-      expect(data).toHaveProperty('status');
-      expect(data.nickname).toBe('改');
-      expect(data).not.toHaveProperty('memberId');
-      expect(data).not.toHaveProperty('memberNo');
-      expect(data).not.toHaveProperty('hasMemberProfile');
-    });
-  });
+  // Route B Phase 4d(2026-06-01):旧 /api/users/me path-stability 共存测试已删除
+  // (legacy controller 已移除;app/v1/me 行为由本 spec 其余用例覆盖)。
 });
