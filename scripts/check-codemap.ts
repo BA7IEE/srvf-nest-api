@@ -17,6 +17,7 @@
  *   C. claude-md-referenced       — 已存在 module-local CLAUDE.md 是否在 CODEMAP 中被引用 (WARN)
  *   D. service-loc-*              — service LOC 阈值与声明漂移 (WARN / INFO)
  *   E. referenced-paths-exist     — CODEMAP 中相对路径 markdown 链接是否存在 (WARN)
+ *   F. migration-count-matches    — prisma/migrations/ 实际数 vs CODEMAP + prisma/CLAUDE.md 声明 (FAIL on drift)
  */
 
 import * as fs from 'node:fs';
@@ -108,6 +109,20 @@ function listServiceFiles(): ServiceEntry[] {
   return out.sort((a, b) => b.loc - a.loc);
 }
 
+// Count migration directories under prisma/migrations/ (matches `ls -d prisma/migrations/*/`;
+// 只数子目录,忽略 migration_lock.toml 文件)。
+function countMigrationDirs(): number {
+  const migrationsDir = path.join(repoRoot, 'prisma', 'migrations');
+  if (!fs.existsSync(migrationsDir)) return 0;
+  return fs.readdirSync(migrationsDir, { withFileTypes: true }).filter((d) => d.isDirectory())
+    .length;
+}
+
+function readRepoFile(relPath: string): string {
+  const abs = path.join(repoRoot, relPath);
+  return fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : '';
+}
+
 // ---------------------------------------------------------------------------
 // CODEMAP parsers
 // ---------------------------------------------------------------------------
@@ -117,6 +132,8 @@ const ANY_SECTION_RE = /^##\s+/;
 const MODULE_ROW_RE = /^\|\s*`([a-z0-9-]+)\/`/;
 const SERVICE_LOC_RE = /service\s+(\d+)L/;
 const MD_LINK_RE = /\[[^\]]*\]\(([^)]+)\)/g;
+// 形如 "12 个 migration"(CODEMAP.md `migrations/` 行 + prisma/CLAUDE.md 累计行共用此措辞)。
+const MIGRATION_COUNT_RE = /(\d+)\s*个\s*migration/;
 
 function* iterModulesSection(codemap: string): Generator<string> {
   const lines = codemap.split('\n');
@@ -168,6 +185,12 @@ function extractRelativeLinks(codemap: string): string[] {
     seen.add(target);
   }
   return [...seen].sort();
+}
+
+// 从一份文档内容里抽取声明的 migration 数(取首个 "N 个 migration");无声明返回 null。
+function parseDeclaredMigrationCount(content: string): number | null {
+  const m = MIGRATION_COUNT_RE.exec(content);
+  return m ? parseInt(m[1], 10) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -314,6 +337,37 @@ function checkReferencedPathsExist(codemap: string): CheckResult {
   };
 }
 
+interface MigrationDocDecl {
+  label: string;
+  declared: number | null;
+}
+
+// prisma/migrations/ 实际目录数为权威;校验各文档声明与之一致。承接 #249/#252 漂移教训:
+// CODEMAP.md 与 prisma/CLAUDE.md 的 migration 计数曾与实际不符,且此前无自动校验抓得到。
+function checkMigrationCount(actual: number, sources: MigrationDocDecl[]): CheckResult {
+  const issues: string[] = [];
+  for (const s of sources) {
+    if (s.declared === null) {
+      issues.push(`${s.label}: 未找到 "N 个 migration" 声明(实际 ${actual});请同步该文档`);
+    } else if (s.declared !== actual) {
+      issues.push(`${s.label}: 声明 ${s.declared},实际 prisma/migrations/ 有 ${actual} 个`);
+    }
+  }
+  if (issues.length === 0) {
+    return {
+      id: 'migration-count-matches',
+      severity: 'PASS',
+      summary: `${actual} migration(s);CODEMAP + prisma/CLAUDE.md 声明一致`,
+    };
+  }
+  return {
+    id: 'migration-count-matches',
+    severity: 'FAIL',
+    summary: `${issues.length} migration 计数漂移(prisma/migrations/ 实际 ${actual} 个)`,
+    details: issues,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Output
 // ---------------------------------------------------------------------------
@@ -355,6 +409,14 @@ function main(): void {
   const claudeMdPaths = listClaudeMdUnderDirs(['src/modules', 'src/common']);
   const services = listServiceFiles();
   const declaredServiceLoc = parseCodemapDeclaredServiceLoc(codemap);
+  const actualMigrations = countMigrationDirs();
+  const migrationSources: MigrationDocDecl[] = [
+    { label: 'CODEMAP.md', declared: parseDeclaredMigrationCount(codemap) },
+    {
+      label: 'prisma/CLAUDE.md',
+      declared: parseDeclaredMigrationCount(readRepoFile('prisma/CLAUDE.md')),
+    },
+  ];
 
   const results: CheckResult[] = [
     checkModulesInCodemap(realModules, declaredModules),
@@ -362,6 +424,7 @@ function main(): void {
     checkClaudeMdReferenced(claudeMdPaths, codemap),
     ...checkServiceLoc(services, declaredServiceLoc),
     checkReferencedPathsExist(codemap),
+    checkMigrationCount(actualMigrations, migrationSources),
   ];
 
   for (const r of results) printResult(r);
