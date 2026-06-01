@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+### Added
+
+- **API surface Route B Phase 1a:`auth/v1` + `system/v1/health` alias 双挂**(D 档;沿 [`docs/api-surface-migration-plan.md §3 / §6`](docs/api-surface-migration-plan.md)):`@Controller([old,new])` 给 `auth` 增 `auth/v1`、`health` 增 `system/v1/health`,**新增 7 路由别名**(`/api/auth/v1/{login,refresh,logout,logout-all}` + `/api/system/v1/health{,/live,/ready}`);**老路径与全部行为(限流 / `@Public` / audit / ResponseInterceptor 包装)零改动**,新老路径 e2e 行为等价。OpenAPI operationId 过渡期自动 `[0]`/`[1]` 消歧(Phase 4 删旧后恢复无后缀)。contract snapshot 显式扩 7 路由;新增 `test/e2e/api-surface-phase1a-alias.e2e-spec.ts` 双路径回归(12 suites / 75 tests 绿)。
+
 ### Docs
 
 - **API surface Route B 全量迁移立项冻结**(文件 docs-only;承载 D 档决策的"评审稿冻结 + 立项"步骤,沿 [`docs/process.md §3` A 档](docs/process.md) + [`§4` D 档降速 step 5](docs/process.md)):用户 2026-06-01 拍板重开 [`AGENTS.md §19.7 D-2`](AGENTS.md) 的"方案 C(`/api/v2/*` 长期保留)",改为按客户端/场景四分的**全量物理迁移**(`/api/admin/v1` + `/api/app/v1` + `/api/auth/v1` + `/api/system/v1`,预留 `/api/open/v1`)

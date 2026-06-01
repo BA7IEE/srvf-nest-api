@@ -25,7 +25,10 @@ import {
 } from './auth.dto';
 
 @ApiTags('Auth')
-@Controller('auth')
+// Route B Phase 1a(alias 双挂;沿 docs/api-surface-migration-plan.md §3):
+// 老 path 'auth' 与新 path 'auth/v1' 并存,行为/限流/@Public/audit 双路径同等;
+// 老 path 待 Phase 4 deprecation 窗口满后删除。endpoint zero behavior drift。
+@Controller(['auth', 'auth/v1'])
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 

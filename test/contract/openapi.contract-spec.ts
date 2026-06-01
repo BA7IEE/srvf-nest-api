@@ -56,6 +56,17 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/health/live'],
   ['get', '/api/health/ready'],
 
+  // Route B Phase 1a alias(2026-06-01;沿 docs/api-surface-migration-plan.md §3 / §6 Phase 1):
+  // auth → auth/v1、health → system/v1/health 双挂;老 path 上方保留,新 path 在此登记。
+  // 老 path 待 Phase 4 删除时,本块与上方对应老 path 一并清理。
+  ['post', '/api/auth/v1/login'],
+  ['post', '/api/auth/v1/refresh'],
+  ['post', '/api/auth/v1/logout'],
+  ['post', '/api/auth/v1/logout-all'],
+  ['get', '/api/system/v1/health'],
+  ['get', '/api/system/v1/health/live'],
+  ['get', '/api/system/v1/health/ready'],
+
   ['get', '/api/users/me'],
   ['patch', '/api/users/me'],
   // P0-D PR-3(2026-05-17):本人自助改密
