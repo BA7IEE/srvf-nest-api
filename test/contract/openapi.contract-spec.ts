@@ -24,6 +24,7 @@ interface OpenApiOperation {
   operationId?: string;
   summary?: string;
   responses?: Record<string, unknown>;
+  deprecated?: boolean;
 }
 
 type OpenApiPathItem = Partial<
@@ -868,5 +869,38 @@ describe('OpenAPI 契约快照', () => {
 
   it('components.schemas 段快照(锁定 DTO 字段集合与类型)', () => {
     expect(doc.components?.schemas).toMatchSnapshot();
+  });
+
+  // Route B Phase 2(沿 docs/api-surface-migration-plan.md §6 Phase 2):
+  // 迁移前老前缀路径必须 deprecated;canonical 新前缀(admin/v1 · system/v1 · auth/v1 · app/v1)必须不 deprecated。
+  const isRouteBLegacy = (p: string): boolean =>
+    p.startsWith('/api/v2/') ||
+    p === '/api/users' ||
+    p.startsWith('/api/users/') ||
+    p === '/api/health' ||
+    p.startsWith('/api/health/') ||
+    (p.startsWith('/api/auth/') && !p.startsWith('/api/auth/v1/'));
+  const CANONICAL_PREFIXES = ['/api/admin/v1/', '/api/system/v1/', '/api/auth/v1/', '/api/app/v1/'];
+
+  it('Phase 2:迁移前老前缀路径的每个 operation 均 deprecated', () => {
+    const notDeprecated: string[] = [];
+    for (const [path, item] of Object.entries(doc.paths)) {
+      if (!isRouteBLegacy(path)) continue;
+      for (const [method, op] of Object.entries(item)) {
+        if (op && op.deprecated !== true) notDeprecated.push(`${method} ${path}`);
+      }
+    }
+    expect(notDeprecated).toEqual([]);
+  });
+
+  it('Phase 2:canonical 新前缀路径的 operation 均 NOT deprecated', () => {
+    const wronglyDeprecated: string[] = [];
+    for (const [path, item] of Object.entries(doc.paths)) {
+      if (!CANONICAL_PREFIXES.some((c) => path.startsWith(c))) continue;
+      for (const [method, op] of Object.entries(item)) {
+        if (op?.deprecated === true) wronglyDeprecated.push(`${method} ${path}`);
+      }
+    }
+    expect(wronglyDeprecated).toEqual([]);
   });
 });
