@@ -23,7 +23,7 @@ import { RbacCacheService } from './rbac-cache.service';
 // - getMyPermissions(user) → MyPermissionsResponseDto:GET /me/permissions 入口
 //
 // 历史阶段边界(PR #6 实装时的"本 PR 不做";部分已被后续 PR 收口,勿据以判断当前事实):
-// - reload 接口:已于 PR #7 + P0-F 落地(`POST /api/v2/rbac/reload`,Service 层 rbac.can())
+// - reload 接口:已于 PR #7 + P0-F 落地(`POST /api/system/v1/rbac/reload`,Service 层 rbac.can())
 // - 业务模块接入 `rbac.can()`:已于 P0-F(v0.15.0)完成,不再限于 attachments
 // 仍未做(留后续 PR):
 // - `GET /api/v2/users/:userId/permissions`(管理员查他人;非 D7 §5.1 端点)
@@ -147,7 +147,7 @@ export class RbacService {
     return { allowed: true, reason: 'has_permission' };
   }
 
-  // GET /api/v2/rbac/me/permissions 入口:返当前用户的有效权限点集 + 角色摘要。
+  // GET /api/system/v1/rbac/me/permissions 入口:返当前用户的有效权限点集 + 角色摘要。
   //
   // **SUPER_ADMIN 处理**(沿用户拍板方案 B):
   // - `permissions`:返 DB 中 `Permission.code` 全集(短路语义实体化;不返 ["*"];不返空数组)
@@ -165,7 +165,7 @@ export class RbacService {
     return { permissions, effectiveRoles };
   }
 
-  // PR #7:POST /api/v2/rbac/reload 入口(沿 D7 v1.1 §5.4 + 用户拍板四项决策)。
+  // PR #7:POST /api/system/v1/rbac/reload 入口(沿 D7 v1.1 §5.4 + 用户拍板四项决策)。
   //
   // - scope 默认 'all';三档 all / user / role 与 RbacCacheService 三个 invalidate 方法 1:1
   // - scope='user' 缺 userId / scope='role' 缺 roleId → BAD_REQUEST(40000;沿用户决策方案 A)

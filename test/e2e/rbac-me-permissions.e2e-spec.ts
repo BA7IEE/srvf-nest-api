@@ -11,7 +11,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// V2.x C-6 RBAC 实施 PR #6:GET /api/v2/rbac/me/permissions e2e。
+// V2.x C-6 RBAC 实施 PR #6:GET /api/system/v1/rbac/me/permissions e2e。
 // 沿 D7 v1.1 §5.1 端点 15 + §5.3 详解 + 用户拍板三项决策。
 //
 // 覆盖:
@@ -26,7 +26,7 @@ import { createTestApp } from '../setup/test-app';
 //
 // P1-B characterization framing(2026-05-21 P1-B 第三单):
 //   本端点在 docs/api-surface-policy.md §6 项 7 中标记为"**必须保留**,不 deprecate,不拆分"。
-//   理由:`GET /api/v2/rbac/me/permissions` 返回 raw RBAC `Permission.code` 数组 +
+//   理由:`GET /api/system/v1/rbac/me/permissions` 返回 raw RBAC `Permission.code` 数组 +
 //   `effectiveRoles` 业务角色摘要,语义**不等价于** `GET /api/app/v1/me/capabilities`
 //   (后者返 product-level capability map:`account / activities / attendance / certificates
 //   / tasks` 嵌套布尔结构,沿 D-5.3 故意不暴露 raw permission code)。
@@ -117,7 +117,7 @@ describe('rbac me/permissions', () => {
 
   describe('权限边界', () => {
     it('未登录 → 401', async () => {
-      const res = await request(httpServer(app)).get('/api/v2/rbac/me/permissions');
+      const res = await request(httpServer(app)).get('/api/system/v1/rbac/me/permissions');
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
   });
@@ -125,7 +125,7 @@ describe('rbac me/permissions', () => {
   describe('权限点聚合', () => {
     it('USER 未持任何角色 → permissions=[] / effectiveRoles=[]', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/rbac/me/permissions')
+        .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', userEmptyAuth);
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual({ permissions: [], effectiveRoles: [] });
@@ -133,7 +133,7 @@ describe('rbac me/permissions', () => {
 
     it('USER 持业务角色(2 权限点)→ permissions 含 2 项(已排序) / effectiveRoles 1 项', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/rbac/me/permissions')
+        .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', userWithRolesAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.permissions).toEqual(['attachment.upload.cert', 'attachment.view.cert']);
@@ -144,7 +144,7 @@ describe('rbac me/permissions', () => {
 
     it('ADMIN 未持任何 RBAC 角色(seed 未实施)→ permissions=[] / effectiveRoles=[]', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/rbac/me/permissions')
+        .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual({ permissions: [], effectiveRoles: [] });
@@ -152,7 +152,7 @@ describe('rbac me/permissions', () => {
 
     it('SUPER_ADMIN → permissions=Permission.code 全集(已排序;沿用户拍板方案 B)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/rbac/me/permissions')
+        .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       // 注:此时 DB Permission 全集 = e2e seed 的 2 条(本 spec 在 reset 后独立 seed)
@@ -166,7 +166,7 @@ describe('rbac me/permissions', () => {
     it('第一次查 → cache miss → set;invalidateUser 后再查 → 重新聚合', async () => {
       // 第一次查:确保 cache 中有该 user 的条目
       await request(httpServer(app))
-        .get('/api/v2/rbac/me/permissions')
+        .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', userWithRolesAuth);
       expect(cache.get(userWithRolesId)).not.toBeNull();
 
@@ -176,7 +176,7 @@ describe('rbac me/permissions', () => {
 
       // 再查应当重新聚合
       const res = await request(httpServer(app))
-        .get('/api/v2/rbac/me/permissions')
+        .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', userWithRolesAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.permissions).toEqual(['attachment.upload.cert', 'attachment.view.cert']);
@@ -193,7 +193,7 @@ describe('rbac me/permissions', () => {
       cache.invalidateUser(superAdminUser.id);
 
       await request(httpServer(app))
-        .get('/api/v2/rbac/me/permissions')
+        .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', superAdminAuth);
 
       // SUPER_ADMIN 路径不应 set cache(因为不走 getUserPermissionCodes)
@@ -207,7 +207,7 @@ describe('rbac me/permissions', () => {
       // 仍能正确填充 request.user;若 select / payload 形状破坏,前面所有 it 都会 401。
       // 这里再补一条显式断言:status=200 + 响应是结构化 data。
       const res = await request(httpServer(app))
-        .get('/api/v2/rbac/me/permissions')
+        .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', userEmptyAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -228,7 +228,7 @@ describe('rbac me/permissions', () => {
       });
 
       const res = await request(httpServer(app))
-        .get('/api/v2/rbac/me/permissions')
+        .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', authHeader);
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
@@ -236,7 +236,7 @@ describe('rbac me/permissions', () => {
 
   // ============ P1-B 第三单(2026-05-21):L3 凭证字段反向断言 ============
   // 沿 docs/api-surface-policy.md §2.1 ❌ "App API 永远不返回 L3 凭证字段"。
-  // /api/v2/rbac/me/permissions 虽属 Ops surface,亦应满足同等约束(沿 §6 项 7 处置铁律)。
+  // /api/system/v1/rbac/me/permissions 虽属 Ops surface,亦应满足同等约束(沿 §6 项 7 处置铁律)。
   describe('P1-B characterization:L3 凭证字段不得泄漏', () => {
     const L3_FORBIDDEN_FIELDS = [
       'passwordHash',
@@ -256,7 +256,7 @@ describe('rbac me/permissions', () => {
       ['SUPER_ADMIN', (): string => superAdminAuth],
     ])('%s → response 不含 L3 凭证字段 + 序列化反向兜底', async (_label, getAuth) => {
       const res = await request(httpServer(app))
-        .get('/api/v2/rbac/me/permissions')
+        .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', getAuth());
       expect(res.status).toBe(200);
 
@@ -281,7 +281,7 @@ describe('rbac me/permissions', () => {
   describe('P1-B characterization:响应形态与 /api/app/v1/me/capabilities 不等价', () => {
     it('me/permissions 顶层 data 含 permissions / effectiveRoles,**不**含 capabilities 形态键', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/rbac/me/permissions')
+        .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', userWithRolesAuth);
 
       expect(res.status).toBe(200);
@@ -310,7 +310,7 @@ describe('rbac me/permissions', () => {
 
     it('SUPER_ADMIN 路径同样不返 capabilities 形态(锁定"raw permission code 不漂移为 product capability")', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/rbac/me/permissions')
+        .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', superAdminAuth);
 
       expect(res.status).toBe(200);

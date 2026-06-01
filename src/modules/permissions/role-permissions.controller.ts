@@ -15,8 +15,8 @@ import { RolePermissionsService } from './role-permissions.service';
 
 // V2.x C-6 RBAC 实施 PR #4:RolePermission 关联表 Controller。
 // 2 个端点(沿 D7 v1.1 §5.1 端点 10-11):
-//   POST   /api/v2/roles/:id/permissions       批量授权(幂等)
-//   DELETE /api/v2/roles/:id/permissions/:permissionId  撤权(精确)
+//   POST   /api/system/v1/roles/:id/permissions       批量授权(幂等)
+//   DELETE /api/system/v1/roles/:id/permissions/:permissionId  撤权(精确)
 //
 // **路径参数语义**(沿 D7 v1.1 §5.1):
 // - `:id` = roleId(cuid 字符串)
@@ -34,7 +34,7 @@ import { RolePermissionsService } from './role-permissions.service';
 @ApiTags('Ops - Role Permissions')
 @ApiBearerAuth()
 @ApiExtraModels(RbacRoleResponseDto, RbacRoleDetailResponseDto, PermissionResponseDto)
-@Controller(['v2/roles/:id/permissions', 'system/v1/roles/:id/permissions'])
+@Controller('system/v1/roles/:id/permissions')
 export class RolePermissionsController {
   constructor(private readonly service: RolePermissionsService) {}
 

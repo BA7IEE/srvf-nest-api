@@ -15,12 +15,12 @@ import { AssignRolePermissionsDto } from './role-permissions.dto';
 // 沿 D7 v1.1 §5.1 端点 10-11 + §6.1 + §9.4 缓存失效 + 用户拍板。
 //
 // 2 个端点:
-//   POST   /api/v2/roles/:id/permissions       批量授权(幂等;入参 permissionCodes[])
-//   DELETE /api/v2/roles/:id/permissions/:permissionId  撤权(精确;路径 permissionId)
+//   POST   /api/system/v1/roles/:id/permissions       批量授权(幂等;入参 permissionCodes[])
+//   DELETE /api/system/v1/roles/:id/permissions/:permissionId  撤权(精确;路径 permissionId)
 //
 // 出参统一返 RbacRoleDetailResponseDto(沿 PR #3 rbac-roles 详情接口):
 // - 调用者一次拿到该角色当前完整 permissions 列表,前端"保存当前选中"语义友好
-// - 与 GET /api/v2/roles/:id 形成一致的 detail 输出契约
+// - 与 GET /api/system/v1/roles/:id 形成一致的 detail 输出契约
 //
 // **30003 vs 30005**(沿 PR #3 RbacRole 范式):
 // - role 不存在 → 30003

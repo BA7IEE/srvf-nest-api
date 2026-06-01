@@ -68,27 +68,27 @@ describe('rbac-roles 模块', () => {
 
   describe('权限边界', () => {
     it('未登录 GET → 401', async () => {
-      const res = await request(httpServer(app)).get('/api/v2/roles');
+      const res = await request(httpServer(app)).get('/api/system/v1/roles');
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it.each([
       [
         'get_list',
-        () => request(httpServer(app)).get('/api/v2/roles').set('Authorization', userAuth),
+        () => request(httpServer(app)).get('/api/system/v1/roles').set('Authorization', userAuth),
       ],
       [
         'get_detail',
         () =>
           request(httpServer(app))
-            .get('/api/v2/roles/some-id-00000000000000000000')
+            .get('/api/system/v1/roles/some-id-00000000000000000000')
             .set('Authorization', userAuth),
       ],
       [
         'post',
         () =>
           request(httpServer(app))
-            .post('/api/v2/roles')
+            .post('/api/system/v1/roles')
             .set('Authorization', userAuth)
             .send({ code: 'apd-chief', displayName: '部长' }),
       ],
@@ -96,7 +96,7 @@ describe('rbac-roles 模块', () => {
         'patch',
         () =>
           request(httpServer(app))
-            .patch('/api/v2/roles/some-id-00000000000000000000')
+            .patch('/api/system/v1/roles/some-id-00000000000000000000')
             .set('Authorization', userAuth)
             .send({ displayName: 'x' }),
       ],
@@ -104,7 +104,7 @@ describe('rbac-roles 模块', () => {
         'delete',
         () =>
           request(httpServer(app))
-            .delete('/api/v2/roles/some-id-00000000000000000000')
+            .delete('/api/system/v1/roles/some-id-00000000000000000000')
             .set('Authorization', userAuth),
       ],
     ])('USER 角色 %s → 30100 RBAC_FORBIDDEN', async (_name, mkReq) => {
@@ -115,7 +115,7 @@ describe('rbac-roles 模块', () => {
     // P0-F PR-1(2026-05-18):v1 ADMIN 不再自动放行 RBAC 元接口,必须显式持 RBAC 角色。
     it('ADMIN 默认无 RBAC 权限 → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/roles')
+        .post('/api/system/v1/roles')
         .set('Authorization', adminAuth)
         .send({ code: 'admin-no-rbac', displayName: 'admin 无权' });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -126,7 +126,7 @@ describe('rbac-roles 模块', () => {
       await grantOpsAdminToUser(app, adminUserId, opsAdminRoleId);
       try {
         const res = await request(httpServer(app))
-          .post('/api/v2/roles')
+          .post('/api/system/v1/roles')
           .set('Authorization', adminAuth)
           .send({ code: 'admin-with-ops-admin', displayName: 'ADMIN with ops-admin' });
         expect(res.status).toBe(201);
@@ -140,7 +140,7 @@ describe('rbac-roles 模块', () => {
 
   // ============ list ============
 
-  describe('list /api/v2/roles', () => {
+  describe('list /api/system/v1/roles', () => {
     beforeAll(async () => {
       // 先准备一些数据(混合活跃 + 软删)
       await prisma.rbacRole.createMany({
@@ -155,7 +155,7 @@ describe('rbac-roles 模块', () => {
 
     it('GET 列表 → 200,分页结构正确,排除已软删', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/roles')
+        .get('/api/system/v1/roles')
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -172,7 +172,7 @@ describe('rbac-roles 模块', () => {
 
     it('GET +code 过滤 contains → 200', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/roles?code=apd')
+        .get('/api/system/v1/roles?code=apd')
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       const codes: string[] = res.body.data.items.map((i: { code: string }) => i.code);
@@ -183,7 +183,7 @@ describe('rbac-roles 模块', () => {
 
     it('列表项不含 permissions 字段(仅 detail 返)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/roles')
+        .get('/api/system/v1/roles')
         .set('Authorization', superAdminAuth);
       for (const item of res.body.data.items) {
         expect(item).not.toHaveProperty('permissions');
@@ -194,7 +194,7 @@ describe('rbac-roles 模块', () => {
 
   // ============ detail ============
 
-  describe('detail GET /api/v2/roles/:id', () => {
+  describe('detail GET /api/system/v1/roles/:id', () => {
     it('详情 → 200,含 permissions: [](RolePermission CRUD 未实施时永远空数组)', async () => {
       const created = await prisma.rbacRole.create({
         data: { code: 'detail-test', displayName: 'detail 测试' },
@@ -202,7 +202,7 @@ describe('rbac-roles 模块', () => {
       });
 
       const res = await request(httpServer(app))
-        .get(`/api/v2/roles/${created.id}`)
+        .get(`/api/system/v1/roles/${created.id}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.code).toBe('detail-test');
@@ -214,7 +214,7 @@ describe('rbac-roles 模块', () => {
 
     it('详情 不存在 id → 30003', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/roles/nonexistent000000000000000000')
+        .get('/api/system/v1/roles/nonexistent000000000000000000')
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.ROLE_NOT_FOUND);
     });
@@ -226,7 +226,7 @@ describe('rbac-roles 模块', () => {
       });
 
       const res = await request(httpServer(app))
-        .get(`/api/v2/roles/${created.id}`)
+        .get(`/api/system/v1/roles/${created.id}`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.ROLE_DELETED);
       expect(res.status).toBe(410);
@@ -252,7 +252,7 @@ describe('rbac-roles 模块', () => {
       });
 
       const res = await request(httpServer(app))
-        .get(`/api/v2/roles/${role.id}`)
+        .get(`/api/system/v1/roles/${role.id}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.permissions).toHaveLength(1);
@@ -267,10 +267,10 @@ describe('rbac-roles 模块', () => {
 
   // ============ create ============
 
-  describe('create POST /api/v2/roles', () => {
+  describe('create POST /api/system/v1/roles', () => {
     it('SUPER_ADMIN POST → 201,字段集严格', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/roles')
+        .post('/api/system/v1/roles')
         .set('Authorization', superAdminAuth)
         .send({
           code: 'create-test',
@@ -290,7 +290,7 @@ describe('rbac-roles 模块', () => {
 
     it('POST 不传 description → 201,description 为 null', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/roles')
+        .post('/api/system/v1/roles')
         .set('Authorization', superAdminAuth)
         .send({ code: 'create-no-desc', displayName: 'x' });
       expect(res.status).toBe(201);
@@ -299,11 +299,11 @@ describe('rbac-roles 模块', () => {
 
     it('POST 重复 code → 30004', async () => {
       await request(httpServer(app))
-        .post('/api/v2/roles')
+        .post('/api/system/v1/roles')
         .set('Authorization', superAdminAuth)
         .send({ code: 'dup-test', displayName: 'first' });
       const res = await request(httpServer(app))
-        .post('/api/v2/roles')
+        .post('/api/system/v1/roles')
         .set('Authorization', superAdminAuth)
         .send({ code: 'dup-test', displayName: 'second' });
       expectBizError(res, BizCode.ROLE_CODE_ALREADY_EXISTS);
@@ -318,7 +318,7 @@ describe('rbac-roles 模块', () => {
         },
       });
       const res = await request(httpServer(app))
-        .post('/api/v2/roles')
+        .post('/api/system/v1/roles')
         .set('Authorization', superAdminAuth)
         .send({ code: 'softdel-dup-code', displayName: 'new' });
       expectBizError(res, BizCode.ROLE_CODE_ALREADY_EXISTS);
@@ -335,7 +335,7 @@ describe('rbac-roles 模块', () => {
       ['leading_dash', '-apd'], // 首字符 -(必须 [a-z])
     ])('POST 非法 code %s = "%s" → 30009', async (_name, code) => {
       const res = await request(httpServer(app))
-        .post('/api/v2/roles')
+        .post('/api/system/v1/roles')
         .set('Authorization', superAdminAuth)
         .send({ code, displayName: 'x' });
       expectBizError(res, BizCode.INVALID_ROLE_CODE_FORMAT);
@@ -349,7 +349,7 @@ describe('rbac-roles 模块', () => {
       ['max_length_33', 'a' + '-'.repeat(31) + 'b'], // 33 字符
     ])('POST 合法 code %s = "%s" → 201', async (_name, code) => {
       const res = await request(httpServer(app))
-        .post('/api/v2/roles')
+        .post('/api/system/v1/roles')
         .set('Authorization', superAdminAuth)
         .send({ code, displayName: 'x' });
       expect(res.status).toBe(201);
@@ -358,14 +358,14 @@ describe('rbac-roles 模块', () => {
 
   // ============ patch ============
 
-  describe('patch PATCH /api/v2/roles/:id', () => {
+  describe('patch PATCH /api/system/v1/roles/:id', () => {
     it('PATCH displayName + description → 200,只改 2 字段', async () => {
       const created = await prisma.rbacRole.create({
         data: { code: 'patch-test', displayName: 'old', description: 'old desc' },
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .patch(`/api/v2/roles/${created.id}`)
+        .patch(`/api/system/v1/roles/${created.id}`)
         .set('Authorization', superAdminAuth)
         .send({ displayName: 'new', description: 'new desc' });
       expect(res.status).toBe(200);
@@ -376,7 +376,7 @@ describe('rbac-roles 模块', () => {
 
     it('PATCH 不存在 id → 30003', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/roles/nonexistent000000000000000000')
+        .patch('/api/system/v1/roles/nonexistent000000000000000000')
         .set('Authorization', superAdminAuth)
         .send({ displayName: 'x' });
       expectBizError(res, BizCode.ROLE_NOT_FOUND);
@@ -388,7 +388,7 @@ describe('rbac-roles 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .patch(`/api/v2/roles/${created.id}`)
+        .patch(`/api/system/v1/roles/${created.id}`)
         .set('Authorization', superAdminAuth)
         .send({ displayName: 'try' });
       expectBizError(res, BizCode.ROLE_NOT_FOUND);
@@ -402,7 +402,7 @@ describe('rbac-roles 模块', () => {
           select: { id: true },
         });
         const res = await request(httpServer(app))
-          .patch(`/api/v2/roles/${created.id}`)
+          .patch(`/api/system/v1/roles/${created.id}`)
           .set('Authorization', superAdminAuth)
           .send({ [field]: 'try' });
         expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
@@ -412,7 +412,7 @@ describe('rbac-roles 模块', () => {
 
   // ============ soft delete ============
 
-  describe('soft delete DELETE /api/v2/roles/:id', () => {
+  describe('soft delete DELETE /api/system/v1/roles/:id', () => {
     it('DELETE → 200,软删(再 GET list 不见,GET detail 返 30005)', async () => {
       const created = await prisma.rbacRole.create({
         data: { code: 'softdel-flow', displayName: 'x' },
@@ -421,7 +421,7 @@ describe('rbac-roles 模块', () => {
 
       // DELETE
       const delRes = await request(httpServer(app))
-        .delete(`/api/v2/roles/${created.id}`)
+        .delete(`/api/system/v1/roles/${created.id}`)
         .set('Authorization', superAdminAuth);
       expect(delRes.status).toBe(200);
       expect(delRes.body.data.code).toBe(created.code);
@@ -435,34 +435,34 @@ describe('rbac-roles 模块', () => {
 
       // list 不再返回
       const listRes = await request(httpServer(app))
-        .get('/api/v2/roles?code=softdel-flow')
+        .get('/api/system/v1/roles?code=softdel-flow')
         .set('Authorization', superAdminAuth);
       const codes: string[] = listRes.body.data.items.map((i: { code: string }) => i.code);
       expect(codes).not.toContain('softdel-flow');
 
       // detail 返 30005
       const detailRes = await request(httpServer(app))
-        .get(`/api/v2/roles/${created.id}`)
+        .get(`/api/system/v1/roles/${created.id}`)
         .set('Authorization', superAdminAuth);
       expectBizError(detailRes, BizCode.ROLE_DELETED);
 
       // 再 PATCH 返 30003(信息泄漏防御)
       const patchRes = await request(httpServer(app))
-        .patch(`/api/v2/roles/${created.id}`)
+        .patch(`/api/system/v1/roles/${created.id}`)
         .set('Authorization', superAdminAuth)
         .send({ displayName: 'x' });
       expectBizError(patchRes, BizCode.ROLE_NOT_FOUND);
 
       // 再 DELETE 也返 30003
       const delAgain = await request(httpServer(app))
-        .delete(`/api/v2/roles/${created.id}`)
+        .delete(`/api/system/v1/roles/${created.id}`)
         .set('Authorization', superAdminAuth);
       expectBizError(delAgain, BizCode.ROLE_NOT_FOUND);
     });
 
     it('DELETE 不存在 id → 30003', async () => {
       const res = await request(httpServer(app))
-        .delete('/api/v2/roles/nonexistent000000000000000000')
+        .delete('/api/system/v1/roles/nonexistent000000000000000000')
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.ROLE_NOT_FOUND);
     });

@@ -108,7 +108,7 @@ describe('attachment-configs 跨表引用约束(V2.x Slow-6)', () => {
       await createAttachment(tc.code, 'image/jpeg', 't1');
 
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attachment-type-configs/${tc.id}`)
+        .delete(`/api/system/v1/attachment-type-configs/${tc.id}`)
         .set('Authorization', superAuth);
       expectBizError(res, BizCode.ATTACHMENT_TYPE_IN_USE);
 
@@ -126,7 +126,7 @@ describe('attachment-configs 跨表引用约束(V2.x Slow-6)', () => {
       await createAttachment(tc.code, 'image/jpeg', 't2');
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-type-configs/${tc.id}/status`)
+        .patch(`/api/system/v1/attachment-type-configs/${tc.id}/status`)
         .set('Authorization', superAuth)
         .send({ status: AttachmentTypeConfigStatus.INACTIVE });
       expectBizError(res, BizCode.ATTACHMENT_TYPE_IN_USE);
@@ -143,7 +143,7 @@ describe('attachment-configs 跨表引用约束(V2.x Slow-6)', () => {
       // 无 attachment 引用此 code
 
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attachment-type-configs/${tc.id}`)
+        .delete(`/api/system/v1/attachment-type-configs/${tc.id}`)
         .set('Authorization', superAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -169,7 +169,7 @@ describe('attachment-configs 跨表引用约束(V2.x Slow-6)', () => {
       await createAttachment(tc.code, 'image/png', 'm4');
 
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attachment-mime-configs/${mc.id}`)
+        .delete(`/api/system/v1/attachment-mime-configs/${mc.id}`)
         .set('Authorization', superAuth);
       expectBizError(res, BizCode.ATTACHMENT_MIME_CONFIG_IN_USE);
 
@@ -190,7 +190,7 @@ describe('attachment-configs 跨表引用约束(V2.x Slow-6)', () => {
       await createAttachment(tc.code, 'image/png', 'm5');
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${mc.id}/status`)
+        .patch(`/api/system/v1/attachment-mime-configs/${mc.id}/status`)
         .set('Authorization', superAuth)
         .send({ status: AttachmentMimeConfigStatus.INACTIVE });
       expectBizError(res, BizCode.ATTACHMENT_MIME_CONFIG_IN_USE);
@@ -206,7 +206,7 @@ describe('attachment-configs 跨表引用约束(V2.x Slow-6)', () => {
       await createAttachment(tc.code, 'image/jpeg', 'm6');
 
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attachment-mime-configs/${mcPng.id}`)
+        .delete(`/api/system/v1/attachment-mime-configs/${mcPng.id}`)
         .set('Authorization', superAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -232,7 +232,7 @@ describe('attachment-configs 跨表引用约束(V2.x Slow-6)', () => {
       await createAttachment(tc.code, 'image/jpeg', 's7');
 
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attachment-size-limit-configs/${sc.id}`)
+        .delete(`/api/system/v1/attachment-size-limit-configs/${sc.id}`)
         .set('Authorization', superAuth);
       expectBizError(res, BizCode.ATTACHMENT_SIZE_LIMIT_CONFIG_IN_USE);
 
@@ -252,7 +252,7 @@ describe('attachment-configs 跨表引用约束(V2.x Slow-6)', () => {
       // 无 attachment 引用此 type.code
 
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attachment-size-limit-configs/${sc.id}`)
+        .delete(`/api/system/v1/attachment-size-limit-configs/${sc.id}`)
         .set('Authorization', superAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);

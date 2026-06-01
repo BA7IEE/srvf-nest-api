@@ -91,7 +91,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
       throw new Error(
         'production fail-fast: storage_settings 未初始化。' +
           '请按 docs/ops/cos-production-rollout-checklist.md §7 通过 ' +
-          'PATCH /api/v2/storage-settings 创建 row。',
+          'PATCH /api/system/v1/storage-settings 创建 row。',
       );
     }
 
@@ -99,7 +99,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
     if (!r.enabled) {
       throw new Error(
         'production fail-fast: storage_settings.enabled=false。' +
-          '请通过 PATCH /api/v2/storage-settings 设 enabled=true。',
+          '请通过 PATCH /api/system/v1/storage-settings 设 enabled=true。',
       );
     }
 
@@ -107,7 +107,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
     if (r.providerType !== 'COS') {
       throw new Error(
         `production fail-fast: providerType=${r.providerType},production 必须是 COS(沿 F2)。` +
-          '请通过 PATCH /api/v2/storage-settings 设 providerType=COS。',
+          '请通过 PATCH /api/system/v1/storage-settings 设 providerType=COS。',
       );
     }
 
@@ -123,7 +123,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
     if (r.credentialStatus !== CredentialStatus.CONFIGURED) {
       throw new Error(
         `production fail-fast: credentialStatus=${r.credentialStatus},必须是 ${CredentialStatus.CONFIGURED}。` +
-          '请按 ops SOP §8 通过 POST /api/v2/storage-settings/reset-credentials 录入凭证;' +
+          '请按 ops SOP §8 通过 POST /api/system/v1/storage-settings/reset-credentials 录入凭证;' +
           `若 ${CredentialStatus.INVALID},检查 STORAGE_ENCRYPTION_KEY 是否被轮换。`,
       );
     }
@@ -261,7 +261,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
   // - 0 新 BizCode(沿 Q-11-4;复用 BAD_REQUEST / UNAUTHORIZED / FORBIDDEN / INTERNAL_ERROR)
   // - PATCH / reset 末尾 invalidate() 清缓存(沿 Q-11-8 / Q-11-17)
 
-  // GET /api/v2/storage-settings(admin 视图)
+  // GET /api/system/v1/storage-settings(admin 视图)
   // 单 singleton row 不存在 → 返 null(沿 Q-11-1);不抛 BizCode
   async getForAdmin(user: CurrentUserPayload): Promise<StorageSettingsResponseDto | null> {
     await this.assertCanOrThrow(user, 'storage-setting.read.singleton');
@@ -278,7 +278,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
     return this.toResponseDto(rows[0]);
   }
 
-  // PATCH /api/v2/storage-settings(upsert;沿 Q-11-1 + Q-11-17)
+  // PATCH /api/system/v1/storage-settings(upsert;沿 Q-11-1 + Q-11-17)
   // 不存在 → create with default(providerType=LOCAL;沿 Q-11-2);
   // 存在 → update + updatedBy = user.id
   // 末尾 invalidate() 清缓存(沿 Q-11-8 / Q-11-17)
@@ -317,7 +317,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
     return this.toResponseDto(row);
   }
 
-  // POST /api/v2/storage-settings/reset-credentials(沿 §6.6.2 + Q-11-1 + Q-11-2)
+  // POST /api/system/v1/storage-settings/reset-credentials(沿 §6.6.2 + Q-11-1 + Q-11-2)
   // 不存在 → upsert 创建 default;providerType=COS(沿 Q-11-2:reset 默认 COS)
   // 加密 SecretId / SecretKey + 写 credentialConfigured=true
   // **永不**在 response / 日志 / audit 中暴露明文 / 密文(沿 §6.6.2 / §6.6.5)

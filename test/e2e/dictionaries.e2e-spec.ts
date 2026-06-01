@@ -57,20 +57,20 @@ describe('dictionaries 模块', () => {
 
   describe('权限边界', () => {
     it('未登录 GET dict-types → 401', async () => {
-      const res = await request(httpServer(app)).get('/api/v2/dict-types');
+      const res = await request(httpServer(app)).get('/api/system/v1/dict-types');
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('USER 角色 GET dict-types → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/dict-types')
+        .get('/api/system/v1/dict-types')
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('USER 角色 POST dict-types → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/dict-types')
+        .post('/api/system/v1/dict-types')
         .set('Authorization', userAuth)
         .send({ code: 'p_user', label: 'x' });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -79,7 +79,7 @@ describe('dictionaries 模块', () => {
     // P0-F PR-2A:ADMIN 默认无 ops-admin → 30100(v1 ADMIN 全权变收紧,显式反向断言)
     it('ADMIN 默认无 ops-admin → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/dict-types')
+        .post('/api/system/v1/dict-types')
         .set('Authorization', adminDefaultAuth)
         .send({ code: 'p_adm_default', label: 'x' });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -92,7 +92,7 @@ describe('dictionaries 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/dict-types/${t.id}`)
+        .delete(`/api/system/v1/dict-types/${t.id}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -110,7 +110,7 @@ describe('dictionaries 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/dict-items/${i.id}`)
+        .delete(`/api/system/v1/dict-items/${i.id}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -123,7 +123,7 @@ describe('dictionaries 模块', () => {
   describe('dict-types CRUD', () => {
     it('SUPER_ADMIN 创建 dict-type → 201,字段集严格', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/dict-types')
+        .post('/api/system/v1/dict-types')
         .set('Authorization', superAdminAuth)
         .send({ code: 'crd_t1', label: 'Create Test 1', sortOrder: 5 });
 
@@ -138,7 +138,7 @@ describe('dictionaries 模块', () => {
 
     it('ADMIN 创建 dict-type → 201', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/dict-types')
+        .post('/api/system/v1/dict-types')
         .set('Authorization', adminAuth)
         .send({ code: 'crd_t2', label: 'Admin Create' });
       expect(res.status).toBe(201);
@@ -147,12 +147,12 @@ describe('dictionaries 模块', () => {
 
     it('code 撞唯一 → DICT_TYPE_CODE_ALREADY_EXISTS', async () => {
       await request(httpServer(app))
-        .post('/api/v2/dict-types')
+        .post('/api/system/v1/dict-types')
         .set('Authorization', superAdminAuth)
         .send({ code: 'dup_t', label: 'first' });
 
       const res = await request(httpServer(app))
-        .post('/api/v2/dict-types')
+        .post('/api/system/v1/dict-types')
         .set('Authorization', superAdminAuth)
         .send({ code: 'dup_t', label: 'second' });
 
@@ -161,7 +161,7 @@ describe('dictionaries 模块', () => {
 
     it('code 格式非法(含中横线 / 大写)→ 400', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/dict-types')
+        .post('/api/system/v1/dict-types')
         .set('Authorization', superAdminAuth)
         .send({ code: 'Has-Dash', label: 'x' });
       expect(res.status).toBe(400);
@@ -169,7 +169,7 @@ describe('dictionaries 模块', () => {
 
     it('GET 列表分页结构正确', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/dict-types?page=1&pageSize=5')
+        .get('/api/system/v1/dict-types?page=1&pageSize=5')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveProperty('items');
@@ -185,7 +185,7 @@ describe('dictionaries 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .get('/api/v2/dict-types?status=INACTIVE')
+        .get('/api/system/v1/dict-types?status=INACTIVE')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       const codes: string[] = res.body.data.items.map((x: { code: string }) => x.code);
@@ -200,7 +200,7 @@ describe('dictionaries 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .get(`/api/v2/dict-types/${t.id}`)
+        .get(`/api/system/v1/dict-types/${t.id}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.code).toBe('fone_t');
@@ -208,7 +208,7 @@ describe('dictionaries 模块', () => {
 
     it('GET 详情 NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/dict-types/cl0000000000000000000000')
+        .get('/api/system/v1/dict-types/cl0000000000000000000000')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.DICT_TYPE_NOT_FOUND);
     });
@@ -219,7 +219,7 @@ describe('dictionaries 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .patch(`/api/v2/dict-types/${t.id}`)
+        .patch(`/api/system/v1/dict-types/${t.id}`)
         .set('Authorization', superAdminAuth)
         .send({ label: 'updated', sortOrder: 99 });
       expect(res.status).toBe(200);
@@ -233,7 +233,7 @@ describe('dictionaries 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .patch(`/api/v2/dict-types/${t.id}`)
+        .patch(`/api/system/v1/dict-types/${t.id}`)
         .set('Authorization', superAdminAuth)
         .send({ code: 'newcode' });
       expect(res.status).toBe(400);
@@ -245,7 +245,7 @@ describe('dictionaries 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .patch(`/api/v2/dict-types/${t.id}/status`)
+        .patch(`/api/system/v1/dict-types/${t.id}/status`)
         .set('Authorization', superAdminAuth)
         .send({ status: DictTypeStatus.INACTIVE });
       expect(res.status).toBe(200);
@@ -258,7 +258,7 @@ describe('dictionaries 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/dict-types/${t.id}`)
+        .delete(`/api/system/v1/dict-types/${t.id}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       const after = await prisma.dictType.findUnique({ where: { id: t.id } });
@@ -274,7 +274,7 @@ describe('dictionaries 模块', () => {
         data: { typeId: t.id, code: 'in-use-item', label: 'child' },
       });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/dict-types/${t.id}`)
+        .delete(`/api/system/v1/dict-types/${t.id}`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.DICT_TYPE_IN_USE);
     });
@@ -295,7 +295,7 @@ describe('dictionaries 模块', () => {
 
     it('POST 创建 dict-item → 201,parentId null', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/dict-items')
+        .post('/api/system/v1/dict-items')
         .set('Authorization', superAdminAuth)
         .send({ typeId, code: 'item-1', label: 'Item 1' });
       expect(res.status).toBe(201);
@@ -311,7 +311,7 @@ describe('dictionaries 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .post('/api/v2/dict-items')
+        .post('/api/system/v1/dict-items')
         .set('Authorization', superAdminAuth)
         .send({ typeId, code: 'child-item', label: 'Child', parentId: parent.id });
       expect(res.status).toBe(201);
@@ -320,7 +320,7 @@ describe('dictionaries 模块', () => {
 
     it('POST typeId 不存在 → DICT_TYPE_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/dict-items')
+        .post('/api/system/v1/dict-items')
         .set('Authorization', superAdminAuth)
         .send({ typeId: 'cl0000000000000000000000', code: 'orphan', label: 'x' });
       expectBizError(res, BizCode.DICT_TYPE_NOT_FOUND);
@@ -328,7 +328,7 @@ describe('dictionaries 模块', () => {
 
     it('POST parent 不存在 → DICT_ITEM_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/dict-items')
+        .post('/api/system/v1/dict-items')
         .set('Authorization', superAdminAuth)
         .send({
           typeId,
@@ -349,7 +349,7 @@ describe('dictionaries 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .post('/api/v2/dict-items')
+        .post('/api/system/v1/dict-items')
         .set('Authorization', superAdminAuth)
         .send({
           typeId,
@@ -362,12 +362,12 @@ describe('dictionaries 模块', () => {
 
     it('POST (typeId, code) 撞唯一 → DICT_ITEM_CODE_ALREADY_EXISTS', async () => {
       await request(httpServer(app))
-        .post('/api/v2/dict-items')
+        .post('/api/system/v1/dict-items')
         .set('Authorization', superAdminAuth)
         .send({ typeId, code: 'dup-item', label: 'first' });
 
       const res = await request(httpServer(app))
-        .post('/api/v2/dict-items')
+        .post('/api/system/v1/dict-items')
         .set('Authorization', superAdminAuth)
         .send({ typeId, code: 'dup-item', label: 'second' });
       expectBizError(res, BizCode.DICT_ITEM_CODE_ALREADY_EXISTS);
@@ -375,14 +375,14 @@ describe('dictionaries 模块', () => {
 
     it('GET 列表 typeId 必填 → 400(参数校验)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/dict-items')
+        .get('/api/system/v1/dict-items')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(400);
     });
 
     it('GET 列表 typeId 不存在 → DICT_TYPE_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/dict-items?typeId=cl0000000000000000000000')
+        .get('/api/system/v1/dict-items?typeId=cl0000000000000000000000')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.DICT_TYPE_NOT_FOUND);
     });
@@ -402,7 +402,7 @@ describe('dictionaries 模块', () => {
         data: { typeId: subType.id, code: 'flt-c2', label: 'c2', parentId: root.id },
       });
       const res = await request(httpServer(app))
-        .get(`/api/v2/dict-items?typeId=${subType.id}&parentId=${root.id}`)
+        .get(`/api/system/v1/dict-items?typeId=${subType.id}&parentId=${root.id}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.total).toBe(2);
@@ -425,7 +425,7 @@ describe('dictionaries 模块', () => {
         },
       });
       const res = await request(httpServer(app))
-        .get(`/api/v2/dict-items/tree?typeId=${treeType.id}`)
+        .get(`/api/system/v1/dict-items/tree?typeId=${treeType.id}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -436,14 +436,14 @@ describe('dictionaries 模块', () => {
 
     it('GET tree typeId 不存在 → DICT_TYPE_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/dict-items/tree?typeId=cl0000000000000000000000')
+        .get('/api/system/v1/dict-items/tree?typeId=cl0000000000000000000000')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.DICT_TYPE_NOT_FOUND);
     });
 
     it('GET /:id NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/dict-items/cl0000000000000000000000')
+        .get('/api/system/v1/dict-items/cl0000000000000000000000')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.DICT_ITEM_NOT_FOUND);
     });
@@ -453,7 +453,7 @@ describe('dictionaries 模块', () => {
         data: { typeId, code: 'upd-i1', label: 'orig', sortOrder: 0 },
       });
       const res = await request(httpServer(app))
-        .patch(`/api/v2/dict-items/${item.id}`)
+        .patch(`/api/system/v1/dict-items/${item.id}`)
         .set('Authorization', superAdminAuth)
         .send({ label: 'updated', sortOrder: 99 });
       expect(res.status).toBe(200);
@@ -466,7 +466,7 @@ describe('dictionaries 模块', () => {
         data: { typeId, code: 'upd-i2', label: 'orig' },
       });
       const res = await request(httpServer(app))
-        .patch(`/api/v2/dict-items/${item.id}`)
+        .patch(`/api/system/v1/dict-items/${item.id}`)
         .set('Authorization', superAdminAuth)
         .send({ code: 'newcode' });
       expect(res.status).toBe(400);
@@ -477,7 +477,7 @@ describe('dictionaries 模块', () => {
         data: { typeId, code: 'sts-i1', label: 'orig' },
       });
       const res = await request(httpServer(app))
-        .patch(`/api/v2/dict-items/${item.id}/status`)
+        .patch(`/api/system/v1/dict-items/${item.id}/status`)
         .set('Authorization', superAdminAuth)
         .send({ status: DictItemStatus.INACTIVE });
       expect(res.status).toBe(200);
@@ -489,7 +489,7 @@ describe('dictionaries 模块', () => {
         data: { typeId, code: 'del-me', label: 'del' },
       });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/dict-items/${item.id}`)
+        .delete(`/api/system/v1/dict-items/${item.id}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       const after = await prisma.dictItem.findUnique({ where: { id: item.id } });
@@ -505,7 +505,7 @@ describe('dictionaries 模块', () => {
         data: { typeId, code: 'c-of-parent', label: 'c', parentId: parent.id },
       });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/dict-items/${parent.id}`)
+        .delete(`/api/system/v1/dict-items/${parent.id}`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.DICT_ITEM_IN_USE);
     });

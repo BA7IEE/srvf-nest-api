@@ -28,7 +28,7 @@ import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.servi
 // **PR-3 D1=A user.update.role 收紧验证**:users-role-boundary.e2e 单独断言
 // "ADMIN+ops-admin 调 PATCH /:id/role → 30100" / "SUPER_ADMIN → 200(+ canChangeRole 永禁升 SA)"。
 // **PR-4 D2=B audit-log 放宽验证**:audit-logs.e2e 单独断言
-// "ADMIN+ops-admin 调 GET /api/v2/audit-logs → 200(数据范围 service 层兜底)"。
+// "ADMIN+ops-admin 调 GET /api/system/v1/audit-logs → 200(数据范围 service 层兜底)"。
 
 export interface RbacSeedResult {
   opsAdminRoleId: string;

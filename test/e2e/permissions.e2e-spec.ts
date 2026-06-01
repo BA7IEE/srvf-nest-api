@@ -69,8 +69,8 @@ describe('permissions 模块', () => {
   // ============ 权限边界 ============
 
   describe('权限边界', () => {
-    it('未登录 GET /api/v2/permissions → 401', async () => {
-      const res = await request(httpServer(app)).get('/api/v2/permissions');
+    it('未登录 GET /api/system/v1/permissions → 401', async () => {
+      const res = await request(httpServer(app)).get('/api/system/v1/permissions');
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
@@ -78,14 +78,14 @@ describe('permissions 模块', () => {
     // ADMIN 持 ops-admin 用例需先 invalidate 清掉(沿真实运行时:绑 ops-admin 后必须 reload)
     it('USER 角色 GET → 403', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/permissions')
+        .get('/api/system/v1/permissions')
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('USER 角色 POST → 403', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/permissions')
+        .post('/api/system/v1/permissions')
         .set('Authorization', userAuth)
         .send({
           code: 'attachment.upload.cert',
@@ -107,7 +107,7 @@ describe('permissions 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .patch(`/api/v2/permissions/${created.id}`)
+        .patch(`/api/system/v1/permissions/${created.id}`)
         .set('Authorization', userAuth)
         .send({ description: 'try' });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -124,7 +124,7 @@ describe('permissions 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/permissions/${created.id}`)
+        .delete(`/api/system/v1/permissions/${created.id}`)
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
@@ -133,7 +133,7 @@ describe('permissions 模块', () => {
     // 不再自动放行,必须显式持有 RBAC 角色(ops-admin 或自定角色)才能通过。
     it('ADMIN 默认无 RBAC 权限 → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/permissions')
+        .post('/api/system/v1/permissions')
         .set('Authorization', adminAuth)
         .send({
           code: 'pb.admin.create',
@@ -150,7 +150,7 @@ describe('permissions 模块', () => {
       await grantOpsAdminToUser(app, adminUserId, opsAdminRoleId);
       try {
         const res = await request(httpServer(app))
-          .post('/api/v2/permissions')
+          .post('/api/system/v1/permissions')
           .set('Authorization', adminAuth)
           .send({
             code: 'pb.adm-ok.create',
@@ -172,7 +172,7 @@ describe('permissions 模块', () => {
   describe('CRUD 主成功路径', () => {
     it('SUPER_ADMIN POST → 201,字段集严格', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/permissions')
+        .post('/api/system/v1/permissions')
         .set('Authorization', superAdminAuth)
         .send({
           code: 'attachment.upload.cert',
@@ -200,7 +200,7 @@ describe('permissions 模块', () => {
 
     it('SUPER_ADMIN POST 不传 description → 201,description 为 null', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/permissions')
+        .post('/api/system/v1/permissions')
         .set('Authorization', superAdminAuth)
         .send({
           code: 'attachment.view.cert',
@@ -214,7 +214,7 @@ describe('permissions 模块', () => {
 
     it('GET 列表 → 200,分页结构正确', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/permissions')
+        .get('/api/system/v1/permissions')
         .set('Authorization', superAdminAuth);
 
       expect(res.status).toBe(200);
@@ -227,7 +227,7 @@ describe('permissions 模块', () => {
 
     it('GET 列表 + module 过滤 → 200,只返回该 module', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/permissions?module=attachment')
+        .get('/api/system/v1/permissions?module=attachment')
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.items.length).toBeGreaterThan(0);
@@ -238,7 +238,7 @@ describe('permissions 模块', () => {
 
     it('GET 列表 + resourceType 过滤 → 200', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/permissions?resourceType=cert')
+        .get('/api/system/v1/permissions?resourceType=cert')
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       for (const item of res.body.data.items) {
@@ -258,7 +258,7 @@ describe('permissions 模块', () => {
         select: { id: true, code: true, module: true },
       });
       const res = await request(httpServer(app))
-        .patch(`/api/v2/permissions/${created.id}`)
+        .patch(`/api/system/v1/permissions/${created.id}`)
         .set('Authorization', superAdminAuth)
         .send({ description: 'new desc' });
       expect(res.status).toBe(200);
@@ -279,7 +279,7 @@ describe('permissions 模块', () => {
       });
 
       const delRes = await request(httpServer(app))
-        .delete(`/api/v2/permissions/${created.id}`)
+        .delete(`/api/system/v1/permissions/${created.id}`)
         .set('Authorization', superAdminAuth);
       expect(delRes.status).toBe(200);
       expect(delRes.body.data.id).toBe(created.id);
@@ -290,7 +290,7 @@ describe('permissions 模块', () => {
 
       // 后续 PATCH 同 id → 30001
       const patchRes = await request(httpServer(app))
-        .patch(`/api/v2/permissions/${created.id}`)
+        .patch(`/api/system/v1/permissions/${created.id}`)
         .set('Authorization', superAdminAuth)
         .send({ description: 'try update deleted' });
       expectBizError(patchRes, BizCode.PERMISSION_NOT_FOUND);
@@ -302,7 +302,7 @@ describe('permissions 模块', () => {
   describe('重复 code(30002 PERMISSION_CODE_ALREADY_EXISTS)', () => {
     it('POST 重复 code → 30002', async () => {
       await request(httpServer(app))
-        .post('/api/v2/permissions')
+        .post('/api/system/v1/permissions')
         .set('Authorization', superAdminAuth)
         .send({
           code: 'dup.test.code',
@@ -312,7 +312,7 @@ describe('permissions 模块', () => {
         });
 
       const res = await request(httpServer(app))
-        .post('/api/v2/permissions')
+        .post('/api/system/v1/permissions')
         .set('Authorization', superAdminAuth)
         .send({
           code: 'dup.test.code',
@@ -346,7 +346,7 @@ describe('permissions 模块', () => {
       ['leading_dot', '.a.b.c'], // 开头点
     ])('POST code = %s 形如 %s → 30008', async (_name, code) => {
       const res = await request(httpServer(app))
-        .post('/api/v2/permissions')
+        .post('/api/system/v1/permissions')
         .set('Authorization', superAdminAuth)
         .send({
           code,
@@ -372,7 +372,7 @@ describe('permissions 模块', () => {
       ['attachment_4seg_view_other', 'attachment.view.cert.other'],
     ])('POST code = %s 合法形如 %s → 201', async (_name, code) => {
       const res = await request(httpServer(app))
-        .post('/api/v2/permissions')
+        .post('/api/system/v1/permissions')
         .set('Authorization', superAdminAuth)
         .send({
           code,
@@ -390,7 +390,7 @@ describe('permissions 模块', () => {
   describe('PATCH / DELETE 不存在 id → 30001', () => {
     it('PATCH 不存在 id → 30001', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/permissions/nonexistent000000000000000000')
+        .patch('/api/system/v1/permissions/nonexistent000000000000000000')
         .set('Authorization', superAdminAuth)
         .send({ description: 'x' });
       expectBizError(res, BizCode.PERMISSION_NOT_FOUND);
@@ -398,7 +398,7 @@ describe('permissions 模块', () => {
 
     it('DELETE 不存在 id → 30001', async () => {
       const res = await request(httpServer(app))
-        .delete('/api/v2/permissions/nonexistent000000000000000000')
+        .delete('/api/system/v1/permissions/nonexistent000000000000000000')
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.PERMISSION_NOT_FOUND);
     });
@@ -418,7 +418,7 @@ describe('permissions 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .patch(`/api/v2/permissions/${created.id}`)
+        .patch(`/api/system/v1/permissions/${created.id}`)
         .set('Authorization', superAdminAuth)
         .send({ code: 'try.change.code' });
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
@@ -437,7 +437,7 @@ describe('permissions 模块', () => {
           select: { id: true },
         });
         const res = await request(httpServer(app))
-          .patch(`/api/v2/permissions/${created.id}`)
+          .patch(`/api/system/v1/permissions/${created.id}`)
           .set('Authorization', superAdminAuth)
           .send({ [field]: 'try' });
         expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });

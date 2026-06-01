@@ -12,9 +12,9 @@ import { AssignUserRoleDto, UserRoleResponseDto } from './user-roles.dto';
 // 沿 D7 v1.1 §5.1 端点 12-14 + §6.2 Q7 角色分级 + §6.3 最后一个 ops-admin 保护 + §9.4 缓存失效 + 用户拍板。
 //
 // 3 个端点:
-//   GET    /api/v2/users/:userId/roles                  查用户角色列表
-//   POST   /api/v2/users/:userId/roles                  分配角色(入参 roleCode 单 code)
-//   DELETE /api/v2/users/:userId/roles/:roleId          撤销角色
+//   GET    /api/system/v1/users/:userId/roles                  查用户角色列表
+//   POST   /api/system/v1/users/:userId/roles                  分配角色(入参 roleCode 单 code)
+//   DELETE /api/system/v1/users/:userId/roles/:roleId          撤销角色
 //
 // **关键设计**(沿用户拍板):
 // 1. **user 失效场景**(沿 v1 §10):user 不存在 / disabled / 已软删 统一返 USER_NOT_FOUND = 10001

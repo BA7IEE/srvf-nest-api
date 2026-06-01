@@ -26,9 +26,9 @@ describe('Route B Phase 1b alias(system/v1 Ops surface)', () => {
     await app.close();
   });
 
-  it('GET /api/system/v1/dict-types 与老 /api/v2/dict-types 返回等价(authed,200 + 同 body)', async () => {
+  it('GET /api/system/v1/dict-types 与老 /api/system/v1/dict-types 返回等价(authed,200 + 同 body)', async () => {
     const oldRes = await request(httpServer(app))
-      .get('/api/v2/dict-types')
+      .get('/api/system/v1/dict-types')
       .set('Authorization', auth);
     const newRes = await request(httpServer(app))
       .get('/api/system/v1/dict-types')

@@ -25,12 +25,12 @@ import { AttachmentTypeConfigsService } from './attachment-type-configs.service'
 
 // V2.x C-7 attachments 实施 PR #3(2026-05-15):AttachmentTypeConfig 模块 Controller。
 // 6 个端点(沿 D7 v1.0 §5.2.1 端点 8-12 + Q5 v1.0 拍板:增加独立 status 端点):
-//   GET    /api/v2/attachment-type-configs              列表(分页 + status / ownerTable 过滤)
-//   POST   /api/v2/attachment-type-configs              创建
-//   GET    /api/v2/attachment-type-configs/:id          详情
-//   PATCH  /api/v2/attachment-type-configs/:id          更新(仅资料字段;严禁 code / status)
-//   PATCH  /api/v2/attachment-type-configs/:id/status   独立改 status(沿 dictionaries 范式)
-//   DELETE /api/v2/attachment-type-configs/:id          软删 + 同步置 INACTIVE
+//   GET    /api/system/v1/attachment-type-configs              列表(分页 + status / ownerTable 过滤)
+//   POST   /api/system/v1/attachment-type-configs              创建
+//   GET    /api/system/v1/attachment-type-configs/:id          详情
+//   PATCH  /api/system/v1/attachment-type-configs/:id          更新(仅资料字段;严禁 code / status)
+//   PATCH  /api/system/v1/attachment-type-configs/:id/status   独立改 status(沿 dictionaries 范式)
+//   DELETE /api/system/v1/attachment-type-configs/:id          软删 + 同步置 INACTIVE
 //
 // **权限标注**(P0-F PR-2B,2026-05-18;撤销 F4 v1.0 "不接 rbac.can()" 锁):
 // 入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;全部判权迁移到 Service 内 `rbac.can()`,
@@ -41,7 +41,7 @@ import { AttachmentTypeConfigsService } from './attachment-type-configs.service'
 @ApiTags('Ops - Attachment Configs')
 @ApiBearerAuth()
 @ApiExtraModels(AttachmentTypeConfigResponseDto)
-@Controller(['v2/attachment-type-configs', 'system/v1/attachment-type-configs'])
+@Controller('system/v1/attachment-type-configs')
 export class AttachmentTypeConfigsController {
   constructor(private readonly service: AttachmentTypeConfigsService) {}
 

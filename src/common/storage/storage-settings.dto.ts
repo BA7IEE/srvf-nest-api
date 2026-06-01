@@ -151,7 +151,7 @@ export class StorageSettingsResponseDto {
 
 // ============ 入参 ============
 
-// PATCH /api/v2/storage-settings(upsert;不存在创建 singleton row;沿 Q-11-1 + Q-11-17)
+// PATCH /api/system/v1/storage-settings(upsert;不存在创建 singleton row;沿 Q-11-1 + Q-11-17)
 // **禁止接受**(沿 §6.6.2 + Q-11 拍板):
 //   - secretId / secretKey(明文凭证;走独立 reset-credentials)
 //   - secretIdEncrypted / secretKeyEncrypted(密文;Service 内部管)
@@ -272,7 +272,7 @@ export class UpdateStorageSettingsDto {
   remarks?: string | null;
 }
 
-// POST /api/v2/storage-settings/reset-credentials(只允许 replace;沿 §6.6.2 + Q-11-5)
+// POST /api/system/v1/storage-settings/reset-credentials(只允许 replace;沿 §6.6.2 + Q-11-5)
 // **严禁包含** secretIdEncrypted / secretKeyEncrypted / credentialConfigured /
 //   oldSecretId / oldSecretKey 等(沿 Q-11-5 不需要 old 校验)
 export class ResetStorageCredentialsDto {

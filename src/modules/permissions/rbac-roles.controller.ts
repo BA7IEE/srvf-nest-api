@@ -22,11 +22,11 @@ import { RbacRolesService } from './rbac-roles.service';
 
 // V2.x C-6 RBAC 实施 PR #3:RbacRole 模块 Controller。
 // 5 个端点(沿 D7 v1.1 §5.1 5-9):
-//   GET    /api/v2/roles          列表(分页 + code 模糊过滤)
-//   GET    /api/v2/roles/:id      详情(含已分配 permissions 数组)
-//   POST   /api/v2/roles          创建
-//   PATCH  /api/v2/roles/:id      更新(仅 displayName / description)
-//   DELETE /api/v2/roles/:id      软删(D4 v1.0;deletedAt;user_roles 不联动)
+//   GET    /api/system/v1/roles          列表(分页 + code 模糊过滤)
+//   GET    /api/system/v1/roles/:id      详情(含已分配 permissions 数组)
+//   POST   /api/system/v1/roles          创建
+//   PATCH  /api/system/v1/roles/:id      更新(仅 displayName / description)
+//   DELETE /api/system/v1/roles/:id      软删(D4 v1.0;deletedAt;user_roles 不联动)
 //
 // **权限标注**(P0-F PR-1,2026-05-18):入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;
 // 全部判权迁移到 RbacRolesService 内 `rbac.can()`,失败抛
@@ -40,7 +40,7 @@ import { RbacRolesService } from './rbac-roles.service';
 @ApiTags('Ops - Roles')
 @ApiBearerAuth()
 @ApiExtraModels(RbacRoleResponseDto, RbacRoleDetailResponseDto, PermissionResponseDto)
-@Controller(['v2/roles', 'system/v1/roles'])
+@Controller('system/v1/roles')
 export class RbacRolesController {
   constructor(private readonly service: RbacRolesService) {}
 

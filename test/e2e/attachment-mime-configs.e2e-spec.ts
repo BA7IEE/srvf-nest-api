@@ -109,20 +109,20 @@ describe('attachment-mime-configs 模块', () => {
     beforeAll(truncateMimeConfigs);
 
     it('perm-1 未登录 GET → 40100', async () => {
-      const res = await request(httpServer(app)).get('/api/v2/attachment-mime-configs');
+      const res = await request(httpServer(app)).get('/api/system/v1/attachment-mime-configs');
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('perm-2 USER 角色 GET → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachment-mime-configs')
+        .get('/api/system/v1/attachment-mime-configs')
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('perm-2 USER 角色 POST → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-mime-configs')
+        .post('/api/system/v1/attachment-mime-configs')
         .set('Authorization', userAuth)
         .send({ typeConfigId: typeConfigA.id, mime: 'image/jpeg' });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -130,14 +130,14 @@ describe('attachment-mime-configs 模块', () => {
 
     it('perm-3 ADMIN 默认无 ops-admin GET → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachment-mime-configs')
+        .get('/api/system/v1/attachment-mime-configs')
         .set('Authorization', adminDefaultAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('perm-4 ADMIN+ops-admin GET → 200', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachment-mime-configs')
+        .get('/api/system/v1/attachment-mime-configs')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -145,7 +145,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('perm-5 SUPER_ADMIN 短路通过(无需 ops-admin grant)GET → 200', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachment-mime-configs')
+        .get('/api/system/v1/attachment-mime-configs')
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -159,7 +159,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('ADMIN create success → 201,完整出参 + 嵌套 typeConfig 摘要 + status 默认 ACTIVE + 不返 deletedAt', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-mime-configs')
+        .post('/api/system/v1/attachment-mime-configs')
         .set('Authorization', adminAuth)
         .send({
           typeConfigId: typeConfigA.id,
@@ -183,7 +183,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('SUPER_ADMIN create 仅必填 → 201', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-mime-configs')
+        .post('/api/system/v1/attachment-mime-configs')
         .set('Authorization', superAdminAuth)
         .send({ typeConfigId: typeConfigA.id, mime: 'image/png' });
       expect(res.status).toBe(201);
@@ -193,7 +193,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('typeConfigId 不存在 → 13020(Q5 v1.0:复用 type config 码)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-mime-configs')
+        .post('/api/system/v1/attachment-mime-configs')
         .set('Authorization', adminAuth)
         .send({ typeConfigId: 'cl0000000000000000nonexist', mime: 'image/heic' });
       expectBizError(res, BizCode.ATTACHMENT_TYPE_CONFIG_NOT_FOUND);
@@ -212,7 +212,7 @@ describe('attachment-mime-configs 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-mime-configs')
+        .post('/api/system/v1/attachment-mime-configs')
         .set('Authorization', adminAuth)
         .send({ typeConfigId: tcDeleted.id, mime: 'image/heic' });
       expectBizError(res, BizCode.ATTACHMENT_TYPE_CONFIG_NOT_FOUND);
@@ -220,12 +220,12 @@ describe('attachment-mime-configs 模块', () => {
 
     it('duplicate (typeConfigId, mime) → 13024', async () => {
       await request(httpServer(app))
-        .post('/api/v2/attachment-mime-configs')
+        .post('/api/system/v1/attachment-mime-configs')
         .set('Authorization', adminAuth)
         .send({ typeConfigId: typeConfigA.id, mime: 'application/pdf' });
 
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-mime-configs')
+        .post('/api/system/v1/attachment-mime-configs')
         .set('Authorization', adminAuth)
         .send({ typeConfigId: typeConfigA.id, mime: 'application/pdf' });
       expectBizError(res, BizCode.ATTACHMENT_MIME_CONFIG_DUPLICATE);
@@ -242,7 +242,7 @@ describe('attachment-mime-configs 模块', () => {
         },
       });
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-mime-configs')
+        .post('/api/system/v1/attachment-mime-configs')
         .set('Authorization', adminAuth)
         .send({ typeConfigId: typeConfigA.id, mime: 'image/webp' });
       expectBizError(res, BizCode.ATTACHMENT_MIME_CONFIG_DUPLICATE);
@@ -258,7 +258,7 @@ describe('attachment-mime-configs 模块', () => {
       ['multi_slash', 'image/jpeg/x'], // 多斜杠
     ])('invalid MIME = %s 形如 %s → 13025', async (_name, mime) => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-mime-configs')
+        .post('/api/system/v1/attachment-mime-configs')
         .set('Authorization', adminAuth)
         .send({ typeConfigId: typeConfigA.id, mime });
       expectBizError(res, BizCode.INVALID_ATTACHMENT_MIME_FORMAT);
@@ -272,7 +272,7 @@ describe('attachment-mime-configs 模块', () => {
       ['wildcard_video', 'video/*'],
     ])('合法 MIME = %s 形如 %s → 201(Q1 v1.0:允许 wildcard)', async (_name, mime) => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-mime-configs')
+        .post('/api/system/v1/attachment-mime-configs')
         .set('Authorization', adminAuth)
         .send({ typeConfigId: typeConfigB.id, mime });
       expect(res.status).toBe(201);
@@ -283,7 +283,7 @@ describe('attachment-mime-configs 模块', () => {
       // typeConfigA + image/jpeg 已在第一个 case 创建
       // 此处 create image/svg+xml 应成功
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-mime-configs')
+        .post('/api/system/v1/attachment-mime-configs')
         .set('Authorization', adminAuth)
         .send({ typeConfigId: typeConfigA.id, mime: 'image/svg+xml' });
       expect(res.status).toBe(201);
@@ -293,7 +293,7 @@ describe('attachment-mime-configs 模块', () => {
       // typeConfigA + image/jpeg 已在第一个 case 创建
       // typeConfigB + image/jpeg 此处应成功
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-mime-configs')
+        .post('/api/system/v1/attachment-mime-configs')
         .set('Authorization', adminAuth)
         .send({ typeConfigId: typeConfigB.id, mime: 'image/jpeg' });
       expect(res.status).toBe(201);
@@ -301,7 +301,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('non-whitelisted body field(status / deletedAt / id)→ 400', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-mime-configs')
+        .post('/api/system/v1/attachment-mime-configs')
         .set('Authorization', adminAuth)
         .send({
           typeConfigId: typeConfigB.id,
@@ -331,7 +331,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('默认分页 → 5 条', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachment-mime-configs')
+        .get('/api/system/v1/attachment-mime-configs')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.total).toBe(5);
@@ -343,7 +343,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('typeConfigId=A filter → 3 条', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/attachment-mime-configs?typeConfigId=${typeConfigA.id}`)
+        .get(`/api/system/v1/attachment-mime-configs?typeConfigId=${typeConfigA.id}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.total).toBe(3);
@@ -351,7 +351,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('status=ACTIVE filter → 5 条', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachment-mime-configs?status=ACTIVE')
+        .get('/api/system/v1/attachment-mime-configs?status=ACTIVE')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.total).toBe(5);
@@ -359,7 +359,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('mime=image/png filter → 2 条(A+B 各 1)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachment-mime-configs?mime=image%2Fpng')
+        .get('/api/system/v1/attachment-mime-configs?mime=image%2Fpng')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.total).toBe(2);
@@ -367,7 +367,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('pageSize=2 → 2 条', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachment-mime-configs?pageSize=2')
+        .get('/api/system/v1/attachment-mime-configs?pageSize=2')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.items).toHaveLength(2);
@@ -382,7 +382,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('GET detail not found → 13022', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attachment-mime-configs/cl0000000000000000nonexist')
+        .get('/api/system/v1/attachment-mime-configs/cl0000000000000000nonexist')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ATTACHMENT_MIME_CONFIG_NOT_FOUND);
     });
@@ -397,7 +397,7 @@ describe('attachment-mime-configs 模块', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .get(`/api/v2/attachment-mime-configs/${created.id}`)
+        .get(`/api/system/v1/attachment-mime-configs/${created.id}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.mime).toBe('image/jpeg');
@@ -423,7 +423,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('PATCH update success → 200,只改 remark', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${id}`)
+        .patch(`/api/system/v1/attachment-mime-configs/${id}`)
         .set('Authorization', adminAuth)
         .send({ remark: 'new remark' });
       expect(res.status).toBe(200);
@@ -434,7 +434,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('PATCH update not found → 13022', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/attachment-mime-configs/cl0000000000000000nonexist')
+        .patch('/api/system/v1/attachment-mime-configs/cl0000000000000000nonexist')
         .set('Authorization', adminAuth)
         .send({ remark: 'x' });
       expectBizError(res, BizCode.ATTACHMENT_MIME_CONFIG_NOT_FOUND);
@@ -442,7 +442,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('PATCH non-whitelisted mime → 400(Q3 v1.0)', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${id}`)
+        .patch(`/api/system/v1/attachment-mime-configs/${id}`)
         .set('Authorization', adminAuth)
         .send({ mime: 'application/pdf' });
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
@@ -450,7 +450,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('PATCH non-whitelisted typeConfigId → 400(Q4 v1.0)', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${id}`)
+        .patch(`/api/system/v1/attachment-mime-configs/${id}`)
         .set('Authorization', adminAuth)
         .send({ typeConfigId: typeConfigB.id });
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
@@ -458,7 +458,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('PATCH non-whitelisted status → 400(Q5 v1.0:走独立 status 端点)', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${id}`)
+        .patch(`/api/system/v1/attachment-mime-configs/${id}`)
         .set('Authorization', adminAuth)
         .send({ status: AttachmentMimeConfigStatus.INACTIVE });
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
@@ -466,13 +466,13 @@ describe('attachment-mime-configs 模块', () => {
 
     it('PATCH non-whitelisted deletedAt / id → 400', async () => {
       const res1 = await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${id}`)
+        .patch(`/api/system/v1/attachment-mime-configs/${id}`)
         .set('Authorization', adminAuth)
         .send({ deletedAt: new Date().toISOString() });
       expectBizError(res1, BizCode.BAD_REQUEST, { strictMessage: false });
 
       const res2 = await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${id}`)
+        .patch(`/api/system/v1/attachment-mime-configs/${id}`)
         .set('Authorization', adminAuth)
         .send({ id: 'fake' });
       expectBizError(res2, BizCode.BAD_REQUEST, { strictMessage: false });
@@ -495,7 +495,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('PATCH status INACTIVE → 200', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${id}/status`)
+        .patch(`/api/system/v1/attachment-mime-configs/${id}/status`)
         .set('Authorization', adminAuth)
         .send({ status: AttachmentMimeConfigStatus.INACTIVE });
       expect(res.status).toBe(200);
@@ -504,7 +504,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('PATCH status back to ACTIVE → 200', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${id}/status`)
+        .patch(`/api/system/v1/attachment-mime-configs/${id}/status`)
         .set('Authorization', adminAuth)
         .send({ status: AttachmentMimeConfigStatus.ACTIVE });
       expect(res.status).toBe(200);
@@ -513,7 +513,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('PATCH status not found → 13022', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/attachment-mime-configs/cl0000000000000000nonexist/status')
+        .patch('/api/system/v1/attachment-mime-configs/cl0000000000000000nonexist/status')
         .set('Authorization', adminAuth)
         .send({ status: AttachmentMimeConfigStatus.INACTIVE });
       expectBizError(res, BizCode.ATTACHMENT_MIME_CONFIG_NOT_FOUND);
@@ -521,7 +521,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('PATCH status 非法 enum 值 → 400', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${id}/status`)
+        .patch(`/api/system/v1/attachment-mime-configs/${id}/status`)
         .set('Authorization', adminAuth)
         .send({ status: 'BAD_STATUS' });
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
@@ -544,7 +544,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('DELETE success → 200', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attachment-mime-configs/${id}`)
+        .delete(`/api/system/v1/attachment-mime-configs/${id}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.mime).toBe('application/pdf');
@@ -552,14 +552,14 @@ describe('attachment-mime-configs 模块', () => {
 
     it('DELETE twice → 13022', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attachment-mime-configs/${id}`)
+        .delete(`/api/system/v1/attachment-mime-configs/${id}`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ATTACHMENT_MIME_CONFIG_NOT_FOUND);
     });
 
     it('soft-deleted 不出现在 list', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/attachment-mime-configs?typeConfigId=${typeConfigA.id}`)
+        .get(`/api/system/v1/attachment-mime-configs?typeConfigId=${typeConfigA.id}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       const mimes = res.body.data.items.map((i: { mime: string }) => i.mime);
@@ -568,14 +568,14 @@ describe('attachment-mime-configs 模块', () => {
 
     it('GET soft-deleted detail → 13022', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/attachment-mime-configs/${id}`)
+        .get(`/api/system/v1/attachment-mime-configs/${id}`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ATTACHMENT_MIME_CONFIG_NOT_FOUND);
     });
 
     it('PATCH soft-deleted → 13022', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${id}`)
+        .patch(`/api/system/v1/attachment-mime-configs/${id}`)
         .set('Authorization', adminAuth)
         .send({ remark: 'x' });
       expectBizError(res, BizCode.ATTACHMENT_MIME_CONFIG_NOT_FOUND);
@@ -583,7 +583,7 @@ describe('attachment-mime-configs 模块', () => {
 
     it('PATCH status soft-deleted → 13022', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${id}/status`)
+        .patch(`/api/system/v1/attachment-mime-configs/${id}/status`)
         .set('Authorization', adminAuth)
         .send({ status: AttachmentMimeConfigStatus.ACTIVE });
       expectBizError(res, BizCode.ATTACHMENT_MIME_CONFIG_NOT_FOUND);

@@ -101,14 +101,14 @@ describe('role-permissions 模块 + cache skeleton', () => {
   describe('权限边界', () => {
     it('未登录 POST → 401', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/roles/nonexistent000000000000000000/permissions')
+        .post('/api/system/v1/roles/nonexistent000000000000000000/permissions')
         .send({ permissionCodes: ['x.y.z'] });
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('USER POST → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/roles/nonexistent000000000000000000/permissions')
+        .post('/api/system/v1/roles/nonexistent000000000000000000/permissions')
         .set('Authorization', userAuth)
         .send({ permissionCodes: ['x.y.z'] });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -117,7 +117,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
     it('USER DELETE → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .delete(
-          '/api/v2/roles/nonexistent000000000000000000/permissions/abc-perm-00000000000000000000',
+          '/api/system/v1/roles/nonexistent000000000000000000/permissions/abc-perm-00000000000000000000',
         )
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -130,7 +130,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
         permCodes: ['adm.norbac.a'],
       });
       const res = await request(httpServer(app))
-        .post(`/api/v2/roles/${roleId}/permissions`)
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', adminAuth)
         .send({ permissionCodes: [perms[0].code] });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -145,7 +145,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
           permCodes: ['adm.ops.b'],
         });
         const res = await request(httpServer(app))
-          .post(`/api/v2/roles/${roleId}/permissions`)
+          .post(`/api/system/v1/roles/${roleId}/permissions`)
           .set('Authorization', adminAuth)
           .send({ permissionCodes: [perms[0].code] });
         expect(res.status).toBe(201);
@@ -157,7 +157,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
 
   // ============ 批量授权 ============
 
-  describe('POST /api/v2/roles/:id/permissions', () => {
+  describe('POST /api/system/v1/roles/:id/permissions', () => {
     it('批量授权 → 200,detail.permissions 含全部新加', async () => {
       const { roleId, perms } = await setupRoleAndPermissions({
         roleCode: 'assign-multi',
@@ -165,7 +165,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
       });
 
       const res = await request(httpServer(app))
-        .post(`/api/v2/roles/${roleId}/permissions`)
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: perms.map((p) => p.code) });
 
@@ -186,7 +186,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
 
       // 第一次授权
       const first = await request(httpServer(app))
-        .post(`/api/v2/roles/${roleId}/permissions`)
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: [perms[0].code] });
       expect(first.status).toBe(201);
@@ -194,7 +194,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
 
       // 第二次重复授权(同一 code)— 幂等成功,不抛 30010,permissions 仍 1 条
       const second = await request(httpServer(app))
-        .post(`/api/v2/roles/${roleId}/permissions`)
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: [perms[0].code] });
       expect(second.status).toBe(201);
@@ -213,13 +213,13 @@ describe('role-permissions 模块 + cache skeleton', () => {
 
       // 先授 a + b
       await request(httpServer(app))
-        .post(`/api/v2/roles/${roleId}/permissions`)
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: ['part.a.x', 'part.b.y'] });
 
       // 再发送 a + b + c(含 2 个已存在 + 1 个新增)
       const res = await request(httpServer(app))
-        .post(`/api/v2/roles/${roleId}/permissions`)
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: perms.map((p) => p.code) });
       expect(res.status).toBe(201);
@@ -232,7 +232,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
         permCodes: ['dup.x.x'],
       });
       const res = await request(httpServer(app))
-        .post(`/api/v2/roles/${roleId}/permissions`)
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: [perms[0].code, perms[0].code, perms[0].code] });
       expect(res.status).toBe(201);
@@ -241,7 +241,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
 
     it('role 不存在 → 30003', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/roles/nonexistent000000000000000000/permissions')
+        .post('/api/system/v1/roles/nonexistent000000000000000000/permissions')
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: ['any.x.y'] });
       expectBizError(res, BizCode.ROLE_NOT_FOUND);
@@ -254,7 +254,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
         roleDeletedAt: new Date(),
       });
       const res = await request(httpServer(app))
-        .post(`/api/v2/roles/${roleId}/permissions`)
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: ['x.y.z'] });
       expectBizError(res, BizCode.ROLE_DELETED);
@@ -266,7 +266,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
         permCodes: ['exist.a.x'],
       });
       const res = await request(httpServer(app))
-        .post(`/api/v2/roles/${roleId}/permissions`)
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: [perms[0].code, 'does.not.exist'] });
       expectBizError(res, BizCode.PERMISSION_NOT_FOUND);
@@ -282,7 +282,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
         permCodes: [],
       });
       const res = await request(httpServer(app))
-        .post(`/api/v2/roles/${roleId}/permissions`)
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: [] });
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
@@ -291,7 +291,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
 
   // ============ 撤权 ============
 
-  describe('DELETE /api/v2/roles/:id/permissions/:permissionId', () => {
+  describe('DELETE /api/system/v1/roles/:id/permissions/:permissionId', () => {
     it('撤权 → 200,detail.permissions 移除指定项', async () => {
       const { roleId, perms } = await setupRoleAndPermissions({
         roleCode: 'revoke-success',
@@ -300,13 +300,13 @@ describe('role-permissions 模块 + cache skeleton', () => {
 
       // 先授 2 个
       await request(httpServer(app))
-        .post(`/api/v2/roles/${roleId}/permissions`)
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: ['rev.a.x', 'rev.b.y'] });
 
       // 撤 a
       const res = await request(httpServer(app))
-        .delete(`/api/v2/roles/${roleId}/permissions/${perms[0].id}`)
+        .delete(`/api/system/v1/roles/${roleId}/permissions/${perms[0].id}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.permissions).toHaveLength(1);
@@ -320,7 +320,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
       });
       // role 和 permission 都存在,但没建过关系
       const res = await request(httpServer(app))
-        .delete(`/api/v2/roles/${roleId}/permissions/${perms[0].id}`)
+        .delete(`/api/system/v1/roles/${roleId}/permissions/${perms[0].id}`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.ROLE_PERMISSION_NOT_FOUND);
     });
@@ -331,7 +331,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/roles/nonexistent000000000000000000/permissions/${perm.id}`)
+        .delete(`/api/system/v1/roles/nonexistent000000000000000000/permissions/${perm.id}`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.ROLE_NOT_FOUND);
     });
@@ -343,7 +343,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
         roleDeletedAt: new Date(),
       });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/roles/${roleId}/permissions/${perms[0].id}`)
+        .delete(`/api/system/v1/roles/${roleId}/permissions/${perms[0].id}`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.ROLE_DELETED);
     });
@@ -354,7 +354,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
         permCodes: [],
       });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/roles/${roleId}/permissions/missing000000000000000000000`)
+        .delete(`/api/system/v1/roles/${roleId}/permissions/missing000000000000000000000`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.PERMISSION_NOT_FOUND);
     });
@@ -362,7 +362,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
 
   // ============ role detail 真实 permissions 填充 ============
 
-  describe('GET /api/v2/roles/:id detail 返回真实 permissions(端到端)', () => {
+  describe('GET /api/system/v1/roles/:id detail 返回真实 permissions(端到端)', () => {
     it('授权后 GET role detail → permissions 数组填充正确', async () => {
       const { roleId, perms } = await setupRoleAndPermissions({
         roleCode: 'detail-real-fill',
@@ -371,13 +371,13 @@ describe('role-permissions 模块 + cache skeleton', () => {
 
       // 用 POST 接口授权(走 service 完整路径)
       await request(httpServer(app))
-        .post(`/api/v2/roles/${roleId}/permissions`)
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: perms.map((p) => p.code) });
 
       // GET detail 验证
       const detailRes = await request(httpServer(app))
-        .get(`/api/v2/roles/${roleId}`)
+        .get(`/api/system/v1/roles/${roleId}`)
         .set('Authorization', superAdminAuth);
       expect(detailRes.status).toBe(200);
       expect(detailRes.body.data.permissions).toHaveLength(2);
@@ -429,7 +429,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
 
       // 触发授权
       await request(httpServer(app))
-        .post(`/api/v2/roles/${roleId}/permissions`)
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: [perms[0].code] });
 
@@ -447,7 +447,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
 
       // 先授权
       await request(httpServer(app))
-        .post(`/api/v2/roles/${roleId}/permissions`)
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: [perms[0].code] });
 
@@ -464,7 +464,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
 
       // 撤权
       await request(httpServer(app))
-        .delete(`/api/v2/roles/${roleId}/permissions/${perms[0].id}`)
+        .delete(`/api/system/v1/roles/${roleId}/permissions/${perms[0].id}`)
         .set('Authorization', superAdminAuth);
 
       // realUser cache 应已被清

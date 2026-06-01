@@ -14,9 +14,9 @@ import { StorageSettingsService } from './storage-settings.service';
 // V2.x C-7.5 Provider 选型实施 PR #11:Storage Settings admin Controller(沿评审 §6.5 / §6.6 + Q-11 拍板)
 //
 // 3 个端点(沿 Q-11-1 / Q-11-13):
-//   GET   /api/v2/storage-settings                    读 singleton row(不存在返 data=null)
-//   PATCH /api/v2/storage-settings                    upsert(不存在则创建 default;沿 Q-11-17)
-//   POST  /api/v2/storage-settings/reset-credentials  AES-256-GCM 加密 SecretId/SecretKey 落库
+//   GET   /api/system/v1/storage-settings                    读 singleton row(不存在返 data=null)
+//   PATCH /api/system/v1/storage-settings                    upsert(不存在则创建 default;沿 Q-11-17)
+//   POST  /api/system/v1/storage-settings/reset-credentials  AES-256-GCM 加密 SecretId/SecretKey 落库
 //
 // **权限标注**(P0-F PR-2B,2026-05-18;撤销 PR #11 "不接 rbac.can()" 锁):
 // 入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;全部判权迁移到 Service 内 `rbac.can()`,
@@ -32,7 +32,7 @@ import { StorageSettingsService } from './storage-settings.service';
 @ApiTags('Ops - Storage Settings')
 @ApiBearerAuth()
 @ApiExtraModels(StorageSettingsResponseDto)
-@Controller(['v2/storage-settings', 'system/v1/storage-settings'])
+@Controller('system/v1/storage-settings')
 export class StorageSettingsController {
   constructor(private readonly service: StorageSettingsService) {}
 

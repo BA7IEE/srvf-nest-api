@@ -36,7 +36,7 @@ describe('contribution-rules 模块', () => {
   const ROLE_ACTIVE_2 = 'crroleb';
   const ROLE_INACTIVE = 'crrolex';
 
-  const URL = '/api/v2/contribution-rules';
+  const URL = '/api/system/v1/contribution-rules';
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -144,7 +144,7 @@ describe('contribution-rules 模块', () => {
 
   // ============ list(7) ============
 
-  describe('GET /api/v2/contribution-rules', () => {
+  describe('GET /api/system/v1/contribution-rules', () => {
     it('list-1 默认分页 + 主排序(activityTypeCode / attendanceRoleCode ASC;不断言 NULL 顺位)', async () => {
       await seedRule({ activityTypeCode: ACTIVITY_TYPE_ACTIVE_2, attendanceRoleCode: ROLE_ACTIVE });
       await seedRule({ activityTypeCode: ACTIVITY_TYPE_ACTIVE, attendanceRoleCode: ROLE_ACTIVE_2 });
@@ -278,7 +278,7 @@ describe('contribution-rules 模块', () => {
 
   // ============ detail(3) ============
 
-  describe('GET /api/v2/contribution-rules/:id', () => {
+  describe('GET /api/system/v1/contribution-rules/:id', () => {
     it('detail-1 命中', async () => {
       const id = await seedRule({});
       const res = await request(httpServer(app))
@@ -308,7 +308,7 @@ describe('contribution-rules 模块', () => {
 
   // ============ create(17) ============
 
-  describe('POST /api/v2/contribution-rules', () => {
+  describe('POST /api/system/v1/contribution-rules', () => {
     it('create-1 全字段', async () => {
       const res = await postCreate(
         createRule({
@@ -428,7 +428,7 @@ describe('contribution-rules 模块', () => {
 
   // ============ update(10) ============
 
-  describe('PATCH /api/v2/contribution-rules/:id', () => {
+  describe('PATCH /api/system/v1/contribution-rules/:id', () => {
     const patch = (id: string, body: Record<string, unknown>, auth = adminAuth) =>
       request(httpServer(app)).patch(`${URL}/${id}`).set('Authorization', auth).send(body);
 
@@ -508,7 +508,7 @@ describe('contribution-rules 模块', () => {
 
   // ============ delete(4) ============
 
-  describe('DELETE /api/v2/contribution-rules/:id', () => {
+  describe('DELETE /api/system/v1/contribution-rules/:id', () => {
     it('delete-1 命中 → 204;之后 GET 404;schema 含 deletedByUserId', async () => {
       const id = await seedRule({});
       const delRes = await request(httpServer(app))

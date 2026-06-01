@@ -229,7 +229,7 @@ describe('prisma/seed.ts — attachment permissions and member role', () => {
     expect(adminUpperRole).toBeNull();
   });
 
-  it('7. seed 不自动给任意 user 分配 member 角色(Q2 v1.0:角色分配走 POST /api/v2/users/:userId/roles)', async () => {
+  it('7. seed 不自动给任意 user 分配 member 角色(Q2 v1.0:角色分配走 POST /api/system/v1/users/:userId/roles)', async () => {
     const result = runSeed({
       APP_ENV: 'test',
       SUPER_ADMIN_USERNAME: 'atp-seed-su-5',

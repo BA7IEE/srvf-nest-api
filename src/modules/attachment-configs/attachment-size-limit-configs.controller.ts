@@ -25,11 +25,11 @@ import { AttachmentSizeLimitConfigsService } from './attachment-size-limit-confi
 
 // V2.x C-7 attachments 实施 PR #5(2026-05-15):AttachmentSizeLimitConfig 模块 Controller。
 // **5 个端点**(Q1 v1.0:本表无 status 字段,无独立 status 端点):
-//   GET    /api/v2/attachment-size-limit-configs              列表(分页 + typeConfigId 过滤)
-//   POST   /api/v2/attachment-size-limit-configs              创建(1:1 与 typeConfig)
-//   GET    /api/v2/attachment-size-limit-configs/:id          详情
-//   PATCH  /api/v2/attachment-size-limit-configs/:id          更新(仅 maxSizeBytes / remark)
-//   DELETE /api/v2/attachment-size-limit-configs/:id          软删
+//   GET    /api/system/v1/attachment-size-limit-configs              列表(分页 + typeConfigId 过滤)
+//   POST   /api/system/v1/attachment-size-limit-configs              创建(1:1 与 typeConfig)
+//   GET    /api/system/v1/attachment-size-limit-configs/:id          详情
+//   PATCH  /api/system/v1/attachment-size-limit-configs/:id          更新(仅 maxSizeBytes / remark)
+//   DELETE /api/system/v1/attachment-size-limit-configs/:id          软删
 //
 // **权限标注**(P0-F PR-2B,2026-05-18;撤销 F4 v1.0 "不接 rbac.can()" 锁):
 // 入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;全部判权迁移到 Service 内 `rbac.can()`,
@@ -40,7 +40,7 @@ import { AttachmentSizeLimitConfigsService } from './attachment-size-limit-confi
 @ApiTags('Ops - Attachment Configs')
 @ApiBearerAuth()
 @ApiExtraModels(AttachmentSizeLimitConfigResponseDto, AttachmentSizeLimitConfigTypeConfigSummaryDto)
-@Controller(['v2/attachment-size-limit-configs', 'system/v1/attachment-size-limit-configs'])
+@Controller('system/v1/attachment-size-limit-configs')
 export class AttachmentSizeLimitConfigsController {
   constructor(private readonly service: AttachmentSizeLimitConfigsService) {}
 

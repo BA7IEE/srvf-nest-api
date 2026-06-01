@@ -153,39 +153,39 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
   describe('权限边界(P0-F PR-4B RBAC)', () => {
     it('未登录 GET list → 401', async () => {
-      const res = await request(httpServer(app)).get('/api/v2/audit-logs');
+      const res = await request(httpServer(app)).get('/api/system/v1/audit-logs');
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('未登录 GET detail → 401', async () => {
-      const res = await request(httpServer(app)).get(`/api/v2/audit-logs/${logBySuper}`);
+      const res = await request(httpServer(app)).get(`/api/system/v1/audit-logs/${logBySuper}`);
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('USER GET list → 30100 RBAC_FORBIDDEN(沿 P0-F PR-4B,USER 未持 audit-log.read.entry)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('USER GET detail → 30100 RBAC_FORBIDDEN(沿 P0-F PR-4B,USER 未持 audit-log.read.entry)', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logBySuper}`)
+        .get(`/api/system/v1/audit-logs/${logBySuper}`)
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('ADMIN 默认(未持 ops-admin)GET list → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .set('Authorization', adminNoOpsAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('ADMIN 默认(未持 ops-admin)GET detail → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logBySuper}`)
+        .get(`/api/system/v1/audit-logs/${logBySuper}`)
         .set('Authorization', adminNoOpsAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
@@ -198,7 +198,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
   describe('ADMIN+ops-admin 数据范围保留(P0-F PR-4B)', () => {
     it('ADMIN+ops-admin GET list → 200,数据范围仍受 list ADMIN where 注入限制(自己 + USER 操作 = 3 条)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .set('Authorization', admin1Auth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -208,7 +208,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('ADMIN+ops-admin GET findOne 自己操作的 → 200', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logByAdmin1}`)
+        .get(`/api/system/v1/audit-logs/${logByAdmin1}`)
         .set('Authorization', admin1Auth);
       expect(res.status).toBe(200);
       expect(res.body.data.actorUserId).toBe(admin1Id);
@@ -216,7 +216,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('ADMIN+ops-admin GET findOne USER 操作的 → 200', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logByUser}`)
+        .get(`/api/system/v1/audit-logs/${logByUser}`)
         .set('Authorization', admin1Auth);
       expect(res.status).toBe(200);
       expect(res.body.data.actorRoleSnap).toBe(Role.USER);
@@ -224,14 +224,14 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('ADMIN+ops-admin GET findOne SA 操作的 → 14101(护栏保留,RBAC 通过 ≠ 数据范围放开)', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logBySuper}`)
+        .get(`/api/system/v1/audit-logs/${logBySuper}`)
         .set('Authorization', admin1Auth);
       expectBizError(res, BizCode.FORBIDDEN_AUDIT_LOG_READ);
     });
 
     it('ADMIN+ops-admin GET findOne 其它 ADMIN 操作的 → 14101(护栏保留)', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logByAdmin2}`)
+        .get(`/api/system/v1/audit-logs/${logByAdmin2}`)
         .set('Authorization', admin1Auth);
       expectBizError(res, BizCode.FORBIDDEN_AUDIT_LOG_READ);
     });
@@ -242,7 +242,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
   describe('list where 注入', () => {
     it('SUPER_ADMIN 可看全部 5 条', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -252,7 +252,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('ADMIN 仅看自己 OR USER 操作的记录:3 条(自己 × 2 + USER × 1)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .set('Authorization', admin1Auth);
       expect(res.status).toBe(200);
       expect(res.body.data.total).toBe(3);
@@ -262,7 +262,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('ADMIN 查另一个 ADMIN 操作的记录(actorUserId=other-admin)→ 0 条', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .query({ actorUserId: admin2Id })
         .set('Authorization', admin1Auth);
       expect(res.status).toBe(200);
@@ -271,7 +271,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('ADMIN2 视角:看到自己 1 条 + USER 操作 1 条,不见 ADMIN1 的 2 条', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .set('Authorization', admin2Auth);
       expect(res.status).toBe(200);
       expect(res.body.data.total).toBe(2);
@@ -285,7 +285,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
   describe('detail 权限', () => {
     it('SUPER_ADMIN 看 SUPER_ADMIN 操作的记录 → 200', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logBySuper}`)
+        .get(`/api/system/v1/audit-logs/${logBySuper}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.id).toBe(logBySuper);
@@ -294,7 +294,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('SUPER_ADMIN 看 USER 操作的记录 → 200', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logByUser}`)
+        .get(`/api/system/v1/audit-logs/${logByUser}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.actorRoleSnap).toBe(Role.USER);
@@ -302,7 +302,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('ADMIN1 看自己操作的记录 → 200', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logByAdmin1}`)
+        .get(`/api/system/v1/audit-logs/${logByAdmin1}`)
         .set('Authorization', admin1Auth);
       expect(res.status).toBe(200);
       expect(res.body.data.actorUserId).toBe(admin1Id);
@@ -310,7 +310,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('ADMIN1 看 USER 操作的记录 → 200', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logByUser}`)
+        .get(`/api/system/v1/audit-logs/${logByUser}`)
         .set('Authorization', admin1Auth);
       expect(res.status).toBe(200);
       expect(res.body.data.actorRoleSnap).toBe(Role.USER);
@@ -318,21 +318,21 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('ADMIN1 越级查 SUPER_ADMIN 操作的记录 → 403 14101', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logBySuper}`)
+        .get(`/api/system/v1/audit-logs/${logBySuper}`)
         .set('Authorization', admin1Auth);
       expectBizError(res, BizCode.FORBIDDEN_AUDIT_LOG_READ);
     });
 
     it('ADMIN1 看另一个 ADMIN(ADMIN2)操作的记录 → 403 14101', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logByAdmin2}`)
+        .get(`/api/system/v1/audit-logs/${logByAdmin2}`)
         .set('Authorization', admin1Auth);
       expectBizError(res, BizCode.FORBIDDEN_AUDIT_LOG_READ);
     });
 
     it('不存在的 id → 404 14001', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs/cl-non-existent-id-1234567890')
+        .get('/api/system/v1/audit-logs/cl-non-existent-id-1234567890')
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.AUDIT_LOG_NOT_FOUND);
     });
@@ -343,7 +343,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
   describe('list 过滤 + 排序', () => {
     it('resourceType=emergency_contact 仅返 emergency_contact 记录', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .query({ resourceType: 'emergency_contact' })
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
@@ -355,7 +355,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('resourceId=cert-by-user 仅返该条', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .query({ resourceId: 'cert-by-user' })
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
@@ -365,7 +365,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('event=certificate.create 仅返 certificate.create 事件', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .query({ event: 'certificate.create' })
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
@@ -375,7 +375,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('actorUserId=user 仅返该 user 操作的记录', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .query({ actorUserId: userId })
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
@@ -385,7 +385,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('startDate / endDate 时间窗过滤(全过滤掉 → 0)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .query({ startDate: '2000-01-01T00:00:00.000Z', endDate: '2000-12-31T23:59:59.999Z' })
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
@@ -394,7 +394,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('startDate 仅传起点(覆盖到全部记录)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .query({ startDate: '2020-01-01T00:00:00.000Z' })
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
@@ -403,7 +403,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('排序契约:createdAt desc + id desc(最新写入排第一)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       const items = res.body.data.items as Array<{ id: string; createdAt: string }>;
@@ -426,7 +426,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
   describe('分页', () => {
     it('pageSize=2,page=1 返前 2 条,total=5', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .query({ page: 1, pageSize: 2 })
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
@@ -438,7 +438,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('pageSize=2,page=3 返最后 1 条', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .query({ page: 3, pageSize: 2 })
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
@@ -450,33 +450,33 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
   // ============ 不可改不可删(controller 不开放写接口,框架返 404) ============
 
   describe('不可改不可删', () => {
-    it('POST /api/v2/audit-logs/:id → 404(controller 未开放)', async () => {
+    it('POST /api/system/v1/audit-logs/:id → 404(controller 未开放)', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/audit-logs/${logBySuper}`)
+        .post(`/api/system/v1/audit-logs/${logBySuper}`)
         .set('Authorization', superAdminAuth)
         .send({});
       expect(res.status).toBe(404);
     });
 
-    it('PATCH /api/v2/audit-logs/:id → 404', async () => {
+    it('PATCH /api/system/v1/audit-logs/:id → 404', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/audit-logs/${logBySuper}`)
+        .patch(`/api/system/v1/audit-logs/${logBySuper}`)
         .set('Authorization', superAdminAuth)
         .send({});
       expect(res.status).toBe(404);
     });
 
-    it('PUT /api/v2/audit-logs/:id → 404', async () => {
+    it('PUT /api/system/v1/audit-logs/:id → 404', async () => {
       const res = await request(httpServer(app))
-        .put(`/api/v2/audit-logs/${logBySuper}`)
+        .put(`/api/system/v1/audit-logs/${logBySuper}`)
         .set('Authorization', superAdminAuth)
         .send({});
       expect(res.status).toBe(404);
     });
 
-    it('DELETE /api/v2/audit-logs/:id → 404', async () => {
+    it('DELETE /api/system/v1/audit-logs/:id → 404', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/audit-logs/${logBySuper}`)
+        .delete(`/api/system/v1/audit-logs/${logBySuper}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(404);
     });
@@ -487,7 +487,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
   describe('AuditContext 锁形', () => {
     it('detail 返回 context 必含 requestId / ip / ua 三字段', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logBySuper}`)
+        .get(`/api/system/v1/audit-logs/${logBySuper}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       const ctx = res.body.data.context;
@@ -498,7 +498,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('ip / ua 写入 null:detail 读出字段存在但值为 null', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logWithFullContext}`)
+        .get(`/api/system/v1/audit-logs/${logWithFullContext}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       const ctx = res.body.data.context;
@@ -512,7 +512,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('before + after + extra 全部写入:detail 6 字段齐全', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logWithFullContext}`)
+        .get(`/api/system/v1/audit-logs/${logWithFullContext}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       const ctx = res.body.data.context;
@@ -524,7 +524,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
     it('不带 before / after / extra 的记录:detail 仅 3 必填字段(无 key)', async () => {
       // logByAdmin2 仅传了 META,无 before/after/extra
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logByAdmin2}`)
+        .get(`/api/system/v1/audit-logs/${logByAdmin2}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       const ctx = res.body.data.context as Record<string, unknown>;
@@ -533,7 +533,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('仅 extra 的记录:detail 4 字段(3 必填 + extra)', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logBySuper}`)
+        .get(`/api/system/v1/audit-logs/${logBySuper}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       const ctx = res.body.data.context as Record<string, unknown>;
@@ -548,7 +548,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
     it('GET list 不写入新审计记录', async () => {
       const before = await prisma.auditLog.count();
       await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .set('Authorization', superAdminAuth)
         .expect(200);
       const after = await prisma.auditLog.count();
@@ -558,7 +558,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
     it('GET detail 不写入新审计记录', async () => {
       const before = await prisma.auditLog.count();
       await request(httpServer(app))
-        .get(`/api/v2/audit-logs/${logBySuper}`)
+        .get(`/api/system/v1/audit-logs/${logBySuper}`)
         .set('Authorization', superAdminAuth)
         .expect(200);
       const after = await prisma.auditLog.count();
@@ -571,7 +571,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
   describe('DTO 白名单', () => {
     it('未声明字段 → 400 BAD_REQUEST', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .query({ nonExistent: 'foo' })
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(400);
@@ -580,7 +580,7 @@ describe('audit-logs 模块(PR #1 + P0-F PR-4B RBAC)', () => {
 
     it('startDate 非 ISO 字符串 → 400 BAD_REQUEST', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/audit-logs')
+        .get('/api/system/v1/audit-logs')
         .query({ startDate: 'not-a-date' })
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(400);

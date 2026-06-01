@@ -85,7 +85,7 @@ describe('attachment-configs audit_logs 集成', () => {
     overrides: Record<string, unknown> = {},
   ): Promise<{ id: string }> => {
     const res = await request(httpServer(app))
-      .post('/api/v2/attachment-type-configs')
+      .post('/api/system/v1/attachment-type-configs')
       .set('Authorization', superAuth)
       .send({
         code: 'member',
@@ -157,7 +157,7 @@ describe('attachment-configs audit_logs 集成', () => {
     it('case 2: PATCH type-config → attachment.config.change/type/update audit', async () => {
       const tc = await seedTypeConfig('member');
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-type-configs/${tc.id}`)
+        .patch(`/api/system/v1/attachment-type-configs/${tc.id}`)
         .set('Authorization', superAuth)
         .send({ displayName: 'updated name' });
       expect(res.status).toBe(200);
@@ -173,7 +173,7 @@ describe('attachment-configs audit_logs 集成', () => {
     it('case 3: PATCH type-config/status → attachment.config.change/type/update-status audit', async () => {
       const tc = await seedTypeConfig('member');
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-type-configs/${tc.id}/status`)
+        .patch(`/api/system/v1/attachment-type-configs/${tc.id}/status`)
         .set('Authorization', superAuth)
         .send({ status: AttachmentTypeConfigStatus.INACTIVE });
       expect(res.status).toBe(200);
@@ -190,7 +190,7 @@ describe('attachment-configs audit_logs 集成', () => {
     it('case 4: DELETE type-config → attachment.config.change/type/delete audit', async () => {
       const tc = await seedTypeConfig('member');
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attachment-type-configs/${tc.id}`)
+        .delete(`/api/system/v1/attachment-type-configs/${tc.id}`)
         .set('Authorization', superAuth);
       expect(res.status).toBe(200);
       const log = (await prisma.auditLog.findFirst())!;
@@ -208,7 +208,7 @@ describe('attachment-configs audit_logs 集成', () => {
     it('case 5: POST mime-config → attachment.config.change/mime/create audit', async () => {
       const tc = await seedTypeConfig('member');
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-mime-configs')
+        .post('/api/system/v1/attachment-mime-configs')
         .set('Authorization', superAuth)
         .send({ typeConfigId: tc.id, mime: 'image/webp' });
       expect(res.status).toBe(201);
@@ -227,7 +227,7 @@ describe('attachment-configs audit_logs 集成', () => {
       const tc = await seedTypeConfig('member');
       const mc = await seedMimeConfig(tc.id, 'image/png');
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${mc.id}`)
+        .patch(`/api/system/v1/attachment-mime-configs/${mc.id}`)
         .set('Authorization', superAuth)
         .send({ remark: 'updated remark' });
       expect(res.status).toBe(200);
@@ -242,7 +242,7 @@ describe('attachment-configs audit_logs 集成', () => {
       const tc = await seedTypeConfig('member');
       const mc = await seedMimeConfig(tc.id, 'image/png');
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${mc.id}/status`)
+        .patch(`/api/system/v1/attachment-mime-configs/${mc.id}/status`)
         .set('Authorization', superAuth)
         .send({ status: AttachmentMimeConfigStatus.INACTIVE });
       expect(res.status).toBe(200);
@@ -259,7 +259,7 @@ describe('attachment-configs audit_logs 集成', () => {
       const tc = await seedTypeConfig('member');
       const mc = await seedMimeConfig(tc.id, 'image/png');
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attachment-mime-configs/${mc.id}`)
+        .delete(`/api/system/v1/attachment-mime-configs/${mc.id}`)
         .set('Authorization', superAuth);
       expect(res.status).toBe(200);
       const log = (await prisma.auditLog.findFirst())!;
@@ -277,7 +277,7 @@ describe('attachment-configs audit_logs 集成', () => {
     it('case 9: POST size-config → attachment.config.change/sizeLimit/create audit', async () => {
       const tc = await seedTypeConfig('member');
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-size-limit-configs')
+        .post('/api/system/v1/attachment-size-limit-configs')
         .set('Authorization', superAuth)
         .send({ typeConfigId: tc.id, maxSizeBytes: 20_000_000 });
       expect(res.status).toBe(201);
@@ -296,7 +296,7 @@ describe('attachment-configs audit_logs 集成', () => {
       const tc = await seedTypeConfig('member');
       const sc = await seedSizeConfig(tc.id);
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attachment-size-limit-configs/${sc.id}`)
+        .patch(`/api/system/v1/attachment-size-limit-configs/${sc.id}`)
         .set('Authorization', superAuth)
         .send({ maxSizeBytes: 30_000_000 });
       expect(res.status).toBe(200);
@@ -312,7 +312,7 @@ describe('attachment-configs audit_logs 集成', () => {
       const tc = await seedTypeConfig('member');
       const sc = await seedSizeConfig(tc.id);
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attachment-size-limit-configs/${sc.id}`)
+        .delete(`/api/system/v1/attachment-size-limit-configs/${sc.id}`)
         .set('Authorization', superAuth);
       expect(res.status).toBe(200);
       const log = (await prisma.auditLog.findFirst())!;
@@ -352,7 +352,7 @@ describe('attachment-configs audit_logs 集成', () => {
       const tc = await seedTypeConfig('member');
       const mc = await seedMimeConfig(tc.id, 'image/png');
       await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${mc.id}`)
+        .patch(`/api/system/v1/attachment-mime-configs/${mc.id}`)
         .set('Authorization', superAuth)
         .send({ remark: 'new remark' });
       const log = (await prisma.auditLog.findFirst())!;
@@ -377,7 +377,7 @@ describe('attachment-configs audit_logs 集成', () => {
       const tc = await seedTypeConfig('member');
       const sc = await seedSizeConfig(tc.id);
       await request(httpServer(app))
-        .delete(`/api/v2/attachment-size-limit-configs/${sc.id}`)
+        .delete(`/api/system/v1/attachment-size-limit-configs/${sc.id}`)
         .set('Authorization', superAuth);
       const log = (await prisma.auditLog.findFirst())!;
       const before = (log.context as Record<string, unknown>).before as Record<string, unknown>;
@@ -394,7 +394,7 @@ describe('attachment-configs audit_logs 集成', () => {
   describe('AuditMeta / actorRoleSnap', () => {
     it('case 15: audit context 含 requestId / ip / ua', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-type-configs')
+        .post('/api/system/v1/attachment-type-configs')
         .set('Authorization', superAuth)
         .set('User-Agent', 'cfg-audit-spec/1.0')
         .send({ code: 'member', displayName: '队员', ownerTable: 'member' });
@@ -418,7 +418,7 @@ describe('attachment-configs audit_logs 集成', () => {
       // ADMIN
       await truncateAuditLogsTestOnly(app);
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-type-configs')
+        .post('/api/system/v1/attachment-type-configs')
         .set('Authorization', adminAuth)
         .send({ code: 'certificate', displayName: 'cert', ownerTable: 'certificate' });
       expect(res.status).toBe(201);
@@ -433,7 +433,7 @@ describe('attachment-configs audit_logs 集成', () => {
   describe('失败操作不写 audit(沿 D6 F6)', () => {
     it('case 17: unauthorized POST → 无 audit', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-type-configs')
+        .post('/api/system/v1/attachment-type-configs')
         .send({ code: 'member', displayName: '队员', ownerTable: 'member' });
       expectBizError(res, BizCode.UNAUTHORIZED);
       const logs = await prisma.auditLog.findMany();
@@ -442,7 +442,7 @@ describe('attachment-configs audit_logs 集成', () => {
 
     it('case 18: USER RBAC_FORBIDDEN POST → 无 audit(P0-F PR-2B:40300 → 30100)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachment-type-configs')
+        .post('/api/system/v1/attachment-type-configs')
         .set('Authorization', userAuth)
         .send({ code: 'member', displayName: '队员', ownerTable: 'member' });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -455,7 +455,7 @@ describe('attachment-configs audit_logs 集成', () => {
       await createTypeConfigFixture({ code: 'member' });
       await truncateAuditLogsTestOnly(app); // 清掉成功 audit
       const dupType = await request(httpServer(app))
-        .post('/api/v2/attachment-type-configs')
+        .post('/api/system/v1/attachment-type-configs')
         .set('Authorization', superAuth)
         .send({ code: 'member', displayName: 'dup', ownerTable: 'member' });
       expectBizError(dupType, BizCode.ATTACHMENT_TYPE_CONFIG_CODE_ALREADY_EXISTS);
@@ -465,7 +465,7 @@ describe('attachment-configs audit_logs 集成', () => {
       const tcRow = await prisma.attachmentTypeConfig.findFirst({ where: { code: 'member' } });
       await seedMimeConfig(tcRow!.id, 'image/png');
       const dupMime = await request(httpServer(app))
-        .post('/api/v2/attachment-mime-configs')
+        .post('/api/system/v1/attachment-mime-configs')
         .set('Authorization', superAuth)
         .send({ typeConfigId: tcRow!.id, mime: 'image/png' });
       expectBizError(dupMime, BizCode.ATTACHMENT_MIME_CONFIG_DUPLICATE);
@@ -474,7 +474,7 @@ describe('attachment-configs audit_logs 集成', () => {
       // size duplicate (13027)
       await seedSizeConfig(tcRow!.id);
       const dupSize = await request(httpServer(app))
-        .post('/api/v2/attachment-size-limit-configs')
+        .post('/api/system/v1/attachment-size-limit-configs')
         .set('Authorization', superAuth)
         .send({ typeConfigId: tcRow!.id, maxSizeBytes: 99 });
       expectBizError(dupSize, BizCode.ATTACHMENT_SIZE_LIMIT_CONFIG_ALREADY_EXISTS);
@@ -484,21 +484,21 @@ describe('attachment-configs audit_logs 集成', () => {
     it('case 20: not_found → 无 audit', async () => {
       const notExistId = 'cl9z3a8b00000abcd1234efgh';
       const updType = await request(httpServer(app))
-        .patch(`/api/v2/attachment-type-configs/${notExistId}`)
+        .patch(`/api/system/v1/attachment-type-configs/${notExistId}`)
         .set('Authorization', superAuth)
         .send({ displayName: 'x' });
       expectBizError(updType, BizCode.ATTACHMENT_TYPE_CONFIG_NOT_FOUND);
       expect(await prisma.auditLog.count()).toBe(0);
 
       const updMime = await request(httpServer(app))
-        .patch(`/api/v2/attachment-mime-configs/${notExistId}`)
+        .patch(`/api/system/v1/attachment-mime-configs/${notExistId}`)
         .set('Authorization', superAuth)
         .send({ remark: 'x' });
       expectBizError(updMime, BizCode.ATTACHMENT_MIME_CONFIG_NOT_FOUND);
       expect(await prisma.auditLog.count()).toBe(0);
 
       const updSize = await request(httpServer(app))
-        .patch(`/api/v2/attachment-size-limit-configs/${notExistId}`)
+        .patch(`/api/system/v1/attachment-size-limit-configs/${notExistId}`)
         .set('Authorization', superAuth)
         .send({ maxSizeBytes: 100 });
       expectBizError(updSize, BizCode.ATTACHMENT_SIZE_LIMIT_CONFIG_NOT_FOUND);

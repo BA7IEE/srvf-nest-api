@@ -84,22 +84,22 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     ActivityRegistrationsModule,
     AttendancesModule,
     // V2 第一阶段批次 5-A(2026-05-12):contribution-rules CRUD
-    //   (沿 D6 v1.1;path /api/v2/contribution-rules;230xx 段位;
+    //   (沿 D6 v1.1;path /api/system/v1/contribution-rules;230xx 段位;
     //    attendance 预填仍由 AttendancesService.applyContributionRulePrefill 完成,本模块不动 attendance)
     ContributionRulesModule,
     // V2 第一阶段批次 6:audit_logs 基础设施
-    //   (D6 v1.1 §4 / §5 / §6;path /api/v2/audit-logs;140xx + 141xx 段位)。
+    //   (D6 v1.1 §4 / §5 / §6;path /api/system/v1/audit-logs;140xx + 141xx 段位)。
     //   schema + module + AuditLogsService.log + 2 个查询接口;
     //   emergency-contacts / certificates 写操作已迁移至 AuditLogsService。
     AuditLogsModule,
     // V2.x C-6 RBAC:permissions / RbacRole / RolePermission / UserRole / RbacService 全套 CRUD
-    //   (沿 D7 v1.1 §4.2 / §5.1;path /api/v2/permissions、/roles 等;300xx 段位)。
+    //   (沿 D7 v1.1 §4.2 / §5.1;path /api/system/v1/permissions、/roles 等;300xx 段位)。
     //   判权双轨:入口 Guard @Roles + Service 层 rbac.can()。
     //   P0-F(v0.15.0)后 rbac.can() 已从 attachments 扩展到管理面(rbac / config / users / audit-logs);
     //   当前接入边界以 docs/current-state.md 与 src/modules/permissions/CLAUDE.md 为准。
     PermissionsModule,
     // V2.x C-7 attachments:attachment-configs 三子模块 CRUD
-    //   (D7 v1.0 §4.2 / §16 Q1-Q7;path /api/v2/attachment-{type,mime,size-limit}-configs;130xx 段位)。
+    //   (D7 v1.0 §4.2 / §16 Q1-Q7;path /api/system/v1/attachment-{type,mime,size-limit}-configs;130xx 段位)。
     //   AttachmentTypeConfig / Mime / Size 三子表 CRUD 全部实装。
     //   沿 F4 v1.0:入口 @Roles(SUPER_ADMIN, ADMIN),不接 RBAC 业务判权。
     AttachmentConfigsModule,

@@ -4,8 +4,8 @@ import { IsIn, IsOptional, IsString, Length } from 'class-validator';
 // V2.x C-6 RBAC 实施 PR #6 + PR #7:RBAC 端点 15 + 16 共用 DTO 集中点。
 // 沿 D7 v1.1 §5.2.5 ReloadRbacDto + §5.2.6 MyPermissionsResponseDto + §5.3 + §5.4 详解。
 //
-// **PR #6 端点 15**(`GET /api/v2/rbac/me/permissions`):MyPermissionsResponseDto + EffectiveRoleDto
-// **PR #7 端点 16**(`POST /api/v2/rbac/reload`):ReloadRbacDto + ReloadRbacResponseDto
+// **PR #6 端点 15**(`GET /api/system/v1/rbac/me/permissions`):MyPermissionsResponseDto + EffectiveRoleDto
+// **PR #7 端点 16**(`POST /api/system/v1/rbac/reload`):ReloadRbacDto + ReloadRbacResponseDto
 //
 // **`permissions` 字段语义**(沿用户拍板方案 B):
 // - 普通角色 / ADMIN / USER:返回 user_roles → role_permissions → permissions 聚合后的 code 集
