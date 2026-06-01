@@ -58,7 +58,7 @@
 | Admin - Activities | `v2/activities` | `admin/v1/activities` | Admin | 7 |
 | Admin - Registrations | `v2/activities/:id/registrations` | `admin/v1/…` | Admin | 6 |
 | Admin - Attendances | `v2/attendance-sheets` + `v2/activities/:id/attendance-sheets` | `admin/v1/…` | Admin | 10 |
-| Admin - Attachments | `v2/attachments`(7 admin 端点) | `admin/v1/attachments` | Admin | 7 |
+| Admin - Attachments | `v2/attachments`(8 admin 端点) | `admin/v1/attachments` | Admin | 8 |
 | Ops - Dictionaries | `v2/dict-types` + `v2/dict-items` | `system/v1/…` | **System** | 13 |
 | Ops - Contribution Rules(D-1) | `v2/contribution-rules` | `system/v1/contribution-rules` | System | 5 |
 | Ops - Audit Logs | `v2/audit-logs` | `system/v1/audit-logs` | System | 2 |
@@ -72,7 +72,8 @@
 | Mobile - *(App) | `app/v1/*` | **不变** | **App** | 15 |
 | Mobile - *(legacy 重复) | `users/me*` + `v2/users/me/*` | **删除(Phase 4)** | — | 8 |
 
-合计:Admin **69** / System **59** / Auth **4** / App **15**(不迁移)/ legacy 删除 **8** + `attachments/me/uploaded` 特殊 **1** = **156**。
+合计:Admin **70** / System **59** / Auth **4** / App **15**(不迁移)/ legacy 删除 **8** + `attachments/me/uploaded` 特殊 **1** = **157**。
+> 计数 true-up(2026-06-01 Phase 1c 实测):`attachments` admin 端点实为 **8**(原稿 §3.2 误记 7),故 Admin **69→70**、总计 **156→157**;surface 归属决策不变(仍全 Admin),仅修正计数。contract `EXPECTED_ROUTES` 为路由权威源。
 
 ### 3.3 特殊项处置(2026-06-01 拍板)
 
@@ -139,7 +140,7 @@
 |---|---|---|---|
 | 立项冻结 | ✅ 本稿(2026-06-01) | — | docs-only;重开 D-2 → §21 D-9 |
 | Phase 0 映射表 | ✅ 已签字冻结(2026-06-01;见 §3) | (本 PR) | 156 路由全映射 + 终态验收基线;tag→surface 无遗留灰区 |
-| Phase 1 alias | 🔄 进行中 | 1a/1b PR | spike ✅;**Phase 1a(auth+health 7 路由)+ Phase 1b(system 56 路由)已落地**(v2→system/v1 双挂,contract 353 + e2e 双路径绿);余 **admin(69 路由)Phase 1c** 待续 |
+| Phase 1 alias | ✅ **完成** | 1a #259 / 1b #260 / 1c PR | **全 133 非-app 路由双挂完成**:1a auth+health(7)/ 1b system(56)/ 1c admin(70);contract 423 + e2e 双路径绿;老路径零回归 |
 | Phase 2 canonical | ⬜ 未启动 | — | — |
 | Phase 3 deprecation | ⬜ 未启动 | — | — |
 | Phase 4 removal | ⬜ 未启动 | — | 不可逆,单独 gated |

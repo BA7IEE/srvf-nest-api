@@ -51,7 +51,7 @@ import { AttachmentsService } from './attachments.service';
 @ApiTags('Admin - Attachments')
 @ApiBearerAuth()
 @ApiExtraModels(AttachmentResponseDto, UploadUrlResponseDto)
-@Controller('v2/attachments')
+@Controller(['v2/attachments', 'admin/v1/attachments'])
 export class AttachmentsController {
   constructor(private readonly service: AttachmentsService) {}
 

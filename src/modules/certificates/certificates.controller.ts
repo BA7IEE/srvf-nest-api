@@ -43,7 +43,7 @@ import { CertificatesService } from './certificates.service';
 
 @ApiTags('Admin - Certificates')
 @ApiBearerAuth()
-@Controller('v2/members/:memberId/certificates')
+@Controller(['v2/members/:memberId/certificates', 'admin/v1/members/:memberId/certificates'])
 export class CertificatesController {
   constructor(private readonly service: CertificatesService) {}
 
