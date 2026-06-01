@@ -26,7 +26,8 @@ import { RbacCacheService } from './rbac-cache.service';
 // - reload 接口:已于 PR #7 + P0-F 落地(`POST /api/system/v1/rbac/reload`,Service 层 rbac.can())
 // - 业务模块接入 `rbac.can()`:已于 P0-F(v0.15.0)完成,不再限于 attachments
 // 仍未做(留后续 PR):
-// - `GET /api/v2/users/:userId/permissions`(管理员查他人;非 D7 §5.1 端点)
+// - `GET /api/system/v1/users/:userId/permissions`(管理员查他人;非 D7 §5.1 端点;未实现 —
+//   终态前缀沿 Route B system/v1,与现有 system/v1/users/:userId/roles 并列)
 // - dept-chief / dept-deputy 层级真实名 seed(PR #8 仅种 ops-admin)
 // 当前事实以 docs/current-state.md 与本目录 CLAUDE.md 为准。
 //

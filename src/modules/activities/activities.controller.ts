@@ -27,7 +27,7 @@ import {
 import { ActivitiesService } from './activities.service';
 
 // V2 第一阶段批次 3A activities controller(7 路由)。
-// 路径前缀:全局 /api(main.ts)+ 'v2/activities'。
+// 路径前缀:全局 /api(main.ts)+ 'admin/v1/activities'。
 //
 // 权限策略(API 前评审决议表 v1.0):
 // - GET list / GET detail:USER + ADMIN + SUPER_ADMIN(Q-A7 同路由,service 按 Role 过滤)

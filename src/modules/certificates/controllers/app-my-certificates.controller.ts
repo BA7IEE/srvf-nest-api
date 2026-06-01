@@ -24,7 +24,7 @@ import { ListAppMyCertificatesQueryDto } from '../dto/app/list-app-my-certificat
 //     AppIdentityResolver(D-P2-7-13 linked-member self perspective)
 //   - **不**挂 @Public(全部要登录);依赖全局 JwtAuthGuard
 //   - **不**挂限流装饰器(沿 default throttler)
-//   - **不**追加方法到既有 CertificatesController(沿 D-P2-7-15;旧 v2 路径整文件 0 diff)
+//   - **不**追加方法到既有 CertificatesController(沿 D-P2-7-15;admin/v1 路径整文件 0 diff)
 //
 // 准入沿 §8.1 / §8.2:canUseApp=false → 403 FORBIDDEN(memberId=null / member 软删 /
 // member.status!=ACTIVE / Admin 无 member 统一 403);**不**沿 D-P2-3-1 admin-without-member

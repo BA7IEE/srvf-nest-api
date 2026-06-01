@@ -34,10 +34,9 @@ import { AttendancesService } from './attendances.service';
 // V2 批次 6 PR #6 共享 helper:从 @Req() 构造 AuditMeta(D6 v1.1 §11.2 / D8 拍板;
 // 不引入 cls-rs / AsyncLocalStorage)。
 //
-// P1-C step 4(2026-05-26):Mobile class `AttendanceRecordsMeController` 已物理拆出到
-// `controllers/attendances-me-records-legacy.controller.ts`(该端点为纯读路径,不引用
-// buildAuditMeta;沿 "物理拆分零跨文件耦合" 原则,不跨文件共享 audit helper)。本文件
-// 保留此模块级函数供 Admin 两 class 使用(共 6 处调用)。
+// buildAuditMeta:本模块级 helper,供 Admin 两 class 使用(共 6 处调用)。队员自助考勤记录流
+// 已收口到 App surface(`controllers/app-my-attendance-records.controller.ts`,`@Controller('app/v1/my')`);
+// 历史 `/v2/users/me/attendance-records` legacy controller 已于 Route B Phase 4d2 删除。
 function buildAuditMeta(req: Request): AuditMeta {
   return {
     requestId: req.id as string,
@@ -49,23 +48,22 @@ function buildAuditMeta(req: Request): AuditMeta {
 // V2 第一阶段批次 3B attendances admin controllers(8 路由)。
 //
 // 两组路径前缀:
-//   1. /v2/activities/:activityId/attendance-sheets(提交 + 列表;2 路由)
-//   2. /v2/attendance-sheets/:id(详情 / review-detail / edit / delete / approve / reject /
+//   1. admin/v1/activities/:activityId/attendance-sheets(提交 + 列表;2 路由)
+//   2. admin/v1/attendance-sheets/:id(详情 / review-detail / edit / delete / approve / reject /
 //      final-approve / final-reject;6 路由)
 //
 // 路由声明顺序(NestJS 字面段优先于 :id 占位段):
 //   sheet controller:list / create / review-detail(字面)/ detail / edit / softDelete /
 //   approve / reject / final-approve / final-reject
 //
-// P1-C step 4(2026-05-26):队员端 1 路由(`GET /v2/users/me/attendance-records`)已物理
-// 迁出到 `controllers/attendances-me-records-legacy.controller.ts`;endpoint path / DTO /
-// service / Guard / RBAC / Swagger Tag 全部 zero drift(沿 docs/api-surface-policy.md §5 项
-// 2 + §6 项 6 + §7 P1-C step 4 + §8 P1 禁止事项)。
+// 队员自助考勤记录(原 `GET /v2/users/me/attendance-records` 1 路由)现位于
+// `controllers/app-my-attendance-records.controller.ts`(`GET /api/app/v1/my/attendance-records`);
+// 历史 legacy controller 已于 Route B Phase 4d2 删除(沿 docs/api-surface-migration-plan.md §6 Phase 4)。
 //
 // 权限策略(沿决议表 v1.0):
 // - 全部管理端 8 路由:ADMIN / SUPER_ADMIN(D16 兜底业务角色)
 
-// ============ 管理端 Controller(挂 /v2/activities/:activityId/attendance-sheets)============
+// ============ 管理端 Controller(挂 admin/v1/activities/:activityId/attendance-sheets)============
 
 @ApiTags('Admin - Attendances')
 @ApiBearerAuth()
@@ -123,7 +121,7 @@ export class AttendanceSheetsCollectionController {
   }
 }
 
-// ============ 管理端 Controller(挂 /v2/attendance-sheets/:id)============
+// ============ 管理端 Controller(挂 admin/v1/attendance-sheets/:id)============
 
 @ApiTags('Admin - Attendances')
 @ApiBearerAuth()

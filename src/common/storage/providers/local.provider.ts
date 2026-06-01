@@ -73,7 +73,7 @@ export class LocalStorageProvider implements StorageProvider {
   // 此处仅保留接口对称性 + expiresAt 计算(沿 Q5b headers 必填可空 / Q5c method PUT 默认)
   // 非 async:无 await 调用(沿 require-await lint);保持接口签名 Promise<T>
   generateUploadUrl(input: GenerateUploadUrlInput): Promise<UploadUrlResult> {
-    const stubUrl = `/api/v2/storage/local-stub-upload/${encodeURIComponent(input.key)}`;
+    const stubUrl = `/internal/storage/local-stub-upload/${encodeURIComponent(input.key)}`;
     return Promise.resolve({
       url: stubUrl,
       method: 'PUT' as const,

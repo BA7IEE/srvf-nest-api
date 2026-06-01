@@ -586,8 +586,9 @@ export class AttachmentsService {
     return { items, total, page: query.page, pageSize: query.pageSize };
   }
 
-  // GET /api/admin/v1/attachments/me/uploaded — 本人上传列表(uploadedBy = currentUser.id)。
-  // 沿 D7 §5.1 端点 7:**自动按 uploadedBy 筛**,不需要 RBAC(本人查自己豁免)。
+  // listMyUploaded — 本人上传列表(uploadedBy = currentUser.id;沿 D7 §5.1 端点 7:
+  // **自动按 uploadedBy 筛**,不需要 RBAC,本人查自己豁免)。原 `GET /me/uploaded` 路由已于
+  // Route B Phase 4e 删除,本方法暂无 live route,保留为未来 `app/v1/my/attachments` building block。
   async listMyUploaded(
     query: PaginationQueryDto,
     user: CurrentUserPayload,

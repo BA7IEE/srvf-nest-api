@@ -35,7 +35,7 @@ import {
 import { ContributionRulesService } from './contribution-rules.service';
 
 // V2 第一阶段批次 5-A contribution_rules controller(5 路由)。
-// 路径前缀:全局 /api(main.ts)+ 'v2/contribution-rules'(决议 E1)。
+// 路径前缀:全局 /api(main.ts)+ 'system/v1/contribution-rules'(决议 E1;Route B 终态)。
 //
 // **权限标注**(P0-F PR-2A,2026-05-18):入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;
 // 全部判权迁移到 ContributionRulesService 内 `rbac.can()`,失败抛

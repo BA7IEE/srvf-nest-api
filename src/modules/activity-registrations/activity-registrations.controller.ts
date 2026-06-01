@@ -43,9 +43,9 @@ import { ActivityRegistrationsService } from './activity-registrations.service';
 // V2 批次 6 PR #5 helper:从 @Req() 构造 AuditMeta(D6 v1.1 §11.2 / D8 拍板;
 // 不引入 cls-rs / AsyncLocalStorage)。
 //
-// P1-C step 3(2026-05-21):Mobile class `ActivityRegistrationsMeController` 已物理拆出到
-// `controllers/activity-registrations-me-legacy.controller.ts`,该文件持有独立副本(沿
-// "物理拆分零跨文件耦合"原则)。本文件保留此模块级函数供 Admin class 使用。
+// buildAuditMeta:本模块级 helper,供 Admin class 使用。队员自助报名流已收口到 App surface
+// (`controllers/app-my-registrations.controller.ts`,`@Controller('app/v1/my')`);
+// 历史 `/v2/users/me/*` legacy controller 已于 Route B Phase 4d2 删除。
 function buildAuditMeta(req: Request): AuditMeta {
   return {
     requestId: req.id as string,
@@ -56,15 +56,13 @@ function buildAuditMeta(req: Request): AuditMeta {
 
 // V2 第一阶段批次 3A activity-registrations admin controller(6 路由)。
 //
-// 管理端(/v2/activities/:activityId/registrations,6 路由):
+// 管理端(admin/v1/activities/:activityId/registrations,6 路由):
 //   GET '' list / POST '' 代报名 / GET 'export' / PATCH ':id/approve' /
 //   PATCH ':id/reject' / PATCH ':id/cancel'
 //
-// P1-C step 3(2026-05-21):队员端 4 路由(`POST activities/:activityId/registration` /
-// `GET registrations` / `GET registrations/:id` / `PATCH registrations/:id/cancel`)已物理
-// 迁出到 `controllers/activity-registrations-me-legacy.controller.ts`;endpoint path /
-// DTO / service / Guard / RBAC / Swagger Tag 全部 zero drift(沿 docs/api-surface-policy.md
-// §5 项 3 + §7 P1-C step 3 + §8 P1 禁止事项)。
+// 队员自助报名流(原 `/v2/users/me/*` 4 路由:POST 报名 / GET list / GET detail / PATCH cancel)
+// 现位于 `controllers/app-my-registrations.controller.ts`(`@Controller('app/v1/my')`);
+// 历史 legacy controller 已于 Route B Phase 4d2 删除(沿 docs/api-surface-migration-plan.md §6 Phase 4)。
 //
 // 路由声明顺序(NestJS 字面段优先于 :id 占位段):
 //   list / create / export(字面)/ approve / reject / cancel(均挂 :id/<action>)
@@ -233,6 +231,6 @@ export class ActivityRegistrationsAdminController {
   }
 }
 
-// P1-C step 3(2026-05-21):队员端 Controller(`ActivityRegistrationsMeController`,
-// @Controller('v2/users/me'),4 路由)已迁出到
-// `controllers/activity-registrations-me-legacy.controller.ts`。
+// 队员自助报名 Controller(原 `/v2/users/me/*` 4 路由)现位于
+// `controllers/app-my-registrations.controller.ts`(`@Controller('app/v1/my')`);
+// 历史 legacy controller 已于 Route B Phase 4d2 删除。

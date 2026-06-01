@@ -43,11 +43,10 @@ import { AttachmentsService } from './attachments.service';
 //
 // **路径顺序铁律**:`/by-owner` / `/upload-url` / `/confirm-upload` 必须放在 `/:id` 之前,避免被 :id 通配匹配。
 //
-// P1-C step 2(2026-05-21):Mixed Controller 物理拆分,把原 `GET /me/uploaded`(method-level
-// 挂 `Mobile - Attachments` tag 的唯一端点)迁出到 AttachmentsMeLegacyController
-// (controllers/attachments-me-legacy.controller.ts),沿 docs/api-surface-policy.md §5 项 4 +
-// §7 P1-C step 2;endpoint path / DTO / service / Guard / RBAC / Swagger Tag 全部 zero drift。
-// 本 Controller 拆分后 class-level @ApiTags 不再与 Mobile - Attachments 同存。
+// 本 Controller 为 `@Controller('admin/v1/attachments')`,class-level @ApiTags = 'Admin - Attachments'。
+// 历史 mobile-like `GET /me/uploaded`(原 `Mobile - Attachments` tag 唯一端点)已于 Route B Phase 4e
+// 删除,未建 App 替代;`listMyUploaded` service 保留为未来 `app/v1/my/attachments` building block
+// (沿 docs/api-surface-migration-plan.md §3.3 / §6 Phase 4)。
 @ApiTags('Admin - Attachments')
 @ApiBearerAuth()
 @ApiExtraModels(AttachmentResponseDto, UploadUrlResponseDto)

@@ -23,7 +23,8 @@ import { ListAppMyAttendanceRecordsQueryDto } from '../dto/app/list-app-my-atten
 //     ADMIN 兼队员可用走 AppIdentityResolver(D-P2-6-13 self perspective)
 //   - **不**挂 @Public(全部要登录);依赖全局 JwtAuthGuard
 //   - **不**挂限流装饰器(沿 default throttler)
-//   - **不**追加方法到既有 AttendanceRecordsMeController(D-P2-6-15;旧 path 逐字不变)
+//   - App 自助端点只落本 controller(`app/v1/my`);**不**混入 Admin controller(沿 D-P2-6-15;
+//     原 `/v2/users/me/attendance-records` legacy controller 已于 Route B Phase 4d2 删除)
 //
 // 准入沿 §8.1 / §8.2:canUseApp=false → 403 FORBIDDEN(member 未关联 / INACTIVE / 软删 /
 // Admin 无 member);**不**沿 D-P2-3-1 admin-without-member 例外(沿 D-P2-6-12)。

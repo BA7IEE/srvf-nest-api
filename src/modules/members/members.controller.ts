@@ -19,7 +19,7 @@ import {
 } from './members.dto';
 import { MembersService } from './members.service';
 
-// /api/admin/v1/members(6 接口);路径前缀:全局 /api(main.ts)+ 'v2/members'。
+// /api/admin/v1/members(6 接口);路径前缀:全局 /api(main.ts)+ 'admin/v1/members'。
 // 权限:GET/POST/PATCH = ADMIN/SUPER_ADMIN;DELETE = SUPER_ADMIN 专属(高危)。
 
 @ApiTags('Admin - Members')
