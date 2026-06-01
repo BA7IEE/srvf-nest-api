@@ -13,7 +13,6 @@ import { AttendancesService } from './attendances.service';
 import { ContributionCalculator } from './contribution-calculator';
 import { TimeOverlapPolicy } from './time-overlap-policy';
 import { AppMyAttendanceRecordsController } from './controllers/app-my-attendance-records.controller';
-import { AttendanceRecordsMeController } from './controllers/attendances-me-records-legacy.controller';
 
 // V2 批次 6 PR #6(D6 v1.1 §8 / 第二波最后一批):导入 AuditLogsModule 以注入 AuditLogsService,
 // attendances 8 处写操作(submit / edit × 2 / softDelete / approve / reject / finalApprove / finalReject)
@@ -26,14 +25,13 @@ import { AttendanceRecordsMeController } from './controllers/attendances-me-reco
 //   - 导入 UsersModule 注入 AppIdentityResolver(P2-1 已 exports;P2-6 准入沿同)
 //   - 薄壳 service thin-wrap 既有 AttendancesService.listMyRecords(签名 0 diff)
 //   - AppMy service 内 2 次 IN 批量自查 AttendanceSheet + Activity 派生字段
-//   - 旧 AttendanceRecordsMeController(/v2/users/me/attendance-records)行为
-//     **逐字不变**(沿 D-P2-6-15 + §11.1 path stability)
+// Route B Phase 4d2(2026-06-01):旧 AttendanceRecordsMeController(/v2/users/me/attendance-records)
+// 已删除(app/v1/my/attendance-records 对等存在;沿 docs/api-surface-migration-plan.md §6 Phase 4)。
 @Module({
   imports: [DatabaseModule, AuditLogsModule, UsersModule],
   controllers: [
     AttendanceSheetsCollectionController,
     AttendanceSheetsResourceController,
-    AttendanceRecordsMeController,
     AppMyAttendanceRecordsController,
   ],
   providers: [

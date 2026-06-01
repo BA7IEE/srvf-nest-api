@@ -57,123 +57,6 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/system/v1/health'],
   ['get', '/api/system/v1/health/live'],
   ['get', '/api/system/v1/health/ready'],
-
-  // P0-D PR-3(2026-05-17):本人自助改密
-
-  // V2 dictionaries (Step 3,2026-05-08)
-
-  // V2 organizations (Step 4,2026-05-08)
-
-  // V2 members (Step 5,2026-05-08)
-
-  // V2 member-departments (Step 6,2026-05-08;嵌套在 members 下作子资源)
-
-  // V2 第一阶段批次 1 member-profiles (2026-05-10;1:1 子资源)
-
-  // V2 第一阶段批次 1 emergency-contacts (2026-05-10;N:1 子资源 + 单条 CRUD)
-
-  // V2 第一阶段批次 2 certificates (2026-05-10;N:1 子资源 + verify / reject / qualification-flag 动作)
-  // 路径顺序:list / create / qualification-flag(必先于 :id)/ detail / update / softDelete /
-  // verify / reject(controller 内方法声明顺序固定;NestJS 字面段优先于 :id 占位段)
-
-  // V2 第一阶段批次 3A activities (2026-05-11;7 路由;Q-A7 USER + ADMIN 同路由)
-
-  // V2 第一阶段批次 3A activity-registrations (2026-05-11;管理端 6 + 队员端 4 = 10 路由)
-  // Q-A3 USER 自助报名与 ADMIN 代报名拆开;Q-A6 CSV 导出(默认 scope=pass / 可选 all)
-  ['post', '/api/v2/users/me/activities/{activityId}/registration'],
-  ['get', '/api/v2/users/me/registrations'],
-  ['get', '/api/v2/users/me/registrations/{id}'],
-  ['patch', '/api/v2/users/me/registrations/{id}/cancel'],
-
-  // V2 第一阶段批次 3B attendances (2026-05-11;管理端 8 + 队员端 1 = 9 路由)
-  // Sheet 提交 / 列表 / detail / review-detail / edit / delete / approve / reject + /me records
-  // 路径顺序:submit / list / review-detail(字面)/ detail / edit / delete / approve / reject
-  // (字面段优先于 :id 占位段;实装阶段 controller 内方法声明顺序固定)
-  // V2 第一阶段批次 4-B(2026-05-12;APD 部门部长 / 副部长终审,沿 D-S5 / D-S7)
-  ['get', '/api/v2/users/me/attendance-records'],
-  // V2 第一阶段批次 5-A(2026-05-12;ContributionRule CRUD,沿 D6 v1.1)
-
-  // V2 第一阶段批次 6 PR #1(2026-05-12;audit_logs 查询接口,沿 D6 v1.1 §5)
-  // 不开放 POST / PATCH / PUT / DELETE / export(F5;写入后不可改不可删,红线)
-
-  // V2.x C-6 RBAC 实施 PR #2(2026-05-14;permissions CRUD,沿 D7 v1.1 §5.1 端点 1-4)
-  // 仅 Permission CRUD;Role / RolePermission / UserRole / RbacService / 判权
-  // 接入由后续 PR #3-#6 完成。沿 F9:本 PR 接入仅入口 Guard @Roles,不接 RBAC 判权。
-
-  // V2.x C-6 RBAC 实施 PR #3(2026-05-14;RbacRole CRUD,沿 D7 v1.1 §5.1 端点 5-9)
-  // 软删(D4 v1.0;deletedAt);GET /:id 区分 30003(不存在)/ 30005 ROLE_DELETED(已软删);
-  // detail 含 permissions 数组(D7 §5.2.6;RolePermission CRUD 未实施时永远空数组)。
-  // PATCH / DELETE 不存在或已软删统一返 30003(沿 v1 §10 信息泄漏防御)。
-
-  // V2.x C-6 RBAC 实施 PR #4(2026-05-14;RolePermission 关联表,沿 D7 v1.1 §5.1 端点 10-11)
-  // POST 批量授权(幂等;入参 permissionCodes[]);DELETE 撤权(精确 :permissionId);
-  // BizCode 30011 ROLE_PERMISSION_NOT_FOUND(关系不存在);
-  // 沿 D7 §9.4 缓存失效:授权/撤权后清所有持有该角色的 user cache。
-
-  // V2.x C-6 RBAC 实施 PR #5(2026-05-14;UserRole CRUD,沿 D7 v1.1 §5.1 端点 12-14)
-  // GET / POST / DELETE 用户角色;POST 入参 roleCode 单 code(沿 D7 §5.2.4);
-  // BizCode 30006/30007/30101/30102;
-  // Q7 C2 中庸角色分级(SUPER_ADMIN 通过 / 持 ops-admin 通过非 ops-admin / 其他 30102);
-  // 最后一个 ops-admin 保护(沿 D7 §6.3;事务内 count + delete)。
-
-  // V2.x C-6 RBAC 实施 PR #6(2026-05-14;RbacService + me/permissions,沿 D7 v1.1 §5.1 端点 15)
-  // 任何登录用户(@Roles(USER, ADMIN, SUPER_ADMIN));SUPER_ADMIN 返 Permission.code 全集
-  //(沿用户拍板方案 B);其它角色返 user_roles → role_permissions → permissions 聚合后的并集。
-
-  // V2.x C-6 RBAC 实施 PR #7(2026-05-14;RBAC reload 接口,沿 D7 v1.1 §5.1 端点 16 + §5.4)
-  // 三档 scope:all(默认)/ user(+ userId)/ role(+ roleId);
-  // 入口 @Roles(SUPER_ADMIN, ADMIN);scope=user 缺 userId / scope=role 缺 roleId → 400;
-  // userId / roleId 不存在 → 200 静默成功(沿用户拍板四项决策);
-  // 出参恒为 { reloaded: true };RBAC_FORBIDDEN 业务模块接入留后续 PR。
-
-  // V2.x C-7 attachments 实施 PR #3(2026-05-15;AttachmentTypeConfig CRUD,沿 D7 v1.0 §4.2 / §16 Q1-Q7)
-  // 6 个端点:list / create / detail / update / updateStatus / softDelete;
-  // 入口 @Roles(SUPER_ADMIN, ADMIN);**不接 rbac.can()**(F4 v1.0:配置三表是系统配置 / 运维能力);
-  // BizCode 13020 ATTACHMENT_TYPE_CONFIG_NOT_FOUND / 13021 ATTACHMENT_TYPE_CONFIG_CODE_ALREADY_EXISTS /
-  // 13023 INVALID_ATTACHMENT_TYPE_CONFIG_CODE_FORMAT;
-  // PATCH /:id 严禁 code(Q1)/ status(Q5 走独立 status 端点)/ deletedAt / id;
-  // 软删 deletedAt = now() + 同步置 status=INACTIVE;
-  // **本 PR 不实装**:AttachmentMimeConfig CRUD(PR #4)/ AttachmentSizeLimitConfig CRUD(PR #5)/
-  // attachments 主模块 / Provider / audit / RBAC 业务判权 / ATTACHMENT_TYPE_CONFIG_IN_USE(13030)。
-
-  // V2.x C-7 attachments 实施 PR #4(2026-05-15;AttachmentMimeConfig CRUD,沿 D7 v1.0 §4.3 / §16 + Q1-Q8)
-  // 6 个端点:list / create / detail / update / updateStatus / softDelete;
-  // 入口 @Roles(SUPER_ADMIN, ADMIN);**不接 rbac.can()**(F4 v1.0);
-  // BizCode 13022 ATTACHMENT_MIME_CONFIG_NOT_FOUND / 13024 ATTACHMENT_MIME_CONFIG_DUPLICATE /
-  // 13025 INVALID_ATTACHMENT_MIME_FORMAT + 复用 13020 ATTACHMENT_TYPE_CONFIG_NOT_FOUND(Q5 v1.0);
-  // PATCH /:id 仅 remark(Q3:mime 不可改 / Q4:typeConfigId 不可改 / Q5:status 走独立端点);
-  // 出参嵌套 typeConfig: { id, code, displayName }(Q2 v1.0);
-  // (typeConfigId, mime) UNIQUE 含软删历史(Q8 v1.0);软删 deletedAt = now() + 同步 INACTIVE;
-  // **本 PR 不实装**:AttachmentSizeLimitConfig CRUD(PR #5)/ attachments 主模块 /
-  // Provider / audit / RBAC 业务判权 / IN_USE 跨表约束(Q6 v1.0)。
-
-  // V2.x C-7 attachments 实施 PR #5(2026-05-15;AttachmentSizeLimitConfig CRUD,沿 D7 v1.0 §4.4 + Q1-Q8)
-  // **5 个端点**(Q1 v1.0:本表无 status 字段,无独立 status 端点):list / create / detail / update / softDelete;
-  // 入口 @Roles(SUPER_ADMIN, ADMIN);**不接 rbac.can()**(F4 v1.0);
-  // BizCode 13026 ATTACHMENT_SIZE_LIMIT_CONFIG_NOT_FOUND / 13027 ATTACHMENT_SIZE_LIMIT_CONFIG_ALREADY_EXISTS +
-  // 复用 13020 ATTACHMENT_TYPE_CONFIG_NOT_FOUND(Q5 PR #4);
-  // PATCH /:id 仅 maxSizeBytes / remark(Q4 PR #4:typeConfigId 不可改;Q5 v1.0:maxSizeBytes 不允许 null);
-  // 出参嵌套独立 AttachmentSizeLimitConfigTypeConfigSummaryDto(Q4 v1.0:不复用 mime 的 summary DTO);
-  // typeConfigId 1:1 UNIQUE 含软删历史(Q3 v1.0);软删 deletedAt = now()(Q7 v1.0:本表无 status,不同步置);
-  // **本 PR 不实装**:attachments 主模块 / Provider / audit / RBAC 业务判权 / IN_USE 跨表约束 / status 字段。
-
-  // V2.x C-7 attachments 实施 PR #6b(2026-05-15;attachments 主模块 7 端点,沿 D7 v1.0 §5.1)
-  // 入口仅 JwtAuthGuard(F3 v1.0;**不加** @Roles);全部判权在 Service 层 rbac.can()。
-  // BizCode 13001 ATTACHMENT_NOT_FOUND / 13010 ATTACHMENT_OWNER_TYPE_INVALID /
-  // 13011 ATTACHMENT_OWNER_NOT_FOUND / 13012 ATTACHMENT_MIME_NOT_ALLOWED /
-  // 13013 ATTACHMENT_SIZE_EXCEEDED / 13015 ATTACHMENT_PII_DETECTED;
-  // 复用 30100 RBAC_FORBIDDEN(写路径)+ 信息泄漏防御 13001(读路径)。
-  // 路径顺序铁律:/by-owner / /me/uploaded 字面段在 /:id 之前(NestJS 字面段优先 :id)。
-  // **本 PR 不实装**:audit_logs 接入(留 PR #6c)/ Provider 文件层(Q15 挂起)。
-  // V2.x C-7.5 实施 PR #10:upload-url + confirm-upload(沿评审 §8.1 / §8.2 / §8.3 / §8.4)
-  // 路径顺序铁律:字面段优先,必须放在 :id 之前(沿 §8.2)
-
-  // V2.x C-7.5 实施 PR #11:Storage Settings admin Controller(沿评审 §6.5 / §6.6 + Q-11)
-
-  // Phase 2 P2-1(2026-05-19):App /api/app/v1/me* 三 endpoint
-  // 沿 docs/app-api-phase-2-review.md §2 接口清单;新 path 默认 /api/app/v1/*(沿
-  // docs/api-client-boundary-migration-plan.md §5 Phase 3 方案 C);旧 /api/users/me*
-  // 行为**逐字不变**(沿 §3.2 + §9.2 #9 path stability)。
   ['get', '/api/app/v1/me'],
   ['get', '/api/app/v1/me/account'],
   ['get', '/api/app/v1/me/capabilities'],
@@ -457,7 +340,6 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'ActivityResponseDto',
   'ActivityListItemDto',
   'CreateRegistrationDto',
-  'CreateMyRegistrationDto',
   'ApproveRegistrationDto',
   'RejectRegistrationDto',
   'CancelRegistrationDto',
@@ -730,35 +612,15 @@ describe('OpenAPI 契约快照', () => {
     expect(doc.components?.schemas).toMatchSnapshot();
   });
 
-  // Route B Phase 2(沿 docs/api-surface-migration-plan.md §6 Phase 2):
-  // 迁移前老前缀路径必须 deprecated;canonical 新前缀(admin/v1 · system/v1 · auth/v1 · app/v1)必须不 deprecated。
-  const isRouteBLegacy = (p: string): boolean =>
-    p.startsWith('/api/v2/') ||
-    p.startsWith('/api/users/') ||
-    p === '/api/health' ||
-    p.startsWith('/api/health/') ||
-    (p.startsWith('/api/auth/') && !p.startsWith('/api/auth/v1/'));
-  const CANONICAL_PREFIXES = ['/api/admin/v1/', '/api/system/v1/', '/api/auth/v1/', '/api/app/v1/'];
+  // Route B 终态验收基线(沿 docs/api-surface-migration-plan.md §3.4):迁移完成后,
+  // OpenAPI 全部路由**只允许**落 4 个 canonical 前缀;零 v2 / 零裸 auth·health·users / 零 legacy。
+  // 任何新增端点必须落 admin/v1 · app/v1 · auth/v1 · system/v1 之一,否则本断言失败。
+  const CANONICAL_PREFIXES = ['/api/admin/v1/', '/api/app/v1/', '/api/auth/v1/', '/api/system/v1/'];
 
-  it('Phase 2:迁移前老前缀路径的每个 operation 均 deprecated', () => {
-    const notDeprecated: string[] = [];
-    for (const [path, item] of Object.entries(doc.paths)) {
-      if (!isRouteBLegacy(path)) continue;
-      for (const [method, op] of Object.entries(item)) {
-        if (op && op.deprecated !== true) notDeprecated.push(`${method} ${path}`);
-      }
-    }
-    expect(notDeprecated).toEqual([]);
-  });
-
-  it('Phase 2:canonical 新前缀路径的 operation 均 NOT deprecated', () => {
-    const wronglyDeprecated: string[] = [];
-    for (const [path, item] of Object.entries(doc.paths)) {
-      if (!CANONICAL_PREFIXES.some((c) => path.startsWith(c))) continue;
-      for (const [method, op] of Object.entries(item)) {
-        if (op?.deprecated === true) wronglyDeprecated.push(`${method} ${path}`);
-      }
-    }
-    expect(wronglyDeprecated).toEqual([]);
+  it('Route B 终态:全部路由仅落 4 canonical 前缀(零 v2 / 零 legacy)', () => {
+    const offenders = Object.keys(doc.paths).filter(
+      (p) => !CANONICAL_PREFIXES.some((c) => p.startsWith(c)),
+    );
+    expect(offenders).toEqual([]);
   });
 });

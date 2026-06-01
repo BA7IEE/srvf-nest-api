@@ -24,7 +24,7 @@ import { createTestApp } from '../setup/test-app';
 //   10. User.DISABLED → 401(JwtStrategy)
 //   11. empty list + 分页 + 排序(checkInAt desc)
 //   12. 未登录 → 401
-//   13. 旧 /api/v2/users/me/attendance-records 行为字面不变(path stability)
+// 注:旧 v2 队员考勤记录路径已在 API surface 迁移(Route B)中删除,行为改由本 App 套件覆盖。
 //
 // 准入沿评审稿 §8.1 + §8.2 + D-P2-6-12 / D-P2-6-13:
 //   - canUseApp=false 统一 FORBIDDEN=40300(不沿 D-P2-3-1 admin-without-member 例外)
@@ -923,32 +923,6 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
   describe('未登录', () => {
     it('GET /api/app/v1/my/attendance-records 不带 Authorization → 401', async () => {
       const res = await request(httpServer(app)).get('/api/app/v1/my/attendance-records');
-      expectBizError(res, BizCode.UNAUTHORIZED);
-    });
-  });
-
-  // ============ Test class 13: path stability(legacy /api/v2/users/me/attendance-records) ============
-
-  describe('path stability — legacy /api/v2/users/me/attendance-records 行为不变', () => {
-    it('USER A 仍可调用旧 path 拿自己的 records(含 admin DTO 全字段)', async () => {
-      const res = await request(httpServer(app))
-        .get('/api/v2/users/me/attendance-records?pageSize=100')
-        .set('Authorization', userAAuth);
-      expect(res.status).toBe(200);
-      const items = (res.body as ResBody).data.items as Array<Record<string, unknown>>;
-      expect(items.length).toBeGreaterThan(0);
-      // 旧 path 返回 admin AttendanceRecordResponseDto,**应**含 sheetId / memberId / member 等
-      // (反向断言:旧 path 行为未被 P2-6 改动)
-      for (const item of items) {
-        expect(item).toHaveProperty('sheetId');
-        expect(item).toHaveProperty('memberId');
-        // 不应有 P2-6 派生字段
-        expect(item).not.toHaveProperty('activityTitle');
-      }
-    });
-
-    it('未登录访问 legacy → 401', async () => {
-      const res = await request(httpServer(app)).get('/api/v2/users/me/attendance-records');
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
   });

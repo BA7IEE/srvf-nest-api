@@ -27,7 +27,7 @@ import { createTestApp } from '../setup/test-app';
 //   - sensitive fields(memberId / reviewedBy / cancelledByUserId / member.memberNo /
 //     member.displayName / deletedAt)永不出现在 App 响应
 //   - MEMBER_NOT_FOUND=15001 永不透出到 App path(由 AppIdentityResolver 拦截)
-//   - 旧 /api/v2/users/me/* 行为**逐字不变**(沿 §5.3 + §15.2 + 风险 14.13)
+// 注:旧 v2 队员自助读路径已在 API surface 迁移(Route B)中删除,行为改由本 App 套件覆盖。
 
 interface ResBody {
   code: number;
@@ -861,52 +861,6 @@ describe('App /api/app/v1/my/* (P2-5a 只读 3 endpoint)', () => {
         await get('/api/app/v1/my/registrations/cabcdef12345678', authHeader),
         BizCode.FORBIDDEN,
       );
-    });
-  });
-
-  // =====================================================
-  // 6. 旧 /api/v2/users/me/* 行为不变(沿 §5.3 + 风险 14.13)
-  // =====================================================
-
-  describe('legacy /api/v2/users/me/* 行为逐字不变', () => {
-    it('GET /api/v2/users/me/registrations 仍返 admin DTO 字段集(含 memberId / memberNo / memberDisplayName)', async () => {
-      const u = nextSeq();
-      const { memberId, authHeader } = await setupLinkedUser({
-        username: `p25a-lg-${u}`,
-        memberNo: `P25A-LG-${u}`,
-      });
-      const act = await createActivity('published', `lg-${u}`);
-      await createRegistration({ memberId, activityId: act.id, statusCode: 'pending' });
-
-      const res = await get('/api/v2/users/me/registrations', authHeader);
-      expect(res.status).toBe(200);
-      const items = (res.body as ResBody).data.items as Array<Record<string, unknown>>;
-      expect(items.length).toBeGreaterThanOrEqual(1);
-      const item = items[0];
-      // legacy 应当含 memberId / memberNo / memberDisplayName(admin DTO)
-      expect(item).toHaveProperty('memberId');
-      expect(item).toHaveProperty('memberNo');
-      expect(item).toHaveProperty('memberDisplayName');
-    });
-
-    it('GET /api/v2/users/me/registrations/:id 仍返 admin DTO(含 reviewedBy / cancelledByUserId)', async () => {
-      const u = nextSeq();
-      const { memberId, authHeader } = await setupLinkedUser({
-        username: `p25a-lgd-${u}`,
-        memberNo: `P25A-LGD-${u}`,
-      });
-      const act = await createActivity('published', `lgd-${u}`);
-      const reg = await createRegistration({
-        memberId,
-        activityId: act.id,
-        statusCode: 'pending',
-      });
-      const res = await get(`/api/v2/users/me/registrations/${reg.id}`, authHeader);
-      expect(res.status).toBe(200);
-      const data = (res.body as ResBody).data;
-      expect(data).toHaveProperty('memberId');
-      expect(data).toHaveProperty('reviewedBy');
-      expect(data).toHaveProperty('cancelledByUserId');
     });
   });
 });

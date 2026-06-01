@@ -1,33 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
-import { DocumentBuilder, type OpenAPIObject, SwaggerModule } from '@nestjs/swagger';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { AppConfig } from '../config/app.config';
-
-// Route B Phase 2(2026-06-01;沿 docs/api-surface-migration-plan.md §3 / §6 Phase 2):
-// 判定一个 OpenAPI path 是否为"迁移前老前缀"。老前缀在 Phase 2 标 deprecated,
-// 引导客户端切到新前缀(admin/v1 · system/v1 · auth/v1 · app/v1 = canonical,不标)。
-// Phase 4 删旧后这些 path 不再出现,本判定自然 no-op。
-function isRouteBLegacyPath(path: string): boolean {
-  if (path.startsWith('/api/v2/')) return true;
-  if (path === '/api/users' || path.startsWith('/api/users/')) return true;
-  if (path === '/api/health' || path.startsWith('/api/health/')) return true;
-  // 老 auth(login / refresh / logout / logout-all);新 /api/auth/v1/* 不标
-  if (path.startsWith('/api/auth/') && !path.startsWith('/api/auth/v1/')) return true;
-  return false;
-}
-
-// 把迁移前老前缀路径的每个 operation 标 deprecated: true(仅 OpenAPI 文档层信号,
-// 不改运行时行为——老路径仍正常服务)。
-function markRouteBLegacyDeprecated(document: OpenAPIObject): void {
-  const methods = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
-  for (const path of Object.keys(document.paths)) {
-    if (!isRouteBLegacyPath(path)) continue;
-    const item = document.paths[path];
-    for (const method of methods) {
-      const op = item[method];
-      if (op) op.deprecated = true;
-    }
-  }
-}
 
 // 应用 Swagger 文档注册。main.ts 与 test/setup/test-app.ts 共用此函数,
 // 与 applyGlobalSetup 同原则:避免 main.ts 与测试两边复制 Swagger 注册代码导致漂移
@@ -91,8 +64,6 @@ export function applySwagger(app: INestApplication, appCfg: AppConfig): void {
     .addTag('Ops - Contribution Rules', '运营:贡献值规则')
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
-  // Route B Phase 2:迁移前老前缀路径标 deprecated(见上方 markRouteBLegacyDeprecated)
-  markRouteBLegacyDeprecated(document);
   SwaggerModule.setup('docs', app, document, {
     useGlobalPrefix: true,
   });

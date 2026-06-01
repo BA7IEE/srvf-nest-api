@@ -31,8 +31,8 @@ import { createTestApp } from '../setup/test-app';
 // **关键铁律断言**:
 //   - sensitive fields(memberId / reviewedBy / cancelledByUserId)永不出现在 App 响应
 //   - MEMBER_NOT_FOUND=15001 不透出到 App path(由 AppIdentityResolver 拦截)
-//   - 旧 /api/v2/* admin / me path 行为**逐字不变**(沿 §5.3 + 风险 14.13)
 //   - 取消他人 / 不存在 / 软删 registration 统一 21001 / 404 防侧信道
+// 注:旧 v2 队员自助写路径已在 API surface 迁移(Route B)中删除,行为改由本 App 套件覆盖。
 
 interface ResBody {
   code: number;
@@ -893,51 +893,6 @@ describe('App /api/app/v1/my/* (P2-5b 写 2 endpoint)', () => {
 
       // 沿评审稿 §12.4:不扩展 surface='app' 字段
       expect(extra).not.toHaveProperty('surface');
-    });
-  });
-
-  // =====================================================
-  // 9. 旧 /api/v2/users/me/* + admin path 行为不变(沿 §5.3 / §15.2 / 风险 14.13)
-  // =====================================================
-
-  describe('legacy /api/v2/* 行为逐字不变', () => {
-    it('POST /api/v2/users/me/activities/:id/registration 仍返 admin DTO(含 memberId / reviewedBy / cancelledByUserId)', async () => {
-      const u = nextSeq();
-      const { authHeader } = await setupLinkedUser({
-        username: `p25b-lg-${u}`,
-        memberNo: `P25B-LG-${u}`,
-      });
-      const act = await createActivity('published', `lg-${u}`);
-      const res = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${act.id}/registration`)
-        .set('Authorization', authHeader)
-        .send({});
-      expect(res.status).toBe(201);
-      const data = (res.body as ResBody).data;
-      // legacy admin DTO 应当含 memberId / reviewedBy / cancelledByUserId
-      expect(data).toHaveProperty('memberId');
-      expect(data).toHaveProperty('reviewedBy');
-      expect(data).toHaveProperty('cancelledByUserId');
-    });
-
-    it('PATCH /api/v2/users/me/registrations/:id/cancel 仍返 admin DTO', async () => {
-      const u = nextSeq();
-      const { memberId, authHeader } = await setupLinkedUser({
-        username: `p25b-lgc-${u}`,
-        memberNo: `P25B-LGC-${u}`,
-      });
-      const act = await createActivity('published', `lgc-${u}`);
-      const reg = await createRegistration({ memberId, activityId: act.id, statusCode: 'pending' });
-      const res = await request(httpServer(app))
-        .patch(`/api/v2/users/me/registrations/${reg.id}/cancel`)
-        .set('Authorization', authHeader)
-        .send({ cancelReason: 'old path' });
-      expect(res.status).toBe(200);
-      const data = (res.body as ResBody).data;
-      expect(data).toHaveProperty('memberId');
-      expect(data).toHaveProperty('reviewedBy');
-      expect(data).toHaveProperty('cancelledByUserId');
-      expect(data.statusCode).toBe('cancelled');
     });
   });
 });
