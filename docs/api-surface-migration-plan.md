@@ -141,6 +141,6 @@
 | 立项冻结 | ✅ 本稿(2026-06-01) | — | docs-only;重开 D-2 → §21 D-9 |
 | Phase 0 映射表 | ✅ 已签字冻结(2026-06-01;见 §3) | (本 PR) | 156 路由全映射 + 终态验收基线;tag→surface 无遗留灰区 |
 | Phase 1 alias | ✅ **完成** | 1a #259 / 1b #260 / 1c PR | **全 133 非-app 路由双挂完成**:1a auth+health(7)/ 1b system(56)/ 1c admin(70);contract 423 + e2e 双路径绿;老路径零回归 |
-| Phase 2 canonical | ⬜ 未启动 | — | — |
+| Phase 2 canonical | 🔄 进行中 | Phase 2 PR | **仓内 deprecate 已落地**(apply-swagger 后处理:142 老前缀 operation 标 `deprecated`;canonical 新前缀不标;contract 425 断言锁定);**余前端/移动端切流 + old-path 流量观测(仓外,作为 Phase 3→4 gate)** |
 | Phase 3 deprecation | ⬜ 未启动 | — | — |
 | Phase 4 removal | ⬜ 未启动 | — | 不可逆,单独 gated |
