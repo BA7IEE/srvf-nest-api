@@ -28,10 +28,7 @@ import { EmergencyContactsService } from './emergency-contacts.service';
 
 @ApiTags('Admin - Emergency Contacts')
 @ApiBearerAuth()
-@Controller([
-  'v2/members/:memberId/emergency-contacts',
-  'admin/v1/members/:memberId/emergency-contacts',
-])
+@Controller('admin/v1/members/:memberId/emergency-contacts')
 export class EmergencyContactsController {
   constructor(private readonly service: EmergencyContactsService) {}
 

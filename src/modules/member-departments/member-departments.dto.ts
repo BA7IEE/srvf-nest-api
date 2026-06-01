@@ -32,7 +32,7 @@ export class MemberDepartmentResponseDto {
 
 // ============ 入参 ============
 
-// PUT /api/v2/members/:memberId/department 入参:仅 organizationId。
+// PUT /api/admin/v1/members/:memberId/department 入参:仅 organizationId。
 // 严格白名单:**禁止** memberId(由路径参数提供)/ id / deletedAt / 任何附加字段。
 export class SetMemberDepartmentDto {
   @ApiProperty({

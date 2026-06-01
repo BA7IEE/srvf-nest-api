@@ -38,7 +38,7 @@ import { ActivitiesService } from './activities.service';
 
 @ApiTags('Admin - Activities')
 @ApiBearerAuth()
-@Controller(['v2/activities', 'admin/v1/activities'])
+@Controller('admin/v1/activities')
 export class ActivitiesController {
   constructor(private readonly service: ActivitiesService) {}
 

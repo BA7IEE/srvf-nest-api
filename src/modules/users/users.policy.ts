@@ -43,7 +43,7 @@ export function canCreateRole(actorRole: Role, targetRole: Role): boolean {
   return false;
 }
 
-// 改角色接口 PATCH /api/users/:id/role:actorRole 是否允许把别人改成 newRole
+// 改角色接口 PATCH /api/admin/v1/users/:id/role:actorRole 是否允许把别人改成 newRole
 //   - 业务 API 禁止把任何人设成 SUPER_ADMIN(包括 SUPER_ADMIN 自己也不能再签发新 SUPER_ADMIN)
 //   - 仅 SUPER_ADMIN 可改角色;controller 已经 @Roles(SUPER_ADMIN),本函数提供纵深防御
 export function canChangeRole(actorRole: Role, newRole: Role): boolean {

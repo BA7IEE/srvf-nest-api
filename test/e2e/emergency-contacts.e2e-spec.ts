@@ -86,21 +86,21 @@ describe('emergency-contacts 模块', () => {
   describe('权限边界', () => {
     it('未登录 GET → 401', async () => {
       const res = await request(httpServer(app)).get(
-        `/api/v2/members/${memberA}/emergency-contacts`,
+        `/api/admin/v1/members/${memberA}/emergency-contacts`,
       );
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('USER GET → 403', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberA}/emergency-contacts`)
+        .get(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
 
     it('USER POST → 403', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/emergency-contacts`)
+        .post(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', userAuth)
         .send(minimalCreatePayload());
       expectBizError(res, BizCode.FORBIDDEN);
@@ -108,7 +108,7 @@ describe('emergency-contacts 模块', () => {
 
     it('USER PATCH → 403', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/emergency-contacts/cl000000000000000000xxxx`)
+        .patch(`/api/admin/v1/members/${memberA}/emergency-contacts/cl000000000000000000xxxx`)
         .set('Authorization', userAuth)
         .send({ contactName: 'X' });
       expectBizError(res, BizCode.FORBIDDEN);
@@ -116,7 +116,7 @@ describe('emergency-contacts 模块', () => {
 
     it('USER DELETE → 403', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${memberA}/emergency-contacts/cl000000000000000000xxxx`)
+        .delete(`/api/admin/v1/members/${memberA}/emergency-contacts/cl000000000000000000xxxx`)
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
@@ -127,14 +127,14 @@ describe('emergency-contacts 模块', () => {
   describe('GET list', () => {
     it('member 不存在 → MEMBER_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/members/cl0000000000000000000000/emergency-contacts')
+        .get('/api/admin/v1/members/cl0000000000000000000000/emergency-contacts')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
     });
 
     it('空列表 → 200 + 空数组', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberA}/emergency-contacts`)
+        .get(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -148,7 +148,7 @@ describe('emergency-contacts 模块', () => {
   describe('POST 主路径', () => {
     it('member 不存在 → MEMBER_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/members/cl0000000000000000000000/emergency-contacts')
+        .post('/api/admin/v1/members/cl0000000000000000000000/emergency-contacts')
         .set('Authorization', adminAuth)
         .send(minimalCreatePayload());
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
@@ -156,7 +156,7 @@ describe('emergency-contacts 模块', () => {
 
     it('ADMIN 创建第一条 → 201,默认 priority=0,不返 deletedAt', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/emergency-contacts`)
+        .post(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', adminAuth)
         .send(minimalCreatePayload());
       expect(res.status).toBe(201);
@@ -172,7 +172,7 @@ describe('emergency-contacts 模块', () => {
 
     it('SUPER_ADMIN 创建多条 + 含 phoneBackup / address / priority → 201', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/emergency-contacts`)
+        .post(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', superAdminAuth)
         .send({
           contactName: '紧急联系人 2',
@@ -190,7 +190,7 @@ describe('emergency-contacts 模块', () => {
 
     it('relationCode 不存在 → EMERGENCY_CONTACT_RELATION_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/emergency-contacts`)
+        .post(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', adminAuth)
         .send({ ...minimalCreatePayload(), relationCode: 'no-such-relation' });
       expectBizError(res, BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID);
@@ -198,7 +198,7 @@ describe('emergency-contacts 模块', () => {
 
     it('relationCode INACTIVE → EMERGENCY_CONTACT_RELATION_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/emergency-contacts`)
+        .post(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', adminAuth)
         .send({ ...minimalCreatePayload(), relationCode: inactiveRelationCode });
       expectBizError(res, BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID);
@@ -208,7 +208,7 @@ describe('emergency-contacts 模块', () => {
       const payload = minimalCreatePayload();
       delete payload.contactName;
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/emergency-contacts`)
+        .post(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', adminAuth)
         .send(payload);
       expect(res.status).toBe(400);
@@ -218,7 +218,7 @@ describe('emergency-contacts 模块', () => {
       const payload = minimalCreatePayload();
       delete payload.phonePrimary;
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/emergency-contacts`)
+        .post(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', adminAuth)
         .send(payload);
       expect(res.status).toBe(400);
@@ -226,7 +226,7 @@ describe('emergency-contacts 模块', () => {
 
     it('phonePrimary 格式非法 → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/emergency-contacts`)
+        .post(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', adminAuth)
         .send({ ...minimalCreatePayload(), phonePrimary: 'abc不是号码' });
       expect(res.status).toBe(400);
@@ -234,7 +234,7 @@ describe('emergency-contacts 模块', () => {
 
     it('non-whitelisted 字段(memberId) → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/emergency-contacts`)
+        .post(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', adminAuth)
         .send({ ...minimalCreatePayload(), memberId: 'cl0000000000000000000000' });
       expect(res.status).toBe(400);
@@ -242,7 +242,7 @@ describe('emergency-contacts 模块', () => {
 
     it('non-whitelisted 字段(deletedAt) → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/emergency-contacts`)
+        .post(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', adminAuth)
         .send({ ...minimalCreatePayload(), deletedAt: new Date().toISOString() });
       expect(res.status).toBe(400);
@@ -254,7 +254,7 @@ describe('emergency-contacts 模块', () => {
   describe('GET list 排序 + 软删过滤', () => {
     it('多条按 priority ASC, createdAt ASC 排序', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberA}/emergency-contacts`)
+        .get(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       const items: Array<{ priority: number; createdAt: string }> = res.body.data;
@@ -273,7 +273,7 @@ describe('emergency-contacts 模块', () => {
 
     beforeAll(async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/emergency-contacts`)
+        .post(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', adminAuth)
         .send({
           contactName: 'Patch Target',
@@ -286,7 +286,7 @@ describe('emergency-contacts 模块', () => {
 
     it('更新 priority → 200', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/emergency-contacts/${contactId}`)
+        .patch(`/api/admin/v1/members/${memberA}/emergency-contacts/${contactId}`)
         .set('Authorization', adminAuth)
         .send({ priority: 1 });
       expect(res.status).toBe(200);
@@ -295,7 +295,7 @@ describe('emergency-contacts 模块', () => {
 
     it('更新 phoneBackup + address → 200', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/emergency-contacts/${contactId}`)
+        .patch(`/api/admin/v1/members/${memberA}/emergency-contacts/${contactId}`)
         .set('Authorization', superAdminAuth)
         .send({ phoneBackup: '13900000099', address: '新地址' });
       expect(res.status).toBe(200);
@@ -305,7 +305,7 @@ describe('emergency-contacts 模块', () => {
 
     it('non-whitelisted(id 入参) → 400', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/emergency-contacts/${contactId}`)
+        .patch(`/api/admin/v1/members/${memberA}/emergency-contacts/${contactId}`)
         .set('Authorization', adminAuth)
         .send({ id: 'cl0000000000000000000000' });
       expect(res.status).toBe(400);
@@ -313,7 +313,7 @@ describe('emergency-contacts 模块', () => {
 
     it('contact 不存在 → EMERGENCY_CONTACT_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/emergency-contacts/cl0000000000000000000000`)
+        .patch(`/api/admin/v1/members/${memberA}/emergency-contacts/cl0000000000000000000000`)
         .set('Authorization', adminAuth)
         .send({ priority: 0 });
       expectBizError(res, BizCode.EMERGENCY_CONTACT_NOT_FOUND);
@@ -322,7 +322,7 @@ describe('emergency-contacts 模块', () => {
     it('contact 属于其他 member → EMERGENCY_CONTACT_NOT_BELONGS_TO_MEMBER', async () => {
       // contactId 属于 memberA;用 memberB 的路径访问
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberB}/emergency-contacts/${contactId}`)
+        .patch(`/api/admin/v1/members/${memberB}/emergency-contacts/${contactId}`)
         .set('Authorization', adminAuth)
         .send({ priority: 1 });
       expectBizError(res, BizCode.EMERGENCY_CONTACT_NOT_BELONGS_TO_MEMBER);
@@ -330,7 +330,7 @@ describe('emergency-contacts 模块', () => {
 
     it('PATCH relationCode 字典 invalid → EMERGENCY_CONTACT_RELATION_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/emergency-contacts/${contactId}`)
+        .patch(`/api/admin/v1/members/${memberA}/emergency-contacts/${contactId}`)
         .set('Authorization', adminAuth)
         .send({ relationCode: 'no-such-relation' });
       expectBizError(res, BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID);
@@ -344,7 +344,7 @@ describe('emergency-contacts 模块', () => {
 
     beforeAll(async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/emergency-contacts`)
+        .post(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', adminAuth)
         .send({
           contactName: '待软删联系人',
@@ -356,21 +356,21 @@ describe('emergency-contacts 模块', () => {
 
     it('contact 不存在 → EMERGENCY_CONTACT_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${memberA}/emergency-contacts/cl0000000000000000000000`)
+        .delete(`/api/admin/v1/members/${memberA}/emergency-contacts/cl0000000000000000000000`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.EMERGENCY_CONTACT_NOT_FOUND);
     });
 
     it('contact 属于其他 member → EMERGENCY_CONTACT_NOT_BELONGS_TO_MEMBER', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${memberB}/emergency-contacts/${contactId}`)
+        .delete(`/api/admin/v1/members/${memberB}/emergency-contacts/${contactId}`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.EMERGENCY_CONTACT_NOT_BELONGS_TO_MEMBER);
     });
 
     it('正常软删 → 200 + DB deletedAt 非空 + 列表不再返回', async () => {
       const delRes = await request(httpServer(app))
-        .delete(`/api/v2/members/${memberA}/emergency-contacts/${contactId}`)
+        .delete(`/api/admin/v1/members/${memberA}/emergency-contacts/${contactId}`)
         .set('Authorization', adminAuth);
       expect(delRes.status).toBe(200);
       expect(delRes.body.data.id).toBe(contactId);
@@ -380,7 +380,7 @@ describe('emergency-contacts 模块', () => {
 
       // 列表过滤
       const listRes = await request(httpServer(app))
-        .get(`/api/v2/members/${memberA}/emergency-contacts`)
+        .get(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', adminAuth);
       const ids: string[] = (listRes.body.data as Array<{ id: string }>).map((i) => i.id);
       expect(ids).not.toContain(contactId);
@@ -388,7 +388,7 @@ describe('emergency-contacts 模块', () => {
 
     it('再次 DELETE 已软删 contact → EMERGENCY_CONTACT_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${memberA}/emergency-contacts/${contactId}`)
+        .delete(`/api/admin/v1/members/${memberA}/emergency-contacts/${contactId}`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.EMERGENCY_CONTACT_NOT_FOUND);
     });

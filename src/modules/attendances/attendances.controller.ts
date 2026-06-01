@@ -69,10 +69,7 @@ function buildAuditMeta(req: Request): AuditMeta {
 
 @ApiTags('Admin - Attendances')
 @ApiBearerAuth()
-@Controller([
-  'v2/activities/:activityId/attendance-sheets',
-  'admin/v1/activities/:activityId/attendance-sheets',
-])
+@Controller('admin/v1/activities/:activityId/attendance-sheets')
 export class AttendanceSheetsCollectionController {
   constructor(private readonly service: AttendancesService) {}
 
@@ -130,7 +127,7 @@ export class AttendanceSheetsCollectionController {
 
 @ApiTags('Admin - Attendances')
 @ApiBearerAuth()
-@Controller(['v2/attendance-sheets', 'admin/v1/attendance-sheets'])
+@Controller('admin/v1/attendance-sheets')
 export class AttendanceSheetsResourceController {
   constructor(private readonly service: AttendancesService) {}
 

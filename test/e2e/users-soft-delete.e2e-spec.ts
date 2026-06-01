@@ -21,29 +21,29 @@ import { createTestApp } from '../setup/test-app';
 
 // 软删用户的 :id 端点矩阵(GET/PATCH/PUT pwd/PATCH role/PATCH status)
 const TARGET_ENDPOINTS: AdminEndpoint[] = [
-  { name: 'GET /:id', method: 'get', path: '/api/users/__ID__' },
+  { name: 'GET /:id', method: 'get', path: '/api/admin/v1/users/__ID__' },
   {
     name: 'PATCH /:id',
     method: 'patch',
-    path: '/api/users/__ID__',
+    path: '/api/admin/v1/users/__ID__',
     body: { nickname: 'X' },
   },
   {
     name: 'PUT /:id/password',
     method: 'put',
-    path: '/api/users/__ID__/password',
+    path: '/api/admin/v1/users/__ID__/password',
     body: { newPassword: 'NewPass123!' },
   },
   {
     name: 'PATCH /:id/role',
     method: 'patch',
-    path: '/api/users/__ID__/role',
+    path: '/api/admin/v1/users/__ID__/role',
     body: { role: Role.ADMIN },
   },
   {
     name: 'PATCH /:id/status',
     method: 'patch',
-    path: '/api/users/__ID__/status',
+    path: '/api/admin/v1/users/__ID__/status',
     body: { status: 'ACTIVE' },
   },
 ];
@@ -86,7 +86,7 @@ describe('软删用户的副作用矩阵', () => {
 
   it('已软删用户再 DELETE /:id → USER_NOT_FOUND(softDelete 内 findRawByIdOrThrow 找不到)', async () => {
     const res = await request(httpServer(app))
-      .delete(`/api/users/${ghostUserId}`)
+      .delete(`/api/admin/v1/users/${ghostUserId}`)
       .set('Authorization', authHeader);
 
     expectBizError(res, BizCode.USER_NOT_FOUND);
@@ -117,7 +117,7 @@ describe('软删用户的副作用矩阵', () => {
       expect(before.length).toBe(1);
 
       const del = await request(httpServer(app))
-        .delete(`/api/users/${target.id}`)
+        .delete(`/api/admin/v1/users/${target.id}`)
         .set('Authorization', authHeader);
       expect(del.status).toBe(200);
 

@@ -119,20 +119,20 @@ describe('member-profiles 模块', () => {
 
   describe('权限边界', () => {
     it('未登录 GET → 401', async () => {
-      const res = await request(httpServer(app)).get(`/api/v2/members/${memberId}/profile`);
+      const res = await request(httpServer(app)).get(`/api/admin/v1/members/${memberId}/profile`);
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('USER GET → 403', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberId}/profile`)
+        .get(`/api/admin/v1/members/${memberId}/profile`)
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
 
     it('USER POST → 403', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberId}/profile`)
+        .post(`/api/admin/v1/members/${memberId}/profile`)
         .set('Authorization', userAuth)
         .send(minimalCreatePayload());
       expectBizError(res, BizCode.FORBIDDEN);
@@ -140,7 +140,7 @@ describe('member-profiles 模块', () => {
 
     it('USER PATCH → 403', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}/profile`)
+        .patch(`/api/admin/v1/members/${memberId}/profile`)
         .set('Authorization', userAuth)
         .send({ realName: '新名字' });
       expectBizError(res, BizCode.FORBIDDEN);
@@ -152,7 +152,7 @@ describe('member-profiles 模块', () => {
   describe('POST + GET 主路径', () => {
     it('member 不存在 → MEMBER_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/members/cl0000000000000000000000/profile')
+        .post('/api/admin/v1/members/cl0000000000000000000000/profile')
         .set('Authorization', adminAuth)
         .send(minimalCreatePayload());
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
@@ -160,7 +160,7 @@ describe('member-profiles 模块', () => {
 
     it('ADMIN 创建(最小 NOT NULL 字段) → 201,响应不含 deletedAt', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberId}/profile`)
+        .post(`/api/admin/v1/members/${memberId}/profile`)
         .set('Authorization', adminAuth)
         .send(minimalCreatePayload());
       expect(res.status).toBe(201);
@@ -176,7 +176,7 @@ describe('member-profiles 模块', () => {
 
     it('GET 已存在 profile → 200 + 完整字段(含 medicalNotes 默认 null + exerciseMethods 空数组)', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberId}/profile`)
+        .get(`/api/admin/v1/members/${memberId}/profile`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.memberId).toBe(memberId);
@@ -189,7 +189,7 @@ describe('member-profiles 模块', () => {
 
     it('GET member 存在但未创建 profile → 200 + data: null', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberWithoutProfileId}/profile`)
+        .get(`/api/admin/v1/members/${memberWithoutProfileId}/profile`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -198,14 +198,14 @@ describe('member-profiles 模块', () => {
 
     it('GET member 不存在 → MEMBER_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/members/cl0000000000000000000000/profile')
+        .get('/api/admin/v1/members/cl0000000000000000000000/profile')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
     });
 
     it('POST 重复创建 → MEMBER_PROFILE_ALREADY_EXISTS', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberId}/profile`)
+        .post(`/api/admin/v1/members/${memberId}/profile`)
         .set('Authorization', adminAuth)
         .send(minimalCreatePayload());
       expectBizError(res, BizCode.MEMBER_PROFILE_ALREADY_EXISTS);
@@ -213,7 +213,7 @@ describe('member-profiles 模块', () => {
 
     it('POST 含 medicalNotes JSON + exerciseMethods 数组 → 201 + 字段往返', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberWithoutProfileId}/profile`)
+        .post(`/api/admin/v1/members/${memberWithoutProfileId}/profile`)
         .set('Authorization', adminAuth)
         .send({
           ...minimalCreatePayload(),
@@ -252,7 +252,7 @@ describe('member-profiles 模块', () => {
       const payload = minimalCreatePayload();
       delete payload.realName;
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${m3Id}/profile`)
+        .post(`/api/admin/v1/members/${m3Id}/profile`)
         .set('Authorization', adminAuth)
         .send(payload);
       expect(res.status).toBe(400);
@@ -260,7 +260,7 @@ describe('member-profiles 模块', () => {
 
     it('non-whitelisted 字段(deletedAt) → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${m3Id}/profile`)
+        .post(`/api/admin/v1/members/${m3Id}/profile`)
         .set('Authorization', adminAuth)
         .send({ ...minimalCreatePayload(), deletedAt: new Date().toISOString() });
       expect(res.status).toBe(400);
@@ -268,7 +268,7 @@ describe('member-profiles 模块', () => {
 
     it('non-whitelisted 字段(memberId) → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${m3Id}/profile`)
+        .post(`/api/admin/v1/members/${m3Id}/profile`)
         .set('Authorization', adminAuth)
         .send({ ...minimalCreatePayload(), memberId: 'cl0000000000000000000000' });
       expect(res.status).toBe(400);
@@ -276,7 +276,7 @@ describe('member-profiles 模块', () => {
 
     it('genderCode 字典不存在 → MEMBER_PROFILE_GENDER_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${m3Id}/profile`)
+        .post(`/api/admin/v1/members/${m3Id}/profile`)
         .set('Authorization', adminAuth)
         .send({ ...minimalCreatePayload(), genderCode: 'no-such-gender' });
       expectBizError(res, BizCode.MEMBER_PROFILE_GENDER_CODE_INVALID);
@@ -284,7 +284,7 @@ describe('member-profiles 模块', () => {
 
     it('genderCode INACTIVE → MEMBER_PROFILE_GENDER_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${m3Id}/profile`)
+        .post(`/api/admin/v1/members/${m3Id}/profile`)
         .set('Authorization', adminAuth)
         .send({ ...minimalCreatePayload(), genderCode: inactiveGenderCode });
       expectBizError(res, BizCode.MEMBER_PROFILE_GENDER_CODE_INVALID);
@@ -292,7 +292,7 @@ describe('member-profiles 模块', () => {
 
     it('documentTypeCode 字典不存在 → MEMBER_PROFILE_DOCUMENT_TYPE_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${m3Id}/profile`)
+        .post(`/api/admin/v1/members/${m3Id}/profile`)
         .set('Authorization', adminAuth)
         .send({ ...minimalCreatePayload(), documentTypeCode: 'no-such-doc' });
       expectBizError(res, BizCode.MEMBER_PROFILE_DOCUMENT_TYPE_CODE_INVALID);
@@ -300,7 +300,7 @@ describe('member-profiles 模块', () => {
 
     it('email 格式非法 → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${m3Id}/profile`)
+        .post(`/api/admin/v1/members/${m3Id}/profile`)
         .set('Authorization', adminAuth)
         .send({ ...minimalCreatePayload(), email: 'not-an-email' });
       expect(res.status).toBe(400);
@@ -308,7 +308,7 @@ describe('member-profiles 模块', () => {
 
     it('mobile 格式非法 → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${m3Id}/profile`)
+        .post(`/api/admin/v1/members/${m3Id}/profile`)
         .set('Authorization', adminAuth)
         .send({ ...minimalCreatePayload(), mobile: 'abc不是手机号' });
       expect(res.status).toBe(400);
@@ -316,7 +316,7 @@ describe('member-profiles 模块', () => {
 
     it('birthDate 非 ISO 8601 → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${m3Id}/profile`)
+        .post(`/api/admin/v1/members/${m3Id}/profile`)
         .set('Authorization', adminAuth)
         .send({ ...minimalCreatePayload(), birthDate: '1990/01/15' });
       expect(res.status).toBe(400);
@@ -337,7 +337,7 @@ describe('member-profiles 模块', () => {
       mPatchId = a.id;
       // 先创一个 profile 用于 PATCH
       await request(httpServer(app))
-        .post(`/api/v2/members/${mPatchId}/profile`)
+        .post(`/api/admin/v1/members/${mPatchId}/profile`)
         .set('Authorization', adminAuth)
         .send(minimalCreatePayload());
 
@@ -350,7 +350,7 @@ describe('member-profiles 模块', () => {
 
     it('部分字段更新 → 200', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${mPatchId}/profile`)
+        .patch(`/api/admin/v1/members/${mPatchId}/profile`)
         .set('Authorization', superAdminAuth)
         .send({ realName: '新名字', volunteerNo: 'V123' });
       expect(res.status).toBe(200);
@@ -360,7 +360,7 @@ describe('member-profiles 模块', () => {
 
     it('medicalNotes 整体替换 → 200', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${mPatchId}/profile`)
+        .patch(`/api/admin/v1/members/${mPatchId}/profile`)
         .set('Authorization', adminAuth)
         .send({
           medicalNotes: [{ categoryCode: 'demo-medical-cat-x' }],
@@ -371,7 +371,7 @@ describe('member-profiles 模块', () => {
 
     it('non-whitelisted 字段(id) → 400', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${mPatchId}/profile`)
+        .patch(`/api/admin/v1/members/${mPatchId}/profile`)
         .set('Authorization', adminAuth)
         .send({ id: 'cl0000000000000000000000' });
       expect(res.status).toBe(400);
@@ -379,7 +379,7 @@ describe('member-profiles 模块', () => {
 
     it('non-whitelisted 字段(createdAt) → 400', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${mPatchId}/profile`)
+        .patch(`/api/admin/v1/members/${mPatchId}/profile`)
         .set('Authorization', adminAuth)
         .send({ createdAt: new Date().toISOString() });
       expect(res.status).toBe(400);
@@ -387,7 +387,7 @@ describe('member-profiles 模块', () => {
 
     it('PATCH profile 不存在 → MEMBER_PROFILE_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${mPatchNoProfileId}/profile`)
+        .patch(`/api/admin/v1/members/${mPatchNoProfileId}/profile`)
         .set('Authorization', adminAuth)
         .send({ realName: 'X' });
       expectBizError(res, BizCode.MEMBER_PROFILE_NOT_FOUND);
@@ -395,7 +395,7 @@ describe('member-profiles 模块', () => {
 
     it('PATCH bloodTypeCode 字典 invalid → MEMBER_PROFILE_BLOOD_TYPE_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${mPatchId}/profile`)
+        .patch(`/api/admin/v1/members/${mPatchId}/profile`)
         .set('Authorization', adminAuth)
         .send({ bloodTypeCode: 'no-such-blood' });
       expectBizError(res, BizCode.MEMBER_PROFILE_BLOOD_TYPE_CODE_INVALID);
@@ -403,7 +403,7 @@ describe('member-profiles 模块', () => {
 
     it('PATCH workNatureCode 有效 → 200', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${mPatchId}/profile`)
+        .patch(`/api/admin/v1/members/${mPatchId}/profile`)
         .set('Authorization', adminAuth)
         .send({ workNatureCode });
       expect(res.status).toBe(200);
@@ -412,7 +412,7 @@ describe('member-profiles 模块', () => {
 
     it('PATCH politicalStatusCode 有效 + bloodTypeCode 有效 → 200', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${mPatchId}/profile`)
+        .patch(`/api/admin/v1/members/${mPatchId}/profile`)
         .set('Authorization', adminAuth)
         .send({ politicalStatusCode, bloodTypeCode });
       expect(res.status).toBe(200);
@@ -422,7 +422,7 @@ describe('member-profiles 模块', () => {
 
     it('PATCH member 不存在 → MEMBER_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/members/cl0000000000000000000000/profile')
+        .patch('/api/admin/v1/members/cl0000000000000000000000/profile')
         .set('Authorization', adminAuth)
         .send({ realName: 'X' });
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);

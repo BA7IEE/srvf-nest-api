@@ -91,20 +91,20 @@ describe('organizations 模块', () => {
 
   describe('权限边界', () => {
     it('未登录 GET → 401', async () => {
-      const res = await request(httpServer(app)).get('/api/v2/organizations');
+      const res = await request(httpServer(app)).get('/api/admin/v1/organizations');
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('USER GET → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/organizations')
+        .get('/api/admin/v1/organizations')
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('USER POST → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/organizations')
+        .post('/api/admin/v1/organizations')
         .set('Authorization', userAuth)
         .send({ name: 'x', nodeTypeCode: activeNodeTypeCode });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -113,7 +113,7 @@ describe('organizations 模块', () => {
     // P0-F PR-2A:ADMIN 默认无 ops-admin → 30100(v1 ADMIN 全权变收紧,显式反向断言)
     it('ADMIN 默认无 ops-admin → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/organizations')
+        .get('/api/admin/v1/organizations')
         .set('Authorization', adminDefaultAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
@@ -125,7 +125,7 @@ describe('organizations 模块', () => {
         data: { name: 'pb-adm-del', nodeTypeCode: activeNodeTypeCode },
       });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/organizations/${root.id}`)
+        .delete(`/api/admin/v1/organizations/${root.id}`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.LAST_ROOT_ORGANIZATION_PROTECTED);
       // 清理:跳过 LAST_ROOT_PROTECTED 走直接 DB 软删
@@ -144,7 +144,7 @@ describe('organizations 模块', () => {
 
     it('SUPER_ADMIN 创建根节点 → 201', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/organizations')
+        .post('/api/admin/v1/organizations')
         .set('Authorization', superAdminAuth)
         .send({ name: 'Demo Root', nodeTypeCode: activeNodeTypeCode });
       expect(res.status).toBe(201);
@@ -159,7 +159,7 @@ describe('organizations 模块', () => {
 
     it('创建第二个根 → ORGANIZATION_ROOT_ALREADY_EXISTS', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/organizations')
+        .post('/api/admin/v1/organizations')
         .set('Authorization', superAdminAuth)
         .send({ name: 'Another Root', nodeTypeCode: activeNodeTypeCode });
       expectBizError(res, BizCode.ORGANIZATION_ROOT_ALREADY_EXISTS);
@@ -167,7 +167,7 @@ describe('organizations 模块', () => {
 
     it('ADMIN 创建子节点 → 201', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/organizations')
+        .post('/api/admin/v1/organizations')
         .set('Authorization', adminAuth)
         .send({
           name: 'Child 1',
@@ -183,7 +183,7 @@ describe('organizations 模块', () => {
 
     it('parent 不存在 → ORGANIZATION_PARENT_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/organizations')
+        .post('/api/admin/v1/organizations')
         .set('Authorization', superAdminAuth)
         .send({
           name: 'orphan',
@@ -195,7 +195,7 @@ describe('organizations 模块', () => {
 
     it('nodeTypeCode 不存在 → ORGANIZATION_NODE_TYPE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/organizations')
+        .post('/api/admin/v1/organizations')
         .set('Authorization', superAdminAuth)
         .send({
           name: 'invalid',
@@ -207,7 +207,7 @@ describe('organizations 模块', () => {
 
     it('nodeTypeCode 在错误 type 下 → ORGANIZATION_NODE_TYPE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/organizations')
+        .post('/api/admin/v1/organizations')
         .set('Authorization', superAdminAuth)
         .send({
           name: 'wrong type',
@@ -219,7 +219,7 @@ describe('organizations 模块', () => {
 
     it('nodeTypeCode 是 INACTIVE → ORGANIZATION_NODE_TYPE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/organizations')
+        .post('/api/admin/v1/organizations')
         .set('Authorization', superAdminAuth)
         .send({
           name: 'inactive code',
@@ -231,7 +231,7 @@ describe('organizations 模块', () => {
 
     it('GET 列表分页', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/organizations?page=1&pageSize=10')
+        .get('/api/admin/v1/organizations?page=1&pageSize=10')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveProperty('items');
@@ -241,7 +241,7 @@ describe('organizations 模块', () => {
 
     it('GET 列表 parentId=null 过滤(根节点)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/organizations?parentId=null')
+        .get('/api/admin/v1/organizations?parentId=null')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       for (const item of res.body.data.items) {
@@ -251,7 +251,7 @@ describe('organizations 模块', () => {
 
     it('GET 列表 parentId=<id> 过滤(子节点)', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/organizations?parentId=${rootId}`)
+        .get(`/api/admin/v1/organizations?parentId=${rootId}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       for (const item of res.body.data.items) {
@@ -261,7 +261,7 @@ describe('organizations 模块', () => {
 
     it('GET tree 嵌套结构', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/organizations/tree')
+        .get('/api/admin/v1/organizations/tree')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.data)).toBe(true);
@@ -275,7 +275,7 @@ describe('organizations 模块', () => {
 
     it('GET 详情 → 200', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/organizations/${rootId}`)
+        .get(`/api/admin/v1/organizations/${rootId}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.id).toBe(rootId);
@@ -283,14 +283,14 @@ describe('organizations 模块', () => {
 
     it('GET 详情 NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/organizations/cl0000000000000000000000')
+        .get('/api/admin/v1/organizations/cl0000000000000000000000')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ORGANIZATION_NOT_FOUND);
     });
 
     it('PATCH 更新 name / sortOrder', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/organizations/${childId}`)
+        .patch(`/api/admin/v1/organizations/${childId}`)
         .set('Authorization', superAdminAuth)
         .send({ name: 'Renamed Child', sortOrder: 99 });
       expect(res.status).toBe(200);
@@ -300,7 +300,7 @@ describe('organizations 模块', () => {
 
     it('PATCH 更新 nodeTypeCode 校验失败 → ORGANIZATION_NODE_TYPE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/organizations/${childId}`)
+        .patch(`/api/admin/v1/organizations/${childId}`)
         .set('Authorization', superAdminAuth)
         .send({ nodeTypeCode: 'no-such-code' });
       expectBizError(res, BizCode.ORGANIZATION_NODE_TYPE_INVALID);
@@ -308,7 +308,7 @@ describe('organizations 模块', () => {
 
     it('PATCH 拒绝 parentId(forbidNonWhitelisted)', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/organizations/${childId}`)
+        .patch(`/api/admin/v1/organizations/${childId}`)
         .set('Authorization', superAdminAuth)
         .send({ parentId: 'cl0000000000000000000000' });
       expect(res.status).toBe(400);
@@ -316,7 +316,7 @@ describe('organizations 模块', () => {
 
     it('PATCH 拒绝 status(forbidNonWhitelisted)', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/organizations/${childId}`)
+        .patch(`/api/admin/v1/organizations/${childId}`)
         .set('Authorization', superAdminAuth)
         .send({ status: 'INACTIVE' });
       expect(res.status).toBe(400);
@@ -324,7 +324,7 @@ describe('organizations 模块', () => {
 
     it('PATCH /:id/status 启停子节点', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/organizations/${childId}/status`)
+        .patch(`/api/admin/v1/organizations/${childId}/status`)
         .set('Authorization', superAdminAuth)
         .send({ status: OrganizationStatus.INACTIVE });
       expect(res.status).toBe(200);
@@ -333,7 +333,7 @@ describe('organizations 模块', () => {
 
     it('PATCH /:id/status INACTIVE 唯一活跃根 → LAST_ROOT_ORGANIZATION_PROTECTED', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/organizations/${rootId}/status`)
+        .patch(`/api/admin/v1/organizations/${rootId}/status`)
         .set('Authorization', superAdminAuth)
         .send({ status: OrganizationStatus.INACTIVE });
       expectBizError(res, BizCode.LAST_ROOT_ORGANIZATION_PROTECTED);
@@ -341,14 +341,14 @@ describe('organizations 模块', () => {
 
     it('DELETE 有子节点 → ORGANIZATION_HAS_CHILDREN', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/organizations/${rootId}`)
+        .delete(`/api/admin/v1/organizations/${rootId}`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.ORGANIZATION_HAS_CHILDREN);
     });
 
     it('DELETE 子节点 → 200(无子节点 / 无成员归属)', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/organizations/${childId}`)
+        .delete(`/api/admin/v1/organizations/${childId}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       const after = await prisma.organization.findUnique({ where: { id: childId } });
@@ -358,7 +358,7 @@ describe('organizations 模块', () => {
 
     it('DELETE 唯一活跃根(无子节点)→ LAST_ROOT_ORGANIZATION_PROTECTED', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/organizations/${rootId}`)
+        .delete(`/api/admin/v1/organizations/${rootId}`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.LAST_ROOT_ORGANIZATION_PROTECTED);
     });
@@ -387,7 +387,7 @@ describe('organizations 模块', () => {
       });
 
       const res = await request(httpServer(app))
-        .post('/api/v2/organizations')
+        .post('/api/admin/v1/organizations')
         .set('Authorization', superAdminAuth)
         .send({ name: 'Replacement', nodeTypeCode: activeNodeTypeCode });
       expectBizError(res, BizCode.ORGANIZATION_ROOT_ALREADY_EXISTS);
@@ -401,7 +401,7 @@ describe('organizations 模块', () => {
 
     it('软删旧根后 → 允许创建新根(deletedAt 非 null 不占位)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/organizations')
+        .post('/api/admin/v1/organizations')
         .set('Authorization', superAdminAuth)
         .send({ name: 'New Root After Soft-Delete', nodeTypeCode: activeNodeTypeCode });
       expect(res.status).toBe(201);

@@ -125,13 +125,13 @@ describe('activities 模块', () => {
 
   describe('权限边界', () => {
     it('未登录 GET list → 401', async () => {
-      const res = await request(httpServer(app)).get('/api/v2/activities');
+      const res = await request(httpServer(app)).get('/api/admin/v1/activities');
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('USER POST → 403', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', userAuth)
         .send(baseCreatePayload());
       expectBizError(res, BizCode.FORBIDDEN);
@@ -139,7 +139,7 @@ describe('activities 模块', () => {
 
     it('USER PATCH → 403', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/activities/cl000000000000000000xxxx')
+        .patch('/api/admin/v1/activities/cl000000000000000000xxxx')
         .set('Authorization', userAuth)
         .send({ title: 'X' });
       expectBizError(res, BizCode.FORBIDDEN);
@@ -147,21 +147,21 @@ describe('activities 模块', () => {
 
     it('USER DELETE → 403', async () => {
       const res = await request(httpServer(app))
-        .delete('/api/v2/activities/cl000000000000000000xxxx')
+        .delete('/api/admin/v1/activities/cl000000000000000000xxxx')
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
 
     it('USER PATCH /publish → 403', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/activities/cl000000000000000000xxxx/publish')
+        .patch('/api/admin/v1/activities/cl000000000000000000xxxx/publish')
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
 
     it('USER PATCH /cancel → 403', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/activities/cl000000000000000000xxxx/cancel')
+        .patch('/api/admin/v1/activities/cl000000000000000000xxxx/cancel')
         .set('Authorization', userAuth)
         .send({});
       expectBizError(res, BizCode.FORBIDDEN);
@@ -169,7 +169,7 @@ describe('activities 模块', () => {
 
     it('USER GET list → 200(允许,Q-A7 同路由 + service Role 过滤)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/activities')
+        .get('/api/admin/v1/activities')
         .set('Authorization', userAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -181,7 +181,7 @@ describe('activities 模块', () => {
   describe('POST 主路径', () => {
     it('ADMIN 创建仅必填 → 200,statusCode=draft / publishedBy=null / cancelledBy=null', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload());
       expect(res.status).toBe(201);
@@ -198,7 +198,7 @@ describe('activities 模块', () => {
 
     it('SUPER_ADMIN 完整字段 + 经纬度 → 200,Decimal 序列化为 string', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', superAdminAuth)
         .send(
           baseCreatePayload({
@@ -230,7 +230,7 @@ describe('activities 模块', () => {
 
     it('根节点 organizationId → ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ organizationId: rootOrgId }));
       expectBizError(res, BizCode.ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN);
@@ -238,7 +238,7 @@ describe('activities 模块', () => {
 
     it('organizationId 不存在 → ORGANIZATION_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ organizationId: 'cl0000000000000000000000' }));
       expectBizError(res, BizCode.ORGANIZATION_NOT_FOUND);
@@ -246,7 +246,7 @@ describe('activities 模块', () => {
 
     it('activityTypeCode 不存在 → ACTIVITY_TYPE_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ activityTypeCode: 'no-such-type' }));
       expectBizError(res, BizCode.ACTIVITY_TYPE_CODE_INVALID);
@@ -254,7 +254,7 @@ describe('activities 模块', () => {
 
     it('activityTypeCode INACTIVE → ACTIVITY_TYPE_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ activityTypeCode: inactiveActivityTypeCode }));
       expectBizError(res, BizCode.ACTIVITY_TYPE_CODE_INVALID);
@@ -262,7 +262,7 @@ describe('activities 模块', () => {
 
     it('genderRequirementCode 不存在 → ACTIVITY_GENDER_REQUIREMENT_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ genderRequirementCode: 'no-such-gr' }));
       expectBizError(res, BizCode.ACTIVITY_GENDER_REQUIREMENT_CODE_INVALID);
@@ -270,7 +270,7 @@ describe('activities 模块', () => {
 
     it('genderRequirementCode INACTIVE → ACTIVITY_GENDER_REQUIREMENT_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ genderRequirementCode: inactiveGenderRequirementCode }));
       expectBizError(res, BizCode.ACTIVITY_GENDER_REQUIREMENT_CODE_INVALID);
@@ -278,7 +278,7 @@ describe('activities 模块', () => {
 
     it('startAt >= endAt → ACTIVITY_START_END_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(
           baseCreatePayload({
@@ -291,7 +291,7 @@ describe('activities 模块', () => {
 
     it('startAt > endAt → ACTIVITY_START_END_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(
           baseCreatePayload({
@@ -306,7 +306,7 @@ describe('activities 模块', () => {
       const payload = baseCreatePayload();
       delete payload.title;
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(payload);
       expect(res.status).toBe(400);
@@ -316,7 +316,7 @@ describe('activities 模块', () => {
       const payload = baseCreatePayload();
       delete payload.organizationId;
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(payload);
       expect(res.status).toBe(400);
@@ -324,7 +324,7 @@ describe('activities 模块', () => {
 
     it('non-whitelisted statusCode → 400', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ statusCode: 'published' }));
       expect(res.status).toBe(400);
@@ -332,7 +332,7 @@ describe('activities 模块', () => {
 
     it('non-whitelisted publishedBy → 400', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ publishedBy: 'cl0000000000000000000000' }));
       expect(res.status).toBe(400);
@@ -340,7 +340,7 @@ describe('activities 模块', () => {
 
     it('non-whitelisted cancelledBy → 400', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ cancelledBy: 'cl0000000000000000000000' }));
       expect(res.status).toBe(400);
@@ -348,7 +348,7 @@ describe('activities 模块', () => {
 
     it('non-whitelisted cancelReason(应通过 /cancel 接口写入)→ 400', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ cancelReason: '禁止透传' }));
       expect(res.status).toBe(400);
@@ -356,7 +356,7 @@ describe('activities 模块', () => {
 
     it('capacity < 1 → 400', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ capacity: 0 }));
       expect(res.status).toBe(400);
@@ -364,7 +364,7 @@ describe('activities 模块', () => {
 
     it('locationLongitude 精度 > 7 位 → 400', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ locationLongitude: 114.12345678 }));
       expect(res.status).toBe(400);
@@ -372,7 +372,7 @@ describe('activities 模块', () => {
 
     it('Q-A13 extras 不在 Activity DTO 中,传入应被白名单拒绝 → 400', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ extras: { foo: 1 } }));
       expect(res.status).toBe(400);
@@ -380,7 +380,7 @@ describe('activities 模块', () => {
 
     it('Q-A13 registrationSchema 任意对象通过(@IsObject)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ registrationSchema: { random: 'shape', arr: [1, 2] } }));
       expect(res.status).toBe(201);
@@ -389,7 +389,7 @@ describe('activities 模块', () => {
 
     it('Q-A13 registrationSchema 非对象(string)→ 400', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ registrationSchema: 'plain string' }));
       expect(res.status).toBe(400);
@@ -406,34 +406,34 @@ describe('activities 模块', () => {
     beforeAll(async () => {
       // 造一组状态:1 draft / 1 published / 1 cancelled
       const draft = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ title: 'LIST-DRAFT' }));
       draftId = draft.body.data.id;
 
       const pubCreate = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ title: 'LIST-PUB' }));
       publishedId = pubCreate.body.data.id;
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${publishedId}/publish`)
+        .patch(`/api/admin/v1/activities/${publishedId}/publish`)
         .set('Authorization', adminAuth);
 
       const cancelCreate = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ title: 'LIST-CANCEL' }));
       cancelledId = cancelCreate.body.data.id;
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${cancelledId}/cancel`)
+        .patch(`/api/admin/v1/activities/${cancelledId}/cancel`)
         .set('Authorization', adminAuth)
         .send({ cancelReason: '用于列表测试' });
     });
 
     it('ADMIN 列表见所有状态(含 draft / cancelled)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/activities')
+        .get('/api/admin/v1/activities')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       const ids: string[] = (res.body.data.items as Array<{ id: string }>).map((i) => i.id);
@@ -442,7 +442,7 @@ describe('activities 模块', () => {
 
     it('USER 列表只见 published / completed(Q-A7)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/activities')
+        .get('/api/admin/v1/activities')
         .set('Authorization', userAuth);
       expect(res.status).toBe(200);
       const statuses = (res.body.data.items as Array<{ statusCode: string }>).map(
@@ -455,7 +455,7 @@ describe('activities 模块', () => {
 
     it('USER 传 statusCode=draft 仍被 service 强制过滤(只见 published)', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/activities')
+        .get('/api/admin/v1/activities')
         .query({ statusCode: 'draft' })
         .set('Authorization', userAuth);
       expect(res.status).toBe(200);
@@ -469,7 +469,7 @@ describe('activities 模块', () => {
 
     it('分页参数生效', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/activities')
+        .get('/api/admin/v1/activities')
         .query({ page: 1, pageSize: 2 })
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
@@ -488,24 +488,24 @@ describe('activities 模块', () => {
 
     beforeAll(async () => {
       const d = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ title: 'DETAIL-DRAFT' }));
       draftId = d.body.data.id;
 
       const p = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ title: 'DETAIL-PUB' }));
       publishedId = p.body.data.id;
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${publishedId}/publish`)
+        .patch(`/api/admin/v1/activities/${publishedId}/publish`)
         .set('Authorization', adminAuth);
     });
 
     it('ADMIN 详情:draft 可见', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${draftId}`)
+        .get(`/api/admin/v1/activities/${draftId}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.statusCode).toBe('draft');
@@ -513,14 +513,14 @@ describe('activities 模块', () => {
 
     it('USER 详情:draft → 404(避免存在性泄漏)', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${draftId}`)
+        .get(`/api/admin/v1/activities/${draftId}`)
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.ACTIVITY_NOT_FOUND);
     });
 
     it('USER 详情:published 可见', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${publishedId}`)
+        .get(`/api/admin/v1/activities/${publishedId}`)
         .set('Authorization', userAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.statusCode).toBe('published');
@@ -528,7 +528,7 @@ describe('activities 模块', () => {
 
     it('不存在 id → ACTIVITY_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/activities/cl0000000000000000000000')
+        .get('/api/admin/v1/activities/cl0000000000000000000000')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ACTIVITY_NOT_FOUND);
     });
@@ -541,7 +541,7 @@ describe('activities 模块', () => {
 
     beforeAll(async () => {
       const r = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ title: 'UPDATE-TARGET' }));
       id = r.body.data.id;
@@ -549,7 +549,7 @@ describe('activities 模块', () => {
 
     it('部分更新 title / location → 200', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${id}`)
+        .patch(`/api/admin/v1/activities/${id}`)
         .set('Authorization', adminAuth)
         .send({ title: '新标题', location: '新地点' });
       expect(res.status).toBe(200);
@@ -559,7 +559,7 @@ describe('activities 模块', () => {
 
     it('更新 startAt 但 endAt 不变 → 起止合并复校(失败 → 20015)', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${id}`)
+        .patch(`/api/admin/v1/activities/${id}`)
         .set('Authorization', adminAuth)
         .send({ startAt: '2026-06-01T15:00:00.000Z' });
       expectBizError(res, BizCode.ACTIVITY_START_END_INVALID);
@@ -567,7 +567,7 @@ describe('activities 模块', () => {
 
     it('non-whitelisted statusCode → 400', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${id}`)
+        .patch(`/api/admin/v1/activities/${id}`)
         .set('Authorization', adminAuth)
         .send({ statusCode: 'published' });
       expect(res.status).toBe(400);
@@ -575,7 +575,7 @@ describe('activities 模块', () => {
 
     it('non-whitelisted publishedAt → 400', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${id}`)
+        .patch(`/api/admin/v1/activities/${id}`)
         .set('Authorization', adminAuth)
         .send({ publishedAt: new Date().toISOString() });
       expect(res.status).toBe(400);
@@ -583,7 +583,7 @@ describe('activities 模块', () => {
 
     it('non-whitelisted cancelReason(应走 cancel 接口)→ 400', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${id}`)
+        .patch(`/api/admin/v1/activities/${id}`)
         .set('Authorization', adminAuth)
         .send({ cancelReason: '禁止透传' });
       expect(res.status).toBe(400);
@@ -591,7 +591,7 @@ describe('activities 模块', () => {
 
     it('activityTypeCode invalid → ACTIVITY_TYPE_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${id}`)
+        .patch(`/api/admin/v1/activities/${id}`)
         .set('Authorization', adminAuth)
         .send({ activityTypeCode: 'no-such' });
       expectBizError(res, BizCode.ACTIVITY_TYPE_CODE_INVALID);
@@ -599,7 +599,7 @@ describe('activities 模块', () => {
 
     it('改 organizationId 为根节点 → ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${id}`)
+        .patch(`/api/admin/v1/activities/${id}`)
         .set('Authorization', adminAuth)
         .send({ organizationId: rootOrgId });
       expectBizError(res, BizCode.ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN);
@@ -607,7 +607,7 @@ describe('activities 模块', () => {
 
     it('不存在 id → ACTIVITY_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/activities/cl0000000000000000000000')
+        .patch('/api/admin/v1/activities/cl0000000000000000000000')
         .set('Authorization', adminAuth)
         .send({ title: 'X' });
       expectBizError(res, BizCode.ACTIVITY_NOT_FOUND);
@@ -623,34 +623,34 @@ describe('activities 模块', () => {
 
     beforeAll(async () => {
       const d = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ title: 'PUB-DRAFT' }));
       draftId = d.body.data.id;
 
       const p = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ title: 'PUB-ALREADY' }));
       alreadyPublishedId = p.body.data.id;
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${alreadyPublishedId}/publish`)
+        .patch(`/api/admin/v1/activities/${alreadyPublishedId}/publish`)
         .set('Authorization', adminAuth);
 
       const c = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ title: 'PUB-CANCEL' }));
       cancelledId = c.body.data.id;
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${cancelledId}/cancel`)
+        .patch(`/api/admin/v1/activities/${cancelledId}/cancel`)
         .set('Authorization', adminAuth)
         .send({});
     });
 
     it('draft → published 成功;写 publishedBy/At', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${draftId}/publish`)
+        .patch(`/api/admin/v1/activities/${draftId}/publish`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.statusCode).toBe('published');
@@ -660,21 +660,21 @@ describe('activities 模块', () => {
 
     it('再次 publish 已 published → ACTIVITY_STATUS_INVALID', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${alreadyPublishedId}/publish`)
+        .patch(`/api/admin/v1/activities/${alreadyPublishedId}/publish`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ACTIVITY_STATUS_INVALID);
     });
 
     it('publish cancelled → ACTIVITY_STATUS_INVALID(Q-A12 / 状态机)', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${cancelledId}/publish`)
+        .patch(`/api/admin/v1/activities/${cancelledId}/publish`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ACTIVITY_STATUS_INVALID);
     });
 
     it('不存在 id → ACTIVITY_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/activities/cl0000000000000000000000/publish')
+        .patch('/api/admin/v1/activities/cl0000000000000000000000/publish')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ACTIVITY_NOT_FOUND);
     });
@@ -689,34 +689,34 @@ describe('activities 模块', () => {
 
     beforeAll(async () => {
       const d = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ title: 'CANCEL-DRAFT' }));
       draftId = d.body.data.id;
 
       const p = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ title: 'CANCEL-PUB' }));
       publishedId = p.body.data.id;
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${publishedId}/publish`)
+        .patch(`/api/admin/v1/activities/${publishedId}/publish`)
         .set('Authorization', adminAuth);
 
       const c = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ title: 'CANCEL-CANCEL' }));
       cancelledId = c.body.data.id;
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${cancelledId}/cancel`)
+        .patch(`/api/admin/v1/activities/${cancelledId}/cancel`)
         .set('Authorization', adminAuth)
         .send({});
     });
 
     it('draft → cancelled 成功;cancelReason 写入', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${draftId}/cancel`)
+        .patch(`/api/admin/v1/activities/${draftId}/cancel`)
         .set('Authorization', adminAuth)
         .send({ cancelReason: '雨天延期' });
       expect(res.status).toBe(200);
@@ -728,7 +728,7 @@ describe('activities 模块', () => {
 
     it('published → cancelled 成功', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${publishedId}/cancel`)
+        .patch(`/api/admin/v1/activities/${publishedId}/cancel`)
         .set('Authorization', adminAuth)
         .send({});
       expect(res.status).toBe(200);
@@ -738,7 +738,7 @@ describe('activities 模块', () => {
 
     it('cancelled → cancelled 拒绝(Q-A12 防重复)', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${cancelledId}/cancel`)
+        .patch(`/api/admin/v1/activities/${cancelledId}/cancel`)
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res, BizCode.ACTIVITY_STATUS_INVALID);
@@ -752,19 +752,19 @@ describe('activities 模块', () => {
 
     beforeAll(async () => {
       const c = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ title: 'CANCEL-LOCK' }));
       cancelledId = c.body.data.id;
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${cancelledId}/cancel`)
+        .patch(`/api/admin/v1/activities/${cancelledId}/cancel`)
         .set('Authorization', adminAuth)
         .send({});
     });
 
     it('PATCH update cancelled → ACTIVITY_STATUS_INVALID', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${cancelledId}`)
+        .patch(`/api/admin/v1/activities/${cancelledId}`)
         .set('Authorization', adminAuth)
         .send({ title: '试图修改' });
       expectBizError(res, BizCode.ACTIVITY_STATUS_INVALID);
@@ -772,14 +772,14 @@ describe('activities 模块', () => {
 
     it('PATCH publish cancelled → ACTIVITY_STATUS_INVALID', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${cancelledId}/publish`)
+        .patch(`/api/admin/v1/activities/${cancelledId}/publish`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ACTIVITY_STATUS_INVALID);
     });
 
     it('DELETE cancelled → 200(D3:删除 ≠ 取消,软删允许)', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/activities/${cancelledId}`)
+        .delete(`/api/admin/v1/activities/${cancelledId}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
     });
@@ -792,7 +792,7 @@ describe('activities 模块', () => {
 
     beforeAll(async () => {
       const r = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ title: 'DEL-TARGET' }));
       id = r.body.data.id;
@@ -800,7 +800,7 @@ describe('activities 模块', () => {
 
     it('软删 → 200 + DB.deletedAt 非空 + 列表过滤 + 详情 NOT_FOUND', async () => {
       const del = await request(httpServer(app))
-        .delete(`/api/v2/activities/${id}`)
+        .delete(`/api/admin/v1/activities/${id}`)
         .set('Authorization', adminAuth);
       expect(del.status).toBe(200);
 
@@ -808,12 +808,12 @@ describe('activities 模块', () => {
       expect(dbRow?.deletedAt).not.toBeNull();
 
       const detail = await request(httpServer(app))
-        .get(`/api/v2/activities/${id}`)
+        .get(`/api/admin/v1/activities/${id}`)
         .set('Authorization', adminAuth);
       expectBizError(detail, BizCode.ACTIVITY_NOT_FOUND);
 
       const list = await request(httpServer(app))
-        .get('/api/v2/activities')
+        .get('/api/admin/v1/activities')
         .set('Authorization', adminAuth);
       const ids: string[] = (list.body.data.items as Array<{ id: string }>).map((i) => i.id);
       expect(ids).not.toContain(id);
@@ -821,7 +821,7 @@ describe('activities 模块', () => {
 
     it('再次 DELETE 已软删 → ACTIVITY_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/activities/${id}`)
+        .delete(`/api/admin/v1/activities/${id}`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ACTIVITY_NOT_FOUND);
     });
@@ -832,7 +832,7 @@ describe('activities 模块', () => {
   describe('IdParamDto 校验', () => {
     it('短 id(< 8 字符)→ 400', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/activities/short')
+        .get('/api/admin/v1/activities/short')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(400);
     });

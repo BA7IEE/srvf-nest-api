@@ -14,7 +14,7 @@ import { createTestApp } from '../setup/test-app';
 // 14.7.4 password-reset spec(9 用例 + P0-F PR-3B D2=B 验证)
 // 系统化覆盖管理员重置密码的完整流程 + DTO 校验 + 反向断言。
 //
-// P0-F PR-3B(2026-05-18):PUT /api/users/:id/password 走 rbac.can('user.reset.password')。
+// P0-F PR-3B(2026-05-18):PUT /api/admin/v1/users/:id/password 走 rbac.can('user.reset.password')。
 // D2=B 拍板:ops-admin **绑定** user.reset.password(运营高频协助找回);
 // service 内 assertCanManageUser 仍生效(ADMIN+ops-admin 仅能 reset USER)。
 // 沿评审稿 §5.2 + §9.3。
@@ -28,7 +28,7 @@ const WEAK_PASSWORDS: Array<[string, string]> = [
   ['纯数字(无字母)', '12345678'],
 ];
 
-describe('管理员重置密码 PUT /api/users/:id/password', () => {
+describe('管理员重置密码 PUT /api/admin/v1/users/:id/password', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let superAuth: string;
@@ -54,7 +54,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
       const before = await prisma.user.findUnique({ where: { id: target.id } });
 
       const res = await request(httpServer(app))
-        .put(`/api/users/${target.id}/password`)
+        .put(`/api/admin/v1/users/${target.id}/password`)
         .set('Authorization', superAuth)
         .send({ newPassword: NEW_PASSWORD });
 
@@ -70,7 +70,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
 
       // 重置
       await request(httpServer(app))
-        .put(`/api/users/${target.id}/password`)
+        .put(`/api/admin/v1/users/${target.id}/password`)
         .set('Authorization', superAuth)
         .send({ newPassword: NEW_PASSWORD });
 
@@ -86,7 +86,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
       const target = await createTestUser(app, { username: 'pwnewok1' });
 
       await request(httpServer(app))
-        .put(`/api/users/${target.id}/password`)
+        .put(`/api/admin/v1/users/${target.id}/password`)
         .set('Authorization', superAuth)
         .send({ newPassword: NEW_PASSWORD });
 
@@ -109,7 +109,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
 
     it('body 含 oldPassword(本设计不接受) → BAD_REQUEST,message 含 oldPassword', async () => {
       const res = await request(httpServer(app))
-        .put(`/api/users/${targetId}/password`)
+        .put(`/api/admin/v1/users/${targetId}/password`)
         .set('Authorization', superAuth)
         .send({ oldPassword: TEST_PASSWORD, newPassword: NEW_PASSWORD });
 
@@ -119,7 +119,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
 
     it('缺 newPassword → BAD_REQUEST,message 含 newPassword', async () => {
       const res = await request(httpServer(app))
-        .put(`/api/users/${targetId}/password`)
+        .put(`/api/admin/v1/users/${targetId}/password`)
         .set('Authorization', superAuth)
         .send({});
 
@@ -145,7 +145,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
       'newPassword %s → BAD_REQUEST,message 含 password 关键词(大小写不敏感)',
       async (_label, weak) => {
         const res = await request(httpServer(app))
-          .put(`/api/users/${targetId}/password`)
+          .put(`/api/admin/v1/users/${targetId}/password`)
           .set('Authorization', superAuth)
           .send({ newPassword: weak });
 
@@ -171,7 +171,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
 
     // 管理员重置 target 密码
     const reset = await request(httpServer(app))
-      .put(`/api/users/${target.id}/password`)
+      .put(`/api/admin/v1/users/${target.id}/password`)
       .set('Authorization', superAuth)
       .send({ newPassword: NEW_PASSWORD });
     expect(reset.status).toBe(200);
@@ -198,7 +198,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
       const { authHeader: plainAuth } = await loginAs(app, 'pwrbacplain1');
 
       const res = await request(httpServer(app))
-        .put(`/api/users/${target.id}/password`)
+        .put(`/api/admin/v1/users/${target.id}/password`)
         .set('Authorization', plainAuth)
         .send({ newPassword: NEW_PASSWORD });
 
@@ -212,7 +212,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
       const { authHeader: adminDefaultAuth } = await loginAs(app, 'pwrbacadmindef1');
 
       const res = await request(httpServer(app))
-        .put(`/api/users/${target.id}/password`)
+        .put(`/api/admin/v1/users/${target.id}/password`)
         .set('Authorization', adminDefaultAuth)
         .send({ newPassword: NEW_PASSWORD });
 
@@ -226,7 +226,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
       const { authHeader: adminOpsAuth } = await loginAs(app, 'pwrbacadmops1');
 
       const res = await request(httpServer(app))
-        .put(`/api/users/${target.id}/password`)
+        .put(`/api/admin/v1/users/${target.id}/password`)
         .set('Authorization', adminOpsAuth)
         .send({ newPassword: NEW_PASSWORD });
 
@@ -244,7 +244,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
       const { authHeader: adminOpsAuth } = await loginAs(app, 'pwrbacadmops2');
 
       const res = await request(httpServer(app))
-        .put(`/api/users/${target.id}/password`)
+        .put(`/api/admin/v1/users/${target.id}/password`)
         .set('Authorization', adminOpsAuth)
         .send({ newPassword: NEW_PASSWORD });
 
@@ -261,7 +261,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
       await loginAs(app, 'pwrefresh1'); // target login,产生 refresh token
 
       await request(httpServer(app))
-        .put(`/api/users/${target.id}/password`)
+        .put(`/api/admin/v1/users/${target.id}/password`)
         .set('Authorization', superAuth)
         .send({ newPassword: NEW_PASSWORD });
 
@@ -281,7 +281,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
       const refreshRaw = lb.body.data.refreshToken;
 
       await request(httpServer(app))
-        .put(`/api/users/${target.id}/password`)
+        .put(`/api/admin/v1/users/${target.id}/password`)
         .set('Authorization', superAuth)
         .send({ newPassword: NEW_PASSWORD });
 
@@ -297,7 +297,7 @@ describe('管理员重置密码 PUT /api/users/:id/password', () => {
       await loginAs(app, 'pwrefresh3');
 
       await request(httpServer(app))
-        .put(`/api/users/${target.id}/password`)
+        .put(`/api/admin/v1/users/${target.id}/password`)
         .set('Authorization', superAuth)
         .send({ newPassword: NEW_PASSWORD });
 

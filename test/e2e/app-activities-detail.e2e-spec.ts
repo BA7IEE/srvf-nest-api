@@ -21,7 +21,7 @@ import { createTestApp } from '../setup/test-app';
 // draft / cancelled / completed / 软删 / 不存在 id 统一 → 404 ACTIVITY_NOT_FOUND
 // (沿 D-P2-4-3 v0.1 锁定;避免存在性侧信道)。
 //
-// 旧 /api/v2/activities/:id 行为**逐字不变**(沿 §11.4 + 风险表 13.12)。
+// 旧 /api/admin/v1/activities/:id 行为**逐字不变**(沿 §11.4 + 风险表 13.12)。
 
 interface ResBody {
   code: number;
@@ -411,16 +411,16 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
   });
 
   // =====================================================
-  // 8. 旧 /api/v2/activities/:id 行为不变(沿 §11.4 + 风险表 13.12)
+  // 8. 旧 /api/admin/v1/activities/:id 行为不变(沿 §11.4 + 风险表 13.12)
   // =====================================================
 
-  describe('legacy /api/v2/activities/:id 行为不变', () => {
-    it('ADMIN GET /api/v2/activities/:id draft 仍 200 + 看到全字段(含 organizationId)', async () => {
+  describe('legacy /api/admin/v1/activities/:id 行为不变', () => {
+    it('ADMIN GET /api/admin/v1/activities/:id draft 仍 200 + 看到全字段(含 organizationId)', async () => {
       await createTestUser(app, { username: 'p24b_legacy_admin', role: Role.ADMIN });
       const { authHeader } = await loginAs(app, 'p24b_legacy_admin');
       const draft = await createActivity('draft', 'legacy-admin-draft');
 
-      const res = await get(`/api/v2/activities/${draft.id}`, authHeader);
+      const res = await get(`/api/admin/v1/activities/${draft.id}`, authHeader);
       expect(res.status).toBe(200);
       const data = (res.body as ResBody).data;
       // 旧 admin 视角看到 organizationId(App 视角永不返,沿 §5.2)
@@ -428,22 +428,22 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
       expect(data.statusCode).toBe('draft');
     });
 
-    it('USER GET /api/v2/activities/:id draft 仍 404(沿 v2 Q-A7)', async () => {
+    it('USER GET /api/admin/v1/activities/:id draft 仍 404(沿 v2 Q-A7)', async () => {
       await createTestUser(app, { username: 'p24b_legacy_user', role: Role.USER });
       const { authHeader } = await loginAs(app, 'p24b_legacy_user');
       const draft = await createActivity('draft', 'legacy-user-draft');
       expectBizError(
-        await get(`/api/v2/activities/${draft.id}`, authHeader),
+        await get(`/api/admin/v1/activities/${draft.id}`, authHeader),
         BizCode.ACTIVITY_NOT_FOUND,
       );
     });
 
-    it('ADMIN GET /api/v2/activities/:id cancelled 仍 200 + 看到 cancelReason', async () => {
+    it('ADMIN GET /api/admin/v1/activities/:id cancelled 仍 200 + 看到 cancelReason', async () => {
       await createTestUser(app, { username: 'p24b_legacy_admin_cx', role: Role.ADMIN });
       const { authHeader } = await loginAs(app, 'p24b_legacy_admin_cx');
       const cancelled = await createActivity('cancelled', 'legacy-admin-cancelled');
 
-      const res = await get(`/api/v2/activities/${cancelled.id}`, authHeader);
+      const res = await get(`/api/admin/v1/activities/${cancelled.id}`, authHeader);
       expect(res.status).toBe(200);
       const data = (res.body as ResBody).data;
       expect(data.cancelReason).toBe('test cancel');

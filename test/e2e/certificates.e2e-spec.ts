@@ -120,20 +120,22 @@ describe('certificates 模块', () => {
 
   describe('权限边界', () => {
     it('未登录 GET list → 401', async () => {
-      const res = await request(httpServer(app)).get(`/api/v2/members/${memberA}/certificates`);
+      const res = await request(httpServer(app)).get(
+        `/api/admin/v1/members/${memberA}/certificates`,
+      );
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('USER GET list → 403', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberA}/certificates`)
+        .get(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
 
     it('USER POST → 403', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', userAuth)
         .send(baseCreatePayload());
       expectBizError(res, BizCode.FORBIDDEN);
@@ -141,14 +143,14 @@ describe('certificates 模块', () => {
 
     it('USER GET detail → 403', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberA}/certificates/cl000000000000000000xxxx`)
+        .get(`/api/admin/v1/members/${memberA}/certificates/cl000000000000000000xxxx`)
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
 
     it('USER PATCH → 403', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/cl000000000000000000xxxx`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/cl000000000000000000xxxx`)
         .set('Authorization', userAuth)
         .send({ issuingOrg: 'X' });
       expectBizError(res, BizCode.FORBIDDEN);
@@ -156,14 +158,14 @@ describe('certificates 模块', () => {
 
     it('USER DELETE → 403', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${memberA}/certificates/cl000000000000000000xxxx`)
+        .delete(`/api/admin/v1/members/${memberA}/certificates/cl000000000000000000xxxx`)
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
 
     it('USER PATCH /verify → 403', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/cl000000000000000000xxxx/verify`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/cl000000000000000000xxxx/verify`)
         .set('Authorization', userAuth)
         .send({});
       expectBizError(res, BizCode.FORBIDDEN);
@@ -171,7 +173,7 @@ describe('certificates 模块', () => {
 
     it('USER PATCH /reject → 403', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/cl000000000000000000xxxx/reject`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/cl000000000000000000xxxx/reject`)
         .set('Authorization', userAuth)
         .send({ verifyNote: 'X' });
       expectBizError(res, BizCode.FORBIDDEN);
@@ -179,7 +181,7 @@ describe('certificates 模块', () => {
 
     it('USER GET /qualification-flag → 403', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberA}/certificates/qualification-flag`)
+        .get(`/api/admin/v1/members/${memberA}/certificates/qualification-flag`)
         .query({ certTypeCode: activeCertTypeCode })
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.FORBIDDEN);
@@ -191,14 +193,14 @@ describe('certificates 模块', () => {
   describe('GET list', () => {
     it('member 不存在 → MEMBER_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/members/cl0000000000000000000000/certificates')
+        .get('/api/admin/v1/members/cl0000000000000000000000/certificates')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
     });
 
     it('空列表 → 200 + 空数组', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberA}/certificates`)
+        .get(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -212,7 +214,7 @@ describe('certificates 模块', () => {
   describe('POST 主路径', () => {
     it('member 不存在 → MEMBER_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/members/cl0000000000000000000000/certificates')
+        .post('/api/admin/v1/members/cl0000000000000000000000/certificates')
         .set('Authorization', adminAuth)
         .send(baseCreatePayload());
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
@@ -220,7 +222,7 @@ describe('certificates 模块', () => {
 
     it('ADMIN 创建仅必填 → 201,status=pending,isInternal=false,不返 deletedAt / attachmentKey', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload());
       expect(res.status).toBe(201);
@@ -242,7 +244,7 @@ describe('certificates 模块', () => {
 
     it('SUPER_ADMIN 创建完整字段 → 201', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', superAdminAuth)
         .send({
           certTypeCode: activeCertTypeCode,
@@ -260,7 +262,7 @@ describe('certificates 模块', () => {
 
     it('cert_type 不存在 → CERTIFICATE_TYPE_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certTypeCode: 'no-such-type' }));
       expectBizError(res, BizCode.CERTIFICATE_TYPE_CODE_INVALID);
@@ -268,7 +270,7 @@ describe('certificates 模块', () => {
 
     it('cert_type INACTIVE → CERTIFICATE_TYPE_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certTypeCode: inactiveCertTypeCode }));
       expectBizError(res, BizCode.CERTIFICATE_TYPE_CODE_INVALID);
@@ -276,7 +278,7 @@ describe('certificates 模块', () => {
 
     it('cert_sub_type 不存在 → CERTIFICATE_SUB_TYPE_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certSubTypeCode: 'no-such-sub' }));
       expectBizError(res, BizCode.CERTIFICATE_SUB_TYPE_CODE_INVALID);
@@ -286,7 +288,7 @@ describe('certificates 模块', () => {
       const payload = baseCreatePayload();
       delete payload.certTypeCode;
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(payload);
       expect(res.status).toBe(400);
@@ -296,7 +298,7 @@ describe('certificates 模块', () => {
       const payload = baseCreatePayload();
       delete payload.issuingOrg;
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(payload);
       expect(res.status).toBe(400);
@@ -306,7 +308,7 @@ describe('certificates 模块', () => {
       const payload = baseCreatePayload();
       delete payload.issuedAt;
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(payload);
       expect(res.status).toBe(400);
@@ -314,7 +316,7 @@ describe('certificates 模块', () => {
 
     it('non-whitelisted certStatusCode → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certStatusCode: 'verified' }));
       expect(res.status).toBe(400);
@@ -322,7 +324,7 @@ describe('certificates 模块', () => {
 
     it('non-whitelisted isInternal → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ isInternal: true }));
       expect(res.status).toBe(400);
@@ -330,7 +332,7 @@ describe('certificates 模块', () => {
 
     it('non-whitelisted verifiedBy → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ verifiedBy: 'cl0000000000000000000000' }));
       expect(res.status).toBe(400);
@@ -338,7 +340,7 @@ describe('certificates 模块', () => {
 
     it('non-whitelisted supersededByCertId → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ supersededByCertId: 'cl0000000000000000000000' }));
       expect(res.status).toBe(400);
@@ -349,7 +351,7 @@ describe('certificates 模块', () => {
 
     it('non-whitelisted memberId → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ memberId: 'cl0000000000000000000000' }));
       expect(res.status).toBe(400);
@@ -357,7 +359,7 @@ describe('certificates 模块', () => {
 
     it('non-whitelisted deletedAt → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ deletedAt: new Date().toISOString() }));
       expect(res.status).toBe(400);
@@ -369,7 +371,7 @@ describe('certificates 模块', () => {
   describe('GET list 排序 + 精简字段', () => {
     it('多条按 certStatusCode ASC, createdAt DESC 排序;列表项不含敏感字段', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberA}/certificates`)
+        .get(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       const items: Array<Record<string, unknown>> = res.body.data;
@@ -396,7 +398,7 @@ describe('certificates 模块', () => {
     beforeAll(async () => {
       // 创建一条用于 detail 测试
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certNumber: 'DETAIL-CERT-001' }));
       certIdA = res.body.data.id;
@@ -404,21 +406,21 @@ describe('certificates 模块', () => {
 
     it('cert 不存在 → CERTIFICATE_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberA}/certificates/cl0000000000000000000000`)
+        .get(`/api/admin/v1/members/${memberA}/certificates/cl0000000000000000000000`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.CERTIFICATE_NOT_FOUND);
     });
 
     it('cert 跨 member → CERTIFICATE_NOT_BELONGS_TO_MEMBER', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberB}/certificates/${certIdA}`)
+        .get(`/api/admin/v1/members/${memberB}/certificates/${certIdA}`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.CERTIFICATE_NOT_BELONGS_TO_MEMBER);
     });
 
     it('200 完整字段 + 不返 deletedAt / attachmentKey', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberA}/certificates/${certIdA}`)
+        .get(`/api/admin/v1/members/${memberA}/certificates/${certIdA}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.id).toBe(certIdA);
@@ -437,7 +439,7 @@ describe('certificates 模块', () => {
 
     beforeAll(async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ issuingOrg: '原机构', certNumber: 'PATCH-001' }));
       certIdA = res.body.data.id;
@@ -445,7 +447,7 @@ describe('certificates 模块', () => {
 
     it('部分更新 issuingOrg / certNumber → 200', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${certIdA}`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${certIdA}`)
         .set('Authorization', adminAuth)
         .send({ issuingOrg: '新机构', certNumber: 'PATCH-001-UPDATED' });
       expect(res.status).toBe(200);
@@ -455,7 +457,7 @@ describe('certificates 模块', () => {
 
     it('Q-A4:更新 issuedAt + expiredAt → 200', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${certIdA}`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${certIdA}`)
         .set('Authorization', superAdminAuth)
         .send({
           issuedAt: '2024-03-01T00:00:00.000Z',
@@ -468,7 +470,7 @@ describe('certificates 模块', () => {
 
     it('PATCH cert_type 字典 invalid → CERTIFICATE_TYPE_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${certIdA}`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${certIdA}`)
         .set('Authorization', adminAuth)
         .send({ certTypeCode: 'no-such-type' });
       expectBizError(res, BizCode.CERTIFICATE_TYPE_CODE_INVALID);
@@ -476,7 +478,7 @@ describe('certificates 模块', () => {
 
     it('non-whitelisted certStatusCode → 400', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${certIdA}`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${certIdA}`)
         .set('Authorization', adminAuth)
         .send({ certStatusCode: 'verified' });
       expect(res.status).toBe(400);
@@ -484,7 +486,7 @@ describe('certificates 模块', () => {
 
     it('non-whitelisted verifyNote → 400', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${certIdA}`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${certIdA}`)
         .set('Authorization', adminAuth)
         .send({ verifyNote: '尝试通过 PATCH 写核验备注' });
       expect(res.status).toBe(400);
@@ -492,7 +494,7 @@ describe('certificates 模块', () => {
 
     it('non-whitelisted isInternal → 400', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${certIdA}`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${certIdA}`)
         .set('Authorization', adminAuth)
         .send({ isInternal: true });
       expect(res.status).toBe(400);
@@ -500,7 +502,7 @@ describe('certificates 模块', () => {
 
     it('cert 不存在 → CERTIFICATE_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/cl0000000000000000000000`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/cl0000000000000000000000`)
         .set('Authorization', adminAuth)
         .send({ issuingOrg: 'X' });
       expectBizError(res, BizCode.CERTIFICATE_NOT_FOUND);
@@ -508,7 +510,7 @@ describe('certificates 模块', () => {
 
     it('cert 跨 member → CERTIFICATE_NOT_BELONGS_TO_MEMBER', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberB}/certificates/${certIdA}`)
+        .patch(`/api/admin/v1/members/${memberB}/certificates/${certIdA}`)
         .set('Authorization', adminAuth)
         .send({ issuingOrg: 'X' });
       expectBizError(res, BizCode.CERTIFICATE_NOT_BELONGS_TO_MEMBER);
@@ -522,7 +524,7 @@ describe('certificates 模块', () => {
 
     beforeAll(async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certNumber: 'DEL-001' }));
       certIdA = res.body.data.id;
@@ -530,21 +532,21 @@ describe('certificates 模块', () => {
 
     it('cert 不存在 → CERTIFICATE_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${memberA}/certificates/cl0000000000000000000000`)
+        .delete(`/api/admin/v1/members/${memberA}/certificates/cl0000000000000000000000`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.CERTIFICATE_NOT_FOUND);
     });
 
     it('跨 member → CERTIFICATE_NOT_BELONGS_TO_MEMBER', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${memberB}/certificates/${certIdA}`)
+        .delete(`/api/admin/v1/members/${memberB}/certificates/${certIdA}`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.CERTIFICATE_NOT_BELONGS_TO_MEMBER);
     });
 
     it('正常软删 → 200 + DB.deletedAt 非空 + 列表过滤 + 详情 NOT_FOUND', async () => {
       const delRes = await request(httpServer(app))
-        .delete(`/api/v2/members/${memberA}/certificates/${certIdA}`)
+        .delete(`/api/admin/v1/members/${memberA}/certificates/${certIdA}`)
         .set('Authorization', adminAuth);
       expect(delRes.status).toBe(200);
       expect(delRes.body.data.id).toBe(certIdA);
@@ -553,20 +555,20 @@ describe('certificates 模块', () => {
       expect(dbRow?.deletedAt).not.toBeNull();
 
       const listRes = await request(httpServer(app))
-        .get(`/api/v2/members/${memberA}/certificates`)
+        .get(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth);
       const ids: string[] = (listRes.body.data as Array<{ id: string }>).map((i) => i.id);
       expect(ids).not.toContain(certIdA);
 
       const detailRes = await request(httpServer(app))
-        .get(`/api/v2/members/${memberA}/certificates/${certIdA}`)
+        .get(`/api/admin/v1/members/${memberA}/certificates/${certIdA}`)
         .set('Authorization', adminAuth);
       expectBizError(detailRes, BizCode.CERTIFICATE_NOT_FOUND);
     });
 
     it('再次 DELETE 已软删 cert → CERTIFICATE_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${memberA}/certificates/${certIdA}`)
+        .delete(`/api/admin/v1/members/${memberA}/certificates/${certIdA}`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.CERTIFICATE_NOT_FOUND);
     });
@@ -581,36 +583,36 @@ describe('certificates 模块', () => {
 
     beforeAll(async () => {
       const r1 = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certNumber: 'VER-PEND' }));
       pendingCertId = r1.body.data.id;
 
       const r2 = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certNumber: 'VER-ALREADY' }));
       alreadyVerifiedCertId = r2.body.data.id;
       // 先 verify 一次
       await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${alreadyVerifiedCertId}/verify`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${alreadyVerifiedCertId}/verify`)
         .set('Authorization', superAdminAuth)
         .send({});
 
       const r3 = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certNumber: 'VER-REJ' }));
       alreadyRejectedCertId = r3.body.data.id;
       await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${alreadyRejectedCertId}/reject`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${alreadyRejectedCertId}/reject`)
         .set('Authorization', adminAuth)
         .send({ verifyNote: '材料不符' });
     });
 
     it('SUPER_ADMIN(无 memberId)verify → verified, verifiedBy=null(Q-I2)', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${pendingCertId}/verify`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${pendingCertId}/verify`)
         .set('Authorization', superAdminAuth)
         .send({ verifyNote: '材料齐全' });
       expect(res.status).toBe(200);
@@ -623,13 +625,13 @@ describe('certificates 模块', () => {
     it('ADMIN(已绑 memberId)verify → verifiedBy=user.memberId(Q-I2)', async () => {
       // 创建新的 pending 用于本用例
       const r = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certNumber: 'VER-BOUND' }));
       const id = r.body.data.id;
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${id}/verify`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${id}/verify`)
         .set('Authorization', adminWithMemberAuth)
         .send({});
       expect(res.status).toBe(200);
@@ -640,7 +642,7 @@ describe('certificates 模块', () => {
 
     it('已 verified 再 verify → CERTIFICATE_INVALID_STATE_TRANSITION', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${alreadyVerifiedCertId}/verify`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${alreadyVerifiedCertId}/verify`)
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res, BizCode.CERTIFICATE_INVALID_STATE_TRANSITION);
@@ -648,7 +650,7 @@ describe('certificates 模块', () => {
 
     it('已 rejected 再 verify → CERTIFICATE_INVALID_STATE_TRANSITION', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${alreadyRejectedCertId}/verify`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${alreadyRejectedCertId}/verify`)
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res, BizCode.CERTIFICATE_INVALID_STATE_TRANSITION);
@@ -656,11 +658,11 @@ describe('certificates 模块', () => {
 
     it('verify non-whitelisted issuedAt → 400', async () => {
       const r = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certNumber: 'VER-NW' }));
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${r.body.data.id}/verify`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${r.body.data.id}/verify`)
         .set('Authorization', adminAuth)
         .send({ issuedAt: '2025-01-01T00:00:00.000Z' });
       expect(res.status).toBe(400);
@@ -668,11 +670,11 @@ describe('certificates 模块', () => {
 
     it('verify non-whitelisted certStatusCode → 400', async () => {
       const r = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certNumber: 'VER-NW2' }));
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${r.body.data.id}/verify`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${r.body.data.id}/verify`)
         .set('Authorization', adminAuth)
         .send({ certStatusCode: 'expired' });
       expect(res.status).toBe(400);
@@ -680,11 +682,11 @@ describe('certificates 模块', () => {
 
     it('verify cert 跨 member → CERTIFICATE_NOT_BELONGS_TO_MEMBER', async () => {
       const r = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certNumber: 'VER-CROSS' }));
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberB}/certificates/${r.body.data.id}/verify`)
+        .patch(`/api/admin/v1/members/${memberB}/certificates/${r.body.data.id}/verify`)
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res, BizCode.CERTIFICATE_NOT_BELONGS_TO_MEMBER);
@@ -696,13 +698,13 @@ describe('certificates 模块', () => {
   describe('PATCH /reject', () => {
     it('pending → rejected,verifyNote 必填', async () => {
       const r = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certNumber: 'REJ-001' }));
       const id = r.body.data.id;
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${id}/reject`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${id}/reject`)
         .set('Authorization', adminAuth)
         .send({ verifyNote: '颁发机构未授权' });
       expect(res.status).toBe(200);
@@ -713,13 +715,13 @@ describe('certificates 模块', () => {
 
     it('reject 缺 verifyNote → 400', async () => {
       const r = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certNumber: 'REJ-002' }));
       const id = r.body.data.id;
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${id}/reject`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${id}/reject`)
         .set('Authorization', adminAuth)
         .send({});
       expect(res.status).toBe(400);
@@ -727,16 +729,16 @@ describe('certificates 模块', () => {
 
     it('reject 已 rejected → CERTIFICATE_INVALID_STATE_TRANSITION', async () => {
       const r = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certNumber: 'REJ-003' }));
       const id = r.body.data.id;
       await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${id}/reject`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${id}/reject`)
         .set('Authorization', adminAuth)
         .send({ verifyNote: '第一次拒绝' });
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${id}/reject`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${id}/reject`)
         .set('Authorization', adminAuth)
         .send({ verifyNote: '第二次拒绝' });
       expectBizError(res, BizCode.CERTIFICATE_INVALID_STATE_TRANSITION);
@@ -744,16 +746,16 @@ describe('certificates 模块', () => {
 
     it('reject 已 verified → CERTIFICATE_INVALID_STATE_TRANSITION', async () => {
       const r = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certNumber: 'REJ-004' }));
       const id = r.body.data.id;
       await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${id}/verify`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${id}/verify`)
         .set('Authorization', adminAuth)
         .send({});
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${id}/reject`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${id}/reject`)
         .set('Authorization', adminAuth)
         .send({ verifyNote: '反悔拒绝' });
       expectBizError(res, BizCode.CERTIFICATE_INVALID_STATE_TRANSITION);
@@ -766,23 +768,23 @@ describe('certificates 模块', () => {
     it('reject C1 → softDelete C1 → POST 新 cert C2 → 201;新记录是 pending', async () => {
       // C1 创建 + 拒绝 + 软删
       const r1 = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(
           baseCreatePayload({ certNumber: 'RESUB-C1', certTypeCode: secondActiveCertTypeCode }),
         );
       const c1Id = r1.body.data.id;
       await request(httpServer(app))
-        .patch(`/api/v2/members/${memberA}/certificates/${c1Id}/reject`)
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${c1Id}/reject`)
         .set('Authorization', adminAuth)
         .send({ verifyNote: '材料缺失' });
       await request(httpServer(app))
-        .delete(`/api/v2/members/${memberA}/certificates/${c1Id}`)
+        .delete(`/api/admin/v1/members/${memberA}/certificates/${c1Id}`)
         .set('Authorization', adminAuth);
 
       // C2 重新提交(新记录,pending)
       const r2 = await request(httpServer(app))
-        .post(`/api/v2/members/${memberA}/certificates`)
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', adminAuth)
         .send(
           baseCreatePayload({ certNumber: 'RESUB-C2', certTypeCode: secondActiveCertTypeCode }),
@@ -809,7 +811,7 @@ describe('certificates 模块', () => {
 
     it('member 不存在 → MEMBER_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/members/cl0000000000000000000000/certificates/qualification-flag')
+        .get('/api/admin/v1/members/cl0000000000000000000000/certificates/qualification-flag')
         .query({ certTypeCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
@@ -817,14 +819,14 @@ describe('certificates 模块', () => {
 
     it('certTypeCode query 缺失 → 400', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${qfMember}/certificates/qualification-flag`)
+        .get(`/api/admin/v1/members/${qfMember}/certificates/qualification-flag`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(400);
     });
 
     it('certTypeCode 字典 invalid → CERTIFICATE_TYPE_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${qfMember}/certificates/qualification-flag`)
+        .get(`/api/admin/v1/members/${qfMember}/certificates/qualification-flag`)
         .query({ certTypeCode: 'no-such-type' })
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.CERTIFICATE_TYPE_CODE_INVALID);
@@ -832,7 +834,7 @@ describe('certificates 模块', () => {
 
     it('无证书 → qualified=false', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${qfMember}/certificates/qualification-flag`)
+        .get(`/api/admin/v1/members/${qfMember}/certificates/qualification-flag`)
         .query({ certTypeCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
@@ -845,16 +847,16 @@ describe('certificates 模块', () => {
 
     it('verified + 无 expiry + 未软删 → qualified=true', async () => {
       const r = await request(httpServer(app))
-        .post(`/api/v2/members/${qfMember}/certificates`)
+        .post(`/api/admin/v1/members/${qfMember}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ certNumber: 'QF-VER' }));
       await request(httpServer(app))
-        .patch(`/api/v2/members/${qfMember}/certificates/${r.body.data.id}/verify`)
+        .patch(`/api/admin/v1/members/${qfMember}/certificates/${r.body.data.id}/verify`)
         .set('Authorization', adminAuth)
         .send({});
 
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${qfMember}/certificates/qualification-flag`)
+        .get(`/api/admin/v1/members/${qfMember}/certificates/qualification-flag`)
         .query({ certTypeCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.body.data.qualified).toBe(true);
@@ -867,16 +869,16 @@ describe('certificates 模块', () => {
         select: { id: true },
       });
       const r = await request(httpServer(app))
-        .post(`/api/v2/members/${m.id}/certificates`)
+        .post(`/api/admin/v1/members/${m.id}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload({ expiredAt: '2099-01-01T00:00:00.000Z' }));
       await request(httpServer(app))
-        .patch(`/api/v2/members/${m.id}/certificates/${r.body.data.id}/verify`)
+        .patch(`/api/admin/v1/members/${m.id}/certificates/${r.body.data.id}/verify`)
         .set('Authorization', adminAuth)
         .send({});
 
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${m.id}/certificates/qualification-flag`)
+        .get(`/api/admin/v1/members/${m.id}/certificates/qualification-flag`)
         .query({ certTypeCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.body.data.qualified).toBe(true);
@@ -901,7 +903,7 @@ describe('certificates 模块', () => {
       });
 
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${m.id}/certificates/qualification-flag`)
+        .get(`/api/admin/v1/members/${m.id}/certificates/qualification-flag`)
         .query({ certTypeCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.body.data.qualified).toBe(false);
@@ -913,12 +915,12 @@ describe('certificates 模块', () => {
         select: { id: true },
       });
       await request(httpServer(app))
-        .post(`/api/v2/members/${m.id}/certificates`)
+        .post(`/api/admin/v1/members/${m.id}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload());
 
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${m.id}/certificates/qualification-flag`)
+        .get(`/api/admin/v1/members/${m.id}/certificates/qualification-flag`)
         .query({ certTypeCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.body.data.qualified).toBe(false);
@@ -930,16 +932,16 @@ describe('certificates 模块', () => {
         select: { id: true },
       });
       const r = await request(httpServer(app))
-        .post(`/api/v2/members/${m.id}/certificates`)
+        .post(`/api/admin/v1/members/${m.id}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload());
       await request(httpServer(app))
-        .patch(`/api/v2/members/${m.id}/certificates/${r.body.data.id}/reject`)
+        .patch(`/api/admin/v1/members/${m.id}/certificates/${r.body.data.id}/reject`)
         .set('Authorization', adminAuth)
         .send({ verifyNote: '不通过' });
 
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${m.id}/certificates/qualification-flag`)
+        .get(`/api/admin/v1/members/${m.id}/certificates/qualification-flag`)
         .query({ certTypeCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.body.data.qualified).toBe(false);
@@ -951,19 +953,19 @@ describe('certificates 模块', () => {
         select: { id: true },
       });
       const r = await request(httpServer(app))
-        .post(`/api/v2/members/${m.id}/certificates`)
+        .post(`/api/admin/v1/members/${m.id}/certificates`)
         .set('Authorization', adminAuth)
         .send(baseCreatePayload());
       await request(httpServer(app))
-        .patch(`/api/v2/members/${m.id}/certificates/${r.body.data.id}/verify`)
+        .patch(`/api/admin/v1/members/${m.id}/certificates/${r.body.data.id}/verify`)
         .set('Authorization', adminAuth)
         .send({});
       await request(httpServer(app))
-        .delete(`/api/v2/members/${m.id}/certificates/${r.body.data.id}`)
+        .delete(`/api/admin/v1/members/${m.id}/certificates/${r.body.data.id}`)
         .set('Authorization', adminAuth);
 
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${m.id}/certificates/qualification-flag`)
+        .get(`/api/admin/v1/members/${m.id}/certificates/qualification-flag`)
         .query({ certTypeCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.body.data.qualified).toBe(false);
@@ -971,7 +973,7 @@ describe('certificates 模块', () => {
 
     it('响应仅 3 字段(memberId / certTypeCode / qualified)', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${qfMember}/certificates/qualification-flag`)
+        .get(`/api/admin/v1/members/${qfMember}/certificates/qualification-flag`)
         .query({ certTypeCode: activeCertTypeCode })
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);

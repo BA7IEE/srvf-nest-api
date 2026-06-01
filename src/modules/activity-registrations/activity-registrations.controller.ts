@@ -78,10 +78,7 @@ function buildAuditMeta(req: Request): AuditMeta {
 
 @ApiTags('Admin - Registrations')
 @ApiBearerAuth()
-@Controller([
-  'v2/activities/:activityId/registrations',
-  'admin/v1/activities/:activityId/registrations',
-])
+@Controller('admin/v1/activities/:activityId/registrations')
 export class ActivityRegistrationsAdminController {
   constructor(private readonly service: ActivityRegistrationsService) {}
 
