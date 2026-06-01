@@ -19,7 +19,7 @@
 - **`StorageSettingsService` 是凭证读取唯一出口**:`getActiveSettings()` 60s 内存缓存 + DB > 1 条时 WARN + 取 createdAt 最早一条(singleton 由 PR #11 后台 CRUD 守护;DB 层不强制)
 - **`CosStorageProvider` 4 档守护**(每次方法调用):settings null / providerType ≠ COS / credentialStatus ≠ CONFIGURED / bucket+region 缺失 → 抛 `CosProviderUnavailableError`(沿 [`providers/cos.provider.ts:158`](providers/cos.provider.ts:158))
 - **`LocalStorageProvider.resolveKey`** 防 `../` 逃逸 root(沿 Q-88-6;[`providers/local.provider.ts:113`](providers/local.provider.ts:113));dev/test 默认 fallback,production 启动期被 fail-fast 拒绝
-- **signed URL**:COS PUT 上传约定客户端必须带 `Content-Type` 与签名一致;`response-content-disposition` 通过 query 参数附加(沿 §6.4.6 CORS);Local provider 返 stub URL(`/api/v2/storage/local-stub-upload/...`)
+- **signed URL**:COS PUT 上传约定客户端必须带 `Content-Type` 与签名一致;`response-content-disposition` 通过 query 参数附加(沿 §6.4.6 CORS);Local provider 返非路由 stub URL(`/internal/storage/local-stub-upload/...`;接口对称用,不会被实际命中)
 - **uploadToken** 紧凑格式 `<base64url(claims)>.<base64url(hmac)>`,**不**引 jsonwebtoken;HMAC key 由 `STORAGE_ENCRYPTION_KEY` 经 scrypt 派生(单独 salt);验签 `timingSafeEqual`;失败统一映射 `13001`(信息泄漏防御)
 - **入口判权当前事实**:`StorageSettingsController` 三端点入口仅 `JwtAuthGuard`,**不**挂 `@Roles`,经 Service 内 `rbac.can()`;`storage-setting.reset.credentials` 当前**未**绑 `ops-admin`,仅 SUPER_ADMIN 经 `RbacService.can` 短路通过(沿 P0-F PR-2B D2=A);此处仅作为当前事实记录,**不得**在 docs-only PR 中改变权限策略
 - **credential write audit 当前事实**:当前 reset-credentials 路径**未**写 `audit_logs`(沿 §6.6.5);日志仅记 `user.id + 动作`,**不**含 secret 明文 / 密文;此处仅作为当前事实记录,**不得**在 docs-only PR 中改变审计策略,是否补 credential write audit 必须单独设计

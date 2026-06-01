@@ -12,7 +12,7 @@
 ## Local facts
 
 - `activities.service.ts` **607L**(偏厚,沿 CODEMAP 标 L 体量);`activity-state-machine.ts`(63L)/ `activity-audit-recorder.ts`(291L)/ `app-activities.service.ts`(162L)/ `app-my-activities.service.ts`(181L)已抽离
-- Admin Controller:`activities.controller.ts` `@Controller('v2/activities')` `@ApiTags('Admin - Activities')`
+- Admin Controller:`activities.controller.ts` `@Controller('admin/v1/activities')` `@ApiTags('Admin - Activities')`
 - App Controller:`controllers/app-activities.controller.ts` `@Controller('app/v1/activities')` `@ApiTags('Mobile - Activities')`(单文件单 class,**非** Mixed Controller)
 - DTO 隔离:Admin DTO 在 `activities.dto.ts`(524L);App DTO 在 `dto/app/`(4 文件)
 - Audit:写路径全部走 `activity-audit-recorder.ts`;**event 名 5 处共用 `'activity.publish'`,不动**(沿 PR #199 characterization 锁定)

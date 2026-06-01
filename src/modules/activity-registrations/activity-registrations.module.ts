@@ -16,8 +16,8 @@ import { AppMyRegistrationsController } from './controllers/app-my-registrations
 //
 // Phase 2 P2-5a(2026-05-20):追加 AppMyRegistrationsController(/api/app/v1/my/* 3
 // 只读 endpoint)+ AppMyRegistrationsService(薄壳)。沿
-// docs/api-surface-policy.md §5 项 3:旧 ActivityRegistrationsAdminController /
-// ActivityRegistrationsMeController 行为**逐字不变**(PR review 强查 controller.ts 无 diff)。
+// docs/api-surface-policy.md §5 项 3:旧 ActivityRegistrationsAdminController
+// 行为**逐字不变**(PR review 强查 controller.ts 无 diff)。
 //
 // Route B Phase 4d2(2026-06-01):`ActivityRegistrationsMeController`(`/api/v2/users/me/*` 4 端点)
 // 已删除(app/v1/my/registrations* 对等存在,队员流由 app-my-registrations-*.e2e 覆盖;

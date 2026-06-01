@@ -28,7 +28,8 @@ import { UsersService } from '../users.service';
 // 沿 docs/app-api-phase-2-review.md §2 + §6.1 + §7.1;migration-plan §5 方案 C;
 // code-architecture §1.1(mobile- / app- 前缀);Phase 1A Swagger Tag 命名。
 // 三 endpoint 全部 capability-aware(canUseApp 通过派生字段表达,**不**走拒绝路径)。
-// 旧 /api/users/me* 行为**逐字不变**(沿 §3.2 + §9.2 #9);本 Controller 与 UsersController 共存。
+// 本 Controller 是 App 自助身份/资料的唯一入口(`app/v1/me`),与 UsersController
+// (`admin/v1/users`)前缀独立、职责分离;队员自助流(原 `/api/users/me*`)已于 Route B Phase 4d 收口至本 Controller。
 //
 // Phase 2 P2-2(2026-05-20):追加 GET / PATCH /profile 两 endpoint(沿
 // docs/app-api-p2-2-profile-review.md §7.3)。与 P2-1 三 endpoint 不同的是:
@@ -43,7 +44,7 @@ import { UsersService } from '../users.service';
 // 该豁免**严格仅本端点**适用,不得复用于 /me/profile / /activities/* / /my/* /
 // /tasks/* / /managed/*(沿评审稿 §4.6 例外边界)。
 // 复用:UsersService.changeMyPassword(P0-D + P0-E)/ ChangeMyPasswordDto / UserResponseDto /
-// @PasswordChangeThrottle()(throttler 实例 'password-change'与旧 /api/users/me/password 共享)/
+// @PasswordChangeThrottle()(throttler 实例 'password-change')/
 // password.change.self audit / refresh token 撤销(revokedReason='self-password-change')。
 // **零新增**:0 DTO / 0 service / 0 BizCode / 0 audit event / 0 throttler 实例。
 @ApiTags('Mobile - Me')

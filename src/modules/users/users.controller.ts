@@ -39,11 +39,10 @@ import { UsersService } from './users.service';
 // service 内 6 项业务护栏全保留:canViewUser / canManageUser / canCreateRole /
 // canChangeRole / assertNotSelf / assertNotLastSuperAdmin(沿评审稿 §8.3)。
 //
-// P1-C step 1(2026-05-21):Mixed Controller 物理拆分,把原 3 个 Root Legacy `/me*`
-// 端点(GET / PATCH /me + PUT /me/password)迁出到 UsersMeLegacyController
-// (controllers/users-me-legacy.controller.ts),沿 docs/api-surface-policy.md §5 项 1 +
-// §7 P1-C step 1;**endpoint path / DTO / service / Guard / RBAC / throttler / Swagger Tag 全部 zero drift**。
-// 本 Controller 拆分后仅承载 8 个 Admin 管理端点,class-level @ApiTags 不再与 Mobile - Me 同存。
+// 本 Controller 仅承载 Admin 管理端点(`@Controller('admin/v1/users')`),class-level
+// @ApiTags = 'Admin - Users'。队员自助端点(GET / PATCH /me + PUT /me/password)现位于
+// AppMeController(`@Controller('app/v1/me')`,controllers/app-me.controller.ts);
+// 历史过渡 UsersMeLegacyController 已于 Route B Phase 4d 删除(沿 docs/api-surface-migration-plan.md §6 Phase 4)。
 @ApiTags('Admin - Users')
 @ApiBearerAuth()
 @Controller('admin/v1/users')
@@ -201,8 +200,8 @@ export class UsersController {
 
   // P0-D PR-3:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
   // 不引入 cls-rs / AsyncLocalStorage)。沿 emergency-contacts.controller.ts 范式。
-  // P1-C step 1(2026-05-21):本 helper 由 UsersMeLegacyController 持有独立副本,本类
-  // 保留以服务 resetPassword(管理员重置密码端点;沿"物理拆分零行为变更"原则)。
+  // 本 helper 服务 resetPassword(管理员重置密码端点)。队员自助改密走 AppMeController
+  // (`app/v1/me`,PUT /me/password);沿 emergency-contacts.controller.ts 范式。
   private buildAuditMeta(req: Request): AuditMeta {
     return {
       requestId: req.id as string,

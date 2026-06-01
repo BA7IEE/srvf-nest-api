@@ -31,7 +31,8 @@ import { ListAppMyRegistrationsQueryDto } from '../dto/app/list-app-my-registrat
 //     可用走 AppIdentityResolver(§7.5 + D-5.2 self perspective)
 //   - **不**挂 @Public(全部要登录);依赖全局 JwtAuthGuard
 //   - **不**挂限流装饰器(沿 default throttler;§6.1 + D-P2-5-7.3)
-//   - **不**追加方法到既有 ActivityRegistrationsMeController(D-P2-5-5;旧 path 逐字不变)
+//   - App 自助端点只落本 controller(`app/v1/my`);**不**混入 Admin controller(沿 D-P2-5-5;
+//     原 `/v2/users/me/*` legacy controller 已于 Route B Phase 4d2 删除)
 //
 // 准入沿 §7.1 / §7.3:canUseApp=false → 403 FORBIDDEN(member 未关联 / INACTIVE / 软删 /
 // Admin 无 member);**不**沿 D-P2-3-1 admin-without-member 例外(沿 §7.4)。

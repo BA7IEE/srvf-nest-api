@@ -16,7 +16,7 @@ import { AppMyCertificatesController } from './controllers/app-my-certificates.c
 //   - 导入 UsersModule 注入 AppIdentityResolver(P2-1 已 exports;P2-7 准入沿同)
 //   - 独立 App service 直查 PrismaService(**不** thin-wrap CertificatesService.list;
 //     **不**新增 listForMember,沿 D-P2-7-9 + Phase 0.7 §6 不立即重构)
-//   - 旧 v2 admin path `/api/admin/v1/members/:memberId/certificates/*` 8 endpoint 行为
+//   - Admin path `/api/admin/v1/members/:memberId/certificates/*` 8 endpoint 行为
 //     **逐字不变**(沿 D-P2-7-15 + §11.1 path stability)
 @Module({
   imports: [DatabaseModule, AuditLogsModule, UsersModule],

@@ -122,7 +122,7 @@ describe('LocalStorageProvider', () => {
         contentType: 'image/png',
         expiresIn: 600,
       });
-      expect(result.url).toBe('/api/v2/storage/local-stub-upload/attachments%2Fdev%2Ffoo.png');
+      expect(result.url).toBe('/internal/storage/local-stub-upload/attachments%2Fdev%2Ffoo.png');
       expect(result.method).toBe('PUT');
       expect(result.headers).toEqual({});
       expect(result.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 600 * 1000);

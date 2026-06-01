@@ -427,9 +427,10 @@ export class ListAttachmentsByOwnerQueryDto extends PaginationQueryDto {
   ownerId!: string;
 }
 
-// GET /api/admin/v1/attachments/me/uploaded(本人上传列表;沿 D7 v1.0 §5.1 端点 7)。
+// listMyUploaded 入参(本人上传列表;沿 D7 v1.0 §5.1 端点 7)。原 `GET /me/uploaded` 路由已于
+// Route B Phase 4e 删除,service 方法保留为未来 `app/v1/my/attachments` building block。
 // 仅分页;uploadedBy 自动按 currentUser.id 注入(不接受入参覆盖)。
-// **直接复用 PaginationQueryDto**;controller 直接 @Query() query: PaginationQueryDto。
+// **直接复用 PaginationQueryDto**(future controller 直接 @Query() query: PaginationQueryDto)。
 
 // IdParamDto 复用 common/dto/id-param.dto;本文件不重复定义。
 // query 多值 tags 由 express 默认 parser 支持(`tags=a&tags=b` → string[]);

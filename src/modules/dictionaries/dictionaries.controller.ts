@@ -28,7 +28,7 @@ import {
 import { DictionariesService } from './dictionaries.service';
 
 // 单文件双 @Controller 类,严格遵守 baseline §5.1 / CLAUDE.md §2 业务模块 4 文件铁律。
-// 路径前缀:全局 /api(main.ts) + 'v2/dict-types' / 'v2/dict-items'。
+// 路径前缀:全局 /api(main.ts) + 'system/v1/dict-types' / 'system/v1/dict-items'。
 //
 // **权限标注**(P0-F PR-2A,2026-05-18):入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;
 // 全部判权迁移到 DictionariesService 内 `rbac.can()`,失败抛

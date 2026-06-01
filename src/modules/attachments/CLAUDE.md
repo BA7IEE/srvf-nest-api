@@ -15,5 +15,5 @@
 - ❌ **永不返回** L3 字段:`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / **完整 signed URL**(`accessUrl`);App API 任何路径都不许暴露。
 - ❌ **不**主动拆 `attachments.service.ts`(沿 [`/docs/current-state.md §3`](../../../docs/current-state.md))。
 - ❌ **不**绕过 `attachment-validation.ts` 写入(mime / size / type 校验必经路径)。
-- ❌ **不**新增 Mixed Controller;Mobile / App 兼容入口走 `controllers/attachments-me-legacy.controller.ts`(已拆,沿 P1-C step 2)。
+- ❌ **不**新增 Mixed Controller(class-level + 方法级双 `@ApiTags`)。历史 mobile-like `GET /me/uploaded`(原 `Mobile - Attachments`)已于 Route B Phase 4e 删除,未建 App 替代;`listMyUploaded` service 保留为未来 `app/v1/my/attachments` building block(沿 [`/docs/api-surface-migration-plan.md §3.3`](../../../docs/api-surface-migration-plan.md))。
 - ❌ **不**把 attachment 写路径绕过 `attachment-audit-recorder.ts`。

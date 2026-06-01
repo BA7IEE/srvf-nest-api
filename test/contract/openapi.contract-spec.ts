@@ -64,7 +64,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // Phase 2 P2-2(2026-05-20):App /api/app/v1/me/profile GET + PATCH
   // 沿 docs/app-api-p2-2-profile-review.md §7.3 + §9.3;字段集恰好 9(GET 出参)/ 2(PATCH 入参);
   // canUseApp=false → FORBIDDEN(40300);empty body / forbidden field → BAD_REQUEST(40000);
-  // P2-2 不新增 BizCode(沿 §6.1);旧 /api/users/me 行为**逐字不变**(沿 §10.3 + §14.2)。
+  // P2-2 不新增 BizCode(沿 §6.1);字段集 / 行为契约沿 §10.3 + §14.2 锁定。
   ['get', '/api/app/v1/me/profile'],
   ['patch', '/api/app/v1/me/profile'],
 
@@ -74,14 +74,14 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // @PasswordChangeThrottle() + password.change.self audit + refresh token 撤销
   // (revokedReason='self-password-change');**0 新 BizCode**;
   // **D-P2-3-1 = X**(沿评审稿 §4.3 锁定):admin without member 允许使用,
-  // 该豁免**严格仅本端点**适用(沿 §4.6);旧 /api/users/me/password 行为**逐字不变**。
+  // 该豁免**严格仅本端点**适用(沿 §4.6)。
   ['put', '/api/app/v1/me/password'],
 
   // Phase 2 P2-4a(2026-05-20):App /api/app/v1/activities/available 列表
   // 沿 docs/app-api-p2-4-activities-review.md §1 接口清单 + §4.1 字段集恰好 11 项;
   // 可见性沿 D-P2-4-1 = A:仅 statusCode='published' AND deletedAt IS NULL;
   // canUseApp=false → FORBIDDEN(40300);不沿 P2-3 admin-without-member 例外(沿 §6.2);
-  // 0 新 BizCode;0 schema 变更;旧 /api/v2/activities* 行为**逐字不变**(沿 §11.4)。
+  // 0 新 BizCode;0 schema 变更;行为契约沿 §11.4 锁定。
   ['get', '/api/app/v1/activities/available'],
 
   // Phase 2 P2-4b(2026-05-20):App /api/app/v1/activities/{id} 详情
@@ -90,7 +90,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 不可见(draft / cancelled / completed / 软删 / 不存在)统一 → 404 ACTIVITY_NOT_FOUND
   // (沿 D-P2-4-3 v0.1 锁定;避免存在性侧信道);
   // 0 新 BizCode(复用既有 ACTIVITY_NOT_FOUND=20001);0 schema 变更;
-  // 旧 /api/v2/activities/{id} 行为**逐字不变**(沿 §11.4)。
+  // 行为契约沿 §11.4 锁定。
   ['get', '/api/app/v1/activities/{id}'],
 
   // Phase 2 P2-5a(2026-05-20):App /api/app/v1/my/* 3 只读 endpoint
@@ -99,8 +99,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 写 2 endpoint(POST / PATCH cancel)留 P2-5b。
   // 准入沿 §7.1 / §7.3 + D-5.2:5 endpoint 全部前置 AppIdentityResolver.resolve +
   // canUseApp;**不**沿 D-P2-3-1 admin-without-member 例外。
-  // 0 新 BizCode(D-P2-5-10);0 schema 变更;旧 /api/v2/users/me/registrations* 4 path
-  // 行为**逐字不变**(沿 §5.3 + §15.2 + 风险 14.13;PR review 强查 controller.ts 无 diff)。
+  // 0 新 BizCode(D-P2-5-10);0 schema 变更;行为契约沿 §5.3 + §15.2 + 风险 14.13 锁定
+  // (PR review 强查 controller.ts 无 diff)。
   ['get', '/api/app/v1/my/registrations'],
   ['get', '/api/app/v1/my/registrations/{id}'],
   ['get', '/api/app/v1/my/activities'],
@@ -119,7 +119,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 复用 attendances.service.listMyRecords(沿 D-P2-6-2 thin-wrap;0 service diff);
   // AppMy service 内 2 次 IN 批量查 AttendanceSheet + Activity(沿 D-P2-6-6 + §7.4 默认方案);
   // 0 新 BizCode / 0 schema / 0 migration / 0 新依赖;
-  // 旧 /api/v2/users/me/attendance-records 行为**逐字不变**(沿 D-P2-6-15 + §11.1 path stability)。
+  // 行为契约沿 D-P2-6-15 + §11.1 path stability 锁定。
   ['get', '/api/app/v1/my/attendance-records'],
 
   // Phase 2 P2-7(2026-05-20):App /api/app/v1/my/certificates 1 endpoint
@@ -128,12 +128,11 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // **不**新增 listForMember);PrismaService 直查 Certificate(memberId + deletedAt:null + 可选
   // certStatusCode / certTypeCode filter;orderBy createdAt desc);
   // 0 新 BizCode / 0 schema / 0 migration / 0 新依赖;
-  // 旧 /api/v2/members/:memberId/certificates/* 8 endpoint 行为**逐字不变**(沿 D-P2-7-15 + §11.1)。
+  // 行为契约沿 D-P2-7-15 + §11.1 锁定。
   ['get', '/api/app/v1/my/certificates'],
 
-  // Route B Phase 1b alias(2026-06-01;沿 docs/api-surface-migration-plan.md §3 / §6 Phase 1):
-  // System surface(Ops-* tag)v2 → system/v1 双挂(56 路由);上方各 v2 老 path 保留,
-  // 新 system/v1 path 在此集中登记;老 path 待 Phase 4 删除时本块一并清理。
+  // System surface(Ops-* tag;56 路由):终态前缀 /api/system/v1/*
+  // (Route B 终态;v2 老前缀已于 Phase 4 删除,沿 docs/api-surface-migration-plan.md §3.4)。
   ['get', '/api/system/v1/dict-types'],
   ['post', '/api/system/v1/dict-types'],
   ['get', '/api/system/v1/dict-types/{id}'],
@@ -191,10 +190,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/system/v1/storage-settings'],
   ['post', '/api/system/v1/storage-settings/reset-credentials'],
 
-  // Route B Phase 1c alias(2026-06-01;沿 docs/api-surface-migration-plan.md §3 / §6 Phase 1):
-  // Admin surface(Admin-* tag)v2/* + users → 增 admin/v1/* 前缀(70 路由)。
-  // 注:历史 mobile-like 重复端点(users/me*、v2/users/me/*、v2/attachments/me/uploaded)
-  // **不**在此(在各自 *-legacy controller,Phase 4 删除候选,不 alias 到 admin/v1)。
+  // Admin surface(Admin-* tag;70 路由):终态前缀 /api/admin/v1/*
+  // (Route B 终态;v2 老前缀已于 Phase 4 删除,沿 docs/api-surface-migration-plan.md §3.4)。
+  // 注:历史 mobile-like 自助端点已收口到 App surface(/api/app/v1/me|my/*);
+  // 原 *-legacy controller 已于 Phase 4 删除,App 自助流由 app-me / app-my-* controller 承载。
   ['get', '/api/admin/v1/users'],
   ['post', '/api/admin/v1/users'],
   ['get', '/api/admin/v1/users/{id}'],
