@@ -161,14 +161,14 @@ Certificate (不在 participation 图内)
 
 > 沿 [`api-surface-policy.md`](api-surface-policy.md) Mobile App 段,App API DTO 严格独立于 Admin DTO,以 `currentUser.memberId` 锁定本人;`scope = self`。
 
-### 6.3 Legacy Root surface(已知边界问题,本期不处理)
+### 6.3 App 自助流(队员本人视角)
 
 | 路径 | 文件 |
 |---|---|
-| `v2/users/me/activities/:activityId/registration`(POST)+ `v2/users/me/registrations*`(GET / cancel) | [`controllers/activity-registrations-me-legacy.controller.ts`](../src/modules/activity-registrations/controllers/activity-registrations-me-legacy.controller.ts) |
-| `v2/users/me/attendance-records` | [`attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts)(末段 `@Controller('v2/users/me/attendance-records')`) |
+| `POST /api/app/v1/my/registrations` + `GET /api/app/v1/my/registrations*`(报名 / 查询 / 取消) | [`controllers/app-my-registrations.controller.ts`](../src/modules/activity-registrations/controllers/app-my-registrations.controller.ts) |
+| `GET /api/app/v1/my/attendance-records` | [`controllers/app-my-attendance-records.controller.ts`](../src/modules/attendances/controllers/app-my-attendance-records.controller.ts) |
 
-> 这些是**旧 mobile-like endpoint**,沿 [`api-surface-policy.md`](api-surface-policy.md) "只维护兼容、不扩展"。新移动端能力**只在** `/api/app/v1/*` 落地。legacy 与 app 双路径是**已知边界问题**,本文**不**主张立即删除 legacy;清理需要独立立项。
+> 队员自助流统一落 App surface `/api/app/v1/my/*`,where 子句永远以 `currentUser.memberId` 锁本人(`scope = self`)。历史 `/v2/users/me/*` legacy controller 已于 **Route B Phase 4d2 删除**(原 legacy 与 app 双路径边界问题已收口);新移动端能力**只在** `/api/app/v1/*` 落地。
 
 ---
 

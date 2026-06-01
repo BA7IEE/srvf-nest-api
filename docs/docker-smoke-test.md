@@ -124,8 +124,8 @@ docker run -d --name u-nest-api-smoke \
 | `POST /api/auth/v1/login`(正确) | 200 | `{code:0, data:{accessToken, tokenType:"Bearer", expiresIn:"15m"}}` | ✔ |
 | `POST /api/auth/v1/login`(错密码) | 401 | `{code:10004, message:"账号或密码错误"}` | ✔ §8 防枚举 |
 | `POST /api/auth/v1/login`(用户不存在) | 401 | `{code:10004, message:"账号或密码错误"}` | ✔ 与错密码完全相同 |
-| `GET /api/users/me`(带 token) | 200 | 含 `lastLoginAt`、不含 `passwordHash` | ✔ §11 `userSafeSelect` |
-| `GET /api/users/me`(无 token) | 401 | `{code:40100, message:"未登录或登录已失效"}` | ✔ §8 两阶段错误码区分 |
+| `GET /api/admin/v1/users`(带 super-admin token) | 200 | `data.items` 含本人 `username`(list-shape)、任何层级不含 `passwordHash` | ✔ §11 `userSafeSelect`(Route B Phase 4d 起 `/api/users/me` 已删,改探 admin 列表) |
+| `GET /api/admin/v1/users`(无 token) | 401 | `{code:40100, message:"未登录或登录已失效"}` | ✔ §8 两阶段错误码区分 |
 
 ### 容器侧观察
 

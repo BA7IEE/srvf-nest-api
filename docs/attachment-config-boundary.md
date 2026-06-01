@@ -67,7 +67,7 @@ AttachmentTypeConfig                       (父配置;parent)
 补充:
 
 - **`StorageSettings` / Provider 不直接消费三表**;`storage_settings.mimePolicyMode = INHERIT` 在 v1.0 默认沿用配置三表,但**不**在 Provider 层直接 join,见 [`docs/ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md)
-- **App / Mobile 不直接管理三表**;三表 CRUD 都是 Ops surface(`@ApiTags('Ops - Attachment Configs')`,挂 `/api/v2/attachment-*-configs/*`)
+- **App / Mobile 不直接管理三表**;三表 CRUD 都是 Ops / System surface(`@ApiTags('Ops - Attachment Configs')`,挂 `/api/system/v1/attachment-*-configs/*`)
 - **runtime 读点集中**:全仓只有 `attachments.service.ts` 一处直接 prisma 读三表;无其它模块旁路读取
 
 ---
@@ -77,7 +77,7 @@ AttachmentTypeConfig                       (父配置;parent)
 合并为单表(如 `AttachmentRule { ruleType, valueJson, ... }`)在理论上可表达 MIME + size + 未来可能的 retention/PII/virus-scan policy,但**当前不做**,原因:
 
 1. **schema migration 高风险**:需要 data migration + downtime 窗口或双写;现有 3 表已稳定运行,无故障驱动
-2. **3 套 API surface 全废**:`/api/v2/attachment-type-configs/*`(6 端点)/ `attachment-mime-configs/*`(6 端点)/ `attachment-size-limit-configs/*`(5 端点)共 17 个端点全部要重设
+2. **3 套 API surface 全废**:`/api/system/v1/attachment-type-configs/*`(6 端点)/ `attachment-mime-configs/*`(6 端点)/ `attachment-size-limit-configs/*`(5 端点)共 17 个端点全部要重设
 3. **OpenAPI / e2e / BizCode / audit `resourceType` 字段含义全变**:
    - e2e ~2476 LOC(`attachment-type-configs.e2e-spec.ts` / `attachment-mime-configs.e2e-spec.ts` / `attachment-size-limit-configs.e2e-spec.ts` / `attachment-configs.audit.e2e-spec.ts` / `attachment-configs.in-use.e2e-spec.ts`)需要重写
    - BizCode 段位 13020-13032 与 audit `resourceType ∈ {attachment_type_config, attachment_mime_config, attachment_size_limit_config}` 现有语义全部失效
@@ -130,7 +130,7 @@ AttachmentTypeConfig                       (父配置;parent)
 - **不**合表为单一 `AttachmentRule`(沿 §4)
 - **不**抽 `AttachmentConfigPolicyService` facade(沿 §5)
 - **不**整理 `src/modules/attachment-configs/` 子目录(13 文件平铺,密度可接受)
-- **不**改 controller path / API surface(`/api/v2/attachment-*-configs/*` 不动)
+- **不**改 controller path / API surface(`/api/system/v1/attachment-*-configs/*` 不动)
 - **不**新增 migration(三表 schema 不动)
 - **不**改 BizCode 段位 13020-13032
 - **不**为 `AttachmentSizeLimitConfig` 补 status 字段
@@ -164,4 +164,4 @@ active 权威源:
 
 - [`AGENTS.md`](../AGENTS.md) — 长期 AI 协作铁律
 - [`docs/current-state.md`](current-state.md) — 当前事实
-- [`docs/api-surface-policy.md`](api-surface-policy.md) — `/api/v2/*` 长期边界(三表所在 surface)
+- [`docs/api-surface-policy.md`](api-surface-policy.md) — surface 长期边界(三表落 System surface `/api/system/v1/*`)
