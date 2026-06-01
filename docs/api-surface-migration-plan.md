@@ -79,7 +79,7 @@
 
 1. **8 个 legacy mobile-like → Phase 4 删除**(均已有 app/v1 对等):`GET`/`PATCH /api/users/me` + `PUT /api/users/me/password`(3;对 `app/v1/me*`)、`/api/v2/users/me/registrations*` 系 4(对 `app/v1/my/registrations`)、`GET /api/v2/users/me/attendance-records`(1;对 `app/v1/my/attendance-records`)。
 2. **`GET /api/v2/rbac/me/permissions` → `GET /api/system/v1/rbac/me/permissions`**:raw RBAC code,PC 后台靠它显示按钮可见性,与 `app/v1/me/capabilities` 语义不等价(D-5.3),**不删**,随 Ops 迁 System。
-3. **`GET /api/v2/attachments/me/uploaded`(无 app/v1 对等)→ 不留孤儿**:删除该端点的**硬前置 = 先单独立项新建 `GET /api/app/v1/my/attachments`**(App surface + Mobile DTO,C 档,可与 alias 阶段并行);新端点上线 + 切流后,旧端点随 Phase 4 删除。该 App 端点建成前,旧端点保留(**不**进 Admin、**不**算迁移完成)。
+3. **`GET /api/v2/attachments/me/uploaded`(无 app/v1 对等)→ Phase 4e(2026-06-01)直接删除,不建替代**:原计划"先建 `app/v1/my/attachments` 再删";**用户 2026-06-01 确认无生产消费者后改为直接删除**——建新 App 端点属过度工程化(违项目"避免过度工程化"原则),终态 4 前缀无需它即达成。`attachments.service.listMyUploaded` 方法**保留**为未来 `app/v1/my/attachments` 的现成 building block;真有"队员看自己上传附件"诉求时单独立项(net-new,无 legacy 纠缠)。**此为对本节原计划的有据偏离**,非静默。
 
 ### 3.4 终态声明(无后遗症验收基线)
 
@@ -143,4 +143,4 @@
 | Phase 1 alias | ✅ **完成** | 1a #259 / 1b #260 / 1c PR | **全 133 非-app 路由双挂完成**:1a auth+health(7)/ 1b system(56)/ 1c admin(70);contract 423 + e2e 双路径绿;老路径零回归 |
 | Phase 2 canonical | 🔄 进行中 | Phase 2 PR | **仓内 deprecate 已落地**(apply-swagger 后处理:142 老前缀 operation 标 `deprecated`;canonical 新前缀不标;contract 425 断言锁定);**余前端/移动端切流 + old-path 流量观测(仓外,作为 Phase 3→4 gate)** |
 | Phase 3 deprecation | ⏭️ **豁免** | — | **无生产消费者**(用户 2026-06-01 确认),deprecation 窗口 / 前端切流 / 流量观测 gate 均不适用,直接进 Phase 4 |
-| Phase 4 removal | 🔄 进行中 | 4a #263 / 4b #264 / 4c #265 / 4d PR | **4a auth+health + 4b system + 4c admin(62)+ 4d `/api/users/me*`(users-me-legacy)老路径已删**(contract 296 + full e2e 1739 绿)。余 **4d2**(删 registrations-me + attendances-me-records legacy controller;主业务 spec 的 `/v2/users/me/*` 队员流迁 `app/v1/my/*`——DTO 不同,独立较大改)/ **4e**(attachments flip admin + 建 `app/v1/my/attachments` + 删 orphan + 移除 deprecation 后处理 + 终态断言 + 注释脚手架 / 模块 CLAUDE.md 清理) |
+| Phase 4 removal | 🔄 进行中 | 4a #263 / 4b #264 / 4c #265 / 4d #266 / 4e PR | **4a auth+health + 4b system + 4c admin + 4d `/api/users/me*` + 4e attachments(flip admin + 删 orphan,不建替代)老路径已删**(contract 287 + full e2e 1725 绿)。余 **4d2(最终片)**:删 registrations-me + attendances-me-records legacy controller + 主 spec `/v2/users/me/*` 队员流迁 `app/v1/my/*`(DTO 不同)+ **移除 apply-swagger deprecation 后处理 + 终态 contract 断言(只剩 4 前缀)+ EXPECTED_ROUTES 注释脚手架 / 模块 CLAUDE.md 清理** |

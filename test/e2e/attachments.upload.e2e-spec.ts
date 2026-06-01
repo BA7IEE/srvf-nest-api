@@ -220,7 +220,7 @@ describe('attachments upload-url + confirm-upload', () => {
 
     it('1. 未登录 → 40100', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .send(buildUploadUrlBody());
       expect(res.status).toBe(401);
       expect(res.body.code).toBe(BizCode.UNAUTHORIZED.code);
@@ -228,7 +228,7 @@ describe('attachments upload-url + confirm-upload', () => {
 
     it('2. USER 无 RBAC member.other → 30100', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', selfAuth)
         .send(buildUploadUrlBody({ ownerId: memberB.id }));
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -236,7 +236,7 @@ describe('attachments upload-url + confirm-upload', () => {
 
     it('3. member self upload-url 成功 → 返 6 字段', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', selfAuth)
         .send(buildUploadUrlBody());
       expect(res.status).toBe(201);
@@ -253,7 +253,7 @@ describe('attachments upload-url + confirm-upload', () => {
 
     it('4. certificate self upload-url 成功', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', selfAuth)
         .send(
           buildUploadUrlBody({
@@ -269,7 +269,7 @@ describe('attachments upload-url + confirm-upload', () => {
 
     it('5. activity upload-url 成功(粗粒度,无 scope)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', superAuth)
         .send(
           buildUploadUrlBody({
@@ -282,7 +282,7 @@ describe('attachments upload-url + confirm-upload', () => {
 
     it('6. ownerType 不在 enum → 13010', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', superAuth)
         .send(buildUploadUrlBody({ ownerType: 'unknown-owner' }));
       expectBizError(res, BizCode.ATTACHMENT_OWNER_TYPE_INVALID);
@@ -301,7 +301,7 @@ describe('attachments upload-url + confirm-upload', () => {
         },
       });
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', superAuth)
         .send(buildUploadUrlBody({ ownerType: 'inactivetype' }));
       // ownerType enum 兜底先命中(沿 service: assertOwnerTypeAllowed 先 enum 再 config)
@@ -311,7 +311,7 @@ describe('attachments upload-url + confirm-upload', () => {
 
     it('8. ownerId 不存在 → 13011', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', superAuth)
         .send(buildUploadUrlBody({ ownerId: 'cl9zzz0000000000000nonexist' }));
       expectBizError(res, BizCode.ATTACHMENT_OWNER_NOT_FOUND);
@@ -319,7 +319,7 @@ describe('attachments upload-url + confirm-upload', () => {
 
     it('9. mime 系统级黑名单(application/zip)→ 13033', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', superAuth)
         .send(buildUploadUrlBody({ mime: 'application/zip' }));
       expectBizError(res, BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED);
@@ -327,7 +327,7 @@ describe('attachments upload-url + confirm-upload', () => {
 
     it('10. mime 不在白名单(image/svg+xml 不在 member typeConfig)→ 13012', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', superAuth)
         .send(buildUploadUrlBody({ mime: 'image/svg+xml' }));
       expectBizError(res, BizCode.ATTACHMENT_MIME_NOT_ALLOWED);
@@ -335,7 +335,7 @@ describe('attachments upload-url + confirm-upload', () => {
 
     it('11. size 超过 typeConfig.defaultMaxSizeBytes → 13013', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', superAuth)
         .send(buildUploadUrlBody({ sizeBytes: 10_000_000 }));
       expectBizError(res, BizCode.ATTACHMENT_SIZE_EXCEEDED);
@@ -343,7 +343,7 @@ describe('attachments upload-url + confirm-upload', () => {
 
     it('12. originalName 含身份证号 → 13015', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', superAuth)
         .send(buildUploadUrlBody({ originalName: '440101199001011234.jpg' }));
       expectBizError(res, BizCode.ATTACHMENT_PII_DETECTED);
@@ -351,7 +351,7 @@ describe('attachments upload-url + confirm-upload', () => {
 
     it('13. sizeBytes=0 边界 → 成功', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', selfAuth)
         .send(buildUploadUrlBody({ sizeBytes: 0 }));
       expect(res.status).toBe(201);
@@ -360,7 +360,7 @@ describe('attachments upload-url + confirm-upload', () => {
     it('14. originalName 极长(255 字符)→ 成功', async () => {
       const longName = 'a'.repeat(251) + '.jpg';
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', selfAuth)
         .send(buildUploadUrlBody({ originalName: longName }));
       expect(res.status).toBe(201);
@@ -370,7 +370,7 @@ describe('attachments upload-url + confirm-upload', () => {
       await truncateAttachments();
       const beforeCount = await prisma.auditLog.count();
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', selfAuth)
         .send(buildUploadUrlBody());
       expect(res.status).toBe(201);
@@ -392,7 +392,7 @@ describe('attachments upload-url + confirm-upload', () => {
     ): Promise<{ token: string; key: string; bodyUsed: Record<string, unknown> }> {
       const body = buildUploadUrlBody(overrides);
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/upload-url')
+        .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', authHeader)
         .send(body);
       expect(res.status).toBe(201);
@@ -414,7 +414,7 @@ describe('attachments upload-url + confirm-upload', () => {
       await fakeUploadToLocal(key, 1024);
 
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/confirm-upload')
+        .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token });
       expect(res.status).toBe(201);
@@ -429,7 +429,7 @@ describe('attachments upload-url + confirm-upload', () => {
       await fakeUploadToLocal(key, 1024);
 
       await request(httpServer(app))
-        .post('/api/v2/attachments/confirm-upload')
+        .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token })
         .expect(201);
@@ -452,7 +452,7 @@ describe('attachments upload-url + confirm-upload', () => {
       await fakeUploadToLocal(key, 1024);
 
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/confirm-upload')
+        .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token });
       expect(typeof res.body.data.accessUrl).toBe('string');
@@ -468,7 +468,7 @@ describe('attachments upload-url + confirm-upload', () => {
       const tampered = `${a}.${buf.toString('base64url')}`;
 
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/confirm-upload')
+        .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: tampered });
       expectBizError(res, BizCode.ATTACHMENT_NOT_FOUND);
@@ -476,7 +476,7 @@ describe('attachments upload-url + confirm-upload', () => {
 
     it('20. confirm token 格式 malformed(无 `.`)→ 13001', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/confirm-upload')
+        .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: 'xxxxxxnotvalid' });
       expectBizError(res, BizCode.ATTACHMENT_NOT_FOUND);
@@ -499,7 +499,7 @@ describe('attachments upload-url + confirm-upload', () => {
         encryptionKey,
       );
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/confirm-upload')
+        .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: expiredToken });
       expectBizError(res, BizCode.ATTACHMENT_NOT_FOUND);
@@ -509,7 +509,7 @@ describe('attachments upload-url + confirm-upload', () => {
       const { token, key } = await getValidToken(selfAuth);
       await fakeUploadToLocal(key, 1024);
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/confirm-upload')
+        .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', otherAuth)
         .send({ uploadToken: token });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -519,7 +519,7 @@ describe('attachments upload-url + confirm-upload', () => {
       const { token } = await getValidToken();
       // 不调 fakeUploadToLocal → LocalProvider headObject 返 exists=false
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/confirm-upload')
+        .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token });
       expectBizError(res, BizCode.ATTACHMENT_NOT_FOUND);
@@ -529,7 +529,7 @@ describe('attachments upload-url + confirm-upload', () => {
       const { token, key } = await getValidToken(selfAuth, { sizeBytes: 1024 });
       await fakeUploadToLocal(key, 2048); // 实际 2048,与 claims 1024 不一致
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/confirm-upload')
+        .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token });
       expectBizError(res, BizCode.ATTACHMENT_SIZE_EXCEEDED);
@@ -539,13 +539,13 @@ describe('attachments upload-url + confirm-upload', () => {
       const { token, key } = await getValidToken();
       await fakeUploadToLocal(key, 1024);
       await request(httpServer(app))
-        .post('/api/v2/attachments/confirm-upload')
+        .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token })
         .expect(201);
 
       const res2 = await request(httpServer(app))
-        .post('/api/v2/attachments/confirm-upload')
+        .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token });
       expectBizError(res2, BizCode.ATTACHMENT_NOT_FOUND);
@@ -556,7 +556,7 @@ describe('attachments upload-url + confirm-upload', () => {
       await fakeUploadToLocal(key, 1024);
       const checksum = 'a'.repeat(64);
       await request(httpServer(app))
-        .post('/api/v2/attachments/confirm-upload')
+        .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token, checksum })
         .expect(201);
@@ -585,7 +585,7 @@ describe('attachments upload-url + confirm-upload', () => {
         encryptionKey,
       );
       await request(httpServer(app))
-        .post('/api/v2/attachments/confirm-upload')
+        .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: expiredToken });
       const afterCount = await prisma.auditLog.count({ where: { event: 'attachment.upload' } });
@@ -596,7 +596,7 @@ describe('attachments upload-url + confirm-upload', () => {
       const { token, key } = await getValidToken();
       await fakeUploadToLocal(key, 1024);
       const res = await request(httpServer(app))
-        .post('/api/v2/attachments/confirm-upload')
+        .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token })
         .expect(201);

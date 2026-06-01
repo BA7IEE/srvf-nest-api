@@ -104,7 +104,7 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   沿 F4 v1.0:入口 @Roles(SUPER_ADMIN, ADMIN),不接 RBAC 业务判权。
     AttachmentConfigsModule,
     // V2.x C-7 attachments 主模块
-    //   (D7-attachments v1.0 §5.1 / §6;path /api/v2/attachments;7 端点;
+    //   (D7-attachments v1.0 §5.1 / §6;path /api/admin/v1/attachments;7 端点;
     //    130xx 业务段实装 13001 / 13010-13013 / 13015;复用 30100 RBAC_FORBIDDEN)。
     //   首次业务模块接入 rbac.can();入口仅 JwtAuthGuard(F3 v1.0;不加 @Roles)。
     //   audit_logs 已集成;Provider 文件层经 StorageModule 接通。
