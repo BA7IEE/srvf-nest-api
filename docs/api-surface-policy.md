@@ -2,11 +2,32 @@
 
 > **目的**:锁定 SRVF API 当前对外提供的 surface(客户端面)分类与新增规则。
 > **配套文档**:[`current-state.md`](./current-state.md)(当前事实)。设计期顶层规范 `api-client-boundary.md` 已归档至 [`docs/archive/plans/api-client-boundary-design-period.md`](./archive/plans/api-client-boundary-design-period.md);本文件已承接为 surface 边界的 active 单一权威源。
-> **本 PR 不修改 controller 路径、不删 v2、不动 OpenAPI snapshot;仅以文档形式登记长期边界**。
+> ⚠️ **2026-06-01 方向变更(Route B)**:用户拍板重开 [`AGENTS.md §19.7 D-2`](../AGENTS.md) 的"方案 C(`/api/v2/*` 长期保留)",改为**按客户端/场景四分的全量物理迁移**(见本文件 §0 + [`api-surface-migration-plan.md`](api-surface-migration-plan.md) + [`AGENTS.md §21 D-9`](../AGENTS.md))。**自该日起,本文件 §1 ~ §3 + §7 P1-D + §8 中一切关于"冻结 v2 / 不迁移 / Phase 1B 暂缓 / 不动 controller path / 新接口默认落 v2"的条款,均被本 §0 + Route B 取代,仅作迁移前历史口径保留**(其中 §1 表整体为迁移前现状快照)。§4 / §5 / §6 / §9(归档关系 / Mixed Controller 存量 / mobile-like 处置 / App·System semantic locks)继续有效。
 
 ---
 
-## 1. 当前 surface 分类
+## 0. API Surface 目标形态(Route B;2026-06-01 拍板)
+
+> 本节是 surface 长期边界的 **canonical 权威源**,取代原"方案 C 冻结"口径。执行细节见 [`api-surface-migration-plan.md`](api-surface-migration-plan.md);决策锁见 [`AGENTS.md §21 D-9`](../AGENTS.md)(取代 §19.7 D-2)。
+
+| Surface | 目标前缀 | 用途 |
+|---|---|---|
+| **Admin** | `/api/admin/v1/*` | 管理后台 / 运维后台业务(现 `/api/v2/*` 业务 CRUD + `/api/users/*`) |
+| **App** | `/api/app/v1/*` | App / 小程序 / 队员端(**已建成 15 endpoint,不迁移**) |
+| **Auth** | `/api/auth/v1/*` | 登录 / 刷新 / 登出 / 认证会话(现 `/api/auth/*`) |
+| **System** | `/api/system/v1/*` | 健康检查 / 运行状态 / 系统元信息 / ops 配置(现 `/api/health/*` + 现 `/api/v2/*` 中 ops/配置/可观测类;承接 D-1 `contribution-rules` → System) |
+| **Open** | `/api/open/v1/*` | **预留**:未来开放平台;本期不实现、不占用 |
+
+**新增规则(自 2026-06-01 生效,覆盖 §2.1 / §2.2 的"新接口落 v2"口径)**:
+
+- ✅ **新接口一律落新前缀**:新管理面 → `/api/admin/v1/*`;新 App → `/api/app/v1/*`;新认证 → `/api/auth/v1/*`;新 ops/系统 → `/api/system/v1/*`。**不再向 `/api/v2/*` 新增任何 endpoint**。
+- ✅ 存量 `/api/v2/*` / `/api/auth/*` / `/api/users/*` / `/api/health/*` 按 [`api-surface-migration-plan.md §6`](api-surface-migration-plan.md) alias → 灰度 → deprecate → 删除分阶段迁移;**每阶段 D 档、单独立项、串行、AI 不自启动**。
+- ✅ App / Admin / System / Auth surface 间 **DTO 不得复用或派生**(沿 §2.1 / D-6);四 surface 物理分离。
+- ❌ audit-logs / storage / RBAC 系 / dictionaries / attachment-configs 的 admin↔system 灰区归属**未拍板**,由迁移计划 Phase 0 映射表经用户签字后冻结;**不**在常规 PR 内擅自归类。
+
+---
+
+## 1. 当前 surface 分类(迁移前现状快照)
 
 | Surface | 当前路径前缀 | 状态 | 用途 |
 |---|---|---|---|

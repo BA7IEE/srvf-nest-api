@@ -6,6 +6,11 @@
 
 ### Docs
 
+- **API surface Route B 全量迁移立项冻结**(文件 docs-only;承载 D 档决策的"评审稿冻结 + 立项"步骤,沿 [`docs/process.md §3` A 档](docs/process.md) + [`§4` D 档降速 step 5](docs/process.md)):用户 2026-06-01 拍板重开 [`AGENTS.md §19.7 D-2`](AGENTS.md) 的"方案 C(`/api/v2/*` 长期保留)",改为按客户端/场景四分的**全量物理迁移**(`/api/admin/v1` + `/api/app/v1` + `/api/auth/v1` + `/api/system/v1`,预留 `/api/open/v1`)
+  - **新增** [`docs/api-surface-migration-plan.md`](docs/api-surface-migration-plan.md):目标形态 + 决策冻结 + 现状→目标映射原则 + 风险表 + 方案 A/B + Phase 0~4(inventory→alias→canonical→deprecation→removal)+ 回退条件 + 执行追踪
+  - **`AGENTS.md`**:D-2 加"已重开并被取代"指针(append-only,不修订 §19 原文)+ 新增 **§21 D-9**(取代 D-2 的"不迁移"部分;D-1 / D-3~D-8 不受影响)
+  - **`docs/api-surface-policy.md`**:新增 **§0 canonical 目标形态**;§1~§3 / §7 P1-D / §8 旧"冻结 v2 / 暂缓 Phase 1B / 不迁移"口径被取代,§4 / §5 / §6 / §9 仍有效
+  - **`docs/current-state.md` / `README.md`**:surface 表与文档地图同步 Route B 立项;**零代码改动**(不动 `src/**` / OpenAPI snapshot / contract / e2e),迁移每阶段 D 档单独立项
 - **注释 true-up:RBAC 模块历史注释对齐 `docs/current-state.md`**(B 档;沿 [`docs/process.md §3` B 档](docs/process.md)):修正 5 文件 6 处滞后注释——`src/app.module.ts`(RBAC 业务判权"仅 attachments 接入" → P0-F 后已扩展管理面 rbac / config / users / audit-logs)/ `src/modules/permissions/permissions.module.ts`(14 RBAC CRUD 接入 + seed 标"仍未做" → 已于 P0-F / PR #8 完成,仅 ADMIN 内置角色 Slow-3 未做;export 注释"本期 AttachmentsModule" → 已扩展多模块)/ `rbac.service.ts`(PR #6"本 PR 不做"reload + 业务模块接入 → 已收口)/ `rbac-cache.service.ts`("get/set 不被任何上层调用 / cache 为空 / invalidate no-op" → 已被 `can()` 实际调用)/ `rbac.dto.ts`(reload"不接 `rbac.can()`" → P0-F PR-1 已迁移 `rbac.can('rbac.config.reload')`)
   - **改写一律指针式**:保留历史叙事,只中和与现状冲突的"现在时陈述",易变枚举统一指向 `docs/current-state.md` + 模块 `CLAUDE.md`;**零行为改动**(不动 Guard / RbacService / seed / export / 测试);`pnpm lint` + `pnpm typecheck` 绿
 - **docs 治理 PR-6**:`ARCHITECTURE.md` 顶层架构入口重写(原 1547 行 → 294 行),设计期蓝图按章节归档至 `docs/archive/**`,active 引用同步刷新(沿 [`docs/process.md §3` A 档](docs/process.md) + [`docs/srvf-foundation-baseline.md §13.3` 纯文档变更](docs/srvf-foundation-baseline.md))
