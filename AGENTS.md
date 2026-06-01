@@ -43,6 +43,7 @@
 - **pnpm-only**:依赖安装与脚本执行统一使用 `pnpm`,禁止 `npm` / `yarn` / `bun`,避免 lockfile 漂移
 - `@nestjs/swagger` 必须按其 `peerDependencies` 选择与当前 NestJS 主版本兼容的版本,**禁止手动钉死主版本号**(如硬写 `^7.x`),否则会出现 peer 警告并隐藏 schema bug
 - 每次只实现一个阶段,不跨阶段提前写;每个阶段完成后必须 lint / typecheck / test,或至少启动服务验证
+- **跨文件改动先按符号 / 引用链确认,再动手**:改 class / method / DTO / provider 注入链 / 调用点前,优先用 TypeScript 符号定义跳转 + 引用查找(LSP / IDE / `tsc`)确认目标的真实身份与全部调用点;`grep` 同名命中**只用于定位候选**,**禁止**仅凭字符串同名直接改(大项目里同名 method / DTO / 字段极易命中错符号,盲改会漏掉真正的调用点 / 注入链或误改无关同名符号)
 
 ---
 
