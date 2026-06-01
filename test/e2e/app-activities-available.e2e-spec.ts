@@ -20,7 +20,7 @@ import { createTestApp } from '../setup/test-app';
 // 可见性沿 D-P2-4-1 = A(v0.1 锁定):仅 statusCode='published' AND deletedAt IS NULL;
 // draft / cancelled / completed / 软删 一律不返;query 严格 page / pageSize(沿 §9.1)。
 //
-// 旧 /api/v2/activities* 行为**逐字不变**(沿 §11.4 + 风险表 13.12)。
+// 旧 /api/admin/v1/activities* 行为**逐字不变**(沿 §11.4 + 风险表 13.12)。
 
 interface ResBody {
   code: number;
@@ -429,11 +429,11 @@ describe('App GET /api/app/v1/activities/available (P2-4a)', () => {
   });
 
   // =====================================================
-  // 8. 旧 /api/v2/activities 行为不变(沿 §11.4 + 风险表 13.12)
+  // 8. 旧 /api/admin/v1/activities 行为不变(沿 §11.4 + 风险表 13.12)
   // =====================================================
 
-  describe('legacy /api/v2/activities 行为不变', () => {
-    it('ADMIN GET /api/v2/activities 仍返既有 ActivityListItemDto 字段集', async () => {
+  describe('legacy /api/admin/v1/activities 行为不变', () => {
+    it('ADMIN GET /api/admin/v1/activities 仍返既有 ActivityListItemDto 字段集', async () => {
       // 既有 ActivityListItemDto 字段集(沿 src/modules/activities/activities.dto.ts)
       const ADMIN_LEGACY_KEYS = [
         'id',
@@ -462,7 +462,7 @@ describe('App GET /api/app/v1/activities/available (P2-4a)', () => {
       // 保证至少一条 published 活动可见
       await createActivity('published', 'legacy-1');
 
-      const res = await get('/api/v2/activities?pageSize=5', authHeader);
+      const res = await get('/api/admin/v1/activities?pageSize=5', authHeader);
       expect(res.status).toBe(200);
       const data = res.body.data as { items: Array<Record<string, unknown>> };
       expect(data.items.length).toBeGreaterThan(0);
@@ -472,7 +472,7 @@ describe('App GET /api/app/v1/activities/available (P2-4a)', () => {
       }
     });
 
-    it('USER GET /api/v2/activities Q-A7 仍仅返 published / completed', async () => {
+    it('USER GET /api/admin/v1/activities Q-A7 仍仅返 published / completed', async () => {
       // 既有 USER 走 legacy 看 published + completed(沿 activities.service.ts Q-A7)
       await createTestUser(app, { username: 'p24a_legacy_user', role: Role.USER });
       const { authHeader } = await loginAs(app, 'p24a_legacy_user');
@@ -480,7 +480,7 @@ describe('App GET /api/app/v1/activities/available (P2-4a)', () => {
       await createActivity('completed', 'legacy-u-cmp');
       await createActivity('draft', 'legacy-u-draft');
 
-      const res = await get('/api/v2/activities?pageSize=100', authHeader);
+      const res = await get('/api/admin/v1/activities?pageSize=100', authHeader);
       expect(res.status).toBe(200);
       const data = res.body.data as { items: Array<{ statusCode: string }> };
       for (const it of data.items) {

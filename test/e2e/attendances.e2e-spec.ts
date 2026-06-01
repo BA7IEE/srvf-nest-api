@@ -153,7 +153,7 @@ describe('attendances 模块', () => {
 
     // 主活动(published)
     const actCreate = await request(httpServer(app))
-      .post('/api/v2/activities')
+      .post('/api/admin/v1/activities')
       .set('Authorization', adminAuth)
       .send({
         title: 'ATT-MAIN',
@@ -165,12 +165,12 @@ describe('attendances 模块', () => {
       });
     activityId = actCreate.body.data.id;
     await request(httpServer(app))
-      .patch(`/api/v2/activities/${activityId}/publish`)
+      .patch(`/api/admin/v1/activities/${activityId}/publish`)
       .set('Authorization', adminAuth);
 
     // 已取消活动
     const actCancel = await request(httpServer(app))
-      .post('/api/v2/activities')
+      .post('/api/admin/v1/activities')
       .set('Authorization', adminAuth)
       .send({
         title: 'ATT-CANCEL',
@@ -182,16 +182,16 @@ describe('attendances 模块', () => {
       });
     activityCancelledId = actCancel.body.data.id;
     await request(httpServer(app))
-      .patch(`/api/v2/activities/${activityCancelledId}/publish`)
+      .patch(`/api/admin/v1/activities/${activityCancelledId}/publish`)
       .set('Authorization', adminAuth);
     await request(httpServer(app))
-      .patch(`/api/v2/activities/${activityCancelledId}/cancel`)
+      .patch(`/api/admin/v1/activities/${activityCancelledId}/cancel`)
       .set('Authorization', adminAuth)
       .send({});
 
     // 另一活动(用于跨 activity 时间冲突 + R23 mismatch)
     const actOther = await request(httpServer(app))
-      .post('/api/v2/activities')
+      .post('/api/admin/v1/activities')
       .set('Authorization', adminAuth)
       .send({
         title: 'ATT-OTHER',
@@ -203,19 +203,19 @@ describe('attendances 模块', () => {
       });
     activityOtherId = actOther.body.data.id;
     await request(httpServer(app))
-      .patch(`/api/v2/activities/${activityOtherId}/publish`)
+      .patch(`/api/admin/v1/activities/${activityOtherId}/publish`)
       .set('Authorization', adminAuth);
 
     // 报名 memberA 到 activityId(R23 正向)
     const reg1 = await request(httpServer(app))
-      .post(`/api/v2/activities/${activityId}/registrations`)
+      .post(`/api/admin/v1/activities/${activityId}/registrations`)
       .set('Authorization', adminAuth)
       .send({ memberId: memberAId });
     registrationAId = reg1.body.data.id;
 
     // 报名 memberA 到 activityOtherId(R23 反向:registration.activityId !== sheet.activityId)
     const reg2 = await request(httpServer(app))
-      .post(`/api/v2/activities/${activityOtherId}/registrations`)
+      .post(`/api/admin/v1/activities/${activityOtherId}/registrations`)
       .set('Authorization', adminAuth)
       .send({ memberId: memberAId });
     registrationOtherActivityId = reg2.body.data.id;
@@ -249,7 +249,7 @@ describe('attendances 模块', () => {
     records: Array<Record<string, unknown>>,
   ): Promise<string> {
     const res = await request(httpServer(app))
-      .post(`/api/v2/activities/${actId}/attendance-sheets`)
+      .post(`/api/admin/v1/activities/${actId}/attendance-sheets`)
       .set('Authorization', adminAuth)
       .send({ records });
     if (res.status !== 201) {
@@ -261,7 +261,7 @@ describe('attendances 模块', () => {
   // 批次 4-B helper:推到 pending_final_review(APD 一级 approve)。
   async function approveToPendingFinalReview(sheetId: string): Promise<void> {
     const res = await request(httpServer(app))
-      .patch(`/api/v2/attendance-sheets/${sheetId}/approve`)
+      .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
       .set('Authorization', adminAuth)
       .send({});
     if (res.status !== 200) {
@@ -276,7 +276,7 @@ describe('attendances 模块', () => {
   async function approveToTerminalApproved(sheetId: string): Promise<void> {
     await approveToPendingFinalReview(sheetId);
     const res = await request(httpServer(app))
-      .patch(`/api/v2/attendance-sheets/${sheetId}/final-approve`)
+      .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
       .set('Authorization', adminAuth)
       .send({});
     if (res.status !== 200) {
@@ -293,7 +293,7 @@ describe('attendances 模块', () => {
   ): Promise<void> {
     await approveToPendingFinalReview(sheetId);
     const res = await request(httpServer(app))
-      .patch(`/api/v2/attendance-sheets/${sheetId}/final-reject`)
+      .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-reject`)
       .set('Authorization', adminAuth)
       .send({ finalReviewNote: note });
     if (res.status !== 200) {
@@ -306,14 +306,14 @@ describe('attendances 模块', () => {
   describe('权限边界', () => {
     it('未登录 POST submit → 401', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .send({ records: [baseRecord()] });
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('USER POST submit → 403', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', userWithMemberAuth)
         .send({ records: [baseRecord()] });
       expectBizError(res, BizCode.FORBIDDEN);
@@ -321,28 +321,28 @@ describe('attendances 模块', () => {
 
     it('USER GET list → 403', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .get(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', userWithMemberAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
 
     it('USER GET detail → 403', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/attendance-sheets/cl000000000000000000xxxx`)
+        .get(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx`)
         .set('Authorization', userWithMemberAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
 
     it('USER GET review-detail → 403', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/attendance-sheets/cl000000000000000000xxxx/review-detail`)
+        .get(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx/review-detail`)
         .set('Authorization', userWithMemberAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
 
     it('USER PATCH edit → 403', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/cl000000000000000000xxxx`)
+        .patch(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx`)
         .set('Authorization', userWithMemberAuth)
         .send({});
       expectBizError(res, BizCode.FORBIDDEN);
@@ -350,14 +350,14 @@ describe('attendances 模块', () => {
 
     it('USER DELETE → 403', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attendance-sheets/cl000000000000000000xxxx`)
+        .delete(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx`)
         .set('Authorization', userWithMemberAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
 
     it('USER PATCH approve → 403', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/cl000000000000000000xxxx/approve`)
+        .patch(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx/approve`)
         .set('Authorization', userWithMemberAuth)
         .send({});
       expectBizError(res, BizCode.FORBIDDEN);
@@ -365,7 +365,7 @@ describe('attendances 模块', () => {
 
     it('USER PATCH reject → 403', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/cl000000000000000000xxxx/reject`)
+        .patch(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx/reject`)
         .set('Authorization', userWithMemberAuth)
         .send({ reviewNote: 'x' });
       expectBizError(res, BizCode.FORBIDDEN);
@@ -390,7 +390,7 @@ describe('attendances 模块', () => {
   describe('POST submit 主路径', () => {
     it('正常提交单 record → 201,statusCode=pending,version=1', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -416,7 +416,7 @@ describe('attendances 模块', () => {
 
     it('提交多 records(memberA + memberC)→ 201', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityOtherId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityOtherId}/attendance-sheets`)
         .set('Authorization', superAdminAuth)
         .send({
           records: [
@@ -463,7 +463,7 @@ describe('attendances 模块', () => {
     it('提交带 registrationId(R23 正向:同活动)→ 201', async () => {
       // memberA 在 activityId 已有 registration registrationAId(R23 正向)
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -484,7 +484,7 @@ describe('attendances 模块', () => {
   describe('POST submit 关键失败', () => {
     it('activity 不存在 → ACTIVITY_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities/cl0000000000000000000000/attendance-sheets')
+        .post('/api/admin/v1/activities/cl0000000000000000000000/attendance-sheets')
         .set('Authorization', adminAuth)
         .send({ records: [baseRecord({ memberId: memberCId })] });
       expectBizError(res, BizCode.ACTIVITY_NOT_FOUND);
@@ -492,7 +492,7 @@ describe('attendances 模块', () => {
 
     it('activity cancelled → ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN(20122)', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityCancelledId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityCancelledId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({ records: [baseRecord({ memberId: memberCId })] });
       expectBizError(res, BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN);
@@ -500,7 +500,7 @@ describe('attendances 模块', () => {
 
     it('member 不存在 → MEMBER_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [baseRecord({ memberId: 'cl0000000000000000000000' })],
@@ -510,7 +510,7 @@ describe('attendances 模块', () => {
 
     it('roleCode 不存在 → ATTENDANCE_ROLE_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [baseRecord({ memberId: memberCId, roleCode: 'no-such-role' })],
@@ -520,7 +520,7 @@ describe('attendances 模块', () => {
 
     it('attendanceStatusCode 不存在 → ATTENDANCE_STATUS_CODE_INVALID(absent/leave 自动失败)', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [baseRecord({ memberId: memberCId, attendanceStatusCode: 'absent' })],
@@ -530,7 +530,7 @@ describe('attendances 模块', () => {
 
     it('checkOutAt <= checkInAt → CHECK_OUT_BEFORE_CHECK_IN', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -546,7 +546,7 @@ describe('attendances 模块', () => {
 
     it('serviceHours <= 0 → ATTENDANCE_SERVICE_HOURS_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -564,7 +564,7 @@ describe('attendances 模块', () => {
 
     it('serviceHours > 跨度 → ATTENDANCE_SERVICE_HOURS_EXCEEDS_SPAN', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -582,7 +582,7 @@ describe('attendances 模块', () => {
     it('R23 跨表:registrationId 不属于本活动 → ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH', async () => {
       // memberA 在 activityOtherId 有 reg,但 sheet 父活动是 activityId
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -599,7 +599,7 @@ describe('attendances 模块', () => {
 
     it('R23 跨表:registrationId 不存在 → MISMATCH', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -616,7 +616,7 @@ describe('attendances 模块', () => {
 
     it('空 records 数组 → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({ records: [] });
       expect(res.status).toBe(400);
@@ -624,7 +624,7 @@ describe('attendances 模块', () => {
 
     it('non-whitelisted statusCode → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           statusCode: 'approved',
@@ -635,7 +635,7 @@ describe('attendances 模块', () => {
 
     it('non-whitelisted version → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           version: 99,
@@ -646,7 +646,7 @@ describe('attendances 模块', () => {
 
     it('non-whitelisted previousSnapshot → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           previousSnapshot: { fake: true },
@@ -657,7 +657,7 @@ describe('attendances 模块', () => {
 
     it('non-whitelisted submitterUserId → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           submitterUserId: 'cl0000000000000000000000',
@@ -691,7 +691,7 @@ describe('attendances 模块', () => {
 
     it('完全重叠 → 22060', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -707,7 +707,7 @@ describe('attendances 模块', () => {
 
     it('部分重叠 → 22060', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -723,7 +723,7 @@ describe('attendances 模块', () => {
 
     it('Q-S15 左闭右开:紧邻 endAt = startAt 允许', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -740,7 +740,7 @@ describe('attendances 模块', () => {
     it('跨 Sheet 跨 Activity 全局校验:不同 activity 但同 memberId 时间重叠 → 22060', async () => {
       // 在 activityOtherId 给 overlapMember 提交同时段 → 应被拒
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityOtherId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityOtherId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -762,7 +762,7 @@ describe('attendances 模块', () => {
         })
       ).id;
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -799,14 +799,14 @@ describe('attendances 模块', () => {
 
     it('GET list:activity 不存在 → ACTIVITY_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/activities/cl0000000000000000000000/attendance-sheets')
+        .get('/api/admin/v1/activities/cl0000000000000000000000/attendance-sheets')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ACTIVITY_NOT_FOUND);
     });
 
     it('GET list 主路径:分页返回 + statusCode=pending 过滤', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${activityId}/attendance-sheets`)
+        .get(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .query({ statusCode: 'pending' })
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
@@ -818,14 +818,14 @@ describe('attendances 模块', () => {
 
     it('GET detail:不存在 → ATTENDANCE_SHEET_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attendance-sheets/cl0000000000000000000000')
+        .get('/api/admin/v1/attendance-sheets/cl0000000000000000000000')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
     });
 
     it('GET detail:不返 records 数组(Sheet 简化)', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/attendance-sheets/${createdId}`)
+        .get(`/api/admin/v1/attendance-sheets/${createdId}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.id).toBe(createdId);
@@ -836,7 +836,7 @@ describe('attendances 模块', () => {
 
     it('GET review-detail:Activity 摘要 + Sheet + Records 完整(R25)', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/attendance-sheets/${createdId}/review-detail`)
+        .get(`/api/admin/v1/attendance-sheets/${createdId}/review-detail`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.activity).toBeDefined();
@@ -856,7 +856,7 @@ describe('attendances 模块', () => {
 
     it('GET review-detail:不存在 → ATTENDANCE_SHEET_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/attendance-sheets/cl0000000000000000000000/review-detail')
+        .get('/api/admin/v1/attendance-sheets/cl0000000000000000000000/review-detail')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
     });
@@ -899,7 +899,7 @@ describe('attendances 模块', () => {
         }),
       ]);
       await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${rejectedId}/reject`)
+        .patch(`/api/admin/v1/attendance-sheets/${rejectedId}/reject`)
         .set('Authorization', adminAuth)
         .send({ reviewNote: 'fixture reject' });
     });
@@ -910,7 +910,7 @@ describe('attendances 模块', () => {
       expect(before?.previousSnapshot).toBeNull();
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${pendingId}`)
+        .patch(`/api/admin/v1/attendance-sheets/${pendingId}`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -947,7 +947,7 @@ describe('attendances 模块', () => {
 
     it('edit approved Sheet → 22040 ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${approvedId}`)
+        .patch(`/api/admin/v1/attendance-sheets/${approvedId}`)
         .set('Authorization', adminAuth)
         .send({ records: [baseRecord({ memberId: memberCId })] });
       expectBizError(res, BizCode.ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE);
@@ -955,7 +955,7 @@ describe('attendances 模块', () => {
 
     it('edit rejected Sheet → 22041 ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${rejectedId}`)
+        .patch(`/api/admin/v1/attendance-sheets/${rejectedId}`)
         .set('Authorization', adminAuth)
         .send({ records: [baseRecord({ memberId: memberCId })] });
       expectBizError(res, BizCode.ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE);
@@ -963,7 +963,7 @@ describe('attendances 模块', () => {
 
     it('edit Sheet 不存在 → 22001', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/attendance-sheets/cl0000000000000000000000')
+        .patch('/api/admin/v1/attendance-sheets/cl0000000000000000000000')
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
@@ -978,7 +978,7 @@ describe('attendances 模块', () => {
         }),
       ]);
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}`)
         .set('Authorization', adminAuth)
         .send({ statusCode: 'approved' });
       expect(res.status).toBe(400);
@@ -993,7 +993,7 @@ describe('attendances 模块', () => {
         }),
       ]);
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}`)
         .set('Authorization', adminAuth)
         .send({ version: 99 });
       expect(res.status).toBe(400);
@@ -1008,7 +1008,7 @@ describe('attendances 模块', () => {
         }),
       ]);
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}`)
         .set('Authorization', adminAuth)
         .send({ previousSnapshot: { fake: true } });
       expect(res.status).toBe(400);
@@ -1023,7 +1023,7 @@ describe('attendances 模块', () => {
         }),
       ]);
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}`)
         .set('Authorization', adminAuth)
         .send({ reviewNote: 'should be rejected' });
       expect(res.status).toBe(400);
@@ -1042,7 +1042,7 @@ describe('attendances 模块', () => {
         }),
       ]);
       const del = await request(httpServer(app))
-        .delete(`/api/v2/attendance-sheets/${id}`)
+        .delete(`/api/admin/v1/attendance-sheets/${id}`)
         .set('Authorization', adminAuth);
       expect(del.status).toBe(200);
 
@@ -1053,7 +1053,7 @@ describe('attendances 模块', () => {
 
       // 软删后 detail 不可见
       const detail = await request(httpServer(app))
-        .get(`/api/v2/attendance-sheets/${id}`)
+        .get(`/api/admin/v1/attendance-sheets/${id}`)
         .set('Authorization', adminAuth);
       expectBizError(detail, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
     });
@@ -1070,7 +1070,7 @@ describe('attendances 模块', () => {
       await approveToTerminalApproved(id);
 
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attendance-sheets/${id}`)
+        .delete(`/api/admin/v1/attendance-sheets/${id}`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE);
     });
@@ -1084,19 +1084,19 @@ describe('attendances 模块', () => {
         }),
       ]);
       await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/reject`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/reject`)
         .set('Authorization', adminAuth)
         .send({ reviewNote: 'cleanup' });
 
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attendance-sheets/${id}`)
+        .delete(`/api/admin/v1/attendance-sheets/${id}`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ATTENDANCE_SHEET_REJECTED_NOT_EDITABLE);
     });
 
     it('软删不存在 Sheet → 22001', async () => {
       const res = await request(httpServer(app))
-        .delete('/api/v2/attendance-sheets/cl0000000000000000000000')
+        .delete('/api/admin/v1/attendance-sheets/cl0000000000000000000000')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
     });
@@ -1114,7 +1114,7 @@ describe('attendances 模块', () => {
         }),
       ]);
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/approve`)
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res, BizCode.ATTENDANCE_RECORD_CONTRIBUTION_POINTS_REQUIRED);
@@ -1131,7 +1131,7 @@ describe('attendances 模块', () => {
       await fillContributionPoints(id, 2);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/approve`)
         .set('Authorization', adminAuth)
         .send({ reviewNote: 'looks good' });
       expect(res.status).toBe(200);
@@ -1156,11 +1156,11 @@ describe('attendances 模块', () => {
       ]);
       await fillContributionPoints(id);
       await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/approve`)
         .set('Authorization', adminAuth)
         .send({});
       const res2 = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/approve`)
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res2, BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
@@ -1175,11 +1175,11 @@ describe('attendances 模块', () => {
         }),
       ]);
       await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/reject`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/reject`)
         .set('Authorization', adminAuth)
         .send({ reviewNote: 'reject me' });
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/approve`)
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res, BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
@@ -1187,7 +1187,7 @@ describe('attendances 模块', () => {
 
     it('approve 不存在 → 22001', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/attendance-sheets/cl0000000000000000000000/approve')
+        .patch('/api/admin/v1/attendance-sheets/cl0000000000000000000000/approve')
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
@@ -1206,7 +1206,7 @@ describe('attendances 模块', () => {
         }),
       ]);
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/reject`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/reject`)
         .set('Authorization', adminAuth)
         .send({ reviewNote: '数据有误' });
       expect(res.status).toBe(200);
@@ -1223,7 +1223,7 @@ describe('attendances 模块', () => {
         }),
       ]);
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/reject`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/reject`)
         .set('Authorization', adminAuth)
         .send({});
       expect(res.status).toBe(400);
@@ -1239,11 +1239,11 @@ describe('attendances 模块', () => {
       ]);
       await fillContributionPoints(id);
       await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/approve`)
         .set('Authorization', adminAuth)
         .send({});
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/reject`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/reject`)
         .set('Authorization', adminAuth)
         .send({ reviewNote: '试图驳回已 pending_final_review' });
       expectBizError(res, BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
@@ -1251,7 +1251,7 @@ describe('attendances 模块', () => {
 
     it('reject 不存在 → 22001', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/attendance-sheets/cl0000000000000000000000/reject')
+        .patch('/api/admin/v1/attendance-sheets/cl0000000000000000000000/reject')
         .set('Authorization', adminAuth)
         .send({ reviewNote: 'x' });
       expectBizError(res, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
@@ -1311,7 +1311,7 @@ describe('attendances 模块', () => {
         }),
       ]);
       await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${rejectedSheetId}/reject`)
+        .patch(`/api/admin/v1/attendance-sheets/${rejectedSheetId}/reject`)
         .set('Authorization', adminAuth)
         .send({ reviewNote: 'reject for /me test' });
 
@@ -1404,7 +1404,7 @@ describe('attendances 模块', () => {
         }),
       ]);
       await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/reject`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/reject`)
         .set('Authorization', adminAuth)
         .send({ reviewNote: 'no event' });
       const sheet = await prisma.attendanceSheet.findUnique({ where: { id } });
@@ -1421,7 +1421,7 @@ describe('attendances 模块', () => {
       ]);
       await fillContributionPoints(id, 1);
       await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/approve`)
         .set('Authorization', adminAuth)
         .send({});
       const sheet = await prisma.attendanceSheet.findUnique({ where: { id } });
@@ -1486,7 +1486,7 @@ describe('attendances 模块', () => {
       await approveToPendingFinalReview(id);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/final-approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/final-approve`)
         .set('Authorization', adminAuth)
         .send({ finalReviewNote: 'final ok' });
       expect(res.status).toBe(200);
@@ -1503,7 +1503,7 @@ describe('attendances 模块', () => {
     it('final-approve 后 sheet 在 /me/attendance-records 可见(终审通过即贡献值生效)', async () => {
       // 已在 beforeAll(/me describe)用 approveToTerminalApproved 验证;此处冗余确保 final-approve 入账
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${pendingFinalReviewId}/final-approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${pendingFinalReviewId}/final-approve`)
         .set('Authorization', adminAuth)
         .send({});
       expect(res.status).toBe(200);
@@ -1523,7 +1523,7 @@ describe('attendances 模块', () => {
       await approveToPendingFinalReview(id);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/final-approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/final-approve`)
         .set('Authorization', adminAuth)
         .send({});
       expect(res.status).toBe(200);
@@ -1533,7 +1533,7 @@ describe('attendances 模块', () => {
     it('final-approve 状态非 pending_final_review → 22045', async () => {
       // 直接对 alreadyApprovedId(approved)再 final-approve
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${alreadyApprovedId}/final-approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${alreadyApprovedId}/final-approve`)
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
@@ -1548,7 +1548,7 @@ describe('attendances 模块', () => {
         }),
       ]);
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/final-approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/final-approve`)
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
@@ -1561,7 +1561,7 @@ describe('attendances 模块', () => {
       // 与 final-reject 段的同向用例(`final-reject 状态非 pending_final_review → 22045`)对称,
       // 防止"终审驳回 → 改主意 → 终审通过"的悄默路径(沿 D-S5 / D-S6 终态不可逆)。
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${alreadyFinalRejectedId}/final-approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${alreadyFinalRejectedId}/final-approve`)
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
@@ -1569,7 +1569,7 @@ describe('attendances 模块', () => {
 
     it('final-approve 不存在 → 22001', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/attendance-sheets/cl0000000000000000000000/final-approve')
+        .patch('/api/admin/v1/attendance-sheets/cl0000000000000000000000/final-approve')
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
@@ -1587,7 +1587,7 @@ describe('attendances 模块', () => {
       await approveToPendingFinalReview(id);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/final-reject`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/final-reject`)
         .set('Authorization', adminAuth)
         .send({ finalReviewNote: '终审驳回理由' });
       expect(res.status).toBe(200);
@@ -1612,7 +1612,7 @@ describe('attendances 模块', () => {
       await fillContributionPoints(id, 1);
       await approveToPendingFinalReview(id);
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/final-reject`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/final-reject`)
         .set('Authorization', adminAuth)
         .send({});
       expect(res.status).toBe(400);
@@ -1629,7 +1629,7 @@ describe('attendances 模块', () => {
       await fillContributionPoints(id, 1);
       await approveToPendingFinalReview(id);
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}/final-reject`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}/final-reject`)
         .set('Authorization', adminAuth)
         .send({ finalReviewNote: '' });
       expect(res.status).toBe(400);
@@ -1638,7 +1638,7 @@ describe('attendances 模块', () => {
     it('final-reject 状态非 pending_final_review → 22045', async () => {
       // alreadyFinalRejectedId 已 final_rejected,再 final-reject 抛 22045
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${alreadyFinalRejectedId}/final-reject`)
+        .patch(`/api/admin/v1/attendance-sheets/${alreadyFinalRejectedId}/final-reject`)
         .set('Authorization', adminAuth)
         .send({ finalReviewNote: 'noop' });
       expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
@@ -1646,7 +1646,7 @@ describe('attendances 模块', () => {
 
     it('final_rejected Sheet 不可 edit → 22043', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${alreadyFinalRejectedId}`)
+        .patch(`/api/admin/v1/attendance-sheets/${alreadyFinalRejectedId}`)
         .set('Authorization', adminAuth)
         .send({ records: [baseRecord({ memberId: memberCId })] });
       expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE);
@@ -1654,7 +1654,7 @@ describe('attendances 模块', () => {
 
     it('final_rejected Sheet 不可 delete → 22043', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attendance-sheets/${alreadyFinalRejectedId}`)
+        .delete(`/api/admin/v1/attendance-sheets/${alreadyFinalRejectedId}`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE);
     });
@@ -1670,7 +1670,7 @@ describe('attendances 模块', () => {
       await fillContributionPoints(id, 1);
       await approveToPendingFinalReview(id);
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${id}`)
+        .patch(`/api/admin/v1/attendance-sheets/${id}`)
         .set('Authorization', adminAuth)
         .send({ records: [baseRecord({ memberId: memberCId })] });
       expectBizError(res, BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
@@ -1687,7 +1687,7 @@ describe('attendances 模块', () => {
       await fillContributionPoints(id, 1);
       await approveToPendingFinalReview(id);
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attendance-sheets/${id}`)
+        .delete(`/api/admin/v1/attendance-sheets/${id}`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
     });

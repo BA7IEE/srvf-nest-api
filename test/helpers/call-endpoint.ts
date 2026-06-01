@@ -6,7 +6,7 @@ import { httpServer } from './http-server';
 // 主要供 it.each 跨多端点参数化用例(如 role-boundary、soft-delete 副作用矩阵)。
 //
 // path 中含 __ID__ 占位符,callEndpoint 调用时用 targetId 替换;
-// path 不含占位符的端点(GET /api/users / POST /api/users)直接传任意 targetId 即可,
+// path 不含占位符的端点(GET /api/admin/v1/users / POST /api/admin/v1/users)直接传任意 targetId 即可,
 // replace 是 no-op。
 export interface AdminEndpoint {
   name: string;

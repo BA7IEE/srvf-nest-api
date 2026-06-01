@@ -22,7 +22,7 @@ import {
 } from './organizations.dto';
 import { OrganizationsService } from './organizations.service';
 
-// /api/v2/organizations(7 接口);路径前缀:全局 /api(main.ts)+ 'v2/organizations'。
+// /api/admin/v1/organizations(7 接口);路径前缀:全局 /api(main.ts)+ 'v2/organizations'。
 //
 // **权限标注**(P0-F PR-2A,2026-05-18):入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;
 // 全部判权迁移到 OrganizationsService 内 `rbac.can()`,失败抛
@@ -33,7 +33,7 @@ import { OrganizationsService } from './organizations.service';
 
 @ApiTags('Admin - Organizations')
 @ApiBearerAuth()
-@Controller(['v2/organizations', 'admin/v1/organizations'])
+@Controller('admin/v1/organizations')
 export class OrganizationsController {
   constructor(private readonly service: OrganizationsService) {}
 

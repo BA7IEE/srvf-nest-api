@@ -30,65 +30,65 @@ import { createTestApp } from '../setup/test-app';
 // 沿评审稿 docs/first-release-p0f-pr3-users-rbac-review.md §9.2 + §9.4。
 
 const ALL_ADMIN_ENDPOINTS: AdminEndpoint[] = [
-  { name: 'GET /api/users', method: 'get', path: '/api/users' },
+  { name: 'GET /api/admin/v1/users', method: 'get', path: '/api/admin/v1/users' },
   {
-    name: 'POST /api/users',
+    name: 'POST /api/admin/v1/users',
     method: 'post',
-    path: '/api/users',
+    path: '/api/admin/v1/users',
     body: { username: 'rbnewuser1', password: TEST_PASSWORD },
   },
-  { name: 'GET /api/users/:id', method: 'get', path: '/api/users/__ID__' },
+  { name: 'GET /api/admin/v1/users/:id', method: 'get', path: '/api/admin/v1/users/__ID__' },
   {
-    name: 'PATCH /api/users/:id',
+    name: 'PATCH /api/admin/v1/users/:id',
     method: 'patch',
-    path: '/api/users/__ID__',
+    path: '/api/admin/v1/users/__ID__',
     body: { nickname: 'X' },
   },
   {
-    name: 'PUT /api/users/:id/password',
+    name: 'PUT /api/admin/v1/users/:id/password',
     method: 'put',
-    path: '/api/users/__ID__/password',
+    path: '/api/admin/v1/users/__ID__/password',
     body: { newPassword: TEST_PASSWORD },
   },
   {
-    name: 'PATCH /api/users/:id/role',
+    name: 'PATCH /api/admin/v1/users/:id/role',
     method: 'patch',
-    path: '/api/users/__ID__/role',
+    path: '/api/admin/v1/users/__ID__/role',
     body: { role: Role.USER },
   },
   {
-    name: 'PATCH /api/users/:id/status',
+    name: 'PATCH /api/admin/v1/users/:id/status',
     method: 'patch',
-    path: '/api/users/__ID__/status',
+    path: '/api/admin/v1/users/__ID__/status',
     body: { status: 'DISABLED' },
   },
-  { name: 'DELETE /api/users/:id', method: 'delete', path: '/api/users/__ID__' },
+  { name: 'DELETE /api/admin/v1/users/:id', method: 'delete', path: '/api/admin/v1/users/__ID__' },
 ];
 
 // ADMIN+ops-admin 持 6 条 user.* permission(D3=A 5 条 + D2=B 1 条;不持 user.update.role);
 // 调 PATCH /:id/role 仍 30100(D1=A 不绑);
 // 调其它 5 个 :id 端点操作 SUPER_ADMIN target → service 层 assertCanManageUser 拒 10101。
 const ADMIN_OPS_BLOCKED_BY_SERVICE: AdminEndpoint[] = [
-  { name: 'GET /api/users/:id', method: 'get', path: '/api/users/__ID__' },
+  { name: 'GET /api/admin/v1/users/:id', method: 'get', path: '/api/admin/v1/users/__ID__' },
   {
-    name: 'PATCH /api/users/:id',
+    name: 'PATCH /api/admin/v1/users/:id',
     method: 'patch',
-    path: '/api/users/__ID__',
+    path: '/api/admin/v1/users/__ID__',
     body: { nickname: 'X' },
   },
   {
-    name: 'PUT /api/users/:id/password',
+    name: 'PUT /api/admin/v1/users/:id/password',
     method: 'put',
-    path: '/api/users/__ID__/password',
+    path: '/api/admin/v1/users/__ID__/password',
     body: { newPassword: TEST_PASSWORD },
   },
   {
-    name: 'PATCH /api/users/:id/status',
+    name: 'PATCH /api/admin/v1/users/:id/status',
     method: 'patch',
-    path: '/api/users/__ID__/status',
+    path: '/api/admin/v1/users/__ID__/status',
     body: { status: 'DISABLED' },
   },
-  { name: 'DELETE /api/users/:id', method: 'delete', path: '/api/users/__ID__' },
+  { name: 'DELETE /api/admin/v1/users/:id', method: 'delete', path: '/api/admin/v1/users/__ID__' },
 ];
 
 describe('users 管理接口角色边界(P0-F PR-3B)', () => {
@@ -153,7 +153,7 @@ describe('users 管理接口角色边界(P0-F PR-3B)', () => {
   describe('ADMIN+ops-admin 调 PATCH /:id/role → 30100(D1=A:user.update.role 不绑 ops-admin)', () => {
     it('ADMIN+ops-admin 调 PATCH /:id/role 操作 USER → 30100(RBAC 拒,不进 service)', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/users/${userTargetId}/role`)
+        .patch(`/api/admin/v1/users/${userTargetId}/role`)
         .set('Authorization', adminOpsAuth)
         .send({ role: Role.USER });
 
@@ -182,7 +182,7 @@ describe('users 管理接口角色边界(P0-F PR-3B)', () => {
       // canChangeRole 永禁升 SA(沿 users.policy.ts:49-52)→ 抛 FORBIDDEN_ROLE_OPERATION(10101)。
       // **业务护栏反向断言**:RBAC 短路不等于业务允许任意改角色。
       const res = await request(httpServer(app))
-        .patch(`/api/users/${userTargetId}/role`)
+        .patch(`/api/admin/v1/users/${userTargetId}/role`)
         .set('Authorization', superAuth)
         .send({ role: Role.SUPER_ADMIN });
 

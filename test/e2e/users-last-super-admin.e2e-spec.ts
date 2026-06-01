@@ -46,7 +46,7 @@ describe('SUPER_ADMIN 互操作正向回归(剩余 active SUPER_ADMIN ≥ 1)', (
     const { authHeader } = await loginAs(app, 'lsadel1a');
 
     const res = await request(httpServer(app))
-      .delete(`/api/users/${b.id}`)
+      .delete(`/api/admin/v1/users/${b.id}`)
       .set('Authorization', authHeader);
 
     expect(res.status).toBe(200);
@@ -70,7 +70,7 @@ describe('SUPER_ADMIN 互操作正向回归(剩余 active SUPER_ADMIN ≥ 1)', (
     const { authHeader } = await loginAs(app, 'lsadis1a');
 
     const res = await request(httpServer(app))
-      .patch(`/api/users/${b.id}/status`)
+      .patch(`/api/admin/v1/users/${b.id}/status`)
       .set('Authorization', authHeader)
       .send({ status: 'DISABLED' });
 
@@ -88,7 +88,7 @@ describe('SUPER_ADMIN 互操作正向回归(剩余 active SUPER_ADMIN ≥ 1)', (
     const { authHeader } = await loginAs(app, 'lsarole1a');
 
     const res = await request(httpServer(app))
-      .patch(`/api/users/${b.id}/role`)
+      .patch(`/api/admin/v1/users/${b.id}/role`)
       .set('Authorization', authHeader)
       .send({ role: Role.ADMIN });
 

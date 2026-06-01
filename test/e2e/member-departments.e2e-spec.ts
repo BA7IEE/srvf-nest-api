@@ -103,20 +103,22 @@ describe('member-departments 归属能力', () => {
     });
 
     it('未登录 GET → 401', async () => {
-      const res = await request(httpServer(app)).get(`/api/v2/members/${memberId}/department`);
+      const res = await request(httpServer(app)).get(
+        `/api/admin/v1/members/${memberId}/department`,
+      );
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('USER GET → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberId}/department`)
+        .get(`/api/admin/v1/members/${memberId}/department`)
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('USER PUT → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .put(`/api/v2/members/${memberId}/department`)
+        .put(`/api/admin/v1/members/${memberId}/department`)
         .set('Authorization', userAuth)
         .send({ organizationId: activeOrgIdA });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -124,7 +126,7 @@ describe('member-departments 归属能力', () => {
 
     it('USER DELETE → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${memberId}/department`)
+        .delete(`/api/admin/v1/members/${memberId}/department`)
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
@@ -132,7 +134,7 @@ describe('member-departments 归属能力', () => {
     // P0-F PR-2A:ADMIN 默认无 ops-admin → 30100(显式反向断言)
     it('ADMIN 默认无 ops-admin → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberId}/department`)
+        .get(`/api/admin/v1/members/${memberId}/department`)
         .set('Authorization', adminDefaultAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
@@ -163,14 +165,14 @@ describe('member-departments 归属能力', () => {
 
     it('member 不存在 → MEMBER_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/members/cl0000000000000000000000/department')
+        .get('/api/admin/v1/members/cl0000000000000000000000/department')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
     });
 
     it('member 无归属 → 200 + data: null', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberWithoutDept}/department`)
+        .get(`/api/admin/v1/members/${memberWithoutDept}/department`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -179,7 +181,7 @@ describe('member-departments 归属能力', () => {
 
     it('member 有归属 → 200 + 数据', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberWithDept}/department`)
+        .get(`/api/admin/v1/members/${memberWithDept}/department`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.id).toBe(deptId);
@@ -203,7 +205,7 @@ describe('member-departments 归属能力', () => {
 
     it('member 不存在 → MEMBER_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .put('/api/v2/members/cl0000000000000000000000/department')
+        .put('/api/admin/v1/members/cl0000000000000000000000/department')
         .set('Authorization', superAdminAuth)
         .send({ organizationId: activeOrgIdA });
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
@@ -211,7 +213,7 @@ describe('member-departments 归属能力', () => {
 
     it('organization 不存在 → ORGANIZATION_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .put(`/api/v2/members/${memberId}/department`)
+        .put(`/api/admin/v1/members/${memberId}/department`)
         .set('Authorization', superAdminAuth)
         .send({ organizationId: 'cl0000000000000000000000' });
       expectBizError(res, BizCode.ORGANIZATION_NOT_FOUND);
@@ -226,7 +228,7 @@ describe('member-departments 归属能力', () => {
         },
       });
       const res = await request(httpServer(app))
-        .put(`/api/v2/members/${inactiveMember.id}/department`)
+        .put(`/api/admin/v1/members/${inactiveMember.id}/department`)
         .set('Authorization', superAdminAuth)
         .send({ organizationId: activeOrgIdA });
       expectBizError(res, BizCode.MEMBER_INACTIVE);
@@ -234,7 +236,7 @@ describe('member-departments 归属能力', () => {
 
     it('organization INACTIVE → ORGANIZATION_INACTIVE', async () => {
       const res = await request(httpServer(app))
-        .put(`/api/v2/members/${memberId}/department`)
+        .put(`/api/admin/v1/members/${memberId}/department`)
         .set('Authorization', superAdminAuth)
         .send({ organizationId: inactiveOrgId });
       expectBizError(res, BizCode.ORGANIZATION_INACTIVE);
@@ -242,7 +244,7 @@ describe('member-departments 归属能力', () => {
 
     it('第一次设置 → 200 + 创建归属', async () => {
       const res = await request(httpServer(app))
-        .put(`/api/v2/members/${memberId}/department`)
+        .put(`/api/admin/v1/members/${memberId}/department`)
         .set('Authorization', adminAuth)
         .send({ organizationId: activeOrgIdA });
       expect(res.status).toBe(200);
@@ -264,7 +266,7 @@ describe('member-departments 归属能力', () => {
       expect(before).not.toBeNull();
 
       const res = await request(httpServer(app))
-        .put(`/api/v2/members/${memberId}/department`)
+        .put(`/api/admin/v1/members/${memberId}/department`)
         .set('Authorization', adminAuth)
         .send({ organizationId: activeOrgIdA });
       expect(res.status).toBe(200);
@@ -287,7 +289,7 @@ describe('member-departments 归属能力', () => {
       expect(oldDept).not.toBeNull();
 
       const res = await request(httpServer(app))
-        .put(`/api/v2/members/${memberId}/department`)
+        .put(`/api/admin/v1/members/${memberId}/department`)
         .set('Authorization', superAdminAuth)
         .send({ organizationId: activeOrgIdB });
       expect(res.status).toBe(200);
@@ -313,7 +315,7 @@ describe('member-departments 归属能力', () => {
   describe('DELETE 解除归属', () => {
     it('member 不存在 → MEMBER_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .delete('/api/v2/members/cl0000000000000000000000/department')
+        .delete('/api/admin/v1/members/cl0000000000000000000000/department')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
     });
@@ -323,7 +325,7 @@ describe('member-departments 归属能力', () => {
         data: { memberNo: 'demo-md-del-1', displayName: 'NoDept' },
       });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${m.id}/department`)
+        .delete(`/api/admin/v1/members/${m.id}/department`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.MEMBER_DEPARTMENT_NOT_FOUND);
     });
@@ -337,7 +339,7 @@ describe('member-departments 归属能力', () => {
       });
 
       const delRes = await request(httpServer(app))
-        .delete(`/api/v2/members/${m.id}/department`)
+        .delete(`/api/admin/v1/members/${m.id}/department`)
         .set('Authorization', adminAuth);
       expect(delRes.status).toBe(200);
       expect(delRes.body.data.id).toBe(dept.id);
@@ -347,7 +349,7 @@ describe('member-departments 归属能力', () => {
 
       // GET 返 null
       const getRes = await request(httpServer(app))
-        .get(`/api/v2/members/${m.id}/department`)
+        .get(`/api/admin/v1/members/${m.id}/department`)
         .set('Authorization', adminAuth);
       expect(getRes.status).toBe(200);
       expect(getRes.body.data).toBeNull();
@@ -387,7 +389,7 @@ describe('member-departments 归属能力', () => {
 
       // 再次 PUT 同 org → 应创建新归属(因为 partial unique index 仅约束 active)
       const res = await request(httpServer(app))
-        .put(`/api/v2/members/${m.id}/department`)
+        .put(`/api/admin/v1/members/${m.id}/department`)
         .set('Authorization', superAdminAuth)
         .send({ organizationId: activeOrgIdA });
       expect(res.status).toBe(200);

@@ -678,7 +678,7 @@ describe('App /api/app/v1/my/certificates (P2-7)', () => {
     // (沿 certificates.controller.ts:60 @ApiWrappedArrayResponse,旧 path data 是裸数组,
     // 非 PageResultDto;App DTO 字段隔离不影响 admin)。
     const res = await request(httpServer(app))
-      .get(`/api/v2/members/${memberAId}/certificates`)
+      .get(`/api/admin/v1/members/${memberAId}/certificates`)
       .set('Authorization', adminWithMemberAuth);
     expect(res.status).toBe(200);
     const body = res.body as {

@@ -24,7 +24,7 @@ import { AppAvailableActivityListItemDto } from '../dto/app/app-available-activi
 //   - canUseApp=false 统一 FORBIDDEN(40300;沿 §6.1 P2-4 不新增 BizCode)
 //   - 不沿 P2-3 admin-without-member 例外:Admin 无 member 关联看"可参加活动"无意义(§6.2)
 //   - scope 隐式 self-perspective(每个 member 看到的 published 活动池相同;沿 §6.5)
-//   - 旧 /api/v2/activities* 行为**逐字不变**(沿 §11.4 + 风险表 13.12)
+//   - 旧 /api/admin/v1/activities* 行为**逐字不变**(沿 §11.4 + 风险表 13.12)
 @ApiTags('Mobile - Activities')
 @ApiBearerAuth()
 @Controller('app/v1/activities')

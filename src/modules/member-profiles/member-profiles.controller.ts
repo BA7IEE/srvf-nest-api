@@ -30,7 +30,7 @@ import { MemberProfilesService } from './member-profiles.service';
 
 @ApiTags('Admin - Member Profiles')
 @ApiBearerAuth()
-@Controller(['v2/members/:memberId/profile', 'admin/v1/members/:memberId/profile'])
+@Controller('admin/v1/members/:memberId/profile')
 export class MemberProfilesController {
   constructor(private readonly service: MemberProfilesService) {}
 

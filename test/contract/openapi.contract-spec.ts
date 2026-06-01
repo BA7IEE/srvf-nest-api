@@ -62,79 +62,27 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/users/me'],
   // P0-D PR-3(2026-05-17):本人自助改密
   ['put', '/api/users/me/password'],
-  ['get', '/api/users'],
-  ['post', '/api/users'],
-  ['get', '/api/users/{id}'],
-  ['patch', '/api/users/{id}'],
-  ['put', '/api/users/{id}/password'],
-  ['patch', '/api/users/{id}/role'],
-  ['patch', '/api/users/{id}/status'],
-  ['delete', '/api/users/{id}'],
 
   // V2 dictionaries (Step 3,2026-05-08)
 
   // V2 organizations (Step 4,2026-05-08)
-  ['get', '/api/v2/organizations'],
-  ['get', '/api/v2/organizations/tree'],
-  ['post', '/api/v2/organizations'],
-  ['get', '/api/v2/organizations/{id}'],
-  ['patch', '/api/v2/organizations/{id}'],
-  ['patch', '/api/v2/organizations/{id}/status'],
-  ['delete', '/api/v2/organizations/{id}'],
 
   // V2 members (Step 5,2026-05-08)
-  ['get', '/api/v2/members'],
-  ['post', '/api/v2/members'],
-  ['get', '/api/v2/members/{id}'],
-  ['patch', '/api/v2/members/{id}'],
-  ['patch', '/api/v2/members/{id}/status'],
-  ['delete', '/api/v2/members/{id}'],
 
   // V2 member-departments (Step 6,2026-05-08;嵌套在 members 下作子资源)
-  ['get', '/api/v2/members/{memberId}/department'],
-  ['put', '/api/v2/members/{memberId}/department'],
-  ['delete', '/api/v2/members/{memberId}/department'],
 
   // V2 第一阶段批次 1 member-profiles (2026-05-10;1:1 子资源)
-  ['get', '/api/v2/members/{memberId}/profile'],
-  ['post', '/api/v2/members/{memberId}/profile'],
-  ['patch', '/api/v2/members/{memberId}/profile'],
 
   // V2 第一阶段批次 1 emergency-contacts (2026-05-10;N:1 子资源 + 单条 CRUD)
-  ['get', '/api/v2/members/{memberId}/emergency-contacts'],
-  ['post', '/api/v2/members/{memberId}/emergency-contacts'],
-  ['patch', '/api/v2/members/{memberId}/emergency-contacts/{id}'],
-  ['delete', '/api/v2/members/{memberId}/emergency-contacts/{id}'],
 
   // V2 第一阶段批次 2 certificates (2026-05-10;N:1 子资源 + verify / reject / qualification-flag 动作)
   // 路径顺序:list / create / qualification-flag(必先于 :id)/ detail / update / softDelete /
   // verify / reject(controller 内方法声明顺序固定;NestJS 字面段优先于 :id 占位段)
-  ['get', '/api/v2/members/{memberId}/certificates'],
-  ['post', '/api/v2/members/{memberId}/certificates'],
-  ['get', '/api/v2/members/{memberId}/certificates/qualification-flag'],
-  ['get', '/api/v2/members/{memberId}/certificates/{id}'],
-  ['patch', '/api/v2/members/{memberId}/certificates/{id}'],
-  ['delete', '/api/v2/members/{memberId}/certificates/{id}'],
-  ['patch', '/api/v2/members/{memberId}/certificates/{id}/verify'],
-  ['patch', '/api/v2/members/{memberId}/certificates/{id}/reject'],
 
   // V2 第一阶段批次 3A activities (2026-05-11;7 路由;Q-A7 USER + ADMIN 同路由)
-  ['get', '/api/v2/activities'],
-  ['post', '/api/v2/activities'],
-  ['get', '/api/v2/activities/{id}'],
-  ['patch', '/api/v2/activities/{id}'],
-  ['delete', '/api/v2/activities/{id}'],
-  ['patch', '/api/v2/activities/{id}/publish'],
-  ['patch', '/api/v2/activities/{id}/cancel'],
 
   // V2 第一阶段批次 3A activity-registrations (2026-05-11;管理端 6 + 队员端 4 = 10 路由)
   // Q-A3 USER 自助报名与 ADMIN 代报名拆开;Q-A6 CSV 导出(默认 scope=pass / 可选 all)
-  ['post', '/api/v2/activities/{activityId}/registrations'],
-  ['get', '/api/v2/activities/{activityId}/registrations'],
-  ['get', '/api/v2/activities/{activityId}/registrations/export'],
-  ['patch', '/api/v2/activities/{activityId}/registrations/{id}/approve'],
-  ['patch', '/api/v2/activities/{activityId}/registrations/{id}/reject'],
-  ['patch', '/api/v2/activities/{activityId}/registrations/{id}/cancel'],
   ['post', '/api/v2/users/me/activities/{activityId}/registration'],
   ['get', '/api/v2/users/me/registrations'],
   ['get', '/api/v2/users/me/registrations/{id}'],
@@ -144,17 +92,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // Sheet 提交 / 列表 / detail / review-detail / edit / delete / approve / reject + /me records
   // 路径顺序:submit / list / review-detail(字面)/ detail / edit / delete / approve / reject
   // (字面段优先于 :id 占位段;实装阶段 controller 内方法声明顺序固定)
-  ['post', '/api/v2/activities/{activityId}/attendance-sheets'],
-  ['get', '/api/v2/activities/{activityId}/attendance-sheets'],
-  ['get', '/api/v2/attendance-sheets/{id}/review-detail'],
-  ['get', '/api/v2/attendance-sheets/{id}'],
-  ['patch', '/api/v2/attendance-sheets/{id}'],
-  ['delete', '/api/v2/attendance-sheets/{id}'],
-  ['patch', '/api/v2/attendance-sheets/{id}/approve'],
-  ['patch', '/api/v2/attendance-sheets/{id}/reject'],
   // V2 第一阶段批次 4-B(2026-05-12;APD 部门部长 / 副部长终审,沿 D-S5 / D-S7)
-  ['patch', '/api/v2/attendance-sheets/{id}/final-approve'],
-  ['patch', '/api/v2/attendance-sheets/{id}/final-reject'],
   ['get', '/api/v2/users/me/attendance-records'],
   // V2 第一阶段批次 5-A(2026-05-12;ContributionRule CRUD,沿 D6 v1.1)
 
@@ -809,7 +747,6 @@ describe('OpenAPI 契约快照', () => {
   // 迁移前老前缀路径必须 deprecated;canonical 新前缀(admin/v1 · system/v1 · auth/v1 · app/v1)必须不 deprecated。
   const isRouteBLegacy = (p: string): boolean =>
     p.startsWith('/api/v2/') ||
-    p === '/api/users' ||
     p.startsWith('/api/users/') ||
     p === '/api/health' ||
     p.startsWith('/api/health/') ||

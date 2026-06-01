@@ -137,7 +137,7 @@ describe('audit-logs 写入迁移', () => {
     overrides: Record<string, unknown> = {},
   ): Promise<{ id: string; contactName: string; phonePrimary: string; address: string | null }> => {
     const res = await request(httpServer(app))
-      .post(`/api/v2/members/${memberId}/emergency-contacts`)
+      .post(`/api/admin/v1/members/${memberId}/emergency-contacts`)
       .set('Authorization', adminAuth)
       .send({
         contactName: '张三',
@@ -153,7 +153,7 @@ describe('audit-logs 写入迁移', () => {
   // 创建一条 pending 状态 certificate,返回 id;用于 update / softDelete / verify / reject 前置
   const createCert = async (): Promise<{ id: string; certNumber: string | null }> => {
     const res = await request(httpServer(app))
-      .post(`/api/v2/members/${memberId}/certificates`)
+      .post(`/api/admin/v1/members/${memberId}/certificates`)
       .set('Authorization', adminAuth)
       .send({
         certTypeCode,
@@ -204,7 +204,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app); // 清掉 create 留下的记录,只留 update
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}/emergency-contacts/${c.id}`)
+        .patch(`/api/admin/v1/members/${memberId}/emergency-contacts/${c.id}`)
         .set('Authorization', adminAuth)
         .send({ priority: 1 });
       expect(res.status).toBe(200);
@@ -220,7 +220,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${memberId}/emergency-contacts/${c.id}`)
+        .delete(`/api/admin/v1/members/${memberId}/emergency-contacts/${c.id}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
 
@@ -244,7 +244,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}/certificates/${c.id}`)
+        .patch(`/api/admin/v1/members/${memberId}/certificates/${c.id}`)
         .set('Authorization', adminAuth)
         .send({ issuingOrg: 'Updated Issuing Org' });
       expect(res.status).toBe(200);
@@ -260,7 +260,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${memberId}/certificates/${c.id}`)
+        .delete(`/api/admin/v1/members/${memberId}/certificates/${c.id}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
 
@@ -274,7 +274,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}/certificates/${c.id}/verify`)
+        .patch(`/api/admin/v1/members/${memberId}/certificates/${c.id}/verify`)
         .set('Authorization', adminAuth)
         .send({ verifyNote: 'OK' });
       expect(res.status).toBe(200);
@@ -289,7 +289,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}/certificates/${c.id}/reject`)
+        .patch(`/api/admin/v1/members/${memberId}/certificates/${c.id}/reject`)
         .set('Authorization', adminAuth)
         .send({ verifyNote: '材料不全' });
       expect(res.status).toBe(200);
@@ -316,7 +316,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}/emergency-contacts/${c.id}`)
+        .patch(`/api/admin/v1/members/${memberId}/emergency-contacts/${c.id}`)
         .set('Authorization', adminAuth)
         .send({ priority: 2 })
         .expect(200);
@@ -334,7 +334,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .delete(`/api/v2/members/${memberId}/emergency-contacts/${c.id}`)
+        .delete(`/api/admin/v1/members/${memberId}/emergency-contacts/${c.id}`)
         .set('Authorization', adminAuth)
         .expect(200);
 
@@ -349,7 +349,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}/certificates/${c.id}/verify`)
+        .patch(`/api/admin/v1/members/${memberId}/certificates/${c.id}/verify`)
         .set('Authorization', adminAuth)
         .send({ verifyNote: '已核验' })
         .expect(200);
@@ -368,7 +368,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}/certificates/${c.id}/reject`)
+        .patch(`/api/admin/v1/members/${memberId}/certificates/${c.id}/reject`)
         .set('Authorization', adminAuth)
         .send({ verifyNote: '材料不全' })
         .expect(200);
@@ -408,7 +408,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}/emergency-contacts/${c.id}`)
+        .patch(`/api/admin/v1/members/${memberId}/emergency-contacts/${c.id}`)
         .set('Authorization', adminAuth)
         .send({ contactName: '李四五' })
         .expect(200);
@@ -428,7 +428,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .delete(`/api/v2/members/${memberId}/emergency-contacts/${c.id}`)
+        .delete(`/api/admin/v1/members/${memberId}/emergency-contacts/${c.id}`)
         .set('Authorization', adminAuth)
         .expect(200);
 
@@ -467,7 +467,7 @@ describe('audit-logs 写入迁移', () => {
     it('emergency-contact create relationCode invalid:audit_logs 不入表 + emergency_contact 不入表', async () => {
       const ecBefore = await prisma.emergencyContact.count();
       const res = await request(httpServer(app))
-        .post(`/api/v2/members/${memberId}/emergency-contacts`)
+        .post(`/api/admin/v1/members/${memberId}/emergency-contacts`)
         .set('Authorization', adminAuth)
         .send({
           contactName: '张三',
@@ -486,7 +486,7 @@ describe('audit-logs 写入迁移', () => {
       const c = await createCert();
       // 先 verify 一次 → verified
       await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}/certificates/${c.id}/verify`)
+        .patch(`/api/admin/v1/members/${memberId}/certificates/${c.id}/verify`)
         .set('Authorization', adminAuth)
         .send({ verifyNote: 'OK' })
         .expect(200);
@@ -495,7 +495,7 @@ describe('audit-logs 写入迁移', () => {
 
       // 再 verify → CERTIFICATE_INVALID_STATE_TRANSITION (409)
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}/certificates/${c.id}/verify`)
+        .patch(`/api/admin/v1/members/${memberId}/certificates/${c.id}/verify`)
         .set('Authorization', adminAuth)
         .send({ verifyNote: 'OK 2' });
       expect(res.status).toBe(409);
@@ -511,7 +511,7 @@ describe('audit-logs 写入迁移', () => {
     it('GET emergency-contacts list:audit_logs 无新记录', async () => {
       const before = await prisma.auditLog.count();
       await request(httpServer(app))
-        .get(`/api/v2/members/${memberId}/emergency-contacts`)
+        .get(`/api/admin/v1/members/${memberId}/emergency-contacts`)
         .set('Authorization', adminAuth)
         .expect(200);
       const after = await prisma.auditLog.count();
@@ -521,7 +521,7 @@ describe('audit-logs 写入迁移', () => {
     it('GET certificates list:audit_logs 无新记录', async () => {
       const before = await prisma.auditLog.count();
       await request(httpServer(app))
-        .get(`/api/v2/members/${memberId}/certificates`)
+        .get(`/api/admin/v1/members/${memberId}/certificates`)
         .set('Authorization', adminAuth)
         .expect(200);
       const after = await prisma.auditLog.count();
@@ -531,7 +531,7 @@ describe('audit-logs 写入迁移', () => {
     it('GET certificates qualification-flag:audit_logs 无新记录', async () => {
       const before = await prisma.auditLog.count();
       await request(httpServer(app))
-        .get(`/api/v2/members/${memberId}/certificates/qualification-flag`)
+        .get(`/api/admin/v1/members/${memberId}/certificates/qualification-flag`)
         .query({ certTypeCode })
         .set('Authorization', adminAuth)
         .expect(200);
@@ -543,7 +543,7 @@ describe('audit-logs 写入迁移', () => {
       const c = await createCert();
       await truncateAuditLogsTestOnly(app);
       await request(httpServer(app))
-        .get(`/api/v2/members/${memberId}/certificates/${c.id}`)
+        .get(`/api/admin/v1/members/${memberId}/certificates/${c.id}`)
         .set('Authorization', adminAuth)
         .expect(200);
       const logs = await prisma.auditLog.count();
@@ -763,7 +763,7 @@ describe('audit-logs 写入迁移', () => {
       overrides: Record<string, unknown> = {},
     ): Promise<{ id: string; statusCode: string }> => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send({
           title: '梧桐山轮值演练',
@@ -799,7 +799,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app); // 清 create 留下的 audit
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${a.id}`)
+        .patch(`/api/admin/v1/activities/${a.id}`)
         .set('Authorization', adminAuth)
         .send({ title: '更新标题' });
       expect(res.status).toBe(200);
@@ -826,7 +826,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .delete(`/api/v2/activities/${a.id}`)
+        .delete(`/api/admin/v1/activities/${a.id}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
 
@@ -845,7 +845,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${a.id}/publish`)
+        .patch(`/api/admin/v1/activities/${a.id}/publish`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
 
@@ -867,7 +867,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${a.id}/cancel`)
+        .patch(`/api/admin/v1/activities/${a.id}/cancel`)
         .set('Authorization', adminAuth)
         .send({ cancelReason: '雨天延期' });
       expect(res.status).toBe(200);
@@ -926,7 +926,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${a.id}`)
+        .patch(`/api/admin/v1/activities/${a.id}`)
         .set('Authorization', adminAuth)
         .send({ description: '新描述' })
         .expect(200);
@@ -947,7 +947,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .delete(`/api/v2/activities/${a.id}`)
+        .delete(`/api/admin/v1/activities/${a.id}`)
         .set('Authorization', adminAuth)
         .expect(200);
 
@@ -963,7 +963,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${a.id}/publish`)
+        .patch(`/api/admin/v1/activities/${a.id}/publish`)
         .set('Authorization', adminAuth)
         .expect(200);
 
@@ -984,7 +984,7 @@ describe('audit-logs 写入迁移', () => {
       const auditBefore = await prisma.auditLog.count();
 
       const res = await request(httpServer(app))
-        .post('/api/v2/activities')
+        .post('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .send({
           title: '回滚测试',
@@ -1004,7 +1004,7 @@ describe('audit-logs 写入迁移', () => {
       await createActivity();
       await truncateAuditLogsTestOnly(app);
       await request(httpServer(app))
-        .get('/api/v2/activities')
+        .get('/api/admin/v1/activities')
         .set('Authorization', adminAuth)
         .expect(200);
       expect(await prisma.auditLog.count()).toBe(0);
@@ -1014,7 +1014,7 @@ describe('audit-logs 写入迁移', () => {
       const a = await createActivity();
       await truncateAuditLogsTestOnly(app);
       await request(httpServer(app))
-        .get(`/api/v2/activities/${a.id}`)
+        .get(`/api/admin/v1/activities/${a.id}`)
         .set('Authorization', adminAuth)
         .expect(200);
       expect(await prisma.auditLog.count()).toBe(0);
@@ -1111,7 +1111,7 @@ describe('audit-logs 写入迁移', () => {
     it('ADMIN POST 代报名触发 → audit_logs +1 registration.create(viaPath=admin)', async () => {
       const actId = await createPublishedActivity();
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${actId}/registrations`)
+        .post(`/api/admin/v1/activities/${actId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: regMemberAdminTargetId });
       expect(res.status).toBe(201);
@@ -1163,14 +1163,14 @@ describe('audit-logs 写入迁移', () => {
     it('PATCH approve 触发 → audit_logs +1 registration.review(action=approve,priorStatusCode=pending → pass)', async () => {
       const actId = await createPublishedActivity();
       const createRes = await request(httpServer(app))
-        .post(`/api/v2/activities/${actId}/registrations`)
+        .post(`/api/admin/v1/activities/${actId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: regMemberAdminTargetId });
       const regId: string = createRes.body.data.id;
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${actId}/registrations/${regId}/approve`)
+        .patch(`/api/admin/v1/activities/${actId}/registrations/${regId}/approve`)
         .set('Authorization', adminAuth)
         .send({});
       expect(res.status).toBe(200);
@@ -1197,14 +1197,14 @@ describe('audit-logs 写入迁移', () => {
     it('PATCH reject 触发 → audit_logs +1 registration.review(action=reject)', async () => {
       const actId = await createPublishedActivity();
       const createRes = await request(httpServer(app))
-        .post(`/api/v2/activities/${actId}/registrations`)
+        .post(`/api/admin/v1/activities/${actId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: regMemberAdminTargetId });
       const regId: string = createRes.body.data.id;
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${actId}/registrations/${regId}/reject`)
+        .patch(`/api/admin/v1/activities/${actId}/registrations/${regId}/reject`)
         .set('Authorization', adminAuth)
         .send({ reviewNote: '不符合条件' });
       expect(res.status).toBe(200);
@@ -1221,14 +1221,14 @@ describe('audit-logs 写入迁移', () => {
     it('PATCH cancel(admin)触发 → audit_logs +1(action=cancel,cancelledByPath=admin,cancelReason)', async () => {
       const actId = await createPublishedActivity();
       const createRes = await request(httpServer(app))
-        .post(`/api/v2/activities/${actId}/registrations`)
+        .post(`/api/admin/v1/activities/${actId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: regMemberAdminTargetId });
       const regId: string = createRes.body.data.id;
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${actId}/registrations/${regId}/cancel`)
+        .patch(`/api/admin/v1/activities/${actId}/registrations/${regId}/cancel`)
         .set('Authorization', adminAuth)
         .send({ cancelReason: '活动调整' });
       expect(res.status).toBe(200);
@@ -1285,7 +1285,7 @@ describe('audit-logs 写入迁移', () => {
     it('context 锁形:requestId 非空字符串,ip / ua 字段存在', async () => {
       const actId = await createPublishedActivity();
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${actId}/registrations`)
+        .post(`/api/admin/v1/activities/${actId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: regMemberAdminTargetId });
       expect(res.status).toBe(201);
@@ -1302,7 +1302,7 @@ describe('audit-logs 写入迁移', () => {
       const actId = await createPublishedActivity();
       // create 阶段
       const createRes = await request(httpServer(app))
-        .post(`/api/v2/activities/${actId}/registrations`)
+        .post(`/api/admin/v1/activities/${actId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: regMemberAdminTargetId });
       const regId: string = createRes.body.data.id;
@@ -1318,7 +1318,7 @@ describe('audit-logs 写入迁移', () => {
 
       // approve 阶段:before.statusCode=pending → after.statusCode=pass
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${actId}/registrations/${regId}/approve`)
+        .patch(`/api/admin/v1/activities/${actId}/registrations/${regId}/approve`)
         .set('Authorization', adminAuth)
         .send({})
         .expect(200);
@@ -1336,7 +1336,7 @@ describe('audit-logs 写入迁移', () => {
       const actId = await createPublishedActivity();
       // 先建一条 active registration
       await request(httpServer(app))
-        .post(`/api/v2/activities/${actId}/registrations`)
+        .post(`/api/admin/v1/activities/${actId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: regMemberAdminTargetId })
         .expect(201);
@@ -1345,7 +1345,7 @@ describe('audit-logs 写入迁移', () => {
 
       // 同 activity + 同 member 再报 → 21002
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${actId}/registrations`)
+        .post(`/api/admin/v1/activities/${actId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: regMemberAdminTargetId });
       expect(res.status).toBe(409);
@@ -1357,14 +1357,14 @@ describe('audit-logs 写入迁移', () => {
     it('exportCsv 不入库(read/export 路径仍 pino-only,Q1=A)', async () => {
       const actId = await createPublishedActivity();
       await request(httpServer(app))
-        .post(`/api/v2/activities/${actId}/registrations`)
+        .post(`/api/admin/v1/activities/${actId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: regMemberAdminTargetId })
         .expect(201);
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${actId}/registrations/export`)
+        .get(`/api/admin/v1/activities/${actId}/registrations/export`)
         .query({ scope: 'all' })
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
@@ -1376,7 +1376,7 @@ describe('audit-logs 写入迁移', () => {
       const actId = await createPublishedActivity();
       await truncateAuditLogsTestOnly(app);
       await request(httpServer(app))
-        .get(`/api/v2/activities/${actId}/registrations`)
+        .get(`/api/admin/v1/activities/${actId}/registrations`)
         .set('Authorization', adminAuth)
         .expect(200);
       expect(await prisma.auditLog.count()).toBe(0);
@@ -1524,7 +1524,7 @@ describe('audit-logs 写入迁移', () => {
       ],
     ): Promise<string> => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${actId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${actId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({ records });
       expect(res.status).toBe(201);
@@ -1566,7 +1566,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${sheetId}`)
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -1603,7 +1603,7 @@ describe('audit-logs 写入迁移', () => {
 
       // 不传 records → 走 edit-no-records 分支
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${sheetId}`)
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}`)
         .set('Authorization', adminAuth)
         .send({});
       expect(res.status).toBe(200);
@@ -1625,7 +1625,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .delete(`/api/v2/attendance-sheets/${sheetId}`)
+        .delete(`/api/admin/v1/attendance-sheets/${sheetId}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
 
@@ -1648,7 +1648,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${sheetId}/approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
         .set('Authorization', adminAuth)
         .send({});
       expect(res.status).toBe(200);
@@ -1680,7 +1680,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${sheetId}/reject`)
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/reject`)
         .set('Authorization', adminAuth)
         .send({ reviewNote: '材料不全' });
       expect(res.status).toBe(200);
@@ -1698,14 +1698,14 @@ describe('audit-logs 写入迁移', () => {
       const sheetId = await submitPendingSheet(actId);
       // 先 approve 进入 pending_final_review
       await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${sheetId}/approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
         .set('Authorization', adminAuth)
         .send({})
         .expect(200);
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${sheetId}/final-approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
         .set('Authorization', adminAuth)
         .send({});
       expect(res.status).toBe(200);
@@ -1733,14 +1733,14 @@ describe('audit-logs 写入迁移', () => {
       const actId = await createActivity();
       const sheetId = await submitPendingSheet(actId);
       await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${sheetId}/approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
         .set('Authorization', adminAuth)
         .send({})
         .expect(200);
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${sheetId}/final-reject`)
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-reject`)
         .set('Authorization', adminAuth)
         .send({ finalReviewNote: '数据不准' });
       expect(res.status).toBe(200);
@@ -1798,7 +1798,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${sheetId}`)
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -1826,7 +1826,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .delete(`/api/v2/attendance-sheets/${sheetId}`)
+        .delete(`/api/admin/v1/attendance-sheets/${sheetId}`)
         .set('Authorization', adminAuth)
         .expect(200);
 
@@ -1844,14 +1844,14 @@ describe('audit-logs 写入迁移', () => {
       const actId = await createActivity();
       const sheetId = await submitPendingSheet(actId);
       await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${sheetId}/approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
         .set('Authorization', adminAuth)
         .send({})
         .expect(200);
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${sheetId}/final-reject`)
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-reject`)
         .set('Authorization', adminAuth)
         .send({ finalReviewNote: '数据不准' })
         .expect(200);
@@ -1873,7 +1873,7 @@ describe('audit-logs 写入迁移', () => {
       const auditBefore = await prisma.auditLog.count();
 
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${actId}/attendance-sheets`)
+        .post(`/api/admin/v1/activities/${actId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .send({
           records: [
@@ -1900,7 +1900,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${sheetId}/approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
         .set('Authorization', adminAuth)
         .send({});
       expect(res.status).toBe(409); // ATTENDANCE_RECORD_CONTRIBUTION_POINTS_REQUIRED (22072, CONFLICT)
@@ -1920,7 +1920,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .get(`/api/v2/activities/${actId}/attendance-sheets`)
+        .get(`/api/admin/v1/activities/${actId}/attendance-sheets`)
         .set('Authorization', adminAuth)
         .expect(200);
       expect(await prisma.auditLog.count()).toBe(0);
@@ -1932,7 +1932,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .get(`/api/v2/attendance-sheets/${sheetId}`)
+        .get(`/api/admin/v1/attendance-sheets/${sheetId}`)
         .set('Authorization', adminAuth)
         .expect(200);
       expect(await prisma.auditLog.count()).toBe(0);
@@ -1944,7 +1944,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .get(`/api/v2/attendance-sheets/${sheetId}/review-detail`)
+        .get(`/api/admin/v1/attendance-sheets/${sheetId}/review-detail`)
         .set('Authorization', adminAuth)
         .expect(200);
       expect(await prisma.auditLog.count()).toBe(0);
@@ -1954,14 +1954,14 @@ describe('audit-logs 写入迁移', () => {
       const actId = await createActivity();
       const sheetId = await submitPendingSheet(actId);
       await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${sheetId}/approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/approve`)
         .set('Authorization', adminAuth)
         .send({})
         .expect(200);
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .patch(`/api/v2/attendance-sheets/${sheetId}/final-approve`)
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
         .set('Authorization', adminAuth)
         .send({})
         .expect(200);

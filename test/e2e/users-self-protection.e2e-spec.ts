@@ -42,7 +42,7 @@ describe('用户管理接口自我保护(assertNotSelf)', () => {
     const { authHeader } = await loginAs(app, 'spsuperdel1');
 
     const res = await request(httpServer(app))
-      .delete(`/api/users/${a.id}`)
+      .delete(`/api/admin/v1/users/${a.id}`)
       .set('Authorization', authHeader);
 
     expectBizError(res, BizCode.CANNOT_OPERATE_SELF);
@@ -53,7 +53,7 @@ describe('用户管理接口自我保护(assertNotSelf)', () => {
     const { authHeader } = await loginAs(app, 'spsuperdis1');
 
     const res = await request(httpServer(app))
-      .patch(`/api/users/${a.id}/status`)
+      .patch(`/api/admin/v1/users/${a.id}/status`)
       .set('Authorization', authHeader)
       .send({ status: 'DISABLED' });
 
@@ -65,7 +65,7 @@ describe('用户管理接口自我保护(assertNotSelf)', () => {
     const { authHeader } = await loginAs(app, 'spsuperrole1');
 
     const res = await request(httpServer(app))
-      .patch(`/api/users/${a.id}/role`)
+      .patch(`/api/admin/v1/users/${a.id}/role`)
       .set('Authorization', authHeader)
       .send({ role: Role.ADMIN });
 
@@ -77,7 +77,7 @@ describe('用户管理接口自我保护(assertNotSelf)', () => {
     const { authHeader } = await loginAs(app, 'spsuperact1');
 
     const res = await request(httpServer(app))
-      .patch(`/api/users/${a.id}/status`)
+      .patch(`/api/admin/v1/users/${a.id}/status`)
       .set('Authorization', authHeader)
       .send({ status: 'ACTIVE' });
 
@@ -95,7 +95,7 @@ describe('用户管理接口自我保护(assertNotSelf)', () => {
     const { authHeader } = await loginAs(app, 'spadmindel1');
 
     const res = await request(httpServer(app))
-      .delete(`/api/users/${b.id}`)
+      .delete(`/api/admin/v1/users/${b.id}`)
       .set('Authorization', authHeader);
 
     expectBizError(res, BizCode.CANNOT_OPERATE_SELF);

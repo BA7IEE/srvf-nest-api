@@ -173,7 +173,7 @@ describe('activity-registrations 模块', () => {
     cancel?: boolean;
   }): Promise<string> {
     const create = await request(httpServer(app))
-      .post('/api/v2/activities')
+      .post('/api/admin/v1/activities')
       .set('Authorization', adminAuth)
       .send({
         title: opts.title,
@@ -188,12 +188,12 @@ describe('activity-registrations 模块', () => {
     const id: string = create.body.data.id as string;
     if (opts.publish) {
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${id}/publish`)
+        .patch(`/api/admin/v1/activities/${id}/publish`)
         .set('Authorization', adminAuth);
     }
     if (opts.cancel) {
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${id}/cancel`)
+        .patch(`/api/admin/v1/activities/${id}/cancel`)
         .set('Authorization', adminAuth)
         .send({});
     }
@@ -205,21 +205,21 @@ describe('activity-registrations 模块', () => {
   describe('权限边界', () => {
     it('未登录 GET admin list → 401', async () => {
       const res = await request(httpServer(app)).get(
-        `/api/v2/activities/${openActivityId}/registrations`,
+        `/api/admin/v1/activities/${openActivityId}/registrations`,
       );
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('USER GET admin list → 403', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${openActivityId}/registrations`)
+        .get(`/api/admin/v1/activities/${openActivityId}/registrations`)
         .set('Authorization', userWithMemberAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
 
     it('USER POST 代报名路径 → 403', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${openActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${openActivityId}/registrations`)
         .set('Authorization', userWithMemberAuth)
         .send({ memberId: memberCId });
       expectBizError(res, BizCode.FORBIDDEN);
@@ -228,7 +228,7 @@ describe('activity-registrations 模块', () => {
     it('USER PATCH approve → 403', async () => {
       const res = await request(httpServer(app))
         .patch(
-          `/api/v2/activities/${openActivityId}/registrations/cl000000000000000000xxxx/approve`,
+          `/api/admin/v1/activities/${openActivityId}/registrations/cl000000000000000000xxxx/approve`,
         )
         .set('Authorization', userWithMemberAuth)
         .send({});
@@ -237,7 +237,7 @@ describe('activity-registrations 模块', () => {
 
     it('USER GET export → 403', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${openActivityId}/registrations/export`)
+        .get(`/api/admin/v1/activities/${openActivityId}/registrations/export`)
         .set('Authorization', userWithMemberAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
@@ -271,7 +271,7 @@ describe('activity-registrations 模块', () => {
   describe('ADMIN POST 代报名', () => {
     it('正常 → 201,statusCode=pending,memberId 来自 body', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${openActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${openActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId });
       expect(res.status).toBe(201);
@@ -285,7 +285,7 @@ describe('activity-registrations 模块', () => {
 
     it('SUPER_ADMIN 代报名 + extras → 201', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${openActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${openActivityId}/registrations`)
         .set('Authorization', superAdminAuth)
         .send({ memberId: memberDId, extras: { tShirtSize: 'L' } });
       expect(res.status).toBe(201);
@@ -294,7 +294,7 @@ describe('activity-registrations 模块', () => {
 
     it('memberId 不存在 → MEMBER_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${openActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${openActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: 'cl0000000000000000000000' });
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
@@ -302,7 +302,7 @@ describe('activity-registrations 模块', () => {
 
     it('activity 不存在 → ACTIVITY_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/activities/cl0000000000000000000000/registrations')
+        .post('/api/admin/v1/activities/cl0000000000000000000000/registrations')
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId });
       expectBizError(res, BizCode.ACTIVITY_NOT_FOUND);
@@ -310,7 +310,7 @@ describe('activity-registrations 模块', () => {
 
     it('activity isPublicRegistration=false → ACTIVITY_NOT_PUBLIC_REGISTRATION', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${privateActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${privateActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId });
       expectBizError(res, BizCode.ACTIVITY_NOT_PUBLIC_REGISTRATION);
@@ -318,7 +318,7 @@ describe('activity-registrations 模块', () => {
 
     it('activity cancelled → ACTIVITY_CANCELLED_REGISTRATION_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${cancelledActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${cancelledActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId });
       expectBizError(res, BizCode.ACTIVITY_CANCELLED_REGISTRATION_FORBIDDEN);
@@ -326,7 +326,7 @@ describe('activity-registrations 模块', () => {
 
     it('同一 member 同一活动二次报名 → ACTIVITY_REGISTRATION_ALREADY_EXISTS', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${openActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${openActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId });
       expectBizError(res, BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS);
@@ -334,7 +334,7 @@ describe('activity-registrations 模块', () => {
 
     it('缺 memberId → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${openActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${openActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({});
       expect(res.status).toBe(400);
@@ -342,7 +342,7 @@ describe('activity-registrations 模块', () => {
 
     it('non-whitelisted statusCode → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${openActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${openActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId, statusCode: 'pass' });
       expect(res.status).toBe(400);
@@ -350,7 +350,7 @@ describe('activity-registrations 模块', () => {
 
     it('non-whitelisted reviewedBy → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${openActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${openActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId, reviewedBy: 'cl0000000000000000000000' });
       expect(res.status).toBe(400);
@@ -358,7 +358,7 @@ describe('activity-registrations 模块', () => {
 
     it('non-whitelisted cancelledByUserId → 400', async () => {
       const res = await request(httpServer(app))
-        .post(`/api/v2/activities/${openActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${openActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId, cancelledByUserId: 'cl0000000000000000000000' });
       expect(res.status).toBe(400);
@@ -469,13 +469,13 @@ describe('activity-registrations 模块', () => {
     it('capacity=1 + pending 占位时,创建第二条 pending 仍允许', async () => {
       // 第一条 pending(memberC)
       const r1 = await request(httpServer(app))
-        .post(`/api/v2/activities/${capacityActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${capacityActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId });
       expect(r1.status).toBe(201);
       // 第二条 pending(memberD)— 应被允许(还没占名额)
       const r2 = await request(httpServer(app))
-        .post(`/api/v2/activities/${capacityActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${capacityActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberDId });
       expect(r2.status).toBe(201);
@@ -493,13 +493,13 @@ describe('activity-registrations 模块', () => {
       expect(regD).toBeTruthy();
       // approve C → 200(占满)
       const a1 = await request(httpServer(app))
-        .patch(`/api/v2/activities/${capacityActivityId}/registrations/${regC!.id}/approve`)
+        .patch(`/api/admin/v1/activities/${capacityActivityId}/registrations/${regC!.id}/approve`)
         .set('Authorization', adminAuth)
         .send({});
       expect(a1.status).toBe(200);
       // approve D → 21032
       const a2 = await request(httpServer(app))
-        .patch(`/api/v2/activities/${capacityActivityId}/registrations/${regD!.id}/approve`)
+        .patch(`/api/admin/v1/activities/${capacityActivityId}/registrations/${regD!.id}/approve`)
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(a2, BizCode.ACTIVITY_CAPACITY_EXCEEDED);
@@ -516,14 +516,14 @@ describe('activity-registrations 模块', () => {
       expect(regD).toBeTruthy();
       // 取消 C(释放名额)
       const c = await request(httpServer(app))
-        .patch(`/api/v2/activities/${capacityActivityId}/registrations/${regC!.id}/cancel`)
+        .patch(`/api/admin/v1/activities/${capacityActivityId}/registrations/${regC!.id}/cancel`)
         .set('Authorization', adminAuth)
         .send({});
       expect(c.status).toBe(200);
       expect(c.body.data.statusCode).toBe('cancelled');
       // 现在 approve D 应成功
       const a = await request(httpServer(app))
-        .patch(`/api/v2/activities/${capacityActivityId}/registrations/${regD!.id}/approve`)
+        .patch(`/api/admin/v1/activities/${capacityActivityId}/registrations/${regD!.id}/approve`)
         .set('Authorization', adminAuth)
         .send({});
       expect(a.status).toBe(200);
@@ -539,18 +539,18 @@ describe('activity-registrations 模块', () => {
         publish: true,
       });
       const r1 = await request(httpServer(app))
-        .post(`/api/v2/activities/${id}/registrations`)
+        .post(`/api/admin/v1/activities/${id}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId });
       expect(r1.status).toBe(201);
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${id}/registrations/${r1.body.data.id}/approve`)
+        .patch(`/api/admin/v1/activities/${id}/registrations/${r1.body.data.id}/approve`)
         .set('Authorization', adminAuth)
         .send({});
 
       // memberD create → 21032
       const r2 = await request(httpServer(app))
-        .post(`/api/v2/activities/${id}/registrations`)
+        .post(`/api/admin/v1/activities/${id}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberDId });
       expectBizError(r2, BizCode.ACTIVITY_CAPACITY_EXCEEDED);
@@ -571,18 +571,18 @@ describe('activity-registrations 模块', () => {
         publish: true,
       });
       const r1 = await request(httpServer(app))
-        .post(`/api/v2/activities/${id}/registrations`)
+        .post(`/api/admin/v1/activities/${id}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId });
       pendingRegId = r1.body.data.id;
 
       const r2 = await request(httpServer(app))
-        .post(`/api/v2/activities/${id}/registrations`)
+        .post(`/api/admin/v1/activities/${id}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberDId });
       alreadyPassedRegId = r2.body.data.id;
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${id}/registrations/${alreadyPassedRegId}/approve`)
+        .patch(`/api/admin/v1/activities/${id}/registrations/${alreadyPassedRegId}/approve`)
         .set('Authorization', adminAuth)
         .send({});
 
@@ -594,7 +594,9 @@ describe('activity-registrations 模块', () => {
 
     it('approve pending → pass;写 reviewedBy/At', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${approveActivityId}/registrations/${pendingRegId}/approve`)
+        .patch(
+          `/api/admin/v1/activities/${approveActivityId}/registrations/${pendingRegId}/approve`,
+        )
         .set('Authorization', adminAuth)
         .send({ reviewNote: '通过' });
       expect(res.status).toBe(200);
@@ -607,7 +609,7 @@ describe('activity-registrations 模块', () => {
     it('再次 approve 已 pass → ACTIVITY_REGISTRATION_STATUS_INVALID', async () => {
       const res = await request(httpServer(app))
         .patch(
-          `/api/v2/activities/${approveActivityId}/registrations/${alreadyPassedRegId}/approve`,
+          `/api/admin/v1/activities/${approveActivityId}/registrations/${alreadyPassedRegId}/approve`,
         )
         .set('Authorization', adminAuth)
         .send({});
@@ -617,7 +619,7 @@ describe('activity-registrations 模块', () => {
     it('approve 不存在 id → ACTIVITY_REGISTRATION_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
         .patch(
-          `/api/v2/activities/${approveActivityId}/registrations/cl0000000000000000000000/approve`,
+          `/api/admin/v1/activities/${approveActivityId}/registrations/cl0000000000000000000000/approve`,
         )
         .set('Authorization', adminAuth)
         .send({});
@@ -627,7 +629,7 @@ describe('activity-registrations 模块', () => {
     it('跨 activityId 访问 → 404(避免存在性泄漏)', async () => {
       // pendingRegId 实际属于 approveActivityId,用 openActivityId 当父路径 → 404
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${openActivityId}/registrations/${pendingRegId}/approve`)
+        .patch(`/api/admin/v1/activities/${openActivityId}/registrations/${pendingRegId}/approve`)
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res, BizCode.ACTIVITY_REGISTRATION_NOT_FOUND);
@@ -647,24 +649,24 @@ describe('activity-registrations 模块', () => {
         publish: true,
       });
       const r1 = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/registrations`)
+        .post(`/api/admin/v1/activities/${activityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId });
       pendingRegId = r1.body.data.id;
       const r2 = await request(httpServer(app))
-        .post(`/api/v2/activities/${activityId}/registrations`)
+        .post(`/api/admin/v1/activities/${activityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberDId });
       passRegId = r2.body.data.id;
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${activityId}/registrations/${passRegId}/approve`)
+        .patch(`/api/admin/v1/activities/${activityId}/registrations/${passRegId}/approve`)
         .set('Authorization', adminAuth)
         .send({});
     });
 
     it('reject pending → reject;reviewNote 必填(传)', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${activityId}/registrations/${pendingRegId}/reject`)
+        .patch(`/api/admin/v1/activities/${activityId}/registrations/${pendingRegId}/reject`)
         .set('Authorization', adminAuth)
         .send({ reviewNote: '资格不符' });
       expect(res.status).toBe(200);
@@ -680,12 +682,12 @@ describe('activity-registrations 模块', () => {
         publish: true,
       });
       const r = await request(httpServer(app))
-        .post(`/api/v2/activities/${id}/registrations`)
+        .post(`/api/admin/v1/activities/${id}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId });
       const regId: string = r.body.data.id;
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${id}/registrations/${regId}/reject`)
+        .patch(`/api/admin/v1/activities/${id}/registrations/${regId}/reject`)
         .set('Authorization', adminAuth)
         .send({});
       expect(res.status).toBe(400);
@@ -693,7 +695,7 @@ describe('activity-registrations 模块', () => {
 
     it('reject pass(非 pending)→ ACTIVITY_REGISTRATION_STATUS_INVALID', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${activityId}/registrations/${passRegId}/reject`)
+        .patch(`/api/admin/v1/activities/${activityId}/registrations/${passRegId}/reject`)
         .set('Authorization', adminAuth)
         .send({ reviewNote: '试图驳回已通过' });
       expectBizError(res, BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
@@ -713,24 +715,24 @@ describe('activity-registrations 模块', () => {
         publish: true,
       });
       const r1 = await request(httpServer(app))
-        .post(`/api/v2/activities/${cancelActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${cancelActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId });
       pendingRegId = r1.body.data.id;
       const r2 = await request(httpServer(app))
-        .post(`/api/v2/activities/${cancelActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${cancelActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberDId });
       passRegId = r2.body.data.id;
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${cancelActivityId}/registrations/${passRegId}/approve`)
+        .patch(`/api/admin/v1/activities/${cancelActivityId}/registrations/${passRegId}/approve`)
         .set('Authorization', adminAuth)
         .send({});
     });
 
     it('cancel pending → cancelled;cancelReason 入库', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${cancelActivityId}/registrations/${pendingRegId}/cancel`)
+        .patch(`/api/admin/v1/activities/${cancelActivityId}/registrations/${pendingRegId}/cancel`)
         .set('Authorization', adminAuth)
         .send({ cancelReason: '队员请假' });
       expect(res.status).toBe(200);
@@ -742,7 +744,7 @@ describe('activity-registrations 模块', () => {
 
     it('cancel pass → cancelled', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${cancelActivityId}/registrations/${passRegId}/cancel`)
+        .patch(`/api/admin/v1/activities/${cancelActivityId}/registrations/${passRegId}/cancel`)
         .set('Authorization', adminAuth)
         .send({});
       expect(res.status).toBe(200);
@@ -752,7 +754,7 @@ describe('activity-registrations 模块', () => {
 
     it('cancel 再次取消 cancelled → ACTIVITY_REGISTRATION_STATUS_INVALID', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${cancelActivityId}/registrations/${passRegId}/cancel`)
+        .patch(`/api/admin/v1/activities/${cancelActivityId}/registrations/${passRegId}/cancel`)
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res, BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
@@ -766,16 +768,16 @@ describe('activity-registrations 模块', () => {
         publish: true,
       });
       const r = await request(httpServer(app))
-        .post(`/api/v2/activities/${id}/registrations`)
+        .post(`/api/admin/v1/activities/${id}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId });
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${id}/registrations/${r.body.data.id}/reject`)
+        .patch(`/api/admin/v1/activities/${id}/registrations/${r.body.data.id}/reject`)
         .set('Authorization', adminAuth)
         .send({ reviewNote: '拒绝' });
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/activities/${id}/registrations/${r.body.data.id}/cancel`)
+        .patch(`/api/admin/v1/activities/${id}/registrations/${r.body.data.id}/cancel`)
         .set('Authorization', adminAuth)
         .send({});
       expectBizError(res, BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
@@ -805,24 +807,26 @@ describe('activity-registrations 模块', () => {
       ).id;
 
       const r1 = await request(httpServer(app))
-        .post(`/api/v2/activities/${listActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${listActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: m1 });
       const r2 = await request(httpServer(app))
-        .post(`/api/v2/activities/${listActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${listActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: m2 });
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${listActivityId}/registrations/${r2.body.data.id}/approve`)
+        .patch(
+          `/api/admin/v1/activities/${listActivityId}/registrations/${r2.body.data.id}/approve`,
+        )
         .set('Authorization', adminAuth)
         .send({});
 
       const r3 = await request(httpServer(app))
-        .post(`/api/v2/activities/${listActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${listActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: m3 });
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${listActivityId}/registrations/${r3.body.data.id}/cancel`)
+        .patch(`/api/admin/v1/activities/${listActivityId}/registrations/${r3.body.data.id}/cancel`)
         .set('Authorization', adminAuth)
         .send({});
 
@@ -831,7 +835,7 @@ describe('activity-registrations 模块', () => {
 
     it('list 返回所有状态(含 cancelled)', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${listActivityId}/registrations`)
+        .get(`/api/admin/v1/activities/${listActivityId}/registrations`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.items.length).toBeGreaterThanOrEqual(3);
@@ -843,7 +847,7 @@ describe('activity-registrations 模块', () => {
 
     it('list + statusCode=pass 过滤', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${listActivityId}/registrations`)
+        .get(`/api/admin/v1/activities/${listActivityId}/registrations`)
         .query({ statusCode: 'pass' })
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
@@ -855,7 +859,7 @@ describe('activity-registrations 模块', () => {
 
     it('list 列表项含 memberNo / memberDisplayName 冗余字段', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${listActivityId}/registrations`)
+        .get(`/api/admin/v1/activities/${listActivityId}/registrations`)
         .set('Authorization', adminAuth);
       const first = res.body.data.items[0] as Record<string, unknown>;
       expect(first).toHaveProperty('memberNo');
@@ -864,7 +868,7 @@ describe('activity-registrations 模块', () => {
 
     it('activity 不存在 → ACTIVITY_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/activities/cl0000000000000000000000/registrations')
+        .get('/api/admin/v1/activities/cl0000000000000000000000/registrations')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ACTIVITY_NOT_FOUND);
     });
@@ -980,30 +984,30 @@ describe('activity-registrations 模块', () => {
       ).id;
 
       await request(httpServer(app))
-        .post(`/api/v2/activities/${exActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${exActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: m1 });
       const r2 = await request(httpServer(app))
-        .post(`/api/v2/activities/${exActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${exActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: m2 });
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${exActivityId}/registrations/${r2.body.data.id}/approve`)
+        .patch(`/api/admin/v1/activities/${exActivityId}/registrations/${r2.body.data.id}/approve`)
         .set('Authorization', adminAuth)
         .send({});
       const r3 = await request(httpServer(app))
-        .post(`/api/v2/activities/${exActivityId}/registrations`)
+        .post(`/api/admin/v1/activities/${exActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: m3 });
       await request(httpServer(app))
-        .patch(`/api/v2/activities/${exActivityId}/registrations/${r3.body.data.id}/cancel`)
+        .patch(`/api/admin/v1/activities/${exActivityId}/registrations/${r3.body.data.id}/cancel`)
         .set('Authorization', adminAuth)
         .send({});
     });
 
     it('默认 format=csv + scope=pass → 200 + text/csv + 仅 pass 行', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${exActivityId}/registrations/export`)
+        .get(`/api/admin/v1/activities/${exActivityId}/registrations/export`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toContain('text/csv');
@@ -1016,7 +1020,7 @@ describe('activity-registrations 模块', () => {
 
     it('scope=all → 200 + 3 数据行(pending + pass + cancelled)', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${exActivityId}/registrations/export`)
+        .get(`/api/admin/v1/activities/${exActivityId}/registrations/export`)
         .query({ scope: 'all' })
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
@@ -1026,7 +1030,7 @@ describe('activity-registrations 模块', () => {
 
     it('format=xlsx → 400(Q-A6 第一版仅 CSV)', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${exActivityId}/registrations/export`)
+        .get(`/api/admin/v1/activities/${exActivityId}/registrations/export`)
         .query({ format: 'xlsx' })
         .set('Authorization', adminAuth);
       expect(res.status).toBe(400);
@@ -1034,7 +1038,7 @@ describe('activity-registrations 模块', () => {
 
     it('scope=invalid → 400', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${exActivityId}/registrations/export`)
+        .get(`/api/admin/v1/activities/${exActivityId}/registrations/export`)
         .query({ scope: 'invalid' })
         .set('Authorization', adminAuth);
       expect(res.status).toBe(400);
@@ -1042,21 +1046,21 @@ describe('activity-registrations 模块', () => {
 
     it('USER 调 export → 403', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${exActivityId}/registrations/export`)
+        .get(`/api/admin/v1/activities/${exActivityId}/registrations/export`)
         .set('Authorization', userWithMemberAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
 
     it('未登录调 export → 401', async () => {
       const res = await request(httpServer(app)).get(
-        `/api/v2/activities/${exActivityId}/registrations/export`,
+        `/api/admin/v1/activities/${exActivityId}/registrations/export`,
       );
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('activity 不存在 → ACTIVITY_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/activities/cl0000000000000000000000/registrations/export')
+        .get('/api/admin/v1/activities/cl0000000000000000000000/registrations/export')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ACTIVITY_NOT_FOUND);
     });
@@ -1065,7 +1069,7 @@ describe('activity-registrations 模块', () => {
       const beforeReg = await prisma.activityRegistration.count();
       const beforeRec = await prisma.attendanceRecord.count();
       await request(httpServer(app))
-        .get(`/api/v2/activities/${exActivityId}/registrations/export`)
+        .get(`/api/admin/v1/activities/${exActivityId}/registrations/export`)
         .query({ scope: 'all' })
         .set('Authorization', adminAuth);
       const afterReg = await prisma.activityRegistration.count();
@@ -1076,7 +1080,7 @@ describe('activity-registrations 模块', () => {
 
     it('CSV 内含 UTF-8 BOM 前缀(让 Excel 自动识别中文)', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/activities/${exActivityId}/registrations/export`)
+        .get(`/api/admin/v1/activities/${exActivityId}/registrations/export`)
         .set('Authorization', adminAuth);
       expect(res.text.charCodeAt(0)).toBe(0xfeff);
     });

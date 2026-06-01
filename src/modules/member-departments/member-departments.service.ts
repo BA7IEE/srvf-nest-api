@@ -77,7 +77,7 @@ export class MemberDepartmentsService {
     }
   }
 
-  // ============ GET /api/v2/members/:memberId/department ============
+  // ============ GET /api/admin/v1/members/:memberId/department ============
 
   // 决策 4:member 存在但无归属返 null(不抛 NOT_FOUND);member 不存在抛 MEMBER_NOT_FOUND。
   async findCurrent(
@@ -93,7 +93,7 @@ export class MemberDepartmentsService {
     return current;
   }
 
-  // ============ PUT /api/v2/members/:memberId/department ============
+  // ============ PUT /api/admin/v1/members/:memberId/department ============
 
   // 幂等设置语义(对应 contract §5.2):
   //   1. 校验 memberId 存在 + status=ACTIVE
@@ -153,7 +153,7 @@ export class MemberDepartmentsService {
     });
   }
 
-  // ============ DELETE /api/v2/members/:memberId/department ============
+  // ============ DELETE /api/admin/v1/members/:memberId/department ============
 
   // 解除当前 active 归属(软删中间表行)。
   // 若 member 无 active 归属 → MEMBER_DEPARTMENT_NOT_FOUND。

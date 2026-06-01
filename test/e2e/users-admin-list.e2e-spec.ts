@@ -14,12 +14,12 @@ import { createTestApp } from '../setup/test-app';
 // 14.6.1 admin-list spec(10 用例)
 // 覆盖:分页参数、排序(createdAt desc)、角色可见范围、软删过滤
 //
-// P0-F PR-3B(2026-05-18):GET /api/users 走 rbac.can('user.read.account')。
+// P0-F PR-3B(2026-05-18):GET /api/admin/v1/users 走 rbac.can('user.read.account')。
 // ADMIN 必须 grant ops-admin 才能进 service;USER → 30100 RBAC_FORBIDDEN(沿评审稿 §9)。
 // service 内 canViewUser 仍生效(ADMIN 列表只见 USER 角色,不因 RBAC 通过而扩大范围)。
 const EXPECTED_PAGE_KEYS = ['items', 'page', 'pageSize', 'total'].sort();
 
-describe('GET /api/users(管理列表)', () => {
+describe('GET /api/admin/v1/users(管理列表)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let opsAdminRoleId: string;
@@ -40,7 +40,9 @@ describe('GET /api/users(管理列表)', () => {
       await createTestUser(app, { username: 'listdefault1', role: Role.SUPER_ADMIN });
       const { authHeader } = await loginAs(app, 'listdefault1');
 
-      const res = await request(httpServer(app)).get('/api/users').set('Authorization', authHeader);
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/users')
+        .set('Authorization', authHeader);
 
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -56,7 +58,7 @@ describe('GET /api/users(管理列表)', () => {
       const { authHeader } = await loginAs(app, 'listcustom1');
 
       const res = await request(httpServer(app))
-        .get('/api/users?page=2&pageSize=5')
+        .get('/api/admin/v1/users?page=2&pageSize=5')
         .set('Authorization', authHeader);
 
       expect(res.status).toBe(200);
@@ -69,7 +71,7 @@ describe('GET /api/users(管理列表)', () => {
       const { authHeader } = await loginAs(app, 'listmax1');
 
       const res = await request(httpServer(app))
-        .get('/api/users?pageSize=101')
+        .get('/api/admin/v1/users?pageSize=101')
         .set('Authorization', authHeader);
 
       expect(res.status).toBe(BizCode.BAD_REQUEST.httpStatus);
@@ -82,7 +84,7 @@ describe('GET /api/users(管理列表)', () => {
       const { authHeader } = await loginAs(app, 'listmin1');
 
       const res = await request(httpServer(app))
-        .get('/api/users?page=0')
+        .get('/api/admin/v1/users?page=0')
         .set('Authorization', authHeader);
 
       expect(res.status).toBe(BizCode.BAD_REQUEST.httpStatus);
@@ -94,7 +96,7 @@ describe('GET /api/users(管理列表)', () => {
       const { authHeader } = await loginAs(app, 'listneg1');
 
       const res = await request(httpServer(app))
-        .get('/api/users?pageSize=-1')
+        .get('/api/admin/v1/users?pageSize=-1')
         .set('Authorization', authHeader);
 
       expect(res.status).toBe(BizCode.BAD_REQUEST.httpStatus);
@@ -116,7 +118,7 @@ describe('GET /api/users(管理列表)', () => {
       await createTestUser(app, { username: 'sortuser3' });
 
       const res = await request(httpServer(app))
-        .get('/api/users?pageSize=10')
+        .get('/api/admin/v1/users?pageSize=10')
         .set('Authorization', authHeader);
 
       expect(res.status).toBe(200);
@@ -140,7 +142,7 @@ describe('GET /api/users(管理列表)', () => {
 
       const { authHeader } = await loginAs(app, 'visiblesuper1');
       const res = await request(httpServer(app))
-        .get('/api/users?pageSize=100')
+        .get('/api/admin/v1/users?pageSize=100')
         .set('Authorization', authHeader);
 
       expect(res.status).toBe(200);
@@ -155,12 +157,12 @@ describe('GET /api/users(管理列表)', () => {
       await createTestUser(app, { username: 'admvisuper1', role: Role.SUPER_ADMIN });
       const admin = await createTestUser(app, { username: 'admviadmin1', role: Role.ADMIN });
       await createTestUser(app, { username: 'admviuser1', role: Role.USER });
-      // P0-F PR-3B:ADMIN 需 grant ops-admin 才能调 GET /api/users(走 rbac.can)
+      // P0-F PR-3B:ADMIN 需 grant ops-admin 才能调 GET /api/admin/v1/users(走 rbac.can)
       await grantOpsAdminToUser(app, admin.id, opsAdminRoleId);
 
       const { authHeader } = await loginAs(app, 'admviadmin1');
       const res = await request(httpServer(app))
-        .get('/api/users?pageSize=100')
+        .get('/api/admin/v1/users?pageSize=100')
         .set('Authorization', authHeader);
 
       expect(res.status).toBe(200);
@@ -179,7 +181,9 @@ describe('GET /api/users(管理列表)', () => {
       await createTestUser(app, { username: 'plainuser1', role: Role.USER });
       const { authHeader } = await loginAs(app, 'plainuser1');
 
-      const res = await request(httpServer(app)).get('/api/users').set('Authorization', authHeader);
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/users')
+        .set('Authorization', authHeader);
 
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
@@ -188,7 +192,9 @@ describe('GET /api/users(管理列表)', () => {
       await createTestUser(app, { username: 'admindefaultlist1', role: Role.ADMIN });
       const { authHeader } = await loginAs(app, 'admindefaultlist1');
 
-      const res = await request(httpServer(app)).get('/api/users').set('Authorization', authHeader);
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/users')
+        .set('Authorization', authHeader);
 
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
@@ -207,7 +213,7 @@ describe('GET /api/users(管理列表)', () => {
 
       const { authHeader } = await loginAs(app, 'softdelop1');
       const res = await request(httpServer(app))
-        .get('/api/users?pageSize=100')
+        .get('/api/admin/v1/users?pageSize=100')
         .set('Authorization', authHeader);
 
       expect(res.status).toBe(200);

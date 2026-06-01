@@ -77,20 +77,20 @@ describe('members 模块', () => {
 
   describe('权限边界', () => {
     it('未登录 GET → 401', async () => {
-      const res = await request(httpServer(app)).get('/api/v2/members');
+      const res = await request(httpServer(app)).get('/api/admin/v1/members');
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('USER GET → 403', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/members')
+        .get('/api/admin/v1/members')
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
 
     it('USER POST → 403', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/members')
+        .post('/api/admin/v1/members')
         .set('Authorization', userAuth)
         .send({ memberNo: 'demo-x1', displayName: 'X' });
       expectBizError(res, BizCode.FORBIDDEN);
@@ -101,7 +101,7 @@ describe('members 模块', () => {
         data: { memberNo: 'demo-pb-1', displayName: 'P' },
       });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${member.id}`)
+        .delete(`/api/admin/v1/members/${member.id}`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.FORBIDDEN);
     });
@@ -114,7 +114,7 @@ describe('members 模块', () => {
 
     it('SUPER_ADMIN 创建 → 201,响应含 memberNo,不含 deletedAt', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/members')
+        .post('/api/admin/v1/members')
         .set('Authorization', superAdminAuth)
         .send({
           memberNo: 'demo-m1',
@@ -136,7 +136,7 @@ describe('members 模块', () => {
       // CreateMemberDto.memberNo @Matches(/^[A-Za-z0-9-]+$/) 不允许空格,
       // DTO 层会先拦截。这是有意的(沿用 v1 username 同模式),前后空格视为非法输入。
       const res = await request(httpServer(app))
-        .post('/api/v2/members')
+        .post('/api/admin/v1/members')
         .set('Authorization', superAdminAuth)
         .send({
           memberNo: '  demo-Trim-Me  ',
@@ -147,7 +147,7 @@ describe('members 模块', () => {
 
     it('memberNo 保留原大小写(不强制 lowercase)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/members')
+        .post('/api/admin/v1/members')
         .set('Authorization', superAdminAuth)
         .send({
           memberNo: 'demo-MixedCase-1',
@@ -159,7 +159,7 @@ describe('members 模块', () => {
 
     it('ADMIN 创建(无 gradeCode) → 201', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/members')
+        .post('/api/admin/v1/members')
         .set('Authorization', adminAuth)
         .send({ memberNo: 'demo-m2', displayName: 'Demo 2' });
       expect(res.status).toBe(201);
@@ -168,7 +168,7 @@ describe('members 模块', () => {
 
     it('memberNo 撞活跃记录 → MEMBER_NO_ALREADY_EXISTS', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/members')
+        .post('/api/admin/v1/members')
         .set('Authorization', superAdminAuth)
         .send({ memberNo: 'demo-m1', displayName: 'Dup' });
       expectBizError(res, BizCode.MEMBER_NO_ALREADY_EXISTS);
@@ -184,7 +184,7 @@ describe('members 模块', () => {
         },
       });
       const res = await request(httpServer(app))
-        .post('/api/v2/members')
+        .post('/api/admin/v1/members')
         .set('Authorization', superAdminAuth)
         .send({ memberNo: 'demo-soft-deleted', displayName: 'New' });
       expectBizError(res, BizCode.MEMBER_NO_ALREADY_EXISTS);
@@ -192,7 +192,7 @@ describe('members 模块', () => {
 
     it('gradeCode 不存在 → MEMBER_GRADE_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/members')
+        .post('/api/admin/v1/members')
         .set('Authorization', superAdminAuth)
         .send({
           memberNo: 'demo-m3',
@@ -204,7 +204,7 @@ describe('members 模块', () => {
 
     it('gradeCode 在错误 type 下 → MEMBER_GRADE_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/members')
+        .post('/api/admin/v1/members')
         .set('Authorization', superAdminAuth)
         .send({
           memberNo: 'demo-m4',
@@ -216,7 +216,7 @@ describe('members 模块', () => {
 
     it('gradeCode 是 INACTIVE → MEMBER_GRADE_CODE_INVALID', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/members')
+        .post('/api/admin/v1/members')
         .set('Authorization', superAdminAuth)
         .send({
           memberNo: 'demo-m5',
@@ -228,7 +228,7 @@ describe('members 模块', () => {
 
     it('memberNo 含特殊字符 → 400(DTO 校验)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/members')
+        .post('/api/admin/v1/members')
         .set('Authorization', superAdminAuth)
         .send({ memberNo: 'demo m1', displayName: 'X' });
       expect(res.status).toBe(400);
@@ -236,7 +236,7 @@ describe('members 模块', () => {
 
     it('memberNo 超长(33 字符) → 400', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/members')
+        .post('/api/admin/v1/members')
         .set('Authorization', superAdminAuth)
         .send({ memberNo: 'a'.repeat(33), displayName: 'X' });
       expect(res.status).toBe(400);
@@ -244,7 +244,7 @@ describe('members 模块', () => {
 
     it('GET 列表分页', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/members?page=1&pageSize=5')
+        .get('/api/admin/v1/members?page=1&pageSize=5')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveProperty('items');
@@ -253,7 +253,7 @@ describe('members 模块', () => {
 
     it('GET 列表 ?memberNo=<exact> 精确匹配', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/members?memberNo=demo-m1')
+        .get('/api/admin/v1/members?memberNo=demo-m1')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.items.length).toBe(1);
@@ -262,7 +262,7 @@ describe('members 模块', () => {
 
     it('GET 列表 ?gradeCode 过滤', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members?gradeCode=${activeGradeCode}`)
+        .get(`/api/admin/v1/members?gradeCode=${activeGradeCode}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       for (const item of res.body.data.items) {
@@ -272,7 +272,7 @@ describe('members 模块', () => {
 
     it('GET 详情 → 含 memberNo,不含 deletedAt', async () => {
       const res = await request(httpServer(app))
-        .get(`/api/v2/members/${memberId}`)
+        .get(`/api/admin/v1/members/${memberId}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.memberNo).toBe('demo-m1');
@@ -281,14 +281,14 @@ describe('members 模块', () => {
 
     it('GET 详情 NOT_FOUND', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/members/cl0000000000000000000000')
+        .get('/api/admin/v1/members/cl0000000000000000000000')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
     });
 
     it('PATCH displayName / gradeCode → 200', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}`)
+        .patch(`/api/admin/v1/members/${memberId}`)
         .set('Authorization', superAdminAuth)
         .send({ displayName: 'Renamed' });
       expect(res.status).toBe(200);
@@ -297,7 +297,7 @@ describe('members 模块', () => {
 
     it('PATCH 拒绝 memberNo(forbidNonWhitelisted)', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}`)
+        .patch(`/api/admin/v1/members/${memberId}`)
         .set('Authorization', superAdminAuth)
         .send({ memberNo: 'CHANGED' });
       expect(res.status).toBe(400);
@@ -305,7 +305,7 @@ describe('members 模块', () => {
 
     it('PATCH 拒绝 status(走 /status)', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}`)
+        .patch(`/api/admin/v1/members/${memberId}`)
         .set('Authorization', superAdminAuth)
         .send({ status: 'INACTIVE' });
       expect(res.status).toBe(400);
@@ -313,7 +313,7 @@ describe('members 模块', () => {
 
     it('PATCH 拒绝敏感字段示例(idCard / phone)', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}`)
+        .patch(`/api/admin/v1/members/${memberId}`)
         .set('Authorization', superAdminAuth)
         .send({ idCard: '110101199001011234', phone: '13800000000' });
       expect(res.status).toBe(400);
@@ -321,7 +321,7 @@ describe('members 模块', () => {
 
     it('PATCH /:id/status → 200', async () => {
       const res = await request(httpServer(app))
-        .patch(`/api/v2/members/${memberId}/status`)
+        .patch(`/api/admin/v1/members/${memberId}/status`)
         .set('Authorization', superAdminAuth)
         .send({ status: MemberStatus.INACTIVE });
       expect(res.status).toBe(200);
@@ -347,7 +347,7 @@ describe('members 模块', () => {
       });
 
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${member.id}`)
+        .delete(`/api/admin/v1/members/${member.id}`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.MEMBER_HAS_LINKED_USER);
     });
@@ -365,7 +365,7 @@ describe('members 模块', () => {
       });
 
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${member.id}`)
+        .delete(`/api/admin/v1/members/${member.id}`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.MEMBER_HAS_ACTIVE_DEPARTMENT);
     });
@@ -375,7 +375,7 @@ describe('members 模块', () => {
         data: { memberNo: 'demo-clean', displayName: 'C' },
       });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/members/${member.id}`)
+        .delete(`/api/admin/v1/members/${member.id}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       const after = await prisma.member.findUnique({ where: { id: member.id } });
