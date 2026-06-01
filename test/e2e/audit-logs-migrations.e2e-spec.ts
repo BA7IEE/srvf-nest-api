@@ -1144,9 +1144,9 @@ describe('audit-logs 写入迁移', () => {
     it('USER POST 自助报名触发 → audit_logs +1 registration.create(viaPath=self,targetMemberId=USER 绑定的 member)', async () => {
       const actId = await createPublishedActivity();
       const res = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${actId}/registration`)
+        .post('/api/app/v1/my/registrations')
         .set('Authorization', userWithMemberAuth)
-        .send({});
+        .send({ activityId: actId });
       expect(res.status).toBe(201);
 
       const logs = await prisma.auditLog.findMany();
@@ -1255,14 +1255,14 @@ describe('audit-logs 写入迁移', () => {
       const actId = await createPublishedActivity();
       // USER 自助报名先建一个 registration
       const createRes = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${actId}/registration`)
+        .post('/api/app/v1/my/registrations')
         .set('Authorization', userWithMemberAuth)
-        .send({});
+        .send({ activityId: actId });
       const regId: string = createRes.body.data.id;
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/users/me/registrations/${regId}/cancel`)
+        .patch(`/api/app/v1/my/registrations/${regId}/cancel`)
         .set('Authorization', userWithMemberAuth)
         .send({ cancelReason: '临时有事' });
       expect(res.status).toBe(200);
@@ -1385,14 +1385,14 @@ describe('audit-logs 写入迁移', () => {
     it('GET detail(me):audit_logs 无新记录(未迁移 read 路径)', async () => {
       const actId = await createPublishedActivity();
       const createRes = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${actId}/registration`)
+        .post('/api/app/v1/my/registrations')
         .set('Authorization', userWithMemberAuth)
-        .send({});
+        .send({ activityId: actId });
       const regId: string = createRes.body.data.id;
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .get(`/api/v2/users/me/registrations/${regId}`)
+        .get(`/api/app/v1/my/registrations/${regId}`)
         .set('Authorization', userWithMemberAuth)
         .expect(200);
       expect(await prisma.auditLog.count()).toBe(0);

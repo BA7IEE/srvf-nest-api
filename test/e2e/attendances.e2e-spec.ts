@@ -30,8 +30,6 @@ describe('attendances 模块', () => {
   let superAdminAuth: string;
   let adminAuth: string;
   let userWithMemberAuth: string;
-  let userNoMemberAuth: string;
-  let otherUserWithMemberAuth: string;
 
   let memberAId: string;
   let memberBId: string;
@@ -50,17 +48,13 @@ describe('attendances 模块', () => {
     await resetDb(app);
     prisma = app.get(PrismaService);
 
-    // 5 用户
+    // 用户(权限边界只需 1 个已绑 member 的 USER)
     await createTestUser(app, { username: 'att-su', role: Role.SUPER_ADMIN });
     await createTestUser(app, { username: 'att-adm', role: Role.ADMIN });
     await createTestUser(app, { username: 'att-user-with-mem', role: Role.USER });
-    await createTestUser(app, { username: 'att-user-no-mem', role: Role.USER });
-    await createTestUser(app, { username: 'att-user-other', role: Role.USER });
     superAdminAuth = (await loginAs(app, 'att-su')).authHeader;
     adminAuth = (await loginAs(app, 'att-adm')).authHeader;
     userWithMemberAuth = (await loginAs(app, 'att-user-with-mem')).authHeader;
-    userNoMemberAuth = (await loginAs(app, 'att-user-no-mem')).authHeader;
-    otherUserWithMemberAuth = (await loginAs(app, 'att-user-other')).authHeader;
 
     const ma = await prisma.member.create({
       data: { memberNo: 'att-m-a', displayName: 'Member A' },
@@ -86,10 +80,6 @@ describe('attendances 模块', () => {
     await prisma.user.update({
       where: { username: 'att-user-with-mem' },
       data: { memberId: memberAId },
-    });
-    await prisma.user.update({
-      where: { username: 'att-user-other' },
-      data: { memberId: otherMemberId },
     });
 
     // 字典:node_type + activity_type + attendance_role + attendance_status
@@ -369,19 +359,6 @@ describe('attendances 模块', () => {
         .set('Authorization', userWithMemberAuth)
         .send({ reviewNote: 'x' });
       expectBizError(res, BizCode.FORBIDDEN);
-    });
-
-    it('未登录 GET /me/attendance-records → 401', async () => {
-      const res = await request(httpServer(app)).get('/api/v2/users/me/attendance-records');
-      expectBizError(res, BizCode.UNAUTHORIZED);
-    });
-
-    it('USER GET /me/attendance-records → 200(允许;USER 路径)', async () => {
-      const res = await request(httpServer(app))
-        .get('/api/v2/users/me/attendance-records')
-        .set('Authorization', userWithMemberAuth);
-      expect(res.status).toBe(200);
-      expect(res.body.code).toBe(0);
     });
   });
 
@@ -1255,137 +1232,6 @@ describe('attendances 模块', () => {
         .set('Authorization', adminAuth)
         .send({ reviewNote: 'x' });
       expectBizError(res, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
-    });
-  });
-
-  // ============ /me/attendance-records(Q-A14) ============
-
-  describe('GET /me/attendance-records', () => {
-    let approvedSheetId: string;
-    let pendingFinalReviewSheetId: string;
-    let pendingSheetId: string;
-    let rejectedSheetId: string;
-    let finalRejectedSheetId: string;
-
-    beforeAll(async () => {
-      // 批次 4-B(沿 D-S6 + D-A1):approved 语义升级为"终审通过";/me/attendance-records 仅返
-      // approved Sheet 内 records,因此必须 approve + finalApprove 才到 approved 终态。
-      // memberA(绑定 userWithMember)在 5 个 Sheet 状态下有 record(pending / pending_final_review /
-      // approved / rejected / final_rejected);只有 approved 应可见。
-      pendingSheetId = await createPendingSheet(activityOtherId, [
-        baseRecord({
-          memberId: memberAId,
-          checkInAt: '2026-07-01T08:00:00.000Z',
-          checkOutAt: '2026-07-01T09:00:00.000Z',
-        }),
-      ]);
-
-      // pending_final_review Sheet:create → fillContrib → approve(到 pending_final_review,不 finalApprove)
-      // 注意时间段错开:pendingSheetId / approvedSheetId / rejectedSheetId 已占用 08-11,本 Sheet 放 12:00
-      pendingFinalReviewSheetId = await createPendingSheet(activityOtherId, [
-        baseRecord({
-          memberId: memberAId,
-          checkInAt: '2026-07-01T12:00:00.000Z',
-          checkOutAt: '2026-07-01T12:30:00.000Z',
-        }),
-      ]);
-      await fillContributionPoints(pendingFinalReviewSheetId, 0.5);
-      await approveToPendingFinalReview(pendingFinalReviewSheetId);
-
-      // approved Sheet(终审通过):create → fillContrib → approve + finalApprove
-      approvedSheetId = await createPendingSheet(activityOtherId, [
-        baseRecord({
-          memberId: memberAId,
-          checkInAt: '2026-07-01T09:00:00.000Z',
-          checkOutAt: '2026-07-01T10:00:00.000Z',
-        }),
-      ]);
-      await fillContributionPoints(approvedSheetId, 1.5);
-      await approveToTerminalApproved(approvedSheetId);
-
-      rejectedSheetId = await createPendingSheet(activityOtherId, [
-        baseRecord({
-          memberId: memberAId,
-          checkInAt: '2026-07-01T10:00:00.000Z',
-          checkOutAt: '2026-07-01T11:00:00.000Z',
-        }),
-      ]);
-      await request(httpServer(app))
-        .patch(`/api/admin/v1/attendance-sheets/${rejectedSheetId}/reject`)
-        .set('Authorization', adminAuth)
-        .send({ reviewNote: 'reject for /me test' });
-
-      // final_rejected Sheet:create → fillContrib → approve + finalReject(records 跟随软删)
-      // 时间段错开:放 13:00
-      finalRejectedSheetId = await createPendingSheet(activityOtherId, [
-        baseRecord({
-          memberId: memberAId,
-          checkInAt: '2026-07-01T13:00:00.000Z',
-          checkOutAt: '2026-07-01T13:30:00.000Z',
-        }),
-      ]);
-      await fillContributionPoints(finalRejectedSheetId, 0.5);
-      await approveThenFinalReject(finalRejectedSheetId, 'final reject for /me test');
-    });
-
-    it('USER 未绑 member → MEMBER_NOT_FOUND', async () => {
-      const res = await request(httpServer(app))
-        .get('/api/v2/users/me/attendance-records')
-        .set('Authorization', userNoMemberAuth);
-      expectBizError(res, BizCode.MEMBER_NOT_FOUND);
-    });
-
-    it('USER 绑 member:只见终审通过 Sheet 内自己的 record(Q-A14;批次 4-B:approved = 终审通过)', async () => {
-      const res = await request(httpServer(app))
-        .get('/api/v2/users/me/attendance-records')
-        .set('Authorization', userWithMemberAuth);
-      expect(res.status).toBe(200);
-      const sheetIds = (res.body.data.items as Array<{ sheetId: string }>).map((i) => i.sheetId);
-      expect(sheetIds).toContain(approvedSheetId);
-      expect(sheetIds).not.toContain(pendingSheetId);
-      // 批次 4-B 新增:pending_final_review / final_rejected 也不可见
-      expect(sheetIds).not.toContain(pendingFinalReviewSheetId);
-      expect(sheetIds).not.toContain(rejectedSheetId);
-      expect(sheetIds).not.toContain(finalRejectedSheetId);
-    });
-
-    it('USER 绑 member:每个 record 含 member 摘要 + Decimal 序列化为 string', async () => {
-      const res = await request(httpServer(app))
-        .get('/api/v2/users/me/attendance-records')
-        .set('Authorization', userWithMemberAuth);
-      const item = (res.body.data.items as Array<Record<string, unknown>>)[0];
-      expect(item.memberId).toBe(memberAId);
-      expect(item).toHaveProperty('member');
-      const member = item.member as Record<string, unknown>;
-      expect(member.memberNo).toBeTruthy();
-      expect(member.displayName).toBeTruthy();
-      expect(typeof item.serviceHours).toBe('string');
-    });
-
-    it('USER 绑 member:activityId 过滤生效', async () => {
-      const res = await request(httpServer(app))
-        .get('/api/v2/users/me/attendance-records')
-        .query({ activityId: activityOtherId })
-        .set('Authorization', userWithMemberAuth);
-      expect(res.status).toBe(200);
-      // 全部返回的都是 activityOtherId 下的 approved records
-      const items = res.body.data.items as Array<{ sheetId: string }>;
-      for (const item of items) {
-        // sheetId 应该指向已 approve 的 sheet,且其 activityId 是 activityOtherId
-        expect(item.sheetId).toBe(approvedSheetId);
-      }
-    });
-
-    it('USER 绑 member:不返他人的 records(otherUserWithMember 看不到 memberA 的)', async () => {
-      const res = await request(httpServer(app))
-        .get('/api/v2/users/me/attendance-records')
-        .set('Authorization', otherUserWithMemberAuth);
-      expect(res.status).toBe(200);
-      const memberIds = (res.body.data.items as Array<{ memberId: string }>).map((i) => i.memberId);
-      for (const m of memberIds) {
-        expect(m).toBe(otherMemberId);
-        expect(m).not.toBe(memberAId);
-      }
     });
   });
 

@@ -25,12 +25,9 @@ describe('activity-registrations 模块', () => {
   let prisma: PrismaService;
   let superAdminAuth: string;
   let adminAuth: string;
-  let userWithMemberAuth: string; // USER + 已绑 Member(自助报名场景)
-  let userNoMemberAuth: string; // USER + 未绑 Member(MEMBER_NOT_FOUND 场景)
-  let otherUserWithMemberAuth: string; // 另一个 USER,用于越权场景
+  let userWithMemberAuth: string; // USER + 已绑 Member(代报名 / 越权对照场景)
 
   let memberAId: string; // 绑定 userWithMember
-  let memberBId: string; // 绑定 otherUserWithMember
   let memberCId: string; // 自由用 Member(代报名)
   let memberDId: string; // capacity 满测试
 
@@ -42,36 +39,26 @@ describe('activity-registrations 模块', () => {
   let privateActivityId: string; // isPublicRegistration=false
   let cancelledActivityId: string; // 已取消
   let capacityActivityId: string; // capacity=1(满名额测试)
-  let exportActivityId: string; // 用于 CSV 导出测试
 
   beforeAll(async () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
 
-    // 4 个 user
+    // user(代报名 + 越权对照只需 1 个已绑 member 的 USER)
     await createTestUser(app, { username: 'reg-su', role: Role.SUPER_ADMIN });
     await createTestUser(app, { username: 'reg-adm', role: Role.ADMIN });
     await createTestUser(app, { username: 'reg-user-with-mem', role: Role.USER });
-    await createTestUser(app, { username: 'reg-user-no-mem', role: Role.USER });
-    await createTestUser(app, { username: 'reg-user-other', role: Role.USER });
     superAdminAuth = (await loginAs(app, 'reg-su')).authHeader;
     adminAuth = (await loginAs(app, 'reg-adm')).authHeader;
     userWithMemberAuth = (await loginAs(app, 'reg-user-with-mem')).authHeader;
-    userNoMemberAuth = (await loginAs(app, 'reg-user-no-mem')).authHeader;
-    otherUserWithMemberAuth = (await loginAs(app, 'reg-user-other')).authHeader;
 
-    // 4 个 member
+    // 3 个 member(memberA 绑 USER;memberC / memberD 自由用于代报名 / capacity)
     const ma = await prisma.member.create({
       data: { memberNo: 'reg-m-a', displayName: 'Member A' },
       select: { id: true },
     });
     memberAId = ma.id;
-    const mb = await prisma.member.create({
-      data: { memberNo: 'reg-m-b', displayName: 'Member B' },
-      select: { id: true },
-    });
-    memberBId = mb.id;
     const mc = await prisma.member.create({
       data: { memberNo: 'reg-m-c', displayName: 'Member C' },
       select: { id: true },
@@ -87,10 +74,6 @@ describe('activity-registrations 模块', () => {
     await prisma.user.update({
       where: { username: 'reg-user-with-mem' },
       data: { memberId: memberAId },
-    });
-    await prisma.user.update({
-      where: { username: 'reg-user-other' },
-      data: { memberId: memberBId },
     });
 
     // node_type + organization(子节点,Activity 可挂)
@@ -149,12 +132,6 @@ describe('activity-registrations 模块', () => {
       title: 'CAP-PUB',
       isPublicRegistration: true,
       capacity: 1,
-      publish: true,
-    });
-    exportActivityId = await createActivityHelper({
-      title: 'EXPORT-PUB',
-      isPublicRegistration: true,
-      capacity: undefined,
       publish: true,
     });
   });
@@ -240,29 +217,6 @@ describe('activity-registrations 模块', () => {
         .get(`/api/admin/v1/activities/${openActivityId}/registrations/export`)
         .set('Authorization', userWithMemberAuth);
       expectBizError(res, BizCode.FORBIDDEN);
-    });
-
-    it('USER POST 自助路径 → 200(允许)', async () => {
-      // 注:用 capacity 不限的活动 + 后续在该 describe 段不再依赖该报名记录
-      const res = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${openActivityId}/registration`)
-        .set('Authorization', otherUserWithMemberAuth)
-        .send({});
-      expect(res.status).toBe(201);
-      expect(res.body.data.statusCode).toBe('pending');
-      // 清理:取消该测试报名,避免影响后续段(otherMember B 在 openActivity 上的占位)
-      const id: string = res.body.data.id;
-      await request(httpServer(app))
-        .patch(`/api/v2/users/me/registrations/${id}/cancel`)
-        .set('Authorization', otherUserWithMemberAuth)
-        .send({});
-    });
-
-    it('未登录 POST 自助 → 401', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${openActivityId}/registration`)
-        .send({});
-      expectBizError(res, BizCode.UNAUTHORIZED);
     });
   });
 
@@ -362,104 +316,6 @@ describe('activity-registrations 模块', () => {
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId, cancelledByUserId: 'cl0000000000000000000000' });
       expect(res.status).toBe(400);
-    });
-  });
-
-  // ============ USER POST 自助报名 ============
-
-  describe('USER POST 自助报名(Q-A3)', () => {
-    let myRegId: string;
-
-    it('USER 未绑 member → MEMBER_NOT_FOUND', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${openActivityId}/registration`)
-        .set('Authorization', userNoMemberAuth)
-        .send({});
-      expectBizError(res, BizCode.MEMBER_NOT_FOUND);
-    });
-
-    it('USER 自助报名:memberId 强制注入(忽略 body memberId 字段 → DTO 拒绝)', async () => {
-      // 传 memberId 试图越权 → DTO 白名单拒绝 400
-      const res = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${exportActivityId}/registration`)
-        .set('Authorization', userWithMemberAuth)
-        .send({ memberId: memberCId });
-      expect(res.status).toBe(400);
-    });
-
-    it('USER 自助报名(无 body)→ 201,memberId=currentUser.memberId', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${exportActivityId}/registration`)
-        .set('Authorization', userWithMemberAuth)
-        .send({});
-      expect(res.status).toBe(201);
-      expect(res.body.data.memberId).toBe(memberAId);
-      expect(res.body.data.statusCode).toBe('pending');
-      myRegId = res.body.data.id;
-    });
-
-    it('USER 自助 + extras → 201', async () => {
-      const id = await createActivityHelper({
-        title: 'SELF-EXTRAS',
-        isPublicRegistration: true,
-        capacity: undefined,
-        publish: true,
-      });
-      const res = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${id}/registration`)
-        .set('Authorization', userWithMemberAuth)
-        .send({ extras: { wantsAccommodation: true } });
-      expect(res.status).toBe(201);
-      expect(res.body.data.extras).toEqual({ wantsAccommodation: true });
-    });
-
-    it('USER 自助报名重复 → ACTIVITY_REGISTRATION_ALREADY_EXISTS', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${exportActivityId}/registration`)
-        .set('Authorization', userWithMemberAuth)
-        .send({});
-      expectBizError(res, BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS);
-    });
-
-    it('USER 自助报名 cancelled activity → ACTIVITY_CANCELLED_REGISTRATION_FORBIDDEN', async () => {
-      const res = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${cancelledActivityId}/registration`)
-        .set('Authorization', userWithMemberAuth)
-        .send({});
-      expectBizError(res, BizCode.ACTIVITY_CANCELLED_REGISTRATION_FORBIDDEN);
-    });
-
-    it('USER 自助:取消后允许重新报名(partial unique 释放,Q-D17)', async () => {
-      const id = await createActivityHelper({
-        title: 'SELF-RETRY',
-        isPublicRegistration: true,
-        capacity: undefined,
-        publish: true,
-      });
-      // 第一次
-      const r1 = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${id}/registration`)
-        .set('Authorization', userWithMemberAuth)
-        .send({});
-      expect(r1.status).toBe(201);
-      const reg1: string = r1.body.data.id;
-      // 取消
-      await request(httpServer(app))
-        .patch(`/api/v2/users/me/registrations/${reg1}/cancel`)
-        .set('Authorization', userWithMemberAuth)
-        .send({});
-      // 第二次报名应成功
-      const r2 = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${id}/registration`)
-        .set('Authorization', userWithMemberAuth)
-        .send({});
-      expect(r2.status).toBe(201);
-      expect(r2.body.data.id).not.toBe(reg1);
-    });
-
-    // 记录:供其他 describe 使用 myRegId 的场景 — 显式声明使用
-    it('myRegId 已就绪(标记)', () => {
-      expect(myRegId).toBeTruthy();
     });
   });
 
@@ -871,93 +727,6 @@ describe('activity-registrations 模块', () => {
         .get('/api/admin/v1/activities/cl0000000000000000000000/registrations')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ACTIVITY_NOT_FOUND);
-    });
-  });
-
-  // ============ USER me 路径 ============
-
-  describe('USER /me 路径', () => {
-    let myActivityId: string;
-    let myRegId: string;
-    let otherRegId: string;
-
-    beforeAll(async () => {
-      myActivityId = await createActivityHelper({
-        title: 'ME-A',
-        isPublicRegistration: true,
-        capacity: undefined,
-        publish: true,
-      });
-      // userWithMember(memberA)报名
-      const r1 = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${myActivityId}/registration`)
-        .set('Authorization', userWithMemberAuth)
-        .send({});
-      myRegId = r1.body.data.id;
-      // otherUser(memberB)报名(用于越权场景)
-      const r2 = await request(httpServer(app))
-        .post(`/api/v2/users/me/activities/${myActivityId}/registration`)
-        .set('Authorization', otherUserWithMemberAuth)
-        .send({});
-      otherRegId = r2.body.data.id;
-    });
-
-    it('GET /me/registrations 仅返自己的', async () => {
-      const res = await request(httpServer(app))
-        .get('/api/v2/users/me/registrations')
-        .set('Authorization', userWithMemberAuth);
-      expect(res.status).toBe(200);
-      const ids: string[] = (res.body.data.items as Array<{ id: string }>).map((i) => i.id);
-      expect(ids).toContain(myRegId);
-      expect(ids).not.toContain(otherRegId);
-    });
-
-    it('USER 未绑 member 调 /me/registrations → MEMBER_NOT_FOUND', async () => {
-      const res = await request(httpServer(app))
-        .get('/api/v2/users/me/registrations')
-        .set('Authorization', userNoMemberAuth);
-      expectBizError(res, BizCode.MEMBER_NOT_FOUND);
-    });
-
-    it('GET /me/registrations/:id 自己的 → 200', async () => {
-      const res = await request(httpServer(app))
-        .get(`/api/v2/users/me/registrations/${myRegId}`)
-        .set('Authorization', userWithMemberAuth);
-      expect(res.status).toBe(200);
-      expect(res.body.data.id).toBe(myRegId);
-    });
-
-    it('GET /me/registrations/:id 他人的 → 404(避免存在性泄漏)', async () => {
-      const res = await request(httpServer(app))
-        .get(`/api/v2/users/me/registrations/${otherRegId}`)
-        .set('Authorization', userWithMemberAuth);
-      expectBizError(res, BizCode.ACTIVITY_REGISTRATION_NOT_FOUND);
-    });
-
-    it('PATCH /me/registrations/:id/cancel 自己的 pending → cancelled', async () => {
-      const res = await request(httpServer(app))
-        .patch(`/api/v2/users/me/registrations/${myRegId}/cancel`)
-        .set('Authorization', userWithMemberAuth)
-        .send({ cancelReason: '临时有事' });
-      expect(res.status).toBe(200);
-      expect(res.body.data.statusCode).toBe('cancelled');
-      expect(res.body.data.cancelReason).toBe('临时有事');
-    });
-
-    it('PATCH /me/registrations/:id/cancel 已 cancelled → ACTIVITY_REGISTRATION_STATUS_INVALID', async () => {
-      const res = await request(httpServer(app))
-        .patch(`/api/v2/users/me/registrations/${myRegId}/cancel`)
-        .set('Authorization', userWithMemberAuth)
-        .send({});
-      expectBizError(res, BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
-    });
-
-    it('PATCH /me/registrations/:id/cancel 他人的 → 404', async () => {
-      const res = await request(httpServer(app))
-        .patch(`/api/v2/users/me/registrations/${otherRegId}/cancel`)
-        .set('Authorization', userWithMemberAuth)
-        .send({});
-      expectBizError(res, BizCode.ACTIVITY_REGISTRATION_NOT_FOUND);
     });
   });
 
