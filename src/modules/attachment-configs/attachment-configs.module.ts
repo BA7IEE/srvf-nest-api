@@ -16,11 +16,11 @@ import { AttachmentTypeConfigsService } from './attachment-type-configs.service'
 // 但 controller / service 按表拆,便于后续 PR 增量加入。
 //
 // 已实装(累计):
-// - PR #3(2026-05-15):AttachmentTypeConfig CRUD(6 端点 path /api/v2/attachment-type-configs[/:id[/status]];
+// - PR #3(2026-05-15):AttachmentTypeConfig CRUD(6 端点 path /api/system/v1/attachment-type-configs[/:id[/status]];
 //   BizCode 13020 / 13021 / 13023;沿 D7 v1.0 §4.2 / §16 Q1-Q7)
-// - PR #4(2026-05-15):AttachmentMimeConfig CRUD(6 端点 path /api/v2/attachment-mime-configs[/:id[/status]];
+// - PR #4(2026-05-15):AttachmentMimeConfig CRUD(6 端点 path /api/system/v1/attachment-mime-configs[/:id[/status]];
 //   BizCode 13022 / 13024 / 13025 + 复用 13020;依赖 typeConfigId FK Restrict)
-// - PR #5(2026-05-15):AttachmentSizeLimitConfig CRUD(**5 端点** path /api/v2/attachment-size-limit-configs[/:id];
+// - PR #5(2026-05-15):AttachmentSizeLimitConfig CRUD(**5 端点** path /api/system/v1/attachment-size-limit-configs[/:id];
 //   BizCode 13026 / 13027 + 复用 13020;依赖 typeConfigId FK Restrict;
 //   **本表无 status 字段**,5 端点不含独立 status 端点;1:1 关系)
 // - PR #6d(2026-05-15):imports AuditLogsModule;3 个 config service 注入 AuditLogsService;

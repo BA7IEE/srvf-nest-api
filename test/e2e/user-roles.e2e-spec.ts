@@ -82,14 +82,14 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
 
   describe('权限边界', () => {
     it('未登录 GET → 401', async () => {
-      const res = await request(httpServer(app)).get(`/api/v2/users/${userId}/roles`);
+      const res = await request(httpServer(app)).get(`/api/system/v1/users/${userId}/roles`);
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it.each([
-      ['get', 'get', `/api/v2/users/${'x'.repeat(25)}/roles`],
-      ['post', 'post', `/api/v2/users/${'x'.repeat(25)}/roles`],
-      ['delete', 'delete', `/api/v2/users/${'x'.repeat(25)}/roles/${'y'.repeat(25)}`],
+      ['get', 'get', `/api/system/v1/users/${'x'.repeat(25)}/roles`],
+      ['post', 'post', `/api/system/v1/users/${'x'.repeat(25)}/roles`],
+      ['delete', 'delete', `/api/system/v1/users/${'x'.repeat(25)}/roles/${'y'.repeat(25)}`],
     ])('USER 角色 %s → 30100 RBAC_FORBIDDEN', async (_name, method, path) => {
       const req = request(httpServer(app));
       let res;
@@ -103,11 +103,11 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
 
   // ============ GET ============
 
-  describe('GET /api/v2/users/:userId/roles', () => {
+  describe('GET /api/system/v1/users/:userId/roles', () => {
     it('查用户角色 → 200,空数组(未分配)', async () => {
       const target = await createTargetUser('get-empty');
       const res = await request(httpServer(app))
-        .get(`/api/v2/users/${target.id}/roles`)
+        .get(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
@@ -119,7 +119,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
         data: { userId: target.id, roleId: bizRoleId, createdBy: superAdminId },
       });
       const res = await request(httpServer(app))
-        .get(`/api/v2/users/${target.id}/roles`)
+        .get(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -143,7 +143,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
         data: { userId: target.id, roleId: softdelRole.id },
       });
       const res = await request(httpServer(app))
-        .get(`/api/v2/users/${target.id}/roles`)
+        .get(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual([]);
@@ -151,7 +151,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
 
     it('user 不存在 → 10001', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/users/nonexistent000000000000000000/roles')
+        .get('/api/system/v1/users/nonexistent000000000000000000/roles')
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.USER_NOT_FOUND);
     });
@@ -163,7 +163,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
         status: UserStatus.DISABLED,
       });
       const res = await request(httpServer(app))
-        .get(`/api/v2/users/${target.id}/roles`)
+        .get(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.USER_NOT_FOUND);
     });
@@ -175,7 +175,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
         deletedAt: new Date(),
       });
       const res = await request(httpServer(app))
-        .get(`/api/v2/users/${target.id}/roles`)
+        .get(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.USER_NOT_FOUND);
     });
@@ -183,11 +183,11 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
 
   // ============ POST 分配 ============
 
-  describe('POST /api/v2/users/:userId/roles', () => {
+  describe('POST /api/system/v1/users/:userId/roles', () => {
     it('SUPER_ADMIN 分配角色 → 201,扁平字段集 + createdByUserId 记 actor', async () => {
       const target = await createTargetUser('assign-success');
       const res = await request(httpServer(app))
-        .post(`/api/v2/users/${target.id}/roles`)
+        .post(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth)
         .send({ roleCode: 'role-a' });
       expect(res.status).toBe(201);
@@ -202,7 +202,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
     it('SUPER_ADMIN 分配 ops-admin 角色 → 201(Q7 C2:SUPER_ADMIN 通过任何)', async () => {
       const target = await createTargetUser('assign-ops-admin');
       const res = await request(httpServer(app))
-        .post(`/api/v2/users/${target.id}/roles`)
+        .post(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth)
         .send({ roleCode: 'ops-admin' });
       expect(res.status).toBe(201);
@@ -213,7 +213,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
       const target = await createTargetUser('assign-duplicate');
       await prisma.userRole.create({ data: { userId: target.id, roleId: bizRoleId } });
       const res = await request(httpServer(app))
-        .post(`/api/v2/users/${target.id}/roles`)
+        .post(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth)
         .send({ roleCode: 'role-a' });
       expectBizError(res, BizCode.USER_ROLE_ALREADY_EXISTS);
@@ -222,7 +222,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
     it('role code 不存在 → 30003', async () => {
       const target = await createTargetUser('assign-role-missing');
       const res = await request(httpServer(app))
-        .post(`/api/v2/users/${target.id}/roles`)
+        .post(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth)
         .send({ roleCode: 'does-not-exist' });
       expectBizError(res, BizCode.ROLE_NOT_FOUND);
@@ -234,7 +234,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
         data: { code: 'softdel-role-post', displayName: 'x', deletedAt: new Date() },
       });
       const res = await request(httpServer(app))
-        .post(`/api/v2/users/${target.id}/roles`)
+        .post(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth)
         .send({ roleCode: 'softdel-role-post' });
       expectBizError(res, BizCode.ROLE_NOT_FOUND);
@@ -242,7 +242,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
 
     it('user 不存在 → 10001', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/users/nonexistent000000000000000000/roles')
+        .post('/api/system/v1/users/nonexistent000000000000000000/roles')
         .set('Authorization', superAdminAuth)
         .send({ roleCode: 'role-a' });
       expectBizError(res, BizCode.USER_NOT_FOUND);
@@ -255,7 +255,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
         status: UserStatus.DISABLED,
       });
       const res = await request(httpServer(app))
-        .post(`/api/v2/users/${target.id}/roles`)
+        .post(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth)
         .send({ roleCode: 'role-a' });
       expectBizError(res, BizCode.USER_NOT_FOUND);
@@ -266,7 +266,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
     it('ADMIN 不持 ops-admin 分配 → 30100 RBAC_FORBIDDEN(入口拦)', async () => {
       const target = await createTargetUser('q7-admin-no-rbac');
       const res = await request(httpServer(app))
-        .post(`/api/v2/users/${target.id}/roles`)
+        .post(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', adminAuth)
         .send({ roleCode: 'role-a' });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -278,7 +278,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
       cache.invalidateUser(adminId);
       const target = await createTargetUser('q7-admin-with-ops');
       const res = await request(httpServer(app))
-        .post(`/api/v2/users/${target.id}/roles`)
+        .post(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', adminAuth)
         .send({ roleCode: 'role-a' });
       expect(res.status).toBe(201);
@@ -294,7 +294,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
       cache.invalidateUser(adminId);
       const target = await createTargetUser('q7-admin-with-ops-assign-ops');
       const res = await request(httpServer(app))
-        .post(`/api/v2/users/${target.id}/roles`)
+        .post(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', adminAuth)
         .send({ roleCode: 'ops-admin' });
       expectBizError(res, BizCode.CANNOT_ASSIGN_HIGHER_ROLE);
@@ -311,7 +311,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
       expect(cache.get(target.id)).not.toBeNull();
 
       await request(httpServer(app))
-        .post(`/api/v2/users/${target.id}/roles`)
+        .post(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth)
         .send({ roleCode: 'role-a' });
 
@@ -321,12 +321,12 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
 
   // ============ DELETE 撤销 ============
 
-  describe('DELETE /api/v2/users/:userId/roles/:roleId', () => {
+  describe('DELETE /api/system/v1/users/:userId/roles/:roleId', () => {
     it('撤销成功 → 200,返回原 UserRole 元信息', async () => {
       const target = await createTargetUser('revoke-success');
       await prisma.userRole.create({ data: { userId: target.id, roleId: bizRoleId } });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/users/${target.id}/roles/${bizRoleId}`)
+        .delete(`/api/system/v1/users/${target.id}/roles/${bizRoleId}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.roleCode).toBe('role-a');
@@ -341,7 +341,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
     it('关系不存在 → 30007', async () => {
       const target = await createTargetUser('revoke-no-relation');
       const res = await request(httpServer(app))
-        .delete(`/api/v2/users/${target.id}/roles/${bizRoleId}`)
+        .delete(`/api/system/v1/users/${target.id}/roles/${bizRoleId}`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.USER_ROLE_NOT_FOUND);
     });
@@ -349,7 +349,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
     it('role 不存在 → 30003', async () => {
       const target = await createTargetUser('revoke-role-missing');
       const res = await request(httpServer(app))
-        .delete(`/api/v2/users/${target.id}/roles/nonexistent000000000000000000`)
+        .delete(`/api/system/v1/users/${target.id}/roles/nonexistent000000000000000000`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.ROLE_NOT_FOUND);
     });
@@ -361,14 +361,14 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
         select: { id: true },
       });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/users/${target.id}/roles/${softRole.id}`)
+        .delete(`/api/system/v1/users/${target.id}/roles/${softRole.id}`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.ROLE_DELETED);
     });
 
     it('user 不存在 → 10001', async () => {
       const res = await request(httpServer(app))
-        .delete(`/api/v2/users/nonexistent000000000000000000/roles/${bizRoleId}`)
+        .delete(`/api/system/v1/users/nonexistent000000000000000000/roles/${bizRoleId}`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.USER_NOT_FOUND);
     });
@@ -379,7 +379,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
       const target = await createTargetUser('revoke-q7-admin-no-rbac');
       await prisma.userRole.create({ data: { userId: target.id, roleId: bizRoleId } });
       const res = await request(httpServer(app))
-        .delete(`/api/v2/users/${target.id}/roles/${bizRoleId}`)
+        .delete(`/api/system/v1/users/${target.id}/roles/${bizRoleId}`)
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
@@ -395,7 +395,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
 
       // 撤销 target1 的 ops-admin → 剩余 0 → 30101
       const res = await request(httpServer(app))
-        .delete(`/api/v2/users/${target1.id}/roles/${opsAdminRoleId}`)
+        .delete(`/api/system/v1/users/${target1.id}/roles/${opsAdminRoleId}`)
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.LAST_OPS_ADMIN_PROTECTED);
 
@@ -415,7 +415,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
 
       // 撤销 t1 → 剩余 1(t2)→ 通过
       const res = await request(httpServer(app))
-        .delete(`/api/v2/users/${t1.id}/roles/${opsAdminRoleId}`)
+        .delete(`/api/system/v1/users/${t1.id}/roles/${opsAdminRoleId}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
 
@@ -432,7 +432,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
       expect(cache.get(target.id)).not.toBeNull();
 
       await request(httpServer(app))
-        .delete(`/api/v2/users/${target.id}/roles/${bizRoleId}`)
+        .delete(`/api/system/v1/users/${target.id}/roles/${bizRoleId}`)
         .set('Authorization', superAdminAuth);
 
       expect(cache.get(target.id)).toBeNull();

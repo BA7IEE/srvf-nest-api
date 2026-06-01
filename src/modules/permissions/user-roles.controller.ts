@@ -18,9 +18,9 @@ import { UserRolesService } from './user-roles.service';
 
 // V2.x C-6 RBAC 实施 PR #5:UserRole 模块 Controller。
 // 3 个端点(沿 D7 v1.1 §5.1 端点 12-14):
-//   GET    /api/v2/users/:userId/roles                  查用户角色列表
-//   POST   /api/v2/users/:userId/roles                  分配角色(入参 roleCode)
-//   DELETE /api/v2/users/:userId/roles/:roleId          撤销角色
+//   GET    /api/system/v1/users/:userId/roles                  查用户角色列表
+//   POST   /api/system/v1/users/:userId/roles                  分配角色(入参 roleCode)
+//   DELETE /api/system/v1/users/:userId/roles/:roleId          撤销角色
 //
 // **权限标注**(P0-F PR-1,2026-05-18):入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;
 // 全部判权迁移到 UserRolesService 内 `rbac.can()` + Q7 二次业务级判定。
@@ -36,7 +36,7 @@ import { UserRolesService } from './user-roles.service';
 @ApiTags('Ops - User Roles')
 @ApiBearerAuth()
 @ApiExtraModels(UserRoleResponseDto)
-@Controller(['v2/users/:userId/roles', 'system/v1/users/:userId/roles'])
+@Controller('system/v1/users/:userId/roles')
 export class UserRolesController {
   constructor(private readonly service: UserRolesService) {}
 

@@ -20,10 +20,10 @@ import { PermissionsService } from './permissions.service';
 
 // V2.x C-6 RBAC 实施 PR #2:permissions 模块 Controller。
 // 4 个端点(沿 D7 v1.1 §5.1 1-4):
-//   GET    /api/v2/permissions      列表(分页)
-//   POST   /api/v2/permissions      创建
-//   PATCH  /api/v2/permissions/:id  更新(仅 description)
-//   DELETE /api/v2/permissions/:id  物理删(D4 v1.0)
+//   GET    /api/system/v1/permissions      列表(分页)
+//   POST   /api/system/v1/permissions      创建
+//   PATCH  /api/system/v1/permissions/:id  更新(仅 description)
+//   DELETE /api/system/v1/permissions/:id  物理删(D4 v1.0)
 //
 // **权限标注**(P0-F PR-1,2026-05-18):入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;
 // 全部判权迁移到 PermissionsService 内 `rbac.can()`,失败抛
@@ -33,7 +33,7 @@ import { PermissionsService } from './permissions.service';
 @ApiTags('Ops - Permissions')
 @ApiBearerAuth()
 @ApiExtraModels(PermissionResponseDto)
-@Controller(['v2/permissions', 'system/v1/permissions'])
+@Controller('system/v1/permissions')
 export class PermissionsController {
   constructor(private readonly service: PermissionsService) {}
 

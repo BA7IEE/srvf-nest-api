@@ -201,7 +201,7 @@ export class UpdateAttachmentTypeConfigDto {
   defaultMimeWhitelist?: string[];
 }
 
-// Q5 v1.0:status 走独立端点(沿 dictionaries `PATCH /api/v2/dict-types/:id/status` 范式)。
+// Q5 v1.0:status 走独立端点(沿 dictionaries `PATCH /api/system/v1/dict-types/:id/status` 范式)。
 export class UpdateAttachmentTypeConfigStatusDto {
   @ApiProperty({
     description: '目标状态',

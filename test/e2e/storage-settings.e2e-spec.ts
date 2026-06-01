@@ -81,31 +81,31 @@ describe('storage-settings admin', () => {
 
   // ============ GET ============
 
-  describe('GET /api/v2/storage-settings', () => {
+  describe('GET /api/system/v1/storage-settings', () => {
     beforeEach(truncate);
 
     it('1. 未登录 → 401 (UNAUTHORIZED=40100)', async () => {
-      const res = await request(httpServer(app)).get('/api/v2/storage-settings');
+      const res = await request(httpServer(app)).get('/api/system/v1/storage-settings');
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('2. USER → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/storage-settings')
+        .get('/api/system/v1/storage-settings')
         .set('Authorization', userAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('2b. ADMIN 默认无 ops-admin → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/storage-settings')
+        .get('/api/system/v1/storage-settings')
         .set('Authorization', adminDefaultAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('3. ADMIN+ops-admin GET singleton row 不存在 → data=null', async () => {
       const res = await request(httpServer(app))
-        .get('/api/v2/storage-settings')
+        .get('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
@@ -115,19 +115,19 @@ describe('storage-settings admin', () => {
 
   // ============ PATCH ============
 
-  describe('PATCH /api/v2/storage-settings', () => {
+  describe('PATCH /api/system/v1/storage-settings', () => {
     beforeEach(truncate);
 
     it('4. 未登录 → 401 (UNAUTHORIZED=40100)', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .send({ enabled: true });
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('5. USER → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', userAuth)
         .send({ enabled: true });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -135,7 +135,7 @@ describe('storage-settings admin', () => {
 
     it('5b. ADMIN 默认无 ops-admin PATCH → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminDefaultAuth)
         .send({ enabled: true });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -143,7 +143,7 @@ describe('storage-settings admin', () => {
 
     it('6. PATCH upsert 创建 singleton row(不存在 → 创建 default;providerType 缺省 LOCAL)', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ enabled: true, bucket: 'srvf-test' });
       expect(res.status).toBe(200);
@@ -159,11 +159,11 @@ describe('storage-settings admin', () => {
     it('7. PATCH 更新 enabled / bucket / region / envPrefix', async () => {
       // 先 upsert 一条
       await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ enabled: false });
       const res = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({
           enabled: true,
@@ -181,7 +181,7 @@ describe('storage-settings admin', () => {
 
     it('8. PATCH TTL 下界(60 / 60)+ 上界(3600 / 1800)成功', async () => {
       const res1 = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ uploadUrlTtlSeconds: 60, downloadUrlTtlSeconds: 60 });
       expect(res1.status).toBe(200);
@@ -189,7 +189,7 @@ describe('storage-settings admin', () => {
       expect(res1.body.data.downloadUrlTtlSeconds).toBe(60);
 
       const res2 = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ uploadUrlTtlSeconds: 3600, downloadUrlTtlSeconds: 1800 });
       expect(res2.status).toBe(200);
@@ -200,19 +200,19 @@ describe('storage-settings admin', () => {
     it('9. PATCH TTL 越界 → 40000', async () => {
       // upload TTL = 59(< 60)
       const r1 = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ uploadUrlTtlSeconds: 59 });
       expect(r1.status).toBe(400);
       // upload TTL = 3601(> 3600)
       const r2 = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ uploadUrlTtlSeconds: 3601 });
       expect(r2.status).toBe(400);
       // download TTL = 1801(> 1800)
       const r3 = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ downloadUrlTtlSeconds: 1801 });
       expect(r3.status).toBe(400);
@@ -220,7 +220,7 @@ describe('storage-settings admin', () => {
 
     it('10. PATCH 拒绝 secretId(forbidNonWhitelisted)', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ enabled: true, secretId: SECRET_ID_PLAIN });
       expect(res.status).toBe(400);
@@ -228,7 +228,7 @@ describe('storage-settings admin', () => {
 
     it('11. PATCH 拒绝 secretKey', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ enabled: true, secretKey: SECRET_KEY_PLAIN });
       expect(res.status).toBe(400);
@@ -236,7 +236,7 @@ describe('storage-settings admin', () => {
 
     it('12. PATCH 拒绝 secretIdEncrypted', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ enabled: true, secretIdEncrypted: 'fake-cipher' });
       expect(res.status).toBe(400);
@@ -244,7 +244,7 @@ describe('storage-settings admin', () => {
 
     it('13. PATCH 拒绝 secretKeyEncrypted', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ enabled: true, secretKeyEncrypted: 'fake-cipher' });
       expect(res.status).toBe(400);
@@ -252,7 +252,7 @@ describe('storage-settings admin', () => {
 
     it('14. PATCH maxObjectSizeBytes="123456" 成功;出参为 string', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ maxObjectSizeBytes: '123456' });
       expect(res.status).toBe(200);
@@ -262,7 +262,7 @@ describe('storage-settings admin', () => {
 
     it('15. PATCH maxObjectSizeBytes 非数字 → 40000', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ maxObjectSizeBytes: 'not-a-number' });
       expect(res.status).toBe(400);
@@ -270,7 +270,7 @@ describe('storage-settings admin', () => {
 
     it('16. PATCH allowedMimePolicyMode=OVERRIDE 成功', async () => {
       const res = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ allowedMimePolicyMode: 'OVERRIDE' });
       expect(res.status).toBe(200);
@@ -280,19 +280,19 @@ describe('storage-settings admin', () => {
 
   // ============ POST /reset-credentials ============
 
-  describe('POST /api/v2/storage-settings/reset-credentials', () => {
+  describe('POST /api/system/v1/storage-settings/reset-credentials', () => {
     beforeEach(truncate);
 
     it('17. 未登录 → 401 (UNAUTHORIZED=40100)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('18. USER → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', userAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -303,7 +303,7 @@ describe('storage-settings admin', () => {
     // ADMIN+ops-admin(adminAuth)调 reset-credentials → 30100;仅 SUPER_ADMIN 短路通过
     it('18a. D2=A:ADMIN+ops-admin 调 reset-credentials → 30100 RBAC_FORBIDDEN(凭证 SA-only)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', adminAuth) // 持 ops-admin,但 reset.credentials 不绑给 ops-admin
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -311,7 +311,7 @@ describe('storage-settings admin', () => {
 
     it('18b. D2=A:ADMIN 默认无 ops-admin 调 reset-credentials → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', adminDefaultAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -319,7 +319,7 @@ describe('storage-settings admin', () => {
 
     it('19. SUPER_ADMIN reset 不存在时 upsert 创建 row + providerType=COS(D2=A 仅 SA 通过)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       expect(res.status).toBe(201);
@@ -332,7 +332,7 @@ describe('storage-settings admin', () => {
 
     it('20. SUPER_ADMIN reset 成功后 credentialStatus=configured', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       expect(res.body.data.credentialStatus).toBe('configured');
@@ -340,7 +340,7 @@ describe('storage-settings admin', () => {
 
     it('21. SUPER_ADMIN reset 成功后 credentialConfigured=true', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       expect(res.body.data.credentialConfigured).toBe(true);
@@ -348,7 +348,7 @@ describe('storage-settings admin', () => {
 
     it('22. SUPER_ADMIN reset 响应不含 secretId / secretKey / Encrypted / credentials', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       assertNoSecret(res.body);
@@ -356,7 +356,7 @@ describe('storage-settings admin', () => {
 
     it('23. SUPER_ADMIN reset 后 DB 中 secretIdEncrypted / secretKeyEncrypted 非 null', async () => {
       await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       const row = await prisma.storageSettings.findFirstOrThrow({
@@ -368,7 +368,7 @@ describe('storage-settings admin', () => {
 
     it('24. SUPER_ADMIN reset 后 DB 密文不等于明文', async () => {
       await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       const row = await prisma.storageSettings.findFirstOrThrow({
@@ -380,14 +380,14 @@ describe('storage-settings admin', () => {
 
     it('25. SUPER_ADMIN reset 两次密文不同(IV 随机性)', async () => {
       await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       const row1 = await prisma.storageSettings.findFirstOrThrow({
         select: { id: true, secretIdEncrypted: true },
       });
       await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       const row2 = await prisma.storageSettings.findFirstOrThrow({
@@ -405,11 +405,11 @@ describe('storage-settings admin', () => {
 
     it('26. GET reset 后 credentialStatus=configured', async () => {
       await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       const res = await request(httpServer(app))
-        .get('/api/v2/storage-settings')
+        .get('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth);
       expect(res.body.data.credentialStatus).toBe('configured');
       assertNoSecret(res.body);
@@ -418,7 +418,7 @@ describe('storage-settings admin', () => {
     it('27. 手工写坏密文后 GET credentialStatus=invalid', async () => {
       // 先 reset 创建一条配置(D2=A:reset 走 SA)
       await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       // 手工写入无效 base64(无法解密)→ credentialStatus=invalid
@@ -431,7 +431,7 @@ describe('storage-settings admin', () => {
       app.get(StorageSettingsService).invalidate();
 
       const res = await request(httpServer(app))
-        .get('/api/v2/storage-settings')
+        .get('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth);
       expect(res.body.data.credentialStatus).toBe('invalid');
       assertNoSecret(res.body);
@@ -440,21 +440,21 @@ describe('storage-settings admin', () => {
     it('28. PATCH 后 invalidate 生效;下一次 GET 返回新值', async () => {
       // 第一次 PATCH 设置 bucket=v1
       await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ bucket: 'v1' });
       const res1 = await request(httpServer(app))
-        .get('/api/v2/storage-settings')
+        .get('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth);
       expect(res1.body.data.bucket).toBe('v1');
 
       // PATCH 改 bucket=v2;invalidate cache → 下一次 GET 拿到 v2
       await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ bucket: 'v2' });
       const res2 = await request(httpServer(app))
-        .get('/api/v2/storage-settings')
+        .get('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth);
       expect(res2.body.data.bucket).toBe('v2');
     });
@@ -462,11 +462,11 @@ describe('storage-settings admin', () => {
     it('29. reset 后 PATCH bucket 不影响 credentialStatus', async () => {
       // D2=A:reset 走 SA;PATCH 走 ADMIN+ops-admin
       await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       const res = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', adminAuth)
         .send({ bucket: 'new-bucket-after-reset' });
       expect(res.body.data.bucket).toBe('new-bucket-after-reset');
@@ -477,16 +477,16 @@ describe('storage-settings admin', () => {
 
     it('30. SUPER_ADMIN 也可访问全部接口(GET / PATCH / reset)', async () => {
       const r1 = await request(httpServer(app))
-        .get('/api/v2/storage-settings')
+        .get('/api/system/v1/storage-settings')
         .set('Authorization', superAuth);
       expect(r1.status).toBe(200);
       const r2 = await request(httpServer(app))
-        .patch('/api/v2/storage-settings')
+        .patch('/api/system/v1/storage-settings')
         .set('Authorization', superAuth)
         .send({ bucket: 'super-bucket' });
       expect(r2.status).toBe(200);
       const r3 = await request(httpServer(app))
-        .post('/api/v2/storage-settings/reset-credentials')
+        .post('/api/system/v1/storage-settings/reset-credentials')
         .set('Authorization', superAuth)
         .send({ secretId: SECRET_ID_PLAIN, secretKey: SECRET_KEY_PLAIN });
       expect(r3.status).toBe(201);

@@ -26,12 +26,12 @@ import { AttachmentMimeConfigsService } from './attachment-mime-configs.service'
 
 // V2.x C-7 attachments 实施 PR #4(2026-05-15):AttachmentMimeConfig 模块 Controller。
 // 6 个端点(沿 D7 v1.0 §5.2.2 + PR #3 type config 范式 + Q5 v1.0 独立 status 端点):
-//   GET    /api/v2/attachment-mime-configs              列表(分页 + typeConfigId / status / mime 过滤)
-//   POST   /api/v2/attachment-mime-configs              创建
-//   GET    /api/v2/attachment-mime-configs/:id          详情
-//   PATCH  /api/v2/attachment-mime-configs/:id          更新(仅 remark)
-//   PATCH  /api/v2/attachment-mime-configs/:id/status   独立改 status
-//   DELETE /api/v2/attachment-mime-configs/:id          软删 + 同步置 INACTIVE
+//   GET    /api/system/v1/attachment-mime-configs              列表(分页 + typeConfigId / status / mime 过滤)
+//   POST   /api/system/v1/attachment-mime-configs              创建
+//   GET    /api/system/v1/attachment-mime-configs/:id          详情
+//   PATCH  /api/system/v1/attachment-mime-configs/:id          更新(仅 remark)
+//   PATCH  /api/system/v1/attachment-mime-configs/:id/status   独立改 status
+//   DELETE /api/system/v1/attachment-mime-configs/:id          软删 + 同步置 INACTIVE
 //
 // **权限标注**(P0-F PR-2B,2026-05-18;撤销 F4 v1.0 "不接 rbac.can()" 锁):
 // 入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;全部判权迁移到 Service 内 `rbac.can()`,
@@ -42,7 +42,7 @@ import { AttachmentMimeConfigsService } from './attachment-mime-configs.service'
 @ApiTags('Ops - Attachment Configs')
 @ApiBearerAuth()
 @ApiExtraModels(AttachmentMimeConfigResponseDto, AttachmentMimeConfigTypeConfigSummaryDto)
-@Controller(['v2/attachment-mime-configs', 'system/v1/attachment-mime-configs'])
+@Controller('system/v1/attachment-mime-configs')
 export class AttachmentMimeConfigsController {
   constructor(private readonly service: AttachmentMimeConfigsService) {}
 

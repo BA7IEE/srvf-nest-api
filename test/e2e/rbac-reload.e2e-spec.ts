@@ -12,7 +12,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// V2.x C-6 RBAC 实施 PR #7:POST /api/v2/rbac/reload e2e。
+// V2.x C-6 RBAC 实施 PR #7:POST /api/system/v1/rbac/reload e2e。
 // 沿 D7 v1.1 §5.4 + F4 v1.0 三档 scope + 用户拍板四项决策。
 //
 // 覆盖:
@@ -25,7 +25,7 @@ import { createTestApp } from '../setup/test-app';
 // - scope=user + userId 不存在 → 200 静默成功(沿用户决策方案 A)
 // - scope=role + roleId 不存在 → 200 静默成功
 
-describe('rbac reload (POST /api/v2/rbac/reload)', () => {
+describe('rbac reload (POST /api/system/v1/rbac/reload)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cache: RbacCacheService;
@@ -89,13 +89,13 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
 
   describe('权限边界', () => {
     it('未登录 → 401', async () => {
-      const res = await request(httpServer(app)).post('/api/v2/rbac/reload').send({});
+      const res = await request(httpServer(app)).post('/api/system/v1/rbac/reload').send({});
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
     it('USER → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/rbac/reload')
+        .post('/api/system/v1/rbac/reload')
         .set('Authorization', userAuth)
         .send({});
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
@@ -105,7 +105,7 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
     // ADMIN 持 ops-admin(setUp 已绑)→ 通过。
     it('ADMIN 持 ops-admin → 200', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/rbac/reload')
+        .post('/api/system/v1/rbac/reload')
         .set('Authorization', adminAuth)
         .send({});
       expect(res.status).toBe(200);
@@ -114,7 +114,7 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
 
     it('SUPER_ADMIN → 200', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/rbac/reload')
+        .post('/api/system/v1/rbac/reload')
         .set('Authorization', superAdminAuth)
         .send({});
       expect(res.status).toBe(200);
@@ -129,7 +129,7 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
       expect(cache.size()).toBeGreaterThanOrEqual(2);
 
       const res = await request(httpServer(app))
-        .post('/api/v2/rbac/reload')
+        .post('/api/system/v1/rbac/reload')
         .set('Authorization', superAdminAuth)
         .send({});
       expect(res.status).toBe(200);
@@ -142,7 +142,7 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
       seedUserCache(user2Id);
 
       const res = await request(httpServer(app))
-        .post('/api/v2/rbac/reload')
+        .post('/api/system/v1/rbac/reload')
         .set('Authorization', superAdminAuth)
         .send({ scope: 'all' });
       expect(res.status).toBe(200);
@@ -158,7 +158,7 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
       expect(cache.get(user2Id)).not.toBeNull();
 
       const res = await request(httpServer(app))
-        .post('/api/v2/rbac/reload')
+        .post('/api/system/v1/rbac/reload')
         .set('Authorization', superAdminAuth)
         .send({ scope: 'user', userId: user1Id });
       expect(res.status).toBe(200);
@@ -171,7 +171,7 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
 
     it('scope=user 缺 userId → 400', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/rbac/reload')
+        .post('/api/system/v1/rbac/reload')
         .set('Authorization', superAdminAuth)
         .send({ scope: 'user' });
       expectBizError(res, BizCode.BAD_REQUEST);
@@ -179,7 +179,7 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
 
     it('scope=user + userId 不存在 → 200 静默成功(沿用户决策方案 A)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/rbac/reload')
+        .post('/api/system/v1/rbac/reload')
         .set('Authorization', superAdminAuth)
         .send({ scope: 'user', userId: 'nonexistent000000000000000000' });
       expect(res.status).toBe(200);
@@ -201,7 +201,7 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
       seedUserCache(superAdminId);
 
       const res = await request(httpServer(app))
-        .post('/api/v2/rbac/reload')
+        .post('/api/system/v1/rbac/reload')
         .set('Authorization', superAdminAuth)
         .send({ scope: 'role', roleId: roleAId });
       expect(res.status).toBe(200);
@@ -215,7 +215,7 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
 
     it('scope=role 缺 roleId → 400', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/rbac/reload')
+        .post('/api/system/v1/rbac/reload')
         .set('Authorization', superAdminAuth)
         .send({ scope: 'role' });
       expectBizError(res, BizCode.BAD_REQUEST);
@@ -223,7 +223,7 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
 
     it('scope=role + roleId 不存在 → 200 静默成功', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/rbac/reload')
+        .post('/api/system/v1/rbac/reload')
         .set('Authorization', superAdminAuth)
         .send({ scope: 'role', roleId: 'nonexistent000000000000000000' });
       expect(res.status).toBe(200);
@@ -236,20 +236,20 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
       // 1. user1 触发 me/permissions(loginAs 已在 beforeAll 完成,但本 it 直接复用 user1 的真实 login)
       const { authHeader: user1Auth } = await loginAs(app, 'reload-target-1');
       await request(httpServer(app))
-        .get('/api/v2/rbac/me/permissions')
+        .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', user1Auth);
       expect(cache.get(user1Id)).not.toBeNull();
 
       // 2. ADMIN 触发 reload(scope=all)
       await request(httpServer(app))
-        .post('/api/v2/rbac/reload')
+        .post('/api/system/v1/rbac/reload')
         .set('Authorization', adminAuth)
         .send({});
       expect(cache.get(user1Id)).toBeNull();
 
       // 3. 再 me/permissions → cache miss → 重新聚合 + set
       await request(httpServer(app))
-        .get('/api/v2/rbac/me/permissions')
+        .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', user1Auth);
       expect(cache.get(user1Id)).not.toBeNull();
     });
@@ -258,7 +258,7 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
   describe('入参严格校验(forbidNonWhitelisted + IsIn)', () => {
     it('scope=invalid → 400(IsIn 拦截)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/rbac/reload')
+        .post('/api/system/v1/rbac/reload')
         .set('Authorization', superAdminAuth)
         .send({ scope: 'invalid-scope' });
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
@@ -266,7 +266,7 @@ describe('rbac reload (POST /api/v2/rbac/reload)', () => {
 
     it('多余字段 → 400(forbidNonWhitelisted)', async () => {
       const res = await request(httpServer(app))
-        .post('/api/v2/rbac/reload')
+        .post('/api/system/v1/rbac/reload')
         .set('Authorization', superAdminAuth)
         .send({ scope: 'all', extraField: 'x' });
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });

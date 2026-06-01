@@ -72,19 +72,6 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['delete', '/api/users/{id}'],
 
   // V2 dictionaries (Step 3,2026-05-08)
-  ['get', '/api/v2/dict-types'],
-  ['post', '/api/v2/dict-types'],
-  ['get', '/api/v2/dict-types/{id}'],
-  ['patch', '/api/v2/dict-types/{id}'],
-  ['patch', '/api/v2/dict-types/{id}/status'],
-  ['delete', '/api/v2/dict-types/{id}'],
-  ['get', '/api/v2/dict-items'],
-  ['post', '/api/v2/dict-items'],
-  ['get', '/api/v2/dict-items/tree'],
-  ['get', '/api/v2/dict-items/{id}'],
-  ['patch', '/api/v2/dict-items/{id}'],
-  ['patch', '/api/v2/dict-items/{id}/status'],
-  ['delete', '/api/v2/dict-items/{id}'],
 
   // V2 organizations (Step 4,2026-05-08)
   ['get', '/api/v2/organizations'],
@@ -170,62 +157,39 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/v2/attendance-sheets/{id}/final-reject'],
   ['get', '/api/v2/users/me/attendance-records'],
   // V2 第一阶段批次 5-A(2026-05-12;ContributionRule CRUD,沿 D6 v1.1)
-  ['get', '/api/v2/contribution-rules'],
-  ['post', '/api/v2/contribution-rules'],
-  ['get', '/api/v2/contribution-rules/{id}'],
-  ['patch', '/api/v2/contribution-rules/{id}'],
-  ['delete', '/api/v2/contribution-rules/{id}'],
 
   // V2 第一阶段批次 6 PR #1(2026-05-12;audit_logs 查询接口,沿 D6 v1.1 §5)
   // 不开放 POST / PATCH / PUT / DELETE / export(F5;写入后不可改不可删,红线)
-  ['get', '/api/v2/audit-logs'],
-  ['get', '/api/v2/audit-logs/{id}'],
 
   // V2.x C-6 RBAC 实施 PR #2(2026-05-14;permissions CRUD,沿 D7 v1.1 §5.1 端点 1-4)
   // 仅 Permission CRUD;Role / RolePermission / UserRole / RbacService / 判权
   // 接入由后续 PR #3-#6 完成。沿 F9:本 PR 接入仅入口 Guard @Roles,不接 RBAC 判权。
-  ['get', '/api/v2/permissions'],
-  ['post', '/api/v2/permissions'],
-  ['patch', '/api/v2/permissions/{id}'],
-  ['delete', '/api/v2/permissions/{id}'],
 
   // V2.x C-6 RBAC 实施 PR #3(2026-05-14;RbacRole CRUD,沿 D7 v1.1 §5.1 端点 5-9)
   // 软删(D4 v1.0;deletedAt);GET /:id 区分 30003(不存在)/ 30005 ROLE_DELETED(已软删);
   // detail 含 permissions 数组(D7 §5.2.6;RolePermission CRUD 未实施时永远空数组)。
   // PATCH / DELETE 不存在或已软删统一返 30003(沿 v1 §10 信息泄漏防御)。
-  ['get', '/api/v2/roles'],
-  ['post', '/api/v2/roles'],
-  ['get', '/api/v2/roles/{id}'],
-  ['patch', '/api/v2/roles/{id}'],
-  ['delete', '/api/v2/roles/{id}'],
 
   // V2.x C-6 RBAC 实施 PR #4(2026-05-14;RolePermission 关联表,沿 D7 v1.1 §5.1 端点 10-11)
   // POST 批量授权(幂等;入参 permissionCodes[]);DELETE 撤权(精确 :permissionId);
   // BizCode 30011 ROLE_PERMISSION_NOT_FOUND(关系不存在);
   // 沿 D7 §9.4 缓存失效:授权/撤权后清所有持有该角色的 user cache。
-  ['post', '/api/v2/roles/{id}/permissions'],
-  ['delete', '/api/v2/roles/{id}/permissions/{permissionId}'],
 
   // V2.x C-6 RBAC 实施 PR #5(2026-05-14;UserRole CRUD,沿 D7 v1.1 §5.1 端点 12-14)
   // GET / POST / DELETE 用户角色;POST 入参 roleCode 单 code(沿 D7 §5.2.4);
   // BizCode 30006/30007/30101/30102;
   // Q7 C2 中庸角色分级(SUPER_ADMIN 通过 / 持 ops-admin 通过非 ops-admin / 其他 30102);
   // 最后一个 ops-admin 保护(沿 D7 §6.3;事务内 count + delete)。
-  ['get', '/api/v2/users/{userId}/roles'],
-  ['post', '/api/v2/users/{userId}/roles'],
-  ['delete', '/api/v2/users/{userId}/roles/{roleId}'],
 
   // V2.x C-6 RBAC 实施 PR #6(2026-05-14;RbacService + me/permissions,沿 D7 v1.1 §5.1 端点 15)
   // 任何登录用户(@Roles(USER, ADMIN, SUPER_ADMIN));SUPER_ADMIN 返 Permission.code 全集
   //(沿用户拍板方案 B);其它角色返 user_roles → role_permissions → permissions 聚合后的并集。
-  ['get', '/api/v2/rbac/me/permissions'],
 
   // V2.x C-6 RBAC 实施 PR #7(2026-05-14;RBAC reload 接口,沿 D7 v1.1 §5.1 端点 16 + §5.4)
   // 三档 scope:all(默认)/ user(+ userId)/ role(+ roleId);
   // 入口 @Roles(SUPER_ADMIN, ADMIN);scope=user 缺 userId / scope=role 缺 roleId → 400;
   // userId / roleId 不存在 → 200 静默成功(沿用户拍板四项决策);
   // 出参恒为 { reloaded: true };RBAC_FORBIDDEN 业务模块接入留后续 PR。
-  ['post', '/api/v2/rbac/reload'],
 
   // V2.x C-7 attachments 实施 PR #3(2026-05-15;AttachmentTypeConfig CRUD,沿 D7 v1.0 §4.2 / §16 Q1-Q7)
   // 6 个端点:list / create / detail / update / updateStatus / softDelete;
@@ -236,12 +200,6 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 软删 deletedAt = now() + 同步置 status=INACTIVE;
   // **本 PR 不实装**:AttachmentMimeConfig CRUD(PR #4)/ AttachmentSizeLimitConfig CRUD(PR #5)/
   // attachments 主模块 / Provider / audit / RBAC 业务判权 / ATTACHMENT_TYPE_CONFIG_IN_USE(13030)。
-  ['get', '/api/v2/attachment-type-configs'],
-  ['post', '/api/v2/attachment-type-configs'],
-  ['get', '/api/v2/attachment-type-configs/{id}'],
-  ['patch', '/api/v2/attachment-type-configs/{id}'],
-  ['patch', '/api/v2/attachment-type-configs/{id}/status'],
-  ['delete', '/api/v2/attachment-type-configs/{id}'],
 
   // V2.x C-7 attachments 实施 PR #4(2026-05-15;AttachmentMimeConfig CRUD,沿 D7 v1.0 §4.3 / §16 + Q1-Q8)
   // 6 个端点:list / create / detail / update / updateStatus / softDelete;
@@ -253,12 +211,6 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // (typeConfigId, mime) UNIQUE 含软删历史(Q8 v1.0);软删 deletedAt = now() + 同步 INACTIVE;
   // **本 PR 不实装**:AttachmentSizeLimitConfig CRUD(PR #5)/ attachments 主模块 /
   // Provider / audit / RBAC 业务判权 / IN_USE 跨表约束(Q6 v1.0)。
-  ['get', '/api/v2/attachment-mime-configs'],
-  ['post', '/api/v2/attachment-mime-configs'],
-  ['get', '/api/v2/attachment-mime-configs/{id}'],
-  ['patch', '/api/v2/attachment-mime-configs/{id}'],
-  ['patch', '/api/v2/attachment-mime-configs/{id}/status'],
-  ['delete', '/api/v2/attachment-mime-configs/{id}'],
 
   // V2.x C-7 attachments 实施 PR #5(2026-05-15;AttachmentSizeLimitConfig CRUD,沿 D7 v1.0 §4.4 + Q1-Q8)
   // **5 个端点**(Q1 v1.0:本表无 status 字段,无独立 status 端点):list / create / detail / update / softDelete;
@@ -269,11 +221,6 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 出参嵌套独立 AttachmentSizeLimitConfigTypeConfigSummaryDto(Q4 v1.0:不复用 mime 的 summary DTO);
   // typeConfigId 1:1 UNIQUE 含软删历史(Q3 v1.0);软删 deletedAt = now()(Q7 v1.0:本表无 status,不同步置);
   // **本 PR 不实装**:attachments 主模块 / Provider / audit / RBAC 业务判权 / IN_USE 跨表约束 / status 字段。
-  ['get', '/api/v2/attachment-size-limit-configs'],
-  ['post', '/api/v2/attachment-size-limit-configs'],
-  ['get', '/api/v2/attachment-size-limit-configs/{id}'],
-  ['patch', '/api/v2/attachment-size-limit-configs/{id}'],
-  ['delete', '/api/v2/attachment-size-limit-configs/{id}'],
 
   // V2.x C-7 attachments 实施 PR #6b(2026-05-15;attachments 主模块 7 端点,沿 D7 v1.0 §5.1)
   // 入口仅 JwtAuthGuard(F3 v1.0;**不加** @Roles);全部判权在 Service 层 rbac.can()。
@@ -296,9 +243,6 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['delete', '/api/v2/attachments/{id}'],
 
   // V2.x C-7.5 实施 PR #11:Storage Settings admin Controller(沿评审 §6.5 / §6.6 + Q-11)
-  ['get', '/api/v2/storage-settings'],
-  ['patch', '/api/v2/storage-settings'],
-  ['post', '/api/v2/storage-settings/reset-credentials'],
 
   // Phase 2 P2-1(2026-05-19):App /api/app/v1/me* 三 endpoint
   // 沿 docs/app-api-phase-2-review.md §2 接口清单;新 path 默认 /api/app/v1/*(沿

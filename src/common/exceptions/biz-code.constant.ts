@@ -690,12 +690,12 @@ export const BizCode = {
   // V2.x C-6 RBAC 实施 PR #3(2026-05-14):RbacRole CRUD 段 3 码实装。
   //
   // 30003 / 30004 / 30005 实装规则(沿 D7 v1.1 §12.1 + 用户拍板):
-  // - GET /api/v2/roles/:id:
+  // - GET /api/system/v1/roles/:id:
   //   - 完全不存在 id → 30003 ROLE_NOT_FOUND
   //   - 存在但 deletedAt != null → 30005 ROLE_DELETED(410 Gone;detail 精确告知"曾在已删")
-  // - PATCH / DELETE /api/v2/roles/:id:
+  // - PATCH / DELETE /api/system/v1/roles/:id:
   //   - 不存在 + 已软删统一返 30003(沿 v1 §10 信息泄漏防御,不告知曾在过)
-  // - POST /api/v2/roles:code 撞唯一约束(含软删历史)→ 30004(P2002 兜底 + 预检查)
+  // - POST /api/system/v1/roles:code 撞唯一约束(含软删历史)→ 30004(P2002 兜底 + 预检查)
   //
   // 已在 RBAC 后续 PR 实装的相关码:
   // - (30006 USER_ROLE_ALREADY_EXISTS / 30007 USER_ROLE_NOT_FOUND 已在 UserRole CRUD 实装,详见下方对应段)
@@ -726,11 +726,11 @@ export const BizCode = {
   //
   // 30011 实装规则(沿用户拍板;D7 v1.1 §12 未定义,本 PR 段内增量,沿 baseline §1.3
   // XX010-XX029 业务级输入校验段位语义):
-  // - DELETE /api/v2/roles/:id/permissions/:permissionId:
+  // - DELETE /api/system/v1/roles/:id/permissions/:permissionId:
   //   - role 不存在 / 已软删 → 30003 / 30005(沿 RbacRole CRUD;复用)
   //   - permission 不存在 → 30001(沿 Permission CRUD;复用)
   //   - role 与 permission 都存在,但 (roleId, permissionId) 关系不存在 → 30011(新增)
-  // - POST /api/v2/roles/:id/permissions:沿用户拍板**幂等成功**,
+  // - POST /api/system/v1/roles/:id/permissions:沿用户拍板**幂等成功**,
   //   重复授权静默跳过,**不**抛 30010 ROLE_PERMISSION_ALREADY_EXISTS
   //
   // 30010-30019 子段位预留 RolePermission 业务级输入校验(本 PR 仅占 30011;
@@ -744,10 +744,10 @@ export const BizCode = {
   // V2.x C-6 RBAC 实施 PR #5(2026-05-14):UserRole CRUD + Q7 角色分级 + ops-admin 保护。
   //
   // 30006 / 30007 实装规则(沿 D7 v1.1 §12.1 + 用户拍板):
-  // - POST /api/v2/users/:userId/roles:
+  // - POST /api/system/v1/users/:userId/roles:
   //   - (userId, roleId) 已存在 → 30006 USER_ROLE_ALREADY_EXISTS(沿 D7 决议**报错**而非幂等,
   //     与 RolePermission 批量幂等不同 — 单次单角色,报错给前端更精确)
-  // - DELETE /api/v2/users/:userId/roles/:roleId:
+  // - DELETE /api/system/v1/users/:userId/roles/:roleId:
   //   - (userId, roleId) 关系不存在 → 30007 USER_ROLE_NOT_FOUND
   //
   // 30101 / 30102 实装规则(沿 D7 v1.1 §12.2 + §6.2 + §6.3):
@@ -785,7 +785,7 @@ export const BizCode = {
   // 失败由**调用方**抛 `BizException(BizCode.RBAC_FORBIDDEN)`(`30100`);
   // RbacService 自身只返 boolean / RbacJudgeResult,不抛异常。
   //
-  // **本 PR 使用范围**:GET /api/v2/rbac/me/permissions 入口本身不抛(任何登录用户均可访问);
+  // **本 PR 使用范围**:GET /api/system/v1/rbac/me/permissions 入口本身不抛(任何登录用户均可访问);
   // RBAC_FORBIDDEN 段位预留,供后续 PR 接入业务模块判权时使用(沿 F9 仅新增 V2 接口启用)。
   // 暴露段位 + message 文案在本 PR 落地,**调用点**留后续 PR。
   RBAC_FORBIDDEN: {

@@ -30,7 +30,7 @@ import { AuditLogsService } from './audit-logs.service';
 
 @ApiTags('Ops - Audit Logs')
 @ApiBearerAuth()
-@Controller(['v2/audit-logs', 'system/v1/audit-logs'])
+@Controller('system/v1/audit-logs')
 export class AuditLogsController {
   constructor(private readonly service: AuditLogsService) {}
 

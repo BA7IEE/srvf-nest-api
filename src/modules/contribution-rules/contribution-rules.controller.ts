@@ -45,7 +45,7 @@ import { ContributionRulesService } from './contribution-rules.service';
 
 @ApiTags('Ops - Contribution Rules')
 @ApiBearerAuth()
-@Controller(['v2/contribution-rules', 'system/v1/contribution-rules'])
+@Controller('system/v1/contribution-rules')
 export class ContributionRulesController {
   constructor(private readonly service: ContributionRulesService) {}
 

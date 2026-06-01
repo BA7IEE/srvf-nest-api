@@ -170,7 +170,7 @@ describe('audit-logs 写入迁移', () => {
     overrides: Record<string, unknown> = {},
   ): Promise<{ id: string; pointsBelow: number; remark: string | null; status: string }> => {
     const res = await request(httpServer(app))
-      .post('/api/v2/contribution-rules')
+      .post('/api/system/v1/contribution-rules')
       .set('Authorization', adminAuth)
       .send({
         activityTypeCode,
@@ -577,7 +577,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app); // 清掉 create 的 audit,仅看 update
 
       const res = await request(httpServer(app))
-        .patch(`/api/v2/contribution-rules/${r.id}`)
+        .patch(`/api/system/v1/contribution-rules/${r.id}`)
         .set('Authorization', adminAuth)
         .send({ remark: 'updated remark' });
       expect(res.status).toBe(200);
@@ -593,7 +593,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))
-        .delete(`/api/v2/contribution-rules/${r.id}`)
+        .delete(`/api/system/v1/contribution-rules/${r.id}`)
         .set('Authorization', adminAuth);
       expect(res.status).toBe(204); // controller @HttpCode(NO_CONTENT)
 
@@ -637,7 +637,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .patch(`/api/v2/contribution-rules/${r.id}`)
+        .patch(`/api/system/v1/contribution-rules/${r.id}`)
         .set('Authorization', adminAuth)
         .send({ pointsBelow: 3, remark: 'rev' })
         .expect(200);
@@ -665,7 +665,7 @@ describe('audit-logs 写入迁移', () => {
       await truncateAuditLogsTestOnly(app);
 
       await request(httpServer(app))
-        .delete(`/api/v2/contribution-rules/${r.id}`)
+        .delete(`/api/system/v1/contribution-rules/${r.id}`)
         .set('Authorization', adminAuth)
         .expect(204);
 
@@ -687,7 +687,7 @@ describe('audit-logs 写入迁移', () => {
       const auditBefore = await prisma.auditLog.count();
 
       const res = await request(httpServer(app))
-        .post('/api/v2/contribution-rules')
+        .post('/api/system/v1/contribution-rules')
         .set('Authorization', adminAuth)
         .send({
           activityTypeCode: 'non-existent-code',
@@ -704,7 +704,7 @@ describe('audit-logs 写入迁移', () => {
       await createRule();
       await truncateAuditLogsTestOnly(app);
       await request(httpServer(app))
-        .get('/api/v2/contribution-rules')
+        .get('/api/system/v1/contribution-rules')
         .set('Authorization', adminAuth)
         .expect(200);
       expect(await prisma.auditLog.count()).toBe(0);
@@ -714,7 +714,7 @@ describe('audit-logs 写入迁移', () => {
       const r = await createRule();
       await truncateAuditLogsTestOnly(app);
       await request(httpServer(app))
-        .get(`/api/v2/contribution-rules/${r.id}`)
+        .get(`/api/system/v1/contribution-rules/${r.id}`)
         .set('Authorization', adminAuth)
         .expect(200);
       expect(await prisma.auditLog.count()).toBe(0);

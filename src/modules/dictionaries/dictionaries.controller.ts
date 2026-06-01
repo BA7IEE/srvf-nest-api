@@ -37,11 +37,11 @@ import { DictionariesService } from './dictionaries.service';
 // D3=A:dict-type / dict-item softDelete 从 v1 仅 SUPER_ADMIN 放宽至 ops-admin 可调
 // (sub-protection 仍在 service 内:DICT_TYPE_IN_USE / DICT_ITEM_IN_USE 引用检查)。
 
-// ============ /api/v2/dict-types ============
+// ============ /api/system/v1/dict-types ============
 
 @ApiTags('Ops - Dictionaries')
 @ApiBearerAuth()
-@Controller(['v2/dict-types', 'system/v1/dict-types'])
+@Controller('system/v1/dict-types')
 export class DictTypesController {
   constructor(private readonly service: DictionariesService) {}
 
@@ -143,11 +143,11 @@ export class DictTypesController {
   }
 }
 
-// ============ /api/v2/dict-items ============
+// ============ /api/system/v1/dict-items ============
 
 @ApiTags('Ops - Dictionaries')
 @ApiBearerAuth()
-@Controller(['v2/dict-items', 'system/v1/dict-items'])
+@Controller('system/v1/dict-items')
 export class DictItemsController {
   constructor(private readonly service: DictionariesService) {}
 
