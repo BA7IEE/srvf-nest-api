@@ -102,23 +102,12 @@ export class ContributionCalculator {
       },
       orderBy: { createdAt: 'asc' },
     });
-    if (candidates.length === 0) {
+    // 选取规则:partial unique 已保证同维度非 NULL durationThreshold 至多 1 条;
+    // NULL durationThreshold 档位可能多条,按 createdAt ASC(见上 orderBy)取首条。
+    // 注:serviceHours 的档位匹配在下方用 threshold 比较完成,此处仅负责"选哪条规则"。
+    const chosen = candidates[0];
+    if (!chosen) {
       return null;
-    }
-    // 优先匹配 record.serviceHours 落入档位的规则;若多条候选(同维度多规则)按 createdAt ASC 取首条。
-    // 实际唯一约束(partial unique)已限制非 NULL durationThreshold 唯一;NULL 档位可能多条,沿 §3.1 复核取首条。
-    let chosen: (typeof candidates)[number] | null = null;
-    for (const rule of candidates) {
-      if (rule.durationThreshold === null) {
-        // NULL 档位:无服务时长阈值,优先取首条;若 chosen 未设则赋值
-        if (chosen === null) chosen = rule;
-        continue;
-      }
-      // 非 NULL 档位:按 durationThreshold 匹配;首条匹配即取
-      if (chosen === null) chosen = rule;
-    }
-    if (chosen === null) {
-      chosen = candidates[0];
     }
     const threshold = chosen.durationThreshold;
     let candidatePoints: number;

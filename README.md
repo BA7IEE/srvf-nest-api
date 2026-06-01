@@ -80,18 +80,20 @@ pnpm start:dev
 
 ## 路由总览
 
+> 全仓 API 落 **4 surface 前缀**(Route B 终态,2026-06-01):`/api/admin/v1`(管理面)· `/api/app/v1`(移动端队员自助)· `/api/auth/v1`(认证)· `/api/system/v1`(系统 / ops);`/api/open/v1` 预留未实现。长期边界见 [`docs/api-surface-policy.md`](./docs/api-surface-policy.md);**完整端点以 `/api/docs` Swagger UI 与 [`docs/current-state.md`](./docs/current-state.md) §2.1 为准**,下表仅列核心端点速览。
+
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| `GET` | `/api/health` | 公开 | 服务健康检查(向后兼容) |
-| `GET` | `/api/health/live` | 公开 | K8s liveness — 进程存活 |
-| `GET` | `/api/health/ready` | 公开 | K8s readiness — DB 连通 |
-| `POST` | `/api/auth/login` | 公开 | `username + password` 登录,返回 JWT;**默认 IP 维度限流 5 次 / 60 秒** |
-| `GET` `PATCH` | `/api/users/me` | 登录 | 本人资料读取 / 修改(仅 nickname / avatarKey) |
-| `GET` `POST` | `/api/users` | super admin / admin | 用户列表(分页) / 创建用户 |
-| `GET` `PATCH` `DELETE` | `/api/users/:id` | super admin / admin | 详情 / 改资料 / 软删除 |
-| `PUT` | `/api/users/:id/password` | super admin / admin | 重置用户密码 |
-| `PATCH` | `/api/users/:id/role` | **super admin only** | 修改用户角色 |
-| `PATCH` | `/api/users/:id/status` | super admin / admin | 启用/禁用用户 |
+| `GET` | `/api/system/v1/health` | 公开 | 服务健康检查 |
+| `GET` | `/api/system/v1/health/live` | 公开 | K8s liveness — 进程存活 |
+| `GET` | `/api/system/v1/health/ready` | 公开 | K8s readiness — DB 连通 |
+| `POST` | `/api/auth/v1/login` | 公开 | `username + password` 登录,返回 JWT;**默认 IP 维度限流 5 次 / 60 秒**(`/refresh` · `/logout` · `/logout-all` 见 Auth surface) |
+| `GET` `PATCH` | `/api/app/v1/me` · `/api/app/v1/me/profile` | 登录队员(App) | 本人身份 / 资料读取 / 修改(仅 nickname / avatarKey) |
+| `GET` `POST` | `/api/admin/v1/users` | super admin / admin | 用户列表(分页) / 创建用户 |
+| `GET` `PATCH` `DELETE` | `/api/admin/v1/users/:id` | super admin / admin | 详情 / 改资料 / 软删除 |
+| `PUT` | `/api/admin/v1/users/:id/password` | super admin / admin | 重置用户密码 |
+| `PATCH` | `/api/admin/v1/users/:id/role` | **super admin only** | 修改用户角色 |
+| `PATCH` | `/api/admin/v1/users/:id/status` | super admin / admin | 启用/禁用用户 |
 | `GET` | `/api/docs` | 开发环境默认开启 | Swagger UI(生产需 `ENABLE_SWAGGER=true`) |
 
 完整字段、错误码归属与示例详见 [`docs/development.md`](./docs/development.md) 与 [`docs/archive/legacy/architecture-v1-blueprint.md §6`](./docs/archive/legacy/architecture-v1-blueprint.md)(原 `ARCHITECTURE.md §6`,PR-6 已归档)。
@@ -102,19 +104,19 @@ V2 第一阶段开发已完成并随 v0.13.0 发布;v0.14.0(P0-E refresh / logou
 
 | 模块 | 路径前缀 | 接口数 | 关键能力 |
 |---|---|---|---|
-| dictionaries | `/api/v2/dict-types` + `/api/v2/dict-items` | 13 | 双表字典 + 父子树形 + 软删显式封装 |
-| organizations | `/api/v2/organizations` | 7 | 组织树形 + 单根上限 + last-root 保护 + nodeTypeCode 走字典 |
-| members | `/api/v2/members` | 6 | `memberNo` 全局唯一不复用 + `gradeCode` 字典校验 + 严禁敏感字段 |
-| member-departments | `/api/v2/members/:memberId/department` | 3 | 一人一部门 + partial unique index + PUT 幂等 |
-| member-profiles(批次 1) | `/api/v2/members/:memberId/profile` | 3 | 1:1 子资源 + 5 字典字段校验 + auditPlaceholder hook |
-| emergency-contacts(批次 1) | `/api/v2/members/:memberId/emergency-contacts` | 4 | N:1 子资源 + priority ASC 排序 + 软删 + auditPlaceholder hook |
-| certificates(批次 2) | `/api/v2/members/:memberId/certificates` | 8 | N:1 + 4 态闭集状态机(pending/verified/expired/rejected)+ verify/reject/qualification-flag 动作 + 列表精简 + 跨 member 校验 |
-| activities(批次 3A) | `/api/v2/activities` | 7 | 活动状态机(draft/published/cancelled/completed)+ Q-A7 USER 与 ADMIN 同路由 service 按 Role 过滤 + Q-A12 cancelled 拒改 + 经纬度 `Decimal(10,7)` |
-| activity-registrations(批次 3A) | `/api/v2/activities/:activityId/registrations` + `/api/v2/users/me/activities/:activityId/registration` + `/api/v2/users/me/registrations` | 10 | Q-A3 USER 自助 vs ADMIN 代报名拆开 + 4 态闭集(pending/pass/reject/cancelled)+ capacity 仅统计 pass + partial unique 取消后允许重报 + Q-A6 CSV 名单导出(StreamableFile,scope=pass 默认/scope=all 可选,不做 XLSX,0 副作用)|
-| attendances(批次 3B + 批次 4-B) | `/api/v2/activities/:activityId/attendance-sheets` + `/api/v2/attendance-sheets/:id`(含 `/review-detail` / `/approve` / `/reject` / `/final-approve` / `/final-reject`)+ `/api/v2/users/me/attendance-records` | 11 | Sheet + Record 双 model;**5 态闭集**(pending / pending_final_review / approved / rejected / final_rejected;**approved 语义升级为"终审通过"**,沿批次 4-B / D-S6)+ APD 完整审核视图(R25 Activity+Sheet+Records[含 Member])+ 编辑 pending 后端生成 previousSnapshot+version+1(D38 / R28 / Q-S16 完整快照)+ 同 memberId 跨 Sheet/Activity 时间不重叠[左闭右开,R16 / Q-S15]+ serviceHours 未传自动计算 / <=0 / 超跨度三档校验(D14 / D45 / D46 / D51)+ registrationId 跨表校验 activity 一致(R23)+ approve 前 contributionPoints 必填(R31)+ **批次 4-B 升级**:`attendance.recorded` 触发位置从 `approve` 移到 `final-approve`(Q-S13 / D-S7;final-reject / approve / reject / submit / edit / delete 均不触发)+ **D14 ContributionRule 预填**(POST 时按 `(activityType, attendanceRole, durationMinutes)` 匹配规则预填 contributionPoints;调用方传值不覆盖;无匹配规则保持 null;dailyCap 默认 1.5;不暴露 CRUD,不引流水表)+ **D11 Activity.completed 推动**(首张 Sheet 提交时事务内 Activity `published → completed`,单向不可逆;reject / final-reject 不回退;completed 语义 = "已进入考勤提交阶段",不代表全部终审通过)+ pending_final_review / final_rejected 不可 edit / softDelete(22030 / 22043)+ finalReviewNote 终审驳回必填(22046)+ /me 仅 approved Sheet 内 records(Q-A14;approved 已升级为终审通过)+ 终审权限当前沿 ADMIN / SUPER_ADMIN(沿 D-S2 不开 22044,APD 部门部长 / 副部长细分权限留后续 RBAC 批次)|
-| auth memberNo 登录回退 | `POST /api/auth/login`(契约不变) | — | `username` 字段服务端语义扩展为 username 或 memberNo |
+| dictionaries | `/api/system/v1/dict-types` + `/api/system/v1/dict-items` | 13 | 双表字典 + 父子树形 + 软删显式封装 |
+| organizations | `/api/admin/v1/organizations` | 7 | 组织树形 + 单根上限 + last-root 保护 + nodeTypeCode 走字典 |
+| members | `/api/admin/v1/members` | 6 | `memberNo` 全局唯一不复用 + `gradeCode` 字典校验 + 严禁敏感字段 |
+| member-departments | `/api/admin/v1/members/:memberId/department` | 3 | 一人一部门 + partial unique index + PUT 幂等 |
+| member-profiles(批次 1) | `/api/admin/v1/members/:memberId/profile` | 3 | 1:1 子资源 + 5 字典字段校验 + auditPlaceholder hook |
+| emergency-contacts(批次 1) | `/api/admin/v1/members/:memberId/emergency-contacts` | 4 | N:1 子资源 + priority ASC 排序 + 软删 + auditPlaceholder hook |
+| certificates(批次 2) | `/api/admin/v1/members/:memberId/certificates` | 8 | N:1 + 4 态闭集状态机(pending/verified/expired/rejected)+ verify/reject/qualification-flag 动作 + 列表精简 + 跨 member 校验 |
+| activities(批次 3A) | `/api/admin/v1/activities` | 7 | 活动状态机(draft/published/cancelled/completed)+ Q-A7 USER 与 ADMIN 同路由 service 按 Role 过滤 + Q-A12 cancelled 拒改 + 经纬度 `Decimal(10,7)` |
+| activity-registrations(批次 3A) | Admin `/api/admin/v1/activities/:activityId/registrations` + App 队员自助 `/api/app/v1/my/registrations` | 10 | Q-A3 USER 自助 vs ADMIN 代报名拆开 + 4 态闭集(pending/pass/reject/cancelled)+ capacity 仅统计 pass + partial unique 取消后允许重报 + Q-A6 CSV 名单导出(StreamableFile,scope=pass 默认/scope=all 可选,不做 XLSX,0 副作用)|
+| attendances(批次 3B + 批次 4-B) | Admin `/api/admin/v1/activities/:activityId/attendance-sheets` + `/api/admin/v1/attendance-sheets/:id`(含 `/review-detail` / `/approve` / `/reject` / `/final-approve` / `/final-reject`)+ App 队员自助 `/api/app/v1/my/attendance-records` | 11 | Sheet + Record 双 model;**5 态闭集**(pending / pending_final_review / approved / rejected / final_rejected;**approved 语义升级为"终审通过"**,沿批次 4-B / D-S6)+ APD 完整审核视图(R25 Activity+Sheet+Records[含 Member])+ 编辑 pending 后端生成 previousSnapshot+version+1(D38 / R28 / Q-S16 完整快照)+ 同 memberId 跨 Sheet/Activity 时间不重叠[左闭右开,R16 / Q-S15]+ serviceHours 未传自动计算 / <=0 / 超跨度三档校验(D14 / D45 / D46 / D51)+ registrationId 跨表校验 activity 一致(R23)+ approve 前 contributionPoints 必填(R31)+ **批次 4-B 升级**:`attendance.recorded` 触发位置从 `approve` 移到 `final-approve`(Q-S13 / D-S7;final-reject / approve / reject / submit / edit / delete 均不触发)+ **D14 ContributionRule 预填**(POST 时按 `(activityType, attendanceRole, durationMinutes)` 匹配规则预填 contributionPoints;调用方传值不覆盖;无匹配规则保持 null;dailyCap 默认 1.5;不暴露 CRUD,不引流水表)+ **D11 Activity.completed 推动**(首张 Sheet 提交时事务内 Activity `published → completed`,单向不可逆;reject / final-reject 不回退;completed 语义 = "已进入考勤提交阶段",不代表全部终审通过)+ pending_final_review / final_rejected 不可 edit / softDelete(22030 / 22043)+ finalReviewNote 终审驳回必填(22046)+ /me 仅 approved Sheet 内 records(Q-A14;approved 已升级为终审通过)+ 终审权限当前沿 ADMIN / SUPER_ADMIN(沿 D-S2 不开 22044,APD 部门部长 / 副部长细分权限留后续 RBAC 批次)|
+| auth memberNo 登录回退 | `POST /api/auth/v1/login`(契约不变) | — | `username` 字段服务端语义扩展为 username 或 memberNo |
 
-完整字段、错误码、权限矩阵详见 [`docs/v2-api-contract.md`](./docs/v2-api-contract.md);在线调试见 `/api/docs` Swagger UI。
+完整字段、错误码、权限矩阵以 `/api/docs` Swagger UI 与 [`docs/current-state.md`](./docs/current-state.md) §2 为准(`docs/v2-api-contract.md` 为 V2 设计期 draft,非当前执行依据)。
 
 `member_profiles` / `emergency_contacts`(批次 1)+ `certificates`(批次 2)+ `activities` / `activity_registrations`(批次 3A)+ **`attendance_sheets` / `attendance_records`(批次 3B)**+ **`ContributionRule` schema + AttendanceSheet 终审 3 字段(批次 4-A)**+ **终审 / D14 ContributionRule 预填 / D11 Activity.completed 推动(批次 4-B)**已全部落地(详见上表)。批次 3 schema 含 4 model 已 commit(`31c8187`);批次 3A API(`6a9339b`)+ 批次 3B API(`5dbd230`)+ 批次 4-A schema(`2190803`)+ 批次 4-B service/API(`6812db9`)接续交付。**当前 V2.x 复活路径与当前解锁状态以 [`docs/current-state.md`](./docs/current-state.md) 与 [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) 为准**;READ ME 不再维护批次级累计接口数与逐版本快照。
 
