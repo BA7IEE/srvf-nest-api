@@ -36,7 +36,7 @@ import { UserRolesService } from './user-roles.service';
 @ApiTags('Ops - User Roles')
 @ApiBearerAuth()
 @ApiExtraModels(UserRoleResponseDto)
-@Controller('v2/users/:userId/roles')
+@Controller(['v2/users/:userId/roles', 'system/v1/users/:userId/roles'])
 export class UserRolesController {
   constructor(private readonly service: UserRolesService) {}
 

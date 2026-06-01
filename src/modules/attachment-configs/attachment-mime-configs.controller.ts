@@ -42,7 +42,7 @@ import { AttachmentMimeConfigsService } from './attachment-mime-configs.service'
 @ApiTags('Ops - Attachment Configs')
 @ApiBearerAuth()
 @ApiExtraModels(AttachmentMimeConfigResponseDto, AttachmentMimeConfigTypeConfigSummaryDto)
-@Controller('v2/attachment-mime-configs')
+@Controller(['v2/attachment-mime-configs', 'system/v1/attachment-mime-configs'])
 export class AttachmentMimeConfigsController {
   constructor(private readonly service: AttachmentMimeConfigsService) {}
 

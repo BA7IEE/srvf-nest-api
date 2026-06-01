@@ -41,7 +41,7 @@ import { DictionariesService } from './dictionaries.service';
 
 @ApiTags('Ops - Dictionaries')
 @ApiBearerAuth()
-@Controller('v2/dict-types')
+@Controller(['v2/dict-types', 'system/v1/dict-types'])
 export class DictTypesController {
   constructor(private readonly service: DictionariesService) {}
 
@@ -147,7 +147,7 @@ export class DictTypesController {
 
 @ApiTags('Ops - Dictionaries')
 @ApiBearerAuth()
-@Controller('v2/dict-items')
+@Controller(['v2/dict-items', 'system/v1/dict-items'])
 export class DictItemsController {
   constructor(private readonly service: DictionariesService) {}
 

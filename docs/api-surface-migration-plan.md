@@ -139,7 +139,7 @@
 |---|---|---|---|
 | 立项冻结 | ✅ 本稿(2026-06-01) | — | docs-only;重开 D-2 → §21 D-9 |
 | Phase 0 映射表 | ✅ 已签字冻结(2026-06-01;见 §3) | (本 PR) | 156 路由全映射 + 终态验收基线;tag→surface 无遗留灰区 |
-| Phase 1 alias | 🔄 进行中 | Phase 1a PR | spike ✅;**Phase 1a(auth+health,7 路由)已落地**(`auth`→`auth/v1`、`health`→`system/v1/health` 双挂,contract+e2e 双路径绿);余 system(59)/ admin(69)切片待续 |
+| Phase 1 alias | 🔄 进行中 | 1a/1b PR | spike ✅;**Phase 1a(auth+health 7 路由)+ Phase 1b(system 56 路由)已落地**(v2→system/v1 双挂,contract 353 + e2e 双路径绿);余 **admin(69 路由)Phase 1c** 待续 |
 | Phase 2 canonical | ⬜ 未启动 | — | — |
 | Phase 3 deprecation | ⬜ 未启动 | — | — |
 | Phase 4 removal | ⬜ 未启动 | — | 不可逆,单独 gated |
