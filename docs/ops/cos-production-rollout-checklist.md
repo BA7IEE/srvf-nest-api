@@ -43,7 +43,7 @@
 | 项 | 实证命令 | 期望 |
 |---|---|---|
 | v0.11.0 已发布 | `gh release list --limit 3` | `v0.11.0 (Latest)` |
-| 5 端点已就位 | `gh api repos/<owner>/<repo>/contents/test/contract/__snapshots__` | snapshot 含 `/api/v2/attachments/upload-url` + `/api/v2/attachments/confirm-upload` + `/api/v2/storage-settings` × 3 |
+| 5 端点已就位 | `gh api repos/<owner>/<repo>/contents/test/contract/__snapshots__` | snapshot 含 `/api/admin/v1/attachments/upload-url` + `/api/admin/v1/attachments/confirm-upload` + `/api/system/v1/storage-settings` × 3 |
 | `STORAGE_ENCRYPTION_KEY` 已支持 | `grep STORAGE_ENCRYPTION_KEY .env.example` | 存在 |
 | Provider 路由 | `grep StorageProviderRouter src/common/storage/storage.module.ts` | 存在 |
 
@@ -58,7 +58,7 @@
 ### 1.3 维护者准备
 
 - 系统管理员账号(`SUPER_ADMIN` 或 `ADMIN`;用于调 storage-settings API)
-- 管理员 JWT(通过 `POST /api/v2/auth/login` 获取)
+- 管理员 JWT(通过 `POST /api/auth/v1/login` 获取)
 - 本地 shell history 防留痕设置(沿 §8.2)
 
 ---
@@ -397,9 +397,9 @@ INFO StorageCryptoService initialized (algorithm=aes-256-gcm)
 
 ### 7.1 端点(沿 [handoff §4.9](../handoff/v0.11.0.md))
 
-- `GET /api/v2/storage-settings`:读当前配置(凭证字段返 `credentialStatus`,**永不返明文**)
-- `PATCH /api/v2/storage-settings`:改非凭证字段(PATCH upsert;首次自动创建 default row)
-- `POST /api/v2/storage-settings/reset-credentials`:重置凭证(详见 §8)
+- `GET /api/system/v1/storage-settings`:读当前配置(凭证字段返 `credentialStatus`,**永不返明文**)
+- `PATCH /api/system/v1/storage-settings`:改非凭证字段(PATCH upsert;首次自动创建 default row)
+- `POST /api/system/v1/storage-settings/reset-credentials`:重置凭证(详见 §8)
 
 **权限**:全部 `@Roles(SUPER_ADMIN, ADMIN)` 入口。
 
@@ -407,13 +407,13 @@ INFO StorageCryptoService initialized (algorithm=aes-256-gcm)
 
 ```bash
 # 1. 维护者登录拿 JWT
-curl -X POST '<api-base-url>/api/v2/auth/login' \
+curl -X POST '<api-base-url>/api/auth/v1/login' \
   -H 'Content-Type: application/json' \
   -d '{"username":"<admin-username>","password":"<admin-password>"}'
 # → { "code": 0, "data": { "accessToken": "<admin-jwt>" } }
 
 # 2. PATCH 非凭证字段(upsert;首次自动建 default row)
-curl -X PATCH '<api-base-url>/api/v2/storage-settings' \
+curl -X PATCH '<api-base-url>/api/system/v1/storage-settings' \
   -H 'Authorization: Bearer <admin-jwt>' \
   -H 'Content-Type: application/json' \
   -d '{
@@ -447,7 +447,7 @@ curl -X PATCH '<api-base-url>/api/v2/storage-settings' \
 ### 7.4 校验初始化结果
 
 ```bash
-curl -X GET '<api-base-url>/api/v2/storage-settings' \
+curl -X GET '<api-base-url>/api/system/v1/storage-settings' \
   -H 'Authorization: Bearer <admin-jwt>'
 # 期望(凭证未录入):
 # {
@@ -473,7 +473,7 @@ curl -X GET '<api-base-url>/api/v2/storage-settings' \
 
 ### 8.1 端点
 
-`POST /api/v2/storage-settings/reset-credentials`
+`POST /api/system/v1/storage-settings/reset-credentials`
 
 ### 8.2 防 shell history 留痕(必读)
 
@@ -514,7 +514,7 @@ $EDITOR "$TMPBODY"
 # }
 
 # 3. 调 API
-curl -X POST '<api-base-url>/api/v2/storage-settings/reset-credentials' \
+curl -X POST '<api-base-url>/api/system/v1/storage-settings/reset-credentials' \
   -H 'Authorization: Bearer <admin-jwt>' \
   -H 'Content-Type: application/json' \
   --data-binary @"$TMPBODY"
@@ -567,7 +567,7 @@ file /tmp/test-upload.bin
 ### 9.2 Step 1:`POST /upload-url`(取 signed URL + uploadToken)
 
 ```bash
-curl -X POST '<api-base-url>/api/v2/attachments/upload-url' \
+curl -X POST '<api-base-url>/api/admin/v1/attachments/upload-url' \
   -H 'Authorization: Bearer <admin-jwt>' \
   -H 'Content-Type: application/json' \
   -d '{
@@ -618,7 +618,7 @@ curl -X PUT "$UPLOAD_URL" \
 ### 9.4 Step 3:`POST /confirm-upload`(落库)
 
 ```bash
-curl -X POST '<api-base-url>/api/v2/attachments/confirm-upload' \
+curl -X POST '<api-base-url>/api/admin/v1/attachments/confirm-upload' \
   -H 'Authorization: Bearer <admin-jwt>' \
   -H 'Content-Type: application/json' \
   -d "{ \"uploadToken\": \"$UPLOAD_TOKEN\" }"
@@ -665,7 +665,7 @@ diff /tmp/test-upload.bin /tmp/test-download.bin && echo 'content match'
 ### 9.6 Step 5:DELETE 验删除链路
 
 ```bash
-curl -X DELETE "<api-base-url>/api/v2/attachments/$ATTACHMENT_ID" \
+curl -X DELETE "<api-base-url>/api/admin/v1/attachments/$ATTACHMENT_ID" \
   -H 'Authorization: Bearer <admin-jwt>' \
   -w 'HTTP %{http_code}\n'
 # 期望:HTTP 200 + { "code": 0, "data": null }

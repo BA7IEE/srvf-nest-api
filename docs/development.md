@@ -66,19 +66,18 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `GET` | `/api/health` / `/api/health/live` / `/api/health/ready` | 三层健康检查(全部 `@Public()`) |
-| `POST` | `/api/auth/login` | `username + password` 登录,返回 `accessToken` + `refreshToken` + `refreshExpiresAt`;**默认 IP 5 次 / 60 秒** |
-| `POST` | `/api/auth/refresh` | rotation always + family revoke + absolute expiration;失败统一 `REFRESH_TOKEN_INVALID=10007`;独立 throttler `refresh` 30 / 60 |
-| `POST` | `/api/auth/logout` | 幂等;只撤销当前 refresh token;**不限流**;**不**吊销 access |
-| `POST` | `/api/auth/logout-all` | 撤销该用户全部未过期 refresh;返 `{ revokedCount }`;复用 `password-change` throttler 5 / 60 |
-| `GET` / `PATCH` | `/api/users/me` | 本人资料(`PATCH` 严格白名单 `nickname` / `avatarKey`) |
-| `PUT` | `/api/users/me/password` | 本人改密(P0-D);独立 throttler `password-change` 5 / 60;`OLD_PASSWORD_INVALID=10005` / `NEW_PASSWORD_SAME_AS_OLD=10006` |
-| `GET` | `/api/app/v1/me` / `/api/app/v1/me/capabilities` / `/api/app/v1/my/registrations` 等 | **v0.15.0 新增 App API surface**(15 endpoint);完整清单见 `EXPECTED_ROUTES` |
+| `GET` | `/api/system/v1/health` / `/api/system/v1/health/live` / `/api/system/v1/health/ready` | 三层健康检查(全部 `@Public()`) |
+| `POST` | `/api/auth/v1/login` | `username + password` 登录,返回 `accessToken` + `refreshToken` + `refreshExpiresAt`;**默认 IP 5 次 / 60 秒** |
+| `POST` | `/api/auth/v1/refresh` | rotation always + family revoke + absolute expiration;失败统一 `REFRESH_TOKEN_INVALID=10007`;独立 throttler `refresh` 30 / 60 |
+| `POST` | `/api/auth/v1/logout` | 幂等;只撤销当前 refresh token;**不限流**;**不**吊销 access |
+| `POST` | `/api/auth/v1/logout-all` | 撤销该用户全部未过期 refresh;返 `{ revokedCount }`;复用 `password-change` throttler 5 / 60 |
+| `GET`/`PATCH`/`PUT` | `/api/app/v1/me` · `/api/app/v1/me/profile` · `/api/app/v1/me/password` | 队员本人身份 / 资料 / 改密(`PATCH` 白名单 `nickname` / `avatarKey`;改密独立 throttler `password-change` 5 / 60,`OLD_PASSWORD_INVALID=10005` / `NEW_PASSWORD_SAME_AS_OLD=10006`)|
+| `GET` | `/api/app/v1/me/capabilities` / `/api/app/v1/my/registrations` 等 | App API surface 完整 15 endpoint;清单见 `EXPECTED_ROUTES` |
 | `GET` | `/api/docs` | Swagger UI |
 
 > **铁律**:
-> - 新移动端能力**只能**落 `/api/app/v1/*` surface(沿 [`api-surface-policy.md`](api-surface-policy.md));禁止扩到 `/api/users/me/*`
-> - Admin Legacy `/api/v2/*` 长期保留,新 PC 管理后台 endpoint 默认落此 surface
+> - 新移动端能力**只能**落 `/api/app/v1/*` surface(沿 [`api-surface-policy.md §0`](api-surface-policy.md));Route B 终态后已无 `/api/users/me/*` legacy 入口
+> - 新 PC 管理后台 endpoint 落 `/api/admin/v1/*`(Route B 终态;原 `/api/v2/*` 已迁移并删除)
 > - 鉴权细则(JWT payload zero drift / refresh token 安全策略 / 联动撤销 4 场景)详 [`AGENTS.md §8 / §9`](../AGENTS.md) + [`security.md`](security.md)
 
 ---
@@ -87,13 +86,13 @@
 
 ```bash
 # 1. 登录拿 access + refresh
-RESP=$(curl -s -X POST http://localhost:3000/api/auth/login \
+RESP=$(curl -s -X POST http://localhost:3000/api/auth/v1/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"ChangeMe123456"}')
 TOKEN=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['accessToken'])")
 
 # 2. 用 access token 访问受保护接口
-curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/users/me
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/app/v1/me
 ```
 
 成功响应统一 `{ "code": 0, "message": "ok", "data": ... }`,错误响应 `{ "code": <BizCode>, "message": <提示>, "data": null }`(沿 [`AGENTS.md §4 / §5`](../AGENTS.md))。

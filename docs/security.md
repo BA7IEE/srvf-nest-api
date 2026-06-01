@@ -17,12 +17,12 @@
 | 自我保护 | `users.service.ts` | 自删 / 自禁 / 自改角色一律 `CANNOT_OPERATE_SELF` |
 | 最后一个 SUPER_ADMIN 保护 | `users.service.ts` `assertNotLastSuperAdmin` | 在事务内 `count` 剩余活跃 super admin,< 1 抛 `LAST_SUPER_ADMIN_PROTECTED` |
 | helmet HTTP 安全头 | `bootstrap/apply-global-setup.ts` | 默认开启,Swagger UI 局部放开 CSP |
-| 登录限流 | `@nestjs/throttler` 内存 storage | 仅 `POST /api/auth/login`,IP 维度 5 次 / 60 秒(可配),不暴露阈值 |
+| 登录限流 | `@nestjs/throttler` 内存 storage | 仅 `POST /api/auth/v1/login`,IP 维度 5 次 / 60 秒(可配),不暴露阈值 |
 | 日志敏感字段 redact | `bootstrap/logger-options.ts` | 命中字段日志显示为 `[REDACTED]`,**不仅仅是长度截断** |
 | 启动强校验 | `config/app.config.ts` + `prisma/seed.ts` | `APP_ENV=production` 下拒绝默认值的 `JWT_SECRET` / `APP_CORS_ORIGIN=*` / `SUPER_ADMIN_PASSWORD` / `SUPER_ADMIN_USERNAME=admin` |
-| 本人自助改密 | `users.controller.ts` + `users.service.ts` + `audit-logs.service.ts` | `PUT /api/users/me/password`(`ChangeMyPasswordDto { oldPassword, newPassword }`);严格事务内顺序:`bcrypt.compare(oldPassword)` → 严格 `===` 比较 oldPassword/newPassword → `bcrypt.hash(newPassword)` → 写 audit log `password.change.self`;响应 `userSafeSelect`(永不含 `passwordHash`);**不**主动吊销旧 token(沿 Token 吊销升级路径) |
+| 本人自助改密 | `controllers/app-me.controller.ts` + `users.service.ts` + `audit-logs.service.ts` | `PUT /api/app/v1/me/password`(`ChangeMyPasswordDto { oldPassword, newPassword }`);严格事务内顺序:`bcrypt.compare(oldPassword)` → 严格 `===` 比较 oldPassword/newPassword → `bcrypt.hash(newPassword)` → 写 audit log `password.change.self`;响应 `userSafeSelect`(永不含 `passwordHash`);**不**主动吊销旧 token(沿 Token 吊销升级路径) |
 | 改密接口防爆破 | `@PasswordChangeThrottle` + `throttler-biz.guard.ts` | 独立 throttler 实例 `password-change`,与登录限流物理隔离;IP 维度 5 次 / 60 秒(`PASSWORD_CHANGE_THROTTLE_LIMIT` / `PASSWORD_CHANGE_THROTTLE_TTL_SECONDS` 可配);内存 storage(不引入 Redis);不暴露阈值 / `Retry-After` / `X-RateLimit-*` |
-| refresh token / logout / logout-all(P0-E PR-3) | `auth.service.ts` + `refresh-token.util.ts` + `audit-logs.service.ts` | `POST /api/auth/refresh`(rotation always + family revoke + absolute expiration)/ `POST /api/auth/logout`(幂等;只撤销当前 row)/ `POST /api/auth/logout-all`(撤销该 user 全部 refresh);`refresh_tokens` 表只存 `sha256(raw).hex`,明文绝不入库;refresh 失败 4 子原因统一 `REFRESH_TOKEN_INVALID=10007`(不拆 EXPIRED/REVOKED/REPLAY);**access token 仍不主动吊销**(沿 D-4);TTL `access 15m / refresh 90d` |
+| refresh token / logout / logout-all(P0-E PR-3) | `auth.service.ts` + `refresh-token.util.ts` + `audit-logs.service.ts` | `POST /api/auth/v1/refresh`(rotation always + family revoke + absolute expiration)/ `POST /api/auth/v1/logout`(幂等;只撤销当前 row)/ `POST /api/auth/v1/logout-all`(撤销该 user 全部 refresh);`refresh_tokens` 表只存 `sha256(raw).hex`,明文绝不入库;refresh 失败 4 子原因统一 `REFRESH_TOKEN_INVALID=10007`(不拆 EXPIRED/REVOKED/REPLAY);**access token 仍不主动吊销**(沿 D-4);TTL `access 15m / refresh 90d` |
 | refresh 接口防爆破 | `@RefreshThrottle` + `throttler-biz.guard.ts`(P0-E PR-3)| 独立 throttler 实例 `refresh`,与登录 / 改密物理隔离;IP 维度 30 次 / 60 秒(`REFRESH_THROTTLE_LIMIT` / `REFRESH_THROTTLE_TTL_SECONDS` 可配,放宽允许多 tab 并发 refresh);内存 storage;不暴露阈值头 |
 | 改密 / 重置 / 禁用 / 软删联动撤销 refresh(P0-E PR-3) | `users.service.ts` 同事务 `tx.refreshToken.updateMany` | 本人改密 → `self-password-change` / 管理员重置 → `admin-password-reset`(+ 新 audit `password.reset.by-admin`)/ 用户被禁用 → `admin-disable` / 用户软删 → `admin-delete`;**access token 仍不主动吊销**(沿 D-4;15m 自然过期 + `JwtStrategy.validate` 每请求查库阻断 DISABLED / 软删);**JWT payload 严格 zero drift** `{ sub, username }` |
 
@@ -54,7 +54,7 @@ req.body.refreshToken
 
 ## 软删除策略
 
-- **当前版本支持软删除**:`DELETE /api/users/:id` 走 `update({ deletedAt: new Date(), status: DISABLED })`,从不调用 `prisma.user.delete()`
+- **当前版本支持软删除**:`DELETE /api/admin/v1/users/:id` 走 `update({ deletedAt: new Date(), status: DISABLED })`,从不调用 `prisma.user.delete()`
 - 所有非"管理员看回收站"查询经 `notDeletedWhere()` 过滤,业务接口看不到已删用户
 - `username` / `email` 唯一性预检查走 `findUnique`(包含软删记录),软删后这两个字段**不复用**——避免身份冒用
 - **当前版本不提供 restore 接口**;误删恢复需数据库管理员人工操作:
@@ -62,7 +62,7 @@ req.body.refreshToken
   UPDATE "User" SET "deletedAt" = NULL, "status" = 'ACTIVE' WHERE id = '...';
   ```
 - 后续若实现 restore,接口契约预定义为:
-  - `PATCH /api/users/:id/restore`
+  - `PATCH /api/admin/v1/users/:id/restore`
   - **仅 `SUPER_ADMIN` 可用**(`@Roles(Role.SUPER_ADMIN)`)
   - 入参为空,出参与其他用户接口一致(`UserResponseDto`)
   - 同样要在事务里检查 `username` / `email` 是否被新用户占用,若占用则要求先重命名旧记录或拒绝恢复
@@ -78,9 +78,9 @@ req.body.refreshToken
 
 | 能力 | 实施位置 |
 |---|---|
-| `POST /api/auth/refresh` | rotation always + family revoke + absolute expiration;失败统一 `REFRESH_TOKEN_INVALID=10007` |
-| `POST /api/auth/logout` | 幂等;只撤销当前 refresh row;不吊销 access |
-| `POST /api/auth/logout-all` | 撤销该 user 全部未过期未撤销 refresh;返 `{ revokedCount }` |
+| `POST /api/auth/v1/refresh` | rotation always + family revoke + absolute expiration;失败统一 `REFRESH_TOKEN_INVALID=10007` |
+| `POST /api/auth/v1/logout` | 幂等;只撤销当前 refresh row;不吊销 access |
+| `POST /api/auth/v1/logout-all` | 撤销该 user 全部未过期未撤销 refresh;返 `{ revokedCount }` |
 | `LoginResponseDto` 扩展 | `refreshToken`(256bit base64url opaque random)+ `refreshExpiresAt`(ISO 8601 UTC family absolute expiration 时刻);字段集恰好 5 项 |
 | **refresh_tokens 表** | `tokenHash @unique`(sha256 hex)+ `familyId` + `expiresAt` + `rotatedAt` + `revokedAt` + `revokedReason` + `replacedById` + `ipFirstSeen` / `uaFirstSeen`(后两者仅供审计不出对外 API) |
 | **联动撤销 4 场景** | 本人改密 `self-password-change` / 管理员重置 `admin-password-reset` / 用户禁用 `admin-disable` / 用户软删 `admin-delete`(同事务原子) |
