@@ -19,9 +19,10 @@
 
 (P1-4 已于 2026-06-10 调研收口,见文末归档区。)
 
-### P1-7 SMS 三个后续消费者 — **⏸ 挂起(逐项单独立项,AI 不自动启动)**
-- ① **找回密码**(手机验证码重置,pre-auth 流程);② **OTP / 验证码登录**(动 `AGENTS.md:242` v1 登录契约,需先对该红区行评审解锁);③ **通知用途短信**(新模板 + 群发,扩 `SmsPurpose` / templateKey)。
-- **前置**:P1-6 终验完成 + 运维侧真实通道验收(签名/模板过审 + 凭证录入,SOP 见届时 `docs/ops/sms-production-rollout-checklist.md`);任一启动前先读 sms 评审稿 §12 本期不做清单。
+### P1-7 SMS 三个后续消费者 — **① 已立项进行中;②③ ⏸ 挂起(逐项单独立项,AI 不自动启动)**
+- ① **找回密码**(手机验证码重置,pre-auth 流程)— **2026-06-11 goal 立项进行中**(D 档拍板;冻结评审稿 [`docs/archive/reviews/password-reset-by-sms-review.md`](../archive/reviews/password-reset-by-sms-review.md);维护者拍板 DevStub 先行全验,真实通道仍走运维接力);T0-T3 完成后转 ✅ 归档区。
+- ② **OTP / 验证码登录**(动 `AGENTS.md:242` v1 登录契约,需先对该红区行评审解锁);③ **通知用途短信**(新模板 + 群发,扩 `SmsPurpose` / templateKey)。
+- **前置(对 ②③)**:运维侧真实通道验收(签名/模板过审 + 凭证录入,SOP 见 `docs/ops/sms-production-rollout-checklist.md`);任一启动前先读 sms 评审稿 §12 与找回密码评审稿 §10 本期不做清单。
 
 ## P2(可优化)
 
