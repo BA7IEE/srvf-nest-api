@@ -2,6 +2,14 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+### Added
+
+- **SMS 基础设施 T3:验证码服务 + 手机号绑定/换绑 + admin 清号**(C/D 档;goal 拍板,冻结评审稿 [`docs/archive/reviews/sms-verification-infra-review.md`](docs/archive/reviews/sms-verification-infra-review.md) §3.2⑤-⑦/§3.3/§3.5/§4;PR #302):新端点 3 个——`POST /api/app/v1/me/phone/send-code` + `PUT /api/app/v1/me/phone`(验码绑定/换绑一体;沿 `me/password` 账号级豁免先例不强约 canUseApp,豁免仅限本两端点)+ `DELETE /api/admin/v1/users/:id/phone`(`rbac.can('user.phone.clear')` + `assertCanManageUser`;幂等;软删用户统一 10001)。`SmsCodeService`:6 位 CSPRNG / TTL 5min / 同 phone+purpose 单活码 / 错 5 次作废 / 成功即消费 / 明文码永不入库·不入日志·不入响应(DevStub 固定码 888888 仅 debug 日志,production-like 物理不可达);防刷三层 = 同号 ≥60s + 同号自然日 10 条(固定 UTC+8 日界)+ IP 双 throttler(`sms-send` 5/60s、`sms-verify` 10/60s,新命名实例与既有三实例物理隔离,`ThrottlerBizGuard` 同型扩展)。**BizCode 新开 24xxx 段 6 码**(24002/24010〔统一码防枚举〕/24030/24031/24120/24121;baseline §1.1 段位表加行,红区例外 goal 唯一授权)+ **3 个 AuditLogEvent**(`phone.bind.self` / `phone.rebind.self` / `phone.clear.by-admin`,detail 手机号一律掩码)。contract 152→**155 路由**;e2e 新增 3 组 42 用例(sms-settings / app-me-phone-bind / sms-throttle);**auth-* 全组原断言零改动全绿**(改密/登录/refresh 行为零漂移)。
+- **SMS 基础设施 T2:通道层(`src/modules/sms/` + DevStub/腾讯云双 Provider + settings/send-logs 4 端点)**(D 档;goal 拍板,评审稿 §3.2①-④/§3.4/§5/§6;PR #301):`GET/PATCH /api/system/v1/sms-settings` + `POST .../reset-credentials`(动词镜像 storage-settings 现状;R 模式 Service 层 `rbac.can()`;凭证 AES-256-GCM〔独立 `SMS_ENCRYPTION_KEY` + 独立派生 salt,与 storage 密文互不可解〕永不回显;reset 仅 SUPER_ADMIN 短路)+ `GET /api/system/v1/sms-send-logs`(分页只读,**响应手机号一律掩码** `138****1234`)。**权限码 seed 76→81**(+`sms-setting.*`×3 / `sms-send-log.read.list` / `user.phone.clear`;ops-admin 54→58,reset 不绑镜像 storage D2=A)。`SmsProviderRouter` 动态路由(settings 缺失不静默 fallback;production-like 下 DEV_STUB 视作未配置——写入校验 + 运行时双重禁用)。新依赖 `tencentcloud-sdk-nodejs-sms` **锁精确版本 4.1.240**(import 仅限单文件);`SMS_ENCRYPTION_KEY` production/smoke 启动 fail-fast(.env.example + docker-smoke workflow 同步)。unit +3 spec(sms-crypto / dev-stub / tencent-sms mock SDK)。
+- **SMS 基础设施 T1:schema(User +phone/phoneVerifiedAt + 三新表)**(D 档;goal 拍板,评审稿 §3.1;PR #300):`User` +`phone String? @unique`(**含软删占用**,沿 username/email 不复用范式)+`phoneVerifiedAt`;新表 `sms_settings`(镜像 StorageSettings 范式)/ `sms_verification_codes`(codeHash sha256,明文永不入库;`@@index([phone, purpose])`)/ `sms_send_logs`(append-only;`@@index([phone, createdAt])`);新 enum `SmsProviderType` / `SmsPurpose` / `SmsSendStatus`。migration `20260610152152_add_sms_infra_user_phone` 干净库重放 + seed 幂等二跑通过;contract snapshot 零 diff(T1 零 API 漂移)。
+
 ## v0.17.0 - 2026-06-10
 
 ### Changed

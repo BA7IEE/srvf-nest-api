@@ -29,7 +29,8 @@
 | `members/` | S (501L) | 全局 `memberNo` **不复用** | memberNo 唯一性铁律 | [`docs/srvf-foundation-baseline.md`](docs/srvf-foundation-baseline.md) |
 | `organizations/` | M (654L) | 组织树 | 树形结构 | — |
 | `permissions/` | L (2213L) | RBAC 4 表 + `RbacService.can()` + `RbacCacheService` | `rbac.*` 14 条权限点;**`rbac/me/permissions` 方法级 Mixed 暂不拆 (P1-A)** | [`CLAUDE.md`](src/modules/permissions/CLAUDE.md) · [`AGENTS.md §8 / §13`](AGENTS.md) · [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
-| `users/` | L (1934L) | 用户 CRUD + `/me*` + 改密 + refresh 联动撤销 | service 544L (large-service watch);Mixed Controller P1-C step 1 已拆完;P0-D / P0-E 全套铁律 | [`AGENTS.md §9`](AGENTS.md) · [`docs/security.md`](docs/security.md) |
+| `sms/` | M (1437L) | SMS 通道层(settings/send-logs/双 Provider/动态路由)+ 验证码签发/校验/防刷 | 凭证 AES-256-GCM 永不回显;明文码不入库·不入日志·不入响应(DevStub debug 例外);production-like 禁 DEV_STUB;providers/ 子目录为 AGENTS §2 已解锁例外 | [`docs/archive/reviews/sms-verification-infra-review.md`](docs/archive/reviews/sms-verification-infra-review.md)(冻结评审稿) |
+| `users/` | L (2143L) | 用户 CRUD + `/me*` + 改密 + refresh 联动撤销 + me/phone 绑定换绑 + admin 清号 | service 699L (large-service watch);Mixed Controller P1-C step 1 已拆完;P0-D / P0-E 全套铁律;phone 占用含软删(沿 username/email 不复用) | [`AGENTS.md §9`](AGENTS.md) · [`docs/security.md`](docs/security.md) |
 
 > 已存在的 module/common-local CLAUDE.md 均应在本表行内引用,避免 AI 导航漂移(可由 `pnpm docs:codemap:check` 检出)。
 
@@ -57,7 +58,7 @@
 | 路径 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
 |---|---|---|---|
 | `schema.prisma` | **数据模型唯一权威源**(字段 / 类型 / 约束 / 索引) | 修改前必先说明影响面 | [`CLAUDE.md`](prisma/CLAUDE.md) |
-| `migrations/` | 12 个 migration(2026-05-02 init → 2026-05-17 refresh tokens) | **禁止** `prisma migrate dev` / `reset` / `db push` 自动跑 | [`CLAUDE.md`](prisma/CLAUDE.md) · [`AGENTS.md §0`](AGENTS.md) |
+| `migrations/` | 13 个 migration(2026-05-02 init → 2026-06-10 sms infra + user phone) | **禁止** `prisma migrate dev` / `reset` / `db push` 自动跑 | [`CLAUDE.md`](prisma/CLAUDE.md) · [`AGENTS.md §0`](AGENTS.md) |
 | `seed.ts` | 默认 super admin + bootstrap user_role | 生产环境强校验启动(`SUPER_ADMIN_*` / `JWT_SECRET` / `APP_CORS_ORIGIN`) | [`docs/deployment.md`](docs/deployment.md) |
 
 ---
