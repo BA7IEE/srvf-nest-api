@@ -304,14 +304,14 @@ import { Role, UserStatus } from '@prisma/client';
 - 响应 DTO 通过 `userSafeSelect` 排除 `passwordHash`,任何接口响应里都不应出现该字段
 - `POST /api/admin/v1/users` **必须由调用方传 `password`**,禁止后端生成默认密码或留空
 - `PUT /api/admin/v1/users/:id/password` 接收 `ResetUserPasswordDto { newPassword }`,**不需要 `oldPassword`**,但必须走 `assertCanManageUser`
-- 管理员重置密码后**不主动吊销 access token**(access ≤ 15m 自然过期);**必须主动撤销目标用户全部 refresh token**(详 §9 P0-E 联动撤销四场景);如需立即阻断 access token,由管理员把目标用户 `status` 改 `DISABLED`(经每请求查库即时生效)
+- 管理员重置密码后**不主动吊销 access token**(access ≤ 15m 自然过期);**必须主动撤销目标用户全部 refresh token**(详 §9 P0-E 联动撤销五场景);如需立即阻断 access token,由管理员把目标用户 `status` 改 `DISABLED`(经每请求查库即时生效)
 - **本人自助改密只能通过独立接口** `PUT /api/app/v1/me/password`(原 `/api/users/me/password` 于 v0.13.0 落地、Route B 终态迁至 App surface;行为冻结于 [P0-D 评审稿](docs/archive/reviews/first-release-p0d-change-my-password-review.md));**不得**在 `PATCH /api/app/v1/me/profile` 或其他资料更新接口里夹带"顺手改密码"逻辑;管理员重置他人密码接口 `PUT /api/admin/v1/users/:id/password` 契约保持不变
 - 本人改密接口入参固定 `ChangeMyPasswordDto { oldPassword, newPassword }`(`oldPassword` 必填,与管理员重置无 `oldPassword` 的语义对称区分);`newPassword` 沿 `ResetUserPasswordDto.newPassword` 范式(至少 8 位 + 数字 + 字母);严格白名单,**禁止**夹带 `username` / `email` / `role` / `status` / `passwordHash` / `id` 任何其他字段
 - 本人改密新增 BizCode:`OLD_PASSWORD_INVALID = 10005`(HTTP 401)、`NEW_PASSWORD_SAME_AS_OLD = 10006`(HTTP 400);**禁止**复用 `LOGIN_FAILED` 或 `BAD_REQUEST` 兜底语义
 - 本人改密接口必须挂 `@PasswordChangeThrottle()`(IP 5/60 秒;沿 §17 `@nestjs/throttler` 内存 storage,**禁止** Redis;limit / ttl 从 `src/config/app.config.ts` 注入,**禁止**硬编码在装饰器)
 - 本人改密成功必须写 audit `AuditLogEvent.UserPasswordChangedSelf`;**禁止**把 `oldPassword` / `newPassword` / `passwordHash` 任何明文或 hash 写入 audit
-- 本人改密成功后**不主动吊销 access token**;**必须主动撤销该用户全部 refresh token**(详 §9 P0-E 联动撤销四场景);`tokenVersion` **不做**,沿 §1 B 档
-- 用户被 `DISABLED`(`PATCH /api/admin/v1/users/:id/status` → `DISABLED`)或被软删(`DELETE /api/admin/v1/users/:id`)时,**必须**主动撤销目标用户全部 refresh token(详 §9 P0-E 联动撤销四场景);access token 由 `JwtStrategy.validate` 每请求查库即时失效
+- 本人改密成功后**不主动吊销 access token**;**必须主动撤销该用户全部 refresh token**(详 §9 P0-E 联动撤销五场景);`tokenVersion` **不做**,沿 §1 B 档
+- 用户被 `DISABLED`(`PATCH /api/admin/v1/users/:id/status` → `DISABLED`)或被软删(`DELETE /api/admin/v1/users/:id`)时,**必须**主动撤销目标用户全部 refresh token(详 §9 P0-E 联动撤销五场景);access token 由 `JwtStrategy.validate` 每请求查库即时失效
 - 本人改密接口**不做**首次登录强制改密、忘记密码 / 邮箱找回、user-member 绑定能力;这些越界诉求出现时必须暂停说明
 
 ### P0-E refresh token 鉴权铁律(v0.14.0 落地,行为冻结)
@@ -343,7 +343,7 @@ import { Role, UserStatus } from '@prisma/client';
 - `POST /api/auth/v1/logout` 走 `@Public()`(refresh token 自身即凭证),只撤销**当前** refresh token(`revokedReason='logout'`,其他 rotation 链 token 不动);**幂等**(不存在 / 已撤销 / 已过期 → 仍返 200,沿 RFC 7009 §2.2),**不**抛业务码;access token 若随头传入**不**校验、**不**消费、**不**吊销
 - `POST /api/auth/v1/logout-all` 走 `JwtAuthGuard`,撤销当前 user 全部未过期且未撤销的 refresh token(`updateMany revokedReason='logout'`);返 `{ revokedCount }`
 
-**联动撤销四场景**(沿 §9 主条目;`updateMany` 必须**同事务**内与主写操作执行,沿 `prisma.$transaction` 范式;audit `extra.refreshTokensRevoked: count` 必写):本人改密 → `'self-password-change'` / 管理员重置 → `'admin-password-reset'` / 用户禁用 → `'admin-disable'` / 用户软删 → `'admin-delete'`
+**联动撤销五场景**(沿 §9 主条目;`updateMany` 必须**同事务**内与主写操作执行,沿 `prisma.$transaction` 范式;audit `extra.refreshTokensRevoked: count` 必写):本人改密 → `'self-password-change'` / 本人短信验证码重置(找回密码,pre-auth)→ `'self-password-reset'`(2026-06-11,冻结评审稿 [password-reset-by-sms-review](docs/archive/reviews/password-reset-by-sms-review.md);audit `password.reset.by-sms`)/ 管理员重置 → `'admin-password-reset'` / 用户禁用 → `'admin-disable'` / 用户软删 → `'admin-delete'`
 
 **access token 行为锁定**:
 - **不主动吊销**;依赖 `JWT_EXPIRES_IN=15m` 自然过期 + `JwtStrategy.validate` 每请求查库阻断 `DISABLED` / 软删用户

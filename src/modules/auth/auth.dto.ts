@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsNotEmpty, IsString, Length, Matches, MaxLength, MinLength } from 'class-validator';
+
+import { MAINLAND_PHONE_PATTERN, SMS_CODE_LENGTH } from '../sms/sms.constants';
 
 // 登录入参严格按 ARCHITECTURE.md §6 / §7.6:仅 username + password,
 // 不支持 email / 手机号 / 验证码登录。
@@ -105,4 +107,58 @@ export class LogoutAllResponseDto {
     example: 3,
   })
   revokedCount!: number;
+}
+
+// ===== 找回密码 T2(2026-06-11;冻结评审稿 password-reset-by-sms-review.md §3.2 / E-8/E-9)=====
+//
+// pre-auth DTO 纪律:严格字段白名单(forbidNonWhitelisted 兜底);
+// phone 沿 MAINLAND_PHONE_PATTERN(SMS 评审稿 E-17),code 沿 6 位数字,
+// newPassword **镜像 ChangeMyPasswordDto.newPassword**(8-128 + 字母数字);
+// 响应永不含验证码 / token / 用户字段(防枚举 §4 + D-PR-1 不自动登录)。
+
+export class SendPasswordResetCodeDto {
+  @ApiProperty({
+    description: '账号绑定的大陆手机号(11 位);防枚举:无效号码返回完全相同的泛化响应',
+    example: '13800001234',
+  })
+  @IsString()
+  @Matches(MAINLAND_PHONE_PATTERN, { message: 'phone 必须是大陆 11 位手机号' })
+  phone!: string;
+}
+
+export class SendPasswordResetCodeResponseDto {
+  @ApiProperty({ description: '验证码有效期(秒;固定 300)', example: 300 })
+  expiresInSeconds!: number;
+}
+
+export class ResetPasswordBySmsDto {
+  @ApiProperty({
+    description: '账号绑定的大陆手机号(11 位;须与 send-code 时一致)',
+    example: '13800001234',
+  })
+  @IsString()
+  @Matches(MAINLAND_PHONE_PATTERN, { message: 'phone 必须是大陆 11 位手机号' })
+  phone!: string;
+
+  @ApiProperty({ description: '6 位数字验证码', example: '123456' })
+  @IsString()
+  @Length(SMS_CODE_LENGTH, SMS_CODE_LENGTH)
+  @Matches(/^\d{6}$/, { message: 'code 必须是 6 位数字' })
+  code!: string;
+
+  @ApiProperty({
+    description:
+      '新密码(至少 8 位,需含字母+数字);与当前密码相同抛 NEW_PASSWORD_SAME_AS_OLD(10006,不消费验证码,可换密码用同码重试)',
+    format: 'password',
+    minLength: 8,
+    maxLength: 128,
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(8)
+  @MaxLength(128)
+  @Matches(/^(?=.*[a-zA-Z])(?=.*\d).+$/, {
+    message: 'password 至少 8 位,且必须包含字母和数字',
+  })
+  newPassword!: string;
 }

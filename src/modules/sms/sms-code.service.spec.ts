@@ -256,3 +256,76 @@ describe('SmsCodeService.verifyAndConsume', () => {
     );
   });
 });
+
+// 找回密码 T2(2026-06-11):只验不消费预检(评审稿 password-reset-by-sms-review.md E-5/E-6;
+// 校验链与 verifyAndConsume 共用 loadValidActiveCodeOrThrow,错码 attempts+1 语义一致)。
+describe('SmsCodeService.assertValid(只验不消费;PASSWORD_RESET 接线)', () => {
+  const ACTIVE = {
+    id: 'code-pr-1',
+    codeHash: sha256Hex('654321'),
+    userId: 'user-1',
+    expiresAt: new Date(Date.now() + 60_000),
+    attempts: 0,
+  };
+  const INPUT = {
+    phone: '13800001234',
+    purpose: 'PASSWORD_RESET' as const,
+    code: '654321',
+    userId: 'user-1',
+  };
+
+  it('有效码 → resolve 且**不**消费(零 updateMany / 零 update)', async () => {
+    const prisma = makePrismaMock();
+    prisma.smsVerificationCode.findFirst.mockResolvedValue(ACTIVE);
+    const svc = makeService(prisma, makeRouterMock({}));
+
+    await expect(svc.assertValid(INPUT)).resolves.toBeUndefined();
+    expect(prisma.smsVerificationCode.updateMany).not.toHaveBeenCalled();
+    expect(prisma.smsVerificationCode.update).not.toHaveBeenCalled();
+    // purpose 透传进 where(PHONE_BIND / PASSWORD_RESET 活码互不可见);
+    // toHaveBeenCalledWith 深度严格相等(不嵌套 objectContaining,规避 no-unsafe-assignment)
+    expect(prisma.smsVerificationCode.findFirst).toHaveBeenCalledWith({
+      where: {
+        phone: INPUT.phone,
+        purpose: 'PASSWORD_RESET',
+        consumedAt: null,
+        supersededAt: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, codeHash: true, userId: true, expiresAt: true, attempts: true },
+    });
+  });
+
+  it.each([
+    ['活码不存在', null],
+    ['已过期', { ...ACTIVE, expiresAt: new Date(Date.now() - 1000) }],
+    ['错 5 次已作废', { ...ACTIVE, attempts: 5 }],
+    ['归属不符(E-8)', { ...ACTIVE, userId: 'user-2' }],
+  ])('%s → 统一 SMS_CODE_INVALID(防枚举,与 verifyAndConsume 一致)', async (_label, row) => {
+    const prisma = makePrismaMock();
+    prisma.smsVerificationCode.findFirst.mockResolvedValue(row);
+    const svc = makeService(prisma, makeRouterMock({}));
+
+    await expect(svc.assertValid(INPUT)).rejects.toEqual(
+      new BizException(BizCode.SMS_CODE_INVALID),
+    );
+    expect(prisma.smsVerificationCode.update).not.toHaveBeenCalled();
+    expect(prisma.smsVerificationCode.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('码值不符 → attempts+1 独立提交(防爆破不因预检弱化)+ SMS_CODE_INVALID;仍不消费', async () => {
+    const prisma = makePrismaMock();
+    prisma.smsVerificationCode.findFirst.mockResolvedValue(ACTIVE);
+    prisma.smsVerificationCode.update.mockResolvedValue({});
+    const svc = makeService(prisma, makeRouterMock({}));
+
+    await expect(svc.assertValid({ ...INPUT, code: '000000' })).rejects.toEqual(
+      new BizException(BizCode.SMS_CODE_INVALID),
+    );
+    expect(prisma.smsVerificationCode.update).toHaveBeenCalledWith({
+      where: { id: 'code-pr-1' },
+      data: { attempts: { increment: 1 } },
+    });
+    expect(prisma.smsVerificationCode.updateMany).not.toHaveBeenCalled();
+  });
+});

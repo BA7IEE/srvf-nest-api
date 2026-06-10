@@ -54,6 +54,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/auth/v1/refresh'],
   ['post', '/api/auth/v1/logout'],
   ['post', '/api/auth/v1/logout-all'],
+  // 找回密码 T2(2026-06-11;冻结评审稿 password-reset-by-sms-review.md §3.2):
+  // pre-auth 两端点,155→157。
+  ['post', '/api/auth/v1/password-reset/send-code'],
+  ['post', '/api/auth/v1/password-reset'],
   ['get', '/api/system/v1/health'],
   ['get', '/api/system/v1/health/live'],
   ['get', '/api/system/v1/health/ready'],

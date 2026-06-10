@@ -55,7 +55,11 @@ export type AuditLogEvent =
   // **禁止**写入:明文验证码 / codeHash / 完整手机号。SmsSettings 变更不写 audit(沿 L-3 挂起)。
   | 'phone.bind.self' // T3 接入(users.service.bindMyPhone 首绑路径;after.phone 掩码;extra.codeId)
   | 'phone.rebind.self' // T3 接入(users.service.bindMyPhone 换绑路径;before/after.phone 掩码;extra.codeId)
-  | 'phone.clear.by-admin'; // T3 接入(users.service.clearUserPhone;仅实际清除时写〔幂等空清不写〕;before.phone 掩码)
+  | 'phone.clear.by-admin' // T3 接入(users.service.clearUserPhone;仅实际清除时写〔幂等空清不写〕;before.phone 掩码)
+  // 找回密码 T2(2026-06-11)接入(冻结评审稿 password-reset-by-sms-review.md §3.4 / D-PR-3)。
+  // 命名沿 password.change.self / password.reset.by-admin 对称范式;actor = 本人(pre-auth 下
+  // actor 即被重置账号本人);手机号一律掩码;禁明文码 / codeHash / 完整号码 / 密码任何形态。
+  | 'password.reset.by-sms'; // T2 接入(auth/password-reset.service.reset 成功事务内 1 处;extra.refreshTokensRevoked + phone 掩码 + codeId)
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

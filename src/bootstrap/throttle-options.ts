@@ -1,5 +1,6 @@
 import type { ThrottlerModuleOptions } from '@nestjs/throttler';
 import { PASSWORD_CHANGE_THROTTLER_NAME } from '../common/decorators/password-change-throttle.decorator';
+import { PASSWORD_RESET_THROTTLER_NAME } from '../common/decorators/password-reset-throttle.decorator';
 import { REFRESH_THROTTLER_NAME } from '../common/decorators/refresh-throttle.decorator';
 import { SMS_SEND_THROTTLER_NAME } from '../common/decorators/sms-send-throttle.decorator';
 import { SMS_VERIFY_THROTTLER_NAME } from '../common/decorators/sms-verify-throttle.decorator';
@@ -47,6 +48,13 @@ export function buildThrottlerOptions(appCfg: AppConfig): ThrottlerModuleOptions
         name: SMS_VERIFY_THROTTLER_NAME,
         limit: appCfg.smsVerifyThrottle.limit,
         ttl: appCfg.smsVerifyThrottle.ttlSeconds * 1000,
+      },
+      // 找回密码 T2(2026-06-11):pre-auth 两端点第 6 实例(评审稿 D-PR-4 / E-10;
+      // 默认 3/60 从紧,六实例计数器互不影响)。
+      {
+        name: PASSWORD_RESET_THROTTLER_NAME,
+        limit: appCfg.passwordResetThrottle.limit,
+        ttl: appCfg.passwordResetThrottle.ttlSeconds * 1000,
       },
     ],
     setHeaders: false,
