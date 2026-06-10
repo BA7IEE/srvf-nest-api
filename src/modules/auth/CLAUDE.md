@@ -5,6 +5,7 @@
 ## Scope
 
 - **登录 / 刷新 / 注销 / token 安全链路**:`POST /api/auth/v1/login` / `/refresh` / `/logout` / `/logout-all`(Route B 终态前缀 `auth/v1`)
+- **找回密码(pre-auth)**:`POST /api/auth/v1/password-reset/send-code` + `POST /api/auth/v1/password-reset`(2026-06-11;[`password-reset.service.ts`](password-reset.service.ts),冻结评审稿 [`password-reset-by-sms-review.md`](../../../docs/archive/reviews/password-reset-by-sms-review.md);验证码签发/校验在 [`/src/modules/sms/`](../sms/)`SmsCodeService`)
 - **JwtStrategy** 是 v1 唯一鉴权阶段查库点(沿 [`strategies/jwt.strategy.ts`](strategies/jwt.strategy.ts));JwtAuthGuard 不应再写一份查库逻辑
 - **不负责**:本人改密(在 [`/src/modules/users/`](../users/)`changeMyPassword`;但改密会**主动撤销**该 user 全部未过期 refresh,沿 P0-E PR-3)、RBAC 判权(在 [`/src/modules/permissions/`](../permissions/))、capabilities 出口(在 `users/app-capability.service.ts`)
 
@@ -21,8 +22,9 @@
 - **logout-all** 撤销该 user 全部未过期且未撤销的 refresh;当前复用 `@PasswordChangeThrottle()`
 - **access token 当前不主动吊销**(沿 D-4):由 `JWT_EXPIRES_IN` 自然过期 + JwtStrategy 每请求查库阻断 DISABLED / 软删用户;保持当前策略,如需引入 blacklist / Redis / tokenVersion 必须走设计决议
 - **password change**:本人改密在 [`users.service.ts:249`](../users/users.service.ts:249) 主动撤销该 user 全部未过期 refresh(`revokedReason='self-password-change'`);旧 access 仍可调直至自然过期(e2e 反向锁定)
-- **audit events 4 个**(写路径全部经 `AuditLogsService`):`auth.login` / `auth.refresh` / `auth.logout` / `auth.logout-all`;extra 字段允许 `familyId / replayDetected / familyRevoked / revokedCount / found`,**禁止**任何明文 / hash
-- **限流装饰器** 3 个 throttler 物理隔离:`@LoginThrottle` / `@RefreshThrottle('refresh' 30/60 IP)` / `@PasswordChangeThrottle('password-change' 5/60 IP)`;命中抛 `TOO_MANY_REQUESTS`,**不**返 `X-RateLimit-*` / `Retry-After` 头
+- **password reset by SMS(pre-auth,2026-06-11)**:校验顺序**冻结**(评审稿 E-5)= 解析用户 → 码预检不消费 → 10006 不烧码 → 原子消费 → 事务(改密 + 撤销全部未撤销未过期 refresh `'self-password-reset'`〔联动撤销第 5 场景,AGENTS §9〕+ audit);**防枚举** = 四种无效号码场景(不存在 / 未绑定 / 禁用 / 软删)send-code 返回与有效号完全相同泛化 200 且零留痕,reset 一切失败统一 `SMS_CODE_INVALID=24010`;成功 `data:null` 不自动登录;旧 access 沿 D-4 不吊销(e2e 正向断言)
+- **audit events 5 个**(写路径全部经 `AuditLogsService`):`auth.login` / `auth.refresh` / `auth.logout` / `auth.logout-all` / `password.reset.by-sms`(actor=本人;extra `refreshTokensRevoked` + `phone` 掩码 + `codeId`);extra 字段**禁止**任何明文 / hash / 完整号码
+- **限流装饰器** 4 个 throttler 物理隔离(全仓共 6 实例):`@LoginThrottle` / `@RefreshThrottle('refresh' 30/60 IP)` / `@PasswordChangeThrottle('password-change' 5/60 IP)` / `@PasswordResetThrottle('password-reset' 3/60 IP,本期两端点)`;命中抛 `TOO_MANY_REQUESTS`,**不**返 `X-RateLimit-*` / `Retry-After` 头
 - **AuthModule 唯一 strategy** 是 `JwtStrategy`;**无** LocalStrategy(沿 [`auth.module.ts:40`](auth.module.ts:40))
 
 ## Risk points (不要做)
@@ -37,6 +39,7 @@
 - ❌ **不**在本 PR / 普通改动里调整 `/auth/logout` 幂等或限流策略;如需调整必须先做安全评审并补测试
 - ❌ **不**引入 LocalStrategy / OAuth / passport-* 其他策略(无设计决议)
 - ❌ **不**改 `AuditMeta` 构造方式为隐式(cls-rs / AsyncLocalStorage);沿 controller `buildAuditMeta(req)` 显式传(沿 D6 v1.1 §11.2 / D8)
+- ❌ **不**破坏 password-reset 防枚举一致性:不为"号码不存在 / 禁用 / 软删"开任何可区分响应(字段 / message / 错误码细分);不在 send-code 写无效号侧痕;不把 10006 检查挪到码预检之前(密码 oracle);不让 reset 返回 token / 用户字段
 - ❌ 本目录任何"普通 docs-only"以外的改动都**非低风险**;改 token 链路 / payload / 错误码 / 限流均按 D 档降速,并跑安全相关 e2e
 
 ## Validation

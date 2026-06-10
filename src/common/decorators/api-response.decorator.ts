@@ -43,6 +43,18 @@ export const ApiWrappedArrayResponse = <T extends Type<unknown>>(dto: T): Method
     }),
   );
 
+// 找回密码 T2(2026-06-11):成功响应 data 恒为 null 的端点专用
+// (评审稿 password-reset-by-sms-review.md E-9:reset 成功不返 token / 用户字段)。
+// data 的 nullable object 形状与 ApiBizErrorResponse 的 data 描述一致;
+// 不复用 ApiWrappedOkResponse(后者强制 $ref 一个 DTO,会让 snapshot 撒谎)。
+//
+// 用法:
+//   @ApiWrappedNullResponse()
+export const ApiWrappedNullResponse = (): MethodDecorator =>
+  ApiOkResponse({
+    schema: wrapEnvelope({ type: 'object', nullable: true, example: null }),
+  });
+
 // V1.3-4 Contract Hardening:错误响应 schema 装饰器。
 //
 // 错误响应外层结构由 AllExceptionsFilter 保证为 { code, message, data: null },

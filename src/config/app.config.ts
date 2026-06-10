@@ -146,6 +146,16 @@ export interface SmsVerifyThrottleConfig {
   ttlSeconds: number;
 }
 
+// 找回密码 T2(2026-06-11):password-reset 两个 pre-auth 端点 IP 限流配置
+// (评审稿 password-reset-by-sms-review.md D-PR-4 / E-10)。
+// 第 6 个独立 throttler 实例(name: 'password-reset'),计数器与既有五实例互不影响。
+// 默认 3 次 / 60 秒,刻意严于 sms-send 5/60:公开端点,是防枚举侧信道采样与
+// 费用滥用的第一道闸(DB 层同号 60s 间隔 / 日 10 条对无效号不可达,只有 IP 层兜底)。
+export interface PasswordResetThrottleConfig {
+  limit: number;
+  ttlSeconds: number;
+}
+
 // SMS 基础设施 T2(2026-06-10):sms_settings 凭证加密 key(评审稿 D-SMS-8;沿 STORAGE 范式)。
 // 独立 env `SMS_ENCRYPTION_KEY`,与 STORAGE_ENCRYPTION_KEY 互不复用;
 // production / smoke fail-fast,dev / test 留空允许 → SmsCryptoService.isAvailable()=false。
@@ -216,6 +226,7 @@ export interface AppConfig {
   sms: SmsConfig;
   smsSendThrottle: SmsSendThrottleConfig;
   smsVerifyThrottle: SmsVerifyThrottleConfig;
+  passwordResetThrottle: PasswordResetThrottleConfig;
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -336,6 +347,22 @@ export default registerAs('app', (): AppConfig => {
     ),
   };
 
+  // 找回密码 T2(2026-06-11):pre-auth 两端点限流(评审稿 D-PR-4;默认 3/60 从紧)。
+  const passwordResetThrottle: PasswordResetThrottleConfig = {
+    limit: parsePositiveInt(
+      process.env.PASSWORD_RESET_THROTTLE_LIMIT,
+      3,
+      'PASSWORD_RESET_THROTTLE_LIMIT',
+      { min: 1, max: 100 },
+    ),
+    ttlSeconds: parsePositiveInt(
+      process.env.PASSWORD_RESET_THROTTLE_TTL_SECONDS,
+      60,
+      'PASSWORD_RESET_THROTTLE_TTL_SECONDS',
+      { min: 1, max: 3600 },
+    ),
+  };
+
   return {
     env,
     port,
@@ -350,5 +377,6 @@ export default registerAs('app', (): AppConfig => {
     sms,
     smsSendThrottle,
     smsVerifyThrottle,
+    passwordResetThrottle,
   };
 });

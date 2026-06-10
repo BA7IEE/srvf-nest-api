@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
+  ApiWrappedNullResponse,
   ApiWrappedOkResponse,
 } from '../../common/decorators/api-response.decorator';
 import {
@@ -11,6 +12,7 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { LoginThrottle } from '../../common/decorators/login-throttle.decorator';
 import { PasswordChangeThrottle } from '../../common/decorators/password-change-throttle.decorator';
+import { PasswordResetThrottle } from '../../common/decorators/password-reset-throttle.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { RefreshThrottle } from '../../common/decorators/refresh-throttle.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -22,14 +24,21 @@ import {
   LogoutAllResponseDto,
   LogoutDto,
   RefreshTokenDto,
+  ResetPasswordBySmsDto,
+  SendPasswordResetCodeDto,
+  SendPasswordResetCodeResponseDto,
 } from './auth.dto';
+import { PasswordResetService } from './password-reset.service';
 
 @ApiTags('Auth')
 // Route B Phase 4(2026-06-01;沿 docs/api-surface-migration-plan.md §6 Phase 4):
 // 老 path 'auth' 已删除(无生产消费者,直接收口);canonical 单一前缀 'auth/v1'。
 @Controller('auth/v1')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly passwordReset: PasswordResetService,
+  ) {}
 
   // POST /api/auth/v1/login(@Public 跳过 JwtAuthGuard)。
   // 默认 POST 返回 201,登录场景没有创建资源,显式 200。
@@ -108,6 +117,58 @@ export class AuthController {
     @Req() req: Request,
   ): Promise<LogoutAllResponseDto> {
     return this.authService.logoutAll(currentUser, this.buildAuditMeta(req));
+  }
+
+  // 找回密码 T2(2026-06-11;冻结评审稿 password-reset-by-sms-review.md §3.2 ① / §4):
+  // pre-auth 公开端点;防枚举 = 四种无效号码场景(不存在 / 未绑定 / 被禁用 / 已软删)
+  // 返回与有效号**完全相同**的泛化 200(不发码不留痕);有效号限频 / 通道错误照常抛
+  // (仅对有效号可达,评审稿 E-4 残余侧信道已接受并成文 R-1)。
+  // @PasswordResetThrottle() → 第 6 throttler 实例 'password-reset'(IP 3/60s 默认,
+  // 与既有五实例物理隔离;不暴露阈值)。
+  @Public()
+  @PasswordResetThrottle()
+  @Post('password-reset/send-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '发送找回密码短信验证码(防枚举:无效号码返回相同泛化响应) [public]',
+  })
+  @ApiWrappedOkResponse(SendPasswordResetCodeResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.SMS_SEND_INTERVAL_LIMIT,
+    BizCode.SMS_PHONE_DAILY_LIMIT,
+    BizCode.SMS_CHANNEL_NOT_CONFIGURED,
+    BizCode.SMS_SEND_FAILED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  sendPasswordResetCode(
+    @Body() dto: SendPasswordResetCodeDto,
+    @Req() req: Request,
+  ): Promise<SendPasswordResetCodeResponseDto> {
+    return this.passwordReset.sendCode(dto, req.ip ?? null);
+  }
+
+  // 找回密码 T2(评审稿 §3.2 ② / E-5 校验顺序冻结):
+  // 解析用户 → 码预检(不消费)→ 10006(不烧码,可换密码同码重试)→ 原子消费 →
+  // 事务(改密 + 撤销全部未撤销未过期 refresh 'self-password-reset'〔联动撤销第 5 场景,
+  // AGENTS §9〕+ audit password.reset.by-sms)。一切失败统一 24010(10006 仅对已验码者可达);
+  // 成功 data:null——不返 token、不自动登录(D-PR-1);access 沿 D-4 不吊销。
+  @Public()
+  @PasswordResetThrottle()
+  @Post('password-reset')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '短信验证码重置密码(撤销全部 refresh;不自动登录) [public]',
+  })
+  @ApiWrappedNullResponse()
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.SMS_CODE_INVALID,
+    BizCode.NEW_PASSWORD_SAME_AS_OLD,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  resetPasswordBySms(@Body() dto: ResetPasswordBySmsDto, @Req() req: Request): Promise<null> {
+    return this.passwordReset.reset(dto, this.buildAuditMeta(req));
   }
 
   // P0-E PR-3:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;

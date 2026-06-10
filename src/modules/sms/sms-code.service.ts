@@ -175,6 +175,45 @@ export class SmsCodeService {
     userId: string;
   }): Promise<{ codeId: string }> {
     const now = new Date();
+    const active = await this.loadValidActiveCodeOrThrow(input, now);
+
+    // 原子抢占消费:并发重放只有一个请求能把 consumedAt 从 null 置为 now
+    const consumed = await this.prisma.smsVerificationCode.updateMany({
+      where: { id: active.id, consumedAt: null },
+      data: { consumedAt: now },
+    });
+    if (consumed.count === 0) {
+      throw new BizException(BizCode.SMS_CODE_INVALID);
+    }
+
+    return { codeId: active.id };
+  }
+
+  /**
+   * 只验不消费(找回密码 T2;评审稿 password-reset-by-sms-review.md E-5/E-6)。
+   *
+   * 供"码有效性必须先于业务检查、业务失败不得烧码"的调用方做预检
+   * (password-reset:10006 新旧密码相同时不消费,可换密码用同码重试);
+   * 校验链与错码 attempts+1 语义与 verifyAndConsume **完全一致**(防爆破不因预检弱化),
+   * 预检通过后调用方仍须经 verifyAndConsume 原子消费(并发重放仍单赢家)。
+   */
+  async assertValid(input: {
+    phone: string;
+    purpose: SmsPurpose;
+    code: string;
+    userId: string;
+  }): Promise<void> {
+    await this.loadValidActiveCodeOrThrow(input, new Date());
+  }
+
+  // 校验链(评审稿 §4;**统一 24010 防枚举**,禁止细分;E-6 抽出供
+  // verifyAndConsume / assertValid 共用,verifyAndConsume 行为零漂移):
+  // 取 phone+purpose 最新活码 → 不存在 / 已过期 / 已作废(错 5 次)/ 归属不符(E-8)
+  // → 统一无效;码值不符 → attempts+1(独立提交,见 verifyAndConsume 方法注释)后统一无效。
+  private async loadValidActiveCodeOrThrow(
+    input: { phone: string; purpose: SmsPurpose; code: string; userId: string },
+    now: Date,
+  ): Promise<{ id: string }> {
     const active = await this.prisma.smsVerificationCode.findFirst({
       where: {
         phone: input.phone,
@@ -198,7 +237,7 @@ export class SmsCodeService {
 
     // 码值比对(timingSafeEqual 卫生习惯;两侧均为 64 字符 sha256 hex 定长)
     if (!hashEquals(sha256Hex(input.code), active.codeHash)) {
-      // 错码计数独立提交(见方法注释);达到上限后续走上面的 attempts>=MAX 统一无效
+      // 错码计数独立提交(见 verifyAndConsume 方法注释);达到上限后续走上面的 attempts>=MAX 统一无效
       await this.prisma.smsVerificationCode.update({
         where: { id: active.id },
         data: { attempts: { increment: 1 } },
@@ -206,16 +245,7 @@ export class SmsCodeService {
       throw new BizException(BizCode.SMS_CODE_INVALID);
     }
 
-    // 原子抢占消费:并发重放只有一个请求能把 consumedAt 从 null 置为 now
-    const consumed = await this.prisma.smsVerificationCode.updateMany({
-      where: { id: active.id, consumedAt: null },
-      data: { consumedAt: now },
-    });
-    if (consumed.count === 0) {
-      throw new BizException(BizCode.SMS_CODE_INVALID);
-    }
-
-    return { codeId: active.id };
+    return { id: active.id };
   }
 }
 

@@ -5,8 +5,10 @@ import { PassportModule } from '@nestjs/passport';
 import type { JwtConfig } from '../../config/jwt.config';
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { SmsModule } from '../sms/sms.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { PasswordResetService } from './password-reset.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
@@ -17,6 +19,9 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     // 'auth.login' / 'auth.refresh' / 'auth.logout' / 'auth.logout-all'(沿评审稿 §5.9);
     // 沿 P0-D UsersModule.imports: AuditLogsModule 范式。
     AuditLogsModule,
+    // 找回密码 T2(2026-06-11):PasswordResetService 消费 SmsCodeService
+    // (assertValid / verifyAndConsume / issue;评审稿 password-reset-by-sms-review.md E-1/E-6)。
+    SmsModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -37,6 +42,6 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, PasswordResetService, JwtStrategy],
 })
 export class AuthModule {}
