@@ -1,6 +1,8 @@
 import type { ThrottlerModuleOptions } from '@nestjs/throttler';
 import { PASSWORD_CHANGE_THROTTLER_NAME } from '../common/decorators/password-change-throttle.decorator';
 import { REFRESH_THROTTLER_NAME } from '../common/decorators/refresh-throttle.decorator';
+import { SMS_SEND_THROTTLER_NAME } from '../common/decorators/sms-send-throttle.decorator';
+import { SMS_VERIFY_THROTTLER_NAME } from '../common/decorators/sms-verify-throttle.decorator';
 import type { AppConfig } from '../config/app.config';
 
 // V1.1 §11.4 / TASKS.md 15.7:登录接口限流(throttler `default` 实例)。
@@ -33,6 +35,18 @@ export function buildThrottlerOptions(appCfg: AppConfig): ThrottlerModuleOptions
         name: REFRESH_THROTTLER_NAME,
         limit: appCfg.refreshThrottle.limit,
         ttl: appCfg.refreshThrottle.ttlSeconds * 1000,
+      },
+      // SMS 基础设施 T3(2026-06-10):发码 / 验码两个独立实例(评审稿 D-SMS-6 / E-23;
+      // 与既有三实例物理隔离,五实例计数器互不影响)。
+      {
+        name: SMS_SEND_THROTTLER_NAME,
+        limit: appCfg.smsSendThrottle.limit,
+        ttl: appCfg.smsSendThrottle.ttlSeconds * 1000,
+      },
+      {
+        name: SMS_VERIFY_THROTTLER_NAME,
+        limit: appCfg.smsVerifyThrottle.limit,
+        ttl: appCfg.smsVerifyThrottle.ttlSeconds * 1000,
       },
     ],
     setHeaders: false,

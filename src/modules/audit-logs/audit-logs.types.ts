@@ -48,7 +48,14 @@ export type AuditLogEvent =
   | 'auth.refresh' // P0-E PR-3 接入(auth.service.refresh 成功 + family revoke 路径共 1 处;extra.familyId / replayDetected / familyRevoked?)
   | 'auth.logout' // P0-E PR-3 接入(auth.service.logout 含幂等命中均写;extra.found: boolean)
   | 'auth.logout-all' // P0-E PR-3 接入(auth.service.logoutAll 1 处;extra.revokedCount: number)
-  | 'password.reset.by-admin'; // P0-E PR-3 隐含范围扩展(users.service.resetPassword 1 处;沿 P0-D `password.change.self` 对称范式;extra.refreshTokensRevoked: number)
+  | 'password.reset.by-admin' // P0-E PR-3 隐含范围扩展(users.service.resetPassword 1 处;沿 P0-D `password.change.self` 对称范式;extra.refreshTokensRevoked: number)
+  // SMS 基础设施 T3(2026-06-10)接入(冻结评审稿 sms-verification-infra-review.md §3.5 / D-SMS-9)。
+  // 3 项命名沿 kebab-case `<resource>.<action>.<scope>` 范式(对称 password.change.self / password.reset.by-admin)。
+  // detail(before / after / extra)中手机号**一律掩码** 138****1234(maskPhone,评审稿 E-21/E-24);
+  // **禁止**写入:明文验证码 / codeHash / 完整手机号。SmsSettings 变更不写 audit(沿 L-3 挂起)。
+  | 'phone.bind.self' // T3 接入(users.service.bindMyPhone 首绑路径;after.phone 掩码;extra.codeId)
+  | 'phone.rebind.self' // T3 接入(users.service.bindMyPhone 换绑路径;before/after.phone 掩码;extra.codeId)
+  | 'phone.clear.by-admin'; // T3 接入(users.service.clearUserPhone;仅实际清除时写〔幂等空清不写〕;before.phone 掩码)
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

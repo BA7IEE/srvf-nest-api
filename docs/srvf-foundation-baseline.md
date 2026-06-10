@@ -57,13 +57,14 @@
 | `210xx` + `211xx` | `activity_registrations` | 200 | **批次 3 已实装**(v0.4.0,2026-05-11)|
 | `220xx` + `221xx` | `attendances` | 200 | **批次 3 + 批次 4-A 已实装**(v0.4.0 14 BizCode + v0.4.0 post-release 批次 4-A 追加 3 BizCode = 17;沿批次 3B 段位补,**不新开模块码**)|
 | `230xx` + `231xx` | `contribution_rules` | 200 | **批次 5-A 已实装**(v0.5.0 post-release,2026-05-12;`230xx` 段 5 BizCode,**不开** `23030` / `231xx`)|
-| `240xx`-`290xx` | 未规划模块预留 | — | 训练 / 装备 / 财务 / 通知等真到时候分配(中间留缓冲) |
+| `240xx` + `241xx` | `sms` | 200 | **SMS 基础设施已实装**(2026-06-10 goal 拍板;`240xx` 段 4 BizCode〔24002/24010/24030/24031〕+ `241xx` 段 2 BizCode〔24120/24121〕;统一码防枚举沿 10007 先例,**不开**细分码;冻结评审稿 [`docs/archive/reviews/sms-verification-infra-review.md §3.3`](archive/reviews/sms-verification-infra-review.md))|
+| `250xx`-`290xx` | 未规划模块预留 | — | 训练 / 装备 / 财务 / 通知等真到时候分配(中间留缓冲) |
 | `300xx` + `301xx` | `permissions`(C-6 RBAC) | 200 | **V2.x C-6 RBAC 已实装**(v0.9.0;4 表 schema + 16 端点 + 14 BizCode;沿 D7-RBAC v1.1 冻结 / PR #51 + #53;详见 [`docs/current-state.md §2`](current-state.md)) |
 | `310xx` 起 | 未规划模块预留 | — | RBAC 之后未规划模块 |
 
 **状态说明**:
 
-- **V2 基线预留**(历史措辞,适用于初版 v0.1 / 2026-05-07 时态):形态级几乎确定会进入 V2,段位预留不会浪费,具体字段集待 D6/D7;**当前**:`dictionaries` / `organizations` / `members` / `member_departments` / `member_profiles` / `attachments` / `permissions` 均已实装(详见各模块"已实装"行 + [`docs/current-state.md §2`](current-state.md));仅 `240xx-290xx` + `310xx` 起仍属未规划预留
+- **V2 基线预留**(历史措辞,适用于初版 v0.1 / 2026-05-07 时态):形态级几乎确定会进入 V2,段位预留不会浪费,具体字段集待 D6/D7;**当前**:`dictionaries` / `organizations` / `members` / `member_departments` / `member_profiles` / `attachments` / `permissions` / `sms` 均已实装(详见各模块"已实装"行 + [`docs/current-state.md §2`](current-state.md));仅 `250xx-290xx` + `310xx` 起仍属未规划预留
 - **批次 2 已实装**(v0.3.0,2026-05-10):批次 2 schema + API 前评审锁定 `certificates` 占用 `180xx + 181xx` 段位,v0.3.0 release 时 5 个 BizCode 实装落地(`18001` / `18010` / `18011` / `18030` / `18101`;详见 `CHANGELOG.md` v0.3.0 段)
 - **批次 3 已实装**(v0.4.0,2026-05-11):批次 3 schema 前评审收口时锁定 `activities` / `activity_registrations` / `attendances` 三段(评审稿 §7.2),v0.4.0 release 时全部 27 个 BizCode 实装落地(`200xx` 9 / `210xx` 4 / `220xx` 14;详见 `CHANGELOG.md` v0.4.0 段)
 - **批次 4-A 已实装**(v0.4.0 post-release,2026-05-11):批次 4-A schema PR(`2190803` PR #18)在 `220xx` attendances 段**补充** 3 个 BizCode(`22043` `ATTENDANCE_SHEET_FINAL_REJECTED_NOT_EDITABLE` / `22045` `ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID` / `22046` `ATTENDANCE_SHEET_FINAL_REVIEW_NOTE_REQUIRED`),配合 `AttendanceSheet` 5 态状态机扩展;**沿 batch 3B 段位**(`220xx`),**不新开模块码**;APD 部门部长 / 副部长专属权限沿 D-S2 **不开** `22044` `FORBIDDEN_*`,权限不足走通用 `40300`

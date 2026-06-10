@@ -204,6 +204,31 @@ export class UsersController {
     return this.usersService.softDelete(currentUser, params.id);
   }
 
+  // SMS 基础设施 T3(2026-06-10):管理员清除用户绑定手机号(冻结评审稿
+  // sms-verification-infra-review.md §3.2 ⑦ / §7 / E-19)。解除绑定的唯一路径
+  // (App 无自助解绑端点);**幂等**:目标无 phone → 200 不报错且不写 audit;
+  // 软删用户统一 USER_NOT_FOUND(沿 §7.8);audit phone.clear.by-admin(号码掩码)。
+  @Delete(':id/phone')
+  @ApiOperation({
+    summary:
+      '清除用户绑定手机号(幂等;同时置空 phoneVerifiedAt;审计号码掩码) [rbac: user.phone.clear]',
+  })
+  @ApiWrappedOkResponse(UserResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.FORBIDDEN_ROLE_OPERATION,
+    BizCode.USER_NOT_FOUND,
+  )
+  clearUserPhone(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Param() params: IdParamDto,
+    @Req() req: Request,
+  ): Promise<UserResponseDto> {
+    return this.usersService.clearUserPhone(currentUser, params.id, this.buildAuditMeta(req));
+  }
+
   // P0-D PR-3:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
   // 不引入 cls-rs / AsyncLocalStorage)。沿 emergency-contacts.controller.ts 范式。
   // 本 helper 服务 resetPassword(管理员重置密码端点)。队员自助改密走 AppMeController

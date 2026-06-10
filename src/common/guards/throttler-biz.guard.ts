@@ -9,15 +9,25 @@ import {
   REFRESH_THROTTLE_KEY,
   REFRESH_THROTTLER_NAME,
 } from '../decorators/refresh-throttle.decorator';
+import {
+  SMS_SEND_THROTTLE_KEY,
+  SMS_SEND_THROTTLER_NAME,
+} from '../decorators/sms-send-throttle.decorator';
+import {
+  SMS_VERIFY_THROTTLE_KEY,
+  SMS_VERIFY_THROTTLER_NAME,
+} from '../decorators/sms-verify-throttle.decorator';
 import { BizCode } from '../exceptions/biz-code.constant';
 import { BizException } from '../exceptions/biz.exception';
 
 // V1.1 §11.4 / TASKS.md 15.7:登录限流入口(metadata = LOGIN_THROTTLE_KEY,走 throttler `default`)。
 // P0-D PR-3(2026-05-17):本人改密限流入口(metadata = PASSWORD_CHANGE_THROTTLE_KEY,走 throttler `password-change`)。
 // P0-E PR-3(2026-05-18):refresh 限流入口(metadata = REFRESH_THROTTLE_KEY,走 throttler `refresh`)。
+// SMS T3(2026-06-10):发码 / 验码限流入口(metadata = SMS_SEND/VERIFY_THROTTLE_KEY,
+// 走 throttler `sms-send` / `sms-verify`;评审稿 D-SMS-6 / E-23,沿既有三实例同型扩展)。
 //
-// 三个 throttler 实例在 ThrottlerModule.forRootAsync 中注册(详见 bootstrap/throttle-options.ts),
-// 物理隔离:登录失败爆破不消耗改密 / refresh 配额,反之亦然。
+// 五个 throttler 实例在 ThrottlerModule.forRootAsync 中注册(详见 bootstrap/throttle-options.ts),
+// 物理隔离:登录失败爆破不消耗改密 / refresh / 发码配额,反之亦然。
 //
 // 与 ThrottlerGuard 的三点定制:
 //   1. shouldSkip 默认 true:全局 APP_GUARD 注册后,所有未标 @LoginThrottle() / @PasswordChangeThrottle()
@@ -52,10 +62,24 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       REFRESH_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const smsSendEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      SMS_SEND_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    const smsVerifyEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      SMS_VERIFY_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     // 未标任何一种 metadata 时全部跳过;任一 metadata 命中即进入限流逻辑,
     // 由 handleRequest 按 throttler.name 决定具体走哪个 throttler。
     return Promise.resolve(
-      !(loginEnabled === true || passwordChangeEnabled === true || refreshEnabled === true),
+      !(
+        loginEnabled === true ||
+        passwordChangeEnabled === true ||
+        refreshEnabled === true ||
+        smsSendEnabled === true ||
+        smsVerifyEnabled === true
+      ),
     );
   }
 
@@ -76,6 +100,14 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       REFRESH_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const smsSendEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      SMS_SEND_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    const smsVerifyEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      SMS_VERIFY_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     // throttler `default` 仅服务 LoginThrottle;否则直接放过
     if (throttler.name === 'default' && loginEnabled !== true) {
@@ -87,6 +119,14 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
     }
     // throttler `refresh` 仅服务 RefreshThrottle;否则直接放过
     if (throttler.name === REFRESH_THROTTLER_NAME && refreshEnabled !== true) {
+      return Promise.resolve(true);
+    }
+    // throttler `sms-send` 仅服务 SmsSendThrottle;否则直接放过
+    if (throttler.name === SMS_SEND_THROTTLER_NAME && smsSendEnabled !== true) {
+      return Promise.resolve(true);
+    }
+    // throttler `sms-verify` 仅服务 SmsVerifyThrottle;否则直接放过
+    if (throttler.name === SMS_VERIFY_THROTTLER_NAME && smsVerifyEnabled !== true) {
       return Promise.resolve(true);
     }
 

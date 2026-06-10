@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, Role, User, UserStatus } from '@prisma/client';
+import { Prisma, Role, SmsPurpose, User, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
@@ -9,6 +9,14 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
+import { SmsCodeService } from '../sms/sms-code.service';
+import { maskPhone } from '../sms/sms.constants';
+import type {
+  AppMePhoneDto,
+  BindMyPhoneDto,
+  SendMyPhoneCodeDto,
+  SendMyPhoneCodeResponseDto,
+} from './dto/app/app-me-phone.dto';
 import {
   ChangeMyPasswordDto,
   CreateUserDto,
@@ -32,6 +40,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
     private readonly rbac: RbacService,
+    private readonly smsCode: SmsCodeService,
   ) {}
 
   // ============ helpers ============
@@ -536,6 +545,152 @@ export class UsersService {
       await tx.refreshToken.updateMany({
         where: { userId: id, revokedAt: null, expiresAt: { gt: new Date() } },
         data: { revokedAt: new Date(), revokedReason: 'admin-delete' },
+      });
+
+      return updated;
+    });
+  }
+
+  // ============ SMS T3:me/phone 绑定 + admin 清除(2026-06-10) ============
+  // 冻结评审稿 docs/archive/reviews/sms-verification-infra-review.md §3.2 ⑤-⑦ / §7 / E-5~E-8 / E-19。
+  // 准入:me/phone 两方法沿 PUT /me/password 账号级豁免先例(E-5),**不**强约 canUseApp;
+  // User.phone 是账号级身份字段(非 member-domain),Admin 无 member 也需绑定;
+  // 豁免仅限这两个端点,禁止外溢。
+
+  // POST /api/app/v1/me/phone/send-code(⑤)。
+  // 占用预检必须 findUnique(**含软删占用**,E-7,沿 §7.8 username/email 不复用范式);
+  // 含本人已绑同号(不提供"重新验证当前号"语义,省一次短信资费)。
+  // 间隔 / 日限 / 通道 / 发送 / 落日志在 SmsCodeService.issue(E-30 边界)。
+  async sendMyPhoneBindCode(
+    currentUser: CurrentUserPayload,
+    dto: SendMyPhoneCodeDto,
+    ip: string | null,
+  ): Promise<SendMyPhoneCodeResponseDto> {
+    const occupied = await this.prisma.user.findUnique({
+      where: { phone: dto.phone },
+      select: { id: true },
+    });
+    if (occupied !== null) {
+      throw new BizException(BizCode.PHONE_ALREADY_BOUND);
+    }
+    return this.smsCode.issue({
+      phone: dto.phone,
+      purpose: SmsPurpose.PHONE_BIND,
+      userId: currentUser.id,
+      ip,
+    });
+  }
+
+  // PUT /api/app/v1/me/phone(⑥):验码绑定 / 换绑一体(§7)。
+  // 流程:占用复查 → 取本人 before.phone → 验码即消费(独立于绑定事务,见
+  // SmsCodeService.verifyAndConsume 注释)→ 事务内 update + audit(bind/rebind 按 before 区分)。
+  // P2002 兜底竞态:落库撞 User_phone_key → PHONE_ALREADY_BOUND(沿 §5 数组判断铁律)。
+  async bindMyPhone(
+    currentUser: CurrentUserPayload,
+    dto: BindMyPhoneDto,
+    auditMeta: AuditMeta,
+  ): Promise<AppMePhoneDto> {
+    const occupied = await this.prisma.user.findUnique({
+      where: { phone: dto.phone },
+      select: { id: true },
+    });
+    if (occupied !== null) {
+      throw new BizException(BizCode.PHONE_ALREADY_BOUND);
+    }
+
+    const me = await this.prisma.user.findFirst({
+      where: this.notDeletedWhere({ id: currentUser.id }),
+      select: { id: true, phone: true },
+    });
+    if (!me) throw new BizException(BizCode.USER_NOT_FOUND);
+
+    const { codeId } = await this.smsCode.verifyAndConsume({
+      phone: dto.phone,
+      purpose: SmsPurpose.PHONE_BIND,
+      code: dto.code,
+      userId: currentUser.id,
+    });
+
+    try {
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const row = await tx.user.update({
+          where: { id: currentUser.id },
+          data: { phone: dto.phone, phoneVerifiedAt: new Date() },
+          select: { phone: true, phoneVerifiedAt: true },
+        });
+
+        // audit detail 手机号一律掩码(E-21/E-24);禁明文码 / codeHash / 完整号码
+        await this.auditLogs.log({
+          event: me.phone === null ? 'phone.bind.self' : 'phone.rebind.self',
+          actorUserId: currentUser.id,
+          actorRoleSnap: currentUser.role,
+          resourceType: 'user',
+          resourceId: currentUser.id,
+          meta: auditMeta,
+          ...(me.phone === null ? {} : { before: { phone: maskPhone(me.phone) } }),
+          after: { phone: maskPhone(dto.phone) },
+          extra: { codeId },
+          tx,
+        });
+
+        return row;
+      });
+
+      return {
+        phone: updated.phone,
+        phoneVerifiedAt: updated.phoneVerifiedAt?.toISOString() ?? null,
+      };
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002' &&
+        Array.isArray(err.meta?.target) &&
+        (err.meta.target as string[]).includes('phone')
+      ) {
+        throw new BizException(BizCode.PHONE_ALREADY_BOUND);
+      }
+      throw err;
+    }
+  }
+
+  // DELETE /api/admin/v1/users/:id/phone(⑦):管理员清除绑定(解除绑定唯一路径,§7)。
+  // rbac.can('user.phone.clear')(绑 ops-admin,评审稿 E-3)+ assertCanManageUser 既有护栏;
+  // 软删用户统一 USER_NOT_FOUND(沿 §7.8);**幂等**(E-19):目标无 phone → 200 不报错,
+  // 且仅实际清除时写 audit。
+  async clearUserPhone(
+    currentUser: CurrentUserPayload,
+    id: string,
+    auditMeta: AuditMeta,
+  ): Promise<UserResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'user.phone.clear');
+
+    const target = await this.prisma.user.findFirst({
+      where: this.notDeletedWhere({ id }),
+      select: { id: true, role: true, status: true, phone: true },
+    });
+    if (!target) throw new BizException(BizCode.USER_NOT_FOUND);
+    this.assertCanManageUser(currentUser, target);
+
+    if (target.phone === null) {
+      return this.findByIdOrThrow(id);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id },
+        data: { phone: null, phoneVerifiedAt: null },
+        select: userSafeSelect,
+      });
+
+      await this.auditLogs.log({
+        event: 'phone.clear.by-admin',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'user',
+        resourceId: id,
+        meta: auditMeta,
+        before: { phone: maskPhone(target.phone as string) },
+        tx,
       });
 
       return updated;

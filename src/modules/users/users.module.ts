@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
+import { SmsModule } from '../sms/sms.module';
 import { AppCapabilityService } from './app-capability.service';
 import { AppIdentityResolver } from './app-identity.resolver';
 import { AppProfileService } from './app-profile.service';
@@ -37,8 +38,11 @@ import { UsersService } from './users.service';
 // (app/v1/me* 对等存在;沿 docs/api-surface-migration-plan.md §6 Phase 4)。`UsersController`
 // 已收为 `@Controller('admin/v1/users')`,与 `AppMeController`(`app/v1/me`)前缀独立,
 // 不再有 `@Controller('users')` 前缀共享,故无注册顺序约束。
+// SMS 基础设施 T3(2026-06-10):import SmsModule 注入 SmsCodeService,供 UsersService
+// 的 sendMyPhoneBindCode / bindMyPhone(验码即消费)使用;评审稿 E-30 边界:sms 模块对
+// User 无感知,phone 占用 / 绑定落库 / audit 全部留在本模块。单向依赖 users → sms,无环。
 @Module({
-  imports: [DatabaseModule, AuditLogsModule, PermissionsModule],
+  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, SmsModule],
   controllers: [UsersController, AppMeController],
   providers: [UsersService, AppIdentityResolver, AppCapabilityService, AppProfileService],
   exports: [AppIdentityResolver],

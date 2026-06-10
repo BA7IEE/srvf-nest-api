@@ -630,6 +630,53 @@ export const BizCode = {
     httpStatus: HttpStatus.BAD_REQUEST,
   },
 
+  // sms 模块业务级(240xx + 241xx)。SMS 基础设施 T3 引入(2026-06-10)。
+  // 详见冻结评审稿 docs/archive/reviews/sms-verification-infra-review.md §3.3;
+  // 段位选择:baseline §1.1 原 "240xx-290xx 未规划模块预留" 首段,本期实装收口
+  // (段位表加行随本 PR,红区例外经 goal 唯一授权)。
+  //
+  // 子段(对齐 baseline §1.3 紧凑使用):
+  // - 24002:唯一约束冲突(User.phone @unique 含软删占用;send-code 预检 / 绑定复查 / P2002)
+  // - 24010:业务级输入校验(验证码统一无效码,**防枚举**:不存在 / 过期 / 已消费 /
+  //          已作废〔superseded 或错 5 次〕 / 码值不符 / 归属不符全部统一本码,沿 10007 先例)
+  // - 24030 / 24031:通道状态非法 / 上游发送失败(5xx 语义:非客户端之过)
+  // - 24120 / 24121:操作频控(同号 60s 间隔 / 同号自然日上限;message 不暴露阈值数字)
+  //
+  // 不开的码(评审稿 §3.3 明确):
+  // - SMS_CODE_EXPIRED / SMS_CODE_ATTEMPTS_EXCEEDED 等细分(防枚举,沿 10007 不拆原则)
+  // - 241xx FORBIDDEN_*:权限拒绝走通用 30100 / 40100 / 40300(RBAC_MAP §6 规则 5)
+  // - IP throttler 命中沿 TOO_MANY_REQUESTS=42900,不另开
+  PHONE_ALREADY_BOUND: {
+    code: 24002,
+    message: '该手机号已被绑定',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  SMS_CODE_INVALID: {
+    code: 24010,
+    message: '验证码错误或已失效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  SMS_CHANNEL_NOT_CONFIGURED: {
+    code: 24030,
+    message: '短信服务未配置或未启用',
+    httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+  },
+  SMS_SEND_FAILED: {
+    code: 24031,
+    message: '短信发送失败,请稍后重试',
+    httpStatus: HttpStatus.BAD_GATEWAY,
+  },
+  SMS_SEND_INTERVAL_LIMIT: {
+    code: 24120,
+    message: '发送过于频繁,请稍后再试',
+    httpStatus: HttpStatus.TOO_MANY_REQUESTS,
+  },
+  SMS_PHONE_DAILY_LIMIT: {
+    code: 24121,
+    message: '该手机号今日发送次数已达上限',
+    httpStatus: HttpStatus.TOO_MANY_REQUESTS,
+  },
+
   // audit_logs 模块业务级(140xx + 141xx)。批次 6 PR #1 引入(2026-05-12)。
   // 详见 docs:批次6_audit_logs_API前评审.md(D6 v1.1)§9。
   // 段位选择:baseline §1.1 v0.5 "audit_logs 140xx + 141xx" 基线预留,本批次实装收口。

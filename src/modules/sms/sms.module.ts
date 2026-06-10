@@ -4,6 +4,7 @@ import { DatabaseModule } from '../../database/database.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { DevStubSmsProvider } from './providers/dev-stub.provider';
 import { TencentSmsProvider } from './providers/tencent-sms.provider';
+import { SmsCodeService } from './sms-code.service';
 import { SmsCryptoService } from './sms-crypto.service';
 import { SmsProviderRouter } from './sms-provider.router';
 import { SmsSendLogsController } from './sms-send-logs.controller';
@@ -15,7 +16,8 @@ import { SmsSettingsService } from './sms-settings.service';
 // docs/archive/reviews/sms-verification-infra-review.md §5 文件计划;镜像 storage.module 范式)
 //
 // T2 范围:settings 三端点 + send-logs 列表 + 双 Provider + 动态路由 + 凭证加密。
-// T3 追加:SmsCodeService(签发/校验/防刷)并 export 供 users 模块消费。
+// T3 已追加:SmsCodeService(签发/校验/防刷)export 供 users 模块消费(评审稿 E-30 边界:
+// 本模块对 User 无感知;phone 占用 / 绑定落库 / audit 归 users 模块)。
 //
 // AGENTS §2 例外:providers/ 子目录经 2026-06-10 goal 拍板解锁(评审稿 §5,
 // 仅限本模块本子目录;镜像 common/storage/providers/ 形态)。
@@ -26,10 +28,11 @@ import { SmsSettingsService } from './sms-settings.service';
     SmsSettingsService,
     SmsSendLogsService,
     SmsCryptoService,
+    SmsCodeService,
     DevStubSmsProvider,
     TencentSmsProvider,
     SmsProviderRouter,
   ],
-  exports: [SmsSettingsService, SmsProviderRouter],
+  exports: [SmsSettingsService, SmsProviderRouter, SmsCodeService],
 })
 export class SmsModule {}

@@ -75,11 +75,15 @@ import { assertTestDatabaseUrl } from './test-db';
 //
 // 取代了 attachment-type-configs.e2e-spec.ts 中的 spec-local TRUNCATE workaround
 // (PR #3 临时方案;PR #4 公共基建统一处理;沿 PR #2 / PR #3 公共基建迁移范式)。
+// SMS 基础设施 T1/T3 追加(2026-06-10):3 张 sms 表(物理名小写,Prisma `@@map`):
+//   sms_settings / sms_verification_codes / sms_send_logs
+// 三表均无 DB FK(评审稿 E-28:userId / codeId / updatedBy 纯 String),独立位置即可;
+// 放在 audit_logs 之后的无 FK 独立段。
 export async function resetDb(app: INestApplication): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "user_roles", "role_permissions", "roles", "permissions", "audit_logs", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "user_roles", "role_permissions", "roles", "permissions", "audit_logs", "sms_settings", "sms_verification_codes", "sms_send_logs", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }
