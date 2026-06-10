@@ -1,0 +1,256 @@
+import { Injectable, Logger } from '@nestjs/common';
+import type { SmsPurpose } from '@prisma/client';
+import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
+
+import { BizCode } from '../../common/exceptions/biz-code.constant';
+import { BizException } from '../../common/exceptions/biz.exception';
+import { PrismaService } from '../../database/prisma.service';
+import { SmsProviderRouter } from './sms-provider.router';
+import {
+  maskPhone,
+  SMS_CODE_MAX_ATTEMPTS,
+  SMS_CODE_TTL_SECONDS,
+  SMS_DAILY_WINDOW_UTC_OFFSET_HOURS,
+  SMS_DEV_STUB_FIXED_CODE,
+  SMS_PHONE_DAILY_LIMIT,
+  SMS_SEND_MIN_INTERVAL_SECONDS,
+  SMS_TEMPLATE_KEY_VERIFY_CODE,
+} from './sms.constants';
+import { SmsChannelUnavailableError, SmsProviderSendError } from './sms.types';
+
+// SMS 基础设施 T3(2026-06-10):验证码签发 / 校验消费 / DB 层防刷
+// (冻结评审稿 docs/archive/reviews/sms-verification-infra-review.md §4 / E-8~E-12 / E-27 / E-29)。
+//
+// 职责边界(E-30):本 Service 对 User 无感知——phone 占用检查 / 绑定落库 / audit
+// 归 users 模块(users.service 调本 Service);本 Service 是 SMS 域 BizException 的
+// 映射边界(SmsChannelUnavailableError → 24030;SmsProviderSendError → 24031)。
+//
+// 明文码纪律(D-SMS-5):明文只存在于"生成 → 交给 provider"内存链路;
+// 入库只存 sha256 hex(E-27);不入 pino 日志(DevStub debug 例外在 provider 内);
+// 不入响应 / audit / OpenAPI 示例。
+
+@Injectable()
+export class SmsCodeService {
+  private readonly logger = new Logger(SmsCodeService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly router: SmsProviderRouter,
+  ) {}
+
+  /**
+   * 签发验证码并发送(评审稿 §4 检查链:间隔 → 日限 → 通道 → 单活码 → 发送 → 落日志)。
+   * phone 占用检查由调用方(users.service)在调用前完成。
+   *
+   * - 同号 <60s 再发 → SMS_SEND_INTERVAL_LIMIT(24120;跨 purpose 共享,本期单 purpose)
+   * - 同号自然日(UTC+8,E-10)≥10 条 → SMS_PHONE_DAILY_LIMIT(24121;
+   *   按 sms_verification_codes 当日创建行数计,含发送失败行,保守防滥用,E-11)
+   * - 通道不可用 → SMS_CHANNEL_NOT_CONFIGURED(24030)
+   * - provider 失败 → code 行保留(参与计数)+ send_log 记 FAILED + SMS_SEND_FAILED(24031;E-12)
+   */
+  async issue(input: {
+    phone: string;
+    purpose: SmsPurpose;
+    userId: string;
+    ip: string | null;
+  }): Promise<{ expiresInSeconds: number }> {
+    const now = new Date();
+
+    // 1. 同号间隔(查 phone 最新一条 code;(phone, purpose) 复合索引前缀覆盖)
+    const latest = await this.prisma.smsVerificationCode.findFirst({
+      where: { phone: input.phone },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    if (
+      latest !== null &&
+      now.getTime() - latest.createdAt.getTime() < SMS_SEND_MIN_INTERVAL_SECONDS * 1000
+    ) {
+      throw new BizException(BizCode.SMS_SEND_INTERVAL_LIMIT);
+    }
+
+    // 2. 同号自然日上限(E-10 固定 UTC+8 日界;不引 tz 依赖)
+    const dailyCount = await this.prisma.smsVerificationCode.count({
+      where: { phone: input.phone, createdAt: { gte: startOfDayUtc8(now) } },
+    });
+    if (dailyCount >= SMS_PHONE_DAILY_LIMIT) {
+      throw new BizException(BizCode.SMS_PHONE_DAILY_LIMIT);
+    }
+
+    // 3. 通道解析(settings 缺失 / 未启用 / production-like DEV_STUB → 24030)。
+    //    先解析再建 code 行:通道不可用时不产生计数占用。
+    let providerType: 'DEV_STUB' | 'TENCENT_SMS';
+    try {
+      providerType = await this.router.resolveProviderType();
+    } catch (err) {
+      if (err instanceof SmsChannelUnavailableError) {
+        throw new BizException(BizCode.SMS_CHANNEL_NOT_CONFIGURED);
+      }
+      throw err;
+    }
+
+    // 4. 生成明文码(E-29:CSPRNG;DEV_STUB 固定 888888,production-like 不可达)
+    const code = providerType === 'DEV_STUB' ? SMS_DEV_STUB_FIXED_CODE : generateNumericCode();
+
+    // 5. 单活码:事务内作废同 phone+purpose 旧活码 + 建新码行(E-9)
+    const codeRow = await this.prisma.$transaction(async (tx) => {
+      await tx.smsVerificationCode.updateMany({
+        where: {
+          phone: input.phone,
+          purpose: input.purpose,
+          consumedAt: null,
+          supersededAt: null,
+        },
+        data: { supersededAt: now },
+      });
+      return tx.smsVerificationCode.create({
+        data: {
+          phone: input.phone,
+          purpose: input.purpose,
+          codeHash: sha256Hex(code),
+          userId: input.userId,
+          expiresAt: new Date(now.getTime() + SMS_CODE_TTL_SECONDS * 1000),
+          ip: input.ip,
+        },
+        select: { id: true },
+      });
+    });
+
+    // 6. 发送(事务外:外部调用不持事务)+ 落 send_log(append-only)
+    try {
+      const result = await this.router.sendVerifyCode({
+        phone: input.phone,
+        code,
+        ttlMinutes: SMS_CODE_TTL_SECONDS / 60,
+      });
+      await this.prisma.smsSendLog.create({
+        data: {
+          phone: input.phone,
+          templateKey: SMS_TEMPLATE_KEY_VERIFY_CODE,
+          providerType,
+          status: 'SENT',
+          providerMsgId: result.providerMsgId,
+          codeId: codeRow.id,
+        },
+      });
+    } catch (err) {
+      // 失败处理(E-12):code 行保留(参与间隔/日限计数),日志记 FAILED,不重试
+      const { errCode, errMsg } = normalizeSendError(err);
+      await this.prisma.smsSendLog.create({
+        data: {
+          phone: input.phone,
+          templateKey: SMS_TEMPLATE_KEY_VERIFY_CODE,
+          providerType,
+          status: 'FAILED',
+          errCode,
+          errMsg,
+          codeId: codeRow.id,
+        },
+      });
+      this.logger.warn(
+        `sms send failed phone=${maskPhone(input.phone)} codeId=${codeRow.id} errCode=${errCode}`,
+      );
+      if (err instanceof SmsChannelUnavailableError) {
+        throw new BizException(BizCode.SMS_CHANNEL_NOT_CONFIGURED);
+      }
+      throw new BizException(BizCode.SMS_SEND_FAILED);
+    }
+
+    return { expiresInSeconds: SMS_CODE_TTL_SECONDS };
+  }
+
+  /**
+   * 校验并消费验证码(评审稿 §4 校验链;**统一 24010 防枚举**,禁止细分)。
+   *
+   * 设计(E-8 + 评审稿 §10):本方法**不**参与调用方事务——
+   * - 错码的 attempts+1 必须独立提交(若挂在外层事务里,抛错回滚会丢计数,错 5 次作废失效);
+   * - 命中走原子 updateMany({ consumedAt: null } → now)抢占消费,并发重放只有一个赢家;
+   * - "已消费但外层绑定事务失败"的窗口极窄(P2002 占用竞态),接受重新发码,
+   *   优于"先绑后消费"(后者在 audit 失败时允许码重用)。
+   */
+  async verifyAndConsume(input: {
+    phone: string;
+    purpose: SmsPurpose;
+    code: string;
+    userId: string;
+  }): Promise<{ codeId: string }> {
+    const now = new Date();
+    const active = await this.prisma.smsVerificationCode.findFirst({
+      where: {
+        phone: input.phone,
+        purpose: input.purpose,
+        consumedAt: null,
+        supersededAt: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, codeHash: true, userId: true, expiresAt: true, attempts: true },
+    });
+
+    // 统一无效:不存在 / 已过期 / 已作废(错 5 次)/ 归属不符(E-8)
+    if (
+      active === null ||
+      active.expiresAt.getTime() <= now.getTime() ||
+      active.attempts >= SMS_CODE_MAX_ATTEMPTS ||
+      active.userId !== input.userId
+    ) {
+      throw new BizException(BizCode.SMS_CODE_INVALID);
+    }
+
+    // 码值比对(timingSafeEqual 卫生习惯;两侧均为 64 字符 sha256 hex 定长)
+    if (!hashEquals(sha256Hex(input.code), active.codeHash)) {
+      // 错码计数独立提交(见方法注释);达到上限后续走上面的 attempts>=MAX 统一无效
+      await this.prisma.smsVerificationCode.update({
+        where: { id: active.id },
+        data: { attempts: { increment: 1 } },
+      });
+      throw new BizException(BizCode.SMS_CODE_INVALID);
+    }
+
+    // 原子抢占消费:并发重放只有一个请求能把 consumedAt 从 null 置为 now
+    const consumed = await this.prisma.smsVerificationCode.updateMany({
+      where: { id: active.id, consumedAt: null },
+      data: { consumedAt: now },
+    });
+    if (consumed.count === 0) {
+      throw new BizException(BizCode.SMS_CODE_INVALID);
+    }
+
+    return { codeId: active.id };
+  }
+}
+
+// === helpers(模块内私有;不入 common grab-bag)===
+
+function sha256Hex(value: string): string {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+// 6 位纯数字 CSPRNG(E-29;禁 Math.random)
+function generateNumericCode(): string {
+  return randomInt(0, 1_000_000).toString().padStart(6, '0');
+}
+
+// 两侧均为 sha256 hex(64 字符定长),timingSafeEqual 直接可用
+function hashEquals(a: string, b: string): boolean {
+  const ba = Buffer.from(a, 'utf8');
+  const bb = Buffer.from(b, 'utf8');
+  return ba.length === bb.length && timingSafeEqual(ba, bb);
+}
+
+// 自然日日界:固定 UTC+8(评审稿 E-10;大陆手机号场景,不随服务器时区漂移)
+function startOfDayUtc8(now: Date): Date {
+  const offsetMs = SMS_DAILY_WINDOW_UTC_OFFSET_HOURS * 3600 * 1000;
+  const shifted = now.getTime() + offsetMs;
+  const dayStartShifted = Math.floor(shifted / 86_400_000) * 86_400_000;
+  return new Date(dayStartShifted - offsetMs);
+}
+
+function normalizeSendError(err: unknown): { errCode: string; errMsg: string } {
+  if (err instanceof SmsProviderSendError) {
+    return { errCode: err.errCode, errMsg: err.errMsg };
+  }
+  if (err instanceof SmsChannelUnavailableError) {
+    return { errCode: 'CHANNEL_UNAVAILABLE', errMsg: err.message };
+  }
+  return { errCode: 'UNKNOWN', errMsg: err instanceof Error ? err.message : String(err) };
+}

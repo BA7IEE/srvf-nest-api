@@ -25,7 +25,7 @@
 | `system/v1/roles/:id/permissions` | `rbac.role-permission.*`(2) |
 | `system/v1/users/:userId/roles` | `rbac.user-role.*`(3) |
 | `system/v1/rbac`(reload) | `rbac.config.reload`(1);`GET me/permissions` 仅登录(方法级 Mixed 存量) |
-| `admin/v1/users` | `user.*`(7;其中 `user.update.role` 不绑 ops-admin,仅 SA 短路 = D1=A 拍板) |
+| `admin/v1/users` | `user.*`(8;其中 `user.update.role` 不绑 ops-admin,仅 SA 短路 = D1=A 拍板;`user.phone.clear` 为 SMS T3 清号端点)|
 | `system/v1/audit-logs` | `audit-log.read.entry`(1) |
 | `system/v1/dict-types` + `dict-items` | `dict.*.type` / `dict.*.item`(8) |
 | `admin/v1/organizations` | `org.*.node`(4) |
@@ -49,7 +49,7 @@
 | `admin/v1/activities/:id/registrations` | 方法级 SA/ADMIN | ❌ |
 | `admin/v1/…attendance-sheets`(2 个 Admin class) | 方法级 SA/ADMIN | ❌ |
 
-### 2.3 A 模式 — App surface(15 endpoint,JwtAuthGuard + self-scope)
+### 2.3 A 模式 — App surface(17 endpoint,JwtAuthGuard + self-scope;SMS T3 +me/phone 两端点沿 me/password 账号级豁免)
 
 `app/v1/me`(5)/ `app/v1/activities`(2)/ `app/v1/my`×3 class(registrations 5 + attendance-records 1 + certificates 1)+ `app/v1/me/password`(继承 P0-D/P0-E 全套铁律)。**永不返回 L3 字段**(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / 完整 signed URL)。
 
@@ -70,11 +70,11 @@
 | 存储设置 | 3 | `storage-setting.{read,update}.singleton` / `storage-setting.reset.credentials` |
 | 短信设置 | 3 | `sms-setting.{read,update}.singleton` / `sms-setting.reset.credentials`(SMS T2,评审稿 §3.4)|
 | 短信日志 | 1 | `sms-send-log.read.list`(SMS T2)|
-| 用户管理 | 8 | `user.{read,create,update,delete}.account` / `user.reset.password` / `user.update.role` / `user.update.status` / `user.phone.clear`(SMS T2 seed;端点 T3 实装)|
+| 用户管理 | 8 | `user.{read,create,update,delete}.account` / `user.reset.password` / `user.update.role` / `user.update.status` / `user.phone.clear`(SMS T2 seed,T3 端点已实装)|
 | 审计 | 1 | `audit-log.read.entry` |
 | 附件业务 | 20 | `attachment.{upload,view,update,delete}.member.{self,other}`(8)/ `…certificate.{self,other}`(8)/ `…activity`(4) |
 
-内置角色:`ops-admin`(绑 58 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials`,三者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS 镜像 E-3,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)。seed 与代码调用**双向对齐**:无"seed 有码未用",无"代码用码未 seed"(唯一过渡例外:`user.phone.clear` 于 SMS T2 随批 seed、端点 T3 实装,期间为预期孤码 WARN,沿评审稿 §3.4)。
+内置角色:`ops-admin`(绑 58 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials`,三者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS 镜像 E-3,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)。seed 与代码调用**双向对齐**:无"seed 有码未用",无"代码用码未 seed"(`user.phone.clear` 已随 SMS T3 端点实装,T2 期间的过渡孤码 WARN 已消除)。
 
 ## 4. 保护不变式(改 users / permissions 前必读)
 

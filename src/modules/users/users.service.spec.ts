@@ -8,6 +8,7 @@ import type { PrismaService } from '../../database/prisma.service';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { RbacService } from '../permissions/rbac.service';
+import type { SmsCodeService } from '../sms/sms-code.service';
 import type {
   CreateUserDto,
   ResetUserPasswordDto,
@@ -145,6 +146,16 @@ function makeAuditLogsMock() {
 }
 type AuditLogsMock = ReturnType<typeof makeAuditLogsMock>;
 
+// SMS T3:UsersService 构造器新增 SmsCodeService 依赖;既有 characterization 用例
+// 不触达 phone 方法,mock 仅满足构造器形参(沿 auditLogs mock 范式)。
+function makeSmsCodeMock() {
+  return {
+    issue: jest.fn<Promise<{ expiresInSeconds: number }>, [unknown]>(),
+    verifyAndConsume: jest.fn<Promise<{ codeId: string }>, [unknown]>(),
+  };
+}
+type SmsCodeMock = ReturnType<typeof makeSmsCodeMock>;
+
 // rbac.can 默认放行;deny 用例显式 mockResolvedValue(false)。
 function makeRbacMock(allow = true) {
   return { can: jest.fn<Promise<boolean>, [unknown, unknown]>().mockResolvedValue(allow) };
@@ -153,14 +164,16 @@ type RbacMock = ReturnType<typeof makeRbacMock>;
 
 function makeService(
   prisma: PrismaMock,
-  opts: { auditLogs?: AuditLogsMock; rbac?: RbacMock } = {},
+  opts: { auditLogs?: AuditLogsMock; rbac?: RbacMock; smsCode?: SmsCodeMock } = {},
 ): UsersService {
   const auditLogs = opts.auditLogs ?? makeAuditLogsMock();
   const rbac = opts.rbac ?? makeRbacMock();
+  const smsCode = opts.smsCode ?? makeSmsCodeMock();
   return new UsersService(
     prisma as unknown as PrismaService,
     auditLogs as unknown as AuditLogsService,
     rbac as unknown as RbacService,
+    smsCode as unknown as SmsCodeService,
   );
 }
 

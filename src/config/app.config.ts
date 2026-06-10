@@ -131,6 +131,21 @@ export interface StorageConfig {
   localRoot: string; // LocalProvider 根目录(env STORAGE_LOCAL_ROOT;default './tmp/storage')
 }
 
+// SMS 基础设施 T3(2026-06-10):App 发码 / 验码绑定 IP 维度限流配置(评审稿 D-SMS-6 / E-23)。
+// 与既有三 throttler 结构相同但物理隔离:throttler.module 注册独立实例
+// (name: 'sms-send' / 'sms-verify'),计数器互不影响。
+// 默认 send 5 次 / 60 秒(短信有真实资费,从紧)、verify 10 次 / 60 秒
+// (验码无资费,放宽一档,配合"错 5 次作废"双层防护)。
+export interface SmsSendThrottleConfig {
+  limit: number;
+  ttlSeconds: number;
+}
+
+export interface SmsVerifyThrottleConfig {
+  limit: number;
+  ttlSeconds: number;
+}
+
 // SMS 基础设施 T2(2026-06-10):sms_settings 凭证加密 key(评审稿 D-SMS-8;沿 STORAGE 范式)。
 // 独立 env `SMS_ENCRYPTION_KEY`,与 STORAGE_ENCRYPTION_KEY 互不复用;
 // production / smoke fail-fast,dev / test 留空允许 → SmsCryptoService.isAvailable()=false。
@@ -199,6 +214,8 @@ export interface AppConfig {
   rbacCache: RbacCacheConfig;
   storage: StorageConfig;
   sms: SmsConfig;
+  smsSendThrottle: SmsSendThrottleConfig;
+  smsVerifyThrottle: SmsVerifyThrottleConfig;
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -290,6 +307,35 @@ export default registerAs('app', (): AppConfig => {
     encryptionKey: parseSmsEncryptionKey(process.env.SMS_ENCRYPTION_KEY, env),
   };
 
+  // SMS 基础设施 T3:发码 / 验码限流(评审稿 D-SMS-6;推荐区间沿 LOGIN_THROTTLE_*)。
+  const smsSendThrottle: SmsSendThrottleConfig = {
+    limit: parsePositiveInt(process.env.SMS_SEND_THROTTLE_LIMIT, 5, 'SMS_SEND_THROTTLE_LIMIT', {
+      min: 1,
+      max: 100,
+    }),
+    ttlSeconds: parsePositiveInt(
+      process.env.SMS_SEND_THROTTLE_TTL_SECONDS,
+      60,
+      'SMS_SEND_THROTTLE_TTL_SECONDS',
+      { min: 1, max: 3600 },
+    ),
+  };
+
+  const smsVerifyThrottle: SmsVerifyThrottleConfig = {
+    limit: parsePositiveInt(
+      process.env.SMS_VERIFY_THROTTLE_LIMIT,
+      10,
+      'SMS_VERIFY_THROTTLE_LIMIT',
+      { min: 1, max: 100 },
+    ),
+    ttlSeconds: parsePositiveInt(
+      process.env.SMS_VERIFY_THROTTLE_TTL_SECONDS,
+      60,
+      'SMS_VERIFY_THROTTLE_TTL_SECONDS',
+      { min: 1, max: 3600 },
+    ),
+  };
+
   return {
     env,
     port,
@@ -302,5 +348,7 @@ export default registerAs('app', (): AppConfig => {
     rbacCache,
     storage,
     sms,
+    smsSendThrottle,
+    smsVerifyThrottle,
   };
 });

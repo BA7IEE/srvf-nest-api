@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Put, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, Put, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { BizException } from '../../../common/exceptions/biz.exception';
@@ -12,6 +12,8 @@ import {
   type CurrentUserPayload,
 } from '../../../common/decorators/current-user.decorator';
 import { PasswordChangeThrottle } from '../../../common/decorators/password-change-throttle.decorator';
+import { SmsSendThrottle } from '../../../common/decorators/sms-send-throttle.decorator';
+import { SmsVerifyThrottle } from '../../../common/decorators/sms-verify-throttle.decorator';
 import type { AuditMeta } from '../../audit-logs/audit-logs.types';
 import { AppCapabilityService } from '../app-capability.service';
 import { AppIdentityResolver } from '../app-identity.resolver';
@@ -19,6 +21,12 @@ import { AppProfileService } from '../app-profile.service';
 import { AppCapabilityResponseDto } from '../dto/app/app-capability-response.dto';
 import { AppMeAccountDto } from '../dto/app/app-me-account.dto';
 import { AppMeResponseDto } from '../dto/app/app-me-response.dto';
+import {
+  AppMePhoneDto,
+  BindMyPhoneDto,
+  SendMyPhoneCodeDto,
+  SendMyPhoneCodeResponseDto,
+} from '../dto/app/app-me-phone.dto';
 import { AppSelfProfileDto } from '../dto/app/app-self-profile.dto';
 import { UpdateAppSelfProfileDto } from '../dto/app/update-app-self-profile.dto';
 import { ChangeMyPasswordDto, UserResponseDto } from '../users.dto';
@@ -193,6 +201,66 @@ export class AppMeController {
       newPassword: dto.newPassword,
     };
     return this.usersService.changeMyPassword(currentUser, safeDto, this.buildAuditMeta(req));
+  }
+
+  // SMS 基础设施 T3(2026-06-10):POST /me/phone/send-code + PUT /me/phone(冻结评审稿
+  // sms-verification-infra-review.md §3.2 ⑤⑥ / §4 / §7 / E-5)。
+  // 准入沿 PUT /me/password 账号级豁免先例(E-5):User.phone 是账号级身份字段,
+  // **不**调 appIdentity.resolve + assertCanUseApp,admin without member 允许使用;
+  // 豁免仅限本两端点,禁止外溢(沿 P2-3 评审稿 §4.6 例外边界精神)。
+  // 防刷三层:同号 60s 间隔 + 同号自然日上限(DB 层,SmsCodeService)+ 本层 IP throttler。
+  @SmsSendThrottle()
+  @Post('phone/send-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'App 发送手机号绑定验证码(目标号已被任何账号绑定则拒;同号限频;响应永不含验证码) [auth]',
+  })
+  @ApiWrappedOkResponse(SendMyPhoneCodeResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.PHONE_ALREADY_BOUND,
+    BizCode.SMS_SEND_INTERVAL_LIMIT,
+    BizCode.SMS_PHONE_DAILY_LIMIT,
+    BizCode.SMS_CHANNEL_NOT_CONFIGURED,
+    BizCode.SMS_SEND_FAILED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  sendMyPhoneCode(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Body() dto: SendMyPhoneCodeDto,
+    @Req() req: Request,
+  ): Promise<SendMyPhoneCodeResponseDto> {
+    // 显式 safeDto 重组(沿 P2-2 §7.4 风险表 10.11a 范式;禁透传 raw body)
+    const safeDto: SendMyPhoneCodeDto = { phone: dto.phone };
+    return this.usersService.sendMyPhoneBindCode(currentUser, safeDto, req.ip ?? null);
+  }
+
+  // 验码绑定 / 换绑一体(⑥;评审稿 §7):错码统一 SMS_CODE_INVALID(24010,防枚举不细分);
+  // 绑定成功事务内写 phone.bind.self / phone.rebind.self audit(手机号掩码)。
+  @SmsVerifyThrottle()
+  @Put('phone')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'App 验码绑定 / 换绑手机号(验证成功即消费;错 5 次作废;响应仅本人可见号码) [auth]',
+  })
+  @ApiWrappedOkResponse(AppMePhoneDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.USER_NOT_FOUND,
+    BizCode.SMS_CODE_INVALID,
+    BizCode.PHONE_ALREADY_BOUND,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  bindMyPhone(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Body() dto: BindMyPhoneDto,
+    @Req() req: Request,
+  ): Promise<AppMePhoneDto> {
+    const safeDto: BindMyPhoneDto = { phone: dto.phone, code: dto.code };
+    return this.usersService.bindMyPhone(currentUser, safeDto, this.buildAuditMeta(req));
   }
 
   // P0-D PR-3 私有 helper(沿 users.controller.ts:121-127 逐字范式):

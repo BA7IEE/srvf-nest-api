@@ -76,6 +76,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // **D-P2-3-1 = X**(沿评审稿 §4.3 锁定):admin without member 允许使用,
   // 该豁免**严格仅本端点**适用(沿 §4.6)。
   ['put', '/api/app/v1/me/password'],
+  // SMS 基础设施 T3(2026-06-10;评审稿 §3.2 ⑤⑥):账号级手机号绑定,沿 me/password
+  // 豁免先例不强约 canUseApp(E-5);phone/send-code 发码 + phone 验码绑定/换绑一体。
+  ['post', '/api/app/v1/me/phone/send-code'],
+  ['put', '/api/app/v1/me/phone'],
 
   // Phase 2 P2-4a(2026-05-20):App /api/app/v1/activities/available 列表
   // 沿 docs/app-api-p2-4-activities-review.md §1 接口清单 + §4.1 字段集恰好 11 项;
@@ -192,7 +196,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
 
   // SMS 基础设施 T2(2026-06-10;冻结评审稿 docs/archive/reviews/sms-verification-infra-review.md §3.2):
   // settings 三端点动词镜像 storage-settings 现状(评审稿 E-1)+ send-logs 分页只读;
-  // T3 再增 app/v1/me/phone* 两端点与 admin 清号端点(届时同步本表)。
+  // T3 已增 app/v1/me/phone* 两端点与 admin 清号端点(见各 surface 段)。
   ['get', '/api/system/v1/sms-settings'],
   ['patch', '/api/system/v1/sms-settings'],
   ['post', '/api/system/v1/sms-settings/reset-credentials'],
@@ -210,6 +214,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/users/{id}/role'],
   ['patch', '/api/admin/v1/users/{id}/status'],
   ['delete', '/api/admin/v1/users/{id}'],
+  // SMS 基础设施 T3(评审稿 §3.2 ⑦):管理员清除绑定手机号(幂等;解除绑定唯一路径)。
+  ['delete', '/api/admin/v1/users/{id}/phone'],
   ['get', '/api/admin/v1/organizations'],
   ['get', '/api/admin/v1/organizations/tree'],
   ['post', '/api/admin/v1/organizations'],
