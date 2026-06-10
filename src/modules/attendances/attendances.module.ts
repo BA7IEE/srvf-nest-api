@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
+import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { UsersModule } from '../users/users.module';
 import { AppMyAttendanceRecordsService } from './app-my-attendance-records.service';
@@ -29,7 +30,7 @@ import { AppMyAttendanceRecordsController } from './controllers/app-my-attendanc
 // Route B Phase 4d2(2026-06-01):旧 AttendanceRecordsMeController(/v2/users/me/attendance-records)
 // 已删除(app/v1/my/attendance-records 对等存在;沿 docs/api-surface-migration-plan.md §6 Phase 4)。
 @Module({
-  imports: [DatabaseModule, AuditLogsModule, UsersModule],
+  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, UsersModule],
   controllers: [
     AttendanceSheetsCollectionController,
     AttendanceSheetsResourceController,

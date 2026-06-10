@@ -11,6 +11,7 @@ import type {
   AttendanceSheetStateMachine,
   AttendanceSheetTransitionDecision,
 } from './attendance-sheet-state-machine';
+import type { RbacService } from '../permissions/rbac.service';
 import type { ContributionCalculator } from './contribution-calculator';
 import { ATTENDANCE_SHEET_STATUS } from './attendances.dto';
 import type {
@@ -266,6 +267,10 @@ function makeService(
     // Presenter 传真实实例而非 mock(零依赖纯映射类):mapper characterization
     // 断言经真实序列化路径,直接锁 P1-4 第一刀"搬家零漂移"。
     new AttendancePresenter(),
+    // Slow-4 T3(评审稿 D-S4-6):rbac mock `can` 恒 true,锁业务行为而非判权;断言零修改。
+    {
+      can: jest.fn<Promise<boolean>, [unknown, string]>().mockResolvedValue(true),
+    } as unknown as RbacService,
   );
 }
 

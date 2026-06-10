@@ -9,6 +9,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { RbacService } from '../permissions/rbac.service';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import { AttendancePresenter } from './attendance-presenter';
 import { AttendanceSheetStateMachine } from './attendance-sheet-state-machine';
@@ -178,7 +179,18 @@ export class AttendancesService {
     private readonly timeOverlapPolicy: TimeOverlapPolicy,
     private readonly sheetStateMachine: AttendanceSheetStateMachine,
     private readonly attendancePresenter: AttendancePresenter,
+    private readonly rbac: RbacService,
   ) {}
+
+  // Slow-4 T3(2026-06-11,评审稿 §3.7 / D-S4-8):RBAC 判权(沿 P0-F assertCanOrThrow 范式)。
+  // 10 个管理端方法第一条语句调用;list / findOne / reviewDetail 共用 read(D4=A 判例);
+  // 终审两码独立(`attendance.final-approve.sheet` / `attendance.final-reject.sheet`,
+  // ADMIN 级终审沿 P1-5 方案 A,部门级细分仍挂 Slow-3 子议题)。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   // ============ helpers:序列化 ============
   // 已抽至 `attendance-presenter.ts` 的 `AttendancePresenter`(P1-4 第一刀,2026-06-10
@@ -358,6 +370,7 @@ export class AttendancesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'attendance.create.sheet');
     return this.prisma.$transaction(async (tx) => {
       // 1. activity 存在 + 非 cancelled;同时取 activityTypeCode + statusCode 用于 D14 预填 + D11 推动
       const activity = await this.findActivityForSubmissionFull(activityId, tx);
@@ -495,6 +508,7 @@ export class AttendancesService {
     query: ListAttendanceSheetsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<AttendanceSheetListItemDto>> {
+    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet');
     await this.prisma.$transaction(async (tx) => {
       await this.assertActivityExists(activityId, tx);
     });
@@ -533,6 +547,7 @@ export class AttendancesService {
   // ============ findOne(GET Sheet 简化详情)============
 
   async findOne(id: string, currentUser: CurrentUserPayload): Promise<AttendanceSheetResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet');
     const sheet = await this.prisma.$transaction(async (tx) => this.findSheetOrThrow(id, tx));
 
     auditPlaceholder('attendance-sheet.read.other', {
@@ -550,6 +565,7 @@ export class AttendancesService {
     id: string,
     currentUser: CurrentUserPayload,
   ): Promise<AttendanceSheetReviewDetailDto> {
+    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet');
     const result = await this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
@@ -604,6 +620,7 @@ export class AttendancesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'attendance.update.sheet');
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
@@ -748,6 +765,7 @@ export class AttendancesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'attendance.delete.sheet');
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
@@ -804,6 +822,7 @@ export class AttendancesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'attendance.approve.sheet');
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
@@ -859,6 +878,7 @@ export class AttendancesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'attendance.reject.sheet');
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
@@ -905,15 +925,17 @@ export class AttendancesService {
   // - **触发** eventPlaceholder('attendance.recorded')(approved-only;同事务内;沿 D-S7)
   // - audit:attendance-sheet.final-review(action='final-approve');沿 D-S11 / 业务规则文档 §8.4
   // - **不重校验**逐条 records.contributionPoints(沿 D-S8;R31 在 APD 一级已校验)
-  // - 权限:终审业务角色为"APD 部门部长 / 副部长",当前实装权限仍沿用管理权限
-  //   (RolesGuard ADMIN / SUPER_ADMIN),细分终审权限将在后续批次实现;
-  //   不开 22044 模块码,权限不足走通用 40300。
+  // - 权限:终审业务角色为"APD 部门部长 / 副部长",当前实装仍为 ADMIN 级终审
+  //   (Slow-4 T3 起走 rbac.can('attendance.final-approve.sheet'),biz-admin 绑定;
+  //   沿 P1-5 方案 A,部门级细分挂 Slow-3 子议题);
+  //   不开 22044 模块码,判权不足走 RBAC_FORBIDDEN(30100)。
   async finalApprove(
     id: string,
     dto: FinalApproveAttendanceSheetDto,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'attendance.final-approve.sheet');
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
@@ -1001,6 +1023,7 @@ export class AttendancesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'attendance.final-reject.sheet');
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 

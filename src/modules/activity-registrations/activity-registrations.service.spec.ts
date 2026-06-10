@@ -4,6 +4,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import type { RbacService } from '../permissions/rbac.service';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import type { ActivityRegistrationTransitionDecision } from './activity-registration-state-machine';
 import { ActivityRegistrationsService } from './activity-registrations.service';
@@ -156,6 +157,12 @@ function makeStateMachineMock(decision: ActivityRegistrationTransitionDecision) 
 }
 type StateMachineMock = ReturnType<typeof makeStateMachineMock>;
 
+// Slow-4 T3(2026-06-11,评审稿 D-S4-6):service 构造函数注入 rbac mock,`can` 恒 true
+// (本 spec 锁业务行为而非判权;判权矩阵由 e2e 权限边界 spec 锁定)。断言零修改。
+function makeRbacMock() {
+  return { can: jest.fn<Promise<boolean>, [unknown, string]>().mockResolvedValue(true) };
+}
+
 function makeService(
   prisma: PrismaMock,
   recorder: AuditRecorderMock,
@@ -166,6 +173,7 @@ function makeService(
     prisma as unknown as PrismaService,
     recorder as unknown as ActivityRegistrationAuditRecorder,
     stateMachine,
+    makeRbacMock() as unknown as RbacService,
   );
 }
 
@@ -212,7 +220,8 @@ describe('ActivityRegistrationsService (characterization)', () => {
         makeStateMachineMock(DENY_DECISION),
       );
 
-      const page = await service.list('act-1', { page: 1, pageSize: 20 });
+      // Slow-4 T3:list 补 currentUser 入参(D-S4-5;rbac mock 恒 true,断言零修改)
+      const page = await service.list('act-1', { page: 1, pageSize: 20 }, makeCurrentUser());
 
       expect(page.total).toBe(2);
       expect(page.items[0].memberNo).toBe('M-1');

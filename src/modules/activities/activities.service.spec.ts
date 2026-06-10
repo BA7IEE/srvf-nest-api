@@ -14,6 +14,7 @@ import type {
 import { ActivitiesService } from './activities.service';
 import type { ActivityAuditRecorder } from './activity-audit-recorder';
 import type { ActivityStateDecision } from './activity-state-machine';
+import type { RbacService } from '../permissions/rbac.service';
 
 // activities service-level characterization spec(B 档 test-only,沿 srvf-god-service-refactor）。
 // 锁定 `activities.service.ts`(607L,L 体量)内部「编排契约」现状行为,作为后续
@@ -190,6 +191,12 @@ function makeRecorderMock() {
 }
 type RecorderMock = ReturnType<typeof makeRecorderMock>;
 
+// Slow-4 T3(2026-06-11,评审稿 D-S4-6):service 构造函数注入 rbac mock,`can` 恒 true
+// (本 spec 锁业务行为而非判权;判权矩阵由 e2e 权限边界 spec 锁定)。断言零修改。
+function makeRbacMock() {
+  return { can: jest.fn<Promise<boolean>, [unknown, string]>().mockResolvedValue(true) };
+}
+
 function makeService(
   prisma: PrismaMock,
   opts: { stateMachine?: StateMachineMock; recorder?: RecorderMock } = {},
@@ -200,6 +207,7 @@ function makeService(
     prisma as unknown as PrismaService,
     stateMachine,
     recorder as unknown as ActivityAuditRecorder,
+    makeRbacMock() as unknown as RbacService,
   );
 }
 

@@ -7,6 +7,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { RbacService } from '../permissions/rbac.service';
 import {
   ActivityListItemDto,
   ActivityResponseDto,
@@ -113,9 +114,18 @@ export class ActivitiesService {
     private readonly prisma: PrismaService,
     private readonly activityStateMachine: ActivityStateMachine,
     private readonly activityAuditRecorder: ActivityAuditRecorder,
+    private readonly rbac: RbacService,
   ) {}
 
   // ============ helpers ============
+
+  // Slow-4 T3(2026-06-11,评审稿 §3.5 / D-S4-8):RBAC 判权(沿 P0-F assertCanOrThrow 范式)。
+  // 5 个写方法第一条语句调用;list / findOne 无码化(仅登录),Q-A7 USER 过滤逻辑原样保留。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   // Prisma Decimal 字段 → string;null 透传。NaN 不会出现(@db.Decimal 兜底)。
   private decimalToString(d: Prisma.Decimal | null): string | null {
@@ -312,6 +322,7 @@ export class ActivitiesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'activity.create.record');
     const startAt = new Date(dto.startAt);
     const endAt = new Date(dto.endAt);
     this.assertStartEndValid(startAt, endAt);
@@ -393,6 +404,7 @@ export class ActivitiesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'activity.update.record');
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 
@@ -493,6 +505,7 @@ export class ActivitiesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'activity.delete.record');
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 
@@ -524,6 +537,7 @@ export class ActivitiesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'activity.publish.record');
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 
@@ -568,6 +582,7 @@ export class ActivitiesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'activity.cancel.record');
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 

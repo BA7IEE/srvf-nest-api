@@ -8,6 +8,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { RbacService } from '../permissions/rbac.service';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
 import {
@@ -109,9 +110,19 @@ export class ActivityRegistrationsService {
     private readonly prisma: PrismaService,
     private readonly registrationAuditRecorder: ActivityRegistrationAuditRecorder,
     private readonly registrationStateMachine: ActivityRegistrationStateMachine,
+    private readonly rbac: RbacService,
   ) {}
 
   // ============ helpers ============
+
+  // Slow-4 T3(2026-06-11,评审稿 §3.6 / D-S4-8):RBAC 判权(沿 P0-F assertCanOrThrow 范式)。
+  // 管理端 6 端点第一条语句调用;list / exportCsv 共用 read(D4=A 判例)。
+  // App 自助端点(app-my-registrations.service.ts)不走 RBAC,self-scope 不变。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   private jsonAsObject(v: Prisma.JsonValue | null): Record<string, unknown> | null {
     if (v === null || typeof v !== 'object' || Array.isArray(v)) return null;
@@ -285,7 +296,9 @@ export class ActivityRegistrationsService {
   async list(
     activityId: string,
     query: ListRegistrationsQueryDto,
+    currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<ActivityRegistrationListItemDto>> {
+    await this.assertCanOrThrow(currentUser, 'activity-registration.read.record');
     // activity 存在性校验(管理员看不存在的活动 → 404)。
     await this.findActivityOrThrow(activityId);
 
@@ -321,6 +334,7 @@ export class ActivityRegistrationsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'activity-registration.create.record');
     return this.prisma.$transaction(async (tx) => {
       const act = await this.assertActivityRegistrable(activityId, tx);
       await this.assertMemberExists(dto.memberId, tx);
@@ -404,6 +418,7 @@ export class ActivityRegistrationsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'activity-registration.approve.record');
     return this.prisma.$transaction(async (tx) => {
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
@@ -455,6 +470,7 @@ export class ActivityRegistrationsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'activity-registration.reject.record');
     return this.prisma.$transaction(async (tx) => {
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
@@ -502,6 +518,7 @@ export class ActivityRegistrationsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'activity-registration.cancel.record');
     return this.prisma.$transaction(async (tx) => {
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
@@ -656,6 +673,7 @@ export class ActivityRegistrationsService {
     query: ExportRegistrationsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<string> {
+    await this.assertCanOrThrow(currentUser, 'activity-registration.read.record');
     await this.findActivityOrThrow(activityId);
 
     const scope = query.scope ?? 'pass';
