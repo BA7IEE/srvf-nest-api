@@ -1,7 +1,7 @@
 # MODULE_MAP — 模块依赖 / 鉴权模式 / 测试对照
 
 > **性质**:derived 地图,非规则源。模块职责 / 体量 / 本地铁律以根 [`CODEMAP.md`](../../CODEMAP.md) 为权威;本文件补**跨模块依赖、鉴权模式、e2e spec 对照、AI 改造分区**四列。
-> 数据快照:2026-06-10,HEAD `18229ed`。与代码冲突时以 `src/**` 为准并回头修本表。
+> 数据快照:2026-06-10,HEAD `aca46fd`(v0.16.0 landing)。与代码冲突时以 `src/**` 为准并回头修本表。
 
 ---
 
@@ -25,7 +25,7 @@
 | `certificates/` | `admin/v1/members/:id/certificates` + `app/v1/my` | G + A | Database, AuditLogs, Users | certificates / app-my-certificates | 🟡 | 4 态闭集 + verify/reject;**不属** participation 上下文 |
 | `activities/` | `admin/v1/activities` + `app/v1/activities` | G + A | Database, AuditLogs, Users | activities / activities-state-transition / activities-audit-characterization / app-activities-* | 🟡 | 4 态状态机已抽离;participation 核心 |
 | `activity-registrations/` | `admin/v1/activities/:id/registrations` + `app/v1/my` | G + A | Database, AuditLogs, Users, **Activities** | activity-registrations / *-state-transition / *-audit-characterization / app-my-registrations-* | 🟡 | partial unique + CSV export;service 750L ⚠G |
-| `attendances/` | `admin/v1/…attendance-sheets` + `app/v1/my` | G + A | Database, AuditLogs, Users | attendances / *-state-transition / *-reject-transition / *-status-guards / *-time-overlap / *-contribution-prefill / *-audit-characterization / app-my-attendance-records | 🟡 | 5 态(含终审);service 1157L ⚠G;time-overlap-policy + contribution-calculator 已抽离 |
+| `attendances/` | `admin/v1/…attendance-sheets` + `app/v1/my` | G + A | Database, AuditLogs, Users | attendances / *-state-transition / *-reject-transition / *-status-guards / *-time-overlap / *-contribution-prefill / *-audit-characterization / app-my-attendance-records | 🟡 | 5 态(含终审);service 1100L ⚠G(P1-4 收口,体量观察);state-machine / audit-recorder / time-overlap-policy / contribution-calculator / presenter(#280)已抽离 |
 | `contribution-rules/` | `system/v1/contribution-rules` | R | Database, AuditLogs, Permissions | contribution-rules | 🟡 | D14 预填规则;归 System surface(D-1 决策锁) |
 | `attachments/` | `admin/v1/attachments` | R(20 条 attachment.*) | Database, Permissions, AuditLogs, **Storage** | attachments / attachments.upload / attachments.audit / *-audit-characterization / seed-attachment-permissions | 🟡 | 业务面 rbac.can() 首批;service 827L ⚠G;key 永不返回完整 signed URL |
 | `attachment-configs/` | `system/v1/attachment-*-configs` | R | Database, AuditLogs, Permissions | attachment-type-configs / attachment-mime-configs / attachment-size-limit-configs / attachment-configs.audit / attachment-configs.in-use | 🟡 | 三表 override-with-default;**不合表不抽 facade**([`attachment-config-boundary.md`](../attachment-config-boundary.md)) |
@@ -66,6 +66,6 @@ StorageModule         ← attachments                                       1
 
 **不建议 AI 随意修改(触碰即降速 / 暂停)**:
 - `auth/`(P0-E 冻结)、`permissions/`(RBAC 核心)、`audit-logs/`(A-1 红线)、`common/storage/`(凭证)
-- 3 个 god-service 的**拆分**(attendances 1157L / attachments 827L / activity-registrations 750L):characterization spec 已全覆盖(#241/#243/#246/#247/#251/#253),但拆分本身需单独立项(沿 [`architecture-boundary.md §5`](../architecture-boundary.md) + `srvf-god-service-refactor` skill)
+- 3 个 god-service 的**拆分**(attendances 1100L / attachments 827L / activity-registrations 750L):**P1-4 系列已于 2026-06-10 调研收口**(attendances 第一刀 presenter #280 落地后,三模块均判定已达 [`architecture-boundary.md`](../architecture-boundary.md) 合理形态,详 [`current-state.md §4`](../current-state.md) P2 行 + [`NEXT_TASKS.md`](./NEXT_TASKS.md) 归档区);重开需 §6 新触发条件并单独立项
 - 7 个 G 模式模块**自行加 rbac.can()**(那是 Slow-4,等业务拍板 Slow-3,见 [`RBAC_MAP.md §5`](./RBAC_MAP.md))
 - `members.memberNo` 编号规则、组织树形态(单树三层)——业务模型级,人工确认
