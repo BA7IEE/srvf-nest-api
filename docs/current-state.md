@@ -1,117 +1,35 @@
 # SRVF API 当前状态入口
 
-> 本文件是 AI / Claude Code / 维护者进入仓库后的**第一入口**,也是**当前事实唯一权威源**。
-> 本文件只记录"当前事实";历史 release handoff / 评审稿 / 批次决议自 v0.15.0 docs 治理收口起,**统一归档于 [`archive/`](archive/) 与 [`archive/handoff/`](archive/handoff/)**;`CHANGELOG.md` 仍维护逐版本累计。
-> 每次 release / handoff 合入后,**必须**优先更新本文件。
-
----
-
-## 0. 文档权威源分层(冲突时按此顺序判定)
-
-| 维度 | 权威源 |
-|---|---|
-| **当前事实**(版本 / open PR / HEAD / 已发能力 / surface 状态) | 本文件(`docs/current-state.md`)+ 代码 + GitHub 当前状态 |
-| **长期 AI 协作铁律**(命名 / 目录 / 错误码 / Guard / 软删除 / App API 边界 / §19 决策) | [`AGENTS.md`](../AGENTS.md)(主入口)+ [`srvf-foundation-baseline.md`](srvf-foundation-baseline.md) + [`V2红线与复活路径.md`](V2红线与复活路径.md) + [`api-surface-policy.md`](api-surface-policy.md) |
-| **流程制度** | [`process.md`](process.md) |
-| **架构设计背景** | [`../ARCHITECTURE.md`](../ARCHITECTURE.md)(请先读其顶部"当前阶段说明") |
-| **历史 handoff / 批次 / 评审稿 / Phase reviews / first-release 过程档案** | [`archive/`](archive/) — **历史证据,不再作为当前执行约束** |
-
-**铁律**:
-- 当前事实与架构蓝图冲突时,以本文件为准;`ARCHITECTURE.md` 仅作为设计背景
-- `archive/**` 内文档只代表归档时刻的决议;**当前代码已演进,以 `src/**` + 本文件为准**
-- `CLAUDE.md` 已收口为入口转发(≤80 行);长期铁律以 `AGENTS.md` 为准
-- 遇到冲突 → **不得擅自调和、不得擅自改文件**,先向用户汇报,等拍板
-
----
+> **第一入口,当前事实唯一权威源**(权威分层见 process §6 / 根 CLAUDE.md §1)。历史档案在 `archive/`,逐版本变更在 [`CHANGELOG.md`](../CHANGELOG.md);release 合入后**必须**优先回填本文件。
+> **铁律**:事实与蓝图冲突以本文件为准;遇冲突**不擅自调和、不擅自改文件**,先报告等拍板。
 
 ## 1. 当前版本状态
 
 | 项 | 当前值 |
 |---|---|
-| 当前版本 | **v0.17.0**(P2-2 Swagger 鉴权后缀文本化〔148 endpoint〕+ AI Harness 手动点自动化治理〔#286,tag/Release AI 执行 + 授权清单内连续推进 + 人话简报〕+ `docs:rbacmap:check` 检查项 G + Route B 文档残留清理 + 收口台账 true-up;release 收口完成 2026-06-10T10:54:58Z,**首次由 AI 按 process §5.1 阶段 6/7 新规执行 tag + Release**) |
-| `package.json#version` | `0.17.0` |
-| Swagger `setVersion(...)` | `0.17.0` |
-| 最新 git tag | `v0.17.0`(2026-06-10;指向 `2b57f8c` = PR #292 handoff squash commit) |
-| GitHub Latest Release | `v0.17.0`(标 Latest;publishedAt 2026-06-10T10:54:58Z;Notes 自 `CHANGELOG.md ## v0.17.0 - 2026-06-10` 段抽取,1 条目) |
-| `main` HEAD | **`2b57f8c`** `docs(release): v0.17.0 handoff index (#292)`(= v0.17.0 tag 指向;本回填 PR 合并后本行自然滞后属固有现象) |
-| open PR | **0**(本回填 PR 合并前) |
-| 工作树状态 | clean |
-| 最新 handoff | [`docs/archive/handoff/v0.17.0.md`](archive/handoff/v0.17.0.md)(v0.17.0 release closeout index;上一版 [`v0.16.0.md`](archive/handoff/v0.16.0.md));handoff 统一归档于 `archive/handoff/`,历史快照不回改 |
-| Unreleased 累计 | **空**(v0.17.0 已于 2026-06-10 发布并折叠;下一个变更 PR 重建 `## Unreleased` 段)。 |
-
-> **复核命令**(任何会话开工前都可以一行跑完):
->
-> ```bash
-> git rev-parse --short HEAD && \
-> grep '"version"' package.json && \
-> grep 'setVersion' src/bootstrap/apply-swagger.ts && \
-> gh pr list --state open && \
-> gh release list --limit 1 && \
-> git status --short
-> ```
-
-> **下一步建议**:Governance-1A 已于 2026-05-21 落地为 PR #165(文档权威源收口 + 过程档案归档 + CLAUDE.md 转发化 + `api-surface-policy.md` 新增);之后陆续合入 PR-1 ~ PR-6(#204-#209 docs 治理压缩)+ #210(AGENTS.md 压缩与死链修)+ #211(current-state HEAD refresh + 入口表死链修)+ #212(CLAUDE.md 项目背景 v1 范围裁剪)+ attendances / activities / activity-registrations / attachments 的 characterization tests + state machine / audit recorder 抽离串(沿 [`architecture-boundary.md`](architecture-boundary.md))。**P1-A 决策锁已落地**(沿 [`api-surface-policy.md §5-§8`](api-surface-policy.md));**P1-B characterization tests 4 个 god-service(attendances / activities / activity-registrations / attachments)已覆盖**;**P1-C step 1/2/3/4 已完成**([`users.controller.ts`](../src/modules/users/users.controller.ts) `/me*` 三端点 / [`attachments.controller.ts`](../src/modules/attachments/attachments.controller.ts) `me/uploaded` / [`activity-registrations.controller.ts`](../src/modules/activity-registrations/activity-registrations.controller.ts) 同文件 Mobile class / [`attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts) 同文件 `AttendanceRecordsMeController` 已分别迁出至 `controllers/*-legacy.controller.ts`;`attendances` step 4 见 PR #236,merge commit `bfb93b9`,主 controller 仅剩 2 个 Admin class,endpoint / OpenAPI snapshot zero drift;详 [`api-surface-policy.md §5.1 / §7 P1-C`](api-surface-policy.md));API surface P1-C same-file controller physical split 已收口,后续若继续推进应另行评估 docs-only 状态刷新、CODEMAP 漂移检查或 service-level characterization tests,**不**借此 deprecate `/api/v2/users/me/attendance-records` / 拆 `attendances.service.ts` / 启动 Phase 1B alias / 改 OpenAPI snapshot;**API surface 全量迁移(Route B)已于 2026-06-01 完成**(取代原"Phase 1B 暂缓 / 方案 C";终态 4 前缀,零 v2 / 零 legacy,详 [`api-surface-migration-plan.md`](api-surface-migration-plan.md) + [`AGENTS.md §21 D-9`](../AGENTS.md))。 **post-#237 治理 / characterization / harness 串**:CODEMAP drift check 脚本(#238)/ CODEMAP 首批 drift 修复(#239)/ `srvf-god-service-refactor` skill(#240)/ `activity-registrations.service.spec.ts`(#241)/ current-state + CODEMAP 回填(#242)/ `attachments.service.spec.ts` service-level characterization spec(#243)/ `srvf-release-closeout` skill(#244)/ current-state 回填(#245)/ `activities.service.spec.ts` service-level characterization spec(#246)/ `attendances.service.spec.ts` service-level characterization spec(#247)均已落地。**当前下一步建议**:(1)4 个 god-service service-level characterization spec **已全部覆盖**(`activity-registrations` #241 / `attachments` #243 / `activities` #246 / `attendances` #247);`certificates`(556L)/ `users`(544L)均**低于 god-service 700L 阈值**(large-service watch);二者 service-level characterization spec 均已用户拍板并合并(`certificates` #251 / `users` #253),**6 个 god/large-service service spec 全覆盖**;(2)`srvf-release-closeout` skill 已可投入后续 release / merge 收口实战;(3)§1 `main` HEAD 随后续 PR 自然滞后属固有现象,本轮 A 档 docs-only re-sync 已追平至 `88b9e26` / #251(含 #252 true-up + #253 users spec);(4)模块体量括注采用 source-only 口径(排除 `*.spec.ts`),test-only spec PR(#241 / #243 / #246 / #247 / #251 / #253)不改动其数字;`CODEMAP.md` 的 migration 计数已于 #252 修正为 12(末位 `add_refresh_tokens`);`pnpm docs:codemap:check` 当前 0 FAIL。
-
----
+| 版本(三方一致) | **v0.17.0**(2026-06-10;package.json = Swagger = tag;tag 指向 `2b57f8c` 标 Latest;要点见 CHANGELOG) |
+| `main` HEAD | `832d7fc`(滞后属固有现象) |
+| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **空** |
+| 最新 handoff | [`archive/handoff/v0.17.0.md`](archive/handoff/v0.17.0.md)(不回改) |
 
 ## 2. 当前系统已具备能力
 
-> 仅做"清单级"罗列。**当前字段 / 接口 / 错误码事实权威源**:字段 / 类型 / 约束 / 索引以 [`../prisma/schema.prisma`](../prisma/schema.prisma) 为准;接口路径 / DTO / 权限矩阵以 Swagger UI(`/api/docs`)+ [`../test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) `EXPECTED_ROUTES` + OpenAPI snapshot 为准;BizCode 编号 / message / httpStatus 以 [`../src/common/exceptions/biz-code.constant.ts`](../src/common/exceptions/biz-code.constant.ts) 常量与 [`../CHANGELOG.md`](../CHANGELOG.md) 累计为准。[`docs/v2-api-contract.md`](v2-api-contract.md) 仅作为 V2-D8 立项时刻 draft 参考,**不再作为当前字段 / 接口 / 错误码的执行依据**。
+> 清单级;事实权威:字段 = [`schema.prisma`](../prisma/schema.prisma);接口 = `/api/docs` + [`EXPECTED_ROUTES`](../test/contract/openapi.contract-spec.ts) + snapshot;BizCode = `biz-code.constant.ts` + CHANGELOG。
 
-- **v1 基础能力**:NestJS + Prisma + PostgreSQL + JWT 登录 + 三层 `Role` + 用户 CRUD + 软删除 + 统一返回格式 + Swagger 100%(沿 [docs/archive/legacy/architecture-v1-blueprint.md §1-§10](archive/legacy/architecture-v1-blueprint.md);原 `ARCHITECTURE.md §1-§10`,PR-6 已归档)
-- **V1.1 工程加固**:`nestjs-pino` 结构化日志 + 请求 ID + helmet + 登录限流 + 健康检查分层 + 优雅关闭 + Dockerfile 多阶段 + GitHub Actions CI(沿 [ARCHITECTURE.md §11](../ARCHITECTURE.md))
-- **V2 数据底座**:`dictionaries`(双表 + 父子树)/ `organizations`(树)/ `members`(全局 `memberNo` 不复用)/ `member_departments`(一人一部门 partial unique)
-- **V2 批次 1**:`member_profiles`(1:1 子资源,含敏感字段)/ `emergency_contacts`(N:1 子资源)
-- **V2 批次 2**:`certificates`(N:1 + 4 态闭集 + verify/reject)
-- **V2 批次 3A**:`activities`(状态机 4 态)/ `activity_registrations`(4 态 + partial unique + CSV export)
-- **V2 批次 3B / 4-A / 4-B**:`attendance_sheets`(5 态;含终审)/ `attendance_records` / `contribution_rules`(D14 预填规则;无 CRUD 流水表)
-- **V2 批次 6**:`audit_logs` 写入即不可改不可删(A-1 红线);`AuditLogEvent` 各业务写路径已全部接入(含 P0-D 本人改密 `password.change.self`,#117)
-- **v0.13.0 P0-D 本人自助改密**:`PUT /api/users/me/password`(`ChangeMyPasswordDto { oldPassword, newPassword }`)+ 2 BizCode(`OLD_PASSWORD_INVALID=10005` / `NEW_PASSWORD_SAME_AS_OLD=10006`)+ 独立 throttler `password-change`(IP 5次/60秒,与登录限流物理隔离)+ audit `password.change.self`;**不主动吊销 access token**(沿 D-4);P0-E PR-3 落地后**联动撤销 refresh token**(`self-password-change`)
-- **v0.14.0 P0-E refresh token / logout / logout-all**(#127 代码 + #128 状态回填 + #129 bump + #130 handoff + tag/Release 已发布 2026-05-17T19:16:06Z):新增 3 个 API 端点(`POST /api/auth/refresh` rotation always + family revoke + absolute expiration / `POST /api/auth/logout` 幂等 / `POST /api/auth/logout-all` 撤销该 user 全部 refresh)+ `LoginResponseDto` 扩 `refreshToken` + `refreshExpiresAt` 字段(`LoginDto` 入参 zero drift)+ **新表** `refresh_tokens`(`tokenHash @unique` 只存 sha256 hash + family 关联 + replacedById 链;migration `20260517165220_add_refresh_tokens`)+ `JWT_EXPIRES_IN=15m`(由 7d 收敛)/ `JWT_REFRESH_EXPIRES_IN=90d`(family absolute expiration 不滑动)+ 新 BizCode `REFRESH_TOKEN_INVALID=10007`(失败 4 子原因统一码)+ 独立 throttler `refresh`(IP 30/60)+ 联动撤销 4 场景(本人改密 / 管理员重置 / 用户禁用 / 用户软删 → `updateMany` 同事务)+ 新 5 audit event(`auth.login` / `auth.refresh` / `auth.logout` / `auth.logout-all` / `password.reset.by-admin`);**access token 仍不主动吊销**(沿 D-4 + 15m TTL + JwtStrategy 每请求查库);**JWT payload 严格 zero drift** `{ sub, username }`;**不**做 tokenVersion / access blacklist / Redis / refresh 查询接口 / 设备列表(沿 D-9)
-- **V2.x C-6 RBAC**:`RbacRole` / `Permission` / `RolePermission` / `UserRole` 4 表 + `RbacService.can()` + 14 条 `rbac.*` 权限点 + `ops-admin` 内置角色 + bootstrap user_role
-- **V2.x C-7 attachments**:多态附件主模块(`@unique` key 已加)+ 配置三表(type / mime / size)+ 业务级 `rbac.can()` 首个业务模块接入(管理面已 P0-F 收紧;业务面除本模块外仍归 Slow-4;详 §3 / §4)
-- **V2.x C-7.5 storage**:`StorageSettings` singleton + `LocalStorageProvider` + `CosStorageProvider` + 动态 Router + AES-256-GCM 凭证加密 + 后台 admin API + production fail-fast hook + `APP_ENV=smoke` 专用 CI 形态
-- **v0.15.0 已发布能力**(release 收口已完成 2026-05-20T17:07:09Z;tag `v0.15.0` 指向 `089499d` = PR #163 handoff squash commit;GitHub Release Latest = `v0.15.0`):
-  - **P0-F RBAC 收紧 4 PR**(评审稿 + 实施):管理面(`rbac/*` 接入 `rbac.can()`,#132)/ 配置面(`config/*` PR-2 + PR-2A + PR-2B,#133 / #134 / #135 / #136)/ 用户管理面(`users/*` 接入 `rbac.can()`,#137 / #138)/ 审计日志面(`audit-logs/*` 接入,#139 / #140);完成"Guard `@Roles(...)` + Service `rbac.can()`" 双轨在管理面的统一收紧
-  - **Phase 0/1 客户端边界评审 + Phase 1A Swagger Tag 重命名**(#141 评审 / #142 重命名):Swagger Tag 向 `surface-module` 分类体系收敛(App / Admin / System / Public 4 surface × module);**0 endpoint 变更**(仅 `@ApiTags` 重命名);Phase 1B path alias `/api/auth/v1/*` + `/api/public/v1/*` **本期未启动**
-  - **App API Phase 2 完整 9-PR 串 P2-0 ~ P2-8 全部合入**(#143 ~ #161;沿 [`docs/archive/reviews/app-api-phase-2-review.md`](archive/reviews/app-api-phase-2-review.md);P2-8 #161 = docs closeout):**15 个新 endpoint** 全部落地,5 个新 Controller(均以 `@Controller('app/v1/...')` 前缀,沿 [Phase 0.5 §10.2 D-4](archive/reviews/app-permission-boundary-review.md) `/me/*` 与 `/my/*` 物理分离):
-    - **身份 / 账号 / 能力**(P2-1):`GET /api/app/v1/me` / `GET /api/app/v1/me/account` / `GET /api/app/v1/me/capabilities`(暴露 product-level capability 而非 raw RBAC permission code,沿 D-5.3)
-    - **个人资料**(P2-2):`GET /api/app/v1/me/profile` / `PATCH /api/app/v1/me/profile`(白名单严格 2 字段 `nickname` + `avatarKey`;身份证号默认掩码后 4 位)
-    - **本人改密**(P2-3):`PUT /api/app/v1/me/password`(继承 P0-D / P0-E 全套铁律:`@PasswordChangeThrottle()` / 10005 / 10006 / 联动撤 refresh / audit `password.change.self`)
-    - **活动**(P2-4):`GET /api/app/v1/activities/available`(可参加列表)/ `GET /api/app/v1/activities/{id}`(App 视角详情 DTO)
-    - **本人报名**(P2-5):`GET /api/app/v1/my/registrations` / `GET /api/app/v1/my/registrations/{id}` / `GET /api/app/v1/my/activities`(P2-5a 只读)+ `POST /api/app/v1/my/registrations` / `PATCH /api/app/v1/my/registrations/{id}/cancel`(P2-5b 写)
-    - **本人考勤**(P2-6):`GET /api/app/v1/my/attendance-records`
-    - **本人证书**(P2-7):`GET /api/app/v1/my/certificates`
-  - **App API DTO 严格 Mobile 隔离**:Phase 2 全部 DTO 均新建 `dto/app/` 子目录承载(沿 [Phase 0.7 §2.2](archive/reviews/code-architecture-boundary-review.md) / [Phase 0.6 §6.1](archive/reviews/data-access-lifecycle-boundary-review.md));**禁止** `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 一个 Admin DTO 构造 App DTO;App API where 子句永远用 `currentUser.memberId` 锁定本人(`scope = self`);**永不返回 L3 字段**(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / 完整 signed URL)
-  - **App API 准入语义**(沿 [`docs/archive/reviews/app-permission-boundary-review.md §10.2`](archive/reviews/app-permission-boundary-review.md) D-5):仅 `User.memberId != null && User.status=ACTIVE && User.deletedAt IS NULL && Member.status=ACTIVE` 的正式队员可用 App;候选 / 临时编号志愿者本期**不**支持;Admin 兼队员走 linked-member self perspective,**不**扩大字段可见性
-- **测试与契约**:
-  - Unit / E2E 实数以最近 main 合入 PR(#160)CI 记录为准,本 P2-8 docs-only PR **未重跑**
-  - E2E spec 文件数终态 **72 suites / 1664 tests**(与 §3 / CHANGELOG 终态一致;Route B Phase 4 删除队员流冗余 spec 后净值)。演进:v0.14.0 的 55 → Phase 2 新增 **8 个 App API e2e spec**(`app-me` / `app-me-password` / `app-activities-available` / `app-activities-detail` / `app-my-registrations-read` / `app-my-registrations-write` / `app-my-attendance-records` / `app-my-certificates`)→ v0.15.0 后续累计 characterization / state-transition / legacy split 相关 spec(沿 #196 / #199 / #202 等 PR)→ Phase 4 删除 `/v2/users/me/*` 队员流冗余 spec 后由中间峰值收敛至 72
-  - Contract OpenAPI snapshot 已覆盖 **15 个 `/api/app/v1/*` 端点**(沿 [`test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) `EXPECTED_ROUTES`)
-  - **Swagger 鉴权后缀惯例(v0.17.0 / P2-2)**:全部 148 endpoint 的 `@ApiOperation` summary 携带统一后缀 `[rbac: <权限码>]` / `[roles: <角色列表>]` / `[public]` / `[auth]`(attachments 动态判权标 `attachment.<action>.*` 通配族);后缀 ↔ 装饰器 / seed 一致性由 `pnpm docs:rbacmap:check` 检查项 G 锁定,新增 endpoint 必须带后缀否则 FAIL
-  - `ci.yml` 全套 + `docker-smoke.yml` 真实启动回归继续生效,env 锁定值与 v0.14.0 一致(`JWT_EXPIRES_IN=15m` + `JWT_REFRESH_EXPIRES_IN=90d`)
-
----
+- **v1 + V1.1 底座**:NestJS + Prisma + PostgreSQL + JWT + 三层 Role + 软删除 + 统一返回 + Swagger 100%;pino 日志 + 请求 ID + helmet + 限流 + 健康检查 + 优雅关闭 + CI
+- **V2 模型全量**:dictionaries / organizations / members(`memberNo` 不复用)/ member_departments / member_profiles / emergency_contacts / certificates / activities / activity_registrations(+CSV)/ attendance_sheets+records(5 态含终审)/ contribution_rules(D14)/ audit_logs(A-1 不可改删)
+- **token 体系**(v0.13/14,**行为冻结**):App 本人改密(不吊销 access,D-4)+ refresh / logout / logout-all(rotation always / family revoke / 90d absolute / 联动撤销 4 场景 / JWT 15m / payload 仅 `{sub,username}`)
+- **RBAC + P0-F**:4 表 + `rbac.can()` + 76 码 + ops-admin;管理面四域(rbac / config / users / audit-logs)已 Service 层判权
+- **attachments + storage**:多态附件 + 配置三表(不合表不抽 facade)+ 业务面 `rbac.can()` 首批(20 码);Local / COS Provider + AES-256-GCM + fail-fast
+- **App API Phase 2**(15 端点):`me`×3 / profile×2 / password / activities×2 / `my/*`×7;DTO 隔离 `dto/app/` 禁派生;self-scope;**永不返回 L3**;准入双 ACTIVE(D-5)
+- **Route B 终态**(2026-06-01):全仓仅 4 前缀,零 v2 / 零裸前缀 / 零 legacy,contract 断言锁定(§2.1)
+- **P2-2 鉴权后缀**(v0.17.0):148 endpoint summary 带 `[rbac:]/[roles:]/[public]/[auth]`,检查项 G 锁一致性
+- **测试与契约**:e2e **72 suites / 1664 tests** + unit 26 spec(6 characterization 全覆盖)+ contract 148 路由白名单;CI 全链 + docker-smoke
 
 ## 2.1 当前 API surface 状态
 
-> 详细 surface 长期边界与新增 / 迁移规则见 [`api-surface-policy.md`](api-surface-policy.md)。
-> ✅ **2026-06-01 Route B 全量迁移已完成**:用户拍板重开 [`AGENTS.md §19.7 D-2`](../AGENTS.md),放弃"方案 C(v2 长期保留)",改为**按客户端/场景四分的全量物理迁移**并已落地。全仓 API 现仅 4 前缀,零 `v2` / 零裸 `auth`·`health`·`users` / 零 legacy(终态由 contract"全部路由仅落 4 canonical 前缀"断言锁定);`/api/open/v1` 预留未实现。目标形态见 [`api-surface-policy.md §0`](api-surface-policy.md);迁移过程见 [`api-surface-migration-plan.md`](api-surface-migration-plan.md) + [`AGENTS.md §21 D-9`](../AGENTS.md)。
-
-| Surface | 终态前缀(Route B) | 原前缀(已迁移删除) | 新增能力策略 |
-|---|---|---|---|
-| **App** | `/api/app/v1/*` | (App 本就是新前缀,未迁移) | 新移动端 endpoint **只能**落此;DTO 必须独立定义于 `dto/app/`,禁止派生 Admin DTO |
-| **Admin** | `/api/admin/v1/*` | `/api/v2/*` + `/api/users/*` | 新管理面 endpoint 落 `/api/admin/v1/*` |
-| **Auth** | `/api/auth/v1/*` | `/api/auth/*` | 新认证 endpoint 落 `/api/auth/v1/*` |
-| **System** | `/api/system/v1/*` | `/api/health/*` + v2 中 ops/配置类 | 新 ops/系统 endpoint 落 `/api/system/v1/*`(承接 D-1 contribution-rules) |
-| **Open** | `/api/open/v1/*`(预留) | — | 本期不实现、不占用 |
-
-**铁律**:
-- ❌ **不再新增 Mixed Controller**(class-level `@ApiTags('Admin - X')` + 方法级追加 `Mobile - X`);Route B 终态后,原 P1-C 拆出的 4 个 `controllers/*-legacy.controller.ts`(users / attachments / activity-registrations / attendances)已于 **Phase 4 删除**,队员自助流统一在 App surface(`controllers/app-me.controller.ts` / `controllers/app-my-*.controller.ts`);仅 `permissions/rbac.controller.ts` `me/permissions` 单方法仍 method-level Mixed(`@Controller('system/v1/rbac')`,沿 [`api-surface-policy.md §5.1`](api-surface-policy.md) 保留)；`dictionaries.controller.ts` 为**非 surface Mixed**(同 surface 双 class,文件结构问题)
-- ❌ 原 mobile-like endpoint(`/api/users/me/*` / `/api/v2/users/me/*`)已于 Route B Phase 4 删除;移动端能力**只**在 `/api/app/v1/*` 落地(沿 [`api-surface-policy.md §0`](api-surface-policy.md))
-- ❌ App API **永远不返回** L3 字段(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / 完整 signed URL)
-
----
+4 前缀(边界规则见 [`api-surface-policy.md`](api-surface-policy.md),迁移过程见 `api-surface-migration-plan.md`):**App** `/api/app/v1/*`(移动端只能落此,DTO 独立 `dto/app/`)| **Admin** `/api/admin/v1/*` | **Auth** `/api/auth/v1/*` | **System** `/api/system/v1/*`(D-1)| **Open** 预留不实现不占用。
+**铁律**:❌ 不再新增 Mixed Controller(存量仅 rbac `me/permissions` 方法级 + dictionaries 同 surface 双 class,冻结);❌ App 永不返回 L3 字段(`passwordHash` / `*token*` / `secret*` / 完整 signed URL)。
 
 ## 3. 当前明确未做 / 暂不启动
 
@@ -134,89 +52,25 @@
 - **不**自动引入 repository / `*.repository.ts` 抽象层 — service 直连 Prisma 沿用
 - **不**在无 contract 审批 / 单独立项的情况下改 controller path / 改 OpenAPI snapshot;Route B 全量迁移已于 2026-06-01 完成(终态 4 前缀),新 endpoint 一律落 `admin/v1` / `app/v1` / `auth/v1` / `system/v1`(沿 [`api-surface-policy.md §0`](api-surface-policy.md))
 
----
-
-## 4. 当前最大风险 / 债务
+## 4. 当前最大风险 / 债务(仅 open 项)
 
 | 等级 | 债务 | 处理建议 |
 |---|---|---|
-| P0 | 缺少"当前状态入口" | ✅ 本文件已建立;后续每次 release / handoff 合入后必须回填 |
-| P0 | handoff 同时承担"历史快照"与"当前事实",内部前后不一致(`v0.12.0` handoff §0 已打 tag、§6/§10/§11 仍写"未打") | handoff 一律视为**历史快照,合入后不回改**;当前事实以本文件为准 |
-| P1 | 权限体系双轨并存(Guard `@Roles(...)` + Service `rbac.can()`);**管理面已通过 P0-F / v0.15.0 收紧**(rbac / config / users / audit-logs 4 PR 接入 `rbac.can()`,#132 / #134 / #136 / #138 / #140;原 P0 已闭环);**剩余业务面**(attachments 之外)细粒度权限接入仍归 Slow-4 范围 | 管理面双轨收口已完成;业务面 RBAC 接入等业务方拍板 Slow-3(ADMIN 内置角色边界)后再启动 Slow-4 |
-| P1 | 第一版前端联调包仅剩运维侧 P0-H / P0-I | **P0-A ~ P0-G 已全部落地并随 v0.13.0 / v0.14.0 / v0.15.0 发布**:P0-A 起步包(#110)/ P0-G BizCode 翻译表(#111)/ P0-C bootstrap SOP(#113)/ P0-D 本人自助改密(#115-#118)/ P0-B 测试 COS 闭环验收(#125)/ P0-E refresh token / logout / logout-all(#126-#128)/ P0-F RBAC 收紧 4 PR(#132-#140);**剩余**:P0-H 部署演练 + P0-I 排错 SOP — 由运维侧立项,系统侧本节无新增动作 |
-| P1 | docs/ 体系庞大(根 6 大文档 + docs/ 50+ 文件);治理仍持续 | ✅ 2026-05-21 治理收口 PR 已将 49 份历史 handoff / 评审稿 / 批次 / first-release 过程档案 / FINAL_REPORT 迁至 [`archive/`](archive/);✅ PR-4(2026-05-22)将 `srvf-foundation-research.md` / `srvf-foundation-data-model-draft.md` / `srvf-foundation-interview-brief.md` 3 个 V2 设计期产物归档至 [`archive/plans/v2-design-phase/`](archive/plans/v2-design-phase/);✅ PR-5(#208)将 `docs/v2-plan.md` 归档至 [`archive/plans/v2-first-stage-plan.md`](archive/plans/v2-first-stage-plan.md);✅ PR-6(#209)将 `ARCHITECTURE.md` 顶层入口重写(1547→294 行),设计期蓝图按章节归档至 [`archive/legacy/architecture-v1-blueprint.md`](archive/legacy/architecture-v1-blueprint.md) / [`archive/legacy/architecture-v1-1-hardening.md`](archive/legacy/architecture-v1-1-hardening.md) / [`archive/plans/architecture-v2-first-stage-blueprint.md`](archive/plans/architecture-v2-first-stage-blueprint.md);✅ **G1-PR-C(#217)** `docs/srvf-business-docs.md` 硬编码本机路径泛化 + G-10 双仓库协作规则占位;✅ **G1-PR-D(#218)** `TASKS.md` 入口化 + V2 第一阶段与 V2.x 批次历史全文归档至 [`archive/legacy/tasks-v2-first-stage-historical.md`](archive/legacy/tasks-v2-first-stage-historical.md);**后续治理串**(G1-7 development/security cross-check / G2 顶层规则缺口 / Phase G3 业务 RCT)沿 [`system-foundation-governance.md §6`](system-foundation-governance.md) 路线图推进 |
-| P1 | `TASKS.md` 历史体量与 V1.1 / V2.x 任务混排(原始单文件历史任务堆积) | ✅ G1-PR-D(#218)已闭环:根目录 `TASKS.md` 已入口化为 **166 行入口索引**;V2 第一阶段 Step 1-7 + V2.x C-6 RBAC / C-7 attachments / C-7.5 Provider / §10 后续任务 全文已 verbatim 归档至 [`archive/legacy/tasks-v2-first-stage-historical.md`](archive/legacy/tasks-v2-first-stage-historical.md);根目录保留 §6/§7/§8/§9/§10 章节锚点供 active(V2 红线 / v2-api-contract 等)+ frozen handoff(v0.9.0/v0.10.0/v0.11.0/v0.12.0)历史引用解析 |
-| P2 | `attendances.service.ts` 1100 行(P1-4 第一刀 #280 抽出 `attendance-presenter.ts` 后;state-machine + audit-recorder + time-overlap-policy + contribution-calculator + presenter 已抽离) | **P1-4 调研收口(2026-06-10 用户拍板)**:第二刀 QueryService 经只读调研判定触发条件不足(净查询构造仅 ~40L、filter 分支少、抽离会模糊事务边界,命中 [`architecture-boundary.md §6`](architecture-boundary.md) Do-not-extract);余量为事务写编排 + 写路径共享断言(§4 本职),**视为合理终态**;重开需新触发条件并单独立项 |
-| P2 | `attachments.service.ts` 827 行 / `activity-registrations.service.ts` 750 行 / `activities.service.ts` 607 行 | **P1-4 调研收口(2026-06-10 用户拍板)**:`attachments` 无合规可抽边界(audit-recorder #203 / validation 纯规则 PR #6b / mime-to-ext 历史已抽,余量为 signed-URL L3 红线 + RBAC self/other scope + 配置三表读点 + 本职编排);`activity-registrations` 仅剩 `formatRowsAsCsv`(~54L 单点调用)低价值 Presenter 候选,**不立项**;`activities`(607L)低于 god 阈值不在 P1-4 范围。三模块均**视为合理形态**,⚠G 标记仅作体量观察 |
-| P2 | service 单测占比仍偏低(`src/` 内 **26** 个 `*.spec.ts` / 221 个 `.ts` 文件 ≈ 11.8%,2026-06-10 实测) | E2E 72 spec 覆盖回归;6 个 god/large-service service spec 全覆盖(#241/#243/#246/#247/#251/#253);participation 5 个纯组件 unit 矩阵 + attendance-presenter spec 已补(#278/#279/#280) |
-| P2 | Mixed Controller 存量(`permissions/rbac.controller.ts` `me/permissions` 方法级 Mobile - Capabilities(P1-A 暂不拆)/ `dictionaries.controller.ts` 同 surface 双 controller(非 surface Mixed);`users.controller.ts` / `attachments.controller.ts` / `activity-registrations.controller.ts` / `attendances.controller.ts` 四项 P1-C step 1/2/3/4 已完成) | 仅兼容,不再新增;剩余 mixed / method-level 状态以 [`api-surface-policy.md §5.1 / §7`](api-surface-policy.md) 当前表为准 |
-| P2 | Contract snapshot 单文件约 1,037,374 字节 / 35,777 行(~1013 KB,2026-06-10 P2-2 后实测),review 困难 | 接受;PR review 时用 diff 工具看 |
-| P3 | `common/storage/` 已承载完整 module + controller(超出原 "common = 跨模块基础设施" 语义) | 长期可迁到 `src/modules/storage/`;本期不动 |
-
----
+| P1 | 权限双轨:管理面已收紧(P0-F),业务面 7 个 G 模式模块(48 处 `@Roles`)归 Slow-4 | 等 Slow-3 决议;AI 禁自行接入 |
+| P1 | 前端联调包剩运维侧 P0-H 演练 + P0-I 排错 SOP | 运维侧立项;系统侧无动作 |
+| P2 | god-service 体量观察:attendances 1100L / attachments 827L / activity-registrations 750L(P1-4 收口 = 合理终态;体量 source-only 口径,排除 spec) | 重开需 architecture-boundary §6 新触发 + 单独立项 |
+| P2 | service 单测占比 ~11.8%(26/221 实测) | 刻意策略(e2e 为主,见 §2 测试行) |
+| P2 | Mixed Controller 存量 2 处(见 §2.1) | 冻结仅兼容;详 api-surface-policy §5.1 |
+| P2 | contract snapshot ~1MB / 35,777 行 | 已接受;review 用 diff,勿整读 |
+| P3 | `common/storage/` 超出 common 语义 | 长期可迁 `src/modules/storage/`;本期不动 |
 
 ## 5. 新任务开工前必须检查
 
-> **门禁**:任何一项不满足,**不开新功能**,先与维护者对齐。
-
-- [ ] `git status --short` 工作树 clean
-- [ ] `git branch --show-current` 在期望分支(`main` 或 `claude/*` worktree)
-- [ ] `gh pr list --state open` 输出为空(open PR = 0)
-- [ ] `package.json#version` 与 Swagger `setVersion(...)` 与最新 tag 三方一致
-- [ ] 最新 [`docs/archive/handoff/`](archive/handoff/) 文件存在,且本文件 §1 表已反映该 release
-- [ ] [`CHANGELOG.md`](../CHANGELOG.md) `## Unreleased` 段不残留与上次 release 重复的未释放变更
-- [ ] 本次任务是否涉及 **D 档**(schema / migration / 权限 / 安全 / 存储 / audit / 不可逆变更);若是,先按 [`docs/process.md §4`](process.md) 降速
-- [ ] 本次任务是否需要用户拍板(C / D / E 档);若是,先回到对话等用户确认,**不动代码**
-
-> **fresh worktree 前置**(新建 worktree / 新克隆后,首次运行任何 `typecheck` / `lint` / `test` 之前必做):
->
-> ```bash
-> pnpm install --frozen-lockfile   # worktree 不共享 node_modules,需各自安装依赖
-> pnpm prisma generate             # 生成 Prisma Client
-> ```
->
-> 未生成 Prisma Client 时,`pnpm typecheck` 会报大量 `@prisma/client has no exported member 'Role'` / `'UserStatus'` 之类**假错误**——这不是代码错误,而是环境准备不足。先跑上面两条,再判断红绿。
-
-详细流程见 [`docs/process.md §2`](process.md)。
-
----
+门禁见 [`process.md §2`](process.md),任一不满足不开新功能。速记:`pnpm agent:preflight` 全过 / handoff 与 §1 一致 / Unreleased 无残留 / D 档降速(process §4)/ 拍板未到不动代码 / fresh worktree 先 install + prisma:generate。
 
 ## 6. 文档阅读顺序
 
-> 不要一次读完所有文档。按"最少必要"读到能完成当前任务为止。
-
-1. **`docs/current-state.md`**(本文件)— 当前事实
-2. **用户当前任务说明** — 决定下一步动作
-3. [`README.md`](../README.md) — 项目快速概览 / 路由总览 / 文档地图
-4. [`AGENTS.md`](../AGENTS.md) — **长期 AI 协作铁律主入口**(§0-§19;`CLAUDE.md` 已收口为入口转发)
-5. [`docs/process.md`](process.md) — 开发流程与 PR 五档分级
-6. [`docs/api-surface-policy.md`](api-surface-policy.md) — API surface 长期边界
-7. [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — 架构设计背景(请先读顶部"当前阶段说明")
-8. [`docs/srvf-foundation-baseline.md`](srvf-foundation-baseline.md) — V2 基线规范(13 项 A 档)
-9. [`docs/V2红线与复活路径.md`](V2红线与复活路径.md) — V2 五档红线(A/B/C/D/E)
-10. **仅在相关时**:
-    - 运行 SOP:[`development.md`](development.md) / [`testing.md`](testing.md) / [`deployment.md`](deployment.md) / [`security.md`](security.md) / [`ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md)
-    - 业务上下文边界图:[`participation-bounded-context.md`](participation-bounded-context.md)(activities / activity-registrations / attendances / contribution-rules 4 模块的状态链条与跨模块耦合;**不**含 certificates)
-    - 附件配置三表边界:[`attachment-config-boundary.md`](attachment-config-boundary.md)(`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig` 的 override-with-default 模式、运行时读点、不合表/不抽 facade 的理由)
-    - 架构边界 / service 抽离:[`architecture-boundary.md`](architecture-boundary.md)(Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect 6 类抽离决策与触发条件;承接 `AGENTS.md §19.7 D-7`)
-    - 历史 handoff:[`archive/handoff/v0.15.0.md`](archive/handoff/v0.15.0.md)(最新)/ [`v0.14.0.md`](archive/handoff/v0.14.0.md) / 更早版本均在 [`archive/handoff/`](archive/handoff/)
-    - 历史评审稿 / 批次决议:[`archive/reviews/`](archive/reviews/) / [`archive/batches/`](archive/batches/)
-    - 历史阶段计划:[`archive/plans/`](archive/plans/)(含 `first-release-bootstrap-sop.md` / `first-release-p0d-change-my-password-review.md` 在 `archive/reviews/`)
-
-`archive/**` 内文档**只代表归档时刻的决议**,不再作为当前执行约束。
-
----
-
-## 7. 冲突处理原则
-
-> 简表;权威分层与铁律见本文件 §0。
-
-| 维度 | 权威源 |
-|---|---|
-| **当前事实**(版本 / open PR / HEAD / 已发能力 / surface 状态) | 代码 + GitHub 当前状态 + 本文件 |
-| **长期 AI 协作铁律**(命名 / 目录 / 错误码 / Guard / 软删除 / App API 边界 / §19 决策) | [`AGENTS.md`](../AGENTS.md) > [`srvf-foundation-baseline.md`](srvf-foundation-baseline.md) > [`V2红线与复活路径.md`](V2红线与复活路径.md) > [`api-surface-policy.md`](api-surface-policy.md) |
-| **流程制度** | [`process.md`](process.md) |
-| **架构设计背景** | [`../ARCHITECTURE.md`](../ARCHITECTURE.md)(请先读顶部"当前阶段说明") |
-| **历史证据**(release 历史 / 评审决议 / 批次决议) | [`archive/handoff/v*.md`](archive/handoff/) + [`archive/reviews/`](archive/reviews/) + [`archive/batches/`](archive/batches/) + [`../CHANGELOG.md`](../CHANGELOG.md) |
-
-**铁律**:遇到冲突 → **不得擅自调和、不得擅自改文件**,先向用户汇报,等拍板。
+1. **必读三件套**:本文件 → [`ai-harness/README.md`](ai-harness/README.md)(速查 / 三档 / 分区)→ [`process.md §2/§3`](process.md)(门禁 + 五档)
+2. [`AGENTS.md`](../AGENTS.md) **按任务主题选读**(节号见 ai-harness 单页)
+3. **按需**:[baseline](srvf-foundation-baseline.md) / [V2 红线](V2红线与复活路径.md) / `ARCHITECTURE.md`(先读顶部说明)/ api-surface-policy
+4. **仅在相关时**:运行 SOP(development / testing / deployment / security / ops)与边界图(participation-bounded-context / attachment-config-boundary / architecture-boundary),均在 docs/ 下;权限地图([RBAC_MAP](ai-harness/RBAC_MAP.md));`archive/`(只作证据)
