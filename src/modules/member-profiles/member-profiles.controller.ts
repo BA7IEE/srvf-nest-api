@@ -11,11 +11,9 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
-import {
-  CreateMemberProfileDto,
-  MemberProfileResponseDto,
-  UpdateMemberProfileDto,
-} from './member-profiles.dto';
+import { CreateMemberProfileDto } from './dto/create-member-profile.dto';
+import { MemberProfileResponseDto } from './dto/member-profile-response.dto';
+import { UpdateMemberProfileDto } from './dto/update-member-profile.dto';
 import { MemberProfilesService } from './member-profiles.service';
 
 // V2 第一阶段批次 1 member_profiles controller。
