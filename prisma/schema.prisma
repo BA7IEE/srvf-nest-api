@@ -1139,7 +1139,7 @@ model SmsVerificationCode {
   phone    String
   purpose  SmsPurpose
   codeHash String // sha256(code) hex;明文码永不入库
-  userId   String? // 签发归属用户;PHONE_BIND 必填值,字段可空留未来 pre-auth 消费者(E-8);不建外键
+  userId   String? // 签发归属用户;PHONE_BIND=当前登录用户,PASSWORD_RESET=按 phone 解析的目标用户(password-reset 评审稿 E-7);字段可空留未来消费者;不建外键
 
   expiresAt    DateTime // 签发 +5min(常量,T3)
   consumedAt   DateTime? // 验证成功即消费
@@ -1154,7 +1154,8 @@ model SmsVerificationCode {
 }
 
 enum SmsPurpose {
-  PHONE_BIND // 本期唯一 purpose;找回密码 / OTP 登录 / 通知挂 NEXT_TASKS P1-7
+  PHONE_BIND // 手机号绑定 / 换绑(登录态;sms-verification-infra 评审稿)
+  PASSWORD_RESET // 找回密码(pre-auth;password-reset-by-sms 评审稿 §3.1;OTP 登录 / 通知仍挂 NEXT_TASKS P1-7)
 }
 
 model SmsSendLog {
