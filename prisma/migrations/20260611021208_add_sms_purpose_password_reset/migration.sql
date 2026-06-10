@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "SmsPurpose" ADD VALUE 'PASSWORD_RESET';
