@@ -1,7 +1,7 @@
 # RBAC_MAP — 权限体系地图与对照表
 
 > **性质**:derived 地图,非规则源。权限**事实**权威源:权限码与绑定 → [`prisma/seed.ts`](../../prisma/seed.ts);判权实现 → [`src/modules/permissions/rbac.service.ts`](../../src/modules/permissions/rbac.service.ts);铁律 → [`AGENTS.md §8 / §13`](../../AGENTS.md)。
-> 数据快照:2026-06-10,HEAD `2b57f8c`(v0.17.0 release;权限事实零变化)。**任何权限事实的变更本身是 D 档**(评审稿 + 用户拍板),本文件只能事后 true-up。
+> 数据快照:2026-06-11,HEAD `8d9fd01`(v0.18.0 release;权限事实变更 = SMS +5 码 76→81,已随 #301/#302 D 档实施同 PR true-up)。**任何权限事实的变更本身是 D 档**(评审稿 + 用户拍板),本文件只能事后 true-up。
 
 ---
 

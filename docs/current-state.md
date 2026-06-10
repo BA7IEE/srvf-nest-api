@@ -7,10 +7,10 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(三方一致) | **v0.17.0**(2026-06-10;package.json = Swagger = tag;tag 指向 `2b57f8c` 标 Latest;要点见 CHANGELOG) |
-| `main` HEAD | `54f3957`(SMS T3,#302;滞后属固有现象) |
-| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **SMS 基础设施 3 段**(T1 #300 / T2 #301 / T3 #302,待下次 release 收口) |
-| 最新 handoff | [`archive/handoff/v0.17.0.md`](archive/handoff/v0.17.0.md)(不回改) |
+| 版本(三方一致) | **v0.18.0**(2026-06-11;package.json = Swagger = tag;tag 指向 `8d9fd01` 标 Latest;要点见 CHANGELOG) |
+| `main` HEAD | `8d9fd01`(v0.18.0 handoff,#305;滞后属固有现象) |
+| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **空**(v0.18.0 已收口) |
+| 最新 handoff | [`archive/handoff/v0.18.0.md`](archive/handoff/v0.18.0.md)(不回改) |
 
 ## 2. 当前系统已具备能力
 
