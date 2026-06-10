@@ -13,8 +13,8 @@
 | **当前事实**(版本、open PR、最新 release、surface 状态、当前债务) | [`docs/current-state.md`](./docs/current-state.md) |
 | **长期 AI 协作铁律**(命名、目录、错误码、Guard、软删除、RBAC、refresh token、App API 边界、§19 决策) | [`AGENTS.md`](./AGENTS.md) |
 | **架构蓝图与早期阶段背景** | [`ARCHITECTURE.md`](./ARCHITECTURE.md)(请先读其顶部"当前阶段说明") |
-| **开发 / PR 分级 / release 收口流程** | [`docs/process.md`](./docs/process.md) |
-| **AI Harness 操作层**(全仓读写分区、模块 / RBAC / 测试地图、AI 修改边界三档、人工确认点、反馈闭环与模板) | [`docs/ai-harness/README.md`](./docs/ai-harness/README.md)(derived 导航层,**非规则源**;与本表其余权威源冲突时让步) |
+| **开发 / PR 分级 / D 档降速与人话简报 / release 收口 / goal 协作模式** | [`docs/process.md`](./docs/process.md) |
+| **AI Harness 操作层单页**(铁律速查表、AI 修改三档与触发即停、全仓读写分区;同目录 `RBAC_MAP.md` 权限地图 + `NEXT_TASKS.md` 后续任务) | [`docs/ai-harness/README.md`](./docs/ai-harness/README.md)(derived 单页,**非规则源**;与本表其余权威源冲突时让步;2026-06-10 Review 冻结档在 `docs/archive/ai-harness/`) |
 | **API surface 长期边界**(/api/app/v1 / /api/v2 / root legacy) | [`docs/api-surface-policy.md`](./docs/api-surface-policy.md)(归档的设计期顶层规范见 [`docs/archive/plans/api-client-boundary-design-period.md`](./docs/archive/plans/api-client-boundary-design-period.md)) |
 | **Participation 业务上下文边界图**(activities / activity-registrations / attendances / contribution-rules 4 模块;不含 certificates) | [`docs/participation-bounded-context.md`](./docs/participation-bounded-context.md) |
 | **附件配置三表边界**(`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig` override-with-default;不合表 / 不抽 facade) | [`docs/attachment-config-boundary.md`](./docs/attachment-config-boundary.md) |
