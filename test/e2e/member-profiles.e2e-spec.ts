@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -12,6 +13,10 @@ import { createTestApp } from '../setup/test-app';
 
 // V2 第一阶段批次 1 member_profiles 模块 e2e。
 // 覆盖 3 接口主成功 + 关键失败:权限边界 / 1:1 unique / 字典 5 项校验 / 禁止白名单外字段。
+//
+// Slow-4 T2(2026-06-11,评审稿 §8 / D-S4-4):入口切到 service 层 rbac.can();
+// 失败统一 RBAC_FORBIDDEN(30100)。`adminAuth` 在 beforeAll 全局 grant biz-admin,
+// 业务断言零修改;细粒度判权矩阵另见 member-profiles-rbac-boundary.e2e-spec.ts。
 //
 // 注:reset-db 清空所有表(包括 dictionaries),每个 spec 必须自建字典(沿用 members.e2e-spec)。
 
@@ -39,11 +44,15 @@ describe('member-profiles 模块', () => {
     prisma = app.get(PrismaService);
 
     await createTestUser(app, { username: 'mp-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'mp-adm', role: Role.ADMIN });
+    const admin = await createTestUser(app, { username: 'mp-adm', role: Role.ADMIN });
     await createTestUser(app, { username: 'mp-user', role: Role.USER });
     superAdminAuth = (await loginAs(app, 'mp-su')).authHeader;
     adminAuth = (await loginAs(app, 'mp-adm')).authHeader;
     userAuth = (await loginAs(app, 'mp-user')).authHeader;
+
+    // Slow-4 T2:seed 36 条业务面码 + biz-admin;给 mp-adm 全局 grant(沿 org e2e 范式)
+    const bizSeed = await seedBizAdminPermissionsAndRole(app);
+    await grantBizAdminToUser(app, admin.id, bizSeed.bizAdminRoleId);
 
     // 创建 5 个字典 type + 各 1 个 ACTIVE item。沿用批次 1 草案 §12.1 必开 6 个的命名,
     // 但本 spec 只需要 service 层用到的 5 个(emergency_relation 由 emergency-contacts.spec 自建)。
@@ -123,27 +132,27 @@ describe('member-profiles 模块', () => {
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER GET → 403', async () => {
+    it('USER GET → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${memberId}/profile`)
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER POST → 403', async () => {
+    it('USER POST → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/members/${memberId}/profile`)
         .set('Authorization', userAuth)
         .send(minimalCreatePayload());
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER PATCH → 403', async () => {
+    it('USER PATCH → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberId}/profile`)
         .set('Authorization', userAuth)
         .send({ realName: '新名字' });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
   });
 

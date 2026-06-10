@@ -1,6 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
@@ -11,7 +10,6 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
@@ -29,7 +27,10 @@ import { CertificatesService } from './certificates.service';
 // V2 第一阶段批次 2 certificates controller。
 // 路径嵌套在 members/:memberId/certificates 下,N:1 子资源 + 4 动作接口。
 //
-// 临时权限策略(API 前评审 §5.1):全部 ADMIN / SUPER_ADMIN 兜底,**不开放** USER 自助。
+// 权限(Slow-4 T2,2026-06-11,评审稿 §3.4;取代批次 2 临时 @Roles 兜底):
+// 入口仅 JwtAuthGuard,判权下沉 service 层 `rbac.can('certificate.*')`
+// (SUPER_ADMIN 短路;biz-admin 绑全部 6 码;list/detail/qualification-flag 共用 read);
+// **不开放** USER 自助(沿批次 2;App 自助读在 app/v1/my/certificates,不走 RBAC)。
 //
 // 路由声明顺序(NestJS 优先级要求):
 //   1. GET ''                      list
@@ -58,16 +59,15 @@ export class CertificatesController {
   }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '列出队员证书(无分页;按 certStatusCode ASC, createdAt DESC 排序;软删过滤;精简字段) [roles: SUPER_ADMIN,ADMIN]',
+      '列出队员证书(无分页;按 certStatusCode ASC, createdAt DESC 排序;软删过滤;精简字段) [rbac: certificate.read.record]',
   })
   @ApiWrappedArrayResponse(CertificateListItemDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
   )
   list(
@@ -78,16 +78,15 @@ export class CertificatesController {
   }
 
   @Post()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '新增一条证书(默认 certStatusCode=pending / isInternal=false) [roles: SUPER_ADMIN,ADMIN]',
+      '新增一条证书(默认 certStatusCode=pending / isInternal=false) [rbac: certificate.create.record]',
   })
   @ApiWrappedOkResponse(CertificateResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.CERTIFICATE_TYPE_CODE_INVALID,
     BizCode.CERTIFICATE_SUB_TYPE_CODE_INVALID,
@@ -105,16 +104,15 @@ export class CertificatesController {
   // 用 QualificationFlagQueryDto 走 ValidationPipe 强制 certTypeCode 必填(NestJS 默认 @Query
   // 不强制 query 参数存在);缺 certTypeCode → 400。
   @Get('qualification-flag')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '资质判定(已核验 + 未过期 + 未软删 = qualified=true;只返布尔 + 摘要) [roles: SUPER_ADMIN,ADMIN]',
+      '资质判定(已核验 + 未过期 + 未软删 = qualified=true;只返布尔 + 摘要) [rbac: certificate.read.record]',
   })
   @ApiWrappedOkResponse(QualificationFlagResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.CERTIFICATE_TYPE_CODE_INVALID,
   )
@@ -127,13 +125,14 @@ export class CertificatesController {
   }
 
   @Get(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '查证书详情(含敏感字段;不返 deletedAt) [roles: SUPER_ADMIN,ADMIN]' })
+  @ApiOperation({
+    summary: '查证书详情(含敏感字段;不返 deletedAt) [rbac: certificate.read.record]',
+  })
   @ApiWrappedOkResponse(CertificateResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.CERTIFICATE_NOT_FOUND,
     BizCode.CERTIFICATE_NOT_BELONGS_TO_MEMBER,
@@ -147,16 +146,15 @@ export class CertificatesController {
   }
 
   @Patch(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '部分更新证书(全字段 optional;**禁止** id / memberId / certStatusCode / verifiedBy / verifiedAt / verifyNote / isInternal / supersededByCertId / expireNotifyDueAt) [roles: SUPER_ADMIN,ADMIN]',
+      '部分更新证书(全字段 optional;**禁止** id / memberId / certStatusCode / verifiedBy / verifiedAt / verifyNote / isInternal / supersededByCertId / expireNotifyDueAt) [rbac: certificate.update.record]',
   })
   @ApiWrappedOkResponse(CertificateResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.CERTIFICATE_NOT_FOUND,
     BizCode.CERTIFICATE_NOT_BELONGS_TO_MEMBER,
@@ -174,13 +172,14 @@ export class CertificatesController {
   }
 
   @Delete(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '软删证书(写 deletedAt;不物理删除) [roles: SUPER_ADMIN,ADMIN]' })
+  @ApiOperation({
+    summary: '软删证书(写 deletedAt;不物理删除) [rbac: certificate.delete.record]',
+  })
   @ApiWrappedOkResponse(CertificateResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.CERTIFICATE_NOT_FOUND,
     BizCode.CERTIFICATE_NOT_BELONGS_TO_MEMBER,
@@ -195,16 +194,15 @@ export class CertificatesController {
   }
 
   @Patch(':id/verify')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '核验通过(pending → verified;不接收 issuedAt / expiredAt / certStatusCode / verifiedBy / verifiedAt) [roles: SUPER_ADMIN,ADMIN]',
+      '核验通过(pending → verified;不接收 issuedAt / expiredAt / certStatusCode / verifiedBy / verifiedAt) [rbac: certificate.verify.record]',
   })
   @ApiWrappedOkResponse(CertificateResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.CERTIFICATE_NOT_FOUND,
     BizCode.CERTIFICATE_NOT_BELONGS_TO_MEMBER,
@@ -221,16 +219,15 @@ export class CertificatesController {
   }
 
   @Patch(':id/reject')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '核验拒绝(pending → rejected;verifyNote 必填;不接收其他系统字段) [roles: SUPER_ADMIN,ADMIN]',
+      '核验拒绝(pending → rejected;verifyNote 必填;不接收其他系统字段) [rbac: certificate.reject.record]',
   })
   @ApiWrappedOkResponse(CertificateResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.CERTIFICATE_NOT_FOUND,
     BizCode.CERTIFICATE_NOT_BELONGS_TO_MEMBER,

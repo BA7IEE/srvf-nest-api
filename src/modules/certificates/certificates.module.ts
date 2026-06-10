@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { PermissionsModule } from '../permissions/permissions.module';
 import { UsersModule } from '../users/users.module';
 import { AppMyCertificatesService } from './app-my-certificates.service';
 import { CertificatesController } from './certificates.controller';
@@ -18,8 +19,11 @@ import { AppMyCertificatesController } from './controllers/app-my-certificates.c
 //     **不**新增 listForMember,沿 D-P2-7-9 + Phase 0.7 §6 不立即重构)
 //   - Admin path `/api/admin/v1/members/:memberId/certificates/*` 8 endpoint 行为
 //     **逐字不变**(沿 D-P2-7-15 + §11.1 path stability)
+//
+// Slow-4 T2(2026-06-11):imports PermissionsModule 供 CertificatesService 注入 RbacService
+// (评审稿 slow4-rbac-business-face-review.md §3.4;App surface 不走 RBAC,AppMyCertificatesService 不动)。
 @Module({
-  imports: [DatabaseModule, AuditLogsModule, UsersModule],
+  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, UsersModule],
   controllers: [CertificatesController, AppMyCertificatesController],
   providers: [CertificatesService, AppMyCertificatesService],
 })

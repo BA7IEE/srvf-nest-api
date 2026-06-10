@@ -9,6 +9,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { RbacService } from '../permissions/rbac.service';
 import {
   CreateEmergencyContactDto,
   EmergencyContactResponseDto,
@@ -55,9 +56,18 @@ export class EmergencyContactsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
+    private readonly rbac: RbacService,
   ) {}
 
   // ============ helpers ============
+
+  // Slow-4 T2(2026-06-11,评审稿 §3.3 / D-S4-8):RBAC 判权(沿 P0-F assertCanOrThrow 范式)。
+  // 每个 public 方法第一条语句调用——先判权后查资源,保持与原 Guard 前置语义一致。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   private async findMemberOrThrow(memberId: string, tx?: PrismaTx): Promise<{ id: string }> {
     const client = tx ?? this.prisma;
@@ -134,6 +144,7 @@ export class EmergencyContactsService {
     memberId: string,
     currentUser: CurrentUserPayload,
   ): Promise<EmergencyContactResponseDto[]> {
+    await this.assertCanOrThrow(currentUser, 'emergency-contact.read.record');
     await this.findMemberOrThrow(memberId);
 
     const items = await this.prisma.emergencyContact.findMany({
@@ -159,6 +170,7 @@ export class EmergencyContactsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<EmergencyContactResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'emergency-contact.create.record');
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       await this.assertRelationCodeValid(dto.relationCode, tx);
@@ -202,6 +214,7 @@ export class EmergencyContactsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<EmergencyContactResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'emergency-contact.update.record');
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findContactInMemberOrThrow(memberId, contactId, tx);
@@ -251,6 +264,7 @@ export class EmergencyContactsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<EmergencyContactResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'emergency-contact.delete.record');
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findContactInMemberOrThrow(memberId, contactId, tx);

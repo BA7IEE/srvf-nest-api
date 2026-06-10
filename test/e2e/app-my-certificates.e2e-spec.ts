@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -132,8 +133,16 @@ describe('App /api/app/v1/my/certificates (P2-7)', () => {
     await createTestUser(app, { username: 'p27-user-no-mem', role: Role.USER });
     await createTestUser(app, { username: 'p27-user-inactive-mem', role: Role.USER });
     await createTestUser(app, { username: 'p27-user-deleted-mem', role: Role.USER });
-    await createTestUser(app, { username: 'p27-admin-with-mem', role: Role.ADMIN });
+    const adminWithMem = await createTestUser(app, {
+      username: 'p27-admin-with-mem',
+      role: Role.ADMIN,
+    });
     await createTestUser(app, { username: 'p27-admin-no-mem', role: Role.ADMIN });
+
+    // Slow-4 T2(2026-06-11,评审稿 §8):旧 admin path smoke 用例所用的 ADMIN 测试用户
+    // 统一补挂 biz-admin(certificates admin 端点已切 service 层 rbac.can())。
+    const bizSeed = await seedBizAdminPermissionsAndRole(app);
+    await grantBizAdminToUser(app, adminWithMem.id, bizSeed.bizAdminRoleId);
 
     // ============ Members ============
     const ma = await prisma.member.create({

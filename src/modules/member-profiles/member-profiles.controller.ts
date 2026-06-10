@@ -1,6 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
@@ -9,7 +8,6 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { CreateMemberProfileDto } from './dto/create-member-profile.dto';
 import { MemberProfileResponseDto } from './dto/member-profile-response.dto';
@@ -19,10 +17,10 @@ import { MemberProfilesService } from './member-profiles.service';
 // V2 第一阶段批次 1 member_profiles controller。
 // 路径嵌套在 members/:memberId/profile 下作为 1:1 子资源(单数,沿用 member-departments 风格)。
 //
-// 临时权限策略(批次 1 评审 §5.1):
-// - 全部 ADMIN / SUPER_ADMIN 兜底,**不开放** USER 自助路由
-// - **不实装** 二次校验中间件;**不实装** 业务角色矩阵执行机制
-// - 默认完整 ResponseDto(含敏感字段);ADMIN/SUPER_ADMIN 本就有权限,后续接入字段动态脱敏时再过滤
+// 权限(Slow-4 T2,2026-06-11,评审稿 §3.2;取代批次 1 临时 @Roles 兜底):
+// - 入口仅 JwtAuthGuard,判权下沉 service 层 `rbac.can('member-profile.*')`
+//   (SUPER_ADMIN 短路;biz-admin 绑全部 3 码);**不开放** USER 自助路由(沿批次 1)
+// - 默认完整 ResponseDto(含敏感字段);后续接入字段动态脱敏时再过滤
 //
 // memberId 为路径参数(@Param('memberId') 直接读;不通过 IdParamDto,与 member-departments 同款)。
 
@@ -33,13 +31,14 @@ export class MemberProfilesController {
   constructor(private readonly service: MemberProfilesService) {}
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '查队员扩展档案(无则返 data: null) [roles: SUPER_ADMIN,ADMIN]' })
+  @ApiOperation({
+    summary: '查队员扩展档案(无则返 data: null) [rbac: member-profile.read.record]',
+  })
   @ApiWrappedOkResponse(MemberProfileResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
   )
   findOne(
@@ -50,16 +49,15 @@ export class MemberProfilesController {
   }
 
   @Post()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '创建队员扩展档案(1:1;重复创建 → MEMBER_PROFILE_ALREADY_EXISTS) [roles: SUPER_ADMIN,ADMIN]',
+      '创建队员扩展档案(1:1;重复创建 → MEMBER_PROFILE_ALREADY_EXISTS) [rbac: member-profile.create.record]',
   })
   @ApiWrappedOkResponse(MemberProfileResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.MEMBER_PROFILE_ALREADY_EXISTS,
     BizCode.MEMBER_PROFILE_GENDER_CODE_INVALID,
@@ -71,21 +69,21 @@ export class MemberProfilesController {
   create(
     @Param('memberId') memberId: string,
     @Body() dto: CreateMemberProfileDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
   ): Promise<MemberProfileResponseDto> {
-    return this.service.create(memberId, dto);
+    return this.service.create(memberId, dto, currentUser);
   }
 
   @Patch()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '部分更新队员扩展档案(全字段 optional;**禁止** id / memberId / 系统字段) [roles: SUPER_ADMIN,ADMIN]',
+      '部分更新队员扩展档案(全字段 optional;**禁止** id / memberId / 系统字段) [rbac: member-profile.update.record]',
   })
   @ApiWrappedOkResponse(MemberProfileResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.MEMBER_PROFILE_NOT_FOUND,
     BizCode.MEMBER_PROFILE_GENDER_CODE_INVALID,
@@ -97,7 +95,8 @@ export class MemberProfilesController {
   update(
     @Param('memberId') memberId: string,
     @Body() dto: UpdateMemberProfileDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
   ): Promise<MemberProfileResponseDto> {
-    return this.service.update(memberId, dto);
+    return this.service.update(memberId, dto, currentUser);
   }
 }

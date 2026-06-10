@@ -1,6 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
@@ -11,7 +10,6 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
@@ -24,7 +22,9 @@ import { EmergencyContactsService } from './emergency-contacts.service';
 // V2 第一阶段批次 1 emergency_contacts controller。
 // 路径嵌套在 members/:memberId/emergency-contacts 下,N:1 子资源 + 单条 CRUD。
 //
-// 临时权限(批次 1 评审 §5.1):全部 ADMIN / SUPER_ADMIN 兜底,**不开放** USER 自助。
+// 权限(Slow-4 T2,2026-06-11,评审稿 §3.3;取代批次 1 临时 @Roles 兜底):
+// 入口仅 JwtAuthGuard,判权下沉 service 层 `rbac.can('emergency-contact.*')`
+// (SUPER_ADMIN 短路;biz-admin 绑全部 4 码);**不开放** USER 自助(沿批次 1)。
 
 @ApiTags('Admin - Emergency Contacts')
 @ApiBearerAuth()
@@ -43,16 +43,15 @@ export class EmergencyContactsController {
   }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '列出队员紧急联系人(无分页;按 priority ASC, createdAt ASC 排序;软删项不返回) [roles: SUPER_ADMIN,ADMIN]',
+      '列出队员紧急联系人(无分页;按 priority ASC, createdAt ASC 排序;软删项不返回) [rbac: emergency-contact.read.record]',
   })
   @ApiWrappedArrayResponse(EmergencyContactResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
   )
   list(
@@ -63,13 +62,12 @@ export class EmergencyContactsController {
   }
 
   @Post()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '新增一条紧急联系人 [roles: SUPER_ADMIN,ADMIN]' })
+  @ApiOperation({ summary: '新增一条紧急联系人 [rbac: emergency-contact.create.record]' })
   @ApiWrappedOkResponse(EmergencyContactResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID,
   )
@@ -83,16 +81,15 @@ export class EmergencyContactsController {
   }
 
   @Patch(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '更新一条紧急联系人(全字段 optional;**禁止** memberId / id 入参) [roles: SUPER_ADMIN,ADMIN]',
+      '更新一条紧急联系人(全字段 optional;**禁止** memberId / id 入参) [rbac: emergency-contact.update.record]',
   })
   @ApiWrappedOkResponse(EmergencyContactResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.EMERGENCY_CONTACT_NOT_FOUND,
     BizCode.EMERGENCY_CONTACT_NOT_BELONGS_TO_MEMBER,
@@ -109,15 +106,14 @@ export class EmergencyContactsController {
   }
 
   @Delete(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '软删一条紧急联系人(写 deletedAt;不物理删除) [roles: SUPER_ADMIN,ADMIN]',
+    summary: '软删一条紧急联系人(写 deletedAt;不物理删除) [rbac: emergency-contact.delete.record]',
   })
   @ApiWrappedOkResponse(EmergencyContactResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.EMERGENCY_CONTACT_NOT_FOUND,
     BizCode.EMERGENCY_CONTACT_NOT_BELONGS_TO_MEMBER,
