@@ -59,7 +59,7 @@ export class AppMeController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'App 视角本人 user + member 摘要(含 canUseApp 标志)' })
+  @ApiOperation({ summary: 'App 视角本人 user + member 摘要(含 canUseApp 标志) [auth]' })
   @ApiWrappedOkResponse(AppMeResponseDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.INTERNAL_ERROR)
   async getMe(@CurrentUser() currentUser: CurrentUserPayload): Promise<AppMeResponseDto> {
@@ -92,7 +92,9 @@ export class AppMeController {
   }
 
   @Get('account')
-  @ApiOperation({ summary: 'App 视角本人账号信息(username / status / lastLoginAt / canUseApp)' })
+  @ApiOperation({
+    summary: 'App 视角本人账号信息(username / status / lastLoginAt / canUseApp) [auth]',
+  })
   @ApiWrappedOkResponse(AppMeAccountDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.INTERNAL_ERROR)
   async getMeAccount(@CurrentUser() currentUser: CurrentUserPayload): Promise<AppMeAccountDto> {
@@ -119,7 +121,7 @@ export class AppMeController {
 
   @Get('capabilities')
   @ApiTags('Mobile - Capabilities')
-  @ApiOperation({ summary: 'App 视角本人 capability map(product-level;非 raw RBAC code)' })
+  @ApiOperation({ summary: 'App 视角本人 capability map(product-level;非 raw RBAC code) [auth]' })
   @ApiWrappedOkResponse(AppCapabilityResponseDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED)
   async getMeCapabilities(
@@ -133,7 +135,7 @@ export class AppMeController {
   @Get('profile')
   @ApiOperation({
     summary:
-      'App 视角本人 profile(User + Member 基础摘要 + hasMemberProfile 派生;canUseApp=true 必要)',
+      'App 视角本人 profile(User + Member 基础摘要 + hasMemberProfile 派生;canUseApp=true 必要) [auth]',
   })
   @ApiWrappedOkResponse(AppSelfProfileDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
@@ -146,7 +148,7 @@ export class AppMeController {
   // forbidNonWhitelisted: true 自动返 BAD_REQUEST(沿 CLAUDE.md §7);
   // canUseApp=false → FORBIDDEN。沿 §6.1 不新增 BizCode。
   @Patch('profile')
-  @ApiOperation({ summary: 'App 视角本人改 profile(严格白名单 nickname / avatarKey)' })
+  @ApiOperation({ summary: 'App 视角本人改 profile(严格白名单 nickname / avatarKey) [auth]' })
   @ApiWrappedOkResponse(AppSelfProfileDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
   async updateMyProfile(
@@ -168,7 +170,7 @@ export class AppMeController {
   @Put('password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'App 视角本人自助改密(需 oldPassword;不主动吊销 access token;撤销全部 refresh)',
+    summary: 'App 视角本人自助改密(需 oldPassword;不主动吊销 access token;撤销全部 refresh) [auth]',
   })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(

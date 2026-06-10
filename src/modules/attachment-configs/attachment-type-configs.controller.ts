@@ -57,7 +57,8 @@ export class AttachmentTypeConfigsController {
 
   @Get()
   @ApiOperation({
-    summary: '列出附件类型配置(分页;可选 status / ownerTable 过滤;默认排序 createdAt DESC)',
+    summary:
+      '列出附件类型配置(分页;可选 status / ownerTable 过滤;默认排序 createdAt DESC) [rbac: attachment-config.read.type]',
   })
   @ApiWrappedPageResponse(AttachmentTypeConfigResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -71,7 +72,7 @@ export class AttachmentTypeConfigsController {
   @Post()
   @ApiOperation({
     summary:
-      '创建附件类型配置(code 全局唯一 / kebab-case 3-32;失败抛 13023 / 13021;status 默认 ACTIVE)',
+      '创建附件类型配置(code 全局唯一 / kebab-case 3-32;失败抛 13023 / 13021;status 默认 ACTIVE) [rbac: attachment-config.create.type]',
   })
   @ApiWrappedOkResponse(AttachmentTypeConfigResponseDto)
   @ApiBizErrorResponse(
@@ -90,7 +91,9 @@ export class AttachmentTypeConfigsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '附件类型配置详情(不存在 / 已软删统一返 13020)' })
+  @ApiOperation({
+    summary: '附件类型配置详情(不存在 / 已软删统一返 13020) [rbac: attachment-config.read.type]',
+  })
   @ApiWrappedOkResponse(AttachmentTypeConfigResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -108,7 +111,7 @@ export class AttachmentTypeConfigsController {
   @Patch(':id')
   @ApiOperation({
     summary:
-      '更新附件类型配置(仅 displayName / description / ownerTable / defaultMaxSizeBytes / defaultMimeWhitelist;**禁止** code / status / deletedAt / id)',
+      '更新附件类型配置(仅 displayName / description / ownerTable / defaultMaxSizeBytes / defaultMimeWhitelist;**禁止** code / status / deletedAt / id) [rbac: attachment-config.update.type]',
   })
   @ApiWrappedOkResponse(AttachmentTypeConfigResponseDto)
   @ApiBizErrorResponse(
@@ -129,7 +132,7 @@ export class AttachmentTypeConfigsController {
   @Patch(':id/status')
   @ApiOperation({
     summary:
-      '更新附件类型配置启停状态(沿 dictionaries 独立 status 端点范式;V2.x Slow-6:ACTIVE → INACTIVE 仍被附件引用时返 13030)',
+      '更新附件类型配置启停状态(沿 dictionaries 独立 status 端点范式;V2.x Slow-6:ACTIVE → INACTIVE 仍被附件引用时返 13030) [rbac: attachment-config.update.type]',
   })
   @ApiWrappedOkResponse(AttachmentTypeConfigResponseDto)
   @ApiBizErrorResponse(
@@ -151,7 +154,7 @@ export class AttachmentTypeConfigsController {
   @Delete(':id')
   @ApiOperation({
     summary:
-      '软删附件类型配置(deletedAt = now() + 同步置 status=INACTIVE;V2.x Slow-6:仍被附件引用时返 13030)',
+      '软删附件类型配置(deletedAt = now() + 同步置 status=INACTIVE;V2.x Slow-6:仍被附件引用时返 13030) [rbac: attachment-config.delete.type]',
   })
   @ApiWrappedOkResponse(AttachmentTypeConfigResponseDto)
   @ApiBizErrorResponse(

@@ -52,7 +52,7 @@ export class UsersController {
   // ===== 管理接口(P0-F PR-3B:走 rbac.can();失败 30100)=====
 
   @Get()
-  @ApiOperation({ summary: '用户列表(分页;ADMIN 仅能看到 USER)' })
+  @ApiOperation({ summary: '用户列表(分页;ADMIN 仅能看到 USER) [rbac: user.read.account]' })
   @ApiWrappedPageResponse(UserResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   list(
@@ -64,7 +64,8 @@ export class UsersController {
 
   @Post()
   @ApiOperation({
-    summary: '创建用户;SUPER_ADMIN 可创建 ADMIN/USER,ADMIN 只能创建 USER',
+    summary:
+      '创建用户;SUPER_ADMIN 可创建 ADMIN/USER,ADMIN 只能创建 USER [rbac: user.create.account]',
   })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
@@ -83,7 +84,7 @@ export class UsersController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '用户详情(ADMIN 仅能查看 USER)' })
+  @ApiOperation({ summary: '用户详情(ADMIN 仅能查看 USER) [rbac: user.read.account]' })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -100,7 +101,9 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: '修改用户资料(不含 username / 密码 / 角色 / 状态)' })
+  @ApiOperation({
+    summary: '修改用户资料(不含 username / 密码 / 角色 / 状态) [rbac: user.update.account]',
+  })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -119,7 +122,7 @@ export class UsersController {
   }
 
   @Put(':id/password')
-  @ApiOperation({ summary: '管理员重置用户密码(无需 oldPassword)' })
+  @ApiOperation({ summary: '管理员重置用户密码(无需 oldPassword) [rbac: user.reset.password]' })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -139,7 +142,8 @@ export class UsersController {
 
   @Patch(':id/role')
   @ApiOperation({
-    summary: '修改用户角色(D1=A:仅 SUPER_ADMIN 短路;ops-admin 不绑 user.update.role)',
+    summary:
+      '修改用户角色(D1=A:仅 SUPER_ADMIN 短路;ops-admin 不绑 user.update.role) [rbac: user.update.role]',
   })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
@@ -160,7 +164,7 @@ export class UsersController {
   }
 
   @Patch(':id/status')
-  @ApiOperation({ summary: '启用/禁用用户(只改 status)' })
+  @ApiOperation({ summary: '启用/禁用用户(只改 status) [rbac: user.update.status]' })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -180,7 +184,9 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: '软删除用户(同时置 deletedAt 与 status=DISABLED)' })
+  @ApiOperation({
+    summary: '软删除用户(同时置 deletedAt 与 status=DISABLED) [rbac: user.delete.account]',
+  })
   @ApiWrappedOkResponse(UserResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,

@@ -41,7 +41,7 @@ export class RolePermissionsController {
   @Post()
   @ApiOperation({
     summary:
-      '批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids)',
+      '批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids) [rbac: rbac.role-permission.create]',
   })
   @ApiWrappedOkResponse(RbacRoleDetailResponseDto)
   @ApiBizErrorResponse(
@@ -63,7 +63,7 @@ export class RolePermissionsController {
   @Delete(':permissionId')
   @ApiOperation({
     summary:
-      '撤销角色的某个权限点(精确路径 :permissionId 是 permission.id 非 code;关系不存在返 30011)',
+      '撤销角色的某个权限点(精确路径 :permissionId 是 permission.id 非 code;关系不存在返 30011) [rbac: rbac.role-permission.delete]',
   })
   @ApiWrappedOkResponse(RbacRoleDetailResponseDto)
   @ApiBizErrorResponse(

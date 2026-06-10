@@ -53,7 +53,7 @@ export class HealthController {
   @Public()
   @Get()
   @ApiOperation({
-    summary: '服务健康检查(根端点,实现等同 /api/system/v1/health/live)',
+    summary: '服务健康检查(根端点,实现等同 /api/system/v1/health/live) [public]',
   })
   @ApiWrappedOkResponse(HealthResponseDto)
   check(): HealthResponseDto {
@@ -63,7 +63,7 @@ export class HealthController {
   @Public()
   @Get('live')
   @ApiOperation({
-    summary: '存活探针(K8s liveness)— 仅证明进程在跑,不查外部依赖',
+    summary: '存活探针(K8s liveness)— 仅证明进程在跑,不查外部依赖 [public]',
   })
   @ApiWrappedOkResponse(HealthResponseDto)
   live(): HealthResponseDto {
@@ -73,7 +73,7 @@ export class HealthController {
   @Public()
   @Get('ready')
   @ApiOperation({
-    summary: '就绪探针(K8s readiness)— 含数据库连通检查;DB 不可用时 HTTP 500 + code 50000',
+    summary: '就绪探针(K8s readiness)— 含数据库连通检查;DB 不可用时 HTTP 500 + code 50000 [public]',
   })
   @ApiWrappedOkResponse(HealthResponseDto)
   @ApiBizErrorResponse(BizCode.INTERNAL_ERROR)

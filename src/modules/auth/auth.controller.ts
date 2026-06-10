@@ -45,7 +45,7 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: '用户名 + 密码登录,返回 JWT + refresh token(family absolute expiration)',
+    summary: '用户名 + 密码登录,返回 JWT + refresh token(family absolute expiration) [public]',
   })
   @ApiWrappedOkResponse(LoginResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.LOGIN_FAILED, BizCode.TOO_MANY_REQUESTS)
@@ -63,7 +63,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'refresh access token(rotation always;family revoke;absolute expiration;返回新 access + 新 refresh)',
+      'refresh access token(rotation always;family revoke;absolute expiration;返回新 access + 新 refresh) [public]',
   })
   @ApiWrappedOkResponse(LoginResponseDto)
   @ApiBizErrorResponse(
@@ -83,7 +83,7 @@ export class AuthController {
   @Public()
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '撤销当前 refresh token(幂等;不吊销 access)' })
+  @ApiOperation({ summary: '撤销当前 refresh token(幂等;不吊销 access) [public]' })
   @ApiWrappedOkResponse(LogoutAllResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST)
   logout(@Body() dto: LogoutDto, @Req() req: Request): Promise<null> {
@@ -99,7 +99,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: '撤销该用户全部未过期且未撤销的 refresh token(本人调;不吊销 access)',
+    summary: '撤销该用户全部未过期且未撤销的 refresh token(本人调;不吊销 access) [auth]',
   })
   @ApiWrappedOkResponse(LogoutAllResponseDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.TOO_MANY_REQUESTS)

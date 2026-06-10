@@ -31,7 +31,9 @@ export class MemberDepartmentsController {
   constructor(private readonly service: MemberDepartmentsService) {}
 
   @Get()
-  @ApiOperation({ summary: '查队员当前部门归属(无归属返 data: null)' })
+  @ApiOperation({
+    summary: '查队员当前部门归属(无归属返 data: null) [rbac: member-department.read.current]',
+  })
   @ApiWrappedOkResponse(MemberDepartmentResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -49,7 +51,8 @@ export class MemberDepartmentsController {
   @Put()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: '幂等设置队员正式部门(已有归属时软删旧 + 创建新;同 org 直接返回)',
+    summary:
+      '幂等设置队员正式部门(已有归属时软删旧 + 创建新;同 org 直接返回) [rbac: member-department.set.current]',
   })
   @ApiWrappedOkResponse(MemberDepartmentResponseDto)
   @ApiBizErrorResponse(
@@ -71,7 +74,9 @@ export class MemberDepartmentsController {
   }
 
   @Delete()
-  @ApiOperation({ summary: '解除当前部门归属(软删中间表行;非 SA 也可)' })
+  @ApiOperation({
+    summary: '解除当前部门归属(软删中间表行;非 SA 也可) [rbac: member-department.clear.current]',
+  })
   @ApiWrappedOkResponse(MemberDepartmentResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,

@@ -34,7 +34,7 @@ export class MemberProfilesController {
 
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '查队员扩展档案(无则返 data: null)' })
+  @ApiOperation({ summary: '查队员扩展档案(无则返 data: null) [roles: SUPER_ADMIN,ADMIN]' })
   @ApiWrappedOkResponse(MemberProfileResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -52,7 +52,8 @@ export class MemberProfilesController {
   @Post()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '创建队员扩展档案(1:1;重复创建 → MEMBER_PROFILE_ALREADY_EXISTS)',
+    summary:
+      '创建队员扩展档案(1:1;重复创建 → MEMBER_PROFILE_ALREADY_EXISTS) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(MemberProfileResponseDto)
   @ApiBizErrorResponse(
@@ -77,7 +78,8 @@ export class MemberProfilesController {
   @Patch()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '部分更新队员扩展档案(全字段 optional;**禁止** id / memberId / 系统字段)',
+    summary:
+      '部分更新队员扩展档案(全字段 optional;**禁止** id / memberId / 系统字段) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(MemberProfileResponseDto)
   @ApiBizErrorResponse(

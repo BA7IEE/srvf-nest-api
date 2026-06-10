@@ -2,6 +2,12 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+### Changed
+
+- **P2-2 Swagger 权限要求文本化**(C 档;goal 预拍板;沿 [`docs/ai-harness/NEXT_TASKS.md`](docs/ai-harness/NEXT_TASKS.md) P2-2):全部 **148 个 endpoint** 的 `@ApiOperation` summary 追加统一鉴权后缀——`[rbac: <权限码>]`(81,Service 层 `rbac.can()` 码自调用点逐个反查;attachments 8 端点运行时 self/other 动态判定标 `attachment.<action>.*` 通配族)/ `[roles: <角色列表>]`(44,方法级 `@Roles`)/ `[public]`(6)/ `[auth]`(17,仅登录:App surface 15 + `rbac/me/permissions` + `auth/logout-all`)。**零 endpoint / DTO / 错误码 / 行为变更**;OpenAPI snapshot diff 296 行全部为 summary 文案(逐行核验非 summary 变更 = 0);维护者与前端可直接从 Swagger UI 读出每个接口的鉴权要求。
+
 ## v0.16.0 - 2026-06-10
 
 ### Added

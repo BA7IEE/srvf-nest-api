@@ -75,7 +75,7 @@ export class AttendanceSheetsCollectionController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '提交考勤单据(事务内一次性 create Sheet + N records;初始 statusCode=pending,version=1;Activity cancelled 拒绝)',
+      '提交考勤单据(事务内一次性 create Sheet + N records;初始 statusCode=pending,version=1;Activity cancelled 拒绝) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
@@ -104,7 +104,9 @@ export class AttendanceSheetsCollectionController {
 
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '列出该活动所有考勤单据(分页 + 可选 statusCode 过滤)' })
+  @ApiOperation({
+    summary: '列出该活动所有考勤单据(分页 + 可选 statusCode 过滤) [roles: SUPER_ADMIN,ADMIN]',
+  })
   @ApiWrappedPageResponse(AttendanceSheetListItemDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -133,7 +135,8 @@ export class AttendanceSheetsResourceController {
   @Get(':id/review-detail')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: 'APD 审核完整视图(R25):Activity 摘要 + Sheet 详情 + Records[含 Member 嵌套]',
+    summary:
+      'APD 审核完整视图(R25):Activity 摘要 + Sheet 详情 + Records[含 Member 嵌套] [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(AttendanceSheetReviewDetailDto)
   @ApiBizErrorResponse(
@@ -152,7 +155,9 @@ export class AttendanceSheetsResourceController {
 
   @Get(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: 'Sheet 简化详情(不含 records 数组;不返 previousSnapshot)' })
+  @ApiOperation({
+    summary: 'Sheet 简化详情(不含 records 数组;不返 previousSnapshot) [roles: SUPER_ADMIN,ADMIN]',
+  })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -171,7 +176,7 @@ export class AttendanceSheetsResourceController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '编辑 pending Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;approved/rejected/pending_final_review/final_rejected 拒绝)',
+      '编辑 pending Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;approved/rejected/pending_final_review/final_rejected 拒绝) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
@@ -205,7 +210,7 @@ export class AttendanceSheetsResourceController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '软删 pending Sheet(事务内级联软删 records;approved/rejected/pending_final_review/final_rejected 拒绝)',
+      '软删 pending Sheet(事务内级联软删 records;approved/rejected/pending_final_review/final_rejected 拒绝) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
@@ -230,7 +235,7 @@ export class AttendanceSheetsResourceController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      'APD 一级通过(pending → pending_final_review;批次 4-B 升级,沿 D-S6;R31 所有 records.contributionPoints 必填;**不再触发** attendance.recorded — 触发位置移到 final-approve;待终审)',
+      'APD 一级通过(pending → pending_final_review;批次 4-B 升级,沿 D-S6;R31 所有 records.contributionPoints 必填;**不再触发** attendance.recorded — 触发位置移到 final-approve;待终审) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
@@ -252,7 +257,9 @@ export class AttendanceSheetsResourceController {
 
   @Patch(':id/reject')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: 'APD 一级驳回(pending → rejected;reviewNote 必填)' })
+  @ApiOperation({
+    summary: 'APD 一级驳回(pending → rejected;reviewNote 必填) [roles: SUPER_ADMIN,ADMIN]',
+  })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -278,7 +285,7 @@ export class AttendanceSheetsResourceController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '终审通过(当前沿用管理权限,细分权限后置;pending_final_review → approved;贡献值正式生效;**触发** attendance.recorded;沿 D-S5 / D-S7)',
+      '终审通过(当前沿用管理权限,细分权限后置;pending_final_review → approved;贡献值正式生效;**触发** attendance.recorded;沿 D-S5 / D-S7) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
@@ -301,7 +308,7 @@ export class AttendanceSheetsResourceController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '终审驳回(当前沿用管理权限,细分权限后置;pending_final_review → final_rejected;finalReviewNote 必填;records 跟随软删;**不触发** attendance.recorded)',
+      '终审驳回(当前沿用管理权限,细分权限后置;pending_final_review → final_rejected;finalReviewNote 必填;records 跟随软删;**不触发** attendance.recorded) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(

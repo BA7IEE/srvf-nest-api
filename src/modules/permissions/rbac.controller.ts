@@ -44,7 +44,7 @@ export class RbacController {
   @ApiTags('Mobile - Capabilities')
   @ApiOperation({
     summary:
-      '查当前用户的有效权限点集 + 业务角色摘要(SUPER_ADMIN 返 Permission.code 全集;沿 D7 v1.1 §5.3)',
+      '查当前用户的有效权限点集 + 业务角色摘要(SUPER_ADMIN 返 Permission.code 全集;沿 D7 v1.1 §5.3) [auth]',
   })
   @ApiWrappedOkResponse(MyPermissionsResponseDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED)
@@ -58,7 +58,7 @@ export class RbacController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '触发 RBAC 缓存失效(沿 D7 v1.1 §5.4 + F4 v1.0 三档 scope:all / user(+userId) / role(+roleId))',
+      '触发 RBAC 缓存失效(沿 D7 v1.1 §5.4 + F4 v1.0 三档 scope:all / user(+userId) / role(+roleId)) [rbac: rbac.config.reload]',
   })
   @ApiWrappedOkResponse(ReloadRbacResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
