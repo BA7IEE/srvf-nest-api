@@ -24,7 +24,8 @@
 | 改密接口防爆破 | `@PasswordChangeThrottle` + `throttler-biz.guard.ts` | 独立 throttler 实例 `password-change`,与登录限流物理隔离;IP 维度 5 次 / 60 秒(`PASSWORD_CHANGE_THROTTLE_LIMIT` / `PASSWORD_CHANGE_THROTTLE_TTL_SECONDS` 可配);内存 storage(不引入 Redis);不暴露阈值 / `Retry-After` / `X-RateLimit-*` |
 | refresh token / logout / logout-all(P0-E PR-3) | `auth.service.ts` + `refresh-token.util.ts` + `audit-logs.service.ts` | `POST /api/auth/v1/refresh`(rotation always + family revoke + absolute expiration)/ `POST /api/auth/v1/logout`(幂等;只撤销当前 row)/ `POST /api/auth/v1/logout-all`(撤销该 user 全部 refresh);`refresh_tokens` 表只存 `sha256(raw).hex`,明文绝不入库;refresh 失败 4 子原因统一 `REFRESH_TOKEN_INVALID=10007`(不拆 EXPIRED/REVOKED/REPLAY);**access token 仍不主动吊销**(沿 D-4);TTL `access 15m / refresh 90d` |
 | refresh 接口防爆破 | `@RefreshThrottle` + `throttler-biz.guard.ts`(P0-E PR-3)| 独立 throttler 实例 `refresh`,与登录 / 改密物理隔离;IP 维度 30 次 / 60 秒(`REFRESH_THROTTLE_LIMIT` / `REFRESH_THROTTLE_TTL_SECONDS` 可配,放宽允许多 tab 并发 refresh);内存 storage;不暴露阈值头 |
-| 改密 / 重置 / 禁用 / 软删联动撤销 refresh(P0-E PR-3) | `users.service.ts` 同事务 `tx.refreshToken.updateMany` | 本人改密 → `self-password-change` / 管理员重置 → `admin-password-reset`(+ 新 audit `password.reset.by-admin`)/ 用户被禁用 → `admin-disable` / 用户软删 → `admin-delete`;**access token 仍不主动吊销**(沿 D-4;15m 自然过期 + `JwtStrategy.validate` 每请求查库阻断 DISABLED / 软删);**JWT payload 严格 zero drift** `{ sub, username }` |
+| 改密 / 重置 / 禁用 / 软删联动撤销 refresh(P0-E PR-3;2026-06-11 +第 5 场景) | `users.service.ts` / `auth/password-reset.service.ts` 同事务 `tx.refreshToken.updateMany` | 本人改密 → `self-password-change` / 本人短信重置(找回密码)→ `self-password-reset`(+ audit `password.reset.by-sms`)/ 管理员重置 → `admin-password-reset`(+ audit `password.reset.by-admin`)/ 用户被禁用 → `admin-disable` / 用户软删 → `admin-delete`;**access token 仍不主动吊销**(沿 D-4;15m 自然过期 + `JwtStrategy.validate` 每请求查库阻断 DISABLED / 软删);**JWT payload 严格 zero drift** `{ sub, username }` |
+| 找回密码防枚举(2026-06-11;冻结评审稿 [`password-reset-by-sms-review.md`](archive/reviews/password-reset-by-sms-review.md) §4) | `auth/password-reset.service.ts` + `@PasswordResetThrottle()` | `POST /api/auth/v1/password-reset{,/send-code}` 两公开端点:四种无效号码场景(不存在 / 未绑定 / 禁用 / 软删)send-code 返回**完全相同**泛化 200 且零留痕;reset 一切失败统一 `SMS_CODE_INVALID=24010`;10006 不消费验证码且仅对已验码者可达(防密码 oracle);第 6 throttler 实例 IP 3/60s;残余侧信道与图形码重启条件见评审稿 R-1 / §9 |
 
 ### 日志 redact 清单
 
@@ -83,7 +84,7 @@ req.body.refreshToken
 | `POST /api/auth/v1/logout-all` | 撤销该 user 全部未过期未撤销 refresh;返 `{ revokedCount }` |
 | `LoginResponseDto` 扩展 | `refreshToken`(256bit base64url opaque random)+ `refreshExpiresAt`(ISO 8601 UTC family absolute expiration 时刻);字段集恰好 5 项 |
 | **refresh_tokens 表** | `tokenHash @unique`(sha256 hex)+ `familyId` + `expiresAt` + `rotatedAt` + `revokedAt` + `revokedReason` + `replacedById` + `ipFirstSeen` / `uaFirstSeen`(后两者仅供审计不出对外 API) |
-| **联动撤销 4 场景** | 本人改密 `self-password-change` / 管理员重置 `admin-password-reset` / 用户禁用 `admin-disable` / 用户软删 `admin-delete`(同事务原子) |
+| **联动撤销 5 场景**(2026-06-11 由 4 扩 5) | 本人改密 `self-password-change` / 本人短信重置 `self-password-reset`(找回密码,2026-06-11)/ 管理员重置 `admin-password-reset` / 用户禁用 `admin-disable` / 用户软删 `admin-delete`(同事务原子) |
 | TTL 锁定 | `JWT_EXPIRES_IN=15m`(由 7d 收敛)/ `JWT_REFRESH_EXPIRES_IN=90d` family **absolute expiration**;rotation 继承同一 `refreshExpiresAt` 不延长;**禁止** sliding expiration |
 | 限流 | 独立 throttler `refresh` 30/60 IP(与 `default` / `password-change` 物理隔离);`logout` **无限流**;`logout-all` 复用 `password-change` 5/60 IP |
 | audit | 新增 `auth.login` / `auth.refresh` / `auth.logout` / `auth.logout-all` / `password.reset.by-admin` 共 5 事件 |

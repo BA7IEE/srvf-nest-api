@@ -2,6 +2,13 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+### Added
+
+- **找回密码:SMS 验证码重置(pre-auth)**(C/D 档;goal 拍板,冻结评审稿 [`docs/archive/reviews/password-reset-by-sms-review.md`](docs/archive/reviews/password-reset-by-sms-review.md) §3.2/§4/§5/E-1~E-18;PR #309):新端点 2 个——`POST /api/auth/v1/password-reset/send-code` + `POST /api/auth/v1/password-reset`(均 `@Public()` + `@PasswordResetThrottle()`,**第 6 命名 throttler 实例** `password-reset` IP 3/60s 默认,与既有五实例物理隔离,message 不暴露阈值)。**防枚举(本功能安全核心)**:号码「不存在 / 未绑定 / 被禁用 / 已软删」四种无效场景 send-code 返回**完全相同**泛化 200(不发码、不写 codes/send_logs、不调 provider),reset 一切失败(码错/过期/超次/号码无效)统一 24010,**零新增 BizCode / 零新增权限码**;10006(新密码与旧相同)**不消费验证码**可同码换密码重试,且仅对已验码者可达(校验顺序冻结防密码 oracle)。**重置后效**:同一事务 passwordHash 更新 + 全量撤销未撤销未过期 refresh(`revokedReason='self-password-reset'`,**联动撤销第 5 场景**;AGENTS §9 四→五场景红区行随 PR 逐行 before/after 更新)+ audit `password.reset.by-sms`(actor=本人,extra.refreshTokensRevoked + 手机号掩码 + codeId);access 沿 D-4 不吊销(e2e 正向断言:重置后旧 access 仍可调 /me)。实现:新文件 `auth/password-reset.service.ts`(**`auth.service.ts` / `users.service.ts` 零 diff**,P0-E 冻结以文件未触碰为证);`SmsCodeService` 校验链抽私有 helper + 新增 `assertValid`(只验不消费;`verifyAndConsume` 行为零漂移,既有 unit 断言零改动全绿);新增 `ApiWrappedNullResponse()` 装饰器(诚实表达 data:null envelope)。contract 155→**157 路由**(snapshot +365 行纯新增、零删除、零 L3 字样);e2e 新组 `auth-password-reset` 12 用例(防枚举四场景一致性 / 全链后效 / 码错 5 次 / 过期 / 重用 / 10006 不烧码 / purpose 隔离 / 跨 purpose 60s 间隔 / IP 限流与隔离);**auth 既有 e2e(login/refresh/logout/改密)断言零修改全绿**。
+- **SmsPurpose 枚举 +`PASSWORD_RESET`**(D 档;评审稿 §3.1;PR #308):单行 enum migration `20260611021208_add_sms_purpose_password_reset`(`ALTER TYPE "SmsPurpose" ADD VALUE`);干净库 `prisma:deploy` 14/14 全量重放 + `migrate diff` 零差异 + seed 幂等二跑通过;migration 历史零回改;contract snapshot 零 diff(T1 零 API 漂移)。
+
 ## v0.18.0 - 2026-06-11
 
 ### Added
