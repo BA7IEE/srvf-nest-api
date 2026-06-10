@@ -19,6 +19,15 @@
 
 (P1-4 已于 2026-06-10 调研收口,见文末归档区。)
 
+### P1-6 手机号验证码基础设施(通道层 + 验证码服务 + 手机号绑定)— **🚧 已立项,进行中**
+- **立项**:2026-06-10 维护者 goal(12 问逐项拍板 + 工程细节代决);评审稿冻结于 [`docs/archive/reviews/sms-verification-infra-review.md`](../archive/reviews/sms-verification-infra-review.md)。
+- **范围**:T0 评审稿 → T1 schema(D)→ T2 通道层(D)→ T3 验证码与绑定(C/D)→ T4 docs 收尾;7 端点 / 5 权限码 / BizCode 24xxx / 3 audit 事件。
+- **状态**:终验通过后本行转归档区。
+
+### P1-7 SMS 三个后续消费者 — **⏸ 挂起(逐项单独立项,AI 不自动启动)**
+- ① **找回密码**(手机验证码重置,pre-auth 流程);② **OTP / 验证码登录**(动 `AGENTS.md:242` v1 登录契约,需先对该红区行评审解锁);③ **通知用途短信**(新模板 + 群发,扩 `SmsPurpose` / templateKey)。
+- **前置**:P1-6 终验完成 + 运维侧真实通道验收(签名/模板过审 + 凭证录入,SOP 见届时 `docs/ops/sms-production-rollout-checklist.md`);任一启动前先读 sms 评审稿 §12 本期不做清单。
+
 ## P2(可优化)
 
 ### P2-3 分页 skip/take 换算的轻度重复 — **❌ 不做**
@@ -29,6 +38,10 @@
 
 ### P2-5 contract snapshot 单文件 ~1MB — **❌ 不做(已接受)**
 - 依据:current-state §4 已接受("PR review 用 diff 看");无动作项,仅提醒勿整读(2026-06-10 实测 35,777 行 / ~1,013 KB)。
+
+### P2-6 `sms_verification_codes` / `sms_send_logs` retention 清理 — **⏸ 挂起(等单独立项)**
+- **背景**:P1-6 拍板"过期验证码行与发送日志本期不清理"(评审稿 §8 三问);两表只增不减,长期体量需清理策略。
+- **届时方案候选**:手动 SQL SOP(`docs/ops/`)或定时清理(本仓无 cron,引入须沿 `AGENTS.md §1` 评审解锁制);任一均为 D 档(物理删数据)。
 
 ---
 
