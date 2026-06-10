@@ -41,7 +41,7 @@ pnpm db:test:reset
 | [`health`](../test/e2e/health.e2e-spec.ts) | 健康检查响应包装 |
 | [`response-format`](../test/e2e/response-format.e2e-spec.ts) / [`swagger`](../test/e2e/swagger.e2e-spec.ts) / [`bizcode-http-status`](../test/e2e/bizcode-http-status.e2e-spec.ts) | 横切:统一响应格式 / Swagger 跳过包装 / BizCode httpStatus 一致性 |
 | [`auth-login`](../test/e2e/auth-login.e2e-spec.ts) / [`auth-jwt-guard`](../test/e2e/auth-jwt-guard.e2e-spec.ts) | 登录正反路径(含防账号枚举四场景一致性)+ JWT 鉴权失效全部分支 |
-| [`users-me`](../test/e2e/users-me.e2e-spec.ts) | 本人接口 GET /me、PATCH /me(字段白名单 + 长度边界) |
+| [`app-me`](../test/e2e/app-me.e2e-spec.ts) / [`app-me-password`](../test/e2e/app-me-password.e2e-spec.ts) | App 本人接口 `/api/app/v1/me*`(资料白名单 + 本人改密铁律;Route B Phase 4 删除 `/api/users/me*` 后,原 `users-me` spec 由此二者承接) |
 | [`users-admin-list`](../test/e2e/users-admin-list.e2e-spec.ts) / [`users-admin-crud`](../test/e2e/users-admin-crud.e2e-spec.ts) / [`users-role-boundary`](../test/e2e/users-role-boundary.e2e-spec.ts) | 管理接口分页 / CRUD 基础路径 / 跨角色边界 |
 | [`users-self-protection`](../test/e2e/users-self-protection.e2e-spec.ts) / [`users-last-super-admin`](../test/e2e/users-last-super-admin.e2e-spec.ts) / [`users-soft-delete`](../test/e2e/users-soft-delete.e2e-spec.ts) / [`users-password-reset`](../test/e2e/users-password-reset.e2e-spec.ts) | 自我保护 / SUPER_ADMIN 互操作正向回归 / 软删副作用矩阵 / 密码重置完整流程 |
 | [`seed`](../test/e2e/seed.e2e-spec.ts) | `prisma/seed.ts` 子进程行为 + production 强校验 |
