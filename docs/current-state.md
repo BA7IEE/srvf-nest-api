@@ -28,16 +28,16 @@
 
 | 项 | 当前值 |
 |---|---|
-| 当前版本 | **v0.16.0**(🎉 Route B API surface 全量迁移终态 + docs 治理 G1/G2 + harness 基建与 6 个 characterization spec + ai-harness 操作层 + P1-4 god-service 拆分系列〔第一刀 #280 + 收口 #281〕;release 收口完成 2026-06-10T07:29:23Z) |
-| `package.json#version` | `0.16.0` |
-| Swagger `setVersion(...)` | `0.16.0` |
-| 最新 git tag | `v0.16.0`(2026-06-10;指向 `e63b9c7` = PR #284 handoff squash commit) |
-| GitHub Latest Release | `v0.16.0`(标 Latest;publishedAt 2026-06-10T07:29:23Z;Notes 自 `CHANGELOG.md ## v0.16.0 - 2026-06-10` 段抽取,13 条目) |
-| `main` HEAD | **`ccd8817`** `chore(scripts): check-rbac-map 追加检查项 G (#288)`(v0.16.0 tag 指向 `e63b9c7` = #284 handoff squash;tag 后追加 #285 回填 + 2026-06-10 harness 收口串 #286/#287/#288,本行随后续 PR 自然滞后属固有现象) |
+| 当前版本 | **v0.17.0**(P2-2 Swagger 鉴权后缀文本化〔148 endpoint〕+ AI Harness 手动点自动化治理〔#286,tag/Release AI 执行 + 授权清单内连续推进 + 人话简报〕+ `docs:rbacmap:check` 检查项 G + Route B 文档残留清理 + 收口台账 true-up;release 收口完成 2026-06-10T10:54:58Z,**首次由 AI 按 process §5.1 阶段 6/7 新规执行 tag + Release**) |
+| `package.json#version` | `0.17.0` |
+| Swagger `setVersion(...)` | `0.17.0` |
+| 最新 git tag | `v0.17.0`(2026-06-10;指向 `2b57f8c` = PR #292 handoff squash commit) |
+| GitHub Latest Release | `v0.17.0`(标 Latest;publishedAt 2026-06-10T10:54:58Z;Notes 自 `CHANGELOG.md ## v0.17.0 - 2026-06-10` 段抽取,1 条目) |
+| `main` HEAD | **`2b57f8c`** `docs(release): v0.17.0 handoff index (#292)`(= v0.17.0 tag 指向;本回填 PR 合并后本行自然滞后属固有现象) |
 | open PR | **0**(本回填 PR 合并前) |
 | 工作树状态 | clean |
-| 最新 handoff | [`docs/archive/handoff/v0.16.0.md`](archive/handoff/v0.16.0.md)(v0.16.0 release closeout index;上一版 [`v0.15.0.md`](archive/handoff/v0.15.0.md));handoff 统一归档于 `archive/handoff/`,历史快照不回改 |
-| Unreleased 累计 | **1 条**(P2-2 Swagger 权限要求文本化,#287,C 档;待下一 release 折叠)。 |
+| 最新 handoff | [`docs/archive/handoff/v0.17.0.md`](archive/handoff/v0.17.0.md)(v0.17.0 release closeout index;上一版 [`v0.16.0.md`](archive/handoff/v0.16.0.md));handoff 统一归档于 `archive/handoff/`,历史快照不回改 |
+| Unreleased 累计 | **空**(v0.17.0 已于 2026-06-10 发布并折叠;下一个变更 PR 重建 `## Unreleased` 段)。 |
 
 > **复核命令**(任何会话开工前都可以一行跑完):
 >
@@ -88,6 +88,7 @@
   - Unit / E2E 实数以最近 main 合入 PR(#160)CI 记录为准,本 P2-8 docs-only PR **未重跑**
   - E2E spec 文件数终态 **72 suites / 1664 tests**(与 §3 / CHANGELOG 终态一致;Route B Phase 4 删除队员流冗余 spec 后净值)。演进:v0.14.0 的 55 → Phase 2 新增 **8 个 App API e2e spec**(`app-me` / `app-me-password` / `app-activities-available` / `app-activities-detail` / `app-my-registrations-read` / `app-my-registrations-write` / `app-my-attendance-records` / `app-my-certificates`)→ v0.15.0 后续累计 characterization / state-transition / legacy split 相关 spec(沿 #196 / #199 / #202 等 PR)→ Phase 4 删除 `/v2/users/me/*` 队员流冗余 spec 后由中间峰值收敛至 72
   - Contract OpenAPI snapshot 已覆盖 **15 个 `/api/app/v1/*` 端点**(沿 [`test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) `EXPECTED_ROUTES`)
+  - **Swagger 鉴权后缀惯例(v0.17.0 / P2-2)**:全部 148 endpoint 的 `@ApiOperation` summary 携带统一后缀 `[rbac: <权限码>]` / `[roles: <角色列表>]` / `[public]` / `[auth]`(attachments 动态判权标 `attachment.<action>.*` 通配族);后缀 ↔ 装饰器 / seed 一致性由 `pnpm docs:rbacmap:check` 检查项 G 锁定,新增 endpoint 必须带后缀否则 FAIL
   - `ci.yml` 全套 + `docker-smoke.yml` 真实启动回归继续生效,env 锁定值与 v0.14.0 一致(`JWT_EXPIRES_IN=15m` + `JWT_REFRESH_EXPIRES_IN=90d`)
 
 ---
