@@ -32,6 +32,7 @@ import { MemberProfilesModule } from './modules/member-profiles/member-profiles.
 import { MembersModule } from './modules/members/members.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
+import { SmsModule } from './modules/sms/sms.module';
 import { UsersModule } from './modules/users/users.module';
 
 // V1.2:test/e2e/request-id.e2e-spec.ts 通过本路径白盒断言 buildHttpLogProps,
@@ -114,6 +115,10 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   导出 StorageSettingsService(60s 缓存)+ StorageCryptoService(AES-256-GCM);
     //   LocalProvider / CosProvider 已实装;storage-settings 后台 CRUD 已落地。
     StorageModule,
+    // SMS 基础设施 T2(2026-06-10):通道层(settings 三端点 + send-logs + 双 Provider + 动态路由)
+    //   (冻结评审稿 docs/archive/reviews/sms-verification-infra-review.md;path /api/system/v1/sms-*;
+    //    R 模式判权;凭证 AES-256-GCM;T3 追加 SmsCodeService 与绑定端点,240xx 段位届时实装)。
+    SmsModule,
   ],
   providers: [
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):

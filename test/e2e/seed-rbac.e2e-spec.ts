@@ -10,9 +10,9 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 沿 D7 v1.1 §10 + 用户拍板六项决策 + 既有 seed.e2e-spec.ts 子进程范式。
 //
 // 覆盖(沿用户决策方案 B):
-// 1. 空 db → seed 后 56 条 permission 全部存在(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B,2026-05-18)
+// 1. 空 db → seed 后 61 条 permission 全部存在(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS,2026-06-10)
 // 2. ops-admin RbacRole 存在
-// 3. ops-admin 绑定 54 条(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B;**不含**
+// 3. ops-admin 绑定 58 条(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS;**不含**
 //    storage-setting.reset.credentials(沿 PR-2 D2=A)+ user.update.role(沿 PR-3 D1=A);
 //    PR-4B D2=B audit-log.read.entry 整条加入)
 // 4. 至少 1 个 user_role 持有 ops-admin(强校验通过)
@@ -67,8 +67,12 @@ function runSeed(envOverrides: Record<string, string>): SeedRunResult {
 // PR-4B(2026-05-18):新增 1 条 audit-log.read.entry(list / findOne 共享 read);
 //   D1=A 命名 audit-log.* 单数;D2=B audit-log.read.entry 整条绑 ops-admin(数据范围 service 层兜底);
 //   D3=A 不拆 self/other;D4=A list/findOne 共用 code;D5=A 不预留 export/sensitive。
+// SMS T2(2026-06-10):新增 5 条(sms-setting 3 + sms-send-log 1 + user.phone.clear;评审稿
+//   docs/archive/reviews/sms-verification-infra-review.md §3.4 / E-3);
+//   sms-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;其余 4 条绑;76→81 / 54→58。
 const RESET_CREDENTIALS_CODE = 'storage-setting.reset.credentials';
 const USER_UPDATE_ROLE_CODE = 'user.update.role';
+const SMS_RESET_CREDENTIALS_CODE = 'sms-setting.reset.credentials';
 const EXPECTED_RBAC_PERMISSION_CODES = [
   // 14 条 rbac.*(沿 PR-1 #132)
   'rbac.permission.read',
@@ -135,13 +139,21 @@ const EXPECTED_RBAC_PERMISSION_CODES = [
   'user.delete.account',
   // 1 条 audit-log.*(PR-4B;D2=B 整条绑 ops-admin;D4=A list/findOne 共用 read)
   'audit-log.read.entry',
+  // 5 条 SMS T2(sms-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;评审稿 §3.4)
+  'sms-setting.read.singleton',
+  'sms-setting.update.singleton',
+  SMS_RESET_CREDENTIALS_CODE,
+  'sms-send-log.read.list',
+  'user.phone.clear',
 ] as const;
 // Permission 总数(含 reset.credentials + user.update.role;沿 D2=A + D1=A 仍 upsert 进表,仅 SA 短路通过)
 const EXPECTED_PERMISSION_COUNT = EXPECTED_RBAC_PERMISSION_CODES.length;
-// ops-admin RolePermission 数(过滤 reset.credentials(PR-2 D2=A)+ user.update.role(PR-3 D1=A)→ 56 - 2 = 54)
-const EXPECTED_OPS_ADMIN_ROLE_PERMISSION_COUNT = EXPECTED_PERMISSION_COUNT - 2;
+// ops-admin RolePermission 数(过滤 reset.credentials(PR-2 D2=A)+ user.update.role(PR-3 D1=A)
+// + sms-setting.reset.credentials(SMS T2 镜像 D2=A)→ 61 - 3 = 58)
+const EXPECTED_OPS_ADMIN_ROLE_PERMISSION_COUNT = EXPECTED_PERMISSION_COUNT - 3;
 const EXPECTED_OPS_ADMIN_BOUND_CODES = EXPECTED_RBAC_PERMISSION_CODES.filter(
-  (c) => c !== RESET_CREDENTIALS_CODE && c !== USER_UPDATE_ROLE_CODE,
+  (c) =>
+    c !== RESET_CREDENTIALS_CODE && c !== USER_UPDATE_ROLE_CODE && c !== SMS_RESET_CREDENTIALS_CODE,
 );
 const EXPECTED_RBAC_ONLY_COUNT = 14; // 仅 rbac.* 段位,供下面 module=rbac 断言用
 
@@ -172,8 +184,8 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     });
     expect(result.code).toBe(0);
 
-    // 1. 56 条 permission 全部存在(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B;
-    //    含 reset.credentials + user.update.role)
+    // 1. 61 条 permission 全部存在(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS;
+    //    含 reset.credentials + user.update.role + sms-setting.reset.credentials)
     const perms = await prisma.permission.findMany({
       where: { code: { in: [...EXPECTED_RBAC_PERMISSION_CODES] } },
       select: { code: true, module: true, resourceType: true },
@@ -214,7 +226,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(opsAdmin!.deletedAt).toBeNull();
     expect(opsAdmin!.displayName).toBe('运营管理员');
 
-    // 3. ops-admin 绑定 54 条 role-permission(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B;
+    // 3. ops-admin 绑定 58 条 role-permission(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS;
     //    沿 PR-2 D1=A 全绑 + PR-2 D2=A 凭证 reset 不绑 + PR-3 D1=A user.update.role 不绑 +
     //    PR-3 D2=B user.reset.password 绑 + PR-3 D3=A 其余 5 条 user.* 全绑 +
     //    PR-4 D2=B audit-log.read.entry 整条绑;详见 §6.2)
