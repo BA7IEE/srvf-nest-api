@@ -4,7 +4,7 @@
 
 ## Scope
 
-- **登录 / 刷新 / 注销 / token 安全链路**:`POST /api/auth/login` / `/refresh` / `/logout` / `/logout-all`
+- **登录 / 刷新 / 注销 / token 安全链路**:`POST /api/auth/v1/login` / `/refresh` / `/logout` / `/logout-all`(Route B 终态前缀 `auth/v1`)
 - **JwtStrategy** 是 v1 唯一鉴权阶段查库点(沿 [`strategies/jwt.strategy.ts`](strategies/jwt.strategy.ts));JwtAuthGuard 不应再写一份查库逻辑
 - **不负责**:本人改密(在 [`/src/modules/users/`](../users/)`changeMyPassword`;但改密会**主动撤销**该 user 全部未过期 refresh,沿 P0-E PR-3)、RBAC 判权(在 [`/src/modules/permissions/`](../permissions/))、capabilities 出口(在 `users/app-capability.service.ts`)
 
