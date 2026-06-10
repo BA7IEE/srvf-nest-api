@@ -4,12 +4,17 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
+// Slow-4 T3(2026-06-11,评审稿 §8 / D-S4-4):管理端 6 端点入口切到 service 层 rbac.can(),
+// 失败统一 RBAC_FORBIDDEN(30100)。`adminAuth` 在 beforeAll 全局 grant biz-admin,
+// 业务断言零修改;细粒度判权矩阵另见 activity-registrations-rbac-boundary.e2e-spec.ts。
+//
 // V2 第一阶段批次 3A activity-registrations 模块 e2e。
 // 覆盖管理端 6 + 队员端 4 = 10 接口主成功 + 关键失败:
 // - 权限边界 / DTO 白名单(Q-A3 双路径)
@@ -47,11 +52,15 @@ describe('activity-registrations 模块', () => {
 
     // user(代报名 + 越权对照只需 1 个已绑 member 的 USER)
     await createTestUser(app, { username: 'reg-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'reg-adm', role: Role.ADMIN });
+    const admin = await createTestUser(app, { username: 'reg-adm', role: Role.ADMIN });
     await createTestUser(app, { username: 'reg-user-with-mem', role: Role.USER });
     superAdminAuth = (await loginAs(app, 'reg-su')).authHeader;
     adminAuth = (await loginAs(app, 'reg-adm')).authHeader;
     userWithMemberAuth = (await loginAs(app, 'reg-user-with-mem')).authHeader;
+
+    // Slow-4 T3:seed 36 条业务面码 + biz-admin;给 reg-adm 全局 grant(沿 org e2e 范式)
+    const bizSeed = await seedBizAdminPermissionsAndRole(app);
+    await grantBizAdminToUser(app, admin.id, bizSeed.bizAdminRoleId);
 
     // 3 个 member(memberA 绑 USER;memberC / memberD 自由用于代报名 / capacity)
     const ma = await prisma.member.create({
@@ -187,36 +196,36 @@ describe('activity-registrations 模块', () => {
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER GET admin list → 403', async () => {
+    it('USER GET admin list → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/activities/${openActivityId}/registrations`)
         .set('Authorization', userWithMemberAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER POST 代报名路径 → 403', async () => {
+    it('USER POST 代报名路径 → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/activities/${openActivityId}/registrations`)
         .set('Authorization', userWithMemberAuth)
         .send({ memberId: memberCId });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER PATCH approve → 403', async () => {
+    it('USER PATCH approve → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .patch(
           `/api/admin/v1/activities/${openActivityId}/registrations/cl000000000000000000xxxx/approve`,
         )
         .set('Authorization', userWithMemberAuth)
         .send({});
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER GET export → 403', async () => {
+    it('USER GET export → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/activities/${openActivityId}/registrations/export`)
         .set('Authorization', userWithMemberAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
   });
 
@@ -813,11 +822,11 @@ describe('activity-registrations 模块', () => {
       expect(res.status).toBe(400);
     });
 
-    it('USER 调 export → 403', async () => {
+    it('USER 调 export → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/activities/${exActivityId}/registrations/export`)
         .set('Authorization', userWithMemberAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('未登录调 export → 401', async () => {

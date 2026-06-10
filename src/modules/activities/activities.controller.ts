@@ -1,6 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
@@ -11,7 +10,6 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -29,9 +27,11 @@ import { ActivitiesService } from './activities.service';
 // V2 第一阶段批次 3A activities controller(7 路由)。
 // 路径前缀:全局 /api(main.ts)+ 'admin/v1/activities'。
 //
-// 权限策略(API 前评审决议表 v1.0):
-// - GET list / GET detail:USER + ADMIN + SUPER_ADMIN(Q-A7 同路由,service 按 Role 过滤)
-// - POST / PATCH / DELETE / publish / cancel:ADMIN + SUPER_ADMIN
+// 权限(Slow-4 T3,2026-06-11,评审稿 §3.5;取代批次 3A @Roles 策略):
+// - GET list / GET detail:无码化,仅登录(`[auth]`;原 @Roles 含 USER = 全角色放行,
+//   等价仅登录;service 内 Q-A7 USER 过滤逻辑原样保留)
+// - POST / PATCH / DELETE / publish / cancel:判权下沉 service 层
+//   `rbac.can('activity.*.record')`(SUPER_ADMIN 短路;biz-admin 绑全部 5 码)
 //
 // 路由声明顺序(NestJS 优先级要求,字面段优先于 :id 占位段):
 //   list / create / detail / update / softDelete / publish / cancel(后两个挂 :id/<action>)
@@ -53,13 +53,12 @@ export class ActivitiesController {
   }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.USER)
   @ApiOperation({
     summary:
-      '列出活动(分页 + 多字段过滤;Q-A7 USER 强制只见 published/completed,忽略入参 statusCode) [roles: SUPER_ADMIN,ADMIN,USER]',
+      '列出活动(分页 + 多字段过滤;Q-A7 USER 强制只见 published/completed,忽略入参 statusCode) [auth]',
   })
   @ApiWrappedPageResponse(ActivityListItemDto)
-  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED)
   list(
     @Query() query: ListActivitiesQueryDto,
     @CurrentUser() currentUser: CurrentUserPayload,
@@ -68,16 +67,15 @@ export class ActivitiesController {
   }
 
   @Post()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '创建活动(initial statusCode=draft;禁 statusCode / audit 字段) [roles: SUPER_ADMIN,ADMIN]',
+      '创建活动(initial statusCode=draft;禁 statusCode / audit 字段) [rbac: activity.create.record]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ORGANIZATION_NOT_FOUND,
     BizCode.ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN,
     BizCode.ACTIVITY_TYPE_CODE_INVALID,
@@ -93,18 +91,11 @@ export class ActivitiesController {
   }
 
   @Get(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.USER)
   @ApiOperation({
-    summary:
-      '活动详情(Q-A7 USER 仅可见 published/completed,其他 → 404) [roles: SUPER_ADMIN,ADMIN,USER]',
+    summary: '活动详情(Q-A7 USER 仅可见 published/completed,其他 → 404) [auth]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
-  @ApiBizErrorResponse(
-    BizCode.BAD_REQUEST,
-    BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
-    BizCode.ACTIVITY_NOT_FOUND,
-  )
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.ACTIVITY_NOT_FOUND)
   findOne(
     @Param() params: IdParamDto,
     @CurrentUser() currentUser: CurrentUserPayload,
@@ -113,16 +104,15 @@ export class ActivitiesController {
   }
 
   @Patch(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '部分更新活动(Q-A12 cancelled 拒改;禁 statusCode / publishedBy/At / cancelledBy/At/Reason) [roles: SUPER_ADMIN,ADMIN]',
+      '部分更新活动(Q-A12 cancelled 拒改;禁 statusCode / publishedBy/At / cancelledBy/At/Reason) [rbac: activity.update.record]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_STATUS_INVALID,
     BizCode.ORGANIZATION_NOT_FOUND,
@@ -141,16 +131,15 @@ export class ActivitiesController {
   }
 
   @Delete(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '软删活动(写 deletedAt;D3:删除 ≠ 取消;cancelled 仍允许软删) [roles: SUPER_ADMIN,ADMIN]',
+      '软删活动(写 deletedAt;D3:删除 ≠ 取消;cancelled 仍允许软删) [rbac: activity.delete.record]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
   )
   softDelete(
@@ -162,16 +151,15 @@ export class ActivitiesController {
   }
 
   @Patch(':id/publish')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '发布活动(draft → published;写 publishedBy/At;非 draft → 20030) [roles: SUPER_ADMIN,ADMIN]',
+      '发布活动(draft → published;写 publishedBy/At;非 draft → 20030) [rbac: activity.publish.record]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_STATUS_INVALID,
   )
@@ -184,16 +172,15 @@ export class ActivitiesController {
   }
 
   @Patch(':id/cancel')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '取消活动(* → cancelled;写 cancelledBy/At/Reason;已 cancelled → 20030) [roles: SUPER_ADMIN,ADMIN]',
+      '取消活动(* → cancelled;写 cancelledBy/At/Reason;已 cancelled → 20030) [rbac: activity.cancel.record]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_STATUS_INVALID,
   )

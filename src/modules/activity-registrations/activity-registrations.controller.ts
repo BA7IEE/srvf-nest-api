@@ -11,7 +11,6 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import type { Request, Response } from 'express';
 import {
   ApiBizErrorResponse,
@@ -22,7 +21,6 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -60,6 +58,10 @@ function buildAuditMeta(req: Request): AuditMeta {
 //   GET '' list / POST '' 代报名 / GET 'export' / PATCH ':id/approve' /
 //   PATCH ':id/reject' / PATCH ':id/cancel'
 //
+// 权限(Slow-4 T3,2026-06-11,评审稿 §3.6;取代批次 3A @Roles 策略):
+// 入口仅 JwtAuthGuard,判权下沉 service 层 `rbac.can('activity-registration.*')`
+// (SUPER_ADMIN 短路;biz-admin 绑全部 5 码;list / export 共用 read,D4=A 判例)。
+//
 // 队员自助报名流(原 `/v2/users/me/*` 4 路由:POST 报名 / GET list / GET detail / PATCH cancel)
 // 现位于 `controllers/app-my-registrations.controller.ts`(`@Controller('app/v1/my')`);
 // 历史 legacy controller 已于 Route B Phase 4d2 删除(沿 docs/api-surface-migration-plan.md §6 Phase 4)。
@@ -81,35 +83,34 @@ export class ActivityRegistrationsAdminController {
   constructor(private readonly service: ActivityRegistrationsService) {}
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '列出该活动所有报名(分页;含已取消 / 已拒绝) [roles: SUPER_ADMIN,ADMIN]',
+    summary: '列出该活动所有报名(分页;含已取消 / 已拒绝) [rbac: activity-registration.read.record]',
   })
   @ApiWrappedPageResponse(ActivityRegistrationListItemDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
   )
   list(
     @Param() params: ActivityIdParamDto,
     @Query() query: ListRegistrationsQueryDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<ActivityRegistrationListItemDto>> {
-    return this.service.list(params.activityId, query);
+    return this.service.list(params.activityId, query, currentUser);
   }
 
   @Post()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      'ADMIN 代报名(Q-A3 与 USER 自助拆开;必填 memberId;校验 capacity + 公开报名 + 未重复) [roles: SUPER_ADMIN,ADMIN]',
+      'ADMIN 代报名(Q-A3 与 USER 自助拆开;必填 memberId;校验 capacity + 公开报名 + 未重复) [rbac: activity-registration.create.record]',
   })
   @ApiWrappedOkResponse(ActivityRegistrationResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.ACTIVITY_NOT_PUBLIC_REGISTRATION,
@@ -128,16 +129,15 @@ export class ActivityRegistrationsAdminController {
 
   // 必须先于 :id/<action> 声明:export 是字面段。
   @Get('export')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '名单导出 CSV(Q-A6:第一版仅 CSV;默认 scope=pass,可选 scope=all;XLSX 不支持 → 400) [roles: SUPER_ADMIN,ADMIN]',
+      '名单导出 CSV(Q-A6:第一版仅 CSV;默认 scope=pass,可选 scope=all;XLSX 不支持 → 400) [rbac: activity-registration.read.record]',
   })
   @ApiProduces('text/csv')
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
   )
   async exportRegistrations(
@@ -157,13 +157,14 @@ export class ActivityRegistrationsAdminController {
   }
 
   @Patch(':id/approve')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '审核通过(pending → pass;capacity 复核) [roles: SUPER_ADMIN,ADMIN]' })
+  @ApiOperation({
+    summary: '审核通过(pending → pass;capacity 复核) [rbac: activity-registration.approve.record]',
+  })
   @ApiWrappedOkResponse(ActivityRegistrationResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_REGISTRATION_NOT_FOUND,
     BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
@@ -185,15 +186,15 @@ export class ActivityRegistrationsAdminController {
   }
 
   @Patch(':id/reject')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '审核拒绝(pending → reject;reviewNote 必填) [roles: SUPER_ADMIN,ADMIN]',
+    summary:
+      '审核拒绝(pending → reject;reviewNote 必填) [rbac: activity-registration.reject.record]',
   })
   @ApiWrappedOkResponse(ActivityRegistrationResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_REGISTRATION_NOT_FOUND,
     BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
@@ -208,15 +209,15 @@ export class ActivityRegistrationsAdminController {
   }
 
   @Patch(':id/cancel')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '管理员代取消(pending|pass → cancelled;cancelled 释放名额) [roles: SUPER_ADMIN,ADMIN]',
+    summary:
+      '管理员代取消(pending|pass → cancelled;cancelled 释放名额) [rbac: activity-registration.cancel.record]',
   })
   @ApiWrappedOkResponse(ActivityRegistrationResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_REGISTRATION_NOT_FOUND,
     BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,

@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -13,6 +14,11 @@ import { createTestApp } from '../setup/test-app';
 // V2 第一阶段批次 3A activities 模块 e2e。
 // 覆盖 7 接口主成功 + 关键失败:权限 / 字典 / 根节点 / 起止时间 / 状态机 /
 // USER 角色过滤(Q-A7)/ cancelled 拒改(Q-A12)/ 软删 / 字段白名单。
+//
+// Slow-4 T3(2026-06-11,评审稿 §8 / D-S4-4):5 个写端点入口切到 service 层 rbac.can(),
+// 失败统一 RBAC_FORBIDDEN(30100);列表/详情无码化(仅登录,USER 仍可读,Q-A7 过滤不变)。
+// `adminAuth` 在 beforeAll 全局 grant biz-admin,业务断言零修改;
+// 细粒度判权矩阵另见 activities-rbac-boundary.e2e-spec.ts。
 
 describe('activities 模块', () => {
   let app: INestApplication;
@@ -34,11 +40,15 @@ describe('activities 模块', () => {
     prisma = app.get(PrismaService);
 
     await createTestUser(app, { username: 'act-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'act-adm', role: Role.ADMIN });
+    const admin = await createTestUser(app, { username: 'act-adm', role: Role.ADMIN });
     await createTestUser(app, { username: 'act-user', role: Role.USER });
     superAdminAuth = (await loginAs(app, 'act-su')).authHeader;
     adminAuth = (await loginAs(app, 'act-adm')).authHeader;
     userAuth = (await loginAs(app, 'act-user')).authHeader;
+
+    // Slow-4 T3:seed 36 条业务面码 + biz-admin;给 act-adm 全局 grant(沿 org e2e 范式)
+    const bizSeed = await seedBizAdminPermissionsAndRole(app);
+    await grantBizAdminToUser(app, admin.id, bizSeed.bizAdminRoleId);
 
     // node_type 字典(Organization.nodeTypeCode 校验依赖)
     const nodeTypeDict = await prisma.dictType.create({
@@ -129,42 +139,42 @@ describe('activities 模块', () => {
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER POST → 403', async () => {
+    it('USER POST → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post('/api/admin/v1/activities')
         .set('Authorization', userAuth)
         .send(baseCreatePayload());
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER PATCH → 403', async () => {
+    it('USER PATCH → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .patch('/api/admin/v1/activities/cl000000000000000000xxxx')
         .set('Authorization', userAuth)
         .send({ title: 'X' });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER DELETE → 403', async () => {
+    it('USER DELETE → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .delete('/api/admin/v1/activities/cl000000000000000000xxxx')
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER PATCH /publish → 403', async () => {
+    it('USER PATCH /publish → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .patch('/api/admin/v1/activities/cl000000000000000000xxxx/publish')
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER PATCH /cancel → 403', async () => {
+    it('USER PATCH /cancel → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .patch('/api/admin/v1/activities/cl000000000000000000xxxx/cancel')
         .set('Authorization', userAuth)
         .send({});
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     it('USER GET list → 200(允许,Q-A7 同路由 + service Role 过滤)', async () => {

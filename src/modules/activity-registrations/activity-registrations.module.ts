@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
+import { PermissionsModule } from '../permissions/permissions.module';
 import { ActivitiesModule } from '../activities/activities.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { UsersModule } from '../users/users.module';
@@ -23,7 +24,7 @@ import { AppMyRegistrationsController } from './controllers/app-my-registrations
 // 已删除(app/v1/my/registrations* 对等存在,队员流由 app-my-registrations-*.e2e 覆盖;
 // 沿 docs/api-surface-migration-plan.md §6 Phase 4)。
 @Module({
-  imports: [DatabaseModule, AuditLogsModule, UsersModule, ActivitiesModule],
+  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, UsersModule, ActivitiesModule],
   controllers: [ActivityRegistrationsAdminController, AppMyRegistrationsController],
   providers: [
     ActivityRegistrationsService,

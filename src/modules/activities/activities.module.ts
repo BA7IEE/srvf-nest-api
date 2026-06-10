@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
+import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { UsersModule } from '../users/users.module';
 import { ActivitiesController } from './activities.controller';
@@ -29,7 +30,7 @@ import { AppActivitiesController } from './controllers/app-activities.controller
 //     §6.3.1;**不**新建 AppMyActivitiesController,该 endpoint 挂在
 //     AppMyRegistrationsController 上)
 @Module({
-  imports: [DatabaseModule, AuditLogsModule, UsersModule],
+  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, UsersModule],
   controllers: [ActivitiesController, AppActivitiesController],
   providers: [
     ActivitiesService,

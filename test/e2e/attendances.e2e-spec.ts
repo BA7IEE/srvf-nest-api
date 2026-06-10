@@ -4,12 +4,17 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
+// Slow-4 T3(2026-06-11,评审稿 §8 / D-S4-4):管理端 10 端点入口切到 service 层 rbac.can(),
+// 失败统一 RBAC_FORBIDDEN(30100)。`adminAuth` 在 beforeAll 全局 grant biz-admin,
+// 业务断言零修改;细粒度判权矩阵另见 attendances-rbac-boundary.e2e-spec.ts。
+//
 // V2 第一阶段批次 3B attendances 模块 e2e。
 // 覆盖 9 接口主成功 + 关键失败:
 // - 权限边界 / DTO 白名单
@@ -50,11 +55,15 @@ describe('attendances 模块', () => {
 
     // 用户(权限边界只需 1 个已绑 member 的 USER)
     await createTestUser(app, { username: 'att-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'att-adm', role: Role.ADMIN });
+    const admin = await createTestUser(app, { username: 'att-adm', role: Role.ADMIN });
     await createTestUser(app, { username: 'att-user-with-mem', role: Role.USER });
     superAdminAuth = (await loginAs(app, 'att-su')).authHeader;
     adminAuth = (await loginAs(app, 'att-adm')).authHeader;
     userWithMemberAuth = (await loginAs(app, 'att-user-with-mem')).authHeader;
+
+    // Slow-4 T3:seed 36 条业务面码 + biz-admin;给 att-adm 全局 grant(沿 org e2e 范式)
+    const bizSeed = await seedBizAdminPermissionsAndRole(app);
+    await grantBizAdminToUser(app, admin.id, bizSeed.bizAdminRoleId);
 
     const ma = await prisma.member.create({
       data: { memberNo: 'att-m-a', displayName: 'Member A' },
@@ -301,64 +310,64 @@ describe('attendances 模块', () => {
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER POST submit → 403', async () => {
+    it('USER POST submit → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', userWithMemberAuth)
         .send({ records: [baseRecord()] });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER GET list → 403', async () => {
+    it('USER GET list → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
         .set('Authorization', userWithMemberAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER GET detail → 403', async () => {
+    it('USER GET detail → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx`)
         .set('Authorization', userWithMemberAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER GET review-detail → 403', async () => {
+    it('USER GET review-detail → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx/review-detail`)
         .set('Authorization', userWithMemberAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER PATCH edit → 403', async () => {
+    it('USER PATCH edit → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx`)
         .set('Authorization', userWithMemberAuth)
         .send({});
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER DELETE → 403', async () => {
+    it('USER DELETE → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .delete(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx`)
         .set('Authorization', userWithMemberAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER PATCH approve → 403', async () => {
+    it('USER PATCH approve → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx/approve`)
         .set('Authorization', userWithMemberAuth)
         .send({});
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER PATCH reject → 403', async () => {
+    it('USER PATCH reject → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/cl000000000000000000xxxx/reject`)
         .set('Authorization', userWithMemberAuth)
         .send({ reviewNote: 'x' });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
   });
 

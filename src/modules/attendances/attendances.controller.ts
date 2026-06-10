@@ -1,6 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
@@ -11,7 +10,6 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -60,8 +58,10 @@ function buildAuditMeta(req: Request): AuditMeta {
 // `controllers/app-my-attendance-records.controller.ts`(`GET /api/app/v1/my/attendance-records`);
 // 历史 legacy controller 已于 Route B Phase 4d2 删除(沿 docs/api-surface-migration-plan.md §6 Phase 4)。
 //
-// 权限策略(沿决议表 v1.0):
-// - 全部管理端 8 路由:ADMIN / SUPER_ADMIN(D16 兜底业务角色)
+// 权限(Slow-4 T3,2026-06-11,评审稿 §3.7;取代决议表 v1.0 @Roles 策略):
+// 入口仅 JwtAuthGuard,判权下沉 service 层 `rbac.can('attendance.*.sheet')`
+// (SUPER_ADMIN 短路;biz-admin 绑全部 8 码;list / detail / review-detail 共用 read,
+// D4=A 判例;终审仍 ADMIN 级,沿 P1-5 方案 A,部门级细分挂 Slow-3 子议题)。
 
 // ============ 管理端 Controller(挂 admin/v1/activities/:activityId/attendance-sheets)============
 
@@ -72,16 +72,15 @@ export class AttendanceSheetsCollectionController {
   constructor(private readonly service: AttendancesService) {}
 
   @Post()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '提交考勤单据(事务内一次性 create Sheet + N records;初始 statusCode=pending,version=1;Activity cancelled 拒绝) [roles: SUPER_ADMIN,ADMIN]',
+      '提交考勤单据(事务内一次性 create Sheet + N records;初始 statusCode=pending,version=1;Activity cancelled 拒绝) [rbac: attendance.create.sheet]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
@@ -103,15 +102,14 @@ export class AttendanceSheetsCollectionController {
   }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '列出该活动所有考勤单据(分页 + 可选 statusCode 过滤) [roles: SUPER_ADMIN,ADMIN]',
+    summary: '列出该活动所有考勤单据(分页 + 可选 statusCode 过滤) [rbac: attendance.read.sheet]',
   })
   @ApiWrappedPageResponse(AttendanceSheetListItemDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
   )
   list(
@@ -133,16 +131,15 @@ export class AttendanceSheetsResourceController {
 
   // review-detail 必须先于 :id 声明(字面段优先于占位段)
   @Get(':id/review-detail')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      'APD 审核完整视图(R25):Activity 摘要 + Sheet 详情 + Records[含 Member 嵌套] [roles: SUPER_ADMIN,ADMIN]',
+      'APD 审核完整视图(R25):Activity 摘要 + Sheet 详情 + Records[含 Member 嵌套] [rbac: attendance.read.sheet]',
   })
   @ApiWrappedOkResponse(AttendanceSheetReviewDetailDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ATTENDANCE_SHEET_NOT_FOUND,
     BizCode.ACTIVITY_NOT_FOUND,
   )
@@ -154,15 +151,15 @@ export class AttendanceSheetsResourceController {
   }
 
   @Get(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: 'Sheet 简化详情(不含 records 数组;不返 previousSnapshot) [roles: SUPER_ADMIN,ADMIN]',
+    summary:
+      'Sheet 简化详情(不含 records 数组;不返 previousSnapshot) [rbac: attendance.read.sheet]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ATTENDANCE_SHEET_NOT_FOUND,
   )
   findOne(
@@ -173,16 +170,15 @@ export class AttendanceSheetsResourceController {
   }
 
   @Patch(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '编辑 pending Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;approved/rejected/pending_final_review/final_rejected 拒绝) [roles: SUPER_ADMIN,ADMIN]',
+      '编辑 pending Sheet(D38:后端生成 previousSnapshot + version+1;旧 records 软删 + 新 records 创建;approved/rejected/pending_final_review/final_rejected 拒绝) [rbac: attendance.update.sheet]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ATTENDANCE_SHEET_NOT_FOUND,
     BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
     BizCode.ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE,
@@ -207,16 +203,15 @@ export class AttendanceSheetsResourceController {
   }
 
   @Delete(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '软删 pending Sheet(事务内级联软删 records;approved/rejected/pending_final_review/final_rejected 拒绝) [roles: SUPER_ADMIN,ADMIN]',
+      '软删 pending Sheet(事务内级联软删 records;approved/rejected/pending_final_review/final_rejected 拒绝) [rbac: attendance.delete.sheet]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ATTENDANCE_SHEET_NOT_FOUND,
     BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
     BizCode.ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE,
@@ -232,16 +227,15 @@ export class AttendanceSheetsResourceController {
   }
 
   @Patch(':id/approve')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      'APD 一级通过(pending → pending_final_review;批次 4-B 升级,沿 D-S6;R31 所有 records.contributionPoints 必填;**不再触发** attendance.recorded — 触发位置移到 final-approve;待终审) [roles: SUPER_ADMIN,ADMIN]',
+      'APD 一级通过(pending → pending_final_review;批次 4-B 升级,沿 D-S6;R31 所有 records.contributionPoints 必填;**不再触发** attendance.recorded — 触发位置移到 final-approve;待终审) [rbac: attendance.approve.sheet]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ATTENDANCE_SHEET_NOT_FOUND,
     BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
     BizCode.ATTENDANCE_RECORD_CONTRIBUTION_POINTS_REQUIRED,
@@ -256,15 +250,14 @@ export class AttendanceSheetsResourceController {
   }
 
   @Patch(':id/reject')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: 'APD 一级驳回(pending → rejected;reviewNote 必填) [roles: SUPER_ADMIN,ADMIN]',
+    summary: 'APD 一级驳回(pending → rejected;reviewNote 必填) [rbac: attendance.reject.sheet]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ATTENDANCE_SHEET_NOT_FOUND,
     BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
   )
@@ -278,20 +271,20 @@ export class AttendanceSheetsResourceController {
   }
 
   // ============ 批次 4-B 新增:终审 final-approve / final-reject ============
-  // 沿 D-A2(沿 baseline §4.4 敏感操作必须独立接口);权限沿 RolesGuard(ADMIN / SUPER_ADMIN),
-  // 不开 22044 模块码(沿 D-S2 / batch 3A 不开 FORBIDDEN_*);终审权限不足走通用 FORBIDDEN(40300)。
+  // 沿 D-A2(沿 baseline §4.4 敏感操作必须独立接口);Slow-4 T3 起权限走 service 层
+  // rbac.can('attendance.final-{approve,reject}.sheet')(ADMIN 级终审沿 P1-5 方案 A),
+  // 不开 22044 模块码(沿 D-S2 / batch 3A 不开 FORBIDDEN_*);判权不足走 RBAC_FORBIDDEN(30100)。
 
   @Patch(':id/final-approve')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '终审通过(当前沿用管理权限,细分权限后置;pending_final_review → approved;贡献值正式生效;**触发** attendance.recorded;沿 D-S5 / D-S7) [roles: SUPER_ADMIN,ADMIN]',
+      '终审通过(ADMIN 级终审沿 P1-5 方案 A,部门级细分挂 Slow-3;pending_final_review → approved;贡献值正式生效;**触发** attendance.recorded;沿 D-S5 / D-S7) [rbac: attendance.final-approve.sheet]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ATTENDANCE_SHEET_NOT_FOUND,
     BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
   )
@@ -305,16 +298,15 @@ export class AttendanceSheetsResourceController {
   }
 
   @Patch(':id/final-reject')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '终审驳回(当前沿用管理权限,细分权限后置;pending_final_review → final_rejected;finalReviewNote 必填;records 跟随软删;**不触发** attendance.recorded) [roles: SUPER_ADMIN,ADMIN]',
+      '终审驳回(ADMIN 级终审沿 P1-5 方案 A,部门级细分挂 Slow-3;pending_final_review → final_rejected;finalReviewNote 必填;records 跟随软删;**不触发** attendance.recorded) [rbac: attendance.final-reject.sheet]',
   })
   @ApiWrappedOkResponse(AttendanceSheetResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
-    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
     BizCode.ATTENDANCE_SHEET_NOT_FOUND,
     BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID,
     BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_NOTE_REQUIRED,

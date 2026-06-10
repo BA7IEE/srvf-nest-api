@@ -7,6 +7,7 @@ import { ActivitiesService } from '../../src/modules/activities/activities.servi
 import type { CreateActivityDto } from '../../src/modules/activities/activities.dto';
 import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
+import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -85,6 +86,12 @@ describe('ActivitiesService state transitions (characterization)', () => {
       },
       select: { id: true },
     });
+
+    // Slow-4 T3(评审稿 §8 / D-S4-6):本 spec 直调 service(绕过 Guard),判权已下沉
+    // service 层 rbac.can();给 ADMIN 测试用户 admin 补挂 biz-admin(零漂移:对应迁移前
+    // @Roles(SUPER_ADMIN, ADMIN) 放行语义;断言零修改)。
+    const bizSeed = await seedBizAdminPermissionsAndRole(app);
+    await grantBizAdminToUser(app, admin.id, bizSeed.bizAdminRoleId);
 
     // node_type 字典 + 根 / 子组织(根节点 parentId=null,activity 禁挂;沿 ARCHITECTURE R8 / D17)
     const nodeDict = await prisma.dictType.create({
