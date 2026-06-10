@@ -55,6 +55,9 @@ Use a Presenter when the logic is mainly about converting internal models / Pris
 - response shape has many conditional fields(e.g. App view vs Admin view)
 - mobile / admin / public views diverge across the same entity
 
+**Current example**:
+- [`src/modules/attendances/attendance-presenter.ts`](../src/modules/attendances/attendance-presenter.ts)(P1-4 第一刀;序列化方法在 service 内被 15 处调用,命中第一条 trigger)
+
 ### 3.2 QueryService
 
 Use a QueryService when the logic is mainly about **read-side query construction**.
@@ -198,7 +201,7 @@ The service should **not** become a dumping ground for:
 | Policy | [`src/modules/attendances/time-overlap-policy.ts`](../src/modules/attendances/time-overlap-policy.ts) | **active** |
 | Policy | [`src/modules/users/users.policy.ts`](../src/modules/users/users.policy.ts) | **active** |
 | Calculator | [`src/modules/attendances/contribution-calculator.ts`](../src/modules/attendances/contribution-calculator.ts) | **active**:accepted adjacent pattern;not one of the six D-7 names but follows the same extraction discipline(纯计算、无 Prisma 写、无 audit) |
-| Presenter | none required yet | **deferred** |
+| Presenter | [`src/modules/attendances/attendance-presenter.ts`](../src/modules/attendances/attendance-presenter.ts) | **active**(P1-4 第一刀,2026-06-10 方案 A 拍板抽出;select 查询策略不随迁,留 service) |
 | QueryService | none required yet | **deferred** |
 | Effect | none required yet | **deferred**(`eventPlaceholder` 占位) |
 
@@ -241,7 +244,7 @@ Prefer a named boundary class when **any** of the following is true:
 ## 8. Deferred work(本期不做)
 
 - **Do not** retrofit every existing service into this pattern immediately(沿 [`AGENTS.md §19.7 D-7`](../AGENTS.md) "本规则不要求立即大规模重构" 段)。
-- **Do not** extract Presenter / QueryService / Effect until a concrete trigger appears(沿 §6 Trigger rules)。
+- **Do not** extract QueryService / Effect until a concrete trigger appears(沿 §6 Trigger rules;Presenter 已于 2026-06-10 P1-4 第一刀按"逐个立项"路径抽出,见 §5)。
 - **Do not** rename existing extracted classes just to match this document(`contribution-calculator.ts` 保留现名,不强行改为 "Service" / "Policy" 等)。
 - **Do not** move participation / attachment / permissions module directories as part of this policy(沿 [`docs/participation-bounded-context.md §8`](participation-bounded-context.md) "禁止大搬目录" 铁律)。
 - **Do not** alter `attendances.service.ts`(1157 LOC)/ `attachments.service.ts`(826 LOC)/ `activity-registrations.service.ts`(750 LOC)/ `activities.service.ts`(607 LOC)行为 — 拆分需先补 characterization tests + 单独立项(沿 [`docs/current-state.md §3 / §4`](current-state.md));LOC 为 2026-05-23 实测,已计入 §5 state-machine + audit-recorder 抽离后的余量。
