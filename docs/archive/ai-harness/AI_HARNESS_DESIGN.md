@@ -1,5 +1,7 @@
 # AI_HARNESS_DESIGN — AI Harness 底座设计
 
+> **迁移注(2026-06-10)**:本文件原位于 `docs/ai-harness/AI_HARNESS_DESIGN.md`,随「AI Harness 瘦身——减脂不减骨」goal 归档至此,正文零改动(其设计决议如"否决 .ai/ 平行树""新任务剧本以 .claude/skills/srvf-* 承载"仍为历史拍板证据);文内对旧操作层文件及 `../*.md` 的相对链接已成预期死链;活规则承接:任务档位 / Loop / goal 模式 → `docs/process.md §3 / §7.1`,操作层速查 → `docs/ai-harness/README.md` 单页。
+
 > **性质**:设计文档(本次 2026-06-10 Review 的核心产物),经维护者合入即生效;流程类条款与 [`process.md`](../process.md) 冲突时以 process.md 为准。
 > 设计目标:让任意 AI Agent 在本仓库**安全、可验证、可中断**地持续开发——理解结构 → 定位模块 → 按档执行 → 自动检查 → 生成报告 → 在人工确认点停下。
 

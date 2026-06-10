@@ -24,7 +24,7 @@
 | [`testing.md`](./testing.md) | E2E 测试运行与覆盖范围 |
 | [`docker-smoke-test.md`](./docker-smoke-test.md) | docker smoke CI 形态说明 |
 | [`ops/cos-production-rollout-checklist.md`](./ops/cos-production-rollout-checklist.md) | 运维侧真实 COS 上线 SOP |
-| [`ai-harness/README.md`](./ai-harness/README.md) | **AI Harness 操作层入口**(derived 导航/矩阵/模板,**非规则源**,与权威源冲突时让步):全仓读写分区 CODEMAP、MODULE_MAP、RBAC_MAP、TEST_MATRIX、PROJECT_RULES(铁律索引)、HUMAN_REVIEW_RULES、AI_HARNESS_DESIGN、NEXT_TASKS、templates/;2026-06-10 Review 快照见 `ai-harness/REVIEW_REPORT.md`(合入后不回改) |
+| [`ai-harness/README.md`](./ai-harness/README.md) | **AI Harness 操作层单页**(derived,**非规则源**,与权威源冲突时让步;必读三件套之一):铁律速查表 / AI 修改三档 + 触发即停 / 全仓读写分区;同目录另两文件 = `RBAC_MAP.md`(权限地图,`docs:rbacmap:check` 守护)+ `NEXT_TASKS.md`(后续任务清单);2026-06-10 Review 冻结档见 `archive/ai-harness/` |
 
 V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威源**):
 
@@ -54,6 +54,7 @@ V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威
 | [`archive/batches/`](./archive/batches/) | 批次 5-A / 6 / 7 / 8 的 API 前评审、业务确认稿、业务访谈提纲、V2.x 立项记录(中文文件名) |
 | [`archive/plans/`](./archive/plans/) | 历史阶段计划:v1.3 / v1.4 / first-release readiness / bizcode mapping / bootstrap SOP / frontend scope / API client boundary migration plan |
 | [`archive/legacy/`](./archive/legacy/) | 自承"历史归档"的早期收尾报告(`FINAL_REPORT.md`) |
+| [`archive/ai-harness/`](./archive/ai-harness/) | 2026-06-10 全仓 Review 总报告与 AI Harness 底座设计(冻结快照;旧操作层 9 文档 + 3 模板已于同日瘦身收口为 `ai-harness/README.md` 单页,文内相对链接属预期死链) |
 
 ---
 
