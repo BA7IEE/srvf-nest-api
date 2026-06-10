@@ -107,7 +107,7 @@ docker run -d --name u-nest-api-smoke \
 容器启动日志:
 
 - `ConfigModule` / `TerminusModule` / `HealthModule` / `UsersModule` / `ThrottlerModule` / `JwtModule` / `LoggerModule` / `AppModule` / `AuthModule` 全部 initialized
-- 路由全部 mapped:`/api/system/v1/health`、`/api/system/v1/health/live`、`/api/system/v1/health/ready`、`/api/auth/v1/login`、`/api/users/*`
+- 路由全部 mapped:`/api/system/v1/health`、`/api/system/v1/health/live`、`/api/system/v1/health/ready`、`/api/auth/v1/login`、`/api/admin/v1/users*`、`/api/app/v1/me*`(Route B 终态前缀;v0.1.5 首轮报告时为旧 `/api/users/*`,随终态 true-up 改写)
 - `Nest application successfully started`
 
 ---

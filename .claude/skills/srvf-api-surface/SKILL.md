@@ -25,7 +25,7 @@ SRVF Nest API 项目所有 API surface(controller / path / Swagger tag / DTO 边
 - 修改 `@Controller(...)` path / 方法 path / HTTP method / 响应结构
 - 修改 `@ApiTags` / `@ApiOperation` summary / 任何 Swagger metadata
 - 新增 / 修改 DTO,尤其涉及 App / Admin / Public surface DTO 边界
-- 新增 endpoint 落 App `/api/app/v1/*` / Admin/V2 `/api/v2/*` / Public / Root Legacy 任一 surface
+- 新增 endpoint 落 `admin/v1` / `app/v1` / `auth/v1` / `system/v1` 任一 canonical surface(Route B 终态;`open/v1` 预留禁占用)
 - 拆 Mixed Controller(class-level + 方法级双 `@ApiTags`)
 - 修改 OpenAPI snapshot 或 contract test
 - 修改方法上 `@Public()` / `@Roles(...)` / `JwtAuthGuard` 入口装饰器组合
@@ -35,7 +35,7 @@ SRVF Nest API 项目所有 API surface(controller / path / Swagger tag / DTO 边
 先**只读**调研,不动任何文件。必须确认并记录:
 
 - 目标 endpoint 当前 path / method / Swagger tag / Guard / `@Public()` / `@Roles(...)` / 限流装饰器
-- 该 endpoint 所属 surface(App / Admin/V2 / Public / Root Legacy)
+- 该 endpoint 所属 surface(Admin / App / Auth / System 四 canonical 之一)
 - 是否影响 OpenAPI snapshot / contract test
 - 是否会形成 Mixed Controller(**不再新增**)
 - 是否触发已有 D-series decision lock(参 `AGENTS.md §19.7`)
@@ -50,7 +50,7 @@ SRVF Nest API 项目所有 API surface(controller / path / Swagger tag / DTO 边
 - **不**随意改 existing path / method / response shape;改任一项即升档为 C/D
 - Controller 物理拆分必须 **endpoint zero drift**:path / method / tag / Guard / `@Roles` / DTO / service 调用全部不变
 - **raw permission code ≠ app capability**:RBAC 原始权限码端点与 App capability 端点语义不等价,不得 alias / 合并 / 互替
-- Root Legacy path **不**改 / **不**顺手 deprecate / **不**加 path alias
+- Route B 终态(全部路由仅落 4 canonical 前缀)由 contract 断言锁定;**不**顺手加 path alias / 改前缀,任何 surface / path 变更一律 D 档单独立项
 - 已有 D-series decision lock 冲突时**停止并报告**
 
 ## Risk grade
