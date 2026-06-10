@@ -19,6 +19,8 @@
  *   D. controller-prefix-canonical — 全部 @Controller 前缀落在 4 canonical 前缀 (FAIL on violation)
  *   E. direct-call-codes-seeded  — rbac.can()/judge() 同行字面量码必须在 seed 中 (FAIL on miss)
  *   F. seed-codes-referenced     — seed 码在 src 中有字面量引用或被动态模板前缀覆盖 (WARN on orphan)
+ *   G. swagger-auth-suffix       — @ApiOperation summary 鉴权后缀(P2-2 惯例)与装饰器/seed 一致
+ *                                  (FAIL on 缺失 / @Roles-@Public 不符 / rbac 码不在 seed)
  *
  * 已知边界(刻意,如需更强保证再立项):
  *   - 权限码经 helper 间接传参(assertCan(user, 'x.y.z'))由 F 的全源字面量扫描覆盖;
@@ -28,6 +30,10 @@
  *     块注释**不**剥离——正则剥块注释会被字符串/注释里的 MIME 通配符 `type/*` 误触
  *     (实测踩坑:attachment-mime-configs.service.ts);块注释内示例码会被记作已引用,接受该边界。
  *   - seed 新增权限码必须保持 `code: '<literal>'` 或 `*_CODE = '<literal>'` 形态,否则 A 会漏提取。
+ *   - G 校验 `[roles:]`/`[public]` 与装饰器严格互证、`[rbac:]` 码(含 `<family>.*` 通配族)必在 seed;
+ *     但**不**解析 service 调用链,即不校验"该方法实际调的码 = 后缀声明的码"(同 E 的边界);
+ *     `[auth]`(仅登录)只要求该方法无 @Roles/@Public。summary 形态须为单行字面量或
+ *     `summary:` 换行后单行字面量(prettier reflow 形态),超出此约定按 FAIL 提示同步提取器。
  */
 
 import * as fs from 'node:fs';
@@ -48,7 +54,7 @@ const rbacMapRelPath = 'docs/ai-harness/RBAC_MAP.md';
 const CANONICAL_PREFIXES = ['admin/v1', 'app/v1', 'auth/v1', 'system/v1'] as const;
 
 // 权限码形态:小写字母/中横线段,至少一个点分隔(与 seed 实际码型一致)。
-const CODE_SHAPE = "[a-z][a-z-]*(?:\\.[a-z-]+)+";
+const CODE_SHAPE = '[a-z][a-z-]*(?:\\.[a-z-]+)+';
 
 // ---------------------------------------------------------------------------
 // File loaders
@@ -66,11 +72,7 @@ function listSourceFiles(dirRel: string): string[] {
       const child = path.join(abs, entry.name);
       if (entry.isDirectory()) {
         walk(child);
-      } else if (
-        entry.isFile() &&
-        entry.name.endsWith('.ts') &&
-        !entry.name.endsWith('.spec.ts')
-      ) {
+      } else if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.spec.ts')) {
         out.push(path.relative(repoRoot, child).split(path.sep).join('/'));
       }
     }
@@ -159,6 +161,86 @@ function scanSources(files: string[]): SrcScan {
     }
   }
   return { literalCodes, directCallCodes, dynamicPrefixes };
+}
+
+interface EndpointSuffix {
+  relPath: string;
+  className: string;
+  method: string;
+  summary: string | null;
+  suffix: string | null; // 原样后缀,如 '[rbac: org.read.node]'
+  hasPublic: boolean;
+  roles: string | null; // 归一化实参,如 'SUPER_ADMIN,ADMIN'
+}
+
+// 配对每个 @ApiOperation 的 summary 与同方法装饰器(@Public / @Roles)。
+// 形态约定见文件头"已知边界"G 条;controller 方法签名按 2 空格缩进识别。
+function extractEndpointSuffixes(files: string[]): EndpointSuffix[] {
+  const out: EndpointSuffix[] = [];
+  const suffixRe = /\[(rbac: [^\]]+|roles: [^\]]+|public|auth)\]$/;
+  for (const relPath of files.filter((f) => f.endsWith('.controller.ts'))) {
+    const lines = stripComments(readRepoFile(relPath)).split('\n');
+    let cls = '';
+    let hasOp = false;
+    let inOp = false;
+    let wantNext = false;
+    let summary: string | null = null;
+    let pub = false;
+    let roles: string | null = null;
+    const reset = (): void => {
+      hasOp = false;
+      inOp = false;
+      wantNext = false;
+      summary = null;
+      pub = false;
+      roles = null;
+    };
+    for (const raw of lines) {
+      const t = raw.trim();
+      const cm = /^export class (\w+)/.exec(t);
+      if (cm) {
+        cls = cm[1];
+        reset();
+        continue;
+      }
+      if (/^@ApiOperation/.test(t)) {
+        hasOp = true;
+        inOp = true;
+      }
+      if (inOp) {
+        if (wantNext) {
+          const m = /^'((?:[^'\\]|\\.)*)',?$/.exec(t);
+          if (m) {
+            summary = m[1];
+            wantNext = false;
+          }
+        } else if (/summary:/.test(t)) {
+          const m = /summary:\s*'((?:[^'\\]|\\.)*)'/.exec(t);
+          if (m) summary = m[1];
+          else wantNext = true;
+        }
+        if (/\}\)/.test(t) && summary !== null) inOp = false;
+      }
+      const rm = /^@Roles\(([^)]*)\)/.exec(t);
+      if (rm) roles = rm[1].replace(/Role\./g, '').replace(/\s+/g, '');
+      if (/^@Public\(\)/.test(t)) pub = true;
+      const mm = /^  (?:async )?([a-zA-Z0-9_]+)(?:<[^>]*>)?\(/.exec(raw);
+      if (mm && !t.startsWith('@') && hasOp) {
+        const sm = summary === null ? null : suffixRe.exec(summary);
+        out.push({
+          relPath,
+          className: cls,
+          method: mm[1],
+          summary,
+          suffix: sm ? `[${sm[1]}]` : null,
+          hasPublic: pub,
+          roles,
+        });
+        reset();
+      }
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -259,7 +341,9 @@ function checkSeedCodesReferenced(scan: SrcScan, seedCodes: Set<string>): CheckR
       summary: `${prefixes.length} 个动态模板前缀(覆盖 ${dynamicCovered} 条 seed 码)`,
       details: prefixes
         .sort()
-        .map((p) => `\`${p}\${...}\` @ ${[...new Set(scan.dynamicPrefixes.get(p) ?? [])].join(', ')}`),
+        .map(
+          (p) => `\`${p}\${...}\` @ ${[...new Set(scan.dynamicPrefixes.get(p) ?? [])].join(', ')}`,
+        ),
     });
   }
   if (orphans.length === 0) {
@@ -277,6 +361,65 @@ function checkSeedCodesReferenced(scan: SrcScan, seedCodes: Set<string>): CheckR
     });
   }
   return results;
+}
+
+function checkSwaggerAuthSuffix(endpoints: EndpointSuffix[], seedCodes: Set<string>): CheckResult {
+  const problems: string[] = [];
+  for (const e of endpoints) {
+    const at = `${e.relPath} :: ${e.className}.${e.method}`;
+    if (e.summary === null) {
+      problems.push(`${at}:summary 无法提取(形态超出提取器约定,见文件头 G 边界)`);
+      continue;
+    }
+    if (e.suffix === null) {
+      problems.push(`${at}:summary 缺少鉴权后缀`);
+      continue;
+    }
+    if (e.hasPublic) {
+      if (e.suffix !== '[public]') problems.push(`${at}:@Public 但后缀为 ${e.suffix}`);
+      continue;
+    }
+    if (e.suffix === '[public]') {
+      problems.push(`${at}:后缀 [public] 但无 @Public`);
+      continue;
+    }
+    if (e.roles !== null) {
+      if (e.suffix !== `[roles: ${e.roles}]`)
+        problems.push(`${at}:@Roles(${e.roles}) 但后缀为 ${e.suffix}`);
+      continue;
+    }
+    if (e.suffix.startsWith('[roles:')) {
+      problems.push(`${at}:后缀 ${e.suffix} 但无 @Roles`);
+      continue;
+    }
+    if (e.suffix === '[auth]') continue; // 仅登录:无 @Roles/@Public,无静态可绑码
+    const rm = /^\[rbac: (.+)\]$/.exec(e.suffix);
+    if (!rm) {
+      problems.push(`${at}:后缀形态无法识别 ${e.suffix}`);
+      continue;
+    }
+    const code = rm[1];
+    if (code.endsWith('.*')) {
+      const prefix = code.slice(0, -1); // 'attachment.upload.'
+      if (![...seedCodes].some((c) => c.startsWith(prefix)))
+        problems.push(`${at}:通配族 ${code} 无任何 seed 码匹配`);
+    } else if (!seedCodes.has(code)) {
+      problems.push(`${at}:[rbac: ${code}] 不在 seed 权限码中`);
+    }
+  }
+  if (problems.length === 0) {
+    return {
+      id: 'swagger-auth-suffix',
+      severity: 'PASS',
+      summary: `${endpoints.length} 个 @ApiOperation 鉴权后缀与装饰器/seed 一致(P2-2 惯例)`,
+    };
+  }
+  return {
+    id: 'swagger-auth-suffix',
+    severity: 'FAIL',
+    summary: `${problems.length} 处 summary 鉴权后缀缺失 / 与实际鉴权不一致`,
+    details: problems,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -309,9 +452,7 @@ function main(): void {
   const seedSource = readRepoFile(seedRelPath);
   const rbacMapDoc = readRepoFile(rbacMapRelPath);
   if (seedSource === '' || rbacMapDoc === '') {
-    console.log(
-      `[FAIL] inputs-exist (${seedRelPath} 或 ${rbacMapRelPath} 不存在/为空)`,
-    );
+    console.log(`[FAIL] inputs-exist (${seedRelPath} 或 ${rbacMapRelPath} 不存在/为空)`);
     console.log('');
     console.log('Summary: 1 FAIL, 0 WARN, 0 INFO, 0 PASS');
     process.exitCode = 1;
@@ -340,6 +481,7 @@ function main(): void {
     checkCanonicalPrefixes(controllers),
     checkDirectCallCodesSeeded(scan, seedCodes),
     ...checkSeedCodesReferenced(scan, seedCodes),
+    checkSwaggerAuthSuffix(extractEndpointSuffixes(srcFiles), seedCodes),
   ];
 
   for (const r of results) printResult(r);
