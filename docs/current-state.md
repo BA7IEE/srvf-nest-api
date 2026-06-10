@@ -33,11 +33,11 @@
 | Swagger `setVersion(...)` | `0.15.0` |
 | 最新 git tag | `v0.15.0`(2026-05-20T17:07:09Z;指向 `089499d` = PR #163 handoff squash commit) |
 | GitHub Latest Release | `v0.15.0`(标 Latest;publishedAt 2026-05-20T17:07:09Z;Notes 自 `CHANGELOG.md ## v0.15.0 - 2026-05-20` 段抽取) |
-| `main` HEAD | **`88b9e26`** `test(certificates): add service characterization spec (#251)`(post-v0.15.0 docs 治理 + 架构边界抽离串 + Governance-1A 串 + **P1-C controller 物理拆分收口**(attendances step 4 = #236 / 状态回填 #237)+ **CODEMAP drift check 脚本**(#238)/ **CODEMAP 首批 drift 修复**(#239)/ **`srvf-god-service-refactor` skill**(#240)/ **`activity-registrations.service.spec.ts`**(#241)/ **current-state + CODEMAP 回填**(#242)/ **`attachments.service.spec.ts` service-level characterization spec**(#243)/ **`srvf-release-closeout` skill**(#244)/ **current-state 回填**(#245)/ **`activities.service.spec.ts` service-level characterization spec**(#246)/ **`attendances.service.spec.ts` service-level characterization spec**(#247)/ **current-state true-up #246-#247**(#248)/ **fresh-worktree preflight + migration 计数修正**(#249)/ **RBAC 模块历史注释 true-up**(#250)/ **current-state + CODEMAP true-up**(#252)/ **`users.service.spec.ts` service-level characterization spec**(#253)/ **`certificates.service.spec.ts` service-level characterization spec**(#251)均已落地;v0.15.0 release tag 仍指向 `089499d` = PR #163 handoff squash commit,2026-06-01 核对) |
+| `main` HEAD | **`aca46fd`** `docs(harness): P1-4 god-service 拆分系列调研收口 (#281)`(post-v0.15.0 累计四大串:① docs 治理 + Governance G1/G2 串(#204-#227);② harness 基建 + characterization 串(#228-#256:CODEMAP / 模块 CLAUDE.md / preflight / 6 个 service spec / 2 个 drift check 脚本 / 3 个 skill);③ **Route B API surface 全量迁移**(#257-#271:终态 4 canonical 前缀,详 §3);④ **ai-harness 操作层 + P1 系列 + P1-4 拆分系列**(#272-#281:9 文档操作层 / rbacmap check / member-profiles dto 拆分 / 终审方案 A 标注 / participation 6 纯组件 unit spec / AttendancePresenter 第一刀 #280 / P1-4 收口 #281);v0.15.0 tag 仍指向 `089499d` = PR #163 handoff squash commit) |
 | open PR | **0**(本入口刷新 PR 合并前) |
 | 工作树状态 | clean |
 | 最新 handoff | [`docs/archive/handoff/v0.15.0.md`](archive/handoff/v0.15.0.md)(v0.15.0 release closeout index;上一版 [`v0.14.0.md`](archive/handoff/v0.14.0.md));自 v0.15.0 docs 治理收口起,handoff 统一归档于 `archive/handoff/`,历史快照不回改 |
-| Unreleased 累计 | **post-v0.15.0 已累计多轮治理、characterization、state-machine / audit-recorder 抽离与 drift cleanup PR**;当前 HEAD 以本表为准,完整历史以 GitHub PR / git log 为准;**均不构成 minor bump 触发条件**。 |
+| Unreleased 累计 | **v0.16.0 release 收口进行中**(2026-06-10 用户拍板):post-v0.15.0 已累计 118 commits(含 Route B 全量迁移这一行为级里程碑),CHANGELOG `## Unreleased` 13 条目已审计完整;按 [`process.md §5.1`](process.md) landing → bump → handoff 推进,tag / GitHub Release 由维护者手动执行。 |
 
 > **复核命令**(任何会话开工前都可以一行跑完):
 >
