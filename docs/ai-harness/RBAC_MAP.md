@@ -103,7 +103,15 @@
 5. 错误码:权限拒绝只允许既有 `UNAUTHORIZED(40100)` / `FORBIDDEN(40300)` / RBAC 拒绝码(30100 段)/ 业务护栏码;**禁止**自创 token 类 100xx 码(AGENTS §5)。
 6. 本文件对照表与代码不一致时:以代码为准,**先报告再 true-up**,不得据本表"纠正"代码。
 
-## 7. 重新生成口径(true-up 时用)
+## 7. 漂移检查与重新生成口径
+
+**首选自动检查**(NEXT_TASKS P1-1 已落地;0 FAIL 才算本表与事实一致):
+
+```bash
+pnpm docs:rbacmap:check   # seed 码↔本表计数 / controller 数↔本表 / 4 canonical 前缀 / 直调码必在 seed / 孤码 WARN
+```
+
+手工重新生成口径(true-up 改表时用):
 
 ```bash
 # 权限码全集(seed)
