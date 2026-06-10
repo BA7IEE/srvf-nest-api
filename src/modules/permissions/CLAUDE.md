@@ -11,7 +11,7 @@
 
 ## Local facts
 
-- **入口模式当前现状**:P0-F PR-1 起本模块 5 controller + 多数业务模块 controller 已迁移到"入口仅 `JwtAuthGuard`,**不**挂 `@Roles(...)`,Service 内 `rbac.can()` 判权 + 失败抛 `RBAC_FORBIDDEN(30100)`"模式;但仓库整体仍**双轨并存** — 例如 [`activity-registrations.controller.ts`](../activity-registrations/activity-registrations.controller.ts) 等老 controller 仍用 `@Roles(SUPER_ADMIN, ADMIN)` 入口判权(沿当前迁移进度)。**这是当前迁移状态,不代表鼓励长期混用**;修改权限边界时必须说明 controller guard、service-level `rbac.can()`、数据范围(where 子句 / `.self`)三者关系
+- **入口模式当前现状(2026-06-11 Slow-4 收口,单轨)**:全仓 controller 一律"入口仅 `JwtAuthGuard`,**不**挂 `@Roles(...)`,Service 内 `rbac.can()` 判权 + 失败抛 `RBAC_FORBIDDEN(30100)`"(活跃 `@Roles` = 0;`RolesGuard` 机制保留 Guard 链作防御性兜底;activities 列表/详情等 `[auth]` 端点无码仅登录)。业务面 ADMIN 权限由内置角色 `biz-admin`(绑 35)承载,seed 幂等补挂每个非软删 ADMIN;修改权限边界时仍必须说明 controller guard、service-level `rbac.can()`、数据范围(where 子句 / `.self`)三者关系
 - **`RbacService` 是唯一判权出口**:`can()` / `judge()` / `getMyPermissions()` / `reload()`;`SUPER_ADMIN` 短路在 `judge()` 内实现;`ADMIN` 继承 USER 由 **seed 给 ADMIN 内置角色配 USER 级权限点**实现,Service 本身**不**对 `ADMIN` 特判
 - **`RbacCacheService` 是 permission resolution cache**(Map + TTL,沿 `RBAC_CACHE_TTL_SECONDS` env / app.config 默认 1800s);**不是**用户身份有效性缓存(身份每请求查库,在 JwtStrategy);invalidate 入口 3 个:`invalidateUser` / `invalidateAllUsersWithRole`(失败仅 logger.warn 不抛)/ `invalidateAll`
 - **raw permission ≠ app capability**(沿 D-5.3 + Phase 0.7 §3.2):
@@ -25,7 +25,7 @@
 
 ## Risk points (不要做)
 
-- ❌ **不**在本"docs-only / 局部 PR"中把 controller 入口 `@Roles` ↔ Service 内 `rbac.can()` 双轨随手统一成单一模型;现状是迁移中,统一改造需独立设计 PR — 但**不代表鼓励长期混用**
+- ❌ **不**给任何端点重新挂 `@Roles(...)` 入口判权(Slow-4 已收口单轨;新管理面 endpoint 默认 R 模式,权限事实变更一律 D 档)
 - ❌ **不**把 `/api/system/v1/rbac/me/permissions` 与 `/api/app/v1/me/capabilities` 混为一谈;raw code 不出 App;capability 不替代后端判权
 - ❌ **不**在本"docs-only / 局部 PR"中改 seed `Permission.code` 集合 / `RolePermission` 映射 / `RbacRole` 内置角色 — 任何 Permission code 改名 / 增删 / 角色权限重映射都按 D 档降速,先与维护者对齐
 - ❌ **不**给 `RbacService.can()` 加 `ADMIN` 内置短路(`ADMIN` 继承 USER 由 seed 实现;Service 不特判,沿 [`rbac.service.ts:124`](rbac.service.ts:124))

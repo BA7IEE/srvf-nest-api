@@ -8,8 +8,8 @@
 | 项 | 当前值 |
 |---|---|
 | 版本(三方一致) | **v0.19.0**(2026-06-11;package.json = Swagger = tag;tag 指向 `2cc1850` 标 Latest;要点见 CHANGELOG) |
-| `main` HEAD | `2cc1850`(v0.19.0 handoff,#312;滞后属固有现象) |
-| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **空**(v0.19.0 已收口) |
+| `main` HEAD | `f16191d`(Slow-4 T3,#317;滞后属固有现象) |
+| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **2 条**(Slow-4 权限双轨收口 #315-#317,待下一 release 折叠) |
 | 最新 handoff | [`archive/handoff/v0.19.0.md`](archive/handoff/v0.19.0.md)(不回改) |
 
 ## 2. 当前系统已具备能力
@@ -19,14 +19,14 @@
 - **v1 + V1.1 底座**:NestJS + Prisma + PostgreSQL + JWT + 三层 Role + 软删除 + 统一返回 + Swagger 100%;pino 日志 + 请求 ID + helmet + 限流 + 健康检查 + 优雅关闭 + CI
 - **V2 模型全量**:dictionaries / organizations / members(`memberNo` 不复用)/ member_departments / member_profiles / emergency_contacts / certificates / activities / activity_registrations(+CSV)/ attendance_sheets+records(5 态含终审)/ contribution_rules(D14)/ audit_logs(A-1 不可改删)
 - **token 体系**(v0.13/14,**行为冻结**):App 本人改密(不吊销 access,D-4)+ refresh / logout / logout-all(rotation always / family revoke / 90d absolute / 联动撤销 5 场景〔2026-06-11 +`self-password-reset`〕/ JWT 15m / payload 仅 `{sub,username}`)
-- **RBAC + P0-F**:4 表 + `rbac.can()` + **81 码**(2026-06-10 SMS +5)+ ops-admin(绑 58);管理面四域(rbac / config / users / audit-logs)已 Service 层判权
+- **RBAC 单轨(P0-F + Slow-4 收口)**:4 表 + `rbac.can()` + **117 码**(2026-06-11 Slow-4 +36)+ 内置角色 ops-admin(绑 58)/ member(绑 9)/ **biz-admin(绑 35,Slow-3 决议「ADMIN 内置角色边界 = 全量业务权限」承载;seed 幂等补挂每个非软删 ADMIN)**;**权限双轨收口完成**(2026-06-11 goal #314-#317,冻结评审稿 [`archive/reviews/slow4-rbac-business-face-review.md`](archive/reviews/slow4-rbac-business-face-review.md)):业务面 7 模块 44 端点摘 `@Roles`(**全仓活跃 `@Roles` = 0**,RolesGuard 机制保留),42 端点 Service 层判权 + activities 列表/详情 2 端点仅登录;`member.delete.record` 仅 SA(D1=A 镜像);零行为漂移由 7 个权限边界 spec(52 例)锁定
 - **attachments + storage**:多态附件 + 配置三表(不合表不抽 facade)+ 业务面 `rbac.can()` 首批(20 码);Local / COS Provider + AES-256-GCM + fail-fast
 - **SMS 基础设施**(2026-06-10,goal T0-T4;冻结评审稿 [`archive/reviews/sms-verification-infra-review.md`](archive/reviews/sms-verification-infra-review.md)):通道层(`sms/` 模块,DevStub/腾讯云双 Provider 动态路由 + settings/send-logs 4 端点 + `SMS_ENCRYPTION_KEY` AES-256-GCM)+ 验证码服务(6 位/5min/单活码/错 5 次作废/防刷三层/明文三不)+ 手机号绑定(`me/phone` 发码+验绑换绑 + admin 清号;phone 唯一含软删占用);purpose 两值 `PHONE_BIND` + `PASSWORD_RESET`;BizCode 24xxx 段 6 码;权限码 76→**81**;AuditLogEvent +3(手机号一律掩码);**真实通道未开通**(运维接力 SOP:[`ops/sms-production-rollout-checklist.md`](ops/sms-production-rollout-checklist.md));OTP 登录/通知挂 [`ai-harness/NEXT_TASKS.md`](ai-harness/NEXT_TASKS.md) P1-7
 - **找回密码(SMS 验证码重置,pre-auth)**(2026-06-11,goal T0-T3;冻结评审稿 [`archive/reviews/password-reset-by-sms-review.md`](archive/reviews/password-reset-by-sms-review.md)):`auth/v1` 两公开端点(`password-reset/send-code` + `password-reset`,`@PasswordResetThrottle()` 第 6 throttler 实例 IP 3/60s);**防枚举**(四种无效号码场景同泛化 200 零留痕 + reset 一切失败统一 24010 + 零新增 BizCode/权限码);10006 不烧码可同码重试;重置后效 = 同事务改密 + 联动撤销第 5 场景 `'self-password-reset'` + audit `password.reset.by-sms`(掩码);access 沿 D-4 不吊销;AuditLogEvent +1(`password.reset.by-sms`,union 共 30 项);**DevStub 已全验,真实短信仍只卡腾讯云审核**(运维接力同上行)
 - **App API Phase 2**(15 端点):`me`×3 / profile×2 / password / activities×2 / `my/*`×7;DTO 隔离 `dto/app/` 禁派生;self-scope;**永不返回 L3**;准入双 ACTIVE(D-5)
 - **Route B 终态**(2026-06-01):全仓仅 4 前缀,零 v2 / 零裸前缀 / 零 legacy,contract 断言锁定(§2.1)
-- **P2-2 鉴权后缀**(v0.17.0 落地 148;找回密码后 **157** endpoint)summary 带 `[rbac:]/[roles:]/[public]/[auth]`,检查项 G 锁一致性
-- **测试与契约**:e2e **76 suites / 1718 tests** + unit 30 spec(6 characterization 全覆盖)+ contract **157 路由**白名单;CI 全链 + docker-smoke
+- **P2-2 鉴权后缀**(v0.17.0 落地 148;现 **157** endpoint)summary 带 `[rbac:]/[roles:]/[public]/[auth]`,检查项 G 锁一致性(Slow-4 后 `[roles:]` 计 0,形态保留供机制兜底)
+- **测试与契约**:e2e **84 suites / 1775 tests**(Slow-4 +7 权限边界 spec +1 seed spec)+ unit 30 spec(6 characterization 全覆盖)+ contract **157 路由**白名单;CI 全链 + docker-smoke
 
 ## 2.1 当前 API surface 状态
 
@@ -37,8 +37,7 @@
 
 > 这些事项**不**由 AI 自行启动,需要用户拍板。
 
-- **不**自动启动 Slow-3(ADMIN 内置角色 / ADMIN 默认附件权限边界)— 等业务方对"业务管理员边界"补充澄清;**2026-06-10 新增子议题**:考勤终审部门级细分(方案 A 拍板:维持 ADMIN 级终审,`finalReviewerUserId` 仅审计记录;"部长"职务无数据模型承载,细分随 Slow-3 一并决议,详 [`participation-bounded-context.md §4`](participation-bounded-context.md))
-- **不**自动启动 Slow-4(业务面 attachments 之外的 V2 接口细粒度 `rbac.can()` 接入;**14 个 RBAC CRUD + 管理面已于 P0-F / v0.15.0 完成**,见 §4 P1 行)— 强依赖 Slow-3 决议
+- **Slow-3 主决议已拍板,Slow-4 已完成**(2026-06-11 goal「权限双轨收口」#314-#317;冻结评审稿 [`archive/reviews/slow4-rbac-business-face-review.md`](archive/reviews/slow4-rbac-business-face-review.md)):ADMIN 内置角色边界 = 全量业务权限,由 `biz-admin` 承载(绑 35;`member.delete.record` 仅 SA;attachment 存量 20 码不绑);业务面 7 模块 44 端点已全部接入 `rbac.can()`,全仓活跃 `@Roles` = 0。**仍挂起的 Slow-3 子议题**:考勤终审部门级细分(2026-06-10 方案 A 沿用:维持 ADMIN 级终审〔现 = 持 biz-admin 的 ADMIN 或 SA〕,`finalReviewerUserId` 仅审计记录;"部长"职务无数据模型承载;重开需单独立项,详 [`participation-bounded-context.md §4`](participation-bounded-context.md))— **不**自动启动
 - **不**自动启动 Slow-5(B8 入队同意书正文 / Q8 退队清理 N 值)— 等业务方提供
 - **不**自动启动 Slow-7(uploadToken 重放黑名单 / 失败回滚 Provider 文件 / test-connection / multipart / STS / 跨 Provider 迁移)— 等真实使用反馈
 - **不**自动启动 L-3(Storage Settings 配置变更 audit_logs)— 等用户授权
@@ -58,7 +57,6 @@
 
 | 等级 | 债务 | 处理建议 |
 |---|---|---|
-| P1 | 权限双轨:管理面已收紧(P0-F),业务面 7 个 G 模式模块(48 处 `@Roles`)归 Slow-4 | 等 Slow-3 决议;AI 禁自行接入 |
 | P1 | 前端联调包剩运维侧 P0-H 演练 + P0-I 排错 SOP | 运维侧立项;系统侧无动作 |
 | P2 | god-service 体量观察:attendances 1100L / attachments 827L / activity-registrations 750L(P1-4 收口 = 合理终态;体量 source-only 口径,排除 spec) | 重开需 architecture-boundary §6 新触发 + 单独立项 |
 | P2 | service 单测占比 ~11.8%(26/221 实测) | 刻意策略(e2e 为主,见 §2 测试行) |
