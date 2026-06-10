@@ -1,6 +1,6 @@
 {
   "name": "srvf-api",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "深圳公益救援队(SRVF)系统 API — 派生自 u-nest-api-starter v0.1.6",
   "private": true,
   "license": "UNLICENSED",

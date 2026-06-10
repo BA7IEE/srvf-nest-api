@@ -2,7 +2,7 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;tag 由维护者按需打。
 
-## Unreleased
+## v0.16.0 - 2026-06-10
 
 ### Added
 
