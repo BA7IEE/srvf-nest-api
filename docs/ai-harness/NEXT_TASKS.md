@@ -11,11 +11,10 @@
 
 ## P1(长期维护)
 
-### P1-3 业务面 RBAC 接入(Slow-4)— **挂起,等业务拍板**
-- **目标**:7 个 G 模式模块(members / member-profiles / emergency-contacts / certificates / activities / activity-registrations / attendances)接入 `rbac.can()`。
-- **前置**:Slow-3(ADMIN 内置角色边界)业务决议——**这是业务方决策,不是工程任务**。
-- **范围**(届时):新权限码 seed(D 档)+ 7 模块 service + e2e。**验收**:按届时评审稿。
-- **人工确认**:✅ 全程(评审稿冻结 + 分 PR)。AI 在拍板前**不得**预实现任何部分。
+### P1-3 业务面 RBAC 接入(Slow-4)— **🚧 进行中(2026-06-11 goal 拍板启动)**
+- **前置已解除**:Slow-3 决议已由维护者 2026-06-11 拍板(ADMIN 内置角色边界 = 全量业务权限,由新内置角色 `biz-admin` 承载;部门级细分仍不做;迁移目标 = 零行为漂移)。
+- **冻结评审稿**:[`docs/archive/reviews/slow4-rbac-business-face-review.md`](../archive/reviews/slow4-rbac-business-face-review.md)(44 端点映射表 + 36 码 + biz-admin 绑 35 + 零漂移验收方案)。
+- **队列**:T0 评审稿 → T1 seed(D 档)→ T2 member 族 4 模块 → T3 participation 3 模块 → T4 docs 收尾;探针驱动,完成后本条 ✅ 归档。
 
 (P1-4 已于 2026-06-10 调研收口,见文末归档区。)
 
