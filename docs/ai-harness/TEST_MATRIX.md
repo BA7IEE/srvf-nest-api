@@ -1,7 +1,7 @@
 # TEST_MATRIX — 命令清单与任务档位测试矩阵
 
 > **性质**:derived 操作文档。测试 SOP 权威 → [`docs/testing.md`](../testing.md);PR 档位与必跑检查权威 → [`docs/process.md §3`](../process.md);本文件把两者合成 AI 可直接执行的矩阵。
-> 数据快照:2026-06-10,HEAD `ccd8817`(post-P2-2 #287 + 检查项 G #288)。✅ = 实测通过;🔶 = 需本地 Docker;本地 daemon 未启动时降级路径见 §1 末尾,CI 等价覆盖。
+> 数据快照:2026-06-10,HEAD `2b57f8c`(v0.17.0 release)。✅ = 实测通过;🔶 = 需本地 Docker;本地 daemon 未启动时降级路径见 §1 末尾,CI 等价覆盖。
 
 ---
 

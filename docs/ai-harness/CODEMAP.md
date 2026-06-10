@@ -2,7 +2,7 @@
 
 > **性质**:derived 导航文档,非规则源。`src/` 模块级地图(体量 / 职责 / 本地铁律)的权威是根 [`CODEMAP.md`](../../CODEMAP.md)(由 `pnpm docs:codemap:check` 防漂移),本文件**不重复维护**那张表。
 > 本文件补两件事:**全仓目录全景**(根 CODEMAP 不覆盖 docs / test / scripts / .claude / .github)与 **AI 读写分区**。
-> 数据快照:2026-06-10,HEAD `ccd8817`(post-P2-2 #287 + 检查项 G #288)。与磁盘冲突时以磁盘为准。
+> 数据快照:2026-06-10,HEAD `2b57f8c`(v0.17.0 release)。与磁盘冲突时以磁盘为准。
 
 ---
 
