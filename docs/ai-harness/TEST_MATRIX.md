@@ -1,7 +1,7 @@
 # TEST_MATRIX — 命令清单与任务档位测试矩阵
 
 > **性质**:derived 操作文档。测试 SOP 权威 → [`docs/testing.md`](../testing.md);PR 档位与必跑检查权威 → [`docs/process.md §3`](../process.md);本文件把两者合成 AI 可直接执行的矩阵。
-> 数据快照:2026-06-10,HEAD `aca46fd`(v0.16.0 landing)。✅ = 实测通过;🔶 = 需本地 Docker,本机未跑(daemon 未启动),CI 等价覆盖。
+> 数据快照:2026-06-10,HEAD `ccd8817`(post-P2-2 #287 + 检查项 G #288)。✅ = 实测通过;🔶 = 需本地 Docker;本地 daemon 未启动时降级路径见 §1 末尾,CI 等价覆盖。
 
 ---
 
@@ -96,8 +96,8 @@ import { waitFor } from '../helpers/wait-for';                // 轮询替代 sl
 - **禁止自动执行**:`prisma migrate dev` / `prisma migrate reset` / `prisma db push` / 改 `migrations/**` 历史(prisma/CLAUDE.md)。
 - **e2e 全量时长**:分钟级(72 suites 串行)。B 档优先跑受影响子集;C 档以上必须全量。
 
-## 7. 已知测试缺口(本次 Review 发现,处置见 NEXT_TASKS)
+## 7. 已知测试缺口(2026-06-10 Review 发现;当前处置状态)
 
-1. 部门级权限场景(部长 / `finalReviewerUserId` 终审矩阵)无专项 e2e——是否属当前业务范围**需人工确认**。
-2. `docs/testing.md` 覆盖表引用已删除的 `users-me.e2e-spec.ts`(Route B Phase 4 删除)——文档漂移,待 A 档 true-up。
-3. unit 覆盖率 ~9.5%(20 spec / 211 源文件)——刻意策略(e2e 为主 + 6 个 god/large service 已 characterization 全覆盖),不是缺陷;新增 service 编排逻辑时按 architecture-boundary 触发条件补。
+1. 部门级权限场景(部长 / `finalReviewerUserId` 终审矩阵)无专项 e2e——**✅ 已拍板不补**(2026-06-10 P1-5 方案 A:维持 ADMIN 级终审,`finalReviewerUserId` 仅审计记录;部门级细分挂 Slow-3 子议题,未立项前不实现、不补部门级 e2e,详 [`participation-bounded-context.md §4`](../participation-bounded-context.md))。
+2. `docs/testing.md` 覆盖表引用已删除的 `users-me.e2e-spec.ts`——**✅ 已修**(2026-06-10 P1-2:替换为 `app-me` / `app-me-password` 承接行,全文 20 个相对链接复核)。
+3. unit 覆盖率 ~11.8%(26 spec / 221 源文件,2026-06-10 实测)——刻意策略(e2e 为主 + 6 个 god/large service characterization 全覆盖 + participation 5 纯组件 unit 矩阵 + presenter spec),不是缺陷;新增 service 编排逻辑时按 architecture-boundary 触发条件补。

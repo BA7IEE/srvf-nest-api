@@ -2,7 +2,7 @@
 
 > **性质**:derived 导航文档,非规则源。`src/` 模块级地图(体量 / 职责 / 本地铁律)的权威是根 [`CODEMAP.md`](../../CODEMAP.md)(由 `pnpm docs:codemap:check` 防漂移),本文件**不重复维护**那张表。
 > 本文件补两件事:**全仓目录全景**(根 CODEMAP 不覆盖 docs / test / scripts / .claude / .github)与 **AI 读写分区**。
-> 数据快照:2026-06-10,HEAD `aca46fd`(post-P1-4 收口,v0.16.0 landing)。与磁盘冲突时以磁盘为准。
+> 数据快照:2026-06-10,HEAD `ccd8817`(post-P2-2 #287 + 检查项 G #288)。与磁盘冲突时以磁盘为准。
 
 ---
 
@@ -34,7 +34,8 @@ srvf-nest-api/
 │   └── CLAUDE.md             # 本地铁律(必读后再动 prisma/)
 ├── scripts/
 │   ├── agent-preflight.sh    # 🟢 开工只读门禁(pnpm agent:preflight)
-│   └── check-codemap.ts      # 🟢 CODEMAP 漂移检查(pnpm docs:codemap:check)
+│   ├── check-codemap.ts      # 🟢 CODEMAP 漂移检查(pnpm docs:codemap:check)
+│   └── check-rbac-map.ts     # 🟢 RBAC_MAP 漂移检查 + P2-2 后缀一致(pnpm docs:rbacmap:check)
 ├── src/
 │   ├── main.ts / app.module.ts   # 🟡 全局装配(APP_GUARD 顺序固定,改 = D 档)
 │   ├── bootstrap/            # 🟡 main.ts 与 test/setup/test-app.ts 共用;改前确认双边
@@ -61,7 +62,7 @@ srvf-nest-api/
 | 分区 | 含义 | AI 行为 |
 |---|---|---|
 | 🟢 自由区 | docs(非权威源)/ 测试新增 / 本目录地图 | 可直接修改,按 PR 档位走检查 |
-| 🟡 谨慎区 | 业务代码 / 配置 / contract snapshot / 工具链 | 按 [`process.md §3`](../process.md) 定档;C 档以上动手前用户拍板 |
+| 🟡 谨慎区 | 业务代码 / 配置 / contract snapshot / 工具链 | 按 [`process.md §3`](../process.md) 定档;C 档范围已含于用户任务说明 / goal → 免二次确认,AI 自行发起仍须拍板;D 档一律拍板 |
 | 🔴 红区 | 五大权威源文档 / CI / prisma schema·migrations·seed / 全局 Guard·Filter·Interceptor / auth·JWT / storage 凭证 / audit 不可变性 / archive/** | **非用户授权不动**;触碰即 D/E 档降速(评审稿 + 拍板) |
 
 红区精确清单(逐文件):`AGENTS.md` / `ARCHITECTURE.md` / `CLAUDE.md` / `docs/srvf-foundation-baseline.md` / `docs/V2红线与复活路径.md` / `docs/api-surface-policy.md`(以上 6 个 = AGENTS.md 顶部铁律点名)+ `.github/workflows/**` + `prisma/schema.prisma` + `prisma/migrations/**` + `prisma/seed.ts` + `src/common/guards/**` + `src/common/filters/**` + `src/common/interceptors/**` + `src/modules/auth/**`(行为契约,P0-E 冻结)+ `src/common/storage/storage-crypto.service.ts` + `docs/archive/**`(只读)。

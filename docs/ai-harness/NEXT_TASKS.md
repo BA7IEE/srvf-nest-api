@@ -21,20 +21,20 @@
 
 ## P2(可优化)
 
-### P2-3 分页 skip/take 换算的轻度重复
-- 各 service 手写 `skip=(page-1)*pageSize`;现状可接受(逻辑两行,已验证)。仅当后续出现第 3 处分页 bug 时再考虑收敛;**不建议**主动抽 util(避免 grab-bag 违反 AGENTS §2)。
+### P2-3 分页 skip/take 换算的轻度重复 — **❌ 不做**
+- 依据:现状可接受(逻辑两行,已验证);主动抽 util 违反 AGENTS §2 grab-bag 禁令。重开条件 = 后续出现第 3 处分页 bug 时单独评估,**不**预先立项。
 
-### P2-4 `common/storage/` 迁往 `src/modules/storage/`
-- current-state §4 已登记 P3;长期可做,本期不动(D 档,涉及 import 链 + e2e)。
+### P2-4 `common/storage/` 迁往 `src/modules/storage/` — **⏸ 挂起(等单独立项)**
+- 等什么:用户对该 D 档迁移(import 链 + e2e 全量影响)单独立项;current-state §4 已登记 P3,长期可做,本期不动。
 
-### P2-5 contract snapshot 单文件 ~1MB
-- current-state §4 已接受("PR review 用 diff 看");无动作,仅提醒勿整读。
+### P2-5 contract snapshot 单文件 ~1MB — **❌ 不做(已接受)**
+- 依据:current-state §4 已接受("PR review 用 diff 看");无动作项,仅提醒勿整读(2026-06-10 实测 35,777 行 / ~1,013 KB)。
 
 ---
 
 ## 已完成项归档区
 
-- **P2-2 Swagger 权限要求文本化惯例补全** ✅(2026-06-10,C 档,goal 预拍板范围内实施):全部 **148 个 endpoint** 的 `@ApiOperation` summary 追加统一鉴权后缀,四种形态与实际鉴权 1:1 对照(`pnpm docs:rbacmap:check` 口径):`[rbac: <权限码>]`(81,R 模式,码自 service `rbac.can()` 调用点逐个反查;attachments 8 端点为运行时 self/other 动态判定,标 `attachment.<action>.*` 通配族)/ `[roles: <角色列表>]`(44,G 模式,自方法级 `@Roles(...)` 实参)/ `[public]`(6,`@Public()`)/ `[auth]`(17,仅登录:App surface 15 + `rbac/me/permissions` + `auth/logout-all`;goal 三格式未覆盖"仅登录"形态,按最小扩展补第 4 记号并已在 PR 描述显式声明)。**零行为变更**;contract snapshot diff 296 行全部为 summary 行(逐行核验非 summary 变更 = 0)。
+- **P2-2 Swagger 权限要求文本化惯例补全** ✅ PR #287(2026-06-10,C 档,goal 预拍板范围内实施;配套一致性检查项 G 见 P1-1 条目 PR #288):全部 **148 个 endpoint** 的 `@ApiOperation` summary 追加统一鉴权后缀,四种形态与实际鉴权 1:1 对照(`pnpm docs:rbacmap:check` 口径):`[rbac: <权限码>]`(81,R 模式,码自 service `rbac.can()` 调用点逐个反查;attachments 8 端点为运行时 self/other 动态判定,标 `attachment.<action>.*` 通配族)/ `[roles: <角色列表>]`(44,G 模式,自方法级 `@Roles(...)` 实参)/ `[public]`(6,`@Public()`)/ `[auth]`(17,仅登录:App surface 15 + `rbac/me/permissions` + `auth/logout-all`;goal 三格式未覆盖"仅登录"形态,按最小扩展补第 4 记号并已在 PR 描述显式声明)。**零行为变更**;contract snapshot diff 296 行全部为 summary 行(逐行核验非 summary 变更 = 0)。
 
 - **P1-4 god-service 拆分系列** ✅ 收口(2026-06-10,用户逐项拍板;沿 `srvf-god-service-refactor` skill 全流程):
   - **第一刀 attendances Presenter** ✅ PR #280(C 档方案 A 拍板):4 个序列化方法 + `decimalToString` 抽至 `attendance-presenter.ts`(137L),service 1157→1100L;零漂移三证 = 716L characterization 断言零改动 + presenter unit spec 6 用例 + contract snapshot 零 diff;事务归属未下放,select 查询策略留 service。
@@ -50,4 +50,4 @@
 - **P0-3 测试环境双侧验证** ✅ 随 PR #272 CI 完成:contract + e2e 在 CI 通过,TEST_MATRIX §1 无 Docker 降级路径成立。
 - **P0-2 入口接线** ✅ PR #273(2026-06-10,用户拍板授权):`CLAUDE.md §1` 表追加 ai-harness 行;CLAUDE.md 66 行,仍 ≤80。
 - **P1-2 `docs/testing.md` 漂移 true-up** ✅(2026-06-10 用户立项,同日落地):覆盖表 `users-me` 行(死链,Route B Phase 4 删除)替换为 `app-me` / `app-me-password` 承接行;全文 20 个相对链接复核,其余 19 个均有效。
-- **P1-1 RBAC_MAP 自动漂移检查脚本** ✅ PR #274(2026-06-10 用户立项,同日落地):`scripts/check-rbac-map.ts` + `pnpm docs:rbacmap:check`(沿 check-codemap 范式,零新依赖;6 检查项:seed 码提取 / 码数对账 / controller 数对账 / canonical 前缀 / 直调码必在 seed / 孤码 WARN + 动态前缀 INFO)。验收达成:当前仓库 0 FAIL;负向测试(删 seed 码 → FAIL 75≠76;篡改声明数 → FAIL)通过。已知边界写在脚本头部(helper 间接调用走全源字面量扫描;仅剥 // 行注释)。
+- **P1-1 RBAC_MAP 自动漂移检查脚本** ✅ PR #274(2026-06-10 用户立项,同日落地):`scripts/check-rbac-map.ts` + `pnpm docs:rbacmap:check`(沿 check-codemap 范式,零新依赖;6 检查项:seed 码提取 / 码数对账 / controller 数对账 / canonical 前缀 / 直调码必在 seed / 孤码 WARN + 动态前缀 INFO)。验收达成:当前仓库 0 FAIL;负向测试(删 seed 码 → FAIL 75≠76;篡改声明数 → FAIL)通过。已知边界写在脚本头部(helper 间接调用走全源字面量扫描;仅剥 // 行注释)。**2026-06-10 追加检查项 G**(PR #288,P2-2 配套):summary 鉴权后缀 ↔ @Roles/@Public/seed 一致性校验,现共 7 检查项;负向 3 连(删后缀 / roles 不符 / 码不在 seed)均精确 FAIL。
