@@ -17,11 +17,7 @@
 - **范围**(届时):新权限码 seed(D 档)+ 7 模块 service + e2e。**验收**:按届时评审稿。
 - **人工确认**:✅ 全程(评审稿冻结 + 分 PR)。AI 在拍板前**不得**预实现任何部分。
 
-### P1-4 god-service 拆分立项(逐个,characterization 已就绪)
-- **目标**:attendances(1157L)→ attachments(827L)→ activity-registrations(750L)按 [`architecture-boundary.md`](../architecture-boundary.md) 抽 QueryService / Presenter。
-- **前置**:6 个 characterization spec 已全覆盖(#241/#243/#246/#247/#251/#253)——护栏已就位。
-- **范围**:单模块单 PR,D 档。**验收**:characterization + 全量 e2e 零行为漂移;`docs:codemap:check` god-service WARN 递减。
-- **人工确认**:✅ 逐个立项(current-state §3 明确"不自动拆")。
+(P1-4 已于 2026-06-10 调研收口,见文末归档区。)
 
 ## P2(可优化)
 
@@ -40,6 +36,14 @@
 ---
 
 ## 已完成项归档区
+
+- **P1-4 god-service 拆分系列** ✅ 收口(2026-06-10,用户逐项拍板;沿 `srvf-god-service-refactor` skill 全流程):
+  - **第一刀 attendances Presenter** ✅ PR #280(C 档方案 A 拍板):4 个序列化方法 + `decimalToString` 抽至 `attendance-presenter.ts`(137L),service 1157→1100L;零漂移三证 = 716L characterization 断言零改动 + presenter unit spec 6 用例 + contract snapshot 零 diff;事务归属未下放,select 查询策略留 service。
+  - **attendances 第二刀(QueryService)**:只读调研判定触发不足——4 个读方法净查询构造仅 ~40L、filter 分支 1-2 个、抽离需事务壳传参或读事务下放,命中 [`architecture-boundary.md §6`](../architecture-boundary.md) Do-not-extract("hide the transaction boundary")→ 拍板收刀。
+  - **attachments(827L)**:调研结论**无合规可抽边界**——纯规则历史已抽完(audit-recorder #203 / `attachment-validation.ts` PR #6b / `mime-to-ext.ts`);余量为 signed-URL L3 红线(`resolveAccessUrl`)+ RBAC self/other scope 判定(Hard stop 区)+ 配置三表读点(boundary 文档锁"不抽 facade")+ 本职编排 → 拍板收刀。
+  - **activity-registrations(750L)**:仅剩 `formatRowsAsCsv`(~54L,单点调用)低价值 Presenter 候选 → 拍板不立项。
+  - **终态认知**:3 个 ⚠G 模块均已达 architecture-boundary 政策下合理形态,`docs:codemap:check` 的 god-service WARN 仅作体量观察,不再视为"待拆"队列;重开任何一刀需出现 §6 新触发条件并单独立项。`current-state.md §3/§4` 已同步本结论。
+  - **伴随产出**:participation 5 个纯组件 unit 全矩阵(#278 time-overlap-policy + contribution-calculator / #279 三个 state-machine)+ attendance-presenter spec(#280);src 内 unit spec 20→26 个。
 
 - **P1-5 部门级权限(finalReviewer 终审)业务确认** ✅(2026-06-10 用户拍板**方案 A**):维持 ADMIN 级终审,`finalReviewerUserId` 仅审计记录不参与授权;部门级细分挂 Slow-3 子议题,未立项前不实现、不新增权限码、不补部门级 e2e。现状已正式标注于 [`participation-bounded-context.md §4`](../participation-bounded-context.md) 关键 invariant;`current-state.md §3` Slow-3 行同步登记。
 - **P2-1 member-profiles dto 拆分(harness 验证任务)** ✅(2026-06-10,用户指定"选一个真实小任务验证 Harness"):**原任务前提修正**——769L 文件内并无 enum(Review 扫描代理误报,亲核仅 4 个 DTO class + 1 共享正则),改按 AGENTS §2 既有解锁例外(单 dto 文件 >300L 允许拆 `dto/` 目录)执行物理拆分:`dto/member-profile.shared.dto.ts`(PHONE_PATTERN + MedicalNoteItemDto)+ response / create / update 三个 per-class 文件,sed 逐字节搬移零改写;importer 仅 controller / service 两处。验收:quick 绿 + contract snapshot **零 diff**(snapshot 未触碰,由 CI 契约锁证明)+ codemap / rbacmap 双检查 0 FAIL。
