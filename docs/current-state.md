@@ -116,7 +116,7 @@
 
 > 这些事项**不**由 AI 自行启动,需要用户拍板。
 
-- **不**自动启动 Slow-3(ADMIN 内置角色 / ADMIN 默认附件权限边界)— 等业务方对"业务管理员边界"补充澄清
+- **不**自动启动 Slow-3(ADMIN 内置角色 / ADMIN 默认附件权限边界)— 等业务方对"业务管理员边界"补充澄清;**2026-06-10 新增子议题**:考勤终审部门级细分(方案 A 拍板:维持 ADMIN 级终审,`finalReviewerUserId` 仅审计记录;"部长"职务无数据模型承载,细分随 Slow-3 一并决议,详 [`participation-bounded-context.md §4`](participation-bounded-context.md))
 - **不**自动启动 Slow-4(业务面 attachments 之外的 V2 接口细粒度 `rbac.can()` 接入;**14 个 RBAC CRUD + 管理面已于 P0-F / v0.15.0 完成**,见 §4 P1 行)— 强依赖 Slow-3 决议
 - **不**自动启动 Slow-5(B8 入队同意书正文 / Q8 退队清理 N 值)— 等业务方提供
 - **不**自动启动 Slow-7(uploadToken 重放黑名单 / 失败回滚 Provider 文件 / test-connection / multipart / STS / 跨 Provider 迁移)— 等真实使用反馈
