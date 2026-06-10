@@ -1,7 +1,7 @@
 # RBAC_MAP — 权限体系地图与对照表
 
 > **性质**:derived 地图,非规则源。权限**事实**权威源:权限码与绑定 → [`prisma/seed.ts`](../../prisma/seed.ts);判权实现 → [`src/modules/permissions/rbac.service.ts`](../../src/modules/permissions/rbac.service.ts);铁律 → [`AGENTS.md §8 / §13`](../../AGENTS.md)。
-> 数据快照:2026-06-11,HEAD `2cc1850`(v0.19.0 release;本周期权限事实**零变更**——找回密码两端点均 `@Public()`,仍 81 码,endpoint 鉴权后缀 157/157 经检查项 G 锁定)。**任何权限事实的变更本身是 D 档**(评审稿 + 用户拍板),本文件只能事后 true-up。
+> 数据快照:2026-06-11,Slow-4 T1 seed 合入(81 → **117 码**,+36 业务面码 + `biz-admin` 内置角色;冻结评审稿 [`slow4-rbac-business-face-review.md`](../archive/reviews/slow4-rbac-business-face-review.md);T1→T3 过渡期 36 码尚无 service 调用点,属预期孤码 WARN,T3 后清零)。**任何权限事实的变更本身是 D 档**(评审稿 + 用户拍板),本文件只能事后 true-up。
 
 ---
 
@@ -10,7 +10,7 @@
 三层 `Role` enum(SUPER_ADMIN > ADMIN > USER,Guard 链全局注册:`ThrottlerBizGuard → JwtAuthGuard → RolesGuard`)与 RBAC 4 表(`RbacRole` / `Permission` / `RolePermission` / `UserRole`,Service 层 `rbac.can()`)并存:
 
 - **管理面 / 配置面 / System surface:已收紧**(v0.15.0 P0-F)——controller 不再标 `@Roles`,入口仅要求登录,每个写读路径在 Service 层 `rbac.can('<code>')` 判权,SUPER_ADMIN 短路通过。
-- **业务面(attachments 之外)7 个模块:仍 Guard `@Roles` 双轨**——归 **Slow-4**,强依赖业务方对 Slow-3(ADMIN 内置角色边界)的决议,**AI 禁止自行启动接入**([`current-state.md §3`](../current-state.md))。
+- **业务面(attachments 之外)7 个模块:仍 Guard `@Roles` 双轨**——归 **Slow-4**(**2026-06-11 已启动**:Slow-3 决议拍板 + T1 seed 合入,T2/T3 摘 @Roles 进行中;冻结评审稿 [`slow4-rbac-business-face-review.md`](../archive/reviews/slow4-rbac-business-face-review.md);范围外仍禁自行扩展)。
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。判权唯一服务入口 = `RbacService.can()`;`RbacCacheService` 是权限解析缓存(TTL 1800s,三档失效),不是身份缓存。
 
@@ -37,7 +37,7 @@
 | `system/v1/sms-send-logs` | `sms-send-log.read.list`(1;响应手机号一律掩码;SMS T2)|
 | `admin/v1/attachments`(业务面首批) | `attachment.*`(20:member/certificate 各 8 含 `.self`/`.other`,activity 4) |
 
-### 2.2 G 模式 — Guard `@Roles` 双轨(Slow-4 待启动,7 模块 48 处 @Roles)
+### 2.2 G 模式 — Guard `@Roles` 双轨(Slow-4 T2/T3 迁移中,7 模块 44 处 @Roles;原"48 处"系本表笔误,亲核 true-up 见评审稿 D-S4-1)
 
 | controller | @Roles 形态 | Service 是否 rbac.can |
 |---|---|---|
@@ -57,7 +57,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT);`system/v1/health`:live / ready。
 
-## 3. 权限码全集(81 条,seed 幂等 upsert)
+## 3. 权限码全集(117 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -73,8 +73,15 @@
 | 用户管理 | 8 | `user.{read,create,update,delete}.account` / `user.reset.password` / `user.update.role` / `user.update.status` / `user.phone.clear`(SMS T2 seed,T3 端点已实装)|
 | 审计 | 1 | `audit-log.read.entry` |
 | 附件业务 | 20 | `attachment.{upload,view,update,delete}.member.{self,other}`(8)/ `…certificate.{self,other}`(8)/ `…activity`(4) |
+| 队员(Slow-4 T1) | 5 | `member.{read,create,update,delete}.record` / `member.update.status` |
+| 队员扩展档案(Slow-4 T1) | 3 | `member-profile.{read,create,update}.record` |
+| 紧急联系人(Slow-4 T1) | 4 | `emergency-contact.{read,create,update,delete}.record` |
+| 证书(Slow-4 T1) | 6 | `certificate.{read,create,update,delete}.record` / `certificate.{verify,reject}.record` |
+| 活动(Slow-4 T1) | 5 | `activity.{create,update,delete}.record` / `activity.{publish,cancel}.record`(列表/详情无码,仅登录) |
+| 活动报名(Slow-4 T1) | 5 | `activity-registration.{read,create}.record` / `activity-registration.{approve,reject,cancel}.record` |
+| 考勤(Slow-4 T1) | 8 | `attendance.{create,read,update,delete}.sheet` / `attendance.{approve,reject,final-approve,final-reject}.sheet` |
 
-内置角色:`ops-admin`(绑 58 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials`,三者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS 镜像 E-3,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)。seed 与代码调用**双向对齐**:无"seed 有码未用",无"代码用码未 seed"(`user.phone.clear` 已随 SMS T3 端点实装,T2 期间的过渡孤码 WARN 已消除)。
+内置角色:`ops-admin`(绑 58 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials`,三者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS 镜像 E-3,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 T1,绑 35 条 = 36 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码不绑〔零漂移〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验)**。seed 与代码调用对齐口径:既有 81 码无孤码;**Slow-4 新增 36 码在 T1→T3 过渡期无 service 调用点(预期孤码 WARN,沿 `user.phone.clear` 先例),T3 落地后双向对齐恢复**。
 
 ## 4. 保护不变式(改 users / permissions 前必读)
 

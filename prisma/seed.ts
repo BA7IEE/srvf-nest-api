@@ -1382,6 +1382,416 @@ async function seedAttachmentPermissions(prisma: PrismaClient): Promise<void> {
   );
 }
 
+// Slow-4 业务面 RBAC 接入(2026-06-11,goal「权限双轨收口」T1;
+// 冻结评审稿 docs/archive/reviews/slow4-rbac-business-face-review.md §4 / §5):
+// 36 条业务面权限码 + `biz-admin` 内置角色(Slow-3 决议:ADMIN 内置角色边界 = 全量业务权限)。
+//
+// **不绑项**(评审稿 §6):
+// - `member.delete.record`:members DELETE 今天仅 SUPER_ADMIN(@Roles(SUPER_ADMIN)),
+//   码进 Permission 表但不绑 biz-admin(镜像 PR-3 D1=A `user.update.role` 收紧范式);
+// - attachment 存量 20 码:attachments 已是 R 模式,未持 RBAC 角色的 ADMIN 今天即 30100;
+//   绑入 = ADMIN 凭空获权,违零行为漂移 → 一条不绑。
+//
+// **幂等不变式**(评审稿 D-S4-7):每个 `role=ADMIN && deletedAt=null` 用户持有 biz-admin,
+// 每次 seed 自动补挂 + 强校验(镜像 seedRbac「至少 1 个 ops-admin」强校验范式);
+// 含 DISABLED(禁用→重启用周期内无需重跑 seed 即保持零漂移);
+// 运行时新建的 ADMIN 不自动持有,走既有 POST /api/system/v1/users/:userId/roles 显式授予。
+
+const MEMBER_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'member.read.record',
+    module: 'member',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看队员(列表 + 详情共用 read,沿 PR-4B D4=A)',
+  },
+  {
+    code: 'member.create.record',
+    module: 'member',
+    action: 'create',
+    resourceType: 'record',
+    description: '创建队员(memberNo 全局唯一不复用)',
+  },
+  {
+    code: 'member.update.record',
+    module: 'member',
+    action: 'update',
+    resourceType: 'record',
+    description: '更新队员(displayName / gradeCode;禁改 memberNo / status)',
+  },
+  {
+    code: 'member.update.status',
+    module: 'member',
+    action: 'update',
+    resourceType: 'status',
+    description: '切换队员 status(ACTIVE↔INACTIVE;镜像 user.update.status 命名)',
+  },
+  {
+    code: 'member.delete.record',
+    module: 'member',
+    action: 'delete',
+    resourceType: 'record',
+    description: '软删队员(仅 SUPER_ADMIN 短路;不绑 biz-admin,D1=A 镜像;评审稿 §6)',
+  },
+];
+
+const MEMBER_PROFILE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'member-profile.read.record',
+    module: 'member-profile',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看队员扩展档案(1:1 子资源;含敏感字段)',
+  },
+  {
+    code: 'member-profile.create.record',
+    module: 'member-profile',
+    action: 'create',
+    resourceType: 'record',
+    description: '创建队员扩展档案',
+  },
+  {
+    code: 'member-profile.update.record',
+    module: 'member-profile',
+    action: 'update',
+    resourceType: 'record',
+    description: '部分更新队员扩展档案',
+  },
+];
+
+const EMERGENCY_CONTACT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'emergency-contact.read.record',
+    module: 'emergency-contact',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看队员紧急联系人',
+  },
+  {
+    code: 'emergency-contact.create.record',
+    module: 'emergency-contact',
+    action: 'create',
+    resourceType: 'record',
+    description: '新增队员紧急联系人',
+  },
+  {
+    code: 'emergency-contact.update.record',
+    module: 'emergency-contact',
+    action: 'update',
+    resourceType: 'record',
+    description: '更新队员紧急联系人',
+  },
+  {
+    code: 'emergency-contact.delete.record',
+    module: 'emergency-contact',
+    action: 'delete',
+    resourceType: 'record',
+    description: '软删队员紧急联系人',
+  },
+];
+
+const CERTIFICATE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'certificate.read.record',
+    module: 'certificate',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看队员证书(列表 + 详情 + qualification-flag 共用 read)',
+  },
+  {
+    code: 'certificate.create.record',
+    module: 'certificate',
+    action: 'create',
+    resourceType: 'record',
+    description: '新增队员证书(初始 pending)',
+  },
+  {
+    code: 'certificate.update.record',
+    module: 'certificate',
+    action: 'update',
+    resourceType: 'record',
+    description: '部分更新队员证书(禁系统字段)',
+  },
+  {
+    code: 'certificate.delete.record',
+    module: 'certificate',
+    action: 'delete',
+    resourceType: 'record',
+    description: '软删队员证书',
+  },
+  {
+    code: 'certificate.verify.record',
+    module: 'certificate',
+    action: 'verify',
+    resourceType: 'record',
+    description: '证书核验通过(pending → verified)',
+  },
+  {
+    code: 'certificate.reject.record',
+    module: 'certificate',
+    action: 'reject',
+    resourceType: 'record',
+    description: '证书核验拒绝(pending → rejected)',
+  },
+];
+
+const ACTIVITY_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'activity.create.record',
+    module: 'activity',
+    action: 'create',
+    resourceType: 'record',
+    description: '创建活动(initial draft;列表/详情无码仅登录,评审稿 §3.5)',
+  },
+  {
+    code: 'activity.update.record',
+    module: 'activity',
+    action: 'update',
+    resourceType: 'record',
+    description: '部分更新活动(cancelled 拒改)',
+  },
+  {
+    code: 'activity.delete.record',
+    module: 'activity',
+    action: 'delete',
+    resourceType: 'record',
+    description: '软删活动(D3:删除 ≠ 取消)',
+  },
+  {
+    code: 'activity.publish.record',
+    module: 'activity',
+    action: 'publish',
+    resourceType: 'record',
+    description: '发布活动(draft → published)',
+  },
+  {
+    code: 'activity.cancel.record',
+    module: 'activity',
+    action: 'cancel',
+    resourceType: 'record',
+    description: '取消活动(* → cancelled)',
+  },
+];
+
+const ACTIVITY_REGISTRATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'activity-registration.read.record',
+    module: 'activity-registration',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看活动报名(列表 + CSV 导出共用 read)',
+  },
+  {
+    code: 'activity-registration.create.record',
+    module: 'activity-registration',
+    action: 'create',
+    resourceType: 'record',
+    description: 'ADMIN 代报名(Q-A3)',
+  },
+  {
+    code: 'activity-registration.approve.record',
+    module: 'activity-registration',
+    action: 'approve',
+    resourceType: 'record',
+    description: '报名审核通过(pending → pass)',
+  },
+  {
+    code: 'activity-registration.reject.record',
+    module: 'activity-registration',
+    action: 'reject',
+    resourceType: 'record',
+    description: '报名审核拒绝(pending → reject)',
+  },
+  {
+    code: 'activity-registration.cancel.record',
+    module: 'activity-registration',
+    action: 'cancel',
+    resourceType: 'record',
+    description: '管理员代取消报名(pending|pass → cancelled)',
+  },
+];
+
+const ATTENDANCE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'attendance.create.sheet',
+    module: 'attendance',
+    action: 'create',
+    resourceType: 'sheet',
+    description: '提交考勤单据(Sheet + N records)',
+  },
+  {
+    code: 'attendance.read.sheet',
+    module: 'attendance',
+    action: 'read',
+    resourceType: 'sheet',
+    description: '查看考勤单据(列表 + 详情 + review-detail 共用 read)',
+  },
+  {
+    code: 'attendance.update.sheet',
+    module: 'attendance',
+    action: 'update',
+    resourceType: 'sheet',
+    description: '编辑 pending 考勤单据(D38 snapshot + version+1)',
+  },
+  {
+    code: 'attendance.delete.sheet',
+    module: 'attendance',
+    action: 'delete',
+    resourceType: 'sheet',
+    description: '软删 pending 考勤单据(级联软删 records)',
+  },
+  {
+    code: 'attendance.approve.sheet',
+    module: 'attendance',
+    action: 'approve',
+    resourceType: 'sheet',
+    description: 'APD 一级通过(pending → pending_final_review)',
+  },
+  {
+    code: 'attendance.reject.sheet',
+    module: 'attendance',
+    action: 'reject',
+    resourceType: 'sheet',
+    description: 'APD 一级驳回(pending → rejected)',
+  },
+  {
+    code: 'attendance.final-approve.sheet',
+    module: 'attendance',
+    action: 'final-approve',
+    resourceType: 'sheet',
+    description: '终审通过(pending_final_review → approved;贡献值生效;ADMIN 级终审沿 P1-5 方案 A)',
+  },
+  {
+    code: 'attendance.final-reject.sheet',
+    module: 'attendance',
+    action: 'final-reject',
+    resourceType: 'sheet',
+    description: '终审驳回(pending_final_review → final_rejected)',
+  },
+];
+
+// D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;码进 Permission 表但不绑 biz-admin(评审稿 §6)
+const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
+
+// 业务面权限码全集(36 条 = member 5 + member-profile 3 + emergency-contact 4 + certificate 6 +
+// activity 5 + activity-registration 5 + attendance 8;评审稿 §4)
+const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  ...MEMBER_PERMISSION_SEED,
+  ...MEMBER_PROFILE_PERMISSION_SEED,
+  ...EMERGENCY_CONTACT_PERMISSION_SEED,
+  ...CERTIFICATE_PERMISSION_SEED,
+  ...ACTIVITY_PERMISSION_SEED,
+  ...ACTIVITY_REGISTRATION_PERMISSION_SEED,
+  ...ATTENDANCE_PERMISSION_SEED,
+];
+
+// biz-admin 绑定集合(35 条 = 36 过滤 member.delete.record;评审稿 §5/§6)
+const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISSION_SEED.filter(
+  (p) => p.code !== MEMBER_DELETE_RECORD_CODE,
+);
+
+const BIZ_ADMIN_ROLE_CODE = 'biz-admin';
+const BIZ_ADMIN_DISPLAY_NAME = '业务管理员';
+const BIZ_ADMIN_DESCRIPTION =
+  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 评审稿 §5):member 5 + member-profile 3 + emergency-contact 4 + certificate 6 + activity 5 + activity-registration 5 + attendance 8 = 36 条中绑 35;member.delete.record 仅 SUPER_ADMIN(D1=A 镜像);attachment 存量 20 码不在本角色(零漂移);每个 ADMIN 用户由 seed 自动补挂本角色';
+
+// Slow-4 T1:36 条业务面权限点 + biz-admin 角色 + 35 条绑定 + ADMIN 全员补挂 + 强校验。
+// 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 与 UserRole 复合唯一键),
+// 连续跑两次数量与 id 稳定;不覆盖运营运行时调整(update: {} 范式)。
+async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
+  // 1. upsert 36 条业务面 Permission
+  for (const perm of BIZ_PERMISSION_SEED) {
+    await prisma.permission.upsert({
+      where: { code: perm.code },
+      update: {},
+      create: {
+        code: perm.code,
+        module: perm.module,
+        action: perm.action,
+        resourceType: perm.resourceType,
+        description: perm.description,
+      },
+    });
+  }
+  console.log(
+    `[seed] Slow-4 business permissions ensured (${BIZ_PERMISSION_SEED.length} entries: ` +
+      `member ${MEMBER_PERMISSION_SEED.length} + member-profile ${MEMBER_PROFILE_PERMISSION_SEED.length} + ` +
+      `emergency-contact ${EMERGENCY_CONTACT_PERMISSION_SEED.length} + certificate ${CERTIFICATE_PERMISSION_SEED.length} + ` +
+      `activity ${ACTIVITY_PERMISSION_SEED.length} + activity-registration ${ACTIVITY_REGISTRATION_PERMISSION_SEED.length} + ` +
+      `attendance ${ATTENDANCE_PERMISSION_SEED.length})`,
+  );
+
+  // 2. upsert biz-admin RbacRole
+  const bizAdminRole = await prisma.rbacRole.upsert({
+    where: { code: BIZ_ADMIN_ROLE_CODE },
+    update: {},
+    create: {
+      code: BIZ_ADMIN_ROLE_CODE,
+      displayName: BIZ_ADMIN_DISPLAY_NAME,
+      description: BIZ_ADMIN_DESCRIPTION,
+    },
+    select: { id: true, code: true },
+  });
+  console.log(`[seed] RBAC role '${bizAdminRole.code}' ensured`);
+
+  // 3. upsert RolePermission 映射:biz-admin → 35 条(过滤 member.delete.record)
+  const bizPermissions = await prisma.permission.findMany({
+    where: { code: { in: BIZ_ADMIN_PERMISSION_SEED.map((p) => p.code) } },
+    select: { id: true, code: true },
+  });
+  if (bizPermissions.length !== BIZ_ADMIN_PERMISSION_SEED.length) {
+    throw new Error(
+      `[seed] Slow-4 seed 强校验失败:期望找到 ${BIZ_ADMIN_PERMISSION_SEED.length} 条 ` +
+        `biz-admin 绑定 Permission,实际查到 ${bizPermissions.length} 条;` +
+        'BIZ_PERMISSION_SEED 与 BIZ_ADMIN_PERMISSION_SEED 可能不同步',
+    );
+  }
+  for (const perm of bizPermissions) {
+    await prisma.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: bizAdminRole.id, permissionId: perm.id } },
+      update: {},
+      create: { roleId: bizAdminRole.id, permissionId: perm.id },
+    });
+  }
+  console.log(
+    `[seed] RBAC role-permissions ensured ('${bizAdminRole.code}' ↔ ${bizPermissions.length} permissions; ` +
+      `'${MEMBER_DELETE_RECORD_CODE}' skipped per Slow-4 评审稿 §6 D1=A 镜像)`,
+  );
+
+  // 4. 幂等补挂(评审稿 D-S4-7):每个 role=ADMIN && deletedAt=null 用户 upsert biz-admin
+  //    (含 DISABLED;软删除外;复合唯一键 userId_roleId 保证幂等)
+  const adminUsers = await prisma.user.findMany({
+    where: { role: Role.ADMIN, deletedAt: null },
+    select: { id: true },
+  });
+  for (const u of adminUsers) {
+    await prisma.userRole.upsert({
+      where: { userId_roleId: { userId: u.id, roleId: bizAdminRole.id } },
+      update: {},
+      create: { userId: u.id, roleId: bizAdminRole.id },
+    });
+  }
+
+  // 5. 强校验(镜像 seedRbac ops-admin ≥1 范式):补挂后不允许存在
+  //    「非软删 ADMIN 且未持 biz-admin」的用户,否则 throw 退出。
+  const unattachedAdminCount = await prisma.user.count({
+    where: {
+      role: Role.ADMIN,
+      deletedAt: null,
+      userRoles: { none: { roleId: bizAdminRole.id } },
+    },
+  });
+  if (unattachedAdminCount > 0) {
+    throw new Error(
+      `[seed] Slow-4 biz-admin 强校验失败:仍有 ${unattachedAdminCount} 个非软删 ADMIN 未持有 biz-admin` +
+        '(幂等不变式「每个 Role.ADMIN 用户持有 biz-admin」被破坏;沿评审稿 D-S4-7)。',
+    );
+  }
+  console.log(
+    `[seed] biz-admin bootstrap done (ADMIN holders attached=${adminUsers.length}, unattached=${unattachedAdminCount})`,
+  );
+}
+
 async function main(): Promise<void> {
   const usernameRaw = process.env.SUPER_ADMIN_USERNAME ?? '';
   const username = usernameRaw.trim().toLowerCase();
@@ -1466,6 +1876,11 @@ async function main(): Promise<void> {
     //   注:依赖 seedRbac 已完成(本函数自身只 upsert Permission / RbacRole / RolePermission,
     //   不依赖任何 ops-admin 状态;但放在 seedRbac 之后保持"先 RBAC meta 再业务权限点"语义顺序)
     await seedAttachmentPermissions(prisma);
+
+    // Slow-4 T1(2026-06-11,评审稿 §5):36 条业务面权限码 + biz-admin 角色 + 35 条绑定
+    //   + ADMIN 全员幂等补挂 + 强校验。放在 seedAttachmentPermissions 之后,
+    //   保持"先 RBAC meta 再业务权限点"语义顺序;依赖 SUPER_ADMIN/ADMIN 用户已就位。
+    await seedBizAdminRbac(prisma);
   } finally {
     await prisma.$disconnect();
   }
