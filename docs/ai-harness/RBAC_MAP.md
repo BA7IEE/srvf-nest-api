@@ -92,7 +92,7 @@
 | `rbac.controller.ts` `GET me/permissions` 方法级 Mixed | 存量冻结(P1-A 不拆),返回 raw code 仅限该 system 端点;App 端能力走 `me/capabilities` | 用户 |
 | `dictionaries.controller.ts` 同文件双 controller | 非 surface Mixed,存量冻结不扩展 | 用户 |
 | Swagger 不体现权限码要求 | 现状:`@ApiBearerAuth` + `@ApiOperation` 文案 + `@ApiBizErrorResponse(30100/40300)`;schema 级权限标注不存在 | 若要做,单独立项(见 NEXT_TASKS P2) |
-| 部门级权限(部长/终审 finalReviewer 细粒度) | 字段已建(`finalReviewerUserId`),无专项权限码与 e2e | 业务方(不确定项) |
+| 部门级权限(部长/终审 finalReviewer 细粒度) | ✅ 已拍板(2026-06-10 方案 A):维持 ADMIN 级终审,`finalReviewerUserId` 仅审计记录;细分挂 Slow-3 子议题,未立项不实现(详 [`participation-bounded-context.md §4`](../participation-bounded-context.md)) | 已决;重开走 Slow-3 |
 
 ## 6. AI 硬规则(权限相关)
 

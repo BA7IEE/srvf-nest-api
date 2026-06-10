@@ -23,11 +23,6 @@
 - **范围**:单模块单 PR,D 档。**验收**:characterization + 全量 e2e 零行为漂移;`docs:codemap:check` god-service WARN 递减。
 - **人工确认**:✅ 逐个立项(current-state §3 明确"不自动拆")。
 
-### P1-5 部门级权限(finalReviewer 终审矩阵)业务确认
-- **目标**:确认"部长/副部长终审"是否属当前业务范围;若是 → 补权限语义 + 专项 e2e;若否 → 在 participation 文档标注"字段预留,无权限语义"。
-- **范围**:先 0 代码(业务问答);**验收**:结论落入 `participation-bounded-context.md` 或新评审稿。
-- **人工确认**:✅(业务方)。
-
 ## P2(可优化)
 
 ### P2-2 Swagger 权限要求文本化惯例补全
@@ -46,6 +41,7 @@
 
 ## 已完成项归档区
 
+- **P1-5 部门级权限(finalReviewer 终审)业务确认** ✅(2026-06-10 用户拍板**方案 A**):维持 ADMIN 级终审,`finalReviewerUserId` 仅审计记录不参与授权;部门级细分挂 Slow-3 子议题,未立项前不实现、不新增权限码、不补部门级 e2e。现状已正式标注于 [`participation-bounded-context.md §4`](../participation-bounded-context.md) 关键 invariant;`current-state.md §3` Slow-3 行同步登记。
 - **P2-1 member-profiles dto 拆分(harness 验证任务)** ✅(2026-06-10,用户指定"选一个真实小任务验证 Harness"):**原任务前提修正**——769L 文件内并无 enum(Review 扫描代理误报,亲核仅 4 个 DTO class + 1 共享正则),改按 AGENTS §2 既有解锁例外(单 dto 文件 >300L 允许拆 `dto/` 目录)执行物理拆分:`dto/member-profile.shared.dto.ts`(PHONE_PATTERN + MedicalNoteItemDto)+ response / create / update 三个 per-class 文件,sed 逐字节搬移零改写;importer 仅 controller / service 两处。验收:quick 绿 + contract snapshot **零 diff**(snapshot 未触碰,由 CI 契约锁证明)+ codemap / rbacmap 双检查 0 FAIL。
 - **P0-1 合入 ai-harness 文档层** ✅ PR #272(2026-06-10):9 文档 + 3 模板 + `docs/README.md §1` 登记;CI 全绿。
 - **P0-3 测试环境双侧验证** ✅ 随 PR #272 CI 完成:contract + e2e 在 CI 通过,TEST_MATRIX §1 无 Docker 降级路径成立。
