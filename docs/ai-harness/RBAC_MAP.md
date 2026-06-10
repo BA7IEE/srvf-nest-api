@@ -1,7 +1,7 @@
 # RBAC_MAP — 权限体系地图与对照表
 
 > **性质**:derived 地图,非规则源。权限**事实**权威源:权限码与绑定 → [`prisma/seed.ts`](../../prisma/seed.ts);判权实现 → [`src/modules/permissions/rbac.service.ts`](../../src/modules/permissions/rbac.service.ts);铁律 → [`AGENTS.md §8 / §13`](../../AGENTS.md)。
-> 数据快照:2026-06-10,HEAD `aca46fd`(v0.16.0 landing;权限事实零变化,仅刷戳)。**任何权限事实的变更本身是 D 档**(评审稿 + 用户拍板),本文件只能事后 true-up。
+> 数据快照:2026-06-10,HEAD `ccd8817`(post-P2-2 #287 + 检查项 G #288;权限事实零变化)。**任何权限事实的变更本身是 D 档**(评审稿 + 用户拍板),本文件只能事后 true-up。
 
 ---
 
@@ -49,7 +49,7 @@
 
 ### 2.3 A 模式 — App surface(15 endpoint,JwtAuthGuard + self-scope)
 
-`app/v1/me`(5)/ `app/v1/activities`(2)/ `app/v1/my`×3 class(registrations 4 + attendance-records 1 + certificates 2)+ `app/v1/me/password`(继承 P0-D/P0-E 全套铁律)。**永不返回 L3 字段**(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / 完整 signed URL)。
+`app/v1/me`(5)/ `app/v1/activities`(2)/ `app/v1/my`×3 class(registrations 5 + attendance-records 1 + certificates 1)+ `app/v1/me/password`(继承 P0-D/P0-E 全套铁律)。**永不返回 L3 字段**(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / 完整 signed URL)。
 
 ### 2.4 P 模式 — `@Public`
 
@@ -91,7 +91,7 @@
 | 7 个业务模块接入 `rbac.can()`(Slow-4) | ⏸ 暂缓,依赖 Slow-3(ADMIN 内置角色边界) | 业务方 |
 | `rbac.controller.ts` `GET me/permissions` 方法级 Mixed | 存量冻结(P1-A 不拆),返回 raw code 仅限该 system 端点;App 端能力走 `me/capabilities` | 用户 |
 | `dictionaries.controller.ts` 同文件双 controller | 非 surface Mixed,存量冻结不扩展 | 用户 |
-| Swagger 不体现权限码要求 | 现状:`@ApiBearerAuth` + `@ApiOperation` 文案 + `@ApiBizErrorResponse(30100/40300)`;schema 级权限标注不存在 | 若要做,单独立项(见 NEXT_TASKS P2) |
+| Swagger 不体现权限码要求 | ✅ 已闭环(2026-06-10 P2-2 #287):全部 148 endpoint summary 统一鉴权后缀(`[rbac:]`/`[roles:]`/`[public]`/`[auth]`),`docs:rbacmap:check` 检查项 G(#288)锁后缀↔装饰器/seed 一致性 | 已决;后缀惯例变更走 A/B 档 + 检查项 G 同步 |
 | 部门级权限(部长/终审 finalReviewer 细粒度) | ✅ 已拍板(2026-06-10 方案 A):维持 ADMIN 级终审,`finalReviewerUserId` 仅审计记录;细分挂 Slow-3 子议题,未立项不实现(详 [`participation-bounded-context.md §4`](../participation-bounded-context.md)) | 已决;重开走 Slow-3 |
 
 ## 6. AI 硬规则(权限相关)
@@ -108,7 +108,7 @@
 **首选自动检查**(NEXT_TASKS P1-1 已落地;0 FAIL 才算本表与事实一致):
 
 ```bash
-pnpm docs:rbacmap:check   # seed 码↔本表计数 / controller 数↔本表 / 4 canonical 前缀 / 直调码必在 seed / 孤码 WARN
+pnpm docs:rbacmap:check   # seed 码↔本表计数 / controller 数↔本表 / 4 canonical 前缀 / 直调码必在 seed / 孤码 WARN / summary 鉴权后缀一致(P2-2)
 ```
 
 手工重新生成口径(true-up 改表时用):

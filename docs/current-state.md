@@ -33,11 +33,11 @@
 | Swagger `setVersion(...)` | `0.16.0` |
 | 最新 git tag | `v0.16.0`(2026-06-10;指向 `e63b9c7` = PR #284 handoff squash commit) |
 | GitHub Latest Release | `v0.16.0`(标 Latest;publishedAt 2026-06-10T07:29:23Z;Notes 自 `CHANGELOG.md ## v0.16.0 - 2026-06-10` 段抽取,13 条目) |
-| `main` HEAD | **`e63b9c7`** `docs(release): v0.16.0 handoff index (#284)`(= v0.16.0 tag 指向;post-v0.15.0 118 commits 四大串索引见 [`archive/handoff/v0.16.0.md §4`](archive/handoff/v0.16.0.md)) |
+| `main` HEAD | **`ccd8817`** `chore(scripts): check-rbac-map 追加检查项 G (#288)`(v0.16.0 tag 指向 `e63b9c7` = #284 handoff squash;tag 后追加 #285 回填 + 2026-06-10 harness 收口串 #286/#287/#288,本行随后续 PR 自然滞后属固有现象) |
 | open PR | **0**(本回填 PR 合并前) |
 | 工作树状态 | clean |
 | 最新 handoff | [`docs/archive/handoff/v0.16.0.md`](archive/handoff/v0.16.0.md)(v0.16.0 release closeout index;上一版 [`v0.15.0.md`](archive/handoff/v0.15.0.md));handoff 统一归档于 `archive/handoff/`,历史快照不回改 |
-| Unreleased 累计 | **空**(v0.16.0 已于 2026-06-10 发布并折叠;下一个变更 PR 重建 `## Unreleased` 段)。 |
+| Unreleased 累计 | **1 条**(P2-2 Swagger 权限要求文本化,#287,C 档;待下一 release 折叠)。 |
 
 > **复核命令**(任何会话开工前都可以一行跑完):
 >
@@ -149,7 +149,7 @@
 | P2 | `attachments.service.ts` 827 行 / `activity-registrations.service.ts` 750 行 / `activities.service.ts` 607 行 | **P1-4 调研收口(2026-06-10 用户拍板)**:`attachments` 无合规可抽边界(audit-recorder #203 / validation 纯规则 PR #6b / mime-to-ext 历史已抽,余量为 signed-URL L3 红线 + RBAC self/other scope + 配置三表读点 + 本职编排);`activity-registrations` 仅剩 `formatRowsAsCsv`(~54L 单点调用)低价值 Presenter 候选,**不立项**;`activities`(607L)低于 god 阈值不在 P1-4 范围。三模块均**视为合理形态**,⚠G 标记仅作体量观察 |
 | P2 | service 单测占比仍偏低(`src/` 内 **26** 个 `*.spec.ts` / 221 个 `.ts` 文件 ≈ 11.8%,2026-06-10 实测) | E2E 72 spec 覆盖回归;6 个 god/large-service service spec 全覆盖(#241/#243/#246/#247/#251/#253);participation 5 个纯组件 unit 矩阵 + attendance-presenter spec 已补(#278/#279/#280) |
 | P2 | Mixed Controller 存量(`permissions/rbac.controller.ts` `me/permissions` 方法级 Mobile - Capabilities(P1-A 暂不拆)/ `dictionaries.controller.ts` 同 surface 双 controller(非 surface Mixed);`users.controller.ts` / `attachments.controller.ts` / `activity-registrations.controller.ts` / `attendances.controller.ts` 四项 P1-C step 1/2/3/4 已完成) | 仅兼容,不再新增;剩余 mixed / method-level 状态以 [`api-surface-policy.md §5.1 / §7`](api-surface-policy.md) 当前表为准 |
-| P2 | Contract snapshot 单文件约 1,083,564 字节 / 37,517 行(~1058 KB),review 困难 | 接受;PR review 时用 diff 工具看 |
+| P2 | Contract snapshot 单文件约 1,037,374 字节 / 35,777 行(~1013 KB,2026-06-10 P2-2 后实测),review 困难 | 接受;PR review 时用 diff 工具看 |
 | P3 | `common/storage/` 已承载完整 module + controller(超出原 "common = 跨模块基础设施" 语义) | 长期可迁到 `src/modules/storage/`;本期不动 |
 
 ---
