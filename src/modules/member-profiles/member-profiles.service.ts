@@ -6,11 +6,9 @@ import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.con
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
-import {
-  CreateMemberProfileDto,
-  MemberProfileResponseDto,
-  UpdateMemberProfileDto,
-} from './member-profiles.dto';
+import { CreateMemberProfileDto } from './dto/create-member-profile.dto';
+import { MemberProfileResponseDto } from './dto/member-profile-response.dto';
+import { UpdateMemberProfileDto } from './dto/update-member-profile.dto';
 
 // V2 第一阶段批次 1 member_profiles service。
 // 详见 docs:批次1_API前评审... §3 / §6 / §9 + 草案 §4 / §10。

@@ -30,9 +30,6 @@
 
 ## P2(可优化)
 
-### P2-1 `member-profiles.dto.ts`(769L)enum 抽离
-- 把 DTO 内大量字典 enum 常量抽到同模块 `.constants.ts`(B 档;不改字段集与 snapshot)。验收:snapshot zero diff + quick 绿。人工确认:❌。
-
 ### P2-2 Swagger 权限要求文本化惯例补全
 - 现状:权限要求靠 `@ApiOperation` 文案,无统一格式。提案:统一 summary 后缀约定(如 `[rbac: dict.read.type]` / `[roles: SA,ADMIN]`),**仅注解文案,零行为变更**(B 档,snapshot 会变 → 实际按 C 档拍板)。低优先;若 P1-1 脚本落地,此项价值上升(可机读校验)。
 
@@ -49,6 +46,7 @@
 
 ## 已完成项归档区
 
+- **P2-1 member-profiles dto 拆分(harness 验证任务)** ✅(2026-06-10,用户指定"选一个真实小任务验证 Harness"):**原任务前提修正**——769L 文件内并无 enum(Review 扫描代理误报,亲核仅 4 个 DTO class + 1 共享正则),改按 AGENTS §2 既有解锁例外(单 dto 文件 >300L 允许拆 `dto/` 目录)执行物理拆分:`dto/member-profile.shared.dto.ts`(PHONE_PATTERN + MedicalNoteItemDto)+ response / create / update 三个 per-class 文件,sed 逐字节搬移零改写;importer 仅 controller / service 两处。验收:quick 绿 + contract snapshot **零 diff**(snapshot 未触碰,由 CI 契约锁证明)+ codemap / rbacmap 双检查 0 FAIL。
 - **P0-1 合入 ai-harness 文档层** ✅ PR #272(2026-06-10):9 文档 + 3 模板 + `docs/README.md §1` 登记;CI 全绿。
 - **P0-3 测试环境双侧验证** ✅ 随 PR #272 CI 完成:contract + e2e 在 CI 通过,TEST_MATRIX §1 无 Docker 降级路径成立。
 - **P0-2 入口接线** ✅ PR #273(2026-06-10,用户拍板授权):`CLAUDE.md §1` 表追加 ai-harness 行;CLAUDE.md 66 行,仍 ≤80。

@@ -17,7 +17,7 @@
 | `permissions/` | `system/v1/permissions·roles·rbac` 等 | R | Database | permissions / rbac-roles / role-permissions / user-roles / rbac-me-permissions / rbac-reload / seed-rbac | 🔴 | RBAC 4 表 + RbacService.can() + RbacCacheService;`me/permissions` 方法级 Mixed 存量(P1-A 不拆) |
 | `audit-logs/` | `system/v1/audit-logs` | R | Database, Permissions | audit-logs / audit-logs-migrations | 🔴 | A-1 红线:写入即不可改不可删 |
 | `members/` | `admin/v1/members` | G | Database | members | 🟡 | `memberNo` 全局唯一不复用(编号铁律,改 = 人工确认) |
-| `member-profiles/` | `admin/v1/members/:id/profile` | G | Database | member-profiles | 🟡 | 1:1 子资源;敏感字段(证件号掩码后 4 位);dto 769L 巨型 |
+| `member-profiles/` | `admin/v1/members/:id/profile` | G | Database | member-profiles | 🟡 | 1:1 子资源;敏感字段(证件号掩码后 4 位);dto 已拆 `dto/` 4 文件(AGENTS §2 >300L 例外) |
 | `emergency-contacts/` | `admin/v1/members/:id/emergency-contacts` | G | Database, AuditLogs | emergency-contacts | 🟢 | N:1 子资源 |
 | `member-departments/` | `admin/v1/members/:id/department` | R | Database | member-departments | 🟢 | 一人一部门 partial unique |
 | `organizations/` | `admin/v1/organizations` | R | Database, Permissions | organizations | 🟡 | 单树:队→部门→小组;parentId 自引 Restrict |
