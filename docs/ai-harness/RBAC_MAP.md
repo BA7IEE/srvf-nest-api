@@ -14,7 +14,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。判权唯一服务入口 = `RbacService.can()`;`RbacCacheService` 是权限解析缓存(TTL 1800s,三档失效),不是身份缓存。
 
-## 2. controller × 鉴权模式对照(32 个 controller class)
+## 2. controller × 鉴权模式对照(34 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
@@ -33,6 +33,8 @@
 | `system/v1/contribution-rules` | `contribution.*.rule`(4) |
 | `system/v1/attachment-{type,mime,size-limit}-configs` | `attachment-config.*`(12) |
 | `system/v1/storage-settings` | `storage-setting.*`(3;`reset.credentials` 不绑 ops-admin = D2=A 拍板) |
+| `system/v1/sms-settings` | `sms-setting.*`(3;`reset.credentials` 不绑 ops-admin,镜像 D2=A;SMS T2)|
+| `system/v1/sms-send-logs` | `sms-send-log.read.list`(1;响应手机号一律掩码;SMS T2)|
 | `admin/v1/attachments`(业务面首批) | `attachment.*`(20:member/certificate 各 8 含 `.self`/`.other`,activity 4) |
 
 ### 2.2 G 模式 — Guard `@Roles` 双轨(Slow-4 待启动,7 模块 48 处 @Roles)
@@ -55,7 +57,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT);`system/v1/health`:live / ready。
 
-## 3. 权限码全集(76 条,seed 幂等 upsert)
+## 3. 权限码全集(81 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -66,11 +68,13 @@
 | 贡献规则 | 4 | `contribution.{read,create,update,delete}.rule` |
 | 附件配置 | 12 | `attachment-config.{read,create,update,delete}.{type,mime,size-limit}` |
 | 存储设置 | 3 | `storage-setting.{read,update}.singleton` / `storage-setting.reset.credentials` |
-| 用户管理 | 7 | `user.{read,create,update,delete}.account` / `user.reset.password` / `user.update.role` / `user.update.status` |
+| 短信设置 | 3 | `sms-setting.{read,update}.singleton` / `sms-setting.reset.credentials`(SMS T2,评审稿 §3.4)|
+| 短信日志 | 1 | `sms-send-log.read.list`(SMS T2)|
+| 用户管理 | 8 | `user.{read,create,update,delete}.account` / `user.reset.password` / `user.update.role` / `user.update.status` / `user.phone.clear`(SMS T2 seed;端点 T3 实装)|
 | 审计 | 1 | `audit-log.read.entry` |
 | 附件业务 | 20 | `attachment.{upload,view,update,delete}.member.{self,other}`(8)/ `…certificate.{self,other}`(8)/ `…activity`(4) |
 
-内置角色:`ops-admin`(绑 54 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials`,二者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)。seed 与代码调用**双向对齐**:无"seed 有码未用",无"代码用码未 seed"。
+内置角色:`ops-admin`(绑 58 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials`,三者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS 镜像 E-3,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)。seed 与代码调用**双向对齐**:无"seed 有码未用",无"代码用码未 seed"(唯一过渡例外:`user.phone.clear` 于 SMS T2 随批 seed、端点 T3 实装,期间为预期孤码 WARN,沿评审稿 §3.4)。
 
 ## 4. 保护不变式(改 users / permissions 前必读)
 

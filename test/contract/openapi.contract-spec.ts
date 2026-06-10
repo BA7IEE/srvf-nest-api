@@ -190,6 +190,14 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/system/v1/storage-settings'],
   ['post', '/api/system/v1/storage-settings/reset-credentials'],
 
+  // SMS 基础设施 T2(2026-06-10;冻结评审稿 docs/archive/reviews/sms-verification-infra-review.md §3.2):
+  // settings 三端点动词镜像 storage-settings 现状(评审稿 E-1)+ send-logs 分页只读;
+  // T3 再增 app/v1/me/phone* 两端点与 admin 清号端点(届时同步本表)。
+  ['get', '/api/system/v1/sms-settings'],
+  ['patch', '/api/system/v1/sms-settings'],
+  ['post', '/api/system/v1/sms-settings/reset-credentials'],
+  ['get', '/api/system/v1/sms-send-logs'],
+
   // Admin surface(Admin-* tag;70 路由):终态前缀 /api/admin/v1/*
   // (Route B 终态;v2 老前缀已于 Phase 4 删除,沿 docs/api-surface-migration-plan.md §3.4)。
   // 注:历史 mobile-like 自助端点已收口到 App surface(/api/app/v1/me|my/*);

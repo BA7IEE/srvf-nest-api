@@ -897,32 +897,95 @@ const AUDIT_LOG_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
-// Permission 全集(用于 step 1 upsert;14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B = 56 条)
+// =========================================================================
+// SMS 基础设施 T2(2026-06-10):+5 条权限码(76→81;冻结评审稿
+// docs/archive/reviews/sms-verification-infra-review.md §3.4 / E-3)。
+//
+// 端点 → permission 映射(评审稿 §3.2):
+//   GET    /api/system/v1/sms-settings                    → sms-setting.read.singleton
+//   PATCH  /api/system/v1/sms-settings                    → sms-setting.update.singleton
+//   POST   /api/system/v1/sms-settings/reset-credentials  → sms-setting.reset.credentials
+//   GET    /api/system/v1/sms-send-logs                   → sms-send-log.read.list
+//   DELETE /api/admin/v1/users/:id/phone(T3 实装)        → user.phone.clear
+//
+// ops-admin 绑定:4 条;`sms-setting.reset.credentials` **不绑**(镜像 storage D2=A,
+// 仅 SUPER_ADMIN 短路)。`user.phone.clear` code 字符串按 goal 原文(module=user /
+// action=clear / resourceType=phone 仅元数据描述);其端点 T3 落地,T2 期间为孤码
+// (rbacmap 检查预期 WARN,非 FAIL)。
+// =========================================================================
+
+// 镜像 PR_2B_RESET_CREDENTIALS_CODE:凭证 reset 不绑 ops-admin
+const SMS_RESET_CREDENTIALS_CODE = 'sms-setting.reset.credentials';
+
+const SMS_INFRA_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'sms-setting.read.singleton',
+    module: 'sms-setting',
+    action: 'read',
+    resourceType: 'singleton',
+    description: '读 SMS Settings singleton row',
+  },
+  {
+    code: 'sms-setting.update.singleton',
+    module: 'sms-setting',
+    action: 'update',
+    resourceType: 'singleton',
+    description: '更新 SMS Settings(upsert;不含凭证;production-like 禁 DEV_STUB)',
+  },
+  {
+    code: SMS_RESET_CREDENTIALS_CODE,
+    module: 'sms-setting',
+    action: 'reset',
+    resourceType: 'credentials',
+    description:
+      '重置腾讯云 SMS SecretId / SecretKey(镜像 storage D2=A 仅 SUPER_ADMIN;不绑 ops-admin)',
+  },
+  {
+    code: 'sms-send-log.read.list',
+    module: 'sms-send-log',
+    action: 'read',
+    resourceType: 'list',
+    description: '分页查看短信发送日志(响应手机号一律掩码)',
+  },
+  {
+    code: 'user.phone.clear',
+    module: 'user',
+    action: 'clear',
+    resourceType: 'phone',
+    description:
+      '管理员清除用户绑定手机号(T3 实装端点;service 内 rbac.can + assertCanManageUser;幂等)',
+  },
+];
+
+// Permission 全集(用于 step 1 upsert;14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS = 61 条)
 const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
   ...PR_2B_PERMISSION_SEED,
   ...USER_PERMISSION_SEED,
   ...AUDIT_LOG_PERMISSION_SEED,
+  ...SMS_INFRA_PERMISSION_SEED,
 ];
 
-// ops-admin 完整绑定集合(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B = 54 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B)
+// ops-admin 完整绑定集合(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS = 58 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3)
 // 注:`storage-setting.reset.credentials` 从 PR_2B_PERMISSION_SEED 过滤掉(沿 PR-2 D2=A;§6.2)
 // 注:`user.update.role` 从 USER_PERMISSION_SEED 过滤掉(沿 PR-3 D1=A;§6.2)
 // 注:`audit-log.read.entry` 整条加入,不过滤(沿 PR-4 D2=B;§6.2)
+// 注:`sms-setting.reset.credentials` 从 SMS_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;评审稿 E-3)
 const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
   ...PR_2B_PERMISSION_SEED.filter((p) => p.code !== PR_2B_RESET_CREDENTIALS_CODE),
   ...USER_PERMISSION_SEED.filter((p) => p.code !== PR_3B_USER_UPDATE_ROLE_CODE),
   ...AUDIT_LOG_PERMISSION_SEED,
+  ...SMS_INFRA_PERMISSION_SEED.filter((p) => p.code !== SMS_RESET_CREDENTIALS_CODE),
 ];
 
 // 运营管理员角色 code(沿 D7 §10.1 / §10.3 ops-admin 唯一公开 placeholder)
 const OPS_ADMIN_ROLE_CODE = 'ops-admin';
 const OPS_ADMIN_DISPLAY_NAME = '运营管理员';
 const OPS_ADMIN_DESCRIPTION =
-  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / contribution-rule + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条)的 meta 角色;14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B = 54 条权限点;凭证 reset 与 user 角色修改仅 SUPER_ADMIN';
+  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / contribution-rule + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条)的 meta 角色;14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS = 58 条权限点;凭证 reset(storage 与 sms)与 user 角色修改仅 SUPER_ADMIN';
 
 // V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集
 // (沿 D7-attachments v1.0 §6.1 + Q11 v1.0 锁清单 + 用户 PR #6a 拍板)。
@@ -1109,7 +1172,7 @@ const MEMBER_ROLE_PERMISSION_CODES: ReadonlyArray<string> = [
 // 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 复合唯一键 /
 // UserRole 复合唯一键),重复跑不重复创建。
 async function seedRbac(prisma: PrismaClient): Promise<void> {
-  // 1. upsert Permission 全集(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B = 56 条;
+  // 1. upsert Permission 全集(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS = 61 条;
   //    沿 D7 §10.2 + P0-F PR-2A 2026-05-18 + P0-F PR-2B 2026-05-18 + P0-F PR-3B 2026-05-18 + P0-F PR-4B 2026-05-18)
   //    全部 56 条都进 Permission 表(含 reset.credentials + user.update.role);
   //    ops-admin 仅绑 54 条(沿 PR-2 D2=A + PR-3 D1=A 双重过滤;PR-4 D2=B audit-log 整条加入)
@@ -1129,7 +1192,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     });
   }
   console.log(
-    `[seed] RBAC + PR-2A + PR-2B + PR-3B + PR-4B permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A + ${PR_2B_PERMISSION_SEED.length} PR-2B + ${USER_PERMISSION_SEED.length} PR-3B + ${AUDIT_LOG_PERMISSION_SEED.length} PR-4B = ${ALL_PERMISSION_SEED.length} entries)`,
+    `[seed] RBAC + PR-2A + PR-2B + PR-3B + PR-4B + SMS permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A + ${PR_2B_PERMISSION_SEED.length} PR-2B + ${USER_PERMISSION_SEED.length} PR-3B + ${AUDIT_LOG_PERMISSION_SEED.length} PR-4B + ${SMS_INFRA_PERMISSION_SEED.length} SMS = ${ALL_PERMISSION_SEED.length} entries)`,
   );
 
   // 2. upsert ops-admin RbacRole(公开 seed 唯一角色;沿用户拍板方案 A)
@@ -1145,7 +1208,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
   });
   console.log(`[seed] RBAC role '${opsAdminRole.code}' ensured`);
 
-  // 3. upsert RolePermission 映射:ops-admin → 14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B = 54 条
+  // 3. upsert RolePermission 映射:ops-admin → 14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS = 58 条
   //    (沿 D7 §10.3 + P0-F PR-2A 2026-05-18 D1=A 全绑 + D3=A 软删放宽 + PR-2B D1=A + D2=A 凭证收紧
   //     + P0-F PR-3B 2026-05-18 D1=A user.update.role 收紧 + D2=B user.reset.password 放宽 + D3=A 其余 5 条全绑
   //     + P0-F PR-4B 2026-05-18 D2=B audit-log.read.entry 整条加入)

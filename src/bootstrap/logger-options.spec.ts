@@ -20,6 +20,8 @@ const fakeAppCfg: AppConfig = {
   refreshThrottle: { limit: 30, ttlSeconds: 60 },
   rbacCache: { ttlSeconds: 1800 },
   storage: { encryptionKey: '', localRoot: './tmp/storage' },
+  // SMS 基础设施 T2:AppConfig 新增必填字段;本 unit test 不关心 SMS,仅满足接口
+  sms: { encryptionKey: '' },
 };
 
 function getRedactPaths(): readonly string[] {
