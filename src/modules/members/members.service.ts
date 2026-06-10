@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, MemberStatus, Prisma } from '@prisma/client';
+import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { RbacService } from '../permissions/rbac.service';
 import {
   CreateMemberDto,
   ListMembersQueryDto,
@@ -33,9 +35,21 @@ type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
 export class MembersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rbac: RbacService,
+  ) {}
 
   // ============ helpers ============
+
+  // Slow-4 T2(2026-06-11,评审稿 §3.1 / D-S4-8):RBAC 判权(沿 P0-F assertCanOrThrow 范式)。
+  // 每个 public 方法第一条语句调用——先判权后查资源,保持与原 Guard 前置语义一致。
+  // `member.delete.record` 不绑 biz-admin(仅 SUPER_ADMIN 短路;D1=A 镜像)。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   // memberNo 入库前 trim(保留原大小写,与 v1 username 的 toLowerCase 不同 — 编号即身份)
   private normalizeMemberNo(raw: string): string {
@@ -106,7 +120,11 @@ export class MembersService {
 
   // ============ list ============
 
-  async list(query: ListMembersQueryDto): Promise<PageResultDto<MemberResponseDto>> {
+  async list(
+    query: ListMembersQueryDto,
+    currentUser: CurrentUserPayload,
+  ): Promise<PageResultDto<MemberResponseDto>> {
+    await this.assertCanOrThrow(currentUser, 'member.read.record');
     const { page, pageSize, memberNo, gradeCode, status } = query;
 
     const filters: Prisma.MemberWhereInput = {};
@@ -131,7 +149,8 @@ export class MembersService {
 
   // ============ create ============
 
-  async create(dto: CreateMemberDto): Promise<MemberResponseDto> {
+  async create(dto: CreateMemberDto, currentUser: CurrentUserPayload): Promise<MemberResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'member.create.record');
     const memberNo = this.normalizeMemberNo(dto.memberNo);
 
     return this.prisma.$transaction(async (tx) => {
@@ -158,14 +177,20 @@ export class MembersService {
 
   // ============ findOne ============
 
-  findOne(id: string): Promise<MemberResponseDto> {
+  async findOne(id: string, currentUser: CurrentUserPayload): Promise<MemberResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'member.read.record');
     return this.findMemberOrThrow(id);
   }
 
   // ============ update ============
 
   // 仅允许 displayName / gradeCode;memberNo / status 由 DTO 白名单兜底拒绝。
-  async update(id: string, dto: UpdateMemberDto): Promise<MemberResponseDto> {
+  async update(
+    id: string,
+    dto: UpdateMemberDto,
+    currentUser: CurrentUserPayload,
+  ): Promise<MemberResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'member.update.record');
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(id, tx);
 
@@ -187,7 +212,12 @@ export class MembersService {
 
   // ============ updateStatus ============
 
-  async updateStatus(id: string, dto: UpdateMemberStatusDto): Promise<MemberResponseDto> {
+  async updateStatus(
+    id: string,
+    dto: UpdateMemberStatusDto,
+    currentUser: CurrentUserPayload,
+  ): Promise<MemberResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'member.update.status');
     await this.findMemberOrThrow(id);
     return this.prisma.member.update({
       where: { id },
@@ -202,7 +232,8 @@ export class MembersService {
   //   - 有 active 部门归属(member_departments.memberId=:id, deletedAt=null)→ 拒绝
   //   - 有 v1 user 绑定(users.memberId=:id, deletedAt=null)→ 拒绝(防悬空外键)
   // 离队走 PATCH /:id/status → INACTIVE(不软删档案);软删仅"档案彻底无效"场景。
-  async softDelete(id: string): Promise<MemberResponseDto> {
+  async softDelete(id: string, currentUser: CurrentUserPayload): Promise<MemberResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'member.delete.record');
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(id, tx);
 

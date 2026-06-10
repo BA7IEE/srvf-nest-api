@@ -6,6 +6,7 @@ import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.con
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { RbacService } from '../permissions/rbac.service';
 import { CreateMemberProfileDto } from './dto/create-member-profile.dto';
 import { MemberProfileResponseDto } from './dto/member-profile-response.dto';
 import { UpdateMemberProfileDto } from './dto/update-member-profile.dto';
@@ -78,9 +79,20 @@ const DICT_TYPE_WORK_NATURE = 'work_nature';
 
 @Injectable()
 export class MemberProfilesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rbac: RbacService,
+  ) {}
 
   // ============ helpers ============
+
+  // Slow-4 T2(2026-06-11,评审稿 §3.2 / D-S4-8):RBAC 判权(沿 P0-F assertCanOrThrow 范式)。
+  // 每个 public 方法第一条语句调用——先判权后查资源,保持与原 Guard 前置语义一致。
+  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
+    if (!(await this.rbac.can(user, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
 
   // 校验 member 存在且未软删(沿用 member-departments / members 模式)。
   private async findMemberOrThrow(memberId: string, tx?: PrismaTx): Promise<{ id: string }> {
@@ -203,6 +215,7 @@ export class MemberProfilesService {
     memberId: string,
     currentUser: CurrentUserPayload,
   ): Promise<MemberProfileResponseDto | null> {
+    await this.assertCanOrThrow(currentUser, 'member-profile.read.record');
     await this.findMemberOrThrow(memberId);
 
     auditPlaceholder('profile.read.other', {
@@ -219,9 +232,14 @@ export class MemberProfilesService {
 
   // ============ create ============
 
-  // 批次 1 不打 A3 update.self / A4 update.review hook(无 USER 自助接口、不实现审批流);
-  // 后续 USER 自助路由开放时再加 currentUser 参数 + audit 调用。
-  async create(memberId: string, dto: CreateMemberProfileDto): Promise<MemberProfileResponseDto> {
+  // 批次 1 不打 A3 update.self / A4 update.review hook(无 USER 自助接口、不实现审批流)。
+  // Slow-4 T2:currentUser 仅用于 rbac 判权,不改 audit 行为。
+  async create(
+    memberId: string,
+    dto: CreateMemberProfileDto,
+    currentUser: CurrentUserPayload,
+  ): Promise<MemberProfileResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'member-profile.create.record');
     return this.prisma.$transaction(async (tx) => {
       // 1. 校验 member 存在
       await this.findMemberOrThrow(memberId, tx);
@@ -298,7 +316,12 @@ export class MemberProfilesService {
 
   // ============ update ============
 
-  async update(memberId: string, dto: UpdateMemberProfileDto): Promise<MemberProfileResponseDto> {
+  async update(
+    memberId: string,
+    dto: UpdateMemberProfileDto,
+    currentUser: CurrentUserPayload,
+  ): Promise<MemberProfileResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'member-profile.update.record');
     return this.prisma.$transaction(async (tx) => {
       // 1. 校验 member 存在
       await this.findMemberOrThrow(memberId, tx);

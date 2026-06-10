@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -13,6 +14,11 @@ import { createTestApp } from '../setup/test-app';
 // V2 第一阶段批次 2 certificates 模块 e2e。
 // 覆盖 8 接口主成功 + 关键失败:权限 / 字典 / 状态机 / 跨 member / 软删 / 排序 / qualification-flag /
 // 字段白名单 / 拒绝后重新提交。预计 50+ 用例(沿 batch 1 emergency-contacts.e2e 风格)。
+//
+// Slow-4 T2(2026-06-11,评审稿 §8 / D-S4-4):入口切到 service 层 rbac.can();
+// 失败统一 RBAC_FORBIDDEN(30100)。`adminAuth` / `adminWithMemberAuth` 两个 ADMIN 测试用户
+// 在 beforeAll 全局 grant biz-admin,业务断言零修改;
+// 细粒度判权矩阵另见 certificates-rbac-boundary.e2e-spec.ts。
 
 describe('certificates 模块', () => {
   let app: INestApplication;
@@ -37,13 +43,18 @@ describe('certificates 模块', () => {
 
     // 4 用户:su / adm(无 memberId)/ user / adm-with-member(有 memberId)
     await createTestUser(app, { username: 'cert-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'cert-adm', role: Role.ADMIN });
+    const admin = await createTestUser(app, { username: 'cert-adm', role: Role.ADMIN });
     await createTestUser(app, { username: 'cert-user', role: Role.USER });
-    await createTestUser(app, { username: 'cert-adm2', role: Role.ADMIN });
+    const admin2 = await createTestUser(app, { username: 'cert-adm2', role: Role.ADMIN });
     superAdminAuth = (await loginAs(app, 'cert-su')).authHeader;
     adminAuth = (await loginAs(app, 'cert-adm')).authHeader;
     userAuth = (await loginAs(app, 'cert-user')).authHeader;
     adminWithMemberAuth = (await loginAs(app, 'cert-adm2')).authHeader;
+
+    // Slow-4 T2:seed 36 条业务面码 + biz-admin;给两个 ADMIN 测试用户全局 grant(沿 org e2e 范式)
+    const bizSeed = await seedBizAdminPermissionsAndRole(app);
+    await grantBizAdminToUser(app, admin.id, bizSeed.bizAdminRoleId);
+    await grantBizAdminToUser(app, admin2.id, bizSeed.bizAdminRoleId);
 
     // 3 个 member:A 主、B 跨、admMember 用于绑定 ADMIN 测 verifiedBy
     const a = await prisma.member.create({
@@ -126,65 +137,65 @@ describe('certificates 模块', () => {
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER GET list → 403', async () => {
+    it('USER GET list → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER POST → 403', async () => {
+    it('USER POST → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/members/${memberA}/certificates`)
         .set('Authorization', userAuth)
         .send(baseCreatePayload());
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER GET detail → 403', async () => {
+    it('USER GET detail → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${memberA}/certificates/cl000000000000000000xxxx`)
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER PATCH → 403', async () => {
+    it('USER PATCH → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberA}/certificates/cl000000000000000000xxxx`)
         .set('Authorization', userAuth)
         .send({ issuingOrg: 'X' });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER DELETE → 403', async () => {
+    it('USER DELETE → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .delete(`/api/admin/v1/members/${memberA}/certificates/cl000000000000000000xxxx`)
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER PATCH /verify → 403', async () => {
+    it('USER PATCH /verify → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberA}/certificates/cl000000000000000000xxxx/verify`)
         .set('Authorization', userAuth)
         .send({});
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER PATCH /reject → 403', async () => {
+    it('USER PATCH /reject → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberA}/certificates/cl000000000000000000xxxx/reject`)
         .set('Authorization', userAuth)
         .send({ verifyNote: 'X' });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER GET /qualification-flag → 403', async () => {
+    it('USER GET /qualification-flag → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${memberA}/certificates/qualification-flag`)
         .query({ certTypeCode: activeCertTypeCode })
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
   });
 

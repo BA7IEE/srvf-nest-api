@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -12,6 +13,10 @@ import { createTestApp } from '../setup/test-app';
 
 // V2 第一阶段批次 1 emergency_contacts 模块 e2e。
 // 覆盖 4 接口主成功 + 关键失败:权限 / 字典 / 跨 member / 软删 / 排序。
+//
+// Slow-4 T2(2026-06-11,评审稿 §8 / D-S4-4):入口切到 service 层 rbac.can();
+// 失败统一 RBAC_FORBIDDEN(30100)。`adminAuth` 在 beforeAll 全局 grant biz-admin,
+// 业务断言零修改;细粒度判权矩阵另见 emergency-contacts-rbac-boundary.e2e-spec.ts。
 
 describe('emergency-contacts 模块', () => {
   let app: INestApplication;
@@ -31,11 +36,15 @@ describe('emergency-contacts 模块', () => {
     prisma = app.get(PrismaService);
 
     await createTestUser(app, { username: 'ec-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'ec-adm', role: Role.ADMIN });
+    const admin = await createTestUser(app, { username: 'ec-adm', role: Role.ADMIN });
     await createTestUser(app, { username: 'ec-user', role: Role.USER });
     superAdminAuth = (await loginAs(app, 'ec-su')).authHeader;
     adminAuth = (await loginAs(app, 'ec-adm')).authHeader;
     userAuth = (await loginAs(app, 'ec-user')).authHeader;
+
+    // Slow-4 T2:seed 36 条业务面码 + biz-admin;给 ec-adm 全局 grant(沿 org e2e 范式)
+    const bizSeed = await seedBizAdminPermissionsAndRole(app);
+    await grantBizAdminToUser(app, admin.id, bizSeed.bizAdminRoleId);
 
     // 创建 emergency_relation 字典 + 1 ACTIVE / 1 INACTIVE
     const relType = await prisma.dictType.create({
@@ -91,34 +100,34 @@ describe('emergency-contacts 模块', () => {
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER GET → 403', async () => {
+    it('USER GET → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER POST → 403', async () => {
+    it('USER POST → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/members/${memberA}/emergency-contacts`)
         .set('Authorization', userAuth)
         .send(minimalCreatePayload());
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER PATCH → 403', async () => {
+    it('USER PATCH → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberA}/emergency-contacts/cl000000000000000000xxxx`)
         .set('Authorization', userAuth)
         .send({ contactName: 'X' });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER DELETE → 403', async () => {
+    it('USER DELETE → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .delete(`/api/admin/v1/members/${memberA}/emergency-contacts/cl000000000000000000xxxx`)
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
   });
 

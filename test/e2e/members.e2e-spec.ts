@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
+import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -13,6 +14,11 @@ import { createTestApp } from '../setup/test-app';
 // V2 Step 5 members 模块 e2e。
 // 覆盖 6 接口主成功 + 关键失败:权限边界 / memberNo 唯一(包含软删) /
 // gradeCode 字典校验 / PATCH 拒 memberNo+status / DELETE 引用拒删 / status 切换。
+//
+// Slow-4 T2(2026-06-11,评审稿 §8 / D-S4-4):入口切到 service 层 rbac.can();
+// 失败统一 RBAC_FORBIDDEN(30100)。`adminAuth` 在 beforeAll 全局 grant biz-admin
+// (对应迁移前 @Roles 放行语义,业务断言零修改);DELETE 码不绑 biz-admin
+// (仅 SUPER_ADMIN 短路,D1=A 镜像)。细粒度判权矩阵另见 members-rbac-boundary.e2e-spec.ts。
 
 describe('members 模块', () => {
   let app: INestApplication;
@@ -31,11 +37,15 @@ describe('members 模块', () => {
     prisma = app.get(PrismaService);
 
     await createTestUser(app, { username: 'mem-su', role: Role.SUPER_ADMIN });
-    await createTestUser(app, { username: 'mem-adm', role: Role.ADMIN });
+    const admin = await createTestUser(app, { username: 'mem-adm', role: Role.ADMIN });
     await createTestUser(app, { username: 'mem-user', role: Role.USER });
     superAdminAuth = (await loginAs(app, 'mem-su')).authHeader;
     adminAuth = (await loginAs(app, 'mem-adm')).authHeader;
     userAuth = (await loginAs(app, 'mem-user')).authHeader;
+
+    // Slow-4 T2:seed 36 条业务面码 + biz-admin;给 mem-adm 全局 grant(沿 org e2e 范式)
+    const bizSeed = await seedBizAdminPermissionsAndRole(app);
+    await grantBizAdminToUser(app, admin.id, bizSeed.bizAdminRoleId);
 
     // 准备 member_grade 字典 + 1 ACTIVE / 1 INACTIVE
     const gradeType = await prisma.dictType.create({
@@ -81,29 +91,30 @@ describe('members 模块', () => {
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER GET → 403', async () => {
+    it('USER GET → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .get('/api/admin/v1/members')
         .set('Authorization', userAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER POST → 403', async () => {
+    it('USER POST → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .post('/api/admin/v1/members')
         .set('Authorization', userAuth)
         .send({ memberNo: 'demo-x1', displayName: 'X' });
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('ADMIN DELETE → 403(SUPER_ADMIN 专属)', async () => {
+    // DoD-4 ⑤:member.delete.record 不绑 biz-admin → ADMIN 即使持 biz-admin 仍 30100(D1=A 镜像)
+    it('ADMIN(持 biz-admin)DELETE → 30100(码不绑,仅 SUPER_ADMIN 短路)', async () => {
       const member = await prisma.member.create({
         data: { memberNo: 'demo-pb-1', displayName: 'P' },
       });
       const res = await request(httpServer(app))
         .delete(`/api/admin/v1/members/${member.id}`)
         .set('Authorization', adminAuth);
-      expectBizError(res, BizCode.FORBIDDEN);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
   });
 
