@@ -101,7 +101,7 @@ Certificate (不在 participation 图内)
 - `AttendanceRecord.contributionPoints` 字段层可空;**业务**层在 Step 9(approved)之前可由 APD 现场修订;终审通过即"语义生效"。
 - `attendance.recorded` 事件是 participation context **向外的唯一已锁定出口语义**;其它消费方(未来 contribution 聚合 / 仪表盘 / 队员个人贡献值汇总)应当订阅它,**不应**直接读 `AttendanceSheet` / `AttendanceRecord` 表。
 - Activity → completed 由 attendances submit 推动,这是**已知的跨 aggregate 写**;在 §5.2 中明确允许,**不再扩散**到其它方向。
-- **终审授权现状(2026-06-10 用户拍板,方案 A)**:Step 9/10 的 `finalApprove` / `finalReject` 由 `@Roles(SUPER_ADMIN, ADMIN)` 守卫——**任何 ADMIN 可终审任何部门**;`AttendanceSheet.finalReviewerUserId` 仅作审计记录,**不参与授权**。"部长 / 副部长"职务在数据模型中不存在(`member_departments` 仅人↔部门归属,无职务字段),部门级细分**刻意后置**(沿 [`attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts) "细分权限后置"注释),作为 Slow-3(ADMIN 边界)决议的子议题,未单独立项前**不**实现、**不**新增权限码、**不**补部门级 e2e。
+- **终审授权现状(2026-06-10 方案 A 拍板;2026-06-11 Slow-4 收口更新)**:Step 9/10 的 `finalApprove` / `finalReject` 由 service 层 `rbac.can('attendance.final-{approve,reject}.sheet')` 判权(两码绑 `biz-admin`)——**终审 = SUPER_ADMIN(短路)或持 `biz-admin` 的 ADMIN**,任何持权 ADMIN 可终审任何部门;`AttendanceSheet.finalReviewerUserId` 仅作审计记录,**不参与授权**。"部长 / 副部长"职务在数据模型中不存在(`member_departments` 仅人↔部门归属,无职务字段),部门级细分**刻意后置**,作为 Slow-3 决议(主决议已于 2026-06-11 落地为 `biz-admin`)的**仍挂起子议题**,未单独立项前**不**实现、**不**新增权限码、**不**补部门级 e2e。
 
 ---
 

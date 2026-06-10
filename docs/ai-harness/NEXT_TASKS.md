@@ -11,12 +11,7 @@
 
 ## P1(长期维护)
 
-### P1-3 业务面 RBAC 接入(Slow-4)— **🚧 进行中(2026-06-11 goal 拍板启动)**
-- **前置已解除**:Slow-3 决议已由维护者 2026-06-11 拍板(ADMIN 内置角色边界 = 全量业务权限,由新内置角色 `biz-admin` 承载;部门级细分仍不做;迁移目标 = 零行为漂移)。
-- **冻结评审稿**:[`docs/archive/reviews/slow4-rbac-business-face-review.md`](../archive/reviews/slow4-rbac-business-face-review.md)(44 端点映射表 + 36 码 + biz-admin 绑 35 + 零漂移验收方案)。
-- **队列**:T0 评审稿 → T1 seed(D 档)→ T2 member 族 4 模块 → T3 participation 3 模块 → T4 docs 收尾;探针驱动,完成后本条 ✅ 归档。
-
-(P1-4 已于 2026-06-10 调研收口,见文末归档区。)
+(P1-3 业务面 RBAC 接入〔Slow-4〕已于 2026-06-11 goal 全队列完成,见文末归档区;P1-4 已于 2026-06-10 调研收口,见文末归档区。)
 
 ### P1-7 SMS 后续消费者(剩 ②③)— **⏸ 挂起(逐项单独立项,AI 不自动启动)**
 - ② **OTP / 验证码登录**(动 `AGENTS.md:242` v1 登录契约,需先对该红区行评审解锁);③ **通知用途短信**(新模板 + 群发,扩 `SmsPurpose` / templateKey)。①找回密码已完成,见归档区。
@@ -41,6 +36,7 @@
 
 ## 已完成项归档区
 
+- **P1-3 业务面 RBAC 接入(Slow-4 / 权限双轨收口)** ✅(2026-06-11 goal T0-T4 全队列完成;冻结评审稿 [`docs/archive/reviews/slow4-rbac-business-face-review.md`](../archive/reviews/slow4-rbac-business-face-review.md)):**Slow-3 决议**(维护者 2026-06-11 拍板)= ADMIN 内置角色边界 = 全量业务权限,`biz-admin` 承载;部门级细分仍不做(沿 P1-5 方案 A);迁移目标 = 零行为漂移。T0 评审稿 #314(44 端点逐行映射,原 RBAC_MAP「48 处」亲核 true-up 为 44)→ T1 seed #315(36 码 + biz-admin 绑 35〔`member.delete.record` 仅 SA,D1=A 镜像;attachment 20 码不绑〕+ ADMIN 全员幂等补挂强校验;81→117 码)→ T2 member 族 #316(21 端点)→ T3 participation #317(23 端点,activities 列表/详情无码化 `[auth]`)→ T4 docs 收尾。**全仓活跃 `@Roles` = 0**(RolesGuard 机制保留);拒权 40300→30100 沿 P0-F 先例;零漂移五类由 7 个 `*-rbac-boundary` spec(52 例)锁定,既有业务断言零修改全绿;`docs:rbacmap:check` 0 FAIL / 0 WARN。
 - **P1-7 ① 找回密码(SMS 验证码重置,pre-auth)** ✅(2026-06-11 goal T0-T3 全队列完成;冻结评审稿 [`docs/archive/reviews/password-reset-by-sms-review.md`](../archive/reviews/password-reset-by-sms-review.md)):T0 评审稿 #307 → T1 enum migration #308(`SmsPurpose` +`PASSWORD_RESET` 单行;干净库 14/14 重放 + seed 幂等二跑)→ T2 实施 #309(`auth/v1` 两公开端点 + 防枚举四场景泛化 200 + reset 统一 24010 零新增码 + 10006 不烧码 + 联动撤销第 5 场景 `'self-password-reset'` + audit `password.reset.by-sms` + `@PasswordResetThrottle()` 第 6 实例 3/60 + AGENTS §9 四→五场景红区行 + e2e 12 例;contract 155→157;**auth 既有断言零修改全绿,auth.service.ts/users.service.ts 零 diff**)→ T3 docs 收尾。**运维侧零新增作业**:DevStub 已全验,真实短信仍只卡腾讯云审核一件事(沿 P1-6 checklist)。图形验证码不做,重启条件成文评审稿 §9。
 - **P1-6 手机号验证码基础设施** ✅(2026-06-10 goal T0-T4 全队列完成;冻结评审稿 [`docs/archive/reviews/sms-verification-infra-review.md`](../archive/reviews/sms-verification-infra-review.md)):T0 评审稿 #299 → T1 schema #300(User +phone/phoneVerifiedAt + 三表三 enum,干净库重放 + seed 幂等二跑)→ T2 通道层 #301(sms 模块 + 双 Provider + settings/send-logs 4 端点 + 权限码 76→81 + SMS_ENCRYPTION_KEY fail-fast + SDK 锁 4.1.240)→ T3 验证码与绑定 #302(SmsCodeService + me/phone 两端点 + admin 清号 + BizCode 24xxx 6 码 + 3 audit 事件 + 双 throttler + e2e 三组 42 用例)→ T4 docs 收尾。**行为锁全程守住**:auth-* 原断言零改动全绿 / JWT payload zero drift / AGENTS:242 不动。**真实通道未开通**(运维接力:[`docs/ops/sms-production-rollout-checklist.md`](../ops/sms-production-rollout-checklist.md));消费者三项见 P1-7,retention 见 P2-6。
 

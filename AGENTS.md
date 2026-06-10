@@ -234,6 +234,7 @@ import { Role, UserStatus } from '@prisma/client';
 
 - `JwtAuthGuard` + `RolesGuard` 通过 `AppModule.providers` 中 `APP_GUARD` 全局注册,顺序固定 `JwtAuthGuard` → `RolesGuard`(先验登录,再验角色);**禁止在 controller 上 `@UseGuards(...)`**
 - 未标 `@Public()` 默认要登录;`@Public()` 与 `@Roles(...)` 互斥
+- **判权单轨现状(2026-06-11 Slow-4 收口,冻结评审稿 [`docs/archive/reviews/slow4-rbac-business-face-review.md`](docs/archive/reviews/slow4-rbac-business-face-review.md))**:全仓活跃 `@Roles(...)` 使用点 = 0——管理面 / 配置面 / 业务面判权一律下沉 Service 层 `rbac.can('<code>')`(SUPER_ADMIN 短路;拒权统一 `RBAC_FORBIDDEN` 30100),controller 入口仅 JwtAuthGuard;`RolesGuard` 机制与 `@Roles` 装饰器**保留在 Guard 链**(防御性兜底,不删);新 endpoint **不**再标 `@Roles`(管理面默认 R 模式,沿 [`docs/ai-harness/RBAC_MAP.md §6`](docs/ai-harness/RBAC_MAP.md));三层 `Role` enum 仍是身份层事实(SA 短路 / §13 用户管理边界 / App 准入),**不**因此废除
 - `RolesGuard` 看到 `@Roles(...)` 但 `request.user` 为空 → **拒绝访问**(抛 `BizException(BizCode.UNAUTHORIZED)`),不要因没拿到 user 就放行
 - `JwtAuthGuard.canActivate` 用 `reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [handler, class])`,命中 `@Public()` 直接返 true,否则走 `super.canActivate`;`@Public()` 装饰器 `SetMetadata(IS_PUBLIC_KEY, true)`,常量与装饰器同文件导出
 

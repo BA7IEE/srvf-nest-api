@@ -2,6 +2,16 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+### Added
+
+- **Slow-4 T1:业务面权限码 seed + `biz-admin` 内置角色**(D 档;goal「权限双轨收口」拍板,冻结评审稿 [`docs/archive/reviews/slow4-rbac-business-face-review.md`](docs/archive/reviews/slow4-rbac-business-face-review.md) §4/§5;PR #315):纯 seed 无 schema——**36 条业务面权限码**(member 5 / member-profile 3 / emergency-contact 4 / certificate 6 / activity 5 / activity-registration 5 / attendance 8,权限码全集 81→**117**)+ 新内置角色 **`biz-admin`(业务管理员)绑 35 条**(`member.delete.record` 不绑,仅 SUPER_ADMIN 短路,镜像 D1=A 判例;attachment 存量 20 码不绑,零漂移)+ **幂等不变式「每个非软删 ADMIN 用户持有 biz-admin」**(每次 seed 自动补挂 + 强校验,镜像「至少 1 个 ops-admin」范式;含 DISABLED,软删除外;运行时新建 ADMIN 走既有 user-roles 端点显式授予)。ops-admin(58)/ member(9)绑定零变化;seed 幂等二跑 + 新 e2e `seed-biz-admin` 5 用例。
+
+### Changed
+
+- **权限双轨收口:业务面 7 模块 44 端点摘 `@Roles`,判权下沉 Service 层 `rbac.can()`——全仓活跃 `@Roles` 清零**(C/D 档;goal 拍板,Slow-3 决议 2026-06-11「ADMIN 内置角色边界 = 全量业务权限,`biz-admin` 承载;部门级细分仍不做」;评审稿 §3/§7/§8;PR #316 member 族 + PR #317 participation):members(DELETE 仅 SA)/ member-profiles / emergency-contacts / certificates / activities / activity-registrations / attendances(2 Admin class)入口仅 JwtAuthGuard,42 端点 service 第一条语句 `rbac.can('<code>')`(SUPER_ADMIN 短路;**先判权后查资源**),**activities 列表+详情 2 端点无码化**(仅登录 `[auth]`,原 `@Roles` 含 USER 等价仅登录,Q-A7 USER 过滤逻辑原样保留)。**零行为漂移验收(e2e 锁定)**:SA 全通 / 持 biz-admin 的 ADMIN 与迁移前一致(既有业务断言零修改全绿,ADMIN 测试用户统一补挂)/ 未持 biz-admin 的 ADMIN 拒 30100 / 裸 USER 仅 activities 2 端点可读其余拒 30100 / members DELETE 对 ADMIN(含持 biz-admin)仍拒、SA 仍通;**拒权码按既定语义 40300→30100**(沿 P0-F #134 先例,既有 spec 权限边界区块 36 处断言同步改码)。新增 7 个 `*-rbac-boundary` e2e spec(52 用例)+ `grantBizAdminToUser` fixture;summary 后缀 `[roles:]`→`[rbac:]`(42 处,2 处 `[auth]`),contract snapshot diff 仅 summary 行 + 403 响应投影(2 个无码化端点 403 块整体移除,文档不撒谎),零路由 / 零字段 / 零 L3;e2e 76→**84 suites**(1718→**1775 tests**);`docs:rbacmap:check` 0 FAIL / 0 WARN(117 码 seed↔代码双向对齐)。`RolesGuard` 机制保留 Guard 链;AGENTS §8 增"判权单轨现状"红区行(随 PR before/after)。
+
 ## v0.19.0 - 2026-06-11
 
 ### Added
