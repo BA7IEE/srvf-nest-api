@@ -28,16 +28,16 @@
 
 | 项 | 当前值 |
 |---|---|
-| 当前版本 | **v0.15.0**(P0-F 管理面 RBAC 收紧 + Phase 1A Swagger Tag 重命名 + App API Phase 2 完整 15 endpoint;release 收口已完成 2026-05-20T17:07:09Z) |
-| `package.json#version` | `0.15.0` |
-| Swagger `setVersion(...)` | `0.15.0` |
-| 最新 git tag | `v0.15.0`(2026-05-20T17:07:09Z;指向 `089499d` = PR #163 handoff squash commit) |
-| GitHub Latest Release | `v0.15.0`(标 Latest;publishedAt 2026-05-20T17:07:09Z;Notes 自 `CHANGELOG.md ## v0.15.0 - 2026-05-20` 段抽取) |
-| `main` HEAD | **`aca46fd`** `docs(harness): P1-4 god-service 拆分系列调研收口 (#281)`(post-v0.15.0 累计四大串:① docs 治理 + Governance G1/G2 串(#204-#227);② harness 基建 + characterization 串(#228-#256:CODEMAP / 模块 CLAUDE.md / preflight / 6 个 service spec / 2 个 drift check 脚本 / 3 个 skill);③ **Route B API surface 全量迁移**(#257-#271:终态 4 canonical 前缀,详 §3);④ **ai-harness 操作层 + P1 系列 + P1-4 拆分系列**(#272-#281:9 文档操作层 / rbacmap check / member-profiles dto 拆分 / 终审方案 A 标注 / participation 6 纯组件 unit spec / AttendancePresenter 第一刀 #280 / P1-4 收口 #281);v0.15.0 tag 仍指向 `089499d` = PR #163 handoff squash commit) |
-| open PR | **0**(本入口刷新 PR 合并前) |
+| 当前版本 | **v0.16.0**(🎉 Route B API surface 全量迁移终态 + docs 治理 G1/G2 + harness 基建与 6 个 characterization spec + ai-harness 操作层 + P1-4 god-service 拆分系列〔第一刀 #280 + 收口 #281〕;release 收口完成 2026-06-10T07:29:23Z) |
+| `package.json#version` | `0.16.0` |
+| Swagger `setVersion(...)` | `0.16.0` |
+| 最新 git tag | `v0.16.0`(2026-06-10;指向 `e63b9c7` = PR #284 handoff squash commit) |
+| GitHub Latest Release | `v0.16.0`(标 Latest;publishedAt 2026-06-10T07:29:23Z;Notes 自 `CHANGELOG.md ## v0.16.0 - 2026-06-10` 段抽取,13 条目) |
+| `main` HEAD | **`e63b9c7`** `docs(release): v0.16.0 handoff index (#284)`(= v0.16.0 tag 指向;post-v0.15.0 118 commits 四大串索引见 [`archive/handoff/v0.16.0.md §4`](archive/handoff/v0.16.0.md)) |
+| open PR | **0**(本回填 PR 合并前) |
 | 工作树状态 | clean |
-| 最新 handoff | [`docs/archive/handoff/v0.15.0.md`](archive/handoff/v0.15.0.md)(v0.15.0 release closeout index;上一版 [`v0.14.0.md`](archive/handoff/v0.14.0.md));自 v0.15.0 docs 治理收口起,handoff 统一归档于 `archive/handoff/`,历史快照不回改 |
-| Unreleased 累计 | **v0.16.0 release 收口进行中**(2026-06-10 用户拍板):post-v0.15.0 已累计 118 commits(含 Route B 全量迁移这一行为级里程碑),CHANGELOG `## Unreleased` 13 条目已审计完整;按 [`process.md §5.1`](process.md) landing → bump → handoff 推进,tag / GitHub Release 由维护者手动执行。 |
+| 最新 handoff | [`docs/archive/handoff/v0.16.0.md`](archive/handoff/v0.16.0.md)(v0.16.0 release closeout index;上一版 [`v0.15.0.md`](archive/handoff/v0.15.0.md));handoff 统一归档于 `archive/handoff/`,历史快照不回改 |
+| Unreleased 累计 | **空**(v0.16.0 已于 2026-06-10 发布并折叠;下一个变更 PR 重建 `## Unreleased` 段)。 |
 
 > **复核命令**(任何会话开工前都可以一行跑完):
 >
