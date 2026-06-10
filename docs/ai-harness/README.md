@@ -17,7 +17,7 @@
 | Swagger | 100% 覆盖;分页必用 `@ApiWrappedPageResponse`;禁裸 `@ApiOkResponse`;summary 带鉴权后缀(检查项 G) | AGENTS §6 |
 | 校验 | 全局 ValidationPipe(whitelist + forbidNonWhitelisted);禁局部重复配置 | AGENTS §7 |
 | 鉴权 | Guard 全局注册,禁 `@UseGuards`;`@Public` 与 `@Roles` 互斥;JwtPayload 仅 `{sub, username}`;身份有效性不缓存 | AGENTS §8 |
-| 密码 / token | passwordHash 永不出响应;refresh token 行为冻结(rotation always / family revoke / 联动撤销四场景) | AGENTS §9 |
+| 密码 / token | passwordHash 永不出响应;refresh token 行为冻结(rotation always / family revoke / 联动撤销五场景) | AGENTS §9 |
 | 软删除 | 禁 `delete()`;`notDeletedWhere` 统一过滤;唯一性预检查用 `findUnique`(含软删) | AGENTS §10 |
 | DTO | 入参白名单第一道防线;App DTO 禁从 Admin DTO 派生(extends / Pick / Omit / …Type) | AGENTS §11 / §19.7 D-6 |
 | 事务 | 多写 / 先查后写 / 管理员保护操作必须 `$transaction` | AGENTS §12 |

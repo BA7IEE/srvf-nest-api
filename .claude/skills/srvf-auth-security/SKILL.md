@@ -41,7 +41,7 @@ SRVF Nest API 项目所有 auth / token / 密码 / 限流 / Guard / 审计跨模
 - 当前限流装饰器分配与 throttler 物理隔离
 - 当前 auth audit event 集合与 `extra` 允许字段
 - 当前 auth / users / permissions 相关 e2e 覆盖
-- 是否触发联动撤销(本人改密 / 管理员重置 / 用户禁用 / 用户软删)
+- 是否触发联动撤销(本人改密 / 本人短信重置〔找回密码〕/ 管理员重置 / 用户禁用 / 用户软删)
 
 ## Security invariants
 
@@ -53,7 +53,8 @@ SRVF Nest API 项目所有 auth / token / 密码 / 限流 / Guard / 审计跨模
 - **refresh rotation / absolute expiration / reuse detection family revoke** 三不变式不得弱化;判断顺序不得调换
 - **login 失败不得泄露账号是否存在**:所有失败场景同响应体 + 同 HTTP status + 同 timing(命中 / 未命中均跑一次 `bcrypt.compare`)
 - **refresh 失败统一一个错误码**;不得拆分子原因(`EXPIRED` / `REVOKED` / `REPLAY`)
-- **password change / logout-all 与 refresh token 撤销关系不得弱化**:联动撤销四场景(自助改密 / 管理员重置 / 用户禁用 / 用户软删)必须同事务内完成
+- **password change / logout-all 与 refresh token 撤销关系不得弱化**:联动撤销五场景(自助改密 / 本人短信重置〔找回密码〕/ 管理员重置 / 用户禁用 / 用户软删)必须同事务内完成
+- **找回密码防枚举不得弱化**:无效号码四场景 send-code 同泛化 200 零留痕;reset 一切失败统一 24010;10006 检查不得挪到码预检之前(密码 oracle);reset 不得返回 token / 用户字段
 - **access token 当前不主动吊销**:依赖 token TTL + 每请求查库阻断;blacklist / Redis / `tokenVersion` 属设计决议,不在常规改动中引入
 - **不引入 `LocalStrategy`** / OAuth / 第三方登录,除非已有设计决议
 - **不暴露 token / password / hash / secret / 完整 signed URL** 到 audit / log / client / OpenAPI / e2e fixture / 文档
