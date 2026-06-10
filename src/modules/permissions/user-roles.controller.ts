@@ -41,7 +41,7 @@ export class UserRolesController {
   constructor(private readonly service: UserRolesService) {}
 
   @Get()
-  @ApiOperation({ summary: '查用户角色列表(排除已软删 RBAC 角色)' })
+  @ApiOperation({ summary: '查用户角色列表(排除已软删 RBAC 角色) [rbac: rbac.user-role.read]' })
   @ApiWrappedArrayResponse(UserRoleResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -59,7 +59,7 @@ export class UserRolesController {
   @Post()
   @ApiOperation({
     summary:
-      '给用户分配角色(入参 roleCode;Q7 角色分级 C2 中庸:SUPER_ADMIN 通过任何 / 持 ops-admin 通过非 ops-admin / 其他 30102;重复分配 30006)',
+      '给用户分配角色(入参 roleCode;Q7 角色分级 C2 中庸:SUPER_ADMIN 通过任何 / 持 ops-admin 通过非 ops-admin / 其他 30102;重复分配 30006) [rbac: rbac.user-role.create]',
   })
   @ApiWrappedOkResponse(UserRoleResponseDto)
   @ApiBizErrorResponse(
@@ -82,7 +82,7 @@ export class UserRolesController {
   @Delete(':roleId')
   @ApiOperation({
     summary:
-      '撤销用户角色(路径 :roleId 是 RbacRole.id;Q7 角色分级判定;撤 ops-admin 时事务内"最后一个 ops-admin 保护"30101;关系不存在 30007)',
+      '撤销用户角色(路径 :roleId 是 RbacRole.id;Q7 角色分级判定;撤 ops-admin 时事务内"最后一个 ops-admin 保护"30101;关系不存在 30007) [rbac: rbac.user-role.delete]',
   })
   @ApiWrappedOkResponse(UserRoleResponseDto)
   @ApiBizErrorResponse(

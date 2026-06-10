@@ -45,7 +45,8 @@ export class EmergencyContactsController {
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '列出队员紧急联系人(无分页;按 priority ASC, createdAt ASC 排序;软删项不返回)',
+    summary:
+      '列出队员紧急联系人(无分页;按 priority ASC, createdAt ASC 排序;软删项不返回) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedArrayResponse(EmergencyContactResponseDto)
   @ApiBizErrorResponse(
@@ -63,7 +64,7 @@ export class EmergencyContactsController {
 
   @Post()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '新增一条紧急联系人' })
+  @ApiOperation({ summary: '新增一条紧急联系人 [roles: SUPER_ADMIN,ADMIN]' })
   @ApiWrappedOkResponse(EmergencyContactResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -84,7 +85,8 @@ export class EmergencyContactsController {
   @Patch(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '更新一条紧急联系人(全字段 optional;**禁止** memberId / id 入参)',
+    summary:
+      '更新一条紧急联系人(全字段 optional;**禁止** memberId / id 入参) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(EmergencyContactResponseDto)
   @ApiBizErrorResponse(
@@ -108,7 +110,9 @@ export class EmergencyContactsController {
 
   @Delete(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '软删一条紧急联系人(写 deletedAt;不物理删除)' })
+  @ApiOperation({
+    summary: '软删一条紧急联系人(写 deletedAt;不物理删除) [roles: SUPER_ADMIN,ADMIN]',
+  })
   @ApiWrappedOkResponse(EmergencyContactResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,

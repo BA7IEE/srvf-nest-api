@@ -47,7 +47,7 @@ export class AppMyAttendanceRecordsController {
   @Get('attendance-records')
   @ApiOperation({
     summary:
-      '我的考勤记录列表(仅 approved Sheet 内 records;分页 + 可选 activityId 过滤;含 activity 派生字段)',
+      '我的考勤记录列表(仅 approved Sheet 内 records;分页 + 可选 activityId 过滤;含 activity 派生字段) [auth]',
   })
   @ApiWrappedPageResponse(AppMyAttendanceRecordDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)

@@ -21,9 +21,6 @@
 
 ## P2(可优化)
 
-### P2-2 Swagger 权限要求文本化惯例补全
-- 现状:权限要求靠 `@ApiOperation` 文案,无统一格式。提案:统一 summary 后缀约定(如 `[rbac: dict.read.type]` / `[roles: SA,ADMIN]`),**仅注解文案,零行为变更**(B 档,snapshot 会变 → 实际按 C 档拍板)。低优先;若 P1-1 脚本落地,此项价值上升(可机读校验)。
-
 ### P2-3 分页 skip/take 换算的轻度重复
 - 各 service 手写 `skip=(page-1)*pageSize`;现状可接受(逻辑两行,已验证)。仅当后续出现第 3 处分页 bug 时再考虑收敛;**不建议**主动抽 util(避免 grab-bag 违反 AGENTS §2)。
 
@@ -36,6 +33,8 @@
 ---
 
 ## 已完成项归档区
+
+- **P2-2 Swagger 权限要求文本化惯例补全** ✅(2026-06-10,C 档,goal 预拍板范围内实施):全部 **148 个 endpoint** 的 `@ApiOperation` summary 追加统一鉴权后缀,四种形态与实际鉴权 1:1 对照(`pnpm docs:rbacmap:check` 口径):`[rbac: <权限码>]`(81,R 模式,码自 service `rbac.can()` 调用点逐个反查;attachments 8 端点为运行时 self/other 动态判定,标 `attachment.<action>.*` 通配族)/ `[roles: <角色列表>]`(44,G 模式,自方法级 `@Roles(...)` 实参)/ `[public]`(6,`@Public()`)/ `[auth]`(17,仅登录:App surface 15 + `rbac/me/permissions` + `auth/logout-all`;goal 三格式未覆盖"仅登录"形态,按最小扩展补第 4 记号并已在 PR 描述显式声明)。**零行为变更**;contract snapshot diff 296 行全部为 summary 行(逐行核验非 summary 变更 = 0)。
 
 - **P1-4 god-service 拆分系列** ✅ 收口(2026-06-10,用户逐项拍板;沿 `srvf-god-service-refactor` skill 全流程):
   - **第一刀 attendances Presenter** ✅ PR #280(C 档方案 A 拍板):4 个序列化方法 + `decimalToString` 抽至 `attendance-presenter.ts`(137L),service 1157→1100L;零漂移三证 = 716L characterization 断言零改动 + presenter unit spec 6 用例 + contract snapshot 零 diff;事务归属未下放,select 查询策略留 service。

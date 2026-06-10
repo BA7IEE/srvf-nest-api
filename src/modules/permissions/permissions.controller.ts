@@ -38,7 +38,9 @@ export class PermissionsController {
   constructor(private readonly service: PermissionsService) {}
 
   @Get()
-  @ApiOperation({ summary: '列出权限点(分页;按 module / resourceType 过滤)' })
+  @ApiOperation({
+    summary: '列出权限点(分页;按 module / resourceType 过滤) [rbac: rbac.permission.read]',
+  })
   @ApiWrappedPageResponse(PermissionResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   list(
@@ -50,7 +52,8 @@ export class PermissionsController {
 
   @Post()
   @ApiOperation({
-    summary: '创建权限点(code 格式 <module>.<action>.<resource_type>;失败抛 30008)',
+    summary:
+      '创建权限点(code 格式 <module>.<action>.<resource_type>;失败抛 30008) [rbac: rbac.permission.create]',
   })
   @ApiWrappedOkResponse(PermissionResponseDto)
   @ApiBizErrorResponse(
@@ -69,7 +72,8 @@ export class PermissionsController {
 
   @Patch(':id')
   @ApiOperation({
-    summary: '更新权限点(仅 description;code / module / action / resourceType 不可改)',
+    summary:
+      '更新权限点(仅 description;code / module / action / resourceType 不可改) [rbac: rbac.permission.update]',
   })
   @ApiWrappedOkResponse(PermissionResponseDto)
   @ApiBizErrorResponse(
@@ -88,7 +92,8 @@ export class PermissionsController {
 
   @Delete(':id')
   @ApiOperation({
-    summary: '物理删除权限点(D4 v1.0;RolePermission FK Cascade 自动联级清理)',
+    summary:
+      '物理删除权限点(D4 v1.0;RolePermission FK Cascade 自动联级清理) [rbac: rbac.permission.delete]',
   })
   @ApiWrappedOkResponse(PermissionResponseDto)
   @ApiBizErrorResponse(

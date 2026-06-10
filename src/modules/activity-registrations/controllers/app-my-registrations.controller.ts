@@ -57,7 +57,7 @@ export class AppMyRegistrationsController {
 
   @Get('registrations')
   @ApiOperation({
-    summary: '我的报名列表(分页 + 可选 statusCode 过滤;sensitive admin 字段不返)',
+    summary: '我的报名列表(分页 + 可选 statusCode 过滤;sensitive admin 字段不返) [auth]',
   })
   @ApiWrappedPageResponse(AppMyRegistrationListItemDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
@@ -72,7 +72,8 @@ export class AppMyRegistrationsController {
 
   @Get('registrations/:id')
   @ApiOperation({
-    summary: '我的报名详情(owner 校验:memberId !== currentUser.memberId 统一返 404 防侧信道)',
+    summary:
+      '我的报名详情(owner 校验:memberId !== currentUser.memberId 统一返 404 防侧信道) [auth]',
   })
   @ApiWrappedOkResponse(AppMyRegistrationDto)
   @ApiBizErrorResponse(
@@ -94,7 +95,7 @@ export class AppMyRegistrationsController {
   @ApiTags('Mobile - My Activities')
   @ApiOperation({
     summary:
-      '我已建立 registration 关系的活动汇总(分页 + 可选 registrationStatusCode 过滤;每活动一行,含本人最新有效 registration 摘要)',
+      '我已建立 registration 关系的活动汇总(分页 + 可选 registrationStatusCode 过滤;每活动一行,含本人最新有效 registration 摘要) [auth]',
   })
   @ApiWrappedPageResponse(AppMyActivityListItemDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
@@ -110,7 +111,7 @@ export class AppMyRegistrationsController {
   @Post('registrations')
   @ApiOperation({
     summary:
-      '本人报名活动(入参 activityId + 可选 extras;前置 published 校验,非 published 统一返 404 防侧信道)',
+      '本人报名活动(入参 activityId + 可选 extras;前置 published 校验,非 published 统一返 404 防侧信道) [auth]',
   })
   @ApiWrappedOkResponse(AppMyRegistrationDto)
   @ApiBizErrorResponse(
@@ -135,7 +136,7 @@ export class AppMyRegistrationsController {
   @Patch('registrations/:id/cancel')
   @ApiOperation({
     summary:
-      '取消本人报名(pending|pass → cancelled;reject / cancelled / 他人 / 软删 / 不存在统一返 404 防侧信道或 21030)',
+      '取消本人报名(pending|pass → cancelled;reject / cancelled / 他人 / 软删 / 不存在统一返 404 防侧信道或 21030) [auth]',
   })
   @ApiWrappedOkResponse(AppMyRegistrationDto)
   @ApiBizErrorResponse(

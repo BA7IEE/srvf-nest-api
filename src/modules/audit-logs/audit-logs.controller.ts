@@ -37,7 +37,7 @@ export class AuditLogsController {
   @Get()
   @ApiOperation({
     summary:
-      '列出审计记录(分页 + 过滤 resourceType / resourceId / event / actorUserId / startDate / endDate;ADMIN 仅看自己 OR USER 操作的记录;稳定排序 createdAt desc + id desc)',
+      '列出审计记录(分页 + 过滤 resourceType / resourceId / event / actorUserId / startDate / endDate;ADMIN 仅看自己 OR USER 操作的记录;稳定排序 createdAt desc + id desc) [rbac: audit-log.read.entry]',
   })
   @ApiWrappedPageResponse(AuditLogResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -51,7 +51,7 @@ export class AuditLogsController {
   @Get(':id')
   @ApiOperation({
     summary:
-      '审计记录详情(ADMIN 越级查 SUPER_ADMIN 操作记录 → 14101;不存在 → 14001;无 update / delete 接口)',
+      '审计记录详情(ADMIN 越级查 SUPER_ADMIN 操作记录 → 14101;不存在 → 14001;无 update / delete 接口) [rbac: audit-log.read.entry]',
   })
   @ApiWrappedOkResponse(AuditLogResponseDto)
   @ApiBizErrorResponse(

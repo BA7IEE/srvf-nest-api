@@ -39,7 +39,7 @@ export class StorageSettingsController {
   @Get()
   @ApiOperation({
     summary:
-      '读 Storage Settings singleton row(沿 Q-11-1:不存在返 data=null;不抛 BizCode;不回显凭证)',
+      '读 Storage Settings singleton row(沿 Q-11-1:不存在返 data=null;不抛 BizCode;不回显凭证) [rbac: storage-setting.read.singleton]',
   })
   @ApiWrappedOkResponse(StorageSettingsResponseDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -50,7 +50,7 @@ export class StorageSettingsController {
   @Patch()
   @ApiOperation({
     summary:
-      'upsert 更新 Storage Settings(沿 Q-11-1 + Q-11-17:不存在则创建 default;providerType 缺省 LOCAL;**拒绝**任何凭证字段;成功后 invalidate cache)',
+      'upsert 更新 Storage Settings(沿 Q-11-1 + Q-11-17:不存在则创建 default;providerType 缺省 LOCAL;**拒绝**任何凭证字段;成功后 invalidate cache) [rbac: storage-setting.update.singleton]',
   })
   @ApiWrappedOkResponse(StorageSettingsResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -64,7 +64,7 @@ export class StorageSettingsController {
   @Post('reset-credentials')
   @ApiOperation({
     summary:
-      '重置 SecretId / SecretKey(沿 §6.6.2 / Q-11-1 / Q-11-5 + P0-F PR-2B D2=A:**仅 SUPER_ADMIN 短路通过**;ADMIN+ops-admin 调用 → 30100;AES-256-GCM 加密落库;响应不回显;不存在则 upsert 创建 default providerType=COS;成功后 invalidate cache)',
+      '重置 SecretId / SecretKey(沿 §6.6.2 / Q-11-1 / Q-11-5 + P0-F PR-2B D2=A:**仅 SUPER_ADMIN 短路通过**;ADMIN+ops-admin 调用 → 30100;AES-256-GCM 加密落库;响应不回显;不存在则 upsert 创建 default providerType=COS;成功后 invalidate cache) [rbac: storage-setting.reset.credentials]',
   })
   @ApiWrappedOkResponse(StorageSettingsResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)

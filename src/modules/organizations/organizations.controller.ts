@@ -38,7 +38,7 @@ export class OrganizationsController {
   constructor(private readonly service: OrganizationsService) {}
 
   @Get()
-  @ApiOperation({ summary: '列出组织节点(分页;parentId=null 过滤根节点)' })
+  @ApiOperation({ summary: '列出组织节点(分页;parentId=null 过滤根节点) [rbac: org.read.node]' })
   @ApiWrappedPageResponse(OrganizationResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   list(
@@ -50,7 +50,7 @@ export class OrganizationsController {
 
   // /tree 必须**先于** /:id 定义(specific-before-dynamic;沿用 dictionaries 经验)。
   @Get('tree')
-  @ApiOperation({ summary: '组织树形(从根开始嵌套;深度无限制)' })
+  @ApiOperation({ summary: '组织树形(从根开始嵌套;深度无限制) [rbac: org.read.node]' })
   @ApiWrappedArrayResponse(OrganizationTreeNodeDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   tree(
@@ -62,7 +62,7 @@ export class OrganizationsController {
 
   @Post()
   @ApiOperation({
-    summary: '创建组织节点(parentId 不传 = 根节点;V2 第一阶段单根上限 1)',
+    summary: '创建组织节点(parentId 不传 = 根节点;V2 第一阶段单根上限 1) [rbac: org.create.node]',
   })
   @ApiWrappedOkResponse(OrganizationResponseDto)
   @ApiBizErrorResponse(
@@ -82,7 +82,7 @@ export class OrganizationsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '组织节点详情' })
+  @ApiOperation({ summary: '组织节点详情 [rbac: org.read.node]' })
   @ApiWrappedOkResponse(OrganizationResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -99,7 +99,8 @@ export class OrganizationsController {
 
   @Patch(':id')
   @ApiOperation({
-    summary: '更新组织节点(name / sortOrder / nodeTypeCode;**禁止改 parentId**)',
+    summary:
+      '更新组织节点(name / sortOrder / nodeTypeCode;**禁止改 parentId**) [rbac: org.update.node]',
   })
   @ApiWrappedOkResponse(OrganizationResponseDto)
   @ApiBizErrorResponse(
@@ -120,7 +121,8 @@ export class OrganizationsController {
 
   @Patch(':id/status')
   @ApiOperation({
-    summary: '启停组织节点(只改 status;停用唯一活跃根 → LAST_ROOT_PROTECTED)',
+    summary:
+      '启停组织节点(只改 status;停用唯一活跃根 → LAST_ROOT_PROTECTED) [rbac: org.update.node]',
   })
   @ApiWrappedOkResponse(OrganizationResponseDto)
   @ApiBizErrorResponse(
@@ -141,7 +143,7 @@ export class OrganizationsController {
   @Delete(':id')
   @ApiOperation({
     summary:
-      '软删组织节点(P0-F PR-2A D3=A 放宽:ops-admin 可调;有子节点 / 成员归属 / 唯一活跃根则拒绝)',
+      '软删组织节点(P0-F PR-2A D3=A 放宽:ops-admin 可调;有子节点 / 成员归属 / 唯一活跃根则拒绝) [rbac: org.delete.node]',
   })
   @ApiWrappedOkResponse(OrganizationResponseDto)
   @ApiBizErrorResponse(

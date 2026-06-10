@@ -62,7 +62,7 @@ export class ContributionRulesController {
   @Get()
   @ApiOperation({
     summary:
-      '列出贡献值规则(分页 + 过滤 activityTypeCode / attendanceRoleCode / status;沿基础稳定排序)',
+      '列出贡献值规则(分页 + 过滤 activityTypeCode / attendanceRoleCode / status;沿基础稳定排序) [rbac: contribution.read.rule]',
   })
   @ApiWrappedPageResponse(ContributionRuleResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -75,7 +75,8 @@ export class ContributionRulesController {
 
   @Post()
   @ApiOperation({
-    summary: '创建贡献值规则(字典校验 + 字段语义 + ACTIVE 唯一性兜底含 NULL durationThreshold)',
+    summary:
+      '创建贡献值规则(字典校验 + 字段语义 + ACTIVE 唯一性兜底含 NULL durationThreshold) [rbac: contribution.create.rule]',
   })
   @ApiWrappedOkResponse(ContributionRuleResponseDto)
   @ApiBizErrorResponse(
@@ -96,7 +97,7 @@ export class ContributionRulesController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '贡献值规则详情(含软删返 404)' })
+  @ApiOperation({ summary: '贡献值规则详情(含软删返 404) [rbac: contribution.read.rule]' })
   @ApiWrappedOkResponse(ContributionRuleResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -114,7 +115,7 @@ export class ContributionRulesController {
   @Patch(':id')
   @ApiOperation({
     summary:
-      '部分更新贡献值规则(白名单仅 pointsBelow / pointsAbove / dailyCap / status / remark;禁改 activityTypeCode / attendanceRoleCode / durationThreshold,由 ValidationPipe 拦截抛 40000)',
+      '部分更新贡献值规则(白名单仅 pointsBelow / pointsAbove / dailyCap / status / remark;禁改 activityTypeCode / attendanceRoleCode / durationThreshold,由 ValidationPipe 拦截抛 40000) [rbac: contribution.update.rule]',
   })
   @ApiWrappedOkResponse(ContributionRuleResponseDto)
   @ApiBizErrorResponse(
@@ -138,7 +139,7 @@ export class ContributionRulesController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary:
-      '软删贡献值规则(写 deletedAt + deletedByUserId;不强制改 status;删完该维度 attendance 预填走 22048 不抛错路径)',
+      '软删贡献值规则(写 deletedAt + deletedByUserId;不强制改 status;删完该维度 attendance 预填走 22048 不抛错路径) [rbac: contribution.delete.rule]',
   })
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,

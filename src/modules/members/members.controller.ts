@@ -30,7 +30,10 @@ export class MembersController {
 
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '列出队员(分页;memberNo 精确查询 / gradeCode / status 过滤)' })
+  @ApiOperation({
+    summary:
+      '列出队员(分页;memberNo 精确查询 / gradeCode / status 过滤) [roles: SUPER_ADMIN,ADMIN]',
+  })
   @ApiWrappedPageResponse(MemberResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
   list(@Query() query: ListMembersQueryDto): Promise<PageResultDto<MemberResponseDto>> {
@@ -40,7 +43,7 @@ export class MembersController {
   @Post()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '创建队员(memberNo 必填,全局唯一不复用;不接收任何敏感字段)',
+    summary: '创建队员(memberNo 必填,全局唯一不复用;不接收任何敏感字段) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(MemberResponseDto)
   @ApiBizErrorResponse(
@@ -56,7 +59,7 @@ export class MembersController {
 
   @Get(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '队员详情(返回 memberNo)' })
+  @ApiOperation({ summary: '队员详情(返回 memberNo) [roles: SUPER_ADMIN,ADMIN]' })
   @ApiWrappedOkResponse(MemberResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -71,7 +74,8 @@ export class MembersController {
   @Patch(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '更新队员(displayName / gradeCode;**禁止改 memberNo / status**)',
+    summary:
+      '更新队员(displayName / gradeCode;**禁止改 memberNo / status**) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(MemberResponseDto)
   @ApiBizErrorResponse(
@@ -88,7 +92,7 @@ export class MembersController {
   @Patch(':id/status')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '切换队员 status(ACTIVE↔INACTIVE);不自动解除部门归属',
+    summary: '切换队员 status(ACTIVE↔INACTIVE);不自动解除部门归属 [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(MemberResponseDto)
   @ApiBizErrorResponse(
@@ -107,7 +111,8 @@ export class MembersController {
   @Delete(':id')
   @Roles(Role.SUPER_ADMIN)
   @ApiOperation({
-    summary: '软删队员(SUPER_ADMIN 专属;有 active 部门归属 / 绑定 user 则拒绝;非常规离队入口)',
+    summary:
+      '软删队员(SUPER_ADMIN 专属;有 active 部门归属 / 绑定 user 则拒绝;非常规离队入口) [roles: SUPER_ADMIN]',
   })
   @ApiWrappedOkResponse(MemberResponseDto)
   @ApiBizErrorResponse(

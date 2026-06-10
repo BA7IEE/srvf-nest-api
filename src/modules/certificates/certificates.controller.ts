@@ -60,7 +60,8 @@ export class CertificatesController {
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '列出队员证书(无分页;按 certStatusCode ASC, createdAt DESC 排序;软删过滤;精简字段)',
+    summary:
+      '列出队员证书(无分页;按 certStatusCode ASC, createdAt DESC 排序;软删过滤;精简字段) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedArrayResponse(CertificateListItemDto)
   @ApiBizErrorResponse(
@@ -79,7 +80,8 @@ export class CertificatesController {
   @Post()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '新增一条证书(默认 certStatusCode=pending / isInternal=false)',
+    summary:
+      '新增一条证书(默认 certStatusCode=pending / isInternal=false) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(CertificateResponseDto)
   @ApiBizErrorResponse(
@@ -105,7 +107,8 @@ export class CertificatesController {
   @Get('qualification-flag')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '资质判定(已核验 + 未过期 + 未软删 = qualified=true;只返布尔 + 摘要)',
+    summary:
+      '资质判定(已核验 + 未过期 + 未软删 = qualified=true;只返布尔 + 摘要) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(QualificationFlagResponseDto)
   @ApiBizErrorResponse(
@@ -125,7 +128,7 @@ export class CertificatesController {
 
   @Get(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '查证书详情(含敏感字段;不返 deletedAt)' })
+  @ApiOperation({ summary: '查证书详情(含敏感字段;不返 deletedAt) [roles: SUPER_ADMIN,ADMIN]' })
   @ApiWrappedOkResponse(CertificateResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -147,7 +150,7 @@ export class CertificatesController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '部分更新证书(全字段 optional;**禁止** id / memberId / certStatusCode / verifiedBy / verifiedAt / verifyNote / isInternal / supersededByCertId / expireNotifyDueAt)',
+      '部分更新证书(全字段 optional;**禁止** id / memberId / certStatusCode / verifiedBy / verifiedAt / verifyNote / isInternal / supersededByCertId / expireNotifyDueAt) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(CertificateResponseDto)
   @ApiBizErrorResponse(
@@ -172,7 +175,7 @@ export class CertificatesController {
 
   @Delete(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '软删证书(写 deletedAt;不物理删除)' })
+  @ApiOperation({ summary: '软删证书(写 deletedAt;不物理删除) [roles: SUPER_ADMIN,ADMIN]' })
   @ApiWrappedOkResponse(CertificateResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -195,7 +198,7 @@ export class CertificatesController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '核验通过(pending → verified;不接收 issuedAt / expiredAt / certStatusCode / verifiedBy / verifiedAt)',
+      '核验通过(pending → verified;不接收 issuedAt / expiredAt / certStatusCode / verifiedBy / verifiedAt) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(CertificateResponseDto)
   @ApiBizErrorResponse(
@@ -220,7 +223,8 @@ export class CertificatesController {
   @Patch(':id/reject')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '核验拒绝(pending → rejected;verifyNote 必填;不接收其他系统字段)',
+    summary:
+      '核验拒绝(pending → rejected;verifyNote 必填;不接收其他系统字段) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(CertificateResponseDto)
   @ApiBizErrorResponse(

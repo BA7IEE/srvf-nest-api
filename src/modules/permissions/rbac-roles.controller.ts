@@ -45,7 +45,7 @@ export class RbacRolesController {
   constructor(private readonly service: RbacRolesService) {}
 
   @Get()
-  @ApiOperation({ summary: '列出角色(分页;按 code 模糊过滤;排除已软删)' })
+  @ApiOperation({ summary: '列出角色(分页;按 code 模糊过滤;排除已软删) [rbac: rbac.role.read]' })
   @ApiWrappedPageResponse(RbacRoleResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   list(
@@ -57,7 +57,8 @@ export class RbacRolesController {
 
   @Get(':id')
   @ApiOperation({
-    summary: '角色详情(含已分配 permissions 数组;不存在返 30003 / 已软删返 30005)',
+    summary:
+      '角色详情(含已分配 permissions 数组;不存在返 30003 / 已软删返 30005) [rbac: rbac.role.read]',
   })
   @ApiWrappedOkResponse(RbacRoleDetailResponseDto)
   @ApiBizErrorResponse(
@@ -76,7 +77,8 @@ export class RbacRolesController {
 
   @Post()
   @ApiOperation({
-    summary: '创建角色(code 格式 kebab-case 3-32 字符;失败抛 30009;含软删历史撞唯一抛 30004)',
+    summary:
+      '创建角色(code 格式 kebab-case 3-32 字符;失败抛 30009;含软删历史撞唯一抛 30004) [rbac: rbac.role.create]',
   })
   @ApiWrappedOkResponse(RbacRoleResponseDto)
   @ApiBizErrorResponse(
@@ -95,7 +97,8 @@ export class RbacRolesController {
 
   @Patch(':id')
   @ApiOperation({
-    summary: '更新角色(仅 displayName / description;code 不可改;不存在或已软删返 30003)',
+    summary:
+      '更新角色(仅 displayName / description;code 不可改;不存在或已软删返 30003) [rbac: rbac.role.update]',
   })
   @ApiWrappedOkResponse(RbacRoleResponseDto)
   @ApiBizErrorResponse(
@@ -115,7 +118,7 @@ export class RbacRolesController {
   @Delete(':id')
   @ApiOperation({
     summary:
-      '软删角色(D4 v1.0;update deletedAt;user_roles / role_permissions 不联动;不存在或已软删返 30003)',
+      '软删角色(D4 v1.0;update deletedAt;user_roles / role_permissions 不联动;不存在或已软删返 30003) [rbac: rbac.role.delete]',
   })
   @ApiWrappedOkResponse(RbacRoleResponseDto)
   @ApiBizErrorResponse(

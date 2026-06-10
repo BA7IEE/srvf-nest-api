@@ -68,7 +68,7 @@ export class AttachmentsController {
   @Post()
   @ApiOperation({
     summary:
-      '创建附件元数据(校验:ownerType 13010 / ownerId 13011 / RBAC 30100 / 系统级 MIME 黑名单 13033 / mime 白名单未命中 13012 / size 13013 / PII 13015;V2.x L-1:系统级黑名单与白名单未命中拆码)',
+      '创建附件元数据(校验:ownerType 13010 / ownerId 13011 / RBAC 30100 / 系统级 MIME 黑名单 13033 / mime 白名单未命中 13012 / size 13013 / PII 13015;V2.x L-1:系统级黑名单与白名单未命中拆码) [rbac: attachment.upload.*]',
   })
   @ApiWrappedOkResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(
@@ -93,7 +93,7 @@ export class AttachmentsController {
   @Get()
   @ApiOperation({
     summary:
-      '列出附件(分页;可选 ownerType / ownerId / uploadedBy / mime / accessLevel / tags 过滤;tags OR 语义;total 按可见数量返;默认排序 createdAt DESC)',
+      '列出附件(分页;可选 ownerType / ownerId / uploadedBy / mime / accessLevel / tags 过滤;tags OR 语义;total 按可见数量返;默认排序 createdAt DESC) [rbac: attachment.view.*]',
   })
   @ApiWrappedPageResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED)
@@ -109,7 +109,7 @@ export class AttachmentsController {
   @Post('upload-url')
   @ApiOperation({
     summary:
-      '申请 signed upload URL(模式 B;校验 ownerType/ownerId/mime/size/PII/RBAC;系统级 MIME 黑名单 → 13033 / 白名单未命中 → 13012;返 uploadUrl + uploadToken;不落库;不审计;沿 §8.3 v1.0 + V2.x L-1)',
+      '申请 signed upload URL(模式 B;校验 ownerType/ownerId/mime/size/PII/RBAC;系统级 MIME 黑名单 → 13033 / 白名单未命中 → 13012;返 uploadUrl + uploadToken;不落库;不审计;沿 §8.3 v1.0 + V2.x L-1) [rbac: attachment.upload.*]',
   })
   @ApiWrappedOkResponse(UploadUrlResponseDto)
   @ApiBizErrorResponse(
@@ -133,7 +133,7 @@ export class AttachmentsController {
   @Post('confirm-upload')
   @ApiOperation({
     summary:
-      '确认上传完成(模式 B;验 uploadToken + headObject + size 一致 → 落库 + audit attachment.upload;沿 §8.4 v1.0)',
+      '确认上传完成(模式 B;验 uploadToken + headObject + size 一致 → 落库 + audit attachment.upload;沿 §8.4 v1.0) [rbac: attachment.upload.*]',
   })
   @ApiWrappedOkResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(
@@ -154,7 +154,7 @@ export class AttachmentsController {
   @Get('by-owner')
   @ApiOperation({
     summary:
-      '按 ownerType + ownerId 列出某业务对象的全部附件(业务模块常用入口;ownerType / ownerId 必填;逐条 ownership 过滤)',
+      '按 ownerType + ownerId 列出某业务对象的全部附件(业务模块常用入口;ownerType / ownerId 必填;逐条 ownership 过滤) [rbac: attachment.view.*]',
   })
   @ApiWrappedPageResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(
@@ -172,7 +172,7 @@ export class AttachmentsController {
 
   @Get(':id')
   @ApiOperation({
-    summary: '附件详情(不存在 / 无权统一返 13001;Q13 v1.0 信息泄漏防御)',
+    summary: '附件详情(不存在 / 无权统一返 13001;Q13 v1.0 信息泄漏防御) [rbac: attachment.view.*]',
   })
   @ApiWrappedOkResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.ATTACHMENT_NOT_FOUND)
@@ -186,7 +186,7 @@ export class AttachmentsController {
   @Patch(':id')
   @ApiOperation({
     summary:
-      '更新附件元数据(仅 description / accessLevel / tags / expireAt;不存在返 13001;无权返 30100;PII 命中返 13015)',
+      '更新附件元数据(仅 description / accessLevel / tags / expireAt;不存在返 13001;无权返 30100;PII 命中返 13015) [rbac: attachment.update.*]',
   })
   @ApiWrappedOkResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(
@@ -206,7 +206,8 @@ export class AttachmentsController {
 
   @Delete(':id')
   @ApiOperation({
-    summary: '物理删附件(Q11 v1.0:不查跨表引用;Provider 文件删除 Q15 挂起待 Provider 评审)',
+    summary:
+      '物理删附件(Q11 v1.0:不查跨表引用;Provider 文件删除 Q15 挂起待 Provider 评审) [rbac: attachment.delete.*]',
   })
   @ApiWrappedOkResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(

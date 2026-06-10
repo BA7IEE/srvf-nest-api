@@ -82,7 +82,9 @@ export class ActivityRegistrationsAdminController {
 
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '列出该活动所有报名(分页;含已取消 / 已拒绝)' })
+  @ApiOperation({
+    summary: '列出该活动所有报名(分页;含已取消 / 已拒绝) [roles: SUPER_ADMIN,ADMIN]',
+  })
   @ApiWrappedPageResponse(ActivityRegistrationListItemDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -100,7 +102,8 @@ export class ActivityRegistrationsAdminController {
   @Post()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: 'ADMIN 代报名(Q-A3 与 USER 自助拆开;必填 memberId;校验 capacity + 公开报名 + 未重复)',
+    summary:
+      'ADMIN 代报名(Q-A3 与 USER 自助拆开;必填 memberId;校验 capacity + 公开报名 + 未重复) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(ActivityRegistrationResponseDto)
   @ApiBizErrorResponse(
@@ -127,7 +130,8 @@ export class ActivityRegistrationsAdminController {
   @Get('export')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '名单导出 CSV(Q-A6:第一版仅 CSV;默认 scope=pass,可选 scope=all;XLSX 不支持 → 400)',
+    summary:
+      '名单导出 CSV(Q-A6:第一版仅 CSV;默认 scope=pass,可选 scope=all;XLSX 不支持 → 400) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiProduces('text/csv')
   @ApiBizErrorResponse(
@@ -154,7 +158,7 @@ export class ActivityRegistrationsAdminController {
 
   @Patch(':id/approve')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '审核通过(pending → pass;capacity 复核)' })
+  @ApiOperation({ summary: '审核通过(pending → pass;capacity 复核) [roles: SUPER_ADMIN,ADMIN]' })
   @ApiWrappedOkResponse(ActivityRegistrationResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -182,7 +186,9 @@ export class ActivityRegistrationsAdminController {
 
   @Patch(':id/reject')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
-  @ApiOperation({ summary: '审核拒绝(pending → reject;reviewNote 必填)' })
+  @ApiOperation({
+    summary: '审核拒绝(pending → reject;reviewNote 必填) [roles: SUPER_ADMIN,ADMIN]',
+  })
   @ApiWrappedOkResponse(ActivityRegistrationResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -204,7 +210,7 @@ export class ActivityRegistrationsAdminController {
   @Patch(':id/cancel')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '管理员代取消(pending|pass → cancelled;cancelled 释放名额)',
+    summary: '管理员代取消(pending|pass → cancelled;cancelled 释放名额) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(ActivityRegistrationResponseDto)
   @ApiBizErrorResponse(

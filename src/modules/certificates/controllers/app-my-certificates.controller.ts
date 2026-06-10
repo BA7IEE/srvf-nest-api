@@ -43,7 +43,7 @@ export class AppMyCertificatesController {
   @Get('certificates')
   @ApiOperation({
     summary:
-      '我的证书列表(本人 pending / verified / expired / rejected 全部可见;分页 + 可选 certStatusCode / certTypeCode 过滤)',
+      '我的证书列表(本人 pending / verified / expired / rejected 全部可见;分页 + 可选 certStatusCode / certTypeCode 过滤) [auth]',
   })
   @ApiWrappedPageResponse(AppMyCertificateDto)
   @ApiBizErrorResponse(

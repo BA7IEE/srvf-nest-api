@@ -56,7 +56,7 @@ export class ActivitiesController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.USER)
   @ApiOperation({
     summary:
-      '列出活动(分页 + 多字段过滤;Q-A7 USER 强制只见 published/completed,忽略入参 statusCode)',
+      '列出活动(分页 + 多字段过滤;Q-A7 USER 强制只见 published/completed,忽略入参 statusCode) [roles: SUPER_ADMIN,ADMIN,USER]',
   })
   @ApiWrappedPageResponse(ActivityListItemDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
@@ -70,7 +70,8 @@ export class ActivitiesController {
   @Post()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '创建活动(initial statusCode=draft;禁 statusCode / audit 字段)',
+    summary:
+      '创建活动(initial statusCode=draft;禁 statusCode / audit 字段) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(
@@ -94,7 +95,8 @@ export class ActivitiesController {
   @Get(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.USER)
   @ApiOperation({
-    summary: '活动详情(Q-A7 USER 仅可见 published/completed,其他 → 404)',
+    summary:
+      '活动详情(Q-A7 USER 仅可见 published/completed,其他 → 404) [roles: SUPER_ADMIN,ADMIN,USER]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(
@@ -114,7 +116,7 @@ export class ActivitiesController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
     summary:
-      '部分更新活动(Q-A12 cancelled 拒改;禁 statusCode / publishedBy/At / cancelledBy/At/Reason)',
+      '部分更新活动(Q-A12 cancelled 拒改;禁 statusCode / publishedBy/At / cancelledBy/At/Reason) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(
@@ -141,7 +143,8 @@ export class ActivitiesController {
   @Delete(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '软删活动(写 deletedAt;D3:删除 ≠ 取消;cancelled 仍允许软删)',
+    summary:
+      '软删活动(写 deletedAt;D3:删除 ≠ 取消;cancelled 仍允许软删) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(
@@ -161,7 +164,8 @@ export class ActivitiesController {
   @Patch(':id/publish')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '发布活动(draft → published;写 publishedBy/At;非 draft → 20030)',
+    summary:
+      '发布活动(draft → published;写 publishedBy/At;非 draft → 20030) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(
@@ -182,7 +186,8 @@ export class ActivitiesController {
   @Patch(':id/cancel')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN)
   @ApiOperation({
-    summary: '取消活动(* → cancelled;写 cancelledBy/At/Reason;已 cancelled → 20030)',
+    summary:
+      '取消活动(* → cancelled;写 cancelledBy/At/Reason;已 cancelled → 20030) [roles: SUPER_ADMIN,ADMIN]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(

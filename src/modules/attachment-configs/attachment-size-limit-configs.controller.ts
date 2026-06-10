@@ -56,7 +56,8 @@ export class AttachmentSizeLimitConfigsController {
 
   @Get()
   @ApiOperation({
-    summary: '列出附件尺寸限制配置(分页;可选 typeConfigId 过滤;默认排序 createdAt DESC)',
+    summary:
+      '列出附件尺寸限制配置(分页;可选 typeConfigId 过滤;默认排序 createdAt DESC) [rbac: attachment-config.read.size-limit]',
   })
   @ApiWrappedPageResponse(AttachmentSizeLimitConfigResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -70,7 +71,7 @@ export class AttachmentSizeLimitConfigsController {
   @Post()
   @ApiOperation({
     summary:
-      '创建附件尺寸限制配置(1:1 与 typeConfig;typeConfigId 不存在 → 13020;重复 → 13027;含软删历史)',
+      '创建附件尺寸限制配置(1:1 与 typeConfig;typeConfigId 不存在 → 13020;重复 → 13027;含软删历史) [rbac: attachment-config.create.size-limit]',
   })
   @ApiWrappedOkResponse(AttachmentSizeLimitConfigResponseDto)
   @ApiBizErrorResponse(
@@ -89,7 +90,10 @@ export class AttachmentSizeLimitConfigsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '附件尺寸限制配置详情(不存在 / 已软删统一返 13026)' })
+  @ApiOperation({
+    summary:
+      '附件尺寸限制配置详情(不存在 / 已软删统一返 13026) [rbac: attachment-config.read.size-limit]',
+  })
   @ApiWrappedOkResponse(AttachmentSizeLimitConfigResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -107,7 +111,7 @@ export class AttachmentSizeLimitConfigsController {
   @Patch(':id')
   @ApiOperation({
     summary:
-      '更新附件尺寸限制配置(仅 maxSizeBytes / remark;**禁止** typeConfigId(Q4 PR #4)/ deletedAt / id;Q5 v1.0:maxSizeBytes 不允许 null)',
+      '更新附件尺寸限制配置(仅 maxSizeBytes / remark;**禁止** typeConfigId(Q4 PR #4)/ deletedAt / id;Q5 v1.0:maxSizeBytes 不允许 null) [rbac: attachment-config.update.size-limit]',
   })
   @ApiWrappedOkResponse(AttachmentSizeLimitConfigResponseDto)
   @ApiBizErrorResponse(
@@ -128,7 +132,7 @@ export class AttachmentSizeLimitConfigsController {
   @Delete(':id')
   @ApiOperation({
     summary:
-      '软删附件尺寸限制配置(deletedAt = now();本表无 status 字段不需要同步置;V2.x Slow-6:同 type 仍被附件引用时返 13032)',
+      '软删附件尺寸限制配置(deletedAt = now();本表无 status 字段不需要同步置;V2.x Slow-6:同 type 仍被附件引用时返 13032) [rbac: attachment-config.delete.size-limit]',
   })
   @ApiWrappedOkResponse(AttachmentSizeLimitConfigResponseDto)
   @ApiBizErrorResponse(
