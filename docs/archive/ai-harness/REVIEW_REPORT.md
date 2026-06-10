@@ -1,5 +1,7 @@
 # srvf-nest-api AI Harness Review 总报告
 
+> **迁移注(2026-06-10)**:本文件原位于 `docs/ai-harness/REVIEW_REPORT.md`,随「AI Harness 瘦身——减脂不减骨」goal 归档至此,正文零改动;文内对同日裁撤的旧操作层文件(CODEMAP / MODULE_MAP / TEST_MATRIX / PROJECT_RULES / HUMAN_REVIEW_RULES / templates)及 `../*.md` 的相对链接已成预期死链,承接关系见 `docs/ai-harness/README.md` 单页。
+
 > **快照性质**:本报告是 2026-06-10 全仓系统性 Review 的冻结产物(HEAD `18229ed`,v0.15.0 post-release),合入后**不回改**;后续事实变化以 [`docs/current-state.md`](../current-state.md) 为准。
 > 审查方法:5 路并行静态扫描(模块架构 / Prisma / RBAC / 测试 / API-Swagger)+ 关键数字逐项人工复核 + 本地门禁实测。所有结论附证据;本地未能执行的检查显式标注。
 
