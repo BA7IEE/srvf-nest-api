@@ -24,6 +24,7 @@
 | [`testing.md`](./testing.md) | E2E 测试运行与覆盖范围 |
 | [`docker-smoke-test.md`](./docker-smoke-test.md) | docker smoke CI 形态说明 |
 | [`ops/cos-production-rollout-checklist.md`](./ops/cos-production-rollout-checklist.md) | 运维侧真实 COS 上线 SOP |
+| [`ai-harness/README.md`](./ai-harness/README.md) | **AI Harness 操作层入口**(derived 导航/矩阵/模板,**非规则源**,与权威源冲突时让步):全仓读写分区 CODEMAP、MODULE_MAP、RBAC_MAP、TEST_MATRIX、PROJECT_RULES(铁律索引)、HUMAN_REVIEW_RULES、AI_HARNESS_DESIGN、NEXT_TASKS、templates/;2026-06-10 Review 快照见 `ai-harness/REVIEW_REPORT.md`(合入后不回改) |
 
 V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威源**):
 
