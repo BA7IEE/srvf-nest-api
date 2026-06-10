@@ -7,32 +7,17 @@
 
 ## P0(harness 落地链路)
 
-### P0-1 合入本 ai-harness 文档层 ✅(本 PR)
-- **目标**:`docs/ai-harness/` 9 文档 + 3 模板 + `docs/README.md §1` 登记合入 main。
-- **范围**:docs-only(A 档)。**验收**:CI 绿;`docs:codemap:check` 0 FAIL;docs/README §1 可发现本目录。
-- **风险**:低(纯新增 + 1 个索引文件追加)。**人工确认**:PR 评审本身。
-
-### P0-2 入口接线:根 `CLAUDE.md` / `AGENTS.md` 是否指向 ai-harness
-- **目标**:让以 `CLAUDE.md` / `AGENTS.md` 为入口的会话能发现本目录(当前仅 `docs/README.md` 可达)。
-- **范围**:`CLAUDE.md` §1 表追加 1 行(或 AGENTS.md 权威源分层表追加 1 行)。
-- **验收**:入口表含 `docs/ai-harness/README.md` 行;CLAUDE.md 仍 ≤80 行。
-- **风险**:低,但**两文件均为"非用户授权不动"** → **必须人工拍板**(A 档 PR,但授权先行)。
-
-### P0-3 测试环境说明落地验证(无 Docker 降级路径)
-- **目标**:确认 [`TEST_MATRIX §1`](./TEST_MATRIX.md) 环境前置在维护者机器与 CI 双侧成立;本次 Review 本地未跑 contract/e2e(Docker daemon 未启动),由本 PR 的 CI 补验。
-- **范围**:无代码;若 CI 红则按失败输出修文档或报告。
-- **验收**:本 PR CI 全绿(= contract 148 路由 + e2e 72 suites 在 CI 通过)。
-- **人工确认**:仅在 CI 红时需要。
+(P0-1 / P0-2 / P0-3 均已完成,见文末归档区。)
 
 ## P1(长期维护)
 
-### P1-1 RBAC_MAP 自动漂移检查脚本
+### P1-1 RBAC_MAP 自动漂移检查脚本(✳ 已立项:用户 2026-06-10 拍板)
 - **目标**:把 [`RBAC_MAP.md §7`](./RBAC_MAP.md) 重新生成口径固化为 `scripts/check-rbac-map.ts`(沿 `check-codemap.ts` 范式:只读、零新依赖、PASS/WARN/FAIL),校验:seed 权限码集合 ↔ 代码 `rbac.can()` 调用集合 ↔ RBAC_MAP 文档表;controller 前缀 ↔ 4 canonical 前缀。
 - **范围**:`scripts/` 新文件 + `package.json` 加 1 个 script(**注意:改 package.json scripts 段不属于依赖变更,但仍建议按 B 档走**)+ 本目录文档登记。
 - **验收**:`pnpm docs:rbac:check` 当前仓库 0 FAIL;故意改坏 seed 一条码能 FAIL。
 - **风险**:低。**人工确认**:立项即可,无业务决策。
 
-### P1-2 `docs/testing.md` 漂移 true-up
+### P1-2 `docs/testing.md` 漂移 true-up(✳ 已立项:用户 2026-06-10 拍板)
 - **目标**:修正覆盖表中已删除的 `users-me.e2e-spec.ts` 引用(Route B Phase 4 删除队员流 spec 后未回填);顺带核对该表其余行。
 - **范围**:docs-only(A 档,单文件)。**验收**:表内引用的 spec 文件全部存在。
 - **风险**:无。**人工确认**:❌。
@@ -75,4 +60,6 @@
 
 ## 已完成项归档区
 
-(任务完成后把对应小节移到此处并标注 PR 号,保持上方清单只含 open 项。)
+- **P0-1 合入 ai-harness 文档层** ✅ PR #272(2026-06-10):9 文档 + 3 模板 + `docs/README.md §1` 登记;CI 全绿。
+- **P0-3 测试环境双侧验证** ✅ 随 PR #272 CI 完成:contract + e2e 在 CI 通过,TEST_MATRIX §1 无 Docker 降级路径成立。
+- **P0-2 入口接线** ✅ 用户 2026-06-10 拍板授权,`CLAUDE.md §1` 表追加 ai-harness 行(本 PR;CLAUDE.md 66 行,仍 ≤80)。
