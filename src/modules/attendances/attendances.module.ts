@@ -4,6 +4,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { UsersModule } from '../users/users.module';
 import { AppMyAttendanceRecordsService } from './app-my-attendance-records.service';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
+import { AttendancePresenter } from './attendance-presenter';
 import {
   AttendanceSheetsCollectionController,
   AttendanceSheetsResourceController,
@@ -41,6 +42,7 @@ import { AppMyAttendanceRecordsController } from './controllers/app-my-attendanc
     TimeOverlapPolicy,
     AttendanceSheetStateMachine,
     AttendanceAuditRecorder,
+    AttendancePresenter,
   ],
 })
 export class AttendancesModule {}

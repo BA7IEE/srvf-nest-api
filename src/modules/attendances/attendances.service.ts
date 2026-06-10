@@ -10,13 +10,13 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
+import { AttendancePresenter } from './attendance-presenter';
 import { AttendanceSheetStateMachine } from './attendance-sheet-state-machine';
 import { ContributionCalculator } from './contribution-calculator';
 import { TimeOverlapPolicy } from './time-overlap-policy';
 import {
   ApproveAttendanceSheetDto,
   ATTENDANCE_SHEET_STATUS,
-  AttendanceMemberSummaryDto,
   AttendanceRecordInputDto,
   AttendanceRecordResponseDto,
   AttendanceSheetActivitySummaryDto,
@@ -164,11 +164,9 @@ const sheetFullSelect = {
   activityId: true,
 } as const satisfies Prisma.AttendanceSheetSelect;
 
-type SheetSafeRow = Prisma.AttendanceSheetGetPayload<{ select: typeof sheetSafeSelect }>;
-type SheetListRow = Prisma.AttendanceSheetGetPayload<{ select: typeof sheetListSelect }>;
-type RecordWithMemberRow = Prisma.AttendanceRecordGetPayload<{
-  select: typeof recordWithMemberSelect;
-}>;
+// 行类型(SheetSafeRow / SheetListRow / RecordWithMemberRow)已随序列化方法迁往
+// `attendance-presenter.ts`(P1-4 第一刀);presenter 侧用最小结构性入参类型,
+// 本文件的 GetPayload 行按结构子类型直接传入,select 常量(查询策略)留在本文件。
 type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
@@ -179,70 +177,15 @@ export class AttendancesService {
     private readonly contributionCalculator: ContributionCalculator,
     private readonly timeOverlapPolicy: TimeOverlapPolicy,
     private readonly sheetStateMachine: AttendanceSheetStateMachine,
+    private readonly attendancePresenter: AttendancePresenter,
   ) {}
 
   // ============ helpers:序列化 ============
-
-  private decimalToString(d: Prisma.Decimal | null): string | null {
-    return d === null ? null : d.toString();
-  }
-
-  private toSheetResponseDto(row: SheetSafeRow): AttendanceSheetResponseDto {
-    return {
-      id: row.id,
-      activityId: row.activityId,
-      submitterUserId: row.submitterUserId,
-      submittedAt: row.submittedAt,
-      statusCode: row.statusCode,
-      reviewerUserId: row.reviewerUserId,
-      reviewedAt: row.reviewedAt,
-      reviewNote: row.reviewNote,
-      finalReviewerUserId: row.finalReviewerUserId,
-      finalReviewedAt: row.finalReviewedAt,
-      finalReviewNote: row.finalReviewNote,
-      version: row.version,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
-  }
-
-  private toSheetListItemDto(row: SheetListRow): AttendanceSheetListItemDto {
-    return {
-      id: row.id,
-      activityId: row.activityId,
-      submitterUserId: row.submitterUserId,
-      submittedAt: row.submittedAt,
-      statusCode: row.statusCode,
-      reviewedAt: row.reviewedAt,
-      version: row.version,
-      createdAt: row.createdAt,
-    };
-  }
-
-  private toRecordResponseDto(row: RecordWithMemberRow): AttendanceRecordResponseDto {
-    return {
-      id: row.id,
-      sheetId: row.sheetId,
-      memberId: row.memberId,
-      member: row.member
-        ? ({
-            id: row.member.id,
-            memberNo: row.member.memberNo,
-            displayName: row.member.displayName,
-          } satisfies AttendanceMemberSummaryDto)
-        : null,
-      roleCode: row.roleCode,
-      checkInAt: row.checkInAt,
-      checkOutAt: row.checkOutAt,
-      serviceHours: row.serviceHours.toString(),
-      attendanceStatusCode: row.attendanceStatusCode,
-      note: row.note,
-      registrationId: row.registrationId,
-      contributionPoints: this.decimalToString(row.contributionPoints),
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
-  }
+  // 已抽至 `attendance-presenter.ts` 的 `AttendancePresenter`(P1-4 第一刀,2026-06-10
+  // 方案 A 拍板;仅"搬家",字段映射 / Decimal 序列化语义零变化)。
+  // 各路径通过 `this.attendancePresenter.toSheetResponseDto(...)` /
+  // `.toSheetListItemDto(...)` / `.toRecordResponseDto(...)` / `.decimalToString(...)` 委托;
+  // 事务边界与查询 select 策略不随迁,仍由本 service 持有。
 
   // ============ helpers:字典校验 ============
 
@@ -517,7 +460,7 @@ export class AttendancesService {
         tx,
       });
 
-      return this.toSheetResponseDto(created);
+      return this.attendancePresenter.toSheetResponseDto(created);
     });
   }
 
@@ -580,7 +523,7 @@ export class AttendancesService {
     });
 
     return {
-      items: rows.map((r) => this.toSheetListItemDto(r)),
+      items: rows.map((r) => this.attendancePresenter.toSheetListItemDto(r)),
       total,
       page,
       pageSize,
@@ -598,7 +541,7 @@ export class AttendancesService {
       operation: 'detail',
     });
 
-    return this.toSheetResponseDto(sheet);
+    return this.attendancePresenter.toSheetResponseDto(sheet);
   }
 
   // ============ reviewDetail(GET 完整审核视图;R25)============
@@ -642,8 +585,8 @@ export class AttendancesService {
 
     return {
       activity: result.activity satisfies AttendanceSheetActivitySummaryDto,
-      sheet: this.toSheetResponseDto(result.sheet),
-      records: result.records.map((r) => this.toRecordResponseDto(r)),
+      sheet: this.attendancePresenter.toSheetResponseDto(result.sheet),
+      records: result.records.map((r) => this.attendancePresenter.toRecordResponseDto(r)),
     };
   }
 
@@ -697,7 +640,7 @@ export class AttendancesService {
           auditMeta,
           tx,
         });
-        return this.toSheetResponseDto(updated);
+        return this.attendancePresenter.toSheetResponseDto(updated);
       }
 
       // 1. 校验新 records
@@ -794,7 +737,7 @@ export class AttendancesService {
         tx,
       });
 
-      return this.toSheetResponseDto(updated);
+      return this.attendancePresenter.toSheetResponseDto(updated);
     });
   }
 
@@ -843,7 +786,7 @@ export class AttendancesService {
         tx,
       });
 
-      return this.toSheetResponseDto(removed);
+      return this.attendancePresenter.toSheetResponseDto(removed);
     });
   }
 
@@ -904,7 +847,7 @@ export class AttendancesService {
         tx,
       });
 
-      return this.toSheetResponseDto(updated);
+      return this.attendancePresenter.toSheetResponseDto(updated);
     });
   }
 
@@ -948,7 +891,7 @@ export class AttendancesService {
         tx,
       });
 
-      return this.toSheetResponseDto(updated);
+      return this.attendancePresenter.toSheetResponseDto(updated);
     });
   }
 
@@ -1016,7 +959,7 @@ export class AttendancesService {
           checkInAt: r.checkInAt.toISOString(),
           checkOutAt: r.checkOutAt.toISOString(),
           serviceHours: r.serviceHours.toString(),
-          contributionPoints: this.decimalToString(r.contributionPoints),
+          contributionPoints: this.attendancePresenter.decimalToString(r.contributionPoints),
           registrationId: r.registrationId,
         })),
       });
@@ -1036,7 +979,7 @@ export class AttendancesService {
         tx,
       });
 
-      return this.toSheetResponseDto(updated);
+      return this.attendancePresenter.toSheetResponseDto(updated);
     });
   }
 
@@ -1112,7 +1055,7 @@ export class AttendancesService {
         tx,
       });
 
-      return this.toSheetResponseDto(updated);
+      return this.attendancePresenter.toSheetResponseDto(updated);
     });
   }
 
@@ -1148,7 +1091,7 @@ export class AttendancesService {
     ]);
 
     return {
-      items: rows.map((r) => this.toRecordResponseDto(r)),
+      items: rows.map((r) => this.attendancePresenter.toRecordResponseDto(r)),
       total,
       page,
       pageSize,

@@ -6,6 +6,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { AttendanceAuditRecorder } from './attendance-audit-recorder';
+import { AttendancePresenter } from './attendance-presenter';
 import type {
   AttendanceSheetStateMachine,
   AttendanceSheetTransitionDecision,
@@ -262,6 +263,9 @@ function makeService(
     contributionCalculator as unknown as ContributionCalculator,
     timeOverlapPolicy,
     stateMachine as unknown as AttendanceSheetStateMachine,
+    // Presenter 传真实实例而非 mock(零依赖纯映射类):mapper characterization
+    // 断言经真实序列化路径,直接锁 P1-4 第一刀"搬家零漂移"。
+    new AttendancePresenter(),
   );
 }
 
