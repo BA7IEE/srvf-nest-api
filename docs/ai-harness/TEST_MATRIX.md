@@ -51,7 +51,7 @@ pnpm prisma:seed                      # seed(幂等;生产强校验)
 |---|---|---|---|
 | A(docs-only) | 文档 / 地图 true-up | 可省 | 动了 CODEMAP/链接 → `docs:codemap:check`;动本目录 → 自查快照戳 |
 | B(代码小修) | 重构 / 注释 / 单测补强 / 非破坏 bug fix | `agent:check:quick` + 受影响模块 e2e(`pnpm test:e2e -- <spec名>`) | 不新增 endpoint / DTO 字段 / 错误码 |
-| C(API 行为) | 新 endpoint / DTO 字段 / 错误码 / 响应语义 | `agent:check:full`(= lint+typecheck+unit+contract+e2e) | contract snapshot 必然变 → diff 必须逐行可解释;动手前用户拍板 |
+| C(API 行为) | 新 endpoint / DTO 字段 / 错误码 / 响应语义 | `agent:check:full`(= lint+typecheck+unit+contract+e2e) | contract snapshot 必然变 → diff 必须逐行可解释;范围已含于用户任务说明 / goal → 免二次确认,AI 自行发起仍须拍板 |
 | D(schema/权限/安全) | migration / seed / RBAC / auth / storage / audit / CI / 依赖 | C 档全部 + 评审稿/立项 + 影响面分析 | 分 PR 串行,禁夹带;对应 skill 必读 |
 | E(release) | bump / handoff / tag | C 档全部 + handoff 锚点 | `srvf-release-closeout` skill |
 

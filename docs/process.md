@@ -62,9 +62,9 @@ grep -A 3 "^## Unreleased" CHANGELOG.md
 |---|---|---|---|---|---|
 | **A 档** | docs-only;无 `.ts` / `.prisma` / `.yml` / `.json` 变动 | 改 README / 加 `docs/process.md` / 改 CHANGELOG Unreleased | (可省) | ❌ | ✅(一次会话多 A 档可串行) |
 | **B 档** | 代码小修(无新 endpoint / 无 DTO 字段增减 / 无 schema / 无 enum / 无 error code 增减) | 内部重构 / 注释 / 私有方法签名 / 单测补强 | `pnpm lint` + `pnpm typecheck` + 受影响范围测试 | ❌(常规) | ✅ |
-| **C 档** | API 行为变化(新 endpoint / DTO 字段增减 / 错误码增减 / 响应字段语义变化 / 新 Guard 装饰器) | 加新接口 / 错误码段扩展 / 接口入参变更 | A 档全部 + `pnpm test` + `pnpm test:contract` + `pnpm test:e2e` | ✅(动手前确认范围) | ⚠ 单 PR 评审 |
+| **C 档** | API 行为变化(新 endpoint / DTO 字段增减 / 错误码增减 / 响应字段语义变化 / 新 Guard 装饰器) | 加新接口 / 错误码段扩展 / 接口入参变更 | A 档全部 + `pnpm test` + `pnpm test:contract` + `pnpm test:e2e` | ✅(动手前确认范围;范围已含于用户任务说明 / goal → 免二次确认,AI 自行发起的 C 档仍须确认) | ⚠ 单 PR 评审 |
 | **D 档** | schema / migration / permission seed / Role enum / 鉴权 / 存储 / 凭证 / audit / 不可逆变更 / 安全相关 | 新建表 / 加 unique / Permission seed 改动 / 加密策略 / 软删除策略 | C 档全部 + 评审稿 / 立项 / 影响面分析 + handoff 段落 | ✅ + 评审稿冻结 + 立项记录 | ❌ 必须分 PR |
-| **E 档** | release / handoff / tag / GitHub Release / version bump | bump PR / handoff PR / 维护者打 tag + release | C 档全部 + handoff 验收锚点 | ✅ | ❌ 强串行 |
+| **E 档** | release / handoff / tag / GitHub Release / version bump | bump PR / handoff PR / tag + GitHub Release 收口(AI 以 gh 执行) | C 档全部 + handoff 验收锚点 | ✅ | ❌ 强串行 |
 
 档位归属规则:
 
@@ -118,8 +118,8 @@ grep -A 3 "^## Unreleased" CHANGELOG.md
 | 3 | landing PR(把本期跨文档的事实同步) | AI | ❌(仅 docs) |
 | 4 | **bump PR** | AI | ✅(仅 3 文件:`package.json` / `apply-swagger.ts` / `CHANGELOG.md` 折叠) |
 | 5 | **handoff PR**(新建 `docs/archive/handoff/v0.X.0.md`) | AI | ❌(仅 docs) |
-| 6 | **git tag**(`v0.X.0`) | 维护者手动 | — |
-| 7 | **GitHub Release**(标 Latest) | 维护者手动 | — |
+| 6 | **git tag**(`v0.X.0`;指向 handoff squash commit) | AI 执行(`git tag` + push),维护者亦可手动 | — |
+| 7 | **GitHub Release**(标 Latest;Notes 从 CHANGELOG 对应段抽取) | AI 执行(`gh release create`,完成后输出 `gh release list` 证据),维护者亦可手动 | — |
 | 8 | **current-state 回填** + README 入口对齐 | AI | ❌(仅 docs) |
 | 9 | open PR / 远端分支 清理 | AI + 维护者 | — |
 
@@ -420,7 +420,7 @@ git -C <main-repo-path> branch -D <branch>
 
 - **不把历史 handoff 当作"当前事实"** — 它们是 release 时刻快照,合入后即可能过期;当前事实以 [`docs/current-state.md`](current-state.md) + 代码 + GitHub 当前状态为准
 - **open PR ≠ 0 时不开新任务**(release 收口阶段除外) — 先看 `gh pr list --state open` 是否为空
-- **不自动启动下一 PR** — 每完成一份工作 / 一个 PR,必须停下等用户拍板下一动作
+- **在用户已立项 / 已授权的任务清单内可连续推进下一 PR;清单外不得** — 用户 goal / 任务说明已列明的任务队列(含其中已预拍板的档位)按序推进,不必逐项回头再问;清单外的任何新工作必须停下等用户拍板
 - **必须输出"本次未做"段** — 每次任务收尾必须显式列出"我没做的范围",防止 AI 自报完成
 - **遇到 D / E 档必须降速** — 沿 §4 流程;**禁止**"顺手做"
 - **不擅自修复审计 / 调研发现的问题** — 即使发现明显 bug 也不动手,除非本任务明确授权;先汇报

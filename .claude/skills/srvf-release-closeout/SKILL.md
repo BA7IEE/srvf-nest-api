@@ -47,7 +47,7 @@ SRVF Nest API 项目的 **release 收口 + PR squash merge + main 同步 + branc
 
 沿 [`process.md §5.1`](../../../docs/process.md),**逐阶段独立 PR、不混不夹带**(0.x 默认 minor):
 
-1. feature PR → 2. CHANGELOG `## Unreleased` 增量 → 3. landing docs PR → 4. **bump PR**(仅 `package.json` / `apply-swagger.ts` / `CHANGELOG.md` 折叠 3 文件)→ 5. **handoff PR**(新建 `docs/archive/handoff/vX.Y.Z.md`,合入后**不回改**)→ 6. 维护者打 **tag**(指向 handoff squash commit)→ 7. 维护者发 **GitHub Release**(Notes 抽自 CHANGELOG 对应段)→ 8. **current-state 回填**(§1 HEAD/tag/release/open PR;§2/§4 若变)→ 9. 分支清理。
+1. feature PR → 2. CHANGELOG `## Unreleased` 增量 → 3. landing docs PR → 4. **bump PR**(仅 `package.json` / `apply-swagger.ts` / `CHANGELOG.md` 折叠 3 文件)→ 5. **handoff PR**(新建 `docs/archive/handoff/vX.Y.Z.md`,合入后**不回改**)→ 6. **tag**(指向 handoff squash commit;AI 以 `git tag` + push 执行,维护者亦可手动)→ 7. **GitHub Release**(Notes 抽自 CHANGELOG 对应段;AI 以 `gh release create` 执行并输出 `gh release list` 证据,维护者亦可手动)→ 8. **current-state 回填**(§1 HEAD/tag/release/open PR;§2/§4 若变)→ 9. 分支清理。
 
 ## Squash merge + cleanup workflow
 

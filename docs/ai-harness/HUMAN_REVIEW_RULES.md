@@ -14,11 +14,11 @@
 | 3 | 改登录 / JWT / refresh token / throttler 参数 | D | P0-E 行为冻结;任何偏移先暂停说明 |
 | 4 | 改 `StorageProvider` / COS / 凭证加密 / `STORAGE_ENCRYPTION_KEY` | D | 评审稿 + 拍板 |
 | 5 | 改 `audit_logs` 字段 / `AuditLogEvent` union | D | A-1 红线;评审稿 + 拍板 |
-| 6 | 新 endpoint / DTO 字段增减 / 新错误码 / 响应语义变化 | C | 动手前确认范围;snapshot diff 逐行可解释 |
+| 6 | 新 endpoint / DTO 字段增减 / 新错误码 / 响应语义变化 | C | 范围已含于用户任务说明 / goal → 免二次确认;AI 自行发起的 C 档仍须动手前确认;snapshot diff 一律逐行解释写进 PR 描述 |
 | 7 | 改 `.github/workflows/**` / `package.json` 依赖 / Dockerfile | D | 影响所有 PR,评审 + 拍板 |
 | 8 | 改全局 Guard / Interceptor / Filter / ValidationPipe / ResponseInterceptor 跳过列表 | D | 评审 + 拍板 |
 | 9 | 跨模块大范围重构 / 拆 god-service | D | 单独立项(`srvf-god-service-refactor`;characterization 先行) |
-| 10 | release / bump / tag / GitHub Release | E | 强串行;tag 与 Release 由维护者手动(process §5) |
+| 10 | release / bump / tag / GitHub Release | E | 强串行;立项后 tag 与 GitHub Release 由 AI 执行(gh;tag 指向 handoff squash commit、Notes 抽自 CHANGELOG、完成后输出证据),维护者亦可手动(process §5.1) |
 | 11 | 物理删除任何业务数据 / 批量回填 / 数据迁移脚本 | D | 评审 + 拍板 + 回退方案 |
 | 12 | 涉及身份证 / 医疗 / 紧急联系人等敏感字段的任何 schema/DTO 草案 | D | **敏感字段三问**先答(AGENTS §18.4):业务用途 / 查看角色与掩码 / 保存期限 |
 | 13 | 触碰六大红区文档 / `docs/archive/**` / 已发布 CHANGELOG 段 | — | 非用户授权不动 |
@@ -43,6 +43,10 @@
 
 ```markdown
 ## 需要拍板:<一句话标题>
+- 人话简报·做什么:<一句话>
+- 人话简报·不做会怎样:<一句话>
+- 人话简报·最坏情况与回退:<一句话>
+- 推荐方案:<A / B>;用户回**"按推荐"**即生效
 - 背景:<现状 + 证据(路径:行号)>
 - 触发规则:<本文件 §1 第 N 条 / current-state §3 某项>
 - 影响面:<模块 / 测试 / 已发版本 / 用户可见行为>
@@ -50,3 +54,5 @@
 - 方案 B:<内容 + 回退条件>
 - 不动代码承诺:在拍板前仅做只读调研
 ```
+
+> 顶部三行「人话简报」+ 推荐方案是给维护者的最低阅读量;下方背景 / 影响面 / 方案对比保留为完整依据。用户只回"按推荐"即视为对推荐方案的有效拍板。
