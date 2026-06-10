@@ -476,7 +476,7 @@ V2 **不引入**第三个 Guard。理由:
 
 | 接口语义 | 装饰器 | 备注 |
 |---|---|---|
-| 公开接口(无需登录) | `@Public()` | V2 仅 `/api/health` 系列继续公开,V2 业务接口默认不公开 |
+| 公开接口(无需登录) | `@Public()` | V2 仅 `/api/system/v1/health` 系列继续公开,V2 业务接口默认不公开 |
 | 需登录但任意角色可访问 | (默认,无需装饰) | |
 | 需特定角色 | `@Roles(Role.SUPER_ADMIN, Role.ADMIN)` | 角色枚举从 `@prisma/client` 导入 |
 | 本人专属接口 | (默认 + Service 内校验 `userId === currentUser.id`) | 不通过 Guard 层 |
@@ -642,7 +642,7 @@ V2 模块开发任务完成后,按以下两档逐项验证再报告完成:
 启动服务,逐项确认:
 
 - `/api/docs` 能正常打开,Swagger UI 完整可用
-- `GET /api/health` / `/api/health/live` / `/api/health/ready` 仍按 v1 / V1.1 契约返回(向后兼容)
+- `GET /api/system/v1/health` / `/api/system/v1/health/live` / `/api/system/v1/health/ready` 按 v1 / V1.1 响应契约返回(Route B 终态前缀)
 - 本任务**新增或影响的接口**能按预期返回,覆盖典型成功路径与典型错误路径
 - 涉及敏感字段的接口,日志中字段显示为 `[REDACTED]`(对照 §8 屏蔽清单)
 

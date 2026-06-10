@@ -169,7 +169,7 @@ import { Role, UserStatus } from '@prisma/client';
 
 **铁律:Swagger UI 与 OpenAPI JSON/YAML 永远不能被业务响应包装。** 实现完成后必须实际访问 `/api/docs` 与 `/api/docs-json` 验收。
 
-`/api/health` **走包装**,不在跳过列表;controller 返回 `{ status: 'ok' }`,最终响应 `{ code: 0, message: 'ok', data: { status: 'ok' } }`。
+`/api/system/v1/health` **走包装**,不在跳过列表;controller 返回 `{ status: 'ok' }`,最终响应 `{ code: 0, message: 'ok', data: { status: 'ok' } }`。
 
 ---
 
@@ -302,16 +302,16 @@ import { Role, UserStatus } from '@prisma/client';
 - DTO 校验:密码至少 8 位 + 含数字 + 字母
 - service 接收 `password` 后**入库前必须** `bcrypt.hash()`,绝不裸传 Prisma
 - 响应 DTO 通过 `userSafeSelect` 排除 `passwordHash`,任何接口响应里都不应出现该字段
-- `POST /api/users` **必须由调用方传 `password`**,禁止后端生成默认密码或留空
-- `PUT /api/users/:id/password` 接收 `ResetUserPasswordDto { newPassword }`,**不需要 `oldPassword`**,但必须走 `assertCanManageUser`
+- `POST /api/admin/v1/users` **必须由调用方传 `password`**,禁止后端生成默认密码或留空
+- `PUT /api/admin/v1/users/:id/password` 接收 `ResetUserPasswordDto { newPassword }`,**不需要 `oldPassword`**,但必须走 `assertCanManageUser`
 - 管理员重置密码后**不主动吊销 access token**(access ≤ 15m 自然过期);**必须主动撤销目标用户全部 refresh token**(详 §9 P0-E 联动撤销四场景);如需立即阻断 access token,由管理员把目标用户 `status` 改 `DISABLED`(经每请求查库即时生效)
-- **本人自助改密只能通过独立接口** `PUT /api/users/me/password`(v0.13.0 已落地,行为冻结于 [P0-D 评审稿](docs/archive/reviews/first-release-p0d-change-my-password-review.md));**不得**在 `PATCH /api/users/me` 或其他资料更新接口里夹带"顺手改密码"逻辑;管理员重置他人密码接口 `PUT /api/users/:id/password` 契约保持不变
+- **本人自助改密只能通过独立接口** `PUT /api/app/v1/me/password`(原 `/api/users/me/password` 于 v0.13.0 落地、Route B 终态迁至 App surface;行为冻结于 [P0-D 评审稿](docs/archive/reviews/first-release-p0d-change-my-password-review.md));**不得**在 `PATCH /api/app/v1/me/profile` 或其他资料更新接口里夹带"顺手改密码"逻辑;管理员重置他人密码接口 `PUT /api/admin/v1/users/:id/password` 契约保持不变
 - 本人改密接口入参固定 `ChangeMyPasswordDto { oldPassword, newPassword }`(`oldPassword` 必填,与管理员重置无 `oldPassword` 的语义对称区分);`newPassword` 沿 `ResetUserPasswordDto.newPassword` 范式(至少 8 位 + 数字 + 字母);严格白名单,**禁止**夹带 `username` / `email` / `role` / `status` / `passwordHash` / `id` 任何其他字段
 - 本人改密新增 BizCode:`OLD_PASSWORD_INVALID = 10005`(HTTP 401)、`NEW_PASSWORD_SAME_AS_OLD = 10006`(HTTP 400);**禁止**复用 `LOGIN_FAILED` 或 `BAD_REQUEST` 兜底语义
 - 本人改密接口必须挂 `@PasswordChangeThrottle()`(IP 5/60 秒;沿 §17 `@nestjs/throttler` 内存 storage,**禁止** Redis;limit / ttl 从 `src/config/app.config.ts` 注入,**禁止**硬编码在装饰器)
 - 本人改密成功必须写 audit `AuditLogEvent.UserPasswordChangedSelf`;**禁止**把 `oldPassword` / `newPassword` / `passwordHash` 任何明文或 hash 写入 audit
 - 本人改密成功后**不主动吊销 access token**;**必须主动撤销该用户全部 refresh token**(详 §9 P0-E 联动撤销四场景);`tokenVersion` **不做**,沿 §1 B 档
-- 用户被 `DISABLED`(`PATCH /api/users/:id/status` → `DISABLED`)或被软删(`DELETE /api/users/:id`)时,**必须**主动撤销目标用户全部 refresh token(详 §9 P0-E 联动撤销四场景);access token 由 `JwtStrategy.validate` 每请求查库即时失效
+- 用户被 `DISABLED`(`PATCH /api/admin/v1/users/:id/status` → `DISABLED`)或被软删(`DELETE /api/admin/v1/users/:id`)时,**必须**主动撤销目标用户全部 refresh token(详 §9 P0-E 联动撤销四场景);access token 由 `JwtStrategy.validate` 每请求查库即时失效
 - 本人改密接口**不做**首次登录强制改密、忘记密码 / 邮箱找回、user-member 绑定能力;这些越界诉求出现时必须暂停说明
 
 ### P0-E refresh token 鉴权铁律(v0.14.0 落地,行为冻结)
@@ -335,13 +335,13 @@ import { Role, UserStatus } from '@prisma/client';
 - `RefreshTokenDto` / `LogoutDto` 严格白名单 1 字段(`refreshToken`);**禁止**夹带 `deviceId` / `userId` / 其他字段
 
 **rotation 与 expiration 三不变式**:
-- **rotation always**:每次 `POST /api/auth/refresh` 必发新 token + 旧 refresh 同事务内标 `rotatedAt + revokedAt + replacedById`
-- **absolute expiration**:`expiresAt` 不延长,严格继承 family 首个 token;refresh TTL `90d`;达到 `refreshExpiresAt` 后必须重新登录(`POST /api/auth/login`),refresh 接口对已过期 family 返 `REFRESH_TOKEN_INVALID=10007`
+- **rotation always**:每次 `POST /api/auth/v1/refresh` 必发新 token + 旧 refresh 同事务内标 `rotatedAt + revokedAt + replacedById`
+- **absolute expiration**:`expiresAt` 不延长,严格继承 family 首个 token;refresh TTL `90d`;达到 `refreshExpiresAt` 后必须重新登录(`POST /api/auth/v1/login`),refresh 接口对已过期 family 返 `REFRESH_TOKEN_INVALID=10007`
 - **reuse detection 触发 family revoke**:收到 `rotatedAt != null` 的 row(旧 raw 被重放)→ 同事务内 `updateMany({ where: { familyId, revokedAt: null }, data: { revokedAt: now(), revokedReason: 'family-revoked' } })`,然后抛 `REFRESH_TOKEN_INVALID`
 
 **logout 行为契约**:
-- `POST /api/auth/logout` 走 `@Public()`(refresh token 自身即凭证),只撤销**当前** refresh token(`revokedReason='logout'`,其他 rotation 链 token 不动);**幂等**(不存在 / 已撤销 / 已过期 → 仍返 200,沿 RFC 7009 §2.2),**不**抛业务码;access token 若随头传入**不**校验、**不**消费、**不**吊销
-- `POST /api/auth/logout-all` 走 `JwtAuthGuard`,撤销当前 user 全部未过期且未撤销的 refresh token(`updateMany revokedReason='logout'`);返 `{ revokedCount }`
+- `POST /api/auth/v1/logout` 走 `@Public()`(refresh token 自身即凭证),只撤销**当前** refresh token(`revokedReason='logout'`,其他 rotation 链 token 不动);**幂等**(不存在 / 已撤销 / 已过期 → 仍返 200,沿 RFC 7009 §2.2),**不**抛业务码;access token 若随头传入**不**校验、**不**消费、**不**吊销
+- `POST /api/auth/v1/logout-all` 走 `JwtAuthGuard`,撤销当前 user 全部未过期且未撤销的 refresh token(`updateMany revokedReason='logout'`);返 `{ revokedCount }`
 
 **联动撤销四场景**(沿 §9 主条目;`updateMany` 必须**同事务**内与主写操作执行,沿 `prisma.$transaction` 范式;audit `extra.refreshTokensRevoked: count` 必写):本人改密 → `'self-password-change'` / 管理员重置 → `'admin-password-reset'` / 用户禁用 → `'admin-disable'` / 用户软删 → `'admin-delete'`
 
@@ -351,9 +351,9 @@ import { Role, UserStatus } from '@prisma/client';
 - e2e `users-change-my-password.e2e-spec.ts §7.5` "改密后旧 access token 仍可调 `/me`" 反向锁定断言**保留不破**
 
 **限流契约**:
-- `POST /api/auth/refresh`:独立 throttler `'refresh'`,IP **30 次 / 60 秒**;装饰器 `@RefreshThrottle()`(纯 metadata,limit / ttl 在 `throttle-options.ts` 从 `app.config.ts` 注入)
-- `POST /api/auth/logout`:**无限流**(刻意;避免攻击者吃光合法 logout 配额)
-- `POST /api/auth/logout-all`:复用 `'password-change'` throttler(IP 5/60);沿"高危操作低频限流"语义
+- `POST /api/auth/v1/refresh`:独立 throttler `'refresh'`,IP **30 次 / 60 秒**;装饰器 `@RefreshThrottle()`(纯 metadata,limit / ttl 在 `throttle-options.ts` 从 `app.config.ts` 注入)
+- `POST /api/auth/v1/logout`:**无限流**(刻意;避免攻击者吃光合法 logout 配额)
+- `POST /api/auth/v1/logout-all`:复用 `'password-change'` throttler(IP 5/60);沿"高危操作低频限流"语义
 - 三 throttler(`default` / `password-change` / `refresh`)**物理隔离**:登录失败爆破不消耗 refresh / logout-all 配额,反之亦然
 - 命中走 `BizException(BizCode.TOO_MANY_REQUESTS)` + HTTP 429;**不暴露** `Retry-After` / `X-RateLimit-*` 头(沿 [`src/bootstrap/throttle-options.ts`](src/bootstrap/throttle-options.ts) `setHeaders: false`)
 
@@ -404,8 +404,8 @@ import { Role, UserStatus } from '@prisma/client';
 
 `forbidNonWhitelisted: true` 是兜底,DTO 自身白名单是第一道防线;一旦 DTO 多声明一个字段,纵深防御直接破口。
 
-- **`UpdateMyProfileDto`**(`PATCH /api/users/me`):仅允许 `nickname` / `avatarKey`。**禁止**包含 `username` / `email` / `password` / `newPassword` / `oldPassword` / `passwordHash` / `role` / `status` / `deletedAt` / `id` / `lastLoginAt` 等任何字段;本人自助改密必须走独立接口 `PUT /api/users/me/password`(铁律见 §9)
-- **`UpdateUserDto`**(`PATCH /api/users/:id`,管理员改用户资料):**禁止**包含 `role` / `password` / `passwordHash` / `status` / `deletedAt` / `id`。角色修改走 `PATCH /api/users/:id/role`,密码重置走 `PUT /api/users/:id/password`,启用 / 禁用走 `PATCH /api/users/:id/status`,软删除走 `DELETE /api/users/:id`,**绝不在更新资料接口里夹带**
+- **`UpdateMyProfileDto`**(`PATCH /api/app/v1/me/profile`):仅允许 `nickname` / `avatarKey`。**禁止**包含 `username` / `email` / `password` / `newPassword` / `oldPassword` / `passwordHash` / `role` / `status` / `deletedAt` / `id` / `lastLoginAt` 等任何字段;本人自助改密必须走独立接口 `PUT /api/app/v1/me/password`(铁律见 §9)
+- **`UpdateUserDto`**(`PATCH /api/admin/v1/users/:id`,管理员改用户资料):**禁止**包含 `role` / `password` / `passwordHash` / `status` / `deletedAt` / `id`。角色修改走 `PATCH /api/admin/v1/users/:id/role`,密码重置走 `PUT /api/admin/v1/users/:id/password`,启用 / 禁用走 `PATCH /api/admin/v1/users/:id/status`,软删除走 `DELETE /api/admin/v1/users/:id`,**绝不在更新资料接口里夹带**
 - **`CreateUserDto.role`** 可选,**禁止**直接透传给 Prisma;必须经业务层根据当前用户角色校验后再决定写入值(见 §13)
 
 ### `IdParamDto` 字符串校验
@@ -444,17 +444,17 @@ import { Role, UserStatus } from '@prisma/client';
 
 **Guard 管入口,Service 管业务**:Guard 层 `@Roles(Role.SUPER_ADMIN, Role.ADMIN)` 只决定谁能进管理接口;Service 层必须经统一 `assertCanManageUser(currentUser, targetUser)` 二次校验"能操作谁"——SUPER_ADMIN 总通过,ADMIN 只能管理 USER,其余抛 `BizException(BizCode.FORBIDDEN_ROLE_OPERATION)`。**禁止**在 service 散落手写 `currentUser.role === ...` 角色比较绕过此函数。
 
-以下接口必须先 `findFirst` 查出目标用户,再 `assertCanManageUser`:`GET /api/users/:id` / `PATCH /api/users/:id` / `PUT /api/users/:id/password` / `PATCH /api/users/:id/role` / `PATCH /api/users/:id/status` / `DELETE /api/users/:id`。
+以下接口必须先 `findFirst` 查出目标用户,再 `assertCanManageUser`:`GET /api/admin/v1/users/:id` / `PATCH /api/admin/v1/users/:id` / `PUT /api/admin/v1/users/:id/password` / `PATCH /api/admin/v1/users/:id/role` / `PATCH /api/admin/v1/users/:id/status` / `DELETE /api/admin/v1/users/:id`。
 
 ### 自我保护(防误操作)
 
-`id === currentUser.id` 时拒绝以下操作,抛 `BizException(BizCode.CANNOT_OPERATE_SELF)`:`DELETE /api/users/:id` / `PATCH /api/users/:id/status`(改 `DISABLED`)/ `PATCH /api/users/:id/role`。
+`id === currentUser.id` 时拒绝以下操作,抛 `BizException(BizCode.CANNOT_OPERATE_SELF)`:`DELETE /api/admin/v1/users/:id` / `PATCH /api/admin/v1/users/:id/status`(改 `DISABLED`)/ `PATCH /api/admin/v1/users/:id/role`。
 
-`PATCH /api/users/:id` 永远不接受 `role` 字段;角色修改必须走 `PATCH /api/users/:id/role`。
+`PATCH /api/admin/v1/users/:id` 永远不接受 `role` 字段;角色修改必须走 `PATCH /api/admin/v1/users/:id/role`。
 
 ### 最后一个 SUPER_ADMIN 保护(防代码漏洞)
 
-任何"剥夺超级管理员权限"操作前,在同一 `prisma.$transaction` 内查询剩余活跃 super admin 数并执行更新,确保操作后剩余 ≥ 1,否则抛 `BizException(BizCode.LAST_SUPER_ADMIN_PROTECTED)`。适用接口(当且仅当目标用户当前是 super admin 时检查):`DELETE /api/users/:id` / `PATCH /api/users/:id/status`(改 `DISABLED`)/ `PATCH /api/users/:id/role`(改 `ADMIN` 或 `USER`)。
+任何"剥夺超级管理员权限"操作前,在同一 `prisma.$transaction` 内查询剩余活跃 super admin 数并执行更新,确保操作后剩余 ≥ 1,否则抛 `BizException(BizCode.LAST_SUPER_ADMIN_PROTECTED)`。适用接口(当且仅当目标用户当前是 super admin 时检查):`DELETE /api/admin/v1/users/:id` / `PATCH /api/admin/v1/users/:id/status`(改 `DISABLED`)/ `PATCH /api/admin/v1/users/:id/role`(改 `ADMIN` 或 `USER`)。
 
 ### 用户列表可见范围
 
