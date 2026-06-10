@@ -19,11 +19,6 @@
 
 (P1-4 已于 2026-06-10 调研收口,见文末归档区。)
 
-### P1-6 手机号验证码基础设施(通道层 + 验证码服务 + 手机号绑定)— **🚧 已立项,进行中**
-- **立项**:2026-06-10 维护者 goal(12 问逐项拍板 + 工程细节代决);评审稿冻结于 [`docs/archive/reviews/sms-verification-infra-review.md`](../archive/reviews/sms-verification-infra-review.md)。
-- **范围**:T0 评审稿 → T1 schema(D)→ T2 通道层(D)→ T3 验证码与绑定(C/D)→ T4 docs 收尾;7 端点 / 5 权限码 / BizCode 24xxx / 3 audit 事件。
-- **状态**:终验通过后本行转归档区。
-
 ### P1-7 SMS 三个后续消费者 — **⏸ 挂起(逐项单独立项,AI 不自动启动)**
 - ① **找回密码**(手机验证码重置,pre-auth 流程);② **OTP / 验证码登录**(动 `AGENTS.md:242` v1 登录契约,需先对该红区行评审解锁);③ **通知用途短信**(新模板 + 群发,扩 `SmsPurpose` / templateKey)。
 - **前置**:P1-6 终验完成 + 运维侧真实通道验收(签名/模板过审 + 凭证录入,SOP 见届时 `docs/ops/sms-production-rollout-checklist.md`);任一启动前先读 sms 评审稿 §12 本期不做清单。
@@ -46,6 +41,8 @@
 ---
 
 ## 已完成项归档区
+
+- **P1-6 手机号验证码基础设施** ✅(2026-06-10 goal T0-T4 全队列完成;冻结评审稿 [`docs/archive/reviews/sms-verification-infra-review.md`](../archive/reviews/sms-verification-infra-review.md)):T0 评审稿 #299 → T1 schema #300(User +phone/phoneVerifiedAt + 三表三 enum,干净库重放 + seed 幂等二跑)→ T2 通道层 #301(sms 模块 + 双 Provider + settings/send-logs 4 端点 + 权限码 76→81 + SMS_ENCRYPTION_KEY fail-fast + SDK 锁 4.1.240)→ T3 验证码与绑定 #302(SmsCodeService + me/phone 两端点 + admin 清号 + BizCode 24xxx 6 码 + 3 audit 事件 + 双 throttler + e2e 三组 42 用例)→ T4 docs 收尾。**行为锁全程守住**:auth-* 原断言零改动全绿 / JWT payload zero drift / AGENTS:242 不动。**真实通道未开通**(运维接力:[`docs/ops/sms-production-rollout-checklist.md`](../ops/sms-production-rollout-checklist.md));消费者三项见 P1-7,retention 见 P2-6。
 
 - **P2-2 Swagger 权限要求文本化惯例补全** ✅ PR #287(2026-06-10,C 档,goal 预拍板范围内实施;配套一致性检查项 G 见 P1-1 条目 PR #288):全部 **148 个 endpoint** 的 `@ApiOperation` summary 追加统一鉴权后缀,四种形态与实际鉴权 1:1 对照(`pnpm docs:rbacmap:check` 口径):`[rbac: <权限码>]`(81,R 模式,码自 service `rbac.can()` 调用点逐个反查;attachments 8 端点为运行时 self/other 动态判定,标 `attachment.<action>.*` 通配族)/ `[roles: <角色列表>]`(44,G 模式,自方法级 `@Roles(...)` 实参)/ `[public]`(6,`@Public()`)/ `[auth]`(17,仅登录:App surface 15 + `rbac/me/permissions` + `auth/logout-all`;goal 三格式未覆盖"仅登录"形态,按最小扩展补第 4 记号并已在 PR 描述显式声明)。**零行为变更**;contract snapshot diff 296 行全部为 summary 行(逐行核验非 summary 变更 = 0)。
 

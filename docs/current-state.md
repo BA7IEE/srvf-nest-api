@@ -8,8 +8,8 @@
 | 项 | 当前值 |
 |---|---|
 | 版本(三方一致) | **v0.17.0**(2026-06-10;package.json = Swagger = tag;tag 指向 `2b57f8c` 标 Latest;要点见 CHANGELOG) |
-| `main` HEAD | `832d7fc`(滞后属固有现象) |
-| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **空** |
+| `main` HEAD | `54f3957`(SMS T3,#302;滞后属固有现象) |
+| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **SMS 基础设施 3 段**(T1 #300 / T2 #301 / T3 #302,待下次 release 收口) |
 | 最新 handoff | [`archive/handoff/v0.17.0.md`](archive/handoff/v0.17.0.md)(不回改) |
 
 ## 2. 当前系统已具备能力
@@ -19,12 +19,13 @@
 - **v1 + V1.1 底座**:NestJS + Prisma + PostgreSQL + JWT + 三层 Role + 软删除 + 统一返回 + Swagger 100%;pino 日志 + 请求 ID + helmet + 限流 + 健康检查 + 优雅关闭 + CI
 - **V2 模型全量**:dictionaries / organizations / members(`memberNo` 不复用)/ member_departments / member_profiles / emergency_contacts / certificates / activities / activity_registrations(+CSV)/ attendance_sheets+records(5 态含终审)/ contribution_rules(D14)/ audit_logs(A-1 不可改删)
 - **token 体系**(v0.13/14,**行为冻结**):App 本人改密(不吊销 access,D-4)+ refresh / logout / logout-all(rotation always / family revoke / 90d absolute / 联动撤销 4 场景 / JWT 15m / payload 仅 `{sub,username}`)
-- **RBAC + P0-F**:4 表 + `rbac.can()` + 76 码 + ops-admin;管理面四域(rbac / config / users / audit-logs)已 Service 层判权
+- **RBAC + P0-F**:4 表 + `rbac.can()` + **81 码**(2026-06-10 SMS +5)+ ops-admin(绑 58);管理面四域(rbac / config / users / audit-logs)已 Service 层判权
 - **attachments + storage**:多态附件 + 配置三表(不合表不抽 facade)+ 业务面 `rbac.can()` 首批(20 码);Local / COS Provider + AES-256-GCM + fail-fast
+- **SMS 基础设施**(2026-06-10,goal T0-T4;冻结评审稿 [`archive/reviews/sms-verification-infra-review.md`](archive/reviews/sms-verification-infra-review.md)):通道层(`sms/` 模块,DevStub/腾讯云双 Provider 动态路由 + settings/send-logs 4 端点 + `SMS_ENCRYPTION_KEY` AES-256-GCM)+ 验证码服务(6 位/5min/单活码/错 5 次作废/防刷三层/明文三不)+ 手机号绑定(`me/phone` 发码+验绑换绑 + admin 清号;phone 唯一含软删占用);**purpose 仅 PHONE_BIND**;BizCode 24xxx 段 6 码;权限码 76→**81**;AuditLogEvent +3(手机号一律掩码);**真实通道未开通**(运维接力 SOP:[`ops/sms-production-rollout-checklist.md`](ops/sms-production-rollout-checklist.md));找回密码/OTP 登录/通知挂 [`ai-harness/NEXT_TASKS.md`](ai-harness/NEXT_TASKS.md) P1-7
 - **App API Phase 2**(15 端点):`me`×3 / profile×2 / password / activities×2 / `my/*`×7;DTO 隔离 `dto/app/` 禁派生;self-scope;**永不返回 L3**;准入双 ACTIVE(D-5)
 - **Route B 终态**(2026-06-01):全仓仅 4 前缀,零 v2 / 零裸前缀 / 零 legacy,contract 断言锁定(§2.1)
-- **P2-2 鉴权后缀**(v0.17.0):148 endpoint summary 带 `[rbac:]/[roles:]/[public]/[auth]`,检查项 G 锁一致性
-- **测试与契约**:e2e **72 suites / 1664 tests** + unit 26 spec(6 characterization 全覆盖)+ contract 148 路由白名单;CI 全链 + docker-smoke
+- **P2-2 鉴权后缀**(v0.17.0 落地 148;SMS 后 **155** endpoint)summary 带 `[rbac:]/[roles:]/[public]/[auth]`,检查项 G 锁一致性
+- **测试与契约**:e2e **75 suites / 1706 tests** + unit 30 spec(6 characterization 全覆盖)+ contract **155 路由**白名单;CI 全链 + docker-smoke
 
 ## 2.1 当前 API surface 状态
 
@@ -63,6 +64,7 @@
 | P2 | Mixed Controller 存量 2 处(见 §2.1) | 冻结仅兼容;详 api-surface-policy §5.1 |
 | P2 | contract snapshot ~1MB / 35,777 行 | 已接受;review 用 diff,勿整读 |
 | P3 | `common/storage/` 超出 common 语义 | 长期可迁 `src/modules/storage/`;本期不动 |
+| P3 | `sms_verification_codes` / `sms_send_logs` 只增不减(本期拍板不做 retention) | 挂 [`NEXT_TASKS P2-6`](ai-harness/NEXT_TASKS.md);届时单独立项(物理删数据 = D 档) |
 
 ## 5. 新任务开工前必须检查
 
