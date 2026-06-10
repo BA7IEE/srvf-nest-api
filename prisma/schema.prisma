@@ -26,6 +26,13 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  // SMS 基础设施 T1(2026-06-10;评审稿 docs/archive/reviews/sms-verification-infra-review.md §3.1):
+  // 账号级手机号(非 Member.phonePrimary 队员联系电话,互不相干)。
+  // @unique 全局唯一**含软删占用**(沿 AGENTS §10 username/email 不复用范式;
+  // 预检查必须 findUnique 含软删,评审稿 E-7);admin 清除后两字段同置 null。
+  phone           String?   @unique
+  phoneVerifiedAt DateTime?
+
   memberId String? @unique
   member   Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
 
@@ -1080,4 +1087,97 @@ model RefreshToken {
   @@index([expiresAt])
   @@index([revokedAt])
   @@map("refresh_tokens")
+}
+
+// =============================================================================
+// ===== SMS 基础设施 T1(2026-06-10)三表 + 三 enum =====
+//
+// 沿评审稿 docs/archive/reviews/sms-verification-infra-review.md §3.1(冻结文本;
+// 维护者 2026-06-10 goal 拍板)。一次设计,允许部分字段首期闲置(null);严禁未来推翻 schema。
+// - sms_settings 镜像 StorageSettings 范式:singleton 由 Service 层保证,DB 不强制;
+//   凭证 AES-256-GCM 加密(SmsCryptoService,T2),明文永不入库。
+// - sms_verification_codes:明文验证码永不入库,只存 sha256 hex(沿 refresh tokenHash 范式,E-27);
+//   同 phone+purpose 单活码由 supersededAt 实现(E-9);userId / codeId 不建外键(E-28)。
+// - sms_send_logs:append-only 发送留痕,无更新/删除路径;响应层手机号一律掩码(E-20/E-21)。
+// - retention:两表本期不清理,待办挂 NEXT_TASKS P2-6。
+// =============================================================================
+model SmsSettings {
+  id String @id @default(cuid())
+
+  // 通道选型(评审稿 D-SMS-2;production-like 禁 DEV_STUB,写入与运行时双重校验,E-15)
+  providerType SmsProviderType
+  enabled      Boolean         @default(true)
+
+  // 腾讯云 SMS 运行参数(非 secret,明文;DEV_STUB 下闲置)
+  sdkAppId             String?
+  signName             String? // 短信签名(须先过审;运维 SOP 见 docs/ops/sms-production-rollout-checklist.md)
+  region               String? // 如 ap-guangzhou
+  templateIdVerifyCode String? // 验证码模板 ID(须先过审;templateKey='verify-code' 的 provider 侧映射)
+
+  // 凭证(加密存储;明文永不入库;响应永不回显——密文也不回显)
+  secretIdEncrypted    String?
+  secretKeyEncrypted   String?
+  credentialConfigured Boolean @default(false) // DB 层简单事实;运行时 credentialStatus 三态由 Service 合成
+
+  // 元信息(沿 StorageSettings 范式;updatedBy 不建外键)
+  remarks   String?
+  updatedBy String? // User.id
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@map("sms_settings")
+}
+
+enum SmsProviderType {
+  DEV_STUB // 非生产联调通道:固定码 888888 + debug 日志(评审稿 E-29;production-like 不可达)
+  TENCENT_SMS
+}
+
+model SmsVerificationCode {
+  id String @id @default(cuid())
+
+  phone    String
+  purpose  SmsPurpose
+  codeHash String // sha256(code) hex;明文码永不入库
+  userId   String? // 签发归属用户;PHONE_BIND 必填值,字段可空留未来 pre-auth 消费者(E-8);不建外键
+
+  expiresAt    DateTime // 签发 +5min(常量,T3)
+  consumedAt   DateTime? // 验证成功即消费
+  supersededAt DateTime? // 同 phone+purpose 新码签发时旧码作废
+  attempts     Int       @default(0) // 错误尝试计数;≥5 作废(统一 SMS_CODE_INVALID,防枚举)
+  ip           String? // 签发请求 IP(防刷取证)
+  createdAt    DateTime  @default(now())
+
+  // 单活码定位 + 间隔/日限按 phone 前缀查询(评审稿 §3.1)
+  @@index([phone, purpose])
+  @@map("sms_verification_codes")
+}
+
+enum SmsPurpose {
+  PHONE_BIND // 本期唯一 purpose;找回密码 / OTP 登录 / 通知挂 NEXT_TASKS P1-7
+}
+
+model SmsSendLog {
+  id String @id @default(cuid())
+
+  phone        String // 明文存储(对账需要);响应层一律掩码 138****1234
+  templateKey  String // 逻辑模板键,本期仅 'verify-code'(E-22;非 provider 模板 ID)
+  providerType SmsProviderType
+  status       SmsSendStatus
+
+  providerMsgId String? // provider 回执 ID
+  errCode       String? // 失败时 provider 错误码(不含 secret)
+  errMsg        String? // 失败时 provider 错误信息(不含 secret)
+  codeId        String? // 关联 sms_verification_codes.id;不建外键(retention 清理不受 FK 牵制)
+
+  createdAt DateTime @default(now())
+
+  // 按号排错 + 列表查询
+  @@index([phone, createdAt])
+  @@map("sms_send_logs")
+}
+
+enum SmsSendStatus {
+  SENT
+  FAILED
 }
