@@ -20,6 +20,7 @@ pnpm lint                             # ✅ eslint --max-warnings 0(src + test +
 pnpm typecheck                        # ✅ tsc --noEmit ×2(src + test 两套 tsconfig)
 pnpm build                            # nest build(CI 必跑)
 pnpm docs:codemap:check               # ✅ CODEMAP 漂移检查(0 FAIL 才算过;WARN/INFO 不阻塞)
+pnpm docs:rbacmap:check               # ✅ RBAC_MAP 漂移检查(seed 码/controller 数/canonical 前缀对账)
 
 # ── 测试三件套 ──
 pnpm test                             # ✅ unit(jest-unit.config.ts;无 DB 依赖;20 specs)
