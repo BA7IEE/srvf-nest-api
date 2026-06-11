@@ -7,10 +7,10 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(三方一致) | **v0.20.0**(2026-06-11;package.json = Swagger = tag;tag 指向 `9116a67` 标 Latest;要点见 CHANGELOG) |
-| `main` HEAD | `9116a67`(v0.20.0 handoff,#320;滞后属固有现象) |
-| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **0**(v0.20.0 已折叠;B 队列 goal F1-F6 增量届时登记) |
-| 最新 handoff | [`archive/handoff/v0.20.0.md`](archive/handoff/v0.20.0.md)(不回改) |
+| 版本(三方一致) | **v0.21.0**(2026-06-11;package.json = Swagger = tag;tag 指向 `3a418c9` 标 Latest;要点见 CHANGELOG) |
+| `main` HEAD | `3a418c9`(v0.21.0 handoff,#331;滞后属固有现象) |
+| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **0**(v0.21.0 已折叠;B 队列 goal #322-#331 全收清) |
+| 最新 handoff | [`archive/handoff/v0.21.0.md`](archive/handoff/v0.21.0.md)(不回改) |
 
 ## 2. 当前系统已具备能力
 
