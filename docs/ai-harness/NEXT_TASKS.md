@@ -13,24 +13,23 @@
 
 (P1-3 业务面 RBAC 接入〔Slow-4〕已于 2026-06-11 goal 全队列完成,见文末归档区;P1-4 已于 2026-06-10 调研收口,见文末归档区。)
 
-### P1-7 SMS 后续消费者(剩 ②③)— **⏸ 挂起(逐项单独立项,AI 不自动启动)**
-- ② **OTP / 验证码登录**(动 `AGENTS.md:242` v1 登录契约,需先对该红区行评审解锁);③ **通知用途短信**(新模板 + 群发,扩 `SmsPurpose` / templateKey)。①找回密码已完成,见归档区。
-- **前置**:运维侧真实通道验收(签名/模板过审 + 凭证录入,SOP 见 `docs/ops/sms-production-rollout-checklist.md`);任一启动前先读 sms 评审稿 §12 与找回密码评审稿 §10 本期不做清单(图形验证码重启条件见后者 §9)。
+### P1-7 SMS 后续消费者(剩 ②③)— **🚧 进行中(2026-06-11 B 队列 goal 拍板立项;冻结评审稿 [`queue-b-otp-birthday-infra-review.md`](../archive/reviews/queue-b-otp-birthday-infra-review.md))**
+- ② **OTP / 验证码登录**(goal F4;`AGENTS.md:242` 红区行已评审解锁,改写随实施 PR)+ ③ **通知用途短信首批 = 生日祝福**(goal F5;拍板仅 `User.phone` 单发,无群发/退订)。①找回密码已完成,见归档区。
+- 原"前置 = 运维侧真实通道验收"由 goal 拍板豁免(DevStub 先行全验沿找回密码先例;真实通道仍由运维接力,届时**两模板一批**送审)。
 
 ## P2(可优化)
 
 ### P2-3 分页 skip/take 换算的轻度重复 — **❌ 不做**
 - 依据:现状可接受(逻辑两行,已验证);主动抽 util 违反 AGENTS §2 grab-bag 禁令。重开条件 = 后续出现第 3 处分页 bug 时单独评估,**不**预先立项。
 
-### P2-4 `common/storage/` 迁往 `src/modules/storage/` — **⏸ 挂起(等单独立项)**
-- 等什么:用户对该 D 档迁移(import 链 + e2e 全量影响)单独立项;current-state §4 已登记 P3,长期可做,本期不动。
+### P2-4 `common/storage/` 迁往 `src/modules/storage/` — **🚧 进行中(2026-06-11 B 队列 goal F2 立项;评审稿 [`queue-b-otp-birthday-infra-review.md §3`](../archive/reviews/queue-b-otp-birthday-infra-review.md))**
+- D 档纯搬迁零行为:snapshot 零 diff 为硬验收;随实施 PR 本条 ✅ 归档 + current-state §4 P3 行闭环。
 
 ### P2-5 contract snapshot 单文件 ~1MB — **❌ 不做(已接受)**
 - 依据:current-state §4 已接受("PR review 用 diff 看");无动作项,仅提醒勿整读(2026-06-10 实测 35,777 行 / ~1,013 KB)。
 
-### P2-6 `sms_verification_codes` / `sms_send_logs` retention 清理 — **⏸ 挂起(等单独立项)**
-- **背景**:P1-6 拍板"过期验证码行与发送日志本期不清理"(评审稿 §8 三问);两表只增不减,长期体量需清理策略。
-- **届时方案候选**:手动 SQL SOP(`docs/ops/`)或定时清理(本仓无 cron,引入须沿 `AGENTS.md §1` 评审解锁制);任一均为 D 档(物理删数据)。
+### P2-6 `sms_verification_codes` / `sms_send_logs` retention 清理 — **🚧 进行中(2026-06-11 B 队列 goal F3 立项;评审稿 [`queue-b-otp-birthday-infra-review.md §4`](../archive/reviews/queue-b-otp-birthday-infra-review.md))**
+- **拍板方案 = 手动 SQL SOP**(`docs/ops/sms-data-retention-sop.md`;验证码 90 天 / 流水 1 年,数值可改;**不解锁 cron 清理**——`@nestjs/schedule` 解锁范围仅生日批);SQL 在 app_test 实测后冻结;随 F3 PR 本条 ✅ 归档。
 
 ---
 
