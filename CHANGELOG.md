@@ -2,6 +2,12 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+### Changed
+
+- **AI Harness 工具授权白名单扩充 + process §7.1「CI 等待期惯例」**(B 档;goal「AI Harness 效率卡点排查与最小优化」T2 拍板,PR #333):`.claude/settings.json` allow 11→32 / ask 4→17 / deny 8→19——按近 2 周转录实测(会弹窗模式下 Bash 调用 1784 次,其中 34 次卡顿 >60s 合计 ~240 分钟)收录 goal 流水线高频写/可逆命令(`git add/commit/push/fetch/pull --ff-only`、`gh pr create`、`gh pr merge --squash` 仅 squash 形态、`pnpm agent:*` / `docs:*:check` / `prisma:generate` / `db:test:init` / `install --frozen-lockfile`、`docker compose up -d postgres`);ask 重构(原全量 `gh pr merge` 改为仅 `--merge/--rebase/--admin` 形态强制弹窗,squash 放行)+ deny/ask 补堵 `pnpm/npx prisma`、`git push -f`、`git -C` 等旁路变体(+`git branch -D` / `worktree remove --force` / `gh repo|release delete` 入 ask/deny);**永不收录清单成文于 settings `_comment_never_allow`**;机器校验零放宽(CI 全绿才合并 / §5.4 八条 / D 档降速原样)。process §7.1 新增「CI 等待期惯例」一条(等待期只读预研不闲等;watch 早退/401 先 `gh auth status` 再轮询)。
+
 ## v0.21.0 - 2026-06-11
 
 ### Added

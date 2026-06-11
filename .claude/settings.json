@@ -1,4 +1,5 @@
 {
+  "_comment_never_allow": "永不收录进 allow(goal「AI Harness 效率卡点排查」2026-06-11 拍板;修改本文件时不得将以下模式移入 allow,只能落在 deny/ask): git reset --hard / git push --force|-f / git branch -D / git worktree remove --force / prisma migrate dev|reset|db push(含 pnpm/npx 前缀变体)/ rm -rf(构建产物目录外)/ gh repo delete / gh release delete。规则优先级 deny > ask > allow,先匹配先赢;复合命令(&& ; |)每个子命令须独立命中规则才放行。",
   "permissions": {
     "deny": [
       "Bash(npm *)",
@@ -6,15 +7,39 @@
       "Bash(bun *)",
       "Bash(prisma migrate reset*)",
       "Bash(prisma db push*)",
+      "Bash(pnpm prisma migrate reset*)",
+      "Bash(pnpm prisma db push*)",
+      "Bash(npx prisma migrate reset*)",
+      "Bash(npx prisma db push*)",
       "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Bash(git -C * push --force*)",
       "Bash(git reset --hard*)",
-      "Bash(rm -rf*)"
+      "Bash(git -C * reset --hard*)",
+      "Bash(rm -rf*)",
+      "Bash(rm -fr*)",
+      "Bash(gh repo delete*)"
     ],
     "ask": [
       "Bash(prisma migrate dev*)",
+      "Bash(pnpm prisma migrate dev*)",
+      "Bash(npx prisma migrate dev*)",
       "Bash(pnpm add*)",
       "Bash(pnpm remove*)",
-      "Bash(gh pr merge*)"
+      "Bash(gh pr merge --merge*)",
+      "Bash(gh pr merge * --merge*)",
+      "Bash(gh pr merge --rebase*)",
+      "Bash(gh pr merge * --rebase*)",
+      "Bash(gh pr merge --admin*)",
+      "Bash(gh pr merge * --admin*)",
+      "Bash(git branch -D*)",
+      "Bash(git branch * -D*)",
+      "Bash(git branch --delete --force*)",
+      "Bash(git worktree remove --force*)",
+      "Bash(git worktree remove * --force*)",
+      "Bash(gh release delete*)"
     ],
     "allow": [
       "Bash(pnpm lint*)",
@@ -27,7 +52,28 @@
       "Bash(git tag*)",
       "Bash(git worktree list*)",
       "Bash(gh pr list*)",
-      "Bash(gh pr view*)"
+      "Bash(gh pr view*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(git fetch)",
+      "Bash(git fetch *)",
+      "Bash(git pull --ff-only)",
+      "Bash(git pull --ff-only *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr merge * --squash)",
+      "Bash(gh pr merge * --squash *)",
+      "Bash(pnpm agent:preflight)",
+      "Bash(pnpm agent:check:quick)",
+      "Bash(pnpm agent:check:api)",
+      "Bash(pnpm agent:check:full)",
+      "Bash(pnpm docs:codemap:check)",
+      "Bash(pnpm docs:rbacmap:check)",
+      "Bash(pnpm prisma:generate)",
+      "Bash(pnpm db:test:init)",
+      "Bash(pnpm install --frozen-lockfile)",
+      "Bash(docker compose up -d postgres)"
     ]
   }
 }
