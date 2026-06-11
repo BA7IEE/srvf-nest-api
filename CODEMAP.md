@@ -7,7 +7,7 @@
 
 ---
 
-## src/modules/(21 个业务模块,平铺,**禁止嵌套 system/business/core 子目录**)
+## src/modules/(22 个业务模块,平铺,**禁止嵌套 system/business/core 子目录**)
 
 | 路径 | 体量 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
 |---|---|---|---|---|
