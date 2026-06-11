@@ -5,7 +5,7 @@
 ## 本地事实
 
 - `schema.prisma` 是**数据模型唯一权威源**(字段 / 类型 / 约束 / 索引);Swagger / DTO / docs 任何与之冲突,**以 schema.prisma 为准**。
-- `migrations/` 累计 15 个 migration(2026-05-02 `init` → 2026-06-11 sms purpose login)。
+- `migrations/` 累计 16 个 migration(2026-05-02 `init` → 2026-06-11 sms settings template id birthday)。
 - migration 命名格式:`YYYYMMDDHHMMSS_<可读描述_下划线分隔>`(例 `20260510193742_v2_batch3_activities_attendances`);**不**允许 `auto` / `tmp` / `wip` 命名。
 - 生产环境只允许 `prisma migrate deploy` 跑**已审查**的 migration(沿 `AGENTS.md §0`)。
 
