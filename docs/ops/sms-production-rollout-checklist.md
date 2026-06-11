@@ -1,4 +1,4 @@
-# SRVF API — 腾讯云 SMS 生产上线运维清单(短信验证码通道)
+# SRVF API — 腾讯云 SMS 生产上线运维清单(验证码 + 生日祝福两模板)
 
 > **性质**:运维侧 SOP(沿 [`cos-production-rollout-checklist.md`](cos-production-rollout-checklist.md) 范式);系统侧能力已随 SMS 基础设施 T1-T3 就绪,**本清单是真实通道开通的唯一接力入口**。
 > **权威源**:行为契约见冻结评审稿 [`docs/archive/reviews/sms-verification-infra-review.md`](../archive/reviews/sms-verification-infra-review.md);字段事实见 [`prisma/schema.prisma`](../../prisma/schema.prisma) `SmsSettings`。
@@ -14,7 +14,7 @@
 ### 0.2 怎么读
 
 - 按 §1 → §6 顺序执行,每节末尾有"校验"步骤;任一校验不过,**不进入下一节**。
-- 占位符:`<SDK_APP_ID>` / `<SIGN_NAME>` / `<TEMPLATE_ID>` / `<SECRET_ID>` / `<SECRET_KEY>` / `<REGION>`(如 `ap-guangzhou`)。
+- 占位符:`<SDK_APP_ID>` / `<SIGN_NAME>` / `<TEMPLATE_ID_VERIFY>` / `<TEMPLATE_ID_BIRTHDAY>` / `<SECRET_ID>` / `<SECRET_KEY>` / `<REGION>`(如 `ap-guangzhou`)。
 
 ## 1. 前置门槛
 
@@ -37,7 +37,9 @@
 
 **校验**:控制台签名状态 = **已通过**;记录 `<SIGN_NAME>`(与控制台显示完全一致,含中文)。
 
-## 3. 验证码模板审核
+## 3. 模板审核(**两模板一批送审**;2026-06-11 B 队列收口后口径)
+
+### 3a. 验证码模板
 
 1. 控制台 → 短信 → 正文模板 → 创建模板。
 2. **模板内容必须恰好 2 个变量,顺序固定**(系统侧 `TemplateParamSet=[验证码, 有效分钟数]`,沿评审稿 E-22):
@@ -48,8 +50,21 @@
 
 3. 模板类型选"验证码";等待审核。
 
-**校验**:模板状态 = **已通过**;记录数字模板 ID `<TEMPLATE_ID>`。
+**校验**:模板状态 = **已通过**;记录数字模板 ID `<TEMPLATE_ID_VERIFY>`(录入 `templateIdVerifyCode`)。
 **⚠ 变量数不是 2 个 / 顺序颠倒** → 真实发送时腾讯云返回 `FailedOperation.TemplateParamSetNotMatch` 类错误(`GET /api/system/v1/sms-send-logs` 的 errCode 可见)。
+
+### 3b. 生日祝福模板(2026-06-11 +;queue-b 评审稿 §6.5)
+
+1. 同入口创建第二个模板;**内容必须零变量**(系统侧 `TemplateParamSet=[]`,纯祝福文案),示例:
+
+   ```text
+   祝您生日快乐!深圳公益救援队感谢有您,愿新的一岁平安顺遂。
+   ```
+
+2. 模板类型选"普通短信"(通知类);等待审核。
+
+**校验**:模板状态 = **已通过**;记录数字模板 ID `<TEMPLATE_ID_BIRTHDAY>`(录入 `templateIdBirthday`)。
+**⚠ 模板含任何 {n} 变量** → 发送时变量数不符同样报 `TemplateParamSetNotMatch`(系统侧固定传空参数组;需变量须先回评审改系统)。
 
 ## 4. SDK AppId 与最小权限子账号
 
@@ -69,7 +84,7 @@
    ```bash
    curl -X PATCH https://<API_HOST>/api/system/v1/sms-settings \
      -H "Authorization: Bearer <ACCESS_TOKEN>" -H "Content-Type: application/json" \
-     -d '{"providerType":"TENCENT_SMS","enabled":true,"sdkAppId":"<SDK_APP_ID>","signName":"<SIGN_NAME>","region":"<REGION>","templateIdVerifyCode":"<TEMPLATE_ID>"}'
+     -d '{"providerType":"TENCENT_SMS","enabled":true,"sdkAppId":"<SDK_APP_ID>","signName":"<SIGN_NAME>","region":"<REGION>","templateIdVerifyCode":"<TEMPLATE_ID_VERIFY>","templateIdBirthday":"<TEMPLATE_ID_BIRTHDAY>"}'
    ```
 
 2. 凭证(仅 SUPER_ADMIN;AES-256-GCM 加密落库,响应与日志永不回显):
@@ -80,7 +95,7 @@
      -d '{"secretId":"<SECRET_ID>","secretKey":"<SECRET_KEY>"}'
    ```
 
-**校验**:`GET /api/system/v1/sms-settings` 返回 `providerType=TENCENT_SMS` / `enabled=true` / **`credentialStatus=configured`** 且四个运行参数均非 null。
+**校验**:`GET /api/system/v1/sms-settings` 返回 `providerType=TENCENT_SMS` / `enabled=true` / **`credentialStatus=configured`** 且运行参数(sdkAppId / signName / region / 两模板 ID)均非 null。
 **⚠ `credentialStatus=invalid`** → `SMS_ENCRYPTION_KEY` 被轮换或密文损坏,重新执行第 2 步。
 **⚠ production 禁 `providerType=DEV_STUB`**:PATCH 传 DEV_STUB 会被 400 拒绝(评审稿 E-15);DevStub 仅限本地/测试联调。
 
@@ -112,6 +127,8 @@
    # 期望:status=SENT / providerType=TENCENT_SMS / providerMsgId 非空 / 手机号显示为掩码 138****XXXX
    ```
 
+4. 生日祝福链路验收(轻量;2026-06-11 +):`templateIdBirthday` 录入后,任一队员生日当天 09:00(Asia/Shanghai)后查 send-logs——期望出现 `templateKey=birthday-greeting / status=SENT` 行且真机收到祝福短信;当天无人生日则顺延至最近生日核验(系统侧幂等保证不重发)。
+
 **全部通过 = 通道上线完成。**
 
 ## 7. 排错速查
@@ -126,5 +143,5 @@
 ## 8. 本清单不覆盖(系统侧已定/挂起事项)
 
 - 凭证轮换:重复 §4-§5 即可(再次 reset-credentials 覆盖)
-- `sms_verification_codes` / `sms_send_logs` retention 清理:挂 [`NEXT_TASKS P2-6`](../ai-harness/NEXT_TASKS.md),未立项前不动
-- 找回密码 / OTP 登录 / 通知用途:挂 [`NEXT_TASKS P1-7`](../ai-harness/NEXT_TASKS.md),逐项单独立项
+- `sms_verification_codes` / `sms_send_logs` retention 清理:**手动 SQL SOP 已收口**(2026-06-11 P2-6),见 [`sms-data-retention-sop.md`](sms-data-retention-sop.md)
+- 找回密码 / OTP 登录 / 生日祝福:**系统侧三项消费者已全部落地**(P1-7 闭环,2026-06-11);本清单完成后三者即随通道真实生效,**零额外运维作业**

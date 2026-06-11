@@ -1,6 +1,7 @@
 # 部署指南
 
 > V1.1 起仅交付应用镜像本身;`docker-compose.yml` 仅供本地起 PostgreSQL,生产部署形态由部署环境决定。
+> **单实例前提(2026-06-11 B 队列起)**:应用内置生日祝福定时任务(`@nestjs/schedule`,进程级 `@Cron`,每日 09:00 Asia/Shanghai;[`queue-b 评审稿 §6.8`](archive/reviews/queue-b-otp-birthday-infra-review.md))——**横向扩成多副本前必须先为该 job 加分布式锁**(DB advisory lock / 任务表),否则同日双发;当前部署形态 = 单实例,无需动作。
 
 ---
 

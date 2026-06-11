@@ -51,7 +51,7 @@
 | **G-4** | 活动流程 | 立项 → 发布 → 报名 → 现场 → 终审 → 贡献值 完整业务流程 |
 | **G-5** | 考勤流程 | 现场打卡 vs 事后录入 / GPS / 二维码 / 手签 / 上传材料 |
 | **G-6** | 数据导入导出规则 | CSV / Excel / 模板 / 字段映射 / 脱敏 / audit 留痕 / 分批落库 |
-| **G-7** | 通知 / 短信 / 推送 | **短信通道已就绪,通知用途未启动**(2026-06-10 SMS 基础设施 T1-T4:通道层 + 验证码 + 手机号绑定落地,冻结评审稿 [`archive/reviews/sms-verification-infra-review.md`](archive/reviews/sms-verification-infra-review.md);通知/推送的统一出口策略仍待 Effect 真出现时决议,沿 [`architecture-boundary.md §3.6`](architecture-boundary.md);消费者三项挂 [`ai-harness/NEXT_TASKS.md P1-7`](ai-harness/NEXT_TASKS.md)) |
+| **G-7** | 通知 / 短信 / 推送 | **首个通知落地点已上线**(2026-06-11 B 队列 goal:`src/modules/notifications/` 生日祝福 job,冻结评审稿 [`archive/reviews/queue-b-otp-birthday-infra-review.md §6`](archive/reviews/queue-b-otp-birthday-infra-review.md);SMS 消费者三项〔找回密码 / OTP 登录 / 生日祝福〕全部闭环;通知/推送的**统一出口策略仍待第二个通知类型出现时决议**,沿 [`architecture-boundary.md §3.6`](architecture-boundary.md)——新通知类型先回评审,不在 notifications 模块自由生长) |
 | **G-8** | 字典治理规则 | 字典码值变更的同步与影响面通知 |
 | **G-9** | 已锁决策解锁路径 | [`AGENTS.md §19.7`](../AGENTS.md) D-x 决策重开的最小入参 |
 | **G-10** | 双仓库协作规则 | 业务文档库与代码仓库的引用 / 同步 / 仲裁 |
