@@ -67,10 +67,10 @@
 ### B. 默认不做,可评审解锁(真实需求触发评审)
 
 - access token 即时吊销(`tokenVersion` 字段 / access token blacklist / JWT revoke list):沿 §9 P0-E + 15m access TTL 自然过期 + `JwtStrategy.validate` 每请求查库承接;诉求出现时按 [`docs/security.md` Token 吊销升级路径](docs/security.md) 单独立项
-- RBAC 业务面全面接入(管理面已于 v0.15.0 P0-F 收紧,业务模块 / attachments 之外仍归 Slow-4 范围)
+- RBAC 业务面全面接入 — **已于 2026-06-11 Slow-4 收口完成,不再属本清单**(管理面 v0.15.0 P0-F 收紧;业务面判权单轨 `rbac.can()`,全仓活跃 `@Roles` = 0,详见 §8「判权单轨现状」行 + 冻结评审稿 [`docs/archive/reviews/slow4-rbac-business-face-review.md`](docs/archive/reviews/slow4-rbac-business-face-review.md);现状清单沿 [`docs/current-state.md §2`](docs/current-state.md))
 - 微信登录 / 小程序登录(业务明确需要时单独评审)
 - 多租户(真实业务出现跨队隔离诉求时单独架构评审)
-- Redis / queue / cron(异步任务诉求触发时评审,需评估运维承接;refresh token 撤销不引入 Redis,沿 DB 主键索引 sub-ms 查询承接)
+- Redis / queue(异步任务诉求触发时评审,需评估运维承接;refresh token 撤销不引入 Redis,沿 DB 主键索引 sub-ms 查询承接);**cron 已于 2026-06-11 按升级路径解锁,范围仅 notifications 生日批一个 `@Cron`**(`@nestjs/schedule`;新增任何定时任务 = 新 D 档评审;数据清理不解锁,沿 retention 手动 SOP;冻结评审稿 [`docs/archive/reviews/queue-b-otp-birthday-infra-review.md`](docs/archive/reviews/queue-b-otp-birthday-infra-review.md) R-5 / 拍板④)
 
 ### C. 当前阶段仍不做
 
@@ -80,7 +80,7 @@
 - refresh_tokens 查询接口(`GET /api/auth/refresh-tokens` 列本人活跃 token)
 - 完整 OAuth 2.0 / OIDC / refresh token tree 复杂度
 - 无真实需求的多租户提前设计
-- 无运维承接能力的基础设施提前引入(Redis / queue / cron)
+- 无运维承接能力的基础设施提前引入(Redis / queue;cron 已限定解锁:仅生日批,详见上方 B 段 cron 行)
 
 **永久铁律(不解锁)**:不引入 `LocalStrategy`(`username + password` 校验在 `auth.service.ts` 内手写)、不创建 `*.entity.ts`(本项目不是 TypeORM 项目)、不使用 Prisma 全局软删中间件 / client extension、**不缓存用户身份有效性状态**(`JwtStrategy.validate` 必每请求查库确认 `deletedAt + status`,确保禁用 / 软删用户下一请求即时失效;未触发 `ARCHITECTURE.md` §9 升级条件前)。**注**:`RbacCacheService`(`src/modules/permissions/rbac-cache.service.ts`)是 RBAC permission resolution cache,**不属于**用户身份有效性状态缓存,是已解锁能力,见 §8 末尾。
 
