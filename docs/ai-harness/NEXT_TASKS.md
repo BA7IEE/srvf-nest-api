@@ -25,13 +25,11 @@
 ### P2-5 contract snapshot 单文件 ~1MB — **❌ 不做(已接受)**
 - 依据:current-state §4 已接受("PR review 用 diff 看");无动作项,仅提醒勿整读(2026-06-10 实测 35,777 行 / ~1,013 KB)。
 
-### P2-6 `sms_verification_codes` / `sms_send_logs` retention 清理 — **🚧 进行中(2026-06-11 B 队列 goal F3 立项;评审稿 [`queue-b-otp-birthday-infra-review.md §4`](../archive/reviews/queue-b-otp-birthday-infra-review.md))**
-- **拍板方案 = 手动 SQL SOP**(`docs/ops/sms-data-retention-sop.md`;验证码 90 天 / 流水 1 年,数值可改;**不解锁 cron 清理**——`@nestjs/schedule` 解锁范围仅生日批);SQL 在 app_test 实测后冻结;随 F3 PR 本条 ✅ 归档。
-
 ---
 
 ## 已完成项归档区
 
+- **P2-6 `sms_verification_codes` / `sms_send_logs` retention 清理** ✅(2026-06-11 B 队列 goal F3;冻结评审稿 [`queue-b-otp-birthday-infra-review.md §4`](../archive/reviews/queue-b-otp-birthday-infra-review.md)):**拍板方案 = 手动 SQL SOP** [`docs/ops/sms-data-retention-sop.md`](../ops/sms-data-retention-sop.md)(验证码 90 天 / 流水 1 年,数值可改;季度例行 + 报警线〔codes>5 万 / logs>50 万 / 合计>100MB〕;备份→事务预数→DELETE→复核 强制顺序);SQL 2026-06-11 在 app_test 实测冻结(老化行 5/7 全删 + 窗口内行存活边界用例);**不解锁 cron 清理**(`@nestjs/schedule` 解锁范围仅生日批,沿评审稿 R-5);docs/README §1 已登记。
 - **P2-4 `common/storage/` 迁往 `src/modules/storage/`** ✅(2026-06-11 B 队列 goal F2;冻结评审稿 [`queue-b-otp-birthday-infra-review.md §3`](../archive/reviews/queue-b-otp-birthday-infra-review.md)):D 档纯搬迁零行为——20 文件 `git mv`(含模块 CLAUDE.md)+ import 链 15 文件更新(外部 3 + spec 2 + e2e 2 + 内部相对深度 4 + 注释 4);**snapshot 逐字节零 diff** + 全仓 `grep common/storage` 残留 0(archive 豁免)+ `agent:check:full` 全绿;CODEMAP 模块数 19→20、current-state §4 P3 行闭环。
 - **P1-3 业务面 RBAC 接入(Slow-4 / 权限双轨收口)** ✅(2026-06-11 goal T0-T4 全队列完成;冻结评审稿 [`docs/archive/reviews/slow4-rbac-business-face-review.md`](../archive/reviews/slow4-rbac-business-face-review.md)):**Slow-3 决议**(维护者 2026-06-11 拍板)= ADMIN 内置角色边界 = 全量业务权限,`biz-admin` 承载;部门级细分仍不做(沿 P1-5 方案 A);迁移目标 = 零行为漂移。T0 评审稿 #314(44 端点逐行映射,原 RBAC_MAP「48 处」亲核 true-up 为 44)→ T1 seed #315(36 码 + biz-admin 绑 35〔`member.delete.record` 仅 SA,D1=A 镜像;attachment 20 码不绑〕+ ADMIN 全员幂等补挂强校验;81→117 码)→ T2 member 族 #316(21 端点)→ T3 participation #317(23 端点,activities 列表/详情无码化 `[auth]`)→ T4 docs 收尾。**全仓活跃 `@Roles` = 0**(RolesGuard 机制保留);拒权 40300→30100 沿 P0-F 先例;零漂移五类由 7 个 `*-rbac-boundary` spec(52 例)锁定,既有业务断言零修改全绿;`docs:rbacmap:check` 0 FAIL / 0 WARN。
 - **P1-7 ① 找回密码(SMS 验证码重置,pre-auth)** ✅(2026-06-11 goal T0-T3 全队列完成;冻结评审稿 [`docs/archive/reviews/password-reset-by-sms-review.md`](../archive/reviews/password-reset-by-sms-review.md)):T0 评审稿 #307 → T1 enum migration #308(`SmsPurpose` +`PASSWORD_RESET` 单行;干净库 14/14 重放 + seed 幂等二跑)→ T2 实施 #309(`auth/v1` 两公开端点 + 防枚举四场景泛化 200 + reset 统一 24010 零新增码 + 10006 不烧码 + 联动撤销第 5 场景 `'self-password-reset'` + audit `password.reset.by-sms` + `@PasswordResetThrottle()` 第 6 实例 3/60 + AGENTS §9 四→五场景红区行 + e2e 12 例;contract 155→157;**auth 既有断言零修改全绿,auth.service.ts/users.service.ts 零 diff**)→ T3 docs 收尾。**运维侧零新增作业**:DevStub 已全验,真实短信仍只卡腾讯云审核一件事(沿 P1-6 checklist)。图形验证码不做,重启条件成文评审稿 §9。
