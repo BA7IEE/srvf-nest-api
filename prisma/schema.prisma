@@ -1164,7 +1164,7 @@ model SmsSendLog {
   id String @id @default(cuid())
 
   phone        String // 明文存储(对账需要);响应层一律掩码 138****1234
-  templateKey  String // 逻辑模板键,本期仅 'verify-code'(E-22;非 provider 模板 ID)
+  templateKey  String // 逻辑模板键:'verify-code'(E-22)/ 'birthday-greeting'(B 队列 F5 生日批,2026-06-11);均非 provider 模板 ID
   providerType SmsProviderType
   status       SmsSendStatus
 
