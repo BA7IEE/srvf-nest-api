@@ -8,8 +8,8 @@
 | 项 | 当前值 |
 |---|---|
 | 版本(三方一致) | **v0.21.0**(2026-06-11;package.json = Swagger = tag;tag 指向 `3a418c9` 标 Latest;要点见 CHANGELOG) |
-| `main` HEAD | `3a418c9`(v0.21.0 handoff,#331;滞后属固有现象) |
-| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **0**(v0.21.0 已折叠;B 队列 goal #322-#331 全收清) |
+| `main` HEAD | `deee99ba`(#337;tag v0.21.0 指 `3a418c9`〔handoff #331〕,main 已前进 #332-#337 共 6 个 docs/chore/ci PR,无代码/契约/schema 变更;HEAD 滞后 tag 属固有现象,本行为滚动快照) |
+| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **2**(#333 工具白名单扩充〔B 档〕+ #334 docs-only CI 快速路径〔D 档〕;v0.21.0 已折叠,此 2 段系 tag 后合入,待下个 release 折叠) |
 | 最新 handoff | [`archive/handoff/v0.21.0.md`](archive/handoff/v0.21.0.md)(不回改) |
 
 ## 2. 当前系统已具备能力
