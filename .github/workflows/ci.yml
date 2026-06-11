@@ -29,15 +29,50 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # docs-only 快速路径(2026-06-11 拍板;效率排查 goal 简报方案 A):
+      # 变更文件「全部 *.md」才算 docs-only(白名单取反:任一非 .md → 全量);
+      # 判定仅在 pull_request 事件进行,push / API 失败 / 文件列表为空或被截断
+      # (changedFiles > 已列出数,>100 文件场景)→ 一律回退全量,只会多跑不会少跑。
+      # 采用 job 内步骤级条件而非 workflow 级 paths 过滤:本 job 在 docs-only PR 上
+      # 仍以同一 check 名上报 success(为未来 required checks 兼容;被跳过的步骤在
+      # run 页面可见可审计)。docs-only 时仍跑 lint / typecheck / unit(秒级轻检),
+      # 跳过 Postgres 启动、Build、db init、prisma:deploy 验证、contract、e2e。
+      # 取文件列表用 `gh pr view --json files` 的原始路径,不用 `gh pr diff --name-only`
+      # (后者对非 ASCII 路径做 C 转义加引号,行尾不再是 .md,会误判;JSON 无此问题)。
+      - name: Detect docs-only change set
+        id: changeset
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          docs_only=false
+          json=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json files,changedFiles 2>/dev/null) || json=""
+          if [ -n "$json" ]; then
+            total=$(jq -r '.changedFiles // 0' <<< "$json")
+            listed=$(jq -r '.files | length' <<< "$json")
+            non_md=$(jq -r '[.files[].path | select(test("\\.md$") | not)] | length' <<< "$json")
+            echo "changedFiles=$total listed=$listed non_md=$non_md"
+            if [ "$listed" -gt 0 ] && [ "$total" -eq "$listed" ] && [ "$non_md" -eq 0 ]; then
+              docs_only=true
+            fi
+          else
+            echo "gh pr view failed; fallback to full pipeline"
+          fi
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$docs_only"
+
       # 通过项目自带的 docker-compose.yml 启动 postgres:16-alpine。
       # 容器名固定为 'u-nest-api-postgres'(见 docker-compose.yml#container_name),与
       # package.json#db:test:init 与 test/setup/test-db.ts 硬编码的 docker exec 目标一致。
       # 不使用 GitHub Actions 的 services: 字段:services 容器名由 runner 自动生成,
       # 无法对齐既有 db:test:init 脚本,会导致 'docker exec u-nest-api-postgres' 失败。
       - name: Start PostgreSQL 16 service container
+        if: steps.changeset.outputs.docs_only != 'true'
         run: docker compose up -d postgres
 
       - name: Wait for PostgreSQL ready
+        if: steps.changeset.outputs.docs_only != 'true'
         run: |
           for i in $(seq 1 60); do
             if docker exec u-nest-api-postgres pg_isready -U postgres -d app >/dev/null 2>&1; then
@@ -87,9 +122,11 @@ jobs:
       # 防止"typecheck 通过但 build 失败"的隐性回归(例如 nest-cli 配置漂移、
       # 构建期 import 路径解析与开发期不一致)。
       - name: Build
+        if: steps.changeset.outputs.docs_only != 'true'
         run: pnpm build
 
       - name: Initialize test database
+        if: steps.changeset.outputs.docs_only != 'true'
         run: pnpm db:test:init
 
       # 显式跑一次生产迁移命令,验证 `pnpm prisma:deploy` 脚本存在且可执行。
@@ -97,6 +134,7 @@ jobs:
       # 之后还会再跑一次 `prisma migrate deploy`,Prisma 对已应用的 migration
       # 是 no-op,不会重复执行或失败。
       - name: Verify production migration command
+        if: steps.changeset.outputs.docs_only != 'true'
         run: pnpm prisma:deploy
 
       # V1.3-5:把 V1.3-1/-2 新增的纯单元测试纳入 CI。
@@ -111,9 +149,11 @@ jobs:
       # 复用 e2e 的 globalSetup(已在上一步初始化 / migrate 完成),串行跑 jest-contract.config.ts;
       # 任何 OpenAPI schema 漂移(路由白名单 / DTO 字段 / 错误响应 schema)都会被快照拦截。
       - name: Run contract tests
+        if: steps.changeset.outputs.docs_only != 'true'
         run: pnpm test:contract
 
       - name: Run E2E tests
+        if: steps.changeset.outputs.docs_only != 'true'
         run: pnpm test:e2e
 
   # 验证 Dockerfile 多阶段构建可成功产出生产镜像。
