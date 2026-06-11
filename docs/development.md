@@ -68,6 +68,7 @@
 |---|---|---|
 | `GET` | `/api/system/v1/health` / `/api/system/v1/health/live` / `/api/system/v1/health/ready` | 三层健康检查(全部 `@Public()`) |
 | `POST` | `/api/auth/v1/login` | `username + password` 登录,返回 `accessToken` + `refreshToken` + `refreshExpiresAt`;**默认 IP 5 次 / 60 秒** |
+| `POST` | `/api/auth/v1/login-sms` / `/api/auth/v1/login-sms/send-code` | OTP(验证码)登录——密码登录的并行方式(2026-06-11):发码 + 登录,防枚举统一 24010,会话签发与密码登录同构;独立 throttler `login-sms` 5 / 60 |
 | `POST` | `/api/auth/v1/refresh` | rotation always + family revoke + absolute expiration;失败统一 `REFRESH_TOKEN_INVALID=10007`;独立 throttler `refresh` 30 / 60 |
 | `POST` | `/api/auth/v1/logout` | 幂等;只撤销当前 refresh token;**不限流**;**不**吊销 access |
 | `POST` | `/api/auth/v1/logout-all` | 撤销该用户全部未过期 refresh;返 `{ revokedCount }`;复用 `password-change` throttler 5 / 60 |

@@ -11,11 +11,7 @@
 
 ## P1(长期维护)
 
-(P1-3 业务面 RBAC 接入〔Slow-4〕已于 2026-06-11 goal 全队列完成,见文末归档区;P1-4 已于 2026-06-10 调研收口,见文末归档区。)
-
-### P1-7 SMS 后续消费者(剩 ②③)— **🚧 进行中(2026-06-11 B 队列 goal 拍板立项;冻结评审稿 [`queue-b-otp-birthday-infra-review.md`](../archive/reviews/queue-b-otp-birthday-infra-review.md))**
-- ② **OTP / 验证码登录**(goal F4;`AGENTS.md:242` 红区行已评审解锁,改写随实施 PR)+ ③ **通知用途短信首批 = 生日祝福**(goal F5;拍板仅 `User.phone` 单发,无群发/退订)。①找回密码已完成,见归档区。
-- 原"前置 = 运维侧真实通道验收"由 goal 拍板豁免(DevStub 先行全验沿找回密码先例;真实通道仍由运维接力,届时**两模板一批**送审)。
+(P1-3〔Slow-4〕与 P1-7〔SMS 消费者三项〕均已完成,见文末归档区;P1-4 已于 2026-06-10 调研收口,见文末归档区。**P1 现无 open 项。**)
 
 ## P2(可优化)
 
@@ -29,6 +25,7 @@
 
 ## 已完成项归档区
 
+- **P1-7 ②③ OTP 登录 + 通知短信首批(生日祝福)** ✅(2026-06-11 B 队列 goal F4/F5 全队列完成;冻结评审稿 [`queue-b-otp-birthday-infra-review.md §5/§6`](../archive/reviews/queue-b-otp-birthday-infra-review.md)——**P1-7 三项消费者全部闭环**):② OTP = 密码登录的并行方式独立端点(F4 #325 `SmsPurpose +LOGIN` 单行 migration → #326 实施:`auth/v1` `login-sms{,/send-code}` 两公开端点 + 第 7 throttler `login-sms` 5/60 + 防枚举沿找回密码范式〔泛化 200 零留痕 / 登录一切失败统一 24010 零新增码〕+ `AuthService.createSession` 同构签发 + audit `auth.login.sms` + **AGENTS:242 红区行解锁改写**;密码登录与 P0-E 既有 e2e 断言零修改全绿;contract 157→159);③ 生日祝福 = 通知首批(F5 #327 `@nestjs/schedule` 锁 6.1.3 + `SmsSettings +templateIdBirthday` → #328 实施:`ScheduleModule.forRoot()` + notifications 模块〔本仓唯一 `@Cron`,09:00 Asia/Shanghai;**no-cron 升级路径正式触发,解锁范围仅生日批**〕+ 选取六条件仅 `User.phone` + 幂等防重发〔重启不重发 e2e 锁定〕+ FAILED 不重试不阻断 + 不进 audit + 掩码 + docker-smoke 锚行;零新端点/零权限码)。**运维接力更新为两模板一批送审**(验证码 + 生日祝福,SOP 见 [`docs/ops/sms-production-rollout-checklist.md`](../ops/sms-production-rollout-checklist.md));群发/退订/活动通知/农历生日未立项(评审稿 §9 本期不做)。
 - **P2-6 `sms_verification_codes` / `sms_send_logs` retention 清理** ✅(2026-06-11 B 队列 goal F3;冻结评审稿 [`queue-b-otp-birthday-infra-review.md §4`](../archive/reviews/queue-b-otp-birthday-infra-review.md)):**拍板方案 = 手动 SQL SOP** [`docs/ops/sms-data-retention-sop.md`](../ops/sms-data-retention-sop.md)(验证码 90 天 / 流水 1 年,数值可改;季度例行 + 报警线〔codes>5 万 / logs>50 万 / 合计>100MB〕;备份→事务预数→DELETE→复核 强制顺序);SQL 2026-06-11 在 app_test 实测冻结(老化行 5/7 全删 + 窗口内行存活边界用例);**不解锁 cron 清理**(`@nestjs/schedule` 解锁范围仅生日批,沿评审稿 R-5);docs/README §1 已登记。
 - **P2-4 `common/storage/` 迁往 `src/modules/storage/`** ✅(2026-06-11 B 队列 goal F2;冻结评审稿 [`queue-b-otp-birthday-infra-review.md §3`](../archive/reviews/queue-b-otp-birthday-infra-review.md)):D 档纯搬迁零行为——20 文件 `git mv`(含模块 CLAUDE.md)+ import 链 15 文件更新(外部 3 + spec 2 + e2e 2 + 内部相对深度 4 + 注释 4);**snapshot 逐字节零 diff** + 全仓 `grep common/storage` 残留 0(archive 豁免)+ `agent:check:full` 全绿;CODEMAP 模块数 19→20、current-state §4 P3 行闭环。
 - **P1-3 业务面 RBAC 接入(Slow-4 / 权限双轨收口)** ✅(2026-06-11 goal T0-T4 全队列完成;冻结评审稿 [`docs/archive/reviews/slow4-rbac-business-face-review.md`](../archive/reviews/slow4-rbac-business-face-review.md)):**Slow-3 决议**(维护者 2026-06-11 拍板)= ADMIN 内置角色边界 = 全量业务权限,`biz-admin` 承载;部门级细分仍不做(沿 P1-5 方案 A);迁移目标 = 零行为漂移。T0 评审稿 #314(44 端点逐行映射,原 RBAC_MAP「48 处」亲核 true-up 为 44)→ T1 seed #315(36 码 + biz-admin 绑 35〔`member.delete.record` 仅 SA,D1=A 镜像;attachment 20 码不绑〕+ ADMIN 全员幂等补挂强校验;81→117 码)→ T2 member 族 #316(21 端点)→ T3 participation #317(23 端点,activities 列表/详情无码化 `[auth]`)→ T4 docs 收尾。**全仓活跃 `@Roles` = 0**(RolesGuard 机制保留);拒权 40300→30100 沿 P0-F 先例;零漂移五类由 7 个 `*-rbac-boundary` spec(52 例)锁定,既有业务断言零修改全绿;`docs:rbacmap:check` 0 FAIL / 0 WARN。
