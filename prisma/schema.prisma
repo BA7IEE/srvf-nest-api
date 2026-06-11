@@ -1155,7 +1155,8 @@ model SmsVerificationCode {
 
 enum SmsPurpose {
   PHONE_BIND // 手机号绑定 / 换绑(登录态;sms-verification-infra 评审稿)
-  PASSWORD_RESET // 找回密码(pre-auth;password-reset-by-sms 评审稿 §3.1;OTP 登录 / 通知仍挂 NEXT_TASKS P1-7)
+  PASSWORD_RESET // 找回密码(pre-auth;password-reset-by-sms 评审稿 §3.1)
+  LOGIN // OTP 验证码登录(pre-auth;queue-b 评审稿 §5.1;通知用途不占 purpose——生日批走 send_logs.templateKey)
 }
 
 model SmsSendLog {
