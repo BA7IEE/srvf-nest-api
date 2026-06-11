@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import { auditPlaceholder } from '../../common/audit/audit-placeholder';
+import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -186,13 +187,6 @@ export class CertificatesService {
     };
   }
 
-  // 把 ISO 8601 字符串规范化为 UTC 00:00:00.000(纯日期语义,B 路径)。
-  // 草案 §6 决议:不落 @db.Date,业务层统一规范化处理。
-  private normalizeDateOnly(input: string): Date {
-    const d = new Date(input);
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  }
-
   // Q-I2 决议:取 currentUser 关联的 user.memberId 作为 verifiedBy;
   // SUPER_ADMIN 默认 memberId=null 时返 null,不卡核验流程。
   // 审计 hook 仍记 currentUser.id 完整保留 user 维度。
@@ -289,13 +283,13 @@ export class CertificatesService {
         memberId,
         certTypeCode: dto.certTypeCode,
         issuingOrg: dto.issuingOrg,
-        issuedAt: this.normalizeDateOnly(dto.issuedAt),
+        issuedAt: normalizeDateOnly(dto.issuedAt),
         certStatusCode: CERT_STATUS_PENDING,
         isInternal: false, // Q-A3:本批次 API 永远 false
       };
       if (dto.certSubTypeCode !== undefined) data.certSubTypeCode = dto.certSubTypeCode;
       if (dto.certNumber !== undefined) data.certNumber = dto.certNumber;
-      if (dto.expiredAt !== undefined) data.expiredAt = this.normalizeDateOnly(dto.expiredAt);
+      if (dto.expiredAt !== undefined) data.expiredAt = normalizeDateOnly(dto.expiredAt);
 
       const created = await tx.certificate.create({
         data,
@@ -358,8 +352,8 @@ export class CertificatesService {
       if (dto.certSubTypeCode !== undefined) data.certSubTypeCode = dto.certSubTypeCode;
       if (dto.issuingOrg !== undefined) data.issuingOrg = dto.issuingOrg;
       if (dto.certNumber !== undefined) data.certNumber = dto.certNumber;
-      if (dto.issuedAt !== undefined) data.issuedAt = this.normalizeDateOnly(dto.issuedAt);
-      if (dto.expiredAt !== undefined) data.expiredAt = this.normalizeDateOnly(dto.expiredAt);
+      if (dto.issuedAt !== undefined) data.issuedAt = normalizeDateOnly(dto.issuedAt);
+      if (dto.expiredAt !== undefined) data.expiredAt = normalizeDateOnly(dto.expiredAt);
 
       const updated = await tx.certificate.update({
         where: { id: before.id },

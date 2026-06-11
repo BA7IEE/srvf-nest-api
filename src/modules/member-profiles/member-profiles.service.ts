@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { auditPlaceholder } from '../../common/audit/audit-placeholder';
+import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
@@ -131,13 +132,6 @@ export class MemberProfilesService {
     if (!item) throw new BizException(biz);
   }
 
-  // 把 ISO 8601 字符串规范化为 UTC 00:00:00.000(纯日期语义,B 路径)。
-  // 草案 §6 决议:不落 @db.Date,业务层统一规范化处理。
-  private normalizeDateOnly(input: string): Date {
-    const d = new Date(input);
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  }
-
   // P2002 兜底:并发场景下预检查通过但 create 撞 1:1 唯一约束。
   // member-departments 模式:Prisma 6.x P2002 meta.target 不可靠,直接转 ALREADY_EXISTS。
   private async runWithUniqueConstraintGuard<T>(fn: () => Promise<T>): Promise<T> {
@@ -260,12 +254,12 @@ export class MemberProfilesService {
         memberId,
         realName: dto.realName,
         genderCode: dto.genderCode,
-        birthDate: this.normalizeDateOnly(dto.birthDate),
+        birthDate: normalizeDateOnly(dto.birthDate),
         documentTypeCode: dto.documentTypeCode,
         documentNumber: dto.documentNumber,
         mobile: dto.mobile,
         email: dto.email,
-        joinedDate: this.normalizeDateOnly(dto.joinedDate),
+        joinedDate: normalizeDateOnly(dto.joinedDate),
         joinSourceCode: dto.joinSourceCode,
         privacyConsentSigned: dto.privacyConsentSigned,
         ethnicityCode: dto.ethnicityCode,
@@ -302,7 +296,7 @@ export class MemberProfilesService {
       if (dto.firstAidSkills !== undefined) data.firstAidSkills = dto.firstAidSkills;
       // 日期可选字段
       if (dto.privacyConsentSignedAt !== undefined) {
-        data.privacyConsentSignedAt = this.normalizeDateOnly(dto.privacyConsentSignedAt);
+        data.privacyConsentSignedAt = normalizeDateOnly(dto.privacyConsentSignedAt);
       }
 
       return this.runWithUniqueConstraintGuard(() =>
@@ -340,7 +334,7 @@ export class MemberProfilesService {
       const data: Prisma.MemberProfileUpdateInput = {};
       if (dto.realName !== undefined) data.realName = dto.realName;
       if (dto.genderCode !== undefined) data.genderCode = dto.genderCode;
-      if (dto.birthDate !== undefined) data.birthDate = this.normalizeDateOnly(dto.birthDate);
+      if (dto.birthDate !== undefined) data.birthDate = normalizeDateOnly(dto.birthDate);
       if (dto.documentTypeCode !== undefined) data.documentTypeCode = dto.documentTypeCode;
       if (dto.documentNumber !== undefined) data.documentNumber = dto.documentNumber;
       if (dto.ethnicityCode !== undefined) data.ethnicityCode = dto.ethnicityCode;
@@ -374,14 +368,14 @@ export class MemberProfilesService {
         data.firstAidKnowledgeCode = dto.firstAidKnowledgeCode;
       if (dto.firstAidSkills !== undefined) data.firstAidSkills = dto.firstAidSkills;
       if (dto.otherSkills !== undefined) data.otherSkills = dto.otherSkills;
-      if (dto.joinedDate !== undefined) data.joinedDate = this.normalizeDateOnly(dto.joinedDate);
+      if (dto.joinedDate !== undefined) data.joinedDate = normalizeDateOnly(dto.joinedDate);
       if (dto.joinSourceCode !== undefined) data.joinSourceCode = dto.joinSourceCode;
       if (dto.noCriminalRecordSigned !== undefined)
         data.noCriminalRecordSigned = dto.noCriminalRecordSigned;
       if (dto.privacyConsentSigned !== undefined)
         data.privacyConsentSigned = dto.privacyConsentSigned;
       if (dto.privacyConsentSignedAt !== undefined) {
-        data.privacyConsentSignedAt = this.normalizeDateOnly(dto.privacyConsentSignedAt);
+        data.privacyConsentSignedAt = normalizeDateOnly(dto.privacyConsentSignedAt);
       }
       if (dto.volunteerNo !== undefined) data.volunteerNo = dto.volunteerNo;
 
