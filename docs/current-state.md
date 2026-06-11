@@ -51,7 +51,7 @@
 - **不**把历史评审稿([`docs/archive/batches/`](archive/batches/) / [`docs/archive/reviews/`](archive/reviews/))当作"当前事实"— 它们是各批次冻结时刻的决策依据
 - **Route B 全量迁移已完成**(2026-06-01;取代原"Phase 1B 暂缓 / 方案 C")— 见 [`api-surface-migration-plan.md`](api-surface-migration-plan.md) + [`AGENTS.md §21 D-9`](../AGENTS.md);**Phase 0 映射已签字冻结**(2026-06-01;[§3](api-surface-migration-plan.md) 全 156 路由 `tag→surface` + 终态验收基线 + 8 个 legacy mobile-like 端点纳入 Phase 4 删除);**Phase 1 alias 已完成**(1a auth+health 7 + 1b system 56 + 1c admin 70 = 133 非-app 路由双挂,contract 423 + e2e 双路径绿,老路径零回归);**Phase 2 完成**(老前缀 OpenAPI 标 `deprecated`、新前缀 canonical);**Phase 3 deprecation 窗口豁免**(无生产消费者,用户 2026-06-01 确认 → 直接 Phase 4);**Phase 4 removal 完成**(4a auth+health / 4b system / 4c admin / 4d `/api/users/me*` / 4e attachments / 4d2 registrations-me + attendances-me-records legacy + 主 spec 队员流迁 `app/v1/my` + 移除 apply-swagger deprecation 后处理 + 终态 contract 断言;contract 280 + full e2e 72 suites/1664 绿);**🎉 Route B 终态达成:全仓 API 只剩 `admin/v1` + `app/v1` + `auth/v1` + `system/v1`,零 `v2` / 零裸 `auth`·`health`·`users` / 零 legacy**(终态由 contract"全部路由仅落 4 canonical 前缀"断言锁定);`/api/open/v1/*` 仍仅预留。**A 档收尾已完成**:src/ 注释 / 模块 CLAUDE.md / contract-spec header(#269)+ docs 活文档(cos runbook / current-state / api-surface-policy §0+§5/§6 / development / security / docker-smoke / participation / attachment-config)均已 true-up 到终态;历史 v2 设计档(`v2-api-contract.md` / `V2红线与复活路径.md`)按设计意图保留
 - **P1-C(Mixed Controller 物理拆分)已被 Route B 全量迁移收口**:原 `controllers/*-legacy.controller.ts`(users / attachments / activity-registrations / attendances)已于 Phase 4 删除,队员自助流在 `/api/app/v1/me*` / `/api/app/v1/my/*`;god-service 现状见 §4 P2 行(P1-4 拆分系列已于 2026-06-10 调研收口)
-- **不**自动拆分 `attendances.service.ts`(1100 行,P1-4 第一刀 #280 后)/ `attachments.service.ts`(827 行)/ `activity-registrations.service.ts`(750 行)等 god-service — **P1-4 拆分系列已于 2026-06-10 调研收口**(用户逐项拍板):三模块均已达 [`architecture-boundary.md`](architecture-boundary.md) 政策下的合理形态(详见 §4 P2 行),重新开拆需出现 §6 新触发条件并单独立项
+- **不**自动拆分 `attendances.service.ts`(1123 行,P1-4 第一刀 #280 后)/ `attachments.service.ts`(827 行)/ `activity-registrations.service.ts`(768 行)等 god-service — **P1-4 拆分系列已于 2026-06-10 调研收口**(用户逐项拍板):三模块均已达 [`architecture-boundary.md`](architecture-boundary.md) 政策下的合理形态(详见 §4 P2 行),重新开拆需出现 §6 新触发条件并单独立项
 - **不**自动引入 repository / `*.repository.ts` 抽象层 — service 直连 Prisma 沿用
 - **不**在无 contract 审批 / 单独立项的情况下改 controller path / 改 OpenAPI snapshot;Route B 全量迁移已于 2026-06-01 完成(终态 4 前缀),新 endpoint 一律落 `admin/v1` / `app/v1` / `auth/v1` / `system/v1`(沿 [`api-surface-policy.md §0`](api-surface-policy.md))
 
@@ -60,7 +60,7 @@
 | 等级 | 债务 | 处理建议 |
 |---|---|---|
 | P1 | 前端联调包剩运维侧 P0-H 演练 + P0-I 排错 SOP | 运维侧立项;系统侧无动作 |
-| P2 | god-service 体量观察:attendances 1100L / attachments 827L / activity-registrations 750L(P1-4 收口 = 合理终态;体量 source-only 口径,排除 spec) | 重开需 architecture-boundary §6 新触发 + 单独立项 |
+| P2 | god-service 体量观察:attendances 1123L / attachments 827L / activity-registrations 768L(P1-4 收口 = 合理终态;体量 source-only 口径,排除 spec;2026-06-12 亲核,Slow-4 判权下沉后小幅增长) | 重开需 architecture-boundary §6 新触发 + 单独立项 |
 | P2 | service 单测占比 ~11.8%(26/221 实测) | 刻意策略(e2e 为主,见 §2 测试行) |
 | P2 | Mixed Controller 存量 2 处(见 §2.1) | 冻结仅兼容;详 api-surface-policy §5.1 |
 | P2 | contract snapshot ~1MB / 35,777 行 | 已接受;review 用 diff,勿整读 |
