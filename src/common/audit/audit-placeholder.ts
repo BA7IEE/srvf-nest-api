@@ -2,9 +2,16 @@ import { Logger } from '@nestjs/common';
 
 // V2 第一阶段批次 1 审计占位函数(详见 docs/批次1_API前评审... §6)。
 //
-// 设计:批次 1 不建 audit_logs 表,所有敏感读 / 写位置必须经统一函数转 pino 结构化日志;
-// 批次 7 接入审计时,**仅替换本函数实现**为"写库 + 触发告警",业务代码零修改。
-// 详见批次 1 Plan §6 + schema 草案 §14。
+// 设计(2026-05 批次 1 原计划):批次 1 不建 audit_logs 表,所有敏感读 / 写位置必须经统一函数
+// 转 pino 结构化日志;原设想批次 7 接入审计时**仅替换本函数实现**为"写库 + 触发告警",
+// 业务代码零修改。详见批次 1 Plan §6 + schema 草案 §14。
+//
+// 【2026-06-12 true-up】"整体替换本函数实现"的原计划已被现实演进取代:audit_logs 表与
+// 独立模块已落地(src/modules/audit-logs,A-1 不可改删),auth / password / phone 等
+// 安全敏感事件由各 service 直接调 AuditLogsService 落库(AuditLogEvent union 在
+// audit-logs.types.ts 独立维护,与本文件 AuditEvent 占位 union 是两套清单),不经过本函数;
+// 本函数维持 pino 结构化日志,仅承接下方既有占位事件,未迁移落库。新增审计落库沿
+// docs/architecture-boundary.md AuditRecorder 边界单独评审(D 档),不再以替换本函数为路径。
 //
 // 事件名锁死为 union type,新增审计事件须先经 Plan / 草案 / API 前评审,**禁止**自行扩展。
 //
