@@ -4,7 +4,7 @@ import type { StorageSettings as StorageSettingsRow } from '@prisma/client';
 
 import appConfig, { type AppEnv } from '../../config/app.config';
 import type { PrismaService } from '../../database/prisma.service';
-import type { RbacService } from '../../modules/permissions/rbac.service';
+import type { RbacService } from '../permissions/rbac.service';
 import { StorageCryptoDecryptError, StorageCryptoService } from './storage-crypto.service';
 import { StorageSettingsService } from './storage-settings.service';
 import { CredentialStatus } from './storage-settings.types';

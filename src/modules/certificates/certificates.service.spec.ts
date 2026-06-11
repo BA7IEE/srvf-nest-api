@@ -170,7 +170,7 @@ function makeService(
 
 describe('CertificatesService (characterization, scoped)', () => {
   // 静默 read hook `auditPlaceholder` 的 pino Logger 输出(放任其执行,但不污染测试输出;
-  // 沿 src/common/storage/storage-settings.service.spec.ts 既有 Logger silence 范式)。
+  // 沿 src/modules/storage/storage-settings.service.spec.ts 既有 Logger silence 范式)。
   let logSpy: jest.SpyInstance;
   beforeEach(() => {
     logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();

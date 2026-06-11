@@ -8,16 +8,16 @@ import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.d
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
-import { CosProviderUnavailableError } from '../../common/storage/providers/cos.provider';
-import { StorageSettingsService } from '../../common/storage/storage-settings.service';
-import { STORAGE_PROVIDER } from '../../common/storage/storage.constants';
-import type { StorageProvider } from '../../common/storage/storage.interface';
+import { CosProviderUnavailableError } from '../storage/providers/cos.provider';
+import { StorageSettingsService } from '../storage/storage-settings.service';
+import { STORAGE_PROVIDER } from '../storage/storage.constants';
+import type { StorageProvider } from '../storage/storage.interface';
 import {
   signUploadToken,
   UploadTokenExpiredError,
   UploadTokenInvalidError,
   verifyUploadToken,
-} from '../../common/storage/upload-token.util';
+} from '../storage/upload-token.util';
 import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';

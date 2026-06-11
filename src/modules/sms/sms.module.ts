@@ -20,7 +20,7 @@ import { SmsSettingsService } from './sms-settings.service';
 // 本模块对 User 无感知;phone 占用 / 绑定落库 / audit 归 users 模块)。
 //
 // AGENTS §2 例外:providers/ 子目录经 2026-06-10 goal 拍板解锁(评审稿 §5,
-// 仅限本模块本子目录;镜像 common/storage/providers/ 形态)。
+// 仅限本模块本子目录;镜像 modules/storage/providers/ 形态)。
 @Module({
   imports: [DatabaseModule, PermissionsModule],
   controllers: [SmsSettingsController, SmsSendLogsController],

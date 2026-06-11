@@ -3,7 +3,7 @@ import { Role } from '@prisma/client';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
-import { signUploadToken } from '../../src/common/storage/upload-token.util';
+import { signUploadToken } from '../../src/modules/storage/upload-token.util';
 import appConfig from '../../src/config/app.config';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';

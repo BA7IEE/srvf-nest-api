@@ -2,12 +2,12 @@ import { Inject, Injectable, Logger, type OnApplicationBootstrap } from '@nestjs
 import { ConfigType } from '@nestjs/config';
 import { Prisma, type StorageSettings as StorageSettingsRow } from '@prisma/client';
 
-import type { CurrentUserPayload } from '../decorators/current-user.decorator';
-import { BizCode } from '../exceptions/biz-code.constant';
-import { BizException } from '../exceptions/biz.exception';
+import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
+import { BizException } from '../../common/exceptions/biz.exception';
 import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
-import { RbacService } from '../../modules/permissions/rbac.service';
+import { RbacService } from '../permissions/rbac.service';
 import { StorageCryptoDecryptError, StorageCryptoService } from './storage-crypto.service';
 import type {
   ResetStorageCredentialsDto,

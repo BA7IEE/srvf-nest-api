@@ -9,7 +9,7 @@ import { buildThrottlerOptions } from './bootstrap/throttle-options';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { ThrottlerBizGuard } from './common/guards/throttler-biz.guard';
-import { StorageModule } from './common/storage/storage.module';
+import { StorageModule } from './modules/storage/storage.module';
 import appConfig from './config/app.config';
 import type { AppConfig } from './config/app.config';
 import databaseConfig from './config/database.config';
