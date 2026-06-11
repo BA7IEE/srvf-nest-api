@@ -45,7 +45,7 @@
 | v0.11.0 已发布 | `gh release list --limit 3` | `v0.11.0 (Latest)` |
 | 5 端点已就位 | `gh api repos/<owner>/<repo>/contents/test/contract/__snapshots__` | snapshot 含 `/api/admin/v1/attachments/upload-url` + `/api/admin/v1/attachments/confirm-upload` + `/api/system/v1/storage-settings` × 3 |
 | `STORAGE_ENCRYPTION_KEY` 已支持 | `grep STORAGE_ENCRYPTION_KEY .env.example` | 存在 |
-| Provider 路由 | `grep StorageProviderRouter src/common/storage/storage.module.ts` | 存在 |
+| Provider 路由 | `grep StorageProviderRouter src/modules/storage/storage.module.ts` | 存在 |
 
 ### 1.2 运维侧准备
 
