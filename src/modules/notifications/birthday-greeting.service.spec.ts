@@ -34,26 +34,29 @@ describe('BirthdayGreetingService.runOnce(直调;mock 依赖)', () => {
   let sendImpl: (input: { phone: string }) => Promise<{ providerMsgId: string | null }>;
   let settingsResolved: { enabled: boolean; templateIdBirthday: string | null } | null;
 
+  // 裸 jest.fn 引用供断言(避免穿过类型 cast 触发 unbound-method;沿 tencent-sms.provider.spec 范式)
+  const findManyMock = jest.fn(() => Promise.resolve(candidates));
+  const sendLogCountMock = jest.fn(() => Promise.resolve(alreadySentCount));
+  const sendLogCreateMock = jest.fn((args: { data: Record<string, unknown> }) => {
+    sendLogRows.push(args.data);
+    return Promise.resolve(args.data);
+  });
+  const resolveProviderTypeMock = jest.fn(() => Promise.resolve('DEV_STUB' as const));
+  const sendBirthdayGreetingMock = jest.fn((input: { phone: string }) => sendImpl(input));
+  const getActiveSettingsMock = jest.fn(() => Promise.resolve(settingsResolved));
+
   const prisma = {
-    memberProfile: {
-      findMany: jest.fn(() => Promise.resolve(candidates)),
-    },
-    smsSendLog: {
-      count: jest.fn(() => Promise.resolve(alreadySentCount)),
-      create: jest.fn((args: { data: Record<string, unknown> }) => {
-        sendLogRows.push(args.data);
-        return Promise.resolve(args.data);
-      }),
-    },
+    memberProfile: { findMany: findManyMock },
+    smsSendLog: { count: sendLogCountMock, create: sendLogCreateMock },
   } as unknown as PrismaService;
 
   const router = {
-    resolveProviderType: jest.fn(() => Promise.resolve('DEV_STUB' as const)),
-    sendBirthdayGreeting: jest.fn((input: { phone: string }) => sendImpl(input)),
+    resolveProviderType: resolveProviderTypeMock,
+    sendBirthdayGreeting: sendBirthdayGreetingMock,
   } as unknown as SmsProviderRouter;
 
   const settings = {
-    getActiveSettings: jest.fn(() => Promise.resolve(settingsResolved)),
+    getActiveSettings: getActiveSettingsMock,
   } as unknown as SmsSettingsService;
 
   let service: BirthdayGreetingService;
@@ -69,16 +72,17 @@ describe('BirthdayGreetingService.runOnce(直调;mock 依赖)', () => {
   });
 
   it('前置检查:settings 缺失 / 未启用 / templateIdBirthday 空 → 整批跳过零行', async () => {
-    for (const s of [
+    const scenarios: Array<typeof settingsResolved> = [
       null,
       { enabled: false, templateIdBirthday: 'tpl' },
       { enabled: true, templateIdBirthday: null },
-    ]) {
-      settingsResolved = s as typeof settingsResolved;
+    ];
+    for (const s of scenarios) {
+      settingsResolved = s;
       const summary = await service.runOnce(NOW);
       expect(summary).toEqual({ selected: 0, sent: 0, skippedIdempotent: 0, failed: 0 });
     }
-    expect(prisma.memberProfile.findMany).not.toHaveBeenCalled();
+    expect(findManyMock).not.toHaveBeenCalled();
   });
 
   it('选取:月日命中 + 全链 ACTIVE + 绑 phone → 发送;六条件反例逐一不选', async () => {
@@ -98,22 +102,19 @@ describe('BirthdayGreetingService.runOnce(直调;mock 依赖)', () => {
     ];
     const summary = await service.runOnce(NOW);
     expect(summary).toEqual({ selected: 1, sent: 1, skippedIdempotent: 0, failed: 0 });
-    expect(router.sendBirthdayGreeting).toHaveBeenCalledTimes(1);
-    expect(router.sendBirthdayGreeting).toHaveBeenCalledWith({ phone: '13900000001' });
+    expect(sendBirthdayGreetingMock).toHaveBeenCalledTimes(1);
+    expect(sendBirthdayGreetingMock).toHaveBeenCalledWith({ phone: '13900000001' });
     expect(sendLogRows[0]).toMatchObject({
       phone: '13900000001',
       templateKey: 'birthday-greeting',
       status: 'SENT',
     });
     // member INACTIVE / profile 软删由 findMany where 排除(断言 where 形状)
-    expect(prisma.memberProfile.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          deletedAt: null,
-          member: { status: 'ACTIVE', deletedAt: null },
-        }),
-      }),
-    );
+    const findArgs = (findManyMock.mock.calls as unknown[][])[0]?.[0] as
+      | { where?: { deletedAt: Date | null; member: { status: string; deletedAt: Date | null } } }
+      | undefined;
+    expect(findArgs?.where?.deletedAt).toBeNull();
+    expect(findArgs?.where?.member).toEqual({ status: 'ACTIVE', deletedAt: null });
   });
 
   it('2/29 生日仅闰年当天发:非闰年 2/28 与 3/1 均不选(不顺延)', async () => {
@@ -141,7 +142,7 @@ describe('BirthdayGreetingService.runOnce(直调;mock 依赖)', () => {
     alreadySentCount = 1;
     const summary = await service.runOnce(NOW);
     expect(summary).toEqual({ selected: 1, sent: 0, skippedIdempotent: 1, failed: 0 });
-    expect(router.sendBirthdayGreeting).not.toHaveBeenCalled();
+    expect(sendBirthdayGreetingMock).not.toHaveBeenCalled();
   });
 
   it('单条失败:写 FAILED 行后继续下一人,不重试不阻断;日志掩码不输出完整号码', async () => {
@@ -177,9 +178,7 @@ describe('BirthdayGreetingService.runOnce(直调;mock 依赖)', () => {
       { birthDate: bd(6, 11), member: { user: activeUser('13911110003') } },
       { birthDate: bd(6, 11), member: { user: activeUser('13911110004') } },
     ];
-    (router.resolveProviderType as jest.Mock).mockRejectedValue(
-      new Error('SMS_CHANNEL_UNAVAILABLE: 运维已关闭'),
-    );
+    resolveProviderTypeMock.mockRejectedValue(new Error('SMS_CHANNEL_UNAVAILABLE: 运维已关闭'));
     const summary = await service.runOnce(NOW);
     expect(summary).toEqual({ selected: 2, sent: 0, skippedIdempotent: 0, failed: 0 });
     expect(sendLogRows).toHaveLength(0);
