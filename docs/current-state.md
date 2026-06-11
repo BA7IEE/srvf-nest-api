@@ -62,7 +62,7 @@
 | P2 | service 单测占比 ~11.8%(26/221 实测) | 刻意策略(e2e 为主,见 §2 测试行) |
 | P2 | Mixed Controller 存量 2 处(见 §2.1) | 冻结仅兼容;详 api-surface-policy §5.1 |
 | P2 | contract snapshot ~1MB / 35,777 行 | 已接受;review 用 diff,勿整读 |
-| P3 | `sms_verification_codes` / `sms_send_logs` 只增不减(本期拍板不做 retention) | 挂 [`NEXT_TASKS P2-6`](ai-harness/NEXT_TASKS.md);届时单独立项(物理删数据 = D 档) |
+| P3 | SMS 两表 retention 依赖维护者手动执行(系统侧无自动清理,刻意) | 沿 [`ops/sms-data-retention-sop.md`](ops/sms-data-retention-sop.md)(2026-06-11 P2-6 收口:季度例行 + 报警线;不解锁 cron) |
 
 ## 5. 新任务开工前必须检查
 
