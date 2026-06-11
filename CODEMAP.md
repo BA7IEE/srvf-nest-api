@@ -7,7 +7,7 @@
 
 ---
 
-## src/modules/(20 个业务模块,平铺,**禁止嵌套 system/business/core 子目录**)
+## src/modules/(21 个业务模块,平铺,**禁止嵌套 system/business/core 子目录**)
 
 | 路径 | 体量 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
 |---|---|---|---|---|
@@ -27,6 +27,7 @@
 | `member-departments/` | S (329L) | 一人一部门 partial unique | partial unique 在 schema 显式 | — |
 | `member-profiles/` | M (1258L) | 1:1 子资源,含敏感字段(身份证默认掩码后 4 位) | **L3 字段不外暴**;白名单严格 | [`docs/security.md`](docs/security.md) |
 | `members/` | S (501L) | 全局 `memberNo` **不复用** | memberNo 唯一性铁律 | [`docs/srvf-foundation-baseline.md`](docs/srvf-foundation-baseline.md) |
+| `notifications/` | S (219L) | 生日祝福短信 job(G-7 首个落地点;本仓唯一 `@Cron`,09:00 Asia/Shanghai) | no-cron 解锁范围仅生日批(新定时任务 = 新 D 档评审);仅发 `User.phone`;幂等查 send_logs 当日 SENT;不进 audit;单实例前提(多实例需先加锁) | [`CLAUDE.md`](src/modules/notifications/CLAUDE.md) · [`docs/archive/reviews/queue-b-otp-birthday-infra-review.md §6`](docs/archive/reviews/queue-b-otp-birthday-infra-review.md) |
 | `organizations/` | M (654L) | 组织树 | 树形结构 | — |
 | `permissions/` | L (2213L) | RBAC 4 表 + `RbacService.can()` + `RbacCacheService` | `rbac.*` 14 条权限点;**`rbac/me/permissions` 方法级 Mixed 暂不拆 (P1-A)** | [`CLAUDE.md`](src/modules/permissions/CLAUDE.md) · [`AGENTS.md §8 / §13`](AGENTS.md) · [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
 | `sms/` | M (1437L) | SMS 通道层(settings/send-logs/双 Provider/动态路由)+ 验证码签发/校验/防刷 | 凭证 AES-256-GCM 永不回显;明文码不入库·不入日志·不入响应(DevStub debug 例外);production-like 禁 DEV_STUB;providers/ 子目录为 AGENTS §2 已解锁例外 | [`docs/archive/reviews/sms-verification-infra-review.md`](docs/archive/reviews/sms-verification-infra-review.md)(冻结评审稿) |

@@ -21,6 +21,9 @@ export const SMS_DAILY_WINDOW_UTC_OFFSET_HOURS = 8;
 // ===== 模板(E-22)=====
 // 逻辑模板键(写入 sms_send_logs.templateKey);provider 侧模板 ID 存 sms_settings.templateIdVerifyCode
 export const SMS_TEMPLATE_KEY_VERIFY_CODE = 'verify-code';
+// 生日祝福(B 队列 F5-T2,queue-b 评审稿 §6.5):零变量模板;provider 侧模板 ID 存
+// sms_settings.templateIdBirthday;生日批幂等防重发按本键 + 当日 + SENT 查 send_logs(E-B6)
+export const SMS_TEMPLATE_KEY_BIRTHDAY = 'birthday-greeting';
 
 // ===== 手机号(E-17/E-21)=====
 // 大陆手机号(SMS 通道边界;不沿用 emergency-contacts 宽松座机 pattern)

@@ -196,6 +196,13 @@ jobs:
           test "$STATUS" = "200"
           test "$(jq -r '.data.db' /tmp/smoke-ready.json)" = "up"
 
+      # B 队列 F5-T2(2026-06-11;queue-b 评审稿 E-B10):确证 ScheduleModule.forRoot()
+      # 在生产镜像内装配成功且生日 job 完成注册(锚行出自 NotificationsModule.onModuleInit;
+      # 改锚行文案必须同步 src/modules/notifications/notifications.module.ts)。
+      - name: Smoke - birthday cron registered (ScheduleModule)
+        run: |
+          docker logs "$APP_CONTAINER" 2>&1 | grep -F 'Birthday greeting cron registered (09:00 Asia/Shanghai)'
+
       - name: Smoke - swagger disabled in production
         run: |
           set -euo pipefail

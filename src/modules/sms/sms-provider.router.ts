@@ -7,6 +7,7 @@ import { TencentSmsProvider } from './providers/tencent-sms.provider';
 import { SmsSettingsService } from './sms-settings.service';
 import {
   SmsChannelUnavailableError,
+  type SendBirthdayGreetingInput,
   type SendVerifyCodeInput,
   type SendVerifyCodeResult,
   type SmsProvider,
@@ -58,6 +59,11 @@ export class SmsProviderRouter implements SmsProvider {
 
   async sendVerifyCode(input: SendVerifyCodeInput): Promise<SendVerifyCodeResult> {
     return (await this.resolve()).sendVerifyCode(input);
+  }
+
+  // 生日祝福(B 队列 F5-T2;queue-b 评审稿 §6.5):同 resolve 语义(不静默 fallback)。
+  async sendBirthdayGreeting(input: SendBirthdayGreetingInput): Promise<SendVerifyCodeResult> {
+    return (await this.resolve()).sendBirthdayGreeting(input);
   }
 
   /**

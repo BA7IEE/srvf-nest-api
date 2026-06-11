@@ -25,6 +25,7 @@ export interface SmsSettingsResolved {
   signName: string | null;
   region: string | null;
   templateIdVerifyCode: string | null;
+  templateIdBirthday: string | null;
   credentials: { secretId: string; secretKey: string } | null;
   credentialStatus: SmsCredentialStatus;
   remarks: string | null;
@@ -45,9 +46,16 @@ export interface SendVerifyCodeResult {
   providerMsgId: string | null; // provider 回执 ID(腾讯云 SerialNo;DevStub 为 null)
 }
 
+// 生日祝福发送入参(B 队列 F5-T2,queue-b 评审稿 §6.5):首版模板零变量,仅 phone;
+// 回执形状复用 SendVerifyCodeResult(通用 provider 回执:providerMsgId)
+export interface SendBirthdayGreetingInput {
+  phone: string; // 大陆 11 位(User.phone 已经 DTO 校验入库);Tencent provider 内部转 +86 E.164
+}
+
 // SMS Provider 统一接口(评审稿 §5 文件计划;镜像 StorageProvider 范式)
 export interface SmsProvider {
   sendVerifyCode(input: SendVerifyCodeInput): Promise<SendVerifyCodeResult>;
+  sendBirthdayGreeting(input: SendBirthdayGreetingInput): Promise<SendVerifyCodeResult>;
 }
 
 // 通道不可用(settings 缺失 / 未启用 / 凭证未配置 / production-like 下 DEV_STUB / 运行参数缺失)。

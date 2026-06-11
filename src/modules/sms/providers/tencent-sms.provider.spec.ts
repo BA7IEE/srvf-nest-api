@@ -32,6 +32,7 @@ function makeSettings(overrides: Partial<SmsSettingsResolved> = {}): SmsSettings
     signName: '某救援队',
     region: 'ap-guangzhou',
     templateIdVerifyCode: '2000000',
+    templateIdBirthday: null,
     credentials: { secretId: 'AKID-test-id', secretKey: 'secret-test-key' },
     credentialStatus: SmsCredentialStatus.CONFIGURED,
     remarks: null,

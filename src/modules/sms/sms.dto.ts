@@ -60,6 +60,9 @@ export class SmsSettingsResponseDto {
   @ApiPropertyOptional({ description: '验证码模板 ID(须先过审)', nullable: true })
   templateIdVerifyCode!: string | null;
 
+  @ApiPropertyOptional({ description: '生日祝福模板 ID(须先过审;零变量模板)', nullable: true })
+  templateIdBirthday!: string | null;
+
   @ApiProperty({
     description: '凭证状态三档(configured / missing / invalid);明文与密文永不回显',
     enum: SmsCredentialStatus,
@@ -121,6 +124,12 @@ export class UpdateSmsSettingsDto {
   @IsString()
   @MaxLength(TEMPLATE_ID_MAX_LENGTH)
   templateIdVerifyCode?: string;
+
+  @ApiPropertyOptional({ description: '生日祝福模板 ID(须先过审;零变量模板,queue-b 评审稿 §6.5)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(TEMPLATE_ID_MAX_LENGTH)
+  templateIdBirthday?: string;
 
   @ApiPropertyOptional({ description: '运维备注' })
   @IsOptional()

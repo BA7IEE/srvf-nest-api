@@ -32,6 +32,8 @@ import { MemberProfilesModule } from './modules/member-profiles/member-profiles.
 import { MembersModule } from './modules/members/members.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SmsModule } from './modules/sms/sms.module';
 import { UsersModule } from './modules/users/users.module';
 
@@ -119,6 +121,13 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   (冻结评审稿 docs/archive/reviews/sms-verification-infra-review.md;path /api/system/v1/sms-*;
     //    R 模式判权;凭证 AES-256-GCM;T3 追加 SmsCodeService 与绑定端点,240xx 段位届时实装)。
     SmsModule,
+    // B 队列 F5-T2(2026-06-11):@nestjs/schedule 全局装配——no-cron 铁律升级路径正式触发
+    //   (冻结评审稿 docs/archive/reviews/queue-b-otp-birthday-infra-review.md 拍板④/R-5;
+    //    解锁范围仅 notifications 生日批一个 @Cron;新增任何定时任务 = 新 D 档评审;
+    //    数据清理不解锁,沿 docs/ops/sms-data-retention-sop.md 手动 SOP)。
+    ScheduleModule.forRoot(),
+    // 生日祝福 job(G-7 首个落地点;零端点/零权限码;单实例部署前提,多实例需先加锁)
+    NotificationsModule,
   ],
   providers: [
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):

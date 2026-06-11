@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-import type { SendVerifyCodeInput, SendVerifyCodeResult, SmsProvider } from '../sms.types';
+import type {
+  SendBirthdayGreetingInput,
+  SendVerifyCodeInput,
+  SendVerifyCodeResult,
+  SmsProvider,
+} from '../sms.types';
 
 // SMS 基础设施 T2(2026-06-10):DevStub Provider(评审稿 D-SMS-5 / E-29)
 //
@@ -21,6 +26,13 @@ export class DevStubSmsProvider implements SmsProvider {
     this.logger.debug(
       `[DEV_STUB] sendVerifyCode phone=${input.phone} code=${input.code} ttlMinutes=${input.ttlMinutes}`,
     );
+    return Promise.resolve({ providerMsgId: null });
+  }
+
+  // 生日祝福(B 队列 F5-T2,queue-b 评审稿 §6.5):零变量模板,无明文码,
+  // debug 日志可输出完整号码(非生产通道,同 sendVerifyCode 例外边界)。
+  sendBirthdayGreeting(input: SendBirthdayGreetingInput): Promise<SendVerifyCodeResult> {
+    this.logger.debug(`[DEV_STUB] sendBirthdayGreeting phone=${input.phone}`);
     return Promise.resolve({ providerMsgId: null });
   }
 }
