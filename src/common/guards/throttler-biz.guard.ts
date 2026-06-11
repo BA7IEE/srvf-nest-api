@@ -1,5 +1,9 @@
 import { ExecutionContext, Injectable } from '@nestjs/common';
 import { ThrottlerGuard, type ThrottlerRequest } from '@nestjs/throttler';
+import {
+  LOGIN_SMS_THROTTLE_KEY,
+  LOGIN_SMS_THROTTLER_NAME,
+} from '../decorators/login-sms-throttle.decorator';
 import { LOGIN_THROTTLE_KEY } from '../decorators/login-throttle.decorator';
 import {
   PASSWORD_CHANGE_THROTTLE_KEY,
@@ -31,8 +35,10 @@ import { BizException } from '../exceptions/biz.exception';
 // 走 throttler `sms-send` / `sms-verify`;评审稿 D-SMS-6 / E-23,沿既有三实例同型扩展)。
 // 找回密码 T2(2026-06-11):pre-auth 两端点限流入口(metadata = PASSWORD_RESET_THROTTLE_KEY,
 // 走 throttler `password-reset`;评审稿 password-reset-by-sms-review.md D-PR-4 / E-10,同型扩展)。
+// B 队列 F4-T2(2026-06-11):OTP 登录两端点限流入口(metadata = LOGIN_SMS_THROTTLE_KEY,
+// 走 throttler `login-sms`;评审稿 queue-b-otp-birthday-infra-review.md E-O3,同型扩展)。
 //
-// 六个 throttler 实例在 ThrottlerModule.forRootAsync 中注册(详见 bootstrap/throttle-options.ts),
+// 七个 throttler 实例在 ThrottlerModule.forRootAsync 中注册(详见 bootstrap/throttle-options.ts),
 // 物理隔离:登录失败爆破不消耗改密 / refresh / 发码配额,反之亦然。
 //
 // 与 ThrottlerGuard 的三点定制:
@@ -80,6 +86,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       PASSWORD_RESET_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const loginSmsEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      LOGIN_SMS_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     // 未标任何一种 metadata 时全部跳过;任一 metadata 命中即进入限流逻辑,
     // 由 handleRequest 按 throttler.name 决定具体走哪个 throttler。
     return Promise.resolve(
@@ -89,7 +99,8 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
         refreshEnabled === true ||
         smsSendEnabled === true ||
         smsVerifyEnabled === true ||
-        passwordResetEnabled === true
+        passwordResetEnabled === true ||
+        loginSmsEnabled === true
       ),
     );
   }
@@ -123,6 +134,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       PASSWORD_RESET_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const loginSmsEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      LOGIN_SMS_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     // throttler `default` 仅服务 LoginThrottle;否则直接放过
     if (throttler.name === 'default' && loginEnabled !== true) {
@@ -146,6 +161,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
     }
     // throttler `password-reset` 仅服务 PasswordResetThrottle;否则直接放过
     if (throttler.name === PASSWORD_RESET_THROTTLER_NAME && passwordResetEnabled !== true) {
+      return Promise.resolve(true);
+    }
+    // throttler `login-sms` 仅服务 LoginSmsThrottle;否则直接放过
+    if (throttler.name === LOGIN_SMS_THROTTLER_NAME && loginSmsEnabled !== true) {
       return Promise.resolve(true);
     }
 

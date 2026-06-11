@@ -10,6 +10,7 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+import { LoginSmsThrottle } from '../../common/decorators/login-sms-throttle.decorator';
 import { LoginThrottle } from '../../common/decorators/login-throttle.decorator';
 import { PasswordChangeThrottle } from '../../common/decorators/password-change-throttle.decorator';
 import { PasswordResetThrottle } from '../../common/decorators/password-reset-throttle.decorator';
@@ -21,13 +22,16 @@ import { AuthService } from './auth.service';
 import {
   LoginDto,
   LoginResponseDto,
+  LoginSmsDto,
   LogoutAllResponseDto,
   LogoutDto,
   RefreshTokenDto,
   ResetPasswordBySmsDto,
+  SendLoginSmsCodeDto,
   SendPasswordResetCodeDto,
   SendPasswordResetCodeResponseDto,
 } from './auth.dto';
+import { LoginSmsService } from './login-sms.service';
 import { PasswordResetService } from './password-reset.service';
 
 @ApiTags('Auth')
@@ -38,6 +42,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly passwordReset: PasswordResetService,
+    private readonly loginSms: LoginSmsService,
   ) {}
 
   // POST /api/auth/v1/login(@Public 跳过 JwtAuthGuard)。
@@ -169,6 +174,54 @@ export class AuthController {
   )
   resetPasswordBySms(@Body() dto: ResetPasswordBySmsDto, @Req() req: Request): Promise<null> {
     return this.passwordReset.reset(dto, this.buildAuditMeta(req));
+  }
+
+  // OTP 登录 F4-T2(2026-06-11;冻结评审稿 queue-b-otp-birthday-infra-review.md §5.2 ① / E-O4):
+  // pre-auth 公开端点;防枚举完全沿找回密码范式 = 四种无效号码场景(不存在 / 未绑定 /
+  // 被禁用 / 已软删)返回与有效号**完全相同**的泛化 200(不发码不留痕);
+  // 有效号限频 / 通道错误照常抛(仅对有效号可达,残余侧信道沿评审稿 R-10 接受)。
+  // @LoginSmsThrottle() → 第 7 throttler 实例 'login-sms'(IP 5/60s 默认 goal 拍板,
+  // 与既有六实例物理隔离;不暴露阈值)。
+  @Public()
+  @LoginSmsThrottle()
+  @Post('login-sms/send-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '发送验证码登录短信验证码(防枚举:无效号码返回相同泛化响应) [public]',
+  })
+  @ApiWrappedOkResponse(SendPasswordResetCodeResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.SMS_SEND_INTERVAL_LIMIT,
+    BizCode.SMS_PHONE_DAILY_LIMIT,
+    BizCode.SMS_CHANNEL_NOT_CONFIGURED,
+    BizCode.SMS_SEND_FAILED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  sendLoginSmsCode(
+    @Body() dto: SendLoginSmsCodeDto,
+    @Req() req: Request,
+  ): Promise<SendPasswordResetCodeResponseDto> {
+    return this.loginSms.sendCode(dto, req.ip ?? null);
+  }
+
+  // OTP 登录 F4-T2(评审稿 §5.2 ② / E-O5 校验顺序冻结):
+  // 解析用户(四无效场景 → 24010)→ verifyAndConsume(LOGIN 码原子消费)→
+  // createSession(与密码登录同构签发,E-O6;audit 'auth.login.sms')。
+  // 一切失败统一 24010(不用 10004——两套防枚举体系各自闭合,零新增 BizCode);
+  // 成功响应 = LoginResponseDto(与密码登录**同 DTO**;同 refresh family 机制 /
+  // lastLoginAt 同步)。AGENTS §8 登录契约行已随本 PR 解锁改写,密码登录契约零变化。
+  @Public()
+  @LoginSmsThrottle()
+  @Post('login-sms')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '手机号 + 短信验证码登录(OTP;与密码登录同构发 token) [public]',
+  })
+  @ApiWrappedOkResponse(LoginResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.SMS_CODE_INVALID, BizCode.TOO_MANY_REQUESTS)
+  loginBySms(@Body() dto: LoginSmsDto, @Req() req: Request): Promise<LoginResponseDto> {
+    return this.loginSms.login(dto, this.buildAuditMeta(req));
   }
 
   // P0-E PR-3:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;

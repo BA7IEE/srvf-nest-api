@@ -58,6 +58,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // pre-auth 两端点,155→157。
   ['post', '/api/auth/v1/password-reset/send-code'],
   ['post', '/api/auth/v1/password-reset'],
+  // OTP 登录 F4-T2(2026-06-11;冻结评审稿 queue-b-otp-birthday-infra-review.md §5.2):
+  // pre-auth 两端点,157→159;登录成功响应复用 LoginResponseDto(与密码登录同 DTO)。
+  ['post', '/api/auth/v1/login-sms/send-code'],
+  ['post', '/api/auth/v1/login-sms'],
   ['get', '/api/system/v1/health'],
   ['get', '/api/system/v1/health/live'],
   ['get', '/api/system/v1/health/ready'],

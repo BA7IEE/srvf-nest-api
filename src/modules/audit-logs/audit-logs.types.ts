@@ -45,6 +45,7 @@ export type AuditLogEvent =
   // `extra` 允许写:`familyId`(cuid)/ `replayDetected: boolean` / `familyRevoked?: boolean` /
   //   `revokedCount: number` / `found: boolean` / `refreshTokensRevoked: number`。
   | 'auth.login' // P0-E PR-3 接入(auth.service.login 成功路径 1 处;resourceType='user' / resourceId=user.id;extra.familyId)
+  | 'auth.login.sms' // B 队列 F4-T2(2026-06-11)接入(login-sms.service.login 成功路径经 AuthService.createSession 1 处;extra.familyId + phone 掩码 + codeId;评审稿 queue-b-otp-birthday-infra-review.md E-O7;登录失败不写,镜像密码登录)
   | 'auth.refresh' // P0-E PR-3 接入(auth.service.refresh 成功 + family revoke 路径共 1 处;extra.familyId / replayDetected / familyRevoked?)
   | 'auth.logout' // P0-E PR-3 接入(auth.service.logout 含幂等命中均写;extra.found: boolean)
   | 'auth.logout-all' // P0-E PR-3 接入(auth.service.logoutAll 1 处;extra.revokedCount: number)

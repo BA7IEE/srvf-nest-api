@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Prisma, UserStatus } from '@prisma/client';
+import { Prisma, UserStatus, type Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -93,6 +93,30 @@ export class AuthService {
       throw new BizException(BizCode.LOGIN_FAILED);
     }
 
+    // 5-8. 会话签发(B 队列 F4-T2 抽取为 createSession,逻辑零增删;
+    // 评审稿 queue-b-otp-birthday-infra-review.md E-O6——OTP 登录与密码登录
+    // 共用同一签发路径,"同构"由单一代码路径保证,行为锁 = auth 既有 e2e 断言零修改全绿)
+    return this.createSession(
+      { id: user.id, username: user.username, role: user.role },
+      meta,
+      'auth.login',
+    );
+  }
+
+  // 会话签发(原 login() 第 5-8 步原样抽取,评审稿 E-O6):
+  //   5. 签 access token(JwtPayload zero drift:仅 { sub, username })
+  //   6. 计算 refresh family absolute expiration
+  //   7. 事务内 create refresh_tokens 行 + 写 audit(event 由调用方传入)
+  //   8. lastLoginAt fire-and-forget
+  // 调用方:login()(event='auth.login',extra 仅 familyId)/
+  //         LoginSmsService.login()(event='auth.login.sms',extra 追加 phone 掩码 + codeId)。
+  // extraAudit 仅允许追加非敏感字段(掩码后手机号 / codeId);禁明文码 / token / hash 任何形态。
+  async createSession(
+    user: { id: string; username: string; role: Role },
+    meta: AuditMeta,
+    event: 'auth.login' | 'auth.login.sms',
+    extraAudit?: Record<string, string | number | null>,
+  ): Promise<LoginResponseDto> {
     // 5. 签 access token(payload zero drift)
     const payload: JwtPayload = { sub: user.id, username: user.username };
     const accessToken = await this.jwtService.signAsync(payload);
@@ -124,13 +148,13 @@ export class AuthService {
         },
       });
       await this.auditLogs.log({
-        event: 'auth.login',
+        event,
         actorUserId: userIdForLog,
         actorRoleSnap: userRoleForLog,
         resourceType: 'user',
         resourceId: userIdForLog,
         meta,
-        extra: { familyId },
+        extra: { familyId, ...extraAudit },
         tx,
       });
     });
