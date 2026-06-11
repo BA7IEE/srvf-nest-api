@@ -375,6 +375,11 @@ export const BizCode = {
     message: '字典项父级形成环',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+  // 规划保留未实装(2026-06-12 把关亲核:全仓零 throw 点;不删码、不改码值,沿 22042/22044
+  // "不开的码"登记范式)。原计划(docs/archive/plans/first-release-bizcode-mapping.md 12014 行)
+  // 拦截 PATCH item 透传 parentId;现实装 UpdateDictItemDto 仅收 label / sortOrder,
+  // parentId 不在白名单(违规入参由全局 forbidNonWhitelisted 422 承接),本码无触发路径;
+  // 若未来开放父级编辑再实装启用。
   DICT_ITEM_PARENT_IMMUTABLE: {
     code: 12014,
     message: '字典项父级不允许修改',
@@ -423,6 +428,10 @@ export const BizCode = {
     message: '活动性别要求字典 code 不存在或已停用',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+  // 规划保留未实装(2026-06-12 把关亲核:全仓零 throw 点;不删码、不改码值,沿 22042/22044
+  // "不开的码"登记范式)。原计划(docs/archive/plans/first-release-bizcode-mapping.md 20014 行)
+  // 拦截 capacity 组合非法(例:min > max);现实装 capacity 为单一可空 Int(NULL = 不限名额),
+  // 数值校验由 DTO @IsInt + @Min(1) 承接,无"组合非法"场景,本码无触发路径;实装时直接启用。
   ACTIVITY_CAPACITY_INVALID: {
     code: 20014,
     message: '活动名额配置无效',

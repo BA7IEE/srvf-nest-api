@@ -2,9 +2,19 @@ import { Logger } from '@nestjs/common';
 
 // V2 第一阶段批次 3 业务事件占位函数(详见 docs:批次3_schema草案_*.md §19 + 决议表 Q-D6)。
 //
-// 设计:批次 3 不引入 @nestjs/event-emitter / 队列(沿项目铁律 R6);所有业务事件
-// 经统一函数转 pino 结构化日志;批次 4 接入贡献值核算时,**仅替换本函数实现**
+// 设计(2026-05 批次 3 原计划):批次 3 不引入 @nestjs/event-emitter / 队列(沿项目铁律 R6);
+// 所有业务事件经统一函数转 pino 结构化日志;原设想批次 4 接入贡献值核算时**仅替换本函数实现**
 // (订阅 + 计算分值),业务代码零修改。
+//
+// 【2026-06-12 true-up】"未来副作用统一替换本函数实现"的原计划已被现实演进取代:
+// - 贡献值核算已落地为 attendances 模块内 ContributionCalculator(审核流程内同步预填),
+//   并未走"订阅本函数"路径;
+// - 第一个真实通知副作用(生日祝福短信,2026-06-11 B 队列 F5)按 docs/architecture-boundary.md
+//   Effect 边界落为独立 service(src/modules/notifications/birthday-greeting.service.ts,
+//   @Cron 触发 + sms_send_logs 落库幂等防重发),不经过本函数;
+// - 后续副作用沿"每 effect 独立 service"范式接入(architecture-boundary.md Effect / Workflow),
+//   不再以替换本函数为统一接入点。本函数现仅承接 attendance.recorded 一个事件(转 pino
+//   结构化日志),保留为该事件的稳定落点。
 //
 // 事件名锁死为 union type,新增业务事件须先经 Plan / 草案 / API 前评审,**禁止**自行扩展。
 //
