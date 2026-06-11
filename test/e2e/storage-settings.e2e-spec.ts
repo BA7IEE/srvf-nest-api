@@ -427,7 +427,7 @@ describe('storage-settings admin', () => {
         data: { secretIdEncrypted: 'INVALID_CIPHER_xxxx', secretKeyEncrypted: 'INVALID_xxxx' },
       });
       const { StorageSettingsService } =
-        await import('../../src/common/storage/storage-settings.service');
+        await import('../../src/modules/storage/storage-settings.service');
       app.get(StorageSettingsService).invalidate();
 
       const res = await request(httpServer(app))

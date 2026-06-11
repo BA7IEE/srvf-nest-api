@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { DatabaseModule } from '../../database/database.module';
-import { PermissionsModule } from '../../modules/permissions/permissions.module';
+import { PermissionsModule } from '../permissions/permissions.module';
 import { CosStorageProvider } from './providers/cos.provider';
 import { LocalStorageProvider } from './providers/local.provider';
 import { StorageCryptoService } from './storage-crypto.service';

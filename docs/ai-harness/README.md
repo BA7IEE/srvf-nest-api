@@ -50,9 +50,9 @@
 | 🟡 谨慎区 | `src/**` 业务代码 / 配置 / contract snapshot / 工具链(eslint·tsconfig·jest 配置) | 按 process §3 定档;C 档 goal 内免二次确认;D 档一律拍板 |
 | 🔴 红区 | 见下清单 | **非用户授权不动**;触碰即 D/E 档降速(评审稿 + 拍板) |
 
-红区精确清单:六大红区文档(`AGENTS.md` / `ARCHITECTURE.md` / `CLAUDE.md` / `docs/srvf-foundation-baseline.md` / `docs/V2红线与复活路径.md` / `docs/api-surface-policy.md`)+ `.github/workflows/**` + `prisma/{schema.prisma, migrations/**, seed.ts}` + `src/common/{guards,filters,interceptors}/**` + `src/modules/auth/**`(P0-E 行为冻结)+ `src/common/storage/storage-crypto.service.ts` + `docs/archive/**`(只读)+ 已发布 CHANGELOG 段。
+红区精确清单:六大红区文档(`AGENTS.md` / `ARCHITECTURE.md` / `CLAUDE.md` / `docs/srvf-foundation-baseline.md` / `docs/V2红线与复活路径.md` / `docs/api-surface-policy.md`)+ `.github/workflows/**` + `prisma/{schema.prisma, migrations/**, seed.ts}` + `src/common/{guards,filters,interceptors}/**` + `src/modules/auth/**`(P0-E 行为冻结)+ `src/modules/storage/storage-crypto.service.ts` + `docs/archive/**`(只读)+ 已发布 CHANGELOG 段。
 
-定位路径:[`current-state.md`](../current-state.md) →(领任务)→ 根 [`CODEMAP.md`](../../CODEMAP.md)(src 模块地图,`docs:codemap:check` 守护)→ 模块级 `CLAUDE.md`(8 个:activities / activity-registrations / attendances / attachments / auth / permissions / common/storage / prisma,动模块时顺手校准)→ 改权限再读 [`RBAC_MAP.md`](./RBAC_MAP.md)。**勿整读**:`docs/archive/**` 正文、contract snapshot(~36k 行,用 diff 看)、`pnpm-lock.yaml`。
+定位路径:[`current-state.md`](../current-state.md) →(领任务)→ 根 [`CODEMAP.md`](../../CODEMAP.md)(src 模块地图,`docs:codemap:check` 守护)→ 模块级 `CLAUDE.md`(8 个:activities / activity-registrations / attendances / attachments / auth / permissions / modules/storage / prisma,动模块时顺手校准)→ 改权限再读 [`RBAC_MAP.md`](./RBAC_MAP.md)。**勿整读**:`docs/archive/**` 正文、contract snapshot(~36k 行,用 diff 看)、`pnpm-lock.yaml`。
 
 ## 4. 目录说明
 

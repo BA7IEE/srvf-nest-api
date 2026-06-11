@@ -2,6 +2,12 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+### Changed
+
+- **storage 模块归位:`src/common/storage/` → `src/modules/storage/` 全量迁移(纯搬迁零行为)**(D 档;goal「B 队列一次收清」F2 拍板,冻结评审稿 [`docs/archive/reviews/queue-b-otp-birthday-infra-review.md`](docs/archive/reviews/queue-b-otp-birthday-infra-review.md) §3):20 文件 `git mv`(13 源码 + 6 spec + 模块 CLAUDE.md)+ import 链 15 文件更新(app.module / attachments 2 文件 / attachments·sms spec 2 / e2e 2 / 迁移文件内部相对深度 4 / 注释路径 4);controller path(`/api/system/v1/storage-settings*`)/ Swagger / DTO / 行为零变化,**OpenAPI snapshot 逐字节零 diff** 为硬验收;全仓 `grep common/storage` 残留 0(archive 豁免);CODEMAP 模块数 19→20;current-state §4 P3 债务行闭环 + NEXT_TASKS P2-4 ✅ 归档。
+
 ## v0.20.0 - 2026-06-11
 
 ### Added

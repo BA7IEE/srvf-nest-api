@@ -96,7 +96,7 @@ describe('SmsCryptoService', () => {
 
   it('与 storage 同 env key 值时密文互不可解(独立派生 salt;评审稿 E-13)', async () => {
     // 动态 import 避免本 spec 与 storage 模块产生编译期依赖耦合
-    const { StorageCryptoService } = await import('../../common/storage/storage-crypto.service');
+    const { StorageCryptoService } = await import('../storage/storage-crypto.service');
     const storageCfg = {
       ...makeCfg(KEY_A),
       storage: { encryptionKey: KEY_A, localRoot: './tmp/storage' },

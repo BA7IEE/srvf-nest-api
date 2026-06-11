@@ -15,8 +15,8 @@ import type {
 //
 // **本 PR(C-7.5 实施 PR #5)仅扩展接口 + 类型,不实装任何 Provider**:
 // 以下能力在 C-7.5 后续 PR 落地后已可用:
-// - LocalStorageProvider / CosStorageProvider(src/common/storage/providers/)
-// - StorageModule + StorageProviderRouter(src/common/storage/storage.module.ts)
+// - LocalStorageProvider / CosStorageProvider(src/modules/storage/providers/)
+// - StorageModule + StorageProviderRouter(src/modules/storage/storage.module.ts)
 // - cos-nodejs-sdk-v5(已在 package.json 引入)
 // 0 runtime impact / 0 callsite / 0 module wiring。
 //

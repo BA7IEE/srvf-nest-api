@@ -1,4 +1,4 @@
-# common/storage — 本地铁律
+# modules/storage — 本地铁律(2026-06-11 自 src/common 区旧址全量迁入,B 队列评审稿 §3;纯搬迁零行为)
 
 > 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);附件配置三表边界读 [`/docs/attachment-config-boundary.md`](../../../docs/attachment-config-boundary.md);架构边界读 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md);安全章节读 [`/docs/security.md`](../../../docs/security.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
 

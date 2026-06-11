@@ -62,7 +62,6 @@
 | P2 | service 单测占比 ~11.8%(26/221 实测) | 刻意策略(e2e 为主,见 §2 测试行) |
 | P2 | Mixed Controller 存量 2 处(见 §2.1) | 冻结仅兼容;详 api-surface-policy §5.1 |
 | P2 | contract snapshot ~1MB / 35,777 行 | 已接受;review 用 diff,勿整读 |
-| P3 | `common/storage/` 超出 common 语义 | 长期可迁 `src/modules/storage/`;本期不动 |
 | P3 | `sms_verification_codes` / `sms_send_logs` 只增不减(本期拍板不做 retention) | 挂 [`NEXT_TASKS P2-6`](ai-harness/NEXT_TASKS.md);届时单独立项(物理删数据 = D 档) |
 
 ## 5. 新任务开工前必须检查

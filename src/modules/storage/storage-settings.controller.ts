@@ -1,9 +1,15 @@
 import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import { ApiBizErrorResponse, ApiWrappedOkResponse } from '../decorators/api-response.decorator';
-import { CurrentUser, type CurrentUserPayload } from '../decorators/current-user.decorator';
-import { BizCode } from '../exceptions/biz-code.constant';
+import {
+  ApiBizErrorResponse,
+  ApiWrappedOkResponse,
+} from '../../common/decorators/api-response.decorator';
+import {
+  CurrentUser,
+  type CurrentUserPayload,
+} from '../../common/decorators/current-user.decorator';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
 import {
   ResetStorageCredentialsDto,
   StorageSettingsResponseDto,
