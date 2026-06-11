@@ -16,6 +16,7 @@
 | **完整环境变量字段** | [`.env.example`](../.env.example) + [`src/config/`](../src/config/) |
 | **安全策略 / 升级路径** | [`security.md`](security.md) |
 | **PR 五档分级 / D 档降速 / release SOP** | [`process.md`](process.md) |
+| **Claude Code 工具授权白名单**(deny / ask / allow;永不收录清单) | [`.claude/settings.json`](../.claude/settings.json)(语义:deny>ask>allow 先匹配先赢,复合命令逐段命中;#333) |
 
 历史 v1 / V1.1 / V2 设计期蓝图与过程档案已归档至 [`archive/legacy/`](archive/legacy/) / [`archive/plans/`](archive/plans/) / [`archive/reviews/`](archive/reviews/) / [`archive/batches/`](archive/batches/),**不再作为当前执行约束**。
 
@@ -27,6 +28,7 @@
 
 ```
 .
+├── .claude/settings.json     # Claude Code 工具授权白名单(deny>ask>allow;永不收录清单见文件内注释键,#333)
 ├── AGENTS.md / CLAUDE.md     # AI 协作铁律入口(CLAUDE.md 已收口为入口转发)
 ├── ARCHITECTURE.md           # 架构入口
 ├── README.md                 # 项目快速概览
@@ -46,7 +48,7 @@
 | `src/main.ts` / `src/app.module.ts` | 应用入口 + 模块注册 + 全局 Guard 注册 |
 | `src/bootstrap/` | 启动期纯函数(global setup / swagger / logger / throttle / request-id) |
 | `src/config/` | `app.config.ts` / `database.config.ts` / `jwt.config.ts` 等;env 读取与启动强校验落在这里 |
-| `src/common/` | 跨模块基础件:decorators / dto / exceptions / filters / guards / interceptors / storage(含 Provider 路由) |
+| `src/common/` | 跨模块基础件:audit / decorators / dto / event / exceptions / filters / guards / interceptors / prisma(storage 已于 v0.21.0 迁至 `src/modules/storage/`,#323) |
 | `src/database/` | `PrismaService` + `DatabaseModule` |
 | `src/modules/` | **业务模块权威位置**(平铺,**禁止**嵌套 `system/` / `business/` / `core/` 子目录) |
 
