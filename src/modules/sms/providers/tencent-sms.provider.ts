@@ -7,6 +7,7 @@ import {
   SmsChannelUnavailableError,
   SmsCredentialStatus,
   SmsProviderSendError,
+  type SendBirthdayGreetingInput,
   type SendVerifyCodeInput,
   type SendVerifyCodeResult,
   type SmsProvider,
@@ -37,7 +38,7 @@ interface TencentSmsContext {
   client: InstanceType<typeof SmsClient>;
   sdkAppId: string;
   signName: string;
-  templateIdVerifyCode: string;
+  templateId: string; // 按调用方选择的模板(verify-code / birthday;缺失在 4 档守护抛)
 }
 
 @Injectable()
@@ -47,16 +48,32 @@ export class TencentSmsProvider implements SmsProvider {
   constructor(private readonly settings: SmsSettingsService) {}
 
   async sendVerifyCode(input: SendVerifyCodeInput): Promise<SendVerifyCodeResult> {
-    const ctx = await this.requireTencentContext();
+    const ctx = await this.requireTencentContext('verify-code');
+    // 验证码模板恰好 2 个变量:{1}=验证码,{2}=有效期分钟数(评审稿 E-22)
+    return this.sendViaSdk(ctx, input.phone, [input.code, String(input.ttlMinutes)]);
+  }
 
+  // 生日祝福(B 队列 F5-T2,queue-b 评审稿 §6.5):零变量模板(TemplateParamSet=[]);
+  // 模板 ID 取 sms_settings.templateIdBirthday(4 档守护按模板选择校验对应列)。
+  async sendBirthdayGreeting(input: SendBirthdayGreetingInput): Promise<SendVerifyCodeResult> {
+    const ctx = await this.requireTencentContext('birthday');
+    return this.sendViaSdk(ctx, input.phone, []);
+  }
+
+  // SDK 单号单发共用段(verify-code / birthday 仅模板与参数不同;错误归一化语义不变)
+  private async sendViaSdk(
+    ctx: TencentSmsContext,
+    phone: string,
+    templateParams: string[],
+  ): Promise<SendVerifyCodeResult> {
     let response;
     try {
       response = await ctx.client.SendSms({
-        PhoneNumberSet: [toE164Mainland(input.phone)],
+        PhoneNumberSet: [toE164Mainland(phone)],
         SmsSdkAppId: ctx.sdkAppId,
         SignName: ctx.signName,
-        TemplateId: ctx.templateIdVerifyCode,
-        TemplateParamSet: [input.code, String(input.ttlMinutes)],
+        TemplateId: ctx.templateId,
+        TemplateParamSet: templateParams,
       });
     } catch (err) {
       // SDK 网络 / 鉴权异常(TencentCloudSDKException 含 code 字段);不含 secret
@@ -74,13 +91,17 @@ export class TencentSmsProvider implements SmsProvider {
     }
 
     this.logger.log(
-      `TencentSms sent ok phone=${maskPhone(input.phone)} serialNo=${status.SerialNo ?? ''}`,
+      `TencentSms sent ok phone=${maskPhone(phone)} serialNo=${status.SerialNo ?? ''}`,
     );
     return { providerMsgId: status.SerialNo ?? null };
   }
 
-  // 解析 settings + 构造 SDK client + 4 档守护(镜像 cos.provider.requireCosContext)
-  private async requireTencentContext(): Promise<TencentSmsContext> {
+  // 解析 settings + 构造 SDK client + 4 档守护(镜像 cos.provider.requireCosContext);
+  // template 形参选择校验/返回哪个模板列(verify-code → templateIdVerifyCode;
+  // birthday → templateIdBirthday;对应列缺失同走 SmsChannelUnavailableError 第 4 档)
+  private async requireTencentContext(
+    template: 'verify-code' | 'birthday',
+  ): Promise<TencentSmsContext> {
     const settings = await this.settings.getActiveSettings();
     if (!settings || !settings.enabled) {
       throw new SmsChannelUnavailableError('sms_settings 未配置或未启用');
@@ -93,10 +114,13 @@ export class TencentSmsProvider implements SmsProvider {
     if (settings.credentialStatus !== SmsCredentialStatus.CONFIGURED || !settings.credentials) {
       throw new SmsChannelUnavailableError(`credentialStatus=${settings.credentialStatus}`);
     }
-    const missing = missingRuntimeParams(settings);
+    const missing = missingRuntimeParams(settings, template);
     if (missing.length > 0) {
       throw new SmsChannelUnavailableError(`sms_settings.${missing.join(' / ')} 未配置`);
     }
+
+    const templateId =
+      template === 'verify-code' ? settings.templateIdVerifyCode : settings.templateIdBirthday;
 
     const client = new SmsClient({
       credential: {
@@ -109,17 +133,21 @@ export class TencentSmsProvider implements SmsProvider {
       client,
       sdkAppId: settings.sdkAppId as string,
       signName: settings.signName as string,
-      templateIdVerifyCode: settings.templateIdVerifyCode as string,
+      templateId: templateId as string,
     };
   }
 }
 
-function missingRuntimeParams(s: SmsSettingsResolved): string[] {
+function missingRuntimeParams(
+  s: SmsSettingsResolved,
+  template: 'verify-code' | 'birthday',
+): string[] {
   const missing: string[] = [];
   if (!s.sdkAppId) missing.push('sdkAppId');
   if (!s.signName) missing.push('signName');
   if (!s.region) missing.push('region');
-  if (!s.templateIdVerifyCode) missing.push('templateIdVerifyCode');
+  if (template === 'verify-code' && !s.templateIdVerifyCode) missing.push('templateIdVerifyCode');
+  if (template === 'birthday' && !s.templateIdBirthday) missing.push('templateIdBirthday');
   return missing;
 }
 

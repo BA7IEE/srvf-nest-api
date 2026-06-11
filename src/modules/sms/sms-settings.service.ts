@@ -217,6 +217,7 @@ export class SmsSettingsService {
     if (dto.region !== undefined) data.region = dto.region;
     if (dto.templateIdVerifyCode !== undefined)
       data.templateIdVerifyCode = dto.templateIdVerifyCode;
+    if (dto.templateIdBirthday !== undefined) data.templateIdBirthday = dto.templateIdBirthday;
     if (dto.remarks !== undefined) data.remarks = dto.remarks;
     return data;
   }
@@ -231,6 +232,7 @@ export class SmsSettingsService {
       signName: row.signName,
       region: row.region,
       templateIdVerifyCode: row.templateIdVerifyCode,
+      templateIdBirthday: row.templateIdBirthday,
       credentials,
       credentialStatus,
       remarks: row.remarks,
@@ -287,6 +289,7 @@ export class SmsSettingsService {
       signName: row.signName,
       region: row.region,
       templateIdVerifyCode: row.templateIdVerifyCode,
+      templateIdBirthday: row.templateIdBirthday,
       credentialStatus,
       credentialConfigured: row.credentialConfigured,
       remarks: row.remarks,
