@@ -3891,6 +3891,25 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "LoginSmsDto": {
+    "properties": {
+      "code": {
+        "description": "6 位数字验证码",
+        "example": "123456",
+        "type": "string",
+      },
+      "phone": {
+        "description": "账号绑定的大陆手机号(11 位;须与 send-code 时一致)",
+        "example": "13800001234",
+        "type": "string",
+      },
+    },
+    "required": [
+      "phone",
+      "code",
+    ],
+    "type": "object",
+  },
   "LogoutAllResponseDto": {
     "properties": {
       "revokedCount": {
@@ -4771,6 +4790,19 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "required": [
       "newPassword",
+    ],
+    "type": "object",
+  },
+  "SendLoginSmsCodeDto": {
+    "properties": {
+      "phone": {
+        "description": "账号绑定的大陆手机号(11 位);防枚举:无效号码返回完全相同的泛化响应",
+        "example": "13800001234",
+        "type": "string",
+      },
+    },
+    "required": [
+      "phone",
     ],
     "type": "object",
   },
@@ -24633,6 +24665,315 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       },
       "summary": "用户名 + 密码登录,返回 JWT + refresh token(family absolute expiration) [public]",
+      "tags": [
+        "Auth",
+      ],
+    },
+  },
+  "/api/auth/v1/login-sms": {
+    "post": {
+      "operationId": "AuthController_loginBySms",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/LoginSmsDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/LoginResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 24010: 验证码错误或已失效",
+                    "enum": [
+                      40000,
+                      24010,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 验证码错误或已失效(code=24010)",
+        },
+        "429": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "42900: 请求过于频繁，请稍后再试",
+                    "enum": [
+                      42900,
+                    ],
+                    "example": 42900,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求过于频繁，请稍后再试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求过于频繁，请稍后再试(code=42900)",
+        },
+      },
+      "summary": "手机号 + 短信验证码登录(OTP;与密码登录同构发 token) [public]",
+      "tags": [
+        "Auth",
+      ],
+    },
+  },
+  "/api/auth/v1/login-sms/send-code": {
+    "post": {
+      "operationId": "AuthController_sendLoginSmsCode",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SendLoginSmsCodeDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/SendPasswordResetCodeResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "429": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "24120: 发送过于频繁,请稍后再试; 24121: 该手机号今日发送次数已达上限; 42900: 请求过于频繁，请稍后再试",
+                    "enum": [
+                      24120,
+                      24121,
+                      42900,
+                    ],
+                    "example": 24120,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "发送过于频繁,请稍后再试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "发送过于频繁,请稍后再试(code=24120) / 该手机号今日发送次数已达上限(code=24121) / 请求过于频繁，请稍后再试(code=42900)",
+        },
+        "502": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "24031: 短信发送失败,请稍后重试",
+                    "enum": [
+                      24031,
+                    ],
+                    "example": 24031,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "短信发送失败,请稍后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "短信发送失败,请稍后重试(code=24031)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "24030: 短信服务未配置或未启用",
+                    "enum": [
+                      24030,
+                    ],
+                    "example": 24030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "短信服务未配置或未启用",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "短信服务未配置或未启用(code=24030)",
+        },
+      },
+      "summary": "发送验证码登录短信验证码(防枚举:无效号码返回相同泛化响应) [public]",
       "tags": [
         "Auth",
       ],

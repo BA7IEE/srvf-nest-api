@@ -8,6 +8,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { SmsModule } from '../sms/sms.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { LoginSmsService } from './login-sms.service';
 import { PasswordResetService } from './password-reset.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
@@ -42,6 +43,6 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, PasswordResetService, JwtStrategy],
+  providers: [AuthService, PasswordResetService, LoginSmsService, JwtStrategy],
 })
 export class AuthModule {}

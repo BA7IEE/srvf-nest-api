@@ -240,7 +240,7 @@ import { Role, UserStatus } from '@prisma/client';
 
 ### 登录
 
-- v1 入参固定 `username + password`(不支持 email / 手机号 / 验证码登录)
+- 密码登录(`POST /api/auth/v1/login`)入参固定 `username + password`(不支持 email 登录 / 不支持在本端点混入手机号或验证码);**验证码(OTP)登录为独立端点** `POST /api/auth/v1/login-sms`(2026-06-11 解锁,冻结评审稿 [`docs/archive/reviews/queue-b-otp-birthday-infra-review.md`](docs/archive/reviews/queue-b-otp-birthday-infra-review.md);防枚举统一 24010,会话签发与密码登录同构),密码登录契约本身零变化
 - `username` 入库与查询前统一 `trim()` + `toLowerCase()`
 - 校验在 `auth.service.ts` 内手写:`findFirst` → `bcrypt.compare` → `JwtService.sign`
 - **不引入 `LocalStrategy`**

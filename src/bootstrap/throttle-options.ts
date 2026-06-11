@@ -1,4 +1,5 @@
 import type { ThrottlerModuleOptions } from '@nestjs/throttler';
+import { LOGIN_SMS_THROTTLER_NAME } from '../common/decorators/login-sms-throttle.decorator';
 import { PASSWORD_CHANGE_THROTTLER_NAME } from '../common/decorators/password-change-throttle.decorator';
 import { PASSWORD_RESET_THROTTLER_NAME } from '../common/decorators/password-reset-throttle.decorator';
 import { REFRESH_THROTTLER_NAME } from '../common/decorators/refresh-throttle.decorator';
@@ -55,6 +56,13 @@ export function buildThrottlerOptions(appCfg: AppConfig): ThrottlerModuleOptions
         name: PASSWORD_RESET_THROTTLER_NAME,
         limit: appCfg.passwordResetThrottle.limit,
         ttl: appCfg.passwordResetThrottle.ttlSeconds * 1000,
+      },
+      // B 队列 F4-T2(2026-06-11):OTP 登录 pre-auth 两端点第 7 实例
+      // (评审稿 queue-b E-O3;默认 5/60 goal 拍板值,七实例计数器互不影响)。
+      {
+        name: LOGIN_SMS_THROTTLER_NAME,
+        limit: appCfg.loginSmsThrottle.limit,
+        ttl: appCfg.loginSmsThrottle.ttlSeconds * 1000,
       },
     ],
     setHeaders: false,

@@ -131,6 +131,38 @@ export class SendPasswordResetCodeResponseDto {
   expiresInSeconds!: number;
 }
 
+// ===== OTP 登录 F4-T2(2026-06-11;冻结评审稿 queue-b-otp-birthday-infra-review.md §5.2 / E-O8)=====
+//
+// pre-auth DTO 纪律同找回密码:严格字段白名单;phone 沿 MAINLAND_PHONE_PATTERN,
+// code 沿 6 位数字;登录成功响应**复用 LoginResponseDto**(与密码登录同 DTO,goal 拍板);
+// send-code 响应复用 SendPasswordResetCodeResponseDto 形状(同模块内复用,非跨模块)。
+
+export class SendLoginSmsCodeDto {
+  @ApiProperty({
+    description: '账号绑定的大陆手机号(11 位);防枚举:无效号码返回完全相同的泛化响应',
+    example: '13800001234',
+  })
+  @IsString()
+  @Matches(MAINLAND_PHONE_PATTERN, { message: 'phone 必须是大陆 11 位手机号' })
+  phone!: string;
+}
+
+export class LoginSmsDto {
+  @ApiProperty({
+    description: '账号绑定的大陆手机号(11 位;须与 send-code 时一致)',
+    example: '13800001234',
+  })
+  @IsString()
+  @Matches(MAINLAND_PHONE_PATTERN, { message: 'phone 必须是大陆 11 位手机号' })
+  phone!: string;
+
+  @ApiProperty({ description: '6 位数字验证码', example: '123456' })
+  @IsString()
+  @Length(SMS_CODE_LENGTH, SMS_CODE_LENGTH)
+  @Matches(/^\d{6}$/, { message: 'code 必须是 6 位数字' })
+  code!: string;
+}
+
 export class ResetPasswordBySmsDto {
   @ApiProperty({
     description: '账号绑定的大陆手机号(11 位;须与 send-code 时一致)',

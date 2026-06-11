@@ -156,6 +156,16 @@ export interface PasswordResetThrottleConfig {
   ttlSeconds: number;
 }
 
+// B 队列 F4-T2(2026-06-11):OTP 登录两个 pre-auth 端点 IP 限流配置
+// (评审稿 queue-b-otp-birthday-infra-review.md E-O3)。
+// 第 7 个独立 throttler 实例(name: 'login-sms'),计数器与既有六实例互不影响。
+// 默认 5 次 / 60 秒(goal 拍板值;登录是高频正常操作,较 password-reset 3/60 放宽一档,
+// 仍配合 DB 层同号 60s 间隔 / 日 10 条与"错 5 次作废"双层防护)。
+export interface LoginSmsThrottleConfig {
+  limit: number;
+  ttlSeconds: number;
+}
+
 // SMS 基础设施 T2(2026-06-10):sms_settings 凭证加密 key(评审稿 D-SMS-8;沿 STORAGE 范式)。
 // 独立 env `SMS_ENCRYPTION_KEY`,与 STORAGE_ENCRYPTION_KEY 互不复用;
 // production / smoke fail-fast,dev / test 留空允许 → SmsCryptoService.isAvailable()=false。
@@ -227,6 +237,7 @@ export interface AppConfig {
   smsSendThrottle: SmsSendThrottleConfig;
   smsVerifyThrottle: SmsVerifyThrottleConfig;
   passwordResetThrottle: PasswordResetThrottleConfig;
+  loginSmsThrottle: LoginSmsThrottleConfig;
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -363,6 +374,20 @@ export default registerAs('app', (): AppConfig => {
     ),
   };
 
+  // B 队列 F4-T2(2026-06-11):OTP 登录两端点限流(评审稿 E-O3;默认 5/60,goal 拍板值)。
+  const loginSmsThrottle: LoginSmsThrottleConfig = {
+    limit: parsePositiveInt(process.env.LOGIN_SMS_THROTTLE_LIMIT, 5, 'LOGIN_SMS_THROTTLE_LIMIT', {
+      min: 1,
+      max: 100,
+    }),
+    ttlSeconds: parsePositiveInt(
+      process.env.LOGIN_SMS_THROTTLE_TTL_SECONDS,
+      60,
+      'LOGIN_SMS_THROTTLE_TTL_SECONDS',
+      { min: 1, max: 3600 },
+    ),
+  };
+
   return {
     env,
     port,
@@ -378,5 +403,6 @@ export default registerAs('app', (): AppConfig => {
     smsSendThrottle,
     smsVerifyThrottle,
     passwordResetThrottle,
+    loginSmsThrottle,
   };
 });
