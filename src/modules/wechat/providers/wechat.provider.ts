@@ -1,0 +1,115 @@
+import { Injectable, Logger } from '@nestjs/common';
+
+import { WechatSettingsService } from '../wechat-settings.service';
+import {
+  WECHAT_CODE2SESSION_URL,
+  WECHAT_ERRCODE_CODE_INVALID,
+  WECHAT_REQUEST_TIMEOUT_MS,
+} from '../wechat.constants';
+import {
+  WechatApiError,
+  WechatChannelUnavailableError,
+  WechatCodeInvalidError,
+  WechatCredentialStatus,
+  type Code2SessionInput,
+  type Code2SessionResult,
+  type WechatMiniProvider,
+} from '../wechat.types';
+
+// 微信小程序登录 T2(2026-06-12):真实微信 Provider(评审稿 E-2/E-11/E-12;
+// 结构镜像 tencent-sms.provider,传输层差异 = 原生 fetch 替代 SDK,零新依赖)
+//
+// - appId / appSecret 从 WechatSettingsService.getActiveSettings() 读(60s 缓存;不依赖 env)
+// - 每次调用 requireWechatContext() 做 4 档守护(镜像 requireTencentContext):
+//   settings null·未启用 / providerType ≠ WECHAT / credentialStatus ≠ CONFIGURED / appId 缺失
+// - 原生 fetch + AbortSignal.timeout 8s(沿 #346 外部请求超时上限先例;Node 22 全局可用)
+// - errcode 映射(E-11):40029 / 40163 → WechatCodeInvalidError(25010);
+//   其余非 0 errcode / HTTP 非 200 / 超时 / 网络错误 / 缺 openid → WechatApiError(25031)
+//
+// 安全性(E-12,L3 红线):
+// - 请求 URL query 含 appid + secret:**禁止**把 URL / fetch 错误原文写入日志或错误信息
+//   (fetch 失败仅取 err.name;HTTP 失败仅取 status;微信 errcode/errmsg 本身不含 secret)
+// - session_key / unionid 解析即弃:不入返回类型、不入变量外传、不入日志
+
+// 微信 jscode2session 回执形状(官方文档;errcode 成功时缺省或为 0)
+interface Code2SessionWireResponse {
+  openid?: string;
+  session_key?: string;
+  unionid?: string;
+  errcode?: number;
+  errmsg?: string;
+}
+
+@Injectable()
+export class WechatMiniRealProvider implements WechatMiniProvider {
+  private readonly logger = new Logger(WechatMiniRealProvider.name);
+
+  constructor(private readonly settings: WechatSettingsService) {}
+
+  async code2session(input: Code2SessionInput): Promise<Code2SessionResult> {
+    const ctx = await this.requireWechatContext();
+
+    const url = new URL(WECHAT_CODE2SESSION_URL);
+    url.searchParams.set('appid', ctx.appId);
+    url.searchParams.set('secret', ctx.appSecret);
+    url.searchParams.set('js_code', input.code);
+    url.searchParams.set('grant_type', 'authorization_code');
+
+    let res: Response;
+    try {
+      res = await fetch(url, { signal: AbortSignal.timeout(WECHAT_REQUEST_TIMEOUT_MS) });
+    } catch (err) {
+      // 超时(TimeoutError)/ DNS / 连接失败;仅取 err.name——错误原文可能内嵌完整 URL(含 secret)
+      const name = err instanceof Error ? err.name : 'UnknownError';
+      throw new WechatApiError('FETCH_ERROR', name);
+    }
+
+    if (!res.ok) {
+      throw new WechatApiError('HTTP_ERROR', `status=${res.status}`);
+    }
+
+    // 微信可能以 text/plain 返回 JSON 体;统一 text → JSON.parse
+    let body: Code2SessionWireResponse;
+    try {
+      body = JSON.parse(await res.text()) as Code2SessionWireResponse;
+    } catch {
+      throw new WechatApiError('INVALID_RESPONSE', 'non-JSON body');
+    }
+
+    if (typeof body.errcode === 'number' && body.errcode !== 0) {
+      if (WECHAT_ERRCODE_CODE_INVALID.includes(body.errcode)) {
+        throw new WechatCodeInvalidError(String(body.errcode));
+      }
+      // -1 系统繁忙 / 40013 invalid appid / 40125 invalid secret / 45011 频率限制 等;
+      // errmsg 来自微信回执,不含 secret,可入错误与日志辅助运维定位
+      this.logger.warn(`wechat code2session errcode=${body.errcode} errmsg=${body.errmsg ?? ''}`);
+      throw new WechatApiError(String(body.errcode), body.errmsg ?? 'unknown wechat error');
+    }
+
+    if (!body.openid) {
+      throw new WechatApiError('MISSING_OPENID', 'response has no openid');
+    }
+
+    // session_key / unionid 即弃(E-12):只取 openid 返回
+    return { openid: body.openid };
+  }
+
+  // 解析 settings + 4 档守护(镜像 tencent-sms requireTencentContext;
+  // 第 1/2 档在 WechatService.resolve 已挡,此处防御性重查)
+  private async requireWechatContext(): Promise<{ appId: string; appSecret: string }> {
+    const settings = await this.settings.getActiveSettings();
+    if (!settings || !settings.enabled) {
+      throw new WechatChannelUnavailableError('wechat_settings 未配置或未启用');
+    }
+    if (settings.providerType !== 'WECHAT') {
+      throw new WechatChannelUnavailableError(`providerType=${settings.providerType} 不是 WECHAT`);
+    }
+    if (settings.credentialStatus !== WechatCredentialStatus.CONFIGURED || !settings.credentials) {
+      throw new WechatChannelUnavailableError(`credentialStatus=${settings.credentialStatus}`);
+    }
+    if (!settings.appId) {
+      throw new WechatChannelUnavailableError('wechat_settings.appId 未配置');
+    }
+    return { appId: settings.appId, appSecret: settings.credentials.appSecret };
+  }
+}

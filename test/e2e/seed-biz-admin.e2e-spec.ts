@@ -16,7 +16,8 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 3. biz-admin 绑定 35 条 RolePermission;member.delete.record **不**在绑定中(D1=A 镜像)
 // 4. 幂等补挂:seed 前已存在的 ADMIN 用户(含 DISABLED)跑 seed 后持有 biz-admin;
 //    SUPER_ADMIN / USER 不被挂;软删 ADMIN 不补挂(D-S4-7)
-// 5. 零变化项:ops-admin 绑定数(58)与 member 角色绑定数(9)不受影响
+// 5. 零变化项:ops-admin 绑定数(61;2026-06-12 WECHAT T2 随授权 seed 变更 58→61 true-up)
+//    与 member 角色绑定数(9)不受 Slow-4 seed 影响
 // 6. seed 连续执行两次完全幂等:Permission 总数 / biz-admin role id /
 //    RolePermission 数 / UserRole 数全部稳定
 //
@@ -107,8 +108,10 @@ const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 3
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
 const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 1; // 35
 
-// 零变化基线(评审稿 §6):ops-admin 58 / member 9
-const EXPECTED_OPS_ADMIN_BINDING_COUNT = 58;
+// 零变化基线(评审稿 §6):本断言意图 = Slow-4 业务面 seed 不改 ops-admin / member 绑定;
+// 基线数跟随 ops-admin 当前合法总数(2026-06-12 WECHAT T2 授权 seed +3 → 58→61,
+// 沿 wechat-mini-login-review.md §3.4;与 seed-rbac spec 的 65-4=61 推导一致)
+const EXPECTED_OPS_ADMIN_BINDING_COUNT = 61;
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
 
 const SEED_ENV = {

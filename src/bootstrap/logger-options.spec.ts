@@ -22,6 +22,8 @@ const fakeAppCfg: AppConfig = {
   storage: { encryptionKey: '', localRoot: './tmp/storage' },
   // SMS 基础设施 T2/T3:AppConfig 新增必填字段;本 unit test 不关心 SMS,仅满足接口
   sms: { encryptionKey: '' },
+  // 微信小程序登录 T2:AppConfig 新增必填字段;本 unit test 不关心微信,仅满足接口
+  wechat: { encryptionKey: '' },
   smsSendThrottle: { limit: 5, ttlSeconds: 60 },
   smsVerifyThrottle: { limit: 10, ttlSeconds: 60 },
   // 找回密码 T2:AppConfig 新增必填字段;本 unit test 不关心限流参数,仅满足接口

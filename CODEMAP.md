@@ -7,7 +7,7 @@
 
 ---
 
-## src/modules/(22 个业务模块,平铺,**禁止嵌套 system/business/core 子目录**)
+## src/modules/(23 个业务模块,平铺,**禁止嵌套 system/business/core 子目录**)
 
 | 路径 | 体量 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
 |---|---|---|---|---|
@@ -31,6 +31,7 @@
 | `organizations/` | M (654L) | 组织树 | 树形结构 | — |
 | `permissions/` | L (2213L) | RBAC 4 表 + `RbacService.can()` + `RbacCacheService` | `rbac.*` 14 条权限点;**`rbac/me/permissions` 方法级 Mixed 暂不拆 (P1-A)** | [`CLAUDE.md`](src/modules/permissions/CLAUDE.md) · [`AGENTS.md §8 / §13`](AGENTS.md) · [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
 | `sms/` | M (1437L) | SMS 通道层(settings/send-logs/双 Provider/动态路由)+ 验证码签发/校验/防刷 | 凭证 AES-256-GCM 永不回显;明文码不入库·不入日志·不入响应(DevStub debug 例外);production-like 禁 DEV_STUB;providers/ 子目录为 AGENTS §2 已解锁例外 | [`docs/archive/reviews/sms-verification-infra-review.md`](docs/archive/reviews/sms-verification-infra-review.md)(冻结评审稿) |
+| `wechat/` | M (929L) | 微信小程序通道层(wechat-settings 三端点 / 双 Provider / code2session 原生 fetch 8s) | appSecret AES-256-GCM 永不回显;session_key 不存储即弃;openid 不滥回显(掩码);wx code / 含 secret 的 URL 不入日志;production-like 禁 DEV_STUB;providers/ 子目录为 AGENTS §2 已解锁例外(第三例) | [`docs/archive/reviews/wechat-mini-login-review.md`](docs/archive/reviews/wechat-mini-login-review.md)(冻结评审稿) |
 | `storage/` | L (1720L) | LocalStorageProvider + CosStorageProvider + 动态 Router + AES-256-GCM | 2026-06-11 自 `src/common/` 旧址全量迁入(B 队列评审稿 §3,纯搬迁零行为,snapshot 零 diff);providers/ 子目录沿 AGENTS §2 已解锁例外 | [`CLAUDE.md`](src/modules/storage/CLAUDE.md) · [`docs/archive/reviews/queue-b-otp-birthday-infra-review.md`](docs/archive/reviews/queue-b-otp-birthday-infra-review.md) |
 | `users/` | L (2143L) | 用户 CRUD + `/me*` + 改密 + refresh 联动撤销 + me/phone 绑定换绑 + admin 清号 | service 699L (large-service watch);Mixed Controller P1-C step 1 已拆完;P0-D / P0-E 全套铁律;phone 占用含软删(沿 username/email 不复用) | [`AGENTS.md §9`](AGENTS.md) · [`docs/security.md`](docs/security.md) |
 

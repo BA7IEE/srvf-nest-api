@@ -957,7 +957,57 @@ const SMS_INFRA_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
-// Permission 全集(用于 step 1 upsert;14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS = 61 条)
+// =========================================================================
+// 微信小程序登录 T2(2026-06-12):+4 条权限码(117→121;冻结评审稿
+// docs/archive/reviews/wechat-mini-login-review.md §3.4 / E-22)。
+//
+// 端点 → permission 映射(评审稿 §3.2):
+//   GET    /api/system/v1/wechat-settings                    → wechat-setting.read.singleton
+//   PATCH  /api/system/v1/wechat-settings                    → wechat-setting.update.singleton
+//   POST   /api/system/v1/wechat-settings/reset-credentials  → wechat-setting.reset.credentials
+//   DELETE /api/admin/v1/users/:id/wechat(T3 实装)          → user.wechat.clear
+//
+// ops-admin 绑定:3 条;`wechat-setting.reset.credentials` **不绑**(镜像 storage/sms D2=A,
+// 仅 SUPER_ADMIN 短路)。`user.wechat.clear` 端点 T3 落地,T2 期间为孤码
+// (rbacmap 检查预期 WARN,非 FAIL;镜像 user.phone.clear 先例)。
+// =========================================================================
+
+// 镜像 SMS_RESET_CREDENTIALS_CODE:凭证 reset 不绑 ops-admin
+const WECHAT_RESET_CREDENTIALS_CODE = 'wechat-setting.reset.credentials';
+
+const WECHAT_INFRA_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'wechat-setting.read.singleton',
+    module: 'wechat-setting',
+    action: 'read',
+    resourceType: 'singleton',
+    description: '读 WeChat Settings singleton row',
+  },
+  {
+    code: 'wechat-setting.update.singleton',
+    module: 'wechat-setting',
+    action: 'update',
+    resourceType: 'singleton',
+    description: '更新 WeChat Settings(upsert;不含凭证;production-like 禁 DEV_STUB)',
+  },
+  {
+    code: WECHAT_RESET_CREDENTIALS_CODE,
+    module: 'wechat-setting',
+    action: 'reset',
+    resourceType: 'credentials',
+    description: '重置微信小程序 AppSecret(镜像 storage/sms D2=A 仅 SUPER_ADMIN;不绑 ops-admin)',
+  },
+  {
+    code: 'user.wechat.clear',
+    module: 'user',
+    action: 'clear',
+    resourceType: 'wechat',
+    description:
+      '管理员清除用户绑定微信 openid(T3 实装端点;service 内 rbac.can + assertCanManageUser;幂等)',
+  },
+];
+
+// Permission 全集(用于 step 1 upsert;14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT = 65 条)
 const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
@@ -965,13 +1015,15 @@ const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...USER_PERMISSION_SEED,
   ...AUDIT_LOG_PERMISSION_SEED,
   ...SMS_INFRA_PERMISSION_SEED,
+  ...WECHAT_INFRA_PERMISSION_SEED,
 ];
 
-// ops-admin 完整绑定集合(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS = 58 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3)
+// ops-admin 完整绑定集合(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT = 61 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4)
 // 注:`storage-setting.reset.credentials` 从 PR_2B_PERMISSION_SEED 过滤掉(沿 PR-2 D2=A;§6.2)
 // 注:`user.update.role` 从 USER_PERMISSION_SEED 过滤掉(沿 PR-3 D1=A;§6.2)
 // 注:`audit-log.read.entry` 整条加入,不过滤(沿 PR-4 D2=B;§6.2)
 // 注:`sms-setting.reset.credentials` 从 SMS_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;评审稿 E-3)
+// 注:`wechat-setting.reset.credentials` 从 WECHAT_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;wechat 评审稿 §3.4)
 const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
@@ -979,13 +1031,14 @@ const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...USER_PERMISSION_SEED.filter((p) => p.code !== PR_3B_USER_UPDATE_ROLE_CODE),
   ...AUDIT_LOG_PERMISSION_SEED,
   ...SMS_INFRA_PERMISSION_SEED.filter((p) => p.code !== SMS_RESET_CREDENTIALS_CODE),
+  ...WECHAT_INFRA_PERMISSION_SEED.filter((p) => p.code !== WECHAT_RESET_CREDENTIALS_CODE),
 ];
 
 // 运营管理员角色 code(沿 D7 §10.1 / §10.3 ops-admin 唯一公开 placeholder)
 const OPS_ADMIN_ROLE_CODE = 'ops-admin';
 const OPS_ADMIN_DISPLAY_NAME = '运营管理员';
 const OPS_ADMIN_DESCRIPTION =
-  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / contribution-rule + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条)的 meta 角色;14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS = 58 条权限点;凭证 reset(storage 与 sms)与 user 角色修改仅 SUPER_ADMIN';
+  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / contribution-rule + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条 + WECHAT: wechat-setting / user.wechat.clear 3 条)的 meta 角色;14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT = 61 条权限点;凭证 reset(storage / sms / wechat)与 user 角色修改仅 SUPER_ADMIN';
 
 // V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集
 // (沿 D7-attachments v1.0 §6.1 + Q11 v1.0 锁清单 + 用户 PR #6a 拍板)。
@@ -1192,7 +1245,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     });
   }
   console.log(
-    `[seed] RBAC + PR-2A + PR-2B + PR-3B + PR-4B + SMS permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A + ${PR_2B_PERMISSION_SEED.length} PR-2B + ${USER_PERMISSION_SEED.length} PR-3B + ${AUDIT_LOG_PERMISSION_SEED.length} PR-4B + ${SMS_INFRA_PERMISSION_SEED.length} SMS = ${ALL_PERMISSION_SEED.length} entries)`,
+    `[seed] RBAC + PR-2A + PR-2B + PR-3B + PR-4B + SMS + WECHAT permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A + ${PR_2B_PERMISSION_SEED.length} PR-2B + ${USER_PERMISSION_SEED.length} PR-3B + ${AUDIT_LOG_PERMISSION_SEED.length} PR-4B + ${SMS_INFRA_PERMISSION_SEED.length} SMS + ${WECHAT_INFRA_PERMISSION_SEED.length} WECHAT = ${ALL_PERMISSION_SEED.length} entries)`,
   );
 
   // 2. upsert ops-admin RbacRole(公开 seed 唯一角色;沿用户拍板方案 A)
