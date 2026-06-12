@@ -1,4 +1,4 @@
-import { Role, UserStatus } from '@prisma/client';
+import { Prisma, Role, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -824,6 +824,63 @@ describe('UsersService (characterization, scoped)', () => {
         data: { revokedReason: string };
       };
       expect(revokeArg.data.revokedReason).toBe('admin-delete');
+    });
+  });
+
+  // 微信 T3 review 收口(2026-06-12 增量审计⑬):bindMyWechat P2002 兜底触达。
+  // 上方既有用例不触达 wechat 方法;本组只锁兜底 catch(含 §5 数组判断铁律),
+  // 主流程 / 掩码 / 幂等由 app-me-wechat e2e 锁定。
+  describe('bindMyWechat — P2002 兜底', () => {
+    function primeBindUntilTx(prisma: PrismaMock, wechat: WechatMock): void {
+      wechat.code2session.mockResolvedValue({ openid: 'o-conflict-1234567890' });
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'u-1',
+        openid: null,
+      } as unknown as SafeUserRow);
+      prisma.user.findUnique.mockResolvedValue(null); // 占用预检未命中(竞态窗口)
+    }
+
+    it('事务撞 User_openid_key(P2002 target 含 openid)→ WECHAT_ALREADY_BOUND', async () => {
+      const prisma = makePrismaMock();
+      const wechat = makeWechatMock();
+      primeBindUntilTx(prisma, wechat);
+      prisma.user.update.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: '6.19.3',
+          meta: { target: ['openid'] },
+        }),
+      );
+      const service = makeService(prisma, { wechat });
+
+      await expect(
+        service.bindMyWechat(
+          makeCurrentUser({ id: 'u-1', role: Role.USER }),
+          { code: 'wx-c' },
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.WECHAT_ALREADY_BOUND));
+    });
+
+    it('P2002 但 target 不含 openid → 原样上抛(§5 数组判断铁律,不误吞他键冲突)', async () => {
+      const prisma = makePrismaMock();
+      const wechat = makeWechatMock();
+      primeBindUntilTx(prisma, wechat);
+      const otherConflict = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: '6.19.3',
+        meta: { target: ['phone'] },
+      });
+      prisma.user.update.mockRejectedValue(otherConflict);
+      const service = makeService(prisma, { wechat });
+
+      await expect(
+        service.bindMyWechat(
+          makeCurrentUser({ id: 'u-1', role: Role.USER }),
+          { code: 'wx-c' },
+          META,
+        ),
+      ).rejects.toBe(otherConflict);
     });
   });
 });
