@@ -57,6 +57,8 @@ docker run --rm -p 3000:3000 \
 
 启动强校验在 `APP_ENV=production` 下会拒绝:`JWT_SECRET` 等于 `.env.example` 默认值、`APP_CORS_ORIGIN` 为空或 `*`、`SUPER_ADMIN_PASSWORD` 等于默认值(seed 时)、`SUPER_ADMIN_USERNAME=admin`(seed 时)。完整字段以 [`.env.example`](../.env.example) 为准。
 
+> **生产长期运行必须配置自动重启**(2026-06-12 增量审计⑩;前提 = 进程兜底 #345:`uncaughtException` / `unhandledRejection` 经 pino 记完整上下文后 `exit(1)`——单实例部署下进程退出即全站不可用,无自动重启则停摆等人工):上面示例的 `--rm` 仅作最小演示(与 `--restart` 互斥),长期运行改用 `docker run -d --restart unless-stopped ...`,或 systemd 单元 `Restart=always`,或编排平台等价物(K8s `restartPolicy` 默认 `Always`)。崩溃可观测性(fatal/error 日志)与自动复活二者都到位,#345 的兜底语义才完整。
+
 ---
 
 ## 生产数据库迁移原则
