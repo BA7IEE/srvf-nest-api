@@ -92,6 +92,9 @@ const LOG_REDACT_PATHS: readonly string[] = [
   '*.wechat',
   '*.wechatId',
   '*.openId',
+  // User.openid 落表实际拼写(全小写;2026-06-12 微信 T1,增量审计⑧):redact 路径
+  // 大小写敏感,上行预留拼写不命中——按 baseline §8.4 与落表对齐;openId 行留置(未落表无害)
+  '*.openid',
   '*.unionId',
   '*.certificateNo',
   '*.licenseNo',

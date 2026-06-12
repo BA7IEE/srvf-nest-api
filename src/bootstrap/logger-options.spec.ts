@@ -145,6 +145,12 @@ describe('LOG_REDACT_PATHS — V2 baseline §8.2 预扩展字段', () => {
   });
 });
 
+describe('LOG_REDACT_PATHS — 落表拼写对齐(2026-06-12 增量审计⑧)', () => {
+  it('包含 *.openid(User.openid 落表实际拼写;redact 路径大小写敏感,openId 预留拼写不命中)', () => {
+    expect(getRedactPaths()).toContain('*.openid');
+  });
+});
+
 describe('LOG_REDACT_PATHS — 整体属性', () => {
   const paths = getRedactPaths();
 

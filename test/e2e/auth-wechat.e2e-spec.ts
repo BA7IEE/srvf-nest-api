@@ -292,6 +292,50 @@ describe('微信登录 + 绑定全链(T3 e2e 组 A;IP 限流调大)', () => {
       app.get(WechatSettingsService).invalidate();
     });
   });
+
+  // 2026-06-12 增量审计③④⑤收口:此前 auth.login.wechat 仅 count 断言(掩码内容未锁)、
+  // 七步③→④顺序冻结无判别用例、:77 软删半边零触达。本组只新增,既有断言零修改。
+  describe('④ review 收口增补(增量审计③④⑤)', () => {
+    it('auth.login.wechat audit extra:openid 全量掩码,完整值零出现(审计③)', async () => {
+      // uActive 已绑 wx-user-1(组①);再走一次已绑登录,连同此前 bind ⑦ 路留痕一并锁内容
+      const res = await loginWechat('wx-user-1');
+      expect(res.status).toBe(200);
+      expect(res.body.data.bindingRequired).toBe(false);
+
+      const rows = await prisma.auditLog.findMany({ where: { event: 'auth.login.wechat' } });
+      // 两个调用点(login 已绑路 :85 / bind ⑦ 路 :200)此刻均已留痕
+      expect(rows.length).toBeGreaterThanOrEqual(4);
+      const s = JSON.stringify(rows);
+      expect(s).not.toContain('dev-openid-wx-user-1'); // 完整 openid 零出现
+      expect(s).not.toContain('dev-openid-wx-user-2'); // 前缀同时覆盖 wx-user-2-new
+      expect(s).toContain('dev-****er-1'); // maskOpenid('dev-openid-wx-user-1') 掩码形态
+    });
+
+    it('七步顺序③→④判别:openid 已被他人占用 + SMS 码错 → 24010 非 25002(审计④)', async () => {
+      // dev-openid-wx-user-2-new 已绑 uRebind(组③);用 uActive 手机锚点 + 错码试探。
+      // 若 ④ 占用检查被挪到 ③ 码预检之前,此处会泄 25002 =
+      // 无码攻击者可探测任意 openid 的绑定关系(oracle,评审稿 §4.3 顺序冻结红线)。
+      await rewindInterval(PHONE_ACTIVE);
+      await sendCode(PHONE_ACTIVE);
+      const res = await bind('wx-user-2-new', PHONE_ACTIVE, '000000');
+      expectBizError(res, BizCode.SMS_CODE_INVALID);
+    });
+
+    it('防侧写:软删账号已绑 openid → 统一 25010(审计⑤;镜像 DISABLED 用例)', async () => {
+      // 给软删账号直接落 openid(模拟历史绑定后被软删);status 保持 ACTIVE,
+      // 使本用例只能由 deletedAt 半边拦下(:77 两半边各自有判别力)
+      const uDeleted = await prisma.user.findFirstOrThrow({
+        where: { username: 'wxl_deleted' },
+        select: { id: true },
+      });
+      await prisma.user.update({
+        where: { id: uDeleted.id },
+        data: { openid: 'dev-openid-deleted-wx' },
+      });
+      const res = await loginWechat('deleted-wx');
+      expectBizError(res, BizCode.WECHAT_CODE_INVALID);
+    });
+  });
 });
 
 describe('微信登录 — 组 B:IP 限流第 8 实例(真实默认 5/60)', () => {
