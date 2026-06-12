@@ -7,10 +7,10 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(三方一致) | **v0.22.0**(2026-06-12;package.json = Swagger = tag;tag 指向 `43630555` 标 Latest;要点见 CHANGELOG) |
-| `main` HEAD | `08ddc752`(#355 微信登录 T3;tag v0.22.0 在 `43630555`,HEAD 已超 tag,本行为滚动快照) |
-| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **3 条待折叠**(微信小程序登录 T1 #353 / T2 #354 / T3 #355;goal P1-8,评审稿冻结于 #352) |
-| 最新 handoff | [`archive/handoff/v0.22.0.md`](archive/handoff/v0.22.0.md)(不回改) |
+| 版本(三方一致) | **v0.23.0**(2026-06-12;package.json = Swagger = tag;tag 指向 `206461bb` 标 Latest;要点见 CHANGELOG) |
+| `main` HEAD | `206461bb`(#358 handoff;tag v0.23.0 与 HEAD 同点,本行为滚动快照) |
+| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **0**(v0.23.0 已折叠 3 条:#353/#354/#355) |
+| 最新 handoff | [`archive/handoff/v0.23.0.md`](archive/handoff/v0.23.0.md)(不回改) |
 
 ## 2. 当前系统已具备能力
 
