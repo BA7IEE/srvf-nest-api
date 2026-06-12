@@ -1,7 +1,13 @@
 # 部署指南
 
 > V1.1 起仅交付应用镜像本身;`docker-compose.yml` 仅供本地起 PostgreSQL,生产部署形态由部署环境决定。
-> **单实例前提(2026-06-11 B 队列起)**:应用内置生日祝福定时任务(`@nestjs/schedule`,进程级 `@Cron`,每日 09:00 Asia/Shanghai;[`queue-b 评审稿 §6.8`](archive/reviews/queue-b-otp-birthday-infra-review.md))——**横向扩成多副本前必须先为该 job 加分布式锁**(DB advisory lock / 任务表),否则同日双发;当前部署形态 = 单实例,无需动作。
+> **单实例前提(2026-06-11 B 队列起;2026-06-12 核实轮补全为完整 checklist)**:当前部署形态 = 单实例,下列 5 处进程内 / 内存状态在单实例下均按设计工作,**无需动作**;它们同时构成**横向扩成多副本前必须逐项处理的 checklist**:
+>
+> 1. **生日祝福定时任务(扩容前必须处理)**:`@nestjs/schedule` 进程级 `@Cron`,每日 09:00 Asia/Shanghai(全仓唯一定时任务;`ScheduleModule.forRoot()` 在 [`app.module.ts`](../src/app.module.ts),job 在 [`birthday-greeting.service.ts`](../src/modules/notifications/birthday-greeting.service.ts);[`queue-b 评审稿 §6.8`](archive/reviews/queue-b-otp-birthday-infra-review.md))。多副本 → 每副本各自触发,同一天重复发送(双副本即双发)→ 扩容前必须先为该 job 加分布式锁(DB advisory lock / 任务表)。
+> 2. **7 个内存限流器(扩容前必须处理)**:`@nestjs/throttler` 内存 storage、不引 Redis([`throttle-options.ts`](../src/bootstrap/throttle-options.ts);login(`default`)/ password-change / refresh / sms-send / sms-verify / password-reset / login-sms 共 7 个实例,均 IP 维度计数)。多副本 → 各实例独立计数,有效阈值 ≈ 配置值 × 副本数放宽。注:SMS 发码另有 DB 层第二道防线(同号 60s 间隔 + 同号自然日上限,`SmsCodeService` 查库实现),天然多实例安全;被放宽的只是 IP 维度桶(login / sms-send 等)→ 扩容前换共享 storage(如 Redis throttler storage)。
+> 3. **RBAC 权限缓存(扩容前评估 TTL)**:`RbacCacheService` 进程内 Map + TTL(默认 1800 秒,`RBAC_CACHE_TTL_SECONDS` 可调);`POST /api/system/v1/rbac/reload` 与全部 invalidate 入口只清**本进程** Map。单实例:授权变更 invalidate 即时生效,TTL 仅兜底;多副本:RBAC 权限点变更在其他实例最多滞后一个 TTL。边界:**用户禁用 / 软删不受本缓存影响、无滞后**(JwtStrategy 每请求查库校验 `status` / `deletedAt`,与本缓存无关),受滞后影响的只有权限点变更 → 扩容前缩短 TTL 或引入跨实例失效广播。
+> 4. **storage-settings 60 秒进程内缓存(影响小,知悉即可)**:[`storage-settings.service.ts`](../src/modules/storage/storage-settings.service.ts) `CACHE_TTL_MS = 60_000`。多副本 → 存储(COS)配置变更在其他实例最多滞后 60s 生效 → 一般可接受;需要更快收敛时缩短 TTL 或改共享缓存。
+> 5. **sms-settings 60 秒进程内缓存(影响小,知悉即可)**:[`sms-settings.service.ts`](../src/modules/sms/sms-settings.service.ts) 同款 `CACHE_TTL_MS = 60_000`。多副本 → SMS 配置(通道开关 / 模板 ID 等)变更最多滞后 60s → 同上,一般可接受。
 
 ---
 
