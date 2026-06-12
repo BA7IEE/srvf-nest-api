@@ -30,6 +30,10 @@ import {
 // - 请求 URL query 含 appid + secret:**禁止**把 URL / fetch 错误原文写入日志或错误信息
 //   (fetch 失败仅取 err.name;HTTP 失败仅取 status;微信 errcode/errmsg 本身不含 secret)
 // - session_key / unionid 解析即弃:不入返回类型、不入变量外传、不入日志
+//
+// 可观测性(2026-06-12 增量 review 发现①⑨收口):全部失败路径各记一行 warn
+// (仅 err.name / status / 固定标签,与上述 E-12 纪律兼容)——否则微信侧全挂时
+// 服务端零可区分信号,ops SOP 排错表承诺的 FETCH_ERROR / TimeoutError 日志无从看起。
 
 // 微信 jscode2session 回执形状(官方文档;errcode 成功时缺省或为 0)
 interface Code2SessionWireResponse {
@@ -61,18 +65,32 @@ export class WechatMiniRealProvider implements WechatMiniProvider {
     } catch (err) {
       // 超时(TimeoutError)/ DNS / 连接失败;仅取 err.name——错误原文可能内嵌完整 URL(含 secret)
       const name = err instanceof Error ? err.name : 'UnknownError';
+      this.logger.warn(`wechat code2session fetch failed name=${name}`);
       throw new WechatApiError('FETCH_ERROR', name);
     }
 
     if (!res.ok) {
+      this.logger.warn(`wechat code2session http error status=${res.status}`);
       throw new WechatApiError('HTTP_ERROR', `status=${res.status}`);
     }
 
-    // 微信可能以 text/plain 返回 JSON 体;统一 text → JSON.parse
+    // 微信可能以 text/plain 返回 JSON 体;统一 text → JSON.parse。
+    // body 读取与 JSON 解析分开 catch:读取阶段超时 / 连接中断属传输层故障,
+    // 归 FETCH_ERROR(原一并落 INVALID_RESPONSE,诊断标签失真)
+    let raw: string;
+    try {
+      raw = await res.text();
+    } catch (err) {
+      const name = err instanceof Error ? err.name : 'UnknownError';
+      this.logger.warn(`wechat code2session body read failed name=${name}`);
+      throw new WechatApiError('FETCH_ERROR', name);
+    }
     let body: Code2SessionWireResponse;
     try {
-      body = JSON.parse(await res.text()) as Code2SessionWireResponse;
+      body = JSON.parse(raw) as Code2SessionWireResponse;
     } catch {
+      // 响应原文不入日志(内容不可信);固定标签足够区分
+      this.logger.warn('wechat code2session invalid response: non-JSON body');
       throw new WechatApiError('INVALID_RESPONSE', 'non-JSON body');
     }
 
@@ -87,6 +105,7 @@ export class WechatMiniRealProvider implements WechatMiniProvider {
     }
 
     if (!body.openid) {
+      this.logger.warn('wechat code2session response has no openid');
       throw new WechatApiError('MISSING_OPENID', 'response has no openid');
     }
 
