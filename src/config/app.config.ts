@@ -166,6 +166,16 @@ export interface LoginSmsThrottleConfig {
   ttlSeconds: number;
 }
 
+// 微信小程序登录 T3(2026-06-12):微信 pre-auth 三端点 IP 限流配置
+// (冻结评审稿 wechat-mini-login-review.md E-17)。
+// 第 8 个独立 throttler 实例(name: 'login-wechat'),计数器与既有七实例互不影响。
+// 默认 5 次 / 60 秒(镜像 login-sms 拍板值;wechat-bind/send-code 对有效号另有
+// DB 层同号 60s 间隔 / 日 10 条兜底)。
+export interface LoginWechatThrottleConfig {
+  limit: number;
+  ttlSeconds: number;
+}
+
 // SMS 基础设施 T2(2026-06-10):sms_settings 凭证加密 key(评审稿 D-SMS-8;沿 STORAGE 范式)。
 // 独立 env `SMS_ENCRYPTION_KEY`,与 STORAGE_ENCRYPTION_KEY 互不复用;
 // production / smoke fail-fast,dev / test 留空允许 → SmsCryptoService.isAvailable()=false。
@@ -266,6 +276,7 @@ export interface AppConfig {
   smsVerifyThrottle: SmsVerifyThrottleConfig;
   passwordResetThrottle: PasswordResetThrottleConfig;
   loginSmsThrottle: LoginSmsThrottleConfig;
+  loginWechatThrottle: LoginWechatThrottleConfig;
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -420,6 +431,22 @@ export default registerAs('app', (): AppConfig => {
     ),
   };
 
+  // 微信小程序登录 T3(2026-06-12):微信 pre-auth 三端点限流(评审稿 E-17;默认 5/60 镜像 login-sms)。
+  const loginWechatThrottle: LoginWechatThrottleConfig = {
+    limit: parsePositiveInt(
+      process.env.LOGIN_WECHAT_THROTTLE_LIMIT,
+      5,
+      'LOGIN_WECHAT_THROTTLE_LIMIT',
+      { min: 1, max: 100 },
+    ),
+    ttlSeconds: parsePositiveInt(
+      process.env.LOGIN_WECHAT_THROTTLE_TTL_SECONDS,
+      60,
+      'LOGIN_WECHAT_THROTTLE_TTL_SECONDS',
+      { min: 1, max: 3600 },
+    ),
+  };
+
   return {
     env,
     port,
@@ -437,5 +464,6 @@ export default registerAs('app', (): AppConfig => {
     smsVerifyThrottle,
     passwordResetThrottle,
     loginSmsThrottle,
+    loginWechatThrottle,
   };
 });

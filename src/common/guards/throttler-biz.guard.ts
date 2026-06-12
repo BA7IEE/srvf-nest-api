@@ -6,6 +6,10 @@ import {
 } from '../decorators/login-sms-throttle.decorator';
 import { LOGIN_THROTTLE_KEY } from '../decorators/login-throttle.decorator';
 import {
+  LOGIN_WECHAT_THROTTLE_KEY,
+  LOGIN_WECHAT_THROTTLER_NAME,
+} from '../decorators/login-wechat-throttle.decorator';
+import {
   PASSWORD_CHANGE_THROTTLE_KEY,
   PASSWORD_CHANGE_THROTTLER_NAME,
 } from '../decorators/password-change-throttle.decorator';
@@ -37,8 +41,10 @@ import { BizException } from '../exceptions/biz.exception';
 // 走 throttler `password-reset`;评审稿 password-reset-by-sms-review.md D-PR-4 / E-10,同型扩展)。
 // B 队列 F4-T2(2026-06-11):OTP 登录两端点限流入口(metadata = LOGIN_SMS_THROTTLE_KEY,
 // 走 throttler `login-sms`;评审稿 queue-b-otp-birthday-infra-review.md E-O3,同型扩展)。
+// 微信小程序登录 T3(2026-06-12):微信 pre-auth 三端点限流入口(metadata =
+// LOGIN_WECHAT_THROTTLE_KEY,走 throttler `login-wechat`;wechat-mini-login-review.md E-17,同型扩展)。
 //
-// 七个 throttler 实例在 ThrottlerModule.forRootAsync 中注册(详见 bootstrap/throttle-options.ts),
+// 八个 throttler 实例在 ThrottlerModule.forRootAsync 中注册(详见 bootstrap/throttle-options.ts),
 // 物理隔离:登录失败爆破不消耗改密 / refresh / 发码配额,反之亦然。
 //
 // 与 ThrottlerGuard 的三点定制:
@@ -90,6 +96,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       LOGIN_SMS_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const loginWechatEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      LOGIN_WECHAT_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     // 未标任何一种 metadata 时全部跳过;任一 metadata 命中即进入限流逻辑,
     // 由 handleRequest 按 throttler.name 决定具体走哪个 throttler。
     return Promise.resolve(
@@ -100,7 +110,8 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
         smsSendEnabled === true ||
         smsVerifyEnabled === true ||
         passwordResetEnabled === true ||
-        loginSmsEnabled === true
+        loginSmsEnabled === true ||
+        loginWechatEnabled === true
       ),
     );
   }
@@ -138,6 +149,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       LOGIN_SMS_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const loginWechatEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      LOGIN_WECHAT_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     // throttler `default` 仅服务 LoginThrottle;否则直接放过
     if (throttler.name === 'default' && loginEnabled !== true) {
@@ -165,6 +180,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
     }
     // throttler `login-sms` 仅服务 LoginSmsThrottle;否则直接放过
     if (throttler.name === LOGIN_SMS_THROTTLER_NAME && loginSmsEnabled !== true) {
+      return Promise.resolve(true);
+    }
+    // throttler `login-wechat` 仅服务 LoginWechatThrottle;否则直接放过
+    if (throttler.name === LOGIN_WECHAT_THROTTLER_NAME && loginWechatEnabled !== true) {
       return Promise.resolve(true);
     }
 

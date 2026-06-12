@@ -9,6 +9,7 @@ import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { RbacService } from '../permissions/rbac.service';
 import type { SmsCodeService } from '../sms/sms-code.service';
+import type { WechatService } from '../wechat/wechat.service';
 import type {
   CreateUserDto,
   ResetUserPasswordDto,
@@ -162,18 +163,34 @@ function makeRbacMock(allow = true) {
 }
 type RbacMock = ReturnType<typeof makeRbacMock>;
 
+// 微信 T3:UsersService 构造器新增 WechatService 依赖;既有 characterization 用例
+// 不触达 wechat 方法,mock 仅满足构造器形参(沿 smsCode mock 范式)。
+function makeWechatMock() {
+  return {
+    code2session: jest.fn<Promise<{ openid: string }>, [string]>(),
+  };
+}
+type WechatMock = ReturnType<typeof makeWechatMock>;
+
 function makeService(
   prisma: PrismaMock,
-  opts: { auditLogs?: AuditLogsMock; rbac?: RbacMock; smsCode?: SmsCodeMock } = {},
+  opts: {
+    auditLogs?: AuditLogsMock;
+    rbac?: RbacMock;
+    smsCode?: SmsCodeMock;
+    wechat?: WechatMock;
+  } = {},
 ): UsersService {
   const auditLogs = opts.auditLogs ?? makeAuditLogsMock();
   const rbac = opts.rbac ?? makeRbacMock();
   const smsCode = opts.smsCode ?? makeSmsCodeMock();
+  const wechat = opts.wechat ?? makeWechatMock();
   return new UsersService(
     prisma as unknown as PrismaService,
     auditLogs as unknown as AuditLogsService,
     rbac as unknown as RbacService,
     smsCode as unknown as SmsCodeService,
+    wechat as unknown as WechatService,
   );
 }
 

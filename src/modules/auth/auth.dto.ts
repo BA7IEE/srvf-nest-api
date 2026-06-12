@@ -163,6 +163,76 @@ export class LoginSmsDto {
   code!: string;
 }
 
+// ===== 微信小程序登录 T3(2026-06-12;冻结评审稿 wechat-mini-login-review.md §3.2 / §4 / E-16/E-25)=====
+//
+// pre-auth DTO 纪律同上:严格字段白名单;wx code 为不透明短串(@MaxLength 128,微信 code
+// 实际 ~32 字符,留余量不锁死);phone 沿 MAINLAND_PHONE_PATTERN,smsCode 沿 6 位数字;
+// 登录/绑定成功的会话部分**复用 LoginResponseDto**(与密码/OTP 登录同 DTO);
+// 响应永不含 openid 明文 / session_key / wx code(E-12;openid 仅 me/wechat 掩码后回显)。
+
+const WECHAT_CODE_MAX_LENGTH = 128;
+
+export class LoginWechatDto {
+  @ApiProperty({
+    description: '微信小程序 wx.login() 产出的一次性 code(5 分钟有效,单次消费)',
+    maxLength: WECHAT_CODE_MAX_LENGTH,
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(WECHAT_CODE_MAX_LENGTH)
+  code!: string;
+}
+
+export class WechatLoginResponseDto {
+  @ApiProperty({
+    description:
+      '该微信 openid 是否尚未绑定账号:true = 未绑定(session=null,客户端引导走 wechat-bind 流程,届时重新 wx.login 取新 code);false = 已绑定并签发会话',
+  })
+  bindingRequired!: boolean;
+
+  @ApiProperty({
+    description: '已绑定时的会话(与密码登录同 LoginResponseDto / 同 refresh family);未绑定为 null',
+    type: LoginResponseDto,
+    nullable: true,
+  })
+  session!: LoginResponseDto | null;
+}
+
+export class SendWechatBindCodeDto {
+  @ApiProperty({
+    description: '账号绑定的大陆手机号(11 位);防枚举:无效号码返回完全相同的泛化响应',
+    example: '13800001234',
+  })
+  @IsString()
+  @Matches(MAINLAND_PHONE_PATTERN, { message: 'phone 必须是大陆 11 位手机号' })
+  phone!: string;
+}
+
+export class WechatBindDto {
+  @ApiProperty({
+    description: '微信小程序 wx.login() 产出的一次性 code(放最前换 openid,失败不烧短信验证码)',
+    maxLength: WECHAT_CODE_MAX_LENGTH,
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(WECHAT_CODE_MAX_LENGTH)
+  code!: string;
+
+  @ApiProperty({
+    description: '账号绑定的大陆手机号(11 位;须与 send-code 时一致)',
+    example: '13800001234',
+  })
+  @IsString()
+  @Matches(MAINLAND_PHONE_PATTERN, { message: 'phone 必须是大陆 11 位手机号' })
+  phone!: string;
+
+  @ApiProperty({ description: '6 位数字短信验证码(purpose=WECHAT_BIND)', example: '123456' })
+  @IsString()
+  @Length(SMS_CODE_LENGTH, SMS_CODE_LENGTH)
+  @Matches(/^\d{6}$/, { message: 'smsCode 必须是 6 位数字' })
+  smsCode!: string;
+}
+
 export class ResetPasswordBySmsDto {
   @ApiProperty({
     description: '账号绑定的大陆手机号(11 位;须与 send-code 时一致)',

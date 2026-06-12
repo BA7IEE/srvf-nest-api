@@ -109,12 +109,15 @@ export class AuthService {
   //   7. 事务内 create refresh_tokens 行 + 写 audit(event 由调用方传入)
   //   8. lastLoginAt fire-and-forget
   // 调用方:login()(event='auth.login',extra 仅 familyId)/
-  //         LoginSmsService.login()(event='auth.login.sms',extra 追加 phone 掩码 + codeId)。
-  // extraAudit 仅允许追加非敏感字段(掩码后手机号 / codeId);禁明文码 / token / hash 任何形态。
+  //         LoginSmsService.login()(event='auth.login.sms',extra 追加 phone 掩码 + codeId)/
+  //         LoginWechatService(event='auth.login.wechat',extra 追加 openid 掩码,
+  //         绑定路径另含 phone 掩码 + codeId;2026-06-12 wechat 评审稿 E-15,union 扩展仅类型行)。
+  // extraAudit 仅允许追加非敏感字段(掩码后手机号 / 掩码后 openid / codeId);
+  // 禁明文码 / token / hash / session_key 任何形态。
   async createSession(
     user: { id: string; username: string; role: Role },
     meta: AuditMeta,
-    event: 'auth.login' | 'auth.login.sms',
+    event: 'auth.login' | 'auth.login.sms' | 'auth.login.wechat',
     extraAudit?: Record<string, string | number | null>,
   ): Promise<LoginResponseDto> {
     // 5. 签 access token(payload zero drift)

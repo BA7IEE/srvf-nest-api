@@ -68,7 +68,7 @@
 
 - access token 即时吊销(`tokenVersion` 字段 / access token blacklist / JWT revoke list):沿 §9 P0-E + 15m access TTL 自然过期 + `JwtStrategy.validate` 每请求查库承接;诉求出现时按 [`docs/security.md` Token 吊销升级路径](docs/security.md) 单独立项
 - RBAC 业务面全面接入 — **已于 2026-06-11 Slow-4 收口完成,不再属本清单**(管理面 v0.15.0 P0-F 收紧;业务面判权单轨 `rbac.can()`,全仓活跃 `@Roles` = 0,详见 §8「判权单轨现状」行 + 冻结评审稿 [`docs/archive/reviews/slow4-rbac-business-face-review.md`](docs/archive/reviews/slow4-rbac-business-face-review.md);现状清单沿 [`docs/current-state.md §2`](docs/current-state.md))
-- 微信登录 / 小程序登录(业务明确需要时单独评审)
+- 微信登录 / 小程序登录 — **已于 2026-06-12 按 ARCHITECTURE §9 升级路径解锁并落地,不再属本清单**(触发条件「第一个小程序产品要接」满足;范围 = 小程序 openid 绑定 + 登录,绑定锚点 = 手机短信,沿 login-sms 范式,冻结评审稿 [`docs/archive/reviews/wechat-mini-login-review.md`](docs/archive/reviews/wechat-mini-login-review.md);密码登录契约零变化,详见 §8「登录」;unionid / session_key 存储、本人裸解绑、其他 OAuth 第三方登录**不在解锁范围**)
 - 多租户(真实业务出现跨队隔离诉求时单独架构评审)
 - Redis / queue(异步任务诉求触发时评审,需评估运维承接;refresh token 撤销不引入 Redis,沿 DB 主键索引 sub-ms 查询承接);**cron 已于 2026-06-11 按升级路径解锁,范围仅 notifications 生日批一个 `@Cron`**(`@nestjs/schedule`;新增任何定时任务 = 新 D 档评审;数据清理不解锁,沿 retention 手动 SOP;冻结评审稿 [`docs/archive/reviews/queue-b-otp-birthday-infra-review.md`](docs/archive/reviews/queue-b-otp-birthday-infra-review.md) R-5 / 拍板④)
 
@@ -241,6 +241,7 @@ import { Role, UserStatus } from '@prisma/client';
 ### 登录
 
 - 密码登录(`POST /api/auth/v1/login`)入参固定 `username + password`(不支持 email 登录 / 不支持在本端点混入手机号或验证码);**验证码(OTP)登录为独立端点** `POST /api/auth/v1/login-sms`(2026-06-11 解锁,冻结评审稿 [`docs/archive/reviews/queue-b-otp-birthday-infra-review.md`](docs/archive/reviews/queue-b-otp-birthday-infra-review.md);防枚举统一 24010,会话签发与密码登录同构),密码登录契约本身零变化
+- **微信小程序登录为第三个独立认证端点** `POST /api/auth/v1/login-wechat`(2026-06-12 解锁,沿 login-sms 范式,冻结评审稿 [`docs/archive/reviews/wechat-mini-login-review.md`](docs/archive/reviews/wechat-mini-login-review.md)):`{code}`→code2session→已绑 `createSession` 同构签发 / 未绑返 `bindingRequired:true`;**绑定锚点 = 手机短信**(pre-auth `wechat-bind{,/send-code}` 验 `SmsPurpose.WECHAT_BIND` 码,防枚举沿 login-sms 泛化 200 + 统一 24010);`User.openid` 唯一含软删占用,解绑唯一路径 = admin 清除;appSecret/session_key 是 L3(session_key 不存储即弃),openid 非 L3 但不滥回显(响应/audit 一律掩码);密码登录契约零变化
 - `username` 入库与查询前统一 `trim()` + `toLowerCase()`
 - 校验在 `auth.service.ts` 内手写:`findFirst` → `bcrypt.compare` → `JwtService.sign`
 - **不引入 `LocalStrategy`**
@@ -373,7 +374,7 @@ import { Role, UserStatus } from '@prisma/client';
 - ❌ Redis / Queue / Cron(refresh token 撤销靠 DB 主键索引 sub-ms 查询)
 - ❌ 完整 OAuth 2.0 / OIDC / refresh token tree / httpOnly cookie 传 refresh token(多端 Web + 小程序 + APP 统一 body 传)
 - ❌ 改 `LoginDto` / `JwtPayload` / `JwtStrategy` 查库字段(沿 v2-api-contract §6.5 + 本节铁律)
-- ❌ refresh token 失败码细分 / 微信小程序 / OAuth 第三方登录
+- ❌ refresh token 失败码细分 / OAuth 第三方登录(微信小程序登录已于 2026-06-12 解锁为第三个独立认证端点,见 §8「登录」;其余第三方登录仍不做)
 
 ---
 

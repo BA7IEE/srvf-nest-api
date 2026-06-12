@@ -29,6 +29,7 @@ const fakeAppCfg: AppConfig = {
   // 找回密码 T2:AppConfig 新增必填字段;本 unit test 不关心限流参数,仅满足接口
   passwordResetThrottle: { limit: 3, ttlSeconds: 60 },
   loginSmsThrottle: { limit: 5, ttlSeconds: 60 },
+  loginWechatThrottle: { limit: 5, ttlSeconds: 60 },
 };
 
 function getRedactPaths(): readonly string[] {

@@ -11,12 +11,15 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
 import { SmsCodeService } from '../sms/sms-code.service';
 import { maskPhone } from '../sms/sms.constants';
+import { maskOpenid } from '../wechat/wechat.constants';
+import { WechatService } from '../wechat/wechat.service';
 import type {
   AppMePhoneDto,
   BindMyPhoneDto,
   SendMyPhoneCodeDto,
   SendMyPhoneCodeResponseDto,
 } from './dto/app/app-me-phone.dto';
+import type { AppMeWechatDto, BindMyWechatDto } from './dto/app/app-me-wechat.dto';
 import {
   ChangeMyPasswordDto,
   CreateUserDto,
@@ -41,6 +44,7 @@ export class UsersService {
     private readonly auditLogs: AuditLogsService,
     private readonly rbac: RbacService,
     private readonly smsCode: SmsCodeService,
+    private readonly wechat: WechatService,
   ) {}
 
   // ============ helpers ============
@@ -651,6 +655,135 @@ export class UsersService {
       }
       throw err;
     }
+  }
+
+  // ============ 微信小程序登录 T3:me/wechat 查询/换绑 + admin 清除(2026-06-12) ============
+  // 冻结评审稿 docs/archive/reviews/wechat-mini-login-review.md §4.4 / E-13/E-18/E-19/E-20。
+  // 准入:me/wechat 两方法沿 me/phone 账号级豁免先例(E-18),**不**强约 canUseApp;
+  // User.openid 是账号级身份字段,Admin 无 member 也需绑定;豁免仅限这两个端点,禁止外溢。
+  // openid 纪律:响应仅掩码回显(maskOpenid);audit 一律掩码;不入 pino 日志。
+
+  // GET /api/app/v1/me/wechat(⑦):绑定状态查询。
+  async getMyWechat(currentUser: CurrentUserPayload): Promise<AppMeWechatDto> {
+    const me = await this.prisma.user.findFirst({
+      where: this.notDeletedWhere({ id: currentUser.id }),
+      select: { openid: true },
+    });
+    if (!me) throw new BizException(BizCode.USER_NOT_FOUND);
+    return {
+      bound: me.openid !== null,
+      openidMasked: me.openid === null ? null : maskOpenid(me.openid),
+    };
+  }
+
+  // PUT /api/app/v1/me/wechat(⑧):已登录绑定 / 换绑一体(评审稿 §4.4;JWT 已证身份,
+  // 无需再验手机,D-W3)。流程:code2session → 占用检查(=本人幂等返当前状态不写 audit;
+  // 他人 → 25002)→ 事务 update + audit wechat.{bind,rebind}.self(viaPath='me')。
+  // P2002 兜底竞态:落库撞 User_openid_key → WECHAT_ALREADY_BOUND(沿 §5 数组判断铁律)。
+  async bindMyWechat(
+    currentUser: CurrentUserPayload,
+    dto: BindMyWechatDto,
+    auditMeta: AuditMeta,
+  ): Promise<AppMeWechatDto> {
+    const { openid } = await this.wechat.code2session(dto.code);
+
+    const me = await this.prisma.user.findFirst({
+      where: this.notDeletedWhere({ id: currentUser.id }),
+      select: { id: true, openid: true },
+    });
+    if (!me) throw new BizException(BizCode.USER_NOT_FOUND);
+
+    const occupied = await this.prisma.user.findUnique({
+      where: { openid },
+      select: { id: true },
+    });
+    if (occupied !== null) {
+      if (occupied.id === currentUser.id) {
+        // 幂等:同 openid 重复绑定,无状态变化不写 audit
+        return { bound: true, openidMasked: maskOpenid(openid) };
+      }
+      throw new BizException(BizCode.WECHAT_ALREADY_BOUND);
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.user.update({
+          where: { id: currentUser.id },
+          data: { openid },
+          select: { id: true },
+        });
+
+        // audit detail openid 一律掩码(E-23);禁 wx code / 完整 openid / session_key
+        await this.auditLogs.log({
+          event: me.openid === null ? 'wechat.bind.self' : 'wechat.rebind.self',
+          actorUserId: currentUser.id,
+          actorRoleSnap: currentUser.role,
+          resourceType: 'user',
+          resourceId: currentUser.id,
+          meta: auditMeta,
+          ...(me.openid === null ? {} : { before: { openid: maskOpenid(me.openid) } }),
+          after: { openid: maskOpenid(openid) },
+          extra: { viaPath: 'me' },
+          tx,
+        });
+      });
+
+      return { bound: true, openidMasked: maskOpenid(openid) };
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002' &&
+        Array.isArray(err.meta?.target) &&
+        (err.meta.target as string[]).includes('openid')
+      ) {
+        throw new BizException(BizCode.WECHAT_ALREADY_BOUND);
+      }
+      throw err;
+    }
+  }
+
+  // DELETE /api/admin/v1/users/:id/wechat(⑨):管理员清除绑定(解除绑定唯一路径,D-W3;
+  // 逐行镜像 clearUserPhone E-20)。rbac.can('user.wechat.clear')(绑 ops-admin)+
+  // assertCanManageUser 既有护栏;软删用户统一 USER_NOT_FOUND(沿 §7.8);
+  // **幂等**:目标无 openid → 200 不报错,且仅实际清除时写 audit。
+  async clearUserWechat(
+    currentUser: CurrentUserPayload,
+    id: string,
+    auditMeta: AuditMeta,
+  ): Promise<UserResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'user.wechat.clear');
+
+    const target = await this.prisma.user.findFirst({
+      where: this.notDeletedWhere({ id }),
+      select: { id: true, role: true, status: true, openid: true },
+    });
+    if (!target) throw new BizException(BizCode.USER_NOT_FOUND);
+    this.assertCanManageUser(currentUser, target);
+
+    if (target.openid === null) {
+      return this.findByIdOrThrow(id);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id },
+        data: { openid: null },
+        select: userSafeSelect,
+      });
+
+      await this.auditLogs.log({
+        event: 'wechat.clear.by-admin',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'user',
+        resourceId: id,
+        meta: auditMeta,
+        before: { openid: maskOpenid(target.openid as string) },
+        tx,
+      });
+
+      return updated;
+    });
   }
 
   // DELETE /api/admin/v1/users/:id/phone(⑦):管理员清除绑定(解除绑定唯一路径,§7)。
