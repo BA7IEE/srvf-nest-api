@@ -6,7 +6,7 @@
 
 ### Added
 
-- **进程级崩溃路径可观测性兜底:`uncaughtException` / `unhandledRejection` 经 pino 记完整上下文后保持 Node 默认崩溃结局**(D 档;goal「会议延期窗口·无等待工作一次收清」G2 拍板):新文件 `src/bootstrap/apply-crash-handlers.ts`(沿 `apply-*` bootstrap 范式),`main.ts` 在 `useLogger` 后注册——`uncaughtException` 记 fatal(含 err + origin;pino fatal 同步 flush 不丢日志)后 `exit(1)`(进程已处不安全态,与 Node 默认结局一致);`unhandledRejection` 记 error 后 **re-throw 升级回 uncaughtException**(注册 listener 会取代 Node22 默认 throw 升级,re-throw 保持"默认随后崩溃"语义零漂移,代价为同一错误 error+fatal 两行属刻意)。敏感信息沿 `logger-options.ts` redact 清单照常 `[REDACTED]`;**不碰 SIGTERM/SIGINT/优雅关闭**(仍由 `enableShutdownHooks` 统一控制,main.ts 注释同步划界:崩溃路径 exit(1) 不属于关闭流程);test 入口(`test-app.ts`)不注册零影响。新 unit spec 5 用例(proc 注入 EventEmitter + exit mock,不在 jest 进程注册真实 handler):双事件各 1 listener 且零 SIGTERM 触碰 / fatal→exit(1) 顺序锁定 / re-throw 同一 reason / 非 Error reason 原样透传。
+- **进程级崩溃路径可观测性兜底:`uncaughtException` / `unhandledRejection` 经 pino 记完整上下文后保持 Node 默认崩溃结局**(D 档;goal「会议延期窗口·无等待工作一次收清」G2 拍板,PR #345):新文件 `src/bootstrap/apply-crash-handlers.ts`(沿 `apply-*` bootstrap 范式),`main.ts` 在 `useLogger` 后注册——`uncaughtException` 记 fatal(含 err + origin;pino fatal 同步 flush 不丢日志)后 `exit(1)`(进程已处不安全态,与 Node 默认结局一致);`unhandledRejection` 记 error 后 **re-throw 升级回 uncaughtException**(注册 listener 会取代 Node22 默认 throw 升级,re-throw 保持"默认随后崩溃"语义零漂移,代价为同一错误 error+fatal 两行属刻意)。敏感信息沿 `logger-options.ts` redact 清单照常 `[REDACTED]`;**不碰 SIGTERM/SIGINT/优雅关闭**(仍由 `enableShutdownHooks` 统一控制,main.ts 注释同步划界:崩溃路径 exit(1) 不属于关闭流程);test 入口(`test-app.ts`)不注册零影响。新 unit spec 5 用例(proc 注入 EventEmitter + exit mock,不在 jest 进程注册真实 handler):双事件各 1 listener 且零 SIGTERM 触碰 / fatal→exit(1) 顺序锁定 / re-throw 同一 reason / 非 Error reason 原样透传。
 
 ### Changed
 
