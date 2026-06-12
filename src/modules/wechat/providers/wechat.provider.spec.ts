@@ -1,3 +1,5 @@
+import { Logger } from '@nestjs/common';
+
 import type { WechatSettingsService } from '../wechat-settings.service';
 import {
   WechatApiError,
@@ -23,6 +25,8 @@ import { WechatMiniRealProvider } from './wechat.provider';
 // 8. 4 档守护:settings null / 未启用 / providerType≠WECHAT / 凭证非 CONFIGURED / appId 缺失
 //    → WechatChannelUnavailableError
 // 9. 请求构造:URL 落 api.weixin.qq.com/sns/jscode2session + 4 个 query 参数 + AbortSignal 就位
+// 10. 失败路径 warn 日志(2026-06-12 增量 review ①⑨ 收口):四失败路径各一行 warn,
+//     内容零 secret / URL / 响应原文;body 读取阶段中断归类 FETCH_ERROR(非 INVALID_RESPONSE)
 
 const APP_ID = 'wx-test-appid';
 const APP_SECRET = 'test-app-secret-value';
@@ -168,5 +172,74 @@ describe('WechatMiniRealProvider', () => {
     const caught = await caughtFrom(provider.code2session({ code: 'x' }));
     expect(caught).toBeInstanceOf(WechatChannelUnavailableError);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  describe('失败路径 warn 日志(2026-06-12 增量 review ①⑨ 收口)', () => {
+    let warnSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      warnSpy.mockRestore();
+    });
+
+    function warnText(): string {
+      return (warnSpy.mock.calls as unknown[][]).map((call) => String(call[0])).join('\n');
+    }
+
+    it('fetch 抛错 → warn 一行,含 err.name 不含 URL / secret(E-12 兼容)', async () => {
+      const timeoutErr = new Error('The operation was aborted due to timeout');
+      timeoutErr.name = 'TimeoutError';
+      fetchSpy.mockRejectedValue(timeoutErr);
+      const provider = makeProvider(makeResolved());
+      await caughtFrom(provider.code2session({ code: 'x' }));
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnText()).toContain('name=TimeoutError');
+      expect(warnText()).not.toContain(APP_SECRET);
+      expect(warnText()).not.toContain('api.weixin.qq.com');
+    });
+
+    it('HTTP 非 200 → warn 一行,含 status 不含响应体', async () => {
+      fetchSpy.mockResolvedValue(new Response('upstream secret-ish body', { status: 502 }));
+      const provider = makeProvider(makeResolved());
+      await caughtFrom(provider.code2session({ code: 'x' }));
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnText()).toContain('status=502');
+      expect(warnText()).not.toContain('secret-ish');
+    });
+
+    it('非 JSON 体 → warn 一行(固定标签,响应原文不入日志)', async () => {
+      fetchSpy.mockResolvedValue(new Response('<html>not json</html>', { status: 200 }));
+      const provider = makeProvider(makeResolved());
+      await caughtFrom(provider.code2session({ code: 'x' }));
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnText()).toContain('non-JSON body');
+      expect(warnText()).not.toContain('<html>');
+    });
+
+    it('200 但缺 openid → warn 一行', async () => {
+      fetchSpy.mockResolvedValue(jsonResponse({ session_key: 'only-sk' }));
+      const provider = makeProvider(makeResolved());
+      await caughtFrom(provider.code2session({ code: 'x' }));
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnText()).toContain('no openid');
+      expect(warnText()).not.toContain('only-sk');
+    });
+
+    it('body 读取阶段中断 → 归类 FETCH_ERROR(原误标 INVALID_RESPONSE)且 warn 一行', async () => {
+      const abortErr = new Error('terminated');
+      abortErr.name = 'TimeoutError';
+      const bodyHangsRes = { ok: true, status: 200, text: () => Promise.reject(abortErr) };
+      fetchSpy.mockResolvedValue(bodyHangsRes);
+      const provider = makeProvider(makeResolved());
+      const caught = await caughtFrom(provider.code2session({ code: 'x' }));
+      expect(caught).toBeInstanceOf(WechatApiError);
+      expect((caught as WechatApiError).errCode).toBe('FETCH_ERROR');
+      expect((caught as WechatApiError).errMsg).toBe('TimeoutError');
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnText()).toContain('body read failed name=TimeoutError');
+    });
   });
 });

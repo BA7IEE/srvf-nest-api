@@ -2,6 +2,12 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+### Fixed
+
+- **微信 code2session 失败路径可观测性:四条上游失败路径补服务端 warn 日志;`res.text()` body 阶段中断归类 FETCH_ERROR**(C 档;goal「微信登录 review 发现收口」PR-A,2026-06-12 增量审计发现①⑨):FETCH_ERROR(超时 / DNS / 连接失败)/ HTTP_ERROR / INVALID_RESPONSE / MISSING_OPENID 四路径此前零服务端日志(仅 errcode≠0 路有 warn;BizException 在全局 filter 不记日志属既有设计),微信侧全挂时服务端只有 info 级 access log,[`docs/ops/wechat-mini-production-rollout-checklist.md`](docs/ops/wechat-mini-production-rollout-checklist.md) 排错表承诺的「FETCH_ERROR·TimeoutError」日志信号实际不存在——现四路径各记一行 warn(仅 err.name / status / 固定标签,**零 wx code / openid / secret / URL / 响应原文**,E-12 纪律不破,与 errcode 路风格一致);`res.text()` body 读取阶段超时 / 中断原被一并 catch 成 `INVALID_RESPONSE: 'non-JSON body'`,现独立 catch 归类 FETCH_ERROR(诊断标签 true-up)。客户端行为零变化(四路径同归 25031 / 502);provider spec +5 用例锁「warn 存在 + 内容零 secret / 响应原文 + body 中断归类」,既有断言零修改。
+
 ## v0.23.0 - 2026-06-12
 
 ### Added
