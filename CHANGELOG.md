@@ -2,6 +2,12 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+### Added
+
+- **微信小程序登录 T1:schema(User +`openid` / SmsPurpose +`WECHAT_BIND` / 新表 `wechat_settings`)**(D 档;goal「微信小程序登录基础设施」拍板,冻结评审稿 [`docs/archive/reviews/wechat-mini-login-review.md`](docs/archive/reviews/wechat-mini-login-review.md) §3.1;PR #353):`User` +`openid String? @unique`(**含软删占用**,沿 phone/username 不复用范式;admin 清除置 null;不存 unionid / session_key / 绑定时间戳,D-W2 最小字段集);`SmsPurpose` +`WECHAT_BIND`(微信绑定锚点 = 手机短信,D-W1);新表 `wechat_settings`(镜像 SmsSettings 单例范式;凭证仅 `appSecretEncrypted` **一段**加密,差异显式登记 E-3)+ 新 enum `WechatProviderType`(`DEV_STUB`/`WECHAT`)。migration `20260612091522_add_wechat_mini_login_infra` 干净库 `prisma:deploy` **17/17** 全量重放 + `migrate diff --exit-code` 零差异 + seed 幂等二跑通过;migration 历史零回改;contract snapshot 零 diff(T1 零 API 漂移);CODEMAP / prisma CLAUDE migration 计数 16→17 随 PR true-up。
+
 ## v0.22.0 - 2026-06-12
 
 ### Added
