@@ -11,7 +11,12 @@
 
 ## P1(长期维护)
 
-(P1-3〔Slow-4〕与 P1-7〔SMS 消费者三项〕均已完成,见文末归档区;P1-4 已于 2026-06-10 调研收口,见文末归档区。**P1 现无 open 项。**)
+(P1-3〔Slow-4〕与 P1-7〔SMS 消费者三项〕均已完成,见文末归档区;P1-4 已于 2026-06-10 调研收口,见文末归档区。)
+
+### P1-8 微信小程序登录基础设施(openid 绑定 + 登录) — 🟡 进行中(goal 立项 2026-06-12)
+- **立项凭据**:维护者 2026-06-12 goal(立项 + D 档拍板;ARCHITECTURE §9 升级路径「第一个小程序产品要接」触发条件满足,解锁微信登录)。冻结评审稿:[`wechat-mini-login-review.md`](../archive/reviews/wechat-mini-login-review.md)。
+- **队列**:T0 评审稿 → T1 schema(User +openid / SmsPurpose +WECHAT_BIND / WechatSettings)→ T2 通道+设置(`src/modules/wechat/` + 凭证加密 + 权限码 +4)→ T3 认证+绑定端点(auth/v1 三公开端点 + me/wechat + admin 清除 + BizCode 25xxx + audit 4 事件)→ T4 docs 收尾。
+- **「正确但休眠」**:DevStub 全链 e2e;真实可用差 ① 注册小程序拿 AppID/AppSecret(运维)② 小程序前端——均列本期不做。
 
 ## P2(可优化)
 
