@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+### Added
+
+- **进程级崩溃路径可观测性兜底:`uncaughtException` / `unhandledRejection` 经 pino 记完整上下文后保持 Node 默认崩溃结局**(D 档;goal「会议延期窗口·无等待工作一次收清」G2 拍板):新文件 `src/bootstrap/apply-crash-handlers.ts`(沿 `apply-*` bootstrap 范式),`main.ts` 在 `useLogger` 后注册——`uncaughtException` 记 fatal(含 err + origin;pino fatal 同步 flush 不丢日志)后 `exit(1)`(进程已处不安全态,与 Node 默认结局一致);`unhandledRejection` 记 error 后 **re-throw 升级回 uncaughtException**(注册 listener 会取代 Node22 默认 throw 升级,re-throw 保持"默认随后崩溃"语义零漂移,代价为同一错误 error+fatal 两行属刻意)。敏感信息沿 `logger-options.ts` redact 清单照常 `[REDACTED]`;**不碰 SIGTERM/SIGINT/优雅关闭**(仍由 `enableShutdownHooks` 统一控制,main.ts 注释同步划界:崩溃路径 exit(1) 不属于关闭流程);test 入口(`test-app.ts`)不注册零影响。新 unit spec 5 用例(proc 注入 EventEmitter + exit mock,不在 jest 进程注册真实 handler):双事件各 1 listener 且零 SIGTERM 触碰 / fatal→exit(1) 顺序锁定 / re-throw 同一 reason / 非 Error reason 原样透传。
+
 ### Changed
 
 - **ci.yml docs-only 快速路径:纯 `.md` 变更 PR 跳过 DB / contract / e2e 重活,保留 lint + typecheck + unit 秒级轻检**(D 档;goal「ci.yml docs-only 快速路径」拍板,承接效率排查简报方案 A,PR #334):`test` job 新增 `Detect docs-only change set` 步骤——`gh pr view --json files,changedFiles` 取**原始路径**判定(白名单取反:任一非 `.md` → 全量;push 事件 / API 失败 / 文件列表为空 / `changedFiles` 与已列出数不等〔>100 文件截断〕→ 一律回退全量,只会多跑不会少跑;不用 `gh pr diff --name-only` 因其对非 ASCII 路径 C 转义会致行尾非 `.md`,如 `docs/V2红线与复活路径.md`),7 个重活步骤(Postgres 启动×2 / Build / db init / prisma:deploy 验证 / contract / e2e)挂步骤级 `if`;docs-only PR CI 预期由 ~6min 降至 ≤2min(实测 50% PR 为 docs-only)。**job 始终以同一 check 名(`Lint / Typecheck / E2E`)上报 success**——步骤级条件而非 workflow 级 paths 过滤,为未来 required checks 兼容;代码 PR 全量链路一字不动;`docker-build` job 与 docker-smoke.yml 均不变。
