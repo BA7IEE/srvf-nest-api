@@ -99,6 +99,14 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/me/wechat'],
   ['put', '/api/app/v1/me/wechat'],
 
+  // 保险模块 T2(2026-06-13;insurance-module-review.md §3.2 端点 1-4):App 自助自购保险
+  // CRUD,self-scope 锁 currentUser.memberId 不接 RBAC(D-INS-3);无 :id 详情端点(E-14);
+  // 他人/不存在/已删统一 26001 防侧信道;新 BizCode 260xx 段 5 码(26030 门槛随 T3)。
+  ['get', '/api/app/v1/me/insurances'],
+  ['post', '/api/app/v1/me/insurances'],
+  ['patch', '/api/app/v1/me/insurances/{id}'],
+  ['delete', '/api/app/v1/me/insurances/{id}'],
+
   // Phase 2 P2-4a(2026-05-20):App /api/app/v1/activities/available 列表
   // 沿 docs/app-api-p2-4-activities-review.md §1 接口清单 + §4.1 字段集恰好 11 项;
   // 可见性沿 D-P2-4-1 = A:仅 statusCode='published' AND deletedAt IS NULL;
@@ -274,6 +282,21 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['delete', '/api/admin/v1/members/{memberId}/certificates/{id}'],
   ['patch', '/api/admin/v1/members/{memberId}/certificates/{id}/verify'],
   ['patch', '/api/admin/v1/members/{memberId}/certificates/{id}/reject'],
+
+  // 保险模块 T2(2026-06-13;insurance-module-review.md §3.2 端点 5-14):队统一保单 CRUD +
+  // 覆盖名单管理(单加/一键加幂等/移除)+ admin 查队员自购保险(read.other,镜像 certificates
+  // N:1 子资源数组无分页)。判权全部 service 层 rbac.can(team-insurance-policy 6 码 +
+  // member-insurance.read.other),biz-admin 全绑(T1 seed)。
+  ['get', '/api/admin/v1/team-insurance-policies'],
+  ['post', '/api/admin/v1/team-insurance-policies'],
+  ['get', '/api/admin/v1/team-insurance-policies/{id}'],
+  ['patch', '/api/admin/v1/team-insurance-policies/{id}'],
+  ['delete', '/api/admin/v1/team-insurance-policies/{id}'],
+  ['get', '/api/admin/v1/team-insurance-policies/{id}/members'],
+  ['post', '/api/admin/v1/team-insurance-policies/{id}/members'],
+  ['post', '/api/admin/v1/team-insurance-policies/{id}/members/add-all-active'],
+  ['delete', '/api/admin/v1/team-insurance-policies/{id}/members/{memberId}'],
+  ['get', '/api/admin/v1/members/{memberId}/insurances'],
   ['get', '/api/admin/v1/activities'],
   ['post', '/api/admin/v1/activities'],
   ['get', '/api/admin/v1/activities/{id}'],

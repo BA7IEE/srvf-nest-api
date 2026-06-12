@@ -1,11 +1,11 @@
 // V2 第一阶段批次 6 audit_logs 模块类型契约(D6 v1.1 §8 / §10 / §11)。
 //
 // 本文件承载 3 个类型契约,与 audit-logs.service.ts 同进同退:
-//   1. AuditLogEvent  — 落库入口 union(首批 6 项起渐进迁入;2026-06-12 wechat T3 后共 35 项)
+//   1. AuditLogEvent  — 落库入口 union(首批 6 项起渐进迁入;2026-06-13 保险 T2 后共 43 项)
 //   2. AuditContext   — Prisma AuditLog.context Json 字段的运行时锁形(6 字段:3 必填 + 3 可选)
 //   3. AuditMeta      — controller 层从 @Req() 构造,显式传给 service
 //
-// 与 src/common/audit/audit-placeholder.ts(AuditEvent,28 项)的关系(D-A 修订核心):
+// 与 src/common/audit/audit-placeholder.ts(AuditEvent,29 项)的关系(D-A 修订核心):
 // - 两套 union 物理隔离(D2):AuditEvent 留 pino-only 占位,AuditLogEvent 走 DB 落库
 // - 事件名同值:AuditLogEvent ⊆ AuditEvent(同字符串值,后续批次迁移时**仅是把字符串从一个 union 挪到另一个**)
 // - 第一波(PR #2)6 项落库:emergency-contact.write × 3 service 上下文 + certificate.{create,update,delete,verify,reject}
@@ -70,7 +70,21 @@ export type AuditLogEvent =
   | 'auth.login.wechat' // T3 接入(AuthService.createSession 经 login-wechat 两调用方;extra.familyId + openid 掩码;登录失败不写,镜像密码登录)
   | 'wechat.bind.self' // T3 接入(auth/login-wechat.service.bind 首绑 + users.service.bindMyWechat 首绑;after.openid 掩码;extra.viaPath)
   | 'wechat.rebind.self' // T3 接入(同上双路径换绑;before/after.openid 掩码;extra.viaPath)
-  | 'wechat.clear.by-admin'; // T3 接入(users.service.clearUserWechat;仅实际清除时写〔幂等空清不写〕;before.openid 掩码)
+  | 'wechat.clear.by-admin' // T3 接入(users.service.clearUserWechat;仅实际清除时写〔幂等空清不写〕;before.openid 掩码)
+  // 保险模块 T2(2026-06-13)接入(冻结评审稿 insurance-module-review.md §3.5 / E-9)。
+  // 8 项命名沿 kebab-case 既有范式(自助三事件 <resource>.<action>.self 对称 phone.bind.self;
+  // 队保单三事件 <resource>.<action> 对称 certificate.create)。
+  // snapshot 沿 certificates 全量不打码(保单号/保险公司中敏感非 L3,audit_logs 自身 RBAC 保护);
+  // 本域无 L3 字段。admin 读他人自购保险走 auditPlaceholder pino('member-insurance.read.other'),
+  // 不进本 union(镜像 certificate.read.other);App self 读不写 audit(D-P2-7-16)。
+  | 'member-insurance.create.self' // T2 接入(app-me-insurances.service.create;after snapshot;extra.memberId)
+  | 'member-insurance.update.self' // T2 接入(app-me-insurances.service.update;before/after;extra.memberId)
+  | 'member-insurance.delete.self' // T2 接入(app-me-insurances.service.softDelete;before;extra.memberId)
+  | 'team-insurance-policy.create' // T2 接入(team-insurance-policies.service.create;after)
+  | 'team-insurance-policy.update' // T2 接入(team-insurance-policies.service.update;before/after)
+  | 'team-insurance-policy.delete' // T2 接入(team-insurance-policies.service.softDelete;before;不级联覆盖行 E-4)
+  | 'team-insurance-coverage.add' // T2 接入(单加 + 一键加共用;resourceId=policyId;extra.mode ∈ {single, all-active},single 带 memberId / all-active 带 addedCount)
+  | 'team-insurance-coverage.remove'; // T2 接入(覆盖行软删;resourceId=policyId;extra.memberId)
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

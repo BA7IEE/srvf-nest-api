@@ -84,7 +84,12 @@ export type AuditEvent =
   // auditPlaceholder 实现仍是 pino log,不落 audit_logs 表(D6 v1.1 F7 留独立批次)。
   | 'contribution-rule.create'
   | 'contribution-rule.update'
-  | 'contribution-rule.delete';
+  | 'contribution-rule.delete'
+  // 保险模块 T2 追加 1 项(2026-06-13;冻结评审稿 insurance-module-review.md §3.5 / E-9,
+  // 评审即本 union 扩展的前置评议;镜像 certificate.read.other):
+  //   member-insurance.read.other  实装(admin GET members/:memberId/insurances;
+  //   保单号/保险公司中敏感,admin 视角读他人留痕;写事件走 audit_logs DB union,不在本清单)
+  | 'member-insurance.read.other';
 
 const auditLogger = new Logger('Audit');
 
