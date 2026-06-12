@@ -68,6 +68,8 @@
 
 `apply-global-setup.ts` / `apply-swagger.ts` / `logger-options.ts` / `request-id.ts` / `throttle-options.ts` — `main.ts` 与 `test/setup/test-app.ts` **共用**这些文件,避免双份装配漂移。改其中任何一个之前先确认两边都被覆盖。
 
+例外:`apply-crash-handlers.ts`(2026-06-12 #345)**仅 `main.ts` 注册**、test 入口刻意不注册——进程崩溃路径可观测性兜底(uncaughtException / unhandledRejection),与优雅关闭(`enableShutdownHooks`)职责互不重叠,边界见该文件头注释。
+
 ---
 
 ## test/
