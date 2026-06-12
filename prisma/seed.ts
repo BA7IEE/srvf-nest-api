@@ -1437,7 +1437,9 @@ async function seedAttachmentPermissions(prisma: PrismaClient): Promise<void> {
 
 // Slow-4 业务面 RBAC 接入(2026-06-11,goal「权限双轨收口」T1;
 // 冻结评审稿 docs/archive/reviews/slow4-rbac-business-face-review.md §4 / §5):
-// 36 条业务面权限码 + `biz-admin` 内置角色(Slow-3 决议:ADMIN 内置角色边界 = 全量业务权限)。
+// 43 条业务面权限码 + `biz-admin` 内置角色(Slow-3 决议:ADMIN 内置角色边界 = 全量业务权限;
+// 2026-06-13 保险模块 +7:team-insurance-policy 6 + member-insurance 1,全绑,
+// 冻结评审稿 docs/archive/reviews/insurance-module-review.md §3.4 / E-6)。
 //
 // **不绑项**(评审稿 §6):
 // - `member.delete.record`:members DELETE 今天仅 SUPER_ADMIN(@Roles(SUPER_ADMIN)),
@@ -1723,11 +1725,70 @@ const ATTENDANCE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
+// 保险模块 T1(2026-06-13;冻结评审稿 docs/archive/reviews/insurance-module-review.md §3.4):
+// 队保单 6 码 + admin 查队员自购保险 1 码,全部绑 biz-admin(E-6,无 member.delete.record 式例外);
+// App 自助端点(app/v1/me/insurances)走 self-scope,**无 RBAC 码**(goal §1 拍板)。
+const TEAM_INSURANCE_POLICY_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'team-insurance-policy.read.record',
+    module: 'team-insurance-policy',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看队统一保单(列表 + 详情 + 覆盖名单共用 read)',
+  },
+  {
+    code: 'team-insurance-policy.create.record',
+    module: 'team-insurance-policy',
+    action: 'create',
+    resourceType: 'record',
+    description: '创建队统一保单(一张 = 一条)',
+  },
+  {
+    code: 'team-insurance-policy.update.record',
+    module: 'team-insurance-policy',
+    action: 'update',
+    resourceType: 'record',
+    description: '部分更新队统一保单',
+  },
+  {
+    code: 'team-insurance-policy.delete.record',
+    module: 'team-insurance-policy',
+    action: 'delete',
+    resourceType: 'record',
+    description: '软删队统一保单(不级联覆盖行,评审稿 E-4)',
+  },
+  {
+    code: 'team-insurance-policy.add.member',
+    module: 'team-insurance-policy',
+    action: 'add',
+    resourceType: 'member',
+    description: '保单覆盖名单加人(单加 + 全体在册一键加共用;一键加幂等仅 active 未软删)',
+  },
+  {
+    code: 'team-insurance-policy.remove.member',
+    module: 'team-insurance-policy',
+    action: 'remove',
+    resourceType: 'member',
+    description: '保单覆盖名单移除队员(软删覆盖行;partial unique 允许重新加入)',
+  },
+];
+
+const MEMBER_INSURANCE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'member-insurance.read.other',
+    module: 'member-insurance',
+    action: 'read',
+    resourceType: 'other',
+    description: 'admin 查看队员自购保险(本人侧走 App self-scope 无码;评审稿 E-7)',
+  },
+];
+
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;码进 Permission 表但不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
 
-// 业务面权限码全集(36 条 = member 5 + member-profile 3 + emergency-contact 4 + certificate 6 +
-// activity 5 + activity-registration 5 + attendance 8;评审稿 §4)
+// 业务面权限码全集(43 条 = member 5 + member-profile 3 + emergency-contact 4 + certificate 6 +
+// activity 5 + activity-registration 5 + attendance 8〔Slow-4 评审稿 §4〕
+// + team-insurance-policy 6 + member-insurance 1〔保险模块评审稿 §3.4,2026-06-13〕)
 const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...MEMBER_PERMISSION_SEED,
   ...MEMBER_PROFILE_PERMISSION_SEED,
@@ -1736,9 +1797,11 @@ const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...ACTIVITY_PERMISSION_SEED,
   ...ACTIVITY_REGISTRATION_PERMISSION_SEED,
   ...ATTENDANCE_PERMISSION_SEED,
+  ...TEAM_INSURANCE_POLICY_PERMISSION_SEED,
+  ...MEMBER_INSURANCE_PERMISSION_SEED,
 ];
 
-// biz-admin 绑定集合(35 条 = 36 过滤 member.delete.record;评审稿 §5/§6)
+// biz-admin 绑定集合(42 条 = 43 过滤 member.delete.record;Slow-4 评审稿 §5/§6 + 保险 E-6)
 const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISSION_SEED.filter(
   (p) => p.code !== MEMBER_DELETE_RECORD_CODE,
 );
@@ -1746,9 +1809,10 @@ const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISS
 const BIZ_ADMIN_ROLE_CODE = 'biz-admin';
 const BIZ_ADMIN_DISPLAY_NAME = '业务管理员';
 const BIZ_ADMIN_DESCRIPTION =
-  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 评审稿 §5):member 5 + member-profile 3 + emergency-contact 4 + certificate 6 + activity 5 + activity-registration 5 + attendance 8 = 36 条中绑 35;member.delete.record 仅 SUPER_ADMIN(D1=A 镜像);attachment 存量 20 码不在本角色(零漂移);每个 ADMIN 用户由 seed 自动补挂本角色';
+  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 评审稿 §5 + 保险模块评审稿 §3.4):member 5 + member-profile 3 + emergency-contact 4 + certificate 6 + activity 5 + activity-registration 5 + attendance 8 + team-insurance-policy 6 + member-insurance 1 = 43 条中绑 42;member.delete.record 仅 SUPER_ADMIN(D1=A 镜像);attachment 存量 20 码不在本角色(零漂移);每个 ADMIN 用户由 seed 自动补挂本角色';
 
-// Slow-4 T1:36 条业务面权限点 + biz-admin 角色 + 35 条绑定 + ADMIN 全员补挂 + 强校验。
+// Slow-4 T1(36/35)+ 保险模块 T1 增量(2026-06-13,+7 全绑 → 43/42):
+// 业务面权限点 + biz-admin 角色 + 绑定 + ADMIN 全员补挂 + 强校验。
 // 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 与 UserRole 复合唯一键),
 // 连续跑两次数量与 id 稳定;不覆盖运营运行时调整(update: {} 范式)。
 async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
@@ -1767,11 +1831,13 @@ async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
     });
   }
   console.log(
-    `[seed] Slow-4 business permissions ensured (${BIZ_PERMISSION_SEED.length} entries: ` +
+    `[seed] business permissions ensured (${BIZ_PERMISSION_SEED.length} entries: ` +
       `member ${MEMBER_PERMISSION_SEED.length} + member-profile ${MEMBER_PROFILE_PERMISSION_SEED.length} + ` +
       `emergency-contact ${EMERGENCY_CONTACT_PERMISSION_SEED.length} + certificate ${CERTIFICATE_PERMISSION_SEED.length} + ` +
       `activity ${ACTIVITY_PERMISSION_SEED.length} + activity-registration ${ACTIVITY_REGISTRATION_PERMISSION_SEED.length} + ` +
-      `attendance ${ATTENDANCE_PERMISSION_SEED.length})`,
+      `attendance ${ATTENDANCE_PERMISSION_SEED.length} + ` +
+      `team-insurance-policy ${TEAM_INSURANCE_POLICY_PERMISSION_SEED.length} + ` +
+      `member-insurance ${MEMBER_INSURANCE_PERMISSION_SEED.length})`,
   );
 
   // 2. upsert biz-admin RbacRole
@@ -1930,7 +1996,8 @@ async function main(): Promise<void> {
     //   不依赖任何 ops-admin 状态;但放在 seedRbac 之后保持"先 RBAC meta 再业务权限点"语义顺序)
     await seedAttachmentPermissions(prisma);
 
-    // Slow-4 T1(2026-06-11,评审稿 §5):36 条业务面权限码 + biz-admin 角色 + 35 条绑定
+    // Slow-4 T1(2026-06-11,评审稿 §5)36/35;保险模块 T1(2026-06-13,评审稿 §3.4)
+    //   +7 全绑 → 43 条业务面权限码 + biz-admin 角色 + 42 条绑定
     //   + ADMIN 全员幂等补挂 + 强校验。放在 seedAttachmentPermissions 之后,
     //   保持"先 RBAC meta 再业务权限点"语义顺序;依赖 SUPER_ADMIN/ADMIN 用户已就位。
     await seedBizAdminRbac(prisma);

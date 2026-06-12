@@ -5,9 +5,9 @@ import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.servi
 // Slow-4 T2/T3(2026-06-11):biz-admin 业务面角色 e2e fixture。
 // 沿冻结评审稿 docs/archive/reviews/slow4-rbac-business-face-review.md §8 + rbac.fixture.ts 范式。
 //
-// 背景:test/setup/reset-db.ts 把 RBAC 4 表清空,prisma/seed.ts 的 36 条业务面码 + biz-admin
+// 背景:test/setup/reset-db.ts 把 RBAC 4 表清空,prisma/seed.ts 的 43 条业务面码 + biz-admin
 // 角色不在 e2e 数据库里。本 fixture 在 spec 的 beforeAll 调用:
-// - seedBizAdminPermissionsAndRole:幂等 upsert 36 条业务面码 + biz-admin 角色 + 35 条绑定
+// - seedBizAdminPermissionsAndRole:幂等 upsert 43 条业务面码 + biz-admin 角色 + 42 条绑定
 //   (`member.delete.record` 进 Permission 表但**不**绑,D1=A 镜像;评审稿 §6)
 // - grantBizAdminToUser:给 user 绑 biz-admin + 主动 invalidateUser cache(模拟 reload)
 // - revokeBizAdminFromUser:撤回 + invalidateUser cache(对称范式)
@@ -18,14 +18,14 @@ import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.servi
 
 export interface BizAdminSeedResult {
   bizAdminRoleId: string;
-  bizPermissionCount: number; // 36
-  bizAdminRolePermissionCount: number; // 35(过滤 member.delete.record)
+  bizPermissionCount: number; // 43(2026-06-13 保险模块 +7)
+  bizAdminRolePermissionCount: number; // 42(过滤 member.delete.record)
 }
 
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
 
-// 沿 prisma/seed.ts BIZ_PERMISSION_SEED(36 条;评审稿 §4 锁定);
+// 沿 prisma/seed.ts BIZ_PERMISSION_SEED(43 条;Slow-4 评审稿 §4 + 保险评审稿 §3.4 锁定);
 // 本 fixture 维护独立集合,与 seed 内部表对照防漂移(沿 rbac.fixture.ts 范式)。
 const BIZ_PERMISSIONS = [
   // ============ member 5 条 ============
@@ -201,9 +201,52 @@ const BIZ_PERMISSIONS = [
     action: 'final-reject',
     resourceType: 'sheet',
   },
+  // ============ 保险模块 +7(2026-06-13;评审稿 insurance-module-review.md §3.4,全绑)============
+  {
+    code: 'team-insurance-policy.read.record',
+    module: 'team-insurance-policy',
+    action: 'read',
+    resourceType: 'record',
+  },
+  {
+    code: 'team-insurance-policy.create.record',
+    module: 'team-insurance-policy',
+    action: 'create',
+    resourceType: 'record',
+  },
+  {
+    code: 'team-insurance-policy.update.record',
+    module: 'team-insurance-policy',
+    action: 'update',
+    resourceType: 'record',
+  },
+  {
+    code: 'team-insurance-policy.delete.record',
+    module: 'team-insurance-policy',
+    action: 'delete',
+    resourceType: 'record',
+  },
+  {
+    code: 'team-insurance-policy.add.member',
+    module: 'team-insurance-policy',
+    action: 'add',
+    resourceType: 'member',
+  },
+  {
+    code: 'team-insurance-policy.remove.member',
+    module: 'team-insurance-policy',
+    action: 'remove',
+    resourceType: 'member',
+  },
+  {
+    code: 'member-insurance.read.other',
+    module: 'member-insurance',
+    action: 'read',
+    resourceType: 'other',
+  },
 ] as const;
 
-// 在 e2e 的 beforeAll 调用一次,seed 36 条业务面码 + biz-admin 角色 + 35 条 RolePermission
+// 在 e2e 的 beforeAll 调用一次,seed 43 条业务面码 + biz-admin 角色 + 42 条 RolePermission
 // 绑定(过滤 `member.delete.record`;沿 D1=A 镜像)。幂等:多次调用不出错(upsert + skipDuplicates)。
 export async function seedBizAdminPermissionsAndRole(
   app: INestApplication,
@@ -222,7 +265,7 @@ export async function seedBizAdminPermissionsAndRole(
     create: { code: 'biz-admin', displayName: '业务管理员' },
     select: { id: true },
   });
-  // 按 code 精确取本 fixture 声明的 36 条(避免被其它 spec 在同一 DB 注入的码干扰)
+  // 按 code 精确取本 fixture 声明的 43 条(避免被其它 spec 在同一 DB 注入的码干扰)
   const seeded = await prisma.permission.findMany({
     where: { code: { in: BIZ_PERMISSIONS.map((p) => p.code) } },
     select: { id: true, code: true },

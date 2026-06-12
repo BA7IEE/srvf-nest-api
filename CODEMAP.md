@@ -60,7 +60,7 @@
 | 路径 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
 |---|---|---|---|
 | `schema.prisma` | **数据模型唯一权威源**(字段 / 类型 / 约束 / 索引) | 修改前必先说明影响面 | [`CLAUDE.md`](prisma/CLAUDE.md) |
-| `migrations/` | 17 个 migration(2026-05-02 init → 2026-06-12 wechat mini login infra) | **禁止** `prisma migrate dev` / `reset` / `db push` 自动跑 | [`CLAUDE.md`](prisma/CLAUDE.md) · [`AGENTS.md §0`](AGENTS.md) |
+| `migrations/` | 18 个 migration(2026-05-02 init → 2026-06-13 add insurance module) | **禁止** `prisma migrate dev` / `reset` / `db push` 自动跑 | [`CLAUDE.md`](prisma/CLAUDE.md) · [`AGENTS.md §0`](AGENTS.md) |
 | `seed.ts` | 默认 super admin + bootstrap user_role | 生产环境强校验启动(`SUPER_ADMIN_*` / `JWT_SECRET` / `APP_CORS_ORIGIN`) | [`docs/deployment.md`](docs/deployment.md) |
 
 ---
