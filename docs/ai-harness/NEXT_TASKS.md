@@ -11,12 +11,7 @@
 
 ## P1(长期维护)
 
-(P1-3〔Slow-4〕与 P1-7〔SMS 消费者三项〕均已完成,见文末归档区;P1-4 已于 2026-06-10 调研收口,见文末归档区。)
-
-### P1-8 微信小程序登录基础设施(openid 绑定 + 登录) — 🟡 进行中(goal 立项 2026-06-12)
-- **立项凭据**:维护者 2026-06-12 goal(立项 + D 档拍板;ARCHITECTURE §9 升级路径「第一个小程序产品要接」触发条件满足,解锁微信登录)。冻结评审稿:[`wechat-mini-login-review.md`](../archive/reviews/wechat-mini-login-review.md)。
-- **队列**:T0 评审稿 → T1 schema(User +openid / SmsPurpose +WECHAT_BIND / WechatSettings)→ T2 通道+设置(`src/modules/wechat/` + 凭证加密 + 权限码 +4)→ T3 认证+绑定端点(auth/v1 三公开端点 + me/wechat + admin 清除 + BizCode 25xxx + audit 4 事件)→ T4 docs 收尾。
-- **「正确但休眠」**:DevStub 全链 e2e;真实可用差 ① 注册小程序拿 AppID/AppSecret(运维)② 小程序前端——均列本期不做。
+(P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,见文末归档区;P1-4 已于 2026-06-10 调研收口,见文末归档区。**P1 现无 open 项。**)
 
 ## P2(可优化)
 
@@ -30,6 +25,7 @@
 
 ## 已完成项归档区
 
+- **P1-8 微信小程序登录基础设施(openid 绑定 + 登录)** ✅(2026-06-12 goal T0-T4 全队列完成;冻结评审稿 [`wechat-mini-login-review.md`](../archive/reviews/wechat-mini-login-review.md);**ARCHITECTURE §9「第一个小程序产品要接」升级路径正式解锁**):T0 评审稿 #352(D-W1~6 拍板 + E-1~30 工程代决)→ T1 schema #353(`User +openid` 唯一含软删占用 / `SmsPurpose +WECHAT_BIND` / `wechat_settings` 表;干净库 17/17 重放 + seed 幂等二跑)→ T2 通道+设置 #354(`wechat/` 第 23 模块:独立 `WECHAT_ENCRYPTION_KEY`+salt / DevStub 确定性假 openid / 真实 code2session **原生 fetch 8s 零新依赖**·session_key 即弃 / settings 三端点 reset 仅 SA;权限码 117→121,ops-admin 58→61)→ T3 认证+绑定 #355(`login-wechat` **第三个独立认证端点**〔createSession 同构,auth.service diff 仅 union 类型行〕+ `wechat-bind{,/send-code}` 手机短信锚点·七步顺序冻结·防枚举沿 login-sms + `me/wechat` 查询换绑〔openid 一律掩码〕+ admin 清除;BizCode 25xxx 4 码 + audit +4〔union 35〕+ 第 8 throttler `login-wechat`;**AGENTS §1/§8/§9 + baseline §1.1 红区随 PR,密码登录契约零变化,既有 e2e 断言零修改**)→ T4 docs 收尾。**行为锁全程守住**:sms 模块零 diff / JwtPayload zero drift / contract 159→168 仅新增。**真实通道未开通**(运维接力:[`ops/wechat-mini-production-rollout-checklist.md`](../ops/wechat-mini-production-rollout-checklist.md));小程序前端、unionid/session_key 存储、本人裸解绑、招新自助小程序化均不在范围(评审稿 §12)。
 - **P1-7 ②③ OTP 登录 + 通知短信首批(生日祝福)** ✅(2026-06-11 B 队列 goal F4/F5 全队列完成;冻结评审稿 [`queue-b-otp-birthday-infra-review.md §5/§6`](../archive/reviews/queue-b-otp-birthday-infra-review.md)——**P1-7 三项消费者全部闭环**):② OTP = 密码登录的并行方式独立端点(F4 #325 `SmsPurpose +LOGIN` 单行 migration → #326 实施:`auth/v1` `login-sms{,/send-code}` 两公开端点 + 第 7 throttler `login-sms` 5/60 + 防枚举沿找回密码范式〔泛化 200 零留痕 / 登录一切失败统一 24010 零新增码〕+ `AuthService.createSession` 同构签发 + audit `auth.login.sms` + **AGENTS:242 红区行解锁改写**;密码登录与 P0-E 既有 e2e 断言零修改全绿;contract 157→159);③ 生日祝福 = 通知首批(F5 #327 `@nestjs/schedule` 锁 6.1.3 + `SmsSettings +templateIdBirthday` → #328 实施:`ScheduleModule.forRoot()` + notifications 模块〔本仓唯一 `@Cron`,09:00 Asia/Shanghai;**no-cron 升级路径正式触发,解锁范围仅生日批**〕+ 选取六条件仅 `User.phone` + 幂等防重发〔重启不重发 e2e 锁定〕+ FAILED 不重试不阻断 + 不进 audit + 掩码 + docker-smoke 锚行;零新端点/零权限码)。**运维接力更新为两模板一批送审**(验证码 + 生日祝福,SOP 见 [`docs/ops/sms-production-rollout-checklist.md`](../ops/sms-production-rollout-checklist.md));群发/退订/活动通知/农历生日未立项(评审稿 §9 本期不做)。
 - **P2-6 `sms_verification_codes` / `sms_send_logs` retention 清理** ✅(2026-06-11 B 队列 goal F3;冻结评审稿 [`queue-b-otp-birthday-infra-review.md §4`](../archive/reviews/queue-b-otp-birthday-infra-review.md)):**拍板方案 = 手动 SQL SOP** [`docs/ops/sms-data-retention-sop.md`](../ops/sms-data-retention-sop.md)(验证码 90 天 / 流水 1 年,数值可改;季度例行 + 报警线〔codes>5 万 / logs>50 万 / 合计>100MB〕;备份→事务预数→DELETE→复核 强制顺序);SQL 2026-06-11 在 app_test 实测冻结(老化行 5/7 全删 + 窗口内行存活边界用例);**不解锁 cron 清理**(`@nestjs/schedule` 解锁范围仅生日批,沿评审稿 R-5);docs/README §1 已登记。
 - **P2-4 `common/storage/` 迁往 `src/modules/storage/`** ✅(2026-06-11 B 队列 goal F2;冻结评审稿 [`queue-b-otp-birthday-infra-review.md §3`](../archive/reviews/queue-b-otp-birthday-infra-review.md)):D 档纯搬迁零行为——20 文件 `git mv`(含模块 CLAUDE.md)+ import 链 15 文件更新(外部 3 + spec 2 + e2e 2 + 内部相对深度 4 + 注释 4);**snapshot 逐字节零 diff** + 全仓 `grep common/storage` 残留 0(archive 豁免)+ `agent:check:full` 全绿;CODEMAP 模块数 19→20、current-state §4 P3 行闭环。

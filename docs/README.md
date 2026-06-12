@@ -26,6 +26,7 @@
 | [`ops/cos-production-rollout-checklist.md`](./ops/cos-production-rollout-checklist.md) | 运维侧真实 COS 上线 SOP |
 | [`ops/sms-production-rollout-checklist.md`](./ops/sms-production-rollout-checklist.md) | 运维侧腾讯云 SMS 真实通道上线 SOP(签名/模板审核 → 凭证录入 → 真实发送验收) |
 | [`ops/sms-data-retention-sop.md`](./ops/sms-data-retention-sop.md) | SMS 数据 retention 手动清理 SOP(验证码 90 天 / 发送流水 1 年,数值可改;维护者手动 psql,**不**引入 cron 清理;SQL 已 app_test 实测冻结) |
+| [`ops/wechat-mini-production-rollout-checklist.md`](./ops/wechat-mini-production-rollout-checklist.md) | 运维侧微信小程序登录真实通道上线 SOP(注册小程序 → AppID/AppSecret → admin 录凭证〔仅 SA〕→ DevStub 全链 → 真实验收;系统侧已"正确但休眠") |
 | [`ai-harness/README.md`](./ai-harness/README.md) | **AI Harness 操作层单页**(derived,**非规则源**,与权威源冲突时让步;必读三件套之一):铁律速查表 / AI 修改三档 + 触发即停 / 全仓读写分区;同目录另两文件 = `RBAC_MAP.md`(权限地图,`docs:rbacmap:check` 守护)+ `NEXT_TASKS.md`(后续任务清单);2026-06-10 Review 冻结档见 `archive/ai-harness/` |
 
 V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威源**):

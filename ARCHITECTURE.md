@@ -168,7 +168,7 @@
 | 救援队系统启动 | `modules/orgs/`(组织/部门),`User` 加 `orgId` 字段 | `src/modules/orgs/` |
 | 出现"A 队不能看 B 队数据" | 引入 `tenantId`,所有 service 显式按租户过滤 | 各业务 `src/modules/<name>/<name>.service.ts` |
 | 真要做"按钮级 / resource type 级 RBAC"(C-6 D7 v0.2 局部收口) | 加 `Role` / `Permission` / `RolePermission` / `UserRole` 4 表 + 自实现 `RbacService`(沿 [`docs/archive/batches/批次8_RBAC_API前评审.md`](./docs/archive/batches/批次8_RBAC_API前评审.md) D7 v0.2 决议;**不**用 `casl` 库;Service 层显式 `rbac.can()` 调用,不做 Guard 装饰器;BizCode 段位 `300xx + 301xx`)| `src/modules/permissions/` |
-| 第一个小程序产品要接 | 加微信登录策略 | `src/modules/auth/strategies/wechat-mini.strategy.ts` |
+| 第一个小程序产品要接 | 加微信登录策略 — **✅ 已解锁并落地(2026-06-12;触发条件满足「队员近期要用微信小程序」,冻结评审稿 [`wechat-mini-login-review.md`](./docs/archive/reviews/wechat-mini-login-review.md))**;实际落地形态与本行早期建议路径不同:**不引入 passport strategy**(沿 AGENTS §8 不引入 LocalStrategy 同源纪律),通道层落 `src/modules/wechat/`、认证端点沿 login-sms 范式平铺 `src/modules/auth/login-wechat.service.ts` | `src/modules/wechat/` + `src/modules/auth/login-wechat.service.ts` |
 | 真有"无感续期"诉求 | 加 refresh token 表 + 接口 | `src/modules/auth/` |
 | 出现"普通用户自助改密码"产品 | 加 `PUT /api/users/me/password` + `ChangeMyPasswordDto` + 防爆破;是否吊销其他设备 token 由该产品安全策略决定 | `src/modules/auth/` + `src/modules/users/` |
 | 真有异步任务 / 限流 | 加 Redis + BullMQ | 新增 `src/modules/queue/` 模块 |
@@ -178,7 +178,7 @@
 
 **判定原则**:不是"觉得以后会用",而是"现在的产品需求里出现了这个明确诉求"。
 
-> **当前已解锁能力**(由真实业务诉求驱动经独立评审解锁,对应本表多条已落地):RBAC(v0.13.0+ / v0.15.0 P0-F 管理面收紧)/ refresh token + logout + logout-all(v0.14.0+)/ attachments 元数据 + 配置三表 + COS Provider(v0.10.0~v0.12.0)/ App API Phase 2 15 endpoint(v0.15.0)/ audit_logs(v0.7.0+ / 第二波 22 处写迁移已完成)/ 本人改密 P0-D(v0.13.0)。详 [`docs/current-state.md §2`](./docs/current-state.md)。仍未解锁的项目(Redis / BullMQ / 微信小程序登录 / pgvector / LLM / 多租户 / `tokenVersion` 字段 / access token blacklist)继续遵守本表触发条件。
+> **当前已解锁能力**(由真实业务诉求驱动经独立评审解锁,对应本表多条已落地):RBAC(v0.13.0+ / v0.15.0 P0-F 管理面收紧)/ refresh token + logout + logout-all(v0.14.0+)/ attachments 元数据 + 配置三表 + COS Provider(v0.10.0~v0.12.0)/ App API Phase 2 15 endpoint(v0.15.0)/ audit_logs(v0.7.0+ / 第二波 22 处写迁移已完成)/ 本人改密 P0-D(v0.13.0)/ **微信小程序登录(2026-06-12 解锁,post-v0.22.0;openid 绑定 + 登录,DevStub 全链可测,真实可用待运维录入 AppID/AppSecret)**。详 [`docs/current-state.md §2`](./docs/current-state.md)。仍未解锁的项目(Redis / BullMQ / pgvector / LLM / 多租户 / `tokenVersion` 字段 / access token blacklist)继续遵守本表触发条件。
 
 ---
 
