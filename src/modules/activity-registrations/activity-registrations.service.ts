@@ -8,6 +8,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import { RbacService } from '../permissions/rbac.service';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
@@ -111,6 +112,8 @@ export class ActivityRegistrationsService {
     private readonly registrationAuditRecorder: ActivityRegistrationAuditRecorder,
     private readonly registrationStateMachine: ActivityRegistrationStateMachine,
     private readonly rbac: RbacService,
+    // 保险 T3:报名门槛(跨模块单向依赖 activity-registration → insurances,评审稿 E-13)
+    private readonly insuranceRequirement: InsuranceRequirementService,
   ) {}
 
   // ============ helpers ============
@@ -164,6 +167,8 @@ export class ActivityRegistrationsService {
   }
 
   // 找 activity 并校验存在(创建报名 / 列表 / 导出 / capacity 复核共用)。
+  // 保险 T3:select 扩展 requiresInsurance / startAt / endAt 三字段供报名门槛断言复用
+  // (不另发查询;评审稿 insurance-module-review.md §4 第 3 条),既有调用方语义不变(返回超集)。
   private async findActivityOrThrow(
     activityId: string,
     tx?: PrismaTx,
@@ -172,6 +177,9 @@ export class ActivityRegistrationsService {
     statusCode: string;
     isPublicRegistration: boolean;
     capacity: number | null;
+    requiresInsurance: boolean;
+    startAt: Date;
+    endAt: Date;
   }> {
     const client = tx ?? this.prisma;
     const act = await client.activity.findFirst({
@@ -181,6 +189,9 @@ export class ActivityRegistrationsService {
         statusCode: true,
         isPublicRegistration: true,
         capacity: true,
+        requiresInsurance: true,
+        startAt: true,
+        endAt: true,
       },
     });
     if (!act) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
@@ -232,7 +243,13 @@ export class ActivityRegistrationsService {
   private async assertActivityRegistrable(
     activityId: string,
     tx: PrismaTx,
-  ): Promise<{ id: string; capacity: number | null }> {
+  ): Promise<{
+    id: string;
+    capacity: number | null;
+    requiresInsurance: boolean;
+    startAt: Date;
+    endAt: Date;
+  }> {
     const act = await this.findActivityOrThrow(activityId, tx);
     if (act.statusCode === ACTIVITY_STATUS_CANCELLED) {
       throw new BizException(BizCode.ACTIVITY_CANCELLED_REGISTRATION_FORBIDDEN);
@@ -240,7 +257,14 @@ export class ActivityRegistrationsService {
     if (!act.isPublicRegistration) {
       throw new BizException(BizCode.ACTIVITY_NOT_PUBLIC_REGISTRATION);
     }
-    return { id: act.id, capacity: act.capacity };
+    // 保险 T3:透传门槛三字段给 create()/createMy() 的 assertMemberInsuredForActivity(E-10)
+    return {
+      id: act.id,
+      capacity: act.capacity,
+      requiresInsurance: act.requiresInsurance,
+      startAt: act.startAt,
+      endAt: act.endAt,
+    };
   }
 
   // capacity 复核(create / approve 共用)。pass 占名额(决议表 Q-D17)。
@@ -340,6 +364,9 @@ export class ActivityRegistrationsService {
       await this.assertMemberExists(dto.memberId, tx);
       await this.assertCapacityNotExceeded(activityId, act.capacity, tx);
       await this.assertNoActiveRegistration(activityId, dto.memberId, tx);
+      // 保险 T3 报名门槛(admin 代报名同样拦截,C015 无旁路;requiresInsurance=false 零查询,
+      // 既有断言零回归;评审稿 §4 / E-10:位于 assertNoActiveRegistration 之后、create 之前)
+      await this.insuranceRequirement.assertMemberInsuredForActivity(dto.memberId, act, tx);
 
       const created = await this.runWithUniqueConstraintGuard(() =>
         tx.activityRegistration.create({
@@ -381,6 +408,8 @@ export class ActivityRegistrationsService {
       const act = await this.assertActivityRegistrable(activityId, tx);
       await this.assertCapacityNotExceeded(activityId, act.capacity, tx);
       await this.assertNoActiveRegistration(activityId, memberId, tx);
+      // 保险 T3 报名门槛(自助路径;App createMyForApp 薄壳经此同样拦截;评审稿 §4 / E-10)
+      await this.insuranceRequirement.assertMemberInsuredForActivity(memberId, act, tx);
 
       const created = await this.runWithUniqueConstraintGuard(() =>
         tx.activityRegistration.create({

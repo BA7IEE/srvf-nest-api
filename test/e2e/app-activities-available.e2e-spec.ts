@@ -449,6 +449,10 @@ describe('App GET /api/app/v1/activities/available (P2-4a)', () => {
         'registrationDeadline',
         'statusCode',
         'isPublicRegistration',
+        // 保险 T3(2026-06-13,评审稿 insurance-module-review.md E-19):admin ListItem DTO
+        // 加性新增 requiresInsurance,本锁同步 +1 字段(goal 明令的 DTO 变更之镜像,
+        // 与 contract snapshot 同性质;App 侧字段集锁零修改 = App DTO 不动的反向证据)。
+        'requiresInsurance',
         'coverImageUrl',
         'locationLongitude',
         'locationLatitude',

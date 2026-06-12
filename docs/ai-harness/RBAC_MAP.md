@@ -8,6 +8,7 @@
 > 2026-06-12 微信小程序登录 T3 戳(同 goal):**权限码零变化**(121 不动);endpoint 162→**168**(auth/v1 三公开端点 `[public]` + me/wechat 两端点 `[auth]` + admin 清除 `[rbac: user.wechat.clear]` 实装,**T2 孤码 WARN 清零**);BizCode +4(25xxx 段)与 audit +4 不属本表;`docs:rbacmap:check` 0 FAIL / 0 WARN。
 > 2026-06-13 保险模块 T1 戳(goal「保险模块」,冻结评审稿 [`insurance-module-review.md §3.4`](../archive/reviews/insurance-module-review.md)):权限码 121→**128**(team-insurance-policy 6 + member-insurance 1,全绑 biz-admin 无例外 E-6);biz-admin 35→**42**;ops-admin 61 / member 9 零变化;endpoint **168** 不变(T2 +14 端点实装);7 新码 T2 实装前孤码 **WARN 预期**(镜像 wechat T2 先例);App 自助 `app/v1/me/insurances` 走 self-scope **无 RBAC 码**。
 > 2026-06-13 保险模块 T2 戳(同 goal):**权限码零变化**(128 不动);endpoint 168→**182**(队保单 9 `[rbac:]` + admin 查队员保险 1 `[rbac: member-insurance.read.other]` + App 自助 4 `[auth]`);controller 35→**38**;**T1 孤码 WARN 清零**;BizCode +5(260xx 段,26030 门槛随 T3)与 audit +8 DB +1 placeholder 不属本表;`docs:rbacmap:check` 0 FAIL / 0 WARN。
+> 2026-06-13 保险模块 T3 戳(同 goal):**权限事实零变化**(128 码 / 绑定 / 内置角色不动);endpoint **182** 不变(`requiresInsurance` 仅活动 DTO 字段新增 + 报名 create 双路径门槛断言,零新端点);BizCode +1(26030 `INSURANCE_REQUIRED`)与 baseline §1.1 红区行不属本表;`docs:rbacmap:check` 0 FAIL / 0 WARN。
 
 ---
 
