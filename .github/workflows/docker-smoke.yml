@@ -92,26 +92,30 @@ jobs:
           DATABASE_URL: ${{ env.HOST_DATABASE_URL }}
         run: pnpm prisma:deploy
 
-      # JWT_SECRET / SUPER_ADMIN_PASSWORD / STORAGE_ENCRYPTION_KEY / SMS_ENCRYPTION_KEY 仅活在该 job 生命周期,
+      # JWT_SECRET / SUPER_ADMIN_PASSWORD / STORAGE_ENCRYPTION_KEY / SMS_ENCRYPTION_KEY /
+      # WECHAT_ENCRYPTION_KEY 仅活在该 job 生命周期,
       # 不进 GitHub Secrets。写入 GITHUB_ENV 供后续 step 共享;不 echo 到日志(默认 mask 不覆盖
       # env 写入,因此这里手动 add-mask)。
       # STORAGE_ENCRYPTION_KEY 沿 V2.x C-7.5 PR #6:production 启动校验要求 ≥ 32 字符;
-      # smoke 容器用 APP_ENV=production 启动,必须注入。
+      # smoke 容器用 APP_ENV=production 启动,必须注入(SMS / WECHAT 两把 key 同款 fail-fast)。
       - name: Generate ephemeral secrets
         run: |
           JWT_SECRET="$(openssl rand -base64 48)"
           SUPER_ADMIN_PASSWORD="Smoke$(openssl rand -hex 8)A1"
           STORAGE_ENCRYPTION_KEY="$(openssl rand -base64 32)"
           SMS_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+          WECHAT_ENCRYPTION_KEY="$(openssl rand -base64 32)"
           echo "::add-mask::$JWT_SECRET"
           echo "::add-mask::$SUPER_ADMIN_PASSWORD"
           echo "::add-mask::$STORAGE_ENCRYPTION_KEY"
           echo "::add-mask::$SMS_ENCRYPTION_KEY"
+          echo "::add-mask::$WECHAT_ENCRYPTION_KEY"
           {
             echo "JWT_SECRET=$JWT_SECRET"
             echo "SUPER_ADMIN_PASSWORD=$SUPER_ADMIN_PASSWORD"
             echo "STORAGE_ENCRYPTION_KEY=$STORAGE_ENCRYPTION_KEY"
             echo "SMS_ENCRYPTION_KEY=$SMS_ENCRYPTION_KEY"
+            echo "WECHAT_ENCRYPTION_KEY=$WECHAT_ENCRYPTION_KEY"
           } >> "$GITHUB_ENV"
 
       # Seed 用 APP_ENV=development 避开 production 下对默认值的额外校验;
@@ -162,6 +166,7 @@ jobs:
             -e JWT_REFRESH_EXPIRES_IN=90d \
             -e STORAGE_ENCRYPTION_KEY="$STORAGE_ENCRYPTION_KEY" \
             -e SMS_ENCRYPTION_KEY="$SMS_ENCRYPTION_KEY" \
+            -e WECHAT_ENCRYPTION_KEY="$WECHAT_ENCRYPTION_KEY" \
             -e DATABASE_URL="$CONTAINER_DATABASE_URL" \
             u-nest-api-starter:smoke
 

@@ -36,6 +36,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SmsModule } from './modules/sms/sms.module';
 import { UsersModule } from './modules/users/users.module';
+import { WechatModule } from './modules/wechat/wechat.module';
 
 // V1.2:test/e2e/request-id.e2e-spec.ts 通过本路径白盒断言 buildHttpLogProps,
 // 保留 re-export 维持兼容(实际定义在 bootstrap/request-id.ts)。
@@ -121,6 +122,10 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   (冻结评审稿 docs/archive/reviews/sms-verification-infra-review.md;path /api/system/v1/sms-*;
     //    R 模式判权;凭证 AES-256-GCM;T3 追加 SmsCodeService 与绑定端点,240xx 段位届时实装)。
     SmsModule,
+    // 微信小程序登录 T2(2026-06-12):微信通道层(settings 三端点 + 双 Provider + code2session)
+    //   (冻结评审稿 docs/archive/reviews/wechat-mini-login-review.md;path /api/system/v1/wechat-settings;
+    //    R 模式判权;appSecret AES-256-GCM;T3 追加认证/绑定端点,25xxx 段位届时实装)。
+    WechatModule,
     // B 队列 F5-T2(2026-06-11):@nestjs/schedule 全局装配——no-cron 铁律升级路径正式触发
     //   (冻结评审稿 docs/archive/reviews/queue-b-otp-birthday-infra-review.md 拍板④/R-5;
     //    解锁范围仅 notifications 生日批一个 @Cron;新增任何定时任务 = 新 D 档评审;

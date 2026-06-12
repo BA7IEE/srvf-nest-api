@@ -79,11 +79,14 @@ import { assertTestDatabaseUrl } from './test-db';
 //   sms_settings / sms_verification_codes / sms_send_logs
 // 三表均无 DB FK(评审稿 E-28:userId / codeId / updatedBy 纯 String),独立位置即可;
 // 放在 audit_logs 之后的无 FK 独立段。
+//
+// 微信小程序登录 T2 追加(2026-06-12):1 张 wechat_settings 表(物理名小写,Prisma `@@map`);
+// 无 DB FK(updatedBy 纯 String;镜像 sms_settings),放在同一无 FK 独立段。
 export async function resetDb(app: INestApplication): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "user_roles", "role_permissions", "roles", "permissions", "audit_logs", "sms_settings", "sms_verification_codes", "sms_send_logs", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "user_roles", "role_permissions", "roles", "permissions", "audit_logs", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }

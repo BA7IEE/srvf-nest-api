@@ -210,6 +210,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/system/v1/sms-settings/reset-credentials'],
   ['get', '/api/system/v1/sms-send-logs'],
 
+  // 微信小程序登录 T2(2026-06-12;冻结评审稿 docs/archive/reviews/wechat-mini-login-review.md §3.2):
+  // settings 三端点动词镜像 sms-settings 现状(评审稿 E-6),159→162;
+  // T3 将增 auth/v1 三公开端点 + app/v1/me/wechat 两端点 + admin 清除端点(届时 →168)。
+  ['get', '/api/system/v1/wechat-settings'],
+  ['patch', '/api/system/v1/wechat-settings'],
+  ['post', '/api/system/v1/wechat-settings/reset-credentials'],
+
   // Admin surface(Admin-* tag;70 路由):终态前缀 /api/admin/v1/*
   // (Route B 终态;v2 老前缀已于 Phase 4 删除,沿 docs/api-surface-migration-plan.md §3.4)。
   // 注:历史 mobile-like 自助端点已收口到 App surface(/api/app/v1/me|my/*);

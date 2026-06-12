@@ -70,9 +70,13 @@ function runSeed(envOverrides: Record<string, string>): SeedRunResult {
 // SMS T2(2026-06-10):新增 5 条(sms-setting 3 + sms-send-log 1 + user.phone.clear;评审稿
 //   docs/archive/reviews/sms-verification-infra-review.md §3.4 / E-3);
 //   sms-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;其余 4 条绑;76→81 / 54→58。
+// WECHAT T2(2026-06-12):新增 4 条(wechat-setting 3 + user.wechat.clear;评审稿
+//   docs/archive/reviews/wechat-mini-login-review.md §3.4 / E-22);
+//   wechat-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;其余 3 条绑;117→121 / 58→61。
 const RESET_CREDENTIALS_CODE = 'storage-setting.reset.credentials';
 const USER_UPDATE_ROLE_CODE = 'user.update.role';
 const SMS_RESET_CREDENTIALS_CODE = 'sms-setting.reset.credentials';
+const WECHAT_RESET_CREDENTIALS_CODE = 'wechat-setting.reset.credentials';
 const EXPECTED_RBAC_PERMISSION_CODES = [
   // 14 条 rbac.*(沿 PR-1 #132)
   'rbac.permission.read',
@@ -145,15 +149,24 @@ const EXPECTED_RBAC_PERMISSION_CODES = [
   SMS_RESET_CREDENTIALS_CODE,
   'sms-send-log.read.list',
   'user.phone.clear',
+  // 4 条 WECHAT T2(wechat-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;wechat 评审稿 §3.4)
+  'wechat-setting.read.singleton',
+  'wechat-setting.update.singleton',
+  WECHAT_RESET_CREDENTIALS_CODE,
+  'user.wechat.clear',
 ] as const;
 // Permission 总数(含 reset.credentials + user.update.role;沿 D2=A + D1=A 仍 upsert 进表,仅 SA 短路通过)
 const EXPECTED_PERMISSION_COUNT = EXPECTED_RBAC_PERMISSION_CODES.length;
 // ops-admin RolePermission 数(过滤 reset.credentials(PR-2 D2=A)+ user.update.role(PR-3 D1=A)
-// + sms-setting.reset.credentials(SMS T2 镜像 D2=A)→ 61 - 3 = 58)
-const EXPECTED_OPS_ADMIN_ROLE_PERMISSION_COUNT = EXPECTED_PERMISSION_COUNT - 3;
+// + sms-setting.reset.credentials(SMS T2 镜像 D2=A)+ wechat-setting.reset.credentials
+// (WECHAT T2 镜像 D2=A)→ 65 - 4 = 61)
+const EXPECTED_OPS_ADMIN_ROLE_PERMISSION_COUNT = EXPECTED_PERMISSION_COUNT - 4;
 const EXPECTED_OPS_ADMIN_BOUND_CODES = EXPECTED_RBAC_PERMISSION_CODES.filter(
   (c) =>
-    c !== RESET_CREDENTIALS_CODE && c !== USER_UPDATE_ROLE_CODE && c !== SMS_RESET_CREDENTIALS_CODE,
+    c !== RESET_CREDENTIALS_CODE &&
+    c !== USER_UPDATE_ROLE_CODE &&
+    c !== SMS_RESET_CREDENTIALS_CODE &&
+    c !== WECHAT_RESET_CREDENTIALS_CODE,
 );
 const EXPECTED_RBAC_ONLY_COUNT = 14; // 仅 rbac.* 段位,供下面 module=rbac 断言用
 
@@ -241,6 +254,9 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(boundCodes).not.toContain(RESET_CREDENTIALS_CODE);
     // D1=A 显式反向断言:user.update.role **不**在 ops-admin RolePermission 中
     expect(boundCodes).not.toContain(USER_UPDATE_ROLE_CODE);
+    // SMS / WECHAT 镜像 D2=A 显式反向断言:两把凭证 reset 码均**不**在 ops-admin RolePermission 中
+    expect(boundCodes).not.toContain(SMS_RESET_CREDENTIALS_CODE);
+    expect(boundCodes).not.toContain(WECHAT_RESET_CREDENTIALS_CODE);
     // PR-4 D2=B 正向断言:audit-log.read.entry **在** ops-admin RolePermission 中
     expect(boundCodes).toContain('audit-log.read.entry');
 
