@@ -34,6 +34,13 @@ import {
 
 const SmsClient = sms.v20210111.Client;
 
+// 外部 SDK 请求超时上限(2026-06-12 goal G3):SDK 默认 reqTimeout 60s(单位:秒),
+// 网络黑洞会拖死上游调用方(验证码发送在绑定手机 / 找回密码 / OTP 登录链路上)。
+// 超时由 SDK 抛异常,经 sendViaSdk 的 catch 归一为 SmsProviderSendError,错误语义不变。
+// 当前真实通道未开通(运维送审中),本配置"正确但休眠":unit spec 锁构造参数就位,
+// 真连后的端到端超时行为留运维接力时验证。
+const SMS_SDK_REQ_TIMEOUT_SECONDS = 8;
+
 interface TencentSmsContext {
   client: InstanceType<typeof SmsClient>;
   sdkAppId: string;
@@ -128,6 +135,7 @@ export class TencentSmsProvider implements SmsProvider {
         secretKey: settings.credentials.secretKey,
       },
       region: settings.region as string,
+      profile: { httpProfile: { reqTimeout: SMS_SDK_REQ_TIMEOUT_SECONDS } },
     });
     return {
       client,

@@ -70,6 +70,8 @@ describe('TencentSmsProvider', () => {
       expect(ClientMock).toHaveBeenCalledWith({
         credential: { secretId: 'AKID-test-id', secretKey: 'secret-test-key' },
         region: 'ap-guangzhou',
+        // 外部 SDK 超时(goal G3):reqTimeout 单位秒;真实通道未开通,配置就位由此锁定
+        profile: { httpProfile: { reqTimeout: 8 } },
       });
       expect(ClientMock.__mockInstance.SendSms).toHaveBeenCalledWith({
         PhoneNumberSet: ['+8613800001234'],
