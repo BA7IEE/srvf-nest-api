@@ -214,6 +214,11 @@ model Member {
   activityRegistrations ActivityRegistration[]
   attendanceRecords     AttendanceRecord[]
 
+  // 保险模块反向 relation(2026-06-13;沿 R2 范式,仅关系映射不算业务字段;
+  // 冻结评审稿 docs/archive/reviews/insurance-module-review.md §3.1)
+  memberInsurances       MemberInsurance[]
+  teamInsuranceCoverages TeamInsuranceCoverage[]
+
   @@index([gradeCode])
   @@index([status])
   @@index([deletedAt])
@@ -477,6 +482,9 @@ model Activity {
   cancelledAt           DateTime?
   cancelReason          String?
   isPublicRegistration  Boolean   @default(true)
+  // 保险模块(2026-06-13):报名保险门槛开关;default false = 迁移安全,既有活动 /
+  // 测试零影响,新活动发布时显式开(评审稿 insurance-module-review.md D-INS-1)。
+  requiresInsurance     Boolean   @default(false)
   registrationSchema    Json? // v0.2 D12 报名表自定义字段 schema 字段位预留
 
   // v0.2 展示内容字段(Q-D11 / Q-D12 / Q-D13)
@@ -1227,4 +1235,86 @@ model WechatSettings {
 enum WechatProviderType {
   DEV_STUB // 非生产联调通道:确定性假 openid dev-openid-<code>(评审稿 E-10;production-like 不可达)
   WECHAT
+}
+
+// =============================================================================
+// ===== 保险模块 T1(2026-06-13)三表 + Activity.requiresInsurance =====
+//
+// 沿冻结评审稿 docs/archive/reviews/insurance-module-review.md §3.1(maintainer
+// 2026-06-12 goal「保险模块」拍板)。业务依据:报名"无保险信息不予通过" + 志愿者
+// 自购 + 队统一买(需求 :687/:698/:422/:452 + 顶层设计 §8 + C015)。
+// - member_insurances:自购保险,每队员多条,App 自助 CRUD(self-scope 不接 RBAC);
+//   coverageEnd 是有效性唯一依据(D-INS-5,自报即可 v1 无核验);policyNumber 无唯一约束(E-2)。
+// - team_insurance_policies:队统一保单,一张 = 一条,admin CRUD;软删不级联覆盖行
+//   (门槛查询 join p.deletedAt IS NULL,被删保单下覆盖行自然失效,E-4)。
+// - team_insurance_coverages:保单 × 队员 join;partial unique (policyId, memberId)
+//   WHERE "deletedAt" IS NULL 由 migration.sql 末尾手写(E-3,沿 activity_registrations 范式);
+//   service 用 P2002 兜底转 26004。
+// - 字段长度上限不落 @db.VarChar,由 DTO + class-validator 承担(沿批次 1/2/3 B 路径)。
+// - 保单图不占 schema 字段:attachments 多态(ownerType + ownerId)天然支持,
+//   接线(enum 分支 + 8 权限码)挂 NEXT_TASKS 单独立项(E-20)。
+// =============================================================================
+
+model MemberInsurance {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  memberId      String
+  insurerName   String // 保险公司;长度 128 由 DTO 约束(沿 Certificate.issuingOrg 范式)
+  policyNumber  String // 保单号;长度 128 由 DTO 约束(沿 certNumber;无唯一约束,E-2)
+  coverageStart DateTime? // 起保日(可选;有值时门槛校验 coverageStart <= 活动 startAt,E-11)
+  coverageEnd   DateTime // 到期时间(必填;有效性唯一依据,D-INS-5)
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@index([memberId])
+  @@index([coverageEnd])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("member_insurances")
+}
+
+model TeamInsurancePolicy {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  insurerName   String // 保险公司;长度 128 由 DTO 约束
+  policyNumber  String // 保单号;长度 128 由 DTO 约束
+  coverageStart DateTime // 起保(必填,goal ②)
+  coverageEnd   DateTime // 到期
+  note          String? // 备注;长度 500 由 DTO 约束
+
+  coverages TeamInsuranceCoverage[]
+
+  @@index([coverageEnd])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("team_insurance_policies")
+}
+
+model TeamInsuranceCoverage {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  policyId String
+  memberId String
+
+  policy TeamInsurancePolicy @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  member Member              @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  // 业务唯一约束(partial unique;E-3):
+  // - (policyId, memberId) WHERE "deletedAt" IS NULL
+  // - 索引名 team_insurance_coverages_policy_member_active_unique
+  // - Prisma DSL 不支持带 WHERE,migration.sql 末尾手动追加(沿 ActivityRegistration 范式)
+  @@index([policyId])
+  @@index([memberId])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("team_insurance_coverages")
 }

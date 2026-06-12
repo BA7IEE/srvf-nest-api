@@ -6,6 +6,7 @@
 > 2026-06-12 v0.22.0 收口戳(goal「会议延期窗口」G2/G3 #345/#346):**权限事实零变化**(117 码 / 绑定 / 内置角色不动);endpoint **159** 不变(进程崩溃兜底 + SDK 超时均零新端点);`docs:rbacmap:check` 仍 0 FAIL / 0 WARN。
 > 2026-06-12 微信小程序登录 T2 戳(goal P1-8,冻结评审稿 [`wechat-mini-login-review.md §3.4`](../archive/reviews/wechat-mini-login-review.md)):权限码 117→**121**(wechat-setting 3 + user.wechat.clear;`wechat-setting.reset.credentials` 不绑 ops-admin 镜像 D2=A);ops-admin 58→**61**;endpoint 159→**162**(wechat-settings 三端点);`user.wechat.clear` 端点 T3 实装,T2 期间孤码 **WARN 预期**(镜像 user.phone.clear 先例)。
 > 2026-06-12 微信小程序登录 T3 戳(同 goal):**权限码零变化**(121 不动);endpoint 162→**168**(auth/v1 三公开端点 `[public]` + me/wechat 两端点 `[auth]` + admin 清除 `[rbac: user.wechat.clear]` 实装,**T2 孤码 WARN 清零**);BizCode +4(25xxx 段)与 audit +4 不属本表;`docs:rbacmap:check` 0 FAIL / 0 WARN。
+> 2026-06-13 保险模块 T1 戳(goal「保险模块」,冻结评审稿 [`insurance-module-review.md §3.4`](../archive/reviews/insurance-module-review.md)):权限码 121→**128**(team-insurance-policy 6 + member-insurance 1,全绑 biz-admin 无例外 E-6);biz-admin 35→**42**;ops-admin 61 / member 9 零变化;endpoint **168** 不变(T2 +14 端点实装);7 新码 T2 实装前孤码 **WARN 预期**(镜像 wechat T2 先例);App 自助 `app/v1/me/insurances` 走 self-scope **无 RBAC 码**。
 
 ---
 
@@ -61,7 +62,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(121 条,seed 幂等 upsert)
+## 3. 权限码全集(128 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -85,8 +86,10 @@
 | 活动(Slow-4 T1) | 5 | `activity.{create,update,delete}.record` / `activity.{publish,cancel}.record`(列表/详情无码,仅登录) |
 | 活动报名(Slow-4 T1) | 5 | `activity-registration.{read,create}.record` / `activity-registration.{approve,reject,cancel}.record` |
 | 考勤(Slow-4 T1) | 8 | `attendance.{create,read,update,delete}.sheet` / `attendance.{approve,reject,final-approve,final-reject}.sheet` |
+| 队保单(保险 T1) | 6 | `team-insurance-policy.{read,create,update,delete}.record` / `team-insurance-policy.{add,remove}.member`(T2 端点实装前孤码 WARN 预期) |
+| 队员自购保险(保险 T1) | 1 | `member-insurance.read.other`(admin 查队员保险;App 本人侧 self-scope 无码;T2 实装) |
 
-内置角色:`ops-admin`(绑 61 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials`,四者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 镜像,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4,绑 35 条 = 36 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码不绑〔零漂移〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。seed 与代码调用**双向对齐**:无"seed 有码未用",无"代码用码未 seed"(`docs:rbacmap:check` 0 FAIL / 0 WARN)。
+内置角色:`ops-admin`(绑 61 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials`,四者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 镜像,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1,绑 42 条 = 43 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码不绑〔零漂移〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。seed 与代码调用**双向对齐**:无"seed 有码未用",无"代码用码未 seed"(`docs:rbacmap:check` 0 FAIL / 0 WARN)。
 
 ## 4. 保护不变式(改 users / permissions 前必读)
 
