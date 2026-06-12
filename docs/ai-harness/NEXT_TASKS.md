@@ -11,7 +11,11 @@
 
 ## P1(长期维护)
 
-(P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,见文末归档区;P1-4 已于 2026-06-10 调研收口,见文末归档区。**P1 现无 open 项。**)
+(P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,见文末归档区;P1-4 已于 2026-06-10 调研收口,见文末归档区。)
+
+### P1-9 保险模块(自购自助 + 队统一保单 + 活动报名门槛) — **🚧 进行中(2026-06-12 goal 拍板,T0-T4 队列推进)**
+- 范围:三表(`member_insurances` / `team_insurance_policies` / `team_insurance_coverages`〔partial unique〕)+ `Activity.requiresInsurance @default(false)` + App 自助 `app/v1/me/insurances`(self-scope 不接 RBAC)+ admin 队保单与覆盖名单(一键加幂等)+ 报名 create 门槛断言(BizCode 26030);权限码 121→128 / biz-admin 35→42;冻结评审稿 [`insurance-module-review.md`](../archive/reviews/insurance-module-review.md)。
+- v1 不做(评审稿 §10):理赔 / 到期主动提醒 / 核验工作流 / **保单图 attachments 接线**(ownerType=`member-insurance` 语义已预留;enum 分支 + 8 权限码 + 配置行需单独立项,评审稿 E-20)/ App activities DTO 暴露 `requiresInsurance`(E-19)。T4 收口时本条转归档区,后续项独立挂出。
 
 ## P2(可优化)
 
