@@ -62,6 +62,12 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // pre-auth 两端点,157→159;登录成功响应复用 LoginResponseDto(与密码登录同 DTO)。
   ['post', '/api/auth/v1/login-sms/send-code'],
   ['post', '/api/auth/v1/login-sms'],
+  // 微信小程序登录 T3(2026-06-12;冻结评审稿 wechat-mini-login-review.md §3.2 ④-⑥):
+  // 第三个独立认证端点 + 手机短信锚点绑定两端点,162→165(连同 me/wechat 与 admin 清除 →168);
+  // login-wechat 未绑返 bindingRequired:true;wechat-bind 成功响应复用 LoginResponseDto。
+  ['post', '/api/auth/v1/login-wechat'],
+  ['post', '/api/auth/v1/wechat-bind/send-code'],
+  ['post', '/api/auth/v1/wechat-bind'],
   ['get', '/api/system/v1/health'],
   ['get', '/api/system/v1/health/live'],
   ['get', '/api/system/v1/health/ready'],
@@ -88,6 +94,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 豁免先例不强约 canUseApp(E-5);phone/send-code 发码 + phone 验码绑定/换绑一体。
   ['post', '/api/app/v1/me/phone/send-code'],
   ['put', '/api/app/v1/me/phone'],
+  // 微信小程序登录 T3(2026-06-12;wechat 评审稿 §3.2 ⑦⑧):账号级微信绑定,沿 me/phone
+  // 豁免先例(E-18);GET 状态查询(openid 掩码)+ PUT 绑定/换绑一体(JWT 已证身份免短信)。
+  ['get', '/api/app/v1/me/wechat'],
+  ['put', '/api/app/v1/me/wechat'],
 
   // Phase 2 P2-4a(2026-05-20):App /api/app/v1/activities/available 列表
   // 沿 docs/app-api-p2-4-activities-review.md §1 接口清单 + §4.1 字段集恰好 11 项;
@@ -231,6 +241,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['delete', '/api/admin/v1/users/{id}'],
   // SMS 基础设施 T3(评审稿 §3.2 ⑦):管理员清除绑定手机号(幂等;解除绑定唯一路径)。
   ['delete', '/api/admin/v1/users/{id}/phone'],
+  // 微信小程序登录 T3(wechat 评审稿 §3.2 ⑨):管理员清除绑定微信 openid(幂等;镜像清号)。
+  ['delete', '/api/admin/v1/users/{id}/wechat'],
   ['get', '/api/admin/v1/organizations'],
   ['get', '/api/admin/v1/organizations/tree'],
   ['post', '/api/admin/v1/organizations'],

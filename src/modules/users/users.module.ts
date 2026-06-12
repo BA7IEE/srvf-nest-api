@@ -3,6 +3,7 @@ import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { SmsModule } from '../sms/sms.module';
+import { WechatModule } from '../wechat/wechat.module';
 import { AppCapabilityService } from './app-capability.service';
 import { AppIdentityResolver } from './app-identity.resolver';
 import { AppProfileService } from './app-profile.service';
@@ -41,8 +42,11 @@ import { UsersService } from './users.service';
 // SMS 基础设施 T3(2026-06-10):import SmsModule 注入 SmsCodeService,供 UsersService
 // 的 sendMyPhoneBindCode / bindMyPhone(验码即消费)使用;评审稿 E-30 边界:sms 模块对
 // User 无感知,phone 占用 / 绑定落库 / audit 全部留在本模块。单向依赖 users → sms,无环。
+// 微信小程序登录 T3(2026-06-12):import WechatModule 注入 WechatService(code2session),
+// 供 bindMyWechat(me/wechat 换绑)使用;同款边界:wechat 模块对 User 无感知,
+// openid 占用 / 绑定落库 / audit 全部留在本模块。单向依赖 users → wechat,无环。
 @Module({
-  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, SmsModule],
+  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, SmsModule, WechatModule],
   controllers: [UsersController, AppMeController],
   providers: [UsersService, AppIdentityResolver, AppCapabilityService, AppProfileService],
   exports: [AppIdentityResolver],

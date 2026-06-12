@@ -6,9 +6,11 @@ import type { JwtConfig } from '../../config/jwt.config';
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { SmsModule } from '../sms/sms.module';
+import { WechatModule } from '../wechat/wechat.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { LoginSmsService } from './login-sms.service';
+import { LoginWechatService } from './login-wechat.service';
 import { PasswordResetService } from './password-reset.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
@@ -23,6 +25,9 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     // 找回密码 T2(2026-06-11):PasswordResetService 消费 SmsCodeService
     // (assertValid / verifyAndConsume / issue;评审稿 password-reset-by-sms-review.md E-1/E-6)。
     SmsModule,
+    // 微信小程序登录 T3(2026-06-12):LoginWechatService 消费 WechatService.code2session
+    // (wechat-mini-login-review.md E-14;绑定锚点仍走上面 SmsModule 的 SmsCodeService)。
+    WechatModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -43,6 +48,6 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, PasswordResetService, LoginSmsService, JwtStrategy],
+  providers: [AuthService, PasswordResetService, LoginSmsService, LoginWechatService, JwtStrategy],
 })
 export class AuthModule {}

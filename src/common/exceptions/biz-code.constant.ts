@@ -3,7 +3,7 @@ import { HttpStatus } from '@nestjs/common';
 // BizCode 常量表
 //
 // 当前状态(随实施滚动维护;每次新增模块码后校对):
-// - 约 125 个 BizCode,覆盖 19 个编号段
+// - 135 个 BizCode(2026-06-12 亲核 grep httpStatus 计数;wechat T3 +4),覆盖 20 个编号段
 // - 编号段权威说明以 `docs/srvf-foundation-baseline.md §1.1` 为准;
 //   ARCHITECTURE.md §7.3 是早期蓝图,模块命名已演进(missions→dictionaries、
 //   files→attachments、devices→audit_logs 等),遇分歧以 baseline §1.1 + 本文件实际常量为准
@@ -31,9 +31,10 @@ import { HttpStatus } from '@nestjs/common';
 // - 21xxx + 211xx: activity_registrations
 // - 22xxx + 221xx: attendances(批次 3B + 4-A APD 终审)
 // - 23xxx + 231xx: contribution_rules
+// - 25xxx + 251xx: wechat(微信小程序登录,2026-06-12)
 // - 30xxx + 301xx: permissions(C-6 RBAC)
 // - 40xxx / 42xxx / 50xxx: 通用 HTTP / infrastructure(BAD_REQUEST / UNAUTHORIZED / FORBIDDEN / NOT_FOUND / TOO_MANY_REQUESTS / INTERNAL_ERROR)
-// - 240xx-290xx: 未规划模块预留(训练 / 装备 / 财务 / 通知等)
+// - 260xx-290xx: 未规划模块预留(训练 / 装备 / 财务 / 通知等)
 export const BizCode = {
   // 通用 HTTP 级
   BAD_REQUEST: { code: 40000, message: '请求参数错误', httpStatus: HttpStatus.BAD_REQUEST },
@@ -684,6 +685,43 @@ export const BizCode = {
     code: 24121,
     message: '该手机号今日发送次数已达上限',
     httpStatus: HttpStatus.TOO_MANY_REQUESTS,
+  },
+
+  // wechat 模块业务级(250xx + 251xx)。微信小程序登录 T3 引入(2026-06-12)。
+  // 详见冻结评审稿 docs/archive/reviews/wechat-mini-login-review.md §3.3 / E-11 / E-21;
+  // 段位选择:baseline §1.1 原 "250xx-290xx 未规划模块预留" 首段,本期实装收口
+  // (段位表加行随本 PR,红区例外经 goal 唯一授权;沿 24xxx SMS 收口先例)。
+  //
+  // 子段(对齐 baseline §1.3 紧凑使用,镜像 sms 段布局):
+  // - 25002:唯一约束冲突(User.openid @unique 含软删占用;绑定/换绑占用检查 / P2002 兜底)
+  // - 25010:业务级输入校验(code2session 微信明确判 code 无效 40029/40163;
+  //          login-wechat 命中账号非 ACTIVE/软删同走本码,防侧写统一,评审稿 §4.2)
+  // - 25030 / 25031:通道状态非法 / 上游调用失败(5xx 语义:非客户端之过;镜像 24030/24031)
+  //
+  // 不开的码(评审稿 §3.3 明确,沿 22042/22044 登记范式):
+  // - 25001 WECHAT_NOT_BOUND:零 throw 路径(login 未绑走 bindingRequired:true / admin 清除幂等 /
+  //   GET me/wechat 返状态对象);未来出现真实触发路径再实装
+  // - 251xx FORBIDDEN_*:权限拒绝走通用 30100 / 40100 / 40300(RBAC_MAP §6 规则 5)
+  // - 绑定/登录中"手机号无效"不开新码:统一 SMS_CODE_INVALID=24010(沿 login-sms 防枚举体系)
+  WECHAT_ALREADY_BOUND: {
+    code: 25002,
+    message: '该微信已绑定其他账号',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  WECHAT_CODE_INVALID: {
+    code: 25010,
+    message: '微信登录凭证无效或已过期',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  WECHAT_CHANNEL_NOT_CONFIGURED: {
+    code: 25030,
+    message: '微信登录服务未配置或未启用',
+    httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+  },
+  WECHAT_API_FAILED: {
+    code: 25031,
+    message: '微信服务调用失败,请稍后重试',
+    httpStatus: HttpStatus.BAD_GATEWAY,
   },
 
   // audit_logs 模块业务级(140xx + 141xx)。批次 6 PR #1 引入(2026-05-12)。

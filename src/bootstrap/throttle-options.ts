@@ -1,5 +1,6 @@
 import type { ThrottlerModuleOptions } from '@nestjs/throttler';
 import { LOGIN_SMS_THROTTLER_NAME } from '../common/decorators/login-sms-throttle.decorator';
+import { LOGIN_WECHAT_THROTTLER_NAME } from '../common/decorators/login-wechat-throttle.decorator';
 import { PASSWORD_CHANGE_THROTTLER_NAME } from '../common/decorators/password-change-throttle.decorator';
 import { PASSWORD_RESET_THROTTLER_NAME } from '../common/decorators/password-reset-throttle.decorator';
 import { REFRESH_THROTTLER_NAME } from '../common/decorators/refresh-throttle.decorator';
@@ -63,6 +64,13 @@ export function buildThrottlerOptions(appCfg: AppConfig): ThrottlerModuleOptions
         name: LOGIN_SMS_THROTTLER_NAME,
         limit: appCfg.loginSmsThrottle.limit,
         ttl: appCfg.loginSmsThrottle.ttlSeconds * 1000,
+      },
+      // 微信小程序登录 T3(2026-06-12):微信 pre-auth 三端点第 8 实例
+      // (wechat 评审稿 E-17;默认 5/60 镜像 login-sms,八实例计数器互不影响)。
+      {
+        name: LOGIN_WECHAT_THROTTLER_NAME,
+        limit: appCfg.loginWechatThrottle.limit,
+        ttl: appCfg.loginWechatThrottle.ttlSeconds * 1000,
       },
     ],
     setHeaders: false,

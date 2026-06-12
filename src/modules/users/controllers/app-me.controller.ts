@@ -27,6 +27,7 @@ import {
   SendMyPhoneCodeDto,
   SendMyPhoneCodeResponseDto,
 } from '../dto/app/app-me-phone.dto';
+import { AppMeWechatDto, BindMyWechatDto } from '../dto/app/app-me-wechat.dto';
 import { AppSelfProfileDto } from '../dto/app/app-self-profile.dto';
 import { UpdateAppSelfProfileDto } from '../dto/app/update-app-self-profile.dto';
 import { ChangeMyPasswordDto, UserResponseDto } from '../users.dto';
@@ -261,6 +262,48 @@ export class AppMeController {
   ): Promise<AppMePhoneDto> {
     const safeDto: BindMyPhoneDto = { phone: dto.phone, code: dto.code };
     return this.usersService.bindMyPhone(currentUser, safeDto, this.buildAuditMeta(req));
+  }
+
+  // 微信小程序登录 T3(2026-06-12):GET /me/wechat + PUT /me/wechat(冻结评审稿
+  // wechat-mini-login-review.md §4.4 / E-13/E-18)。
+  // 准入沿 me/phone 账号级豁免先例(E-18):User.openid 是账号级身份字段,
+  // **不**调 appIdentity.resolve + assertCanUseApp;豁免仅限本两端点,禁止外溢。
+  // openid 仅掩码回显(非 L3 但不滥回显);响应永不含 wx code / session_key。
+  @Get('wechat')
+  @ApiOperation({
+    summary: 'App 查询本人微信绑定状态(openid 一律掩码回显) [auth]',
+  })
+  @ApiWrappedOkResponse(AppMeWechatDto)
+  @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.USER_NOT_FOUND)
+  getMyWechat(@CurrentUser() currentUser: CurrentUserPayload): Promise<AppMeWechatDto> {
+    return this.usersService.getMyWechat(currentUser);
+  }
+
+  // 已登录绑定 / 换绑一体(⑧;评审稿 §4.4):JWT 已证身份,无需再验手机(D-W3);
+  // 同 openid 幂等;他人占用(含软删占用)→ 25002;不挂限流(登录态 + wx code 单次有效
+  // 天然限频,无可爆破 secret,评审稿 E-17)。
+  @Put('wechat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'App 绑定 / 换绑本人微信(wx.login code 换 openid;无需短信;同 openid 幂等) [auth]',
+  })
+  @ApiWrappedOkResponse(AppMeWechatDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.USER_NOT_FOUND,
+    BizCode.WECHAT_CODE_INVALID,
+    BizCode.WECHAT_ALREADY_BOUND,
+    BizCode.WECHAT_CHANNEL_NOT_CONFIGURED,
+    BizCode.WECHAT_API_FAILED,
+  )
+  bindMyWechat(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Body() dto: BindMyWechatDto,
+    @Req() req: Request,
+  ): Promise<AppMeWechatDto> {
+    const safeDto: BindMyWechatDto = { code: dto.code };
+    return this.usersService.bindMyWechat(currentUser, safeDto, this.buildAuditMeta(req));
   }
 
   // P0-D PR-3 私有 helper(沿 users.controller.ts:121-127 逐字范式):

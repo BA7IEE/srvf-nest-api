@@ -1,7 +1,7 @@
 // V2 第一阶段批次 6 audit_logs 模块类型契约(D6 v1.1 §8 / §10 / §11)。
 //
 // 本文件承载 3 个类型契约,与 audit-logs.service.ts 同进同退:
-//   1. AuditLogEvent  — 第一批落库入口 union(6 项)
+//   1. AuditLogEvent  — 落库入口 union(首批 6 项起渐进迁入;2026-06-12 wechat T3 后共 35 项)
 //   2. AuditContext   — Prisma AuditLog.context Json 字段的运行时锁形(6 字段:3 必填 + 3 可选)
 //   3. AuditMeta      — controller 层从 @Req() 构造,显式传给 service
 //
@@ -60,7 +60,17 @@ export type AuditLogEvent =
   // 找回密码 T2(2026-06-11)接入(冻结评审稿 password-reset-by-sms-review.md §3.4 / D-PR-3)。
   // 命名沿 password.change.self / password.reset.by-admin 对称范式;actor = 本人(pre-auth 下
   // actor 即被重置账号本人);手机号一律掩码;禁明文码 / codeHash / 完整号码 / 密码任何形态。
-  | 'password.reset.by-sms'; // T2 接入(auth/password-reset.service.reset 成功事务内 1 处;extra.refreshTokensRevoked + phone 掩码 + codeId)
+  | 'password.reset.by-sms' // T2 接入(auth/password-reset.service.reset 成功事务内 1 处;extra.refreshTokensRevoked + phone 掩码 + codeId)
+  // 微信小程序登录 T3(2026-06-12)接入(冻结评审稿 wechat-mini-login-review.md §3.5 / E-23)。
+  // 4 项命名沿 kebab-case 既有范式(auth.login.sms / phone.{bind,rebind}.self / phone.clear.by-admin 对称)。
+  // detail(before / after / extra)中 openid **一律掩码**(maskOpenid,前 4 后 4;openid 非 L3
+  // 但不滥回显);**禁止**写入:wx code / session_key / appSecret / 完整 openid 任何形态。
+  // wechat.bind.self / wechat.rebind.self 双写入路径 extra.viaPath ∈ {'pre-auth','me'} 区分
+  // (沿 registration.create viaPath 范式);pre-auth 路径另含 phone 掩码 + codeId。
+  | 'auth.login.wechat' // T3 接入(AuthService.createSession 经 login-wechat 两调用方;extra.familyId + openid 掩码;登录失败不写,镜像密码登录)
+  | 'wechat.bind.self' // T3 接入(auth/login-wechat.service.bind 首绑 + users.service.bindMyWechat 首绑;after.openid 掩码;extra.viaPath)
+  | 'wechat.rebind.self' // T3 接入(同上双路径换绑;before/after.openid 掩码;extra.viaPath)
+  | 'wechat.clear.by-admin'; // T3 接入(users.service.clearUserWechat;仅实际清除时写〔幂等空清不写〕;before.openid 掩码)
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

@@ -229,6 +229,30 @@ export class UsersController {
     return this.usersService.clearUserPhone(currentUser, params.id, this.buildAuditMeta(req));
   }
 
+  // 微信小程序登录 T3(2026-06-12):管理员清除用户绑定微信 openid(冻结评审稿
+  // wechat-mini-login-review.md §4.4 / E-20,逐行镜像清号端点)。解除绑定的唯一路径
+  // (App 无自助解绑端点,D-W3);**幂等**:目标无 openid → 200 不报错且不写 audit;
+  // 软删用户统一 USER_NOT_FOUND(沿 §7.8);audit wechat.clear.by-admin(openid 掩码)。
+  @Delete(':id/wechat')
+  @ApiOperation({
+    summary: '清除用户绑定微信 openid(幂等;审计 openid 掩码) [rbac: user.wechat.clear]',
+  })
+  @ApiWrappedOkResponse(UserResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.FORBIDDEN_ROLE_OPERATION,
+    BizCode.USER_NOT_FOUND,
+  )
+  clearUserWechat(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Param() params: IdParamDto,
+    @Req() req: Request,
+  ): Promise<UserResponseDto> {
+    return this.usersService.clearUserWechat(currentUser, params.id, this.buildAuditMeta(req));
+  }
+
   // P0-D PR-3:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
   // 不引入 cls-rs / AsyncLocalStorage)。沿 emergency-contacts.controller.ts 范式。
   // 本 helper 服务 resetPassword(管理员重置密码端点)。队员自助改密走 AppMeController

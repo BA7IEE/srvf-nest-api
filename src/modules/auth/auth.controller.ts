@@ -12,6 +12,7 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { LoginSmsThrottle } from '../../common/decorators/login-sms-throttle.decorator';
 import { LoginThrottle } from '../../common/decorators/login-throttle.decorator';
+import { LoginWechatThrottle } from '../../common/decorators/login-wechat-throttle.decorator';
 import { PasswordChangeThrottle } from '../../common/decorators/password-change-throttle.decorator';
 import { PasswordResetThrottle } from '../../common/decorators/password-reset-throttle.decorator';
 import { Public } from '../../common/decorators/public.decorator';
@@ -23,6 +24,7 @@ import {
   LoginDto,
   LoginResponseDto,
   LoginSmsDto,
+  LoginWechatDto,
   LogoutAllResponseDto,
   LogoutDto,
   RefreshTokenDto,
@@ -30,8 +32,12 @@ import {
   SendLoginSmsCodeDto,
   SendPasswordResetCodeDto,
   SendPasswordResetCodeResponseDto,
+  SendWechatBindCodeDto,
+  WechatBindDto,
+  WechatLoginResponseDto,
 } from './auth.dto';
 import { LoginSmsService } from './login-sms.service';
+import { LoginWechatService } from './login-wechat.service';
 import { PasswordResetService } from './password-reset.service';
 
 @ApiTags('Auth')
@@ -43,6 +49,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly passwordReset: PasswordResetService,
     private readonly loginSms: LoginSmsService,
+    private readonly loginWechat: LoginWechatService,
   ) {}
 
   // POST /api/auth/v1/login(@Public 跳过 JwtAuthGuard)。
@@ -222,6 +229,82 @@ export class AuthController {
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.SMS_CODE_INVALID, BizCode.TOO_MANY_REQUESTS)
   loginBySms(@Body() dto: LoginSmsDto, @Req() req: Request): Promise<LoginResponseDto> {
     return this.loginSms.login(dto, this.buildAuditMeta(req));
+  }
+
+  // 微信小程序登录 T3(2026-06-12;冻结评审稿 wechat-mini-login-review.md §4.2 / E-16):
+  // 第三个独立认证端点;`{code}`→code2session→已绑 createSession 同构签发 /
+  // 未绑返 `{bindingRequired:true, session:null}`(非枚举面:openid 必须经持有微信账号的
+  // wx.login code 换取);命中但账号 DISABLED / 软删 → 统一 25010(防侧写,镜像 login-sms 范式)。
+  // @LoginWechatThrottle() → 第 8 throttler 实例 'login-wechat'(IP 5/60 默认,
+  // 与既有七实例物理隔离;不暴露阈值)。
+  @Public()
+  @LoginWechatThrottle()
+  @Post('login-wechat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '微信小程序 code 登录(已绑同构发 token;未绑返 bindingRequired) [public]',
+  })
+  @ApiWrappedOkResponse(WechatLoginResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.WECHAT_CODE_INVALID,
+    BizCode.WECHAT_CHANNEL_NOT_CONFIGURED,
+    BizCode.WECHAT_API_FAILED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  loginByWechat(@Body() dto: LoginWechatDto, @Req() req: Request): Promise<WechatLoginResponseDto> {
+    return this.loginWechat.login(dto, this.buildAuditMeta(req));
+  }
+
+  // 微信绑定发码(评审稿 §4.3 send-code):purpose=WECHAT_BIND(手机短信锚点,D-W1);
+  // 防枚举沿 login-sms 范式 = 四种无效号码场景泛化 200 零留痕;
+  // 有效号限频 / 通道错误照常抛(残余侧信道沿 R-1 接受)。
+  @Public()
+  @LoginWechatThrottle()
+  @Post('wechat-bind/send-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '发送微信绑定短信验证码(防枚举:无效号码返回相同泛化响应) [public]',
+  })
+  @ApiWrappedOkResponse(SendPasswordResetCodeResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.SMS_SEND_INTERVAL_LIMIT,
+    BizCode.SMS_PHONE_DAILY_LIMIT,
+    BizCode.SMS_CHANNEL_NOT_CONFIGURED,
+    BizCode.SMS_SEND_FAILED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  sendWechatBindCode(
+    @Body() dto: SendWechatBindCodeDto,
+    @Req() req: Request,
+  ): Promise<SendPasswordResetCodeResponseDto> {
+    return this.loginWechat.sendBindCode(dto, req.ip ?? null);
+  }
+
+  // 微信首绑/换绑 + 登录(评审稿 §4.3 七步校验顺序冻结):
+  // ① code2session(最前,失败不烧 SMS 码)② 解析手机号(四无效 → 24010)
+  // ③ 码预检不消费 ④ openid 占用(他人 → 25002,仅对已证手机控制权者可达)
+  // ⑤ 原子消费 ⑥ 绑定事务 + audit wechat.{bind,rebind}.self ⑦ createSession 同构签发。
+  @Public()
+  @LoginWechatThrottle()
+  @Post('wechat-bind')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '手机短信锚点绑定微信 openid 并登录(验码即消费;绑定后同构发 token) [public]',
+  })
+  @ApiWrappedOkResponse(LoginResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.SMS_CODE_INVALID,
+    BizCode.WECHAT_CODE_INVALID,
+    BizCode.WECHAT_ALREADY_BOUND,
+    BizCode.WECHAT_CHANNEL_NOT_CONFIGURED,
+    BizCode.WECHAT_API_FAILED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  bindWechat(@Body() dto: WechatBindDto, @Req() req: Request): Promise<LoginResponseDto> {
+    return this.loginWechat.bind(dto, this.buildAuditMeta(req));
   }
 
   // P0-E PR-3:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
