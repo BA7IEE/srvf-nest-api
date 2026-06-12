@@ -33,6 +33,12 @@ model User {
   phone           String?   @unique
   phoneVerifiedAt DateTime?
 
+  // 微信小程序登录 T1(2026-06-12;评审稿 docs/archive/reviews/wechat-mini-login-review.md §3.1):
+  // 微信小程序 openid,账号级身份字段(D-W2 最小字段集:不存 unionid / session_key / 绑定时间戳)。
+  // @unique 全局唯一**含软删占用**(沿 phone/username 不复用范式;预检查必须 findUnique 含软删,
+  // 评审稿 E-19);admin 清除置 null(解除绑定唯一路径,D-W3)。
+  openid String? @unique
+
   memberId String? @unique
   member   Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
 
@@ -1158,6 +1164,7 @@ enum SmsPurpose {
   PHONE_BIND // 手机号绑定 / 换绑(登录态;sms-verification-infra 评审稿)
   PASSWORD_RESET // 找回密码(pre-auth;password-reset-by-sms 评审稿 §3.1)
   LOGIN // OTP 验证码登录(pre-auth;queue-b 评审稿 §5.1;通知用途不占 purpose——生日批走 send_logs.templateKey)
+  WECHAT_BIND // 微信 openid 绑定锚点(pre-auth;wechat-mini-login 评审稿 D-W1)
 }
 
 model SmsSendLog {
@@ -1183,4 +1190,41 @@ model SmsSendLog {
 enum SmsSendStatus {
   SENT
   FAILED
+}
+
+// =========================================================================
+// 微信小程序登录基础设施 T1(2026-06-12;冻结评审稿
+// docs/archive/reviews/wechat-mini-login-review.md §3.1,镜像 SmsSettings 范式)
+//
+// 凭证单例表(singleton 不在 DB 层强制,>1 行 Service 层 WARN 取最早,E-3);
+// 与 SmsSettings 的差异:凭证仅 appSecret **一段**加密(SMS 是 secretId+secretKey 两段);
+// 无 send-logs 对应物(code2session 免费查询类 API,无资费无触达,E-8)。
+// =========================================================================
+
+model WechatSettings {
+  id String @id @default(cuid())
+
+  // 通道选型(评审稿 E-6/E-10;production-like 禁 DEV_STUB,写入与运行时双重校验)
+  providerType WechatProviderType
+  enabled      Boolean            @default(true)
+
+  // 小程序运行参数(非 secret,明文;DEV_STUB 下闲置;镜像 sdkAppId 地位)
+  appId String?
+
+  // 凭证(加密存储;明文永不入库;响应永不回显——密文也不回显;L3)
+  appSecretEncrypted   String?
+  credentialConfigured Boolean @default(false) // DB 层简单事实;运行时 credentialStatus 三态由 Service 合成
+
+  // 元信息(沿 SmsSettings 范式;updatedBy 不建外键)
+  remarks   String?
+  updatedBy String? // User.id
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@map("wechat_settings")
+}
+
+enum WechatProviderType {
+  DEV_STUB // 非生产联调通道:确定性假 openid dev-openid-<code>(评审稿 E-10;production-like 不可达)
+  WECHAT
 }
