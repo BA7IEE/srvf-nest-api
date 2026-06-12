@@ -109,8 +109,19 @@
 | 微信登录服务未配置或未启用 | 25030 | settings 行缺失 / enabled=false / appId 空 / credentialStatus≠configured;production 配 DEV_STUB 也落此 |
 | 微信登录凭证无效或已过期 | 25010 | code 过期(5 分钟)/ 已使用(40163)/ 伪造(40029);**绑定的账号被禁用或软删也统一本码**(防侧写,先查目标账号状态) |
 | 微信服务调用失败 | 25031 | 看服务端 warn 日志 errcode:40013=AppID 错 / 40125=AppSecret 错(§4 步 4)/ -1=微信系统繁忙重试 / FETCH_ERROR·TimeoutError=出网不通(检查服务器出站 443 到 api.weixin.qq.com) |
-| 该微信已绑定其他账号 | 25002 | openid 已被占用(含软删账号占用);需先 `DELETE /api/admin/v1/users/:id/wechat` 清除原绑定 |
+| 该微信已绑定其他账号 | 25002 | openid 已被占用(含软删账号占用);**活跃持有者**:先 `DELETE /api/admin/v1/users/:id/wechat` 清除原绑定;**软删持有者:该端点返 404(USER_NOT_FOUND),需 DB 介入,见表下注** |
 | 验证码错误或已失效 | 24010 | 绑定锚点短信侧:号码无效(四场景统一)/ 码错/过期/超次;沿 SMS 排错(sms checklist §7) |
 | 请求过于频繁 | 42900 | 第 8 throttler `login-wechat` IP 5/60 命中;正常重试间隔即可 |
+
+> **软删占用的 DB 介入步骤**(2026-06-12 增量审计⑦:`clearUserWechat` 镜像 phone 沿 §7.8,经 `notDeletedWhere` 查目标——软删持有者对该 API 不可见也不可清;且 openid 全链掩码,无法经任何 API 反查持有账号):
+>
+> ```sql
+> -- 1. 定位软删且仍占用 openid 的行(典型场景:队员旧账号软删后,换新账号重绑撞 25002)
+> SELECT id, username, phone, "deletedAt" FROM "User" WHERE openid IS NOT NULL AND "deletedAt" IS NOT NULL;
+> -- 2. 结合队员身份人工确认后释放占用(沿 security.md 软删恢复同级 DB 手术纪律;操作记入变更记录)
+> UPDATE "User" SET openid = NULL WHERE id = '<上一步确认的 id>';
+> ```
+>
+> 释放后队员重走绑定流程即可。本注记是运维出路成文,**不**改变 E-19「openid 占用含软删、不复用」语义,也不引入 restore / 软删自动清绑。
 
 安全提醒:服务端日志**永不**含 AppSecret / session_key / wx code / 完整 openid;若在任何日志看到这四者之一,按安全事件处理并上报。
