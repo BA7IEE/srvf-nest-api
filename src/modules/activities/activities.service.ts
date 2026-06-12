@@ -71,6 +71,7 @@ const activitySafeSelect = {
   cancelledAt: true,
   cancelReason: true,
   isPublicRegistration: true,
+  requiresInsurance: true,
   registrationSchema: true,
   coverImageUrl: true,
   galleryImageUrls: true,
@@ -97,6 +98,7 @@ const activityListItemSelect = {
   registrationDeadline: true,
   statusCode: true,
   isPublicRegistration: true,
+  requiresInsurance: true,
   coverImageUrl: true,
   locationLongitude: true,
   locationLatitude: true,
@@ -164,6 +166,7 @@ export class ActivitiesService {
       cancelledAt: row.cancelledAt,
       cancelReason: row.cancelReason,
       isPublicRegistration: row.isPublicRegistration,
+      requiresInsurance: row.requiresInsurance,
       registrationSchema: this.jsonAsObject(row.registrationSchema),
       coverImageUrl: row.coverImageUrl,
       galleryImageUrls: this.jsonAsStringArray(row.galleryImageUrls),
@@ -190,6 +193,7 @@ export class ActivitiesService {
       registrationDeadline: row.registrationDeadline,
       statusCode: row.statusCode,
       isPublicRegistration: row.isPublicRegistration,
+      requiresInsurance: row.requiresInsurance,
       coverImageUrl: row.coverImageUrl,
       locationLongitude: this.decimalToString(row.locationLongitude),
       locationLatitude: this.decimalToString(row.locationLatitude),
@@ -365,6 +369,9 @@ export class ActivitiesService {
       if (dto.isPublicRegistration !== undefined) {
         data.isPublicRegistration = dto.isPublicRegistration;
       }
+      if (dto.requiresInsurance !== undefined) {
+        data.requiresInsurance = dto.requiresInsurance;
+      }
       if (dto.registrationSchema !== undefined) {
         data.registrationSchema = dto.registrationSchema as Prisma.InputJsonValue;
       }
@@ -462,6 +469,9 @@ export class ActivitiesService {
       if (dto.registrationNotes !== undefined) data.registrationNotes = dto.registrationNotes;
       if (dto.isPublicRegistration !== undefined) {
         data.isPublicRegistration = dto.isPublicRegistration;
+      }
+      if (dto.requiresInsurance !== undefined) {
+        data.requiresInsurance = dto.requiresInsurance;
       }
       if (dto.registrationSchema !== undefined) {
         data.registrationSchema = dto.registrationSchema as Prisma.InputJsonValue;

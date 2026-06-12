@@ -113,6 +113,12 @@ export class ActivityResponseDto {
   @ApiProperty({ description: '是否公开报名(默认 true)' })
   isPublicRegistration!: boolean;
 
+  @ApiProperty({
+    description:
+      '是否要求保险(默认 false;true 时报名校验队员有覆盖活动日期的有效保险,否则 26030;保险 T3,评审稿 insurance-module-review.md §4)',
+  })
+  requiresInsurance!: boolean;
+
   @ApiPropertyOptional({
     description: '报名表自定义字段 schema(Json;Q-A13 不做嵌套校验)',
     nullable: true,
@@ -201,6 +207,9 @@ export class ActivityListItemDto {
 
   @ApiProperty({ description: '是否公开报名' })
   isPublicRegistration!: boolean;
+
+  @ApiProperty({ description: '是否要求保险(保险 T3)' })
+  requiresInsurance!: boolean;
 
   @ApiPropertyOptional({ description: '封面图片 URL', nullable: true })
   coverImageUrl!: string | null;
@@ -307,6 +316,13 @@ export class CreateActivityDto {
   @IsOptional()
   @IsBoolean()
   isPublicRegistration?: boolean;
+
+  @ApiPropertyOptional({
+    description: '是否要求保险(默认 false = 不校验,迁移安全;发布时可设;保险 T3)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  requiresInsurance?: boolean;
 
   @ApiPropertyOptional({
     description: '报名表自定义字段 schema(Json;Q-A13 不做嵌套校验)',
@@ -438,6 +454,13 @@ export class UpdateActivityDto {
   @IsOptional()
   @IsBoolean()
   isPublicRegistration?: boolean;
+
+  @ApiPropertyOptional({
+    description: '是否要求保险(改 true 仅影响其后新报名,快照语义不回溯;保险 T3 E-12)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  requiresInsurance?: boolean;
 
   @ApiPropertyOptional({
     description: '报名表自定义字段 schema',

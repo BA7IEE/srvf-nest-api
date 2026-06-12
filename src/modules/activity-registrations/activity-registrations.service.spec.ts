@@ -4,6 +4,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import type { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import type { RbacService } from '../permissions/rbac.service';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import type { ActivityRegistrationTransitionDecision } from './activity-registration-state-machine';
@@ -163,6 +164,17 @@ function makeRbacMock() {
   return { can: jest.fn<Promise<boolean>, [unknown, string]>().mockResolvedValue(true) };
 }
 
+// 保险 T3(2026-06-13,评审稿 insurance-module-review.md E-10):构造函数注入门槛 mock,
+// assert 恒通过(本 spec fixture 活动 requiresInsurance 走 Prisma default=false,门槛语义
+// 由 e2e activity-registrations-insurance-gate 锁定)。既有断言零修改,仅机械补第 5 参。
+function makeInsuranceRequirementMock() {
+  return {
+    assertMemberInsuredForActivity: jest
+      .fn<Promise<void>, [string, unknown, unknown]>()
+      .mockResolvedValue(undefined),
+  };
+}
+
 function makeService(
   prisma: PrismaMock,
   recorder: AuditRecorderMock,
@@ -174,6 +186,7 @@ function makeService(
     recorder as unknown as ActivityRegistrationAuditRecorder,
     stateMachine,
     makeRbacMock() as unknown as RbacService,
+    makeInsuranceRequirementMock() as unknown as InsuranceRequirementService,
   );
 }
 

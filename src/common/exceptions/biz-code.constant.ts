@@ -3,7 +3,7 @@ import { HttpStatus } from '@nestjs/common';
 // BizCode 常量表
 //
 // 当前状态(随实施滚动维护;每次新增模块码后校对):
-// - 140 个 BizCode(2026-06-13 亲核 grep httpStatus 计数;保险 T2 +5),覆盖 21 个编号段
+// - 141 个 BizCode(2026-06-13 亲核 grep httpStatus 计数;保险 T2 +5 / T3 +26030),覆盖 21 个编号段
 // - 编号段权威说明以 `docs/srvf-foundation-baseline.md §1.1` 为准;
 //   ARCHITECTURE.md §7.3 是早期蓝图,模块命名已演进(missions→dictionaries、
 //   files→attachments、devices→audit_logs 等),遇分歧以 baseline §1.1 + 本文件实际常量为准
@@ -764,6 +764,13 @@ export const BizCode = {
     code: 26010,
     message: '起保日期不得晚于到期日期',
     httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  // T3 报名门槛(评审稿 §3.3 落点表;过期与无保险不细分,前端提示价值无差,E-8;
+  // 409 沿 20120/21030 报名业务态冲突家族;requiresInsurance=false 活动零查询不触发)。
+  INSURANCE_REQUIRED: {
+    code: 26030,
+    message: '该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名',
+    httpStatus: HttpStatus.CONFLICT,
   },
 
   // audit_logs 模块业务级(140xx + 141xx)。批次 6 PR #1 引入(2026-05-12)。

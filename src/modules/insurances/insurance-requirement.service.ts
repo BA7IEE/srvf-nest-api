@@ -1,14 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { normalizeDateOnly } from '../../common/datetime/date-only.util';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
+import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 
 // 保险模块 T2:活动报名保险门槛校验 service(2026-06-13;InsurancesModule 唯一 export)。
 // 冻结评审稿 docs/archive/reviews/insurance-module-review.md §4 / E-10~E-13。
 //
 // 调用方:activity-registrations.service create()(admin 代报名)与 createMy()(自助,
-// App createMyForApp 薄壳经此)事务内调用(T3 接线;依赖单向 activity-registration → insurances;
-// assert 形态 + BizCode INSURANCE_REQUIRED=26030 随 T3 落,本期先交付纯查询能力,沿评审稿 §3.3 落点表)。
+// App createMyForApp 薄壳经此)事务内调用(T3 已接线;依赖单向 activity-registration → insurances)。
 // 本 service 纯读,**不**接 rbac(内部服务)、**不**写 audit。
 //
 // 语义冻结(E-11/E-12;快照:仅报名 create 时校验,approve/cancel/保险变化不回溯):
@@ -61,5 +62,20 @@ export class InsuranceRequirementService {
       select: { id: true },
     });
     return coverage !== null;
+  }
+
+  // 报名门槛断言(T3;报名 create 事务内调用,E-10/E-12 快照语义)。
+  // requiresInsurance=false → 零查询直接通过(既有活动 / 既有测试零回归保证,D-INS-1);
+  // 任一来源覆盖 → 通过;否则 INSURANCE_REQUIRED=26030(过期与无保险不细分,E-8)。
+  async assertMemberInsuredForActivity(
+    memberId: string,
+    activity: { requiresInsurance: boolean; startAt: Date; endAt: Date },
+    tx?: PrismaTx,
+  ): Promise<void> {
+    if (!activity.requiresInsurance) return;
+    const insured = await this.isMemberInsuredForActivity(memberId, activity, tx);
+    if (!insured) {
+      throw new BizException(BizCode.INSURANCE_REQUIRED);
+    }
   }
 }
