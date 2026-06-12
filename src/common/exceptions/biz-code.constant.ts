@@ -3,7 +3,7 @@ import { HttpStatus } from '@nestjs/common';
 // BizCode 常量表
 //
 // 当前状态(随实施滚动维护;每次新增模块码后校对):
-// - 135 个 BizCode(2026-06-12 亲核 grep httpStatus 计数;wechat T3 +4),覆盖 20 个编号段
+// - 140 个 BizCode(2026-06-13 亲核 grep httpStatus 计数;保险 T2 +5),覆盖 21 个编号段
 // - 编号段权威说明以 `docs/srvf-foundation-baseline.md §1.1` 为准;
 //   ARCHITECTURE.md §7.3 是早期蓝图,模块命名已演进(missions→dictionaries、
 //   files→attachments、devices→audit_logs 等),遇分歧以 baseline §1.1 + 本文件实际常量为准
@@ -32,9 +32,10 @@ import { HttpStatus } from '@nestjs/common';
 // - 22xxx + 221xx: attendances(批次 3B + 4-A APD 终审)
 // - 23xxx + 231xx: contribution_rules
 // - 25xxx + 251xx: wechat(微信小程序登录,2026-06-12)
+// - 26xxx + 261xx: insurances(保险模块,2026-06-13)
 // - 30xxx + 301xx: permissions(C-6 RBAC)
 // - 40xxx / 42xxx / 50xxx: 通用 HTTP / infrastructure(BAD_REQUEST / UNAUTHORIZED / FORBIDDEN / NOT_FOUND / TOO_MANY_REQUESTS / INTERNAL_ERROR)
-// - 260xx-290xx: 未规划模块预留(训练 / 装备 / 财务 / 通知等)
+// - 270xx-290xx: 未规划模块预留(训练 / 装备 / 财务 / 通知等)
 export const BizCode = {
   // 通用 HTTP 级
   BAD_REQUEST: { code: 40000, message: '请求参数错误', httpStatus: HttpStatus.BAD_REQUEST },
@@ -722,6 +723,47 @@ export const BizCode = {
     code: 25031,
     message: '微信服务调用失败,请稍后重试',
     httpStatus: HttpStatus.BAD_GATEWAY,
+  },
+
+  // insurances 模块业务级(260xx + 261xx)。保险模块 T2 引入(2026-06-13)。
+  // 详见冻结评审稿 docs/archive/reviews/insurance-module-review.md §3.3 / E-8;
+  // 段位选择:baseline §1.1 原 "260xx-290xx 未规划模块预留" 首段,本期实装收口
+  // (段位表加行随 T3 PR,红区例外经 goal 唯一授权;沿 24xxx/25xxx 收口先例)。
+  //
+  // 子段(对齐 baseline §1.3 紧凑使用):
+  // - 26001-26003:NOT_FOUND 家族(自购保险 / 队保单 / 覆盖行;App 侧他人/不存在/已删
+  //   统一 26001 防侧信道,沿 P2-5 findMy 范式,评审稿 E-14)
+  // - 26004:唯一约束冲突(覆盖名单 partial unique 单加重复;P2002 兜底同码,镜像 21002)
+  // - 26010:业务级输入校验(coverageStart > coverageEnd 跨字段;自购与队保单共用)
+  // - 26030:报名门槛(T3 实装 INSURANCE_REQUIRED;409 沿 20120/21030 报名业务态冲突家族)
+  //
+  // 不开的码(评审稿 §3.3 明确):
+  // - 261xx FORBIDDEN_*:权限拒绝走通用 30100 / 40100 / 40300(RBAC_MAP §6 规则 5)
+  // - 过期 vs 无保险不细分:同 26030(前端提示价值无差,评审稿 E-8)
+  MEMBER_INSURANCE_NOT_FOUND: {
+    code: 26001,
+    message: '保险记录不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  TEAM_INSURANCE_POLICY_NOT_FOUND: {
+    code: 26002,
+    message: '队保单不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  TEAM_INSURANCE_COVERAGE_NOT_FOUND: {
+    code: 26003,
+    message: '该队员不在本保单覆盖名单内',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  TEAM_INSURANCE_COVERAGE_ALREADY_EXISTS: {
+    code: 26004,
+    message: '该队员已在本保单覆盖名单内',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  INSURANCE_COVERAGE_DATE_RANGE_INVALID: {
+    code: 26010,
+    message: '起保日期不得晚于到期日期',
+    httpStatus: HttpStatus.BAD_REQUEST,
   },
 
   // audit_logs 模块业务级(140xx + 141xx)。批次 6 PR #1 引入(2026-05-12)。

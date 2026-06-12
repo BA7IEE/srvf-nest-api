@@ -25,6 +25,7 @@ import { ContributionRulesModule } from './modules/contribution-rules/contributi
 import { DictionariesModule } from './modules/dictionaries/dictionaries.module';
 import { EmergencyContactsModule } from './modules/emergency-contacts/emergency-contacts.module';
 import { HealthModule } from './modules/health/health.module';
+import { InsurancesModule } from './modules/insurances/insurances.module';
 import { MemberDepartmentsModule } from './modules/member-departments/member-departments.module';
 import { AttachmentConfigsModule } from './modules/attachment-configs/attachment-configs.module';
 import { AttachmentsModule } from './modules/attachments/attachments.module';
@@ -81,6 +82,7 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     MemberProfilesModule,
     EmergencyContactsModule,
     CertificatesModule,
+    InsurancesModule,
     // V2 第一阶段批次 3A(2026-05-11):activities + activity-registrations(含 CSV export)。
     // V2 第一阶段批次 3B(2026-05-11):attendances(双 model AttendanceSheet + AttendanceRecord;
     // APD review;/me/attendance-records;触发 eventPlaceholder('attendance.recorded') approved-only)。

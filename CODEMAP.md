@@ -7,7 +7,7 @@
 
 ---
 
-## src/modules/(23 个业务模块,平铺,**禁止嵌套 system/business/core 子目录**)
+## src/modules/(24 个业务模块,平铺,**禁止嵌套 system/business/core 子目录**)
 
 | 路径 | 体量 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
 |---|---|---|---|---|
@@ -24,6 +24,7 @@
 | `dictionaries/` | M (968L) | 字典双表 + 父子树 | 同 surface 双 controller(**非 surface Mixed**) | [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
 | `emergency-contacts/` | S (571L) | N:1 紧急联系人 | 子资源 | — |
 | `health/` | S (137L) | 健康检查(live / ready) | **模块结构例外**:只有 module + controller,**无 service** | [`AGENTS.md §2`](AGENTS.md) |
+| `insurances/` | M (1551L) | 自购保险(App self-scope)+ 队保单 + 覆盖名单 + 报名门槛查询 | 覆盖名单 partial unique 在 migration 直写;`InsuranceRequirementService` 是唯一跨模块出口(activity-registration 单向依赖) | [`docs/archive/reviews/insurance-module-review.md`](docs/archive/reviews/insurance-module-review.md) |
 | `member-departments/` | S (329L) | 一人一部门 partial unique | partial unique 在 schema 显式 | — |
 | `member-profiles/` | M (1258L) | 1:1 子资源,含敏感字段(身份证默认掩码后 4 位) | **L3 字段不外暴**;白名单严格 | [`docs/security.md`](docs/security.md) |
 | `members/` | S (501L) | 全局 `memberNo` **不复用** | memberNo 唯一性铁律 | [`docs/srvf-foundation-baseline.md`](docs/srvf-foundation-baseline.md) |
