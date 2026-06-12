@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
+import { applyCrashHandlers } from './bootstrap/apply-crash-handlers';
 import { applyGlobalSetup } from './bootstrap/apply-global-setup';
 import { applySwagger } from './bootstrap/apply-swagger';
 import type { AppConfig } from './config/app.config';
@@ -15,12 +16,19 @@ async function bootstrap(): Promise<void> {
   // 映射 / 全局过滤器注册等)走 pino。HTTP 请求日志由 LoggerModule 注册的 middleware 处理。
   // test/setup/test-app.ts 走 app.useLogger(false),不会受这里影响——main.ts 是生产入口,
   // test 入口独立。
-  app.useLogger(app.get(Logger));
+  const logger = app.get(Logger);
+  app.useLogger(logger);
+
+  // 崩溃路径可观测性兜底(uncaughtException / unhandledRejection 经 pino 记完整
+  // 上下文后保持 Node 默认崩溃结局)。仅生产入口注册,test 入口不注册;
+  // 与下方优雅关闭职责互不重叠,边界详见 apply-crash-handlers.ts 头注释。
+  applyCrashHandlers(logger);
 
   // V1.1 §11.2 / §15.4:启用 NestJS 关闭钩子,SIGTERM / SIGINT 时触发模块生命周期。
   // 关闭顺序:HTTP server 停接 → 等待 in-flight 请求 → 各模块 OnModuleDestroy
   // (PrismaService.$disconnect) → OnApplicationShutdown。
-  // 禁止自写 process.on('SIGTERM') / process.exit(),由 NestJS lifecycle 统一控制。
+  // 禁止自写 process.on('SIGTERM') / process.exit() 参与**关闭流程**,优雅关闭由
+  // NestJS lifecycle 统一控制(崩溃路径的 exit(1) 不属于关闭流程,见上方兜底注释)。
   app.enableShutdownHooks();
 
   // 触发 app.config.ts 内的启动强校验(registerAs callback 已在模块解析时执行,
