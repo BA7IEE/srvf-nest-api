@@ -34,6 +34,13 @@ import type {
 // - 错误信息不暴露 SecretId / SecretKey 明文 / 密文(沿 §6.6 Q22)
 // - credentialStatus 三档守护(沿 §6.6.3)
 
+// 外部 SDK 请求超时上限(2026-06-12 goal G3):COS SDK `Timeout` 单位 ms,默认不设
+// (= 无超时),网络黑洞会拖死上游调用方(putObject / headObject 在附件上传确认链路上)。
+// 超时由 SDK 抛错,沿既有错误路径透出,语义不变。当前真实 COS 未接通(运维侧未录入
+// 凭证),本配置"正确但休眠":unit spec 锁构造参数就位,真连后的端到端超时行为留运维
+// 接力时验证。
+const COS_REQUEST_TIMEOUT_MS = 8000;
+
 export class CosProviderUnavailableError extends Error {
   constructor(reason: string) {
     super(`COS_PROVIDER_UNAVAILABLE: ${reason}`);
@@ -172,6 +179,7 @@ export class CosStorageProvider implements StorageProvider {
     const cos = new COS({
       SecretId: settings.credentials.secretId,
       SecretKey: settings.credentials.secretKey,
+      Timeout: COS_REQUEST_TIMEOUT_MS,
     });
     return {
       cos,

@@ -352,7 +352,7 @@ describe('CosStorageProvider', () => {
       expect(COSMock).toHaveBeenCalledTimes(2);
     });
 
-    it('Constructor 收到 SecretId / SecretKey', async () => {
+    it('Constructor 收到 SecretId / SecretKey + Timeout 8000ms(外部 SDK 超时,goal G3)', async () => {
       const { service } = makeSettingsServiceMock(makeSettings());
       COSMock.__mockInstance.deleteObject.mockResolvedValue({ statusCode: 204 });
       const svc = new CosStorageProvider(service);
@@ -360,6 +360,8 @@ describe('CosStorageProvider', () => {
       expect(COSMock).toHaveBeenCalledWith({
         SecretId: 'AKID-test-id',
         SecretKey: 'secret-test-key',
+        // Timeout 单位 ms;真实 COS 未接通,超时配置就位由此锁定
+        Timeout: 8000,
       });
     });
   });
