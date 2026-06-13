@@ -9,7 +9,7 @@
 |---|---|
 | 版本(三方一致) | **v0.24.0**(2026-06-13;package.json = Swagger = tag;tag 指向 `c438840c` 标 Latest;要点见 CHANGELOG) |
 | `main` HEAD | `c438840c`(#370 handoff;tag v0.24.0 与 HEAD 同点,本行为滚动快照) |
-| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **0**(v0.24.0 已折叠 5 条:保险 #365/#366/#367 + 微信 review #360/#361) |
+| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **1**(本 PR:`GET /api/admin/v1/me` 只读身份 bootstrap;v0.24.0 已折叠 5 条:保险 #365/#366/#367 + 微信 review #360/#361) |
 | 最新 handoff | [`archive/handoff/v0.24.0.md`](archive/handoff/v0.24.0.md)(不回改) |
 
 ## 2. 当前系统已具备能力
@@ -29,9 +29,10 @@
 - **保险模块(自购自助 + 队统一保单 + 活动报名门槛;顶层设计 §8 保险域首落地)**(2026-06-13,goal T0-T4 #363/#365/#366/#367;冻结评审稿 [`archive/reviews/insurance-module-review.md`](archive/reviews/insurance-module-review.md)):**三表**(`member_insurances`〔自购:保险公司/保单号/到期必填+起保可选,`coverageEnd` 是有效性唯一依据,自报即可 v1 无核验〕/ `team_insurance_policies`〔队统一保单一张=一条〕/ `team_insurance_coverages`〔保单×队员 join,partial unique (policyId,memberId) WHERE deletedAt IS NULL〕)+ `Activity.requiresInsurance @default(false)`(默认 false=迁移安全);**第 24 模块 `insurances/` 14 端点**:App 自助 `app/v1/me/insurances` ×4(**self-scope 锁 memberId 不接 RBAC**,防 IDOR 26001 防侧信道)/ 队保单 `admin/v1/team-insurance-policies` ×9(CRUD+覆盖名单单加/**全体在册一键加幂等仅 ACTIVE**/移除;保单软删不级联覆盖行)/ admin 查队员保险 ×1(`member-insurance.read.other`);**报名门槛**:`requiresInsurance=true` 时报名 create **双路径**(admin 代报名+自助)事务内校验「自购有效 **或** 队保单覆盖,任一即可」(北京日粒度含等号,快照不回溯),否则 `INSURANCE_REQUIRED=26030`;BizCode **26xxx 段 6 码**(261xx 不开)+ 权限码 +7 全绑 biz-admin(121→**128**,自助侧零码)+ AuditLogEvent +8(union 共 **43**)+ placeholder +1(29);baseline §1.1 红区加段(goal 授权);**v1 不做**(评审稿 §10):理赔/到期主动提醒/核验工作流/**保单图 attachments 接线**(ownerType 语义已预留,enum 分支+8 权限码单独立项)/App activities DTO 暴露 requiresInsurance;真实保险数据待业务侧录入
 - **进程硬化两件(2026-06-12,goal「会议延期窗口·无等待工作一次收清」G2/G3,#345/#346)**:① 崩溃路径可观测性兜底(`src/bootstrap/apply-crash-handlers.ts`,仅 main.ts 注册:uncaughtException 记 fatal 后 exit(1) / unhandledRejection 记日志后 re-throw 保持 Node 默认崩溃结局;经 pino 沿 redact 清单;**不碰 SIGTERM/优雅关闭**);② 外部 SDK 请求超时上限(腾讯云 SMS `reqTimeout` 8s + COS `Timeout` 8000ms,超时沿既有错误路径语义零变化;**正确但当前休眠**——SMS/COS 真通道均未接,配置就位由两 provider spec 构造断言锁定)
 - **App API Phase 2**(15 端点):`me`×3 / profile×2 / password / activities×2 / `my/*`×7;DTO 隔离 `dto/app/` 禁派生;self-scope;**永不返回 L3**;准入双 ACTIVE(D-5)
+- **Admin surface 本人身份**(2026-06-14,goal「Admin surface 本人身份端点」#372):`GET /api/admin/v1/me` 只读身份 bootstrap(`AdminMeController` 单一 `Admin - Me` tag + 独立 `AdminMeResponseDto` 字段集恰好 9 = User 本体身份;入口仅 `JwtAuthGuard` 不挂 `@Roles`,任意登录用户返本人;**不内联角色/权限**——权限仍走 `system/v1/rbac/me/permissions`;不返 member 业务字段 / raw permission code / L3;零 prisma/BizCode/audit)
 - **Route B 终态**(2026-06-01):全仓仅 4 前缀,零 v2 / 零裸前缀 / 零 legacy,contract 断言锁定(§2.1)
-- **P2-2 鉴权后缀**(v0.17.0 落地 148;现 **168** endpoint)summary 带 `[rbac:]/[roles:]/[public]/[auth]`,检查项 G 锁一致性(Slow-4 后 `[roles:]` 计 0,形态保留供机制兜底)
-- **测试与契约**:e2e **92 suites / 1852 tests** + unit **40 spec / 1396 tests**(2026-06-13 保险 goal true-up 亲核:e2e +app-me-insurances 11 / team-insurance-policies 10 / insurance-gate 10〔含微信 review 收口 #360-#361 增量〕;unit 增量主要为 BizCode/audit union 参数化用例随 +6 码 +9 事件展开)+ contract **182 路由**白名单(168→182 仅新增);CI 全链 + docker-smoke(含生日 cron 启动锚行 + `WECHAT_ENCRYPTION_KEY` 注入)
+- **P2-2 鉴权后缀**(v0.17.0 落地 148;现 **183** endpoint,2026-06-14 亲核 EXPECTED_ROUTES = 实际路由数;旧值 168 系保险模块前快照,含保险 T2 +14 与本 PR `admin/v1/me` +1)summary 带 `[rbac:]/[roles:]/[public]/[auth]`,检查项 G 锁一致性(Slow-4 后 `[roles:]` 计 0,形态保留供机制兜底)
+- **测试与契约**:e2e **93 suites / 1861 tests** + unit **40 spec / 1396 tests**(2026-06-14 `admin/v1/me` true-up 亲核:e2e +admin-me 9〔本 PR〕;2026-06-13 保险 goal true-up 亲核:e2e +app-me-insurances 11 / team-insurance-policies 10 / insurance-gate 10〔含微信 review 收口 #360-#361 增量〕;unit 增量主要为 BizCode/audit union 参数化用例随 +6 码 +9 事件展开)+ contract **183 路由**白名单(168→182 保险 T2 + 182→183 本 PR `admin/v1/me`,均仅新增);CI 全链 + docker-smoke(含生日 cron 启动锚行 + `WECHAT_ENCRYPTION_KEY` 注入)
 
 ## 2.1 当前 API surface 状态
 

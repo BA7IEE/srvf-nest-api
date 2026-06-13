@@ -271,6 +271,7 @@
   - `/api/app/v1/me/profile`
   - `/api/app/v1/me/password`
   - `/api/app/v1/me/capabilities`
+  - `/api/admin/v1/me`(**Admin surface** 本人身份只读 bootstrap,2026-06-14;`/me = 身份` 原则跨 surface 适用——管理后台登录后取本人昵称/头像/角色。**只读**,不内联角色/权限——权限走 `/api/system/v1/rbac/me/permissions`〔§9.4〕;与 App `/me` **物理隔离、DTO 不派生**〔§2.1〕)
   - `/api/app/v1/my/activities`
   - `/api/app/v1/my/registrations`
   - `/api/app/v1/my/attendance-records`

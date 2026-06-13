@@ -7,6 +7,7 @@ import { WechatModule } from '../wechat/wechat.module';
 import { AppCapabilityService } from './app-capability.service';
 import { AppIdentityResolver } from './app-identity.resolver';
 import { AppProfileService } from './app-profile.service';
+import { AdminMeController } from './controllers/admin-me.controller';
 import { AppMeController } from './controllers/app-me.controller';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
@@ -47,7 +48,9 @@ import { UsersService } from './users.service';
 // openid 占用 / 绑定落库 / audit 全部留在本模块。单向依赖 users → wechat,无环。
 @Module({
   imports: [DatabaseModule, AuditLogsModule, PermissionsModule, SmsModule, WechatModule],
-  controllers: [UsersController, AppMeController],
+  // admin/v1/me 本人身份只读 bootstrap(2026-06-14):AdminMeController 物理隔离于 Admin surface
+  // (单一 @ApiTags('Admin - Me'),非 Mixed),复用 UsersService.getMyAdminIdentity 薄读路径。
+  controllers: [UsersController, AppMeController, AdminMeController],
   providers: [UsersService, AppIdentityResolver, AppCapabilityService, AppProfileService],
   exports: [AppIdentityResolver],
 })

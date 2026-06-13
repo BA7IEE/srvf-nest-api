@@ -239,6 +239,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // (Route B 终态;v2 老前缀已于 Phase 4 删除,沿 docs/api-surface-migration-plan.md §3.4)。
   // 注:历史 mobile-like 自助端点已收口到 App surface(/api/app/v1/me|my/*);
   // 原 *-legacy controller 已于 Phase 4 删除,App 自助流由 app-me / app-my-* controller 承载。
+  // Admin 自视角本人身份只读 bootstrap(2026-06-14;AdminMeController,单一 'Admin - Me' tag;
+  // 任意登录用户返本人身份 9 字段,不内联角色/权限——权限走 system/v1/rbac/me/permissions)。
+  ['get', '/api/admin/v1/me'],
   ['get', '/api/admin/v1/users'],
   ['post', '/api/admin/v1/users'],
   ['get', '/api/admin/v1/users/{id}'],
@@ -608,6 +611,12 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // 注:ListAppMyCertificatesQueryDto 是 @Query() DTO,被 NestJS Swagger 内联为
   // parameters,**不**注册到 components.schemas(沿 P2-5a / P2-6 query DTO 同范式)。
   'AppMyCertificateDto',
+
+  // Admin surface 本人身份 bootstrap(2026-06-14):GET /api/admin/v1/me 出参。
+  // AdminMeResponseDto 独立注册为 named schema,字段集恰好 9(User 本体身份);
+  // **禁止**继承 / Pick / Omit / Mapped Types 任何既有 DTO(含 AppMeResponseDto /
+  // UserResponseDto;沿 api-surface-policy §2.1 四 surface DTO 物理隔离)。
+  'AdminMeResponseDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

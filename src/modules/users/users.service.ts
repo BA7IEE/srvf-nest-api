@@ -37,6 +37,23 @@ const BCRYPT_SALT_ROUNDS = 10;
 
 type PrismaTx = Prisma.TransactionClient;
 
+// admin/v1/me 本人身份只读投影(2026-06-14)。字段集 = User 本体身份 9 项,
+// **不**含 member 业务字段 / L3(passwordHash / *token* / secret*)/ createdAt / updatedAt;
+// 故**不**复用 userSafeSelect(其服务于 admin/v1/users 详情 DTO,含 createdAt/updatedAt
+// 缺 memberId,字段集与本端点不一致)。lastLoginAt 为 Date,ISO 化在 controller 拼装层做。
+export type AdminMeIdentity = Pick<
+  User,
+  | 'id'
+  | 'username'
+  | 'email'
+  | 'nickname'
+  | 'avatarKey'
+  | 'role'
+  | 'status'
+  | 'lastLoginAt'
+  | 'memberId'
+>;
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -189,6 +206,28 @@ export class UsersService {
 
   findMe(currentUser: CurrentUserPayload): Promise<UserResponseDto> {
     return this.findByIdOrThrow(currentUser.id);
+  }
+
+  // ============ /api/admin/v1/me(Admin 自视角只读身份;2026-06-14)============
+  // 任意登录用户取本人 User 身份(对齐 rbac/me/permissions 准入:入口仅 JwtAuthGuard,
+  // service 内**不**做 rbac.can() / role 判定——只返本人无越权面)。复用 notDeletedWhere
+  // 读路径;并发软删窗口返 null,由 AdminMeController 兜底为 UNAUTHORIZED(逐字镜像
+  // app-me.controller.ts 范式)。**不读 / 不写任何 member 业务字段**;字段集 = AdminMeIdentity 9 项。
+  getMyAdminIdentity(currentUser: CurrentUserPayload): Promise<AdminMeIdentity | null> {
+    return this.prisma.user.findFirst({
+      where: this.notDeletedWhere({ id: currentUser.id }),
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        nickname: true,
+        avatarKey: true,
+        role: true,
+        status: true,
+        lastLoginAt: true,
+        memberId: true,
+      },
+    });
   }
 
   async updateMyProfile(

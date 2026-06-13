@@ -2,6 +2,12 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+### Added
+
+- **Admin surface 本人身份只读端点(`GET /api/admin/v1/me`,身份 bootstrap)**(C 档;goal「Admin surface 本人身份端点」拍板,2026-06-14):管理后台登录后显示当前管理员昵称/头像/角色的 canonical 身份接口——此前 Admin surface 缺「我是谁」端点(权限码侧已有 `system/v1/rbac/me/permissions`,身份侧空缺;`app/v1/me` 被锁为需绑 active member 的 App 自视角不可借用,沿 api-surface-policy §9.2/§9.3)。新增 `AdminMeController`([`controllers/admin-me.controller.ts`](src/modules/users/controllers/admin-me.controller.ts),**单一** `@ApiTags('Admin - Me')` 非 Mixed,镜像 app-me 位置范式)+ 独立 `AdminMeResponseDto`([`dto/admin/`](src/modules/users/dto/admin/admin-me-response.dto.ts),字段集**恰好 9** = User 本体身份 `userId/username/email/nickname/avatarKey/role/status/lastLoginAt/memberId`;**禁继承/Pick/Omit** 任何既有 DTO 含 AppMeResponseDto/UserResponseDto,沿 §2.1 四 surface DTO 物理隔离)+ `UsersService.getMyAdminIdentity` 薄读路径(`notDeletedWhere` 复用;并发软删窗口返 null → controller 兜底 UNAUTHORIZED,逐字镜像 app-me)。**单一职责**(D2:只返身份不内联角色/权限,权限仍走 `rbac/me/permissions`,§9.4)+ **任意登录用户返本人身份**(D3:入口仅 `JwtAuthGuard` 不挂 `@Roles`,service 内不做 `rbac.can()`/role 判定,对齐 `rbac/me/permissions` 准入);**不返** member 业务字段(`memberNo`/`displayName`/`gradeCode` 属 App 自视角 §9.3)/ raw permission code(§9.4)/ L3 字段。**零新增**:0 prisma/migration / 0 BizCode / 0 throttler / 0 audit event(纯读)。contract 182→**183**(snapshot 仅新增本路由 + `AdminMeResponseDto`,其余路由/schema 零漂移)+ EXPECTED_ROUTES/EXPECTED_SCHEMAS 同步;e2e +1 spec 9 例(字段集精确 9 / 响应无 L3·member·raw-permission 字段 / 无 token·错 token → 401 / 普通 USER 也 200 返自身〔D3〕/ 登录后被禁用·软删被 JwtStrategy 挡 401 / linked active member 仅返 `memberId` 不泄业务字段)。
+
 ## v0.24.0 - 2026-06-13
 
 ### Added
