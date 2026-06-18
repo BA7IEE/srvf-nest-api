@@ -10,9 +10,9 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 沿 D7 v1.1 §10 + 用户拍板六项决策 + 既有 seed.e2e-spec.ts 子进程范式。
 //
 // 覆盖(沿用户决策方案 B):
-// 1. 空 db → seed 后 61 条 permission 全部存在(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS,2026-06-10)
+// 1. 空 db → seed 后 68 条 permission 全部存在(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME)
 // 2. ops-admin RbacRole 存在
-// 3. ops-admin 绑定 58 条(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS;**不含**
+// 3. ops-admin 绑定 63 条(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME;**不含**
 //    storage-setting.reset.credentials(沿 PR-2 D2=A)+ user.update.role(沿 PR-3 D1=A);
 //    PR-4B D2=B audit-log.read.entry 整条加入)
 // 4. 至少 1 个 user_role 持有 ops-admin(强校验通过)
@@ -77,6 +77,7 @@ const RESET_CREDENTIALS_CODE = 'storage-setting.reset.credentials';
 const USER_UPDATE_ROLE_CODE = 'user.update.role';
 const SMS_RESET_CREDENTIALS_CODE = 'sms-setting.reset.credentials';
 const WECHAT_RESET_CREDENTIALS_CODE = 'wechat-setting.reset.credentials';
+const REALNAME_RESET_CREDENTIALS_CODE = 'realname-setting.reset.credentials';
 const EXPECTED_RBAC_PERMISSION_CODES = [
   // 14 条 rbac.*(沿 PR-1 #132)
   'rbac.permission.read',
@@ -154,19 +155,24 @@ const EXPECTED_RBAC_PERMISSION_CODES = [
   'wechat-setting.update.singleton',
   WECHAT_RESET_CREDENTIALS_CODE,
   'user.wechat.clear',
+  // 3 条 REALNAME T1(realname-setting.reset.credentials 镜像 D2=A 不绑 ops-admin;招新评审稿 §3.4)
+  'realname-setting.read.singleton',
+  'realname-setting.update.singleton',
+  REALNAME_RESET_CREDENTIALS_CODE,
 ] as const;
 // Permission 总数(含 reset.credentials + user.update.role;沿 D2=A + D1=A 仍 upsert 进表,仅 SA 短路通过)
 const EXPECTED_PERMISSION_COUNT = EXPECTED_RBAC_PERMISSION_CODES.length;
 // ops-admin RolePermission 数(过滤 reset.credentials(PR-2 D2=A)+ user.update.role(PR-3 D1=A)
-// + sms-setting.reset.credentials(SMS T2 镜像 D2=A)+ wechat-setting.reset.credentials
-// (WECHAT T2 镜像 D2=A)→ 65 - 4 = 61)
-const EXPECTED_OPS_ADMIN_ROLE_PERMISSION_COUNT = EXPECTED_PERMISSION_COUNT - 4;
+// + sms-setting.reset.credentials(SMS T2 镜像 D2=A)+ wechat-setting.reset.credentials(WECHAT T2)
+// + realname-setting.reset.credentials(REALNAME T1 镜像 D2=A,招新评审稿 §3.4)→ 68 - 5 = 63)
+const EXPECTED_OPS_ADMIN_ROLE_PERMISSION_COUNT = EXPECTED_PERMISSION_COUNT - 5;
 const EXPECTED_OPS_ADMIN_BOUND_CODES = EXPECTED_RBAC_PERMISSION_CODES.filter(
   (c) =>
     c !== RESET_CREDENTIALS_CODE &&
     c !== USER_UPDATE_ROLE_CODE &&
     c !== SMS_RESET_CREDENTIALS_CODE &&
-    c !== WECHAT_RESET_CREDENTIALS_CODE,
+    c !== WECHAT_RESET_CREDENTIALS_CODE &&
+    c !== REALNAME_RESET_CREDENTIALS_CODE,
 );
 const EXPECTED_RBAC_ONLY_COUNT = 14; // 仅 rbac.* 段位,供下面 module=rbac 断言用
 
@@ -187,7 +193,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     await resetDb(app);
   });
 
-  it('空 db + 合法 env → 56 条 permission(14 rbac + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B) + ops-admin role + 54 条 role-permission(D2=A 凭证不绑 + D1=A user.update.role 不绑;D2=B audit-log.read.entry 整条绑) + 强校验通过', async () => {
+  it('空 db + 合法 env → 68 条 permission(14 rbac + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME) + ops-admin role + 63 条 role-permission(D2=A 4 把凭证 reset + D1=A user.update.role 共 5 不绑;D2=B audit-log.read.entry 整条绑) + 强校验通过', async () => {
     const result = runSeed({
       APP_ENV: 'test',
       SUPER_ADMIN_USERNAME: 'rbac-seed-su',
@@ -197,8 +203,8 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     });
     expect(result.code).toBe(0);
 
-    // 1. 61 条 permission 全部存在(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS;
-    //    含 reset.credentials + user.update.role + sms-setting.reset.credentials)
+    // 1. 68 条 permission 全部存在(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME;
+    //    含 4 把 reset.credentials + user.update.role)
     const perms = await prisma.permission.findMany({
       where: { code: { in: [...EXPECTED_RBAC_PERMISSION_CODES] } },
       select: { code: true, module: true, resourceType: true },
@@ -239,7 +245,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(opsAdmin!.deletedAt).toBeNull();
     expect(opsAdmin!.displayName).toBe('运营管理员');
 
-    // 3. ops-admin 绑定 58 条 role-permission(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS;
+    // 3. ops-admin 绑定 63 条 role-permission(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME;
     //    沿 PR-2 D1=A 全绑 + PR-2 D2=A 凭证 reset 不绑 + PR-3 D1=A user.update.role 不绑 +
     //    PR-3 D2=B user.reset.password 绑 + PR-3 D3=A 其余 5 条 user.* 全绑 +
     //    PR-4 D2=B audit-log.read.entry 整条绑;详见 §6.2)
@@ -254,9 +260,10 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(boundCodes).not.toContain(RESET_CREDENTIALS_CODE);
     // D1=A 显式反向断言:user.update.role **不**在 ops-admin RolePermission 中
     expect(boundCodes).not.toContain(USER_UPDATE_ROLE_CODE);
-    // SMS / WECHAT 镜像 D2=A 显式反向断言:两把凭证 reset 码均**不**在 ops-admin RolePermission 中
+    // SMS / WECHAT / REALNAME 镜像 D2=A 显式反向断言:三把凭证 reset 码均**不**在 ops-admin RolePermission 中
     expect(boundCodes).not.toContain(SMS_RESET_CREDENTIALS_CODE);
     expect(boundCodes).not.toContain(WECHAT_RESET_CREDENTIALS_CODE);
+    expect(boundCodes).not.toContain(REALNAME_RESET_CREDENTIALS_CODE);
     // PR-4 D2=B 正向断言:audit-log.read.entry **在** ops-admin RolePermission 中
     expect(boundCodes).toContain('audit-log.read.entry');
 
@@ -354,7 +361,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(result.stderr.toLowerCase()).toMatch(/rbac_initial_ops_admin_user_id|bootstrap/);
   });
 
-  it('幂等:连续跑两次 seed 数量不变(48 permission / 1 role / 47 role-permission / 1 user-role;沿 D2=A 凭证不绑)', async () => {
+  it('幂等:连续跑两次 seed 数量不变(全表 136 permission / 1 ops-admin role / 63 role-permission / 1 user-role;断言相对稳定)', async () => {
     // 第一次
     const first = runSeed({
       APP_ENV: 'test',
