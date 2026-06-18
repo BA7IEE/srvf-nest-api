@@ -355,9 +355,9 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
 
   // ===== 系统性审查 R1 修复回归(FM-A / FM-C / F-1) =====
 
-  // FM-A:核验中断卡死态(pending_verification:付费核验后发号事务失败遗留)可人工 resolve 恢复。
-  // 直接造 pending_verification 行(模拟 tx2 失败遗留),admin approve → verified + 发号(唯一恢复出口)。
-  it('Ⓐ1 pending_verification 卡死态 → 人工 resolve approve 恢复为 verified + 发号', async () => {
+  // FM-A:核验已出 matched 结果但 tx2 失败的真卡死态(pending_verification + verifyOutcome=matched)可人工 resolve 恢复。
+  // 直接造该行(模拟 tx2 失败遗留),admin approve → verified + 发号(唯一恢复出口;DoD ② matched 卡死行可发号)。
+  it('Ⓐ1 pending_verification matched 卡死态 → 人工 resolve approve 恢复为 verified + 发号', async () => {
     const cycle = await openCycle();
     const stuck = await prisma.recruitmentApplication.create({
       data: {
@@ -368,6 +368,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         realName: '赵六',
         idCardNumber: ID_MATCH_A,
         phone: '13900000009',
+        verifyOutcome: 'matched', // FM-A 收紧:真卡死行须先具备核验结果方可救
       },
     });
     const res = await request(httpServer(app))
@@ -379,8 +380,8 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(res.body.data.tempNo).toBe('T20260001');
   });
 
-  // FM-A:卡死态也可人工 reject(恢复出口的另一支;不受容量限)。
-  it('Ⓐ2 pending_verification 卡死态 → 人工 resolve reject 为 rejected(eliminationStage=manual)', async () => {
+  // FM-A:真卡死态也可人工 reject(恢复出口的另一支;不受容量限)。matched 卡死行 admin 仍可裁断为 reject。
+  it('Ⓐ2 pending_verification matched 卡死态 → 人工 resolve reject 为 rejected(eliminationStage=manual)', async () => {
     const cycle = await openCycle();
     const stuck = await prisma.recruitmentApplication.create({
       data: {
@@ -391,6 +392,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         realName: '赵六',
         idCardNumber: ID_MATCH_B,
         phone: '13900000010',
+        verifyOutcome: 'matched', // FM-A 收紧:真卡死行须先具备核验结果方可救(reject 路径同理)
       },
     });
     const res = await request(httpServer(app))
@@ -400,6 +402,75 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.statusCode).toBe('rejected');
     expect(res.body.data.eliminationStage).toBe('manual');
+  });
+
+  // FM-A 收紧(DoD ①):核验在途行(pending_verification + verifyOutcome 空)admin 不可碰 —— approve / reject 均 28040。
+  // 真腾讯云通道接上后,每个大陆报名调 verify 的数秒窗口都停此态;此闸杜绝 admin 在该窗口抢自动发号 / 提前发号绕实名。
+  it('Ⓐ3 pending_verification 核验在途态(verifyOutcome 空)→ resolve approve / reject 均 28040;行零改动', async () => {
+    const cycle = await openCycle();
+    const inflight = await prisma.recruitmentApplication.create({
+      data: {
+        cycleId: cycle.id,
+        statusCode: 'pending_verification',
+        documentTypeCode: 'mainland_id',
+        isForeigner: false,
+        realName: '孙八',
+        idCardNumber: ID_MATCH_A,
+        phone: '13900000012',
+        // verifyOutcome 留空 = 核验在途(verify 未出结果)
+      },
+    });
+    const approve = await request(httpServer(app))
+      .post(`${ADMIN_APPS}/${inflight.id}/resolve`)
+      .set('Authorization', adminAuth)
+      .send({ approved: true });
+    expectBizError(approve, BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
+    const reject = await request(httpServer(app))
+      .post(`${ADMIN_APPS}/${inflight.id}/resolve`)
+      .set('Authorization', adminAuth)
+      .send({ approved: false });
+    expectBizError(reject, BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
+    // 在途行未被改动:仍 pending_verification、无 tempNo、verifyOutcome 仍空
+    const after = await prisma.recruitmentApplication.findUnique({ where: { id: inflight.id } });
+    expect(after?.statusCode).toBe('pending_verification');
+    expect(after?.tempNo).toBeNull();
+    expect(after?.verifyOutcome).toBeNull();
+  });
+
+  // FM-A 收紧(DoD ③):mismatch 卡死行实名核验已判不一致 —— approve 被拒(不绕开实名结果发号),reject 可。
+  it('Ⓐ4 pending_verification mismatch 卡死态 → approve 28040;reject 可 → rejected', async () => {
+    const cycle = await openCycle();
+    const mismatch = await prisma.recruitmentApplication.create({
+      data: {
+        cycleId: cycle.id,
+        statusCode: 'pending_verification',
+        documentTypeCode: 'mainland_id',
+        isForeigner: false,
+        realName: '周九',
+        idCardNumber: ID_MISMATCH,
+        phone: '13900000013',
+        verifyOutcome: 'mismatch', // 核验已判不一致的卡死行(tx2 失败遗留)
+      },
+    });
+    // approve 不可:不给绕开实名结果发号的口子
+    const approve = await request(httpServer(app))
+      .post(`${ADMIN_APPS}/${mismatch.id}/resolve`)
+      .set('Authorization', adminAuth)
+      .send({ approved: true });
+    expectBizError(approve, BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
+    const stillStuck = await prisma.recruitmentApplication.findUnique({
+      where: { id: mismatch.id },
+    });
+    expect(stillStuck?.statusCode).toBe('pending_verification');
+    expect(stillStuck?.tempNo).toBeNull();
+    // reject 可:卡死行清理出口
+    const reject = await request(httpServer(app))
+      .post(`${ADMIN_APPS}/${mismatch.id}/resolve`)
+      .set('Authorization', adminAuth)
+      .send({ approved: false });
+    expect(reject.status).toBe(200);
+    expect(reject.body.data.statusCode).toBe('rejected');
+    expect(reject.body.data.eliminationStage).toBe('manual');
   });
 
   // FM-C:容量满时人工 resolve approve 也被发号事务原子挡(28031);自增回滚;reject 不受限。
@@ -416,6 +487,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         realName: '钱七',
         idCardNumber: ID_MATCH_B,
         phone: '13900000011',
+        verifyOutcome: 'matched', // FM-A 收紧:matched 真卡死行方过在途闸,approve 才触达容量原子校验(FM-C)
       },
     });
     const res = await request(httpServer(app))
