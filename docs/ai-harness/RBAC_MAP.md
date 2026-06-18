@@ -13,6 +13,8 @@
 > 2026-06-18 招新一期 T2 戳(同 goal):**权限事实零变化**(136 码 / 绑定 / 内置角色不动);endpoint 183→**186**(realname-settings 三端点 `[rbac: realname-setting.*]`);controller 39→**40**(`RealnameSettingsController`);**T1 期 realname 3 码孤码 WARN 清零**(端点实装);BizCode 27xxx(27030/27031)+ baseline §1.1 `270xx` 红区行随本 T2 PR(评审稿 §11 归属微调:27xxx 随 realname 模块走,self-contained 可测);recruitment 5 码仍孤码(T3 清零)。`docs:rbacmap:check` 0 FAIL / 5 WARN(预期)。
 >
 > 2026-06-18 招新一期 T3 戳(同 goal,收口):**权限事实零变化**(136 码 / 绑定 / 内置角色不动);endpoint 186→**196**(open/v1 公开报名 2 `[public]` + admin/v1 轮次 4〔`recruitment-cycle.*`〕+ admin/v1 报名 4〔`recruitment-application.*`〕);controller 40→**43**(`RecruitmentPublicController`〔open/v1 首用,@Public 无码〕 + `RecruitmentCyclesController` + `RecruitmentApplicationsAdminController`);**recruitment 5 码孤码 WARN 清零**(T1 预留端点 T3 实装);**`open/v1` 首用**——api-surface-policy §0「预留→首用」解锁,第 5 canonical 前缀(`scripts/check-rbac-map.ts` + `test/contract/openapi.contract-spec.ts` 的 `CANONICAL_PREFIXES` 同步);BizCode 28xxx(280xx 段)+ baseline §1.1 行随本 T3 PR;audit +5 DB union + 2 placeholder 不属本表。`docs:rbacmap:check` 0 FAIL / 0 WARN。
+>
+> 2026-06-19 招新二期 T1 戳(goal「招新 phase 2(招新后段)」,冻结评审稿 [`recruitment-phase2-review.md §3.4`](../archive/reviews/recruitment-phase2-review.md)):权限码 136→**139**(recruitment-application +3:`mark.threshold` / `evaluate.assessment` / `promote.member`,全绑 biz-admin 无例外 E-R2-11);biz-admin 47→**50**;ops-admin 63 / member 9 零变化;endpoint **196** 不变(T1 仅 schema/migration/seed);**3 新码端点 T2/T3 实装前孤码 WARN 预期**(镜像招新一期 T1 先例);BizCode 28041-28043 + audit +3 DB union 不属本表(随 T2/T3 PR)。
 
 ---
 
@@ -81,7 +83,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(136 条,seed 幂等 upsert)
+## 3. 权限码全集(139 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -109,9 +111,9 @@
 | 队员自购保险(保险 T1) | 1 | `member-insurance.read.other`(admin 查队员保险;App 本人侧 self-scope 无码;T2 实装) |
 | 实名核验设置(招新 T1) | 3 | `realname-setting.{read,update}.singleton` / `realname-setting.reset.credentials`(`reset` 不绑 ops-admin 镜像 D2=A;T2 端点实装前孤码 WARN 预期) |
 | 招新轮次(招新 T1;T3 实装) | 3 | `recruitment-cycle.{read,create,update}.record`(`admin/v1/recruitment/cycles`;孤码 T3 清零) |
-| 招新报名(招新 T1;T3 实装) | 2 | `recruitment-application.read.record`(列表/详情/取证件照 signed-URL 共用)/ `recruitment-application.resolve.manual`(人工待核 resolve;`admin/v1/recruitment/applications`;孤码 T3 清零) |
+| 招新报名(招新一期 T1→T3;二期 T1→T2/T3) | 5 | `recruitment-application.read.record`(列表/详情/取证件照 signed-URL/公示名单 共用)/ `recruitment-application.resolve.manual`(人工待核 resolve)/ `recruitment-application.mark.threshold`(标门槛)/ `recruitment-application.evaluate.assessment`(综合评定/淘汰)/ `recruitment-application.promote.member`(一键发号建 User+Member);`admin/v1/recruitment/*`;二期 3 码 T2/T3 实装前孤码 WARN |
 
-内置角色:`ops-admin`(绑 63 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新 T1,绑 47 条 = 48 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码不绑〔零漂移〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN(本 T1 新增 8 码均属此),其余无"代码用码未 seed"。
+内置角色:`ops-admin`(绑 63 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新一期/二期 T1,绑 50 条 = 51 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码不绑〔零漂移〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN(本 T1 新增 8 码均属此),其余无"代码用码未 seed"。
 
 ## 4. 保护不变式(改 users / permissions 前必读)
 

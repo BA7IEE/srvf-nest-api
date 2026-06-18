@@ -265,7 +265,8 @@ model MemberDepartment {
 //   业务层按 00:00:00.000Z 规范化处理(不落 @db.Date)。
 //
 // NOT NULL 字段(草案 §7 第一档):realName / genderCode / birthDate / documentTypeCode /
-//   documentNumber / mobile / email / joinedDate / joinSourceCode / privacyConsentSigned。
+//   documentNumber / mobile / joinedDate / joinSourceCode / privacyConsentSigned。
+//   (email 招新二期 M-1 由 NOT NULL 放宽为可空,见下 email 字段注)
 // 其余字段 schema 可空(兼容 3000+ 历史档案缺字段);DTO 层按"业务必填"严格校验。
 
 model MemberProfile {
@@ -292,7 +293,7 @@ model MemberProfile {
   workArea            String? // MP-14 行政区粒度
   mobile              String // MP-15 高敏感
   landline            String? // MP-16 报名表选填
-  email               String // MP-17
+  email               String? // MP-17(招新二期 M-1 放宽:报名链路不采集,promote 建档可 null;admin DTO 仍 @IsEmail 必填)
   qq                  String? // MP-18a
   wechat              String? // MP-18b
 
@@ -322,6 +323,11 @@ model MemberProfile {
 
   // ===== 外部记录字段 =====
   volunteerNo String? // MP-31 义工号,不参与登录/权限/身份识别(草案 §3)
+
+  // 招新二期 promote 搬入(2026-06-19,wrinkle① / E-R2-3;评审稿 recruitment-phase2-review.md):
+  // 证件照裸 storage key,镜像 User.avatarKey;不进 Attachment 多态表 / 不接 RBAC(不触 E-20 整包);
+  // promote 从 recruitment_applications.idCardImageKey 搬入(同一 storage 对象),application 侧清空,blob 单一属主=member。
+  idCardImageKey String? // MP-32 证件照 storage key
 
   member Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
 
@@ -1344,13 +1350,16 @@ model RecruitmentCycle {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  year       Int // 招新年份(临时编号 T{year}{seq} 的 year)
-  name       String // 轮次名(如「2026 年度招新」);长度由 DTO 约束
-  statusCode String // open / closed(后台开关;String 沿 activity_registrations.statusCode 范式)
-  capacity   Int? // 容量上限(可临时增容;null=不限)
-  tempNoSeq  Int       @default(0) // 临时编号原子计数器(发号时 update +1,E-R-9)
-  openedAt   DateTime?
-  closedAt   DateTime?
+  year        Int // 招新年份(临时编号 T{year}{seq} 的 year)
+  name        String // 轮次名(如「2026 年度招新」);长度由 DTO 约束
+  statusCode  String // open / closed(后台开关;String 沿 activity_registrations.statusCode 范式)
+  capacity    Int? // 容量上限(可临时增容;null=不限)
+  tempNoSeq   Int       @default(0) // 临时编号原子计数器(发号时 update +1,E-R-9)
+  // 招新二期(2026-06-19,评审稿 recruitment-phase2-review.md E-R2-6):永久编号当年流水原子计数器
+  // (批量 promote 单事务内 +N,镜像 tempNoSeq 行级自增);{YY}{NNN} 的 NNN。
+  memberNoSeq Int       @default(0)
+  openedAt    DateTime?
+  closedAt    DateTime?
 
   // 通知配置(后填;小程序展示 + 可选短信文案;E-R-17)
   meetingInfo    String? // 见面会信息
@@ -1404,6 +1413,15 @@ model RecruitmentApplication {
   reviewedAt        DateTime?
   reviewNote        String?
   sensitivePurgedAt DateTime? // 留存清理(字段 NULL + blob 删)执行时刻
+
+  // ===== 招新二期(后段;2026-06-19,评审稿 recruitment-phase2-review.md)=====
+  // 状态机扩展为 +3 String 态(pending_evaluation / publicity / promoted),沿 statusCode String 范式无 migration;
+  // eliminationStage +2 值(evaluation / threshold-timeout)。以下为新增列(全可空,纯加列无破坏):
+  thresholdMarks    Json? // 门槛标记(M-3 / E-R2-2):{ patrol1:{at,by}, patrol2, training, redCross, bsafe };仅 verified/pending_evaluation 态可标
+  evaluatedByUserId String? // 综合评定操作人(不建外键,沿 reviewedByUserId / SmsSettings.updatedBy)
+  evaluatedAt       DateTime?
+  evaluationNote    String? // 综合评定备注(D-R2-3)
+  promotedMemberId  String? // 报名→Member 链(E-R2-8;不建外键,保 phase-1 D-R-1「报名行无 Member FK」字面)
 
   cycle RecruitmentCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict)
 

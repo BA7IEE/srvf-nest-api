@@ -1832,6 +1832,9 @@ const MEMBER_INSURANCE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 // recruitment-cycle 3 码 + recruitment-application 2 码,全部绑 biz-admin(E-R-19,无例外);
 // 公开报名/查询走 open/v1 无账号 pre-auth,**无 RBAC 码**(分叉①/②);取证件照 signed-URL 复用
 // recruitment-application.read.record(不另加码,配套②)。5 码端点 T3 实装,T1 期间孤码(WARN 预期)。
+// 招新二期 T1(2026-06-19;冻结评审稿 recruitment-phase2-review.md §3.4 / E-R2-11):recruitment-application
+// +3 码(mark.threshold / evaluate.assessment / promote.member),全绑 biz-admin;公示名单复用 read.record;
+// 端点 T2/T3 实装,T1 期间孤码(WARN 预期)。
 const RECRUITMENT_CYCLE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
     code: 'recruitment-cycle.read.record',
@@ -1872,15 +1875,40 @@ const RECRUITMENT_APPLICATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed>
     resourceType: 'manual',
     description: '人工待核 resolve(外籍等;通过→发临时编号 / 不通过→未通过;评审稿分叉④)',
   },
+  // 招新二期 +3(2026-06-19;评审稿 recruitment-phase2-review.md §3.4 / E-R2-11,全绑 biz-admin 无例外)
+  {
+    code: 'recruitment-application.mark.threshold',
+    module: 'recruitment-application',
+    action: 'mark',
+    resourceType: 'threshold',
+    description:
+      '标/清门槛完成(巡山×2/培训/红十字/BSAFE;幂等;末次完成自动推进待综合评定;评审稿 E-R2-2)',
+  },
+  {
+    code: 'recruitment-application.evaluate.assessment',
+    module: 'recruitment-application',
+    action: 'evaluate',
+    resourceType: 'assessment',
+    description:
+      '综合评定/淘汰(单一人工闸;通过→公示 / 不通过→未通过;门槛超期 verified 态淘汰;评审稿 D-R2-3)',
+  },
+  {
+    code: 'recruitment-application.promote.member',
+    module: 'recruitment-application',
+    action: 'promote',
+    resourceType: 'member',
+    description:
+      '一键发号:公示报名按拼音序批量发永久编号 + 建 User+Member+档案+紧急联系人(评审稿 D-R2-5)',
+  },
 ];
 
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;码进 Permission 表但不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
 
-// 业务面权限码全集(48 条 = member 5 + member-profile 3 + emergency-contact 4 + certificate 6 +
+// 业务面权限码全集(51 条 = member 5 + member-profile 3 + emergency-contact 4 + certificate 6 +
 // activity 5 + activity-registration 5 + attendance 8〔Slow-4 评审稿 §4〕
 // + team-insurance-policy 6 + member-insurance 1〔保险模块评审稿 §3.4,2026-06-13〕
-// + recruitment-cycle 3 + recruitment-application 2〔招新一期评审稿 §3.4,2026-06-18〕)
+// + recruitment-cycle 3 + recruitment-application 5〔招新一期 2 §3.4 2026-06-18 + 招新二期 +3 §3.4 2026-06-19〕)
 const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...MEMBER_PERMISSION_SEED,
   ...MEMBER_PROFILE_PERMISSION_SEED,
@@ -1895,7 +1923,7 @@ const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RECRUITMENT_APPLICATION_PERMISSION_SEED,
 ];
 
-// biz-admin 绑定集合(47 条 = 48 过滤 member.delete.record;Slow-4 评审稿 §5/§6 + 保险 E-6 + 招新 E-R-19)
+// biz-admin 绑定集合(50 条 = 51 过滤 member.delete.record;Slow-4 §5/§6 + 保险 E-6 + 招新 E-R-19/E-R2-11)
 const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISSION_SEED.filter(
   (p) => p.code !== MEMBER_DELETE_RECORD_CODE,
 );
