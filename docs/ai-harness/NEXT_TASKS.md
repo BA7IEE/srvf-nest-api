@@ -20,6 +20,13 @@
 - **保单图 attachments 接线**(评审稿 E-20:`ownerType='member-insurance'` 语义已预留,多态机制零 schema 改动;接线 = `AttachmentOwnerType` enum + `assertOwnerExists`/scope 分支 + `attachment.{upload,view,update,delete}.member-insurance.{self,other}` 8 权限码 seed + 配置三表运行时行——超出原 goal DoD 权限码清单,需单独授权)
 - App activities DTO 暴露 `requiresInsurance`(评审稿 E-19:App 端拒报已经 26030 message 提示;列表/详情展示门槛标识等小程序前端真实需要再加,App DTO 字段集变更单独评审)
 
+### P1-11 招新一期(招新前段)— 报名 + 实名核验 + 临时编号 + 通知 — **🚧 进行中(T0 评审稿已冻结,T1 待开)**
+- goal 文本 = 立项 + 评审授权(2026-06-18,招新需求会已开完,维护者拍板事实自含);**顶层设计 §招新业务域首落地**。**冻结评审稿** [`recruitment-phase1-review.md`](../archive/reviews/recruitment-phase1-review.md)(§0.5 四分叉 2026-06-18 维护者元核验全「按推荐」+ 3 配套补充)。
+- **范围(一期/招新前段)**:报名者不建 User/不进 members(临时编号绑报名记录,**永不进 members**);3 表(`recruitment_cycles` / `recruitment_applications` / `realname_verification_settings`)+ 实名核验通道层(第 25 模块 `realname/`,镜像 wechat/sms)+ 报名业务(第 26 模块 `recruitment/`);状态机 待核验→核验通过/人工待核(外籍)/未通过;临时编号 `T{year}{seq}` 按序;脱敏行级留存(手动 SQL+blob SOP,不解锁 cron)。
+- **元核验结论(2026-06-18,冻结)**:① 公开端点启用 `open/v1` 首用(政策红区,走解锁范式)② 提交期不单独短信验手机(实名核验+openid 为身份闸门,手机仅通知用途)③ 证件照存 `application.idCardImageKey`(storage 层,不进 Attachment)④ 一期含最小人工 resolve 端点。**3 配套**:付费核验前先免费校验+同轮身份证去重+限流 / admin 取图走短 TTL signed-URL + 留存按 key 删 blob / 实名核验每次调用入 audit。
+- **队列**:T0 评审稿(本,A 档)→ T1 schema(第 19 migration + 8 码 seed,128→136)→ T2 realname 通道层 + `REALNAME_ENCRYPTION_KEY` → T3 报名端点 + BizCode 27/28xxx + audit +5/+2 + open/v1 + baseline 红区 → T4 docs 收尾。
+- **本 goal 不做**:二期(巡山门槛/综合评定/公示/永久编号/promote)+ 三期(入队 10 项/部门/级别);真实腾讯云核验通道(运维接力);新 cron;改现有登录/微信/sms 行为;临时编号写 members。
+
 ## P2(可优化)
 
 ### P2-3 分页 skip/take 换算的轻度重复 — **❌ 不做**
