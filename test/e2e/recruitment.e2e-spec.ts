@@ -2,6 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import { ID_CARD_IMAGE_MAX_BYTES } from '../../src/modules/recruitment/recruitment.constants';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -350,5 +351,106 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   it('⑪ 普通 USER token 调 admin 报名列表 → 30100', async () => {
     const res = await request(httpServer(app)).get(ADMIN_APPS).set('Authorization', userAuth);
     expectBizError(res, BizCode.RBAC_FORBIDDEN);
+  });
+
+  // ===== 系统性审查 R1 修复回归(FM-A / FM-C / F-1) =====
+
+  // FM-A:核验中断卡死态(pending_verification:付费核验后发号事务失败遗留)可人工 resolve 恢复。
+  // 直接造 pending_verification 行(模拟 tx2 失败遗留),admin approve → verified + 发号(唯一恢复出口)。
+  it('Ⓐ1 pending_verification 卡死态 → 人工 resolve approve 恢复为 verified + 发号', async () => {
+    const cycle = await openCycle();
+    const stuck = await prisma.recruitmentApplication.create({
+      data: {
+        cycleId: cycle.id,
+        statusCode: 'pending_verification',
+        documentTypeCode: 'mainland_id',
+        isForeigner: false,
+        realName: '赵六',
+        idCardNumber: ID_MATCH_A,
+        phone: '13900000009',
+      },
+    });
+    const res = await request(httpServer(app))
+      .post(`${ADMIN_APPS}/${stuck.id}/resolve`)
+      .set('Authorization', adminAuth)
+      .send({ approved: true, reviewNote: '核验中断,人工补发' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.statusCode).toBe('verified');
+    expect(res.body.data.tempNo).toBe('T20260001');
+  });
+
+  // FM-A:卡死态也可人工 reject(恢复出口的另一支;不受容量限)。
+  it('Ⓐ2 pending_verification 卡死态 → 人工 resolve reject 为 rejected(eliminationStage=manual)', async () => {
+    const cycle = await openCycle();
+    const stuck = await prisma.recruitmentApplication.create({
+      data: {
+        cycleId: cycle.id,
+        statusCode: 'pending_verification',
+        documentTypeCode: 'mainland_id',
+        isForeigner: false,
+        realName: '赵六',
+        idCardNumber: ID_MATCH_B,
+        phone: '13900000010',
+      },
+    });
+    const res = await request(httpServer(app))
+      .post(`${ADMIN_APPS}/${stuck.id}/resolve`)
+      .set('Authorization', adminAuth)
+      .send({ approved: false });
+    expect(res.status).toBe(200);
+    expect(res.body.data.statusCode).toBe('rejected');
+    expect(res.body.data.eliminationStage).toBe('manual');
+  });
+
+  // FM-C:容量满时人工 resolve approve 也被发号事务原子挡(28031);自增回滚;reject 不受限。
+  it('Ⓒ 容量满 → 人工 resolve approve 也 28031(发号原子校验 + tempNoSeq 回滚);reject 仍可', async () => {
+    const cycle = await openCycle({ capacity: 1 });
+    // 占满容量:一条 matched 报名 → verified + T20260001(tempNoSeq=1)
+    await submit(validPayload({ wechatCode: 'code-cap1', idCardNumber: ID_MATCH_A }));
+    const pending = await prisma.recruitmentApplication.create({
+      data: {
+        cycleId: cycle.id,
+        statusCode: 'pending_verification',
+        documentTypeCode: 'mainland_id',
+        isForeigner: false,
+        realName: '钱七',
+        idCardNumber: ID_MATCH_B,
+        phone: '13900000011',
+      },
+    });
+    const res = await request(httpServer(app))
+      .post(`${ADMIN_APPS}/${pending.id}/resolve`)
+      .set('Authorization', adminAuth)
+      .send({ approved: true });
+    expectBizError(res, BizCode.RECRUITMENT_CYCLE_CAPACITY_FULL);
+    // 行未被发号;cycle.tempNoSeq 因事务回滚保持 1(无超发)
+    const after = await prisma.recruitmentApplication.findUnique({ where: { id: pending.id } });
+    expect(after?.statusCode).toBe('pending_verification');
+    expect(after?.tempNo).toBeNull();
+    const c = await prisma.recruitmentCycle.findUnique({ where: { id: cycle.id } });
+    expect(c?.tempNoSeq).toBe(1);
+    // reject 不受容量限,卡死态始终可被拒(恢复出口不被容量堵死)
+    const rej = await request(httpServer(app))
+      .post(`${ADMIN_APPS}/${pending.id}/resolve`)
+      .set('Authorization', adminAuth)
+      .send({ approved: false });
+    expect(rej.status).toBe(200);
+    expect(rej.body.data.statusCode).toBe('rejected');
+  });
+
+  // F-1:证件照超 5MB → multer 解析层 413(归一 40000),不全量 buffer 进内存;不建申请。
+  it('Ⓕ 证件照超 5MB → 413 + 40000(multer 大小闸);不建申请', async () => {
+    await openCycle();
+    const tooBig = Buffer.alloc(ID_CARD_IMAGE_MAX_BYTES + 1024);
+    const res = await request(httpServer(app))
+      .post(OPEN_SUBMIT)
+      .field(
+        'payload',
+        JSON.stringify(validPayload({ wechatCode: 'code-big', idCardNumber: ID_MATCH_A })),
+      )
+      .attach('idCardImage', tooBig, { filename: 'big.jpg', contentType: 'image/jpeg' });
+    expect(res.status).toBe(413);
+    expect(res.body.code).toBe(BizCode.BAD_REQUEST.code);
+    expect(await prisma.recruitmentApplication.count()).toBe(0);
   });
 });
