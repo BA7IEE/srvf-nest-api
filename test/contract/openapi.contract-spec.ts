@@ -337,6 +337,19 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/attachments/{id}'],
   ['patch', '/api/admin/v1/attachments/{id}'],
   ['delete', '/api/admin/v1/attachments/{id}'],
+  // 招新一期(招新前段)T3(2026-06-18;冻结评审稿 recruitment-phase1-review.md §3.2):
+  //   recruitment 10 路由,186→196。open/v1 公开报名 surface **首用**(api-surface-policy §0
+  //   「预留→首用」解锁;第 5 canonical 前缀,见文件尾 CANONICAL_PREFIXES);admin/v1 轮次×4 + 报名×4。
+  ['post', '/api/open/v1/recruitment/applications'],
+  ['post', '/api/open/v1/recruitment/applications/query'],
+  ['post', '/api/admin/v1/recruitment/cycles'],
+  ['get', '/api/admin/v1/recruitment/cycles'],
+  ['get', '/api/admin/v1/recruitment/cycles/{id}'],
+  ['patch', '/api/admin/v1/recruitment/cycles/{id}'],
+  ['get', '/api/admin/v1/recruitment/applications'],
+  ['get', '/api/admin/v1/recruitment/applications/{id}'],
+  ['get', '/api/admin/v1/recruitment/applications/{id}/id-card-image-url'],
+  ['post', '/api/admin/v1/recruitment/applications/{id}/resolve'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -623,6 +636,21 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // **禁止**继承 / Pick / Omit / Mapped Types 任何既有 DTO(含 AppMeResponseDto /
   // UserResponseDto;沿 api-surface-policy §2.1 四 surface DTO 物理隔离)。
   'AdminMeResponseDto',
+
+  // 招新一期(招新前段)T3(2026-06-18;冻结评审稿 recruitment-phase1-review.md §3.2):
+  //   recruitment DTO 物理隔离(独立 class,禁止继承 / Pick / Omit / Mapped Types)。
+  //   公开出参 RecruitmentApplicationPublicDto = self-scope 最小集(无 PII 明文);
+  //   admin 出参 RecruitmentApplicationAdminDto = 含 PII(列表掩码 / 详情全显由 service 控)。
+  //   注:RecruitmentSubmitPayloadDto 走 multipart 内嵌 JSON 串(@Body('payload') string),
+  //   **不**作为 @Body() 类型 → NestJS Swagger 不注册为 component schema(沿 query DTO 内联范式)。
+  'RecruitmentApplicationPublicDto',
+  'RecruitmentQueryDto',
+  'RecruitmentCycleResponseDto',
+  'CreateRecruitmentCycleDto',
+  'UpdateRecruitmentCycleDto',
+  'RecruitmentApplicationAdminDto',
+  'ResolveRecruitmentApplicationDto',
+  'IdCardImageUrlResponseDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
@@ -691,11 +719,21 @@ describe('OpenAPI 契约快照', () => {
   });
 
   // Route B 终态验收基线(沿 docs/api-surface-migration-plan.md §3.4):迁移完成后,
-  // OpenAPI 全部路由**只允许**落 4 个 canonical 前缀;零 v2 / 零裸 auth·health·users / 零 legacy。
-  // 任何新增端点必须落 admin/v1 · app/v1 · auth/v1 · system/v1 之一,否则本断言失败。
-  const CANONICAL_PREFIXES = ['/api/admin/v1/', '/api/app/v1/', '/api/auth/v1/', '/api/system/v1/'];
+  // OpenAPI 全部路由**只允许**落 canonical 前缀;零 v2 / 零裸 auth·health·users / 零 legacy。
+  // 任何新增端点必须落 admin/v1 · app/v1 · auth/v1 · system/v1 · open/v1 之一,否则本断言失败。
+  //
+  // 招新一期(招新前段)T3(2026-06-18):open/v1 **首用**——api-surface-policy §0「预留→首用」
+  //   解锁。open/v1 = 无账号公开报名 surface(小程序自助;@Public 跳过 JwtAuthGuard);
+  //   第 5 canonical 前缀。后续公开端点(无账号)统一落 open/v1,不再裸前缀。
+  const CANONICAL_PREFIXES = [
+    '/api/admin/v1/',
+    '/api/app/v1/',
+    '/api/auth/v1/',
+    '/api/system/v1/',
+    '/api/open/v1/',
+  ];
 
-  it('Route B 终态:全部路由仅落 4 canonical 前缀(零 v2 / 零 legacy)', () => {
+  it('Route B 终态:全部路由仅落 5 canonical 前缀(含 open/v1 首用;零 v2 / 零 legacy)', () => {
     const offenders = Object.keys(doc.paths).filter(
       (p) => !CANONICAL_PREFIXES.some((c) => p.startsWith(c)),
     );

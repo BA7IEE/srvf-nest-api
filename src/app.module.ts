@@ -36,6 +36,7 @@ import { PermissionsModule } from './modules/permissions/permissions.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { RealnameModule } from './modules/realname/realname.module';
+import { RecruitmentModule } from './modules/recruitment/recruitment.module';
 import { SmsModule } from './modules/sms/sms.module';
 import { UsersModule } from './modules/users/users.module';
 import { WechatModule } from './modules/wechat/wechat.module';
@@ -133,6 +134,10 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   (冻结评审稿 docs/archive/reviews/recruitment-phase1-review.md;path /api/system/v1/realname-settings;
     //    R 模式判权;secretId/secretKey 两段 AES-256-GCM;27030/27031 通道码本 T2 实装;真通道休眠 DevStub 全验)。
     RealnameModule,
+    // 招新一期(招新前段)T3(2026-06-18):recruitment 第 26 模块(报名 + 实名核验编排 + 临时编号 + 通知展示)
+    //   (冻结评审稿 docs/archive/reviews/recruitment-phase1-review.md;surface open/v1 公开报名首用 + admin/v1 轮次/报名;
+    //    R 模式判权;证件照走 storage 短 TTL signed-URL;付费实名核验为免费校验后最后一道闸;temp number 不入 members)。
+    RecruitmentModule,
     // B 队列 F5-T2(2026-06-11):@nestjs/schedule 全局装配——no-cron 铁律升级路径正式触发
     //   (冻结评审稿 docs/archive/reviews/queue-b-otp-birthday-infra-review.md 拍板④/R-5;
     //    解锁范围仅 notifications 生日批一个 @Cron;新增任何定时任务 = 新 D 档评审;

@@ -84,7 +84,14 @@ export type AuditLogEvent =
   | 'team-insurance-policy.update' // T2 接入(team-insurance-policies.service.update;before/after)
   | 'team-insurance-policy.delete' // T2 接入(team-insurance-policies.service.softDelete;before;不级联覆盖行 E-4)
   | 'team-insurance-coverage.add' // T2 接入(单加 + 一键加共用;resourceId=policyId;extra.mode ∈ {single, all-active},single 带 memberId / all-active 带 addedCount)
-  | 'team-insurance-coverage.remove'; // T2 接入(覆盖行软删;resourceId=policyId;extra.memberId)
+  | 'team-insurance-coverage.remove' // T2 接入(覆盖行软删;resourceId=policyId;extra.memberId)
+  // 招新一期 T3 追加 5 项(2026-06-18;冻结评审稿 recruitment-phase1-review.md §3.5;
+  // 自助 submit / realname-verify 的 actorUserId 置空——无账号报名者,沿 AuditLogInput actorUserId:null):
+  | 'recruitment-cycle.create' // admin 建轮;after
+  | 'recruitment-cycle.update' // admin 开关/容量/通知配置;before/after
+  | 'recruitment-application.submit' // 公开提交(自助;actor 置空);after〔状态〕;手机/openid/身份证号一律掩码
+  | 'recruitment-application.realname-verify' // 每次实名核验调用(配套③;独立写;actor 置空);idCard/name 掩码 + outcome + tempNo?
+  | 'recruitment-application.resolve-manual'; // admin 人工 resolve;before/after status;extra tempNo?/eliminationStage?
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

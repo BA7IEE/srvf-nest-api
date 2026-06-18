@@ -176,6 +176,12 @@ export interface LoginWechatThrottleConfig {
   ttlSeconds: number;
 }
 
+// 招新一期 T3(2026-06-18):招新报名公开端点限流(评审稿 E-R-25;默认 10/3600,名额有限防重复/高频)。
+export interface RecruitmentThrottleConfig {
+  limit: number;
+  ttlSeconds: number;
+}
+
 // SMS 基础设施 T2(2026-06-10):sms_settings 凭证加密 key(评审稿 D-SMS-8;沿 STORAGE 范式)。
 // 独立 env `SMS_ENCRYPTION_KEY`,与 STORAGE_ENCRYPTION_KEY 互不复用;
 // production / smoke fail-fast,dev / test 留空允许 → SmsCryptoService.isAvailable()=false。
@@ -305,6 +311,7 @@ export interface AppConfig {
   passwordResetThrottle: PasswordResetThrottleConfig;
   loginSmsThrottle: LoginSmsThrottleConfig;
   loginWechatThrottle: LoginWechatThrottleConfig;
+  recruitmentThrottle: RecruitmentThrottleConfig;
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -479,6 +486,25 @@ export default registerAs('app', (): AppConfig => {
     ),
   };
 
+  // 招新一期 T3(2026-06-18):招新报名公开端点限流(评审稿 E-R-25;默认 10/3600)。
+  const recruitmentThrottle: RecruitmentThrottleConfig = {
+    limit: parsePositiveInt(
+      process.env.RECRUITMENT_THROTTLE_LIMIT,
+      10,
+      'RECRUITMENT_THROTTLE_LIMIT',
+      {
+        min: 1,
+        max: 100,
+      },
+    ),
+    ttlSeconds: parsePositiveInt(
+      process.env.RECRUITMENT_THROTTLE_TTL_SECONDS,
+      3600,
+      'RECRUITMENT_THROTTLE_TTL_SECONDS',
+      { min: 1, max: 3600 },
+    ),
+  };
+
   return {
     env,
     port,
@@ -498,5 +524,6 @@ export default registerAs('app', (): AppConfig => {
     passwordResetThrottle,
     loginSmsThrottle,
     loginWechatThrottle,
+    recruitmentThrottle,
   };
 });

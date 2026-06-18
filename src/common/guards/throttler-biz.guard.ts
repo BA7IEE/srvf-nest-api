@@ -10,6 +10,10 @@ import {
   LOGIN_WECHAT_THROTTLER_NAME,
 } from '../decorators/login-wechat-throttle.decorator';
 import {
+  RECRUITMENT_THROTTLE_KEY,
+  RECRUITMENT_THROTTLER_NAME,
+} from '../decorators/recruitment-throttle.decorator';
+import {
   PASSWORD_CHANGE_THROTTLE_KEY,
   PASSWORD_CHANGE_THROTTLER_NAME,
 } from '../decorators/password-change-throttle.decorator';
@@ -100,6 +104,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       LOGIN_WECHAT_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const recruitmentEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      RECRUITMENT_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     // 未标任何一种 metadata 时全部跳过;任一 metadata 命中即进入限流逻辑,
     // 由 handleRequest 按 throttler.name 决定具体走哪个 throttler。
     return Promise.resolve(
@@ -111,7 +119,8 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
         smsVerifyEnabled === true ||
         passwordResetEnabled === true ||
         loginSmsEnabled === true ||
-        loginWechatEnabled === true
+        loginWechatEnabled === true ||
+        recruitmentEnabled === true
       ),
     );
   }
@@ -153,6 +162,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       LOGIN_WECHAT_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const recruitmentEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      RECRUITMENT_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     // throttler `default` 仅服务 LoginThrottle;否则直接放过
     if (throttler.name === 'default' && loginEnabled !== true) {
@@ -184,6 +197,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
     }
     // throttler `login-wechat` 仅服务 LoginWechatThrottle;否则直接放过
     if (throttler.name === LOGIN_WECHAT_THROTTLER_NAME && loginWechatEnabled !== true) {
+      return Promise.resolve(true);
+    }
+    // throttler `recruitment` 仅服务 RecruitmentThrottle(招新报名公开端点);否则直接放过
+    if (throttler.name === RECRUITMENT_THROTTLER_NAME && recruitmentEnabled !== true) {
       return Promise.resolve(true);
     }
 
