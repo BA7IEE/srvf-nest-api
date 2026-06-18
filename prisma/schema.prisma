@@ -1318,3 +1318,134 @@ model TeamInsuranceCoverage {
   @@index([createdAt])
   @@map("team_insurance_coverages")
 }
+
+// =============================================================================
+// ===== 招新一期(招新前段)T1(2026-06-18)3 表 + RealnameProviderType enum =====
+//
+// 沿冻结评审稿 docs/archive/reviews/recruitment-phase1-review.md §3.1(maintainer
+// 2026-06-18 goal「招新一期(招新前段)」拍板 + §0.5 四分叉元核验冻结 + 3 配套)。
+// 业务依据:招新需求会(讨论稿 v1 + 技术就绪度对照 v1)。报名者不建 User / 不进 members,
+// 身份全由 recruitment_applications 承载,临时编号绑报名记录、永不进 members(D-R-1)。
+// - recruitment_cycles:招新轮次,后台开/关 + 容量(可临时增容)+ tempNoSeq 临时编号原子
+//   计数器(发号时 update +1,行级自增天然串行,E-R-9)+ 通知配置(后填,E-R-17)。
+// - recruitment_applications:报名记录;openid 锚点(code2session 复用,E-R-7);敏感资料
+//   (留存 SOP 30 天后 NULL 化 + 按 idCardImageKey 删 storage blob,配套②)与脱敏留存字段
+//   (永久行级)共存(D-R-7 / E-R-14);statusCode String 沿 activity_registrations 范式(4 态);
+//   tempNo 仅 verified 有值、≠ memberNo;**仅 FK→cycle(无 Member FK,D-R-1 的 schema 保证)**。
+//   partial unique ×2 由 migration.sql 末尾手写(E-R-9/10,Prisma DSL 不支持带 WHERE)。
+// - realname_verification_settings:实名核验单例,镜像 SmsSettings;凭证两段(secretId+
+//   secretKey)AES-256-GCM(RealnameCryptoService,T2)明文永不入库;singleton 由 Service 保证。
+// - 字段长度上限不落 @db.VarChar,由 DTO + class-validator 承担(沿近期惯例)。
+// =============================================================================
+
+model RecruitmentCycle {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  year       Int // 招新年份(临时编号 T{year}{seq} 的 year)
+  name       String // 轮次名(如「2026 年度招新」);长度由 DTO 约束
+  statusCode String // open / closed(后台开关;String 沿 activity_registrations.statusCode 范式)
+  capacity   Int? // 容量上限(可临时增容;null=不限)
+  tempNoSeq  Int       @default(0) // 临时编号原子计数器(发号时 update +1,E-R-9)
+  openedAt   DateTime?
+  closedAt   DateTime?
+
+  // 通知配置(后填;小程序展示 + 可选短信文案;E-R-17)
+  meetingInfo    String? // 见面会信息
+  qqGroup        String? // QQ 群
+  notifyTemplate Json? // 可配置通知模板(各节点文案)
+
+  applications RecruitmentApplication[]
+
+  @@index([year])
+  @@index([statusCode])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("recruitment_cycles")
+}
+
+model RecruitmentApplication {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  cycleId    String
+  statusCode String // pending_verification / verified / manual_review / rejected
+  tempNo     String? // 临时编号 T{year}{seq};仅 verified 有值;≠ memberNo(永不进 members)
+
+  openid String? // 微信 openid(code2session;再查询 + 同轮去重次级键;掩码回显)
+
+  // ===== 敏感资料(留存 SOP:rejected 或 本轮 closed 满 30 天后 NULL 化 + 按 idCardImageKey 删 blob)=====
+  realName          String?
+  idCardNumber      String? // 身份证号(高敏感;同轮去重键;留存清)
+  birthDate         DateTime? // 精确生日(从身份证号提取;留存清)
+  phone             String? // 手机(仅通知联系方式,非身份证据,配套③;留存清)
+  detailedAddress   String? // 详细住址(留存清)
+  idCardImageKey    String? // 证件照 storage key(分叉③A;留存按 key 删 storage blob)
+  emergencyContacts Json? // 紧急联系人 ≥2:[{name, relation, phone}](留存清)
+  profileExtra      Json? // 其余报名字段(Q7 精简后冻结,本期最小;留存清)
+
+  // ===== 脱敏留存字段(永久行级保留)=====
+  documentTypeCode String // 证件类型(判外籍/人工;非高敏)
+  isForeigner      Boolean @default(false)
+  genderCode       String?
+  ageGroup         String? // 年龄段(提交时从生日派生)
+  cityDistrict     String? // 城市到区(提交时从住址派生)
+  sourceChannel    String? // 来源渠道
+  eliminationStage String? // 淘汰环节(rejected 时记)
+
+  // 核验 / 人工记账
+  verifiedAt        DateTime?
+  verifyOutcome     String? // matched / mismatch / manual / skipped
+  reviewedByUserId  String? // 人工 resolve 操作人(admin;不建外键,沿 SmsSettings.updatedBy)
+  reviewedAt        DateTime?
+  reviewNote        String?
+  sensitivePurgedAt DateTime? // 留存清理(字段 NULL + blob 删)执行时刻
+
+  cycle RecruitmentCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict)
+
+  // 业务唯一约束(partial unique;migration.sql 末尾手写,E-R-9/10;Prisma DSL 不支持带 WHERE):
+  // - recruitment_applications_cycle_idcard_active_unique ON (cycleId, idCardNumber)
+  //   WHERE "deletedAt" IS NULL AND "statusCode" <> 'rejected' —— 防重复报名(同轮同人),
+  //   允许 rejected 后同轮重试;service P2002 兜底转 28003(沿 activity_registrations 范式)
+  // - recruitment_applications_cycle_tempno_unique ON (cycleId, tempNo)
+  //   WHERE "tempNo" IS NOT NULL —— 临时编号同轮唯一(配合 tempNoSeq 原子自增兜底并发)
+  @@index([cycleId])
+  @@index([statusCode])
+  @@index([openid])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("recruitment_applications")
+}
+
+model RealnameVerificationSettings {
+  id String @id @default(cuid())
+
+  // 通道选型(production-like 禁 DEV_STUB,写入与运行时双重校验,镜像 sms E-15)
+  providerType RealnameProviderType
+  enabled      Boolean              @default(true)
+
+  // 腾讯云实名核验运行参数(非 secret,明文;DEV_STUB 下闲置)
+  region String? // 如 ap-guangzhou
+
+  // 凭证(两段 secretId+secretKey;AES-256-GCM 加密,RealnameCryptoService T2;明文永不入库,密文也不回显)
+  secretIdEncrypted    String?
+  secretKeyEncrypted   String?
+  credentialConfigured Boolean @default(false) // DB 层简单事实;运行时 credentialStatus 三态由 Service 合成
+
+  // 元信息(沿 SmsSettings 范式;updatedBy 不建外键)
+  remarks   String?
+  updatedBy String? // User.id
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@map("realname_verification_settings")
+}
+
+enum RealnameProviderType {
+  DEV_STUB // 非生产联调通道:确定性两路(身份证校验位 偶=matched / 奇=mismatch,E-R-6;production-like 不可达)
+  TENCENT_CLOUD
+}

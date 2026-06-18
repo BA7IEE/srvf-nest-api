@@ -9,6 +9,7 @@
 > 2026-06-13 保险模块 T1 戳(goal「保险模块」,冻结评审稿 [`insurance-module-review.md §3.4`](../archive/reviews/insurance-module-review.md)):权限码 121→**128**(team-insurance-policy 6 + member-insurance 1,全绑 biz-admin 无例外 E-6);biz-admin 35→**42**;ops-admin 61 / member 9 零变化;endpoint **168** 不变(T2 +14 端点实装);7 新码 T2 实装前孤码 **WARN 预期**(镜像 wechat T2 先例);App 自助 `app/v1/me/insurances` 走 self-scope **无 RBAC 码**。
 > 2026-06-13 保险模块 T2 戳(同 goal):**权限码零变化**(128 不动);endpoint 168→**182**(队保单 9 `[rbac:]` + admin 查队员保险 1 `[rbac: member-insurance.read.other]` + App 自助 4 `[auth]`);controller 35→**38**;**T1 孤码 WARN 清零**;BizCode +5(260xx 段,26030 门槛随 T3)与 audit +8 DB +1 placeholder 不属本表;`docs:rbacmap:check` 0 FAIL / 0 WARN。
 > 2026-06-13 保险模块 T3 戳(同 goal):**权限事实零变化**(128 码 / 绑定 / 内置角色不动);endpoint **182** 不变(`requiresInsurance` 仅活动 DTO 字段新增 + 报名 create 双路径门槛断言,零新端点);BizCode +1(26030 `INSURANCE_REQUIRED`)与 baseline §1.1 红区行不属本表;`docs:rbacmap:check` 0 FAIL / 0 WARN。
+> 2026-06-18 招新一期 T1 戳(goal「招新一期(招新前段)」,冻结评审稿 [`recruitment-phase1-review.md §3.4`](../archive/reviews/recruitment-phase1-review.md)):权限码 128→**136**(realname-setting 3〔`reset.credentials` 不绑 ops-admin 镜像 D2=A〕+ recruitment-cycle 3 + recruitment-application 2,后 5 全绑 biz-admin 无例外 E-R-19);biz-admin 42→**47**;ops-admin 61→**63**;member 9 零变化;**8 新码端点 T2/T3 实装前孤码 WARN 预期**(镜像保险 T1 先例);endpoint **183** 不变(T1 仅 schema/migration/seed)。**controller 38→39 true-up**:此数为 #372 `GET /api/admin/v1/me`(`AdminMeController`)合入后**既存漂移**、非本 T1 新增(T1 零新 controller),沿 §6 规则 6「先报告再 true-up」随本 PR 校正。BizCode 27/28xxx 段与 audit 不属本表。
 
 ---
 
@@ -21,7 +22,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。判权唯一服务入口 = `RbacService.can()`;`RbacCacheService` 是权限解析缓存(TTL 1800s,三档失效),不是身份缓存。
 
-## 2. controller × 鉴权模式对照(38 个 controller class)
+## 2. controller × 鉴权模式对照(39 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
@@ -66,7 +67,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(128 条,seed 幂等 upsert)
+## 3. 权限码全集(136 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -92,8 +93,11 @@
 | 考勤(Slow-4 T1) | 8 | `attendance.{create,read,update,delete}.sheet` / `attendance.{approve,reject,final-approve,final-reject}.sheet` |
 | 队保单(保险 T1) | 6 | `team-insurance-policy.{read,create,update,delete}.record` / `team-insurance-policy.{add,remove}.member`(T2 端点实装前孤码 WARN 预期) |
 | 队员自购保险(保险 T1) | 1 | `member-insurance.read.other`(admin 查队员保险;App 本人侧 self-scope 无码;T2 实装) |
+| 实名核验设置(招新 T1) | 3 | `realname-setting.{read,update}.singleton` / `realname-setting.reset.credentials`(`reset` 不绑 ops-admin 镜像 D2=A;T2 端点实装前孤码 WARN 预期) |
+| 招新轮次(招新 T1) | 3 | `recruitment-cycle.{read,create,update}.record`(T3 端点实装前孤码 WARN 预期) |
+| 招新报名(招新 T1) | 2 | `recruitment-application.read.record`(列表/详情/取证件照 signed-URL 共用)/ `recruitment-application.resolve.manual`(人工待核 resolve;T3 实装) |
 
-内置角色:`ops-admin`(绑 61 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials`,四者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 镜像,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1,绑 42 条 = 43 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码不绑〔零漂移〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。seed 与代码调用**双向对齐**:无"seed 有码未用",无"代码用码未 seed"(`docs:rbacmap:check` 0 FAIL / 0 WARN)。
+内置角色:`ops-admin`(绑 63 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新 T1,绑 47 条 = 48 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码不绑〔零漂移〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN(本 T1 新增 8 码均属此),其余无"代码用码未 seed"。
 
 ## 4. 保护不变式(改 users / permissions 前必读)
 
