@@ -296,7 +296,7 @@ const BIZ_PERMISSIONS = [
   },
 ] as const;
 
-// 在 e2e 的 beforeAll 调用一次,seed 48 条业务面码 + biz-admin 角色 + 47 条 RolePermission
+// 在 e2e 的 beforeAll 调用一次,seed 51 条业务面码 + biz-admin 角色 + 50 条 RolePermission
 // 绑定(过滤 `member.delete.record`;沿 D1=A 镜像)。幂等:多次调用不出错(upsert + skipDuplicates)。
 export async function seedBizAdminPermissionsAndRole(
   app: INestApplication,
@@ -315,7 +315,7 @@ export async function seedBizAdminPermissionsAndRole(
     create: { code: 'biz-admin', displayName: '业务管理员' },
     select: { id: true },
   });
-  // 按 code 精确取本 fixture 声明的 48 条(避免被其它 spec 在同一 DB 注入的码干扰)
+  // 按 code 精确取本 fixture 声明的 51 条(避免被其它 spec 在同一 DB 注入的码干扰)
   const seeded = await prisma.permission.findMany({
     where: { code: { in: BIZ_PERMISSIONS.map((p) => p.code) } },
     select: { id: true, code: true },

@@ -8,14 +8,15 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 
 // Slow-4 T1(2026-06-11)seed 业务面码 + biz-admin 内置角色 e2e;
 // 2026-06-13 保险模块 T1 +7(36→43 / 绑定 35→42);2026-06-18 招新一期 T1 +5(43→48 / 绑定 42→47,
-// 评审稿 recruitment-phase1-review.md §3.4 / E-R-19)+ REALNAME settings 授权 seed → ops-admin 61→63。
+// 评审稿 recruitment-phase1-review.md §3.4 / E-R-19)+ REALNAME settings 授权 seed → ops-admin 61→63;
+// 2026-06-19 招新二期 T1 +3(48→51 / 绑定 47→50,评审稿 recruitment-phase2-review.md §3.4 / E-R2-11)。
 // 沿冻结评审稿 docs/archive/reviews/slow4-rbac-business-face-review.md §5 + D-S4-7
 // + seed-attachment-permissions.e2e-spec.ts 子进程范式。
 //
 // 覆盖(评审稿 §5 验收项):
-// 1. 跑 seed 后存在 48 条业务面 permission(11 域分布 5/3/4/6/5/5/8/6/1/3/2,逐码一致)
+// 1. 跑 seed 后存在 51 条业务面 permission(11 域分布 5/3/4/6/5/5/8/6/1/3/5,逐码一致)
 // 2. 存在 biz-admin RbacRole(displayName / description 正确)
-// 3. biz-admin 绑定 47 条 RolePermission;member.delete.record **不**在绑定中(D1=A 镜像)
+// 3. biz-admin 绑定 50 条 RolePermission;member.delete.record **不**在绑定中(D1=A 镜像)
 // 4. 幂等补挂:seed 前已存在的 ADMIN 用户(含 DISABLED)跑 seed 后持有 biz-admin;
 //    SUPER_ADMIN / USER 不被挂;软删 ADMIN 不补挂(D-S4-7)
 // 5. 零变化项:ops-admin 绑定数(63;WECHAT T2 58→61 + 招新 T1 REALNAME settings 61→63 授权 true-up;
