@@ -8,8 +8,8 @@
 | 项 | 当前值 |
 |---|---|
 | 版本(三方一致) | **v0.24.0**(2026-06-13;package.json = Swagger = tag;tag 指向 `c438840c` 标 Latest;要点见 CHANGELOG) |
-| `main` HEAD | `0334a7ca`(#377 招新一期 T4;tag v0.24.0 仍在 `c438840c`,HEAD 已累积 Unreleased 故超出 tag,本行为滚动快照) |
-| open PR / 工作树 / Unreleased | **0**(本回填 PR 前;#372 + 招新一期 #373-#377 均已合入 main)/ clean / **4**(`GET /api/admin/v1/me` #372 + 招新一期 T1 #374 / T2 #375 / T3 #376;T0 评审稿 #373 与 T4 收尾 #377 为 A 档 docs 不计 Unreleased;本 §1 回填 PR 亦 A 档不计;v0.24.0 已折叠 5 条:保险 #365/#366/#367 + 微信 review #360/#361) |
+| `main` HEAD | `3de66895`(#379 招新一期系统性审查 R1;tag v0.24.0 仍在 `c438840c`,HEAD 已累积 Unreleased 故超出 tag,本行为滚动快照) |
+| open PR / 工作树 / Unreleased | **0**(本回填 PR 前;#372 + 招新一期 #373-#377 + §1 回填 #378 + 系统性审查 R1 #379 均已合入 main)/ clean / **5**(`GET /api/admin/v1/me` #372 + 招新一期 T1 #374 / T2 #375 / T3 #376 + 系统性审查 R1 #379;T0 评审稿 #373 / T4 收尾 #377 / §1 回填 #378 为 A 档 docs 不计 Unreleased;本 §1 回填 PR 亦 A 档不计;v0.24.0 已折叠 5 条:保险 #365/#366/#367 + 微信 review #360/#361) |
 | 最新 handoff | [`archive/handoff/v0.24.0.md`](archive/handoff/v0.24.0.md)(不回改) |
 
 ## 2. 当前系统已具备能力
