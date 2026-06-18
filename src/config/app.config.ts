@@ -190,6 +190,13 @@ export interface WechatConfig {
   encryptionKey: string; // 空字符串 = 未配置(dev / test 允许;production / smoke 启动已 fail)
 }
 
+// 招新一期 · 实名核验通道 T2(2026-06-18):realname_verification_settings 凭证加密 key
+// (评审稿 E-R-4;沿 SMS / WeChat 范式)。独立 env `REALNAME_ENCRYPTION_KEY`,与 STORAGE /
+// SMS / WECHAT 三把 key 互不复用(独立派生 salt);production / smoke fail-fast,dev / test 留空允许。
+export interface RealnameConfig {
+  encryptionKey: string; // 空字符串 = 未配置(dev / test 允许;production / smoke 启动已 fail)
+}
+
 // V2.x C-7.5 实施 PR #7:LocalStorageProvider 根目录(沿 Q-88-1 拍板 A)。
 // 留空默认 './tmp/storage'(相对仓库根目录;.gitignore 已排除 tmp/);
 // 显式可以是绝对路径或相对路径;由 LocalStorageProvider 调 path.resolve 归一化。
@@ -259,6 +266,26 @@ function parseWechatEncryptionKey(raw: string | undefined, env: AppEnv): string 
   return trimmed;
 }
 
+// 招新一期 · 实名核验通道 T2:沿 parseWechatEncryptionKey 同款宽松校验(只挡空值与明显短;
+// 具体派生留 RealnameCryptoService)。
+function parseRealnameEncryptionKey(raw: string | undefined, env: AppEnv): string {
+  if (!raw || raw.trim() === '') {
+    if (isProductionLike(env)) {
+      throw new Error(
+        'REALNAME_ENCRYPTION_KEY 不能为空(production / smoke);推荐 openssl rand -base64 32 生成 32 字节 key',
+      );
+    }
+    return '';
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length < 32) {
+    throw new Error(
+      `REALNAME_ENCRYPTION_KEY 太短:长度 ${trimmed.length}(至少 32 字符;推荐 openssl rand -base64 32)`,
+    );
+  }
+  return trimmed;
+}
+
 export interface AppConfig {
   env: AppEnv;
   port: number;
@@ -272,6 +299,7 @@ export interface AppConfig {
   storage: StorageConfig;
   sms: SmsConfig;
   wechat: WechatConfig;
+  realname: RealnameConfig;
   smsSendThrottle: SmsSendThrottleConfig;
   smsVerifyThrottle: SmsVerifyThrottleConfig;
   passwordResetThrottle: PasswordResetThrottleConfig;
@@ -372,6 +400,10 @@ export default registerAs('app', (): AppConfig => {
     encryptionKey: parseWechatEncryptionKey(process.env.WECHAT_ENCRYPTION_KEY, env),
   };
 
+  const realname: RealnameConfig = {
+    encryptionKey: parseRealnameEncryptionKey(process.env.REALNAME_ENCRYPTION_KEY, env),
+  };
+
   // SMS 基础设施 T3:发码 / 验码限流(评审稿 D-SMS-6;推荐区间沿 LOGIN_THROTTLE_*)。
   const smsSendThrottle: SmsSendThrottleConfig = {
     limit: parsePositiveInt(process.env.SMS_SEND_THROTTLE_LIMIT, 5, 'SMS_SEND_THROTTLE_LIMIT', {
@@ -460,6 +492,7 @@ export default registerAs('app', (): AppConfig => {
     storage,
     sms,
     wechat,
+    realname,
     smsSendThrottle,
     smsVerifyThrottle,
     passwordResetThrottle,

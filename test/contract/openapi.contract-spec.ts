@@ -235,6 +235,12 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/system/v1/wechat-settings'],
   ['post', '/api/system/v1/wechat-settings/reset-credentials'],
 
+  // 招新一期 · 实名核验通道 T2(2026-06-18):realname-settings 三端点(评审稿 §3.2 端点 1-3;
+  // 路径动词镜像 wechat/sms-settings;183→186);T3 将增 recruitment 公开/admin 端点(届时 →~196)。
+  ['get', '/api/system/v1/realname-settings'],
+  ['patch', '/api/system/v1/realname-settings'],
+  ['post', '/api/system/v1/realname-settings/reset-credentials'],
+
   // Admin surface(Admin-* tag;70 路由):终态前缀 /api/admin/v1/*
   // (Route B 终态;v2 老前缀已于 Phase 4 删除,沿 docs/api-surface-migration-plan.md §3.4)。
   // 注:历史 mobile-like 自助端点已收口到 App surface(/api/app/v1/me|my/*);

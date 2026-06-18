@@ -82,11 +82,17 @@ import { assertTestDatabaseUrl } from './test-db';
 //
 // 微信小程序登录 T2 追加(2026-06-12):1 张 wechat_settings 表(物理名小写,Prisma `@@map`);
 // 无 DB FK(updatedBy 纯 String;镜像 sms_settings),放在同一无 FK 独立段。
+//
+// 招新一期 T1/T2 追加(2026-06-18):3 张新表(物理名小写,Prisma `@@map`):
+//   realname_verification_settings(无 DB FK,镜像 wechat_settings,放无 FK 独立段;T2 settings e2e 用)/
+//   recruitment_applications(FK cycleId → recruitment_cycles,Restrict;子表)/ recruitment_cycles(无 FK,父表)
+// 顺序:recruitment_applications(子)→ recruitment_cycles(父);CASCADE 兜底。recruitment 两表 T3 报名 e2e 用,
+// 本期一并加入,避免与 realname 同款「表不在 truncate 列表 → 跨 run 残留行污染 GET 空库断言」隔离 bug。
 export async function resetDb(app: INestApplication): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "user_roles", "role_permissions", "roles", "permissions", "audit_logs", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "user_roles", "role_permissions", "roles", "permissions", "audit_logs", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "realname_verification_settings", "recruitment_applications", "recruitment_cycles", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }

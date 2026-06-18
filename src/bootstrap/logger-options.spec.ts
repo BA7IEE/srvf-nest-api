@@ -24,6 +24,8 @@ const fakeAppCfg: AppConfig = {
   sms: { encryptionKey: '' },
   // 微信小程序登录 T2:AppConfig 新增必填字段;本 unit test 不关心微信,仅满足接口
   wechat: { encryptionKey: '' },
+  // 招新一期 · 实名核验通道 T2:AppConfig 新增必填字段;本 unit test 不关心实名核验,仅满足接口
+  realname: { encryptionKey: '' },
   smsSendThrottle: { limit: 5, ttlSeconds: 60 },
   smsVerifyThrottle: { limit: 10, ttlSeconds: 60 },
   // 找回密码 T2:AppConfig 新增必填字段;本 unit test 不关心限流参数,仅满足接口

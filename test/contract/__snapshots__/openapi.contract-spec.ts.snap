@@ -4923,6 +4923,74 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "RealnameSettingsResponseDto": {
+    "properties": {
+      "createdAt": {
+        "description": "创建时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "credentialConfigured": {
+        "description": "DB 层是否已配置凭证(运行时状态看 credentialStatus)",
+        "type": "boolean",
+      },
+      "credentialStatus": {
+        "description": "凭证状态三档(configured / missing / invalid);secretId/secretKey 明文与密文永不回显",
+        "enum": [
+          "configured",
+          "missing",
+          "invalid",
+        ],
+        "type": "string",
+      },
+      "enabled": {
+        "description": "全局启用开关",
+        "type": "boolean",
+      },
+      "id": {
+        "description": "cuid 主键",
+        "type": "string",
+      },
+      "providerType": {
+        "description": "通道类型(production-like 禁 DEV_STUB)",
+        "enum": [
+          "DEV_STUB",
+          "TENCENT_CLOUD",
+        ],
+        "type": "string",
+      },
+      "region": {
+        "description": "腾讯云 region(非 secret;如 ap-guangzhou)",
+        "nullable": true,
+        "type": "object",
+      },
+      "remarks": {
+        "description": "运维备注",
+        "nullable": true,
+        "type": "object",
+      },
+      "updatedAt": {
+        "description": "更新时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "updatedBy": {
+        "description": "最后更新人 User.id",
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "id",
+      "providerType",
+      "enabled",
+      "credentialStatus",
+      "credentialConfigured",
+      "updatedAt",
+      "createdAt",
+    ],
+    "type": "object",
+  },
   "RefreshTokenDto": {
     "properties": {
       "refreshToken": {
@@ -5040,6 +5108,27 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "phone",
       "code",
       "newPassword",
+    ],
+    "type": "object",
+  },
+  "ResetRealnameCredentialsDto": {
+    "properties": {
+      "secretId": {
+        "description": "腾讯云 SecretId 明文;Service 层 AES-256-GCM 加密后落库;**永不回显**",
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string",
+      },
+      "secretKey": {
+        "description": "腾讯云 SecretKey 明文;Service 层 AES-256-GCM 加密后落库;**永不回显**",
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "secretId",
+      "secretKey",
     ],
     "type": "object",
   },
@@ -6303,6 +6392,31 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "displayName": {
         "description": "显示名",
         "maxLength": 50,
+        "type": "string",
+      },
+    },
+    "type": "object",
+  },
+  "UpdateRealnameSettingsDto": {
+    "properties": {
+      "enabled": {
+        "description": "全局启用开关",
+        "type": "boolean",
+      },
+      "providerType": {
+        "description": "通道类型;production-like 环境拒绝 DEV_STUB(评审稿 E-R-5)",
+        "enum": [
+          "DEV_STUB",
+          "TENCENT_CLOUD",
+        ],
+        "type": "string",
+      },
+      "region": {
+        "description": "腾讯云 region(非 secret)",
+        "type": "string",
+      },
+      "remarks": {
+        "description": "运维备注",
         "type": "string",
       },
     },
@@ -39322,6 +39436,434 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "触发 RBAC 缓存失效(沿 D7 v1.1 §5.4 + F4 v1.0 三档 scope:all / user(+userId) / role(+roleId)) [rbac: rbac.config.reload]",
       "tags": [
         "Ops - RBAC",
+      ],
+    },
+  },
+  "/api/system/v1/realname-settings": {
+    "get": {
+      "operationId": "RealnameSettingsController_get",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/RealnameSettingsResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "读 Realname Verification Settings singleton row(不存在返 data=null;不抛 BizCode;不回显凭证) [rbac: realname-setting.read.singleton]",
+      "tags": [
+        "Ops - Realname Settings",
+      ],
+    },
+    "patch": {
+      "operationId": "RealnameSettingsController_update",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateRealnameSettingsDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/RealnameSettingsResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "upsert 更新实名核验设置(不存在则创建 default providerType=DEV_STUB;production-like 拒绝 DEV_STUB;**拒绝**任何凭证字段;成功后 invalidate cache) [rbac: realname-setting.update.singleton]",
+      "tags": [
+        "Ops - Realname Settings",
+      ],
+    },
+  },
+  "/api/system/v1/realname-settings/reset-credentials": {
+    "post": {
+      "operationId": "RealnameSettingsController_resetCredentials",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ResetRealnameCredentialsDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/RealnameSettingsResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "重置腾讯云实名核验 secretId/secretKey(**仅 SUPER_ADMIN 短路通过**,码不绑 ops-admin;两段 AES-256-GCM 加密落库;响应不回显;不存在则 upsert 创建 default providerType=TENCENT_CLOUD;成功后 invalidate cache) [rbac: realname-setting.reset.credentials]",
+      "tags": [
+        "Ops - Realname Settings",
       ],
     },
   },
