@@ -8,8 +8,8 @@
 | 项 | 当前值 |
 |---|---|
 | 版本(三方一致) | **v0.24.0**(2026-06-13;package.json = Swagger = tag;tag 指向 `c438840c` 标 Latest;要点见 CHANGELOG) |
-| `main` HEAD | `c438840c`(#370 handoff;tag v0.24.0 与 HEAD 同点,本行为滚动快照) |
-| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **1**(本 PR:`GET /api/admin/v1/me` 只读身份 bootstrap;v0.24.0 已折叠 5 条:保险 #365/#366/#367 + 微信 review #360/#361) |
+| `main` HEAD | `0334a7ca`(#377 招新一期 T4;tag v0.24.0 仍在 `c438840c`,HEAD 已累积 Unreleased 故超出 tag,本行为滚动快照) |
+| open PR / 工作树 / Unreleased | **0**(本回填 PR 前;#372 + 招新一期 #373-#377 均已合入 main)/ clean / **4**(`GET /api/admin/v1/me` #372 + 招新一期 T1 #374 / T2 #375 / T3 #376;T0 评审稿 #373 与 T4 收尾 #377 为 A 档 docs 不计 Unreleased;本 §1 回填 PR 亦 A 档不计;v0.24.0 已折叠 5 条:保险 #365/#366/#367 + 微信 review #360/#361) |
 | 最新 handoff | [`archive/handoff/v0.24.0.md`](archive/handoff/v0.24.0.md)(不回改) |
 
 ## 2. 当前系统已具备能力
@@ -76,6 +76,7 @@
 | P3 | SMS 两表 retention 依赖维护者手动执行(系统侧无自动清理,刻意) | 沿 [`ops/sms-data-retention-sop.md`](ops/sms-data-retention-sop.md)(2026-06-11 P2-6 收口:季度例行 + 报警线;不解锁 cron) |
 | P3 | 保险到期无自动提醒(刻意:cron 解锁范围仅生日批;临近到期靠管理员人工查看 coverageEnd) | 提醒诉求出现单独立项(新定时任务 = 新 D 档评审,沿 R-5);字段已留,见 [`archive/reviews/insurance-module-review.md §10`](archive/reviews/insurance-module-review.md) |
 | P3 | 招新失败者脱敏清理依赖维护者手动执行(系统侧无自动清理,刻意;含 storage blob 删除) | 沿 [`ops/recruitment-data-retention-sop.md`](ops/recruitment-data-retention-sop.md)(rejected / 轮次结束 30 天后清敏感字段 + 证件照 blob,保留行级脱敏统计;不解锁 cron) |
+| P3 | 招新公开报名同轮去重前置于付费核验(配套①成本纪律),`RECRUITMENT_DUPLICATE_APPLICATION`(28003)可被限流内枚举「某身份证号本轮是否已报名」 | **v1 接受不改实现**(维护者 2026-06-18 拍板):免费去重必须前置以省付费核验成本(评审稿 §4 校验顺序冻结);泄露面窄=需已知目标**完整**身份证号 + 同一在开轮次,且受 `@RecruitmentThrottle` IP 10/3600 限速;留痕备案,真实风险出现再单独评估(如 200 泛化 / 核验后才去重) |
 
 ## 5. 新任务开工前必须检查
 
