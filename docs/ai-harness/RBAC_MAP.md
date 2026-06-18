@@ -11,6 +11,8 @@
 > 2026-06-13 保险模块 T3 戳(同 goal):**权限事实零变化**(128 码 / 绑定 / 内置角色不动);endpoint **182** 不变(`requiresInsurance` 仅活动 DTO 字段新增 + 报名 create 双路径门槛断言,零新端点);BizCode +1(26030 `INSURANCE_REQUIRED`)与 baseline §1.1 红区行不属本表;`docs:rbacmap:check` 0 FAIL / 0 WARN。
 > 2026-06-18 招新一期 T1 戳(goal「招新一期(招新前段)」,冻结评审稿 [`recruitment-phase1-review.md §3.4`](../archive/reviews/recruitment-phase1-review.md)):权限码 128→**136**(realname-setting 3〔`reset.credentials` 不绑 ops-admin 镜像 D2=A〕+ recruitment-cycle 3 + recruitment-application 2,后 5 全绑 biz-admin 无例外 E-R-19);biz-admin 42→**47**;ops-admin 61→**63**;member 9 零变化;**8 新码端点 T2/T3 实装前孤码 WARN 预期**(镜像保险 T1 先例);endpoint **183** 不变(T1 仅 schema/migration/seed)。**controller 38→39 true-up**:此数为 #372 `GET /api/admin/v1/me`(`AdminMeController`)合入后**既存漂移**、非本 T1 新增(T1 零新 controller),沿 §6 规则 6「先报告再 true-up」随本 PR 校正。BizCode 27/28xxx 段与 audit 不属本表。
 > 2026-06-18 招新一期 T2 戳(同 goal):**权限事实零变化**(136 码 / 绑定 / 内置角色不动);endpoint 183→**186**(realname-settings 三端点 `[rbac: realname-setting.*]`);controller 39→**40**(`RealnameSettingsController`);**T1 期 realname 3 码孤码 WARN 清零**(端点实装);BizCode 27xxx(27030/27031)+ baseline §1.1 `270xx` 红区行随本 T2 PR(评审稿 §11 归属微调:27xxx 随 realname 模块走,self-contained 可测);recruitment 5 码仍孤码(T3 清零)。`docs:rbacmap:check` 0 FAIL / 5 WARN(预期)。
+>
+> 2026-06-18 招新一期 T3 戳(同 goal,收口):**权限事实零变化**(136 码 / 绑定 / 内置角色不动);endpoint 186→**196**(open/v1 公开报名 2 `[public]` + admin/v1 轮次 4〔`recruitment-cycle.*`〕+ admin/v1 报名 4〔`recruitment-application.*`〕);controller 40→**43**(`RecruitmentPublicController`〔open/v1 首用,@Public 无码〕 + `RecruitmentCyclesController` + `RecruitmentApplicationsAdminController`);**recruitment 5 码孤码 WARN 清零**(T1 预留端点 T3 实装);**`open/v1` 首用**——api-surface-policy §0「预留→首用」解锁,第 5 canonical 前缀(`scripts/check-rbac-map.ts` + `test/contract/openapi.contract-spec.ts` 的 `CANONICAL_PREFIXES` 同步);BizCode 28xxx(280xx 段)+ baseline §1.1 行随本 T3 PR;audit +5 DB union + 2 placeholder 不属本表。`docs:rbacmap:check` 0 FAIL / 0 WARN。
 
 ---
 
@@ -23,7 +25,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。判权唯一服务入口 = `RbacService.can()`;`RbacCacheService` 是权限解析缓存(TTL 1800s,三档失效),不是身份缓存。
 
-## 2. controller × 鉴权模式对照(40 个 controller class)
+## 2. controller × 鉴权模式对照(43 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
@@ -56,6 +58,16 @@
 | `admin/v1/…attendance-sheets`(2 个 Admin class;Slow-4 T3) | `attendance.*.sheet`(8;list/detail/review-detail 共用 read;终审两码独立,ADMIN 级沿 P1-5 方案 A) |
 | `admin/v1/team-insurance-policies`(保险 T2) | `team-insurance-policy.*`(6;list/detail/覆盖名单共用 read;add/remove 覆盖名单两码独立) |
 | `admin/v1/members/:memberId/insurances`(保险 T2) | `member-insurance.read.other`(1;数组无分页镜像 certificates;本人侧走 App self-scope 无码) |
+| `admin/v1/recruitment/cycles`(招新 T3) | `recruitment-cycle.*.record`(3;list/detail 共用 read;开/关轮 + 容量/通知模板走 update) |
+| `admin/v1/recruitment/applications`(招新 T3) | `recruitment-application.*`(2;list/detail/取证件照 signed-URL 共用 `read.record`;人工待核 `resolve.manual`)|
+
+### 2.1b A 模式 — `@Public` 无账号公开端点(招新 T3 首用)
+
+| controller(路径前缀) | 鉴权 |
+|---|---|
+| `open/v1/recruitment`(招新 T3;公开报名提交/查询) | `@Public` 跳过 JwtAuthGuard;无 rbac 码;按 IP 走第 9 throttler `recruitment`(10/3600);敏感字段仅入库不回显 |
+
+> `open/v1` = **第 5 canonical 前缀**(api-surface-policy §0「预留→首用」T3 解锁;无账号自助报名 surface,小程序前端直连)。`auth/v1` 的 `@Public` 登录端点同属无码,但归 auth 域既有计列;此处仅登记招新公开 surface。
 
 ### 2.2 G 模式 — Guard `@Roles`(已清零)
 
@@ -96,8 +108,8 @@
 | 队保单(保险 T1) | 6 | `team-insurance-policy.{read,create,update,delete}.record` / `team-insurance-policy.{add,remove}.member`(T2 端点实装前孤码 WARN 预期) |
 | 队员自购保险(保险 T1) | 1 | `member-insurance.read.other`(admin 查队员保险;App 本人侧 self-scope 无码;T2 实装) |
 | 实名核验设置(招新 T1) | 3 | `realname-setting.{read,update}.singleton` / `realname-setting.reset.credentials`(`reset` 不绑 ops-admin 镜像 D2=A;T2 端点实装前孤码 WARN 预期) |
-| 招新轮次(招新 T1) | 3 | `recruitment-cycle.{read,create,update}.record`(T3 端点实装前孤码 WARN 预期) |
-| 招新报名(招新 T1) | 2 | `recruitment-application.read.record`(列表/详情/取证件照 signed-URL 共用)/ `recruitment-application.resolve.manual`(人工待核 resolve;T3 实装) |
+| 招新轮次(招新 T1;T3 实装) | 3 | `recruitment-cycle.{read,create,update}.record`(`admin/v1/recruitment/cycles`;孤码 T3 清零) |
+| 招新报名(招新 T1;T3 实装) | 2 | `recruitment-application.read.record`(列表/详情/取证件照 signed-URL 共用)/ `recruitment-application.resolve.manual`(人工待核 resolve;`admin/v1/recruitment/applications`;孤码 T3 清零) |
 
 内置角色:`ops-admin`(绑 63 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新 T1,绑 47 条 = 48 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码不绑〔零漂移〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN(本 T1 新增 8 码均属此),其余无"代码用码未 seed"。
 

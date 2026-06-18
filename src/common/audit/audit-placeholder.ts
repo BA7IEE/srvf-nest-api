@@ -89,7 +89,10 @@ export type AuditEvent =
   // 评审即本 union 扩展的前置评议;镜像 certificate.read.other):
   //   member-insurance.read.other  实装(admin GET members/:memberId/insurances;
   //   保单号/保险公司中敏感,admin 视角读他人留痕;写事件走 audit_logs DB union,不在本清单)
-  | 'member-insurance.read.other';
+  | 'member-insurance.read.other'
+  // 招新一期 T3 追加 2 项(2026-06-18;评审稿 §3.5;镜像 certificate.read.other / certificate.attachment.read):
+  | 'recruitment-application.read.other' // admin 读报名 PII(列表/详情)
+  | 'recruitment-application.id-card-image.read'; // admin 取证件照 signed-URL(配套②)
 
 const auditLogger = new Logger('Audit');
 

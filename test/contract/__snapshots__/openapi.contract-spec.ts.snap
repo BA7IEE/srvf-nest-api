@@ -3630,6 +3630,27 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "CreateRecruitmentCycleDto": {
+    "properties": {
+      "capacity": {
+        "description": "容量上限(可临时增容;缺省不限)",
+        "type": "number",
+      },
+      "name": {
+        "description": "轮次名(如「2026 年度招新」)",
+        "type": "string",
+      },
+      "year": {
+        "description": "招新年份(临时编号 T{year} 的 year)",
+        "type": "number",
+      },
+    },
+    "required": [
+      "year",
+      "name",
+    ],
+    "type": "object",
+  },
   "CreateRegistrationDto": {
     "properties": {
       "extras": {
@@ -4075,6 +4096,24 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "required": [
       "status",
+    ],
+    "type": "object",
+  },
+  "IdCardImageUrlResponseDto": {
+    "properties": {
+      "expiresAt": {
+        "description": "URL 过期时刻",
+        "format": "date-time",
+        "type": "string",
+      },
+      "url": {
+        "description": "证件照短 TTL signed-URL(L3;不入日志/snapshot)",
+        "type": "string",
+      },
+    },
+    "required": [
+      "url",
+      "expiresAt",
     ],
     "type": "object",
   },
@@ -4991,6 +5030,187 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "RecruitmentApplicationAdminDto": {
+    "properties": {
+      "ageGroup": {
+        "nullable": true,
+        "type": "object",
+      },
+      "cityDistrict": {
+        "nullable": true,
+        "type": "object",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "cycleId": {
+        "type": "string",
+      },
+      "documentTypeCode": {
+        "type": "string",
+      },
+      "eliminationStage": {
+        "nullable": true,
+        "type": "object",
+      },
+      "genderCode": {
+        "nullable": true,
+        "type": "object",
+      },
+      "hasIdCardImage": {
+        "description": "是否有证件照(取图走 :id/id-card-image-url)",
+        "type": "boolean",
+      },
+      "id": {
+        "type": "string",
+      },
+      "idCardNumber": {
+        "description": "身份证号(列表掩码,详情可全显)",
+        "nullable": true,
+        "type": "object",
+      },
+      "isForeigner": {
+        "type": "boolean",
+      },
+      "phone": {
+        "nullable": true,
+        "type": "object",
+      },
+      "realName": {
+        "nullable": true,
+        "type": "object",
+      },
+      "statusCode": {
+        "type": "string",
+      },
+      "tempNo": {
+        "nullable": true,
+        "type": "object",
+      },
+      "verifyOutcome": {
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "id",
+      "cycleId",
+      "statusCode",
+      "documentTypeCode",
+      "isForeigner",
+      "hasIdCardImage",
+      "createdAt",
+    ],
+    "type": "object",
+  },
+  "RecruitmentApplicationPublicDto": {
+    "properties": {
+      "cycleName": {
+        "description": "轮次名",
+        "type": "string",
+      },
+      "meetingInfo": {
+        "description": "见面会信息(后填)",
+        "nullable": true,
+        "type": "object",
+      },
+      "notifyTemplate": {
+        "description": "通知模板/各节点文案(后填)",
+        "nullable": true,
+        "type": "object",
+      },
+      "qqGroup": {
+        "description": "QQ 群(后填)",
+        "nullable": true,
+        "type": "object",
+      },
+      "statusCode": {
+        "description": "报名状态(pending_verification/verified/manual_review/rejected)",
+        "type": "string",
+      },
+      "tempNo": {
+        "description": "临时编号 T{year}{seq}(仅 verified 有值)",
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "statusCode",
+      "cycleName",
+    ],
+    "type": "object",
+  },
+  "RecruitmentCycleResponseDto": {
+    "properties": {
+      "capacity": {
+        "nullable": true,
+        "type": "object",
+      },
+      "closedAt": {
+        "nullable": true,
+        "type": "object",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "issuedCount": {
+        "description": "已发临时编号数(tempNoSeq)",
+        "type": "number",
+      },
+      "meetingInfo": {
+        "nullable": true,
+        "type": "object",
+      },
+      "name": {
+        "type": "string",
+      },
+      "notifyTemplate": {
+        "nullable": true,
+        "type": "object",
+      },
+      "openedAt": {
+        "nullable": true,
+        "type": "object",
+      },
+      "qqGroup": {
+        "nullable": true,
+        "type": "object",
+      },
+      "statusCode": {
+        "type": "string",
+      },
+      "year": {
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "year",
+      "name",
+      "statusCode",
+      "issuedCount",
+      "createdAt",
+    ],
+    "type": "object",
+  },
+  "RecruitmentQueryDto": {
+    "properties": {
+      "wechatCode": {
+        "description": "微信 wx.login code(换 openid 查本人当前轮报名)",
+        "maxLength": 128,
+        "type": "string",
+      },
+    },
+    "required": [
+      "wechatCode",
+    ],
+    "type": "object",
+  },
   "RefreshTokenDto": {
     "properties": {
       "refreshToken": {
@@ -5200,6 +5420,22 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "required": [
       "appSecret",
+    ],
+    "type": "object",
+  },
+  "ResolveRecruitmentApplicationDto": {
+    "properties": {
+      "approved": {
+        "description": "true=人工核验通过(发临时编号);false=不通过(rejected)",
+        "type": "boolean",
+      },
+      "reviewNote": {
+        "description": "人工核验备注",
+        "type": "string",
+      },
+    },
+    "required": [
+      "approved",
     ],
     "type": "object",
   },
@@ -6417,6 +6653,31 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       },
       "remarks": {
         "description": "运维备注",
+        "type": "string",
+      },
+    },
+    "type": "object",
+  },
+  "UpdateRecruitmentCycleDto": {
+    "properties": {
+      "capacity": {
+        "description": "容量上限(可临时增容)",
+        "type": "number",
+      },
+      "meetingInfo": {
+        "description": "见面会信息(后填)",
+        "type": "string",
+      },
+      "notifyTemplate": {
+        "description": "通知模板(各节点文案;后填)",
+        "type": "object",
+      },
+      "qqGroup": {
+        "description": "QQ 群(后填)",
+        "type": "string",
+      },
+      "statusCode": {
+        "description": "状态(open / closed;开新 open 轮要求当前无 open 轮)",
         "type": "string",
       },
     },
@@ -20417,6 +20678,1405 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/admin/v1/recruitment/applications": {
+    "get": {
+      "operationId": "RecruitmentApplicationsAdminController_list",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "in": "query",
+          "name": "cycleId",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "in": "query",
+          "name": "statusCode",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/RecruitmentApplicationAdminDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "招新报名分页列表(可按 cycleId / statusCode 过滤;身份证号/手机列表掩码) [rbac: recruitment-application.read.record]",
+      "tags": [
+        "Admin - Recruitment Applications",
+      ],
+    },
+  },
+  "/api/admin/v1/recruitment/applications/{id}": {
+    "get": {
+      "operationId": "RecruitmentApplicationsAdminController_detail",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/RecruitmentApplicationAdminDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28002: 招新报名记录不存在",
+                    "enum": [
+                      28002,
+                    ],
+                    "example": 28002,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "招新报名记录不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "招新报名记录不存在(code=28002)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "招新报名详情(身份证号/手机全显;读 PII 记审计) [rbac: recruitment-application.read.record]",
+      "tags": [
+        "Admin - Recruitment Applications",
+      ],
+    },
+  },
+  "/api/admin/v1/recruitment/applications/{id}/id-card-image-url": {
+    "get": {
+      "operationId": "RecruitmentApplicationsAdminController_idCardImageUrl",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/IdCardImageUrlResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28002: 招新报名记录不存在",
+                    "enum": [
+                      28002,
+                    ],
+                    "example": 28002,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "招新报名记录不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "招新报名记录不存在(code=28002)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "取证件照短 TTL signed-URL(L3;不入日志/snapshot;读图记审计) [rbac: recruitment-application.read.record]",
+      "tags": [
+        "Admin - Recruitment Applications",
+      ],
+    },
+  },
+  "/api/admin/v1/recruitment/applications/{id}/resolve": {
+    "post": {
+      "operationId": "RecruitmentApplicationsAdminController_resolve",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ResolveRecruitmentApplicationDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/RecruitmentApplicationAdminDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28002: 招新报名记录不存在",
+                    "enum": [
+                      28002,
+                    ],
+                    "example": 28002,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "招新报名记录不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "招新报名记录不存在(code=28002)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28040: 该报名不处于人工待核状态,无法人工核验",
+                    "enum": [
+                      28040,
+                    ],
+                    "example": 28040,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "该报名不处于人工待核状态,无法人工核验",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "该报名不处于人工待核状态,无法人工核验(code=28040)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "人工 resolve(仅 manual_review 可解;approved→verified 发临时编号 / 否→rejected;非 manual_review→28040) [rbac: recruitment-application.resolve.manual]",
+      "tags": [
+        "Admin - Recruitment Applications",
+      ],
+    },
+  },
+  "/api/admin/v1/recruitment/cycles": {
+    "get": {
+      "operationId": "RecruitmentCyclesController_list",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/RecruitmentCycleResponseDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "招新轮次分页列表 [rbac: recruitment-cycle.read.record]",
+      "tags": [
+        "Admin - Recruitment Cycles",
+      ],
+    },
+    "post": {
+      "operationId": "RecruitmentCyclesController_create",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateRecruitmentCycleDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/RecruitmentCycleResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "创建招新轮次(默认 closed,需显式开轮) [rbac: recruitment-cycle.create.record]",
+      "tags": [
+        "Admin - Recruitment Cycles",
+      ],
+    },
+  },
+  "/api/admin/v1/recruitment/cycles/{id}": {
+    "get": {
+      "operationId": "RecruitmentCyclesController_detail",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/RecruitmentCycleResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28001: 招新轮次不存在",
+                    "enum": [
+                      28001,
+                    ],
+                    "example": 28001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "招新轮次不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "招新轮次不存在(code=28001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "招新轮次详情 [rbac: recruitment-cycle.read.record]",
+      "tags": [
+        "Admin - Recruitment Cycles",
+      ],
+    },
+    "patch": {
+      "operationId": "RecruitmentCyclesController_update",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateRecruitmentCycleDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/RecruitmentCycleResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28001: 招新轮次不存在",
+                    "enum": [
+                      28001,
+                    ],
+                    "example": 28001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "招新轮次不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "招新轮次不存在(code=28001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "更新招新轮次(开/关轮、容量、见面会/QQ群/通知模板;开 open 轮要求当前无其它 open 轮) [rbac: recruitment-cycle.update.record]",
+      "tags": [
+        "Admin - Recruitment Cycles",
+      ],
+    },
+  },
   "/api/admin/v1/team-insurance-policies": {
     "get": {
       "operationId": "TeamInsurancePoliciesController_list",
@@ -30362,6 +32022,399 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "发送微信绑定短信验证码(防枚举:无效号码返回相同泛化响应) [public]",
       "tags": [
         "Auth",
+      ],
+    },
+  },
+  "/api/open/v1/recruitment/applications": {
+    "post": {
+      "operationId": "RecruitmentPublicController_submit",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "multipart/form-data": {
+            "schema": {
+              "properties": {
+                "idCardImage": {
+                  "description": "证件照(jpeg/png ≤5MB)",
+                  "format": "binary",
+                  "type": "string",
+                },
+                "payload": {
+                  "description": "RecruitmentSubmitPayloadDto 的 JSON 串(wechatCode/realName/idCardNumber/…)",
+                  "type": "string",
+                },
+              },
+              "required": [
+                "payload",
+                "idCardImage",
+              ],
+              "type": "object",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/RecruitmentApplicationPublicDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 28010: 报名年龄须在 18 至 60 周岁之间; 28011: 请上传证件照",
+                    "enum": [
+                      40000,
+                      28010,
+                      28011,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 报名年龄须在 18 至 60 周岁之间(code=28010) / 请上传证件照(code=28011)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28030: 当前没有开放报名的招新轮次; 28031: 本轮招新名额已满; 28003: 本轮招新你已提交报名,请勿重复报名",
+                    "enum": [
+                      28030,
+                      28031,
+                      28003,
+                    ],
+                    "example": 28030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "当前没有开放报名的招新轮次",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "当前没有开放报名的招新轮次(code=28030) / 本轮招新名额已满(code=28031) / 本轮招新你已提交报名,请勿重复报名(code=28003)",
+        },
+        "429": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "42900: 请求过于频繁，请稍后再试",
+                    "enum": [
+                      42900,
+                    ],
+                    "example": 42900,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求过于频繁，请稍后再试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求过于频繁，请稍后再试(code=42900)",
+        },
+        "502": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "27031: 实名核验服务调用失败,请稍后重试",
+                    "enum": [
+                      27031,
+                    ],
+                    "example": 27031,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "实名核验服务调用失败,请稍后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "实名核验服务调用失败,请稍后重试(code=27031)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "27030: 实名核验服务未配置或未启用",
+                    "enum": [
+                      27030,
+                    ],
+                    "example": 27030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "实名核验服务未配置或未启用",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "实名核验服务未配置或未启用(code=27030)",
+        },
+      },
+      "summary": "公开报名提交(无账号;multipart:payload JSON 串 + idCardImage 文件;免费校验通过后才调付费实名核验;大陆证件 matched→发临时编号,外籍→人工待核;throttler recruitment) [public]",
+      "tags": [
+        "Public - Recruitment",
+      ],
+    },
+  },
+  "/api/open/v1/recruitment/applications/query": {
+    "post": {
+      "operationId": "RecruitmentPublicController_query",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RecruitmentQueryDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/RecruitmentApplicationPublicDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28002: 招新报名记录不存在",
+                    "enum": [
+                      28002,
+                    ],
+                    "example": 28002,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "招新报名记录不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "招新报名记录不存在(code=28002)",
+        },
+        "429": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "42900: 请求过于频繁，请稍后再试",
+                    "enum": [
+                      42900,
+                    ],
+                    "example": 42900,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求过于频繁，请稍后再试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求过于频繁，请稍后再试(code=42900)",
+        },
+      },
+      "summary": "公开查询本人报名(凭新 wx.login code 换 openid;返回本人最近一条报名状态 + 临时编号 + 通知展示;无匹配→28002;throttler recruitment) [public]",
+      "tags": [
+        "Public - Recruitment",
       ],
     },
   },

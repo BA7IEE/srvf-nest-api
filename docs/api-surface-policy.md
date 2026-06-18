@@ -16,13 +16,13 @@
 | **App** | `/api/app/v1/*` | App / 小程序 / 队员端(**已建成 15 endpoint,不迁移**) |
 | **Auth** | `/api/auth/v1/*` | 登录 / 刷新 / 登出 / 认证会话(现 `/api/auth/*`) |
 | **System** | `/api/system/v1/*` | 健康检查 / 运行状态 / 系统元信息 / ops 配置(现 `/api/health/*` + 现 `/api/v2/*` 中 ops/配置/可观测类;承接 D-1 `contribution-rules` → System) |
-| **Open** | `/api/open/v1/*` | **预留**:未来开放平台;本期不实现、不占用 |
+| **Open** | `/api/open/v1/*` | **首用(2026-06-18 招新一期 T3)**:无账号公开 surface(`@Public` 跳过 JwtAuthGuard;首落地 = 招新报名提交/查询,小程序自助直连);未来开放平台扩展仍按需 D 档立项 |
 
 **新增规则(自 2026-06-01 生效,覆盖 §2.1 / §2.2 的"新接口落 v2"口径)**:
 
 - ✅ **新接口一律落新前缀**:新管理面 → `/api/admin/v1/*`;新 App → `/api/app/v1/*`;新认证 → `/api/auth/v1/*`;新 ops/系统 → `/api/system/v1/*`。**不再向 `/api/v2/*` 新增任何 endpoint**。
-- ✅ 存量 `/api/v2/*` / `/api/auth/*` / `/api/users/*` / `/api/health/*` 已按 [`api-surface-migration-plan.md §6`](api-surface-migration-plan.md) 全部迁移并删除(**2026-06-01 完成**,终态由 contract"全部路由仅落 4 canonical 前缀"断言锁定);此后任何 surface / path 变更仍需 **D 档、单独立项**。
-- ✅ App / Admin / System / Auth surface 间 **DTO 不得复用或派生**(沿 §2.1 / D-6);四 surface 物理分离。
+- ✅ 存量 `/api/v2/*` / `/api/auth/*` / `/api/users/*` / `/api/health/*` 已按 [`api-surface-migration-plan.md §6`](api-surface-migration-plan.md) 全部迁移并删除(**2026-06-01 完成**,终态由 contract 前缀断言锁定:**2026-06-01 = 4 canonical 前缀**;**2026-06-18 招新一期 T3 首用 `open/v1` → 5 canonical 前缀**,见 [`test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) + [`scripts/check-rbac-map.ts`](../scripts/check-rbac-map.ts) 的 `CANONICAL_PREFIXES`);此后任何 surface / path 变更仍需 **D 档、单独立项**。
+- ✅ App / Admin / System / Auth / Open surface 间 **DTO 不得复用或派生**(沿 §2.1 / D-6);五 surface 物理分离(`open/v1` 公开出参为独立 class,不派生自 admin/app DTO)。
 - ✅ audit-logs / storage / RBAC 系 / dictionaries / attachment-configs 的 admin↔system 灰区归属**已由迁移计划 Phase 0 映射表(经用户签字)冻结**(见 [`api-surface-migration-plan.md §3`](api-surface-migration-plan.md);均落 System surface `/api/system/v1/*`);**不**在常规 PR 内擅自重归类。
 
 ---

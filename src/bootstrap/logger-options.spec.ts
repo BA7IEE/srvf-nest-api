@@ -32,6 +32,7 @@ const fakeAppCfg: AppConfig = {
   passwordResetThrottle: { limit: 3, ttlSeconds: 60 },
   loginSmsThrottle: { limit: 5, ttlSeconds: 60 },
   loginWechatThrottle: { limit: 5, ttlSeconds: 60 },
+  recruitmentThrottle: { limit: 10, ttlSeconds: 3600 },
 };
 
 function getRedactPaths(): readonly string[] {

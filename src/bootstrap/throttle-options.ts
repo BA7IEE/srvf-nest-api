@@ -1,6 +1,7 @@
 import type { ThrottlerModuleOptions } from '@nestjs/throttler';
 import { LOGIN_SMS_THROTTLER_NAME } from '../common/decorators/login-sms-throttle.decorator';
 import { LOGIN_WECHAT_THROTTLER_NAME } from '../common/decorators/login-wechat-throttle.decorator';
+import { RECRUITMENT_THROTTLER_NAME } from '../common/decorators/recruitment-throttle.decorator';
 import { PASSWORD_CHANGE_THROTTLER_NAME } from '../common/decorators/password-change-throttle.decorator';
 import { PASSWORD_RESET_THROTTLER_NAME } from '../common/decorators/password-reset-throttle.decorator';
 import { REFRESH_THROTTLER_NAME } from '../common/decorators/refresh-throttle.decorator';
@@ -71,6 +72,13 @@ export function buildThrottlerOptions(appCfg: AppConfig): ThrottlerModuleOptions
         name: LOGIN_WECHAT_THROTTLER_NAME,
         limit: appCfg.loginWechatThrottle.limit,
         ttl: appCfg.loginWechatThrottle.ttlSeconds * 1000,
+      },
+      // 招新一期 T3(2026-06-18):招新报名公开两端点第 9 实例
+      // (评审稿 E-R-25;默认 10/3600 名额有限防重复/高频,九实例计数器互不影响)。
+      {
+        name: RECRUITMENT_THROTTLER_NAME,
+        limit: appCfg.recruitmentThrottle.limit,
+        ttl: appCfg.recruitmentThrottle.ttlSeconds * 1000,
       },
     ],
     setHeaders: false,

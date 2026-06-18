@@ -796,6 +796,61 @@ export const BizCode = {
     httpStatus: HttpStatus.BAD_GATEWAY,
   },
 
+  // recruitment 招新报名业务级(280xx + 281xx)。招新一期 T3 引入(2026-06-18)。
+  // 详见冻结评审稿 docs/archive/reviews/recruitment-phase1-review.md §3.3 / E-R-18;
+  // 段位选择:baseline §1.1 原 "280xx-290xx 未规划预留"(T2 已收窄至 270xx realname)首段。
+  //
+  // 子段(对齐 baseline §1.3 紧凑使用):
+  // - 28001/28002:NOT_FOUND(轮次 / 报名)
+  // - 28003:唯一约束冲突(同轮同身份证防重复;partial unique P2002 兜底同码)
+  // - 28010/28011:业务级输入校验(年龄越界 / 证件照缺;身份证号格式·校验位走通用 422/40000,
+  //   紧急联系人<2 走 DTO @ArrayMinSize 通用 422,评审稿 E-R-12/13)
+  // - 28030/28031:轮次状态冲突(无 open 轮·已关 / 容量已满)
+  // - 28040:人工 resolve 前置态冲突(非 manual_review)
+  //
+  // 不开的码(评审稿 §3.3):281xx FORBIDDEN_*(权限拒绝走通用 30100/40300);
+  //   「实名核验不匹配」不是 BizCode(是 verify 结果,驱动状态机 rejected)。
+  RECRUITMENT_CYCLE_NOT_FOUND: {
+    code: 28001,
+    message: '招新轮次不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  RECRUITMENT_APPLICATION_NOT_FOUND: {
+    code: 28002,
+    message: '招新报名记录不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  RECRUITMENT_DUPLICATE_APPLICATION: {
+    code: 28003,
+    message: '本轮招新你已提交报名,请勿重复报名',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  RECRUITMENT_AGE_OUT_OF_RANGE: {
+    code: 28010,
+    message: '报名年龄须在 18 至 60 周岁之间',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  RECRUITMENT_ID_CARD_IMAGE_REQUIRED: {
+    code: 28011,
+    message: '请上传证件照',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  RECRUITMENT_CYCLE_NOT_OPEN: {
+    code: 28030,
+    message: '当前没有开放报名的招新轮次',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  RECRUITMENT_CYCLE_CAPACITY_FULL: {
+    code: 28031,
+    message: '本轮招新名额已满',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL: {
+    code: 28040,
+    message: '该报名不处于人工待核状态,无法人工核验',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // audit_logs 模块业务级(140xx + 141xx)。批次 6 PR #1 引入(2026-05-12)。
   // 详见 docs:批次6_audit_logs_API前评审.md(D6 v1.1)§9。
   // 段位选择:baseline §1.1 v0.5 "audit_logs 140xx + 141xx" 基线预留,本批次实装收口。
