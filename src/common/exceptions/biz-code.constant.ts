@@ -773,6 +773,29 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // realname 实名核验通道(270xx)。招新一期 T2 引入(2026-06-18)。
+  // 详见冻结评审稿 docs/archive/reviews/recruitment-phase1-review.md §3.3 / E-R-18;
+  // 段位选择:baseline §1.1 原 "270xx-290xx 未规划预留" 首段,本期实装收口
+  // (段位表加行随本 T2 PR,红区例外经 goal 唯一授权;沿 24xxx/25xxx/26xxx 收口先例)。
+  //
+  // 子段(对齐 baseline §1.3;仅通道状态段,镜像 sms 24030/24031 / wechat 25030/25031):
+  // - 27030:通道未配置(settings 缺失 / 未启用 / 凭证非 CONFIGURED / production-like DEV_STUB)
+  // - 27031:上游调用失败(腾讯云 Error 回执 / HTTP 非 200 / 超时 / 网络 / 缺 Result)
+  //
+  // 不开的码(评审稿 §3.3 明确):
+  // - 271xx FORBIDDEN_*:权限拒绝走通用 30100 / 40300(RBAC_MAP §6 规则 5)
+  // - 「核验不匹配」**不是 BizCode**:是 verify 结果,驱动报名状态机 rejected(T3)
+  REALNAME_CHANNEL_NOT_CONFIGURED: {
+    code: 27030,
+    message: '实名核验服务未配置或未启用',
+    httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+  },
+  REALNAME_API_FAILED: {
+    code: 27031,
+    message: '实名核验服务调用失败,请稍后重试',
+    httpStatus: HttpStatus.BAD_GATEWAY,
+  },
+
   // audit_logs 模块业务级(140xx + 141xx)。批次 6 PR #1 引入(2026-05-12)。
   // 详见 docs:批次6_audit_logs_API前评审.md(D6 v1.1)§9。
   // 段位选择:baseline §1.1 v0.5 "audit_logs 140xx + 141xx" 基线预留,本批次实装收口。

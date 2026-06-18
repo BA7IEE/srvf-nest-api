@@ -35,6 +35,7 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { RealnameModule } from './modules/realname/realname.module';
 import { SmsModule } from './modules/sms/sms.module';
 import { UsersModule } from './modules/users/users.module';
 import { WechatModule } from './modules/wechat/wechat.module';
@@ -128,6 +129,10 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   (冻结评审稿 docs/archive/reviews/wechat-mini-login-review.md;path /api/system/v1/wechat-settings;
     //    R 模式判权;appSecret AES-256-GCM;T3 追加认证/绑定端点,25xxx 段位届时实装)。
     WechatModule,
+    // 招新一期 · 实名核验通道 T2(2026-06-18):realname 第 25 模块(settings 三端点 + 双 Provider + verify 编排)
+    //   (冻结评审稿 docs/archive/reviews/recruitment-phase1-review.md;path /api/system/v1/realname-settings;
+    //    R 模式判权;secretId/secretKey 两段 AES-256-GCM;27030/27031 通道码本 T2 实装;真通道休眠 DevStub 全验)。
+    RealnameModule,
     // B 队列 F5-T2(2026-06-11):@nestjs/schedule 全局装配——no-cron 铁律升级路径正式触发
     //   (冻结评审稿 docs/archive/reviews/queue-b-otp-birthday-infra-review.md 拍板④/R-5;
     //    解锁范围仅 notifications 生日批一个 @Cron;新增任何定时任务 = 新 D 档评审;

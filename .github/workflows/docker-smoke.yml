@@ -105,17 +105,20 @@ jobs:
           STORAGE_ENCRYPTION_KEY="$(openssl rand -base64 32)"
           SMS_ENCRYPTION_KEY="$(openssl rand -base64 32)"
           WECHAT_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+          REALNAME_ENCRYPTION_KEY="$(openssl rand -base64 32)"
           echo "::add-mask::$JWT_SECRET"
           echo "::add-mask::$SUPER_ADMIN_PASSWORD"
           echo "::add-mask::$STORAGE_ENCRYPTION_KEY"
           echo "::add-mask::$SMS_ENCRYPTION_KEY"
           echo "::add-mask::$WECHAT_ENCRYPTION_KEY"
+          echo "::add-mask::$REALNAME_ENCRYPTION_KEY"
           {
             echo "JWT_SECRET=$JWT_SECRET"
             echo "SUPER_ADMIN_PASSWORD=$SUPER_ADMIN_PASSWORD"
             echo "STORAGE_ENCRYPTION_KEY=$STORAGE_ENCRYPTION_KEY"
             echo "SMS_ENCRYPTION_KEY=$SMS_ENCRYPTION_KEY"
             echo "WECHAT_ENCRYPTION_KEY=$WECHAT_ENCRYPTION_KEY"
+            echo "REALNAME_ENCRYPTION_KEY=$REALNAME_ENCRYPTION_KEY"
           } >> "$GITHUB_ENV"
 
       # Seed 用 APP_ENV=development 避开 production 下对默认值的额外校验;
@@ -167,6 +170,7 @@ jobs:
             -e STORAGE_ENCRYPTION_KEY="$STORAGE_ENCRYPTION_KEY" \
             -e SMS_ENCRYPTION_KEY="$SMS_ENCRYPTION_KEY" \
             -e WECHAT_ENCRYPTION_KEY="$WECHAT_ENCRYPTION_KEY" \
+            -e REALNAME_ENCRYPTION_KEY="$REALNAME_ENCRYPTION_KEY" \
             -e DATABASE_URL="$CONTAINER_DATABASE_URL" \
             u-nest-api-starter:smoke
 
