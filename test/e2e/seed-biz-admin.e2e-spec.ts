@@ -7,18 +7,19 @@ import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
 
 // Slow-4 T1(2026-06-11)seed 业务面码 + biz-admin 内置角色 e2e;
-// 2026-06-13 保险模块 T1 随授权 seed 变更 +7(36→43 / 绑定 35→42,评审稿 insurance-module-review.md §3.4 / E-21)。
+// 2026-06-13 保险模块 T1 +7(36→43 / 绑定 35→42);2026-06-18 招新一期 T1 +5(43→48 / 绑定 42→47,
+// 评审稿 recruitment-phase1-review.md §3.4 / E-R-19)+ REALNAME settings 授权 seed → ops-admin 61→63。
 // 沿冻结评审稿 docs/archive/reviews/slow4-rbac-business-face-review.md §5 + D-S4-7
 // + seed-attachment-permissions.e2e-spec.ts 子进程范式。
 //
 // 覆盖(评审稿 §5 验收项):
-// 1. 跑 seed 后存在 43 条业务面 permission(9 域分布 5/3/4/6/5/5/8/6/1,逐码一致)
+// 1. 跑 seed 后存在 48 条业务面 permission(11 域分布 5/3/4/6/5/5/8/6/1/3/2,逐码一致)
 // 2. 存在 biz-admin RbacRole(displayName / description 正确)
-// 3. biz-admin 绑定 42 条 RolePermission;member.delete.record **不**在绑定中(D1=A 镜像)
+// 3. biz-admin 绑定 47 条 RolePermission;member.delete.record **不**在绑定中(D1=A 镜像)
 // 4. 幂等补挂:seed 前已存在的 ADMIN 用户(含 DISABLED)跑 seed 后持有 biz-admin;
 //    SUPER_ADMIN / USER 不被挂;软删 ADMIN 不补挂(D-S4-7)
-// 5. 零变化项:ops-admin 绑定数(61;2026-06-12 WECHAT T2 随授权 seed 变更 58→61 true-up)
-//    与 member 角色绑定数(9)不受 Slow-4 seed 影响
+// 5. 零变化项:ops-admin 绑定数(63;WECHAT T2 58→61 + 招新 T1 REALNAME settings 61→63 授权 true-up;
+//    业务面 seed 不绑 ops-admin 的不变式仍成立)与 member 角色绑定数(9)不受业务面 seed 影响
 // 6. seed 连续执行两次完全幂等:Permission 总数 / biz-admin role id /
 //    RolePermission 数 / UserRole 数全部稳定
 //
@@ -110,17 +111,24 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   'team-insurance-policy.add.member',
   'team-insurance-policy.remove.member',
   'member-insurance.read.other',
+  // 招新一期 +5(2026-06-18;评审稿 recruitment-phase1-review.md §3.4,全绑无例外)
+  'recruitment-cycle.read.record',
+  'recruitment-cycle.create.record',
+  'recruitment-cycle.update.record',
+  'recruitment-application.read.record',
+  'recruitment-application.resolve.manual',
 ] as const;
-const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 43
+const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 48
 
 // D1=A 镜像:不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
 const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 1; // 42
 
-// 零变化基线(评审稿 §6):本断言意图 = Slow-4 业务面 seed 不改 ops-admin / member 绑定;
-// 基线数跟随 ops-admin 当前合法总数(2026-06-12 WECHAT T2 授权 seed +3 → 58→61,
-// 沿 wechat-mini-login-review.md §3.4;与 seed-rbac spec 的 65-4=61 推导一致)
-const EXPECTED_OPS_ADMIN_BINDING_COUNT = 61;
+// 零变化基线(评审稿 §6):本断言意图 = 业务面 seed 不改 ops-admin / member 绑定;
+// 基线数跟随 ops-admin 当前合法总数(2026-06-12 WECHAT T2 +3 → 58→61;
+// 2026-06-18 招新一期 T1 REALNAME settings 授权 seed +2 → 61→63,沿 recruitment-phase1-review.md
+// §3.4 / E-R-19;realname-setting.reset.credentials 不绑;与 seed-rbac 的 68-5=63 推导一致)
+const EXPECTED_OPS_ADMIN_BINDING_COUNT = 63;
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
 
 const SEED_ENV = {
@@ -147,7 +155,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     await resetDb(app);
   });
 
-  it('1. 空 db → seed 跑完后 43 条业务面 permission 全部存在(9 域分布一致)', async () => {
+  it('1. 空 db → seed 跑完后 48 条业务面 permission 全部存在(11 域分布一致)', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-1' });
     expect(result.code).toBe(0);
 
@@ -172,10 +180,12 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
       attendance: 8,
       'team-insurance-policy': 6,
       'member-insurance': 1,
+      'recruitment-cycle': 3,
+      'recruitment-application': 2,
     });
   });
 
-  it('2 + 3. biz-admin RbacRole 存在;绑定恰 42 条;member.delete.record 不在绑定中', async () => {
+  it('2 + 3. biz-admin RbacRole 存在;绑定恰 47 条;member.delete.record 不在绑定中', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-2' });
     expect(result.code).toBe(0);
 

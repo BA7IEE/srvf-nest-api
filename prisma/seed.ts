@@ -1007,7 +1007,49 @@ const WECHAT_INFRA_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
-// Permission 全集(用于 step 1 upsert;14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT = 65 条)
+// =========================================================================
+// 招新一期 · 实名核验通道 T1(2026-06-18):+3 条 settings 权限码(冻结评审稿
+// docs/archive/reviews/recruitment-phase1-review.md §3.4 / E-R-19)。
+//
+// 端点 → permission 映射(评审稿 §3.2;端点 T2 实装):
+//   GET    /api/system/v1/realname-settings                    → realname-setting.read.singleton
+//   PATCH  /api/system/v1/realname-settings                    → realname-setting.update.singleton
+//   POST   /api/system/v1/realname-settings/reset-credentials  → realname-setting.reset.credentials
+//
+// ops-admin 绑定:2 条;`realname-setting.reset.credentials` **不绑**(镜像 storage/sms/wechat
+// D2=A,仅 SUPER_ADMIN 短路)。3 码端点 T2 实装,T1 期间为孤码(rbacmap F 项 WARN 预期,
+// 非 FAIL;镜像保险 T1 / wechat T2 先例)。
+// =========================================================================
+
+// 镜像 WECHAT_RESET_CREDENTIALS_CODE:凭证 reset 不绑 ops-admin
+const REALNAME_RESET_CREDENTIALS_CODE = 'realname-setting.reset.credentials';
+
+const REALNAME_INFRA_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'realname-setting.read.singleton',
+    module: 'realname-setting',
+    action: 'read',
+    resourceType: 'singleton',
+    description: '读 Realname Verification Settings singleton row',
+  },
+  {
+    code: 'realname-setting.update.singleton',
+    module: 'realname-setting',
+    action: 'update',
+    resourceType: 'singleton',
+    description: '更新实名核验设置(upsert;不含凭证;production-like 禁 DEV_STUB)',
+  },
+  {
+    code: REALNAME_RESET_CREDENTIALS_CODE,
+    module: 'realname-setting',
+    action: 'reset',
+    resourceType: 'credentials',
+    description:
+      '重置腾讯云实名核验 secretId/secretKey(镜像 storage/sms/wechat D2=A 仅 SUPER_ADMIN;不绑 ops-admin)',
+  },
+];
+
+// Permission 全集(用于 step 1 upsert;14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME = 68 条)
 const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
@@ -1016,14 +1058,16 @@ const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...AUDIT_LOG_PERMISSION_SEED,
   ...SMS_INFRA_PERMISSION_SEED,
   ...WECHAT_INFRA_PERMISSION_SEED,
+  ...REALNAME_INFRA_PERMISSION_SEED,
 ];
 
-// ops-admin 完整绑定集合(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT = 61 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4)
+// ops-admin 完整绑定集合(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 63 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4 / REALNAME E-R-19)
 // 注:`storage-setting.reset.credentials` 从 PR_2B_PERMISSION_SEED 过滤掉(沿 PR-2 D2=A;§6.2)
 // 注:`user.update.role` 从 USER_PERMISSION_SEED 过滤掉(沿 PR-3 D1=A;§6.2)
 // 注:`audit-log.read.entry` 整条加入,不过滤(沿 PR-4 D2=B;§6.2)
 // 注:`sms-setting.reset.credentials` 从 SMS_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;评审稿 E-3)
 // 注:`wechat-setting.reset.credentials` 从 WECHAT_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;wechat 评审稿 §3.4)
+// 注:`realname-setting.reset.credentials` 从 REALNAME_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;招新评审稿 E-R-19)
 const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
@@ -1032,13 +1076,14 @@ const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...AUDIT_LOG_PERMISSION_SEED,
   ...SMS_INFRA_PERMISSION_SEED.filter((p) => p.code !== SMS_RESET_CREDENTIALS_CODE),
   ...WECHAT_INFRA_PERMISSION_SEED.filter((p) => p.code !== WECHAT_RESET_CREDENTIALS_CODE),
+  ...REALNAME_INFRA_PERMISSION_SEED.filter((p) => p.code !== REALNAME_RESET_CREDENTIALS_CODE),
 ];
 
 // 运营管理员角色 code(沿 D7 §10.1 / §10.3 ops-admin 唯一公开 placeholder)
 const OPS_ADMIN_ROLE_CODE = 'ops-admin';
 const OPS_ADMIN_DISPLAY_NAME = '运营管理员';
 const OPS_ADMIN_DESCRIPTION =
-  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / contribution-rule + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条 + WECHAT: wechat-setting / user.wechat.clear 3 条)的 meta 角色;14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT = 61 条权限点;凭证 reset(storage / sms / wechat)与 user 角色修改仅 SUPER_ADMIN';
+  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / contribution-rule + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条 + WECHAT: wechat-setting / user.wechat.clear 3 条 + REALNAME: realname-setting 2 条)的 meta 角色;14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 63 条权限点;凭证 reset(storage / sms / wechat / realname)与 user 角色修改仅 SUPER_ADMIN';
 
 // V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集
 // (沿 D7-attachments v1.0 §6.1 + Q11 v1.0 锁清单 + 用户 PR #6a 拍板)。
@@ -1245,7 +1290,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     });
   }
   console.log(
-    `[seed] RBAC + PR-2A + PR-2B + PR-3B + PR-4B + SMS + WECHAT permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A + ${PR_2B_PERMISSION_SEED.length} PR-2B + ${USER_PERMISSION_SEED.length} PR-3B + ${AUDIT_LOG_PERMISSION_SEED.length} PR-4B + ${SMS_INFRA_PERMISSION_SEED.length} SMS + ${WECHAT_INFRA_PERMISSION_SEED.length} WECHAT = ${ALL_PERMISSION_SEED.length} entries)`,
+    `[seed] RBAC + PR-2A + PR-2B + PR-3B + PR-4B + SMS + WECHAT + REALNAME permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A + ${PR_2B_PERMISSION_SEED.length} PR-2B + ${USER_PERMISSION_SEED.length} PR-3B + ${AUDIT_LOG_PERMISSION_SEED.length} PR-4B + ${SMS_INFRA_PERMISSION_SEED.length} SMS + ${WECHAT_INFRA_PERMISSION_SEED.length} WECHAT + ${REALNAME_INFRA_PERMISSION_SEED.length} REALNAME = ${ALL_PERMISSION_SEED.length} entries)`,
   );
 
   // 2. upsert ops-admin RbacRole(公开 seed 唯一角色;沿用户拍板方案 A)
@@ -1783,12 +1828,59 @@ const MEMBER_INSURANCE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
+// 招新一期 T1(2026-06-18;冻结评审稿 docs/archive/reviews/recruitment-phase1-review.md §3.4):
+// recruitment-cycle 3 码 + recruitment-application 2 码,全部绑 biz-admin(E-R-19,无例外);
+// 公开报名/查询走 open/v1 无账号 pre-auth,**无 RBAC 码**(分叉①/②);取证件照 signed-URL 复用
+// recruitment-application.read.record(不另加码,配套②)。5 码端点 T3 实装,T1 期间孤码(WARN 预期)。
+const RECRUITMENT_CYCLE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'recruitment-cycle.read.record',
+    module: 'recruitment-cycle',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看招新轮次(列表 + 详情共用 read)',
+  },
+  {
+    code: 'recruitment-cycle.create.record',
+    module: 'recruitment-cycle',
+    action: 'create',
+    resourceType: 'record',
+    description: '创建招新轮次(默认 closed,显式开)',
+  },
+  {
+    code: 'recruitment-cycle.update.record',
+    module: 'recruitment-cycle',
+    action: 'update',
+    resourceType: 'record',
+    description: '更新招新轮次(开/关 + 容量 + 通知配置;service 强校验至多一个 open 轮)',
+  },
+];
+
+const RECRUITMENT_APPLICATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'recruitment-application.read.record',
+    module: 'recruitment-application',
+    action: 'read',
+    resourceType: 'record',
+    description:
+      'admin 查看报名(列表 + 详情 + 取证件照 signed-URL 共用;读 PII 走 placeholder 审计)',
+  },
+  {
+    code: 'recruitment-application.resolve.manual',
+    module: 'recruitment-application',
+    action: 'resolve',
+    resourceType: 'manual',
+    description: '人工待核 resolve(外籍等;通过→发临时编号 / 不通过→未通过;评审稿分叉④)',
+  },
+];
+
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;码进 Permission 表但不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
 
-// 业务面权限码全集(43 条 = member 5 + member-profile 3 + emergency-contact 4 + certificate 6 +
+// 业务面权限码全集(48 条 = member 5 + member-profile 3 + emergency-contact 4 + certificate 6 +
 // activity 5 + activity-registration 5 + attendance 8〔Slow-4 评审稿 §4〕
-// + team-insurance-policy 6 + member-insurance 1〔保险模块评审稿 §3.4,2026-06-13〕)
+// + team-insurance-policy 6 + member-insurance 1〔保险模块评审稿 §3.4,2026-06-13〕
+// + recruitment-cycle 3 + recruitment-application 2〔招新一期评审稿 §3.4,2026-06-18〕)
 const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...MEMBER_PERMISSION_SEED,
   ...MEMBER_PROFILE_PERMISSION_SEED,
@@ -1799,9 +1891,11 @@ const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...ATTENDANCE_PERMISSION_SEED,
   ...TEAM_INSURANCE_POLICY_PERMISSION_SEED,
   ...MEMBER_INSURANCE_PERMISSION_SEED,
+  ...RECRUITMENT_CYCLE_PERMISSION_SEED,
+  ...RECRUITMENT_APPLICATION_PERMISSION_SEED,
 ];
 
-// biz-admin 绑定集合(42 条 = 43 过滤 member.delete.record;Slow-4 评审稿 §5/§6 + 保险 E-6)
+// biz-admin 绑定集合(47 条 = 48 过滤 member.delete.record;Slow-4 评审稿 §5/§6 + 保险 E-6 + 招新 E-R-19)
 const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISSION_SEED.filter(
   (p) => p.code !== MEMBER_DELETE_RECORD_CODE,
 );
@@ -1809,14 +1903,14 @@ const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISS
 const BIZ_ADMIN_ROLE_CODE = 'biz-admin';
 const BIZ_ADMIN_DISPLAY_NAME = '业务管理员';
 const BIZ_ADMIN_DESCRIPTION =
-  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 评审稿 §5 + 保险模块评审稿 §3.4):member 5 + member-profile 3 + emergency-contact 4 + certificate 6 + activity 5 + activity-registration 5 + attendance 8 + team-insurance-policy 6 + member-insurance 1 = 43 条中绑 42;member.delete.record 仅 SUPER_ADMIN(D1=A 镜像);attachment 存量 20 码不在本角色(零漂移);每个 ADMIN 用户由 seed 自动补挂本角色';
+  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 评审稿 §5 + 保险模块评审稿 §3.4 + 招新一期评审稿 §3.4):member 5 + member-profile 3 + emergency-contact 4 + certificate 6 + activity 5 + activity-registration 5 + attendance 8 + team-insurance-policy 6 + member-insurance 1 + recruitment-cycle 3 + recruitment-application 2 = 48 条中绑 47;member.delete.record 仅 SUPER_ADMIN(D1=A 镜像);attachment 存量 20 码不在本角色(零漂移);每个 ADMIN 用户由 seed 自动补挂本角色';
 
-// Slow-4 T1(36/35)+ 保险模块 T1 增量(2026-06-13,+7 全绑 → 43/42):
+// Slow-4 T1(36/35)+ 保险模块 T1 增量(2026-06-13,+7 全绑 → 43/42)+ 招新一期 T1 增量(2026-06-18,+5 全绑 → 48/47):
 // 业务面权限点 + biz-admin 角色 + 绑定 + ADMIN 全员补挂 + 强校验。
 // 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 与 UserRole 复合唯一键),
 // 连续跑两次数量与 id 稳定;不覆盖运营运行时调整(update: {} 范式)。
 async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
-  // 1. upsert 36 条业务面 Permission
+  // 1. upsert 48 条业务面 Permission
   for (const perm of BIZ_PERMISSION_SEED) {
     await prisma.permission.upsert({
       where: { code: perm.code },
@@ -1837,7 +1931,9 @@ async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
       `activity ${ACTIVITY_PERMISSION_SEED.length} + activity-registration ${ACTIVITY_REGISTRATION_PERMISSION_SEED.length} + ` +
       `attendance ${ATTENDANCE_PERMISSION_SEED.length} + ` +
       `team-insurance-policy ${TEAM_INSURANCE_POLICY_PERMISSION_SEED.length} + ` +
-      `member-insurance ${MEMBER_INSURANCE_PERMISSION_SEED.length})`,
+      `member-insurance ${MEMBER_INSURANCE_PERMISSION_SEED.length} + ` +
+      `recruitment-cycle ${RECRUITMENT_CYCLE_PERMISSION_SEED.length} + ` +
+      `recruitment-application ${RECRUITMENT_APPLICATION_PERMISSION_SEED.length})`,
   );
 
   // 2. upsert biz-admin RbacRole
@@ -1853,7 +1949,7 @@ async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
   });
   console.log(`[seed] RBAC role '${bizAdminRole.code}' ensured`);
 
-  // 3. upsert RolePermission 映射:biz-admin → 35 条(过滤 member.delete.record)
+  // 3. upsert RolePermission 映射:biz-admin → 47 条(过滤 member.delete.record)
   const bizPermissions = await prisma.permission.findMany({
     where: { code: { in: BIZ_ADMIN_PERMISSION_SEED.map((p) => p.code) } },
     select: { id: true, code: true },
