@@ -228,6 +228,17 @@ export class RecruitmentApplicationsService {
       },
     });
 
+    // 9.5 核验结果前置落库(FM-A 收紧 2026-06-19;零 schema):pending_verification 同时是「核验在途态」。
+    // 发号 tx2 之前先把 matched/mismatch 写入已有字段 verifyOutcome,使两类同状态行在库层可分:
+    //   - 核验在途行(本步未执行)→ verifyOutcome 仍空;
+    //   - 核验已出结果但 tx2 失败的「真卡死行」→ verifyOutcome 已落。
+    // admin 人工 resolve 据此只救后者、放过在途行(见 resolveManual)。
+    const outcome = result.matched ? VERIFY_OUTCOME_MATCHED : VERIFY_OUTCOME_MISMATCH;
+    await this.prisma.recruitmentApplication.update({
+      where: { id: application.id },
+      data: { verifyOutcome: outcome },
+    });
+
     // 10. tx2:matched → verified + 原子发号;mismatch → rejected
     const finalApp = await this.prisma.$transaction(async (tx) => {
       if (result.matched) {
@@ -343,8 +354,12 @@ export class RecruitmentApplicationsService {
   }
 
   // ============ admin 人工 resolve(分叉④A;manual_review 或 pending_verification → verified 发号 / rejected)============
-  // 可解态 = 外籍人工待核(manual_review)+ 核验中断卡死态(pending_verification:付费核验后发号事务失败遗留;
-  // 人工 resolve 是其唯一恢复出口,FM-A Option A;系统性审查 §1)。approved 走容量校验(FM-C);reject 不受容量限。
+  // 可解态 = 外籍人工待核(manual_review)+ 核验已出结果的真卡死态(pending_verification 且 verifyOutcome 已落:
+  // 付费核验后发号事务失败遗留;人工 resolve 是其唯一恢复出口,FM-A Option A;系统性审查 §1)。
+  // FM-A 收紧(2026-06-19):pending_verification 同时是「核验在途态」——在途行(verifyOutcome 空)admin 不可碰
+  //   (→28040;否则抢自动发号 / 在核验出结果前发号绕开实名);mismatch 卡死行只能 reject、不能 approve 发号
+  //   (不给绕开实名结果的口子;→28040)。matched 卡死行可 approve。
+  // approved 走容量校验(FM-C);reject 不受容量限。
   async resolveManual(
     id: string,
     dto: ResolveRecruitmentApplicationDto,
@@ -359,6 +374,19 @@ export class RecruitmentApplicationsService {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
       }
       if (row.statusCode !== APP_STATUS_MANUAL && row.statusCode !== APP_STATUS_PENDING) {
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
+      }
+      // FM-A 收紧:pending_verification 核验在途行(verifyOutcome 空)admin 不可碰 —— 仅核验已出结果的
+      // 真卡死行可解。外籍 manual_review(verifyOutcome=manual)不落此闸。
+      if (row.statusCode === APP_STATUS_PENDING && row.verifyOutcome === null) {
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
+      }
+      // FM-A 收紧:mismatch 卡死行实名核验已判不一致,只能 reject、不能 approve 发号(不绕开实名结果)。
+      if (
+        dto.approved &&
+        row.statusCode === APP_STATUS_PENDING &&
+        row.verifyOutcome === VERIFY_OUTCOME_MISMATCH
+      ) {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
       }
       let updated: RecruitmentApplication;

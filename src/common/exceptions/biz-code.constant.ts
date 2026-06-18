@@ -806,7 +806,7 @@ export const BizCode = {
   // - 28010/28011:业务级输入校验(年龄越界 / 证件照缺;身份证号格式·校验位走通用 422/40000,
   //   紧急联系人<2 走 DTO @ArrayMinSize 通用 422,评审稿 E-R-12/13)
   // - 28030/28031:轮次状态冲突(无 open 轮·已关 / 容量已满)
-  // - 28040:人工 resolve 前置态冲突(非 manual_review)
+  // - 28040:人工 resolve 前置态冲突(非可解态 / pending_verification 核验在途 verifyOutcome 空 / mismatch 卡死行 approve)
   //
   // 不开的码(评审稿 §3.3):281xx FORBIDDEN_*(权限拒绝走通用 30100/40300);
   //   「实名核验不匹配」不是 BizCode(是 verify 结果,驱动状态机 rejected)。
