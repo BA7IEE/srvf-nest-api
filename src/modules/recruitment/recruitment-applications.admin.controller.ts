@@ -33,7 +33,8 @@ import { RecruitmentApplicationsService } from './recruitment-applications.servi
 
 // 招新一期 T3(2026-06-18):招新报名 admin surface(评审稿 §3.2 端点 10-13)。
 // 入口仅 JwtAuthGuard,判权全在 service rbac.can();读 PII 记 placeholder 审计。
-// 证件照取图走短 TTL signed-URL + L3 不入日志(配套②);人工 resolve 走 manual_review 闸(分叉④A)。
+// 证件照取图走短 TTL signed-URL + L3 不入日志(配套②);人工 resolve 走 manual_review / pending_verification 闸
+// (分叉④A + 核验中断卡死态恢复,FM-A;系统性审查 §1)。
 
 function buildAuditMeta(req: Request): AuditMeta {
   return {
@@ -106,7 +107,7 @@ export class RecruitmentApplicationsAdminController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '人工 resolve(仅 manual_review 可解;approved→verified 发临时编号 / 否→rejected;非 manual_review→28040) [rbac: recruitment-application.resolve.manual]',
+      '人工 resolve(manual_review 或 pending_verification〔核验中断卡死态〕可解;approved→verified 发临时编号〔受容量限〕/ 否→rejected;其余状态→28040) [rbac: recruitment-application.resolve.manual]',
   })
   @ApiWrappedOkResponse(RecruitmentApplicationAdminDto)
   @ApiBizErrorResponse(

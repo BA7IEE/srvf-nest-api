@@ -190,6 +190,10 @@ export class RecruitmentApplicationsService {
         return row;
       });
     } catch (err) {
+      // tx1 失败(并发撞 partial unique 或任何 DB 错误)→ 第 6 步刚落 storage 的证件照成孤儿
+      // (留存 SOP 按库行 idCardImageKey 删 blob,清不到无库行的孤儿)。best-effort 补偿删,
+      // 失败仅告警、不掩盖原错(FM-B;系统性审查 §3)。
+      await this.safeDeleteOrphanImage(idCardImageKey);
       // 并发去重命中 partial unique → 28003
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new BizException(BizCode.RECRUITMENT_DUPLICATE_APPLICATION);
@@ -338,7 +342,9 @@ export class RecruitmentApplicationsService {
     return { url: result.url, expiresAt: result.expiresAt };
   }
 
-  // ============ admin 人工 resolve(分叉④A;manual_review → verified 发号 / rejected)============
+  // ============ admin 人工 resolve(分叉④A;manual_review 或 pending_verification → verified 发号 / rejected)============
+  // 可解态 = 外籍人工待核(manual_review)+ 核验中断卡死态(pending_verification:付费核验后发号事务失败遗留;
+  // 人工 resolve 是其唯一恢复出口,FM-A Option A;系统性审查 §1)。approved 走容量校验(FM-C);reject 不受容量限。
   async resolveManual(
     id: string,
     dto: ResolveRecruitmentApplicationDto,
@@ -352,7 +358,7 @@ export class RecruitmentApplicationsService {
       if (!row) {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
       }
-      if (row.statusCode !== APP_STATUS_MANUAL) {
+      if (row.statusCode !== APP_STATUS_MANUAL && row.statusCode !== APP_STATUS_PENDING) {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
       }
       let updated: RecruitmentApplication;
@@ -387,7 +393,7 @@ export class RecruitmentApplicationsService {
         resourceType: AUDIT_RESOURCE_TYPE,
         resourceId: id,
         meta: auditMeta,
-        before: { statusCode: APP_STATUS_MANUAL },
+        before: { statusCode: row.statusCode },
         after: { statusCode: updated.statusCode },
         extra: { tempNo: updated.tempNo, eliminationStage: updated.eliminationStage },
         tx,
@@ -423,14 +429,32 @@ export class RecruitmentApplicationsService {
     return cycle;
   }
 
-  // 临时编号 T{year}{seq:04d}:行级原子自增取号(并发由 Postgres 行锁串行;partial unique 兜底)
+  // 临时编号 T{year}{seq:04d}:行级原子自增取号(并发由 Postgres 行锁串行;partial unique 兜底)。
+  // 容量校验在同一行锁内做:自增后 tempNoSeq 超 capacity → 抛 28031,事务回滚撤销自增,
+  // 杜绝并发 TOCTOU 超发 + 人工 resolve 旁路超发(FM-C;系统性审查 §2)。
+  // 前置 resolveOpenCycleOrThrow 的容量预检仅快速失败、省付费核验,不再是唯一闸。
   private async issueTempNo(tx: Prisma.TransactionClient, cycleId: string): Promise<string> {
     const cycle = await tx.recruitmentCycle.update({
       where: { id: cycleId },
       data: { tempNoSeq: { increment: 1 } },
-      select: { tempNoSeq: true, year: true },
+      select: { tempNoSeq: true, year: true, capacity: true },
     });
+    if (cycle.capacity !== null && cycle.tempNoSeq > cycle.capacity) {
+      throw new BizException(BizCode.RECRUITMENT_CYCLE_CAPACITY_FULL);
+    }
     return formatTempNo(cycle.year, cycle.tempNoSeq);
+  }
+
+  // tx1 失败时补偿删除刚落的证件照孤儿 blob(best-effort;失败仅告警,不掩盖原错)。
+  // 留存 SOP 按库行 key 删 blob,无库行的孤儿清不到;此处在建库失败路径即时清理(FM-B;系统性审查 §3)。
+  private async safeDeleteOrphanImage(key: string): Promise<void> {
+    try {
+      await this.storage.deleteObject(key);
+    } catch (e) {
+      this.logger.warn(
+        `recruitment orphan id-card image cleanup failed key=${key}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   }
 
   private async findAppOrThrow(id: string): Promise<RecruitmentApplication> {

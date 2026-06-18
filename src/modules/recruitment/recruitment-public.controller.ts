@@ -23,6 +23,7 @@ import { RecruitmentThrottle } from '../../common/decorators/recruitment-throttl
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { ID_CARD_IMAGE_MAX_BYTES } from './recruitment.constants';
 import {
   RecruitmentApplicationPublicDto,
   RecruitmentQueryDto,
@@ -82,7 +83,11 @@ export class RecruitmentPublicController {
   @Public()
   @RecruitmentThrottle()
   @Post('applications')
-  @UseInterceptors(FileInterceptor('idCardImage'))
+  // 证件照大小闸下沉到 multer 解析层:超 5MB 在落盘/入内存阶段即 413 拒,
+  // 不再先全量 buffer 进内存才在 service 校验(F-1 防内存 DoS;系统性审查 §4)。
+  @UseInterceptors(
+    FileInterceptor('idCardImage', { limits: { fileSize: ID_CARD_IMAGE_MAX_BYTES, files: 1 } }),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {

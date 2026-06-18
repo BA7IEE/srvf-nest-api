@@ -15,6 +15,9 @@ const HTTP_STATUS_TO_BIZ: Record<number, BizCodeEntry> = {
   [HttpStatus.UNAUTHORIZED]: BizCode.UNAUTHORIZED,
   [HttpStatus.FORBIDDEN]: BizCode.FORBIDDEN,
   [HttpStatus.NOT_FOUND]: BizCode.NOT_FOUND,
+  // multipart 上传超大小限(NestJS FileInterceptor 把 multer LIMIT_FILE_SIZE 转 413 PayloadTooLarge)
+  // → 归一为客户端参数错误 40000(与 service 层 image.size 超限同码),而非裸 50000(招新证件照上传 F-1)。
+  [HttpStatus.PAYLOAD_TOO_LARGE]: BizCode.BAD_REQUEST,
 };
 
 @Catch()
