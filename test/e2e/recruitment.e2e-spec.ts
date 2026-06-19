@@ -525,4 +525,200 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(res.body.code).toBe(BizCode.BAD_REQUEST.code);
     expect(await prisma.recruitmentApplication.count()).toBe(0);
   });
+
+  // =====================================================================
+  // 招新二期(招新后段)T2:门槛标记 + 综合评定 + 公示名单
+  // (冻结评审稿 recruitment-phase2-review.md §4/§8;状态机 verified→pending_evaluation→publicity)
+  // =====================================================================
+
+  const ADMIN_APPS2 = ADMIN_APPS;
+  const THRESHOLDS = ['patrol1', 'patrol2', 'training', 'redCross', 'bsafe'] as const;
+
+  async function submitVerified(code: string, idCard: string, name = '张三') {
+    const res = await submit(
+      validPayload({ wechatCode: code, idCardNumber: idCard, realName: name }),
+    );
+    expect(res.body.data.statusCode).toBe('verified');
+    return prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: `dev-openid-${code}` },
+    });
+  }
+  function markThreshold(id: string, thresholdCode: string, completed: boolean, auth = adminAuth) {
+    return request(httpServer(app))
+      .patch(`${ADMIN_APPS2}/${id}/thresholds`)
+      .set('Authorization', auth)
+      .send({ thresholdCode, completed });
+  }
+  async function markAll(id: string) {
+    for (const c of THRESHOLDS) await markThreshold(id, c, true);
+  }
+  function evaluate(id: string, approved: boolean, note?: string, auth = adminAuth) {
+    return request(httpServer(app))
+      .post(`${ADMIN_APPS2}/${id}/evaluate`)
+      .set('Authorization', auth)
+      .send({ approved, ...(note !== undefined ? { note } : {}) });
+  }
+
+  it('㉑(二期) 门槛标记:逐项标 → 末次自动 pending_evaluation;清一项回退 verified;谁标/何时落库', async () => {
+    await openCycle();
+    const appRow = await submitVerified('p2-1', ID_MATCH_A);
+    for (const c of ['patrol1', 'patrol2', 'training', 'redCross']) {
+      const r = await markThreshold(appRow.id, c, true);
+      expect(r.status).toBe(200);
+      expect(r.body.data.statusCode).toBe('verified');
+      expect(r.body.data.thresholdsComplete).toBe(false);
+    }
+    const r5 = await markThreshold(appRow.id, 'bsafe', true);
+    expect(r5.body.data.statusCode).toBe('pending_evaluation');
+    expect(r5.body.data.thresholdsComplete).toBe(true);
+
+    const after = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { id: appRow.id },
+    });
+    const marks = after.thresholdMarks as Record<string, { at: string; by: string }>;
+    expect(Object.keys(marks).sort()).toEqual([
+      'bsafe',
+      'patrol1',
+      'patrol2',
+      'redCross',
+      'training',
+    ]);
+    expect(marks.bsafe.by).toBeTruthy(); // 谁标
+    expect(marks.bsafe.at).toBeTruthy(); // 何时
+
+    const rc = await markThreshold(appRow.id, 'patrol1', false);
+    expect(rc.body.data.statusCode).toBe('verified'); // 清一项 → 回退
+    expect(rc.body.data.thresholdsComplete).toBe(false);
+  });
+
+  it('㉒(二期) 门槛标记幂等 + 非法态 28041 + RBAC 边界 + 非法 code 422', async () => {
+    await openCycle();
+    const appRow = await submitVerified('p2-2', ID_MATCH_B);
+    await markThreshold(appRow.id, 'patrol1', true);
+    const r2 = await markThreshold(appRow.id, 'patrol1', true); // 幂等
+    expect(r2.body.data.statusCode).toBe('verified');
+    const row = await prisma.recruitmentApplication.findFirstOrThrow({ where: { id: appRow.id } });
+    expect(Object.keys(row.thresholdMarks as object)).toEqual(['patrol1']);
+
+    // 非法态:rejected 报名标门槛 → 28041
+    const mm = await submit(validPayload({ wechatCode: 'p2-2b', idCardNumber: ID_MISMATCH }));
+    expect(mm.body.data.statusCode).toBe('rejected');
+    const rejected = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-p2-2b' },
+    });
+    expectBizError(
+      await markThreshold(rejected.id, 'patrol1', true),
+      BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
+    );
+
+    // RBAC:USER → forbidden
+    expectBizError(
+      await markThreshold(appRow.id, 'training', true, userAuth),
+      BizCode.RBAC_FORBIDDEN,
+    );
+
+    // 非法 thresholdCode → 400 校验失败(@IsIn;沿 phase-1 DTO 校验 400 范式)
+    const bad = await request(httpServer(app))
+      .patch(`${ADMIN_APPS2}/${appRow.id}/thresholds`)
+      .set('Authorization', adminAuth)
+      .send({ thresholdCode: 'nope', completed: true });
+    expect(bad.status).toBe(400);
+    expect(bad.body.code).toBe(BizCode.BAD_REQUEST.code);
+  });
+
+  it('㉓(二期) 综合评定:pending_evaluation 通过→publicity / 不通过→rejected(evaluation)', async () => {
+    await openCycle();
+    const a1 = await submitVerified('p2-3a', ID_MATCH_A);
+    await markAll(a1.id);
+    const pass = await evaluate(a1.id, true, '综合表现优秀');
+    expect(pass.status).toBe(200);
+    expect(pass.body.data.statusCode).toBe('publicity');
+    expect(pass.body.data.evaluationNote).toBe('综合表现优秀');
+
+    const a2 = await submitVerified('p2-3b', ID_MATCH_B);
+    await markAll(a2.id);
+    const fail = await evaluate(a2.id, false, '体能不达标');
+    expect(fail.body.data.statusCode).toBe('rejected');
+    expect(fail.body.data.eliminationStage).toBe('evaluation');
+  });
+
+  it('㉔(二期) verified approved=false→门槛超期淘汰(threshold-timeout);approved=true→28041', async () => {
+    await openCycle();
+    const a1 = await submitVerified('p2-4a', ID_MATCH_A);
+    const timeout = await evaluate(a1.id, false, '逾期未完成门槛');
+    expect(timeout.body.data.statusCode).toBe('rejected');
+    expect(timeout.body.data.eliminationStage).toBe('threshold-timeout');
+
+    const a2 = await submitVerified('p2-4b', ID_MATCH_B);
+    expectBizError(await evaluate(a2.id, true), BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
+  });
+
+  it('㉕(二期) 公示名单:拼音序 + 拟发编号预览 + 零敏感 + 外籍 needsManualBuild 不占号', async () => {
+    const cycle = await openCycle();
+    // 三大陆:张三/李四/王五(拼音 zhang/li/wang)
+    const zhang = await submitVerified('p2-5z', ID_MATCH_A, '张三');
+    const li = await submitVerified('p2-5l', ID_MATCH_B, '李四');
+    const wang = await submitVerified('p2-5w', ID_MATCH_C, '王五');
+    for (const a of [zhang, li, wang]) {
+      await markAll(a.id);
+      await evaluate(a.id, true);
+    }
+    // 外籍(护照):拼音 '阿' a 排最前;manual_review → resolve → 门槛 → 评定 → publicity
+    const fs = await submit(
+      validPayload({
+        wechatCode: 'p2-5f',
+        documentTypeCode: 'passport',
+        idCardNumber: 'E87654321',
+        realName: '阿福',
+      }),
+    );
+    expect(fs.body.data.statusCode).toBe('manual_review');
+    const foreign = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-p2-5f' },
+    });
+    await request(httpServer(app))
+      .post(`${ADMIN_APPS2}/${foreign.id}/resolve`)
+      .set('Authorization', adminAuth)
+      .send({ approved: true });
+    await markAll(foreign.id);
+    await evaluate(foreign.id, true);
+
+    const res = await request(httpServer(app))
+      .get(`${ADMIN_CYCLES}/${cycle.id}/publicity-list`)
+      .set('Authorization', adminAuth);
+    expect(res.status).toBe(200);
+    const data = res.body.data;
+    expect(data.cycleYear).toBe(2026);
+    expect(data.promotableCount).toBe(3);
+    expect(data.manualBuildCount).toBe(1);
+    // 拼音序:阿福(a) → 李四(li) → 王五(wang) → 张三(zhang)
+    expect(data.items.map((i: { realName: string }) => i.realName)).toEqual([
+      '阿福',
+      '李四',
+      '王五',
+      '张三',
+    ]);
+    // 外籍排首但不占号(needsManualBuild + null);大陆按拼音序 26001/26002/26003
+    expect(data.items[0]).toMatchObject({
+      realName: '阿福',
+      isForeigner: true,
+      needsManualBuild: true,
+      proposedMemberNo: null,
+    });
+    expect(data.items[1]).toMatchObject({
+      realName: '李四',
+      needsManualBuild: false,
+      proposedMemberNo: '26001',
+    });
+    expect(data.items[2]).toMatchObject({ realName: '王五', proposedMemberNo: '26002' });
+    expect(data.items[3]).toMatchObject({ realName: '张三', proposedMemberNo: '26003' });
+    // 零敏感:item 仅 5 字段,无身份证号/手机/住址
+    expect(Object.keys(data.items[1] as Record<string, unknown>).sort()).toEqual([
+      'applicationId',
+      'isForeigner',
+      'needsManualBuild',
+      'proposedMemberNo',
+      'realName',
+    ]);
+  });
 });

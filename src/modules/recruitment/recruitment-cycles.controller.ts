@@ -16,9 +16,12 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   CreateRecruitmentCycleDto,
+  PublicityListItemDto,
+  PublicityListResponseDto,
   RecruitmentCycleResponseDto,
   UpdateRecruitmentCycleDto,
 } from './recruitment.dto';
+import { RecruitmentApplicationsService } from './recruitment-applications.service';
 import { RecruitmentCyclesService } from './recruitment-cycles.service';
 
 // 招新一期 T3(2026-06-18):招新轮次 admin surface(评审稿 §3.2 端点 6-9)。
@@ -35,10 +38,13 @@ function buildAuditMeta(req: Request): AuditMeta {
 
 @ApiTags('Admin - Recruitment Cycles')
 @ApiBearerAuth()
-@ApiExtraModels(RecruitmentCycleResponseDto)
+@ApiExtraModels(RecruitmentCycleResponseDto, PublicityListResponseDto, PublicityListItemDto)
 @Controller('admin/v1/recruitment/cycles')
 export class RecruitmentCyclesController {
-  constructor(private readonly service: RecruitmentCyclesService) {}
+  constructor(
+    private readonly service: RecruitmentCyclesService,
+    private readonly applicationsService: RecruitmentApplicationsService,
+  ) {}
 
   @Post()
   @ApiOperation({
@@ -96,5 +102,23 @@ export class RecruitmentCyclesController {
     @Req() req: Request,
   ): Promise<RecruitmentCycleResponseDto> {
     return this.service.update(id, dto, user, buildAuditMeta(req));
+  }
+
+  @Get(':id/publicity-list')
+  @ApiOperation({
+    summary:
+      '公示名单(姓名 + 拟发编号,拼音序,零敏感;外籍 needsManualBuild=true 不占号、一键发号不含) [rbac: recruitment-application.read.record]',
+  })
+  @ApiWrappedOkResponse(PublicityListResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.RECRUITMENT_CYCLE_NOT_FOUND,
+  )
+  publicityList(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<PublicityListResponseDto> {
+    return this.applicationsService.publicityList(id, user);
   }
 }

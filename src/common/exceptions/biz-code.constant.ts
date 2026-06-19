@@ -850,6 +850,15 @@ export const BizCode = {
     message: '该报名不处于人工待核状态,无法人工核验',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 招新二期(后段)T2/T3(2026-06-19;评审稿 recruitment-phase2-review.md §3.3 / E-R2-10):
+  // - 28041:状态机闸——标门槛/综合评定/发号目标态不符(T2)
+  // - 28042:预留不开(promote 对外籍/不可发号项 skip+report、不 block 整批;维护者 2026-06-19 澄清细化 E-R2-6)
+  // - 28043:当年永久编号流水撞 999 上限(T3 promote;M-4 报错不扩位)
+  RECRUITMENT_APPLICATION_WRONG_STATE: {
+    code: 28041,
+    message: '该报名当前状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // audit_logs 模块业务级(140xx + 141xx)。批次 6 PR #1 引入(2026-05-12)。
   // 详见 docs:批次6_audit_logs_API前评审.md(D6 v1.1)§9。

@@ -20,30 +20,45 @@ import { WechatService } from '../wechat/wechat.service';
 import {
   APP_STATUS_MANUAL,
   APP_STATUS_PENDING,
+  APP_STATUS_PENDING_EVALUATION,
+  APP_STATUS_PUBLICITY,
   APP_STATUS_REJECTED,
   APP_STATUS_VERIFIED,
   CYCLE_STATUS_OPEN,
+  ELIM_STAGE_EVALUATION,
   ELIM_STAGE_MANUAL,
   ELIM_STAGE_REALNAME,
+  ELIM_STAGE_THRESHOLD_TIMEOUT,
   ID_CARD_IMAGE_ALLOWED_MIME,
   ID_CARD_IMAGE_KEY_PREFIX,
   ID_CARD_IMAGE_MAX_BYTES,
   ID_CARD_IMAGE_SIGNED_URL_TTL_SECONDS,
+  MEMBER_NO_MAX_SEQ,
   RECRUITMENT_MAX_AGE,
   RECRUITMENT_MIN_AGE,
+  type ThresholdCode,
+  type ThresholdMarks,
   VERIFY_OUTCOME_MANUAL,
   VERIFY_OUTCOME_MATCHED,
   VERIFY_OUTCOME_MISMATCH,
   ageGroupOf,
+  allThresholdsComplete,
+  comparePromotionOrder,
   computeAge,
   extractBirthDate,
   extractGenderCode,
+  formatMemberNo,
   formatTempNo,
   isForeignDocument,
+  isPromotable,
   isValidChineseId,
 } from './recruitment.constants';
 import type {
+  EvaluateRecruitmentApplicationDto,
   IdCardImageUrlResponseDto,
+  MarkThresholdDto,
+  PublicityListItemDto,
+  PublicityListResponseDto,
   RecruitmentApplicationAdminDto,
   RecruitmentApplicationPublicDto,
   RecruitmentSubmitPayloadDto,
@@ -430,6 +445,165 @@ export class RecruitmentApplicationsService {
     });
   }
 
+  // ============ 招新二期:标/清门槛(M-3 / E-R2-2;幂等;末次完成自动推进 pending_evaluation)============
+  async markThreshold(
+    id: string,
+    dto: MarkThresholdDto,
+    user: CurrentUserPayload,
+    meta: AuditMeta,
+    now: Date,
+  ): Promise<RecruitmentApplicationAdminDto> {
+    await this.assertCanOrThrow(user, 'recruitment-application.mark.threshold');
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.recruitmentApplication.findFirst({ where: { id, deletedAt: null } });
+      if (!row) {
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+      }
+      // 仅 verified / pending_evaluation 态可标(评定/公示/发号后门槛不可再动);他态 28041
+      if (
+        row.statusCode !== APP_STATUS_VERIFIED &&
+        row.statusCode !== APP_STATUS_PENDING_EVALUATION
+      ) {
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
+      }
+      const marks: ThresholdMarks = { ...((row.thresholdMarks as ThresholdMarks | null) ?? {}) };
+      const code = dto.thresholdCode as ThresholdCode; // DTO @IsIn 已校验 ∈ THRESHOLD_CODES
+      if (dto.completed) {
+        marks[code] = { at: now.toISOString(), by: user.id };
+      } else {
+        delete marks[code];
+      }
+      const allComplete = allThresholdsComplete(marks);
+      // 单一真相源自动推进:全完成→pending_evaluation / 否→回退 verified(仅此二态切换)
+      const nextStatus = allComplete ? APP_STATUS_PENDING_EVALUATION : APP_STATUS_VERIFIED;
+      const updated = await tx.recruitmentApplication.update({
+        where: { id },
+        data: { thresholdMarks: marks as Prisma.InputJsonValue, statusCode: nextStatus },
+      });
+      await this.auditLogs.log({
+        event: 'recruitment-application.mark-threshold',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: id,
+        meta,
+        before: { statusCode: row.statusCode },
+        after: { statusCode: nextStatus },
+        extra: { thresholdCode: code, completed: dto.completed, allComplete },
+        tx,
+      });
+      return this.toAdminDto(updated, false);
+    });
+  }
+
+  // ============ 招新二期:综合评定 / 淘汰(单一人工闸;D-R2-3 / 流程冻结 §4)============
+  // pending_evaluation:通过→公示 / 不通过→未通过(evaluation);
+  // verified:仅 approved=false 淘汰(门槛超期/退出,threshold-timeout);approved=true→28041(门槛未齐);
+  // 其余态→28041。
+  async evaluate(
+    id: string,
+    dto: EvaluateRecruitmentApplicationDto,
+    user: CurrentUserPayload,
+    meta: AuditMeta,
+    now: Date,
+  ): Promise<RecruitmentApplicationAdminDto> {
+    await this.assertCanOrThrow(user, 'recruitment-application.evaluate.assessment');
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.recruitmentApplication.findFirst({ where: { id, deletedAt: null } });
+      if (!row) {
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+      }
+      let nextStatus: string;
+      let eliminationStage: string | null = null;
+      if (row.statusCode === APP_STATUS_PENDING_EVALUATION) {
+        if (dto.approved) {
+          nextStatus = APP_STATUS_PUBLICITY;
+        } else {
+          nextStatus = APP_STATUS_REJECTED;
+          eliminationStage = ELIM_STAGE_EVALUATION;
+        }
+      } else if (row.statusCode === APP_STATUS_VERIFIED) {
+        if (dto.approved) {
+          // 门槛未齐不可直接过评定(必须先全完成自动到 pending_evaluation)
+          throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
+        }
+        nextStatus = APP_STATUS_REJECTED;
+        eliminationStage = ELIM_STAGE_THRESHOLD_TIMEOUT;
+      } else {
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
+      }
+      const updated = await tx.recruitmentApplication.update({
+        where: { id },
+        data: {
+          statusCode: nextStatus,
+          evaluatedByUserId: user.id,
+          evaluatedAt: now,
+          ...(dto.note !== undefined ? { evaluationNote: dto.note } : {}),
+          ...(eliminationStage ? { eliminationStage } : {}),
+        },
+      });
+      await this.auditLogs.log({
+        event: 'recruitment-application.evaluate',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: id,
+        meta,
+        before: { statusCode: row.statusCode },
+        after: { statusCode: nextStatus },
+        extra: { approved: dto.approved, eliminationStage },
+        tx,
+      });
+      return this.toAdminDto(updated, false);
+    });
+  }
+
+  // ============ 招新二期:公示名单(D-R2-4;姓名 + 拟发编号,拼音序,零敏感)============
+  // 计算式预览:拟发编号 = 同一确定性拼音排序 + 当前 memberNoSeq 推算(发号时一致);
+  // 仅大陆可发号项编号,外籍/不可发号项 needsManualBuild=true + proposedMemberNo=null(M-1 发号前可见)。
+  // 公示名单读不记审计(配置台账类,姓名本就对外公示;评审稿 §3.5)。
+  async publicityList(
+    cycleId: string,
+    user: CurrentUserPayload,
+  ): Promise<PublicityListResponseDto> {
+    await this.assertCanOrThrow(user, 'recruitment-application.read.record');
+    const cycle = await this.prisma.recruitmentCycle.findFirst({
+      where: { id: cycleId, deletedAt: null },
+    });
+    if (!cycle) {
+      throw new BizException(BizCode.RECRUITMENT_CYCLE_NOT_FOUND);
+    }
+    const rows = await this.prisma.recruitmentApplication.findMany({
+      where: { cycleId, statusCode: APP_STATUS_PUBLICITY, deletedAt: null },
+    });
+    const sorted = [...rows].sort(comparePromotionOrder);
+    let seq = cycle.memberNoSeq;
+    const items: PublicityListItemDto[] = sorted.map((r) => {
+      const promotable = isPromotable(r);
+      let proposedMemberNo: string | null = null;
+      if (promotable) {
+        seq += 1;
+        // 超 999 预览置 null(实际发号撞上限 → 28043);保持预览与发号一致
+        proposedMemberNo = seq <= MEMBER_NO_MAX_SEQ ? formatMemberNo(cycle.year, seq) : null;
+      }
+      return {
+        applicationId: r.id,
+        realName: r.realName,
+        proposedMemberNo,
+        isForeigner: r.isForeigner,
+        needsManualBuild: !promotable,
+      };
+    });
+    const promotableCount = items.filter((i) => !i.needsManualBuild).length;
+    return {
+      cycleId: cycle.id,
+      cycleYear: cycle.year,
+      items,
+      promotableCount,
+      manualBuildCount: items.length - promotableCount,
+    };
+  }
+
   // === helpers ===
 
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
@@ -538,6 +712,12 @@ export class RecruitmentApplicationsService {
       verifyOutcome: app.verifyOutcome,
       eliminationStage: app.eliminationStage,
       hasIdCardImage: app.idCardImageKey !== null,
+      thresholdMarks:
+        (app.thresholdMarks as Record<string, { at: string; by: string }> | null) ?? null,
+      thresholdsComplete: allThresholdsComplete(app.thresholdMarks as ThresholdMarks | null),
+      evaluationNote: app.evaluationNote,
+      promotedMemberId: app.promotedMemberId,
+      needsManualBuild: !isPromotable(app),
       createdAt: app.createdAt,
     };
   }
