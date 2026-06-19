@@ -877,9 +877,12 @@ export const BizCode = {
   //
   // 子段:
   // - 28201/28202:NOT_FOUND(入队轮 / 入队申请)
-  // - 28240:状态机闸(标 gate / 综合评估目标态不符)
-  // 后续(T3 自助 create / T4 一键入队)增量:28203 DUPLICATE_APPLICATION / 28210 MEMBER_ALREADY_ENROLLED /
-  //   28230 CYCLE_NOT_OPEN / 28241 GATES_NOT_SATISFIED / 28242 DEPARTMENT_NOT_ELIGIBLE(本 PR 未用,不预定义)。
+  // - 28203:唯一约束冲突(同轮同人活跃申请去重;partial unique P2002 兜底,T3)
+  // - 28210:已入队(member 已有部门/级别,非新志愿者;T3 自助 create 前置)
+  // - 28230:无 open 入队轮(T3 自助 create 前置)
+  // - 28240:状态机闸(标 gate / 综合评估 / 改候选目标态不符)
+  // 候选/选定部门 org 存在+ACTIVE 校验复用既有 ORGANIZATION_NOT_FOUND / ORGANIZATION_INACTIVE(不另开码)。
+  // 后续(T4 一键入队)增量:28241 GATES_NOT_SATISFIED / 28242 DEPARTMENT_NOT_ELIGIBLE(本 PR 未用,不预定义)。
   // 不开 281xx-style FORBIDDEN_*(权限拒绝走通用 30100/40300,沿 phase-1 §3.3);
   // grade-code-invalid 走既有 MEMBER_GRADE_CODE_INVALID(level-1 seed 缺失时,理论不发生)。
   TEAM_JOIN_CYCLE_NOT_FOUND: {
@@ -891,6 +894,21 @@ export const BizCode = {
     code: 28202,
     message: '入队申请不存在',
     httpStatus: HttpStatus.NOT_FOUND,
+  },
+  TEAM_JOIN_DUPLICATE_APPLICATION: {
+    code: 28203,
+    message: '本轮你已发起入队申请,请勿重复发起',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  TEAM_JOIN_MEMBER_ALREADY_ENROLLED: {
+    code: 28210,
+    message: '你已在队(已有部门/级别),无需再次入队',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  TEAM_JOIN_CYCLE_NOT_OPEN: {
+    code: 28230,
+    message: '当前没有开放的入队轮',
+    httpStatus: HttpStatus.CONFLICT,
   },
   TEAM_JOIN_APPLICATION_WRONG_STATE: {
     code: 28240,

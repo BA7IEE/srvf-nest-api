@@ -11,27 +11,25 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
 import {
-  ALL_GATE_CODES,
   APP_STATUS_APPROVED,
   APP_STATUS_JOINING,
   APP_STATUS_PENDING_EVALUATION,
   APP_STATUS_REJECTED,
-  ATTENDANCE_SHEET_STATUS_APPROVED,
-  CONTRIBUTION_THRESHOLD,
   ELIM_STAGE_EVALUATION,
   ELIM_STAGE_GATE_TIMEOUT,
   type GateCode,
   type GateMark,
   type GateMarks,
-  GENERAL_GATE_CODES,
   allGeneralGatesSatisfied,
-  contributionCutoff,
   isExtendableGate,
-  isGateSatisfied,
 } from './team-join.constants';
+import {
+  type ContributionResult,
+  buildGateStatus,
+  computeContribution,
+} from './team-join-progress';
 import type {
   EvaluateTeamJoinApplicationDto,
-  GateStatusDto,
   MarkGateDto,
   TeamJoinApplicationAdminDto,
 } from './team-join.dto';
@@ -49,11 +47,6 @@ const APPLICATION_INCLUDE = {
 } as const;
 
 type ApplicationRow = Prisma.TeamJoinApplicationGetPayload<{ include: typeof APPLICATION_INCLUDE }>;
-
-interface ContributionResult {
-  points: Prisma.Decimal;
-  satisfied: boolean;
-}
 
 @Injectable()
 export class TeamJoinApplicationsService {
@@ -81,26 +74,6 @@ export class TeamJoinApplicationsService {
       throw new BizException(BizCode.TEAM_JOIN_APPLICATION_NOT_FOUND);
     }
     return row;
-  }
-
-  // ===== 贡献值只读汇总(评审稿 §4.3;approved sheet,checkInAt < cutoff,历史累计,Decimal 精度)=====
-  private async computeContribution(
-    memberId: string,
-    cycleYear: number,
-    client: PrismaService | Prisma.TransactionClient,
-  ): Promise<ContributionResult> {
-    const cutoff = contributionCutoff(cycleYear);
-    const agg = await client.attendanceRecord.aggregate({
-      where: {
-        memberId,
-        deletedAt: null,
-        checkInAt: { lt: cutoff },
-        sheet: { statusCode: ATTENDANCE_SHEET_STATUS_APPROVED, deletedAt: null },
-      },
-      _sum: { contributionPoints: true },
-    });
-    const points = agg._sum.contributionPoints ?? new Prisma.Decimal(0);
-    return { points, satisfied: points.gte(CONTRIBUTION_THRESHOLD) };
   }
 
   // ============ admin 列表(可按 cycleId / statusCode 过滤;贡献值列表不算 = null)============
@@ -135,7 +108,7 @@ export class TeamJoinApplicationsService {
   async detailForAdmin(id: string, user: CurrentUserPayload): Promise<TeamJoinApplicationAdminDto> {
     await this.assertCanOrThrow(user, 'team-join-application.read.record');
     const row = await this.findOrThrow(id, this.prisma);
-    const contribution = await this.computeContribution(row.memberId, row.cycle.year, this.prisma);
+    const contribution = await computeContribution(this.prisma, row.memberId, row.cycle.year);
     return this.toAdminDto(row, contribution, new Date());
   }
 
@@ -173,7 +146,7 @@ export class TeamJoinApplicationsService {
 
       // 单一真相源自动推进:8 通用全满足 + 贡献值≥5 → pending_evaluation;否则回退 joining
       const generalSatisfied = allGeneralGatesSatisfied(marks, row.cycle.openedAt, now);
-      const contribution = await this.computeContribution(row.memberId, row.cycle.year, tx);
+      const contribution = await computeContribution(tx, row.memberId, row.cycle.year);
       const nextStatus =
         generalSatisfied && contribution.satisfied
           ? APP_STATUS_PENDING_EVALUATION
@@ -228,7 +201,7 @@ export class TeamJoinApplicationsService {
           // 旧 pending 态保留,admin 重标 gate 时 mark-gate 自动重算回退 joining(单一真相源自愈)。
           const marks = (row.gateMarks as GateMarks | null) ?? null;
           const generalSatisfied = allGeneralGatesSatisfied(marks, row.cycle.openedAt, now);
-          const contribution = await this.computeContribution(row.memberId, row.cycle.year, tx);
+          const contribution = await computeContribution(tx, row.memberId, row.cycle.year);
           if (!generalSatisfied || !contribution.satisfied) {
             throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
           }
@@ -281,27 +254,6 @@ export class TeamJoinApplicationsService {
     });
   }
 
-  // ===== presenter:gate 实况 + 贡献值(contribution=null 时列表场景不展示)=====
-  private buildGateStatus(
-    marks: GateMarks | null,
-    cycleOpenedAt: Date | null,
-    now: Date,
-  ): GateStatusDto[] {
-    const generalSet = new Set<string>(GENERAL_GATE_CODES);
-    return ALL_GATE_CODES.map((code) => {
-      const mark = marks?.[code];
-      return {
-        code,
-        professional: !generalSet.has(code),
-        marked: mark != null,
-        passed: mark ? mark.passed : null,
-        satisfied: isGateSatisfied(code, mark, cycleOpenedAt, now),
-        completionDate: mark?.completionDate ?? null,
-        extendedUntil: mark?.extendedUntil ?? null,
-      };
-    });
-  }
-
   private toAdminDto(
     row: ApplicationRow,
     contribution: ContributionResult | null,
@@ -317,7 +269,7 @@ export class TeamJoinApplicationsService {
       statusCode: row.statusCode,
       targetOrganizationIds: (row.targetOrganizationIds as string[] | null) ?? [],
       selectedOrganizationId: row.selectedOrganizationId,
-      gates: this.buildGateStatus(marks, row.cycle.openedAt, now),
+      gates: buildGateStatus(marks, row.cycle.openedAt, now),
       generalGatesSatisfied: allGeneralGatesSatisfied(marks, row.cycle.openedAt, now),
       contributionPoints: contribution ? contribution.points.toString() : null,
       contributionSatisfied: contribution ? contribution.satisfied : null,

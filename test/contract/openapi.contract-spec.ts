@@ -368,6 +368,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/team-join/applications/{id}'],
   ['patch', '/api/admin/v1/team-join/applications/{id}/gates'],
   ['post', '/api/admin/v1/team-join/applications/{id}/evaluate'],
+  // 招新三期 T3(2026-06-19;评审稿 §3.2):app/v1/me 自助面 3 端点(发起/查进度/改候选),208→211。
+  ['post', '/api/app/v1/me/team-join/applications'],
+  ['get', '/api/app/v1/me/team-join/applications/current'],
+  ['patch', '/api/app/v1/me/team-join/applications/{id}/targets'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
