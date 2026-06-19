@@ -15,6 +15,8 @@
 > 2026-06-18 招新一期 T3 戳(同 goal,收口):**权限事实零变化**(136 码 / 绑定 / 内置角色不动);endpoint 186→**196**(open/v1 公开报名 2 `[public]` + admin/v1 轮次 4〔`recruitment-cycle.*`〕+ admin/v1 报名 4〔`recruitment-application.*`〕);controller 40→**43**(`RecruitmentPublicController`〔open/v1 首用,@Public 无码〕 + `RecruitmentCyclesController` + `RecruitmentApplicationsAdminController`);**recruitment 5 码孤码 WARN 清零**(T1 预留端点 T3 实装);**`open/v1` 首用**——api-surface-policy §0「预留→首用」解锁,第 5 canonical 前缀(`scripts/check-rbac-map.ts` + `test/contract/openapi.contract-spec.ts` 的 `CANONICAL_PREFIXES` 同步);BizCode 28xxx(280xx 段)+ baseline §1.1 行随本 T3 PR;audit +5 DB union + 2 placeholder 不属本表。`docs:rbacmap:check` 0 FAIL / 0 WARN。
 >
 > 2026-06-19 招新二期 T1 戳(goal「招新 phase 2(招新后段)」,冻结评审稿 [`recruitment-phase2-review.md §3.4`](../archive/reviews/recruitment-phase2-review.md)):权限码 136→**139**(recruitment-application +3:`mark.threshold` / `evaluate.assessment` / `promote.member`,全绑 biz-admin 无例外 E-R2-11);biz-admin 47→**50**;ops-admin 63 / member 9 零变化;endpoint **196** 不变(T1 仅 schema/migration/seed);**3 新码端点 T2/T3 实装前孤码 WARN 预期**(镜像招新一期 T1 先例);BizCode 28041-28043 + audit +3 DB union 不属本表(随 T2/T3 PR)。
+>
+> 2026-06-19 招新二期 T2 戳(同 goal):**权限事实零变化**(139 码 / 绑定 / 内置角色不动);endpoint 196→**199**(admin 标门槛 `PATCH .../applications/{id}/thresholds` + 综合评定 `POST .../applications/{id}/evaluate` + 公示名单 `GET .../cycles/{id}/publicity-list`〔复用 `recruitment-application.read.record`〕);controller 43 不变(扩既有 2 controller);**`mark.threshold` / `evaluate.assessment` 2 码孤码 WARN 清零**(`promote.member` 仍孤码,T3 清零);BizCode 28041 + audit +2 DB union(`mark-threshold` / `evaluate`)随本 T2 PR。`docs:rbacmap:check` 0 FAIL / 1 WARN(预期)。
 
 ---
 

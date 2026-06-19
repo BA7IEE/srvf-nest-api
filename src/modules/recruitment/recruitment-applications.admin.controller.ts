@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -25,7 +26,9 @@ import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
+  EvaluateRecruitmentApplicationDto,
   IdCardImageUrlResponseDto,
+  MarkThresholdDto,
   RecruitmentApplicationAdminDto,
   ResolveRecruitmentApplicationDto,
 } from './recruitment.dto';
@@ -125,5 +128,50 @@ export class RecruitmentApplicationsAdminController {
     @Req() req: Request,
   ): Promise<RecruitmentApplicationAdminDto> {
     return this.service.resolveManual(id, dto, user, buildAuditMeta(req), new Date());
+  }
+
+  @Patch(':id/thresholds')
+  @ApiOperation({
+    summary:
+      '标/清门槛(巡山×2/培训/红十字/BSAFE;幂等;仅 verified/pending_evaluation 态;末次完成自动→待综合评定) [rbac: recruitment-application.mark.threshold]',
+  })
+  @ApiWrappedOkResponse(RecruitmentApplicationAdminDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
+    BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
+  )
+  markThreshold(
+    @Param('id') id: string,
+    @Body() dto: MarkThresholdDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<RecruitmentApplicationAdminDto> {
+    return this.service.markThreshold(id, dto, user, buildAuditMeta(req), new Date());
+  }
+
+  @Post(':id/evaluate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '综合评定/淘汰(单一人工闸;pending_evaluation 通过→公示·不通过→未通过;verified approved=false→门槛超期淘汰;他态或门槛未齐 approve→28041) [rbac: recruitment-application.evaluate.assessment]',
+  })
+  @ApiWrappedOkResponse(RecruitmentApplicationAdminDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
+    BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
+  )
+  evaluate(
+    @Param('id') id: string,
+    @Body() dto: EvaluateRecruitmentApplicationDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<RecruitmentApplicationAdminDto> {
+    return this.service.evaluate(id, dto, user, buildAuditMeta(req), new Date());
   }
 }

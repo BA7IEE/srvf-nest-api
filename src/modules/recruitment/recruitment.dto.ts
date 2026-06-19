@@ -5,6 +5,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsObject,
   IsOptional,
@@ -16,7 +17,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-import { EMERGENCY_CONTACTS_MIN } from './recruitment.constants';
+import { EMERGENCY_CONTACTS_MIN, THRESHOLD_CODES } from './recruitment.constants';
 
 // 招新一期(招新前段)T3(2026-06-18):recruitment DTO 集合(评审稿 §3.2)。
 //
@@ -240,7 +241,86 @@ export class RecruitmentApplicationAdminDto {
   @ApiPropertyOptional({ nullable: true }) eliminationStage!: string | null;
   @ApiProperty({ description: '是否有证件照(取图走 :id/id-card-image-url)' })
   hasIdCardImage!: boolean;
+  // ===== 招新二期(后段)字段 =====
+  @ApiPropertyOptional({
+    description:
+      '门槛标记 { patrol1:{at,by}, ... }(M-3;5 项 patrol1/patrol2/training/redCross/bsafe)',
+    nullable: true,
+  })
+  thresholdMarks!: Record<string, { at: string; by: string }> | null;
+  @ApiProperty({ description: '门槛是否全完成(派生;5 项标记齐 = true)' })
+  thresholdsComplete!: boolean;
+  @ApiPropertyOptional({ description: '综合评定备注', nullable: true })
+  evaluationNote!: string | null;
+  @ApiPropertyOptional({
+    description: '永久编号(promoted 后;promote 出的 Member.memberNo)',
+    nullable: true,
+  })
+  promotedMemberId!: string | null;
+  @ApiProperty({ description: '一键发号不含、需 admin 手动建档(M-1:外籍/缺派生字段)' })
+  needsManualBuild!: boolean;
   @ApiProperty() createdAt!: Date;
+}
+
+// ============ 招新二期:门槛标记 / 综合评定(admin)============
+
+// 标/清单个门槛(幂等;仅 verified/pending_evaluation 态可标,评审稿 E-R2-2)
+export class MarkThresholdDto {
+  @ApiProperty({
+    description: '门槛 code',
+    enum: THRESHOLD_CODES as unknown as string[],
+  })
+  @IsString()
+  @IsIn(THRESHOLD_CODES, { message: '门槛 code 非法' })
+  thresholdCode!: string;
+
+  @ApiProperty({ description: 'true=标记完成;false=清除标记(补课纠错)' })
+  @IsBoolean()
+  completed!: boolean;
+}
+
+// 综合评定 / 淘汰(单一人工闸,评审稿 D-R2-3 / 流程冻结 §4)
+export class EvaluateRecruitmentApplicationDto {
+  @ApiProperty({
+    description:
+      'true=综合评定通过(pending_evaluation→公示);false=不通过/淘汰(→未通过;verified 态 false=门槛超期淘汰)',
+  })
+  @IsBoolean()
+  approved!: boolean;
+
+  @ApiPropertyOptional({ description: '综合评定备注' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
+// ============ 招新二期:公示名单(D-R2-4;姓名 + 拟发编号,拼音序,零敏感)============
+
+export class PublicityListItemDto {
+  @ApiProperty() applicationId!: string;
+  @ApiPropertyOptional({ description: '公示姓名(拼音序)', nullable: true })
+  realName!: string | null;
+  @ApiPropertyOptional({
+    description: '拟发永久编号 {YY}{NNN}(仅可发号项;外籍/不可发号为 null)',
+    nullable: true,
+  })
+  proposedMemberNo!: string | null;
+  @ApiProperty({ description: '是否外籍' })
+  isForeigner!: boolean;
+  @ApiProperty({ description: 'true=一键发号不含、需 admin 手动建档(M-1 边界,发号前可见)' })
+  needsManualBuild!: boolean;
+}
+
+export class PublicityListResponseDto {
+  @ApiProperty() cycleId!: string;
+  @ApiProperty() cycleYear!: number;
+  @ApiProperty({ type: [PublicityListItemDto], description: '公示中报名(拼音序)' })
+  items!: PublicityListItemDto[];
+  @ApiProperty({ description: '可一键发号数(大陆可派生)' })
+  promotableCount!: number;
+  @ApiProperty({ description: '需手动建档数(外籍等;一键发号不含)' })
+  manualBuildCount!: number;
 }
 
 // 人工 resolve(分叉④A):通过 → 发临时编号;不通过 → rejected
