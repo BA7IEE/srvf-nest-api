@@ -361,7 +361,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(result.stderr.toLowerCase()).toMatch(/rbac_initial_ops_admin_user_id|bootstrap/);
   });
 
-  it('幂等:连续跑两次 seed 数量不变(全表 136 permission / 1 ops-admin role / 63 role-permission / 1 user-role;断言相对稳定)', async () => {
+  it('幂等:连续跑两次 seed 数量不变(全表 139 permission / 1 ops-admin role / 63 role-permission / 1 user-role;断言相对稳定)', async () => {
     // 第一次
     const first = runSeed({
       APP_ENV: 'test',
