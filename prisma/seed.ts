@@ -1917,6 +1917,60 @@ const RECRUITMENT_APPLICATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed>
   },
 ];
 
+// 招新三期(入队:志愿者→队员)T2(2026-06-19;冻结评审稿 recruitment-phase3-review.md §3.4 / E-J-8):
+// team-join-cycle 3 码 + team-join-application 3 码(read / mark.gate / evaluate.assessment),全绑 biz-admin。
+// app/v1 自助面 self-scope **无 RBAC 码**(镜像 insurances me)。join.member(一键入队)随 T4 controller 落
+// (避免 rbacmap 孤码:本 PR 码全有 admin controller call-site)。
+const TEAM_JOIN_CYCLE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'team-join-cycle.read.record',
+    module: 'team-join-cycle',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看入队轮(列表 + 详情共用 read)',
+  },
+  {
+    code: 'team-join-cycle.create.record',
+    module: 'team-join-cycle',
+    action: 'create',
+    resourceType: 'record',
+    description: '创建入队轮(默认 closed,显式开)',
+  },
+  {
+    code: 'team-join-cycle.update.record',
+    module: 'team-join-cycle',
+    action: 'update',
+    resourceType: 'record',
+    description: '更新入队轮(开/关 + 轮次名;service 强校验至多一个 open 轮)',
+  },
+];
+
+const TEAM_JOIN_APPLICATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'team-join-application.read.record',
+    module: 'team-join-application',
+    action: 'read',
+    resourceType: 'record',
+    description: 'admin 查看入队申请(列表 + 详情;详情含各 gate 实况 + 实时贡献值汇总)',
+  },
+  {
+    code: 'team-join-application.mark.gate',
+    module: 'team-join-application',
+    action: 'mark',
+    resourceType: 'gate',
+    description:
+      '标 gate(8 通用 + 4 专业队;通过/未通过 + 完成日 + dept-assessment 可延长期;幂等;末次 8 通用全过 + 贡献值≥5 自动→待综合评估;评审稿 §4.1)',
+  },
+  {
+    code: 'team-join-application.evaluate.assessment',
+    module: 'team-join-application',
+    action: 'evaluate',
+    resourceType: 'assessment',
+    description:
+      '综合评估/淘汰(单一人工闸;通过→待入队 / 不通过→未通过;joining 门槛超期淘汰;评审稿 §4.5)',
+  },
+];
+
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;码进 Permission 表但不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
 
@@ -1936,6 +1990,8 @@ const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...MEMBER_INSURANCE_PERMISSION_SEED,
   ...RECRUITMENT_CYCLE_PERMISSION_SEED,
   ...RECRUITMENT_APPLICATION_PERMISSION_SEED,
+  ...TEAM_JOIN_CYCLE_PERMISSION_SEED,
+  ...TEAM_JOIN_APPLICATION_PERMISSION_SEED,
 ];
 
 // biz-admin 绑定集合(50 条 = 51 过滤 member.delete.record;Slow-4 §5/§6 + 保险 E-6 + 招新 E-R-19/E-R2-11)
@@ -1976,7 +2032,9 @@ async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
       `team-insurance-policy ${TEAM_INSURANCE_POLICY_PERMISSION_SEED.length} + ` +
       `member-insurance ${MEMBER_INSURANCE_PERMISSION_SEED.length} + ` +
       `recruitment-cycle ${RECRUITMENT_CYCLE_PERMISSION_SEED.length} + ` +
-      `recruitment-application ${RECRUITMENT_APPLICATION_PERMISSION_SEED.length})`,
+      `recruitment-application ${RECRUITMENT_APPLICATION_PERMISSION_SEED.length} + ` +
+      `team-join-cycle ${TEAM_JOIN_CYCLE_PERMISSION_SEED.length} + ` +
+      `team-join-application ${TEAM_JOIN_APPLICATION_PERMISSION_SEED.length})`,
   );
 
   // 2. upsert biz-admin RbacRole

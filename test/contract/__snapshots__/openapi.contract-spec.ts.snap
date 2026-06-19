@@ -3704,6 +3704,23 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "CreateTeamJoinCycleDto": {
+    "properties": {
+      "name": {
+        "description": "轮次名(如「2026 年度入队」)",
+        "type": "string",
+      },
+      "year": {
+        "description": "入队年份(贡献值 cutoff = {year}-03-31 北京日界)",
+        "type": "number",
+      },
+    },
+    "required": [
+      "year",
+      "name",
+    ],
+    "type": "object",
+  },
   "CreateUserDto": {
     "properties": {
       "avatarKey": {
@@ -4030,6 +4047,26 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "EvaluateTeamJoinApplicationDto": {
+    "properties": {
+      "approved": {
+        "description": "true=综合评估通过(pending_evaluation→approved 待入队);false=不通过/淘汰(→rejected;joining 态 false=门槛超期人工淘汰)",
+        "type": "boolean",
+      },
+      "evaluationExtendedUntil": {
+        "description": "综合评估延长期(ISO;approve 时可设;approved 态跨轮入队时未到仍认)",
+        "type": "string",
+      },
+      "note": {
+        "description": "综合评估备注",
+        "type": "string",
+      },
+    },
+    "required": [
+      "approved",
+    ],
+    "type": "object",
+  },
   "FinalApproveAttendanceSheetDto": {
     "properties": {
       "finalReviewNote": {
@@ -4050,6 +4087,44 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "required": [
       "finalReviewNote",
+    ],
+    "type": "object",
+  },
+  "GateStatusDto": {
+    "properties": {
+      "code": {
+        "type": "string",
+      },
+      "completionDate": {
+        "nullable": true,
+        "type": "object",
+      },
+      "extendedUntil": {
+        "nullable": true,
+        "type": "object",
+      },
+      "marked": {
+        "description": "是否已标记",
+        "type": "boolean",
+      },
+      "passed": {
+        "nullable": true,
+        "type": "object",
+      },
+      "professional": {
+        "description": "是否专业队 gate(条件性,不计入通用 8 自动推进)",
+        "type": "boolean",
+      },
+      "satisfied": {
+        "description": "是否满足(passed + 在有效期内)",
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "code",
+      "professional",
+      "marked",
+      "satisfied",
     ],
     "type": "object",
   },
@@ -4244,6 +4319,46 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "required": [
       "refreshToken",
+    ],
+    "type": "object",
+  },
+  "MarkGateDto": {
+    "properties": {
+      "completionDate": {
+        "description": "实际完成日(ISO;算有效期)",
+        "type": "string",
+      },
+      "extendedUntil": {
+        "description": "延长期(ISO;仅 dept-assessment 可设;超本轮仍认。非可延 gate 传则忽略)",
+        "type": "string",
+      },
+      "gateCode": {
+        "description": "gate code(8 通用 + 4 专业队)",
+        "enum": [
+          "fitness",
+          "first-aid-training",
+          "military",
+          "psych",
+          "interview",
+          "dept-assessment",
+          "entry-exam",
+          "intermediate-outdoor",
+          "team-water",
+          "team-urban",
+          "team-mountain",
+          "team-high",
+        ],
+        "type": "string",
+      },
+      "passed": {
+        "description": "true=通过;false=未通过(记录失败,不满足)",
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "gateCode",
+      "passed",
+      "completionDate",
     ],
     "type": "object",
   },
@@ -6116,6 +6231,136 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "TeamJoinApplicationAdminDto": {
+    "properties": {
+      "contributionPoints": {
+        "description": "贡献值汇总(approved sheet,截至入队年 3-31;仅详情计算,列表为 null)",
+        "nullable": true,
+        "type": "object",
+      },
+      "contributionSatisfied": {
+        "description": "贡献值是否 ≥5(详情计算;列表为 null)",
+        "nullable": true,
+        "type": "object",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "cycleId": {
+        "type": "string",
+      },
+      "eliminationStage": {
+        "nullable": true,
+        "type": "object",
+      },
+      "evaluatedAt": {
+        "nullable": true,
+        "type": "object",
+      },
+      "evaluationExtendedUntil": {
+        "nullable": true,
+        "type": "object",
+      },
+      "evaluationNote": {
+        "nullable": true,
+        "type": "object",
+      },
+      "gates": {
+        "description": "各 gate 实况(8 通用 + 4 专业队)",
+        "items": {
+          "$ref": "#/components/schemas/GateStatusDto",
+        },
+        "type": "array",
+      },
+      "generalGatesSatisfied": {
+        "description": "8 通用门槛是否全满足(contribution 另算)",
+        "type": "boolean",
+      },
+      "id": {
+        "type": "string",
+      },
+      "joinedAt": {
+        "nullable": true,
+        "type": "object",
+      },
+      "memberDisplayName": {
+        "description": "队员称呼",
+        "nullable": true,
+        "type": "object",
+      },
+      "memberId": {
+        "type": "string",
+      },
+      "memberNo": {
+        "description": "队员永久编号",
+        "nullable": true,
+        "type": "object",
+      },
+      "selectedOrganizationId": {
+        "description": "最终选定部门(一键入队时 admin 定;T4)",
+        "nullable": true,
+        "type": "object",
+      },
+      "statusCode": {
+        "type": "string",
+      },
+      "targetOrganizationIds": {
+        "description": "候选目标部门 orgId(可多)",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "id",
+      "cycleId",
+      "memberId",
+      "statusCode",
+      "targetOrganizationIds",
+      "gates",
+      "generalGatesSatisfied",
+      "createdAt",
+    ],
+    "type": "object",
+  },
+  "TeamJoinCycleResponseDto": {
+    "properties": {
+      "closedAt": {
+        "nullable": true,
+        "type": "object",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "name": {
+        "type": "string",
+      },
+      "openedAt": {
+        "nullable": true,
+        "type": "object",
+      },
+      "statusCode": {
+        "type": "string",
+      },
+      "year": {
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "year",
+      "name",
+      "statusCode",
+      "createdAt",
+    ],
+    "type": "object",
+  },
   "UpdateActivityDto": {
     "properties": {
       "activityTypeCode": {
@@ -7043,6 +7288,19 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "policyNumber": {
         "description": "保单号",
         "maxLength": 128,
+        "type": "string",
+      },
+    },
+    "type": "object",
+  },
+  "UpdateTeamJoinCycleDto": {
+    "properties": {
+      "name": {
+        "description": "轮次名",
+        "type": "string",
+      },
+      "statusCode": {
+        "description": "状态(open / closed;开新 open 轮要求当前无其它 open 轮)",
         "type": "string",
       },
     },
@@ -24898,6 +25156,1485 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "覆盖名单移除队员(软删覆盖行;partial unique 允许重新加入;不在名单 → 26003) [rbac: team-insurance-policy.remove.member]",
       "tags": [
         "Admin - Team Insurance Policies",
+      ],
+    },
+  },
+  "/api/admin/v1/team-join/applications": {
+    "get": {
+      "operationId": "TeamJoinApplicationsAdminController_list",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "按入队轮过滤",
+          "in": "query",
+          "name": "cycleId",
+          "required": false,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "按状态过滤(joining/pending_evaluation/approved/joined/rejected)",
+          "in": "query",
+          "name": "statusCode",
+          "required": false,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/TeamJoinApplicationAdminDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "入队申请分页列表(可按 cycleId / statusCode 过滤;贡献值列表不算) [rbac: team-join-application.read.record]",
+      "tags": [
+        "Admin - Team Join Applications",
+      ],
+    },
+  },
+  "/api/admin/v1/team-join/applications/{id}": {
+    "get": {
+      "operationId": "TeamJoinApplicationsAdminController_detail",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/TeamJoinApplicationAdminDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28202: 入队申请不存在",
+                    "enum": [
+                      28202,
+                    ],
+                    "example": 28202,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "入队申请不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "入队申请不存在(code=28202)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "入队申请详情(含各 gate 实况 + 实时贡献值汇总) [rbac: team-join-application.read.record]",
+      "tags": [
+        "Admin - Team Join Applications",
+      ],
+    },
+  },
+  "/api/admin/v1/team-join/applications/{id}/evaluate": {
+    "post": {
+      "operationId": "TeamJoinApplicationsAdminController_evaluate",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/EvaluateTeamJoinApplicationDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/TeamJoinApplicationAdminDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28202: 入队申请不存在",
+                    "enum": [
+                      28202,
+                    ],
+                    "example": 28202,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "入队申请不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "入队申请不存在(code=28202)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28240: 该入队申请当前状态不允许此操作",
+                    "enum": [
+                      28240,
+                    ],
+                    "example": 28240,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "该入队申请当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "该入队申请当前状态不允许此操作(code=28240)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "综合评估/淘汰(单一人工闸;pending_evaluation 通过→待入队·不通过→未通过;joining approved=false→门槛超期淘汰;他态或门槛未齐 approve→冲突) [rbac: team-join-application.evaluate.assessment]",
+      "tags": [
+        "Admin - Team Join Applications",
+      ],
+    },
+  },
+  "/api/admin/v1/team-join/applications/{id}/gates": {
+    "patch": {
+      "operationId": "TeamJoinApplicationsAdminController_markGate",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MarkGateDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/TeamJoinApplicationAdminDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28202: 入队申请不存在",
+                    "enum": [
+                      28202,
+                    ],
+                    "example": 28202,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "入队申请不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "入队申请不存在(code=28202)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28240: 该入队申请当前状态不允许此操作",
+                    "enum": [
+                      28240,
+                    ],
+                    "example": 28240,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "该入队申请当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "该入队申请当前状态不允许此操作(code=28240)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "标 gate(8 通用 + 4 专业队;通过/未通过 + 完成日 + dept-assessment 可延长期;幂等;仅 joining/pending_evaluation 态;末次 8 通用全过 + 贡献值≥5 自动→待综合评估) [rbac: team-join-application.mark.gate]",
+      "tags": [
+        "Admin - Team Join Applications",
+      ],
+    },
+  },
+  "/api/admin/v1/team-join/cycles": {
+    "get": {
+      "operationId": "TeamJoinCyclesController_list",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/TeamJoinCycleResponseDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "入队轮分页列表 [rbac: team-join-cycle.read.record]",
+      "tags": [
+        "Admin - Team Join Cycles",
+      ],
+    },
+    "post": {
+      "operationId": "TeamJoinCyclesController_create",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateTeamJoinCycleDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/TeamJoinCycleResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "创建入队轮(默认 closed,需显式开轮) [rbac: team-join-cycle.create.record]",
+      "tags": [
+        "Admin - Team Join Cycles",
+      ],
+    },
+  },
+  "/api/admin/v1/team-join/cycles/{id}": {
+    "get": {
+      "operationId": "TeamJoinCyclesController_detail",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/TeamJoinCycleResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28201: 入队轮不存在",
+                    "enum": [
+                      28201,
+                    ],
+                    "example": 28201,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "入队轮不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "入队轮不存在(code=28201)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "入队轮详情 [rbac: team-join-cycle.read.record]",
+      "tags": [
+        "Admin - Team Join Cycles",
+      ],
+    },
+    "patch": {
+      "operationId": "TeamJoinCyclesController_update",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateTeamJoinCycleDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/TeamJoinCycleResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28201: 入队轮不存在",
+                    "enum": [
+                      28201,
+                    ],
+                    "example": 28201,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "入队轮不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "入队轮不存在(code=28201)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "更新入队轮(开/关轮、轮次名;开 open 轮要求当前无其它 open 轮) [rbac: team-join-cycle.update.record]",
+      "tags": [
+        "Admin - Team Join Cycles",
       ],
     },
   },
