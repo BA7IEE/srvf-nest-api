@@ -84,9 +84,9 @@ describe('招新三期(入队)admin 面 e2e', () => {
     return m.id;
   }
 
-  async function openCycle(): Promise<string> {
+  async function openCycle(openedAt: Date = new Date()): Promise<string> {
     const c = await prisma.teamJoinCycle.create({
-      data: { year: CYCLE_YEAR, name: '2026 年度入队', statusCode: 'open', openedAt: new Date() },
+      data: { year: CYCLE_YEAR, name: '2026 年度入队', statusCode: 'open', openedAt },
     });
     return c.id;
   }
@@ -318,6 +318,50 @@ describe('招新三期(入队)admin 面 e2e', () => {
     const mil = detail.body.data.gates.find((x: { code: string }) => x.code === 'military');
     expect(mil.satisfied).toBe(false);
     expect(detail.body.data.statusCode).toBe('joining');
+  });
+
+  it('⑧b【bug HIGH】入队轮开启当天(白天)date-only 完成的本轮 gate → 同北京日算本轮有效', async () => {
+    // 轮次开启 = 2026-06-19 06:00 UTC(北京 14:00);gate 完成日 date-only '2026-06-19'(= UTC 00:00,精确时刻早于 openedAt)。
+    // 修复前:00:00 UTC < 06:00 UTC openedAt → 误判「本轮之前」失效;修复后:同北京日 → 满足。
+    const cycleId = await openCycle(new Date('2026-06-19T06:00:00Z'));
+    const memberId = await createMember();
+    const appId = await createApplication(cycleId, memberId);
+    await markGate(appId, 'fitness', { completionDate: '2026-06-19' }).expect(200);
+    const detail = await request(httpServer(app))
+      .get(`${ADMIN_APPS}/${appId}`)
+      .set('Authorization', adminAuth)
+      .expect(200);
+    const fitness = detail.body.data.gates.find((x: { code: string }) => x.code === 'fitness');
+    expect(fitness.satisfied).toBe(true);
+  });
+
+  it('⑬b【bug MED】pending_evaluation 期间 gate 过期 → evaluate approve 重校验被拒(WRONG_STATE)', async () => {
+    const cycleId = await openCycle();
+    const memberId = await createMember();
+    await addContribution(memberId, '5.00');
+    const nowIso = new Date().toISOString();
+    const expired = new Date(Date.now() - 3 * 365 * 24 * 3600_000).toISOString(); // military(2年)过期
+    const marks: Record<string, unknown> = {};
+    for (const g of GENERAL_GATES) {
+      marks[g] = {
+        at: nowIso,
+        by: adminUserId,
+        passed: true,
+        completionDate: g === 'military' ? expired : nowIso,
+      };
+    }
+    // 直建 pending_evaluation 态 + 含过期 military 的 gateMarks(模拟评估期间 years gate 过期)
+    const appId = await createApplication(cycleId, memberId, {
+      statusCode: 'pending_evaluation',
+      gateMarks: marks,
+    });
+    expectBizError(await evaluate(appId, true), BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
+    // 未误 approve,仍 pending_evaluation(旧态保留,admin 重标 gate 自愈)
+    const detail = await request(httpServer(app))
+      .get(`${ADMIN_APPS}/${appId}`)
+      .set('Authorization', adminAuth)
+      .expect(200);
+    expect(detail.body.data.statusCode).toBe('pending_evaluation');
   });
 
   it('⑨ dept-assessment 延长期(完成日早于本轮但 extendedUntil 未到)→ 满足', async () => {

@@ -222,6 +222,16 @@ export class TeamJoinApplicationsService {
       let eliminationStage: string | null = null;
       if (row.statusCode === APP_STATUS_PENDING_EVALUATION) {
         if (dto.approved) {
+          // 重校验(bug MED 修复,2026-06-19 元核验;沿 phase-2 FM-A 精神):pending_evaluation
+          // 期间 years gate(军训 2年/初级救援 3年)或 dept-assessment 延长期可能过期,不可信旧
+          // statusCode 放过过期项 → 重跑 8 通用门槛 + 贡献值,不再满足则拒(28240),不写 approved;
+          // 旧 pending 态保留,admin 重标 gate 时 mark-gate 自动重算回退 joining(单一真相源自愈)。
+          const marks = (row.gateMarks as GateMarks | null) ?? null;
+          const generalSatisfied = allGeneralGatesSatisfied(marks, row.cycle.openedAt, now);
+          const contribution = await this.computeContribution(row.memberId, row.cycle.year, tx);
+          if (!generalSatisfied || !contribution.satisfied) {
+            throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
+          }
           nextStatus = APP_STATUS_APPROVED;
         } else {
           nextStatus = APP_STATUS_REJECTED;

@@ -102,6 +102,14 @@ export function contributionCutoff(cycleYear: number): Date {
   return new Date(Date.UTC(cycleYear, 3, 1, 0, 0, 0) - BEIJING_UTC_OFFSET_HOURS * 3600_000);
 }
 
+// 北京日历日序号(UTC+8 偏移后按整天 floor)。「本轮」边界按北京日比较,化解
+// completionDate date-only(`new Date('YYYY-MM-DD')` = UTC 00:00)与 cycle.openedAt 精确时刻
+// 跨日界误判 —— 入队轮开启当天(北京白天 openedAt > 当日 UTC 0 点)完成的 gate 不再被误判
+// 「本轮之前」失效(bug HIGH,2026-06-19 维护者元核验)。
+function beijingDayNumber(d: Date): number {
+  return Math.floor((d.getTime() + BEIJING_UTC_OFFSET_HOURS * 3600_000) / 86_400_000);
+}
+
 // ===== gateMarks JSON 形(评审稿 §3.1)=====
 export interface GateMark {
   at: string; // ISO 标记时刻
@@ -133,7 +141,8 @@ export function isGateSatisfied(
       return true; // 延长期(仅 dept-assessment 会设)
     }
     if (cycleOpenedAt == null) return false;
-    return completion.getTime() >= cycleOpenedAt.getTime();
+    // 按北京日历日比较(同日完成算本轮内;bug HIGH 修复,不再用精确时刻 >=)
+    return beijingDayNumber(completion) >= beijingDayNumber(cycleOpenedAt);
   }
   // { years: N }
   const expiry = new Date(completion);
