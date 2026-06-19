@@ -94,7 +94,8 @@ export type AuditLogEvent =
   | 'recruitment-application.resolve-manual' // admin 人工 resolve;before/after status;extra tempNo?/eliminationStage?
   // 招新二期(后段)T2/T3(2026-06-19;评审稿 recruitment-phase2-review.md §3.5 / E-R2-12):
   | 'recruitment-application.mark-threshold' // admin 标/清门槛;before/after status;extra {thresholdCode, completed, allComplete}
-  | 'recruitment-application.evaluate'; // admin 综合评定/淘汰;before/after status;extra {approved, eliminationStage?}
+  | 'recruitment-application.evaluate' // admin 综合评定/淘汰;before/after status;extra {approved, eliminationStage?}
+  | 'recruitment-application.promote'; // admin 一键发号(逐报名一条);before/after status;extra {memberNo, memberId, tempNo, openid:掩码}
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

@@ -110,7 +110,12 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   });
 
   beforeEach(async () => {
-    // 每测隔离:清报名 + 轮次 + 招新审计(audit 计数按 event 断言,需逐测清零)
+    // 每测隔离:先清 promote 产物(FK 顺序:contacts/profile/绑 member 的 user → member;
+    // 二期 promote 跨测会撞 memberNo/openid @unique,phase-1 测试无 member 为 no-op),再清报名/轮次/审计。
+    await prisma.emergencyContact.deleteMany({});
+    await prisma.memberProfile.deleteMany({});
+    await prisma.user.deleteMany({ where: { memberId: { not: null } } }); // promote 建的 User 都绑 member
+    await prisma.member.deleteMany({});
     await prisma.recruitmentApplication.deleteMany({});
     await prisma.recruitmentCycle.deleteMany({});
     await prisma.auditLog.deleteMany({
@@ -720,5 +725,165 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       'proposedMemberNo',
       'realName',
     ]);
+  });
+
+  // =====================================================================
+  // 招新二期(招新后段)T3:一键发号(建 User+Member;最重一刀)
+  // (评审稿 D-R2-5/6 + §4 流程冻结 + §8 DoD)
+  // =====================================================================
+
+  async function toPublicity(code: string, idCard: string, name: string) {
+    const a = await submitVerified(code, idCard, name);
+    await markAll(a.id);
+    await evaluate(a.id, true);
+    return a;
+  }
+  function promote(cycleId: string, auth = adminAuth) {
+    return request(httpServer(app))
+      .post(`${ADMIN_CYCLES}/${cycleId}/promote`)
+      .set('Authorization', auth)
+      .send({});
+  }
+
+  it('㉖(二期) 一键发号:公示→建 User+Member+档案+紧急联系人;{YY}{NNN} 拼音序;两层身份(无部门无级别);报名敏感清', async () => {
+    const cycle = await openCycle();
+    const membersBefore = await prisma.member.count();
+    await toPublicity('p3-z', ID_MATCH_A, '张三'); // zhang
+    await toPublicity('p3-l', ID_MATCH_B, '李四'); // li
+    await toPublicity('p3-w', ID_MATCH_C, '王五'); // wang
+
+    const res = await promote(cycle.id);
+    expect(res.status).toBe(200);
+    expect(res.body.data.promotedCount).toBe(3);
+    expect(res.body.data.skippedCount).toBe(0);
+    // 拼音序:李四 26001 / 王五 26002 / 张三 26003
+    expect(
+      res.body.data.promoted.map((p: { realName: string; memberNo: string }) => [
+        p.realName,
+        p.memberNo,
+      ]),
+    ).toEqual([
+      ['李四', '26001'],
+      ['王五', '26002'],
+      ['张三', '26003'],
+    ]);
+
+    expect(await prisma.member.count()).toBe(membersBefore + 3);
+    const li = await prisma.member.findFirstOrThrow({
+      where: { memberNo: '26001' },
+      include: {
+        user: true,
+        memberProfile: true,
+        emergencyContacts: true,
+        memberDepartments: true,
+      },
+    });
+    // 两层身份铁律:无级别、无部门
+    expect(li.gradeCode).toBeNull();
+    expect(li.memberDepartments.length).toBe(0);
+    expect(li.displayName).toBe('李四');
+    // wrinkle③ User:openid 绑定、username=memberNo、passwordHash 非空(密码登录天然关闭)、memberId 回链
+    expect(li.user?.openid).toBe('dev-openid-p3-l');
+    expect(li.user?.username).toBe('26001');
+    expect(li.user?.passwordHash).toBeTruthy();
+    expect(li.user?.memberId).toBe(li.id);
+    // MemberProfile 映射 + email null(M-1)+ 证件照搬入(wrinkle①)
+    expect(li.memberProfile?.realName).toBe('李四');
+    expect(li.memberProfile?.documentNumber).toBe(ID_MATCH_B);
+    expect(li.memberProfile?.mobile).toBe('13900000001');
+    expect(li.memberProfile?.email).toBeNull();
+    expect(li.memberProfile?.joinSourceCode).toBe('recruitment');
+    expect(li.memberProfile?.privacyConsentSigned).toBe(true);
+    expect(li.memberProfile?.idCardImageKey).toBeTruthy();
+    // 紧急联系人迁移(2 个,priority 0/1)
+    expect(li.emergencyContacts.length).toBe(2);
+    // 报名行:promoted + 链 + 敏感清 + blob 归 member + 脱敏统计留存
+    const liApp = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-p3-l' },
+    });
+    expect(liApp.statusCode).toBe('promoted');
+    expect(liApp.promotedMemberId).toBe(li.id);
+    expect(liApp.realName).toBeNull();
+    expect(liApp.idCardNumber).toBeNull();
+    expect(liApp.idCardImageKey).toBeNull();
+    expect(liApp.sensitivePurgedAt).toBeTruthy();
+    expect(liApp.cityDistrict).toBe('北京市朝阳区'); // 脱敏统计永久留存
+    // cycle.memberNoSeq 自增到 3
+    const cy = await prisma.recruitmentCycle.findFirstOrThrow({ where: { id: cycle.id } });
+    expect(cy.memberNoSeq).toBe(3);
+  });
+
+  it('㉗(二期) 幂等:重跑 promote 命中 0(promoted 已离开 publicity);同报名不重复建 Member', async () => {
+    const cycle = await openCycle();
+    await toPublicity('p3i-a', ID_MATCH_A, '陈一');
+    const first = await promote(cycle.id);
+    expect(first.body.data.promotedCount).toBe(1);
+    const membersAfterFirst = await prisma.member.count();
+
+    const second = await promote(cycle.id);
+    expect(second.body.data.promotedCount).toBe(0);
+    expect(second.body.data.skippedCount).toBe(0);
+    expect(await prisma.member.count()).toBe(membersAfterFirst); // 不重复建
+  });
+
+  it('㉘(二期) 外籍 skip+report:不进一键发号(foreign-manual-build)、不建 Member、仍 publicity;大陆照常发', async () => {
+    const cycle = await openCycle();
+    const fs = await submit(
+      validPayload({
+        wechatCode: 'p3f-f',
+        documentTypeCode: 'passport',
+        idCardNumber: 'E99887766',
+        realName: '周吴',
+      }),
+    );
+    expect(fs.body.data.statusCode).toBe('manual_review');
+    const foreign = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-p3f-f' },
+    });
+    await request(httpServer(app))
+      .post(`${ADMIN_APPS2}/${foreign.id}/resolve`)
+      .set('Authorization', adminAuth)
+      .send({ approved: true });
+    await markAll(foreign.id);
+    await evaluate(foreign.id, true);
+    await toPublicity('p3f-m', ID_MATCH_A, '王五');
+    const membersBefore = await prisma.member.count();
+
+    const res = await promote(cycle.id);
+    expect(res.body.data.promotedCount).toBe(1); // 仅大陆
+    expect(res.body.data.skippedCount).toBe(1);
+    expect(res.body.data.skipped[0]).toMatchObject({ reason: 'foreign-manual-build' });
+    expect(await prisma.member.count()).toBe(membersBefore + 1); // 外籍未建 Member
+    const fa = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-p3f-f' },
+    });
+    expect(fa.statusCode).toBe('publicity'); // 仍 publicity,待 admin 手动建档
+    expect(fa.promotedMemberId).toBeNull();
+  });
+
+  it('㉙(二期) 空公示集→零发;撞 999 上限→28043(整批回滚:seq 复位、报名仍 publicity、零 Member)', async () => {
+    const cycle = await openCycle();
+    const empty = await promote(cycle.id);
+    expect(empty.body.data.promotedCount).toBe(0);
+
+    // 把 memberNoSeq 顶到 999,再发 1 → 1000 > 999 → 28043
+    await prisma.recruitmentCycle.update({ where: { id: cycle.id }, data: { memberNoSeq: 999 } });
+    await toPublicity('p3x-a', ID_MATCH_A, '赵敏');
+    const membersBefore = await prisma.member.count();
+    expectBizError(await promote(cycle.id), BizCode.RECRUITMENT_MEMBER_NO_EXHAUSTED);
+    // 整批回滚:seq 复位 999、零 Member、报名仍 publicity
+    const cy = await prisma.recruitmentCycle.findFirstOrThrow({ where: { id: cycle.id } });
+    expect(cy.memberNoSeq).toBe(999);
+    expect(await prisma.member.count()).toBe(membersBefore);
+    const za = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-p3x-a' },
+    });
+    expect(za.statusCode).toBe('publicity');
+  });
+
+  it('㉚(二期) promote RBAC:USER → forbidden;轮次不存在 → 28001', async () => {
+    const cycle = await openCycle();
+    expectBizError(await promote(cycle.id, userAuth), BizCode.RBAC_FORBIDDEN);
+    expectBizError(await promote('nonexistent-cycle-id'), BizCode.RECRUITMENT_CYCLE_NOT_FOUND);
   });
 });

@@ -852,11 +852,22 @@ export const BizCode = {
   },
   // 招新二期(后段)T2/T3(2026-06-19;评审稿 recruitment-phase2-review.md §3.3 / E-R2-10):
   // - 28041:状态机闸——标门槛/综合评定/发号目标态不符(T2)
-  // - 28042:预留不开(promote 对外籍/不可发号项 skip+report、不 block 整批;维护者 2026-06-19 澄清细化 E-R2-6)
+  // - 28042:一键发号时编号/账号唯一冲突(撞既有 memberNo / openid / username;整批事务回滚不跳号,
+  //   admin 排查后重试)。**外籍/不可发号项不走此码**——它们在事务前分区 skip + report、不 block(E-R2-6)。
   // - 28043:当年永久编号流水撞 999 上限(T3 promote;M-4 报错不扩位)
   RECRUITMENT_APPLICATION_WRONG_STATE: {
     code: 28041,
     message: '该报名当前状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  RECRUITMENT_APPLICATION_NOT_PROMOTABLE: {
+    code: 28042,
+    message: '发号时编号或账号唯一冲突,本批未发号,请排查后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  RECRUITMENT_MEMBER_NO_EXHAUSTED: {
+    code: 28043,
+    message: '本年度永久编号流水已达上限(999)',
     httpStatus: HttpStatus.CONFLICT,
   },
 
