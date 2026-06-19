@@ -31,10 +31,10 @@
 | 触发 | 保留窗口 | 理由 |
 |---|---|---|
 | 报名 **rejected**(实名核验未通过 / 人工拒) | rejected **30 天**后 | 失败者无长期留高敏感 PII 必要;30 天覆盖申诉 / 复核窗口 |
-| 轮次 **结束**(`recruitment_cycles.statusCode='closed'`)且申请**非 verified** | 轮次 `closedAt` **30 天**后 | 轮次结束 = 该批招新收口,未通过者一并脱敏 |
+| 轮次 **结束**(`recruitment_cycles.statusCode='closed'`)且申请**不在 phase-2 在途/已转正**(`statusCode NOT IN ('verified','pending_evaluation','publicity','promoted')`) | 轮次 `closedAt` **30 天**后 | 轮次结束 = 该批招新收口,未通过 / 未进 phase-2 者一并脱敏 |
 
 > **数值可改**:维护者可按需调整 30 天窗口(如合规要求延长),直接改本文件数值并在 §5 记录;无需重新评审。**禁止** < 7 天。
-> **不在清理范围**:`statusCode='verified'`(通过者)——其数据保留至 **phase-2 promote**(转正建 User+Member)消费;phase-2 出本期范围,verified 行的留存治理随 phase-2 立项时定义。
+> **不在清理范围(phase-2 落地后 2026-06-19 true-up)**:① **phase-2 在途行** `statusCode IN ('verified','pending_evaluation','publicity')`(门槛 / 待综合评定 / 公示中,正流转中,数据保留至 promote 消费或被淘汰转 rejected)——含**外籍 publicity 行**(一键发号 skip,待 admin 手动建档,详 [`recruitment-phase2-review.md §10`](../archive/reviews/recruitment-phase2-review.md));② **`promoted` 行**——promote 时 PII 已**即时清**(`sensitivePurgedAt` 已置 + 敏感字段已 NULL + 证件照 blob 归 member),本 SOP 的 `sensitivePurgedAt IS NULL` 自动跳过,**无需也不应再清**;转正后 PII 由 `member_profiles` / `emergency_contacts` 承载,归既有成员数据治理(C-8 议题)。
 
 ## 2. 触发条件
 
@@ -58,7 +58,7 @@ WHERE a."deletedAt" IS NULL
   AND a."sensitivePurgedAt" IS NULL
   AND (
     (a."statusCode" = 'rejected' AND a."createdAt" < now() - interval '30 days')
-    OR (c."statusCode" = 'closed' AND c."closedAt" < now() - interval '30 days' AND a."statusCode" <> 'verified')
+    OR (c."statusCode" = 'closed' AND c."closedAt" < now() - interval '30 days' AND a."statusCode" NOT IN ('verified', 'pending_evaluation', 'publicity', 'promoted'))
   );
 ```
 
@@ -80,7 +80,7 @@ pg_dump "$DATABASE_URL" -t recruitment_applications -t recruitment_cycles \
     AND a."idCardImageKey" IS NOT NULL
     AND (
       (a."statusCode" = 'rejected' AND a."createdAt" < now() - interval '30 days')
-      OR (c."statusCode" = 'closed' AND c."closedAt" < now() - interval '30 days' AND a."statusCode" <> 'verified')
+      OR (c."statusCode" = 'closed' AND c."closedAt" < now() - interval '30 days' AND a."statusCode" NOT IN ('verified', 'pending_evaluation', 'publicity', 'promoted'))
     )
 ) TO 'recruitment-idcard-keys-to-delete.txt';
 ```
@@ -105,7 +105,7 @@ JOIN recruitment_cycles c ON c.id = a."cycleId"
 WHERE a."deletedAt" IS NULL AND a."sensitivePurgedAt" IS NULL
   AND (
     (a."statusCode" = 'rejected' AND a."createdAt" < now() - interval '30 days')
-    OR (c."statusCode" = 'closed' AND c."closedAt" < now() - interval '30 days' AND a."statusCode" <> 'verified')
+    OR (c."statusCode" = 'closed' AND c."closedAt" < now() - interval '30 days' AND a."statusCode" NOT IN ('verified', 'pending_evaluation', 'publicity', 'promoted'))
   );
 
 -- 5b. 清敏感字段 + 标记 sensitivePurgedAt(更新行数必须与 5a 一致;不一致 → ROLLBACK)
@@ -126,7 +126,7 @@ WHERE c.id = a."cycleId"
   AND a."deletedAt" IS NULL AND a."sensitivePurgedAt" IS NULL
   AND (
     (a."statusCode" = 'rejected' AND a."createdAt" < now() - interval '30 days')
-    OR (c."statusCode" = 'closed' AND c."closedAt" < now() - interval '30 days' AND a."statusCode" <> 'verified')
+    OR (c."statusCode" = 'closed' AND c."closedAt" < now() - interval '30 days' AND a."statusCode" NOT IN ('verified', 'pending_evaluation', 'publicity', 'promoted'))
   );
 
 COMMIT;
@@ -153,7 +153,7 @@ ANALYZE recruitment_applications;
 ## 4. 边界与禁止
 
 - ❌ **不**删行(`DELETE` / 软删):脱敏维度留作招新漏斗统计;只清敏感字段
-- ❌ **不**清 `statusCode='verified'` 行(留待 phase-2 promote;§1 注)
+- ❌ **不**清 phase-2 在途行 `statusCode IN ('verified','pending_evaluation','publicity')`(正流转中,含外籍待手动建档的 publicity 行;§1 注);`promoted` 行 promote 已即时清(`sensitivePurgedAt` 已置,WHERE 自动跳过,不重复清)
 - ❌ **不**碰 `members` / `users` / `member_profiles` / 任何非招新表
 - ❌ **不**先清 DB 后删 blob(次序反 = blob 孤儿);**不**用 `TRUNCATE`
 - ❌ **不**改 §1 触发 `WHERE` 列(`statusCode` / `createdAt` / 轮次 `closedAt` 为窗口锚)
