@@ -7,10 +7,10 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(三方一致) | **v0.24.0**(2026-06-13;package.json = Swagger = tag;tag 指向 `c438840c` 标 Latest;要点见 CHANGELOG) |
-| `main` HEAD | `0e7f6ca2`(#385 招新二期 T3 一键发号建 User+Member;tag v0.24.0 仍在 `c438840c`,HEAD 已累积 Unreleased 故超出 tag,本行为滚动快照) |
-| open PR / 工作树 / Unreleased | **0**(本 T4 收尾 PR 前;#372 + 招新一期 #373-#381 + §1 回填 #378/#380/#382 + 招新二期 #383-#385 均已合入 main)/ clean / **9**(`GET /api/admin/v1/me` #372 + 招新一期 T1 #374 / T2 #375 / T3 #376 + 系统性审查 R1 #379 + FM-A 收紧 #381 + 招新二期 T1 #383 / T2 #384 / T3 #385;招新一期 T0 #373 / T4 #377 + 招新二期 T0〔含于 #383〕/ T4 收尾〔本 PR〕/ §1 回填 #378 #380 #382 为 A 档 docs 不计 Unreleased;v0.24.0 已折叠 5 条:保险 #365/#366/#367 + 微信 review #360/#361) |
-| 最新 handoff | [`archive/handoff/v0.24.0.md`](archive/handoff/v0.24.0.md)(不回改) |
+| 版本(三方一致) | **v0.25.0**(2026-06-19;package.json = Swagger = tag;tag 指向 `782f668e` 标 Latest;要点见 CHANGELOG) |
+| `main` HEAD | `782f668e`(#389 handoff;tag v0.25.0 与 HEAD 同点,本行为滚动快照) |
+| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **0**(v0.25.0 已折叠 10 条:招新一期 #374/#375/#376 + 招新二期 #383/#384/#385 + Admin/me #372 + 健壮性 #379/#381/#387) |
+| 最新 handoff | [`archive/handoff/v0.25.0.md`](archive/handoff/v0.25.0.md)(不回改) |
 
 ## 2. 当前系统已具备能力
 
@@ -34,7 +34,7 @@
 - **Admin surface 本人身份**(2026-06-14,goal「Admin surface 本人身份端点」#372):`GET /api/admin/v1/me` 只读身份 bootstrap(`AdminMeController` 单一 `Admin - Me` tag + 独立 `AdminMeResponseDto` 字段集恰好 9 = User 本体身份;入口仅 `JwtAuthGuard` 不挂 `@Roles`,任意登录用户返本人;**不内联角色/权限**——权限仍走 `system/v1/rbac/me/permissions`;不返 member 业务字段 / raw permission code / L3;零 prisma/BizCode/audit)
 - **Route B 终态**(2026-06-01):全仓仅 4 前缀,零 v2 / 零裸前缀 / 零 legacy,contract 断言锁定(§2.1)
 - **P2-2 鉴权后缀**(v0.17.0 落地 148;现 **200** endpoint,2026-06-19 亲核 EXPECTED_ROUTES = 实际路由数;183 → 196〔招新一期 T3 +10〕 → **200**〔招新二期 +4:T2 标门槛/评定/公示名单 3 + T3 一键发号 1,均 admin/v1〕)summary 带 `[rbac:]/[roles:]/[public]/[auth]`,检查项 G 锁一致性(Slow-4 后 `[roles:]` 计 0,形态保留供机制兜底)
-- **测试与契约**:e2e **95 suites / 1905 tests** + unit **45 spec / 1477 tests**(2026-06-18 招新 goal true-up 亲核:e2e +recruitment 1 spec/17 例〔本 goal T3〕+ realname-settings 1 spec〔T2〕;unit +realname crypto/provider 等,主要随 BizCode 27xxx/28xxx + audit union +5 参数化展开;**2026-06-18 招新系统性审查 R1 再 +e2e recruitment 4 例〔17→21:FM-A 卡死态 resolve 恢复 ×2 / FM-C 人工发号容量 28031 / F-1 超限 413〕+ unit `recruitment-applications.service` 1 spec/4 例〔FM-B 孤儿 blob 补偿〕**;**2026-06-19 招新 FM-A 收紧再 +e2e recruitment 2 例〔21→23:核验在途行 resolve 28040 / mismatch 卡死行只能 reject;verifyOutcome 前置落库 + resolve 闸收紧,零 schema〕**;**2026-06-19 招新二期再 +e2e recruitment 10 例〔23→33:T2 门槛全链/幂等/评定两路/公示名单拼音序零敏感外籍 + T3 一键发号建 User+Member+迁移/幂等/外籍 skip+report/999 回滚/RBAC〕**;2026-06-14 `admin/v1/me` +9 / 2026-06-13 保险 +31 为前序基线)+ contract **200 路由**白名单(183 → 196〔招新一期 T3〕 → **200**〔招新二期 T2 +3 / T3 +1〕,均仅新增 + open/v1 首用 5 canonical 前缀)+ `realname_verification_settings` / `recruitment_cycles` / `recruitment_applications` 三表纳入 reset-db;CI 全链 + docker-smoke(含生日 cron 启动锚行 + `WECHAT_ENCRYPTION_KEY` / `REALNAME_ENCRYPTION_KEY` 注入)
+- **测试与契约**:e2e **95 suites / 1906 tests** + unit **46 spec / 1494 tests**(2026-06-18 招新 goal true-up 亲核:e2e +recruitment 1 spec/17 例〔本 goal T3〕+ realname-settings 1 spec〔T2〕;unit +realname crypto/provider 等,主要随 BizCode 27xxx/28xxx + audit union +5 参数化展开;**2026-06-18 招新系统性审查 R1 再 +e2e recruitment 4 例〔17→21:FM-A 卡死态 resolve 恢复 ×2 / FM-C 人工发号容量 28031 / F-1 超限 413〕+ unit `recruitment-applications.service` 1 spec/4 例〔FM-B 孤儿 blob 补偿〕**;**2026-06-19 招新 FM-A 收紧再 +e2e recruitment 2 例〔21→23:核验在途行 resolve 28040 / mismatch 卡死行只能 reject;verifyOutcome 前置落库 + resolve 闸收紧,零 schema〕**;**2026-06-19 招新二期再 +e2e recruitment 10 例〔23→33:T2 门槛全链/幂等/评定两路/公示名单拼音序零敏感外籍 + T3 一键发号建 User+Member+迁移/幂等/外籍 skip+report/999 回滚/RBAC〕**;**2026-06-19 promote 超时硬化再 +e2e recruitment 1 例〔33→34:批量发号 N=25 号段连续无空洞〕+ unit +1 spec〔45→46 spec,1492→1494:bcrypt 移出事务结构断言〕**;2026-06-14 `admin/v1/me` +9 / 2026-06-13 保险 +31 为前序基线;**e2e 1906 / unit 1494 / contract 341 三计数 2026-06-19 v0.25.0 bump #388 CI 实跑亲核**)+ contract **200 路由**白名单(183 → 196〔招新一期 T3〕 → **200**〔招新二期 T2 +3 / T3 +1〕,均仅新增 + open/v1 首用 5 canonical 前缀)+ `realname_verification_settings` / `recruitment_cycles` / `recruitment_applications` 三表纳入 reset-db;CI 全链 + docker-smoke(含生日 cron 启动锚行 + `WECHAT_ENCRYPTION_KEY` / `REALNAME_ENCRYPTION_KEY` 注入)
 
 ## 2.1 当前 API surface 状态
 
