@@ -122,8 +122,16 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   'recruitment-application.mark.threshold',
   'recruitment-application.evaluate.assessment',
   'recruitment-application.promote.member',
+  // 招新三期入队 T2 +6(2026-06-19;评审稿 recruitment-phase3-review.md §3.4,全绑无例外;
+  // join.member 随 T4 controller 落)
+  'team-join-cycle.read.record',
+  'team-join-cycle.create.record',
+  'team-join-cycle.update.record',
+  'team-join-application.read.record',
+  'team-join-application.mark.gate',
+  'team-join-application.evaluate.assessment',
 ] as const;
-const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 51
+const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 57
 
 // D1=A 镜像:不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
@@ -187,10 +195,12 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
       'member-insurance': 1,
       'recruitment-cycle': 3,
       'recruitment-application': 5,
+      'team-join-cycle': 3,
+      'team-join-application': 3,
     });
   });
 
-  it('2 + 3. biz-admin RbacRole 存在;绑定恰 50 条;member.delete.record 不在绑定中', async () => {
+  it('2 + 3. biz-admin RbacRole 存在;绑定恰 56 条;member.delete.record 不在绑定中', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-2' });
     expect(result.code).toBe(0);
 
