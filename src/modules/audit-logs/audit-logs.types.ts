@@ -101,7 +101,9 @@ export type AuditLogEvent =
   | 'team-join-cycle.create' // admin 建入队轮;after
   | 'team-join-cycle.update' // admin 开/关/改名;before/after
   | 'team-join-application.mark-gate' // admin 标 gate;before/after status;extra {gateCode, passed, generalGatesSatisfied, contributionSatisfied}
-  | 'team-join-application.evaluate'; // admin 综合评估/淘汰;before/after status;extra {approved, eliminationStage?}
+  | 'team-join-application.evaluate' // admin 综合评估/淘汰;before/after status;extra {approved, eliminationStage?}
+  // 招新三期(入队)T3(2026-06-19;评审稿 §3.5):App 自助发起 / 改候选部门(actorUserId = 本人 User):
+  | 'team-join-application.submit'; // 自助发起入队申请(after status/cycle/targetCount)+ 改候选部门复用(before/after targetCount)
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit
