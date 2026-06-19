@@ -886,4 +886,43 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expectBizError(await promote(cycle.id, userAuth), BizCode.RBAC_FORBIDDEN);
     expectBizError(await promote('nonexistent-cycle-id'), BizCode.RECRUITMENT_CYCLE_NOT_FOUND);
   });
+
+  // ㉛ 超时硬化(B 档):bcrypt 移出事务后,大批量一键发号不被事务超时顶死。
+  // 不依赖计时(避免 flaky):直接造 ≥20 个 publicity 报名 → 一键发号 → 断言号段连续无空洞、全部成功。
+  it('㉛(二期·硬化) 批量发号 ≥20:号段 26001..26025 连续无空洞、全部建 User+Member 成功', async () => {
+    const cycle = await openCycle();
+    const N = 25;
+    // 直接造 publicity 报名(绕开提交链路;字段满足 isPromotable + promote 逐字段读取需要)。
+    // 已是 phase-1 ㉙ 用例既有手法(直接 prisma 操纵 cycle/报名)。
+    const rows = Array.from({ length: N }, (_, i) => ({
+      cycleId: cycle.id,
+      statusCode: 'publicity',
+      documentTypeCode: 'mainland_id',
+      isForeigner: false,
+      openid: `batch-openid-${i}`,
+      realName: `批量报名${String(i).padStart(2, '0')}`,
+      genderCode: i % 2 === 0 ? 'male' : 'female',
+      birthDate: new Date('1995-03-07T00:00:00.000Z'),
+      idCardNumber: `BATCHID${String(i).padStart(4, '0')}`,
+      phone: `139000${String(i).padStart(5, '0')}`,
+    }));
+    await prisma.recruitmentApplication.createMany({ data: rows });
+    const membersBefore = await prisma.member.count();
+
+    const res = await promote(cycle.id);
+    expect(res.status).toBe(200);
+    expect(res.body.data.promotedCount).toBe(N);
+    expect(res.body.data.skippedCount).toBe(0);
+
+    // 号段连续无空洞:N 个永久编号恰为 26001..26025(同长定宽 → 字典序=数值序)
+    const nos = res.body.data.promoted.map((p: { memberNo: string }) => p.memberNo).sort();
+    const expected = Array.from({ length: N }, (_, i) => `26${String(i + 1).padStart(3, '0')}`);
+    expect(nos).toEqual(expected);
+
+    // 全部成功落库:N 个 Member、N 个绑定 openid 的 User(passwordHash 取自事务前预算)、cycle 自增到 N
+    expect(await prisma.member.count()).toBe(membersBefore + N);
+    expect(await prisma.user.count({ where: { memberId: { not: null } } })).toBe(N);
+    const cy = await prisma.recruitmentCycle.findFirstOrThrow({ where: { id: cycle.id } });
+    expect(cy.memberNoSeq).toBe(N);
+  });
 });
