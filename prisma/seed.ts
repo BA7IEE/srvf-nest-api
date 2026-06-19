@@ -79,17 +79,32 @@ const BCRYPT_SALT_ROUNDS = 10;
 // - dict_items 全部 parentId = null(顶层);父子树形 V2.x 评估再引入
 const V2_DICT_SEED = [
   {
+    // 招新三期入队(2026-06-19):node_type 加 4 专业队 code(W-J-1 约定,识别专业队);
+    // code 稳定 = 长期契约(模块常量 PROFESSIONAL_TEAM_GATE_BY_NODE_TYPE 映射),由运营把
+    // 真实队挂到对应 org;Organization 不加字段。冻结评审稿 recruitment-phase3-review.md §4.4。
     type: { code: 'node_type', label: 'Demo node type', sortOrder: 0 },
     items: [
       { code: 'demo-node-type-1', label: 'Demo node type 1', sortOrder: 0 },
       { code: 'demo-node-type-2', label: 'Demo node type 2', sortOrder: 1 },
+      { code: 'professional-water', label: '专业队-水域(待运营命名)', sortOrder: 2 },
+      { code: 'professional-urban', label: '专业队-城市搜救(待运营命名)', sortOrder: 3 },
+      { code: 'professional-mountain', label: '专业队-山地(待运营命名)', sortOrder: 4 },
+      { code: 'professional-high', label: '专业队-高空(待运营命名)', sortOrder: 5 },
     ],
   },
   {
-    type: { code: 'member_grade', label: 'Demo member grade', sortOrder: 1 },
+    // 招新三期入队(2026-06-19,goal 授权):真实 1-7 级别 code 稳定(长期契约,
+    // members.assertGradeCodeValid 依赖其存在 + ACTIVE);label 仅占位「级别 N(待运营命名)」——
+    // 真实级别名永不进 git(R13 / v2-data-model §0.2);入队设 gradeCode='level-1'。评审稿 E-J-6 / §3.4。
+    type: { code: 'member_grade', label: '队员级别 member-grade', sortOrder: 1 },
     items: [
-      { code: 'demo-member-grade-1', label: 'Demo member grade 1', sortOrder: 0 },
-      { code: 'demo-member-grade-2', label: 'Demo member grade 2', sortOrder: 1 },
+      { code: 'level-1', label: '级别 1(待运营命名)', sortOrder: 0 },
+      { code: 'level-2', label: '级别 2(待运营命名)', sortOrder: 1 },
+      { code: 'level-3', label: '级别 3(待运营命名)', sortOrder: 2 },
+      { code: 'level-4', label: '级别 4(待运营命名)', sortOrder: 3 },
+      { code: 'level-5', label: '级别 5(待运营命名)', sortOrder: 4 },
+      { code: 'level-6', label: '级别 6(待运营命名)', sortOrder: 5 },
+      { code: 'level-7', label: '级别 7(待运营命名)', sortOrder: 6 },
     ],
   },
   // ===== V2 第一阶段批次 1 追加 6 个字典 =====
