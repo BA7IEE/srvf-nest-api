@@ -323,6 +323,35 @@ export class PublicityListResponseDto {
   manualBuildCount!: number;
 }
 
+// ============ 招新二期:一键发号结果(D-R2-5;promote 出参)============
+
+export class PromotedItemDto {
+  @ApiProperty() applicationId!: string;
+  @ApiProperty({ description: '新建 Member id' }) memberId!: string;
+  @ApiProperty({ description: '永久编号 {YY}{NNN}' }) memberNo!: string;
+  @ApiPropertyOptional({ nullable: true }) realName!: string | null;
+}
+
+export class PromoteSkippedItemDto {
+  @ApiProperty() applicationId!: string;
+  @ApiPropertyOptional({ nullable: true }) realName!: string | null;
+  @ApiProperty({
+    description:
+      '跳过原因:foreign-manual-build / openid-already-bound / missing-derived-field / ...(需 admin 手动建档)',
+  })
+  reason!: string;
+}
+
+export class PromoteResultDto {
+  @ApiProperty() cycleId!: string;
+  @ApiProperty({ description: '本批已发号建档数' }) promotedCount!: number;
+  @ApiProperty({ description: '本批跳过数(外籍等;需 admin 手动建档)' }) skippedCount!: number;
+  @ApiProperty({ type: [PromotedItemDto], description: '已发号(拼音序)' })
+  promoted!: PromotedItemDto[];
+  @ApiProperty({ type: [PromoteSkippedItemDto], description: '跳过项(一键发号不含,需手动建档)' })
+  skipped!: PromoteSkippedItemDto[];
+}
+
 // 人工 resolve(分叉④A):通过 → 发临时编号;不通过 → rejected
 export class ResolveRecruitmentApplicationDto {
   @ApiProperty({ description: 'true=人工核验通过(发临时编号);false=不通过(rejected)' })

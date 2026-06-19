@@ -355,6 +355,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/recruitment/applications/{id}/thresholds'],
   ['post', '/api/admin/v1/recruitment/applications/{id}/evaluate'],
   ['get', '/api/admin/v1/recruitment/cycles/{id}/publicity-list'],
+  // 招新二期 T3:一键发号(建 User+Member),199→200。
+  ['post', '/api/admin/v1/recruitment/cycles/{id}/promote'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。

@@ -17,6 +17,8 @@
 > 2026-06-19 招新二期 T1 戳(goal「招新 phase 2(招新后段)」,冻结评审稿 [`recruitment-phase2-review.md §3.4`](../archive/reviews/recruitment-phase2-review.md)):权限码 136→**139**(recruitment-application +3:`mark.threshold` / `evaluate.assessment` / `promote.member`,全绑 biz-admin 无例外 E-R2-11);biz-admin 47→**50**;ops-admin 63 / member 9 零变化;endpoint **196** 不变(T1 仅 schema/migration/seed);**3 新码端点 T2/T3 实装前孤码 WARN 预期**(镜像招新一期 T1 先例);BizCode 28041-28043 + audit +3 DB union 不属本表(随 T2/T3 PR)。
 >
 > 2026-06-19 招新二期 T2 戳(同 goal):**权限事实零变化**(139 码 / 绑定 / 内置角色不动);endpoint 196→**199**(admin 标门槛 `PATCH .../applications/{id}/thresholds` + 综合评定 `POST .../applications/{id}/evaluate` + 公示名单 `GET .../cycles/{id}/publicity-list`〔复用 `recruitment-application.read.record`〕);controller 43 不变(扩既有 2 controller);**`mark.threshold` / `evaluate.assessment` 2 码孤码 WARN 清零**(`promote.member` 仍孤码,T3 清零);BizCode 28041 + audit +2 DB union(`mark-threshold` / `evaluate`)随本 T2 PR。`docs:rbacmap:check` 0 FAIL / 1 WARN(预期)。
+>
+> 2026-06-19 招新二期 T3 戳(同 goal,收口):**权限事实零变化**(139 码 / 绑定 / 内置角色不动);endpoint 199→**200**(一键发号 `POST .../cycles/{id}/promote`〔建 User+Member;`recruitment-application.promote.member`〕);controller 43 不变(扩既有 cycles controller);**`promote.member` 孤码 WARN 清零 → 招新二期 3 码全实装**(`docs:rbacmap:check` **0 FAIL / 0 WARN**);BizCode 28042(发号唯一冲突)/ 28043(流水撞 999)+ audit +1 DB union(`promote`)随本 T3 PR;**首次在 members/users 落地写**(promote 单事务建 User+Member+profile+contacts,**直连 prisma 不复用 service**,两层身份:无部门无级别)。
 
 ---
 

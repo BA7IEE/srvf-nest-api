@@ -10,6 +10,7 @@ import { RecruitmentApplicationsAdminController } from './recruitment-applicatio
 import { RecruitmentApplicationsService } from './recruitment-applications.service';
 import { RecruitmentCyclesController } from './recruitment-cycles.controller';
 import { RecruitmentCyclesService } from './recruitment-cycles.service';
+import { RecruitmentPromotionService } from './recruitment-promotion.service';
 import { RecruitmentPublicController } from './recruitment-public.controller';
 
 // 招新一期(招新前段)T3(2026-06-18):recruitment 模块装配(评审稿 §3.2)。
@@ -30,6 +31,10 @@ import { RecruitmentPublicController } from './recruitment-public.controller';
     RecruitmentCyclesController,
     RecruitmentApplicationsAdminController,
   ],
-  providers: [RecruitmentCyclesService, RecruitmentApplicationsService],
+  providers: [
+    RecruitmentCyclesService,
+    RecruitmentApplicationsService,
+    RecruitmentPromotionService,
+  ],
 })
 export class RecruitmentModule {}

@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 
@@ -16,6 +27,9 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   CreateRecruitmentCycleDto,
+  PromoteResultDto,
+  PromoteSkippedItemDto,
+  PromotedItemDto,
   PublicityListItemDto,
   PublicityListResponseDto,
   RecruitmentCycleResponseDto,
@@ -23,6 +37,7 @@ import {
 } from './recruitment.dto';
 import { RecruitmentApplicationsService } from './recruitment-applications.service';
 import { RecruitmentCyclesService } from './recruitment-cycles.service';
+import { RecruitmentPromotionService } from './recruitment-promotion.service';
 
 // 招新一期 T3(2026-06-18):招新轮次 admin surface(评审稿 §3.2 端点 6-9)。
 // 入口仅 JwtAuthGuard,**不**挂 @Roles;判权全在 service rbac.can()(R 模式)。
@@ -38,12 +53,20 @@ function buildAuditMeta(req: Request): AuditMeta {
 
 @ApiTags('Admin - Recruitment Cycles')
 @ApiBearerAuth()
-@ApiExtraModels(RecruitmentCycleResponseDto, PublicityListResponseDto, PublicityListItemDto)
+@ApiExtraModels(
+  RecruitmentCycleResponseDto,
+  PublicityListResponseDto,
+  PublicityListItemDto,
+  PromoteResultDto,
+  PromotedItemDto,
+  PromoteSkippedItemDto,
+)
 @Controller('admin/v1/recruitment/cycles')
 export class RecruitmentCyclesController {
   constructor(
     private readonly service: RecruitmentCyclesService,
     private readonly applicationsService: RecruitmentApplicationsService,
+    private readonly promotionService: RecruitmentPromotionService,
   ) {}
 
   @Post()
@@ -120,5 +143,27 @@ export class RecruitmentCyclesController {
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<PublicityListResponseDto> {
     return this.applicationsService.publicityList(id, user);
+  }
+
+  @Post(':id/promote')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '公示结束一键发号:对公示报名按拼音序批量发永久编号 {YY}{NNN} + 建 User+Member+档案+紧急联系人(单事务原子/幂等;外籍 skip+report 不 block;空集零发) [rbac: recruitment-application.promote.member]',
+  })
+  @ApiWrappedOkResponse(PromoteResultDto)
+  @ApiBizErrorResponse(
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.RECRUITMENT_CYCLE_NOT_FOUND,
+    BizCode.RECRUITMENT_APPLICATION_NOT_PROMOTABLE,
+    BizCode.RECRUITMENT_MEMBER_NO_EXHAUSTED,
+  )
+  promote(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<PromoteResultDto> {
+    return this.promotionService.promote(id, user, buildAuditMeta(req), new Date());
   }
 }
