@@ -38,6 +38,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { RealnameModule } from './modules/realname/realname.module';
 import { RecruitmentModule } from './modules/recruitment/recruitment.module';
 import { SmsModule } from './modules/sms/sms.module';
+import { TeamJoinModule } from './modules/team-join/team-join.module';
 import { UsersModule } from './modules/users/users.module';
 import { WechatModule } from './modules/wechat/wechat.module';
 
@@ -138,6 +139,10 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   (冻结评审稿 docs/archive/reviews/recruitment-phase1-review.md;surface open/v1 公开报名首用 + admin/v1 轮次/报名;
     //    R 模式判权;证件照走 storage 短 TTL signed-URL;付费实名核验为免费校验后最后一道闸;temp number 不入 members)。
     RecruitmentModule,
+    // 招新三期(入队:志愿者→队员)T2(2026-06-19):team-join 第 27 模块(入队轮 CRUD + 标 gate +
+    //   综合评估 + 贡献值只读汇总;冻结评审稿 docs/archive/reviews/recruitment-phase3-review.md;
+    //   R 模式判权;admin/v1 surface,app 自助 T3 / 一键入队 T4;两层身份:入队才赋部门+级别)。
+    TeamJoinModule,
     // B 队列 F5-T2(2026-06-11):@nestjs/schedule 全局装配——no-cron 铁律升级路径正式触发
     //   (冻结评审稿 docs/archive/reviews/queue-b-otp-birthday-infra-review.md 拍板④/R-5;
     //    解锁范围仅 notifications 生日批一个 @Cron;新增任何定时任务 = 新 D 档评审;

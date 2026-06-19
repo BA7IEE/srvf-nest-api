@@ -95,7 +95,13 @@ export type AuditLogEvent =
   // 招新二期(后段)T2/T3(2026-06-19;评审稿 recruitment-phase2-review.md §3.5 / E-R2-12):
   | 'recruitment-application.mark-threshold' // admin 标/清门槛;before/after status;extra {thresholdCode, completed, allComplete}
   | 'recruitment-application.evaluate' // admin 综合评定/淘汰;before/after status;extra {approved, eliminationStage?}
-  | 'recruitment-application.promote'; // admin 一键发号(逐报名一条);before/after status;extra {memberNo, memberId, tempNo, openid:掩码}
+  | 'recruitment-application.promote' // admin 一键发号(逐报名一条);before/after status;extra {memberNo, memberId, tempNo, openid:掩码}
+  // 招新三期(入队:志愿者→队员)T2(2026-06-19;评审稿 recruitment-phase3-review.md §3.5 / E-J-8;
+  // 本 PR 仅 admin 4 项,自助 submit〔T3〕/ join〔T4〕后续追加):
+  | 'team-join-cycle.create' // admin 建入队轮;after
+  | 'team-join-cycle.update' // admin 开/关/改名;before/after
+  | 'team-join-application.mark-gate' // admin 标 gate;before/after status;extra {gateCode, passed, generalGatesSatisfied, contributionSatisfied}
+  | 'team-join-application.evaluate'; // admin 综合评估/淘汰;before/after status;extra {approved, eliminationStage?}
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

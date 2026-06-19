@@ -871,6 +871,33 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // team-join 招新三期(入队:志愿者→队员)业务级(282xx)。T2 引入(2026-06-19)。
+  // 冻结评审稿 docs/archive/reviews/recruitment-phase3-review.md §3.3 / E-J-8;新开 282xx 子段
+  // (招新域 280xx-290xx 预留内,与 phase-1/2 的 280xx/281xx 物理分组)。
+  //
+  // 子段:
+  // - 28201/28202:NOT_FOUND(入队轮 / 入队申请)
+  // - 28240:状态机闸(标 gate / 综合评估目标态不符)
+  // 后续(T3 自助 create / T4 一键入队)增量:28203 DUPLICATE_APPLICATION / 28210 MEMBER_ALREADY_ENROLLED /
+  //   28230 CYCLE_NOT_OPEN / 28241 GATES_NOT_SATISFIED / 28242 DEPARTMENT_NOT_ELIGIBLE(本 PR 未用,不预定义)。
+  // 不开 281xx-style FORBIDDEN_*(权限拒绝走通用 30100/40300,沿 phase-1 §3.3);
+  // grade-code-invalid 走既有 MEMBER_GRADE_CODE_INVALID(level-1 seed 缺失时,理论不发生)。
+  TEAM_JOIN_CYCLE_NOT_FOUND: {
+    code: 28201,
+    message: '入队轮不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  TEAM_JOIN_APPLICATION_NOT_FOUND: {
+    code: 28202,
+    message: '入队申请不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  TEAM_JOIN_APPLICATION_WRONG_STATE: {
+    code: 28240,
+    message: '该入队申请当前状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // audit_logs 模块业务级(140xx + 141xx)。批次 6 PR #1 引入(2026-05-12)。
   // 详见 docs:批次6_audit_logs_API前评审.md(D6 v1.1)§9。
   // 段位选择:baseline §1.1 v0.5 "audit_logs 140xx + 141xx" 基线预留,本批次实装收口。

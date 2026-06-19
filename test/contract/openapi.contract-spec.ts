@@ -357,6 +357,17 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/recruitment/cycles/{id}/publicity-list'],
   // 招新二期 T3:一键发号(建 User+Member),199→200。
   ['post', '/api/admin/v1/recruitment/cycles/{id}/promote'],
+  // 招新三期(入队:志愿者→队员)T2(2026-06-19;冻结评审稿 recruitment-phase3-review.md §3.2):
+  //   team-join admin 面 8 端点(入队轮 CRUD 4 + 报名 list/detail/标 gate/综合评估 4),200→208(均 admin/v1,仅新增)。
+  //   app 自助面(T3)/ 一键入队(T4)后续追加。
+  ['post', '/api/admin/v1/team-join/cycles'],
+  ['get', '/api/admin/v1/team-join/cycles'],
+  ['get', '/api/admin/v1/team-join/cycles/{id}'],
+  ['patch', '/api/admin/v1/team-join/cycles/{id}'],
+  ['get', '/api/admin/v1/team-join/applications'],
+  ['get', '/api/admin/v1/team-join/applications/{id}'],
+  ['patch', '/api/admin/v1/team-join/applications/{id}/gates'],
+  ['post', '/api/admin/v1/team-join/applications/{id}/evaluate'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
