@@ -174,6 +174,9 @@ model Organization {
   // V2 第一阶段批次 3 反向 relation(沿批次 1 / 批次 2 R2 范式)
   activities Activity[]
 
+  // 招新三期入队(2026-06-19):selectedOrganizationId 反向 relation(评审稿 §3.1;仅关系映射)
+  teamJoinApplications TeamJoinApplication[]
+
   @@index([parentId])
   @@index([nodeTypeCode])
   @@index([status])
@@ -218,6 +221,10 @@ model Member {
   // 冻结评审稿 docs/archive/reviews/insurance-module-review.md §3.1)
   memberInsurances       MemberInsurance[]
   teamInsuranceCoverages TeamInsuranceCoverage[]
+
+  // 招新三期入队(2026-06-19;沿 R2 范式,仅关系映射不算业务字段;
+  // 冻结评审稿 docs/archive/reviews/recruitment-phase3-review.md §3.1)
+  teamJoinApplications TeamJoinApplication[]
 
   @@index([gradeCode])
   @@index([status])
@@ -1466,4 +1473,76 @@ model RealnameVerificationSettings {
 enum RealnameProviderType {
   DEV_STUB // 非生产联调通道:确定性两路(身份证校验位 偶=matched / 奇=mismatch,E-R-6;production-like 不可达)
   TENCENT_CLOUD
+}
+
+// =============================================================================
+// 招新三期(入队:志愿者 → 队员)—— 第 27 模块 team-join(2026-06-19)
+// 冻结评审稿 docs/archive/reviews/recruitment-phase3-review.md §3.1。
+// - team_join_cycles:入队轮(annual,admin 开/关,至多一个 open);比 recruitment_cycles
+//   更简(无发号 seq / capacity / 通知配置 —— member 已有 memberNo,本期不发号)。
+// - team_join_applications:入队申请,**有真实 memberId FK**(申请人已是 member,与
+//   recruitment_applications「无 Member FK」相反);gateMarks Json 落 8 通用 + 0~4 专业队 gate
+//   (contribution 实时算不落库);partial unique 由 migration.sql 末尾手写(E-J-2,Prisma DSL
+//   不支持带 WHERE);selectedOrganizationId 一键入队时定最终单部门。
+// - 字段长度上限不落 @db.VarChar,由 DTO + class-validator 承担(沿近期惯例)。
+// =============================================================================
+
+model TeamJoinCycle {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  year       Int // 入队年份(贡献值 cutoff = {year}-03-31 北京日界;级别/编号无关)
+  name       String // 轮次名(长度由 DTO 约束)
+  statusCode String // open / closed(后台开关;至多一个 open 由 service 守)
+  openedAt   DateTime?
+  closedAt   DateTime?
+
+  applications TeamJoinApplication[]
+
+  @@index([year])
+  @@index([statusCode])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("team_join_cycles")
+}
+
+model TeamJoinApplication {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  cycleId  String
+  memberId String // 申请人(phase-2 promote 出的已转正志愿者);真实 FK,与 recruitment_applications 相反
+
+  statusCode             String // joining / pending_evaluation / approved / joined / rejected
+  targetOrganizationIds  Json // 候选目标部门 orgId 数组(志愿者自助选,可多;joining 态可改)
+  gateMarks              Json? // { [gateCode]: { at, by, passed, completionDate, extendedUntil? } };8 通用 + 0~4 专业队;contribution 不在此(实时算)
+  selectedOrganizationId String? // 一键入队时 admin 定的最终单部门
+
+  evaluatedByUserId       String? // 综合评估操作人(不建外键,沿 reviewedByUserId / SmsSettings.updatedBy)
+  evaluatedAt             DateTime?
+  evaluationNote          String?
+  evaluationExtendedUntil DateTime? // 综合评估延长期(admin 设;超本轮仍认)
+
+  eliminationStage String? // evaluation / gate-timeout(rejected 时记)
+  joinedAt         DateTime? // 一键入队执行时刻
+
+  cycle        TeamJoinCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict)
+  member       Member        @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  organization Organization? @relation(fields: [selectedOrganizationId], references: [id], onDelete: Restrict)
+
+  // 业务唯一约束(partial unique;migration.sql 末尾手写,E-J-2;Prisma DSL 不支持带 WHERE):
+  // - team_join_applications_member_cycle_active_unique ON (memberId, cycleId)
+  //   WHERE "deletedAt" IS NULL AND "statusCode" <> 'rejected' —— 同轮同人至多一活跃申请,
+  //   允许 rejected 后同轮重试;service P2002 兜底转 28203(沿 recruitment 范式)
+  @@index([cycleId])
+  @@index([memberId])
+  @@index([statusCode])
+  @@index([selectedOrganizationId])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("team_join_applications")
 }
