@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import { maskAddress, maskName, maskPhone } from '../../common/audit/mask-pii.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -15,6 +15,7 @@ import {
   EmergencyContactResponseDto,
   UpdateEmergencyContactDto,
 } from './emergency-contacts.dto';
+import { assertEmergencyRelationCodeValid } from './emergency-relation.validation';
 
 // V2 第一阶段批次 1 emergency_contacts service。
 // 详见 docs:批次1_API前评审... §3.3 / §6 / §9 + 草案 §5 / §10。
@@ -29,8 +30,6 @@ import {
 //   - list  → auditPlaceholder('emergency-contact.read.other', ...)  pino-only(批次 6 PR #2 未迁移,沿 F2)
 //   - create / update / softDelete → AuditLogsService.log({ event: 'emergency-contact.write', ... })
 //     批次 6 PR #2 迁移(D-A 修订 / D6 v1.1 §8.2),敏感字段经 maskName / maskPhone / maskAddress 打码
-
-const EMERGENCY_RELATION_DICT_CODE = 'emergency_relation';
 
 const emergencyContactSafeSelect = {
   id: true,
@@ -79,23 +78,10 @@ export class EmergencyContactsService {
     return m;
   }
 
-  // 校验 emergency_relation 字典 code(同 members.assertGradeCodeValid 模式)。
+  // 校验 emergency_relation 字典 code → 委托 canonical 单一来源(emergency-relation.validation.ts);
+  // 与 recruitment promote 共用同一校验,杜绝绕过(#399 F3)。
   private async assertRelationCodeValid(relationCode: string, tx?: PrismaTx): Promise<void> {
-    const client = tx ?? this.prisma;
-    const item = await client.dictItem.findFirst({
-      where: {
-        code: relationCode,
-        status: DictItemStatus.ACTIVE,
-        deletedAt: null,
-        type: {
-          code: EMERGENCY_RELATION_DICT_CODE,
-          status: DictTypeStatus.ACTIVE,
-          deletedAt: null,
-        },
-      },
-      select: { id: true },
-    });
-    if (!item) throw new BizException(BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID);
+    await assertEmergencyRelationCodeValid(tx ?? this.prisma, relationCode);
   }
 
   // 找 contact + 校验归属(memberId 匹配 + notDeleted)。

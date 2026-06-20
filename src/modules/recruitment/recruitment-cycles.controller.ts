@@ -158,6 +158,8 @@ export class RecruitmentCyclesController {
     BizCode.RECRUITMENT_CYCLE_NOT_FOUND,
     BizCode.RECRUITMENT_APPLICATION_NOT_PROMOTABLE,
     BizCode.RECRUITMENT_MEMBER_NO_EXHAUSTED,
+    // F3(#399):展开报名 JSON → emergency_contacts 行时校验 relation 字典码
+    BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID,
   )
   promote(
     @Param('id') id: string,
