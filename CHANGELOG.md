@@ -2,6 +2,24 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## v0.26.1 - 2026-06-20
+
+> **SemVer 拍板**:**patch**(v0.26.0 → v0.26.1)。本版全为 `### Fixed`(安全 / 依赖 CVE / 正确性)、**零 feature / 零 schema / 零 migration**,按 semver 取 patch(**刻意偏离 process「0.x 默认 minor」**,维护者 2026-06-20 拍板)。主线 = #399 全仓系统性 review 的 **P2 六项修复**(review-then-fix;base = v0.26.0)。
+
+### Fixed
+
+- **F1 — RBAC 提权职责分离:`role-permission.assign` 加 SA-only 保留码分级闸**(B 档;goal「全仓 review P2 修复」拍板,#399 review-then-fix,冻结报告 [`docs/archive/reviews/full-repo-systematic-review-v0.26.0.md`](docs/archive/reviews/full-repo-systematic-review-v0.26.0.md) F1;PR #400):持 `ops-admin` 者此前可经 `POST system/v1/roles/:id/permissions` 把 seed 有意不绑任何内置角色、语义「仅 SUPER_ADMIN 短路」的 **6 条保留码**(`user.update.role` / 4×`*-setting.reset.credentials` / `member.delete.record`)自授给任意角色再绑己身,间接获 SA-only 能力(`assign` 原只判 `rbac.role-permission.create`,缺 `user-role.canAssignRole` 那样的分级闸)。修法:新增 [`reserved-super-admin-permission-codes.ts`](src/modules/permissions/reserved-super-admin-permission-codes.ts)(6 码单一事实来源)+ `assign()` 加 `assertNoReservedCodesOrThrow`——非 SUPER_ADMIN 请求码命中保留集 → 新 BizCode `PERMISSION_RESERVED_SUPER_ADMIN_ONLY`(**30103**),在去重后、Permission 存在性查询前 fail-close、命中即整批拒绝;SUPER_ADMIN 短路放行。测试:unit 冻结 6 码 spec + e2e 4 边界 + `seed-rbac` 漂移哨兵(6 码存在为 Permission ∧ 未绑 ops/biz-admin);4-lens 对抗 verify 全 bypassable=false。
+
+- **F2 — attachment 直传 key signed-URL IDOR:create() key 派生格式 + 命名空间正则约束**(B 档;同 goal,报告 F2「COS 接通前必修」;PR #402):模式 A `POST admin/v1/attachments` → `create(dto.key)` 直收客户端 raw key(仅长度约束),`resolveAccessUrl(key)` 对任意 key 签 signed URL → 持 upload 权者可对**命名空间外任意 COS 对象**签发越权 GET。修法:新 [`attachment-key-format.ts`](src/modules/attachments/attachment-key-format.ts) `isDerivedAttachmentKey`——create() 校验 key 匹配 `attachments/<当前 envPrefix>/yyyy/mm/dd/<base64url≥16>.<ext>`(envPrefix 与 `generateAttachmentKey` 同源、转义精确匹配;锚定 `^…$` + 随机段 charset 挡路径穿越/命名空间逃逸),不匹配 → 新 BizCode `ATTACHMENT_KEY_INVALID`(**13014**),早于 `$transaction` 不落库、不签 URL。模式 B(upload-url/confirm,HMAC `uploadToken` 绑 key↔会话)本就安全、不动;残余(命名空间内已知完整随机段 key 的 owner-绑定)留 P3。
+
+- **F3 — promote 绕字典校验 + 报名侧根因:emergency relation 字典校验报名侧 + promote 双层一致**(B 档;同 goal,报告 F3;PR #404):一键发号展开报名 JSON → `emergency_contacts` 行时 `relationCode` 原样 best-effort 落库,绕过 canonical `emergency_relation` 字典校验;**根因在报名侧**——报名 DTO `EmergencyContactInputDto.relation` 仅 `@IsString`+长度、不校验字典 → 用户可提交非法 relation(如 label `'父亲'`),报名收下、仅 promote 拒 → **永久卡 `publicity` 入不了队**(比静默污染更糟)。修法:抽 [`assertEmergencyRelationCodeValid`](src/modules/emergency-contacts/emergency-relation.validation.ts) canonical 纯函数(单一事实来源),**报名侧 `submit()`(网络/付费核验调用前 fail-fast,提交即拒)+ promote(defense-in-depth)+ `emergency-contacts.service`(委托)三处共用** → 非法 relation 抛 `EMERGENCY_CONTACT_RELATION_CODE_INVALID`(**19010**,复用既有码);promote 单事务整批回滚。报名侧 + promote 端点 `@ApiBizErrorResponse` 各补 19010。
+
+- **F4 — attendance rejected 单时间窗死锁:一级 reject records 跟随软删**(B 档;同 goal,报告 F4;PR #403):一级 `reject`(pending→rejected)的 records 不软删、`deletedAt` 仍 NULL,而 time-overlap 校验只过 `deletedAt IS NULL` → 被驳回 sheet 的 records **永久占用该 member 时间窗**,纠正后同窗重交必报 `ATTENDANCE_TIME_OVERLAP` 死锁、无恢复路径(仅 `final_rejected` 软删 records)。修法:`reject()` 令 records 跟随软删(`updateMany deletedAt=reviewedAt`,对称 `finalReject`)→ 释放时间窗;审计 `logReview` 加 `beforeRecords` + `recordsCount`(进 records 必含组)。状态机 / overlap 策略 / 端点 / 错误码不变,无新码、无 schema;wrong-state 护栏不变。
+
+- **F5 — 依赖 CVE:multer 升 `^2.2.0`(未鉴权 multipart 上传 DoS)**(B/config 档;同 goal,报告 F5;PR #401):`@nestjs/platform-express` 锁死 `multer@2.1.1`(GHSA-3p4h-7m6x-2hcm,high:畸形 multipart 深层嵌套字段 DoS),未鉴权公开报名 multipart 上传(`open/v1/recruitment` `@Public`)受影响。修法:`package.json` 新增 `pnpm.overrides` 钉 `multer ^2.2.0`(解析 2.2.0)。
+
+- **F6 — 依赖 CVE:COS-SDK 传递 critical override(form-data / fast-xml-parser)**(B/config 档;同 goal,报告 F6;PR #401):生产强制 provider(COS)的 SDK 链含 critical 传递 CVE——`form-data`(unsafe-random boundary,critical)+ `fast-xml-parser`(entity-bypass critical + DoS high)。修法:`pnpm.overrides` 钉 `fast-xml-parser ^4.5.5`(cos→4.5.6)+ `request>form-data ^2.5.4`(作用域 cos>request→2.5.6)+ 审计期浮出的同类 **runtime** 高 `tencentcloud-sdk-nodejs-common>form-data ^3.0.5`(SMS SDK CRLF,维护者拍板并入)。4 目标路径 critical/high=0,`pnpm audit` 总量 26→16;门禁 = pnpm audit 目标清零 + build + cos/SMS provider 单测 + e2e 上传 smoke 全绿。残余 dev-only(`fast-uri`/@types-supertest)+ `cos>fast-xml-parser` <5.7.0 moderate(需 4→5 breaking)登记 NEXT_TASKS。
+
 ## v0.26.0 - 2026-06-20
 
 ### Added
