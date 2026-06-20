@@ -87,5 +87,12 @@
     "tsx": "^4.21.0",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "multer": "^2.2.0",
+      "fast-xml-parser": "^4.5.5",
+      "request>form-data": "^2.5.4"
+    }
   }
 }
