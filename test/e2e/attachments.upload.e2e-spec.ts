@@ -14,7 +14,7 @@ import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
 // V2.x C-7.5 PR #10:upload-url + confirm-upload e2e(沿评审 §8 + Q-10-1 到 Q-10-15 拍板)
-// 28 用例(15 upload-url + 13 confirm-upload)
+// 29 用例(15 upload-url + 14 confirm-upload;#29 = F10 #399 owner 软删窗口复校)
 
 const SUPER_USERNAME = 'upl-su';
 const SELF_USERNAME = 'upl-self';
@@ -608,6 +608,25 @@ describe('attachments upload-url + confirm-upload', () => {
         select: { etag: true },
       });
       expect(row.etag).toBeNull();
+    });
+
+    it('29. confirm owner 软删窗口(F10 #399):token 签发后 owner 软删 → confirm 落库前复校 → 13011,不落悬空行', async () => {
+      // 独立临时 member(不污染 memberA);superAuth 取 token(绕 RBAC),fakeUpload,再软删 owner
+      const tmp = await prisma.member.create({
+        data: { memberNo: 'UPL-TMP01', displayName: 'MemberTmp' },
+        select: { id: true },
+      });
+      const { token, key } = await getValidToken(superAuth, { ownerId: tmp.id });
+      await fakeUploadToLocal(key, 1024);
+      await prisma.member.update({ where: { id: tmp.id }, data: { deletedAt: new Date() } });
+
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/attachments/confirm-upload')
+        .set('Authorization', superAuth)
+        .send({ uploadToken: token });
+      // F10:create()/createUploadUrl() 已 assertOwnerExists,confirm 现对齐 → owner 软删即拒、不落悬空行
+      expectBizError(res, BizCode.ATTACHMENT_OWNER_NOT_FOUND);
+      expect(await prisma.attachment.count({ where: { key } })).toBe(0);
     });
   });
 });

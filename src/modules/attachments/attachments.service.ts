@@ -755,6 +755,10 @@ export class AttachmentsService {
     // === Step 6:contentType 不校验(沿 Q-10-9) ===
     // === Step 7:PII 不重做(沿 §8.4 Q10 + Q-10-X) ===
 
+    // === Step 7.5(F10 #399):owner 仍存活复校 —— upload-url 签发后 owner 可能软删,confirm 落库前
+    //     与 create() / createUploadUrl() 对齐补 assertOwnerExists,杜绝 owner 软删窗口内落悬空附件行。 ===
+    await this.assertOwnerExists(claims.ownerType as AttachmentOwnerType, claims.ownerId);
+
     // === Step 8:落库 + audit(同事务 fail-fast;沿 §8.4.3 Step 5 + PR #6c F6) ===
     // 需要 ownerTable 进 audit extra(沿现有 create);重查 typeConfig 拿 ownerTable
     const { ownerTable } = await this.assertOwnerTypeAllowed(claims.ownerType);
