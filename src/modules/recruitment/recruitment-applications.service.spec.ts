@@ -58,6 +58,10 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
       recruitmentApplication: {
         findFirst: jest.fn().mockResolvedValue(null),
       },
+      // F3:relation 字典校验(assertEmergencyRelationCodeValid)→ 命中 ACTIVE 项(校验通过)
+      dictItem: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'rel1' }),
+      },
       // tx1:建库事务失败(putObject 已成功 → blob 成孤儿)
       $transaction: jest.fn().mockRejectedValue(txError),
     };

@@ -827,38 +827,49 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(cy.memberNoSeq).toBe(3);
   });
 
-  // F3(#399):promote 复用 canonical assertEmergencyRelationCodeValid;非法 relation 不再 best-effort 持久化。
-  it('㉖b(二期 F3) promote 遇非法 emergency relation → EMERGENCY_CONTACT_RELATION_CODE_INVALID + 整批回滚不建 Member', async () => {
-    const cycle = await openCycle();
-    // submit DTO 不校验 relation(仅 @IsString)→ 非字典码经 submit 存入报名 JSON,到 promote 才被 canonical 拦
-    const sub = await submit(
+  // F3(#399):relation 字典校验 = 报名侧(主入口,提交即拒)+ promote 侧(defense-in-depth)双层一致。
+  it('㉖b(二期 F3) 报名侧:emergencyContacts.relation 非字典码 → 提交即拒 19010(报名不落库,不会卡 promote)', async () => {
+    await openCycle();
+    // 首位 relation 为非字典码(历史 label '父亲' 即此类漏网);报名侧现即拒,不让其进入 publicity
+    const res = await submit(
       validPayload({
-        wechatCode: 'p3-bad',
+        wechatCode: 'p3-badsubmit',
         idCardNumber: ID_MATCH_A,
         realName: '赵六',
-        // ≥2 联系人(满足 ArrayMinSize);首位 relation 为非字典码 → promote 校验拦截
         emergencyContacts: [
           { name: '钱七', relation: 'not-a-relation', phone: '13900000009' },
           { name: '孙八', relation: 'parent', phone: '13900000010' },
         ],
       }),
     );
-    expect(sub.body.data.statusCode).toBe('verified');
-    const appRow = await prisma.recruitmentApplication.findFirstOrThrow({
-      where: { openid: 'dev-openid-p3-bad' },
+    expectBizError(res, BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID);
+    // fail-fast 在 tx1 前 → 报名未落库
+    expect(
+      await prisma.recruitmentApplication.count({ where: { openid: 'dev-openid-p3-badsubmit' } }),
+    ).toBe(0);
+  });
+
+  it('㉖c(二期 F3) promote 侧 defense-in-depth:报名后 relation 失效(字典停用/数据修订)→ promote 19010 + 整批回滚', async () => {
+    const cycle = await openCycle();
+    // 合法 relation 提交 → 驱到 publicity
+    const a = await toPublicity('p3-defense', ID_MATCH_A, '赵六');
+    // 模拟「提交后 relation 失效」(报名侧通过、之后字典项停用或数据被改):直接改报名 JSON 为非字典码
+    await prisma.recruitmentApplication.update({
+      where: { id: a.id },
+      data: {
+        emergencyContacts: [
+          { name: '钱七', relation: 'not-a-relation', phone: '13900000009' },
+          { name: '孙八', relation: 'parent', phone: '13900000010' },
+        ],
+      },
     });
-    await markAll(appRow.id);
-    await evaluate(appRow.id, true); // → publicity
     const membersBefore = await prisma.member.count();
 
-    // promote:非法 relation 命中 canonical 校验 → 19010,整批事务回滚
+    // promote 复用同一 canonical 校验 → 19010,单事务整批回滚
     const res = await promote(cycle.id);
     expectBizError(res, BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID);
-    // 整批回滚:无 Member 建出;报名仍 publicity(未 promoted)
     expect(await prisma.member.count()).toBe(membersBefore);
-    const after = await prisma.recruitmentApplication.findFirstOrThrow({
-      where: { openid: 'dev-openid-p3-bad' },
-    });
+    const after = await prisma.recruitmentApplication.findFirstOrThrow({ where: { id: a.id } });
     expect(after.statusCode).toBe('publicity');
     expect(after.promotedMemberId).toBeNull();
   });

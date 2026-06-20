@@ -11,6 +11,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { assertEmergencyRelationCodeValid } from '../emergency-contacts/emergency-relation.validation';
 import { RbacService } from '../permissions/rbac.service';
 import { RealnameVerificationService } from '../realname/realname.service';
 import { maskIdCard, maskName } from '../realname/realname.constants';
@@ -120,6 +121,13 @@ export class RecruitmentApplicationsService {
         throw new BizException(BizCode.RECRUITMENT_AGE_OUT_OF_RANGE);
       }
       genderCode = extractGenderCode(payload.idCardNumber);
+    }
+
+    // 3.5. F3(#399):紧急联系人 relation 字典校验 —— 报名侧(主入口)与 promote 一致(复用同一
+    //      canonical 纯函数)。提交即拒非法码,避免「报名收下 → promote 19010 拒 → 永久卡 publicity
+    //      无法入队」。放在 wechat / 付费核验等网络调用前,fail-fast 省外部开销。
+    for (const contact of payload.emergencyContacts) {
+      await assertEmergencyRelationCodeValid(this.prisma, contact.relation);
     }
 
     // 4. code2session(免费 wechat;失败沿 wechat 25030/25031 上抛)→ openid
