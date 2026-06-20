@@ -16,7 +16,7 @@
  *   A. seed-codes-extract        — seed 权限码可提取且非空(FAIL on empty)
  *   B. rbacmap-code-count        — RBAC_MAP.md 声明的权限码总数 vs seed 实际 (FAIL on drift)
  *   C. rbacmap-controller-count  — RBAC_MAP.md 声明的 controller 数 vs src 实际 (FAIL on drift)
- *   D. controller-prefix-canonical — 全部 @Controller 前缀落在 4 canonical 前缀 (FAIL on violation)
+ *   D. controller-prefix-canonical — 全部 @Controller 前缀落在 CANONICAL_PREFIXES 内 (FAIL on violation)
  *   E. direct-call-codes-seeded  — rbac.can()/judge() 同行字面量码必须在 seed 中 (FAIL on miss)
  *   F. seed-codes-referenced     — seed 码在 src 中有字面量引用或被动态模板前缀覆盖 (WARN on orphan)
  *   G. swagger-auth-suffix       — @ApiOperation summary 鉴权后缀(P2-2 惯例)与装饰器/seed 一致
@@ -295,7 +295,7 @@ function checkCanonicalPrefixes(controllers: ControllerDecl[]): CheckResult {
     return {
       id: 'controller-prefix-canonical',
       severity: 'PASS',
-      summary: `${controllers.length}/${controllers.length} @Controller 前缀均落 4 canonical 前缀`,
+      summary: `${controllers.length}/${controllers.length} @Controller 前缀均落 ${CANONICAL_PREFIXES.length} canonical 前缀`,
     };
   }
   return {
