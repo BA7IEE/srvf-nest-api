@@ -41,13 +41,14 @@ export class RolePermissionsController {
   @Post()
   @ApiOperation({
     summary:
-      '批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids) [rbac: rbac.role-permission.create]',
+      '批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids;SA-only 保留码仅 SUPER_ADMIN 可分配,否则 30103) [rbac: rbac.role-permission.create]',
   })
   @ApiWrappedOkResponse(RbacRoleDetailResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
+    BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY,
     BizCode.ROLE_NOT_FOUND,
     BizCode.ROLE_DELETED,
     BizCode.PERMISSION_NOT_FOUND,

@@ -360,6 +360,105 @@ describe('role-permissions 模块 + cache skeleton', () => {
     });
   });
 
+  // ============ F1 分级闸:SA-only 保留码 ============
+  // #399 F1:assign() 原先只判 rbac.role-permission.create,未阻止持 ops-admin 者把
+  // SA-only 保留码(seed 有意不绑 biz-admin/ops-admin)自授给任意角色 → 间接获 SA-only 能力。
+  describe('F1 分级闸:SA-only 保留码不可被非 SUPER_ADMIN 分配', () => {
+    it('ops-admin 分配保留码 → 30103,且整批不写入(连同批普通码)', async () => {
+      await grantOpsAdminToUser(app, rpAdminUserId, rpOpsAdminRoleId);
+      try {
+        const { roleId } = await setupRoleAndPermissions({
+          roleCode: 'f1-ops-reserved',
+          permCodes: ['f1.normal.ok'],
+        });
+        // 保留码 Permission 真实存在(模拟 seed),证明闸早于存在性查询、不退化成 30001。
+        // upsert:rbac.fixture 可能已 seed 部分保留码,避免唯一冲突。
+        await prisma.permission.upsert({
+          where: { code: 'member.delete.record' },
+          update: {},
+          create: {
+            code: 'member.delete.record',
+            module: 'member',
+            action: 'delete',
+            resourceType: 'record',
+          },
+        });
+        const res = await request(httpServer(app))
+          .post(`/api/system/v1/roles/${roleId}/permissions`)
+          .set('Authorization', adminAuth)
+          .send({ permissionCodes: ['f1.normal.ok', 'member.delete.record'] });
+        expectBizError(res, BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY);
+
+        // 整批拒绝:连同批的普通码也未写入
+        const dbCount = await prisma.rolePermission.count({ where: { roleId } });
+        expect(dbCount).toBe(0);
+      } finally {
+        await revokeOpsAdminFromUser(app, rpAdminUserId, rpOpsAdminRoleId);
+      }
+    });
+
+    it('ops-admin 分配保留码(即便该码尚未 seed)→ 仍 30103(fail-close,不泄漏存在性)', async () => {
+      await grantOpsAdminToUser(app, rpAdminUserId, rpOpsAdminRoleId);
+      try {
+        const { roleId } = await setupRoleAndPermissions({
+          roleCode: 'f1-ops-reserved-unseeded',
+          permCodes: [],
+        });
+        // 不创建 user.update.role Permission;闸在字符串层拦截,先于 findMany
+        const res = await request(httpServer(app))
+          .post(`/api/system/v1/roles/${roleId}/permissions`)
+          .set('Authorization', adminAuth)
+          .send({ permissionCodes: ['user.update.role'] });
+        expectBizError(res, BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY);
+      } finally {
+        await revokeOpsAdminFromUser(app, rpAdminUserId, rpOpsAdminRoleId);
+      }
+    });
+
+    it('SUPER_ADMIN 分配同一保留码 → 201(短路放行)', async () => {
+      const { roleId } = await setupRoleAndPermissions({
+        roleCode: 'f1-su-reserved',
+        permCodes: [],
+      });
+      // upsert:user.update.role 已由 rbac.fixture seed,避免唯一冲突
+      await prisma.permission.upsert({
+        where: { code: 'user.update.role' },
+        update: {},
+        create: {
+          code: 'user.update.role',
+          module: 'user',
+          action: 'update',
+          resourceType: 'role',
+        },
+      });
+      const res = await request(httpServer(app))
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
+        .set('Authorization', superAdminAuth)
+        .send({ permissionCodes: ['user.update.role'] });
+      expect(res.status).toBe(201);
+      const codes = res.body.data.permissions.map((p: { code: string }) => p.code);
+      expect(codes).toContain('user.update.role');
+    });
+
+    it('ops-admin 分配纯普通码 → 201(闸不误伤非保留码)', async () => {
+      await grantOpsAdminToUser(app, rpAdminUserId, rpOpsAdminRoleId);
+      try {
+        const { roleId, perms } = await setupRoleAndPermissions({
+          roleCode: 'f1-ops-normal',
+          permCodes: ['f1.plain.a', 'f1.plain.b'],
+        });
+        const res = await request(httpServer(app))
+          .post(`/api/system/v1/roles/${roleId}/permissions`)
+          .set('Authorization', adminAuth)
+          .send({ permissionCodes: perms.map((p) => p.code) });
+        expect(res.status).toBe(201);
+        expect(res.body.data.permissions).toHaveLength(2);
+      } finally {
+        await revokeOpsAdminFromUser(app, rpAdminUserId, rpOpsAdminRoleId);
+      }
+    });
+  });
+
   // ============ role detail 真实 permissions 填充 ============
 
   describe('GET /api/system/v1/roles/:id detail 返回真实 permissions(端到端)', () => {

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -10,6 +11,7 @@ import { RbacService } from './rbac.service';
 import { RbacRoleDetailResponseDto } from './rbac-roles.dto';
 import { rbacRoleSelect } from './rbac-roles.select';
 import { AssignRolePermissionsDto } from './role-permissions.dto';
+import { RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET } from './reserved-super-admin-permission-codes';
 
 // V2.x C-6 RBAC 实施 PR #4:RolePermission 关联表业务逻辑。
 // 沿 D7 v1.1 §5.1 端点 10-11 + §6.1 + §9.4 缓存失效 + 用户拍板。
@@ -48,6 +50,28 @@ export class RolePermissionsService {
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
     if (!(await this.rbac.can(user, action))) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
+
+  // F1(#399 全仓 review):role-permission 分级闸 —— 非 SUPER_ADMIN 不得把
+  // SA-only 保留码(RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET)分配给**任何**角色。
+  //
+  // 这组保留码在 seed 中有意不绑 biz-admin / ops-admin(仅 SUPER_ADMIN 短路);
+  // assign() 原先只判 `rbac.role-permission.create`,未阻止持 ops-admin 者把保留码
+  // 自授给某角色再绑到自己身上,间接获得 SA-only 能力(授权越权洞)。
+  //
+  // 设计:
+  // - SUPER_ADMIN 短路放行(沿 user-roles.canAssignRole 范式);
+  // - 在请求码(已去重)字符串层面拦截,**早于** Permission 存在性查询 —— 即便保留码
+  //   尚未 seed,非 SA 也拿 30103(fail-close,不退化成 30001 泄漏存在性);
+  // - 命中即整批拒绝(不部分写入),与 30001 整批拒绝语义一致。
+  private assertNoReservedCodesOrThrow(user: CurrentUserPayload, uniqueCodes: string[]): void {
+    if (user.role === Role.SUPER_ADMIN) return;
+    const hitsReserved = uniqueCodes.some((code) =>
+      RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET.has(code),
+    );
+    if (hitsReserved) {
+      throw new BizException(BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY);
     }
   }
 
@@ -93,9 +117,13 @@ export class RolePermissionsService {
     // 1. role 必须存在 + 未软删
     await this.assertRoleAccessibleOrThrow(roleId);
 
-    // 2. 按 codes 查 permissions;**任一 code 不存在 → 30001**(整批拒绝,不部分成功)
     //    去重处理:即使 DTO 重复传同一 code 也能正常工作
     const uniqueCodes = Array.from(new Set(dto.permissionCodes));
+
+    // 2. F1 分级闸:非 SUPER_ADMIN 不得分配 SA-only 保留码(早于存在性查询;命中即整批拒绝)
+    this.assertNoReservedCodesOrThrow(user, uniqueCodes);
+
+    // 3. 按 codes 查 permissions;**任一 code 不存在 → 30001**(整批拒绝,不部分成功)
     const perms = await this.prisma.permission.findMany({
       where: { code: { in: uniqueCodes } },
       select: { id: true, code: true },
@@ -105,18 +133,18 @@ export class RolePermissionsService {
       throw new BizException(BizCode.PERMISSION_NOT_FOUND);
     }
 
-    // 3. 幂等批量写入(沿用户拍板;Prisma createMany skipDuplicates 利用
+    // 4. 幂等批量写入(沿用户拍板;Prisma createMany skipDuplicates 利用
     //    schema unique([roleId, permissionId]),已存在的关系静默跳过)
     await this.prisma.rolePermission.createMany({
       data: perms.map((p) => ({ roleId, permissionId: p.id })),
       skipDuplicates: true,
     });
 
-    // 4. 缓存失效(沿 D7 §9.4):所有持有该角色的 user cache 清掉。
+    // 5. 缓存失效(沿 D7 §9.4):所有持有该角色的 user cache 清掉。
     //    失败仅 logger.warn(在 RbacCacheService 内),不阻断业务返回。
     await this.cache.invalidateAllUsersWithRole(roleId);
 
-    // 5. 返回该角色当前完整 detail(含最新 permissions)
+    // 6. 返回该角色当前完整 detail(含最新 permissions)
     return this.buildDetailResponse(roleId);
   }
 
