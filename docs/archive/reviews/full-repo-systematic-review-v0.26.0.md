@@ -8,6 +8,26 @@
 
 ---
 
+> ## ✅ 修复落地状态(2026-06-20;review-then-fix goal「全仓 review P2 修复」收口)
+>
+> §2 的 **6 项 P2 全部已修并合入 `main`**(per-task PR + 元核验,每项对抗式自检/回归测试;B/config 档,无 schema):
+>
+> | finding | 修法落地 | PR |
+> |---|---|---|
+> | **F1** RBAC 分级闸 | `role-permission.assign` 加 `assertNoReservedCodesOrThrow`(6 SA-only 保留码单一来源 + seed 漂移哨兵)→ 30103 | [#400](https://github.com/BA7IEE/srvf-nest-api/pull/400) |
+> | **F2** attachment key IDOR | create() 校验 key 匹配 `attachments/<envPrefix>/` 派生格式正则(锚定挡穿越/逃逸)→ 13014;模式 B(HMAC token)本就安全 | [#402](https://github.com/BA7IEE/srvf-nest-api/pull/402) |
+> | **F3** promote 绕字典校验 | 抽 `assertEmergencyRelationCodeValid` canonical 纯函数;**报名侧(主入口,提交即拒)+ promote(defense-in-depth)+ emergency-contacts(委托)三处共用** → 19010(复用既有码) | [#404](https://github.com/BA7IEE/srvf-nest-api/pull/404) |
+> | **F4** attendance reject 死锁 | 一级 reject 的 records 跟随软删(对称 finalReject)→ 释放 time-overlap 窗口;审计加 beforeRecords/recordsCount | [#403](https://github.com/BA7IEE/srvf-nest-api/pull/403) |
+> | **F5+F6** dep CVE | `pnpm.overrides`:multer ^2.2.0 / fast-xml-parser ^4.5.5 / `request>form-data` ^2.5.4 + `tencentcloud-…-common>form-data` ^3.0.5;4 目标路径 critical/high=0 | [#401](https://github.com/BA7IEE/srvf-nest-api/pull/401) |
+>
+> **复核补强(F3)**:维护者下代码复核发现报名 DTO `relation` 仅 `@IsString` 不校验字典 → 非法 relation 报名可收下、仅 promote 拒 → **永久卡 publicity 入不了队**(比静默污染更糟;e2e 旧用 label `'父亲'/'母亲'` 当 code 漏网即铁证)。故 F3 校验**补到报名侧主入口**(提交即拒 19010),promote 侧留 defense-in-depth。
+>
+> **残余(均 P3、无当前运行时危害,登记 [`docs/ai-harness/NEXT_TASKS.md`](../../ai-harness/NEXT_TASKS.md))**:F2 owner-绑定 key(模式 A 弃用 / 命名空间内已知-key 残余)· attachment.`*.other` 接 enforcement 时复核 F1 保留集 · `fast-uri`/@types-supertest `form-data`(dev-only,运行期不触达)· cos>`fast-xml-parser` <5.7.0 moderate(需 4→5 breaking;cos 仅解析,低危)+ CI `pnpm audit` gate(本报告 §3 F18)。
+>
+> §3 的 P3(13)未在本批处理(F12/F13/F14 等),仍 open,按报告 §7 分批后续。
+
+---
+
 ## 0. 结论(TL;DR)
 
 - **底座结构性健康:0 P0 / 0 P1。** 招新三期入队刚收口的 v0.26.0,经全仓 10 维对抗扫描**未发现高危/严重缺陷**。confirmed-new 全部为 **P2(6)+ P3(13)= 19 条**,均为**硬化级 / 一致性级**,非阻断。
