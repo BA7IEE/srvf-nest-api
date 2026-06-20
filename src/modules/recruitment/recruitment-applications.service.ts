@@ -45,6 +45,7 @@ import {
   ageGroupOf,
   allThresholdsComplete,
   comparePromotionOrder,
+  decidePromotionIssuance,
   computeAge,
   extractBirthDate,
   extractGenderCode,
@@ -584,24 +585,38 @@ export class RecruitmentApplicationsService {
     const rows = await this.prisma.recruitmentApplication.findMany({
       where: { cycleId, statusCode: APP_STATUS_PUBLICITY, deletedAt: null },
     });
+    // F9(#399):公示拟发号与一键发号共享 decidePromotionIssuance —— 同序(comparePromotionOrder)、同判
+    // (isPromotable + openid 未被既有 User 占用 + 批内 openid 去重)→ 预览 = 实发,杜绝「公示显示拟发号、
+    // promote 时因 openid 已占用/批内重复被 skip 致编号偏移、公示失真」。openid 仅内部判定用,不入出参。
+    const candidateOpenids = rows.map((r) => r.openid).filter((o): o is string => o != null);
+    const boundRows = candidateOpenids.length
+      ? await this.prisma.user.findMany({
+          where: { openid: { in: candidateOpenids } },
+          select: { openid: true },
+        })
+      : [];
+    const boundOpenids = new Set(
+      boundRows.map((r) => r.openid).filter((o): o is string => o != null),
+    );
     const sorted = [...rows].sort(comparePromotionOrder);
     let seq = cycle.memberNoSeq;
-    const items: PublicityListItemDto[] = sorted.map((r) => {
-      const promotable = isPromotable(r);
-      let proposedMemberNo: string | null = null;
-      if (promotable) {
-        seq += 1;
-        // 超 999 预览置 null(实际发号撞上限 → 28043);保持预览与发号一致
-        proposedMemberNo = seq <= MEMBER_NO_MAX_SEQ ? formatMemberNo(cycle.year, seq) : null;
-      }
-      return {
-        applicationId: r.id,
-        realName: r.realName,
-        proposedMemberNo,
-        isForeigner: r.isForeigner,
-        needsManualBuild: !promotable,
-      };
-    });
+    const items: PublicityListItemDto[] = decidePromotionIssuance(sorted, boundOpenids).map(
+      ({ app: r, willIssue }) => {
+        let proposedMemberNo: string | null = null;
+        if (willIssue) {
+          seq += 1;
+          // 超 999 预览置 null(实际发号撞上限 → 28043);保持预览与发号一致
+          proposedMemberNo = seq <= MEMBER_NO_MAX_SEQ ? formatMemberNo(cycle.year, seq) : null;
+        }
+        return {
+          applicationId: r.id,
+          realName: r.realName,
+          proposedMemberNo,
+          isForeigner: r.isForeigner,
+          needsManualBuild: !willIssue,
+        };
+      },
+    );
     const promotableCount = items.filter((i) => !i.needsManualBuild).length;
     return {
       cycleId: cycle.id,

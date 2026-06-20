@@ -102,6 +102,63 @@ export function isPromotable(app: {
   );
 }
 
+/** promote / 公示预览共享的发号判定项(isPromotable 字段集 + id;RecruitmentApplication 天然满足) */
+export interface PromotionIssuanceItem {
+  id: string;
+  isForeigner: boolean;
+  birthDate: Date | null;
+  genderCode: string | null;
+  openid: string | null;
+  realName: string | null;
+}
+
+/** 单项发号判定:willIssue=false 时 reason 给出跳过原因(promote skipped[].reason 同源) */
+export interface PromotionIssuanceDecision<T> {
+  app: T;
+  willIssue: boolean;
+  reason: string | null;
+}
+
+/** 跳过原因(promote 与公示同源;判定顺序即优先级) */
+export function promotionSkipReason(
+  app: PromotionIssuanceItem,
+  openidBound: boolean,
+  duplicateOpenidInBatch: boolean,
+): string {
+  if (app.isForeigner) return 'foreign-manual-build';
+  if (openidBound) return 'openid-already-bound';
+  if (app.openid == null) return 'missing-openid';
+  if (duplicateOpenidInBatch) return 'duplicate-openid-in-batch';
+  if (app.birthDate == null || app.genderCode == null) return 'missing-derived-field';
+  if (app.realName == null) return 'incomplete-data';
+  return 'not-promotable';
+}
+
+/**
+ * 发号资格判定(一键发号 promote 与公示预览 publicityList 共享,结构性保证「公示预览 = 实发」;#399 F9/F15)。
+ * - sortedApps 须已按 comparePromotionOrder 排序(两处同序 → 批内去重 tie-break 一致);
+ * - boundOpenids = 已被既有 User(含软删,沿 openid @unique 占用语义)占用的 openid 集;
+ * - 批内同一 openid 仅发号序最先一行可发,其余记 'duplicate-openid-in-batch'(原先第二行入事务
+ *   撞 User.openid @unique → P2002 → 整批回滚零发号;#399 F15)。
+ */
+export function decidePromotionIssuance<T extends PromotionIssuanceItem>(
+  sortedApps: readonly T[],
+  boundOpenids: ReadonlySet<string>,
+): PromotionIssuanceDecision<T>[] {
+  const seenOpenids = new Set<string>();
+  return sortedApps.map((app) => {
+    const openidBound = app.openid != null && boundOpenids.has(app.openid);
+    const duplicateOpenidInBatch = app.openid != null && seenOpenids.has(app.openid);
+    const willIssue = isPromotable(app) && !openidBound && !duplicateOpenidInBatch;
+    if (willIssue && app.openid != null) seenOpenids.add(app.openid);
+    return {
+      app,
+      willIssue,
+      reason: willIssue ? null : promotionSkipReason(app, openidBound, duplicateOpenidInBatch),
+    };
+  });
+}
+
 // ===== 年龄门槛(评审稿 D-R-7 / E-R-12;从身份证号校验)=====
 export const RECRUITMENT_MIN_AGE = 18;
 export const RECRUITMENT_MAX_AGE = 60;
