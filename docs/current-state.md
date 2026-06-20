@@ -85,7 +85,7 @@
 
 ## 5. 新任务开工前必须检查
 
-门禁见 [`process.md §2`](process.md),任一不满足不开新功能。速记:`pnpm agent:preflight` 全过 / handoff 与 §1 一致 / Unreleased 无残留 / D 档降速(process §4)/ 拍板未到不动代码 / fresh worktree 先 install + prisma:generate。
+门禁见 [`process.md §2`](process.md),任一不满足不开新功能。速记:`pnpm agent:preflight` 全过(工作树 clean · 无 open PR · 未落后 origin/main 三条机械门禁硬判 exit 0;版本三方 / handoff / Unreleased 等仍只读打印) / handoff 与 §1 一致 / Unreleased 无残留 / D 档降速(process §4)/ 拍板未到不动代码 / fresh worktree 先 install + prisma:generate。
 
 ## 6. 文档阅读顺序
 

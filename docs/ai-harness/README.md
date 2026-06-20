@@ -2,7 +2,7 @@
 
 > **性质**:derived 操作层,**非规则源**;与权威源(`AGENTS.md` / `current-state.md` / `process.md` / `api-surface-policy.md`)冲突时本页让步,并回头修本页。
 > **必读三件套** = [`current-state.md`](../current-state.md)(当前事实)+ 本页 + [`process.md §2/§3`](../process.md)(开工门禁 + PR 五档);`AGENTS.md` 按任务主题选读对应节(节号见下表),baseline / V2 红线 / ARCHITECTURE / api-surface-policy 按需。
-> 开工先跑 `pnpm agent:preflight`;fresh worktree 先 `pnpm install --frozen-lockfile && pnpm prisma:generate`。
+> 开工先跑 `pnpm agent:preflight`(硬判 工作树 clean / 无 open PR / 未落后 origin/main,任一不过 exit 1;余项只读);fresh worktree 先 `pnpm install --frozen-lockfile && pnpm prisma:generate`。
 
 ## 1. 铁律速查(主题 → 一句话 → 出处)
 
