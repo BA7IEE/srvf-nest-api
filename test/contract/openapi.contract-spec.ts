@@ -368,6 +368,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/team-join/applications/{id}'],
   ['patch', '/api/admin/v1/team-join/applications/{id}/gates'],
   ['post', '/api/admin/v1/team-join/applications/{id}/evaluate'],
+  // 招新三期 T4(2026-06-19;评审稿 §4.5):一键入队(设部门 + 级别 level-1),211→212。
+  ['post', '/api/admin/v1/team-join/applications/{id}/join'],
   // 招新三期 T3(2026-06-19;评审稿 §3.2):app/v1/me 自助面 3 端点(发起/查进度/改候选),208→211。
   ['post', '/api/app/v1/me/team-join/applications'],
   ['get', '/api/app/v1/me/team-join/applications/current'],

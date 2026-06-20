@@ -87,6 +87,13 @@ export function professionalGateForNodeType(nodeTypeCode: string): GateCode | nu
   return PROFESSIONAL_TEAM_GATE_BY_NODE_TYPE[nodeTypeCode] ?? null;
 }
 
+// ===== 级别(评审稿 E-J-6 / §3.4;T4 一键入队)=====
+// 入队设 gradeCode='level-1'(seed 1-7 member_grade 的第一级);MEMBER_GRADE_DICT_CODE 与
+// members.service 同口径(dict_type code);enrollment 直连 prisma 复刻 assertGradeCodeValid 校验
+// (level-1 须存在 + ACTIVE,理论 seed 已保证;缺失 → MEMBER_GRADE_CODE_INVALID)。
+export const JOIN_GRADE_CODE = 'level-1';
+export const MEMBER_GRADE_DICT_CODE = 'member_grade';
+
 // ===== 贡献值(评审稿 §4.3;W-J-3 / Q4)=====
 // approved-only:字面镜像 attendances `ATTENDANCE_SHEET_STATUS.APPROVED`('approved' = attendance_sheet_status
 // 字典稳定值,终审通过);不 import attendances 内部,保持 team-join 自洽(评审稿 §4.3)。

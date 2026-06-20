@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -152,6 +152,70 @@ describe('招新三期(入队)admin 面 e2e', () => {
     return last;
   }
 
+  let t4OrgSeq = 0;
+  async function makeOrg(
+    nodeTypeCode = 'demo-node-type-1',
+    status: 'ACTIVE' | 'INACTIVE' = 'ACTIVE',
+  ): Promise<string> {
+    t4OrgSeq += 1;
+    const org = await prisma.organization.create({
+      data: { name: `部门${t4OrgSeq}`, nodeTypeCode, status },
+    });
+    return org.id;
+  }
+
+  function join(appId: string, organizationId: string, auth = adminAuth): request.Test {
+    return request(httpServer(app))
+      .post(`${ADMIN_APPS}/${appId}/join`)
+      .set('Authorization', auth)
+      .send({ organizationId });
+  }
+
+  // 直建一条「approved」入队申请(8 通用 gate 全过 + 候选部门 + contribution≥5),用于 T4 一键入队测试。
+  // gateMarks 可注入(过期等);默认全过(完成日 = now)。
+  async function setupApproved(opts: {
+    targets: string[];
+    contribution?: string;
+    gateMarks?: Record<string, unknown>;
+    evaluationExtendedUntil?: Date;
+    cycleStatus?: 'open' | 'closed';
+  }): Promise<{ appId: string; memberId: string; cycleId: string }> {
+    const cycle = await prisma.teamJoinCycle.create({
+      data: {
+        year: CYCLE_YEAR,
+        name: '2026 年度入队',
+        statusCode: opts.cycleStatus ?? 'open',
+        openedAt: new Date(),
+      },
+    });
+    const memberId = await createMember();
+    await addContribution(memberId, opts.contribution ?? '5.00');
+    const nowIso = new Date().toISOString();
+    const marks =
+      opts.gateMarks ??
+      Object.fromEntries(
+        GENERAL_GATES.map((g) => [
+          g,
+          { at: nowIso, by: adminUserId, passed: true, completionDate: nowIso },
+        ]),
+      );
+    const a = await prisma.teamJoinApplication.create({
+      data: {
+        cycleId: cycle.id,
+        memberId,
+        statusCode: 'approved',
+        targetOrganizationIds: opts.targets,
+        gateMarks: marks as Prisma.InputJsonValue,
+        evaluatedByUserId: adminUserId,
+        evaluatedAt: new Date(),
+        ...(opts.evaluationExtendedUntil
+          ? { evaluationExtendedUntil: opts.evaluationExtendedUntil }
+          : {}),
+      },
+    });
+    return { appId: a.id, memberId, cycleId: cycle.id };
+  }
+
   beforeAll(async () => {
     app = await createTestApp();
     prisma = app.get(PrismaService);
@@ -165,6 +229,13 @@ describe('招新三期(入队)admin 面 e2e', () => {
       select: { id: true },
     });
     adminUserId = adminUser!.id;
+    // 一键入队设 gradeCode='level-1' 依赖 member_grade 字典(resetDb 已 truncate dicts,此处补 seed)
+    const gradeType = await prisma.dictType.create({
+      data: { code: 'member_grade', label: '队员级别' },
+    });
+    await prisma.dictItem.create({
+      data: { typeId: gradeType.id, code: 'level-1', label: '级别 1' },
+    });
   });
 
   afterAll(async () => {
@@ -176,6 +247,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
     await prisma.attendanceSheet.deleteMany({});
     await prisma.activity.deleteMany({});
     await prisma.teamJoinApplication.deleteMany({});
+    await prisma.memberDepartment.deleteMany({}); // T4 一键入队建的归属(FK 顺序:先于 org/member)
     await prisma.teamJoinCycle.deleteMany({});
     await prisma.organization.deleteMany({});
     await prisma.member.deleteMany({});
@@ -504,5 +576,142 @@ describe('招新三期(入队)admin 面 e2e', () => {
     expect(byEvent['team-join-cycle.update']).toBeGreaterThanOrEqual(1);
     expect(byEvent['team-join-application.mark-gate']).toBeGreaterThanOrEqual(1);
     expect(byEvent['team-join-application.evaluate']).toBeGreaterThanOrEqual(1);
+  });
+
+  // ===== T4 一键入队(志愿者 → 队员)=====
+  it('⑰【T4】approved → joined;两层身份转换(前无部门无级别 → 后 level-1 + 部门)+ audit join', async () => {
+    const org = await makeOrg();
+    const { appId, memberId } = await setupApproved({ targets: [org] });
+    const before = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { gradeCode: true },
+    });
+    expect(before?.gradeCode).toBeNull();
+    const beforeDept = await prisma.memberDepartment.count({
+      where: { memberId, deletedAt: null },
+    });
+    expect(beforeDept).toBe(0);
+
+    const res = await join(appId, org).expect(200);
+    expect(res.body.data.statusCode).toBe('joined');
+    expect(res.body.data.selectedOrganizationId).toBe(org);
+    expect(res.body.data.joinedAt).not.toBeNull();
+
+    const after = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { gradeCode: true },
+    });
+    expect(after?.gradeCode).toBe('level-1');
+    const dept = await prisma.memberDepartment.findFirst({ where: { memberId, deletedAt: null } });
+    expect(dept?.organizationId).toBe(org);
+    const auditCount = await prisma.auditLog.count({
+      where: { event: 'team-join-application.join' },
+    });
+    expect(auditCount).toBe(1);
+  });
+
+  it('⑱【T4】幂等:已 joined 重跑 → WRONG_STATE,不重复设部门/级别', async () => {
+    const org = await makeOrg();
+    const { appId, memberId } = await setupApproved({ targets: [org] });
+    await join(appId, org).expect(200);
+    expectBizError(await join(appId, org), BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
+    const depts = await prisma.memberDepartment.count({ where: { memberId, deletedAt: null } });
+    expect(depts).toBe(1);
+  });
+
+  it('⑲【T4】非 approved 态(joining)入队 → WRONG_STATE', async () => {
+    const org = await makeOrg();
+    const cycleId = await openCycle();
+    const memberId = await createMember();
+    const appId = await createApplication(cycleId, memberId, {
+      targetOrganizationIds: [org],
+      statusCode: 'joining',
+    });
+    expectBizError(await join(appId, org), BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
+  });
+
+  it('⑳【T4】选定部门不在候选/不存在/INACTIVE → 28242;失败 member 不变(原子)', async () => {
+    const orgA = await makeOrg();
+    const orgOther = await makeOrg();
+    const { appId, memberId } = await setupApproved({ targets: [orgA] });
+    expectBizError(await join(appId, orgOther), BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE);
+    expectBizError(await join(appId, 'no-such-org'), BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE);
+    const inactiveCand = await makeOrg('demo-node-type-1', 'INACTIVE');
+    const s2 = await setupApproved({ targets: [inactiveCand] });
+    expectBizError(await join(s2.appId, inactiveCand), BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE);
+    // 失败后 member 仍无级别/部门(原子,无半建态)
+    const m = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { gradeCode: true },
+    });
+    expect(m?.gradeCode).toBeNull();
+    expect(await prisma.memberDepartment.count({ where: { memberId, deletedAt: null } })).toBe(0);
+  });
+
+  it('㉑【T4】选专业队:缺对应 team-* gate → 28242;补 gate → joined', async () => {
+    const proOrg = await makeOrg('professional-water'); // 水队 → 需 team-water gate
+    const { appId } = await setupApproved({ targets: [proOrg] }); // 仅 8 通用,无 team-water
+    expectBizError(await join(appId, proOrg), BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE);
+
+    const nowIso = new Date().toISOString();
+    const withTeam = Object.fromEntries(
+      [...GENERAL_GATES, 'team-water'].map((g) => [
+        g,
+        { at: nowIso, by: adminUserId, passed: true, completionDate: nowIso },
+      ]),
+    );
+    const proOrg2 = await makeOrg('professional-water');
+    const s2 = await setupApproved({ targets: [proOrg2], gateMarks: withTeam });
+    const res = await join(s2.appId, proOrg2).expect(200);
+    expect(res.body.data.statusCode).toBe('joined');
+    expect(res.body.data.selectedOrganizationId).toBe(proOrg2);
+  });
+
+  it('㉒【T4】approved 后通用 gate 过期(military 3年前)→ 入队 28241(兜底重校验)', async () => {
+    const org = await makeOrg();
+    const nowIso = new Date().toISOString();
+    const expired = new Date(Date.now() - 3 * 365 * 24 * 3600_000).toISOString();
+    const marks = Object.fromEntries(
+      GENERAL_GATES.map((g) => [
+        g,
+        {
+          at: nowIso,
+          by: adminUserId,
+          passed: true,
+          completionDate: g === 'military' ? expired : nowIso,
+        },
+      ]),
+    );
+    const { appId } = await setupApproved({ targets: [org], gateMarks: marks });
+    expectBizError(await join(appId, org), BizCode.TEAM_JOIN_GATES_NOT_SATISFIED);
+  });
+
+  it('㉓【T4】跨轮(cycle closed)无延长期 → 28240;有延长期(未到)→ joined', async () => {
+    const org = await makeOrg();
+    const s1 = await setupApproved({ targets: [org], cycleStatus: 'closed' });
+    expectBizError(await join(s1.appId, org), BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
+
+    const org2 = await makeOrg();
+    const nextYear = new Date(Date.now() + 365 * 24 * 3600_000);
+    const s2 = await setupApproved({
+      targets: [org2],
+      cycleStatus: 'closed',
+      evaluationExtendedUntil: nextYear,
+    });
+    const res = await join(s2.appId, org2).expect(200);
+    expect(res.body.data.statusCode).toBe('joined');
+  });
+
+  it('㉔【T4】USER 一键入队 → RBAC_FORBIDDEN', async () => {
+    const org = await makeOrg();
+    const { appId } = await setupApproved({ targets: [org] });
+    expectBizError(await join(appId, org, userAuth), BizCode.RBAC_FORBIDDEN);
+  });
+
+  it('㉕【T4】member 已有级别(已入队)→ 28210', async () => {
+    const org = await makeOrg();
+    const { appId, memberId } = await setupApproved({ targets: [org] });
+    await prisma.member.update({ where: { id: memberId }, data: { gradeCode: 'level-1' } });
+    expectBizError(await join(appId, org), BizCode.TEAM_JOIN_MEMBER_ALREADY_ENROLLED);
   });
 });

@@ -7,10 +7,11 @@ import {
   CONTRIBUTION_THRESHOLD,
   type GateMarks,
   GENERAL_GATE_CODES,
+  allGeneralGatesSatisfied,
   contributionCutoff,
   isGateSatisfied,
 } from './team-join.constants';
-import type { GateStatusDto } from './team-join.dto';
+import type { GateStatusDto, TeamJoinApplicationAdminDto } from './team-join.dto';
 
 // 招新三期(入队)进度派生(贡献值汇总 + gate 实况);admin 面与 app 自助面共用,避免逻辑分叉
 // (评审稿 §4.2/§4.3;2026-06-19 元核验后抽出:同一份「本轮按北京日 / years / 延长期」判定单一真相源)。
@@ -60,4 +61,43 @@ export function buildGateStatus(
       extendedUntil: mark?.extendedUntil ?? null,
     };
   });
+}
+
+// ===== admin 行查询 include + presenter(admin list/detail/标 gate/评估/一键入队 共用)=====
+// cycle.statusCode 供一键入队判「综合评估本轮有效 / 延长期」(T4);member 供展示编号/称呼。
+export const TEAM_JOIN_APPLICATION_INCLUDE = {
+  cycle: { select: { openedAt: true, year: true, statusCode: true, name: true } },
+  member: { select: { memberNo: true, displayName: true } },
+} as const;
+
+export type TeamJoinApplicationRow = Prisma.TeamJoinApplicationGetPayload<{
+  include: typeof TEAM_JOIN_APPLICATION_INCLUDE;
+}>;
+
+export function buildAdminDto(
+  row: TeamJoinApplicationRow,
+  contribution: ContributionResult | null,
+  now: Date,
+): TeamJoinApplicationAdminDto {
+  const marks = (row.gateMarks as GateMarks | null) ?? null;
+  return {
+    id: row.id,
+    cycleId: row.cycleId,
+    memberId: row.memberId,
+    memberNo: row.member.memberNo,
+    memberDisplayName: row.member.displayName,
+    statusCode: row.statusCode,
+    targetOrganizationIds: (row.targetOrganizationIds as string[] | null) ?? [],
+    selectedOrganizationId: row.selectedOrganizationId,
+    gates: buildGateStatus(marks, row.cycle.openedAt, now),
+    generalGatesSatisfied: allGeneralGatesSatisfied(marks, row.cycle.openedAt, now),
+    contributionPoints: contribution ? contribution.points.toString() : null,
+    contributionSatisfied: contribution ? contribution.satisfied : null,
+    evaluationNote: row.evaluationNote,
+    evaluatedAt: row.evaluatedAt,
+    evaluationExtendedUntil: row.evaluationExtendedUntil,
+    eliminationStage: row.eliminationStage,
+    joinedAt: row.joinedAt,
+    createdAt: row.createdAt,
+  };
 }

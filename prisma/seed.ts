@@ -1969,6 +1969,15 @@ const TEAM_JOIN_APPLICATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> =
     description:
       '综合评估/淘汰(单一人工闸;通过→待入队 / 不通过→未通过;joining 门槛超期淘汰;评审稿 §4.5)',
   },
+  // 招新三期入队 T4(2026-06-19;评审稿 §4.5):一键入队(志愿者→队员;设部门 + 级别 level-1),全绑 biz-admin。
+  {
+    code: 'team-join-application.join.member',
+    module: 'team-join-application',
+    action: 'join',
+    resourceType: 'member',
+    description:
+      '一键入队:approved 申请单事务设部门 + 级别 level-1 → joined(原子/幂等;两层身份转换;评审稿 §4.5)',
+  },
 ];
 
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;码进 Permission 表但不绑 biz-admin(评审稿 §6)
