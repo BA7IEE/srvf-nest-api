@@ -714,11 +714,31 @@ describe('AttachmentsService (characterization)', () => {
       expect(prisma.attachment.create).not.toHaveBeenCalled();
     });
 
+    it('owner 软删窗口(F10 #399)→ 13011;不写库 / 不审计(token 签发后 owner 被软删)', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      const recorder = makeRecorderMock();
+      provider.headObject.mockResolvedValue({ exists: true, size: 1024 });
+      prisma.member.findFirst.mockResolvedValue(null); // owner 已软删 → Step 7.5 assertOwnerExists 抛
+      const service = makeService(prisma, { provider, recorder });
+
+      await expect(
+        service.confirmUpload(
+          makeConfirmDto(makeUploadToken()),
+          makeCurrentUser({ id: 'u1', memberId: 'mem-1' }),
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_OWNER_NOT_FOUND));
+      expect(prisma.attachment.create).not.toHaveBeenCalled();
+      expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
+    });
+
     it('同 key 二次提交(tx 内 findFirst 命中)→ 13001;不写库 / 不审计', async () => {
       const prisma = makePrismaMock();
       const provider = makeProviderMock();
       const recorder = makeRecorderMock();
       provider.headObject.mockResolvedValue({ exists: true, size: 1024 });
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' }); // F10:owner 存活(过 Step 7.5)→ 进 tx 撞 dedup
       prisma.attachmentTypeConfig.findFirst.mockResolvedValue(makeTypeConfig());
       prisma.attachment.findFirst.mockResolvedValue(makeAttachmentRow({ id: 'dup' }));
       const service = makeService(prisma, { provider, recorder });
@@ -739,6 +759,7 @@ describe('AttachmentsService (characterization)', () => {
       const provider = makeProviderMock();
       const recorder = makeRecorderMock();
       provider.headObject.mockResolvedValue({ exists: true, size: 1024, etag: 'etag-1' });
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' }); // F10:owner 存活复校(Step 7.5)
       prisma.attachmentTypeConfig.findFirst.mockResolvedValue(makeTypeConfig());
       prisma.attachment.findFirst.mockResolvedValue(null);
       prisma.attachment.create.mockResolvedValue(makeAttachmentRow({ ownerId: 'mem-1' }));

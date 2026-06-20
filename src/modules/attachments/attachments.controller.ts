@@ -142,6 +142,7 @@ export class AttachmentsController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.ATTACHMENT_NOT_FOUND,
+    BizCode.ATTACHMENT_OWNER_NOT_FOUND, // F10(#399):owner 软删窗口复校(与 create/upload-url 对齐)
     BizCode.ATTACHMENT_SIZE_EXCEEDED,
   )
   confirmUpload(
