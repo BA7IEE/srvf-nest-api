@@ -17,8 +17,8 @@ import {
   APP_STATUS_PUBLICITY,
   MEMBER_NO_MAX_SEQ,
   comparePromotionOrder,
+  decidePromotionIssuance,
   formatMemberNo,
-  isPromotable,
 } from './recruitment.constants';
 import type { PromoteResultDto, PromoteSkippedItemDto, PromotedItemDto } from './recruitment.dto';
 
@@ -77,23 +77,26 @@ export class RecruitmentPromotionService {
       where: { cycleId, statusCode: APP_STATUS_PUBLICITY, deletedAt: null },
     });
 
-    // 事务前分区(纯查询):promotable(大陆可派生 + openid 未占用)vs skip(外籍/缺字段/openid 已绑)。
-    // skip 项 report 不 block(M-1);事务只处理 promotable,保证「不致整批因外籍卡死」。
+    // F16(#399):openid 占用一次性批量查(取代逐行 findFirst,N 顺序往返 → 1;行为/原子性零变)。
+    const boundOpenids = await this.loadBoundOpenids(apps);
+
+    // 事务前分区(纯查询):先按发号序排,再用与公示预览共享的 decidePromotionIssuance 判定 —— 结构性
+    // 保证「公示拟发号 = 实发」(#399 F9)、批内同 openid 仅首行发号余项 skip(#399 F15,免第二行入
+    // 事务撞 User.openid @unique 整批回滚)。skip 项 report 不 block(外籍/缺字段/openid 占用;M-1)。
+    const sortedApps = [...apps].sort(comparePromotionOrder);
     const promotable: RecruitmentApplication[] = [];
     const skipped: PromoteSkippedItemDto[] = [];
-    for (const a of apps) {
-      const openidBound = a.openid ? await this.openidAlreadyBound(a.openid) : false;
-      if (isPromotable(a) && !openidBound) {
-        promotable.push(a);
+    for (const d of decidePromotionIssuance(sortedApps, boundOpenids)) {
+      if (d.willIssue) {
+        promotable.push(d.app);
       } else {
         skipped.push({
-          applicationId: a.id,
-          realName: a.realName,
-          reason: this.skipReason(a, openidBound),
+          applicationId: d.app.id,
+          realName: d.app.realName,
+          reason: d.reason as string,
         });
       }
     }
-    promotable.sort(comparePromotionOrder);
 
     // 超时硬化:bcrypt(rounds=10,~80ms/个,CPU 密集)预算在**事务之外**完成。
     // 口令为随机高熵、与编号/事务无关,故可在事务前并发预算 n 个哈希,事务回调内逐个取用,
@@ -177,7 +180,9 @@ export class RecruitmentPromotionService {
                 select: { id: true },
               });
             }
-            // 标 promoted + 链 + 即时清敏感(PII 已搬 member;blob 归 member,留存 SOP 不再触 promoted 行)
+            // 标 promoted + 链 + 即时清敏感(PII 已搬 member;blob 归 member,留存 SOP 不再触 promoted 行)。
+            // F12(#399):openid + reviewNote 亦属留存 SOP §1 须置 NULL 的敏感字段;promote 即时清后
+            // SOP「WHERE sensitivePurgedAt IS NULL」永久跳过本行 —— 漏清则两再识别字段在「已脱敏」行永久残留。
             await tx.recruitmentApplication.update({
               where: { id: a.id },
               data: {
@@ -192,6 +197,8 @@ export class RecruitmentPromotionService {
                 emergencyContacts: Prisma.DbNull,
                 profileExtra: Prisma.DbNull,
                 idCardImageKey: null,
+                openid: null,
+                reviewNote: null,
               },
             });
             await this.auditLogs.log({
@@ -245,19 +252,16 @@ export class RecruitmentPromotionService {
     }
   }
 
-  // openid 全局唯一含软删占用(沿 User.openid @unique 范式):已被任何 User(含软删)占用 → 不可建
-  private async openidAlreadyBound(openid: string): Promise<boolean> {
-    const existing = await this.prisma.user.findFirst({ where: { openid }, select: { id: true } });
-    return existing !== null;
-  }
-
-  private skipReason(app: RecruitmentApplication, openidBound: boolean): string {
-    if (app.isForeigner) return 'foreign-manual-build';
-    if (openidBound) return 'openid-already-bound';
-    if (app.openid == null) return 'missing-openid';
-    if (app.birthDate == null || app.genderCode == null) return 'missing-derived-field';
-    if (app.realName == null) return 'incomplete-data';
-    return 'not-promotable';
+  // F16(#399):openid 占用一次性批量查(沿 User.openid @unique 含软删占用语义)→ Set。
+  // 取代原逐行 findFirst(N 顺序往返);空集免查。发号资格判定/skipReason 已并入 constants.decidePromotionIssuance。
+  private async loadBoundOpenids(apps: readonly { openid: string | null }[]): Promise<Set<string>> {
+    const openids = apps.map((a) => a.openid).filter((o): o is string => o != null);
+    if (openids.length === 0) return new Set<string>();
+    const rows = await this.prisma.user.findMany({
+      where: { openid: { in: openids } },
+      select: { openid: true },
+    });
+    return new Set(rows.map((r) => r.openid).filter((o): o is string => o != null));
   }
 
   private parseContacts(json: Prisma.JsonValue | null): EmergencyContactJson[] {

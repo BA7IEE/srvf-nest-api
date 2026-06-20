@@ -812,14 +812,17 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     // 紧急联系人迁移(2 个,priority 0/1)
     expect(li.emergencyContacts.length).toBe(2);
     // 报名行:promoted + 链 + 敏感清 + blob 归 member + 脱敏统计留存
+    // (F12#399 后 openid 已即时清,改用 promotedMemberId 定位本行)
     const liApp = await prisma.recruitmentApplication.findFirstOrThrow({
-      where: { openid: 'dev-openid-p3-l' },
+      where: { promotedMemberId: li.id },
     });
     expect(liApp.statusCode).toBe('promoted');
     expect(liApp.promotedMemberId).toBe(li.id);
     expect(liApp.realName).toBeNull();
     expect(liApp.idCardNumber).toBeNull();
     expect(liApp.idCardImageKey).toBeNull();
+    expect(liApp.openid).toBeNull(); // F12(#399):openid 一并即时清
+    expect(liApp.reviewNote).toBeNull(); // F12(#399):reviewNote 一并即时清
     expect(liApp.sensitivePurgedAt).toBeTruthy();
     expect(liApp.cityDistrict).toBe('北京市朝阳区'); // 脱敏统计永久留存
     // cycle.memberNoSeq 自增到 3
@@ -985,5 +988,158 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(await prisma.user.count({ where: { memberId: { not: null } } })).toBe(N);
     const cy = await prisma.recruitmentCycle.findFirstOrThrow({ where: { id: cycle.id } });
     expect(cy.memberNoSeq).toBe(N);
+  });
+
+  // =====================================================================
+  // #399 P3 promote 健壮批(F12 即时清漏 / F15 批内 openid 去重 / F9 公示口径分叉)
+  // 直接造 publicity 报名(沿 ㉛ 手法,绕开提交链路)
+  // =====================================================================
+
+  function publicityRow(over: Record<string, unknown>) {
+    return {
+      cycleId: '', // 调用处填
+      statusCode: 'publicity',
+      documentTypeCode: 'mainland_id',
+      isForeigner: false,
+      genderCode: 'male',
+      birthDate: new Date('1995-03-07T00:00:00.000Z'),
+      phone: '13900000000',
+      ...over,
+    };
+  }
+
+  it('㉜(二期 F12) promote 即时清:promoted 行 openid + reviewNote 一并置 NULL(留存 SOP 跳过 promoted 行的前提)', async () => {
+    const cycle = await openCycle();
+    await prisma.recruitmentApplication.createMany({
+      data: [
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 'f12-openid',
+          realName: '周九',
+          idCardNumber: 'F12ID0001',
+          reviewNote: '人工核验备注(含可识别信息)',
+        }),
+      ],
+    });
+    const res = await promote(cycle.id);
+    expect(res.body.data.promotedCount).toBe(1);
+    const appId = res.body.data.promoted[0].applicationId as string;
+    const row = await prisma.recruitmentApplication.findFirstOrThrow({ where: { id: appId } });
+    expect(row.statusCode).toBe('promoted');
+    expect(row.sensitivePurgedAt).toBeTruthy();
+    // F12:两再识别字段亦清(原先漏清 → 在 sensitivePurgedAt 已置行被 SOP 永久跳过、永久残留)
+    expect(row.openid).toBeNull();
+    expect(row.reviewNote).toBeNull();
+    // 既有即时清字段一并复核(零行为漂移)
+    expect(row.realName).toBeNull();
+    expect(row.idCardNumber).toBeNull();
+  });
+
+  it('㉝(二期 F15) 同批共享 openid:仅发号序首行发号、次行 skip(duplicate-openid-in-batch),不整批回滚零发号', async () => {
+    const cycle = await openCycle();
+    const membersBefore = await prisma.member.count();
+    // 两行共享 openid 'f15-dup' + 一行独立;原先第二行入事务撞 User.openid @unique → P2002 → 整批回滚
+    await prisma.recruitmentApplication.createMany({
+      data: [
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 'f15-dup',
+          realName: '钱一',
+          idCardNumber: 'F15ID0001',
+        }),
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 'f15-dup',
+          realName: '钱二',
+          idCardNumber: 'F15ID0002',
+        }),
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 'f15-uniq',
+          realName: '孙三',
+          idCardNumber: 'F15ID0003',
+        }),
+      ],
+    });
+    const res = await promote(cycle.id);
+    expect(res.status).toBe(200);
+    // 去重后 2 发号(共享 openid 仅发号序首行)+ 1 skip;不整批回滚(否则 promotedCount=0)
+    expect(res.body.data.promotedCount).toBe(2);
+    expect(res.body.data.skippedCount).toBe(1);
+    expect(res.body.data.skipped[0]).toMatchObject({ reason: 'duplicate-openid-in-batch' });
+    expect(await prisma.member.count()).toBe(membersBefore + 2);
+    // 共享 openid 仅一个 User 持有(@unique 未被撞)
+    expect(await prisma.user.count({ where: { openid: 'f15-dup' } })).toBe(1);
+  });
+
+  it('㉞(二期 F9) 公示预览 = 实发:openid 已被既有 User 占用的行 needsManualBuild + 不占号,其余拟发号与 promote 实发一致', async () => {
+    const cycle = await openCycle();
+    // 既有 User 占用某 openid(模拟该报名者 openid 已绑定既有账号 → promote 会 skip)
+    await prisma.user.create({
+      data: {
+        username: 'f9-bound-user',
+        passwordHash: 'x',
+        role: 'USER',
+        openid: 'f9-bound-openid',
+      },
+    });
+    // 拼音序:李四(li)< 王五(wang,openid 占用)< 张三(zhang)
+    await prisma.recruitmentApplication.createMany({
+      data: [
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 'f9-openid-li',
+          realName: '李四',
+          idCardNumber: 'F9ID0001',
+        }),
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 'f9-bound-openid',
+          realName: '王五',
+          idCardNumber: 'F9ID0002',
+        }),
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 'f9-openid-zhang',
+          realName: '张三',
+          idCardNumber: 'F9ID0003',
+        }),
+      ],
+    });
+    // 公示预览:王五(openid 占用)needsManualBuild + null;李四 26001 / 张三 26002(王五不占号、无偏移)
+    const pv = await request(httpServer(app))
+      .get(`${ADMIN_CYCLES}/${cycle.id}/publicity-list`)
+      .set('Authorization', adminAuth);
+    expect(pv.status).toBe(200);
+    expect(pv.body.data.promotableCount).toBe(2);
+    expect(pv.body.data.items[0]).toMatchObject({
+      realName: '李四',
+      needsManualBuild: false,
+      proposedMemberNo: '26001',
+    });
+    expect(pv.body.data.items[1]).toMatchObject({
+      realName: '王五',
+      needsManualBuild: true,
+      proposedMemberNo: null,
+    });
+    expect(pv.body.data.items[2]).toMatchObject({
+      realName: '张三',
+      needsManualBuild: false,
+      proposedMemberNo: '26002',
+    });
+    // 实发 = 预览:李四 26001 / 张三 26002;王五 skip(openid-already-bound)
+    const res = await promote(cycle.id);
+    expect(res.body.data.promotedCount).toBe(2);
+    expect(res.body.data.skippedCount).toBe(1);
+    expect(res.body.data.skipped[0]).toMatchObject({ reason: 'openid-already-bound' });
+    expect(
+      res.body.data.promoted.map((p: { realName: string; memberNo: string }) => [
+        p.realName,
+        p.memberNo,
+      ]),
+    ).toEqual([
+      ['李四', '26001'],
+      ['张三', '26002'],
+    ]);
   });
 });
