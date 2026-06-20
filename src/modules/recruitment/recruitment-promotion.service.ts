@@ -10,6 +10,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { assertEmergencyRelationCodeValid } from '../emergency-contacts/emergency-relation.validation';
 import { RbacService } from '../permissions/rbac.service';
 import {
   APP_STATUS_PROMOTED,
@@ -158,9 +159,13 @@ export class RecruitmentPromotionService {
               },
               select: { id: true },
             });
-            // EmergencyContact(Json → 行;relationCode 原样 best-effort;priority=序)
+            // EmergencyContact(Json → 行;priority=序)
+            // 本次修订前为「relationCode 原样 best-effort」→ 绕过字典校验持久化非法码(#399 F3)。
+            // 现复用 canonical assertEmergencyRelationCodeValid(纯函数、直连 tx,不引 service;防环铁律不破):
+            // 非法 relationCode → EMERGENCY_CONTACT_RELATION_CODE_INVALID,整批事务回滚(沿「失败可恢复」)。
             const contacts = this.parseContacts(a.emergencyContacts);
             for (let j = 0; j < contacts.length; j++) {
+              await assertEmergencyRelationCodeValid(tx, contacts[j].relation);
               await tx.emergencyContact.create({
                 data: {
                   memberId: member.id,

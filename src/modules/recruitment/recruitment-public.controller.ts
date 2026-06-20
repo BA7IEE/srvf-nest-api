@@ -114,6 +114,8 @@ export class RecruitmentPublicController {
     BizCode.RECRUITMENT_AGE_OUT_OF_RANGE,
     BizCode.RECRUITMENT_DUPLICATE_APPLICATION,
     BizCode.RECRUITMENT_ID_CARD_IMAGE_REQUIRED,
+    // F3(#399):紧急联系人 relation 字典码校验(报名侧;与 promote 一致)
+    BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID,
     BizCode.REALNAME_CHANNEL_NOT_CONFIGURED,
     BizCode.REALNAME_API_FAILED,
     BizCode.TOO_MANY_REQUESTS,
