@@ -24,9 +24,35 @@
 >
 > **残余(均 P3、无当前运行时危害,登记 [`docs/ai-harness/NEXT_TASKS.md`](../../ai-harness/NEXT_TASKS.md))**:F2 owner-绑定 key(模式 A 弃用 / 命名空间内已知-key 残余)· attachment.`*.other` 接 enforcement 时复核 F1 保留集 · `fast-uri`/@types-supertest `form-data`(dev-only,运行期不触达)· cos>`fast-xml-parser` <5.7.0 moderate(需 4→5 breaking;cos 仅解析,低危)+ CI `pnpm audit` gate(本报告 §3 F18)。
 >
-> §3 的 P3(13)未在本批处理(F12/F13/F14 等),仍 open,按报告 §7 分批后续。
+> §3 的 P3(13)处理收口见下「✅ P3 处理状态」块。
 
 ---
+
+> ## ✅ P3 处理状态(2026-06-20;review-then-fix goal「#399 review P3 处理」收口)
+>
+> §3 的 **13 项 P3 全部处理**(R0 triage 元核验逐项复核为真/复核 severity → 拍板方案 A;per-task PR + 元核验 + 回归/边界测试,均合入 `main`):
+>
+> **修(9;B/A 档)**:
+>
+> | finding | 修法落地 | PR |
+> |---|---|---|
+> | **F12** promote 即时清漏 PII | update 补 `openid:null`+`reviewNote:null`(留存 SOP §1 列为须 NULL;promote 置 `sensitivePurgedAt` 后 SOP `WHERE … IS NULL` 永久跳过本行 → 漏清即永久残留) | [#409](https://github.com/BA7IEE/srvf-nest-api/pull/409) |
+> | **F15** 同批 openid 整批回滚 | 批内 openid 去重 → 仅发号序首行发号、余项 skip=`duplicate-openid-in-batch`(免第二行入事务撞 `User.openid @unique` → P2002 整批回滚零发号) | [#409](https://github.com/BA7IEE/srvf-nest-api/pull/409) |
+> | **F16** N+1 | 逐行 `user.findFirst` → 单次 `findMany({openid:{in}})` 构 Set(N→1) | [#409](https://github.com/BA7IEE/srvf-nest-api/pull/409) |
+> | **F9** 公示口径分叉 | 抽 `decidePromotionIssuance` 纯函数,`publicityList` 与 `promote` 共享同序同判 → 公示拟发号 = 实发 | [#409](https://github.com/BA7IEE/srvf-nest-api/pull/409) |
+> | **F10** confirmUpload owner | confirm 落库前补 `assertOwnerExists`(对齐 create/upload-url;owner 软删窗口 → 13011 拒、不落悬空行) | [#410](https://github.com/BA7IEE/srvf-nest-api/pull/410) |
+> | **F11** 容量竞态 | approve 容量闸前对 `"Activity"` 行加 `FOR UPDATE`(仅限名额)串行化并发 approve,杜绝 pass 超 capacity;:459 注释 true-up | [#411](https://github.com/BA7IEE/srvf-nest-api/pull/411) |
+> | **F17 + F19** 扩容文档 | deployment.md 限流器 8→9(+recruitment)、+第 7 处 realname-settings 缓存、header 计数 6→7、current-state 指针 5→7 | [#412](https://github.com/BA7IEE/srvf-nest-api/pull/412) |
+> | **F14** check 脚本 | controller-prefix 注释/PASS 摘要硬写「4 canonical」→ `${CANONICAL_PREFIXES.length}`(实 5,自维护) | [#413](https://github.com/BA7IEE/srvf-nest-api/pull/413) |
+>
+> **接受 + 登记(3;无当前运行时危害,登记 `current-state §4` / `NEXT_TASKS`,理由见各处)**:
+> - **F7** 付费核验 cost-DoS:异号刷付费核验,与已接受 28003 枚举面**同源**;**真实腾讯云实名核验休眠(DevStub 免费)今日零成本**,接通才激活(类 F2/COS);彻底修 = per-openid 配额(改报名去重语义,属产品决策)→ 真实通道接通触发再评。
+> - **F8** promote 写 `genderCode`/`documentTypeCode` 字典契约:**复核降级**——`isForeignDocument` 令非 `mainland_id` 即 foreign(不进发号),promote 只写固定 canonical 码 `mainland_id`/`male`/`female`(派生/非用户可控,**无 F3 式注入**),且 profile 码当前无字典校验消费点 → 零运行时危害;真修 = 保证 prod 字典 seed 含这些 item code(seed/ops 不变量,加 promote 断言反会把潜在不一致硬化成失败)。
+> - **F13** `BIZ_ADMIN_DESCRIPTION` 计数过时(「48 中绑 47」→ 实 58/57,漏整个 team-join;rbacmap 不校 description 故逃门禁)= **cosmetic doc-drift**;改 `prisma/seed.ts`=D 档,值不抵 → 登记 NEXT_TASKS,待 seed 下次改动顺手校准(或改 `*_PERMISSION_SEED.length` 动态拼接)。
+>
+> **延后(1)**:**F18** CI `pnpm audit` gate → 归 `system-foundation-governance.md` G-12 正式立项(治理策略选择 + 噪声/阻断权衡;与 P2 残余 dev-only CVE 同处理)。
+>
+> **§2 P2-6 残余 4 项(F1/F2/F5/F6,见 NEXT_TASKS)不变**:仍 deferred(COS 接通 / `attachment.*.other` enforcement 接线 / 上游升级触发)。
 
 ## 0. 结论(TL;DR)
 

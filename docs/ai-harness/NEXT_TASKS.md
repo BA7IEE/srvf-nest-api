@@ -37,9 +37,17 @@
 - **F5/F6 关联:dev-only 依赖 CVE**(P3)— `fast-uri`(`@nestjs/cli>…>ajv`,path-traversal/host-confusion high)+ `@types/supertest>…>form-data`(CRLF high)均 **dev/构建/测试链、运行期不触达**;待 `@nestjs/cli` 官方升级链 / `@types` 更新。**+ `cos>fast-xml-parser` <5.7.0 moderate**(XMLBuilder 注入;需 4→5 **breaking major**,cos 仅解析腾讯云响应、不以不可信输入构造 XML,低危,本批拍板范围外)。
 - **F18(报告 §3):CI `pnpm audit` 门禁**(P3)— 全仓无 audit gate;建议 CI 加 `pnpm audit --audit-level high`(先告警再门禁)或 G-12 正式立项,把残余 CVE 分类「修/接受+理由」登记。
 
+### P2-7 #399 review P3 处理残余(接受+登记 3 项;**均无当前运行时危害**) — 2026-06-20 收口登记
+> #399 §3 的 13 项 P3:**9 项已修**(#409-#413,见归档区 + 冻结报告 ✅ P3 处理状态)、**1 项延后**(F18 CI audit gate,见上 P2-6 末项 → 归 G-12),以下 3 项 R0 triage 复核后**接受+登记**:
+- **F7 付费核验 cost-DoS**(P3)— 同 openid 可用不同伪造身份证号无限提交、每条直达付费实名核验(去重键 `(cycleId,idCardNumber)` 无 per-openid 上限),与已接受的 28003 枚举面**同源**(current-state §4)。**真实腾讯云实名核验休眠(DevStub 免费)→ 今日零成本**;接通才激活(类 F2/COS 接通前非紧急)。彻底修 = per-openid 配额(改报名去重语义,属产品决策)→ **真实通道接通触发再评**。
+- **F8 promote 写字典码契约**(P3)— promote 写 `MemberProfile.genderCode`/`documentTypeCode` 不经 canonical 字典校验。**R0 复核降级**:`isForeignDocument` 令非 `mainland_id` 即 foreign(不进一键发号),故 promote 只写固定 canonical 码 `mainland_id`/`male`/`female`(身份证派生 / 非用户可控,**无 F3 式注入污染**),且 profile 码当前无字典校验消费点 → **零运行时危害**。真修 = 保证 prod 字典 seed 含 `male`/`female`/`mainland_id` item code(**seed/ops 不变量**;加 promote 断言反会把潜在不一致硬化成 promote 失败、且 demo seed `demo-*` 会打挂既有 e2e)→ seed/字典治理时一并保障。
+- **F13 `BIZ_ADMIN_DESCRIPTION` 计数过时**(P3,cosmetic)— seed 持久化的 biz-admin `role.description` 枚举停在「48 中绑 47」,实际 58/57(漏整个 team-join);rbacmap 不校 description 文本故逃门禁。**纯 cosmetic doc-drift**,无功能影响;改 `prisma/seed.ts`=D 档,值不抵 → 留待 **seed 下次改动顺手校准**(建议改 `*_PERMISSION_SEED.length` 动态拼接,根除复发)。
+
 ---
 
 ## 已完成项归档区
+
+- **#399 全仓 review P3 处理(9 修 + 3 接受 + 1 延后)** ✅(2026-06-20 review-then-fix goal「#399 review P3 处理」,R0 triage 元核验逐项复核 → 拍板方案 A;per-task PR + 元核验 + 回归/边界测试):**修 9**——F12 即时清漏 / F15 批内 openid 去重 / F16 N+1 / F9 公示口径([#409](https://github.com/BA7IEE/srvf-nest-api/pull/409))· F10 confirmUpload owner 复校([#410](https://github.com/BA7IEE/srvf-nest-api/pull/410))· F11 容量 FOR UPDATE([#411](https://github.com/BA7IEE/srvf-nest-api/pull/411))· F17+F19 扩容文档([#412](https://github.com/BA7IEE/srvf-nest-api/pull/412))· F14 check 脚本([#413](https://github.com/BA7IEE/srvf-nest-api/pull/413));**接受+登记 3**(F7/F8/F13,见上 P2-7)；**延后 1**(F18→G-12,见 P2-6)。全程 B/A 档无 schema;contract snapshot 仅 F10 confirm-upload +13011 受控增量,余零 diff;每项对抗式自检 + 回归/边界测试。冻结报告 [`archive/reviews/full-repo-systematic-review-v0.26.0.md`](../archive/reviews/full-repo-systematic-review-v0.26.0.md) 顶部「✅ P3 处理状态」。
 
 - **#399 全仓 review P2 六项修复** ✅(2026-06-20 review-then-fix goal「全仓 review P2 修复」,per-task PR + 元核验):F1 RBAC 分级闸 [#400](https://github.com/BA7IEE/srvf-nest-api/pull/400) · F5+F6 dep CVE overrides [#401](https://github.com/BA7IEE/srvf-nest-api/pull/401) · F2 attachment key 命名空间正则 [#402](https://github.com/BA7IEE/srvf-nest-api/pull/402) · F4 attendance reject 软删解 time-overlap 死锁 [#403](https://github.com/BA7IEE/srvf-nest-api/pull/403) · F3 emergency relation 字典校验(报名侧主入口 + promote defense-in-depth 双层一致)[#404](https://github.com/BA7IEE/srvf-nest-api/pull/404)。全程 B/config 档无 schema;每项对抗式自检 + 回归/边界测试;残余见上 P2-6。冻结报告 [`archive/reviews/full-repo-systematic-review-v0.26.0.md`](../archive/reviews/full-repo-systematic-review-v0.26.0.md) 顶部「✅ 修复落地状态」。
 
