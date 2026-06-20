@@ -882,7 +882,8 @@ export const BizCode = {
   // - 28230:无 open 入队轮(T3 自助 create 前置)
   // - 28240:状态机闸(标 gate / 综合评估 / 改候选目标态不符)
   // 候选/选定部门 org 存在+ACTIVE 校验复用既有 ORGANIZATION_NOT_FOUND / ORGANIZATION_INACTIVE(不另开码)。
-  // 后续(T4 一键入队)增量:28241 GATES_NOT_SATISFIED / 28242 DEPARTMENT_NOT_ELIGIBLE(本 PR 未用,不预定义)。
+  // - 28241:一键入队兜底重校验失败(approved 后通用门槛/贡献值过期;T4)
+  // - 28242:选定部门不在候选 / 选了专业队但对应 team-* gate 未过(T4)
   // 不开 281xx-style FORBIDDEN_*(权限拒绝走通用 30100/40300,沿 phase-1 §3.3);
   // grade-code-invalid 走既有 MEMBER_GRADE_CODE_INVALID(level-1 seed 缺失时,理论不发生)。
   TEAM_JOIN_CYCLE_NOT_FOUND: {
@@ -913,6 +914,16 @@ export const BizCode = {
   TEAM_JOIN_APPLICATION_WRONG_STATE: {
     code: 28240,
     message: '该入队申请当前状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  TEAM_JOIN_GATES_NOT_SATISFIED: {
+    code: 28241,
+    message: '入队门槛或贡献值已不满足,无法入队(请重新核对)',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE: {
+    code: 28242,
+    message: '选定部门不在候选范围,或专业队考核未通过,无法入队',
     httpStatus: HttpStatus.CONFLICT,
   },
 

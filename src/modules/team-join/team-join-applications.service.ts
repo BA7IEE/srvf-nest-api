@@ -24,8 +24,9 @@ import {
   isExtendableGate,
 } from './team-join.constants';
 import {
-  type ContributionResult,
-  buildGateStatus,
+  TEAM_JOIN_APPLICATION_INCLUDE,
+  type TeamJoinApplicationRow,
+  buildAdminDto,
   computeContribution,
 } from './team-join-progress';
 import type {
@@ -37,16 +38,9 @@ import type {
 // 招新三期(入队)T2(2026-06-19):入队申请 admin surface 逻辑(评审稿 §3.2 / §4)。
 // 标 gate(幂等;末次全过 + 贡献值≥5 自动推进 pending_evaluation)/ 综合评估(单一人工闸)/
 // list+detail / 贡献值只读汇总(approved sheet,checkInAt < cutoff)。一键入队(joined)在 T4。
+// 行查询 include + admin presenter(buildAdminDto)抽至 team-join-progress.ts,admin/enrollment 共用。
 
 const AUDIT_RESOURCE_TYPE = 'team_join_application';
-
-// 行查询统一带 cycle(openedAt/year 算 gate 有效期 + 贡献值 cutoff)+ member(展示编号/称呼)。
-const APPLICATION_INCLUDE = {
-  cycle: { select: { openedAt: true, year: true } },
-  member: { select: { memberNo: true, displayName: true } },
-} as const;
-
-type ApplicationRow = Prisma.TeamJoinApplicationGetPayload<{ include: typeof APPLICATION_INCLUDE }>;
 
 @Injectable()
 export class TeamJoinApplicationsService {
@@ -65,10 +59,10 @@ export class TeamJoinApplicationsService {
   private async findOrThrow(
     id: string,
     client: PrismaService | Prisma.TransactionClient,
-  ): Promise<ApplicationRow> {
+  ): Promise<TeamJoinApplicationRow> {
     const row = await client.teamJoinApplication.findFirst({
       where: { id, deletedAt: null },
-      include: APPLICATION_INCLUDE,
+      include: TEAM_JOIN_APPLICATION_INCLUDE,
     });
     if (!row) {
       throw new BizException(BizCode.TEAM_JOIN_APPLICATION_NOT_FOUND);
@@ -89,7 +83,7 @@ export class TeamJoinApplicationsService {
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.teamJoinApplication.findMany({
         where,
-        include: APPLICATION_INCLUDE,
+        include: TEAM_JOIN_APPLICATION_INCLUDE,
         orderBy: { createdAt: 'desc' },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -97,7 +91,7 @@ export class TeamJoinApplicationsService {
       this.prisma.teamJoinApplication.count({ where }),
     ]);
     return {
-      items: rows.map((r) => this.toAdminDto(r, null, new Date())),
+      items: rows.map((r) => buildAdminDto(r, null, new Date())),
       total,
       page: query.page,
       pageSize: query.pageSize,
@@ -109,7 +103,7 @@ export class TeamJoinApplicationsService {
     await this.assertCanOrThrow(user, 'team-join-application.read.record');
     const row = await this.findOrThrow(id, this.prisma);
     const contribution = await computeContribution(this.prisma, row.memberId, row.cycle.year);
-    return this.toAdminDto(row, contribution, new Date());
+    return buildAdminDto(row, contribution, new Date());
   }
 
   // ============ 标 gate(幂等;仅 joining/pending_evaluation 态;末次自动推进)============
@@ -155,7 +149,7 @@ export class TeamJoinApplicationsService {
       const updated = await tx.teamJoinApplication.update({
         where: { id },
         data: { gateMarks: marks as Prisma.InputJsonValue, statusCode: nextStatus },
-        include: APPLICATION_INCLUDE,
+        include: TEAM_JOIN_APPLICATION_INCLUDE,
       });
       await this.auditLogs.log({
         event: 'team-join-application.mark-gate',
@@ -174,7 +168,7 @@ export class TeamJoinApplicationsService {
         },
         tx,
       });
-      return this.toAdminDto(updated, contribution, now);
+      return buildAdminDto(updated, contribution, now);
     });
   }
 
@@ -236,7 +230,7 @@ export class TeamJoinApplicationsService {
       const updated = await tx.teamJoinApplication.update({
         where: { id },
         data,
-        include: APPLICATION_INCLUDE,
+        include: TEAM_JOIN_APPLICATION_INCLUDE,
       });
       await this.auditLogs.log({
         event: 'team-join-application.evaluate',
@@ -250,35 +244,7 @@ export class TeamJoinApplicationsService {
         extra: { approved: dto.approved, eliminationStage },
         tx,
       });
-      return this.toAdminDto(updated, null, now);
+      return buildAdminDto(updated, null, now);
     });
-  }
-
-  private toAdminDto(
-    row: ApplicationRow,
-    contribution: ContributionResult | null,
-    now: Date,
-  ): TeamJoinApplicationAdminDto {
-    const marks = (row.gateMarks as GateMarks | null) ?? null;
-    return {
-      id: row.id,
-      cycleId: row.cycleId,
-      memberId: row.memberId,
-      memberNo: row.member.memberNo,
-      memberDisplayName: row.member.displayName,
-      statusCode: row.statusCode,
-      targetOrganizationIds: (row.targetOrganizationIds as string[] | null) ?? [],
-      selectedOrganizationId: row.selectedOrganizationId,
-      gates: buildGateStatus(marks, row.cycle.openedAt, now),
-      generalGatesSatisfied: allGeneralGatesSatisfied(marks, row.cycle.openedAt, now),
-      contributionPoints: contribution ? contribution.points.toString() : null,
-      contributionSatisfied: contribution ? contribution.satisfied : null,
-      evaluationNote: row.evaluationNote,
-      evaluatedAt: row.evaluatedAt,
-      evaluationExtendedUntil: row.evaluationExtendedUntil,
-      eliminationStage: row.eliminationStage,
-      joinedAt: row.joinedAt,
-      createdAt: row.createdAt,
-    };
   }
 }

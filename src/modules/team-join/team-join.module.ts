@@ -10,6 +10,7 @@ import { AppMeTeamJoinService } from './team-join-applications.app.service';
 import { TeamJoinApplicationsService } from './team-join-applications.service';
 import { TeamJoinCyclesController } from './team-join-cycles.controller';
 import { TeamJoinCyclesService } from './team-join-cycles.service';
+import { TeamJoinEnrollmentService } from './team-join-enrollment.service';
 
 // 招新三期(入队:志愿者 → 队员)T2/T3(2026-06-19):team-join 第 27 模块装配(评审稿 §5)。
 // 消费 Permissions(rbac.can)/ AuditLogs(审计)/ Users(AppIdentityResolver:App 准入,T3);
@@ -23,6 +24,11 @@ import { TeamJoinCyclesService } from './team-join-cycles.service';
     TeamJoinApplicationsAdminController,
     TeamJoinApplicationsAppController,
   ],
-  providers: [TeamJoinCyclesService, TeamJoinApplicationsService, AppMeTeamJoinService],
+  providers: [
+    TeamJoinCyclesService,
+    TeamJoinApplicationsService,
+    AppMeTeamJoinService,
+    TeamJoinEnrollmentService,
+  ],
 })
 export class TeamJoinModule {}

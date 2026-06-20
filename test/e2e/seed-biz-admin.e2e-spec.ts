@@ -130,6 +130,8 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   'team-join-application.read.record',
   'team-join-application.mark.gate',
   'team-join-application.evaluate.assessment',
+  // 招新三期入队 T4 +1(2026-06-19;评审稿 §4.5,全绑无例外)
+  'team-join-application.join.member',
 ] as const;
 const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 57
 
@@ -196,11 +198,11 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
       'recruitment-cycle': 3,
       'recruitment-application': 5,
       'team-join-cycle': 3,
-      'team-join-application': 3,
+      'team-join-application': 4,
     });
   });
 
-  it('2 + 3. biz-admin RbacRole 存在;绑定恰 56 条;member.delete.record 不在绑定中', async () => {
+  it('2 + 3. biz-admin RbacRole 存在;绑定恰 57 条;member.delete.record 不在绑定中', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-2' });
     expect(result.code).toBe(0);
 

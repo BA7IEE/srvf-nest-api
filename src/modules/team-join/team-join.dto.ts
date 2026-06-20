@@ -130,6 +130,19 @@ export class EvaluateTeamJoinApplicationDto {
   evaluationExtendedUntil?: string;
 }
 
+// ============ admin 一键入队(T4;志愿者 → 队员;评审稿 §4.5)============
+
+export class JoinTeamJoinApplicationDto {
+  @ApiProperty({
+    description:
+      '最终选定目标部门 orgId(须在候选 targetOrganizationIds 中且 ACTIVE;若为专业队则对应 team-* gate 须已过)',
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  organizationId!: string;
+}
+
 // ============ admin 报名出参 ============
 
 // 单个 gate 实况(service 派生:是否标记 / 通过 / 在有效期内满足)
