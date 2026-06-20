@@ -7,10 +7,10 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(三方一致) | **v0.26.0**(2026-06-20;package.json = Swagger = tag = Release;tag 指向 `ec8b2e70` 标 Latest;要点见 CHANGELOG v0.26.0 段) |
-| `main` HEAD | `ec8b2e70`(#397 v0.26.0 handoff;tag v0.26.0 与 HEAD 同点,本行为滚动快照,current-state 回填 PR 合入后再滚动) |
-| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **0**(v0.26.0 已折叠 4 条:招新三期入队 #391〔T0+T1〕/#392〔T2〕/#393〔T3〕/#394〔T4〕) |
-| 最新 handoff | [`archive/handoff/v0.26.0.md`](archive/handoff/v0.26.0.md)(不回改) |
+| 版本(三方一致) | **v0.26.1**(2026-06-20;package.json = Swagger = tag = Release;tag 指向 `29b6e16e` 标 Latest;要点见 CHANGELOG v0.26.1 段) |
+| `main` HEAD | `29b6e16e`(#407 v0.26.1 handoff;tag v0.26.1 与 HEAD 同点,本行为滚动快照,current-state 回填 PR 合入后再滚动) |
+| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **0**(v0.26.1 = #399 review P2 六项修复 Fixed ×6:F1 #400 / F2 #402 / F3 #404 / F4 #403 / F5+F6 #401;**无 Unreleased 中转**——六项 fix PR code-only 未带条目,bump #406 直接写 v0.26.1〔走 A,维护者拍板〕) |
+| 最新 handoff | [`archive/handoff/v0.26.1.md`](archive/handoff/v0.26.1.md)(不回改) |
 
 ## 2. 当前系统已具备能力
 
