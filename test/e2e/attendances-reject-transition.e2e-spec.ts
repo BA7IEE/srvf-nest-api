@@ -190,7 +190,7 @@ describe('AttendancesService reject transition (characterization)', () => {
   describe('A. reject(pending → rejected)', () => {
     beforeEach(isolateFixtures);
 
-    it('成功路径:返 rejected + DB 落库 + reviewer 三字段 + record 不软删 + audit review.reject', async () => {
+    it('成功路径:返 rejected + DB 落库 + reviewer 三字段 + record 跟随软删(F4)+ audit review.reject', async () => {
       const sheetId = await seedSheet({ statusCode: 'pending' });
 
       const result = await ctx.service.reject(
@@ -228,15 +228,17 @@ describe('AttendancesService reject transition (characterization)', () => {
       expect(db.finalReviewedAt).toBeNull();
       expect(db.finalReviewNote).toBeNull();
 
-      // record 不软删(reject 不级联 records;沿 service.ts:1052-1061 单 update)
+      // F4(#399):record 跟随软删(对称 final_rejected;deletedAt 写为 reviewedAt 同刻)
       const recs = await ctx.prisma.attendanceRecord.findMany({
         where: { sheetId },
         select: { deletedAt: true },
       });
       expect(recs).toHaveLength(1);
-      expect(recs[0].deletedAt).toBeNull();
+      expect(recs[0].deletedAt).not.toBeNull();
+      // 软删时刻 = sheet.reviewedAt 同刻
+      expect(recs[0].deletedAt?.getTime()).toBe(db.reviewedAt?.getTime());
 
-      // audit:event = 'attendance-sheet.review',extra 全字段断
+      // audit:event = 'attendance-sheet.review',extra 全字段断(F4:reject 现写 recordsCount)
       const audits = await ctx.prisma.auditLog.findMany({
         where: { resourceId: sheetId },
         orderBy: { createdAt: 'desc' },
@@ -250,12 +252,15 @@ describe('AttendancesService reject transition (characterization)', () => {
           action?: string;
           priorStatusCode?: string;
           nextStatusCode?: string;
+          recordsCount?: number;
         };
       };
       expect(ctx0.extra?.operation).toBe('review');
       expect(ctx0.extra?.action).toBe('reject');
       expect(ctx0.extra?.priorStatusCode).toBe('pending');
       expect(ctx0.extra?.nextStatusCode).toBe('rejected');
+      // F4:reject 软删 records → 审计写 recordsCount(被软删条数)
+      expect(ctx0.extra?.recordsCount).toBe(1);
     });
   });
 

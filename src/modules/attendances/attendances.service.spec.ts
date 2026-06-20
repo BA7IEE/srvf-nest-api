@@ -502,7 +502,7 @@ describe('AttendancesService (characterization, scoped)', () => {
       expect(res.statusCode).toBe(ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW);
     });
 
-    it('reject allow → update rejected + reviewNote;logReview(action=reject, tx)', async () => {
+    it('reject allow → records 软删(updateMany)+ update rejected + reviewNote;logReview(action=reject, recordsCount, tx)', async () => {
       const prisma = makePrismaMock();
       const recorder = makeRecorderMock();
       const stateMachine = makeStateMachineMock({
@@ -512,6 +512,8 @@ describe('AttendancesService (characterization, scoped)', () => {
       prisma.attendanceSheet.findFirst.mockResolvedValue(
         makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.PENDING }),
       );
+      // F4:reject 软删前抓 records 快照(对称 finalReject);2 条 → recordsCount=2
+      prisma.attendanceRecord.findMany.mockResolvedValue([makeRecordRow(), makeRecordRow()]);
       prisma.attendanceSheet.update.mockResolvedValue(
         makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.REJECTED, reviewNote: 'bad data' }),
       );
@@ -524,13 +526,22 @@ describe('AttendancesService (characterization, scoped)', () => {
         META,
       );
 
+      // F4:records 跟随软删(updateMany 写 deletedAt;沿 finalReject 断言范式)
+      expect(prisma.attendanceRecord.updateMany).toHaveBeenCalledTimes(1);
+      const recUpdateArg = prisma.attendanceRecord.updateMany.mock.calls[0][0] as {
+        where: { sheetId: string; deletedAt: null };
+        data: { deletedAt: Date };
+      };
+      expect(recUpdateArg.where.sheetId).toBe('sheet-1');
+      expect(recUpdateArg.data.deletedAt).toBeInstanceOf(Date);
       const updateArg = prisma.attendanceSheet.update.mock.calls[0][0] as {
         data: { statusCode: string; reviewNote: string };
       };
       expect(updateArg.data.statusCode).toBe(ATTENDANCE_SHEET_STATUS.REJECTED);
       expect(updateArg.data.reviewNote).toBe('bad data');
+      // F4:logReview 带 beforeRecords + recordsCount(对称 finalReject)
       expect(recorder.logReview).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'reject', tx: prisma }),
+        expect.objectContaining({ action: 'reject', recordsCount: 2, tx: prisma }),
       );
       expect(res.statusCode).toBe(ATTENDANCE_SHEET_STATUS.REJECTED);
     });
