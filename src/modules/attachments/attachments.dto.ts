@@ -53,7 +53,7 @@ export class AttachmentResponseDto {
   @ApiProperty({ description: '主键(cuid)', example: 'cl9z3a8b00000abcd1234efgh' })
   id!: string;
 
-  @ApiProperty({ description: 'Provider 侧文件唯一引用', example: 'attachments/2026/05/abc.jpg' })
+  @ApiProperty({ description: 'Provider 侧文件唯一引用', example: 'attachments/prod/2026/05/15/Ab1cD2eF3gH4iJkL.jpg' })
   key!: string;
 
   @ApiProperty({ description: '原始文件名', example: 'idcard-front.jpg' })
@@ -119,7 +119,7 @@ export class CreateAttachmentDto {
   @ApiProperty({
     description: 'Provider 侧文件唯一引用',
     maxLength: KEY_MAX_LENGTH,
-    example: 'attachments/2026/05/abc.jpg',
+    example: 'attachments/prod/2026/05/15/Ab1cD2eF3gH4iJkL.jpg',
   })
   @IsString()
   @MinLength(1)

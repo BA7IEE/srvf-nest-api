@@ -5,6 +5,7 @@ import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
+import { conformingAttachmentKey } from '../helpers/attachment-key';
 import { truncateAuditLogsTestOnly } from '../helpers/audit-logs-cleanup';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -167,7 +168,7 @@ describe('attachments audit_logs 集成', () => {
   // ============ Helpers ============
 
   const buildBody = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-    key: `attachments/2026/05/${Math.random().toString(36).slice(2)}.jpg`,
+    key: conformingAttachmentKey(), // F2:服务端派生格式合规 key(原任意 key 已被 13014 校验拒)
     originalName: 'test.jpg',
     mime: 'image/jpeg',
     size: 100_000,

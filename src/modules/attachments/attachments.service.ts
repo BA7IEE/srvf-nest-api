@@ -41,6 +41,7 @@ import {
   UploadUrlResponseDto,
 } from './attachments.dto';
 import { attachmentSelect } from './attachments.select';
+import { isDerivedAttachmentKey } from './attachment-key-format';
 import { mimeToExt } from './mime-to-ext';
 
 // V2.x C-7 attachments 实施 PR #6b / #6c:attachments 主模块业务逻辑。
@@ -372,6 +373,17 @@ export class AttachmentsService {
 
     // 7. PII 检测(13015)
     this.assertNoPii(dto);
+
+    // 7.5. F2(#399):key 必须匹配服务端派生格式 + 当前 envPrefix 命名空间(13014)。
+    //      模式 A 历史直收客户端 raw key → 可对命名空间外任意对象签 signed URL(IDOR);
+    //      此处把 key 绑定到 attachments/<envPrefix>/yyyy/mm/dd/<base64url>.<ext>。
+    //      envPrefix 与 generateAttachmentKey 同源(getActiveSettings ?? cfg.env)。
+    //      残余(命名空间内、已知完整随机段的 key)= owner-绑定,留 P3(模式 A 弃用)。
+    const keySettings = await this.storageSettings.getActiveSettings();
+    const keyEnvPrefix = keySettings?.envPrefix ?? this.cfg.env;
+    if (!isDerivedAttachmentKey(dto.key, keyEnvPrefix)) {
+      throw new BizException(BizCode.ATTACHMENT_KEY_INVALID);
+    }
 
     // 8. 事务内:写主表 + audit 落库(沿 D7 §7.2 同事务 fail-fast)。
     //    校验链(步骤 1-7)留事务外(PR #6c Q7 拍板;读不需事务);

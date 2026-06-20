@@ -68,7 +68,7 @@ export class AttachmentsController {
   @Post()
   @ApiOperation({
     summary:
-      '创建附件元数据(校验:ownerType 13010 / ownerId 13011 / RBAC 30100 / 系统级 MIME 黑名单 13033 / mime 白名单未命中 13012 / size 13013 / PII 13015;V2.x L-1:系统级黑名单与白名单未命中拆码) [rbac: attachment.upload.*]',
+      '创建附件元数据(校验:ownerType 13010 / ownerId 13011 / RBAC 30100 / 系统级 MIME 黑名单 13033 / mime 白名单未命中 13012 / size 13013 / key 派生格式 13014 / PII 13015;V2.x L-1:系统级黑名单与白名单未命中拆码;F2:key 必须落在 attachments/<envPrefix>/ 派生格式,防客户端任意 key 签 URL) [rbac: attachment.upload.*]',
   })
   @ApiWrappedOkResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(
@@ -80,6 +80,7 @@ export class AttachmentsController {
     BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED,
     BizCode.ATTACHMENT_MIME_NOT_ALLOWED,
     BizCode.ATTACHMENT_SIZE_EXCEEDED,
+    BizCode.ATTACHMENT_KEY_INVALID,
     BizCode.ATTACHMENT_PII_DETECTED,
   )
   create(

@@ -2,9 +2,11 @@ import type { INestApplication } from '@nestjs/common';
 import { AttachmentAccessLevel, Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import { isDerivedAttachmentKey } from '../../src/modules/attachments/attachment-key-format';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
+import { conformingAttachmentKey } from '../helpers/attachment-key';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -236,7 +238,7 @@ describe('attachments 主模块', () => {
 
   // 帮助函数:构造一个合法的 POST body
   const buildBody = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-    key: `attachments/2026/05/${Math.random().toString(36).slice(2)}.jpg`,
+    key: conformingAttachmentKey(), // F2:服务端派生格式合规 key(原任意 key 已被 13014 校验拒)
     originalName: 'test.jpg',
     mime: 'image/jpeg',
     size: 100_000,
@@ -504,6 +506,53 @@ describe('attachments 主模块', () => {
     });
   });
 
+  // ============ F2(#399):create key 派生格式校验(13014)============
+  // 模式 A create() 此前直收客户端 raw key → `resolveAccessUrl(key)` 可对命名空间外任意
+  // COS 对象签 signed URL(IDOR)。走 B:key 必须匹配
+  // attachments/<envPrefix>/yyyy/mm/dd/<base64url≥16>.<ext>(envPrefix=test),否则 13014。
+  describe('POST /api/admin/v1/attachments — F2 key 派生格式校验', () => {
+    it('合规派生 key → 201', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/attachments')
+        .set('Authorization', superAuth)
+        .send(buildBody({ key: conformingAttachmentKey() }));
+      expect(res.status).toBe(201);
+    });
+
+    it.each([
+      ['短任意 key(旧 "k1" 式)', 'k1'],
+      ['命名空间外(非 attachments/)', 'other/test/2026/05/15/Ab1_cD2-eF3gH4iJ.jpg'],
+      ['envPrefix 不符(prod)', 'attachments/prod/2026/05/15/Ab1_cD2-eF3gH4iJ.jpg'],
+      ['缺 day 段', 'attachments/test/2026/05/Ab1_cD2-eF3gH4iJ.jpg'],
+      ['随机段 <16 字符', 'attachments/test/2026/05/15/short.jpg'],
+      ['路径穿越', 'attachments/test/2026/05/15/../../../etc/passwd.jpg'],
+    ])('非法 key(%s)→ 13014,且不落库', async (_label, badKey) => {
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/attachments')
+        .set('Authorization', superAuth)
+        .send(buildBody({ key: badKey }));
+      expectBizError(res, BizCode.ATTACHMENT_KEY_INVALID);
+      // 校验早于 tx → 不落库
+      const row = await prisma.attachment.findFirst({ where: { key: badKey } });
+      expect(row).toBeNull();
+    });
+
+    it('模式 B 不受影响:upload-url 返回的服务端派生 key 通过 F2 校验(生成器↔校验器一致)', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/attachments/upload-url')
+        .set('Authorization', superAuth)
+        .send({
+          ownerType: 'member',
+          ownerId: memberA.id,
+          originalName: 'photo.jpg',
+          mime: 'image/jpeg',
+          sizeBytes: 1024,
+        });
+      expect(res.status).toBe(201);
+      expect(isDerivedAttachmentKey(res.body.data.key as string, 'test')).toBe(true);
+    });
+  });
+
   // ============ GET list ============
 
   describe('GET /api/admin/v1/attachments', () => {
@@ -516,7 +565,7 @@ describe('attachments 主模块', () => {
       await truncateAttachments();
       memberAtt = await prisma.attachment.create({
         data: {
-          key: 'k1',
+          key: conformingAttachmentKey(),
           originalName: 'a.jpg',
           mime: 'image/jpeg',
           size: 100,
@@ -529,7 +578,7 @@ describe('attachments 主模块', () => {
       });
       memberBAtt = await prisma.attachment.create({
         data: {
-          key: 'k2',
+          key: conformingAttachmentKey(),
           originalName: 'b.jpg',
           mime: 'image/jpeg',
           size: 100,
@@ -542,7 +591,7 @@ describe('attachments 主模块', () => {
       });
       certAtt = await prisma.attachment.create({
         data: {
-          key: 'k3',
+          key: conformingAttachmentKey(),
           originalName: 'cert.pdf',
           mime: 'application/pdf',
           size: 100,
@@ -554,7 +603,7 @@ describe('attachments 主模块', () => {
       });
       activityAtt = await prisma.attachment.create({
         data: {
-          key: 'k4',
+          key: conformingAttachmentKey(),
           originalName: 'act.jpg',
           mime: 'image/jpeg',
           size: 100,
@@ -633,7 +682,7 @@ describe('attachments 主模块', () => {
       await prisma.attachment.createMany({
         data: [
           {
-            key: 'bo1',
+            key: conformingAttachmentKey(),
             originalName: 'a.jpg',
             mime: 'image/jpeg',
             size: 100,
@@ -642,7 +691,7 @@ describe('attachments 主模块', () => {
             ownerId: memberA.id,
           },
           {
-            key: 'bo2',
+            key: conformingAttachmentKey(),
             originalName: 'a2.jpg',
             mime: 'image/jpeg',
             size: 100,
@@ -651,7 +700,7 @@ describe('attachments 主模块', () => {
             ownerId: memberA.id,
           },
           {
-            key: 'bo3',
+            key: conformingAttachmentKey(),
             originalName: 'b.jpg',
             mime: 'image/jpeg',
             size: 100,
@@ -726,7 +775,7 @@ describe('attachments 主模块', () => {
       const superId = (await prisma.user.findFirst({ where: { username: SUPER_USERNAME } }))!.id;
       memberAtt = await prisma.attachment.create({
         data: {
-          key: 'ga1',
+          key: conformingAttachmentKey(),
           originalName: 'a.jpg',
           mime: 'image/jpeg',
           size: 100,
@@ -738,7 +787,7 @@ describe('attachments 主模块', () => {
       });
       memberBAtt = await prisma.attachment.create({
         data: {
-          key: 'ga2',
+          key: conformingAttachmentKey(),
           originalName: 'b.jpg',
           mime: 'image/jpeg',
           size: 100,
@@ -791,7 +840,7 @@ describe('attachments 主模块', () => {
       const superId = (await prisma.user.findFirst({ where: { username: SUPER_USERNAME } }))!.id;
       memberAtt = await prisma.attachment.create({
         data: {
-          key: 'pa1',
+          key: conformingAttachmentKey(),
           originalName: 'a.jpg',
           mime: 'image/jpeg',
           size: 100,
@@ -803,7 +852,7 @@ describe('attachments 主模块', () => {
       });
       memberBAtt = await prisma.attachment.create({
         data: {
-          key: 'pa2',
+          key: conformingAttachmentKey(),
           originalName: 'b.jpg',
           mime: 'image/jpeg',
           size: 100,
@@ -851,7 +900,7 @@ describe('attachments 主模块', () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attachments/${memberAtt.id}`)
         .set('Authorization', superAuth)
-        .send({ key: 'new', ownerType: 'activity' });
+        .send({ key: conformingAttachmentKey(), ownerType: 'activity' });
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
     });
 
@@ -875,7 +924,7 @@ describe('attachments 主模块', () => {
       const superId = (await prisma.user.findFirst({ where: { username: SUPER_USERNAME } }))!.id;
       memberAtt = await prisma.attachment.create({
         data: {
-          key: 'd1',
+          key: conformingAttachmentKey(),
           originalName: 'a.jpg',
           mime: 'image/jpeg',
           size: 100,
@@ -887,7 +936,7 @@ describe('attachments 主模块', () => {
       });
       memberBAtt = await prisma.attachment.create({
         data: {
-          key: 'd2',
+          key: conformingAttachmentKey(),
           originalName: 'b.jpg',
           mime: 'image/jpeg',
           size: 100,

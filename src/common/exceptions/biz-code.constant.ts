@@ -1238,6 +1238,16 @@ export const BizCode = {
     message: '附件大小超过上限',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+  // F2(全仓 review #399,2026-06-20):create()(模式 A)key 格式校验。
+  // 客户端 raw key 必须落在「attachments 命名空间 + 当前 envPrefix + 服务端派生格式」内,
+  // 否则可对命名空间外任意 COS 对象签 signed URL(IDOR)。校验源:
+  // src/modules/attachments/attachment-key-format.ts(与 generateAttachmentKey 同源)。
+  // 占 13010-13015 create 校验子段空位 13014。
+  ATTACHMENT_KEY_INVALID: {
+    code: 13014,
+    message: '附件 key 格式不合法',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
   ATTACHMENT_PII_DETECTED: {
     code: 13015,
     message: '附件元数据包含个人敏感信息(身份证号),已拒绝',

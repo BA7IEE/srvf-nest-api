@@ -75,7 +75,7 @@ function makeAttachmentRow(overrides: Partial<AttachmentRow> = {}): AttachmentRo
     id: 'att-1',
     createdAt: FIXED_DATE,
     updatedAt: FIXED_DATE,
-    key: 'attachments/test/2026/01/01/abc.png',
+    key: 'attachments/test/2026/01/01/abcdefghijklmnop.png',
     originalName: 'photo.png',
     mime: 'image/png',
     size: 1024,
@@ -125,7 +125,7 @@ function makeCurrentUser(overrides: Partial<CurrentUserPayload> = {}): CurrentUs
 
 function makeCreateDto(overrides: Partial<Record<string, unknown>> = {}): CreateAttachmentDto {
   return {
-    key: 'attachments/test/2026/01/01/abc.png',
+    key: 'attachments/test/2026/01/01/abcdefghijklmnop.png',
     originalName: 'photo.png',
     mime: 'image/png',
     size: 1024,
@@ -166,7 +166,7 @@ function makeConfirmDto(uploadToken: string, checksum: string | null = null): Co
 
 function makeUploadToken(overrides: Partial<UploadTokenClaims> = {}): string {
   const claims: UploadTokenClaims = {
-    key: 'attachments/test/2026/01/01/abc.png',
+    key: 'attachments/test/2026/01/01/abcdefghijklmnop.png',
     ownerType: 'member',
     ownerId: 'mem-1',
     originalName: 'photo.png',
