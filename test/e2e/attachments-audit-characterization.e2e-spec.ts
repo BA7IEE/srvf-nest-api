@@ -16,6 +16,7 @@ import type {
 } from '../../src/modules/attachments/attachments.dto';
 import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
+import { conformingAttachmentKey } from '../helpers/attachment-key';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -226,7 +227,7 @@ describe('AttachmentsService audit characterization', () => {
   // 沿 attachments.audit.e2e-spec.ts buildBody 范式(legacy create DTO)
   function buildCreateDto(override: Partial<CreateAttachmentDto> = {}): CreateAttachmentDto {
     const base = {
-      key: `attachments/test/2026/05/${Math.random().toString(36).slice(2)}.jpg`,
+      key: conformingAttachmentKey(), // F2:服务端派生格式合规 key(原任意 key 已被 13014 校验拒)
       originalName: 'photo.jpg',
       mime: 'image/jpeg',
       size: 1024,
