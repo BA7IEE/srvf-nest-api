@@ -420,6 +420,54 @@ describe('activity-registrations 模块', () => {
         .send({ memberId: memberDId });
       expectBizError(r2, BizCode.ACTIVITY_CAPACITY_EXCEEDED);
     });
+
+    it('capacity=1 并发 approve 两条 pending → 恰一条 pass、一条 21032(FOR UPDATE 串行化防超容量;F11 #399)', async () => {
+      // 独立活动(不复用 capacityActivityId 链式状态);两条 pending(memberC / memberD)
+      const id = await createActivityHelper({
+        title: 'CAP-CONCURRENT',
+        isPublicRegistration: true,
+        capacity: 1,
+        publish: true,
+      });
+      const r1 = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${id}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: memberCId });
+      const r2 = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${id}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: memberDId });
+      expect(r1.status).toBe(201);
+      expect(r2.status).toBe(201);
+
+      // 并发 approve 两条:无行锁会双双过 COUNT 闸 → pass=2 超 capacity;FOR UPDATE 串行化 → 恰一过
+      const [a1, a2] = await Promise.all([
+        request(httpServer(app))
+          .patch(
+            `/api/admin/v1/activities/${id}/registrations/${r1.body.data.id as string}/approve`,
+          )
+          .set('Authorization', adminAuth)
+          .send({}),
+        request(httpServer(app))
+          .patch(
+            `/api/admin/v1/activities/${id}/registrations/${r2.body.data.id as string}/approve`,
+          )
+          .set('Authorization', adminAuth)
+          .send({}),
+      ]);
+
+      const ok = [a1, a2].filter((r) => r.status === 200);
+      const failed = [a1, a2].filter((r) => r.status !== 200);
+      expect(ok).toHaveLength(1);
+      expect(failed).toHaveLength(1);
+      expect(ok[0].body.data.statusCode).toBe('pass');
+      expectBizError(failed[0], BizCode.ACTIVITY_CAPACITY_EXCEEDED);
+      // 最终恰 1 条 pass(未超 capacity)
+      const passCount = await prisma.activityRegistration.count({
+        where: { activityId: id, statusCode: 'pass', deletedAt: null },
+      });
+      expect(passCount).toBe(1);
+    });
   });
 
   // ============ approve / reject / cancel 状态机 ============

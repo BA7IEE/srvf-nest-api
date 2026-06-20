@@ -16,7 +16,7 @@
 - App Controller:`controllers/app-my-registrations.controller.ts` `@Controller('app/v1/my')` `@ApiTags('Mobile - My Registrations')`;**方法级**追加 `@ApiTags('Mobile - My Activities')` 于 `GET /my/activities`(刻意保留)
 - DTO 隔离:Admin DTO 在 `activity-registrations.dto.ts`;App DTO 在 `dto/app/`(5 文件)
 - **Partial unique** `activity_registrations_activity_member_active_unique` 由 migration 直写(Prisma schema 上**不可见**);service 用 `P2002` 兜底转 `BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS = 21002`
-- Capacity 复核 `assertCapacityNotExceeded`:create + approve 共用;**事务内重新计数**避免 race(沿 service line 327 / 368 / 415)
+- Capacity 复核 `assertCapacityNotExceeded`:create + approve 共用;**approve 转 pass 前对 `Activity` 行加 `FOR UPDATE` 排他锁**串行化并发 approve 防超容量(F11 #399;原「事务内重新计数避免 race」在 READ COMMITTED 下不成立)。`capacity=null` 不限名额免锁;create 仅建 pending 不占名额,容量校验为前置提示
 - Audit events(2 个):`registration.create`(create 路径)/ `registration.review`(approve / reject / cancel 共用,通过 `extra.action` 区分;`cancelAdmin` vs `cancelMy` 由 `extra.cancelledByPath` 字段记录,**不**进 StateMachine)
 - 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID`
 - CSV 导出:`GET admin/v1/activities/:activityId/registrations/export` 手写 `escapeCsvField`,**不**引 `csv-stringify`;**不**写 `export_logs` / **不**生成 `AttendanceRecord`(Q-A6 三禁)
@@ -26,7 +26,7 @@
 
 - ❌ **不**绕过 `activity-registration-state-machine.ts` 在 service 内裸写态迁移
 - ❌ **不**绕过 partial unique 防护 / `P2002` 兜底直接 `prisma.activityRegistration.create`(`assertNoActiveDuplicate` 路径必须命中)
-- ❌ **不**绕过 `assertCapacityNotExceeded`(create + approve 共用,事务内重新计数避免 race)
+- ❌ **不**绕过 `assertCapacityNotExceeded`(create + approve 共用);**不**移除 approve 内对 `Activity` 行的 `FOR UPDATE` 锁(F11 #399 并发超容量防护)
 - ❌ **不**改 audit event 名 `registration.create` / `registration.review`(characterization 已锁)
 - ❌ **不**把 `cancelAdmin` / `cancelMy` 路径区分挪进 StateMachine(只通过 `extra.cancelledByPath` 在 audit 记录)
 - ❌ **不**改 Admin Controller path `admin/v1/activities/:activityId/registrations`(`export` 字面段必须**先**于 `:id/<action>` 路由声明,Q-A6 锁定;调换顺序会被 Nest 路由解析为 `:id=export`)

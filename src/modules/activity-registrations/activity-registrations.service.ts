@@ -456,8 +456,14 @@ export class ActivityRegistrationsService {
         throw new BizException(transition.biz);
       }
 
-      // capacity 复核(approve 转 pass 占名额,事务内重新计数避免 race)。
+      // capacity 复核(approve 转 pass 占名额)。F11(#399):READ COMMITTED 下普通 COUNT 复核无行锁,
+      // 两并发 approve 互不可见对方未提交写 → 双双过闸 → pass 超 capacity(原注释「事务内重新计数避免
+      // race」不成立)。对 activity 行加 FOR UPDATE 排他锁,令同一 activity 的并发 approve 串行化:后到者
+      // 阻塞至前者提交,再 COUNT 即见已提交 pass → 正确拒。仅限名额活动需锁(capacity=null 不限名额免锁)。
       const act = await this.findActivityOrThrow(activityId, tx);
+      if (act.capacity !== null) {
+        await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${activityId} FOR UPDATE`;
+      }
       await this.assertCapacityNotExceeded(activityId, act.capacity, tx);
 
       const updated = await tx.activityRegistration.update({
