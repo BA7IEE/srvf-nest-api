@@ -2,6 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
 import { execSync } from 'child_process';
 import { PrismaService } from '../../src/database/prisma.service';
+import { RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES } from '../../src/modules/permissions/reserved-super-admin-permission-codes';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
@@ -275,6 +276,39 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
       },
     });
     expect(opsAdminHolderCount).toBeGreaterThanOrEqual(1);
+  });
+
+  // F1(#399)漂移哨兵:RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES(role-permission.assign
+  // 分级闸的单一事实来源)必须与 seed「不绑」矩阵一致 —— 每条保留码都(a)存在为 Permission、
+  // (b)未绑 ops-admin、(c)未绑 biz-admin。seed 重命名/改绑任一保留码而未同步常量,本测试即红。
+  it('F1 漂移哨兵:6 保留码均存在为 Permission 且未绑 ops-admin / biz-admin', async () => {
+    const result = runSeed({
+      APP_ENV: 'test',
+      SUPER_ADMIN_USERNAME: 'rbac-seed-f1',
+      SUPER_ADMIN_PASSWORD: 'Passw0rd1!',
+      SUPER_ADMIN_EMAIL: '',
+      RBAC_INITIAL_OPS_ADMIN_USER_ID: '',
+    });
+    expect(result.code).toBe(0);
+
+    const reserved = [...RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES];
+
+    // (a) 每条保留码都存在为 Permission(重命名即此处缺项 → 红)
+    const perms = await prisma.permission.findMany({
+      where: { code: { in: reserved } },
+      select: { code: true },
+    });
+    expect(new Set(perms.map((p) => p.code))).toEqual(new Set(reserved));
+
+    // (b) + (c) 任一保留码都不在 ops-admin / biz-admin 的 RolePermission 绑定中
+    const bindings = await prisma.rolePermission.findMany({
+      where: {
+        role: { code: { in: ['ops-admin', 'biz-admin'] } },
+        permission: { code: { in: reserved } },
+      },
+      select: { role: { select: { code: true } }, permission: { select: { code: true } } },
+    });
+    expect(bindings).toEqual([]);
   });
 
   it('fallback 路径:RBAC_INITIAL_OPS_ADMIN_USER_ID 留空 → 绑到 SUPER_ADMIN(本 seed 刚创建的)', async () => {

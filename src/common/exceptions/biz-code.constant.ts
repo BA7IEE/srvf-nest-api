@@ -1076,6 +1076,20 @@ export const BizCode = {
     httpStatus: HttpStatus.FORBIDDEN,
   },
 
+  // F1(全仓 review #399,2026-06-20):role-permission.assign 分级闸专属拒绝码。
+  //
+  // SA-only 保留码(user.update.role / 4×*-setting.reset.credentials / member.delete.record)
+  // 在 seed 中有意不绑 biz-admin / ops-admin(仅 SUPER_ADMIN 短路)。
+  // RolePermissionsService.assign() 原先只判 rbac.role-permission.create,未阻止持
+  // ops-admin 者把这些保留码"自授"给任意角色 → 间接获得 SA-only 能力。
+  // 闸:非 SUPER_ADMIN 的请求码命中保留集 → 本码(整批拒绝,不部分写入)。
+  // 保留集单一来源:src/modules/permissions/reserved-super-admin-permission-codes.ts
+  PERMISSION_RESERVED_SUPER_ADMIN_ONLY: {
+    code: 30103,
+    message: '该权限点仅超级管理员可分配',
+    httpStatus: HttpStatus.FORBIDDEN,
+  },
+
   // V2.x C-6 RBAC 实施 PR #6(2026-05-14):RbacService.can() 配套统一拒绝码。
   //
   // 沿 D7 v1.1 §F5 / §12.2 锁定:Service 层显式 `rbac.can(actor, action, resource?)` 调用,
