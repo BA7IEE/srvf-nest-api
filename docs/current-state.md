@@ -7,10 +7,10 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(三方一致) | **v0.25.0**(2026-06-19;package.json = Swagger = tag;tag 指向 `782f668e` 标 Latest;**招新三期入队已并入 CHANGELOG Unreleased,待 release 收口 bump**) |
-| `main` HEAD | `fe3501bd`(#394 招新三期 T4 一键入队;本行为滚动快照,T5 docs 收尾后再滚动) |
-| open PR / 工作树 / Unreleased | **0**(本 T5 PR 前)/ clean / **4**(招新三期入队 #391/#392/#393/#394:T1 schema / T2 admin / T3 app 自助 / T4 一键入队;待 release bump 折叠) |
-| 最新 handoff | [`archive/handoff/v0.25.0.md`](archive/handoff/v0.25.0.md)(不回改) |
+| 版本(三方一致) | **v0.26.0**(2026-06-20;package.json = Swagger = tag = Release;tag 指向 `ec8b2e70` 标 Latest;要点见 CHANGELOG v0.26.0 段) |
+| `main` HEAD | `ec8b2e70`(#397 v0.26.0 handoff;tag v0.26.0 与 HEAD 同点,本行为滚动快照,current-state 回填 PR 合入后再滚动) |
+| open PR / 工作树 / Unreleased | **0**(本 PR 前)/ clean / **0**(v0.26.0 已折叠 4 条:招新三期入队 #391〔T0+T1〕/#392〔T2〕/#393〔T3〕/#394〔T4〕) |
+| 最新 handoff | [`archive/handoff/v0.26.0.md`](archive/handoff/v0.26.0.md)(不回改) |
 
 ## 2. 当前系统已具备能力
 
