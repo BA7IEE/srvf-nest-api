@@ -258,11 +258,14 @@ export class AttendanceAuditRecorder {
   }
 
   // ============ approve / reject 共用 ============
-  // event: `attendance-sheet.review`;before / after = sheet only(沿原 service 现状)。
-  // `recordsCount` **仅 approve 路径写**;reject 不写(沿原 service 现状)。
+  // event: `attendance-sheet.review`。
+  // approve:before / after = sheet only;extra.recordsCount(records 不变)。
+  // reject(F4 #399):records 跟随软删 → before = sheet + records 快照(对称 finalReject),
+  //   extra.recordsCount = 被软删条数。
   async logReview(args: {
     sheetId: string;
     beforeSheet: AuditSheetSnapshotInput;
+    beforeRecords?: AuditRecordSnapshotInput[]; // reject only(F4:reject 软删 records,审计含软删前快照)
     afterSheet: AuditSheetSnapshotInput;
     actorUserId: string;
     actorRoleSnap: Role;
@@ -282,6 +285,10 @@ export class AttendanceAuditRecorder {
     if (args.recordsCount !== undefined) {
       extra.recordsCount = args.recordsCount;
     }
+    const before =
+      args.beforeRecords !== undefined
+        ? this.toSheetAuditSnapshot(args.beforeSheet, args.beforeRecords)
+        : this.toSheetAuditSnapshot(args.beforeSheet);
     await this.auditLogs.log({
       event: 'attendance-sheet.review',
       actorUserId: args.actorUserId,
@@ -289,7 +296,7 @@ export class AttendanceAuditRecorder {
       resourceType: AUDIT_RESOURCE_TYPE,
       resourceId: args.sheetId,
       meta: args.auditMeta,
-      before: this.toSheetAuditSnapshot(args.beforeSheet),
+      before,
       after: this.toSheetAuditSnapshot(args.afterSheet),
       extra,
       tx: args.tx,

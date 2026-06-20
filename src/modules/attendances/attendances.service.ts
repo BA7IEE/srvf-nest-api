@@ -62,7 +62,8 @@ import {
 // - approve(APD 一级):**批次 4-B 升级:pending → pending_final_review**(从 v0.4.0 → approved 升级);
 //   所有 records.contributionPoints 必填(R31,沿 D-S8 在 APD approve 时校验);
 //   写 reviewerUserId/At/Note;**不再触发** attendance.recorded(沿 D-S7);触发位置移到 final-approve。
-// - reject(APD 一级):仅 pending → rejected;reviewNote 必填
+// - reject(APD 一级):仅 pending → rejected;reviewNote 必填;**records 跟随软删**(F4 #399:
+//   对称 final_rejected,释放 time-overlap 窗口,解一级驳回同窗无法重交的死锁)
 // - final-approve(批次 4-B 新增,沿 D-S5):pending_final_review → approved;
 //   写 finalReviewer*;**同事务内触发** eventPlaceholder('attendance.recorded')(沿 D-S7);
 //   audit:attendance-sheet.final-review。终审不重校验逐条 records(沿 D-S8)。
@@ -87,9 +88,9 @@ import {
 // 不迁移**(沿 Q1=A 当前阶段不记录查看行为);**`eventPlaceholder('attendance.recorded')` 与
 // audit 是两套独立机制,不动**(沿 D-S7;final-approve 同事务触发业务事件,audit 同事务记录;
 // 若 audit 写失败 → 整个事务回滚 → 业务事件随之回滚,由 DB 事务原子性保证)。
-// records 全字段快照入 audit context:submit / edit × 2 / softDelete / finalReject 必含;
-// approve / reject / finalApprove 只放 sheet 快照,`extra.recordsCount` 元数据(records 不变,
-// 通过 sheet.previousSnapshot 或 finalReject 的 records 软删时间回溯)。
+// records 全字段快照入 audit context:submit / edit × 2 / softDelete / finalReject / **reject**
+// (F4 #399:reject 也软删 records,审计含软删前快照,对称 finalReject)必含;
+// approve / finalApprove 只放 sheet 快照,`extra.recordsCount` 元数据(records 不变)。
 // 字段非敏感(打码矩阵未命中,沿 PR #3 / PR #4 / PR #5 不打码范式)。
 
 const ACTIVITY_STATUS_PUBLISHED = 'published';
@@ -887,12 +888,28 @@ export class AttendancesService {
         throw new BizException(rejectTransition.biz);
       }
 
+      const reviewedAt = new Date();
+
+      // F4(#399):一级 reject 的 records **跟随软删**(对称 final_rejected;沿 softDelete / finalReject
+      // 范式)。原先 rejected 的 records 仍 deletedAt IS NULL → 永久占用 time-overlap 窗口
+      // (overlap 只过 deletedAt),致该队员同窗无法重交(死锁)。软删后窗口释放,可重新提交。
+      // 软删前抓 records 全字段快照入 audit(对称 finalReject;沿 §audit records 必含组)。
+      const currentRecords = await tx.attendanceRecord.findMany({
+        where: { sheetId: id, deletedAt: null },
+        select: recordWithMemberSelect,
+        orderBy: { checkInAt: 'asc' },
+      });
+      await tx.attendanceRecord.updateMany({
+        where: { sheetId: id, deletedAt: null },
+        data: { deletedAt: reviewedAt },
+      });
+
       const updated = await tx.attendanceSheet.update({
         where: { id: sheet.id },
         data: {
           statusCode: rejectTransition.nextStatusCode,
           reviewerUserId: currentUser.id,
-          reviewedAt: new Date(),
+          reviewedAt,
           reviewNote: dto.reviewNote,
         },
         select: sheetSafeSelect,
@@ -901,12 +918,14 @@ export class AttendancesService {
       await this.attendanceAuditRecorder.logReview({
         sheetId: id,
         beforeSheet: sheet,
+        beforeRecords: currentRecords,
         afterSheet: updated,
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
         action: 'reject',
         priorStatusCode: sheet.statusCode,
         nextStatusCode: rejectTransition.nextStatusCode,
+        recordsCount: currentRecords.length,
         auditMeta,
         tx,
       });

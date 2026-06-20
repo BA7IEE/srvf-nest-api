@@ -523,4 +523,46 @@ describe('AttendancesService time overlap (characterization)', () => {
       expect(records[0].checkOutAt.toISOString()).toBe('2026-01-06T09:00:00.000Z');
     });
   });
+
+  // ============ E. F4(#399):一级 reject 软删 records → 释放 overlap 窗口(死锁修复)============
+  // 原先一级 rejected 的 records 不软删(deletedAt IS NULL)→ 永久占用 overlap 窗口,
+  // 同 member 同窗无法重交(死锁)。F4 起 reject 软删 records,窗口释放,可重新提交。
+  describe('E. F4:reject 软删 records 释放 overlap 窗口(死锁修复)', () => {
+    beforeEach(isolateFixtures);
+
+    it('reject sheet1 后同 member 同窗 sheet2 可重新提交(此前 ATTENDANCE_TIME_OVERLAP 死锁)', async () => {
+      const window = {
+        memberId: ctx.memberAId,
+        checkInAt: '2026-01-07T10:00:00.000Z',
+        checkOutAt: '2026-01-07T12:00:00.000Z',
+      };
+
+      // 1. 提交 sheet1(占用时间窗,pending)
+      const sheet1 = await submitSheet(ctx.activityAId, [window]);
+      expect(await countActiveRecordsForSheet(sheet1)).toBe(1);
+
+      // 2. 死锁前提:同 member 同窗跨 Sheet 再提交 → ATTENDANCE_TIME_OVERLAP(窗口被占)
+      await expect(submitSheet(ctx.activityBId, [window])).rejects.toMatchObject({
+        biz: BizCode.ATTENDANCE_TIME_OVERLAP,
+      });
+
+      // 3. 一级 reject sheet1 → records 跟随软删(F4)
+      await ctx.service.reject(
+        sheet1,
+        { reviewNote: '数据有误,驳回' },
+        ctx.submitterPayload,
+        AUDIT_META,
+      );
+      expect(await countActiveRecordsForSheet(sheet1)).toBe(0);
+
+      // 4. 死锁解除:同 member 同窗重新提交 → 成功(窗口已释放)
+      const sheet2 = await submitSheet(ctx.activityBId, [window]);
+      expect(await countActiveRecordsForSheet(sheet2)).toBe(1);
+      const s2 = await ctx.prisma.attendanceSheet.findUniqueOrThrow({
+        where: { id: sheet2 },
+        select: { statusCode: true },
+      });
+      expect(s2.statusCode).toBe('pending');
+    });
+  });
 });
