@@ -159,6 +159,9 @@ enum DictItemStatus {
 model Organization {
   id           String             @id @default(cuid())
   name         String
+  // 组织缩写(可空 + 全局唯一,含软删历史占用)。seed 内置 16 个真实缩写(SRVF / SMRT …),
+  // 运行时建的节点可由运营后台补填。Postgres @unique 容多 NULL,无需 partial index。
+  code         String?            @unique
   parentId     String?
   nodeTypeCode String
   sortOrder    Int                @default(0)

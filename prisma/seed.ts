@@ -18,7 +18,8 @@ import * as bcrypt from 'bcryptjs';
 // - R13 收窄(2026-06-21 goal「字典内置」,维护者拍板,公开仓库已知情;权威源
 //   docs/V2红线与复活路径.md A-9):仅**真实成员 PII(姓名 / 身份证 / 手机号)+ 真实编号规则与
 //   样例(memberNo)不进 git history**;非敏感分类字典取值(国标参照 + 队内级别名 / 活动类别等)
-//   允许内置 seed。node_type / work_nature 本次仍留占位。
+//   允许内置 seed。node_type 已内置真实分类(组织节点类别;2026-06-21 goal「组织树内置」),
+//   并由 seedOrganizations 内置 SRVF 根 + 15 部门;work_nature 本次仍留占位。
 // - upsert + update: {} 实现幂等,不覆盖运营运行时手动调整(真实 label 仅干净库首次 seed 生效)
 //
 // V2 第一阶段批次 1 追加(详见 docs:批次1_schema草案_member_profiles_emergency_contacts.md
@@ -85,17 +86,23 @@ const BCRYPT_SALT_ROUNDS = 10;
 // - 本表 dict_items 全部 parentId = null(顶层);activity_type 二级树由 seedActivityTypeHierarchy 处理
 const V2_DICT_SEED = [
   {
-    // 招新三期入队(2026-06-19):node_type 加 4 专业队 code(W-J-1 约定,识别专业队);
-    // code 稳定 = 长期契约(模块常量 PROFESSIONAL_TEAM_GATE_BY_NODE_TYPE 映射),由运营把
-    // 真实队挂到对应 org;Organization 不加字段。冻结评审稿 recruitment-phase3-review.md §4.4。
-    type: { code: 'node_type', label: 'Demo node type', sortOrder: 0 },
+    // 组织节点类别(2026-06-21 goal「组织树内置」;R13 收窄后非敏感分类字典可内置真实值)。
+    // 8 项真实分类替换原 demo-node-type-1/2 占位。**4 个 professional-* code 原样保留**——
+    // 长期契约,team-join 模块常量 PROFESSIONAL_TEAM_GATE_BY_NODE_TYPE 依赖其存在
+    //(org SMRT→mountain / SWRT→water / SURT→urban / STRT→high);仅 label 可改。
+    // 非专业队分类(headquarters / rescue-team / functional-dept / volunteer)纯显示用、
+    // 运营后台可增改。seedOrganizations 据此把 16 个内置 org 挂到对应 nodeTypeCode。
+    // 冻结评审稿 recruitment-phase3-review.md §4.4。
+    type: { code: 'node_type', label: '组织节点类别', sortOrder: 0 },
     items: [
-      { code: 'demo-node-type-1', label: 'Demo node type 1', sortOrder: 0 },
-      { code: 'demo-node-type-2', label: 'Demo node type 2', sortOrder: 1 },
-      { code: 'professional-water', label: '专业队-水域(待运营命名)', sortOrder: 2 },
-      { code: 'professional-urban', label: '专业队-城市搜救(待运营命名)', sortOrder: 3 },
-      { code: 'professional-mountain', label: '专业队-山地(待运营命名)', sortOrder: 4 },
-      { code: 'professional-high', label: '专业队-高空(待运营命名)', sortOrder: 5 },
+      { code: 'headquarters', label: '总部', sortOrder: 0 },
+      { code: 'professional-mountain', label: '山地专业救援队', sortOrder: 1 },
+      { code: 'professional-water', label: '水域专业救援队', sortOrder: 2 },
+      { code: 'professional-urban', label: '城市专业救援队', sortOrder: 3 },
+      { code: 'professional-high', label: '高空专业救援队', sortOrder: 4 },
+      { code: 'rescue-team', label: '救援保障队', sortOrder: 5 },
+      { code: 'functional-dept', label: '职能部门', sortOrder: 6 },
+      { code: 'volunteer', label: '志愿者', sortOrder: 7 },
     ],
   },
   {
@@ -587,6 +594,61 @@ async function seedActivityTypeHierarchy(prisma: PrismaClient): Promise<void> {
   console.log(
     `[seed] V2 dict 'activity_type' ensured (${parents.length} 父项 + ${children.length} 子项,二级树)`,
   );
+}
+
+// 组织树内置(2026-06-21 goal「组织树内置」;R13 收窄后非敏感组织名可内置真实值)。
+// 扁平两层:1 个根(深圳公益救援队 / SRVF)+ 15 个部门(含 THQ 联合会)全部直挂其下;
+// 日后要加中间层级另起 goal。镜像 seedActivityTypeHierarchy:先 upsert 根取 id,再 upsert 子
+//(parentId = 根 id)。upsert by code(Organization.code @unique);update: {} 幂等,不覆盖
+// 运营运行时调整(真实 name / nodeTypeCode 仅干净库首次 seed 生效)。
+// 4 专业队 nodeTypeCode 必须挂对应 professional-*(team-join 门槛兼容,见 V2_DICT_SEED node_type)。
+async function seedOrganizations(prisma: PrismaClient): Promise<void> {
+  const root = await prisma.organization.upsert({
+    where: { code: 'SRVF' },
+    update: {},
+    create: {
+      name: '深圳公益救援队',
+      code: 'SRVF',
+      nodeTypeCode: 'headquarters',
+      // parentId 默认 null = 根节点
+    },
+    select: { id: true },
+  });
+
+  // 15 个部门全部 parentId = 根。code 稳定(长期契约,定后不改);name / nodeTypeCode 运营可改。
+  const departments = [
+    { name: '山地救援队', code: 'SMRT', nodeTypeCode: 'professional-mountain', sortOrder: 0 },
+    { name: '水上搜救队', code: 'SWRT', nodeTypeCode: 'professional-water', sortOrder: 1 },
+    { name: '城市搜救队', code: 'SURT', nodeTypeCode: 'professional-urban', sortOrder: 2 },
+    { name: '高空救援队', code: 'STRT', nodeTypeCode: 'professional-high', sortOrder: 3 },
+    { name: '医疗辅助队', code: 'SAMT', nodeTypeCode: 'rescue-team', sortOrder: 4 },
+    { name: '应急通讯队', code: 'SECT', nodeTypeCode: 'rescue-team', sortOrder: 5 },
+    { name: '特勤部', code: 'SSD', nodeTypeCode: 'rescue-team', sortOrder: 6 },
+    { name: '少辅队', code: 'STAT', nodeTypeCode: 'rescue-team', sortOrder: 7 },
+    { name: '信息指挥中心', code: 'ICC', nodeTypeCode: 'functional-dept', sortOrder: 8 },
+    { name: '志愿者组织部', code: 'VOD', nodeTypeCode: 'functional-dept', sortOrder: 9 },
+    { name: '行政外联部', code: 'APD', nodeTypeCode: 'functional-dept', sortOrder: 10 },
+    { name: '技术培训部', code: 'TTD', nodeTypeCode: 'functional-dept', sortOrder: 11 },
+    { name: '秘书处', code: 'SEC', nodeTypeCode: 'functional-dept', sortOrder: 12 },
+    { name: '联合会', code: 'THQ', nodeTypeCode: 'functional-dept', sortOrder: 13 },
+    { name: '志愿者', code: 'VOL', nodeTypeCode: 'volunteer', sortOrder: 14 },
+  ];
+
+  for (const d of departments) {
+    await prisma.organization.upsert({
+      where: { code: d.code },
+      update: {},
+      create: {
+        name: d.name,
+        code: d.code,
+        nodeTypeCode: d.nodeTypeCode,
+        parentId: root.id,
+        sortOrder: d.sortOrder,
+      },
+    });
+  }
+
+  console.log(`[seed] organizations ensured (1 根 SRVF + ${departments.length} 部门,扁平两层)`);
 }
 
 // V2.x C-6 RBAC 实施 PR #8(2026-05-14):14 条 rbac.* 权限点全集(沿 D7 v1.1 §10.2)。
@@ -2475,6 +2537,11 @@ async function main(): Promise<void> {
 
     // V2 第一阶段批次 3:activity_type 二级树字典(D11)
     await seedActivityTypeHierarchy(prisma);
+
+    // 组织树内置(2026-06-21 goal「组织树内置」):SRVF 根 + 15 部门。
+    // 依赖 node_type 真实分类已由 seedV2Dictionaries 内置(nodeTypeCode 为字符串,无 FK,
+    // 但语义上应在 node_type 之后)。
+    await seedOrganizations(prisma);
 
     // V2.x C-6 RBAC 实施 PR #8(沿 D7 v1.1 §10):14 条 rbac.* + ops-admin + bootstrap
     await seedRbac(prisma);
