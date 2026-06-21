@@ -15,7 +15,7 @@ import {
   UpdateMemberStatusDto,
 } from './members.dto';
 
-// 队员等级 dict_type code(seed neutral-demo 实际值;详见 prisma/seed.ts V2_DICT_SEED)。
+// 队员等级 dict_type code(seed 内置真实值 member_grade,R13 收窄后队内分类可内置;详见 prisma/seed.ts V2_DICT_SEED)。
 // 模块内常量化:Step 4 organizations 自有 'node_type';如未来需跨模块复用再抽 common。
 const MEMBER_GRADE_DICT_CODE = 'member_grade';
 
