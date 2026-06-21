@@ -2,9 +2,9 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
+## v0.27.0 - 2026-06-21
 
-> **SemVer 建议**:**minor**(新增第 28 模块 CMS 内容发布,零 breaking;0.x 默认 minor → 预期 v0.27.0)。版本号 bump(`package.json` + Swagger `setVersion` + tag + GitHub Release)由 release 收口执行(沿 [`docs/process.md §5.1`](docs/process.md)),本节先承载条目。
+> **SemVer 拍板**:**minor**(v0.26.1 → v0.27.0)。新增第 28 模块 CMS 内容发布(D 档功能串,goal「内容发布模块」T0-T5),零 breaking,沿 process「0.x 默认 minor」。
 
 ### Added
 
