@@ -365,6 +365,13 @@ export const BizCode = {
     message: '字典类型 code 已存在',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 系统内置字典类型禁止软删(seed 内置类型;额外闸,与 DICT_TYPE_IN_USE 并存,
+  // 不依赖当前是否被引用)。详见 dictionaries.service.ts SYSTEM_PROTECTED_DICT_TYPES。
+  DICT_TYPE_SYSTEM_PROTECTED: {
+    code: 12003,
+    message: '系统内置字典类型不允许删除',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   DICT_ITEM_NOT_FOUND: {
     code: 12010,
     message: '字典项不存在',
@@ -394,6 +401,13 @@ export const BizCode = {
     code: 12014,
     message: '字典项父级不允许修改',
     httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  // 系统内置字典项禁止软删(闭集 + 国标参照 + 队内内置类型下的项;额外闸,与 DICT_ITEM_IN_USE 并存,
+  // 不依赖当前是否被引用)。详见 dictionaries.service.ts ITEM_PROTECTED_DICT_TYPES。
+  DICT_ITEM_SYSTEM_PROTECTED: {
+    code: 12015,
+    message: '系统内置字典项不允许删除',
+    httpStatus: HttpStatus.CONFLICT,
   },
   DICT_TYPE_IN_USE: {
     code: 12030,

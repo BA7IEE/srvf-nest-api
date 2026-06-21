@@ -125,7 +125,7 @@ export class DictTypesController {
   @Delete(':id')
   @ApiOperation({
     summary:
-      '软删字典类型(P0-F PR-2A D3=A 放宽:ops-admin 可调;有 dict_items / organizations / members 引用则拒绝) [rbac: dict.delete.type]',
+      '软删字典类型(P0-F PR-2A D3=A 放宽:ops-admin 可调;系统内置类型拒删;有 dict_items / organizations / members 引用则拒绝) [rbac: dict.delete.type]',
   })
   @ApiWrappedOkResponse(DictTypeResponseDto)
   @ApiBizErrorResponse(
@@ -133,6 +133,7 @@ export class DictTypesController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.DICT_TYPE_NOT_FOUND,
+    BizCode.DICT_TYPE_SYSTEM_PROTECTED,
     BizCode.DICT_TYPE_IN_USE,
   )
   softDelete(
@@ -261,7 +262,7 @@ export class DictItemsController {
   @Delete(':id')
   @ApiOperation({
     summary:
-      '软删字典项(P0-F PR-2A D3=A 放宽:ops-admin 可调;有子节点 / organizations / members 引用则拒绝) [rbac: dict.delete.item]',
+      '软删字典项(P0-F PR-2A D3=A 放宽:ops-admin 可调;闭集 / 国标 / 队内内置类型下的项拒删;有子节点 / organizations / members 引用则拒绝) [rbac: dict.delete.item]',
   })
   @ApiWrappedOkResponse(DictItemResponseDto)
   @ApiBizErrorResponse(
@@ -269,6 +270,7 @@ export class DictItemsController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.DICT_ITEM_NOT_FOUND,
+    BizCode.DICT_ITEM_SYSTEM_PROTECTED,
     BizCode.DICT_ITEM_IN_USE,
   )
   softDelete(
