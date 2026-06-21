@@ -87,10 +87,10 @@ Certificate (不在 participation 图内)
 | 1. 活动起草 | activities | `create` → `statusCode='draft'` | 仅创建,无下游 |
 | 2. 活动发布 | activities | `publish` → `draft → published` | 解锁 Registration 创建与 AttendanceSheet 提交 |
 | 3. 活动取消 | activities | `cancel` → `* → cancelled` | 阻断所有下游写;attendances 在 `findActivityForSubmissionFull` 内会拒绝 `ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN` |
-| 4. 报名(admin / app / legacy) | activity-registrations | `create` / `createMy` → `pending` | 不影响 Activity 状态;partial unique 防重复 |
+| 4. 报名(admin / app / legacy) | activity-registrations | `create` / `createMy` → `pending` | 不影响 Activity 状态;partial unique 防重复;**报名截止生效**(`assertActivityRegistrable` 两路公共闸:`registrationDeadline` 非 null 且 `now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`;approve **不**加此闸,截止前已报 pending 仍可批) |
 | 5. 报名审核 | activity-registrations | `approve` / `reject` → `pass` / `reject` | 仅服务内部状态 |
 | 6. 报名取消 | activity-registrations | `cancelAdmin` / `cancelMy` → `cancelled` | partial unique 允许同人再次报名 |
-| 7. 考勤表首次提交 | attendances | `submit` → `Sheet.statusCode='pending'` + 多条 `Record` 同事务建立 | **跨模块写**:`Activity.statusCode` 从 `published → completed`(D11 / D-S10;[`attendances.service.ts:495`](../src/modules/attendances/attendances.service.ts:495));**跨模块读**:`tx.contributionRule.findMany` 预填 `AttendanceRecord.contributionPoints`(D14 5.B;[`contribution-calculator.ts:89`](../src/modules/attendances/contribution-calculator.ts:89));**跨模块读**:`assertRegistrationMatchesActivity` 校验 `registrationId.activityId === sheet.activityId`(R23;[`attendances.service.ts:299`](../src/modules/attendances/attendances.service.ts:299)) |
+| 7. 考勤表首次提交 | attendances | `submit` → `Sheet.statusCode='pending'` + 多条 `Record` 同事务建立 | **跨模块写**:`Activity.statusCode` 从 `published → completed`(D11 / D-S10;[`attendances.service.ts:495`](../src/modules/attendances/attendances.service.ts:495));**跨模块读**:`tx.contributionRule.findMany` 预填 `AttendanceRecord.contributionPoints`(D14 5.B;[`contribution-calculator.ts:87`](../src/modules/attendances/contribution-calculator.ts:87);2026-06-21 起预填回归原始规则分,**不再 per-record dailyCap 钳制**,见下 invariant「全局每日封顶」);**跨模块读**:`assertRegistrationMatchesActivity` 校验 `registrationId.activityId === sheet.activityId`(R23;[`attendances.service.ts:299`](../src/modules/attendances/attendances.service.ts:299)) |
 | 8. APD 一级审核 | attendances | `approve` → `pending → pending_final_review`;`reject` → `pending → rejected` | **不**触发 `attendance.recorded`(沿 D-S7;触发点已移到 final-approve) |
 | 9. APD 终审通过 | attendances | `finalApprove` → `pending_final_review → approved` | **`contributionPoints` 在此刻语义上生效**;同事务内 `eventPlaceholder('attendance.recorded')` 发出([`attendances.service.ts:1003`](../src/modules/attendances/attendances.service.ts:1003));未来 contribution-points 聚合器从此事件消费 |
 | 10. APD 终审驳回 | attendances | `finalReject` → `pending_final_review → final_rejected` | 不触发 `attendance.recorded`;records 跟随软删 |
@@ -99,6 +99,7 @@ Certificate (不在 participation 图内)
 **关键 invariant**:
 
 - `AttendanceRecord.contributionPoints` 字段层可空;**业务**层在 Step 9(approved)之前可由 APD 现场修订;终审通过即"语义生效"。
+- **全局每日封顶在本 context 之外**(活动闭环硬化 2026-06-21):队员单个北京日历日的贡献值总分封顶 1.5(`GLOBAL_DAILY_CONTRIBUTION_CAP`),封顶**只**发生在 recruitment 侧 team-join `computeContribution`(按 `checkInAt` 北京日分组 → 每日封顶 → 加总),**不**在 participation 侧落库——`AttendanceRecord.contributionPoints` 仍存原始规则分。`ContributionRule.dailyCap` 列保留但已 deprecated、calculator 不再读。
 - `attendance.recorded` 事件是 participation context **向外的唯一已锁定出口语义**;其它消费方(未来 contribution 聚合 / 仪表盘 / 队员个人贡献值汇总)应当订阅它,**不应**直接读 `AttendanceSheet` / `AttendanceRecord` 表。
 - Activity → completed 由 attendances submit 推动,这是**已知的跨 aggregate 写**;在 §5.2 中明确允许,**不再扩散**到其它方向。
 - **终审授权现状(2026-06-10 方案 A 拍板;2026-06-11 Slow-4 收口更新)**:Step 9/10 的 `finalApprove` / `finalReject` 由 service 层 `rbac.can('attendance.final-{approve,reject}.sheet')` 判权(两码绑 `biz-admin`)——**终审 = SUPER_ADMIN(短路)或持 `biz-admin` 的 ADMIN**,任何持权 ADMIN 可终审任何部门;`AttendanceSheet.finalReviewerUserId` 仅作审计记录,**不参与授权**。"部长 / 副部长"职务在数据模型中不存在(`member_departments` 仅人↔部门归属,无职务字段),部门级细分**刻意后置**,作为 Slow-3 决议(主决议已于 2026-06-11 落地为 `biz-admin`)的**仍挂起子议题**,未单独立项前**不**实现、**不**新增权限码、**不**补部门级 e2e。

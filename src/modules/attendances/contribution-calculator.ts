@@ -30,9 +30,6 @@ type PrefillRecordLike = {
 
 @Injectable()
 export class ContributionCalculator {
-  // 默认日上限 1.5(沿 Q-OPEN-7 锁定;ContributionRule.dailyCap === null 时兜底)。
-  private readonly DEFAULT_DAILY_CAP = 1.5;
-
   // 批次 4-B D14 5.B 预填(沿 D-S4 / D-A8 / 业务规则文档 §4)。
   // 输入:normalized records + activityTypeCode;
   // 输出:applied records(contributionPoints 已按规则预填或保持调用方传入值)。
@@ -49,8 +46,9 @@ export class ContributionCalculator {
   //   record.serviceHours >  rule.durationThreshold → 取 rule.pointsAbove ?? pointsBelow
   // 服务时长无档位(rule.durationThreshold === null):
   //   直接取 rule.pointsBelow(pointsAbove 不参与)
-  // 每日上限:rule.dailyCap 兜底 1.5(沿 Q-OPEN-7 / D-S3);
-  //   预填值 = MIN(candidatePoints, effectiveDailyCap)。
+  // 每日封顶(活动闭环硬化 2026-06-21):本计算器不再 per-record 钳制;预填 = candidatePoints 原始规则分。
+  //   全局每日上限改落汇总处(team-join `computeContribution`:按北京日分组封顶
+  //   GLOBAL_DAILY_CONTRIBUTION_CAP=1.5);ContributionRule.dailyCap 列保留但本计算器不再读。
   //
   // NULL durationThreshold 选取(沿 §3.1 复核报告):
   //   ORDER BY createdAt ASC LIMIT 1(明确,不随机)。
@@ -97,7 +95,6 @@ export class ContributionCalculator {
         durationThreshold: true,
         pointsBelow: true,
         pointsAbove: true,
-        dailyCap: true,
         createdAt: true,
       },
       orderBy: { createdAt: 'asc' },
@@ -119,10 +116,9 @@ export class ContributionCalculator {
       candidatePoints =
         chosen.pointsAbove !== null ? Number(chosen.pointsAbove) : Number(chosen.pointsBelow);
     }
-    const effectiveCap =
-      chosen.dailyCap !== null ? Number(chosen.dailyCap) : this.DEFAULT_DAILY_CAP;
-    const finalPoints = Math.min(candidatePoints, effectiveCap);
-    // 保留 2 位小数(对齐 Decimal(5,2))
-    return Math.round(finalPoints * 100) / 100;
+    // 活动闭环硬化(2026-06-21):去掉每条记录的 dailyCap 钳制,预填回归原始规则分。
+    // 全局每日封顶改落汇总处 team-join computeContribution(按北京日分组封顶),不再 per-record MIN。
+    // 保留 2 位小数(对齐 Decimal(5,2))。
+    return Math.round(candidatePoints * 100) / 100;
   }
 }

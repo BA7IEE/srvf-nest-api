@@ -7,7 +7,9 @@ import {
   CONTRIBUTION_THRESHOLD,
   type GateMarks,
   GENERAL_GATE_CODES,
+  GLOBAL_DAILY_CONTRIBUTION_CAP,
   allGeneralGatesSatisfied,
+  beijingDayNumber,
   contributionCutoff,
   isGateSatisfied,
 } from './team-join.constants';
@@ -22,22 +24,41 @@ export interface ContributionResult {
 }
 
 // 贡献值只读汇总:approved sheet + checkInAt < 入队年 3-31 cutoff,历史累计,Decimal 精度,实时算不落库。
+// 全局每日封顶(活动闭环硬化 2026-06-21):一个队员单个北京日历日的贡献值总分封顶在
+// GLOBAL_DAILY_CONTRIBUTION_CAP(默认 1.5)。按记录 checkInAt 的北京日历日分组 → 每日总和封顶 →
+// 再加总。封顶在此汇总处、不落库 → 旧记录存值照旧,无 migration / 无回溯重算;直接影响入队 ≥5 gate 值
+//(原「每条各自封顶、一天多条叠加超额」语义改为「一人一北京日总分封顶」)。in-memory 取数分组
+//(成员记录有界);contributionPoints 为 null(APD 未填 / 无匹配规则)按 0 计,沿旧 SQL SUM 跳 NULL 语义。
 export async function computeContribution(
   client: PrismaService | Prisma.TransactionClient,
   memberId: string,
   cycleYear: number,
 ): Promise<ContributionResult> {
   const cutoff = contributionCutoff(cycleYear);
-  const agg = await client.attendanceRecord.aggregate({
+  const records = await client.attendanceRecord.findMany({
     where: {
       memberId,
       deletedAt: null,
       checkInAt: { lt: cutoff },
       sheet: { statusCode: ATTENDANCE_SHEET_STATUS_APPROVED, deletedAt: null },
     },
-    _sum: { contributionPoints: true },
+    select: { checkInAt: true, contributionPoints: true },
   });
-  const points = agg._sum.contributionPoints ?? new Prisma.Decimal(0);
+  // 按北京日历日分组求和(null 贡献值按 0 计)。
+  const dayTotals = new Map<number, Prisma.Decimal>();
+  for (const r of records) {
+    const day = beijingDayNumber(r.checkInAt);
+    const prev = dayTotals.get(day) ?? new Prisma.Decimal(0);
+    dayTotals.set(day, prev.add(r.contributionPoints ?? new Prisma.Decimal(0)));
+  }
+  // 每日总和封顶在全局上限,再加总。
+  let points = new Prisma.Decimal(0);
+  for (const daySum of dayTotals.values()) {
+    const capped = daySum.greaterThan(GLOBAL_DAILY_CONTRIBUTION_CAP)
+      ? GLOBAL_DAILY_CONTRIBUTION_CAP
+      : daySum;
+    points = points.add(capped);
+  }
   return { points, satisfied: points.gte(CONTRIBUTION_THRESHOLD) };
 }
 

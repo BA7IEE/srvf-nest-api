@@ -167,7 +167,11 @@ describe('App /api/app/v1/my/* (P2-5b 写 2 endpoint)', () => {
   async function createActivity(
     state: 'draft' | 'published' | 'cancelled' | 'completed',
     titleSuffix: string,
-    opts: { isPublicRegistration?: boolean; capacity?: number | null } = {},
+    opts: {
+      isPublicRegistration?: boolean;
+      capacity?: number | null;
+      registrationDeadline?: Date;
+    } = {},
   ): Promise<{ id: string }> {
     const base = {
       title: `P2-5b ${state} ${titleSuffix}`,
@@ -179,7 +183,8 @@ describe('App /api/app/v1/my/* (P2-5b 写 2 endpoint)', () => {
       coverImageUrl: 'https://example.test/cover.png',
       capacity: opts.capacity === undefined ? 30 : opts.capacity,
       isPublicRegistration: opts.isPublicRegistration ?? true,
-      registrationDeadline: new Date('2026-06-25T23:59:59.000Z'),
+      // 默认 2026-06-25(晚于当前 2026-06-21,不触发截止闸);需要测截止时显式传过去时刻。
+      registrationDeadline: opts.registrationDeadline ?? new Date('2026-06-25T23:59:59.000Z'),
     };
     if (state === 'cancelled') {
       return prisma.activity.create({
@@ -275,6 +280,22 @@ describe('App /api/app/v1/my/* (P2-5b 写 2 endpoint)', () => {
       });
       expect(dbRow).not.toBeNull();
       expect(dbRow!.statusCode).toBe('pending');
+    });
+
+    it('截止后(deadline 已过)→ 自助报名拒 ACTIVITY_REGISTRATION_DEADLINE_PASSED', async () => {
+      const u = nextSeq();
+      const { authHeader } = await setupLinkedUser({
+        username: `p25b-dl-${u}`,
+        memberNo: `P25B-DL-${u}`,
+      });
+      // published + public,但报名截止已过 → 经 createMy → assertActivityRegistrable 截止闸(20123)。
+      const act = await createActivity('published', `dl-${u}`, {
+        registrationDeadline: new Date('2020-01-01T00:00:00.000Z'),
+      });
+      expectBizError(
+        await post(APP_POST, { activityId: act.id }, authHeader),
+        BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED,
+      );
     });
 
     it('success with extras: extras 透传(不嵌套校验,沿 D-P2-5-12)', async () => {

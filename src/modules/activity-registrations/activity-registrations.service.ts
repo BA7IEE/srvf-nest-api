@@ -180,6 +180,7 @@ export class ActivityRegistrationsService {
     requiresInsurance: boolean;
     startAt: Date;
     endAt: Date;
+    registrationDeadline: Date | null;
   }> {
     const client = tx ?? this.prisma;
     const act = await client.activity.findFirst({
@@ -192,6 +193,9 @@ export class ActivityRegistrationsService {
         requiresInsurance: true,
         startAt: true,
         endAt: true,
+        // 活动闭环硬化(2026-06-21):报名截止闸取数(assertActivityRegistrable 读;
+        // approve 不读,既有调用方零回归,返回超集)。
+        registrationDeadline: true,
       },
     });
     if (!act) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
@@ -256,6 +260,12 @@ export class ActivityRegistrationsService {
     }
     if (!act.isPublicRegistration) {
       throw new BizException(BizCode.ACTIVITY_NOT_PUBLIC_REGISTRATION);
+    }
+    // 活动闭环硬化(2026-06-21):报名截止时刻生效。两路公共闸——create 代报名 + createMy 自助
+    // (App createMyForApp 经 createMy)都经此。registrationDeadline 为 null = 不设截止;精确时刻
+    // 比较 now > deadline,不做北京日归一(T0 确认)。approve 不经此闸 → 截止前已报 pending 仍可批。
+    if (act.registrationDeadline !== null && new Date() > act.registrationDeadline) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED);
     }
     // 保险 T3:透传门槛三字段给 create()/createMy() 的 assertMemberInsuredForActivity(E-10)
     return {
