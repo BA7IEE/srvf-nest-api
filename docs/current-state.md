@@ -10,7 +10,7 @@
 | 版本(三方一致) | **v0.27.0**(2026-06-21;package.json = Swagger = tag = Release 四方一致;tag 指向 `7b7118dc` 标 Latest;要点见 CHANGELOG v0.27.0 段) |
 | `main` HEAD | `7b7118dc`(#417 v0.27.0 bump;tag v0.27.0 指向此点;本行为滚动快照,本 current-state 回填 PR 合入后 HEAD 再滚动) |
 | open PR / 工作树 / Unreleased | **0**(本回填 PR 前)/ clean / **0**(v0.27.0 = 第 28 模块 CMS 内容发布 feature #416 + bump #417;CHANGELOG `## Unreleased` 已折叠为 `## v0.27.0`,无残留) |
-| 最新 handoff | v0.27.0 **streamlined 收口未建 handoff**(维护者 2026-06-21 拍板收口列表未含 handoff;tag 指向 bump #417 合并点,沿 process §5.2「除非用户另行拍板」);上一 handoff [`archive/handoff/v0.26.1.md`](archive/handoff/v0.26.1.md)(不回改) |
+| 最新 handoff | [`archive/handoff/v0.27.0.md`](archive/handoff/v0.27.0.md)(post-release 补档,2026-06-21;tag 仍指 bump #417 合并点 `7b7118dc`,沿 process §5.2,**不因补档回指**;不回改) |
 
 ## 2. 当前系统已具备能力
 
