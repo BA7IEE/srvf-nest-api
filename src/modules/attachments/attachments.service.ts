@@ -126,11 +126,20 @@ export class AttachmentsService {
 
   // ===== CMS 内容模块可信只读(content-module-review §5.4;α 决议)=====
   // content 读取面在**文章可见级校验通过后**调用,取某 owner 的全部附件(已签 URL),**不**走
-  // attachment.view RBAC(公开读者亦可见,附件随文章可见级)。仅 content 模块使用。
+  // attachment.view RBAC(公开读者亦可见,附件随文章可见级)。
+  // **仅限 content-* owner**(content-image / content-file):本方法无 RBAC,若被误用于 member /
+  // certificate / activity 等 owner,将无鉴权签出(含 PII 的)附件下载 URL。故方法体开头加运行时护栏
+  // 限定 content-* owner(元核验加固,2026-06-21 维护者);其余 owner 的读**必须**走 attachment.view
+  // RBAC(getById / list)。resolveSignedUrlTrusted 只签传入 key、无 owner 上下文,风险低,不加此栏。
   async listOwnerAttachmentsTrusted(
     ownerType: AttachmentOwnerType,
     ownerId: string,
   ): Promise<OwnerAttachmentView[]> {
+    if (ownerType !== 'content-image' && ownerType !== 'content-file') {
+      throw new Error(
+        'listOwnerAttachmentsTrusted: content-* owner types only (no-RBAC trusted view)',
+      );
+    }
     const rows = await this.prisma.attachment.findMany({
       where: { ownerType, ownerId },
       select: {
