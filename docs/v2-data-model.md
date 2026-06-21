@@ -25,7 +25,7 @@
 - **不是** migration SQL — migration 由 Step 1 实施期生成;本文不写任何 SQL 语句
 - **不是** controller / service / dto 代码 — 由 v2-plan Step 3-6 实施期编写
 - **不是** API 契约 — 接口契约草案由 `docs/v2-api-contract.md` 承载
-- **不是**真实业务取值 — 真实部门名 / 等级名 / 字典内容**不进**本文(沿用 `research.md §7-R13`)
+- **不是**真实业务取值 — 真实成员 PII(姓名 / 身份证 / 手机号)+ 真实编号样例(memberNo)**不进**本文(R13;2026-06-21 收窄,非敏感分类字典取值已可内置 seed,见 [`V2红线与复活路径.md` A-9](V2红线与复活路径.md))
 - **不是**已确认开发启动 — V2-D8 标记完成需 5 份立项产出物全部就位
 
 ### 0.3 严守的边界
@@ -35,7 +35,7 @@
 - ❌ 不写 Prisma DSL(`@id` / `@default` / `@relation` / `@@unique` / `@@map` 等装饰器)
 - ❌ 不写完整 Prisma `model Xxx { ... }` 块
 - ❌ 不写 migration SQL(`CREATE TABLE` / `ALTER TABLE` 等)
-- ❌ 不写真实业务取值(部门名 / 等级名 / 字典 items 具体内容)
+- ❌ 不写真实成员 PII(姓名 / 身份证 / 手机号)+ 真实编号样例(memberNo)(R13 收窄,2026-06-21;非敏感分类字典取值已可内置 seed,见 `V2红线与复活路径.md` A-9)
 - ❌ 不覆盖 5 个延后模型(`member_profiles` / `attachments` / `audit_logs` / `events` / `event_participants`)
 - ❌ 不写 controller / service / dto class / API 路径
 
@@ -162,6 +162,28 @@ V2 第一阶段开发范围由 D7-min 决议锁定为 **4 个新模型 + 1 项 v
 - **优先启停**:`status` 切换;字典 items 投入业务使用后**不物理删除**(`research.md §6.5`)
 - **`deletedAt` 防御性留置**:仅运营场景下确实要软删时使用
 - **历史业务数据保护**:即便 items 被软删,历史业务数据(已存的 `gradeCode = 'XXX'`)仍可解析(因 `findUnique` 在 service 层包含软删记录)
+
+### 3.7 字典 seed 内置策略与防误删守卫(2026-06-21 goal「字典内置」)
+
+R13 收窄(见 [`V2红线与复活路径.md` A-9](V2红线与复活路径.md))后,`prisma/seed.ts` 按字典性质分三类内置 + 两类占位:
+
+| 类别 | 例 | seed 内置 | code 契约 | 项级防误删 |
+|---|---|---|---|---|
+| **闭集**(状态 / 角色机)| `cert_status` / `activity_status` / `registration_status` / `attendance_sheet_status` / `attendance_status` / `attendance_role` | 真实闭集值 | 业务状态机依赖,长期契约 | ✅ 受保护 |
+| **国标参照** | `gender` / `blood_type` / `marital_status` / `political_status` / `document_type` / `education` / `ethnicity`(56 民族)/ `emergency_relation` | 真实 GB 标准值 | 英文 / 拼音 snake_case,长期契约 | ✅ 受保护 |
+| **队内内置** | `member_grade`(9 项)/ `activity_type`(9 父 + 28 子) | 队内真实分类 | 中文生成稳定 snake_case,长期契约 | ✅ 受保护 |
+| **占位 / 开放分类** | `node_type`(组织树另起 goal)/ `work_nature`(本次未给值)/ `cert_type` / `cert_sub_type` / `content_type`(待运营细化) | 占位 demo / 初始集 | — | ❌ 项可由运营增删改 |
+
+**防误删守卫**(`dictionaries.service.ts`;service 常量,无 schema flag / 无 migration):
+
+- **不变量 ①**:全部 seed 内置类型禁止【类型】软删(`SYSTEM_PROTECTED_DICT_TYPES`;含占位类型)→ `DICT_TYPE_SYSTEM_PROTECTED`(12003)。
+- **不变量 ②**:闭集 + 国标 + 队内内置类型下的【项】禁止软删(`ITEM_PROTECTED_DICT_TYPES`)→ `DICT_ITEM_SYSTEM_PROTECTED`(12015);改 code 本就不可能(`UpdateDictItemDto` 白名单仅 label / sortOrder)。
+- **不变量 ③**:运营自建的非内置类型及其项 CRUD 行为不变(不在集合即放行)。
+- **不变量 ④**:所有类型 / 项 label / sortOrder / status 切换保持可改(守卫只封 delete)。
+- 与 `DICT_TYPE_IN_USE` / `DICT_ITEM_IN_USE` 引用检查**并存**:守卫是额外闸,不依赖当前是否被引用。
+- 守卫 code 集合须与 `prisma/seed.ts`(`V2_DICT_SEED` + `seedActivityTypeHierarchy`)同步;新增 seed 内置类型时同步登记(漏登只是少一层保护,非破坏性)。
+
+**幂等**:seed `upsert` + `update: {}` 不覆盖运营运行时手改;真实 label 仅干净库首次 seed 生效(模板期可接受)。
 
 ---
 
@@ -595,9 +617,8 @@ V2.x 复活触发条件见 [`docs/V2红线与复活路径.md §4.3`](V2红线与
 
 ### 11.2 不写入的内容
 
-- ❌ 真实部门名(具体业务上的部门 / 小组 / 编组类别取值)
-- ❌ 真实等级名(具体业务上的等级 / 资质取值)
-- ❌ 真实字典 items 内容(seed 仅 neutral-demo)
+- ❌ 真实成员 PII(姓名 / 身份证 / 手机号)+ 真实编号规则 / 样例(memberNo)— R13 红线(2026-06-21 收窄;权威源 `V2红线与复活路径.md` A-9)
+- ℹ️ 非敏感分类字典取值(国标参照 gender / blood_type / … / ethnicity + 队内 member_grade 级别名 / activity_type 活动类别)已内置 `prisma/seed.ts` seed;node_type / work_nature 仍占位(组织树另起 goal)
 - ❌ 完整 Prisma `model {}` 块
 - ❌ Migration SQL
 - ❌ Controller / Service / DTO class 完整代码

@@ -50,6 +50,75 @@ type SafeDictType = Prisma.DictTypeGetPayload<{ select: typeof dictTypeSelect }>
 type SafeDictItem = Prisma.DictItemGetPayload<{ select: typeof dictItemSelect }>;
 type PrismaTx = Prisma.TransactionClient;
 
+// =========================================================================
+// 系统内置字典防误删守卫(2026-06-21 goal「字典内置」W3;service 常量,无 schema flag / 无 migration)。
+//
+// 不变量:
+//   ① 全部 seed 内置类型禁止【类型】软删(SYSTEM_PROTECTED_DICT_TYPES)。
+//   ② 闭集 + 国标参照 + 队内内置类型下的【项】禁止软删(ITEM_PROTECTED_DICT_TYPES);
+//      改 code 本就不可能(UpdateDictItemDto 白名单只收 label / sortOrder,parentId / code 在外),
+//      此守卫额外封住 delete。
+//   ③ 运营自建的非内置类型及其项 CRUD 行为不变(不在下列集合即放行)。
+//   ④ 所有类型 / 项 label / sortOrder / status 切换保持可改(本守卫只封 delete)。
+//
+// 与 DICT_TYPE_IN_USE / DICT_ITEM_IN_USE 引用检查【并存】:本守卫是额外闸,不依赖当前是否被引用。
+// 集合内容须与 prisma/seed.ts(V2_DICT_SEED + seedActivityTypeHierarchy)同步;新增 seed 内置类型时
+// 同步登记(漏登只是少一层保护,非破坏性)。
+// =========================================================================
+
+// ① 全部 seed 内置 dict_type code → 禁【类型】软删。
+const SYSTEM_PROTECTED_DICT_TYPES: ReadonlySet<string> = new Set<string>([
+  // 占位 / 开放分类类型:类型禁删,但其 items 不在 ② 内(运营可增删改占位 / 细化分类)。
+  'node_type',
+  'work_nature',
+  'cert_type',
+  'cert_sub_type',
+  'content_type',
+  // 国标参照(items 亦受 ② 保护)。
+  'gender',
+  'document_type',
+  'political_status',
+  'blood_type',
+  'marital_status',
+  'education',
+  'ethnicity',
+  'emergency_relation',
+  // 队内内置(items 亦受 ② 保护)。
+  'member_grade',
+  'activity_type',
+  // 闭集状态 / 角色机(items 亦受 ② 保护)。
+  'cert_status',
+  'activity_status',
+  'registration_status',
+  'attendance_sheet_status',
+  'attendance_status',
+  'attendance_role',
+]);
+
+// ② 闭集 + 国标参照 + 队内内置类型 → 其下【项】禁软删(SYSTEM_PROTECTED_DICT_TYPES 的子集;
+//    排除占位 / 开放分类类型,后者 items 由运营维护)。
+const ITEM_PROTECTED_DICT_TYPES: ReadonlySet<string> = new Set<string>([
+  // 国标参照
+  'gender',
+  'document_type',
+  'political_status',
+  'blood_type',
+  'marital_status',
+  'education',
+  'ethnicity',
+  'emergency_relation',
+  // 队内内置
+  'member_grade',
+  'activity_type',
+  // 闭集状态 / 角色机
+  'cert_status',
+  'activity_status',
+  'registration_status',
+  'attendance_sheet_status',
+  'attendance_status',
+  'attendance_role',
+]);
+
 @Injectable()
 export class DictionariesService {
   constructor(
@@ -219,6 +288,11 @@ export class DictionariesService {
     return this.prisma.$transaction(async (tx) => {
       const target = await this.findDictTypeOrThrow(id, tx);
 
+      // W3 守卫:系统内置类型禁止软删(额外闸,先于 IN_USE 引用检查;不依赖是否被引用)。
+      if (SYSTEM_PROTECTED_DICT_TYPES.has(target.code)) {
+        throw new BizException(BizCode.DICT_TYPE_SYSTEM_PROTECTED);
+      }
+
       const [itemsCount, orgCount, memberCount] = await Promise.all([
         tx.dictItem.count({ where: { typeId: id, deletedAt: null } }),
         tx.organization.count({ where: { nodeTypeCode: target.code, deletedAt: null } }),
@@ -356,6 +430,16 @@ export class DictionariesService {
     await this.assertCanOrThrow(user, 'dict.delete.item');
     return this.prisma.$transaction(async (tx) => {
       const target = await this.findDictItemOrThrow(id, tx);
+
+      // W3 守卫:闭集 + 国标 + 队内内置类型下的项禁止软删(额外闸,先于 IN_USE 引用检查)。
+      // 取所属类型 code(findUnique 不过滤软删,确保即便类型态变化仍按 code 判保护)。
+      const ownerType = await tx.dictType.findUnique({
+        where: { id: target.typeId },
+        select: { code: true },
+      });
+      if (ownerType && ITEM_PROTECTED_DICT_TYPES.has(ownerType.code)) {
+        throw new BizException(BizCode.DICT_ITEM_SYSTEM_PROTECTED);
+      }
 
       const [childCount, orgCount, memberCount] = await Promise.all([
         tx.dictItem.count({ where: { parentId: id, deletedAt: null } }),

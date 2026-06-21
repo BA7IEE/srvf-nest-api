@@ -510,4 +510,156 @@ describe('dictionaries 模块', () => {
       expectBizError(res, BizCode.DICT_ITEM_IN_USE);
     });
   });
+
+  // ============ W3 系统内置防误删守卫 ============
+  // 2026-06-21 goal「字典内置」:seed 内置类型禁【类型】删;闭集 + 国标 + 队内内置类型下的项禁【项】删;
+  // 占位 / 开放分类类型(node_type / content_type)的项 + 运营自建类型 / 项行为不变。
+  // 守卫按 type.code 判定,故 e2e 直接以受保护 code 造 type/item 即可触发(无需跑 seed)。
+  describe('系统内置防误删守卫 (W3)', () => {
+    it('DELETE 系统内置类型(member_grade)→ DICT_TYPE_SYSTEM_PROTECTED', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'member_grade', label: '队员级别' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .delete(`/api/system/v1/dict-types/${t.id}`)
+        .set('Authorization', superAdminAuth);
+      expectBizError(res, BizCode.DICT_TYPE_SYSTEM_PROTECTED);
+    });
+
+    it('DELETE 占位内置类型(node_type)→ DICT_TYPE_SYSTEM_PROTECTED(类型受保护,即便其项不受保护)', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'node_type', label: '节点类别' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .delete(`/api/system/v1/dict-types/${t.id}`)
+        .set('Authorization', superAdminAuth);
+      expectBizError(res, BizCode.DICT_TYPE_SYSTEM_PROTECTED);
+    });
+
+    it('DELETE 闭集内置项(attendance_status / present)→ DICT_ITEM_SYSTEM_PROTECTED', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'attendance_status', label: '考勤明细状态' },
+        select: { id: true },
+      });
+      const i = await prisma.dictItem.create({
+        data: { typeId: t.id, code: 'present', label: '已到场' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .delete(`/api/system/v1/dict-items/${i.id}`)
+        .set('Authorization', superAdminAuth);
+      expectBizError(res, BizCode.DICT_ITEM_SYSTEM_PROTECTED);
+    });
+
+    it('DELETE 国标内置项(gender / male)→ DICT_ITEM_SYSTEM_PROTECTED', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'gender', label: '性别' },
+        select: { id: true },
+      });
+      const i = await prisma.dictItem.create({
+        data: { typeId: t.id, code: 'male', label: '男' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .delete(`/api/system/v1/dict-items/${i.id}`)
+        .set('Authorization', superAdminAuth);
+      expectBizError(res, BizCode.DICT_ITEM_SYSTEM_PROTECTED);
+    });
+
+    it('PATCH 受保护项 label / sortOrder → 200(守卫只封 delete,不封 update)', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'blood_type', label: '血型' },
+        select: { id: true },
+      });
+      const i = await prisma.dictItem.create({
+        data: { typeId: t.id, code: 'a', label: 'A 型', sortOrder: 0 },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .patch(`/api/system/v1/dict-items/${i.id}`)
+        .set('Authorization', superAdminAuth)
+        .send({ label: 'A 型(改)', sortOrder: 9 });
+      expect(res.status).toBe(200);
+      expect(res.body.data.label).toBe('A 型(改)');
+      expect(res.body.data.sortOrder).toBe(9);
+    });
+
+    it('PATCH /:id/status 受保护项启停 → 200', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'political_status', label: '政治面貌' },
+        select: { id: true },
+      });
+      const i = await prisma.dictItem.create({
+        data: { typeId: t.id, code: 'masses', label: '群众' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .patch(`/api/system/v1/dict-items/${i.id}/status`)
+        .set('Authorization', superAdminAuth)
+        .send({ status: DictItemStatus.INACTIVE });
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe(DictItemStatus.INACTIVE);
+    });
+
+    it('DELETE 队内内置类型下的项(activity_type / rescue)→ DICT_ITEM_SYSTEM_PROTECTED', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'activity_type', label: '活动类型' },
+        select: { id: true },
+      });
+      const i = await prisma.dictItem.create({
+        data: { typeId: t.id, code: 'rescue', label: '救援' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .delete(`/api/system/v1/dict-items/${i.id}`)
+        .set('Authorization', superAdminAuth);
+      expectBizError(res, BizCode.DICT_ITEM_SYSTEM_PROTECTED);
+    });
+
+    it('DELETE 开放分类类型下的项(content_type / announcement)→ 200(运营可维护)', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'content_type', label: '内容类型' },
+        select: { id: true },
+      });
+      const i = await prisma.dictItem.create({
+        data: { typeId: t.id, code: 'announcement', label: '公告' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .delete(`/api/system/v1/dict-items/${i.id}`)
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      expect(res.body.data.id).toBe(i.id);
+    });
+
+    it('DELETE 运营自建类型 → 200(回归:非内置类型行为不变)', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'ops_custom_w3', label: '运营自建' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .delete(`/api/system/v1/dict-types/${t.id}`)
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      expect(res.body.data.id).toBe(t.id);
+    });
+
+    it('DELETE 运营自建类型下的项 → 200(回归:非内置项行为不变)', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'ops_custom_w3_items', label: '运营自建' },
+        select: { id: true },
+      });
+      const i = await prisma.dictItem.create({
+        data: { typeId: t.id, code: 'ops-item-1', label: 'x' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .delete(`/api/system/v1/dict-items/${i.id}`)
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      expect(res.body.data.id).toBe(i.id);
+    });
+  });
 });

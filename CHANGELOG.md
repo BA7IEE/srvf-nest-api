@@ -2,6 +2,22 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+> goal「字典内置(国标 + 队内真实值)+ 闭集/内置防误删守卫 + R13 收窄」(D 档 seed 数据语义,**无 schema / 无 migration**)。版本 bump 随下个 release 收口由维护者定。
+
+### Added
+
+- **字典系统内置防误删守卫(W3)**(D 档 service 守卫,无 schema / 无 migration;`src/modules/dictionaries/`):`dictionaries.service.ts` 新增 `SYSTEM_PROTECTED_DICT_TYPES`(21 个 seed 内置类型,禁【类型】软删)+ `ITEM_PROTECTED_DICT_TYPES`(16 个闭集 / 国标 / 队内内置类型,其下【项】禁软删)两常量闸;两 DELETE 端点新增 BizCode `DICT_TYPE_SYSTEM_PROTECTED`(**12003**)/ `DICT_ITEM_SYSTEM_PROTECTED`(**12015**),均 409,与既有 `DICT_TYPE_IN_USE` / `DICT_ITEM_IN_USE` 引用检查**并存**(额外闸,不依赖是否被引用)。守卫只封 delete:类型 / 项 label / sortOrder / status 切换、运营自建类型 / 项 CRUD 行为不变。e2e +10 用例;OpenAPI snapshot 仅新增(两 DELETE 端点 error enum 各 +1 码,无新路由)。
+
+### Changed
+
+- **字典 seed 内置国标参照 + 队内真实值(W1/W2)**(D 档 seed 数据语义,无 migration;`prisma/seed.ts`):
+  - **国标参照内置**:`gender`(GB/T 2261.1)/ `blood_type`(ABO)/ `marital_status`(GB/T 2261.2)/ `political_status`(GB/T 4762,13 类)/ `document_type` / `education`(GB/T 4658)/ `ethnicity`(GB/T 3304,**56 民族**)/ `emergency_relation`,真实 GB 标准 code(英文 / 拼音 snake_case 长期契约)+ 中文 label,替换原 demo 占位 / 新增缺项(`marital_status` / `education` / `ethnicity` 为新增类型)。
+  - **队内真实值内置**:`member_grade` 9 项(volunteer / level-1~7〔label 改「正式队员N级」,**code 不变**〕/ reserve);`activity_type` 二级树替换 demo → **9 父 + 28 子**(队内真实活动分类)。
+  - `node_type` / `work_nature` 仍占位(组织树另起 goal / 本次未给值);`promote` / `team-join` 业务逻辑**不变**(`gradeCode=null` 与 volunteer 字典项双表示是已知取舍)。seed `upsert` + `update: {}` 幂等(干净库二跑全 ensured 无重复),真实 label 仅干净库首次 seed 生效。
+- **R13(A-9 红线)收窄**(受保护文档,goal 授权,维护者 2026-06-21 拍板,公开仓库已知情):`docs/V2红线与复活路径.md` A-9 从「真实业务取值(部门名 / 等级名 / 活动类别 / 字典内容)不进 git」收窄为「**仅真实成员 PII(姓名 / 身份证 / 手机号)+ 真实编号规则与样例(memberNo)不进 git**;非敏感分类字典取值允许内置 seed」;同步 `docs/v2-data-model.md` / `docs/v2-api-contract.md` / `prisma/seed.ts` 注释等活跃引用 + 附录 B.1 索引。**保留**:成员 PII + 真实 memberNo 规则 / 样例仍禁(`v2-api-contract` 真实编号样例条 + `schema.prisma` displayName「不写真实姓名」不动)。字典三类策略(闭集 / 国标内置 / 队内内置)+ 防误删规则记入 [`docs/v2-data-model.md §3.7`](docs/v2-data-model.md)。
+
 ## v0.27.0 - 2026-06-21
 
 > **SemVer 拍板**:**minor**(v0.26.1 → v0.27.0)。新增第 28 模块 CMS 内容发布(D 档功能串,goal「内容发布模块」T0-T5),零 breaking,沿 process「0.x 默认 minor」。
