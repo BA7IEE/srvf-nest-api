@@ -13,15 +13,19 @@ import * as bcrypt from 'bcryptjs';
 // 幂等性:用户已存在时 **不覆盖** 密码 / 角色 / 邮箱,只打印提示。
 //
 // V2 第一阶段(详见 docs/v2-plan.md §2.2 / docs/v2-data-model.md §2-§3):
-// SUPER_ADMIN 处理之后追加 neutral-demo 字典 seed。
-// - dict_types: node_type / member_grade
-// - 每类放抽象占位 dict_items;真实部门名 / 等级名 / 队员编号不进 git history(R13)
-// - upsert + update: {} 实现幂等,不覆盖运营在运行时手动调整的取值
+// SUPER_ADMIN 处理之后追加字典 seed(完整清单见 V2_DICT_SEED + seedActivityTypeHierarchy)。
+// - dict_types: node_type / member_grade / gender / ethnicity 等
+// - R13 收窄(2026-06-21 goal「字典内置」,维护者拍板,公开仓库已知情;权威源
+//   docs/V2红线与复活路径.md A-9):仅**真实成员 PII(姓名 / 身份证 / 手机号)+ 真实编号规则与
+//   样例(memberNo)不进 git history**;非敏感分类字典取值(国标参照 + 队内级别名 / 活动类别等)
+//   允许内置 seed。node_type / work_nature 本次仍留占位。
+// - upsert + update: {} 实现幂等,不覆盖运营运行时手动调整(真实 label 仅干净库首次 seed 生效)
 //
 // V2 第一阶段批次 1 追加(详见 docs:批次1_schema草案_member_profiles_emergency_contacts.md
 // v1.0 冻结版 §12.1 + 决议表 Q-S04 / Q-S06):
 // 必开 6 个字典 type:emergency_relation / gender / document_type / political_status /
-// blood_type / work_nature。占位 items 为演示数据;真实运营录入由队部决定。
+// blood_type / work_nature。前 5 类已内置国标 / 队内真实值(2026-06-21 goal「字典内置」);
+// work_nature 仍占位(本次未给值)。
 //
 // V2 第一阶段批次 2 追加(详见 docs:批次2_schema草案_certificates.md v1.0 冻结版 §12.1
 // + 决议表 Q-D7):
@@ -52,8 +56,9 @@ import * as bcrypt from 'bcryptjs';
 // V2 第一阶段批次 4-A 追加(详见 docs:批次4_贡献值业务规则_schema草案评审决议表 v1.0 D-S6 + 字典扩展决议表 v1.0):
 // - attendance_sheet_status 字典扩展 3 → 5 态(D-S6);见 V2_DICT_SEED 内对应条目
 // - ContributionRule **不在 seed 中预填真实规则**(字典扩展决议 §4.1 选项 A);
-//   运营后台 / 私有 seed 录入,真实计分规则不进 git history(沿 baseline §0.3 / R13)
-// - activity_type / attendance_role **沿 v0.4.0 neutral-demo 占位**;真实子项 / 角色由运营后台维护
+//   运营计分配置由队部 / 运营后台 / 私有 seed 维护,非本 seed 职责。
+// - activity_type / attendance_role 已内置队内真实分类(2026-06-21 goal「字典内置」;
+//   R13 收窄后非敏感分类字典可内置;attendance_role 7 项闭集沿 D13 不变)。
 //
 // V2.x C-6 RBAC 实施 PR #8 追加(2026-05-14;沿 D7 v1.1 §10 + 用户拍板六项决策):
 // 1. 14 条 rbac.* Permission 全集 upsert(D7 §10.2;**跳过 4 条 attachment.***,
@@ -74,9 +79,10 @@ const DEFAULT_PASSWORD = 'ChangeMe123456';
 const USERNAME_PATTERN = /^[a-z0-9_-]{3,32}$/;
 const BCRYPT_SALT_ROUNDS = 10;
 
-// V2 neutral-demo 字典 seed:仅占位,真实业务取值由运营在部署后通过运营后台 / 私有 seed 录入。
+// V2 字典 seed:R13 收窄后非敏感分类字典内置真实值(国标参照 + 队内分类);node_type / work_nature
+// 仍占位。真实成员 PII / 真实 memberNo 规则与样例仍不进 git(R13 保留口径;权威源 V2红线 A-9)。
 // - type code 用 snake_case,与字段名 organizations.nodeTypeCode / members.gradeCode 对齐
-// - dict_items 全部 parentId = null(顶层);父子树形 V2.x 评估再引入
+// - 本表 dict_items 全部 parentId = null(顶层);activity_type 二级树由 seedActivityTypeHierarchy 处理
 const V2_DICT_SEED = [
   {
     // 招新三期入队(2026-06-19):node_type 加 4 专业队 code(W-J-1 约定,识别专业队);
@@ -93,63 +99,93 @@ const V2_DICT_SEED = [
     ],
   },
   {
-    // 招新三期入队(2026-06-19,goal 授权):真实 1-7 级别 code 稳定(长期契约,
-    // members.assertGradeCodeValid 依赖其存在 + ACTIVE);label 仅占位「级别 N(待运营命名)」——
-    // 真实级别名永不进 git(R13 / v2-data-model §0.2);入队设 gradeCode='level-1'。评审稿 E-J-6 / §3.4。
-    type: { code: 'member_grade', label: '队员级别 member-grade', sortOrder: 1 },
+    // 队内队员级别(2026-06-21 goal「字典内置」授权;R13 收窄后非敏感分类字典可内置真实值):
+    // 9 项 = volunteer(志愿者)+ level-1~7(正式队员 1~7 级)+ reserve(后备队员)。
+    // level-1~7 code **稳定不变**(长期契约;members.assertGradeCodeValid 依赖其存在 + ACTIVE;
+    // team-join 一键入队写死 gradeCode='level-1',只改 label 不受影响);volunteer / reserve 为新增
+    // 显式可选项(promote 仍写 gradeCode=null = 志愿者实际落库状态,volunteer 字典项供显示 /
+    // 运营选择用,双表示是已知取舍,**不改 promote / team-join 代码**)。评审稿 E-J-6 / §3.4。
+    type: { code: 'member_grade', label: '队员级别', sortOrder: 1 },
     items: [
-      { code: 'level-1', label: '级别 1(待运营命名)', sortOrder: 0 },
-      { code: 'level-2', label: '级别 2(待运营命名)', sortOrder: 1 },
-      { code: 'level-3', label: '级别 3(待运营命名)', sortOrder: 2 },
-      { code: 'level-4', label: '级别 4(待运营命名)', sortOrder: 3 },
-      { code: 'level-5', label: '级别 5(待运营命名)', sortOrder: 4 },
-      { code: 'level-6', label: '级别 6(待运营命名)', sortOrder: 5 },
-      { code: 'level-7', label: '级别 7(待运营命名)', sortOrder: 6 },
+      { code: 'volunteer', label: '志愿者', sortOrder: 0 },
+      { code: 'level-1', label: '正式队员1级', sortOrder: 1 },
+      { code: 'level-2', label: '正式队员2级', sortOrder: 2 },
+      { code: 'level-3', label: '正式队员3级', sortOrder: 3 },
+      { code: 'level-4', label: '正式队员4级', sortOrder: 4 },
+      { code: 'level-5', label: '正式队员5级', sortOrder: 5 },
+      { code: 'level-6', label: '正式队员6级', sortOrder: 6 },
+      { code: 'level-7', label: '正式队员7级', sortOrder: 7 },
+      { code: 'reserve', label: '后备队员', sortOrder: 8 },
     ],
   },
-  // ===== V2 第一阶段批次 1 追加 6 个字典 =====
+  // ===== V2 第一阶段批次 1 的 6 个字典 =====
+  // emergency_relation / gender / document_type / political_status / blood_type 已内置国标真值
+  // (2026-06-21 goal「字典内置」;R13 收窄后非敏感分类字典可内置真实值);work_nature 仍占位(本次未给值)。
+  // 全部 code 用稳定英文 snake_case(长期契约,定后不改),label 中文;每类注释标注 GB 依据。
   {
-    type: { code: 'emergency_relation', label: 'Demo emergency contact relation', sortOrder: 2 },
+    // 紧急联系人关系(非敏感分类标签)。
+    type: { code: 'emergency_relation', label: '紧急联系人关系', sortOrder: 2 },
     items: [
-      { code: 'family', label: 'Demo family', sortOrder: 0 },
-      { code: 'friend', label: 'Demo friend', sortOrder: 1 },
-      { code: 'spouse', label: 'Demo spouse', sortOrder: 2 },
-      { code: 'parent', label: 'Demo parent', sortOrder: 3 },
-      { code: 'child', label: 'Demo child', sortOrder: 4 },
-      { code: 'other', label: 'Demo other', sortOrder: 5 },
-    ],
-  },
-  {
-    type: { code: 'gender', label: 'Demo gender', sortOrder: 3 },
-    items: [
-      { code: 'demo-gender-1', label: 'Demo gender 1', sortOrder: 0 },
-      { code: 'demo-gender-2', label: 'Demo gender 2', sortOrder: 1 },
-    ],
-  },
-  {
-    type: { code: 'document_type', label: 'Demo document type', sortOrder: 4 },
-    items: [
-      { code: 'demo-doc-type-1', label: 'Demo document type 1', sortOrder: 0 },
-      { code: 'demo-doc-type-2', label: 'Demo document type 2', sortOrder: 1 },
-      { code: 'demo-doc-type-3', label: 'Demo document type 3', sortOrder: 2 },
-      { code: 'demo-doc-type-4', label: 'Demo document type 4', sortOrder: 3 },
+      { code: 'family', label: '家人', sortOrder: 0 },
+      { code: 'friend', label: '朋友', sortOrder: 1 },
+      { code: 'spouse', label: '配偶', sortOrder: 2 },
+      { code: 'parent', label: '父母', sortOrder: 3 },
+      { code: 'child', label: '子女', sortOrder: 4 },
+      { code: 'other', label: '其他', sortOrder: 5 },
     ],
   },
   {
-    type: { code: 'political_status', label: 'Demo political status', sortOrder: 5 },
+    // 性别(GB/T 2261.1-2003 个人基本信息·性别代码:0 未知 / 1 男 / 2 女 / 9 未说明)。
+    type: { code: 'gender', label: '性别', sortOrder: 3 },
     items: [
-      { code: 'demo-political-1', label: 'Demo political 1', sortOrder: 0 },
-      { code: 'demo-political-2', label: 'Demo political 2', sortOrder: 1 },
-      { code: 'demo-political-3', label: 'Demo political 3', sortOrder: 2 },
+      { code: 'male', label: '男', sortOrder: 0 },
+      { code: 'female', label: '女', sortOrder: 1 },
+      { code: 'unknown', label: '未知的性别', sortOrder: 2 },
+      { code: 'unspecified', label: '未说明的性别', sortOrder: 3 },
     ],
   },
   {
-    type: { code: 'blood_type', label: 'Demo blood type', sortOrder: 6 },
+    // 证件类型(沿居民身份证 + 公安部出入境证件常用分类;非敏感分类标签)。
+    type: { code: 'document_type', label: '证件类型', sortOrder: 4 },
     items: [
-      { code: 'demo-blood-A', label: 'Demo A', sortOrder: 0 },
-      { code: 'demo-blood-B', label: 'Demo B', sortOrder: 1 },
-      { code: 'demo-blood-AB', label: 'Demo AB', sortOrder: 2 },
-      { code: 'demo-blood-O', label: 'Demo O', sortOrder: 3 },
+      { code: 'id_card', label: '居民身份证', sortOrder: 0 },
+      { code: 'household_register', label: '居民户口簿', sortOrder: 1 },
+      { code: 'passport', label: '护照', sortOrder: 2 },
+      { code: 'military_id', label: '军官证 / 士兵证', sortOrder: 3 },
+      { code: 'hk_macau_permit', label: '港澳居民来往内地通行证', sortOrder: 4 },
+      { code: 'taiwan_permit', label: '台湾居民来往大陆通行证', sortOrder: 5 },
+      { code: 'foreigner_permit', label: '外国人永久居留身份证', sortOrder: 6 },
+      { code: 'other', label: '其他', sortOrder: 7 },
+    ],
+  },
+  {
+    // 政治面貌(GB/T 4762-1984 政治面貌代码,13 类)。
+    type: { code: 'political_status', label: '政治面貌', sortOrder: 5 },
+    items: [
+      { code: 'ccp_member', label: '中共党员', sortOrder: 0 },
+      { code: 'ccp_probationary_member', label: '中共预备党员', sortOrder: 1 },
+      { code: 'cyl_member', label: '共青团员', sortOrder: 2 },
+      { code: 'rcck_member', label: '民革党员', sortOrder: 3 },
+      { code: 'cdl_member', label: '民盟盟员', sortOrder: 4 },
+      { code: 'cndca_member', label: '民建会员', sortOrder: 5 },
+      { code: 'cape_member', label: '民进会员', sortOrder: 6 },
+      { code: 'cpwdp_member', label: '农工党党员', sortOrder: 7 },
+      { code: 'cpp_member', label: '致公党党员', sortOrder: 8 },
+      { code: 'js_member', label: '九三学社社员', sortOrder: 9 },
+      { code: 'tdsl_member', label: '台盟盟员', sortOrder: 10 },
+      { code: 'non_party', label: '无党派人士', sortOrder: 11 },
+      { code: 'masses', label: '群众', sortOrder: 12 },
+    ],
+  },
+  {
+    // 血型(ABO 血型系统;Rh 阴阳性如需另立字典)。
+    type: { code: 'blood_type', label: '血型', sortOrder: 6 },
+    items: [
+      { code: 'a', label: 'A 型', sortOrder: 0 },
+      { code: 'b', label: 'B 型', sortOrder: 1 },
+      { code: 'ab', label: 'AB 型', sortOrder: 2 },
+      { code: 'o', label: 'O 型', sortOrder: 3 },
+      { code: 'unknown', label: '未知', sortOrder: 4 },
     ],
   },
   {
@@ -258,6 +294,97 @@ const V2_DICT_SEED = [
       { code: 'post', label: '推文', sortOrder: 3 },
     ],
   },
+  // ===== 2026-06-21 goal「字典内置」追加 3 个国标参照字典 =====
+  // marital_status / education / ethnicity:R13 收窄后非敏感分类字典可内置真实值;
+  // code 稳定英文 / 拼音 snake_case(长期契约,定后不改),label 中文;注释标注 GB 依据。
+  {
+    // 婚姻状况(GB/T 2261.2-2003 婚姻状况代码:10 未婚 / 20 已婚 / 30 丧偶 / 40 离婚 / 90 未说明)。
+    type: { code: 'marital_status', label: '婚姻状况', sortOrder: 18 },
+    items: [
+      { code: 'unmarried', label: '未婚', sortOrder: 0 },
+      { code: 'married', label: '已婚', sortOrder: 1 },
+      { code: 'widowed', label: '丧偶', sortOrder: 2 },
+      { code: 'divorced', label: '离婚', sortOrder: 3 },
+      { code: 'unspecified', label: '未说明的婚姻状况', sortOrder: 4 },
+    ],
+  },
+  {
+    // 学历 / 文化程度(GB/T 4658-2006 学历代码,常用层级扁平化)。
+    type: { code: 'education', label: '学历 / 文化程度', sortOrder: 19 },
+    items: [
+      { code: 'doctor', label: '博士研究生', sortOrder: 0 },
+      { code: 'master', label: '硕士研究生', sortOrder: 1 },
+      { code: 'bachelor', label: '大学本科', sortOrder: 2 },
+      { code: 'college', label: '大学专科', sortOrder: 3 },
+      { code: 'secondary_vocational', label: '中等职业教育', sortOrder: 4 },
+      { code: 'senior_high', label: '普通高中', sortOrder: 5 },
+      { code: 'junior_high', label: '初中', sortOrder: 6 },
+      { code: 'primary', label: '小学', sortOrder: 7 },
+      { code: 'other', label: '其他 / 未说明', sortOrder: 8 },
+    ],
+  },
+  {
+    // 民族(GB/T 3304-1991 中国各民族名称的罗马字母拼写法和代码;56 民族,code 用拼音罗马字母)。
+    type: { code: 'ethnicity', label: '民族', sortOrder: 20 },
+    items: [
+      { code: 'han', label: '汉族', sortOrder: 0 },
+      { code: 'mongol', label: '蒙古族', sortOrder: 1 },
+      { code: 'hui', label: '回族', sortOrder: 2 },
+      { code: 'zang', label: '藏族', sortOrder: 3 },
+      { code: 'uygur', label: '维吾尔族', sortOrder: 4 },
+      { code: 'miao', label: '苗族', sortOrder: 5 },
+      { code: 'yi', label: '彝族', sortOrder: 6 },
+      { code: 'zhuang', label: '壮族', sortOrder: 7 },
+      { code: 'buyei', label: '布依族', sortOrder: 8 },
+      { code: 'chosen', label: '朝鲜族', sortOrder: 9 },
+      { code: 'man', label: '满族', sortOrder: 10 },
+      { code: 'dong', label: '侗族', sortOrder: 11 },
+      { code: 'yao', label: '瑶族', sortOrder: 12 },
+      { code: 'bai', label: '白族', sortOrder: 13 },
+      { code: 'tujia', label: '土家族', sortOrder: 14 },
+      { code: 'hani', label: '哈尼族', sortOrder: 15 },
+      { code: 'kazak', label: '哈萨克族', sortOrder: 16 },
+      { code: 'dai', label: '傣族', sortOrder: 17 },
+      { code: 'li', label: '黎族', sortOrder: 18 },
+      { code: 'lisu', label: '傈僳族', sortOrder: 19 },
+      { code: 'va', label: '佤族', sortOrder: 20 },
+      { code: 'she', label: '畲族', sortOrder: 21 },
+      { code: 'gaoshan', label: '高山族', sortOrder: 22 },
+      { code: 'lahu', label: '拉祜族', sortOrder: 23 },
+      { code: 'sui', label: '水族', sortOrder: 24 },
+      { code: 'dongxiang', label: '东乡族', sortOrder: 25 },
+      { code: 'naxi', label: '纳西族', sortOrder: 26 },
+      { code: 'jingpo', label: '景颇族', sortOrder: 27 },
+      { code: 'kirgiz', label: '柯尔克孜族', sortOrder: 28 },
+      { code: 'tu', label: '土族', sortOrder: 29 },
+      { code: 'daur', label: '达斡尔族', sortOrder: 30 },
+      { code: 'mulao', label: '仫佬族', sortOrder: 31 },
+      { code: 'qiang', label: '羌族', sortOrder: 32 },
+      { code: 'blang', label: '布朗族', sortOrder: 33 },
+      { code: 'salar', label: '撒拉族', sortOrder: 34 },
+      { code: 'maonan', label: '毛南族', sortOrder: 35 },
+      { code: 'gelao', label: '仡佬族', sortOrder: 36 },
+      { code: 'xibe', label: '锡伯族', sortOrder: 37 },
+      { code: 'achang', label: '阿昌族', sortOrder: 38 },
+      { code: 'pumi', label: '普米族', sortOrder: 39 },
+      { code: 'tajik', label: '塔吉克族', sortOrder: 40 },
+      { code: 'nu', label: '怒族', sortOrder: 41 },
+      { code: 'uzbek', label: '乌孜别克族', sortOrder: 42 },
+      { code: 'russ', label: '俄罗斯族', sortOrder: 43 },
+      { code: 'ewenki', label: '鄂温克族', sortOrder: 44 },
+      { code: 'deang', label: '德昂族', sortOrder: 45 },
+      { code: 'bonan', label: '保安族', sortOrder: 46 },
+      { code: 'yugur', label: '裕固族', sortOrder: 47 },
+      { code: 'gin', label: '京族', sortOrder: 48 },
+      { code: 'tatar', label: '塔塔尔族', sortOrder: 49 },
+      { code: 'derung', label: '独龙族', sortOrder: 50 },
+      { code: 'oroqen', label: '鄂伦春族', sortOrder: 51 },
+      { code: 'hezhen', label: '赫哲族', sortOrder: 52 },
+      { code: 'monba', label: '门巴族', sortOrder: 53 },
+      { code: 'lhoba', label: '珞巴族', sortOrder: 54 },
+      { code: 'jino', label: '基诺族', sortOrder: 55 },
+    ],
+  },
 ] as const;
 
 async function seedV2Dictionaries(prisma: PrismaClient): Promise<void> {
@@ -293,9 +420,7 @@ async function seedV2Dictionaries(prisma: PrismaClient): Promise<void> {
       });
     }
 
-    console.log(
-      `[seed] V2 dict '${entry.type.code}' ensured (${entry.items.length} items, neutral-demo)`,
-    );
+    console.log(`[seed] V2 dict '${entry.type.code}' ensured (${entry.items.length} items)`);
   }
 }
 
@@ -306,12 +431,11 @@ async function seedV2Dictionaries(prisma: PrismaClient): Promise<void> {
 // ③ upsert 子项,parentId 从 parentMap 取
 // 幂等性:upsert + update: {} 保证;父子项顺序由本函数控制(先父后子)。
 //
-// 占位 seed 形态(Q-S11):
-// - `demo-` 前缀英文 code + 中文演示 label
-// - 3 父项(演示-轮值 / 演示-培训 / 演示-行动)
-// - 4 子项(演示-梧桐山轮值 / 演示-梅林轮值 / 演示-基础培训 / 演示-初级救援培训)
-// - `demo-action` 父项故意无子项,演示 Q-S17 决议"允许挂顶级"
-// 真实节点名由队部 / 秘书处后续运营层录入。
+// 真实业务取值(2026-06-21 goal「字典内置」;R13 收窄后非敏感分类字典可内置真实值):
+// - 9 父项 + 28 子项(队内真实活动分类);code 按中文生成稳定 snake_case(长期契约,定后不改),
+//   label 中文。
+// - `logistics`(物资)父项无子项,沿 Q-S17 决议"允许挂顶级"。
+// - 「ICC、无人机小组轮值」拆为 icc_duty / uav_group_duty 两项(顿号读作列表分隔,合 28 子计数)。
 async function seedActivityTypeHierarchy(prisma: PrismaClient): Promise<void> {
   const dictType = await prisma.dictType.upsert({
     where: { code: 'activity_type' },
@@ -325,9 +449,15 @@ async function seedActivityTypeHierarchy(prisma: PrismaClient): Promise<void> {
   });
 
   const parents = [
-    { code: 'demo-rotation', label: '演示-轮值', sortOrder: 0 },
-    { code: 'demo-training', label: '演示-培训', sortOrder: 1 },
-    { code: 'demo-action', label: '演示-行动', sortOrder: 2 },
+    { code: 'rescue', label: '救援', sortOrder: 0 },
+    { code: 'support', label: '保障', sortOrder: 1 },
+    { code: 'outreach', label: '外展活动', sortOrder: 2 },
+    { code: 'training', label: '训练', sortOrder: 3 },
+    { code: 'exchange', label: '交流', sortOrder: 4 },
+    { code: 'joint_drill', label: '联合演练', sortOrder: 5 },
+    { code: 'duty_rotation', label: '轮值', sortOrder: 6 },
+    { code: 'logistics', label: '物资', sortOrder: 7 },
+    { code: 'other', label: '其他', sortOrder: 8 },
   ];
 
   const parentMap = new Map<string, string>();
@@ -347,30 +477,72 @@ async function seedActivityTypeHierarchy(prisma: PrismaClient): Promise<void> {
   }
 
   const children = [
+    // 救援
+    { code: 'rescue_mission', label: '救援', sortOrder: 0, parentCode: 'rescue' },
+    { code: 'disaster_relief', label: '救灾', sortOrder: 1, parentCode: 'rescue' },
+    { code: 'assistance', label: '救助', sortOrder: 2, parentCode: 'rescue' },
+    // 保障
+    { code: 'event_support', label: '赛事保障', sortOrder: 0, parentCode: 'support' },
+    { code: 'team_activity_support', label: '队伍活动保障', sortOrder: 1, parentCode: 'support' },
+    // 外展活动
+    { code: 'external_lecture', label: '对外讲座', sortOrder: 0, parentCode: 'outreach' },
     {
-      code: 'demo-rotation-wutongshan',
-      label: '演示-梧桐山轮值',
-      sortOrder: 0,
-      parentCode: 'demo-rotation',
-    },
-    {
-      code: 'demo-rotation-meilin',
-      label: '演示-梅林轮值',
+      code: 'external_promotion_federation',
+      label: '对外宣导(联合会)',
       sortOrder: 1,
-      parentCode: 'demo-rotation',
+      parentCode: 'outreach',
     },
+    { code: 'external_training', label: '对外培训', sortOrder: 2, parentCode: 'outreach' },
     {
-      code: 'demo-training-basic',
-      label: '演示-基础培训',
+      code: 'external_promotion_department',
+      label: '对外宣导(部门)',
+      sortOrder: 3,
+      parentCode: 'outreach',
+    },
+    // 训练
+    { code: 'team_training', label: '队伍训练', sortOrder: 0, parentCode: 'training' },
+    { code: 'external_course', label: '外部培训', sortOrder: 1, parentCode: 'training' },
+    {
+      code: 'internal_demand_training',
+      label: '内训需求训练',
+      sortOrder: 2,
+      parentCode: 'training',
+    },
+    // 交流
+    { code: 'competition_exchange', label: '赛事比武交流', sortOrder: 0, parentCode: 'exchange' },
+    { code: 'key_meeting', label: '重要会议', sortOrder: 1, parentCode: 'exchange' },
+    // 联合演练
+    {
+      code: 'external_joint_drill',
+      label: '外单位联合演练',
       sortOrder: 0,
-      parentCode: 'demo-training',
+      parentCode: 'joint_drill',
     },
     {
-      code: 'demo-training-rescue',
-      label: '演示-初级救援培训',
+      code: 'internal_multi_dept_drill',
+      label: '内部三个部门以上联合演练',
       sortOrder: 1,
-      parentCode: 'demo-training',
+      parentCode: 'joint_drill',
     },
+    // 轮值
+    { code: 'futian_ustation', label: '福田 u 站', sortOrder: 0, parentCode: 'duty_rotation' },
+    { code: 'wutongshan_duty', label: '梧桐山轮值', sortOrder: 1, parentCode: 'duty_rotation' },
+    { code: 'icc_duty', label: 'ICC 轮值', sortOrder: 2, parentCode: 'duty_rotation' },
+    { code: 'uav_group_duty', label: '无人机小组轮值', sortOrder: 3, parentCode: 'duty_rotation' },
+    { code: 'helicopter_duty', label: '直升机轮值', sortOrder: 4, parentCode: 'duty_rotation' },
+    { code: 'department_duty', label: '部门轮值', sortOrder: 5, parentCode: 'duty_rotation' },
+    // 其他
+    { code: 'interview', label: '采访', sortOrder: 0, parentCode: 'other' },
+    { code: 'general_meeting', label: '一般会议', sortOrder: 1, parentCode: 'other' },
+    {
+      code: 'psychological_assessment',
+      label: '心理评估',
+      sortOrder: 2,
+      parentCode: 'other',
+    },
+    { code: 'department_team_building', label: '部门团建', sortOrder: 3, parentCode: 'other' },
+    { code: 'transportation', label: '交通类', sortOrder: 4, parentCode: 'other' },
+    { code: 'special_social_service', label: '特殊社会服务', sortOrder: 5, parentCode: 'other' },
   ];
 
   for (const c of children) {
@@ -392,7 +564,7 @@ async function seedActivityTypeHierarchy(prisma: PrismaClient): Promise<void> {
   }
 
   console.log(
-    `[seed] V2 dict 'activity_type' ensured (${parents.length} 父项 + ${children.length} 子项,二级树,demo)`,
+    `[seed] V2 dict 'activity_type' ensured (${parents.length} 父项 + ${children.length} 子项,二级树)`,
   );
 }
 
@@ -2277,7 +2449,7 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(created, null, 2));
     }
 
-    // V2 第一阶段:无论 SUPER_ADMIN 是否新建,都追加 neutral-demo 字典 seed
+    // V2 第一阶段:无论 SUPER_ADMIN 是否新建,都追加字典 seed
     await seedV2Dictionaries(prisma);
 
     // V2 第一阶段批次 3:activity_type 二级树字典(D11)
