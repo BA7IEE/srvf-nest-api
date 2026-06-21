@@ -1546,3 +1546,42 @@ model TeamJoinApplication {
   @@index([createdAt])
   @@map("team_join_applications")
 }
+
+// CMS 内容发布模块(第 28 模块,2026-06-21;冻结评审稿 docs/archive/reviews/content-module-review.md)。
+// 公告 / 公示 / 简报 / 推文统一一表;正文 Markdown 原文;5 级可见(每篇选一档);立即发布无 cron。
+// 封面 / 正文图 / 文件附件统一为 Attachment 行(ownerType='content-image'|'content-file' + ownerId=content.id),
+// 不在本表;content 读取面自签下载 URL 并按文章可见级闸控(评审稿 §5 + attachments/CLAUDE.md 范围例外 a)。
+model Content {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  title           String // 标题(DTO ≤ 200)
+  summary         String? // 摘要(DTO ≤ 500)
+  body            String // 正文 Markdown 原文(PG text);含 ![](attachment:<attachmentId>) 占位,读时改写为签名 URL;DTO ≤ 50000
+  contentTypeCode String // ∈ content_type 字典 item(announcement / publicity / briefing / post)
+  statusCode      String // draft / published / archived(String 常量,无 enum,沿 recruitment 范式)
+  visibilityCode  String // public / member / formal_member / department / management(每篇选一档)
+
+  visibleOrganizationIds String[] @default([]) // department 档可见部门 orgId;String[] 供 list where hasSome 过滤(沿 attachments.tags 范式)
+  tags                   String[] @default([]) // 标签;读取面 hasSome 筛选(无 GIN,沿 attachments.tags / MemberProfile.exerciseMethods 无索引惯例,v1 顺扫)
+
+  coverImageKey     String? // 封面反范式 storage key(列表缩略图直签,免 per-row Attachment 查询)
+  coverAttachmentId String? // 封面对应 content-image 附件 id(标记 / 换 / 清;不建外键)
+
+  viewCount Int @default(0) // 累计 PV(详情打开原子自增;列表 / 预览 / 404 不计)
+
+  pinned       Boolean   @default(false) // 置顶
+  publishedAt  DateTime? // publish 时置 now;unpublish 保留;draft 从未发布为 null
+  authorUserId String? // 创建 / 操作 admin;不建外键(沿 reviewedByUserId / SmsSettings.updatedBy)
+
+  @@index([statusCode])
+  @@index([visibilityCode])
+  @@index([contentTypeCode])
+  @@index([publishedAt])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([statusCode, publishedAt]) // 公开 / 会员列表:published 按发布时间序常用复合
+  @@map("contents")
+}

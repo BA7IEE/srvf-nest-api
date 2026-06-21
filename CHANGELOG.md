@@ -2,6 +2,20 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+> **SemVer 建议**:**minor**(新增第 28 模块 CMS 内容发布,零 breaking;0.x 默认 minor → 预期 v0.27.0)。版本号 bump(`package.json` + Swagger `setVersion` + tag + GitHub Release)由 release 收口执行(沿 [`docs/process.md §5.1`](docs/process.md)),本节先承载条目。
+
+### Added
+
+- **内容发布模块(CMS:公告/公示/简报/推文,第 28 模块)**(D 档功能串;goal「内容发布模块」T0-T5;冻结评审稿 [`docs/archive/reviews/content-module-review.md`](docs/archive/reviews/content-module-review.md)):
+  - **T1 schema/migration/seed**:单表 `contents`(Markdown 正文 + 5 档可见 + `visibleOrganizationIds`/`tags` String[] + 封面反范式双指针 `coverImageKey`/`coverAttachmentId` + `viewCount` + pinned/publishedAt/authorUserId〔无 FK〕);migration `20260621090000_add_content_module`(第 22 个;干净库 deploy 22/22 重放 + seed 幂等二跑)。seed:`content_type` 字典(announcement/publicity/briefing/post,label 占位)+ content.* 5 权限码 + attachment.content-* 4 码(全绑 biz-admin)+ 2 条 AttachmentTypeConfig(content-image / content-file)。**附件复用既有 attachments**(α 决议,推翻 T0 初版「storage key 不进 Attachment」):`AttachmentOwnerType`(TS 常量数组,非 Prisma enum)+`content-image`/`content-file`;`assertOwnerExists`/`buildRbacResourceAndScope` 加 content 分支(coarse,无 self/other);AttachmentsService 导出 + 加可信只读 `listOwnerAttachmentsTrusted`/`resolveSignedUrlTrusted`。**演进 Slow-4 §6「biz-admin 不含 attachment.* 码」不变式 → 仅含 CMS content-* 4 码**(`seed-biz-admin.e2e` 同步 true-up)。BizCode 290xx 5 码(164→**169**)+ AuditLogEvent +4(57→**61**)。
+  - **T2 admin 面**(`admin/v1/contents` ×12):CRUD + 状态机 publish/unpublish/archive(立即生效**无 cron**;非法跃迁 29030)+ 附件 Mode B(upload-url/confirm/删,委托 AttachmentsService 写路径 RBAC `attachment.{upload,delete}.content-*`)+ 封面设/清 + audit(`content.{create,update,delete,publish}`,publish 伞含 unpublish/archive via extra.operation)。
+  - **T3 open 公开面**(`open/v1/contents` ×2):`@Public` + 第 10 throttler `content-public`(IP 60/60s);仅 published+public;detail 防枚举(不存在 / 不可见同 404);viewCount+1;反范式封面缩略图直签(免 N+1)。
+  - **T4 app 会员面 + 5 档可见性**(`app/v1/contents` ×2):canUseApp 准入(否则 403);**可见性纯函数** [`content.visibility.ts`](src/modules/content/content.visibility.ts)(public/member/formal_member/department/management;21 unit)+ list `buildVisibilityWhere`;**搜索(keyword ILIKE 标题+正文)+ 标签(hasSome)AND 可见性不旁路**;正文图 `![](attachment:<id>)` 占位**读时改写**(仅本文章 content-image id,外来 id 不泄露);**签名 URL 仅过文章可见级后返**(范围例外 a,§5.7,已 true-up `attachments/CLAUDE.md` + current-state §2.1)。
+  - 权限码 146→**155**(全绑 biz-admin;app/open 读零码)/ controller 46→**49** / endpoint **+16**(212→**228**)/ CODEMAP 模块 27→**28** / migration 21→**22**。e2e +3 spec(content-admin 25 + content-public 19 + content-app 18,含 5 档可见 hit/miss「看不到不该看的」)+ unit +1 spec(content.visibility 21)+ contract +16 路由(snapshot 仅新增)。`docs:rbacmap:check`(155)/`docs:codemap:check` 0 FAIL。
+  - **v1 不做**(评审稿 §10):content_reads 已读回执 / 评论·点赞 / 定时发布·cron / UV·时序分析 / 部长角色·部门级内容权限细分 / 招新公示自动桥接 / attachment Mime·SizeLimit override / 正文图 client 端 key 解析。
+
 ## v0.26.1 - 2026-06-20
 
 > **SemVer 拍板**:**patch**(v0.26.0 → v0.26.1)。本版全为 `### Fixed`(安全 / 依赖 CVE / 正确性)、**零 feature / 零 schema / 零 migration**,按 semver 取 patch(**刻意偏离 process「0.x 默认 minor」**,维护者 2026-06-20 拍板)。主线 = #399 全仓系统性 review 的 **P2 六项修复**(review-then-fix;base = v0.26.0)。

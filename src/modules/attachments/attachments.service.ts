@@ -69,6 +69,19 @@ import { mimeToExt } from './mime-to-ext';
 
 type SafeAttachment = Prisma.AttachmentGetPayload<{ select: typeof attachmentSelect }>;
 
+// CMS(content-module-review §5.2 / §5.4;α 决议):content 读取面用的「可信附件视图」——已签名下载
+// URL;调用方(content)负责在取此视图**之前**完成文章可见级校验,本视图**不**经 attachment.view RBAC
+//(公开读者零权限亦可见,附件继承文章可见级)。仅 content 模块消费;其余 owner 读仍走 RBAC。
+export interface OwnerAttachmentView {
+  id: string;
+  ownerType: string;
+  mime: string;
+  originalName: string;
+  size: number;
+  createdAt: Date;
+  accessUrl: string | null;
+}
+
 @Injectable()
 export class AttachmentsService {
   private readonly logger = new Logger(AttachmentsService.name);
@@ -109,6 +122,46 @@ export class AttachmentsService {
       }
       return null;
     }
+  }
+
+  // ===== CMS 内容模块可信只读(content-module-review §5.4;α 决议)=====
+  // content 读取面在**文章可见级校验通过后**调用,取某 owner 的全部附件(已签 URL),**不**走
+  // attachment.view RBAC(公开读者亦可见,附件随文章可见级)。仅 content 模块使用。
+  async listOwnerAttachmentsTrusted(
+    ownerType: AttachmentOwnerType,
+    ownerId: string,
+  ): Promise<OwnerAttachmentView[]> {
+    const rows = await this.prisma.attachment.findMany({
+      where: { ownerType, ownerId },
+      select: {
+        id: true,
+        ownerType: true,
+        mime: true,
+        originalName: true,
+        size: true,
+        key: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    return Promise.all(
+      rows.map(async (r) => ({
+        id: r.id,
+        ownerType: r.ownerType,
+        mime: r.mime,
+        originalName: r.originalName,
+        size: r.size,
+        createdAt: r.createdAt,
+        accessUrl: await this.resolveAccessUrl(r.key),
+      })),
+    );
+  }
+
+  // 给 storage key 直接签下载 URL(列表封面缩略图反范式 key 直签,免 per-row Attachment 查询;
+  // key null → null)。可信语义同上:调用方先做可见级校验。
+  async resolveSignedUrlTrusted(key: string | null): Promise<string | null> {
+    if (!key) return null;
+    return this.resolveAccessUrl(key);
   }
 
   // PR #90:事务外同步尝试 Provider 删除(沿 F4 + Q3 路线 C);
@@ -167,6 +220,12 @@ export class AttachmentsService {
         where: notDeletedWhere({ id: ownerId }),
         select: { id: true },
       });
+    } else if (ownerType === 'content-image' || ownerType === 'content-file') {
+      // CMS(评审稿 §5.1):content-image / content-file 两 owner 均指向 contents 表(未软删)
+      found = await this.prisma.content.findFirst({
+        where: notDeletedWhere({ id: ownerId }),
+        select: { id: true },
+      });
     }
     if (!found) {
       throw new BizException(BizCode.ATTACHMENT_OWNER_NOT_FOUND);
@@ -184,8 +243,8 @@ export class AttachmentsService {
     resource: { ownerType: 'member'; ownerId: string } | undefined;
     scope: 'self' | 'other' | null;
   }> {
-    if (ownerType === 'activity') {
-      // activity 粗粒度判权,无 self/other 区分(Q10 v1.0 锁)
+    if (ownerType === 'activity' || ownerType === 'content-image' || ownerType === 'content-file') {
+      // activity / CMS content-* 粗粒度判权,无 self/other 区分(Q10 v1.0 锁;content 评审稿 §5.2)
       return { resource: undefined, scope: null };
     }
 

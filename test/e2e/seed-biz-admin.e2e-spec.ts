@@ -132,12 +132,22 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   'team-join-application.evaluate.assessment',
   // 招新三期入队 T4 +1(2026-06-19;评审稿 §4.5,全绑无例外)
   'team-join-application.join.member',
+  // CMS 内容模块 +9(2026-06-21;评审稿 content-module-review.md §7,全绑 biz-admin):content.* 5 + attachment.content-* 4
+  'content.read.record',
+  'content.create.record',
+  'content.update.record',
+  'content.delete.record',
+  'content.publish.record',
+  'attachment.upload.content-image',
+  'attachment.delete.content-image',
+  'attachment.upload.content-file',
+  'attachment.delete.content-file',
 ] as const;
-const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 57
+const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 67
 
 // D1=A 镜像:不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
-const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 1; // 50
+const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 1; // 66
 
 // 零变化基线(评审稿 §6):本断言意图 = 业务面 seed 不改 ops-admin / member 绑定;
 // 基线数跟随 ops-admin 当前合法总数(2026-06-12 WECHAT T2 +3 → 58→61;
@@ -170,7 +180,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     await resetDb(app);
   });
 
-  it('1. 空 db → seed 跑完后 51 条业务面 permission 全部存在(11 域分布一致)', async () => {
+  it('1. 空 db → seed 跑完后 67 条业务面 permission 全部存在(15 域分布一致)', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-1' });
     expect(result.code).toBe(0);
 
@@ -199,10 +209,12 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
       'recruitment-application': 5,
       'team-join-cycle': 3,
       'team-join-application': 4,
+      content: 5,
+      attachment: 4,
     });
   });
 
-  it('2 + 3. biz-admin RbacRole 存在;绑定恰 57 条;member.delete.record 不在绑定中', async () => {
+  it('2 + 3. biz-admin RbacRole 存在;绑定恰 66 条;member.delete.record 不在绑定中', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-2' });
     expect(result.code).toBe(0);
 
@@ -225,8 +237,15 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     expect(boundCodes).toEqual(
       [...EXPECTED_BIZ_PERMISSION_CODES].filter((c) => c !== MEMBER_DELETE_RECORD_CODE).sort(),
     );
-    // 零漂移显式断言:biz-admin 不含任何 attachment.* 码(评审稿 §6)
-    expect(boundCodes.filter((c) => c.startsWith('attachment.'))).toEqual([]);
+    // CMS α(2026-06-21,content-module-review.md §7):biz-admin 现含**且仅含** CMS content-* 4 个
+    // attachment 写码(演进 Slow-4 §6「biz-admin 不含 attachment.* 码」不变式);
+    // member / certificate / activity 既有附件码仍不绑(零漂移)。
+    expect(boundCodes.filter((c) => c.startsWith('attachment.'))).toEqual([
+      'attachment.delete.content-file',
+      'attachment.delete.content-image',
+      'attachment.upload.content-file',
+      'attachment.upload.content-image',
+    ]);
   });
 
   it('4. 幂等补挂:既存 ADMIN(含 DISABLED)补挂 biz-admin;SA/USER/软删 ADMIN 不挂(D-S4-7)', async () => {

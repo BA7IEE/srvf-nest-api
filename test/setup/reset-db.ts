@@ -93,6 +93,6 @@ export async function resetDb(app: INestApplication): Promise<void> {
 
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "user_roles", "role_permissions", "roles", "permissions", "audit_logs", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "realname_verification_settings", "recruitment_applications", "recruitment_cycles", "team_join_applications", "team_join_cycles", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "user_roles", "role_permissions", "roles", "permissions", "audit_logs", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "realname_verification_settings", "recruitment_applications", "recruitment_cycles", "team_join_applications", "team_join_cycles", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }

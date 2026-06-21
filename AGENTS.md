@@ -608,7 +608,7 @@ API Client Boundary 设计期(Phase 0)过程性约束(原 §19.1 ~ §19.6)已随
 | App | `/api/app/v1/*` | App / 小程序 / 队员端(**已建成,不迁移**) |
 | Auth | `/api/auth/v1/*` | 登录 / 刷新 / 登出 / 认证会话 |
 | System | `/api/system/v1/*` | 健康检查 / 运行状态 / 系统元信息 / ops 配置(承接 D-1 `contribution-rules` → System) |
-| Open | `/api/open/v1/*` | **首用(2026-06-18 招新一期 T3)**:无账号公开 surface(`@Public`;首落地 = 招新报名提交/查询);第 5 canonical 前缀,执行细节以 [`docs/api-surface-policy.md §0`](docs/api-surface-policy.md) 为准 |
+| Open | `/api/open/v1/*` | **首用(2026-06-18 招新一期 T3)**:无账号公开 surface(`@Public`;首落地 = 招新报名提交/查询);**2026-06-21 CMS 第二用** = 内容公开列表/详情(`open/v1/contents`);第 5 canonical 前缀,执行细节以 [`docs/api-surface-policy.md §0`](docs/api-surface-policy.md) 为准 |
 
 存量 `/api/v2/*` / `/api/auth/*` / `/api/users/*` / `/api/health/*` **将按 alias → 灰度 → deprecate → 删除分阶段全量迁移**(取代 D-2 的"不强制迁移 / 不做大面积老接口双写")。执行细节、逐 endpoint 归属、阶段顺序、回退条件以 active 权威源 [`docs/api-surface-migration-plan.md`](docs/api-surface-migration-plan.md) + [`docs/api-surface-policy.md §0`](docs/api-surface-policy.md) 为准。
 

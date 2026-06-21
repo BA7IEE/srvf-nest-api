@@ -1,6 +1,10 @@
 import { ExecutionContext, Injectable } from '@nestjs/common';
 import { ThrottlerGuard, type ThrottlerRequest } from '@nestjs/throttler';
 import {
+  CONTENT_PUBLIC_THROTTLE_KEY,
+  CONTENT_PUBLIC_THROTTLER_NAME,
+} from '../decorators/content-public-throttle.decorator';
+import {
   LOGIN_SMS_THROTTLE_KEY,
   LOGIN_SMS_THROTTLER_NAME,
 } from '../decorators/login-sms-throttle.decorator';
@@ -108,6 +112,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       RECRUITMENT_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const contentPublicEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      CONTENT_PUBLIC_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     // 未标任何一种 metadata 时全部跳过;任一 metadata 命中即进入限流逻辑,
     // 由 handleRequest 按 throttler.name 决定具体走哪个 throttler。
     return Promise.resolve(
@@ -120,7 +128,8 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
         passwordResetEnabled === true ||
         loginSmsEnabled === true ||
         loginWechatEnabled === true ||
-        recruitmentEnabled === true
+        recruitmentEnabled === true ||
+        contentPublicEnabled === true
       ),
     );
   }
@@ -166,6 +175,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       RECRUITMENT_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const contentPublicEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      CONTENT_PUBLIC_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     // throttler `default` 仅服务 LoginThrottle;否则直接放过
     if (throttler.name === 'default' && loginEnabled !== true) {
@@ -201,6 +214,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
     }
     // throttler `recruitment` 仅服务 RecruitmentThrottle(招新报名公开端点);否则直接放过
     if (throttler.name === RECRUITMENT_THROTTLER_NAME && recruitmentEnabled !== true) {
+      return Promise.resolve(true);
+    }
+    // throttler `content-public` 仅服务 ContentPublicThrottle(open/v1 内容读取面);否则直接放过
+    if (throttler.name === CONTENT_PUBLIC_THROTTLER_NAME && contentPublicEnabled !== true) {
       return Promise.resolve(true);
     }
 

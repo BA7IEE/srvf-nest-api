@@ -21,6 +21,7 @@ import { AttendancesModule } from './modules/attendances/attendances.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CertificatesModule } from './modules/certificates/certificates.module';
+import { ContentModule } from './modules/content/content.module';
 import { ContributionRulesModule } from './modules/contribution-rules/contribution-rules.module';
 import { DictionariesModule } from './modules/dictionaries/dictionaries.module';
 import { EmergencyContactsModule } from './modules/emergency-contacts/emergency-contacts.module';
@@ -143,6 +144,10 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   综合评估 + 贡献值只读汇总;冻结评审稿 docs/archive/reviews/recruitment-phase3-review.md;
     //   R 模式判权;admin/v1 surface,app 自助 T3 / 一键入队 T4;两层身份:入队才赋部门+级别)。
     TeamJoinModule,
+    // CMS 内容发布模块(第 28 模块)T2(2026-06-21):content admin surface(评审稿 content-module-review.md;
+    //   path /api/admin/v1/contents;R 模式判权 content.* 5 码;附件经 AttachmentsService 写路径 RBAC +
+    //   content 读取面自签;状态机 draft/published/archived 立即生效无 cron;app/open 面 T3/T4 后续追加)。
+    ContentModule,
     // B 队列 F5-T2(2026-06-11):@nestjs/schedule 全局装配——no-cron 铁律升级路径正式触发
     //   (冻结评审稿 docs/archive/reviews/queue-b-otp-birthday-infra-review.md 拍板④/R-5;
     //    解锁范围仅 notifications 生日批一个 @Cron;新增任何定时任务 = 新 D 档评审;
