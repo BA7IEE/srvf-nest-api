@@ -157,6 +157,7 @@ describe('activity-registrations 模块', () => {
     capacity: number | undefined;
     publish: boolean;
     cancel?: boolean;
+    registrationDeadline?: string;
   }): Promise<string> {
     const create = await request(httpServer(app))
       .post('/api/admin/v1/activities')
@@ -170,6 +171,9 @@ describe('activity-registrations 模块', () => {
         location: '演示地点',
         isPublicRegistration: opts.isPublicRegistration,
         ...(opts.capacity !== undefined ? { capacity: opts.capacity } : {}),
+        ...(opts.registrationDeadline !== undefined
+          ? { registrationDeadline: opts.registrationDeadline }
+          : {}),
       });
     const id: string = create.body.data.id as string;
     if (opts.publish) {
@@ -325,6 +329,81 @@ describe('activity-registrations 模块', () => {
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId, cancelledByUserId: 'cl0000000000000000000000' });
       expect(res.status).toBe(400);
+    });
+  });
+
+  // ============ 报名截止(deadline 闸;create 两路生效,approve 不加)============
+
+  describe('报名截止(deadline 闸)', () => {
+    const PAST_DEADLINE = '2020-01-01T00:00:00.000Z';
+    const FUTURE_DEADLINE = '2999-01-01T00:00:00.000Z';
+
+    it('截止前(deadline 未到)→ 代报名成功 pending', async () => {
+      const id = await createActivityHelper({
+        title: 'DL-FUTURE',
+        isPublicRegistration: true,
+        capacity: undefined,
+        publish: true,
+        registrationDeadline: FUTURE_DEADLINE,
+      });
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${id}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: memberCId });
+      expect(res.status).toBe(201);
+      expect(res.body.data.statusCode).toBe('pending');
+    });
+
+    it('截止后(deadline 已过)→ 代报名拒 ACTIVITY_REGISTRATION_DEADLINE_PASSED', async () => {
+      const id = await createActivityHelper({
+        title: 'DL-PAST',
+        isPublicRegistration: true,
+        capacity: undefined,
+        publish: true,
+        registrationDeadline: PAST_DEADLINE,
+      });
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${id}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: memberCId });
+      expectBizError(res, BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED);
+    });
+
+    it('deadline=null → 不拦(代报名成功 pending)', async () => {
+      const id = await createActivityHelper({
+        title: 'DL-NULL',
+        isPublicRegistration: true,
+        capacity: undefined,
+        publish: true,
+        // 不传 registrationDeadline → 列为 null,不设截止
+      });
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${id}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: memberCId });
+      expect(res.status).toBe(201);
+      expect(res.body.data.statusCode).toBe('pending');
+    });
+
+    it('截止后已 pending 仍可 approve(approve 不加截止闸)', async () => {
+      const id = await createActivityHelper({
+        title: 'DL-APPROVE',
+        isPublicRegistration: true,
+        capacity: undefined,
+        publish: true,
+        registrationDeadline: PAST_DEADLINE,
+      });
+      // 模拟「截止前已报」的 pending(直接插入,绕过 create 闸);截止后 approve 仍应成功。
+      const reg = await prisma.activityRegistration.create({
+        data: { activityId: id, memberId: memberCId, statusCode: 'pending' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/activities/${id}/registrations/${reg.id}/approve`)
+        .set('Authorization', adminAuth)
+        .send({});
+      expect(res.status).toBe(200);
+      expect(res.body.data.statusCode).toBe('pass');
     });
   });
 

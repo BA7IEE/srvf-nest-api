@@ -2,13 +2,14 @@ import { Prisma } from '@prisma/client';
 
 import { ContributionCalculator } from './contribution-calculator';
 
-// ContributionCalculator 组件级 unit 矩阵(B 档 test-only;沿 D14 5.B / D-A8 / D-S11 / Q-OPEN-7)。
+// ContributionCalculator 组件级 unit 矩阵(B 档 test-only;沿 D14 5.B / D-A8 / D-S11)。
 // 行为权威仍是 attendances-contribution-prefill.e2e-spec.ts(真实 DB + ContributionRule 表);
 // 本 spec 不重复 DB 级断言,只锁三件事:
 //   1. 入参三态分发(undefined → 预填 / null → 显式清空跳过 / number → 不覆盖,含 0);
-//   2. 档位计算矩阵(threshold null / hours<=threshold / hours>threshold × pointsAbove 兜底)
-//      与 dailyCap 兜底 1.5(Q-OPEN-7)+ MIN 封顶;
-//   3. 发往 tx 的查询形态(ACTIVE + deletedAt null + createdAt ASC;§3.1 复核报告"明确,不随机")。
+//   2. 档位计算矩阵(threshold null / hours<=threshold / hours>threshold × pointsAbove 兜底);
+//      **无每条 dailyCap 钳制**(活动闭环硬化 2026-06-21:全局每日封顶改落汇总处 team-join
+//      computeContribution,calculator 预填回归原始规则分 pointsBelow/pointsAbove);
+//   3. 发往 tx 的查询形态(ACTIVE + deletedAt null + createdAt ASC,**不再 select dailyCap**;§3.1)。
 // 与 attendances.service.spec.ts 的边界声明互补(该 spec 明确不复刻本组件内部矩阵)。
 
 const FIXED_DATE = new Date('2026-01-01T00:00:00.000Z');
@@ -17,18 +18,15 @@ interface RuleRow {
   durationThreshold: Prisma.Decimal | null;
   pointsBelow: Prisma.Decimal;
   pointsAbove: Prisma.Decimal | null;
-  dailyCap: Prisma.Decimal | null;
   createdAt: Date;
 }
 
-// 默认 dailyCap 3.00:高于本文件所有 candidate,确保档位断言不被封顶干扰;
-// 测 cap 行为时显式覆盖。
+// 活动闭环硬化(2026-06-21):calculator 不再读 dailyCap,RuleRow / makeRule 不再含该列。
 function makeRule(overrides: Partial<RuleRow> = {}): RuleRow {
   return {
     durationThreshold: null,
     pointsBelow: new Prisma.Decimal('1.00'),
     pointsAbove: null,
-    dailyCap: new Prisma.Decimal('3.00'),
     createdAt: FIXED_DATE,
     ...overrides,
   };
@@ -120,7 +118,7 @@ describe('ContributionCalculator', () => {
     });
 
     // 档位矩阵:threshold / pointsAbove / serviceHours → 预期取值
-    // below=1.00, above=2.00(由 makeRule 覆盖),cap=3.00 不干扰。
+    // below=1.00, above=2.00(由 makeRule 覆盖);无每条封顶,预填 = 原始规则分。
     const tierCases: Array<
       [
         name: string,
@@ -181,7 +179,6 @@ describe('ContributionCalculator', () => {
           durationThreshold: true,
           pointsBelow: true,
           pointsAbove: true,
-          dailyCap: true,
           createdAt: true,
         },
         orderBy: { createdAt: 'asc' },
@@ -189,23 +186,17 @@ describe('ContributionCalculator', () => {
     });
   });
 
-  describe('每日上限(Q-OPEN-7:dailyCap null 兜底 1.5;预填值 = MIN(candidate, cap))', () => {
-    const capCases: Array<
-      [name: string, dailyCap: string | null, below: string, expected: number]
-    > = [
-      ['dailyCap null → 兜底 1.5 封顶', null, '2.00', 1.5],
-      ['dailyCap 低于 candidate → 取 cap', '1.00', '2.00', 1],
-      ['dailyCap 高于 candidate → 取 candidate', '3.00', '2.00', 2],
-      ['dailyCap null 但 candidate 未触顶 → 取 candidate', null, '0.75', 0.75],
+  describe('无每条封顶(活动闭环硬化 2026-06-21:去 per-record dailyCap 钳制,预填回归原始规则分;全局每日封顶改落 team-join computeContribution)', () => {
+    // 旧行为:MIN(candidate, dailyCap ?? 1.5);新行为:预填 = candidate 原始规则分,本计算器不封顶。
+    const noCapCases: Array<[name: string, below: string, expected: number]> = [
+      ['原会被默认 1.5 封顶的 2.00 → 现回归 2.0', '2.00', 2],
+      ['远超旧 1.5 上限的 10.00 → 现回归 10', '10.00', 10],
+      ['未触旧上限的 0.75 → 仍 0.75(原值不变)', '0.75', 0.75],
+      ['恰为旧默认上限的 1.50 → 1.5', '1.50', 1.5],
     ];
 
-    it.each(capCases)('%s', async (_name, dailyCap, below, expected) => {
-      const { tx } = makeTx([
-        makeRule({
-          dailyCap: dailyCap === null ? null : new Prisma.Decimal(dailyCap),
-          pointsBelow: new Prisma.Decimal(below),
-        }),
-      ]);
+    it.each(noCapCases)('%s', async (_name, below, expected) => {
+      const { tx } = makeTx([makeRule({ pointsBelow: new Prisma.Decimal(below) })]);
 
       const out = await calculator.applyContributionRulePrefill([rec(4)], 'rescue', tx);
 

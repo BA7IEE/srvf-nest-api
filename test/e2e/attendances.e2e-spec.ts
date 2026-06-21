@@ -1587,7 +1587,7 @@ describe('attendances 模块', () => {
       }
     });
 
-    it('ContributionRule 命中:>=6h 取 pointsAbove + dailyCap 兜底封顶', async () => {
+    it('ContributionRule 命中:>=6h 取 pointsAbove(活动闭环硬化 2026-06-21:不再 per-record dailyCap 钳制 → 原始规则分)', async () => {
       const rule = await prisma.contributionRule.create({
         data: {
           activityTypeCode: 'att-demo',
@@ -1595,7 +1595,7 @@ describe('attendances 模块', () => {
           durationThreshold: 6,
           pointsBelow: 1,
           pointsAbove: 3,
-          dailyCap: 1.5, // 显式上限封顶
+          dailyCap: 1.5, // 列保留但 calculator 不再读;不再每条封顶
           status: 'ACTIVE',
         },
         select: { id: true },
@@ -1606,14 +1606,15 @@ describe('attendances 模块', () => {
             memberId: memberCId,
             roleCode: 'instructor',
             checkInAt: '2026-07-02T10:00:00.000Z',
-            checkOutAt: '2026-07-02T18:00:00.000Z', // 8h >= 6h → pointsAbove=3,但被 dailyCap 1.5 封顶
+            checkOutAt: '2026-07-02T18:00:00.000Z', // 8h >= 6h → pointsAbove=3;dailyCap 不再每条封顶
           }),
         ]);
         const records = await prisma.attendanceRecord.findMany({
           where: { sheetId: id, deletedAt: null },
           select: { contributionPoints: true },
         });
-        expect(records[0].contributionPoints?.toString()).toBe('1.5');
+        // 旧:MIN(3, dailyCap 1.5)=1.5;新:不每条封顶 → 原始规则分 3(全局每日封顶改落 team-join 汇总处)
+        expect(records[0].contributionPoints?.toString()).toBe('3');
       } finally {
         await prisma.contributionRule.delete({ where: { id: rule.id } });
       }

@@ -3,9 +3,10 @@ import { HttpStatus } from '@nestjs/common';
 // BizCode 常量表
 //
 // 当前状态(随实施滚动维护;每次新增模块码后校对):
-// - 169 个 BizCode(2026-06-21 亲核:grep 'httpStatus:' / 'code: NNNNN' / 去重三法交叉;含 CMS content 290xx +5;
-//   2026-06-13 的「141」系彼时快照,此后 realname 27xxx + 招新·入队 28xxx(280xx/281xx/282xx)+ #399 review
-//   错误码增量(13014 / 19010 / 30103)+ CMS content 290xx 5 码),覆盖 24 个编号段
+// - 170 个 BizCode(2026-06-21 亲核:grep 'httpStatus:' / 'code: NNNNN' / 去重三法交叉;含 CMS content 290xx +5
+//   + 活动闭环硬化 20123 报名截止 +1;2026-06-13 的「141」系彼时快照,此后 realname 27xxx + 招新·入队 28xxx
+//   (280xx/281xx/282xx)+ #399 review 错误码增量(13014 / 19010 / 30103)+ CMS content 290xx 5 码
+//   + 20123 ACTIVITY_REGISTRATION_DEADLINE_PASSED〔201xx activities 段,报名截止生效〕),覆盖 24 个编号段
 // - CMS 内容发布模块(第 28 模块,2026-06-21,评审稿 §7):290xx 段 5 码(29001 NOT_FOUND / 29010 type /
 //   29011 visibility / 29012 visible-org / 29030 status-transition);291xx 权限边界预留(暂不用,RBAC 统一 30100);
 //   附件类错误(MIME / 大小 / PII / owner)复用既有 13xxx,不新增码(评审稿 §7)
@@ -471,6 +472,15 @@ export const BizCode = {
   ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN: {
     code: 20122,
     message: '活动已取消,禁止录入考勤',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 活动闭环硬化(2026-06-21):报名截止时刻生效。registrationDeadline 非 null 且 now > deadline →
+  // 拒报名;自助 createMy + 管理员代报名 create 两路经 assertActivityRegistrable 共用此闸
+  // (App createMyForApp 薄壳经 createMy 同样拦)。approve 不加闸:截止只管报名动作,不管事后审批,
+  // 截止前已报的 pending 仍可批。沿 20120/20121 报名时活动态阻断家族,409。
+  ACTIVITY_REGISTRATION_DEADLINE_PASSED: {
+    code: 20123,
+    message: '活动报名已截止',
     httpStatus: HttpStatus.CONFLICT,
   },
 

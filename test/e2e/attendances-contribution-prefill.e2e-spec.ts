@@ -363,7 +363,7 @@ describe('AttendancesService contribution prefill (characterization)', () => {
       expect(decimalToNumberOrNull(rec.contributionPoints)).toBe(0.5);
     });
 
-    it('Case 6:dailyCap 命中 → MIN(candidate, dailyCap)', async () => {
+    it('Case 6:dailyCap 不再每条封顶 → 预填 = 原始规则分(活动闭环硬化 2026-06-21)', async () => {
       const activityId = await createActivity(ACTIVITY_TYPE_DEMO);
       await createRule({
         activityTypeCode: ACTIVITY_TYPE_DEMO,
@@ -371,7 +371,7 @@ describe('AttendancesService contribution prefill (characterization)', () => {
         durationThreshold: 4,
         pointsBelow: 0.5,
         pointsAbove: 2.0,
-        dailyCap: 1.2, // 显式上限 < pointsAbove
+        dailyCap: 1.2, // 旧:封顶 1.2;新:calculator 不再读 dailyCap,全局每日封顶改落 team-join 汇总处
       });
 
       const sheetId = await submitOne({
@@ -381,11 +381,11 @@ describe('AttendancesService contribution prefill (characterization)', () => {
       });
 
       const rec = await getOnlyRecord(sheetId);
-      // candidate = 2.0,但 dailyCap=1.2 封顶
-      expect(decimalToNumberOrNull(rec.contributionPoints)).toBe(1.2);
+      // candidate = 2.0;旧 MIN(2.0,1.2)=1.2,新不每条封顶 → 2.0
+      expect(decimalToNumberOrNull(rec.contributionPoints)).toBe(2.0);
     });
 
-    it('Case 7:dailyCap = null → 默认 cap 1.5(DEFAULT_DAILY_CAP)', async () => {
+    it('Case 7:dailyCap = null 也不再兜底 1.5 封顶 → 预填 = 原始规则分', async () => {
       const activityId = await createActivity(ACTIVITY_TYPE_DEMO);
       await createRule({
         activityTypeCode: ACTIVITY_TYPE_DEMO,
@@ -393,7 +393,7 @@ describe('AttendancesService contribution prefill (characterization)', () => {
         durationThreshold: 4,
         pointsBelow: 0.5,
         pointsAbove: 2.0,
-        dailyCap: null, // service 兜底 1.5
+        dailyCap: null,
       });
 
       const sheetId = await submitOne({
@@ -403,8 +403,8 @@ describe('AttendancesService contribution prefill (characterization)', () => {
       });
 
       const rec = await getOnlyRecord(sheetId);
-      // candidate = 2.0,默认 cap 1.5 封顶
-      expect(decimalToNumberOrNull(rec.contributionPoints)).toBe(1.5);
+      // candidate = 2.0;旧默认 cap 1.5 封顶 → 1.5,新不每条封顶 → 2.0
+      expect(decimalToNumberOrNull(rec.contributionPoints)).toBe(2.0);
     });
 
     it('Case 8:多条 NULL 档位规则 → 按 createdAt ASC 取首条', async () => {

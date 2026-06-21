@@ -705,8 +705,10 @@ model AttendanceRecord {
 //   后方角色按简化档位预填(<6h = pointsBelow / >=6h = pointsAbove),APD 现场修订。
 //
 // 每日上限(D-S3 / D-D5):
-// - dailyCap?:每日上限;null 时由 service 兜底默认 1.5(Q-OPEN-7 锁定);
-//   R22 类应填 0(明示零上限,沿 D-S9 业务规则文档 §6.3)。
+// - dailyCap?:**已 deprecated(活动闭环硬化 2026-06-21)**。每日封顶语义由「每条记录各自封顶」
+//   改为「全局每日上限」(一人单个北京日历日总分封顶 GLOBAL_DAILY_CONTRIBUTION_CAP=1.5),封顶落在
+//   汇总处 team-join `computeContribution`,ContributionCalculator 不再读此列。列保留不删(免 migration);
+//   旧值照旧存库、不参与计算。原行为:null 时由 service 兜底默认 1.5(Q-OPEN-7);R22 类填 0(D-S9 §6.3)。
 //
 // 启停字段(D-S1):沿 baseline §2.2.3 + v0.4.0 现有 enum 风格,用大写 ACTIVE/INACTIVE;
 // 禁止使用 isActive / isEnabled / enabled。
@@ -725,7 +727,7 @@ model ContributionRule {
   durationThreshold  Decimal?               @db.Decimal(5, 2) // 时长档位阈值(小时);null 表示无档位
   pointsBelow        Decimal                @db.Decimal(5, 2) // ≤ 阈值(或无档位)的预填分值
   pointsAbove        Decimal?               @db.Decimal(5, 2) // > 阈值的预填分值;无档位时不填
-  dailyCap           Decimal?               @db.Decimal(5, 2) // 每日上限;null 时 service 兜底 1.5
+  dailyCap           Decimal?               @db.Decimal(5, 2) // [deprecated 2026-06-21] 全局每日封顶改落 team-join computeContribution;calculator 不再读,列保留免 migration
   status             ContributionRuleStatus @default(ACTIVE)
   remark             String?
   createdAt          DateTime               @default(now())

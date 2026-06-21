@@ -99,6 +99,10 @@ export const MEMBER_GRADE_DICT_CODE = 'member_grade';
 // 字典稳定值,终审通过);不 import attendances 内部,保持 team-join 自洽(评审稿 §4.3)。
 export const ATTENDANCE_SHEET_STATUS_APPROVED = 'approved';
 export const CONTRIBUTION_THRESHOLD = new Prisma.Decimal(5);
+// 全局每日封顶(活动闭环硬化 2026-06-21):一个队员单个北京日历日的贡献值总分封顶在统一值。
+// 由「每条记录各自封顶」改为「全局每日上限」——封顶落在汇总处 computeContribution(不落库、
+// 不在 calculator 每条钳制)。v1 常量(配置化后置);ContributionRule.dailyCap 列已 deprecated 不再读。
+export const GLOBAL_DAILY_CONTRIBUTION_CAP = new Prisma.Decimal('1.5');
 const BEIJING_UTC_OFFSET_HOURS = 8;
 
 /**
@@ -113,7 +117,8 @@ export function contributionCutoff(cycleYear: number): Date {
 // completionDate date-only(`new Date('YYYY-MM-DD')` = UTC 00:00)与 cycle.openedAt 精确时刻
 // 跨日界误判 —— 入队轮开启当天(北京白天 openedAt > 当日 UTC 0 点)完成的 gate 不再被误判
 // 「本轮之前」失效(bug HIGH,2026-06-19 维护者元核验)。
-function beijingDayNumber(d: Date): number {
+// 导出复用:gate 本轮边界判定 + 贡献值全局每日封顶分组(computeContribution)共用同一北京日序号口径。
+export function beijingDayNumber(d: Date): number {
   return Math.floor((d.getTime() + BEIJING_UTC_OFFSET_HOURS * 3600_000) / 86_400_000);
 }
 
