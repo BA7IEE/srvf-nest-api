@@ -408,4 +408,124 @@ describe('organizations 模块', () => {
       expect(res.body.data.parentId).toBeNull();
     });
   });
+
+  // ============ code 缩写字段(可空 + 唯一)============
+
+  describe('code 缩写字段(可空 + 唯一)', () => {
+    let rootId: string;
+    let childWithCodeId: string;
+
+    beforeAll(async () => {
+      // 自包含:清空 Organization 后建一个**不带 code** 的根(回归:不传 code 仍可建)
+      await prisma.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/organizations')
+        .set('Authorization', superAdminAuth)
+        .send({ name: 'Code Root', nodeTypeCode: activeNodeTypeCode });
+      rootId = res.body.data.id;
+    });
+
+    it('不传 code 建根 → 响应含 code 字段且为 null(回归)', async () => {
+      const res = await request(httpServer(app))
+        .get(`/api/admin/v1/organizations/${rootId}`)
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveProperty('code');
+      expect(res.body.data.code).toBeNull();
+    });
+
+    it('建带 code 的子节点 → 201,响应含 code', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/organizations')
+        .set('Authorization', superAdminAuth)
+        .send({
+          name: 'Mountain',
+          parentId: rootId,
+          nodeTypeCode: activeNodeTypeCode,
+          code: 'SMRT',
+        });
+      expect(res.status).toBe(201);
+      expect(res.body.data.code).toBe('SMRT');
+      childWithCodeId = res.body.data.id;
+    });
+
+    it('撞 code → ORGANIZATION_CODE_ALREADY_EXISTS', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/organizations')
+        .set('Authorization', superAdminAuth)
+        .send({ name: 'Dup', parentId: rootId, nodeTypeCode: activeNodeTypeCode, code: 'SMRT' });
+      expectBizError(res, BizCode.ORGANIZATION_CODE_ALREADY_EXISTS);
+    });
+
+    it('非法 code 格式(小写)→ 400(DTO @Matches)', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/organizations')
+        .set('Authorization', superAdminAuth)
+        .send({ name: 'Bad', parentId: rootId, nodeTypeCode: activeNodeTypeCode, code: 'smrt' });
+      expect(res.status).toBe(400);
+    });
+
+    it('不传 code 建子节点 → 201,code 为 null(多 NULL 不撞唯一)', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/organizations')
+        .set('Authorization', superAdminAuth)
+        .send({ name: 'NoCode Child', parentId: rootId, nodeTypeCode: activeNodeTypeCode });
+      expect(res.status).toBe(201);
+      expect(res.body.data.code).toBeNull();
+    });
+
+    it('PATCH 更新 code → 200,响应 code 更新', async () => {
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/organizations/${childWithCodeId}`)
+        .set('Authorization', superAdminAuth)
+        .send({ code: 'SMRT2' });
+      expect(res.status).toBe(200);
+      expect(res.body.data.code).toBe('SMRT2');
+    });
+
+    it('PATCH code 设回自身当前值 → 200(排除自身不算冲突)', async () => {
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/organizations/${childWithCodeId}`)
+        .set('Authorization', superAdminAuth)
+        .send({ code: 'SMRT2' });
+      expect(res.status).toBe(200);
+      expect(res.body.data.code).toBe('SMRT2');
+    });
+
+    it('PATCH code 撞他节点已有 → ORGANIZATION_CODE_ALREADY_EXISTS', async () => {
+      const other = await request(httpServer(app))
+        .post('/api/admin/v1/organizations')
+        .set('Authorization', superAdminAuth)
+        .send({ name: 'Water', parentId: rootId, nodeTypeCode: activeNodeTypeCode, code: 'SWRT' });
+      expect(other.status).toBe(201);
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/organizations/${childWithCodeId}`)
+        .set('Authorization', superAdminAuth)
+        .send({ code: 'SWRT' });
+      expectBizError(res, BizCode.ORGANIZATION_CODE_ALREADY_EXISTS);
+    });
+
+    it('软删后 code 仍占位 → 撞 ORGANIZATION_CODE_ALREADY_EXISTS(全局 @unique 含软删历史)', async () => {
+      const node = await request(httpServer(app))
+        .post('/api/admin/v1/organizations')
+        .set('Authorization', superAdminAuth)
+        .send({ name: 'High', parentId: rootId, nodeTypeCode: activeNodeTypeCode, code: 'STRT' });
+      expect(node.status).toBe(201);
+      // 直接 DB 软删(API DELETE 会被业务护栏拦;此处只测 code 占位语义)
+      await prisma.organization.update({
+        where: { id: node.body.data.id },
+        data: { deletedAt: new Date() },
+      });
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/organizations')
+        .set('Authorization', superAdminAuth)
+        .send({
+          name: 'High Again',
+          parentId: rootId,
+          nodeTypeCode: activeNodeTypeCode,
+          code: 'STRT',
+        });
+      expectBizError(res, BizCode.ORGANIZATION_CODE_ALREADY_EXISTS);
+    });
+  });
 });
