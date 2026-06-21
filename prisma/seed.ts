@@ -248,6 +248,16 @@ const V2_DICT_SEED = [
       { code: 'info', label: '信息', sortOrder: 6 },
     ],
   },
+  {
+    type: { code: 'content_type', label: '内容类型', sortOrder: 17 },
+    // CMS 内容类型(label 占位,待运营细化;评审稿 §7):公告 / 公示 / 简报 / 推文
+    items: [
+      { code: 'announcement', label: '公告', sortOrder: 0 },
+      { code: 'publicity', label: '公示', sortOrder: 1 },
+      { code: 'briefing', label: '简报', sortOrder: 2 },
+      { code: 'post', label: '推文', sortOrder: 3 },
+    ],
+  },
 ] as const;
 
 async function seedV2Dictionaries(prisma: PrismaClient): Promise<void> {
@@ -1980,6 +1990,82 @@ const TEAM_JOIN_APPLICATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> =
   },
 ];
 
+// CMS 内容发布模块(第 28 模块,2026-06-21;评审稿 §7):content.* 5 码,全绑 biz-admin。
+const CONTENT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'content.read.record',
+    module: 'content',
+    action: 'read',
+    resourceType: 'record',
+    description:
+      'admin 查看内容(列表 + 详情;全状态全可见档);亦作 app/v1 management 可见档判定信号(评审稿 §4.1)',
+  },
+  {
+    code: 'content.create.record',
+    module: 'content',
+    action: 'create',
+    resourceType: 'record',
+    description: '新建内容草稿(先草稿拿 id 再上传封面 / 正文图 / 附件;评审稿 §5.3)',
+  },
+  {
+    code: 'content.update.record',
+    module: 'content',
+    action: 'update',
+    resourceType: 'record',
+    description: '更新内容(draft / published 可改,archived 冻结);设 / 清封面',
+  },
+  {
+    code: 'content.delete.record',
+    module: 'content',
+    action: 'delete',
+    resourceType: 'record',
+    description: '软删内容(任意态)',
+  },
+  {
+    code: 'content.publish.record',
+    module: 'content',
+    action: 'publish',
+    resourceType: 'record',
+    description: '内容状态机:publish / unpublish / archive(立即生效无 cron;评审稿 §3)',
+  },
+];
+
+// CMS 附件 owner(content-image / content-file)写路径 coarse 权限码(沿 attachment.*.activity 粗粒度范式;
+// 全绑 biz-admin;α 决议)。读路径由 content 自签 + 文章可见级闸控,不走这些码(评审稿 §5.2 / §5.4)。
+// 注:这 4 码 module='attachment' 但归入 BIZ_PERMISSION_SEED 绑 biz-admin —— 内容写路径授权,
+// 演进 Slow-4「biz-admin 不含 attachment.* 码」不变式为「仅含 CMS content-* 4 码」(评审稿 §7;
+// seed-biz-admin.e2e 的 attachment.* 断言同步 true-up)。
+const CONTENT_ATTACHMENT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'attachment.upload.content-image',
+    module: 'attachment',
+    action: 'upload',
+    resourceType: 'content-image',
+    description: '上传内容图片(封面 / 正文图;经 AttachmentsService 写路径判权)',
+  },
+  {
+    code: 'attachment.delete.content-image',
+    module: 'attachment',
+    action: 'delete',
+    resourceType: 'content-image',
+    description: '删除内容图片附件',
+  },
+  {
+    code: 'attachment.upload.content-file',
+    module: 'attachment',
+    action: 'upload',
+    resourceType: 'content-file',
+    description: '上传内容文件附件',
+  },
+  {
+    code: 'attachment.delete.content-file',
+    module: 'attachment',
+    action: 'delete',
+    resourceType: 'content-file',
+    description: '删除内容文件附件',
+  },
+];
+
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;码进 Permission 表但不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
 
@@ -2001,6 +2087,8 @@ const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RECRUITMENT_APPLICATION_PERMISSION_SEED,
   ...TEAM_JOIN_CYCLE_PERMISSION_SEED,
   ...TEAM_JOIN_APPLICATION_PERMISSION_SEED,
+  ...CONTENT_PERMISSION_SEED,
+  ...CONTENT_ATTACHMENT_PERMISSION_SEED,
 ];
 
 // biz-admin 绑定集合(50 条 = 51 过滤 member.delete.record;Slow-4 §5/§6 + 保险 E-6 + 招新 E-R-19/E-R2-11)
@@ -2011,7 +2099,7 @@ const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISS
 const BIZ_ADMIN_ROLE_CODE = 'biz-admin';
 const BIZ_ADMIN_DISPLAY_NAME = '业务管理员';
 const BIZ_ADMIN_DESCRIPTION =
-  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 评审稿 §5 + 保险模块评审稿 §3.4 + 招新一期评审稿 §3.4):member 5 + member-profile 3 + emergency-contact 4 + certificate 6 + activity 5 + activity-registration 5 + attendance 8 + team-insurance-policy 6 + member-insurance 1 + recruitment-cycle 3 + recruitment-application 2 = 48 条中绑 47;member.delete.record 仅 SUPER_ADMIN(D1=A 镜像);attachment 存量 20 码不在本角色(零漂移);每个 ADMIN 用户由 seed 自动补挂本角色';
+  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 §5 + 保险 §3.4 + 招新一/二/三期 §3.4 + CMS 内容模块评审稿 §7):member 5 + member-profile 3 + emergency-contact 4 + certificate 6 + activity 5 + activity-registration 5 + attendance 8 + team-insurance-policy 6 + member-insurance 1 + recruitment-cycle 3 + recruitment-application 5 + team-join-cycle 3 + team-join-application 4 + content 5 + content-attachment 4 = 67 条中绑 66;member.delete.record 仅 SUPER_ADMIN(D1=A 镜像);attachment 存量 20 码(member / certificate / activity)不在本角色,CMS content-image / content-file 写路径 4 码因内容授权绑入(评审稿 α / §5.2);每个 ADMIN 用户由 seed 自动补挂本角色';
 
 // Slow-4 T1(36/35)+ 保险模块 T1 增量(2026-06-13,+7 全绑 → 43/42)+ 招新一期 T1 增量(2026-06-18,+5 全绑 → 48/47):
 // 业务面权限点 + biz-admin 角色 + 绑定 + ADMIN 全员补挂 + 强校验。
@@ -2043,7 +2131,9 @@ async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
       `recruitment-cycle ${RECRUITMENT_CYCLE_PERMISSION_SEED.length} + ` +
       `recruitment-application ${RECRUITMENT_APPLICATION_PERMISSION_SEED.length} + ` +
       `team-join-cycle ${TEAM_JOIN_CYCLE_PERMISSION_SEED.length} + ` +
-      `team-join-application ${TEAM_JOIN_APPLICATION_PERMISSION_SEED.length})`,
+      `team-join-application ${TEAM_JOIN_APPLICATION_PERMISSION_SEED.length} + ` +
+      `content ${CONTENT_PERMISSION_SEED.length} + ` +
+      `content-attachment ${CONTENT_ATTACHMENT_PERMISSION_SEED.length})`,
   );
 
   // 2. upsert biz-admin RbacRole
@@ -2202,6 +2292,9 @@ async function main(): Promise<void> {
     //   不依赖任何 ops-admin 状态;但放在 seedRbac 之后保持"先 RBAC meta 再业务权限点"语义顺序)
     await seedAttachmentPermissions(prisma);
 
+    // CMS 内容模块(2026-06-21,评审稿 §5.1):content-image / content-file 附件类型默认配置行(幂等)
+    await seedContentAttachmentTypeConfigs(prisma);
+
     // Slow-4 T1(2026-06-11,评审稿 §5)36/35;保险模块 T1(2026-06-13,评审稿 §3.4)
     //   +7 全绑 → 43 条业务面权限码 + biz-admin 角色 + 42 条绑定
     //   + ADMIN 全员幂等补挂 + 强校验。放在 seedAttachmentPermissions 之后,
@@ -2210,6 +2303,50 @@ async function main(): Promise<void> {
   } finally {
     await prisma.$disconnect();
   }
+}
+
+// CMS 内容模块(2026-06-21;评审稿 §5.1 / §7):content-image / content-file 两 owner 的
+// AttachmentTypeConfig 默认配置行(MIME 白名单 + 大小上限直接落 TypeConfig 默认列;v1 不开
+// Mime/SizeLimit override 行,沿 attachment-config-boundary §6「新增 owner type = 新增一条
+// AttachmentTypeConfig 行,不动 schema」)。幂等 upsert by code(update:{},不回退运营调整)。
+const CONTENT_ATTACHMENT_TYPE_CONFIG_SEED = [
+  {
+    code: 'content-image',
+    displayName: '内容图片(封面 / 正文图)',
+    ownerTable: 'contents',
+    defaultMaxSizeBytes: 10 * 1024 * 1024,
+    defaultMimeWhitelist: ['image/jpeg', 'image/png', 'image/webp'],
+  },
+  {
+    code: 'content-file',
+    displayName: '内容文件附件',
+    ownerTable: 'contents',
+    defaultMaxSizeBytes: 20 * 1024 * 1024,
+    defaultMimeWhitelist: [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ],
+  },
+] as const;
+
+async function seedContentAttachmentTypeConfigs(prisma: PrismaClient): Promise<void> {
+  for (const cfg of CONTENT_ATTACHMENT_TYPE_CONFIG_SEED) {
+    await prisma.attachmentTypeConfig.upsert({
+      where: { code: cfg.code },
+      update: {},
+      create: {
+        code: cfg.code,
+        displayName: cfg.displayName,
+        ownerTable: cfg.ownerTable,
+        defaultMaxSizeBytes: cfg.defaultMaxSizeBytes,
+        defaultMimeWhitelist: [...cfg.defaultMimeWhitelist],
+      },
+    });
+  }
+  console.log(
+    `[seed] content attachment type configs ensured (${CONTENT_ATTACHMENT_TYPE_CONFIG_SEED.length}: content-image / content-file)`,
+  );
 }
 
 main().catch((err: unknown) => {

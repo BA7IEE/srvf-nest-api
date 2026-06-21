@@ -2737,6 +2737,385 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "ContentAdminDetailDto": {
+    "properties": {
+      "attachments": {
+        "description": "附件列表(content-image + content-file)",
+        "items": {
+          "$ref": "#/components/schemas/ContentAttachmentDto",
+        },
+        "type": "array",
+      },
+      "authorUserId": {
+        "nullable": true,
+        "type": "object",
+      },
+      "body": {
+        "description": "正文 Markdown(attachment:<id> 占位已改写为签名 URL)",
+        "type": "string",
+      },
+      "contentTypeCode": {
+        "type": "string",
+      },
+      "coverAttachmentId": {
+        "nullable": true,
+        "type": "object",
+      },
+      "coverImageUrl": {
+        "description": "封面缩略图签名 URL",
+        "nullable": true,
+        "type": "object",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "pinned": {
+        "type": "boolean",
+      },
+      "publishedAt": {
+        "nullable": true,
+        "type": "object",
+      },
+      "statusCode": {
+        "type": "string",
+      },
+      "summary": {
+        "nullable": true,
+        "type": "object",
+      },
+      "tags": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "title": {
+        "type": "string",
+      },
+      "updatedAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "viewCount": {
+        "description": "累计 PV(admin 详情不自增)",
+        "type": "number",
+      },
+      "visibilityCode": {
+        "type": "string",
+      },
+      "visibleOrganizationIds": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "id",
+      "title",
+      "body",
+      "contentTypeCode",
+      "statusCode",
+      "visibilityCode",
+      "visibleOrganizationIds",
+      "tags",
+      "attachments",
+      "pinned",
+      "viewCount",
+      "createdAt",
+      "updatedAt",
+    ],
+    "type": "object",
+  },
+  "ContentAdminListItemDto": {
+    "properties": {
+      "authorUserId": {
+        "nullable": true,
+        "type": "object",
+      },
+      "contentTypeCode": {
+        "type": "string",
+      },
+      "coverImageUrl": {
+        "description": "封面缩略图签名 URL(coverImageKey 直签)",
+        "nullable": true,
+        "type": "object",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "pinned": {
+        "type": "boolean",
+      },
+      "publishedAt": {
+        "nullable": true,
+        "type": "object",
+      },
+      "statusCode": {
+        "type": "string",
+      },
+      "summary": {
+        "nullable": true,
+        "type": "object",
+      },
+      "tags": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "title": {
+        "type": "string",
+      },
+      "updatedAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "viewCount": {
+        "description": "累计 PV",
+        "type": "number",
+      },
+      "visibilityCode": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "title",
+      "contentTypeCode",
+      "statusCode",
+      "visibilityCode",
+      "tags",
+      "pinned",
+      "viewCount",
+      "createdAt",
+      "updatedAt",
+    ],
+    "type": "object",
+  },
+  "ContentAttachmentConfirmDto": {
+    "properties": {
+      "checksum": {
+        "description": "客户端计算的 SHA-256 checksum(64 hex;可选)",
+        "type": "string",
+      },
+      "etag": {
+        "description": "Provider etag(可选;LocalProvider 可缺)",
+        "type": "string",
+      },
+      "uploadToken": {
+        "description": "upload-url 端点签发的 HMAC-SHA256 token",
+        "type": "string",
+      },
+    },
+    "required": [
+      "uploadToken",
+    ],
+    "type": "object",
+  },
+  "ContentAttachmentDto": {
+    "properties": {
+      "id": {
+        "description": "附件 id",
+        "type": "string",
+      },
+      "kind": {
+        "description": "种类(image=content-image / file=content-file)",
+        "type": "string",
+      },
+      "mime": {
+        "description": "MIME 类型",
+        "type": "string",
+      },
+      "originalName": {
+        "description": "原始文件名",
+        "type": "string",
+      },
+      "size": {
+        "description": "文件大小(字节)",
+        "type": "number",
+      },
+      "url": {
+        "description": "签名访问短链(Provider 不可用时降级 null)",
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "id",
+      "kind",
+      "mime",
+      "originalName",
+      "size",
+    ],
+    "type": "object",
+  },
+  "ContentAttachmentUploadUrlDto": {
+    "properties": {
+      "kind": {
+        "description": "附件种类(image=封面/正文图;file=文件附件)",
+        "enum": [
+          "image",
+          "file",
+        ],
+        "type": "string",
+      },
+      "mime": {
+        "description": "MIME 类型(走 content-image/content-file 白名单)",
+        "maxLength": 128,
+        "type": "string",
+      },
+      "originalName": {
+        "description": "原始文件名(PII 检测;入 token claims)",
+        "maxLength": 255,
+        "type": "string",
+      },
+      "sizeBytes": {
+        "description": "文件大小(字节;走 content-* 大小上限)",
+        "minimum": 0,
+        "type": "number",
+      },
+    },
+    "required": [
+      "kind",
+      "originalName",
+      "mime",
+      "sizeBytes",
+    ],
+    "type": "object",
+  },
+  "ContentReadDetailDto": {
+    "properties": {
+      "attachments": {
+        "description": "附件列表(content-image + content-file;签名 URL 随文章可见级)",
+        "items": {
+          "$ref": "#/components/schemas/ContentAttachmentDto",
+        },
+        "type": "array",
+      },
+      "body": {
+        "description": "正文 Markdown(attachment:<id> 占位已改写为签名 URL)",
+        "type": "string",
+      },
+      "contentTypeCode": {
+        "type": "string",
+      },
+      "coverImageUrl": {
+        "description": "封面缩略图签名 URL",
+        "nullable": true,
+        "type": "object",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "pinned": {
+        "type": "boolean",
+      },
+      "publishedAt": {
+        "nullable": true,
+        "type": "object",
+      },
+      "summary": {
+        "nullable": true,
+        "type": "object",
+      },
+      "tags": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "title": {
+        "type": "string",
+      },
+      "viewCount": {
+        "description": "累计 PV(详情已自增)",
+        "type": "number",
+      },
+      "visibilityCode": {
+        "description": "可见档(展示用;不回显可见部门 orgId 列表)",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "title",
+      "body",
+      "contentTypeCode",
+      "visibilityCode",
+      "tags",
+      "attachments",
+      "pinned",
+      "viewCount",
+      "createdAt",
+    ],
+    "type": "object",
+  },
+  "ContentReadListItemDto": {
+    "properties": {
+      "contentTypeCode": {
+        "type": "string",
+      },
+      "coverImageUrl": {
+        "description": "封面缩略图签名 URL(coverImageKey 直签)",
+        "nullable": true,
+        "type": "object",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "pinned": {
+        "type": "boolean",
+      },
+      "publishedAt": {
+        "nullable": true,
+        "type": "object",
+      },
+      "summary": {
+        "nullable": true,
+        "type": "object",
+      },
+      "tags": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "title": {
+        "type": "string",
+      },
+      "viewCount": {
+        "description": "累计 PV",
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "title",
+      "contentTypeCode",
+      "tags",
+      "pinned",
+      "viewCount",
+      "createdAt",
+    ],
+    "type": "object",
+  },
   "ContributionRuleResponseDto": {
     "properties": {
       "activityTypeCode": {
@@ -3224,6 +3603,69 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "certTypeCode",
       "issuingOrg",
       "issuedAt",
+    ],
+    "type": "object",
+  },
+  "CreateContentDto": {
+    "properties": {
+      "body": {
+        "description": "正文 Markdown 原文(含 ![](attachment:<id>) 占位;服务端不解析/不消毒 HTML)",
+        "maxLength": 50000,
+        "type": "string",
+      },
+      "contentTypeCode": {
+        "description": "内容类型(content_type 字典 ACTIVE item;失败 → 29010)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "pinned": {
+        "default": false,
+        "description": "是否置顶",
+        "type": "boolean",
+      },
+      "summary": {
+        "description": "摘要",
+        "maxLength": 500,
+        "type": "string",
+      },
+      "tags": {
+        "description": "标签数组(读取面 hasSome 筛选)",
+        "items": {
+          "type": "string",
+        },
+        "maxItems": 16,
+        "type": "array",
+      },
+      "title": {
+        "description": "标题",
+        "maxLength": 200,
+        "type": "string",
+      },
+      "visibilityCode": {
+        "description": "可见档(每篇选一;失败 → 29011)",
+        "enum": [
+          "public",
+          "member",
+          "formal_member",
+          "department",
+          "management",
+        ],
+        "maxLength": 32,
+        "type": "string",
+      },
+      "visibleOrganizationIds": {
+        "description": "可见部门 orgId 数组(仅 department 档必填且须全为活跃部门;非 department 档须空;失败 → 29012)",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "title",
+      "body",
+      "contentTypeCode",
+      "visibilityCode",
     ],
     "type": "object",
   },
@@ -5949,6 +6391,19 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "SetContentCoverDto": {
+    "properties": {
+      "attachmentId": {
+        "description": "封面对应 content-image 附件 id;传 null 清空封面",
+        "nullable": true,
+        "type": "string",
+      },
+    },
+    "required": [
+      "attachmentId",
+    ],
+    "type": "object",
+  },
   "SetMemberDepartmentDto": {
     "properties": {
       "organizationId": {
@@ -6781,6 +7236,60 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "颁发机构",
         "maxLength": 128,
         "type": "string",
+      },
+    },
+    "type": "object",
+  },
+  "UpdateContentDto": {
+    "properties": {
+      "body": {
+        "description": "正文 Markdown 原文",
+        "maxLength": 50000,
+        "type": "string",
+      },
+      "contentTypeCode": {
+        "description": "内容类型(content_type 字典 ACTIVE item)",
+        "type": "string",
+      },
+      "pinned": {
+        "description": "是否置顶",
+        "type": "boolean",
+      },
+      "summary": {
+        "description": "摘要(传 null 清空)",
+        "maxLength": 500,
+        "type": "object",
+      },
+      "tags": {
+        "description": "标签数组(覆盖式替换)",
+        "items": {
+          "type": "string",
+        },
+        "maxItems": 16,
+        "type": "array",
+      },
+      "title": {
+        "description": "标题",
+        "maxLength": 200,
+        "type": "string",
+      },
+      "visibilityCode": {
+        "description": "可见档(每篇选一)",
+        "enum": [
+          "public",
+          "member",
+          "formal_member",
+          "department",
+          "management",
+        ],
+        "type": "string",
+      },
+      "visibleOrganizationIds": {
+        "description": "可见部门 orgId 数组(department 档必填活跃部门;非 department 档须空)",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
       },
     },
     "type": "object",
@@ -14500,6 +15009,2284 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "APD 审核完整视图(R25):Activity 摘要 + Sheet 详情 + Records[含 Member 嵌套] [rbac: attendance.read.sheet]",
       "tags": [
         "Admin - Attendances",
+      ],
+    },
+  },
+  "/api/admin/v1/contents": {
+    "get": {
+      "operationId": "ContentAdminController_list",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量(上限 50)",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "maximum": 50,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "按状态过滤(draft/published/archived)",
+          "in": "query",
+          "name": "statusCode",
+          "required": false,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "按内容类型过滤",
+          "in": "query",
+          "name": "contentTypeCode",
+          "required": false,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "按可见档过滤",
+          "in": "query",
+          "name": "visibilityCode",
+          "required": false,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "关键词(标题 + 正文 ILIKE)",
+          "in": "query",
+          "name": "keyword",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按标签过滤(含任意 tag 即命中;支持 ?tags=a&tags=b 或单值)",
+          "in": "query",
+          "name": "tags",
+          "required": false,
+          "schema": {
+            "items": {
+              "type": "string",
+            },
+            "maxItems": 16,
+            "type": "array",
+          },
+        },
+        {
+          "description": "按置顶过滤",
+          "in": "query",
+          "name": "pinned",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/ContentAdminListItemDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "内容分页列表(status/type/visibility/keyword/tags/pinned 过滤;admin 见全部状态全可见档) [rbac: content.read.record]",
+      "tags": [
+        "Admin - Content",
+      ],
+    },
+    "post": {
+      "operationId": "ContentAdminController_create",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateContentDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ContentAdminDetailDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 29010: 内容类型无效; 29011: 可见级无效; 29012: 指定可见部门无效(为空 / 不存在 / 非活跃)",
+                    "enum": [
+                      40000,
+                      29010,
+                      29011,
+                      29012,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 内容类型无效(code=29010) / 可见级无效(code=29011) / 指定可见部门无效(为空 / 不存在 / 非活跃)(code=29012)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "新建内容草稿(create → draft) [rbac: content.create.record]",
+      "tags": [
+        "Admin - Content",
+      ],
+    },
+  },
+  "/api/admin/v1/contents/{id}": {
+    "delete": {
+      "operationId": "ContentAdminController_remove",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29001: 内容不存在",
+                    "enum": [
+                      29001,
+                    ],
+                    "example": 29001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容不存在(code=29001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "软删内容(任意态) [rbac: content.delete.record]",
+      "tags": [
+        "Admin - Content",
+      ],
+    },
+    "get": {
+      "operationId": "ContentAdminController_detail",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ContentAdminDetailDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29001: 内容不存在",
+                    "enum": [
+                      29001,
+                    ],
+                    "example": 29001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容不存在(code=29001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "内容详情(含附件签名 URL + 正文占位改写 + viewCount〔不自增〕) [rbac: content.read.record]",
+      "tags": [
+        "Admin - Content",
+      ],
+    },
+    "patch": {
+      "operationId": "ContentAdminController_update",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateContentDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ContentAdminDetailDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 29010: 内容类型无效; 29011: 可见级无效; 29012: 指定可见部门无效(为空 / 不存在 / 非活跃)",
+                    "enum": [
+                      40000,
+                      29010,
+                      29011,
+                      29012,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 内容类型无效(code=29010) / 可见级无效(code=29011) / 指定可见部门无效(为空 / 不存在 / 非活跃)(code=29012)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29001: 内容不存在",
+                    "enum": [
+                      29001,
+                    ],
+                    "example": 29001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容不存在(code=29001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29030: 内容状态流转不允许",
+                    "enum": [
+                      29030,
+                    ],
+                    "example": 29030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容状态流转不允许",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容状态流转不允许(code=29030)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "更新内容(draft/published 可改,archived 冻结 → 29030) [rbac: content.update.record]",
+      "tags": [
+        "Admin - Content",
+      ],
+    },
+  },
+  "/api/admin/v1/contents/{id}/archive": {
+    "post": {
+      "operationId": "ContentAdminController_archive",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ContentAdminDetailDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29001: 内容不存在",
+                    "enum": [
+                      29001,
+                    ],
+                    "example": 29001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容不存在(code=29001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29030: 内容状态流转不允许",
+                    "enum": [
+                      29030,
+                    ],
+                    "example": 29030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容状态流转不允许",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容状态流转不允许(code=29030)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "归档内容(published → archived,终态不可逆) [rbac: content.publish.record]",
+      "tags": [
+        "Admin - Content",
+      ],
+    },
+  },
+  "/api/admin/v1/contents/{id}/attachments/confirm": {
+    "post": {
+      "operationId": "ContentAdminController_confirm",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ContentAttachmentConfirmDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AttachmentResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 13013: 附件大小超过上限; 13011: 附件归属对象不存在或已软删",
+                    "enum": [
+                      40000,
+                      13013,
+                      13011,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 附件大小超过上限(code=13013) / 附件归属对象不存在或已软删(code=13011)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29001: 内容不存在; 13001: 附件不存在",
+                    "enum": [
+                      29001,
+                      13001,
+                    ],
+                    "example": 29001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容不存在(code=29001) / 附件不存在(code=13001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "确认附件上传(token 校验 + headObject;落 Attachment 行 + audit attachment.upload) [auth]",
+      "tags": [
+        "Admin - Content",
+      ],
+    },
+  },
+  "/api/admin/v1/contents/{id}/attachments/upload-url": {
+    "post": {
+      "operationId": "ContentAdminController_uploadUrl",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ContentAttachmentUploadUrlDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/UploadUrlResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 13010: 附件归属类型不合法; 13012: 附件 MIME 类型不在白名单; 13013: 附件大小超过上限; 13015: 附件元数据包含个人敏感信息(身份证号),已拒绝; 13033: 附件 MIME 类型在系统级黑名单中,不允许上传",
+                    "enum": [
+                      40000,
+                      13010,
+                      13012,
+                      13013,
+                      13015,
+                      13033,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 附件归属类型不合法(code=13010) / 附件 MIME 类型不在白名单(code=13012) / 附件大小超过上限(code=13013) / 附件元数据包含个人敏感信息(身份证号),已拒绝(code=13015) / 附件 MIME 类型在系统级黑名单中,不允许上传(code=13033)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29001: 内容不存在",
+                    "enum": [
+                      29001,
+                    ],
+                    "example": 29001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容不存在(code=29001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "取附件上传 URL(kind=image|file;先验内容存在;附件写权由 AttachmentsService 判) [rbac: attachment.upload.*]",
+      "tags": [
+        "Admin - Content",
+      ],
+    },
+  },
+  "/api/admin/v1/contents/{id}/attachments/{attachmentId}": {
+    "delete": {
+      "operationId": "ContentAdminController_removeAttachment",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "in": "path",
+          "name": "attachmentId",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29001: 内容不存在",
+                    "enum": [
+                      29001,
+                    ],
+                    "example": 29001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容不存在(code=29001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "删内容附件(先验归属本文章,再物理删 + audit attachment.delete) [rbac: attachment.delete.*]",
+      "tags": [
+        "Admin - Content",
+      ],
+    },
+  },
+  "/api/admin/v1/contents/{id}/cover": {
+    "put": {
+      "operationId": "ContentAdminController_setCover",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SetContentCoverDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ContentAdminDetailDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29001: 内容不存在",
+                    "enum": [
+                      29001,
+                    ],
+                    "example": 29001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容不存在(code=29001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "设 / 清封面({attachmentId|null};非本文章 content-image 附件 → 404) [rbac: content.update.record]",
+      "tags": [
+        "Admin - Content",
+      ],
+    },
+  },
+  "/api/admin/v1/contents/{id}/publish": {
+    "post": {
+      "operationId": "ContentAdminController_publish",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ContentAdminDetailDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29001: 内容不存在",
+                    "enum": [
+                      29001,
+                    ],
+                    "example": 29001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容不存在(code=29001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29030: 内容状态流转不允许",
+                    "enum": [
+                      29030,
+                    ],
+                    "example": 29030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容状态流转不允许",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容状态流转不允许(code=29030)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "发布内容(draft → published,置 publishedAt) [rbac: content.publish.record]",
+      "tags": [
+        "Admin - Content",
+      ],
+    },
+  },
+  "/api/admin/v1/contents/{id}/unpublish": {
+    "post": {
+      "operationId": "ContentAdminController_unpublish",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ContentAdminDetailDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29001: 内容不存在",
+                    "enum": [
+                      29001,
+                    ],
+                    "example": 29001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容不存在(code=29001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29030: 内容状态流转不允许",
+                    "enum": [
+                      29030,
+                    ],
+                    "example": 29030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容状态流转不允许",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容状态流转不允许(code=29030)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "撤回内容(published → draft,保留 publishedAt) [rbac: content.publish.record]",
+      "tags": [
+        "Admin - Content",
       ],
     },
   },
@@ -29553,6 +32340,388 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/app/v1/contents": {
+    "get": {
+      "operationId": "ContentAppController_list",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量(上限 50)",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "maximum": 50,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "按内容类型过滤",
+          "in": "query",
+          "name": "contentTypeCode",
+          "required": false,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "关键词(标题 + 正文 ILIKE)",
+          "in": "query",
+          "name": "keyword",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按标签过滤(含任意 tag 即命中;支持 ?tags=a&tags=b 或单值)",
+          "in": "query",
+          "name": "tags",
+          "required": false,
+          "schema": {
+            "items": {
+              "type": "string",
+            },
+            "maxItems": 16,
+            "type": "array",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/ContentReadListItemDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "会员内容列表(准入 canUseApp;按 5 档可见性过滤;keyword/tags/contentTypeCode;无 body) [auth]",
+      "tags": [
+        "Mobile - Content",
+      ],
+    },
+  },
+  "/api/app/v1/contents/{id}": {
+    "get": {
+      "operationId": "ContentAppController_detail",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ContentReadDetailDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29001: 内容不存在",
+                    "enum": [
+                      29001,
+                    ],
+                    "example": 29001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容不存在(code=29001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "会员内容详情(准入 canUseApp;可见级不通过 → 404 防枚举;正文占位改写 + 附件签名 + viewCount 自增) [auth]",
+      "tags": [
+        "Mobile - Content",
+      ],
+    },
+  },
   "/api/app/v1/me": {
     "get": {
       "operationId": "AppMeController_getMe",
@@ -35798,6 +38967,310 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "发送微信绑定短信验证码(防枚举:无效号码返回相同泛化响应) [public]",
       "tags": [
         "Auth",
+      ],
+    },
+  },
+  "/api/open/v1/contents": {
+    "get": {
+      "operationId": "ContentPublicController_list",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量(上限 50)",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "maximum": 50,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "按内容类型过滤",
+          "in": "query",
+          "name": "contentTypeCode",
+          "required": false,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "关键词(标题 + 正文 ILIKE)",
+          "in": "query",
+          "name": "keyword",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按标签过滤(含任意 tag 即命中;支持 ?tags=a&tags=b 或单值)",
+          "in": "query",
+          "name": "tags",
+          "required": false,
+          "schema": {
+            "items": {
+              "type": "string",
+            },
+            "maxItems": 16,
+            "type": "array",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/ContentReadListItemDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "429": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "42900: 请求过于频繁，请稍后再试",
+                    "enum": [
+                      42900,
+                    ],
+                    "example": 42900,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求过于频繁，请稍后再试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求过于频繁，请稍后再试(code=42900)",
+        },
+      },
+      "summary": "公开内容列表(仅 published+public;keyword/tags/contentTypeCode 过滤;无 body;throttler content-public) [public]",
+      "tags": [
+        "Public - Content",
+      ],
+    },
+  },
+  "/api/open/v1/contents/{id}": {
+    "get": {
+      "operationId": "ContentPublicController_detail",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ContentReadDetailDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "29001: 内容不存在",
+                    "enum": [
+                      29001,
+                    ],
+                    "example": 29001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "内容不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "内容不存在(code=29001)",
+        },
+        "429": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "42900: 请求过于频繁，请稍后再试",
+                    "enum": [
+                      42900,
+                    ],
+                    "example": 42900,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求过于频繁，请稍后再试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求过于频繁，请稍后再试(code=42900)",
+        },
+      },
+      "summary": "公开内容详情(仅 published+public,否则 404 防枚举;正文占位改写 + 附件签名 + viewCount 自增;throttler content-public) [public]",
+      "tags": [
+        "Public - Content",
       ],
     },
   },

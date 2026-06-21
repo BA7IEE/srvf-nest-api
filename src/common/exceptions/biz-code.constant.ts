@@ -3,7 +3,12 @@ import { HttpStatus } from '@nestjs/common';
 // BizCode 常量表
 //
 // 当前状态(随实施滚动维护;每次新增模块码后校对):
-// - 141 个 BizCode(2026-06-13 亲核 grep httpStatus 计数;保险 T2 +5 / T3 +26030),覆盖 21 个编号段
+// - 169 个 BizCode(2026-06-21 亲核:grep 'httpStatus:' / 'code: NNNNN' / 去重三法交叉;含 CMS content 290xx +5;
+//   2026-06-13 的「141」系彼时快照,此后 realname 27xxx + 招新·入队 28xxx(280xx/281xx/282xx)+ #399 review
+//   错误码增量(13014 / 19010 / 30103)+ CMS content 290xx 5 码),覆盖 24 个编号段
+// - CMS 内容发布模块(第 28 模块,2026-06-21,评审稿 §7):290xx 段 5 码(29001 NOT_FOUND / 29010 type /
+//   29011 visibility / 29012 visible-org / 29030 status-transition);291xx 权限边界预留(暂不用,RBAC 统一 30100);
+//   附件类错误(MIME / 大小 / PII / owner)复用既有 13xxx,不新增码(评审稿 §7)
 // - 编号段权威说明以 `docs/srvf-foundation-baseline.md §1.1` 为准;
 //   ARCHITECTURE.md §7.3 是早期蓝图,模块命名已演进(missions→dictionaries、
 //   files→attachments、devices→audit_logs 等),遇分歧以 baseline §1.1 + 本文件实际常量为准
@@ -33,9 +38,12 @@ import { HttpStatus } from '@nestjs/common';
 // - 23xxx + 231xx: contribution_rules
 // - 25xxx + 251xx: wechat(微信小程序登录,2026-06-12)
 // - 26xxx + 261xx: insurances(保险模块,2026-06-13)
+// - 27xxx: realname(实名核验通道,2026-06-18;27030/27031 通道错误)
+// - 28xxx + 281xx + 282xx: recruitment 一/二期 + team-join 入队(招新业务域,2026-06-18/19)
+// - 29xxx + 291xx: content(CMS 内容发布,2026-06-21;290xx 5 码,291xx 预留)
 // - 30xxx + 301xx: permissions(C-6 RBAC)
 // - 40xxx / 42xxx / 50xxx: 通用 HTTP / infrastructure(BAD_REQUEST / UNAUTHORIZED / FORBIDDEN / NOT_FOUND / TOO_MANY_REQUESTS / INTERNAL_ERROR)
-// - 270xx-290xx: 未规划模块预留(训练 / 装备 / 财务 / 通知等)
+// - 未规划模块预留(训练 / 装备 / 财务 / 通知等):29xxx 之后顺延(realname 27xxx / recruitment 28xxx / content 29xxx 已实装)
 export const BizCode = {
   // 通用 HTTP 级
   BAD_REQUEST: { code: 40000, message: '请求参数错误', httpStatus: HttpStatus.BAD_REQUEST },
@@ -924,6 +932,36 @@ export const BizCode = {
   TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE: {
     code: 28242,
     message: '选定部门不在候选范围,或专业队考核未通过,无法入队',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // content 模块业务级(290xx)。CMS 内容发布模块(第 28 模块)引入(2026-06-21;评审稿 §7)。
+  // 段位选择:baseline §1.1 原 "270xx-290xx 未规划预留" 末段,本期实装收口。
+  // 附件类错误(MIME / 大小 / PII / owner)复用既有 13xxx(经 AttachmentsService 写路径),不在此新增;
+  // 搜索 / 标签为查询参数,非法走通用 400(BAD_REQUEST),无专用码。291xx 权限边界预留(RBAC 统一 30100)。
+  CONTENT_NOT_FOUND: {
+    code: 29001,
+    message: '内容不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  CONTENT_TYPE_INVALID: {
+    code: 29010,
+    message: '内容类型无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  CONTENT_VISIBILITY_INVALID: {
+    code: 29011,
+    message: '可见级无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  CONTENT_VISIBLE_ORG_INVALID: {
+    code: 29012,
+    message: '指定可见部门无效(为空 / 不存在 / 非活跃)',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  CONTENT_INVALID_STATUS_TRANSITION: {
+    code: 29030,
+    message: '内容状态流转不允许',
     httpStatus: HttpStatus.CONFLICT,
   },
 

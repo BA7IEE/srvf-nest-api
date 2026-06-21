@@ -24,5 +24,8 @@ import { AttachmentsService } from './attachments.service';
   imports: [DatabaseModule, PermissionsModule, AuditLogsModule, StorageModule],
   controllers: [AttachmentsController],
   providers: [AttachmentsService, AttachmentAuditRecorder],
+  // CMS 内容模块(2026-06-21,评审稿 §5.2):导出 AttachmentsService 供 content 模块复用
+  // 上传/确认/删(写路径 rbac.can)+ listOwnerAttachmentsTrusted / resolveSignedUrlTrusted(可信只读)。
+  exports: [AttachmentsService],
 })
 export class AttachmentsModule {}

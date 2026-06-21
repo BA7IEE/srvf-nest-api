@@ -8,14 +8,21 @@
 
 // ============ ownerType 业务层 TS enum(Q1 v1.0)============
 
-// 沿 D7-attachments v1.0 启用场景 1-4(member / certificate / activity);
-// 场景 5-6(培训资料 / 装备图)延后实装时,需同步追加 enum 与 attachment_type_configs seed。
+// 沿 D7-attachments v1.0 启用 member / certificate / activity;
+// CMS 内容模块(2026-06-21)追加 content-image / content-file(评审稿 §5.1;两 owner 均指向 contents 表)。
+// 其余场景(培训资料 / 装备图)延后实装时,同步追加 enum 与 attachment_type_configs seed。
 //
 // **Q1 双层校验语义**:
 // - 业务层 enum 是**代码防错**(编译期已知;Service / DTO 引用此常量);
 // - 配置表 attachment_type_configs.code 是**运行时权威源**(运营可启停 / 新增 type)
 // - 校验顺序:**配置表先**(权威);**enum 兜底**(双保险)
-export const ATTACHMENT_OWNER_TYPES = ['member', 'certificate', 'activity'] as const;
+export const ATTACHMENT_OWNER_TYPES = [
+  'member',
+  'certificate',
+  'activity',
+  'content-image',
+  'content-file',
+] as const;
 export type AttachmentOwnerType = (typeof ATTACHMENT_OWNER_TYPES)[number];
 
 export function isKnownAttachmentOwnerType(value: string): value is AttachmentOwnerType {

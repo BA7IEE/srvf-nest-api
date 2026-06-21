@@ -374,6 +374,29 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/app/v1/me/team-join/applications'],
   ['get', '/api/app/v1/me/team-join/applications/current'],
   ['patch', '/api/app/v1/me/team-join/applications/{id}/targets'],
+  // CMS 内容发布模块(第 28 模块)T2(2026-06-21;冻结评审稿 content-module-review.md §8 端点 1-12):
+  //   admin/v1/contents 12 端点,212→224(仅 admin 面;app/open 面 T3/T4 后续追加)。
+  //   判权 R 模式 content.* 5 码;附件端点(upload-url/confirm/删)经 AttachmentsService 写路径 RBAC;封面 set/clear。
+  ['post', '/api/admin/v1/contents'],
+  ['get', '/api/admin/v1/contents'],
+  ['get', '/api/admin/v1/contents/{id}'],
+  ['patch', '/api/admin/v1/contents/{id}'],
+  ['delete', '/api/admin/v1/contents/{id}'],
+  ['post', '/api/admin/v1/contents/{id}/publish'],
+  ['post', '/api/admin/v1/contents/{id}/unpublish'],
+  ['post', '/api/admin/v1/contents/{id}/archive'],
+  ['post', '/api/admin/v1/contents/{id}/attachments/upload-url'],
+  ['post', '/api/admin/v1/contents/{id}/attachments/confirm'],
+  ['delete', '/api/admin/v1/contents/{id}/attachments/{attachmentId}'],
+  ['put', '/api/admin/v1/contents/{id}/cover'],
+  // CMS 内容发布模块(第 28 模块)T3/T4(2026-06-21;冻结评审稿 content-module-review.md §8 open/app):
+  //   open/v1/contents 2 端点(@Public + content-public throttle〔第 10〕;仅 published+public,无码 `[public]`)
+  //   + app/v1/contents 2 端点(canUseApp 准入 + 5 档可见性;无码 `[auth]`),224→228。
+  //   读者出参零敏感(无 authorUserId / visibleOrganizationIds);签名 URL 为范围例外 a(§5.7)仅过可见级后返。
+  ['get', '/api/open/v1/contents'],
+  ['get', '/api/open/v1/contents/{id}'],
+  ['get', '/api/app/v1/contents'],
+  ['get', '/api/app/v1/contents/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -675,6 +698,31 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'RecruitmentApplicationAdminDto',
   'ResolveRecruitmentApplicationDto',
   'IdCardImageUrlResponseDto',
+
+  // CMS 内容发布模块(第 28 模块)T2(2026-06-21;冻结评审稿 content-module-review.md §6/§8):
+  //   content admin DTO 物理隔离(独立 class,禁止继承 / Pick / Omit / Mapped Types)。
+  //   入参 CreateContentDto / UpdateContentDto / ContentAttachmentUploadUrlDto /
+  //   ContentAttachmentConfirmDto / SetContentCoverDto;出参 ContentAdminDetailDto /
+  //   ContentAdminListItemDto + 嵌套 ContentAttachmentDto。
+  //   注:ListContentAdminQueryDto 是 @Query() DTO,被 NestJS Swagger 内联为 parameters,
+  //   **不**注册到 components.schemas(沿既有 query DTO 内联范式);附件端点复用
+  //   UploadUrlResponseDto / AttachmentResponseDto(attachments 模块已注册)。
+  'CreateContentDto',
+  'UpdateContentDto',
+  'ContentAttachmentUploadUrlDto',
+  'ContentAttachmentConfirmDto',
+  'SetContentCoverDto',
+  'ContentAdminDetailDto',
+  'ContentAdminListItemDto',
+  'ContentAttachmentDto',
+
+  // CMS 内容发布模块(第 28 模块)T3/T4(2026-06-21;冻结评审稿 content-module-review.md §8 open/app):
+  //   open + app 读取面共用出参 ContentReadListItemDto / ContentReadDetailDto(独立 class,物理隔离;
+  //   零 authorUserId / 零 visibleOrganizationIds;复用嵌套 ContentAttachmentDto)。
+  //   注:ListContentReadQueryDto 是 @Query() DTO,被 NestJS Swagger 内联为 parameters,
+  //   **不**注册到 components.schemas(沿既有 query DTO 内联范式)。
+  'ContentReadListItemDto',
+  'ContentReadDetailDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

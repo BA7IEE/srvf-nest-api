@@ -7,7 +7,7 @@
 
 ---
 
-## src/modules/(27 个业务模块,平铺,**禁止嵌套 system/business/core 子目录**)
+## src/modules/(28 个业务模块,平铺,**禁止嵌套 system/business/core 子目录**)
 
 | 路径 | 体量 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
 |---|---|---|---|---|
@@ -20,6 +20,7 @@
 | `audit-logs/` | M (594L) | 写入即不可改不可删(A-1 红线) | 各业务写路径已全接入 `AuditLogEvent` | [`AGENTS.md §9`](AGENTS.md) |
 | `auth/` | M (1678L) | 登录 / refresh / logout / logout-all / 找回密码 + OTP 登录 + 微信登录与绑定(pre-auth 平铺三 service;2026-06-12 亲核计数) | **不引入 `LocalStrategy`**;`username+password` 在 service 内手写;找回密码 / OTP / 微信三套防枚举·防侧写一致性禁破坏;`createSession` 唯一签发点(三种登录共用) | [`CLAUDE.md`](src/modules/auth/CLAUDE.md) · [`AGENTS.md §1 永久铁律`](AGENTS.md) · [`docs/security.md`](docs/security.md) |
 | `certificates/` | M (1410L) | 证书 N:1 + 4 态闭集 + verify/reject | service 556L (large-service watch);**不**属 participation 上下文(独立 member-qualifications) | [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md)(明确排除) |
+| `content/` | M (2115L,T4) | CMS 内容发布(第 28 模块):admin 面(T2)内容 CRUD + 状态机 draft/published/archived(立即生效无 cron)+ 封面双指针 + 附件经 `AttachmentsService`(content-image/content-file)+ 正文 `attachment:<id>` 占位读时改写 + viewCount(详情不增);open 面(T3,`open/v1/contents` @Public + 第 10 throttler content-public)+ app 面(T4,`app/v1/contents` canUseApp 准入 + 5 档可见性 public/member/formal_member/department/management)读取面 list/detail(详情不可见 → 404 防枚举 + viewCount 自增) | service 577L;判权 R 模式 `content.*.record` 5 码(admin);读取面 open=公开无码 / app=canUseApp 准入无码,可见性纯函数 `content.visibility.ts`(21 单测);附件写路径走 `AttachmentsService` rbac(`attachment.{upload,delete}.content-*`),content 读取面自签且仅过文章可见级后返(范围例外 a);读者出参零 authorUserId / 零 visibleOrganizationIds | [`docs/archive/reviews/content-module-review.md`](docs/archive/reviews/content-module-review.md)(冻结评审稿) |
 | `contribution-rules/` | M (914L) | D14 预填规则 | **无 CRUD 流水表** | [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
 | `dictionaries/` | M (968L) | 字典双表 + 父子树 | 同 surface 双 controller(**非 surface Mixed**) | [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
 | `emergency-contacts/` | S (571L) | N:1 紧急联系人 | 子资源 | — |
@@ -64,7 +65,7 @@
 | 路径 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
 |---|---|---|---|
 | `schema.prisma` | **数据模型唯一权威源**(字段 / 类型 / 约束 / 索引) | 修改前必先说明影响面 | [`CLAUDE.md`](prisma/CLAUDE.md) |
-| `migrations/` | 21 个 migration(2026-05-02 init → 2026-06-19 add team-join phase3) | **禁止** `prisma migrate dev` / `reset` / `db push` 自动跑 | [`CLAUDE.md`](prisma/CLAUDE.md) · [`AGENTS.md §0`](AGENTS.md) |
+| `migrations/` | 22 个 migration(2026-05-02 init → 2026-06-21 add content module) | **禁止** `prisma migrate dev` / `reset` / `db push` 自动跑 | [`CLAUDE.md`](prisma/CLAUDE.md) · [`AGENTS.md §0`](AGENTS.md) |
 | `seed.ts` | 默认 super admin + bootstrap user_role | 生产环境强校验启动(`SUPER_ADMIN_*` / `JWT_SECRET` / `APP_CORS_ORIGIN`) | [`docs/deployment.md`](docs/deployment.md) |
 
 ---

@@ -16,7 +16,7 @@
 | **App** | `/api/app/v1/*` | App / 小程序 / 队员端(**已建成 15 endpoint,不迁移**) |
 | **Auth** | `/api/auth/v1/*` | 登录 / 刷新 / 登出 / 认证会话(现 `/api/auth/*`) |
 | **System** | `/api/system/v1/*` | 健康检查 / 运行状态 / 系统元信息 / ops 配置(现 `/api/health/*` + 现 `/api/v2/*` 中 ops/配置/可观测类;承接 D-1 `contribution-rules` → System) |
-| **Open** | `/api/open/v1/*` | **首用(2026-06-18 招新一期 T3)**:无账号公开 surface(`@Public` 跳过 JwtAuthGuard;首落地 = 招新报名提交/查询,小程序自助直连);未来开放平台扩展仍按需 D 档立项 |
+| **Open** | `/api/open/v1/*` | **首用(2026-06-18 招新一期 T3)**:无账号公开 surface(`@Public` 跳过 JwtAuthGuard;首落地 = 招新报名提交/查询,小程序自助直连);**2026-06-21 CMS 第二用** = 内容公开列表/详情(`open/v1/contents`,published+public,第 10 throttler `content-public`);未来开放平台扩展仍按需 D 档立项 |
 
 **新增规则(自 2026-06-01 生效,覆盖 §2.1 / §2.2 的"新接口落 v2"口径)**:
 

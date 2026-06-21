@@ -1,4 +1,5 @@
 import type { ThrottlerModuleOptions } from '@nestjs/throttler';
+import { CONTENT_PUBLIC_THROTTLER_NAME } from '../common/decorators/content-public-throttle.decorator';
 import { LOGIN_SMS_THROTTLER_NAME } from '../common/decorators/login-sms-throttle.decorator';
 import { LOGIN_WECHAT_THROTTLER_NAME } from '../common/decorators/login-wechat-throttle.decorator';
 import { RECRUITMENT_THROTTLER_NAME } from '../common/decorators/recruitment-throttle.decorator';
@@ -79,6 +80,13 @@ export function buildThrottlerOptions(appCfg: AppConfig): ThrottlerModuleOptions
         name: RECRUITMENT_THROTTLER_NAME,
         limit: appCfg.recruitmentThrottle.limit,
         ttl: appCfg.recruitmentThrottle.ttlSeconds * 1000,
+      },
+      // CMS 内容发布模块 T3(2026-06-21):open/v1 内容读取面两端点第 10 实例
+      // (评审稿 §7;默认 60/60 读取适配,十实例计数器互不影响)。
+      {
+        name: CONTENT_PUBLIC_THROTTLER_NAME,
+        limit: appCfg.contentPublicThrottle.limit,
+        ttl: appCfg.contentPublicThrottle.ttlSeconds * 1000,
       },
     ],
     setHeaders: false,

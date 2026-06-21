@@ -105,7 +105,14 @@ export type AuditLogEvent =
   // 招新三期(入队)T3(2026-06-19;评审稿 §3.5):App 自助发起 / 改候选部门(actorUserId = 本人 User):
   | 'team-join-application.submit' // 自助发起入队申请(after status/cycle/targetCount)+ 改候选部门复用(before/after targetCount)
   // 招新三期(入队)T4(2026-06-19;评审稿 §4.5):admin 一键入队(志愿者→队员;设部门 + 级别 level-1):
-  | 'team-join-application.join'; // before/after status;extra {organizationId, gradeCode, memberId}
+  | 'team-join-application.join' // before/after status;extra {organizationId, gradeCode, memberId}
+  // CMS 内容发布模块(第 28 模块)T2(2026-06-21;评审稿 content-module-review.md §7):admin 内容写 4 事件。
+  // content.publish 为伞事件,覆盖 publish / unpublish / archive(extra.operation 区分 + before/after statusCode,
+  // 沿 activity.publish 一事件多 operation 范式)。读取面 / viewCount 自增不写 audit;附件上传/删复用 attachment.{upload,delete}。
+  | 'content.create' // admin 建内容草稿(after 快照)
+  | 'content.update' // admin 更新内容(before/after;set-cover 复用,extra.operation='set-cover')
+  | 'content.delete' // admin 软删内容(before)
+  | 'content.publish'; // admin 状态机;extra.operation ∈ {publish, unpublish, archive} + before/after statusCode
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

@@ -182,6 +182,13 @@ export interface RecruitmentThrottleConfig {
   ttlSeconds: number;
 }
 
+// CMS 内容发布模块(第 28 模块)T3(2026-06-21):open/v1 内容读取面限流(评审稿 §7;
+// 第 10 个独立 throttler 实例 content-public,默认 60/60s——读取适配,比写入/付费端点宽松,仍挡高频扫库)。
+export interface ContentPublicThrottleConfig {
+  limit: number;
+  ttlSeconds: number;
+}
+
 // SMS 基础设施 T2(2026-06-10):sms_settings 凭证加密 key(评审稿 D-SMS-8;沿 STORAGE 范式)。
 // 独立 env `SMS_ENCRYPTION_KEY`,与 STORAGE_ENCRYPTION_KEY 互不复用;
 // production / smoke fail-fast,dev / test 留空允许 → SmsCryptoService.isAvailable()=false。
@@ -312,6 +319,7 @@ export interface AppConfig {
   loginSmsThrottle: LoginSmsThrottleConfig;
   loginWechatThrottle: LoginWechatThrottleConfig;
   recruitmentThrottle: RecruitmentThrottleConfig;
+  contentPublicThrottle: ContentPublicThrottleConfig;
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -505,6 +513,22 @@ export default registerAs('app', (): AppConfig => {
     ),
   };
 
+  // CMS 内容发布模块 T3(2026-06-21):open/v1 内容读取面限流(评审稿 §7;默认 60/60 读取适配)。
+  const contentPublicThrottle: ContentPublicThrottleConfig = {
+    limit: parsePositiveInt(
+      process.env.CONTENT_PUBLIC_THROTTLE_LIMIT,
+      60,
+      'CONTENT_PUBLIC_THROTTLE_LIMIT',
+      { min: 1, max: 100 },
+    ),
+    ttlSeconds: parsePositiveInt(
+      process.env.CONTENT_PUBLIC_THROTTLE_TTL_SECONDS,
+      60,
+      'CONTENT_PUBLIC_THROTTLE_TTL_SECONDS',
+      { min: 1, max: 3600 },
+    ),
+  };
+
   return {
     env,
     port,
@@ -525,5 +549,6 @@ export default registerAs('app', (): AppConfig => {
     loginSmsThrottle,
     loginWechatThrottle,
     recruitmentThrottle,
+    contentPublicThrottle,
   };
 });

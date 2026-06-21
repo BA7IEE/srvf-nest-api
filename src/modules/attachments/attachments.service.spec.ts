@@ -868,4 +868,63 @@ describe('AttachmentsService (characterization)', () => {
       expect(findManyArg.where.uploadedBy).toBe('u1');
     });
   });
+
+  // ============ J. listOwnerAttachmentsTrusted — content-* owner 护栏(元核验加固 2026-06-21) ============
+  // 本方法 public + 无 RBAC;运行时护栏限定 content-image / content-file owner,
+  // 防将来误用对 member / certificate / activity 等 owner 无鉴权签出(含 PII)附件下载 URL。
+  describe('listOwnerAttachmentsTrusted — content-* owner guard (no-RBAC trusted view)', () => {
+    it('非 content-* owner(member)→ 抛护栏 Error;不查库(防无鉴权签出 PII 附件 URL)', async () => {
+      const prisma = makePrismaMock();
+      const service = makeService(prisma);
+
+      await expect(service.listOwnerAttachmentsTrusted('member', 'mem-1')).rejects.toThrow(
+        /content-\* owner types only/,
+      );
+      expect(prisma.attachment.findMany).not.toHaveBeenCalled();
+    });
+
+    it('certificate / activity owner 同样被护栏拒(穷举既有非 content owner)', async () => {
+      const prisma = makePrismaMock();
+      const service = makeService(prisma);
+
+      await expect(service.listOwnerAttachmentsTrusted('certificate', 'cert-1')).rejects.toThrow(
+        /content-\* owner types only/,
+      );
+      await expect(service.listOwnerAttachmentsTrusted('activity', 'act-1')).rejects.toThrow(
+        /content-\* owner types only/,
+      );
+      expect(prisma.attachment.findMany).not.toHaveBeenCalled();
+    });
+
+    it('content-image / content-file owner → 放行,返已签 URL 视图(护栏不误伤本用途)', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      prisma.attachment.findMany.mockResolvedValue([
+        makeAttachmentRow({
+          id: 'ci-1',
+          ownerType: 'content-image',
+          ownerId: 'content-1',
+          key: 'k1',
+        }),
+      ]);
+      const service = makeService(prisma, { provider });
+
+      const views = await service.listOwnerAttachmentsTrusted('content-image', 'content-1');
+
+      expect(views).toHaveLength(1);
+      expect(views[0]).toEqual(
+        expect.objectContaining({
+          id: 'ci-1',
+          ownerType: 'content-image',
+          accessUrl: 'https://signed.example/download',
+        }),
+      );
+
+      // content-file 同样放行(空集不抛)
+      prisma.attachment.findMany.mockResolvedValue([]);
+      await expect(
+        service.listOwnerAttachmentsTrusted('content-file', 'content-1'),
+      ).resolves.toEqual([]);
+    });
+  });
 });
