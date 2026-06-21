@@ -306,7 +306,7 @@ export const BizCode = {
   // - 11010-11029:业务级输入校验(parent_not_found / node_type_invalid /
   //   parent_cycle / parent_change_forbidden)
   // - 11030-11099:资源状态非法 / 引用约束(has_children / has_members /
-  //   root_already_exists)
+  //   root_already_exists / code_already_exists)
   // - 11103:系统约束保护(last_root_protected)
   ORGANIZATION_NOT_FOUND: {
     code: 11001,
@@ -346,6 +346,12 @@ export const BizCode = {
   ORGANIZATION_ROOT_ALREADY_EXISTS: {
     code: 11032,
     message: '系统已存在活跃根节点',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 组织缩写 code 撞唯一约束(含软删历史占用;Service findUnique 预检查 + P2002 兜底)。
+  ORGANIZATION_CODE_ALREADY_EXISTS: {
+    code: 11033,
+    message: '组织缩写 code 已存在',
     httpStatus: HttpStatus.CONFLICT,
   },
   LAST_ROOT_ORGANIZATION_PROTECTED: {

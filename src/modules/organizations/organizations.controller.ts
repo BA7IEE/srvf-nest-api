@@ -73,6 +73,7 @@ export class OrganizationsController {
     BizCode.ORGANIZATION_NODE_TYPE_INVALID,
     BizCode.ORGANIZATION_PARENT_CYCLE,
     BizCode.ORGANIZATION_ROOT_ALREADY_EXISTS,
+    BizCode.ORGANIZATION_CODE_ALREADY_EXISTS,
   )
   create(
     @CurrentUser() user: CurrentUserPayload,
@@ -110,6 +111,7 @@ export class OrganizationsController {
     BizCode.ORGANIZATION_NOT_FOUND,
     BizCode.ORGANIZATION_NODE_TYPE_INVALID,
     BizCode.ORGANIZATION_PARENT_CHANGE_FORBIDDEN,
+    BizCode.ORGANIZATION_CODE_ALREADY_EXISTS,
   )
   update(
     @CurrentUser() user: CurrentUserPayload,

@@ -7,10 +7,16 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
   MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+
+// 组织缩写格式:大写字母 / 数字 / 连字符(长期契约 code 风格;seed 内置 SRVF / SMRT …)。
+// 格式校验放 DTO @Matches → 违规走全局 ValidationPipe 返 400;唯一性由 service 校验(11033)。
+const ORGANIZATION_CODE_PATTERN = /^[A-Z0-9-]+$/;
+const ORGANIZATION_CODE_MAX_LENGTH = 32;
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 
 // V2 第一阶段 organizations 模块 DTO 集合。
@@ -28,6 +34,13 @@ export class OrganizationResponseDto {
 
   @ApiProperty({ description: '节点名', example: 'Demo Org Root' })
   name!: string;
+
+  @ApiPropertyOptional({
+    description: '组织缩写(null = 未设置;全局唯一)',
+    example: 'SRVF',
+    nullable: true,
+  })
+  code!: string | null;
 
   @ApiPropertyOptional({
     description: '父级自引用(null = 根节点;V2 第一阶段单根上限 1)',
@@ -73,6 +86,17 @@ export class CreateOrganizationDto {
   name!: string;
 
   @ApiPropertyOptional({
+    description: '组织缩写(可选;大写字母 / 数字 / 连字符;全局唯一,含软删历史占用)',
+    example: 'SRVF',
+    maxLength: ORGANIZATION_CODE_MAX_LENGTH,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(ORGANIZATION_CODE_MAX_LENGTH)
+  @Matches(ORGANIZATION_CODE_PATTERN, { message: 'code 仅允许大写字母 / 数字 / 连字符' })
+  code?: string;
+
+  @ApiPropertyOptional({
     description: '父级 id(可选;不传 = 创建根节点;V2 第一阶段单根上限 1)',
     minLength: 8,
     maxLength: 64,
@@ -100,7 +124,7 @@ export class CreateOrganizationDto {
   sortOrder?: number;
 }
 
-// 仅允许 name / sortOrder / nodeTypeCode;**绝对禁止** parentId(对应 D7-min O-1
+// 仅允许 name / code / sortOrder / nodeTypeCode;**绝对禁止** parentId(对应 D7-min O-1
 // "不可改父级"红线);status 走 /:id/status;deletedAt / id 永不接受。
 export class UpdateOrganizationDto {
   @ApiPropertyOptional({ description: '节点名', maxLength: 100 })
@@ -109,6 +133,17 @@ export class UpdateOrganizationDto {
   @MinLength(1)
   @MaxLength(100)
   name?: string;
+
+  @ApiPropertyOptional({
+    description: '组织缩写(可选;大写字母 / 数字 / 连字符;全局唯一,含软删历史占用)',
+    example: 'SRVF',
+    maxLength: ORGANIZATION_CODE_MAX_LENGTH,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(ORGANIZATION_CODE_MAX_LENGTH)
+  @Matches(ORGANIZATION_CODE_PATTERN, { message: 'code 仅允许大写字母 / 数字 / 连字符' })
+  code?: string;
 
   @ApiPropertyOptional({ description: '同级排序权重', minimum: 0 })
   @IsOptional()

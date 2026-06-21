@@ -25,6 +25,7 @@ const NODE_TYPE_DICT_CODE = 'node_type';
 const organizationSelect = {
   id: true,
   name: true,
+  code: true,
   parentId: true,
   nodeTypeCode: true,
   sortOrder: true,
@@ -86,6 +87,46 @@ export class OrganizationsService {
       select: { id: true },
     });
     if (!item) throw new BizException(BizCode.ORGANIZATION_NODE_TYPE_INVALID);
+  }
+
+  // code 唯一性预检查(含软删历史占用)。`code String? @unique` 是**全局**约束(含 deletedAt
+  // 非空行),预检查必须用 findUnique 含全部记录,否则软删占用会通过预检查后撞 P2002
+  //(沿 attachment-type-configs 范式 + prisma/CLAUDE.md 软删 unique 铁律)。update 传 excludeId
+  // 排除自身(把 code 设回当前值不算冲突)。
+  private async assertCodeAvailableOrThrow(
+    code: string,
+    tx: PrismaTx,
+    excludeId?: string,
+  ): Promise<void> {
+    const existing = await tx.organization.findUnique({
+      where: { code },
+      select: { id: true },
+    });
+    if (existing && existing.id !== excludeId) {
+      throw new BizException(BizCode.ORGANIZATION_CODE_ALREADY_EXISTS);
+    }
+  }
+
+  // P2002 兜底 — 预检查应已拦绝大多数,这层处理并发(两个写同时撞 code unique)。
+  // Organization 唯一业务约束只有 code @unique(id 是 cuid PK 不会撞);Prisma 6.x P2002
+  // meta.target 形态不稳(数组 ['code'] 或约束名 'Organization_code_key'),两者均含 'code'。
+  private async runCodeUniqueGuard<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const target = err.meta?.target;
+        const targetStr = Array.isArray(target)
+          ? target.join(',')
+          : typeof target === 'string'
+            ? target
+            : '';
+        if (targetStr.includes('code')) {
+          throw new BizException(BizCode.ORGANIZATION_CODE_ALREADY_EXISTS);
+        }
+      }
+      throw err;
+    }
   }
 
   // 单根上限(决策 3 修订):创建根节点(parentId=null)前检查 parentId IS NULL +
@@ -191,32 +232,41 @@ export class OrganizationsService {
     dto: CreateOrganizationDto,
   ): Promise<OrganizationResponseDto> {
     await this.assertCanOrThrow(user, 'org.create.node');
-    return this.prisma.$transaction(async (tx) => {
-      // 1. nodeTypeCode 必须有效(6 项 AND 校验)
-      await this.assertNodeTypeCodeValid(dto.nodeTypeCode, tx);
+    return this.runCodeUniqueGuard(() =>
+      this.prisma.$transaction(async (tx) => {
+        // 1. nodeTypeCode 必须有效(6 项 AND 校验)
+        await this.assertNodeTypeCodeValid(dto.nodeTypeCode, tx);
 
-      // 2. parentId 校验:存在 + 未软删(允许在 INACTIVE 父下建子,与 v2-data-model §4.6 一致)
-      if (dto.parentId !== undefined) {
-        const parent = await tx.organization.findFirst({
-          where: notDeletedWhere({ id: dto.parentId }),
-          select: { id: true },
+        // 2. code 唯一性(可选;传了才校验,含软删历史占用)
+        if (dto.code !== undefined) {
+          await this.assertCodeAvailableOrThrow(dto.code, tx);
+        }
+
+        // 3. parentId 校验:存在 + 未软删(允许在 INACTIVE 父下建子,与 v2-data-model §4.6 一致)
+        if (dto.parentId !== undefined) {
+          const parent = await tx.organization.findFirst({
+            where: notDeletedWhere({ id: dto.parentId }),
+            select: { id: true },
+          });
+          if (!parent) throw new BizException(BizCode.ORGANIZATION_PARENT_NOT_FOUND);
+        } else {
+          // 创建根 → 单根上限检查
+          await this.assertNoExistingRoot(tx);
+        }
+
+        return tx.organization.create({
+          data: {
+            name: dto.name,
+            // code 未传 → undefined → Prisma 省略该列 → 落 NULL(可空)
+            code: dto.code,
+            parentId: dto.parentId,
+            nodeTypeCode: dto.nodeTypeCode,
+            sortOrder: dto.sortOrder ?? 0,
+          },
+          select: organizationSelect,
         });
-        if (!parent) throw new BizException(BizCode.ORGANIZATION_PARENT_NOT_FOUND);
-      } else {
-        // 创建根 → 单根上限检查
-        await this.assertNoExistingRoot(tx);
-      }
-
-      return tx.organization.create({
-        data: {
-          name: dto.name,
-          parentId: dto.parentId,
-          nodeTypeCode: dto.nodeTypeCode,
-          sortOrder: dto.sortOrder ?? 0,
-        },
-        select: organizationSelect,
-      });
-    });
+      }),
+    );
   }
 
   // ============ findOne ============
@@ -234,24 +284,32 @@ export class OrganizationsService {
     dto: UpdateOrganizationDto,
   ): Promise<OrganizationResponseDto> {
     await this.assertCanOrThrow(user, 'org.update.node');
-    return this.prisma.$transaction(async (tx) => {
-      await this.findOrganizationOrThrow(id, tx);
+    return this.runCodeUniqueGuard(() =>
+      this.prisma.$transaction(async (tx) => {
+        await this.findOrganizationOrThrow(id, tx);
 
-      if (dto.nodeTypeCode !== undefined) {
-        await this.assertNodeTypeCodeValid(dto.nodeTypeCode, tx);
-      }
+        if (dto.nodeTypeCode !== undefined) {
+          await this.assertNodeTypeCodeValid(dto.nodeTypeCode, tx);
+        }
 
-      const data: Prisma.OrganizationUpdateInput = {};
-      if (dto.name !== undefined) data.name = dto.name;
-      if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
-      if (dto.nodeTypeCode !== undefined) data.nodeTypeCode = dto.nodeTypeCode;
+        // code 唯一性(可选;排除自身 → 把 code 设回当前值不算冲突;含软删历史占用)
+        if (dto.code !== undefined) {
+          await this.assertCodeAvailableOrThrow(dto.code, tx, id);
+        }
 
-      return tx.organization.update({
-        where: { id },
-        data,
-        select: organizationSelect,
-      });
-    });
+        const data: Prisma.OrganizationUpdateInput = {};
+        if (dto.name !== undefined) data.name = dto.name;
+        if (dto.code !== undefined) data.code = dto.code;
+        if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
+        if (dto.nodeTypeCode !== undefined) data.nodeTypeCode = dto.nodeTypeCode;
+
+        return tx.organization.update({
+          where: { id },
+          data,
+          select: organizationSelect,
+        });
+      }),
+    );
   }
 
   // ============ updateStatus ============
