@@ -4,7 +4,9 @@
 
 ## Unreleased
 
-> Unreleased 累积两 goal:①「字典内置(国标 + 队内真实值)+ 闭集/内置防误删守卫 + R13 收窄」(D 档 seed 数据语义,无 schema / 无 migration);②「组织树内置(SRVF 根 + 15 部门)+ `Organization.code` 缩写字段 + node_type 真实分类」(D 档,**含 migration**)。版本 bump 随下个 release 收口由维护者定。
+## v0.28.0 - 2026-06-22
+
+> **SemVer 拍板**:**minor**(v0.27.0 → v0.28.0)。本版累积 5 个 feature PR(#420 活动闭环硬化 / #421 字典内置 + 闭集/内置防误删守卫 + R13 收窄 / #422 activity_type 字典树微调 / #423 组织树内置 + `Organization.code`〔含 migration〕/ #424 organizations API 暴露 code),全 additive、零 breaking,沿 process「0.x 默认 minor」。
 
 ### Added
 
@@ -12,14 +14,17 @@
 
 - **字典系统内置防误删守卫(W3)**(D 档 service 守卫,无 schema / 无 migration;`src/modules/dictionaries/`):`dictionaries.service.ts` 新增 `SYSTEM_PROTECTED_DICT_TYPES`(21 个 seed 内置类型,禁【类型】软删)+ `ITEM_PROTECTED_DICT_TYPES`(16 个闭集 / 国标 / 队内内置类型,其下【项】禁软删)两常量闸;两 DELETE 端点新增 BizCode `DICT_TYPE_SYSTEM_PROTECTED`(**12003**)/ `DICT_ITEM_SYSTEM_PROTECTED`(**12015**),均 409,与既有 `DICT_TYPE_IN_USE` / `DICT_ITEM_IN_USE` 引用检查**并存**(额外闸,不依赖是否被引用)。守卫只封 delete:类型 / 项 label / sortOrder / status 切换、运营自建类型 / 项 CRUD 行为不变。e2e +10 用例;OpenAPI snapshot 仅新增(两 DELETE 端点 error enum 各 +1 码,无新路由)。
 
+- **活动报名截止生效(活动闭环硬化·任务 A)**(B 档;goal「活动闭环两处硬化」;PR #420;`src/modules/activity-registrations/`):`assertActivityRegistrable` 加公共闸——`registrationDeadline` 非 null 且 `now > deadline` → 拒报名(自助 `createMy` / App `createMyForApp` + 管理员 `create` 三路都拦;`approve` **不加闸**,截止前已报 pending 仍可批)。精确时刻比较,不做北京日归一(T0 确认)。新增 BizCode `ACTIVITY_REGISTRATION_DEADLINE_PASSED`(**20123**,409;201xx activities 段)。OpenAPI snapshot 仅 20123 受控增量(admin create + App create 两处 `@ApiBizErrorResponse`,无新路由)。
+
 ### Changed
 
 - **`node_type` 字典 demo → 8 真实组织节点类别**(D 档 seed 数据语义;goal「组织树内置」T2;`prisma/seed.ts`):`node_type` 由 `demo-node-type-1/2` 占位替换为 8 项真实分类(`headquarters` / `professional-mountain`·`water`·`urban`·`high` / `rescue-team` / `functional-dept` / `volunteer`);**4 个 `professional-*` code 原样保留**(长期契约,team-join `PROFESSIONAL_TEAM_GATE_BY_NODE_TYPE` 依赖;仅 label 可改)。承接 #421「node_type 仍占位」遗留。**防误删守卫不变**(`node_type` 仍在 `SYSTEM_PROTECTED_DICT_TYPES`〔类型禁删〕、不在 `ITEM_PROTECTED_DICT_TYPES`〔items 开放可改〕,无守卫 / schema 改动)。同步活跃文档占位表述(`docs/v2-data-model.md` / `docs/v2-api-contract.md`)。
 - **字典 seed 内置国标参照 + 队内真实值(W1/W2)**(D 档 seed 数据语义,无 migration;`prisma/seed.ts`):
   - **国标参照内置**:`gender`(GB/T 2261.1)/ `blood_type`(ABO)/ `marital_status`(GB/T 2261.2)/ `political_status`(GB/T 4762,13 类)/ `document_type` / `education`(GB/T 4658)/ `ethnicity`(GB/T 3304,**56 民族**)/ `emergency_relation`,真实 GB 标准 code(英文 / 拼音 snake_case 长期契约)+ 中文 label,替换原 demo 占位 / 新增缺项(`marital_status` / `education` / `ethnicity` 为新增类型)。
-  - **队内真实值内置**:`member_grade` 9 项(volunteer / level-1~7〔label 改「正式队员N级」,**code 不变**〕/ reserve);`activity_type` 二级树替换 demo → **9 父 + 28 子**(队内真实活动分类)。
+  - **队内真实值内置**:`member_grade` 9 项(volunteer / level-1~7〔label 改「正式队员N级」,**code 不变**〕/ reserve);`activity_type` 二级树替换 demo → 队内真实活动分类(#421 初版 9 父 + 28 子;**#422 微调 4 处**〔PR #422,`prisma/seed.ts` `seedActivityTypeHierarchy`〕:救援 +「集结未行动」/ 物资 +3 子〔日常 / 赛事保障 / 救援救灾物资〕/ 轮值 `icc_duty` 合并「ICC、无人机小组轮值」并删 `uav_group_duty` / 训练 `internal_demand_training`→`no_contribution_training`「无贡献值训练」→ **终态 9 父 + 31 子**)。
   - `node_type` 改由本 Unreleased「组织树内置」goal 内置真实分类(见上 Changed 首条);`work_nature` 仍占位(本次未给值);`promote` / `team-join` 业务逻辑**不变**(`gradeCode=null` 与 volunteer 字典项双表示是已知取舍)。seed `upsert` + `update: {}` 幂等(干净库二跑全 ensured 无重复),真实 label 仅干净库首次 seed 生效。
 - **R13(A-9 红线)收窄**(受保护文档,goal 授权,维护者 2026-06-21 拍板,公开仓库已知情):`docs/V2红线与复活路径.md` A-9 从「真实业务取值(部门名 / 等级名 / 活动类别 / 字典内容)不进 git」收窄为「**仅真实成员 PII(姓名 / 身份证 / 手机号)+ 真实编号规则与样例(memberNo)不进 git**;非敏感分类字典取值允许内置 seed」;同步 `docs/v2-data-model.md` / `docs/v2-api-contract.md` / `prisma/seed.ts` 注释等活跃引用 + 附录 B.1 索引。**保留**:成员 PII + 真实 memberNo 规则 / 样例仍禁(`v2-api-contract` 真实编号样例条 + `schema.prisma` displayName「不写真实姓名」不动)。字典三类策略(闭集 / 国标内置 / 队内内置)+ 防误删规则记入 [`docs/v2-data-model.md §3.7`](docs/v2-data-model.md)。
+- **贡献值全局每日封顶(活动闭环硬化·任务 B)**(B 档;goal「活动闭环两处硬化」;PR #420;`src/modules/attendances/` + `src/modules/team-join/`):由「每条记录各自封顶」改为「一人单个北京日历日总分封顶 **1.5**」。`contribution-calculator` 去每条 `dailyCap` 钳制(预填回归原始规则分 `pointsBelow`/`pointsAbove`);封顶移到汇总处 team-join `computeContribution`(按 `checkInAt` 北京日分组 → 每日封顶 `GLOBAL_DAILY_CONTRIBUTION_CAP=1.5` → 加总),直接影响入队 ≥5 gate。**不落库、无回溯重算**;`ContributionRule.dailyCap` 列保留标 **deprecated**、calculator 不再读 → **零 schema / 零 migration**。e2e 夹具按新语义原位重写(贡献值摊到多个北京日 + 新增「同日多条 → 封顶 1.5/日」一例)。
 
 ## v0.27.0 - 2026-06-21
 
