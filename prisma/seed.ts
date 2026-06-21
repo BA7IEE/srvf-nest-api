@@ -432,10 +432,12 @@ async function seedV2Dictionaries(prisma: PrismaClient): Promise<void> {
 // 幂等性:upsert + update: {} 保证;父子项顺序由本函数控制(先父后子)。
 //
 // 真实业务取值(2026-06-21 goal「字典内置」;R13 收窄后非敏感分类字典可内置真实值):
-// - 9 父项 + 28 子项(队内真实活动分类);code 按中文生成稳定 snake_case(长期契约,定后不改),
+// - 9 父项 + 31 子项(队内真实活动分类);code 按中文生成稳定 snake_case(长期契约,定后不改),
 //   label 中文。
-// - `logistics`(物资)父项无子项,沿 Q-S17 决议"允许挂顶级"。
-// - 「ICC、无人机小组轮值」拆为 icc_duty / uav_group_duty 两项(顿号读作列表分隔,合 28 子计数)。
+// - 2026-06-21 维护者微调 4 处(pre-prod 无活动数据引用旧 code):救援 +「集结未行动」/ 物资 + 3 子
+//   (日常 / 赛事保障 / 救援救灾物资)/ 轮值 icc_duty 合并「ICC轮值、无人机小组轮值」并删 uav_group_duty /
+//   训练「内训需求训练」→「无贡献值训练」(code internal_demand_training → no_contribution_training,
+//   语义变更故同步改 code)。
 async function seedActivityTypeHierarchy(prisma: PrismaClient): Promise<void> {
   const dictType = await prisma.dictType.upsert({
     where: { code: 'activity_type' },
@@ -481,6 +483,7 @@ async function seedActivityTypeHierarchy(prisma: PrismaClient): Promise<void> {
     { code: 'rescue_mission', label: '救援', sortOrder: 0, parentCode: 'rescue' },
     { code: 'disaster_relief', label: '救灾', sortOrder: 1, parentCode: 'rescue' },
     { code: 'assistance', label: '救助', sortOrder: 2, parentCode: 'rescue' },
+    { code: 'assembled_no_action', label: '集结未行动', sortOrder: 3, parentCode: 'rescue' },
     // 保障
     { code: 'event_support', label: '赛事保障', sortOrder: 0, parentCode: 'support' },
     { code: 'team_activity_support', label: '队伍活动保障', sortOrder: 1, parentCode: 'support' },
@@ -503,8 +506,8 @@ async function seedActivityTypeHierarchy(prisma: PrismaClient): Promise<void> {
     { code: 'team_training', label: '队伍训练', sortOrder: 0, parentCode: 'training' },
     { code: 'external_course', label: '外部培训', sortOrder: 1, parentCode: 'training' },
     {
-      code: 'internal_demand_training',
-      label: '内训需求训练',
+      code: 'no_contribution_training',
+      label: '无贡献值训练',
       sortOrder: 2,
       parentCode: 'training',
     },
@@ -524,13 +527,31 @@ async function seedActivityTypeHierarchy(prisma: PrismaClient): Promise<void> {
       sortOrder: 1,
       parentCode: 'joint_drill',
     },
-    // 轮值
+    // 轮值(icc_duty 合并「ICC轮值、无人机小组轮值」;原 uav_group_duty 删除)
     { code: 'futian_ustation', label: '福田 u 站', sortOrder: 0, parentCode: 'duty_rotation' },
     { code: 'wutongshan_duty', label: '梧桐山轮值', sortOrder: 1, parentCode: 'duty_rotation' },
-    { code: 'icc_duty', label: 'ICC 轮值', sortOrder: 2, parentCode: 'duty_rotation' },
-    { code: 'uav_group_duty', label: '无人机小组轮值', sortOrder: 3, parentCode: 'duty_rotation' },
-    { code: 'helicopter_duty', label: '直升机轮值', sortOrder: 4, parentCode: 'duty_rotation' },
-    { code: 'department_duty', label: '部门轮值', sortOrder: 5, parentCode: 'duty_rotation' },
+    {
+      code: 'icc_duty',
+      label: 'ICC轮值、无人机小组轮值',
+      sortOrder: 2,
+      parentCode: 'duty_rotation',
+    },
+    { code: 'helicopter_duty', label: '直升机轮值', sortOrder: 3, parentCode: 'duty_rotation' },
+    { code: 'department_duty', label: '部门轮值', sortOrder: 4, parentCode: 'duty_rotation' },
+    // 物资
+    { code: 'daily_supplies', label: '日常物资', sortOrder: 0, parentCode: 'logistics' },
+    {
+      code: 'event_support_supplies',
+      label: '赛事保障物资',
+      sortOrder: 1,
+      parentCode: 'logistics',
+    },
+    {
+      code: 'rescue_relief_supplies',
+      label: '救援救灾物资',
+      sortOrder: 2,
+      parentCode: 'logistics',
+    },
     // 其他
     { code: 'interview', label: '采访', sortOrder: 0, parentCode: 'other' },
     { code: 'general_meeting', label: '一般会议', sortOrder: 1, parentCode: 'other' },
