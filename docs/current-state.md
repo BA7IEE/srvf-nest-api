@@ -7,10 +7,10 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(三方一致) | **v0.28.0**(2026-06-22;package.json = Swagger = tag = Release 四方一致;tag 指向 `e4bd6d5e` 标 Latest;要点见 CHANGELOG v0.28.0 段) |
-| `main` HEAD | `4958df43`(#427 招新实名 OCR 改造 T1+T2;本行为滚动快照,本 T3 docs 收尾 PR 合入后 HEAD 再滚动) |
-| open PR / 工作树 / Unreleased | 本 T3 PR 前 **0** open PR / clean / Unreleased = **招新实名环节 OCR 改造**(#427 已合,T3 docs 待合;**并入下个 minor**,届时 bump 收口) |
-| 最新 handoff | [`archive/handoff/v0.28.0.md`](archive/handoff/v0.28.0.md)(post-release 补档,2026-06-22;tag 仍指 bump #425 合并点 `e4bd6d5e`,沿 process §5.2,**不因补档回指**;不回改) |
+| 版本(三方一致) | **v0.29.0**(2026-06-22;package.json = Swagger = tag = Release 四方一致;tag 指向 `4dcd9c48` 标 Latest;要点见 CHANGELOG v0.29.0 段) |
+| `main` HEAD | post-release docs PR 合并点(本 §1 回填 + v0.29.0 handoff;tag 点 `4dcd9c48` 之后;本行为滚动快照) |
+| open PR / 工作树 / Unreleased | 本 docs PR 前 **0** open PR / clean / **0**(v0.29.0 = 招新实名 OCR 改造 #427 T1+T2 + #428 T3 docs + bump #429;`## Unreleased` 已折叠为 `## v0.29.0`,无残留) |
+| 最新 handoff | [`archive/handoff/v0.29.0.md`](archive/handoff/v0.29.0.md)(post-release 补档,2026-06-22;tag 指 bump #429 合并点 `4dcd9c48`,维护者拍板沿 v0.28.0「tag@bump」形态〔process §5.2 用户拍板〕;不回改) |
 
 ## 2. 当前系统已具备能力
 
@@ -77,7 +77,7 @@
 | 等级 | 债务 | 处理建议 |
 |---|---|---|
 | P1 | 前端联调包剩运维侧 P0-H 演练 + P0-I 排错 SOP | 运维侧立项;系统侧无动作 |
-| P2 | god-service 体量观察:attendances 1123L / **users 832L(2026-06-12 微信 T3 +me/wechat 三方法跨入观察线)** / attachments 827L / activity-registrations 768L(P1-4 收口 = 合理终态;体量 source-only 口径,排除 spec;2026-06-12 亲核) | 重开需 architecture-boundary §6 新触发 + 单独立项 |
+| P2 | god-service 体量观察:attendances 1123L / **recruitment-applications 839L(2026-06-22 OCR 改造 +OCR 识别/判定逻辑跨入观察线;授权内增长,codemap 1 WARN)** / users 832L(2026-06-12 微信 T3 +me/wechat 三方法) / attachments 827L / activity-registrations 768L(P1-4 收口 = 合理终态;体量 source-only 口径,排除 spec) | 重开需 architecture-boundary §6 新触发 + 单独立项 |
 | P2 | service 单测占比 ~11.8%(26/221 实测) | 刻意策略(e2e 为主,见 §2 测试行) |
 | P2 | Mixed Controller 存量 2 处(见 §2.1) | 冻结仅兼容;详 api-surface-policy §5.1 |
 | P2 | contract snapshot ~1MB / 35,777 行 | 已接受;review 用 diff,勿整读 |
