@@ -7,9 +7,11 @@ import { RecruitmentApplicationsService } from './recruitment-applications.servi
 import type { RecruitmentSubmitPayloadDto } from './recruitment.dto';
 import type { UploadedImageFile } from './recruitment-applications.service';
 
-// 系统性审查 R1 · FM-B 回归(单测):
-// 证件照 putObject 成功、但建库事务(tx1)失败时,必须 best-effort 补偿删除刚落的孤儿 blob
-// ——否则留存 SOP 按库行 idCardImageKey 删 blob 清不到无库行的孤儿,身份证图永久滞留。
+// 系统性审查 R1 · FM-B 回归(单测;OCR 改造后单事务结构):
+// 证件照 putObject 成功、但建终态事务($transaction)失败时,必须 best-effort 补偿删除刚落的孤儿 blob
+// ——否则留存 SOP 按库行 idCardImageKey 删 blob 清不到无库行的孤儿,证件照永久滞留。
+// OCR 改造(2026-06-22):付费 OCR(recognize)已挪到唯一事务之前——故 mainland 报名在事务失败前
+// **已调用一次 recognize**(下方断言锁定该新顺序);孤儿补偿仍由 safeDeleteOrphanImage 兜底。
 // e2e 难确定性触发(去重 precheck 在 putObject 前已挡掉多数重复;P2002 路径需真并发竞态),
 // 故以单测精确锁定:mock storage + 令 $transaction 抛错 → 断言 deleteObject 被调。
 
@@ -66,7 +68,15 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
       $transaction: jest.fn().mockRejectedValue(txError),
     };
     const wechat = { code2session: jest.fn().mockResolvedValue({ openid: 'op1' }) };
-    const realname = { verify: jest.fn() };
+    // OCR 改造:mainland 报名提交端重识别(分叉②);桩返「清晰+匹配」,createStatus=verified(但事务被 mock 拒)
+    const realname = {
+      recognize: jest.fn().mockResolvedValue({
+        recognized: true,
+        name: '张三',
+        idCardNumber: VALID_MAINLAND_ID,
+        warnings: [],
+      }),
+    };
     const rbac = { can: jest.fn() };
     const auditLogs = { log: jest.fn() };
 
@@ -81,21 +91,21 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
     return { service, storage, prisma, realname };
   }
 
-  it('tx1 普通错误失败 → 补偿删孤儿 blob + 原错上抛;不触付费核验', async () => {
-    const { service, storage, realname } = buildService(new Error('tx1 boom'));
+  it('单事务普通错误失败 → 补偿删孤儿 blob + 原错上抛;OCR 已在事务前调一次', async () => {
+    const { service, storage, realname } = buildService(new Error('tx boom'));
 
-    await expect(service.submit(buildPayload(), image, meta, now)).rejects.toThrow('tx1 boom');
+    await expect(service.submit(buildPayload(), image, meta, now)).rejects.toThrow('tx boom');
 
     expect(storage.putObject).toHaveBeenCalledTimes(1);
     expect(storage.deleteObject).toHaveBeenCalledTimes(1);
     expect(storage.deleteObject).toHaveBeenCalledWith(
       expect.stringContaining('recruitment/id-card/cyc1/'),
     );
-    // tx1 在付费核验之前失败:realname.verify 不应被调(不白花钱)
-    expect(realname.verify).not.toHaveBeenCalled();
+    // OCR 改造:付费 OCR 在唯一事务之前 → mainland 报名已调一次 recognize(锁新顺序)
+    expect(realname.recognize).toHaveBeenCalledTimes(1);
   });
 
-  it('tx1 撞 partial unique(P2002)→ 补偿删孤儿 blob + 转 28003', async () => {
+  it('单事务撞 partial unique(P2002)→ 补偿删孤儿 blob + 转 28003', async () => {
     const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
       code: 'P2002',
       clientVersion: 'test',

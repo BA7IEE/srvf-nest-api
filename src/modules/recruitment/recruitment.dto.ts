@@ -122,6 +122,41 @@ export class RecruitmentSubmitPayloadDto {
   profileExtra?: Record<string, unknown>;
 }
 
+// ============ 公开 OCR 识别预填(OCR 改造 2026-06-22;评审稿 §3.2 端点 4b / §4)============
+// multipart:`documentTypeCode`(表单字段)+ `idCardImage`(文件)→ OCR 识别结果供前端回填。
+// **无状态**(不落图、不发 token,分叉①A);申请人确认/修正后再走提交端点(权威判定)。
+
+export class RecruitmentOcrRecognizeResponseDto {
+  @ApiProperty({
+    description: '该证件类型本期是否走 OCR(身份证/护照/回乡证 true;其余 false→前端手填)',
+  })
+  ocrSupported!: boolean;
+
+  @ApiProperty({ description: '证件照是否清晰可读(false=请重拍;非错误,可继续提交转人工)' })
+  clarityOk!: boolean;
+
+  @ApiPropertyOptional({
+    description: 'OCR 识别出的姓名 / 证件号(供前端回填;申请人本人 PII,不入日志)',
+    nullable: true,
+  })
+  recognized!: { realName: string | null; idCardNumber: string | null } | null;
+
+  @ApiProperty({
+    description: '图像防伪/质量告警归一码(空=无告警;仅身份证有意义;有告警仍可提交→转人工)',
+    type: [String],
+  })
+  antiForgeryWarnings!: string[];
+
+  @ApiPropertyOptional({
+    description: '证件类别(仅回乡证:须来往内地;往来港澳会在提交侧记 category_mismatch)',
+    nullable: true,
+  })
+  documentCategory!: string | null;
+
+  @ApiPropertyOptional({ description: '前端提示文案(如不清晰/不支持时)', nullable: true })
+  hint!: string | null;
+}
+
 // ============ 公开查询(凭新 wx.login code)============
 
 export class RecruitmentQueryDto {
