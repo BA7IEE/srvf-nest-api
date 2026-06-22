@@ -2,9 +2,7 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
-
-> 累计下一个 minor 候选(**未 bump 版本 / 未发 Release**;沿发版拍板「合并所有子 PR 进 main + 累计 `## Unreleased`」)。
+## v0.30.0 - 2026-06-23
 
 ### Added
 
