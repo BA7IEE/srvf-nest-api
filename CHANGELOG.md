@@ -2,7 +2,9 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
+## v0.29.0 - 2026-06-22
+
+> **SemVer 拍板**:**minor**(v0.28.0 → v0.29.0)。本版 = 招新实名环节 OCR 改造(#427 T1+T2 通道层语义换血〔faceid 二要素核验 → 腾讯云 OCR 多证件识别〕+ 报名流程重构 / #428 T3 docs),全 additive(+1 公开 OCR 识别端点;零 schema / 零新 BizCode / 零新权限码 / 零 breaking),沿 process「0.x 默认 minor」。
 
 ### Changed
 
