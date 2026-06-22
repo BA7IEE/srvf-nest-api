@@ -459,3 +459,108 @@ export class AttendanceSheetReviewDetailDto {
   })
   records!: AttendanceRecordResponseDto[];
 }
+
+// ============ 跨轴只读出参(2026-06-23 队员/审批跨轴只读查询 goal)============
+
+// 跨活动考勤单据列表项(审批工作台 Tier2):AttendanceSheetListItemDto 字段 + activityTitle。
+// 跨活动横扫时 item 脱离 :activityId 路径段,自带活动上下文。独立 admin-surface class,
+// **不** extends / Pick / Omit AttendanceSheetListItemDto(同 surface 也物理隔离)。
+export class AdminAttendanceSheetListItemDto {
+  @ApiProperty({ description: '主键' })
+  id!: string;
+
+  @ApiProperty({ description: '所属活动 Activity.id' })
+  activityId!: string;
+
+  @ApiPropertyOptional({ description: '活动标题(跨轴上下文;软删活动仍可读)', nullable: true })
+  activityTitle!: string | null;
+
+  @ApiProperty({ description: '提交人 User.id' })
+  submitterUserId!: string;
+
+  @ApiProperty({ description: '提交时间' })
+  submittedAt!: Date;
+
+  @ApiProperty({ description: '审核状态字典 code' })
+  statusCode!: string;
+
+  @ApiPropertyOptional({ description: '审核时间', nullable: true })
+  reviewedAt!: Date | null;
+
+  @ApiProperty({ description: '版本号' })
+  version!: number;
+
+  @ApiProperty({ description: '创建时间' })
+  createdAt!: Date;
+}
+
+// 某队员考勤记录项(队员 360 Tier3):复用 attendance-presenter 的 record 字段集(admin 字段集,
+// 含 member 嵌套 / Decimal→string)+ activityId / activityTitle 跨轴上下文。仅返 approved Sheet
+// 内 records(镜像 app /me Q-A14:已生效记录;不暴露 pending / rejected)。独立 admin-surface class。
+export class AdminMemberAttendanceRecordDto {
+  @ApiProperty({ description: '主键' })
+  id!: string;
+
+  @ApiProperty({ description: '所属 Sheet.id' })
+  sheetId!: string;
+
+  @ApiProperty({ description: '所属活动 Activity.id(跨轴上下文)' })
+  activityId!: string;
+
+  @ApiPropertyOptional({ description: '活动标题(跨轴上下文;软删活动仍可读)', nullable: true })
+  activityTitle!: string | null;
+
+  @ApiProperty({ description: '队员 Member.id' })
+  memberId!: string;
+
+  @ApiPropertyOptional({ description: '队员嵌套摘要(admin 字段集;复用 presenter)' })
+  member?: AttendanceMemberSummaryDto | null;
+
+  @ApiProperty({ description: '考勤角色字典 code' })
+  roleCode!: string;
+
+  @ApiProperty({ description: '签到时间' })
+  checkInAt!: Date;
+
+  @ApiProperty({ description: '签退时间' })
+  checkOutAt!: Date;
+
+  @ApiProperty({ description: '服务时长(Decimal(5,2);序列化为 string)', type: 'string' })
+  serviceHours!: string;
+
+  @ApiProperty({ description: '考勤明细状态字典 code' })
+  attendanceStatusCode!: string;
+
+  @ApiPropertyOptional({ description: '备注', nullable: true })
+  note!: string | null;
+
+  @ApiPropertyOptional({ description: '关联报名记录 id(可空)', nullable: true })
+  registrationId!: string | null;
+
+  @ApiPropertyOptional({
+    description: '贡献值(Decimal(5,2);序列化为 string)',
+    nullable: true,
+    type: 'string',
+  })
+  contributionPoints!: string | null;
+
+  @ApiProperty({ description: '创建时间' })
+  createdAt!: Date;
+
+  @ApiProperty({ description: '更新时间' })
+  updatedAt!: Date;
+}
+
+// 某队员贡献值生涯累计汇总(队员 360 Tier3):实时算不落库,复用 team-join computeCappedContribution
+// 封顶核(approved sheet + 全局每日封顶 1.5,生涯无 cutoff;**禁裸 SUM** 绕过封顶会算多)。
+export class MemberContributionSummaryDto {
+  @ApiProperty({ description: '队员 Member.id' })
+  memberId!: string;
+
+  @ApiProperty({
+    description:
+      '生涯累计贡献值 capped 总分(Decimal;序列化为 string;approved sheet + 北京日封顶 1.5)',
+    type: 'string',
+  })
+  contributionPoints!: string;
+}

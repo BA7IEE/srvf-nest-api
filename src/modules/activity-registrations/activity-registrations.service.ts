@@ -15,6 +15,7 @@ import { ActivityRegistrationStateMachine } from './activity-registration-state-
 import {
   ActivityRegistrationListItemDto,
   ActivityRegistrationResponseDto,
+  AdminRegistrationListItemDto,
   ApproveRegistrationDto,
   CancelRegistrationDto,
   CreateMyRegistrationDto,
@@ -97,11 +98,27 @@ const registrationListSelect = {
   },
 } as const satisfies Prisma.ActivityRegistrationSelect;
 
+// 跨轴只读列表 select(2026-06-23):列表精简 select + activity{id,title} 上下文。
+// 跨活动 / 跨队员横扫时 item 脱离 :activityId 路径段,经 Prisma 嵌套关系一次取活动标题(无 N+1);
+// activity.deletedAt 不过滤:FK onDelete=Restrict 保证 activity 行存在,软删态字段仍可读,不暴露 deletedAt。
+const registrationAdminListSelect = {
+  ...registrationListSelect,
+  activity: {
+    select: {
+      id: true,
+      title: true,
+    },
+  },
+} as const satisfies Prisma.ActivityRegistrationSelect;
+
 type RegistrationFullRow = Prisma.ActivityRegistrationGetPayload<{
   select: typeof registrationSafeSelect;
 }>;
 type RegistrationListRow = Prisma.ActivityRegistrationGetPayload<{
   select: typeof registrationListSelect;
+}>;
+type RegistrationAdminListRow = Prisma.ActivityRegistrationGetPayload<{
+  select: typeof registrationAdminListSelect;
 }>;
 type PrismaTx = Prisma.TransactionClient;
 
@@ -155,6 +172,23 @@ export class ActivityRegistrationsService {
     return {
       id: row.id,
       activityId: row.activityId,
+      memberId: row.memberId,
+      memberNo: row.member?.memberNo ?? null,
+      memberDisplayName: row.member?.displayName ?? null,
+      statusCode: row.statusCode,
+      registeredAt: row.registeredAt,
+      reviewedAt: row.reviewedAt,
+      cancelledAt: row.cancelledAt,
+      createdAt: row.createdAt,
+    };
+  }
+
+  // 跨轴只读列表项映射(2026-06-23):复用 toListItemDto 同字段集 + activityTitle 上下文。
+  private toAdminListItemDto(row: RegistrationAdminListRow): AdminRegistrationListItemDto {
+    return {
+      id: row.id,
+      activityId: row.activityId,
+      activityTitle: row.activity?.title ?? null,
       memberId: row.memberId,
       memberNo: row.member?.memberNo ?? null,
       memberDisplayName: row.member?.displayName ?? null,
@@ -354,6 +388,83 @@ export class ActivityRegistrationsService {
 
     return {
       items: rows.map((r) => this.toListItemDto(r)),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  // ============ 跨轴只读:跨活动报名横扫(Tier2 审批工作台)============
+
+  // 2026-06-23 跨轴只读(GET admin/v1/registrations):脱离 :activityId 路径段,按 statusCode
+  // 跨所有活动横扫报名(审批工作台「待我审批的」)。判权复用 read 码;item 自带 activity 上下文。
+  // 既有 `list(activityId, ...)` 行为零变更——此为新增只读方法,不动旧路径。
+  async listAllForAdmin(
+    query: ListRegistrationsQueryDto,
+    currentUser: CurrentUserPayload,
+  ): Promise<PageResultDto<AdminRegistrationListItemDto>> {
+    await this.assertCanOrThrow(currentUser, 'activity-registration.read.record');
+
+    const { page, pageSize, statusCode } = query;
+    const filters: Prisma.ActivityRegistrationWhereInput = {};
+    if (statusCode !== undefined) filters.statusCode = statusCode;
+    const where = notDeletedWhere(filters);
+
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.activityRegistration.findMany({
+        where,
+        select: registrationAdminListSelect,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.activityRegistration.count({ where }),
+    ]);
+
+    return {
+      items: rows.map((r) => this.toAdminListItemDto(r)),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  // ============ 跨轴只读:某队员报名履历(Tier3 队员 360)============
+
+  // 2026-06-23 跨轴只读(GET admin/v1/members/:memberId/registrations):某队员跨活动报名履历
+  // (队员 360「活动履历」tab)。镜像 admin-member-insurances 结构 + MEMBER_NOT_FOUND 守卫;
+  // 判权复用 read 码;item 自带 activity 上下文。可选 statusCode 过滤。
+  async listForMemberAdmin(
+    memberId: string,
+    query: ListRegistrationsQueryDto,
+    currentUser: CurrentUserPayload,
+  ): Promise<PageResultDto<AdminRegistrationListItemDto>> {
+    await this.assertCanOrThrow(currentUser, 'activity-registration.read.record');
+    // 队员存在性守卫(不存在 / 软删 → 15001,镜像 admin-member-insurances inline 检查)。
+    const member = await this.prisma.member.findFirst({
+      where: notDeletedWhere({ id: memberId }),
+      select: { id: true },
+    });
+    if (!member) throw new BizException(BizCode.MEMBER_NOT_FOUND);
+
+    const { page, pageSize, statusCode } = query;
+    const filters: Prisma.ActivityRegistrationWhereInput = { memberId };
+    if (statusCode !== undefined) filters.statusCode = statusCode;
+    const where = notDeletedWhere(filters);
+
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.activityRegistration.findMany({
+        where,
+        select: registrationAdminListSelect,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.activityRegistration.count({ where }),
+    ]);
+
+    return {
+      items: rows.map((r) => this.toAdminListItemDto(r)),
       total,
       page,
       pageSize,

@@ -329,6 +329,16 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/attendance-sheets/{id}/reject'],
   ['patch', '/api/admin/v1/attendance-sheets/{id}/final-approve'],
   ['patch', '/api/admin/v1/attendance-sheets/{id}/final-reject'],
+  // 队员/审批跨轴只读查询(2026-06-23;前端任务驱动后台 · GAP-001 Tier2 / GAP-002 Tier3):
+  //   5 个 admin 只读端点,224→229(仅新增;复用 read 码零新码 / 零 schema 列 / 零 migration)。
+  //   Tier2 跨活动横扫(审批工作台):registrations + attendance-sheets(根 @Get 加在既有
+  //   AttendanceSheetsResourceController);Tier3 队员 360:members/:memberId/{registrations,
+  //   attendance-records,contribution-summary}(贡献值实时算复用 team-join 封顶核,生涯累计 1.5/北京日)。
+  ['get', '/api/admin/v1/registrations'],
+  ['get', '/api/admin/v1/attendance-sheets'],
+  ['get', '/api/admin/v1/members/{memberId}/registrations'],
+  ['get', '/api/admin/v1/members/{memberId}/attendance-records'],
+  ['get', '/api/admin/v1/members/{memberId}/contribution-summary'],
   ['post', '/api/admin/v1/attachments'],
   ['get', '/api/admin/v1/attachments'],
   ['post', '/api/admin/v1/attachments/upload-url'],
@@ -495,6 +505,18 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'AttendanceSheetListItemDto',
   'AttendanceRecordResponseDto',
   'AttendanceSheetReviewDetailDto',
+
+  // 队员/审批跨轴只读查询(2026-06-23;GAP-001 Tier2 / GAP-002 Tier3):4 个 admin 出参 DTO,
+  // 独立 admin-surface class(**不** extends / Pick / Omit 既有 list-item;沿 §2.1 / §0)。
+  //   AdminRegistrationListItemDto(activity-registrations 模块)= 既有列表项 + activityTitle;
+  //   AdminAttendanceSheetListItemDto / AdminMemberAttendanceRecordDto = 既有 + activity 上下文;
+  //   MemberContributionSummaryDto = { memberId, contributionPoints }(生涯累计 capped 总分)。
+  // 注:ListRegistrationsQueryDto / ListAttendanceSheetsQueryDto / PaginationQueryDto 复用既有
+  //   @Query DTO,被内联为 parameters,不进 components.schemas;:memberId 为 raw @Param 同理。
+  'AdminRegistrationListItemDto',
+  'AdminAttendanceSheetListItemDto',
+  'AdminMemberAttendanceRecordDto',
+  'MemberContributionSummaryDto',
 
   // V2 第一阶段批次 4-B(APD 部门部长 / 副部长终审)
   'FinalApproveAttendanceSheetDto',

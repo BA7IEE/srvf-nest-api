@@ -111,6 +111,46 @@ export class ActivityRegistrationListItemDto {
   createdAt!: Date;
 }
 
+// 跨轴只读列表项(2026-06-23 队员 360 / 跨活动审批面):在 ActivityRegistrationListItemDto
+// 字段基础上追加 activityTitle —— 跨活动 / 跨队员横扫时,item 脱离 :activityId 路径段,
+// 必须自带活动上下文(activityId 已有 + title)供前端展示。独立 admin-surface class,
+// **不** extends / Pick / Omit ActivityRegistrationListItemDto(沿 §2.1 / §0 不跨 surface 派生;
+// 同 surface 也保持物理隔离,避免列表项字段集隐式耦合)。
+export class AdminRegistrationListItemDto {
+  @ApiProperty({ description: '主键' })
+  id!: string;
+
+  @ApiProperty({ description: '活动外键' })
+  activityId!: string;
+
+  @ApiPropertyOptional({ description: '活动标题(跨轴上下文;软删活动仍可读)', nullable: true })
+  activityTitle!: string | null;
+
+  @ApiProperty({ description: '队员外键' })
+  memberId!: string;
+
+  @ApiPropertyOptional({ description: '队员编号(冗余字段,便于前端展示)', nullable: true })
+  memberNo!: string | null;
+
+  @ApiPropertyOptional({ description: '队员显示名(冗余字段,便于前端展示)', nullable: true })
+  memberDisplayName!: string | null;
+
+  @ApiProperty({ description: '报名状态字典 code' })
+  statusCode!: string;
+
+  @ApiProperty({ description: '报名时间' })
+  registeredAt!: Date;
+
+  @ApiPropertyOptional({ description: '审核时间', nullable: true })
+  reviewedAt!: Date | null;
+
+  @ApiPropertyOptional({ description: '取消时间', nullable: true })
+  cancelledAt!: Date | null;
+
+  @ApiProperty({ description: '创建时间' })
+  createdAt!: Date;
+}
+
 // ============ 入参:Create(ADMIN 代报名) ============
 
 // Q-A3 决议:ADMIN 路径必填 memberId;USER 走 CreateMyRegistrationDto。
