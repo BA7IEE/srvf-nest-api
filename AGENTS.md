@@ -16,6 +16,7 @@
 | **Participation 业务上下文边界图**(activities / activity-registrations / attendances / contribution-rules 4 模块;不含 certificates) | [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
 | **附件配置三表边界**(`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig` override-with-default;不合表 / 不抽 facade) | [`docs/attachment-config-boundary.md`](docs/attachment-config-boundary.md) |
 | **架构边界铁律**(Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect 抽离决策;承接 §19.7 D-7 的 active execution policy) | [`docs/architecture-boundary.md`](docs/architecture-boundary.md) |
+| **前后端 API 对接交接**(任务→端点能力图 / 踩坑 / 缺口台账;admin + 小程序) | [`docs/handoff/README.md`](docs/handoff/README.md)(派生·指针优先;字段真相仍是 live `/api/docs-json`) |
 | **V2 基线规范 / 红线** | [`docs/srvf-foundation-baseline.md`](docs/srvf-foundation-baseline.md) / [`docs/V2红线与复活路径.md`](docs/V2红线与复活路径.md) |
 | **流程制度**(开工 checklist / PR 五档 / release 收口) | [`docs/process.md`](docs/process.md) |
 | **架构设计背景**(v1 蓝图 / V1.1 工程加固 / V2 §12) | [`ARCHITECTURE.md`](ARCHITECTURE.md)(请先读其顶部"当前阶段说明") |
@@ -32,6 +33,7 @@
 - 除非用户明确要求,AI **不得**修改 `ARCHITECTURE.md`、`AGENTS.md`、`docs/srvf-foundation-baseline.md`、`docs/V2红线与复活路径.md`、`docs/api-surface-policy.md`
 - 实现过程中发现文档与代码冲突时,**必须先暂停并说明**,不得擅自调和
 - `archive/**` 内文档只代表归档时刻的决议;当前代码已演进,以 `src/**` + `docs/current-state.md` 为准
+- **改 API surface / 端点 / DTO / RBAC / 契约 → 同一个 PR 内**更新 [`docs/handoff/`](docs/handoff/) 受影响的能力图 / 缺口台账,并 `pnpm docs:handoff:openapi` 刷新快照(前后端交接层不漂的唯一办法)
 
 ---
 
