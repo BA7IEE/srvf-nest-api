@@ -12,29 +12,31 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// 招新一期(招新前段)T3 e2e(冻结评审稿 docs/archive/reviews/recruitment-phase1-review.md §4/§7):
-// 报名全链 + 校验失败分支 + 外籍人工 + 编号按序唯一 + 防重复 + 轮次开关 + 付费核验前置免费校验 +
-// 每次核验入 audit + signed-URL 取图 + members 计数零增长。DevStub 双通道(wechat / realname)驱动。
+// 招新报名全链 e2e(OCR 改造冻结评审稿 docs/archive/reviews/recruitment-realname-ocr-review.md §4/§8):
+// 识别端点 + 报名全链(大陆 OCR 匹配→verified / 不匹配·防伪告警·不清晰→manual_review)+ 外籍人工 +
+// 编号按序唯一 + 防重复 + 轮次开关 + 付费 OCR 前置免费校验 + 每次 OCR 入 audit + signed-URL + members 零增长。
 //
-// DevStub 语义:
+// DevStub 双通道驱动:
 //   wechat code2session → openid = `dev-openid-<code>`(不同 code = 不同微信用户)。
-//   realname verify → 身份证号校验位(第 18 位)偶(含 X=10)→ matched;奇 → mismatch(评审稿 E-R-6)。
-// 故下列号均为 **GB11643 真有效校验位**(先过 service isValidChineseId 免费校验,再由 DevStub 判 matched)。
+//   realname OCR recognize → 把证件照 buffer 当 JSON 信封 {name,idCardNumber,warnings,clarity,documentCategory} 回显。
+// 故 submit()/recognize() 把「期望的 OCR 结果」编进图(信封);**匹配/不匹配由信封 vs 提交值决定**,
+// 不再由身份证号校验位奇偶决定(OCR 改造退役 realnameDevStubMatched)。下列号均为 GB11643 真有效校验位
+// (大陆免费校验 isValidChineseId 仍前置)。
 
 const OPEN_SUBMIT = '/api/open/v1/recruitment/applications';
+const OPEN_RECOGNIZE = '/api/open/v1/recruitment/applications/recognize';
 const OPEN_QUERY = '/api/open/v1/recruitment/applications/query';
 const ADMIN_CYCLES = '/api/admin/v1/recruitment/cycles';
 const ADMIN_APPS = '/api/admin/v1/recruitment/applications';
 
-// 校验位偶 → DevStub matched(报名 → verified + 发临时编号)
-const ID_MATCH_A = '110101199003070038'; // 校验位 8
-const ID_MATCH_B = '110101199003070046'; // 校验位 6
-const ID_MATCH_C = '110101199003070054'; // 校验位 4
-// 校验位奇 → DevStub mismatch(报名 → rejected)
-const ID_MISMATCH = '110101199003070011'; // 校验位 1
+// 有效校验位大陆身份证(OCR 匹配/不匹配改由 submit() 信封驱动,与校验位无关)
+const ID_MATCH_A = '110101199003070038';
+const ID_MATCH_B = '110101199003070046';
+const ID_MATCH_C = '110101199003070054';
+const ID_MISMATCH = '110101199003070011'; // 仍是有效号;用于「OCR 与提交值不一致」链(信封造)
 // 有效校验位但年龄越界(生于 2015,约 11 岁)
 const ID_UNDERAGE = '110101201503070018';
-// 校验位错误 → isValidChineseId=false(免费校验即拦,不进付费核验)
+// 校验位错误 → isValidChineseId=false(免费校验即拦,不进付费 OCR)
 const ID_INVALID = '110101199003070010';
 
 describe('招新一期(招新前段)报名全链 e2e', () => {
@@ -61,19 +63,42 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     };
   }
 
+  // 提交:multipart payload + idCardImage(= DevStub OCR 信封)。默认信封 = 与 payload 一致(matched);
+  // opts.ocr 覆盖造不一致/告警/不清晰(评审稿 §3.7);opts.withImage=false 造缺图。
   function submit(
     payload: Record<string, unknown>,
-    opts: { withImage?: boolean } = {},
+    opts: { withImage?: boolean; ocr?: Record<string, unknown> } = {},
   ): request.Test {
     const withImage = opts.withImage ?? true;
+    const envelope = opts.ocr ?? {
+      name: payload.realName,
+      idCardNumber: payload.idCardNumber,
+      clarity: true,
+      warnings: [],
+    };
     let req = request(httpServer(app)).post(OPEN_SUBMIT).field('payload', JSON.stringify(payload));
     if (withImage) {
-      req = req.attach('idCardImage', Buffer.from('fake-id-card-image-bytes'), {
+      req = req.attach('idCardImage', Buffer.from(JSON.stringify(envelope)), {
         filename: 'id.jpg',
         contentType: 'image/jpeg',
       });
     }
     return req;
+  }
+
+  // 识别端点:multipart documentTypeCode + idCardImage(= OCR 信封);envelope=null 造缺图。
+  function recognize(
+    documentTypeCode: string,
+    envelope: Record<string, unknown> | null,
+  ): request.Test {
+    const req = request(httpServer(app))
+      .post(OPEN_RECOGNIZE)
+      .field('documentTypeCode', documentTypeCode);
+    if (envelope === null) return req;
+    return req.attach('idCardImage', Buffer.from(JSON.stringify(envelope)), {
+      filename: 'id.jpg',
+      contentType: 'image/jpeg',
+    });
   }
 
   function openCycle(over: Record<string, unknown> = {}) {
@@ -157,19 +182,48 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(app1?.statusCode).toBe('verified');
   });
 
-  // ② 校验失败分支 → rejected(无临时编号)
-  it('② 大陆证件 mismatch → 200 rejected,无临时编号,eliminationStage=realname', async () => {
+  // ② 大陆 OCR 不匹配(信封姓名 ≠ 提交)→ manual_review(不再 rejected,「对不上转人工不误杀」)
+  it('② 大陆 OCR 不匹配 → 200 manual_review,无临时编号,verifyOutcome=mismatch(不 rejected)', async () => {
     await openCycle();
-    const res = await submit(validPayload({ wechatCode: 'code-b', idCardNumber: ID_MISMATCH }));
-
+    const res = await submit(validPayload({ wechatCode: 'code-b', idCardNumber: ID_MATCH_A }), {
+      ocr: { name: '李四', idCardNumber: ID_MATCH_A, clarity: true, warnings: [] },
+    });
     expect(res.status).toBe(201);
-    expect(res.body.data.statusCode).toBe('rejected');
+    expect(res.body.data.statusCode).toBe('manual_review');
     expect(res.body.data.tempNo).toBeNull();
     const row = await prisma.recruitmentApplication.findFirst({
       where: { openid: 'dev-openid-code-b' },
     });
-    expect(row?.eliminationStage).toBe('realname');
+    expect(row?.verifyOutcome).toBe('mismatch');
+    expect(row?.eliminationStage).toBeNull(); // mismatch 不再写 'realname' 淘汰(退役)
     expect(row?.tempNo).toBeNull();
+    expect(await realnameVerifyAuditCount()).toBe(1); // 付费 OCR 已调一次(留痕)
+  });
+
+  // ②b 大陆 OCR 防伪告警 → manual_review(forgery_warning;矩阵防伪先于匹配)
+  it('②b 大陆 OCR 防伪告警 → manual_review(verifyOutcome=forgery_warning)', async () => {
+    await openCycle();
+    const res = await submit(validPayload({ wechatCode: 'code-b2', idCardNumber: ID_MATCH_A }), {
+      ocr: { name: '张三', idCardNumber: ID_MATCH_A, clarity: true, warnings: ['PS'] },
+    });
+    expect(res.body.data.statusCode).toBe('manual_review');
+    const row = await prisma.recruitmentApplication.findFirst({
+      where: { openid: 'dev-openid-code-b2' },
+    });
+    expect(row?.verifyOutcome).toBe('forgery_warning');
+  });
+
+  // ②c 大陆 OCR 证件照不清晰 → manual_review(ocr_unclear)
+  it('②c 大陆 OCR 不清晰 → manual_review(verifyOutcome=ocr_unclear)', async () => {
+    await openCycle();
+    const res = await submit(validPayload({ wechatCode: 'code-b3', idCardNumber: ID_MATCH_A }), {
+      ocr: { clarity: false },
+    });
+    expect(res.body.data.statusCode).toBe('manual_review');
+    const row = await prisma.recruitmentApplication.findFirst({
+      where: { openid: 'dev-openid-code-b3' },
+    });
+    expect(row?.verifyOutcome).toBe('ocr_unclear');
   });
 
   // ③ 外籍 → manual_review(不调付费核验);admin 人工 resolve approved → verified + 发号
@@ -372,50 +426,82 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expectBizError(res, BizCode.RBAC_FORBIDDEN);
   });
 
-  // ===== 系统性审查 R1 修复回归(FM-A / FM-C / F-1) =====
+  // ===== OCR 改造:识别端点 + manual_review resolve + 容量原子(FM-C 沿用)=====
+  // 注:OCR 改造退役 pending_verification 在途态与 FM-A 卡死恢复/守卫(报名 submit 单事务建终态,
+  // 外部 OCR 在唯一事务之前,失败整体回滚无残留)——原 Ⓐ1-Ⓐ4 卡死系列随之删除。
 
-  // FM-A:核验已出 matched 结果但 tx2 失败的真卡死态(pending_verification + verifyOutcome=matched)可人工 resolve 恢复。
-  // 直接造该行(模拟 tx2 失败遗留),admin approve → verified + 发号(唯一恢复出口;DoD ② matched 卡死行可发号)。
-  it('Ⓐ1 pending_verification matched 卡死态 → 人工 resolve approve 恢复为 verified + 发号', async () => {
-    const cycle = await openCycle();
-    const stuck = await prisma.recruitmentApplication.create({
-      data: {
-        cycleId: cycle.id,
-        statusCode: 'pending_verification',
-        documentTypeCode: 'mainland_id',
-        isForeigner: false,
-        realName: '赵六',
-        idCardNumber: ID_MATCH_A,
-        phone: '13900000009',
-        verifyOutcome: 'matched', // FM-A 收紧:真卡死行须先具备核验结果方可救
-      },
+  // OCR① 识别端点 mainland → ocrSupported + clarityOk + 回填姓名/证件号(供申请人确认)
+  it('OCR① 识别端点 mainland → ocrSupported/clarityOk + 回填', async () => {
+    await openCycle();
+    const res = await recognize('mainland_id', {
+      name: '张三',
+      idCardNumber: ID_MATCH_A,
+      clarity: true,
+      warnings: [],
     });
+    expect(res.status).toBe(200);
+    expect(res.body.data.ocrSupported).toBe(true);
+    expect(res.body.data.clarityOk).toBe(true);
+    expect(res.body.data.recognized.realName).toBe('张三');
+    expect(res.body.data.recognized.idCardNumber).toBe(ID_MATCH_A);
+  });
+
+  // OCR② 识别端点 非 OCR 类型 → ocrSupported:false(前端转手填)
+  it('OCR② 识别端点 非 OCR 类型(taiwan_permit)→ ocrSupported:false', async () => {
+    await openCycle();
+    const res = await recognize('taiwan_permit', { name: 'x', idCardNumber: 'T1234567' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.ocrSupported).toBe(false);
+    expect(res.body.data.recognized).toBeNull();
+  });
+
+  // OCR③ 识别端点 不清晰 → clarityOk:false(非错误,可继续提交转人工)
+  it('OCR③ 识别端点 不清晰 → clarityOk:false', async () => {
+    await openCycle();
+    const res = await recognize('mainland_id', { clarity: false });
+    expect(res.status).toBe(200);
+    expect(res.body.data.ocrSupported).toBe(true);
+    expect(res.body.data.clarityOk).toBe(false);
+    expect(res.body.data.recognized).toBeNull();
+  });
+
+  // OCR④ 识别端点 无 open 轮 → 28030(省 OCR)
+  it('OCR④ 识别端点 无 open 轮 → 28030', async () => {
+    const res = await recognize('mainland_id', { name: '张三', idCardNumber: ID_MATCH_A });
+    expectBizError(res, BizCode.RECRUITMENT_CYCLE_NOT_OPEN);
+  });
+
+  // Ⓜ manual_review(大陆 OCR 不匹配)→ 人工 resolve approve → verified + 发号
+  // (人工是 manual_review 最终权威:看图后可放行真实申请人,「对不上转人工不误杀」)
+  it('Ⓜ manual_review(OCR 不匹配)→ resolve approve → verified + 发号(人工最终权威)', async () => {
+    await openCycle();
+    await submit(validPayload({ wechatCode: 'code-mr', idCardNumber: ID_MATCH_A }), {
+      ocr: { name: '李四', idCardNumber: ID_MATCH_A, clarity: true },
+    });
+    const row = await prisma.recruitmentApplication.findFirst({
+      where: { openid: 'dev-openid-code-mr' },
+    });
+    expect(row?.statusCode).toBe('manual_review');
     const res = await request(httpServer(app))
-      .post(`${ADMIN_APPS}/${stuck.id}/resolve`)
+      .post(`${ADMIN_APPS}/${row?.id}/resolve`)
       .set('Authorization', adminAuth)
-      .send({ approved: true, reviewNote: '核验中断,人工补发' });
+      .send({ approved: true, reviewNote: '看图核实为本人,放行' });
     expect(res.status).toBe(200);
     expect(res.body.data.statusCode).toBe('verified');
     expect(res.body.data.tempNo).toBe('T20260001');
   });
 
-  // FM-A:真卡死态也可人工 reject(恢复出口的另一支;不受容量限)。matched 卡死行 admin 仍可裁断为 reject。
-  it('Ⓐ2 pending_verification matched 卡死态 → 人工 resolve reject 为 rejected(eliminationStage=manual)', async () => {
-    const cycle = await openCycle();
-    const stuck = await prisma.recruitmentApplication.create({
-      data: {
-        cycleId: cycle.id,
-        statusCode: 'pending_verification',
-        documentTypeCode: 'mainland_id',
-        isForeigner: false,
-        realName: '赵六',
-        idCardNumber: ID_MATCH_B,
-        phone: '13900000010',
-        verifyOutcome: 'matched', // FM-A 收紧:真卡死行须先具备核验结果方可救(reject 路径同理)
-      },
+  // Ⓜb manual_review → 人工 resolve reject → rejected(eliminationStage=manual)
+  it('Ⓜb manual_review → resolve reject → rejected(eliminationStage=manual)', async () => {
+    await openCycle();
+    await submit(validPayload({ wechatCode: 'code-mr2', idCardNumber: ID_MATCH_A }), {
+      ocr: { name: '李四', idCardNumber: ID_MATCH_A, clarity: true },
+    });
+    const row = await prisma.recruitmentApplication.findFirst({
+      where: { openid: 'dev-openid-code-mr2' },
     });
     const res = await request(httpServer(app))
-      .post(`${ADMIN_APPS}/${stuck.id}/resolve`)
+      .post(`${ADMIN_APPS}/${row?.id}/resolve`)
       .set('Authorization', adminAuth)
       .send({ approved: false });
     expect(res.status).toBe(200);
@@ -423,106 +509,38 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(res.body.data.eliminationStage).toBe('manual');
   });
 
-  // FM-A 收紧(DoD ①):核验在途行(pending_verification + verifyOutcome 空)admin 不可碰 —— approve / reject 均 28040。
-  // 真腾讯云通道接上后,每个大陆报名调 verify 的数秒窗口都停此态;此闸杜绝 admin 在该窗口抢自动发号 / 提前发号绕实名。
-  it('Ⓐ3 pending_verification 核验在途态(verifyOutcome 空)→ resolve approve / reject 均 28040;行零改动', async () => {
-    const cycle = await openCycle();
-    const inflight = await prisma.recruitmentApplication.create({
-      data: {
-        cycleId: cycle.id,
-        statusCode: 'pending_verification',
-        documentTypeCode: 'mainland_id',
-        isForeigner: false,
-        realName: '孙八',
-        idCardNumber: ID_MATCH_A,
-        phone: '13900000012',
-        // verifyOutcome 留空 = 核验在途(verify 未出结果)
-      },
-    });
-    const approve = await request(httpServer(app))
-      .post(`${ADMIN_APPS}/${inflight.id}/resolve`)
-      .set('Authorization', adminAuth)
-      .send({ approved: true });
-    expectBizError(approve, BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
-    const reject = await request(httpServer(app))
-      .post(`${ADMIN_APPS}/${inflight.id}/resolve`)
-      .set('Authorization', adminAuth)
-      .send({ approved: false });
-    expectBizError(reject, BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
-    // 在途行未被改动:仍 pending_verification、无 tempNo、verifyOutcome 仍空
-    const after = await prisma.recruitmentApplication.findUnique({ where: { id: inflight.id } });
-    expect(after?.statusCode).toBe('pending_verification');
-    expect(after?.tempNo).toBeNull();
-    expect(after?.verifyOutcome).toBeNull();
-  });
-
-  // FM-A 收紧(DoD ③):mismatch 卡死行实名核验已判不一致 —— approve 被拒(不绕开实名结果发号),reject 可。
-  it('Ⓐ4 pending_verification mismatch 卡死态 → approve 28040;reject 可 → rejected', async () => {
-    const cycle = await openCycle();
-    const mismatch = await prisma.recruitmentApplication.create({
-      data: {
-        cycleId: cycle.id,
-        statusCode: 'pending_verification',
-        documentTypeCode: 'mainland_id',
-        isForeigner: false,
-        realName: '周九',
-        idCardNumber: ID_MISMATCH,
-        phone: '13900000013',
-        verifyOutcome: 'mismatch', // 核验已判不一致的卡死行(tx2 失败遗留)
-      },
-    });
-    // approve 不可:不给绕开实名结果发号的口子
-    const approve = await request(httpServer(app))
-      .post(`${ADMIN_APPS}/${mismatch.id}/resolve`)
-      .set('Authorization', adminAuth)
-      .send({ approved: true });
-    expectBizError(approve, BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
-    const stillStuck = await prisma.recruitmentApplication.findUnique({
-      where: { id: mismatch.id },
-    });
-    expect(stillStuck?.statusCode).toBe('pending_verification');
-    expect(stillStuck?.tempNo).toBeNull();
-    // reject 可:卡死行清理出口
-    const reject = await request(httpServer(app))
-      .post(`${ADMIN_APPS}/${mismatch.id}/resolve`)
-      .set('Authorization', adminAuth)
-      .send({ approved: false });
-    expect(reject.status).toBe(200);
-    expect(reject.body.data.statusCode).toBe('rejected');
-    expect(reject.body.data.eliminationStage).toBe('manual');
-  });
-
-  // FM-C:容量满时人工 resolve approve 也被发号事务原子挡(28031);自增回滚;reject 不受限。
-  it('Ⓒ 容量满 → 人工 resolve approve 也 28031(发号原子校验 + tempNoSeq 回滚);reject 仍可', async () => {
+  // FM-C(沿用):容量满时 manual_review resolve approve 也被发号事务原子挡(28031);自增回滚;reject 不受限。
+  // manual_review 行直接造(容量满时 submit 在容量预检即 28031,无法经 submit 建);issueTempNo 容量校验仍兜底。
+  it('Ⓒ 容量满 → manual_review resolve approve 也 28031(发号原子校验 + tempNoSeq 回滚);reject 仍可', async () => {
     const cycle = await openCycle({ capacity: 1 });
     // 占满容量:一条 matched 报名 → verified + T20260001(tempNoSeq=1)
     await submit(validPayload({ wechatCode: 'code-cap1', idCardNumber: ID_MATCH_A }));
-    const pending = await prisma.recruitmentApplication.create({
+    const manual = await prisma.recruitmentApplication.create({
       data: {
         cycleId: cycle.id,
-        statusCode: 'pending_verification',
+        statusCode: 'manual_review',
         documentTypeCode: 'mainland_id',
         isForeigner: false,
         realName: '钱七',
         idCardNumber: ID_MATCH_B,
         phone: '13900000011',
-        verifyOutcome: 'matched', // FM-A 收紧:matched 真卡死行方过在途闸,approve 才触达容量原子校验(FM-C)
+        verifyOutcome: 'mismatch',
       },
     });
     const res = await request(httpServer(app))
-      .post(`${ADMIN_APPS}/${pending.id}/resolve`)
+      .post(`${ADMIN_APPS}/${manual.id}/resolve`)
       .set('Authorization', adminAuth)
       .send({ approved: true });
     expectBizError(res, BizCode.RECRUITMENT_CYCLE_CAPACITY_FULL);
     // 行未被发号;cycle.tempNoSeq 因事务回滚保持 1(无超发)
-    const after = await prisma.recruitmentApplication.findUnique({ where: { id: pending.id } });
-    expect(after?.statusCode).toBe('pending_verification');
+    const after = await prisma.recruitmentApplication.findUnique({ where: { id: manual.id } });
+    expect(after?.statusCode).toBe('manual_review');
     expect(after?.tempNo).toBeNull();
     const c = await prisma.recruitmentCycle.findUnique({ where: { id: cycle.id } });
     expect(c?.tempNoSeq).toBe(1);
-    // reject 不受容量限,卡死态始终可被拒(恢复出口不被容量堵死)
+    // reject 不受容量限,manual_review 始终可被拒
     const rej = await request(httpServer(app))
-      .post(`${ADMIN_APPS}/${pending.id}/resolve`)
+      .post(`${ADMIN_APPS}/${manual.id}/resolve`)
       .set('Authorization', adminAuth)
       .send({ approved: false });
     expect(rej.status).toBe(200);
@@ -619,14 +637,16 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     const row = await prisma.recruitmentApplication.findFirstOrThrow({ where: { id: appRow.id } });
     expect(Object.keys(row.thresholdMarks as object)).toEqual(['patrol1']);
 
-    // 非法态:rejected 报名标门槛 → 28041
-    const mm = await submit(validPayload({ wechatCode: 'p2-2b', idCardNumber: ID_MISMATCH }));
-    expect(mm.body.data.statusCode).toBe('rejected');
-    const rejected = await prisma.recruitmentApplication.findFirstOrThrow({
+    // 非法态:非 verified/pending_evaluation 报名标门槛 → 28041(OCR 改造:用 manual_review 行,经 OCR 不匹配造)
+    const mm = await submit(validPayload({ wechatCode: 'p2-2b', idCardNumber: ID_MISMATCH }), {
+      ocr: { name: '别人', idCardNumber: ID_MISMATCH, clarity: true },
+    });
+    expect(mm.body.data.statusCode).toBe('manual_review');
+    const nonVerified = await prisma.recruitmentApplication.findFirstOrThrow({
       where: { openid: 'dev-openid-p2-2b' },
     });
     expectBizError(
-      await markThreshold(rejected.id, 'patrol1', true),
+      await markThreshold(nonVerified.id, 'patrol1', true),
       BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
     );
 

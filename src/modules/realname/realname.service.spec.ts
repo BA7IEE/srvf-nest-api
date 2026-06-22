@@ -11,13 +11,23 @@ import {
   RealnameApiError,
   RealnameChannelUnavailableError,
   RealnameCredentialStatus,
+  type RealnameOcrResult,
   type RealnameSettingsResolved,
-  type RealnameVerifyResult,
 } from './realname.types';
 
-// 招新一期 · 实名核验通道 T2:RealnameVerificationService 单测——锁 resolve 选路 + 域错误→BizCode 映射边界。
+// 招新实名环节 OCR 改造 · RealnameVerificationService 单测——锁 resolve 选路 + 域错误→BizCode 映射边界。
 
-const INPUT = { name: '张三', idCardNumber: '110101199003070012' };
+const INPUT = {
+  documentTypeCode: 'mainland_id',
+  image: Buffer.from('img'),
+  mimeType: 'image/jpeg',
+};
+const OK: RealnameOcrResult = {
+  recognized: true,
+  name: '张三',
+  idCardNumber: '110101199003070038',
+  warnings: [],
+};
 
 function resolved(over: Partial<RealnameSettingsResolved>): RealnameSettingsResolved {
   return {
@@ -29,8 +39,8 @@ function resolved(over: Partial<RealnameSettingsResolved>): RealnameSettingsReso
     credentialStatus: RealnameCredentialStatus.MISSING,
     remarks: null,
     updatedBy: null,
-    updatedAt: new Date('2026-06-18T00:00:00.000Z'),
-    createdAt: new Date('2026-06-18T00:00:00.000Z'),
+    updatedAt: new Date('2026-06-22T00:00:00.000Z'),
+    createdAt: new Date('2026-06-22T00:00:00.000Z'),
     ...over,
   };
 }
@@ -38,8 +48,8 @@ function resolved(over: Partial<RealnameSettingsResolved>): RealnameSettingsReso
 function makeService(opts: {
   settings: RealnameSettingsResolved | null;
   env?: string;
-  devStubResult?: RealnameVerifyResult | Error;
-  tencentResult?: RealnameVerifyResult | Error;
+  devStubResult?: RealnameOcrResult | Error;
+  tencentResult?: RealnameOcrResult | Error;
 }): {
   service: RealnameVerificationService;
   devStub: jest.Mock;
@@ -49,7 +59,7 @@ function makeService(opts: {
     getActiveSettings: jest.fn().mockResolvedValue(opts.settings),
   } as unknown as RealnameSettingsService;
 
-  const make = (r?: RealnameVerifyResult | Error): jest.Mock =>
+  const make = (r?: RealnameOcrResult | Error): jest.Mock =>
     jest
       .fn()
       .mockImplementation(() => (r instanceof Error ? Promise.reject(r) : Promise.resolve(r)));
@@ -58,8 +68,8 @@ function makeService(opts: {
 
   const service = new RealnameVerificationService(
     settings,
-    { verify: devStub } as unknown as DevStubRealnameProvider,
-    { verify: tencent } as unknown as TencentRealnameProvider,
+    { recognize: devStub } as unknown as DevStubRealnameProvider,
+    { recognize: tencent } as unknown as TencentRealnameProvider,
     { env: opts.env ?? 'test' } as unknown as ConfigType<typeof appConfig>,
   );
   return { service, devStub, tencent };
@@ -74,24 +84,24 @@ async function catchErr(p: Promise<unknown>): Promise<unknown> {
   }
 }
 
-describe('RealnameVerificationService', () => {
-  it('DEV_STUB → 路由 devStub,matched 透传', async () => {
+describe('RealnameVerificationService (OCR)', () => {
+  it('DEV_STUB → 路由 devStub,结果透传', async () => {
     const { service, devStub, tencent } = makeService({
       settings: resolved({ providerType: 'DEV_STUB' }),
-      devStubResult: { matched: true },
+      devStubResult: OK,
     });
-    const res = await service.verify(INPUT);
-    expect(res).toEqual({ matched: true });
+    const res = await service.recognize(INPUT);
+    expect(res).toEqual(OK);
     expect(devStub).toHaveBeenCalledTimes(1);
     expect(tencent).not.toHaveBeenCalled();
   });
 
-  it('DEV_STUB → mismatch 透传(matched=false 是返回值不是异常)', async () => {
+  it('DEV_STUB → recognized:false 透传(不清晰是返回值不是异常)', async () => {
     const { service } = makeService({
       settings: resolved({ providerType: 'DEV_STUB' }),
-      devStubResult: { matched: false, reason: 'x' },
+      devStubResult: { recognized: false, name: null, idCardNumber: null, warnings: [] },
     });
-    expect(await service.verify(INPUT)).toEqual({ matched: false, reason: 'x' });
+    expect((await service.recognize(INPUT)).recognized).toBe(false);
   });
 
   it('TENCENT_CLOUD → 路由 tencent', async () => {
@@ -101,9 +111,9 @@ describe('RealnameVerificationService', () => {
         credentialStatus: RealnameCredentialStatus.CONFIGURED,
         credentials: { secretId: 'a', secretKey: 'b' },
       }),
-      tencentResult: { matched: true },
+      tencentResult: OK,
     });
-    expect(await service.verify(INPUT)).toEqual({ matched: true });
+    expect(await service.recognize(INPUT)).toEqual(OK);
     expect(tencent).toHaveBeenCalledTimes(1);
     expect(devStub).not.toHaveBeenCalled();
   });
@@ -113,7 +123,7 @@ describe('RealnameVerificationService', () => {
       settings: resolved({ providerType: 'DEV_STUB' }),
       devStubResult: new RealnameChannelUnavailableError('x'),
     });
-    const err = await catchErr(service.verify(INPUT));
+    const err = await catchErr(service.recognize(INPUT));
     expect(err).toBeInstanceOf(BizException);
     expect((err as BizException).biz).toBe(BizCode.REALNAME_CHANNEL_NOT_CONFIGURED);
   });
@@ -123,14 +133,14 @@ describe('RealnameVerificationService', () => {
       settings: resolved({ providerType: 'DEV_STUB' }),
       devStubResult: new RealnameApiError('FETCH_ERROR', 'TimeoutError'),
     });
-    const err = await catchErr(service.verify(INPUT));
+    const err = await catchErr(service.recognize(INPUT));
     expect(err).toBeInstanceOf(BizException);
     expect((err as BizException).biz).toBe(BizCode.REALNAME_API_FAILED);
   });
 
   it('settings 缺失 → 27030(resolve 抛 ChannelUnavailable 映射)', async () => {
     const { service } = makeService({ settings: null });
-    const err = await catchErr(service.verify(INPUT));
+    const err = await catchErr(service.recognize(INPUT));
     expect((err as BizException).biz).toBe(BizCode.REALNAME_CHANNEL_NOT_CONFIGURED);
   });
 
@@ -139,7 +149,7 @@ describe('RealnameVerificationService', () => {
       settings: resolved({ providerType: 'DEV_STUB' }),
       env: 'production',
     });
-    const err = await catchErr(service.verify(INPUT));
+    const err = await catchErr(service.recognize(INPUT));
     expect((err as BizException).biz).toBe(BizCode.REALNAME_CHANNEL_NOT_CONFIGURED);
     expect(devStub).not.toHaveBeenCalled();
   });

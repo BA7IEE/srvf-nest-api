@@ -341,6 +341,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   //   recruitment 10 路由,186→196。open/v1 公开报名 surface **首用**(api-surface-policy §0
   //   「预留→首用」解锁;第 5 canonical 前缀,见文件尾 CANONICAL_PREFIXES);admin/v1 轮次×4 + 报名×4。
   ['post', '/api/open/v1/recruitment/applications'],
+  // 招新实名环节 OCR 改造(2026-06-22;冻结评审稿 recruitment-realname-ocr-review.md §3.2 端点 4b):
+  //   +1 公开识别端点(扫证件 OCR 回填供申请人确认;无状态);仅新增。
+  ['post', '/api/open/v1/recruitment/applications/recognize'],
   ['post', '/api/open/v1/recruitment/applications/query'],
   ['post', '/api/admin/v1/recruitment/cycles'],
   ['get', '/api/admin/v1/recruitment/cycles'],

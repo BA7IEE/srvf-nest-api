@@ -10,25 +10,26 @@ import { RealnameSettingsService } from './realname-settings.service';
 import {
   RealnameApiError,
   RealnameChannelUnavailableError,
+  type RealnameOcrInput,
+  type RealnameOcrResult,
   type RealnameProvider,
-  type RealnameVerifyInput,
-  type RealnameVerifyResult,
 } from './realname.types';
 
-// 招新一期 · 实名核验通道 T2(2026-06-18):实名核验编排(评审稿 §4/E-R-5;
+// 招新实名环节 OCR 改造(2026-06-22):实名 OCR 识别编排(评审稿 §3.6/E-RO-1;
 // 镜像 WechatService 的 resolve + 域错误→BizCode 映射边界,不设独立 router 文件——
-// realname 仅 verify 一个方法,router 职责内联本 Service)
+// realname 仅 recognize 一个方法,router 职责内联本 Service)
 //
 // resolve 语义(镜像 wechat 不静默 fallback):settings 缺失 / 未启用 /
 // production-like 下 DEV_STUB → 一律抛 RealnameChannelUnavailableError。
 //
 // 第②重 production-like 禁 DEV_STUB(镜像 wechat E-10;第①重在
-// RealnameSettingsService.updateSettings 写入口;双重保证假核验结果永不在生产生效)。
+// RealnameSettingsService.updateSettings 写入口;双重保证假识别结果永不在生产生效)。
 //
-// 域错误 → BizCode 映射边界归本 Service(评审稿 §3.3/§4):
+// 域错误 → BizCode 映射边界归本 Service(评审稿 §3.3):
 // RealnameChannelUnavailableError → 27030 / RealnameApiError → 27031。
-// 调用方(T3 recruitment 报名 service)只面对 BizException 与 RealnameVerifyResult;
-// **「不匹配(matched=false)」是返回值不是异常**,由调用方驱动状态机(rejected)。
+// 调用方(recruitment 报名 service)只面对 BizException 与 RealnameOcrResult;
+// **「不清晰 / 不匹配 / 防伪告警(recognized/warnings/字段)」是返回值不是异常**,由调用方驱动状态机
+// (大陆匹配→verified / 其余→manual_review)。提交端对 27030/27031 亦不外抛、转 manual_review(分叉③)。
 
 @Injectable()
 export class RealnameVerificationService {
@@ -41,14 +42,14 @@ export class RealnameVerificationService {
   ) {}
 
   /**
-   * 姓名 + 身份证号二要素核验(评审稿 §4 步骤 8)。
-   * 姓名 / 身份证号不入日志 / audit 明文(调用方掩码);失败映射:
-   * 通道未配置 → 27030;其余上游失败 → 27031。返回 {matched} 由调用方驱动状态机。
+   * 证件照 OCR 识别(评审稿 §3.6/§4)。
+   * 证件照字节 / 姓名 / 证件号不入日志 / audit 明文(调用方掩码);失败映射:
+   * 通道未配置 → 27030;其余上游失败 → 27031。返回 OCR 结构化结果由调用方驱动状态机。
    */
-  async verify(input: RealnameVerifyInput): Promise<RealnameVerifyResult> {
+  async recognize(input: RealnameOcrInput): Promise<RealnameOcrResult> {
     try {
       const provider = await this.resolve();
-      return await provider.verify(input);
+      return await provider.recognize(input);
     } catch (err) {
       if (err instanceof RealnameChannelUnavailableError) {
         throw new BizException(BizCode.REALNAME_CHANNEL_NOT_CONFIGURED);

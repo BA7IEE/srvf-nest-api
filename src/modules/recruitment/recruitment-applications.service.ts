@@ -14,13 +14,20 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { assertEmergencyRelationCodeValid } from '../emergency-contacts/emergency-relation.validation';
 import { RbacService } from '../permissions/rbac.service';
 import { RealnameVerificationService } from '../realname/realname.service';
-import { maskIdCard, maskName } from '../realname/realname.constants';
+import {
+  isMainlandBoundPermitCategory,
+  isOcrDocument,
+  maskIdCard,
+  maskName,
+  normalizeIdForMatch,
+  normalizeNameForMatch,
+} from '../realname/realname.constants';
+import type { RealnameOcrResult } from '../realname/realname.types';
 import { STORAGE_PROVIDER } from '../storage/storage.constants';
 import type { StorageProvider } from '../storage/storage.interface';
 import { WechatService } from '../wechat/wechat.service';
 import {
   APP_STATUS_MANUAL,
-  APP_STATUS_PENDING,
   APP_STATUS_PENDING_EVALUATION,
   APP_STATUS_PUBLICITY,
   APP_STATUS_REJECTED,
@@ -28,7 +35,6 @@ import {
   CYCLE_STATUS_OPEN,
   ELIM_STAGE_EVALUATION,
   ELIM_STAGE_MANUAL,
-  ELIM_STAGE_REALNAME,
   ELIM_STAGE_THRESHOLD_TIMEOUT,
   ID_CARD_IMAGE_ALLOWED_MIME,
   ID_CARD_IMAGE_KEY_PREFIX,
@@ -39,9 +45,13 @@ import {
   RECRUITMENT_MIN_AGE,
   type ThresholdCode,
   type ThresholdMarks,
+  VERIFY_OUTCOME_CATEGORY_MISMATCH,
+  VERIFY_OUTCOME_FORGERY_WARNING,
   VERIFY_OUTCOME_MANUAL,
   VERIFY_OUTCOME_MATCHED,
   VERIFY_OUTCOME_MISMATCH,
+  VERIFY_OUTCOME_OCR_ERROR,
+  VERIFY_OUTCOME_OCR_UNCLEAR,
   ageGroupOf,
   allThresholdsComplete,
   comparePromotionOrder,
@@ -52,6 +62,7 @@ import {
   formatMemberNo,
   formatTempNo,
   isForeignDocument,
+  isMainlandId,
   isPromotable,
   isValidChineseId,
 } from './recruitment.constants';
@@ -63,6 +74,7 @@ import type {
   PublicityListResponseDto,
   RecruitmentApplicationAdminDto,
   RecruitmentApplicationPublicDto,
+  RecruitmentOcrRecognizeResponseDto,
   RecruitmentSubmitPayloadDto,
   ResolveRecruitmentApplicationDto,
 } from './recruitment.dto';
@@ -93,23 +105,91 @@ export class RecruitmentApplicationsService {
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
-  // ============ 公开提交(open/v1;无账号 pre-auth;§4 校验顺序冻结)============
+  // ============ 公开 OCR 识别预填(open/v1;无账号;OCR 改造端点 4b;评审稿 §4)============
+  // 无状态:OCR 后即弃图,不落库不发 token(分叉①A)。免费前置(open 轮 + mime/大小 + 是否 OCR 类型),
+  // 再付费 OCR;通道未配 27030 / 上游失败 27031 **在此浮现**(前端 UX);不清晰返 clarityOk:false(非错误)。
+  // 付费调用留 pino 运维 trace(掩码;无 DB resource——尚无申请记录;cost-DoS 已登记接受)。
+  async recognize(
+    documentTypeCode: string,
+    image: UploadedImageFile | undefined,
+    meta: AuditMeta,
+  ): Promise<RecruitmentOcrRecognizeResponseDto> {
+    void meta; // 公开识别不写 DB 审计(无 resource);保留签名一致
+    await this.findOpenCycleOrThrow(); // 无 open 轮 → 28030(省 OCR);识别不卡容量
+    if (!image) {
+      throw new BizException(BizCode.RECRUITMENT_ID_CARD_IMAGE_REQUIRED);
+    }
+    if (
+      image.size > ID_CARD_IMAGE_MAX_BYTES ||
+      !ID_CARD_IMAGE_ALLOWED_MIME.includes(image.mimetype)
+    ) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    // 非 OCR 类型(台胞证/外国人永居/其余)→ ocrSupported:false(前端转手填,不调付费 OCR)
+    if (!isOcrDocument(documentTypeCode)) {
+      return {
+        ocrSupported: false,
+        clarityOk: false,
+        recognized: null,
+        antiForgeryWarnings: [],
+        documentCategory: null,
+        hint: '该证件类型需人工核验,请手动填写姓名与证件号',
+      };
+    }
+    // 付费 OCR(27030/27031 在此抛出,供前端提示;不吞)
+    const ocr = await this.realname.recognize({
+      documentTypeCode,
+      image: image.buffer,
+      mimeType: image.mimetype,
+    });
+    // 回乡证类别(分叉②:识别端建议性校验 + 人工最终;不在提交端权威重判)
+    const categoryOk =
+      documentTypeCode !== 'hk_macau_permit' || isMainlandBoundPermitCategory(ocr.documentCategory);
+    // pino 运维 trace(不含姓名/证件号明文;记类型 + 清晰 + 告警数 + 类别结论)
+    this.logger.log(
+      `recruitment ocr recognize type=${documentTypeCode} recognized=${ocr.recognized} ` +
+        `warnings=${ocr.warnings.length} category=${categoryOk ? 'ok' : VERIFY_OUTCOME_CATEGORY_MISMATCH}`,
+    );
+    if (!ocr.recognized) {
+      return {
+        ocrSupported: true,
+        clarityOk: false,
+        recognized: null,
+        antiForgeryWarnings: ocr.warnings,
+        documentCategory: ocr.documentCategory ?? null,
+        hint: '证件照不清晰,请重拍清晰证件照',
+      };
+    }
+    return {
+      ocrSupported: true,
+      clarityOk: true,
+      recognized: { realName: ocr.name, idCardNumber: ocr.idCardNumber },
+      antiForgeryWarnings: ocr.warnings,
+      documentCategory: ocr.documentCategory ?? null,
+      hint: categoryOk ? null : '证件类别非来往内地通行证,提交后将转人工复核',
+    };
+  }
+
+  // ============ 公开提交(open/v1;无账号 pre-auth;OCR 改造 §4 校验顺序冻结)============
+  // OCR 前置 + 单事务建终态(分叉④):免费校验 → code2session → 去重 → (大陆)付费 OCR 权威判定 →
+  // 落图 → **单事务建终态记录(verified 原子发号 / manual_review)+ audit**。OCR 在唯一事务之前,
+  // 事务内只剩本地写,失败整体回滚无残留 —— **无 pending_verification 在途态、无 FM-A 卡死类**。
   async submit(
     payload: RecruitmentSubmitPayloadDto,
     image: UploadedImageFile | undefined,
     meta: AuditMeta,
     now: Date,
   ): Promise<RecruitmentApplicationPublicDto> {
-    // 1. DTO 校验已在 controller(格式/紧急联系人≥2);本处 service 级:open 轮 → 年龄 → code2session → 去重 → (付费)核验
-    // 2. 当前唯一 open 轮(无 → 28030;容量满 → 28031)
+    // 1. 当前唯一 open 轮(无 → 28030;容量满 → 28031 快速失败,省付费 OCR)
     const cycle = await this.resolveOpenCycleOrThrow();
 
     const foreign = isForeignDocument(payload.documentTypeCode);
+    const mainland = isMainlandId(payload.documentTypeCode);
 
-    // 3. 大陆证件:校验位 + 年龄 18-60(纯,免费;外籍跳过,走人工待核)
+    // 2. 大陆证件:校验位 + 年龄 18-60(纯,免费;非大陆跳过,走人工)
     let birthDate: Date | null = null;
     let genderCode: string | null = null;
-    if (!foreign) {
+    if (mainland) {
       if (!isValidChineseId(payload.idCardNumber)) {
         throw new BizException(BizCode.BAD_REQUEST);
       }
@@ -124,9 +204,7 @@ export class RecruitmentApplicationsService {
       genderCode = extractGenderCode(payload.idCardNumber);
     }
 
-    // 3.5. F3(#399):紧急联系人 relation 字典校验 —— 报名侧(主入口)与 promote 一致(复用同一
-    //      canonical 纯函数)。提交即拒非法码,避免「报名收下 → promote 19010 拒 → 永久卡 publicity
-    //      无法入队」。放在 wechat / 付费核验等网络调用前,fail-fast 省外部开销。
+    // 3. 紧急联系人 relation 字典校验(免费,fail-fast,省后续外部开销;F3 #399 报名侧与 promote 一致)
     for (const contact of payload.emergencyContacts) {
       await assertEmergencyRelationCodeValid(this.prisma, contact.relation);
     }
@@ -134,7 +212,7 @@ export class RecruitmentApplicationsService {
     // 4. code2session(免费 wechat;失败沿 wechat 25030/25031 上抛)→ openid
     const { openid } = await this.wechat.code2session(payload.wechatCode);
 
-    // 5. 同轮去重预检(身份证号;P2002 兜底见 tx1)
+    // 5. 同轮去重预检(身份证号;P2002 兜底见单事务;省付费 OCR)
     const dup = await this.prisma.recruitmentApplication.findFirst({
       where: {
         cycleId: cycle.id,
@@ -148,7 +226,7 @@ export class RecruitmentApplicationsService {
       throw new BizException(BizCode.RECRUITMENT_DUPLICATE_APPLICATION);
     }
 
-    // 6. 证件照(缺 → 28011;mime/大小校验;失败不建申请)→ StorageProvider 落 key
+    // 6. 证件照(缺 → 28011;mime/大小校验)
     if (!image) {
       throw new BizException(BizCode.RECRUITMENT_ID_CARD_IMAGE_REQUIRED);
     }
@@ -158,6 +236,23 @@ export class RecruitmentApplicationsService {
     ) {
       throw new BizException(BizCode.BAD_REQUEST);
     }
+
+    // 7. 付费 OCR 权威判定(分叉②:仅大陆重识别;护照/回乡证/非 OCR 类型恒 manual_review,提交端不再 OCR)。
+    //    分叉③:大陆 OCR 通道未配/上游失败不外抛,转 manual_review(ocr_error,不误杀)。
+    let createStatus: string;
+    let verifyOutcome: string;
+    let ocrCalled = false;
+    if (mainland) {
+      const decision = await this.decideMainlandOcr(payload, image);
+      createStatus = decision.status;
+      verifyOutcome = decision.outcome;
+      ocrCalled = true;
+    } else {
+      createStatus = APP_STATUS_MANUAL;
+      verifyOutcome = VERIFY_OUTCOME_MANUAL;
+    }
+
+    // 8. 落图 → key(失败不建记录)
     const ext = image.mimetype === 'image/png' ? 'png' : 'jpg';
     const idCardImageKey = `${ID_CARD_IMAGE_KEY_PREFIX}/${cycle.id}/${randomUUID()}.${ext}`;
     await this.storage.putObject({
@@ -166,16 +261,24 @@ export class RecruitmentApplicationsService {
       contentType: image.mimetype,
     });
 
-    // 7. tx1:create application(大陆=pending_verification / 外籍=manual_review)+ 派生脱敏字段 + audit submit
-    const createStatus = foreign ? APP_STATUS_MANUAL : APP_STATUS_PENDING;
+    // 9. 单事务建终态:verified → 原子发号(容量同事务校验,FM-C)+ tempNo;manual_review → 无 tempNo。
+    //    audit submit(actor 置空)+ (大陆)audit realname-verify(每次付费 OCR 必留痕,resourceId=新 id)。
     const ageGroup = birthDate ? ageGroupOf(computeAge(birthDate, now)) : null;
-    let application: RecruitmentApplication;
+    let finalApp: RecruitmentApplication;
     try {
-      application = await this.prisma.$transaction(async (tx) => {
+      finalApp = await this.prisma.$transaction(async (tx) => {
+        let tempNo: string | null = null;
+        let verifiedAt: Date | null = null;
+        if (createStatus === APP_STATUS_VERIFIED) {
+          tempNo = await this.issueTempNo(tx, cycle.id);
+          verifiedAt = now;
+        }
         const row = await tx.recruitmentApplication.create({
           data: {
             cycleId: cycle.id,
             statusCode: createStatus,
+            ...(tempNo ? { tempNo } : {}),
+            ...(verifiedAt ? { verifiedAt } : {}),
             openid,
             realName: payload.realName,
             idCardNumber: payload.idCardNumber,
@@ -193,7 +296,7 @@ export class RecruitmentApplicationsService {
             ageGroup,
             cityDistrict: payload.cityDistrict,
             sourceChannel: payload.sourceChannel,
-            verifyOutcome: foreign ? VERIFY_OUTCOME_MANUAL : null,
+            verifyOutcome,
           },
         });
         await this.auditLogs.log({
@@ -211,88 +314,84 @@ export class RecruitmentApplicationsService {
           },
           tx,
         });
+        // 配套③:每次付费 OCR 调用必留痕(仅大陆走付费 OCR);掩码 + outcome + 证件类型
+        if (ocrCalled) {
+          await this.auditLogs.log({
+            event: 'recruitment-application.realname-verify',
+            actorUserId: null,
+            actorRoleSnap: null,
+            resourceType: AUDIT_RESOURCE_TYPE,
+            resourceId: row.id,
+            meta,
+            extra: {
+              idCard: maskIdCard(payload.idCardNumber),
+              name: maskName(payload.realName),
+              documentType: payload.documentTypeCode,
+              outcome: verifyOutcome,
+            },
+            tx,
+          });
+        }
         return row;
       });
     } catch (err) {
-      // tx1 失败(并发撞 partial unique 或任何 DB 错误)→ 第 6 步刚落 storage 的证件照成孤儿
-      // (留存 SOP 按库行 idCardImageKey 删 blob,清不到无库行的孤儿)。best-effort 补偿删,
-      // 失败仅告警、不掩盖原错(FM-B;系统性审查 §3)。
+      // 单事务失败(并发撞 partial unique 或任何 DB 错误)→ 第 8 步刚落 storage 的证件照成孤儿。
+      // best-effort 补偿删,失败仅告警、不掩盖原错(FM-B;系统性审查 §3)。
       await this.safeDeleteOrphanImage(idCardImageKey);
-      // 并发去重命中 partial unique → 28003
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new BizException(BizCode.RECRUITMENT_DUPLICATE_APPLICATION);
       }
       throw err;
     }
 
-    // 外籍:停在 manual_review,出口 = 人工 resolve(不进 8-10,根本不调付费核验)
-    if (foreign) {
-      this.logger.log(`recruitment submit → manual_review (foreign) app=${application.id}`);
-      return this.toPublicDto(application, cycle);
-    }
-
-    // 8. 付费实名核验(仅大陆证件;事务外;通道不可用 27030 / API 异常 27031)
-    const result = await this.realname.verify({
-      name: payload.realName,
-      idCardNumber: payload.idCardNumber,
-    });
-
-    // 9. 核验调用审计(配套③;独立写,主事务前;每次付费调用必留痕)
-    await this.auditLogs.log({
-      event: 'recruitment-application.realname-verify',
-      actorUserId: null,
-      actorRoleSnap: null,
-      resourceType: AUDIT_RESOURCE_TYPE,
-      resourceId: application.id,
-      meta,
-      extra: {
-        idCard: maskIdCard(payload.idCardNumber),
-        name: maskName(payload.realName),
-        outcome: result.matched ? VERIFY_OUTCOME_MATCHED : VERIFY_OUTCOME_MISMATCH,
-      },
-    });
-
-    // 9.5 核验结果前置落库(FM-A 收紧 2026-06-19;零 schema):pending_verification 同时是「核验在途态」。
-    // 发号 tx2 之前先把 matched/mismatch 写入已有字段 verifyOutcome,使两类同状态行在库层可分:
-    //   - 核验在途行(本步未执行)→ verifyOutcome 仍空;
-    //   - 核验已出结果但 tx2 失败的「真卡死行」→ verifyOutcome 已落。
-    // admin 人工 resolve 据此只救后者、放过在途行(见 resolveManual)。
-    const outcome = result.matched ? VERIFY_OUTCOME_MATCHED : VERIFY_OUTCOME_MISMATCH;
-    await this.prisma.recruitmentApplication.update({
-      where: { id: application.id },
-      data: { verifyOutcome: outcome },
-    });
-
-    // 10. tx2:matched → verified + 原子发号;mismatch → rejected
-    const finalApp = await this.prisma.$transaction(async (tx) => {
-      if (result.matched) {
-        const tempNo = await this.issueTempNo(tx, cycle.id);
-        return tx.recruitmentApplication.update({
-          where: { id: application.id },
-          data: {
-            statusCode: APP_STATUS_VERIFIED,
-            tempNo,
-            verifyOutcome: VERIFY_OUTCOME_MATCHED,
-            verifiedAt: now,
-          },
-        });
-      }
-      return tx.recruitmentApplication.update({
-        where: { id: application.id },
-        data: {
-          statusCode: APP_STATUS_REJECTED,
-          verifyOutcome: VERIFY_OUTCOME_MISMATCH,
-          verifiedAt: now,
-          eliminationStage: ELIM_STAGE_REALNAME,
-        },
-      });
-    });
-
-    // 11. 通知触发:小程序展示数据已落库(application 状态 + cycle 通知配置);可选 SMS 为休眠 hook
+    // 10. 通知触发:小程序展示数据已落库(application 状态 + cycle 通知配置);可选 SMS 为休眠 hook
     this.logger.log(
       `recruitment notify ready app=${finalApp.id} status=${finalApp.statusCode} tempNo=${finalApp.tempNo ?? '-'}`,
     );
     return this.toPublicDto(finalApp, cycle);
+  }
+
+  // 大陆身份证 OCR 权威判定(评审稿 §3.6 矩阵;分叉③/⑤/⑥)。
+  // 返回终态 + verifyOutcome;OCR 通道未配/上游失败不外抛,转 manual_review(不误杀)。
+  private async decideMainlandOcr(
+    payload: RecruitmentSubmitPayloadDto,
+    image: UploadedImageFile,
+  ): Promise<{ status: string; outcome: string }> {
+    let ocr: RealnameOcrResult;
+    try {
+      ocr = await this.realname.recognize({
+        documentTypeCode: payload.documentTypeCode,
+        image: image.buffer,
+        mimeType: image.mimetype,
+      });
+    } catch (err) {
+      // 分叉③:通道未配(27030)/ 上游失败(27031)→ manual_review,不外抛(提交端永不因 OCR 硬报错)
+      if (
+        err instanceof BizException &&
+        (err.biz === BizCode.REALNAME_CHANNEL_NOT_CONFIGURED ||
+          err.biz === BizCode.REALNAME_API_FAILED)
+      ) {
+        this.logger.warn('recruitment mainland OCR failed → manual_review (ocr_error)');
+        return { status: APP_STATUS_MANUAL, outcome: VERIFY_OUTCOME_OCR_ERROR };
+      }
+      throw err;
+    }
+    if (!ocr.recognized) {
+      return { status: APP_STATUS_MANUAL, outcome: VERIFY_OUTCOME_OCR_UNCLEAR };
+    }
+    if (ocr.warnings.length > 0) {
+      return { status: APP_STATUS_MANUAL, outcome: VERIFY_OUTCOME_FORGERY_WARNING };
+    }
+    const nameMatch =
+      ocr.name != null &&
+      normalizeNameForMatch(ocr.name) === normalizeNameForMatch(payload.realName);
+    const idMatch =
+      ocr.idCardNumber != null &&
+      normalizeIdForMatch(ocr.idCardNumber) === normalizeIdForMatch(payload.idCardNumber);
+    if (nameMatch && idMatch) {
+      return { status: APP_STATUS_VERIFIED, outcome: VERIFY_OUTCOME_MATCHED };
+    }
+    return { status: APP_STATUS_MANUAL, outcome: VERIFY_OUTCOME_MISMATCH };
   }
 
   // ============ 公开查询(凭新 wx.login code → openid → 本人最近报名)============
@@ -377,13 +476,12 @@ export class RecruitmentApplicationsService {
     return { url: result.url, expiresAt: result.expiresAt };
   }
 
-  // ============ admin 人工 resolve(分叉④A;manual_review 或 pending_verification → verified 发号 / rejected)============
-  // 可解态 = 外籍人工待核(manual_review)+ 核验已出结果的真卡死态(pending_verification 且 verifyOutcome 已落:
-  // 付费核验后发号事务失败遗留;人工 resolve 是其唯一恢复出口,FM-A Option A;系统性审查 §1)。
-  // FM-A 收紧(2026-06-19):pending_verification 同时是「核验在途态」——在途行(verifyOutcome 空)admin 不可碰
-  //   (→28040;否则抢自动发号 / 在核验出结果前发号绕开实名);mismatch 卡死行只能 reject、不能 approve 发号
-  //   (不给绕开实名结果的口子;→28040)。matched 卡死行可 approve。
-  // approved 走容量校验(FM-C);reject 不受容量限。
+  // ============ admin 人工 resolve(manual_review → verified 发号 / rejected)============
+  // OCR 改造(2026-06-22 分叉④):报名 submit 改单事务建终态,**不再产生 pending_verification 在途态**,
+  // FM-A 卡死恢复/在途守卫整类退役。可解态 = manual_review 唯一(护照/回乡证/其余人工 + 大陆 OCR
+  // 不匹配·防伪告警·不清晰·上游失败转入)。**人工是 manual_review 的最终权威**:approve 即放行发号
+  // (含 OCR 不匹配的——人工看图后可放行真实申请人,「对不上转人工不误杀」),reject → rejected。
+  // approve 走容量原子校验(FM-C,issueTempNo);reject 不受容量限。
   async resolveManual(
     id: string,
     dto: ResolveRecruitmentApplicationDto,
@@ -397,20 +495,7 @@ export class RecruitmentApplicationsService {
       if (!row) {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
       }
-      if (row.statusCode !== APP_STATUS_MANUAL && row.statusCode !== APP_STATUS_PENDING) {
-        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
-      }
-      // FM-A 收紧:pending_verification 核验在途行(verifyOutcome 空)admin 不可碰 —— 仅核验已出结果的
-      // 真卡死行可解。外籍 manual_review(verifyOutcome=manual)不落此闸。
-      if (row.statusCode === APP_STATUS_PENDING && row.verifyOutcome === null) {
-        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
-      }
-      // FM-A 收紧:mismatch 卡死行实名核验已判不一致,只能 reject、不能 approve 发号(不绕开实名结果)。
-      if (
-        dto.approved &&
-        row.statusCode === APP_STATUS_PENDING &&
-        row.verifyOutcome === VERIFY_OUTCOME_MISMATCH
-      ) {
+      if (row.statusCode !== APP_STATUS_MANUAL) {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
       }
       let updated: RecruitmentApplication;
@@ -635,7 +720,8 @@ export class RecruitmentApplicationsService {
     }
   }
 
-  private async resolveOpenCycleOrThrow(): Promise<RecruitmentCycle> {
+  // 当前唯一 open 轮(无 → 28030);**不卡容量**(识别端点用;OCR 改造 §4)
+  private async findOpenCycleOrThrow(): Promise<RecruitmentCycle> {
     const cycle = await this.prisma.recruitmentCycle.findFirst({
       where: { statusCode: CYCLE_STATUS_OPEN, deletedAt: null },
       orderBy: { createdAt: 'desc' },
@@ -643,6 +729,12 @@ export class RecruitmentApplicationsService {
     if (!cycle) {
       throw new BizException(BizCode.RECRUITMENT_CYCLE_NOT_OPEN);
     }
+    return cycle;
+  }
+
+  // open 轮 + 容量预检(提交端用;满 → 28031 快速失败省付费 OCR;原子兜底在 issueTempNo,FM-C)
+  private async resolveOpenCycleOrThrow(): Promise<RecruitmentCycle> {
+    const cycle = await this.findOpenCycleOrThrow();
     if (cycle.capacity !== null) {
       const issued = await this.prisma.recruitmentApplication.count({
         where: { cycleId: cycle.id, statusCode: APP_STATUS_VERIFIED, deletedAt: null },

@@ -26,6 +26,7 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ID_CARD_IMAGE_MAX_BYTES } from './recruitment.constants';
 import {
   RecruitmentApplicationPublicDto,
+  RecruitmentOcrRecognizeResponseDto,
   RecruitmentQueryDto,
   RecruitmentSubmitPayloadDto,
 } from './recruitment.dto';
@@ -75,7 +76,7 @@ async function parseSubmitPayload(
 }
 
 @ApiTags('Public - Recruitment')
-@ApiExtraModels(RecruitmentApplicationPublicDto)
+@ApiExtraModels(RecruitmentApplicationPublicDto, RecruitmentOcrRecognizeResponseDto)
 @Controller('open/v1/recruitment')
 export class RecruitmentPublicController {
   constructor(private readonly service: RecruitmentApplicationsService) {}
@@ -104,7 +105,7 @@ export class RecruitmentPublicController {
   })
   @ApiOperation({
     summary:
-      '公开报名提交(无账号;multipart:payload JSON 串 + idCardImage 文件;免费校验通过后才调付费实名核验;大陆证件 matched→发临时编号,外籍→人工待核;throttler recruitment) [public]',
+      '公开报名提交(无账号;multipart:payload JSON 串 + idCardImage 文件;免费校验通过后才调付费 OCR;大陆证件 OCR 匹配+防伪+清晰→发临时编号,否则/其余证件→人工待核;OCR 改造后提交端对 OCR 永不硬报错,通道未配/上游失败均转人工;throttler recruitment) [public]',
   })
   @ApiWrappedOkResponse(RecruitmentApplicationPublicDto)
   @ApiBizErrorResponse(
@@ -116,8 +117,7 @@ export class RecruitmentPublicController {
     BizCode.RECRUITMENT_ID_CARD_IMAGE_REQUIRED,
     // F3(#399):紧急联系人 relation 字典码校验(报名侧;与 promote 一致)
     BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID,
-    BizCode.REALNAME_CHANNEL_NOT_CONFIGURED,
-    BizCode.REALNAME_API_FAILED,
+    // OCR 改造:提交端不再外抛 27030/27031(转 manual_review,分叉③);仅识别端点浮现
     BizCode.TOO_MANY_REQUESTS,
   )
   async submit(
@@ -127,6 +127,53 @@ export class RecruitmentPublicController {
   ): Promise<RecruitmentApplicationPublicDto> {
     const dto = await parseSubmitPayload(payloadJson);
     return this.service.submit(dto, image, buildAuditMeta(req), new Date());
+  }
+
+  @Public()
+  @RecruitmentThrottle()
+  @Post('applications/recognize')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('idCardImage', { limits: { fileSize: ID_CARD_IMAGE_MAX_BYTES, files: 1 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['documentTypeCode', 'idCardImage'],
+      properties: {
+        documentTypeCode: {
+          type: 'string',
+          description:
+            '证件类型(mainland_id/passport/hk_macau_permit 走 OCR;其余返 ocrSupported:false)',
+        },
+        idCardImage: { type: 'string', format: 'binary', description: '证件照(jpeg/png ≤5MB)' },
+      },
+    },
+  })
+  @ApiOperation({
+    summary:
+      '公开证件 OCR 识别预填(无账号;multipart:documentTypeCode + idCardImage;OCR 回填姓名/证件号供申请人确认/修正;无状态不落库;非 OCR 类型→ocrSupported:false;不清晰→clarityOk:false;throttler recruitment) [public]',
+  })
+  @ApiWrappedOkResponse(RecruitmentOcrRecognizeResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.RECRUITMENT_CYCLE_NOT_OPEN,
+    BizCode.RECRUITMENT_ID_CARD_IMAGE_REQUIRED,
+    // 识别端点浮现 OCR 通道错误供前端提示(提交端则转人工不外抛,分叉③)
+    BizCode.REALNAME_CHANNEL_NOT_CONFIGURED,
+    BizCode.REALNAME_API_FAILED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  recognize(
+    @Body('documentTypeCode') documentTypeCode: string | undefined,
+    @UploadedFile() image: UploadedImageFile | undefined,
+    @Req() req: Request,
+  ): Promise<RecruitmentOcrRecognizeResponseDto> {
+    if (typeof documentTypeCode !== 'string' || documentTypeCode.length === 0) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    return this.service.recognize(documentTypeCode, image, buildAuditMeta(req));
   }
 
   @Public()
