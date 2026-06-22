@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
-import { PageResultDto } from '../../common/dto/pagination.dto';
+import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { eventPlaceholder } from '../../common/event/event-placeholder';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -10,12 +10,18 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
+// 跨轴只读(2026-06-23):复用 team-join 贡献值封顶核(单一真相源;生涯累计 cutoff=null)。
+// 纯函数调用,非 DI provider → 无 AttendancesModule → TeamJoinModule 依赖;team-join 不反向
+// import attendances(team-join.constants 自洽),无循环。
+import { computeCappedContribution } from '../team-join/team-join-progress';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import { AttendancePresenter } from './attendance-presenter';
 import { AttendanceSheetStateMachine } from './attendance-sheet-state-machine';
 import { ContributionCalculator } from './contribution-calculator';
 import { TimeOverlapPolicy } from './time-overlap-policy';
 import {
+  AdminAttendanceSheetListItemDto,
+  AdminMemberAttendanceRecordDto,
   ApproveAttendanceSheetDto,
   ATTENDANCE_SHEET_STATUS,
   AttendanceRecordInputDto,
@@ -28,6 +34,7 @@ import {
   FinalApproveAttendanceSheetDto,
   FinalRejectAttendanceSheetDto,
   ListAttendanceSheetsQueryDto,
+  MemberContributionSummaryDto,
   MyAttendanceRecordsQueryDto,
   RejectAttendanceSheetDto,
   UpdateAttendanceSheetDto,
@@ -165,6 +172,35 @@ const sheetFullSelect = {
   previousSnapshot: true,
   activityId: true,
 } as const satisfies Prisma.AttendanceSheetSelect;
+
+// 跨轴只读 select(2026-06-23):
+// - adminSheetListSelect:Sheet 列表精简 select + activity{id,title}(跨活动横扫上下文,审批工作台)。
+// - adminMemberRecordSelect:Record + Member 嵌套 + sheet{activityId, activity{title}}(队员 360 考勤记录上下文)。
+// 活动标题经 Prisma 嵌套关系一次取(无 N+1);activity.deletedAt 不过滤(FK onDelete=Restrict 保证行存在,
+// 软删态字段仍可读,不暴露 deletedAt)。
+const adminSheetListSelect = {
+  ...sheetListSelect,
+  activity: {
+    select: {
+      id: true,
+      title: true,
+    },
+  },
+} as const satisfies Prisma.AttendanceSheetSelect;
+
+const adminMemberRecordSelect = {
+  ...recordWithMemberSelect,
+  sheet: {
+    select: {
+      activityId: true,
+      activity: {
+        select: {
+          title: true,
+        },
+      },
+    },
+  },
+} as const satisfies Prisma.AttendanceRecordSelect;
 
 // 行类型(SheetSafeRow / SheetListRow / RecordWithMemberRow)已随序列化方法迁往
 // `attendance-presenter.ts`(P1-4 第一刀);presenter 侧用最小结构性入参类型,
@@ -543,6 +579,113 @@ export class AttendancesService {
       page,
       pageSize,
     };
+  }
+
+  // ============ 跨轴只读:跨活动考勤单据横扫(Tier2 审批工作台)============
+
+  // 2026-06-23 跨轴只读(GET admin/v1/attendance-sheets):脱离 :activityId 路径段,按 statusCode
+  // 跨所有活动横扫考勤单据(审批工作台)。判权复用 read 码;item 自带 activity 上下文。
+  // 序列化复用 presenter.toSheetListItemDto + activityTitle;既有 list(activityId,...) 行为零变更。
+  async listAllSheetsForAdmin(
+    query: ListAttendanceSheetsQueryDto,
+    currentUser: CurrentUserPayload,
+  ): Promise<PageResultDto<AdminAttendanceSheetListItemDto>> {
+    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet');
+
+    const { page, pageSize, statusCode } = query;
+    const filters: Prisma.AttendanceSheetWhereInput = {};
+    if (statusCode !== undefined) filters.statusCode = statusCode;
+    const where = notDeletedWhere(filters);
+
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.attendanceSheet.findMany({
+        where,
+        select: adminSheetListSelect,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.attendanceSheet.count({ where }),
+    ]);
+
+    return {
+      items: rows.map((r) => ({
+        ...this.attendancePresenter.toSheetListItemDto(r),
+        activityTitle: r.activity?.title ?? null,
+      })),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  // ============ 跨轴只读:某队员考勤记录(Tier3 队员 360)============
+
+  // 2026-06-23 跨轴只读(GET admin/v1/members/:memberId/attendance-records):某队员跨 sheet
+  // 考勤记录(队员 360「考勤记录」tab)。仅返 approved Sheet 内 records(镜像 app /me Q-A14:
+  // 已生效记录,不暴露 pending / rejected);MEMBER_NOT_FOUND 守卫;判权复用 read 码;
+  // 序列化复用 presenter.toRecordResponseDto + activityId/activityTitle 跨轴上下文。
+  async listRecordsForMemberAdmin(
+    memberId: string,
+    query: PaginationQueryDto,
+    currentUser: CurrentUserPayload,
+  ): Promise<PageResultDto<AdminMemberAttendanceRecordDto>> {
+    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet');
+    // 队员存在性守卫(不存在 / 软删 → 15001,镜像 admin-member-insurances inline 检查)。
+    const member = await this.prisma.member.findFirst({
+      where: notDeletedWhere({ id: memberId }),
+      select: { id: true },
+    });
+    if (!member) throw new BizException(BizCode.MEMBER_NOT_FOUND);
+
+    const { page, pageSize } = query;
+    const where = notDeletedWhere({
+      memberId,
+      sheet: { statusCode: ATTENDANCE_SHEET_STATUS.APPROVED, deletedAt: null },
+    });
+
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.attendanceRecord.findMany({
+        where,
+        select: adminMemberRecordSelect,
+        orderBy: { checkInAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.attendanceRecord.count({ where }),
+    ]);
+
+    return {
+      items: rows.map((r) => ({
+        ...this.attendancePresenter.toRecordResponseDto(r),
+        activityId: r.sheet.activityId,
+        activityTitle: r.sheet.activity?.title ?? null,
+      })),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  // ============ 跨轴只读:某队员贡献值生涯累计(Tier3 队员 360)============
+
+  // 2026-06-23 跨轴只读(GET admin/v1/members/:memberId/contribution-summary):某队员贡献值
+  // 生涯累计 capped 总分(队员 360「贡献值」tab)。实时算不落库,复用 team-join 封顶核
+  // computeCappedContribution(approved sheet + 全局每日封顶 1.5,生涯无 cutoff);**禁裸 SUM**
+  // ——绕过封顶会算多。MEMBER_NOT_FOUND 守卫;判权复用 attendance.read.sheet。
+  async getMemberContributionSummary(
+    memberId: string,
+    currentUser: CurrentUserPayload,
+  ): Promise<MemberContributionSummaryDto> {
+    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet');
+    const member = await this.prisma.member.findFirst({
+      where: notDeletedWhere({ id: memberId }),
+      select: { id: true },
+    });
+    if (!member) throw new BizException(BizCode.MEMBER_NOT_FOUND);
+
+    const points = await computeCappedContribution(this.prisma, memberId, null);
+    return { memberId, contributionPoints: points.toString() };
   }
 
   // ============ findOne(GET Sheet 简化详情)============

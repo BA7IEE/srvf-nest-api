@@ -23,23 +23,26 @@ export interface ContributionResult {
   satisfied: boolean;
 }
 
-// 贡献值只读汇总:approved sheet + checkInAt < 入队年 3-31 cutoff,历史累计,Decimal 精度,实时算不落库。
+// 贡献值封顶核(单一真相源):approved sheet only,Decimal 精度,实时算不落库。
 // 全局每日封顶(活动闭环硬化 2026-06-21):一个队员单个北京日历日的贡献值总分封顶在
 // GLOBAL_DAILY_CONTRIBUTION_CAP(默认 1.5)。按记录 checkInAt 的北京日历日分组 → 每日总和封顶 →
-// 再加总。封顶在此汇总处、不落库 → 旧记录存值照旧,无 migration / 无回溯重算;直接影响入队 ≥5 gate 值
-//(原「每条各自封顶、一天多条叠加超额」语义改为「一人一北京日总分封顶」)。in-memory 取数分组
+// 再加总。封顶在此汇总处、不落库 → 旧记录存值照旧,无 migration / 无回溯重算。in-memory 取数分组
 //(成员记录有界);contributionPoints 为 null(APD 未填 / 无匹配规则)按 0 计,沿旧 SQL SUM 跳 NULL 语义。
-export async function computeContribution(
+//
+// cutoff 参数化(2026-06-23,队员 360 跨轴只读复用):
+//   - Date  → 仅计 checkInAt < cutoff 的记录(入队 gate「本轮 3-31 截至」语义,team-join 调用方传入)
+//   - null  → 不设上界,**生涯累计**(admin 队员贡献汇总,无入队年 cutoff)
+// **禁裸 SUM**:任何贡献值总分都必须走本函数的北京日分组封顶,绕过会算多(超 1.5/日)。
+export async function computeCappedContribution(
   client: PrismaService | Prisma.TransactionClient,
   memberId: string,
-  cycleYear: number,
-): Promise<ContributionResult> {
-  const cutoff = contributionCutoff(cycleYear);
+  cutoff: Date | null,
+): Promise<Prisma.Decimal> {
   const records = await client.attendanceRecord.findMany({
     where: {
       memberId,
       deletedAt: null,
-      checkInAt: { lt: cutoff },
+      ...(cutoff ? { checkInAt: { lt: cutoff } } : {}),
       sheet: { statusCode: ATTENDANCE_SHEET_STATUS_APPROVED, deletedAt: null },
     },
     select: { checkInAt: true, contributionPoints: true },
@@ -59,6 +62,18 @@ export async function computeContribution(
       : daySum;
     points = points.add(capped);
   }
+  return points;
+}
+
+// 入队三期(招新)贡献值只读汇总:封顶核 + 入队年 3-31 cutoff + ≥5 gate 判定。
+// 行为零变化(2026-06-23 抽出封顶核后):cutoff = contributionCutoff(cycleYear),points 委托
+// computeCappedContribution,satisfied 仍按 CONTRIBUTION_THRESHOLD 判。team-join 各调用方签名不变。
+export async function computeContribution(
+  client: PrismaService | Prisma.TransactionClient,
+  memberId: string,
+  cycleYear: number,
+): Promise<ContributionResult> {
+  const points = await computeCappedContribution(client, memberId, contributionCutoff(cycleYear));
   return { points, satisfied: points.gte(CONTRIBUTION_THRESHOLD) };
 }
 

@@ -2,6 +2,20 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+> 累计下一个 minor 候选(**未 bump 版本 / 未发 Release**;沿发版拍板「合并所有子 PR 进 main + 累计 `## Unreleased`」)。
+
+### Added
+
+- **队员/审批「跨轴只读查询」补全(5 个 admin 只读端点;goal「队员/审批『跨轴只读查询』补全」,支撑前端任务驱动后台;交接层 GAP-001 Tier2 / GAP-002 Tier3)**:后端报名/考勤本按所有权轴(活动/队员)**嵌套**查询,沿轴下钻已全有;前端却把嵌套子资源拍平成顶级菜单 + 手选父级下拉(上下文丢失)。本变更只补**跨轴横扫**只读缺口,全落 `/api/admin/v1/*`(Route B §0),**既有嵌套路径端点零行为变更**:
+  - **Tier2 审批工作台(跨活动横扫「待我处理」)**:`GET /api/admin/v1/registrations`〔跨所有活动报名,分页 + 可选 `statusCode`;`[rbac: activity-registration.read.record]`〕+ `GET /api/admin/v1/attendance-sheets`〔跨所有活动考勤单据,为既有 `AttendanceSheetsResourceController` 加根 `@Get` 不新增 class;`[rbac: attendance.read.sheet]`〕。脱离 `:activityId` 路径段;item 自带 activity 上下文(`activityId`/`activityTitle`)。
+  - **Tier3 队员 360(沿队员轴下钻)**:`GET /api/admin/v1/members/:memberId/registrations`〔报名履历;`[rbac: activity-registration.read.record]`〕+ `GET .../attendance-records`〔考勤记录,仅 approved sheet 内 records,镜像 app `/me` Q-A14;`[rbac: attendance.read.sheet]`〕+ `GET .../contribution-summary`〔贡献值**生涯累计 capped 总分**;`[rbac: attendance.read.sheet]`〕。`MEMBER_NOT_FOUND` 守卫镜像 `admin-member-insurances`。
+  - **贡献值实时算不落库**:抽出 `team-join-progress.ts` 的封顶核 `computeCappedContribution(client, memberId, cutoff: Date|null)`(`computeContribution` 委托之,team-join 各调用方签名/行为零变化);`cutoff=null` = 生涯累计(无入队年上界),approved sheet + 按 `checkInAt` 北京日分组封顶 `GLOBAL_DAILY_CONTRIBUTION_CAP=1.5` 再加总(**禁裸 SUM**——绕过封顶会算多)。
+  - 跨活动/跨人 item 的 activity 上下文经 Prisma 嵌套 `select` 一次取(**无 N+1**);序列化复用既有 presenter / list-item 映射;新增出参 DTO 为独立 admin-surface class(`AdminRegistrationListItemDto` / `AdminAttendanceSheetListItemDto` / `AdminMemberAttendanceRecordDto` / `MemberContributionSummaryDto`,**不** extends/Pick/Omit 既有 DTO,沿 §2.1/§0)。
+  - **footprint**:复用现成 read 码 **零新权限码**(155 不变)· **零 BizCode / 零 migration / 零 schema 列 / 零 enum / 零 audit event(纯读)/ 零新模块 / 零新依赖**;controller 49→**52**(+3 新 class);EXPECTED_ROUTES 229→**234**;OpenAPI snapshot **仅新增**(+5 路由 + 4 schema,additions-only);`docs:rbacmap:check`(155)0 FAIL/0 WARN · `docs:codemap:check` 0 FAIL。
+  - **同 PR 更新交接层**(反漂铁律):`docs/handoff/admin-web.md` 的 GAP-001 / GAP-002 → 已发,§2.2 队员 360 + §2.3 审批工作台 的 ⛔ → ✅;`docs/handoff/openapi.json` 经 `pnpm docs:handoff:openapi` 刷新。
+
 ## v0.29.0 - 2026-06-22
 
 > **SemVer 拍板**:**minor**(v0.28.0 → v0.29.0)。本版 = 招新实名环节 OCR 改造(#427 T1+T2 通道层语义换血〔faceid 二要素核验 → 腾讯云 OCR 多证件识别〕+ 报名流程重构 / #428 T3 docs),全 additive(+1 公开 OCR 识别端点;零 schema / 零新 BizCode / 零新权限码 / 零 breaking),沿 process「0.x 默认 minor」。

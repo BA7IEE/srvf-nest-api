@@ -16,6 +16,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   ActivityIdParamDto,
+  AdminAttendanceSheetListItemDto,
   ApproveAttendanceSheetDto,
   AttendanceSheetListItemDto,
   AttendanceSheetResponseDto,
@@ -128,6 +129,23 @@ export class AttendanceSheetsCollectionController {
 @Controller('admin/v1/attendance-sheets')
 export class AttendanceSheetsResourceController {
   constructor(private readonly service: AttendancesService) {}
+
+  // 跨轴只读(2026-06-23 队员/审批跨轴只读查询 goal;审批工作台 Tier2):根 @Get 跨所有活动横扫
+  // 考勤单据(脱离 :activityId 路径段)。根路径精确匹配空段,与 :id / :id/review-detail 无声明顺序冲突。
+  // 判权复用 attendance.read.sheet;item 自带 activity 上下文(AdminAttendanceSheetListItemDto)。
+  @Get()
+  @ApiOperation({
+    summary:
+      '跨活动考勤单据横扫(审批工作台;分页 + 可选 statusCode;脱离 :activityId 路径段;item 带 activity 上下文) [rbac: attendance.read.sheet]',
+  })
+  @ApiWrappedPageResponse(AdminAttendanceSheetListItemDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  listAll(
+    @Query() query: ListAttendanceSheetsQueryDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ): Promise<PageResultDto<AdminAttendanceSheetListItemDto>> {
+    return this.service.listAllSheetsForAdmin(query, currentUser);
+  }
 
   // review-detail 必须先于 :id 声明(字面段优先于占位段)
   @Get(':id/review-detail')

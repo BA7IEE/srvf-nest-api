@@ -10,6 +10,10 @@ import { ActivityRegistrationStateMachine } from './activity-registration-state-
 import { ActivityRegistrationsAdminController } from './activity-registrations.controller';
 import { ActivityRegistrationsService } from './activity-registrations.service';
 import { AppMyRegistrationsService } from './app-my-registrations.service';
+import {
+  AdminMemberRegistrationsController,
+  AdminRegistrationsController,
+} from './controllers/admin-registrations.controller';
 import { AppMyRegistrationsController } from './controllers/app-my-registrations.controller';
 
 // V2 批次 6 PR #5(D6 v1.1 §8 / 第二波第三步):导入 AuditLogsModule 以注入 AuditLogsService,
@@ -34,7 +38,12 @@ import { AppMyRegistrationsController } from './controllers/app-my-registrations
     ActivitiesModule,
     InsurancesModule,
   ],
-  controllers: [ActivityRegistrationsAdminController, AppMyRegistrationsController],
+  controllers: [
+    ActivityRegistrationsAdminController,
+    AdminRegistrationsController,
+    AdminMemberRegistrationsController,
+    AppMyRegistrationsController,
+  ],
   providers: [
     ActivityRegistrationsService,
     AppMyRegistrationsService,

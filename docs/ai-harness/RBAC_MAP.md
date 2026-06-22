@@ -27,6 +27,8 @@
 > 2026-06-21 CMS 内容发布模块 T2 戳(同 goal):**权限事实零变化**(155 码 / 绑定 / 内置角色不动);controller 46→**47**(`ContentAdminController`,`admin/v1/contents`);endpoint +12 admin(建/列/详/改/软删 + 状态机 publish/unpublish/archive + 附件 upload-url/confirm/删 + 封面)。**content.* 5 码孤码 WARN 清零**(T2 service `rbac.can` 字面量引用);附件写端点后缀走 `[rbac: attachment.upload.*]`/`[rbac: attachment.delete.*]` 通配族 + confirm `[auth]`。BizCode 290xx 已于 T1 落库(本 T2 仅引用);audit `content.{create,update,delete,publish}` 已于 T1 入 union(本 T2 实际写)。`docs:rbacmap:check` **0 FAIL / 0 WARN**。app/open 面(T3/T4)后续追加。
 >
 > 2026-06-21 CMS 内容发布模块 T3/T4 戳(同 goal,读取面收口):**权限事实零变化**(155 码 / 绑定 / 内置角色不动;open/app 读取面**零新权限码**——public + canUseApp self-scope);controller 47→**49**(+`ContentPublicController`〔open/v1/contents,@Public 无码 `[public]`,第 10 throttler `content-public` 60/60s〕 + `ContentAppController`〔app/v1/contents,canUseApp 准入 + 5 档可见性,无码 `[auth]`〕)。endpoint +4(open 2〔列表/详情,仅 published+public 防枚举〕 + app 2〔列表/详情,5 档可见性过滤 + viewCount 自增〕)。**5 档可见性**(public / member / formal_member / department / management)纯函数 `content.visibility.ts` 21 单测;读者出参零 authorUserId / 零 visibleOrganizationIds;签名 URL 为范围例外 a(`attachments/CLAUDE.md` 已 true-up)仅过可见级后返。`docs:rbacmap:check` **0 FAIL / 0 WARN**。
+>
+> 2026-06-23 队员/审批跨轴只读查询戳(goal「队员/审批『跨轴只读查询』补全」,支撑前端任务驱动后台 · 交接层 GAP-001 Tier2 / GAP-002 Tier3):**权限事实零变化**(155 码 / 绑定 / 内置角色不动——5 端点全复用现成 read 码,**零新码**);controller 49→**52**(+3:`AdminRegistrationsController`〔admin/v1/registrations〕 + `AdminMemberRegistrationsController`〔admin/v1/members/:memberId/registrations〕 + `AdminMemberAttendanceController`〔admin/v1/members/:memberId,attendance-records + contribution-summary 2 端点〕;跨活动考勤单据横扫为既有 `AttendanceSheetsResourceController` 加根 @Get,**不新增 class**)。endpoint +5(Tier2 跨活动横扫 registrations + attendance-sheets〔`[rbac: activity-registration.read.record]` / `[rbac: attendance.read.sheet]`〕;Tier3 队员 360 registrations + attendance-records + contribution-summary)。贡献值汇总实时算不落库,复用 team-join `computeCappedContribution` 封顶核(approved sheet + 北京日封顶 1.5,生涯累计无 cutoff;**禁裸 SUM**);MEMBER_NOT_FOUND 守卫镜像 admin-member-insurances。零 BizCode / 零 migration / 零 schema 列 / 零 audit event(纯读)。`docs:rbacmap:check` **0 FAIL / 0 WARN**。
 
 ---
 
@@ -39,7 +41,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。判权唯一服务入口 = `RbacService.can()`;`RbacCacheService` 是权限解析缓存(TTL 1800s,三档失效),不是身份缓存。
 
-## 2. controller × 鉴权模式对照(49 个 controller class)
+## 2. controller × 鉴权模式对照(52 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
@@ -69,7 +71,10 @@
 | `admin/v1/members/:memberId/certificates`(Slow-4 T2) | `certificate.*.record`(6;list/detail/qualification-flag 共用 read) |
 | `admin/v1/activities`(Slow-4 T3) | `activity.*.record`(5,仅 5 个写端点;**列表/详情无码仅登录 `[auth]`**) |
 | `admin/v1/activities/:activityId/registrations`(Slow-4 T3) | `activity-registration.*.record`(5;list/export 共用 read) |
-| `admin/v1/…attendance-sheets`(2 个 Admin class;Slow-4 T3) | `attendance.*.sheet`(8;list/detail/review-detail 共用 read;终审两码独立,ADMIN 级沿 P1-5 方案 A) |
+| `admin/v1/registrations`(跨轴只读 2026-06-23) | `activity-registration.read.record`(1;跨活动报名横扫,审批工作台,复用 read 零新码) |
+| `admin/v1/members/:memberId/registrations`(跨轴只读 2026-06-23) | `activity-registration.read.record`(1;某队员报名履历,队员 360,复用 read;MEMBER_NOT_FOUND 守卫) |
+| `admin/v1/…attendance-sheets`(2 个 Admin class;Slow-4 T3;跨轴只读 2026-06-23 加根 @Get) | `attendance.*.sheet`(8;list/detail/review-detail/跨活动根 list 共用 read;终审两码独立,ADMIN 级沿 P1-5 方案 A) |
+| `admin/v1/members/:memberId`(attendance 派生跨轴只读 2026-06-23) | `attendance.read.sheet`(1 码 2 端点:考勤记录 attendance-records + 贡献值汇总 contribution-summary;贡献值实时算复用 team-join 封顶核;MEMBER_NOT_FOUND 守卫) |
 | `admin/v1/team-insurance-policies`(保险 T2) | `team-insurance-policy.*`(6;list/detail/覆盖名单共用 read;add/remove 覆盖名单两码独立) |
 | `admin/v1/members/:memberId/insurances`(保险 T2) | `member-insurance.read.other`(1;数组无分页镜像 certificates;本人侧走 App self-scope 无码) |
 | `admin/v1/recruitment/cycles`(招新 T3) | `recruitment-cycle.*.record`(3;list/detail 共用 read;开/关轮 + 容量/通知模板走 update) |
