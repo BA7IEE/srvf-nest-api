@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+### Changed
+
+- **招新实名环节:二要素核验 → 腾讯云 OCR 多证件识别(D 档功能串;goal「招新实名环节」T1+T2;PR #427;冻结评审稿 [`recruitment-realname-ocr-review.md`](docs/archive/reviews/recruitment-realname-ocr-review.md))**:实名环节从「腾讯云 faceid 二要素**真实性核验**(查公安库)」**语义换血**为「腾讯云 **OCR 证件识别 + 自洽匹配**」——**明确放弃联网真实性核验**(全仓删除 `IdCardVerification` 调用路径,grep 自证仅注释提及)。`realname/` 通道层就地改造(不改模块名/不新建模块):Provider 契约 `verify(name,idCard)→{matched}` 改为 `recognize(documentTypeCode,image)→{结构化字段 + 防伪 warnings + 清晰度}`;三 action 按证件类型分流(`RecognizeValidIDCardOCR` 身份证〔自带防伪〕/ `MLIDPassportOCR` 护照〔仅机读〕/ `MainlandPermitOCR` 回乡证〔仅来往内地〕)走 `ocr.tencentcloudapi.com`(service `ocr` / version `2018-11-19`),**复用现有 TC3-HMAC-SHA256 签名**(`buildSignedHeaders` 参数化 action,零新依赖、沿 8s 上限);**真通道保持休眠**(DevStub 改确定性 OCR 桩〔证件照当 JSON 信封回显〕,`.spec` mock fetch 锁三 action 结构)。`realname-settings` 三端点 / 凭证两段加密 / 三态 credentialStatus / 单例 **零行为漂移**(仅运行时指向的腾讯云产品变了)。
+- **招新报名流程重构 + 状态机净化(分叉①A/②/③/④/⑤/⑥;PR #427)**:报名提交改「**OCR 前置 + 单事务建终态**」——免费校验(校验位/年龄/code2session/同轮去重)→(大陆)付费 OCR 权威判定 → 落图 → 单事务建终态记录(verified 原子发号 / manual_review)+ audit。判定:`mainland_id` OCR **匹配一致 + 防伪无告警 + 清晰** → 自动 `verified` + 临时编号;**不匹配 / 防伪告警 / 不清晰 / OCR 上游失败 → `manual_review`(不再 `rejected`,「对不上转人工不误杀」)**;护照 / 回乡证 → `manual_review`(提交端不重识别,识别端 OCR 回填 + 人工最终);台胞证 / 外国人永居 / 其余 → `manual_review` 不 OCR。姓名匹配 = NFC 归一完全一致(不做生僻字容错);证件号完全一致。**退役 `pending_verification` 在途态 + FM-A 卡死恢复/守卫**(OCR 移到唯一事务之前,失败整体回滚无残留 → 卡死类整类消失);`resolveManual` 只解 `manual_review`(人工是最终权威,approve 含 OCR 不匹配的也可放行)。`mismatch→rejected` 退役致 `ELIM_STAGE_REALNAME` 不再写入(常量保留历史兼容)。
+
+### Added
+
+- **公开 OCR 识别预填端点 `POST /api/open/v1/recruitment/applications/recognize`(`@Public` + 第 9 throttler;PR #427)**:multipart(`documentTypeCode` + `idCardImage`)→ OCR 回填姓名/证件号供申请人确认/修正(**无状态**,不落图、不发 token);非 OCR 类型返 `ocrSupported:false`(前端转手填),不清晰返 `clarityOk:false`(非错误,可继续提交转人工);OCR 通道未配 27030 / 上游失败 27031 **仅在识别端浮现**(提交端转人工不外抛)。`verifyOutcome` 加细分 String 值(`forgery_warning` / `ocr_unclear` / `ocr_error` / `category_mismatch`,零 migration)。
+- **footprint(地基已就位)**:**零 schema migration**(`idCardNumber`/`documentTypeCode`/`verifyOutcome`/`idCardImageKey`/`isForeigner` 复用;`verifyOutcome` String 新值零 migration)· **零新 BizCode**(复用 27030/27031;OCR 失败/不清晰/类别不符/不匹配 → manual_review 非错误码)· **零新权限码**(识别端点 `@Public`)· **AuditLogEvent union 零变**(`recruitment-application.realname-verify` 语义重定为 OCR 调用)· **零新依赖**。EXPECTED_ROUTES 228→**229**(+1 识别端点,contract snapshot 仅新增 + submit 错误集去 27030/27031〔转人工不外抛〕)。**真实腾讯云 OCR 通道未开通**(运维接力 SOP [`ops/realname-verification-rollout-checklist.md`](docs/ops/realname-verification-rollout-checklist.md) 已改 OCR 口径);DevStub 全链 e2e 已验。
+
 ## v0.28.0 - 2026-06-22
 
 > **SemVer 拍板**:**minor**(v0.27.0 → v0.28.0)。本版累积 5 个 feature PR(#420 活动闭环硬化 / #421 字典内置 + 闭集/内置防误删守卫 + R13 收窄 / #422 activity_type 字典树微调 / #423 组织树内置 + `Organization.code`〔含 migration〕/ #424 organizations API 暴露 code),全 additive、零 breaking,沿 process「0.x 默认 minor」。
