@@ -79,11 +79,11 @@
 
 | # | 诉求(前端想做的任务) | 期望端点 | 状态 |
 |---|---|---|---|
-| **GAP-001** | 审批工作台:跨所有活动按 status 横扫报名/考勤 | `GET /api/admin/v1/registrations?statusCode=` · `GET /api/admin/v1/attendance-sheets?statusCode=` | ✅ **已合入 main**(`## Unreleased`,2026-06-23;[PR #432](https://github.com/BA7IEE/srvf-nest-api/pull/432);**未 bump 版本**,随下个 minor 发版)。注:过滤参数实装为 `statusCode`(非草拟期 `status`) |
-| **GAP-002** | 队员 360:某队员的报名履历 / 考勤记录 / 贡献值生涯累计 | `GET .../members/:id/registrations` · `GET .../members/:id/attendance-records` · `GET .../members/:id/contribution-summary`(贡献值=实时算复用 team-join `computeCappedContribution` 封顶核,生涯 cutoff=null + 北京日封顶 1.5) | ✅ **已合入 main**(`## Unreleased`,2026-06-23;[PR #432](https://github.com/BA7IEE/srvf-nest-api/pull/432);**未 bump 版本**)。注:`attendance-records` 仅返 approved sheet 内 records |
+| **GAP-001** | 审批工作台:跨所有活动按 status 横扫报名/考勤 | `GET /api/admin/v1/registrations?statusCode=` · `GET /api/admin/v1/attendance-sheets?statusCode=` | ✅ **已发 v0.30.0**(2026-06-23;[PR #432](https://github.com/BA7IEE/srvf-nest-api/pull/432) → bump #433 → tag `v0.30.0` / Release Latest)。注:过滤参数实装为 `statusCode`(非草拟期 `status`) |
+| **GAP-002** | 队员 360:某队员的报名履历 / 考勤记录 / 贡献值生涯累计 | `GET .../members/:id/registrations` · `GET .../members/:id/attendance-records` · `GET .../members/:id/contribution-summary`(贡献值=实时算复用 team-join `computeCappedContribution` 封顶核,生涯 cutoff=null + 北京日封顶 1.5) | ✅ **已发 v0.30.0**(2026-06-23;[PR #432](https://github.com/BA7IEE/srvf-nest-api/pull/432) → bump #433 → tag `v0.30.0` / Release)。注:`attendance-records` 仅返 approved sheet 内 records |
 
 > 备注:**活动作战室(Tier1)不是缺口**——后端全就绪,纯前端重组 IA(见 §2.1)。
-> ✅ GAP-001 / GAP-002 已于 2026-06-23 合入 main(`## Unreleased`),§2.2/§2.3 已 ⛔→✅;发版(版本 bump + Release)另走收口,届时把上方「已合入 main」改「已发 vX.Y.Z」。
+> ✅ GAP-001 / GAP-002 已于 2026-06-23 **发版 v0.30.0**(#432 + bump #433 + tag/Release Latest),§2.2/§2.3 已 ⛔→✅。
 
 ---
 
