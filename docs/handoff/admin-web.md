@@ -68,7 +68,7 @@
 3. **权限码不要臆造**:用真实码(如 `member.read.record` / `attendance.final-approve.sheet`),来源 = 各端点 `[rbac: x]` summary 或 [`RBAC_MAP.md`](../ai-harness/RBAC_MAP.md);禁 `*:*:*` / `permission:btn:*`。
 4. **贡献值别在前端裸 SUM**:存在**全局每日封顶 1.5**(一人单北京日封顶)。前端把 `attendance_records.contributionPoints` 直接相加会**算多**。要总分用后端给的 capped 值(见 GAP-002 的 contribution-summary;在它落地前,贡献值总分一律走后端,不在前端算)。
 5. **菜单是前端静态 + `permissions[]` 过滤**,后端没有菜单树端点(`asyncRoutes` / `getMenuList` 是 P0 禁区,别开)。
-6. **App ≠ Admin**:`/api/app/v1/*` 是小程序面(本人视角,见 [`miniapp.md`](miniapp.md)),admin 后台不要调它。
+6. **App ≠ Admin**:`/api/app/v1/*` 是小程序面(本人视角,见 [`miniapp.md`](miniapp.md)),admin 后台不要调它。**唯一例外 = 账号级自助端点**:`PUT app/v1/me/password`(改密)/ `app/v1/me/phone*`(换绑手机)是有意的"账号级豁免"(`D-P2-3-1` 锁定,无 canUseApp 闸、`admin without member 允许使用`)——admin 个人中心改密 / 换手机直接调它们,**不必造 `admin/v1` 镜像**。
 7. **signed URL / 敏感字段**有可见级与时效;附件走 `upload-url` / `confirm-upload` 通用链路,别假设直链。
 
 ---
@@ -82,7 +82,7 @@
 | **GAP-001** | 审批工作台:跨所有活动按 status 横扫报名/考勤 | `GET /api/admin/v1/registrations?statusCode=` · `GET /api/admin/v1/attendance-sheets?statusCode=` | ✅ **已发 v0.30.0**(2026-06-23;[PR #432](https://github.com/BA7IEE/srvf-nest-api/pull/432) → bump #433 → tag `v0.30.0` / Release Latest)。注:过滤参数实装为 `statusCode`(非草拟期 `status`) |
 | **GAP-002** | 队员 360:某队员的报名履历 / 考勤记录 / 贡献值生涯累计 | `GET .../members/:id/registrations` · `GET .../members/:id/attendance-records` · `GET .../members/:id/contribution-summary`(贡献值=实时算复用 team-join `computeCappedContribution` 封顶核,生涯 cutoff=null + 北京日封顶 1.5) | ✅ **已发 v0.30.0**(2026-06-23;[PR #432](https://github.com/BA7IEE/srvf-nest-api/pull/432) → bump #433 → tag `v0.30.0` / Release)。注:`attendance-records` 仅返 approved sheet 内 records |
 | **GAP-003** | 工作台/首页待办汇总数字(待审报名数 / 进行中活动数 / 招新进度)— 设计期识别,待前端确认是否做仪表盘 | 一个聚合 stats 端点(或前端用各列表 `total`/分页字段拼,无新端点) | 提出 |
-| **GAP-004** | 管理员自助改密(PC 个人中心「旧密码→新密码」);现 `admin/v1/me` 仅 GET 身份,无 `me/password` | `PUT /api/admin/v1/me/password`(镜像 app `me/password` 账号级豁免链路) | 提出(已确认要做,B 档待实施) |
+| **GAP-004** | 管理员自助改密(PC 个人中心「旧→新」)— **调研结论:非缺口**。`app/v1/me/password` 是账号级自助(`D-P2-3-1` 锁定,"admin without member 允许使用"),admin 用自身 JWT 即可改密(复用 `changeMyPassword`:同事务撤销 refresh + `password.change.self` 审计 + 限流) | 无需新端点;admin 个人中心直接调账号级 `app/v1/me/password`(例外见踩坑 #6) | ✅ 已澄清(2026-06-23 用户拍板=文档化,不造 `admin/v1` 镜像) |
 | **GAP-005** | 向队员主动推送通知/公告(活动提醒 / 招新公告 / 紧急召集);现 notifications 模块仅"生日短信"后台任务,无 admin 推送面 | 待定:notification 推送面(涉新 schema + 新 RBAC 码 = **D 档拍板**) | 提出(已确认要做,待出 goal) |
 
 > 备注:**活动作战室(Tier1)不是缺口**——后端全就绪,纯前端重组 IA(见 §2.1)。
@@ -153,7 +153,7 @@
 | 审计日志 | `system/v1/audit-logs` | `audit-log.read.entry` | 只读 + 时间范围筛选;详情 `el-drawer` |
 | 短信日志 | `system/v1/sms-send-logs` | `sms-send-log.read.list` | 只读 `PureTable`(手机号**掩码**);独立页,别折进系统设置 |
 | 系统设置 | `{storage,sms,wechat,realname}-settings` | `*-setting.read.singleton` | 单例 `el-form`;密钥掩码回显;reset 凭证多为仅超管可见 |
-| 个人中心(头像下拉,非侧栏) | `admin/v1/me`(身份;改密见 [GAP-004](#4-缺口台账-gap-ledger)) | `[auth]` 仅登录 | `el-descriptions` 展示身份/角色;**自助改密端点是缺口**(GAP-004) |
+| 个人中心(头像下拉,非侧栏) | `admin/v1/me`(身份)· 改密走账号级 `app/v1/me/password`(admin 可用) | `[auth]` 仅登录 | `el-descriptions` 展示身份/角色;改密表单(旧→新)直接打账号级端点(踩坑 #6 例外,非缺口) |
 
 > 可见性码只列"能否看见该菜单/列表"的 read 码;**按钮级码(approve / promote / final-approve …)另查** §2 + 端点 `[rbac:]` summary(沿 §3 #3,**禁臆造**)。菜单 = 前端静态路由 + `permissions[]` 过滤(§3 #5,后端无菜单树端点)。
 
