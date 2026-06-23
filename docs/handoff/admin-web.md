@@ -81,12 +81,81 @@
 |---|---|---|---|
 | **GAP-001** | 审批工作台:跨所有活动按 status 横扫报名/考勤 | `GET /api/admin/v1/registrations?statusCode=` · `GET /api/admin/v1/attendance-sheets?statusCode=` | ✅ **已发 v0.30.0**(2026-06-23;[PR #432](https://github.com/BA7IEE/srvf-nest-api/pull/432) → bump #433 → tag `v0.30.0` / Release Latest)。注:过滤参数实装为 `statusCode`(非草拟期 `status`) |
 | **GAP-002** | 队员 360:某队员的报名履历 / 考勤记录 / 贡献值生涯累计 | `GET .../members/:id/registrations` · `GET .../members/:id/attendance-records` · `GET .../members/:id/contribution-summary`(贡献值=实时算复用 team-join `computeCappedContribution` 封顶核,生涯 cutoff=null + 北京日封顶 1.5) | ✅ **已发 v0.30.0**(2026-06-23;[PR #432](https://github.com/BA7IEE/srvf-nest-api/pull/432) → bump #433 → tag `v0.30.0` / Release)。注:`attendance-records` 仅返 approved sheet 内 records |
+| **GAP-003** | 工作台/首页待办汇总数字(待审报名数 / 进行中活动数 / 招新进度)— 设计期识别,待前端确认是否做仪表盘 | 一个聚合 stats 端点(或前端用各列表 `total`/分页字段拼,无新端点) | 提出 |
 
 > 备注:**活动作战室(Tier1)不是缺口**——后端全就绪,纯前端重组 IA(见 §2.1)。
 > ✅ GAP-001 / GAP-002 已于 2026-06-23 **发版 v0.30.0**(#432 + bump #433 + tag/Release Latest),§2.2/§2.3 已 ⛔→✅。
 
 ---
 
-## 5. 这份文件怎么不馊
+## 5. 导航与页面设计(IA 建议 — 给前端"做哪些菜单/页面")
+
+> 把 §1 轴模型 + §2 能力图落成具体菜单树与页面骨架,解决前端"不知道做哪些页面"。
+> 端点详情对 §2,字段对 live `/api/docs-json`,权限码对 [`RBAC_MAP.md`](../ai-harness/RBAC_MAP.md)。
+> **菜单树严格守 §1**:嵌套子资源只作详情页的 tab,不单独成顶级菜单。
+
+### 5.1 业务主线(一个队员的一生 — 前端最该先懂)
+
+整个后台围绕"陌生人 → 正式队员 → 日常出勤"。**招新(`recruitment`)与入队(`team-join`)是先后两道门,不是一回事**:
+
+```
+路人 ─公开报名→ 申请人 ─实名OCR+考核→ ①一键发号 → 志愿者(有账号/有 Member,但无部门无级别)
+                                                      └ 入队申请+综合评估 → ②一键入队(设部门+级别 L1)→ 正式队员
+正式队员 ─日常→ 报名活动 → 出勤 → 考勤审核 → 贡献值累计    档案维护:证书 / 保险 / 部门 / 级别
+```
+
+- **第①道门 = 招新**:对外公开报名 → OCR 实名 → 考核 → **一键发号**(`recruitment-application.promote.member`),产物 = 志愿者(有账号但无部门无级别)。
+- **第②道门 = 入队**:志愿者 → 综合评估 → **一键入队**(`team-join-application.join.member`,设部门 + 级别 L1),产物 = 正式队员。
+
+### 5.2 推荐菜单树(6 顶层组)
+
+```
+工作台 / 我的待办              ← 落地首页(见 5.4)
+活动
+  活动列表 ──▶ 活动作战室(详情·tab:概览│报名│考勤 ──▶ 考勤审核详情)
+  审批工作台(跨活动横扫:待审报名 + 待审考勤)
+队员
+  队员列表 ──▶ 队员360(详情·tab:基本│部门│档案│证书│紧急联系人│保险│活动履历│考勤记录│贡献值)
+  队保单(团队保险单 + 覆盖名单)
+招募与入队
+  招新轮次 ──▶ 报名审核(OCR·考核·一键发号)
+  入队管理 ──▶ 入队申请(综合评估·一键入队)
+内容发布
+  内容列表 ──▶ 内容编辑器(草稿/发布/5档可见性)
+系统管理
+  用户管理│角色与权限│组织架构│数据字典│贡献值规则│附件配置│审计日志│系统设置
+```
+
+**故意不做的菜单**(它们是别人的 tab):报名管理、考勤管理、证书管理、保险管理、紧急联系人、部门管理。看到要写"请先选择一个 X 才能看 Y"就回 §1 反模式。
+
+### 5.3 页面骨架 + 可见性码(组件按 Element Plus / pure-admin `PureTable`)
+
+| 页面 | 主端点(详见 §2) | 进入/列表可见性码 | 骨架要点 |
+|---|---|---|---|
+| 活动列表 → 作战室 | `activities` + `/:id/{registrations,attendance-sheets}` | 列表 `[auth]` 仅登录;写操作 `activity.*.record` | `el-tabs` 三 tab;`activityId` 取**路由参数**不放下拉;考勤进 `review-detail` 审核页(初审/终审) |
+| 审批工作台 | `registrations?statusCode=` · `attendance-sheets?statusCode=` | `activity-registration.read.record` · `attendance.read.sheet` | 跨活动扁平列表 + `statusCode` 切;item 自带活动上下文;`el-drawer` 内审批 |
+| 队员列表 → 360 | `members` + 8 子资源(§2.2) | `member.read.record`(各子 tab 另持各自 read 码) | `el-tabs` 九 tab;贡献值用 `contribution-summary` capped 值,**别裸 SUM**(§3 #4) |
+| 队保单 | `team-insurance-policies` | `team-insurance-policy.read.record` | 左保单表 + 右覆盖名单(`el-transfer` 或加/移弹窗) |
+| 招新轮次 / 报名审核 | `recruitment/{cycles,applications}` | `recruitment-cycle.read.record` · `recruitment-application.read.record` | `el-steps` 表流程;证件照走 signed-URL;`el-drawer` 标门槛/综合评定/一键发号 |
+| 入队管理 / 入队申请 | `team-join/{cycles,applications}` | `team-join-cycle.read.record` · `team-join-application.read.record` | 同上;一键入队弹窗选部门(`el-tree-select`)+ 默认级别 L1 |
+| 内容发布 | `contents` | `content.read.record` | 富文本 + 封面 `el-upload` + 可见性下拉(5 档)+ 状态机按钮 |
+| 用户管理 | `admin/v1/users` | `user.read.account` | CRUD;自我保护 / 最后超管后端拦,按错误码提示 |
+| 角色与权限 | `system/v1/{roles,permissions,user-roles}` | `rbac.role.read` / `rbac.permission.read` | 角色授权 `el-tree`/`el-transfer` |
+| 组织架构 | `admin/v1/organizations` | `org.read.node` | `el-tree` 增删改(已内置根 + 15 部门) |
+| 数据字典 | `system/v1/dict-{types,items}` | `dict.read.type` / `dict.read.item` | 左类型右项联动;内置项有防误删守卫 |
+| 贡献值规则 | `system/v1/contribution-rules` | `contribution.read.rule` | 是**规则**不是队员的分,别和 360 贡献值混 |
+| 附件配置 | `system/v1/attachment-{type,mime,size-limit}-configs` | `attachment-config.read.*` | 三表 override-with-default,三 tab |
+| 审计日志 | `system/v1/audit-logs` | `audit-log.read.entry` | 只读 + 时间范围筛选;详情 `el-drawer` |
+| 系统设置 | `{storage,sms,wechat,realname}-settings` | `*-setting.read.singleton` | 单例 `el-form`;密钥掩码回显;reset 凭证多为仅超管可见 |
+
+> 可见性码只列"能否看见该菜单/列表"的 read 码;**按钮级码(approve / promote / final-approve …)另查** §2 + 端点 `[rbac:]` summary(沿 §3 #3,**禁臆造**)。菜单 = 前端静态路由 + `permissions[]` 过滤(§3 #5,后端无菜单树端点)。
+
+### 5.4 工作台 / 首页
+
+最实用的落地页是"**有什么等我处理**"(待审报名 / 考勤),而非报表。数字卡片(`el-statistic`)目前只能靠各列表的 `total` 拼——后端**无聚合 stats 端点**;若要正式做仪表盘,见 [GAP-003](#4-缺口台账-gap-ledger)。
+
+---
+
+## 6. 这份文件怎么不馊
 
 改后端 API surface / RBAC / 契约 → **同 PR** 改本文件受影响行 + `pnpm docs:handoff:openapi`(沿 [`AGENTS.md`](../../AGENTS.md) 反漂铁律)。前端对接前先读本文件 + 对 live `/api/docs-json` 核字段。
