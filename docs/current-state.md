@@ -7,10 +7,10 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(三方一致) | **v0.30.0**(2026-06-23;package.json = Swagger = tag = Release 四方一致;tag `v0.30.0` 指向 bump `f91a774a` 标 Latest;要点见 CHANGELOG v0.30.0 段) |
-| `main` HEAD | post-release docs PR 合并点(本 §1 回填 + v0.30.0 handoff;tag 点 `f91a774a` 之后;本行为滚动快照) |
-| open PR / 工作树 / Unreleased | 本 docs PR 前 **0** open PR / clean / **0**(v0.30.0 = 队员/审批跨轴只读查询补全 #432 + bump #433;`## Unreleased` 已折叠为 `## v0.30.0`,无残留) |
-| 最新 handoff | [`archive/handoff/v0.30.0.md`](archive/handoff/v0.30.0.md)(post-release 补档,2026-06-23;tag 指 bump #433 合并点 `f91a774a`,沿 v0.28/29「tag@bump」形态〔process §5.2 用户拍板〕;不回改) |
+| 版本(三方一致) | **v0.31.0**(2026-06-24;package.json = Swagger = tag = Release 四方一致;tag `v0.31.0` 指向 bump `e4c7e526` 标 Latest;要点见 CHANGELOG v0.31.0 段) |
+| `main` HEAD | post-release docs PR 合并点(本 §1 回填 + v0.31.0 handoff;tag 点 `e4c7e526` 之后;本行为滚动快照) |
+| open PR / 工作树 / Unreleased | 本 docs PR 前 **0** open PR / clean / **0**(v0.31.0 = 招新→入队闭环优化 S1–S6 #439–#445 + bump #446;`## Unreleased` 已折叠为 `## v0.31.0`〔S3–S6 条目;S1/S2 为 A 档记 §2,沿仓库「A 档不进 CHANGELOG」约定〕,无残留) |
+| 最新 handoff | [`archive/handoff/v0.31.0.md`](archive/handoff/v0.31.0.md)(post-release 补档,2026-06-24;tag 指 bump #446 合并点 `e4c7e526`,沿 v0.28/29/30「tag@bump」形态〔process §5.2 用户拍板〕;不回改) |
 
 ## 2. 当前系统已具备能力
 
