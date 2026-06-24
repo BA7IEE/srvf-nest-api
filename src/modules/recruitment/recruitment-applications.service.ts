@@ -72,6 +72,10 @@ import {
   isValidChineseId,
 } from './recruitment.constants';
 import {
+  RecruitmentIdentityService,
+  type ConsumedPhoneIdentity,
+} from './recruitment-identity.service';
+import {
   RECRUITMENT_STAGE_DICT_TYPE,
   assembleRecruitmentProgress,
 } from './recruitment-progress-presenter';
@@ -112,6 +116,7 @@ export class RecruitmentApplicationsService {
     private readonly auditLogs: AuditLogsService,
     private readonly wechat: WechatService,
     private readonly realname: RealnameVerificationService,
+    private readonly identity: RecruitmentIdentityService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
@@ -219,8 +224,28 @@ export class RecruitmentApplicationsService {
       await assertEmergencyRelationCodeValid(this.prisma, contact.relation);
     }
 
-    // 4. code2session(免费 wechat;失败沿 wechat 25030/25031 上抛)→ openid
-    const { openid } = await this.wechat.code2session(payload.wechatCode);
+    // 4. 身份链(评审稿 §3.1 两套入口;E-P4-4):小程序 wechatCode → openid,或 H5 phoneVerificationToken。
+    //    至少二选一(否则 40000,不全匿名);两者皆可(小程序用户也验了手机)。code2session 免费,失败沿 25030/25031 上抛。
+    //    openid 最终在终态单事务内确定(可来自 wechat 或会话行);phone 身份链落点同事务消费会话行后写。
+    const hasWechat = typeof payload.wechatCode === 'string' && payload.wechatCode.length > 0;
+    const hasToken =
+      typeof payload.phoneVerificationToken === 'string' &&
+      payload.phoneVerificationToken.length > 0;
+    if (!hasWechat && !hasToken) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    const wechatOpenid = hasWechat
+      ? (await this.wechat.code2session(payload.wechatCode as string)).openid
+      : null;
+    // H5 token 非消费预校验(fail-fast:省后续付费 OCR / 落图;真正消费在终态单事务内,建记录失败回滚则 token 保活可重试)
+    if (hasToken) {
+      await this.identity.assertPhoneSessionValid(
+        payload.phoneVerificationToken as string,
+        cycle.id,
+        payload.phone,
+        now,
+      );
+    }
 
     // 5. 同轮去重预检(身份证号;P2002 兜底见单事务;省付费 OCR)
     const dup = await this.prisma.recruitmentApplication.findFirst({
@@ -277,6 +302,17 @@ export class RecruitmentApplicationsService {
     let finalApp: RecruitmentApplication;
     try {
       finalApp = await this.prisma.$transaction(async (tx) => {
+        // H5:事务内消费会话行(与建终态记录同事务,建失败回滚则 token 保活可重试);得手机身份链落点。
+        let phoneIdentity: ConsumedPhoneIdentity | null = null;
+        if (hasToken) {
+          phoneIdentity = await this.identity.consumePhoneSession(
+            tx,
+            payload.phoneVerificationToken as string,
+            cycle.id,
+            now,
+          );
+        }
+        const openid = wechatOpenid ?? phoneIdentity?.openid ?? null;
         let tempNo: string | null = null;
         let verifiedAt: Date | null = null;
         if (createStatus === APP_STATUS_VERIFIED) {
@@ -289,11 +325,18 @@ export class RecruitmentApplicationsService {
             statusCode: createStatus,
             ...(tempNo ? { tempNo } : {}),
             ...(verifiedAt ? { verifiedAt } : {}),
-            openid,
+            ...(openid ? { openid } : {}),
             realName: payload.realName,
             idCardNumber: payload.idCardNumber,
             ...(birthDate ? { birthDate } : {}),
             phone: payload.phone,
+            // H5 手机身份链落点(小程序链恒 null;§3.3/§3.4)
+            ...(phoneIdentity
+              ? {
+                  phoneVerifiedAt: phoneIdentity.phoneVerifiedAt,
+                  phoneVerificationMethod: phoneIdentity.phoneVerificationMethod,
+                }
+              : {}),
             detailedAddress: payload.detailedAddress,
             idCardImageKey,
             emergencyContacts: payload.emergencyContacts as unknown as Prisma.InputJsonValue,
@@ -319,7 +362,7 @@ export class RecruitmentApplicationsService {
           after: { cycleId: cycle.id, createStatus, isForeigner: foreign },
           extra: {
             phone: this.maskPhone(payload.phone),
-            openid: this.maskOpenid(openid),
+            openid: openid ? this.maskOpenid(openid) : null,
             idCard: maskIdCard(payload.idCardNumber),
           },
           tx,

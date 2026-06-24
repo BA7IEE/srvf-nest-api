@@ -96,6 +96,10 @@ export type AuditLogEvent =
   | 'recruitment-application.mark-threshold' // admin 标/清门槛;before/after status;extra {thresholdCode, completed, allComplete}
   | 'recruitment-application.evaluate' // admin 综合评定/淘汰;before/after status;extra {approved, eliminationStage?}
   | 'recruitment-application.promote' // admin 一键发号(逐报名一条);before/after status;extra {memberNo, memberId, tempNo, openid:掩码}
+  // 招新四期 S4a(H5 + 手机身份链)T1(2026-06-24;评审稿 recruitment-phase4-loop-optimization-review.md §3.4):
+  // 申请人自助换绑(actor 置空;手机/openid 一律掩码,沿 phone.rebind.self / wechat.rebind.self 范式):
+  | 'recruitment-application.rebind-wechat' // 自助换微信换绑;before/after.openid 掩码;extra {phone:掩码}
+  | 'recruitment-application.rebind-phone' // 自助换手机换绑;before/after.phone 掩码;extra {method, reason}
   // 招新三期(入队:志愿者→队员)T2(2026-06-19;评审稿 recruitment-phase3-review.md §3.5 / E-J-8;
   // 本 PR 仅 admin 4 项,自助 submit〔T3〕/ join〔T4〕后续追加):
   | 'team-join-cycle.create' // admin 建入队轮;after

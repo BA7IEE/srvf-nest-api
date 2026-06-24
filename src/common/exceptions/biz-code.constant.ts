@@ -908,6 +908,20 @@ export const BizCode = {
     message: '本年度永久编号流水已达上限(999)',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 招新四期 S4a(H5 + 手机身份链;2026-06-24;评审稿 recruitment-phase4-loop-optimization-review.md §3.3/§3.4):
+  // - 28050:报名前身份会话凭证(phoneVerificationToken)无效 / 过期 / 已消费(H5 提交端;前端据此引导重新验码)
+  // - 28051:换微信换绑时新 openid 已被本轮另一活跃报名占用(防绑到他人报名 → 查询串号)
+  // 「手机验证码错/过期」沿 SMS 域 24010(SMS_CODE_INVALID,防枚举);权限拒绝走通用(自助公开无 RBAC 码)。
+  RECRUITMENT_IDENTITY_SESSION_INVALID: {
+    code: 28050,
+    message: '手机验证已失效,请重新获取验证码',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  RECRUITMENT_WECHAT_ALREADY_BOUND: {
+    code: 28051,
+    message: '该微信已绑定本轮其它报名,无法换绑',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // team-join 招新三期(入队:志愿者→队员)业务级(282xx)。T2 引入(2026-06-19)。
   // 冻结评审稿 docs/archive/reviews/recruitment-phase3-review.md §3.3 / E-J-8;新开 282xx 子段

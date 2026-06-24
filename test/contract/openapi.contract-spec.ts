@@ -355,6 +355,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
   //   +1 公开识别端点(扫证件 OCR 回填供申请人确认;无状态);仅新增。
   ['post', '/api/open/v1/recruitment/applications/recognize'],
   ['post', '/api/open/v1/recruitment/applications/query'],
+  // 招新四期 S4a(H5 + 手机身份链;2026-06-24;冻结评审稿 recruitment-phase4-loop-optimization-review.md §3):
+  //   +5 公开端点(身份链发码/验码 2 + 手机查询②/自助换微信/自助换手机 3);均 open/v1 仅新增,235→240。
+  ['post', '/api/open/v1/recruitment/identity/send-code'],
+  ['post', '/api/open/v1/recruitment/identity/verify-code'],
+  ['post', '/api/open/v1/recruitment/applications/query-by-phone'],
+  ['post', '/api/open/v1/recruitment/applications/rebind-wechat'],
+  ['post', '/api/open/v1/recruitment/applications/rebind-phone'],
   ['post', '/api/admin/v1/recruitment/cycles'],
   ['get', '/api/admin/v1/recruitment/cycles'],
   ['get', '/api/admin/v1/recruitment/cycles/{id}'],
@@ -726,6 +733,14 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'RecruitmentApplicationProgressDto',
   'RecruitmentTodoItemDto',
   'RecruitmentQueryDto',
+  // 招新四期 S4a(H5 + 手机身份链;2026-06-24):身份链发码/验码/手机查询②/换绑 DTO(注册为 named schema)
+  'RecruitmentSendCodeDto',
+  'RecruitmentSendCodeResponseDto',
+  'RecruitmentVerifyCodeDto',
+  'RecruitmentVerifyCodeResponseDto',
+  'RecruitmentQueryByPhoneDto',
+  'RecruitmentRebindWechatDto',
+  'RecruitmentRebindPhoneDto',
   'RecruitmentCycleResponseDto',
   'CreateRecruitmentCycleDto',
   'UpdateRecruitmentCycleDto',

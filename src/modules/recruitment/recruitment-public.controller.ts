@@ -28,14 +28,22 @@ import {
   RecruitmentApplicationProgressDto,
   RecruitmentApplicationPublicDto,
   RecruitmentOcrRecognizeResponseDto,
+  RecruitmentQueryByPhoneDto,
   RecruitmentQueryDto,
+  RecruitmentRebindPhoneDto,
+  RecruitmentRebindWechatDto,
+  RecruitmentSendCodeDto,
+  RecruitmentSendCodeResponseDto,
   RecruitmentSubmitPayloadDto,
   RecruitmentTodoItemDto,
+  RecruitmentVerifyCodeDto,
+  RecruitmentVerifyCodeResponseDto,
 } from './recruitment.dto';
 import {
   RecruitmentApplicationsService,
   type UploadedImageFile,
 } from './recruitment-applications.service';
+import { RecruitmentIdentityService } from './recruitment-identity.service';
 
 // 招新一期 T3(2026-06-18):公开报名 surface(评审稿 §3.2 端点 4-5)。
 //
@@ -83,10 +91,15 @@ async function parseSubmitPayload(
   RecruitmentApplicationProgressDto,
   RecruitmentTodoItemDto,
   RecruitmentOcrRecognizeResponseDto,
+  RecruitmentSendCodeResponseDto,
+  RecruitmentVerifyCodeResponseDto,
 )
 @Controller('open/v1/recruitment')
 export class RecruitmentPublicController {
-  constructor(private readonly service: RecruitmentApplicationsService) {}
+  constructor(
+    private readonly service: RecruitmentApplicationsService,
+    private readonly identity: RecruitmentIdentityService,
+  ) {}
 
   @Public()
   @RecruitmentThrottle()
@@ -104,7 +117,8 @@ export class RecruitmentPublicController {
       properties: {
         payload: {
           type: 'string',
-          description: 'RecruitmentSubmitPayloadDto 的 JSON 串(wechatCode/realName/idCardNumber/…)',
+          description:
+            'RecruitmentSubmitPayloadDto 的 JSON 串(realName/idCardNumber/…;身份链 wechatCode〔小程序〕或 phoneVerificationToken〔H5,verify-code 所发〕至少二选一)',
         },
         idCardImage: { type: 'string', format: 'binary', description: '证件照(jpeg/png ≤5MB)' },
       },
@@ -112,7 +126,7 @@ export class RecruitmentPublicController {
   })
   @ApiOperation({
     summary:
-      '公开报名提交(无账号;multipart:payload JSON 串 + idCardImage 文件;免费校验通过后才调付费 OCR;大陆证件 OCR 匹配+防伪+清晰→发临时编号,否则/其余证件→人工待核;OCR 改造后提交端对 OCR 永不硬报错,通道未配/上游失败均转人工;throttler recruitment) [public]',
+      '公开报名提交(无账号;multipart:payload JSON 串 + idCardImage 文件;身份链 wechatCode〔小程序〕或 phoneVerificationToken〔H5 验码令牌〕至少二选一,S4a;免费校验通过后才调付费 OCR;大陆证件 OCR 匹配+防伪+清晰→发临时编号,否则/其余证件→人工待核;OCR 改造后提交端对 OCR 永不硬报错,通道未配/上游失败均转人工;throttler recruitment) [public]',
   })
   @ApiWrappedOkResponse(RecruitmentApplicationPublicDto)
   @ApiBizErrorResponse(
@@ -124,6 +138,8 @@ export class RecruitmentPublicController {
     BizCode.RECRUITMENT_ID_CARD_IMAGE_REQUIRED,
     // F3(#399):紧急联系人 relation 字典码校验(报名侧;与 promote 一致)
     BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID,
+    // S4a:H5 phoneVerificationToken 无效/过期/已用(分叉前 fail-fast)
+    BizCode.RECRUITMENT_IDENTITY_SESSION_INVALID,
     // OCR 改造:提交端不再外抛 27030/27031(转 manual_review,分叉③);仅识别端点浮现
     BizCode.TOO_MANY_REQUESTS,
   )
@@ -199,5 +215,117 @@ export class RecruitmentPublicController {
   )
   query(@Body() dto: RecruitmentQueryDto): Promise<RecruitmentApplicationProgressDto> {
     return this.service.query(dto.wechatCode);
+  }
+
+  // ============ 招新四期 S4a:H5 + 手机身份链(评审稿 §3;无账号 pre-auth 自助)============
+
+  @Public()
+  @RecruitmentThrottle()
+  @Post('identity/send-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'H5 报名前手机发码(无账号;SmsPurpose=RECRUITMENT_BIND;无 open 轮→28030;手机维度 60s 间隔/10 条日限〔跨 purpose 合计〕+ throttler recruitment 双层兜底) [public]',
+  })
+  @ApiWrappedOkResponse(RecruitmentSendCodeResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.RECRUITMENT_CYCLE_NOT_OPEN,
+    BizCode.SMS_SEND_INTERVAL_LIMIT,
+    BizCode.SMS_PHONE_DAILY_LIMIT,
+    BizCode.SMS_CHANNEL_NOT_CONFIGURED,
+    BizCode.SMS_SEND_FAILED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  sendCode(
+    @Body() dto: RecruitmentSendCodeDto,
+    @Req() req: Request,
+  ): Promise<RecruitmentSendCodeResponseDto> {
+    return this.identity.sendCode(dto.phone, req.ip ?? null);
+  }
+
+  @Public()
+  @RecruitmentThrottle()
+  @Post('identity/verify-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'H5 报名前验码 → 发短时一次性身份令牌(无账号;验码成功落会话行 + 返 phoneVerificationToken〔30min 内随报名提交出示,明文仅一次性返回〕;码错/过期/超次统一 24010;无 open 轮→28030;throttler recruitment) [public]',
+  })
+  @ApiWrappedOkResponse(RecruitmentVerifyCodeResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.RECRUITMENT_CYCLE_NOT_OPEN,
+    BizCode.SMS_CODE_INVALID,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  verifyCode(@Body() dto: RecruitmentVerifyCodeDto): Promise<RecruitmentVerifyCodeResponseDto> {
+    return this.identity.verifyCode(dto, new Date());
+  }
+
+  @Public()
+  @RecruitmentThrottle()
+  @Post('applications/query-by-phone')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '公开查询本人报名进度②(手机+验证码;无账号;验码消费一码 → 手机定位最近一条报名进度模型,与微信 code 查询同出参/同派生口径;码错→24010 / 无匹配→28002;throttler recruitment) [public]',
+  })
+  @ApiWrappedOkResponse(RecruitmentApplicationProgressDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.SMS_CODE_INVALID,
+    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  queryByPhone(
+    @Body() dto: RecruitmentQueryByPhoneDto,
+  ): Promise<RecruitmentApplicationProgressDto> {
+    return this.identity.queryByPhone(dto.phone, dto.code);
+  }
+
+  @Public()
+  @RecruitmentThrottle()
+  @Post('applications/rebind-wechat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '自助换微信换绑(无账号;当前手机验码校验本人 → code2session 新微信 → 更 application.openid;返更新后进度模型;码错→24010 / 无报名→28002 / 新微信已绑本轮他人报名→28051;审计 rebind-wechat;throttler recruitment) [public]',
+  })
+  @ApiWrappedOkResponse(RecruitmentApplicationProgressDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.SMS_CODE_INVALID,
+    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
+    BizCode.RECRUITMENT_WECHAT_ALREADY_BOUND,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  rebindWechat(
+    @Body() dto: RecruitmentRebindWechatDto,
+    @Req() req: Request,
+  ): Promise<RecruitmentApplicationProgressDto> {
+    return this.identity.rebindWechat(dto, buildAuditMeta(req));
+  }
+
+  @Public()
+  @RecruitmentThrottle()
+  @Post('applications/rebind-phone')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '自助换手机换绑(无账号;双验:当前手机验码校验本人 + 新手机验码;更 application.phone + 换绑历史追加;返更新后进度模型;码错→24010 / 无报名→28002 / 新旧手机相同→40000;审计 rebind-phone;throttler recruitment) [public]',
+  })
+  @ApiWrappedOkResponse(RecruitmentApplicationProgressDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.SMS_CODE_INVALID,
+    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  rebindPhone(
+    @Body() dto: RecruitmentRebindPhoneDto,
+    @Req() req: Request,
+  ): Promise<RecruitmentApplicationProgressDto> {
+    return this.identity.rebindPhone(dto, buildAuditMeta(req), new Date());
   }
 }

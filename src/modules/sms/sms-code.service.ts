@@ -51,7 +51,7 @@ export class SmsCodeService {
   async issue(input: {
     phone: string;
     purpose: SmsPurpose;
-    userId: string;
+    userId: string | null; // 放宽 null:匿名 pre-auth 报名人(RECRUITMENT_BIND)无账号(E-P4-4;列本就可空)
     ip: string | null;
   }): Promise<{ expiresInSeconds: number }> {
     const now = new Date();
@@ -172,7 +172,7 @@ export class SmsCodeService {
     phone: string;
     purpose: SmsPurpose;
     code: string;
-    userId: string;
+    userId: string | null; // 放宽 null:匿名报名人(E-P4-4);归属校验 null === null 天然放行(phone+purpose 为锚)
   }): Promise<{ codeId: string }> {
     const now = new Date();
     const active = await this.loadValidActiveCodeOrThrow(input, now);
@@ -201,7 +201,7 @@ export class SmsCodeService {
     phone: string;
     purpose: SmsPurpose;
     code: string;
-    userId: string;
+    userId: string | null; // 放宽 null:匿名报名人(E-P4-4)
   }): Promise<void> {
     await this.loadValidActiveCodeOrThrow(input, new Date());
   }
@@ -211,7 +211,7 @@ export class SmsCodeService {
   // 取 phone+purpose 最新活码 → 不存在 / 已过期 / 已作废(错 5 次)/ 归属不符(E-8)
   // → 统一无效;码值不符 → attempts+1(独立提交,见 verifyAndConsume 方法注释)后统一无效。
   private async loadValidActiveCodeOrThrow(
-    input: { phone: string; purpose: SmsPurpose; code: string; userId: string },
+    input: { phone: string; purpose: SmsPurpose; code: string; userId: string | null },
     now: Date,
   ): Promise<{ id: string }> {
     const active = await this.prisma.smsVerificationCode.findFirst({

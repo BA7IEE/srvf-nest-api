@@ -53,11 +53,27 @@ export class EmergencyContactInputDto {
 }
 
 export class RecruitmentSubmitPayloadDto {
-  @ApiProperty({ description: '微信 wx.login code(后端 code2session 换 openid)', maxLength: 128 })
+  @ApiPropertyOptional({
+    description:
+      '微信 wx.login code(小程序链 code2session 换 openid;与 phoneVerificationToken 至少二选一)',
+    maxLength: 128,
+  })
+  @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(128)
-  wechatCode!: string;
+  wechatCode?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'H5 手机身份链令牌(verify-code 端点验码后所发,绑手机+轮次,一次性;与 wechatCode 至少二选一,H5 链必填)',
+    maxLength: 128,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  phoneVerificationToken?: string;
 
   @ApiProperty({ description: '真实姓名(实名核验二要素;高敏感)' })
   @IsString()
@@ -165,6 +181,104 @@ export class RecruitmentQueryDto {
   @MinLength(1)
   @MaxLength(128)
   wechatCode!: string;
+}
+
+// ============ 招新四期 S4a:H5 + 手机身份链(评审稿 §3;无账号 pre-auth 自助)============
+// 复用 src/modules/sms 基建(SmsPurpose.RECRUITMENT_BIND)。发码/验码 → 短时一次性 token,
+// 凭 token 走 H5 报名提交;查询②直接「手机+验证码」;自助换微信/换手机换绑。
+
+const SMS_CODE_6 = /^\d{6}$/;
+
+export class RecruitmentSendCodeDto {
+  @ApiProperty({ description: '手机号(大陆手机号;H5 报名前身份验证)' })
+  @IsString()
+  @Matches(MAINLAND_PHONE, { message: '手机号格式不正确' })
+  phone!: string;
+}
+
+export class RecruitmentSendCodeResponseDto {
+  @ApiProperty({ description: '验证码有效期(秒)' })
+  expiresInSeconds!: number;
+}
+
+export class RecruitmentVerifyCodeDto {
+  @ApiProperty({ description: '手机号(大陆手机号)' })
+  @IsString()
+  @Matches(MAINLAND_PHONE, { message: '手机号格式不正确' })
+  phone!: string;
+
+  @ApiProperty({ description: '短信验证码(6 位数字)' })
+  @IsString()
+  @Matches(SMS_CODE_6, { message: '验证码格式不正确' })
+  code!: string;
+}
+
+export class RecruitmentVerifyCodeResponseDto {
+  @ApiProperty({
+    description: 'H5 手机身份链令牌(一次性;30 分钟内随报名提交出示;明文仅此一次返回)',
+  })
+  phoneVerificationToken!: string;
+
+  @ApiProperty({ description: '令牌过期时刻' })
+  expiresAt!: Date;
+}
+
+export class RecruitmentQueryByPhoneDto {
+  @ApiProperty({ description: '手机号(大陆手机号;查本人当前轮报名)' })
+  @IsString()
+  @Matches(MAINLAND_PHONE, { message: '手机号格式不正确' })
+  phone!: string;
+
+  @ApiProperty({ description: '短信验证码(6 位数字;一次查询消费一码)' })
+  @IsString()
+  @Matches(SMS_CODE_6, { message: '验证码格式不正确' })
+  code!: string;
+}
+
+export class RecruitmentRebindWechatDto {
+  @ApiProperty({ description: '当前已绑手机号(校验本人;须先验码)' })
+  @IsString()
+  @Matches(MAINLAND_PHONE, { message: '手机号格式不正确' })
+  phone!: string;
+
+  @ApiProperty({ description: '当前手机短信验证码(6 位数字)' })
+  @IsString()
+  @Matches(SMS_CODE_6, { message: '验证码格式不正确' })
+  code!: string;
+
+  @ApiProperty({ description: '新微信 wx.login code(换绑目标 openid)', maxLength: 128 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  newWechatCode!: string;
+}
+
+export class RecruitmentRebindPhoneDto {
+  @ApiProperty({ description: '当前已绑手机号(校验本人;须先验码)' })
+  @IsString()
+  @Matches(MAINLAND_PHONE, { message: '手机号格式不正确' })
+  phone!: string;
+
+  @ApiProperty({ description: '当前手机短信验证码(6 位数字)' })
+  @IsString()
+  @Matches(SMS_CODE_6, { message: '验证码格式不正确' })
+  code!: string;
+
+  @ApiProperty({ description: '新手机号(大陆手机号;须与当前不同)' })
+  @IsString()
+  @Matches(MAINLAND_PHONE, { message: '新手机号格式不正确' })
+  newPhone!: string;
+
+  @ApiProperty({ description: '新手机短信验证码(6 位数字)' })
+  @IsString()
+  @Matches(SMS_CODE_6, { message: '验证码格式不正确' })
+  newPhoneCode!: string;
+
+  @ApiPropertyOptional({ description: '换绑原因(自由短串;缺省记 self-rebind)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  reason?: string;
 }
 
 // 公开出参:申请状态 + 临时编号 + 通知展示(self-scope 最小集;不回显他人/PII 明文)。
