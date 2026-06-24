@@ -732,3 +732,193 @@ export class RecruitmentCycleStatsDto {
   @ApiProperty({ type: RecruitmentStatsIssuanceDto, description: '公示发号' })
   issuance!: RecruitmentStatsIssuanceDto;
 }
+
+// ============ 招新闭环优化 S6:批量操作(评审稿 §8;纯加端点,零 schema / 零新 RBAC 码)============
+// 三类:批量标门槛(复用单行 markThreshold)/ 批量导出 CSV(脱敏复用 S3 toAdminDto)/ 一键发号前预检
+//(复用 decidePromotionIssuance,结构性保证「预检=实发」)。批量通知不做(挂 §9 / GAP-005,随 S7)。
+// 物理隔离独立 class(禁继承 / Pick / Omit;沿 api-surface-policy §2.1)。
+
+// 批量标门槛单个匹配项(§8.1 匹配键;优先级 tempNo > 姓名+手机 > 手机)。
+export class BatchMarkThresholdMatchDto {
+  @ApiPropertyOptional({ description: '临时编号 T{year}{seq}(最精确匹配键;优先)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  tempNo?: string;
+
+  @ApiPropertyOptional({
+    description: '手机号(配合 realName = 姓名+手机;单用须本轮唯一命中,否则 ambiguous)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  phone?: string;
+
+  @ApiPropertyOptional({ description: '真实姓名(须配合 phone;姓名单键不作为匹配键)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(NAME_MAX)
+  realName?: string;
+}
+
+export class BatchMarkThresholdDto {
+  @ApiPropertyOptional({
+    description: '限定轮次(**强烈建议**:手机/姓名跨轮去歧义;缺省跨全部未软删报名匹配)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  cycleId?: string;
+
+  @ApiProperty({ description: '门槛 code', enum: THRESHOLD_CODES as unknown as string[] })
+  @IsString()
+  @IsIn(THRESHOLD_CODES, { message: '门槛 code 非法' })
+  thresholdCode!: string;
+
+  @ApiProperty({ description: 'true=标记完成;false=清除标记(逐行幂等,复用单行 markThreshold)' })
+  @IsBoolean()
+  completed!: boolean;
+
+  @ApiProperty({
+    description:
+      '匹配项数组(临时编号 / 手机 / 姓名+手机;「签到记录导入」= 前端解析签到表为本数组,后端不碰文件)',
+    type: [BatchMarkThresholdMatchDto],
+  })
+  @IsArray()
+  @ArrayMinSize(1, { message: '匹配项至少 1 条' })
+  @ArrayMaxSize(500, { message: '单批至多 500 条' })
+  @ValidateNested({ each: true })
+  @Type(() => BatchMarkThresholdMatchDto)
+  matches!: BatchMarkThresholdMatchDto[];
+}
+
+export class BatchMarkThresholdRowResultDto {
+  @ApiProperty({ description: '对应入参 matches 的下标(前端按此回填行)' })
+  index!: number;
+  @ApiProperty({
+    description:
+      '逐行结果:marked(已标,幂等)/ unmatched(匹配不上)/ failed(命中但标记失败,如状态非法)',
+  })
+  status!: string;
+  @ApiPropertyOptional({ description: '命中的报名 id(matched/failed 时)', nullable: true })
+  applicationId!: string | null;
+  @ApiPropertyOptional({
+    description: '匹配方式 tempNo / name+phone / phone(命中时)',
+    nullable: true,
+  })
+  matchedBy!: string | null;
+  @ApiPropertyOptional({
+    description: 'unmatched 原因:no-match(0 命中)/ ambiguous(多命中)/ insufficient-key(缺匹配键)',
+    nullable: true,
+  })
+  unmatchedReason!: string | null;
+  @ApiPropertyOptional({ description: 'failed 业务错误码(如 28041 状态非法)', nullable: true })
+  errorCode!: number | null;
+  @ApiPropertyOptional({
+    description: '标记后报名态(marked 时;= pending_evaluation 即末次门槛完成自动推进)',
+    nullable: true,
+  })
+  statusCode!: string | null;
+  @ApiPropertyOptional({ description: '门槛是否全完成(marked 时)', nullable: true })
+  thresholdsComplete!: boolean | null;
+}
+
+export class BatchMarkThresholdResultDto {
+  @ApiProperty({
+    type: [BatchMarkThresholdRowResultDto],
+    description: '逐行结果(与入参 matches 同序)',
+  })
+  results!: BatchMarkThresholdRowResultDto[];
+  @ApiProperty({ description: '入参总行数' })
+  total!: number;
+  @ApiProperty({ description: '已标记数(含幂等重标)' })
+  marked!: number;
+  @ApiProperty({ description: '匹配不上数(no-match / ambiguous / insufficient-key)' })
+  unmatched!: number;
+  @ApiProperty({ description: '命中但标记失败数(状态非法等;逐行容错,不整批回滚)' })
+  failed!: number;
+  @ApiProperty({ description: '本批标记后处于待综合评定态的行数(末次门槛完成自动推进)' })
+  autoAdvanced!: number;
+}
+
+// 批量导出 CSV 筛选项(§8.1;脱敏列/明文列随 S3 read.sensitive 分级;导出本身无响应 DTO,走 text/csv)。
+export const RECRUITMENT_EXPORT_FILTERS = [
+  'all',
+  'manual',
+  'verified',
+  'threshold-incomplete',
+  'pending-evaluation',
+  'publicity',
+  'promoted',
+  'rejected',
+] as const;
+
+export class ExportRecruitmentApplicationsDto {
+  @ApiPropertyOptional({ description: '限定轮次(缺省导出全部未软删报名)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  cycleId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '筛选:all 全部 / manual 待人工 / verified 已初审 / threshold-incomplete 门槛未完成 / pending-evaluation 待评定 / publicity 公示 / promoted 发号 / rejected 淘汰;缺省 all',
+    enum: RECRUITMENT_EXPORT_FILTERS as unknown as string[],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(RECRUITMENT_EXPORT_FILTERS, { message: '导出筛选项非法' })
+  filter?: string;
+}
+
+// 一键发号前预检逐行(§8.2;willIssue / skipReason 与实发同源 decidePromotionIssuance,**预检=实发**)。
+export class PromotePrecheckRowDto {
+  @ApiProperty() applicationId!: string;
+  @ApiPropertyOptional({ description: '公示姓名(拼音序)', nullable: true })
+  realName!: string | null;
+  @ApiProperty({ description: '是否可一键发号(= 实发 willIssue 同源 decidePromotionIssuance)' })
+  willIssue!: boolean;
+  @ApiPropertyOptional({
+    description:
+      '跳过原因(§8.2 六类:foreign-manual-build / openid-already-bound / missing-openid / duplicate-openid-in-batch / missing-derived-field / incomplete-data;willIssue=true 为 null)',
+    nullable: true,
+  })
+  skipReason!: string | null;
+  @ApiPropertyOptional({
+    description: '拟发永久编号 {YY}{NNN}(仅 willIssue;与公示/实发同序推算)',
+    nullable: true,
+  })
+  proposedMemberNo!: string | null;
+  @ApiProperty({ description: '是否外籍(特殊证件标识;需手动建档)' })
+  isForeigner!: boolean;
+  @ApiProperty({ description: '证件类型(特殊证件标识)' })
+  documentTypeCode!: string;
+  @ApiProperty({ description: '缺 openid(无法建账号)' })
+  missingOpenid!: boolean;
+  @ApiProperty({ description: 'openid 已被既有账号占用' })
+  openidAlreadyBound!: boolean;
+  @ApiProperty({ description: 'openid 在本批重复(高亮:≥2 申请人共用同一 openid)' })
+  duplicateOpenidInBatch!: boolean;
+  @ApiProperty({ description: '缺手机' })
+  missingPhone!: boolean;
+  @ApiProperty({ description: '缺生日(身份证派生失败 / 外籍未填)' })
+  missingBirthDate!: boolean;
+  @ApiProperty({ description: '缺性别' })
+  missingGender!: boolean;
+}
+
+export class PromotePrecheckResultDto {
+  @ApiProperty() cycleId!: string;
+  @ApiProperty() cycleYear!: number;
+  @ApiProperty({
+    type: [PromotePrecheckRowDto],
+    description: '公示报名逐行预检(拼音序,与实发同序)',
+  })
+  rows!: PromotePrecheckRowDto[];
+  @ApiProperty({ description: '可一键发号数' })
+  promotableCount!: number;
+  @ApiProperty({ description: '跳过数(= 需手动建档数)' })
+  skipCount!: number;
+  @ApiProperty({ description: '公示总数' })
+  total!: number;
+}

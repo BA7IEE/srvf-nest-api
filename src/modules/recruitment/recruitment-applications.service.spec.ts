@@ -265,3 +265,232 @@ describe('RecruitmentApplicationsService · S3 敏感字段分级判权', () => 
     expect(storage.generateDownloadUrl).not.toHaveBeenCalled();
   });
 });
+
+// ===== 招新闭环优化 S6(评审稿 §8.1):批量导出 CSV 脱敏分级 =====
+// goal DoD#5「导出 read.record 脱敏 vs read.sensitive 明文」+「脱敏复用 S3 toAdminDto 口径(零第二套)」。
+describe('RecruitmentApplicationsService.exportApplicationsCsv · S3 脱敏分级 + 筛选', () => {
+  const RAW_ID = '110101199003070038';
+  const RAW_PHONE = '13900000001';
+  const RECORD = 'recruitment-application.read.record';
+  const SENSITIVE = 'recruitment-application.read.sensitive';
+  const ADMIN_USER = { id: 'admin-1', username: 'admin', role: 'ADMIN', memberId: null } as never;
+
+  function row(over: Record<string, unknown> = {}) {
+    return {
+      id: 'app-1',
+      cycleId: 'cyc-1',
+      statusCode: 'verified',
+      tempNo: 'T20260001',
+      realName: '张三',
+      idCardNumber: RAW_ID,
+      phone: RAW_PHONE,
+      documentTypeCode: 'mainland_id',
+      isForeigner: false,
+      birthDate: new Date('1990-03-07T00:00:00.000Z'),
+      genderCode: 'male',
+      ageGroup: null,
+      cityDistrict: '北京市朝阳区',
+      verifyOutcome: null,
+      riskLevel: null,
+      manualReviewReason: null,
+      eliminationStage: null,
+      idCardImageKey: null,
+      thresholdMarks: null,
+      evaluationNote: null,
+      promotedMemberId: null,
+      openid: 'op-1',
+      createdAt: new Date('2026-06-18T00:00:00.000Z'),
+      ...over,
+    };
+  }
+
+  function buildExportService(canMap: Record<string, boolean>, rows: Record<string, unknown>[]) {
+    const findMany = jest.fn().mockResolvedValue(rows);
+    const prisma = { recruitmentApplication: { findMany } };
+    const rbac = {
+      can: jest.fn((_u: unknown, code: string) => Promise.resolve(canMap[code] ?? false)),
+    };
+    const service = new RecruitmentApplicationsService(
+      prisma as never,
+      rbac as never,
+      { log: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    return { service, findMany };
+  }
+
+  it('持 read.sensitive → CSV 明文列(id_card_number/phone 原值)', async () => {
+    const { service } = buildExportService({ [RECORD]: true, [SENSITIVE]: true }, [row()]);
+    const csv = await service.exportApplicationsCsv({}, ADMIN_USER);
+    const [header, line1] = csv.split('\n');
+    expect(header.split(',')).toContain('id_card_number');
+    expect(line1).toContain(RAW_ID); // 明文
+    expect(line1).toContain(RAW_PHONE);
+  });
+
+  it('仅 read.record(无 sensitive)→ CSV 脱敏列(掩码,绝不出明文)', async () => {
+    const { service } = buildExportService({ [RECORD]: true, [SENSITIVE]: false }, [row()]);
+    const csv = await service.exportApplicationsCsv({}, ADMIN_USER);
+    expect(csv).not.toContain(RAW_ID); // 明文绝不泄露
+    expect(csv).not.toContain(RAW_PHONE);
+    expect(csv).toContain('*'); // 掩码(复用 toAdminDto)
+    expect(csv).toContain('张三'); // 非敏感列照常(realName 在 record 级)
+  });
+
+  it('无 read.record → RBAC_FORBIDDEN(不触库)', async () => {
+    const { service, findMany } = buildExportService({ [RECORD]: false }, [row()]);
+    await expect(service.exportApplicationsCsv({}, ADMIN_USER)).rejects.toMatchObject({
+      biz: { code: BizCode.RBAC_FORBIDDEN.code },
+    });
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  // 取某次 findMany 调用的 where(显式收紧类型,避免 mock.calls 的 any 漂入断言)。
+  const whereOfCall = (findMany: jest.Mock, callIndex = 0): Record<string, unknown> => {
+    const calls = findMany.mock.calls as Array<[{ where: Record<string, unknown> }]>;
+    return calls[callIndex][0].where;
+  };
+
+  it('filter=manual → where.statusCode=manual_review;filter 缺省 all → 无 statusCode 约束', async () => {
+    const { service, findMany } = buildExportService({ [RECORD]: true }, []);
+    await service.exportApplicationsCsv({ filter: 'manual', cycleId: 'cyc-9' }, ADMIN_USER);
+    expect(whereOfCall(findMany)).toMatchObject({
+      deletedAt: null,
+      cycleId: 'cyc-9',
+      statusCode: 'manual_review',
+    });
+
+    findMany.mockClear();
+    await service.exportApplicationsCsv({}, ADMIN_USER);
+    expect(whereOfCall(findMany).statusCode).toBeUndefined(); // all:无态约束
+  });
+
+  it('filter=threshold-incomplete → 取 verified 后内存过滤掉门槛已齐行', async () => {
+    const complete = {
+      patrol1: { at: 'x', by: 'u' },
+      patrol2: { at: 'x', by: 'u' },
+      training: { at: 'x', by: 'u' },
+      redCross: { at: 'x', by: 'u' },
+      bsafe: { at: 'x', by: 'u' },
+    };
+    const { service, findMany } = buildExportService({ [RECORD]: true }, [
+      row({ id: 'incomplete', thresholdMarks: { patrol1: { at: 'x', by: 'u' } } }),
+      row({ id: 'done', thresholdMarks: complete }),
+    ]);
+    const csv = await service.exportApplicationsCsv({ filter: 'threshold-incomplete' }, ADMIN_USER);
+    // DB where 仍按 verified 取(post-filter 在内存)
+    expect(whereOfCall(findMany)).toMatchObject({ statusCode: 'verified' });
+    expect(csv).toContain('incomplete');
+    expect(csv).not.toContain('done'); // 门槛已齐被滤除
+  });
+});
+
+// ===== 招新闭环优化 S6(评审稿 §8.1):批量标门槛编排(复用单行 markThreshold + 逐行容错)=====
+// goal DoD#5「批量标门槛 matched/unmatched/逐行容错」。matching 纯函数另见 recruitment-batch-matching.spec.ts;
+// 本组锁编排:① 复用单行 markThreshold(spy 验调用);② 逐行容错(某行抛 BizException 记 failed 不整批断);
+// ③ 匹配不上记 unmatched;④ 自动推进计数;⑤ 批次汇总。
+describe('RecruitmentApplicationsService.batchMarkThreshold · 编排(复用单行 markThreshold + 逐行容错)', () => {
+  const meta: AuditMeta = { requestId: 'r1', ip: null, ua: null };
+  const now = new Date('2026-06-24T00:00:00.000Z');
+  const user = { id: 'admin1', role: 'SUPER_ADMIN' } as never;
+
+  function buildBatchService(candidates: Record<string, unknown>[]) {
+    const prisma = {
+      recruitmentApplication: { findMany: jest.fn().mockResolvedValue(candidates) },
+    };
+    const rbac = { can: jest.fn().mockResolvedValue(true) };
+    const service = new RecruitmentApplicationsService(
+      prisma as never,
+      rbac as never,
+      { log: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    return { service };
+  }
+
+  const dto = (over: Record<string, unknown> = {}) => ({
+    thresholdCode: 'patrol1',
+    completed: true,
+    matches: [{ tempNo: 'T20260001' }, { tempNo: 'T20260002' }, { tempNo: 'T99999999' }],
+    ...over,
+  });
+
+  it('matched 行逐行复用单行 markThreshold;unmatched 行不调;失败行记 failed 不整批断;汇总正确', async () => {
+    const { service } = buildBatchService([
+      { id: 'a1', tempNo: 'T20260001', phone: null, realName: null },
+      { id: 'a2', tempNo: 'T20260002', phone: null, realName: null },
+      // T99999999 无候选 → unmatched(no-match)
+    ]);
+
+    // spy 单行 markThreshold:a1 成功(末次完成→pending_evaluation 自动推进)、a2 抛 28041 状态非法
+    // (返回/拒绝 Promise,不用 async 关键字以免 require-await;逐行容错路径靠 a2 的 reject 触发)
+    const spy = jest.spyOn(service, 'markThreshold').mockImplementation((id: string) => {
+      if (id === 'a1') {
+        return Promise.resolve({
+          statusCode: 'pending_evaluation',
+          thresholdsComplete: true,
+        } as never);
+      }
+      return Promise.reject(new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE));
+    });
+
+    const res = await service.batchMarkThreshold(dto(), user, meta, now);
+
+    // ① 仅对 matched 的 a1/a2 调单行 markThreshold(零第二套);unmatched 不调
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy).toHaveBeenCalledWith(
+      'a1',
+      { thresholdCode: 'patrol1', completed: true },
+      user,
+      meta,
+      now,
+    );
+
+    // ② 逐行结果 + 汇总(逐行容错:a2 failed 不影响 a1 marked / T9 unmatched)
+    expect(res.total).toBe(3);
+    expect(res.marked).toBe(1);
+    expect(res.failed).toBe(1);
+    expect(res.unmatched).toBe(1);
+    expect(res.autoAdvanced).toBe(1); // a1 末次完成自动推进
+
+    const a1 = res.results.find((r) => r.applicationId === 'a1');
+    expect(a1).toMatchObject({
+      status: 'marked',
+      statusCode: 'pending_evaluation',
+      matchedBy: 'tempNo',
+    });
+    const a2 = res.results.find((r) => r.applicationId === 'a2');
+    expect(a2).toMatchObject({
+      status: 'failed',
+      errorCode: BizCode.RECRUITMENT_APPLICATION_WRONG_STATE.code,
+    });
+    const unmatched = res.results.find((r) => r.status === 'unmatched');
+    expect(unmatched).toMatchObject({ index: 2, unmatchedReason: 'no-match', applicationId: null });
+  });
+
+  it('RBAC 拒绝 → RBAC_FORBIDDEN(入口快速失败,不触候选查询)', async () => {
+    const prisma = { recruitmentApplication: { findMany: jest.fn() } };
+    const rbac = { can: jest.fn().mockResolvedValue(false) };
+    const service = new RecruitmentApplicationsService(
+      prisma as never,
+      rbac as never,
+      { log: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await expect(service.batchMarkThreshold(dto() as never, user, meta, now)).rejects.toMatchObject(
+      {
+        biz: { code: BizCode.RBAC_FORBIDDEN.code },
+      },
+    );
+    expect(prisma.recruitmentApplication.findMany).not.toHaveBeenCalled();
+  });
+});

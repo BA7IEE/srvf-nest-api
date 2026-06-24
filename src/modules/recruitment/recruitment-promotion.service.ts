@@ -4,6 +4,7 @@ import { OrganizationStatus, Prisma, type RecruitmentApplication } from '@prisma
 import * as bcrypt from 'bcryptjs';
 
 import { normalizeDateOnly } from '../../common/datetime/date-only.util';
+import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -20,7 +21,13 @@ import {
   decidePromotionIssuance,
   formatMemberNo,
 } from './recruitment.constants';
-import type { PromoteResultDto, PromoteSkippedItemDto, PromotedItemDto } from './recruitment.dto';
+import type {
+  PromoteResultDto,
+  PromoteSkippedItemDto,
+  PromotePrecheckResultDto,
+  PromotePrecheckRowDto,
+  PromotedItemDto,
+} from './recruitment.dto';
 
 // 招新二期(后段)T3:一键发号(评审稿 D-R2-5/6 + E-R2-6/7 + §4 流程冻结)。
 // 公示结束 → 对 cycle 内全部 publicity 报名按姓名拼音序批量发永久编号 {YY}{NNN}
@@ -266,6 +273,85 @@ export class RecruitmentPromotionService {
       skippedCount: skipped.length,
       promoted,
       skipped,
+    };
+  }
+
+  // 招新闭环优化 S6(评审稿 §8.2):一键发号前预检 —— **纯读**,不写、不改 promote 结论。
+  // 结构性保证「预检 = 实发」:逐字复用 promote 的事务前分区(同 loadBoundOpenids + comparePromotionOrder
+  // + decidePromotionIssuance),输出每行可发/跳过 + 跳过原因(§8.2 六类)+ 重复 openid 高亮 +
+  // 缺手机/生日/性别 + 特殊证件标识 + 汇总。RBAC 复用 promote.member(与实发同 audience)。
+  async promotePrecheck(
+    cycleId: string,
+    user: CurrentUserPayload,
+  ): Promise<PromotePrecheckResultDto> {
+    await this.assertCanOrThrow(user, 'recruitment-application.promote.member');
+
+    const cycle = await this.prisma.recruitmentCycle.findFirst({
+      where: { id: cycleId, deletedAt: null },
+    });
+    if (!cycle) {
+      throw new BizException(BizCode.RECRUITMENT_CYCLE_NOT_FOUND);
+    }
+
+    // 公示集 + openid 占用集 + 拼音序:与 promote 事务前分区一字不差(同源保证预检=实发)。
+    const apps = await this.prisma.recruitmentApplication.findMany({
+      where: { cycleId, statusCode: APP_STATUS_PUBLICITY, deletedAt: null },
+    });
+    const boundOpenids = await this.loadBoundOpenids(apps);
+    const sortedApps = [...apps].sort(comparePromotionOrder);
+
+    // 「openid 批内重复」高亮:出现 ≥2 行的非空 openid(展示辅助,不改发号判定)。
+    const openidCounts = new Map<string, number>();
+    for (const a of sortedApps) {
+      if (a.openid != null) openidCounts.set(a.openid, (openidCounts.get(a.openid) ?? 0) + 1);
+    }
+
+    // 拟发编号推算与 publicityList 同口径(willIssue 行依序占号)。
+    let seq = cycle.memberNoSeq;
+    const rows: PromotePrecheckRowDto[] = decidePromotionIssuance(sortedApps, boundOpenids).map(
+      ({ app, willIssue, reason }) => {
+        let proposedMemberNo: string | null = null;
+        if (willIssue) {
+          seq += 1;
+          proposedMemberNo = seq <= MEMBER_NO_MAX_SEQ ? formatMemberNo(cycle.year, seq) : null;
+        }
+        return {
+          applicationId: app.id,
+          realName: app.realName,
+          willIssue,
+          skipReason: reason,
+          proposedMemberNo,
+          isForeigner: app.isForeigner,
+          documentTypeCode: app.documentTypeCode,
+          missingOpenid: app.openid == null,
+          openidAlreadyBound: app.openid != null && boundOpenids.has(app.openid),
+          duplicateOpenidInBatch: app.openid != null && (openidCounts.get(app.openid) ?? 0) > 1,
+          missingPhone: app.phone == null,
+          missingBirthDate: app.birthDate == null,
+          missingGender: app.genderCode == null,
+        };
+      },
+    );
+
+    const promotableCount = rows.filter((r) => r.willIssue).length;
+    const skipCount = rows.length - promotableCount;
+    // 纯读 placeholder 审计(复用既有 read.other pino 事件 + operation 区分;沿 registrations export 范式,
+    // 不扩 locked AuditEvent union)。含 admin / 范围(cycleId)/ 汇总。
+    auditPlaceholder('recruitment-application.read.other', {
+      adminId: user.id,
+      operation: 'promote-precheck',
+      cycleId,
+      promotableCount,
+      skipCount,
+    });
+
+    return {
+      cycleId: cycle.id,
+      cycleYear: cycle.year,
+      rows,
+      promotableCount,
+      skipCount,
+      total: rows.length,
     };
   }
 

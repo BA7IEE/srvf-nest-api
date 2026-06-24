@@ -27,6 +27,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   CreateRecruitmentCycleDto,
+  PromotePrecheckResultDto,
+  PromotePrecheckRowDto,
   PromoteResultDto,
   PromoteSkippedItemDto,
   PromotedItemDto,
@@ -68,6 +70,8 @@ function buildAuditMeta(req: Request): AuditMeta {
   PromoteResultDto,
   PromotedItemDto,
   PromoteSkippedItemDto,
+  PromotePrecheckResultDto,
+  PromotePrecheckRowDto,
   RecruitmentCycleStatsDto,
   RecruitmentStatsTodayDto,
   RecruitmentStatsPendingDto,
@@ -177,6 +181,24 @@ export class RecruitmentCyclesController {
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<RecruitmentCycleStatsDto> {
     return this.statsService.getCycleStats(id, user, new Date());
+  }
+
+  @Get(':id/promote-precheck')
+  @ApiOperation({
+    summary:
+      '一键发号前预检(纯读;复用 decidePromotionIssuance 结构性保证「预检=实发」;逐行可发/跳过 + 六类跳过原因 + 重复 openid 高亮 + 缺手机/生日/性别 + 特殊证件标识 + 汇总) [rbac: recruitment-application.promote.member]',
+  })
+  @ApiWrappedOkResponse(PromotePrecheckResultDto)
+  @ApiBizErrorResponse(
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.RECRUITMENT_CYCLE_NOT_FOUND,
+  )
+  promotePrecheck(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<PromotePrecheckResultDto> {
+    return this.promotionService.promotePrecheck(id, user);
   }
 
   @Post(':id/promote')

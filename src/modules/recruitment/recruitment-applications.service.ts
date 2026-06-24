@@ -32,6 +32,7 @@ import { WechatService } from '../wechat/wechat.service';
 import {
   APP_STATUS_MANUAL,
   APP_STATUS_PENDING_EVALUATION,
+  APP_STATUS_PROMOTED,
   APP_STATUS_PUBLICITY,
   APP_STATUS_REJECTED,
   APP_STATUS_VERIFIED,
@@ -63,6 +64,7 @@ import {
   isPromotable,
   isValidChineseId,
 } from './recruitment.constants';
+import { resolveBatchMatches } from './recruitment-batch-matching';
 import {
   RecruitmentIdentityService,
   type ConsumedPhoneIdentity,
@@ -74,7 +76,11 @@ import {
   deriveRecruitmentStage,
 } from './recruitment-progress-presenter';
 import type {
+  BatchMarkThresholdDto,
+  BatchMarkThresholdResultDto,
+  BatchMarkThresholdRowResultDto,
   EvaluateRecruitmentApplicationDto,
+  ExportRecruitmentApplicationsDto,
   IdCardImageUrlResponseDto,
   MarkThresholdDto,
   PublicityListItemDto,
@@ -571,6 +577,133 @@ export class RecruitmentApplicationsService {
     return this.toAdminDto(row, !canSensitive);
   }
 
+  // ============ 招新闭环优化 S6:批量导出 CSV(评审稿 §8.1;脱敏随码复用 S3 toAdminDto,零第二套)============
+  // 入口闸 = read.record(同 list/detail);**持 read.sensitive → 明文列 / 仅 read.record → 脱敏列**
+  //(S3 §11.1 分级):脱敏单一真相源在 toAdminDto(masked = !canSensitive),CSV 仅消费已脱敏 DTO —— 明文
+  // 绝不在无 read.sensitive 时出列。读操作 export placeholder 审计(含 admin / 范围 filter / 脱敏级;
+  // 复用既有 read.other pino 事件 + operation 区分,沿 registrations export 范式,不扩 locked AuditEvent union)。
+  // 返回纯 CSV 字符串(controller 包 StreamableFile + BOM,沿 activity-registrations CSV 导出范式;不引新依赖)。
+  async exportApplicationsCsv(
+    dto: ExportRecruitmentApplicationsDto,
+    user: CurrentUserPayload,
+  ): Promise<string> {
+    await this.assertCanOrThrow(user, 'recruitment-application.read.record');
+    const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
+    const filter = dto.filter ?? 'all';
+
+    const where: Prisma.RecruitmentApplicationWhereInput = {
+      deletedAt: null,
+      ...(dto.cycleId ? { cycleId: dto.cycleId } : {}),
+      ...this.exportStatusWhere(filter),
+    };
+    const rows = await this.prisma.recruitmentApplication.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+    });
+    // threshold-incomplete:verified 且门槛未齐(post-filter,沿 stats tracking 口径;
+    // verified 门槛齐为瞬态,markThreshold 末次完成即自动→pending_evaluation)。
+    const filtered =
+      filter === 'threshold-incomplete'
+        ? rows.filter((r) => !allThresholdsComplete(r.thresholdMarks as ThresholdMarks | null))
+        : rows;
+
+    // 脱敏随码:复用 S3 toAdminDto(masked = !canSensitive)→ 零第二套口径。
+    const dtos = filtered.map((r) => this.toAdminDto(r, !canSensitive));
+
+    auditPlaceholder('recruitment-application.read.other', {
+      adminId: user.id,
+      operation: 'export',
+      filter,
+      maskLevel: canSensitive ? 'plain' : 'masked',
+      rowsCount: dtos.length,
+    });
+
+    return this.formatApplicationsCsv(dtos);
+  }
+
+  // 导出筛选 → statusCode where(threshold-incomplete 先按 verified 取,再 post-filter 门槛未齐)。
+  private exportStatusWhere(filter: string): Prisma.RecruitmentApplicationWhereInput {
+    switch (filter) {
+      case 'manual':
+        return { statusCode: APP_STATUS_MANUAL };
+      case 'verified':
+      case 'threshold-incomplete':
+        return { statusCode: APP_STATUS_VERIFIED };
+      case 'pending-evaluation':
+        return { statusCode: APP_STATUS_PENDING_EVALUATION };
+      case 'publicity':
+        return { statusCode: APP_STATUS_PUBLICITY };
+      case 'promoted':
+        return { statusCode: APP_STATUS_PROMOTED };
+      case 'rejected':
+        return { statusCode: APP_STATUS_REJECTED };
+      case 'all':
+      default:
+        return {};
+    }
+  }
+
+  // 简单 CSV encoder(沿 activity-registrations「不引入新依赖」):双引号转义 + 含逗号/换行/双引号字段加引号。
+  // 入参为**已脱敏** RecruitmentApplicationAdminDto(idCardNumber/phone 列已随 S3 码掩码/明文);CSV 只投影,不二次脱敏。
+  private formatApplicationsCsv(rows: RecruitmentApplicationAdminDto[]): string {
+    const HEADERS = [
+      'id',
+      'cycle_id',
+      'status_code',
+      'temp_no',
+      'real_name',
+      'id_card_number',
+      'phone',
+      'document_type_code',
+      'is_foreigner',
+      'gender_code',
+      'age_group',
+      'city_district',
+      'verify_outcome',
+      'risk_level',
+      'manual_review_reason',
+      'elimination_stage',
+      'thresholds_complete',
+      'needs_manual_build',
+      'created_at',
+    ];
+    const escapeField = (value: string | number | boolean | Date | null): string => {
+      if (value === null || value === undefined) return '';
+      const s = value instanceof Date ? value.toISOString() : String(value);
+      if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+    const lines: string[] = [HEADERS.join(',')];
+    for (const r of rows) {
+      lines.push(
+        [
+          escapeField(r.id),
+          escapeField(r.cycleId),
+          escapeField(r.statusCode),
+          escapeField(r.tempNo),
+          escapeField(r.realName),
+          escapeField(r.idCardNumber),
+          escapeField(r.phone),
+          escapeField(r.documentTypeCode),
+          escapeField(r.isForeigner),
+          escapeField(r.genderCode),
+          escapeField(r.ageGroup),
+          escapeField(r.cityDistrict),
+          escapeField(r.verifyOutcome),
+          escapeField(r.riskLevel),
+          escapeField(r.manualReviewReason),
+          escapeField(r.eliminationStage),
+          escapeField(r.thresholdsComplete),
+          escapeField(r.needsManualBuild),
+          escapeField(r.createdAt),
+        ].join(','),
+      );
+    }
+    return lines.join('\n');
+  }
+
   // ============ admin 取证件照 signed-URL(配套②;L3;短 TTL;S3:敏感查看 read.sensitive)============
   async getIdCardImageUrl(
     id: string,
@@ -705,6 +838,98 @@ export class RecruitmentApplicationsService {
       });
       return this.toAdminDto(updated, false);
     });
+  }
+
+  // ============ 招新闭环优化 S6:批量标门槛(评审稿 §8.1;复用单行 markThreshold,零第二套)============
+  // 入参 = 匹配键数组(临时编号 / 手机 / 姓名+手机;「签到记录导入」由前端解析为本数组)+ thresholdCode + completed。
+  // **逐行复用单行 markThreshold**(各自独立事务 → 逐行幂等 + 逐行容错:某行匹配不上/状态非法不整批回滚;
+  // per-row mark-threshold DB 审计 + 自动推进语义全由单行逻辑承载,本方法零重复)。批次汇总走 logger.log
+  // (沿 promote 批量操作范式:per-row DB 审计 + 操作性汇总日志;不扩 locked AuditEvent union)。
+  async batchMarkThreshold(
+    dto: BatchMarkThresholdDto,
+    user: CurrentUserPayload,
+    meta: AuditMeta,
+    now: Date,
+  ): Promise<BatchMarkThresholdResultDto> {
+    // 入口快速失败(单行 markThreshold 内仍逐行复判,防御不破)。
+    await this.assertCanOrThrow(user, 'recruitment-application.mark.threshold');
+
+    // 候选集(限定 scope + 未软删;仅取匹配所需字段)。缺 cycleId 时跨全部未软删报名匹配
+    // (手机/姓名多命中 → ambiguous 安全留人工,不误标)。
+    const candidates = await this.prisma.recruitmentApplication.findMany({
+      where: { deletedAt: null, ...(dto.cycleId ? { cycleId: dto.cycleId } : {}) },
+      select: { id: true, tempNo: true, phone: true, realName: true },
+    });
+    const resolutions = resolveBatchMatches(dto.matches, candidates);
+
+    const results: BatchMarkThresholdRowResultDto[] = [];
+    let marked = 0;
+    let unmatched = 0;
+    let failed = 0;
+    let autoAdvanced = 0;
+
+    for (let i = 0; i < resolutions.length; i++) {
+      const r = resolutions[i];
+      if (r.status === 'unmatched') {
+        unmatched += 1;
+        results.push({
+          index: i,
+          status: 'unmatched',
+          applicationId: null,
+          matchedBy: null,
+          unmatchedReason: r.reason,
+          errorCode: null,
+          statusCode: null,
+          thresholdsComplete: null,
+        });
+        continue;
+      }
+      // 命中 → 复用单行 markThreshold(自有事务:逐行幂等 + 逐行容错 + 自动推进 + per-row 审计)。
+      try {
+        const updated = await this.markThreshold(
+          r.applicationId,
+          { thresholdCode: dto.thresholdCode, completed: dto.completed },
+          user,
+          meta,
+          now,
+        );
+        marked += 1;
+        const advanced = dto.completed && updated.statusCode === APP_STATUS_PENDING_EVALUATION;
+        if (advanced) autoAdvanced += 1;
+        results.push({
+          index: i,
+          status: 'marked',
+          applicationId: r.applicationId,
+          matchedBy: r.matchedBy,
+          unmatchedReason: null,
+          errorCode: null,
+          statusCode: updated.statusCode,
+          thresholdsComplete: updated.thresholdsComplete,
+        });
+      } catch (err) {
+        // 逐行容错:单行业务失败(如 28041 状态非法)记 failed,批次继续(不整批回滚)。
+        failed += 1;
+        results.push({
+          index: i,
+          status: 'failed',
+          applicationId: r.applicationId,
+          matchedBy: r.matchedBy,
+          unmatchedReason: null,
+          errorCode: err instanceof BizException ? err.biz.code : null,
+          statusCode: null,
+          thresholdsComplete: null,
+        });
+      }
+    }
+
+    // 批次汇总(操作性日志;per-row 审计已由单行 markThreshold 落库)。
+    this.logger.log(
+      `recruitment batch-mark-threshold code=${dto.thresholdCode} completed=${dto.completed} ` +
+        `total=${dto.matches.length} marked=${marked} unmatched=${unmatched} failed=${failed} ` +
+        `autoAdvanced=${autoAdvanced} by=${user.id}`,
+    );
+
+    return { results, total: dto.matches.length, marked, unmatched, failed, autoAdvanced };
   }
 
   // ============ 招新二期:综合评定 / 淘汰(单一人工闸;D-R2-3 / 流程冻结 §4)============
