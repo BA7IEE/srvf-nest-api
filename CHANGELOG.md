@@ -2,6 +2,16 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+### Added
+
+- **招新报名 RBAC 敏感字段分级(`recruitment-application.read.sensitive` 新码;D-lite;goal「招新闭环优化 S3 — RBAC 敏感字段分级」;GAP-006 第三切片;冻结评审稿 [`recruitment-phase4-loop-optimization-review.md §11`](docs/archive/reviews/recruitment-phase4-loop-optimization-review.md) / Q-P4-10)**:原 `recruitment-application.read.record` **一码看尽**脱敏列表 + **明文详情** + 证件照 signed-URL + 公示名单 + 工作台 stats(字段级无分级,合规风险)。本切片把「敏感查看」从 `read.record` 切出为新码 `recruitment-application.read.sensitive`:
+  - **`read.record` 语义收窄**(保留码、去明文)→ 只 gate 脱敏列表 + **脱敏详情** + 公示名单 + 工作台 stats;
+  - **敏感路径改判 `read.sensitive`**:报名详情端点持 `read.sensitive` → 明文证件号/手机,仅持 `read.record` → 脱敏详情(**响应字段集不变,仅 masking 随码**;入口闸仍 `read.record`);证件照 signed-URL 端点闸 `read.record` → `read.sensitive`。
+  - **迁移零行为回退**(§11.2):新码经 `BIZ_ADMIN_PERMISSION_SEED` 过滤默认补挂 `biz-admin`(additive 幂等,二跑无漂移);因业务面码现全绑 biz-admin 无其他角色,**本切片对现有用户零行为变化**(明文照旧),字段级分级仅对将来细分角色生效。
+  - **footprint**:**零 schema / 零 migration / 零 BizCode / 零 audit event / 零新依赖 / 零新端点 · controller**;权限码 155→**156**(seed +1,全绑 biz-admin → 绑定 66→**67**;ops-admin 63 / member 9 零变化);既有端点判权细化;`read.sensitive` 实装即用 **0 孤码**。改 RBAC 契约 → 同 PR 更新 `docs/handoff/admin-web.md` 能力图 + GAP-006 S3 进展 + 前端对接指南(`srvf-admin-web`);`docs:rbacmap:check`(156)0 FAIL/0 WARN · `docs:codemap:check` 0 FAIL。
+
 ## v0.30.0 - 2026-06-23
 
 ### Added

@@ -472,23 +472,26 @@ export class RecruitmentApplicationsService {
     };
   }
 
-  // ============ admin 详情(PII 全显)============
+  // ============ admin 详情(敏感字段分级;S3 §11.1)============
+  // 入口闸 = read.record(普通查看);持 read.sensitive → 明文证件号/手机,仅 read.record → 脱敏详情。
+  // 响应字段集不随码变(只 masking 随码;biz-admin 同持双码,行为不回退)。
   async detailForAdmin(
     id: string,
     user: CurrentUserPayload,
   ): Promise<RecruitmentApplicationAdminDto> {
     await this.assertCanOrThrow(user, 'recruitment-application.read.record');
     const row = await this.findAppOrThrow(id);
+    const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
     auditPlaceholder('recruitment-application.read.other', { adminId: user.id, applicationId: id });
-    return this.toAdminDto(row, false);
+    return this.toAdminDto(row, !canSensitive);
   }
 
-  // ============ admin 取证件照 signed-URL(配套②;L3;短 TTL)============
+  // ============ admin 取证件照 signed-URL(配套②;L3;短 TTL;S3:敏感查看 read.sensitive)============
   async getIdCardImageUrl(
     id: string,
     user: CurrentUserPayload,
   ): Promise<IdCardImageUrlResponseDto> {
-    await this.assertCanOrThrow(user, 'recruitment-application.read.record');
+    await this.assertCanOrThrow(user, 'recruitment-application.read.sensitive');
     const row = await this.findAppOrThrow(id);
     if (!row.idCardImageKey) {
       throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);

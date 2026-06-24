@@ -2159,6 +2159,9 @@ const MEMBER_INSURANCE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 // 招新二期 T1(2026-06-19;冻结评审稿 recruitment-phase2-review.md §3.4 / E-R2-11):recruitment-application
 // +3 码(mark.threshold / evaluate.assessment / promote.member),全绑 biz-admin;公示名单复用 read.record;
 // 端点 T2/T3 实装,T1 期间孤码(WARN 预期)。
+// 招新闭环优化 S3(2026-06-24;评审稿 recruitment-phase4-loop-optimization-review.md §11 / Q-P4-10):
+// recruitment-application +1 码 read.sensitive(敏感查看),全绑 biz-admin 无例外;read.record 语义收窄为脱敏。
+// 实装即用(详情明文闸 + 证件照 signed-URL),无孤码;上文「signed-URL 复用 read.record」自本切片起改判 read.sensitive。
 const RECRUITMENT_CYCLE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
     code: 'recruitment-cycle.read.record',
@@ -2190,7 +2193,18 @@ const RECRUITMENT_APPLICATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed>
     action: 'read',
     resourceType: 'record',
     description:
-      'admin 查看报名(列表 + 详情 + 取证件照 signed-URL 共用;读 PII 走 placeholder 审计)',
+      '普通查看:脱敏列表 + 脱敏详情 + 公示名单 + 工作台 stats(明文证件号/手机 + 证件照 signed-URL 走 read.sensitive;读记 placeholder 审计)',
+  },
+  // 招新闭环优化 S3(2026-06-24;评审稿 recruitment-phase4-loop-optimization-review.md §11.1 / Q-P4-10):
+  // 敏感查看从 read.record 切出。read.record 语义收窄为脱敏;明文证件号/手机(详情)+ 证件照 signed-URL 改判此码。
+  // 默认绑 biz-admin(沿 BIZ_ADMIN_PERMISSION_SEED 过滤;§11.2 迁移:现持 read.record 的 biz-admin 补挂本码 → 明文行为不回退)。
+  {
+    code: 'recruitment-application.read.sensitive',
+    module: 'recruitment-application',
+    action: 'read',
+    resourceType: 'sensitive',
+    description:
+      '敏感查看:详情明文证件号/手机 + 取证件照 signed-URL(从 read.record 切出;招新闭环优化 S3 §11.1)',
   },
   {
     code: 'recruitment-application.resolve.manual',
@@ -2398,7 +2412,7 @@ const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISS
 const BIZ_ADMIN_ROLE_CODE = 'biz-admin';
 const BIZ_ADMIN_DISPLAY_NAME = '业务管理员';
 const BIZ_ADMIN_DESCRIPTION =
-  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 §5 + 保险 §3.4 + 招新一/二/三期 §3.4 + CMS 内容模块评审稿 §7):member 5 + member-profile 3 + emergency-contact 4 + certificate 6 + activity 5 + activity-registration 5 + attendance 8 + team-insurance-policy 6 + member-insurance 1 + recruitment-cycle 3 + recruitment-application 5 + team-join-cycle 3 + team-join-application 4 + content 5 + content-attachment 4 = 67 条中绑 66;member.delete.record 仅 SUPER_ADMIN(D1=A 镜像);attachment 存量 20 码(member / certificate / activity)不在本角色,CMS content-image / content-file 写路径 4 码因内容授权绑入(评审稿 α / §5.2);每个 ADMIN 用户由 seed 自动补挂本角色';
+  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 §5 + 保险 §3.4 + 招新一/二/三期 §3.4 + 招新闭环优化 S3 §11 + CMS 内容模块评审稿 §7):member 5 + member-profile 3 + emergency-contact 4 + certificate 6 + activity 5 + activity-registration 5 + attendance 8 + team-insurance-policy 6 + member-insurance 1 + recruitment-cycle 3 + recruitment-application 6 + team-join-cycle 3 + team-join-application 4 + content 5 + content-attachment 4 = 68 条中绑 67;member.delete.record 仅 SUPER_ADMIN(D1=A 镜像);attachment 存量 20 码(member / certificate / activity)不在本角色,CMS content-image / content-file 写路径 4 码因内容授权绑入(评审稿 α / §5.2);每个 ADMIN 用户由 seed 自动补挂本角色';
 
 // Slow-4 T1(36/35)+ 保险模块 T1 增量(2026-06-13,+7 全绑 → 43/42)+ 招新一期 T1 增量(2026-06-18,+5 全绑 → 48/47):
 // 业务面权限点 + biz-admin 角色 + 绑定 + ADMIN 全员补挂 + 强校验。
