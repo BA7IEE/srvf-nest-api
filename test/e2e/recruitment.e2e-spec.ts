@@ -44,6 +44,8 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   let prisma: PrismaService;
   let adminAuth: string; // SUPER_ADMIN(rbac.can 短路通过)
   let userAuth: string; // 普通 USER(RBAC 边界)
+  let sensitiveAuth: string; // 非 SA:read.record + read.sensitive(S3 敏感查看)
+  let recordOnlyAuth: string; // 非 SA:仅 read.record(S3 脱敏查看)
 
   function validPayload(over: Record<string, unknown> = {}): Record<string, unknown> {
     return {
@@ -111,6 +113,36 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     return prisma.auditLog.count({ where: { event: 'recruitment-application.realname-verify' } });
   }
 
+  // S3 判权矩阵:给一个新的非 SA USER 精确授予 codes(建 Permission + 专用角色 + 绑 + 挂),返登录 authHeader。
+  // 角色/权限/绑定写在 beforeAll、不被 beforeEach 清(后者只清报名/promote 产物),跨测持久。
+  // code 形态恒 3 段 `<module>.<action>.<resourceType>`(recruitment-application.read.{record,sensitive})。
+  async function createUserWithCodes(username: string, codes: string[]): Promise<string> {
+    await createTestUser(app, { username, role: Role.USER });
+    const u = await prisma.user.findUniqueOrThrow({ where: { username }, select: { id: true } });
+    for (const code of codes) {
+      const [moduleName, action, resourceType] = code.split('.');
+      await prisma.permission.upsert({
+        where: { code },
+        update: {},
+        create: { code, module: moduleName, action, resourceType },
+      });
+    }
+    const perms = await prisma.permission.findMany({
+      where: { code: { in: codes } },
+      select: { id: true },
+    });
+    const role = await prisma.rbacRole.create({
+      data: { code: `e2e-role-${username}`, displayName: username },
+      select: { id: true },
+    });
+    await prisma.rolePermission.createMany({
+      data: perms.map((p) => ({ roleId: role.id, permissionId: p.id })),
+      skipDuplicates: true,
+    });
+    await prisma.userRole.create({ data: { userId: u.id, roleId: role.id } });
+    return (await loginAs(app, username)).authHeader;
+  }
+
   beforeAll(async () => {
     process.env.RECRUITMENT_THROTTLE_LIMIT = '100'; // 配额上限(评审稿 max 100);全链测试不触限流
     app = await createTestApp();
@@ -127,6 +159,15 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     adminAuth = (await loginAs(app, 'recruit_admin')).authHeader;
     await createTestUser(app, { username: 'recruit_user', role: Role.USER });
     userAuth = (await loginAs(app, 'recruit_user')).authHeader;
+
+    // S3 敏感字段分级判权矩阵用户(非 SA,走真实 RBAC 而非短路)
+    sensitiveAuth = await createUserWithCodes('recruit_sensitive', [
+      'recruitment-application.read.record',
+      'recruitment-application.read.sensitive',
+    ]);
+    recordOnlyAuth = await createUserWithCodes('recruit_record_only', [
+      'recruitment-application.read.record',
+    ]);
 
     // F3(#399):promote 现复用 canonical assertEmergencyRelationCodeValid 校验 emergency_relation 字典码;
     // seed 该字典 + ACTIVE 项,供 validPayload 的 emergencyContacts.relation 通过(reference data,
@@ -487,6 +528,74 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   it('⑪ 普通 USER token 调 admin 报名列表 → 30100', async () => {
     const res = await request(httpServer(app)).get(ADMIN_APPS).set('Authorization', userAuth);
     expectBizError(res, BizCode.RBAC_FORBIDDEN);
+  });
+
+  // ⑪b S3 敏感字段分级(评审稿 §11):持 read.record + read.sensitive → 详情明文 + 证件照 signed-URL 200
+  it('⑪b S3 · read.record+read.sensitive → 详情明文身份证号 + 证件照 signed-URL 200', async () => {
+    await openCycle();
+    await submit(validPayload({ wechatCode: 'code-s1', idCardNumber: ID_MATCH_A }));
+    const row = await prisma.recruitmentApplication.findFirst({
+      where: { openid: 'dev-openid-code-s1' },
+    });
+    const detail = await request(httpServer(app))
+      .get(`${ADMIN_APPS}/${row?.id}`)
+      .set('Authorization', sensitiveAuth);
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.idCardNumber).toBe(ID_MATCH_A); // 明文
+
+    const img = await request(httpServer(app))
+      .get(`${ADMIN_APPS}/${row?.id}/id-card-image-url`)
+      .set('Authorization', sensitiveAuth);
+    expect(img.status).toBe(200);
+    expect(typeof img.body.data.url).toBe('string');
+    expect(img.body.data.url.length).toBeGreaterThan(0);
+  });
+
+  // ⑪c S3:仅 read.record(无 read.sensitive)→ 详情脱敏(字段集不变) + 证件照 signed-URL 30100;列表仍可见
+  it('⑪c S3 · 仅 read.record → 详情脱敏 + 证件照 30100;列表(脱敏)仍 200', async () => {
+    await openCycle();
+    await submit(validPayload({ wechatCode: 'code-s2', idCardNumber: ID_MATCH_A }));
+    const row = await prisma.recruitmentApplication.findFirst({
+      where: { openid: 'dev-openid-code-s2' },
+    });
+
+    // 详情:可见(200)但证件号脱敏;字段集不变(realName 等同名键仍在)
+    const detail = await request(httpServer(app))
+      .get(`${ADMIN_APPS}/${row?.id}`)
+      .set('Authorization', recordOnlyAuth);
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.idCardNumber).not.toBe(ID_MATCH_A);
+    expect(detail.body.data.idCardNumber).toContain('*');
+    expect(detail.body.data.realName).toBe('张三');
+
+    // 证件照 signed-URL:闸已从 read.record 收紧为 read.sensitive → 30100
+    const img = await request(httpServer(app))
+      .get(`${ADMIN_APPS}/${row?.id}/id-card-image-url`)
+      .set('Authorization', recordOnlyAuth);
+    expectBizError(img, BizCode.RBAC_FORBIDDEN);
+
+    // 列表:read.record 仍可见(本就脱敏)
+    const list = await request(httpServer(app))
+      .get(ADMIN_APPS)
+      .set('Authorization', recordOnlyAuth);
+    expect(list.status).toBe(200);
+  });
+
+  // ⑪d S3:无任何码(普通 USER)→ 详情 + 证件照均 30100(闸优先)
+  it('⑪d S3 · 普通 USER(无码)→ 详情 + 证件照 signed-URL 均 30100', async () => {
+    await openCycle();
+    await submit(validPayload({ wechatCode: 'code-s3', idCardNumber: ID_MATCH_A }));
+    const row = await prisma.recruitmentApplication.findFirst({
+      where: { openid: 'dev-openid-code-s3' },
+    });
+    const detail = await request(httpServer(app))
+      .get(`${ADMIN_APPS}/${row?.id}`)
+      .set('Authorization', userAuth);
+    expectBizError(detail, BizCode.RBAC_FORBIDDEN);
+    const img = await request(httpServer(app))
+      .get(`${ADMIN_APPS}/${row?.id}/id-card-image-url`)
+      .set('Authorization', userAuth);
+    expectBizError(img, BizCode.RBAC_FORBIDDEN);
   });
 
   // ===== OCR 改造:识别端点 + manual_review resolve + 容量原子(FM-C 沿用)=====

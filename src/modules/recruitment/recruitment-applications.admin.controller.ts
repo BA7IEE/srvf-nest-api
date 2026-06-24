@@ -74,7 +74,7 @@ export class RecruitmentApplicationsAdminController {
   @Get(':id')
   @ApiOperation({
     summary:
-      '招新报名详情(身份证号/手机全显;读 PII 记审计) [rbac: recruitment-application.read.record]',
+      '招新报名详情(敏感分级 S3:持 read.sensitive 看明文身份证号/手机,仅 read.record 看脱敏;字段集不变;读 PII 记审计) [rbac: recruitment-application.read.record]',
   })
   @ApiWrappedOkResponse(RecruitmentApplicationAdminDto)
   @ApiBizErrorResponse(
@@ -92,7 +92,7 @@ export class RecruitmentApplicationsAdminController {
   @Get(':id/id-card-image-url')
   @ApiOperation({
     summary:
-      '取证件照短 TTL signed-URL(L3;不入日志/snapshot;读图记审计) [rbac: recruitment-application.read.record]',
+      '取证件照短 TTL signed-URL(L3;不入日志/snapshot;读图记审计;敏感分级 S3) [rbac: recruitment-application.read.sensitive]',
   })
   @ApiWrappedOkResponse(IdCardImageUrlResponseDto)
   @ApiBizErrorResponse(

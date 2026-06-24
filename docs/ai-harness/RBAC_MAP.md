@@ -29,6 +29,8 @@
 > 2026-06-21 CMS 内容发布模块 T3/T4 戳(同 goal,读取面收口):**权限事实零变化**(155 码 / 绑定 / 内置角色不动;open/app 读取面**零新权限码**——public + canUseApp self-scope);controller 47→**49**(+`ContentPublicController`〔open/v1/contents,@Public 无码 `[public]`,第 10 throttler `content-public` 60/60s〕 + `ContentAppController`〔app/v1/contents,canUseApp 准入 + 5 档可见性,无码 `[auth]`〕)。endpoint +4(open 2〔列表/详情,仅 published+public 防枚举〕 + app 2〔列表/详情,5 档可见性过滤 + viewCount 自增〕)。**5 档可见性**(public / member / formal_member / department / management)纯函数 `content.visibility.ts` 21 单测;读者出参零 authorUserId / 零 visibleOrganizationIds;签名 URL 为范围例外 a(`attachments/CLAUDE.md` 已 true-up)仅过可见级后返。`docs:rbacmap:check` **0 FAIL / 0 WARN**。
 >
 > 2026-06-23 队员/审批跨轴只读查询戳(goal「队员/审批『跨轴只读查询』补全」,支撑前端任务驱动后台 · 交接层 GAP-001 Tier2 / GAP-002 Tier3):**权限事实零变化**(155 码 / 绑定 / 内置角色不动——5 端点全复用现成 read 码,**零新码**);controller 49→**52**(+3:`AdminRegistrationsController`〔admin/v1/registrations〕 + `AdminMemberRegistrationsController`〔admin/v1/members/:memberId/registrations〕 + `AdminMemberAttendanceController`〔admin/v1/members/:memberId,attendance-records + contribution-summary 2 端点〕;跨活动考勤单据横扫为既有 `AttendanceSheetsResourceController` 加根 @Get,**不新增 class**)。endpoint +5(Tier2 跨活动横扫 registrations + attendance-sheets〔`[rbac: activity-registration.read.record]` / `[rbac: attendance.read.sheet]`〕;Tier3 队员 360 registrations + attendance-records + contribution-summary)。贡献值汇总实时算不落库,复用 team-join `computeCappedContribution` 封顶核(approved sheet + 北京日封顶 1.5,生涯累计无 cutoff;**禁裸 SUM**);MEMBER_NOT_FOUND 守卫镜像 admin-member-insurances。零 BizCode / 零 migration / 零 schema 列 / 零 audit event(纯读)。`docs:rbacmap:check` **0 FAIL / 0 WARN**。
+>
+> 2026-06-24 招新闭环优化 S3 戳(goal「招新闭环优化 S3 — RBAC 敏感字段分级」,冻结评审稿 [`recruitment-phase4-loop-optimization-review.md §11`](../archive/reviews/recruitment-phase4-loop-optimization-review.md) / Q-P4-10):权限码 155→**156**(recruitment-application +1:`read.sensitive` 敏感查看,从 `read.record` 切出,全绑 biz-admin 无例外);biz-admin 66→**67**;ops-admin 63 / member 9 零变化;endpoint **200** 不变 / controller **52** 不变(既有端点判权细化,零新端点/类)。`read.record` 语义收窄(脱敏列表 + 脱敏详情 + 公示名单 + 工作台 stats);`read.sensitive` 实装即用(详情明文证件号/手机闸 + 证件照 signed-URL),**0 孤码**。**§11.2 迁移:现 biz-admin 持 read.record,拆分后由 `BIZ_ADMIN_PERMISSION_SEED` 自动补挂 read.sensitive → 明文行为不回退;15+1 码现全绑 biz-admin 无其他角色,本切片对现有用户零行为变化(分级仅对将来细分角色生效)**。零 schema / 零 migration;改 RBAC 契约 → 同 PR 更新 `docs/handoff` admin-web 能力图 + 前端对接指南。`docs:rbacmap:check` **0 FAIL / 0 WARN**。
 
 ---
 
@@ -78,7 +80,7 @@
 | `admin/v1/team-insurance-policies`(保险 T2) | `team-insurance-policy.*`(6;list/detail/覆盖名单共用 read;add/remove 覆盖名单两码独立) |
 | `admin/v1/members/:memberId/insurances`(保险 T2) | `member-insurance.read.other`(1;数组无分页镜像 certificates;本人侧走 App self-scope 无码) |
 | `admin/v1/recruitment/cycles`(招新 T3) | `recruitment-cycle.*.record`(3;list/detail 共用 read;开/关轮 + 容量/通知模板走 update) |
-| `admin/v1/recruitment/applications`(招新 T3) | `recruitment-application.*`(2;list/detail/取证件照 signed-URL 共用 `read.record`;人工待核 `resolve.manual`)|
+| `admin/v1/recruitment/applications`(招新 T3;二期 T2;闭环优化 S3) | `recruitment-application.*`(5;list/脱敏详情共用 `read.record`;详情明文证件号·手机 + 证件照 signed-URL `read.sensitive`〔S3 §11〕;人工待核 `resolve.manual`;标门槛 `mark.threshold`;综合评定 `evaluate.assessment`)|
 | `admin/v1/team-join/cycles`(招新三期入队 T2) | `team-join-cycle.*.record`(3;list/detail 共用 read;开/关轮 + 轮次名走 update) |
 | `admin/v1/team-join/applications`(招新三期入队 T2/T4) | `team-join-application.*`(4;list/detail 共用 `read.record`;标 gate `mark.gate`;综合评估 `evaluate.assessment`;一键入队 `join.member`〔T4 设部门+级别 level-1〕)|
 | `admin/v1/contents`(CMS 内容 T2) | `content.*.record`(5;list/detail 共用 `read.record`;状态机 publish/unpublish/archive 共用 `publish.record`;封面 set/clear 走 `update.record`)。附件端点 upload-url/confirm/删 经 `AttachmentsService` 写路径判 `attachment.{upload,delete}.content-image\|content-file`〔`[rbac: attachment.upload.*]`/`[rbac: attachment.delete.*]` 通配族〕;confirm 仅 JWT + token〔`[auth]`〕|
@@ -104,7 +106,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(155 条,seed 幂等 upsert)
+## 3. 权限码全集(156 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -132,7 +134,7 @@
 | 队员自购保险(保险 T1) | 1 | `member-insurance.read.other`(admin 查队员保险;App 本人侧 self-scope 无码;T2 实装) |
 | 实名核验设置(招新 T1) | 3 | `realname-setting.{read,update}.singleton` / `realname-setting.reset.credentials`(`reset` 不绑 ops-admin 镜像 D2=A;T2 端点实装前孤码 WARN 预期) |
 | 招新轮次(招新 T1;T3 实装) | 3 | `recruitment-cycle.{read,create,update}.record`(`admin/v1/recruitment/cycles`;孤码 T3 清零) |
-| 招新报名(招新一期 T1→T3;二期 T1→T2/T3) | 5 | `recruitment-application.read.record`(列表/详情/取证件照 signed-URL/公示名单 共用)/ `recruitment-application.resolve.manual`(人工待核 resolve)/ `recruitment-application.mark.threshold`(标门槛)/ `recruitment-application.evaluate.assessment`(综合评定/淘汰)/ `recruitment-application.promote.member`(一键发号建 User+Member);`admin/v1/recruitment/*`;二期 3 码 T2/T3 实装前孤码 WARN |
+| 招新报名(招新一期 T1→T3;二期 T1→T2/T3;闭环优化 S3) | 6 | `recruitment-application.read.record`(普通查看:脱敏列表 + 脱敏详情 + 公示名单 + 工作台 stats 共用)/ `recruitment-application.read.sensitive`(敏感查看:详情明文证件号·手机 + 证件照 signed-URL;S3 §11.1 从 read.record 切出,全绑 biz-admin)/ `recruitment-application.resolve.manual`(人工待核 resolve)/ `recruitment-application.mark.threshold`(标门槛)/ `recruitment-application.evaluate.assessment`(综合评定/淘汰)/ `recruitment-application.promote.member`(一键发号建 User+Member);`admin/v1/recruitment/*` |
 | 入队轮(招新三期入队 T2) | 3 | `team-join-cycle.{read,create,update}.record`(`admin/v1/team-join/cycles`;list/detail 共用 read;至多一个 open 轮) |
 | 入队申请(招新三期入队 T2/T4) | 4 | `team-join-application.read.record`(列表/详情共用)/ `team-join-application.mark.gate`(标 gate)/ `team-join-application.evaluate.assessment`(综合评估/淘汰)/ `team-join-application.join.member`(一键入队 = 设部门 + 级别 level-1,T4);`admin/v1/team-join/applications`;自助 `app/v1/me/team-join/*` 发起/查进度/改候选 **self-scope 无码** |
 | 内容发布(CMS T1 seed;T2 admin 实装) | 5 | `content.{read,create,update,delete,publish}.record`(`admin/v1/contents`;list/detail 共用 read;状态机 publish/unpublish/archive 共用 publish;封面 set/clear 走 update;app/open 读零码 T3/T4;**T2 controller 实装后孤码 WARN 清零**) |
