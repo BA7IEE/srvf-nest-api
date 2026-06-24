@@ -2,6 +2,8 @@
 //
 // 沿冻结评审稿 docs/archive/reviews/recruitment-phase1-review.md(下称"评审稿")。
 
+import { createHash, randomBytes } from 'node:crypto';
+
 import { maskIdCard } from '../realname/realname.constants';
 
 // ===== 轮次状态(String;后台开关)=====
@@ -272,3 +274,29 @@ export const EMERGENCY_CONTACTS_MIN = 2;
 
 // 复用 realname 的身份证号掩码(audit / 日志;评审稿配套③)
 export { maskIdCard };
+
+// =============================================================================
+// 招新四期 S4a:H5 + 手机身份链(2026-06-24;评审稿 recruitment-phase4-loop-optimization-review.md §3)
+// =============================================================================
+
+// 报名前身份会话 TTL(§3.3「如 30min」):验码 → 发 token,token 30min 内一次性消费
+export const RECRUITMENT_IDENTITY_SESSION_TTL_SECONDS = 30 * 60;
+
+// 手机验证方式(application.phoneVerificationMethod / session.phoneVerificationMethod;§3.3)
+export const PHONE_VERIFICATION_METHOD_SMS = 'sms'; // H5 短信验码
+export const PHONE_VERIFICATION_METHOD_WECHAT = 'wechat'; // 小程序链(辅;本刀提交端不写,预留)
+
+// 自助换手机换绑原因默认值(rebind-phone;无入参时;§3.4)
+export const PHONE_CHANGE_REASON_SELF_REBIND = 'self-rebind';
+
+// 报名前身份会话凭证(phoneVerificationToken):明文一次性返客户端,入库只存 sha256 hex
+// (沿 refresh-token.util / sms codeHash 范式;§3.2 验后持久凭证净新建)。
+// 32 字节 CSPRNG → 64 字符 hex 明文 token;禁 Math.random(沿 SMS E-29)。
+export function generatePhoneVerificationToken(): string {
+  return randomBytes(32).toString('hex');
+}
+
+/** token 入库前 sha256 hex(明文永不入库;查询/消费时同算比对) */
+export function hashPhoneVerificationToken(rawToken: string): string {
+  return createHash('sha256').update(rawToken, 'utf8').digest('hex');
+}

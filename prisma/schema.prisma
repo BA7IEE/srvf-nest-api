@@ -1191,6 +1191,7 @@ enum SmsPurpose {
   PASSWORD_RESET // 找回密码(pre-auth;password-reset-by-sms 评审稿 §3.1)
   LOGIN // OTP 验证码登录(pre-auth;queue-b 评审稿 §5.1;通知用途不占 purpose——生日批走 send_logs.templateKey)
   WECHAT_BIND // 微信 openid 绑定锚点(pre-auth;wechat-mini-login 评审稿 D-W1)
+  RECRUITMENT_BIND // H5 招新报名前手机身份链(pre-auth 匿名;recruitment-phase4 评审稿 §3.2 E-P4-3;userId 形参放宽 null,E-P4-4)
 }
 
 model SmsSendLog {
@@ -1378,7 +1379,8 @@ model RecruitmentCycle {
   qqGroup        String? // QQ 群
   notifyTemplate Json? // 可配置通知模板(各节点文案)
 
-  applications RecruitmentApplication[]
+  applications     RecruitmentApplication[]
+  identitySessions RecruitmentIdentitySession[]
 
   @@index([year])
   @@index([statusCode])
@@ -1435,6 +1437,16 @@ model RecruitmentApplication {
   evaluationNote    String? // 综合评定备注(D-R2-3)
   promotedMemberId  String? // 报名→Member 链(E-R2-8;不建外键,保 phase-1 D-R-1「报名行无 Member FK」字面)
 
+  // ===== 招新四期 S4a(H5 + 手机身份链;2026-06-24,评审稿 recruitment-phase4-loop-optimization-review.md §3.4)=====
+  // 手机号上调为身份链锚(原仅通知用途);以下全可空、纯加列无破坏。phone 明文仍存 phone 列(留存清),
+  // 本组为身份链元数据:验证方式 / 换绑轨迹 / 风险标记。掩码三不:audit/日志/snapshot 不出明文手机。
+  phoneVerifiedAt         DateTime? // H5 验码成功时刻(小程序链恒 null);submit/rebind-phone 落
+  phoneVerificationMethod String? // sms(H5 验码)/ wechat(小程序辅);提交时落
+  phoneChangedAt          DateTime? // 自助换手机换绑时刻(rebind-phone)
+  phoneChangeReason       String? // 换手机原因(自由短串;rebind-phone)
+  phoneBindingHistory     Json? // 换绑历史追加 [{from,to,at,reason,method}](rebind-phone;DB 内可存明文,沿 phone 列同敏感级)
+  phoneRiskFlag           String? // 风险标记(后台解绑纠错切片用;本刀仅建列不写)
+
   cycle RecruitmentCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict)
 
   // 业务唯一约束(partial unique;migration.sql 末尾手写,E-R-9/10;Prisma DSL 不支持带 WHERE):
@@ -1449,6 +1461,39 @@ model RecruitmentApplication {
   @@index([deletedAt])
   @@index([createdAt])
   @@map("recruitment_applications")
+}
+
+// 招新四期 S4a(H5 + 手机身份链;2026-06-24,评审稿 recruitment-phase4-loop-optimization-review.md §3.3 / E-P4-5)。
+// 报名前身份会话行(净新建):承载「H5 验码 → 短时一次性 token → 提交」的有时间差身份链。
+// **不进 recruitment_applications,不参与去重/统计/容量**;TTL 过期由留存 SOP 清(expiresAt 索引)。
+// 临时凭证(沿 sms_verification_codes / refresh_tokens 范式):token 入库只存 sha256 hex,
+// consumedAt 标一次性消费(非 deletedAt 软删);明文 token 仅验码响应一次性返客户端,永不入库/日志。
+// ocrAttemptCount/lastOcrOutcome/requiresRetake 为 S4b(OCR 六分流重拍计数)**预建列,本刀不写逻辑**(Q-P4-1)。
+model RecruitmentIdentitySession {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  expiresAt DateTime // 签发 + TTL(30min);过期即不可消费
+
+  cycleId String // 轮次锚(token 限定本轮);真实 FK
+
+  phone                      String // 验证过的手机(身份链锚)
+  phoneVerifiedAt            DateTime // 验码成功时刻
+  phoneVerificationMethod    String // sms(H5)/ wechat(小程序辅)
+  phoneVerificationTokenHash String    @unique // sha256(raw) hex;明文 token 永不入库,验码一次性返客户端
+  consumedAt                 DateTime? // submit 原子消费即作废(一次性;镜像 sms_verification_codes.consumedAt)
+  openid                     String? // 可选(小程序链 code2session 得)
+
+  // S4b 预建(OCR 六分流重拍计数;本刀仅建列、不写逻辑;Q-P4-1)
+  ocrAttemptCount Int     @default(0)
+  lastOcrOutcome  String?
+  requiresRetake  Boolean @default(false)
+
+  cycle RecruitmentCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+
+  @@index([phone, cycleId]) // 手机 + 轮次查(§3.3)
+  @@index([cycleId])
+  @@index([expiresAt]) // TTL 清理(留存 SOP)
+  @@map("recruitment_identity_sessions")
 }
 
 model RealnameVerificationSettings {

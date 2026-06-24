@@ -80,12 +80,15 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
     const rbac = { can: jest.fn() };
     const auditLogs = { log: jest.fn() };
 
+    // S4a:identity service(本组测试走 wechatCode 路径,hasToken=false,故 assert/consume 不被调用)
+    const identity = { assertPhoneSessionValid: jest.fn(), consumePhoneSession: jest.fn() };
     const service = new RecruitmentApplicationsService(
       prisma as never,
       rbac as never,
       auditLogs as never,
       wechat as never,
       realname as never,
+      identity as never,
       storage,
     );
     return { service, storage, prisma, realname };
@@ -208,6 +211,7 @@ describe('RecruitmentApplicationsService · S3 敏感字段分级判权', () => 
       { log: jest.fn() } as never,
       {} as never,
       {} as never,
+      {} as never, // S4a:identity service(本组判权测试不触提交链)
       storage,
     );
     return { service, rbac, storage };
