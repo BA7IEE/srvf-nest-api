@@ -81,10 +81,10 @@
 |---|---|---|---|
 | **GAP-001** | 审批工作台:跨所有活动按 status 横扫报名/考勤 | `GET /api/admin/v1/registrations?statusCode=` · `GET /api/admin/v1/attendance-sheets?statusCode=` | ✅ **已发 v0.30.0**(2026-06-23;[PR #432](https://github.com/BA7IEE/srvf-nest-api/pull/432) → bump #433 → tag `v0.30.0` / Release Latest)。注:过滤参数实装为 `statusCode`(非草拟期 `status`) |
 | **GAP-002** | 队员 360:某队员的报名履历 / 考勤记录 / 贡献值生涯累计 | `GET .../members/:id/registrations` · `GET .../members/:id/attendance-records` · `GET .../members/:id/contribution-summary`(贡献值=实时算复用 team-join `computeCappedContribution` 封顶核,生涯 cutoff=null + 北京日封顶 1.5) | ✅ **已发 v0.30.0**(2026-06-23;[PR #432](https://github.com/BA7IEE/srvf-nest-api/pull/432) → bump #433 → tag `v0.30.0` / Release)。注:`attendance-records` 仅返 approved sheet 内 records |
-| **GAP-003** | 工作台/首页待办汇总数字(待审报名数 / 进行中活动数 / 招新进度)— 设计期识别,待前端确认是否做仪表盘 | 一个聚合 stats 端点(或前端用各列表 `total`/分页字段拼,无新端点) | 提出 |
+| **GAP-003** | 工作台/首页待办汇总数字(待审报名数 / 进行中活动数 / 招新进度)— 设计期识别,待前端确认是否做仪表盘 | 一个聚合 stats 端点(或前端用各列表 `total`/分页字段拼,无新端点);**招新进度**部分 = `GET /api/admin/v1/recruitment/cycles/{id}/stats` | 🟡 **部分交付**(2026-06-24):**招新进度**部分已由招新工作台 stats 端点答复(GAP-006 S2,见下,Unreleased;五组聚合 今日/待处理/门槛进度/综合评定/公示发号)。**待审报名数 / 进行中活动数**仍未做(可待活动域 stats 合并,或前端用各列表 `total` 拼,无强需新端点) |
 | **GAP-004** | 管理员自助改密(PC 个人中心「旧→新」)— **调研结论:非缺口**。`app/v1/me/password` 是账号级自助(`D-P2-3-1` 锁定,"admin without member 允许使用"),admin 用自身 JWT 即可改密(复用 `changeMyPassword`:同事务撤销 refresh + `password.change.self` 审计 + 限流) | 无需新端点;admin 个人中心直接调账号级 `app/v1/me/password`(例外见踩坑 #6) | ✅ 已澄清(2026-06-23 用户拍板=文档化,不造 `admin/v1` 镜像) |
 | **GAP-005** | 向队员主动推送通知/公告(活动提醒 / 招新公告 / 紧急召集);现 notifications 模块仅"生日短信"后台任务,无 admin 推送面 | 待定:notification 推送面(涉新 schema + 新 RBAC 码 = **D 档拍板**) | 提出(已确认要做,待出 goal) |
-| **GAP-006** | 招新→入队完整闭环优化(招新工作台 stats / 新人进度模型 / OCR 复核分流 / H5 手机身份链 / promote 志愿者化 / 批量操作 / RBAC 字段分级 等 12 域)— T0 评审已冻结、零代码,按切片另出 goal | 冻结评审稿 [`archive/reviews/recruitment-phase4-loop-optimization-review.md`](../archive/reviews/recruitment-phase4-loop-optimization-review.md)(其 §7 工作台 stats **含 GAP-003「招新进度」部分**;其 §9 通知闭环**挂 GAP-005 落地后**)| 提出(T0 冻结 2026-06-24,12 项待拍板;首切片 = 状态业务文案+进度模型,档 A 纯读) |
+| **GAP-006** | 招新→入队完整闭环优化(招新工作台 stats / 新人进度模型 / OCR 复核分流 / H5 手机身份链 / promote 志愿者化 / 批量操作 / RBAC 字段分级 等 12 域)— T0 评审已冻结、零代码,按切片另出 goal | 冻结评审稿 [`archive/reviews/recruitment-phase4-loop-optimization-review.md`](../archive/reviews/recruitment-phase4-loop-optimization-review.md)(其 §7 工作台 stats **含 GAP-003「招新进度」部分**;其 §9 通知闭环**挂 GAP-005 落地后**)| 🟡 **已出 goal · 按切片交付中**(T0 冻结 2026-06-24,12 项 Q-P4-* 已按推荐拍板):**S1 状态业务文案 + 新人进度模型**已发(#439,Unreleased)· **S2 招新工作台 stats**已交付(本 PR,Unreleased;`GET …/cycles/{id}/stats` 五组只读聚合,答 GAP-003「招新进度」);S3~S7 待后续切片(S5 promote 志愿者化 = 最重一刀;S7 通知阻塞 GAP-005) |
 
 > 备注:**活动作战室(Tier1)不是缺口**——后端全就绪,纯前端重组 IA(见 §2.1)。
 > ✅ GAP-001 / GAP-002 已于 2026-06-23 **发版 v0.30.0**(#432 + bump #433 + tag/Release Latest),§2.2/§2.3 已 ⛔→✅。
@@ -143,6 +143,7 @@
 | 队员列表 → 360 | `members` + 8 子资源(§2.2) | `member.read.record`(各子 tab 另持各自 read 码) | `el-tabs` 九 tab;贡献值用 `contribution-summary` capped 值,**别裸 SUM**(§3 #4) |
 | 队保单 | `team-insurance-policies` | `team-insurance-policy.read.record` | 左保单表 + 右覆盖名单(`el-transfer` 或加/移弹窗) |
 | 招新轮次 / 报名审核 | `recruitment/{cycles,applications}` | `recruitment-cycle.read.record` · `recruitment-application.read.record` | `el-steps` 表流程;证件照走 signed-URL;`el-drawer` 标门槛/综合评定/一键发号 |
+| 招新工作台(进度看板) | `recruitment/cycles/:id/stats` | `recruitment-application.read.record` | 五组聚合卡片(今日数据/待处理事项/门槛进度/综合评定/公示发号);**纯读**,计数与报名 stage 同源;`el-statistic` 数字卡 + `el-progress` 门槛分布;待人工 normal/high/system 三栏为 `verifyOutcome` 代理(精确 riskLevel 待 S4) |
 | 入队管理 / 入队申请 | `team-join/{cycles,applications}` | `team-join-cycle.read.record` · `team-join-application.read.record` | 同上;一键入队弹窗选部门(`el-tree-select`)+ 默认级别 L1 |
 | 内容发布 | `contents` | `content.read.record` | 富文本 + 封面 `el-upload` + 可见性下拉(5 档)+ 状态机按钮 |
 | 用户管理 | `admin/v1/users` | `user.read.account` | CRUD;自我保护 / 最后超管后端拦,按错误码提示 |
@@ -166,7 +167,7 @@
 
 ### 5.4 工作台 / 首页
 
-最实用的落地页是"**有什么等我处理**"(待审报名 / 考勤),而非报表。**建议直接把「审批工作台」设为登录默认路由**:后端**无聚合 stats 端点**(数字卡片 `el-statistic` 现只能靠各列表 `total` 拼),与其先做个喂不饱的仪表盘,不如用工作台兜底,待 [GAP-003](#4-缺口台账-gap-ledger) 落地再加汇总卡片。
+最实用的落地页是"**有什么等我处理**"(待审报名 / 考勤),而非报表。**建议直接把「审批工作台」设为登录默认路由**:活动/报名/考勤域**仍无全局聚合 stats 端点**(首页数字卡片 `el-statistic` 现只能靠各列表 `total` 拼),与其先做个喂不饱的仪表盘,不如用工作台兜底,待 [GAP-003](#4-缺口台账-gap-ledger) 的活动域部分落地再加汇总卡片。**招新域例外**:招新工作台已有专属 stats 端点(`recruitment/cycles/:id/stats`,五组聚合,GAP-006 S2),招新进度看板可直接做。
 
 ---
 

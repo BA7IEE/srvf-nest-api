@@ -370,6 +370,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/recruitment/cycles/{id}/publicity-list'],
   // 招新二期 T3:一键发号(建 User+Member),199→200。
   ['post', '/api/admin/v1/recruitment/cycles/{id}/promote'],
+  // 招新闭环优化 S2(2026-06-24;冻结评审稿 recruitment-phase4-loop-optimization-review.md §7):
+  //   招新工作台聚合只读 stats(五组;纯读零 schema;复用 read.record 零新 RBAC 码;答 GAP-003)。
+  ['get', '/api/admin/v1/recruitment/cycles/{id}/stats'],
   // 招新三期(入队:志愿者→队员)T2(2026-06-19;冻结评审稿 recruitment-phase3-review.md §3.2):
   //   team-join admin 面 8 端点(入队轮 CRUD 4 + 报名 list/detail/标 gate/综合评估 4),200→208(均 admin/v1,仅新增)。
   //   app 自助面(T3)/ 一键入队(T4)后续追加。
@@ -729,6 +732,15 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'RecruitmentApplicationAdminDto',
   'ResolveRecruitmentApplicationDto',
   'IdCardImageUrlResponseDto',
+  // 招新闭环优化 S2(2026-06-24;评审稿 §7.1):招新工作台 stats 五组出参(独立 class 物理隔离;
+  //   嵌套 today/pending/threshold(+ item)/evaluation/issuance 六个子 DTO 均注册为 named schema)。
+  'RecruitmentCycleStatsDto',
+  'RecruitmentStatsTodayDto',
+  'RecruitmentStatsPendingDto',
+  'RecruitmentStatsThresholdDto',
+  'RecruitmentStatsThresholdItemDto',
+  'RecruitmentStatsEvaluationDto',
+  'RecruitmentStatsIssuanceDto',
 
   // CMS 内容发布模块(第 28 模块)T2(2026-06-21;冻结评审稿 content-module-review.md §6/§8):
   //   content admin DTO 物理隔离(独立 class,禁止继承 / Pick / Omit / Mapped Types)。

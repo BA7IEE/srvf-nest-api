@@ -33,11 +33,19 @@ import {
   PublicityListItemDto,
   PublicityListResponseDto,
   RecruitmentCycleResponseDto,
+  RecruitmentCycleStatsDto,
+  RecruitmentStatsEvaluationDto,
+  RecruitmentStatsIssuanceDto,
+  RecruitmentStatsPendingDto,
+  RecruitmentStatsThresholdDto,
+  RecruitmentStatsThresholdItemDto,
+  RecruitmentStatsTodayDto,
   UpdateRecruitmentCycleDto,
 } from './recruitment.dto';
 import { RecruitmentApplicationsService } from './recruitment-applications.service';
 import { RecruitmentCyclesService } from './recruitment-cycles.service';
 import { RecruitmentPromotionService } from './recruitment-promotion.service';
+import { RecruitmentStatsService } from './recruitment-stats.service';
 
 // 招新一期 T3(2026-06-18):招新轮次 admin surface(评审稿 §3.2 端点 6-9)。
 // 入口仅 JwtAuthGuard,**不**挂 @Roles;判权全在 service rbac.can()(R 模式)。
@@ -60,6 +68,13 @@ function buildAuditMeta(req: Request): AuditMeta {
   PromoteResultDto,
   PromotedItemDto,
   PromoteSkippedItemDto,
+  RecruitmentCycleStatsDto,
+  RecruitmentStatsTodayDto,
+  RecruitmentStatsPendingDto,
+  RecruitmentStatsThresholdDto,
+  RecruitmentStatsThresholdItemDto,
+  RecruitmentStatsEvaluationDto,
+  RecruitmentStatsIssuanceDto,
 )
 @Controller('admin/v1/recruitment/cycles')
 export class RecruitmentCyclesController {
@@ -67,6 +82,7 @@ export class RecruitmentCyclesController {
     private readonly service: RecruitmentCyclesService,
     private readonly applicationsService: RecruitmentApplicationsService,
     private readonly promotionService: RecruitmentPromotionService,
+    private readonly statsService: RecruitmentStatsService,
   ) {}
 
   @Post()
@@ -143,6 +159,24 @@ export class RecruitmentCyclesController {
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<PublicityListResponseDto> {
     return this.applicationsService.publicityList(id, user);
+  }
+
+  @Get(':id/stats')
+  @ApiOperation({
+    summary:
+      '招新工作台聚合 stats(今日数据/待处理事项/门槛进度/综合评定/公示发号 五组;纯读零写;各业务态计数与 stage 派生同源) [rbac: recruitment-application.read.record]',
+  })
+  @ApiWrappedOkResponse(RecruitmentCycleStatsDto)
+  @ApiBizErrorResponse(
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.RECRUITMENT_CYCLE_NOT_FOUND,
+  )
+  stats(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<RecruitmentCycleStatsDto> {
+    return this.statsService.getCycleStats(id, user, new Date());
   }
 
   @Post(':id/promote')

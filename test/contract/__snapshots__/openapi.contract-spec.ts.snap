@@ -6380,6 +6380,66 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "RecruitmentCycleStatsDto": {
+    "properties": {
+      "cycleId": {
+        "type": "string",
+      },
+      "cycleYear": {
+        "type": "number",
+      },
+      "evaluation": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RecruitmentStatsEvaluationDto",
+          },
+        ],
+        "description": "综合评定",
+      },
+      "issuance": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RecruitmentStatsIssuanceDto",
+          },
+        ],
+        "description": "公示发号",
+      },
+      "pending": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RecruitmentStatsPendingDto",
+          },
+        ],
+        "description": "待处理事项",
+      },
+      "threshold": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RecruitmentStatsThresholdDto",
+          },
+        ],
+        "description": "门槛进度",
+      },
+      "today": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RecruitmentStatsTodayDto",
+          },
+        ],
+        "description": "今日数据",
+      },
+    },
+    "required": [
+      "cycleId",
+      "cycleYear",
+      "today",
+      "pending",
+      "threshold",
+      "evaluation",
+      "issuance",
+    ],
+    "type": "object",
+  },
   "RecruitmentOcrRecognizeResponseDto": {
     "properties": {
       "antiForgeryWarnings": {
@@ -6430,6 +6490,156 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "required": [
       "wechatCode",
+    ],
+    "type": "object",
+  },
+  "RecruitmentStatsEvaluationDto": {
+    "properties": {
+      "eliminated": {
+        "description": "评定淘汰(rejected 且 eliminationStage=evaluation)",
+        "type": "number",
+      },
+      "passed": {
+        "description": "已通过进公示(stage=publicity;= publicity 态)",
+        "type": "number",
+      },
+      "pending": {
+        "description": "待评定(stage=evaluation;= pending_evaluation 态)",
+        "type": "number",
+      },
+    },
+    "required": [
+      "pending",
+      "passed",
+      "eliminated",
+    ],
+    "type": "object",
+  },
+  "RecruitmentStatsIssuanceDto": {
+    "properties": {
+      "inPublicity": {
+        "description": "公示中(stage=publicity;= publicity 态)",
+        "type": "number",
+      },
+      "needManualBuild": {
+        "description": "需手动建档数(decidePromotionIssuance 跳过项;外籍/缺派生字段/openid 占用)",
+        "type": "number",
+      },
+      "oneClickIssuable": {
+        "description": "可一键发号数(复用 decidePromotionIssuance 预判;与 publicity-list promotableCount 同源)",
+        "type": "number",
+      },
+      "promoted": {
+        "description": "已发号(stage=volunteer;= promoted 态)",
+        "type": "number",
+      },
+    },
+    "required": [
+      "inPublicity",
+      "oneClickIssuable",
+      "needManualBuild",
+      "promoted",
+    ],
+    "type": "object",
+  },
+  "RecruitmentStatsPendingDto": {
+    "properties": {
+      "manualHigh": {
+        "description": "待人工·高风险(verifyOutcome=forgery_warning 代理;riskLevel=high 精确分栏待 S4)",
+        "type": "number",
+      },
+      "manualNormal": {
+        "description": "待人工·普通(verifyOutcome 代理:非 ocr_error/forgery_warning;riskLevel=normal 精确分栏待 S4)",
+        "type": "number",
+      },
+      "manualSystem": {
+        "description": "待人工·系统异常(verifyOutcome=ocr_error 代理;riskLevel=system 精确分栏待 S4)",
+        "type": "number",
+      },
+      "manualTotal": {
+        "description": "待人工总数(stage=manual;= manual_review 态)",
+        "type": "number",
+      },
+      "pendingEvaluation": {
+        "description": "待综合评定(stage=evaluation;= pending_evaluation 态)",
+        "type": "number",
+      },
+      "pendingIssuance": {
+        "description": "待发号(stage=publicity;= publicity 态)",
+        "type": "number",
+      },
+    },
+    "required": [
+      "manualTotal",
+      "manualNormal",
+      "manualHigh",
+      "manualSystem",
+      "pendingEvaluation",
+      "pendingIssuance",
+    ],
+    "type": "object",
+  },
+  "RecruitmentStatsThresholdDto": {
+    "properties": {
+      "byThreshold": {
+        "description": "5 项各自完成人数分布",
+        "items": {
+          "$ref": "#/components/schemas/RecruitmentStatsThresholdItemDto",
+        },
+        "type": "array",
+      },
+      "tracking": {
+        "description": "门槛跟踪中人数(stage=threshold;verified 且门槛未齐)",
+        "type": "number",
+      },
+    },
+    "required": [
+      "tracking",
+      "byThreshold",
+    ],
+    "type": "object",
+  },
+  "RecruitmentStatsThresholdItemDto": {
+    "properties": {
+      "code": {
+        "description": "门槛 code(patrol1/patrol2/training/redCross/bsafe)",
+        "type": "string",
+      },
+      "completedCount": {
+        "description": "本轮完成该门槛人数(thresholdMarks 真投影,标记存在即完成)",
+        "type": "number",
+      },
+      "name": {
+        "description": "门槛展示名",
+        "type": "string",
+      },
+    },
+    "required": [
+      "code",
+      "name",
+      "completedCount",
+    ],
+    "type": "object",
+  },
+  "RecruitmentStatsTodayDto": {
+    "properties": {
+      "manualProcessed": {
+        "description": "今日人工处理数(reviewedAt 北京日界当日;人工 resolve 时刻)",
+        "type": "number",
+      },
+      "newApplications": {
+        "description": "今日新报名(createdAt 北京日界当日)",
+        "type": "number",
+      },
+      "tempNoIssued": {
+        "description": "今日发临时号(verifiedAt 北京日界当日)",
+        "type": "number",
+      },
+    },
+    "required": [
+      "newApplications",
+      "tempNoIssued",
+      "manualProcessed",
     ],
     "type": "object",
   },
@@ -27596,6 +27806,163 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "公示名单(姓名 + 拟发编号,拼音序,零敏感;外籍 needsManualBuild=true 不占号、一键发号不含) [rbac: recruitment-application.read.record]",
+      "tags": [
+        "Admin - Recruitment Cycles",
+      ],
+    },
+  },
+  "/api/admin/v1/recruitment/cycles/{id}/stats": {
+    "get": {
+      "operationId": "RecruitmentCyclesController_stats",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/RecruitmentCycleStatsDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "28001: 招新轮次不存在",
+                    "enum": [
+                      28001,
+                    ],
+                    "example": 28001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "招新轮次不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "招新轮次不存在(code=28001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "招新工作台聚合 stats(今日数据/待处理事项/门槛进度/综合评定/公示发号 五组;纯读零写;各业务态计数与 stage 派生同源) [rbac: recruitment-application.read.record]",
       "tags": [
         "Admin - Recruitment Cycles",
       ],

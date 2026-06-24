@@ -469,3 +469,96 @@ export class IdCardImageUrlResponseDto {
   @ApiProperty({ description: 'URL 过期时刻' })
   expiresAt!: Date;
 }
+
+// ============ 招新闭环优化 S2:招新工作台 stats(评审稿 §7.1 五组;纯读聚合,零敏感明文)============
+// 各业务态计数与 S1 deriveRecruitmentStage 同源(单一 stage 口径,零第二套判定;评审稿 §7.1 line 365
+// 「待处理事项即各 stage 计数」)。物理隔离独立 class(禁继承 / Pick / Omit;沿 api-surface-policy §2.1)。
+// 「待人工」normal/high/system 三栏:Q-P4-3 的精确 `riskLevel` 字段待 S4;本切片用 `verifyOutcome` 代理
+// (system=ocr_error / high=forgery_warning / normal=其余),已在各字段 description 明确标注。
+
+export class RecruitmentStatsTodayDto {
+  @ApiProperty({ description: '今日新报名(createdAt 北京日界当日)' })
+  newApplications!: number;
+  @ApiProperty({ description: '今日发临时号(verifiedAt 北京日界当日)' })
+  tempNoIssued!: number;
+  @ApiProperty({ description: '今日人工处理数(reviewedAt 北京日界当日;人工 resolve 时刻)' })
+  manualProcessed!: number;
+}
+
+export class RecruitmentStatsPendingDto {
+  @ApiProperty({ description: '待人工总数(stage=manual;= manual_review 态)' })
+  manualTotal!: number;
+  @ApiProperty({
+    description:
+      '待人工·普通(verifyOutcome 代理:非 ocr_error/forgery_warning;riskLevel=normal 精确分栏待 S4)',
+  })
+  manualNormal!: number;
+  @ApiProperty({
+    description: '待人工·高风险(verifyOutcome=forgery_warning 代理;riskLevel=high 精确分栏待 S4)',
+  })
+  manualHigh!: number;
+  @ApiProperty({
+    description: '待人工·系统异常(verifyOutcome=ocr_error 代理;riskLevel=system 精确分栏待 S4)',
+  })
+  manualSystem!: number;
+  @ApiProperty({ description: '待综合评定(stage=evaluation;= pending_evaluation 态)' })
+  pendingEvaluation!: number;
+  @ApiProperty({ description: '待发号(stage=publicity;= publicity 态)' })
+  pendingIssuance!: number;
+}
+
+export class RecruitmentStatsThresholdItemDto {
+  @ApiProperty({ description: '门槛 code(patrol1/patrol2/training/redCross/bsafe)' })
+  code!: string;
+  @ApiProperty({ description: '门槛展示名' })
+  name!: string;
+  @ApiProperty({ description: '本轮完成该门槛人数(thresholdMarks 真投影,标记存在即完成)' })
+  completedCount!: number;
+}
+
+export class RecruitmentStatsThresholdDto {
+  @ApiProperty({ description: '门槛跟踪中人数(stage=threshold;verified 且门槛未齐)' })
+  tracking!: number;
+  @ApiProperty({ type: [RecruitmentStatsThresholdItemDto], description: '5 项各自完成人数分布' })
+  byThreshold!: RecruitmentStatsThresholdItemDto[];
+}
+
+export class RecruitmentStatsEvaluationDto {
+  @ApiProperty({ description: '待评定(stage=evaluation;= pending_evaluation 态)' })
+  pending!: number;
+  @ApiProperty({ description: '已通过进公示(stage=publicity;= publicity 态)' })
+  passed!: number;
+  @ApiProperty({ description: '评定淘汰(rejected 且 eliminationStage=evaluation)' })
+  eliminated!: number;
+}
+
+export class RecruitmentStatsIssuanceDto {
+  @ApiProperty({ description: '公示中(stage=publicity;= publicity 态)' })
+  inPublicity!: number;
+  @ApiProperty({
+    description:
+      '可一键发号数(复用 decidePromotionIssuance 预判;与 publicity-list promotableCount 同源)',
+  })
+  oneClickIssuable!: number;
+  @ApiProperty({
+    description: '需手动建档数(decidePromotionIssuance 跳过项;外籍/缺派生字段/openid 占用)',
+  })
+  needManualBuild!: number;
+  @ApiProperty({ description: '已发号(stage=volunteer;= promoted 态)' })
+  promoted!: number;
+}
+
+export class RecruitmentCycleStatsDto {
+  @ApiProperty() cycleId!: string;
+  @ApiProperty() cycleYear!: number;
+  @ApiProperty({ type: RecruitmentStatsTodayDto, description: '今日数据' })
+  today!: RecruitmentStatsTodayDto;
+  @ApiProperty({ type: RecruitmentStatsPendingDto, description: '待处理事项' })
+  pending!: RecruitmentStatsPendingDto;
+  @ApiProperty({ type: RecruitmentStatsThresholdDto, description: '门槛进度' })
+  threshold!: RecruitmentStatsThresholdDto;
+  @ApiProperty({ type: RecruitmentStatsEvaluationDto, description: '综合评定' })
+  evaluation!: RecruitmentStatsEvaluationDto;
+  @ApiProperty({ type: RecruitmentStatsIssuanceDto, description: '公示发号' })
+  issuance!: RecruitmentStatsIssuanceDto;
+}
