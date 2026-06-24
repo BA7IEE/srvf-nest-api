@@ -1225,4 +1225,170 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       ['张三', '26002'],
     ]);
   });
+
+  // =====================================================================
+  // 招新闭环优化 S2:招新工作台聚合 stats(冻结评审稿 recruitment-phase4-loop-optimization-review.md §7.1)
+  //   GET admin/v1/recruitment/cycles/:id/stats —— 五组计数走真实 DB + Prisma + controller;
+  //   计数与 stage 派生同源(S1 deriveRecruitmentStage)、发号预判复用 decidePromotionIssuance。
+  // =====================================================================
+  it('㉕(S2) 工作台 stats:五组计数正确(多态夹具,真实库)', async () => {
+    const cycle = await prisma.recruitmentCycle.create({
+      data: { year: 2027, name: '2027 stats 夹具轮', statusCode: 'closed' },
+    });
+    const OLD = new Date('2020-01-01T00:00:00.000Z');
+    const TODAY = new Date(); // 与 controller new Date() 同北京日(midnight 临界忽略,沿仓内 date 测试惯例)
+    const at = '2026-06-10T00:00:00.000Z';
+    await prisma.recruitmentApplication.createMany({
+      data: [
+        // 待人工 ×3:system(ocr_error)/ high(forgery_warning)/ normal(mismatch);前二条 createdAt=今日
+        {
+          cycleId: cycle.id,
+          statusCode: 'manual_review',
+          documentTypeCode: 'mainland_id',
+          verifyOutcome: 'ocr_error',
+          createdAt: TODAY,
+          realName: '系统一',
+        },
+        {
+          cycleId: cycle.id,
+          statusCode: 'manual_review',
+          documentTypeCode: 'mainland_id',
+          verifyOutcome: 'forgery_warning',
+          createdAt: TODAY,
+          realName: '高危一',
+        },
+        {
+          cycleId: cycle.id,
+          statusCode: 'manual_review',
+          documentTypeCode: 'mainland_id',
+          verifyOutcome: 'mismatch',
+          createdAt: OLD,
+          reviewedAt: TODAY,
+          realName: '普通一',
+        },
+        // 门槛跟踪中 ×1(verified + 未齐;verifiedAt=今日)
+        {
+          cycleId: cycle.id,
+          statusCode: 'verified',
+          documentTypeCode: 'mainland_id',
+          createdAt: OLD,
+          verifiedAt: TODAY,
+          thresholdMarks: { patrol1: { at, by: 'u1' }, patrol2: { at, by: 'u1' } },
+          realName: '门槛一',
+        },
+        // 待综合评定 ×1
+        {
+          cycleId: cycle.id,
+          statusCode: 'pending_evaluation',
+          documentTypeCode: 'mainland_id',
+          createdAt: OLD,
+          realName: '评定一',
+        },
+        // 公示 ×3:甲/乙 大陆可发号、丙 外籍需手动建档
+        {
+          cycleId: cycle.id,
+          statusCode: 'publicity',
+          documentTypeCode: 'mainland_id',
+          isForeigner: false,
+          birthDate: new Date('1995-03-07T00:00:00.000Z'),
+          genderCode: 'male',
+          openid: 'stat-oa',
+          realName: '公示甲',
+          createdAt: OLD,
+        },
+        {
+          cycleId: cycle.id,
+          statusCode: 'publicity',
+          documentTypeCode: 'mainland_id',
+          isForeigner: false,
+          birthDate: new Date('1995-03-07T00:00:00.000Z'),
+          genderCode: 'female',
+          openid: 'stat-ob',
+          realName: '公示乙',
+          createdAt: OLD,
+        },
+        {
+          cycleId: cycle.id,
+          statusCode: 'publicity',
+          documentTypeCode: 'passport',
+          isForeigner: true,
+          openid: 'stat-oc',
+          realName: '公示丙',
+          createdAt: OLD,
+        },
+        // 已发号 ×1(promotedMemberId 无 FK,任意串)
+        {
+          cycleId: cycle.id,
+          statusCode: 'promoted',
+          documentTypeCode: 'mainland_id',
+          promotedMemberId: 'stat-fake-mem',
+          createdAt: OLD,
+          realName: '已号一',
+        },
+        // 评定淘汰 ×1(rejected + eliminationStage=evaluation)
+        {
+          cycleId: cycle.id,
+          statusCode: 'rejected',
+          documentTypeCode: 'mainland_id',
+          eliminationStage: 'evaluation',
+          createdAt: OLD,
+          realName: '淘汰一',
+        },
+      ],
+    });
+
+    const res = await request(httpServer(app))
+      .get(`${ADMIN_CYCLES}/${cycle.id}/stats`)
+      .set('Authorization', adminAuth);
+    expect(res.status).toBe(200);
+    expect(res.body.data.cycleId).toBe(cycle.id);
+    expect(res.body.data.cycleYear).toBe(2027);
+    expect(res.body.data.today).toEqual({
+      newApplications: 2,
+      tempNoIssued: 1,
+      manualProcessed: 1,
+    });
+    expect(res.body.data.pending).toEqual({
+      manualTotal: 3,
+      manualNormal: 1,
+      manualHigh: 1,
+      manualSystem: 1,
+      pendingEvaluation: 1,
+      pendingIssuance: 3,
+    });
+    expect(res.body.data.threshold).toEqual({
+      tracking: 1,
+      byThreshold: [
+        { code: 'patrol1', name: '巡山一', completedCount: 1 },
+        { code: 'patrol2', name: '巡山二', completedCount: 1 },
+        { code: 'training', name: '培训', completedCount: 0 },
+        { code: 'redCross', name: '红十字', completedCount: 0 },
+        { code: 'bsafe', name: 'BSAFE', completedCount: 0 },
+      ],
+    });
+    expect(res.body.data.evaluation).toEqual({ pending: 1, passed: 3, eliminated: 1 });
+    expect(res.body.data.issuance).toEqual({
+      inPublicity: 3,
+      oneClickIssuable: 2,
+      needManualBuild: 1,
+      promoted: 1,
+    });
+  });
+
+  it('㉖(S2) 工作台 stats:普通 USER 无 read.record → 403 RBAC_FORBIDDEN', async () => {
+    const cycle = await prisma.recruitmentCycle.create({
+      data: { year: 2027, name: '2027 stats rbac 轮', statusCode: 'closed' },
+    });
+    const res = await request(httpServer(app))
+      .get(`${ADMIN_CYCLES}/${cycle.id}/stats`)
+      .set('Authorization', userAuth);
+    expectBizError(res, BizCode.RBAC_FORBIDDEN);
+  });
+
+  it('㉗(S2) 工作台 stats:轮次不存在 → 28001', async () => {
+    const res = await request(httpServer(app))
+      .get(`${ADMIN_CYCLES}/non-existent-cycle/stats`)
+      .set('Authorization', adminAuth);
+    expectBizError(res, BizCode.RECRUITMENT_CYCLE_NOT_FOUND);
+  });
 });

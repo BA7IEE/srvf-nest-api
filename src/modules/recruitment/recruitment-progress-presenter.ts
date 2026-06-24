@@ -61,7 +61,8 @@ const IDENTITY_CANDIDATE = '招新候选人'; // 综合评定 / 公示
 const IDENTITY_VOLUNTEER = '志愿者'; // 已发永久编号(**禁「已晋升」**)
 
 // ===== 门槛展示名(5 项固定 code;来源 recruitment-applications.admin.controller「巡山×2/培训/红十字/BSAFE」)=====
-const THRESHOLD_NAMES: Record<ThresholdCode, string> = {
+// 导出供 S2 工作台 stats 的「各门槛完成分布」复用同一份展示名(零第二份副本;不改 deriveRecruitmentStage 口径)。
+export const THRESHOLD_NAMES: Record<ThresholdCode, string> = {
   patrol1: '巡山一',
   patrol2: '巡山二',
   training: '培训',

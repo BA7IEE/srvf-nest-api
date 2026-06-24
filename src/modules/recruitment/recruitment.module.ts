@@ -12,6 +12,7 @@ import { RecruitmentCyclesController } from './recruitment-cycles.controller';
 import { RecruitmentCyclesService } from './recruitment-cycles.service';
 import { RecruitmentPromotionService } from './recruitment-promotion.service';
 import { RecruitmentPublicController } from './recruitment-public.controller';
+import { RecruitmentStatsService } from './recruitment-stats.service';
 
 // 招新一期(招新前段)T3(2026-06-18):recruitment 模块装配(评审稿 §3.2)。
 // 消费 Wechat(code2session)/ Realname(付费实名核验)/ Storage(证件照)/ Permissions(rbac.can)/
@@ -35,6 +36,7 @@ import { RecruitmentPublicController } from './recruitment-public.controller';
     RecruitmentCyclesService,
     RecruitmentApplicationsService,
     RecruitmentPromotionService,
+    RecruitmentStatsService,
   ],
 })
 export class RecruitmentModule {}
