@@ -25,10 +25,12 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ID_CARD_IMAGE_MAX_BYTES } from './recruitment.constants';
 import {
+  RecruitmentApplicationProgressDto,
   RecruitmentApplicationPublicDto,
   RecruitmentOcrRecognizeResponseDto,
   RecruitmentQueryDto,
   RecruitmentSubmitPayloadDto,
+  RecruitmentTodoItemDto,
 } from './recruitment.dto';
 import {
   RecruitmentApplicationsService,
@@ -76,7 +78,12 @@ async function parseSubmitPayload(
 }
 
 @ApiTags('Public - Recruitment')
-@ApiExtraModels(RecruitmentApplicationPublicDto, RecruitmentOcrRecognizeResponseDto)
+@ApiExtraModels(
+  RecruitmentApplicationPublicDto,
+  RecruitmentApplicationProgressDto,
+  RecruitmentTodoItemDto,
+  RecruitmentOcrRecognizeResponseDto,
+)
 @Controller('open/v1/recruitment')
 export class RecruitmentPublicController {
   constructor(private readonly service: RecruitmentApplicationsService) {}
@@ -182,15 +189,15 @@ export class RecruitmentPublicController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '公开查询本人报名(凭新 wx.login code 换 openid;返回本人最近一条报名状态 + 临时编号 + 通知展示;无匹配→28002;throttler recruitment) [public]',
+      '公开查询本人报名进度(凭新 wx.login code 换 openid;返回本人最近一条进度模型:业务态 stage + 字典文案 + 门槛 todoList 真投影 + 临时编号 + 轮次通知;无匹配→28002;throttler recruitment) [public]',
   })
-  @ApiWrappedOkResponse(RecruitmentApplicationPublicDto)
+  @ApiWrappedOkResponse(RecruitmentApplicationProgressDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
     BizCode.TOO_MANY_REQUESTS,
   )
-  query(@Body() dto: RecruitmentQueryDto): Promise<RecruitmentApplicationPublicDto> {
+  query(@Body() dto: RecruitmentQueryDto): Promise<RecruitmentApplicationProgressDto> {
     return this.service.query(dto.wechatCode);
   }
 }

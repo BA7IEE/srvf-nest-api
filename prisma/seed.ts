@@ -596,6 +596,50 @@ async function seedActivityTypeHierarchy(prisma: PrismaClient): Promise<void> {
   );
 }
 
+// 招新闭环优化 S1(2026-06-24 goal「招新闭环优化 S1」;评审稿 §4 状态业务化 §4.1/§4.2):
+// recruitment_stage 字典 —— 招新业务态 stage → 展示文案(stageText)。后端只管 statusCode(机器态)
+// + 派生 stage,展示文案落字典(后台可维护,改文案不发版);见 src/.../recruitment-progress-presenter.ts。
+// 本切片只 seed【现有持久数据可派生】的 7 态(评审稿 §4.2);retake/confirm/manual_high 待 S4(会话表/
+// riskLevel 落地)再补,本切片仅在 presenter 预留枚举位、不 seed 其文案。
+// **禁「已晋升」**(Q-P4-8):promoted 展示一律「已转志愿者 / 待入队」。
+// 幂等:upsert by (typeId, code),update:{} 不回退运营调整(label/sortOrder/status 运营可后台改);二跑无漂移。
+// 防误删守卫:dict_type + items 已登记 src/.../dictionaries.service.ts 的 SYSTEM/ITEM_PROTECTED_DICT_TYPES。
+const RECRUITMENT_STAGE_SEED = [
+  { code: 'manual', label: '待人工核验', sortOrder: 0 },
+  { code: 'threshold', label: '门槛未完成', sortOrder: 1 },
+  { code: 'threshold_done', label: '门槛已完成', sortOrder: 2 },
+  { code: 'evaluation', label: '待综合评定', sortOrder: 3 },
+  { code: 'publicity', label: '公示中', sortOrder: 4 },
+  { code: 'volunteer', label: '已转志愿者 / 待入队', sortOrder: 5 },
+  { code: 'rejected', label: '未通过', sortOrder: 6 },
+] as const;
+
+async function seedRecruitmentStageDict(prisma: PrismaClient): Promise<void> {
+  const dictType = await prisma.dictType.upsert({
+    where: { code: 'recruitment_stage' },
+    update: {},
+    create: { code: 'recruitment_stage', label: '招新进度态', sortOrder: 12 },
+    select: { id: true },
+  });
+
+  for (const item of RECRUITMENT_STAGE_SEED) {
+    await prisma.dictItem.upsert({
+      where: { typeId_code: { typeId: dictType.id, code: item.code } },
+      update: {},
+      create: {
+        typeId: dictType.id,
+        code: item.code,
+        label: item.label,
+        sortOrder: item.sortOrder,
+      },
+    });
+  }
+
+  console.log(
+    `[seed] V2 dict 'recruitment_stage' ensured (${RECRUITMENT_STAGE_SEED.length} items;招新业务态文案)`,
+  );
+}
+
 // 组织树内置(2026-06-21 goal「组织树内置」;R13 收窄后非敏感组织名可内置真实值)。
 // 扁平两层:1 个根(深圳公益救援队 / SRVF)+ 15 个部门(含 THQ 联合会)全部直挂其下;
 // 日后要加中间层级另起 goal。镜像 seedActivityTypeHierarchy:先 upsert 根取 id,再 upsert 子
@@ -2537,6 +2581,9 @@ async function main(): Promise<void> {
 
     // V2 第一阶段批次 3:activity_type 二级树字典(D11)
     await seedActivityTypeHierarchy(prisma);
+
+    // 招新闭环优化 S1(2026-06-24):recruitment_stage 招新业务态文案字典(additive;7 态)
+    await seedRecruitmentStageDict(prisma);
 
     // 组织树内置(2026-06-21 goal「组织树内置」):SRVF 根 + 15 部门。
     // 依赖 node_type 真实分类已由 seedV2Dictionaries 内置(nodeTypeCode 为字符串,无 FK,

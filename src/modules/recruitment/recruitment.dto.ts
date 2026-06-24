@@ -167,7 +167,8 @@ export class RecruitmentQueryDto {
   wechatCode!: string;
 }
 
-// 公开出参:申请状态 + 临时编号 + 通知展示(self-scope 最小集;不回显他人/PII 明文)
+// 公开出参:申请状态 + 临时编号 + 通知展示(self-scope 最小集;不回显他人/PII 明文)。
+// 提交端点(submit)仍返本 DTO;**公开本人查询(query)已改返进度模型 RecruitmentApplicationProgressDto**。
 export class RecruitmentApplicationPublicDto {
   @ApiProperty({ description: '报名状态(pending_verification/verified/manual_review/rejected)' })
   statusCode!: string;
@@ -186,6 +187,67 @@ export class RecruitmentApplicationPublicDto {
 
   @ApiPropertyOptional({ description: '通知模板/各节点文案(后填)', nullable: true })
   notifyTemplate!: Record<string, unknown> | null;
+}
+
+// ============ 公开本人进度模型(招新闭环优化 S1;评审稿 §6.1 / §4 状态业务化)============
+// 把机器态 statusCode 派生为业务态 stage + 字典文案 stageText + 动作码 nextAction + 门槛 todoList 真投影,
+// 作为「公开本人查询」的出参(submit 端点仍返 RecruitmentApplicationPublicDto)。文案归属见
+// recruitment-progress-presenter.ts(stageText 来自 recruitment_stage 字典,§4.1「后端不存展示文案明文」)。
+
+export class RecruitmentTodoItemDto {
+  @ApiProperty({ description: '门槛 code(patrol1/patrol2/training/redCross/bsafe)' })
+  code!: string;
+
+  @ApiProperty({ description: '门槛展示名' })
+  name!: string;
+
+  @ApiProperty({ description: '是否完成(thresholdMarks 真投影,非写死)' })
+  done!: boolean;
+}
+
+export class RecruitmentApplicationProgressDto {
+  @ApiProperty({ description: '业务态枚举(评审稿 §4.2;statusCode 派生,机器态不外露)' })
+  stage!: string;
+
+  @ApiProperty({ description: '业务态文案(recruitment_stage 字典 label;后台可维护)' })
+  stageText!: string;
+
+  @ApiProperty({ description: '一句话当前状态说明(S1 同 stageText)' })
+  statusText!: string;
+
+  @ApiPropertyOptional({
+    description: '下一步动作码(前端据此渲染按钮文案;终态为 null)',
+    nullable: true,
+  })
+  nextAction!: string | null;
+
+  @ApiPropertyOptional({ description: '临时编号 T{year}{seq}(verified 后有值)', nullable: true })
+  tempNo!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      '永久编号(promoted 后;**公开查询恒 null**——发号即清 openid 不可达,经登录态 app 侧另见)',
+    nullable: true,
+  })
+  memberNo!: string | null;
+
+  @ApiProperty({ description: '身份文案(报名申请人/招新候选人/志愿者/正式队员)' })
+  identityText!: string;
+
+  @ApiProperty({
+    type: [RecruitmentTodoItemDto],
+    description: '门槛清单(5 项;done 来自实际标记数据)',
+  })
+  todoList!: RecruitmentTodoItemDto[];
+
+  @ApiPropertyOptional({ description: '见面会信息(轮次配置)', nullable: true })
+  meetingInfo!: string | null;
+
+  @ApiPropertyOptional({ description: 'QQ 群(轮次配置)', nullable: true })
+  qqGroup!: string | null;
+
+  @ApiPropertyOptional({ description: '通知配置/各节点文案(轮次 notifyTemplate)', nullable: true })
+  notice!: Record<string, unknown> | null;
 }
 
 // ============ admin 轮次 ============

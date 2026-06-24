@@ -93,6 +93,8 @@ const SYSTEM_PROTECTED_DICT_TYPES: ReadonlySet<string> = new Set<string>([
   'attendance_sheet_status',
   'attendance_status',
   'attendance_role',
+  // 招新业务态展示文案(招新闭环优化 S1;闭集 stage→文案,绑后端 stage 码;items 亦受 ② 保护)。
+  'recruitment_stage',
 ]);
 
 // ② 闭集 + 国标参照 + 队内内置类型 → 其下【项】禁软删(SYSTEM_PROTECTED_DICT_TYPES 的子集;
@@ -117,6 +119,8 @@ const ITEM_PROTECTED_DICT_TYPES: ReadonlySet<string> = new Set<string>([
   'attendance_sheet_status',
   'attendance_status',
   'attendance_role',
+  // 招新业务态展示文案(招新闭环优化 S1;闭集 stage→文案,绑后端 stage 码)。
+  'recruitment_stage',
 ]);
 
 @Injectable()
