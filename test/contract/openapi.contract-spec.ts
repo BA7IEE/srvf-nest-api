@@ -716,6 +716,12 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   //   注:RecruitmentSubmitPayloadDto 走 multipart 内嵌 JSON 串(@Body('payload') string),
   //   **不**作为 @Body() 类型 → NestJS Swagger 不注册为 component schema(沿 query DTO 内联范式)。
   'RecruitmentApplicationPublicDto',
+  // 招新闭环优化 S1(2026-06-24;评审稿 §4/§6):公开本人查询出参 enrich 为进度模型
+  //   RecruitmentApplicationProgressDto(业务态 stage + 字典文案 + 门槛 todoList 真投影 +
+  //   嵌套 RecruitmentTodoItemDto);独立 class 物理隔离(不继承 PublicDto)。submit 端点仍返
+  //   RecruitmentApplicationPublicDto(上一条)。
+  'RecruitmentApplicationProgressDto',
+  'RecruitmentTodoItemDto',
   'RecruitmentQueryDto',
   'RecruitmentCycleResponseDto',
   'CreateRecruitmentCycleDto',

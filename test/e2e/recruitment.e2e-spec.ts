@@ -141,6 +141,24 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         { typeId: relType.id, code: 'family', label: 'Family' },
       ],
     });
+
+    // 招新闭环优化 S1:recruitment_stage 业务态文案字典(镜像 prisma/seed.ts seedRecruitmentStageDict;
+    // 公开查询进度模型的 stageText 来源;reference data,beforeEach 不清,跨测持久)。
+    const stageType = await prisma.dictType.create({
+      data: { code: 'recruitment_stage', label: '招新进度态' },
+      select: { id: true },
+    });
+    await prisma.dictItem.createMany({
+      data: [
+        { typeId: stageType.id, code: 'manual', label: '待人工核验', sortOrder: 0 },
+        { typeId: stageType.id, code: 'threshold', label: '门槛未完成', sortOrder: 1 },
+        { typeId: stageType.id, code: 'threshold_done', label: '门槛已完成', sortOrder: 2 },
+        { typeId: stageType.id, code: 'evaluation', label: '待综合评定', sortOrder: 3 },
+        { typeId: stageType.id, code: 'publicity', label: '公示中', sortOrder: 4 },
+        { typeId: stageType.id, code: 'volunteer', label: '已转志愿者 / 待入队', sortOrder: 5 },
+        { typeId: stageType.id, code: 'rejected', label: '未通过', sortOrder: 6 },
+      ],
+    });
   });
 
   afterAll(async () => {
@@ -413,11 +431,56 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       .set('Authorization', adminAuth);
     expect(detail.body.data.idCardNumber).toBe(ID_MATCH_A);
 
-    // 公开 query:本人凭新 code(同 openid)查到 verified
+    // 公开 query:本人凭新 code(同 openid)查到进度模型(verified + 零门槛 → 业务态 threshold)
     const q = await request(httpServer(app)).post(OPEN_QUERY).send({ wechatCode: 'code-o' });
     expect(q.status).toBe(200);
-    expect(q.body.data.statusCode).toBe('verified');
+    expect(q.body.data.stage).toBe('threshold');
     expect(q.body.data.tempNo).toBe('T20260001');
+    // 业务化:机器态 statusCode 不再外露于进度模型
+    expect(q.body.data.statusCode).toBeUndefined();
+  });
+
+  // ⑩b 公开查询进度模型(招新闭环优化 S1;评审稿 §4/§6):业务态 stage + 字典 stageText +
+  //     门槛 todoList 真投影 + memberNo 恒 null(覆盖边界)。
+  it('⑩b 公开查询进度模型:verified + 部分门槛 → stage/stageText/todoList 真投影', async () => {
+    await openCycle();
+    await submit(validPayload({ wechatCode: 'code-prog', idCardNumber: ID_MATCH_A }));
+    const row = await prisma.recruitmentApplication.findFirst({
+      where: { openid: 'dev-openid-code-prog' },
+    });
+    // 落 2/5 门槛(直接落库,隔离验证查询投影;门槛标记本身另有测试)
+    await prisma.recruitmentApplication.update({
+      where: { id: row?.id },
+      data: {
+        thresholdMarks: {
+          patrol1: { at: '2026-06-24T00:00:00.000Z', by: 'admin' },
+          training: { at: '2026-06-24T00:00:00.000Z', by: 'admin' },
+        },
+      },
+    });
+
+    const q = await request(httpServer(app)).post(OPEN_QUERY).send({ wechatCode: 'code-prog' });
+    expect(q.status).toBe(200);
+    const d = q.body.data;
+    expect(d.stage).toBe('threshold');
+    expect(d.stageText).toBe('门槛未完成'); // 来自 recruitment_stage 字典
+    expect(d.statusText).toBe('门槛未完成'); // S1:同 stageText
+    expect(d.nextAction).toBe('complete-threshold');
+    expect(d.identityText).toBe('报名申请人');
+    expect(d.tempNo).toBe('T20260001');
+    expect(d.memberNo).toBeNull(); // 覆盖边界:公开查询不可达 promoted 行
+    // 门槛 todoList 真投影:5 项,done 来自实际标记
+    const todoList = d.todoList as Array<{ code: string; name: string; done: boolean }>;
+    expect(todoList).toHaveLength(5);
+    const doneByCode: Record<string, boolean> = Object.fromEntries(
+      todoList.map((i) => [i.code, i.done]),
+    );
+    expect(doneByCode.patrol1).toBe(true);
+    expect(doneByCode.training).toBe(true);
+    expect(doneByCode.patrol2).toBe(false);
+    expect(doneByCode.redCross).toBe(false);
+    expect(doneByCode.bsafe).toBe(false);
+    expect(todoList.every((i) => i.name.length > 0)).toBe(true);
   });
 
   // ⑪ RBAC 边界:普通 USER 调 admin 列表 → 30100

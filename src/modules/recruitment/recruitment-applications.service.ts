@@ -1,6 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { Prisma, type RecruitmentApplication, type RecruitmentCycle } from '@prisma/client';
+import {
+  DictItemStatus,
+  Prisma,
+  type RecruitmentApplication,
+  type RecruitmentCycle,
+} from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { auditPlaceholder } from '../../common/audit/audit-placeholder';
@@ -66,6 +71,10 @@ import {
   isPromotable,
   isValidChineseId,
 } from './recruitment.constants';
+import {
+  RECRUITMENT_STAGE_DICT_TYPE,
+  assembleRecruitmentProgress,
+} from './recruitment-progress-presenter';
 import type {
   EvaluateRecruitmentApplicationDto,
   IdCardImageUrlResponseDto,
@@ -73,6 +82,7 @@ import type {
   PublicityListItemDto,
   PublicityListResponseDto,
   RecruitmentApplicationAdminDto,
+  RecruitmentApplicationProgressDto,
   RecruitmentApplicationPublicDto,
   RecruitmentOcrRecognizeResponseDto,
   RecruitmentSubmitPayloadDto,
@@ -395,7 +405,11 @@ export class RecruitmentApplicationsService {
   }
 
   // ============ 公开查询(凭新 wx.login code → openid → 本人最近报名)============
-  async query(wechatCode: string): Promise<RecruitmentApplicationPublicDto> {
+  // 招新闭环优化 S1(评审稿 §4/§6):出参 enrich 为新人进度模型(业务态 stage + 字典文案 +
+  // 门槛 todoList 真投影);statusCode 流转逻辑 / 状态机零改动,纯展示派生。
+  // 覆盖边界:promote 即清 openid → 本查询天然查不到发号后记录,故 stage 不会是 volunteer、
+  // memberNo 恒 null(尾段经登录态 app 侧另见,非本切片)。
+  async query(wechatCode: string): Promise<RecruitmentApplicationProgressDto> {
     const { openid } = await this.wechat.code2session(wechatCode);
     const app = await this.prisma.recruitmentApplication.findFirst({
       where: { openid, deletedAt: null },
@@ -407,7 +421,22 @@ export class RecruitmentApplicationsService {
     const cycle = await this.prisma.recruitmentCycle.findFirstOrThrow({
       where: { id: app.cycleId },
     });
-    return this.toPublicDto(app, cycle);
+    const stageTextByCode = await this.loadStageTextMap();
+    return assembleRecruitmentProgress(app, cycle, stageTextByCode);
+  }
+
+  // recruitment_stage 字典 → { stage code → stageText } map(§4.1「展示文案在字典」)。
+  // 仅取 ACTIVE 项;字典缺项时 presenter 回退 stage 机器码(prod 由 seed 兜底齐全)。
+  private async loadStageTextMap(): Promise<ReadonlyMap<string, string>> {
+    const items = await this.prisma.dictItem.findMany({
+      where: {
+        type: { code: RECRUITMENT_STAGE_DICT_TYPE, deletedAt: null },
+        status: DictItemStatus.ACTIVE,
+        deletedAt: null,
+      },
+      select: { code: true, label: true },
+    });
+    return new Map(items.map((i) => [i.code, i.label]));
   }
 
   // ============ admin 列表(PII 掩码;读 PII placeholder 审计)============

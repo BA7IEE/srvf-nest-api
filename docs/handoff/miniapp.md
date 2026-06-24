@@ -25,6 +25,7 @@
 | 我的报名(报名/查/取消) | `GET /api/app/v1/my/registrations` · `POST` 报名 · `PATCH` 取消 |
 | 我的考勤 / 证书 | `GET /api/app/v1/my/attendance-records` · `GET /api/app/v1/my/certificates` |
 | 公开(无账号) | `POST /api/open/v1/recruitment/applications/*`(招新报名) · `GET /api/open/v1/contents`(内容) |
+| 招新本人进度(无账号) | `POST /api/open/v1/recruitment/applications/query`(凭 wx.login code 换 openid;**返进度模型**:业务态 `stage` + 字典 `stageText` + `nextAction` + 门槛 `todoList` 真投影 + 临时编号;`memberNo` 恒 null——发号后经登录态 app 侧查,见 §3 GAP-006) |
 
 > 任务→端点的细化(注册流、入队流等)等建仓时按真实页面补,别提前臆造。
 
@@ -32,7 +33,7 @@
 
 | # | 诉求 | 期望端点 | 状态 |
 |---|---|---|---|
-| _(空)_ | | | |
+| GAP-006 | 招新→入队闭环「可见」(12 域:进度模型/工作台/批量/通知/H5+手机/promote 志愿者化…;T0 冻结评审稿 `docs/archive/reviews/recruitment-phase4-loop-optimization-review.md`) | 见评审稿 §12 切片表(S1–S7) | **S1 已交付**:状态业务文案 + 新人进度模型(公开本人查询出参 enrich 为进度模型 + `recruitment_stage` 字典;评审稿 §4/§6)。S2(工作台 stats)~S7(通知,阻塞 GAP-005)待后续切片另出 goal。 |
 
 ## 4. 不馊
 
