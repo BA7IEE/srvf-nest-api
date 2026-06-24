@@ -6,6 +6,7 @@ import {
   APP_STATUS_PUBLICITY,
   APP_STATUS_REJECTED,
   APP_STATUS_VERIFIED,
+  RISK_LEVEL_HIGH,
   THRESHOLD_CODES,
   type ThresholdCode,
   type ThresholdMarks,
@@ -43,10 +44,10 @@ export const STAGE_EVALUATION = 'evaluation'; // pending_evaluation
 export const STAGE_PUBLICITY = 'publicity'; // publicity
 export const STAGE_VOLUNTEER = 'volunteer'; // promoted(展示「已转志愿者/待入队」,**禁「已晋升」** Q-P4-8)
 export const STAGE_REJECTED = 'rejected'; // rejected
-// 本切片【预留扩展位,不实现】(依赖 S4 报名前会话表 / riskLevel 字段;此处仅占枚举位,函数不产出):
-export const STAGE_RETAKE = 'retake'; // 待重拍(S4 会话态)
-export const STAGE_CONFIRM = 'confirm'; // 待核对(S4 会话态)
-export const STAGE_MANUAL_HIGH = 'manual_high'; // 待人工·高风险复核(S4 riskLevel=high)
+// 招新闭环优化 S4b【已实现】(会话态 / riskLevel 落地;评审稿 §4.2):
+export const STAGE_RETAKE = 'retake'; // 待重拍(会话态:OCR 模糊/防伪重拍循环 requiresRetake=true;报名记录未创建)
+export const STAGE_CONFIRM = 'confirm'; // 待核对(会话态:mismatch 待三选一;报名记录未创建)
+export const STAGE_MANUAL_HIGH = 'manual_high'; // 待人工·高风险复核(manual_review + riskLevel=high;**申请人侧文案中性同 manual**)
 
 // ===== 下一步动作码(机器码;前端据此渲染按钮文案;评审稿 §6.2)=====
 export const NEXT_ACTION_WAIT_REVIEW = 'wait-review';
@@ -54,6 +55,9 @@ export const NEXT_ACTION_COMPLETE_THRESHOLD = 'complete-threshold';
 export const NEXT_ACTION_WAIT_EVALUATION = 'wait-evaluation';
 export const NEXT_ACTION_VIEW_PUBLICITY = 'view-publicity';
 export const NEXT_ACTION_APPLY_TEAMJOIN = 'apply-teamjoin';
+// S4b 会话态动作码(§6.2):
+export const NEXT_ACTION_RETAKE = 'retake'; // 待重拍 → 重新拍照上传
+export const NEXT_ACTION_CONFIRM_OCR = 'confirm-ocr'; // 待核对 → 用OCR结果 / 改填写 / 确认OCR错
 
 // ===== 身份文案(评审稿 §5.3 / §6.1;goal DoD#1 要求纯函数直接产出)=====
 const IDENTITY_APPLICANT = '报名申请人'; // 报名 / 初审 / 门槛 / 未通过
@@ -70,12 +74,17 @@ export const THRESHOLD_NAMES: Record<ThresholdCode, string> = {
   bsafe: 'BSAFE',
 };
 
-// 派生入参 = 现有持久数据(评审稿 §6.1;goal DoD#1 列明 4 字段)。
+// 派生入参 = 现有持久数据(评审稿 §6.1;S1 4 字段)+ S4b OCR 六分流派生信号(全可选,向后兼容):
+// - riskLevel:application.riskLevel(manual_review + high → manual_high;§4.2)
+// - requiresRetake / pendingOcrConfirm:**会话态**(报名记录尚未创建,submit 延迟响应派生 retake/confirm)。
 export interface RecruitmentStageInput {
   statusCode: string;
   thresholdMarks: ThresholdMarks | null;
   tempNo: string | null;
   promotedMemberId: string | null;
+  riskLevel?: string | null;
+  requiresRetake?: boolean;
+  pendingOcrConfirm?: boolean;
 }
 
 export interface RecruitmentStageDerivation {
@@ -85,12 +94,28 @@ export interface RecruitmentStageDerivation {
 }
 
 /**
- * 机器态 `statusCode`(+ 门槛完成度)→ 业务态 `stage` / 动作码 / 身份文案(纯函数,零副作用)。
- * 评审稿 §4.2 映射;本切片仅覆盖现有持久数据可派生的态,`retake`/`confirm`/`manual_high` 待 S4。
+ * 机器态 `statusCode`(+ 门槛完成度 + S4b riskLevel / 会话态)→ 业务态 `stage` / 动作码 / 身份文案(纯函数,零副作用)。
+ * 评审稿 §4.2 映射。**会话态优先**(报名记录尚未创建):requiresRetake → `retake` / pendingOcrConfirm → `confirm`。
+ * `manual_review` + `riskLevel=high` → `manual_high`(高风险分流仅后台用,**申请人侧文案中性同 manual**;goal 三③)。
  * `promoted` → `volunteer`,口径「已转志愿者/待入队」,**全程禁「已晋升」**(Q-P4-8)。
  * 退役态 `pending_verification`(OCR 改造后不再产生)与未知 statusCode 防御性归「待人工核验」。
  */
 export function deriveRecruitmentStage(input: RecruitmentStageInput): RecruitmentStageDerivation {
+  // 会话态优先(报名记录尚未创建;submit 六分流延迟响应派生)。
+  if (input.requiresRetake) {
+    return {
+      stage: STAGE_RETAKE,
+      nextAction: NEXT_ACTION_RETAKE,
+      identityText: IDENTITY_APPLICANT,
+    };
+  }
+  if (input.pendingOcrConfirm) {
+    return {
+      stage: STAGE_CONFIRM,
+      nextAction: NEXT_ACTION_CONFIRM_OCR,
+      identityText: IDENTITY_APPLICANT,
+    };
+  }
   switch (input.statusCode) {
     case APP_STATUS_VERIFIED:
       return allThresholdsComplete(input.thresholdMarks)
@@ -125,6 +150,12 @@ export function deriveRecruitmentStage(input: RecruitmentStageInput): Recruitmen
     case APP_STATUS_REJECTED:
       return { stage: STAGE_REJECTED, nextAction: null, identityText: IDENTITY_APPLICANT };
     case APP_STATUS_MANUAL:
+      // 高风险复核分流(riskLevel=high):stage 区分 manual_high(后台三栏用),申请人侧文案中性同 manual。
+      return {
+        stage: input.riskLevel === RISK_LEVEL_HIGH ? STAGE_MANUAL_HIGH : STAGE_MANUAL,
+        nextAction: NEXT_ACTION_WAIT_REVIEW,
+        identityText: IDENTITY_APPLICANT,
+      };
     case APP_STATUS_PENDING: // 退役态(历史行防御);与未知 statusCode 同归「待人工核验」
     default:
       return {
@@ -151,6 +182,7 @@ export type RecruitmentProgressSource = {
   tempNo: string | null;
   thresholdMarks: unknown; // Prisma Json
   promotedMemberId: string | null;
+  riskLevel: string | null; // S4b:manual_review + high → manual_high(申请人侧文案中性)
 };
 
 export type RecruitmentProgressCycle = {
@@ -176,6 +208,7 @@ export function assembleRecruitmentProgress(
     thresholdMarks: marks,
     tempNo: app.tempNo,
     promotedMemberId: app.promotedMemberId,
+    riskLevel: app.riskLevel,
   });
   const stageText = stageTextByCode.get(stage) ?? stage;
   return {

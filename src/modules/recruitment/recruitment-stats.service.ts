@@ -7,11 +7,11 @@ import { PrismaService } from '../../database/prisma.service';
 import { RbacService } from '../permissions/rbac.service';
 import {
   ELIM_STAGE_EVALUATION,
+  RISK_LEVEL_HIGH,
+  RISK_LEVEL_SYSTEM,
   THRESHOLD_CODES,
   type ThresholdCode,
   type ThresholdMarks,
-  VERIFY_OUTCOME_FORGERY_WARNING,
-  VERIFY_OUTCOME_OCR_ERROR,
   comparePromotionOrder,
   decidePromotionIssuance,
 } from './recruitment.constants';
@@ -19,6 +19,7 @@ import type { RecruitmentCycleStatsDto } from './recruitment.dto';
 import {
   STAGE_EVALUATION,
   STAGE_MANUAL,
+  STAGE_MANUAL_HIGH,
   STAGE_PUBLICITY,
   STAGE_REJECTED,
   STAGE_THRESHOLD,
@@ -44,7 +45,7 @@ import {
 // **聚合成本**:每轮 1 次 applications.findMany(限定该轮 + 未软删,有界)+ 1 次 user.findMany
 // (仅公示子集的 openid 占用判定;空集免查)。禁 N+1、禁跨轮全表扫描。
 
-// 该轮聚合所需最小字段集(stage 派生 + 今日时间戳 + 待人工细分代理 + 评定淘汰 + 发号预判)。
+// 该轮聚合所需最小字段集(stage 派生 + 今日时间戳 + 待人工三栏真 riskLevel + 评定淘汰 + 发号预判)。
 const STATS_SELECT = {
   id: true,
   statusCode: true,
@@ -54,7 +55,7 @@ const STATS_SELECT = {
   createdAt: true,
   verifiedAt: true,
   reviewedAt: true,
-  verifyOutcome: true,
+  riskLevel: true, // S4b:待人工三栏真口径(normal/high/system;去 verifyOutcome 代理)
   eliminationStage: true,
   isForeigner: true,
   birthDate: true,
@@ -145,19 +146,21 @@ export class RecruitmentStatsService {
         }
       }
 
-      // 复用 S1 单一 stage 口径(零第二套判定)。
+      // 复用 S1 单一 stage 口径(零第二套判定);S4b 传 riskLevel → manual_review+high 派生 manual_high。
       const { stage } = deriveRecruitmentStage({
         statusCode: a.statusCode,
         thresholdMarks: marks,
         tempNo: a.tempNo,
         promotedMemberId: a.promotedMemberId,
+        riskLevel: a.riskLevel,
       });
       switch (stage) {
         case STAGE_MANUAL:
+        case STAGE_MANUAL_HIGH:
+          // S4b:待人工三栏改真 riskLevel 口径(去 verifyOutcome 代理;normal 由 manualTotal 减出,见下)。
           manualTotal += 1;
-          // riskLevel 精确三栏待 S4;本切片用 verifyOutcome 代理(其余归 normal,见下方 manualNormal)。
-          if (a.verifyOutcome === VERIFY_OUTCOME_OCR_ERROR) manualSystem += 1;
-          else if (a.verifyOutcome === VERIFY_OUTCOME_FORGERY_WARNING) manualHigh += 1;
+          if (a.riskLevel === RISK_LEVEL_SYSTEM) manualSystem += 1;
+          else if (a.riskLevel === RISK_LEVEL_HIGH) manualHigh += 1;
           break;
         case STAGE_THRESHOLD:
           thresholdTracking += 1;

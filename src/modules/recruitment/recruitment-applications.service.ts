@@ -24,8 +24,6 @@ import {
   isOcrDocument,
   maskIdCard,
   maskName,
-  normalizeIdForMatch,
-  normalizeNameForMatch,
 } from '../realname/realname.constants';
 import type { RealnameOcrResult } from '../realname/realname.types';
 import { STORAGE_PROVIDER } from '../storage/storage.constants';
@@ -51,12 +49,6 @@ import {
   type ThresholdCode,
   type ThresholdMarks,
   VERIFY_OUTCOME_CATEGORY_MISMATCH,
-  VERIFY_OUTCOME_FORGERY_WARNING,
-  VERIFY_OUTCOME_MANUAL,
-  VERIFY_OUTCOME_MATCHED,
-  VERIFY_OUTCOME_MISMATCH,
-  VERIFY_OUTCOME_OCR_ERROR,
-  VERIFY_OUTCOME_OCR_UNCLEAR,
   ageGroupOf,
   allThresholdsComplete,
   comparePromotionOrder,
@@ -75,9 +67,11 @@ import {
   RecruitmentIdentityService,
   type ConsumedPhoneIdentity,
 } from './recruitment-identity.service';
+import { type OcrOutcome, classifyOcrResult, routeOcrOutcome } from './recruitment-ocr-routing';
 import {
   RECRUITMENT_STAGE_DICT_TYPE,
   assembleRecruitmentProgress,
+  deriveRecruitmentStage,
 } from './recruitment-progress-presenter';
 import type {
   EvaluateRecruitmentApplicationDto,
@@ -87,9 +81,9 @@ import type {
   PublicityListResponseDto,
   RecruitmentApplicationAdminDto,
   RecruitmentApplicationProgressDto,
-  RecruitmentApplicationPublicDto,
   RecruitmentOcrRecognizeResponseDto,
   RecruitmentSubmitPayloadDto,
+  RecruitmentSubmitResultDto,
   ResolveRecruitmentApplicationDto,
 } from './recruitment.dto';
 
@@ -194,7 +188,7 @@ export class RecruitmentApplicationsService {
     image: UploadedImageFile | undefined,
     meta: AuditMeta,
     now: Date,
-  ): Promise<RecruitmentApplicationPublicDto> {
+  ): Promise<RecruitmentSubmitResultDto> {
     // 1. 当前唯一 open 轮(无 → 28030;容量满 → 28031 快速失败,省付费 OCR)
     const cycle = await this.resolveOpenCycleOrThrow();
 
@@ -272,22 +266,55 @@ export class RecruitmentApplicationsService {
       throw new BizException(BizCode.BAD_REQUEST);
     }
 
-    // 7. 付费 OCR 权威判定(分叉②:仅大陆重识别;护照/回乡证/非 OCR 类型恒 manual_review,提交端不再 OCR)。
-    //    分叉③:大陆 OCR 通道未配/上游失败不外抛,转 manual_review(ocr_error,不误杀)。
-    let createStatus: string;
-    let verifyOutcome: string;
+    // 7. OCR 六分流分类(评审稿 §2.1;分叉②:仅大陆重识别;护照/回乡证/非 OCR 类型 → manual,提交端不再 OCR)。
+    //    分叉③:大陆 OCR 通道未配/上游失败不外抛 → outcome='ocr_error'(classifyMainlandOcr try/catch 归一)。
+    let outcome: OcrOutcome;
+    let recognized: { realName: string | null; idCardNumber: string | null } | null = null;
     let ocrCalled = false;
     if (mainland) {
-      const decision = await this.decideMainlandOcr(payload, image);
-      createStatus = decision.status;
-      verifyOutcome = decision.outcome;
+      const cls = await this.classifyMainlandOcr(payload, image);
+      outcome = cls.outcome;
+      recognized = cls.recognized;
       ocrCalled = true;
     } else {
-      createStatus = APP_STATUS_MANUAL;
-      verifyOutcome = VERIFY_OUTCOME_MANUAL;
+      outcome = 'manual';
     }
 
-    // 8. 落图 → key(失败不建记录)
+    // 8. 会话计数态(H5 报名前身份会话行;Q-P4-1;无会话/小程序链传 null)→ 六分流路由(纯函数,零副作用)。
+    let sessionPriorCount: number | null = null;
+    let sessionPriorLastOutcome: string | null = null;
+    if (hasToken) {
+      const state = await this.identity.readOcrAttemptState(
+        payload.phoneVerificationToken as string,
+      );
+      sessionPriorCount = state?.ocrAttemptCount ?? 0;
+      sessionPriorLastOutcome = state?.lastOcrOutcome ?? null;
+    }
+    const decision = routeOcrOutcome({
+      outcome,
+      applicantConfirmedOcrWrong: payload.applicantConfirmedOcrWrong ?? false,
+      sessionPriorCount,
+      sessionPriorLastOutcome,
+    });
+
+    // 9. 延迟分流(不落报名记录:模糊重拍 / 三选一待核对 / 上游首次重试):写会话行计数(若有会话,
+    //    不消费 token → 身份链保活可重试)+ 返中性引导(不落图、不暴露 riskLevel/forgery);付费 OCR 仅 pino 留痕。
+    if (decision.disposition !== 'submitted') {
+      if (decision.sessionBump && hasToken) {
+        await this.identity.writeOcrAttempt(
+          payload.phoneVerificationToken as string,
+          decision.sessionBump,
+        );
+      }
+      this.logger.log(
+        `recruitment ocr defer disposition=${decision.disposition} outcome=${outcome} ` +
+          `phone=${this.maskPhone(payload.phone)} hasSession=${hasToken}`,
+      );
+      return this.buildDeferResult(decision.disposition, recognized, cycle);
+    }
+    const record = decision.record as NonNullable<typeof decision.record>; // disposition='submitted' → record 必有
+
+    // 10. 落图 → key(失败不建记录)
     const ext = image.mimetype === 'image/png' ? 'png' : 'jpg';
     const idCardImageKey = `${ID_CARD_IMAGE_KEY_PREFIX}/${cycle.id}/${randomUUID()}.${ext}`;
     await this.storage.putObject({
@@ -296,7 +323,7 @@ export class RecruitmentApplicationsService {
       contentType: image.mimetype,
     });
 
-    // 9. 单事务建终态:verified → 原子发号(容量同事务校验,FM-C)+ tempNo;manual_review → 无 tempNo。
+    // 11. 单事务建终态:verified → 原子发号(容量同事务校验,FM-C)+ tempNo;manual_review → 无 tempNo + OCR 六分流字段。
     //    audit submit(actor 置空)+ (大陆)audit realname-verify(每次付费 OCR 必留痕,resourceId=新 id)。
     const ageGroup = birthDate ? ageGroupOf(computeAge(birthDate, now)) : null;
     let finalApp: RecruitmentApplication;
@@ -315,14 +342,14 @@ export class RecruitmentApplicationsService {
         const openid = wechatOpenid ?? phoneIdentity?.openid ?? null;
         let tempNo: string | null = null;
         let verifiedAt: Date | null = null;
-        if (createStatus === APP_STATUS_VERIFIED) {
+        if (record.statusCode === APP_STATUS_VERIFIED) {
           tempNo = await this.issueTempNo(tx, cycle.id);
           verifiedAt = now;
         }
         const row = await tx.recruitmentApplication.create({
           data: {
             cycleId: cycle.id,
-            statusCode: createStatus,
+            statusCode: record.statusCode,
             ...(tempNo ? { tempNo } : {}),
             ...(verifiedAt ? { verifiedAt } : {}),
             ...(openid ? { openid } : {}),
@@ -349,7 +376,13 @@ export class RecruitmentApplicationsService {
             ageGroup,
             cityDistrict: payload.cityDistrict,
             sourceChannel: payload.sourceChannel,
-            verifyOutcome,
+            // OCR 六分流落点(§2.2):verifyOutcome(机器判定,既有)+ manualReviewReason(后台分类)+
+            // riskLevel(三栏分流)+ 三选一③标记 + lastOcrOutcome 快照。
+            verifyOutcome: record.verifyOutcome,
+            ...(record.manualReviewReason ? { manualReviewReason: record.manualReviewReason } : {}),
+            ...(record.riskLevel ? { riskLevel: record.riskLevel } : {}),
+            ...(record.applicantConfirmedOcrWrong ? { applicantConfirmedOcrWrong: true } : {}),
+            lastOcrOutcome: record.lastOcrOutcome,
           },
         });
         await this.auditLogs.log({
@@ -359,7 +392,12 @@ export class RecruitmentApplicationsService {
           resourceType: AUDIT_RESOURCE_TYPE,
           resourceId: row.id,
           meta,
-          after: { cycleId: cycle.id, createStatus, isForeigner: foreign },
+          after: {
+            cycleId: cycle.id,
+            createStatus: record.statusCode,
+            isForeigner: foreign,
+            riskLevel: record.riskLevel,
+          },
           extra: {
             phone: this.maskPhone(payload.phone),
             openid: openid ? this.maskOpenid(openid) : null,
@@ -380,7 +418,7 @@ export class RecruitmentApplicationsService {
               idCard: maskIdCard(payload.idCardNumber),
               name: maskName(payload.realName),
               documentType: payload.documentTypeCode,
-              outcome: verifyOutcome,
+              outcome: record.verifyOutcome,
             },
             tx,
           });
@@ -388,7 +426,7 @@ export class RecruitmentApplicationsService {
         return row;
       });
     } catch (err) {
-      // 单事务失败(并发撞 partial unique 或任何 DB 错误)→ 第 8 步刚落 storage 的证件照成孤儿。
+      // 单事务失败(并发撞 partial unique 或任何 DB 错误)→ 第 10 步刚落 storage 的证件照成孤儿。
       // best-effort 补偿删,失败仅告警、不掩盖原错(FM-B;系统性审查 §3)。
       await this.safeDeleteOrphanImage(idCardImageKey);
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -397,19 +435,23 @@ export class RecruitmentApplicationsService {
       throw err;
     }
 
-    // 10. 通知触发:小程序展示数据已落库(application 状态 + cycle 通知配置);可选 SMS 为休眠 hook
+    // 12. 通知触发:小程序展示数据已落库(application 状态 + cycle 通知配置);可选 SMS 为休眠 hook
     this.logger.log(
       `recruitment notify ready app=${finalApp.id} status=${finalApp.statusCode} tempNo=${finalApp.tempNo ?? '-'}`,
     );
-    return this.toPublicDto(finalApp, cycle);
+    return this.toSubmitResult(finalApp, cycle);
   }
 
-  // 大陆身份证 OCR 权威判定(评审稿 §3.6 矩阵;分叉③/⑤/⑥)。
-  // 返回终态 + verifyOutcome;OCR 通道未配/上游失败不外抛,转 manual_review(不误杀)。
-  private async decideMainlandOcr(
+  // 大陆身份证 OCR 六分流分类(评审稿 §2.1/§3.6 矩阵;复用纯函数 classifyOcrResult)。
+  // 返回 outcome(matched/mismatch/forgery_warning/ocr_unclear/ocr_error)+ OCR 识别值(供 mismatch 三选一回填);
+  // OCR 通道未配/上游失败不外抛 → outcome='ocr_error'(提交端永不因 OCR 硬报错,分叉③)。
+  private async classifyMainlandOcr(
     payload: RecruitmentSubmitPayloadDto,
     image: UploadedImageFile,
-  ): Promise<{ status: string; outcome: string }> {
+  ): Promise<{
+    outcome: OcrOutcome;
+    recognized: { realName: string | null; idCardNumber: string | null } | null;
+  }> {
     let ocr: RealnameOcrResult;
     try {
       ocr = await this.realname.recognize({
@@ -418,33 +460,31 @@ export class RecruitmentApplicationsService {
         mimeType: image.mimetype,
       });
     } catch (err) {
-      // 分叉③:通道未配(27030)/ 上游失败(27031)→ manual_review,不外抛(提交端永不因 OCR 硬报错)
       if (
         err instanceof BizException &&
         (err.biz === BizCode.REALNAME_CHANNEL_NOT_CONFIGURED ||
           err.biz === BizCode.REALNAME_API_FAILED)
       ) {
-        this.logger.warn('recruitment mainland OCR failed → manual_review (ocr_error)');
-        return { status: APP_STATUS_MANUAL, outcome: VERIFY_OUTCOME_OCR_ERROR };
+        this.logger.warn(
+          'recruitment mainland OCR failed → ocr_error (六分流:首次重试/连续 2 次落系统异常)',
+        );
+        return { outcome: 'ocr_error', recognized: null };
       }
       throw err;
     }
-    if (!ocr.recognized) {
-      return { status: APP_STATUS_MANUAL, outcome: VERIFY_OUTCOME_OCR_UNCLEAR };
-    }
-    if (ocr.warnings.length > 0) {
-      return { status: APP_STATUS_MANUAL, outcome: VERIFY_OUTCOME_FORGERY_WARNING };
-    }
-    const nameMatch =
-      ocr.name != null &&
-      normalizeNameForMatch(ocr.name) === normalizeNameForMatch(payload.realName);
-    const idMatch =
-      ocr.idCardNumber != null &&
-      normalizeIdForMatch(ocr.idCardNumber) === normalizeIdForMatch(payload.idCardNumber);
-    if (nameMatch && idMatch) {
-      return { status: APP_STATUS_VERIFIED, outcome: VERIFY_OUTCOME_MATCHED };
-    }
-    return { status: APP_STATUS_MANUAL, outcome: VERIFY_OUTCOME_MISMATCH };
+    const outcome = classifyOcrResult(
+      {
+        recognized: ocr.recognized,
+        name: ocr.name,
+        idCardNumber: ocr.idCardNumber,
+        warnings: ocr.warnings,
+      },
+      { realName: payload.realName, idCardNumber: payload.idCardNumber },
+    );
+    return {
+      outcome,
+      recognized: ocr.recognized ? { realName: ocr.name, idCardNumber: ocr.idCardNumber } : null,
+    };
   }
 
   // ============ 公开查询(凭新 wx.login code → openid → 本人最近报名)============
@@ -485,7 +525,7 @@ export class RecruitmentApplicationsService {
   // ============ admin 列表(PII 掩码;读 PII placeholder 审计)============
   async listForAdmin(
     query: PaginationQueryDto,
-    filters: { cycleId?: string; statusCode?: string },
+    filters: { cycleId?: string; statusCode?: string; riskLevel?: string },
     user: CurrentUserPayload,
   ): Promise<PageResultDto<RecruitmentApplicationAdminDto>> {
     await this.assertCanOrThrow(user, 'recruitment-application.read.record');
@@ -493,6 +533,8 @@ export class RecruitmentApplicationsService {
       deletedAt: null,
       ...(filters.cycleId ? { cycleId: filters.cycleId } : {}),
       ...(filters.statusCode ? { statusCode: filters.statusCode } : {}),
+      // S4b:人工队列三栏过滤(§2.4;normal/high/system)
+      ...(filters.riskLevel ? { riskLevel: filters.riskLevel } : {}),
     };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.recruitmentApplication.findMany({
@@ -867,13 +909,78 @@ export class RecruitmentApplicationsService {
     return openid.length <= 8 ? '***' : `${openid.slice(0, 4)}****${openid.slice(-4)}`;
   }
 
-  private toPublicDto(
+  // 落记录提交结果(outcome='submitted';verified/manual_review;statusCode 为中性机器态,不含 riskLevel/分类)。
+  private toSubmitResult(
     app: RecruitmentApplication,
     cycle: RecruitmentCycle,
-  ): RecruitmentApplicationPublicDto {
+  ): RecruitmentSubmitResultDto {
     return {
+      outcome: 'submitted',
       statusCode: app.statusCode,
       tempNo: app.tempNo,
+      stage: null,
+      stageText: null,
+      nextAction: null,
+      hint: null,
+      recognized: null,
+      cycleName: cycle.name,
+      meetingInfo: cycle.meetingInfo,
+      qqGroup: cycle.qqGroup,
+      notifyTemplate: cycle.notifyTemplate as Record<string, unknown> | null,
+    };
+  }
+
+  // 延迟引导结果(不落记录;六分流 retake/confirm/retry)。**中性文案,绝不暴露 riskLevel/forgery**(goal 三③隐私口径):
+  // - retake/confirm 经 deriveRecruitmentStage 派生会话态 stage(单一真相源)+ 字典文案;retry 无业务态(系统瞬态)。
+  // - confirm(mismatch 三选一)回带 OCR 识别值供申请人选「①用 OCR 回填」(申请人本人 PII,等同 recognize 端)。
+  private async buildDeferResult(
+    disposition: 'retake' | 'confirm' | 'retry',
+    recognized: { realName: string | null; idCardNumber: string | null } | null,
+    cycle: RecruitmentCycle,
+  ): Promise<RecruitmentSubmitResultDto> {
+    let stage: string | null = null;
+    let stageText: string | null = null;
+    let nextAction: string | null = null;
+    let hint: string | null = null;
+    if (disposition === 'retake') {
+      const d = deriveRecruitmentStage({
+        statusCode: APP_STATUS_VERIFIED, // 占位:requiresRetake 短路在 switch 之前,statusCode 不参与
+        thresholdMarks: null,
+        tempNo: null,
+        promotedMemberId: null,
+        requiresRetake: true,
+      });
+      stage = d.stage; // STAGE_RETAKE
+      nextAction = d.nextAction; // NEXT_ACTION_RETAKE
+      hint = '证件照不清晰或需重拍,请重新拍摄清晰的证件原件后再次提交';
+    } else if (disposition === 'confirm') {
+      const d = deriveRecruitmentStage({
+        statusCode: APP_STATUS_VERIFIED, // 占位:pendingOcrConfirm 短路
+        thresholdMarks: null,
+        tempNo: null,
+        promotedMemberId: null,
+        pendingOcrConfirm: true,
+      });
+      stage = d.stage; // STAGE_CONFIRM
+      nextAction = d.nextAction; // NEXT_ACTION_CONFIRM_OCR
+      hint = '证件识别与填写不一致,请核对:使用识别结果、修改填写、或确认识别有误后再次提交';
+    } else {
+      // retry(上游首次失败):系统瞬态,无业务 stage;中性提示重试。
+      hint = '当前核验繁忙,请稍后重试';
+    }
+    if (stage !== null) {
+      const map = await this.loadStageTextMap();
+      stageText = map.get(stage) ?? stage;
+    }
+    return {
+      outcome: disposition,
+      statusCode: null,
+      tempNo: null,
+      stage,
+      stageText,
+      nextAction,
+      hint,
+      recognized: disposition === 'confirm' ? recognized : null,
       cycleName: cycle.name,
       meetingInfo: cycle.meetingInfo,
       qqGroup: cycle.qqGroup,
@@ -900,6 +1007,8 @@ export class RecruitmentApplicationsService {
       ageGroup: app.ageGroup,
       cityDistrict: app.cityDistrict,
       verifyOutcome: app.verifyOutcome,
+      riskLevel: app.riskLevel,
+      manualReviewReason: app.manualReviewReason,
       eliminationStage: app.eliminationStage,
       hasIdCardImage: app.idCardImageKey !== null,
       thresholdMarks:

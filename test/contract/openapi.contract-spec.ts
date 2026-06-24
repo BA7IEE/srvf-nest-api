@@ -721,15 +721,16 @@ const EXPECTED_SCHEMAS: readonly string[] = [
 
   // 招新一期(招新前段)T3(2026-06-18;冻结评审稿 recruitment-phase1-review.md §3.2):
   //   recruitment DTO 物理隔离(独立 class,禁止继承 / Pick / Omit / Mapped Types)。
-  //   公开出参 RecruitmentApplicationPublicDto = self-scope 最小集(无 PII 明文);
   //   admin 出参 RecruitmentApplicationAdminDto = 含 PII(列表掩码 / 详情全显由 service 控)。
   //   注:RecruitmentSubmitPayloadDto 走 multipart 内嵌 JSON 串(@Body('payload') string),
   //   **不**作为 @Body() 类型 → NestJS Swagger 不注册为 component schema(沿 query DTO 内联范式)。
-  'RecruitmentApplicationPublicDto',
+  // 招新闭环优化 S4b(2026-06-24;评审稿 §2.1):submit 出参由 RecruitmentApplicationPublicDto 升级为
+  //   RecruitmentSubmitResultDto(OCR 六分流:outcome 区分落记录 submitted 与不落记录的中性延迟引导
+  //   retake/confirm/retry;**不暴露 riskLevel/forgery 分级**)。独立 class 物理隔离。
+  'RecruitmentSubmitResultDto',
   // 招新闭环优化 S1(2026-06-24;评审稿 §4/§6):公开本人查询出参 enrich 为进度模型
   //   RecruitmentApplicationProgressDto(业务态 stage + 字典文案 + 门槛 todoList 真投影 +
-  //   嵌套 RecruitmentTodoItemDto);独立 class 物理隔离(不继承 PublicDto)。submit 端点仍返
-  //   RecruitmentApplicationPublicDto(上一条)。
+  //   嵌套 RecruitmentTodoItemDto);独立 class 物理隔离。
   'RecruitmentApplicationProgressDto',
   'RecruitmentTodoItemDto',
   'RecruitmentQueryDto',

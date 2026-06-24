@@ -35,7 +35,7 @@
 ## 0. TL;DR
 
 1. **范围 = 招新前段(报名/OCR)→ 后段(门槛/评定/公示/发号)→ 入队(志愿者→队员)整条线的 12 个特性域**;本轮**只冻结设计 + 排期,零代码**,实施按 §12 切片逐个另出 goal。
-2. **现状重核(§1)整体吻合 goal 侦察,但纠正/补强 8 处**(详 §1.2),其中两处关键:① **入队门禁耦合是「两处」不是一处**——除 `team-join-enrollment.service.ts:140-147`(一键入队),报名侧 `team-join-applications.app.service.ts:60-75`(志愿者自助发起申请)也同样卡 `gradeCode==null + 零部门`;② **`verifyOutcome` 已有 7 细分值**(matched/mismatch/manual/skipped + forgery_warning/ocr_unclear/ocr_error/category_mismatch),不是「仅一个字段记原因」——新拆分原因应**复用并扩展**它,而非另起炉灶。
+2. **现状重核(§1)整体吻合 goal 侦察,但纠正/补强 8 处**(详 §1.2),其中两处关键:① **入队门禁耦合是「两处」不是一处**——除 `team-join-enrollment.service.ts:140-147`(一键入队),报名侧 `team-join-applications.app.service.ts:60-75`(志愿者自助发起申请)也同样卡 `gradeCode==null + 零部门`;② **`verifyOutcome` 已有 8 细分值**〔S4b 顺修:原稿误记 7〕(matched/mismatch/manual/skipped + forgery_warning/ocr_unclear/ocr_error/category_mismatch),不是「仅一个字段记原因」——新拆分原因应**复用并扩展**它,而非另起炉灶。
 3. **OCR 拆分(§2)**:把现「5 条全塞 manual_review」改为「自动通过 / 模糊→前端重拍不落记录 / 不一致→自助三选一仅确认错才进人工 / 防伪→高风险复核单列 / 上游失败→连续多次才进系统异常通道 / 特殊证件→人工」六分流;新增 `manualReviewReason/riskLevel/ocrAttemptCount/lastOcrOutcome/applicantConfirmedOcrWrong/requiresRetake`,**重拍计数落在 §3 报名前身份会话行**(Q-P4-1)。
 4. **H5 + 手机身份链(§3)**:复用 `sms-code.service`(发码/验码/限流/加密**全在**),但 `SmsPurpose` 是 **DB enum**(加值 = D 档 migration),且 `issue/verifyAndConsume` 形参 `userId:string`、而报名人匿名 → 需**放宽形参为可空**(列本就可空)或传稳定 sentinel;**无既有「验后凭证」** → 须新建短时 `phoneVerificationToken`(承载在报名前身份会话行)。
 5. **状态业务化(§4)**:后端只管 `statusCode`(机器态)+ 派生 `stage`(业务态),字典/前端管文案;**`promoted` enum 值不改库,展示一律「已转志愿者/待入队」,全程禁「已晋升」**(Q-P4-8)。
@@ -58,7 +58,7 @@
 | 核查项 | 结论(现状) | 证据(file:line) |
 |---|---|---|
 | 招新状态机 7 值 | `pending_verification`(退役,OCR 改造后报名不再产生)/ `verified` / `manual_review` / `rejected` / `pending_evaluation` / `publicity` / `promoted`,均 String 无 enum | [recruitment.constants.ts:15-22](../../../src/modules/recruitment/recruitment.constants.ts) |
-| `verifyOutcome` 细分值 | **已 7 值**:`matched`/`mismatch`/`manual`/`skipped` + OCR 改造分叉⑥ 加 `forgery_warning`/`ocr_unclear`/`ocr_error`/`category_mismatch` | [recruitment.constants.ts:25-33](../../../src/modules/recruitment/recruitment.constants.ts) |
+| `verifyOutcome` 细分值 | **已 8 值**〔S4b 顺修:原稿误记 7,实为 8〕:`matched`/`mismatch`/`manual`/`skipped` + OCR 改造分叉⑥ 加 `forgery_warning`/`ocr_unclear`/`ocr_error`/`category_mismatch` | [recruitment.constants.ts:25-33](../../../src/modules/recruitment/recruitment.constants.ts) |
 | OCR 判定分支(大陆) | `decideMainlandOcr` **5 分支全塞 manual_review**:上游失败→`ocr_error` / 不清晰→`ocr_unclear` / 防伪告警→`forgery_warning` / 匹配→`verified`(唯一放行) / 不一致→`mismatch` | [recruitment-applications.service.ts:356-395](../../../src/modules/recruitment/recruitment-applications.service.ts) |
 | OCR 判定分支(非大陆) | 护照/回乡证/台胞证/外永居/其余 → 提交端**不再 OCR**,恒 `manual_review`+`manual` | [recruitment-applications.service.ts:250-253](../../../src/modules/recruitment/recruitment-applications.service.ts) |
 | `recognize()` 预填 | **无状态、不落库、不发 token**;已返 `clarityOk:false`+`hint:'请重拍清晰证件照'`(前端重拍 UX 钩子**已部分存在**于识别端,缺的是提交端的对齐) | [recruitment-applications.service.ts:112-171](../../../src/modules/recruitment/recruitment-applications.service.ts) |
@@ -81,7 +81,7 @@
 ### 1.2 相对 goal 侦察的亲核纠正(8 处)
 
 1. **入队门禁是「两处」耦合,非一处**(goal 仅列 enrollment ~134-150):报名侧自助发起申请 [team-join-applications.app.service.ts:60-75](../../../src/modules/team-join/team-join-applications.app.service.ts) 同样卡 `gradeCode==null+零部门`。**§5 改造必须同时改这两处 + `member_departments` 单部门写法**,否则志愿者连「发起入队申请」都进不去。
-2. **`verifyOutcome` 已有 7 细分值**(goal 述「仅一个 verifyOutcome 字段记原因」偏弱):OCR 改造分叉⑥ 已加 `forgery_warning/ocr_unclear/ocr_error/category_mismatch`([constants:25-33](../../../src/modules/recruitment/recruitment.constants.ts))。**§2 新拆分原因 = 复用扩展 `verifyOutcome`,真正缺的是 `riskLevel/ocrAttemptCount/applicantConfirmedOcrWrong/requiresRetake/manualReviewReason`(后台展示用人话归类)**。
+2. **`verifyOutcome` 已有 8 细分值**〔S4b 顺修:原稿误记 7〕(goal 述「仅一个 verifyOutcome 字段记原因」偏弱):OCR 改造分叉⑥ 已加 `forgery_warning/ocr_unclear/ocr_error/category_mismatch`([constants:25-33](../../../src/modules/recruitment/recruitment.constants.ts))。**§2 新拆分原因 = 复用扩展 `verifyOutcome`,真正缺的是 `riskLevel/ocrAttemptCount/applicantConfirmedOcrWrong/requiresRetake/manualReviewReason`(后台展示用人话归类)**。
 3. **OCR 实为 6 分流不是 5**:`decideMainlandOcr` 5 分支(大陆)+ 非大陆恒人工([service:250-253](../../../src/modules/recruitment/recruitment-applications.service.ts))是独立第 6 路。
 4. **「前端重拍」UX 钩子已部分存在**:`recognize()` 已返 `clarityOk:false`+重拍 hint([service:153-162](../../../src/modules/recruitment/recruitment-applications.service.ts));缺口是**提交端** `submit()` 仍把模糊→manual_review([:380](../../../src/modules/recruitment/recruitment-applications.service.ts))。§2 改造点 = 让提交端与识别端对齐「模糊不落记录」。
 5. **`SmsPurpose` 是 DB enum**(非 String 约定):加 `RECRUITMENT_*` purpose = **D 档 enum migration**([schema:1189-1194](../../../prisma/schema.prisma)),非零成本。
@@ -105,7 +105,7 @@
 | 图片模糊 / OCR 读不出(`ocr_unclear`) | **前端重拍,不落报名记录、不进人工**;计数累积 | **否**(落 §3 身份会话行) | 会话行 `requiresRetake=true`、`ocrAttemptCount++`、`lastOcrOutcome=ocr_unclear` |
 | OCR 与填写不一致(`mismatch`) | 先让申请人**三选一**:① 用 OCR 结果回填 ② 改自己填写 ③ 确认 OCR 错;**仅③** `applicantConfirmedOcrWrong=true` 才落记录进**普通人工** | ③才落 | `verifyOutcome=mismatch`、`manualReviewReason=ocr_mismatch_confirmed`、`riskLevel=normal` |
 | 防伪告警 / 疑似篡改·复印·遮挡·翻拍(`forgery_warning`) | 先提示**重拍原件**;再不行落记录进**高风险复核**(与普通人工分流、单独标识) | 重拍 N 次后才落 | `verifyOutcome=forgery_warning`、`manualReviewReason=forgery_suspected`、`riskLevel=high` |
-| OCR 上游失败/通道未配(`ocr_error`) | **首次**提示重试;**连续 2 次**(Q-P4-4)才落记录进「系统 OCR 异常」通道(与证件异常分流) | 连续失败后才落 | `verifyOutcome=ocr_error`、`manualReviewReason=system_ocr_error`、`riskLevel=normal` |
+| OCR 上游失败/通道未配(`ocr_error`) | **首次**提示重试;**连续 2 次**(Q-P4-4)才落记录进「系统 OCR 异常」通道(与证件异常分流) | 连续失败后才落 | `verifyOutcome=ocr_error`、`manualReviewReason=system_ocr_error`、`riskLevel=system`〔S4b 顺修:原稿误记 normal,与 §2.4「系统异常栏=system」一致〕 |
 | 特殊证件 / 非 OCR 类型 / 生僻字多次失败 | **人工**(现状保留,恒 `manual`) | 是 | `verifyOutcome=manual`、`manualReviewReason=special_document` |
 
 > 「自助三选一」(Q-P4-2)与「高风险分流」(Q-P4-3)、「上游失败计次」(Q-P4-4)是产品口径,均带本稿推荐,见 §13。

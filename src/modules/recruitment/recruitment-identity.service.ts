@@ -174,6 +174,36 @@ export class RecruitmentIdentityService {
     };
   }
 
+  // ============ S4b OCR 六分流:读 / 写会话行重拍计数(Q-P4-1;承载于 S4a 预建列)============
+  // token 已经过 submit 的 assertPhoneSessionValid 前置校验(存在/未过期/未消费/轮次/手机一致);
+  // 此二法只读写计数列、**不消费 token**(延迟分支重拍循环不结束身份链)。无会话(小程序链)不调。
+
+  // 读会话行 OCR 计数态(escalation/连续计数决策用;未找到返 null,防御)
+  async readOcrAttemptState(
+    rawToken: string,
+  ): Promise<{ ocrAttemptCount: number; lastOcrOutcome: string | null } | null> {
+    const session = await this.prisma.recruitmentIdentitySession.findUnique({
+      where: { phoneVerificationTokenHash: hashPhoneVerificationToken(rawToken) },
+      select: { ocrAttemptCount: true, lastOcrOutcome: true },
+    });
+    return session;
+  }
+
+  // 写会话行 OCR 计数(延迟分支;不消费 token;ocrAttemptCount 为调用方算好的连续计数)
+  async writeOcrAttempt(
+    rawToken: string,
+    bump: { lastOcrOutcome: string; requiresRetake: boolean; ocrAttemptCount: number },
+  ): Promise<void> {
+    await this.prisma.recruitmentIdentitySession.updateMany({
+      where: { phoneVerificationTokenHash: hashPhoneVerificationToken(rawToken), consumedAt: null },
+      data: {
+        lastOcrOutcome: bump.lastOcrOutcome,
+        requiresRetake: bump.requiresRetake,
+        ocrAttemptCount: bump.ocrAttemptCount,
+      },
+    });
+  }
+
   // ============ 查询②:手机 + 验证码(查本人最近一条报名进度;Q-P4-6)============
   // 直验码(消费一码)→ 手机定位最近活跃报名 → 进度模型(与微信 code 查询同出参 / 同派生口径)。
   async queryByPhone(phone: string, code: string): Promise<RecruitmentApplicationProgressDto> {
