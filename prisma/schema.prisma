@@ -1447,6 +1447,15 @@ model RecruitmentApplication {
   phoneBindingHistory     Json? // 换绑历史追加 [{from,to,at,reason,method}](rebind-phone;DB 内可存明文,沿 phone 列同敏感级)
   phoneRiskFlag           String? // 风险标记(后台解绑纠错切片用;本刀仅建列不写)
 
+  // ===== 招新四期 S4b(OCR 六分流 + 重拍计数;2026-06-24,评审稿 recruitment-phase4-loop-optimization-review.md §2)=====
+  // 把现「5 分支全塞 manual_review」拆为六分流;以下 4 列全 additive(可空/有默认,纯加列无破坏,无 enum)。
+  // verifyOutcome(机器判定原因,既有)保留并复用;manualReviewReason(后台人工队列分类)+ riskLevel(三栏分流)并存(§2.2 E-P4-2)。
+  // 重拍计数落 §3 报名前身份会话行(recruitment_identity_sessions,Q-P4-1);submit 落库时把会话行最近 OCR 结论快照进 lastOcrOutcome。
+  manualReviewReason         String? // 后台人工原因分类:ocr_mismatch_confirmed / forgery_suspected / system_ocr_error / special_document(§2.2/§2.4)
+  riskLevel                  String? // 复核风险级:normal / high(防伪/篡改)/ system(上游异常)——驱动后台三栏(§2.4);**申请人侧不暴露**
+  applicantConfirmedOcrWrong Boolean @default(false) // mismatch 三选一之③:申请人确认 OCR 错、坚持填写为准 → 落普通人工(§2.1)
+  lastOcrOutcome             String? // 最近一次 OCR 结论快照(= 某 verifyOutcome 值;submit 落库时从会话行结转,§2.2/§2.3)
+
   cycle RecruitmentCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict)
 
   // 业务唯一约束(partial unique;migration.sql 末尾手写,E-R-9/10;Prisma DSL 不支持带 WHERE):

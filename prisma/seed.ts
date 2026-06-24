@@ -599,8 +599,10 @@ async function seedActivityTypeHierarchy(prisma: PrismaClient): Promise<void> {
 // 招新闭环优化 S1(2026-06-24 goal「招新闭环优化 S1」;评审稿 §4 状态业务化 §4.1/§4.2):
 // recruitment_stage 字典 —— 招新业务态 stage → 展示文案(stageText)。后端只管 statusCode(机器态)
 // + 派生 stage,展示文案落字典(后台可维护,改文案不发版);见 src/.../recruitment-progress-presenter.ts。
-// 本切片只 seed【现有持久数据可派生】的 7 态(评审稿 §4.2);retake/confirm/manual_high 待 S4(会话表/
-// riskLevel 落地)再补,本切片仅在 presenter 预留枚举位、不 seed 其文案。
+// S1 seed 现有持久数据可派生的 7 态;招新闭环优化 S4b(2026-06-24)补会话态/风险态 3 态(评审稿 §4.2):
+// retake「待重拍」/ confirm「待核对」(报名记录尚未创建的会话态,submit 延迟响应派生)+
+// manual_high(riskLevel=high)——**申请人侧文案中性「待人工核验」**(同 manual;高风险分级仅后台队列用,
+// 不对申请人暴露疑似造假已被标记;goal 三③隐私口径)。
 // **禁「已晋升」**(Q-P4-8):promoted 展示一律「已转志愿者 / 待入队」。
 // 幂等:upsert by (typeId, code),update:{} 不回退运营调整(label/sortOrder/status 运营可后台改);二跑无漂移。
 // 防误删守卫:dict_type + items 已登记 src/.../dictionaries.service.ts 的 SYSTEM/ITEM_PROTECTED_DICT_TYPES。
@@ -612,6 +614,10 @@ const RECRUITMENT_STAGE_SEED = [
   { code: 'publicity', label: '公示中', sortOrder: 4 },
   { code: 'volunteer', label: '已转志愿者 / 待入队', sortOrder: 5 },
   { code: 'rejected', label: '未通过', sortOrder: 6 },
+  // S4b 会话态/风险态(评审稿 §4.2):
+  { code: 'retake', label: '待重拍', sortOrder: 7 },
+  { code: 'confirm', label: '待核对', sortOrder: 8 },
+  { code: 'manual_high', label: '待人工核验', sortOrder: 9 }, // 申请人侧中性,等同 manual;高风险分流仅后台
 ] as const;
 
 async function seedRecruitmentStageDict(prisma: PrismaClient): Promise<void> {

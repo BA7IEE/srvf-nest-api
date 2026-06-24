@@ -8,7 +8,7 @@ import { RecruitmentStatsService } from './recruitment-stats.service';
 // 纯聚合服务,直接 new + mock PrismaService/RbacService(无事务、无副作用)。覆盖:
 // ① 五组(今日/待处理/门槛/综合评定/公示发号)在一份多态夹具下逐组精确计数;
 // ② 今日数据走**北京日界**(含「UTC 日 ≠ 北京日」的两个边界行,证明非 naive UTC 日);
-// ③ 待人工 normal/high/system 三栏 = verifyOutcome 代理(riskLevel 精确分栏待 S4);
+// ③ 待人工 normal/high/system 三栏 = **真 riskLevel 口径**(S4b 落地;去 verifyOutcome 代理);
 // ④ 公示「可一键发号/需手动建档」复用 decidePromotionIssuance(外籍 + openid 占用均落 needManualBuild);
 // ⑤ RBAC 拒绝 → RBAC_FORBIDDEN;轮次不存在 → RECRUITMENT_CYCLE_NOT_FOUND。
 
@@ -27,7 +27,7 @@ type StatsApp = {
   createdAt: Date;
   verifiedAt: Date | null;
   reviewedAt: Date | null;
-  verifyOutcome: string | null;
+  riskLevel: string | null;
   eliminationStage: string | null;
   isForeigner: boolean;
   birthDate: Date | null;
@@ -44,7 +44,7 @@ function app(over: Partial<StatsApp> & Pick<StatsApp, 'id' | 'statusCode'>): Sta
     createdAt: NOT_TODAY,
     verifiedAt: null,
     reviewedAt: null,
-    verifyOutcome: null,
+    riskLevel: null,
     eliminationStage: null,
     isForeigner: false,
     birthDate: new Date('1995-03-07T00:00:00.000Z'),
@@ -84,10 +84,10 @@ function buildService(
 describe('RecruitmentStatsService.getCycleStats · 五组聚合(多态夹具)', () => {
   // 多态夹具(createdAt/verifiedAt/reviewedAt 全置 NOT_TODAY,本组只验 stage 类计数,today 应全 0):
   const apps: StatsApp[] = [
-    // 待人工 3:system(ocr_error)/ high(forgery_warning)/ normal(mismatch)
-    app({ id: 'm1', statusCode: 'manual_review', verifyOutcome: 'ocr_error' }),
-    app({ id: 'm2', statusCode: 'manual_review', verifyOutcome: 'forgery_warning' }),
-    app({ id: 'm3', statusCode: 'manual_review', verifyOutcome: 'mismatch' }),
+    // 待人工 3:真 riskLevel 三栏 system / high / normal(S4b;去 verifyOutcome 代理)
+    app({ id: 'm1', statusCode: 'manual_review', riskLevel: 'system' }),
+    app({ id: 'm2', statusCode: 'manual_review', riskLevel: 'high' }),
+    app({ id: 'm3', statusCode: 'manual_review', riskLevel: 'normal' }),
     // 门槛跟踪中 2(verified + 未齐):A {patrol1,patrol2} / B {patrol1,training}
     app({ id: 't1', statusCode: 'verified', thresholdMarks: { patrol1: mark(), patrol2: mark() } }),
     app({
@@ -134,14 +134,14 @@ describe('RecruitmentStatsService.getCycleStats · 五组聚合(多态夹具)', 
     app({ id: 'r2', statusCode: 'rejected', eliminationStage: 'manual' }),
   ];
 
-  it('待处理事项:manualTotal=3 + normal/high/system 代理三栏 + 待评定 + 待发号', async () => {
+  it('待处理事项:manualTotal=3 + 真 riskLevel 三栏 normal/high/system + 待评定 + 待发号', async () => {
     const { service } = buildService(apps);
     const res = await service.getCycleStats('cyc1', user, NOW);
     expect(res.pending).toEqual({
-      manualTotal: 3,
-      manualNormal: 1, // mismatch 归 normal(非 ocr_error/forgery_warning)
-      manualHigh: 1, // forgery_warning 代理
-      manualSystem: 1, // ocr_error 代理
+      manualTotal: 3, // stage=manual + manual_high(high 行派生 manual_high 仍计入)
+      manualNormal: 1, // riskLevel=normal(= manualTotal − high − system)
+      manualHigh: 1, // 真 riskLevel=high
+      manualSystem: 1, // 真 riskLevel=system
       pendingEvaluation: 2,
       pendingIssuance: 3, // = publicity 态(p1/p2/pf)
     });

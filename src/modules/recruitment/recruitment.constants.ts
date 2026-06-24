@@ -34,6 +34,19 @@ export const VERIFY_OUTCOME_OCR_UNCLEAR = 'ocr_unclear'; // 证件照不清晰 /
 export const VERIFY_OUTCOME_OCR_ERROR = 'ocr_error'; // OCR 上游失败/通道未配(分叉③ 转人工不外抛)
 export const VERIFY_OUTCOME_CATEGORY_MISMATCH = 'category_mismatch'; // 回乡证类别非来往内地
 
+// ===== 招新四期 S4b(OCR 六分流;评审稿 §2.1/§2.2/§2.4;String,零 migration)=====
+// 复核风险级(riskLevel;驱动后台人工队列三栏分流 §2.4;**申请人侧不暴露**,goal 三③隐私口径):
+export const RISK_LEVEL_NORMAL = 'normal'; // 普通人工(mismatch 确认错 / 特殊证件)
+export const RISK_LEVEL_HIGH = 'high'; // 高风险复核(防伪/疑似篡改)
+export const RISK_LEVEL_SYSTEM = 'system'; // 系统异常(OCR 上游失败;§2.4 取此,顺修 §2.1 ocr_error 行 normal→system)
+// 后台人工原因分类(manualReviewReason;派生归类自 verifyOutcome,供 admin 分组筛选 §2.2/§2.4):
+export const MANUAL_REASON_OCR_MISMATCH_CONFIRMED = 'ocr_mismatch_confirmed'; // mismatch 三选一之③(applicantConfirmedOcrWrong)
+export const MANUAL_REASON_FORGERY_SUSPECTED = 'forgery_suspected'; // 防伪重拍仍异常 → 高风险
+export const MANUAL_REASON_SYSTEM_OCR_ERROR = 'system_ocr_error'; // 上游连续失败 → 系统异常
+export const MANUAL_REASON_SPECIAL_DOCUMENT = 'special_document'; // 特殊证件/非 OCR 类型/生僻字多次失败
+// 防伪 / 上游失败「连续达此次数才落记录进人工」(Q-P4-4「连续 2 次」;首次只提示重拍/重试,不落记录):
+export const OCR_DEFER_MAX_ATTEMPTS = 2;
+
 // ===== 淘汰环节(eliminationStage;脱敏留存)=====
 // OCR 改造(2026-06-22 分叉④/⑤):mismatch 不再 rejected(改 manual_review,不误杀),
 // ELIM_STAGE_REALNAME 报名主流程**不再写入**(常量保留仅历史兼容);淘汰仅经人工 resolve(ELIM_STAGE_MANUAL)。

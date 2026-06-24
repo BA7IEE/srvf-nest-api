@@ -136,6 +136,14 @@ export class RecruitmentSubmitPayloadDto {
   @IsOptional()
   @IsObject()
   profileExtra?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description:
+      'OCR 不一致三选一之③:申请人确认 OCR 识别有误、坚持以填写为准(S4b §2.1;true 时不一致仍落普通人工复核,不再要求重拍/改填)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  applicantConfirmedOcrWrong?: boolean;
 }
 
 // ============ 公开 OCR 识别预填(OCR 改造 2026-06-22;评审稿 §3.2 端点 4b / §4)============
@@ -281,14 +289,54 @@ export class RecruitmentRebindPhoneDto {
   reason?: string;
 }
 
-// 公开出参:申请状态 + 临时编号 + 通知展示(self-scope 最小集;不回显他人/PII 明文)。
-// 提交端点(submit)仍返本 DTO;**公开本人查询(query)已改返进度模型 RecruitmentApplicationProgressDto**。
-export class RecruitmentApplicationPublicDto {
-  @ApiProperty({ description: '报名状态(pending_verification/verified/manual_review/rejected)' })
-  statusCode!: string;
+// 公开提交结果(招新闭环优化 S4b OCR 六分流;评审稿 §2.1):提交端点 submit 出参。
+// outcome 区分「落报名记录」(submitted:verified/manual_review)与「不落记录的中性延迟引导」
+// (retake 重拍 / confirm 三选一待核对 / retry 上游首次重试)。**绝不暴露 riskLevel/forgery 分级**
+// (高风险疑似造假不对申请人提示;goal 三③隐私口径)——申请人侧仅见中性 stage/hint。
+// 公开本人查询(query)出参另为进度模型 RecruitmentApplicationProgressDto。
+export class RecruitmentSubmitResultDto {
+  @ApiProperty({
+    description:
+      '提交处置:submitted(已落报名记录)/ retake(请重拍,不落记录)/ confirm(识别与填写不一致,请三选一,不落记录)/ retry(核验繁忙,请重试,不落记录)',
+  })
+  outcome!: string;
+
+  @ApiPropertyOptional({
+    description: '报名状态(verified/manual_review;仅 outcome=submitted 有值,否则 null)',
+    nullable: true,
+  })
+  statusCode!: string | null;
 
   @ApiPropertyOptional({ description: '临时编号 T{year}{seq}(仅 verified 有值)', nullable: true })
   tempNo!: string | null;
+
+  @ApiPropertyOptional({
+    description: '业务态(retake=待重拍 / confirm=待核对;submitted/retry 为 null;中性,不含风险分级)',
+    nullable: true,
+  })
+  stage!: string | null;
+
+  @ApiPropertyOptional({
+    description: '业务态文案(recruitment_stage 字典 label;中性)',
+    nullable: true,
+  })
+  stageText!: string | null;
+
+  @ApiPropertyOptional({
+    description: '下一步动作码(retake / confirm-ocr;前端据此渲染按钮)',
+    nullable: true,
+  })
+  nextAction!: string | null;
+
+  @ApiPropertyOptional({ description: '中性引导文案(重拍 / 核对 / 重试)', nullable: true })
+  hint!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'OCR 识别值(仅 outcome=confirm 三选一时返,供申请人选「①用 OCR 回填」;申请人本人 PII)',
+    nullable: true,
+  })
+  recognized!: { realName: string | null; idCardNumber: string | null } | null;
 
   @ApiProperty({ description: '轮次名' })
   cycleName!: string;
@@ -305,7 +353,7 @@ export class RecruitmentApplicationPublicDto {
 
 // ============ 公开本人进度模型(招新闭环优化 S1;评审稿 §6.1 / §4 状态业务化)============
 // 把机器态 statusCode 派生为业务态 stage + 字典文案 stageText + 动作码 nextAction + 门槛 todoList 真投影,
-// 作为「公开本人查询」的出参(submit 端点仍返 RecruitmentApplicationPublicDto)。文案归属见
+// 作为「公开本人查询」的出参(submit 端点返 RecruitmentSubmitResultDto)。文案归属见
 // recruitment-progress-presenter.ts(stageText 来自 recruitment_stage 字典,§4.1「后端不存展示文案明文」)。
 
 export class RecruitmentTodoItemDto {
@@ -449,6 +497,18 @@ export class RecruitmentApplicationAdminDto {
   @ApiPropertyOptional({ nullable: true }) ageGroup!: string | null;
   @ApiPropertyOptional({ nullable: true }) cityDistrict!: string | null;
   @ApiPropertyOptional({ nullable: true }) verifyOutcome!: string | null;
+  // ===== 招新闭环优化 S4b(OCR 六分流;§2.4 后台人工队列三栏 + 分组筛选)=====
+  @ApiPropertyOptional({
+    description: '复核风险级(normal/high/system;人工队列三栏分流;可按此过滤列表)',
+    nullable: true,
+  })
+  riskLevel!: string | null;
+  @ApiPropertyOptional({
+    description:
+      '后台人工原因分类(ocr_mismatch_confirmed/forgery_suspected/system_ocr_error/special_document;可分组筛选)',
+    nullable: true,
+  })
+  manualReviewReason!: string | null;
   @ApiPropertyOptional({ nullable: true }) eliminationStage!: string | null;
   @ApiProperty({ description: '是否有证件照(取图走 :id/id-card-image-url)' })
   hasIdCardImage!: boolean;
@@ -587,8 +647,8 @@ export class IdCardImageUrlResponseDto {
 // ============ 招新闭环优化 S2:招新工作台 stats(评审稿 §7.1 五组;纯读聚合,零敏感明文)============
 // 各业务态计数与 S1 deriveRecruitmentStage 同源(单一 stage 口径,零第二套判定;评审稿 §7.1 line 365
 // 「待处理事项即各 stage 计数」)。物理隔离独立 class(禁继承 / Pick / Omit;沿 api-surface-policy §2.1)。
-// 「待人工」normal/high/system 三栏:Q-P4-3 的精确 `riskLevel` 字段待 S4;本切片用 `verifyOutcome` 代理
-// (system=ocr_error / high=forgery_warning / normal=其余),已在各字段 description 明确标注。
+// 「待人工」normal/high/system 三栏:S4b 已落 `riskLevel` 字段,**改用真 riskLevel 单一口径**(去 S2 的
+// verifyOutcome 代理;system=riskLevel.system / high=riskLevel.high / normal=manualTotal 减出)。
 
 export class RecruitmentStatsTodayDto {
   @ApiProperty({ description: '今日新报名(createdAt 北京日界当日)' })
@@ -600,20 +660,16 @@ export class RecruitmentStatsTodayDto {
 }
 
 export class RecruitmentStatsPendingDto {
-  @ApiProperty({ description: '待人工总数(stage=manual;= manual_review 态)' })
+  @ApiProperty({ description: '待人工总数(stage=manual + manual_high;= manual_review 态)' })
   manualTotal!: number;
   @ApiProperty({
     description:
-      '待人工·普通(verifyOutcome 代理:非 ocr_error/forgery_warning;riskLevel=normal 精确分栏待 S4)',
+      '待人工·普通(riskLevel=normal:mismatch 确认错 / 特殊证件;= manualTotal − high − system)',
   })
   manualNormal!: number;
-  @ApiProperty({
-    description: '待人工·高风险(verifyOutcome=forgery_warning 代理;riskLevel=high 精确分栏待 S4)',
-  })
+  @ApiProperty({ description: '待人工·高风险(真 riskLevel=high:防伪/疑似篡改复核)' })
   manualHigh!: number;
-  @ApiProperty({
-    description: '待人工·系统异常(verifyOutcome=ocr_error 代理;riskLevel=system 精确分栏待 S4)',
-  })
+  @ApiProperty({ description: '待人工·系统异常(真 riskLevel=system:OCR 上游连续失败)' })
   manualSystem!: number;
   @ApiProperty({ description: '待综合评定(stage=evaluation;= pending_evaluation 态)' })
   pendingEvaluation!: number;

@@ -28,6 +28,7 @@
 | 招新本人进度(无账号) | `POST /api/open/v1/recruitment/applications/query`(凭 wx.login code 换 openid;**返进度模型**:业务态 `stage` + 字典 `stageText` + `nextAction` + 门槛 `todoList` 真投影 + 临时编号;`memberNo` 恒 null——发号后经登录态 app 侧查,见 §3 GAP-006) |
 | **H5 报名前手机身份链(无账号;S4a)** | `POST /api/open/v1/recruitment/identity/send-code`(`{phone}`→发验证码) → `POST .../identity/verify-code`(`{phone,code}`→返一次性 `phoneVerificationToken`〔30min,明文仅返一次〕) → 提交报名(见下行 H5 链) |
 | **H5 报名提交(无账号;S4a)** | `POST /api/open/v1/recruitment/applications`(multipart;`payload` JSON 内 **`phoneVerificationToken`**〔H5〕或 `wechatCode`〔小程序〕**至少二选一**;`payload.phone` 须与验证手机一致;小程序链向后兼容不变) |
+| **OCR 六分流提交结果(S4b)** | 同上 submit 端点出参由 `RecruitmentSubmitResultDto.outcome` 区分:`submitted`(已落记录,`statusCode`=verified/manual_review + `tempNo`)/ `retake`(证件照模糊或需重拍,**不落记录**,`stage`/`stageText`/`hint` 中性引导,重拍后用**同 token** 重提)/ `confirm`(识别与填写不一致**三选一**,回带 `recognized`{realName,idCardNumber}:① 用 OCR 回填〔改 `payload.realName/idCardNumber` 重提〕② 改填写重提 ③ `payload.applicantConfirmedOcrWrong=true` 确认 OCR 错→落普通人工)/ `retry`(核验繁忙,稍后用同 token 重提)。**①②不落人工、仅③落**;`retake/confirm/retry` 均不消费 token。⚠️ 出参**绝不含风险分级**(高风险疑似造假不对申请人提示;申请人侧文案恒中性「待人工核验」) |
 | **招新本人进度②(手机;S4a)** | `POST /api/open/v1/recruitment/applications/query-by-phone`(`{phone,code}`→同进度模型;一次查询消费一码) |
 | **自助换绑(无账号;S4a)** | `POST .../applications/rebind-wechat`(`{phone,code,newWechatCode}`,当前手机验码校验本人→换 openid) · `POST .../applications/rebind-phone`(`{phone,code,newPhone,newPhoneCode}`,双验→换手机+换绑历史) |
 
@@ -38,7 +39,7 @@
 
 | # | 诉求 | 期望端点 | 状态 |
 |---|---|---|---|
-| GAP-006 | 招新→入队闭环「可见」(12 域:进度模型/工作台/批量/通知/H5+手机/promote 志愿者化…;T0 冻结评审稿 `docs/archive/reviews/recruitment-phase4-loop-optimization-review.md`) | 见评审稿 §12 切片表(S1–S7) | **S1/S2/S3/S4a 已交付**:S1 进度模型 + S2 工作台 stats + S3 RBAC 敏感分级(以上 admin/进度面);**S4a = H5 + 手机身份链**(发码/验码/H5 报名提交 + 手机查询② + 自助换微信/换手机;新表 `recruitment_identity_sessions` + `SmsPurpose.RECRUITMENT_BIND`;评审稿 §3)。**S4b**(OCR 六分流重拍计数,会话表预建列已就位)/ S5(promote 志愿者化)/ S6(批量)/ S7(通知,阻塞 GAP-005)待后续切片另出 goal。 |
+| GAP-006 | 招新→入队闭环「可见」(12 域:进度模型/工作台/批量/通知/H5+手机/promote 志愿者化…;T0 冻结评审稿 `docs/archive/reviews/recruitment-phase4-loop-optimization-review.md`) | 见评审稿 §12 切片表(S1–S7) | **S1/S2/S3/S4a/S4b 已交付**:S1 进度模型 + S2 工作台 stats + S3 RBAC 敏感分级;**S4a = H5 + 手机身份链**;**S4b = OCR 六分流 + 重拍计数**(submit 改六分流:matched→verified / 模糊·防伪首次→retake 不落 / 不一致→三选一 / 上游首次→retry;forgery·ocr_error **H5 会话连续 2 次**才落 manual_review〔high/system〕,计数落 `recruitment_identity_sessions` 预建列;application +4 列 additive 无 enum;进度模型 +retake/confirm/manual_high 三态;S2 待人工三栏升真 `riskLevel`)。**S5**(promote 志愿者化)/ S6(批量)/ S7(通知,阻塞 GAP-005)待后续切片另出 goal。 |
 
 ## 4. 不馊
 

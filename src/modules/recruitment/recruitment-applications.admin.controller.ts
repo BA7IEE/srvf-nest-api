@@ -58,7 +58,7 @@ export class RecruitmentApplicationsAdminController {
   @Get()
   @ApiOperation({
     summary:
-      '招新报名分页列表(可按 cycleId / statusCode 过滤;身份证号/手机列表掩码) [rbac: recruitment-application.read.record]',
+      '招新报名分页列表(可按 cycleId / statusCode / riskLevel〔S4b 人工队列三栏 normal/high/system〕过滤;身份证号/手机列表掩码) [rbac: recruitment-application.read.record]',
   })
   @ApiWrappedPageResponse(RecruitmentApplicationAdminDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -67,8 +67,9 @@ export class RecruitmentApplicationsAdminController {
     @CurrentUser() user: CurrentUserPayload,
     @Query('cycleId') cycleId?: string,
     @Query('statusCode') statusCode?: string,
+    @Query('riskLevel') riskLevel?: string,
   ) {
-    return this.service.listForAdmin(query, { cycleId, statusCode }, user);
+    return this.service.listForAdmin(query, { cycleId, statusCode, riskLevel }, user);
   }
 
   @Get(':id')

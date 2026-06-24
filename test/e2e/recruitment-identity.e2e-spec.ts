@@ -3,6 +3,7 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { RealnameSettingsService } from '../../src/modules/realname/realname-settings.service';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -141,6 +142,10 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
         { typeId: stageType.id, code: 'publicity', label: '公示中', sortOrder: 4 },
         { typeId: stageType.id, code: 'volunteer', label: '已转志愿者 / 待入队', sortOrder: 5 },
         { typeId: stageType.id, code: 'rejected', label: '未通过', sortOrder: 6 },
+        // S4b 会话态 / 风险态(manual_high 申请人侧文案中性同 manual)
+        { typeId: stageType.id, code: 'retake', label: '待重拍', sortOrder: 7 },
+        { typeId: stageType.id, code: 'confirm', label: '待核对', sortOrder: 8 },
+        { typeId: stageType.id, code: 'manual_high', label: '待人工核验', sortOrder: 9 },
       ],
     });
   });
@@ -410,5 +415,147 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
       basePayload('13900000004', { phoneVerificationToken: token4, idCardNumber: ID_A }),
     );
     expectBizError(dup, BizCode.RECRUITMENT_DUPLICATE_APPLICATION);
+  });
+
+  // ============ S4b:OCR 六分流(H5 会话计数;评审稿 §2.1;Q-P4-2/3/4)============
+  // 重拍/上游计次落 S4a 会话行预建列(ocrAttemptCount/requiresRetake/lastOcrOutcome);
+  // 延迟分流不落报名记录、不消费 token(身份链保活可重试);连续达 2 次才升级落库。
+
+  // 临时禁用/恢复 realname 通道(DevStub 不模拟上游错 → 用通道开关造 ocr_error;断言前即复原)。
+  // 直写 DB 绕过 service → 须显式 invalidate() 清 60s settings 缓存,否则旧值仍命中(非确定性)。
+  async function setRealnameEnabled(enabled: boolean): Promise<void> {
+    await prisma.realnameVerificationSettings.updateMany({ data: { enabled } });
+    app.get(RealnameSettingsService).invalidate();
+  }
+
+  it('⑰ 模糊(clarity:false)→ retake,不落记录,会话行 count++/requiresRetake,token 不消费', async () => {
+    await openCycle();
+    const phone = '13900000001';
+    const token = await getToken(phone);
+    const res = await submit(basePayload(phone, { phoneVerificationToken: token }), {
+      clarity: false,
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.data.outcome).toBe('retake');
+    expect(res.body.data.stage).toBe('retake');
+    expect(res.body.data.stageText).toBe('待重拍');
+    expect(await prisma.recruitmentApplication.count()).toBe(0); // 不落记录
+    const sess = await prisma.recruitmentIdentitySession.findFirst({ where: { phone } });
+    expect(sess?.ocrAttemptCount).toBe(1);
+    expect(sess?.requiresRetake).toBe(true);
+    expect(sess?.lastOcrOutcome).toBe('ocr_unclear');
+    expect(sess?.consumedAt).toBeNull(); // token 保活可重试
+  });
+
+  it('⑱ 上游失败连续 2 次才落:首次 retry 不落 / 第二次 → manual_review riskLevel=system', async () => {
+    await openCycle();
+    const phone = '13900000001';
+    const token = await getToken(phone);
+    await setRealnameEnabled(false); // 造 ocr_error
+    const r1 = await submit(basePayload(phone, { phoneVerificationToken: token }));
+    const r2 = await submit(basePayload(phone, { phoneVerificationToken: token }));
+    await setRealnameEnabled(true); // 断言前复原,失败不污染后续
+    expect(r1.body.data.outcome).toBe('retry'); // 首次只提示重试
+    expect(await prisma.recruitmentApplication.count()).toBe(1); // 仅第二次落 1 条
+    expect(r2.body.data.outcome).toBe('submitted');
+    expect(r2.body.data.statusCode).toBe('manual_review');
+    const row = await prisma.recruitmentApplication.findFirst({ where: { phone } });
+    expect(row?.riskLevel).toBe('system');
+    expect(row?.manualReviewReason).toBe('system_ocr_error');
+    expect(row?.verifyOutcome).toBe('ocr_error');
+    expect(row?.lastOcrOutcome).toBe('ocr_error'); // 快照
+  });
+
+  it('⑲ 防伪连续 2 次才落:首次 retake(中性不暴露 forgery)/ 第二次 → manual_review riskLevel=high', async () => {
+    await openCycle();
+    const phone = '13900000001';
+    const token = await getToken(phone);
+    const forgery = { name: '张三', idCardNumber: ID_A, clarity: true, warnings: ['PS'] };
+    const r1 = await submit(basePayload(phone, { phoneVerificationToken: token }), forgery);
+    expect(r1.body.data.outcome).toBe('retake');
+    expect(JSON.stringify(r1.body.data)).not.toMatch(/防伪|篡改|forgery|高风险|疑似/); // 申请人侧中性
+    expect(await prisma.recruitmentApplication.count()).toBe(0);
+    const r2 = await submit(basePayload(phone, { phoneVerificationToken: token }), forgery);
+    expect(r2.body.data.outcome).toBe('submitted');
+    expect(r2.body.data.statusCode).toBe('manual_review');
+    const row = await prisma.recruitmentApplication.findFirst({ where: { phone } });
+    expect(row?.riskLevel).toBe('high');
+    expect(row?.manualReviewReason).toBe('forgery_suspected');
+  });
+
+  it('⑳ mismatch 三选一①②:confirm 不落记录 → 用 OCR 回填纠正后 verified(不进人工)', async () => {
+    await openCycle();
+    const phone = '13900000001';
+    const token = await getToken(phone);
+    // 填「张三」但 OCR 读「李四」→ mismatch → confirm(不落记录,回带识别值)
+    const mm = await submit(
+      basePayload(phone, { phoneVerificationToken: token, realName: '张三' }),
+      {
+        name: '李四',
+        idCardNumber: ID_A,
+        clarity: true,
+        warnings: [],
+      },
+    );
+    expect(mm.body.data.outcome).toBe('confirm');
+    expect(mm.body.data.stage).toBe('confirm');
+    expect(mm.body.data.recognized).toEqual({ realName: '李四', idCardNumber: ID_A });
+    expect(await prisma.recruitmentApplication.count()).toBe(0); // ①② 不进人工
+    // ①用 OCR 回填:改填「李四」重提(同 token 未消费)→ matched → verified
+    const ok = await submit(
+      basePayload(phone, { phoneVerificationToken: token, realName: '李四' }),
+      {
+        name: '李四',
+        idCardNumber: ID_A,
+        clarity: true,
+        warnings: [],
+      },
+    );
+    expect(ok.body.data.outcome).toBe('submitted');
+    expect(ok.body.data.statusCode).toBe('verified');
+    const row = await prisma.recruitmentApplication.findFirst({ where: { phone } });
+    expect(row?.statusCode).toBe('verified');
+    expect(row?.riskLevel).toBeNull();
+  });
+
+  it('㉑ mismatch 三选一③:applicantConfirmedOcrWrong → 普通人工(riskLevel=normal + 确认标记)', async () => {
+    await openCycle();
+    const phone = '13900000001';
+    const token = await getToken(phone);
+    const res = await submit(
+      basePayload(phone, {
+        phoneVerificationToken: token,
+        realName: '张三',
+        applicantConfirmedOcrWrong: true,
+      }),
+      { name: '李四', idCardNumber: ID_A, clarity: true, warnings: [] },
+    );
+    expect(res.body.data.outcome).toBe('submitted');
+    expect(res.body.data.statusCode).toBe('manual_review');
+    const row = await prisma.recruitmentApplication.findFirst({ where: { phone } });
+    expect(row?.riskLevel).toBe('normal');
+    expect(row?.manualReviewReason).toBe('ocr_mismatch_confirmed');
+    expect(row?.applicantConfirmedOcrWrong).toBe(true);
+  });
+
+  it('㉒ 进度模型 manual_high 申请人侧中性:query-by-phone → stage=manual_high / stageText=待人工核验', async () => {
+    const cycle = await openCycle();
+    await seedApp(cycle.id, {
+      phone: '13900000001',
+      statusCode: 'manual_review',
+      tempNo: null,
+      riskLevel: 'high',
+      manualReviewReason: 'forgery_suspected',
+      verifyOutcome: 'forgery_warning',
+      openid: 'dev-openid-mh',
+    });
+    await sendCode('13900000001');
+    const res = await request(httpServer(app))
+      .post(QUERY_PHONE)
+      .send({ phone: '13900000001', code: FIXED_CODE });
+    expect(res.status).toBe(200);
+    expect(res.body.data.stage).toBe('manual_high');
+    expect(res.body.data.stageText).toBe('待人工核验'); // 中性,不暴露高风险
+    expect(JSON.stringify(res.body.data)).not.toMatch(/高风险|疑似|造假|forgery/);
   });
 });

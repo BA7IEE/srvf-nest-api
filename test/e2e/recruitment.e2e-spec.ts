@@ -241,48 +241,68 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(app1?.statusCode).toBe('verified');
   });
 
-  // ② 大陆 OCR 不匹配(信封姓名 ≠ 提交)→ manual_review(不再 rejected,「对不上转人工不误杀」)
-  it('② 大陆 OCR 不匹配 → 200 manual_review,无临时编号,verifyOutcome=mismatch(不 rejected)', async () => {
+  // ② 大陆 OCR 不匹配(小程序链/无会话)→ S4b 六分流:延迟 confirm 三选一,**不落记录**(替换原「直落 manual_review」)
+  it('② 大陆 OCR 不匹配 → 200 outcome=confirm,不落记录,回带 OCR 识别值供三选一', async () => {
     await openCycle();
     const res = await submit(validPayload({ wechatCode: 'code-b', idCardNumber: ID_MATCH_A }), {
       ocr: { name: '李四', idCardNumber: ID_MATCH_A, clarity: true, warnings: [] },
     });
     expect(res.status).toBe(201);
-    expect(res.body.data.statusCode).toBe('manual_review');
-    expect(res.body.data.tempNo).toBeNull();
-    const row = await prisma.recruitmentApplication.findFirst({
-      where: { openid: 'dev-openid-code-b' },
-    });
-    expect(row?.verifyOutcome).toBe('mismatch');
-    expect(row?.eliminationStage).toBeNull(); // mismatch 不再写 'realname' 淘汰(退役)
-    expect(row?.tempNo).toBeNull();
-    expect(await realnameVerifyAuditCount()).toBe(1); // 付费 OCR 已调一次(留痕)
+    expect(res.body.data.outcome).toBe('confirm');
+    expect(res.body.data.statusCode).toBeNull();
+    expect(res.body.data.stage).toBe('confirm');
+    expect(res.body.data.recognized).toEqual({ realName: '李四', idCardNumber: ID_MATCH_A });
+    // 不落报名记录 + 不留 DB OCR 审计(无 resourceId;付费 OCR 仅 pino 留痕)
+    expect(await prisma.recruitmentApplication.count()).toBe(0);
+    expect(await realnameVerifyAuditCount()).toBe(0);
   });
 
-  // ②b 大陆 OCR 防伪告警 → manual_review(forgery_warning;矩阵防伪先于匹配)
-  it('②b 大陆 OCR 防伪告警 → manual_review(verifyOutcome=forgery_warning)', async () => {
+  // ②-③ mismatch 三选一之③「确认 OCR 错」(applicantConfirmedOcrWrong)→ 落普通人工(normal,不误杀)
+  it('②-③ mismatch + applicantConfirmedOcrWrong → manual_review(riskLevel=normal,ocr_mismatch_confirmed)', async () => {
+    await openCycle();
+    const res = await submit(
+      validPayload({
+        wechatCode: 'code-b-confirm',
+        idCardNumber: ID_MATCH_A,
+        applicantConfirmedOcrWrong: true,
+      }),
+      { ocr: { name: '李四', idCardNumber: ID_MATCH_A, clarity: true, warnings: [] } },
+    );
+    expect(res.body.data.outcome).toBe('submitted');
+    expect(res.body.data.statusCode).toBe('manual_review');
+    const row = await prisma.recruitmentApplication.findFirst({
+      where: { openid: 'dev-openid-code-b-confirm' },
+    });
+    expect(row?.verifyOutcome).toBe('mismatch');
+    expect(row?.riskLevel).toBe('normal');
+    expect(row?.manualReviewReason).toBe('ocr_mismatch_confirmed');
+    expect(row?.applicantConfirmedOcrWrong).toBe(true);
+    expect(await realnameVerifyAuditCount()).toBe(1); // 落记录 → 付费 OCR 留痕
+  });
+
+  // ②b 大陆 OCR 防伪告警(小程序链/无会话)→ 延迟 retake(重拍原件),**不落记录、不升级**(无会话不服务端升级)
+  it('②b 大陆 OCR 防伪告警 → outcome=retake,不落记录(无会话不升级高风险)', async () => {
     await openCycle();
     const res = await submit(validPayload({ wechatCode: 'code-b2', idCardNumber: ID_MATCH_A }), {
       ocr: { name: '张三', idCardNumber: ID_MATCH_A, clarity: true, warnings: ['PS'] },
     });
-    expect(res.body.data.statusCode).toBe('manual_review');
-    const row = await prisma.recruitmentApplication.findFirst({
-      where: { openid: 'dev-openid-code-b2' },
-    });
-    expect(row?.verifyOutcome).toBe('forgery_warning');
+    expect(res.body.data.outcome).toBe('retake');
+    expect(res.body.data.stage).toBe('retake');
+    expect(res.body.data.statusCode).toBeNull();
+    // 中性引导:不暴露 forgery/高风险(申请人侧隐私口径)
+    expect(JSON.stringify(res.body.data)).not.toMatch(/防伪|篡改|forgery|高风险/);
+    expect(await prisma.recruitmentApplication.count()).toBe(0);
   });
 
-  // ②c 大陆 OCR 证件照不清晰 → manual_review(ocr_unclear)
-  it('②c 大陆 OCR 不清晰 → manual_review(verifyOutcome=ocr_unclear)', async () => {
+  // ②c 大陆 OCR 证件照不清晰 → 延迟 retake,**不落记录、永不进人工**
+  it('②c 大陆 OCR 不清晰 → outcome=retake,不落记录', async () => {
     await openCycle();
     const res = await submit(validPayload({ wechatCode: 'code-b3', idCardNumber: ID_MATCH_A }), {
       ocr: { clarity: false },
     });
-    expect(res.body.data.statusCode).toBe('manual_review');
-    const row = await prisma.recruitmentApplication.findFirst({
-      where: { openid: 'dev-openid-code-b3' },
-    });
-    expect(row?.verifyOutcome).toBe('ocr_unclear');
+    expect(res.body.data.outcome).toBe('retake');
+    expect(res.body.data.stage).toBe('retake');
+    expect(await prisma.recruitmentApplication.count()).toBe(0);
   });
 
   // ③ 外籍 → manual_review(不调付费核验);admin 人工 resolve approved → verified + 发号
@@ -645,11 +665,17 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
 
   // Ⓜ manual_review(大陆 OCR 不匹配)→ 人工 resolve approve → verified + 发号
   // (人工是 manual_review 最终权威:看图后可放行真实申请人,「对不上转人工不误杀」)
-  it('Ⓜ manual_review(OCR 不匹配)→ resolve approve → verified + 发号(人工最终权威)', async () => {
+  it('Ⓜ manual_review(OCR 不匹配,申请人确认③)→ resolve approve → verified + 发号(人工最终权威)', async () => {
     await openCycle();
-    await submit(validPayload({ wechatCode: 'code-mr', idCardNumber: ID_MATCH_A }), {
-      ocr: { name: '李四', idCardNumber: ID_MATCH_A, clarity: true },
-    });
+    // S4b:mismatch 经三选一之③(applicantConfirmedOcrWrong)落普通人工,admin 看图放行真实申请人
+    await submit(
+      validPayload({
+        wechatCode: 'code-mr',
+        idCardNumber: ID_MATCH_A,
+        applicantConfirmedOcrWrong: true,
+      }),
+      { ocr: { name: '李四', idCardNumber: ID_MATCH_A, clarity: true } },
+    );
     const row = await prisma.recruitmentApplication.findFirst({
       where: { openid: 'dev-openid-code-mr' },
     });
@@ -666,9 +692,14 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   // Ⓜb manual_review → 人工 resolve reject → rejected(eliminationStage=manual)
   it('Ⓜb manual_review → resolve reject → rejected(eliminationStage=manual)', async () => {
     await openCycle();
-    await submit(validPayload({ wechatCode: 'code-mr2', idCardNumber: ID_MATCH_A }), {
-      ocr: { name: '李四', idCardNumber: ID_MATCH_A, clarity: true },
-    });
+    await submit(
+      validPayload({
+        wechatCode: 'code-mr2',
+        idCardNumber: ID_MATCH_A,
+        applicantConfirmedOcrWrong: true,
+      }),
+      { ocr: { name: '李四', idCardNumber: ID_MATCH_A, clarity: true } },
+    );
     const row = await prisma.recruitmentApplication.findFirst({
       where: { openid: 'dev-openid-code-mr2' },
     });
@@ -809,10 +840,15 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     const row = await prisma.recruitmentApplication.findFirstOrThrow({ where: { id: appRow.id } });
     expect(Object.keys(row.thresholdMarks as object)).toEqual(['patrol1']);
 
-    // 非法态:非 verified/pending_evaluation 报名标门槛 → 28041(OCR 改造:用 manual_review 行,经 OCR 不匹配造)
-    const mm = await submit(validPayload({ wechatCode: 'p2-2b', idCardNumber: ID_MISMATCH }), {
-      ocr: { name: '别人', idCardNumber: ID_MISMATCH, clarity: true },
-    });
+    // 非法态:非 verified/pending_evaluation 报名标门槛 → 28041(S4b:mismatch 经确认③落 manual_review 行)
+    const mm = await submit(
+      validPayload({
+        wechatCode: 'p2-2b',
+        idCardNumber: ID_MISMATCH,
+        applicantConfirmedOcrWrong: true,
+      }),
+      { ocr: { name: '别人', idCardNumber: ID_MISMATCH, clarity: true } },
+    );
     expect(mm.body.data.statusCode).toBe('manual_review');
     const nonVerified = await prisma.recruitmentApplication.findFirstOrThrow({
       where: { openid: 'dev-openid-p2-2b' },
@@ -1349,12 +1385,14 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     const at = '2026-06-10T00:00:00.000Z';
     await prisma.recruitmentApplication.createMany({
       data: [
-        // 待人工 ×3:system(ocr_error)/ high(forgery_warning)/ normal(mismatch);前二条 createdAt=今日
+        // 待人工 ×3:S4b 真 riskLevel 三栏 system / high / normal;前二条 createdAt=今日
         {
           cycleId: cycle.id,
           statusCode: 'manual_review',
           documentTypeCode: 'mainland_id',
           verifyOutcome: 'ocr_error',
+          riskLevel: 'system',
+          manualReviewReason: 'system_ocr_error',
           createdAt: TODAY,
           realName: '系统一',
         },
@@ -1363,6 +1401,8 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
           statusCode: 'manual_review',
           documentTypeCode: 'mainland_id',
           verifyOutcome: 'forgery_warning',
+          riskLevel: 'high',
+          manualReviewReason: 'forgery_suspected',
           createdAt: TODAY,
           realName: '高危一',
         },
@@ -1371,6 +1411,8 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
           statusCode: 'manual_review',
           documentTypeCode: 'mainland_id',
           verifyOutcome: 'mismatch',
+          riskLevel: 'normal',
+          manualReviewReason: 'ocr_mismatch_confirmed',
           createdAt: OLD,
           reviewedAt: TODAY,
           realName: '普通一',

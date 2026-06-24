@@ -6,19 +6,27 @@ import {
   APP_STATUS_PUBLICITY,
   APP_STATUS_REJECTED,
   APP_STATUS_VERIFIED,
+  RISK_LEVEL_HIGH,
+  RISK_LEVEL_NORMAL,
+  RISK_LEVEL_SYSTEM,
   THRESHOLD_CODES,
   type ThresholdMarks,
 } from './recruitment.constants';
 import {
   NEXT_ACTION_APPLY_TEAMJOIN,
   NEXT_ACTION_COMPLETE_THRESHOLD,
+  NEXT_ACTION_CONFIRM_OCR,
+  NEXT_ACTION_RETAKE,
   NEXT_ACTION_VIEW_PUBLICITY,
   NEXT_ACTION_WAIT_EVALUATION,
   NEXT_ACTION_WAIT_REVIEW,
+  STAGE_CONFIRM,
   STAGE_EVALUATION,
   STAGE_MANUAL,
+  STAGE_MANUAL_HIGH,
   STAGE_PUBLICITY,
   STAGE_REJECTED,
+  STAGE_RETAKE,
   STAGE_THRESHOLD,
   STAGE_THRESHOLD_DONE,
   STAGE_VOLUNTEER,
@@ -29,6 +37,7 @@ import {
 
 // 招新闭环优化 S1 单测:stage 派生纯函数全分支 + 门槛 todoList 真投影 + 进度模型组装。
 // 锁定评审稿 §4.2 映射 + Q-P4-8(promoted 禁「已晋升」)+ goal DoD#1/#3 边界(memberNo 恒 null)。
+// S4b 扩展:会话态(retake/confirm)优先 + manual_review+riskLevel=high → manual_high(申请人侧中性)。
 
 const ALL_MARKS: ThresholdMarks = Object.fromEntries(
   THRESHOLD_CODES.map((c) => [c, { at: '2026-06-24T00:00:00.000Z', by: 'admin-1' }]),
@@ -39,22 +48,79 @@ function input(over: {
   thresholdMarks?: ThresholdMarks | null;
   tempNo?: string | null;
   promotedMemberId?: string | null;
+  riskLevel?: string | null;
+  requiresRetake?: boolean;
+  pendingOcrConfirm?: boolean;
 }) {
   return {
     statusCode: over.statusCode,
     thresholdMarks: over.thresholdMarks ?? null,
     tempNo: over.tempNo ?? null,
     promotedMemberId: over.promotedMemberId ?? null,
+    riskLevel: over.riskLevel ?? null,
+    ...(over.requiresRetake !== undefined ? { requiresRetake: over.requiresRetake } : {}),
+    ...(over.pendingOcrConfirm !== undefined ? { pendingOcrConfirm: over.pendingOcrConfirm } : {}),
   };
 }
 
 describe('deriveRecruitmentStage(评审稿 §4.2 全分支)', () => {
-  it('manual_review → manual / wait-review / 报名申请人', () => {
+  it('manual_review(无 riskLevel)→ manual / wait-review / 报名申请人', () => {
     expect(deriveRecruitmentStage(input({ statusCode: APP_STATUS_MANUAL }))).toEqual({
       stage: STAGE_MANUAL,
       nextAction: NEXT_ACTION_WAIT_REVIEW,
       identityText: '报名申请人',
     });
+  });
+
+  // ===== S4b:riskLevel 派生 manual_high(申请人侧文案中性,stage 区分仅后台三栏)=====
+  it('manual_review + riskLevel=high → manual_high(申请人侧仍 wait-review / 报名申请人)', () => {
+    expect(
+      deriveRecruitmentStage(input({ statusCode: APP_STATUS_MANUAL, riskLevel: RISK_LEVEL_HIGH })),
+    ).toEqual({
+      stage: STAGE_MANUAL_HIGH,
+      nextAction: NEXT_ACTION_WAIT_REVIEW,
+      identityText: '报名申请人',
+    });
+  });
+
+  it('manual_review + riskLevel=normal/system → 仍 manual(仅 high 升 manual_high)', () => {
+    expect(
+      deriveRecruitmentStage(input({ statusCode: APP_STATUS_MANUAL, riskLevel: RISK_LEVEL_NORMAL }))
+        .stage,
+    ).toBe(STAGE_MANUAL);
+    expect(
+      deriveRecruitmentStage(input({ statusCode: APP_STATUS_MANUAL, riskLevel: RISK_LEVEL_SYSTEM }))
+        .stage,
+    ).toBe(STAGE_MANUAL);
+  });
+
+  // ===== S4b:会话态(报名记录未创建)优先,submit 延迟响应派生 =====
+  it('会话态 requiresRetake → retake / retake(不论 statusCode 占位)', () => {
+    expect(
+      deriveRecruitmentStage(input({ statusCode: APP_STATUS_VERIFIED, requiresRetake: true })),
+    ).toEqual({
+      stage: STAGE_RETAKE,
+      nextAction: NEXT_ACTION_RETAKE,
+      identityText: '报名申请人',
+    });
+  });
+
+  it('会话态 pendingOcrConfirm → confirm / confirm-ocr', () => {
+    expect(
+      deriveRecruitmentStage(input({ statusCode: APP_STATUS_VERIFIED, pendingOcrConfirm: true })),
+    ).toEqual({
+      stage: STAGE_CONFIRM,
+      nextAction: NEXT_ACTION_CONFIRM_OCR,
+      identityText: '报名申请人',
+    });
+  });
+
+  it('会话态优先级:requiresRetake 早于 pendingOcrConfirm 早于 statusCode', () => {
+    expect(
+      deriveRecruitmentStage(
+        input({ statusCode: APP_STATUS_MANUAL, requiresRetake: true, pendingOcrConfirm: true }),
+      ).stage,
+    ).toBe(STAGE_RETAKE);
   });
 
   it('verified + 门槛未齐(空)→ threshold / complete-threshold / 报名申请人', () => {
@@ -181,6 +247,7 @@ describe('assembleRecruitmentProgress(进度模型组装)', () => {
       tempNo: 'T20260001',
       thresholdMarks: { patrol1: { at: '2026-06-24T00:00:00.000Z', by: 'a' } },
       promotedMemberId: null,
+      riskLevel: null,
     };
     const dto = assembleRecruitmentProgress(app, cycle, stageTextByCode);
     expect(dto.stage).toBe(STAGE_THRESHOLD);
@@ -203,6 +270,7 @@ describe('assembleRecruitmentProgress(进度模型组装)', () => {
       tempNo: 'T20260002',
       thresholdMarks: null,
       promotedMemberId: null,
+      riskLevel: null,
     };
     const dto = assembleRecruitmentProgress(app, cycle, stageTextByCode);
     expect(dto.stage).toBe(STAGE_EVALUATION);
@@ -215,10 +283,27 @@ describe('assembleRecruitmentProgress(进度模型组装)', () => {
       tempNo: 'T20260003',
       thresholdMarks: ALL_MARKS,
       promotedMemberId: 'm-9',
+      riskLevel: null,
     };
     const dto = assembleRecruitmentProgress(app, cycle, stageTextByCode);
     expect(dto.stage).toBe(STAGE_VOLUNTEER);
     expect(dto.memberNo).toBeNull();
     expect(JSON.stringify(dto)).not.toContain('已晋升');
+  });
+
+  it('S4b:manual_review + riskLevel=high 行组装 → stage=manual_high,stageText 取字典中性文案', () => {
+    const app = {
+      statusCode: APP_STATUS_MANUAL,
+      tempNo: null,
+      thresholdMarks: null,
+      promotedMemberId: null,
+      riskLevel: RISK_LEVEL_HIGH,
+    };
+    // 字典 manual_high 文案 = 中性「待人工核验」(与 manual 同;申请人侧不暴露高风险分级)
+    const map = new Map<string, string>([[STAGE_MANUAL_HIGH, '待人工核验']]);
+    const dto = assembleRecruitmentProgress(app, cycle, map);
+    expect(dto.stage).toBe(STAGE_MANUAL_HIGH);
+    expect(dto.stageText).toBe('待人工核验'); // 中性,无「高风险/疑似」字样
+    expect(JSON.stringify(dto)).not.toMatch(/高风险|疑似|造假|forgery/);
   });
 });
