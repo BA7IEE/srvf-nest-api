@@ -18,6 +18,7 @@ import {
   CYCLE_STATUS_OPEN,
   type GateMarks,
   allGeneralGatesSatisfied,
+  isUnenrolledVolunteer,
 } from './team-join.constants';
 import {
   type ContributionResult,
@@ -56,20 +57,19 @@ export class AppMeTeamJoinService {
     return access.member.id;
   }
 
-  // 已入队拦截:member 已有级别(gradeCode)或 active 部门归属 → 28210(非新志愿者)。
+  // 已入队拦截(招新闭环优化 S5;评审稿 §5.2b):仅「未入队志愿者」可发起 ——
+  // 新口径(gradeCode='volunteer' + 仅一条 VOL active 部门)/ legacy 口径(gradeCode=null + 零部门);
+  // 其余(已设 level-* 级别 / 已有非 VOL 部门)→ 28210。判定走共享纯函数 isUnenrolledVolunteer(两处门禁零漂移)。
   private async assertNotEnrolledOrThrow(memberId: string, tx: PrismaTx): Promise<void> {
     const member = await tx.member.findUnique({
       where: { id: memberId },
       select: { gradeCode: true },
     });
-    if (member?.gradeCode != null) {
-      throw new BizException(BizCode.TEAM_JOIN_MEMBER_ALREADY_ENROLLED);
-    }
-    const dept = await tx.memberDepartment.findFirst({
+    const activeDepts = await tx.memberDepartment.findMany({
       where: { memberId, deletedAt: null },
-      select: { id: true },
+      select: { organization: { select: { code: true } } },
     });
-    if (dept) {
+    if (!isUnenrolledVolunteer({ gradeCode: member?.gradeCode ?? null }, activeDepts)) {
       throw new BizException(BizCode.TEAM_JOIN_MEMBER_ALREADY_ENROLLED);
     }
   }

@@ -166,6 +166,22 @@ describe('招新三期(入队)App 自助面 e2e', () => {
     expect(res.body.data.memberId).toBeUndefined();
   });
 
+  it('②b【S5】新志愿者(volunteer + VOL 部门)发起入队申请:门禁双兼容不拦,201 joining', async () => {
+    await openCycle();
+    const target = await makeOrg();
+    // 转「新志愿者」状态(S5 后 promote 产物):gradeCode='volunteer' + 1 条 VOL 归口部门
+    const volOrg = await prisma.organization.create({
+      data: { name: '志愿者', code: 'VOL', nodeTypeCode: 'volunteer', status: 'ACTIVE' },
+    });
+    await prisma.member.update({ where: { id: volA.memberId }, data: { gradeCode: 'volunteer' } });
+    await prisma.memberDepartment.create({
+      data: { memberId: volA.memberId, organizationId: volOrg.id },
+    });
+
+    const res = await submit(volA.authHeader, [target]).expect(201);
+    expect(res.body.data.statusCode).toBe('joining');
+  });
+
   it('③ 无 open 入队轮 → CYCLE_NOT_OPEN', async () => {
     const org = await makeOrg();
     expectBizError(await submit(volA.authHeader, [org]), BizCode.TEAM_JOIN_CYCLE_NOT_OPEN);

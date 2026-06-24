@@ -192,6 +192,8 @@ export class RecruitmentCyclesController {
     BizCode.RECRUITMENT_CYCLE_NOT_FOUND,
     BizCode.RECRUITMENT_APPLICATION_NOT_PROMOTABLE,
     BizCode.RECRUITMENT_MEMBER_NO_EXHAUSTED,
+    // S5(评审稿 §5.2a):promote 现建 VOL 归口部门;该部门缺失/非 ACTIVE → 事务前清晰失败
+    BizCode.RECRUITMENT_VOLUNTEER_ORG_UNAVAILABLE,
     // F3(#399):展开报名 JSON → emergency_contacts 行时校验 relation 字典码
     BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID,
   )

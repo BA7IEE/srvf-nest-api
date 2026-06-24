@@ -673,6 +673,37 @@ describe('招新三期(入队)admin 面 e2e', () => {
     expect(auditCount).toBe(1);
   });
 
+  it('⑰b【T4·S5】新志愿者(volunteer + VOL 部门)入队:软删 VOL + 建目标 → 恰 1 条 active 目标部门 + level-1', async () => {
+    const target = await makeOrg(); // 目标部门(候选,非 VOL)
+    const { appId, memberId } = await setupApproved({ targets: [target] });
+    // 转「新志愿者」状态(S5 后 promote 的产物形态):gradeCode='volunteer' + 1 条 VOL 归口部门
+    const volOrg = await prisma.organization.create({
+      data: { name: '志愿者', code: 'VOL', nodeTypeCode: 'volunteer', status: 'ACTIVE' },
+    });
+    await prisma.member.update({ where: { id: memberId }, data: { gradeCode: 'volunteer' } });
+    const volDept = await prisma.memberDepartment.create({
+      data: { memberId, organizationId: volOrg.id },
+    });
+
+    const res = await join(appId, target).expect(200);
+    expect(res.body.data.statusCode).toBe('joined');
+    expect(res.body.data.selectedOrganizationId).toBe(target);
+
+    // 入队后:gradeCode 升 level-1
+    const after = await prisma.member.findUniqueOrThrow({
+      where: { id: memberId },
+      select: { gradeCode: true },
+    });
+    expect(after.gradeCode).toBe('level-1');
+    // 守 member_departments 单部门 partial unique:恰 1 条 active 且为目标部门(VOL 已软删,绝无两条 active)
+    const active = await prisma.memberDepartment.findMany({ where: { memberId, deletedAt: null } });
+    expect(active).toHaveLength(1);
+    expect(active[0].organizationId).toBe(target);
+    // VOL 行被软删(deletedAt 置,留痕不物理删)
+    const vol = await prisma.memberDepartment.findUniqueOrThrow({ where: { id: volDept.id } });
+    expect(vol.deletedAt).not.toBeNull();
+  });
+
   it('⑱【T4】幂等:已 joined 重跑 → WRONG_STATE,不重复设部门/级别', async () => {
     const org = await makeOrg();
     const { appId, memberId } = await setupApproved({ targets: [org] });

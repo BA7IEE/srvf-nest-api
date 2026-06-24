@@ -21,8 +21,10 @@ import {
   type GateMarks,
   JOIN_GRADE_CODE,
   MEMBER_GRADE_DICT_CODE,
+  VOL_ORG_CODE,
   allGeneralGatesSatisfied,
   isGateSatisfied,
+  isUnenrolledVolunteer,
   professionalGateForNodeType,
 } from './team-join.constants';
 import {
@@ -130,26 +132,33 @@ export class TeamJoinEnrollmentService {
         throw new BizException(BizCode.TEAM_JOIN_GATES_NOT_SATISFIED);
       }
 
-      // 6. member 仍 ACTIVE + 仍无部门/级别(防重复入队;两层身份铁律)
+      // 6. member 仍 ACTIVE + 仍是「未入队志愿者」(招新闭环优化 S5;§5.2b:新口径 volunteer+VOL /
+      //    legacy null+零部门;判定走共享 isUnenrolledVolunteer 与自助门禁零漂移)。activeDepts 含 org.code,
+      //    供步骤 8 定位 VOL 行软删(单部门 partial unique:绝不与目标部门同时 active)。
       const member = await tx.member.findFirst({
         where: { id: app.memberId, deletedAt: null },
         select: { status: true, gradeCode: true },
       });
       if (!member) throw new BizException(BizCode.MEMBER_NOT_FOUND);
       if (member.status !== MemberStatus.ACTIVE) throw new BizException(BizCode.MEMBER_INACTIVE);
-      if (member.gradeCode != null) {
+      const activeDepts = await tx.memberDepartment.findMany({
+        where: { memberId: app.memberId, deletedAt: null },
+        select: { id: true, organization: { select: { code: true } } },
+      });
+      if (!isUnenrolledVolunteer({ gradeCode: member.gradeCode }, activeDepts)) {
         throw new BizException(BizCode.TEAM_JOIN_MEMBER_ALREADY_ENROLLED);
       }
-      const existingDept = await tx.memberDepartment.findFirst({
-        where: { memberId: app.memberId, deletedAt: null },
-        select: { id: true },
-      });
-      if (existingDept) throw new BizException(BizCode.TEAM_JOIN_MEMBER_ALREADY_ENROLLED);
 
       // 7. 级别校验(level-1 存在 + ACTIVE)
       await this.assertGradeCodeValidTx(tx, JOIN_GRADE_CODE);
 
-      // 8. 单事务原子写:建部门 + 设级别 + 状态 joined(全或无;失败回滚 → member 仍无部门/级别)
+      // 8. 单事务原子写(招新闭环优化 S5;§5.2c):守 member_departments 单部门 partial unique ——
+      //    新志愿者先软删 VOL 归口部门行(绝不与目标部门同时 active),legacy(零部门)无 VOL 可删;
+      //    再 create 目标部门 → 设级别 level-1 → 状态 joined(全或无;失败回滚 → member 仍未入队)。
+      const volDept = activeDepts.find((d) => d.organization.code === VOL_ORG_CODE);
+      if (volDept) {
+        await tx.memberDepartment.update({ where: { id: volDept.id }, data: { deletedAt: now } });
+      }
       try {
         await tx.memberDepartment.create({
           data: { memberId: app.memberId, organizationId: dto.organizationId },
