@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+> 累计下一个 minor 候选(**未 bump 版本 / 未发 Release**;沿发版拍板「合并所有子 PR 进 main + 累计 `## Unreleased`」)。
+
+## v0.31.0 - 2026-06-24
+
 ### Added
 
 - **招新批量操作(档 E/feature,纯加端点;goal「招新闭环优化 S6」;GAP-006 第六切片;冻结评审稿 [`recruitment-phase4-loop-optimization-review.md §8`](docs/archive/reviews/recruitment-phase4-loop-optimization-review.md) / Q-P4-12)**:招新工作台缺批量入口(逐个标门槛/逐个看发号资格)。本切片加 **3 批量端点**,**零 schema / 零新 RBAC 码 / 零 audit union 扩展**(全复用既有口径,杜绝第二套):
