@@ -908,6 +908,14 @@ export const BizCode = {
     message: '本年度永久编号流水已达上限(999)',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 招新闭环优化 S5(promote 志愿者化;2026-06-24;评审稿 recruitment-phase4-loop-optimization-review.md §5.2a):
+  // promote 现写 gradeCode='volunteer' + 建 VOL 归口部门(Organization.code='VOL',≠ VOD 志愿者组织部);
+  // 该归口部门缺失或非 ACTIVE → 在建任何 member 之前清晰失败(不留半成品),供运维校正 seed/组织状态。
+  RECRUITMENT_VOLUNTEER_ORG_UNAVAILABLE: {
+    code: 28044,
+    message: '志愿者归口部门(VOL)缺失或未启用,无法发号转志愿者',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   // 招新四期 S4a(H5 + 手机身份链;2026-06-24;评审稿 recruitment-phase4-loop-optimization-review.md §3.3/§3.4):
   // - 28050:报名前身份会话凭证(phoneVerificationToken)无效 / 过期 / 已消费(H5 提交端;前端据此引导重新验码)
   // - 28051:换微信换绑时新 openid 已被本轮另一活跃报名占用(防绑到他人报名 → 查询串号)

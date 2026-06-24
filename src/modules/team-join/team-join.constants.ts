@@ -94,6 +94,45 @@ export function professionalGateForNodeType(nodeTypeCode: string): GateCode | nu
 export const JOIN_GRADE_CODE = 'level-1';
 export const MEMBER_GRADE_DICT_CODE = 'member_grade';
 
+// ===== 入队入口身份判定(招新闭环优化 S5;评审稿 §5.2b;推翻 phase-3 E-J-6 双表示取舍)=====
+// 「未入队志愿者」= 可发起入队申请 / 可被一键入队的入口态。两处门禁(自助发起 app.service +
+// 一键入队 enrollment.service)共享本纯函数,零漂移。
+// VOL / volunteer 字面镜像 seed 稳定契约(Organization.code='VOL' 长期契约 + member_grade 'volunteer'
+// 项);不 import recruitment 内部,保持 team-join 自洽(沿本文件 ATTENDANCE_SHEET_STATUS_APPROVED 范式)。
+export const VOLUNTEER_GRADE_CODE = 'volunteer';
+export const VOL_ORG_CODE = 'VOL';
+
+export interface UnenrolledVolunteerMember {
+  gradeCode: string | null;
+}
+export interface ActiveDeptWithOrgCode {
+  organization: { code: string | null }; // Organization.code 为可空(String?;legacy org 无 code)
+}
+
+/**
+ * 是否「未入队志愿者」(可发起入队申请 / 可被一键入队)。评审稿 §5.2b 双口径(命中任一即放行):
+ * - 新口径(S5 后 promote 出):gradeCode==='volunteer' 且 **仅一条** active 部门且其 org=VOL;
+ * - legacy 口径(phase-3 promote 出的历史志愿者):gradeCode==null 且 **零** active 部门。
+ * 其余(已设 level-* 级别 / 已有非 VOL 部门 / 身份不一致)= 已入队 / 非志愿者 → 拦截。
+ * activeDepts 仅传 deletedAt IS NULL 的归属;org.code 由调用方 include 带入(纯函数不查库)。
+ */
+export function isUnenrolledVolunteer(
+  member: UnenrolledVolunteerMember,
+  activeDepts: readonly ActiveDeptWithOrgCode[],
+): boolean {
+  if (
+    member.gradeCode === VOLUNTEER_GRADE_CODE &&
+    activeDepts.length === 1 &&
+    activeDepts[0].organization.code === VOL_ORG_CODE
+  ) {
+    return true;
+  }
+  if (member.gradeCode == null && activeDepts.length === 0) {
+    return true;
+  }
+  return false;
+}
+
 // ===== 贡献值(评审稿 §4.3;W-J-3 / Q4)=====
 // approved-only:字面镜像 attendances `ATTENDANCE_SHEET_STATUS.APPROVED`('approved' = attendance_sheet_status
 // 字典稳定值,终审通过);不 import attendances 内部,保持 team-join 自洽(评审稿 §4.3)。

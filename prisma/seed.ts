@@ -392,6 +392,14 @@ const V2_DICT_SEED = [
       { code: 'jino', label: '基诺族', sortOrder: 55 },
     ],
   },
+  {
+    // 加入来源(member_profiles.joinSourceCode;候选字典,无 FK = 自由串)。招新闭环优化 S5
+    //(2026-06-24,评审稿 §5 + §1.2 亲核纠正 8):promote 直写 joinSourceCode='recruitment',此前该字典
+    // 从未 seed(自由串残留)。本片 additive 补齐字典基线(0 schema 改动、upsert 幂等),供后台展示/校验
+    // 候选;镜像 phase-2 E-R2-15 遗留。未登记 dictionaries.service 防误删守卫(自由串候选字典,不在本片授权面)。
+    type: { code: 'join_source', label: '加入来源', sortOrder: 21 },
+    items: [{ code: 'recruitment', label: '招新转入', sortOrder: 0 }],
+  },
 ] as const;
 
 async function seedV2Dictionaries(prisma: PrismaClient): Promise<void> {

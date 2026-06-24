@@ -200,6 +200,13 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         { typeId: stageType.id, code: 'rejected', label: '未通过', sortOrder: 6 },
       ],
     });
+
+    // 招新闭环优化 S5(评审稿 §5.2a):promote 现写 gradeCode='volunteer' + 建 VOL 归口部门
+    //(Organization.code='VOL' + ACTIVE,≠ VOD 志愿者组织部)。seed VOL 组织(reference data,
+    // beforeEach 不清,跨测持久);缺它 promote 会 28044 清晰失败。
+    await prisma.organization.create({
+      data: { name: '志愿者', code: 'VOL', nodeTypeCode: 'volunteer', status: 'ACTIVE' },
+    });
   });
 
   afterAll(async () => {
@@ -213,6 +220,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     await prisma.emergencyContact.deleteMany({});
     await prisma.memberProfile.deleteMany({});
     await prisma.user.deleteMany({ where: { memberId: { not: null } } }); // promote 建的 User 都绑 member
+    await prisma.memberDepartment.deleteMany({}); // S5:promote 建的 VOL 归口部门(FK RESTRICT,须先于 member 清)
     await prisma.member.deleteMany({});
     await prisma.recruitmentApplication.deleteMany({});
     await prisma.recruitmentCycle.deleteMany({});
@@ -1020,9 +1028,13 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         memberDepartments: true,
       },
     });
-    // 两层身份铁律:无级别、无部门
-    expect(li.gradeCode).toBeNull();
-    expect(li.memberDepartments.length).toBe(0);
+    // 招新闭环优化 S5(评审稿 §5.2a;推翻 phase-3 E-J-6 双表示):promote 即赋志愿者身份 ——
+    // gradeCode='volunteer' + 恰 1 条 active VOL 归口部门(入队才换目标部门 + 升 level-1)。
+    expect(li.gradeCode).toBe('volunteer');
+    expect(li.memberDepartments.length).toBe(1);
+    const volOrg = await prisma.organization.findFirstOrThrow({ where: { code: 'VOL' } });
+    expect(li.memberDepartments[0].organizationId).toBe(volOrg.id);
+    expect(li.memberDepartments[0].deletedAt).toBeNull();
     expect(li.displayName).toBe('李四');
     // wrinkle③ User:openid 绑定、username=memberNo、passwordHash 非空(密码登录天然关闭)、memberId 回链
     expect(li.user?.openid).toBe('dev-openid-p3-l');
@@ -1105,17 +1117,22 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(after.promotedMemberId).toBeNull();
   });
 
-  it('㉗(二期) 幂等:重跑 promote 命中 0(promoted 已离开 publicity);同报名不重复建 Member', async () => {
+  it('㉗(二期) 幂等:重跑 promote 命中 0(promoted 已离开 publicity);同报名不重复建 Member;不双建 VOL 部门', async () => {
     const cycle = await openCycle();
     await toPublicity('p3i-a', ID_MATCH_A, '陈一');
     const first = await promote(cycle.id);
     expect(first.body.data.promotedCount).toBe(1);
     const membersAfterFirst = await prisma.member.count();
+    // S5:首跑即建恰 1 条 active VOL 归口部门
+    const memberId = first.body.data.promoted[0].memberId as string;
+    expect(await prisma.memberDepartment.count({ where: { memberId, deletedAt: null } })).toBe(1);
 
     const second = await promote(cycle.id);
     expect(second.body.data.promotedCount).toBe(0);
     expect(second.body.data.skippedCount).toBe(0);
-    expect(await prisma.member.count()).toBe(membersAfterFirst); // 不重复建
+    expect(await prisma.member.count()).toBe(membersAfterFirst); // 不重复建 Member
+    // S5:重跑命中 0 → 不双建 VOL 部门(仍恰 1 条 active)
+    expect(await prisma.memberDepartment.count({ where: { memberId, deletedAt: null } })).toBe(1);
   });
 
   it('㉘(二期) 外籍 skip+report:不进一键发号(foreign-manual-build)、不建 Member、仍 publicity;大陆照常发', async () => {
