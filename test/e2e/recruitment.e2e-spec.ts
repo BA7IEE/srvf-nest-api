@@ -1559,4 +1559,406 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       .set('Authorization', adminAuth);
     expectBizError(res, BizCode.RECRUITMENT_CYCLE_NOT_FOUND);
   });
+
+  // =====================================================================
+  // 招新闭环优化 S6:批量操作(冻结评审稿 recruitment-phase4-loop-optimization-review.md §8)
+  //   批量标门槛(复用单行 markThreshold)/ 批量导出 CSV(脱敏复用 S3 toAdminDto)/
+  //   一键发号前预检(复用 decidePromotionIssuance,预检=实发)。
+  // =====================================================================
+
+  async function submitVerifiedPhone(code: string, idCard: string, name: string, phone: string) {
+    const res = await submit(
+      validPayload({ wechatCode: code, idCardNumber: idCard, realName: name, phone }),
+    );
+    expect(res.body.data.statusCode).toBe('verified');
+    return prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: `dev-openid-${code}` },
+    });
+  }
+  function batchMarkThreshold(body: Record<string, unknown>, auth = adminAuth) {
+    return request(httpServer(app))
+      .post(`${ADMIN_APPS}/batch-mark-threshold`)
+      .set('Authorization', auth)
+      .send(body);
+  }
+
+  it('㉘(S6) 批量标门槛:tempNo / 手机 / 姓名+手机 三键命中 + unmatched(no-match / insufficient)+ 幂等 + per-row 审计', async () => {
+    const cycle = await openCycle();
+    const a1 = await submitVerifiedPhone('s6-1', ID_MATCH_A, '赵一', '13900001001');
+    const a2 = await submitVerifiedPhone('s6-2', ID_MATCH_B, '钱二', '13900001002');
+    const a3 = await submitVerifiedPhone('s6-3', ID_MATCH_C, '孙三', '13900001003');
+
+    const res = await batchMarkThreshold({
+      cycleId: cycle.id,
+      thresholdCode: 'patrol1',
+      completed: true,
+      matches: [
+        { tempNo: a1.tempNo }, // matched by tempNo
+        { phone: '13900001002' }, // matched by phone(唯一)
+        { realName: '孙三', phone: '13900001003' }, // matched by name+phone
+        { tempNo: 'T20269999' }, // no-match
+        { realName: '只有名' }, // insufficient-key
+      ],
+    });
+    expect(res.status).toBe(200);
+    const d = res.body.data;
+    expect(d).toMatchObject({ total: 5, marked: 3, unmatched: 2, failed: 0, autoAdvanced: 0 });
+    expect(d.results[0]).toMatchObject({
+      index: 0,
+      status: 'marked',
+      applicationId: a1.id,
+      matchedBy: 'tempNo',
+    });
+    expect(d.results[1]).toMatchObject({
+      status: 'marked',
+      applicationId: a2.id,
+      matchedBy: 'phone',
+    });
+    expect(d.results[2]).toMatchObject({
+      status: 'marked',
+      applicationId: a3.id,
+      matchedBy: 'name+phone',
+    });
+    expect(d.results[3]).toMatchObject({ status: 'unmatched', unmatchedReason: 'no-match' });
+    expect(d.results[4]).toMatchObject({
+      status: 'unmatched',
+      unmatchedReason: 'insufficient-key',
+    });
+
+    // DB:三行 patrol1 已标(复用单行 markThreshold 逻辑)
+    const a1db = await prisma.recruitmentApplication.findFirstOrThrow({ where: { id: a1.id } });
+    expect((a1db.thresholdMarks as Record<string, unknown>).patrol1).toBeTruthy();
+
+    // 幂等:重跑同批 → 仍 marked、无副作用
+    const again = await batchMarkThreshold({
+      cycleId: cycle.id,
+      thresholdCode: 'patrol1',
+      completed: true,
+      matches: [{ tempNo: a1.tempNo }],
+    });
+    expect(again.body.data.marked).toBe(1);
+    expect(again.body.data.results[0].status).toBe('marked');
+
+    // per-row mark-threshold DB 审计已写(复用单行 → 首批 + 幂等重跑 ≥ 2 条)
+    const auditCount = await prisma.auditLog.count({
+      where: { event: 'recruitment-application.mark-threshold', resourceId: a1.id },
+    });
+    expect(auditCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it('㉙(S6) 批量标门槛:手机重复→ambiguous;状态非法行→failed(逐行容错,不整批断,其余行照标)', async () => {
+    const cycle = await openCycle();
+    // 两 app 共用手机 → 手机匹配 ambiguous(绝不猜)
+    await submitVerifiedPhone('s6-da', ID_MATCH_A, '周一', '13900002000');
+    await submitVerifiedPhone('s6-db', ID_MATCH_B, '吴二', '13900002000');
+    // manual_review 行(状态非法标门槛 → failed):mismatch + 申请人确认③ + 独立手机
+    const mmRes = await submit(
+      validPayload({
+        wechatCode: 's6-mm',
+        idCardNumber: ID_MISMATCH,
+        phone: '13900002500',
+        applicantConfirmedOcrWrong: true,
+      }),
+      { ocr: { name: '别人', idCardNumber: ID_MISMATCH, clarity: true } },
+    );
+    expect(mmRes.body.data.statusCode).toBe('manual_review');
+    // 一个可正常标的 verified 行(证明逐行容错:它不受 ambiguous/failed 行影响)
+    const ok = await submitVerifiedPhone('s6-ok', ID_MATCH_C, '郑三', '13900002600');
+
+    const res = await batchMarkThreshold({
+      cycleId: cycle.id,
+      thresholdCode: 'patrol1',
+      completed: true,
+      matches: [
+        { phone: '13900002000' }, // ambiguous(dupA/dupB)
+        { phone: '13900002500' }, // 命中 manual_review → failed(状态非法)
+        { phone: '13900002600' }, // 正常 → marked
+      ],
+    });
+    expect(res.status).toBe(200);
+    const d = res.body.data;
+    expect(d).toMatchObject({ total: 3, marked: 1, unmatched: 1, failed: 1 });
+    expect(d.results[0]).toMatchObject({ status: 'unmatched', unmatchedReason: 'ambiguous' });
+    expect(d.results[1]).toMatchObject({
+      status: 'failed',
+      errorCode: BizCode.RECRUITMENT_APPLICATION_WRONG_STATE.code,
+    });
+    expect(d.results[2]).toMatchObject({ status: 'marked', applicationId: ok.id });
+    // 容错验证:ok 行确实标上了(失败行未阻断它)
+    const okDb = await prisma.recruitmentApplication.findFirstOrThrow({ where: { id: ok.id } });
+    expect((okDb.thresholdMarks as Record<string, unknown>).patrol1).toBeTruthy();
+  });
+
+  it('㉚(S6) 批量标门槛:批量标末次门槛触发自动推进 pending_evaluation(autoAdvanced 计数;保留单行自动推进语义)', async () => {
+    const cycle = await openCycle();
+    const a = await submitVerifiedPhone('s6-aa', ID_MATCH_A, '郑一', '13900003000');
+    for (const c of ['patrol1', 'patrol2', 'training', 'redCross'])
+      await markThreshold(a.id, c, true);
+
+    const res = await batchMarkThreshold({
+      cycleId: cycle.id,
+      thresholdCode: 'bsafe',
+      completed: true,
+      matches: [{ tempNo: a.tempNo }],
+    });
+    expect(res.body.data.marked).toBe(1);
+    expect(res.body.data.autoAdvanced).toBe(1);
+    expect(res.body.data.results[0]).toMatchObject({
+      status: 'marked',
+      statusCode: 'pending_evaluation',
+      thresholdsComplete: true,
+    });
+    const db = await prisma.recruitmentApplication.findFirstOrThrow({ where: { id: a.id } });
+    expect(db.statusCode).toBe('pending_evaluation');
+  });
+
+  it('㉛(S6) 批量标门槛 RBAC + 校验:USER → 30100;空 matches → 400;非法 thresholdCode → 400', async () => {
+    const cycle = await openCycle();
+    expectBizError(
+      await batchMarkThreshold(
+        {
+          cycleId: cycle.id,
+          thresholdCode: 'patrol1',
+          completed: true,
+          matches: [{ tempNo: 'T1' }],
+        },
+        userAuth,
+      ),
+      BizCode.RBAC_FORBIDDEN,
+    );
+    const empty = await batchMarkThreshold({
+      cycleId: cycle.id,
+      thresholdCode: 'patrol1',
+      completed: true,
+      matches: [],
+    });
+    expect(empty.status).toBe(400);
+    const badCode = await batchMarkThreshold({
+      cycleId: cycle.id,
+      thresholdCode: 'not-a-threshold',
+      completed: true,
+      matches: [{ tempNo: 'T1' }],
+    });
+    expect(badCode.status).toBe(400);
+  });
+
+  it('㉜(S6) 批量导出 CSV:持 read.sensitive → 明文列;仅 read.record → 脱敏列(明文不泄露);无码 → 30100', async () => {
+    const cycle = await openCycle();
+    await submit(validPayload({ wechatCode: 's6-ex', idCardNumber: ID_MATCH_A })); // verified;phone 13900000001
+
+    // 持 read.sensitive → 明文证件号 / 手机列
+    const plain = await request(httpServer(app))
+      .post(`${ADMIN_APPS}/export`)
+      .set('Authorization', sensitiveAuth)
+      .send({ cycleId: cycle.id });
+    expect(plain.status).toBe(200);
+    expect(plain.headers['content-type']).toContain('text/csv');
+    expect(plain.text).toContain('id_card_number'); // 表头
+    expect(plain.text).toContain(ID_MATCH_A); // 明文证件号
+    expect(plain.text).toContain('13900000001'); // 明文手机
+
+    // 仅 read.record → 脱敏列(明文绝不出)
+    const masked = await request(httpServer(app))
+      .post(`${ADMIN_APPS}/export`)
+      .set('Authorization', recordOnlyAuth)
+      .send({ cycleId: cycle.id });
+    expect(masked.status).toBe(200);
+    expect(masked.text).not.toContain(ID_MATCH_A); // 明文不泄露
+    expect(masked.text).not.toContain('13900000001');
+    expect(masked.text).toContain('*'); // 掩码(复用 toAdminDto)
+    expect(masked.text).toContain('张三'); // 非敏感列照常(realName 在 record 级)
+
+    // 无码 USER → 30100
+    expectBizError(
+      await request(httpServer(app))
+        .post(`${ADMIN_APPS}/export`)
+        .set('Authorization', userAuth)
+        .send({}),
+      BizCode.RBAC_FORBIDDEN,
+    );
+  });
+
+  it('㉝(S6) 批量导出 CSV:按筛选(publicity)只导公示行,过滤其余态', async () => {
+    const cycle = await openCycle();
+    await submit(validPayload({ wechatCode: 's6-f1', idCardNumber: ID_MATCH_A })); // verified
+    await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        openid: 's6-pub',
+        realName: '公示员',
+        idCardNumber: 'S6PUB001',
+      }),
+    });
+    const res = await request(httpServer(app))
+      .post(`${ADMIN_APPS}/export`)
+      .set('Authorization', sensitiveAuth)
+      .send({ cycleId: cycle.id, filter: 'publicity' });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('公示员'); // 公示行在
+    expect(res.text).not.toContain('张三'); // verified(submit 默认名)被滤除
+  });
+
+  it('㉞(S6) 发号预检 = 实发:precheck 逐行 willIssue/skipReason 与实际 promote promoted/skipped 同源(decidePromotionIssuance)', async () => {
+    const cycle = await openCycle();
+    // 既有 User 占用 openid 's6p-bound'(模拟该报名者 openid 已绑既有账号 → promote 会 skip)
+    await prisma.user.create({
+      data: { username: 's6-bound-occupier', passwordHash: 'x', role: 'USER', openid: 's6p-bound' },
+    });
+    // 混合公示集:2 可发 + 外籍 + openid 占用 + 批内重复 + 缺 openid(直接造行,沿 ㉞ F9 手法)
+    await prisma.recruitmentApplication.createMany({
+      data: [
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 's6p-1',
+          realName: '艾一',
+          idCardNumber: 'S6P0001',
+        }),
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 's6p-2',
+          realName: '艾二',
+          idCardNumber: 'S6P0002',
+        }),
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 's6p-f',
+          realName: '波三',
+          isForeigner: true,
+          documentTypeCode: 'passport',
+          idCardNumber: 'S6P0003',
+        }),
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 's6p-bound',
+          realName: '曹四',
+          idCardNumber: 'S6P0004',
+        }),
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 's6p-dup',
+          realName: '丁五',
+          idCardNumber: 'S6P0005',
+        }),
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 's6p-dup',
+          realName: '丁六',
+          idCardNumber: 'S6P0006',
+        }),
+        publicityRow({
+          cycleId: cycle.id,
+          openid: null,
+          realName: '鄂七',
+          idCardNumber: 'S6P0007',
+        }),
+      ],
+    });
+
+    // 1) 预检(纯读;promote 之前)
+    const pre = await request(httpServer(app))
+      .get(`${ADMIN_CYCLES}/${cycle.id}/promote-precheck`)
+      .set('Authorization', adminAuth);
+    expect(pre.status).toBe(200);
+    type PreRow = { applicationId: string; willIssue: boolean; skipReason: string | null };
+    const preById: Record<string, PreRow> = Object.fromEntries(
+      (pre.body.data.rows as PreRow[]).map((r) => [r.applicationId, r]),
+    );
+
+    // 2) 实际发号
+    const prom = await promote(cycle.id);
+    expect(prom.status).toBe(200);
+    const promotedIds = new Set(
+      (prom.body.data.promoted as Array<{ applicationId: string }>).map((p) => p.applicationId),
+    );
+    const skipById: Record<string, { reason: string }> = Object.fromEntries(
+      (prom.body.data.skipped as Array<{ applicationId: string; reason: string }>).map((s) => [
+        s.applicationId,
+        s,
+      ]),
+    );
+
+    // 3) 一致性:每行 precheck.willIssue === 实发 promoted;skipReason === 实发 skipped.reason(预检=实发)
+    for (const [id, row] of Object.entries(preById)) {
+      expect(row.willIssue).toBe(promotedIds.has(id));
+      if (!row.willIssue) expect(row.skipReason).toBe(skipById[id].reason);
+    }
+    // 汇总一致
+    expect(pre.body.data.promotableCount).toBe(prom.body.data.promotedCount);
+    expect(pre.body.data.skipCount).toBe(prom.body.data.skippedCount);
+    expect(pre.body.data.total).toBe(7);
+
+    // 覆盖到的六类跳过原因(本夹具命中四类)
+    const reasons = new Set(
+      Object.values(preById)
+        .filter((r) => !r.willIssue)
+        .map((r) => r.skipReason),
+    );
+    expect(reasons).toContain('foreign-manual-build');
+    expect(reasons).toContain('openid-already-bound');
+    expect(reasons).toContain('duplicate-openid-in-batch');
+    expect(reasons).toContain('missing-openid');
+  });
+
+  it('㉟(S6) 发号预检:重复 openid 高亮 + 缺字段 flag + 特殊证件;RBAC USER → 30100;轮次不存在 → 28001', async () => {
+    const cycle = await openCycle();
+    await prisma.recruitmentApplication.createMany({
+      data: [
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 's6h-dup',
+          realName: '甲',
+          idCardNumber: 'S6H001',
+        }),
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 's6h-dup',
+          realName: '乙',
+          idCardNumber: 'S6H002',
+        }),
+        publicityRow({
+          cycleId: cycle.id,
+          openid: 's6h-nb',
+          realName: '丙',
+          idCardNumber: 'S6H003',
+          birthDate: null,
+          genderCode: null,
+        }),
+      ],
+    });
+    const pre = await request(httpServer(app))
+      .get(`${ADMIN_CYCLES}/${cycle.id}/promote-precheck`)
+      .set('Authorization', adminAuth);
+    expect(pre.status).toBe(200);
+    type HRow = {
+      realName: string | null;
+      duplicateOpenidInBatch: boolean;
+      missingBirthDate: boolean;
+      missingGender: boolean;
+      skipReason: string | null;
+    };
+    const rows = pre.body.data.rows as HRow[];
+    // 重复 openid 两行均高亮
+    const dupRows = rows.filter((r) => r.realName === '甲' || r.realName === '乙');
+    expect(dupRows.every((r) => r.duplicateOpenidInBatch)).toBe(true);
+    // 缺生日/性别行:flag + missing-derived-field
+    const nb = rows.find((r) => r.realName === '丙')!;
+    expect(nb.missingBirthDate).toBe(true);
+    expect(nb.missingGender).toBe(true);
+    expect(nb.skipReason).toBe('missing-derived-field');
+
+    // RBAC:USER → 30100
+    expectBizError(
+      await request(httpServer(app))
+        .get(`${ADMIN_CYCLES}/${cycle.id}/promote-precheck`)
+        .set('Authorization', userAuth),
+      BizCode.RBAC_FORBIDDEN,
+    );
+    // 轮次不存在 → 28001
+    expectBizError(
+      await request(httpServer(app))
+        .get(`${ADMIN_CYCLES}/non-existent/promote-precheck`)
+        .set('Authorization', adminAuth),
+      BizCode.RECRUITMENT_CYCLE_NOT_FOUND,
+    );
+  });
 });

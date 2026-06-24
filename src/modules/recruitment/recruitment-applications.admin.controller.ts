@@ -9,9 +9,11 @@ import {
   Post,
   Query,
   Req,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
+import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
+import type { Request, Response } from 'express';
 
 import {
   ApiBizErrorResponse,
@@ -26,7 +28,11 @@ import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
+  BatchMarkThresholdDto,
+  BatchMarkThresholdResultDto,
+  BatchMarkThresholdRowResultDto,
   EvaluateRecruitmentApplicationDto,
+  ExportRecruitmentApplicationsDto,
   IdCardImageUrlResponseDto,
   MarkThresholdDto,
   RecruitmentApplicationAdminDto,
@@ -50,7 +56,12 @@ function buildAuditMeta(req: Request): AuditMeta {
 
 @ApiTags('Admin - Recruitment Applications')
 @ApiBearerAuth()
-@ApiExtraModels(RecruitmentApplicationAdminDto, IdCardImageUrlResponseDto)
+@ApiExtraModels(
+  RecruitmentApplicationAdminDto,
+  IdCardImageUrlResponseDto,
+  BatchMarkThresholdResultDto,
+  BatchMarkThresholdRowResultDto,
+)
 @Controller('admin/v1/recruitment/applications')
 export class RecruitmentApplicationsAdminController {
   constructor(private readonly service: RecruitmentApplicationsService) {}
@@ -70,6 +81,46 @@ export class RecruitmentApplicationsAdminController {
     @Query('riskLevel') riskLevel?: string,
   ) {
     return this.service.listForAdmin(query, { cycleId, statusCode, riskLevel }, user);
+  }
+
+  // 招新闭环优化 S6:批量标门槛 / 批量导出。字面段 export / batch-mark-threshold 在 :id 路由**之前**声明
+  // (沿 activity-registrations export 路由顺序铁律;防 Nest 把字面段解析为 :id 参数)。
+  @Post('batch-mark-threshold')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '批量标门槛(匹配键 临时编号/手机/姓名+手机,签到记录导入由前端解析为数组;逐行复用单行 markThreshold = 逐行幂等 + 逐行容错〔某行匹配不上/状态非法不整批回滚〕+ 自动推进;返回 per-row 结果 + 批次汇总) [rbac: recruitment-application.mark.threshold]',
+  })
+  @ApiWrappedOkResponse(BatchMarkThresholdResultDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  batchMarkThreshold(
+    @Body() dto: BatchMarkThresholdDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<BatchMarkThresholdResultDto> {
+    return this.service.batchMarkThreshold(dto, user, buildAuditMeta(req), new Date());
+  }
+
+  @Post('export')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '批量导出 CSV(按筛选 全部/待人工/已初审/门槛未完成/待评定/公示/发号/淘汰;持 read.sensitive → 明文证件号/手机列 / 仅 read.record → 脱敏列〔S3 分级,脱敏复用 toAdminDto〕;读操作记审计) [rbac: recruitment-application.read.record]',
+  })
+  @ApiProduces('text/csv')
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  async export(
+    @Body() dto: ExportRecruitmentApplicationsDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const csv = await this.service.exportApplicationsCsv(dto, user);
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="recruitment-applications.csv"',
+    });
+    // UTF-8 BOM(让 Excel 自动识别中文)。
+    return new StreamableFile(Buffer.from('﻿' + csv, 'utf8'));
   }
 
   @Get(':id')

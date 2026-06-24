@@ -380,6 +380,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 招新闭环优化 S2(2026-06-24;冻结评审稿 recruitment-phase4-loop-optimization-review.md §7):
   //   招新工作台聚合只读 stats(五组;纯读零 schema;复用 read.record 零新 RBAC 码;答 GAP-003)。
   ['get', '/api/admin/v1/recruitment/cycles/{id}/stats'],
+  // 招新闭环优化 S6(2026-06-24;冻结评审稿 recruitment-phase4-loop-optimization-review.md §8):
+  //   批量操作 3 端点(纯加端点,零 schema / 零新 RBAC 码)——批量标门槛(复用单行 markThreshold)/
+  //   批量导出 CSV(脱敏复用 S3 toAdminDto)/ 一键发号前预检(复用 decidePromotionIssuance,预检=实发)。
+  //   批量通知不做(挂 §9 / GAP-005,随 S7)。
+  ['post', '/api/admin/v1/recruitment/applications/batch-mark-threshold'],
+  ['post', '/api/admin/v1/recruitment/applications/export'],
+  ['get', '/api/admin/v1/recruitment/cycles/{id}/promote-precheck'],
   // 招新三期(入队:志愿者→队员)T2(2026-06-19;冻结评审稿 recruitment-phase3-review.md §3.2):
   //   team-join admin 面 8 端点(入队轮 CRUD 4 + 报名 list/detail/标 gate/综合评估 4),200→208(均 admin/v1,仅新增)。
   //   app 自助面(T3)/ 一键入队(T4)后续追加。
@@ -757,6 +764,17 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'RecruitmentStatsThresholdItemDto',
   'RecruitmentStatsEvaluationDto',
   'RecruitmentStatsIssuanceDto',
+  // 招新闭环优化 S6(2026-06-24;评审稿 §8):批量操作 DTO(独立 class 物理隔离)。
+  //   批量标门槛入参 BatchMarkThresholdDto(+ 嵌套 match)/ 出参 BatchMarkThresholdResultDto(+ 嵌套 row);
+  //   批量导出入参 ExportRecruitmentApplicationsDto(出参为 text/csv StreamableFile,无响应 schema);
+  //   发号预检出参 PromotePrecheckResultDto(+ 嵌套 row)。
+  'BatchMarkThresholdMatchDto',
+  'BatchMarkThresholdDto',
+  'BatchMarkThresholdRowResultDto',
+  'BatchMarkThresholdResultDto',
+  'ExportRecruitmentApplicationsDto',
+  'PromotePrecheckRowDto',
+  'PromotePrecheckResultDto',
 
   // CMS 内容发布模块(第 28 模块)T2(2026-06-21;冻结评审稿 content-module-review.md §6/§8):
   //   content admin DTO 物理隔离(独立 class,禁止继承 / Pick / Omit / Mapped Types)。
