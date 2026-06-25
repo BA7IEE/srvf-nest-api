@@ -3,6 +3,7 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { ID_CARD_IMAGE_MAX_BYTES } from '../../src/modules/recruitment/recruitment.constants';
+import { NotificationDispatcher } from '../../src/modules/notifications/notification-dispatcher';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -221,6 +222,10 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     await prisma.memberProfile.deleteMany({});
     await prisma.user.deleteMany({ where: { memberId: { not: null } } }); // promote 建的 User 都绑 member
     await prisma.memberDepartment.deleteMany({}); // S5:promote 建的 VOL 归口部门(FK RESTRICT,须先于 member 清)
+    // 统一通知 S3:promote 发号定向通知(recipientMemberId FK→Member Restrict)+ 投递须先于 member 清。
+    await prisma.notificationDelivery.deleteMany({});
+    await prisma.notificationRead.deleteMany({});
+    await prisma.notification.deleteMany({});
     await prisma.member.deleteMany({});
     await prisma.recruitmentApplication.deleteMany({});
     await prisma.recruitmentCycle.deleteMany({});
@@ -1068,6 +1073,55 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     // cycle.memberNoSeq 自增到 3
     const cy = await prisma.recruitmentCycle.findFirstOrThrow({ where: { id: cycle.id } });
     expect(cy.memberNoSeq).toBe(3);
+  });
+
+  // ===== 统一通知 S3(评审稿 §6.4 / 招新 §9.1):发号 → 定向通知(站内 + 微信)=====
+
+  it('㉖d(S3) 发号 → 每个新建 member 收一条定向 system 通知(directed/recruitment/含 wechat + memberNo)', async () => {
+    const cycle = await openCycle();
+    await toPublicity('s3-z', ID_MATCH_A, '张三');
+    await toPublicity('s3-l', ID_MATCH_B, '李四');
+
+    const res = await promote(cycle.id);
+    expect(res.body.data.promotedCount).toBe(2);
+    const promoted = res.body.data.promoted as { memberId: string; memberNo: string }[];
+
+    for (const p of promoted) {
+      const notifs = await prisma.notification.findMany({
+        where: { recipientMemberId: p.memberId },
+      });
+      expect(notifs).toHaveLength(1);
+      expect(notifs[0]).toMatchObject({
+        audienceType: 'directed',
+        sourceType: 'system',
+        statusCode: 'published',
+        notificationTypeCode: 'recruitment',
+        authorUserId: null,
+      });
+      expect(notifs[0].channels).toEqual(['in-app', 'wechat']); // 发号:站内 + 微信
+      expect(notifs[0].body).toContain(p.memberNo); // payload:memberNo
+    }
+  });
+
+  it('㉖e(S3) 派发失败注入(dispatcher 抛错)→ **promote 仍成功**(号段连续 + member 建出;行为锁未破)', async () => {
+    const cycle = await openCycle();
+    await toPublicity('s3-err', ID_MATCH_A, '张三');
+
+    // spy 同一 NotificationDispatcher 单例(producer 注入同实例)→ 派发每次抛
+    const dispatcher = app.get(NotificationDispatcher);
+    const spy = jest
+      .spyOn(dispatcher, 'dispatchTargeted')
+      .mockRejectedValue(new Error('dispatch boom'));
+    try {
+      const res = await promote(cycle.id);
+      expect(res.status).toBe(200);
+      expect(res.body.data.promotedCount).toBe(1); // 业务成功,派发失败被吞
+      const member = await prisma.member.findFirstOrThrow({ where: { memberNo: '26001' } });
+      expect(member.gradeCode).toBe('volunteer'); // 发号产物完整
+      expect(spy).toHaveBeenCalled(); // 确有尝试派发(且抛错被吞)
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   // F3(#399):relation 字典校验 = 报名侧(主入口,提交即拒)+ promote 侧(defense-in-depth)双层一致。

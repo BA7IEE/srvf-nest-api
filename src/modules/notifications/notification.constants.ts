@@ -44,12 +44,21 @@ export type NotificationVisibility = (typeof NOTIFICATION_VISIBILITIES)[number];
 
 // ===== 通知类型字典(notificationTypeCode ∈ notification_type 字典 ACTIVE item;评审稿 §9.4)=====
 export const NOTIFICATION_TYPE_DICT_CODE = 'notification_type';
+// 招新 producer 定向通知类型(发号 / 入队结果;seed notification_type item 'recruitment' 已内置 = '招新公告')。
+export const NOTIFICATION_TYPE_RECRUITMENT = 'recruitment';
+
+// 定向(directed)通知的可见档(统一通知 S3):收件人恒为 member,故置 member 档。
+// feed 的广播分支已按 audienceType=broadcast 收窄,定向行**不借**可见档泄漏(仅 recipientMemberId=本人可见);
+// 此值仅作语义诚实占位 + admin 列表展示,实际可见性由 recipientMemberId 闸控(notification-read.service)。
+export const NOTIFICATION_DIRECTED_VISIBILITY = NOTIFICATION_VISIBILITY_MEMBER;
 
 // ===== 统一通知形状值(S1 仅用默认值;S2/S3 additive 扩值不返工;评审稿 §2.1 / §9.1)=====
-// audienceType:广播(S1/S2) | directed(S3 定向)。
+// audienceType:广播(S1/S2 admin) | directed(S3 producer 定向单一收件人)。
 export const NOTIFICATION_AUDIENCE_BROADCAST = 'broadcast';
-// sourceType:admin 撰写(S1/S2) | system 自动(S3 producer)。
+export const NOTIFICATION_AUDIENCE_DIRECTED = 'directed';
+// sourceType:admin 撰写(S1/S2) | system 自动(S3 producer,authorUserId=null,跳过 admin 状态机直 published)。
 export const NOTIFICATION_SOURCE_ADMIN = 'admin';
+export const NOTIFICATION_SOURCE_SYSTEM = 'system';
 // channels:站内(恒发) | wechat(S2) | sms(S5);代码常量非字典(渠道是工程枚举,评审稿 §9.4)。
 export const NOTIFICATION_CHANNEL_IN_APP = 'in-app';
 export const NOTIFICATION_CHANNEL_WECHAT = 'wechat';

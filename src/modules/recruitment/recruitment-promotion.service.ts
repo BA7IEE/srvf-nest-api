@@ -12,6 +12,12 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { assertEmergencyRelationCodeValid } from '../emergency-contacts/emergency-relation.validation';
+import {
+  NOTIFICATION_CHANNEL_IN_APP,
+  NOTIFICATION_CHANNEL_WECHAT,
+  NOTIFICATION_TYPE_RECRUITMENT,
+} from '../notifications/notification.constants';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { RbacService } from '../permissions/rbac.service';
 import {
   APP_STATUS_PROMOTED,
@@ -68,6 +74,8 @@ export class RecruitmentPromotionService {
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
+    // 统一通知 S3:发号定向通知(producer → notifications **单向**直调,D-N5 无事件总线;防环:绝不被 notifications 回调)。
+    private readonly notificationDispatcher: NotificationDispatcher,
   ) {}
 
   async promote(
@@ -267,6 +275,11 @@ export class RecruitmentPromotionService {
     this.logger.log(
       `recruitment promote cycle=${cycleId} promoted=${promoted.length} skipped=${skipped.length}`,
     );
+
+    // 发号定向通知(统一通知 S3;评审稿 §6.4 + 招新 §9.1):**事务 commit 之后、事务外**对每个新建 member 派发。
+    // **绝不破坏 promote 行为锁**(号段连续无空洞 / 全或无 / 幂等已在事务内完成并 commit);派发失败只记日志。
+    await this.dispatchPromotionNotifications(promoted);
+
     return {
       cycleId,
       promotedCount: promoted.length,
@@ -274,6 +287,27 @@ export class RecruitmentPromotionService {
       promoted,
       skipped,
     };
+  }
+
+  // 逐个新建 member 派发「已发号(已转志愿者 / 待入队)」定向通知(站内 + 微信)。
+  // **try-catch 永不抛**:任一 member 派发失败(含 dispatcher 内部异常)只记日志,不阻断其余、不破坏 promote 既有行为。
+  // payload(§9.1):memberNo + 发起入队入口;渠道 = 站内恒达 + 微信(新志愿者通常无 quota → 微信 skipped no-quota)。
+  private async dispatchPromotionNotifications(promoted: PromotedItemDto[]): Promise<void> {
+    for (const item of promoted) {
+      try {
+        await this.notificationDispatcher.dispatchTargeted({
+          recipientMemberId: item.memberId,
+          notificationTypeCode: NOTIFICATION_TYPE_RECRUITMENT,
+          title: '已发放永久编号',
+          body: `您已转为志愿者,永久编号 ${item.memberNo}。请进入小程序「申请入队」完成入队。`,
+          channels: [NOTIFICATION_CHANNEL_IN_APP, NOTIFICATION_CHANNEL_WECHAT],
+        });
+      } catch (err) {
+        this.logger.error(
+          `promote notification dispatch failed (member=${item.memberId}): ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
   // 招新闭环优化 S6(评审稿 §8.2):一键发号前预检 —— **纯读**,不写、不改 promote 结论。

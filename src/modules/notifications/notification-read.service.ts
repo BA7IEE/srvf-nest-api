@@ -16,6 +16,11 @@ import {
   canSeeContent,
   type CallerVisibilityContext,
 } from '../content/content.visibility';
+import {
+  NOTIFICATION_AUDIENCE_BROADCAST,
+  NOTIFICATION_AUDIENCE_DIRECTED,
+  NOTIFICATION_STATUS_PUBLISHED,
+} from './notification.constants';
 import type {
   ListNotificationReadQueryDto,
   MarkNotificationReadResponseDto,
@@ -81,6 +86,31 @@ export class NotificationReadService {
     return buildVisibilityWhere(ctx) as unknown as Prisma.NotificationWhereInput;
   }
 
+  // 会员 feed where(统一通知 S3;评审稿 §2.1):**广播可见 ∪ 本人定向**。
+  // - 广播分支按 audienceType=broadcast **收窄**复用的可见档 where —— 杜绝定向行(其 visibilityCode='member')
+  //   借广播可见档泄漏给他人(若不收窄,他人 member 会命中定向行的 member 可见档,= 越权)。
+  // - 定向分支:audienceType=directed 且 recipientMemberId=本人 + published(他人不命中 → feed 不含 + 详情 31001 防枚举)。
+  // 广播行 recipientMemberId 恒 null、定向行 audienceType 恒 directed,两分支互斥不重复计数。
+  private buildFeedWhere(
+    ctx: CallerVisibilityContext,
+    memberId: string,
+  ): Prisma.NotificationWhereInput {
+    return {
+      OR: [
+        {
+          audienceType: NOTIFICATION_AUDIENCE_BROADCAST,
+          ...this.buildVisibleNotificationWhere(ctx),
+        },
+        {
+          audienceType: NOTIFICATION_AUDIENCE_DIRECTED,
+          recipientMemberId: memberId,
+          statusCode: NOTIFICATION_STATUS_PUBLISHED,
+          deletedAt: null,
+        },
+      ],
+    };
+  }
+
   // ============ 端点 9:会员列表(准入 + 4 档可见性 + 每项 read 标志)============
   async appList(
     currentUser: CurrentUserPayload,
@@ -88,7 +118,7 @@ export class NotificationReadService {
   ): Promise<PageResultDto<NotificationReadListItemDto>> {
     const member = await this.assertCanUseAppOrThrow(currentUser);
     const ctx = await this.resolveCtx(currentUser, member.id);
-    const where = this.buildVisibleNotificationWhere(ctx);
+    const where = this.buildFeedWhere(ctx, member.id);
 
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.notification.findMany({
@@ -118,7 +148,7 @@ export class NotificationReadService {
   async appDetail(currentUser: CurrentUserPayload, id: string): Promise<NotificationReadDetailDto> {
     const member = await this.assertCanUseAppOrThrow(currentUser);
     const ctx = await this.resolveCtx(currentUser, member.id);
-    const row = await this.findVisibleOrThrow(ctx, id);
+    const row = await this.findVisibleOrThrow(ctx, member.id, id);
     const read = await this.hasRead(member.id, id);
     return this.toReadDetailDto(row, read);
   }
@@ -130,8 +160,8 @@ export class NotificationReadService {
   ): Promise<MarkNotificationReadResponseDto> {
     const member = await this.assertCanUseAppOrThrow(currentUser);
     const ctx = await this.resolveCtx(currentUser, member.id);
-    // 对不存在 / 不可见 / 未发布通知 → 31001 防侧信道(不可 mark-read 看不到的)。
-    await this.findVisibleOrThrow(ctx, id);
+    // 对不存在 / 不可见 / 未发布 / 他人定向通知 → 31001 防侧信道(不可 mark-read 看不到的)。
+    await this.findVisibleOrThrow(ctx, member.id, id);
 
     try {
       // 首插:create 成功 → 原子自增 readCount(非事务,镜像 content viewCount;失败不阻断已读语义)。
@@ -157,8 +187,8 @@ export class NotificationReadService {
     const member = await this.assertCanUseAppOrThrow(currentUser);
     const ctx = await this.resolveCtx(currentUser, member.id);
     const where: Prisma.NotificationWhereInput = {
-      ...this.buildVisibleNotificationWhere(ctx),
-      // 本人未读 = 不存在该 member 的 NotificationRead 行(Prisma none → NOT EXISTS 相关子查询)。
+      // 广播可见 ∪ 本人定向(S3),AND 本人未读 = 不存在该 member 的 NotificationRead 行(none → NOT EXISTS)。
+      ...this.buildFeedWhere(ctx, member.id),
       reads: { none: { memberId: member.id } },
     };
     const unreadCount = await this.prisma.notification.count({ where });
@@ -167,13 +197,23 @@ export class NotificationReadService {
 
   // ===== 私有 helper =====
 
-  // 取行 → canSeeContent 判定(不可见 / 不存在统一 31001 防枚举);复用 content.visibility 单条判定。
+  // 取行 → 可见性判定(不可见 / 不存在统一 31001 防枚举)。
+  // 广播:复用 content.visibility 单条判定(canSeeContent;含 published 前提)。
+  // 定向(S3):仅 recipientMemberId=本人 + published 可见(他人 → 31001 防枚举,杜绝侧信道探测)。
   private async findVisibleOrThrow(
     ctx: CallerVisibilityContext,
+    memberId: string,
     id: string,
   ): Promise<Notification> {
     const row = await this.prisma.notification.findFirst({ where: { id, deletedAt: null } });
-    if (!row || !canSeeContent(ctx, row)) {
+    if (!row) {
+      throw new BizException(BizCode.NOTIFICATION_NOT_FOUND);
+    }
+    const visible =
+      row.audienceType === NOTIFICATION_AUDIENCE_DIRECTED
+        ? row.recipientMemberId === memberId && row.statusCode === NOTIFICATION_STATUS_PUBLISHED
+        : canSeeContent(ctx, row);
+    if (!visible) {
       throw new BizException(BizCode.NOTIFICATION_NOT_FOUND);
     }
     return row;
