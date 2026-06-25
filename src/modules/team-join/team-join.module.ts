@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { UsersModule } from '../users/users.module';
 import { TeamJoinApplicationsAdminController } from './team-join-applications.admin.controller';
@@ -18,7 +19,13 @@ import { TeamJoinEnrollmentService } from './team-join-enrollment.service';
 // surface:admin/v1(入队轮 CRUD + 报名 list/detail + 标 gate + 综合评估)+ app/v1/me(自助发起/查进度/改候选,T3)。
 // 一键入队(enrollment)T4 追加。
 @Module({
-  imports: [DatabaseModule, PermissionsModule, AuditLogsModule, UsersModule],
+  imports: [
+    DatabaseModule,
+    PermissionsModule,
+    AuditLogsModule,
+    UsersModule,
+    NotificationsModule, // 统一通知 S3:入队结果定向通知(NotificationDispatcher;producer → notifications 单向)
+  ],
   controllers: [
     TeamJoinCyclesController,
     TeamJoinApplicationsAdminController,

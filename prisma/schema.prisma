@@ -231,7 +231,9 @@ model Member {
 
   // 统一通知模块 S1 站内信渠道(2026-06-25;沿 R2 范式,仅关系映射不算业务字段;
   // 冻结评审稿 docs/archive/reviews/unified-notification-dispatcher-review.md §5 / member-notification-review.md §3)
-  notificationReads NotificationRead[]
+  notificationReads     NotificationRead[]
+  // 统一通知模块 S3 producer 定向(2026-06-25;Notification.recipientMemberId 反向 relation,仅关系映射)
+  directedNotifications Notification[]
 
   @@index([gradeCode])
   @@index([status])
@@ -1671,18 +1673,24 @@ model Notification {
 
   visibleOrganizationIds String[] @default([]) // department 档可见部门 orgId 数组(hasSome;镜像 content)
 
-  // ===== 统一通知形状前向兼容列(本切片即加,S1 仅用默认值;S2/S3 additive 不返工)=====
-  audienceType String   @default("broadcast") // broadcast | directed(D-N9;S1 仅 broadcast,directed + recipientMemberId 待 S3)
-  sourceType   String   @default("admin") // admin | system(D-N1;S1 仅 admin,system 待 S3 producer)
-  channels     String[] @default(["in-app"]) // 目标渠道声明(§7;S1 仅 in-app,wechat / sms 待 S2/S5)
+  // ===== 统一通知形状前向兼容列(S1 即加默认值;S2/S3 additive 不返工)=====
+  audienceType String   @default("broadcast") // broadcast(S1/S2 admin 广播)| directed(S3 producer 定向)(D-N9)
+  sourceType   String   @default("admin") // admin(S1/S2 撰写)| system(S3 producer 自动)(D-N1)
+  channels     String[] @default(["in-app"]) // 目标渠道声明(§7;in-app 恒发,wechat = S2,sms = S5)
+
+  // 定向收件人(统一通知 S3;评审稿 §2.1 / §9.1;migration 第 29)。
+  // 广播 = null;directed = 单一收件人 member。FK onDelete Restrict(沿仓内惯例;收件人软删后定向行成无害孤儿)。
+  // feed 仅本人可见(notification-read.service 扩 where:广播可见 ∪ 本人定向;他人 → 31001 防枚举)。
+  recipientMemberId String?
 
   readCount    Int       @default(0) // 反范式已读人数(首次 mark-read 原子 increment;镜像 content.viewCount)
   pinned       Boolean   @default(false) // 置顶
   publishedAt  DateTime? // publish 时置 now;unpublish 保留;draft 从未发布为 null
-  authorUserId String? // 发布 admin;不建外键(沿 content.authorUserId / reviewedByUserId)
+  authorUserId String? // 发布 admin;不建外键(沿 content.authorUserId / reviewedByUserId);system 定向为 null
 
   reads      NotificationRead[]
   deliveries NotificationDelivery[] // 推送渠道(微信/短信)per-recipient 投递态(S2 起;站内不落)
+  recipient  Member?                @relation(fields: [recipientMemberId], references: [id], onDelete: Restrict)
 
   @@index([statusCode])
   @@index([visibilityCode])
@@ -1691,6 +1699,7 @@ model Notification {
   @@index([deletedAt])
   @@index([createdAt])
   @@index([statusCode, publishedAt]) // 会员 feed:published 按发布时间序常用复合
+  @@index([audienceType, recipientMemberId]) // 定向 feed:某 member 的 directed 通知(S3)
   @@map("notifications")
 }
 

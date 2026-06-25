@@ -27,6 +27,7 @@ import {
   DELIVERY_REASON_NEED_RESUBSCRIBE,
   DELIVERY_REASON_NO_OPENID,
   DELIVERY_REASON_NO_QUOTA,
+  DELIVERY_REASON_NO_TEMPLATE,
   DELIVERY_REASON_TEMPLATE_PARAM,
   DELIVERY_REASON_TOKEN_FAILED,
   DELIVERY_STATUS_FAILED,
@@ -78,6 +79,57 @@ export class NotificationWechatDispatchService {
         `wechat dispatch failed for notification=${notification.id}: ${(err as Error).message}`,
       );
     }
+  }
+
+  // 统一通知 S3:定向通知微信渠道派发(单一收件人 = notification.recipientMemberId)。
+  // 由 NotificationDispatcher Effect 在 producer 事务 **commit 之后** 调用(§6.2:8s HTTP 绝不拖事务)。
+  // **永不抛**(镜像 dispatchBroadcast):微信失败仅 log + delivery,绝不回滚已建定向行 / 阻断 producer。
+  // 复用 dispatchOne(§3.4 五步:openid → 原子扣 quota → send → delivery + 失败码语义)——与广播同一套渠道机制。
+  // 与广播差异:无可见性 fan-out(收件人显式)、无 re-publish 去重(定向行每次新建唯一);新志愿者通常无 quota → skipped no-quota。
+  async dispatchDirected(notification: Notification): Promise<void> {
+    try {
+      const recipientMemberId = notification.recipientMemberId;
+      if (!recipientMemberId) return; // 防御:定向通知必有收件人(dispatcher 已置)
+
+      // 1. 该类型有可发微信模板(enabled + templateId 非空)?无 → 记 skipped no-template(单收件人留痕,便于运维诊断)。
+      const templateId = await this.templates.getEnabledTemplateId(
+        notification.notificationTypeCode,
+      );
+      if (!templateId) {
+        await this.recordDelivery({
+          notificationId: notification.id,
+          memberId: recipientMemberId,
+          recipientRef: '-',
+          status: DELIVERY_STATUS_SKIPPED,
+          reasonCode: DELIVERY_REASON_NO_TEMPLATE,
+        });
+        return;
+      }
+
+      // 2. 解析收件人 openid(active member → active user.openid;无 → dispatchOne 记 skipped no-openid)。
+      const openid = await this.resolveMemberOpenid(recipientMemberId);
+
+      // 3. 单收件人下发(复用 dispatchOne:openid 空 → skipped no-openid;有 → 原子扣 quota → send → delivery)。
+      await this.dispatchOne(notification, templateId, { memberId: recipientMemberId, openid });
+    } catch (err) {
+      this.logger.error(
+        `wechat directed dispatch failed for notification=${notification.id}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  // 定向收件人 openid 解析:active member 的 active user.openid(单收件人,非批量 resolveAudience)。
+  private async resolveMemberOpenid(memberId: string): Promise<string | null> {
+    const member = await this.prisma.member.findFirst({
+      where: notDeletedWhere({ id: memberId, status: MemberStatus.ACTIVE }),
+      select: { id: true },
+    });
+    if (!member) return null;
+    const user = await this.prisma.user.findFirst({
+      where: notDeletedWhere({ memberId, status: UserStatus.ACTIVE }),
+      select: { openid: true },
+    });
+    return user?.openid ?? null;
   }
 
   private async dispatchBroadcastInner(notification: Notification): Promise<void> {

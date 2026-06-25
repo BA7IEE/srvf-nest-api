@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { RealnameModule } from '../realname/realname.module';
 import { SmsModule } from '../sms/sms.module';
@@ -30,6 +31,7 @@ import { RecruitmentStatsService } from './recruitment-stats.service';
     RealnameModule,
     StorageModule,
     SmsModule, // 招新四期 S4a:复用 SmsCodeService(RECRUITMENT_BIND 发码/验码)
+    NotificationsModule, // 统一通知 S3:发号定向通知(NotificationDispatcher;producer → notifications 单向)
   ],
   controllers: [
     RecruitmentPublicController,

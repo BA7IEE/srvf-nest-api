@@ -4,6 +4,7 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { NotificationDispatcher } from '../../src/modules/notifications/notification-dispatcher';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
@@ -289,6 +290,10 @@ describe('招新三期(入队)admin 面 e2e', () => {
     await prisma.memberDepartment.deleteMany({}); // T4 一键入队建的归属(FK 顺序:先于 org/member)
     await prisma.teamJoinCycle.deleteMany({});
     await prisma.organization.deleteMany({});
+    // 统一通知 S3:入队定向通知(recipientMemberId FK→Member Restrict)须先于 member 清。
+    await prisma.notificationDelivery.deleteMany({});
+    await prisma.notificationRead.deleteMany({});
+    await prisma.notification.deleteMany({});
     await prisma.member.deleteMany({});
     await prisma.auditLog.deleteMany({
       where: { resourceType: { in: ['team_join_cycle', 'team_join_application'] } },
@@ -671,6 +676,55 @@ describe('招新三期(入队)admin 面 e2e', () => {
       where: { event: 'team-join-application.join' },
     });
     expect(auditCount).toBe(1);
+  });
+
+  // ===== 统一通知 S3(评审稿 §6.4 / 招新 §9.1):入队 → 定向通知(仅站内)=====
+
+  it('⑰c【S3】入队成功 → member 收一条定向 system 通知(directed/recruitment/仅站内 + 部门名)', async () => {
+    const org = await makeOrg();
+    const orgRow = await prisma.organization.findUniqueOrThrow({ where: { id: org } });
+    const { appId, memberId } = await setupApproved({ targets: [org] });
+
+    await join(appId, org).expect(200);
+
+    const notifs = await prisma.notification.findMany({ where: { recipientMemberId: memberId } });
+    expect(notifs).toHaveLength(1);
+    expect(notifs[0]).toMatchObject({
+      audienceType: 'directed',
+      sourceType: 'system',
+      statusCode: 'published',
+      notificationTypeCode: 'recruitment',
+      authorUserId: null,
+    });
+    expect(notifs[0].channels).toEqual(['in-app']); // 入队:仅站内(§9.1 渠道倾向)
+    expect(notifs[0].body).toContain(orgRow.name); // payload:部门名
+  });
+
+  it('⑰d【S3】派发失败注入(dispatcher 抛错)→ **入队仍成功**(level-1 + 单部门;行为锁未破)', async () => {
+    const org = await makeOrg();
+    const { appId, memberId } = await setupApproved({ targets: [org] });
+
+    // spy 同一 NotificationDispatcher 单例(producer 注入同实例)→ 派发抛
+    const dispatcher = app.get(NotificationDispatcher);
+    const spy = jest
+      .spyOn(dispatcher, 'dispatchTargeted')
+      .mockRejectedValue(new Error('dispatch boom'));
+    try {
+      const res = await join(appId, org).expect(200);
+      expect(res.body.data.statusCode).toBe('joined'); // 业务成功,派发失败被吞
+      const after = await prisma.member.findUniqueOrThrow({
+        where: { id: memberId },
+        select: { gradeCode: true },
+      });
+      expect(after.gradeCode).toBe('level-1'); // 入队产物完整
+      const active = await prisma.memberDepartment.findMany({
+        where: { memberId, deletedAt: null },
+      });
+      expect(active).toHaveLength(1); // 单部门 partial unique 未破
+      expect(spy).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('⑰b【T4·S5】新志愿者(volunteer + VOL 部门)入队:软删 VOL + 建目标 → 恰 1 条 active 目标部门 + level-1', async () => {
