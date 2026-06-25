@@ -152,8 +152,10 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   'notification.update.record',
   'notification.delete.record',
   'notification.publish.record',
+  // 统一通知模块 S2 微信订阅 quota 渠道 +1(2026-06-25;§9.2 模板配置写权,运营可配;读复用 read.record,全绑 biz-admin)
+  'notification.update.template',
 ] as const;
-const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 73(2026-06-25 统一通知模块 S1 +5)
+const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 74(2026-06-25 统一通知 S1 +5 / S2 +1)
 
 // D1=A 镜像:不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
@@ -190,7 +192,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     await resetDb(app);
   });
 
-  it('1. 空 db → seed 跑完后 73 条业务面 permission 全部存在(16 域分布一致)', async () => {
+  it('1. 空 db → seed 跑完后 74 条业务面 permission 全部存在(16 域分布一致)', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-1' });
     expect(result.code).toBe(0);
 
@@ -221,11 +223,11 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
       'team-join-application': 4,
       content: 5,
       attachment: 4,
-      notification: 5,
+      notification: 6, // S1 站内 5 + S2 update.template 1
     });
   });
 
-  it('2 + 3. biz-admin RbacRole 存在;绑定恰 72 条;member.delete.record 不在绑定中', async () => {
+  it('2 + 3. biz-admin RbacRole 存在;绑定恰 73 条;member.delete.record 不在绑定中', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-2' });
     expect(result.code).toBe(0);
 

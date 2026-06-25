@@ -2446,6 +2446,15 @@ const NOTIFICATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
     resourceType: 'record',
     description: '通知状态机:publish(推送)/ unpublish(撤回)/ archive(立即生效无 cron)',
   },
+  // 统一通知 S2(2026-06-25;微信订阅 quota 渠道):模板配置写权(运营改 templateId 不重部署,D-N3)。
+  // 读模板配置复用 notification.read.record(不另开 read 码,§9.2「至多 +1」预算);全绑 biz-admin。
+  {
+    code: 'notification.update.template',
+    module: 'notification',
+    action: 'update',
+    resourceType: 'template',
+    description: '配置通知类型 → 微信订阅模板 ID + 启用态(upsert;运营可配)',
+  },
 ];
 
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;码进 Permission 表但不绑 biz-admin(评审稿 §6)
@@ -2687,6 +2696,9 @@ async function main(): Promise<void> {
     // CMS 内容模块(2026-06-21,评审稿 §5.1):content-image / content-file 附件类型默认配置行(幂等)
     await seedContentAttachmentTypeConfigs(prisma);
 
+    // 统一通知 S2(2026-06-25,评审稿 §3.5):微信订阅模板配置默认行(templateId=null 待运营填;幂等)
+    await seedWechatSubscribeTemplates(prisma);
+
     // Slow-4 T1(2026-06-11,评审稿 §5)36/35;保险模块 T1(2026-06-13,评审稿 §3.4)
     //   +7 全绑 → 43 条业务面权限码 + biz-admin 角色 + 42 条绑定
     //   + ADMIN 全员幂等补挂 + 强校验。放在 seedAttachmentPermissions 之后,
@@ -2738,6 +2750,30 @@ async function seedContentAttachmentTypeConfigs(prisma: PrismaClient): Promise<v
   }
   console.log(
     `[seed] content attachment type configs ensured (${CONTENT_ATTACHMENT_TYPE_CONFIG_SEED.length}: content-image / content-file)`,
+  );
+}
+
+// 统一通知 S2(2026-06-25;微信订阅 quota 渠道,评审稿 §3.5 / D-N3):各 notification_type 的微信订阅模板
+// 配置行(notificationTypeCode → templateId)。templateId **默认 null**(小程序后台审批后由 admin 经
+// `PUT /api/admin/v1/notification-wechat-templates/:typeCode` 填,运营改不重部署);null = 该类型微信渠道
+// 不可发(派发 skip),杜绝占位假模板误发真消息。幂等 upsert by notificationTypeCode,`update:{}` 不回退运营值。
+const WECHAT_SUBSCRIBE_TEMPLATE_SEED = [
+  'activity-reminder',
+  'recruitment',
+  'emergency',
+  'general',
+] as const;
+
+async function seedWechatSubscribeTemplates(prisma: PrismaClient): Promise<void> {
+  for (const notificationTypeCode of WECHAT_SUBSCRIBE_TEMPLATE_SEED) {
+    await prisma.wechatSubscribeTemplate.upsert({
+      where: { notificationTypeCode },
+      update: {},
+      create: { notificationTypeCode, templateId: null, enabled: true },
+    });
+  }
+  console.log(
+    `[seed] wechat subscribe templates ensured (${WECHAT_SUBSCRIBE_TEMPLATE_SEED.length}: templateId 默认 null 待运营配置)`,
   );
 }
 

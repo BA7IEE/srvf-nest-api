@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import {
@@ -17,8 +17,13 @@ import {
   NotificationReadDetailDto,
   NotificationReadListItemDto,
   NotificationUnreadCountDto,
+  WechatSubscriptionAckDto,
+  WechatSubscriptionAckResponseDto,
+  WechatSubscriptionStatusQueryDto,
+  WechatSubscriptionStatusResponseDto,
 } from './notification.dto';
 import { NotificationReadService } from './notification-read.service';
+import { NotificationSubscriptionService } from './notification-subscription.service';
 
 // 统一通知模块 S1 站内信渠道(第 28 模块 notifications 扩 controller)app/v1 会员读取面
 // (评审稿 unified-notification-dispatcher-review.md §5 / member-notification-review.md §7 端点 9-12)。
@@ -33,10 +38,15 @@ import { NotificationReadService } from './notification-read.service';
   NotificationReadDetailDto,
   MarkNotificationReadResponseDto,
   NotificationUnreadCountDto,
+  WechatSubscriptionAckResponseDto,
+  WechatSubscriptionStatusResponseDto,
 )
 @Controller('app/v1/notifications')
 export class NotificationAppController {
-  constructor(private readonly service: NotificationReadService) {}
+  constructor(
+    private readonly service: NotificationReadService,
+    private readonly subscriptions: NotificationSubscriptionService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -49,6 +59,36 @@ export class NotificationAppController {
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
     return this.service.appList(currentUser, query);
+  }
+
+  // ===== 微信订阅 quota(统一通知 S2;字面段 subscriptions/* 声明于 :id 之前)=====
+
+  @Post('subscriptions/ack')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '上报微信订阅授权(逐模板 quota +1,封顶 D-N2;additive 非去重幂等;前端只在真授权后上报) [auth]',
+  })
+  @ApiWrappedOkResponse(WechatSubscriptionAckResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
+  ackSubscriptions(
+    @Body() dto: WechatSubscriptionAckDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ): Promise<WechatSubscriptionAckResponseDto> {
+    return this.subscriptions.ack(currentUser, dto.templateIds);
+  }
+
+  @Get('subscriptions/status')
+  @ApiOperation({
+    summary: '查微信订阅剩余配额(逐模板 availableCount;前端据此判断是否需补授权) [auth]',
+  })
+  @ApiWrappedOkResponse(WechatSubscriptionStatusResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
+  subscriptionStatus(
+    @Query() query: WechatSubscriptionStatusQueryDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ): Promise<WechatSubscriptionStatusResponseDto> {
+    return this.subscriptions.status(currentUser, query.templateIds);
   }
 
   // 字面段:必须在 `:id` 之前声明(否则 'unread-count' 被当作 :id)。

@@ -243,3 +243,172 @@ describe('WechatMiniRealProvider', () => {
     });
   });
 });
+
+// 统一通知 S2:getAccessToken(stable_token + 缓存)单测。
+describe('WechatMiniRealProvider.getAccessToken (S2)', () => {
+  let fetchSpy: jest.SpyInstance;
+  beforeEach(() => {
+    fetchSpy = jest.spyOn(globalThis, 'fetch');
+  });
+  afterEach(() => {
+    fetchSpy.mockRestore();
+  });
+
+  it('成功:取 access_token + 请求落 stable_token POST(body 含 appid/secret/grant_type)', async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ access_token: 'at-123', expires_in: 7200 }));
+    const provider = makeProvider(makeResolved());
+    const token = await provider.getAccessToken();
+    expect(token).toBe('at-123');
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://api.weixin.qq.com/cgi-bin/stable_token');
+    expect(init.method).toBe('POST');
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      grant_type: 'client_credential',
+      appid: APP_ID,
+      secret: APP_SECRET,
+    });
+    expect((init.signal as AbortSignal) instanceof AbortSignal).toBe(true);
+  });
+
+  it('进程内缓存:两次调用仅 1 次 fetch', async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ access_token: 'at-cache', expires_in: 7200 }));
+    const provider = makeProvider(makeResolved());
+    await provider.getAccessToken();
+    await provider.getAccessToken();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('forceRefresh=true:跳过缓存强刷(第二次 fetch;body.force_refresh=true)', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(jsonResponse({ access_token: 'at-1', expires_in: 7200 }))
+      .mockResolvedValueOnce(jsonResponse({ access_token: 'at-2', expires_in: 7200 }));
+    const provider = makeProvider(makeResolved());
+    expect(await provider.getAccessToken()).toBe('at-1');
+    expect(await provider.getAccessToken(true)).toBe('at-2');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const secondBody = JSON.parse(
+      (fetchSpy.mock.calls[1] as [string, RequestInit])[1].body as string,
+    ) as { force_refresh?: boolean };
+    expect(secondBody.force_refresh).toBe(true);
+  });
+
+  it('errcode 非 0 → WechatApiError(errmsg 不含 secret;E-12)', async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ errcode: 40013, errmsg: 'invalid appid' }));
+    const provider = makeProvider(makeResolved());
+    const caught = await caughtFrom(provider.getAccessToken());
+    expect(caught).toBeInstanceOf(WechatApiError);
+    expect((caught as WechatApiError).errCode).toBe('40013');
+    expect((caught as WechatApiError).message).not.toContain(APP_SECRET);
+  });
+
+  it('缺 access_token → WechatApiError(MISSING_TOKEN)', async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ expires_in: 7200 }));
+    const provider = makeProvider(makeResolved());
+    const caught = await caughtFrom(provider.getAccessToken());
+    expect((caught as WechatApiError).errCode).toBe('MISSING_TOKEN');
+  });
+
+  it('fetch 抛错 → WechatApiError(FETCH_ERROR),不含 URL / secret(E-12)', async () => {
+    const timeoutErr = new Error('aborted');
+    timeoutErr.name = 'TimeoutError';
+    fetchSpy.mockRejectedValue(timeoutErr);
+    const provider = makeProvider(makeResolved());
+    const caught = await caughtFrom(provider.getAccessToken());
+    const err = caught as WechatApiError;
+    expect(err.errCode).toBe('FETCH_ERROR');
+    expect(err.message).not.toContain(APP_SECRET);
+    expect(err.message).not.toContain('api.weixin.qq.com');
+  });
+
+  it('access_token 永不入 warn 日志(L3)', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    // 触发一次 errcode warn(成功路径不 warn,且断言失败日志不含 token)
+    fetchSpy.mockResolvedValue(jsonResponse({ errcode: -1, errmsg: 'busy' }));
+    const provider = makeProvider(makeResolved());
+    await caughtFrom(provider.getAccessToken());
+    const text = (warnSpy.mock.calls as unknown[][]).map((c) => String(c[0])).join('\n');
+    expect(text).not.toContain(APP_SECRET);
+    warnSpy.mockRestore();
+  });
+});
+
+// 统一通知 S2:sendSubscribeMessage(订阅消息下发;不抛、归一 ok:false)单测。
+describe('WechatMiniRealProvider.sendSubscribeMessage (S2)', () => {
+  let fetchSpy: jest.SpyInstance;
+  const INPUT = {
+    openid: 'oABCDEF1234567890',
+    templateId: 'tmpl-1',
+    data: { thing1: { value: 'hi' } },
+  };
+  beforeEach(() => {
+    fetchSpy = jest.spyOn(globalThis, 'fetch');
+  });
+  afterEach(() => {
+    fetchSpy.mockRestore();
+  });
+
+  it('成功 errcode 0 + msgid → { ok:true, msgId };请求落 subscribe/send + access_token 在 query', async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ errcode: 0, errmsg: 'ok', msgid: 999 }));
+    const provider = makeProvider(makeResolved());
+    const result = await provider.sendSubscribeMessage('at-xyz', INPUT);
+    expect(result).toEqual({ ok: true, msgId: '999' });
+    const [url, init] = fetchSpy.mock.calls[0] as [URL, RequestInit];
+    expect(url.origin + url.pathname).toBe(
+      'https://api.weixin.qq.com/cgi-bin/message/subscribe/send',
+    );
+    expect(url.searchParams.get('access_token')).toBe('at-xyz');
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      touser: INPUT.openid,
+      template_id: INPUT.templateId,
+      data: INPUT.data,
+    });
+    expect((init.signal as AbortSignal) instanceof AbortSignal).toBe(true);
+  });
+
+  it.each([[43101], [40003], [47003], [40001]])(
+    'errcode %d → { ok:false, errCode }(不抛)',
+    async (errcode) => {
+      fetchSpy.mockResolvedValue(jsonResponse({ errcode, errmsg: 'fail' }));
+      const provider = makeProvider(makeResolved());
+      const result = await provider.sendSubscribeMessage('at', INPUT);
+      expect(result).toEqual({ ok: false, errCode: String(errcode), errMsg: 'fail' });
+    },
+  );
+
+  it('HTTP 非 200 → ok:false HTTP_ERROR', async () => {
+    fetchSpy.mockResolvedValue(new Response('x', { status: 502 }));
+    const provider = makeProvider(makeResolved());
+    const result = await provider.sendSubscribeMessage('at', INPUT);
+    expect(result).toEqual({ ok: false, errCode: 'HTTP_ERROR', errMsg: 'status=502' });
+  });
+
+  it('fetch 抛错 → ok:false FETCH_ERROR(errMsg 仅 err.name,不含 access_token/URL;E-12)', async () => {
+    const err = new Error('boom');
+    err.name = 'TimeoutError';
+    fetchSpy.mockRejectedValue(err);
+    const provider = makeProvider(makeResolved());
+    const result = await provider.sendSubscribeMessage('secret-token-xyz', INPUT);
+    expect(result).toEqual({ ok: false, errCode: 'FETCH_ERROR', errMsg: 'TimeoutError' });
+  });
+
+  it('非 JSON 体 → ok:false INVALID_RESPONSE', async () => {
+    fetchSpy.mockResolvedValue(new Response('<html>', { status: 200 }));
+    const provider = makeProvider(makeResolved());
+    const result = await provider.sendSubscribeMessage('at', INPUT);
+    expect(result).toEqual({ ok: false, errCode: 'INVALID_RESPONSE', errMsg: 'non-JSON body' });
+  });
+
+  it('失败日志不含 access_token,openid 掩码(E-12 / E-13)', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    fetchSpy.mockResolvedValue(jsonResponse({ errcode: 43101, errmsg: 'no auth' }));
+    const provider = makeProvider(makeResolved());
+    await provider.sendSubscribeMessage('access-token-secret', INPUT);
+    const text = (warnSpy.mock.calls as unknown[][]).map((c) => String(c[0])).join('\n');
+    expect(text).not.toContain('access-token-secret');
+    expect(text).not.toContain(INPUT.openid); // 明文 openid 不入,掩码形式
+    expect(text).toContain('oABC****7890');
+    warnSpy.mockRestore();
+  });
+});

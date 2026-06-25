@@ -46,12 +46,41 @@ export type NotificationVisibility = (typeof NOTIFICATION_VISIBILITIES)[number];
 export const NOTIFICATION_TYPE_DICT_CODE = 'notification_type';
 
 // ===== 统一通知形状值(S1 仅用默认值;S2/S3 additive 扩值不返工;评审稿 §2.1 / §9.1)=====
-// audienceType:广播(S1 唯一) | directed(S3 定向)。
+// audienceType:广播(S1/S2) | directed(S3 定向)。
 export const NOTIFICATION_AUDIENCE_BROADCAST = 'broadcast';
-// sourceType:admin 撰写(S1 唯一) | system 自动(S3 producer)。
+// sourceType:admin 撰写(S1/S2) | system 自动(S3 producer)。
 export const NOTIFICATION_SOURCE_ADMIN = 'admin';
-// channels:站内(S1 唯一) | wechat(S2) | sms(S5)。
+// channels:站内(恒发) | wechat(S2) | sms(S5);代码常量非字典(渠道是工程枚举,评审稿 §9.4)。
 export const NOTIFICATION_CHANNEL_IN_APP = 'in-app';
+export const NOTIFICATION_CHANNEL_WECHAT = 'wechat';
+// admin 可勾选渠道白名单(S2 = in-app + wechat;sms = S5 再放开)。站内恒发,service 归一时强制含 in-app。
+export const NOTIFICATION_CHANNELS_ALLOWED = [
+  NOTIFICATION_CHANNEL_IN_APP,
+  NOTIFICATION_CHANNEL_WECHAT,
+] as const;
+
+// ===== 微信订阅 quota 渠道常量(统一通知 S2;评审稿 §3 / D-N2)=====
+// quota 上限(每 memberId × templateId;D-N2 默认 5):防前端 ack 刷量 + 对齐微信侧累积限制。
+// 达上限 ack no-op(+1 仅在 availableCount < cap 时生效)。
+export const WECHAT_SUBSCRIPTION_QUOTA_CAP = 5;
+// ack / status 单次最多模板数(防滥用;一次订阅授权通常 ≤ 3 模板)。
+export const WECHAT_SUBSCRIPTION_TEMPLATE_IDS_MAX = 10;
+export const WECHAT_TEMPLATE_ID_MAX = 128;
+
+// NotificationDelivery.status(代码常量;仅推送渠道落,站内不落)。
+export const DELIVERY_STATUS_SENT = 'sent';
+export const DELIVERY_STATUS_FAILED = 'failed';
+export const DELIVERY_STATUS_SKIPPED = 'skipped';
+
+// NotificationDelivery.reasonCode(skipped / failed 的细分原因;前端 / 运维诊断 + 补授权信号)。
+export const DELIVERY_REASON_NO_OPENID = 'no-openid'; // 可见但 member 无绑定 openid → 不发
+export const DELIVERY_REASON_NO_QUOTA = 'no-quota'; // 原子扣减 count===0(并发竞争扣空)→ 不发 + 补授权信号
+export const DELIVERY_REASON_NO_TEMPLATE = 'no-template'; // 该通知类型未配置 / 未启用微信模板 → 整渠道跳过
+export const DELIVERY_REASON_NEED_RESUBSCRIBE = 'need-resubscribe'; // 微信 43101 用户拒收/无授权 → 补授权信号(条件回补 quota)
+export const DELIVERY_REASON_INVALID_OPENID = 'invalid-openid'; // 微信 40003 openid 非法
+export const DELIVERY_REASON_TEMPLATE_PARAM = 'template-param'; // 微信 47003 模板参数不匹配
+export const DELIVERY_REASON_TOKEN_FAILED = 'token-failed'; // access_token 取用失败 / 通道不可用
+export const DELIVERY_REASON_API_FAILED = 'api-failed'; // 其余微信上游失败(HTTP / 网络 / 非 0 errcode)
 
 // ===== DTO 上限(评审稿 §3;站内信是短文案,body 上限远小于 content 的 50000)=====
 export const NOTIFICATION_TITLE_MAX = 200;

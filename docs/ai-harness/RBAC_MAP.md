@@ -33,6 +33,8 @@
 > 2026-06-24 招新闭环优化 S3 戳(goal「招新闭环优化 S3 — RBAC 敏感字段分级」,冻结评审稿 [`recruitment-phase4-loop-optimization-review.md §11`](../archive/reviews/recruitment-phase4-loop-optimization-review.md) / Q-P4-10):权限码 155→**156**(recruitment-application +1:`read.sensitive` 敏感查看,从 `read.record` 切出,全绑 biz-admin 无例外);biz-admin 66→**67**;ops-admin 63 / member 9 零变化;endpoint **200** 不变 / controller **52** 不变(既有端点判权细化,零新端点/类)。`read.record` 语义收窄(脱敏列表 + 脱敏详情 + 公示名单 + 工作台 stats);`read.sensitive` 实装即用(详情明文证件号/手机闸 + 证件照 signed-URL),**0 孤码**。**§11.2 迁移:现 biz-admin 持 read.record,拆分后由 `BIZ_ADMIN_PERMISSION_SEED` 自动补挂 read.sensitive → 明文行为不回退;15+1 码现全绑 biz-admin 无其他角色,本切片对现有用户零行为变化(分级仅对将来细分角色生效)**。零 schema / 零 migration;改 RBAC 契约 → 同 PR 更新 `docs/handoff` admin-web 能力图 + 前端对接指南。`docs:rbacmap:check` **0 FAIL / 0 WARN**。
 >
 > 2026-06-25 统一通知模块 S1 站内信渠道戳(goal「GAP-005 统一通知模块 S1 — 站内信渠道」,冻结评审稿 [`unified-notification-dispatcher-review.md §5/§9/§11`](../archive/reviews/unified-notification-dispatcher-review.md) supersede [`member-notification-review.md`](../archive/reviews/member-notification-review.md)):权限码 156→**161**(notification +5:`notification.{read,create,update,delete,publish}.record`,全绑 biz-admin 无例外,**实装即用 0 孤码**);biz-admin 67→**72**;ops-admin 63 / member 9 零变化;controller 52→**54**(+`NotificationAdminController`〔admin/v1/notifications,R 模式 `rbac.can` **无 @RequirePermissions**〕 + `NotificationAppController`〔app/v1/notifications,canUseApp 准入 + 4 档可见性无码 `[auth]`〕);endpoint +12(admin 8 CRUD + 状态机 publish/unpublish/archive;app 4 list/unread-count/detail/mark-read)。可见性**复用** content.visibility(去 public = 4 档,零第二套);状态机镜像 content;BizCode 310xx 5 码;audit `notification.{create,update,delete,publish}` 4 事件(publish 伞盖三跃迁)。统一形状列 audienceType/sourceType/channels 本切片即加(S1 仅 broadcast/admin/in-app),微信 quota / 短信兜底 / producer 定向 = S2-S5 additive 不返工。第 27 migration(notifications + notification_reads 两表)。改 RBAC 契约 → 同 PR 更新 `docs/handoff` admin-web 能力图 + 前端对接指南。`docs:rbacmap:check` **0 FAIL / 0 WARN**。
+>
+> 2026-06-25 统一通知模块 S2 微信订阅 quota 渠道戳(goal「GAP-005 统一通知模块 S2 — 微信订阅 quota 渠道」,冻结评审稿 [`unified-notification-dispatcher-review.md §3/§7/§9`](../archive/reviews/unified-notification-dispatcher-review.md)):权限码 161→**162**(notification +1:`notification.update.template` 微信模板配置写权,运营可配 D-N3,全绑 biz-admin 无例外,**实装即用 0 孤码**;读模板配置复用 `notification.read.record` 不另开 read 码,§9.2「至多 +1」预算);biz-admin 72→**73**;ops-admin 63 / member 9 零变化;controller 54→**55**(+`NotificationWechatTemplateAdminController`〔admin/v1/notification-wechat-templates,R 模式 `rbac.can` **无 @RequirePermissions**;独立 base path 避与 notifications/:id 冲突〕);endpoint +4(app/v1/notifications/subscriptions 2:ack/status,canUseApp 准入无码 `[auth]`;admin/v1/notification-wechat-templates 2:list〔read.record〕/ upsert〔update.template〕)。微信派发 = publish 事务外同步分支(`NotificationDelivery` 记账,§6.2 HTTP 事务外;零新端点);quota +1 封顶(D-N2 默认 5)/ 条件原子 -1;BizCode **零新增**(发送失败落 delivery errCode 非 API 异常,ack/status 格式校验走通用 400);第 28 migration(notification_deliveries + wechat_subscription_quotas + wechat_subscribe_templates 三表)。L3:微信 access_token / appSecret / openid 零出参零明文入日志(沿 wechat E-12 + maskOpenid)。改 RBAC 契约 → 同 PR 更新 `docs/handoff` admin-web 能力图 + 前端对接指南。`docs:rbacmap:check` **0 FAIL / 0 WARN**。
 
 ---
 
@@ -45,7 +47,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。判权唯一服务入口 = `RbacService.can()`;`RbacCacheService` 是权限解析缓存(TTL 1800s,三档失效),不是身份缓存。
 
-## 2. controller × 鉴权模式对照(54 个 controller class)
+## 2. controller × 鉴权模式对照(55 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
@@ -86,7 +88,9 @@
 | `admin/v1/team-join/cycles`(招新三期入队 T2) | `team-join-cycle.*.record`(3;list/detail 共用 read;开/关轮 + 轮次名走 update) |
 | `admin/v1/team-join/applications`(招新三期入队 T2/T4) | `team-join-application.*`(4;list/detail 共用 `read.record`;标 gate `mark.gate`;综合评估 `evaluate.assessment`;一键入队 `join.member`〔T4 设部门+级别 level-1〕)|
 | `admin/v1/contents`(CMS 内容 T2) | `content.*.record`(5;list/detail 共用 `read.record`;状态机 publish/unpublish/archive 共用 `publish.record`;封面 set/clear 走 `update.record`)。附件端点 upload-url/confirm/删 经 `AttachmentsService` 写路径判 `attachment.{upload,delete}.content-image\|content-file`〔`[rbac: attachment.upload.*]`/`[rbac: attachment.delete.*]` 通配族〕;confirm 仅 JWT + token〔`[auth]`〕|
-| `admin/v1/notifications`(统一通知 S1 站内信渠道) | `notification.*.record`(5;list/detail 共用 `read.record`;状态机 publish/unpublish/archive 共用 `publish.record`;create/update/delete 各一)。**无 @RequirePermissions**,R 模式 service `rbac.can`(镜像 content);可见性复用 content.visibility(去 public = 4 档);BizCode 310xx 5 码;audit `notification.{create,update,delete,publish}` 4 事件(publish 伞盖三跃迁)|
+| `admin/v1/notifications`(统一通知 S1 站内信渠道) | `notification.*.record`(5;list/detail 共用 `read.record`;状态机 publish/unpublish/archive 共用 `publish.record`;create/update/delete 各一)。**无 @RequirePermissions**,R 模式 service `rbac.can`(镜像 content);可见性复用 content.visibility(去 public = 4 档);BizCode 310xx 5 码;audit `notification.{create,update,delete,publish}` 4 事件(publish 伞盖三跃迁)。**S2:** create/update 加 `channels` 勾选(可含 wechat);publish 含 wechat → 事务外微信派发(quota 扣 + `NotificationDelivery` 记账,零新端点) |
+| `admin/v1/notification-wechat-templates`(统一通知 S2 微信模板配置) | list = `notification.read.record`(复用)/ upsert(`PUT /:typeCode`)= `notification.update.template`。**无 @RequirePermissions**,R 模式 service `rbac.can`;运营可配 notificationTypeCode→templateId(D-N3),独立 base path 避与 notifications/:id 冲突 |
+| `app/v1/notifications/subscriptions`(统一通知 S2 微信订阅 quota) | **无码**(canUseApp 准入 `[auth]`):ack(`POST subscriptions/ack` quota +1 封顶)/ status(`GET subscriptions/status` 查剩余配额);字面段 subscriptions/* 声明于 :id 之前 |
 
 ### 2.1b A 模式 — `@Public` 无账号公开端点(招新 T3 首用)
 
@@ -109,7 +113,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(161 条,seed 幂等 upsert)
+## 3. 权限码全集(162 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -143,8 +147,9 @@
 | 内容发布(CMS T1 seed;T2 admin 实装) | 5 | `content.{read,create,update,delete,publish}.record`(`admin/v1/contents`;list/detail 共用 read;状态机 publish/unpublish/archive 共用 publish;封面 set/clear 走 update;app/open 读零码 T3/T4;**T2 controller 实装后孤码 WARN 清零**) |
 | 内容附件(CMS T1;content-image/file 写) | 4 | `attachment.{upload,delete}.content-image` / `attachment.{upload,delete}.content-file`(内容写路径 coarse,α;全绑 biz-admin;读路径 content 自签 + 文章可见级无码;由 `attachment.{upload,delete}.` 动态前缀覆盖不孤) |
 | 统一通知 S1 站内信渠道(2026-06-25) | 5 | `notification.{read,create,update,delete,publish}.record`(`admin/v1/notifications`;list/detail 共用 read;状态机 publish/unpublish/archive 共用 publish;create/update/delete 各一;app 会员读取面零码 = canUseApp 闸 + 4 档可见性;全绑 biz-admin;**实装即用 0 孤码**)|
+| 统一通知 S2 微信订阅 quota 渠道(2026-06-25) | 1 | `notification.update.template`(`admin/v1/notification-wechat-templates` upsert;微信模板配置写权,运营可配 D-N3;读复用 `notification.read.record`;app 订阅 ack/status 零码 = canUseApp 闸;全绑 biz-admin;**实装即用 0 孤码**)|
 
-内置角色:`ops-admin`(绑 63 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新一/二/三期入队 + 招新闭环 S3 + CMS content + 统一通知 S1,绑 72 条 = 73 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码〔member/certificate/activity〕不绑,CMS content-* 4 码 + notification 5 码绑入〔α / 统一通知 S1 §9.2;演进 Slow-4 §6「biz-admin 不含 attachment.* 码」不变式 = 仅含 CMS content-* 4 码〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN(本 T1 新增 8 码均属此),其余无"代码用码未 seed"。
+内置角色:`ops-admin`(绑 63 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新一/二/三期入队 + 招新闭环 S3 + CMS content + 统一通知 S1/S2,绑 73 条 = 74 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码〔member/certificate/activity〕不绑,CMS content-* 4 码 + notification 6 码〔S1 5 + S2 `update.template` 1〕绑入〔α / 统一通知 S1 §9.2 + S2 §9.2;演进 Slow-4 §6「biz-admin 不含 attachment.* 码」不变式 = 仅含 CMS content-* 4 码〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN(本 T1 新增 8 码均属此),其余无"代码用码未 seed"。
 
 ## 4. 保护不变式(改 users / permissions 前必读)
 

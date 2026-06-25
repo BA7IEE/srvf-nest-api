@@ -19,6 +19,7 @@ import { RbacService } from '../permissions/rbac.service';
 import {
   NOTIFICATION_AUDIENCE_BROADCAST,
   NOTIFICATION_CHANNEL_IN_APP,
+  NOTIFICATION_CHANNEL_WECHAT,
   NOTIFICATION_SOURCE_ADMIN,
   NOTIFICATION_STATUS_ARCHIVED,
   NOTIFICATION_STATUS_DRAFT,
@@ -26,6 +27,7 @@ import {
   NOTIFICATION_TYPE_DICT_CODE,
   NOTIFICATION_VISIBILITY_DEPARTMENT,
 } from './notification.constants';
+import { NotificationWechatDispatchService } from './notification-wechat-dispatch.service';
 import type {
   CreateNotificationDto,
   ListNotificationAdminQueryDto,
@@ -50,12 +52,25 @@ export class NotificationService {
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
+    private readonly wechatDispatch: NotificationWechatDispatchService,
   ) {}
 
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
     if (!(await this.rbac.can(user, action))) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
     }
+  }
+
+  // 渠道归一(S2):站内恒发 → 强制含 in-app;去重保序;DTO 已校验各值 ∈ 白名单(in-app / wechat)。
+  // 未传 → 默认仅站内(['in-app'],与 S1 行为一致)。
+  private normalizeChannels(channels: string[] | undefined): string[] {
+    const set = new Set<string>([NOTIFICATION_CHANNEL_IN_APP]);
+    for (const c of channels ?? []) set.add(c);
+    // 稳定序:in-app 在前,wechat 在后(仅这两值;sms = S5)
+    return [
+      NOTIFICATION_CHANNEL_IN_APP,
+      ...[...set].filter((c) => c !== NOTIFICATION_CHANNEL_IN_APP),
+    ];
   }
 
   private async findOrThrow(
@@ -133,10 +148,10 @@ export class NotificationService {
           statusCode: NOTIFICATION_STATUS_DRAFT, // create → draft
           visibilityCode: dto.visibilityCode,
           visibleOrganizationIds,
-          // 统一形状:S1 显式置广播 / admin / 站内(后续 S2/S3 additive 扩值不返工)
+          // 统一形状:广播 / admin;channels = 站内恒发 + admin 勾选(S2 可含 wechat)
           audienceType: NOTIFICATION_AUDIENCE_BROADCAST,
           sourceType: NOTIFICATION_SOURCE_ADMIN,
-          channels: [NOTIFICATION_CHANNEL_IN_APP],
+          channels: this.normalizeChannels(dto.channels),
           pinned: dto.pinned ?? false,
           authorUserId: user.id,
         },
@@ -233,6 +248,8 @@ export class NotificationService {
         data.notificationTypeCode = dto.notificationTypeCode;
       }
       if (dto.pinned !== undefined) data.pinned = dto.pinned;
+      // 渠道勾选改动(S2):归一保证站内恒发(admin 可加/去 wechat;published 也可改,下次 publish 生效)
+      if (dto.channels !== undefined) data.channels = this.normalizeChannels(dto.channels);
 
       // 可见档 + 可见部门:visibilityCode 改了要重算 visibleOrganizationIds;
       // 只改 visibleOrganizationIds(visibilityCode 沿用旧值)也按当前(新或旧)可见档校验(镜像 content)。
@@ -290,7 +307,16 @@ export class NotificationService {
     user: CurrentUserPayload,
     meta: AuditMeta,
   ): Promise<NotificationAdminDetailDto> {
-    return this.transition(id, user, meta, 'publish');
+    const row = await this.transition(id, user, meta, 'publish');
+    // 微信渠道:在 publish DB 事务**之外**同步派发(§6.2:8s HTTP 绝不拖事务)。
+    // 仅广播勾微信走;派发器永不抛(失败落 delivery 不阻断 publish 响应,§8.3)。
+    if (
+      row.channels.includes(NOTIFICATION_CHANNEL_WECHAT) &&
+      row.audienceType === NOTIFICATION_AUDIENCE_BROADCAST
+    ) {
+      await this.wechatDispatch.dispatchBroadcast(row);
+    }
+    return this.toDetailDto(row);
   }
 
   async unpublish(
@@ -298,7 +324,7 @@ export class NotificationService {
     user: CurrentUserPayload,
     meta: AuditMeta,
   ): Promise<NotificationAdminDetailDto> {
-    return this.transition(id, user, meta, 'unpublish');
+    return this.toDetailDto(await this.transition(id, user, meta, 'unpublish'));
   }
 
   async archive(
@@ -306,16 +332,16 @@ export class NotificationService {
     user: CurrentUserPayload,
     meta: AuditMeta,
   ): Promise<NotificationAdminDetailDto> {
-    return this.transition(id, user, meta, 'archive');
+    return this.toDetailDto(await this.transition(id, user, meta, 'archive'));
   }
 
-  // 状态机内嵌(镜像 content;立即生效无 cron)。非法跃迁 → 31030。
+  // 状态机内嵌(镜像 content;立即生效无 cron)。非法跃迁 → 31030。返原始 row(publish 据 channels 派发)。
   private async transition(
     id: string,
     user: CurrentUserPayload,
     meta: AuditMeta,
     operation: 'publish' | 'unpublish' | 'archive',
-  ): Promise<NotificationAdminDetailDto> {
+  ): Promise<Notification> {
     await this.assertCanOrThrow(user, 'notification.publish.record');
 
     const row = await this.prisma.$transaction(async (tx) => {
@@ -358,7 +384,7 @@ export class NotificationService {
       });
       return updated;
     });
-    return this.toDetailDto(row);
+    return row;
   }
 
   // ============ 出参构造 ============

@@ -113,3 +113,94 @@ describe('WechatService — 域错误 → BizCode 映射(评审稿 E-11/§5)', (
     });
   });
 });
+
+// 统一通知 S2:sendSubscribeMessage 编排(取 token + token 失效刷一次重试 + 归一不抛)。
+describe('WechatService.sendSubscribeMessage (S2 编排)', () => {
+  const INPUT = { openid: 'oX', templateId: 't', data: {} };
+
+  function makeS2Service(real: {
+    getAccessToken?: jest.Mock;
+    sendSubscribeMessage?: jest.Mock;
+  }): WechatService {
+    const settings = {
+      getActiveSettings: jest.fn().mockResolvedValue(makeResolved()),
+    };
+    const realProvider = {
+      code2session: jest.fn(),
+      getAccessToken: real.getAccessToken ?? jest.fn().mockResolvedValue('at-1'),
+      sendSubscribeMessage: real.sendSubscribeMessage ?? jest.fn(),
+    };
+    return new WechatService(
+      settings as unknown as WechatSettingsService,
+      { code2session: jest.fn() } as unknown as DevStubWechatProvider,
+      realProvider as unknown as WechatMiniRealProvider,
+      { env: 'development' } as unknown as ConstructorParameters<typeof WechatService>[3],
+    );
+  }
+
+  it('成功:取 token + 发送一次,结果透传', async () => {
+    const send = jest.fn().mockResolvedValue({ ok: true, msgId: 'm1' });
+    const getToken = jest.fn().mockResolvedValue('at-1');
+    const service = makeS2Service({ getAccessToken: getToken, sendSubscribeMessage: send });
+    await expect(service.sendSubscribeMessage(INPUT)).resolves.toEqual({ ok: true, msgId: 'm1' });
+    expect(getToken).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('token 失效 40001 → 强刷 + 重发一次成功', async () => {
+    const getToken = jest.fn().mockResolvedValueOnce('at-old').mockResolvedValueOnce('at-new');
+    const send = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: false, errCode: '40001', errMsg: 'expired' })
+      .mockResolvedValueOnce({ ok: true, msgId: 'm2' });
+    const service = makeS2Service({ getAccessToken: getToken, sendSubscribeMessage: send });
+    await expect(service.sendSubscribeMessage(INPUT)).resolves.toEqual({ ok: true, msgId: 'm2' });
+    expect(getToken).toHaveBeenCalledTimes(2);
+    expect(getToken).toHaveBeenLastCalledWith(true); // forceRefresh
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('token 失效重试仍败 → 最终 ok:false(非业务重试,只一次)', async () => {
+    const send = jest.fn().mockResolvedValue({ ok: false, errCode: '42001', errMsg: 'x' });
+    const service = makeS2Service({
+      getAccessToken: jest.fn().mockResolvedValue('at'),
+      sendSubscribeMessage: send,
+    });
+    const result = await service.sendSubscribeMessage(INPUT);
+    expect(result).toEqual({ ok: false, errCode: '42001', errMsg: 'x' });
+    expect(send).toHaveBeenCalledTimes(2); // 仅重试一次
+  });
+
+  it('43101 业务失败不重试(非 token 类)', async () => {
+    const send = jest.fn().mockResolvedValue({ ok: false, errCode: '43101', errMsg: 'no auth' });
+    const service = makeS2Service({
+      getAccessToken: jest.fn().mockResolvedValue('at'),
+      sendSubscribeMessage: send,
+    });
+    const result = await service.sendSubscribeMessage(INPUT);
+    expect(result).toEqual({ ok: false, errCode: '43101', errMsg: 'no auth' });
+    expect(send).toHaveBeenCalledTimes(1); // 不重试
+  });
+
+  it('getAccessToken 抛 WechatApiError → 归一 ok:false(保留 errCode,不抛)', async () => {
+    const service = makeS2Service({
+      getAccessToken: jest
+        .fn()
+        .mockRejectedValue(new WechatApiError('FETCH_ERROR', 'TimeoutError')),
+    });
+    await expect(service.sendSubscribeMessage(INPUT)).resolves.toEqual({
+      ok: false,
+      errCode: 'FETCH_ERROR',
+      errMsg: 'TimeoutError',
+    });
+  });
+
+  it('通道不可用 → ok:false CHANNEL_UNAVAILABLE(不抛)', async () => {
+    const service = makeS2Service({
+      getAccessToken: jest.fn().mockRejectedValue(new WechatChannelUnavailableError('未配置')),
+    });
+    const result = await service.sendSubscribeMessage(INPUT);
+    expect(result.ok).toBe(false);
+    expect((result as { errCode: string }).errCode).toBe('CHANNEL_UNAVAILABLE');
+  });
+});

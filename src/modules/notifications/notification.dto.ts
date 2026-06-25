@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
   IsArray,
   IsBoolean,
   IsIn,
@@ -15,12 +17,15 @@ import {
 
 import {
   NOTIFICATION_BODY_MAX,
+  NOTIFICATION_CHANNELS_ALLOWED,
   NOTIFICATION_PAGE_SIZE_MAX,
   NOTIFICATION_STATUSES,
   NOTIFICATION_TITLE_MAX,
   NOTIFICATION_TYPE_CODE_MAX,
   NOTIFICATION_VISIBILITIES,
   NOTIFICATION_VISIBILITY_CODE_MAX,
+  WECHAT_SUBSCRIPTION_TEMPLATE_IDS_MAX,
+  WECHAT_TEMPLATE_ID_MAX,
 } from './notification.constants';
 
 // 统一通知模块 S1 站内信渠道(2026-06-25):admin 写面 + app 会员读取面 DTO 集合
@@ -83,6 +88,18 @@ export class CreateNotificationDto {
   @IsOptional()
   @IsBoolean()
   pinned?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      '目标渠道(默认仅站内 ["in-app"];可勾 "wechat" 机会式推送已订阅会员;站内恒发,服务端强制含 in-app)',
+    enum: NOTIFICATION_CHANNELS_ALLOWED as unknown as string[],
+    isArray: true,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @IsIn(NOTIFICATION_CHANNELS_ALLOWED, { each: true, message: '渠道无效' })
+  channels?: string[];
 }
 
 // 更新:全字段可选(沿 content / recruitment update 范式);archived 态被 service 冻结(31030)。
@@ -130,6 +147,17 @@ export class UpdateNotificationDto {
   @IsOptional()
   @IsBoolean()
   pinned?: boolean;
+
+  @ApiPropertyOptional({
+    description: '目标渠道(可改;站内恒发,服务端强制含 in-app;published 也可改,下次 publish 生效)',
+    enum: NOTIFICATION_CHANNELS_ALLOWED as unknown as string[],
+    isArray: true,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @IsIn(NOTIFICATION_CHANNELS_ALLOWED, { each: true, message: '渠道无效' })
+  channels?: string[];
 }
 
 // ============ admin 列表入参(评审稿 §6 端点 2;admin 见全部状态 / 全可见档)============
@@ -286,4 +314,98 @@ export class MarkNotificationReadResponseDto {
 // unread-count 未读数(badge;评审稿 §7 端点 12)。
 export class NotificationUnreadCountDto {
   @ApiProperty({ description: '未读通知数(可见 + published − 本人已读)' }) unreadCount!: number;
+}
+
+// ============ 微信订阅 quota app 面入参 / 出参(统一通知 S2;评审稿 §3.3)============
+
+// ack 入参:本次 wx.requestSubscribeMessage 用户**接受**的模板 ID 列表(前端只在真授权后上报)。
+export class WechatSubscriptionAckDto {
+  @ApiProperty({
+    type: [String],
+    description: '本次用户接受授权的微信订阅模板 ID(additive 累积;后端封顶 D-N2)',
+  })
+  @IsArray()
+  @ArrayNotEmpty({ message: '至少一个模板 ID' })
+  @ArrayMaxSize(WECHAT_SUBSCRIPTION_TEMPLATE_IDS_MAX)
+  @IsString({ each: true })
+  @MaxLength(WECHAT_TEMPLATE_ID_MAX, { each: true })
+  templateIds!: string[];
+}
+
+// status 入参:查这些模板的剩余配额(逗号分隔 query;前端据此判断是否需补授权)。
+export class WechatSubscriptionStatusQueryDto {
+  @ApiProperty({
+    description: '模板 ID 列表(逗号分隔,如 tmpl_a,tmpl_b;或重复 query 参数)',
+    type: String,
+  })
+  @Transform(({ value }: { value: unknown }) => {
+    if (Array.isArray(value)) return value.map((v) => String(v));
+    if (typeof value === 'string') {
+      return value
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    return [];
+  })
+  @IsArray()
+  @ArrayNotEmpty({ message: '至少一个模板 ID' })
+  @ArrayMaxSize(WECHAT_SUBSCRIPTION_TEMPLATE_IDS_MAX)
+  @IsString({ each: true })
+  @MaxLength(WECHAT_TEMPLATE_ID_MAX, { each: true })
+  templateIds!: string[];
+}
+
+// 单模板配额(ack / status 共用出参项)。
+export class WechatQuotaItemDto {
+  @ApiProperty() templateId!: string;
+  @ApiProperty({ description: '该模板当前可用配额(0 = 已用尽,前端应提示补授权)' })
+  availableCount!: number;
+}
+
+// ack 回执:各模板 +1(封顶)后的新配额。
+export class WechatSubscriptionAckResponseDto {
+  @ApiProperty({ type: [WechatQuotaItemDto] }) quotas!: WechatQuotaItemDto[];
+}
+
+// status 回执:各模板当前配额(无配额行 = 0)。
+export class WechatSubscriptionStatusResponseDto {
+  @ApiProperty({ type: [WechatQuotaItemDto] }) quotas!: WechatQuotaItemDto[];
+}
+
+// ============ 微信订阅模板配置 admin 面入参 / 出参(统一通知 S2;D-N3 运营可配)============
+
+// upsert 入参(notificationTypeCode 取自 URL path;body 仅 templateId / enabled / remarks)。
+export class UpsertWechatSubscribeTemplateDto {
+  @ApiPropertyOptional({
+    description: '微信订阅消息模板 ID(小程序后台审批后填;留空 = 该类型微信渠道不可发)',
+    maxLength: WECHAT_TEMPLATE_ID_MAX,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(WECHAT_TEMPLATE_ID_MAX)
+  templateId?: string;
+
+  @ApiPropertyOptional({ description: '是否启用(默认 true)', default: true })
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @ApiPropertyOptional({ description: '备注', maxLength: 200, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  remarks?: string;
+}
+
+// 模板配置出参(admin list / upsert 共用)。
+export class WechatSubscribeTemplateDto {
+  @ApiProperty() notificationTypeCode!: string;
+  @ApiPropertyOptional({ nullable: true, description: '模板 ID(null = 未配置,微信渠道不可发)' })
+  templateId!: string | null;
+  @ApiProperty() enabled!: boolean;
+  @ApiPropertyOptional({ nullable: true }) remarks!: string | null;
+  @ApiPropertyOptional({ nullable: true }) updatedBy!: string | null;
+  @ApiProperty() updatedAt!: Date;
 }

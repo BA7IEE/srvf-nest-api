@@ -42,9 +42,38 @@ export interface Code2SessionResult {
   openid: string;
 }
 
-// 微信 Provider 统一接口(评审稿 §5 文件计划;镜像 SmsProvider 范式)
+// 订阅消息发送入参(统一通知 S2;data = 微信模板字段映射,见 notifications 模块 wechat-data 内置映射)。
+// openid / templateId / access_token 属 L3 面:不入日志明文(access_token 由 Provider 内部取用,不外传)。
+export interface SendSubscribeMessageInput {
+  openid: string;
+  templateId: string;
+  data: Record<string, { value: string }>;
+  page?: string;
+}
+
+// 订阅消息发送结果(判别联合):派发器据此写 NotificationDelivery + 应用失败码语义(§3.4)。
+// **不抛异常**——逐收件人发送一条失败不阻断下一人(镜像生日批 FAILED 不阻断);
+// 网络/HTTP/超时/非 0 errcode 一律归一为 { ok:false, errCode },errCode 为微信 errcode 字符串
+// 或归一化标签(FETCH_ERROR / HTTP_ERROR / INVALID_RESPONSE),**永不含 secret / access_token / 完整 URL**(E-12)。
+export type SendSubscribeMessageResult =
+  | { ok: true; msgId: string | null }
+  | { ok: false; errCode: string; errMsg: string };
+
+// 微信 Provider 统一接口(评审稿 §5 文件计划;镜像 SmsProvider 范式)。
+// S2 additive 扩订阅消息发送两能力(getAccessToken / sendSubscribeMessage);code2session 登录链路零改。
 export interface WechatMiniProvider {
   code2session(input: Code2SessionInput): Promise<Code2SessionResult>;
+
+  // 取 access_token(stable_token;进程内缓存 ~7000s)。forceRefresh=true 跳过缓存强刷
+  // (token 失效 40001/42001 重试场景)。失败抛 WechatApiError / WechatChannelUnavailableError。
+  getAccessToken(forceRefresh?: boolean): Promise<string>;
+
+  // 下发订阅消息(单次 POST,不重试、不管理 token——token 由调用方传入)。
+  // 结果归一为 SendSubscribeMessageResult(不抛业务异常;供派发器逐人记账)。
+  sendSubscribeMessage(
+    accessToken: string,
+    input: SendSubscribeMessageInput,
+  ): Promise<SendSubscribeMessageResult>;
 }
 
 // 通道不可用(settings 缺失 / 未启用 / 凭证未配置 / appId 缺失 / production-like 下 DEV_STUB)。
