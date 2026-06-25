@@ -427,6 +427,23 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/open/v1/contents/{id}'],
   ['get', '/api/app/v1/contents'],
   ['get', '/api/app/v1/contents/{id}'],
+  // 统一通知模块 S1 站内信渠道(第 28 模块 notifications 扩 controller;2026-06-25;冻结评审稿
+  //   unified-notification-dispatcher-review.md §5 / member-notification-review.md §6/§7),+12 → 255。
+  //   admin/v1/notifications 8(CRUD + 状态机 publish/unpublish/archive;R 模式 notification.* 5 码,无 @RequirePermissions)
+  //   + app/v1/notifications 4(list/unread-count/detail/mark-read;canUseApp 准入 + 4 档可见性〔复用 content.visibility 去 public〕,无码 [auth])。
+  //   读者出参零敏感(无 authorUserId / visibleOrganizationIds / statusCode / readCount);unread-count 字面段声明于 :id 之前。
+  ['post', '/api/admin/v1/notifications'],
+  ['get', '/api/admin/v1/notifications'],
+  ['get', '/api/admin/v1/notifications/{id}'],
+  ['patch', '/api/admin/v1/notifications/{id}'],
+  ['delete', '/api/admin/v1/notifications/{id}'],
+  ['post', '/api/admin/v1/notifications/{id}/publish'],
+  ['post', '/api/admin/v1/notifications/{id}/unpublish'],
+  ['post', '/api/admin/v1/notifications/{id}/archive'],
+  ['get', '/api/app/v1/notifications'],
+  ['get', '/api/app/v1/notifications/unread-count'],
+  ['get', '/api/app/v1/notifications/{id}'],
+  ['post', '/api/app/v1/notifications/{id}/read'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -800,6 +817,22 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   //   **不**注册到 components.schemas(沿既有 query DTO 内联范式)。
   'ContentReadListItemDto',
   'ContentReadDetailDto',
+
+  // 统一通知模块 S1 站内信渠道(第 28 模块 notifications 扩 controller;2026-06-25;冻结评审稿
+  //   unified-notification-dispatcher-review.md §5 / member-notification-review.md §6/§7):
+  //   notification DTO 物理隔离(独立 class,禁止继承 / Pick / Omit)。
+  //   admin 入参 Create/Update;出参 NotificationAdminDetailDto / NotificationAdminListItemDto;
+  //   app 读取面出参 NotificationReadListItemDto / NotificationReadDetailDto + mark-read / unread-count 出参。
+  //   注:ListNotificationAdminQueryDto / ListNotificationReadQueryDto 是 @Query() DTO,被内联为 parameters,
+  //   不进 components.schemas(沿既有 query DTO 内联范式)。
+  'CreateNotificationDto',
+  'UpdateNotificationDto',
+  'NotificationAdminDetailDto',
+  'NotificationAdminListItemDto',
+  'NotificationReadListItemDto',
+  'NotificationReadDetailDto',
+  'MarkNotificationReadResponseDto',
+  'NotificationUnreadCountDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

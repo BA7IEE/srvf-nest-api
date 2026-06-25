@@ -116,7 +116,16 @@ export type AuditLogEvent =
   | 'content.create' // admin 建内容草稿(after 快照)
   | 'content.update' // admin 更新内容(before/after;set-cover 复用,extra.operation='set-cover')
   | 'content.delete' // admin 软删内容(before)
-  | 'content.publish'; // admin 状态机;extra.operation ∈ {publish, unpublish, archive} + before/after statusCode
+  | 'content.publish' // admin 状态机;extra.operation ∈ {publish, unpublish, archive} + before/after statusCode
+  // 统一通知模块 S1 站内信渠道(第 28 模块 notifications 扩 controller)T1(2026-06-25;评审稿
+  // unified-notification-dispatcher-review.md §13 + member-notification-review.md §2⑩):admin 写 4 事件。
+  // notification.publish 为伞事件,覆盖 publish / unpublish / archive(extra.operation 区分 + before/after statusCode,
+  // 沿 content.publish / activity.publish 一事件多 operation 范式)。会员 mark-read / 阅读不写 audit(运营触达阅读侧,
+  // 镜像生日批 + content viewCount + App self 读不写;评审稿 §13 / D-P2-7-16)。
+  | 'notification.create' // admin 建通知草稿(after 快照)
+  | 'notification.update' // admin 更新通知(before/after)
+  | 'notification.delete' // admin 软删通知(before)
+  | 'notification.publish'; // admin 状态机;extra.operation ∈ {publish, unpublish, archive} + before/after statusCode
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

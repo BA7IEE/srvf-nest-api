@@ -6,6 +6,16 @@
 
 > 累计下一个 minor 候选(**未 bump 版本 / 未发 Release**;沿发版拍板「合并所有子 PR 进 main + 累计 `## Unreleased`」)。
 
+### Added
+
+- **统一通知模块 S1 — 站内信渠道(档 D;goal「GAP-005 统一通知模块 S1」;冻结评审稿 [`unified-notification-dispatcher-review.md`](docs/archive/reviews/unified-notification-dispatcher-review.md) §5/§9/§11 supersede [`member-notification-review.md`](docs/archive/reviews/member-notification-review.md))**:运营缺「向队员主动推送通知/公告」能力(GAP-005;现 `notifications/` 仅生日 cron)。本切片落 **统一通知中枢首切片 = 站内信渠道**,扩既有 `notifications/` 模块(**模块 +0**,第 28 模块扩 controller),镜像 content「admin 撰写/发布 + 会员拉取 + 可见性分档」+ 一张轻量已读表:
+  - **2 表 + 第 27 migration**(纯新增 additive,无破坏/无回填/无 enum;干净库重放 27/27 + seed 幂等二跑核过):`Notification`(原 T0 §3 列 + **统一形状前向兼容列** `audienceType`〔默认 broadcast〕/`sourceType`〔默认 admin〕/`channels`〔默认 ["in-app"]〕,本切片仅用这些 S1 值)+ `NotificationRead`(`notificationId × memberId` append-once,**plain unique 无软删** = 与 TeamInsuranceCoverage 刻意差异)+ Member 反向关系;**不加 `recipientMemberId`**(S3 additive)。
+  - **admin 8 端点** `admin/v1/notifications`(CRUD + 状态机 publish/unpublish/archive;**R 模式 `rbac.can`,无 `@RequirePermissions`**,镜像 content):状态机镜像 content(draft→published→archived,立即生效无 cron),非法跃迁 → `31030`;readCount 回显;audit **4 事件** `notification.{create,update,delete,publish}`(publish 伞盖三跃迁 via `extra.operation`)。BizCode **310xx 5 码**(31001/31010/31011/31012/31030,镜像 content 290xx)。
+  - **app 4 端点** `app/v1/notifications`(list/unread-count/detail/mark-read;canUseApp 准入〔403〕+ **可见性复用 `content.visibility` 4 档去 public,零第二套**+ 防枚举 404):mark-read **幂等 upsert**(NotificationRead create + P2002 兜底)+ readCount **原子 +1 仅首插**(二次 no-op 不重复增);unread-count = NOT EXISTS 子查询(`reads.none`);**字面段 `unread-count` 路由声明于 `:id` 之前**;读者出参零敏感(无 authorUserId/visibleOrganizationIds/statusCode/readCount,每项带 `read` 已读标志)。
+  - **seed**:`notification_type` 字典 4 项(activity-reminder/recruitment/emergency/general)+ **5 RBAC 码** `notification.{read,create,update,delete,publish}.record` 全绑 biz-admin(权限码 **156→161**;biz-admin 67→72;additive 幂等二跑无漂移)。
+  - **统一形状不返工**:`audienceType`/`sourceType`/`channels` 本切片即加(S1 只用 broadcast/admin/in-app),后续 S2 微信 quota / S3 producer 定向(recipientMemberId)/ S5 短信兜底**只 additive 加列加表**,站内状态机/可见性/已读语义零改。**不引 cron/queue/事件总线/Effect 类**(站内 = pull 零发送);不碰 birthday cron / sms / wechat / content(`content.visibility` 只复用不改)。
+  - **footprint**:**模块 +0**(第 28 模块扩 controller)· **第 27 migration**(2 表)· 权限码 **156→161** · BizCode 310xx **+5** · audit union **+4** · 字典 `notification_type` +1(4 items)· controller **52→54**(NotificationAdminController + NotificationAppController)· `EXPECTED_ROUTES` **243→255**(+12,snapshot 受控)· **cron/queue/事件总线 +0**;新增 `notification.visibility-reuse.spec.ts`(可见性复用自证 7 例)+ e2e `notifications-admin`(CRUD + 状态机 31030 非法跃迁 + 类型/部门校验 + audit)+ `notifications-app`(4 档可见 hit/miss + mark-read 幂等〔readCount 不重复增〕+ unread-count + 防枚举 404)。同 PR 更新 `docs/handoff/{admin-web,miniapp}.md`(GAP-005 → 进行中)+ `docs/current-state.md` + `RBAC_MAP`(161)/ `CODEMAP`(27 migration);`docs:rbacmap:check`(161)/ `docs:codemap:check` 0 FAIL。
+
 ## v0.31.0 - 2026-06-24
 
 ### Added

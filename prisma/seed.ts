@@ -400,6 +400,19 @@ const V2_DICT_SEED = [
     type: { code: 'join_source', label: '加入来源', sortOrder: 21 },
     items: [{ code: 'recruitment', label: '招新转入', sortOrder: 0 }],
   },
+  {
+    // 统一通知模块 S1 站内信渠道(2026-06-25;冻结评审稿
+    // docs/archive/reviews/unified-notification-dispatcher-review.md §9.4 / member-notification-review.md §7):
+    // notification.notificationTypeCode ∈ 本字典 ACTIVE item;label 占位待运营细化。
+    // code 沿通知域 kebab-case 风格(对齐 schema channels=['in-app']);后续可按招新六触发 / 活动 / 考勤细化。
+    type: { code: 'notification_type', label: '通知类型', sortOrder: 22 },
+    items: [
+      { code: 'activity-reminder', label: '活动提醒', sortOrder: 0 },
+      { code: 'recruitment', label: '招新公告', sortOrder: 1 },
+      { code: 'emergency', label: '紧急召集', sortOrder: 2 },
+      { code: 'general', label: '一般通知', sortOrder: 3 },
+    ],
+  },
 ] as const;
 
 async function seedV2Dictionaries(prisma: PrismaClient): Promise<void> {
@@ -2393,6 +2406,48 @@ const CONTENT_ATTACHMENT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
+// 统一通知模块 S1 站内信渠道(2026-06-25;冻结评审稿
+// docs/archive/reviews/unified-notification-dispatcher-review.md §9.2 + member-notification-review.md §4):
+// notification.* 5 码,全绑 biz-admin(镜像 content;app 会员读取面零码 = canUseApp 闸 + 可见级)。
+// 不开 read.other / publish.emergency(通知是广播无 owner-scope;紧急召集仍是 publish 一种;沿原 T0 §4)。
+const NOTIFICATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'notification.read.record',
+    module: 'notification',
+    action: 'read',
+    resourceType: 'record',
+    description: 'admin 查看通知(列表 + 详情;全状态全可见档;回显已读人数)',
+  },
+  {
+    code: 'notification.create.record',
+    module: 'notification',
+    action: 'create',
+    resourceType: 'record',
+    description: '新建通知草稿',
+  },
+  {
+    code: 'notification.update.record',
+    module: 'notification',
+    action: 'update',
+    resourceType: 'record',
+    description: '更新通知(draft / published 可改,archived 冻结)',
+  },
+  {
+    code: 'notification.delete.record',
+    module: 'notification',
+    action: 'delete',
+    resourceType: 'record',
+    description: '软删通知(任意态)',
+  },
+  {
+    code: 'notification.publish.record',
+    module: 'notification',
+    action: 'publish',
+    resourceType: 'record',
+    description: '通知状态机:publish(推送)/ unpublish(撤回)/ archive(立即生效无 cron)',
+  },
+];
+
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;码进 Permission 表但不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
 
@@ -2416,6 +2471,7 @@ const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...TEAM_JOIN_APPLICATION_PERMISSION_SEED,
   ...CONTENT_PERMISSION_SEED,
   ...CONTENT_ATTACHMENT_PERMISSION_SEED,
+  ...NOTIFICATION_PERMISSION_SEED,
 ];
 
 // biz-admin 绑定集合(50 条 = 51 过滤 member.delete.record;Slow-4 §5/§6 + 保险 E-6 + 招新 E-R-19/E-R2-11)
@@ -2426,7 +2482,7 @@ const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISS
 const BIZ_ADMIN_ROLE_CODE = 'biz-admin';
 const BIZ_ADMIN_DISPLAY_NAME = '业务管理员';
 const BIZ_ADMIN_DESCRIPTION =
-  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 §5 + 保险 §3.4 + 招新一/二/三期 §3.4 + 招新闭环优化 S3 §11 + CMS 内容模块评审稿 §7):member 5 + member-profile 3 + emergency-contact 4 + certificate 6 + activity 5 + activity-registration 5 + attendance 8 + team-insurance-policy 6 + member-insurance 1 + recruitment-cycle 3 + recruitment-application 6 + team-join-cycle 3 + team-join-application 4 + content 5 + content-attachment 4 = 68 条中绑 67;member.delete.record 仅 SUPER_ADMIN(D1=A 镜像);attachment 存量 20 码(member / certificate / activity)不在本角色,CMS content-image / content-file 写路径 4 码因内容授权绑入(评审稿 α / §5.2);每个 ADMIN 用户由 seed 自动补挂本角色';
+  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 §5 + 保险 §3.4 + 招新一/二/三期 §3.4 + 招新闭环优化 S3 §11 + CMS 内容模块评审稿 §7):member 5 + member-profile 3 + emergency-contact 4 + certificate 6 + activity 5 + activity-registration 5 + attendance 8 + team-insurance-policy 6 + member-insurance 1 + recruitment-cycle 3 + recruitment-application 6 + team-join-cycle 3 + team-join-application 4 + content 5 + content-attachment 4 + notification 5 = 73 条中绑 72;member.delete.record 仅 SUPER_ADMIN(D1=A 镜像);attachment 存量 20 码(member / certificate / activity)不在本角色,CMS content-image / content-file 写路径 4 码因内容授权绑入(评审稿 α / §5.2);notification 5 码统一通知模块 S1 站内信渠道绑入(2026-06-25,评审稿 §9.2);每个 ADMIN 用户由 seed 自动补挂本角色';
 
 // Slow-4 T1(36/35)+ 保险模块 T1 增量(2026-06-13,+7 全绑 → 43/42)+ 招新一期 T1 增量(2026-06-18,+5 全绑 → 48/47):
 // 业务面权限点 + biz-admin 角色 + 绑定 + ADMIN 全员补挂 + 强校验。
@@ -2460,7 +2516,8 @@ async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
       `team-join-cycle ${TEAM_JOIN_CYCLE_PERMISSION_SEED.length} + ` +
       `team-join-application ${TEAM_JOIN_APPLICATION_PERMISSION_SEED.length} + ` +
       `content ${CONTENT_PERMISSION_SEED.length} + ` +
-      `content-attachment ${CONTENT_ATTACHMENT_PERMISSION_SEED.length})`,
+      `content-attachment ${CONTENT_ATTACHMENT_PERMISSION_SEED.length} + ` +
+      `notification ${NOTIFICATION_PERMISSION_SEED.length})`,
   );
 
   // 2. upsert biz-admin RbacRole

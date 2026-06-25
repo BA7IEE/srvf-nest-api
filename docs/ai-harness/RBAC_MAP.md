@@ -31,6 +31,8 @@
 > 2026-06-23 队员/审批跨轴只读查询戳(goal「队员/审批『跨轴只读查询』补全」,支撑前端任务驱动后台 · 交接层 GAP-001 Tier2 / GAP-002 Tier3):**权限事实零变化**(155 码 / 绑定 / 内置角色不动——5 端点全复用现成 read 码,**零新码**);controller 49→**52**(+3:`AdminRegistrationsController`〔admin/v1/registrations〕 + `AdminMemberRegistrationsController`〔admin/v1/members/:memberId/registrations〕 + `AdminMemberAttendanceController`〔admin/v1/members/:memberId,attendance-records + contribution-summary 2 端点〕;跨活动考勤单据横扫为既有 `AttendanceSheetsResourceController` 加根 @Get,**不新增 class**)。endpoint +5(Tier2 跨活动横扫 registrations + attendance-sheets〔`[rbac: activity-registration.read.record]` / `[rbac: attendance.read.sheet]`〕;Tier3 队员 360 registrations + attendance-records + contribution-summary)。贡献值汇总实时算不落库,复用 team-join `computeCappedContribution` 封顶核(approved sheet + 北京日封顶 1.5,生涯累计无 cutoff;**禁裸 SUM**);MEMBER_NOT_FOUND 守卫镜像 admin-member-insurances。零 BizCode / 零 migration / 零 schema 列 / 零 audit event(纯读)。`docs:rbacmap:check` **0 FAIL / 0 WARN**。
 >
 > 2026-06-24 招新闭环优化 S3 戳(goal「招新闭环优化 S3 — RBAC 敏感字段分级」,冻结评审稿 [`recruitment-phase4-loop-optimization-review.md §11`](../archive/reviews/recruitment-phase4-loop-optimization-review.md) / Q-P4-10):权限码 155→**156**(recruitment-application +1:`read.sensitive` 敏感查看,从 `read.record` 切出,全绑 biz-admin 无例外);biz-admin 66→**67**;ops-admin 63 / member 9 零变化;endpoint **200** 不变 / controller **52** 不变(既有端点判权细化,零新端点/类)。`read.record` 语义收窄(脱敏列表 + 脱敏详情 + 公示名单 + 工作台 stats);`read.sensitive` 实装即用(详情明文证件号/手机闸 + 证件照 signed-URL),**0 孤码**。**§11.2 迁移:现 biz-admin 持 read.record,拆分后由 `BIZ_ADMIN_PERMISSION_SEED` 自动补挂 read.sensitive → 明文行为不回退;15+1 码现全绑 biz-admin 无其他角色,本切片对现有用户零行为变化(分级仅对将来细分角色生效)**。零 schema / 零 migration;改 RBAC 契约 → 同 PR 更新 `docs/handoff` admin-web 能力图 + 前端对接指南。`docs:rbacmap:check` **0 FAIL / 0 WARN**。
+>
+> 2026-06-25 统一通知模块 S1 站内信渠道戳(goal「GAP-005 统一通知模块 S1 — 站内信渠道」,冻结评审稿 [`unified-notification-dispatcher-review.md §5/§9/§11`](../archive/reviews/unified-notification-dispatcher-review.md) supersede [`member-notification-review.md`](../archive/reviews/member-notification-review.md)):权限码 156→**161**(notification +5:`notification.{read,create,update,delete,publish}.record`,全绑 biz-admin 无例外,**实装即用 0 孤码**);biz-admin 67→**72**;ops-admin 63 / member 9 零变化;controller 52→**54**(+`NotificationAdminController`〔admin/v1/notifications,R 模式 `rbac.can` **无 @RequirePermissions**〕 + `NotificationAppController`〔app/v1/notifications,canUseApp 准入 + 4 档可见性无码 `[auth]`〕);endpoint +12(admin 8 CRUD + 状态机 publish/unpublish/archive;app 4 list/unread-count/detail/mark-read)。可见性**复用** content.visibility(去 public = 4 档,零第二套);状态机镜像 content;BizCode 310xx 5 码;audit `notification.{create,update,delete,publish}` 4 事件(publish 伞盖三跃迁)。统一形状列 audienceType/sourceType/channels 本切片即加(S1 仅 broadcast/admin/in-app),微信 quota / 短信兜底 / producer 定向 = S2-S5 additive 不返工。第 27 migration(notifications + notification_reads 两表)。改 RBAC 契约 → 同 PR 更新 `docs/handoff` admin-web 能力图 + 前端对接指南。`docs:rbacmap:check` **0 FAIL / 0 WARN**。
 
 ---
 
@@ -43,7 +45,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。判权唯一服务入口 = `RbacService.can()`;`RbacCacheService` 是权限解析缓存(TTL 1800s,三档失效),不是身份缓存。
 
-## 2. controller × 鉴权模式对照(52 个 controller class)
+## 2. controller × 鉴权模式对照(54 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
@@ -84,6 +86,7 @@
 | `admin/v1/team-join/cycles`(招新三期入队 T2) | `team-join-cycle.*.record`(3;list/detail 共用 read;开/关轮 + 轮次名走 update) |
 | `admin/v1/team-join/applications`(招新三期入队 T2/T4) | `team-join-application.*`(4;list/detail 共用 `read.record`;标 gate `mark.gate`;综合评估 `evaluate.assessment`;一键入队 `join.member`〔T4 设部门+级别 level-1〕)|
 | `admin/v1/contents`(CMS 内容 T2) | `content.*.record`(5;list/detail 共用 `read.record`;状态机 publish/unpublish/archive 共用 `publish.record`;封面 set/clear 走 `update.record`)。附件端点 upload-url/confirm/删 经 `AttachmentsService` 写路径判 `attachment.{upload,delete}.content-image\|content-file`〔`[rbac: attachment.upload.*]`/`[rbac: attachment.delete.*]` 通配族〕;confirm 仅 JWT + token〔`[auth]`〕|
+| `admin/v1/notifications`(统一通知 S1 站内信渠道) | `notification.*.record`(5;list/detail 共用 `read.record`;状态机 publish/unpublish/archive 共用 `publish.record`;create/update/delete 各一)。**无 @RequirePermissions**,R 模式 service `rbac.can`(镜像 content);可见性复用 content.visibility(去 public = 4 档);BizCode 310xx 5 码;audit `notification.{create,update,delete,publish}` 4 事件(publish 伞盖三跃迁)|
 
 ### 2.1b A 模式 — `@Public` 无账号公开端点(招新 T3 首用)
 
@@ -98,15 +101,15 @@
 
 **2026-06-11 Slow-4 T2/T3(#316/#317)后不存在 G 模式 controller**:原 7 模块 44 处 `@Roles`(历史计数"48 处"系本表笔误,亲核 true-up 见评审稿 D-S4-1)全部迁入上方 R 模式或无码化;迁移前逐端点形态冻结于评审稿 §3 映射表。
 
-### 2.3 A 模式 — App surface(28 endpoint,JwtAuthGuard + 准入;SMS T3 +me/phone 两端点、WECHAT T3 +me/wechat 两端点均沿 me/password 账号级豁免;保险 T2 +me/insurances 4 端点 CRUD;招新三期入队 T3 +me/team-join 3 端点;CMS T4 +contents 2 端点可见性闸)
+### 2.3 A 模式 — App surface(32 endpoint,JwtAuthGuard + 准入;SMS T3 +me/phone 两端点、WECHAT T3 +me/wechat 两端点均沿 me/password 账号级豁免;保险 T2 +me/insurances 4 端点 CRUD;招新三期入队 T3 +me/team-join 3 端点;CMS T4 +contents 2 端点可见性闸;统一通知 S1 +notifications 4 端点站内信拉取〔list/unread-count/detail/mark-read〕)
 
-`app/v1/me`(7,含 GET/PUT me/wechat〔openid 一律掩码回显〕)/ `app/v1/me/insurances`(4,自购保险自助 CRUD,保险 T2;26001 防侧信道)/ `app/v1/me/team-join`(3,入队自助:发起申请/查进度/改候选部门,招新三期 T3;准入 AppIdentityResolver canUseApp=false→403,锁 currentUser.memberId 防 IDOR)/ `app/v1/activities`(2)/ `app/v1/my`×3 class(registrations 5 + attendance-records 1 + certificates 1)+ `app/v1/me/password`(继承 P0-D/P0-E 全套铁律)+ `app/v1/contents`(2,CMS 内容会员读取面 T4;准入 canUseApp=false→403,**非 self-scope 而是 5 档可见性闸**〔public/member/formal_member/department/management〕,详情不可见 → 404 防枚举,viewCount 自增)。**永不返回 L3 字段**(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / `appSecret*` / `session_key` / 完整 signed URL;**例外 a**:content-* 签名 URL 仅在过文章可见级后于 open/v1+app/v1 内容读取面返回,见 `attachments/CLAUDE.md`)。
+`app/v1/me`(7,含 GET/PUT me/wechat〔openid 一律掩码回显〕)/ `app/v1/me/insurances`(4,自购保险自助 CRUD,保险 T2;26001 防侧信道)/ `app/v1/me/team-join`(3,入队自助:发起申请/查进度/改候选部门,招新三期 T3;准入 AppIdentityResolver canUseApp=false→403,锁 currentUser.memberId 防 IDOR)/ `app/v1/activities`(2)/ `app/v1/my`×3 class(registrations 5 + attendance-records 1 + certificates 1)+ `app/v1/me/password`(继承 P0-D/P0-E 全套铁律)+ `app/v1/contents`(2,CMS 内容会员读取面 T4;准入 canUseApp=false→403,**非 self-scope 而是 5 档可见性闸**〔public/member/formal_member/department/management〕,详情不可见 → 404 防枚举,viewCount 自增)+ `app/v1/notifications`(4,统一通知 S1 站内信拉取:list/unread-count/detail/mark-read;准入 canUseApp=false→403,**4 档可见性闸**〔复用 content.visibility 去 public〕,详情/mark-read 不可见 → 404 防枚举;mark-read 幂等 upsert + readCount 原子 +1;**unread-count 字面段声明于 :id 之前**;读者出参零 authorUserId/visibleOrganizationIds/statusCode/readCount)。**永不返回 L3 字段**(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / `appSecret*` / `session_key` / 完整 signed URL;**例外 a**:content-* 签名 URL 仅在过文章可见级后于 open/v1+app/v1 内容读取面返回,见 `attachments/CLAUDE.md`)。
 
 ### 2.4 P 模式 — `@Public`
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(156 条,seed 幂等 upsert)
+## 3. 权限码全集(161 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -139,8 +142,9 @@
 | 入队申请(招新三期入队 T2/T4) | 4 | `team-join-application.read.record`(列表/详情共用)/ `team-join-application.mark.gate`(标 gate)/ `team-join-application.evaluate.assessment`(综合评估/淘汰)/ `team-join-application.join.member`(一键入队 = 设部门 + 级别 level-1,T4);`admin/v1/team-join/applications`;自助 `app/v1/me/team-join/*` 发起/查进度/改候选 **self-scope 无码** |
 | 内容发布(CMS T1 seed;T2 admin 实装) | 5 | `content.{read,create,update,delete,publish}.record`(`admin/v1/contents`;list/detail 共用 read;状态机 publish/unpublish/archive 共用 publish;封面 set/clear 走 update;app/open 读零码 T3/T4;**T2 controller 实装后孤码 WARN 清零**) |
 | 内容附件(CMS T1;content-image/file 写) | 4 | `attachment.{upload,delete}.content-image` / `attachment.{upload,delete}.content-file`(内容写路径 coarse,α;全绑 biz-admin;读路径 content 自签 + 文章可见级无码;由 `attachment.{upload,delete}.` 动态前缀覆盖不孤) |
+| 统一通知 S1 站内信渠道(2026-06-25) | 5 | `notification.{read,create,update,delete,publish}.record`(`admin/v1/notifications`;list/detail 共用 read;状态机 publish/unpublish/archive 共用 publish;create/update/delete 各一;app 会员读取面零码 = canUseApp 闸 + 4 档可见性;全绑 biz-admin;**实装即用 0 孤码**)|
 
-内置角色:`ops-admin`(绑 63 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新一期/二期 + 招新三期入队,绑 66 条 = 67 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码〔member/certificate/activity〕不绑,CMS content-* 4 码绑入〔α 决议,演进 Slow-4 §6「biz-admin 不含 attachment.* 码」不变式〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN(本 T1 新增 8 码均属此),其余无"代码用码未 seed"。
+内置角色:`ops-admin`(绑 63 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新一/二/三期入队 + 招新闭环 S3 + CMS content + 统一通知 S1,绑 72 条 = 73 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码〔member/certificate/activity〕不绑,CMS content-* 4 码 + notification 5 码绑入〔α / 统一通知 S1 §9.2;演进 Slow-4 §6「biz-admin 不含 attachment.* 码」不变式 = 仅含 CMS content-* 4 码〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN(本 T1 新增 8 码均属此),其余无"代码用码未 seed"。
 
 ## 4. 保护不变式(改 users / permissions 前必读)
 
