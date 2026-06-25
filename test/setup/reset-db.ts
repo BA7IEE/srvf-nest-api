@@ -88,11 +88,15 @@ import { assertTestDatabaseUrl } from './test-db';
 //   recruitment_applications(FK cycleId → recruitment_cycles,Restrict;子表)/ recruitment_cycles(无 FK,父表)
 // 顺序:recruitment_applications(子)→ recruitment_cycles(父);CASCADE 兜底。recruitment 两表 T3 报名 e2e 用,
 // 本期一并加入,避免与 realname 同款「表不在 truncate 列表 → 跨 run 残留行污染 GET 空库断言」隔离 bug。
+//
+// 统一通知模块 S1 站内信渠道追加(2026-06-25):2 张新表(物理名小写,Prisma `@@map`):
+//   notification_reads(FK notificationId → notifications,memberId → Member,均 Restrict;子表)/ notifications(无被引父表)。
+// 顺序:notification_reads(子)→ notifications(父),均在 Member 之前;CASCADE 兜底。
 export async function resetDb(app: INestApplication): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "user_roles", "role_permissions", "roles", "permissions", "audit_logs", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "realname_verification_settings", "recruitment_applications", "recruitment_cycles", "team_join_applications", "team_join_cycles", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "user_roles", "role_permissions", "roles", "permissions", "audit_logs", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "realname_verification_settings", "recruitment_applications", "recruitment_cycles", "team_join_applications", "team_join_cycles", "notification_reads", "notifications", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }

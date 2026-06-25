@@ -31,6 +31,7 @@
 | **OCR 六分流提交结果(S4b)** | 同上 submit 端点出参由 `RecruitmentSubmitResultDto.outcome` 区分:`submitted`(已落记录,`statusCode`=verified/manual_review + `tempNo`)/ `retake`(证件照模糊或需重拍,**不落记录**,`stage`/`stageText`/`hint` 中性引导,重拍后用**同 token** 重提)/ `confirm`(识别与填写不一致**三选一**,回带 `recognized`{realName,idCardNumber}:① 用 OCR 回填〔改 `payload.realName/idCardNumber` 重提〕② 改填写重提 ③ `payload.applicantConfirmedOcrWrong=true` 确认 OCR 错→落普通人工)/ `retry`(核验繁忙,稍后用同 token 重提)。**①②不落人工、仅③落**;`retake/confirm/retry` 均不消费 token。⚠️ 出参**绝不含风险分级**(高风险疑似造假不对申请人提示;申请人侧文案恒中性「待人工核验」) |
 | **招新本人进度②(手机;S4a)** | `POST /api/open/v1/recruitment/applications/query-by-phone`(`{phone,code}`→同进度模型;一次查询消费一码) |
 | **自助换绑(无账号;S4a)** | `POST .../applications/rebind-wechat`(`{phone,code,newWechatCode}`,当前手机验码校验本人→换 openid) · `POST .../applications/rebind-phone`(`{phone,code,newPhone,newPhoneCode}`,双验→换手机+换绑历史) |
+| **会员站内信 feed(统一通知 S1)** | `GET /api/app/v1/notifications`(分页 feed,每项带 `read` 已读标志)· `GET .../notifications/unread-count`(未读红点 badge:`{unreadCount}`)· `GET .../notifications/{id}`(详情含 body;**不自动已读**)· `POST .../notifications/{id}/read`(标记已读;**幂等**,二次 no-op 不重复计数)。准入 canUseApp(否则 403);**4 档可见性**(member/formal_member/department/management,**去 public**,复用 content.visibility);不可见/未发布通知 → 404 防枚举。出参零敏感(无 authorUserId/visibleOrganizationIds/statusCode/readCount) |
 
 > 任务→端点的细化(注册流、入队流等)等建仓时按真实页面补,别提前臆造。
 > **H5 链失败码**:验码错/过期统一 `24010`;token 无效/过期/已用 `28050`;无 open 轮 `28030`;换微信撞他人 `28051`;无报名 `28002`。
@@ -40,6 +41,7 @@
 
 | # | 诉求 | 期望端点 | 状态 |
 |---|---|---|---|
+| GAP-005 | 会员站内信(向队员推送通知/公告;站内 feed + 未读红点 + 标记已读)| `app/v1/notifications`(list/unread-count/detail/mark-read)| ✅ **S1 站内信渠道已交付**(本 PR,Unreleased;统一通知模块首切片,冻结评审稿 `docs/archive/reviews/unified-notification-dispatcher-review.md`)。会员侧 = 站内信 feed(**4 档可见性复用 content.visibility 去 public**)+ 未读数 badge + mark-read 幂等(见 §2)。**S2 微信订阅消息 quota**(`wx.requestSubscribeMessage` ack 上报 → 后端配额扣减发送)/ **S3 producer 定向**(招新各节点系统通知,招新 §9 / GAP-006 S7)/ **S5 短信兜底**待后续切片另出 goal |
 | GAP-006 | 招新→入队闭环「可见」(12 域:进度模型/工作台/批量/通知/H5+手机/promote 志愿者化…;T0 冻结评审稿 `docs/archive/reviews/recruitment-phase4-loop-optimization-review.md`) | 见评审稿 §12 切片表(S1–S7) | ✅ **已发 v0.31.0**(S1–S6;#439–#445 → bump #446 → tag `v0.31.0` / Release Latest;以下逐切片 Unreleased 为交付时态历史标注)。**S1–S4b**:S1 进度模型 + S2 工作台 stats + S3 RBAC 敏感分级;**S4a = H5 + 手机身份链**;**S4b = OCR 六分流 + 重拍计数**(submit 改六分流:matched→verified / 模糊·防伪首次→retake 不落 / 不一致→三选一 / 上游首次→retry;forgery·ocr_error **H5 会话连续 2 次**才落 manual_review〔high/system〕,计数落 `recruitment_identity_sessions` 预建列;application +4 列 additive 无 enum;进度模型 +retake/confirm/manual_high 三态;S2 待人工三栏升真 `riskLevel`)。**S5 = promote 志愿者化**已交付(Unreleased):发号后志愿者 `Member.gradeCode` 由 `null` 改 `'volunteer'` + 挂 VOL 归口部门 → **`GET /api/app/v1/me` 的 `gradeCode` 对志愿者现返 `'volunteer'`(此前 null;详见 §2 ⚠️ 语义变)**。**S6 = 批量操作**已发(批量标门槛 / 导出 CSV / 发号预检,纯加端点零 schema / 零新 RBAC 码);**S7**(通知,阻塞 GAP-005)待后续切片另出 goal。 |
 
 ## 4. 不馊

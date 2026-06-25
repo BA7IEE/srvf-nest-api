@@ -229,6 +229,10 @@ model Member {
   // 冻结评审稿 docs/archive/reviews/recruitment-phase3-review.md §3.1)
   teamJoinApplications TeamJoinApplication[]
 
+  // 统一通知模块 S1 站内信渠道(2026-06-25;沿 R2 范式,仅关系映射不算业务字段;
+  // 冻结评审稿 docs/archive/reviews/unified-notification-dispatcher-review.md §5 / member-notification-review.md §3)
+  notificationReads NotificationRead[]
+
   @@index([gradeCode])
   @@index([status])
   @@index([deletedAt])
@@ -1643,4 +1647,67 @@ model Content {
   @@index([createdAt])
   @@index([statusCode, publishedAt]) // 公开 / 会员列表:published 按发布时间序常用复合
   @@map("contents")
+}
+
+// ===== 统一通知模块 S1:站内信渠道(第 28 模块 notifications 扩 controller,非新模块)=====
+//
+// 冻结评审稿:docs/archive/reviews/unified-notification-dispatcher-review.md(T0 修订;统一形状 §2/§5/§11)
+//   supersede 原 docs/archive/reviews/member-notification-review.md §3(站内信 schema 本切片照建)。
+// 镜像 Content(状态机 draft/published/archived + 可见性分档〔去 public = 4 档〕+ 软删 + readCount 反范式);
+// 额外一张轻量已读表 NotificationRead(站内信核心差异)。**首切片一次建成统一形状**:audienceType /
+// sourceType / channels 前向兼容列本切片即加(S1 仅用 broadcast / admin / in-app 值),后续 S2 微信 quota /
+// S3 producer 定向(recipientMemberId / producerModule)只 additive 扩列扩表,站内状态机 / 可见性 / 已读语义零返工。
+model Notification {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  title                String // 标题(DTO ≤ 200)
+  body                 String // 站内信正文(PG text;纯文本 / 轻 Markdown;DTO ≤ 5000,v1 无正文图 / 附件)
+  notificationTypeCode String // ∈ notification_type 字典 item(activity-reminder / recruitment / emergency / general)
+  statusCode           String // draft / published / archived(String 常量,无 enum,镜像 content)
+  visibilityCode       String // member / formal_member / department / management(4 档;去 public,会员面专属)
+
+  visibleOrganizationIds String[] @default([]) // department 档可见部门 orgId 数组(hasSome;镜像 content)
+
+  // ===== 统一通知形状前向兼容列(本切片即加,S1 仅用默认值;S2/S3 additive 不返工)=====
+  audienceType String   @default("broadcast") // broadcast | directed(D-N9;S1 仅 broadcast,directed + recipientMemberId 待 S3)
+  sourceType   String   @default("admin") // admin | system(D-N1;S1 仅 admin,system 待 S3 producer)
+  channels     String[] @default(["in-app"]) // 目标渠道声明(§7;S1 仅 in-app,wechat / sms 待 S2/S5)
+
+  readCount    Int       @default(0) // 反范式已读人数(首次 mark-read 原子 increment;镜像 content.viewCount)
+  pinned       Boolean   @default(false) // 置顶
+  publishedAt  DateTime? // publish 时置 now;unpublish 保留;draft 从未发布为 null
+  authorUserId String? // 发布 admin;不建外键(沿 content.authorUserId / reviewedByUserId)
+
+  reads NotificationRead[]
+
+  @@index([statusCode])
+  @@index([visibilityCode])
+  @@index([notificationTypeCode])
+  @@index([publishedAt])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([statusCode, publishedAt]) // 会员 feed:published 按发布时间序常用复合
+  @@map("notifications")
+}
+
+// 已读回执(notificationId × memberId,append-once;无 updatedAt / 无 deletedAt = immutable)。
+// plain unique([notificationId, memberId])——已读不软删,无需 partial-unique-WHERE(与 TeamInsuranceCoverage 刻意差异)。
+// FK 全 onDelete: Restrict(沿仓内惯例);通知软删后已读行成无害孤儿(retention SOP 手动清,不解锁 cron)。
+model NotificationRead {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now()) // = 首次已读时刻(readAt)
+
+  notificationId String
+  memberId       String
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Restrict)
+  member       Member       @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@unique([notificationId, memberId]) // 一会员对一通知至多一条(plain unique;mark-read upsert 幂等键)
+  @@index([memberId]) // 会员未读查询主路径(NOT EXISTS 子查询)
+  @@index([notificationId])
+  @@map("notification_reads")
 }

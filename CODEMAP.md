@@ -29,7 +29,7 @@
 | `member-departments/` | S (329L) | 一人一部门 partial unique | partial unique 在 schema 显式 | — |
 | `member-profiles/` | M (1258L) | 1:1 子资源,含敏感字段(身份证默认掩码后 4 位) | **L3 字段不外暴**;白名单严格 | [`docs/security.md`](docs/security.md) |
 | `members/` | S (501L) | 全局 `memberNo` **不复用** | memberNo 唯一性铁律 | [`docs/srvf-foundation-baseline.md`](docs/srvf-foundation-baseline.md) |
-| `notifications/` | S (219L) | 生日祝福短信 job(G-7 首个落地点;本仓唯一 `@Cron`,09:00 Asia/Shanghai) | no-cron 解锁范围仅生日批(新定时任务 = 新 D 档评审);仅发 `User.phone`;幂等查 send_logs 当日 SENT;不进 audit;单实例前提(多实例需先加锁) | [`CLAUDE.md`](src/modules/notifications/CLAUDE.md) · [`docs/archive/reviews/queue-b-otp-birthday-infra-review.md §6`](docs/archive/reviews/queue-b-otp-birthday-infra-review.md) |
+| `notifications/` | M | 生日祝福短信 job(G-7;本仓唯一 `@Cron`,09:00 Asia/Shanghai)+ **统一通知模块 S1 站内信渠道**(admin 撰写/发布 8 端点 + 会员站内信拉取 4 端点;镜像 content 状态机 + 可见性〔复用 content.visibility 去 public = 4 档〕+ NotificationRead 已读 + readCount)| no-cron 解锁范围仅生日批(站内 = 纯 pull 零 cron);统一形状列 audienceType/sourceType/channels 前向兼容(S1 仅 broadcast/admin/in-app;微信 quota / 短信兜底 / producer 定向 = S2-S5 additive);可见性复用 content.visibility 无第二套 | [`CLAUDE.md`](src/modules/notifications/CLAUDE.md) · [`docs/archive/reviews/unified-notification-dispatcher-review.md`](docs/archive/reviews/unified-notification-dispatcher-review.md) |
 | `organizations/` | M (654L) | 组织树 | 树形结构 | — |
 | `permissions/` | L (2213L) | RBAC 4 表 + `RbacService.can()` + `RbacCacheService` | `rbac.*` 14 条权限点;**`rbac/me/permissions` 方法级 Mixed 暂不拆 (P1-A)** | [`CLAUDE.md`](src/modules/permissions/CLAUDE.md) · [`AGENTS.md §8 / §13`](AGENTS.md) · [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
 | `realname/` | M (1087L) | 实名核验通道层(realname-settings 三端点 / 双 Provider / verify 编排 + 原生 fetch TC3 签名 8s + 27xxx 映射边界;招新一期 T2) | secretId/secretKey 两段 AES-256-GCM 永不回显;真通道休眠(DevStub 全验,腾讯云凭证待运维);姓名/身份证号不入日志;production-like 禁 DEV_STUB;providers/ 子目录为 AGENTS §2 已解锁例外(第四例) | [`docs/archive/reviews/recruitment-phase1-review.md`](docs/archive/reviews/recruitment-phase1-review.md)(冻结评审稿) |
@@ -65,7 +65,7 @@
 | 路径 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
 |---|---|---|---|
 | `schema.prisma` | **数据模型唯一权威源**(字段 / 类型 / 约束 / 索引) | 修改前必先说明影响面 | [`CLAUDE.md`](prisma/CLAUDE.md) |
-| `migrations/` | 26 个 migration(2026-05-02 init → 2026-06-24 招新四期 S4b:recruitment_applications +4 OCR 六分流列〔manualReviewReason/riskLevel/applicantConfirmedOcrWrong/lastOcrOutcome;additive 无 enum 无不可逆〕) | **禁止** `prisma migrate dev` / `reset` / `db push` 自动跑 | [`CLAUDE.md`](prisma/CLAUDE.md) · [`AGENTS.md §0`](AGENTS.md) |
+| `migrations/` | 27 个 migration(2026-05-02 init → 2026-06-25 统一通知模块 S1:notifications + notification_reads 两表〔含统一形状列 audienceType/sourceType/channels;additive 无 enum 无不可逆〕) | **禁止** `prisma migrate dev` / `reset` / `db push` 自动跑 | [`CLAUDE.md`](prisma/CLAUDE.md) · [`AGENTS.md §0`](AGENTS.md) |
 | `seed.ts` | 默认 super admin + bootstrap user_role | 生产环境强校验启动(`SUPER_ADMIN_*` / `JWT_SECRET` / `APP_CORS_ORIGIN`) | [`docs/deployment.md`](docs/deployment.md) |
 
 ---

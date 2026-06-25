@@ -3,13 +3,16 @@ import { HttpStatus } from '@nestjs/common';
 // BizCode 常量表
 //
 // 当前状态(随实施滚动维护;每次新增模块码后校对):
-// - 170 个 BizCode(2026-06-21 亲核:grep 'httpStatus:' / 'code: NNNNN' / 去重三法交叉;含 CMS content 290xx +5
-//   + 活动闭环硬化 20123 报名截止 +1;2026-06-13 的「141」系彼时快照,此后 realname 27xxx + 招新·入队 28xxx
-//   (280xx/281xx/282xx)+ #399 review 错误码增量(13014 / 19010 / 30103)+ CMS content 290xx 5 码
-//   + 20123 ACTIVITY_REGISTRATION_DEADLINE_PASSED〔201xx activities 段,报名截止生效〕),覆盖 24 个编号段
+// - 175 个 BizCode(2026-06-25 亲核:grep 'httpStatus:' / 'code: NNNNN' / 去重三法交叉;含 CMS content 290xx +5
+//   + 活动闭环硬化 20123 报名截止 +1 + 统一通知 310xx +5;2026-06-13 的「141」系彼时快照,此后 realname 27xxx
+//   + 招新·入队 28xxx(280xx/281xx/282xx)+ #399 review 错误码增量(13014 / 19010 / 30103)+ CMS content 290xx 5 码
+//   + 20123 ACTIVITY_REGISTRATION_DEADLINE_PASSED〔201xx activities 段〕+ 通知 310xx 5 码),覆盖 25 个编号段
 // - CMS 内容发布模块(第 28 模块,2026-06-21,评审稿 §7):290xx 段 5 码(29001 NOT_FOUND / 29010 type /
 //   29011 visibility / 29012 visible-org / 29030 status-transition);291xx 权限边界预留(暂不用,RBAC 统一 30100);
 //   附件类错误(MIME / 大小 / PII / owner)复用既有 13xxx,不新增码(评审稿 §7)
+// - 统一通知模块 S1 站内信渠道(第 28 模块 notifications 扩 controller,2026-06-25,评审稿 §9.3):310xx 段 5 码
+//   (31001 NOT_FOUND / 31010 type / 31011 visibility / 31012 visible-org / 31030 status-transition,镜像 content 290xx);
+//   311xx 权限边界预留(暂不用,RBAC 统一 30100);可见性复用 content.visibility,无第二套
 // - 编号段权威说明以 `docs/srvf-foundation-baseline.md §1.1` 为准;
 //   ARCHITECTURE.md §7.3 是早期蓝图,模块命名已演进(missions→dictionaries、
 //   files→attachments、devices→audit_logs 等),遇分歧以 baseline §1.1 + 本文件实际常量为准
@@ -43,8 +46,9 @@ import { HttpStatus } from '@nestjs/common';
 // - 28xxx + 281xx + 282xx: recruitment 一/二期 + team-join 入队(招新业务域,2026-06-18/19)
 // - 29xxx + 291xx: content(CMS 内容发布,2026-06-21;290xx 5 码,291xx 预留)
 // - 30xxx + 301xx: permissions(C-6 RBAC)
+// - 31xxx + 311xx: notifications(统一通知模块 S1 站内信渠道,2026-06-25;310xx 5 码,311xx 预留)
 // - 40xxx / 42xxx / 50xxx: 通用 HTTP / infrastructure(BAD_REQUEST / UNAUTHORIZED / FORBIDDEN / NOT_FOUND / TOO_MANY_REQUESTS / INTERNAL_ERROR)
-// - 未规划模块预留(训练 / 装备 / 财务 / 通知等):29xxx 之后顺延(realname 27xxx / recruitment 28xxx / content 29xxx 已实装)
+// - 未规划模块预留(训练 / 装备 / 财务等):31xxx 之后顺延(realname 27xxx / recruitment 28xxx / content 29xxx / notification 31xxx 已实装)
 export const BizCode = {
   // 通用 HTTP 级
   BAD_REQUEST: { code: 40000, message: '请求参数错误', httpStatus: HttpStatus.BAD_REQUEST },
@@ -1014,6 +1018,37 @@ export const BizCode = {
   CONTENT_INVALID_STATUS_TRANSITION: {
     code: 29030,
     message: '内容状态流转不允许',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // notification 模块业务级(310xx)。统一通知模块 S1 站内信渠道(第 28 模块 notifications 扩 controller)引入
+  // (2026-06-25;冻结评审稿 unified-notification-dispatcher-review.md §9.3 + member-notification-review.md §5)。
+  // 段位选择:permissions 30xxx 之后顺延,baseline §1.1「未规划预留」收口首段;镜像 content 290xx。
+  // app 详情 / mark-read 对不存在 / 不可见统一 31001 防枚举;DTO 白名单非法走通用 400 无码;
+  // 311xx 权限边界预留(暂不用,RBAC 拒绝统一走 30100)。
+  NOTIFICATION_NOT_FOUND: {
+    code: 31001,
+    message: '通知不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  NOTIFICATION_TYPE_INVALID: {
+    code: 31010,
+    message: '通知类型无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  NOTIFICATION_VISIBILITY_INVALID: {
+    code: 31011,
+    message: '可见级无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  NOTIFICATION_VISIBLE_ORG_INVALID: {
+    code: 31012,
+    message: '指定可见部门无效(为空 / 不存在 / 非活跃)',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  NOTIFICATION_INVALID_STATUS_TRANSITION: {
+    code: 31030,
+    message: '通知状态流转不允许',
     httpStatus: HttpStatus.CONFLICT,
   },
 
