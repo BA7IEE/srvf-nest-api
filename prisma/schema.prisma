@@ -1681,7 +1681,8 @@ model Notification {
   publishedAt  DateTime? // publish 时置 now;unpublish 保留;draft 从未发布为 null
   authorUserId String? // 发布 admin;不建外键(沿 content.authorUserId / reviewedByUserId)
 
-  reads NotificationRead[]
+  reads      NotificationRead[]
+  deliveries NotificationDelivery[] // 推送渠道(微信/短信)per-recipient 投递态(S2 起;站内不落)
 
   @@index([statusCode])
   @@index([visibilityCode])
@@ -1710,4 +1711,72 @@ model NotificationRead {
   @@index([memberId]) // 会员未读查询主路径(NOT EXISTS 子查询)
   @@index([notificationId])
   @@map("notification_reads")
+}
+
+// =============================================================================
+// 统一通知模块 S2 微信订阅 quota 渠道(2026-06-25;冻结评审稿
+// docs/archive/reviews/unified-notification-dispatcher-review.md §3/§9.1,D-N2/D-N3/D-N6)。
+// 三张净新增表(全 additive,无破坏、无回填、无 enum;migration 第 28);站内 S1 语义零返工。
+// =============================================================================
+
+// 推送渠道 per-recipient 投递态(§2.1 核心张力解法:fan-out 只发生在推送渠道,站内不落)。
+// S2 仅 wechat 渠道;短信 = S5。流水语义(沿 sms_send_logs append-only;notificationId FK Restrict 串父记录,
+// memberId 松引用不建 FK——投递日志不应被会员软删牵制,镜像 sms_send_logs 零 FK 取舍)。
+// recipientRef = 掩码后 openid / phone(maskOpenid / maskPhone;明文永不入库,L3/L2 纪律)。
+model NotificationDelivery {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  notificationId String
+  channel        String // wechat(S2 唯一)| sms(S5);代码常量非字典
+  memberId       String // 收件人 member(松引用,不建 FK;openid 可换绑故按 memberId 留痕)
+  recipientRef   String // 掩码 openid / phone(回显安全;明文不入库)
+  status         String // pending | sent | failed | skipped
+  reasonCode     String? // no-quota / no-openid / need-resubscribe / invalid-openid / template-param / token-failed / no-template
+  providerMsgId  String? // provider 回执 ID(微信 msgid;不含 secret)
+  errCode        String? // 失败时 provider 错误码(微信 errcode 字符串;不含 secret)
+  attemptedAt    DateTime? // 实际发起外部调用时刻(skipped = null,未发起外部调用)
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Restrict)
+
+  @@index([notificationId])
+  @@index([memberId, channel])
+  @@index([status])
+  @@map("notification_deliveries")
+}
+
+// 微信订阅消息配额(memberId × templateId → availableCount;D-N2 上限默认 5)。
+// 按 memberId 存(非 openid)——openid 可换绑(招新 S4a rebind),memberId 稳定;发送时 member→user→openid 现取。
+// +1(ack)= upsert increment 配上限;-1(发送)= 条件原子扣减 updateMany(availableCount>0),count===1 才发。
+// 松引用 memberId 不建 FK(状态表,会员软删不应牵制;镜像 sms_send_logs / wechat 流水取舍)。
+model WechatSubscriptionQuota {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberId       String
+  templateId     String
+  availableCount Int    @default(0) // ≥ 0(条件原子扣减杜绝越扣为负)
+
+  @@unique([memberId, templateId]) // 一会员一模板至多一行(ack upsert 键 + count 查询主路径)
+  @@index([templateId]) // 派发:按 templateId 取有配额会员(availableCount > 0)
+  @@map("wechat_subscription_quotas")
+}
+
+// 微信订阅消息模板配置(notificationTypeCode → templateId;运营可配,D-N3)。
+// 镜像 sms_settings.templateIdBirthday「模板 ID 存配置、运营改不重部署」先例,但一类型一模板故独立表(1:1)。
+// 字段映射(payload → 微信 data key)= 内置代码(随类型固定,不入本表;见 notification.wechat-data.ts)。
+// templateId 可空:小程序后台审批后由 admin 填;未填 / disabled = 该类型微信渠道不可发(派发 skip no-template)。
+model WechatSubscribeTemplate {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notificationTypeCode String  @unique // ∈ notification_type 字典;一类型一模板
+  templateId           String? // 微信订阅消息模板 ID(运维上线后台审批后填)
+  enabled              Boolean @default(true)
+  remarks              String?
+  updatedBy            String? // User.id(不建外键,沿 settings 范式)
+
+  @@map("wechat_subscribe_templates")
 }

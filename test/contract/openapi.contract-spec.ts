@@ -444,6 +444,16 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/notifications/unread-count'],
   ['get', '/api/app/v1/notifications/{id}'],
   ['post', '/api/app/v1/notifications/{id}/read'],
+  // 统一通知模块 S2 微信订阅 quota 渠道(2026-06-25;冻结评审稿
+  //   unified-notification-dispatcher-review.md §3/§7),+4 → 259。
+  //   app/v1/notifications/subscriptions 2(ack 上报授权 quota +1 封顶 / status 查剩余配额;canUseApp 准入,无码 [auth];
+  //   字面段 subscriptions/* 声明于 :id 之前)+ admin/v1/notification-wechat-templates 2(list / upsert 模板配置;
+  //   R 模式 read.record / update.template,无 @RequirePermissions;独立 base path 避与 notifications/:id 冲突)。
+  //   微信派发 = publish 事务外同步分支(NotificationDelivery 记账,零新端点);token/openid 零出参(L3)。
+  ['post', '/api/app/v1/notifications/subscriptions/ack'],
+  ['get', '/api/app/v1/notifications/subscriptions/status'],
+  ['get', '/api/admin/v1/notification-wechat-templates'],
+  ['put', '/api/admin/v1/notification-wechat-templates/{typeCode}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -833,6 +843,14 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'NotificationReadDetailDto',
   'MarkNotificationReadResponseDto',
   'NotificationUnreadCountDto',
+
+  // 统一通知 S2 微信订阅 quota 渠道:ack/status 入参出参 + 模板配置 admin DTO(物理隔离独立 class)。
+  'WechatSubscriptionAckDto',
+  'WechatSubscriptionAckResponseDto',
+  'WechatSubscriptionStatusResponseDto',
+  'WechatQuotaItemDto',
+  'UpsertWechatSubscribeTemplateDto',
+  'WechatSubscribeTemplateDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

@@ -6,12 +6,15 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { DevStubWechatProvider } from './providers/dev-stub.provider';
 import { WechatMiniRealProvider } from './providers/wechat.provider';
+import { WECHAT_ERRCODE_TOKEN_INVALID } from './wechat.constants';
 import { WechatSettingsService } from './wechat-settings.service';
 import {
   WechatApiError,
   WechatChannelUnavailableError,
   WechatCodeInvalidError,
   type Code2SessionResult,
+  type SendSubscribeMessageInput,
+  type SendSubscribeMessageResult,
   type WechatMiniProvider,
 } from './wechat.types';
 
@@ -62,6 +65,52 @@ export class WechatService {
       }
       throw err;
     }
+  }
+
+  /**
+   * 统一通知 S2:下发订阅消息(取 token + 发送 + token 失效刷一次重试一次)。
+   * **不抛业务异常** —— 通道不可用 / token 取用失败 / 发送失败一律归一为 SendSubscribeMessageResult,
+   * 供派发器逐收件人写 NotificationDelivery 不阻断下一人(评审稿 §3.4 / D-N7;镜像生日批 FAILED 不阻断)。
+   * 40001/42001 token 失效 = token 层重试(强刷 + 重发一次),**非业务重试**(失败码语义不自动重发)。
+   */
+  async sendSubscribeMessage(
+    input: SendSubscribeMessageInput,
+  ): Promise<SendSubscribeMessageResult> {
+    let provider: WechatMiniProvider;
+    let accessToken: string;
+    try {
+      provider = await this.resolve();
+      accessToken = await provider.getAccessToken();
+    } catch (err) {
+      return this.tokenFailureResult(err);
+    }
+
+    let result = await provider.sendSubscribeMessage(accessToken, input);
+    if (!result.ok && WECHAT_ERRCODE_TOKEN_INVALID.includes(Number(result.errCode))) {
+      // token 失效:强刷一次 + 重发一次(非业务重试)
+      try {
+        accessToken = await provider.getAccessToken(true);
+      } catch (err) {
+        return this.tokenFailureResult(err);
+      }
+      result = await provider.sendSubscribeMessage(accessToken, input);
+    }
+    return result;
+  }
+
+  // token 取用 / 通道失败 → 归一为 ok:false(errCode 保留底层域错误码,errMsg 不含 secret)
+  private tokenFailureResult(err: unknown): SendSubscribeMessageResult {
+    if (err instanceof WechatApiError) {
+      return { ok: false, errCode: err.errCode, errMsg: err.errMsg };
+    }
+    if (err instanceof WechatChannelUnavailableError) {
+      return { ok: false, errCode: 'CHANNEL_UNAVAILABLE', errMsg: 'wechat channel unavailable' };
+    }
+    return {
+      ok: false,
+      errCode: 'TOKEN_FAILED',
+      errMsg: err instanceof Error ? err.name : 'UnknownError',
+    };
   }
 
   private async resolve(): Promise<WechatMiniProvider> {
