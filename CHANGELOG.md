@@ -6,6 +6,8 @@
 
 > 累计下一个 minor 候选(**未 bump 版本 / 未发 Release**;沿发版拍板「合并所有子 PR 进 main + 累计 `## Unreleased`」)。
 
+## v0.32.0 - 2026-06-27
+
 ### Added
 
 - **统一通知模块 S5 — 短信兜底渠道(档 D,含真实计费外发;goal「GAP-005 统一通知模块 S5」;冻结评审稿 [`unified-notification-dispatcher-review.md`](docs/archive/reviews/unified-notification-dispatcher-review.md) §4/§8.3/§9;D-N4/D-N8)**:紧急召集缺「站内/微信够不着时的短信兜底」。本切片落 **短信渠道 = admin 显式发起、计费确认必需的紧急召集兜底**,复用 sms 基建不 fork;**短信永不默认/不强制/不随 publish 自动发**(站内+微信优先),**无 cron/queue/事件总线**(同步发送,§8);**真·全员批处理异步明确不做**(延后,见末)。
