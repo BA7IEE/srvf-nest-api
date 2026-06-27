@@ -2455,6 +2455,15 @@ const NOTIFICATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
     resourceType: 'template',
     description: '配置通知类型 → 微信订阅模板 ID + 启用态(upsert;运营可配)',
   },
+  // 统一通知 S5(2026-06-27;短信兜底渠道):admin 显式发起短信(紧急召集)成本动作单独 gating
+  // (评审稿 §9.2 / D-N4;计费确认必需;全绑 biz-admin)。
+  {
+    code: 'notification.send.sms',
+    module: 'notification',
+    action: 'send',
+    resourceType: 'sms',
+    description: 'admin 显式发起短信兜底(紧急召集;计费确认必需,confirmed=true 才真发)',
+  },
 ];
 
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;码进 Permission 表但不绑 biz-admin(评审稿 §6)
@@ -2491,7 +2500,7 @@ const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISS
 const BIZ_ADMIN_ROLE_CODE = 'biz-admin';
 const BIZ_ADMIN_DISPLAY_NAME = '业务管理员';
 const BIZ_ADMIN_DESCRIPTION =
-  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 §5 + 保险 §3.4 + 招新一/二/三期 §3.4 + 招新闭环优化 S3 §11 + CMS 内容模块评审稿 §7):member 5 + member-profile 3 + emergency-contact 4 + certificate 6 + activity 5 + activity-registration 5 + attendance 8 + team-insurance-policy 6 + member-insurance 1 + recruitment-cycle 3 + recruitment-application 6 + team-join-cycle 3 + team-join-application 4 + content 5 + content-attachment 4 + notification 5 = 73 条中绑 72;member.delete.record 仅 SUPER_ADMIN(D1=A 镜像);attachment 存量 20 码(member / certificate / activity)不在本角色,CMS content-image / content-file 写路径 4 码因内容授权绑入(评审稿 α / §5.2);notification 5 码统一通知模块 S1 站内信渠道绑入(2026-06-25,评审稿 §9.2);每个 ADMIN 用户由 seed 自动补挂本角色';
+  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 §5 + 保险 §3.4 + 招新一/二/三期 §3.4 + 招新闭环优化 S3 §11 + CMS 内容模块评审稿 §7 + 统一通知模块 S1/S2/S5 §9.2):member 5 + member-profile 3 + emergency-contact 4 + certificate 6 + activity 5 + activity-registration 5 + attendance 8 + team-insurance-policy 6 + member-insurance 1 + recruitment-cycle 3 + recruitment-application 6 + team-join-cycle 3 + team-join-application 4 + content 5 + content-attachment 4 + notification 7 = 75 条中绑 74;member.delete.record 仅 SUPER_ADMIN(D1=A 镜像);attachment 存量 20 码(member / certificate / activity)不在本角色,CMS content-image / content-file 写路径 4 码因内容授权绑入(评审稿 α / §5.2);notification 7 码(S1 站内信 5 + S2 微信模板配置 1 + S5 短信发起 1)统一通知模块绑入(2026-06-25 ~ 2026-06-27,评审稿 §9.2);每个 ADMIN 用户由 seed 自动补挂本角色';
 
 // Slow-4 T1(36/35)+ 保险模块 T1 增量(2026-06-13,+7 全绑 → 43/42)+ 招新一期 T1 增量(2026-06-18,+5 全绑 → 48/47):
 // 业务面权限点 + biz-admin 角色 + 绑定 + ADMIN 全员补挂 + 强校验。

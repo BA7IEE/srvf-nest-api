@@ -8,6 +8,7 @@ import { SmsSettingsService } from './sms-settings.service';
 import {
   SmsChannelUnavailableError,
   type SendBirthdayGreetingInput,
+  type SendNotificationInput,
   type SendVerifyCodeInput,
   type SendVerifyCodeResult,
   type SmsProvider,
@@ -64,6 +65,12 @@ export class SmsProviderRouter implements SmsProvider {
   // 生日祝福(B 队列 F5-T2;queue-b 评审稿 §6.5):同 resolve 语义(不静默 fallback)。
   async sendBirthdayGreeting(input: SendBirthdayGreetingInput): Promise<SendVerifyCodeResult> {
     return (await this.resolve()).sendBirthdayGreeting(input);
+  }
+
+  // 通知兜底(统一通知 S5;评审稿 §4):同 resolve 语义(不静默 fallback);
+  // **additive 不改 verifyCode/birthday 既有发送行为**(行为锁)。
+  async sendNotification(input: SendNotificationInput): Promise<SendVerifyCodeResult> {
+    return (await this.resolve()).sendNotification(input);
   }
 
   /**

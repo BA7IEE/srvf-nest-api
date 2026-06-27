@@ -31,6 +31,8 @@ import {
   ListNotificationAdminQueryDto,
   NotificationAdminDetailDto,
   NotificationAdminListItemDto,
+  NotificationSmsSendResultDto,
+  SendNotificationSmsDto,
   UpdateNotificationDto,
 } from './notification.dto';
 import { NotificationService } from './notification.service';
@@ -49,7 +51,11 @@ function buildAuditMeta(req: Request): AuditMeta {
 
 @ApiTags('Admin - Notifications')
 @ApiBearerAuth()
-@ApiExtraModels(NotificationAdminDetailDto, NotificationAdminListItemDto)
+@ApiExtraModels(
+  NotificationAdminDetailDto,
+  NotificationAdminListItemDto,
+  NotificationSmsSendResultDto,
+)
 @Controller('admin/v1/notifications')
 export class NotificationAdminController {
   constructor(private readonly service: NotificationService) {}
@@ -195,5 +201,29 @@ export class NotificationAdminController {
     @Req() req: Request,
   ): Promise<NotificationAdminDetailDto> {
     return this.service.archive(id, user, buildAuditMeta(req));
+  }
+
+  @Post(':id/send-sms')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '显式发起短信兜底(紧急召集;计费确认必需:confirmed=true 才真发,false 仅预览受众计数;须已发布且声明短信渠道) [rbac: notification.send.sms]',
+  })
+  @ApiWrappedOkResponse(NotificationSmsSendResultDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.NOTIFICATION_NOT_FOUND,
+    BizCode.NOTIFICATION_SMS_NOT_SENDABLE,
+    BizCode.SMS_CHANNEL_NOT_CONFIGURED,
+  )
+  sendSms(
+    @Param('id') id: string,
+    @Body() dto: SendNotificationSmsDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<NotificationSmsSendResultDto> {
+    return this.service.sendSms(id, dto, user, buildAuditMeta(req));
   }
 }

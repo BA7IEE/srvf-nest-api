@@ -24,6 +24,10 @@ export const SMS_TEMPLATE_KEY_VERIFY_CODE = 'verify-code';
 // 生日祝福(B 队列 F5-T2,queue-b 评审稿 §6.5):零变量模板;provider 侧模板 ID 存
 // sms_settings.templateIdBirthday;生日批幂等防重发按本键 + 当日 + SENT 查 send_logs(E-B6)
 export const SMS_TEMPLATE_KEY_BIRTHDAY = 'birthday-greeting';
+// 统一通知 S5 短信兜底渠道(2026-06-27,评审稿 unified-notification-dispatcher-review.md §4):
+// 紧急召集兜底零变量模板(镜像生日批,无个人信息出仓——SMS 仅"请打开 App/小程序查看"的触达 nudge);
+// provider 侧模板 ID 存 sms_settings.templateIdNotification;同日同模板幂等防重发按本键查 send_logs。
+export const SMS_TEMPLATE_KEY_NOTIFICATION = 'notification';
 
 // ===== 手机号(E-17/E-21)=====
 // 大陆手机号(SMS 通道边界;不沿用 emergency-contacts 宽松座机 pattern)

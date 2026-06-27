@@ -8,6 +8,7 @@ import {
   SmsCredentialStatus,
   SmsProviderSendError,
   type SendBirthdayGreetingInput,
+  type SendNotificationInput,
   type SendVerifyCodeInput,
   type SendVerifyCodeResult,
   type SmsProvider,
@@ -67,6 +68,13 @@ export class TencentSmsProvider implements SmsProvider {
     return this.sendViaSdk(ctx, input.phone, []);
   }
 
+  // 通知兜底(统一通知 S5,评审稿 §4):紧急召集零变量模板(TemplateParamSet=[]);
+  // 模板 ID 取 sms_settings.templateIdNotification(4 档守护按模板选择校验对应列)。
+  async sendNotification(input: SendNotificationInput): Promise<SendVerifyCodeResult> {
+    const ctx = await this.requireTencentContext('notification');
+    return this.sendViaSdk(ctx, input.phone, []);
+  }
+
   // SDK 单号单发共用段(verify-code / birthday 仅模板与参数不同;错误归一化语义不变)
   private async sendViaSdk(
     ctx: TencentSmsContext,
@@ -105,9 +113,10 @@ export class TencentSmsProvider implements SmsProvider {
 
   // 解析 settings + 构造 SDK client + 4 档守护(镜像 cos.provider.requireCosContext);
   // template 形参选择校验/返回哪个模板列(verify-code → templateIdVerifyCode;
-  // birthday → templateIdBirthday;对应列缺失同走 SmsChannelUnavailableError 第 4 档)
+  // birthday → templateIdBirthday;notification → templateIdNotification〔统一通知 S5〕;
+  // 对应列缺失同走 SmsChannelUnavailableError 第 4 档)
   private async requireTencentContext(
-    template: 'verify-code' | 'birthday',
+    template: 'verify-code' | 'birthday' | 'notification',
   ): Promise<TencentSmsContext> {
     const settings = await this.settings.getActiveSettings();
     if (!settings || !settings.enabled) {
@@ -126,8 +135,7 @@ export class TencentSmsProvider implements SmsProvider {
       throw new SmsChannelUnavailableError(`sms_settings.${missing.join(' / ')} 未配置`);
     }
 
-    const templateId =
-      template === 'verify-code' ? settings.templateIdVerifyCode : settings.templateIdBirthday;
+    const templateId = selectTemplateId(settings, template);
 
     const client = new SmsClient({
       credential: {
@@ -148,7 +156,7 @@ export class TencentSmsProvider implements SmsProvider {
 
 function missingRuntimeParams(
   s: SmsSettingsResolved,
-  template: 'verify-code' | 'birthday',
+  template: 'verify-code' | 'birthday' | 'notification',
 ): string[] {
   const missing: string[] = [];
   if (!s.sdkAppId) missing.push('sdkAppId');
@@ -156,7 +164,20 @@ function missingRuntimeParams(
   if (!s.region) missing.push('region');
   if (template === 'verify-code' && !s.templateIdVerifyCode) missing.push('templateIdVerifyCode');
   if (template === 'birthday' && !s.templateIdBirthday) missing.push('templateIdBirthday');
+  if (template === 'notification' && !s.templateIdNotification) {
+    missing.push('templateIdNotification');
+  }
   return missing;
+}
+
+// 模板列选择(verify-code / birthday / notification → 对应 sms_settings 模板 ID 列;统一通知 S5)。
+function selectTemplateId(
+  s: SmsSettingsResolved,
+  template: 'verify-code' | 'birthday' | 'notification',
+): string | null {
+  if (template === 'verify-code') return s.templateIdVerifyCode;
+  if (template === 'birthday') return s.templateIdBirthday;
+  return s.templateIdNotification;
 }
 
 // 大陆 11 位 → E.164(+86 前缀;DTO 已锁 ^1[3-9]\d{9}$,评审稿 E-17)

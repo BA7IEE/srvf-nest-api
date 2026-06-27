@@ -12,6 +12,7 @@ import { NotificationAppController } from './notification-app.controller';
 import { NotificationDispatcher } from './notification-dispatcher';
 import { NotificationReadService } from './notification-read.service';
 import { NotificationService } from './notification.service';
+import { NotificationSmsDispatchService } from './notification-sms-dispatch.service';
 import { NotificationSubscriptionService } from './notification-subscription.service';
 import { NotificationWechatDispatchService } from './notification-wechat-dispatch.service';
 import { NotificationWechatTemplateAdminController } from './notification-wechat-template.admin.controller';
@@ -37,6 +38,15 @@ import { WechatSubscribeTemplateService } from './wechat-subscribe-template.serv
 // **exports 出**供 producer(招新 recruitment / 入队 team-join)在业务事务 commit 后单向直调(D-N5;防环:本模块绝不回调 producer)。
 // feed 扩 buildFeedWhere(广播可见 ∪ 本人定向),recipientMemberId 定向收件人;**仍不引 cron/queue/事件总线**。
 //
+// 统一通知 S4 活动·考勤 producer 定向触发(2026-06-25):报名审批 / 活动取消 / 考勤终审三处 producer commit 后
+// 事务外 try-catch 直调 S3 dispatchTargeted(仅站内;0 schema/0 端点/0 RBAC 码,纯 producer 接入)。
+//
+// 统一通知 S5 短信兜底渠道(2026-06-27;评审稿 §4):NotificationSmsDispatchService —— admin 显式发起紧急召集短信
+// (NotificationAdminController +1 端点 send-sms,计费确认必需;新码 notification.send.sms)。复用 SmsModule
+// SmsProviderRouter.sendNotification(additive)+ NotificationDelivery + sms_send_logs,逐可见有手机者单发,
+// 防滥发继承同号封顶/间隔/同日同模板幂等,FAILED 逐人不阻断,maskPhone;**短信永不随 publish 自动发**(外发事务外);
+// **仍不引 cron/queue/事件总线**(同步发送 §8;真·全员批处理异步延后)。
+//
 // onModuleInit 锚行:docker-smoke 以 grep 本行确证 ScheduleModule.forRoot() 在
 // 生产镜像内装配成功且生日 job 完成注册(评审稿 E-B10;改动本文案需同步
 // .github/workflows/docker-smoke.yml 的 grep 步骤)。
@@ -60,6 +70,7 @@ import { WechatSubscribeTemplateService } from './wechat-subscribe-template.serv
     NotificationReadService,
     NotificationSubscriptionService,
     NotificationWechatDispatchService,
+    NotificationSmsDispatchService,
     NotificationDispatcher,
     WechatSubscribeTemplateService,
   ],

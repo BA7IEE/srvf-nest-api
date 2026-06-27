@@ -1152,6 +1152,7 @@ model SmsSettings {
   region               String? // 如 ap-guangzhou
   templateIdVerifyCode String? // 验证码模板 ID(须先过审;templateKey='verify-code' 的 provider 侧映射)
   templateIdBirthday   String? // 生日祝福模板 ID(须先过审,零变量模板;templateKey='birthday-greeting' 的 provider 侧映射;queue-b 评审稿 §6.2)
+  templateIdNotification String? // 通知兜底模板 ID(须先过审,零变量模板;templateKey='notification' 的 provider 侧映射;统一通知 S5 评审稿 §4)
 
   // 凭证(加密存储;明文永不入库;响应永不回显——密文也不回显)
   secretIdEncrypted    String?

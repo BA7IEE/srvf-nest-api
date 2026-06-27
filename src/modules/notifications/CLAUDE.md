@@ -10,7 +10,9 @@
 - **统一通知 S1 站内信渠道**(2026-06-25):admin 撰写/发布面(`NotificationAdminController` 8 端点)+ 会员 app 拉取面(`NotificationAppController` 4 端点);`Notification` 广播 + `NotificationRead` 已读;**站内 = pull 零发送**;可见性**复用 `content.visibility`**(去 public = 4 档)。
 - **统一通知 S2 微信订阅 quota 渠道**(2026-06-25):admin 勾微信渠道 → publish **事务外**同步派发(`NotificationWechatDispatchService`);quota ack/status(`NotificationSubscriptionService`)+ 模板配置(`WechatSubscribeTemplateService` + `NotificationWechatTemplateAdminController`);`NotificationDelivery` 投递态 + `WechatSubscriptionQuota` 配额 + `WechatSubscribeTemplate` 模板;发送能力 additive 在 `wechat/` 模块。
 - **统一通知 S3 producer 接入 + 派发器 Effect 正式化**(2026-06-25):`NotificationDispatcher`(architecture-boundary §3.6 **首个真实 Effect**;`dispatchTargeted` 建**已发布定向行** = directed/system/authorUserId=null/跳过 draft 直 published → 站内 + 微信〔复用 S2 `dispatchDirected` 单收件人〕)由 **producer**(招新发号 `recruitment-promotion` / 入队 `team-join-enrollment`)在业务事务 **commit 后**直调(D-N5 单向直调,无事件总线);`Notification.recipientMemberId`(定向收件人,FK→Member Restrict)+ feed 扩 `buildFeedWhere`(广播可见 ∪ 本人定向,广播分支按 audienceType 收窄防泄漏,他人 31001 防枚举)。
-- **不负责**:验证码(`SmsCodeService`)/ wechat·sms settings 管理(各自模块)/ 活动·考勤 producer 触发(S4)/ 短信兜底(S5)/ 报名前 5 触发(申请人非队员,维持查询 pull;openid 推送路另立项)/ 退订偏好(未立项)。
+- **统一通知 S4 活动·考勤 producer 定向触发**(2026-06-25):报名审批(`approve`/`reject` → 报名本人)/ 活动取消(`cancel` → 遍历仍在册报名者 fan-out)/ 考勤终审(`finalApprove` → sheet 内逐 record 本人)三处 producer 在各自业务事务 **commit 后、事务外、`try-catch` 永不抛**直调 S3 `dispatchTargeted`(`activity-reminder` 类型,**仅站内**,微信 opt-in 延后);**0 schema / 0 端点 / 0 RBAC 码**(纯 producer 接入,复用 S3 派发器)。
+- **统一通知 S5 短信兜底渠道**(2026-06-27):`NotificationSmsDispatchService` —— **admin 显式发起紧急召集短信**(`POST admin/v1/notifications/:id/send-sms`,新码 `notification.send.sms`;**计费确认必需** confirmed=true 才真发 / false 仅预览受众计数);复用 `SmsProviderRouter.sendNotification`(additive 零变量,不改 verifyCode/birthday)+ `NotificationDelivery`(channel=sms)+ `sms_send_logs`,逐**可见且有手机**者单发,**防滥发继承**同号封顶 10/间隔 60s/同日同模板幂等(查 send_logs)+ re-trigger 去重,**FAILED 逐人不阻断**,`maskPhone`;**短信永不随 publish 自动发**(外发在事务外);第 30 migration(`sms_settings.templateIdNotification` 1 列 additive)。
+- **不负责**:验证码(`SmsCodeService`)/ wechat·sms settings 管理(各自模块)/ 报名前 5 触发(申请人非队员,维持查询 pull;openid 推送路另立项)/ 真·全员短信批处理异步(延后,未立项)/ 退订偏好(未立项)。
 
 ## Local facts
 
@@ -48,7 +50,18 @@
 - ❌ producer(promote / 入队)**不**把 `dispatchTargeted` 放进业务事务内,**只**在事务 **commit 之后**调,且 **`try-catch` 永不抛** —— 派发失败绝不破坏 promote 行为锁(号段连续/全或无/幂等)或入队行为锁(单部门 partial unique/level-1)。
 - ❌ **不**给定向 feed 的广播分支去掉 `audienceType=broadcast` 收窄 —— 定向行 `visibilityCode='member'`,不收窄会借广播 member 可见档泄漏给他人(越权);定向仅 `recipientMemberId=本人`可见,他人 `31001` 防枚举。
 - ❌ 系统定向通知**不**走 admin 状态机(直接建 published / sourceType=system / authorUserId=null;不污染 admin CRUD 路径,不入 audit,§13)。
-- ⚠️ **报名前 5 触发不做**(申请人非队员,S1/S2 够不着):报名受理/转人工/门槛/评定/公示维持**查询进度 pull**;openid 非会员推送路 = 另立项(S4 活动/考勤、S5 短信同样另切片)。
+- ⚠️ **报名前 5 触发不做**(申请人非队员,S1/S2 够不着):报名受理/转人工/门槛/评定/公示维持**查询进度 pull**;openid 非会员推送路 = 另立项。
+
+### S5 短信兜底渠道(2026-06-27)
+
+- ❌ **不**让短信随 publish 自动发 / 不默认 / 不强制(站内+微信优先;**短信只由 admin 显式 confirmed=true 端点触发**,成本动作显式 gating;`NotificationService.publish` 绝不调短信派发)。
+- ❌ **不**在无 `confirmed=true` 时发任何短信(预览 confirmed=false 零发送零计费;缺 confirmed 走通用 400)——防误触发资费。
+- ❌ **不**改 `SmsProviderRouter` / 两 provider 的 `sendVerifyCode` / `sendBirthdayGreeting` 既有发送(行为锁;S5 仅 **additive** `sendNotification`)。
+- ❌ 外部 SMS API **在任何 DB 事务之外**;**FAILED 逐人不阻断**(镜像生日批);通道中途不可用零成本中止(不写 FAILED)。
+- ❌ **不**引 cron / queue / 事件总线(同步发送,§8);**真·全员短信批处理异步不做**(唯一可能触碰 R-5;受众规模致同步延迟超阈 → 挂 NEXT_TASKS 观察,**不自建异步基建**,变更须维护者拍)。
+- ❌ **不**输出明文手机号(响应/日志/审计一律 `maskPhone`;`NotificationDelivery.recipientRef` 存掩码;audit 仅收件人计数无明文)。
+- ⚠️ 短信模板 `sms_settings.templateIdNotification` **须运维填真实零变量模板 ID 并先过审**(空 = 该渠道未配置,confirmed 发送返 24030;DevStub 忽略其值但须非空,对齐生日批口径)。
+- ⚠️ 防滥发**继承同号封顶 10/间隔 60s**(查 `sms_send_logs`,跨模板)+ **同日同模板幂等**(一日一兜底 nudge,镜像生日批);改阈值改既有 `sms.constants` 常量(勿在本模块另立第二套)。
 
 ## Validation
 
@@ -57,4 +70,6 @@
 - `pnpm test -- notification-dispatcher recruitment-promotion` — S3 单测:定向行形态(directed/system/published)+ 渠道编排 + 发号通知**事务外**顺序 + 派发失败不破坏 promote
 - `pnpm test:e2e -- notifications-birthday notifications-admin notifications-app notifications-wechat notifications-directed` — 直调 / 全链:生日 + S1 站内信 + S2 微信 + S3 定向(收件人可见 / **他人 404 防枚举** / 微信 sent·no-quota·no-template)
 - `pnpm test:e2e -- recruitment.e2e team-join.e2e` — S3 producer:发号→定向通知 / 入队→定向通知 / **注入 dispatcher 抛错断言 promote·入队仍成功**
+- `pnpm test -- notification-sms-dispatch dev-stub.provider tencent-sms.provider` — S5 单测:通道未就绪 / 仅可见有手机者 / 同日同模板幂等·日封顶·间隔继承 / re-trigger 去重 / FAILED 不阻断 / maskPhone / 预览不发 / provider `sendNotification` + 行为锁
+- `pnpm test:e2e -- notifications-sms` — S5 全链:RBAC + 31001/31013 闸 + confirmed 缺失 400 + 预览不发 + 确认逐人 send_log/delivery/maskPhone/audit + 同日幂等 + re-trigger 去重 + 仅可见有手机者 + 24030
 - 改启动锚行文案 → 必须同步 docker-smoke workflow 并跑该 workflow

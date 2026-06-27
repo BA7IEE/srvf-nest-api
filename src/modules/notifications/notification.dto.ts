@@ -160,6 +160,36 @@ export class UpdateNotificationDto {
   channels?: string[];
 }
 
+// ============ admin 短信兜底发起入参 / 出参(统一通知 S5;评审稿 §4 / D-N4 计费确认)============
+
+// 显式发起短信入参:confirmed 必填(缺失 → 通用 400);仅 confirmed=true 才真发(计费确认必需,防误触发资费)。
+// confirmed=false = 预览(返回可计费受众计数,零发送零计费,供前端二次确认「将向 N 人发短信 = N 条计费」)。
+export class SendNotificationSmsDto {
+  @ApiProperty({
+    description:
+      '计费确认(必填)。true = 确认发送短信(每收件人 1 条计费);false = 仅预览受众计数,不发送不计费',
+  })
+  @IsBoolean()
+  confirmed!: boolean;
+}
+
+// 短信兜底发起回执:recipientCount = 可见且有手机的可计费受众(= sent + failed + skipped,confirmed=true 时);
+// confirmed=false 预览时 sent/failed/skipped 恒 0(零发送)。
+export class NotificationSmsSendResultDto {
+  @ApiProperty({ description: '本次是否实际发送(false = 仅预览计数,未发送)' })
+  confirmed!: boolean;
+  @ApiProperty({ description: '可计费受众数(可见且有手机;= 将发短信条数,N 人 = N 条计费)' })
+  recipientCount!: number;
+  @ApiProperty({ description: '实际发送成功条数(预览恒 0)' })
+  sent!: number;
+  @ApiProperty({ description: '发送失败条数(FAILED 落 delivery 不阻断;预览恒 0)' })
+  failed!: number;
+  @ApiProperty({
+    description: '跳过条数(已发送 / 同日同模板幂等 / 日封顶 / 间隔;不计费;预览恒 0)',
+  })
+  skipped!: number;
+}
+
 // ============ admin 列表入参(评审稿 §6 端点 2;admin 见全部状态 / 全可见档)============
 
 export class ListNotificationAdminQueryDto {

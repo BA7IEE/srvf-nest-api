@@ -16,9 +16,11 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
+import { SmsChannelUnavailableError } from '../sms/sms.types';
 import {
   NOTIFICATION_AUDIENCE_BROADCAST,
   NOTIFICATION_CHANNEL_IN_APP,
+  NOTIFICATION_CHANNEL_SMS,
   NOTIFICATION_CHANNEL_WECHAT,
   NOTIFICATION_SOURCE_ADMIN,
   NOTIFICATION_STATUS_ARCHIVED,
@@ -27,12 +29,15 @@ import {
   NOTIFICATION_TYPE_DICT_CODE,
   NOTIFICATION_VISIBILITY_DEPARTMENT,
 } from './notification.constants';
+import { NotificationSmsDispatchService } from './notification-sms-dispatch.service';
 import { NotificationWechatDispatchService } from './notification-wechat-dispatch.service';
 import type {
   CreateNotificationDto,
   ListNotificationAdminQueryDto,
   NotificationAdminDetailDto,
   NotificationAdminListItemDto,
+  NotificationSmsSendResultDto,
+  SendNotificationSmsDto,
   UpdateNotificationDto,
 } from './notification.dto';
 
@@ -53,6 +58,7 @@ export class NotificationService {
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
     private readonly wechatDispatch: NotificationWechatDispatchService,
+    private readonly smsDispatch: NotificationSmsDispatchService,
   ) {}
 
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
@@ -333,6 +339,66 @@ export class NotificationService {
     meta: AuditMeta,
   ): Promise<NotificationAdminDetailDto> {
     return this.toDetailDto(await this.transition(id, user, meta, 'archive'));
+  }
+
+  // ============ 端点:admin 显式发起短信兜底(紧急召集;统一通知 S5,评审稿 §4 / D-N4)============
+  // **计费确认必需**:confirmed=true 才真发(每收件人 1 条计费);confirmed=false = 预览受众计数零发送零计费。
+  // **前置闸**:通知须 published 且 channels 声明含 'sms'(否则 31013);通道未配置 → 24030(发送前抛,零计费)。
+  // **短信外发在任何 DB 事务之外**(§6.2;dispatch 逐人 send_log/delivery 非事务,FAILED 逐人不阻断)。
+  // **审计**:仅 confirmed 真发记 audit(admin 显式管理动作 + 收件人计数;复用 notification.publish 伞事件
+  // operation='send-sms',§13.2 admin 入 audit / 逐条投递不入 audit;手机号经 delivery/send_log 掩码,audit 仅计数无明文)。
+  async sendSms(
+    id: string,
+    dto: SendNotificationSmsDto,
+    user: CurrentUserPayload,
+    meta: AuditMeta,
+  ): Promise<NotificationSmsSendResultDto> {
+    await this.assertCanOrThrow(user, 'notification.send.sms');
+    const notification = await this.findOrThrow(id, this.prisma);
+
+    // 前置闸:须已发布 + 声明含 sms 渠道(紧急召集兜底意图;排除草稿 / 未声明短信的通知)。
+    if (
+      notification.statusCode !== NOTIFICATION_STATUS_PUBLISHED ||
+      !notification.channels.includes(NOTIFICATION_CHANNEL_SMS)
+    ) {
+      throw new BizException(BizCode.NOTIFICATION_SMS_NOT_SENDABLE);
+    }
+
+    // 预览(未确认):返回可计费受众计数,零发送零计费零审计(供前端二次确认「将向 N 人发短信 = N 条计费」)。
+    if (!dto.confirmed) {
+      const recipientCount = await this.smsDispatch.countRecipients(notification);
+      return { confirmed: false, recipientCount, sent: 0, failed: 0, skipped: 0 };
+    }
+
+    // 确认发送:外部 SMS 在任何 DB 事务之外;通道未就绪 → 24030(发送前抛,零计费零 delivery)。
+    let summary;
+    try {
+      summary = await this.smsDispatch.dispatch(notification);
+    } catch (err) {
+      if (err instanceof SmsChannelUnavailableError) {
+        throw new BizException(BizCode.SMS_CHANNEL_NOT_CONFIGURED);
+      }
+      throw err;
+    }
+
+    // 审计 admin 显式管理动作 + 收件人计数(复用 publish 伞事件,无新 audit 串;手机号不入 audit,仅计数)。
+    await this.auditLogs.log({
+      event: 'notification.publish',
+      actorUserId: user.id,
+      actorRoleSnap: user.role,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: notification.id,
+      meta,
+      extra: {
+        operation: 'send-sms',
+        recipientCount: summary.recipientCount,
+        sent: summary.sent,
+        failed: summary.failed,
+        skipped: summary.skipped,
+      },
+    });
+
+    return { confirmed: true, ...summary };
   }
 
   // 状态机内嵌(镜像 content;立即生效无 cron)。非法跃迁 → 31030。返原始 row(publish 据 channels 派发)。

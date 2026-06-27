@@ -20,6 +20,11 @@
 - **保单图 attachments 接线**(评审稿 E-20:`ownerType='member-insurance'` 语义已预留,多态机制零 schema 改动;接线 = `AttachmentOwnerType` enum + `assertOwnerExists`/scope 分支 + `attachment.{upload,view,update,delete}.member-insurance.{self,other}` 8 权限码 seed + 配置三表运行时行——超出原 goal DoD 权限码清单,需单独授权)
 - App activities DTO 暴露 `requiresInsurance`(评审稿 E-19:App 端拒报已经 26030 message 提示;列表/详情展示门槛标识等小程序前端真实需要再加,App DTO 字段集变更单独评审)
 
+### P1-14 GAP-005 统一通知模块后续(S1–S5 已发,余项 ⏸ 诉求触发再立项)
+- **真·全员短信批处理异步**(S5 末位切片明确延后,评审稿 §4/§8.1/§8.3):当前短信兜底 = **admin 显式 confirmed=true 同步逐人发**,受众 = 通知可见且有手机者(团队百人级,同步可承受)。**若未来受众规模致同步 HTTP 延迟超阈** → 先在此**观察记录**,再评估是否引异步/批处理基建;**这是唯一可能触碰 R-5(no-cron 解锁范围仅生日批)的场景,须维护者拍 D 档评审**,**不自建 cron/queue/事件总线**(冻结决策)。S5 已 `log()` 派发汇总(notification/recipientCount/sent/failed/skipped)供观察。
+- **报名前 openid 非会员推送路**(S3/S5 均标注另立项):招新报名前 5 触发(报名受理/转人工/门槛/评定/公示)申请人**非队员**,站内/微信/短信(均需 member)够不着 → 现维持**查询进度 pull**;若需主动推送给未入队报名人(微信 openid 锚点),单独立项。
+- **短信 admin 投递查询端点**(可选):当前 `NotificationDelivery`(channel=sms)+ `sms_send_logs` 落库,admin 查投递成败靠 `sms-send-logs` 列表(已有)/ 运维看库;若需「按通知查短信投递明细」admin 端点,诉求触发再加(沿 S2 微信 delivery 无专属查询端点的口径)。
+
 (P1-11 招新一期〔招新前段〕+ P1-12 招新二期〔招新后段〕+ **P1-13 招新三期〔入队:志愿者→队员〕** 均已完成,见文末归档区;**招新业务域三段闭环**:报名前段〔临时编号〕→ 转正后段〔建 User+Member,无部门无级别〕→ 入队〔10 项考核 + 综合评估 → 设部门 + 级别 level-1〕。)
 
 ## P2(可优化)

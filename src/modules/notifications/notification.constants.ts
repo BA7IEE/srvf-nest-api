@@ -65,10 +65,14 @@ export const NOTIFICATION_SOURCE_SYSTEM = 'system';
 // channels:站内(恒发) | wechat(S2) | sms(S5);代码常量非字典(渠道是工程枚举,评审稿 §9.4)。
 export const NOTIFICATION_CHANNEL_IN_APP = 'in-app';
 export const NOTIFICATION_CHANNEL_WECHAT = 'wechat';
-// admin 可勾选渠道白名单(S2 = in-app + wechat;sms = S5 再放开)。站内恒发,service 归一时强制含 in-app。
+export const NOTIFICATION_CHANNEL_SMS = 'sms';
+// admin 可勾选渠道白名单(S2 = in-app + wechat;S5 放开 sms = 声明"紧急召集兜底可发短信"的意图)。
+// 站内恒发,service 归一时强制含 in-app。**声明 sms ≠ 自动发短信**:短信永不随 publish 自动发,
+// 仅 admin 经显式确认端点(POST :id/send-sms,confirmed=true,计费确认)触发(评审稿 §4 / D-N4)。
 export const NOTIFICATION_CHANNELS_ALLOWED = [
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_CHANNEL_WECHAT,
+  NOTIFICATION_CHANNEL_SMS,
 ] as const;
 
 // ===== 微信订阅 quota 渠道常量(统一通知 S2;评审稿 §3 / D-N2)=====
@@ -93,6 +97,14 @@ export const DELIVERY_REASON_INVALID_OPENID = 'invalid-openid'; // 微信 40003 
 export const DELIVERY_REASON_TEMPLATE_PARAM = 'template-param'; // 微信 47003 模板参数不匹配
 export const DELIVERY_REASON_TOKEN_FAILED = 'token-failed'; // access_token 取用失败 / 通道不可用
 export const DELIVERY_REASON_API_FAILED = 'api-failed'; // 其余微信上游失败(HTTP / 网络 / 非 0 errcode)
+
+// 统一通知 S5 短信兜底渠道 skipped reasonCode(评审稿 §4 / §8.3;短信防滥发继承)。
+// 注:可见但无 User.phone 的 member 不计入可计费受众(不落 delivery),故无 no-phone reason。
+export const DELIVERY_REASON_ALREADY_SENT = 'already-sent'; // 本通知已对该 member sent 过短信(re-trigger 去重)
+export const DELIVERY_REASON_IDEMPOTENT = 'idempotent'; // 同号同日同模板已 SENT(镜像生日批幂等;一日一兜底 nudge)
+export const DELIVERY_REASON_DAILY_LIMIT = 'daily-limit'; // 同号当日 SENT 短信已达封顶(继承 SMS_PHONE_DAILY_LIMIT)
+export const DELIVERY_REASON_INTERVAL = 'interval'; // 同号上一条 SENT 短信在间隔内(继承 SMS_SEND_MIN_INTERVAL_SECONDS)
+export const DELIVERY_REASON_SEND_FAILED = 'send-failed'; // provider 发送失败(errCode 落 delivery;FAILED 逐人不阻断)
 
 // ===== DTO 上限(评审稿 §3;站内信是短文案,body 上限远小于 content 的 50000)=====
 export const NOTIFICATION_TITLE_MAX = 200;
