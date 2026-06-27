@@ -440,6 +440,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/admin/v1/notifications/{id}/publish'],
   ['post', '/api/admin/v1/notifications/{id}/unpublish'],
   ['post', '/api/admin/v1/notifications/{id}/archive'],
+  // 统一通知模块 S5 短信兜底渠道(2026-06-27;冻结评审稿 unified-notification-dispatcher-review.md §4),+1 → 260。
+  //   admin/v1/notifications/:id/send-sms(显式发起短信兜底紧急召集;计费确认必需 confirmed=true 才真发,
+  //   false 仅预览受众计数;R 模式 notification.send.sms 无 @RequirePermissions;短信永不随 publish 自动发)。
+  ['post', '/api/admin/v1/notifications/{id}/send-sms'],
   ['get', '/api/app/v1/notifications'],
   ['get', '/api/app/v1/notifications/unread-count'],
   ['get', '/api/app/v1/notifications/{id}'],
@@ -843,6 +847,9 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'NotificationReadDetailDto',
   'MarkNotificationReadResponseDto',
   'NotificationUnreadCountDto',
+  // 统一通知 S5 短信兜底渠道(2026-06-27;评审稿 §4):admin 显式发起短信入参 + 回执(物理隔离独立 class)。
+  'SendNotificationSmsDto',
+  'NotificationSmsSendResultDto',
 
   // 统一通知 S2 微信订阅 quota 渠道:ack/status 入参出参 + 模板配置 admin DTO(物理隔离独立 class)。
   'WechatSubscriptionAckDto',

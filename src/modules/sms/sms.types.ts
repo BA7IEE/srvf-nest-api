@@ -26,6 +26,7 @@ export interface SmsSettingsResolved {
   region: string | null;
   templateIdVerifyCode: string | null;
   templateIdBirthday: string | null;
+  templateIdNotification: string | null; // 统一通知 S5 紧急召集兜底模板 ID(零变量;镜像 templateIdBirthday)
   credentials: { secretId: string; secretKey: string } | null;
   credentialStatus: SmsCredentialStatus;
   remarks: string | null;
@@ -52,10 +53,17 @@ export interface SendBirthdayGreetingInput {
   phone: string; // 大陆 11 位(User.phone 已经 DTO 校验入库);Tencent provider 内部转 +86 E.164
 }
 
+// 通知兜底发送入参(统一通知 S5,评审稿 §4):紧急召集兜底零变量模板,仅 phone;
+// 回执形状复用 SendVerifyCodeResult(通用 provider 回执:providerMsgId)。
+export interface SendNotificationInput {
+  phone: string; // 大陆 11 位(User.phone 已经 DTO 校验入库);Tencent provider 内部转 +86 E.164
+}
+
 // SMS Provider 统一接口(评审稿 §5 文件计划;镜像 StorageProvider 范式)
 export interface SmsProvider {
   sendVerifyCode(input: SendVerifyCodeInput): Promise<SendVerifyCodeResult>;
   sendBirthdayGreeting(input: SendBirthdayGreetingInput): Promise<SendVerifyCodeResult>;
+  sendNotification(input: SendNotificationInput): Promise<SendVerifyCodeResult>; // 统一通知 S5
 }
 
 // 通道不可用(settings 缺失 / 未启用 / 凭证未配置 / production-like 下 DEV_STUB / 运行参数缺失)。

@@ -33,6 +33,7 @@ function makeSettings(overrides: Partial<SmsSettingsResolved> = {}): SmsSettings
     region: 'ap-guangzhou',
     templateIdVerifyCode: '2000000',
     templateIdBirthday: null,
+    templateIdNotification: null,
     credentials: { secretId: 'AKID-test-id', secretKey: 'secret-test-key' },
     credentialStatus: SmsCredentialStatus.CONFIGURED,
     remarks: null,
@@ -90,6 +91,49 @@ describe('TencentSmsProvider', () => {
       await provider.sendVerifyCode(INPUT);
       await provider.sendVerifyCode(INPUT);
       expect(ClientMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('sendNotification 成功路径(统一通知 S5;零变量)', () => {
+    it('TemplateId 取 templateIdNotification / TemplateParamSet=[](零变量)', async () => {
+      ClientMock.__mockInstance.SendSms.mockResolvedValue({
+        SendStatusSet: [{ Code: 'Ok', SerialNo: 'sn-notif-1' }],
+      });
+      const provider = new TencentSmsProvider(
+        makeSettingsServiceMock(makeSettings({ templateIdNotification: '9000000' })),
+      );
+
+      const result = await provider.sendNotification({ phone: '13800001234' });
+
+      expect(result).toEqual({ providerMsgId: 'sn-notif-1' });
+      expect(ClientMock.__mockInstance.SendSms).toHaveBeenCalledWith({
+        PhoneNumberSet: ['+8613800001234'],
+        SmsSdkAppId: '1400000000',
+        SignName: '某救援队',
+        TemplateId: '9000000',
+        TemplateParamSet: [],
+      });
+    });
+
+    it('templateIdNotification 缺失 → SmsChannelUnavailableError 且不触发 SDK(第 4 档守护)', async () => {
+      const provider = new TencentSmsProvider(
+        makeSettingsServiceMock(makeSettings({ templateIdNotification: null })),
+      );
+      await expect(provider.sendNotification({ phone: '13800001234' })).rejects.toBeInstanceOf(
+        SmsChannelUnavailableError,
+      );
+      expect(ClientMock.__mockInstance.SendSms).not.toHaveBeenCalled();
+    });
+
+    it('不改 verifyCode/birthday 行为锁:notification 模板缺失不影响 verifyCode 发送', async () => {
+      ClientMock.__mockInstance.SendSms.mockResolvedValue({
+        SendStatusSet: [{ Code: 'Ok', SerialNo: 'sn-vc' }],
+      });
+      // templateIdNotification 空但 templateIdVerifyCode 在 → verifyCode 照常成功
+      const provider = new TencentSmsProvider(
+        makeSettingsServiceMock(makeSettings({ templateIdNotification: null })),
+      );
+      await expect(provider.sendVerifyCode(INPUT)).resolves.toEqual({ providerMsgId: 'sn-vc' });
     });
   });
 

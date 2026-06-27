@@ -1046,6 +1046,14 @@ export const BizCode = {
     message: '指定可见部门无效(为空 / 不存在 / 非活跃)',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+  // 统一通知 S5 短信兜底渠道(2026-06-27;评审稿 unified-notification-dispatcher-review.md §4):
+  // admin 显式发起短信的前置校验码——通知须为 published 且 channels 声明含 'sms'(紧急召集兜底意图);
+  // 否则不可发短信(31013)。通道未配置走既有 SMS_CHANNEL_NOT_CONFIGURED(24030);confirmed 缺失走通用 400。
+  NOTIFICATION_SMS_NOT_SENDABLE: {
+    code: 31013,
+    message: '通知不可发送短信(须为已发布状态且已声明短信渠道)',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
   NOTIFICATION_INVALID_STATUS_TRANSITION: {
     code: 31030,
     message: '通知状态流转不允许',
