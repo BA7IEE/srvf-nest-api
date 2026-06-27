@@ -7,10 +7,10 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(三方一致) | **v0.31.0**(2026-06-24;package.json = Swagger = tag = Release 四方一致;tag `v0.31.0` 指向 bump `e4c7e526` 标 Latest;要点见 CHANGELOG v0.31.0 段) |
-| `main` HEAD | post-release docs PR 合并点(本 §1 回填 + v0.31.0 handoff;tag 点 `e4c7e526` 之后;本行为滚动快照) |
-| open PR / 工作树 / Unreleased | **0** open PR / clean / `## Unreleased` 含 **统一通知模块 S1 站内信渠道 + S2 微信订阅 quota 渠道 + S3 producer 接入(发号/入队定向通知 + 派发器 Effect 正式化 + recipientMemberId)+ S4 活动·考勤 producer 定向触发(报名审批/活动取消/考勤结果,纯 producer 接入零 schema)+ S5 短信兜底渠道(admin 显式发起紧急召集 + 计费确认必需 + 第 30 migration sms_settings.templateIdNotification)**(GAP-005 S1–S5 全切片;本 PR 新增,均 D/C 档)。v0.31.0 = 招新→入队闭环优化 S1–S6 #439–#445 + bump #446(其 `## Unreleased` 已折叠为 `## v0.31.0`〔S3–S6 条目;S1/S2 为 A 档记 §2〕) |
-| 最新 handoff | [`archive/handoff/v0.31.0.md`](archive/handoff/v0.31.0.md)(post-release 补档,2026-06-24;tag 指 bump #446 合并点 `e4c7e526`,沿 v0.28/29/30「tag@bump」形态〔process §5.2 用户拍板〕;不回改) |
+| 版本(三方一致) | **v0.32.0**(2026-06-27;package.json = Swagger = tag = Release 四方一致;tag `v0.32.0` 指向 bump `221850a6` 标 Latest;要点见 CHANGELOG v0.32.0 段) |
+| `main` HEAD | post-release docs PR 合并点(本 §1 回填 + v0.32.0 handoff;tag 点 `221850a6` 之后;本行为滚动快照) |
+| open PR / 工作树 / Unreleased | **0** open PR / clean / `## Unreleased` **空**(已发版归零;v0.32.0 = 统一通知模块 GAP-005 S1–S5 #449–#453 + bump #454〔其 `## Unreleased` 已折叠为 `## v0.32.0`,含 S1 站内信 / S2 微信订阅 quota / S3 producer 接入+派发器 Effect 正式化+recipientMemberId / S4 活动·考勤 producer 定向触发〔0 schema〕/ S5 短信兜底渠道〔第 30 migration〕全切片条目〕) |
+| 最新 handoff | [`archive/handoff/v0.32.0.md`](archive/handoff/v0.32.0.md)(post-release 补档,2026-06-27;tag 指 bump #454 合并点 `221850a6`,沿 v0.28/29/30/31「tag@bump」形态〔process §5.2 用户拍板〕;不回改) |
 
 ## 2. 当前系统已具备能力
 
