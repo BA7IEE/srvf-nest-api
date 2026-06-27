@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, Prisma, Role } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
@@ -7,6 +7,11 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import {
+  NOTIFICATION_CHANNEL_IN_APP,
+  NOTIFICATION_TYPE_ACTIVITY_REMINDER,
+} from '../notifications/notification.constants';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { RbacService } from '../permissions/rbac.service';
 import {
   ActivityListItemDto,
@@ -110,13 +115,23 @@ type ActivityFullRow = Prisma.ActivityGetPayload<{ select: typeof activitySafeSe
 type ActivityListRow = Prisma.ActivityGetPayload<{ select: typeof activityListItemSelect }>;
 type PrismaTx = Prisma.TransactionClient;
 
+// 统一通知 S4(评审稿 §6.4):活动取消通知收件人 = 仍在册报名者 —— pending(待审)+ pass(已通过);
+// reject / cancelled 已出局不打扰。状态字面量镜像 activity-registration-state-machine 的
+// ACTIVITY_REGISTRATION_STATUS(此处刻意用字面量,避免 activities → activity-registrations 跨模块耦合)。
+const ACTIVE_REGISTRATION_STATUS_CODES = ['pending', 'pass'] as const;
+
 @Injectable()
 export class ActivitiesService {
+  private readonly logger = new Logger(ActivitiesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly activityStateMachine: ActivityStateMachine,
     private readonly activityAuditRecorder: ActivityAuditRecorder,
     private readonly rbac: RbacService,
+    // 统一通知 S4(评审稿 §6.4):活动取消 → 已报名者定向通知派发器(producer → notifications 单向直调,
+    // commit 后事务外、try-catch 永不抛;防环:本服务绝不被通知模块回调)。
+    private readonly notificationDispatcher: NotificationDispatcher,
   ) {}
 
   // ============ helpers ============
@@ -593,7 +608,7 @@ export class ActivitiesService {
     auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity.cancel.record');
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 
       const transition = this.activityStateMachine.decide('cancel', current.statusCode);
@@ -626,7 +641,64 @@ export class ActivitiesService {
         tx,
       });
 
-      return this.toResponseDto(updated);
+      // 携带通知要素(活动名 + 取消原因)出事务;dto 仍为对外返回体。收件人在 commit 后由 registration 解析。
+      return {
+        dto: this.toResponseDto(updated),
+        activityId: current.id,
+        activityTitle: updated.title,
+        cancelReason: dto.cancelReason ?? null,
+      };
     });
+
+    // 活动取消定向通知(统一通知 S4;评审稿 §6.4 / §6.2):**事务 commit 之后、事务外**遍历已报名者逐人派。
+    // **绝不破坏取消状态机行为锁**(* → cancelled 已在事务内 commit);派发失败只记日志,不阻断、不回滚。
+    await this.dispatchCancellationNotifications(
+      result.activityId,
+      result.activityTitle,
+      result.cancelReason,
+    );
+
+    return result.dto;
+  }
+
+  // 派发「活动取消」定向通知(仅站内,goal:S4 站内为主、微信 opt-in 延后 —— 避免对 N 报名者微信 fan-out 延迟)。
+  // 收件人 = 该活动仍在册报名者(pending + pass;registration→member 解析,memberId 去重)。
+  // **整体 try-catch 永不抛 + 单人派发再各自吞**:任一人派发失败只记日志,不阻断其余、不破坏已 commit 的取消(行为锁)。
+  private async dispatchCancellationNotifications(
+    activityId: string,
+    activityTitle: string,
+    cancelReason: string | null,
+  ): Promise<void> {
+    try {
+      const registrations = await this.prisma.activityRegistration.findMany({
+        where: notDeletedWhere({
+          activityId,
+          statusCode: { in: [...ACTIVE_REGISTRATION_STATUS_CODES] },
+        }),
+        select: { memberId: true },
+      });
+      // 去重:同一 member 理论上 partial unique 仅一条 active 报名,稳妥去重防多发。
+      const memberIds = [...new Set(registrations.map((r) => r.memberId))];
+      const reasonSuffix = cancelReason ? ` 取消原因:${cancelReason}` : '';
+      for (const memberId of memberIds) {
+        try {
+          await this.notificationDispatcher.dispatchTargeted({
+            recipientMemberId: memberId,
+            notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_REMINDER,
+            title: '活动已取消',
+            body: `您报名的「${activityTitle}」已取消。${reasonSuffix}`,
+            channels: [NOTIFICATION_CHANNEL_IN_APP],
+          });
+        } catch (err) {
+          this.logger.error(
+            `activity cancel notification dispatch failed (activity=${activityId}, member=${memberId}): ${(err as Error).message}`,
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.error(
+        `activity cancel notification fan-out failed (activity=${activityId}): ${(err as Error).message}`,
+      );
+    }
   }
 }

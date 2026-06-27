@@ -183,8 +183,10 @@ describe('App /api/app/v1/my/* (P2-5b 写 2 endpoint)', () => {
       coverImageUrl: 'https://example.test/cover.png',
       capacity: opts.capacity === undefined ? 30 : opts.capacity,
       isPublicRegistration: opts.isPublicRegistration ?? true,
-      // 默认 2026-06-25(晚于当前 2026-06-21,不触发截止闸);需要测截止时显式传过去时刻。
-      registrationDeadline: opts.registrationDeadline ?? new Date('2026-06-25T23:59:59.000Z'),
+      // 默认远未来(不触发截止闸,保留「截止存在但未过」覆盖);需要测截止时显式传过去时刻(见下「截止后」用例)。
+      // 注:原默认 2026-06-25 是写作时(2026-06-21)的「未来」相对值,墙钟越过该日后会误触 20123 截止闸 →
+      // 改用固定远未来日期,与 wall-clock 解耦,杜绝时间炸弹(test/** 范围内的既有 fixture 修复,非 S4 业务改动)。
+      registrationDeadline: opts.registrationDeadline ?? new Date('2099-12-31T23:59:59.000Z'),
     };
     if (state === 'cancelled') {
       return prisma.activity.create({

@@ -5,6 +5,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import type { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import type { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import { AttendancePresenter } from './attendance-presenter';
 import type {
@@ -189,6 +190,11 @@ function makePrismaMock() {
   const user = { findFirst: jest.fn<Promise<{ memberId: string | null } | null>, [unknown]>() };
   const activity = {
     findFirst: jest.fn<Promise<{ id: string; statusCode: string } | null>, [unknown]>(),
+    // 统一通知 S4:finalApprove 后 commit 外的派发 helper 读活动名(this.prisma.activity.findUnique);
+    // 默认返标题,旧 characterization 用例不关心(helper try-catch 永不抛,断言零影响)。
+    findUnique: jest
+      .fn<Promise<{ title: string } | null>, [unknown]>()
+      .mockResolvedValue({ title: '测试活动' }),
   };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
   const prisma = { attendanceSheet, attendanceRecord, user, activity, $transaction };
@@ -245,6 +251,17 @@ function makeTimeOverlapPolicyMock() {
 }
 type TimeOverlapPolicyMock = ReturnType<typeof makeTimeOverlapPolicyMock>;
 
+// 统一通知 S4:派发器 mock —— dispatchTargeted 默认 resolve;finalApprove 用例可注入 reject
+// 验证「派发失败不破坏终审」,或断言逐 record 入参(recipientMemberId / channels / 贡献值)。
+function makeNotificationDispatcherMock() {
+  return {
+    dispatchTargeted: jest
+      .fn<Promise<{ id: string }>, [Record<string, unknown>]>()
+      .mockResolvedValue({ id: 'notif-1' }),
+  };
+}
+type NotificationDispatcherMock = ReturnType<typeof makeNotificationDispatcherMock>;
+
 function makeService(
   prisma: PrismaMock,
   opts: {
@@ -252,12 +269,14 @@ function makeService(
     contributionCalculator?: ContributionCalculatorMock;
     timeOverlapPolicy?: TimeOverlapPolicyMock;
     stateMachine?: StateMachineMock;
+    dispatcher?: NotificationDispatcherMock;
   } = {},
 ): AttendancesService {
   const recorder = opts.recorder ?? makeRecorderMock();
   const contributionCalculator = opts.contributionCalculator ?? makeContributionCalculatorMock();
   const timeOverlapPolicy = opts.timeOverlapPolicy ?? makeTimeOverlapPolicyMock();
   const stateMachine = opts.stateMachine ?? makeStateMachineMock(DENY_DECISION);
+  const dispatcher = opts.dispatcher ?? makeNotificationDispatcherMock();
   return new AttendancesService(
     prisma as unknown as PrismaService,
     recorder as unknown as AttendanceAuditRecorder,
@@ -271,6 +290,7 @@ function makeService(
     {
       can: jest.fn<Promise<boolean>, [unknown, string]>().mockResolvedValue(true),
     } as unknown as RbacService,
+    dispatcher as unknown as NotificationDispatcher,
   );
 }
 
@@ -582,6 +602,95 @@ describe('AttendancesService (characterization, scoped)', () => {
         expect.objectContaining({ action: 'final-approve', tx: prisma }),
       );
       expect(res.statusCode).toBe(ATTENDANCE_SHEET_STATUS.APPROVED);
+    });
+
+    // ===== 统一通知 S4(评审稿 §6.4 / §6.2):终审通过 → 逐 record 本人考勤结果/贡献值定向通知 =====
+    it('S4:finalApprove → 逐 record 派给本人(directed/in-app/activity-reminder,含活动名+贡献值);事务外', async () => {
+      const prisma = makePrismaMock();
+      const stateMachine = makeStateMachineMock({
+        allowed: true,
+        nextStatusCode: ATTENDANCE_SHEET_STATUS.APPROVED,
+      });
+      const dispatcher = makeNotificationDispatcherMock();
+      prisma.attendanceSheet.findFirst.mockResolvedValue(
+        makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW }),
+      );
+      // 两条 record(不同 member)→ 两次定向派发(逐 record 本人)
+      prisma.attendanceRecord.findMany.mockResolvedValue([
+        makeRecordRow({
+          id: 'rec-1',
+          memberId: 'mem-1',
+          contributionPoints: new Prisma.Decimal('1.50'),
+        }),
+        makeRecordRow({
+          id: 'rec-2',
+          memberId: 'mem-2',
+          contributionPoints: new Prisma.Decimal('2.00'),
+        }),
+      ]);
+      prisma.attendanceSheet.update.mockResolvedValue(
+        makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.APPROVED, activityId: 'act-9' }),
+      );
+      prisma.activity.findUnique.mockResolvedValue({ title: '应急拉练' });
+      const service = makeService(prisma, { stateMachine, dispatcher });
+
+      const res = await service.finalApprove(
+        'sheet-1',
+        makeFinalApproveDto('ok'),
+        makeCurrentUser(),
+        META,
+      );
+      expect(res.statusCode).toBe(ATTENDANCE_SHEET_STATUS.APPROVED);
+
+      expect(dispatcher.dispatchTargeted).toHaveBeenCalledTimes(2);
+      const recipients = dispatcher.dispatchTargeted.mock.calls.map((c) => c[0].recipientMemberId);
+      expect(new Set(recipients)).toEqual(new Set(['mem-1', 'mem-2']));
+      for (const [arg] of dispatcher.dispatchTargeted.mock.calls) {
+        expect(arg).toMatchObject({
+          notificationTypeCode: 'activity-reminder',
+          channels: ['in-app'],
+          title: '考勤结果已确认',
+        });
+        expect(arg.body).toContain('应急拉练');
+      }
+      // 活动名读 commit 外(findUnique),非事务内
+      expect(prisma.activity.findUnique).toHaveBeenCalledWith({
+        where: { id: 'act-9' },
+        select: { title: true },
+      });
+
+      // 事务外硬证:首个派发严格在 sheet.update(事务内)之后(commit 后才派发)
+      const updateOrder = prisma.attendanceSheet.update.mock.invocationCallOrder[0];
+      const dispatchOrder = dispatcher.dispatchTargeted.mock.invocationCallOrder[0];
+      expect(dispatchOrder).toBeGreaterThan(updateOrder);
+    });
+
+    it('S4:派发失败(dispatcher 抛错)→ **终审仍成功**(approved 已 commit;不外冒)', async () => {
+      const prisma = makePrismaMock();
+      const stateMachine = makeStateMachineMock({
+        allowed: true,
+        nextStatusCode: ATTENDANCE_SHEET_STATUS.APPROVED,
+      });
+      const dispatcher = makeNotificationDispatcherMock();
+      dispatcher.dispatchTargeted.mockRejectedValue(new Error('dispatch boom'));
+      prisma.attendanceSheet.findFirst.mockResolvedValue(
+        makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.PENDING_FINAL_REVIEW }),
+      );
+      prisma.attendanceRecord.findMany.mockResolvedValue([makeRecordRow()]);
+      prisma.attendanceSheet.update.mockResolvedValue(
+        makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.APPROVED }),
+      );
+      const service = makeService(prisma, { stateMachine, dispatcher });
+
+      const res = await service.finalApprove(
+        'sheet-1',
+        makeFinalApproveDto('ok'),
+        makeCurrentUser(),
+        META,
+      );
+      expect(res.statusCode).toBe(ATTENDANCE_SHEET_STATUS.APPROVED); // 业务成功(派发失败被吞)
+      expect(prisma.attendanceSheet.update).toHaveBeenCalledTimes(1);
+      expect(dispatcher.dispatchTargeted).toHaveBeenCalled();
     });
 
     it('finalReject allow → records 软删(updateMany)+ update final_rejected;logFinalReview(action=final-reject, tx)', async () => {

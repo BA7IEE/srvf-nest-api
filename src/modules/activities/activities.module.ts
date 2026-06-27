@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
@@ -30,7 +31,9 @@ import { AppActivitiesController } from './controllers/app-activities.controller
 //     §6.3.1;**不**新建 AppMyActivitiesController,该 endpoint 挂在
 //     AppMyRegistrationsController 上)
 @Module({
-  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, UsersModule],
+  // 统一通知 S4(评审稿 §6.4 / §11):活动取消 → 已报名者定向通知(NotificationDispatcher;
+  // producer → notifications **单向**,cancel commit 后直调,防环:通知绝不回调活动)。
+  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, UsersModule, NotificationsModule],
   controllers: [ActivitiesController, AppActivitiesController],
   providers: [
     ActivitiesService,

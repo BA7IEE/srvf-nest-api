@@ -4,6 +4,7 @@ import { DatabaseModule } from '../../database/database.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { ActivitiesModule } from '../activities/activities.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
@@ -37,6 +38,9 @@ import { AppMyRegistrationsController } from './controllers/app-my-registrations
     UsersModule,
     ActivitiesModule,
     InsurancesModule,
+    // 统一通知 S4(评审稿 §6.4 / §11):报名审批结果定向通知(NotificationDispatcher;
+    // producer → notifications **单向**,本模块 commit 后直调,防环:通知绝不回调报名)。
+    NotificationsModule,
   ],
   controllers: [
     ActivityRegistrationsAdminController,

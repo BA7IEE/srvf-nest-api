@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -9,6 +9,11 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import {
+  NOTIFICATION_CHANNEL_IN_APP,
+  NOTIFICATION_TYPE_ACTIVITY_REMINDER,
+} from '../notifications/notification.constants';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { RbacService } from '../permissions/rbac.service';
 // 跨轴只读(2026-06-23):复用 team-join 贡献值封顶核(单一真相源;生涯累计 cutoff=null)。
 // 纯函数调用,非 DI provider → 无 AttendancesModule → TeamJoinModule 依赖;team-join 不反向
@@ -209,6 +214,8 @@ type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
 export class AttendancesService {
+  private readonly logger = new Logger(AttendancesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly attendanceAuditRecorder: AttendanceAuditRecorder,
@@ -217,6 +224,9 @@ export class AttendancesService {
     private readonly sheetStateMachine: AttendanceSheetStateMachine,
     private readonly attendancePresenter: AttendancePresenter,
     private readonly rbac: RbacService,
+    // 统一通知 S4(评审稿 §6.4):考勤终审通过 → 本人考勤结果/贡献值定向通知派发器(producer → notifications
+    // 单向直调,commit 后事务外、try-catch 永不抛;防环:本服务绝不被通知模块回调)。
+    private readonly notificationDispatcher: NotificationDispatcher,
   ) {}
 
   // Slow-4 T3(2026-06-11,评审稿 §3.7 / D-S4-8):RBAC 判权(沿 P0-F assertCanOrThrow 范式)。
@@ -1098,7 +1108,7 @@ export class AttendancesService {
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
     await this.assertCanOrThrow(currentUser, 'attendance.final-approve.sheet');
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
       const finalApproveTransition = this.sheetStateMachine.decide(
@@ -1163,8 +1173,59 @@ export class AttendancesService {
         tx,
       });
 
-      return this.attendancePresenter.toSheetResponseDto(updated);
+      // 携带通知收件人(逐 record 本人 memberId + 本次贡献值)出事务;dto 仍为对外返回体。
+      return {
+        dto: this.attendancePresenter.toSheetResponseDto(updated),
+        activityId: updated.activityId,
+        recipients: recordsForEvent.map((r) => ({
+          memberId: r.memberId,
+          contributionPoints: this.attendancePresenter.decimalToString(r.contributionPoints),
+        })),
+      };
     });
+
+    // 考勤结果/贡献值定向通知(统一通知 S4;评审稿 §6.4 / §6.2):**事务 commit 之后、事务外**逐 record 派给本人。
+    // **绝不破坏 finalApprove + 贡献值生效行为锁**(pending_final_review → approved + attendance.recorded 已在事务内
+    // commit);派发失败只记日志,不阻断、不回滚。
+    await this.dispatchAttendanceNotifications(result.activityId, result.recipients);
+
+    return result.dto;
+  }
+
+  // 派发「考勤结果/贡献值」定向通知(仅站内,goal:S4 站内为主、微信 opt-in 延后)。收件人 = 该 sheet 终审通过的
+  // 逐条 record 本人(record→member;payload 含活动名 + 本次贡献值)。一人多 record(多时段)→ 多条,各自独立
+  // (每条 = 一次考勤结果)。**整体 try-catch + 单条各自吞**:任一失败只记日志,不阻断其余、不破坏已 commit 的终审。
+  private async dispatchAttendanceNotifications(
+    activityId: string,
+    recipients: Array<{ memberId: string; contributionPoints: string | null }>,
+  ): Promise<void> {
+    if (recipients.length === 0) return;
+    try {
+      const activity = await this.prisma.activity.findUnique({
+        where: { id: activityId },
+        select: { title: true },
+      });
+      const activityTitle = activity?.title ?? '活动';
+      for (const r of recipients) {
+        try {
+          await this.notificationDispatcher.dispatchTargeted({
+            recipientMemberId: r.memberId,
+            notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_REMINDER,
+            title: '考勤结果已确认',
+            body: `您在「${activityTitle}」的考勤已终审通过,本次贡献值 ${r.contributionPoints ?? '0'}。`,
+            channels: [NOTIFICATION_CHANNEL_IN_APP],
+          });
+        } catch (err) {
+          this.logger.error(
+            `attendance result notification dispatch failed (activity=${activityId}, member=${r.memberId}): ${(err as Error).message}`,
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.error(
+        `attendance result notification fan-out failed (activity=${activityId}): ${(err as Error).message}`,
+      );
+    }
   }
 
   // ============ final-reject(PATCH;批次 4-B 新增 — 终审驳回)============
