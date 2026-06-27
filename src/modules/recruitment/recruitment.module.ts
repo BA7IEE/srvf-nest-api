@@ -8,7 +8,9 @@ import { RealnameModule } from '../realname/realname.module';
 import { SmsModule } from '../sms/sms.module';
 import { StorageModule } from '../storage/storage.module';
 import { WechatModule } from '../wechat/wechat.module';
+import { RecruitmentApplicationReviewService } from './recruitment-application-review.service';
 import { RecruitmentApplicationsAdminController } from './recruitment-applications.admin.controller';
+import { RecruitmentApplicationsQueryService } from './recruitment-applications-query.service';
 import { RecruitmentApplicationsService } from './recruitment-applications.service';
 import { RecruitmentCyclesController } from './recruitment-cycles.controller';
 import { RecruitmentCyclesService } from './recruitment-cycles.service';
@@ -41,6 +43,8 @@ import { RecruitmentStatsService } from './recruitment-stats.service';
   providers: [
     RecruitmentCyclesService,
     RecruitmentApplicationsService,
+    RecruitmentApplicationsQueryService, // god-service 拆分(2026-06-28):admin 读面
+    RecruitmentApplicationReviewService, // god-service 拆分(2026-06-28):核验后评审写动作
     RecruitmentIdentityService,
     RecruitmentPromotionService,
     RecruitmentStatsService,

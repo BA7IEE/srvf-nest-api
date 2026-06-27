@@ -44,7 +44,7 @@ import {
   RecruitmentStatsTodayDto,
   UpdateRecruitmentCycleDto,
 } from './recruitment.dto';
-import { RecruitmentApplicationsService } from './recruitment-applications.service';
+import { RecruitmentApplicationsQueryService } from './recruitment-applications-query.service';
 import { RecruitmentCyclesService } from './recruitment-cycles.service';
 import { RecruitmentPromotionService } from './recruitment-promotion.service';
 import { RecruitmentStatsService } from './recruitment-stats.service';
@@ -84,7 +84,7 @@ function buildAuditMeta(req: Request): AuditMeta {
 export class RecruitmentCyclesController {
   constructor(
     private readonly service: RecruitmentCyclesService,
-    private readonly applicationsService: RecruitmentApplicationsService,
+    private readonly applicationsQueryService: RecruitmentApplicationsQueryService,
     private readonly promotionService: RecruitmentPromotionService,
     private readonly statsService: RecruitmentStatsService,
   ) {}
@@ -162,7 +162,7 @@ export class RecruitmentCyclesController {
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<PublicityListResponseDto> {
-    return this.applicationsService.publicityList(id, user);
+    return this.applicationsQueryService.publicityList(id, user);
   }
 
   @Get(':id/stats')
