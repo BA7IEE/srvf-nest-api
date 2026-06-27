@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -9,6 +9,11 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
+import {
+  NOTIFICATION_CHANNEL_IN_APP,
+  NOTIFICATION_TYPE_ACTIVITY_REMINDER,
+} from '../notifications/notification.constants';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { RbacService } from '../permissions/rbac.service';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
@@ -124,6 +129,8 @@ type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
 export class ActivityRegistrationsService {
+  private readonly logger = new Logger(ActivityRegistrationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly registrationAuditRecorder: ActivityRegistrationAuditRecorder,
@@ -131,6 +138,9 @@ export class ActivityRegistrationsService {
     private readonly rbac: RbacService,
     // 保险 T3:报名门槛(跨模块单向依赖 activity-registration → insurances,评审稿 E-13)
     private readonly insuranceRequirement: InsuranceRequirementService,
+    // 统一通知 S4(评审稿 §6.4):审批结果定向通知派发器(producer → notifications 单向直调,
+    // commit 后事务外、try-catch 永不抛;防环:本服务绝不被通知模块回调)。
+    private readonly notificationDispatcher: NotificationDispatcher,
   ) {}
 
   // ============ helpers ============
@@ -569,7 +579,7 @@ export class ActivityRegistrationsService {
     auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity-registration.approve.record');
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
       const transition = this.registrationStateMachine.decide('approve', reg.statusCode);
@@ -613,8 +623,20 @@ export class ActivityRegistrationsService {
         tx,
       });
 
-      return this.toResponseDto(updated);
+      // 携带通知收件人(报名本人 memberId)出事务;dto 仍为对外返回体。
+      return { dto: this.toResponseDto(updated), memberId: updated.memberId };
     });
+
+    // 报名审批结果定向通知(统一通知 S4;评审稿 §6.4 / §6.2):**事务 commit 之后、事务外**派给报名本人。
+    // **绝不破坏审批行为锁**(pending→pass 状态机 / capacity FOR UPDATE 串行化已在事务内 commit);派发失败只记日志。
+    await this.dispatchReviewNotification(
+      result.memberId,
+      activityId,
+      'approved',
+      dto.reviewNote ?? null,
+    );
+
+    return result.dto;
   }
 
   // ============ 管理端:reject ============
@@ -627,7 +649,7 @@ export class ActivityRegistrationsService {
     auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity-registration.reject.record');
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
       const transition = this.registrationStateMachine.decide('reject', reg.statusCode);
@@ -661,8 +683,48 @@ export class ActivityRegistrationsService {
         tx,
       });
 
-      return this.toResponseDto(updated);
+      // 携带通知收件人(报名本人 memberId)出事务;dto 仍为对外返回体。
+      return { dto: this.toResponseDto(updated), memberId: updated.memberId };
     });
+
+    // 报名审批结果定向通知(统一通知 S4;评审稿 §6.4 / §6.2):**事务 commit 之后、事务外**派给报名本人。
+    // **绝不破坏审批行为锁**(pending→reject 状态机已在事务内 commit);派发失败只记日志。
+    await this.dispatchReviewNotification(result.memberId, activityId, 'rejected', dto.reviewNote);
+
+    return result.dto;
+  }
+
+  // 派发「报名审批结果」定向通知(仅站内,§9.1 渠道倾向 + goal:S4 站内为主、微信 opt-in 延后)。
+  // **try-catch 永不抛**:派发失败(含 dispatcher 内部异常 / 活动查不到)只记日志,绝不回滚 / 阻断已 commit
+  // 的审批(行为锁)。收件人 = 报名本人 memberId(registration→member);payload:活动名 + 通过/驳回 + 理由(若有)。
+  private async dispatchReviewNotification(
+    memberId: string,
+    activityId: string,
+    outcome: 'approved' | 'rejected',
+    reviewNote: string | null,
+  ): Promise<void> {
+    try {
+      const activity = await this.prisma.activity.findUnique({
+        where: { id: activityId },
+        select: { title: true },
+      });
+      const activityTitle = activity?.title ?? '活动';
+      const passed = outcome === 'approved';
+      const reasonSuffix = reviewNote ? ` 理由:${reviewNote}` : '';
+      await this.notificationDispatcher.dispatchTargeted({
+        recipientMemberId: memberId,
+        notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_REMINDER,
+        title: passed ? '报名已通过' : '报名未通过',
+        body: passed
+          ? `您报名的「${activityTitle}」已通过审核。${reasonSuffix}`
+          : `您报名的「${activityTitle}」未通过审核。${reasonSuffix}`,
+        channels: [NOTIFICATION_CHANNEL_IN_APP],
+      });
+    } catch (err) {
+      this.logger.error(
+        `registration review notification dispatch failed (member=${memberId}, activity=${activityId}): ${(err as Error).message}`,
+      );
+    }
   }
 
   // ============ 管理端:cancel(代取消)============

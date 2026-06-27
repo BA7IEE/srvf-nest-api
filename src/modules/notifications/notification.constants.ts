@@ -46,6 +46,9 @@ export type NotificationVisibility = (typeof NOTIFICATION_VISIBILITIES)[number];
 export const NOTIFICATION_TYPE_DICT_CODE = 'notification_type';
 // 招新 producer 定向通知类型(发号 / 入队结果;seed notification_type item 'recruitment' 已内置 = '招新公告')。
 export const NOTIFICATION_TYPE_RECRUITMENT = 'recruitment';
+// 活动/考勤 producer 定向通知类型(S4:考勤结果 / 报名审批 / 活动取消;三者同属活动域,复用 seed
+// notification_type item 'activity-reminder' 已内置 = '活动提醒';S4 不新增字典 type,评审稿 §9.4)。
+export const NOTIFICATION_TYPE_ACTIVITY_REMINDER = 'activity-reminder';
 
 // 定向(directed)通知的可见档(统一通知 S3):收件人恒为 member,故置 member 档。
 // feed 的广播分支已按 audienceType=broadcast 收窄,定向行**不借**可见档泄漏(仅 recipientMemberId=本人可见);

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { AppMyAttendanceRecordsService } from './app-my-attendance-records.service';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
@@ -31,7 +32,9 @@ import { AppMyAttendanceRecordsController } from './controllers/app-my-attendanc
 // Route B Phase 4d2(2026-06-01):旧 AttendanceRecordsMeController(/v2/users/me/attendance-records)
 // 已删除(app/v1/my/attendance-records 对等存在;沿 docs/api-surface-migration-plan.md §6 Phase 4)。
 @Module({
-  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, UsersModule],
+  // 统一通知 S4(评审稿 §6.4 / §11):考勤终审通过 → 本人考勤结果/贡献值定向通知(NotificationDispatcher;
+  // producer → notifications **单向**,finalApprove commit 后直调,防环:通知绝不回调考勤)。
+  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, UsersModule, NotificationsModule],
   controllers: [
     AttendanceSheetsCollectionController,
     AttendanceSheetsResourceController,
