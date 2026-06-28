@@ -225,7 +225,10 @@ describe('App /api/app/v1/my/* (P2-5a 只读 3 endpoint)', () => {
       location: '梧桐山',
       coverImageUrl: 'https://example.test/cover.png',
       capacity: 30,
-      registrationDeadline: new Date('2026-06-25T23:59:59.000Z'),
+      // 固定远未来,与 wall-clock 解耦(镜像 #452 app-my-registrations-write 同款 fixture 修复)。
+      // 本只读套件不返也不过滤 registrationDeadline(读路径仅 ownership + 软删 + status),原近未来
+      // 默认值当前不 failing;但属硬编码潜在时间炸弹 → 改远未来。test/** fixture 修复,零业务行为变更。
+      registrationDeadline: new Date('2099-12-31T23:59:59.000Z'),
     };
     if (state === 'cancelled') {
       return prisma.activity.create({

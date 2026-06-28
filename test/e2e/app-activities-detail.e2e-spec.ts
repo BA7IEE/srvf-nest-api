@@ -165,7 +165,10 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
       registrationNotes: 'P2-4b 报名须知',
       coverImageUrl: 'https://example.test/cover.png',
       capacity: 30,
-      registrationDeadline: new Date('2026-06-25T23:59:59.000Z'),
+      // 固定远未来,与 wall-clock 解耦(镜像 #452 app-my-registrations-write 同款 fixture 修复)。
+      // 详情可见性仅 statusCode='published' + 未软删,不按截止闸过滤,原近未来默认值当前不 failing;
+      // 但属硬编码潜在时间炸弹 → 改远未来杜绝墙钟越过误触。test/** fixture 修复,零业务行为变更。
+      registrationDeadline: new Date('2099-12-31T23:59:59.000Z'),
     };
     if (state === 'draft') {
       return prisma.activity.create({
