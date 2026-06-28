@@ -24,7 +24,6 @@ import {
   CurrentUser,
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
-import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
@@ -36,6 +35,7 @@ import {
   IdCardImageUrlResponseDto,
   MarkThresholdDto,
   RecruitmentApplicationAdminDto,
+  RecruitmentApplicationListQueryDto,
   ResolveRecruitmentApplicationDto,
 } from './recruitment.dto';
 import { RecruitmentApplicationReviewService } from './recruitment-application-review.service';
@@ -82,13 +82,16 @@ export class RecruitmentApplicationsAdminController {
   @ApiWrappedPageResponse(RecruitmentApplicationAdminDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   list(
-    @Query() query: PaginationQueryDto,
+    @Query() query: RecruitmentApplicationListQueryDto,
     @CurrentUser() user: CurrentUserPayload,
-    @Query('cycleId') cycleId?: string,
-    @Query('statusCode') statusCode?: string,
-    @Query('riskLevel') riskLevel?: string,
   ) {
-    return this.queryService.listForAdmin(query, { cycleId, statusCode, riskLevel }, user);
+    // 过滤参 cycleId/statusCode/riskLevel 改由 query DTO 白名单承载(去掉旧 loose @Query('x') 旁路:
+    // 它绕开 DTO,触发全局 forbidNonWhitelisted 误拒文档化过滤参);过滤语义不变,仍由 queryService 接收 filters。
+    return this.queryService.listForAdmin(
+      query,
+      { cycleId: query.cycleId, statusCode: query.statusCode, riskLevel: query.riskLevel },
+      user,
+    );
   }
 
   // 招新闭环优化 S6:批量标门槛 / 批量导出。字面段 export / batch-mark-threshold 在 :id 路由**之前**声明

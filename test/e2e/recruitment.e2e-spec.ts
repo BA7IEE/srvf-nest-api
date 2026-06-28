@@ -7,7 +7,7 @@ import { NotificationDispatcher } from '../../src/modules/notifications/notifica
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -555,6 +555,72 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(doneByCode.redCross).toBe(false);
     expect(doneByCode.bsafe).toBe(false);
     expect(todoList.every((i) => i.name.length > 0)).toBe(true);
+  });
+
+  // ⑩c S4b 列表过滤(契约↔校验一致性修复;前端报名审核 tab smoke):
+  //     cycleId/statusCode/riskLevel 进 query DTO 白名单后,带过滤参的列表不再被全局
+  //     ValidationPipe forbidNonWhitelisted 误拒(原 400「property cycleId should not exist」)+ 过滤命中正确;
+  //     非法 riskLevel(超 normal/high/system)经 DTO @IsIn → 400(反证白名单确在校验、未弱化全局安全设置)。
+  it('⑩c S4b 列表过滤 cycleId/statusCode/riskLevel:带 filters 不再 400 + 命中正确;非法 riskLevel→400', async () => {
+    const cycle = await openCycle();
+    // 直接造 3 行(隔离过滤投影;riskLevel 实由 OCR 六分流落,这里直造)。同轮 idCardNumber 须各异
+    //(partial unique (cycleId, idCardNumber) WHERE 非删非拒;A/B manual_review + C verified 均「活跃」受约束)。
+    const seed = (over: Partial<Prisma.RecruitmentApplicationUncheckedCreateInput>) =>
+      prisma.recruitmentApplication.create({
+        data: {
+          cycleId: cycle.id,
+          statusCode: 'manual_review', // 默认人工队列态;verified 行经 over 覆盖
+          documentTypeCode: 'mainland_id',
+          isForeigner: false,
+          realName: '过滤样本',
+          ...over,
+        },
+      });
+    const appNormal = await seed({
+      riskLevel: 'normal',
+      idCardNumber: ID_MATCH_A,
+      verifyOutcome: 'mismatch',
+    });
+    const appHigh = await seed({
+      riskLevel: 'high',
+      idCardNumber: ID_MATCH_B,
+      verifyOutcome: 'mismatch',
+    });
+    const appVerified = await seed({
+      statusCode: 'verified',
+      riskLevel: null,
+      idCardNumber: ID_MATCH_C,
+    });
+
+    const list = (qs: string) =>
+      request(httpServer(app)).get(`${ADMIN_APPS}${qs}`).set('Authorization', adminAuth);
+
+    // 核心回归:带全部三过滤参 → 200(不再 400),命中 normal 行
+    const filtered = await list(`?cycleId=${cycle.id}&statusCode=manual_review&riskLevel=normal`);
+    expect(filtered.status).toBe(200);
+    expect(filtered.body.data.total).toBe(1);
+    expect(filtered.body.data.items[0].id).toBe(appNormal.id);
+
+    // 单 riskLevel=high → 命中 high 行
+    const high = await list('?riskLevel=high');
+    expect(high.status).toBe(200);
+    expect(high.body.data.total).toBe(1);
+    expect(high.body.data.items[0].id).toBe(appHigh.id);
+
+    // 单 statusCode=verified → 命中 verified 行
+    const verified = await list('?statusCode=verified');
+    expect(verified.status).toBe(200);
+    expect(verified.body.data.total).toBe(1);
+    expect(verified.body.data.items[0].id).toBe(appVerified.id);
+
+    // 无过滤 → 基线全 3 行(证过滤是收窄、非默认空)
+    const all = await list('');
+    expect(all.status).toBe(200);
+    expect(all.body.data.total).toBe(3);
+
+    // 非法 riskLevel(超出 normal/high/system)→ 400(DTO @IsIn 生效)
+    const bad = await list('?riskLevel=bogus');
+    expect(bad.status).toBe(400);
   });
 
   // ⑪ RBAC 边界:普通 USER 调 admin 列表 → 30100
