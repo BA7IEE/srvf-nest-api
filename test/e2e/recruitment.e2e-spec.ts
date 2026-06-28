@@ -742,6 +742,160 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expectBizError(res, BizCode.RECRUITMENT_CYCLE_NOT_OPEN);
   });
 
+  // =====================================================================
+  // OCR 鉴伪版充分利用(2026-06-29;评审稿 recruitment-ocr-anti-forgery-enrichment-review.md §8 D1-D4)
+  // =====================================================================
+
+  // 富信封:DevStub 注入扩展字段 + 证件类型 + 卡片级告警 + 两裁剪图 base64。
+  // 故意令 OCR 的 sex/birth 与号码推导**不同**(沿 D2:OCR 仅回显不覆盖);address 等供落库/回显。
+  const CARD_CROP_B64 = Buffer.from('fake-card-crop-bytes').toString('base64');
+  const PORTRAIT_CROP_B64 = Buffer.from('fake-portrait-crop-bytes').toString('base64');
+  function richOcr(over: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      name: '张三',
+      idCardNumber: ID_MATCH_A,
+      clarity: true,
+      warnings: [],
+      documentType: '中华人民共和国居民身份证',
+      extendedFields: {
+        sex: { content: '女', reflect: false, incomplete: false }, // 故意 ≠ 号码推导(male)
+        nation: { content: '汉', reflect: true, incomplete: false },
+        birth: { content: '2000/1/1', reflect: false, incomplete: false }, // 故意 ≠ 号码推导(1990-03-07)
+        address: { content: '北京市朝阳区某街道 99 号', reflect: false, incomplete: true },
+        authority: { content: '北京市公安局朝阳分局', reflect: false, incomplete: false },
+        validDate: { content: '2010.07.21-2020.07.21', reflect: false, incomplete: false },
+      },
+      cardWarnings: {
+        copy: false,
+        reshoot: false,
+        ps: false,
+        border: true,
+        occlusion: false,
+        blur: false,
+      },
+      cardImageBase64: CARD_CROP_B64,
+      portraitImageBase64: PORTRAIT_CROP_B64,
+      ...over,
+    };
+  }
+
+  // D1:recognize 鉴伪版扩展回显(ocrDetail:字段级 reflect/incomplete + 卡片级告警 + 证件类型);**裁剪图 base64 绝不在响应**
+  it('OCR⑤(D1) recognize 鉴伪版扩展回显 ocrDetail;裁剪图 base64 不在响应', async () => {
+    await openCycle();
+    const res = await recognize('mainland_id', richOcr());
+    expect(res.status).toBe(200);
+    const d = res.body.data;
+    expect(d.clarityOk).toBe(true);
+    // 字段级回显(content + reflect/incomplete)
+    expect(d.ocrDetail.address).toEqual({
+      content: '北京市朝阳区某街道 99 号',
+      reflect: false,
+      incomplete: true,
+    });
+    expect(d.ocrDetail.nation).toEqual({ content: '汉', reflect: true, incomplete: false });
+    expect(d.ocrDetail.sex.content).toBe('女');
+    expect(d.ocrDetail.documentType).toBe('中华人民共和国居民身份证');
+    // 卡片级质量/防伪告警全集(border=true)
+    expect(d.ocrDetail.cardWarnings).toEqual({
+      copy: false,
+      reshoot: false,
+      ps: false,
+      border: true,
+      occlusion: false,
+      blur: false,
+    });
+    // L3:裁剪图 base64 绝不进 recognize 响应(全响应体不含注入的 base64 串)
+    const blob = JSON.stringify(res.body);
+    expect(blob).not.toContain(CARD_CROP_B64);
+    expect(blob).not.toContain(PORTRAIT_CROP_B64);
+  });
+
+  // D2 + D3:submit matched → verified;落 4 OCR 列(住址/民族/签发机关/有效期)+ 2 裁剪图 key;
+  // **gender/birth 仍来自号码推导**(OCR 的 sex=女/birth=2000 不覆盖 male/1990-03-07)。
+  it('OCR⑥(D2/D3) submit 落 4 OCR 列 + 2 裁剪图 key;gender/birth 恒号码推导(OCR 不覆盖)', async () => {
+    await openCycle();
+    const res = await submit(validPayload({ wechatCode: 'code-rich', idCardNumber: ID_MATCH_A }), {
+      ocr: richOcr(),
+    });
+    expect(res.body.data.statusCode).toBe('verified');
+    const row = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-code-rich' },
+    });
+    // 4 OCR 列落库(顾问式存档)
+    expect(row.ocrAddress).toBe('北京市朝阳区某街道 99 号');
+    expect(row.ocrNation).toBe('汉');
+    expect(row.ocrAuthority).toBe('北京市公安局朝阳分局');
+    expect(row.ocrValidDate).toBe('2010.07.21-2020.07.21');
+    // 2 裁剪图 key 非空 + 前缀正确
+    expect(row.idCardCropImageKey).toMatch(/^recruitment\/id-card-crop\//);
+    expect(row.idCardPortraitImageKey).toMatch(/^recruitment\/id-card-portrait\//);
+    // **权威性铁律**:gender/birth 仍来自身份证号(male / 1990-03-07),OCR 的 sex/birth 不覆盖
+    expect(row.genderCode).toBe('male');
+    expect(row.birthDate?.toISOString()).toBe('1990-03-07T00:00:00.000Z');
+  });
+
+  // D3:不返裁剪图的富信封提交仍成功;两裁剪 key 列降级为 null(接口未返裁剪图不阻断)
+  it('OCR⑦(D3) submit 不返裁剪图 → 两裁剪 key 列 null,提交仍成功', async () => {
+    await openCycle();
+    const res = await submit(
+      validPayload({ wechatCode: 'code-nocrop', idCardNumber: ID_MATCH_A }),
+      {
+        ocr: richOcr({ cardImageBase64: undefined, portraitImageBase64: undefined }),
+      },
+    );
+    expect(res.body.data.statusCode).toBe('verified');
+    const row = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-code-nocrop' },
+    });
+    expect(row.idCardCropImageKey).toBeNull();
+    expect(row.idCardPortraitImageKey).toBeNull();
+    // 4 OCR 列仍落(扩展字段在;裁剪图缺只影响两 key 列)
+    expect(row.ocrAddress).toBe('北京市朝阳区某街道 99 号');
+  });
+
+  // D4:admin 三图 signed-URL(原图 + 主体裁剪 + 头像裁剪)+ 4 OCR 列敏感分级。
+  it('OCR⑧(D4) admin 三图 URL + 4 OCR 列敏感分级(sensitive 明文 / record-only 脱敏 null)', async () => {
+    await openCycle();
+    await submit(validPayload({ wechatCode: 'code-d4', idCardNumber: ID_MATCH_A }), {
+      ocr: richOcr(),
+    });
+    const row = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-code-d4' },
+    });
+
+    // 三图 URL(read.sensitive 闸内):原图 + 两裁剪图 URL 均非空
+    const img = await request(httpServer(app))
+      .get(`${ADMIN_APPS}/${row.id}/id-card-image-url`)
+      .set('Authorization', sensitiveAuth);
+    expect(img.status).toBe(200);
+    expect(typeof img.body.data.url).toBe('string');
+    expect(img.body.data.url.length).toBeGreaterThan(0);
+    expect(typeof img.body.data.cropImageUrl).toBe('string');
+    expect(img.body.data.cropImageUrl.length).toBeGreaterThan(0);
+    expect(typeof img.body.data.portraitImageUrl).toBe('string');
+    expect(img.body.data.portraitImageUrl.length).toBeGreaterThan(0);
+
+    // 详情:read.sensitive → 4 OCR 列明文
+    const detailS = await request(httpServer(app))
+      .get(`${ADMIN_APPS}/${row.id}`)
+      .set('Authorization', sensitiveAuth);
+    expect(detailS.body.data.ocrAddress).toBe('北京市朝阳区某街道 99 号');
+    expect(detailS.body.data.ocrNation).toBe('汉');
+    expect(detailS.body.data.hasIdCardCropImage).toBe(true);
+    expect(detailS.body.data.hasIdCardPortraitImage).toBe(true);
+
+    // 详情:仅 read.record(脱敏级)→ 4 OCR 列 null(字段集不变,值随码脱敏);has-flag 仍可见(非 PII)
+    const detailR = await request(httpServer(app))
+      .get(`${ADMIN_APPS}/${row.id}`)
+      .set('Authorization', recordOnlyAuth);
+    expect(detailR.status).toBe(200);
+    expect(detailR.body.data.ocrAddress).toBeNull();
+    expect(detailR.body.data.ocrNation).toBeNull();
+    expect(detailR.body.data.ocrAuthority).toBeNull();
+    expect(detailR.body.data.ocrValidDate).toBeNull();
+    expect(detailR.body.data.hasIdCardCropImage).toBe(true);
+  });
+
   // Ⓜ manual_review(大陆 OCR 不匹配)→ 人工 resolve approve → verified + 发号
   // (人工是 manual_review 最终权威:看图后可放行真实申请人,「对不上转人工不误杀」)
   it('Ⓜ manual_review(OCR 不匹配,申请人确认③)→ resolve approve → verified + 发号(人工最终权威)', async () => {

@@ -32,9 +32,11 @@ import {
   APP_STATUS_VERIFIED,
   CYCLE_STATUS_OPEN,
   ELIM_STAGE_MANUAL,
+  ID_CARD_CROP_IMAGE_KEY_PREFIX,
   ID_CARD_IMAGE_ALLOWED_MIME,
   ID_CARD_IMAGE_KEY_PREFIX,
   ID_CARD_IMAGE_MAX_BYTES,
+  ID_CARD_PORTRAIT_IMAGE_KEY_PREFIX,
   RECRUITMENT_MAX_AGE,
   RECRUITMENT_MIN_AGE,
   VERIFY_OUTCOME_CATEGORY_MISMATCH,
@@ -57,6 +59,7 @@ import {
   assembleRecruitmentProgress,
 } from './recruitment-progress-presenter';
 import {
+  buildOcrRecognizeDetail,
   buildRecruitmentDeferResult,
   maskOpenid,
   maskPhone,
@@ -134,6 +137,7 @@ export class RecruitmentApplicationsService {
         antiForgeryWarnings: [],
         documentCategory: null,
         hint: '该证件类型需人工核验,请手动填写姓名与证件号',
+        ocrDetail: null,
       };
     }
     // dev 安全诊断(logger.debug:生产默认不输出;无 PII)——核对 multipart 文件是否正常读入
@@ -155,6 +159,9 @@ export class RecruitmentApplicationsService {
       `recruitment ocr recognize type=${documentTypeCode} recognized=${ocr.recognized} ` +
         `warnings=${ocr.warnings.length} category=${categoryOk ? 'ok' : VERIFY_OUTCOME_CATEGORY_MISMATCH}`,
     );
+    // 鉴伪版充分利用:顾问式扩展回显(字段级/卡片级告警 + 证件类型;不改判定)。不清晰时一并回显——
+    // 此时字段级 reflect/incomplete 最能帮申请人定位「哪栏拍糊/反光」。**裁剪图 base64 绝不进响应**(纯函数不取)。
+    const ocrDetail = buildOcrRecognizeDetail(ocr);
     if (!ocr.recognized) {
       return {
         ocrSupported: true,
@@ -163,6 +170,7 @@ export class RecruitmentApplicationsService {
         antiForgeryWarnings: ocr.warnings,
         documentCategory: ocr.documentCategory ?? null,
         hint: '证件照不清晰,请重拍清晰证件照',
+        ocrDetail,
       };
     }
     return {
@@ -172,6 +180,7 @@ export class RecruitmentApplicationsService {
       antiForgeryWarnings: ocr.warnings,
       documentCategory: ocr.documentCategory ?? null,
       hint: categoryOk ? null : '证件类别非来往内地通行证,提交后将转人工复核',
+      ocrDetail,
     };
   }
 
@@ -267,10 +276,13 @@ export class RecruitmentApplicationsService {
     let outcome: OcrOutcome;
     let recognized: { realName: string | null; idCardNumber: string | null } | null = null;
     let ocrCalled = false;
+    // 鉴伪版充分利用:mainland OCR 完整结果(扩展字段 + 裁剪图 base64);仅 submitted 路径消费(落 4 列 + 2 裁剪图)。
+    let mainlandOcr: RealnameOcrResult | null = null;
     if (mainland) {
       const cls = await this.classifyMainlandOcr(payload, image);
       outcome = cls.outcome;
       recognized = cls.recognized;
+      mainlandOcr = cls.ocr;
       ocrCalled = true;
     } else {
       outcome = 'manual';
@@ -315,14 +327,29 @@ export class RecruitmentApplicationsService {
     }
     const record = decision.record as NonNullable<typeof decision.record>; // disposition='submitted' → record 必有
 
-    // 10. 落图 → key(失败不建记录)
+    // 10. 落图 → key(失败不建记录)。collect 全部已落 storage key,事务失败时逐个 best-effort 补偿删(FM-B 扩为多 key)。
     const ext = image.mimetype === 'image/png' ? 'png' : 'jpg';
     const idCardImageKey = `${ID_CARD_IMAGE_KEY_PREFIX}/${cycle.id}/${randomUUID()}.${ext}`;
+    const storedKeys: string[] = [idCardImageKey];
     await this.storage.putObject({
       key: idCardImageKey,
       body: image.buffer,
       contentType: image.mimetype,
     });
+    // 10b. 鉴伪版充分利用:主体框 / 头像裁剪图(腾讯返 base64 JPEG)解码入库(仅 mainland 鉴伪版返回时);
+    //      缺省/接口未返 → key 留 null 不阻断提交(E3/E7)。裁剪图入库后即弃 base64(不入日志)。
+    const idCardCropImageKey = await this.storeCropImage(
+      mainlandOcr?.cardImageBase64,
+      ID_CARD_CROP_IMAGE_KEY_PREFIX,
+      cycle.id,
+      storedKeys,
+    );
+    const idCardPortraitImageKey = await this.storeCropImage(
+      mainlandOcr?.portraitImageBase64,
+      ID_CARD_PORTRAIT_IMAGE_KEY_PREFIX,
+      cycle.id,
+      storedKeys,
+    );
 
     // 11. 单事务建终态:verified → 原子发号(容量同事务校验,FM-C)+ tempNo;manual_review → 无 tempNo + OCR 六分流字段。
     //    audit submit(actor 置空)+ (大陆)audit realname-verify(每次付费 OCR 必留痕,resourceId=新 id)。
@@ -367,6 +394,14 @@ export class RecruitmentApplicationsService {
               : {}),
             detailedAddress: payload.detailedAddress,
             idCardImageKey,
+            // 鉴伪版充分利用(§5):4 OCR 列(顾问式存档,来自 extendedFields.*.content;缺 → null)+ 2 裁剪图 key
+            // (storeCropImage 返 string|null)。**gender/birth 不在此组**(仍由 idCardNumber 推导,见第 2 步,不被 OCR 覆盖)。
+            idCardCropImageKey,
+            idCardPortraitImageKey,
+            ocrAddress: mainlandOcr?.extendedFields?.address?.content ?? null,
+            ocrNation: mainlandOcr?.extendedFields?.nation?.content ?? null,
+            ocrAuthority: mainlandOcr?.extendedFields?.authority?.content ?? null,
+            ocrValidDate: mainlandOcr?.extendedFields?.validDate?.content ?? null,
             emergencyContacts: payload.emergencyContacts as unknown as Prisma.InputJsonValue,
             ...(payload.profileExtra !== undefined
               ? { profileExtra: payload.profileExtra as Prisma.InputJsonValue }
@@ -427,9 +462,11 @@ export class RecruitmentApplicationsService {
         return row;
       });
     } catch (err) {
-      // 单事务失败(并发撞 partial unique 或任何 DB 错误)→ 第 10 步刚落 storage 的证件照成孤儿。
-      // best-effort 补偿删,失败仅告警、不掩盖原错(FM-B;系统性审查 §3)。
-      await this.safeDeleteOrphanImage(idCardImageKey);
+      // 单事务失败(并发撞 partial unique 或任何 DB 错误)→ 第 10/10b 步刚落 storage 的证件照 + 裁剪图成孤儿。
+      // best-effort 逐个补偿删(原图 + 主体裁剪 + 头像裁剪),失败仅告警、不掩盖原错(FM-B;系统性审查 §3)。
+      for (const k of storedKeys) {
+        await this.safeDeleteOrphanImage(k);
+      }
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new BizException(BizCode.RECRUITMENT_DUPLICATE_APPLICATION);
       }
@@ -452,6 +489,9 @@ export class RecruitmentApplicationsService {
   ): Promise<{
     outcome: OcrOutcome;
     recognized: { realName: string | null; idCardNumber: string | null } | null;
+    // 鉴伪版充分利用:回带完整 OCR 结果(扩展字段 + 裁剪图 base64),供 submit 落 4 列 + 2 裁剪图;
+    // ocr_error(上游失败/通道未配)→ null(列/裁剪图全留 null,E7)。
+    ocr: RealnameOcrResult | null;
   }> {
     let ocr: RealnameOcrResult;
     try {
@@ -469,7 +509,7 @@ export class RecruitmentApplicationsService {
         this.logger.warn(
           'recruitment mainland OCR failed → ocr_error (六分流:首次重试/连续 2 次落系统异常)',
         );
-        return { outcome: 'ocr_error', recognized: null };
+        return { outcome: 'ocr_error', recognized: null, ocr: null };
       }
       throw err;
     }
@@ -485,6 +525,7 @@ export class RecruitmentApplicationsService {
     return {
       outcome,
       recognized: ocr.recognized ? { realName: ocr.name, idCardNumber: ocr.idCardNumber } : null,
+      ocr,
     };
   }
 
@@ -635,6 +676,26 @@ export class RecruitmentApplicationsService {
       throw new BizException(BizCode.RECRUITMENT_CYCLE_CAPACITY_FULL);
     }
     return formatTempNo(cycle.year, cycle.tempNoSeq);
+  }
+
+  // 鉴伪版充分利用:裁剪图 base64 解码入库(主体框 / 头像;仅 mainland 鉴伪版返回时)。
+  // base64 缺省/空 → 不落、返 null(列留空不阻断提交,E3/E7);落成功 → key 推入 storedKeys 供事务失败补偿删。
+  // 裁剪图为腾讯返 JPEG base64,ext 恒 jpg;base64 入库后即弃(不入日志,L3)。
+  private async storeCropImage(
+    base64: string | null | undefined,
+    prefix: string,
+    cycleId: string,
+    storedKeys: string[],
+  ): Promise<string | null> {
+    if (!base64) return null;
+    const key = `${prefix}/${cycleId}/${randomUUID()}.jpg`;
+    await this.storage.putObject({
+      key,
+      body: Buffer.from(base64, 'base64'),
+      contentType: 'image/jpeg',
+    });
+    storedKeys.push(key);
+    return key;
   }
 
   // tx1 失败时补偿删除刚落的证件照孤儿 blob(best-effort;失败仅告警,不掩盖原错)。

@@ -60,6 +60,49 @@ describe('DevStubRealnameProvider (OCR)', () => {
     expect(res.warnings).toEqual([]);
   });
 
+  it('鉴伪版充分利用:扩展字段/证件类型/cardWarnings/裁剪图 base64 如实透传', async () => {
+    const res = await provider.recognize(
+      input({
+        name: '张三',
+        idCardNumber: '110101199003070038',
+        clarity: true,
+        documentType: '中华人民共和国居民身份证',
+        extendedFields: {
+          sex: { content: '男', reflect: false, incomplete: false },
+          nation: { content: '汉', reflect: false, incomplete: false },
+          birth: { content: '1990/3/7', reflect: false, incomplete: false },
+          address: { content: '北京市朝阳区某街道', reflect: false, incomplete: false },
+          authority: { content: '北京市公安局朝阳分局', reflect: false, incomplete: false },
+          validDate: { content: '2010.07.21-2020.07.21', reflect: false, incomplete: false },
+        },
+        cardWarnings: {
+          copy: false,
+          reshoot: false,
+          ps: false,
+          border: true,
+          occlusion: false,
+          blur: false,
+        },
+        cardImageBase64: 'card-crop-b64',
+        portraitImageBase64: 'portrait-crop-b64',
+      }),
+    );
+    expect(res.documentType).toBe('中华人民共和国居民身份证');
+    expect(res.extendedFields?.address?.content).toBe('北京市朝阳区某街道');
+    expect(res.cardWarnings?.border).toBe(true);
+    expect(res.cardImageBase64).toBe('card-crop-b64');
+    expect(res.portraitImageBase64).toBe('portrait-crop-b64');
+  });
+
+  it('缺省扩展字段 → 全 null(降级,沿既有简单信封)', async () => {
+    const res = await provider.recognize(
+      input({ name: '张三', idCardNumber: '110101199003070038', clarity: true }),
+    );
+    expect(res.documentType).toBeNull();
+    expect(res.extendedFields).toBeNull();
+    expect(res.cardImageBase64).toBeNull();
+  });
+
   it('确定性:同一图多次调用结果稳定', async () => {
     const i = input({ name: '李四', idCardNumber: '110101199003070046', clarity: true });
     const a = await provider.recognize(i);

@@ -141,6 +141,8 @@ export class RecruitmentApplicationsQueryService {
   }
 
   // ============ admin 取证件照 signed-URL(配套②;L3;短 TTL;S3:敏感查看 read.sensitive)============
+  // OCR 鉴伪版充分利用(2026-06-29;D4):同时返三图 signed-URL —— 原图 + 主体框裁剪(CardImage)+ 头像裁剪
+  // (PortraitImage)。裁剪图仅身份证鉴伪版且已入库才有 key;无 key → URL null(不阻断,前端不渲染)。
   async getIdCardImageUrl(
     id: string,
     user: CurrentUserPayload,
@@ -154,12 +156,25 @@ export class RecruitmentApplicationsQueryService {
       key: row.idCardImageKey,
       expiresIn: ID_CARD_IMAGE_SIGNED_URL_TTL_SECONDS,
     });
+    // 裁剪图 key 存在才生成签名 URL(键缺 → null);TTL 同原图。
+    const cropImageUrl = await this.maybeSignedUrl(row.idCardCropImageKey);
+    const portraitImageUrl = await this.maybeSignedUrl(row.idCardPortraitImageKey);
     auditPlaceholder('recruitment-application.id-card-image.read', {
       adminId: user.id,
       applicationId: id,
     });
     // url 是 L3,不入日志/snapshot;仅出参回显
-    return { url: result.url, expiresAt: result.expiresAt };
+    return { url: result.url, expiresAt: result.expiresAt, cropImageUrl, portraitImageUrl };
+  }
+
+  // 裁剪图 key → signed-URL(null key → null;TTL 同原图)。
+  private async maybeSignedUrl(key: string | null): Promise<string | null> {
+    if (!key) return null;
+    const r = await this.storage.generateDownloadUrl({
+      key,
+      expiresIn: ID_CARD_IMAGE_SIGNED_URL_TTL_SECONDS,
+    });
+    return r.url;
   }
 
   // ============ 招新二期:公示名单(D-R2-4;姓名 + 拟发编号,拼音序,零敏感)============

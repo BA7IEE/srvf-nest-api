@@ -1463,6 +1463,18 @@ model RecruitmentApplication {
   applicantConfirmedOcrWrong Boolean @default(false) // mismatch 三选一之③:申请人确认 OCR 错、坚持填写为准 → 落普通人工(§2.1)
   lastOcrOutcome             String? // 最近一次 OCR 结论快照(= 某 verifyOutcome 值;submit 落库时从会话行结转,§2.2/§2.3)
 
+  // ===== OCR 鉴伪版充分利用(2026-06-29,评审稿 recruitment-ocr-anti-forgery-enrichment-review.md §3.1/§4)=====
+  // 仅 mainland_id RecognizeValidIDCardOCR 充分利用:扩展字段入库 + 主体/头像裁剪图入库。以下 6 列全 additive
+  // (可空,纯加列无破坏,无 enum、无默认、无回填)。OCR 读取值 = **顾问式存档,非权威**;gender/birth 仍由身份证号
+  // 推导(genderCode/birthDate),本组**不参与**派生、OCR 的 Sex/Birth 仅 recognize 回显不持久。住址为高敏感 PII,
+  // 与 idCardNumber 同级、纳入 read.sensitive 门控(masked→null)。裁剪图仅 submit 解码入库,base64 不入响应/日志(L3)。
+  ocrAddress             String? // OCR 住址(顾问式存档;≠ applicant 自填 detailedAddress;高敏感,read.sensitive 门控)
+  ocrNation              String? // OCR 民族
+  ocrAuthority           String? // OCR 签发机关
+  ocrValidDate           String? // OCR 有效期(腾讯返串,如 2010.07.21-2020.07.21 / 2010.07.21-长期;不解析 DateTime)
+  idCardCropImageKey     String? // 主体框裁剪图 storage key(CardImage;后台人工复核查看;留存按 key 删 blob)
+  idCardPortraitImageKey String? // 头像裁剪图 storage key(PortraitImage;存档;「设为队员头像」留后续 goal)
+
   cycle RecruitmentCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict)
 
   // 业务唯一约束(partial unique;migration.sql 末尾手写,E-R-9/10;Prisma DSL 不支持带 WHERE):

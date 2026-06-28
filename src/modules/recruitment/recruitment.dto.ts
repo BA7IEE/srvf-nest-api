@@ -157,6 +157,47 @@ export class RecruitmentSubmitPayloadDto {
 // multipart:`documentTypeCode`(表单字段)+ `idCardImage`(文件)→ OCR 识别结果供前端回填。
 // **无状态**(不落图、不发 token,分叉①A);申请人确认/修正后再走提交端点(权威判定)。
 
+// ============ OCR 鉴伪版充分利用(2026-06-29;评审稿 recruitment-ocr-anti-forgery-enrichment-review.md §4.2)============
+// 仅身份证鉴伪版有意义的顾问式回显:字段级(每栏 reflect/incomplete)+ 卡片级告警 + 证件类型。
+// **不改判定**(recognized/clarityOk/antiForgeryWarnings 既有语义不动);供前端精准提示「哪个字段反光/不完整」。
+
+export class RecruitmentOcrFieldDto {
+  @ApiPropertyOptional({ description: 'OCR 识别值(申请人本人 PII;不入日志)', nullable: true })
+  content!: string | null;
+  @ApiProperty({ description: '该字段反光(IsReflect/IsKeyReflect)' })
+  reflect!: boolean;
+  @ApiProperty({ description: '该字段不完整/被遮挡(IsInComplete/IsKeyInComplete)' })
+  incomplete!: boolean;
+}
+
+export class RecruitmentOcrCardWarningsDto {
+  @ApiProperty({ description: '疑似复印件' }) copy!: boolean;
+  @ApiProperty({ description: '疑似翻拍(屏幕)' }) reshoot!: boolean;
+  @ApiProperty({ description: '疑似 PS 篡改' }) ps!: boolean;
+  @ApiProperty({ description: '边框不完整' }) border!: boolean;
+  @ApiProperty({ description: '遮挡' }) occlusion!: boolean;
+  @ApiProperty({ description: '模糊' }) blur!: boolean;
+}
+
+export class RecruitmentOcrDetailDto {
+  @ApiPropertyOptional({ type: RecruitmentOcrFieldDto, nullable: true })
+  sex!: RecruitmentOcrFieldDto | null;
+  @ApiPropertyOptional({ type: RecruitmentOcrFieldDto, nullable: true })
+  nation!: RecruitmentOcrFieldDto | null;
+  @ApiPropertyOptional({ type: RecruitmentOcrFieldDto, nullable: true })
+  birth!: RecruitmentOcrFieldDto | null;
+  @ApiPropertyOptional({ type: RecruitmentOcrFieldDto, nullable: true })
+  address!: RecruitmentOcrFieldDto | null;
+  @ApiPropertyOptional({ type: RecruitmentOcrFieldDto, nullable: true })
+  authority!: RecruitmentOcrFieldDto | null;
+  @ApiPropertyOptional({ type: RecruitmentOcrFieldDto, nullable: true })
+  validDate!: RecruitmentOcrFieldDto | null;
+  @ApiPropertyOptional({ description: 'OCR 识别出的证件类型(顶层 Type)', nullable: true })
+  documentType!: string | null;
+  @ApiPropertyOptional({ type: RecruitmentOcrCardWarningsDto, nullable: true })
+  cardWarnings!: RecruitmentOcrCardWarningsDto | null;
+}
+
 export class RecruitmentOcrRecognizeResponseDto {
   @ApiProperty({
     description: '该证件类型本期是否走 OCR(身份证/护照/回乡证 true;其余 false→前端手填)',
@@ -186,6 +227,14 @@ export class RecruitmentOcrRecognizeResponseDto {
 
   @ApiPropertyOptional({ description: '前端提示文案(如不清晰/不支持时)', nullable: true })
   hint!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      '鉴伪版扩展回显(仅身份证;顾问式不改判定):字段级 性别/民族/出生/住址/签发机关/有效期(每栏 reflect/incomplete)+ 证件类型 + 卡片级质量/防伪告警。**裁剪图 base64 绝不在此返回**(仅 submit 入库)。',
+    type: RecruitmentOcrDetailDto,
+    nullable: true,
+  })
+  ocrDetail!: RecruitmentOcrDetailDto | null;
 }
 
 // ============ 公开查询(凭新 wx.login code)============
@@ -547,6 +596,22 @@ export class RecruitmentApplicationAdminDto {
   @ApiPropertyOptional({ nullable: true }) eliminationStage!: string | null;
   @ApiProperty({ description: '是否有证件照(取图走 :id/id-card-image-url)' })
   hasIdCardImage!: boolean;
+  // ===== OCR 鉴伪版充分利用(2026-06-29;敏感分级 S3:masked〔无 read.sensitive〕→ null)=====
+  // OCR 顾问式存档值(非权威);住址为高敏感 PII,四列统一随 read.sensitive 门控(脱敏级 → null)。
+  @ApiPropertyOptional({ description: 'OCR 住址(高敏感;无 read.sensitive → null)', nullable: true })
+  ocrAddress!: string | null;
+  @ApiPropertyOptional({ description: 'OCR 民族(无 read.sensitive → null)', nullable: true })
+  ocrNation!: string | null;
+  @ApiPropertyOptional({ description: 'OCR 签发机关(无 read.sensitive → null)', nullable: true })
+  ocrAuthority!: string | null;
+  @ApiPropertyOptional({ description: 'OCR 有效期(无 read.sensitive → null)', nullable: true })
+  ocrValidDate!: string | null;
+  @ApiProperty({
+    description: '是否有主体框裁剪图(身份证鉴伪版;取图走 :id/id-card-image-url 的 cropImageUrl)',
+  })
+  hasIdCardCropImage!: boolean;
+  @ApiProperty({ description: '是否有头像裁剪图(身份证鉴伪版;取图走 portraitImageUrl)' })
+  hasIdCardPortraitImage!: boolean;
   // ===== 招新二期(后段)字段 =====
   @ApiPropertyOptional({
     description:
@@ -672,11 +737,24 @@ export class ResolveRecruitmentApplicationDto {
 }
 
 export class IdCardImageUrlResponseDto {
-  @ApiProperty({ description: '证件照短 TTL signed-URL(L3;不入日志/snapshot)' })
+  @ApiProperty({ description: '证件照原图短 TTL signed-URL(L3;不入日志/snapshot)' })
   url!: string;
 
-  @ApiProperty({ description: 'URL 过期时刻' })
+  @ApiProperty({ description: 'URL 过期时刻(三图同 TTL)' })
   expiresAt!: Date;
+
+  // OCR 鉴伪版充分利用(2026-06-29):主体框 / 头像裁剪图 signed-URL(身份证鉴伪版才有;未入库 → null)。
+  @ApiPropertyOptional({
+    description: '主体框裁剪图 signed-URL(CardImage;仅身份证鉴伪版且已入库;否则 null)',
+    nullable: true,
+  })
+  cropImageUrl!: string | null;
+
+  @ApiPropertyOptional({
+    description: '头像裁剪图 signed-URL(PortraitImage;仅身份证鉴伪版且已入库;否则 null)',
+    nullable: true,
+  })
+  portraitImageUrl!: string | null;
 }
 
 // ============ 招新闭环优化 S2:招新工作台 stats(评审稿 §7.1 五组;纯读聚合,零敏感明文)============

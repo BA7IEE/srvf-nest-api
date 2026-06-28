@@ -26,6 +26,9 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ID_CARD_IMAGE_MAX_BYTES } from './recruitment.constants';
 import {
   RecruitmentApplicationProgressDto,
+  RecruitmentOcrCardWarningsDto,
+  RecruitmentOcrDetailDto,
+  RecruitmentOcrFieldDto,
   RecruitmentSubmitResultDto,
   RecruitmentOcrRecognizeResponseDto,
   RecruitmentQueryByPhoneDto,
@@ -91,6 +94,10 @@ async function parseSubmitPayload(
   RecruitmentApplicationProgressDto,
   RecruitmentTodoItemDto,
   RecruitmentOcrRecognizeResponseDto,
+  // OCR 鉴伪版充分利用:recognize 响应嵌套 DTO(显式注册,确保进 components.schemas)
+  RecruitmentOcrDetailDto,
+  RecruitmentOcrFieldDto,
+  RecruitmentOcrCardWarningsDto,
   RecruitmentSendCodeResponseDto,
   RecruitmentVerifyCodeResponseDto,
 )
