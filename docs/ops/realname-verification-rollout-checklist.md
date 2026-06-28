@@ -44,13 +44,13 @@
 ### 1.2 运维侧准备
 
 - [ ] 一个已实名认证的腾讯云账号,开通**文字识别 OCR** 下列三接口(按需主体完成开通与计费签约):
-  - `RecognizeValidIDCardOCR`(身份证识别 + 图像防伪:翻拍 / PS 篡改 / 复印件 / 遮挡 / 边框告警)
+  - `RecognizeValidIDCardOCR`(身份证**鉴伪版**;响应嵌套 `Response.IDCardInfo.{Name,IdNum}.Content` + `WarnInfos` 标志位 —— 系统侧已按此结构映射〔2026-06-29 修复〕;**须确认账号开通的是此鉴伪版,而非标准 `IDCardOCR`**:二者计费/响应结构不同)
   - `MLIDPassportOCR`(护照识别,**仅可机读护照**)
   - `MainlandPermitOCR`(港澳台居民来往内地 / 大陆通行证识别;系统侧仅接受「来往内地」类别)
 - [ ] CAM 子账号 **SecretId / SecretKey**(最小权限:仅授予上述 OCR 接口;**不要**用主账号密钥)
 - [ ] 确认接口的 `region` / `endpoint` 与系统侧 Provider 实现一致:`ocr.tencentcloudapi.com`,service `ocr`,
-      version `2018-11-19`(见冻结评审稿 §3.6 / `realname.constants.ts`;不一致需先对齐再录入;
-      **真实响应字段名以腾讯云 OCR 文档为准,首次联调对照校正**)
+      version `2018-11-19`(见冻结评审稿 §3.6 / `realname.constants.ts`;不一致需先对齐再录入)
+- [ ] **首次真实联调核对字段映射**(2026-06-29:mainland 鉴伪版已按腾讯云文档嵌套结构〔`IDCardInfo.{Name,IdNum}.Content`〕校正;passport / hk_macau 仍按顶层字符串映射,待各自首次联调确认):真实身份证打一次 `recognize` 后,看后端 `logger.debug` 行 `[realname ocr] … nameHit=true idHit=true` —— **出现 = 字段路径正确**;若图清晰但 `nameHit=false / idHit=false`,字段名仍需对照真实回包微调 provider `mapResponse`。**字段映射失败现会落 `27031`〔识别端〕/ `ocr_error`〔提交端〕而非静默「不清晰」**,便于一眼定位(2026-06-29 去混淆修复)
 - [ ] SUPER_ADMIN 账号(§4 录凭证仅 SUPER_ADMIN 可调)
 
 ---

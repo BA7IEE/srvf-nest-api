@@ -13,10 +13,13 @@ import {
 } from '../realname.types';
 import { TencentRealnameProvider } from './tencent-realname.provider';
 
-// 招新实名环节 OCR 改造 · 真实腾讯云 OCR Provider 单测(评审稿 §8;真通道休眠 → 仅 mock fetch 锁结构)
+// 招新实名环节 OCR 改造 · 真实腾讯云 OCR Provider 单测(评审稿 §8)
 //
+// mainland 用**腾讯云线上真实嵌套结构**(Response.IDCardInfo.{Name,IdNum}.Content + WarnInfos 标志位)锁定,
+// 替掉旧的「顶层 Name/IdNum」循环 mock(那曾让字段映射 bug 漏网,详见 2026-06-29 修复)。
 // 覆盖三 action(RecognizeValidIDCardOCR / MLIDPassportOCR / MainlandPermitOCR)成功映射 +
-// recognized=false(关键字段缺/非机读)+ 防伪告警透传 + 回乡证类别 +
+// recognized=false(Content 缺/非机读,真不清晰)+ IDCardInfo 容器整块缺失→契约错 27031(去混淆,不当不清晰)+
+// 防伪标志收窄(复印/翻拍/PS 进防伪,质量类不进)+ 回乡证类别 +
 // 腾讯云 Error 回执→27031 / HTTP 非 200→27031 / 非 JSON→27031 / 缺 Response→27031 / 超时→27031 /
 // 通道未配→27030(不调 fetch)/ 非 OCR 类型→ChannelUnavailable(不调 fetch)。
 // 不验真实签名值(TC3 依赖 Date);此处锁请求构造(action header / host / version)与结果/错误映射。
@@ -62,9 +65,18 @@ describe('TencentRealnameProvider (OCR)', () => {
     jest.restoreAllMocks();
   });
 
-  it('mainland RecognizeValidIDCardOCR:Name+IdNum → recognized + 字段;action header 正确', async () => {
+  // 鉴伪版 RecognizeValidIDCardOCR 真实响应:字段嵌在 Response.IDCardInfo,每项是 { Content } 对象;
+  // WarnInfos 是标志位对象(1=命中)。下列 mock 镜像线上结构(替掉旧的「顶层 Name/IdNum」循环 mock)。
+  it('mainland RecognizeValidIDCardOCR:嵌套 IDCardInfo.Content → recognized + 字段;action header 正确', async () => {
     const fn = mockFetchJson({
-      Response: { Name: '张三', IdNum: '110101199003070038', WarnInfos: [], RequestId: 'r1' },
+      Response: {
+        IDCardInfo: {
+          Name: { Content: '张三', Confidence: 90 },
+          IdNum: { Content: '110101199003070038', Confidence: 90 },
+          WarnInfos: { CopyCheck: 0, ReshootCheck: 0, PSCheck: 0 },
+        },
+        RequestId: 'r1',
+      },
     });
     const res = await makeProvider(CONFIGURED).recognize(input('mainland_id'));
     expect(res.recognized).toBe(true);
@@ -79,19 +91,37 @@ describe('TencentRealnameProvider (OCR)', () => {
     expect(headers.Host).toBe('ocr.tencentcloudapi.com');
   });
 
-  it('mainland 防伪告警透传(WarnInfos 非空 → warnings)', async () => {
+  it('mainland 防伪标志(Copy/PS=1)→ warnings;质量标志(Blur=1)不当防伪', async () => {
     mockFetchJson({
-      Response: { Name: '张三', IdNum: '110101199003070038', WarnInfos: [9101, 9102] },
+      Response: {
+        IDCardInfo: {
+          Name: { Content: '张三' },
+          IdNum: { Content: '110101199003070038' },
+          WarnInfos: { CopyCheck: 1, PSCheck: 1, ReshootCheck: 0, BlurCheck: 1, BorderCheck: 1 },
+        },
+      },
     });
     const res = await makeProvider(CONFIGURED).recognize(input('mainland_id'));
     expect(res.recognized).toBe(true);
-    expect(res.warnings).toEqual(['9101', '9102']);
+    // 仅复印/翻拍/PS 进防伪;模糊/边缘(质量)不进
+    expect(res.warnings).toEqual(['CopyCheck', 'PSCheck']);
   });
 
-  it('mainland 关键字段缺(无 IdNum)→ recognized:false(不清晰,非异常)', async () => {
-    mockFetchJson({ Response: { Name: '张三', RequestId: 'r1' } });
+  it('mainland IDCardInfo 在但 Content 读不出关键字段 → recognized:false(真不清晰,非异常)', async () => {
+    mockFetchJson({
+      Response: { IDCardInfo: { Name: { Content: '张三' } }, RequestId: 'r1' },
+    });
     const res = await makeProvider(CONFIGURED).recognize(input('mainland_id'));
     expect(res.recognized).toBe(false);
+    expect(res.name).toBe('张三');
+    expect(res.idCardNumber).toBeNull();
+  });
+
+  it('mainland IDCardInfo 容器整块缺失 → RealnameApiError(契约错,**不**降级成 recognized:false)', async () => {
+    mockFetchJson({ Response: { RequestId: 'r1' } });
+    await expect(makeProvider(CONFIGURED).recognize(input('mainland_id'))).rejects.toBeInstanceOf(
+      RealnameApiError,
+    );
   });
 
   it('passport MLIDPassportOCR:Name+ID → recognized;action 正确', async () => {
