@@ -8,9 +8,6 @@ import {
 } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
-import { auditPlaceholder } from '../../common/audit/audit-placeholder';
-import { PageResultDto } from '../../common/dto/pagination.dto';
-import type { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
@@ -31,40 +28,25 @@ import type { StorageProvider } from '../storage/storage.interface';
 import { WechatService } from '../wechat/wechat.service';
 import {
   APP_STATUS_MANUAL,
-  APP_STATUS_PENDING_EVALUATION,
-  APP_STATUS_PROMOTED,
-  APP_STATUS_PUBLICITY,
   APP_STATUS_REJECTED,
   APP_STATUS_VERIFIED,
   CYCLE_STATUS_OPEN,
-  ELIM_STAGE_EVALUATION,
   ELIM_STAGE_MANUAL,
-  ELIM_STAGE_THRESHOLD_TIMEOUT,
   ID_CARD_IMAGE_ALLOWED_MIME,
   ID_CARD_IMAGE_KEY_PREFIX,
   ID_CARD_IMAGE_MAX_BYTES,
-  ID_CARD_IMAGE_SIGNED_URL_TTL_SECONDS,
-  MEMBER_NO_MAX_SEQ,
   RECRUITMENT_MAX_AGE,
   RECRUITMENT_MIN_AGE,
-  type ThresholdCode,
-  type ThresholdMarks,
   VERIFY_OUTCOME_CATEGORY_MISMATCH,
   ageGroupOf,
-  allThresholdsComplete,
-  comparePromotionOrder,
-  decidePromotionIssuance,
   computeAge,
   extractBirthDate,
   extractGenderCode,
-  formatMemberNo,
   formatTempNo,
   isForeignDocument,
   isMainlandId,
-  isPromotable,
   isValidChineseId,
 } from './recruitment.constants';
-import { resolveBatchMatches } from './recruitment-batch-matching';
 import {
   RecruitmentIdentityService,
   type ConsumedPhoneIdentity,
@@ -73,18 +55,15 @@ import { type OcrOutcome, classifyOcrResult, routeOcrOutcome } from './recruitme
 import {
   RECRUITMENT_STAGE_DICT_TYPE,
   assembleRecruitmentProgress,
-  deriveRecruitmentStage,
 } from './recruitment-progress-presenter';
+import {
+  buildRecruitmentDeferResult,
+  maskOpenid,
+  maskPhone,
+  toAdminApplicationDto,
+  toRecruitmentSubmitResult,
+} from './recruitment-applications.presenter';
 import type {
-  BatchMarkThresholdDto,
-  BatchMarkThresholdResultDto,
-  BatchMarkThresholdRowResultDto,
-  EvaluateRecruitmentApplicationDto,
-  ExportRecruitmentApplicationsDto,
-  IdCardImageUrlResponseDto,
-  MarkThresholdDto,
-  PublicityListItemDto,
-  PublicityListResponseDto,
   RecruitmentApplicationAdminDto,
   RecruitmentApplicationProgressDto,
   RecruitmentOcrRecognizeResponseDto,
@@ -95,6 +74,12 @@ import type {
 
 // 招新一期 T3(2026-06-18):招新报名 service(评审稿 §3.2 端点 4/5/10-13 + §4 校验流程冻结)。
 // 公开提交/查询无账号(actor 置空);admin 走 rbac.can。付费实名核验为最后一道闸(配套①成本纪律)。
+//
+// god-service 拆分(2026-06-28):本 service 收口在「公开申请人自助管道」+ 发临时编号的两条路径
+// (submit 自动 / resolveManual 人工,共享 issueTempNo 容量原子兜底 FM-C)。其余职责已抽离:
+// 视图塑形/脱敏/CSV → recruitment-applications.presenter.ts(纯函数);admin 读面 →
+// recruitment-applications-query.service.ts;核验后评审写动作(标门槛/批量/评定)→
+// recruitment-application-review.service.ts(沿 architecture-boundary §3.1/§3.2/§4)。
 
 const AUDIT_RESOURCE_TYPE = 'recruitment_application';
 
@@ -314,9 +299,14 @@ export class RecruitmentApplicationsService {
       }
       this.logger.log(
         `recruitment ocr defer disposition=${decision.disposition} outcome=${outcome} ` +
-          `phone=${this.maskPhone(payload.phone)} hasSession=${hasToken}`,
+          `phone=${maskPhone(payload.phone)} hasSession=${hasToken}`,
       );
-      return this.buildDeferResult(decision.disposition, recognized, cycle);
+      // 文案字典仅在有业务态(retake/confirm)时加载;retry 系统瞬态无 stage → 不查库(保留原行为)。
+      const stageTextByCode =
+        decision.disposition === 'retry'
+          ? new Map<string, string>()
+          : await this.loadStageTextMap();
+      return buildRecruitmentDeferResult(decision.disposition, recognized, cycle, stageTextByCode);
     }
     const record = decision.record as NonNullable<typeof decision.record>; // disposition='submitted' → record 必有
 
@@ -405,8 +395,8 @@ export class RecruitmentApplicationsService {
             riskLevel: record.riskLevel,
           },
           extra: {
-            phone: this.maskPhone(payload.phone),
-            openid: openid ? this.maskOpenid(openid) : null,
+            phone: maskPhone(payload.phone),
+            openid: openid ? maskOpenid(openid) : null,
             idCard: maskIdCard(payload.idCardNumber),
           },
           tx,
@@ -445,7 +435,7 @@ export class RecruitmentApplicationsService {
     this.logger.log(
       `recruitment notify ready app=${finalApp.id} status=${finalApp.statusCode} tempNo=${finalApp.tempNo ?? '-'}`,
     );
-    return this.toSubmitResult(finalApp, cycle);
+    return toRecruitmentSubmitResult(finalApp, cycle);
   }
 
   // 大陆身份证 OCR 六分流分类(评审稿 §2.1/§3.6 矩阵;复用纯函数 classifyOcrResult)。
@@ -528,210 +518,13 @@ export class RecruitmentApplicationsService {
     return new Map(items.map((i) => [i.code, i.label]));
   }
 
-  // ============ admin 列表(PII 掩码;读 PII placeholder 审计)============
-  async listForAdmin(
-    query: PaginationQueryDto,
-    filters: { cycleId?: string; statusCode?: string; riskLevel?: string },
-    user: CurrentUserPayload,
-  ): Promise<PageResultDto<RecruitmentApplicationAdminDto>> {
-    await this.assertCanOrThrow(user, 'recruitment-application.read.record');
-    const where: Prisma.RecruitmentApplicationWhereInput = {
-      deletedAt: null,
-      ...(filters.cycleId ? { cycleId: filters.cycleId } : {}),
-      ...(filters.statusCode ? { statusCode: filters.statusCode } : {}),
-      // S4b:人工队列三栏过滤(§2.4;normal/high/system)
-      ...(filters.riskLevel ? { riskLevel: filters.riskLevel } : {}),
-    };
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.recruitmentApplication.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
-      }),
-      this.prisma.recruitmentApplication.count({ where }),
-    ]);
-    auditPlaceholder('recruitment-application.read.other', {
-      adminId: user.id,
-      count: rows.length,
-    });
-    return {
-      items: rows.map((r) => this.toAdminDto(r, true)),
-      total,
-      page: query.page,
-      pageSize: query.pageSize,
-    };
-  }
-
-  // ============ admin 详情(敏感字段分级;S3 §11.1)============
-  // 入口闸 = read.record(普通查看);持 read.sensitive → 明文证件号/手机,仅 read.record → 脱敏详情。
-  // 响应字段集不随码变(只 masking 随码;biz-admin 同持双码,行为不回退)。
-  async detailForAdmin(
-    id: string,
-    user: CurrentUserPayload,
-  ): Promise<RecruitmentApplicationAdminDto> {
-    await this.assertCanOrThrow(user, 'recruitment-application.read.record');
-    const row = await this.findAppOrThrow(id);
-    const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
-    auditPlaceholder('recruitment-application.read.other', { adminId: user.id, applicationId: id });
-    return this.toAdminDto(row, !canSensitive);
-  }
-
-  // ============ 招新闭环优化 S6:批量导出 CSV(评审稿 §8.1;脱敏随码复用 S3 toAdminDto,零第二套)============
-  // 入口闸 = read.record(同 list/detail);**持 read.sensitive → 明文列 / 仅 read.record → 脱敏列**
-  //(S3 §11.1 分级):脱敏单一真相源在 toAdminDto(masked = !canSensitive),CSV 仅消费已脱敏 DTO —— 明文
-  // 绝不在无 read.sensitive 时出列。读操作 export placeholder 审计(含 admin / 范围 filter / 脱敏级;
-  // 复用既有 read.other pino 事件 + operation 区分,沿 registrations export 范式,不扩 locked AuditEvent union)。
-  // 返回纯 CSV 字符串(controller 包 StreamableFile + BOM,沿 activity-registrations CSV 导出范式;不引新依赖)。
-  async exportApplicationsCsv(
-    dto: ExportRecruitmentApplicationsDto,
-    user: CurrentUserPayload,
-  ): Promise<string> {
-    await this.assertCanOrThrow(user, 'recruitment-application.read.record');
-    const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
-    const filter = dto.filter ?? 'all';
-
-    const where: Prisma.RecruitmentApplicationWhereInput = {
-      deletedAt: null,
-      ...(dto.cycleId ? { cycleId: dto.cycleId } : {}),
-      ...this.exportStatusWhere(filter),
-    };
-    const rows = await this.prisma.recruitmentApplication.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-    });
-    // threshold-incomplete:verified 且门槛未齐(post-filter,沿 stats tracking 口径;
-    // verified 门槛齐为瞬态,markThreshold 末次完成即自动→pending_evaluation)。
-    const filtered =
-      filter === 'threshold-incomplete'
-        ? rows.filter((r) => !allThresholdsComplete(r.thresholdMarks as ThresholdMarks | null))
-        : rows;
-
-    // 脱敏随码:复用 S3 toAdminDto(masked = !canSensitive)→ 零第二套口径。
-    const dtos = filtered.map((r) => this.toAdminDto(r, !canSensitive));
-
-    auditPlaceholder('recruitment-application.read.other', {
-      adminId: user.id,
-      operation: 'export',
-      filter,
-      maskLevel: canSensitive ? 'plain' : 'masked',
-      rowsCount: dtos.length,
-    });
-
-    return this.formatApplicationsCsv(dtos);
-  }
-
-  // 导出筛选 → statusCode where(threshold-incomplete 先按 verified 取,再 post-filter 门槛未齐)。
-  private exportStatusWhere(filter: string): Prisma.RecruitmentApplicationWhereInput {
-    switch (filter) {
-      case 'manual':
-        return { statusCode: APP_STATUS_MANUAL };
-      case 'verified':
-      case 'threshold-incomplete':
-        return { statusCode: APP_STATUS_VERIFIED };
-      case 'pending-evaluation':
-        return { statusCode: APP_STATUS_PENDING_EVALUATION };
-      case 'publicity':
-        return { statusCode: APP_STATUS_PUBLICITY };
-      case 'promoted':
-        return { statusCode: APP_STATUS_PROMOTED };
-      case 'rejected':
-        return { statusCode: APP_STATUS_REJECTED };
-      case 'all':
-      default:
-        return {};
-    }
-  }
-
-  // 简单 CSV encoder(沿 activity-registrations「不引入新依赖」):双引号转义 + 含逗号/换行/双引号字段加引号。
-  // 入参为**已脱敏** RecruitmentApplicationAdminDto(idCardNumber/phone 列已随 S3 码掩码/明文);CSV 只投影,不二次脱敏。
-  private formatApplicationsCsv(rows: RecruitmentApplicationAdminDto[]): string {
-    const HEADERS = [
-      'id',
-      'cycle_id',
-      'status_code',
-      'temp_no',
-      'real_name',
-      'id_card_number',
-      'phone',
-      'document_type_code',
-      'is_foreigner',
-      'gender_code',
-      'age_group',
-      'city_district',
-      'verify_outcome',
-      'risk_level',
-      'manual_review_reason',
-      'elimination_stage',
-      'thresholds_complete',
-      'needs_manual_build',
-      'created_at',
-    ];
-    const escapeField = (value: string | number | boolean | Date | null): string => {
-      if (value === null || value === undefined) return '';
-      const s = value instanceof Date ? value.toISOString() : String(value);
-      if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
-        return `"${s.replace(/"/g, '""')}"`;
-      }
-      return s;
-    };
-    const lines: string[] = [HEADERS.join(',')];
-    for (const r of rows) {
-      lines.push(
-        [
-          escapeField(r.id),
-          escapeField(r.cycleId),
-          escapeField(r.statusCode),
-          escapeField(r.tempNo),
-          escapeField(r.realName),
-          escapeField(r.idCardNumber),
-          escapeField(r.phone),
-          escapeField(r.documentTypeCode),
-          escapeField(r.isForeigner),
-          escapeField(r.genderCode),
-          escapeField(r.ageGroup),
-          escapeField(r.cityDistrict),
-          escapeField(r.verifyOutcome),
-          escapeField(r.riskLevel),
-          escapeField(r.manualReviewReason),
-          escapeField(r.eliminationStage),
-          escapeField(r.thresholdsComplete),
-          escapeField(r.needsManualBuild),
-          escapeField(r.createdAt),
-        ].join(','),
-      );
-    }
-    return lines.join('\n');
-  }
-
-  // ============ admin 取证件照 signed-URL(配套②;L3;短 TTL;S3:敏感查看 read.sensitive)============
-  async getIdCardImageUrl(
-    id: string,
-    user: CurrentUserPayload,
-  ): Promise<IdCardImageUrlResponseDto> {
-    await this.assertCanOrThrow(user, 'recruitment-application.read.sensitive');
-    const row = await this.findAppOrThrow(id);
-    if (!row.idCardImageKey) {
-      throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
-    }
-    const result = await this.storage.generateDownloadUrl({
-      key: row.idCardImageKey,
-      expiresIn: ID_CARD_IMAGE_SIGNED_URL_TTL_SECONDS,
-    });
-    auditPlaceholder('recruitment-application.id-card-image.read', {
-      adminId: user.id,
-      applicationId: id,
-    });
-    // url 是 L3,不入日志/snapshot;仅出参回显
-    return { url: result.url, expiresAt: result.expiresAt };
-  }
-
   // ============ admin 人工 resolve(manual_review → verified 发号 / rejected)============
   // OCR 改造(2026-06-22 分叉④):报名 submit 改单事务建终态,**不再产生 pending_verification 在途态**,
   // FM-A 卡死恢复/在途守卫整类退役。可解态 = manual_review 唯一(护照/回乡证/其余人工 + 大陆 OCR
   // 不匹配·防伪告警·不清晰·上游失败转入)。**人工是 manual_review 的最终权威**:approve 即放行发号
   // (含 OCR 不匹配的——人工看图后可放行真实申请人,「对不上转人工不误杀」),reject → rejected。
   // approve 走容量原子校验(FM-C,issueTempNo);reject 不受容量限。
+  // 注:与 submit 同享 issueTempNo(FM-C 唯一真相源),故 resolveManual 留本 service,不入 review service。
   async resolveManual(
     id: string,
     dto: ResolveRecruitmentApplicationDto,
@@ -785,273 +578,8 @@ export class RecruitmentApplicationsService {
         extra: { tempNo: updated.tempNo, eliminationStage: updated.eliminationStage },
         tx,
       });
-      return this.toAdminDto(updated, false);
+      return toAdminApplicationDto(updated, false);
     });
-  }
-
-  // ============ 招新二期:标/清门槛(M-3 / E-R2-2;幂等;末次完成自动推进 pending_evaluation)============
-  async markThreshold(
-    id: string,
-    dto: MarkThresholdDto,
-    user: CurrentUserPayload,
-    meta: AuditMeta,
-    now: Date,
-  ): Promise<RecruitmentApplicationAdminDto> {
-    await this.assertCanOrThrow(user, 'recruitment-application.mark.threshold');
-    return this.prisma.$transaction(async (tx) => {
-      const row = await tx.recruitmentApplication.findFirst({ where: { id, deletedAt: null } });
-      if (!row) {
-        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
-      }
-      // 仅 verified / pending_evaluation 态可标(评定/公示/发号后门槛不可再动);他态 28041
-      if (
-        row.statusCode !== APP_STATUS_VERIFIED &&
-        row.statusCode !== APP_STATUS_PENDING_EVALUATION
-      ) {
-        throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
-      }
-      const marks: ThresholdMarks = { ...((row.thresholdMarks as ThresholdMarks | null) ?? {}) };
-      const code = dto.thresholdCode as ThresholdCode; // DTO @IsIn 已校验 ∈ THRESHOLD_CODES
-      if (dto.completed) {
-        marks[code] = { at: now.toISOString(), by: user.id };
-      } else {
-        delete marks[code];
-      }
-      const allComplete = allThresholdsComplete(marks);
-      // 单一真相源自动推进:全完成→pending_evaluation / 否→回退 verified(仅此二态切换)
-      const nextStatus = allComplete ? APP_STATUS_PENDING_EVALUATION : APP_STATUS_VERIFIED;
-      const updated = await tx.recruitmentApplication.update({
-        where: { id },
-        data: { thresholdMarks: marks as Prisma.InputJsonValue, statusCode: nextStatus },
-      });
-      await this.auditLogs.log({
-        event: 'recruitment-application.mark-threshold',
-        actorUserId: user.id,
-        actorRoleSnap: user.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: id,
-        meta,
-        before: { statusCode: row.statusCode },
-        after: { statusCode: nextStatus },
-        extra: { thresholdCode: code, completed: dto.completed, allComplete },
-        tx,
-      });
-      return this.toAdminDto(updated, false);
-    });
-  }
-
-  // ============ 招新闭环优化 S6:批量标门槛(评审稿 §8.1;复用单行 markThreshold,零第二套)============
-  // 入参 = 匹配键数组(临时编号 / 手机 / 姓名+手机;「签到记录导入」由前端解析为本数组)+ thresholdCode + completed。
-  // **逐行复用单行 markThreshold**(各自独立事务 → 逐行幂等 + 逐行容错:某行匹配不上/状态非法不整批回滚;
-  // per-row mark-threshold DB 审计 + 自动推进语义全由单行逻辑承载,本方法零重复)。批次汇总走 logger.log
-  // (沿 promote 批量操作范式:per-row DB 审计 + 操作性汇总日志;不扩 locked AuditEvent union)。
-  async batchMarkThreshold(
-    dto: BatchMarkThresholdDto,
-    user: CurrentUserPayload,
-    meta: AuditMeta,
-    now: Date,
-  ): Promise<BatchMarkThresholdResultDto> {
-    // 入口快速失败(单行 markThreshold 内仍逐行复判,防御不破)。
-    await this.assertCanOrThrow(user, 'recruitment-application.mark.threshold');
-
-    // 候选集(限定 scope + 未软删;仅取匹配所需字段)。缺 cycleId 时跨全部未软删报名匹配
-    // (手机/姓名多命中 → ambiguous 安全留人工,不误标)。
-    const candidates = await this.prisma.recruitmentApplication.findMany({
-      where: { deletedAt: null, ...(dto.cycleId ? { cycleId: dto.cycleId } : {}) },
-      select: { id: true, tempNo: true, phone: true, realName: true },
-    });
-    const resolutions = resolveBatchMatches(dto.matches, candidates);
-
-    const results: BatchMarkThresholdRowResultDto[] = [];
-    let marked = 0;
-    let unmatched = 0;
-    let failed = 0;
-    let autoAdvanced = 0;
-
-    for (let i = 0; i < resolutions.length; i++) {
-      const r = resolutions[i];
-      if (r.status === 'unmatched') {
-        unmatched += 1;
-        results.push({
-          index: i,
-          status: 'unmatched',
-          applicationId: null,
-          matchedBy: null,
-          unmatchedReason: r.reason,
-          errorCode: null,
-          statusCode: null,
-          thresholdsComplete: null,
-        });
-        continue;
-      }
-      // 命中 → 复用单行 markThreshold(自有事务:逐行幂等 + 逐行容错 + 自动推进 + per-row 审计)。
-      try {
-        const updated = await this.markThreshold(
-          r.applicationId,
-          { thresholdCode: dto.thresholdCode, completed: dto.completed },
-          user,
-          meta,
-          now,
-        );
-        marked += 1;
-        const advanced = dto.completed && updated.statusCode === APP_STATUS_PENDING_EVALUATION;
-        if (advanced) autoAdvanced += 1;
-        results.push({
-          index: i,
-          status: 'marked',
-          applicationId: r.applicationId,
-          matchedBy: r.matchedBy,
-          unmatchedReason: null,
-          errorCode: null,
-          statusCode: updated.statusCode,
-          thresholdsComplete: updated.thresholdsComplete,
-        });
-      } catch (err) {
-        // 逐行容错:单行业务失败(如 28041 状态非法)记 failed,批次继续(不整批回滚)。
-        failed += 1;
-        results.push({
-          index: i,
-          status: 'failed',
-          applicationId: r.applicationId,
-          matchedBy: r.matchedBy,
-          unmatchedReason: null,
-          errorCode: err instanceof BizException ? err.biz.code : null,
-          statusCode: null,
-          thresholdsComplete: null,
-        });
-      }
-    }
-
-    // 批次汇总(操作性日志;per-row 审计已由单行 markThreshold 落库)。
-    this.logger.log(
-      `recruitment batch-mark-threshold code=${dto.thresholdCode} completed=${dto.completed} ` +
-        `total=${dto.matches.length} marked=${marked} unmatched=${unmatched} failed=${failed} ` +
-        `autoAdvanced=${autoAdvanced} by=${user.id}`,
-    );
-
-    return { results, total: dto.matches.length, marked, unmatched, failed, autoAdvanced };
-  }
-
-  // ============ 招新二期:综合评定 / 淘汰(单一人工闸;D-R2-3 / 流程冻结 §4)============
-  // pending_evaluation:通过→公示 / 不通过→未通过(evaluation);
-  // verified:仅 approved=false 淘汰(门槛超期/退出,threshold-timeout);approved=true→28041(门槛未齐);
-  // 其余态→28041。
-  async evaluate(
-    id: string,
-    dto: EvaluateRecruitmentApplicationDto,
-    user: CurrentUserPayload,
-    meta: AuditMeta,
-    now: Date,
-  ): Promise<RecruitmentApplicationAdminDto> {
-    await this.assertCanOrThrow(user, 'recruitment-application.evaluate.assessment');
-    return this.prisma.$transaction(async (tx) => {
-      const row = await tx.recruitmentApplication.findFirst({ where: { id, deletedAt: null } });
-      if (!row) {
-        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
-      }
-      let nextStatus: string;
-      let eliminationStage: string | null = null;
-      if (row.statusCode === APP_STATUS_PENDING_EVALUATION) {
-        if (dto.approved) {
-          nextStatus = APP_STATUS_PUBLICITY;
-        } else {
-          nextStatus = APP_STATUS_REJECTED;
-          eliminationStage = ELIM_STAGE_EVALUATION;
-        }
-      } else if (row.statusCode === APP_STATUS_VERIFIED) {
-        if (dto.approved) {
-          // 门槛未齐不可直接过评定(必须先全完成自动到 pending_evaluation)
-          throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
-        }
-        nextStatus = APP_STATUS_REJECTED;
-        eliminationStage = ELIM_STAGE_THRESHOLD_TIMEOUT;
-      } else {
-        throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
-      }
-      const updated = await tx.recruitmentApplication.update({
-        where: { id },
-        data: {
-          statusCode: nextStatus,
-          evaluatedByUserId: user.id,
-          evaluatedAt: now,
-          ...(dto.note !== undefined ? { evaluationNote: dto.note } : {}),
-          ...(eliminationStage ? { eliminationStage } : {}),
-        },
-      });
-      await this.auditLogs.log({
-        event: 'recruitment-application.evaluate',
-        actorUserId: user.id,
-        actorRoleSnap: user.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: id,
-        meta,
-        before: { statusCode: row.statusCode },
-        after: { statusCode: nextStatus },
-        extra: { approved: dto.approved, eliminationStage },
-        tx,
-      });
-      return this.toAdminDto(updated, false);
-    });
-  }
-
-  // ============ 招新二期:公示名单(D-R2-4;姓名 + 拟发编号,拼音序,零敏感)============
-  // 计算式预览:拟发编号 = 同一确定性拼音排序 + 当前 memberNoSeq 推算(发号时一致);
-  // 仅大陆可发号项编号,外籍/不可发号项 needsManualBuild=true + proposedMemberNo=null(M-1 发号前可见)。
-  // 公示名单读不记审计(配置台账类,姓名本就对外公示;评审稿 §3.5)。
-  async publicityList(
-    cycleId: string,
-    user: CurrentUserPayload,
-  ): Promise<PublicityListResponseDto> {
-    await this.assertCanOrThrow(user, 'recruitment-application.read.record');
-    const cycle = await this.prisma.recruitmentCycle.findFirst({
-      where: { id: cycleId, deletedAt: null },
-    });
-    if (!cycle) {
-      throw new BizException(BizCode.RECRUITMENT_CYCLE_NOT_FOUND);
-    }
-    const rows = await this.prisma.recruitmentApplication.findMany({
-      where: { cycleId, statusCode: APP_STATUS_PUBLICITY, deletedAt: null },
-    });
-    // F9(#399):公示拟发号与一键发号共享 decidePromotionIssuance —— 同序(comparePromotionOrder)、同判
-    // (isPromotable + openid 未被既有 User 占用 + 批内 openid 去重)→ 预览 = 实发,杜绝「公示显示拟发号、
-    // promote 时因 openid 已占用/批内重复被 skip 致编号偏移、公示失真」。openid 仅内部判定用,不入出参。
-    const candidateOpenids = rows.map((r) => r.openid).filter((o): o is string => o != null);
-    const boundRows = candidateOpenids.length
-      ? await this.prisma.user.findMany({
-          where: { openid: { in: candidateOpenids } },
-          select: { openid: true },
-        })
-      : [];
-    const boundOpenids = new Set(
-      boundRows.map((r) => r.openid).filter((o): o is string => o != null),
-    );
-    const sorted = [...rows].sort(comparePromotionOrder);
-    let seq = cycle.memberNoSeq;
-    const items: PublicityListItemDto[] = decidePromotionIssuance(sorted, boundOpenids).map(
-      ({ app: r, willIssue }) => {
-        let proposedMemberNo: string | null = null;
-        if (willIssue) {
-          seq += 1;
-          // 超 999 预览置 null(实际发号撞上限 → 28043);保持预览与发号一致
-          proposedMemberNo = seq <= MEMBER_NO_MAX_SEQ ? formatMemberNo(cycle.year, seq) : null;
-        }
-        return {
-          applicationId: r.id,
-          realName: r.realName,
-          proposedMemberNo,
-          isForeigner: r.isForeigner,
-          needsManualBuild: !willIssue,
-        };
-      },
-    );
-    const promotableCount = items.filter((i) => !i.needsManualBuild).length;
-    return {
-      cycleId: cycle.id,
-      cycleYear: cycle.year,
-      items,
-      promotableCount,
-      manualBuildCount: items.length - promotableCount,
-    };
   }
 
   // === helpers ===
@@ -1114,135 +642,5 @@ export class RecruitmentApplicationsService {
         `recruitment orphan id-card image cleanup failed key=${key}: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
-  }
-
-  private async findAppOrThrow(id: string): Promise<RecruitmentApplication> {
-    const row = await this.prisma.recruitmentApplication.findFirst({
-      where: { id, deletedAt: null },
-    });
-    if (!row) {
-      throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
-    }
-    return row;
-  }
-
-  private maskPhone(phone: string): string {
-    return phone.length >= 11 ? `${phone.slice(0, 3)}****${phone.slice(-4)}` : '***';
-  }
-
-  private maskOpenid(openid: string): string {
-    return openid.length <= 8 ? '***' : `${openid.slice(0, 4)}****${openid.slice(-4)}`;
-  }
-
-  // 落记录提交结果(outcome='submitted';verified/manual_review;statusCode 为中性机器态,不含 riskLevel/分类)。
-  private toSubmitResult(
-    app: RecruitmentApplication,
-    cycle: RecruitmentCycle,
-  ): RecruitmentSubmitResultDto {
-    return {
-      outcome: 'submitted',
-      statusCode: app.statusCode,
-      tempNo: app.tempNo,
-      stage: null,
-      stageText: null,
-      nextAction: null,
-      hint: null,
-      recognized: null,
-      cycleName: cycle.name,
-      meetingInfo: cycle.meetingInfo,
-      qqGroup: cycle.qqGroup,
-      notifyTemplate: cycle.notifyTemplate as Record<string, unknown> | null,
-    };
-  }
-
-  // 延迟引导结果(不落记录;六分流 retake/confirm/retry)。**中性文案,绝不暴露 riskLevel/forgery**(goal 三③隐私口径):
-  // - retake/confirm 经 deriveRecruitmentStage 派生会话态 stage(单一真相源)+ 字典文案;retry 无业务态(系统瞬态)。
-  // - confirm(mismatch 三选一)回带 OCR 识别值供申请人选「①用 OCR 回填」(申请人本人 PII,等同 recognize 端)。
-  private async buildDeferResult(
-    disposition: 'retake' | 'confirm' | 'retry',
-    recognized: { realName: string | null; idCardNumber: string | null } | null,
-    cycle: RecruitmentCycle,
-  ): Promise<RecruitmentSubmitResultDto> {
-    let stage: string | null = null;
-    let stageText: string | null = null;
-    let nextAction: string | null = null;
-    let hint: string | null = null;
-    if (disposition === 'retake') {
-      const d = deriveRecruitmentStage({
-        statusCode: APP_STATUS_VERIFIED, // 占位:requiresRetake 短路在 switch 之前,statusCode 不参与
-        thresholdMarks: null,
-        tempNo: null,
-        promotedMemberId: null,
-        requiresRetake: true,
-      });
-      stage = d.stage; // STAGE_RETAKE
-      nextAction = d.nextAction; // NEXT_ACTION_RETAKE
-      hint = '证件照不清晰或需重拍,请重新拍摄清晰的证件原件后再次提交';
-    } else if (disposition === 'confirm') {
-      const d = deriveRecruitmentStage({
-        statusCode: APP_STATUS_VERIFIED, // 占位:pendingOcrConfirm 短路
-        thresholdMarks: null,
-        tempNo: null,
-        promotedMemberId: null,
-        pendingOcrConfirm: true,
-      });
-      stage = d.stage; // STAGE_CONFIRM
-      nextAction = d.nextAction; // NEXT_ACTION_CONFIRM_OCR
-      hint = '证件识别与填写不一致,请核对:使用识别结果、修改填写、或确认识别有误后再次提交';
-    } else {
-      // retry(上游首次失败):系统瞬态,无业务 stage;中性提示重试。
-      hint = '当前核验繁忙,请稍后重试';
-    }
-    if (stage !== null) {
-      const map = await this.loadStageTextMap();
-      stageText = map.get(stage) ?? stage;
-    }
-    return {
-      outcome: disposition,
-      statusCode: null,
-      tempNo: null,
-      stage,
-      stageText,
-      nextAction,
-      hint,
-      recognized: disposition === 'confirm' ? recognized : null,
-      cycleName: cycle.name,
-      meetingInfo: cycle.meetingInfo,
-      qqGroup: cycle.qqGroup,
-      notifyTemplate: cycle.notifyTemplate as Record<string, unknown> | null,
-    };
-  }
-
-  private toAdminDto(app: RecruitmentApplication, masked: boolean): RecruitmentApplicationAdminDto {
-    return {
-      id: app.id,
-      cycleId: app.cycleId,
-      statusCode: app.statusCode,
-      tempNo: app.tempNo,
-      realName: app.realName,
-      idCardNumber: app.idCardNumber
-        ? masked
-          ? maskIdCard(app.idCardNumber)
-          : app.idCardNumber
-        : null,
-      phone: app.phone ? (masked ? this.maskPhone(app.phone) : app.phone) : null,
-      documentTypeCode: app.documentTypeCode,
-      isForeigner: app.isForeigner,
-      genderCode: app.genderCode,
-      ageGroup: app.ageGroup,
-      cityDistrict: app.cityDistrict,
-      verifyOutcome: app.verifyOutcome,
-      riskLevel: app.riskLevel,
-      manualReviewReason: app.manualReviewReason,
-      eliminationStage: app.eliminationStage,
-      hasIdCardImage: app.idCardImageKey !== null,
-      thresholdMarks:
-        (app.thresholdMarks as Record<string, { at: string; by: string }> | null) ?? null,
-      thresholdsComplete: allThresholdsComplete(app.thresholdMarks as ThresholdMarks | null),
-      evaluationNote: app.evaluationNote,
-      promotedMemberId: app.promotedMemberId,
-      needsManualBuild: !isPromotable(app),
-      createdAt: app.createdAt,
-    };
   }
 }

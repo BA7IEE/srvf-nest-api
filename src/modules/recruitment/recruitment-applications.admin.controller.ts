@@ -38,6 +38,8 @@ import {
   RecruitmentApplicationAdminDto,
   ResolveRecruitmentApplicationDto,
 } from './recruitment.dto';
+import { RecruitmentApplicationReviewService } from './recruitment-application-review.service';
+import { RecruitmentApplicationsQueryService } from './recruitment-applications-query.service';
 import { RecruitmentApplicationsService } from './recruitment-applications.service';
 
 // 招新一期 T3(2026-06-18):招新报名 admin surface(评审稿 §3.2 端点 10-13)。
@@ -64,7 +66,13 @@ function buildAuditMeta(req: Request): AuditMeta {
 )
 @Controller('admin/v1/recruitment/applications')
 export class RecruitmentApplicationsAdminController {
-  constructor(private readonly service: RecruitmentApplicationsService) {}
+  // god-service 拆分(2026-06-28):读面 → queryService、评审写动作 → reviewService、
+  // 人工 resolve(共享发号 FM-C)仍在 service。端点 path/DTO/guard/契约零变,仅内部派发分流。
+  constructor(
+    private readonly service: RecruitmentApplicationsService,
+    private readonly queryService: RecruitmentApplicationsQueryService,
+    private readonly reviewService: RecruitmentApplicationReviewService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -80,7 +88,7 @@ export class RecruitmentApplicationsAdminController {
     @Query('statusCode') statusCode?: string,
     @Query('riskLevel') riskLevel?: string,
   ) {
-    return this.service.listForAdmin(query, { cycleId, statusCode, riskLevel }, user);
+    return this.queryService.listForAdmin(query, { cycleId, statusCode, riskLevel }, user);
   }
 
   // 招新闭环优化 S6:批量标门槛 / 批量导出。字面段 export / batch-mark-threshold 在 :id 路由**之前**声明
@@ -98,7 +106,7 @@ export class RecruitmentApplicationsAdminController {
     @CurrentUser() user: CurrentUserPayload,
     @Req() req: Request,
   ): Promise<BatchMarkThresholdResultDto> {
-    return this.service.batchMarkThreshold(dto, user, buildAuditMeta(req), new Date());
+    return this.reviewService.batchMarkThreshold(dto, user, buildAuditMeta(req), new Date());
   }
 
   @Post('export')
@@ -114,7 +122,7 @@ export class RecruitmentApplicationsAdminController {
     @CurrentUser() user: CurrentUserPayload,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const csv = await this.service.exportApplicationsCsv(dto, user);
+    const csv = await this.queryService.exportApplicationsCsv(dto, user);
     res.set({
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': 'attachment; filename="recruitment-applications.csv"',
@@ -138,7 +146,7 @@ export class RecruitmentApplicationsAdminController {
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<RecruitmentApplicationAdminDto> {
-    return this.service.detailForAdmin(id, user);
+    return this.queryService.detailForAdmin(id, user);
   }
 
   @Get(':id/id-card-image-url')
@@ -156,7 +164,7 @@ export class RecruitmentApplicationsAdminController {
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<IdCardImageUrlResponseDto> {
-    return this.service.getIdCardImageUrl(id, user);
+    return this.queryService.getIdCardImageUrl(id, user);
   }
 
   @Post(':id/resolve')
@@ -201,7 +209,7 @@ export class RecruitmentApplicationsAdminController {
     @CurrentUser() user: CurrentUserPayload,
     @Req() req: Request,
   ): Promise<RecruitmentApplicationAdminDto> {
-    return this.service.markThreshold(id, dto, user, buildAuditMeta(req), new Date());
+    return this.reviewService.markThreshold(id, dto, user, buildAuditMeta(req), new Date());
   }
 
   @Post(':id/evaluate')
@@ -224,6 +232,6 @@ export class RecruitmentApplicationsAdminController {
     @CurrentUser() user: CurrentUserPayload,
     @Req() req: Request,
   ): Promise<RecruitmentApplicationAdminDto> {
-    return this.service.evaluate(id, dto, user, buildAuditMeta(req), new Date());
+    return this.reviewService.evaluate(id, dto, user, buildAuditMeta(req), new Date());
   }
 }
