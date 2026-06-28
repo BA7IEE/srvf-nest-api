@@ -17,7 +17,14 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-import { EMERGENCY_CONTACTS_MIN, THRESHOLD_CODES } from './recruitment.constants';
+import { PaginationQueryDto } from '../../common/dto/pagination.dto';
+import {
+  EMERGENCY_CONTACTS_MIN,
+  RISK_LEVEL_HIGH,
+  RISK_LEVEL_NORMAL,
+  RISK_LEVEL_SYSTEM,
+  THRESHOLD_CODES,
+} from './recruitment.constants';
 
 // 招新一期(招新前段)T3(2026-06-18):recruitment DTO 集合(评审稿 §3.2)。
 //
@@ -480,6 +487,34 @@ export class RecruitmentCycleResponseDto {
 }
 
 // ============ admin 报名 ============
+
+// admin 报名列表 query(分页 + 可选 cycleId / statusCode / riskLevel〔S4b 人工队列三栏 §2.4〕过滤)。
+// 过滤参数必须进 DTO 白名单:全局 ValidationPipe(whitelist + forbidNonWhitelisted)校验整个 query 对象,
+// loose @Query('x') 旁路不进白名单 → 发送过滤参时 400「property cycleId should not exist」(前端报名审核 tab 过滤失效)。
+export class RecruitmentApplicationListQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({ description: '按招新轮过滤' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(CODE_MAX)
+  cycleId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '按机器态 statusCode 过滤(pending_verification/verified/manual_review/rejected 等)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  statusCode?: string;
+
+  @ApiPropertyOptional({
+    description: '按复核风险级过滤(S4b 后台人工队列三栏分流;normal/high/system)',
+    enum: [RISK_LEVEL_NORMAL, RISK_LEVEL_HIGH, RISK_LEVEL_SYSTEM],
+  })
+  @IsOptional()
+  @IsIn([RISK_LEVEL_NORMAL, RISK_LEVEL_HIGH, RISK_LEVEL_SYSTEM])
+  riskLevel?: string;
+}
 
 // admin 报名出参(含 PII;身份证号/手机详情可全显,沿 certificates 可见性;列表掩码由 service 控制)
 export class RecruitmentApplicationAdminDto {

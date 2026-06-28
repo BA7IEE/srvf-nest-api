@@ -6,6 +6,11 @@
 
 > 累计下一个 minor 候选(**未 bump 版本 / 未发 Release**;沿发版拍板「合并所有子 PR 进 main + 累计 `## Unreleased`」)。
 
+### Fixed
+
+- **招新报名 admin 列表过滤参数被全局 `forbidNonWhitelisted` 误拒(档 C;契约↔校验一致性;前端 smoke 报名审核 tab 过滤失效)**:`GET /api/admin/v1/recruitment/applications` 的 `cycleId`/`statusCode`/`riskLevel` 过滤参经 loose `@Query('x')` 旁路传入、绕开 DTO → 全局 `ValidationPipe`(`whitelist + forbidNonWhitelisted`,[`apply-global-setup.ts`](src/bootstrap/apply-global-setup.ts))校验整个 query 对象时这三参不在白名单 → **400「property cycleId should not exist」**,后台无法按轮/状态/风险级过滤。修法 = **把过滤参纳入 query DTO 白名单**(**不动全局安全设置**):新建 [`RecruitmentApplicationListQueryDto`](src/modules/recruitment/recruitment.dto.ts) `extends PaginationQueryDto`(`cycleId`/`statusCode`/`riskLevel` 全 `@IsOptional` + `riskLevel @IsIn(normal/high/system)` 复用既有 `RISK_LEVEL_*` 常量 + `@ApiPropertyOptional` 文档化);controller [`list()`](src/modules/recruitment/recruitment-applications.admin.controller.ts) 改 `@Query() query: RecruitmentApplicationListQueryDto`、**去掉 loose `@Query('x')`**,filters 改从校验后 DTO 取;`listForAdmin` 过滤语义/签名零改(只换参数来源 loose→DTO)。
+  - **footprint**:**0 schema/migration/RBAC 码/BizCode/新端点** · path/method/tag/Guard 零变 · **`EXPECTED_ROUTES` 零变**(改参非改路由)· contract snapshot **受控微调**(三参 `required: true→false`〔loose `@Query` 默认 required 的旧契约失真一并矫正〕+ `riskLevel` 增 `enum: [normal,high,system]` + 三参补 description;参数名/`in:query`/语义不变)· 同类反模式全仓 grep `@Query('…')` **仅此一处**(其余列表端点均已 `@Query() …Dto` 白名单,无同款隐患)。新增 e2e ⑩c(带 `?cycleId=&statusCode=&riskLevel=` → 200 不再 400 + 三过滤命中正确 + 非法 `riskLevel` → 400 反证白名单生效);同 PR 刷新 `docs/handoff/{admin-web.md,openapi.json}`。
+
 ## v0.32.0 - 2026-06-27
 
 ### Added
