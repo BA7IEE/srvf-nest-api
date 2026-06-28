@@ -41,22 +41,46 @@ import {
 // - secretKey 仅参与签名计算,**不入**日志 / 错误信息 / 请求体;Authorization 头不落日志
 // - 证件照 base64 / 姓名 / 证件号在请求体或响应中,但**不入日志**(失败仅记 err.name / status / Tencent Code)
 //
-// 字段映射:真实字段名以腾讯云 OCR 文档为准,rollout 期对照校正(休眠期由 .spec mock 锁结构)。
+// 字段映射(2026-06-29 校正,对照腾讯云线上文档):mainland 鉴伪版 RecognizeValidIDCardOCR 返回 **嵌套**
+// Response.IDCardInfo —— 姓名/证件号在 .Name.Content / .IdNum.Content(**非顶层字符串**),WarnInfos 是标志位
+// 对象(值=1 命中)。passport / hk_macau 的 action 非嵌套,仍按顶层字符串映射。.spec 以真实嵌套结构锁定。
+
+// 腾讯云 OCR ContentInfo:鉴伪版每个识别字段的形状(值在 .Content,另带置信度)。
+interface TencentContentInfo {
+  Content?: string;
+  Confidence?: number;
+}
+
+// 鉴伪版 CardWarnInfo:防伪/质量标志位(值=1 命中,0/缺=正常)。
+// 仅复印/翻拍/PS 三项属**防伪**(进 antiForgeryWarnings → forgery_warning 高风险路由);
+// 边缘/遮挡/模糊属**质量**:读不出即 recognized:false 引导重拍,不当防伪升级(避免把真人申请误判为伪造)。
+interface TencentCardWarnInfo {
+  CopyCheck?: number; // 1=复印件
+  ReshootCheck?: number; // 1=翻拍(屏幕拍摄)
+  PSCheck?: number; // 1=PS 篡改痕迹
+  BorderCheck?: number; // 1=边缘不完整(质量)
+  OcclusionCheck?: number; // 1=遮挡(质量)
+  BlurCheck?: number; // 1=模糊(质量)
+}
+
+// 鉴伪版身份证识别结果容器(RecognizeValidIDCardOCR 的 Response.IDCardInfo)
+interface TencentIDCardInfo {
+  Name?: TencentContentInfo;
+  IdNum?: TencentContentInfo;
+  WarnInfos?: TencentCardWarnInfo;
+}
 
 // 腾讯云 v3 统一回执(Response 包裹;成功含识别字段,失败含 Error)。三 action 字段并集,均可选。
 interface TencentOcrWireResponse {
   Response?: {
-    // 通用 / 身份证(RecognizeValidIDCardOCR)
+    // 身份证鉴伪版(RecognizeValidIDCardOCR):**嵌套** IDCardInfo,字段值在 .Content
+    IDCardInfo?: TencentIDCardInfo;
+    // 护照(MLIDPassportOCR):顶层字符串字段
     Name?: string;
-    IdNum?: string;
-    CardNum?: string;
-    WarnInfos?: Array<number | string>; // 防伪/质量告警码(空/缺 = 无告警)
-    WarnCardInfos?: Array<number | string>;
-    // 护照(MLIDPassportOCR)
     EnglishName?: string;
     ID?: string;
     LicenseNumber?: string;
-    // 港澳台来往内地/大陆通行证(MainlandPermitOCR)
+    // 港澳台来往内地/大陆通行证(MainlandPermitOCR):顶层字符串字段
     Number?: string;
     CardType?: string; // 证件类别(须 ∈ 来往内地/大陆)
     RequestId?: string;
@@ -128,11 +152,21 @@ export class TencentRealnameProvider implements RealnameProvider {
     if (response.Error) {
       // 腾讯云 Error.Code / Message 来自回执,不含 secret;可入日志辅助运维定位
       const code = response.Error.Code ?? 'UNKNOWN';
-      this.logger.warn(`realname ocr tencent error action=${action} code=${code}`);
-      throw new RealnameApiError(code, response.Error.Message ?? 'unknown tencent error');
+      const msg = response.Error.Message ?? 'unknown tencent error';
+      this.logger.warn(`realname ocr tencent error action=${action} code=${code} msg=${msg}`);
+      throw new RealnameApiError(code, msg);
     }
 
-    return this.mapResponse(action, response);
+    const result = this.mapResponse(action, response);
+    // dev 安全诊断(logger.debug:生产日志级别默认不输出;**全程无 PII** —— 仅记命中布尔/长度/code,
+    // 永不记姓名/证件号明文)。运维联调据此核对:通道/区域/图片是否送达 + 腾讯是否真返回姓名+证件号。
+    this.logger.debug(
+      `[realname ocr] providerType=TENCENT_CLOUD action=${action} region=${ctx.region} ` +
+        `documentType=${input.documentTypeCode} mime=${input.mimeType} bufferLen=${input.image.length} ` +
+        `requestId=${response.RequestId ?? '-'} recognized=${result.recognized} ` +
+        `nameHit=${result.name != null} idHit=${result.idCardNumber != null} warnings=${result.warnings.length}`,
+    );
+    return result;
   }
 
   // 三 action 响应 → 归一化 RealnameOcrResult(字段并集;缺关键字段 = recognized:false 不清晰)
@@ -141,9 +175,20 @@ export class TencentRealnameProvider implements RealnameProvider {
     r: NonNullable<TencentOcrWireResponse['Response']>,
   ): RealnameOcrResult {
     if (action === REALNAME_OCR_ACTION_MAINLAND_ID) {
-      const name = r.Name ?? null;
-      const idCardNumber = r.IdNum ?? r.CardNum ?? null;
-      const warnings = [...(r.WarnInfos ?? []), ...(r.WarnCardInfos ?? [])].map((w) => String(w));
+      // 鉴伪版字段嵌在 Response.IDCardInfo,每项是 { Content } 对象(**非顶层字符串**)。
+      // 去混淆(评审稿 §3.6 + 本次修复):IDCardInfo 容器整块缺失 = 响应结构不符(action 用错 / 接口改版 /
+      // 非证件图被判另类),属「契约/系统错」而非「照片不清晰」→ 抛 RealnameApiError(识别端上浮 27031、
+      // 提交端转 ocr_error),**不静默降级成 recognized:false**。容器在、但 Content 读不出关键字段才算真不清晰。
+      const info = r.IDCardInfo;
+      if (!info) {
+        this.logger.warn(
+          `realname ocr contract mismatch action=${action} reason=IDCardInfo-missing`,
+        );
+        throw new RealnameApiError('CONTRACT_MISMATCH', 'IDCardInfo missing in OCR response');
+      }
+      const name = info.Name?.Content?.trim() || null;
+      const idCardNumber = info.IdNum?.Content?.trim() || null;
+      const warnings = collectForgeryWarnings(info.WarnInfos);
       return {
         recognized: Boolean(name && idCardNumber),
         name,
@@ -259,6 +304,18 @@ export class TencentRealnameProvider implements RealnameProvider {
       'X-TC-Region': ctx.region,
     };
   }
+}
+
+// 鉴伪版 WarnInfos(标志位对象)→ 防伪告警名数组(值=1 命中)。
+// 仅复印/翻拍/PS 计入防伪(驱动 forgery_warning 高风险复核);边缘/遮挡/模糊属质量,不当防伪(读不出
+// 走 recognized:false 重拍,读得出则放行由申请人确认)。映射收窄 = 不把质量问题误升级成「疑似伪造」。
+function collectForgeryWarnings(w: TencentCardWarnInfo | undefined): string[] {
+  if (!w) return [];
+  const out: string[] = [];
+  if (w.CopyCheck === 1) out.push('CopyCheck');
+  if (w.ReshootCheck === 1) out.push('ReshootCheck');
+  if (w.PSCheck === 1) out.push('PSCheck');
+  return out;
 }
 
 function sha256hex(input: string): string {

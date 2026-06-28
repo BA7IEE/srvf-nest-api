@@ -136,7 +136,12 @@ export class RecruitmentApplicationsService {
         hint: '该证件类型需人工核验,请手动填写姓名与证件号',
       };
     }
-    // 付费 OCR(27030/27031 在此抛出,供前端提示;不吞)
+    // dev 安全诊断(logger.debug:生产默认不输出;无 PII)——核对 multipart 文件是否正常读入
+    this.logger.debug(
+      `[recruitment ocr recognize] documentType=${documentTypeCode} mime=${image.mimetype} ` +
+        `size=${image.size} bufferLen=${image.buffer.length}`,
+    );
+    // 付费 OCR(27030/27031 在此抛出,供前端提示;不吞)。映射失败(IDCardInfo 缺)亦走 27031 不当不清晰。
     const ocr = await this.realname.recognize({
       documentTypeCode,
       image: image.buffer,
