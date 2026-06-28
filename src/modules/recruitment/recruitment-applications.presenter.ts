@@ -1,6 +1,7 @@
 import { Prisma, type RecruitmentApplication, type RecruitmentCycle } from '@prisma/client';
 
 import { maskIdCard } from '../realname/realname.constants';
+import type { RealnameOcrResult } from '../realname/realname.types';
 import {
   APP_STATUS_MANUAL,
   APP_STATUS_PENDING_EVALUATION,
@@ -13,7 +14,11 @@ import {
   isPromotable,
 } from './recruitment.constants';
 import { deriveRecruitmentStage } from './recruitment-progress-presenter';
-import type { RecruitmentApplicationAdminDto, RecruitmentSubmitResultDto } from './recruitment.dto';
+import type {
+  RecruitmentApplicationAdminDto,
+  RecruitmentOcrDetailDto,
+  RecruitmentSubmitResultDto,
+} from './recruitment.dto';
 
 // 招新报名 Presenter(纯视图塑形;god-service 拆分 2026-06-28,沿 architecture-boundary §3.1)。
 // 从 RecruitmentApplicationsService 极小「搬家」:Prisma 行 → 响应 DTO 的纯映射 + PII 掩码 + CSV 投影 +
@@ -29,6 +34,28 @@ export function maskPhone(phone: string): string {
 /** openid 掩码(<=8 全掩;否则留前 4 后 4)。 */
 export function maskOpenid(openid: string): string {
   return openid.length <= 8 ? '***' : `${openid.slice(0, 4)}****${openid.slice(-4)}`;
+}
+
+/**
+ * OCR 鉴伪版充分利用(2026-06-29):RealnameOcrResult → recognize 端顾问式 ocrDetail(纯映射)。
+ * **不改判定**(只读 extendedFields/cardWarnings/documentType);**不取裁剪图 base64**(L3,绝不入响应)。
+ * 无任何扩展数据(护照/回乡证/简单信封)→ null(前端不渲染扩展面板)。
+ */
+export function buildOcrRecognizeDetail(ocr: RealnameOcrResult): RecruitmentOcrDetailDto | null {
+  const ext = ocr.extendedFields;
+  const warn = ocr.cardWarnings;
+  const docType = ocr.documentType ?? null;
+  if (!ext && !warn && !docType) return null;
+  return {
+    sex: ext?.sex ?? null,
+    nation: ext?.nation ?? null,
+    birth: ext?.birth ?? null,
+    address: ext?.address ?? null,
+    authority: ext?.authority ?? null,
+    validDate: ext?.validDate ?? null,
+    documentType: docType,
+    cardWarnings: warn ?? null,
+  };
 }
 
 /**
@@ -61,6 +88,14 @@ export function toAdminApplicationDto(
     manualReviewReason: app.manualReviewReason,
     eliminationStage: app.eliminationStage,
     hasIdCardImage: app.idCardImageKey !== null,
+    // OCR 鉴伪版充分利用(2026-06-29;S3 敏感分级):4 OCR 列随 read.sensitive 门控(masked → null);
+    // 2 裁剪图 has-flag 为布尔(非 PII)恒回显,取图走 :id/id-card-image-url 的 crop/portrait URL。
+    ocrAddress: masked ? null : app.ocrAddress,
+    ocrNation: masked ? null : app.ocrNation,
+    ocrAuthority: masked ? null : app.ocrAuthority,
+    ocrValidDate: masked ? null : app.ocrValidDate,
+    hasIdCardCropImage: app.idCardCropImageKey !== null,
+    hasIdCardPortraitImage: app.idCardPortraitImageKey !== null,
     thresholdMarks:
       (app.thresholdMarks as Record<string, { at: string; by: string }> | null) ?? null,
     thresholdsComplete: allThresholdsComplete(app.thresholdMarks as ThresholdMarks | null),

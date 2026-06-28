@@ -786,6 +786,11 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'RecruitmentApplicationAdminDto',
   'ResolveRecruitmentApplicationDto',
   'IdCardImageUrlResponseDto',
+  // OCR 鉴伪版充分利用(2026-06-29;评审稿 recruitment-ocr-anti-forgery-enrichment-review.md §4.2):
+  //   recognize 响应嵌套 ocrDetail(字段级 + 卡片级告警 + 证件类型);3 个新 named schema。
+  'RecruitmentOcrDetailDto',
+  'RecruitmentOcrFieldDto',
+  'RecruitmentOcrCardWarningsDto',
   // 招新闭环优化 S2(2026-06-24;评审稿 §7.1):招新工作台 stats 五组出参(独立 class 物理隔离;
   //   嵌套 today/pending/threshold(+ item)/evaluation/issuance 六个子 DTO 均注册为 named schema)。
   'RecruitmentCycleStatsDto',

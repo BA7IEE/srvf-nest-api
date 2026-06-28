@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-import type { RealnameOcrInput, RealnameOcrResult, RealnameProvider } from '../realname.types';
+import type {
+  RealnameOcrCardWarnings,
+  RealnameOcrExtendedFields,
+  RealnameOcrInput,
+  RealnameOcrResult,
+  RealnameProvider,
+} from '../realname.types';
 
 // 招新实名环节 OCR 改造(2026-06-22):DevStub OCR Provider(评审稿 E-RO-9)
 //
@@ -20,6 +26,13 @@ interface DevStubOcrEnvelope {
   warnings?: string[];
   clarity?: boolean;
   documentCategory?: string;
+  // OCR 鉴伪版充分利用(2026-06-29):扩展字段 / 证件类型 / 卡片级告警 / 裁剪图 base64 直接透传,
+  // 供 e2e 造「recognize 回显扩展字段 + submit 落 4 列 + 2 裁剪图」链(评审稿 §3.7;缺省 → undefined → 下游降级 null)。
+  extendedFields?: RealnameOcrExtendedFields;
+  documentType?: string;
+  cardWarnings?: RealnameOcrCardWarnings;
+  cardImageBase64?: string;
+  portraitImageBase64?: string;
 }
 
 @Injectable()
@@ -49,6 +62,12 @@ export class DevStubRealnameProvider implements RealnameProvider {
       idCardNumber: env.idCardNumber ?? null,
       warnings: env.warnings ?? [],
       documentCategory: env.documentCategory ?? null,
+      // 鉴伪版充分利用:如实透传(缺省 → null);base64 裁剪图仅 submit 路径消费,不入响应/日志(下游保证)。
+      documentType: env.documentType ?? null,
+      extendedFields: env.extendedFields ?? null,
+      cardWarnings: env.cardWarnings ?? null,
+      cardImageBase64: env.cardImageBase64 ?? null,
+      portraitImageBase64: env.portraitImageBase64 ?? null,
     });
   }
 

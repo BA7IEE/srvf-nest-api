@@ -91,6 +91,111 @@ describe('TencentRealnameProvider (OCR)', () => {
     expect(headers.Host).toBe('ocr.tencentcloudapi.com');
   });
 
+  // OCR 鉴伪版充分利用(2026-06-29,评审稿 recruitment-ocr-anti-forgery-enrichment-review.md §3.6/§8 D5):
+  // 请求体显式带 7 Enable* 开关(仅 mainland)+ 扩展字段嵌套映射(Sex/Nation/Birth/Address/Authority/ValidDate
+  // 每项 ContentInfo + 字段级 IsReflect/IsInComplete/IsKey* 标志)+ 顶层 CardImage/PortraitImage/Type 透传 +
+  // 卡片级 cardWarnings 全集投影。以线上文档真实嵌套结构 mock 锁定;运维上线校正字段名。
+  it('mainland 鉴伪版充分利用:请求体带 7 Enable* 开关 + 扩展字段/裁剪图/Type/cardWarnings 映射', async () => {
+    const fn = mockFetchJson({
+      Response: {
+        IDCardInfo: {
+          Name: { Content: '张三', Confidence: 99 },
+          IdNum: { Content: '110101199003070038', Confidence: 99 },
+          Sex: { Content: '男', IsReflect: false, IsInComplete: false },
+          Nation: { Content: '汉', IsReflect: 1, IsInComplete: 0 },
+          Birth: { Content: '1990/3/7' },
+          Address: { Content: '北京市朝阳区某街道', IsKeyInComplete: true },
+          Authority: { Content: '北京市公安局朝阳分局' },
+          ValidDate: { Content: '2010.07.21-2020.07.21' },
+          WarnInfos: {
+            CopyCheck: 0,
+            ReshootCheck: 0,
+            PSCheck: 0,
+            BorderCheck: 1,
+            OcclusionCheck: 0,
+            BlurCheck: 1,
+          },
+        },
+        CardImage: 'base64-card-crop-bytes',
+        PortraitImage: 'base64-portrait-crop-bytes',
+        Type: '中华人民共和国居民身份证',
+        RequestId: 'r-rich',
+      },
+    });
+    const res = await makeProvider(CONFIGURED).recognize(input('mainland_id'));
+
+    // 既有行为锁:recognized/name/idCardNumber/warnings 不受充分利用影响(BorderCheck/BlurCheck 是质量,不进 forgery)
+    expect(res.recognized).toBe(true);
+    expect(res.name).toBe('张三');
+    expect(res.warnings).toEqual([]);
+
+    // 请求体带 7 Enable* 开关
+    const body = JSON.parse(
+      ((fn.mock.calls[0] as unknown[])[1] as { body: string }).body,
+    ) as Record<string, unknown>;
+    expect(body.EnablePortrait).toBe(true);
+    expect(body.EnableCropImage).toBe(true);
+    expect(body.EnableBorderCheck).toBe(true);
+    expect(body.EnableOcclusionCheck).toBe(true);
+    expect(body.EnableCopyCheck).toBe(true);
+    expect(body.EnableReshootCheck).toBe(true);
+    expect(body.EnableQualityCheck).toBe(true);
+    expect(typeof body.ImageBase64).toBe('string');
+
+    // 扩展字段映射(content + 字段级 reflect/incomplete 合并 Key*)
+    expect(res.extendedFields?.sex).toEqual({ content: '男', reflect: false, incomplete: false });
+    expect(res.extendedFields?.nation).toEqual({ content: '汉', reflect: true, incomplete: false });
+    expect(res.extendedFields?.address).toEqual({
+      content: '北京市朝阳区某街道',
+      reflect: false,
+      incomplete: true, // IsKeyInComplete=true 合并入 incomplete
+    });
+    expect(res.extendedFields?.authority?.content).toBe('北京市公安局朝阳分局');
+    expect(res.extendedFields?.validDate?.content).toBe('2010.07.21-2020.07.21');
+
+    // 顶层 Type + 裁剪图 base64 透传(裁剪图仅 submit 路径消费)
+    expect(res.documentType).toBe('中华人民共和国居民身份证');
+    expect(res.cardImageBase64).toBe('base64-card-crop-bytes');
+    expect(res.portraitImageBase64).toBe('base64-portrait-crop-bytes');
+
+    // 卡片级告警全集(质量类 border/blur 在此结构化回显,但**不**进 warnings 防伪子集)
+    expect(res.cardWarnings).toEqual({
+      copy: false,
+      reshoot: false,
+      ps: false,
+      border: true,
+      occlusion: false,
+      blur: true,
+    });
+  });
+
+  it('mainland 不返裁剪图/扩展字段(仅 Name/IdNum)→ 裁剪图 null + 扩展字段全 null(降级不报错)', async () => {
+    mockFetchJson({
+      Response: {
+        IDCardInfo: { Name: { Content: '张三' }, IdNum: { Content: '110101199003070038' } },
+        RequestId: 'r-min',
+      },
+    });
+    const res = await makeProvider(CONFIGURED).recognize(input('mainland_id'));
+    expect(res.recognized).toBe(true);
+    expect(res.cardImageBase64).toBeNull();
+    expect(res.portraitImageBase64).toBeNull();
+    expect(res.documentType).toBeNull();
+    expect(res.extendedFields?.address).toBeNull();
+  });
+
+  it('passport 请求体不带 Enable*(那 action 无鉴伪/裁剪能力;维持 { ImageBase64 })', async () => {
+    const fn = mockFetchJson({ Response: { Name: 'ZHANG SAN', ID: 'E12345678', RequestId: 'r1' } });
+    await makeProvider(CONFIGURED).recognize(input('passport'));
+    const body = JSON.parse(
+      ((fn.mock.calls[0] as unknown[])[1] as { body: string }).body,
+    ) as Record<string, unknown>;
+    expect(body.ImageBase64).toBeDefined();
+    expect(body.EnablePortrait).toBeUndefined();
+    expect(body.EnableCropImage).toBeUndefined();
+    expect(Object.keys(body)).toEqual(['ImageBase64']);
+  });
+
   it('mainland 防伪标志(Copy/PS=1)→ warnings;质量标志(Blur=1)不当防伪', async () => {
     mockFetchJson({
       Response: {

@@ -18,6 +18,9 @@ import {
   RealnameApiError,
   RealnameChannelUnavailableError,
   RealnameCredentialStatus,
+  type RealnameOcrCardWarnings,
+  type RealnameOcrExtendedFields,
+  type RealnameOcrField,
   type RealnameOcrInput,
   type RealnameOcrResult,
   type RealnameProvider,
@@ -44,11 +47,20 @@ import {
 // 字段映射(2026-06-29 校正,对照腾讯云线上文档):mainland 鉴伪版 RecognizeValidIDCardOCR 返回 **嵌套**
 // Response.IDCardInfo —— 姓名/证件号在 .Name.Content / .IdNum.Content(**非顶层字符串**),WarnInfos 是标志位
 // 对象(值=1 命中)。passport / hk_macau 的 action 非嵌套,仍按顶层字符串映射。.spec 以真实嵌套结构锁定。
+//
+// OCR 鉴伪版充分利用(2026-06-29,评审稿 recruitment-ocr-anti-forgery-enrichment-review.md §3.6):请求体显式
+// 带 Enable* 开关(仅 mainland),取回扩展字段(Sex/Nation/Birth/Address/Authority/ValidDate,每项 ContentInfo)+
+// 字段级反光/不完整标志 + 顶层 CardImage/PortraitImage 裁剪图 base64 + 顶层 Type。字段名以线上文档为准、运维上线校正。
 
-// 腾讯云 OCR ContentInfo:鉴伪版每个识别字段的形状(值在 .Content,另带置信度)。
+// 腾讯云 OCR ContentInfo:鉴伪版每个识别字段的形状(值在 .Content,另带置信度 + 字段级质量标志)。
 interface TencentContentInfo {
   Content?: string;
   Confidence?: number;
+  // 字段级质量标志(鉴伪版;Enable* 后返回;布尔或 0/1,coerce 兜底)。Key* = 关键区域。
+  IsReflect?: boolean | number;
+  IsInComplete?: boolean | number;
+  IsKeyReflect?: boolean | number;
+  IsKeyInComplete?: boolean | number;
 }
 
 // 鉴伪版 CardWarnInfo:防伪/质量标志位(值=1 命中,0/缺=正常)。
@@ -63,11 +75,18 @@ interface TencentCardWarnInfo {
   BlurCheck?: number; // 1=模糊(质量)
 }
 
-// 鉴伪版身份证识别结果容器(RecognizeValidIDCardOCR 的 Response.IDCardInfo)
+// 鉴伪版身份证识别结果容器(RecognizeValidIDCardOCR 的 Response.IDCardInfo)。
+// Name/IdNum 既有;Sex/Nation/Birth/Address/Authority/ValidDate 为充分利用新增扩展字段(Enable* 后返回)。
 interface TencentIDCardInfo {
   Name?: TencentContentInfo;
   IdNum?: TencentContentInfo;
   WarnInfos?: TencentCardWarnInfo;
+  Sex?: TencentContentInfo;
+  Nation?: TencentContentInfo;
+  Birth?: TencentContentInfo;
+  Address?: TencentContentInfo;
+  Authority?: TencentContentInfo;
+  ValidDate?: TencentContentInfo;
 }
 
 // 腾讯云 v3 统一回执(Response 包裹;成功含识别字段,失败含 Error)。三 action 字段并集,均可选。
@@ -75,6 +94,10 @@ interface TencentOcrWireResponse {
   Response?: {
     // 身份证鉴伪版(RecognizeValidIDCardOCR):**嵌套** IDCardInfo,字段值在 .Content
     IDCardInfo?: TencentIDCardInfo;
+    // 鉴伪版充分利用:顶层裁剪图 base64(Enable* 后返回)+ 识别证件类型字符串
+    CardImage?: string; // 主体框裁剪图 base64(EnableCropImage)
+    PortraitImage?: string; // 头像裁剪图 base64(EnablePortrait)
+    Type?: string; // 识别出的证件类型
     // 护照(MLIDPassportOCR):顶层字符串字段
     Name?: string;
     EnglishName?: string;
@@ -103,7 +126,7 @@ export class TencentRealnameProvider implements RealnameProvider {
       );
     }
     const ctx = await this.requireTencentContext();
-    const payload = JSON.stringify({ ImageBase64: input.image.toString('base64') });
+    const payload = JSON.stringify(buildRequestBody(action, input.image));
     const timestamp = Math.floor(Date.now() / 1000);
     const headers = this.buildSignedHeaders(ctx, payload, timestamp, action);
 
@@ -164,7 +187,10 @@ export class TencentRealnameProvider implements RealnameProvider {
       `[realname ocr] providerType=TENCENT_CLOUD action=${action} region=${ctx.region} ` +
         `documentType=${input.documentTypeCode} mime=${input.mimeType} bufferLen=${input.image.length} ` +
         `requestId=${response.RequestId ?? '-'} recognized=${result.recognized} ` +
-        `nameHit=${result.name != null} idHit=${result.idCardNumber != null} warnings=${result.warnings.length}`,
+        `nameHit=${result.name != null} idHit=${result.idCardNumber != null} warnings=${result.warnings.length} ` +
+        // 鉴伪版充分利用:仅记裁剪图**是否存在**(布尔)+ base64 长度,**永不记 base64 明文 / 字段内容**(L3)
+        `cardImage=${result.cardImageBase64 != null} portrait=${result.portraitImageBase64 != null} ` +
+        `cardImageLen=${result.cardImageBase64?.length ?? 0} extFields=${result.extendedFields != null}`,
     );
     return result;
   }
@@ -195,6 +221,13 @@ export class TencentRealnameProvider implements RealnameProvider {
         idCardNumber,
         warnings,
         reason: name && idCardNumber ? undefined : 'id-card key fields missing',
+        // 鉴伪版充分利用(§3.6 映射表;顾问式,不入判定):扩展字段 + 卡片级告警 + 顶层 Type + 裁剪图 base64。
+        documentType: r.Type?.trim() || null,
+        extendedFields: mapExtendedFields(info),
+        cardWarnings: mapCardWarnings(info.WarnInfos),
+        // 裁剪图 base64:仅 submit 路径消费(不进 recognize 响应/日志);缺省/未返 → null。
+        cardImageBase64: r.CardImage || null,
+        portraitImageBase64: r.PortraitImage || null,
       };
     }
     if (action === REALNAME_OCR_ACTION_PASSPORT) {
@@ -309,6 +342,7 @@ export class TencentRealnameProvider implements RealnameProvider {
 // 鉴伪版 WarnInfos(标志位对象)→ 防伪告警名数组(值=1 命中)。
 // 仅复印/翻拍/PS 计入防伪(驱动 forgery_warning 高风险复核);边缘/遮挡/模糊属质量,不当防伪(读不出
 // 走 recognized:false 重拍,读得出则放行由申请人确认)。映射收窄 = 不把质量问题误升级成「疑似伪造」。
+// **行为锁**:此函数语义/收窄不变(本次充分利用只新增 cardWarnings 全集结构,不改本函数)。
 function collectForgeryWarnings(w: TencentCardWarnInfo | undefined): string[] {
   if (!w) return [];
   const out: string[] = [];
@@ -316,6 +350,62 @@ function collectForgeryWarnings(w: TencentCardWarnInfo | undefined): string[] {
   if (w.ReshootCheck === 1) out.push('ReshootCheck');
   if (w.PSCheck === 1) out.push('PSCheck');
   return out;
+}
+
+// 鉴伪版充分利用:请求体构造。仅 mainland 鉴伪版带 Enable* 开关(取扩展字段 + 裁剪图 + 各检查);
+// passport/hk_macau 那两 action 无鉴伪/裁剪能力,维持 { ImageBase64 } 不变(评审稿 §3.6.1 / E5)。
+function buildRequestBody(action: string, image: Buffer): Record<string, unknown> {
+  const ImageBase64 = image.toString('base64');
+  if (action !== REALNAME_OCR_ACTION_MAINLAND_ID) {
+    return { ImageBase64 };
+  }
+  return {
+    ImageBase64,
+    EnablePortrait: true, // 返回头像裁剪图 PortraitImage
+    EnableCropImage: true, // 返回主体框裁剪图 CardImage
+    EnableBorderCheck: true, // 边框完整性
+    EnableOcclusionCheck: true, // 遮挡
+    EnableCopyCheck: true, // 复印件
+    EnableReshootCheck: true, // 翻拍
+    EnableQualityCheck: true, // 图像质量(反光/模糊等)
+  };
+}
+
+// 字段级标志 coerce:腾讯返布尔或 0/1;统一为 boolean。reflect/incomplete 各合并关键区域(Key*)与普通标志。
+function flag(v: boolean | number | undefined): boolean {
+  return v === true || v === 1;
+}
+function mapField(c: TencentContentInfo | undefined): RealnameOcrField | null {
+  if (!c) return null;
+  return {
+    content: c.Content?.trim() || null,
+    reflect: flag(c.IsReflect) || flag(c.IsKeyReflect),
+    incomplete: flag(c.IsInComplete) || flag(c.IsKeyInComplete),
+  };
+}
+
+// 鉴伪版扩展字段集映射(Sex/Nation/Birth/Address/Authority/ValidDate;顾问式,不入判定)。
+function mapExtendedFields(info: TencentIDCardInfo): RealnameOcrExtendedFields {
+  return {
+    sex: mapField(info.Sex),
+    nation: mapField(info.Nation),
+    birth: mapField(info.Birth),
+    address: mapField(info.Address),
+    authority: mapField(info.Authority),
+    validDate: mapField(info.ValidDate),
+  };
+}
+
+// WarnInfos 6 标志 → 卡片级质量/防伪告警全集结构(布尔投影;recognize 顾问式回显)。
+function mapCardWarnings(w: TencentCardWarnInfo | undefined): RealnameOcrCardWarnings {
+  return {
+    copy: w?.CopyCheck === 1,
+    reshoot: w?.ReshootCheck === 1,
+    ps: w?.PSCheck === 1,
+    border: w?.BorderCheck === 1,
+    occlusion: w?.OcclusionCheck === 1,
+    blur: w?.BlurCheck === 1,
+  };
 }
 
 function sha256hex(input: string): string {

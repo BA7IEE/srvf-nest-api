@@ -281,6 +281,11 @@ export const ID_CARD_IMAGE_MAX_BYTES = 5 * 1024 * 1024; // 5MB 上限(证件照�
 export const ID_CARD_IMAGE_ALLOWED_MIME: ReadonlyArray<string> = ['image/jpeg', 'image/png'];
 // admin 取图 signed-URL TTL(配套②;短 TTL)
 export const ID_CARD_IMAGE_SIGNED_URL_TTL_SECONDS = 300;
+// OCR 鉴伪版充分利用(2026-06-29;评审稿 recruitment-ocr-anti-forgery-enrichment-review.md §3.1/E4):
+// 主体框 / 头像裁剪图 storage key 前缀(镜像 idCardImageKey 形态:prefix + cycleId + uuid + ext;
+// 裁剪图为腾讯返 base64 JPEG,ext 恒 jpg)。仅 mainland_id 鉴伪版 submit 路径写入。
+export const ID_CARD_CROP_IMAGE_KEY_PREFIX = 'recruitment/id-card-crop';
+export const ID_CARD_PORTRAIT_IMAGE_KEY_PREFIX = 'recruitment/id-card-portrait';
 
 // ===== 紧急联系人(评审稿 D-R + E-R-13;JSON 数组,≥2)=====
 export const EMERGENCY_CONTACTS_MIN = 2;

@@ -44,6 +44,37 @@ export interface RealnameOcrInput {
   mimeType: string; // image/jpeg | image/png(仅诊断;不影响 base64)
 }
 
+// OCR 鉴伪版充分利用(2026-06-29,评审稿 recruitment-ocr-anti-forgery-enrichment-review.md §4.1):
+// 字段级识别结果 —— content + 字段级反光/不完整标志(顾问式回显,不进判定)。
+// reflect = IsReflect||IsKeyReflect;incomplete = IsInComplete||IsKeyInComplete(线上文档为准,运维校正)。
+export interface RealnameOcrField {
+  content: string | null;
+  reflect: boolean;
+  incomplete: boolean;
+}
+
+// 鉴伪版扩展字段集(仅 mainland_id RecognizeValidIDCardOCR;每项可空)。
+// **Sex/Birth 仅供 recognize 回显,不持久、不覆盖 genderCode/birthDate(身份证号推导仍权威)**。
+export interface RealnameOcrExtendedFields {
+  sex: RealnameOcrField | null;
+  nation: RealnameOcrField | null;
+  birth: RealnameOcrField | null;
+  address: RealnameOcrField | null;
+  authority: RealnameOcrField | null;
+  validDate: RealnameOcrField | null;
+}
+
+// 卡片级质量 / 防伪告警全集(顾问式回显;= WarnInfos 6 标志的结构化布尔投影)。
+// 区别于 `warnings: string[]`(仅 Copy/Reshoot/PS 防伪子集,驱动六分流路由)——本结构是 recognize 端的完整质量读数。
+export interface RealnameOcrCardWarnings {
+  copy: boolean;
+  reshoot: boolean;
+  ps: boolean;
+  border: boolean;
+  occlusion: boolean;
+  blur: boolean;
+}
+
 // OCR 识别出参(结构化字段 + 防伪 + 清晰度):
 // - 「识别成功 + 匹配 + 无防伪告警 + 清晰」是否放行,由调用方据 §3.6 矩阵裁断;
 // - 「不清晰 / 不匹配 / 防伪告警」**不是异常**——是 OCR 结果,驱动 manual_review(差异于上游失败)。
@@ -59,6 +90,17 @@ export interface RealnameOcrResult {
   documentCategory?: string | null;
   // 归一化原因(不含 PII;供审计 extra / 诊断)
   reason?: string;
+
+  // ===== OCR 鉴伪版充分利用(全 optional;仅 mainland_id 鉴伪版填充;顾问式)=====
+  // 顶层识别证件类型字符串(腾讯 Type;recognize 回显,不入判定)
+  documentType?: string | null;
+  // 字段级扩展(性别/民族/出生/住址/签发机关/有效期;recognize 回显 + 部分落库存档)
+  extendedFields?: RealnameOcrExtendedFields | null;
+  // 卡片级质量/防伪告警全集(recognize 回显)
+  cardWarnings?: RealnameOcrCardWarnings | null;
+  // 主体框 / 头像裁剪图 base64(**仅 submit 路径解码入库;不进 recognize 响应、不入日志**,L3)
+  cardImageBase64?: string | null;
+  portraitImageBase64?: string | null;
 }
 
 // 实名 OCR 识别 Provider 统一接口(§5 文件计划;镜像 WechatMiniProvider / SmsProvider 范式)

@@ -5,7 +5,7 @@
 ## 本地事实
 
 - `schema.prisma` 是**数据模型唯一权威源**(字段 / 类型 / 约束 / 索引);Swagger / DTO / docs 任何与之冲突,**以 schema.prisma 为准**。
-- `migrations/` 累计 30 个 migration(2026-05-02 `init` → 2026-06-27 统一通知模块 S5 短信兜底:`sms_settings.templateIdNotification` 1 列〔可空 TEXT;通知兜底紧急召集模板 ID,镜像 `templateIdBirthday`;全 additive,无 enum、无不可逆、无回填〕;前一为 S3 `notifications.recipientMemberId` 1 列;再前为 S2 `notification_deliveries` + `wechat_subscription_quotas` + `wechat_subscribe_templates` 三表 / S1 `notifications` + `notification_reads` 两表)。
+- `migrations/` 累计 31 个 migration(2026-05-02 `init` → 2026-06-29 招新实名 OCR 鉴伪版充分利用:`recruitment_applications` +6 列〔`ocrAddress`/`ocrNation`/`ocrAuthority`/`ocrValidDate` OCR 扩展字段顾问式存档 + `idCardCropImageKey`/`idCardPortraitImageKey` 主体框/头像裁剪图 key;全可空 TEXT additive,无 enum、无不可逆、无回填〕;前一为 2026-06-27 统一通知模块 S5 短信兜底 `sms_settings.templateIdNotification` 1 列;再前为 S3 `notifications.recipientMemberId` 1 列 / S2 `notification_deliveries` + `wechat_subscription_quotas` + `wechat_subscribe_templates` 三表 / S1 `notifications` + `notification_reads` 两表)。
 - migration 命名格式:`YYYYMMDDHHMMSS_<可读描述_下划线分隔>`(例 `20260510193742_v2_batch3_activities_attendances`);**不**允许 `auto` / `tmp` / `wip` 命名。
 - 生产环境只允许 `prisma migrate deploy` 跑**已审查**的 migration(沿 `AGENTS.md §0`)。
 
