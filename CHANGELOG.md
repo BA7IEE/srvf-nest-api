@@ -6,6 +6,8 @@
 
 > 累计下一个 minor 候选(**未 bump 版本 / 未发 Release**;沿发版拍板「合并所有子 PR 进 main + 累计 `## Unreleased`」)。
 
+## v0.33.0 - 2026-06-29
+
 ### Added
 
 - **招新实名 OCR 充分利用腾讯云身份证鉴伪版能力(档 D;扩展字段映射 + 主体/头像裁剪图入库 + 字段级告警顾问式回显;goal「招新实名 OCR 充分利用…鉴伪版」;冻结评审稿 [`recruitment-ocr-anti-forgery-enrichment-review.md`](docs/archive/reviews/recruitment-ocr-anti-forgery-enrichment-review.md))**:现状只榨了鉴伪版 `RecognizeValidIDCardOCR` 一点点(请求体仅 `{ImageBase64}`、映射只取 Name/IdNum/3 防伪标志)。本切片把它**充分利用**,**仅大陆身份证路径增强**(护照/回乡证维持现状,裁剪/字段级告警是鉴伪版独有):
