@@ -1,7 +1,7 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
 > **canonical**(本文件在后端仓,改契约同 PR 改本文件;见 [`README.md`](README.md))。
-> 字段级真相 = live `/api/docs-json`;权限码 = [`RBAC_MAP.md`](../ai-harness/RBAC_MAP.md)(155)。
+> 字段级真相 = live `/api/docs-json`;权限码 = [`RBAC_MAP.md`](../ai-harness/RBAC_MAP.md)(176)。
 > 本文件只讲这两样讲不了的:**轴模型 + 任务→端点图 + 踩坑 + 缺口**。
 
 ---
@@ -15,7 +15,7 @@
            ├─ /registrations            报名(activityId 是路径必填段)
            └─ /attendance-sheets        考勤(同上)
 队员轴   admin/v1/members/:id
-           ├─ /certificates  /department  /profile
+           ├─ /certificates  /memberships  /profile   (/department 旧单部门面 deprecated → memberships)
            └─ /emergency-contacts  /insurances
 ```
 
@@ -26,6 +26,8 @@
 > ❌ **反模式(已发生过)**:把嵌套子资源拍平成顶级菜单 + 一个"手选父级"下拉
 > (报名页选活动、考勤页选活动、证书页选队员)。这等于把后端已经建好的父子关系在 UI 层扔掉,
 > 制造"上下文丢失"。看到自己在写"请先选择一个 X 才能看 Y",就停下来想想——Y 是不是该长在 X 的详情页里。
+
+> 📎 **本批新增两类资源的归位(守本轴纪律)**:队员**组织归属**(memberships,终态 scoped-authz PR2)是**队员轴**子资源 → 只作队员 360 的一个 tab(§2.2),**不做**顶级"归属管理"菜单 + 手选队员;**职务定义 / 职务规则**(positions / position-rules,PR3)是**全局配置**(不属任何实例轴)→ 归"系统管理/基础数据",与数据字典 / 组织架构并列(§2.6)。
 
 ---
 
@@ -42,14 +44,17 @@
 > 关键:报名/考勤接口**本来就按 activityId 嵌套**——作战室是它们的自然消费者。
 > `activityId` 从**路由参数**来,不要在页面顶部摆"选择活动"下拉。
 
-### 2.2 队员 360(沿队员轴下钻)— ✅ 5 子资源 + 3 跨轴查询全就绪(跨轴只读 2026-06-23)
+### 2.2 队员 360(沿队员轴下钻)— ✅ 5 子资源(部门→memberships 升级 PR2)+ 3 跨轴查询全就绪(跨轴只读 2026-06-23)
 | tab | 端点 | 状态 |
 |---|---|---|
 | 基本信息 | `GET /api/admin/v1/members/:id` | ✅ |
-| 证书 / 部门 / 档案 / 紧急联系人 / 保险 | `GET /api/admin/v1/members/:id/{certificates,department,profile,emergency-contacts,insurances}` | ✅ |
+| 证书 / 档案 / 紧急联系人 / 保险 | `GET /api/admin/v1/members/:id/{certificates,profile,emergency-contacts,insurances}` | ✅ |
+| **组织归属(memberships)** — 主/兼/临时/支援多归属 + 任期 | `GET/POST .../members/:id/memberships` · `PATCH/DELETE .../members/:id/memberships/:id`(**终态 scoped-authz PR2**,已发 main)| ✅(旧 `/department` 单部门面 deprecated,见下备注)|
 | 活动履历 / 考勤记录 / 贡献值 | `GET .../members/:id/registrations?statusCode=` · `GET .../members/:id/attendance-records` · `GET .../members/:id/contribution-summary` | ✅(跨轴只读 2026-06-23,见 [GAP-002](#4-缺口台账-gap-ledger))|
 
 > 队员 360 跨轴查询备注:`registrations`/`attendance-records` 分页(`page`/`pageSize`)+ item 自带 activity 上下文(`activityId`/`activityTitle`);`attendance-records` **仅返 approved sheet 内 records**(已生效记录,镜像 app `/me` 口径);`contribution-summary` 返**生涯累计 capped 总分**(`{ memberId, contributionPoints }`,后端已按北京日封顶 1.5,**前端直接展示别再加**)。不存在/软删队员 → `MEMBER_NOT_FOUND`(15001)。
+
+> **组织归属(memberships)= 部门面升级(终态 scoped-authz PR2,已发 main)**:一个队员可有多条归属——**主 PRIMARY**(至多一条 active)/ **兼 SECONDARY** / **临时 TEMPORARY** / **支援 SUPPORT**,各带任期(`startedAt` / `endedAt`)+ 原因(`reason`),支持历史留痕。端点 `admin/v1/members/:memberId/memberships`:`GET` 列全部含历史(`membership.list.record`)· `POST` 新增指定 `membershipType`(`membership.set.record`)· `PATCH :id` 改类型 / 任期 / 原因〔不改 status〕(`membership.set.record`)· `DELETE :id` 结束归属〔status=ENDED + endedAt,留痕非物删〕(`membership.end.record`);**换组织 = 结束旧 + 新建**(不就地改 organizationId)。4 码全绑 **ops-admin**;`membership.read.record` 已 seed 但**本刀无端点承接**(为未来 `GET :id` 预留的孤码)。**旧单部门端点 `GET/PUT/DELETE .../members/:memberId/department`(3 端点,`member-department.{read,set,clear}.current`)deprecated-但保留一版**——内部映射到 active PRIMARY membership;**新面一律用 memberships,别再对 `/department` 开新 UI**。
 
 ### 2.3 审批工作台(跨活动横扫"待我处理")— ✅ 后端扁平查询就绪(跨轴只读 2026-06-23)
 跨所有活动按 `statusCode` 横扫报名/考勤,**脱离 `:activityId` 路径段**:`GET /api/admin/v1/registrations?statusCode=` · `GET /api/admin/v1/attendance-sheets?statusCode=`(均分页 + item 自带 activity 上下文 `activityId`/`activityTitle`)。见 [GAP-001](#4-缺口台账-gap-ledger)。
@@ -84,6 +89,25 @@
 
 **模板配置(D-N3 运营可配)**:`templateId` = 小程序后台审批后拿到的订阅消息模板 ID,**默认 null = 该类型微信渠道不可发**(运维上线后台审批后经此端点填)。字段映射(通知 → 微信 `data` key,如 `thing1`=标题)**内置代码**,运维上线须按真实模板字段名核对(见评审稿 §3.5)。
 
+### 2.6 组织 · 职务配置(终态 scoped-authz PR1–PR3 已发 main)— ⚠️ 看清落地进度再造 UI
+
+「组织职务 + 分管 + scoped RBAC + 统一鉴权」终态按 §11 序列逐刀落地(冻结稿 [`org-position-scoped-authz-terminal-design-review.md`](../reviews/org-position-scoped-authz-terminal-design-review.md))。**已发 3 刀,新增以下配置面**(队员**组织归属** memberships 属队员轴,见 §2.2):
+
+| 任务 / 页面 | 端点 | 鉴权 |
+|---|---|---|
+| **组织架构 reparent**(重挂父级;PR1)| `POST /api/admin/v1/organizations/:id/move`(body 必填非空 `parentId`;不支持移成根)| `[rbac: org.move.node]` |
+| **职务定义 列表 / 增改删**(全局复用;PR3)| `GET/POST /api/admin/v1/positions` · `GET/PATCH/DELETE .../positions/:id` | `[rbac: position.{read,create,update,delete}.definition]` |
+| **职务规则 列表 / 增改删**(某组织类别可设哪些职务;PR3)| `GET/POST /api/admin/v1/position-rules` · `PATCH/DELETE .../position-rules/:id`(列表按 `nodeTypeCode` 过滤;无 `GET :id`)| `[rbac: position-rule.{read,create,update,delete}.record]` |
+
+**reparent**:重挂组织节点父级,事务内重算闭包表;守护——禁改根节点父级(`ORGANIZATION_PARENT_CHANGE_FORBIDDEN`)/ 目标父 = 自身或后代(成环)(`ORGANIZATION_PARENT_CYCLE`)/ 父不存在(`ORGANIZATION_PARENT_NOT_FOUND`)→ 拒。
+
+**职务定义(positions)= 全局复用定义**:6 内置(队长 / 副队长 / 部长 / 副部长 / 组长 / 副组长);类别 `categoryCode` = `LEADER` 正职 / `DEPUTY` 副职 / `STAFF` 干事(STAFF 留口未内置);`code` kebab 创建后不可改;被职务规则引用时禁删(`POSITION_IN_USE` 32003)。**职务规则(position-rules)= 绑定关系**:某**组织类别**(`nodeTypeCode`,取 node_type 字典值)可设哪些职务(30 内置默认规则;`(nodeTypeCode, positionId)` 唯一)。positions + rules **8 码全绑 ops-admin**。
+
+> ⚠️ **scoped-authz 落地进度(前端别超前造 UI)**:
+> - **已发(现在可做)**:组织架构 reparent(接组织架构页)+ 队员**组织归属管理**(memberships,§2.2 队员 360 tab)+ **职务定义 / 职务规则配置页**(本节,归系统管理)。
+> - **未落地(先别做)**:**任职分配**(PR4)/ **分管**(PR5)/ **带 scope 的角色绑定**(PR6)/ **统一 AuthzService + scoped 判权**(PR8)—— 端点尚未建,见 §4 [GAP-007](#4-缺口台账-gap-ledger)。
+> - **当前判权仍是全局 RBAC 码**:职务 / 规则**只是配置定义,尚未接入任何判权路径**(建了职务 ≠ 有了 scoped 权限;别据此在前端做 scope 相关权限逻辑)。
+
 ---
 
 ## 3. 踩坑表(gotchas)
@@ -110,6 +134,7 @@
 | **GAP-004** | 管理员自助改密(PC 个人中心「旧→新」)— **调研结论:非缺口**。`app/v1/me/password` 是账号级自助(`D-P2-3-1` 锁定,"admin without member 允许使用"),admin 用自身 JWT 即可改密(复用 `changeMyPassword`:同事务撤销 refresh + `password.change.self` 审计 + 限流) | 无需新端点;admin 个人中心直接调账号级 `app/v1/me/password`(例外见踩坑 #6) | ✅ 已澄清(2026-06-23 用户拍板=文档化,不造 `admin/v1` 镜像) |
 | **GAP-005** | 向队员主动推送通知/公告(活动提醒 / 招新公告 / 紧急召集);现 notifications 模块仅"生日短信"后台任务,无 admin 推送面 | **统一多渠道**(站内 / 微信订阅 quota / 短信)+ 派发器(Effect)+ producer 只创建任务;T0 修订冻结评审稿 [`archive/reviews/unified-notification-dispatcher-review.md`](../archive/reviews/unified-notification-dispatcher-review.md)(supersede 原 [`member-notification-review.md`](../archive/reviews/member-notification-review.md) 站内信架构;招新 §9 / GAP-006 S7 触发挂此)| ✅ **已发 v0.32.0**(S1–S5 全切片 #449–#453 → bump #454 → tag `v0.32.0` / Release Latest;2026-06-27;以下逐切片 `本 PR` / Unreleased 为各自交付时态历史标注)。**S1 站内信渠道已交付**(本 PR,Unreleased;T0 修订评审 2026-06-25 已冻结):**admin 8 端点** `admin/v1/notifications`(CRUD + 状态机 publish/unpublish/archive;R 模式 `notification.*` 5 RBAC 码 156→161;见 §2.5)+ **app 4 端点** `app/v1/notifications`(站内信 feed:list/unread-count/detail/mark-read;canUseApp 准入 + 4 档可见性**复用 content.visibility 去 public** + 未读红点;mark-read 幂等;见 [`miniapp.md`](miniapp.md))。状态机/可见性镜像 content 零第二套;统一形状列就位不返工;BizCode 310xx 5 码。**S2 微信订阅 quota 渠道已交付**(本 PR,Unreleased):admin create/update 加 `channels` 勾选(可含 wechat),publish 含 wechat → **事务外**向「该类型已配模板 + 可见 + 有订阅 quota」会员逐人推送(非订阅者不打扰,投递落 `NotificationDelivery`);**+app 2 端点** `app/v1/notifications/subscriptions`(ack 上报授权 quota +1 封顶 / status 查剩余配额,见 [`miniapp.md`](miniapp.md))+ **admin 2 端点** `admin/v1/notification-wechat-templates`(模板配置运营可配,新码 `notification.update.template` 161→162;见 §2.5);微信 subscribe-send 能力 additive 扩 `wechat/`(stable_token 缓存 + 8s + token 失效刷一次重试,L3 token/openid 零明文)。**S3 producer 接入 + 派发器 Effect 正式化已交付**(本 PR,Unreleased):`NotificationDispatcher`(architecture-boundary §3.6 **首个真实 Effect**;`dispatchTargeted` 建已发布定向行 directed/system/authorUserId=null/跳过 draft 直 published → 站内 + 微信复用 S2)由招新 **发号**(`recruitment-promotion`,promote commit 后,站内+微信,payload memberNo + 入队入口)与 **入队**(`team-join-enrollment`,join commit 后,仅站内,payload 部门+正式队员)在业务事务**外** try-catch 直调(**派发失败不破坏 promote/入队行为锁**;防环单向 producer→notifications);`Notification.recipientMemberId` 定向收件人(会员 feed **仅本人可见**,他人 404 防枚举);**0 新端点 / 0 新 RBAC 码(162 不变)/ 0 BizCode**(producer 内调,admin 面无新操作)。**报名前 5 触发不做**(报名受理/转人工/门槛/评定/公示:申请人那时非队员,S1/S2 够不着,维持**查询进度 pull**)。**S4 活动·考勤 producer 定向触发已交付**(本 PR,Unreleased):**报名审批结果**(approve/reject → 报名本人)/ **活动取消**(cancel → 遍历已报名者 pending+pass fan-out)/ **考勤终审结果·贡献值**(finalApprove → sheet 内逐 record 本人)三处 producer 在各自业务事务 **commit 后、事务外、try-catch 永不抛**直调 `dispatchTargeted`(`activity-reminder` 类型,**仅站内** channels=['in-app'],微信 opt-in 延后);**派发失败绝不破坏取消状态机 / 报名审批状态机 / 考勤 finalApprove + 贡献值**行为锁(注入失败 e2e 断言三处业务仍成功);防环单向 producer→notifications;**0 schema / 0 migration / 0 新端点 / 0 新 RBAC 码(162 不变)/ 0 BizCode**(纯 producer 内调,复用 S3 派发器 + 既有 `notification_type` 字典)。**S5 短信兜底渠道已交付**(本 PR,Unreleased;末位切片,含真实计费外发):**admin 1 端点** `POST admin/v1/notifications/{id}/send-sms`(新码 `notification.send.sms` 162→163;见 §2.5)= **紧急召集兜底,admin 显式发起 + 计费确认必需**——`confirmed:false` 预览 `recipientCount`(可见且有手机的可计费受众,零发送),`confirmed:true` 真发(逐人经 `SmsProviderRouter.sendNotification` 单发零变量"请打开 App 查看"短信 + `NotificationDelivery`/`sms_send_logs` 记账,手机号 maskPhone);**短信永不随 publish 自动发**(站内+微信优先,成本动作显式 gating);前置闸须 **published + channels 含 `sms`**(否则 `31013`)、通道未配置 → `24030`、缺 `confirmed` → 400;防滥发继承同号封顶 10/间隔 60s/同日同模板幂等 + FAILED 逐人不阻断;审计复用 `notification.publish` 伞事件 `operation='send-sms'` + 收件人计数(无新 audit 串)。**0 新表**(复用 `NotificationDelivery`/`sms_send_logs`)+ 第 30 migration(`sms_settings.templateIdNotification` 1 列)。**运维须**填真实 `templateIdNotification`(零变量模板须先过审)。**报名前 openid 非会员推送路 / 真·全员短信批处理异步**待后续切片另出 goal。**至此 GAP-005 S1–S5 全切片落地**(招新 S7 通知阻塞解除)|
 | **GAP-006** | 招新→入队完整闭环优化(招新工作台 stats / 新人进度模型 / OCR 复核分流 / H5 手机身份链 / promote 志愿者化 / 批量操作 / RBAC 字段分级 等 12 域)— T0 评审已冻结、零代码,按切片另出 goal | 冻结评审稿 [`archive/reviews/recruitment-phase4-loop-optimization-review.md`](../archive/reviews/recruitment-phase4-loop-optimization-review.md)(其 §7 工作台 stats **含 GAP-003「招新进度」部分**;其 §9 通知闭环**挂 GAP-005 落地后**)| ✅ **已发 v0.31.0**(S1–S6 全 7 切片 #439–#445 → bump #446 → tag `v0.31.0` / Release Latest;2026-06-24;以下逐切片 `#NNN` / Unreleased 为各自交付时态历史标注):**S1 状态业务文案 + 新人进度模型**已发(#439,Unreleased)· **S2 招新工作台 stats**已发(#440,Unreleased;`GET …/cycles/{id}/stats` 五组只读聚合,答 GAP-003「招新进度」)· **S3 RBAC 敏感字段分级**已发(#441;新码 `recruitment-application.read.sensitive`——报名详情明文证件号/手机 + 证件照 signed-URL 改判敏感码,`read.record` 收窄为脱敏;biz-admin 同持双码)· **S4a H5 + 手机身份链**已发(#442)· **S4b OCR 六分流 + 重拍计数**已交付(本 PR,Unreleased):submit 六分流〔matched→verified / 模糊·防伪首次→retake 不落记录 / 不一致→三选一 / 上游首次→retry;**forgery·ocr_error H5 会话连续 2 次**才落 `manual_review`〔high/system〕,计数落会话表预建列〕;application **+4 列 additive 无 enum**;进度模型 +`retake/confirm/manual_high` 三态;**S2 待人工三栏升真 `riskLevel`**;admin 报名列表 +`riskLevel` 过滤、admin DTO +`riskLevel`/`manualReviewReason`(人工队列三栏分流/分组);**申请人侧绝不暴露风险分级**(高风险中性文案);**S5 promote 志愿者化 + 入队门禁双兼容**已交付(Unreleased):promote 改写 `gradeCode='volunteer'` + 建 **VOL 归口部门**(`Organization.code='VOL'`,≠ VOD);入队**两处门禁**(自助发起 + 一键入队)改用共享纯函数 `isUnenrolledVolunteer` **双兼容**(新 `volunteer`+VOL / legacy `null`+零部门);一键入队写改「**软删 VOL + 建目标部门**」守 `member_departments` 单部门唯一;历史成员**零迁移**;`join_source` 字典补 `recruitment` 项;新错误码 `28044`(VOL 部门缺失/非 ACTIVE 时 promote 清晰失败)。**S6 批量操作**已交付(Unreleased):**3 批量端点纯加,零 schema / 零新 RBAC 码**——批量标门槛 `POST …/applications/batch-mark-threshold`(匹配键 临时编号/手机/姓名+手机,签到导入由前端解析为数组;复用单行 `markThreshold` = 逐行幂等 + 逐行容错〔不整批回滚〕+ 自动推进;返 per-row + 批次汇总)· 批量导出 `POST …/applications/export`(按筛选导 CSV;**持 `read.sensitive` → 明文列 / 仅 `read.record` → 脱敏列**,复用 S3 `toAdminDto`)· 一键发号前预检 `GET …/cycles/{id}/promote-precheck`(纯读;复用 `decidePromotionIssuance` **结构性保证「预检=实发」**;per-row 可发/跳过 + 六类原因 + 重复 openid 高亮 + 缺字段 flag + 特殊证件 + 汇总)。**S7 通知闭环 = 部分交付**(本 PR,Unreleased,经 GAP-005 S3):招新 6 触发中**发号 / 入队结果** 2 个(申请人此时已是队员)已接入统一通知派发器 → 当事队员收到系统**定向**站内信(发号另带微信);**报名前 5 触发**(报名受理/转人工/门槛/评定/公示)申请人非队员、定向通知够不着 → **维持现状靠查询进度 pull**(`POST open/v1/recruitment/applications/query` 进度模型,见 S1),openid 非会员推送路另立项 |
+| **GAP-007** | 终态「组织职务 + 分管 + scoped RBAC + 统一鉴权」落地序列(§11 PR1–PR12 逐刀)— 组织基座 / 多归属 / 职务配置 / 任职 / 分管 / scoped 判权 | 冻结稿 [`org-position-scoped-authz-terminal-design-review.md`](../reviews/org-position-scoped-authz-terminal-design-review.md) | 🟡 **进行中(逐刀发 main,序列内不单独发版)**:**PR1 组织基座**(reparent `org.move.node` + 闭包表,[#465](https://github.com/BA7IEE/srvf-nest-api/pull/465))· **PR2 Membership**(多归属 memberships,[#466](https://github.com/BA7IEE/srvf-nest-api/pull/466))· **PR3 职务定义**(positions + position-rules,[#467](https://github.com/BA7IEE/srvf-nest-api/pull/467))**已发**(能力见 §2.6 / §2.2)。**PR4 任职 / PR5 分管 / PR6 带 scope 的 RoleBinding / PR7 Policy / PR8 统一 AuthzService+scoped 判权 …→PR12 尚未落地**(design-only,各自另出 goal)。前端**现可做** memberships / positions / position-rules 配置面 + reparent;**任职 · 分管 · scoped 权限 UI 待端点落地**(当前判权仍全局 RBAC 码)|
 
 > 备注:**活动作战室(Tier1)不是缺口**——后端全就绪,纯前端重组 IA(见 §2.1)。
 > ✅ GAP-001 / GAP-002 已于 2026-06-23 **发版 v0.30.0**(#432 + bump #433 + tag/Release Latest),§2.2/§2.3 已 ⛔→✅。
@@ -135,6 +160,8 @@
 - **第①道门 = 招新**:对外公开报名 → OCR 实名 → 考核 → **一键发号**(`recruitment-application.promote.member`),产物 = 志愿者。**S5(Unreleased)起**显式化:`gradeCode='volunteer'` + 挂 **VOL 归口部门**(`Organization.code='VOL'`,≠ VOD 志愿者组织部);历史(S5 前)发号的志愿者仍为 `null`+零部门,入队门禁**双兼容**(两种都认作"未入队志愿者")。
 - **第②道门 = 入队**:志愿者 → 综合评估 → **一键入队**(`team-join-application.join.member`):新志愿者**软删 VOL 归口部门** + 建**目标部门** + 升级别 L1;legacy(零部门)直接建目标部门。守 `member_departments` 单部门唯一(任一时刻仅 1 条 active 归属)。产物 = 正式队员。
 
+> 注:队员的**部门归属现由 memberships 建模**(终态 scoped-authz PR2,§2.2);发号 / 入队的**写路径已内部重指向** active **PRIMARY** membership,**admin 面行为逐字不变**(前端仍调 promote / join,无需改),"单部门唯一"现由 memberships 的 PRIMARY-active 唯一约束承接。**独立的多归属管理**(主 / 兼 / 临时 / 支援)见队员 360 的**组织归属 tab**(§2.2),与入队 funnel 分开。
+
 ### 5.2 推荐菜单树(6 顶层组)
 
 ```
@@ -143,7 +170,7 @@
   活动列表 ──▶ 活动作战室(详情·tab:概览│报名│考勤 ──▶ 考勤审核详情)
   审批工作台(跨活动横扫:待审报名 + 待审考勤)
 队员
-  队员列表 ──▶ 队员360(详情·tab:基本│部门│档案│证书│紧急联系人│保险│活动履历│考勤记录│贡献值)
+  队员列表 ──▶ 队员360(详情·tab:基本│组织归属│档案│证书│紧急联系人│保险│活动履历│考勤记录│贡献值)
   队保单(团队保险单 + 覆盖名单)
 招募与入队
   招新轮次 ──▶ 报名审核(OCR·考核·一键发号)
@@ -151,13 +178,13 @@
 内容发布
   内容列表 ──▶ 内容编辑器(草稿/发布/5档可见性)
 系统管理
-  用户管理│角色与权限│组织架构│数据字典│贡献值规则│附件配置│审计日志│短信日志│系统设置
+  用户管理│角色与权限│组织架构│职务定义│职务规则│数据字典│贡献值规则│附件配置│审计日志│短信日志│系统设置
   (个人中心走右上角头像下拉,不进侧栏)
 ```
 
 **故意不做的菜单**(它们是别人的 tab):报名管理、考勤管理、证书管理、保险管理、紧急联系人、部门管理。看到要写"请先选择一个 X 才能看 Y"就回 §1 反模式。
 
-> **分组可演进**:① "系统管理" 一拥挤就拆「基础数据」(字典 / 组织 / 贡献值规则 / 附件配置)+「系统与权限」(用户 / 角色 / 审计 / 短信日志 / 各设置),按使用频率 + 权限层级分;② 审批工作台**只做日常高频**(报名 / 考勤);招新报名、入队申请的待处理队列是季节性的,**留在各自模块**别塞进工作台(要"全局待办数"等 [GAP-003](#4-缺口台账-gap-ledger) 的 stats 端点统一出)。
+> **分组可演进**:① "系统管理" 一拥挤就拆「基础数据」(字典 / 组织 / 职务定义 / 职务规则 / 贡献值规则 / 附件配置)+「系统与权限」(用户 / 角色 / 审计 / 短信日志 / 各设置),按使用频率 + 权限层级分;② 审批工作台**只做日常高频**(报名 / 考勤);招新报名、入队申请的待处理队列是季节性的,**留在各自模块**别塞进工作台(要"全局待办数"等 [GAP-003](#4-缺口台账-gap-ledger) 的 stats 端点统一出)。
 
 ### 5.3 页面骨架 + 可见性码(组件按 Element Plus / pure-admin `PureTable`)
 
@@ -165,7 +192,7 @@
 |---|---|---|---|
 | 活动列表 → 作战室 | `activities` + `/:id/{registrations,attendance-sheets}` | 列表 `[auth]` 仅登录;写操作 `activity.*.record` | `el-tabs` 三 tab;`activityId` 取**路由参数**不放下拉;考勤进 `review-detail` 审核页(初审/终审) |
 | 审批工作台 | `registrations?statusCode=` · `attendance-sheets?statusCode=` | `activity-registration.read.record` · `attendance.read.sheet` | 跨活动扁平列表 + `statusCode` 切;item 自带活动上下文;`el-drawer` 内审批 |
-| 队员列表 → 360 | `members` + 8 子资源(§2.2) | `member.read.record`(各子 tab 另持各自 read 码) | `el-tabs` 九 tab;贡献值用 `contribution-summary` capped 值,**别裸 SUM**(§3 #4) |
+| 队员列表 → 360 | `members` + 子资源(§2.2;含**组织归属 memberships** CRUD)| `member.read.record`(各子 tab 另持各自 read 码;组织归属 tab:`membership.list.record` 看 + `membership.set.record` 增/改 + `membership.end.record` 结束)| `el-tabs` 九 tab(**部门 tab 升级为组织归属**:主 / 兼 / 临时 / 支援多归属 + 任期);贡献值用 `contribution-summary` capped 值,**别裸 SUM**(§3 #4) |
 | 队保单 | `team-insurance-policies` | `team-insurance-policy.read.record` | 左保单表 + 右覆盖名单(`el-transfer` 或加/移弹窗) |
 | 招新轮次 / 报名审核 | `recruitment/{cycles,applications}`(列表 `?cycleId=&statusCode=&riskLevel=normal\|high\|system` 过滤〔三参均 query DTO 白名单、可选;早期 loose `@Query` 旁路曾被全局 `forbidNonWhitelisted` 误拒 400,已纳入 `RecruitmentApplicationListQueryDto` 修复〕,**S4b**) | `recruitment-cycle.read.record` · `recruitment-application.read.record`(列表/脱敏详情)· `recruitment-application.read.sensitive`(详情明文证件号·手机 + 证件照 signed-URL;**S3 敏感分级**) | `el-steps` 表流程;**详情默认脱敏,持 `read.sensitive` 才显明文证件号/手机 + 取证件照 signed-URL**(无该码 → signed-URL 30100;字段集不变只 masking 随码);**S4b 人工队列三栏**:列表按 `riskLevel`(普通/高风险/系统异常)切栏,DTO 含 `riskLevel`/`manualReviewReason`(`forgery_suspected`/`system_ocr_error`/`ocr_mismatch_confirmed`/`special_document`)分组筛;`el-drawer` 标门槛/综合评定/一键发号;**S6 批量操作**:`POST applications/batch-mark-threshold`(批量标门槛,匹配键 临时编号/手机/姓名+手机,`mark.threshold` 码,返 per-row + 批次汇总)· `POST applications/export`(导 CSV,`read.record` 脱敏列 / `read.sensitive` 明文列)· `GET cycles/:id/promote-precheck`(发号前预检,`promote.member` 码,预检=实发);**OCR 鉴伪版充分利用(已发 v0.33.0)**:`GET applications/{id}/id-card-image-url` 现返**三图 signed-URL**(`url` 原图 + `cropImageUrl` 主体框裁剪 + `portraitImageUrl` 头像裁剪;裁剪图仅大陆身份证鉴伪版且已入库才有、否则 null;**仍 `read.sensitive` 闸**),报名详情 DTO **+4 OCR 顾问式列** `ocrAddress`/`ocrNation`/`ocrAuthority`/`ocrValidDate`(**随 `read.sensitive` 分级:脱敏级 → null**,住址等同证件号敏感)+ `hasIdCardCropImage`/`hasIdCardPortraitImage` 布尔 flag;**OCR 仅顾问式存档,gender/birth 仍由证件号推导权威、不被 OCR 覆盖** |
 | 招新工作台(进度看板) | `recruitment/cycles/:id/stats` | `recruitment-application.read.record` | 五组聚合卡片(今日数据/待处理事项/门槛进度/综合评定/公示发号);**纯读**,计数与报名 stage 同源;`el-statistic` 数字卡 + `el-progress` 门槛分布;待人工 normal/high/system 三栏为**真 `riskLevel` 口径**(S4b 落地,去 verifyOutcome 代理);**S6 发号前预检**(`cycles/:id/promote-precheck`)可在「公示发号」卡上做发号前体检(逐行可发/跳过原因) |
@@ -173,7 +200,9 @@
 | 内容发布 | `contents` | `content.read.record` | 富文本 + 封面 `el-upload` + 可见性下拉(5 档)+ 状态机按钮 |
 | 用户管理 | `admin/v1/users` | `user.read.account` | CRUD;自我保护 / 最后超管后端拦,按错误码提示 |
 | 角色与权限 | `system/v1/{roles,permissions,user-roles}` | `rbac.role.read` / `rbac.permission.read` | 角色授权 `el-tree`/`el-transfer` |
-| 组织架构 | `admin/v1/organizations` | `org.read.node` | `el-tree` 增删改(已内置根 + 15 部门) |
+| 组织架构 | `admin/v1/organizations`(含 reparent `POST .../:id/move`)| `org.read.node`(reparent 用 `org.move.node`)| `el-tree` 增删改 + **重挂父级 reparent**("移动"操作,body 必填 `parentId`;禁改根 / 守环,§2.6);已内置根 + 15 部门 |
+| 职务定义 | `admin/v1/positions` | `position.read.definition`(增/改/删另持 `create`/`update`/`delete`.definition)| `PureTable` CRUD;类别 LEADER / DEPUTY / STAFF;`code` 创建后不可改;6 内置(队/部/组正副职);被规则引用禁删(32003);全局配置(§2.6)|
+| 职务规则 | `admin/v1/position-rules` | `position-rule.read.record`(增/改/删另持 `create`/`update`/`delete`.record)| 设"某组织类别可设哪些职务";按 `nodeTypeCode` 过滤;`(类别, 职务)` 唯一;30 内置默认(§2.6)|
 | 数据字典 | `system/v1/dict-{types,items}` | `dict.read.type` / `dict.read.item` | 左类型右项联动;内置项有防误删守卫 |
 | 贡献值规则 | `system/v1/contribution-rules` | `contribution.read.rule` | 是**规则**不是队员的分,别和 360 贡献值混 |
 | 附件配置 | `system/v1/attachment-{type,mime,size-limit}-configs` | `attachment-config.read.*` | 三表 override-with-default,三 tab |
