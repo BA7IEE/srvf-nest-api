@@ -1352,10 +1352,45 @@ const POSITION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
-// PR-2A 聚合(32 条:dict 8 + org 5〔终态 scoped-authz PR1 +org.move.node〕+ member-department 3 +
-// membership 4〔终态 scoped-authz PR2〕+ contribution 4 + position 4 + position-rule 4〔终态 scoped-authz PR3〕)。
+// position-assignment.* 4(终态 scoped-authz PR4「任职」;冻结稿 §4.3 / §7.3;任职管理 + 历史;
+// 沿组织归属域配置/管理码现绑 ops-admin)。**任职 = 数据 + 任命校验,绝不进判权路径**(判权是 PR8)。
+// 双轴读(组织轴列 + 队员轴列)共用 position-assignment.read.record;历史链单独 read.history。
+const POSITION_ASSIGNMENT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'position-assignment.read.record',
+    module: 'position-assignment',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看任职(组织轴在任列表 / 队员轴任职含历史)',
+  },
+  {
+    code: 'position-assignment.create.record',
+    module: 'position-assignment',
+    action: 'create',
+    resourceType: 'record',
+    description: '任命(校验职务适配 / 单人独占 / 兼任 / 归属要求 / 任期)',
+  },
+  {
+    code: 'position-assignment.revoke.record',
+    module: 'position-assignment',
+    action: 'revoke',
+    resourceType: 'record',
+    description: '撤销任职(status=REVOKED + 撤销人 + endedAt)',
+  },
+  {
+    code: 'position-assignment.read.history',
+    module: 'position-assignment',
+    action: 'read',
+    resourceType: 'history',
+    description: '查看任职变更/历史链',
+  },
+];
+
+// PR-2A 聚合(36 条:dict 8 + org 5〔终态 scoped-authz PR1 +org.move.node〕+ member-department 3 +
+// membership 4〔终态 scoped-authz PR2〕+ contribution 4 + position 4 + position-rule 4〔终态 scoped-authz PR3〕
+// + position-assignment 4〔终态 scoped-authz PR4〕)。
 // member-department 与 membership 同"组织归属"域,membership 为 member-department 的升级面(旧 3 码保留 deprecated);
-// position / position-rule 为职务定义配置面(冻结稿 §4.3;全绑 ops-admin,沿配置码现绑)。
+// position / position-rule 为职务定义配置面;position-assignment 为任职管理面(冻结稿 §4.3;全绑 ops-admin,沿配置/管理码现绑)。
 const PR_2A_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...DICT_PERMISSION_SEED,
   ...ORG_PERMISSION_SEED,
@@ -1363,6 +1398,7 @@ const PR_2A_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...MEMBERSHIP_PERMISSION_SEED,
   ...CONTRIBUTION_PERMISSION_SEED,
   ...POSITION_PERMISSION_SEED,
+  ...POSITION_ASSIGNMENT_PERMISSION_SEED,
 ];
 
 // P0-F PR-2B(2026-05-18):配置类接口 RBAC 接入第二批(15 条)。
@@ -1766,7 +1802,7 @@ const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...REALNAME_INFRA_PERMISSION_SEED,
 ];
 
-// ops-admin 完整绑定集合(14 rbac.* + 32 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 76 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4 / REALNAME E-R-19;PR-2A 32 = 终态 scoped-authz PR1 org.move.node + PR2 membership 4 + PR3 position 4 + position-rule 4 码,全绑 ops-admin 无过滤)
+// ops-admin 完整绑定集合(14 rbac.* + 36 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 80 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4 / REALNAME E-R-19;PR-2A 36 = 终态 scoped-authz PR1 org.move.node + PR2 membership 4 + PR3 position 4 + position-rule 4 + PR4 position-assignment 4 码,全绑 ops-admin 无过滤)
 // 注:`storage-setting.reset.credentials` 从 PR_2B_PERMISSION_SEED 过滤掉(沿 PR-2 D2=A;§6.2)
 // 注:`user.update.role` 从 USER_PERMISSION_SEED 过滤掉(沿 PR-3 D1=A;§6.2)
 // 注:`audit-log.read.entry` 整条加入,不过滤(沿 PR-4 D2=B;§6.2)
@@ -1788,7 +1824,7 @@ const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 const OPS_ADMIN_ROLE_CODE = 'ops-admin';
 const OPS_ADMIN_DISPLAY_NAME = '运营管理员';
 const OPS_ADMIN_DESCRIPTION =
-  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / membership / contribution-rule / position / position-rule + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条 + WECHAT: wechat-setting / user.wechat.clear 3 条 + REALNAME: realname-setting 2 条)的 meta 角色;14 rbac.* + 32 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 76 条权限点;凭证 reset(storage / sms / wechat / realname)与 user 角色修改仅 SUPER_ADMIN';
+  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / membership / contribution-rule / position / position-rule / position-assignment + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条 + WECHAT: wechat-setting / user.wechat.clear 3 条 + REALNAME: realname-setting 2 条)的 meta 角色;14 rbac.* + 36 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 80 条权限点;凭证 reset(storage / sms / wechat / realname)与 user 角色修改仅 SUPER_ADMIN';
 
 // V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集
 // (沿 D7-attachments v1.0 §6.1 + Q11 v1.0 锁清单 + 用户 PR #6a 拍板)。

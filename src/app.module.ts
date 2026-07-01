@@ -35,6 +35,7 @@ import { MembersModule } from './modules/members/members.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { PositionsModule } from './modules/positions/positions.module';
+import { PositionAssignmentsModule } from './modules/position-assignments/position-assignments.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { RealnameModule } from './modules/realname/realname.module';
@@ -85,6 +86,9 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     // 终态 scoped-authz PR3(2026-07-01;冻结稿 §3.2/§3.3/§7.2):职务定义 + 职务规则配置面
     //   (admin/v1/positions 5 路由 + admin/v1/position-rules 4 路由;R 模式 position.* / position-rule.* 8 码)。
     PositionsModule,
+    // 终态 scoped-authz PR4(2026-07-01;冻结稿 §3.4/§7.3):任职(position-assignments)双轴管理面
+    //   (5 路由:组织轴列/建 + 队员轴列 + 撤销 + 历史;R 模式 position-assignment.* 4 码;任命/撤销写 audit)。
+    PositionAssignmentsModule,
     MembersModule,
     MemberDepartmentsModule,
     MemberProfilesModule,

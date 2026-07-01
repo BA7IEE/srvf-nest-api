@@ -184,6 +184,10 @@ model Organization {
   // MemberDepartment 的升级表:主/兼/临时/支援归属 + 任期。**本刀绝不被任何模块读作授权**(AuthzService 是 PR8)。
   memberOrganizationMemberships MemberOrganizationMembership[]
 
+  // 终态 scoped-authz PR4(2026-07-01;冻结稿 §3.4):任职反向 relation(仅关系映射,无列)。
+  // **assignment 只是数据 + 任命校验,绝不被任何判权路径读**(AuthzService 是 PR8)。
+  positionAssignments OrganizationPositionAssignment[]
+
   // V2 第一阶段批次 3 反向 relation(沿批次 1 / 批次 2 R2 范式)
   activities Activity[]
 
@@ -232,9 +236,8 @@ model OrganizationClosure {
 //   6 领导职务(队长/副队长/部长/副部长/组长/副组长;R4,PositionCategory.STAFF 干事留口不 seed)。
 // - OrganizationPositionRule = 某类组织(node_type)可设哪些职务的规则(R6 一类多领导称谓 +
 //   R8 requireMembership 按 (nodeType, position) 可配:总队级领导免根归属)。
-// **本刀纯配置定义:只建 + seed + CRUD,绝不被任何判权路径读**(消费它的 assignment=PR4 /
-//   policy=PR7 / authz=PR8;故本刀 OrganizationPosition 暂不含 assignments / rolePolicies 前向
-//   relation —— 对端 model 尚未建,待 PR4 / PR7 各自补挂反向 relation)。
+// **纯配置定义:只建 + seed + CRUD,绝不被任何判权路径读**(消费它的 assignment=PR4 /
+//   policy=PR7 / authz=PR8;`assignments` 反向 relation 由 PR4 补挂〔见下〕,`rolePolicies` 待 PR7)。
 model OrganizationPosition {
   id              String           @id @default(cuid())
   code            String           @unique // kebab,如 team-leader / dept-deputy / group-leader
@@ -251,7 +254,10 @@ model OrganizationPosition {
   updatedAt       DateTime         @updatedAt
   deletedAt       DateTime?
 
-  rules OrganizationPositionRule[]
+  rules       OrganizationPositionRule[]
+  // 终态 scoped-authz PR4(2026-07-01;冻结稿 §3.4):任职反向 relation(仅关系映射,无列)。
+  // 消费它的 policy=PR7 / authz=PR8;**本刀 assignment 只是数据 + 任命校验,绝不被任何判权路径读**。
+  assignments OrganizationPositionAssignment[]
 
   @@index([categoryCode])
   @@index([status])
@@ -295,6 +301,57 @@ model OrganizationPositionRule {
   @@map("organization_position_rules")
 }
 
+// ===== 终态 scoped-authz PR4:organization_position_assignments =====
+//
+// 任职(冻结稿 §3.4 / §7.3 / §4.3 / R2;goal 2026-07-01 PR4)。语义:
+// - 一条 = 人(memberId)× 组织(organizationId)× 职务(positionId)× 任期(startedAt/endedAt)× 状态。
+// - status ACTIVE / ENDED / REVOKED;撤销 = 写 REVOKED + revokedByUserId + endedAt(保留行做历史)。
+// - isConcurrent(R2 兼任标记):忠实回填公告"（兼）"(如赵强兼 SAMT 队长);**纯标记,不影响授权、不进任命校验**。
+// - 任命校验(service 层):职务适配(org.nodeType × position 须有 active OrganizationPositionRule)/
+//   单人独占(position.allowMultiple=false)/ 兼任(position.allowConcurrent=false)/ requireMembership
+//   (匹配规则要求时,member 须在本组织或其祖先有 active membership —— 读 closure 求祖先集 + memberships
+//   active 判定,**属任命业务合法性,绝非判权;closure 不进任何判权路径**)/ 任期(endedAt>startedAt)。
+// **本表 = 数据 + 任命校验:绝不被任何 rbac.can / AuthzService 判权路径读**(判权是 PR8;RoleBinding 是 PR6,
+//   故此处**不**挂 roleBindings 反向 relation)。三 FK onDelete Restrict;(org,position,member) active
+//   由 migration.sql 末尾手写 partial unique 兜底(P2002 → ASSIGNMENT_ALREADY_EXISTS)。任职历史 = 软删行 +
+//   ENDED/REVOKED 行全保留,可追溯。
+model OrganizationPositionAssignment {
+  id                String           @id @default(cuid())
+  organizationId    String
+  positionId        String
+  memberId          String
+  status            AssignmentStatus @default(ACTIVE)
+  startedAt         DateTime // 任期起(公告任期起,如 2026-07-01)
+  endedAt           DateTime? // 任期止(公告任期止,如 2027-06-30;有值须 > startedAt)
+  appointedByUserId String? // 任命人 userId
+  revokedByUserId   String? // 撤销人 userId
+  appointmentSource String? // 任命来源:announcement-2026 / manual / import
+  isConcurrent      Boolean          @default(false) // R2:兼任标记(回填公告"（兼）";不影响授权,并存 PA 都生效)
+  note              String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  deletedAt         DateTime?
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  position     OrganizationPosition @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  member       Member               @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([positionId])
+  @@index([memberId])
+  @@index([organizationId, status])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("organization_position_assignments")
+}
+
+// 结构闭集用 enum(沿冻结稿 §3.0 / PR2 MembershipStatus 范式;区别于运营可扩的字典码)。
+enum AssignmentStatus {
+  ACTIVE
+  ENDED
+  REVOKED
+}
+
 // ===== V2 第一阶段:members =====
 
 model Member {
@@ -311,6 +368,8 @@ model Member {
   memberDepartments             MemberDepartment[]
   // 终态 scoped-authz PR2(2026-07-01;冻结稿 §3.1):组织归属反向 relation(仅关系映射,不算业务字段新增,沿 R2 范式)。
   memberOrganizationMemberships MemberOrganizationMembership[]
+  // 终态 scoped-authz PR4(2026-07-01;冻结稿 §3.4):任职反向 relation(仅关系映射,不算业务字段新增,沿 R2 范式)。
+  positionAssignments           OrganizationPositionAssignment[]
   // V2 第一阶段批次 1:扩展模块反向 relation;主表既有业务字段语义不变,
   // 不在 Member 主表新增任何业务字段(顶层 §11 K1 + 批次 1 schema 草案 R2)。
   memberProfile                 MemberProfile?
@@ -318,8 +377,8 @@ model Member {
   // V2 第一阶段批次 2:Certificate 两条反向 relation;同样仅 Prisma 关系映射,
   // 不算业务字段新增(批次 2 schema 草案 v1.0 §7 / R2);
   // verifier 角色由 service 层判定,schema 不约束。
-  certificates                  Certificate[]                  @relation("CertificateMember")
-  certificatesVerified          Certificate[]                  @relation("CertificateVerifier")
+  certificates                  Certificate[]                    @relation("CertificateMember")
+  certificatesVerified          Certificate[]                    @relation("CertificateVerifier")
 
   // V2 第一阶段批次 3 反向 relation(沿批次 1 / 批次 2 R2 范式)
   activityRegistrations ActivityRegistration[]

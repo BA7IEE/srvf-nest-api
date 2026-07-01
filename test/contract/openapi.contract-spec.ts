@@ -478,6 +478,15 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/admin/v1/position-rules'],
   ['patch', '/api/admin/v1/position-rules/{id}'],
   ['delete', '/api/admin/v1/position-rules/{id}'],
+  // 终态 scoped-authz PR4「任职」(2026-07-01;冻结稿 §7.3),+5 → 279。
+  //   双轴:组织轴 GET 在任列表 / POST 任命 + 队员轴 GET 任职(含历史) + 扁平 POST 撤销 / GET 历史链。
+  //   单 PositionAssignmentsController(@Controller('admin/v1') 共同前缀 + 完整子路径);
+  //   R 模式 position-assignment.{read,create,revoke}.record + .read.history 4 码,无 @Roles。
+  ['get', '/api/admin/v1/organizations/{orgId}/position-assignments'],
+  ['post', '/api/admin/v1/organizations/{orgId}/position-assignments'],
+  ['get', '/api/admin/v1/members/{memberId}/position-assignments'],
+  ['post', '/api/admin/v1/position-assignments/{id}/revoke'],
+  ['get', '/api/admin/v1/position-assignments/{id}/history'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -899,6 +908,11 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'PositionRuleResponseDto',
   'CreatePositionRuleDto',
   'UpdatePositionRuleDto',
+
+  // 终态 scoped-authz PR4「任职」(2026-07-01;冻结稿 §3.4/§7.3):
+  //   position-assignments DTO(入参 Create + 出参 Response;撤销无 body、历史/列表复用 Response)。
+  'PositionAssignmentResponseDto',
+  'CreatePositionAssignmentDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
