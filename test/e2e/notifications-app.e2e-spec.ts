@@ -165,10 +165,10 @@ describe('统一通知模块(第 28 模块)app/v1 会员读取面 e2e(4 档可�
 
     orgA = await makeOrg('部门A');
     orgB = await makeOrg('部门B');
-    await prisma.memberDepartment.create({
+    await prisma.memberOrganizationMembership.create({
       data: { memberId: formalA.memberId, organizationId: orgA },
     });
-    await prisma.memberDepartment.create({
+    await prisma.memberOrganizationMembership.create({
       data: { memberId: formalB.memberId, organizationId: orgB },
     });
 

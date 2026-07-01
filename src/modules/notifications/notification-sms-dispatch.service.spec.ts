@@ -41,7 +41,7 @@ function build(opts: {
     user: {
       findMany: jest.fn().mockResolvedValue(usersRows),
     },
-    memberDepartment: {
+    memberOrganizationMembership: {
       findMany: jest.fn().mockResolvedValue([]),
     },
     notificationDelivery: {

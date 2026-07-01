@@ -180,6 +180,10 @@ model Organization {
   children          Organization[]     @relation("OrganizationTree")
   memberDepartments MemberDepartment[]
 
+  // 终态 scoped-authz PR2(2026-07-01;冻结稿 §3.1):组织归属反向 relation(仅关系映射,无列)。
+  // MemberDepartment 的升级表:主/兼/临时/支援归属 + 任期。**本刀绝不被任何模块读作授权**(AuthzService 是 PR8)。
+  memberOrganizationMemberships MemberOrganizationMembership[]
+
   // V2 第一阶段批次 3 反向 relation(沿批次 1 / 批次 2 R2 范式)
   activities Activity[]
 
@@ -233,17 +237,19 @@ model Member {
   updatedAt   DateTime     @updatedAt
   deletedAt   DateTime?
 
-  user                 User?
-  memberDepartments    MemberDepartment[]
+  user                          User?
+  memberDepartments             MemberDepartment[]
+  // 终态 scoped-authz PR2(2026-07-01;冻结稿 §3.1):组织归属反向 relation(仅关系映射,不算业务字段新增,沿 R2 范式)。
+  memberOrganizationMemberships MemberOrganizationMembership[]
   // V2 第一阶段批次 1:扩展模块反向 relation;主表既有业务字段语义不变,
   // 不在 Member 主表新增任何业务字段(顶层 §11 K1 + 批次 1 schema 草案 R2)。
-  memberProfile        MemberProfile?
-  emergencyContacts    EmergencyContact[]
+  memberProfile                 MemberProfile?
+  emergencyContacts             EmergencyContact[]
   // V2 第一阶段批次 2:Certificate 两条反向 relation;同样仅 Prisma 关系映射,
   // 不算业务字段新增(批次 2 schema 草案 v1.0 §7 / R2);
   // verifier 角色由 service 层判定,schema 不约束。
-  certificates         Certificate[]      @relation("CertificateMember")
-  certificatesVerified Certificate[]      @relation("CertificateVerifier")
+  certificates                  Certificate[]                  @relation("CertificateMember")
+  certificatesVerified          Certificate[]                  @relation("CertificateVerifier")
 
   // V2 第一阶段批次 3 反向 relation(沿批次 1 / 批次 2 R2 范式)
   activityRegistrations ActivityRegistration[]
@@ -297,6 +303,56 @@ model MemberDepartment {
   @@index([organizationId])
   @@index([deletedAt])
   @@index([createdAt])
+}
+
+// ===== 终态 scoped-authz PR2:member_organization_memberships =====
+//
+// MemberDepartment(裸单归属)的升级表(冻结稿 §3.1 / §8.1;goal 2026-07-01 PR2)。语义:
+// - membershipType=PRIMARY 至多 1 条 active(= 旧"单部门"语义的升级,只约束主归属);
+//   partial unique `member_org_membership_primary_active_unique` 由 migration.sql 末尾手写
+//   (Prisma DSL 至 6.x 不支持带 WHERE 的部分唯一索引,沿 MemberDepartment / ContributionRule 范式)。
+// - SECONDARY/TEMPORARY/SUPPORT 可并存多条 = 跨部门 / 兼属 / 临时编入 / 支援。
+// - 任期 startedAt/endedAt + status 表达历史;软删行保留留痕。
+// 迁移:每条 active MemberDepartment 回填为 (PRIMARY, ACTIVE, startedAt=createdAt);旧表冻结不再写入(cleanup 留后续 PR)。
+// **本表只建 + 回填 + CRUD,绝不被任何模块读作授权**(AuthzService 是 PR8)。
+model MemberOrganizationMembership {
+  id              String           @id @default(cuid())
+  memberId        String
+  organizationId  String
+  membershipType  MembershipType   @default(PRIMARY)
+  status          MembershipStatus @default(ACTIVE)
+  startedAt       DateTime         @default(now())
+  endedAt         DateTime?
+  reason          String? // 编入 / 调出原因(自由短串)
+  createdByUserId String?
+  endedByUserId   String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  deletedAt       DateTime?
+
+  member       Member       @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([memberId])
+  @@index([organizationId])
+  @@index([memberId, status])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("member_organization_memberships")
+}
+
+// 结构闭集用 enum(沿冻结稿 §3.1;区别于 PR1 运营可扩的字典码如 establishmentStatusCode)。
+enum MembershipType {
+  PRIMARY
+  SECONDARY
+  TEMPORARY
+  SUPPORT
+}
+
+enum MembershipStatus {
+  ACTIVE
+  ENDED
+  SUSPENDED
 }
 
 // ===== V2 第一阶段批次 1:member_profiles =====
@@ -1176,11 +1232,11 @@ model SmsSettings {
   enabled      Boolean         @default(true)
 
   // 腾讯云 SMS 运行参数(非 secret,明文;DEV_STUB 下闲置)
-  sdkAppId             String?
-  signName             String? // 短信签名(须先过审;运维 SOP 见 docs/ops/sms-production-rollout-checklist.md)
-  region               String? // 如 ap-guangzhou
-  templateIdVerifyCode String? // 验证码模板 ID(须先过审;templateKey='verify-code' 的 provider 侧映射)
-  templateIdBirthday   String? // 生日祝福模板 ID(须先过审,零变量模板;templateKey='birthday-greeting' 的 provider 侧映射;queue-b 评审稿 §6.2)
+  sdkAppId               String?
+  signName               String? // 短信签名(须先过审;运维 SOP 见 docs/ops/sms-production-rollout-checklist.md)
+  region                 String? // 如 ap-guangzhou
+  templateIdVerifyCode   String? // 验证码模板 ID(须先过审;templateKey='verify-code' 的 provider 侧映射)
+  templateIdBirthday     String? // 生日祝福模板 ID(须先过审,零变量模板;templateKey='birthday-greeting' 的 provider 侧映射;queue-b 评审稿 §6.2)
   templateIdNotification String? // 通知兜底模板 ID(须先过审,零变量模板;templateKey='notification' 的 provider 侧映射;统一通知 S5 评审稿 §4)
 
   // 凭证(加密存储;明文永不入库;响应永不回显——密文也不回显)

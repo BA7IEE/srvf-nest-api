@@ -39,6 +39,8 @@
 > 2026-06-27 统一通知模块 S5 短信兜底渠道戳(goal「GAP-005 统一通知模块 S5 — 短信兜底渠道」,冻结评审稿 [`unified-notification-dispatcher-review.md §4/§8.3/§9`](../archive/reviews/unified-notification-dispatcher-review.md)):权限码 162→**163**(notification +1:`notification.send.sms` 短信发起成本动作单独 gating,计费确认必需 D-N4,全绑 biz-admin 无例外,**实装即用 0 孤码**);biz-admin 73→**74**;ops-admin 63 / member 9 零变化;controller **55** 不变(扩既有 `NotificationAdminController`,零新 class);endpoint +1 → **260**(`POST admin/v1/notifications/:id/send-sms`;R 模式 `notification.send.sms` 无 @RequirePermissions)。短信派发 = admin 显式 confirmed=true 触发的事务外同步分支(`NotificationSmsDispatchService` 复用 `SmsProviderRouter.sendNotification` additive + `NotificationDelivery`/`sms_send_logs` 记账,§6.2 HTTP 事务外;**短信永不随 publish 自动发**);防滥发继承同号封顶 10/间隔 60s/同日同模板幂等(查 `sms_send_logs`)+ FAILED 逐人不阻断;BizCode +1(310xx 段 31013 `NOTIFICATION_SMS_NOT_SENDABLE` 须已发布且声明短信渠道;通道未配置走既有 24030;confirmed 缺失走通用 400);audit 复用 `notification.publish` 伞事件 `operation='send-sms'` + 收件人计数(**无新增 audit 串**;§13.2 admin 入 audit / 逐条投递不入 audit)。第 30 migration(`sms_settings.templateIdNotification` 1 列 additive)。L2:手机号一律 `maskPhone`(delivery/日志/审计零明文)。改 RBAC 契约 → 同 PR 更新 `docs/handoff` admin-web 能力图 + 前端对接指南。`docs:rbacmap:check` **0 FAIL / 0 WARN**。
 
 > 2026-07-01 终态 scoped-authz PR1 组织基座戳(goal「终态 scoped-authz 落地序列【首刀 PR1 — 组织基座】」,冻结评审稿 [`org-position-scoped-authz-terminal-design-review.md §3.8/§8.3/§11`](../reviews/org-position-scoped-authz-terminal-design-review.md)):权限码 163→**164**(org +1:`org.move.node` reparent 重挂父级,绑 ops-admin 沿 org.*.node 现绑,**实装即用 0 孤码**);ops-admin 63→**64**;biz-admin 74 / member 9 零变化;controller **55** 不变(扩既有 `OrganizationsController`,零新 class);endpoint +1 → **261**(`POST admin/v1/organizations/:id/move`;R 模式 service 层 `rbac.can('org.move.node')` 无 @Roles)。复活两死 BizCode(`ORGANIZATION_PARENT_CYCLE` 11012 环检测〔closure 判定目标父=自身/后代〕/ `ORGANIZATION_PARENT_CHANGE_FORBIDDEN` 11013 受限位置〔禁改根节点父级,守单根上限〕);move 事务内重算受影响子树 closure(删旧祖先→子树边、按新父插入,PK 兜底防重)。第 32 migration(新表 `organization_closure` 闭包表 + WITH RECURSIVE 从现有 parentId 树一次性回填〔含 depth-0 自身行〕+ `Organization` 两 additive 可空列 `establishmentStatusCode?`/`groupFunctionCode?` R1/R3,纯加性、无破坏、无不可逆);`node_type` 字典 +`group` 一值 + 新字典 `org_establishment_status`(闭集 formal/provisional,登记 SYSTEM+ITEM 防误删)+ 留口字典 `group_function`(空 items,沿 `join_source` 自由串候选惯例不登记)。**closure 只建 + 维护、本刀绝不被任何模块读作授权**(AuthzService 是 PR8);两 additive 列 schema-only、不进 DTO / OpenAPI / 现有读路径。行为锁:现有组织 CRUD / getTree / 单根上限 / 软删护栏(HAS_CHILDREN/HAS_MEMBERS/LAST_ROOT)逐字不变。landing 序列 PR1/12,不单独发版。`docs:rbacmap:check` **0 FAIL / 0 WARN**。
+>
+> 2026-07-01 终态 scoped-authz PR2 Membership 戳(goal「终态 scoped-authz 落地序列【第 2 刀 PR2 — Membership】」,冻结评审稿 [`org-position-scoped-authz-terminal-design-review.md §3.1/§7.1/§8.1/§4.3`](../reviews/org-position-scoped-authz-terminal-design-review.md)):权限码 164→**168**(membership +4:`membership.{list,read,set,end}.record`,全绑 ops-admin 沿 member-department.* 现绑);ops-admin 64→**68**;biz-admin 74 / member 9 零变化;controller **55→56**(新 `MembershipsController`,并入 member-departments 模块);endpoint +4 → **265**(`GET/POST admin/v1/members/:memberId/memberships` + `PATCH/DELETE .../:id`;旧 3 department 路由保留;R 模式 service 层 `rbac.can` 无 @Roles)。第 33 migration(净新表 `member_organization_memberships` + 2 枚举 `MembershipType`/`MembershipStatus` + 2 手写 partial unique〔`primary_active_unique` 仅约束 PRIMARY / `active_unique` (member,org,type)〕+ 回填 active `MemberDepartment`→PRIMARY membership〔复用 id、startedAt=createdAt〕;纯加性、可逆)。BizCode +2(170xx 段 17003 `MEMBERSHIP_NOT_FOUND` / 17004 `MEMBERSHIP_ALREADY_EXISTS`)。**行为锁核心**:旧 3 department 端点重指向 PRIMARY 行、行为逐字不变(旧 e2e HTTP 断言零改,仅内部 DB 断言改指向新表);**全量重指向**——recruitment/team-join(写)+ organizations/members/notifications×3/content/team-join-app(读 8 处消费者)一并迁到 active PRIMARY membership,旧 `MemberDepartment` 表真正冻结(仅回填读过一次,无任何生产读写,cleanup PR 可 DROP)。`read.record` 为未来 GET :id 预留 = 唯一刻意预埋孤码(WARN,非 FAIL)。**membership 表绝不被任何模块读作授权**(AuthzService 是 PR8)。landing 序列 PR2/12,不单独发版。`docs:rbacmap:check` **0 FAIL / 1 WARN**(`membership.read.record` 预埋)。
 
 ---
 
@@ -51,7 +53,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。判权唯一服务入口 = `RbacService.can()`;`RbacCacheService` 是权限解析缓存(TTL 1800s,三档失效),不是身份缓存。
 
-## 2. controller × 鉴权模式对照(55 个 controller class)
+## 2. controller × 鉴权模式对照(56 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
@@ -66,7 +68,8 @@
 | `system/v1/audit-logs` | `audit-log.read.entry`(1) |
 | `system/v1/dict-types` + `dict-items` | `dict.*.type` / `dict.*.item`(8) |
 | `admin/v1/organizations` | `org.*.node`(4) |
-| `admin/v1/members/:id/department` | `member-department.*.current`(3) |
+| `admin/v1/members/:id/department` | `member-department.*.current`(3;deprecated,重指向 PRIMARY membership)|
+| `admin/v1/members/:memberId/memberships` | `membership.{list,set,end}.record`(3 端点用码;`read.record` 预留孤码;终态 scoped-authz PR2)|
 | `system/v1/contribution-rules` | `contribution.*.rule`(4) |
 | `system/v1/attachment-{type,mime,size-limit}-configs` | `attachment-config.*`(12) |
 | `system/v1/storage-settings` | `storage-setting.*`(3;`reset.credentials` 不绑 ops-admin = D2=A 拍板) |
@@ -117,14 +120,15 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(164 条,seed 幂等 upsert)
+## 3. 权限码全集(168 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
 | rbac meta | 14 | `rbac.permission.{read,create,update,delete}` / `rbac.role.{read,create,update,delete}` / `rbac.role-permission.{create,delete}` / `rbac.user-role.{read,create,delete}` / `rbac.config.reload` |
 | 字典 | 8 | `dict.{read,create,update,delete}.{type,item}` |
 | 组织 | 5 | `org.{read,create,update,delete}.node` / `org.move.node`(终态 scoped-authz PR1 reparent 重挂父级;绑 ops-admin) |
-| 队员部门 | 3 | `member-department.{read,set,clear}.current` |
+| 队员部门(deprecated 兼容) | 3 | `member-department.{read,set,clear}.current`(重指向 PRIMARY membership;`admin/v1/members/:id/department` 保留一版)|
+| 队员归属(终态 scoped-authz PR2) | 4 | `membership.{list,read,set,end}.record`(member-department.* 升级面;`admin/v1/members/:memberId/memberships`;POST/PATCH 共用 `set`;`read.record` 为未来 GET :id 预留 = 刻意预埋孤码 WARN;全绑 ops-admin)|
 | 贡献规则 | 4 | `contribution.{read,create,update,delete}.rule` |
 | 附件配置 | 12 | `attachment-config.{read,create,update,delete}.{type,mime,size-limit}` |
 | 存储设置 | 3 | `storage-setting.{read,update}.singleton` / `storage-setting.reset.credentials` |
@@ -154,7 +158,7 @@
 | 统一通知 S2 微信订阅 quota 渠道(2026-06-25) | 1 | `notification.update.template`(`admin/v1/notification-wechat-templates` upsert;微信模板配置写权,运营可配 D-N3;读复用 `notification.read.record`;app 订阅 ack/status 零码 = canUseApp 闸;全绑 biz-admin;**实装即用 0 孤码**)|
 | 统一通知 S5 短信兜底渠道(2026-06-27) | 1 | `notification.send.sms`(`admin/v1/notifications/:id/send-sms`;显式发起短信兜底〔紧急召集〕成本动作单独 gating,计费确认必需 confirmed=true;全绑 biz-admin;**实装即用 0 孤码**)|
 
-内置角色:`ops-admin`(绑 64 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**;终态 scoped-authz PR1 `org.move.node` 绑入 63→64)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新一/二/三期入队 + 招新闭环 S3 + CMS content + 统一通知 S1/S2/S5,绑 74 条 = 75 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码〔member/certificate/activity〕不绑,CMS content-* 4 码 + notification 7 码〔S1 5 + S2 `update.template` 1 + S5 `send.sms` 1〕绑入〔α / 统一通知 S1 §9.2 + S2 §9.2 + S5 §9.2;演进 Slow-4 §6「biz-admin 不含 attachment.* 码」不变式 = 仅含 CMS content-* 4 码〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN,其余无"代码用码未 seed"。
+内置角色:`ops-admin`(绑 68 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**;终态 scoped-authz PR1 `org.move.node` 绑入 63→64,PR2 `membership.{list,read,set,end}.record` 4 码绑入 64→68)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新一/二/三期入队 + 招新闭环 S3 + CMS content + 统一通知 S1/S2/S5,绑 74 条 = 75 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码〔member/certificate/activity〕不绑,CMS content-* 4 码 + notification 7 码〔S1 5 + S2 `update.template` 1 + S5 `send.sms` 1〕绑入〔α / 统一通知 S1 §9.2 + S2 §9.2 + S5 §9.2;演进 Slow-4 §6「biz-admin 不含 attachment.* 码」不变式 = 仅含 CMS content-* 4 码〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN,其余无"代码用码未 seed"。
 
 ## 4. 保护不变式(改 users / permissions 前必读)
 

@@ -65,8 +65,9 @@ export class AppMeTeamJoinService {
       where: { id: memberId },
       select: { gradeCode: true },
     });
-    const activeDepts = await tx.memberDepartment.findMany({
-      where: { memberId, deletedAt: null },
+    // 终态 scoped-authz PR2:重指向 active PRIMARY membership(= 旧单部门)。
+    const activeDepts = await tx.memberOrganizationMembership.findMany({
+      where: { memberId, deletedAt: null, membershipType: 'PRIMARY', status: 'ACTIVE' },
       select: { organization: { select: { code: true } } },
     });
     if (!isUnenrolledVolunteer({ gradeCode: member?.gradeCode ?? null }, activeDepts)) {

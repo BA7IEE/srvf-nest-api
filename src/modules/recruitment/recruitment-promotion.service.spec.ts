@@ -81,7 +81,7 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
       memberProfile: { create: jest.fn().mockResolvedValue({ id: 'prof' }) },
       emergencyContact: { create: jest.fn().mockResolvedValue({ id: 'ec' }) },
       // S5:promote 同事务建 VOL 归口部门(每个 member 一条)
-      memberDepartment: { create: jest.fn().mockResolvedValue({ id: 'md' }) },
+      memberOrganizationMembership: { create: jest.fn().mockResolvedValue({ id: 'md' }) },
       recruitmentApplication: { update: jest.fn().mockResolvedValue({}) },
     };
 
@@ -189,7 +189,7 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
     expect(txMock.user.create).not.toHaveBeenCalled();
     // S5:空批不要求 VOL 存在(promotable=0 → 跳过解析),也不建任何 VOL 部门
     expect(orgFindFirst).not.toHaveBeenCalled();
-    expect(txMock.memberDepartment.create).not.toHaveBeenCalled();
+    expect(txMock.memberOrganizationMembership.create).not.toHaveBeenCalled();
     expect(getTxOptions()).toEqual({ timeout: PROMOTE_TX_TIMEOUT_MS });
   });
 
@@ -276,7 +276,7 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
     ]);
 
     // 每人一条 VOL 归口部门(organizationId = 解析出的 VOL id;不双建)
-    const mdCalls = txMock.memberDepartment.create.mock.calls as Array<
+    const mdCalls = txMock.memberOrganizationMembership.create.mock.calls as Array<
       [{ data: { memberId: string; organizationId: string } }]
     >;
     expect(mdCalls).toHaveLength(n);
@@ -291,7 +291,7 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
     });
     expect(orgFindFirst).toHaveBeenCalledTimes(1);
     expect(txMock.member.create).not.toHaveBeenCalled();
-    expect(txMock.memberDepartment.create).not.toHaveBeenCalled();
+    expect(txMock.memberOrganizationMembership.create).not.toHaveBeenCalled();
   });
 
   it('S5:VOL 归口部门非 ACTIVE → 28044(同样不建 member)', async () => {

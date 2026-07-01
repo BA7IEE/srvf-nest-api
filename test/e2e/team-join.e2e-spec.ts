@@ -287,7 +287,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
     await prisma.attendanceSheet.deleteMany({});
     await prisma.activity.deleteMany({});
     await prisma.teamJoinApplication.deleteMany({});
-    await prisma.memberDepartment.deleteMany({}); // T4 一键入队建的归属(FK 顺序:先于 org/member)
+    await prisma.memberOrganizationMembership.deleteMany({}); // T4 一键入队建的归属(FK 顺序:先于 org/member)
     await prisma.teamJoinCycle.deleteMany({});
     await prisma.organization.deleteMany({});
     // 统一通知 S3:入队定向通知(recipientMemberId FK→Member Restrict)须先于 member 清。
@@ -655,7 +655,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
       select: { gradeCode: true },
     });
     expect(before?.gradeCode).toBeNull();
-    const beforeDept = await prisma.memberDepartment.count({
+    const beforeDept = await prisma.memberOrganizationMembership.count({
       where: { memberId, deletedAt: null },
     });
     expect(beforeDept).toBe(0);
@@ -670,7 +670,9 @@ describe('招新三期(入队)admin 面 e2e', () => {
       select: { gradeCode: true },
     });
     expect(after?.gradeCode).toBe('level-1');
-    const dept = await prisma.memberDepartment.findFirst({ where: { memberId, deletedAt: null } });
+    const dept = await prisma.memberOrganizationMembership.findFirst({
+      where: { memberId, deletedAt: null },
+    });
     expect(dept?.organizationId).toBe(org);
     const auditCount = await prisma.auditLog.count({
       where: { event: 'team-join-application.join' },
@@ -717,7 +719,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
         select: { gradeCode: true },
       });
       expect(after.gradeCode).toBe('level-1'); // 入队产物完整
-      const active = await prisma.memberDepartment.findMany({
+      const active = await prisma.memberOrganizationMembership.findMany({
         where: { memberId, deletedAt: null },
       });
       expect(active).toHaveLength(1); // 单部门 partial unique 未破
@@ -735,7 +737,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
       data: { name: '志愿者', code: 'VOL', nodeTypeCode: 'volunteer', status: 'ACTIVE' },
     });
     await prisma.member.update({ where: { id: memberId }, data: { gradeCode: 'volunteer' } });
-    const volDept = await prisma.memberDepartment.create({
+    const volDept = await prisma.memberOrganizationMembership.create({
       data: { memberId, organizationId: volOrg.id },
     });
 
@@ -750,11 +752,15 @@ describe('招新三期(入队)admin 面 e2e', () => {
     });
     expect(after.gradeCode).toBe('level-1');
     // 守 member_departments 单部门 partial unique:恰 1 条 active 且为目标部门(VOL 已软删,绝无两条 active)
-    const active = await prisma.memberDepartment.findMany({ where: { memberId, deletedAt: null } });
+    const active = await prisma.memberOrganizationMembership.findMany({
+      where: { memberId, deletedAt: null },
+    });
     expect(active).toHaveLength(1);
     expect(active[0].organizationId).toBe(target);
     // VOL 行被软删(deletedAt 置,留痕不物理删)
-    const vol = await prisma.memberDepartment.findUniqueOrThrow({ where: { id: volDept.id } });
+    const vol = await prisma.memberOrganizationMembership.findUniqueOrThrow({
+      where: { id: volDept.id },
+    });
     expect(vol.deletedAt).not.toBeNull();
   });
 
@@ -763,7 +769,9 @@ describe('招新三期(入队)admin 面 e2e', () => {
     const { appId, memberId } = await setupApproved({ targets: [org] });
     await join(appId, org).expect(200);
     expectBizError(await join(appId, org), BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
-    const depts = await prisma.memberDepartment.count({ where: { memberId, deletedAt: null } });
+    const depts = await prisma.memberOrganizationMembership.count({
+      where: { memberId, deletedAt: null },
+    });
     expect(depts).toBe(1);
   });
 
@@ -793,7 +801,9 @@ describe('招新三期(入队)admin 面 e2e', () => {
       select: { gradeCode: true },
     });
     expect(m?.gradeCode).toBeNull();
-    expect(await prisma.memberDepartment.count({ where: { memberId, deletedAt: null } })).toBe(0);
+    expect(
+      await prisma.memberOrganizationMembership.count({ where: { memberId, deletedAt: null } }),
+    ).toBe(0);
   });
 
   it('㉑【T4】选专业队:缺对应 team-* gate → 28242;补 gate → joined', async () => {

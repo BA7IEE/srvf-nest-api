@@ -197,10 +197,13 @@ export class NotificationWechatDispatchService {
     });
     const userByMember = new Map(users.flatMap((u) => (u.memberId ? [[u.memberId, u]] : [])));
 
-    const depts = await this.prisma.memberDepartment.findMany({
+    // 终态 scoped-authz PR2:重指向 active PRIMARY membership(= 旧单部门)。
+    const depts = await this.prisma.memberOrganizationMembership.findMany({
       where: {
         memberId: { in: activeMemberIds },
         deletedAt: null,
+        membershipType: 'PRIMARY',
+        status: 'ACTIVE',
         organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
       },
       select: { memberId: true, organizationId: true },

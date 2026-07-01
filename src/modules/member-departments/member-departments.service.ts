@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { MemberStatus, OrganizationStatus, Prisma } from '@prisma/client';
+import {
+  MemberStatus,
+  MembershipStatus,
+  MembershipType,
+  OrganizationStatus,
+  Prisma,
+} from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -8,16 +14,33 @@ import { PrismaService } from '../../database/prisma.service';
 import { RbacService } from '../permissions/rbac.service';
 import { MemberDepartmentResponseDto, SetMemberDepartmentDto } from './member-departments.dto';
 
-// 集中定义对外 select。永不包含 deletedAt(软删除内部状态)。
-const memberDepartmentSelect = {
+// 终态 scoped-authz PR2(2026-07-01;冻结稿 §8.1 行为锁核心):本 service 由旧 `MemberDepartment` 表
+// **重指向**到 `member_organization_memberships` 的 **PRIMARY** 行(旧"单部门"语义 = 主归属)。
+// 旧 3 端点 GET/PUT/DELETE .../department 与 3 码 member-department.{read,set,clear}.current **保留一版
+// (deprecated)、行为逐字不变**;旧 MemberDepartment 表冻结(不再写入,下线留后续 cleanup PR)。
+// 单归属唯一由新 partial unique `member_org_membership_primary_active_unique`(仅约束 PRIMARY)兜底;
+// 旧端点 P2002 仍抛 MEMBER_DEPARTMENT_ALREADY_EXISTS(17002)= 契约不变(新 memberships 面才用 17004)。
+// **本表绝不被任何模块读作授权**(AuthzService 是 PR8)。
+
+// 集中定义对外 select(承接旧 memberDepartmentSelect;返回 shape 与旧端点逐字一致)。
+// 永不包含 deletedAt / membershipType / status / startedAt 等新列(旧端点响应 DTO 不变)。
+const primaryMembershipSelect = {
   id: true,
   memberId: true,
   organizationId: true,
   createdAt: true,
   updatedAt: true,
-} as const satisfies Prisma.MemberDepartmentSelect;
+} as const satisfies Prisma.MemberOrganizationMembershipSelect;
 
 type PrismaTx = Prisma.TransactionClient;
+
+// 旧"单部门"= active PRIMARY membership 的 where 片段(重指向唯一入口)。
+const activePrimaryWhere = (memberId: string): Prisma.MemberOrganizationMembershipWhereInput => ({
+  memberId,
+  deletedAt: null,
+  membershipType: MembershipType.PRIMARY,
+  status: MembershipStatus.ACTIVE,
+});
 
 @Injectable()
 export class MemberDepartmentsService {
@@ -63,9 +86,9 @@ export class MemberDepartmentsService {
     return org;
   }
 
-  // P2002 兜底:partial unique index "MemberDepartment_memberId_active_key" 是 Step 1
-  // migration.sql 末尾手动追加,Prisma 客户端的 P2002 meta.target 不可靠(可能是
-  // 索引名而非字段数组)。决策 8 修订:**任何 P2002 直接抛 ALREADY_EXISTS**,不解析 target。
+  // P2002 兜底:partial unique index "member_org_membership_primary_active_unique" 是 migration.sql
+  // 末尾手动追加,Prisma 客户端的 P2002 meta.target 不可靠(可能是索引名而非字段数组)。
+  // **任何 P2002 直接抛 MEMBER_DEPARTMENT_ALREADY_EXISTS**(旧端点契约不变,不用新 17004)。
   private async runWithUniqueConstraintGuard<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
@@ -80,28 +103,29 @@ export class MemberDepartmentsService {
   // ============ GET /api/admin/v1/members/:memberId/department ============
 
   // 决策 4:member 存在但无归属返 null(不抛 NOT_FOUND);member 不存在抛 MEMBER_NOT_FOUND。
+  // 重指向:读 active PRIMARY membership(= 旧单部门)。
   async findCurrent(
     user: CurrentUserPayload,
     memberId: string,
   ): Promise<MemberDepartmentResponseDto | null> {
     await this.assertCanOrThrow(user, 'member-department.read.current');
     await this.findMemberOrThrow(memberId);
-    const current = await this.prisma.memberDepartment.findFirst({
-      where: { memberId, deletedAt: null },
-      select: memberDepartmentSelect,
+    const current = await this.prisma.memberOrganizationMembership.findFirst({
+      where: activePrimaryWhere(memberId),
+      select: primaryMembershipSelect,
     });
     return current;
   }
 
   // ============ PUT /api/admin/v1/members/:memberId/department ============
 
-  // 幂等设置语义(对应 contract §5.2):
+  // 幂等设置语义(对应 contract §5.2;重指向到 PRIMARY membership,语义逐字不变):
   //   1. 校验 memberId 存在 + status=ACTIVE
   //   2. 校验 organizationId 存在 + status=ACTIVE
-  //   3. 查 member 当前 active 归属:
-  //      - 不存在 → 创建新归属
+  //   3. 查 member 当前 active PRIMARY 归属:
+  //      - 不存在 → 创建新 PRIMARY 归属
   //      - 已存在且 organizationId 相同 → 直接返回(决策 5:无副作用,不更新时间)
-  //      - 已存在但 organizationId 不同 → 软删旧 + 创建新(单事务原子)
+  //      - 已存在但 organizationId 不同 → 软删旧 PRIMARY + 创建新 PRIMARY(单事务原子)
   //   4. P2002 兜底转 MEMBER_DEPARTMENT_ALREADY_EXISTS(并发场景)
   async set(
     user: CurrentUserPayload,
@@ -122,10 +146,10 @@ export class MemberDepartmentsService {
         throw new BizException(BizCode.ORGANIZATION_INACTIVE);
       }
 
-      // 3. 查当前 active 归属
-      const current = await tx.memberDepartment.findFirst({
-        where: { memberId, deletedAt: null },
-        select: memberDepartmentSelect,
+      // 3. 查当前 active PRIMARY 归属
+      const current = await tx.memberOrganizationMembership.findFirst({
+        where: activePrimaryWhere(memberId),
+        select: primaryMembershipSelect,
       });
 
       if (current) {
@@ -133,21 +157,23 @@ export class MemberDepartmentsService {
           // 幂等:同 organizationId 直接返回现归属(无副作用)
           return current;
         }
-        // 软删旧归属(避免撞 partial unique index)
-        await tx.memberDepartment.update({
+        // 软删旧 PRIMARY 归属(避免撞 partial unique index)
+        await tx.memberOrganizationMembership.update({
           where: { id: current.id },
           data: { deletedAt: new Date() },
         });
       }
 
-      // 4. 创建新归属(P2002 兜底防并发)
+      // 4. 创建新 PRIMARY 归属(P2002 兜底防并发)
       return this.runWithUniqueConstraintGuard(() =>
-        tx.memberDepartment.create({
+        tx.memberOrganizationMembership.create({
           data: {
             memberId,
             organizationId: dto.organizationId,
+            membershipType: MembershipType.PRIMARY,
+            status: MembershipStatus.ACTIVE,
           },
-          select: memberDepartmentSelect,
+          select: primaryMembershipSelect,
         }),
       );
     });
@@ -155,24 +181,24 @@ export class MemberDepartmentsService {
 
   // ============ DELETE /api/admin/v1/members/:memberId/department ============
 
-  // 解除当前 active 归属(软删中间表行)。
-  // 若 member 无 active 归属 → MEMBER_DEPARTMENT_NOT_FOUND。
+  // 解除当前 active PRIMARY 归属(软删中间表行)。
+  // 若 member 无 active PRIMARY 归属 → MEMBER_DEPARTMENT_NOT_FOUND。
   async remove(user: CurrentUserPayload, memberId: string): Promise<MemberDepartmentResponseDto> {
     await this.assertCanOrThrow(user, 'member-department.clear.current');
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
 
-      const current = await tx.memberDepartment.findFirst({
-        where: { memberId, deletedAt: null },
-        select: memberDepartmentSelect,
+      const current = await tx.memberOrganizationMembership.findFirst({
+        where: activePrimaryWhere(memberId),
+        select: primaryMembershipSelect,
       });
       if (!current) throw new BizException(BizCode.MEMBER_DEPARTMENT_NOT_FOUND);
 
       // 软删 = update({ deletedAt: now });不物理删除(baseline §10)
-      return tx.memberDepartment.update({
+      return tx.memberOrganizationMembership.update({
         where: { id: current.id },
         data: { deletedAt: new Date() },
-        select: memberDepartmentSelect,
+        select: primaryMembershipSelect,
       });
     });
   }

@@ -371,7 +371,7 @@ describe('members 模块', () => {
       const org = await prisma.organization.create({
         data: { name: 'demo-dept-org', nodeTypeCode: 'demo-wrong-grade' },
       });
-      await prisma.memberDepartment.create({
+      await prisma.memberOrganizationMembership.create({
         data: { memberId: member.id, organizationId: org.id },
       });
 

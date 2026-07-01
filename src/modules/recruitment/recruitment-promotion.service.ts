@@ -168,8 +168,9 @@ export class RecruitmentPromotionService {
               },
               select: { id: true },
             });
-            // VOL 归口部门(member_departments 单部门 partial unique:此刻仅此一条 active 归属)。
-            await tx.memberDepartment.create({
+            // VOL 归口部门 —— 终态 scoped-authz PR2:重指向 member_organization_memberships 的 PRIMARY 行
+            //(默认 membershipType=PRIMARY/status=ACTIVE = 旧单部门语义;primary_active_unique 兜底:此刻仅此一条 active PRIMARY)。
+            await tx.memberOrganizationMembership.create({
               data: { memberId: member.id, organizationId: volOrgId },
             });
             // User(微信-only:openid 主、随机口令密码登录天然关闭、username=memberNo;零 auth 改)

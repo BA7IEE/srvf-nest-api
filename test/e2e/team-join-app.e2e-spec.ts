@@ -130,7 +130,7 @@ describe('招新三期(入队)App 自助面 e2e', () => {
     await prisma.attendanceSheet.deleteMany({});
     await prisma.activity.deleteMany({});
     await prisma.teamJoinApplication.deleteMany({});
-    await prisma.memberDepartment.deleteMany({});
+    await prisma.memberOrganizationMembership.deleteMany({});
     await prisma.teamJoinCycle.deleteMany({});
     await prisma.organization.deleteMany({});
     // 复位 volA/volB 的入队相关身份(gradeCode 清空;部门已随 memberDepartment 清)
@@ -174,7 +174,7 @@ describe('招新三期(入队)App 自助面 e2e', () => {
       data: { name: '志愿者', code: 'VOL', nodeTypeCode: 'volunteer', status: 'ACTIVE' },
     });
     await prisma.member.update({ where: { id: volA.memberId }, data: { gradeCode: 'volunteer' } });
-    await prisma.memberDepartment.create({
+    await prisma.memberOrganizationMembership.create({
       data: { memberId: volA.memberId, organizationId: volOrg.id },
     });
 

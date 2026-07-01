@@ -447,7 +447,16 @@ export class OrganizationsService {
 
       const [childCount, memberCount] = await Promise.all([
         tx.organization.count({ where: { parentId: id, deletedAt: null } }),
-        tx.memberDepartment.count({ where: { organizationId: id, deletedAt: null } }),
+        // 终态 scoped-authz PR2:HAS_MEMBERS 护栏重指向 active PRIMARY membership(= 旧单部门语义,行为逐字保持;
+        // 收紧到"任意类型归属阻止删组织"是独立语义决策,非本刀)。
+        tx.memberOrganizationMembership.count({
+          where: {
+            organizationId: id,
+            deletedAt: null,
+            membershipType: 'PRIMARY',
+            status: 'ACTIVE',
+          },
+        }),
       ]);
       if (childCount > 0) throw new BizException(BizCode.ORGANIZATION_HAS_CHILDREN);
       if (memberCount > 0) throw new BizException(BizCode.ORGANIZATION_HAS_MEMBERS);
