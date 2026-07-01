@@ -135,7 +135,12 @@ export type AuditLogEvent =
   // resourceType='position_assignment';create 写 after 快照 / revoke 写 before+after(status ACTIVE→REVOKED)。
   // 命名沿 kebab-case `<resource>.<action>` 既有范式(对称 certificate.create / team-insurance-policy.create)。
   | 'position-assignment.create' // admin 任命(position-assignments.service: create 1 处;extra.operation='create' + organizationId + targetMemberId)
-  | 'position-assignment.revoke'; // admin 撤销任职(position-assignments.service: revoke 1 处;before/after status;extra.operation='revoke' + targetMemberId)
+  | 'position-assignment.revoke' // admin 撤销任职(position-assignments.service: revoke 1 处;before/after status;extra.operation='revoke' + targetMemberId)
+  // 终态 scoped-authz PR5「分管」(2026-07-01;冻结评审稿 org-position-scoped-authz-terminal-design-review.md
+  // §3.5 / §7.4 / §4.3 / §11 PR5):分管写 2 事件。resourceType='supervision_assignment';
+  // create 写 after 快照 / revoke 写 before+after(status ACTIVE→REVOKED)。命名沿 kebab-case `<resource>.<action>` 既有范式。
+  | 'supervision-assignment.create' // admin 建分管(supervision-assignments.service: create 1 处;extra.operation='create' + organizationId + supervisorMemberId)
+  | 'supervision-assignment.revoke'; // admin 撤销分管(supervision-assignments.service: revoke 1 处;before/after status;extra.operation='revoke' + supervisorMemberId)
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

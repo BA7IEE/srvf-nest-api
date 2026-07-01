@@ -36,6 +36,7 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { PositionsModule } from './modules/positions/positions.module';
 import { PositionAssignmentsModule } from './modules/position-assignments/position-assignments.module';
+import { SupervisionAssignmentsModule } from './modules/supervision-assignments/supervision-assignments.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { RealnameModule } from './modules/realname/realname.module';
@@ -89,6 +90,10 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     // 终态 scoped-authz PR4(2026-07-01;冻结稿 §3.4/§7.3):任职(position-assignments)双轴管理面
     //   (5 路由:组织轴列/建 + 队员轴列 + 撤销 + 历史;R 模式 position-assignment.* 4 码;任命/撤销写 audit)。
     PositionAssignmentsModule,
+    // 终态 scoped-authz PR5(2026-07-01;冻结稿 §3.5/§7.4):分管(supervision-assignments)管理面
+    //   (6 路由:扁平列/建/改/撤销 + 队员轴分管范围 + 组织轴被谁分管;R 模式 supervision-assignment.* 4 码;
+    //    建/撤销写 audit;分管与职务正交、绝不进判权路径,closure 仅展示读非 judge)。
+    SupervisionAssignmentsModule,
     MembersModule,
     MemberDepartmentsModule,
     MemberProfilesModule,

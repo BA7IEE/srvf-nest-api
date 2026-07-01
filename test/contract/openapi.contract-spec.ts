@@ -487,6 +487,16 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/members/{memberId}/position-assignments'],
   ['post', '/api/admin/v1/position-assignments/{id}/revoke'],
   ['get', '/api/admin/v1/position-assignments/{id}/history'],
+  // 终态 scoped-authz PR5「分管」(2026-07-01;冻结稿 §7.4),+6 → 285。
+  //   扁平 GET 在任列表 / POST 建 / PATCH 改 / POST 撤销 + 队员轴 GET 分管范围 + 组织轴 GET 被谁分管。
+  //   单 SupervisionAssignmentsController(@Controller('admin/v1') 共同前缀 + 完整子路径);
+  //   R 模式 supervision-assignment.{read,create,update,revoke}.record 4 码,无 @Roles(分管绝不进判权路径)。
+  ['get', '/api/admin/v1/supervision-assignments'],
+  ['post', '/api/admin/v1/supervision-assignments'],
+  ['get', '/api/admin/v1/members/{memberId}/supervision-scope'],
+  ['get', '/api/admin/v1/organizations/{orgId}/supervisors'],
+  ['patch', '/api/admin/v1/supervision-assignments/{id}'],
+  ['post', '/api/admin/v1/supervision-assignments/{id}/revoke'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -913,6 +923,14 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   //   position-assignments DTO(入参 Create + 出参 Response;撤销无 body、历史/列表复用 Response)。
   'PositionAssignmentResponseDto',
   'CreatePositionAssignmentDto',
+
+  // 终态 scoped-authz PR5「分管」(2026-07-01;冻结稿 §3.5/§7.4):
+  //   supervision-assignments DTO(入参 Create/Update + 出参 Response;分管范围 ScopeEntry + 被谁分管 Supervisor〔嵌 Response〕)。
+  'SupervisionAssignmentResponseDto',
+  'CreateSupervisionAssignmentDto',
+  'UpdateSupervisionAssignmentDto',
+  'SupervisionScopeEntryDto',
+  'OrganizationSupervisorDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

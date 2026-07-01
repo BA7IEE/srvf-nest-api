@@ -171,8 +171,9 @@ const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 1; // 7
 // 2026-07-01 终态 scoped-authz PR1 org.move.node 绑 ops-admin +1 → 63→64;
 // 2026-07-01 终态 scoped-authz PR2 membership.{list,read,set,end}.record 绑 ops-admin +4 → 64→68;
 // 2026-07-01 终态 scoped-authz PR3 position.*.definition 4 + position-rule.*.record 4 绑 ops-admin +8 → 68→76;
-// 2026-07-01 终态 scoped-authz PR4 position-assignment.* 4 绑 ops-admin +4 → 76→80;与 seed-rbac 的 85-5=80 推导一致)
-const EXPECTED_OPS_ADMIN_BINDING_COUNT = 80;
+// 2026-07-01 终态 scoped-authz PR4 position-assignment.* 4 绑 ops-admin +4 → 76→80;
+// 2026-07-01 终态 scoped-authz PR5 supervision-assignment.* 4 绑 ops-admin +4 → 80→84;与 seed-rbac 的 89-5=84 推导一致)
+const EXPECTED_OPS_ADMIN_BINDING_COUNT = 84;
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
 
 const SEED_ENV = {
