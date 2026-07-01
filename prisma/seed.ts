@@ -1420,11 +1420,47 @@ const SUPERVISION_ASSIGNMENT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> 
   },
 ];
 
-// PR-2A 聚合(40 条:dict 8 + org 5〔终态 scoped-authz PR1 +org.move.node〕+ member-department 3 +
+// role-binding.* 4(终态 scoped-authz PR6「RoleBinding」;冻结稿 §4.3 / §7.5;带 scope 的角色绑定管理面;
+// 沿组织归属域配置/管理码现绑 ops-admin)。**scoped 绑定入库即止,RbacService 只读 GLOBAL、绝不判 scoped**(判权是 PR8)。
+const ROLE_BINDING_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'role-binding.read.record',
+    module: 'role-binding',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看角色绑定(principal × role × scope × 任期;含 scoped 各型)',
+  },
+  {
+    code: 'role-binding.create.record',
+    module: 'role-binding',
+    action: 'create',
+    resourceType: 'record',
+    description:
+      '建角色绑定(principal × role × scope + 任期;GLOBAL/ORGANIZATION/TREE/ACTIVITY/RESOURCE/SELF)',
+  },
+  {
+    code: 'role-binding.update.record',
+    module: 'role-binding',
+    action: 'update',
+    resourceType: 'record',
+    description: '改角色绑定(任期 / 状态 / note)',
+  },
+  {
+    code: 'role-binding.delete.record',
+    module: 'role-binding',
+    action: 'delete',
+    resourceType: 'record',
+    description: '软删角色绑定(status=ENDED + endedAt + deletedAt)',
+  },
+];
+
+// PR-2A 聚合(44 条:dict 8 + org 5〔终态 scoped-authz PR1 +org.move.node〕+ member-department 3 +
 // membership 4〔终态 scoped-authz PR2〕+ contribution 4 + position 4 + position-rule 4〔终态 scoped-authz PR3〕
-// + position-assignment 4〔终态 scoped-authz PR4〕+ supervision-assignment 4〔终态 scoped-authz PR5〕)。
+// + position-assignment 4〔终态 scoped-authz PR4〕+ supervision-assignment 4〔终态 scoped-authz PR5〕
+// + role-binding 4〔终态 scoped-authz PR6〕)。
 // member-department 与 membership 同"组织归属"域,membership 为 member-department 的升级面(旧 3 码保留 deprecated);
-// position / position-rule 为职务定义配置面;position-assignment 为任职管理面;supervision-assignment 为分管管理面
+// position / position-rule 为职务定义配置面;position-assignment 为任职管理面;supervision-assignment 为分管管理面;
+// role-binding 为带 scope 的角色绑定管理面(scoped 入库即止,RbacService 只读 GLOBAL,判权是 PR8)
 //(冻结稿 §4.3;全绑 ops-admin,沿配置/管理码现绑)。
 const PR_2A_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...DICT_PERMISSION_SEED,
@@ -1435,6 +1471,7 @@ const PR_2A_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...POSITION_PERMISSION_SEED,
   ...POSITION_ASSIGNMENT_PERMISSION_SEED,
   ...SUPERVISION_ASSIGNMENT_PERMISSION_SEED,
+  ...ROLE_BINDING_PERMISSION_SEED,
 ];
 
 // P0-F PR-2B(2026-05-18):配置类接口 RBAC 接入第二批(15 条)。
@@ -1838,7 +1875,7 @@ const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...REALNAME_INFRA_PERMISSION_SEED,
 ];
 
-// ops-admin 完整绑定集合(14 rbac.* + 36 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 80 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4 / REALNAME E-R-19;PR-2A 36 = 终态 scoped-authz PR1 org.move.node + PR2 membership 4 + PR3 position 4 + position-rule 4 + PR4 position-assignment 4 码,全绑 ops-admin 无过滤)
+// ops-admin 完整绑定集合(14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 88 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4 / REALNAME E-R-19;PR-2A 44 = base 20 + 终态 scoped-authz PR1 org.move.node + PR2 membership 4 + PR3 position 4 + position-rule 4 + PR4 position-assignment 4 + PR5 supervision-assignment 4 + PR6 role-binding 4 码,全绑 ops-admin 无过滤)
 // 注:`storage-setting.reset.credentials` 从 PR_2B_PERMISSION_SEED 过滤掉(沿 PR-2 D2=A;§6.2)
 // 注:`user.update.role` 从 USER_PERMISSION_SEED 过滤掉(沿 PR-3 D1=A;§6.2)
 // 注:`audit-log.read.entry` 整条加入,不过滤(沿 PR-4 D2=B;§6.2)
@@ -1860,7 +1897,7 @@ const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 const OPS_ADMIN_ROLE_CODE = 'ops-admin';
 const OPS_ADMIN_DISPLAY_NAME = '运营管理员';
 const OPS_ADMIN_DESCRIPTION =
-  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / membership / contribution-rule / position / position-rule / position-assignment + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条 + WECHAT: wechat-setting / user.wechat.clear 3 条 + REALNAME: realname-setting 2 条)的 meta 角色;14 rbac.* + 36 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 80 条权限点;凭证 reset(storage / sms / wechat / realname)与 user 角色修改仅 SUPER_ADMIN';
+  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / membership / contribution-rule / position / position-rule / position-assignment / supervision-assignment / role-binding + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条 + WECHAT: wechat-setting / user.wechat.clear 3 条 + REALNAME: realname-setting 2 条)的 meta 角色;14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 88 条权限点;凭证 reset(storage / sms / wechat / realname)与 user 角色修改仅 SUPER_ADMIN';
 
 // V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集
 // (沿 D7-attachments v1.0 §6.1 + Q11 v1.0 锁清单 + 用户 PR #6a 拍板)。
@@ -2042,10 +2079,66 @@ const MEMBER_ROLE_PERMISSION_CODES: ReadonlyArray<string> = [
   'attachment.view.activity',
 ];
 
+// 终态 scoped-authz PR6(2026-07-01;冻结稿 §8.2):判权唯一读源 = global RoleBinding。
+// seed 授予角色(ops-admin bootstrap + biz-admin 补挂)改写 RoleBinding(principalType=USER, scopeType=GLOBAL,
+//   status=ACTIVE),**UserRole 表冻结、seed 不再写**(否则判权读 RoleBinding 看不到 seed 授予的角色)。
+// 幂等:RoleBinding 无 Prisma 复合唯一键(active partial unique 手写),故 findFirst active → 缺则 create。
+async function ensureGlobalUserRoleBinding(
+  prisma: PrismaClient,
+  userId: string,
+  roleId: string,
+): Promise<void> {
+  const existing = await prisma.roleBinding.findFirst({
+    where: {
+      principalType: 'USER',
+      principalId: userId,
+      roleId,
+      scopeType: 'GLOBAL',
+      status: 'ACTIVE',
+      deletedAt: null,
+    },
+    select: { id: true },
+  });
+  if (!existing) {
+    await prisma.roleBinding.create({
+      data: {
+        principalType: 'USER',
+        principalId: userId,
+        roleId,
+        scopeType: 'GLOBAL',
+        status: 'ACTIVE',
+      },
+    });
+  }
+}
+
+// 终态 scoped-authz PR6:某角色的活跃 GLOBAL 持有者中 active user 数(RoleBinding 无 user relation〔principalId 多态〕,
+//   故取 active global 绑定的 principalId 再 count active user =「至少 1 个活跃持有者」强校验的等价语义)。
+async function countActiveGlobalRoleHolders(
+  prisma: PrismaClient,
+  roleCode: string,
+): Promise<number> {
+  const bindings = await prisma.roleBinding.findMany({
+    where: {
+      principalType: 'USER',
+      scopeType: 'GLOBAL',
+      status: 'ACTIVE',
+      deletedAt: null,
+      role: { code: roleCode, deletedAt: null },
+    },
+    select: { principalId: true },
+  });
+  const ids = bindings.map((b) => b.principalId).filter((id): id is string => id !== null);
+  if (ids.length === 0) return 0;
+  return prisma.user.count({
+    where: { id: { in: ids }, deletedAt: null, status: UserStatus.ACTIVE },
+  });
+}
+
 // V2.x C-6 RBAC 实施 PR #8:RBAC seed/bootstrap 主函数。
 // 沿 D7 v1.1 §10 + 用户拍板六项决策。
-// 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 复合唯一键 /
-// UserRole 复合唯一键),重复跑不重复创建。
+// 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 复合唯一键);
+// 终态 scoped-authz PR6 起 bootstrap 授予改写 global RoleBinding(ensureGlobalUserRoleBinding 幂等)。
 async function seedRbac(prisma: PrismaClient): Promise<void> {
   // 1. upsert Permission 全集(14 rbac.* + 24 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME = 73 条;
   //    沿 D7 §10.2 + 历次 P0-F / 基建 / 终态 scoped-authz PR1(org.move.node)·PR2(membership 4 码)增量)
@@ -2154,23 +2247,15 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
   }
 
   if (targetUserId) {
-    await prisma.userRole.upsert({
-      where: { userId_roleId: { userId: targetUserId, roleId: opsAdminRole.id } },
-      update: {},
-      create: { userId: targetUserId, roleId: opsAdminRole.id },
-    });
+    // 终态 scoped-authz PR6:授予改写 global RoleBinding(判权唯一读源;UserRole 表冻结不写)。
+    await ensureGlobalUserRoleBinding(prisma, targetUserId, opsAdminRole.id);
   }
 
   // 5. 强校验(沿 D7 §10.4 + §6.3 最后一个 ops-admin 保护范式):
-  //    seed 完成后 **至少 1 个活跃 user_role 持有 ops-admin**,否则 throw 退出。
-  //    检查范围:user 活跃 + ops-admin 角色未软删(理论本 seed 刚 upsert 应满足,
+  //    seed 完成后 **至少 1 个活跃持有者(active user × active global ops-admin 绑定)**,否则 throw 退出。
+  //    检查范围:user 活跃 + ops-admin 角色未软删(理论本 seed 刚 ensure 应满足,
   //    但若 fallback 路径没找到 SUPER_ADMIN 且无 env,此处会 throw — 这是设计预期)。
-  const activeOpsAdminCount = await prisma.userRole.count({
-    where: {
-      role: { code: OPS_ADMIN_ROLE_CODE, deletedAt: null },
-      user: { deletedAt: null, status: UserStatus.ACTIVE },
-    },
-  });
+  const activeOpsAdminCount = await countActiveGlobalRoleHolders(prisma, OPS_ADMIN_ROLE_CODE);
   if (activeOpsAdminCount < 1) {
     throw new Error(
       `[seed] RBAC bootstrap 强校验失败:活跃 ops-admin 持有者数 = ${activeOpsAdminCount},` +
@@ -3001,29 +3086,33 @@ async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
       `'${MEMBER_DELETE_RECORD_CODE}' skipped per Slow-4 评审稿 §6 D1=A 镜像)`,
   );
 
-  // 4. 幂等补挂(评审稿 D-S4-7):每个 role=ADMIN && deletedAt=null 用户 upsert biz-admin
-  //    (含 DISABLED;软删除外;复合唯一键 userId_roleId 保证幂等)
+  // 4. 幂等补挂(评审稿 D-S4-7):每个 role=ADMIN && deletedAt=null 用户 ensure biz-admin
+  //    (含 DISABLED;软删除外)。终态 scoped-authz PR6:授予改写 global RoleBinding(ensureGlobalUserRoleBinding 幂等)。
   const adminUsers = await prisma.user.findMany({
     where: { role: Role.ADMIN, deletedAt: null },
     select: { id: true },
   });
   for (const u of adminUsers) {
-    await prisma.userRole.upsert({
-      where: { userId_roleId: { userId: u.id, roleId: bizAdminRole.id } },
-      update: {},
-      create: { userId: u.id, roleId: bizAdminRole.id },
-    });
+    await ensureGlobalUserRoleBinding(prisma, u.id, bizAdminRole.id);
   }
 
   // 5. 强校验(镜像 seedRbac ops-admin ≥1 范式):补挂后不允许存在
-  //    「非软删 ADMIN 且未持 biz-admin」的用户,否则 throw 退出。
-  const unattachedAdminCount = await prisma.user.count({
+  //    「非软删 ADMIN 且未持 active global biz-admin 绑定」的用户,否则 throw 退出。
+  //    RoleBinding 无 User relation(principalId 多态),故取 ADMIN 集 - 已持 biz-admin 绑定集。
+  const adminIds = adminUsers.map((u) => u.id);
+  const boundBizAdminBindings = await prisma.roleBinding.findMany({
     where: {
-      role: Role.ADMIN,
+      principalType: 'USER',
+      scopeType: 'GLOBAL',
+      status: 'ACTIVE',
       deletedAt: null,
-      userRoles: { none: { roleId: bizAdminRole.id } },
+      roleId: bizAdminRole.id,
+      principalId: { in: adminIds },
     },
+    select: { principalId: true },
   });
+  const boundAdminIds = new Set(boundBizAdminBindings.map((b) => b.principalId));
+  const unattachedAdminCount = adminIds.filter((id) => !boundAdminIds.has(id)).length;
   if (unattachedAdminCount > 0) {
     throw new Error(
       `[seed] Slow-4 biz-admin 强校验失败:仍有 ${unattachedAdminCount} 个非软删 ADMIN 未持有 biz-admin` +

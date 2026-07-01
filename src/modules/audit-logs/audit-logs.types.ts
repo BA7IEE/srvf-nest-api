@@ -140,7 +140,14 @@ export type AuditLogEvent =
   // §3.5 / §7.4 / §4.3 / §11 PR5):分管写 2 事件。resourceType='supervision_assignment';
   // create 写 after 快照 / revoke 写 before+after(status ACTIVE→REVOKED)。命名沿 kebab-case `<resource>.<action>` 既有范式。
   | 'supervision-assignment.create' // admin 建分管(supervision-assignments.service: create 1 处;extra.operation='create' + organizationId + supervisorMemberId)
-  | 'supervision-assignment.revoke'; // admin 撤销分管(supervision-assignments.service: revoke 1 处;before/after status;extra.operation='revoke' + supervisorMemberId)
+  | 'supervision-assignment.revoke' // admin 撤销分管(supervision-assignments.service: revoke 1 处;before/after status;extra.operation='revoke' + supervisorMemberId)
+  // 终态 scoped-authz PR6「RoleBinding」(2026-07-01;冻结评审稿 org-position-scoped-authz-terminal-design-review.md
+  // §3.6 / §7.5 / §10.6 / §11 PR6):角色绑定写 2 事件(伞事件,一事件多来源,沿 registration.create viaPath 范式)。
+  // resourceType='role_binding';create 写 after 快照 / revoke 写 before+after(status ACTIVE→ENDED)。
+  // extra.viaPath ∈ {'role-binding','user-role'} 区分来源:'role-binding' = role-bindings CRUD 面(scoped 各型);
+  //   'user-role' = 兼容面 user-roles CRUD(现经 global RoleBinding;UserRolesService 直写 auditLog,避免模块环)。
+  | 'role-binding.create' // admin 建角色绑定(role-bindings.service: create + user-roles.service: assign;extra.viaPath 区分)
+  | 'role-binding.revoke'; // admin 撤销 / 软删角色绑定(role-bindings.service: remove + user-roles.service: revoke;before/after status)
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

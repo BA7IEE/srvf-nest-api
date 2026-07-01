@@ -48,6 +48,8 @@
 
 > 2026-07-01 终态 scoped-authz PR5 分管 戳(goal「终态 scoped-authz 落地序列【第 5 刀 PR5 — 分管】」,冻结评审稿 [`org-position-scoped-authz-terminal-design-review.md §3.5/§7.4/§4.3/R5`](../reviews/org-position-scoped-authz-terminal-design-review.md)):权限码 180→**184**(supervision-assignment +4:`supervision-assignment.{read,create,update,revoke}.record`,全绑 ops-admin 沿组织归属域管理码现绑;三读端点〔列/某人分管范围/某组织被谁分管〕共用 `read.record`,无孤码);ops-admin 80→**84**;biz-admin 74 / member 9 零变化;controller **59→60**(新 `SupervisionAssignmentsController`,独立 `supervision-assignments/` 模块;`@Controller('admin/v1')` 共同前缀跨 3 根路径〔扁平 supervision-assignments + 队员轴 supervision-scope + 组织轴 supervisors〕);模块 30→**31**;endpoint +6 → **285**(扁平 `GET/POST admin/v1/supervision-assignments` + `PATCH .../:id` + `POST .../:id/revoke` + 队员轴 `GET admin/v1/members/:memberId/supervision-scope` + 组织轴 `GET admin/v1/organizations/:orgId/supervisors`;R 模式 service 层 `rbac.can` 无 @Roles。**注:goal 估 +5→284,runner 亲核精确为 +6→285** —— DoD §3 列明 6 端点均 §7 e2e 载荷)。第 36 migration(净新表 `organization_supervision_assignments` + 2 枚举 `SupervisionScopeMode{EXACT,TREE}`/`SupervisionStatus{ACTIVE,ENDED,REVOKED}` + 4 索引 + 2 FK Restrict〔supervisorMemberId→Member / organizationId→Organization〕+ 末尾手写 partial unique `(supervisorMemberId,organizationId) WHERE deletedAt IS NULL AND status='ACTIVE'`;无回填、无不可逆)。BizCode +4(33xxx 新段:33001 `SUPERVISION_ASSIGNMENT_NOT_FOUND` / 33002 `SUPERVISION_ALREADY_EXISTS`〔P2002 兜底〕/ 33003 `SUPERVISION_ASSIGNMENT_TENURE_INVALID` / 33004 `SUPERVISION_ASSIGNMENT_ALREADY_ENDED`;supervisor/org 存在+active 复用 15001/17030/11001/17031)。audit +2 事件(`supervision-assignment.create` / `.revoke`;resourceType='supervision_assignment')。**核心语义**:分管 = 与职务**正交**的独立范围监督关系,create 绝不要求 supervisor 持职务(R5:副职头衔零推导);scope/supervisors 查询读 `organization_closure`(TREE 展开后代 / inherited 求祖先)**仅作展示/报表,绝非判权**。**分管 = 数据 + 展示,绝不被任何 rbac.can / AuthzService 判权路径读**(判权是 PR8;RoleBinding 是 PR6)。landing 序列 PR5/12,不单独发版。`docs:rbacmap:check` **0 FAIL / 1 WARN**(`membership.read.record` 预埋,非本刀;supervision-assignment 4 码均有端点承接,无新孤码)。
 
+> 2026-07-01 终态 scoped-authz PR6 RoleBinding 戳(goal「终态 scoped-authz 落地序列【第 6 刀 PR6 — RoleBinding】」,冻结评审稿 [`org-position-scoped-authz-terminal-design-review.md §3.6/§7.5/§8.2/§4.3`](../reviews/org-position-scoped-authz-terminal-design-review.md)):权限码 184→**188**(role-binding +4:`role-binding.{read,create,update,delete}.record`,全绑 ops-admin 沿组织归属域管理码现绑);ops-admin 84→**88**;biz-admin 74 / member 9 零变化;controller **60→61**(新 `RoleBindingsController`,独立 `role-bindings/` 模块;`@Controller('admin/v1')` + 完整子路径 role-bindings[/:id]);模块 31→**32**;endpoint +4 → **289**(`GET/POST admin/v1/role-bindings` + `PATCH/DELETE .../:id`;R 模式 service 层 `rbac.can` 无 @Roles)。第 37 migration(净新表 `role_bindings` + 3 枚举 `PrincipalType{USER,MEMBER,POSITION_ASSIGNMENT,SYSTEM}`/`BindingScopeType{GLOBAL,ORGANIZATION,ORGANIZATION_TREE,ACTIVITY,RESOURCE,SELF}`/`BindingStatus{ACTIVE,ENDED,SUSPENDED}` + 6 索引 + 2 真 FK Restrict〔roleId→roles / scopeOrgId→Organization;principalId 多态无 FK〕+ 末尾手写 partial unique `(principalType,principalId,roleId,scopeType,scopeOrgId,scopeActivityId,scopeResourceType,scopeResourceId) WHERE deletedAt IS NULL AND status='ACTIVE'` **NULLS NOT DISTINCT**〔PG16;令 GLOBAL 的 NULL scope 列也去重 = 保住 UserRole 旧 @@unique 并发去重行为锁〕+ **回填**每条 UserRole→RoleBinding〔principalType=USER, principalId=userId, scopeType=GLOBAL, status=ACTIVE;复用 id、保 createdAt/createdBy〕)。BizCode +5(34xxx 新段:34001 `ROLE_BINDING_NOT_FOUND` / 34002 `ROLE_BINDING_ALREADY_EXISTS`〔P2002 兜底〕/ 34003 `ROLE_BINDING_SCOPE_INVALID` / 34004 `ROLE_BINDING_PRINCIPAL_INVALID` / 34005 `ROLE_BINDING_TENURE_INVALID`;principal/role/org/activity 存在性复用 10001/15001/32020/30003/30005/11001/12001)。audit +2 事件(`role-binding.create` / `.revoke`;resourceType='role_binding';伞事件 extra.viaPath ∈ {role-binding,user-role})。**🔴 行为锁核心(序列内头一刀真正碰 `RbacService` 判权读源)**:UserRole→global RoleBinding **无损升级 = 判权唯一读源** —— `RbacService.getUserPermissionCodes`/`getEffectiveRoles` + user-roles CRUD + rbac-cache 失效 + seed bootstrap/biz-admin + 全部 fixtures/e2e **全量重指向** `RoleBinding(principalType=USER, scopeType=GLOBAL)`;**UserRole 表冻结、零生产读写**(cleanup PR 再 DROP)。`RbacService.can()` 对外语义逐字不变(characterization:判权矩阵 + user-roles CRUD 前后一致)。**🔴 scoped 绑定可存不判**:CRUD 建的 ORGANIZATION/TREE/ACTIVITY/RESOURCE/SELF 绑定入库即止,**RbacService 只读 scopeType=GLOBAL、绝不判 scoped**(e2e 证:建 ORGANIZATION_TREE 绑定后该 user 判权零变化;scoped 判权是 PR8 AuthzService)。landing 序列 PR6/12,不单独发版。`docs:rbacmap:check` **0 FAIL / 1 WARN**(`membership.read.record` 预埋,非本刀;role-binding 4 码均有端点承接,无新孤码)。
+
 ---
 
 ## 1. 双轨架构现状(一句话版)
@@ -59,7 +61,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。判权唯一服务入口 = `RbacService.can()`;`RbacCacheService` 是权限解析缓存(TTL 1800s,三档失效),不是身份缓存。
 
-## 2. controller × 鉴权模式对照(60 个 controller class)
+## 2. controller × 鉴权模式对照(61 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
@@ -80,6 +82,7 @@
 | `admin/v1/position-rules`(职务规则 PR3) | `position-rule.*.record`(4;list 按 nodeTypeCode 过滤;nodeTypeCode 校验 node_type 字典有效)|
 | `admin/v1/*` 任职双轴(任职 PR4;单 `PositionAssignmentsController` 跨 org/member/flat 3 根) | `position-assignment.{read,create,revoke}.record` + `.read.history`(4;双轴读共用 read.record;任命 5 校验;撤销;历史链;**绝不进判权路径**)|
 | `admin/v1/*` 分管(分管 PR5;单 `SupervisionAssignmentsController` 跨 flat/member/org 3 根) | `supervision-assignment.{read,create,update,revoke}.record`(4;三读端点〔列/某人分管范围/某组织被谁分管〕共用 read.record;分管与职务正交、create 不要求持职务;scope/supervisors 读 closure 仅展示;**绝不进判权路径**)|
+| `admin/v1/role-bindings[/:id]` 角色绑定(RoleBinding PR6;单 `RoleBindingsController`) | `role-binding.{read,create,update,delete}.record`(4;列/建 + 改/软删;principal × role × scope × 任期;UserRole→global RoleBinding 无损升级 = **判权唯一读源**,RbacService 只读 GLOBAL;**scoped 各型入库即止、绝不进判权路径**,判权是 PR8)|
 | `system/v1/contribution-rules` | `contribution.*.rule`(4) |
 | `system/v1/attachment-{type,mime,size-limit}-configs` | `attachment-config.*`(12) |
 | `system/v1/storage-settings` | `storage-setting.*`(3;`reset.credentials` 不绑 ops-admin = D2=A 拍板) |
@@ -130,7 +133,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(184 条,seed 幂等 upsert)
+## 3. 权限码全集(188 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -143,6 +146,7 @@
 | 职务规则(终态 scoped-authz PR3) | 4 | `position-rule.{read,create,update,delete}.record`(`admin/v1/position-rules`;全绑 ops-admin)|
 | 任职(终态 scoped-authz PR4) | 4 | `position-assignment.{read,create,revoke}.record` + `.read.history`(双轴管理 + 撤销 + 历史链;双轴读共用 `read.record`;全绑 ops-admin;**任职 = 数据 + 任命校验,绝不进判权路径**)|
 | 分管(终态 scoped-authz PR5) | 4 | `supervision-assignment.{read,create,update,revoke}.record`(管理 + 分管范围/被谁分管查询;三读端点共用 `read.record`;全绑 ops-admin;**分管与职务正交、create 不要求持职务;分管 = 数据 + 展示,绝不进判权路径**)|
+| 角色绑定(终态 scoped-authz PR6) | 4 | `role-binding.{read,create,update,delete}.record`(带 scope 的角色绑定 CRUD;全绑 ops-admin;**UserRole→global RoleBinding 无损升级 = 判权唯一读源,RbacService 只读 GLOBAL;scoped 各型入库即止、绝不进判权路径**,判权是 PR8)|
 | 贡献规则 | 4 | `contribution.{read,create,update,delete}.rule` |
 | 附件配置 | 12 | `attachment-config.{read,create,update,delete}.{type,mime,size-limit}` |
 | 存储设置 | 3 | `storage-setting.{read,update}.singleton` / `storage-setting.reset.credentials` |

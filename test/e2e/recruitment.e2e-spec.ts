@@ -140,7 +140,16 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       data: perms.map((p) => ({ roleId: role.id, permissionId: p.id })),
       skipDuplicates: true,
     });
-    await prisma.userRole.create({ data: { userId: u.id, roleId: role.id } });
+    // 终态 scoped-authz PR6:判权读源 = global RoleBinding。
+    await prisma.roleBinding.create({
+      data: {
+        principalType: 'USER',
+        principalId: u.id,
+        roleId: role.id,
+        scopeType: 'GLOBAL',
+        status: 'ACTIVE',
+      },
+    });
     return (await loginAs(app, username)).authHeader;
   }
 

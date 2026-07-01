@@ -111,11 +111,16 @@ import { assertTestDatabaseUrl } from './test-db';
 // 终态 scoped-authz PR5 追加(2026-07-01):organization_supervision_assignments(物理名小写,Prisma `@@map`);
 //   FK supervisorMemberId → Member / organizationId → Organization,均 Restrict(子表)。
 //   同 PR4 显式列出(沿教训防跨 spec 残留污染断言);放 organization_position_assignments 之前。
+//
+// 终态 scoped-authz PR6 追加(2026-07-01):role_bindings(物理名小写,Prisma `@@map`);
+//   FK roleId → roles / scopeOrgId → Organization,均 Restrict(子表;principalId 多态无 FK)。
+//   必须显式列出(沿 PR3/4/5 教训防跨 spec 残留污染判权 / seed-rbac 计数断言);放 user_roles 之前
+//   (它与 user_roles 都是 roles 子表;判权唯一读源,残留会污染其它 spec 的 rbac.can 结果)。
 export async function resetDb(app: INestApplication): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "user_roles", "role_permissions", "roles", "permissions", "audit_logs", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "realname_verification_settings", "recruitment_applications", "recruitment_cycles", "team_join_applications", "team_join_cycles", "notification_reads", "notifications", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "member_organization_memberships", "organization_supervision_assignments", "organization_position_assignments", "organization_position_rules", "organization_positions", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "role_bindings", "user_roles", "role_permissions", "roles", "permissions", "audit_logs", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "realname_verification_settings", "recruitment_applications", "recruitment_cycles", "team_join_applications", "team_join_cycles", "notification_reads", "notifications", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "MemberDepartment", "member_organization_memberships", "organization_supervision_assignments", "organization_position_assignments", "organization_position_rules", "organization_positions", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }

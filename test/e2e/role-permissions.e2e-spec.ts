@@ -513,17 +513,23 @@ describe('role-permissions 模块 + cache skeleton', () => {
       cache.set(fakeUserId, new Set(['old.cached.code']));
       expect(cache.get(fakeUserId)).not.toBeNull();
 
-      // 让 userRole 表里存在 fakeUserId 与本 role 的关联(否则 invalidateAllUsersWithRole 找不到)
-      // 注:UserRole CRUD 留 PR #5;这里用 prisma 直接插入测试数据。
-      // user fixture 用 'rp-su' 已创建;为简化,用其 id 与 fakeUserId 不重复,所以这里直接插 fakeUserId 不合法(User 表无该 id);
-      // 改方案:用 prisma 直接 insert UserRole 记录用 rp-su 的真实 user.id。
+      // 让 role_bindings 表里存在真实 user 与本 role 的 global 绑定(否则 invalidateAllUsersWithRole 找不到)。
+      // 注:终态 scoped-authz PR6 起判权/失效读源 = global RoleBinding;这里用 prisma 直接插测试数据。
+      // user fixture 用 'rp-su' 已创建;用其真实 user.id 插 RoleBinding(principalId 多态无 FK,但仍用真实 id 保真)。
       const realUser = await prisma.user.findUnique({
         where: { username: 'rp-su' },
         select: { id: true },
       });
       cache.set(realUser!.id, new Set(['old.cached.code']));
-      await prisma.userRole.create({
-        data: { userId: realUser!.id, roleId },
+      // 终态 scoped-authz PR6:invalidateAllUsersWithRole 现读 global RoleBinding,故插 RoleBinding(USER, GLOBAL, ACTIVE)。
+      await prisma.roleBinding.create({
+        data: {
+          principalType: 'USER',
+          principalId: realUser!.id,
+          roleId,
+          scopeType: 'GLOBAL',
+          status: 'ACTIVE',
+        },
       });
 
       // 触发授权
@@ -532,9 +538,9 @@ describe('role-permissions 模块 + cache skeleton', () => {
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: [perms[0].code] });
 
-      // realUser cache 应已被清(invalidateAllUsersWithRole 走的是 prisma 查 user_roles 然后清)
+      // realUser cache 应已被清(invalidateAllUsersWithRole 走的是 prisma 查 global role_bindings 然后清)
       expect(cache.get(realUser!.id)).toBeNull();
-      // fakeUserId 因为没在 user_roles 表里,不会被本次清掉(skeleton 验证粒度)
+      // fakeUserId 因为没在 role_bindings 表里,不会被本次清掉(skeleton 验证粒度)
       // — 但这是端到端测,fakeUserId 也未必残留;不强断言,只验证 realUser 被清的关键路径。
     });
 
@@ -555,8 +561,15 @@ describe('role-permissions 模块 + cache skeleton', () => {
         where: { username: 'rp-adm' },
         select: { id: true },
       });
-      await prisma.userRole.create({
-        data: { userId: realUser!.id, roleId },
+      // 终态 scoped-authz PR6:invalidateAllUsersWithRole 现读 global RoleBinding,故插 RoleBinding(USER, GLOBAL, ACTIVE)。
+      await prisma.roleBinding.create({
+        data: {
+          principalType: 'USER',
+          principalId: realUser!.id,
+          roleId,
+          scopeType: 'GLOBAL',
+          status: 'ACTIVE',
+        },
       });
       cache.set(realUser!.id, new Set(['some.cached.code']));
       expect(cache.get(realUser!.id)).not.toBeNull();

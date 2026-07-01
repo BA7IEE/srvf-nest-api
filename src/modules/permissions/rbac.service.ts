@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { BindingScopeType, BindingStatus, PrincipalType, Role } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -68,18 +68,27 @@ export class RbacService {
 
   // 取当前用户的有效权限点集合(走缓存)。
   //
+  // **判权唯一读源(终态 scoped-authz PR6 起,冻结稿 §8.2 行为锁)**:读 RoleBinding
+  //   (principalType=USER, scopeType=GLOBAL, status=ACTIVE, 未软删)聚合权限点 —— 等价替换旧
+  //   `user_roles` 读(每条 UserRole 已由第 37 migration 回填为该形态的 RoleBinding),**全局判权语义逐字不变**。
+  // **🔴 只读 scopeType=GLOBAL,绝不判 scoped**:经 role-bindings CRUD 建的 ORGANIZATION/TREE/ACTIVITY/
+  //   RESOURCE/SELF 绑定入库即止,本函数忽略非 GLOBAL 行(scoped 判权是 PR8 AuthzService)。UserRole 表冻结、零读写。
   // **行为**:
-  // - SUPER_ADMIN 不在此处特判:本函数总是返回 user_roles 聚合后的实际权限点集
+  // - SUPER_ADMIN 不在此处特判:本函数总是返回 global RoleBinding 聚合后的实际权限点集
   //   (SUPER_ADMIN 的短路在 `can()` / `getMyPermissions()` 中各自实现,语义不同)
   // - cache miss → 查 DB → set cache;cache hit → 直接返
-  // - 排除已软删的 RbacRole(沿 D7 §13 失效场景:RbacRole 软删时 user_roles 不联动,join 过滤)
+  // - 排除已软删的 RbacRole(沿 D7 §13 失效场景:RbacRole 软删时 role_bindings 不联动,join 过滤)
   async getUserPermissionCodes(userId: string): Promise<Set<string>> {
     const cached = this.cache.get(userId);
     if (cached !== null) return cached;
 
-    const userRoles = await this.prisma.userRole.findMany({
+    const bindings = await this.prisma.roleBinding.findMany({
       where: {
-        userId,
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        scopeType: BindingScopeType.GLOBAL,
+        status: BindingStatus.ACTIVE,
+        deletedAt: null,
         role: { deletedAt: null },
       },
       select: {
@@ -96,8 +105,8 @@ export class RbacService {
     });
 
     const codes = new Set<string>();
-    for (const ur of userRoles) {
-      for (const rp of ur.role.rolePermissions) {
+    for (const b of bindings) {
+      for (const rp of b.role.rolePermissions) {
         codes.add(rp.permission.code);
       }
     }
@@ -225,11 +234,16 @@ export class RbacService {
   }
 
   // 查当前用户持有的 RBAC 业务角色摘要(沿 D7 §5.2.6 嵌套结构)。
-  // 排除已软删的 RbacRole;按 createdAt 升序(与 UserRolesService.list 一致)。
+  // 终态 scoped-authz PR6:读 global RoleBinding(等价替换旧 user_roles 读;回填保 createdAt → 排序逐字不变)。
+  // 排除已软删的 RbacRole;按 createdAt 升序(与 UserRolesService.list 一致)。只读 GLOBAL,scoped 不计入摘要。
   private async getEffectiveRoles(userId: string): Promise<EffectiveRoleDto[]> {
-    const rows = await this.prisma.userRole.findMany({
+    const rows = await this.prisma.roleBinding.findMany({
       where: {
-        userId,
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        scopeType: BindingScopeType.GLOBAL,
+        status: BindingStatus.ACTIVE,
+        deletedAt: null,
         role: { deletedAt: null },
       },
       select: {

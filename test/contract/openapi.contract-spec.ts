@@ -241,7 +241,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/system/v1/realname-settings'],
   ['post', '/api/system/v1/realname-settings/reset-credentials'],
 
-  // Admin surface(Admin-* tag;70 路由):终态前缀 /api/admin/v1/*
+  // Admin surface(Admin-* tag;74 路由):终态前缀 /api/admin/v1/*
   // (Route B 终态;v2 老前缀已于 Phase 4 删除,沿 docs/api-surface-migration-plan.md §3.4)。
   // 注:历史 mobile-like 自助端点已收口到 App surface(/api/app/v1/me|my/*);
   // 原 *-legacy controller 已于 Phase 4 删除,App 自助流由 app-me / app-my-* controller 承载。
@@ -497,6 +497,15 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/organizations/{orgId}/supervisors'],
   ['patch', '/api/admin/v1/supervision-assignments/{id}'],
   ['post', '/api/admin/v1/supervision-assignments/{id}/revoke'],
+  // 终态 scoped-authz PR6「RoleBinding」(2026-07-01;冻结稿 §7.5),+4 → 289。
+  //   带 scope 的角色绑定管理面:GET 列 / POST 建 / PATCH 改 / DELETE 软删。
+  //   单 RoleBindingsController(@Controller('admin/v1') 共同前缀 + 完整子路径 role-bindings[/:id]);
+  //   R 模式 role-binding.{read,create,update,delete}.record 4 码,无 @Roles。
+  //   UserRole→global RoleBinding 无损升级 = 判权唯一读源(RbacService 只读 GLOBAL);scoped 入库即止(判权是 PR8)。
+  ['get', '/api/admin/v1/role-bindings'],
+  ['post', '/api/admin/v1/role-bindings'],
+  ['patch', '/api/admin/v1/role-bindings/{id}'],
+  ['delete', '/api/admin/v1/role-bindings/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -931,6 +940,12 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'UpdateSupervisionAssignmentDto',
   'SupervisionScopeEntryDto',
   'OrganizationSupervisorDto',
+
+  // 终态 scoped-authz PR6「RoleBinding」(2026-07-01;冻结稿 §3.6/§7.5):
+  //   role-bindings DTO(入参 Create/Update + 出参 Response;scoped 各型入库不判,判权是 PR8)。
+  'RoleBindingResponseDto',
+  'CreateRoleBindingDto',
+  'UpdateRoleBindingDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

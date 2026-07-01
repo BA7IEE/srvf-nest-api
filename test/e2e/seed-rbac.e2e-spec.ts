@@ -11,9 +11,9 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 沿 D7 v1.1 §10 + 用户拍板六项决策 + 既有 seed.e2e-spec.ts 子进程范式。
 //
 // 覆盖(沿用户决策方案 B):
-// 1. 空 db → seed 后 89 条 permission 全部存在(14 rbac.* + 40 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME;终态 scoped-authz PR1 PR-2A 19→20 +org.move.node,PR2 20→24 +membership 4,PR3 24→32 +position 4 / position-rule 4,PR4 32→36 +position-assignment 4,PR5 36→40 +supervision-assignment 4)
+// 1. 空 db → seed 后 93 条 permission 全部存在(14 rbac.* + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME;终态 scoped-authz PR1 PR-2A 19→20 +org.move.node,PR2 20→24 +membership 4,PR3 24→32 +position 4 / position-rule 4,PR4 32→36 +position-assignment 4,PR5 36→40 +supervision-assignment 4,PR6 40→44 +role-binding 4)
 // 2. ops-admin RbacRole 存在
-// 3. ops-admin 绑定 84 条(14 rbac.* + 40 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME;**不含**
+// 3. ops-admin 绑定 88 条(14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME;**不含**
 //    storage-setting.reset.credentials(沿 PR-2 D2=A)+ user.update.role(沿 PR-3 D1=A);
 //    PR-4B D2=B audit-log.read.entry 整条加入)
 // 4. 至少 1 个 user_role 持有 ops-admin(强校验通过)
@@ -143,6 +143,11 @@ const EXPECTED_RBAC_PERMISSION_CODES = [
   'supervision-assignment.create.record',
   'supervision-assignment.update.record',
   'supervision-assignment.revoke.record',
+  // 4 条 role-binding.*(PR-2A;终态 scoped-authz PR6 角色绑定;全绑 ops-admin,沿管理码现绑;scoped 入库不判,RbacService 只读 GLOBAL)
+  'role-binding.read.record',
+  'role-binding.create.record',
+  'role-binding.update.record',
+  'role-binding.delete.record',
   // 12 条 attachment-config.*(PR-2B)
   'attachment-config.read.type',
   'attachment-config.create.type',
@@ -190,7 +195,7 @@ const EXPECTED_RBAC_PERMISSION_CODES = [
 const EXPECTED_PERMISSION_COUNT = EXPECTED_RBAC_PERMISSION_CODES.length;
 // ops-admin RolePermission 数(过滤 reset.credentials(PR-2 D2=A)+ user.update.role(PR-3 D1=A)
 // + sms-setting.reset.credentials(SMS T2 镜像 D2=A)+ wechat-setting.reset.credentials(WECHAT T2)
-// + realname-setting.reset.credentials(REALNAME T1 镜像 D2=A,招新评审稿 §3.4)→ 89 - 5 = 84)
+// + realname-setting.reset.credentials(REALNAME T1 镜像 D2=A,招新评审稿 §3.4)→ 93 - 5 = 88)
 const EXPECTED_OPS_ADMIN_ROLE_PERMISSION_COUNT = EXPECTED_PERMISSION_COUNT - 5;
 const EXPECTED_OPS_ADMIN_BOUND_CODES = EXPECTED_RBAC_PERMISSION_CODES.filter(
   (c) =>
@@ -219,7 +224,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     await resetDb(app);
   });
 
-  it('空 db + 合法 env → 89 条 permission(14 rbac + 40 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME) + ops-admin role + 84 条 role-permission(D2=A 4 把凭证 reset + D1=A user.update.role 共 5 不绑;D2=B audit-log.read.entry 整条绑) + 强校验通过', async () => {
+  it('空 db + 合法 env → 93 条 permission(14 rbac + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME) + ops-admin role + 88 条 role-permission(D2=A 4 把凭证 reset + D1=A user.update.role 共 5 不绑;D2=B audit-log.read.entry 整条绑) + 强校验通过', async () => {
     const result = runSeed({
       APP_ENV: 'test',
       SUPER_ADMIN_USERNAME: 'rbac-seed-su',
@@ -297,11 +302,14 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     // PR-4 D2=B 正向断言:audit-log.read.entry **在** ops-admin RolePermission 中
     expect(boundCodes).toContain('audit-log.read.entry');
 
-    // 4. 至少 1 个 user_role 持有 ops-admin(强校验)
-    const opsAdminHolderCount = await prisma.userRole.count({
+    // 4. 至少 1 个 active global RoleBinding 持有 ops-admin(强校验;终态 scoped-authz PR6 判权唯一读源)
+    const opsAdminHolderCount = await prisma.roleBinding.count({
       where: {
         role: { code: 'ops-admin', deletedAt: null },
-        user: { deletedAt: null, status: UserStatus.ACTIVE },
+        principalType: 'USER',
+        scopeType: 'GLOBAL',
+        status: 'ACTIVE',
+        deletedAt: null,
       },
     });
     expect(opsAdminHolderCount).toBeGreaterThanOrEqual(1);
@@ -359,10 +367,18 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
       where: { code: 'ops-admin' },
       select: { id: true },
     });
-    const userRole = await prisma.userRole.findUnique({
-      where: { userId_roleId: { userId: su.id, roleId: opsAdmin.id } },
+    // 终态 scoped-authz PR6:bootstrap 授予现写 global RoleBinding(判权唯一读源;UserRole 冻结)。
+    const binding = await prisma.roleBinding.findFirst({
+      where: {
+        principalType: 'USER',
+        principalId: su.id,
+        roleId: opsAdmin.id,
+        scopeType: 'GLOBAL',
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
     });
-    expect(userRole).not.toBeNull();
+    expect(binding).not.toBeNull();
   });
 
   it('env 路径:RBAC_INITIAL_OPS_ADMIN_USER_ID 指定已有 user → 绑到该 user 而非 SUPER_ADMIN', async () => {
@@ -387,8 +403,9 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
       select: { id: true },
     });
 
-    // 清掉已有的 ops-admin user_role(避免和 fallback 创建的混淆),仅观察 env 路径效果
-    await prisma.userRole.deleteMany({});
+    // 清掉已有的 ops-admin 绑定(避免和 fallback 创建的混淆),仅观察 env 路径效果
+    // 终态 scoped-authz PR6:判权授予现写 global RoleBinding,故清 role_bindings。
+    await prisma.roleBinding.deleteMany({});
 
     const second = runSeed({
       APP_ENV: 'test',
@@ -404,10 +421,18 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
       where: { code: 'ops-admin' },
       select: { id: true },
     });
-    const userRole = await prisma.userRole.findUnique({
-      where: { userId_roleId: { userId: target.id, roleId: opsAdmin.id } },
+    // 终态 scoped-authz PR6:env 指定目标现绑 global RoleBinding。
+    const binding = await prisma.roleBinding.findFirst({
+      where: {
+        principalType: 'USER',
+        principalId: target.id,
+        roleId: opsAdmin.id,
+        scopeType: 'GLOBAL',
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
     });
-    expect(userRole).not.toBeNull();
+    expect(binding).not.toBeNull();
   });
 
   it('env 指定不存在的 userId → seed 失败 throw,exit ≠ 0', async () => {
@@ -424,7 +449,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(result.stderr.toLowerCase()).toMatch(/rbac_initial_ops_admin_user_id|bootstrap/);
   });
 
-  it('幂等:连续跑两次 seed 数量不变(全表 139 permission / 1 ops-admin role / 63 role-permission / 1 user-role;断言相对稳定)', async () => {
+  it('幂等:连续跑两次 seed 数量不变(全表 permission / 1 ops-admin role / role-permission / 1 global role-binding;断言相对稳定)', async () => {
     // 第一次
     const first = runSeed({
       APP_ENV: 'test',
@@ -443,8 +468,8 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     const rolePermCountAfter1 = await prisma.rolePermission.count({
       where: { roleId: opsAdminAfter1.id },
     });
-    const userRoleCountAfter1 = await prisma.userRole.count({
-      where: { roleId: opsAdminAfter1.id },
+    const bindingCountAfter1 = await prisma.roleBinding.count({
+      where: { roleId: opsAdminAfter1.id, principalType: 'USER', scopeType: 'GLOBAL' },
     });
 
     // 第二次:相同 env,seed 应全部 no-op
@@ -469,8 +494,10 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(await prisma.rolePermission.count({ where: { roleId: opsAdminAfter1.id } })).toBe(
       rolePermCountAfter1,
     );
-    expect(await prisma.userRole.count({ where: { roleId: opsAdminAfter1.id } })).toBe(
-      userRoleCountAfter1,
-    );
+    expect(
+      await prisma.roleBinding.count({
+        where: { roleId: opsAdminAfter1.id, principalType: 'USER', scopeType: 'GLOBAL' },
+      }),
+    ).toBe(bindingCountAfter1);
   });
 });

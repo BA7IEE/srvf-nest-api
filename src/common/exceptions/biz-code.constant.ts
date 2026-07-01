@@ -1189,6 +1189,41 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // - 340xx:角色绑定(role-binding)—— 终态 scoped-authz PR6「RoleBinding」引入(2026-07-01;冻结稿 §3.6 / §7.5 / §4.3)。
+  //   带 scope 的角色绑定管理面(GLOBAL/ORGANIZATION/ORGANIZATION_TREE/ACTIVITY/RESOURCE/SELF)。
+  //   principalId 多态无 FK,按 principalType 校验存在性:USER 引用不存在复用 USER_NOT_FOUND(10001)/
+  //   MEMBER 复用 MEMBER_NOT_FOUND(15001)/ POSITION_ASSIGNMENT 复用 POSITION_ASSIGNMENT_NOT_FOUND(32020);
+  //   roleId 引用不存在/已软删复用 ROLE_NOT_FOUND(30003)/ ROLE_DELETED(30005);
+  //   scopeOrgId 引用不存在复用 ORGANIZATION_NOT_FOUND(11001);scopeActivityId 引用不存在复用 ACTIVITY_NOT_FOUND(12001)。
+  //   34001 NOT_FOUND / 34002 撞唯一 active(P2002 兜底,全 scope 维度)/ 34003 scope 字段与 scopeType 不匹配 /
+  //   34004 principalId 与 principalType 不匹配(非 SYSTEM 缺 principalId 等)/ 34005 任期非法(endedAt≤startedAt)。
+  //   **🔴 scoped 绑定入库即止,RbacService 只读 scopeType=GLOBAL、绝不判 scoped**(判权是 PR8 AuthzService)。
+  ROLE_BINDING_NOT_FOUND: {
+    code: 34001,
+    message: '角色绑定不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ROLE_BINDING_ALREADY_EXISTS: {
+    code: 34002,
+    message: '相同 principal × 角色 × scope 的在任绑定已存在',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ROLE_BINDING_SCOPE_INVALID: {
+    code: 34003,
+    message: 'scope 字段与 scopeType 不匹配(缺必填 scope 或提供了多余 scope)',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ROLE_BINDING_PRINCIPAL_INVALID: {
+    code: 34004,
+    message: 'principalId 与 principalType 不匹配(非 SYSTEM 主体必须提供 principalId)',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ROLE_BINDING_TENURE_INVALID: {
+    code: 34005,
+    message: '任期止必须晚于任期起',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+
   // audit_logs 模块业务级(140xx + 141xx)。批次 6 PR #1 引入(2026-05-12)。
   // 详见 docs:批次6_audit_logs_API前评审.md(D6 v1.1)§9。
   // 段位选择:baseline §1.1 v0.5 "audit_logs 140xx + 141xx" 基线预留,本批次实装收口。

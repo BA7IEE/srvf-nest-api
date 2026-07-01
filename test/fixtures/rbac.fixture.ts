@@ -275,31 +275,53 @@ export async function seedRbacPermissionsAndOpsAdmin(
 }
 
 // 给 user 绑 ops-admin + 主动失效缓存(模拟运行时"绑角色后 POST /rbac/reload"流程)。
+// 终态 scoped-authz PR6:判权唯一读源 = global RoleBinding,故 grant 写 RoleBinding(USER, GLOBAL, ACTIVE);
+//   无 Prisma 复合唯一键 → findFirst active 缺则 create(幂等)。UserRole 表冻结、fixture 不再写。
 export async function grantOpsAdminToUser(
   app: INestApplication,
   userId: string,
   opsAdminRoleId: string,
 ): Promise<void> {
   const prisma = app.get(PrismaService);
-  await prisma.userRole.upsert({
-    where: { userId_roleId: { userId, roleId: opsAdminRoleId } },
-    update: {},
-    create: { userId, roleId: opsAdminRoleId },
+  const existing = await prisma.roleBinding.findFirst({
+    where: {
+      principalType: 'USER',
+      principalId: userId,
+      roleId: opsAdminRoleId,
+      scopeType: 'GLOBAL',
+      status: 'ACTIVE',
+      deletedAt: null,
+    },
+    select: { id: true },
   });
+  if (!existing) {
+    await prisma.roleBinding.create({
+      data: {
+        principalType: 'USER',
+        principalId: userId,
+        roleId: opsAdminRoleId,
+        scopeType: 'GLOBAL',
+        status: 'ACTIVE',
+      },
+    });
+  }
   app.get(RbacCacheService).invalidateUser(userId);
 }
 
-// 撤回 ops-admin + 失效缓存(对称范式)。
+// 撤回 ops-admin + 失效缓存(对称范式)。终态 scoped-authz PR6:清该 user+role 的 global 绑定(测试清理硬删即可)。
 export async function revokeOpsAdminFromUser(
   app: INestApplication,
   userId: string,
   opsAdminRoleId: string,
 ): Promise<void> {
   const prisma = app.get(PrismaService);
-  await prisma.userRole
-    .delete({ where: { userId_roleId: { userId, roleId: opsAdminRoleId } } })
-    .catch(() => {
-      /* 关系不存在 — 静默 */
-    });
+  await prisma.roleBinding.deleteMany({
+    where: {
+      principalType: 'USER',
+      principalId: userId,
+      roleId: opsAdminRoleId,
+      scopeType: 'GLOBAL',
+    },
+  });
   app.get(RbacCacheService).invalidateUser(userId);
 }

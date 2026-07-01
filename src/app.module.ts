@@ -36,6 +36,7 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { PositionsModule } from './modules/positions/positions.module';
 import { PositionAssignmentsModule } from './modules/position-assignments/position-assignments.module';
+import { RoleBindingsModule } from './modules/role-bindings/role-bindings.module';
 import { SupervisionAssignmentsModule } from './modules/supervision-assignments/supervision-assignments.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -94,6 +95,10 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   (6 路由:扁平列/建/改/撤销 + 队员轴分管范围 + 组织轴被谁分管;R 模式 supervision-assignment.* 4 码;
     //    建/撤销写 audit;分管与职务正交、绝不进判权路径,closure 仅展示读非 judge)。
     SupervisionAssignmentsModule,
+    // 终态 scoped-authz PR6(2026-07-01;冻结稿 §3.6/§7.5):带 scope 的角色绑定(role-bindings)管理面(第 32 模块)
+    //   (4 路由:列/建 + 改/软删;R 模式 role-binding.* 4 码;建/软删写 audit)。UserRole→global RoleBinding 无损升级 =
+    //    判权唯一读源(RbacService 只读 GLOBAL);scoped 绑定入库即止、绝不进判权路径(判权是 PR8 AuthzService)。
+    RoleBindingsModule,
     MembersModule,
     MemberDepartmentsModule,
     MemberProfilesModule,

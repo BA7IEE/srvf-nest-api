@@ -70,10 +70,23 @@ describe('rbac reload (POST /api/system/v1/rbac/reload)', () => {
       select: { id: true },
     });
     roleAId = roleA.id;
-    await prisma.userRole.createMany({
+    // 终态 scoped-authz PR6:判权读源 = global RoleBinding,故授予角色写 RoleBinding(USER, GLOBAL, ACTIVE)。
+    await prisma.roleBinding.createMany({
       data: [
-        { userId: user1Id, roleId: roleAId },
-        { userId: user2Id, roleId: roleAId },
+        {
+          principalType: 'USER',
+          principalId: user1Id,
+          roleId: roleAId,
+          scopeType: 'GLOBAL',
+          status: 'ACTIVE',
+        },
+        {
+          principalType: 'USER',
+          principalId: user2Id,
+          roleId: roleAId,
+          scopeType: 'GLOBAL',
+          status: 'ACTIVE',
+        },
       ],
     });
   });
