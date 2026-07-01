@@ -8,6 +8,12 @@ import type { RbacResource } from './rbac.service';
 // V2.x C-6 RBAC 实施 PR #6:RbacService 单元测试。
 // 沿 D7 v1.1 §7.1 判权优先级 + §8.2 实现伪代码 + §8.3 ownership 字段映射。
 //
+// **终态 scoped-authz PR6(2026-07-01;行为锁 white-box 适配)**:判权读源从 `user_roles` 重指向
+//   global `RoleBinding`。本白盒 spec 的**判权矩阵语义断言逐字不变**(SUPER_ADMIN 短路 / has_permission /
+//   no_permission / self_match / cache miss-hit / getMyPermissions 各分支),仅把被 mock 的 prisma 方法名从
+//   `userRole.findMany` 换成 `roleBinding.findMany`(聚合行 shape 相同:role.rolePermissions.permission.code)。
+//   scoped 绑定零判权影响由 e2e(真库 WHERE scopeType=GLOBAL 过滤)证,非本 mock 单测粒度。
+//
 // 覆盖:
 // 1. SUPER_ADMIN 短路:can() / judge() 任何 action 直返 true / super_admin_pass
 // 2. ADMIN / USER 走 RBAC 表(本 PR seed 未实施,聚合返空集 — 这本身是正确行为)
@@ -19,7 +25,7 @@ import type { RbacResource } from './rbac.service';
 //    - ownerType=member + user.memberId=null → no_permission(fail-close)
 // 5. cache 行为:miss → 查 DB + set;hit → 不查 DB
 // 6. getMyPermissions:
-//    - SUPER_ADMIN → Permission.code 全集 + effectiveRoles 走 user_roles
+//    - SUPER_ADMIN → Permission.code 全集 + effectiveRoles 走 global RoleBinding
 //    - 非 SUPER_ADMIN → permissions 走 getUserPermissionCodes(走缓存)
 
 function makeUser(overrides: Partial<CurrentUserPayload> = {}): CurrentUserPayload {
@@ -33,7 +39,8 @@ function makeUser(overrides: Partial<CurrentUserPayload> = {}): CurrentUserPaylo
   };
 }
 
-interface UserRoleAggregateRow {
+// 判权聚合行 shape(global RoleBinding.role.rolePermissions.permission.code;与旧 user_roles 聚合 shape 相同)。
+interface RoleBindingAggregateRow {
   role: {
     rolePermissions: Array<{ permission: { code: string } }>;
   };
@@ -45,7 +52,7 @@ interface EffectiveRoleRow {
 
 function makePrismaMock() {
   return {
-    userRole: {
+    roleBinding: {
       findMany: jest.fn<Promise<unknown[]>, [unknown]>().mockResolvedValue([]),
     },
     permission: {
@@ -90,7 +97,7 @@ describe('RbacService', () => {
       const allowed = await service.can(user, 'rbac.role.read');
 
       expect(allowed).toBe(true);
-      expect(prisma.userRole.findMany).not.toHaveBeenCalled();
+      expect(prisma.roleBinding.findMany).not.toHaveBeenCalled();
       expect(prisma.permission.findMany).not.toHaveBeenCalled();
     });
 
@@ -107,14 +114,14 @@ describe('RbacService', () => {
   describe('精确 action 匹配(非 SUPER_ADMIN)', () => {
     it('未命中 → no_permission', async () => {
       const { prisma, service } = setupService();
-      const userRoleRows: UserRoleAggregateRow[] = [
+      const userRoleRows: RoleBindingAggregateRow[] = [
         {
           role: {
             rolePermissions: [{ permission: { code: 'attachment.view.cert.other' } }],
           },
         },
       ];
-      prisma.userRole.findMany.mockResolvedValueOnce(userRoleRows);
+      prisma.roleBinding.findMany.mockResolvedValueOnce(userRoleRows);
 
       const result = await service.judge(makeUser({ role: Role.ADMIN }), 'rbac.role.delete');
 
@@ -123,10 +130,10 @@ describe('RbacService', () => {
 
     it('命中且非 .self → has_permission', async () => {
       const { prisma, service } = setupService();
-      const userRoleRows: UserRoleAggregateRow[] = [
+      const userRoleRows: RoleBindingAggregateRow[] = [
         { role: { rolePermissions: [{ permission: { code: 'rbac.role.read' } }] } },
       ];
-      prisma.userRole.findMany.mockResolvedValueOnce(userRoleRows);
+      prisma.roleBinding.findMany.mockResolvedValueOnce(userRoleRows);
 
       const result = await service.judge(makeUser({ role: Role.ADMIN }), 'rbac.role.read');
 
@@ -135,7 +142,7 @@ describe('RbacService', () => {
 
     it('ADMIN 无 RBAC 角色(seed 未实施)→ 聚合返空集 → no_permission', async () => {
       const { prisma, service } = setupService();
-      prisma.userRole.findMany.mockResolvedValueOnce([]);
+      prisma.roleBinding.findMany.mockResolvedValueOnce([]);
 
       const result = await service.judge(makeUser({ role: Role.ADMIN }), 'rbac.role.read');
 
@@ -147,10 +154,10 @@ describe('RbacService', () => {
     const SELF_ACTION = 'attachment.upload.cert.self';
 
     function withPermission(prisma: PrismaMock, code: string) {
-      const rows: UserRoleAggregateRow[] = [
+      const rows: RoleBindingAggregateRow[] = [
         { role: { rolePermissions: [{ permission: { code } }] } },
       ];
-      prisma.userRole.findMany.mockResolvedValueOnce(rows);
+      prisma.roleBinding.findMany.mockResolvedValueOnce(rows);
     }
 
     it('缺 resource → no_permission(fail-close)', async () => {
@@ -242,54 +249,54 @@ describe('RbacService', () => {
   describe('cache 行为', () => {
     it('miss → 查 DB + set;同一 user 第二次调用直接 hit(不再查 DB)', async () => {
       const { prisma, service } = setupService();
-      const userRoleRows: UserRoleAggregateRow[] = [
+      const userRoleRows: RoleBindingAggregateRow[] = [
         { role: { rolePermissions: [{ permission: { code: 'rbac.role.read' } }] } },
       ];
-      prisma.userRole.findMany.mockResolvedValueOnce(userRoleRows);
+      prisma.roleBinding.findMany.mockResolvedValueOnce(userRoleRows);
 
       const codes1 = await service.getUserPermissionCodes('user-cache-1');
       expect(codes1.has('rbac.role.read')).toBe(true);
-      expect(prisma.userRole.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.roleBinding.findMany).toHaveBeenCalledTimes(1);
 
       const codes2 = await service.getUserPermissionCodes('user-cache-1');
       expect(codes2.has('rbac.role.read')).toBe(true);
-      expect(prisma.userRole.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.roleBinding.findMany).toHaveBeenCalledTimes(1);
     });
 
     it('invalidateUser 后再查 → cache miss → 重新查 DB', async () => {
       const { prisma, cache, service } = setupService();
-      const userRoleRows: UserRoleAggregateRow[] = [
+      const userRoleRows: RoleBindingAggregateRow[] = [
         { role: { rolePermissions: [{ permission: { code: 'rbac.role.read' } }] } },
       ];
-      prisma.userRole.findMany.mockResolvedValue(userRoleRows);
+      prisma.roleBinding.findMany.mockResolvedValue(userRoleRows);
 
       await service.getUserPermissionCodes('user-inv-1');
-      expect(prisma.userRole.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.roleBinding.findMany).toHaveBeenCalledTimes(1);
 
       cache.invalidateUser('user-inv-1');
 
       await service.getUserPermissionCodes('user-inv-1');
-      expect(prisma.userRole.findMany).toHaveBeenCalledTimes(2);
+      expect(prisma.roleBinding.findMany).toHaveBeenCalledTimes(2);
     });
   });
 
   describe('getMyPermissions()', () => {
-    it('SUPER_ADMIN → permissions=Permission.code 全集(已排序)+ effectiveRoles=user_roles 查询', async () => {
+    it('SUPER_ADMIN → permissions=Permission.code 全集(已排序)+ effectiveRoles=global RoleBinding 查询', async () => {
       const { prisma, service } = setupService();
       prisma.permission.findMany.mockResolvedValueOnce([
         { code: 'attachment.upload.cert' },
         { code: 'rbac.role.read' },
       ]);
       const effectiveRows: EffectiveRoleRow[] = [];
-      prisma.userRole.findMany.mockResolvedValueOnce(effectiveRows);
+      prisma.roleBinding.findMany.mockResolvedValueOnce(effectiveRows);
 
       const result = await service.getMyPermissions(makeUser({ role: Role.SUPER_ADMIN }));
 
       expect(result.permissions).toEqual(['attachment.upload.cert', 'rbac.role.read']);
       expect(result.effectiveRoles).toEqual([]);
-      // SUPER_ADMIN 不应触发 getUserPermissionCodes 内部的 userRole.findMany 聚合查询
-      // 但本测试还查了 effectiveRoles → userRole.findMany 调用 1 次
-      expect(prisma.userRole.findMany).toHaveBeenCalledTimes(1);
+      // SUPER_ADMIN 不应触发 getUserPermissionCodes 内部的 roleBinding.findMany 聚合查询
+      // 但本测试还查了 effectiveRoles → roleBinding.findMany 调用 1 次
+      expect(prisma.roleBinding.findMany).toHaveBeenCalledTimes(1);
       expect(prisma.permission.findMany).toHaveBeenCalledTimes(1);
     });
 
@@ -297,7 +304,7 @@ describe('RbacService', () => {
       const { prisma, service } = setupService();
 
       // 第一次 findMany 调用是 getUserPermissionCodes 聚合(rolePermissions 嵌套)
-      const aggregateRows: UserRoleAggregateRow[] = [
+      const aggregateRows: RoleBindingAggregateRow[] = [
         {
           role: {
             rolePermissions: [
@@ -311,7 +318,7 @@ describe('RbacService', () => {
       const effectiveRows: EffectiveRoleRow[] = [
         { role: { code: 'role-a', displayName: '业务角色 A' } },
       ];
-      prisma.userRole.findMany
+      prisma.roleBinding.findMany
         .mockResolvedValueOnce(aggregateRows)
         .mockResolvedValueOnce(effectiveRows);
 
@@ -324,7 +331,7 @@ describe('RbacService', () => {
 
     it('ADMIN 无 RBAC 角色(seed 未实施)→ permissions=[] + effectiveRoles=[]', async () => {
       const { prisma, service } = setupService();
-      prisma.userRole.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      prisma.roleBinding.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
       const result = await service.getMyPermissions(makeUser({ role: Role.ADMIN }));
 

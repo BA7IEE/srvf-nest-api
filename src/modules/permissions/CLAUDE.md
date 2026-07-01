@@ -6,13 +6,16 @@
 
 - **RBAC 配置中心**:`Permission` / `RbacRole` / `RolePermission` / `UserRole` CRUD + **判权核心** `RbacService`
 - **15+1 端点**(累计):14 个 RBAC CRUD(Permission / Role / RolePermission / UserRole)+ `GET /api/system/v1/rbac/me/permissions`(端点 15)+ `POST /api/system/v1/rbac/reload`(端点 16)
-- **判权优先级**(沿 D7 v1.1 §7.1):SUPER_ADMIN 短路 → ADMIN 经 seed 继承 USER 权限(本身不特判)→ user_roles → role_permissions 聚合 → `.self` 后缀做 ownership
+- **判权优先级**(沿 D7 v1.1 §7.1):SUPER_ADMIN 短路 → ADMIN 经 seed 继承 USER 权限(本身不特判)→ **global RoleBinding**(终态 scoped-authz PR6 起,判权读源从 `user_roles` 重指向 `RoleBinding(principalType=USER, scopeType=GLOBAL, status=ACTIVE)`)→ role_permissions 聚合 → `.self` 后缀做 ownership
 - **不负责**:登录 / refresh / 改密(在 [`/src/modules/auth/`](../auth/));capability map 出口在 [`/src/modules/users/app-capability.service.ts`](../users/app-capability.service.ts) — **不是**本模块
 
 ## Local facts
 
 - **入口模式当前现状(2026-06-11 Slow-4 收口,单轨)**:全仓 controller 一律"入口仅 `JwtAuthGuard`,**不**挂 `@Roles(...)`,Service 内 `rbac.can()` 判权 + 失败抛 `RBAC_FORBIDDEN(30100)`"(活跃 `@Roles` = 0;`RolesGuard` 机制保留 Guard 链作防御性兜底;activities 列表/详情等 `[auth]` 端点无码仅登录)。业务面 ADMIN 权限由内置角色 `biz-admin`(绑 35)承载,seed 幂等补挂每个非软删 ADMIN;修改权限边界时仍必须说明 controller guard、service-level `rbac.can()`、数据范围(where 子句 / `.self`)三者关系
 - **`RbacService` 是唯一判权出口**:`can()` / `judge()` / `getMyPermissions()` / `reload()`;`SUPER_ADMIN` 短路在 `judge()` 内实现;`ADMIN` 继承 USER 由 **seed 给 ADMIN 内置角色配 USER 级权限点**实现,Service 本身**不**对 `ADMIN` 特判
+- **🔴 判权唯一读源 = global RoleBinding(终态 scoped-authz PR6;冻结稿 §8.2 行为锁)**:`getUserPermissionCodes`〔判权聚合〕/`getEffectiveRoles`〔角色摘要〕**只读** `RoleBinding(principalType=USER, scopeType=GLOBAL, status=ACTIVE, deletedAt=null)`;**UserRole 表冻结、零生产读写**(每条 UserRole 已由第 37 migration 回填为该形态 RoleBinding;cleanup PR 再 DROP)。**只读 GLOBAL,绝不判 scoped**——经 `role-bindings/` CRUD 建的 ORGANIZATION/TREE/ACTIVITY/RESOURCE/SELF 绑定入库即止,判权忽略(scoped 判权是 PR8 AuthzService)。改判权/读源必跑 characterization(rbac.service.spec 判权矩阵 + user-roles/role-bindings e2e)
+- **`UserRolesService` 内部换存储、对外契约零变(PR6)**:assign/list/revoke **读写 global RoleBinding**;端点路径 + 码(`rbac.user-role.{read,create,delete}`)+ 请求/响应 DTO 逐字不变;**撤销 = 软删**(status=ENDED + endedAt + deletedAt,非物理删);建/撤写 audit(`role-binding.{create,revoke}` + extra.viaPath='user-role';**直写 auditLog** 规避 PermissionsModule↔AuditLogsModule 模块环,本仓 forwardRef 零使用)
+- **`RbacCacheService` 已 export**(PR6):供 `role-bindings/` 模块在 USER 主体的 GLOBAL 绑定建/改/软删后失效该 user 权限缓存(失效链不破)
 - **`RbacCacheService` 是 permission resolution cache**(Map + TTL,沿 `RBAC_CACHE_TTL_SECONDS` env / app.config 默认 1800s);**不是**用户身份有效性缓存(身份每请求查库,在 JwtStrategy);invalidate 入口 3 个:`invalidateUser` / `invalidateAllUsersWithRole`(失败仅 logger.warn 不抛)/ `invalidateAll`
 - **raw permission ≠ app capability**(沿 D-5.3 + Phase 0.7 §3.2):
   - `GET /api/system/v1/rbac/me/permissions`(本模块,raw `Permission.code` 集合 + 业务角色摘要;SUPER_ADMIN 返 Permission.code 全集而**非** `["*"]`)

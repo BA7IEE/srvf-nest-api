@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
@@ -8,6 +9,7 @@ import {
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   AssignUserRoleDto,
   RevokeUserRoleParamDto,
@@ -15,6 +17,16 @@ import {
   UserRoleResponseDto,
 } from './user-roles.dto';
 import { UserRolesService } from './user-roles.service';
+
+// 从 @Req() 构造 AuditMeta(沿 supervision-assignments / content 范式;D8 拍板不引入 ALS)。
+// 终态 scoped-authz PR6:user-role assign/remove 现经 RoleBinding,建 / 撤销写 audit(resourceType='role_binding')。
+function buildAuditMeta(req: Request): AuditMeta {
+  return {
+    requestId: req.id as string,
+    ip: req.ip ?? null,
+    ua: req.headers['user-agent'] ?? null,
+  };
+}
 
 // V2.x C-6 RBAC 实施 PR #5:UserRole 模块 Controller。
 // 3 个端点(沿 D7 v1.1 §5.1 端点 12-14):
@@ -75,8 +87,9 @@ export class UserRolesController {
     @CurrentUser() actor: CurrentUserPayload,
     @Param() params: UserIdParamDto,
     @Body() dto: AssignUserRoleDto,
+    @Req() req: Request,
   ): Promise<UserRoleResponseDto> {
-    return this.service.assign(actor, params.userId, dto);
+    return this.service.assign(actor, params.userId, dto, buildAuditMeta(req));
   }
 
   @Delete(':roleId')
@@ -99,7 +112,8 @@ export class UserRolesController {
   revoke(
     @CurrentUser() actor: CurrentUserPayload,
     @Param() params: RevokeUserRoleParamDto,
+    @Req() req: Request,
   ): Promise<UserRoleResponseDto> {
-    return this.service.revoke(actor, params.userId, params.roleId);
+    return this.service.revoke(actor, params.userId, params.roleId, buildAuditMeta(req));
   }
 }

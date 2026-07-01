@@ -202,6 +202,10 @@ model Organization {
   closureAncestors   OrganizationClosure[] @relation("ClosureAncestor")
   closureDescendants OrganizationClosure[] @relation("ClosureDescendant")
 
+  // 终态 scoped-authz PR6(2026-07-01;冻结稿 §3.6):RoleBinding scope=ORGANIZATION/ORGANIZATION_TREE 的真 FK 反向
+  // relation(仅关系映射,无列)。**scoped 绑定入库即止,RbacService 只读 GLOBAL、绝不判 scoped**(判权是 PR8)。
+  roleBindingScopes RoleBinding[] @relation("RoleBindingScopeOrg")
+
   @@index([parentId])
   @@index([nodeTypeCode])
   @@index([status])
@@ -1109,6 +1113,11 @@ model RbacRole {
   rolePermissions RolePermission[]
   userRoles       UserRole[]
 
+  // 终态 scoped-authz PR6(2026-07-01;冻结稿 §3.6):带 scope 的角色绑定反向 relation(真 FK,Restrict)。
+  // RoleBinding(principalType=USER, scopeType=GLOBAL)是 UserRole 的无损升级 = 判权唯一读源;
+  // UserRole 表 PR6 起冻结、零生产读写(cleanup PR 再 DROP)。
+  roleBindings RoleBinding[]
+
   @@index([deletedAt])
   @@map("roles")
 }
@@ -1163,6 +1172,77 @@ model UserRole {
   @@index([userId])
   @@index([roleId])
   @@map("user_roles")
+}
+
+// 终态 scoped-authz PR6「RoleBinding」(2026-07-01 goal;冻结稿 §3.6 / §8.2 / §7.5 / §4.3;序列 PR6/12)。
+//
+// **带 scope 的角色绑定:终态替代 / 兼容 UserRole。** 每条 UserRole 已由第 37 migration 回填为
+//   RoleBinding(principalType=USER, principalId=userId, scopeType=GLOBAL, status=ACTIVE)。
+// **判权唯一读源(行为锁,PR6 起):** RbacService.getUserPermissionCodes / getEffectiveRoles +
+//   user-roles CRUD + rbac-cache 失效**全部只读 / 只写 scopeType=GLOBAL 的本表**;UserRole 表冻结、零生产读写。
+// **🔴 scoped 绑定可存不判(PR8 边界):** ORGANIZATION / ORGANIZATION_TREE / ACTIVITY / RESOURCE / SELF 各型
+//   经 role-bindings CRUD 入库,但 **RbacService 只读 GLOBAL、绝不判 scoped**(scoped 判权是 PR8 AuthzService)。
+//
+// **principalId 多态(沿 Attachment.ownerType/ownerId 范式):** 随 principalType 指向
+//   user / member / position_assignment / system(SYSTEM 时可空),**不建通用 Prisma FK**
+//   (会对 USER 主体误断言指向 position_assignment 而失败),由 service 按 principalType 校验存在性。
+//   仅 roleId→RbacRole、scopeOrgId→Organization 是真 FK(非多态,Restrict)。
+// **partial unique(手写,第 37 migration 末尾;PG16 NULLS NOT DISTINCT):**
+//   (principalType,principalId,roleId,scopeType,scopeOrgId,scopeActivityId,scopeResourceType,scopeResourceId)
+//   WHERE deletedAt IS NULL AND status='ACTIVE'(同一绑定不重复;NULLS NOT DISTINCT 令 GLOBAL 的 NULL scope 列
+//   也参与去重 = 保住 UserRole 旧 @@unique(userId,roleId) 的并发去重行为锁;P2002 → ROLE_BINDING_ALREADY_EXISTS)。
+model RoleBinding {
+  id                String           @id @default(cuid())
+  principalType     PrincipalType // USER / MEMBER / POSITION_ASSIGNMENT / SYSTEM
+  principalId       String? // 多态、无 FK(SYSTEM 时可空);USER 时 = User.id
+  roleId            String
+  scopeType         BindingScopeType
+  scopeOrgId        String? // ORGANIZATION / ORGANIZATION_TREE 时必填
+  scopeActivityId   String? // ACTIVITY 时必填(多态 String,无 FK)
+  scopeResourceType String? // RESOURCE 时必填(如 attendance_sheet)
+  scopeResourceId   String? // RESOURCE 时必填(多态 String,无 FK)
+  status            BindingStatus    @default(ACTIVE)
+  startedAt         DateTime         @default(now())
+  endedAt           DateTime? // 临时授权可设;过期不授权(PR8 判)
+  createdByUserId   String?
+  note              String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  deletedAt         DateTime?
+
+  role              RbacRole      @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  scopeOrganization Organization? @relation("RoleBindingScopeOrg", fields: [scopeOrgId], references: [id], onDelete: Restrict)
+
+  @@index([principalType, principalId])
+  @@index([roleId])
+  @@index([scopeType, scopeOrgId])
+  @@index([scopeActivityId])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("role_bindings")
+}
+
+// 终态 scoped-authz PR6(2026-07-01;冻结稿 §3.6):RoleBinding 三枚举。
+enum PrincipalType {
+  USER
+  MEMBER
+  POSITION_ASSIGNMENT
+  SYSTEM
+}
+
+enum BindingScopeType {
+  GLOBAL
+  ORGANIZATION
+  ORGANIZATION_TREE
+  ACTIVITY
+  RESOURCE
+  SELF
+}
+
+enum BindingStatus {
+  ACTIVE
+  ENDED
+  SUSPENDED
 }
 
 // ===== V2.x C-7 attachments 4 表(沿 D7 v1.0 §4 schema 草案) =====

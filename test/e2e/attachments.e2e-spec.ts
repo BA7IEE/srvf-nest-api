@@ -212,10 +212,15 @@ describe('attachments 主模块', () => {
     }
     // 给 selfUser / otherUser 绑定 member 角色;noMemberUser 不绑
     for (const u of [selfUser, otherUser]) {
-      await prisma.userRole.upsert({
-        where: { userId_roleId: { userId: u.id, roleId: memberRole.id } },
-        update: {},
-        create: { userId: u.id, roleId: memberRole.id },
+      // 终态 scoped-authz PR6:判权读源 = global RoleBinding,故授予角色写 RoleBinding(USER, GLOBAL, ACTIVE)。
+      await prisma.roleBinding.create({
+        data: {
+          principalType: 'USER',
+          principalId: u.id,
+          roleId: memberRole.id,
+          scopeType: 'GLOBAL',
+          status: 'ACTIVE',
+        },
       });
     }
 

@@ -187,10 +187,15 @@ describe('AttachmentsService audit characterization', () => {
         create: { roleId: memberRole.id, permissionId: perm.id },
       });
     }
-    await prisma.userRole.upsert({
-      where: { userId_roleId: { userId: selfUser.id, roleId: memberRole.id } },
-      update: {},
-      create: { userId: selfUser.id, roleId: memberRole.id },
+    // 终态 scoped-authz PR6:判权读源 = global RoleBinding,故授予角色写 RoleBinding(USER, GLOBAL, ACTIVE)。
+    await prisma.roleBinding.create({
+      data: {
+        principalType: 'USER',
+        principalId: selfUser.id,
+        roleId: memberRole.id,
+        scopeType: 'GLOBAL',
+        status: 'ACTIVE',
+      },
     });
 
     // 5. CurrentUserPayloads(service-level direct call 不经 JwtAuthGuard,手动构造)

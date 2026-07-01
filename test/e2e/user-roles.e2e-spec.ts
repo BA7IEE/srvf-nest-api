@@ -15,6 +15,11 @@ import { createTestApp } from '../setup/test-app';
 // V2.x C-6 RBAC 实施 PR #5:UserRole CRUD + Q7 角色分级 + ops-admin 保护 e2e。
 // 沿 D7 v1.1 §5.1 端点 12-14 + §6.2 Q7 C2 中庸 + §6.3 + §9.4 + 用户拍板。
 //
+// **终态 scoped-authz PR6(2026-07-01;行为锁)**:端点内部换存储 —— user-roles CRUD 现经 global RoleBinding
+//   (principalType=USER, scopeType=GLOBAL);端点路径 / 码 / 请求响应 DTO 逐字不变,故所有 HTTP 断言不变。
+//   本 e2e 直接读写测试数据的辅助(grant / findActive / deleteMany)从 user_roles 改到 RoleBinding;
+//   撤销由物理删改软删(status=ENDED + deletedAt),故"撤销后 DB 已删"断言改为"无 active 绑定"(外部行为等同)。
+//
 // 覆盖(沿任务 #9):
 // - GET 查用户角色 / 分配角色 / 重复分配 30006 / 撤销角色 / 撤销不存在 30007
 // - user 不存在 / disabled / softdel 全 10001(沿 v1 §10 信息泄漏防御)
@@ -24,6 +29,54 @@ import { createTestApp } from '../setup/test-app';
 // - 最后一个 ops-admin 保护(30101)
 // - 缓存失效:invalidateUser(targetUserId)
 // - 权限边界(USER 入口 403)
+
+// 终态 scoped-authz PR6 测试辅助:判权唯一读源 = global RoleBinding,故 e2e 内授予/查/清角色改用 RoleBinding。
+async function grantGlobalBinding(
+  prisma: PrismaService,
+  userId: string,
+  roleId: string,
+  createdByUserId?: string,
+): Promise<void> {
+  await prisma.roleBinding.create({
+    data: {
+      principalType: 'USER',
+      principalId: userId,
+      roleId,
+      scopeType: 'GLOBAL',
+      status: 'ACTIVE',
+      ...(createdByUserId !== undefined ? { createdByUserId } : {}),
+    },
+  });
+}
+
+// 查某 user+role 的 active global 绑定(判权可见的那条);撤销后应为 null,事务回滚后应仍在。
+async function findActiveGlobalBinding(prisma: PrismaService, userId: string, roleId: string) {
+  return prisma.roleBinding.findFirst({
+    where: {
+      principalType: 'USER',
+      principalId: userId,
+      roleId,
+      scopeType: 'GLOBAL',
+      status: 'ACTIVE',
+      deletedAt: null,
+    },
+  });
+}
+
+// 清某 role(可选限定 user)的全部 global 绑定(测试前置清场,硬删即可)。
+async function deleteGlobalBindings(
+  prisma: PrismaService,
+  where: { userId?: string; roleId: string },
+): Promise<void> {
+  await prisma.roleBinding.deleteMany({
+    where: {
+      principalType: 'USER',
+      scopeType: 'GLOBAL',
+      roleId: where.roleId,
+      ...(where.userId !== undefined ? { principalId: where.userId } : {}),
+    },
+  });
+}
 
 describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
   let app: INestApplication;
@@ -115,9 +168,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
 
     it('查用户角色 → 200,含已分配的扁平字段集', async () => {
       const target = await createTargetUser('get-with-roles');
-      await prisma.userRole.create({
-        data: { userId: target.id, roleId: bizRoleId, createdBy: superAdminId },
-      });
+      await grantGlobalBinding(prisma, target.id, bizRoleId, superAdminId);
       const res = await request(httpServer(app))
         .get(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth);
@@ -139,9 +190,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
         data: { code: 'softdel-role-for-get', displayName: 'x', deletedAt: new Date() },
         select: { id: true },
       });
-      await prisma.userRole.create({
-        data: { userId: target.id, roleId: softdelRole.id },
-      });
+      await grantGlobalBinding(prisma, target.id, softdelRole.id);
       const res = await request(httpServer(app))
         .get(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth);
@@ -211,7 +260,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
 
     it('重复分配 → 30006', async () => {
       const target = await createTargetUser('assign-duplicate');
-      await prisma.userRole.create({ data: { userId: target.id, roleId: bizRoleId } });
+      await grantGlobalBinding(prisma, target.id, bizRoleId);
       const res = await request(httpServer(app))
         .post(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth)
@@ -274,7 +323,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
 
     it('Q7 C2 — ADMIN 持 ops-admin 分配业务角色 → 201', async () => {
       // 给 admin 配 ops-admin 角色;P0-F PR-1:必须 invalidateUser 让 cache 失效
-      await prisma.userRole.create({ data: { userId: adminId, roleId: opsAdminRoleId } });
+      await grantGlobalBinding(prisma, adminId, opsAdminRoleId);
       cache.invalidateUser(adminId);
       const target = await createTargetUser('q7-admin-with-ops');
       const res = await request(httpServer(app))
@@ -283,14 +332,12 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
         .send({ roleCode: 'role-a' });
       expect(res.status).toBe(201);
       // 清理:撤回 admin 的 ops-admin,避免影响后续测试
-      await prisma.userRole.delete({
-        where: { userId_roleId: { userId: adminId, roleId: opsAdminRoleId } },
-      });
+      await deleteGlobalBindings(prisma, { userId: adminId, roleId: opsAdminRoleId });
       cache.invalidateUser(adminId);
     });
 
     it('Q7 C2 — ADMIN 持 ops-admin **分配 ops-admin** → 30102', async () => {
-      await prisma.userRole.create({ data: { userId: adminId, roleId: opsAdminRoleId } });
+      await grantGlobalBinding(prisma, adminId, opsAdminRoleId);
       cache.invalidateUser(adminId);
       const target = await createTargetUser('q7-admin-with-ops-assign-ops');
       const res = await request(httpServer(app))
@@ -298,9 +345,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
         .set('Authorization', adminAuth)
         .send({ roleCode: 'ops-admin' });
       expectBizError(res, BizCode.CANNOT_ASSIGN_HIGHER_ROLE);
-      await prisma.userRole.delete({
-        where: { userId_roleId: { userId: adminId, roleId: opsAdminRoleId } },
-      });
+      await deleteGlobalBindings(prisma, { userId: adminId, roleId: opsAdminRoleId });
       cache.invalidateUser(adminId);
     });
 
@@ -322,20 +367,18 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
   // ============ DELETE 撤销 ============
 
   describe('DELETE /api/system/v1/users/:userId/roles/:roleId', () => {
-    it('撤销成功 → 200,返回原 UserRole 元信息', async () => {
+    it('撤销成功 → 200,返回原绑定元信息', async () => {
       const target = await createTargetUser('revoke-success');
-      await prisma.userRole.create({ data: { userId: target.id, roleId: bizRoleId } });
+      await grantGlobalBinding(prisma, target.id, bizRoleId);
       const res = await request(httpServer(app))
         .delete(`/api/system/v1/users/${target.id}/roles/${bizRoleId}`)
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.roleCode).toBe('role-a');
 
-      // DB 已删
-      const stillThere = await prisma.userRole.findUnique({
-        where: { userId_roleId: { userId: target.id, roleId: bizRoleId } },
-      });
-      expect(stillThere).toBeNull();
+      // DB 已软删(终态 scoped-authz PR6:status=ENDED + deletedAt;判权可见的 active 绑定应消失 = 外部行为等同旧物理删)
+      const stillActive = await findActiveGlobalBinding(prisma, target.id, bizRoleId);
+      expect(stillActive).toBeNull();
     });
 
     it('关系不存在 → 30007', async () => {
@@ -377,7 +420,7 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
     // ADMIN 不持 ops-admin → 入口直接 30100,不会到 Q7 30102。
     it('ADMIN 不持 ops-admin 撤销 → 30100 RBAC_FORBIDDEN(入口拦)', async () => {
       const target = await createTargetUser('revoke-q7-admin-no-rbac');
-      await prisma.userRole.create({ data: { userId: target.id, roleId: bizRoleId } });
+      await grantGlobalBinding(prisma, target.id, bizRoleId);
       const res = await request(httpServer(app))
         .delete(`/api/system/v1/users/${target.id}/roles/${bizRoleId}`)
         .set('Authorization', adminAuth);
@@ -387,11 +430,11 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
     it('最后一个 ops-admin 保护 → 30101', async () => {
       // 前置:清空所有 ops-admin 持有者(因前面的 it 已分配过 ops-admin,
       // 直接撤销可能剩余 ≥ 2 不触发保护)
-      await prisma.userRole.deleteMany({ where: { roleId: opsAdminRoleId } });
+      await deleteGlobalBindings(prisma, { roleId: opsAdminRoleId });
 
       // 准备:确保有且仅有 1 个 ops-admin 持有者(target1)
       const target1 = await createTargetUser('last-ops-admin-1');
-      await prisma.userRole.create({ data: { userId: target1.id, roleId: opsAdminRoleId } });
+      await grantGlobalBinding(prisma, target1.id, opsAdminRoleId);
 
       // 撤销 target1 的 ops-admin → 剩余 0 → 30101
       const res = await request(httpServer(app))
@@ -399,19 +442,17 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
         .set('Authorization', superAdminAuth);
       expectBizError(res, BizCode.LAST_OPS_ADMIN_PROTECTED);
 
-      // 验证 DB 中关系仍在(事务回滚)
-      const stillThere = await prisma.userRole.findUnique({
-        where: { userId_roleId: { userId: target1.id, roleId: opsAdminRoleId } },
-      });
-      expect(stillThere).not.toBeNull();
+      // 验证 DB 中 active 绑定仍在(事务回滚,软删未发生)
+      const stillActive = await findActiveGlobalBinding(prisma, target1.id, opsAdminRoleId);
+      expect(stillActive).not.toBeNull();
     });
 
     it('有 ≥ 2 个 ops-admin 持有者时,撤销一个 → 200', async () => {
       // 准备:2 个 ops-admin 持有者
       const t1 = await createTargetUser('two-ops-admins-1');
       const t2 = await createTargetUser('two-ops-admins-2');
-      await prisma.userRole.create({ data: { userId: t1.id, roleId: opsAdminRoleId } });
-      await prisma.userRole.create({ data: { userId: t2.id, roleId: opsAdminRoleId } });
+      await grantGlobalBinding(prisma, t1.id, opsAdminRoleId);
+      await grantGlobalBinding(prisma, t2.id, opsAdminRoleId);
 
       // 撤销 t1 → 剩余 1(t2)→ 通过
       const res = await request(httpServer(app))
@@ -420,14 +461,12 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
       expect(res.status).toBe(200);
 
       // 清理 t2(避免影响后续 "最后一个" 测试)
-      await prisma.userRole.delete({
-        where: { userId_roleId: { userId: t2.id, roleId: opsAdminRoleId } },
-      });
+      await deleteGlobalBindings(prisma, { userId: t2.id, roleId: opsAdminRoleId });
     });
 
     it('缓存失效:DELETE 后 invalidateUser 被调用', async () => {
       const target = await createTargetUser('cache-invalidate-delete');
-      await prisma.userRole.create({ data: { userId: target.id, roleId: bizRoleId } });
+      await grantGlobalBinding(prisma, target.id, bizRoleId);
       cache.set(target.id, new Set(['some.cached.code']));
       expect(cache.get(target.id)).not.toBeNull();
 

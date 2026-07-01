@@ -105,9 +105,15 @@ describe('rbac me/permissions', () => {
       data: perms.map((p) => ({ roleId: roleAId, permissionId: p.id })),
     });
 
-    // 给 userWithRoles 分配 me-role-a
-    await prisma.userRole.create({
-      data: { userId: userWithRolesId, roleId: roleAId },
+    // 给 userWithRoles 分配 me-role-a(终态 scoped-authz PR6:判权读源 = global RoleBinding)
+    await prisma.roleBinding.create({
+      data: {
+        principalType: 'USER',
+        principalId: userWithRolesId,
+        roleId: roleAId,
+        scopeType: 'GLOBAL',
+        status: 'ACTIVE',
+      },
     });
   });
 

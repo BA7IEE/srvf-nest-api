@@ -21,8 +21,10 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 3. biz-admin 绑定 50 条 RolePermission;member.delete.record **不**在绑定中(D1=A 镜像)
 // 4. 幂等补挂:seed 前已存在的 ADMIN 用户(含 DISABLED)跑 seed 后持有 biz-admin;
 //    SUPER_ADMIN / USER 不被挂;软删 ADMIN 不补挂(D-S4-7)
-// 5. 零变化项:ops-admin 绑定数(76;WECHAT T2 58→61 + 招新 T1 REALNAME settings 61→63 授权 true-up
-//    + 终态 scoped-authz PR1 org.move.node 63→64 + PR2 membership 4 码 64→68 + PR3 position/rule 8 码 68→76;业务面 seed 不绑 ops-admin 的不变式仍成立)
+// 5. 零变化项:ops-admin 绑定数(88;WECHAT T2 58→61 + 招新 T1 REALNAME settings 61→63 授权 true-up
+//    + 终态 scoped-authz PR1 org.move.node 63→64 + PR2 membership 4 码 64→68 + PR3 position/rule 8 码 68→76
+//    + PR4 position-assignment 4 码 76→80 + PR5 supervision-assignment 4 码 80→84 + PR6 role-binding 4 码 84→88;
+//    业务面 seed 不绑 ops-admin 的不变式仍成立)
 //    与 member 角色绑定数(9)不受业务面 seed 影响
 // 6. seed 连续执行两次完全幂等:Permission 总数 / biz-admin role id /
 //    RolePermission 数 / UserRole 数全部稳定
@@ -172,8 +174,9 @@ const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 1; // 7
 // 2026-07-01 终态 scoped-authz PR2 membership.{list,read,set,end}.record 绑 ops-admin +4 → 64→68;
 // 2026-07-01 终态 scoped-authz PR3 position.*.definition 4 + position-rule.*.record 4 绑 ops-admin +8 → 68→76;
 // 2026-07-01 终态 scoped-authz PR4 position-assignment.* 4 绑 ops-admin +4 → 76→80;
-// 2026-07-01 终态 scoped-authz PR5 supervision-assignment.* 4 绑 ops-admin +4 → 80→84;与 seed-rbac 的 89-5=84 推导一致)
-const EXPECTED_OPS_ADMIN_BINDING_COUNT = 84;
+// 2026-07-01 终态 scoped-authz PR5 supervision-assignment.* 4 绑 ops-admin +4 → 80→84;
+// 2026-07-01 终态 scoped-authz PR6 role-binding.* 4 绑 ops-admin +4 → 84→88;与 seed-rbac 的 93-5=88 推导一致)
+const EXPECTED_OPS_ADMIN_BINDING_COUNT = 88;
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
 
 const SEED_ENV = {
@@ -307,13 +310,20 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
       where: { code: 'biz-admin' },
       select: { id: true },
     });
+    // 终态 scoped-authz PR6:biz-admin 补挂现写 global RoleBinding(判权唯一读源;UserRole 冻结)。
     const holderIds = new Set(
       (
-        await prisma.userRole.findMany({
-          where: { roleId: bizAdmin.id },
-          select: { userId: true },
+        await prisma.roleBinding.findMany({
+          where: {
+            roleId: bizAdmin.id,
+            principalType: 'USER',
+            scopeType: 'GLOBAL',
+            status: 'ACTIVE',
+            deletedAt: null,
+          },
+          select: { principalId: true },
         })
-      ).map((r) => r.userId),
+      ).map((r) => r.principalId),
     );
     expect(holderIds.has(adminActive.id)).toBe(true);
     expect(holderIds.has(adminDisabled.id)).toBe(true); // 含 DISABLED(D-S4-7)
@@ -369,7 +379,8 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
       select: { id: true },
     });
     const rolePermCount1 = await prisma.rolePermission.count();
-    const userRoleCount1 = await prisma.userRole.count();
+    // 终态 scoped-authz PR6:授予现写 global RoleBinding,幂等计数改数 role_bindings。
+    const bindingCount1 = await prisma.roleBinding.count();
 
     const second = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-5' });
     expect(second.code).toBe(0);
@@ -380,11 +391,11 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
       select: { id: true },
     });
     const rolePermCount2 = await prisma.rolePermission.count();
-    const userRoleCount2 = await prisma.userRole.count();
+    const bindingCount2 = await prisma.roleBinding.count();
 
     expect(permCount2).toBe(permCount1);
     expect(role2.id).toBe(role1.id);
     expect(rolePermCount2).toBe(rolePermCount1);
-    expect(userRoleCount2).toBe(userRoleCount1);
+    expect(bindingCount2).toBe(bindingCount1);
   });
 });

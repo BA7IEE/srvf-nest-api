@@ -244,19 +244,19 @@ describe('prisma/seed.ts — attachment permissions and member role', () => {
       select: { id: true },
     });
 
-    // 显式断言:UserRole 表中**没有任何** user 持有 member 角色
-    const memberHolderCount = await prisma.userRole.count({
-      where: { roleId: memberRole.id },
+    // 显式断言:role_bindings 表中**没有任何** user 持有 member 角色(终态 scoped-authz PR6 判权读源 = global RoleBinding)
+    const memberHolderCount = await prisma.roleBinding.count({
+      where: { roleId: memberRole.id, principalType: 'USER', scopeType: 'GLOBAL' },
     });
     expect(memberHolderCount).toBe(0);
 
-    // 对照:同次 seed 已自动给 SUPER_ADMIN 绑定 ops-admin(seedRbac fallback),证明 user 创建+seed 跑过
+    // 对照:同次 seed 已自动给 SUPER_ADMIN 绑定 ops-admin(seedRbac fallback,现写 global RoleBinding),证明 user 创建+seed 跑过
     const opsAdminRole = await prisma.rbacRole.findUniqueOrThrow({
       where: { code: 'ops-admin' },
       select: { id: true },
     });
-    const opsAdminHolderCount = await prisma.userRole.count({
-      where: { roleId: opsAdminRole.id },
+    const opsAdminHolderCount = await prisma.roleBinding.count({
+      where: { roleId: opsAdminRole.id, principalType: 'USER', scopeType: 'GLOBAL' },
     });
     expect(opsAdminHolderCount).toBeGreaterThanOrEqual(1);
   });
