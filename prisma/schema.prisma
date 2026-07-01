@@ -225,6 +225,76 @@ model OrganizationClosure {
   @@map("organization_closure")
 }
 
+// ===== 终态 scoped-authz PR3:organization_positions + organization_position_rules =====
+//
+// 职务定义面(冻结稿 §3.2 / §3.3 / §11 PR3;goal 2026-07-01)。语义:
+// - OrganizationPosition = 全局复用的职务定义(一个"部长"职务不为每个部建一份);目录 v1 收敛为
+//   6 领导职务(队长/副队长/部长/副部长/组长/副组长;R4,PositionCategory.STAFF 干事留口不 seed)。
+// - OrganizationPositionRule = 某类组织(node_type)可设哪些职务的规则(R6 一类多领导称谓 +
+//   R8 requireMembership 按 (nodeType, position) 可配:总队级领导免根归属)。
+// **本刀纯配置定义:只建 + seed + CRUD,绝不被任何判权路径读**(消费它的 assignment=PR4 /
+//   policy=PR7 / authz=PR8;故本刀 OrganizationPosition 暂不含 assignments / rolePolicies 前向
+//   relation —— 对端 model 尚未建,待 PR4 / PR7 各自补挂反向 relation)。
+model OrganizationPosition {
+  id              String           @id @default(cuid())
+  code            String           @unique // kebab,如 team-leader / dept-deputy / group-leader
+  name            String // 显示名:队长 / 副部长 / 组长 …
+  categoryCode    PositionCategory // LEADER 正职 / DEPUTY 副职 / STAFF 干事
+  rank            Int              @default(0) // 层级排序权重(正职 < 副职 < 组长 < 副组长;数值越小越资深)
+  isLeadership    Boolean          @default(false) // 是否领导职务
+  allowMultiple   Boolean          @default(false) // 同组织同职务是否允许多人在任(如总队 6 副队长)
+  allowConcurrent Boolean          @default(true) // 是否允许一人兼任多职务(如赵强兼 SAMT 队长)
+  sortOrder       Int              @default(0)
+  status          PolicyStatus     @default(ACTIVE)
+  description     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  deletedAt       DateTime?
+
+  rules OrganizationPositionRule[]
+
+  @@index([categoryCode])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("organization_positions")
+}
+
+// 结构闭集用 enum(沿冻结稿 §3.0 / PR2 MembershipType 范式;区别于运营可扩的字典码如 nodeTypeCode)。
+enum PositionCategory {
+  LEADER
+  DEPUTY
+  STAFF
+}
+
+// 配置态闭集用 enum(沿 §3.0;与 ContributionRuleStatus 同形 ACTIVE/INACTIVE,语义独立命名 PolicyStatus;
+// 冻结稿终态 OrganizationPositionRule / OrganizationPositionRolePolicy〔PR7〕共用)。
+enum PolicyStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model OrganizationPositionRule {
+  id                String       @id @default(cuid())
+  nodeTypeCode      String // 关联 node_type 字典:headquarters / rescue-team / functional-dept / group / …
+  positionId        String
+  required          Boolean      @default(false) // 该类组织是否必须有此职务
+  minCount          Int? // 最少在任人数(null=不限)
+  maxCount          Int? // 最多在任人数(null=不限;与 position.allowMultiple 协同)
+  requireMembership Boolean      @default(true) // 任此职务是否要求先有该组织 active 归属(R8:总队级 → false)
+  allowConcurrent   Boolean      @default(true) // 该类组织内是否允许兼任
+  status            PolicyStatus @default(ACTIVE)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  deletedAt         DateTime?
+
+  position OrganizationPosition @relation(fields: [positionId], references: [id], onDelete: Restrict)
+
+  @@unique([nodeTypeCode, positionId]) // 同类组织对同职务一条规则
+  @@index([positionId])
+  @@index([deletedAt])
+  @@map("organization_position_rules")
+}
+
 // ===== V2 第一阶段:members =====
 
 model Member {
