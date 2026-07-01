@@ -129,7 +129,13 @@ export type AuditLogEvent =
   | 'notification.create' // admin 建通知草稿(after 快照)
   | 'notification.update' // admin 更新通知(before/after)
   | 'notification.delete' // admin 软删通知(before)
-  | 'notification.publish'; // admin 状态机 + S5 短信发起;extra.operation ∈ {publish, unpublish, archive, send-sms}
+  | 'notification.publish' // admin 状态机 + S5 短信发起;extra.operation ∈ {publish, unpublish, archive, send-sms}
+  // 终态 scoped-authz PR4「任职」(2026-07-01;冻结评审稿 org-position-scoped-authz-terminal-design-review.md
+  // §1.7〔"任命/撤销...审计...复用本表,resourceType 扩 position_assignment"〕/ §11 PR4 决议):任职写 2 事件。
+  // resourceType='position_assignment';create 写 after 快照 / revoke 写 before+after(status ACTIVE→REVOKED)。
+  // 命名沿 kebab-case `<resource>.<action>` 既有范式(对称 certificate.create / team-insurance-policy.create)。
+  | 'position-assignment.create' // admin 任命(position-assignments.service: create 1 处;extra.operation='create' + organizationId + targetMemberId)
+  | 'position-assignment.revoke'; // admin 撤销任职(position-assignments.service: revoke 1 处;before/after status;extra.operation='revoke' + targetMemberId)
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

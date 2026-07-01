@@ -43,6 +43,8 @@
 > 2026-07-01 终态 scoped-authz PR2 Membership 戳(goal「终态 scoped-authz 落地序列【第 2 刀 PR2 — Membership】」,冻结评审稿 [`org-position-scoped-authz-terminal-design-review.md §3.1/§7.1/§8.1/§4.3`](../reviews/org-position-scoped-authz-terminal-design-review.md)):权限码 164→**168**(membership +4:`membership.{list,read,set,end}.record`,全绑 ops-admin 沿 member-department.* 现绑);ops-admin 64→**68**;biz-admin 74 / member 9 零变化;controller **55→56**(新 `MembershipsController`,并入 member-departments 模块);endpoint +4 → **265**(`GET/POST admin/v1/members/:memberId/memberships` + `PATCH/DELETE .../:id`;旧 3 department 路由保留;R 模式 service 层 `rbac.can` 无 @Roles)。第 33 migration(净新表 `member_organization_memberships` + 2 枚举 `MembershipType`/`MembershipStatus` + 2 手写 partial unique〔`primary_active_unique` 仅约束 PRIMARY / `active_unique` (member,org,type)〕+ 回填 active `MemberDepartment`→PRIMARY membership〔复用 id、startedAt=createdAt〕;纯加性、可逆)。BizCode +2(170xx 段 17003 `MEMBERSHIP_NOT_FOUND` / 17004 `MEMBERSHIP_ALREADY_EXISTS`)。**行为锁核心**:旧 3 department 端点重指向 PRIMARY 行、行为逐字不变(旧 e2e HTTP 断言零改,仅内部 DB 断言改指向新表);**全量重指向**——recruitment/team-join(写)+ organizations/members/notifications×3/content/team-join-app(读 8 处消费者)一并迁到 active PRIMARY membership,旧 `MemberDepartment` 表真正冻结(仅回填读过一次,无任何生产读写,cleanup PR 可 DROP)。`read.record` 为未来 GET :id 预留 = 唯一刻意预埋孤码(WARN,非 FAIL)。**membership 表绝不被任何模块读作授权**(AuthzService 是 PR8)。landing 序列 PR2/12,不单独发版。`docs:rbacmap:check` **0 FAIL / 1 WARN**(`membership.read.record` 预埋)。
 >
 > 2026-07-01 终态 scoped-authz PR3 职务定义 戳(goal「终态 scoped-authz 落地序列【第 3 刀 PR3 — 职务定义】」,冻结评审稿 [`org-position-scoped-authz-terminal-design-review.md §3.2/§3.3/§7.2/§4.3`](../reviews/org-position-scoped-authz-terminal-design-review.md)):权限码 168→**176**(position +4 `position.{read,create,update,delete}.definition` + position-rule +4 `position-rule.{read,create,update,delete}.record`,全绑 ops-admin 沿 dict/org/contribution 配置码现绑);ops-admin 68→**76**;biz-admin 74 / member 9 零变化;controller **56→58**(新 `PositionsController` + `PositionRulesController`,并入新 `positions/` 模块);endpoint +9 → **274**(positions 5〔GET 列 / POST 建 / GET :id / PATCH :id / DELETE :id〕 + position-rules 4〔GET 列〔按 nodeTypeCode 过滤〕/ POST 建 / PATCH :id / DELETE :id;GET :id §7.2 未列不实装〕;R 模式 service 层 `rbac.can` 无 @Roles)。第 34 migration(净新两空表 `organization_positions` + `organization_position_rules` + 2 枚举 `PositionCategory`/`PolicyStatus` + 索引 + FK Restrict + 普通唯一 `code` / `(nodeTypeCode,positionId)`;无 partial unique、无回填、无不可逆;6 领导职务 + 30 默认规则由 seed 幂等 upsert)。BizCode +6(32xxx 新段:32001 `POSITION_NOT_FOUND` / 32002 `POSITION_CODE_DUPLICATE` / 32003 `POSITION_IN_USE` / 32010 `POSITION_RULE_NOT_FOUND` / 32011 `POSITION_RULE_ALREADY_EXISTS` / 32012 `POSITION_RULE_NODE_TYPE_INVALID`)。seed:6 领导职务(队长/副队长/部长/副部长/组长/副组长;R4 STAFF 干事留口不 seed)+ 30 默认规则(§2.2 + R6 rescue-team 双领导称谓 + R8 headquarters requireMembership=false)。删除守卫:职务被规则引用禁删(32003)。**Position/Rule 纯配置定义,绝不被任何判权路径读**(policy=PR7 / assignment=PR4 / authz=PR8)。landing 序列 PR3/12,不单独发版。`docs:rbacmap:check` **0 FAIL / 1 WARN**(`membership.read.record` 预埋,非本刀)。
+>
+> 2026-07-01 终态 scoped-authz PR4 任职 戳(goal「终态 scoped-authz 落地序列【第 4 刀 PR4 — 任职】」,冻结评审稿 [`org-position-scoped-authz-terminal-design-review.md §3.4/§7.3/§4.3/R2`](../reviews/org-position-scoped-authz-terminal-design-review.md)):权限码 176→**180**(position-assignment +4:`position-assignment.{read,create,revoke}.record` + `.read.history`,全绑 ops-admin 沿组织归属域管理码现绑);ops-admin 76→**80**;biz-admin 74 / member 9 零变化;controller **58→59**(新 `PositionAssignmentsController`,独立 `position-assignments/` 模块;`@Controller('admin/v1')` 共同前缀跨 3 根路径);模块 29→**30**;endpoint +5 → **279**(组织轴 `GET/POST admin/v1/organizations/:orgId/position-assignments` + 队员轴 `GET admin/v1/members/:memberId/position-assignments` + 扁平 `POST admin/v1/position-assignments/:id/revoke` + `GET .../:id/history`;R 模式 service 层 `rbac.can` 无 @Roles)。第 35 migration(净新表 `organization_position_assignments` + 枚举 `AssignmentStatus`〔ACTIVE/ENDED/REVOKED〕+ 6 索引 + 3 FK Restrict + 末尾手写 partial unique `(organizationId,positionId,memberId) WHERE deletedAt IS NULL AND status='ACTIVE'`;无回填、无不可逆)。BizCode +8(32xxx 3202x 新段:32020 `POSITION_ASSIGNMENT_NOT_FOUND` / 32021 `_ALREADY_EXISTS`〔P2002 兜底〕/ 32022 `_RULE_NOT_MATCHED` / 32023 `_SINGLE_HOLDER` / 32024 `_CONCURRENT_FORBIDDEN` / 32025 `_MEMBERSHIP_REQUIRED` / 32026 `_TENURE_INVALID` / 32027 `_ALREADY_ENDED`)。audit +2 事件(`position-assignment.create` / `.revoke`;resourceType='position_assignment';复用 AuditLogEvent 闭 union,评审稿 §1.7 决议)。任命校验:职务适配(org.nodeType×position 须有 active rule)/ 单人独占(allowMultiple=false)/ 兼任(allowConcurrent=false)/ requireMembership(读 closure 求 O 祖先集 + memberships active 判定,BD-4 解读:本组织或祖先有 active 归属)/ 任期(endedAt>startedAt)。**任职 = 数据 + 任命校验,绝不被任何 rbac.can / AuthzService 判权路径读;closure 仅任命校验读、非判权**(判权是 PR8;RoleBinding 是 PR6,故不挂 roleBindings 反向 relation)。landing 序列 PR4/12,不单独发版。`docs:rbacmap:check` **0 FAIL / 1 WARN**(`membership.read.record` 预埋,非本刀;position-assignment 4 码均有端点承接,无新孤码)。
 
 ---
 
@@ -55,7 +57,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。判权唯一服务入口 = `RbacService.can()`;`RbacCacheService` 是权限解析缓存(TTL 1800s,三档失效),不是身份缓存。
 
-## 2. controller × 鉴权模式对照(58 个 controller class)
+## 2. controller × 鉴权模式对照(59 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
@@ -74,6 +76,7 @@
 | `admin/v1/members/:memberId/memberships` | `membership.{list,set,end}.record`(3 端点用码;`read.record` 预留孤码;终态 scoped-authz PR2)|
 | `admin/v1/positions`(职务定义 PR3) | `position.*.definition`(4;list/detail 共用 read;删除守卫职务被规则引用禁删 32003)|
 | `admin/v1/position-rules`(职务规则 PR3) | `position-rule.*.record`(4;list 按 nodeTypeCode 过滤;nodeTypeCode 校验 node_type 字典有效)|
+| `admin/v1/*` 任职双轴(任职 PR4;单 `PositionAssignmentsController` 跨 org/member/flat 3 根) | `position-assignment.{read,create,revoke}.record` + `.read.history`(4;双轴读共用 read.record;任命 5 校验;撤销;历史链;**绝不进判权路径**)|
 | `system/v1/contribution-rules` | `contribution.*.rule`(4) |
 | `system/v1/attachment-{type,mime,size-limit}-configs` | `attachment-config.*`(12) |
 | `system/v1/storage-settings` | `storage-setting.*`(3;`reset.credentials` 不绑 ops-admin = D2=A 拍板) |
@@ -124,7 +127,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(176 条,seed 幂等 upsert)
+## 3. 权限码全集(180 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -135,6 +138,7 @@
 | 队员归属(终态 scoped-authz PR2) | 4 | `membership.{list,read,set,end}.record`(member-department.* 升级面;`admin/v1/members/:memberId/memberships`;POST/PATCH 共用 `set`;`read.record` 为未来 GET :id 预留 = 刻意预埋孤码 WARN;全绑 ops-admin)|
 | 职务定义(终态 scoped-authz PR3) | 4 | `position.{read,create,update,delete}.definition`(`admin/v1/positions`;全绑 ops-admin 沿配置码现绑)|
 | 职务规则(终态 scoped-authz PR3) | 4 | `position-rule.{read,create,update,delete}.record`(`admin/v1/position-rules`;全绑 ops-admin)|
+| 任职(终态 scoped-authz PR4) | 4 | `position-assignment.{read,create,revoke}.record` + `.read.history`(双轴管理 + 撤销 + 历史链;双轴读共用 `read.record`;全绑 ops-admin;**任职 = 数据 + 任命校验,绝不进判权路径**)|
 | 贡献规则 | 4 | `contribution.{read,create,update,delete}.rule` |
 | 附件配置 | 12 | `attachment-config.{read,create,update,delete}.{type,mime,size-limit}` |
 | 存储设置 | 3 | `storage-setting.{read,update}.singleton` / `storage-setting.reset.credentials` |

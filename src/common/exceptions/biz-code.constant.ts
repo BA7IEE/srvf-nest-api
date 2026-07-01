@@ -1112,6 +1112,54 @@ export const BizCode = {
     httpStatus: HttpStatus.BAD_REQUEST,
   },
 
+  // - 3202x:任职(position-assignment)—— 终态 scoped-authz PR4「任职」引入(2026-07-01;冻结稿 §3.4 / §7.3 / §4.3)。
+  //   任命校验失败清晰归码;memberId/organizationId/positionId 引用不存在分别复用 MEMBER_NOT_FOUND(20001)/
+  //   ORGANIZATION_NOT_FOUND(19001)/ POSITION_NOT_FOUND(32001)。**任职 = 数据 + 任命校验,绝不进判权路径**。
+  //   32020 NOT_FOUND / 32021 同人同组织同职务撞唯一(P2002 兜底)/ 32022 该 org 类别不可设此职务(无 active 规则)/
+  //   32023 单人独占(allowMultiple=false 已有在任)/ 32024 兼任禁止(allowConcurrent=false 已有其它在任)/
+  //   32025 需先有本组织或其祖先 active 归属(requireMembership=true)/ 32026 任期非法(endedAt≤startedAt)/
+  //   32027 任职已结束/撤销,无法再次撤销。
+  POSITION_ASSIGNMENT_NOT_FOUND: {
+    code: 32020,
+    message: '任职记录不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  POSITION_ASSIGNMENT_ALREADY_EXISTS: {
+    code: 32021,
+    message: '该成员在此组织的该职务已有在任任职',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  POSITION_ASSIGNMENT_RULE_NOT_MATCHED: {
+    code: 32022,
+    message: '该组织类别不可设置此职务(无对应职务规则)',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  POSITION_ASSIGNMENT_SINGLE_HOLDER: {
+    code: 32023,
+    message: '该职务不允许多人在任,已有在任者',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  POSITION_ASSIGNMENT_CONCURRENT_FORBIDDEN: {
+    code: 32024,
+    message: '该职务不允许兼任,该成员已有其它在任任职',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  POSITION_ASSIGNMENT_MEMBERSHIP_REQUIRED: {
+    code: 32025,
+    message: '任此职务须先在本组织或其上级有在任归属',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  POSITION_ASSIGNMENT_TENURE_INVALID: {
+    code: 32026,
+    message: '任期止必须晚于任期起',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  POSITION_ASSIGNMENT_ALREADY_ENDED: {
+    code: 32027,
+    message: '任职已结束或已撤销,无法再次撤销',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // audit_logs 模块业务级(140xx + 141xx)。批次 6 PR #1 引入(2026-05-12)。
   // 详见 docs:批次6_audit_logs_API前评审.md(D6 v1.1)§9。
   // 段位选择:baseline §1.1 v0.5 "audit_logs 140xx + 141xx" 基线预留,本批次实装收口。
