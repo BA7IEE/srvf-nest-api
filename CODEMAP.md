@@ -65,7 +65,7 @@
 | 路径 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
 |---|---|---|---|
 | `schema.prisma` | **数据模型唯一权威源**(字段 / 类型 / 约束 / 索引) | 修改前必先说明影响面 | [`CLAUDE.md`](prisma/CLAUDE.md) |
-| `migrations/` | 31 个 migration(2026-05-02 init → 2026-06-29 招新实名 OCR 鉴伪版充分利用:recruitment_applications +6 列〔ocrAddress/ocrNation/ocrAuthority/ocrValidDate + idCardCropImageKey/idCardPortraitImageKey;全可空 TEXT additive,无 enum 无不可逆无回填〕;前一为 2026-06-27 统一通知模块 S5 短信兜底 sms_settings.templateIdNotification 1 列;再前为 S3 notifications.recipientMemberId 1 列 / S2 notification_deliveries + wechat_subscription_quotas + wechat_subscribe_templates 三表 / S1 notifications + notification_reads) | **禁止** `prisma migrate dev` / `reset` / `db push` 自动跑 | [`CLAUDE.md`](prisma/CLAUDE.md) · [`AGENTS.md §0`](AGENTS.md) |
+| `migrations/` | 32 个 migration(2026-05-02 init → 2026-07-01 终态 scoped-authz PR1 组织基座:organization_closure 闭包表〔WITH RECURSIVE 回填现有树〕 + Organization 两 additive 可空列 establishmentStatusCode?/groupFunctionCode?〔纯加无 enum 无回填无不可逆〕;前一为 2026-06-29 招新实名 OCR 鉴伪版充分利用:recruitment_applications +6 列〔ocrAddress/ocrNation/ocrAuthority/ocrValidDate + idCardCropImageKey/idCardPortraitImageKey;全可空 TEXT additive,无 enum 无不可逆无回填〕;再前为 2026-06-27 统一通知 S5 sms_settings.templateIdNotification 1 列 / S3 notifications.recipientMemberId 1 列 / S2 三表 / S1 两表) | **禁止** `prisma migrate dev` / `reset` / `db push` 自动跑 | [`CLAUDE.md`](prisma/CLAUDE.md) · [`AGENTS.md §0`](AGENTS.md) |
 | `seed.ts` | 默认 super admin + bootstrap user_role | 生产环境强校验启动(`SUPER_ADMIN_*` / `JWT_SECRET` / `APP_CORS_ORIGIN`) | [`docs/deployment.md`](docs/deployment.md) |
 
 ---

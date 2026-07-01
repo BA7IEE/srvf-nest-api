@@ -9,7 +9,7 @@
 |---|---|
 | 版本(三方一致) | **v0.33.0**(2026-06-29;package.json = Swagger = tag = Release 四方一致;tag `v0.33.0` 指向 bump `906b2c82` 标 Latest;要点见 CHANGELOG v0.33.0 段) |
 | `main` HEAD | post-release docs PR 合并点(本 §1 回填 + v0.33.0 handoff;tag 点 `906b2c82` 之后;本行为滚动快照) |
-| open PR / 工作树 / Unreleased | **0** open PR / clean / `## Unreleased` **空**(已发版归零;v0.33.0 = 招新实名 OCR 充分利用鉴伪版〔#461,档 D,recruitment_applications +6 列 = 第 31 migration〕+ 大陆身份证 OCR 嵌套字段对齐修复〔#460,档 C〕+ 招新报名列表过滤参纳入 query DTO 白名单修复〔#458,档 C〕,均经 bump #462〔其 `## Unreleased` 已折叠为 `## v0.33.0`〕) |
+| open PR / 工作树 / Unreleased | **0** open PR / clean / `## Unreleased` 累计 **终态 scoped-authz PR1 组织基座**(档 D;landing 序列 PR1/12,**未 bump / 未发 Release**):新表 `organization_closure` 闭包表〔`WITH RECURSIVE` 回填现有树〕 + reparent 端点 `POST /:id/move`〔权限码 `org.move.node`;复活死码 `ORGANIZATION_PARENT_CYCLE`/`_CHANGE_FORBIDDEN`〕 + `node_type` +`group` + `Organization` 两 additive 可空列 + `org_establishment_status`/`group_function` 两字典 = **第 32 migration**;权限码 163→**164** / ops-admin 63→**64** / `EXPECTED_ROUTES` 260→**261**;**closure 只建 + 维护、绝不被读作授权**(AuthzService 是 PR8)。上一发版 v0.33.0 = 招新实名 OCR 充分利用鉴伪版〔#461,档 D,第 31 migration〕+ 大陆身份证 OCR 嵌套字段对齐修复〔#460,档 C〕+ 招新报名列表过滤参纳入 query DTO 白名单修复〔#458,档 C〕,均经 bump #462〔其 `## Unreleased` 已折叠为 `## v0.33.0`〕 |
 | 最新 handoff | [`archive/handoff/v0.33.0.md`](archive/handoff/v0.33.0.md)(post-release 补档,2026-06-29;tag 指 bump #462 合并点 `906b2c82`,沿 v0.28/29/30/31/32「tag@bump」形态〔process §5.2 用户拍板〕;不回改) |
 
 ## 2. 当前系统已具备能力

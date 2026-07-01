@@ -528,4 +528,255 @@ describe('organizations 模块', () => {
       expectBizError(res, BizCode.ORGANIZATION_CODE_ALREADY_EXISTS);
     });
   });
+
+  // ============ 终态 scoped-authz PR1:closure + reparent(org.move.node)============
+  // 冻结稿 §3.8/§8.3/§11 PR1。覆盖:create 维护 closure / reparent 三分支(成功·环·受限根)/
+  // 目标父不存在 / 同父幂等 / 深层子树重算 / 权限边界 / node_type group 建组节点 / 两 additive 列读写。
+  describe('closure + reparent(org.move.node)', () => {
+    let groupNodeTypeCode: string;
+    let rootId: string;
+
+    // 通过 API 建节点(维护 closure);返回新 id。
+    const createNode = async (name: string, parentId?: string, nodeTypeCode?: string) => {
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/organizations')
+        .set('Authorization', superAdminAuth)
+        .send({ name, parentId, nodeTypeCode: nodeTypeCode ?? activeNodeTypeCode });
+      expect(res.status).toBe(201);
+      return res.body.data.id as string;
+    };
+
+    // 查某节点祖先集(closure descendantId=id)→ Map<ancestorId, depth>。
+    const ancestorsOf = async (id: string): Promise<Map<string, number>> => {
+      const rows = await prisma.organizationClosure.findMany({
+        where: { descendantId: id },
+        select: { ancestorId: true, depth: true },
+      });
+      return new Map(rows.map((r) => [r.ancestorId, r.depth]));
+    };
+
+    beforeAll(async () => {
+      // 自包含:清空 Organization(级联清 organization_closure),重建单根 + 'group' 节点类别 item。
+      await prisma.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
+      const nodeType = await prisma.dictType.findUniqueOrThrow({
+        where: { code: 'node_type' },
+        select: { id: true },
+      });
+      const groupItem = await prisma.dictItem.create({
+        data: { typeId: nodeType.id, code: 'group', label: '组 / 工作组' },
+        select: { code: true },
+      });
+      groupNodeTypeCode = groupItem.code;
+      rootId = await createNode('Closure Root');
+    });
+
+    it('create 维护 closure:建根 → 仅自身 depth-0 行', async () => {
+      const anc = await ancestorsOf(rootId);
+      expect(anc.get(rootId)).toBe(0);
+      expect(anc.size).toBe(1);
+    });
+
+    it('create 维护 closure:三代(根→部→子)祖先链正确', async () => {
+      const dept = await createNode('C-Dept', rootId);
+      const child = await createNode('C-Child', dept);
+      // 部:自身@0 + 根@1
+      const deptAnc = await ancestorsOf(dept);
+      expect(deptAnc.get(dept)).toBe(0);
+      expect(deptAnc.get(rootId)).toBe(1);
+      expect(deptAnc.size).toBe(2);
+      // 子:自身@0 + 部@1 + 根@2
+      const childAnc = await ancestorsOf(child);
+      expect(childAnc.get(child)).toBe(0);
+      expect(childAnc.get(dept)).toBe(1);
+      expect(childAnc.get(rootId)).toBe(2);
+      expect(childAnc.size).toBe(3);
+    });
+
+    it('reparent 成功:叶子改挂到另一部下 → 200 + closure 重算(旧祖先边删、新祖先边入)', async () => {
+      const deptA = await createNode('R-DeptA', rootId);
+      const deptB = await createNode('R-DeptB', rootId);
+      const leaf = await createNode('R-Leaf', deptA);
+      // 移动前:leaf 祖先 = {leaf@0, deptA@1, root@2}
+      expect(await ancestorsOf(leaf)).toEqual(
+        new Map([
+          [leaf, 0],
+          [deptA, 1],
+          [rootId, 2],
+        ]),
+      );
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/organizations/${leaf}/move`)
+        .set('Authorization', superAdminAuth)
+        .send({ parentId: deptB });
+      expect(res.status).toBe(201);
+      expect(res.body.data.parentId).toBe(deptB);
+      // 移动后:leaf 祖先 = {leaf@0, deptB@1, root@2}(deptA 边已删)
+      expect(await ancestorsOf(leaf)).toEqual(
+        new Map([
+          [leaf, 0],
+          [deptB, 1],
+          [rootId, 2],
+        ]),
+      );
+    });
+
+    it('reparent 深层子树:移动带子的部 → 子树全体祖先链重算', async () => {
+      const deptA = await createNode('D-DeptA', rootId);
+      const deptB = await createNode('D-DeptB', rootId);
+      const sub = await createNode('D-Sub', deptA); // deptA 的子
+      const leaf = await createNode('D-Leaf', sub); // deptA 的孙
+      // 把 deptA 整棵移到 deptB 下:root→deptB→deptA→sub→leaf
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/organizations/${deptA}/move`)
+        .set('Authorization', superAdminAuth)
+        .send({ parentId: deptB });
+      expect(res.status).toBe(201);
+      // deptA 祖先 = {deptA@0, deptB@1, root@2}
+      expect(await ancestorsOf(deptA)).toEqual(
+        new Map([
+          [deptA, 0],
+          [deptB, 1],
+          [rootId, 2],
+        ]),
+      );
+      // 孙 leaf 祖先链整体 +1:{leaf@0, sub@1, deptA@2, deptB@3, root@4}
+      expect(await ancestorsOf(leaf)).toEqual(
+        new Map([
+          [leaf, 0],
+          [sub, 1],
+          [deptA, 2],
+          [deptB, 3],
+          [rootId, 4],
+        ]),
+      );
+    });
+
+    it('reparent 环:目标父 = 自身后代 → ORGANIZATION_PARENT_CYCLE', async () => {
+      const deptA = await createNode('CY-DeptA', rootId);
+      const sub = await createNode('CY-Sub', deptA);
+      // 把 deptA 挂到它自己的后代 sub 下 → 成环
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/organizations/${deptA}/move`)
+        .set('Authorization', superAdminAuth)
+        .send({ parentId: sub });
+      expectBizError(res, BizCode.ORGANIZATION_PARENT_CYCLE);
+    });
+
+    it('reparent 环:目标父 = 自身 → ORGANIZATION_PARENT_CYCLE', async () => {
+      const dept = await createNode('CY-Self', rootId);
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/organizations/${dept}/move`)
+        .set('Authorization', superAdminAuth)
+        .send({ parentId: dept });
+      expectBizError(res, BizCode.ORGANIZATION_PARENT_CYCLE);
+    });
+
+    it('reparent 受限:改根节点父级 → ORGANIZATION_PARENT_CHANGE_FORBIDDEN', async () => {
+      const dept = await createNode('F-Dept', rootId);
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/organizations/${rootId}/move`)
+        .set('Authorization', superAdminAuth)
+        .send({ parentId: dept });
+      expectBizError(res, BizCode.ORGANIZATION_PARENT_CHANGE_FORBIDDEN);
+    });
+
+    it('reparent 目标父不存在 → ORGANIZATION_PARENT_NOT_FOUND', async () => {
+      const dept = await createNode('PN-Dept', rootId);
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/organizations/${dept}/move`)
+        .set('Authorization', superAdminAuth)
+        .send({ parentId: 'cl0000000000000000000000' });
+      expectBizError(res, BizCode.ORGANIZATION_PARENT_NOT_FOUND);
+    });
+
+    it('reparent 同父 → 幂等 200,parentId 不变,closure 不漂', async () => {
+      const deptA = await createNode('ID-DeptA', rootId);
+      const leaf = await createNode('ID-Leaf', deptA);
+      const before = await ancestorsOf(leaf);
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/organizations/${leaf}/move`)
+        .set('Authorization', superAdminAuth)
+        .send({ parentId: deptA });
+      expect(res.status).toBe(201);
+      expect(res.body.data.parentId).toBe(deptA);
+      expect(await ancestorsOf(leaf)).toEqual(before);
+    });
+
+    it('reparent 目标节点不存在 → ORGANIZATION_NOT_FOUND', async () => {
+      const dept = await createNode('NF-Dept', rootId);
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/organizations/cl0000000000000000000000/move')
+        .set('Authorization', superAdminAuth)
+        .send({ parentId: dept });
+      expectBizError(res, BizCode.ORGANIZATION_NOT_FOUND);
+    });
+
+    it('reparent 缺 parentId → 400(DTO 必填)', async () => {
+      const dept = await createNode('BR-Dept', rootId);
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/organizations/${dept}/move`)
+        .set('Authorization', superAdminAuth)
+        .send({});
+      expect(res.status).toBe(400);
+    });
+
+    it('权限边界:USER move → 30100 RBAC_FORBIDDEN', async () => {
+      const dept = await createNode('RB-Dept', rootId);
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/organizations/${dept}/move`)
+        .set('Authorization', userAuth)
+        .send({ parentId: rootId });
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    it('权限边界:ADMIN 默认无 ops-admin move → 30100 RBAC_FORBIDDEN', async () => {
+      const dept = await createNode('RB2-Dept', rootId);
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/organizations/${dept}/move`)
+        .set('Authorization', adminDefaultAuth)
+        .send({ parentId: rootId });
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    it('node_type group:可建组节点(nodeTypeCode=group)→ 201', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/organizations')
+        .set('Authorization', superAdminAuth)
+        .send({ name: 'G-Group', parentId: rootId, nodeTypeCode: groupNodeTypeCode });
+      expect(res.status).toBe(201);
+      expect(res.body.data.nodeTypeCode).toBe('group');
+    });
+
+    it('两 additive 列可读写(schema-only;经 prisma 写入 provisional / 组功能后读回)', async () => {
+      const id = await createNode('AC-Node', rootId, groupNodeTypeCode);
+      // 新建节点两列默认 null
+      const fresh = await prisma.organization.findUniqueOrThrow({
+        where: { id },
+        select: { establishmentStatusCode: true, groupFunctionCode: true },
+      });
+      expect(fresh.establishmentStatusCode).toBeNull();
+      expect(fresh.groupFunctionCode).toBeNull();
+      // 写入后读回(冻结稿 §3.0.1 R1 provisional 筹备组 / R3 组功能留口)
+      await prisma.organization.update({
+        where: { id },
+        data: { establishmentStatusCode: 'provisional', groupFunctionCode: 'training' },
+      });
+      const after = await prisma.organization.findUniqueOrThrow({
+        where: { id },
+        select: { establishmentStatusCode: true, groupFunctionCode: true },
+      });
+      expect(after.establishmentStatusCode).toBe('provisional');
+      expect(after.groupFunctionCode).toBe('training');
+    });
+
+    it('closure 无悬挂 / 无重复:built tree 全部边可回溯到存活节点(PK 兜底防重)', async () => {
+      // 任意时刻 closure 每条边的 ancestor / descendant 都指向存在的 Organization 行。
+      const orphan = await prisma.$queryRawUnsafe<Array<{ n: bigint }>>(
+        `SELECT count(*)::bigint AS n FROM organization_closure c
+         WHERE NOT EXISTS (SELECT 1 FROM "Organization" o WHERE o.id=c."ancestorId")
+            OR NOT EXISTS (SELECT 1 FROM "Organization" o WHERE o.id=c."descendantId")`,
+      );
+      expect(Number(orphan[0].n)).toBe(0);
+    });
+  });
 });

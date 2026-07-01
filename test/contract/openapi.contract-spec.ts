@@ -266,6 +266,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/organizations/{id}'],
   ['patch', '/api/admin/v1/organizations/{id}'],
   ['patch', '/api/admin/v1/organizations/{id}/status'],
+  // 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §8.3/§11 PR1):reparent 重挂父级。
+  ['post', '/api/admin/v1/organizations/{id}/move'],
   ['delete', '/api/admin/v1/organizations/{id}'],
   ['get', '/api/admin/v1/members'],
   ['post', '/api/admin/v1/members'],
