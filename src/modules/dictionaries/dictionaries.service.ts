@@ -95,6 +95,10 @@ const SYSTEM_PROTECTED_DICT_TYPES: ReadonlySet<string> = new Set<string>([
   'attendance_role',
   // 招新业务态展示文案(招新闭环优化 S1;闭集 stage→文案,绑后端 stage 码;items 亦受 ② 保护)。
   'recruitment_stage',
+  // 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §3.0.1 R1):组织设立状态闭集
+  //(formal/provisional;Organization.establishmentStatusCode 引用);items 亦受 ② 保护。
+  // 注:留口字典 group_function(R3;空 items、无校验路径)沿 join_source 自由串候选字典惯例**不登记**。
+  'org_establishment_status',
 ]);
 
 // ② 闭集 + 国标参照 + 队内内置类型 → 其下【项】禁软删(SYSTEM_PROTECTED_DICT_TYPES 的子集;
@@ -121,6 +125,8 @@ const ITEM_PROTECTED_DICT_TYPES: ReadonlySet<string> = new Set<string>([
   'attendance_role',
   // 招新业务态展示文案(招新闭环优化 S1;闭集 stage→文案,绑后端 stage 码)。
   'recruitment_stage',
+  // 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §3.0.1 R1):组织设立状态闭集 formal/provisional。
+  'org_establishment_status',
 ]);
 
 @Injectable()

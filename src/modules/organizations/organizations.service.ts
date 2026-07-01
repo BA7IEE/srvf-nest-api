@@ -8,8 +8,14 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { RbacService } from '../permissions/rbac.service';
 import {
+  buildCreateClosureEdges,
+  buildReparentEdgesToInsert,
+  isReparentCycle,
+} from './organization-closure.util';
+import {
   CreateOrganizationDto,
   ListOrganizationsQueryDto,
+  MoveOrganizationDto,
   OrganizationResponseDto,
   OrganizationTreeNodeDto,
   OrganizationTreeQueryDto,
@@ -254,7 +260,7 @@ export class OrganizationsService {
           await this.assertNoExistingRoot(tx);
         }
 
-        return tx.organization.create({
+        const created = await tx.organization.create({
           data: {
             name: dto.name,
             // code 未传 → undefined → Prisma 省略该列 → 落 NULL(可空)
@@ -265,6 +271,19 @@ export class OrganizationsService {
           },
           select: organizationSelect,
         });
+
+        // closure 维护(冻结稿 §3.8/§8.3):自身 depth-0 + 继承父全部祖先各 +1;建根 → 仅自身行。
+        const parentAncestors = dto.parentId
+          ? await tx.organizationClosure.findMany({
+              where: { descendantId: dto.parentId },
+              select: { ancestorId: true, depth: true },
+            })
+          : [];
+        await tx.organizationClosure.createMany({
+          data: buildCreateClosureEdges(created.id, parentAncestors),
+        });
+
+        return created;
       }),
     );
   }
@@ -331,6 +350,86 @@ export class OrganizationsService {
       return tx.organization.update({
         where: { id },
         data: { status: dto.status },
+        select: organizationSelect,
+      });
+    });
+  }
+
+  // ============ move (reparent) ============
+
+  // 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §8.3/§11 PR1):重挂父级 + closure 重算。
+  // 复活两死码:改根节点父级 → PARENT_CHANGE_FORBIDDEN(守单根上限;受限位置);
+  // 目标父=自身/自身后代 → PARENT_CYCLE(closure 子树集判定)。事务内重算受影响子树 closure
+  //(删旧祖先→子树边、按新父插入),无悬挂、PK 兜底防重。行为锁:不触碰现有 CRUD / getTree / 单根 / 软删护栏。
+  async move(
+    user: CurrentUserPayload,
+    id: string,
+    dto: MoveOrganizationDto,
+  ): Promise<OrganizationResponseDto> {
+    await this.assertCanOrThrow(user, 'org.move.node');
+    return this.prisma.$transaction(async (tx) => {
+      const target = await this.findOrganizationOrThrow(id, tx);
+
+      // 受限位置:根节点父级不可改(移根 = 破坏单根结构)。
+      if (target.parentId === null) {
+        throw new BizException(BizCode.ORGANIZATION_PARENT_CHANGE_FORBIDDEN);
+      }
+
+      // 目标父必须存在且未软删(允许挂到 INACTIVE 父下,与 create 一致)。
+      const newParent = await tx.organization.findFirst({
+        where: notDeletedWhere({ id: dto.parentId }),
+        select: { id: true },
+      });
+      if (!newParent) throw new BizException(BizCode.ORGANIZATION_PARENT_NOT_FOUND);
+
+      // 同父 → 幂等 no-op(避免重算撞 PK;直接返回当前态)。
+      if (target.parentId === dto.parentId) {
+        return this.findOrganizationOrThrow(id, tx);
+      }
+
+      // 被移动子树(closure 查 ancestorId=id,含自身 depth-0)。
+      const subtree = await tx.organizationClosure.findMany({
+        where: { ancestorId: id },
+        select: { descendantId: true, depth: true },
+      });
+
+      // 环判定:目标父 = 自身或自身后代 → 拒。
+      if (
+        isReparentCycle(
+          dto.parentId,
+          subtree.map((s) => s.descendantId),
+        )
+      ) {
+        throw new BizException(BizCode.ORGANIZATION_PARENT_CYCLE);
+      }
+
+      // 删旧边:旧祖先(不含自身)× 子树全部后代。两个 in 即笛卡尔积;子树内部边 / 自身行不受影响
+      //(其 ancestorId 属子树、不在旧祖先集)。
+      const oldAncestors = await tx.organizationClosure.findMany({
+        where: { descendantId: id, depth: { gt: 0 } },
+        select: { ancestorId: true },
+      });
+      if (oldAncestors.length > 0) {
+        await tx.organizationClosure.deleteMany({
+          where: {
+            ancestorId: { in: oldAncestors.map((a) => a.ancestorId) },
+            descendantId: { in: subtree.map((s) => s.descendantId) },
+          },
+        });
+      }
+
+      // 插新边:新父全部祖先(含新父自身)× 子树全部后代,depth = sup+sub+1。
+      const newParentAncestors = await tx.organizationClosure.findMany({
+        where: { descendantId: dto.parentId },
+        select: { ancestorId: true, depth: true },
+      });
+      await tx.organizationClosure.createMany({
+        data: buildReparentEdgesToInsert(newParentAncestors, subtree),
+      });
+
+      return tx.organization.update({
+        where: { id },
+        data: { parentId: dto.parentId },
         select: organizationSelect,
       });
     });

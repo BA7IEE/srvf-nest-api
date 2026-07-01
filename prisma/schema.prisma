@@ -157,18 +157,24 @@ enum DictItemStatus {
 // ===== V2 第一阶段:organizations =====
 
 model Organization {
-  id           String             @id @default(cuid())
-  name         String
+  id                      String             @id @default(cuid())
+  name                    String
   // 组织缩写(可空 + 全局唯一,含软删历史占用)。seed 内置 16 个真实缩写(SRVF / SMRT …),
   // 运行时建的节点可由运营后台补填。Postgres @unique 容多 NULL,无需 partial index。
-  code         String?            @unique
-  parentId     String?
-  nodeTypeCode String
-  sortOrder    Int                @default(0)
-  status       OrganizationStatus @default(ACTIVE)
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  deletedAt    DateTime?
+  code                    String?            @unique
+  parentId                String?
+  nodeTypeCode            String
+  // 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §3.0.1 R1/R3):两 additive 可空列,
+  // 纯加列 / 无 default / 无回填。establishmentStatusCode → 设立状态字典 org_establishment_status
+  //(空 / `formal`=正式;`provisional`=筹备组);groupFunctionCode → 组功能留口字典 group_function
+  //(v1 只占列、不写业务逻辑)。本刀 schema-only,不进 Create/Update DTO 与响应(冻结稿「只占列」)。
+  establishmentStatusCode String?
+  groupFunctionCode       String?
+  sortOrder               Int                @default(0)
+  status                  OrganizationStatus @default(ACTIVE)
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  deletedAt               DateTime?
 
   parent            Organization?      @relation("OrganizationTree", fields: [parentId], references: [id], onDelete: Restrict)
   children          Organization[]     @relation("OrganizationTree")
@@ -180,6 +186,10 @@ model Organization {
   // 招新三期入队(2026-06-19):selectedOrganizationId 反向 relation(评审稿 §3.1;仅关系映射)
   teamJoinApplications TeamJoinApplication[]
 
+  // 终态 scoped-authz PR1(2026-07-01;冻结稿 §3.8):closure 闭包表反向 relation(仅关系映射,无列)。
+  closureAncestors   OrganizationClosure[] @relation("ClosureAncestor")
+  closureDescendants OrganizationClosure[] @relation("ClosureDescendant")
+
   @@index([parentId])
   @@index([nodeTypeCode])
   @@index([status])
@@ -190,6 +200,25 @@ model Organization {
 enum OrganizationStatus {
   ACTIVE
   INACTIVE
+}
+
+// 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §3.8):组织闭包表 —— 高效上下级判定。
+// 每节点含 depth-0 自身行;(ancestor,descendant,depth) 表达祖先→后代距离(0=自身 / 1=直接子 / …)。
+// 维护:create 事务内继承父全部祖先 +1 / move 事务内删旧祖先→子树边后按新父插入(PK 兜底防重)/
+// migration WITH RECURSIVE 一次性回填现有树 / seed 幂等补齐内置 16 节点。
+// **本刀只建 + 维护,绝不被任何模块读作授权**(AuthzService 是 PR8)。
+model OrganizationClosure {
+  ancestorId   String
+  descendantId String
+  depth        Int
+
+  ancestor   Organization @relation("ClosureAncestor", fields: [ancestorId], references: [id], onDelete: Cascade)
+  descendant Organization @relation("ClosureDescendant", fields: [descendantId], references: [id], onDelete: Cascade)
+
+  @@id([ancestorId, descendantId])
+  @@index([descendantId])
+  @@index([ancestorId, depth])
+  @@map("organization_closure")
 }
 
 // ===== V2 第一阶段:members =====

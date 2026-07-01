@@ -11,9 +11,9 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 沿 D7 v1.1 §10 + 用户拍板六项决策 + 既有 seed.e2e-spec.ts 子进程范式。
 //
 // 覆盖(沿用户决策方案 B):
-// 1. 空 db → seed 后 68 条 permission 全部存在(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME)
+// 1. 空 db → seed 后 69 条 permission 全部存在(14 rbac.* + 20 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME;终态 scoped-authz PR1 PR-2A 19→20 +org.move.node)
 // 2. ops-admin RbacRole 存在
-// 3. ops-admin 绑定 63 条(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME;**不含**
+// 3. ops-admin 绑定 64 条(14 rbac.* + 20 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME;**不含**
 //    storage-setting.reset.credentials(沿 PR-2 D2=A)+ user.update.role(沿 PR-3 D1=A);
 //    PR-4B D2=B audit-log.read.entry 整条加入)
 // 4. 至少 1 个 user_role 持有 ops-admin(强校验通过)
@@ -55,9 +55,9 @@ function runSeed(envOverrides: Record<string, string>): SeedRunResult {
   }
 }
 
-// 沿 prisma/seed.ts 中 ALL_PERMISSION_SEED 表(D7 v1.1 §10.2 14 rbac.* + P0-F PR-2A 19 + PR-2B 15 + PR-3B 7 + PR-4B 1);
+// 沿 prisma/seed.ts 中 ALL_PERMISSION_SEED 表(D7 v1.1 §10.2 14 rbac.* + P0-F PR-2A 20 + PR-2B 15 + PR-3B 7 + PR-4B 1);
 // 本 spec 维护独立期望集合,与 seed 内部表对照防漂移。
-// PR-2A(2026-05-18):新增 19 条配置类(dict 8 + org 4 + member-department 3 + contribution 4);
+// PR-2A(2026-05-18;终态 scoped-authz PR1 org 4→5):新增 20 条配置类(dict 8 + org 5 + member-department 3 + contribution 4);
 //   全部绑给 ops-admin(D1=A);D3=A 软删放宽;D4=A set/clear。
 // PR-2B(2026-05-18):新增 15 条配置类(attachment-config 12 + storage-setting 3);
 //   D2=A:storage-setting.reset.credentials 加入 Permission upsert 但**不**绑 ops-admin(SA 短路);
@@ -104,11 +104,12 @@ const EXPECTED_RBAC_PERMISSION_CODES = [
   'dict.create.item',
   'dict.update.item',
   'dict.delete.item',
-  // 4 条 org.*(PR-2A)
+  // 5 条 org.*(PR-2A;终态 scoped-authz PR1 +org.move.node reparent,绑 ops-admin)
   'org.read.node',
   'org.create.node',
   'org.update.node',
   'org.delete.node',
+  'org.move.node',
   // 3 条 member-department.*(PR-2A;D4=A)
   'member-department.read.current',
   'member-department.set.current',
@@ -165,7 +166,7 @@ const EXPECTED_RBAC_PERMISSION_CODES = [
 const EXPECTED_PERMISSION_COUNT = EXPECTED_RBAC_PERMISSION_CODES.length;
 // ops-admin RolePermission 数(过滤 reset.credentials(PR-2 D2=A)+ user.update.role(PR-3 D1=A)
 // + sms-setting.reset.credentials(SMS T2 镜像 D2=A)+ wechat-setting.reset.credentials(WECHAT T2)
-// + realname-setting.reset.credentials(REALNAME T1 镜像 D2=A,招新评审稿 §3.4)→ 68 - 5 = 63)
+// + realname-setting.reset.credentials(REALNAME T1 镜像 D2=A,招新评审稿 §3.4)→ 69 - 5 = 64)
 const EXPECTED_OPS_ADMIN_ROLE_PERMISSION_COUNT = EXPECTED_PERMISSION_COUNT - 5;
 const EXPECTED_OPS_ADMIN_BOUND_CODES = EXPECTED_RBAC_PERMISSION_CODES.filter(
   (c) =>
@@ -194,7 +195,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     await resetDb(app);
   });
 
-  it('空 db + 合法 env → 68 条 permission(14 rbac + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME) + ops-admin role + 63 条 role-permission(D2=A 4 把凭证 reset + D1=A user.update.role 共 5 不绑;D2=B audit-log.read.entry 整条绑) + 强校验通过', async () => {
+  it('空 db + 合法 env → 69 条 permission(14 rbac + 20 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME) + ops-admin role + 64 条 role-permission(D2=A 4 把凭证 reset + D1=A user.update.role 共 5 不绑;D2=B audit-log.read.entry 整条绑) + 强校验通过', async () => {
     const result = runSeed({
       APP_ENV: 'test',
       SUPER_ADMIN_USERNAME: 'rbac-seed-su',
@@ -204,7 +205,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     });
     expect(result.code).toBe(0);
 
-    // 1. 68 条 permission 全部存在(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME;
+    // 1. 69 条 permission 全部存在(14 rbac.* + 20 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME;
     //    含 4 把 reset.credentials + user.update.role)
     const perms = await prisma.permission.findMany({
       where: { code: { in: [...EXPECTED_RBAC_PERMISSION_CODES] } },
@@ -246,7 +247,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(opsAdmin!.deletedAt).toBeNull();
     expect(opsAdmin!.displayName).toBe('运营管理员');
 
-    // 3. ops-admin 绑定 63 条 role-permission(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME;
+    // 3. ops-admin 绑定 64 条 role-permission(14 rbac.* + 20 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME;
     //    沿 PR-2 D1=A 全绑 + PR-2 D2=A 凭证 reset 不绑 + PR-3 D1=A user.update.role 不绑 +
     //    PR-3 D2=B user.reset.password 绑 + PR-3 D3=A 其余 5 条 user.* 全绑 +
     //    PR-4 D2=B audit-log.read.entry 整条绑;详见 §6.2)

@@ -103,6 +103,9 @@ const V2_DICT_SEED = [
       { code: 'rescue-team', label: '救援保障队', sortOrder: 5 },
       { code: 'functional-dept', label: '职能部门', sortOrder: 6 },
       { code: 'volunteer', label: '志愿者', sortOrder: 7 },
+      // 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §3.0.1/§8.3 R1):组 / 工作组节点类别。
+      // 队/部/中心下级组挂此类型;筹备组**不新增 nodeType**,用 establishmentStatusCode='provisional' 表达。
+      { code: 'group', label: '组 / 工作组', sortOrder: 8 },
     ],
   },
   {
@@ -413,6 +416,25 @@ const V2_DICT_SEED = [
       { code: 'general', label: '一般通知', sortOrder: 3 },
     ],
   },
+  {
+    // 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §3.0.1 R1 / §8.3):组织设立状态。
+    // 闭集:空 / formal=正式;provisional=筹备组(潜水组 / 炊事保障组（筹）)。转正 = 翻 provisional→formal,
+    // 免改 nodeType、保任命与历史。Organization.establishmentStatusCode 引用本字典 code(v1 schema-only)。
+    // 防误删守卫:闭集 → 已登记 dictionaries.service.ts SYSTEM + ITEM_PROTECTED_DICT_TYPES。
+    type: { code: 'org_establishment_status', label: '组织设立状态', sortOrder: 23 },
+    items: [
+      { code: 'formal', label: '正式', sortOrder: 0 },
+      { code: 'provisional', label: '筹备', sortOrder: 1 },
+    ],
+  },
+  {
+    // 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §3.0.1 R3 / §8.3):组功能留口字典。
+    // v1 只占字典类型 + Organization.groupFunctionCode 列位,**不写业务逻辑、items 留空**;未来按组功能
+    //(训练 / 装备 / 文书 / 外展 / 无人机…)差异化职务规则再启用。自由串候选字典(groupFunctionCode 无 FK、
+    // 无校验路径)→ 沿 join_source 惯例**不登记**防误删守卫(留口可不保护;goal DoD3)。
+    type: { code: 'group_function', label: '组功能', sortOrder: 24 },
+    items: [],
+  },
 ] as const;
 
 async function seedV2Dictionaries(prisma: PrismaClient): Promise<void> {
@@ -705,8 +727,9 @@ async function seedOrganizations(prisma: PrismaClient): Promise<void> {
     { name: '志愿者', code: 'VOL', nodeTypeCode: 'volunteer', sortOrder: 14 },
   ];
 
+  const deptIds: string[] = [];
   for (const d of departments) {
-    await prisma.organization.upsert({
+    const dept = await prisma.organization.upsert({
       where: { code: d.code },
       update: {},
       create: {
@@ -716,10 +739,33 @@ async function seedOrganizations(prisma: PrismaClient): Promise<void> {
         parentId: root.id,
         sortOrder: d.sortOrder,
       },
+      select: { id: true },
+    });
+    deptIds.push(dept.id);
+  }
+
+  // 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §3.8/§8.3):幂等补齐内置 16 节点 closure。
+  // 全新库 migration 先于 seed 跑(Organization 空)→ WITH RECURSIVE backfill 插 0 行;此处按扁平两层
+  // 结构补齐 31 行(16 自身 depth-0 + 15 根→子 depth-1),与 service create/move 事务内维护、与生产库
+  //(节点先存在)migration 回填结果同构。upsert by 复合 PK,二跑 diff 空。
+  const closureRows: Array<{ ancestorId: string; descendantId: string; depth: number }> = [
+    { ancestorId: root.id, descendantId: root.id, depth: 0 }, // 根自身 depth-0
+    ...deptIds.map((id) => ({ ancestorId: id, descendantId: id, depth: 0 })), // 15 子自身 depth-0
+    ...deptIds.map((id) => ({ ancestorId: root.id, descendantId: id, depth: 1 })), // 根→15 子 depth-1
+  ];
+  for (const row of closureRows) {
+    await prisma.organizationClosure.upsert({
+      where: {
+        ancestorId_descendantId: { ancestorId: row.ancestorId, descendantId: row.descendantId },
+      },
+      update: {},
+      create: row,
     });
   }
 
-  console.log(`[seed] organizations ensured (1 根 SRVF + ${departments.length} 部门,扁平两层)`);
+  console.log(
+    `[seed] organizations ensured (1 根 SRVF + ${departments.length} 部门,扁平两层;closure ${closureRows.length} 行)`,
+  );
 }
 
 // V2.x C-6 RBAC 实施 PR #8(2026-05-14):14 条 rbac.* 权限点全集(沿 D7 v1.1 §10.2)。
@@ -943,6 +989,15 @@ const ORG_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
     action: 'delete',
     resourceType: 'node',
     description: '软删组织节点(D3=A 放宽至 ops-admin)',
+  },
+  {
+    // 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §8.3/§11 PR1):reparent 重挂父级。
+    // 沿 org.*.node 现绑(绑 ops-admin);service 层 rbac.can('org.move.node'),0 @Roles。
+    code: 'org.move.node',
+    module: 'org',
+    action: 'move',
+    resourceType: 'node',
+    description: '重挂组织节点父级(reparent;环 / 受限位置守卫)',
   },
 ];
 

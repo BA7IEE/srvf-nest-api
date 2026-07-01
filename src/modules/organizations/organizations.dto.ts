@@ -170,6 +170,21 @@ export class UpdateOrganizationStatusDto {
   status!: OrganizationStatus;
 }
 
+// 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §8.3 / §11 PR1):reparent 入参。
+// 独立 DTO(不派生 Create/Update);仅接**非空** parentId(移成根不支持,守单根上限)。
+// service 层守卫:改根节点父级 → PARENT_CHANGE_FORBIDDEN;目标父不存在 → PARENT_NOT_FOUND;
+// 目标父=自身/自身后代 → PARENT_CYCLE(closure 判定)。
+export class MoveOrganizationDto {
+  @ApiProperty({
+    description: '新父级 id(必填;不支持移成根节点)',
+    minLength: 8,
+    maxLength: 64,
+  })
+  @IsString()
+  @Length(8, 64)
+  parentId!: string;
+}
+
 // 列表 query:parentId 接受字面值 'null'(过滤根节点)/ cuid(过滤指定父下子节点);
 // 不传则不限制(列出全部活跃节点)。
 export class ListOrganizationsQueryDto extends PaginationQueryDto {

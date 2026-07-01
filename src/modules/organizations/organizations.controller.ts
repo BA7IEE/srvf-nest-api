@@ -14,6 +14,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import {
   CreateOrganizationDto,
   ListOrganizationsQueryDto,
+  MoveOrganizationDto,
   OrganizationResponseDto,
   OrganizationTreeNodeDto,
   OrganizationTreeQueryDto,
@@ -140,6 +141,31 @@ export class OrganizationsController {
     @Body() dto: UpdateOrganizationStatusDto,
   ): Promise<OrganizationResponseDto> {
     return this.service.updateStatus(user, params.id, dto);
+  }
+
+  // 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §8.3/§11 PR1):reparent 重挂父级。
+  // 命令式(沿 promote/join/send-sms 现役 POST 范式);判权 service 层 rbac.can('org.move.node'),0 @Roles。
+  @Post(':id/move')
+  @ApiOperation({
+    summary:
+      '重挂组织节点父级(reparent;禁改根节点父级 / 目标父=自身或后代成环 → 拒;事务内重算 closure) [rbac: org.move.node]',
+  })
+  @ApiWrappedOkResponse(OrganizationResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ORGANIZATION_NOT_FOUND,
+    BizCode.ORGANIZATION_PARENT_NOT_FOUND,
+    BizCode.ORGANIZATION_PARENT_CYCLE,
+    BizCode.ORGANIZATION_PARENT_CHANGE_FORBIDDEN,
+  )
+  move(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: IdParamDto,
+    @Body() dto: MoveOrganizationDto,
+  ): Promise<OrganizationResponseDto> {
+    return this.service.move(user, params.id, dto);
   }
 
   @Delete(':id')
