@@ -188,6 +188,10 @@ model Organization {
   // **assignment 只是数据 + 任命校验,绝不被任何判权路径读**(AuthzService 是 PR8)。
   positionAssignments OrganizationPositionAssignment[]
 
+  // 终态 scoped-authz PR5(2026-07-01;冻结稿 §3.5):被分管反向 relation(仅关系映射,无列)。
+  // **分管只是数据 + 展示,绝不被任何判权路径读**(AuthzService 是 PR8)。
+  supervisedBy OrganizationSupervisionAssignment[] @relation("OrgSupervised")
+
   // V2 第一阶段批次 3 反向 relation(沿批次 1 / 批次 2 R2 范式)
   activities Activity[]
 
@@ -352,6 +356,56 @@ enum AssignmentStatus {
   REVOKED
 }
 
+// ===== 终态 scoped-authz PR5:organization_supervision_assignments =====
+//
+// 分管关系(冻结稿 §3.5 / §7.4 / §4.3;goal 2026-07-01 PR5)。语义:
+// - 分管 = 与职务(§3.4 assignment)**正交**的独立范围监督关系。一条 = 分管人(supervisorMemberId)×
+//   被分管组织(organizationId)× 范围模式(scopeMode:EXACT 仅该节点 / TREE 含全部下级)× 任期 × 状态。
+// - **黄勇分管 SECT、SSD = 两行;与他的「副队长」职务(assignment)互不为前提** —— create 分管绝不要求
+//   supervisor 持有任何职务/领导头衔,运营自由指派「谁分管哪个组织」(R5:副职头衔零推导,管辖来自分管/显式绑定)。
+// - status ACTIVE / ENDED / REVOKED;撤销 = 写 REVOKED + revokedByUserId + endedAt(保留行做历史)。
+// - 分管范围展开(supervision-scope 查询)/ 被谁分管(supervisors 查询)**读 organization_closure 仅作展示/报表**
+//   (TREE 展开求后代集 / inherited 求祖先集);**绝非判权**。
+// **本表 = 数据 + 展示:绝不被任何 rbac.can / AuthzService 判权路径读**(判权是 PR8 才把分管推导成只读监督 scope;
+//   RoleBinding 是 PR6)。2 FK onDelete Restrict;(supervisor,org) active 由 migration.sql 末尾手写 partial unique
+//   兜底(P2002 → SUPERVISION_ALREADY_EXISTS)。分管历史 = 软删行 + ENDED/REVOKED 行全保留,可追溯。
+model OrganizationSupervisionAssignment {
+  id                 String               @id @default(cuid())
+  supervisorMemberId String // 分管人(副队长/队长本人;正交于职务,不要求持职务)
+  organizationId     String // 被分管组织
+  scopeMode          SupervisionScopeMode @default(TREE) // EXACT 仅该节点 / TREE 含全部下级
+  status             SupervisionStatus    @default(ACTIVE)
+  startedAt          DateTime // 分管任期起(必填)
+  endedAt            DateTime? // 分管任期止(有值须 > startedAt)
+  appointedByUserId  String? // 指派人 userId
+  revokedByUserId    String? // 撤销人 userId
+  note               String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  deletedAt          DateTime?
+
+  supervisor   Member       @relation("MemberSupervision", fields: [supervisorMemberId], references: [id], onDelete: Restrict)
+  organization Organization @relation("OrgSupervised", fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([supervisorMemberId])
+  @@index([organizationId])
+  @@index([supervisorMemberId, status])
+  @@index([deletedAt])
+  @@map("organization_supervision_assignments")
+}
+
+// 结构闭集用 enum(沿冻结稿 §3.0 / PR2 范式;区别于运营可扩的字典码)。
+enum SupervisionScopeMode {
+  EXACT
+  TREE
+}
+
+enum SupervisionStatus {
+  ACTIVE
+  ENDED
+  REVOKED
+}
+
 // ===== V2 第一阶段:members =====
 
 model Member {
@@ -370,6 +424,8 @@ model Member {
   memberOrganizationMemberships MemberOrganizationMembership[]
   // 终态 scoped-authz PR4(2026-07-01;冻结稿 §3.4):任职反向 relation(仅关系映射,不算业务字段新增,沿 R2 范式)。
   positionAssignments           OrganizationPositionAssignment[]
+  // 终态 scoped-authz PR5(2026-07-01;冻结稿 §3.5):分管反向 relation(该 member 作为分管人;仅关系映射,不算业务字段新增,沿 R2 范式)。
+  supervisions                  OrganizationSupervisionAssignment[] @relation("MemberSupervision")
   // V2 第一阶段批次 1:扩展模块反向 relation;主表既有业务字段语义不变,
   // 不在 Member 主表新增任何业务字段(顶层 §11 K1 + 批次 1 schema 草案 R2)。
   memberProfile                 MemberProfile?

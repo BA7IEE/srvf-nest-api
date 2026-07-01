@@ -47,9 +47,10 @@ import { HttpStatus } from '@nestjs/common';
 // - 29xxx + 291xx: content(CMS 内容发布,2026-06-21;290xx 5 码,291xx 预留)
 // - 30xxx + 301xx: permissions(C-6 RBAC)
 // - 31xxx + 311xx: notifications(统一通知模块 S1 站内信渠道,2026-06-25;310xx 5 码,311xx 预留)
-// - 32xxx: organization positions + position rules(职务定义 320xx 3 码 + 职务规则 3201x 3 码;终态 scoped-authz PR3,2026-07-01)
+// - 32xxx: organization positions + position rules + position assignments(职务定义 320xx 3 码 + 职务规则 3201x 3 码 + 任职 3202x 8 码;终态 scoped-authz PR3/PR4,2026-07-01)
+// - 33xxx: organization supervision assignments(分管关系 330xx 4 码;终态 scoped-authz PR5,2026-07-01)
 // - 40xxx / 42xxx / 50xxx: 通用 HTTP / infrastructure(BAD_REQUEST / UNAUTHORIZED / FORBIDDEN / NOT_FOUND / TOO_MANY_REQUESTS / INTERNAL_ERROR)
-// - 未规划模块预留(训练 / 装备 / 财务等):32xxx 之后顺延(realname 27xxx / recruitment 28xxx / content 29xxx / notification 31xxx / position 32xxx 已实装)
+// - 未规划模块预留(训练 / 装备 / 财务等):33xxx 之后顺延(realname 27xxx / recruitment 28xxx / content 29xxx / notification 31xxx / position 32xxx / supervision 33xxx 已实装)
 export const BizCode = {
   // 通用 HTTP 级
   BAD_REQUEST: { code: 40000, message: '请求参数错误', httpStatus: HttpStatus.BAD_REQUEST },
@@ -1157,6 +1158,34 @@ export const BizCode = {
   POSITION_ASSIGNMENT_ALREADY_ENDED: {
     code: 32027,
     message: '任职已结束或已撤销,无法再次撤销',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // - 330xx:分管(supervision-assignment)—— 终态 scoped-authz PR5「分管」引入(2026-07-01;冻结稿 §3.5 / §7.4 / §4.3)。
+  //   分管 = 与职务正交的独立范围监督关系;create 绝不要求 supervisor 持职务。
+  //   supervisor 引用不存在/非 active 复用 MEMBER_NOT_FOUND(15001)/ MEMBER_INACTIVE(17030);
+  //   organization 引用不存在/非 active 复用 ORGANIZATION_NOT_FOUND(11001)/ ORGANIZATION_INACTIVE(17031);
+  //   scopeMode 非法(∉ {EXACT,TREE})由 DTO @IsEnum → 通用 400,不另开码。
+  //   33001 NOT_FOUND / 33002 同人对同组织撞唯一 active(P2002 兜底)/ 33003 任期非法(endedAt≤startedAt)/
+  //   33004 分管已结束/撤销,无法再次撤销。**分管 = 数据 + 展示,绝不进判权路径**。
+  SUPERVISION_ASSIGNMENT_NOT_FOUND: {
+    code: 33001,
+    message: '分管记录不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  SUPERVISION_ALREADY_EXISTS: {
+    code: 33002,
+    message: '该成员对此组织已有在任分管',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  SUPERVISION_ASSIGNMENT_TENURE_INVALID: {
+    code: 33003,
+    message: '任期止必须晚于任期起',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  SUPERVISION_ASSIGNMENT_ALREADY_ENDED: {
+    code: 33004,
+    message: '分管已结束或已撤销,无法再次撤销',
     httpStatus: HttpStatus.CONFLICT,
   },
 

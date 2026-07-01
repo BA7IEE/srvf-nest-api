@@ -1386,11 +1386,46 @@ const POSITION_ASSIGNMENT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
-// PR-2A 聚合(36 条:dict 8 + org 5〔终态 scoped-authz PR1 +org.move.node〕+ member-department 3 +
+// supervision-assignment.* 4(终态 scoped-authz PR5「分管」;冻结稿 §4.3 / §7.4;分管管理 + 分管范围/被谁分管查询;
+// 沿组织归属域配置/管理码现绑 ops-admin)。**分管 = 数据 + 展示,绝不进判权路径**(判权是 PR8)。
+// 三读端点(列 / 某人分管范围 / 某组织被谁分管)共用 supervision-assignment.read.record,无孤码。
+const SUPERVISION_ASSIGNMENT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'supervision-assignment.read.record',
+    module: 'supervision-assignment',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看分管(在任列表 / 某人分管范围 / 某组织被谁分管)',
+  },
+  {
+    code: 'supervision-assignment.create.record',
+    module: 'supervision-assignment',
+    action: 'create',
+    resourceType: 'record',
+    description: '建分管(supervisor × org × scopeMode + 任期;与职务正交,不要求持职务)',
+  },
+  {
+    code: 'supervision-assignment.update.record',
+    module: 'supervision-assignment',
+    action: 'update',
+    resourceType: 'record',
+    description: '改分管(scopeMode / 任期 / note)',
+  },
+  {
+    code: 'supervision-assignment.revoke.record',
+    module: 'supervision-assignment',
+    action: 'revoke',
+    resourceType: 'record',
+    description: '撤销分管(status=REVOKED + 撤销人 + endedAt)',
+  },
+];
+
+// PR-2A 聚合(40 条:dict 8 + org 5〔终态 scoped-authz PR1 +org.move.node〕+ member-department 3 +
 // membership 4〔终态 scoped-authz PR2〕+ contribution 4 + position 4 + position-rule 4〔终态 scoped-authz PR3〕
-// + position-assignment 4〔终态 scoped-authz PR4〕)。
+// + position-assignment 4〔终态 scoped-authz PR4〕+ supervision-assignment 4〔终态 scoped-authz PR5〕)。
 // member-department 与 membership 同"组织归属"域,membership 为 member-department 的升级面(旧 3 码保留 deprecated);
-// position / position-rule 为职务定义配置面;position-assignment 为任职管理面(冻结稿 §4.3;全绑 ops-admin,沿配置/管理码现绑)。
+// position / position-rule 为职务定义配置面;position-assignment 为任职管理面;supervision-assignment 为分管管理面
+//(冻结稿 §4.3;全绑 ops-admin,沿配置/管理码现绑)。
 const PR_2A_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...DICT_PERMISSION_SEED,
   ...ORG_PERMISSION_SEED,
@@ -1399,6 +1434,7 @@ const PR_2A_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...CONTRIBUTION_PERMISSION_SEED,
   ...POSITION_PERMISSION_SEED,
   ...POSITION_ASSIGNMENT_PERMISSION_SEED,
+  ...SUPERVISION_ASSIGNMENT_PERMISSION_SEED,
 ];
 
 // P0-F PR-2B(2026-05-18):配置类接口 RBAC 接入第二批(15 条)。
