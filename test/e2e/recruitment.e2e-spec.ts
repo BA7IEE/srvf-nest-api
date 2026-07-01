@@ -221,7 +221,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     await prisma.emergencyContact.deleteMany({});
     await prisma.memberProfile.deleteMany({});
     await prisma.user.deleteMany({ where: { memberId: { not: null } } }); // promote 建的 User 都绑 member
-    await prisma.memberDepartment.deleteMany({}); // S5:promote 建的 VOL 归口部门(FK RESTRICT,须先于 member 清)
+    await prisma.memberOrganizationMembership.deleteMany({}); // S5:promote 建的 VOL 归口 PRIMARY 归属(FK RESTRICT,须先于 member 清)
     // 统一通知 S3:promote 发号定向通知(recipientMemberId FK→Member Restrict)+ 投递须先于 member 清。
     await prisma.notificationDelivery.deleteMany({});
     await prisma.notificationRead.deleteMany({});
@@ -1250,16 +1250,16 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         user: true,
         memberProfile: true,
         emergencyContacts: true,
-        memberDepartments: true,
+        memberOrganizationMemberships: true,
       },
     });
     // 招新闭环优化 S5(评审稿 §5.2a;推翻 phase-3 E-J-6 双表示):promote 即赋志愿者身份 ——
     // gradeCode='volunteer' + 恰 1 条 active VOL 归口部门(入队才换目标部门 + 升 level-1)。
     expect(li.gradeCode).toBe('volunteer');
-    expect(li.memberDepartments.length).toBe(1);
+    expect(li.memberOrganizationMemberships.length).toBe(1);
     const volOrg = await prisma.organization.findFirstOrThrow({ where: { code: 'VOL' } });
-    expect(li.memberDepartments[0].organizationId).toBe(volOrg.id);
-    expect(li.memberDepartments[0].deletedAt).toBeNull();
+    expect(li.memberOrganizationMemberships[0].organizationId).toBe(volOrg.id);
+    expect(li.memberOrganizationMemberships[0].deletedAt).toBeNull();
     expect(li.displayName).toBe('李四');
     // wrinkle③ User:openid 绑定、username=memberNo、passwordHash 非空(密码登录天然关闭)、memberId 回链
     expect(li.user?.openid).toBe('dev-openid-p3-l');
@@ -1399,14 +1399,22 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     const membersAfterFirst = await prisma.member.count();
     // S5:首跑即建恰 1 条 active VOL 归口部门
     const memberId = first.body.data.promoted[0].memberId as string;
-    expect(await prisma.memberDepartment.count({ where: { memberId, deletedAt: null } })).toBe(1);
+    expect(
+      await prisma.memberOrganizationMembership.count({
+        where: { memberId, deletedAt: null, membershipType: 'PRIMARY', status: 'ACTIVE' },
+      }),
+    ).toBe(1);
 
     const second = await promote(cycle.id);
     expect(second.body.data.promotedCount).toBe(0);
     expect(second.body.data.skippedCount).toBe(0);
     expect(await prisma.member.count()).toBe(membersAfterFirst); // 不重复建 Member
     // S5:重跑命中 0 → 不双建 VOL 部门(仍恰 1 条 active)
-    expect(await prisma.memberDepartment.count({ where: { memberId, deletedAt: null } })).toBe(1);
+    expect(
+      await prisma.memberOrganizationMembership.count({
+        where: { memberId, deletedAt: null, membershipType: 'PRIMARY', status: 'ACTIVE' },
+      }),
+    ).toBe(1);
   });
 
   it('㉘(二期) 外籍 skip+report:不进一键发号(foreign-manual-build)、不建 Member、仍 publicity;大陆照常发', async () => {

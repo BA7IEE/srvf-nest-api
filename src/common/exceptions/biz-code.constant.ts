@@ -135,10 +135,12 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
-  // member_departments 模块业务级(170xx + 171xx)。详见 docs/v2-api-contract.md §5.4。
+  // member_departments / memberships 模块业务级(170xx + 171xx;同"组织归属"域)。详见 docs/v2-api-contract.md §5.4。
   // 子段(对齐 baseline §1.3):
-  // - 17001:NOT_FOUND(member 当前无 active 归属)
-  // - 17002:唯一约束冲突(并发兜底,partial unique index 撞)
+  // - 17001:NOT_FOUND(member 当前无 active 归属;旧 department 端点)
+  // - 17002:唯一约束冲突(并发兜底,partial unique index 撞;旧 department 端点)
+  // - 17003:NOT_FOUND(memberships :id 端点:该归属不存在 / 非本人 / 已软删;终态 scoped-authz PR2)
+  // - 17004:唯一约束冲突(PRIMARY 唯一 / (member,org,type) 唯一撞;P2002 兜底;终态 scoped-authz PR2)
   // - 17030-17099:资源状态非法(member INACTIVE / organization INACTIVE)
   //
   // 复用现有错误码:MEMBER_NOT_FOUND(15001) / ORGANIZATION_NOT_FOUND(11001);
@@ -151,6 +153,18 @@ export const BizCode = {
   MEMBER_DEPARTMENT_ALREADY_EXISTS: {
     code: 17002,
     message: '队员已有活跃部门归属',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 终态 scoped-authz PR2(2026-07-01;冻结稿 §3.1 / §7.1):memberships 归属 CRUD 业务码。
+  // NOT_FOUND 为 :id 端点(PATCH/DELETE)必需的兜底;ALREADY_EXISTS 承接 P2002(两 partial unique 任一撞)。
+  MEMBERSHIP_NOT_FOUND: {
+    code: 17003,
+    message: '归属记录不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  MEMBERSHIP_ALREADY_EXISTS: {
+    code: 17004,
+    message: '该归属已存在(主归属唯一 / 同组织同类型不可重复)',
     httpStatus: HttpStatus.CONFLICT,
   },
   MEMBER_INACTIVE: {

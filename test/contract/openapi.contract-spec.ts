@@ -278,6 +278,11 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/members/{memberId}/department'],
   ['put', '/api/admin/v1/members/{memberId}/department'],
   ['delete', '/api/admin/v1/members/{memberId}/department'],
+  // 终态 scoped-authz PR2(2026-07-01;冻结稿 §7.1):组织归属 memberships 4 端点(旧 3 department 路由保留)。
+  ['get', '/api/admin/v1/members/{memberId}/memberships'],
+  ['post', '/api/admin/v1/members/{memberId}/memberships'],
+  ['patch', '/api/admin/v1/members/{memberId}/memberships/{id}'],
+  ['delete', '/api/admin/v1/members/{memberId}/memberships/{id}'],
   ['get', '/api/admin/v1/members/{memberId}/profile'],
   ['post', '/api/admin/v1/members/{memberId}/profile'],
   ['patch', '/api/admin/v1/members/{memberId}/profile'],
@@ -502,6 +507,11 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // V2 member-departments (Step 6)
   'SetMemberDepartmentDto',
   'MemberDepartmentResponseDto',
+
+  // 终态 scoped-authz PR2(2026-07-01;冻结稿 §3.1/§7.1)memberships 组织归属
+  'MembershipResponseDto',
+  'CreateMembershipDto',
+  'UpdateMembershipDto',
 
   // V2 第一阶段批次 1 member-profiles
   'CreateMemberProfileDto',

@@ -238,8 +238,9 @@ export class MembersService {
       await this.findMemberOrThrow(id, tx);
 
       const [activeDeptCount, linkedUserCount] = await Promise.all([
-        tx.memberDepartment.count({
-          where: { memberId: id, deletedAt: null },
+        // 终态 scoped-authz PR2:重指向 active PRIMARY membership(= 旧单部门语义,行为逐字保持)。
+        tx.memberOrganizationMembership.count({
+          where: { memberId: id, deletedAt: null, membershipType: 'PRIMARY', status: 'ACTIVE' },
         }),
         tx.user.count({
           where: { memberId: id, deletedAt: null },

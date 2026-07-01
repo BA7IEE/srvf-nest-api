@@ -15,6 +15,11 @@ import { createTestApp } from '../setup/test-app';
 // 覆盖 3 接口主成功 + 关键失败:权限边界 / GET 无归属返 null / PUT 幂等 + 事务原子 /
 // DELETE 解除 / 单归属约束(partial unique index DB 层兜底) / 软删后重新归属。
 //
+// 终态 scoped-authz PR2(2026-07-01;冻结稿 §8.1 行为锁核心):旧 3 端点已重指向到
+// member_organization_memberships 的 PRIMARY 行;本 spec 的 HTTP 请求/响应/错误码/幂等断言
+// **逐字不变**,仅把内部塞数据/DB 断言由 prisma.memberDepartment.* 改指向
+// prisma.memberOrganizationMembership.*(默认 PRIMARY/ACTIVE);"单归属"= active PRIMARY 唯一(新 partial unique)。
+//
 // P0-F PR-2A(2026-05-18):入口切到 service 层 rbac.can();失败统一 RBAC_FORBIDDEN(30100)。
 // `adminAuth` 在 beforeAll 全局 grant ops-admin(沿 dict / org e2e 范式);单独建 `adminDefaultAuth`
 // 做"ADMIN 默认 30100"反向断言。D4=A:member-department 使用 set.current / clear.current
@@ -157,7 +162,7 @@ describe('member-departments 归属能力', () => {
         data: { memberNo: 'demo-md-get-2', displayName: 'WithDept' },
       });
       memberWithDept = m2.id;
-      const dept = await prisma.memberDepartment.create({
+      const dept = await prisma.memberOrganizationMembership.create({
         data: { memberId: m2.id, organizationId: activeOrgIdA },
       });
       deptId = dept.id;
@@ -253,14 +258,14 @@ describe('member-departments 归属能力', () => {
       expect(res.body.data).not.toHaveProperty('deletedAt');
 
       // DB 验证
-      const count = await prisma.memberDepartment.count({
+      const count = await prisma.memberOrganizationMembership.count({
         where: { memberId, deletedAt: null },
       });
       expect(count).toBe(1);
     });
 
     it('幂等:同 organizationId → 200 + 现归属(无副作用,id 不变)', async () => {
-      const before = await prisma.memberDepartment.findFirst({
+      const before = await prisma.memberOrganizationMembership.findFirst({
         where: { memberId, deletedAt: null },
       });
       expect(before).not.toBeNull();
@@ -274,16 +279,16 @@ describe('member-departments 归属能力', () => {
       expect(res.body.data.organizationId).toBe(activeOrgIdA);
 
       // DB 验证仅 1 条 active(决策 5:幂等无副作用,不软删旧)
-      const activeCount = await prisma.memberDepartment.count({
+      const activeCount = await prisma.memberOrganizationMembership.count({
         where: { memberId, deletedAt: null },
       });
       expect(activeCount).toBe(1);
-      const afterTotal = await prisma.memberDepartment.count({ where: { memberId } });
+      const afterTotal = await prisma.memberOrganizationMembership.count({ where: { memberId } });
       expect(afterTotal).toBe(1);
     });
 
     it('换部门:不同 organizationId → 200 + 软删旧 + 创建新(单事务原子)', async () => {
-      const oldDept = await prisma.memberDepartment.findFirst({
+      const oldDept = await prisma.memberOrganizationMembership.findFirst({
         where: { memberId, deletedAt: null },
       });
       expect(oldDept).not.toBeNull();
@@ -297,13 +302,13 @@ describe('member-departments 归属能力', () => {
       expect(res.body.data.id).not.toBe(oldDept!.id); // 新归属不同 id
 
       // DB 验证:旧归属 deletedAt 非空;新归属 active 仅 1 条
-      const oldAfter = await prisma.memberDepartment.findUnique({
+      const oldAfter = await prisma.memberOrganizationMembership.findUnique({
         where: { id: oldDept!.id },
       });
       expect(oldAfter?.deletedAt).not.toBeNull();
       expect(oldAfter?.organizationId).toBe(activeOrgIdA);
 
-      const activeCount = await prisma.memberDepartment.count({
+      const activeCount = await prisma.memberOrganizationMembership.count({
         where: { memberId, deletedAt: null },
       });
       expect(activeCount).toBe(1);
@@ -334,7 +339,7 @@ describe('member-departments 归属能力', () => {
       const m = await prisma.member.create({
         data: { memberNo: 'demo-md-del-2', displayName: 'WithDept' },
       });
-      const dept = await prisma.memberDepartment.create({
+      const dept = await prisma.memberOrganizationMembership.create({
         data: { memberId: m.id, organizationId: activeOrgIdA },
       });
 
@@ -344,7 +349,9 @@ describe('member-departments 归属能力', () => {
       expect(delRes.status).toBe(200);
       expect(delRes.body.data.id).toBe(dept.id);
 
-      const after = await prisma.memberDepartment.findUnique({ where: { id: dept.id } });
+      const after = await prisma.memberOrganizationMembership.findUnique({
+        where: { id: dept.id },
+      });
       expect(after?.deletedAt).not.toBeNull();
 
       // GET 返 null
@@ -363,12 +370,12 @@ describe('member-departments 归属能力', () => {
       const m = await prisma.member.create({
         data: { memberNo: 'demo-md-uq-1', displayName: 'UQ' },
       });
-      await prisma.memberDepartment.create({
+      await prisma.memberOrganizationMembership.create({
         data: { memberId: m.id, organizationId: activeOrgIdA },
       });
       // 第二条 active(deletedAt=null)应被 partial unique index 拒绝
       await expect(
-        prisma.memberDepartment.create({
+        prisma.memberOrganizationMembership.create({
           data: { memberId: m.id, organizationId: activeOrgIdB },
         }),
       ).rejects.toThrow(/Unique constraint/i);
@@ -379,10 +386,10 @@ describe('member-departments 归属能力', () => {
         data: { memberNo: 'demo-md-resu-1', displayName: 'ReSU' },
       });
       // 创建 + 软删
-      const old = await prisma.memberDepartment.create({
+      const old = await prisma.memberOrganizationMembership.create({
         data: { memberId: m.id, organizationId: activeOrgIdA },
       });
-      await prisma.memberDepartment.update({
+      await prisma.memberOrganizationMembership.update({
         where: { id: old.id },
         data: { deletedAt: new Date() },
       });

@@ -129,7 +129,9 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
     });
     const user = await createTestUser(app, { username: `sms_recip_${seq}` });
     await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id, phone } });
-    await prisma.memberDepartment.create({ data: { memberId: member.id, organizationId: orgId } });
+    await prisma.memberOrganizationMembership.create({
+      data: { memberId: member.id, organizationId: orgId },
+    });
     return member.id;
   }
 

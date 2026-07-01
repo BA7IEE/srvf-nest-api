@@ -62,10 +62,13 @@ export class ContentReadService {
     // 活跃部门归属(department 档命中判定 + isFormalMember);仅当确为 member 时才查。
     let activeOrgIds: string[] = [];
     if (isMember && access.member !== null) {
-      const depts = await this.prisma.memberDepartment.findMany({
+      // 终态 scoped-authz PR2:重指向 active PRIMARY membership(= 旧单部门)。
+      const depts = await this.prisma.memberOrganizationMembership.findMany({
         where: {
           memberId: access.member.id,
           deletedAt: null,
+          membershipType: 'PRIMARY',
+          status: 'ACTIVE',
           organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
         },
         select: { organizationId: true },

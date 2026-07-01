@@ -1026,6 +1026,41 @@ const MEMBER_DEPARTMENT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
+// membership.* 4 条(终态 scoped-authz PR2;冻结稿 §4.3 / §7.1;member-department.* 的升级面,旧 3 码保留 deprecated)。
+// 端点映射(§7.1):GET list→list / POST 新增+PATCH 改 共用 set / DELETE 结束→end。
+// read.record 按 §4.3 seed 并绑 ops-admin(→168/68),本刀无端点承接(为未来 GET :id 预留)= 刻意预埋孤码
+//(docs:rbacmap:check 记 WARN 不记 FAIL;不违反 DoD「0-FAIL」)。全 4 码绑 ops-admin(沿 member-department.* 现绑)。
+const MEMBERSHIP_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'membership.list.record',
+    module: 'membership',
+    action: 'list',
+    resourceType: 'record',
+    description: '列出队员全部组织归属(主/兼/临时/支援 + 任期)',
+  },
+  {
+    code: 'membership.read.record',
+    module: 'membership',
+    action: 'read',
+    resourceType: 'record',
+    description: '读取单条组织归属(预留;本刀无端点承接)',
+  },
+  {
+    code: 'membership.set.record',
+    module: 'membership',
+    action: 'set',
+    resourceType: 'record',
+    description: '新增 / 修改组织归属(类型 / 任期)',
+  },
+  {
+    code: 'membership.end.record',
+    module: 'membership',
+    action: 'end',
+    resourceType: 'record',
+    description: '结束组织归属',
+  },
+];
+
 // contribution.* 4 条(contribution-rules R/C/U/D)
 const CONTRIBUTION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
@@ -1058,11 +1093,14 @@ const CONTRIBUTION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
-// PR-2A 聚合(19 条:dict 8 + org 4 + member-department 3 + contribution 4)
+// PR-2A 聚合(24 条:dict 8 + org 5〔终态 scoped-authz PR1 +org.move.node〕+ member-department 3 +
+// membership 4〔终态 scoped-authz PR2〕+ contribution 4)。member-department 与 membership 同"组织归属"域,
+// membership 为 member-department 的升级面(旧 3 码保留 deprecated)。
 const PR_2A_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...DICT_PERMISSION_SEED,
   ...ORG_PERMISSION_SEED,
   ...MEMBER_DEPARTMENT_PERMISSION_SEED,
+  ...MEMBERSHIP_PERMISSION_SEED,
   ...CONTRIBUTION_PERMISSION_SEED,
 ];
 
@@ -1455,7 +1493,7 @@ const REALNAME_INFRA_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
-// Permission 全集(用于 step 1 upsert;14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME = 68 条)
+// Permission 全集(用于 step 1 upsert;14 rbac.* + 24 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME = 73 条)
 const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
@@ -1467,7 +1505,7 @@ const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...REALNAME_INFRA_PERMISSION_SEED,
 ];
 
-// ops-admin 完整绑定集合(14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 63 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4 / REALNAME E-R-19)
+// ops-admin 完整绑定集合(14 rbac.* + 24 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 68 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4 / REALNAME E-R-19;PR-2A 24 = 终态 scoped-authz PR1 org.move.node + PR2 membership 4 码)
 // 注:`storage-setting.reset.credentials` 从 PR_2B_PERMISSION_SEED 过滤掉(沿 PR-2 D2=A;§6.2)
 // 注:`user.update.role` 从 USER_PERMISSION_SEED 过滤掉(沿 PR-3 D1=A;§6.2)
 // 注:`audit-log.read.entry` 整条加入,不过滤(沿 PR-4 D2=B;§6.2)
@@ -1489,7 +1527,7 @@ const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 const OPS_ADMIN_ROLE_CODE = 'ops-admin';
 const OPS_ADMIN_DISPLAY_NAME = '运营管理员';
 const OPS_ADMIN_DESCRIPTION =
-  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / contribution-rule + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条 + WECHAT: wechat-setting / user.wechat.clear 3 条 + REALNAME: realname-setting 2 条)的 meta 角色;14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 63 条权限点;凭证 reset(storage / sms / wechat / realname)与 user 角色修改仅 SUPER_ADMIN';
+  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / membership / contribution-rule + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条 + WECHAT: wechat-setting / user.wechat.clear 3 条 + REALNAME: realname-setting 2 条)的 meta 角色;14 rbac.* + 24 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 68 条权限点;凭证 reset(storage / sms / wechat / realname)与 user 角色修改仅 SUPER_ADMIN';
 
 // V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集
 // (沿 D7-attachments v1.0 §6.1 + Q11 v1.0 锁清单 + 用户 PR #6a 拍板)。
@@ -1676,10 +1714,10 @@ const MEMBER_ROLE_PERMISSION_CODES: ReadonlyArray<string> = [
 // 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 复合唯一键 /
 // UserRole 复合唯一键),重复跑不重复创建。
 async function seedRbac(prisma: PrismaClient): Promise<void> {
-  // 1. upsert Permission 全集(14 rbac.* + 19 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS = 61 条;
-  //    沿 D7 §10.2 + P0-F PR-2A 2026-05-18 + P0-F PR-2B 2026-05-18 + P0-F PR-3B 2026-05-18 + P0-F PR-4B 2026-05-18)
-  //    全部 56 条都进 Permission 表(含 reset.credentials + user.update.role);
-  //    ops-admin 仅绑 54 条(沿 PR-2 D2=A + PR-3 D1=A 双重过滤;PR-4 D2=B audit-log 整条加入)
+  // 1. upsert Permission 全集(14 rbac.* + 24 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME = 73 条;
+  //    沿 D7 §10.2 + 历次 P0-F / 基建 / 终态 scoped-authz PR1(org.move.node)·PR2(membership 4 码)增量)
+  //    全部 73 条都进 Permission 表(含 4 把 reset.credentials + user.update.role);
+  //    ops-admin 仅绑 68 条(沿 PR-2 / SMS / WECHAT / REALNAME D2=A 凭证收紧 + PR-3 D1=A user.update.role 收紧;PR-4 D2=B audit-log 整条加入)
   for (const perm of ALL_PERMISSION_SEED) {
     await prisma.permission.upsert({
       where: { code: perm.code },
@@ -1712,7 +1750,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
   });
   console.log(`[seed] RBAC role '${opsAdminRole.code}' ensured`);
 
-  // 3. upsert RolePermission 映射:ops-admin → 14 rbac.* + 19 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS = 58 条
+  // 3. upsert RolePermission 映射:ops-admin → 14 rbac.* + 24 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 68 条
   //    (沿 D7 §10.3 + P0-F PR-2A 2026-05-18 D1=A 全绑 + D3=A 软删放宽 + PR-2B D1=A + D2=A 凭证收紧
   //     + P0-F PR-3B 2026-05-18 D1=A user.update.role 收紧 + D2=B user.reset.password 放宽 + D3=A 其余 5 条全绑
   //     + P0-F PR-4B 2026-05-18 D2=B audit-log.read.entry 整条加入)

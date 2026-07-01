@@ -151,8 +151,14 @@ export class TeamJoinEnrollmentService {
       });
       if (!member) throw new BizException(BizCode.MEMBER_NOT_FOUND);
       if (member.status !== MemberStatus.ACTIVE) throw new BizException(BizCode.MEMBER_INACTIVE);
-      const activeDepts = await tx.memberDepartment.findMany({
-        where: { memberId: app.memberId, deletedAt: null },
+      // 终态 scoped-authz PR2:重指向 member_organization_memberships 的 active PRIMARY 行(= 旧单部门)。
+      const activeDepts = await tx.memberOrganizationMembership.findMany({
+        where: {
+          memberId: app.memberId,
+          deletedAt: null,
+          membershipType: 'PRIMARY',
+          status: 'ACTIVE',
+        },
         select: { id: true, organization: { select: { code: true } } },
       });
       if (!isUnenrolledVolunteer({ gradeCode: member.gradeCode }, activeDepts)) {
@@ -162,19 +168,22 @@ export class TeamJoinEnrollmentService {
       // 7. 级别校验(level-1 存在 + ACTIVE)
       await this.assertGradeCodeValidTx(tx, JOIN_GRADE_CODE);
 
-      // 8. 单事务原子写(招新闭环优化 S5;§5.2c):守 member_departments 单部门 partial unique ——
-      //    新志愿者先软删 VOL 归口部门行(绝不与目标部门同时 active),legacy(零部门)无 VOL 可删;
-      //    再 create 目标部门 → 设级别 level-1 → 状态 joined(全或无;失败回滚 → member 仍未入队)。
+      // 8. 单事务原子写(招新闭环优化 S5;§5.2c):守 PRIMARY 单主归属 primary_active_unique ——
+      //    新志愿者先软删 VOL 归口 PRIMARY 行(绝不与目标部门同时 active),legacy(零部门)无 VOL 可删;
+      //    再 create 目标部门 PRIMARY → 设级别 level-1 → 状态 joined(全或无;失败回滚 → member 仍未入队)。
       const volDept = activeDepts.find((d) => d.organization.code === VOL_ORG_CODE);
       if (volDept) {
-        await tx.memberDepartment.update({ where: { id: volDept.id }, data: { deletedAt: now } });
+        await tx.memberOrganizationMembership.update({
+          where: { id: volDept.id },
+          data: { deletedAt: now },
+        });
       }
       try {
-        await tx.memberDepartment.create({
+        await tx.memberOrganizationMembership.create({
           data: { memberId: app.memberId, organizationId: dto.organizationId },
         });
       } catch (err) {
-        // partial unique (memberId) WHERE deletedAt IS NULL 兜底并发重复入队
+        // primary_active_unique (memberId) WHERE deletedAt IS NULL AND status=ACTIVE AND type=PRIMARY 兜底并发重复入队
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
           throw new BizException(BizCode.TEAM_JOIN_MEMBER_ALREADY_ENROLLED);
         }
