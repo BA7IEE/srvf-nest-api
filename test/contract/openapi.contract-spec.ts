@@ -465,6 +465,19 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/notifications/subscriptions/status'],
   ['get', '/api/admin/v1/notification-wechat-templates'],
   ['put', '/api/admin/v1/notification-wechat-templates/{typeCode}'],
+  // 终态 scoped-authz PR3「职务定义」(2026-07-01;冻结稿 §7.2),+9 → 274。
+  //   positions 5(GET 列 / POST 建 / GET :id / PATCH :id / DELETE :id)+ position-rules 4
+  //   (GET 列〔按 nodeTypeCode 过滤〕/ POST 建 / PATCH :id / DELETE :id;GET :id §7.2 未列不实装)。
+  //   R 模式 position.*.definition 4 + position-rule.*.record 4,无 @Roles。
+  ['get', '/api/admin/v1/positions'],
+  ['post', '/api/admin/v1/positions'],
+  ['get', '/api/admin/v1/positions/{id}'],
+  ['patch', '/api/admin/v1/positions/{id}'],
+  ['delete', '/api/admin/v1/positions/{id}'],
+  ['get', '/api/admin/v1/position-rules'],
+  ['post', '/api/admin/v1/position-rules'],
+  ['patch', '/api/admin/v1/position-rules/{id}'],
+  ['delete', '/api/admin/v1/position-rules/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -875,6 +888,17 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'WechatQuotaItemDto',
   'UpsertWechatSubscribeTemplateDto',
   'WechatSubscribeTemplateDto',
+
+  // 终态 scoped-authz PR3「职务定义」(2026-07-01;冻结稿 §3.2/§3.3/§7.2):
+  //   positions / position-rules DTO 物理隔离(独立 class;入参 Create/Update + 出参 Response)。
+  //   注:PositionQueryDto / PositionRuleQueryDto 继承 PaginationQueryDto,被 NestJS Swagger 内联为
+  //   parameters,不进 components.schemas(沿既有 query DTO 内联范式)。
+  'PositionResponseDto',
+  'CreatePositionDto',
+  'UpdatePositionDto',
+  'PositionRuleResponseDto',
+  'CreatePositionRuleDto',
+  'UpdatePositionRuleDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

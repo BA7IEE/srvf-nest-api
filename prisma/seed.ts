@@ -1,4 +1,4 @@
-import { PrismaClient, Role, UserStatus } from '@prisma/client';
+import { PositionCategory, PrismaClient, Role, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 // v1 唯一允许创建 SUPER_ADMIN 的入口(详见 ARCHITECTURE.md §7.11 + §8 + §13)。
@@ -768,6 +768,204 @@ async function seedOrganizations(prisma: PrismaClient): Promise<void> {
   );
 }
 
+// 终态 scoped-authz PR3「职务定义」(2026-07-01 goal;冻结稿 §3.2 / §7.2 / R4 / §12)。
+// 目录 v1 收敛为 6 领导职务(R4;PositionCategory.STAFF 干事留口不 seed —— 2026 公告里
+// "文书 / 装备 / 训练"是组〔Organization〕而非个人职务,人是该组组长)。
+// rank 按资历权重(正职 < 副职 < 组长 < 副组长;数值越小越资深,goal 定);allowMultiple 按 §12 公告实况:
+//   队长 / 部长 = false(一组织一正职);副队长 / 副部长 / 组长 / 副组长 = true
+//   (总队 6 副队长;SURT 训练组多组长);allowConcurrent 全 true(赵强兼 SAMT 队长)。
+// 幂等 upsert by code;update:{} 不覆盖运营运行时调整(真实值仅干净库首次 seed 生效)。
+// **本表纯配置定义,绝不被任何判权路径读**(消费它的 policy=PR7 / assignment=PR4 / authz=PR8)。
+const POSITION_SEED: ReadonlyArray<{
+  code: string;
+  name: string;
+  categoryCode: PositionCategory;
+  rank: number;
+  isLeadership: boolean;
+  allowMultiple: boolean;
+  allowConcurrent: boolean;
+  sortOrder: number;
+  description: string;
+}> = [
+  {
+    code: 'team-leader',
+    name: '队长',
+    categoryCode: PositionCategory.LEADER,
+    rank: 10,
+    isLeadership: true,
+    allowMultiple: false,
+    allowConcurrent: true,
+    sortOrder: 1,
+    description: '队 / 中心正职负责人(一组织一正职)',
+  },
+  {
+    code: 'vice-captain',
+    name: '副队长',
+    categoryCode: PositionCategory.DEPUTY,
+    rank: 20,
+    isLeadership: true,
+    allowMultiple: true,
+    allowConcurrent: true,
+    sortOrder: 2,
+    description: '队 / 中心副职负责人(可多人,如总队 6 副队长)',
+  },
+  {
+    code: 'dept-leader',
+    name: '部长',
+    categoryCode: PositionCategory.LEADER,
+    rank: 10,
+    isLeadership: true,
+    allowMultiple: false,
+    allowConcurrent: true,
+    sortOrder: 3,
+    description: '部门正职负责人(一组织一正职)',
+  },
+  {
+    code: 'dept-deputy',
+    name: '副部长',
+    categoryCode: PositionCategory.DEPUTY,
+    rank: 20,
+    isLeadership: true,
+    allowMultiple: true,
+    allowConcurrent: true,
+    sortOrder: 4,
+    description: '部门副职负责人(可多人)',
+  },
+  {
+    code: 'group-leader',
+    name: '组长',
+    categoryCode: PositionCategory.LEADER,
+    rank: 30,
+    isLeadership: true,
+    allowMultiple: true,
+    allowConcurrent: true,
+    sortOrder: 5,
+    description: '组正职负责人(可多人,如 SURT 训练组多组长)',
+  },
+  {
+    code: 'deputy-group-leader',
+    name: '副组长',
+    categoryCode: PositionCategory.DEPUTY,
+    rank: 40,
+    isLeadership: true,
+    allowMultiple: true,
+    allowConcurrent: true,
+    sortOrder: 6,
+    description: '组副职负责人(可多人)',
+  },
+];
+
+// 默认职务规则(冻结稿 §2.2 + R6 + R8;30 条 = 2 + 4×4 + 6 + 4 + 2)。按"组织类别(node_type)"声明。
+// R6 一类多领导称谓:rescue-team 同时登记队长 / 副队长 + 部长 / 副部长(SAMT/SECT/SSD 用队长、
+//   STAT 用部长,两套都登记由实际任命择一)。
+// R8 requireMembership 按 (nodeType, position) 可配:仅总队级领导(headquarters 队长 / 副队长)
+//   = false(总队长 / 副队长其 PRIMARY 归属在本队,不必"归属"于根);其余全 true
+//   (组长 / 副组长应在本组织子树内有 active 归属;goal DoD)。→ requireMembership = nodeType !== 'headquarters'。
+// volunteer(VOL 持有桶)不设任何职务规则。
+// required / allowConcurrent / status / minCount / maxCount 走列默认(false / true / ACTIVE / null / null;
+// minCount/maxCount 留空,runner 定)。幂等 upsert by (nodeTypeCode, positionId);update:{} 不覆盖运营调整。
+const POSITION_RULE_SEED: ReadonlyArray<{
+  nodeTypeCode: string;
+  positionCodes: readonly string[];
+}> = [
+  { nodeTypeCode: 'headquarters', positionCodes: ['team-leader', 'vice-captain'] },
+  {
+    nodeTypeCode: 'professional-mountain',
+    positionCodes: ['team-leader', 'vice-captain', 'group-leader', 'deputy-group-leader'],
+  },
+  {
+    nodeTypeCode: 'professional-water',
+    positionCodes: ['team-leader', 'vice-captain', 'group-leader', 'deputy-group-leader'],
+  },
+  {
+    nodeTypeCode: 'professional-urban',
+    positionCodes: ['team-leader', 'vice-captain', 'group-leader', 'deputy-group-leader'],
+  },
+  {
+    nodeTypeCode: 'professional-high',
+    positionCodes: ['team-leader', 'vice-captain', 'group-leader', 'deputy-group-leader'],
+  },
+  {
+    // R6:队长 / 副队长(SAMT/SECT/SSD)+ 部长 / 副部长(STAT)两套领导称谓都登记,任命择一。
+    nodeTypeCode: 'rescue-team',
+    positionCodes: [
+      'team-leader',
+      'vice-captain',
+      'dept-leader',
+      'dept-deputy',
+      'group-leader',
+      'deputy-group-leader',
+    ],
+  },
+  {
+    nodeTypeCode: 'functional-dept',
+    positionCodes: ['dept-leader', 'dept-deputy', 'group-leader', 'deputy-group-leader'],
+  },
+  { nodeTypeCode: 'group', positionCodes: ['group-leader', 'deputy-group-leader'] },
+  // volunteer → 无规则(VOL 持有桶)
+];
+
+async function seedPositions(prisma: PrismaClient): Promise<void> {
+  for (const p of POSITION_SEED) {
+    await prisma.organizationPosition.upsert({
+      where: { code: p.code },
+      update: {},
+      create: {
+        code: p.code,
+        name: p.name,
+        categoryCode: p.categoryCode,
+        rank: p.rank,
+        isLeadership: p.isLeadership,
+        allowMultiple: p.allowMultiple,
+        allowConcurrent: p.allowConcurrent,
+        sortOrder: p.sortOrder,
+        description: p.description,
+      },
+    });
+  }
+  console.log(
+    `[seed] organization positions ensured (${POSITION_SEED.length} 领导职务;R4 STAFF 干事留口不 seed)`,
+  );
+}
+
+async function seedPositionRules(prisma: PrismaClient): Promise<void> {
+  const positions = await prisma.organizationPosition.findMany({
+    where: { code: { in: POSITION_SEED.map((p) => p.code) } },
+    select: { id: true, code: true },
+  });
+  const idByCode = new Map(positions.map((p) => [p.code, p.id]));
+
+  let ruleCount = 0;
+  for (const rule of POSITION_RULE_SEED) {
+    // R8:仅总队级领导免根归属;其余(含组长 / 副组长)要求本组织子树内 active 归属。
+    const requireMembership = rule.nodeTypeCode !== 'headquarters';
+    for (const posCode of rule.positionCodes) {
+      const positionId = idByCode.get(posCode);
+      if (!positionId) {
+        throw new Error(
+          `[seed] position rule for nodeType '${rule.nodeTypeCode}' references unknown position code '${posCode}'`,
+        );
+      }
+      await prisma.organizationPositionRule.upsert({
+        where: {
+          nodeTypeCode_positionId: { nodeTypeCode: rule.nodeTypeCode, positionId },
+        },
+        update: {},
+        create: {
+          nodeTypeCode: rule.nodeTypeCode,
+          positionId,
+          requireMembership,
+          // required=false / allowConcurrent=true / status=ACTIVE / minCount=maxCount=null 走列默认
+        },
+      });
+      ruleCount++;
+    }
+  }
+  console.log(
+    `[seed] organization position rules ensured (${ruleCount} 条默认规则;§2.2 + R6 一类多领导称谓 + R8 总队级免根归属)`,
+  );
+}
+
 // V2.x C-6 RBAC 实施 PR #8(2026-05-14):14 条 rbac.* 权限点全集(沿 D7 v1.1 §10.2)。
 // 跳过 4 条 attachment.*(沿用户拍板方案 A;留 C-7 attachments)。
 // 注:code 必须满足 PR #2 实装的 Permission code 正则 `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*){2}$`
@@ -1093,15 +1291,78 @@ const CONTRIBUTION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
-// PR-2A 聚合(24 条:dict 8 + org 5〔终态 scoped-authz PR1 +org.move.node〕+ member-department 3 +
-// membership 4〔终态 scoped-authz PR2〕+ contribution 4)。member-department 与 membership 同"组织归属"域,
-// membership 为 member-department 的升级面(旧 3 码保留 deprecated)。
+// position.* 4 + position-rule.* 4(终态 scoped-authz PR3;冻结稿 §4.3 / §7.2;职务定义 + 职务规则
+// 纯配置面 CRUD;沿 dict / org / contribution 配置码现绑 ops-admin)。**Position/Rule 绝不进判权路径**。
+const POSITION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'position.read.definition',
+    module: 'position',
+    action: 'read',
+    resourceType: 'definition',
+    description: '查看职务定义(列表 / 详情)',
+  },
+  {
+    code: 'position.create.definition',
+    module: 'position',
+    action: 'create',
+    resourceType: 'definition',
+    description: '创建职务定义',
+  },
+  {
+    code: 'position.update.definition',
+    module: 'position',
+    action: 'update',
+    resourceType: 'definition',
+    description: '更新职务定义(含启停)',
+  },
+  {
+    code: 'position.delete.definition',
+    module: 'position',
+    action: 'delete',
+    resourceType: 'definition',
+    description: '软删职务定义(被职务规则引用时禁删)',
+  },
+  {
+    code: 'position-rule.read.record',
+    module: 'position-rule',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看职务规则(按 nodeTypeCode 过滤)',
+  },
+  {
+    code: 'position-rule.create.record',
+    module: 'position-rule',
+    action: 'create',
+    resourceType: 'record',
+    description: '创建职务规则(某类组织可设哪些职务)',
+  },
+  {
+    code: 'position-rule.update.record',
+    module: 'position-rule',
+    action: 'update',
+    resourceType: 'record',
+    description: '更新职务规则(含启停)',
+  },
+  {
+    code: 'position-rule.delete.record',
+    module: 'position-rule',
+    action: 'delete',
+    resourceType: 'record',
+    description: '软删职务规则',
+  },
+];
+
+// PR-2A 聚合(32 条:dict 8 + org 5〔终态 scoped-authz PR1 +org.move.node〕+ member-department 3 +
+// membership 4〔终态 scoped-authz PR2〕+ contribution 4 + position 4 + position-rule 4〔终态 scoped-authz PR3〕)。
+// member-department 与 membership 同"组织归属"域,membership 为 member-department 的升级面(旧 3 码保留 deprecated);
+// position / position-rule 为职务定义配置面(冻结稿 §4.3;全绑 ops-admin,沿配置码现绑)。
 const PR_2A_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...DICT_PERMISSION_SEED,
   ...ORG_PERMISSION_SEED,
   ...MEMBER_DEPARTMENT_PERMISSION_SEED,
   ...MEMBERSHIP_PERMISSION_SEED,
   ...CONTRIBUTION_PERMISSION_SEED,
+  ...POSITION_PERMISSION_SEED,
 ];
 
 // P0-F PR-2B(2026-05-18):配置类接口 RBAC 接入第二批(15 条)。
@@ -1493,7 +1754,7 @@ const REALNAME_INFRA_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
-// Permission 全集(用于 step 1 upsert;14 rbac.* + 24 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME = 73 条)
+// Permission 全集(用于 step 1 upsert;14 rbac.* + 32 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME = 81 条)
 const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...RBAC_PERMISSION_SEED,
   ...PR_2A_PERMISSION_SEED,
@@ -1505,7 +1766,7 @@ const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...REALNAME_INFRA_PERMISSION_SEED,
 ];
 
-// ops-admin 完整绑定集合(14 rbac.* + 24 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 68 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4 / REALNAME E-R-19;PR-2A 24 = 终态 scoped-authz PR1 org.move.node + PR2 membership 4 码)
+// ops-admin 完整绑定集合(14 rbac.* + 32 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 76 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4 / REALNAME E-R-19;PR-2A 32 = 终态 scoped-authz PR1 org.move.node + PR2 membership 4 + PR3 position 4 + position-rule 4 码,全绑 ops-admin 无过滤)
 // 注:`storage-setting.reset.credentials` 从 PR_2B_PERMISSION_SEED 过滤掉(沿 PR-2 D2=A;§6.2)
 // 注:`user.update.role` 从 USER_PERMISSION_SEED 过滤掉(沿 PR-3 D1=A;§6.2)
 // 注:`audit-log.read.entry` 整条加入,不过滤(沿 PR-4 D2=B;§6.2)
@@ -1527,7 +1788,7 @@ const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 const OPS_ADMIN_ROLE_CODE = 'ops-admin';
 const OPS_ADMIN_DISPLAY_NAME = '运营管理员';
 const OPS_ADMIN_DESCRIPTION =
-  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / membership / contribution-rule + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条 + WECHAT: wechat-setting / user.wechat.clear 3 条 + REALNAME: realname-setting 2 条)的 meta 角色;14 rbac.* + 24 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 68 条权限点;凭证 reset(storage / sms / wechat / realname)与 user 角色修改仅 SUPER_ADMIN';
+  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / membership / contribution-rule / position / position-rule + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条 + WECHAT: wechat-setting / user.wechat.clear 3 条 + REALNAME: realname-setting 2 条)的 meta 角色;14 rbac.* + 32 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME = 76 条权限点;凭证 reset(storage / sms / wechat / realname)与 user 角色修改仅 SUPER_ADMIN';
 
 // V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集
 // (沿 D7-attachments v1.0 §6.1 + Q11 v1.0 锁清单 + 用户 PR #6a 拍板)。
@@ -2785,6 +3046,12 @@ async function main(): Promise<void> {
     // 依赖 node_type 真实分类已由 seedV2Dictionaries 内置(nodeTypeCode 为字符串,无 FK,
     // 但语义上应在 node_type 之后)。
     await seedOrganizations(prisma);
+
+    // 终态 scoped-authz PR3「职务定义」(2026-07-01;冻结稿 §3.2/§3.3):6 领导职务 + 30 默认职务规则。
+    // 依赖 node_type 字典(seedV2Dictionaries 已内置)+ 本表 6 职务 id;规则 upsert 需先建职务。
+    // 纯配置定义,不依赖 RBAC / Member / Organization 实例,故放 seedOrganizations 之后、seedRbac 之前。
+    await seedPositions(prisma);
+    await seedPositionRules(prisma);
 
     // V2.x C-6 RBAC 实施 PR #8(沿 D7 v1.1 §10):14 条 rbac.* + ops-admin + bootstrap
     await seedRbac(prisma);

@@ -47,8 +47,9 @@ import { HttpStatus } from '@nestjs/common';
 // - 29xxx + 291xx: content(CMS 内容发布,2026-06-21;290xx 5 码,291xx 预留)
 // - 30xxx + 301xx: permissions(C-6 RBAC)
 // - 31xxx + 311xx: notifications(统一通知模块 S1 站内信渠道,2026-06-25;310xx 5 码,311xx 预留)
+// - 32xxx: organization positions + position rules(职务定义 320xx 3 码 + 职务规则 3201x 3 码;终态 scoped-authz PR3,2026-07-01)
 // - 40xxx / 42xxx / 50xxx: 通用 HTTP / infrastructure(BAD_REQUEST / UNAUTHORIZED / FORBIDDEN / NOT_FOUND / TOO_MANY_REQUESTS / INTERNAL_ERROR)
-// - 未规划模块预留(训练 / 装备 / 财务等):31xxx 之后顺延(realname 27xxx / recruitment 28xxx / content 29xxx / notification 31xxx 已实装)
+// - 未规划模块预留(训练 / 装备 / 财务等):32xxx 之后顺延(realname 27xxx / recruitment 28xxx / content 29xxx / notification 31xxx / position 32xxx 已实装)
 export const BizCode = {
   // 通用 HTTP 级
   BAD_REQUEST: { code: 40000, message: '请求参数错误', httpStatus: HttpStatus.BAD_REQUEST },
@@ -1072,6 +1073,43 @@ export const BizCode = {
     code: 31030,
     message: '通知状态流转不允许',
     httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // organization positions + position rules 模块业务级(32xxx)。终态 scoped-authz PR3「职务定义」引入
+  // (2026-07-01;冻结稿 §3.2 / §3.3 / §7.2)。纯配置面 CRUD;段位沿"31xxx 之后顺延"新开 32xxx。
+  // 子段:
+  // - 320xx:职务定义(position)—— 32001 NOT_FOUND / 32002 code 撞唯一(P2002 兜底)/ 32003 被规则引用禁删
+  // - 3201x:职务规则(position-rule)—— 32010 NOT_FOUND / 32011 (nodeType,position) 撞唯一(P2002)/ 32012 nodeTypeCode 非法
+  // positionId 引用不存在的职务复用 POSITION_NOT_FOUND(32001)。删除守卫沿 ORGANIZATION_HAS_CHILDREN 范式。
+  POSITION_NOT_FOUND: {
+    code: 32001,
+    message: '职务定义不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  POSITION_CODE_DUPLICATE: {
+    code: 32002,
+    message: '职务 code 已存在',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  POSITION_IN_USE: {
+    code: 32003,
+    message: '职务已被职务规则引用,无法删除',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  POSITION_RULE_NOT_FOUND: {
+    code: 32010,
+    message: '职务规则不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  POSITION_RULE_ALREADY_EXISTS: {
+    code: 32011,
+    message: '该组织类别对该职务已有规则',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  POSITION_RULE_NODE_TYPE_INVALID: {
+    code: 32012,
+    message: '组织节点类别(nodeTypeCode)无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
   },
 
   // audit_logs 模块业务级(140xx + 141xx)。批次 6 PR #1 引入(2026-05-12)。
