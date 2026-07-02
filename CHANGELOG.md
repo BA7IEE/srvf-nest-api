@@ -6,6 +6,17 @@
 
 > 累计下一个 minor 候选(**未 bump 版本 / 未发 Release**;沿发版拍板「合并所有子 PR 进 main + 累计 `## Unreleased`」)。
 
+## v0.34.0 - 2026-07-03
+
+> **终态「组织职务 + 分管 + scoped RBAC + 统一鉴权」PR1–PR12 全量落地**:8 新表(`organization_closure`/`member_organization_memberships`/`organization_positions`/`organization_position_rules`/`organization_position_assignments`/`organization_supervision_assignments`/`role_bindings`/`organization_position_role_policies`;7 个新 migration 32→38)/ 32 新端点(`EXPECTED_ROUTES` 260→292)/ 28 新权限码(163→191)/ 4 新内置角色(3→7:`org-admin`/`group-manager`/`org-supervisor`/`attendance-final-reviewer`)/ 判权大脑 `AuthzService`(三源推导 + 可解释 `explain`)+ `POST admin/v1/authz/explain` 可解释性出口 + 公告导入工具(preview/execute)+ `activities`/`activity-registrations`/`attendances` 三模块(participation)scoped 判权首批落地。0 端点回滚 / 0 表回滚,全部纯新增。
+
+### ⚠️ 行为变更(现网可感,务必读)
+
+- **考勤终审自审禁止**:submitter==终审人 → 拒绝,新 BizCode **22074** `ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN`(403;**SUPER_ADMIN 亦拒**,域不变量永不可配)。
+- **考勤终审一级同人默认禁止**:一级 reviewer==终审人 → 默认拒绝,新 BizCode **22075** `ATTENDANCE_SAME_REVIEWER_FORBIDDEN`(403;env `ATTENDANCE_ALLOW_SAME_REVIEWER=true` 可放开同人,自审不受此开关影响)。
+- **⚠️ 运维注意:单管理员部署终审链现需第二人** —— submit / 一级审与终审不可同一账号;仅配一个管理员账号的部署,须在升级前补挂第二个具终审权限的账号,否则终审流程会卡死。
+- 其余判权面(activities/activity-registrations/attendances 三模块 PR12 scoped 切换)**对既有 GLOBAL 持有者(biz-admin/ops-admin/SUPER_ADMIN)零行为变化**——全量既有 e2e 逐字锁定验证;scoped 影响面仅限**新获得**能力的职务/分管持有者,不构成对现网既有工作流的破坏性变更。
+
 ### Added
 
 - **终态 scoped-authz 落地序列【第 12 刀 PR12 — 逐面迁移第一批(participation)】(档 D;goal「终态 scoped-authz 落地序列【第 12 刀 PR12 — 逐面迁移第一批(participation)】」;T0 冻结评审稿 [`org-position-scoped-authz-terminal-design-review.md`](docs/reviews/org-position-scoped-authz-terminal-design-review.md) §11 PR12+)**:`activities` / `activity-registrations` / `attendances` 三模块判权全量从 `rbac.can` 切 `authz.can`/`authz.explain`(24 处调用位点),scoped 持有者(经职务 policy 或分管推导)在其组织树范围内首次获得参与域点动作能力;**0 schema / 0 migration(仍 38)/ 0 新端点(仍 292)/ 0 新权限码(仍 191)/ 0 BizCode / 模块仍 34 —— 纯 repoint 刀**。
@@ -85,6 +96,12 @@
   - **`Organization` 两 additive 可空列(冻结稿 §3.0.1 R1/R3;schema-only)**:`establishmentStatusCode?`(设立状态,空/`formal`=正式、`provisional`=筹备组;筹备组**不新增 nodeType**、转正 = 翻状态)+ `groupFunctionCode?`(组功能留口,v1 只占列不写逻辑)。纯加列、无 default、无回填、无不可逆;**不进 Create/Update DTO 与响应 / OpenAPI / 任何现有读路径**,「可读写」由 prisma 级 e2e 自证。
   - **字典(seed 幂等,二跑 diff 空)**:`node_type` +`group` 一值;新增闭集字典 `org_establishment_status`(`formal`/`provisional`,登记 `dictionaries.service.ts` SYSTEM+ITEM 防误删守卫);留口字典 `group_function`(v1 空 items、无校验路径,沿 `join_source` 自由串候选字典惯例**不登记**守卫)。
   - **footprint**:**模块 +0**(扩既有 `OrganizationsController`/`OrganizationsService`,零新 class,controller **55 不变**)· **第 32 migration**(新表 + 2 additive 列 + `WITH RECURSIVE` 回填;纯加性、无破坏、无 enum、无不可逆、无历史回填)· **+1 端点** `POST admin/v1/organizations/:id/move`(`EXPECTED_ROUTES` 260→**261**)· **+1 RBAC 码** `org.move.node`(权限码 163→**164** / ops-admin 绑定 63→**64** / biz-admin·member 零变;三 seed snapshot spec 对账:seed-rbac `EXPECTED_RBAC_PERMISSION_CODES` +1〔`.length` 自动 68→69·ops-admin 63→64〕、seed-biz-admin `EXPECTED_OPS_ADMIN_BINDING_COUNT` 63→64、seed-attachment 零变)· **0 新 BizCode**(复活 2 死码)· contract snapshot **受控追加**(+`MoveOrganizationDto` + `/organizations/{id}/move` 路径;2 additive 列 schema-only 不入 Swagger,routes 段 +1)· **行为锁**:现有组织 CRUD / getTree / 单根上限 / 软删护栏(HAS_CHILDREN/HAS_MEMBERS/LAST_ROOT)逐字不变(org e2e 38→**54** 例全绿,含既有行为锁)· 新增 closure util 单测 10 例 + org e2e reparent/closure 16 例 · unit 1878→**1888** / contract 457→**458** / 全量 e2e 绿 / lint / typecheck 0 · `docs:rbacmap:check`(164)/ `docs:codemap:check`(32 migration)0 FAIL 0 WARN。同 PR 刷 `docs/ai-harness/RBAC_MAP.md`(§3 计数 + 戳)/ `docs/current-state.md §1` / `CODEMAP.md` + `prisma/CLAUDE.md`(32 migration)。**landing 序列不单独发版**(攒批到阶段性再走 release closeout 九阶段 E 档);冻结评审稿是 PR1–PR12 活文档,全序列落完才归档。**docs/handoff `openapi.json` + admin-web 能力图刷新延后到 handoff 收口批**(本刀 goal 未授权 handoff 面)。
+
+### 已知未完项(版后动作)
+
+- **① 摘 `biz-admin` 终审两码待办**:`attendance.final-approve.sheet` / `attendance.final-reject.sheet` 摘码是后置独立微刀,前置 ops-gate 三项——生产环境已实际完成公告数据导入 + BD-2 `attendance-final-reviewer` 绑定已实际挂载 + scoped 终审链验证通过;三者未齐前不摘码,现状 ADMIN 全局终审契约照旧零断档。
+- **② 2026 任命公告数据尚未导入**:PR11 的 preview/execute 两段式导入工具已就绪,任命 / 分管 / 组织行由运营在实际导入时运行时提交;沿 R13,合成 / 示例数据不入 git,本仓不含任何真实任命公告数据。
+- **③ 终批 handoff 待摘码后合刷**:`announcement-import` 2 端点说明 + 摘码后的判权语义变化,计划与①的摘码微刀合并推送,不随本次发版单独更新交接层文档。
 
 ## v0.33.0 - 2026-06-29
 
