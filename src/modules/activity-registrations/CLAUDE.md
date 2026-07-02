@@ -11,7 +11,8 @@
 
 ## Local facts
 
-- `activity-registrations.service.ts` **750L**(god-service,沿 CODEMAP);`activity-registration-state-machine.ts`(71L)/ `activity-registration-audit-recorder.ts`(197L)/ `app-my-registrations.service.ts`(280L)已抽离
+- `activity-registrations.service.ts` **1020L**(god-service,沿 CODEMAP;true-up 自陈旧 750L 记载);`activity-registration-state-machine.ts`(71L)/ `activity-registration-audit-recorder.ts`(197L)/ `app-my-registrations.service.ts`(280L)已抽离
+- **判权(终态 scoped-authz PR12,2026-07-02)**:8 处调用位点判权走 `assertCanOrThrow` → `authz.explain`;`list`/`exportCsv`(嵌套 `:activityId`)带 `{type:'activity', id: activityId}` 父 ref;`approve`/`reject`/`cancelAdmin` 带 `{type:'activity_registration', id}`(点动作,scoped 持有者树内可用);`create`(代报名)/ `listAllForAdmin`(扁平跨轴)/ `listForMemberAdmin`(队员轴跨活动)无 ref(GLOBAL-only,不在冻结稿①点动作枚举内);`resource_not_found` 回退 `rbac.can` 全局码判定,持码者 return 交回既有 `findActivityOrThrow`/`findRegistrationOrThrow` 抛 `ACTIVITY_NOT_FOUND`/`ACTIVITY_REGISTRATION_NOT_FOUND`,无码者 30100。App 自助端点(`createMy`/`listMy`/`findMy`/`cancelMy`)不受影响,self-scope 不变。e2e 见 `test/e2e/participation-scoped-authz.e2e-spec.ts`。
 - Admin Controller:`activity-registrations.controller.ts` `@Controller('admin/v1/activities/:activityId/registrations')` `@ApiTags('Admin - Registrations')`
 - App Controller:`controllers/app-my-registrations.controller.ts` `@Controller('app/v1/my')` `@ApiTags('Mobile - My Registrations')`;**方法级**追加 `@ApiTags('Mobile - My Activities')` 于 `GET /my/activities`(刻意保留)
 - DTO 隔离:Admin DTO 在 `activity-registrations.dto.ts`;App DTO 在 `dto/app/`(5 文件)
@@ -21,7 +22,7 @@
 - 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID`
 - CSV 导出:`GET admin/v1/activities/:activityId/registrations/export` 手写 `escapeCsvField`,**不**引 `csv-stringify`;**不**写 `export_logs` / **不**生成 `AttendanceRecord`(Q-A6 三禁)
 - **报名截止**(活动闭环硬化 2026-06-21):`assertActivityRegistrable`(create 代报名 + createMy 自助 + App `createMyForApp` 共用闸)在 isPublicRegistration 之后判 `registrationDeadline !== null && now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`(精确时刻,不做北京日归一);**approve 不加此闸**(截止只管报名动作,截止前已报 pending 仍可批)
-- E2E:`activity-registrations.e2e-spec.ts` / `activity-registrations-state-transition.e2e-spec.ts` / `activity-registrations-audit-characterization.e2e-spec.ts` / `app-my-registrations-read.e2e-spec.ts` / `app-my-registrations-write.e2e-spec.ts`
+- E2E:`activity-registrations.e2e-spec.ts` / `activity-registrations-rbac-boundary.e2e-spec.ts` / `activity-registrations-state-transition.e2e-spec.ts` / `activity-registrations-audit-characterization.e2e-spec.ts` / `activity-registrations-insurance-gate.e2e-spec.ts` / `app-my-registrations-read.e2e-spec.ts` / `app-my-registrations-write.e2e-spec.ts`;scoped 判权矩阵在 `participation-scoped-authz.e2e-spec.ts`(与 activities / attendances 共用一个文件)
 
 ## Risk points (不要做)
 
@@ -33,7 +34,7 @@
 - ❌ **不**改 Admin Controller path `admin/v1/activities/:activityId/registrations`(`export` 字面段必须**先**于 `:id/<action>` 路由声明,Q-A6 锁定;调换顺序会被 Nest 路由解析为 `:id=export`)
 - ❌ **不**把 Admin DTO 用 `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 派生为 App DTO(沿 [`/AGENTS.md §19.7 D-6`](../../../AGENTS.md));App `dto/app/` 字段集**刻意删除** `memberId` / `memberNo` / `memberDisplayName`(沿 §16.B.2)
 - ❌ App 视角 where 子句**永远**用 `currentUser.memberId` 锁本人;**禁止** role 短路 / `scope=all`
-- ❌ **不**主动拆 `activity-registrations.service.ts`(750L,沿 [`/docs/current-state.md §4 P2`](../../../docs/current-state.md))
+- ❌ **不**主动拆 `activity-registrations.service.ts`(1020L,沿 [`/docs/current-state.md §4 P2`](../../../docs/current-state.md))
 - ❌ **不**在 CSV 导出路径引入 `csv-stringify` 等新依赖(沿 Q-A6 + [`/AGENTS.md §0`](../../../AGENTS.md))
 - ❌ **不**误以为 `pass → cancelled` 后会自动腾出 capacity 给后续 pending(腾出靠 partial unique 让 `cancelled` 不占;但 capacity 复核只看 `pass` 计数,无 reservation 机制)
 

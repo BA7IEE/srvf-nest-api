@@ -14,6 +14,7 @@ import {
   NOTIFICATION_TYPE_ACTIVITY_REMINDER,
 } from '../notifications/notification.constants';
 import { AuthzService } from '../authz/authz.service';
+import type { ResourceRef } from '../authz/authz.types';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { RbacService } from '../permissions/rbac.service';
 // 跨轴只读(2026-06-23):复用 team-join 贡献值封顶核(单一真相源;生涯累计 cutoff=null)。
@@ -226,22 +227,39 @@ export class AttendancesService {
     private readonly sheetStateMachine: AttendanceSheetStateMachine,
     private readonly attendancePresenter: AttendancePresenter,
     private readonly rbac: RbacService,
-    // 终态 scoped-authz PR9(2026-07-02):统一判权大脑,仅终审两方法消费(见
-    // assertFinalReviewAuthzOrThrow);其余 6 管理端动作仍走 rbac.can(逐面迁移 = PR12)。
+    // 终态 scoped-authz PR9(2026-07-02)起统一判权大脑;终审两方法见 assertFinalReviewAuthzOrThrow。
+    // PR12(2026-07-02;冻结稿 §11 逐面迁移第一批)起其余 6 管理端动作(create/read×多/update/delete/
+    // approve/reject)也切 authz.explain,见 assertCanOrThrow。
     private readonly authz: AuthzService,
     // 统一通知 S4(评审稿 §6.4):考勤终审通过 → 本人考勤结果/贡献值定向通知派发器(producer → notifications
     // 单向直调,commit 后事务外、try-catch 永不抛;防环:本服务绝不被通知模块回调)。
     private readonly notificationDispatcher: NotificationDispatcher,
   ) {}
 
-  // Slow-4 T3(2026-06-11,评审稿 §3.7 / D-S4-8):RBAC 判权(沿 P0-F assertCanOrThrow 范式)。
-  // 10 个管理端方法第一条语句调用;list / findOne / reviewDetail 共用 read(D4=A 判例);
-  // 终审两码独立(`attendance.final-approve.sheet` / `attendance.final-reject.sheet`,
-  // ADMIN 级终审沿 P1-5 方案 A,部门级细分仍挂 Slow-3 子议题)。
-  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
-    if (!(await this.rbac.can(user, action))) {
-      throw new BizException(BizCode.RBAC_FORBIDDEN);
+  // Slow-4 T3(2026-06-11,评审稿 §3.7 / D-S4-8)起点;终态 scoped-authz PR12(2026-07-02;
+  // 冻结稿 §11 + 决断①②)升级:判权走 authz.explain,ref 矩阵——
+  //   - submit(create.sheet)/ list(嵌套 :activityId)传 {type:'activity', id: activityId}
+  //   - findOne / reviewDetail / edit / softDelete / approve / reject 传 {type:'attendance_sheet', id}
+  //     (点动作)
+  //   - listAllSheetsForAdmin(扁平跨轴)/ listRecordsForMemberAdmin / getMemberContributionSummary
+  //     (队员轴跨活动)无 ref(no-ref = GLOBAL-only,行为锁天然成立)
+  // NOT_FOUND 回退沿 assertFinalReviewAuthzOrThrow 同范式:resource_not_found 时退回 rbac.can 全局码
+  // 判定——持码者 return(交回调用方后续 assertActivityExists / findSheetOrThrow 抛既有 NOT_FOUND,
+  // 「先判权后查资源」行为锁不变),无码者 30100 防枚举。8 个管理端方法(不含终审两方法)第一条语句
+  // 调用;list / findOne / reviewDetail / listAllSheetsForAdmin / listRecordsForMemberAdmin /
+  // getMemberContributionSummary 共用 read(D4=A 判例)。终审两码独立走 assertFinalReviewAuthzOrThrow
+  // (`attendance.final-approve.sheet` / `attendance.final-reject.sheet`,PR9 起,自审/同人约束)。
+  private async assertCanOrThrow(
+    user: CurrentUserPayload,
+    action: string,
+    ref?: ResourceRef,
+  ): Promise<void> {
+    const decision = await this.authz.explain(user, action, ref);
+    if (decision.allow) return;
+    if (ref && decision.reason === 'resource_not_found' && (await this.rbac.can(user, action))) {
+      return;
     }
+    throw new BizException(BizCode.RBAC_FORBIDDEN);
   }
 
   // 终态 scoped-authz PR9(2026-07-02;冻结稿 §5.2/§5.3 + BD-2):终审两方法判权切 AuthzService,
@@ -456,7 +474,10 @@ export class AttendancesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.create.sheet');
+    await this.assertCanOrThrow(currentUser, 'attendance.create.sheet', {
+      type: 'activity',
+      id: activityId,
+    });
     return this.prisma.$transaction(async (tx) => {
       // 1. activity 存在 + 非 cancelled;同时取 activityTypeCode + statusCode 用于 D14 预填 + D11 推动
       const activity = await this.findActivityForSubmissionFull(activityId, tx);
@@ -594,7 +615,10 @@ export class AttendancesService {
     query: ListAttendanceSheetsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<AttendanceSheetListItemDto>> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet');
+    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
+      type: 'activity',
+      id: activityId,
+    });
     await this.prisma.$transaction(async (tx) => {
       await this.assertActivityExists(activityId, tx);
     });
@@ -740,7 +764,10 @@ export class AttendancesService {
   // ============ findOne(GET Sheet 简化详情)============
 
   async findOne(id: string, currentUser: CurrentUserPayload): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet');
+    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
+      type: 'attendance_sheet',
+      id,
+    });
     const sheet = await this.prisma.$transaction(async (tx) => this.findSheetOrThrow(id, tx));
 
     auditPlaceholder('attendance-sheet.read.other', {
@@ -758,7 +785,10 @@ export class AttendancesService {
     id: string,
     currentUser: CurrentUserPayload,
   ): Promise<AttendanceSheetReviewDetailDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet');
+    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
+      type: 'attendance_sheet',
+      id,
+    });
     const result = await this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
@@ -813,7 +843,10 @@ export class AttendancesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.update.sheet');
+    await this.assertCanOrThrow(currentUser, 'attendance.update.sheet', {
+      type: 'attendance_sheet',
+      id,
+    });
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
@@ -958,7 +991,10 @@ export class AttendancesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.delete.sheet');
+    await this.assertCanOrThrow(currentUser, 'attendance.delete.sheet', {
+      type: 'attendance_sheet',
+      id,
+    });
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
@@ -1015,7 +1051,10 @@ export class AttendancesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.approve.sheet');
+    await this.assertCanOrThrow(currentUser, 'attendance.approve.sheet', {
+      type: 'attendance_sheet',
+      id,
+    });
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
@@ -1071,7 +1110,10 @@ export class AttendancesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.reject.sheet');
+    await this.assertCanOrThrow(currentUser, 'attendance.reject.sheet', {
+      type: 'attendance_sheet',
+      id,
+    });
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 

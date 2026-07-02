@@ -15,6 +15,8 @@ import {
 } from '../notifications/notification.constants';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { RbacService } from '../permissions/rbac.service';
+import { AuthzService } from '../authz/authz.service';
+import type { ResourceRef } from '../authz/authz.types';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
 import {
@@ -136,6 +138,9 @@ export class ActivityRegistrationsService {
     private readonly registrationAuditRecorder: ActivityRegistrationAuditRecorder,
     private readonly registrationStateMachine: ActivityRegistrationStateMachine,
     private readonly rbac: RbacService,
+    // 终态 scoped-authz PR12(2026-07-02;冻结稿 §11 逐面迁移第一批):统一判权大脑,管理端
+    // 判权从 rbac.can 切 authz.explain(见 assertCanOrThrow)。
+    private readonly authz: AuthzService,
     // 保险 T3:报名门槛(跨模块单向依赖 activity-registration → insurances,评审稿 E-13)
     private readonly insuranceRequirement: InsuranceRequirementService,
     // 统一通知 S4(评审稿 §6.4):审批结果定向通知派发器(producer → notifications 单向直调,
@@ -145,13 +150,27 @@ export class ActivityRegistrationsService {
 
   // ============ helpers ============
 
-  // Slow-4 T3(2026-06-11,评审稿 §3.6 / D-S4-8):RBAC 判权(沿 P0-F assertCanOrThrow 范式)。
-  // 管理端 6 端点第一条语句调用;list / exportCsv 共用 read(D4=A 判例)。
-  // App 自助端点(app-my-registrations.service.ts)不走 RBAC,self-scope 不变。
-  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
-    if (!(await this.rbac.can(user, action))) {
-      throw new BizException(BizCode.RBAC_FORBIDDEN);
+  // Slow-4 T3(2026-06-11,评审稿 §3.6 / D-S4-8)起点;终态 scoped-authz PR12(2026-07-02;
+  // 冻结稿 §11 + 决断①②)升级:判权走 authz.explain,ref 矩阵——
+  //   - list / exportCsv(嵌套 :activityId)传 {type:'activity', id: activityId} 父 ref
+  //   - approve / reject / cancelAdmin 传 {type:'activity_registration', id}(点动作)
+  //   - create(代报名)/ listAllForAdmin(扁平跨轴)/ listForMemberAdmin(队员轴跨活动)无 ref
+  //     (no-ref = GLOBAL-only,行为锁天然成立;不在冻结稿①点动作枚举内,DoD scoped e2e 亦未列)
+  // NOT_FOUND 回退沿 PR9 范式:resource_not_found 时退回 rbac.can 全局码判定——持码者 return
+  // (交回调用方后续 findActivityOrThrow / findRegistrationOrThrow 抛既有 NOT_FOUND,「先判权后查
+  // 资源」行为锁不变),无码者 30100 防枚举。管理端 8 端点第一条语句调用;list / exportCsv 共用 read
+  // (D4=A 判例)。App 自助端点(createMy/listMy/findMy/cancelMy)不走本 helper,self-scope 不变。
+  private async assertCanOrThrow(
+    user: CurrentUserPayload,
+    action: string,
+    ref?: ResourceRef,
+  ): Promise<void> {
+    const decision = await this.authz.explain(user, action, ref);
+    if (decision.allow) return;
+    if (ref && decision.reason === 'resource_not_found' && (await this.rbac.can(user, action))) {
+      return;
     }
+    throw new BizException(BizCode.RBAC_FORBIDDEN);
   }
 
   private jsonAsObject(v: Prisma.JsonValue | null): Record<string, unknown> | null {
@@ -376,7 +395,10 @@ export class ActivityRegistrationsService {
     query: ListRegistrationsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<ActivityRegistrationListItemDto>> {
-    await this.assertCanOrThrow(currentUser, 'activity-registration.read.record');
+    await this.assertCanOrThrow(currentUser, 'activity-registration.read.record', {
+      type: 'activity',
+      id: activityId,
+    });
     // activity 存在性校验(管理员看不存在的活动 → 404)。
     await this.findActivityOrThrow(activityId);
 
@@ -578,7 +600,10 @@ export class ActivityRegistrationsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity-registration.approve.record');
+    await this.assertCanOrThrow(currentUser, 'activity-registration.approve.record', {
+      type: 'activity_registration',
+      id,
+    });
     const result = await this.prisma.$transaction(async (tx) => {
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
@@ -648,7 +673,10 @@ export class ActivityRegistrationsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity-registration.reject.record');
+    await this.assertCanOrThrow(currentUser, 'activity-registration.reject.record', {
+      type: 'activity_registration',
+      id,
+    });
     const result = await this.prisma.$transaction(async (tx) => {
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
@@ -736,7 +764,10 @@ export class ActivityRegistrationsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity-registration.cancel.record');
+    await this.assertCanOrThrow(currentUser, 'activity-registration.cancel.record', {
+      type: 'activity_registration',
+      id,
+    });
     return this.prisma.$transaction(async (tx) => {
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
@@ -891,7 +922,10 @@ export class ActivityRegistrationsService {
     query: ExportRegistrationsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<string> {
-    await this.assertCanOrThrow(currentUser, 'activity-registration.read.record');
+    await this.assertCanOrThrow(currentUser, 'activity-registration.read.record', {
+      type: 'activity',
+      id: activityId,
+    });
     await this.findActivityOrThrow(activityId);
 
     const scope = query.scope ?? 'pass';

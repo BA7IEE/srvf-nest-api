@@ -503,9 +503,12 @@ describe('AttendancesService (characterization, scoped)', () => {
   // ============ 2b. PR9 终审判权切换(authz deny 映射)============
   // goal 决断①:finalApprove / finalReject 判权走 authz.explain(user, code, {type:'attendance_sheet', id});
   // 约束两 reason → 22074 / 22075;resource_not_found → rbac.can 回退保「先判码后查单」旧契约;
-  // 其余一切 deny → 30100。其余 6 管理端动作不触 authz(仍 rbac.can,逐面迁移 = PR12)。
+  // 其余一切 deny → 30100。终态 scoped-authz PR12(2026-07-02)起其余 6 管理端动作也切
+  // authz.explain(ref 矩阵见 attendances.service.ts assertCanOrThrow 头注),
+  // 但**约束否决(self_approval_forbidden/same_reviewer_forbidden)仅注册于 final-approve**
+  // (§5.3 注册表冻结),故 approve 等动作即便走 authz 也不会命中这两个 reason。
   describe('PR9 终审 authz 判权(deny 映射)', () => {
-    it('finalApprove:authz.explain 收 (user, final-approve 码, ref);approve 等其余动作零调用', async () => {
+    it('finalApprove:authz.explain 收 (user, final-approve 码, ref);approve 亦经 authz 但收各自 action+ref(PR12)', async () => {
       const prisma = makePrismaMock();
       const authz = makeAuthzMock();
       const stateMachine = makeStateMachineMock(DENY_DECISION);
@@ -527,7 +530,12 @@ describe('AttendancesService (characterization, scoped)', () => {
       await expect(service.approve('sheet-1', makeApproveDto(), user, META)).rejects.toEqual(
         new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID),
       );
-      expect(authz.explain).not.toHaveBeenCalled();
+      // PR12:approve 判权也走 authz.explain(不再是「零调用」);收自己的 action + sheet ref,
+      // 与 final-approve 的约束否决面(§5.3 注册表)互不相干。
+      expect(authz.explain).toHaveBeenCalledWith(user, 'attendance.approve.sheet', {
+        type: 'attendance_sheet',
+        id: 'sheet-1',
+      });
     });
 
     it('finalReject:authz.explain 收 final-reject 码 + 同 ref 形状', async () => {

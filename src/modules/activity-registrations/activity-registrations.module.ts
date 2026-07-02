@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { InsurancesModule } from '../insurances/insurances.module';
 import { DatabaseModule } from '../../database/database.module';
+import { AuthzModule } from '../authz/authz.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { ActivitiesModule } from '../activities/activities.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
@@ -29,12 +30,18 @@ import { AppMyRegistrationsController } from './controllers/app-my-registrations
 // Route B Phase 4d2(2026-06-01):`ActivityRegistrationsMeController`(`/api/v2/users/me/*` 4 端点)
 // 已删除(app/v1/my/registrations* 对等存在,队员流由 app-my-registrations-*.e2e 覆盖;
 // 沿 docs/api-surface-migration-plan.md §6 Phase 4)。
+// 终态 scoped-authz PR12(2026-07-02;冻结稿 §11 PR12+ 逐面迁移第一批):导入 AuthzModule 注入
+// AuthzService —— list/approve/reject/cancelAdmin/exportCsv 判权从 rbac.can 切 authz.can/explain
+// (list/exportCsv 带 {type:'activity', id} 父 ref;approve/reject/cancelAdmin 带
+// {type:'activity_registration', id};create/listAllForAdmin/listForMemberAdmin 仍 no-ref)。
+// authz 是叶子模块,不成环。
 @Module({
   // InsurancesModule:保险 T3 报名门槛(单向依赖,仅注入 InsuranceRequirementService;评审稿 E-13)
   imports: [
     DatabaseModule,
     AuditLogsModule,
     PermissionsModule,
+    AuthzModule,
     UsersModule,
     ActivitiesModule,
     InsurancesModule,
