@@ -26,6 +26,16 @@ const AUDIT_RESOURCE_TYPE = 'position_assignment';
 
 type PrismaTx = Prisma.TransactionClient;
 
+// 终态 scoped-authz PR11(2026-07-02;冻结稿 §8.4 / §11 PR11):dry-run 沙箱哨兵。
+// create() 走满全部 5 校验 + 真实 insert + audit 写入后,若 options.dryRun,在事务提交前抛本类型强制
+// 整个事务(含 audit)一并回滚,catch 后原样返回"本应创建"的响应体 —— 零新写入且零校验逻辑分叉,
+// 供 announcement-import 预览零写入复用同一份真实校验(而非另起一套校验)。仅本文件内使用,不导出。
+class DryRunAbort<T> extends Error {
+  constructor(public readonly value: T) {
+    super('DRY_RUN_ABORT');
+  }
+}
+
 @Injectable()
 export class PositionAssignmentsService {
   constructor(
@@ -137,6 +147,7 @@ export class PositionAssignmentsService {
     organizationId: string,
     dto: CreatePositionAssignmentDto,
     meta: AuditMeta,
+    options?: { dryRun?: boolean },
   ) {
     await this.assertCanOrThrow(user, 'position-assignment.create.record');
 
@@ -147,123 +158,130 @@ export class PositionAssignmentsService {
       throw new BizException(BizCode.POSITION_ASSIGNMENT_TENURE_INVALID);
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const org = await this.findOrganizationOrThrow(organizationId, tx);
-      const position = await this.findPositionOrThrow(dto.positionId, tx);
-      await this.findMemberOrThrow(dto.memberId, tx);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const org = await this.findOrganizationOrThrow(organizationId, tx);
+        const position = await this.findPositionOrThrow(dto.positionId, tx);
+        await this.findMemberOrThrow(dto.memberId, tx);
 
-      // 2. 职务适配 + 取 requireMembership(同一条规则)。(nodeTypeCode, positionId) 普通唯一 → 至多 1 active。
-      const rule = await tx.organizationPositionRule.findFirst({
-        where: {
-          nodeTypeCode: org.nodeTypeCode,
-          positionId: position.id,
-          status: PolicyStatus.ACTIVE,
-          deletedAt: null,
-        },
-        select: { requireMembership: true },
-      });
-      if (!rule) throw new BizException(BizCode.POSITION_ASSIGNMENT_RULE_NOT_MATCHED);
-
-      // 3. requireMembership(冻结稿 R8 + goal「重要说明」BD-4 解读:本组织 O 或其任一祖先有 active membership)。
-      //    读 organization_closure(descendantId=O → 祖先集,含 depth-0 自身)+ memberships active 判定。
-      //    **纯任命业务合法性,绝非判权;closure 不进 rbac.can / AuthzService**。
-      if (rule.requireMembership) {
-        const ancestorRows = await tx.organizationClosure.findMany({
-          where: { descendantId: organizationId },
-          select: { ancestorId: true },
-        });
-        const scopeOrgIds = ancestorRows.map((r) => r.ancestorId);
-        const membership = await tx.memberOrganizationMembership.findFirst({
+        // 2. 职务适配 + 取 requireMembership(同一条规则)。(nodeTypeCode, positionId) 普通唯一 → 至多 1 active。
+        const rule = await tx.organizationPositionRule.findFirst({
           where: {
-            memberId: dto.memberId,
-            status: 'ACTIVE',
+            nodeTypeCode: org.nodeTypeCode,
+            positionId: position.id,
+            status: PolicyStatus.ACTIVE,
             deletedAt: null,
-            organizationId: { in: scopeOrgIds },
           },
-          select: { id: true },
+          select: { requireMembership: true },
         });
-        if (!membership) throw new BizException(BizCode.POSITION_ASSIGNMENT_MEMBERSHIP_REQUIRED);
-      }
+        if (!rule) throw new BizException(BizCode.POSITION_ASSIGNMENT_RULE_NOT_MATCHED);
 
-      // 4. 兼任:position.allowConcurrent=false → member 不得已有其它 active 任职(多数职务 true,允许兼任如赵强)。
-      if (!position.allowConcurrent) {
-        const otherActive = await tx.organizationPositionAssignment.count({
-          where: { memberId: dto.memberId, status: AssignmentStatus.ACTIVE, deletedAt: null },
-        });
-        if (otherActive > 0) {
-          throw new BizException(BizCode.POSITION_ASSIGNMENT_CONCURRENT_FORBIDDEN);
+        // 3. requireMembership(冻结稿 R8 + goal「重要说明」BD-4 解读:本组织 O 或其任一祖先有 active membership)。
+        //    读 organization_closure(descendantId=O → 祖先集,含 depth-0 自身)+ memberships active 判定。
+        //    **纯任命业务合法性,绝非判权;closure 不进 rbac.can / AuthzService**。
+        if (rule.requireMembership) {
+          const ancestorRows = await tx.organizationClosure.findMany({
+            where: { descendantId: organizationId },
+            select: { ancestorId: true },
+          });
+          const scopeOrgIds = ancestorRows.map((r) => r.ancestorId);
+          const membership = await tx.memberOrganizationMembership.findFirst({
+            where: {
+              memberId: dto.memberId,
+              status: 'ACTIVE',
+              deletedAt: null,
+              organizationId: { in: scopeOrgIds },
+            },
+            select: { id: true },
+          });
+          if (!membership) throw new BizException(BizCode.POSITION_ASSIGNMENT_MEMBERSHIP_REQUIRED);
         }
-      }
 
-      // 5. 防重:同人同组织同职务已有 active(service 预检 + partial unique 兜底)。
-      const dup = await tx.organizationPositionAssignment.count({
-        where: {
-          organizationId,
-          positionId: position.id,
-          memberId: dto.memberId,
-          status: AssignmentStatus.ACTIVE,
-          deletedAt: null,
-        },
-      });
-      if (dup > 0) throw new BizException(BizCode.POSITION_ASSIGNMENT_ALREADY_EXISTS);
+        // 4. 兼任:position.allowConcurrent=false → member 不得已有其它 active 任职(多数职务 true,允许兼任如赵强)。
+        if (!position.allowConcurrent) {
+          const otherActive = await tx.organizationPositionAssignment.count({
+            where: { memberId: dto.memberId, status: AssignmentStatus.ACTIVE, deletedAt: null },
+          });
+          if (otherActive > 0) {
+            throw new BizException(BizCode.POSITION_ASSIGNMENT_CONCURRENT_FORBIDDEN);
+          }
+        }
 
-      // 6. 单人独占:position.allowMultiple=false → (org,position) 不得有第二条 active(此人已在步骤 5 排除)。
-      if (!position.allowMultiple) {
-        const holders = await tx.organizationPositionAssignment.count({
+        // 5. 防重:同人同组织同职务已有 active(service 预检 + partial unique 兜底)。
+        const dup = await tx.organizationPositionAssignment.count({
           where: {
-            organizationId,
-            positionId: position.id,
-            status: AssignmentStatus.ACTIVE,
-            deletedAt: null,
-          },
-        });
-        if (holders > 0) throw new BizException(BizCode.POSITION_ASSIGNMENT_SINGLE_HOLDER);
-      }
-
-      const created = await this.runWithUniqueGuard(() =>
-        tx.organizationPositionAssignment.create({
-          data: {
             organizationId,
             positionId: position.id,
             memberId: dto.memberId,
             status: AssignmentStatus.ACTIVE,
-            startedAt,
-            endedAt,
-            appointedByUserId: user.id,
-            appointmentSource: dto.appointmentSource ?? null,
-            isConcurrent: dto.isConcurrent ?? false,
-            note: dto.note ?? null,
+            deletedAt: null,
           },
-          select: positionAssignmentSafeSelect,
-        }),
-      );
+        });
+        if (dup > 0) throw new BizException(BizCode.POSITION_ASSIGNMENT_ALREADY_EXISTS);
 
-      await this.auditLogs.log({
-        event: 'position-assignment.create',
-        actorUserId: user.id,
-        actorRoleSnap: user.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: created.id,
-        meta,
-        after: {
-          organizationId: created.organizationId,
-          positionId: created.positionId,
-          memberId: created.memberId,
-          status: created.status,
-          startedAt: created.startedAt,
-          endedAt: created.endedAt,
-          isConcurrent: created.isConcurrent,
-        },
-        extra: {
-          operation: 'create',
-          organizationId: created.organizationId,
-          targetMemberId: created.memberId,
-        },
-        tx,
+        // 6. 单人独占:position.allowMultiple=false → (org,position) 不得有第二条 active(此人已在步骤 5 排除)。
+        if (!position.allowMultiple) {
+          const holders = await tx.organizationPositionAssignment.count({
+            where: {
+              organizationId,
+              positionId: position.id,
+              status: AssignmentStatus.ACTIVE,
+              deletedAt: null,
+            },
+          });
+          if (holders > 0) throw new BizException(BizCode.POSITION_ASSIGNMENT_SINGLE_HOLDER);
+        }
+
+        const created = await this.runWithUniqueGuard(() =>
+          tx.organizationPositionAssignment.create({
+            data: {
+              organizationId,
+              positionId: position.id,
+              memberId: dto.memberId,
+              status: AssignmentStatus.ACTIVE,
+              startedAt,
+              endedAt,
+              appointedByUserId: user.id,
+              appointmentSource: dto.appointmentSource ?? null,
+              isConcurrent: dto.isConcurrent ?? false,
+              note: dto.note ?? null,
+            },
+            select: positionAssignmentSafeSelect,
+          }),
+        );
+
+        await this.auditLogs.log({
+          event: 'position-assignment.create',
+          actorUserId: user.id,
+          actorRoleSnap: user.role,
+          resourceType: AUDIT_RESOURCE_TYPE,
+          resourceId: created.id,
+          meta,
+          after: {
+            organizationId: created.organizationId,
+            positionId: created.positionId,
+            memberId: created.memberId,
+            status: created.status,
+            startedAt: created.startedAt,
+            endedAt: created.endedAt,
+            isConcurrent: created.isConcurrent,
+          },
+          extra: {
+            operation: 'create',
+            organizationId: created.organizationId,
+            targetMemberId: created.memberId,
+          },
+          tx,
+        });
+
+        const result = this.toResponseDto(created);
+        if (options?.dryRun) throw new DryRunAbort(result);
+        return result;
       });
-
-      return this.toResponseDto(created);
-    });
+    } catch (err) {
+      if (err instanceof DryRunAbort) return err.value as ReturnType<typeof this.toResponseDto>;
+      throw err;
+    }
   }
 
   // ============ POST /api/admin/v1/position-assignments/:id/revoke ============

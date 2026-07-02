@@ -70,7 +70,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。判权唯一服务入口 = `RbacService.can()`;`RbacCacheService` 是权限解析缓存(TTL 1800s,三档失效),不是身份缓存。
 
-## 2. controller × 鉴权模式对照(62 个 controller class)
+## 2. controller × 鉴权模式对照(63 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
@@ -93,6 +93,7 @@
 | `admin/v1/*` 分管(分管 PR5;单 `SupervisionAssignmentsController` 跨 flat/member/org 3 根) | `supervision-assignment.{read,create,update,revoke}.record`(4;三读端点〔列/某人分管范围/某组织被谁分管〕共用 read.record;分管与职务正交、create 不要求持职务;scope/supervisors 读 closure 仅展示;**绝不进判权路径**)|
 | `admin/v1/role-bindings[/:id]` 角色绑定(RoleBinding PR6;单 `RoleBindingsController`) | `role-binding.{read,create,update,delete}.record`(4;列/建 + 改/软删;principal × role × scope × 任期;UserRole→global RoleBinding 无损升级 = **判权唯一读源**,RbacService 只读 GLOBAL;**scoped 各型入库即止、绝不进判权路径**,判权是 PR8)|
 | `admin/v1/authz/explain` 权限解释(PR10;`AuthzController` = authz 模块第一个 controller) | `authz.explain.decision`(1;POST 诊断读:目标用户 × action × 可选 resourceRef → 200 返 `{targetUser, decision}`;**deny 是数据非错误**〔resource_not_found 亦 decision reason〕;目标不存在/软删 10001;入参白名单不过通用 400;matchedGrant 内部 id 原样返 ops-admin 面可见;无 audit)|
+| `admin/v1/announcement-import/{preview,execute}` 公告导入(PR11;`AnnouncementImportController`) | `announcement-import.{preview,execute}.record`(2;preview 零写入逐行诊断/execute 幂等落库;组织行 nodeType 恒 `group`;双锚铁律 execute 无 memberNo 即拒;只做锚定解析+编排,任命 5 校验/分管校验/closure/audit 全部只存在于被复用的 `OrganizationsService`/`PositionAssignmentsService`/`SupervisionAssignmentsService`)|
 | `system/v1/contribution-rules` | `contribution.*.rule`(4) |
 | `system/v1/attachment-{type,mime,size-limit}-configs` | `attachment-config.*`(12) |
 | `system/v1/storage-settings` | `storage-setting.*`(3;`reset.credentials` 不绑 ops-admin = D2=A 拍板) |
@@ -143,7 +144,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(189 条,seed 幂等 upsert)
+## 3. 权限码全集(191 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -158,6 +159,7 @@
 | 分管(终态 scoped-authz PR5) | 4 | `supervision-assignment.{read,create,update,revoke}.record`(管理 + 分管范围/被谁分管查询;三读端点共用 `read.record`;全绑 ops-admin;**分管与职务正交、create 不要求持职务;分管 = 数据 + 展示,绝不进判权路径**)|
 | 角色绑定(终态 scoped-authz PR6) | 4 | `role-binding.{read,create,update,delete}.record`(带 scope 的角色绑定 CRUD;全绑 ops-admin;**UserRole→global RoleBinding 无损升级 = 判权唯一读源,RbacService 只读 GLOBAL;scoped 各型入库即止、绝不进判权路径**,判权是 PR8)|
 | 权限解释(终态 scoped-authz PR10) | 1 | `authz.explain.decision`(`POST admin/v1/authz/explain` 调用者判权码;绑 ops-admin;**explain 是 AuthzService 的只读诊断出口,不改判权语义;deny 是 200 数据非错误**)|
+| 公告导入(终态 scoped-authz PR11) | 2 | `announcement-import.{preview,execute}.record`(`POST admin/v1/announcement-import/{preview,execute}`;全绑 ops-admin;**preview 零写入靠三个被复用 service `create()` 新增的 `{dryRun?}` 沙箱哨兵参数,不是另起只读校验;execute 幂等可重跑;双锚铁律 R7,不按姓名自动落库**)|
 | 贡献规则 | 4 | `contribution.{read,create,update,delete}.rule` |
 | 附件配置 | 12 | `attachment-config.{read,create,update,delete}.{type,mime,size-limit}` |
 | 存储设置 | 3 | `storage-setting.{read,update}.singleton` / `storage-setting.reset.credentials` |
@@ -187,7 +189,7 @@
 | 统一通知 S2 微信订阅 quota 渠道(2026-06-25) | 1 | `notification.update.template`(`admin/v1/notification-wechat-templates` upsert;微信模板配置写权,运营可配 D-N3;读复用 `notification.read.record`;app 订阅 ack/status 零码 = canUseApp 闸;全绑 biz-admin;**实装即用 0 孤码**)|
 | 统一通知 S5 短信兜底渠道(2026-06-27) | 1 | `notification.send.sms`(`admin/v1/notifications/:id/send-sms`;显式发起短信兜底〔紧急召集〕成本动作单独 gating,计费确认必需 confirmed=true;全绑 biz-admin;**实装即用 0 孤码**)|
 
-内置角色:`ops-admin`(绑 89 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**;终态 scoped-authz PR1 `org.move.node` 绑入 63→64,PR2 `membership.{list,read,set,end}.record` 4 码绑入 64→68,PR3-PR6 职务定义/规则/任职/分管/角色绑定 20 码绑入 68→88,PR10 `authz.explain.decision` 绑入 88→89)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新一/二/三期入队 + 招新闭环 S3 + CMS content + 统一通知 S1/S2/S5,绑 74 条 = 75 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码〔member/certificate/activity〕不绑,CMS content-* 4 码 + notification 7 码〔S1 5 + S2 `update.template` 1 + S5 `send.sms` 1〕绑入〔α / 统一通知 S1 §9.2 + S2 §9.2 + S5 §9.2;演进 Slow-4 §6「biz-admin 不含 attachment.* 码」不变式 = 仅含 CMS content-* 4 码〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。终态 scoped-authz PR7(2026-07-01)另 seed **3 个纯定义角色(零 user 持有,PR8 才由职务/分管推导;绝不进当前判权)**:`org-admin`(绑 56 = biz-admin 74 过滤终审 2 + 敏感 1 + recruitment-* 8 + team-join-* 7;职务 policy 目标:team-leader/dept-leader)+ `group-manager`(绑 22,本组资料/内容/考勤一级;职务 policy 目标:group-leader)+ `org-supervisor`(绑 4,BD-3 只读定稿;分管推导用,非职务 policy 目标)。终态 scoped-authz PR9(2026-07-02)另 seed **第 7 角色 `attendance-final-reviewer`**(考勤终审员;绑 **3** 条既有码 `attendance.{read,final-approve,final-reject}.sheet`,0 新码;**零持有、零 policy 行,终审绝不随职务推导** —— 终审身份 = 显式 RoleBinding〔标准形态 POSITION_ASSIGNMENT 主体 + ORGANIZATION_TREE@root,换届撤任职即失权〕,生产绑定待 PR11 公告导入后运营挂;biz-admin 终审两码 B 方案保留,摘码 = PR12 显式项)。seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN,其余无"代码用码未 seed"。
+内置角色:`ops-admin`(绑 91 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**;终态 scoped-authz PR1 `org.move.node` 绑入 63→64,PR2 `membership.{list,read,set,end}.record` 4 码绑入 64→68,PR3-PR6 职务定义/规则/任职/分管/角色绑定 20 码绑入 68→88,PR10 `authz.explain.decision` 绑入 88→89,PR11 `announcement-import.{preview,execute}.record` 2 码绑入 89→91)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新一/二/三期入队 + 招新闭环 S3 + CMS content + 统一通知 S1/S2/S5,绑 74 条 = 75 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕;attachment 存量 20 码〔member/certificate/activity〕不绑,CMS content-* 4 码 + notification 7 码〔S1 5 + S2 `update.template` 1 + S5 `send.sms` 1〕绑入〔α / 统一通知 S1 §9.2 + S2 §9.2 + S5 §9.2;演进 Slow-4 §6「biz-admin 不含 attachment.* 码」不变式 = 仅含 CMS content-* 4 码〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。终态 scoped-authz PR7(2026-07-01)另 seed **3 个纯定义角色(零 user 持有,PR8 才由职务/分管推导;绝不进当前判权)**:`org-admin`(绑 56 = biz-admin 74 过滤终审 2 + 敏感 1 + recruitment-* 8 + team-join-* 7;职务 policy 目标:team-leader/dept-leader)+ `group-manager`(绑 22,本组资料/内容/考勤一级;职务 policy 目标:group-leader)+ `org-supervisor`(绑 4,BD-3 只读定稿;分管推导用,非职务 policy 目标)。终态 scoped-authz PR9(2026-07-02)另 seed **第 7 角色 `attendance-final-reviewer`**(考勤终审员;绑 **3** 条既有码 `attendance.{read,final-approve,final-reject}.sheet`,0 新码;**零持有、零 policy 行,终审绝不随职务推导** —— 终审身份 = 显式 RoleBinding〔标准形态 POSITION_ASSIGNMENT 主体 + ORGANIZATION_TREE@root,换届撤任职即失权〕,生产绑定待 PR11 公告导入后运营挂;biz-admin 终审两码 B 方案保留,摘码 = PR12 显式项)。seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN,其余无"代码用码未 seed"。
 
 ## 4. 保护不变式(改 users / permissions 前必读)
 
@@ -209,8 +211,8 @@
 | `rbac.controller.ts` `GET me/permissions` 方法级 Mixed | 存量冻结(P1-A 不拆),返回 raw code 仅限该 system 端点;App 端能力走 `me/capabilities` | 用户 |
 | `dictionaries.controller.ts` 同文件双 controller | 非 surface Mixed,存量冻结不扩展 | 用户 |
 | Swagger 不体现权限码要求 | ✅ 已闭环(2026-06-10 P2-2 #287):全部 148 endpoint summary 统一鉴权后缀(`[rbac:]`/`[roles:]`/`[public]`/`[auth]`),`docs:rbacmap:check` 检查项 G(#288)锁后缀↔装饰器/seed 一致性 | 已决;后缀惯例变更走 A/B 档 + 检查项 G 同步 |
-| 部门级权限(部长/终审 finalReviewer 细粒度) | ✅ **PR9 已接线(2026-07-02,Slow-3 #277 方案 A 挂账正式解)**:`finalApprove`/`finalReject` 判权走 `authz.explain`(带 ref);真收紧 = 自审禁止 22074(SA 亦拒)+ 一级同人默认禁止 22075(env `ATTENDANCE_ALLOW_SAME_REVIEWER` 可配)+ scoped 通路(attendance-final-reviewer 角色经 POSITION_ASSIGNMENT 主体 RoleBinding);B 方案 biz-admin 终审两码保留(全局终审照旧)。序列前史:T0 冻结稿 [`org-position-scoped-authz-terminal-design-review.md`](../reviews/org-position-scoped-authz-terminal-design-review.md),PR1-7 数据+配置面,PR8 判权大脑。剩余:PR10 explain 端点 / PR11 公告导入 / PR12 逐面迁移(各自出 goal) | 已决 |
-| **PR12:摘 biz-admin 终审两码**(`attendance.final-{approve,reject}.sheet`) | ⏳ 挂起(B 方案显式项,2026-07-02 PR9 拍板):**待 PR11 公告导入建立真实 APD 任职 + 运营经 role-bindings 挂 attendance-final-reviewer 绑定后**再摘 —— 摘早了 = ADMIN 全局终审断档;摘除时 org-admin(biz-admin 派生过滤)码集自动不受影响(本就排除终审两码) | 用户(PR12 goal)|
+| 部门级权限(部长/终审 finalReviewer 细粒度) | ✅ **PR9 已接线(2026-07-02,Slow-3 #277 方案 A 挂账正式解)**:`finalApprove`/`finalReject` 判权走 `authz.explain`(带 ref);真收紧 = 自审禁止 22074(SA 亦拒)+ 一级同人默认禁止 22075(env `ATTENDANCE_ALLOW_SAME_REVIEWER` 可配)+ scoped 通路(attendance-final-reviewer 角色经 POSITION_ASSIGNMENT 主体 RoleBinding);B 方案 biz-admin 终审两码保留(全局终审照旧)。序列前史:T0 冻结稿 [`org-position-scoped-authz-terminal-design-review.md`](../reviews/org-position-scoped-authz-terminal-design-review.md),PR1-7 数据+配置面,PR8 判权大脑,**PR10 explain 端点 / PR11 公告导入均已发**。剩余:PR12 逐面迁移(出 goal) | 已决 |
+| **PR12:摘 biz-admin 终审两码**(`attendance.final-{approve,reject}.sheet`) | ⏳ 挂起(B 方案显式项,2026-07-02 PR9 拍板):**PR11 公告导入工具已发(2026-07-02),但摘码前提是运营已实际执行导入 + 已挂 `attendance-final-reviewer` 绑定**(工具就绪 ≠ 数据已导入)——摘早了 = ADMIN 全局终审断档;摘除时 org-admin(biz-admin 派生过滤)码集自动不受影响(本就排除终审两码)。**ops 步骤(决断⑥,零代码字面量)**:导入完成后,运营手工经既有 role-bindings CRUD 挂一条显式绑定 —— `POST /api/admin/v1/role-bindings` `{principalType: 'POSITION_ASSIGNMENT', principalId: '<APD 部长任职的 OrganizationPositionAssignment.id>', roleId: '<attendance-final-reviewer 的 RbacRole.id>', scopeType: 'ORGANIZATION_TREE', scopeOrgId: '<总队根组织 id>', startedAt: '<ISO 8601>'}`;该绑定行是终审中枢的唯一真相、可随时换绑(BD-2) | 用户(PR12 goal)|
 
 ## 6. AI 硬规则(权限相关)
 

@@ -3,6 +3,7 @@ import { OrganizationStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -122,6 +123,27 @@ export class CreateOrganizationDto {
   @IsInt()
   @Min(0)
   sortOrder?: number;
+
+  // 终态 scoped-authz PR11(2026-07-02;冻结稿 §3.0.1 R1/R3 + §8.4):PR1 已加列但未接入
+  // Create DTO 的两 additive 可空字段,本刀接入(仅新增可选入参,不改 name/code/parentId/nodeTypeCode/
+  // sortOrder 既有校验与行为)。establishmentStatusCode 取值锁字典 org_establishment_status 的两个
+  // 已知值(空 = 未设置);groupFunctionCode 沿 R3「留口不写业务逻辑」仅格式校验,不做字典存在性校验。
+  @ApiPropertyOptional({
+    description: "设立状态(可选;'formal'=正式 /'provisional'=筹备组;不传 = 未设置)",
+    enum: ['formal', 'provisional'],
+  })
+  @IsOptional()
+  @IsIn(['formal', 'provisional'])
+  establishmentStatusCode?: string;
+
+  @ApiPropertyOptional({
+    description: '组功能字典 code(留口;v1 只占列不做业务校验)',
+    maxLength: 64,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  groupFunctionCode?: string;
 }
 
 // 仅允许 name / code / sortOrder / nodeTypeCode;**绝对禁止** parentId(对应 D7-min O-1
