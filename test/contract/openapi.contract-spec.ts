@@ -506,6 +506,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/admin/v1/role-bindings'],
   ['patch', '/api/admin/v1/role-bindings/{id}'],
   ['delete', '/api/admin/v1/role-bindings/{id}'],
+  // 终态 scoped-authz PR10「authz/explain」(2026-07-02;冻结稿 §7.6 + §9 行 20),+1 → 290。
+  //   权限解释可解释性出口(诊断读):POST 入 { userId, action, resourceRef? },出
+  //   { targetUser, decision: AuthzDecision };deny 是 200 数据不是错误(resource_not_found 亦然),
+  //   reason 稳定枚举(2 allow + 9 deny)入 OpenAPI 契约锁。
+  //   AuthzController(authz 模块第一个 controller;@Controller('admin/v1') + 完整子路径 authz/explain);
+  //   R 模式 authz.explain.decision 1 码,无 @Roles,无 audit(goal 决断④)。
+  ['post', '/api/admin/v1/authz/explain'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -946,6 +953,17 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'RoleBindingResponseDto',
   'CreateRoleBindingDto',
   'UpdateRoleBindingDto',
+
+  // 终态 scoped-authz PR10「authz/explain」(2026-07-02;冻结稿 §7.6 + §9 行 20):
+  //   权限解释 DTO(入参 userId/action/resourceRef 严格白名单 + 出参镜像 PR8 AuthzDecision;
+  //   reason 11 值稳定枚举入 snapshot = 契约锁)。
+  'ExplainAuthzDto',
+  'ExplainResourceRefDto',
+  'ExplainAuthzResponseDto',
+  'ExplainTargetUserDto',
+  'AuthzDecisionDto',
+  'MatchedGrantDto',
+  'ResolvedResourceDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

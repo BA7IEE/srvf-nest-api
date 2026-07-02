@@ -11,9 +11,9 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 沿 D7 v1.1 §10 + 用户拍板六项决策 + 既有 seed.e2e-spec.ts 子进程范式。
 //
 // 覆盖(沿用户决策方案 B):
-// 1. 空 db → seed 后 93 条 permission 全部存在(14 rbac.* + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME;终态 scoped-authz PR1 PR-2A 19→20 +org.move.node,PR2 20→24 +membership 4,PR3 24→32 +position 4 / position-rule 4,PR4 32→36 +position-assignment 4,PR5 36→40 +supervision-assignment 4,PR6 40→44 +role-binding 4)
+// 1. 空 db → seed 后 94 条 permission 全部存在(14 rbac.* + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME + 1 AUTHZ;终态 scoped-authz PR1 PR-2A 19→20 +org.move.node,PR2 20→24 +membership 4,PR3 24→32 +position 4 / position-rule 4,PR4 32→36 +position-assignment 4,PR5 36→40 +supervision-assignment 4,PR6 40→44 +role-binding 4,PR10 +1 authz.explain.decision)
 // 2. ops-admin RbacRole 存在
-// 3. ops-admin 绑定 88 条(14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME;**不含**
+// 3. ops-admin 绑定 89 条(14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME + 1 AUTHZ;**不含**
 //    storage-setting.reset.credentials(沿 PR-2 D2=A)+ user.update.role(沿 PR-3 D1=A);
 //    PR-4B D2=B audit-log.read.entry 整条加入)
 // 4. 至少 1 个 user_role 持有 ops-admin(强校验通过)
@@ -190,12 +190,14 @@ const EXPECTED_RBAC_PERMISSION_CODES = [
   'realname-setting.read.singleton',
   'realname-setting.update.singleton',
   REALNAME_RESET_CREDENTIALS_CODE,
+  // 1 条 AUTHZ(终态 scoped-authz PR10;权限解释诊断码,整条绑 ops-admin)
+  'authz.explain.decision',
 ] as const;
 // Permission 总数(含 reset.credentials + user.update.role;沿 D2=A + D1=A 仍 upsert 进表,仅 SA 短路通过)
 const EXPECTED_PERMISSION_COUNT = EXPECTED_RBAC_PERMISSION_CODES.length;
 // ops-admin RolePermission 数(过滤 reset.credentials(PR-2 D2=A)+ user.update.role(PR-3 D1=A)
 // + sms-setting.reset.credentials(SMS T2 镜像 D2=A)+ wechat-setting.reset.credentials(WECHAT T2)
-// + realname-setting.reset.credentials(REALNAME T1 镜像 D2=A,招新评审稿 §3.4)→ 93 - 5 = 88)
+// + realname-setting.reset.credentials(REALNAME T1 镜像 D2=A,招新评审稿 §3.4)→ 94 - 5 = 89)
 const EXPECTED_OPS_ADMIN_ROLE_PERMISSION_COUNT = EXPECTED_PERMISSION_COUNT - 5;
 const EXPECTED_OPS_ADMIN_BOUND_CODES = EXPECTED_RBAC_PERMISSION_CODES.filter(
   (c) =>
@@ -224,7 +226,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     await resetDb(app);
   });
 
-  it('空 db + 合法 env → 93 条 permission(14 rbac + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME) + ops-admin role + 88 条 role-permission(D2=A 4 把凭证 reset + D1=A user.update.role 共 5 不绑;D2=B audit-log.read.entry 整条绑) + 强校验通过', async () => {
+  it('空 db + 合法 env → 94 条 permission(14 rbac + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME + 1 AUTHZ) + ops-admin role + 89 条 role-permission(D2=A 4 把凭证 reset + D1=A user.update.role 共 5 不绑;D2=B audit-log.read.entry 整条绑) + 强校验通过', async () => {
     const result = runSeed({
       APP_ENV: 'test',
       SUPER_ADMIN_USERNAME: 'rbac-seed-su',
@@ -234,7 +236,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     });
     expect(result.code).toBe(0);
 
-    // 1. 81 条 permission 全部存在(14 rbac.* + 32 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME;
+    // 1. 94 条 permission 全部存在(14 rbac.* + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME + 1 AUTHZ;
     //    含 4 把 reset.credentials + user.update.role)
     const perms = await prisma.permission.findMany({
       where: { code: { in: [...EXPECTED_RBAC_PERMISSION_CODES] } },

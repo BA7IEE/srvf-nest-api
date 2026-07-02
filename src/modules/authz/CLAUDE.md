@@ -6,7 +6,7 @@
 
 - **统一判权大脑(终态 scoped-authz PR8,2026-07-02)**:`AuthzService.can/explain(user, action, ref?)` —— 三源 grant 归集(直接 RoleBinding ∪ 职务 policy 推导 ∪ 分管推导)+ `covers()` scope 覆盖判定 + `ActionConstraint` 域不变量否决
 - **`ResourceResolverService`**:11 类资源归属解析(activity / attendance_sheet / attendance_record / activity_registration / member / member_profile / certificate / team_join_application / recruitment_application / notification / attachment〔按 ownerType 委派〕),输出统一 `ResolvedResource`;解析失败一律 null → deny(resource_not_found)fail-close
-- **0 controller / 0 端点 / 0 权限码 / 0 schema / 0 BizCode**:纯 service 模块;explain 端点是 PR10
+- **explain 诊断端点(终态 scoped-authz PR10,2026-07-02;冻结稿 §7.6)**:`AuthzController` — `POST admin/v1/authz/explain`(模块唯一 controller / 1 端点 / 1 码 `authz.explain.decision` 绑 ops-admin;0 schema / 0 BizCode);薄编排 `AuthzExplainService` = 调用者 `rbac.can` → 目标用户加载 → **纯消费** `AuthzService.explain` 原样返 `{targetUser, decision}`,不改判权语义
 - **不负责**:全局判权入口仍是 [`/src/modules/permissions/`](../permissions/) 的 `RbacService`(业务面现全部走它);列表读 scope 下推(QueryService 过滤)按 architecture-boundary 决议 deferred,不在本模块
 
 ## Local facts
@@ -21,6 +21,7 @@
 - **resolver 口径**:member 的归属组织 = active PRIMARY membership;recruitment_application 恒无 org/owner(D-R-1);notification 广播态 org=null(多组织「任一覆盖」covers 留消费面迁移时扩展);attachment 仅委派 member/certificate/activity 三类 ownerType,其余(content-*)null fail-close;链上父资源软删不阻断解析,scope org 的 ACTIVE 闸门在 `covers()`
 - **性能口径(goal 决断④)**:三源每 decision 现查、无新缓存层;`RbacService.getRoleIdsWithPermission` 是 PR8 additive(批量角色含码,RolePermission roleId 索引);优化留口 = 角色→码集合 TTL 缓存,做之前先看真实 QPS
 - **deny reason 归因优先级**:resource_not_found > 约束否决 >(covers 失败后)inactive_org > expired_grant > out_of_[supervised_]scope > no_permission;失效 grant 只参与归因**绝不参与 allow**
+- **explain 端点契约(PR10 拍板)**:**deny 是数据不是错误** —— 入参合法即 200 返 decision,`resource_not_found` 亦是 decision reason;仅输入错误走异常(目标用户不存在/已软删 → 10001;type/action 白名单不过 → 通用 400,BizCode +0);DISABLED 目标可 explain(status 原样返,决断③);matchedGrant 内部 id 原样返 ops-admin 面(不脱敏);**无 audit**(决断④;deny 采样 = 冻结稿 §10.6 可选项,做须 goal)。`authz.dto.ts` 的 `AUTHZ_REASON_VALUES`(11 值)/`GRANT_SOURCE_VALUES`/`EXPLAINABLE_RESOURCE_TYPES`(= resolver 11 类)是 OpenAPI 契约锁:改 `authz.types` 联合或 resolver 支持面时**必须同步**(`satisfies` 编译锁 + authz-explain e2e Record 完备锁双向兜底)
 
 ## Risk points (不要做)
 
@@ -28,7 +29,8 @@
 - ❌ **不**在 3b 给副职加任何推导兜底 / 不评估却放行非 null conditionJson(两者都是越权面)
 - ❌ **不**把 `RbacService.can/judge` 的调用改成绕过(无 ref 路径必须持续复用,防两套全局语义漂移)
 - ❌ **不**在本模块写 "APD" / 具体部门 / 具体职务的字面量判权门控(BD-2;配置行决定一切)
-- ❌ **不**建 authz explain HTTP 端点(PR10 goal)/ 不接任何业务消费者(PR9+ 各自 goal)/ 不做列表 scope 下推
+- ❌ **不**接新的业务消费者(逐面迁移 = PR12 各自 goal)/ 不做列表 scope 下推
+- ❌ **不**给 explain 端点加 audit / deny 采样(§10.6 可选项须 goal)/ **不**把 explain 的 deny 改成抛错(deny 是 200 数据 = PR10 决断②)/ **不**在 explain 薄编排里叠加自己的判权逻辑(它必须始终是 `AuthzService.explain` 的纯消费面)
 - ❌ **不**引入新缓存层 / 不把 `RbacCacheService`(per-user 权限点缓存)错用成 per-role 缓存
 - ❌ **不**让 ActionConstraint 豁免 SUPER_ADMIN(它是数据完整性不变量;场景 4「SA 亦拒自审」是拍板)
 - ❌ **不**把 resolver 的 fail-close(null → resource_not_found)改成"解析失败按无 scope 资源放行"
@@ -38,5 +40,5 @@
 
 - `pnpm lint` + `pnpm typecheck`
 - `pnpm test` — `action-constraints.spec.ts`(约束注册表)
-- `pnpm test:e2e` — **三件套必跑**:`authz-rbac-equivalence`(🔴 等价矩阵行为锁)/ `authz-three-source`(崔广庆/黄勇/BD-2 终审+自审/R5 副职/失效族/SELF)/ `authz-resource-resolver`(11 类逐类 + 软删 fail-close + attachment 委派)
-- 改判权流程 / covers / 三源归集 → 三件套全跑 + `pnpm test:contract`(0 端点不变式:路由 289 恒定)
+- `pnpm test:e2e` — **四件套必跑**:`authz-rbac-equivalence`(🔴 等价矩阵行为锁)/ `authz-three-source`(崔广庆/黄勇/BD-2 终审+自审/R5 副职/失效族/SELF)/ `authz-resource-resolver`(11 类逐类 + 软删 fail-close + attachment 委派)/ `authz-explain`(PR10 端点:五 allow 形态 + 四 deny-as-data + 10001/400/30100 + reason 枚举完备锁)
+- 改判权流程 / covers / 三源归集 → 四件套全跑 + `pnpm test:contract`(端点不变式:路由 290 恒定,authz 面仅 explain 一路)
