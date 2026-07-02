@@ -7,13 +7,14 @@
 
 ---
 
-## src/modules/(32 个业务模块,平铺,**禁止嵌套 system/business/core 子目录**)
+## src/modules/(33 个业务模块,平铺,**禁止嵌套 system/business/core 子目录**)
 
 | 路径 | 体量 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
 |---|---|---|---|---|
 | `activities/` | L (2393L) | 活动主资源,4 态状态机(`activity-state-machine.ts`) | service 607L 偏厚;participation 上下文核心 | [`CLAUDE.md`](src/modules/activities/CLAUDE.md) · [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
 | `activity-registrations/` | L (2590L) | 活动报名,4 态 + partial unique + CSV export + 跨轴只读(2026-06-23) | service 924L(+跨活动横扫 + 队员履历 2 只读方法,沿 §4 体量观察);Mixed Controller P1-C step 3 已拆完;`controllers/admin-registrations.controller.ts` 跨轴只读 2 class | [`CLAUDE.md`](src/modules/activity-registrations/CLAUDE.md) · [`docs/api-surface-policy.md §5.1`](docs/api-surface-policy.md) |
 | `ai/` | S (placeholder) | LLM / 向量占位 | **本期不实现**;README 占位 | [`AGENTS.md §1 C`](AGENTS.md) |
+| `announcement-import/` | S | 公告导入两段式工具(终态 scoped-authz PR11,2026-07-02):`POST admin/v1/announcement-import/{preview,execute}` 2 路由 + R 模式 2 码 `announcement-import.{preview,execute}.record`;preview 零写入逐行诊断(ok/blocked/already-exists/needs-manual)/ execute 幂等落库(单行失败不影响其它行);组织行 nodeType 恒为 `group` | **只做锚定解析 + 编排,不含第二套校验**:任命 5 校验/分管校验/closure 维护/audit 全部只存在于被复用的 `OrganizationsService`/`PositionAssignmentsService`/`SupervisionAssignmentsService`;preview 零写入靠三者 `create()` 新增的 `{dryRun?}` 沙箱哨兵参数(校验+写入真实执行后提交前整体回滚),不是另起只读校验;双锚铁律(execute 无 memberNo 即拒,不按姓名猜) | [`CLAUDE.md`](src/modules/announcement-import/CLAUDE.md) · [`docs/reviews/org-position-scoped-authz-terminal-design-review.md`](docs/reviews/org-position-scoped-authz-terminal-design-review.md)(冻结评审稿 §8.4/§11 PR11) |
 | `attachment-configs/` | L (2175L) | 附件配置三表(type / mime / size) | **不合表、不抽 facade、override-with-default** | [`docs/attachment-config-boundary.md`](docs/attachment-config-boundary.md) |
 | `attachments/` | ⚠G (service 826L) | 多态附件主模块 + RBAC 业务面首批接入 | accessUrl / signed URL 永不返回;L3 字段隔离 | [`CLAUDE.md`](src/modules/attachments/CLAUDE.md) · [`docs/attachment-config-boundary.md`](docs/attachment-config-boundary.md) |
 | `attendances/` | ⚠G (service 1386L) | 考勤主表 5 态(含终审)+ contribution 计算 + 跨轴只读(2026-06-23);**终审两方法 PR9(2026-07-02)起判权走 `authz.explain`(本仓首个 authz 消费者)** | 5 个边界类已抽离(state-machine / audit-recorder / time-overlap-policy / contribution-calculator / presenter #280);P1-4 拆分系列 2026-06-10 调研收口,余量为事务编排本职,⚠G 仅体量观察(沿 current-state §4);+跨活动单据横扫 + 队员考勤记录/贡献汇总 3 只读方法(贡献复用 team-join 封顶核);App 端点在 `controllers/app-my-attendance-records.controller.ts`,跨轴只读队员面在 `controllers/admin-member-attendance.controller.ts`;**PR9 真收紧:自审 22074(SA 亦拒)/ 一级同人默认 22075(env `ATTENDANCE_ALLOW_SAME_REVIEWER` 可配)/ scoped RoleBinding 通路;其余 6 动作仍 rbac.can(PR12),其余 deny 30100 不变** | [`CLAUDE.md`](src/modules/attendances/CLAUDE.md) · [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |

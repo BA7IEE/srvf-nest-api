@@ -171,6 +171,23 @@ describe('SupervisionAssignmentsService.create', () => {
       new BizException(BizCode.SUPERVISION_ALREADY_EXISTS),
     );
   });
+
+  // 终态 scoped-authz PR11(2026-07-02):dryRun 沙箱哨兵(announcement-import preview 复用真实校验的机制)。
+  it('dryRun=true:走满校验 + 真实 insert + audit 后回滚,返回"本应创建"的响应体', async () => {
+    const tx = makeTx();
+    const res = await svcWith(tx).create(USER, baseDto, META, { dryRun: true });
+    expect(res.status).toBe('ACTIVE');
+    expect(tx.organizationSupervisionAssignment.create).toHaveBeenCalledTimes(1);
+    expect(auditLogMock).toHaveBeenCalled();
+  });
+
+  it('dryRun=true 遇校验失败:仍抛出原 BizException(不是静默通过)', async () => {
+    const tx = makeTx();
+    tx.organizationSupervisionAssignment.count.mockResolvedValue(1);
+    await expect(svcWith(tx).create(USER, baseDto, META, { dryRun: true })).rejects.toEqual(
+      new BizException(BizCode.SUPERVISION_ALREADY_EXISTS),
+    );
+  });
 });
 
 describe('SupervisionAssignmentsService.getSupervisionScope', () => {

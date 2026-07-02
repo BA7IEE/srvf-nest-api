@@ -38,6 +38,16 @@ const AUDIT_RESOURCE_TYPE = 'supervision_assignment';
 
 type PrismaTx = Prisma.TransactionClient;
 
+// 终态 scoped-authz PR11(2026-07-02;冻结稿 §8.4 / §11 PR11):dry-run 沙箱哨兵,镜像
+// position-assignments.service.ts 同名类(不共享,沿模块自包含范式)。create() 走满全部校验 + 真实
+// insert + audit 写入后,若 options.dryRun,在事务提交前抛本类型强制整个事务(含 audit)一并回滚,
+// catch 后原样返回"本应创建"的响应体 —— 供 announcement-import 预览零写入复用同一份真实校验。
+class DryRunAbort<T> extends Error {
+  constructor(public readonly value: T) {
+    super('DRY_RUN_ABORT');
+  }
+}
+
 @Injectable()
 export class SupervisionAssignmentsService {
   constructor(
@@ -115,7 +125,12 @@ export class SupervisionAssignmentsService {
   //   1. 任期:endedAt 有值须 > startedAt(TENURE_INVALID)
   //   2. 防重:同人对同组织已有 active(ALREADY_EXISTS;partial unique 兜底)
   // **不校验 supervisor 是否持职务**(分管与职务正交);scopeMode 非法由 DTO @IsEnum → 400。
-  async create(user: CurrentUserPayload, dto: CreateSupervisionAssignmentDto, meta: AuditMeta) {
+  async create(
+    user: CurrentUserPayload,
+    dto: CreateSupervisionAssignmentDto,
+    meta: AuditMeta,
+    options?: { dryRun?: boolean },
+  ) {
     await this.assertCanOrThrow(user, 'supervision-assignment.create.record');
 
     // 任期校验(纯输入,不触库先做)。
@@ -125,68 +140,75 @@ export class SupervisionAssignmentsService {
       throw new BizException(BizCode.SUPERVISION_ASSIGNMENT_TENURE_INVALID);
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const supervisor = await this.findMemberOrThrow(dto.supervisorMemberId, tx);
-      if (supervisor.status !== MemberStatus.ACTIVE) {
-        throw new BizException(BizCode.MEMBER_INACTIVE);
-      }
-      const org = await this.findOrganizationOrThrow(dto.organizationId, tx);
-      if (org.status !== OrganizationStatus.ACTIVE) {
-        throw new BizException(BizCode.ORGANIZATION_INACTIVE);
-      }
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const supervisor = await this.findMemberOrThrow(dto.supervisorMemberId, tx);
+        if (supervisor.status !== MemberStatus.ACTIVE) {
+          throw new BizException(BizCode.MEMBER_INACTIVE);
+        }
+        const org = await this.findOrganizationOrThrow(dto.organizationId, tx);
+        if (org.status !== OrganizationStatus.ACTIVE) {
+          throw new BizException(BizCode.ORGANIZATION_INACTIVE);
+        }
 
-      // 防重:同人对同组织已有 active(service 预检 + partial unique 兜底)。
-      const dup = await tx.organizationSupervisionAssignment.count({
-        where: {
-          supervisorMemberId: dto.supervisorMemberId,
-          organizationId: dto.organizationId,
-          status: SupervisionStatus.ACTIVE,
-          deletedAt: null,
-        },
-      });
-      if (dup > 0) throw new BizException(BizCode.SUPERVISION_ALREADY_EXISTS);
-
-      const created = await this.runWithUniqueGuard(() =>
-        tx.organizationSupervisionAssignment.create({
-          data: {
+        // 防重:同人对同组织已有 active(service 预检 + partial unique 兜底)。
+        const dup = await tx.organizationSupervisionAssignment.count({
+          where: {
             supervisorMemberId: dto.supervisorMemberId,
             organizationId: dto.organizationId,
-            scopeMode: dto.scopeMode ?? SupervisionScopeMode.TREE,
             status: SupervisionStatus.ACTIVE,
-            startedAt,
-            endedAt,
-            appointedByUserId: user.id,
-            note: dto.note ?? null,
+            deletedAt: null,
           },
-          select: supervisionAssignmentSafeSelect,
-        }),
-      );
+        });
+        if (dup > 0) throw new BizException(BizCode.SUPERVISION_ALREADY_EXISTS);
 
-      await this.auditLogs.log({
-        event: 'supervision-assignment.create',
-        actorUserId: user.id,
-        actorRoleSnap: user.role,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: created.id,
-        meta,
-        after: {
-          supervisorMemberId: created.supervisorMemberId,
-          organizationId: created.organizationId,
-          scopeMode: created.scopeMode,
-          status: created.status,
-          startedAt: created.startedAt,
-          endedAt: created.endedAt,
-        },
-        extra: {
-          operation: 'create',
-          organizationId: created.organizationId,
-          supervisorMemberId: created.supervisorMemberId,
-        },
-        tx,
+        const created = await this.runWithUniqueGuard(() =>
+          tx.organizationSupervisionAssignment.create({
+            data: {
+              supervisorMemberId: dto.supervisorMemberId,
+              organizationId: dto.organizationId,
+              scopeMode: dto.scopeMode ?? SupervisionScopeMode.TREE,
+              status: SupervisionStatus.ACTIVE,
+              startedAt,
+              endedAt,
+              appointedByUserId: user.id,
+              note: dto.note ?? null,
+            },
+            select: supervisionAssignmentSafeSelect,
+          }),
+        );
+
+        await this.auditLogs.log({
+          event: 'supervision-assignment.create',
+          actorUserId: user.id,
+          actorRoleSnap: user.role,
+          resourceType: AUDIT_RESOURCE_TYPE,
+          resourceId: created.id,
+          meta,
+          after: {
+            supervisorMemberId: created.supervisorMemberId,
+            organizationId: created.organizationId,
+            scopeMode: created.scopeMode,
+            status: created.status,
+            startedAt: created.startedAt,
+            endedAt: created.endedAt,
+          },
+          extra: {
+            operation: 'create',
+            organizationId: created.organizationId,
+            supervisorMemberId: created.supervisorMemberId,
+          },
+          tx,
+        });
+
+        const result = this.toResponseDto(created);
+        if (options?.dryRun) throw new DryRunAbort(result);
+        return result;
       });
-
-      return this.toResponseDto(created);
-    });
+    } catch (err) {
+      if (err instanceof DryRunAbort) return err.value as ReturnType<typeof this.toResponseDto>;
+      throw err;
+    }
   }
 
   // ============ GET /api/admin/v1/members/:memberId/supervision-scope ============

@@ -18,7 +18,7 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 //   3. 🔴 R5 CI 断言:副职(vice-captain / dept-deputy / deputy-group-leader)policy 行数恒 = 0
 //   4. R5 运行时护栏生效:人为给副职塞行后重跑 seed → 非 0 退出
 //   5. 零指派 + 零漂移:3 新角色无任何 RoleBinding / UserRole 持有者(判权零影响);
-//      ops-admin 89(PR10 起)/ member 9 / biz-admin 74 绑定数不变;6 保留码不绑 3 新角色(F1 哨兵延伸)
+//      ops-admin 91(PR11 起)/ member 9 / biz-admin 74 绑定数不变;6 保留码不绑 3 新角色(F1 哨兵延伸)
 //   6. 幂等:连续两次 seed counts / role id 稳定 + policy updatedAt 不 bump
 //
 // 终态 scoped-authz PR9(2026-07-02)追加:第 7 内置角色 `attendance-final-reviewer`(冻结稿
@@ -191,9 +191,10 @@ const EXPECTED_FINAL_REVIEWER_CODES = [
   'attendance.final-reject.sheet',
 ] as const;
 
-// 既有 3 角色绑定数零漂移基线(seed-rbac 89 / seed-attachment 9 / seed-biz-admin 74 同口径;
-// 2026-07-02 终态 scoped-authz PR10 authz.explain.decision 绑 ops-admin 88→89)。
-const EXPECTED_OPS_ADMIN_BINDING_COUNT = 89;
+// 既有 3 角色绑定数零漂移基线(seed-rbac 91 / seed-attachment 9 / seed-biz-admin 74 同口径;
+// 2026-07-02 终态 scoped-authz PR10 authz.explain.decision 绑 ops-admin 88→89;
+// PR11 announcement-import 2 码绑 ops-admin 89→91)。
+const EXPECTED_OPS_ADMIN_BINDING_COUNT = 91;
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
 const EXPECTED_BIZ_ADMIN_BINDING_COUNT = 74;
 
@@ -330,7 +331,7 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     expect(second.stderr).toContain('R5');
   });
 
-  it('5. 零指派 + 零漂移:3 新角色无任何持有者;ops-admin 89(PR10 起)/ member 9 / biz-admin 74 不变;保留码不绑', async () => {
+  it('5. 零指派 + 零漂移:3 新角色无任何持有者;ops-admin 91(PR11 起)/ member 9 / biz-admin 74 不变;保留码不绑', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-5' }).code).toBe(0);
 
     // 3 新角色零 user 持有(判权唯一读源 RoleBinding 全类型 + 冻结的 UserRole 双查;

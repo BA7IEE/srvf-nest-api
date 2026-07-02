@@ -17,6 +17,7 @@ import jwtConfig from './config/jwt.config';
 import { DatabaseModule } from './database/database.module';
 import { ActivitiesModule } from './modules/activities/activities.module';
 import { ActivityRegistrationsModule } from './modules/activity-registrations/activity-registrations.module';
+import { AnnouncementImportModule } from './modules/announcement-import/announcement-import.module';
 import { AttendancesModule } from './modules/attendances/attendances.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -132,6 +133,11 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   0 controller / 0 端点 / 0 新码 / 0 schema。**本刀零业务消费者**(第一个消费者 = PR9 考勤终审;
     //   explain 端点 = PR10;逐面迁移 = PR12);无 ref 判权逐字等价 rbac.can(行为锁,等价矩阵 e2e 锁定)。
     AuthzModule,
+    // 终态 scoped-authz PR11(2026-07-02;冻结稿 §8.4/§11 PR11):公告导入两段式管理面(第 34 模块)。
+    //   2 路由(preview 零写入诊断 + execute 幂等落库);R 模式 announcement-import.{preview,execute}.record
+    //   2 码;导入本身只做锚定解析 + 编排,复用 OrganizationsService/PositionAssignmentsService/
+    //   SupervisionAssignmentsService 的 create()(dryRun 沙箱哨兵驱动 preview 零写入)。0 schema。
+    AnnouncementImportModule,
     // V2.x C-7 attachments:attachment-configs 三子模块 CRUD
     //   (D7 v1.0 §4.2 / §16 Q1-Q7;path /api/system/v1/attachment-{type,mime,size-limit}-configs;130xx 段位)。
     //   AttachmentTypeConfig / Mime / Size 三子表 CRUD 全部实装。

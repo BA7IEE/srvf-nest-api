@@ -713,6 +713,64 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AnnouncementImportRequestDto": {
+    "properties": {
+      "organizations": {
+        "description": "待建组节点行",
+        "items": {
+          "$ref": "#/components/schemas/ImportOrganizationRowDto",
+        },
+        "type": "array",
+      },
+      "positions": {
+        "description": "待任命行",
+        "items": {
+          "$ref": "#/components/schemas/ImportPositionRowDto",
+        },
+        "type": "array",
+      },
+      "supervisions": {
+        "description": "待建分管行",
+        "items": {
+          "$ref": "#/components/schemas/ImportSupervisionRowDto",
+        },
+        "type": "array",
+      },
+    },
+    "type": "object",
+  },
+  "AnnouncementImportResultDto": {
+    "properties": {
+      "organizations": {
+        "items": {
+          "$ref": "#/components/schemas/ImportOrganizationRowResultDto",
+        },
+        "type": "array",
+      },
+      "positions": {
+        "items": {
+          "$ref": "#/components/schemas/ImportPositionRowResultDto",
+        },
+        "type": "array",
+      },
+      "summary": {
+        "$ref": "#/components/schemas/ImportSummaryDto",
+      },
+      "supervisions": {
+        "items": {
+          "$ref": "#/components/schemas/ImportSupervisionRowResultDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "organizations",
+      "positions",
+      "supervisions",
+      "summary",
+    ],
+    "type": "object",
+  },
   "AppActivityDetailDto": {
     "properties": {
       "activityTypeCode": {
@@ -4561,6 +4619,19 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "maxLength": 32,
         "type": "string",
       },
+      "establishmentStatusCode": {
+        "description": "设立状态(可选;'formal'=正式 /'provisional'=筹备组;不传 = 未设置)",
+        "enum": [
+          "formal",
+          "provisional",
+        ],
+        "type": "string",
+      },
+      "groupFunctionCode": {
+        "description": "组功能字典 code(留口;v1 只占列不做业务校验)",
+        "maxLength": 64,
+        "type": "string",
+      },
       "name": {
         "description": "节点名",
         "maxLength": 100,
@@ -5687,6 +5758,301 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "url",
       "expiresAt",
+    ],
+    "type": "object",
+  },
+  "ImportOrganizationRowDto": {
+    "properties": {
+      "code": {
+        "description": "新组的永久 code(全局唯一;同时作为本请求内 positions[]/supervisions[].orgCode 的引用键)",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "establishmentStatusCode": {
+        "description": "设立状态('provisional' 表筹备组;不传 = 未设置)",
+        "enum": [
+          "formal",
+          "provisional",
+        ],
+        "type": "string",
+      },
+      "groupFunctionCode": {
+        "description": "组功能字典 code(留口)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "name": {
+        "description": "组名",
+        "maxLength": 100,
+        "type": "string",
+      },
+      "parentCode": {
+        "description": "父组织 code(必须已存在,或为本请求更早声明的组织行 code)",
+        "type": "string",
+      },
+      "sortOrder": {
+        "description": "同级排序权重",
+        "minimum": 0,
+        "type": "number",
+      },
+    },
+    "type": "object",
+  },
+  "ImportOrganizationRowResultDto": {
+    "properties": {
+      "organizationId": {
+        "description": "已建/命中的组织 id(dry-run 亦返回"本应创建"的 id)",
+        "nullable": true,
+        "type": "object",
+      },
+      "reasons": {
+        "items": {
+          "$ref": "#/components/schemas/ImportRowIssueDto",
+        },
+        "type": "array",
+      },
+      "row": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ImportOrganizationRowDto",
+          },
+        ],
+        "description": "原样回显入参行",
+      },
+      "status": {
+        "enum": [
+          "ok",
+          "blocked",
+          "already-exists",
+          "needs-manual",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "row",
+      "status",
+      "reasons",
+    ],
+    "type": "object",
+  },
+  "ImportPositionRowDto": {
+    "properties": {
+      "appointmentSource": {
+        "description": "任命来源标记(不传 = 'announcement-2026')",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "displayName": {
+        "description": "姓名(仅 preview 辅助解析用;唯一命中 active 队员时回显建议 memberNo,仍需人工确认)",
+        "maxLength": 100,
+        "type": "string",
+      },
+      "endedAt": {
+        "description": "任期止(ISO 8601;须晚于任期起)",
+        "type": "string",
+      },
+      "isConcurrent": {
+        "description": "是否兼任(不传 = false)",
+        "type": "boolean",
+      },
+      "memberNo": {
+        "description": "队员编号(双锚之一;execute 必须提供)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "note": {
+        "description": "备注",
+        "maxLength": 200,
+        "type": "string",
+      },
+      "orgCode": {
+        "description": "组织 code(双锚之一;可引用已存在组织,或本请求 organizations[] 新建的组织)",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "positionCode": {
+        "description": "职务 code",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "startedAt": {
+        "description": "任期起(ISO 8601)",
+        "type": "string",
+      },
+    },
+    "type": "object",
+  },
+  "ImportPositionRowResultDto": {
+    "properties": {
+      "positionAssignmentId": {
+        "description": "已建/命中的任职记录 id",
+        "nullable": true,
+        "type": "object",
+      },
+      "reasons": {
+        "items": {
+          "$ref": "#/components/schemas/ImportRowIssueDto",
+        },
+        "type": "array",
+      },
+      "row": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ImportPositionRowDto",
+          },
+        ],
+        "description": "原样回显入参行",
+      },
+      "status": {
+        "enum": [
+          "ok",
+          "blocked",
+          "already-exists",
+          "needs-manual",
+        ],
+        "type": "string",
+      },
+      "suggestedMemberNo": {
+        "description": "displayName 唯一命中 active 队员时的建议 memberNo(仅 needs-manual 可能带值)",
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "row",
+      "status",
+      "reasons",
+    ],
+    "type": "object",
+  },
+  "ImportRowIssueDto": {
+    "properties": {
+      "bizCode": {
+        "description": "底层 BizCode(合成原因如"缺 memberNo"/"姓名多义" 为 null)",
+        "nullable": true,
+        "type": "object",
+      },
+      "message": {
+        "description": "人类可读说明(直接取自被复用 service 抛出的 BizException.message,或合成说明)",
+        "type": "string",
+      },
+    },
+    "required": [
+      "message",
+    ],
+    "type": "object",
+  },
+  "ImportSummaryDto": {
+    "properties": {
+      "alreadyExists": {
+        "description": "status='already-exists' 行数(execute 语境下 = 幂等 skip)",
+        "type": "number",
+      },
+      "blocked": {
+        "type": "number",
+      },
+      "needsManual": {
+        "type": "number",
+      },
+      "ok": {
+        "type": "number",
+      },
+      "total": {
+        "description": "本次请求总行数(三类合计)",
+        "type": "number",
+      },
+    },
+    "required": [
+      "total",
+      "ok",
+      "blocked",
+      "alreadyExists",
+      "needsManual",
+    ],
+    "type": "object",
+  },
+  "ImportSupervisionRowDto": {
+    "properties": {
+      "displayName": {
+        "description": "姓名(仅 preview 辅助解析用;语义同 ImportPositionRowDto.displayName)",
+        "maxLength": 100,
+        "type": "string",
+      },
+      "endedAt": {
+        "description": "任期止(ISO 8601;须晚于任期起)",
+        "type": "string",
+      },
+      "note": {
+        "description": "备注",
+        "maxLength": 200,
+        "type": "string",
+      },
+      "orgCode": {
+        "description": "被分管组织 code(双锚之一;可引用已存在组织,或本请求 organizations[] 新建的组织)",
+        "maxLength": 32,
+        "type": "string",
+      },
+      "scopeMode": {
+        "description": "分管范围(不传 = TREE)",
+        "enum": [
+          "EXACT",
+          "TREE",
+        ],
+        "type": "string",
+      },
+      "startedAt": {
+        "description": "任期起(ISO 8601)",
+        "type": "string",
+      },
+      "supervisorMemberNo": {
+        "description": "分管人队员编号(双锚之一;execute 必须提供)",
+        "maxLength": 64,
+        "type": "string",
+      },
+    },
+    "type": "object",
+  },
+  "ImportSupervisionRowResultDto": {
+    "properties": {
+      "reasons": {
+        "items": {
+          "$ref": "#/components/schemas/ImportRowIssueDto",
+        },
+        "type": "array",
+      },
+      "row": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ImportSupervisionRowDto",
+          },
+        ],
+        "description": "原样回显入参行",
+      },
+      "status": {
+        "enum": [
+          "ok",
+          "blocked",
+          "already-exists",
+          "needs-manual",
+        ],
+        "type": "string",
+      },
+      "suggestedMemberNo": {
+        "description": "displayName 唯一命中 active 队员时的建议 memberNo(仅 needs-manual 可能带值)",
+        "nullable": true,
+        "type": "object",
+      },
+      "supervisionAssignmentId": {
+        "description": "已建/命中的分管记录 id",
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "row",
+      "status",
+      "reasons",
     ],
     "type": "object",
   },
@@ -14842,6 +15208,322 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "发布活动(draft → published;写 publishedBy/At;非 draft → 20030) [rbac: activity.publish.record]",
       "tags": [
         "Admin - Activities",
+      ],
+    },
+  },
+  "/api/admin/v1/announcement-import/execute": {
+    "post": {
+      "operationId": "AnnouncementImportController_execute",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AnnouncementImportRequestDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AnnouncementImportResultDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "公告导入执行(逐行落库,幂等可重跑,单行失败不影响其它行)[rbac: announcement-import.execute.record]",
+      "tags": [
+        "Admin - Announcement Import",
+      ],
+    },
+  },
+  "/api/admin/v1/announcement-import/preview": {
+    "post": {
+      "operationId": "AnnouncementImportController_preview",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AnnouncementImportRequestDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AnnouncementImportResultDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "公告导入预览(零写入,逐行回显 ok/blocked/already-exists/needs-manual)[rbac: announcement-import.preview.record]",
+      "tags": [
+        "Admin - Announcement Import",
       ],
     },
   },

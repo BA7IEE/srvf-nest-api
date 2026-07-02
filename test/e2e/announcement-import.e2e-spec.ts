@@ -1,0 +1,581 @@
+import type { INestApplication } from '@nestjs/common';
+import { Role } from '@prisma/client';
+import request from 'supertest';
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import { PrismaService } from '../../src/database/prisma.service';
+import { loginAs } from '../fixtures/auth.fixture';
+import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
+import { createTestUser } from '../fixtures/users.fixture';
+import { expectBizError } from '../helpers/biz-code.assert';
+import { httpServer } from '../helpers/http-server';
+import { resetDb } from '../setup/reset-db';
+import { createTestApp } from '../setup/test-app';
+
+// 终态 scoped-authz PR11(2026-07-02;冻结稿 §8.4 / §11 PR11;goal DoD §2/§3)公告导入 preview/execute e2e。
+//
+// 覆盖:
+//   RBAC 权限边界(preview/execute 各自判权,无码 30100)
+//   preview 标记族(goal DoD 2):memberNo 命中 ok / displayName 唯一命中回显建议 needs-manual /
+//     displayName 多义 needs-manual / member 不存在 blocked / orgCode 不存在 blocked /
+//     职务不适配该类别 blocked / 缺归属 blocked / 已任职 already-exists / 组织行 provisional ok
+//   preview 零写入断言(表 count 前后不变)
+//   execute(goal DoD 3):混合三类行一次落库(组节点含 provisional + 任职含字段/任期/isConcurrent/
+//     appointmentSource + audit 落 + 分管)/ 无 memberNo 行拒 / 重跑全 skipped(幂等)/
+//     部分失败不影响其它行 / 同批组织行可被后续行通过 orgCode 引用
+//
+// R13 红线:全部用例使用合成占位数据(AIE2E- 前缀 memberNo / "测试X" 占位姓名),不含任何真实
+// 2026 任命公告姓名 / memberNo 对照。
+//
+// RBAC:沿 position-assignments.e2e-spec.ts / supervision-assignments.e2e-spec.ts 范式,rbac.fixture
+// 共享 56 码基线不含 position-assignment.* / supervision-assignment.* / announcement-import.*,
+// 本 spec 在 beforeAll 内联 seed 这 4 码 + 绑 ops-admin(org.create.node 已在共享基线中)。
+
+const EXTRA_CODES = [
+  'position-assignment.create.record',
+  'supervision-assignment.create.record',
+  'announcement-import.preview.record',
+  'announcement-import.execute.record',
+] as const;
+
+async function seedExtraCodesAndBind(prisma: PrismaService, opsAdminRoleId: string): Promise<void> {
+  for (const code of EXTRA_CODES) {
+    const [module, action, resourceType] = code.split('.');
+    await prisma.permission.upsert({
+      where: { code },
+      update: {},
+      create: { code, module, action, resourceType },
+    });
+  }
+  const perms = await prisma.permission.findMany({
+    where: { code: { in: [...EXTRA_CODES] } },
+    select: { id: true },
+  });
+  await prisma.rolePermission.createMany({
+    data: perms.map((p) => ({ roleId: opsAdminRoleId, permissionId: p.id })),
+    skipDuplicates: true,
+  });
+}
+
+describe('announcement-import 公告导入 preview/execute', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let adminAuth: string;
+  let userAuth: string;
+
+  // 配置面基线(beforeAll 建一次,只读复用)。
+  let posGroupLeaderId: string; // 有 (group, posGroupLeader) 规则,requireMembership=true
+  let posTeamOnlyId: string; // 只有 (rescue-team, posTeamOnly) 规则,对 group 而言 RULE_NOT_MATCHED
+  let orgTeamId: string; // rescue-team,根
+  let orgGroupId: string; // group,parent=orgTeam,已存在(非本次导入新建)
+
+  let memberSeq = 0;
+  async function newMember(
+    tag: string,
+    opts: { displayName?: string; status?: 'ACTIVE' | 'INACTIVE' } = {},
+  ): Promise<{ id: string; memberNo: string }> {
+    memberSeq += 1;
+    const memberNo = `AIE2E-${tag}-${memberSeq}`;
+    const m = await prisma.member.create({
+      data: {
+        memberNo,
+        displayName: opts.displayName ?? `测试-${tag}-${memberSeq}`,
+        status: opts.status ?? 'ACTIVE',
+      },
+      select: { id: true },
+    });
+    return { id: m.id, memberNo };
+  }
+
+  async function addMembership(memberId: string, organizationId: string): Promise<void> {
+    await prisma.memberOrganizationMembership.create({
+      data: { memberId, organizationId, membershipType: 'PRIMARY', status: 'ACTIVE' },
+    });
+  }
+
+  const startedAt = '2026-07-01T00:00:00.000Z';
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    await resetDb(app);
+    prisma = app.get(PrismaService);
+
+    const admin = await createTestUser(app, { username: 'ai-adm', role: Role.ADMIN });
+    await createTestUser(app, { username: 'ai-user', role: Role.USER });
+    adminAuth = (await loginAs(app, 'ai-adm')).authHeader;
+    userAuth = (await loginAs(app, 'ai-user')).authHeader;
+
+    const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    await seedExtraCodesAndBind(prisma, seed.opsAdminRoleId);
+    await grantOpsAdminToUser(app, admin.id, seed.opsAdminRoleId);
+
+    // node_type 字典(供 OrganizationsService.create 的 assertNodeTypeCodeValid 6 项 AND 校验通过;
+    // 组织行 nodeTypeCode 恒为 'group',沿 organizations.e2e-spec.ts 范式)。
+    const nodeType = await prisma.dictType.create({
+      data: { code: 'node_type', label: 'Node Type' },
+      select: { id: true },
+    });
+    await prisma.dictItem.create({ data: { typeId: nodeType.id, code: 'group', label: '组' } });
+
+    // 职务定义
+    const [groupLeader, teamOnly] = await Promise.all([
+      prisma.organizationPosition.create({
+        data: {
+          code: 'ai-e2e-group-leader',
+          name: '组长',
+          categoryCode: 'LEADER',
+          allowMultiple: true,
+          allowConcurrent: true,
+        },
+        select: { id: true },
+      }),
+      prisma.organizationPosition.create({
+        data: {
+          code: 'ai-e2e-team-only',
+          name: '仅队级职务',
+          categoryCode: 'LEADER',
+          allowMultiple: true,
+          allowConcurrent: true,
+        },
+        select: { id: true },
+      }),
+    ]);
+    posGroupLeaderId = groupLeader.id;
+    posTeamOnlyId = teamOnly.id;
+
+    // 组织树:orgTeam(rescue-team,根)/ orgGroup(group,parent=orgTeam,已存在)
+    const team = await prisma.organization.create({
+      data: { name: 'ai-e2e-team', code: 'AIE2E-TEAM', nodeTypeCode: 'rescue-team' },
+      select: { id: true },
+    });
+    orgTeamId = team.id;
+    const group = await prisma.organization.create({
+      data: {
+        name: 'ai-e2e-existing-group',
+        code: 'AIE2E-GRP',
+        nodeTypeCode: 'group',
+        parentId: orgTeamId,
+      },
+      select: { id: true },
+    });
+    orgGroupId = group.id;
+
+    await prisma.organizationClosure.createMany({
+      data: [
+        { ancestorId: orgTeamId, descendantId: orgTeamId, depth: 0 },
+        { ancestorId: orgGroupId, descendantId: orgGroupId, depth: 0 },
+        { ancestorId: orgTeamId, descendantId: orgGroupId, depth: 1 },
+      ],
+    });
+
+    await prisma.organizationPositionRule.createMany({
+      data: [
+        { nodeTypeCode: 'group', positionId: posGroupLeaderId, requireMembership: true },
+        { nodeTypeCode: 'rescue-team', positionId: posTeamOnlyId, requireMembership: false },
+      ],
+    });
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  function preview(auth: string, body: Record<string, unknown>) {
+    return request(httpServer(app))
+      .post('/api/admin/v1/announcement-import/preview')
+      .set('Authorization', auth)
+      .send(body);
+  }
+
+  function execute(auth: string, body: Record<string, unknown>) {
+    return request(httpServer(app))
+      .post('/api/admin/v1/announcement-import/execute')
+      .set('Authorization', auth)
+      .send(body);
+  }
+
+  // ============ RBAC 权限边界 ============
+
+  describe('RBAC 权限边界', () => {
+    it('未登录 → 401', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/announcement-import/preview')
+        .send({ organizations: [{ code: 'X', parentCode: 'Y', name: 'Z' }] });
+      expectBizError(res, BizCode.UNAUTHORIZED);
+    });
+
+    it('USER 无码 → preview 30100', async () => {
+      const res = await preview(userAuth, {
+        organizations: [{ code: 'X', parentCode: 'Y', name: 'Z' }],
+      });
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+
+    it('USER 无码 → execute 30100', async () => {
+      const res = await execute(userAuth, {
+        organizations: [{ code: 'X', parentCode: 'Y', name: 'Z' }],
+      });
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+  });
+
+  // ============ preview 标记族 + 零写入(goal DoD 2)============
+
+  describe('preview 标记族(单请求覆盖全部标记 + 零写入断言)', () => {
+    it(
+      'memberNo ok / displayName 唯一 needs-manual+建议 / displayName 多义 needs-manual / ' +
+        'member 不存在 blocked / orgCode 不存在 blocked / 职务不适配 blocked / 缺归属 blocked / ' +
+        '已任职 already-exists / 组织行 provisional ok —— 全程零写入',
+      async () => {
+        const memberHappy = await newMember('happy');
+        await addMembership(memberHappy.id, orgTeamId); // 祖先归属,满足 requireMembership
+
+        const memberUnique = await newMember('uniq', { displayName: '测试唯一命中甲' });
+        await prisma.member.create({
+          data: {
+            memberNo: `AIE2E-DUP-${++memberSeq}`,
+            displayName: '测试重名乙',
+            status: 'ACTIVE',
+          },
+        });
+        await prisma.member.create({
+          data: {
+            memberNo: `AIE2E-DUP-${++memberSeq}`,
+            displayName: '测试重名乙',
+            status: 'ACTIVE',
+          },
+        });
+
+        const memberNoMembership = await newMember('nomem');
+        // 故意不给 memberNoMembership 任何归属
+
+        const memberAlready = await newMember('already');
+        await addMembership(memberAlready.id, orgTeamId);
+        await prisma.organizationPositionAssignment.create({
+          data: {
+            organizationId: orgGroupId,
+            positionId: posGroupLeaderId,
+            memberId: memberAlready.id,
+            status: 'ACTIVE',
+            startedAt: new Date(startedAt),
+          },
+        });
+
+        const countsBefore = await Promise.all([
+          prisma.organization.count(),
+          prisma.organizationPositionAssignment.count(),
+          prisma.organizationSupervisionAssignment.count(),
+          prisma.auditLog.count(),
+        ]);
+
+        const res = await preview(adminAuth, {
+          organizations: [
+            {
+              code: 'AIE2E-PREVIEW-NEW',
+              parentCode: 'AIE2E-TEAM',
+              name: '预览筹备组',
+              establishmentStatusCode: 'provisional',
+            },
+          ],
+          positions: [
+            {
+              memberNo: memberHappy.memberNo,
+              orgCode: 'AIE2E-GRP',
+              positionCode: 'ai-e2e-group-leader',
+              startedAt,
+            },
+            {
+              displayName: '测试唯一命中甲',
+              orgCode: 'AIE2E-GRP',
+              positionCode: 'ai-e2e-group-leader',
+              startedAt,
+            },
+            {
+              displayName: '测试重名乙',
+              orgCode: 'AIE2E-GRP',
+              positionCode: 'ai-e2e-group-leader',
+              startedAt,
+            },
+            {
+              memberNo: 'AIE2E-DOES-NOT-EXIST',
+              orgCode: 'AIE2E-GRP',
+              positionCode: 'ai-e2e-group-leader',
+              startedAt,
+            },
+            {
+              memberNo: memberHappy.memberNo,
+              orgCode: 'AIE2E-NO-SUCH-ORG',
+              positionCode: 'ai-e2e-group-leader',
+              startedAt,
+            },
+            {
+              memberNo: memberHappy.memberNo,
+              orgCode: 'AIE2E-GRP',
+              positionCode: 'ai-e2e-team-only',
+              startedAt,
+            },
+            {
+              memberNo: memberNoMembership.memberNo,
+              orgCode: 'AIE2E-GRP',
+              positionCode: 'ai-e2e-group-leader',
+              startedAt,
+            },
+            {
+              memberNo: memberAlready.memberNo,
+              orgCode: 'AIE2E-GRP',
+              positionCode: 'ai-e2e-group-leader',
+              startedAt,
+            },
+          ],
+        });
+
+        expect(res.status).toBe(200);
+        expect(res.body.code).toBe(0);
+        const data = res.body.data as {
+          organizations: Array<{ status: string; organizationId: string | null }>;
+          positions: Array<{ status: string; suggestedMemberNo: string | null }>;
+        };
+
+        expect(data.organizations[0].status).toBe('ok');
+        expect(typeof data.organizations[0].organizationId).toBe('string');
+
+        expect(data.positions[0].status).toBe('ok'); // memberNo 命中
+        expect(data.positions[1].status).toBe('needs-manual');
+        expect(data.positions[1].suggestedMemberNo).toBe(memberUnique.memberNo); // 唯一命中回显建议
+        expect(data.positions[2].status).toBe('needs-manual');
+        expect(data.positions[2].suggestedMemberNo ?? null).toBeNull(); // 多义,无建议
+        expect(data.positions[3].status).toBe('blocked'); // member 不存在
+        expect(data.positions[4].status).toBe('blocked'); // orgCode 不存在
+        expect(data.positions[5].status).toBe('blocked'); // 职务不适配该类别(RULE_NOT_MATCHED)
+        expect(data.positions[6].status).toBe('blocked'); // 缺归属(MEMBERSHIP_REQUIRED)
+        expect(data.positions[7].status).toBe('already-exists'); // 已任职
+
+        // 零写入:preview 前后表 count 完全不变(含 organizations[] 的 dry-run 组节点)。
+        const countsAfter = await Promise.all([
+          prisma.organization.count(),
+          prisma.organizationPositionAssignment.count(),
+          prisma.organizationSupervisionAssignment.count(),
+          prisma.auditLog.count(),
+        ]);
+        expect(countsAfter).toEqual(countsBefore);
+      },
+    );
+  });
+
+  // ============ execute(goal DoD 3)============
+
+  describe('execute 落库(混合三类行 / 无 memberNo 拒 / 幂等重跑 / 部分失败隔离)', () => {
+    it('混合三类行一次落库:组节点(provisional)+ 任职(字段/任期/isConcurrent/appointmentSource + audit)+ 分管', async () => {
+      const memberPos = await newMember('exec-pos');
+      await addMembership(memberPos.id, orgTeamId);
+      const memberSup = await newMember('exec-sup');
+
+      const res = await execute(adminAuth, {
+        organizations: [
+          {
+            code: 'AIE2E-EXECGRP',
+            parentCode: 'AIE2E-TEAM',
+            name: '执行新组',
+            establishmentStatusCode: 'provisional',
+          },
+        ],
+        positions: [
+          {
+            memberNo: memberPos.memberNo,
+            orgCode: 'AIE2E-EXECGRP', // 引用同请求 organizations[] 新建的组
+            positionCode: 'ai-e2e-group-leader',
+            startedAt,
+            isConcurrent: true,
+            note: 'exec-note',
+          },
+        ],
+        supervisions: [
+          {
+            supervisorMemberNo: memberSup.memberNo,
+            orgCode: 'AIE2E-EXECGRP',
+            scopeMode: 'EXACT',
+            startedAt,
+          },
+        ],
+      });
+
+      expect(res.status).toBe(200);
+      const data = res.body.data as {
+        organizations: Array<{ status: string; organizationId: string | null }>;
+        positions: Array<{ status: string; positionAssignmentId: string | null }>;
+        supervisions: Array<{ status: string; supervisionAssignmentId: string | null }>;
+      };
+      expect(data.organizations[0].status).toBe('ok');
+      expect(data.positions[0].status).toBe('ok');
+      expect(data.supervisions[0].status).toBe('ok');
+
+      // 组节点真落库(含 provisional)
+      const org = await prisma.organization.findFirst({
+        where: { code: 'AIE2E-EXECGRP' },
+        select: { id: true, nodeTypeCode: true, parentId: true, establishmentStatusCode: true },
+      });
+      expect(org).not.toBeNull();
+      expect(org!.nodeTypeCode).toBe('group');
+      expect(org!.parentId).toBe(orgTeamId);
+      expect(org!.establishmentStatusCode).toBe('provisional');
+      expect(org!.id).toBe(data.organizations[0].organizationId);
+
+      // 任职真落库:字段 / 任期 / isConcurrent / appointmentSource 默认值正确
+      const pa = await prisma.organizationPositionAssignment.findFirst({
+        where: { id: data.positions[0].positionAssignmentId ?? undefined },
+        select: {
+          organizationId: true,
+          positionId: true,
+          memberId: true,
+          status: true,
+          startedAt: true,
+          isConcurrent: true,
+          note: true,
+          appointmentSource: true,
+        },
+      });
+      expect(pa).not.toBeNull();
+      expect(pa!.organizationId).toBe(org!.id);
+      expect(pa!.positionId).toBe(posGroupLeaderId);
+      expect(pa!.memberId).toBe(memberPos.id);
+      expect(pa!.status).toBe('ACTIVE');
+      expect(pa!.startedAt.toISOString()).toBe(startedAt);
+      expect(pa!.isConcurrent).toBe(true);
+      expect(pa!.note).toBe('exec-note');
+      expect(pa!.appointmentSource).toBe('announcement-2026');
+
+      const paAudit = await prisma.auditLog.findFirst({
+        where: {
+          event: 'position-assignment.create',
+          resourceId: pa ? data.positions[0].positionAssignmentId : undefined,
+        },
+      });
+      expect(paAudit).not.toBeNull();
+
+      // 分管真落库
+      const sup = await prisma.organizationSupervisionAssignment.findFirst({
+        where: { id: data.supervisions[0].supervisionAssignmentId ?? undefined },
+        select: { organizationId: true, supervisorMemberId: true, scopeMode: true, status: true },
+      });
+      expect(sup).not.toBeNull();
+      expect(sup!.organizationId).toBe(org!.id);
+      expect(sup!.supervisorMemberId).toBe(memberSup.id);
+      expect(sup!.scopeMode).toBe('EXACT');
+      expect(sup!.status).toBe('ACTIVE');
+
+      const supAudit = await prisma.auditLog.findFirst({
+        where: {
+          event: 'supervision-assignment.create',
+          resourceId: data.supervisions[0].supervisionAssignmentId ?? undefined,
+        },
+      });
+      expect(supAudit).not.toBeNull();
+    });
+
+    it('无 memberNo 行拒(即便 displayName 给了)——不落库,不猜', async () => {
+      const before = await prisma.organizationPositionAssignment.count();
+      const res = await execute(adminAuth, {
+        positions: [
+          {
+            displayName: '随便什么名字',
+            orgCode: 'AIE2E-GRP',
+            positionCode: 'ai-e2e-group-leader',
+            startedAt,
+          },
+        ],
+      });
+      expect(res.status).toBe(200);
+      const data = res.body.data as { positions: Array<{ status: string }> };
+      expect(data.positions[0].status).toBe('blocked');
+      expect(await prisma.organizationPositionAssignment.count()).toBe(before);
+    });
+
+    it('重跑幂等:同一批次再次 execute 全部 already-exists,零新增行', async () => {
+      const memberPos = await newMember('idem-pos');
+      await addMembership(memberPos.id, orgTeamId);
+      const memberSup = await newMember('idem-sup');
+
+      const body = {
+        organizations: [{ code: 'AIE2E-IDEMGRP', parentCode: 'AIE2E-TEAM', name: '幂等组' }],
+        positions: [
+          {
+            memberNo: memberPos.memberNo,
+            orgCode: 'AIE2E-IDEMGRP',
+            positionCode: 'ai-e2e-group-leader',
+            startedAt,
+          },
+        ],
+        supervisions: [
+          { supervisorMemberNo: memberSup.memberNo, orgCode: 'AIE2E-IDEMGRP', startedAt },
+        ],
+      };
+
+      const first = await execute(adminAuth, body);
+      expect(first.status).toBe(200);
+      const firstData = first.body.data as {
+        organizations: Array<{ status: string }>;
+        positions: Array<{ status: string }>;
+        supervisions: Array<{ status: string }>;
+      };
+      expect(firstData.organizations[0].status).toBe('ok');
+      expect(firstData.positions[0].status).toBe('ok');
+      expect(firstData.supervisions[0].status).toBe('ok');
+
+      const countsAfterFirst = await Promise.all([
+        prisma.organization.count(),
+        prisma.organizationPositionAssignment.count(),
+        prisma.organizationSupervisionAssignment.count(),
+      ]);
+
+      const second = await execute(adminAuth, body);
+      expect(second.status).toBe(200);
+      const secondData = second.body.data as {
+        organizations: Array<{ status: string }>;
+        positions: Array<{ status: string }>;
+        supervisions: Array<{ status: string }>;
+      };
+      expect(secondData.organizations[0].status).toBe('already-exists');
+      expect(secondData.positions[0].status).toBe('already-exists');
+      expect(secondData.supervisions[0].status).toBe('already-exists');
+
+      const countsAfterSecond = await Promise.all([
+        prisma.organization.count(),
+        prisma.organizationPositionAssignment.count(),
+        prisma.organizationSupervisionAssignment.count(),
+      ]);
+      expect(countsAfterSecond).toEqual(countsAfterFirst);
+    });
+
+    it('部分失败不影响其它行:一行 orgCode 不存在,另一行仍成功落库', async () => {
+      const memberGood = await newMember('partial-ok');
+      await addMembership(memberGood.id, orgTeamId);
+
+      const res = await execute(adminAuth, {
+        positions: [
+          {
+            memberNo: memberGood.memberNo,
+            orgCode: 'AIE2E-GRP',
+            positionCode: 'ai-e2e-group-leader',
+            startedAt,
+          },
+          {
+            memberNo: (await newMember('partial-bad')).memberNo,
+            orgCode: 'AIE2E-TOTALLY-MISSING',
+            positionCode: 'ai-e2e-group-leader',
+            startedAt,
+          },
+        ],
+      });
+      expect(res.status).toBe(200);
+      const data = res.body.data as {
+        positions: Array<{ status: string; positionAssignmentId: string | null }>;
+      };
+      expect(data.positions[0].status).toBe('ok');
+      expect(data.positions[1].status).toBe('blocked');
+
+      const created = await prisma.organizationPositionAssignment.findFirst({
+        where: { id: data.positions[0].positionAssignmentId ?? undefined },
+      });
+      expect(created).not.toBeNull();
+    });
+  });
+});

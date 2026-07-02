@@ -1468,6 +1468,27 @@ const AUTHZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
+// 终态 scoped-authz PR11「公告导入」(2026-07-02;冻结稿 §8.4 / §11 PR11):公告任职/分管/组节点
+// preview/execute 两段式导入工具判权码(2 条,均绑 ops-admin,非 reserved)。preview 零写入诊断、
+// execute 幂等落库,两者都只做锚定解析 + 编排,复用 organizations/position-assignments/
+// supervision-assignments 既有 create() 校验与 audit(dryRun 沙箱哨兵驱动零写入)。
+const ANNOUNCEMENT_IMPORT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'announcement-import.preview.record',
+    module: 'announcement-import',
+    action: 'preview',
+    resourceType: 'record',
+    description: '公告导入预览(零写入):逐行回显 ok/blocked/already-exists/needs-manual + 原因',
+  },
+  {
+    code: 'announcement-import.execute.record',
+    module: 'announcement-import',
+    action: 'execute',
+    resourceType: 'record',
+    description: '公告导入执行:逐行落库(组节点/任职/分管),幂等可重跑,单行失败不影响其它行',
+  },
+];
+
 // PR-2A 聚合(44 条:dict 8 + org 5〔终态 scoped-authz PR1 +org.move.node〕+ member-department 3 +
 // membership 4〔终态 scoped-authz PR2〕+ contribution 4 + position 4 + position-rule 4〔终态 scoped-authz PR3〕
 // + position-assignment 4〔终态 scoped-authz PR4〕+ supervision-assignment 4〔终态 scoped-authz PR5〕
@@ -1888,9 +1909,10 @@ const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...WECHAT_INFRA_PERMISSION_SEED,
   ...REALNAME_INFRA_PERMISSION_SEED,
   ...AUTHZ_PERMISSION_SEED,
+  ...ANNOUNCEMENT_IMPORT_PERMISSION_SEED,
 ];
 
-// ops-admin 完整绑定集合(14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME + 1 AUTHZ = 89 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4 / REALNAME E-R-19;PR-2A 44 = base 20 + 终态 scoped-authz PR1 org.move.node + PR2 membership 4 + PR3 position 4 + position-rule 4 + PR4 position-assignment 4 + PR5 supervision-assignment 4 + PR6 role-binding 4 码,全绑 ops-admin 无过滤;AUTHZ 1 = PR10 authz.explain.decision 诊断码,整条绑)
+// ops-admin 完整绑定集合(14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME + 1 AUTHZ + 2 ANNOUNCEMENT-IMPORT = 91 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4 / REALNAME E-R-19;PR-2A 44 = base 20 + 终态 scoped-authz PR1 org.move.node + PR2 membership 4 + PR3 position 4 + position-rule 4 + PR4 position-assignment 4 + PR5 supervision-assignment 4 + PR6 role-binding 4 码,全绑 ops-admin 无过滤;AUTHZ 1 = PR10 authz.explain.decision 诊断码,整条绑;ANNOUNCEMENT-IMPORT 2 = PR11 announcement-import.{preview,execute}.record,整条绑)
 // 注:`storage-setting.reset.credentials` 从 PR_2B_PERMISSION_SEED 过滤掉(沿 PR-2 D2=A;§6.2)
 // 注:`user.update.role` 从 USER_PERMISSION_SEED 过滤掉(沿 PR-3 D1=A;§6.2)
 // 注:`audit-log.read.entry` 整条加入,不过滤(沿 PR-4 D2=B;§6.2)
@@ -1907,13 +1929,14 @@ const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...WECHAT_INFRA_PERMISSION_SEED.filter((p) => p.code !== WECHAT_RESET_CREDENTIALS_CODE),
   ...REALNAME_INFRA_PERMISSION_SEED.filter((p) => p.code !== REALNAME_RESET_CREDENTIALS_CODE),
   ...AUTHZ_PERMISSION_SEED,
+  ...ANNOUNCEMENT_IMPORT_PERMISSION_SEED,
 ];
 
 // 运营管理员角色 code(沿 D7 §10.1 / §10.3 ops-admin 唯一公开 placeholder)
 const OPS_ADMIN_ROLE_CODE = 'ops-admin';
 const OPS_ADMIN_DISPLAY_NAME = '运营管理员';
 const OPS_ADMIN_DESCRIPTION =
-  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / membership / contribution-rule / position / position-rule / position-assignment / supervision-assignment / role-binding + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条 + WECHAT: wechat-setting / user.wechat.clear 3 条 + REALNAME: realname-setting 2 条 + AUTHZ: authz.explain 诊断 1 条)的 meta 角色;14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME + 1 AUTHZ = 89 条权限点;凭证 reset(storage / sms / wechat / realname)与 user 角色修改仅 SUPER_ADMIN';
+  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / membership / contribution-rule / position / position-rule / position-assignment / supervision-assignment / role-binding + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条 + WECHAT: wechat-setting / user.wechat.clear 3 条 + REALNAME: realname-setting 2 条 + AUTHZ: authz.explain 诊断 1 条 + ANNOUNCEMENT-IMPORT: 公告导入 preview/execute 2 条)的 meta 角色;14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME + 1 AUTHZ + 2 ANNOUNCEMENT-IMPORT = 91 条权限点;凭证 reset(storage / sms / wechat / realname)与 user 角色修改仅 SUPER_ADMIN';
 
 // V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集
 // (沿 D7-attachments v1.0 §6.1 + Q11 v1.0 锁清单 + 用户 PR #6a 拍板)。
@@ -2156,10 +2179,10 @@ async function countActiveGlobalRoleHolders(
 // 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 复合唯一键);
 // 终态 scoped-authz PR6 起 bootstrap 授予改写 global RoleBinding(ensureGlobalUserRoleBinding 幂等)。
 async function seedRbac(prisma: PrismaClient): Promise<void> {
-  // 1. upsert Permission 全集(14 rbac.* + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME + 1 AUTHZ = 94 条;
-  //    沿 D7 §10.2 + 历次 P0-F / 基建 / 终态 scoped-authz PR1(org.move.node)·PR2(membership 4 码)…PR10(authz.explain.decision)增量)
-  //    全部 94 条都进 Permission 表(含 4 把 reset.credentials + user.update.role);
-  //    ops-admin 仅绑 89 条(沿 PR-2 / SMS / WECHAT / REALNAME D2=A 凭证收紧 + PR-3 D1=A user.update.role 收紧;PR-4 D2=B audit-log 整条加入)
+  // 1. upsert Permission 全集(14 rbac.* + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME + 1 AUTHZ + 2 ANNOUNCEMENT-IMPORT = 96 条;
+  //    沿 D7 §10.2 + 历次 P0-F / 基建 / 终态 scoped-authz PR1(org.move.node)·PR2(membership 4 码)…PR10(authz.explain.decision)·PR11(announcement-import 2 码)增量)
+  //    全部 96 条都进 Permission 表(含 4 把 reset.credentials + user.update.role);
+  //    ops-admin 仅绑 91 条(沿 PR-2 / SMS / WECHAT / REALNAME D2=A 凭证收紧 + PR-3 D1=A user.update.role 收紧;PR-4 D2=B audit-log 整条加入)
   for (const perm of ALL_PERMISSION_SEED) {
     await prisma.permission.upsert({
       where: { code: perm.code },
@@ -2176,7 +2199,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     });
   }
   console.log(
-    `[seed] RBAC + PR-2A + PR-2B + PR-3B + PR-4B + SMS + WECHAT + REALNAME + AUTHZ permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A + ${PR_2B_PERMISSION_SEED.length} PR-2B + ${USER_PERMISSION_SEED.length} PR-3B + ${AUDIT_LOG_PERMISSION_SEED.length} PR-4B + ${SMS_INFRA_PERMISSION_SEED.length} SMS + ${WECHAT_INFRA_PERMISSION_SEED.length} WECHAT + ${REALNAME_INFRA_PERMISSION_SEED.length} REALNAME + ${AUTHZ_PERMISSION_SEED.length} AUTHZ = ${ALL_PERMISSION_SEED.length} entries)`,
+    `[seed] RBAC + PR-2A + PR-2B + PR-3B + PR-4B + SMS + WECHAT + REALNAME + AUTHZ + ANNOUNCEMENT-IMPORT permissions ensured (${RBAC_PERMISSION_SEED.length} rbac.* + ${PR_2A_PERMISSION_SEED.length} PR-2A + ${PR_2B_PERMISSION_SEED.length} PR-2B + ${USER_PERMISSION_SEED.length} PR-3B + ${AUDIT_LOG_PERMISSION_SEED.length} PR-4B + ${SMS_INFRA_PERMISSION_SEED.length} SMS + ${WECHAT_INFRA_PERMISSION_SEED.length} WECHAT + ${REALNAME_INFRA_PERMISSION_SEED.length} REALNAME + ${AUTHZ_PERMISSION_SEED.length} AUTHZ + ${ANNOUNCEMENT_IMPORT_PERMISSION_SEED.length} ANNOUNCEMENT-IMPORT = ${ALL_PERMISSION_SEED.length} entries)`,
   );
 
   // 2. upsert ops-admin RbacRole(公开 seed 唯一角色;沿用户拍板方案 A)

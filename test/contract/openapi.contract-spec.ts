@@ -513,6 +513,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
   //   AuthzController(authz 模块第一个 controller;@Controller('admin/v1') + 完整子路径 authz/explain);
   //   R 模式 authz.explain.decision 1 码,无 @Roles,无 audit(goal 决断④)。
   ['post', '/api/admin/v1/authz/explain'],
+  // 终态 scoped-authz PR11「公告导入」(2026-07-02;冻结稿 §8.4 + §11 PR11),+2 → 292。
+  //   两段式:POST preview(零写入诊断,逐行回显 ok/blocked/already-exists/needs-manual)+
+  //   POST execute(幂等落库,单行失败不影响其它行)。AnnouncementImportController
+  //   (@Controller('admin/v1') + 完整子路径 announcement-import/{preview,execute});
+  //   R 模式 announcement-import.{preview,execute}.record 2 码,无 @Roles。
+  ['post', '/api/admin/v1/announcement-import/preview'],
+  ['post', '/api/admin/v1/announcement-import/execute'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -964,6 +971,19 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'AuthzDecisionDto',
   'MatchedGrantDto',
   'ResolvedResourceDto',
+
+  // 终态 scoped-authz PR11「公告导入」(2026-07-02;冻结稿 §8.4 + §11 PR11):
+  //   preview/execute 共用请求/响应 DTO(三类行 + 逐行结果 + 汇总;deny/blocked 是数据不是错误)。
+  'AnnouncementImportRequestDto',
+  'AnnouncementImportResultDto',
+  'ImportOrganizationRowDto',
+  'ImportOrganizationRowResultDto',
+  'ImportPositionRowDto',
+  'ImportPositionRowResultDto',
+  'ImportSupervisionRowDto',
+  'ImportSupervisionRowResultDto',
+  'ImportRowIssueDto',
+  'ImportSummaryDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

@@ -222,6 +222,34 @@ describe('PositionAssignmentsService.create', () => {
     );
   });
 
+  // 终态 scoped-authz PR11(2026-07-02):dryRun 沙箱哨兵(announcement-import preview 复用真实校验的机制)。
+  it('dryRun=true:走满校验 + 真实 insert + audit 后回滚,返回"本应创建"的响应体,但零持久化 insert/audit', async () => {
+    const tx = makeTx();
+    const svc = svcWith(tx);
+    const res = await svc.create(USER, 'org1', baseDto, META, { dryRun: true });
+    expect(res.status).toBe('ACTIVE');
+    expect(res.organizationId).toBe('org1');
+    // insert 语句本身仍被调用一次(校验路径完全复用),但由 $transaction 整体回滚 —— 单测层面
+    // 用 mock 无法直接断言"未落库"(那是 e2e 真事务的职责),这里只锁"create 参数与非 dryRun 一致"。
+    expect(tx.organizationPositionAssignment.create).toHaveBeenCalledTimes(1);
+    expect(auditLogMock).toHaveBeenCalled();
+  });
+
+  it('dryRun=true 遇校验失败:仍抛出原 BizException(不是静默通过)', async () => {
+    const tx = makeTx();
+    tx.organizationPositionRule.findFirst.mockResolvedValue(null);
+    await expect(svcWith(tx).create(USER, 'org1', baseDto, META, { dryRun: true })).rejects.toEqual(
+      new BizException(BizCode.POSITION_ASSIGNMENT_RULE_NOT_MATCHED),
+    );
+  });
+
+  it('省略 options(向后兼容):行为与显式 { dryRun: false } 逐字一致', async () => {
+    const tx = makeTx();
+    const res = await svcWith(tx).create(USER, 'org1', baseDto, META);
+    expect(res.status).toBe('ACTIVE');
+    expect(tx.organizationPositionAssignment.create).toHaveBeenCalledTimes(1);
+  });
+
   it('org / position / member 不存在 → 各自 NOT_FOUND', async () => {
     const txNoOrg = makeTx();
     txNoOrg.organization.findFirst.mockResolvedValue(null);

@@ -43,6 +43,16 @@ const organizationSelect = {
 type SafeOrganization = Prisma.OrganizationGetPayload<{ select: typeof organizationSelect }>;
 type PrismaTx = Prisma.TransactionClient;
 
+// 终态 scoped-authz PR11(2026-07-02;冻结稿 §8.4 / §11 PR11):dry-run 沙箱哨兵,镜像
+// position-assignments/supervision-assignments 同名类(不共享,沿模块自包含范式)。create() 走满全部
+// 校验 + 真实 insert(+ closure 维护)后,若 options.dryRun,在事务提交前抛本类型强制整个事务一并回滚,
+// catch 后原样返回"本应创建"的响应体 —— 供 announcement-import 预览零写入复用同一份真实校验。
+class DryRunAbort<T> extends Error {
+  constructor(public readonly value: T) {
+    super('DRY_RUN_ABORT');
+  }
+}
+
 @Injectable()
 export class OrganizationsService {
   constructor(
@@ -236,56 +246,66 @@ export class OrganizationsService {
   async create(
     user: CurrentUserPayload,
     dto: CreateOrganizationDto,
+    options?: { dryRun?: boolean },
   ): Promise<OrganizationResponseDto> {
     await this.assertCanOrThrow(user, 'org.create.node');
-    return this.runCodeUniqueGuard(() =>
-      this.prisma.$transaction(async (tx) => {
-        // 1. nodeTypeCode 必须有效(6 项 AND 校验)
-        await this.assertNodeTypeCodeValid(dto.nodeTypeCode, tx);
+    try {
+      return await this.runCodeUniqueGuard(() =>
+        this.prisma.$transaction(async (tx) => {
+          // 1. nodeTypeCode 必须有效(6 项 AND 校验)
+          await this.assertNodeTypeCodeValid(dto.nodeTypeCode, tx);
 
-        // 2. code 唯一性(可选;传了才校验,含软删历史占用)
-        if (dto.code !== undefined) {
-          await this.assertCodeAvailableOrThrow(dto.code, tx);
-        }
+          // 2. code 唯一性(可选;传了才校验,含软删历史占用)
+          if (dto.code !== undefined) {
+            await this.assertCodeAvailableOrThrow(dto.code, tx);
+          }
 
-        // 3. parentId 校验:存在 + 未软删(允许在 INACTIVE 父下建子,与 v2-data-model §4.6 一致)
-        if (dto.parentId !== undefined) {
-          const parent = await tx.organization.findFirst({
-            where: notDeletedWhere({ id: dto.parentId }),
-            select: { id: true },
+          // 3. parentId 校验:存在 + 未软删(允许在 INACTIVE 父下建子,与 v2-data-model §4.6 一致)
+          if (dto.parentId !== undefined) {
+            const parent = await tx.organization.findFirst({
+              where: notDeletedWhere({ id: dto.parentId }),
+              select: { id: true },
+            });
+            if (!parent) throw new BizException(BizCode.ORGANIZATION_PARENT_NOT_FOUND);
+          } else {
+            // 创建根 → 单根上限检查
+            await this.assertNoExistingRoot(tx);
+          }
+
+          const created = await tx.organization.create({
+            data: {
+              name: dto.name,
+              // code 未传 → undefined → Prisma 省略该列 → 落 NULL(可空)
+              code: dto.code,
+              parentId: dto.parentId,
+              nodeTypeCode: dto.nodeTypeCode,
+              sortOrder: dto.sortOrder ?? 0,
+              // PR11(2026-07-02):两 additive 可空列透传(PR1 schema-only 留口本刀首次接入 Create DTO)。
+              establishmentStatusCode: dto.establishmentStatusCode ?? null,
+              groupFunctionCode: dto.groupFunctionCode ?? null,
+            },
+            select: organizationSelect,
           });
-          if (!parent) throw new BizException(BizCode.ORGANIZATION_PARENT_NOT_FOUND);
-        } else {
-          // 创建根 → 单根上限检查
-          await this.assertNoExistingRoot(tx);
-        }
 
-        const created = await tx.organization.create({
-          data: {
-            name: dto.name,
-            // code 未传 → undefined → Prisma 省略该列 → 落 NULL(可空)
-            code: dto.code,
-            parentId: dto.parentId,
-            nodeTypeCode: dto.nodeTypeCode,
-            sortOrder: dto.sortOrder ?? 0,
-          },
-          select: organizationSelect,
-        });
+          // closure 维护(冻结稿 §3.8/§8.3):自身 depth-0 + 继承父全部祖先各 +1;建根 → 仅自身行。
+          const parentAncestors = dto.parentId
+            ? await tx.organizationClosure.findMany({
+                where: { descendantId: dto.parentId },
+                select: { ancestorId: true, depth: true },
+              })
+            : [];
+          await tx.organizationClosure.createMany({
+            data: buildCreateClosureEdges(created.id, parentAncestors),
+          });
 
-        // closure 维护(冻结稿 §3.8/§8.3):自身 depth-0 + 继承父全部祖先各 +1;建根 → 仅自身行。
-        const parentAncestors = dto.parentId
-          ? await tx.organizationClosure.findMany({
-              where: { descendantId: dto.parentId },
-              select: { ancestorId: true, depth: true },
-            })
-          : [];
-        await tx.organizationClosure.createMany({
-          data: buildCreateClosureEdges(created.id, parentAncestors),
-        });
-
-        return created;
-      }),
-    );
+          if (options?.dryRun) throw new DryRunAbort(created);
+          return created;
+        }),
+      );
+    } catch (err) {
+      if (err instanceof DryRunAbort) return err.value as OrganizationResponseDto;
+      throw err;
+    }
   }
 
   // ============ findOne ============
