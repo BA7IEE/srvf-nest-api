@@ -12,13 +12,15 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 2026-06-19 招新二期 T1 +3(48→51 / 绑定 47→50,评审稿 recruitment-phase2-review.md §3.4 / E-R2-11)。
 // 2026-06-24 招新闭环优化 S3 +1(67→68 / 绑定 66→67;read.sensitive 敏感查看从 read.record 切出,
 // 评审稿 recruitment-phase4-loop-optimization-review.md §11 / Q-P4-10,全绑 biz-admin 无例外)。
+// 2026-07-03 摘码微刀:终审两码摘除绑定(75 码绑 74→**72**;终审 = attendance-final-reviewer
+// scoped 绑定或 SUPER_ADMIN 兜底;seed 新增 targeted 幂等清理老库残留,见用例 7)。
 // 沿冻结评审稿 docs/archive/reviews/slow4-rbac-business-face-review.md §5 + D-S4-7
 // + seed-attachment-permissions.e2e-spec.ts 子进程范式。
 //
 // 覆盖(评审稿 §5 验收项):
-// 1. 跑 seed 后存在 68 条业务面 permission(15 域,byModule 逐码一致)
+// 1. 跑 seed 后存在 75 条业务面 permission(16 域,byModule 逐码一致)
 // 2. 存在 biz-admin RbacRole(displayName / description 正确)
-// 3. biz-admin 绑定 50 条 RolePermission;member.delete.record **不**在绑定中(D1=A 镜像)
+// 3. biz-admin 绑定 72 条 RolePermission;member.delete.record 与终审两码 **不**在绑定中
 // 4. 幂等补挂:seed 前已存在的 ADMIN 用户(含 DISABLED)跑 seed 后持有 biz-admin;
 //    SUPER_ADMIN / USER 不被挂;软删 ADMIN 不补挂(D-S4-7)
 // 5. 零变化项:ops-admin 绑定数(91;WECHAT T2 58→61 + 招新 T1 REALNAME settings 61→63 授权 true-up
@@ -165,7 +167,14 @@ const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 7
 
 // D1=A 镜像:不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
-const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 1; // 74
+// biz-admin 不绑 3 码 = member.delete.record(D1=A 镜像)+ 终审两码(2026-07-03 摘码微刀:
+// 终审权只归 attendance-final-reviewer scoped 绑定 + SUPER_ADMIN 短路兜底,RBAC_MAP §5 挂账关闭)
+const BIZ_ADMIN_UNBOUND_CODES: ReadonlyArray<string> = [
+  MEMBER_DELETE_RECORD_CODE,
+  'attendance.final-approve.sheet',
+  'attendance.final-reject.sheet',
+];
+const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 3; // 72
 
 // 零变化基线(评审稿 §6):本断言意图 = 业务面 seed 不改 ops-admin / member 绑定;
 // 基线数跟随 ops-admin 当前合法总数(2026-06-12 WECHAT T2 +3 → 58→61;
@@ -242,7 +251,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     });
   });
 
-  it('2 + 3. biz-admin RbacRole 存在;绑定恰 74 条;member.delete.record 不在绑定中', async () => {
+  it('2 + 3. biz-admin RbacRole 存在;绑定恰 72 条;member.delete.record 与终审两码不在绑定中', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-2' });
     expect(result.code).toBe(0);
 
@@ -254,6 +263,8 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     expect(bizAdmin!.displayName).toBe('业务管理员');
     expect(bizAdmin!.description).toContain('Slow-3 决议');
     expect(bizAdmin!.description).toContain('member.delete.record');
+    // 摘码微刀(2026-07-03):description 明示终审两码不绑
+    expect(bizAdmin!.description).toContain('attendance.final-approve.sheet');
 
     const bound = await prisma.rolePermission.findMany({
       where: { roleId: bizAdmin!.id },
@@ -261,9 +272,11 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     });
     const boundCodes = bound.map((b) => b.permission.code).sort();
     expect(boundCodes).toHaveLength(EXPECTED_BIZ_ADMIN_BINDING_COUNT);
-    expect(boundCodes).not.toContain(MEMBER_DELETE_RECORD_CODE);
+    for (const code of BIZ_ADMIN_UNBOUND_CODES) {
+      expect(boundCodes).not.toContain(code);
+    }
     expect(boundCodes).toEqual(
-      [...EXPECTED_BIZ_PERMISSION_CODES].filter((c) => c !== MEMBER_DELETE_RECORD_CODE).sort(),
+      [...EXPECTED_BIZ_PERMISSION_CODES].filter((c) => !BIZ_ADMIN_UNBOUND_CODES.includes(c)).sort(),
     );
     // CMS α(2026-06-21,content-module-review.md §7):biz-admin 现含**且仅含** CMS content-* 4 个
     // attachment 写码(演进 Slow-4 §6「biz-admin 不含 attachment.* 码」不变式);
@@ -401,5 +414,48 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     expect(role2.id).toBe(role1.id);
     expect(rolePermCount2).toBe(rolePermCount1);
     expect(bindingCount2).toBe(bindingCount1);
+  });
+
+  it('7. 摘码幂等清理:老库残留终审两码绑定 → 再跑 seed 被 targeted 清除(72 恢复;他角色零触碰)', async () => {
+    const first = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-6' });
+    expect(first.code).toBe(0);
+
+    const bizAdmin = await prisma.rbacRole.findUniqueOrThrow({
+      where: { code: 'biz-admin' },
+      select: { id: true },
+    });
+    const finalPerms = await prisma.permission.findMany({
+      where: { code: { in: ['attendance.final-approve.sheet', 'attendance.final-reject.sheet'] } },
+      select: { id: true },
+    });
+    expect(finalPerms).toHaveLength(2); // 两码仍在 Permission 表(不删码)
+
+    // 模拟 v0.34.0 及以前 seed 留下的旧绑定(seed 纯 upsert 无对账删除 → 老库会残留)
+    await prisma.rolePermission.createMany({
+      data: finalPerms.map((p) => ({ roleId: bizAdmin.id, permissionId: p.id })),
+      skipDuplicates: true,
+    });
+    expect(await prisma.rolePermission.count({ where: { roleId: bizAdmin.id } })).toBe(
+      EXPECTED_BIZ_ADMIN_BINDING_COUNT + 2,
+    );
+
+    const second = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-6' });
+    expect(second.code).toBe(0);
+
+    const bound = await prisma.rolePermission.findMany({
+      where: { roleId: bizAdmin.id },
+      select: { permission: { select: { code: true } } },
+    });
+    expect(bound).toHaveLength(EXPECTED_BIZ_ADMIN_BINDING_COUNT);
+    const codes = bound.map((b) => b.permission.code);
+    expect(codes).not.toContain('attendance.final-approve.sheet');
+    expect(codes).not.toContain('attendance.final-reject.sheet');
+
+    // 清理只咬合 biz-admin × 终审两码:attendance-final-reviewer 的 3 条绑定(含同两码)原样保留
+    const finalReviewer = await prisma.rbacRole.findUniqueOrThrow({
+      where: { code: 'attendance-final-reviewer' },
+      select: { id: true },
+    });
+    expect(await prisma.rolePermission.count({ where: { roleId: finalReviewer.id } })).toBe(3);
   });
 });

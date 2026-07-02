@@ -21,22 +21,34 @@ import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
 
-// 终态 scoped-authz PR9(2026-07-02;冻结稿 §5.2/§5.3 + BD-2;首个 authz 消费者):
-// 考勤终审 HTTP 面接线矩阵。角色 / 职务 / 组织树(含 closure)用**真 seed**(子进程,沿
-// authz-three-source 范式)—— scoped 通路用的是 seed 真第 7 角色 `attendance-final-reviewer`,
-// 与生产逐字一致;sheet 直造(pending_final_review + 显式 submitter/reviewer)。
+// 终态 scoped-authz PR9(2026-07-02;冻结稿 §5.2/§5.3 + BD-2;首个 authz 消费者)+
+// 摘码微刀(2026-07-03;RBAC_MAP §5 挂账关闭):考勤终审 HTTP 面接线矩阵。
+// 角色 / 职务 / 组织树(含 closure)用**真 seed**(子进程,沿 authz-three-source 范式)——
+// scoped 通路用的是 seed 真第 7 角色 `attendance-final-reviewer`,与生产逐字一致;
+// sheet 直造(pending_final_review + 显式 submitter/reviewer)。
 //
-// 覆盖(goal DoD 2/3/4):
-//   真收紧:①自审 → 22074(SUPER_ADMIN 亦拒)②一级同人 → 22075(默认)
-//     ③final-reject 无约束(注册表 PR8 冻结仅 final-approve —— 锁不对称语义)
-//   行为锁:④biz-admin ADMIN 终审他人单 → 200(B 方案 GLOBAL 通路契约照旧)
+// ⚠️ 摘码微刀语义翻面:biz-admin 不再持终审两码(74→72)—— 终审权只归 scoped 绑定 +
+// SUPER_ADMIN 短路兜底。判定顺序(authz.service.ts):约束否决只发生在 grant 命中之后,
+// 故无码者(含持 biz-admin 的 ADMIN)一律 30100(no_permission),约束用例须由持权身份承载。
+//
+// 覆盖:
+//   真收紧(约束语义,持权身份承载):①SA 自审 → 22074(域不变量不随短路豁免;单据零变化)
+//     ①b scoped 持权者自审 → 22074(须先于 ⑥ 运行 —— ⑥ 永久 END 任职,本文件本就依赖声明顺序)
+//     ②一级同人(SA 为一级审后自终审)→ 22075(默认;SA 亦受同人约束)
+//     ③final-reject 无约束(注册表 PR8 冻结仅 final-approve —— SA 自 reject 200 锁不对称语义)
+//   摘码翻面:④持 biz-admin 的 ADMIN 终审他人单 → 30100(原 B 方案 GLOBAL ALLOW 翻转;
+//     final-approve/final-reject 双拒 + DB 显式断言终审两码不在 biz-admin 绑定)
+//     ④b SUPER_ADMIN 终审他人单 → 200(super_admin_pass 兜底恒在)
 //     ⑤裸 USER / 无 biz-admin 的 ADMIN → 30100(权限拒绝面零变)
-//   scoped 通路(BD-2 全链):⑥dept-leader 任职 + RoleBinding(POSITION_ASSIGNMENT,
+//     ⑤b 摘码边界:biz-admin 对其余 6 考勤动作(create/read/update/delete/approve/reject)
+//       authz.can 仍 ALLOW,仅终审两码 false(HTTP 面另见 attendances-rbac-boundary)
+//   scoped 通路(BD-2 全链,零变):⑥dept-leader 任职 + RoleBinding(POSITION_ASSIGNMENT,
 //     attendance-final-reviewer, TREE@root)且**无 biz-admin** → 终审他人单 200
 //     (service 级 explain 自证 matchedGrant.source=role_binding);撤任职(ENDED)→ 同请求
 //     30100(explain=expired_grant,换届即失权);⑦同职务无绑定者 → 30100(no_permission ——
 //     职务→org-admin policy 不含终审码,BD-2 终审绝不随职务推导)
-//   env 开关:⑧ATTENDANCE_ALLOW_SAME_REVIEWER=true(独立 app 实例)→ 同人放行、自审仍拒
+//   env 开关:⑧ATTENDANCE_ALLOW_SAME_REVIEWER=true(独立 app 实例)→ 同人放行(SA 一级审
+//     后自终审 200)、自审仍拒(22074 永不可配)
 //
 // 约束语义的纯函数/服务级矩阵在 action-constraints.spec + authz-three-source 场景 4;
 // deny → BizCode 映射的 unit 面在 attendances.service.spec「PR9 终审 authz 判权」。
@@ -72,16 +84,16 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
   let activityId: string;
 
   // HTTP 身份(均 loginAs 真登录)
-  let subAdminId: string; // ADMIN + biz-admin;固定当 submitter
-  let subAdminAuth: string;
-  let revAdminId: string; // ADMIN + biz-admin;固定当一级审核人
-  let revAdminAuth: string;
-  let finalAdminAuth: string; // ADMIN + biz-admin;中性终审人(行为锁 ④)
+  let subAdminId: string; // ADMIN + biz-admin;固定当 submitter(摘码后不再作终审人)
+  let revAdminId: string; // ADMIN + biz-admin;固定当一级审核人(同上)
+  let finalAdminAuth: string; // ADMIN + biz-admin;摘码翻面主体(④ 终审 30100 / ⑤b 六动作边界)
+  let finalAdminPayload: CurrentUserPayload;
   let saUserId: string;
   let saAuth: string;
   let bareUserAuth: string;
   let adminNoGrantAuth: string;
   // BD-2 scoped 终审人(无 biz-admin,仅 POSITION_ASSIGNMENT 主体绑定)
+  let deptHeadUserId: string;
   let deptHeadAuth: string;
   let deptHeadPayload: CurrentUserPayload;
   let deptHeadAssignmentId: string;
@@ -150,7 +162,7 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     revAdminId = revAdmin.id;
     saUserId = saUser.id;
 
-    // biz-admin 用真 seed 角色(74 码含终审两码;B 方案不摘)
+    // biz-admin 用真 seed 角色(2026-07-03 摘码微刀后 72 码,不含终审两码 —— ④/⑤b 翻面前提)
     const bizAdminRoleId = (
       await prisma.rbacRole.findFirstOrThrow({
         where: { code: 'biz-admin', deletedAt: null },
@@ -160,9 +172,14 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     await grantBizAdminToUser(app, subAdmin.id, bizAdminRoleId);
     await grantBizAdminToUser(app, revAdmin.id, bizAdminRoleId);
     await grantBizAdminToUser(app, finalAdmin.id, bizAdminRoleId);
+    finalAdminPayload = {
+      id: finalAdmin.id,
+      username: 'fra-final-adm',
+      role: Role.ADMIN,
+      status: finalAdmin.status,
+      memberId: null,
+    };
 
-    subAdminAuth = (await loginAs(app, 'fra-sub-adm')).authHeader;
-    revAdminAuth = (await loginAs(app, 'fra-rev-adm')).authHeader;
     finalAdminAuth = (await loginAs(app, 'fra-final-adm')).authHeader;
     saAuth = (await loginAs(app, 'fra-su-2')).authHeader;
     bareUserAuth = (await loginAs(app, 'fra-bare-user')).authHeader;
@@ -170,6 +187,7 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
 
     // ===== BD-2 scoped 终审人:APD dept-leader 任职 + attendance-final-reviewer@TREE(root)=====
     const deptHeadUser = await createTestUser(app, { username: 'fra-dept-head', role: Role.USER });
+    deptHeadUserId = deptHeadUser.id;
     const deptHeadMember = await prisma.member.create({
       data: { memberNo: 'fra-m-head', displayName: 'FRA 部长' },
       select: { id: true },
@@ -246,12 +264,12 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     await app.close();
   });
 
-  // ============ 真收紧(goal DoD 2)============
+  // ============ 真收紧(约束语义;摘码后由持权身份承载)============
 
-  it('①自审:submitter==终审人 → 22074;单据零变化(deny 在事务前)', async () => {
-    const sheetId = await mkSheet(subAdminId);
+  it('①自审(SUPER_ADMIN 亦拒——域不变量不随短路豁免):submitter==终审人 → 22074;单据零变化(deny 在事务前)', async () => {
+    const sheetId = await mkSheet(saUserId);
     expectBizError(
-      await finalApprove(sheetId, subAdminAuth),
+      await finalApprove(sheetId, saAuth),
       BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN,
     );
     const db = await prisma.attendanceSheet.findUniqueOrThrow({
@@ -261,40 +279,73 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     expect(db).toEqual({ statusCode: 'pending_final_review', finalReviewerUserId: null });
   });
 
-  it('①b 自审对 SUPER_ADMIN 亦拒(域不变量不随短路豁免)→ 22074', async () => {
-    const sheetId = await mkSheet(saUserId);
+  it('①b scoped 持权者(role_binding grant)自审 → 22074(约束在 scoped grant 命中后仍否决)', async () => {
+    // 依赖声明顺序先于 ⑥(⑥ 会永久 END deptHead 任职);此时绑定仍 ACTIVE。
+    const sheetId = await mkSheet(deptHeadUserId);
     expectBizError(
-      await finalApprove(sheetId, saAuth),
+      await finalApprove(sheetId, deptHeadAuth),
       BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN,
     );
   });
 
-  it('②一级同人:reviewer==终审人 → 22075(默认禁止)', async () => {
-    const sheetId = await mkSheet(subAdminId, revAdminId);
-    expectBizError(
-      await finalApprove(sheetId, revAdminAuth),
-      BizCode.ATTENDANCE_SAME_REVIEWER_FORBIDDEN,
-    );
+  it('②一级同人:reviewer==终审人 → 22075(默认禁止;SA 亦受同人约束)', async () => {
+    const sheetId = await mkSheet(subAdminId, saUserId);
+    expectBizError(await finalApprove(sheetId, saAuth), BizCode.ATTENDANCE_SAME_REVIEWER_FORBIDDEN);
   });
 
-  it('③final-reject 无自审/同人约束(注册表 PR8 冻结仅 final-approve)—— submitter 自 reject → 200', async () => {
-    const sheetId = await mkSheet(subAdminId, revAdminId);
+  it('③final-reject 无自审/同人约束(注册表 PR8 冻结仅 final-approve)—— SA submitter 自 reject → 200', async () => {
+    const sheetId = await mkSheet(saUserId, revAdminId);
     const res = await request(httpServer(app))
       .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-reject`)
-      .set('Authorization', subAdminAuth)
+      .set('Authorization', saAuth)
       .send({ finalReviewNote: '终审驳回(无约束面)' });
     expect(res.status).toBe(200);
     expect(res.body.data.statusCode).toBe('final_rejected');
   });
 
-  // ============ 行为锁(goal DoD 3;B 方案契约照旧)============
+  // ============ 摘码翻面(2026-07-03;原 B 方案 GLOBAL ALLOW 翻转)============
 
-  it('④biz-admin ADMIN 终审他人提交、他人一级审的单 → 200(GLOBAL grant 通路)', async () => {
+  it('④持 biz-admin 的 ADMIN 终审他人单 → 30100(摘码翻面);终审两码不在 biz-admin 绑定', async () => {
     const sheetId = await mkSheet(subAdminId, revAdminId);
-    const res = await finalApprove(sheetId, finalAdminAuth);
+    // 原 B 方案:200(GLOBAL grant 通路);摘码后:no_permission → 30100
+    expectBizError(await finalApprove(sheetId, finalAdminAuth), BizCode.RBAC_FORBIDDEN);
+    expectBizError(
+      await request(httpServer(app))
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-reject`)
+        .set('Authorization', finalAdminAuth)
+        .send({ finalReviewNote: 'X' }),
+      BizCode.RBAC_FORBIDDEN,
+    );
+    // 单据零变化(deny 在事务前)
+    const db = await prisma.attendanceSheet.findUniqueOrThrow({
+      where: { id: sheetId },
+      select: { statusCode: true, finalReviewerUserId: true },
+    });
+    expect(db).toEqual({ statusCode: 'pending_final_review', finalReviewerUserId: null });
+
+    // DB 显式断言:终审两码不在 biz-admin 绑定(seed 对账另见 seed-biz-admin.e2e-spec 72)
+    const bizRole = await prisma.rbacRole.findFirstOrThrow({
+      where: { code: 'biz-admin', deletedAt: null },
+      select: { id: true },
+    });
+    expect(
+      await prisma.rolePermission.count({
+        where: {
+          roleId: bizRole.id,
+          permission: {
+            code: { in: ['attendance.final-approve.sheet', 'attendance.final-reject.sheet'] },
+          },
+        },
+      }),
+    ).toBe(0);
+  });
+
+  it('④b SUPER_ADMIN 终审他人提交、他人一级审的单 → 200(super_admin_pass 兜底恒在)', async () => {
+    const sheetId = await mkSheet(subAdminId, revAdminId);
+    const res = await finalApprove(sheetId, saAuth);
     expect(res.status).toBe(200);
     expect(res.body.data.statusCode).toBe('approved');
-    expect(res.body.data.finalReviewerUserId).toBeTruthy();
+    expect(res.body.data.finalReviewerUserId).toBe(saUserId);
   });
 
   it('⑤裸 USER / 无 biz-admin 的 ADMIN → 30100(权限拒绝面契约零变)', async () => {
@@ -309,6 +360,23 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
         .send({ finalReviewNote: 'X' }),
       BizCode.RBAC_FORBIDDEN,
     );
+  });
+
+  it('⑤b 摘码边界:biz-admin 对其余 6 考勤动作仍 ALLOW,仅终审两码 DENY(摘的只有终审两码)', async () => {
+    const stillAllowed = [
+      'attendance.create.sheet',
+      'attendance.read.sheet',
+      'attendance.update.sheet',
+      'attendance.delete.sheet',
+      'attendance.approve.sheet',
+      'attendance.reject.sheet',
+    ];
+    for (const action of stillAllowed) {
+      expect(await authz.can(finalAdminPayload, action)).toBe(true);
+    }
+    for (const action of ['attendance.final-approve.sheet', 'attendance.final-reject.sheet']) {
+      expect(await authz.can(finalAdminPayload, action)).toBe(false);
+    }
   });
 
   // ============ BD-2 scoped 通路(goal DoD 4)============
@@ -352,15 +420,14 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
 
   describe('⑧ATTENDANCE_ALLOW_SAME_REVIEWER=true(独立 app;同人放行、自审仍拒)', () => {
     let relaxedApp: INestApplication;
-    let relaxedSubAuth: string;
-    let relaxedRevAuth: string;
+    let relaxedSaAuth: string;
 
     beforeAll(async () => {
       process.env.ATTENDANCE_ALLOW_SAME_REVIEWER = 'true';
       relaxedApp = await createTestApp();
-      // 同库同用户,对新 app 实例重新登录(fixtures 不重建)
-      relaxedSubAuth = (await loginAs(relaxedApp, 'fra-sub-adm')).authHeader;
-      relaxedRevAuth = (await loginAs(relaxedApp, 'fra-rev-adm')).authHeader;
+      // 同库同用户,对新 app 实例重新登录(fixtures 不重建)。
+      // 摘码后 ADMIN+biz-admin 无终审码,同人/自审对照均由持权的 SA 承载。
+      relaxedSaAuth = (await loginAs(relaxedApp, 'fra-su-2')).authHeader;
     }, 60_000);
 
     afterAll(async () => {
@@ -369,19 +436,19 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     });
 
     it('一级同人 → 200 放行;自审 → 22074 仍拒(自审永不可配)', async () => {
-      const sameReviewerSheet = await mkSheet(subAdminId, revAdminId);
+      const sameReviewerSheet = await mkSheet(subAdminId, saUserId);
       const res = await request(httpServer(relaxedApp))
         .patch(`/api/admin/v1/attendance-sheets/${sameReviewerSheet}/final-approve`)
-        .set('Authorization', relaxedRevAuth)
+        .set('Authorization', relaxedSaAuth)
         .send({});
       expect(res.status).toBe(200);
       expect(res.body.data.statusCode).toBe('approved');
 
-      const selfSheet = await mkSheet(subAdminId, revAdminId);
+      const selfSheet = await mkSheet(saUserId, revAdminId);
       expectBizError(
         await request(httpServer(relaxedApp))
           .patch(`/api/admin/v1/attendance-sheets/${selfSheet}/final-approve`)
-          .set('Authorization', relaxedSubAuth)
+          .set('Authorization', relaxedSaAuth)
           .send({}),
         BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN,
       );

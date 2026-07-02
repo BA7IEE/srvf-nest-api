@@ -41,6 +41,10 @@ interface SeedContext {
   service: AttendancesService;
   reviewerUserId: string;
   reviewerPayload: CurrentUserPayload;
+  // 摘码微刀(2026-07-03):biz-admin 不再持终审两码 → finalApprove/finalReject 一律用
+  // 独立 SUPER_ADMIN 终审身份(SA 兜底通路;authz 先于状态机,无码者会先吃 30100)
+  finalReviewerUserId: string;
+  finalReviewerPayload: CurrentUserPayload;
   // PR9 自审约束(22074)后 seedSheet 不能再「reviewer 兼作 submitter」—— 独立 submitter FK
   submitterUserId: string;
   memberId: string;
@@ -93,6 +97,18 @@ describe('AttendancesService state transitions (characterization)', () => {
       select: { id: true },
     });
 
+    // 摘码微刀(2026-07-03):独立 SUPER_ADMIN 终审身份(见 SeedContext 注释;
+    // ≠ submitter / ≠ 一级 reviewer,避开 22074/22075)
+    const finalReviewer = await prisma.user.create({
+      data: {
+        username: 'att-state-final-reviewer',
+        passwordHash: '$2a$10$dummy-hash-not-used-since-no-login-needed',
+        role: Role.SUPER_ADMIN,
+        status: UserStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+
     const member = await prisma.member.create({
       data: { memberNo: 'att-state-m-001', displayName: 'State Member' },
       select: { id: true },
@@ -136,6 +152,14 @@ describe('AttendancesService state transitions (characterization)', () => {
         id: reviewer.id,
         username: 'att-state-reviewer',
         role: Role.ADMIN,
+        status: UserStatus.ACTIVE,
+        memberId: null,
+      },
+      finalReviewerUserId: finalReviewer.id,
+      finalReviewerPayload: {
+        id: finalReviewer.id,
+        username: 'att-state-final-reviewer',
+        role: Role.SUPER_ADMIN,
         status: UserStatus.ACTIVE,
         memberId: null,
       },
@@ -322,7 +346,7 @@ describe('AttendancesService state transitions (characterization)', () => {
       const result = await ctx.service.finalApprove(
         sheetId,
         { finalReviewNote: 'final ok' },
-        ctx.reviewerPayload,
+        ctx.finalReviewerPayload,
         AUDIT_META,
       );
 
@@ -339,7 +363,7 @@ describe('AttendancesService state transitions (characterization)', () => {
         },
       });
       expect(db.statusCode).toBe('approved');
-      expect(db.finalReviewerUserId).toBe(ctx.reviewerUserId);
+      expect(db.finalReviewerUserId).toBe(ctx.finalReviewerUserId);
       expect(db.finalReviewedAt).not.toBeNull();
       expect(db.finalReviewNote).toBe('final ok');
 
@@ -381,7 +405,7 @@ describe('AttendancesService state transitions (characterization)', () => {
           ctx.service.finalApprove(
             sheetId,
             { finalReviewNote: 'x' },
-            ctx.reviewerPayload,
+            ctx.finalReviewerPayload,
             AUDIT_META,
           ),
         ).rejects.toMatchObject({
@@ -412,7 +436,7 @@ describe('AttendancesService state transitions (characterization)', () => {
       const result = await ctx.service.finalReject(
         sheetId,
         { finalReviewNote: 'rejected for state-transition test' },
-        ctx.reviewerPayload,
+        ctx.finalReviewerPayload,
         AUDIT_META,
       );
 
@@ -429,7 +453,7 @@ describe('AttendancesService state transitions (characterization)', () => {
         },
       });
       expect(db.statusCode).toBe('final_rejected');
-      expect(db.finalReviewerUserId).toBe(ctx.reviewerUserId);
+      expect(db.finalReviewerUserId).toBe(ctx.finalReviewerUserId);
       expect(db.finalReviewedAt).not.toBeNull();
       expect(db.finalReviewNote).toBe('rejected for state-transition test');
 
@@ -473,7 +497,7 @@ describe('AttendancesService state transitions (characterization)', () => {
         ctx.service.finalReject(
           sheetId,
           { finalReviewNote: '   ' },
-          ctx.reviewerPayload,
+          ctx.finalReviewerPayload,
           AUDIT_META,
         ),
       ).rejects.toMatchObject({
@@ -514,7 +538,7 @@ describe('AttendancesService state transitions (characterization)', () => {
           ctx.service.finalReject(
             sheetId,
             { finalReviewNote: 'rejected note' },
-            ctx.reviewerPayload,
+            ctx.finalReviewerPayload,
             AUDIT_META,
           ),
         ).rejects.toMatchObject({

@@ -47,7 +47,8 @@ function runSeed(): void {
 
 // 各面代表码(真 seed 里全部存在,除最后一个刻意不存在):
 // member.read.record(业务面,biz-admin ✓ / ops ✗)/ rbac.role.read(平台面,ops ✓ / biz ✗)/
-// attendance.final-approve.sheet(终审码 + ActionConstraint 注册 action;无 ref 不触发约束)/
+// attendance.final-approve.sheet(终审码 + ActionConstraint 注册 action;无 ref 不触发约束;
+// 2026-07-03 摘码微刀后 biz-admin ✗ —— 两引擎同拒,等价锁不破)/
 // attachment.view.member.self(.self 码,member 角色 ✓;无 resource 双侧 fail-close)/
 // org.read.node(ops 组织面)/ content.publish.record(CMS 面,biz-admin ✓)/ 不存在码
 const MATRIX_ACTIONS = [
@@ -183,7 +184,7 @@ describe('authz ↔ rbac 等价矩阵(🔴 无 ref 行为锁)', () => {
     expect(by('SUPER_ADMIN', 'definitely.not.a.code')).toBe(true); // SA 短路对不存在码同样放行(现语义)
     expect(by('ADMIN+biz-admin', 'member.read.record')).toBe(true);
     expect(by('ADMIN+biz-admin', 'rbac.role.read')).toBe(false);
-    expect(by('ADMIN+biz-admin', 'attendance.final-approve.sheet')).toBe(true); // 无 ref 不触发自审约束
+    expect(by('ADMIN+biz-admin', 'attendance.final-approve.sheet')).toBe(false); // 摘码微刀(2026-07-03):终审两码已不绑 biz-admin,双引擎同拒
     expect(by('ops-admin 持有者', 'rbac.role.read')).toBe(true);
     expect(by('ops-admin 持有者', 'org.read.node')).toBe(true);
     expect(by('ops-admin 持有者', 'member.read.record')).toBe(false);

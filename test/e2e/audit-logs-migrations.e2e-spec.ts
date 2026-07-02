@@ -25,8 +25,9 @@ describe('audit-logs 写入迁移', () => {
   let prisma: PrismaService;
   let adminAuth: string;
   let adminId: string;
-  // 终态 scoped-authz PR9:第二管理员专职 final-approve(submit/一级审是 adminAuth —— 自审
-  // 22074 / 同人 22075 约束后同一人不能终审到底;audit 断言本身零修改)
+  // 终态 scoped-authz PR9:第二身份专职终审(submit/一级审是 adminAuth —— 自审 22074 /
+  // 同人 22075 约束后同一人不能终审到底);摘码微刀(2026-07-03):biz-admin 不再持终审两码,
+  // 终审身份换 SUPER_ADMIN(SA 兜底通路;audit 断言本身零修改)。
   let finalAdminAuth: string;
 
   let memberId: string;
@@ -56,13 +57,12 @@ describe('audit-logs 写入迁移', () => {
     const bizSeed = await seedBizAdminPermissionsAndRole(app);
     await grantBizAdminToUser(app, adminId, bizSeed.bizAdminRoleId);
 
-    // PR9:第二管理员(见上方 finalAdminAuth 注释)
-    const finalAdmin = await createTestUser(app, {
+    // PR9 第二终审身份;摘码微刀(2026-07-03)后为 SUPER_ADMIN(见上方 finalAdminAuth 注释)
+    await createTestUser(app, {
       username: 'al-mig-final-adm',
-      role: Role.ADMIN,
+      role: Role.SUPER_ADMIN,
     });
     finalAdminAuth = (await loginAs(app, 'al-mig-final-adm')).authHeader;
-    await grantBizAdminToUser(app, finalAdmin.id, bizSeed.bizAdminRoleId);
 
     // emergency_relation 字典
     const relType = await prisma.dictType.create({
@@ -1756,9 +1756,10 @@ describe('audit-logs 写入迁移', () => {
         .expect(200);
       await truncateAuditLogsTestOnly(app);
 
+      // 摘码微刀:final-reject 亦须持权身份(adminAuth 的 biz-admin 已无终审码)
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-reject`)
-        .set('Authorization', adminAuth)
+        .set('Authorization', finalAdminAuth)
         .send({ finalReviewNote: '数据不准' });
       expect(res.status).toBe(200);
 
@@ -1869,7 +1870,7 @@ describe('audit-logs 写入迁移', () => {
 
       await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-reject`)
-        .set('Authorization', adminAuth)
+        .set('Authorization', finalAdminAuth)
         .send({ finalReviewNote: '数据不准' })
         .expect(200);
 

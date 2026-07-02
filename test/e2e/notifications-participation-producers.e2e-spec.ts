@@ -54,7 +54,10 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
   let attendances: AttendancesService;
 
   let adminPayload: CurrentUserPayload;
-  // PR9:sheet submitter 独立 FK 用户 id(自审约束下 ≠ 终审人 adminPayload)
+  // 摘码微刀(2026-07-03):biz-admin 不再持终审两码 → finalApprove 用独立 SUPER_ADMIN
+  // 终审身份(SA 兜底通路;adminPayload 继续承担其余 producer 动作,语义不变)
+  let finalReviewerPayload: CurrentUserPayload;
+  // PR9:sheet submitter 独立 FK 用户 id(自审约束下 ≠ 终审人)
   let sheetSubmitterUserId: string;
   let alice: Member;
   let bob: Member;
@@ -117,8 +120,8 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
   }
 
   // pending_final_review 的 sheet + 每个 member 一条 record(绕过 submit 状态机)。
-  // PR9:submitter 用独立 FK 用户(不能再用 adminPayload —— 终审 authz 自审约束 22074 下
-  // submitter 必须 ≠ 终审人;本 spec 终审人固定 adminPayload)。
+  // PR9:submitter 用独立 FK 用户(终审 authz 自审约束 22074 下 submitter 必须 ≠ 终审人;
+  // 摘码微刀后本 spec 终审人固定 finalReviewerPayload〔SA〕)。
   async function seedSheetPendingFinal(activityId: string, memberIds: string[]): Promise<string> {
     const sheet = await prisma.attendanceSheet.create({
       data: {
@@ -210,6 +213,24 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
       select: { id: true },
     });
     sheetSubmitterUserId = sheetSubmitter.id;
+
+    // 摘码微刀(2026-07-03):独立 SA 终审身份(≠ submitter,避开 22074;sheet 无一级 reviewer)
+    const finalReviewer = await prisma.user.create({
+      data: {
+        username: 's4-final-reviewer',
+        passwordHash: '$2a$10$dummy-hash-not-used-since-service-direct',
+        role: Role.SUPER_ADMIN,
+        status: UserStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    finalReviewerPayload = {
+      id: finalReviewer.id,
+      username: 's4-final-reviewer',
+      role: Role.SUPER_ADMIN,
+      status: UserStatus.ACTIVE,
+      memberId: null,
+    };
 
     alice = await makeMember('s4_alice');
     bob = await makeMember('s4_bob');
@@ -369,7 +390,12 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
       const activityId = await seedActivity('汛期值守');
       const sheetId = await seedSheetPendingFinal(activityId, [alice.memberId, bob.memberId]);
 
-      await attendances.finalApprove(sheetId, { finalReviewNote: 'ok' }, adminPayload, AUDIT_META);
+      await attendances.finalApprove(
+        sheetId,
+        { finalReviewNote: 'ok' },
+        finalReviewerPayload,
+        AUDIT_META,
+      );
 
       const aliceNotifs = await directedOf(alice.memberId);
       const bobNotifs = await directedOf(bob.memberId);
@@ -401,7 +427,7 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         const res = await attendances.finalApprove(
           sheetId,
           { finalReviewNote: 'ok' },
-          adminPayload,
+          finalReviewerPayload,
           AUDIT_META,
         );
         expect(res.statusCode).toBe('approved');
