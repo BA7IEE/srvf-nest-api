@@ -20,6 +20,7 @@ import { ActivityRegistrationsModule } from './modules/activity-registrations/ac
 import { AttendancesModule } from './modules/attendances/attendances.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { AuthzModule } from './modules/authz/authz.module';
 import { CertificatesModule } from './modules/certificates/certificates.module';
 import { ContentModule } from './modules/content/content.module';
 import { ContributionRulesModule } from './modules/contribution-rules/contribution-rules.module';
@@ -126,6 +127,11 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   P0-F(v0.15.0)后 rbac.can() 已从 attachments 扩展到管理面(rbac / config / users / audit-logs);
     //   当前接入边界以 docs/current-state.md 与 src/modules/permissions/CLAUDE.md 为准。
     PermissionsModule,
+    // 终态 scoped-authz PR8(2026-07-02;冻结稿 §5.1/§5.2/§5.3):统一判权模块(第 33 模块)。
+    //   AuthzService(三源推导 + covers + ActionConstraint)+ ResourceResolverService(11 类资源归属解析);
+    //   0 controller / 0 端点 / 0 新码 / 0 schema。**本刀零业务消费者**(第一个消费者 = PR9 考勤终审;
+    //   explain 端点 = PR10;逐面迁移 = PR12);无 ref 判权逐字等价 rbac.can(行为锁,等价矩阵 e2e 锁定)。
+    AuthzModule,
     // V2.x C-7 attachments:attachment-configs 三子模块 CRUD
     //   (D7 v1.0 §4.2 / §16 Q1-Q7;path /api/system/v1/attachment-{type,mime,size-limit}-configs;130xx 段位)。
     //   AttachmentTypeConfig / Mime / Size 三子表 CRUD 全部实装。

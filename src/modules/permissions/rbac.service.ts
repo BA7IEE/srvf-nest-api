@@ -206,6 +206,30 @@ export class RbacService {
     return { reloaded: true };
   }
 
+  // 批量判定「哪些角色含该权限码」(终态 scoped-authz PR8 additive;冻结稿 §5.2 关键设计回答第 1 条
+  // 「RbacService.roleHasPermission(roleId, action)」的批量形态)。
+  //
+  // - **仅供 AuthzService 三源虚拟 grant 的"角色含码"过滤**(RoleBinding / 职务 policy / 分管推导出的
+  //   roleId 集 × action → 含码的 roleId 子集);RolePermission 有 roleId 索引,单 IN 查询
+  // - 排除已软删 RbacRole(join 过滤,沿 getUserPermissionCodes 口径)
+  // - **不走 RbacCacheService**(那是 per-user 权限点缓存,键形不同;per-role 缓存留 PR8 性能优化口,
+  //   本刀每 decision 现查)。**can() / judge() 语义零变化**(本方法纯 additive,行为锁)。
+  async getRoleIdsWithPermission(
+    roleIds: readonly string[],
+    permissionCode: string,
+  ): Promise<Set<string>> {
+    if (roleIds.length === 0) return new Set();
+    const rows = await this.prisma.rolePermission.findMany({
+      where: {
+        roleId: { in: [...roleIds] },
+        role: { deletedAt: null },
+        permission: { code: permissionCode },
+      },
+      select: { roleId: true },
+    });
+    return new Set(rows.map((r) => r.roleId));
+  }
+
   // ============ 内部 helpers ============
 
   // checkOwnership(沿 D7 §8.2 + §8.3):

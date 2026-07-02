@@ -7,7 +7,7 @@
 
 ---
 
-## src/modules/(31 个业务模块,平铺,**禁止嵌套 system/business/core 子目录**)
+## src/modules/(32 个业务模块,平铺,**禁止嵌套 system/business/core 子目录**)
 
 | 路径 | 体量 | 职责 | 主要风险 / 本地铁律 | 本地约束 |
 |---|---|---|---|---|
@@ -19,6 +19,7 @@
 | `attendances/` | ⚠G (service 1285L) | 考勤主表 5 态(含终审)+ contribution 计算 + 跨轴只读(2026-06-23) | 5 个边界类已抽离(state-machine / audit-recorder / time-overlap-policy / contribution-calculator / presenter #280);P1-4 拆分系列 2026-06-10 调研收口,余量为事务编排本职,⚠G 仅体量观察(沿 current-state §4);+跨活动单据横扫 + 队员考勤记录/贡献汇总 3 只读方法(贡献复用 team-join 封顶核);App 端点在 `controllers/app-my-attendance-records.controller.ts`,跨轴只读队员面在 `controllers/admin-member-attendance.controller.ts` | [`CLAUDE.md`](src/modules/attendances/CLAUDE.md) · [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
 | `audit-logs/` | M (594L) | 写入即不可改不可删(A-1 红线) | 各业务写路径已全接入 `AuditLogEvent` | [`AGENTS.md §9`](AGENTS.md) |
 | `auth/` | M (1678L) | 登录 / refresh / logout / logout-all / 找回密码 + OTP 登录 + 微信登录与绑定(pre-auth 平铺三 service;2026-06-12 亲核计数) | **不引入 `LocalStrategy`**;`username+password` 在 service 内手写;找回密码 / OTP / 微信三套防枚举·防侧写一致性禁破坏;`createSession` 唯一签发点(三种登录共用) | [`CLAUDE.md`](src/modules/auth/CLAUDE.md) · [`AGENTS.md §1 永久铁律`](AGENTS.md) · [`docs/security.md`](docs/security.md) |
+| `authz/` | S | **统一判权大脑**(终态 scoped-authz PR8,2026-07-02):AuthzService(三源 grant 推导 + covers + ActionConstraint)+ ResourceResolver(11 类归属解析,fail-close);0 controller / 0 端点 | 🔴 零业务消费者(接线 PR9 起),现网判权仍全走 rbac.can;无 ref 判权逐字等价 rbac.can(等价矩阵 e2e 行为锁);R5 副职零推导 / BD-2 不 hardcode 部门 | [`CLAUDE.md`](src/modules/authz/CLAUDE.md) · [`docs/reviews/org-position-scoped-authz-terminal-design-review.md §5`](docs/reviews/org-position-scoped-authz-terminal-design-review.md) |
 | `certificates/` | M (1410L) | 证书 N:1 + 4 态闭集 + verify/reject | service 556L (large-service watch);**不**属 participation 上下文(独立 member-qualifications) | [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md)(明确排除) |
 | `content/` | M (2115L,T4) | CMS 内容发布(第 28 模块):admin 面(T2)内容 CRUD + 状态机 draft/published/archived(立即生效无 cron)+ 封面双指针 + 附件经 `AttachmentsService`(content-image/content-file)+ 正文 `attachment:<id>` 占位读时改写 + viewCount(详情不增);open 面(T3,`open/v1/contents` @Public + 第 10 throttler content-public)+ app 面(T4,`app/v1/contents` canUseApp 准入 + 5 档可见性 public/member/formal_member/department/management)读取面 list/detail(详情不可见 → 404 防枚举 + viewCount 自增) | service 577L;判权 R 模式 `content.*.record` 5 码(admin);读取面 open=公开无码 / app=canUseApp 准入无码,可见性纯函数 `content.visibility.ts`(21 单测);附件写路径走 `AttachmentsService` rbac(`attachment.{upload,delete}.content-*`),content 读取面自签且仅过文章可见级后返(范围例外 a);读者出参零 authorUserId / 零 visibleOrganizationIds | [`docs/archive/reviews/content-module-review.md`](docs/archive/reviews/content-module-review.md)(冻结评审稿) |
 | `contribution-rules/` | M (914L) | D14 预填规则 | **无 CRUD 流水表** | [`docs/participation-bounded-context.md`](docs/participation-bounded-context.md) |
