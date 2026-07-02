@@ -7,8 +7,10 @@ import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.servi
 //
 // 背景:test/setup/reset-db.ts 把 RBAC 4 表清空,prisma/seed.ts 的 51 条业务面码 + biz-admin
 // 角色不在 e2e 数据库里。本 fixture 在 spec 的 beforeAll 调用:
-// - seedBizAdminPermissionsAndRole:幂等 upsert 51 条业务面码 + biz-admin 角色 + 50 条绑定
-//   (`member.delete.record` 进 Permission 表但**不**绑,D1=A 镜像;评审稿 §6)
+// - seedBizAdminPermissionsAndRole:幂等 upsert 51 条业务面码 + biz-admin 角色 + 48 条绑定
+//   (`member.delete.record`〔D1=A 镜像,评审稿 §6〕+ `attendance.final-{approve,reject}.sheet`
+//   〔2026-07-03 摘码微刀:终审归 scoped 绑定 / SUPER_ADMIN 兜底〕进 Permission 表但**不**绑,
+//   与 prisma/seed.ts BIZ_ADMIN_EXCLUDED_CODES 同口径镜像)
 // - grantBizAdminToUser:给 user 绑 biz-admin + 主动 invalidateUser cache(模拟 reload)
 // - revokeBizAdminFromUser:撤回 + invalidateUser cache(对称范式)
 //
@@ -19,11 +21,19 @@ import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.servi
 export interface BizAdminSeedResult {
   bizAdminRoleId: string;
   bizPermissionCount: number; // 51(2026-06-19 招新二期 +3)
-  bizAdminRolePermissionCount: number; // 50(过滤 member.delete.record)
+  bizAdminRolePermissionCount: number; // 48(过滤 member.delete.record + 终审两码)
 }
 
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
+
+// 摘码微刀(2026-07-03):终审两码不绑 biz-admin(终审 = attendance-final-reviewer scoped 绑定
+// 或 SUPER_ADMIN 兜底);镜像 prisma/seed.ts BIZ_ADMIN_EXCLUDED_CODES 口径。
+const BIZ_ADMIN_UNBOUND_CODES: ReadonlySet<string> = new Set([
+  MEMBER_DELETE_RECORD_CODE,
+  'attendance.final-approve.sheet',
+  'attendance.final-reject.sheet',
+]);
 
 // 沿 prisma/seed.ts BIZ_PERMISSION_SEED(51 条;Slow-4 §4 + 保险 §3.4 + 招新一期/二期 §3.4 锁定);
 // 本 fixture 维护独立集合,与 seed 内部表对照防漂移(沿 rbac.fixture.ts 范式)。
@@ -296,8 +306,9 @@ const BIZ_PERMISSIONS = [
   },
 ] as const;
 
-// 在 e2e 的 beforeAll 调用一次,seed 51 条业务面码 + biz-admin 角色 + 50 条 RolePermission
-// 绑定(过滤 `member.delete.record`;沿 D1=A 镜像)。幂等:多次调用不出错(upsert + skipDuplicates)。
+// 在 e2e 的 beforeAll 调用一次,seed 51 条业务面码 + biz-admin 角色 + 48 条 RolePermission
+// 绑定(过滤 `member.delete.record` + 终审两码;沿 D1=A 镜像 + 摘码微刀)。
+// 幂等:多次调用不出错(upsert + skipDuplicates)。
 export async function seedBizAdminPermissionsAndRole(
   app: INestApplication,
 ): Promise<BizAdminSeedResult> {
@@ -321,7 +332,8 @@ export async function seedBizAdminPermissionsAndRole(
     select: { id: true, code: true },
   });
   // 绑给 biz-admin 时过滤 `member.delete.record`(仅 SUPER_ADMIN 短路;评审稿 §6)
-  const bizAdminBindings = seeded.filter((p) => p.code !== MEMBER_DELETE_RECORD_CODE);
+  // + 终审两码(2026-07-03 摘码微刀;与 prisma/seed.ts 同口径)
+  const bizAdminBindings = seeded.filter((p) => !BIZ_ADMIN_UNBOUND_CODES.has(p.code));
   await prisma.rolePermission.createMany({
     data: bizAdminBindings.map((p) => ({ roleId: bizAdmin.id, permissionId: p.id })),
     skipDuplicates: true,

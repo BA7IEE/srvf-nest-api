@@ -34,10 +34,12 @@ describe('attendances 模块', () => {
   let prisma: PrismaService;
   let superAdminAuth: string;
   let adminAuth: string;
-  // 终态 scoped-authz PR9:第二管理员专职终审 —— 自审禁止(submitter==终审人 → 22074)+
-  // 同人默认禁止(一级 reviewer==终审人 → 22075)后,单管理员无法再走完 submit→approve→final 全程;
-  // 本 spec submit/一级审仍 adminAuth,final-approve 一律 finalAdminAuth(约束语义见
-  // attendances-final-review-authz.e2e-spec.ts 专属矩阵;此处业务断言零修改)。
+  // 终态 scoped-authz PR9:第二身份专职终审 —— 自审禁止(submitter==终审人 → 22074)+
+  // 同人默认禁止(一级 reviewer==终审人 → 22075)后,单人无法再走完 submit→approve→final 全程;
+  // 摘码微刀(2026-07-03):biz-admin 不再持终审两码 → 终审人从 ADMIN+biz-admin 换成
+  // SUPER_ADMIN(SA 兜底通路;仅换身份,业务断言零修改)。本 spec submit/一级审仍 adminAuth,
+  // final-approve / final-reject 一律 finalAdminAuth(权限/约束矩阵见
+  // attendances-final-review-authz.e2e-spec.ts + attendances-rbac-boundary.e2e-spec.ts)。
   let finalAdminAuth: string;
   let userWithMemberAuth: string;
 
@@ -61,18 +63,18 @@ describe('attendances 模块', () => {
     // 用户(权限边界只需 1 个已绑 member 的 USER)
     await createTestUser(app, { username: 'att-su', role: Role.SUPER_ADMIN });
     const admin = await createTestUser(app, { username: 'att-adm', role: Role.ADMIN });
-    // PR9:第二管理员(专职终审;见上方 finalAdminAuth 注释)
-    const finalAdmin = await createTestUser(app, { username: 'att-final-adm', role: Role.ADMIN });
+    // PR9 第二身份专职终审;摘码微刀(2026-07-03)后为 SUPER_ADMIN(SA 兜底通路,见上方注释)
+    await createTestUser(app, { username: 'att-final-adm', role: Role.SUPER_ADMIN });
     await createTestUser(app, { username: 'att-user-with-mem', role: Role.USER });
     superAdminAuth = (await loginAs(app, 'att-su')).authHeader;
     adminAuth = (await loginAs(app, 'att-adm')).authHeader;
     finalAdminAuth = (await loginAs(app, 'att-final-adm')).authHeader;
     userWithMemberAuth = (await loginAs(app, 'att-user-with-mem')).authHeader;
 
-    // Slow-4 T3:seed 36 条业务面码 + biz-admin;给 att-adm / att-final-adm 全局 grant(沿 org e2e 范式)
+    // Slow-4 T3:seed 业务面码 + biz-admin;给 att-adm 全局 grant(沿 org e2e 范式;
+    // att-final-adm 是 SA 走短路,不 grant —— biz-admin 已无终审两码,grant 也无用)
     const bizSeed = await seedBizAdminPermissionsAndRole(app);
     await grantBizAdminToUser(app, admin.id, bizSeed.bizAdminRoleId);
-    await grantBizAdminToUser(app, finalAdmin.id, bizSeed.bizAdminRoleId);
 
     const ma = await prisma.member.create({
       data: { memberNo: 'att-m-a', displayName: 'Member A' },
@@ -296,7 +298,8 @@ describe('attendances 模块', () => {
     }
   }
 
-  // 批次 4-B helper:推到 final_rejected 终态(APD 一级 approve + APD 部门部长 / 副部长 final-reject)。
+  // 批次 4-B helper:推到 final_rejected 终态(一级 approve = adminAuth,final-reject =
+  // finalAdminAuth —— 摘码微刀后 biz-admin 无终审码,终审一律走 SA 兜底身份)。
   async function approveThenFinalReject(
     sheetId: string,
     note = 'fixture final reject',
@@ -304,7 +307,7 @@ describe('attendances 模块', () => {
     await approveToPendingFinalReview(sheetId);
     const res = await request(httpServer(app))
       .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-reject`)
-      .set('Authorization', adminAuth)
+      .set('Authorization', finalAdminAuth)
       .send({ finalReviewNote: note });
     if (res.status !== 200) {
       throw new Error(`approveThenFinalReject failed: ${res.status} ${JSON.stringify(res.body)}`);
@@ -1436,10 +1439,12 @@ describe('attendances 模块', () => {
       expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
     });
 
-    it('final-approve 不存在 → 22001', async () => {
+    it('final-approve 不存在 → 22001(持权者;无码者是 30100 防枚举,见 rbac-boundary)', async () => {
+      // 摘码微刀:adminAuth(biz-admin)已无终审码 → 会吃 30100;22001「先判码后查单」
+      // 行为锁由持权的 finalAdminAuth(SA)承载。
       const res = await request(httpServer(app))
         .patch('/api/admin/v1/attendance-sheets/cl0000000000000000000000/final-approve')
-        .set('Authorization', adminAuth)
+        .set('Authorization', finalAdminAuth)
         .send({});
       expectBizError(res, BizCode.ATTENDANCE_SHEET_NOT_FOUND);
     });
@@ -1457,7 +1462,7 @@ describe('attendances 模块', () => {
 
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${id}/final-reject`)
-        .set('Authorization', adminAuth)
+        .set('Authorization', finalAdminAuth)
         .send({ finalReviewNote: '终审驳回理由' });
       expect(res.status).toBe(200);
       expect(res.body.data.statusCode).toBe('final_rejected');
@@ -1482,7 +1487,7 @@ describe('attendances 模块', () => {
       await approveToPendingFinalReview(id);
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${id}/final-reject`)
-        .set('Authorization', adminAuth)
+        .set('Authorization', finalAdminAuth)
         .send({});
       expect(res.status).toBe(400);
     });
@@ -1499,16 +1504,17 @@ describe('attendances 模块', () => {
       await approveToPendingFinalReview(id);
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${id}/final-reject`)
-        .set('Authorization', adminAuth)
+        .set('Authorization', finalAdminAuth)
         .send({ finalReviewNote: '' });
       expect(res.status).toBe(400);
     });
 
     it('final-reject 状态非 pending_final_review → 22045', async () => {
       // alreadyFinalRejectedId 已 final_rejected,再 final-reject 抛 22045
+      // (摘码微刀:须持权身份才到状态门;adminAuth 会先吃 30100)
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${alreadyFinalRejectedId}/final-reject`)
-        .set('Authorization', adminAuth)
+        .set('Authorization', finalAdminAuth)
         .send({ finalReviewNote: 'noop' });
       expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
     });

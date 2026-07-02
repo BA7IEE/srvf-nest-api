@@ -41,8 +41,9 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 //     ③c 无 ref 退化(GLOBAL 命中返合成 matchedGrant,无 bindingId = 行为锁口径)
 //     ③d 目标 SUPER_ADMIN → super_admin_pass
 //   deny 是数据(全部 200):④ no_permission(含"码不存在"也是 no_permission = 诊断值)
-//     ⑤ out_of_scope(scoped 绑定 + 树外 ref)⑥ self_approval_forbidden(final-approve + 提交人==目标,
-//     SA 亦拒的注册表语义在 three-source;此处锁 HTTP 面 200 形状)⑦ resource_not_found(200 decision,非 404)
+//     ⑤ out_of_scope(scoped 绑定 + 树外 ref)⑥ self_approval_forbidden(final-approve + 提交人==目标;
+//     2026-07-03 摘码微刀后目标用 SA〔持权者才进约束评估〕,SA 亦拒的注册表语义在 three-source;
+//     此处锁 HTTP 面 200 形状)⑦ resource_not_found(200 decision,非 404)
 //   输入错误(异常):⑧ 目标用户不存在 / 已软删 → 10001;type ∉ 11 类 / action 非法格式 / 未知字段 → 400
 //   决断③:DISABLED 目标也可 explain,status 原样返
 //   §9 行 20:reason ∈ AuthzReason 稳定枚举(Record 完备性双向锁 + 实测响应 ⊆ 枚举)
@@ -101,7 +102,9 @@ describe('authz/explain 权限解释端点(PR10:可解释性出口)', () => {
   // 资源
   let apdMemberId: string; // PRIMARY ACTIVE membership @APD
   let swrtMemberId: string; // PRIMARY ACTIVE membership @SWRT(树外对照)
-  let sheetByTBizId: string; // submitter = tBiz(自审约束)
+  // submitter = tSa(自审约束;2026-07-03 摘码微刀后 biz-admin 无终审码 —— 无码者先吃
+  // no_permission,self_approval_forbidden 须由持权者〔SA super_admin_pass〕承载)
+  let sheetByTSaId: string;
 
   // 实测出现过的 reason 全集(最终断言 ⊆ AUTHZ_REASON_VALUES,§9 行 20)
   const seenReasons = new Set<string>();
@@ -282,7 +285,7 @@ describe('authz/explain 权限解释端点(PR10:可解释性出口)', () => {
       },
     });
 
-    // 自审约束资源:APD 活动 + tBiz 本人提交的 sheet(约束只读 extra.submitterUserId)
+    // 自审约束资源:APD 活动 + tSa 本人提交的 sheet(约束只读 extra.submitterUserId)
     const activity = await prisma.activity.create({
       data: {
         title: 'explain 诊断演示',
@@ -295,11 +298,11 @@ describe('authz/explain 权限解释端点(PR10:可解释性出口)', () => {
       },
       select: { id: true },
     });
-    sheetByTBizId = (
+    sheetByTSaId = (
       await prisma.attendanceSheet.create({
         data: {
           activityId: activity.id,
-          submitterUserId: tBizId,
+          submitterUserId: tSaId,
           statusCode: 'pending_final_review',
           version: 1,
         },
@@ -429,15 +432,17 @@ describe('authz/explain 权限解释端点(PR10:可解释性出口)', () => {
     expect(data.decision.resource?.organizationId).toBe(swrtId);
   });
 
-  it('⑥ self_approval_forbidden:final-approve + 提交人==目标用户 → 200 返 reason(不是 403)', async () => {
+  it('⑥ self_approval_forbidden:final-approve + 提交人==目标用户(SA,持权)→ 200 返 reason(不是 403)', async () => {
+    // 摘码微刀(2026-07-03):biz-admin 目标会先吃 no_permission(约束只在 grant 命中后评估),
+    // 本 reason 改由 SA(super_admin_pass 后被约束否决)承载 —— 亦即「SA 自审照拒」的 explain 面证据。
     const data = await explainOk(opsAuth, {
-      userId: tBizId,
+      userId: tSaId,
       action: 'attendance.final-approve.sheet',
-      resourceRef: { type: 'attendance_sheet', id: sheetByTBizId },
+      resourceRef: { type: 'attendance_sheet', id: sheetByTSaId },
     });
     expect(data.decision.allow).toBe(false);
     expect(data.decision.reason).toBe('self_approval_forbidden');
-    expect(data.decision.resource?.extra?.submitterUserId).toBe(tBizId);
+    expect(data.decision.resource?.extra?.submitterUserId).toBe(tSaId);
   });
 
   it('⑦ resource_not_found 是 200 的 decision reason(诊断端点回答"为什么",不抛业务错)', async () => {

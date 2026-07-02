@@ -14,8 +14,10 @@ import { createTestApp } from '../setup/test-app';
 // Slow-4 T3(2026-06-11):attendances 模块(2 个 Admin class,10 端点)RBAC 权限边界 spec。
 // 沿冻结评审稿 slow4-rbac-business-face-review.md §7 零行为漂移验收
 // (① SA 短路 / ② ADMIN+biz-admin 照常 / ③ ADMIN 无 biz-admin 30100 / ④ USER 30100)。
-// list / detail / review-detail 共用 attendance.read.sheet(D4=A 判例);
-// 终审两码独立(ADMIN 级终审沿 P1-5 方案 A)。
+// list / detail / review-detail 共用 attendance.read.sheet(D4=A 判例)。
+// ⚠️ 摘码微刀(2026-07-03):终审两码不再绑 biz-admin —— final-approve / final-reject 的
+// ② 从 200 翻 30100(其余 6 动作 ② 照常 200 = 摘码边界),终审 ALLOW 面由 ① SA 兜底承载;
+// scoped 通路见 attendances-final-review-authz.e2e-spec。
 // 业务行为细节(状态机 / 时间重叠 / 贡献值)由 attendances*.e2e-spec.ts 系列锁定。
 
 describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
@@ -336,7 +338,7 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
         ).status,
       ).toBe(200);
     });
-    it('final-approve:③④ 30100 / ② 200 / ① 200(pending_final_review;ADMIN 级终审)', async () => {
+    it('final-approve:②③④ 30100(② 摘码翻面)/ ① 200(SA 兜底;pending_final_review)', async () => {
       const sheetId = await createSheetAt('pending_final_review');
       expectBizError(
         await request(httpServer(app))
@@ -352,16 +354,16 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
           .send({}),
         BizCode.RBAC_FORBIDDEN,
       );
-      expect(
-        (
-          await request(httpServer(app))
-            .patch(`${resBase()}/${sheetId}/final-approve`)
-            .set('Authorization', admBizAuth)
-            .send({})
-        ).status,
-      ).toBe(200);
+      // 摘码微刀(2026-07-03):② ADMIN+biz-admin 原 200 翻 30100(终审两码已摘)
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`${resBase()}/${sheetId}/final-approve`)
+          .set('Authorization', admBizAuth)
+          .send({}),
+        BizCode.RBAC_FORBIDDEN,
+      );
       // PR9:s2 换 admBiz 提交(默认 submitter 是 SA 本人 —— 自审约束 22074 对 SA 亦拒;
-      // ① 短路语义仍被锁:SA 终审**他人**提交的单 200)
+      // ① 短路语义仍被锁:SA 终审**他人**提交的单 200 = 摘码后唯一 GLOBAL 兜底)
       const s2 = await createSheetAt('pending_final_review', admBizUserId);
       expect(
         (
@@ -372,7 +374,7 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
         ).status,
       ).toBe(200);
     });
-    it('final-reject:③④ 30100 / ② 200(pending_final_review;finalReviewNote 必填)', async () => {
+    it('final-reject:②③④ 30100(② 摘码翻面)/ ① 200(SA;finalReviewNote 必填)', async () => {
       const sheetId = await createSheetAt('pending_final_review');
       expectBizError(
         await request(httpServer(app))
@@ -388,11 +390,20 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
           .send({ finalReviewNote: 'X' }),
         BizCode.RBAC_FORBIDDEN,
       );
+      // 摘码微刀(2026-07-03):② ADMIN+biz-admin 原 200 翻 30100
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`${resBase()}/${sheetId}/final-reject`)
+          .set('Authorization', admBizAuth)
+          .send({ finalReviewNote: 'X' }),
+        BizCode.RBAC_FORBIDDEN,
+      );
+      // ① SA 兜底 200(final-reject 无自审/同人约束 —— SA 终审自己提交的单亦可)
       expect(
         (
           await request(httpServer(app))
             .patch(`${resBase()}/${sheetId}/final-reject`)
-            .set('Authorization', admBizAuth)
+            .set('Authorization', saAuth)
             .send({ finalReviewNote: '边界终审驳回' })
         ).status,
       ).toBe(200);
