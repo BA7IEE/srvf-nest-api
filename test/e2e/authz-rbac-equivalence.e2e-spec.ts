@@ -25,7 +25,7 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 //   - explain 形状:SA → super_admin_pass + matchedGrant.source=super_admin;GLOBAL 命中 → matched + role_binding
 //
 // 角色 / 码集用**真 seed**(子进程 pnpm tsx prisma/seed.ts,沿 seed-position-role-policies 范式),
-// 保真度 = 生产 188 码 / 6 内置角色逐字。
+// 保真度 = 生产 189 码 / 7 内置角色逐字(PR9 +attendance-final-reviewer;PR10 +authz.explain.decision)。
 
 const SEED_ENV = {
   APP_ENV: 'test',
