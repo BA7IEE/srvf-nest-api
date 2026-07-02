@@ -21,6 +21,10 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 //      ops-admin 88 / member 9 / biz-admin 74 绑定数不变;6 保留码不绑 3 新角色(F1 哨兵延伸)
 //   6. 幂等:连续两次 seed counts / role id 稳定 + policy updatedAt 不 bump
 //
+// 终态 scoped-authz PR9(2026-07-02)追加:第 7 内置角色 `attendance-final-reviewer`(冻结稿
+// 场景 4 / BD-2 终审中枢显式绑定载体)—— 角色全集 6→7;专属用例 7 锁「绑 3 既有码 + 零持有 +
+// 零 policy 行(终审不随职务推导)」。
+//
 // 不覆盖(刻意;PR8 范围):policy → 实际授权推导(本刀 policy 表纯配置,绝不被判权路径读)。
 
 interface SeedRunResult {
@@ -179,6 +183,14 @@ const VICE_POSITION_CODES = ['vice-captain', 'dept-deputy', 'deputy-group-leader
 
 const NEW_ROLE_CODES = ['org-admin', 'group-manager', 'org-supervisor'] as const;
 
+// 终态 scoped-authz PR9:第 7 内置角色(冻结稿场景 4 / BD-2)—— 3 条既有 attendance 码,0 新码。
+const FINAL_REVIEWER_ROLE_CODE = 'attendance-final-reviewer';
+const EXPECTED_FINAL_REVIEWER_CODES = [
+  'attendance.read.sheet',
+  'attendance.final-approve.sheet',
+  'attendance.final-reject.sheet',
+] as const;
+
 // 既有 3 角色绑定数零漂移基线(seed-rbac 88 / seed-attachment 9 / seed-biz-admin 74 同口径)。
 const EXPECTED_OPS_ADMIN_BINDING_COUNT = 88;
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
@@ -192,7 +204,7 @@ async function boundCodesOf(prisma: PrismaService, roleCode: string): Promise<st
   return rows.map((r) => r.permission.code).sort();
 }
 
-describe('prisma/seed.ts — PR7 position role policies + 3 management roles', () => {
+describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内置角色 7)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -209,7 +221,7 @@ describe('prisma/seed.ts — PR7 position role policies + 3 management roles', (
     await resetDb(app);
   });
 
-  it('1. 内置角色 3→6:org-admin(56)/ group-manager(22)/ org-supervisor(4)码集逐码相等', async () => {
+  it('1. 内置角色全集 = 7(PR7 3→6 + PR9 attendance-final-reviewer);org-admin(56)/ group-manager(22)/ org-supervisor(4)码集逐码相等', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-1' }).code).toBe(0);
 
     const roles = await prisma.rbacRole.findMany({
@@ -217,7 +229,15 @@ describe('prisma/seed.ts — PR7 position role policies + 3 management roles', (
       select: { code: true },
     });
     expect(new Set(roles.map((r) => r.code))).toEqual(
-      new Set(['ops-admin', 'member', 'biz-admin', 'org-admin', 'group-manager', 'org-supervisor']),
+      new Set([
+        'ops-admin',
+        'member',
+        'biz-admin',
+        'org-admin',
+        'group-manager',
+        'org-supervisor',
+        FINAL_REVIEWER_ROLE_CODE,
+      ]),
     );
 
     expect(await boundCodesOf(prisma, 'org-admin')).toEqual([...EXPECTED_ORG_ADMIN_CODES].sort());
@@ -373,5 +393,27 @@ describe('prisma/seed.ts — PR7 position role policies + 3 management roles', (
     });
     expect(policies).toHaveLength(3);
     expect(policies.every((p) => p.updatedAt.getTime() === p.createdAt.getTime())).toBe(true);
+  });
+
+  it('7. PR9 attendance-final-reviewer:绑且仅绑 3 既有码;零持有;零 policy 行(终审不随职务推导)', async () => {
+    expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr9-seed-su-7' }).code).toBe(0);
+
+    // 码集逐码相等(0 新权限码 —— 3 条全是既有 attendance 码)
+    expect(await boundCodesOf(prisma, FINAL_REVIEWER_ROLE_CODE)).toEqual(
+      [...EXPECTED_FINAL_REVIEWER_CODES].sort(),
+    );
+
+    const role = await prisma.rbacRole.findUniqueOrThrow({
+      where: { code: FINAL_REVIEWER_ROLE_CODE },
+      select: { id: true },
+    });
+    // 零持有(冻结稿 BD-2:生产绑定 = PR11 公告导入建立真实任职后运营经 role-bindings CRUD 挂;
+    // seed 绝不发绑定 —— RoleBinding 全类型 + 冻结的 UserRole 双查)
+    expect(await prisma.roleBinding.count({ where: { roleId: role.id } })).toBe(0);
+    expect(await prisma.userRole.count({ where: { roleId: role.id } })).toBe(0);
+    // 零 policy 行(终审不随职务自动推导,必须显式 RoleBinding;与 org-supervisor 同为非 policy 目标)
+    expect(await prisma.organizationPositionRolePolicy.count({ where: { roleId: role.id } })).toBe(
+      0,
+    );
   });
 });

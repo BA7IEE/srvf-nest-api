@@ -143,6 +143,9 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
 
     // ============ Users ============
     await createTestUser(app, { username: 'p26-su', role: Role.SUPER_ADMIN });
+    // PR9:第二 SUPER_ADMIN 专职 final-approve(p26-su 是 submitter+一级审;自审 22074 对 SA
+    // 亦拒、同人 22075 默认拒 —— 单人无法再走完 submit→approve→final 全程)
+    await createTestUser(app, { username: 'p26-su-final', role: Role.SUPER_ADMIN });
     await createTestUser(app, { username: 'p26-user-a', role: Role.USER });
     await createTestUser(app, { username: 'p26-user-b', role: Role.USER });
     await createTestUser(app, { username: 'p26-user-no-mem', role: Role.USER });
@@ -211,6 +214,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
 
     // ============ Login ============
     const superAdminAuth = (await loginAs(app, 'p26-su')).authHeader;
+    const finalReviewerAuth = (await loginAs(app, 'p26-su-final')).authHeader;
     userAAuth = (await loginAs(app, 'p26-user-a')).authHeader;
     userBAuth = (await loginAs(app, 'p26-user-b')).authHeader;
     userNoMemAuth = (await loginAs(app, 'p26-user-no-mem')).authHeader;
@@ -399,6 +403,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
     const approvedSheet3Id = approvedSheet3Res.body.data.id as string;
 
     // ============ Approve 1/2/3 全部到 approved 终态 ============
+    // PR9:终审换第二 SUPER_ADMIN(自审/同人约束;fixture 语义不变 —— 单据到 approved 终态)
     for (const sid of [approvedSheet1Id, approvedSheet2Id, approvedSheet3Id]) {
       await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${sid}/approve`)
@@ -406,7 +411,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
         .send({});
       await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${sid}/final-approve`)
-        .set('Authorization', superAdminAuth)
+        .set('Authorization', finalReviewerAuth)
         .send({});
     }
 

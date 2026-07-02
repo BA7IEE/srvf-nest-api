@@ -54,6 +54,8 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
   let attendances: AttendancesService;
 
   let adminPayload: CurrentUserPayload;
+  // PR9:sheet submitter 独立 FK 用户 id(自审约束下 ≠ 终审人 adminPayload)
+  let sheetSubmitterUserId: string;
   let alice: Member;
   let bob: Member;
   let orgId: string;
@@ -115,11 +117,13 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
   }
 
   // pending_final_review 的 sheet + 每个 member 一条 record(绕过 submit 状态机)。
+  // PR9:submitter 用独立 FK 用户(不能再用 adminPayload —— 终审 authz 自审约束 22074 下
+  // submitter 必须 ≠ 终审人;本 spec 终审人固定 adminPayload)。
   async function seedSheetPendingFinal(activityId: string, memberIds: string[]): Promise<string> {
     const sheet = await prisma.attendanceSheet.create({
       data: {
         activityId,
-        submitterUserId: adminPayload.id,
+        submitterUserId: sheetSubmitterUserId,
         statusCode: 'pending_final_review',
         version: 1,
       },
@@ -194,6 +198,18 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
       status: UserStatus.ACTIVE,
       memberId: null,
     };
+
+    // PR9:sheet submitter 独立 FK 用户(见 seedSheetPendingFinal 注释)
+    const sheetSubmitter = await prisma.user.create({
+      data: {
+        username: 's4-submitter',
+        passwordHash: '$2a$10$dummy-hash-not-used-since-service-direct',
+        role: Role.USER,
+        status: UserStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    sheetSubmitterUserId = sheetSubmitter.id;
 
     alice = await makeMember('s4_alice');
     bob = await makeMember('s4_bob');

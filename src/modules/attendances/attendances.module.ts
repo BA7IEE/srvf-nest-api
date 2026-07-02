@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
+import { AuthzModule } from '../authz/authz.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -34,7 +35,16 @@ import { AppMyAttendanceRecordsController } from './controllers/app-my-attendanc
 @Module({
   // 统一通知 S4(评审稿 §6.4 / §11):考勤终审通过 → 本人考勤结果/贡献值定向通知(NotificationDispatcher;
   // producer → notifications **单向**,finalApprove commit 后直调,防环:通知绝不回调考勤)。
-  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, UsersModule, NotificationsModule],
+  // 终态 scoped-authz PR9(2026-07-02):导入 AuthzModule 注入 AuthzService —— 终审两方法判权切
+  // authz.explain(首个消费者;authz 是叶子模块,无反向依赖,不成环);其余 6 动作仍走 rbac.can。
+  imports: [
+    DatabaseModule,
+    AuditLogsModule,
+    PermissionsModule,
+    AuthzModule,
+    UsersModule,
+    NotificationsModule,
+  ],
   controllers: [
     AttendanceSheetsCollectionController,
     AttendanceSheetsResourceController,

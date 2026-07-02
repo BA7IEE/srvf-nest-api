@@ -16,17 +16,25 @@ import type { ResolvedResource } from './authz.types';
 
 export type ConstraintVetoReason = 'self_approval_forbidden' | 'same_reviewer_forbidden';
 
+// 约束评估上下文(PR9,goal 决断②):运行时可配开关,由 AuthzService 从 app.config 注入
+// (env `ATTENDANCE_ALLOW_SAME_REVIEWER`,默认 false=禁止;取代 PR8 的代码常量
+// ATTENDANCE_FINAL_APPROVE_ALLOW_SAME_REVIEWER)。只影响 same_reviewer;自审约束永不读此开关。
+export interface ActionConstraintContext {
+  attendanceAllowSameReviewer: boolean;
+}
+
 export interface ActionConstraint {
   reason: ConstraintVetoReason;
   // 返回 true = 否决(deny with reason);false = 放行
-  vetoes(user: CurrentUserPayload, resource: ResolvedResource | null): boolean;
+  vetoes(
+    user: CurrentUserPayload,
+    resource: ResolvedResource | null,
+    ctx: ActionConstraintContext,
+  ): boolean;
 }
 
-// BD 拍板(§5.3 第 2 行):一级审核与终审是否允许同人 —— **默认禁止**;代码常量可配
-// (如未来运营要放开,只改此常量走 A/B 档,不动判权流程)。
-export const ATTENDANCE_FINAL_APPROVE_ALLOW_SAME_REVIEWER = false;
-
 // 自己不能终审自己提交的考勤单(§5.3 第 1 行;场景 4:SUPER_ADMIN 亦拒)。
+// 域不变量:不读 ctx,任何配置都不可放开(goal 决断②「自审永不可放开」)。
 const selfApprovalForbidden: ActionConstraint = {
   reason: 'self_approval_forbidden',
   vetoes: (user, resource) => {
@@ -35,11 +43,11 @@ const selfApprovalForbidden: ActionConstraint = {
   },
 };
 
-// 一级审核人不得再终审同一张单(§5.3 第 2 行;默认禁止,常量可配)。
+// 一级审核人不得再终审同一张单(§5.3 第 2 行;默认禁止,env 可配 —— ctx 见上)。
 const sameReviewerForbidden: ActionConstraint = {
   reason: 'same_reviewer_forbidden',
-  vetoes: (user, resource) => {
-    if (ATTENDANCE_FINAL_APPROVE_ALLOW_SAME_REVIEWER) return false;
+  vetoes: (user, resource, ctx) => {
+    if (ctx.attendanceAllowSameReviewer) return false;
     const reviewerUserId = resource?.extra?.['reviewerUserId'];
     return typeof reviewerUserId === 'string' && reviewerUserId === user.id;
   },

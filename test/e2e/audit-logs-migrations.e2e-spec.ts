@@ -25,6 +25,9 @@ describe('audit-logs 写入迁移', () => {
   let prisma: PrismaService;
   let adminAuth: string;
   let adminId: string;
+  // 终态 scoped-authz PR9:第二管理员专职 final-approve(submit/一级审是 adminAuth —— 自审
+  // 22074 / 同人 22075 约束后同一人不能终审到底;audit 断言本身零修改)
+  let finalAdminAuth: string;
 
   let memberId: string;
   let relationCode: string;
@@ -52,6 +55,14 @@ describe('audit-logs 写入迁移', () => {
     // 也已切到 service 层 rbac.can(),ADMIN 测试用户统一补挂 biz-admin。
     const bizSeed = await seedBizAdminPermissionsAndRole(app);
     await grantBizAdminToUser(app, adminId, bizSeed.bizAdminRoleId);
+
+    // PR9:第二管理员(见上方 finalAdminAuth 注释)
+    const finalAdmin = await createTestUser(app, {
+      username: 'al-mig-final-adm',
+      role: Role.ADMIN,
+    });
+    finalAdminAuth = (await loginAs(app, 'al-mig-final-adm')).authHeader;
+    await grantBizAdminToUser(app, finalAdmin.id, bizSeed.bizAdminRoleId);
 
     // emergency_relation 字典
     const relType = await prisma.dictType.create({
@@ -1709,9 +1720,10 @@ describe('audit-logs 写入迁移', () => {
         .expect(200);
       await truncateAuditLogsTestOnly(app);
 
+      // PR9:终审换第二管理员(adminAuth 是 submitter+一级审,自审/同人约束下不可再终审)
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
-        .set('Authorization', adminAuth)
+        .set('Authorization', finalAdminAuth)
         .send({});
       expect(res.status).toBe(200);
 
@@ -1965,9 +1977,10 @@ describe('audit-logs 写入迁移', () => {
         .expect(200);
       await truncateAuditLogsTestOnly(app);
 
+      // PR9:终审换第二管理员(自审/同人约束)
       await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
-        .set('Authorization', adminAuth)
+        .set('Authorization', finalAdminAuth)
         .send({})
         .expect(200);
 

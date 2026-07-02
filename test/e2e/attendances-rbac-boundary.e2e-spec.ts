@@ -26,6 +26,7 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
   let admDefaultAuth: string;
   let userAuth: string;
   let submitterUserId: string;
+  let admBizUserId: string;
 
   let activityId: string;
   let memberId: string;
@@ -34,15 +35,17 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
   let recordHourSeq = 0;
 
   // prisma 直造指定状态的 Sheet + 1 条 record(contributionPoints 已填,满足 R31;
-  // 各 sheet 时间窗错开避免 R16 重叠校验干扰 edit/submit 路径)
-  const createSheetAt = async (statusCode: string): Promise<string> => {
+  // 各 sheet 时间窗错开避免 R16 重叠校验干扰 edit/submit 路径)。
+  // PR9:submitterOverride —— 默认 submitter 是 SA;SA 自己终审的用例(① 短路)因自审约束
+  // (22074,SA 亦拒)须换他人提交的单,短路语义本身不变。
+  const createSheetAt = async (statusCode: string, submitterOverride?: string): Promise<string> => {
     recordHourSeq += 2;
     const start = new Date(Date.UTC(2026, 8, 1, recordHourSeq % 20, 0, 0));
     const end = new Date(Date.UTC(2026, 8, 1, (recordHourSeq % 20) + 1, 0, 0));
     const sheet = await prisma.attendanceSheet.create({
       data: {
         activityId,
-        submitterUserId,
+        submitterUserId: submitterOverride ?? submitterUserId,
         statusCode,
         records: {
           create: [
@@ -77,6 +80,7 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
     admDefaultAuth = (await loginAs(app, 'atrb-adm-default')).authHeader;
     userAuth = (await loginAs(app, 'atrb-user')).authHeader;
     submitterUserId = sa.id;
+    admBizUserId = admBiz.id;
 
     const bizSeed = await seedBizAdminPermissionsAndRole(app);
     await grantBizAdminToUser(app, admBiz.id, bizSeed.bizAdminRoleId);
@@ -356,7 +360,9 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
             .send({})
         ).status,
       ).toBe(200);
-      const s2 = await createSheetAt('pending_final_review');
+      // PR9:s2 换 admBiz 提交(默认 submitter 是 SA 本人 —— 自审约束 22074 对 SA 亦拒;
+      // ① 短路语义仍被锁:SA 终审**他人**提交的单 200)
+      const s2 = await createSheetAt('pending_final_review', admBizUserId);
       expect(
         (
           await request(httpServer(app))

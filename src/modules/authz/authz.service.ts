@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   AssignmentStatus,
   BindingScopeType,
@@ -12,9 +13,10 @@ import {
   SupervisionStatus,
 } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import type { AppConfig } from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import { RbacService } from '../permissions/rbac.service';
-import { getConstraintsForAction } from './action-constraints';
+import { getConstraintsForAction, type ActionConstraintContext } from './action-constraints';
 import type { AuthzDecision, MatchedGrant, ResolvedResource, ResourceRef } from './authz.types';
 import { ResourceResolverService } from './resource-resolver.service';
 
@@ -104,11 +106,24 @@ function isWithinTerm(startedAt: Date, endedAt: Date | null, now: Date): boolean
 
 @Injectable()
 export class AuthzService {
+  // ActionConstraint 评估上下文(PR9 决断②):启动时从 app.config 读一次(env 静态,沿
+  // RbacCacheService 读 rbacCache.ttlSeconds 范式);同人开关只进 ctx,不进判权主流程。
+  private readonly constraintContext: ActionConstraintContext;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly resolver: ResourceResolverService,
-  ) {}
+    configService: ConfigService,
+  ) {
+    const appCfg = configService.get<AppConfig>('app');
+    if (!appCfg) {
+      throw new Error('app.config 未加载,AuthzService 无法读取 ATTENDANCE_ALLOW_SAME_REVIEWER');
+    }
+    this.constraintContext = {
+      attendanceAllowSameReviewer: appCfg.attendance.allowSameReviewer,
+    };
+  }
 
   // ============ 公开 API(§5.2 签名)============
 
@@ -496,7 +511,7 @@ export class AuthzService {
     resource: ResolvedResource | null,
   ): AuthzDecision {
     for (const constraint of getConstraintsForAction(action)) {
-      if (constraint.vetoes(user, resource)) {
+      if (constraint.vetoes(user, resource, this.constraintContext)) {
         return { allow: false, reason: constraint.reason, resource: decision.resource };
       }
     }

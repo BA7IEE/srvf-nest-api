@@ -3392,6 +3392,72 @@ async function seedPositionRolePolicies(prisma: PrismaClient): Promise<void> {
   }
 }
 
+// 终态 scoped-authz PR9「考勤终审员角色」(2026-07-02 goal;冻结稿场景 4 / §2.4 BD-2;序列 PR9/12)。
+//
+// 第 7 个内置角色:`attendance-final-reviewer` —— 终审中枢的**显式绑定**载体:业务上的终审部门
+// 部长/副部长经 RoleBinding(标准形态 principalType=POSITION_ASSIGNMENT + ORGANIZATION_TREE@root)
+// 持有本角色行使终审;换届 = 任职 ENDED 即失权,零代码改动(BD-2「只改绑定行不改代码」)。
+// 绑 3 条**既有**码(0 新权限码):attendance.final-approve.sheet / attendance.final-reject.sheet /
+// attendance.read.sheet(读码让终审人可看单;一级 approve/reject 不含 —— 同人约束语义下终审与一级分人)。
+//
+// **🔴 本 seed 零持有、零 policy 行**:不 seed 任何 RoleBinding(生产绑定 = PR11 公告导入建立真实
+// 任职后运营挂),也绝不进 PositionRolePolicy(终审不随职务自动推导,必须显式绑定 —— 冻结稿 BD-2);
+// biz-admin 的终审两码**保留不摘**(B 方案:ADMIN 全局终审照旧零断档;摘码 = PR12 显式项)。
+const ATTENDANCE_FINAL_REVIEWER_ROLE_CODE = 'attendance-final-reviewer';
+const ATTENDANCE_FINAL_REVIEWER_DISPLAY_NAME = '考勤终审员';
+const ATTENDANCE_FINAL_REVIEWER_DESCRIPTION =
+  '考勤终审中枢角色(冻结稿场景 4 / BD-2):经显式 RoleBinding(标准形态 POSITION_ASSIGNMENT 主体 + ' +
+  'ORGANIZATION_TREE@root)持有,行使 attendance.final-approve.sheet / final-reject.sheet + read.sheet;' +
+  '不随职务自动推导(零 PositionRolePolicy 行),换届撤任职即失权。自审禁止(SUPER_ADMIN 亦拒)与' +
+  '一级同人默认禁止由 authz ActionConstraint 承载,不在角色码集内。seed 零持有;绑定经 ' +
+  'role-bindings CRUD 显式建(PR11 公告导入后运营挂)。';
+const ATTENDANCE_FINAL_REVIEWER_PERMISSION_CODES: ReadonlyArray<string> = [
+  'attendance.read.sheet',
+  'attendance.final-approve.sheet',
+  'attendance.final-reject.sheet',
+];
+
+// 幂等:RbacRole.upsert by code / RolePermission.upsert by (roleId,permissionId);
+// 强校验镜像 seedPositionRolePolicies.bindRolePermissions(3 码必须已被 seedBizAdminRbac upsert)。
+async function seedAttendanceFinalReviewerRole(prisma: PrismaClient): Promise<void> {
+  const role = await prisma.rbacRole.upsert({
+    where: { code: ATTENDANCE_FINAL_REVIEWER_ROLE_CODE },
+    update: {},
+    create: {
+      code: ATTENDANCE_FINAL_REVIEWER_ROLE_CODE,
+      displayName: ATTENDANCE_FINAL_REVIEWER_DISPLAY_NAME,
+      description: ATTENDANCE_FINAL_REVIEWER_DESCRIPTION,
+    },
+    select: { id: true, code: true },
+  });
+
+  const perms = await prisma.permission.findMany({
+    where: { code: { in: [...ATTENDANCE_FINAL_REVIEWER_PERMISSION_CODES] } },
+    select: { id: true, code: true },
+  });
+  if (perms.length !== ATTENDANCE_FINAL_REVIEWER_PERMISSION_CODES.length) {
+    const found = new Set(perms.map((p) => p.code));
+    const missing = ATTENDANCE_FINAL_REVIEWER_PERMISSION_CODES.filter((c) => !found.has(c));
+    throw new Error(
+      `[seed] PR9 seed 强校验失败:角色 '${role.code}' 期望绑定 ` +
+        `${ATTENDANCE_FINAL_REVIEWER_PERMISSION_CODES.length} 条既有 Permission,` +
+        `实际查到 ${perms.length} 条;缺失:${missing.join(', ')}` +
+        '(可能调用顺序早于 seedBizAdminRbac,或码集拼写有误)。',
+    );
+  }
+  for (const perm of perms) {
+    await prisma.rolePermission.upsert({
+      where: { roleId_permissionId: { roleId: role.id, permissionId: perm.id } },
+      update: {},
+      create: { roleId: role.id, permissionId: perm.id },
+    });
+  }
+  console.log(
+    `[seed] RBAC role '${role.code}' ensured (↔ ${ATTENDANCE_FINAL_REVIEWER_PERMISSION_CODES.length} 条既有 attendance 码;` +
+      '零持有、零 policy —— 绑定经 role-bindings CRUD 显式建)',
+  );
+}
+
 async function main(): Promise<void> {
   const usernameRaw = process.env.SUPER_ADMIN_USERNAME ?? '';
   const username = usernameRaw.trim().toLowerCase();
@@ -3508,6 +3574,12 @@ async function main(): Promise<void> {
     //   (职务 id)+ seedAttachmentPermissions(attachment.* 码)+ seedBizAdminRbac(biz-admin
     //   码集,org-admin 借其过滤而来)均已完成。
     await seedPositionRolePolicies(prisma);
+
+    // 终态 scoped-authz PR9「考勤终审员」(2026-07-02;冻结稿场景 4 / BD-2):第 7 内置角色
+    //   attendance-final-reviewer,绑 3 条既有 attendance 码;零持有、零 policy(生产绑定 =
+    //   PR11 公告导入建立真实任职后,运营经 role-bindings CRUD 显式挂)。依赖 seedBizAdminRbac
+    //   已把 attendance.* 码 upsert 进 Permission 表。
+    await seedAttendanceFinalReviewerRole(prisma);
   } finally {
     await prisma.$disconnect();
   }

@@ -34,6 +34,11 @@ describe('attendances 模块', () => {
   let prisma: PrismaService;
   let superAdminAuth: string;
   let adminAuth: string;
+  // 终态 scoped-authz PR9:第二管理员专职终审 —— 自审禁止(submitter==终审人 → 22074)+
+  // 同人默认禁止(一级 reviewer==终审人 → 22075)后,单管理员无法再走完 submit→approve→final 全程;
+  // 本 spec submit/一级审仍 adminAuth,final-approve 一律 finalAdminAuth(约束语义见
+  // attendances-final-review-authz.e2e-spec.ts 专属矩阵;此处业务断言零修改)。
+  let finalAdminAuth: string;
   let userWithMemberAuth: string;
 
   let memberAId: string;
@@ -56,14 +61,18 @@ describe('attendances 模块', () => {
     // 用户(权限边界只需 1 个已绑 member 的 USER)
     await createTestUser(app, { username: 'att-su', role: Role.SUPER_ADMIN });
     const admin = await createTestUser(app, { username: 'att-adm', role: Role.ADMIN });
+    // PR9:第二管理员(专职终审;见上方 finalAdminAuth 注释)
+    const finalAdmin = await createTestUser(app, { username: 'att-final-adm', role: Role.ADMIN });
     await createTestUser(app, { username: 'att-user-with-mem', role: Role.USER });
     superAdminAuth = (await loginAs(app, 'att-su')).authHeader;
     adminAuth = (await loginAs(app, 'att-adm')).authHeader;
+    finalAdminAuth = (await loginAs(app, 'att-final-adm')).authHeader;
     userWithMemberAuth = (await loginAs(app, 'att-user-with-mem')).authHeader;
 
-    // Slow-4 T3:seed 36 条业务面码 + biz-admin;给 att-adm 全局 grant(沿 org e2e 范式)
+    // Slow-4 T3:seed 36 条业务面码 + biz-admin;给 att-adm / att-final-adm 全局 grant(沿 org e2e 范式)
     const bizSeed = await seedBizAdminPermissionsAndRole(app);
     await grantBizAdminToUser(app, admin.id, bizSeed.bizAdminRoleId);
+    await grantBizAdminToUser(app, finalAdmin.id, bizSeed.bizAdminRoleId);
 
     const ma = await prisma.member.create({
       data: { memberNo: 'att-m-a', displayName: 'Member A' },
@@ -272,11 +281,13 @@ describe('attendances 模块', () => {
 
   // 批次 4-B helper:推到 approved 终态(APD 一级 approve + APD 部门部长 / 副部长 final-approve)。
   // 沿决议表 v1.0 D5 候选 B + D-S6:approved 语义升级为"终审通过"。
+  // PR9:终审换 finalAdminAuth(submit/一级审是 adminAuth —— 自审 22074 / 同人 22075 约束生效后
+  // 同一人不能再终审)。
   async function approveToTerminalApproved(sheetId: string): Promise<void> {
     await approveToPendingFinalReview(sheetId);
     const res = await request(httpServer(app))
       .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
-      .set('Authorization', adminAuth)
+      .set('Authorization', finalAdminAuth)
       .send({});
     if (res.status !== 200) {
       throw new Error(
@@ -1340,9 +1351,10 @@ describe('attendances 模块', () => {
       await fillContributionPoints(id, 1.5);
       await approveToPendingFinalReview(id);
 
+      // PR9:终审用第二管理员(submit/一级审是 adminAuth,自审/同人约束下不可自终审)
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${id}/final-approve`)
-        .set('Authorization', adminAuth)
+        .set('Authorization', finalAdminAuth)
         .send({ finalReviewNote: 'final ok' });
       expect(res.status).toBe(200);
       // 沿 D-S6:approved = 终审通过(贡献值正式生效)
@@ -1359,7 +1371,7 @@ describe('attendances 模块', () => {
       // 已在 beforeAll(/me describe)用 approveToTerminalApproved 验证;此处冗余确保 final-approve 入账
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${pendingFinalReviewId}/final-approve`)
-        .set('Authorization', adminAuth)
+        .set('Authorization', finalAdminAuth)
         .send({});
       expect(res.status).toBe(200);
       expect(res.body.data.statusCode).toBe('approved');
@@ -1379,7 +1391,7 @@ describe('attendances 模块', () => {
 
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${id}/final-approve`)
-        .set('Authorization', adminAuth)
+        .set('Authorization', finalAdminAuth)
         .send({});
       expect(res.status).toBe(200);
       expect(res.body.data.finalReviewNote).toBeNull();
@@ -1387,9 +1399,11 @@ describe('attendances 模块', () => {
 
     it('final-approve 状态非 pending_final_review → 22045', async () => {
       // 直接对 alreadyApprovedId(approved)再 final-approve
+      // PR9:用 finalAdminAuth —— authz 约束先于状态机,adminAuth(=submitter)会先吃 22074,
+      // 本用例要锁的是状态门 22045(约束矩阵另见 attendances-final-review-authz e2e)
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${alreadyApprovedId}/final-approve`)
-        .set('Authorization', adminAuth)
+        .set('Authorization', finalAdminAuth)
         .send({});
       expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
     });
@@ -1404,7 +1418,7 @@ describe('attendances 模块', () => {
       ]);
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${id}/final-approve`)
-        .set('Authorization', adminAuth)
+        .set('Authorization', finalAdminAuth)
         .send({});
       expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
     });
@@ -1417,7 +1431,7 @@ describe('attendances 模块', () => {
       // 防止"终审驳回 → 改主意 → 终审通过"的悄默路径(沿 D-S5 / D-S6 终态不可逆)。
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${alreadyFinalRejectedId}/final-approve`)
-        .set('Authorization', adminAuth)
+        .set('Authorization', finalAdminAuth)
         .send({});
       expectBizError(res, BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
     });
