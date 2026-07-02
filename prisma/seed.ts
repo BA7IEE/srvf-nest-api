@@ -1,4 +1,4 @@
-import { PositionCategory, PrismaClient, Role, UserStatus } from '@prisma/client';
+import { PolicyScopeMode, PositionCategory, PrismaClient, Role, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 // v1 唯一允许创建 SUPER_ADMIN 的入口(详见 ARCHITECTURE.md §7.11 + §8 + §13)。
@@ -3124,6 +3124,274 @@ async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
   );
 }
 
+// 终态 scoped-authz PR7「职务→角色 policy」(2026-07-01 goal;冻结稿 §3.7 / §2.4 BD-1/BD-3 / R5;序列 PR7/12)。
+//
+// 3 个管理/监督角色(goal 本刀内定拍板:合并冻结稿草案原提的 team-manager/dept-manager 二分为统一
+// `org-admin`,scope 相对"任职组织"〔TREE〕天然区分 root 全组织 vs 非 root 本队/本部,无需
+// conditionJson 分流):
+// - `org-admin`(队长 team-leader / 部长 dept-leader 合用,本组织〔含子树〕全业务管理):
+//   码集 = biz-admin 74 业务码过滤〔attendance.final-{approve,reject}.sheet(BD-2:终审归 APD 类中枢
+//   显式 RoleBinding,org-admin 不含)+ recruitment-application.read.sensitive(敏感明文,§4.2 分级)〕,
+//   **另排除 `recruitment-*`/`team-join-*` 全前缀族**(招新/入队是中央流程,不随"本组织业务管理"
+//   下放——本刀 runner 判断,goal 原文标注倾向排除、供 PR 评审复核;若维护者认为应部分/全部纳入,
+//   属可逆调整,后续 PR 加回 RolePermission 绑定即可,不影响本表结构)。
+// - `group-manager`(组长 group-leader,轻量,本组范围):本组资料/内容/考勤一级读写
+//   (attachment.upload.*/view.* 现有 20 码族中 member/certificate 的 self+other + activity 共 10 条 +
+//   member-profile/certificate/emergency-contact 只读 3 条 + content.* 5 条〔不含 content-image/
+//   content-file 附件写,那是 CMS "content-attachment" 独立码族,本刀不纳入,后续如需再加〕+
+//   attendance 一级读/approve/reject 3 条〔不含 final-*〕+ activity-registration.read.record)。
+// - `org-supervisor`(分管推导用只读角色,BD-3 定稿 4 码;`activity.read.record` /
+//   `attendance-record.read.record` 2 个候选码本刀不加,沿 §4.3 表末 🟡 维持未 seed)。
+//
+// **🔴 R5 安全红线:** 副职(vice-captain / dept-deputy / deputy-group-leader)**零** policy 行 ——
+// 下方 POSITION_ROLE_POLICY_SEED 只登记 3 条正职映射,不为副职写任何行;`seedPositionRolePolicies`
+// 末尾另有运行时断言兜底(防未来误改)。**这 3 角色本刀不指派给任何 user**(PR8 才据职务/分管动态推导),
+// 不影响 RbacService.can() 判权语义;policy 表本身纯配置,绝不被任何判权路径读。
+const ORG_ADMIN_ROLE_CODE = 'org-admin';
+const ORG_ADMIN_DISPLAY_NAME = '组织业务管理员(队长/部长)';
+const ORG_ADMIN_DESCRIPTION =
+  '职务→角色 policy 默认映射目标(冻结稿 §3.7 BD-1):队长 team-leader / 部长 dept-leader 正职经 ' +
+  'PositionRolePolicy 映射本角色,scope=TREE(任职组织,root 队长即覆盖全组织);≠ SUPER_ADMIN—— ' +
+  '码集 = biz-admin 74 条过滤 attendance.final-approve.sheet / attendance.final-reject.sheet' +
+  '(终审归 APD 类中枢显式 RoleBinding)/ recruitment-application.read.sensitive(敏感明文)/ ' +
+  '整个 recruitment-*、team-join-* 前缀族(招新/入队中央流程,不随组织业务下放);不含任何平台/RBAC/' +
+  '凭证码(biz-admin 本就不含);本刀零 user 持有,PR8 起由职务任职动态推导。';
+
+const GROUP_MANAGER_ROLE_CODE = 'group-manager';
+const GROUP_MANAGER_DISPLAY_NAME = '小组管理员(组长)';
+const GROUP_MANAGER_DESCRIPTION =
+  '职务→角色 policy 默认映射目标(冻结稿 §3.7):组长 group-leader 正职经 PositionRolePolicy 映射本角色,' +
+  'scope=TREE(本组〔含子级〕)。码集 = 本组资料/内容/考勤一级读写(attachment.upload.*/view.* 10 条 + ' +
+  'member-profile/certificate/emergency-contact 只读 3 条 + content.* 5 条 + attendance 一级 3 条 + ' +
+  'activity-registration.read.record);不含 member 增删改/状态、attendance.final-*、*.read.sensitive、' +
+  'activity 增删改/发布/取消、招新/入队/保险管理、content-image/content-file 附件写。本刀零 user 持有,' +
+  'PR8 起由职务任职动态推导。';
+
+const ORG_SUPERVISOR_ROLE_CODE = 'org-supervisor';
+const ORG_SUPERVISOR_DISPLAY_NAME = '分管监督员(只读)';
+const ORG_SUPERVISOR_DESCRIPTION =
+  '分管(OrganizationSupervisionAssignment)推导用只读角色(冻结稿 §2.4 BD-3 定稿 4 码):' +
+  'member.read.record / activity-registration.read.record / attendance.read.sheet / ' +
+  'certificate.read.record。不含写 / 终审 / 敏感;分管人如需审批/终审须另加显式 RoleBinding。' +
+  '`activity.read.record` / `attendance-record.read.record` 2 个候选码(§4.3 表末 🟡)本刀不加。' +
+  '本刀零 user 持有,PR8 起由分管关系动态推导(不经本刀的 PositionRolePolicy——分管与职务正交)。';
+
+// org-admin 排除项(冻结稿 §2.4 BD-1 + BD-2 + §4.2):终审 2 码 + 敏感 1 码,精确排除。
+const ORG_ADMIN_EXCLUDED_CODES: ReadonlySet<string> = new Set([
+  'attendance.final-approve.sheet',
+  'attendance.final-reject.sheet',
+  'recruitment-application.read.sensitive',
+]);
+// org-admin 排除项(runner 判断,goal 原文标注倾向排除):招新/入队中央功能码整前缀族。
+const ORG_ADMIN_EXCLUDED_PREFIXES: ReadonlyArray<string> = ['recruitment-', 'team-join-'];
+
+// org-admin 码集 = biz-admin 现绑码(74)过滤上述排除项;随 biz-admin 自动同步,不手工复制列表
+// (biz-admin 未来若新增业务码,org-admin 自动继承,除非落入排除规则——与"队长/部长管本组织业务"语义一致)。
+const ORG_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> =
+  BIZ_ADMIN_PERMISSION_SEED.filter(
+    (p) =>
+      !ORG_ADMIN_EXCLUDED_CODES.has(p.code) &&
+      !ORG_ADMIN_EXCLUDED_PREFIXES.some((prefix) => p.code.startsWith(prefix)),
+  );
+
+// group-manager 码集(冻结稿 §3.7 场景举例 + goal 本刀收敛;22 条)。
+const GROUP_MANAGER_PERMISSION_CODES: ReadonlyArray<string> = [
+  // attachment.upload.*/view.*(现有 20 码族中 member/certificate 的 self+other + activity;10 条;
+  // 不含 content-image/content-file——那是 CMS 独立 "content-attachment" 码族,不在此通配范围)
+  'attachment.upload.member.self',
+  'attachment.upload.member.other',
+  'attachment.upload.certificate.self',
+  'attachment.upload.certificate.other',
+  'attachment.upload.activity',
+  'attachment.view.member.self',
+  'attachment.view.member.other',
+  'attachment.view.certificate.self',
+  'attachment.view.certificate.other',
+  'attachment.view.activity',
+  // 本组队员资料只读(3 条)
+  'member-profile.read.record',
+  'certificate.read.record',
+  'emergency-contact.read.record',
+  // 内容管理(content.* 5 条;不含 content-image/content-file 附件写)
+  'content.read.record',
+  'content.create.record',
+  'content.update.record',
+  'content.delete.record',
+  'content.publish.record',
+  // 考勤一级审批(3 条;不含 final-*)
+  'attendance.read.sheet',
+  'attendance.approve.sheet',
+  'attendance.reject.sheet',
+  // 报名只读(1 条)
+  'activity-registration.read.record',
+];
+
+// org-supervisor 码集(冻结稿 §2.4 BD-3 定稿;4 条,不含 2 个候选码)。
+const ORG_SUPERVISOR_PERMISSION_CODES: ReadonlyArray<string> = [
+  'member.read.record',
+  'activity-registration.read.record',
+  'attendance.read.sheet',
+  'certificate.read.record',
+];
+
+// 默认职务→角色 policy(冻结稿 §3.7;**仅正职**,R5 副职不登记任何行)。scopeMode 全 TREE
+// (相对任职组织;root 队长/部长 = 全组织,非 root = 本队/本部/本组)。
+const POSITION_ROLE_POLICY_SEED: ReadonlyArray<{
+  positionCode: string;
+  roleCode: string;
+  scopeMode: PolicyScopeMode;
+}> = [
+  { positionCode: 'team-leader', roleCode: ORG_ADMIN_ROLE_CODE, scopeMode: PolicyScopeMode.TREE },
+  { positionCode: 'dept-leader', roleCode: ORG_ADMIN_ROLE_CODE, scopeMode: PolicyScopeMode.TREE },
+  {
+    positionCode: 'group-leader',
+    roleCode: GROUP_MANAGER_ROLE_CODE,
+    scopeMode: PolicyScopeMode.TREE,
+  },
+];
+
+// R5 安全红线断言目标:副职职务 code(冻结稿 §3.7 🔴;这 3 个职务在本表必须恒为 0 行)。
+const R5_VICE_POSITION_CODES: ReadonlyArray<string> = [
+  'vice-captain',
+  'dept-deputy',
+  'deputy-group-leader',
+];
+
+// 依赖 seedPositions(职务 id)+ seedAttachmentPermissions(attachment.* 码)+ seedBizAdminRbac
+// (biz-admin 码集,org-admin 借其过滤而来)均已完成,故放在 main() 最后一步。
+// 幂等:RbacRole.upsert by code / RolePermission.upsert by (roleId,permissionId) /
+// OrganizationPositionRolePolicy.upsert by (positionId,roleId)。
+async function seedPositionRolePolicies(prisma: PrismaClient): Promise<void> {
+  // 1. upsert 3 个管理/监督角色(本刀不绑定给任何 user)。
+  const orgAdminRole = await prisma.rbacRole.upsert({
+    where: { code: ORG_ADMIN_ROLE_CODE },
+    update: {},
+    create: {
+      code: ORG_ADMIN_ROLE_CODE,
+      displayName: ORG_ADMIN_DISPLAY_NAME,
+      description: ORG_ADMIN_DESCRIPTION,
+    },
+    select: { id: true, code: true },
+  });
+  const groupManagerRole = await prisma.rbacRole.upsert({
+    where: { code: GROUP_MANAGER_ROLE_CODE },
+    update: {},
+    create: {
+      code: GROUP_MANAGER_ROLE_CODE,
+      displayName: GROUP_MANAGER_DISPLAY_NAME,
+      description: GROUP_MANAGER_DESCRIPTION,
+    },
+    select: { id: true, code: true },
+  });
+  const orgSupervisorRole = await prisma.rbacRole.upsert({
+    where: { code: ORG_SUPERVISOR_ROLE_CODE },
+    update: {},
+    create: {
+      code: ORG_SUPERVISOR_ROLE_CODE,
+      displayName: ORG_SUPERVISOR_DISPLAY_NAME,
+      description: ORG_SUPERVISOR_DESCRIPTION,
+    },
+    select: { id: true, code: true },
+  });
+  console.log(
+    `[seed] RBAC roles '${orgAdminRole.code}' / '${groupManagerRole.code}' / ` +
+      `'${orgSupervisorRole.code}' ensured`,
+  );
+
+  // 2. RolePermission 绑定(强校验:期望码数必须全部命中已 seed 的 Permission,否则说明调用顺序
+  //    被打乱或码集拼写有误)。
+  const bindRolePermissions = async (
+    roleId: string,
+    roleCode: string,
+    codes: ReadonlyArray<string>,
+  ): Promise<void> => {
+    const perms = await prisma.permission.findMany({
+      where: { code: { in: [...codes] } },
+      select: { id: true, code: true },
+    });
+    if (perms.length !== codes.length) {
+      const found = new Set(perms.map((p) => p.code));
+      const missing = codes.filter((c) => !found.has(c));
+      throw new Error(
+        `[seed] PR7 seed 强校验失败:角色 '${roleCode}' 期望绑定 ${codes.length} 条 Permission,` +
+          `实际查到 ${perms.length} 条;缺失:${missing.join(', ')}` +
+          '(可能调用顺序早于 seedBizAdminRbac/seedAttachmentPermissions,或码集拼写有误)。',
+      );
+    }
+    for (const perm of perms) {
+      await prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId, permissionId: perm.id } },
+        update: {},
+        create: { roleId, permissionId: perm.id },
+      });
+    }
+  };
+
+  await bindRolePermissions(
+    orgAdminRole.id,
+    orgAdminRole.code,
+    ORG_ADMIN_PERMISSION_SEED.map((p) => p.code),
+  );
+  await bindRolePermissions(
+    groupManagerRole.id,
+    groupManagerRole.code,
+    GROUP_MANAGER_PERMISSION_CODES,
+  );
+  await bindRolePermissions(
+    orgSupervisorRole.id,
+    orgSupervisorRole.code,
+    ORG_SUPERVISOR_PERMISSION_CODES,
+  );
+  console.log(
+    `[seed] RBAC role-permissions ensured ('${orgAdminRole.code}' ↔ ` +
+      `${ORG_ADMIN_PERMISSION_SEED.length} / '${groupManagerRole.code}' ↔ ` +
+      `${GROUP_MANAGER_PERMISSION_CODES.length} / '${orgSupervisorRole.code}' ↔ ` +
+      `${ORG_SUPERVISOR_PERMISSION_CODES.length})`,
+  );
+
+  // 3. upsert 默认 policy(仅正职;R5 副职不在 POSITION_ROLE_POLICY_SEED 中,本就不会写入)。
+  const roleIdByCode = new Map<string, string>([
+    [orgAdminRole.code, orgAdminRole.id],
+    [groupManagerRole.code, groupManagerRole.id],
+  ]);
+  const positions = await prisma.organizationPosition.findMany({
+    where: { code: { in: POSITION_ROLE_POLICY_SEED.map((p) => p.positionCode) } },
+    select: { id: true, code: true },
+  });
+  const positionIdByCode = new Map(positions.map((p) => [p.code, p.id]));
+
+  for (const policy of POSITION_ROLE_POLICY_SEED) {
+    const positionId = positionIdByCode.get(policy.positionCode);
+    const roleId = roleIdByCode.get(policy.roleCode);
+    if (!positionId) {
+      throw new Error(`[seed] PR7 policy 引用未知职务 code '${policy.positionCode}'`);
+    }
+    if (!roleId) {
+      throw new Error(`[seed] PR7 policy 引用未知角色 code '${policy.roleCode}'`);
+    }
+    await prisma.organizationPositionRolePolicy.upsert({
+      where: { positionId_roleId: { positionId, roleId } },
+      update: {},
+      create: { positionId, roleId, scopeMode: policy.scopeMode },
+    });
+  }
+  console.log(
+    `[seed] organization position role policies ensured (${POSITION_ROLE_POLICY_SEED.length} 条默认映射;仅正职,R5 副职零行)`,
+  );
+
+  // 4. R5 安全红线运行时断言(冻结稿 §3.7 🔴 / §10.5):副职必须零 policy 行,防未来任何改动
+  //    误给副职塞入管理映射(总队 6 副队长各得近全组织管理 = goal 明禁的"部长=管理员")。
+  const viceViolationCount = await prisma.organizationPositionRolePolicy.count({
+    where: { position: { code: { in: [...R5_VICE_POSITION_CODES] } }, deletedAt: null },
+  });
+  if (viceViolationCount > 0) {
+    throw new Error(
+      `[seed] R5 安全红线破坏:副职(${R5_VICE_POSITION_CODES.join('/')})存在 ` +
+        `${viceViolationCount} 条管理 policy 行,副职默认不得推导任何管理角色(冻结稿 §3.7 🔴 R5)。`,
+    );
+  }
+}
+
 async function main(): Promise<void> {
   const usernameRaw = process.env.SUPER_ADMIN_USERNAME ?? '';
   const username = usernameRaw.trim().toLowerCase();
@@ -3234,6 +3502,12 @@ async function main(): Promise<void> {
     //   + ADMIN 全员幂等补挂 + 强校验。放在 seedAttachmentPermissions 之后,
     //   保持"先 RBAC meta 再业务权限点"语义顺序;依赖 SUPER_ADMIN/ADMIN 用户已就位。
     await seedBizAdminRbac(prisma);
+
+    // 终态 scoped-authz PR7「职务→角色 policy」(2026-07-01;冻结稿 §3.7):3 管理/监督角色 +
+    //   绑定 + 3 条默认职务→角色映射(仅正职,R5 副职零行)。放在最后一步:依赖 seedPositions
+    //   (职务 id)+ seedAttachmentPermissions(attachment.* 码)+ seedBizAdminRbac(biz-admin
+    //   码集,org-admin 借其过滤而来)均已完成。
+    await seedPositionRolePolicies(prisma);
   } finally {
     await prisma.$disconnect();
   }
