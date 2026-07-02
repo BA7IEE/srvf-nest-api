@@ -245,7 +245,7 @@ model OrganizationClosure {
 // - OrganizationPositionRule = 某类组织(node_type)可设哪些职务的规则(R6 一类多领导称谓 +
 //   R8 requireMembership 按 (nodeType, position) 可配:总队级领导免根归属)。
 // **纯配置定义:只建 + seed + CRUD,绝不被任何判权路径读**(消费它的 assignment=PR4 /
-//   policy=PR7 / authz=PR8;`assignments` 反向 relation 由 PR4 补挂〔见下〕,`rolePolicies` 待 PR7)。
+//   policy=PR7 / authz=PR8;`assignments` 反向 relation 由 PR4 补挂,`rolePolicies` 反向 relation 由 PR7 补挂〔见下〕)。
 model OrganizationPosition {
   id              String           @id @default(cuid())
   code            String           @unique // kebab,如 team-leader / dept-deputy / group-leader
@@ -262,10 +262,13 @@ model OrganizationPosition {
   updatedAt       DateTime         @updatedAt
   deletedAt       DateTime?
 
-  rules       OrganizationPositionRule[]
+  rules        OrganizationPositionRule[]
   // 终态 scoped-authz PR4(2026-07-01;冻结稿 §3.4):任职反向 relation(仅关系映射,无列)。
   // 消费它的 policy=PR7 / authz=PR8;**本刀 assignment 只是数据 + 任命校验,绝不被任何判权路径读**。
-  assignments OrganizationPositionAssignment[]
+  assignments  OrganizationPositionAssignment[]
+  // 终态 scoped-authz PR7(2026-07-01;冻结稿 §3.7):职务→角色映射反向 relation(仅关系映射,无列)。
+  // 消费它的是 PR8 AuthzService;**本表 rolePolicies = 纯配置,绝不被任何判权路径读**。
+  rolePolicies OrganizationPositionRolePolicy[]
 
   @@index([categoryCode])
   @@index([status])
@@ -437,8 +440,8 @@ model Member {
   // V2 第一阶段批次 2:Certificate 两条反向 relation;同样仅 Prisma 关系映射,
   // 不算业务字段新增(批次 2 schema 草案 v1.0 §7 / R2);
   // verifier 角色由 service 层判定,schema 不约束。
-  certificates                  Certificate[]                    @relation("CertificateMember")
-  certificatesVerified          Certificate[]                    @relation("CertificateVerifier")
+  certificates                  Certificate[]                       @relation("CertificateMember")
+  certificatesVerified          Certificate[]                       @relation("CertificateVerifier")
 
   // V2 第一阶段批次 3 反向 relation(沿批次 1 / 批次 2 R2 范式)
   activityRegistrations ActivityRegistration[]
@@ -1118,6 +1121,11 @@ model RbacRole {
   // UserRole 表 PR6 起冻结、零生产读写(cleanup PR 再 DROP)。
   roleBindings RoleBinding[]
 
+  // 终态 scoped-authz PR7(2026-07-01;冻结稿 §3.7):职务→角色映射反向 relation(仅关系映射,无列)。
+  // **本表纯配置,绝不被任何判权路径读**(消费方是 PR8 AuthzService);org-admin/group-manager/
+  // org-supervisor 三管理角色本刀零 user 持有,不影响 RbacService.can() 判权语义。
+  rolePolicies OrganizationPositionRolePolicy[]
+
   @@index([deletedAt])
   @@map("roles")
 }
@@ -1243,6 +1251,47 @@ enum BindingStatus {
   ACTIVE
   ENDED
   SUSPENDED
+}
+
+// 终态 scoped-authz PR7「职务→角色 policy」(2026-07-01 goal;冻结稿 §3.7 / §2.4 BD-1/BD-3 / R5;序列 PR7/12)。
+//
+// **这是"职务不天然 = 管理员"的关键闸门:** 职务(§3.4 assignment)换算成什么角色、覆盖多大范围,
+//   全在此显式声明、可审计、可调。**只为正职映射管理角色**(队长 team-leader / 部长 dept-leader →
+//   org-admin;组长 group-leader → group-manager)。**本刀 goal 落地拍板**:合并冻结稿草案原提的
+//   team-manager/dept-manager 二分为统一 org-admin(队长/部长合用一套业务面广角色),scope 相对
+//   "任职组织"(TREE)天然区分 root(全组织)vs 非 root(本队/本部),无需 conditionJson 分流。
+// **🔴 R5 安全红线 —— 副职默认不推导管理角色:** `vice-captain` / `dept-deputy` /
+//   `deputy-group-leader` **零**本表行(seed 不写、CI 断言恒为 0)。副职实际管辖权只能来自
+//   `OrganizationSupervisionAssignment`(分管)或显式 `RoleBinding`,绝不由头衔自动推导
+//   (否则总队 6 名副队长各得近全组织管理 = goal 明禁的"部长=管理员")。`org-supervisor`
+//   （分管推导用只读角色)**不是**本表映射目标 —— 它由 PR8 分管推导消费,不经职务 policy。
+// **本表纯配置映射:只建 + seed 3 条(仅正职)+ CRUD 预留,绝不被任何判权路径读**
+//   (职务→角色的动态推导消费方是 PR8 AuthzService;本刀 0 端点 / 0 新权限码 / 0 controller)。
+model OrganizationPositionRolePolicy {
+  id            String          @id @default(cuid())
+  positionId    String
+  roleId        String
+  scopeMode     PolicyScopeMode @default(TREE) // 相对"任职所在组织"的 EXACT / TREE
+  conditionJson Json? // 可选条件(本刀 seed 不用,留列位;如未来 { nodeTypeCode: 'functional-dept' })
+  status        PolicyStatus    @default(ACTIVE)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  deletedAt     DateTime?
+
+  position OrganizationPosition @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  role     RbacRole             @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([positionId, roleId])
+  @@index([positionId])
+  @@index([roleId])
+  @@index([deletedAt])
+  @@map("organization_position_role_policies")
+}
+
+// 终态 scoped-authz PR7(2026-07-01;冻结稿 §3.0):职务→角色映射的 scope 相对模式。
+enum PolicyScopeMode {
+  EXACT
+  TREE
 }
 
 // ===== V2.x C-7 attachments 4 表(沿 D7 v1.0 §4 schema 草案) =====
