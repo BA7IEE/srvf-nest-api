@@ -11,7 +11,7 @@
 
 ## Local facts
 
-- **🔴 消费者接线进度(改本模块前先核对)**:**PR9(2026-07-02)起首个消费者 = attendances 终审两方法**(`finalApprove`/`finalReject` 走 `authz.explain` + deny→BizCode 映射〔22074/22075/30100,见 attendances/CLAUDE.md〕);其余全部业务面仍走 rbac.can,逐面迁移 = PR12。**本模块行为调整自 PR9 起影响现网终审面**;等价矩阵行为锁必须始终成立
+- **🔴 消费者接线进度(改本模块前先核对)**:**PR9(2026-07-02)起首个消费者 = attendances 终审两方法**(`finalApprove`/`finalReject` 走 `authz.explain` + deny→BizCode 映射〔22074/22075/30100,见 attendances/CLAUDE.md〕);**PR12(2026-07-02)起 activities / activity-registrations / attendances 三模块(participation 首批,共 24 处调用位点)全量切 `authz.can`/`authz.explain`**(ref 矩阵见各模块 CLAUDE.md;GLOBAL 行为逐字不变,scoped 持有者树内获新点动作能力);members / certificates / content / notifications 等其余业务面仍走 rbac.can,逐面迁移留后续批。**本模块行为调整自 PR9 起影响现网终审面,PR12 起影响 participation 三模块管理端全部动作**;等价矩阵行为锁必须始终成立
 - **🔴 无 ref 退化 = 行为锁(goal 决断①)**:`authz.can(user, action)`〔无 ref〕**逐字复用 `RbacService.judge`** —— 与 `rbac.can` 逐项一致(SUPER_ADMIN 短路 / GLOBAL 码集走缓存 / `.self` 无 resource fail-close);scoped grant 无 ref 一律不 covers。等价矩阵锁在 `test/e2e/authz-rbac-equivalence.e2e-spec.ts`,改判权流程必跑
 - **🔴 R5 安全红线(冻结稿 §5.2)**:副职(vice-captain / dept-deputy / deputy-group-leader)不自动推导管理角色 —— 由数据保证(seed 副职零 policy 行),3b 职务推导对副职天然零产出;**代码里不写副职特判,也绝不为"方便"给 3b 加头衔兜底**。全局/全树管辖只能来自显式 RoleBinding(3a)或分管(3c)
 - **BD-2 终审中枢不 hardcode**:终审身份只认 `RoleBinding(principalType=POSITION_ASSIGNMENT, …)` 配置行;本模块禁止出现任何 "APD" / 部门字面量门控。分管监督角色锚点 = 常量 `SUPERVISOR_ROLE_CODE`('org-supervisor',BD-3)

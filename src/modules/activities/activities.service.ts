@@ -13,6 +13,8 @@ import {
 } from '../notifications/notification.constants';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { RbacService } from '../permissions/rbac.service';
+import { AuthzService } from '../authz/authz.service';
+import type { ResourceRef } from '../authz/authz.types';
 import {
   ActivityListItemDto,
   ActivityResponseDto,
@@ -129,6 +131,9 @@ export class ActivitiesService {
     private readonly activityStateMachine: ActivityStateMachine,
     private readonly activityAuditRecorder: ActivityAuditRecorder,
     private readonly rbac: RbacService,
+    // 终态 scoped-authz PR12(2026-07-02;冻结稿 §11 逐面迁移第一批):统一判权大脑,5 个写方法
+    // 判权从 rbac.can 切 authz.explain(见 assertCanOrThrow);list / findOne 仍无码仅登录不变。
+    private readonly authz: AuthzService,
     // 统一通知 S4(评审稿 §6.4):活动取消 → 已报名者定向通知派发器(producer → notifications 单向直调,
     // commit 后事务外、try-catch 永不抛;防环:本服务绝不被通知模块回调)。
     private readonly notificationDispatcher: NotificationDispatcher,
@@ -136,12 +141,25 @@ export class ActivitiesService {
 
   // ============ helpers ============
 
-  // Slow-4 T3(2026-06-11,评审稿 §3.5 / D-S4-8):RBAC 判权(沿 P0-F assertCanOrThrow 范式)。
-  // 5 个写方法第一条语句调用;list / findOne 无码化(仅登录),Q-A7 USER 过滤逻辑原样保留。
-  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
-    if (!(await this.rbac.can(user, action))) {
-      throw new BizException(BizCode.RBAC_FORBIDDEN);
+  // Slow-4 T3(2026-06-11,评审稿 §3.5 / D-S4-8)起点;终态 scoped-authz PR12(2026-07-02;
+  // 冻结稿 §11 + 决断①②)升级:判权走 authz.explain,ref 矩阵——
+  //   - create 无 ref(no-ref = GLOBAL-only,行为锁天然成立;scoped create 留后续批)
+  //   - update/delete/publish/cancel 传 {type:'activity', id}(点动作,scoped 持有者树内可用)
+  // NOT_FOUND 回退沿 PR9 范式(attendances.service.ts assertFinalReviewAuthzOrThrow):resource_not_found
+  // 时退回 rbac.can 全局码判定——持码者 return(交回调用方后续 findActivityOrThrow 抛既有 ACTIVITY_NOT_FOUND,
+  // 「先判权后查资源」行为锁不变),无码者 30100 防枚举。5 个写方法第一条语句调用;list / findOne 无码化
+  // (仅登录)不变,Q-A7 USER 过滤逻辑原样保留。
+  private async assertCanOrThrow(
+    user: CurrentUserPayload,
+    action: string,
+    ref?: ResourceRef,
+  ): Promise<void> {
+    const decision = await this.authz.explain(user, action, ref);
+    if (decision.allow) return;
+    if (ref && decision.reason === 'resource_not_found' && (await this.rbac.can(user, action))) {
+      return;
     }
+    throw new BizException(BizCode.RBAC_FORBIDDEN);
   }
 
   // Prisma Decimal 字段 → string;null 透传。NaN 不会出现(@db.Decimal 兜底)。
@@ -426,7 +444,7 @@ export class ActivitiesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity.update.record');
+    await this.assertCanOrThrow(currentUser, 'activity.update.record', { type: 'activity', id });
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 
@@ -530,7 +548,7 @@ export class ActivitiesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity.delete.record');
+    await this.assertCanOrThrow(currentUser, 'activity.delete.record', { type: 'activity', id });
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 
@@ -562,7 +580,7 @@ export class ActivitiesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity.publish.record');
+    await this.assertCanOrThrow(currentUser, 'activity.publish.record', { type: 'activity', id });
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 
@@ -607,7 +625,7 @@ export class ActivitiesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'activity.cancel.record');
+    await this.assertCanOrThrow(currentUser, 'activity.cancel.record', { type: 'activity', id });
     const result = await this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 

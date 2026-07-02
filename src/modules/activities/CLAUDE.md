@@ -11,13 +11,14 @@
 
 ## Local facts
 
-- `activities.service.ts` **607L**(偏厚,沿 CODEMAP 标 L 体量);`activity-state-machine.ts`(63L)/ `activity-audit-recorder.ts`(291L)/ `app-activities.service.ts`(162L)/ `app-my-activities.service.ts`(181L)已抽离
+- `activities.service.ts` **722L**(偏厚,沿 CODEMAP 标 L 体量);`activity-state-machine.ts`(63L)/ `activity-audit-recorder.ts`(291L)/ `app-activities.service.ts`(162L)/ `app-my-activities.service.ts`(181L)已抽离
+- **判权(终态 scoped-authz PR12,2026-07-02)**:5 个写方法(create/update/delete/publish/cancel)判权走 `assertCanOrThrow` → `authz.explain`;`create` 无 ref(GLOBAL-only,scoped 创建留后续批);`update`/`delete`/`publish`/`cancel` 带 `{type:'activity', id}` ref(scoped 持有者〔如 team-leader 经 policy→org-admin@TREE〕在其组织树内可用);`resource_not_found` 回退 `rbac.can` 全局码判定,持码者 return 交回 `findActivityOrThrow` 抛既有 `ACTIVITY_NOT_FOUND`,无码者 30100;`list`/`findOne` 仍无码仅登录(Slow-4 现状不变)。e2e 见 `test/e2e/participation-scoped-authz.e2e-spec.ts`。
 - Admin Controller:`activities.controller.ts` `@Controller('admin/v1/activities')` `@ApiTags('Admin - Activities')`
 - App Controller:`controllers/app-activities.controller.ts` `@Controller('app/v1/activities')` `@ApiTags('Mobile - Activities')`(单文件单 class,**非** Mixed Controller)
 - DTO 隔离:Admin DTO 在 `activities.dto.ts`(524L);App DTO 在 `dto/app/`(4 文件)
 - Audit:写路径全部走 `activity-audit-recorder.ts`;**event 名 5 处共用 `'activity.publish'`,不动**(沿 PR #199 characterization 锁定)
 - 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_STATUS_INVALID`
-- E2E:`activities.e2e-spec.ts` / `activities-state-transition.e2e-spec.ts` / `activities-audit-characterization.e2e-spec.ts` / `app-activities-available.e2e-spec.ts` / `app-activities-detail.e2e-spec.ts`
+- E2E:`activities.e2e-spec.ts` / `activities-rbac-boundary.e2e-spec.ts` / `activities-state-transition.e2e-spec.ts` / `activities-audit-characterization.e2e-spec.ts` / `app-activities-available.e2e-spec.ts` / `app-activities-detail.e2e-spec.ts`;scoped 判权矩阵在 `participation-scoped-authz.e2e-spec.ts`(与 activity-registrations / attendances 共用一个文件)
 
 ## Risk points (不要做)
 
@@ -27,7 +28,7 @@
 - ❌ **不**把 `completed` 推进逻辑挪进本模块状态机(由 attendances 在首次 sheet 提交时推动;沿 [`/docs/participation-bounded-context.md §5`](../../../docs/participation-bounded-context.md))
 - ❌ **不**把 Admin DTO 用 `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 派生为 App DTO(沿 [`/AGENTS.md §19.7 D-6`](../../../AGENTS.md));App DTO 进 `dto/app/`
 - ❌ **不**新增 Mixed Controller(class-level + 方法级双 `@ApiTags`);新 App endpoint 进 `controllers/app-*.controller.ts`
-- ❌ **不**主动拆 `activities.service.ts`(607L,沿 [`/docs/current-state.md §4 P2`](../../../docs/current-state.md);拆分需单独立项)
+- ❌ **不**主动拆 `activities.service.ts`(722L,沿 [`/docs/current-state.md §4 P2`](../../../docs/current-state.md);拆分需单独立项)
 - ❌ App 服务的 `_memberId` 入参是**扩展槽**(v0.1 published 活动池对全员相同,未参与 where 过滤),**不**借口"未使用"删掉(沿 `AppActivitiesService.findVisibleByIdForMember` / `listAvailableForMember` 顶部注释)
 
 ## Before editing

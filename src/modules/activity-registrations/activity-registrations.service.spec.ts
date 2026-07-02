@@ -7,6 +7,7 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import type { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import type { RbacService } from '../permissions/rbac.service';
+import type { AuthzService } from '../authz/authz.service';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import type { ActivityRegistrationTransitionDecision } from './activity-registration-state-machine';
 import { ActivityRegistrationsService } from './activity-registrations.service';
@@ -172,6 +173,20 @@ function makeRbacMock() {
   return { can: jest.fn<Promise<boolean>, [unknown, string]>().mockResolvedValue(true) };
 }
 
+// 终态 scoped-authz PR12(2026-07-02):authz mock —— explain 默认 allow(matched),既有
+// characterization 断言零修改(判权切换不动业务行为);风格镜像 attendances.service.spec.ts
+// 的 makeAuthzMock(PR9 先例)。
+function makeAuthzMock(
+  decision: { allow: boolean; reason: string } = { allow: true, reason: 'matched' },
+) {
+  return {
+    explain: jest
+      .fn<Promise<{ allow: boolean; reason: string }>, [unknown, string, unknown]>()
+      .mockResolvedValue(decision),
+  };
+}
+type AuthzMock = ReturnType<typeof makeAuthzMock>;
+
 // 保险 T3(2026-06-13,评审稿 insurance-module-review.md E-10):构造函数注入门槛 mock,
 // assert 恒通过(本 spec fixture 活动 requiresInsurance 走 Prisma default=false,门槛语义
 // 由 e2e activity-registrations-insurance-gate 锁定)。既有断言零修改,仅机械补第 5 参。
@@ -199,6 +214,7 @@ function makeService(
   recorder: AuditRecorderMock,
   stateMachine: StateMachineMock,
   dispatcher: NotificationDispatcherMock = makeNotificationDispatcherMock(),
+  authz: AuthzMock = makeAuthzMock(),
 ): ActivityRegistrationsService {
   // stateMachine mock 仅含 decide,结构上可直接赋给 ActivityRegistrationStateMachine,无需断言。
   return new ActivityRegistrationsService(
@@ -206,6 +222,7 @@ function makeService(
     recorder as unknown as ActivityRegistrationAuditRecorder,
     stateMachine,
     makeRbacMock() as unknown as RbacService,
+    authz as unknown as AuthzService,
     makeInsuranceRequirementMock() as unknown as InsuranceRequirementService,
     dispatcher as unknown as NotificationDispatcher,
   );

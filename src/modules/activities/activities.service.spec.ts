@@ -16,6 +16,7 @@ import type { ActivityAuditRecorder } from './activity-audit-recorder';
 import type { ActivityStateDecision } from './activity-state-machine';
 import type { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import type { RbacService } from '../permissions/rbac.service';
+import type { AuthzService } from '../authz/authz.service';
 
 // activities service-level characterization spec(B 档 test-only,沿 srvf-god-service-refactor）。
 // 锁定 `activities.service.ts`(607L,L 体量)内部「编排契约」现状行为,作为后续
@@ -203,6 +204,20 @@ function makeRbacMock() {
   return { can: jest.fn<Promise<boolean>, [unknown, string]>().mockResolvedValue(true) };
 }
 
+// 终态 scoped-authz PR12(2026-07-02):authz mock —— explain 默认 allow(matched),既有
+// characterization 断言零修改(判权切换不动业务行为);风格镜像 attendances.service.spec.ts
+// 的 makeAuthzMock(PR9 先例)。
+function makeAuthzMock(
+  decision: { allow: boolean; reason: string } = { allow: true, reason: 'matched' },
+) {
+  return {
+    explain: jest
+      .fn<Promise<{ allow: boolean; reason: string }>, [unknown, string, unknown]>()
+      .mockResolvedValue(decision),
+  };
+}
+type AuthzMock = ReturnType<typeof makeAuthzMock>;
+
 // 统一通知 S4:派发器 mock —— dispatchTargeted 默认 resolve;cancel fan-out 用例可注入 reject
 // 验证「派发失败不破坏取消」,或断言逐报名者入参(recipientMemberId / channels)。
 function makeNotificationDispatcherMock() {
@@ -220,16 +235,19 @@ function makeService(
     stateMachine?: StateMachineMock;
     recorder?: RecorderMock;
     dispatcher?: NotificationDispatcherMock;
+    authz?: AuthzMock;
   } = {},
 ): ActivitiesService {
   const stateMachine = opts.stateMachine ?? makeStateMachineMock(DENY_DECISION);
   const recorder = opts.recorder ?? makeRecorderMock();
   const dispatcher = opts.dispatcher ?? makeNotificationDispatcherMock();
+  const authz = opts.authz ?? makeAuthzMock();
   return new ActivitiesService(
     prisma as unknown as PrismaService,
     stateMachine,
     recorder as unknown as ActivityAuditRecorder,
     makeRbacMock() as unknown as RbacService,
+    authz as unknown as AuthzService,
     dispatcher as unknown as NotificationDispatcher,
   );
 }

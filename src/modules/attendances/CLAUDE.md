@@ -9,7 +9,8 @@
 - `attendance_sheets` **5 态**(含终审);`attendance_records` 子表。
 - 状态变更必须经过 `attendance-sheet-state-machine.ts`,**不**在 service 内裸写态迁移。
 - 业务写路径必须走 `attendance-audit-recorder.ts` 写入 `AuditLogEvent`。
-- **终审判权(终态 scoped-authz PR9,2026-07-02)**:`finalApprove`/`finalReject` 走 `assertFinalReviewAuthzOrThrow`(`authz.explain` 带 ref)——deny 映射:自审 → 22074(SUPER_ADMIN 亦拒)/ 一级同人 → 22075(env `ATTENDANCE_ALLOW_SAME_REVIEWER` 可放开;约束注册在 authz 模块且**仅咬合 final-approve**)/ sheet 不存在 → 回退 `rbac.can`(持码者进事务抛 22001,无码者 30100 防枚举)/ 其余一切 deny → 30100;**biz-admin 终审两码保留(B 方案),摘码 = PR12**;**其余 6 管理端动作仍走 `assertCanOrThrow`(rbac.can),PR12 前不迁**。e2e 矩阵在 `test/e2e/attendances-final-review-authz.e2e-spec.ts`;spec 造终审链须遵「submit/一级审 ≠ 终审人」。
+- **终审判权(终态 scoped-authz PR9,2026-07-02)**:`finalApprove`/`finalReject` 走 `assertFinalReviewAuthzOrThrow`(`authz.explain` 带 ref)——deny 映射:自审 → 22074(SUPER_ADMIN 亦拒)/ 一级同人 → 22075(env `ATTENDANCE_ALLOW_SAME_REVIEWER` 可放开;约束注册在 authz 模块且**仅咬合 final-approve**)/ sheet 不存在 → 回退 `rbac.can`(持码者进事务抛 22001,无码者 30100 防枚举)/ 其余一切 deny → 30100;**biz-admin 终审两码保留(B 方案),摘码 = 后置独立微刀(ops-gate:待生产完成公告导入 + BD-2 绑定 + scoped 终审链验证)**。e2e 矩阵在 `test/e2e/attendances-final-review-authz.e2e-spec.ts`;spec 造终审链须遵「submit/一级审 ≠ 终审人」。
+- **其余 8 处调用位点判权(终态 scoped-authz PR12,2026-07-02)**:`submit`(create.sheet)/`list`(嵌套 `:activityId`)带 `{type:'activity', id: activityId}` 父 ref;`findOne`/`reviewDetail`/`edit`/`softDelete`/`approve`/`reject` 带 `{type:'attendance_sheet', id}`(点动作,scoped 持有者树内可用);`listAllSheetsForAdmin`(扁平跨轴)/ `listRecordsForMemberAdmin`/ `getMemberContributionSummary`(队员轴跨活动)无 ref(GLOBAL-only)。`resource_not_found` 回退同 PR9 范式:持码者 return 交回既有 `assertActivityExists`/`findSheetOrThrow` 抛既有 NOT_FOUND,无码者 30100。scoped 生效 e2e(team-leader 经 org-admin@TREE / group-leader 经 group-manager@TREE / org-supervisor 经分管推导)+ NOT_FOUND 回退例在 `test/e2e/participation-scoped-authz.e2e-spec.ts`(与 activities / activity-registrations 共用一个文件)。
 
 ## 不要做(踩雷区)
 

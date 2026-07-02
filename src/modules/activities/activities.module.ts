@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
+import { AuthzModule } from '../authz/authz.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -30,10 +31,20 @@ import { AppActivitiesController } from './controllers/app-activities.controller
 //   - exports 供 ActivityRegistrationsModule 内 AppMyRegistrationsService 注入(沿
 //     §6.3.1;**不**新建 AppMyActivitiesController,该 endpoint 挂在
 //     AppMyRegistrationsController 上)
+// 终态 scoped-authz PR12(2026-07-02;冻结稿 §11 PR12+ 逐面迁移第一批):导入 AuthzModule
+// 注入 AuthzService —— 5 个写方法判权从 rbac.can 切 authz.can/explain(update/delete/publish/cancel
+// 带 {type:'activity', id} ref;create 仍 no-ref)。authz 是叶子模块,不成环。
 @Module({
   // 统一通知 S4(评审稿 §6.4 / §11):活动取消 → 已报名者定向通知(NotificationDispatcher;
   // producer → notifications **单向**,cancel commit 后直调,防环:通知绝不回调活动)。
-  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, UsersModule, NotificationsModule],
+  imports: [
+    DatabaseModule,
+    AuditLogsModule,
+    PermissionsModule,
+    AuthzModule,
+    UsersModule,
+    NotificationsModule,
+  ],
   controllers: [ActivitiesController, AppActivitiesController],
   providers: [
     ActivitiesService,
