@@ -41,6 +41,8 @@ interface SeedContext {
   service: AttendancesService;
   reviewerUserId: string;
   reviewerPayload: CurrentUserPayload;
+  // PR9 自审约束(22074)后 seedSheet 不能再「reviewer 兼作 submitter」—— 独立 submitter FK
+  submitterUserId: string;
   memberId: string;
   activityId: string;
 }
@@ -123,12 +125,12 @@ describe('AttendancesService state transitions (characterization)', () => {
       select: { id: true },
     });
 
-    // submitter 仅用作 sheet.submitterUserId FK,本 spec 不测 submit 行为;此处保留隐式引用
-    void submitter;
-
     ctx = {
       prisma,
       service,
+      // PR9:submitter 真正接进 seedSheet(此前仅占位)—— 终审 authz 自审约束下
+      // submitter 必须 ≠ 终审人(reviewerPayload),否则全 spec 吃 22074
+      submitterUserId: submitter.id,
       reviewerUserId: reviewer.id,
       reviewerPayload: {
         id: reviewer.id,
@@ -168,7 +170,7 @@ describe('AttendancesService state transitions (characterization)', () => {
     const sheet = await ctx.prisma.attendanceSheet.create({
       data: {
         activityId: ctx.activityId,
-        submitterUserId: ctx.reviewerUserId, // 简化:用 reviewer 兼作 submitter(FK 满足)
+        submitterUserId: ctx.submitterUserId, // PR9:独立 submitter(自审约束下不可 reviewer 兼作)
         statusCode: opts.statusCode,
         version: 1,
       },

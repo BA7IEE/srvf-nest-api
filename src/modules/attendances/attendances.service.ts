@@ -13,6 +13,7 @@ import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_TYPE_ACTIVITY_REMINDER,
 } from '../notifications/notification.constants';
+import { AuthzService } from '../authz/authz.service';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { RbacService } from '../permissions/rbac.service';
 // 跨轴只读(2026-06-23):复用 team-join 贡献值封顶核(单一真相源;生涯累计 cutoff=null)。
@@ -62,8 +63,9 @@ import {
 //   其中 **approved 业务语义 = 终审通过**(从 v0.4.0 "APD 通过" 升级);
 //   pending_final_review = APD 一级已审,等终审;
 //   final_rejected = 终审驳回(终态,records 跟随软删,沿 D8 主路径)。
-//   注:终审业务角色为"APD 部门部长 / 副部长",当前实装权限仍沿用管理权限
-//   (ADMIN / SUPER_ADMIN),细分终审权限将在后续批次实现。
+//   注:终审业务角色为"APD 部门部长 / 副部长";终态 scoped-authz PR9(2026-07-02)起终审两方法
+//   判权走 AuthzService(biz-admin 全局码保留〔B 方案〕+ scoped RoleBinding 通路 + 自审/同人约束),
+//   终审身份由 role-bindings 配置行决定,代码不含部门字面量门控(BD-2)。
 // - submit:事务内一次性 create Sheet + N records;activity statusCode != cancelled
 //   批次 4-B 新增:**D14 5.B 系统预填** contributionPoints(根据 ContributionRule 查表)+
 //   **D11 推动** Activity.statusCode = 'completed'(若当前 published)。
@@ -224,6 +226,9 @@ export class AttendancesService {
     private readonly sheetStateMachine: AttendanceSheetStateMachine,
     private readonly attendancePresenter: AttendancePresenter,
     private readonly rbac: RbacService,
+    // 终态 scoped-authz PR9(2026-07-02):统一判权大脑,仅终审两方法消费(见
+    // assertFinalReviewAuthzOrThrow);其余 6 管理端动作仍走 rbac.can(逐面迁移 = PR12)。
+    private readonly authz: AuthzService,
     // 统一通知 S4(评审稿 §6.4):考勤终审通过 → 本人考勤结果/贡献值定向通知派发器(producer → notifications
     // 单向直调,commit 后事务外、try-catch 永不抛;防环:本服务绝不被通知模块回调)。
     private readonly notificationDispatcher: NotificationDispatcher,
@@ -236,6 +241,40 @@ export class AttendancesService {
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
     if (!(await this.rbac.can(user, action))) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
+
+  // 终态 scoped-authz PR9(2026-07-02;冻结稿 §5.2/§5.3 + BD-2):终审两方法判权切 AuthzService,
+  // 本仓**首个 authz 消费者**。带 ref 判权 = GLOBAL 绑定(biz-admin 终审两码保留,B 方案,ADMIN
+  // 全局终审契约照旧)∪ scoped 三源(如 POSITION_ASSIGNMENT 主体 RoleBinding —— 终审中枢经
+  // role-bindings 配置行决定,绝不 hardcode 部门)+ ActionConstraint 否决(自审禁止,SUPER_ADMIN
+  // 亦拒;同人默认禁止,env ATTENDANCE_ALLOW_SAME_REVIEWER 可放开)。
+  //
+  // deny 映射(goal 决断①):
+  // - self_approval_forbidden → 22074 / same_reviewer_forbidden → 22075(域不变量否决,非权限不足)
+  // - resource_not_found → 行为锁:旧序是「先判码后查单」——持全局码者放行,进事务由
+  //   findSheetOrThrow 抛 ATTENDANCE_SHEET_NOT_FOUND(22001)如旧;无码者仍 30100(防枚举)
+  // - 其余一切 deny(no_permission / out_of_scope / expired_grant 等)→ 30100 不变(权限拒绝面契约零变)
+  private async assertFinalReviewAuthzOrThrow(
+    user: CurrentUserPayload,
+    action: string,
+    sheetId: string,
+  ): Promise<void> {
+    const decision = await this.authz.explain(user, action, {
+      type: 'attendance_sheet',
+      id: sheetId,
+    });
+    if (decision.allow) return;
+    switch (decision.reason) {
+      case 'self_approval_forbidden':
+        throw new BizException(BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN);
+      case 'same_reviewer_forbidden':
+        throw new BizException(BizCode.ATTENDANCE_SAME_REVIEWER_FORBIDDEN);
+      case 'resource_not_found':
+        if (await this.rbac.can(user, action)) return;
+        throw new BizException(BizCode.RBAC_FORBIDDEN);
+      default:
+        throw new BizException(BizCode.RBAC_FORBIDDEN);
     }
   }
 
@@ -1097,17 +1136,17 @@ export class AttendancesService {
   // - **触发** eventPlaceholder('attendance.recorded')(approved-only;同事务内;沿 D-S7)
   // - audit:attendance-sheet.final-review(action='final-approve');沿 D-S11 / 业务规则文档 §8.4
   // - **不重校验**逐条 records.contributionPoints(沿 D-S8;R31 在 APD 一级已校验)
-  // - 权限:终审业务角色为"APD 部门部长 / 副部长",当前实装仍为 ADMIN 级终审
-  //   (Slow-4 T3 起走 rbac.can('attendance.final-approve.sheet'),biz-admin 绑定;
-  //   沿 P1-5 方案 A,部门级细分挂 Slow-3 子议题);
-  //   不开 22044 模块码,判权不足走 RBAC_FORBIDDEN(30100)。
+  // - 权限(终态 scoped-authz PR9 起):走 authz.explain('attendance.final-approve.sheet', ref)
+  //   —— biz-admin 全局终审保留(B 方案;摘码 = PR12 显式项)+ scoped RoleBinding 通路
+  //   + 自审禁止(22074,SUPER_ADMIN 亦拒)/ 同人默认禁止(22075,env 可配);
+  //   判权不足仍走 RBAC_FORBIDDEN(30100),22044 模块码维持不开。
   async finalApprove(
     id: string,
     dto: FinalApproveAttendanceSheetDto,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.final-approve.sheet');
+    await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.final-approve.sheet', id);
     const result = await this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 
@@ -1239,14 +1278,15 @@ export class AttendancesService {
   // - records **跟随软删**(沿 D8 主路径)
   // - **不触发** attendance.recorded(沿 D-S7;子项候选 C)
   // - audit:attendance-sheet.final-review(action='final-reject')
-  // - 权限同 finalApprove:当前实装沿 ADMIN / SUPER_ADMIN,细分终审权限后置。
+  // - 权限同 finalApprove(PR9 起走 authz;B 方案 biz-admin 保留 + scoped 通路);注意
+  //   ActionConstraint 注册表(PR8 冻结)只咬合 final-approve —— final-reject 无自审/同人约束。
   async finalReject(
     id: string,
     dto: FinalRejectAttendanceSheetDto,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttendanceSheetResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.final-reject.sheet');
+    await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.final-reject.sheet', id);
     return this.prisma.$transaction(async (tx) => {
       const sheet = await this.findSheetOrThrow(id, tx);
 

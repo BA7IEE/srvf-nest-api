@@ -13,6 +13,7 @@ import type {
   AttendanceSheetTransitionDecision,
 } from './attendance-sheet-state-machine';
 import type { RbacService } from '../permissions/rbac.service';
+import type { AuthzService } from '../authz/authz.service';
 import type { ContributionCalculator } from './contribution-calculator';
 import { ATTENDANCE_SHEET_STATUS } from './attendances.dto';
 import type {
@@ -251,6 +252,19 @@ function makeTimeOverlapPolicyMock() {
 }
 type TimeOverlapPolicyMock = ReturnType<typeof makeTimeOverlapPolicyMock>;
 
+// 终态 scoped-authz PR9:authz mock —— explain 默认 allow(matched),既有 characterization
+// 断言零修改(判权切换不动业务行为);deny 映射用例注入具体 reason 验证 BizCode 映射。
+function makeAuthzMock(
+  decision: { allow: boolean; reason: string } = { allow: true, reason: 'matched' },
+) {
+  return {
+    explain: jest
+      .fn<Promise<{ allow: boolean; reason: string }>, [unknown, string, unknown]>()
+      .mockResolvedValue(decision),
+  };
+}
+type AuthzMock = ReturnType<typeof makeAuthzMock>;
+
 // 统一通知 S4:派发器 mock —— dispatchTargeted 默认 resolve;finalApprove 用例可注入 reject
 // 验证「派发失败不破坏终审」,或断言逐 record 入参(recipientMemberId / channels / 贡献值)。
 function makeNotificationDispatcherMock() {
@@ -270,6 +284,9 @@ function makeService(
     timeOverlapPolicy?: TimeOverlapPolicyMock;
     stateMachine?: StateMachineMock;
     dispatcher?: NotificationDispatcherMock;
+    authz?: AuthzMock;
+    // PR9:resource_not_found 回退路径读 rbac.can(行为锁「先判码后查单」);默认 true
+    rbacCan?: boolean;
   } = {},
 ): AttendancesService {
   const recorder = opts.recorder ?? makeRecorderMock();
@@ -277,6 +294,7 @@ function makeService(
   const timeOverlapPolicy = opts.timeOverlapPolicy ?? makeTimeOverlapPolicyMock();
   const stateMachine = opts.stateMachine ?? makeStateMachineMock(DENY_DECISION);
   const dispatcher = opts.dispatcher ?? makeNotificationDispatcherMock();
+  const authz = opts.authz ?? makeAuthzMock();
   return new AttendancesService(
     prisma as unknown as PrismaService,
     recorder as unknown as AttendanceAuditRecorder,
@@ -286,10 +304,12 @@ function makeService(
     // Presenter 传真实实例而非 mock(零依赖纯映射类):mapper characterization
     // 断言经真实序列化路径,直接锁 P1-4 第一刀"搬家零漂移"。
     new AttendancePresenter(),
-    // Slow-4 T3(评审稿 D-S4-6):rbac mock `can` 恒 true,锁业务行为而非判权;断言零修改。
+    // Slow-4 T3(评审稿 D-S4-6):rbac mock `can` 默认恒 true,锁业务行为而非判权;断言零修改。
     {
-      can: jest.fn<Promise<boolean>, [unknown, string]>().mockResolvedValue(true),
+      can: jest.fn<Promise<boolean>, [unknown, string]>().mockResolvedValue(opts.rbacCan ?? true),
     } as unknown as RbacService,
+    // PR9:终审两方法判权走 authz.explain(默认 allow;deny 映射见专属 describe)
+    authz as unknown as AuthzService,
     dispatcher as unknown as NotificationDispatcher,
   );
 }
@@ -477,6 +497,116 @@ describe('AttendancesService (characterization, scoped)', () => {
       expect(prisma.attendanceRecord.updateMany).not.toHaveBeenCalled();
       expect(prisma.attendanceSheet.update).not.toHaveBeenCalled();
       expect(recorder.logFinalReview).not.toHaveBeenCalled();
+    });
+  });
+
+  // ============ 2b. PR9 终审判权切换(authz deny 映射)============
+  // goal 决断①:finalApprove / finalReject 判权走 authz.explain(user, code, {type:'attendance_sheet', id});
+  // 约束两 reason → 22074 / 22075;resource_not_found → rbac.can 回退保「先判码后查单」旧契约;
+  // 其余一切 deny → 30100。其余 6 管理端动作不触 authz(仍 rbac.can,逐面迁移 = PR12)。
+  describe('PR9 终审 authz 判权(deny 映射)', () => {
+    it('finalApprove:authz.explain 收 (user, final-approve 码, ref);approve 等其余动作零调用', async () => {
+      const prisma = makePrismaMock();
+      const authz = makeAuthzMock();
+      const stateMachine = makeStateMachineMock(DENY_DECISION);
+      prisma.attendanceSheet.findFirst.mockResolvedValue(
+        makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.APPROVED }),
+      );
+      const service = makeService(prisma, { authz, stateMachine });
+      const user = makeCurrentUser();
+
+      await expect(
+        service.finalApprove('sheet-1', makeFinalApproveDto(), user, META),
+      ).rejects.toEqual(new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID));
+      expect(authz.explain).toHaveBeenCalledWith(user, 'attendance.final-approve.sheet', {
+        type: 'attendance_sheet',
+        id: 'sheet-1',
+      });
+
+      authz.explain.mockClear();
+      await expect(service.approve('sheet-1', makeApproveDto(), user, META)).rejects.toEqual(
+        new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID),
+      );
+      expect(authz.explain).not.toHaveBeenCalled();
+    });
+
+    it('finalReject:authz.explain 收 final-reject 码 + 同 ref 形状', async () => {
+      const prisma = makePrismaMock();
+      const authz = makeAuthzMock();
+      const stateMachine = makeStateMachineMock(DENY_DECISION);
+      prisma.attendanceSheet.findFirst.mockResolvedValue(
+        makeSheetRow({ statusCode: ATTENDANCE_SHEET_STATUS.APPROVED }),
+      );
+      const service = makeService(prisma, { authz, stateMachine });
+      const user = makeCurrentUser();
+
+      await expect(
+        service.finalReject('sheet-1', makeFinalRejectDto('no'), user, META),
+      ).rejects.toEqual(new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID));
+      expect(authz.explain).toHaveBeenCalledWith(user, 'attendance.final-reject.sheet', {
+        type: 'attendance_sheet',
+        id: 'sheet-1',
+      });
+    });
+
+    it('self_approval_forbidden → 22074(域不变量,非权限不足);不进事务 / 不审计', async () => {
+      const prisma = makePrismaMock();
+      const authz = makeAuthzMock({ allow: false, reason: 'self_approval_forbidden' });
+      const recorder = makeRecorderMock();
+      const service = makeService(prisma, { authz, recorder });
+
+      await expect(
+        service.finalApprove('sheet-1', makeFinalApproveDto(), makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(BizCode.ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN));
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(recorder.logFinalReview).not.toHaveBeenCalled();
+    });
+
+    it('same_reviewer_forbidden → 22075(finalApprove / finalReject 同映射面)', async () => {
+      const prisma = makePrismaMock();
+      const authz = makeAuthzMock({ allow: false, reason: 'same_reviewer_forbidden' });
+      const service = makeService(prisma, { authz });
+
+      await expect(
+        service.finalApprove('sheet-1', makeFinalApproveDto(), makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(BizCode.ATTENDANCE_SAME_REVIEWER_FORBIDDEN));
+      await expect(
+        service.finalReject('sheet-1', makeFinalRejectDto('no'), makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(BizCode.ATTENDANCE_SAME_REVIEWER_FORBIDDEN));
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('no_permission / out_of_scope / expired_grant / inactive_org → 30100(权限拒绝面契约零变)', async () => {
+      for (const reason of ['no_permission', 'out_of_scope', 'expired_grant', 'inactive_org']) {
+        const prisma = makePrismaMock();
+        const service = makeService(prisma, { authz: makeAuthzMock({ allow: false, reason }) });
+        await expect(
+          service.finalApprove('sheet-1', makeFinalApproveDto(), makeCurrentUser(), META),
+        ).rejects.toEqual(new BizException(BizCode.RBAC_FORBIDDEN));
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      }
+    });
+
+    it('resource_not_found + 持全局码 → 放行进事务,findSheetOrThrow 抛 22001(行为锁「先判码后查单」)', async () => {
+      const prisma = makePrismaMock();
+      const authz = makeAuthzMock({ allow: false, reason: 'resource_not_found' });
+      prisma.attendanceSheet.findFirst.mockResolvedValue(null);
+      const service = makeService(prisma, { authz, rbacCan: true });
+
+      await expect(
+        service.finalApprove('missing', makeFinalApproveDto(), makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(BizCode.ATTENDANCE_SHEET_NOT_FOUND));
+    });
+
+    it('resource_not_found + 无全局码 → 30100(防枚举;不进事务)', async () => {
+      const prisma = makePrismaMock();
+      const authz = makeAuthzMock({ allow: false, reason: 'resource_not_found' });
+      const service = makeService(prisma, { authz, rbacCan: false });
+
+      await expect(
+        service.finalReject('missing', makeFinalRejectDto('x'), makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(BizCode.RBAC_FORBIDDEN));
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });
 

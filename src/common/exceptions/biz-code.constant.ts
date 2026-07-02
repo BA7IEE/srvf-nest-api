@@ -657,6 +657,25 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // 终态 scoped-authz PR9 引入(2026-07-02;冻结稿 §5.3 ActionConstraint 域不变量,首个 authz 消费者)。
+  //
+  // 两码 = AuthzService 约束否决(self_approval_forbidden / same_reviewer_forbidden)的对外映射,
+  // 语义是「数据完整性不变量,对 SUPER_ADMIN 也生效」,**不是**权限不足 —— 权限不足维持 30100
+  // RBAC_FORBIDDEN(22044 FINAL_REVIEW_FORBIDDEN 继续不开,沿 D-S2 决议)。
+  // 段位:沿 22xxx attendances 顺延取 22074/22075(22050-22099 原规划 Record 实体级,
+  // 22074 起两枚终审判权约束例外借用,就近登记于终审 2204x 块之后)。
+  // same_reviewer 可经 env ATTENDANCE_ALLOW_SAME_REVIEWER=true 放开;自审永不可放开。
+  ATTENDANCE_SELF_FINAL_REVIEW_FORBIDDEN: {
+    code: 22074,
+    message: '不能终审自己提交的考勤单据',
+    httpStatus: HttpStatus.FORBIDDEN,
+  },
+  ATTENDANCE_SAME_REVIEWER_FORBIDDEN: {
+    code: 22075,
+    message: '一级审核人不得再终审同一张考勤单据',
+    httpStatus: HttpStatus.FORBIDDEN,
+  },
+
   // contribution_rules 模块业务级(230xx + 231xx)。批次 5-A 引入(2026-05-12)。
   // 详见 docs:批次5-A_贡献值规则CRUD_API前评审.md v1.1 §5(BizCode 锁定 紧凑版)+ §2.2 E3。
   // 段位选择:baseline §1.1 v0.4 "未规划模块从 230xx 起" → v0.5 收口段位归属为 contribution_rules。

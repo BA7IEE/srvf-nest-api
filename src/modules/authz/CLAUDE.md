@@ -11,13 +11,13 @@
 
 ## Local facts
 
-- **🔴 消费者接线进度(改本模块前先核对)**:PR8 落地时**全仓零业务调用点**(仅模块自身 + 测试);第一个消费者 = PR9 考勤终审;逐面迁移 = PR12。在消费者接上之前,本模块任何行为调整都不影响现网,但**等价矩阵行为锁必须始终成立**
+- **🔴 消费者接线进度(改本模块前先核对)**:**PR9(2026-07-02)起首个消费者 = attendances 终审两方法**(`finalApprove`/`finalReject` 走 `authz.explain` + deny→BizCode 映射〔22074/22075/30100,见 attendances/CLAUDE.md〕);其余全部业务面仍走 rbac.can,逐面迁移 = PR12。**本模块行为调整自 PR9 起影响现网终审面**;等价矩阵行为锁必须始终成立
 - **🔴 无 ref 退化 = 行为锁(goal 决断①)**:`authz.can(user, action)`〔无 ref〕**逐字复用 `RbacService.judge`** —— 与 `rbac.can` 逐项一致(SUPER_ADMIN 短路 / GLOBAL 码集走缓存 / `.self` 无 resource fail-close);scoped grant 无 ref 一律不 covers。等价矩阵锁在 `test/e2e/authz-rbac-equivalence.e2e-spec.ts`,改判权流程必跑
 - **🔴 R5 安全红线(冻结稿 §5.2)**:副职(vice-captain / dept-deputy / deputy-group-leader)不自动推导管理角色 —— 由数据保证(seed 副职零 policy 行),3b 职务推导对副职天然零产出;**代码里不写副职特判,也绝不为"方便"给 3b 加头衔兜底**。全局/全树管辖只能来自显式 RoleBinding(3a)或分管(3c)
 - **BD-2 终审中枢不 hardcode**:终审身份只认 `RoleBinding(principalType=POSITION_ASSIGNMENT, …)` 配置行;本模块禁止出现任何 "APD" / 部门字面量门控。分管监督角色锚点 = 常量 `SUPERVISOR_ROLE_CODE`('org-supervisor',BD-3)
 - **POSITION_ASSIGNMENT 主体绑定随任职失效**:底层 assignment 非 ACTIVE / 出任期 / 软删 → 该绑定不产权(换届即失权,无需清绑定行)
 - **conditionJson 保守跳过**:`OrganizationPositionRolePolicy.conditionJson` 非 null 的行本刀不评估、直接跳过(fail-close 不越权;seed 全 null)。首个真实条件需求出现时再落评估器,禁止"忽略条件当无条件"的过渡实现
-- **ActionConstraint 对 SUPER_ADMIN 也生效**(域不变量非权限):注册表只有 `attendance.final-approve.sheet` 两条(自审禁止 + 同人终审禁止〔默认禁,常量 `ATTENDANCE_FINAL_APPROVE_ALLOW_SAME_REVIEWER` 可配〕);未注册 action 零约束;`sensitive_denied` 是保留 reason(敏感分级由 §4.2 独立权限码承载,不在此双轨)
+- **ActionConstraint 对 SUPER_ADMIN 也生效**(域不变量非权限):注册表只有 `attendance.final-approve.sheet` 两条(自审禁止〔永不可配〕 + 同人终审禁止〔默认禁;PR9 起经 `ActionConstraintContext` 从 app.config 注入 env `ATTENDANCE_ALLOW_SAME_REVIEWER`,严格 === 'true' 才放开,PR8 代码常量已移除〕);**final-reject 不在注册表 = 无自审/同人约束(e2e 锁不对称语义,扩注册面是行为变更须 goal 授权)**;未注册 action 零约束;`sensitive_denied` 是保留 reason(敏感分级由 §4.2 独立权限码承载,不在此双轨)
 - **resolver 口径**:member 的归属组织 = active PRIMARY membership;recruitment_application 恒无 org/owner(D-R-1);notification 广播态 org=null(多组织「任一覆盖」covers 留消费面迁移时扩展);attachment 仅委派 member/certificate/activity 三类 ownerType,其余(content-*)null fail-close;链上父资源软删不阻断解析,scope org 的 ACTIVE 闸门在 `covers()`
 - **性能口径(goal 决断④)**:三源每 decision 现查、无新缓存层;`RbacService.getRoleIdsWithPermission` 是 PR8 additive(批量角色含码,RolePermission roleId 索引);优化留口 = 角色→码集合 TTL 缓存,做之前先看真实 QPS
 - **deny reason 归因优先级**:resource_not_found > 约束否决 >(covers 失败后)inactive_org > expired_grant > out_of_[supervised_]scope > no_permission;失效 grant 只参与归因**绝不参与 allow**

@@ -118,6 +118,14 @@ export interface RbacCacheConfig {
   ttlSeconds: number;
 }
 
+// 终态 scoped-authz PR9(2026-07-02;冻结稿 §5.3 拍板「一级审核与终审同人默认禁止」):
+// 考勤终审 ActionConstraint 的同人开关。env `ATTENDANCE_ALLOW_SAME_REVIEWER`,严格 === 'true'
+// 才放开(沿 ENABLE_SWAGGER 布尔范式,默认 false=禁止);消费方 = authz 模块 same_reviewer 约束。
+// 只可放开「一级审核人 == 终审人」;自审禁止(submitter == 终审人)是域不变量,永不可配。
+export interface AttendanceConfig {
+  allowSameReviewer: boolean;
+}
+
 // V2.x C-7.5 Provider 选型实施 PR #6:storage 凭证加密 key(沿 §6.6.1 + Q23 例外)。
 // AES-256-GCM 需 32 字节 key;运行时由 StorageCryptoService 派生(scrypt)。
 // production 严禁默认值 / 严禁留空(沿 v1 §14 JWT_SECRET 范式)。
@@ -309,6 +317,7 @@ export interface AppConfig {
   passwordChangeThrottle: PasswordChangeThrottleConfig;
   refreshThrottle: RefreshThrottleConfig;
   rbacCache: RbacCacheConfig;
+  attendance: AttendanceConfig;
   storage: StorageConfig;
   sms: SmsConfig;
   wechat: WechatConfig;
@@ -400,6 +409,11 @@ export default registerAs('app', (): AppConfig => {
       'RBAC_CACHE_TTL_SECONDS',
       { min: 60, max: 86400 },
     ),
+  };
+
+  // PR9:严格 === 'true'(沿 ENABLE_SWAGGER 范式,禁止 truthy 判断);未设 / 其它值一律 false=同人禁止。
+  const attendance: AttendanceConfig = {
+    allowSameReviewer: process.env.ATTENDANCE_ALLOW_SAME_REVIEWER === 'true',
   };
 
   const storage: StorageConfig = {
@@ -539,6 +553,7 @@ export default registerAs('app', (): AppConfig => {
     passwordChangeThrottle,
     refreshThrottle,
     rbacCache,
+    attendance,
     storage,
     sms,
     wechat,

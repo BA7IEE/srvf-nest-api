@@ -19,6 +19,8 @@ const fakeAppCfg: AppConfig = {
   passwordChangeThrottle: { limit: 5, ttlSeconds: 60 },
   refreshThrottle: { limit: 30, ttlSeconds: 60 },
   rbacCache: { ttlSeconds: 1800 },
+  // 终态 scoped-authz PR9:AppConfig 新增必填字段;本 unit test 不关心终审约束,仅满足接口
+  attendance: { allowSameReviewer: false },
   storage: { encryptionKey: '', localRoot: './tmp/storage' },
   // SMS 基础设施 T2/T3:AppConfig 新增必填字段;本 unit test 不关心 SMS,仅满足接口
   sms: { encryptionKey: '' },
