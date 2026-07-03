@@ -20,7 +20,7 @@ export function applySwagger(app: INestApplication, appCfg: AppConfig): void {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('U Nest API Starter')
     .setDescription('AI-friendly TypeScript API base — NestJS + Prisma + PostgreSQL')
-    .setVersion('0.34.0')
+    .setVersion('0.35.0')
     .addBearerAuth()
     // ===== Auth / Public(全部客户端共用)=====
     .addTag('Auth', '身份认证与会话管理(login / refresh / logout / logout-all)')
