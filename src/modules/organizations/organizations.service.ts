@@ -6,6 +6,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
 import {
   buildCreateClosureEdges,
@@ -26,6 +28,10 @@ import {
 // 节点类别 dict_type code(seed neutral-demo 实际值;详见 prisma/seed.ts V2_DICT_SEED)。
 // 模块内常量化:Step 5 members 自有 'member_grade';如未来需要跨模块复用再抽 common。
 const NODE_TYPE_DICT_CODE = 'node_type';
+
+// 审计留痕批(2026-07-03;review #484 G18 → NEXT_TASKS P1-16)。沿 position-assignments /
+// supervision-assignments 范式:resourceType 模块内常量化,不抽共享类。
+const AUDIT_RESOURCE_TYPE = 'organization';
 
 // 集中定义对外 select。永不包含 deletedAt(软删除内部状态)。
 const organizationSelect = {
@@ -58,6 +64,7 @@ export class OrganizationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
+    private readonly auditLogs: AuditLogsService,
   ) {}
 
   // ============ helpers ============
@@ -246,6 +253,7 @@ export class OrganizationsService {
   async create(
     user: CurrentUserPayload,
     dto: CreateOrganizationDto,
+    meta: AuditMeta,
     options?: { dryRun?: boolean },
   ): Promise<OrganizationResponseDto> {
     await this.assertCanOrThrow(user, 'org.create.node');
@@ -296,6 +304,25 @@ export class OrganizationsService {
             : [];
           await tx.organizationClosure.createMany({
             data: buildCreateClosureEdges(created.id, parentAncestors),
+          });
+
+          await this.auditLogs.log({
+            event: 'organization.create',
+            actorUserId: user.id,
+            actorRoleSnap: user.role,
+            resourceType: AUDIT_RESOURCE_TYPE,
+            resourceId: created.id,
+            meta,
+            after: {
+              name: created.name,
+              code: created.code,
+              parentId: created.parentId,
+              nodeTypeCode: created.nodeTypeCode,
+              sortOrder: created.sortOrder,
+              status: created.status,
+            },
+            extra: { operation: 'create' },
+            tx,
           });
 
           if (options?.dryRun) throw new DryRunAbort(created);
@@ -357,6 +384,7 @@ export class OrganizationsService {
     user: CurrentUserPayload,
     id: string,
     dto: UpdateOrganizationStatusDto,
+    meta: AuditMeta,
   ): Promise<OrganizationResponseDto> {
     await this.assertCanOrThrow(user, 'org.update.node');
     return this.prisma.$transaction(async (tx) => {
@@ -367,11 +395,26 @@ export class OrganizationsService {
         await this.assertNotLastActiveRoot(tx, id);
       }
 
-      return tx.organization.update({
+      const updated = await tx.organization.update({
         where: { id },
         data: { status: dto.status },
         select: organizationSelect,
       });
+
+      await this.auditLogs.log({
+        event: 'organization.status-change',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: updated.id,
+        meta,
+        before: { status: target.status },
+        after: { status: updated.status },
+        extra: { operation: 'status-change' },
+        tx,
+      });
+
+      return updated;
     });
   }
 
@@ -385,6 +428,7 @@ export class OrganizationsService {
     user: CurrentUserPayload,
     id: string,
     dto: MoveOrganizationDto,
+    meta: AuditMeta,
   ): Promise<OrganizationResponseDto> {
     await this.assertCanOrThrow(user, 'org.move.node');
     return this.prisma.$transaction(async (tx) => {
@@ -447,11 +491,26 @@ export class OrganizationsService {
         data: buildReparentEdgesToInsert(newParentAncestors, subtree),
       });
 
-      return tx.organization.update({
+      const updated = await tx.organization.update({
         where: { id },
         data: { parentId: dto.parentId },
         select: organizationSelect,
       });
+
+      await this.auditLogs.log({
+        event: 'organization.move',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: updated.id,
+        meta,
+        before: { parentId: target.parentId },
+        after: { parentId: updated.parentId },
+        extra: { operation: 'move' },
+        tx,
+      });
+
+      return updated;
     });
   }
 
@@ -460,7 +519,11 @@ export class OrganizationsService {
   // 决策 5:事务原子。决策 3=A:同时查 dict 范围外的 member_departments(Step 6 落地后无需补)。
   // P0-F PR-2A D3=A:从 v1 @Roles(SUPER_ADMIN) 单角色放宽至 ops-admin 可调
   // (sub-protection 仍由本方法事务内 HAS_CHILDREN / HAS_MEMBERS / LAST_ROOT_PROTECTED 兜底)。
-  async softDelete(user: CurrentUserPayload, id: string): Promise<OrganizationResponseDto> {
+  async softDelete(
+    user: CurrentUserPayload,
+    id: string,
+    meta: AuditMeta,
+  ): Promise<OrganizationResponseDto> {
     await this.assertCanOrThrow(user, 'org.delete.node');
     return this.prisma.$transaction(async (tx) => {
       const target = await this.findOrganizationOrThrow(id, tx);
@@ -486,11 +549,25 @@ export class OrganizationsService {
         await this.assertNotLastActiveRoot(tx, id);
       }
 
-      return tx.organization.update({
+      const updated = await tx.organization.update({
         where: { id },
         data: { deletedAt: new Date(), status: OrganizationStatus.INACTIVE },
         select: organizationSelect,
       });
+
+      await this.auditLogs.log({
+        event: 'organization.delete',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: updated.id,
+        meta,
+        before: { status: target.status, parentId: target.parentId },
+        extra: { operation: 'delete' },
+        tx,
+      });
+
+      return updated;
     });
   }
 }

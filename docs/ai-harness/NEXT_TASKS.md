@@ -32,10 +32,6 @@
 - **候选方案**:镜像 `announcement-import` 的 preview/execute 两段式设计(零写入诊断 + 幂等落库 + 逐行 `ok`/`blocked`/`already-exists` 结果),但目标表是 `Member`(可能含基础档案字段)而非组织/任职/分管;**同样受 R13 约束**——测试与文档示例一律用假数据,真实姓名/证件信息不进本仓库任何位置。
 - **触发条件**:出现批量导入存量队员(> 逐个可接受量级)的真实诉求时单独立项评审(D 档,涉及 schema 是否需要新增批量端点、字段集范围、与 `POST admin/v1/members` 单条端点的关系)。
 
-### P1-16 organizations.create/update 面审计留痕补齐 — **⏸ 不自动启动,诉求触发再立项**
-- **背景**(review #484 G18):`OrganizationsService.create()` 全程无 audit 写入,是 PR1(2026-07-01)遗留的既有决策(模块 CLAUDE.md 已记录、非 PR11 announcement-import 新引入);PR11(2026-07-02)是第一个把这条路径推到批量规模(单请求最多 200 行)并用于真实公告场景的调用方,放大了"谁在何时批量建了哪些组"缺失审计轨迹的实际暴露面。
-- **触发条件**:若需补齐,应作为 `organizations.service.ts` 独立立项(同时惠及既有单条创建/更新端点),**不应**在 announcement-import 模块内单独造一份 audit 逻辑。
-
 ### P2-3 分页 skip/take 换算的轻度重复 — **❌ 不做**
 - 依据:现状可接受(逻辑两行,已验证);主动抽 util 违反 AGENTS §2 grab-bag 禁令。重开条件 = 后续出现第 3 处分页 bug 时单独评估,**不**预先立项。
 
@@ -57,6 +53,8 @@
 ---
 
 ## 已完成项归档区
+
+- **P1-16 organizations 写面审计留痕补齐** ✅(review #484 G18;本 PR,2026-07-03 goal「organizations 写面审计留痕补齐」全队列完成)——`OrganizationsService` 4 写点(`create`/`move`/`updateStatus`/`softDelete`)inline-in-transaction 接入 `AuditLogsService`(+4 `AuditLogEvent`:`organization.{create,move,status-change,delete}`;`resourceType='organization'`);`update`(PATCH)沿 `role-binding.update`/`supervision-assignment.update`/`memberships.update` 既有先例不审计(仅改 `name`/`sortOrder`/`nodeTypeCode` 等 cosmetic 字段,非建/终/树结构/授权状态变更),设计说明详见 [`src/modules/organizations/CLAUDE.md`](../../src/modules/organizations/CLAUDE.md)。`create` 的 audit 写在 `DryRunAbort` 哨兵之前、同一事务内——`announcement-import` 批量导入复用同一 `create()` 方法(`meta` 同步透传),preview 零写入既有 e2e 断言(含 `auditLog` count)**零修改全绿**证明 audit 随事务回滚天然零残留,execute 批量落库自动获得逐行审计轨迹(新增 e2e 断言:批量 audit 行数 = 成功组织行数)。**0 端点 / 0 权限码 / 0 BizCode / 0 schema / 0 migration 变更**,5 个方法响应 / 错误码 / 校验顺序 / closure 维护逐字不变;新增 `test/e2e/organizations-audit-characterization.e2e-spec.ts`(4 写点 audit 形状 + update / move 同父幂等 no-op 零 audit + 4 处 audit 写失败 → `$transaction` 回滚)。
 
 - **F13 `BIZ_ADMIN_DESCRIPTION` 计数过时** ✅(review #484 G27,2026-07-03 记录;已于同日摘码微刀 #482 顺手校准)——`prisma/seed.ts` 的 `BIZ_ADMIN_DESCRIPTION` 现读「75 条中绑 72」,与摘码后实际绑定数(72)一致;此前「48 中绑 47」等旧计数已随 #482 自然更新,无需再单独立项。
 

@@ -11,7 +11,8 @@ import { AnnouncementImportService } from './announcement-import.service';
 // imports PermissionsModule 供注入 RbacService(R 模式 rbac.can);imports
 // OrganizationsModule/PositionAssignmentsModule/SupervisionAssignmentsModule 供注入三个被复用 service
 // 的 create()(决断②:绝不绕过,校验/audit/closure 全继承)。本模块自身**不**注入 AuditLogsModule ——
-// 不写自己的 audit 事件,三个被复用 service 各自 audit(组织行本就无 audit,PR1 现状不变)。
+// 不写自己的 audit 事件,三个被复用 service 各自 audit(组织行 audit 已随 NEXT_TASKS P1-16〔review #484
+// G18,2026-07-03〕补齐,`OrganizationsService.create()` 内部写 `organization.create`)。
 @Module({
   imports: [
     DatabaseModule,

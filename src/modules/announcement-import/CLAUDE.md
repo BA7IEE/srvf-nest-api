@@ -25,7 +25,7 @@
 - ❌ **不**在本模块重新实现职务适配 / `requireMembership` / 单人独占 / 兼任 / 分管防重等任何校验逻辑——一律通过调用被复用 service 的 `create()` 触发,本模块只捕获其抛出的 `BizException` 并转译成行结果
 - ❌ **不**按姓名自动落库(execute 对缺 `memberNo` 的行直接 `blocked`,即便 `displayName` 唯一命中)
 - ❌ **不**给 `dryRun` 沙箱哨兵机制加共享工具类(`DryRunAbort` 在三个被复用 service 文件内各自私有声明,不抽 `common/utils`,沿 AGENTS §2 铁律)
-- ❌ **不**在本模块写自己的 `AuditLogEvent`/直接调用 `AuditLogsService`——audit 全部由被复用 service 内部完成(组织行本就无 audit,PR1 现状不变,本刀不新增)
+- ❌ **不**在本模块写自己的 `AuditLogEvent`/直接调用 `AuditLogsService`——audit 全部由被复用 service 内部完成(**组织行 audit 已随 NEXT_TASKS P1-16〔review #484 G18,2026-07-03〕补齐**:`OrganizationsService.create()` 内部写 `organization.create`,详见 [`../organizations/CLAUDE.md`](../organizations/CLAUDE.md);本模块只需把已在作用域的 `meta` 参数透传给 `create()`,不新增任何 audit 逻辑)
 - ❌ **不**把真实公告数据(姓名 / memberNo 对照)写进本仓任何位置(seed / fixture / e2e / 文档示例)——R13 红线;测试与文档一律用假数据(如 `T0001`/`张三` 类占位)
 - ❌ **不**摘 biz-admin 终审两码(留 PR12 显式项)
 

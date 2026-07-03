@@ -168,6 +168,7 @@ export class AnnouncementImportService {
           orgCodeMap,
           seenOrgCodes,
           poisonedOrgCodes,
+          meta,
           dryRun,
         ),
       );
@@ -293,6 +294,7 @@ export class AnnouncementImportService {
     orgCodeMap: Map<string, OrgAnchor>,
     seenCodes: Set<string>,
     poisonedOrgCodes: Set<string>,
+    meta: AuditMeta,
     dryRun: boolean,
   ): Promise<ImportOrganizationRowResultDto> {
     if (!row.code || !row.parentCode || !row.name) {
@@ -334,6 +336,7 @@ export class AnnouncementImportService {
           groupFunctionCode: row.groupFunctionCode,
           sortOrder: row.sortOrder,
         },
+        meta,
         { dryRun },
       );
       orgCodeMap.set(row.code, { id: created.id, nodeTypeCode: GROUP_NODE_TYPE_CODE });

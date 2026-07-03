@@ -419,6 +419,13 @@ describe('announcement-import 公告导入 preview/execute', () => {
       expect(org!.establishmentStatusCode).toBe('provisional');
       expect(org!.id).toBe(data.organizations[0].organizationId);
 
+      // 组织行 audit 落(NEXT_TASKS P1-16;review #484 G18)——announcement-import 复用
+      // OrganizationsService.create() 同一方法,批量场景自动获得逐行审计轨迹。
+      const orgAudit = await prisma.auditLog.findFirst({
+        where: { event: 'organization.create', resourceId: org!.id },
+      });
+      expect(orgAudit).not.toBeNull();
+
       // 任职真落库:字段 / 任期 / isConcurrent / appointmentSource 默认值正确
       const pa = await prisma.organizationPositionAssignment.findFirst({
         where: { id: data.positions[0].positionAssignmentId ?? undefined },
@@ -469,6 +476,32 @@ describe('announcement-import 公告导入 preview/execute', () => {
         },
       });
       expect(supAudit).not.toBeNull();
+    });
+
+    it('批量 execute 创建多个组织 → organization.create 审计行数与成功组织行数一致(NEXT_TASKS P1-16)', async () => {
+      const beforeAuditCount = await prisma.auditLog.count({
+        where: { event: 'organization.create' },
+      });
+
+      const res = await execute(adminAuth, {
+        organizations: [
+          { code: 'AIE2E-BATCH-A', parentCode: 'AIE2E-TEAM', name: '批量组A' },
+          { code: 'AIE2E-BATCH-B', parentCode: 'AIE2E-TEAM', name: '批量组B' },
+          { code: 'AIE2E-BATCH-C', parentCode: 'AIE2E-TEAM', name: '批量组C' },
+        ],
+      });
+
+      expect(res.status).toBe(200);
+      const data = res.body.data as {
+        organizations: Array<{ status: string; organizationId: string | null }>;
+      };
+      const okRows = data.organizations.filter((o) => o.status === 'ok');
+      expect(okRows).toHaveLength(3);
+
+      const afterAuditCount = await prisma.auditLog.count({
+        where: { event: 'organization.create' },
+      });
+      expect(afterAuditCount - beforeAuditCount).toBe(okRows.length);
     });
 
     it('无 memberNo 行拒(即便 displayName 给了)——不落库,不猜', async () => {
