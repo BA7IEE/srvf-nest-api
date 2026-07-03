@@ -254,7 +254,7 @@ model OrganizationPosition {
   rank            Int              @default(0) // 层级排序权重(正职 < 副职 < 组长 < 副组长;数值越小越资深)
   isLeadership    Boolean          @default(false) // 是否领导职务
   allowMultiple   Boolean          @default(false) // 同组织同职务是否允许多人在任(如总队 6 副队长)
-  allowConcurrent Boolean          @default(true) // 是否允许一人兼任多职务(如赵强兼 SAMT 队长)
+  allowConcurrent Boolean          @default(true) // 是否允许一人兼任多职务(如副队长甲兼 SAMT 队长)
   sortOrder       Int              @default(0)
   status          PolicyStatus     @default(ACTIVE)
   description     String?
@@ -317,7 +317,7 @@ model OrganizationPositionRule {
 // 任职(冻结稿 §3.4 / §7.3 / §4.3 / R2;goal 2026-07-01 PR4)。语义:
 // - 一条 = 人(memberId)× 组织(organizationId)× 职务(positionId)× 任期(startedAt/endedAt)× 状态。
 // - status ACTIVE / ENDED / REVOKED;撤销 = 写 REVOKED + revokedByUserId + endedAt(保留行做历史)。
-// - isConcurrent(R2 兼任标记):忠实回填公告"（兼）"(如赵强兼 SAMT 队长);**纯标记,不影响授权、不进任命校验**。
+// - isConcurrent(R2 兼任标记):忠实回填公告"（兼）"(如副队长甲兼 SAMT 队长);**纯标记,不影响授权、不进任命校验**。
 // - 任命校验(service 层):职务适配(org.nodeType × position 须有 active OrganizationPositionRule)/
 //   单人独占(position.allowMultiple=false)/ 兼任(position.allowConcurrent=false)/ requireMembership
 //   (匹配规则要求时,member 须在本组织或其祖先有 active membership —— 读 closure 求祖先集 + memberships
@@ -368,7 +368,7 @@ enum AssignmentStatus {
 // 分管关系(冻结稿 §3.5 / §7.4 / §4.3;goal 2026-07-01 PR5)。语义:
 // - 分管 = 与职务(§3.4 assignment)**正交**的独立范围监督关系。一条 = 分管人(supervisorMemberId)×
 //   被分管组织(organizationId)× 范围模式(scopeMode:EXACT 仅该节点 / TREE 含全部下级)× 任期 × 状态。
-// - **黄勇分管 SECT、SSD = 两行;与他的「副队长」职务(assignment)互不为前提** —— create 分管绝不要求
+// - **副队长乙分管 SECT、SSD = 两行;与他的「副队长」职务(assignment)互不为前提** —— create 分管绝不要求
 //   supervisor 持有任何职务/领导头衔,运营自由指派「谁分管哪个组织」(R5:副职头衔零推导,管辖来自分管/显式绑定)。
 // - status ACTIVE / ENDED / REVOKED;撤销 = 写 REVOKED + revokedByUserId + endedAt(保留行做历史)。
 // - 分管范围展开(supervision-scope 查询)/ 被谁分管(supervisors 查询)**读 organization_closure 仅作展示/报表**

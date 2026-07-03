@@ -222,7 +222,7 @@ describe('SupervisionAssignmentsService.getSupervisionScope', () => {
     expect(tx.organizationClosure.findMany).not.toHaveBeenCalled();
   });
 
-  it('混合(黄勇场景):TREE(SECT 含子) + EXACT(SSD 不展开)两条并存', async () => {
+  it('混合(副队长乙场景):TREE(SECT 含子) + EXACT(SSD 不展开)两条并存', async () => {
     const tx = makeTx();
     tx.organizationSupervisionAssignment.findMany.mockResolvedValue([
       { id: 'sect', organizationId: 'orgSECT', scopeMode: 'TREE' },

@@ -98,7 +98,7 @@ describe('prisma/seed.ts — organization positions + rules', () => {
       expect(got!.rank).toBe(exp.rank);
       expect(got!.allowMultiple).toBe(exp.allowMultiple);
       expect(got!.isLeadership).toBe(true); // 6 职务均为领导职务
-      expect(got!.allowConcurrent).toBe(true); // 赵强兼任 → 全 true
+      expect(got!.allowConcurrent).toBe(true); // 副队长甲兼任 → 全 true
     }
     // STAFF 干事留口不 seed(R4)
     expect(positions.some((p) => p.categoryCode === 'STAFF')).toBe(false);

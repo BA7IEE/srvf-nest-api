@@ -13,7 +13,7 @@ import { createTestApp } from '../setup/test-app';
 
 // 终态 scoped-authz PR4「任职」e2e(2026-07-01;冻结稿 §3.4 / §7.3 / §4.3 / R2 + goal DoD §7)。
 // 覆盖:RBAC 边界 / 双轴 CRUD / 任命成功 + isConcurrent 回填 / 四类校验各自拒 + 任期 + 防重 + 存在性 /
-//   撤销后不再 active + 历史可查 / 赵强兼任并存。
+//   撤销后不再 active + 历史可查 / 副队长甲兼任并存。
 //
 // RBAC:本仓 rbac.fixture 的 RBAC_PERMISSIONS 未含 position-assignment.*(且 membership/position 同样未含,
 // 沿 PR2/PR3 只走 seed+contract 未写 CRUD e2e 的惯例);为不改共享 fixture(其 count 被 rbac 元 e2e 依赖),
@@ -502,12 +502,12 @@ describe('position-assignments 任职双轴管理', () => {
     });
   });
 
-  // ============ 赵强兼任并存(allowConcurrent) ============
+  // ============ 副队长甲兼任并存(allowConcurrent) ============
 
-  describe('赵强场景:同人两队职务并存', () => {
+  describe('副队长甲场景:同人两队职务并存', () => {
     it('副队长@team(兼容) + 队长@另一队(isConcurrent=true)两条 active 并存', async () => {
       const zhao = await newMember('zhao');
-      // 另建一支独立救援队,避免与「单人独占」用例占用的 orgTeam2 team-leader 冲突(赵强兼 SAMT 队长)。
+      // 另建一支独立救援队,避免与「单人独占」用例占用的 orgTeam2 team-leader 冲突(副队长甲兼 SAMT 队长)。
       const orgZhaoTeam = await prisma.organization.create({
         data: { name: 'pa-e2e-zhao-team', nodeTypeCode: 'rescue-team' },
         select: { id: true },

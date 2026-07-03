@@ -1,6 +1,6 @@
 -- 终态 scoped-authz PR5「分管」(2026-07-01 goal;冻结稿 §3.5 / §7.4 / §4.3 / §11 PR5)。
 -- 纯加一空表 + 2 枚举 + 4 索引 + 2 FK(Restrict)+ 末尾手写 1 partial unique:无回填、无不可逆。
--- 分管 = 与职务(§3.4 assignment)**正交**的独立范围监督关系(黄勇分管 SECT、SSD = 两行,与其「副队长」职务互不为前提)。
+-- 分管 = 与职务(§3.4 assignment)**正交**的独立范围监督关系(副队长乙分管 SECT、SSD = 两行,与其「副队长」职务互不为前提)。
 -- 此处 partial unique 做「同人对同组织不重复 active」防重底线(P2002 → SUPERVISION_ALREADY_EXISTS,33002)。
 -- 分管历史 = 软删行 + ENDED/REVOKED 行全保留,可追溯。
 -- **本表 = 数据 + 展示:绝不被任何判权路径读**(判权是 PR8 才把分管推导成只读监督 scope;RoleBinding 是 PR6)。

@@ -773,7 +773,7 @@ async function seedOrganizations(prisma: PrismaClient): Promise<void> {
 // "文书 / 装备 / 训练"是组〔Organization〕而非个人职务,人是该组组长)。
 // rank 按资历权重(正职 < 副职 < 组长 < 副组长;数值越小越资深,goal 定);allowMultiple 按 §12 公告实况:
 //   队长 / 部长 = false(一组织一正职);副队长 / 副部长 / 组长 / 副组长 = true
-//   (总队 6 副队长;SURT 训练组多组长);allowConcurrent 全 true(赵强兼 SAMT 队长)。
+//   (总队 6 副队长;SURT 训练组多组长);allowConcurrent 全 true(副队长甲兼 SAMT 队长)。
 // 幂等 upsert by code;update:{} 不覆盖运营运行时调整(真实值仅干净库首次 seed 生效)。
 // **本表纯配置定义,绝不被任何判权路径读**(消费它的 policy=PR7 / assignment=PR4 / authz=PR8)。
 const POSITION_SEED: ReadonlyArray<{

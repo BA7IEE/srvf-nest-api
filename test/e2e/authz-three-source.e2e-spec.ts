@@ -24,9 +24,9 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 真的没有终审码、org-supervisor 真的只有 4 读码,场景语义与生产逐字一致。
 //
 // 覆盖:
-//   场景 1(崔广庆):team-leader@SECT 经 policy→org-admin@TREE → SECT 子组(行动组)sheet 读 ALLOW
+//   场景 1(队长甲):team-leader@SECT 经 policy→org-admin@TREE → SECT 子组(行动组)sheet 读 ALLOW
 //     (matchedGrant source=position);同 ref 终审 DENY no_permission(BD-2:终审不在 org-admin 码集)
-//   场景 3(黄勇):仅 SupervisionAssignment(SECT,TREE)→ SECT 队员读 ALLOW(source=supervision,
+//   场景 3(副队长乙):仅 SupervisionAssignment(SECT,TREE)→ SECT 队员读 ALLOW(source=supervision,
 //     org-supervisor);SWRT 队员 DENY out_of_supervised_scope;写 DENY no_permission(BD-3 只读)
 //   场景 4(BD-2 终审):RoleBinding(principalType=POSITION_ASSIGNMENT〔APD 部长任职〕,终审测试角色,
 //     TREE@root)→ 任意 sheet 终审 ALLOW;自己提交的 sheet DENY self_approval_forbidden(SUPER_ADMIN 亦拒);
@@ -35,7 +35,7 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 //   失效族:任职 REVOKED / 任职过期 / 分管 ENDED / 绑定过期 → expired_grant;scope org INACTIVE → inactive_org;
 //     resource 不存在 / 已软删 → resource_not_found
 //   SELF:RoleBinding(MEMBER, scopeType=SELF, org-supervisor)→ 本人 member ref ALLOW / 他人 DENY out_of_scope
-//   无 ref 退化:三源持有者(黄勇)无 ref 判权仍 === rbac 旧语义(scoped/推导源不泄入)
+//   无 ref 退化:三源持有者(副队长乙)无 ref 判权仍 === rbac 旧语义(scoped/推导源不泄入)
 //
 // 时间口径:active fixture 用 startedAt 远过去 + endedAt=null(spec 不随日历腐烂);
 // 失效 fixture 用 endedAt 远过去 / 非 ACTIVE status。
@@ -280,9 +280,9 @@ describe('authz 三源推导(§5.2 3a/3b/3c + §6 场景 + R5 + 失效族 + SELF
         select: { id: true },
       });
 
-    // 场景 1:崔广庆 team-leader@SECT(policy→org-admin@TREE)
+    // 场景 1:队长甲 team-leader@SECT(policy→org-admin@TREE)
     cuiAssignmentId = (await mkAssignment(cui.memberId, sectId, teamLeaderId)).id;
-    // 场景 3:黄勇仅分管 SECT(TREE),无职务无绑定
+    // 场景 3:副队长乙仅分管 SECT(TREE),无职务无绑定
     huangSupervisionId = (
       await prisma.organizationSupervisionAssignment.create({
         data: {
@@ -383,7 +383,7 @@ describe('authz 三源推导(§5.2 3a/3b/3c + §6 场景 + R5 + 失效族 + SELF
   const sheetRef = (id: string) => ({ type: 'attendance_sheet', id });
   const memberRef = (id: string) => ({ type: 'member', id });
 
-  // ============ 场景 1:崔广庆(3b 职务推导) ============
+  // ============ 场景 1:队长甲(3b 职务推导) ============
 
   it('场景 1:team-leader@SECT → org-admin@TREE 覆盖 SECT 子组 sheet 读(source=position)', async () => {
     const d = await authz.explain(cui.payload, 'attendance.read.sheet', sheetRef(sheet1Id));
@@ -410,7 +410,7 @@ describe('authz 三源推导(§5.2 3a/3b/3c + §6 场景 + R5 + 失效族 + SELF
     expect(d.matchedGrant).toBeUndefined();
   });
 
-  // ============ 场景 3:黄勇(3c 分管推导) ============
+  // ============ 场景 3:副队长乙(3c 分管推导) ============
 
   it('场景 3:仅分管 SECT(TREE)→ SECT 队员读 ALLOW(source=supervision,org-supervisor)', async () => {
     const d = await authz.explain(huang.payload, 'member.read.record', memberRef(sectMemberId));
@@ -434,7 +434,7 @@ describe('authz 三源推导(§5.2 3a/3b/3c + §6 场景 + R5 + 失效族 + SELF
     expect(d).toMatchObject({ allow: false, reason: 'no_permission' });
   });
 
-  it('无 ref 退化:三源持有者(黄勇)无 ref 判权 === rbac 旧语义(推导源不泄入)', async () => {
+  it('无 ref 退化:三源持有者(副队长乙)无 ref 判权 === rbac 旧语义(推导源不泄入)', async () => {
     expect(await authz.can(huang.payload, 'member.read.record')).toBe(false);
     expect(await authz.can(cui.payload, 'attendance.read.sheet')).toBe(false);
   });
