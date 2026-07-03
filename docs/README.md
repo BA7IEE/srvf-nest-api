@@ -27,8 +27,8 @@
 | [`ops/sms-production-rollout-checklist.md`](./ops/sms-production-rollout-checklist.md) | 运维侧腾讯云 SMS 真实通道上线 SOP(签名/模板审核 → 凭证录入 → 真实发送验收) |
 | [`ops/sms-data-retention-sop.md`](./ops/sms-data-retention-sop.md) | SMS 数据 retention 手动清理 SOP(验证码 90 天 / 发送流水 1 年,数值可改;维护者手动 psql,**不**引入 cron 清理;SQL 已 app_test 实测冻结) |
 | [`ops/wechat-mini-production-rollout-checklist.md`](./ops/wechat-mini-production-rollout-checklist.md) | 运维侧微信小程序登录真实通道上线 SOP(注册小程序 → AppID/AppSecret → admin 录凭证〔仅 SA〕→ DevStub 全链 → 真实验收;系统侧已"正确但休眠") |
+| [`ops/scoped-authz-go-live-checklist.md`](./ops/scoped-authz-go-live-checklist.md) | 维护者/运营侧「组织职务 + 分管 + scoped RBAC + 统一鉴权」上线初始化 SOP(一次性动作:部署迁移+seed → 建管理账号 → 录入队员 → 公告 rows 导入 → BD-2 终审绑定 → authz/explain 验收 → env 项确认) |
 | [`ai-harness/README.md`](./ai-harness/README.md) | **AI Harness 操作层单页**(derived,**非规则源**,与权威源冲突时让步;必读三件套之一):铁律速查表 / AI 修改三档 + 触发即停 / 全仓读写分区;同目录另两文件 = `RBAC_MAP.md`(权限地图,`docs:rbacmap:check` 守护)+ `NEXT_TASKS.md`(后续任务清单);2026-06-10 Review 冻结档见 `archive/ai-harness/` |
-| [`reviews/org-position-scoped-authz-terminal-design-review.md`](./reviews/org-position-scoped-authz-terminal-design-review.md) | **T0 冻结稿(2026-07-01)**:终态「组织职务 + 分管关系 + scoped RBAC + 统一鉴权」架构评审稿;R1–R8 + BD-1–BD-4 全拍板,§11 给 PR1–PR12 落地序列。**design-only,实现以 `../prisma/schema.prisma` + `src/**` 为准**;落地中作活文档,全序列实施完成后归档至 `archive/reviews/` |
 
 V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威源**):
 
@@ -54,7 +54,7 @@ V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威
 | 目录 | 内容 |
 |---|---|
 | [`archive/handoff/`](./archive/handoff/) | 历史 release handoff(v0.4.0 ~ v0.15.0),release 时刻快照,**合入后不回改** |
-| [`archive/reviews/`](./archive/reviews/) | 历史评审稿:App API Phase 2(P2-2~P2-7)/ Phase 0.5/0.6/0.7 boundary review / Phase 1 client-boundary review / P0-D/P0-E/P0-F 评审稿 |
+| [`archive/reviews/`](./archive/reviews/) | 历史评审稿:App API Phase 2(P2-2~P2-7)/ Phase 0.5/0.6/0.7 boundary review / Phase 1 client-boundary review / P0-D/P0-E/P0-F 评审稿 / 终态「组织职务 + 分管 + scoped RBAC + 统一鉴权」架构评审稿(`org-position-scoped-authz-terminal-design-review.md`,PR1–PR12 + 摘码微刀全序列实施完成,2026-07-03 归档) |
 | [`archive/batches/`](./archive/batches/) | 批次 5-A / 6 / 7 / 8 的 API 前评审、业务确认稿、业务访谈提纲、V2.x 立项记录(中文文件名) |
 | [`archive/plans/`](./archive/plans/) | 历史阶段计划:v1.3 / v1.4 / first-release readiness / bizcode mapping / bootstrap SOP / frontend scope / API client boundary migration plan |
 | [`archive/legacy/`](./archive/legacy/) | 自承"历史归档"的早期收尾报告(`FINAL_REPORT.md`) |
