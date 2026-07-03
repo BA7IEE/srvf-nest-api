@@ -99,4 +99,23 @@ describe('action-constraints(§5.3 域不变量注册表)', () => {
       false,
     );
   });
+
+  // review #484 G12:两约束同时命中(同一人身兼 submitter + 一级 reviewer,现试图终审)时的优先级
+  // 此前无测试锁定。`AuthzService.applyConstraints`(authz.service.ts)对 `getConstraintsForAction()`
+  // 返回的数组做 `for...of` 遍历、首个否决即返(见该方法头注释"首个否决即 deny"),注册表顺序
+  // `[selfApprovalForbidden, sameReviewerForbidden]` 即评估顺序 —— 故本测试用 `.find()` 复现同一遍历
+  // 语义,不重新实现 applyConstraints,也不 mock AuthzService。
+  it('两约束同时命中(submitter==reviewer==判权人)时,自审 self_approval_forbidden 优先于同人 same_reviewer_forbidden(注册顺序即优先级,首个否决即返;两个原因码均映射为 deny,非 allow/deny 翻转,静默重排风险见头注释)', () => {
+    const constraints = getConstraintsForAction(FINAL_APPROVE_ACTION);
+    const me = userPayload('user-a');
+    const bothTrigger = sheetResource({ submitterUserId: 'user-a', reviewerUserId: 'user-a' });
+
+    // 先证两条约束在此 resource 下确实都会独立否决(不是因为互斥条件导致只有一条命中)
+    expect(constraints[0].vetoes(me, bothTrigger, DEFAULT_CTX)).toBe(true);
+    expect(constraints[1].vetoes(me, bothTrigger, DEFAULT_CTX)).toBe(true);
+
+    // 复现 applyConstraints 的评估顺序(首个否决即返),断言胜出的是 self_approval_forbidden(22074)
+    const firstVeto = constraints.find((c) => c.vetoes(me, bothTrigger, DEFAULT_CTX));
+    expect(firstVeto?.reason).toBe('self_approval_forbidden');
+  });
 });

@@ -73,7 +73,7 @@
 ### 2.4 其它资源管理页(CRUD,沿现状)
 活动列表 `GET /api/admin/v1/activities`(多字段过滤)· 队员列表 `GET /api/admin/v1/members`(memberNo/gradeCode/status)· 字典 `system/v1/dict-*` · 组织 · 贡献值**规则** `system/v1/contribution-rules`(注:是规则,不是队员的分)· 用户/RBAC/审计 `system/v1/*`。
 
-### 2.5 通知管理(站内信撰写 / 发布 + 微信订阅渠道 + 系统定向 + 短信兜底)— ✅ S1+S2+S3+S4+S5 后端就绪(本 PR,Unreleased)
+### 2.5 通知管理(站内信撰写 / 发布 + 微信订阅渠道 + 系统定向 + 短信兜底)— ✅ S1+S2+S3+S4+S5 后端就绪(v0.32.0 已发)
 
 统一通知模块 S1 站内信渠道 + S2 微信订阅 quota 渠道 + S3 producer 接入 + S4 活动·考勤 producer 定向触发 + S5 短信兜底渠道(GAP-005 S1–S5 全切片;冻结评审稿 [`unified-notification-dispatcher-review.md`](../archive/reviews/unified-notification-dispatcher-review.md))。admin 撰写/发布,会员 app 拉取站内信 feed(未读红点);S2 起 admin 可勾微信渠道,发布时向已订阅会员机会式推送。**S3 = 系统自动定向通知**:招新**发号 / 入队**完成后,后端自动向当事队员发一条**定向**站内信(发号另带微信),admin 面**无新操作**(producer 内部直调派发器,无新端点/无新 RBAC 码);会员侧 feed 见 [`miniapp.md`](miniapp.md)。**S4 = 活动·考勤系统定向**:管理端**报名审批(通过/驳回)/ 活动取消 / 考勤终审通过**三处操作后,后端自动向相关队员发**定向**站内信(报名本人 / 已报名者 fan-out / 考勤表内每位队员;`activity-reminder` 类型,**仅站内**,微信 opt-in 延后);admin 面**同样无新操作**(三 producer 各自 commit 后直调派发器,无新端点/无新 RBAC 码/无新 BizCode),会员侧 feed 见 [`miniapp.md`](miniapp.md)。**S5 = 短信兜底(紧急召集;admin 显式发起 + 计费确认)**:管理端对**已发布且勾了"短信"渠道**的通知,点"发送短信" → **必须二次确认计费**:前端先以 `confirmed:false` 调 `POST admin/v1/notifications/{id}/send-sms` **预览** `recipientCount`(「将向 N 人发短信 = N 条计费」),用户确认后再以 `confirmed:true` 真发(向**可见且有手机**的队员逐人发"请打开 App 查看"短信;新 RBAC 码 `notification.send.sms` 162→163;见 §2.5)。**短信永不随发布自动发**(成本动作显式 gating);未声明短信渠道 / 未发布 → `31013`,短信通道未配置 → `24030`,缺 `confirmed` → 400;手机号一律掩码。**真·全员短信批处理异步未做**(若受众过大致延迟另立项)。
 

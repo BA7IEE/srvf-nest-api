@@ -30,9 +30,10 @@ import {
 // 沿 content / position-assignment 范式;resourceType='supervision_assignment')。
 //
 // **分管 = 与职务正交的独立范围监督关系**:create 绝不要求 supervisor 持任何职务/领导头衔,运营自由指派。
-// **本表 = 数据 + 展示:绝不被任何 rbac.can / AuthzService 判权路径读**(判权是 PR8 才把分管推导成只读监督 scope;
-//   RoleBinding 是 PR6)。分管范围展开(supervision-scope)/ 被谁分管(supervisors)读 organization_closure
-//   **仅作展示/报表**(TREE 求后代集 / inherited 求祖先集),**绝非判权** —— closure 不进 rbac.can/AuthzService。
+// **本表自身 CRUD/校验逻辑不读角色/权限表(单向)**;但 **PR8 起 AuthzService 会读本表**把分管推导成只读监督
+//   scope 的输入之一(review #484 G6 true-up:此前"绝不被判权路径读"措辞已过时)——分管建立/撤销直接联动
+//   授权结果,不是"与判权无关"。分管范围展开(supervision-scope)/ 被谁分管(supervisors)读 organization_closure
+//   **仅作展示/报表**(TREE 求后代集 / inherited 求祖先集),**绝非判权** —— closure 本身不进 rbac.can/AuthzService。
 
 const AUDIT_RESOURCE_TYPE = 'supervision_assignment';
 

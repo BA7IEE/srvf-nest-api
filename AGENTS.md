@@ -347,7 +347,7 @@ import { Role, UserStatus } from '@prisma/client';
 - `POST /api/auth/v1/logout` 走 `@Public()`(refresh token 自身即凭证),只撤销**当前** refresh token(`revokedReason='logout'`,其他 rotation 链 token 不动);**幂等**(不存在 / 已撤销 / 已过期 → 仍返 200,沿 RFC 7009 §2.2),**不**抛业务码;access token 若随头传入**不**校验、**不**消费、**不**吊销
 - `POST /api/auth/v1/logout-all` 走 `JwtAuthGuard`,撤销当前 user 全部未过期且未撤销的 refresh token(`updateMany revokedReason='logout'`);返 `{ revokedCount }`
 
-**联动撤销五场景**(沿 §9 主条目;`updateMany` 必须**同事务**内与主写操作执行,沿 `prisma.$transaction` 范式;audit `extra.refreshTokensRevoked: count` 必写):本人改密 → `'self-password-change'` / 本人短信验证码重置(找回密码,pre-auth)→ `'self-password-reset'`(2026-06-11,冻结评审稿 [password-reset-by-sms-review](docs/archive/reviews/password-reset-by-sms-review.md);audit `password.reset.by-sms`)/ 管理员重置 → `'admin-password-reset'` / 用户禁用 → `'admin-disable'` / 用户软删 → `'admin-delete'`
+**联动撤销五场景**(沿 §9 主条目;`updateMany` 必须**同事务**内与主写操作执行,沿 `prisma.$transaction` 范式):本人改密 → `'self-password-change'`(audit `password.change.self`,`extra.refreshTokensRevoked: count` 必写)/ 本人短信验证码重置(找回密码,pre-auth)→ `'self-password-reset'`(2026-06-11,冻结评审稿 [password-reset-by-sms-review](docs/archive/reviews/password-reset-by-sms-review.md);audit `password.reset.by-sms`,`extra.refreshTokensRevoked: count` 必写)/ 管理员重置 → `'admin-password-reset'`(audit `password.reset.by-admin`,`extra.refreshTokensRevoked: count` 必写)/ 用户禁用 → `'admin-disable'`(**刻意不写 audit**,沿 D-PR3-2 拍板——仅撤销 refresh,不记录 status 改动事件)/ 用户软删 → `'admin-delete'`(**刻意不写 audit**,沿 D-PR3-2 拍板——仅撤销 refresh)
 
 **access token 行为锁定**:
 - **不主动吊销**;依赖 `JWT_EXPIRES_IN=15m` 自然过期 + `JwtStrategy.validate` 每请求查库阻断 `DISABLED` / 软删用户

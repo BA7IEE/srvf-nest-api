@@ -8,7 +8,7 @@
 // 不含任何权限语义。
 
 /** 一条 closure 边(祖先 → 后代,距离 depth;depth=0 即自身行)。 */
-export interface ClosureEdge {
+interface ClosureEdge {
   ancestorId: string;
   descendantId: string;
   depth: number;

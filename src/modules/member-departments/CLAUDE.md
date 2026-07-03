@@ -1,6 +1,6 @@
 # member-departments — 本地铁律
 
-> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);终态 scoped-authz PR2 冻结稿 [`org-position-scoped-authz-terminal-design-review.md §3.1/§7.1/§8.1`](../../../docs/archive/reviews/org-position-scoped-authz-terminal-design-review.md);第二轮全仓 review G5 [`full-repo-systematic-review-v0.34.0.md`](../../../docs/reviews/full-repo-systematic-review-v0.34.0.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
+> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);终态 scoped-authz PR2 冻结稿 [`org-position-scoped-authz-terminal-design-review.md §3.1/§7.1/§8.1`](../../../docs/archive/reviews/org-position-scoped-authz-terminal-design-review.md);第二轮全仓 review G5 [`full-repo-systematic-review-v0.34.0.md`](../../../docs/archive/reviews/full-repo-systematic-review-v0.34.0.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
 
 ## Scope
 
