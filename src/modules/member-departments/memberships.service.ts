@@ -5,6 +5,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
 import { CreateMembershipDto, MembershipResponseDto, UpdateMembershipDto } from './memberships.dto';
 
@@ -14,6 +16,13 @@ import { CreateMembershipDto, MembershipResponseDto, UpdateMembershipDto } from 
 //
 // 与旧单部门(member-departments)面的关系:旧面重指向到 PRIMARY 行做兼容;本面是终态全归属面,
 // 显式承载 type / 任期 / status(PRIMARY 唯一由 partial unique 兜底,SECONDARY/TEMPORARY/SUPPORT 可并存)。
+//
+// 审计留痕批(2026-07-03;review #484 G5):create / end 写 audit(inline-in-transaction,沿
+// position-assignments / supervision-assignments 范式;resourceType='membership';extra.viaPath='membership'
+// 区分旧 member-departments 入口)。**update(PATCH)不写 audit**——沿 role-binding.update /
+// supervision-assignment.update 既有先例,仅改类型 / 任期 / 原因等非建 / 终字段,不构成建 / 终事件。
+
+const AUDIT_RESOURCE_TYPE = 'membership';
 
 // 集中定义对外 select(全字段;永不含 deletedAt 软删内部状态)。
 const membershipSelect = {
@@ -38,6 +47,7 @@ export class MembershipsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
+    private readonly auditLogs: AuditLogsService,
   ) {}
 
   // ============ helpers(自包含;沿 member-departments 范式,不抽共享类)============
@@ -108,6 +118,7 @@ export class MembershipsService {
     user: CurrentUserPayload,
     memberId: string,
     dto: CreateMembershipDto,
+    meta: AuditMeta,
   ): Promise<MembershipResponseDto> {
     await this.assertCanOrThrow(user, 'membership.set.record');
     return this.prisma.$transaction(async (tx) => {
@@ -119,7 +130,7 @@ export class MembershipsService {
       if (org.status !== OrganizationStatus.ACTIVE) {
         throw new BizException(BizCode.ORGANIZATION_INACTIVE);
       }
-      return this.runWithUniqueConstraintGuard(() =>
+      const created = await this.runWithUniqueConstraintGuard(() =>
         tx.memberOrganizationMembership.create({
           data: {
             memberId,
@@ -132,6 +143,26 @@ export class MembershipsService {
           select: membershipSelect,
         }),
       );
+
+      await this.auditLogs.log({
+        event: 'membership.set',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: created.id,
+        meta,
+        after: {
+          memberId: created.memberId,
+          organizationId: created.organizationId,
+          membershipType: created.membershipType,
+          status: created.status,
+          reason: created.reason,
+        },
+        extra: { viaPath: 'membership', operation: 'create', targetMemberId: memberId },
+        tx,
+      });
+
+      return created;
     });
   }
 
@@ -139,6 +170,7 @@ export class MembershipsService {
 
   // 改类型 / 任期 / 原因(全可选)。不改 status(结束走 DELETE)、不改 memberId/organizationId。
   // 找不到该 member 名下未软删归属 → MEMBERSHIP_NOT_FOUND;改类型可能撞唯一 → MEMBERSHIP_ALREADY_EXISTS。
+  // **不写 audit**(沿 role-binding.update / supervision-assignment.update 先例;非建/终字段变更)。
   async update(
     user: CurrentUserPayload,
     memberId: string,
@@ -177,16 +209,17 @@ export class MembershipsService {
     user: CurrentUserPayload,
     memberId: string,
     id: string,
+    meta: AuditMeta,
   ): Promise<MembershipResponseDto> {
     await this.assertCanOrThrow(user, 'membership.end.record');
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.memberOrganizationMembership.findFirst({
         where: { id, memberId, deletedAt: null, status: MembershipStatus.ACTIVE },
-        select: { id: true },
+        select: { id: true, status: true },
       });
       if (!current) throw new BizException(BizCode.MEMBERSHIP_NOT_FOUND);
 
-      return tx.memberOrganizationMembership.update({
+      const updated = await tx.memberOrganizationMembership.update({
         where: { id },
         data: {
           status: MembershipStatus.ENDED,
@@ -195,6 +228,25 @@ export class MembershipsService {
         },
         select: membershipSelect,
       });
+
+      await this.auditLogs.log({
+        event: 'membership.end',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: updated.id,
+        meta,
+        before: { status: current.status },
+        after: {
+          status: updated.status,
+          endedAt: updated.endedAt,
+          endedByUserId: updated.endedByUserId,
+        },
+        extra: { viaPath: 'membership', operation: 'end', targetMemberId: memberId },
+        tx,
+      });
+
+      return updated;
     });
   }
 }

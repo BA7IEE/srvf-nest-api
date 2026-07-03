@@ -11,6 +11,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
 import { MemberDepartmentResponseDto, SetMemberDepartmentDto } from './member-departments.dto';
 
@@ -21,6 +23,12 @@ import { MemberDepartmentResponseDto, SetMemberDepartmentDto } from './member-de
 // 单归属唯一由新 partial unique `member_org_membership_primary_active_unique`(仅约束 PRIMARY)兜底;
 // 旧端点 P2002 仍抛 MEMBER_DEPARTMENT_ALREADY_EXISTS(17002)= 契约不变(新 memberships 面才用 17004)。
 // **本表绝不被任何模块读作授权**(AuthzService 是 PR8)。
+//
+// 审计留痕批(2026-07-03;review #484 G5):set / remove 写 audit(inline-in-transaction,复用
+// memberships.service 同一 AuditLogEvent 联合;resourceType='membership';extra.viaPath='department'
+// 区分新 memberships 入口)。set 的幂等分支(同 organizationId,无 DB 写)**不写 audit**(无状态变更)。
+
+const AUDIT_RESOURCE_TYPE = 'membership';
 
 // 集中定义对外 select(承接旧 memberDepartmentSelect;返回 shape 与旧端点逐字一致)。
 // 永不包含 deletedAt / membershipType / status / startedAt 等新列(旧端点响应 DTO 不变)。
@@ -47,6 +55,7 @@ export class MemberDepartmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
+    private readonly auditLogs: AuditLogsService,
   ) {}
 
   // ============ helpers ============
@@ -131,6 +140,7 @@ export class MemberDepartmentsService {
     user: CurrentUserPayload,
     memberId: string,
     dto: SetMemberDepartmentDto,
+    meta: AuditMeta,
   ): Promise<MemberDepartmentResponseDto> {
     await this.assertCanOrThrow(user, 'member-department.set.current');
     return this.prisma.$transaction(async (tx) => {
@@ -154,7 +164,7 @@ export class MemberDepartmentsService {
 
       if (current) {
         if (current.organizationId === dto.organizationId) {
-          // 幂等:同 organizationId 直接返回现归属(无副作用)
+          // 幂等:同 organizationId 直接返回现归属(无副作用,无状态变更 → 不写 audit)
           return current;
         }
         // 软删旧 PRIMARY 归属(避免撞 partial unique index)
@@ -165,7 +175,7 @@ export class MemberDepartmentsService {
       }
 
       // 4. 创建新 PRIMARY 归属(P2002 兜底防并发)
-      return this.runWithUniqueConstraintGuard(() =>
+      const created = await this.runWithUniqueConstraintGuard(() =>
         tx.memberOrganizationMembership.create({
           data: {
             memberId,
@@ -176,6 +186,28 @@ export class MemberDepartmentsService {
           select: primaryMembershipSelect,
         }),
       );
+
+      // 5. 写 audit(仅真实发生状态变更的两分支:首次建 / 换部门;before=旧 PRIMARY 行快照〔换部门场景〕)
+      await this.auditLogs.log({
+        event: 'membership.set',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: created.id,
+        meta,
+        before: current
+          ? { id: current.id, memberId: current.memberId, organizationId: current.organizationId }
+          : undefined,
+        after: {
+          id: created.id,
+          memberId: created.memberId,
+          organizationId: created.organizationId,
+        },
+        extra: { viaPath: 'department', operation: 'set', targetMemberId: memberId },
+        tx,
+      });
+
+      return created;
     });
   }
 
@@ -183,7 +215,11 @@ export class MemberDepartmentsService {
 
   // 解除当前 active PRIMARY 归属(软删中间表行)。
   // 若 member 无 active PRIMARY 归属 → MEMBER_DEPARTMENT_NOT_FOUND。
-  async remove(user: CurrentUserPayload, memberId: string): Promise<MemberDepartmentResponseDto> {
+  async remove(
+    user: CurrentUserPayload,
+    memberId: string,
+    meta: AuditMeta,
+  ): Promise<MemberDepartmentResponseDto> {
     await this.assertCanOrThrow(user, 'member-department.clear.current');
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
@@ -195,11 +231,36 @@ export class MemberDepartmentsService {
       if (!current) throw new BizException(BizCode.MEMBER_DEPARTMENT_NOT_FOUND);
 
       // 软删 = update({ deletedAt: now });不物理删除(baseline §10)
-      return tx.memberOrganizationMembership.update({
+      const deletedAt = new Date();
+      const updated = await tx.memberOrganizationMembership.update({
         where: { id: current.id },
-        data: { deletedAt: new Date() },
+        data: { deletedAt },
         select: primaryMembershipSelect,
       });
+
+      await this.auditLogs.log({
+        event: 'membership.end',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: updated.id,
+        meta,
+        before: {
+          id: current.id,
+          memberId: current.memberId,
+          organizationId: current.organizationId,
+        },
+        after: {
+          id: updated.id,
+          memberId: updated.memberId,
+          organizationId: updated.organizationId,
+          deletedAt,
+        },
+        extra: { viaPath: 'department', operation: 'remove', targetMemberId: memberId },
+        tx,
+      });
+
+      return updated;
     });
   }
 }

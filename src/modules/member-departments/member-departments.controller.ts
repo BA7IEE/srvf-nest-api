@@ -1,5 +1,16 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Put } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Put,
+  Req,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
@@ -7,8 +18,18 @@ import {
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { MemberDepartmentResponseDto, SetMemberDepartmentDto } from './member-departments.dto';
 import { MemberDepartmentsService } from './member-departments.service';
+
+// 从 @Req() 构造 AuditMeta(沿 position-assignments / content-admin 范式;D8 拍板不引入 ALS)。
+function buildAuditMeta(req: Request): AuditMeta {
+  return {
+    requestId: req.id as string,
+    ip: req.ip ?? null,
+    ua: req.headers['user-agent'] ?? null,
+  };
+}
 
 // 路径嵌套在 members/:memberId/ 下作为子资源(语义"队员的部门");contract §5.1 锁定。
 // 模块独立(src/modules/member-departments/),路径仍嵌套(controller 路径配置)。
@@ -69,8 +90,9 @@ export class MemberDepartmentsController {
     @CurrentUser() user: CurrentUserPayload,
     @Param('memberId') memberId: string,
     @Body() dto: SetMemberDepartmentDto,
+    @Req() req: Request,
   ): Promise<MemberDepartmentResponseDto> {
-    return this.service.set(user, memberId, dto);
+    return this.service.set(user, memberId, dto, buildAuditMeta(req));
   }
 
   @Delete()
@@ -88,7 +110,8 @@ export class MemberDepartmentsController {
   remove(
     @CurrentUser() user: CurrentUserPayload,
     @Param('memberId') memberId: string,
+    @Req() req: Request,
   ): Promise<MemberDepartmentResponseDto> {
-    return this.service.remove(user, memberId);
+    return this.service.remove(user, memberId, buildAuditMeta(req));
   }
 }

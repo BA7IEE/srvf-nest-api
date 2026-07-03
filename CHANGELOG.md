@@ -12,6 +12,7 @@
 - **fix(role-bindings): 写路径三处边界收紧**——PATCH 禁写「ACTIVE+已过期」矛盾态、绑定主体校验收紧至 active 任职/active 用户(review #484 G7/G13/G16;判权路径零改动,BizCode +0)
 - **fix(recruitment,announcement-import): OCR 落图失败孤儿补偿收口 + 导入 already-exists 组织一致性校验与毒丸传播**(review #484 G3/G8;成功路径行为不变,BizCode +0)
 - **fix(deps,dictionaries): 生产可达 CVE overrides(qs/js-yaml + COS 链 best-effort)+ notification_type 入字典防误删保护集**(review #484 G10/G25/G2;零行为变更,BizCode +0)
+- **feat(member-departments): memberships 双入口写路径补齐审计留痕**(review #484 G5;+2 AuditLogEvent,viaPath 区分入口;业务行为零变化)
 
 ## v0.34.0 - 2026-07-03
 
