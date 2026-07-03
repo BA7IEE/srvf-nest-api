@@ -40,5 +40,5 @@
 
 - `pnpm lint` + `pnpm typecheck`
 - `pnpm test` — `action-constraints.spec.ts`(约束注册表)
-- `pnpm test:e2e` — **四件套必跑**:`authz-rbac-equivalence`(🔴 等价矩阵行为锁)/ `authz-three-source`(崔广庆/黄勇/BD-2 终审+自审/R5 副职/失效族/SELF)/ `authz-resource-resolver`(11 类逐类 + 软删 fail-close + attachment 委派)/ `authz-explain`(PR10 端点:五 allow 形态 + 四 deny-as-data + 10001/400/30100 + reason 枚举完备锁)
+- `pnpm test:e2e` — **四件套必跑**:`authz-rbac-equivalence`(🔴 等价矩阵行为锁)/ `authz-three-source`(队长甲/副队长乙/BD-2 终审+自审/R5 副职/失效族/SELF)/ `authz-resource-resolver`(11 类逐类 + 软删 fail-close + attachment 委派)/ `authz-explain`(PR10 端点:五 allow 形态 + 四 deny-as-data + 10001/400/30100 + reason 枚举完备锁)
 - 改判权流程 / covers / 三源归集 → 四件套全跑 + `pnpm test:contract`(端点不变式:路由 290 恒定,authz 面仅 explain 一路)

@@ -197,7 +197,7 @@ export class PositionAssignmentsService {
           if (!membership) throw new BizException(BizCode.POSITION_ASSIGNMENT_MEMBERSHIP_REQUIRED);
         }
 
-        // 4. 兼任:position.allowConcurrent=false → member 不得已有其它 active 任职(多数职务 true,允许兼任如赵强)。
+        // 4. 兼任:position.allowConcurrent=false → member 不得已有其它 active 任职(多数职务 true,允许兼任如副队长甲)。
         if (!position.allowConcurrent) {
           const otherActive = await tx.organizationPositionAssignment.count({
             where: { memberId: dto.memberId, status: AssignmentStatus.ACTIVE, deletedAt: null },

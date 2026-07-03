@@ -12,7 +12,7 @@ import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
 // 终态 scoped-authz PR5「分管」e2e(2026-07-01;冻结稿 §3.5 / §7.4 / §4.3 / R5 + goal DoD §7)。
-// 覆盖:RBAC 边界 / 建分管(与职务正交:supervisor 无任何职务仍可建)/ 黄勇双分管(SECT TREE + SSD EXACT 并存)/
+// 覆盖:RBAC 边界 / 建分管(与职务正交:supervisor 无任何职务仍可建)/ 副队长乙双分管(SECT TREE + SSD EXACT 并存)/
 //   supervision-scope(TREE 展开含子组、EXACT 不展开)/ supervisors(直接 DIRECT + 祖先 TREE 继承 INHERITED、
 //   祖先 EXACT 不覆盖)/ 防重 SUPERVISION_ALREADY_EXISTS / 撤销后不再 active + supervisors 不含 /
 //   改 scopeMode / 校验各自拒(supervisor 非会员 / 非 active / org 不存在 / 非 active / 任期非法)。
@@ -57,8 +57,8 @@ describe('supervision-assignments 分管管理', () => {
   let userAuth: string;
 
   // 组织树(beforeAll 建一次,只读复用):
-  //   SECT(rescue-team)→ SECTaction(group,子)   —— 黄勇 TREE 分管 SECT
-  //   SSD(rescue-team) → SSDsub(group,子)       —— 黄勇 EXACT 分管 SSD(EXACT 不覆盖 SSDsub)
+  //   SECT(rescue-team)→ SECTaction(group,子)   —— 副队长乙 TREE 分管 SECT
+  //   SSD(rescue-team) → SSDsub(group,子)       —— 副队长乙 EXACT 分管 SSD(EXACT 不覆盖 SSDsub)
   let orgSECTId: string;
   let orgSECTactionId: string;
   let orgSSDId: string;
@@ -170,12 +170,12 @@ describe('supervision-assignments 分管管理', () => {
     });
   });
 
-  // ============ 黄勇场景:双分管并存 + scope 展开 ============
+  // ============ 副队长乙场景:双分管并存 + scope 展开 ============
 
-  describe('黄勇场景:副队长(无本刀职务)分管 SECT + SSD', () => {
+  describe('副队长乙场景:副队长(无本刀职务)分管 SECT + SSD', () => {
     it('建分管不要求 supervisor 持职务;SECT(TREE) + SSD(EXACT)两条 active 并存', async () => {
       const huangyong = await newMember('huangyong');
-      // 黄勇本刀不建任何 PositionAssignment(分管与职务正交,create 绝不校验持职务)。
+      // 副队长乙本刀不建任何 PositionAssignment(分管与职务正交,create 绝不校验持职务)。
       const a1 = await createSup(adminAuth, {
         supervisorMemberId: huangyong,
         organizationId: orgSECTId,
