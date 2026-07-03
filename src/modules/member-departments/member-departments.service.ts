@@ -19,7 +19,7 @@ import { MemberDepartmentResponseDto, SetMemberDepartmentDto } from './member-de
 // 终态 scoped-authz PR2(2026-07-01;冻结稿 §8.1 行为锁核心):本 service 由旧 `MemberDepartment` 表
 // **重指向**到 `member_organization_memberships` 的 **PRIMARY** 行(旧"单部门"语义 = 主归属)。
 // 旧 3 端点 GET/PUT/DELETE .../department 与 3 码 member-department.{read,set,clear}.current **保留一版
-// (deprecated)、行为逐字不变**;旧 MemberDepartment 表冻结(不再写入,下线留后续 cleanup PR)。
+// (deprecated)、行为逐字不变**;旧 MemberDepartment 表已 DROP(冻结表 cleanup,第 39 migration,2026-07-03)。
 // 单归属唯一由新 partial unique `member_org_membership_primary_active_unique`(仅约束 PRIMARY)兜底;
 // 旧端点 P2002 仍抛 MEMBER_DEPARTMENT_ALREADY_EXISTS(17002)= 契约不变(新 memberships 面才用 17004)。
 // **本表绝不被任何模块读作授权**(AuthzService 是 PR8)。

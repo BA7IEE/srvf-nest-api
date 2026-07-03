@@ -66,7 +66,7 @@
 
 ## 1. 双轨架构现状(一句话版)
 
-三层 `Role` enum(SUPER_ADMIN > ADMIN > USER,Guard 链全局注册:`ThrottlerBizGuard → JwtAuthGuard → RolesGuard`)是**身份层**;判权**单轨**走 RBAC 4 表(`RbacRole` / `Permission` / `RolePermission` / `UserRole`,Service 层 `rbac.can()`):
+三层 `Role` enum(SUPER_ADMIN > ADMIN > USER,Guard 链全局注册:`ThrottlerBizGuard → JwtAuthGuard → RolesGuard`)是**身份层**;判权**单轨**走 RBAC 4 表(`RbacRole` / `Permission` / `RolePermission` / `RoleBinding`〔终态 scoped-authz PR6 起取代旧 `UserRole` 表,已 DROP〕,Service 层 `rbac.can()`):
 
 - **管理面 / 配置面 / System surface:已收紧**(v0.15.0 P0-F)——controller 不标 `@Roles`,入口仅要求登录,每个写读路径在 Service 层 `rbac.can('<code>')` 判权,SUPER_ADMIN 短路通过。
 - **业务面:已收口**(2026-06-11 Slow-4,goal #314-#317)——原 G 模式 7 模块 44 端点全部摘 `@Roles`:42 端点 Service 层判权(`biz-admin` 承载 ADMIN 业务权限,Slow-3 决议;`member.delete.record` 仅 SA 短路),activities 列表/详情 2 端点无码仅登录(`[auth]`,Q-A7 过滤留 service)。**全仓活跃 `@Roles` = 0**;`RolesGuard` 机制与装饰器保留 Guard 链(防御性兜底),新 endpoint 不再标 `@Roles`。

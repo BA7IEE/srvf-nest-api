@@ -287,7 +287,7 @@ import { Role, UserStatus } from '@prisma/client';
 
 ### RBAC permission resolution cache(不缓存身份原则的唯一例外)
 
-[`RbacCacheService`](src/modules/permissions/rbac-cache.service.ts) 是 **`rbac.can()` 权限解析缓存**(`RolePermission` join 结果),**不**属于身份有效性状态缓存。约束:显式 TTL `RBAC_CACHE_TTL_SECONDS=1800`(从 [`app.config.ts`](src/config/app.config.ts) 注入,**禁止**硬编码);三档显式失效路径 `invalidateAll` / `invalidateUser` / `invalidateRole` 与 `RolePermission` / `UserRole` / `RbacRole` 变更 1:1 绑定;缓存层故障**保守降级**,不阻断 `rbac.can()` 主路径;**不**替代 `JwtStrategy.validate` 每请求查库;**不**引入 Redis / 外部 KV(沿 §1 B 档),当前实现为进程内 Map + TTL。
+[`RbacCacheService`](src/modules/permissions/rbac-cache.service.ts) 是 **`rbac.can()` 权限解析缓存**(`RolePermission` join 结果),**不**属于身份有效性状态缓存。约束:显式 TTL `RBAC_CACHE_TTL_SECONDS=1800`(从 [`app.config.ts`](src/config/app.config.ts) 注入,**禁止**硬编码);三档显式失效路径 `invalidateAll` / `invalidateUser` / `invalidateRole` 与 `RolePermission` / `RoleBinding`(终态 scoped-authz PR6 起取代旧 `UserRole` 表,已 DROP)/ `RbacRole` 变更 1:1 绑定;缓存层故障**保守降级**,不阻断 `rbac.can()` 主路径;**不**替代 `JwtStrategy.validate` 每请求查库;**不**引入 Redis / 外部 KV(沿 §1 B 档),当前实现为进程内 Map + TTL。
 
 ---
 

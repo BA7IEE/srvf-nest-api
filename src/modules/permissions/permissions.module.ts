@@ -39,7 +39,9 @@ import { UserRolesService } from './user-roles.service';
 // 当前事实以 docs/current-state.md 与本目录 CLAUDE.md 为准。
 //
 // 本模块归口设计(沿 dictionaries 单模块多 controller 范式):
-// - 同一 PermissionsModule 同时管理 Permission + RbacRole + RolePermission + UserRole + RbacService
+// - 同一 PermissionsModule 同时管理 Permission + RbacRole + RolePermission + RbacService,
+//   加上 UserRolesService(终态 scoped-authz PR6 起读写 RoleBinding 的 USER×GLOBAL 子集;
+//   RoleBinding 全量 CRUD 归口独立的 role-bindings/ 模块)
 //   (语义紧耦合,都是 RBAC 配置中心)
 // - 多 controller / 多 service:permissions.* + rbac-roles.* + role-permissions.* + user-roles.* + rbac.*
 // - RbacCacheService 是模块内共享 provider,被 RolePermissionsService + UserRolesService

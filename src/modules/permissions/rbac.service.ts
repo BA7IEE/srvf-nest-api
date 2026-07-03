@@ -72,7 +72,7 @@ export class RbacService {
   //   (principalType=USER, scopeType=GLOBAL, status=ACTIVE, 未软删)聚合权限点 —— 等价替换旧
   //   `user_roles` 读(每条 UserRole 已由第 37 migration 回填为该形态的 RoleBinding),**全局判权语义逐字不变**。
   // **🔴 只读 scopeType=GLOBAL,绝不判 scoped**:经 role-bindings CRUD 建的 ORGANIZATION/TREE/ACTIVITY/
-  //   RESOURCE/SELF 绑定入库即止,本函数忽略非 GLOBAL 行(scoped 判权是 PR8 AuthzService)。UserRole 表冻结、零读写。
+  //   RESOURCE/SELF 绑定入库即止,本函数忽略非 GLOBAL 行(scoped 判权是 PR8 AuthzService)。旧 UserRole 表已 DROP。
   // **行为**:
   // - SUPER_ADMIN 不在此处特判:本函数总是返回 global RoleBinding 聚合后的实际权限点集
   //   (SUPER_ADMIN 的短路在 `can()` / `getMyPermissions()` 中各自实现,语义不同)
