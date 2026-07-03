@@ -327,7 +327,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
       where: { code: 'biz-admin' },
       select: { id: true },
     });
-    // 终态 scoped-authz PR6:biz-admin 补挂现写 global RoleBinding(判权唯一读源;UserRole 冻结)。
+    // 终态 scoped-authz PR6:biz-admin 补挂现写 global RoleBinding(判权唯一读源;旧 UserRole 表已 DROP)。
     const holderIds = new Set(
       (
         await prisma.roleBinding.findMany({

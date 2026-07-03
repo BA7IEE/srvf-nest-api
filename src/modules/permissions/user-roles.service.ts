@@ -20,8 +20,8 @@ import { AssignUserRoleDto, UserRoleResponseDto } from './user-roles.dto';
 // 沿 D7 v1.1 §5.1 端点 12-14 + §6.2 Q7 角色分级 + §6.3 最后一个 ops-admin 保护 + §9.4 缓存失效 + 用户拍板。
 //
 // **终态 scoped-authz PR6(2026-07-01;冻结稿 §8.2 行为锁):内部换存储,对外契约零变。**
-// - 全部读 / 写从 `user_roles` 重指向 `RoleBinding(principalType=USER, scopeType=GLOBAL, status=ACTIVE)`
-//   —— UserRole 表冻结、零生产读写(cleanup PR 再 DROP);单一真相源 = RoleBinding。
+// - 全部读 / 写从旧 `user_roles` 重指向 `RoleBinding(principalType=USER, scopeType=GLOBAL, status=ACTIVE)`
+//   —— 旧 UserRole 表已 DROP(冻结表 cleanup,第 39 migration);单一真相源 = RoleBinding。
 // - 端点路径 + 权限码(rbac.user-role.{read,create,delete})+ 请求/响应 DTO **逐字不变**。
 // - 撤销 = **软删**(status=ENDED + endedAt + deletedAt),保历史;partial unique WHERE deletedAt IS NULL AND
 //   status='ACTIVE' 令软删行不阻断再分配 = 与旧「物理删后可再分配」外部行为一致。

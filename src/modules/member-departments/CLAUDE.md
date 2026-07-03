@@ -7,7 +7,7 @@
 本目录物理上承载**两个面**,共写同一张表 `member_organization_memberships`:
 
 - **`memberships.*`(新面,终态全归属面)**:沿队员轴嵌套 `admin/v1/members/:memberId/memberships`,显式承载 `membershipType`(PRIMARY/SECONDARY/TEMPORARY/SUPPORT)/ 任期 / `status`;PRIMARY 唯一由 partial unique 兜底,其余类型可并存多条。
-- **`member-departments.*`(旧面,deprecated 但契约锁定)**:`admin/v1/members/:memberId/department`,重指向到 `memberships` 表的 **active PRIMARY** 行,GET/PUT/DELETE 响应 shape / 错误码逐字锁定不变。旧 `MemberDepartment` 表已冻结(不再写入)。
+- **`member-departments.*`(旧面,deprecated 但契约锁定)**:`admin/v1/members/:memberId/department`,重指向到 `memberships` 表的 **active PRIMARY** 行,GET/PUT/DELETE 响应 shape / 错误码逐字锁定不变。旧 `MemberDepartment` 表已 DROP(冻结表 cleanup,第 39 migration,2026-07-03)。
 
 两面各自独立 `service`/`controller`/`dto` 文件(`memberships.*.ts` / `member-departments.*.ts`),**不互相调用**(旧面重指向的是底层表,不是新面的 service 方法)。
 
@@ -26,7 +26,7 @@
 
 - ❌ **不**给 `memberships.update`(PATCH)加 audit,除非有新设计决议(见上"Local facts")。
 - ❌ **不**给 `member-departments.set` 的幂等分支(`current.organizationId === dto.organizationId` 直接 `return`)加 audit——该分支无 DB 写,加了就是记录"什么都没发生"的假事件。
-- ❌ **不**在旧 `MemberDepartment` 表上补任何读写(已冻结,下线留后续 cleanup PR;本模块两 service 只读写 `member_organization_memberships`)。
+- ❌ **不**给旧 `MemberDepartment` 表补任何读写代码(该表已物理 DROP,第 39 migration;本模块两 service 只读写 `member_organization_memberships`)。
 - ❌ **不**把旧面 `member-departments.*` 端点的响应 shape / 错误码当作可自由调整项——PUT/GET/DELETE 三端点行为逐字锁定(重指向兼容层),真要变更走新面 `memberships.*`。
 - ❌ 新增第三个写入口(若未来出现)务必同样接入 audit 并选一个新的 `extra.viaPath` 值,不要复用 `membership`/`department` 覆盖已有语义。
 

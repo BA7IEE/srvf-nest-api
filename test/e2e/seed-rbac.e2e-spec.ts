@@ -374,7 +374,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
       where: { code: 'ops-admin' },
       select: { id: true },
     });
-    // 终态 scoped-authz PR6:bootstrap 授予现写 global RoleBinding(判权唯一读源;UserRole 冻结)。
+    // 终态 scoped-authz PR6:bootstrap 授予现写 global RoleBinding(判权唯一读源;旧 UserRole 表已 DROP)。
     const binding = await prisma.roleBinding.findFirst({
       where: {
         principalType: 'USER',

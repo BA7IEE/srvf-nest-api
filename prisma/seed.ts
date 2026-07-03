@@ -2121,7 +2121,7 @@ const MEMBER_ROLE_PERMISSION_CODES: ReadonlyArray<string> = [
 
 // 终态 scoped-authz PR6(2026-07-01;冻结稿 §8.2):判权唯一读源 = global RoleBinding。
 // seed 授予角色(ops-admin bootstrap + biz-admin 补挂)改写 RoleBinding(principalType=USER, scopeType=GLOBAL,
-//   status=ACTIVE),**UserRole 表冻结、seed 不再写**(否则判权读 RoleBinding 看不到 seed 授予的角色)。
+//   status=ACTIVE);旧 UserRole 表已 DROP(冻结表 cleanup,第 39 migration),seed 不写该表。
 // 幂等:RoleBinding 无 Prisma 复合唯一键(active partial unique 手写),故 findFirst active → 缺则 create。
 async function ensureGlobalUserRoleBinding(
   prisma: PrismaClient,
@@ -2287,7 +2287,7 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
   }
 
   if (targetUserId) {
-    // 终态 scoped-authz PR6:授予改写 global RoleBinding(判权唯一读源;UserRole 表冻结不写)。
+    // 终态 scoped-authz PR6:授予改写 global RoleBinding(判权唯一读源;旧 UserRole 表已 DROP)。
     await ensureGlobalUserRoleBinding(prisma, targetUserId, opsAdminRole.id);
   }
 
@@ -3070,7 +3070,8 @@ const BIZ_ADMIN_DESCRIPTION =
 
 // Slow-4 T1(36/35)+ 保险模块 T1 增量(2026-06-13,+7 全绑 → 43/42)+ 招新一期 T1 增量(2026-06-18,+5 全绑 → 48/47):
 // 业务面权限点 + biz-admin 角色 + 绑定 + ADMIN 全员补挂 + 强校验。
-// 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 与 UserRole 复合唯一键),
+// 幂等性:Permission.code / RbacRole.code / RolePermission 复合唯一键全部 upsert;global RoleBinding
+// 走 `ensureGlobalUserRoleBinding` 手写 findFirst+create 幂等(无 Prisma 复合唯一键,partial unique 手写)。
 // 连续跑两次数量与 id 稳定;不覆盖运营运行时调整(update: {} 范式)。
 async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
   // 1. upsert 48 条业务面 Permission

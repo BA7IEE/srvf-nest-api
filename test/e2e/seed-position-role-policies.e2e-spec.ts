@@ -17,7 +17,7 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 //   2. 3 条默认 policy(仅正职,scopeMode 全 TREE);org-supervisor 不是 policy 目标
 //   3. 🔴 R5 CI 断言:副职(vice-captain / dept-deputy / deputy-group-leader)policy 行数恒 = 0
 //   4. R5 运行时护栏生效:人为给副职塞行后重跑 seed → 非 0 退出
-//   5. 零指派 + 零漂移:3 新角色无任何 RoleBinding / UserRole 持有者(判权零影响);
+//   5. 零指派 + 零漂移:3 新角色无任何 RoleBinding 持有者(判权零影响);
 //      ops-admin 91(PR11 起)/ member 9 / biz-admin 72(2026-07-03 摘码微刀起)绑定数不变;
 //      6 保留码不绑 3 新角色(F1 哨兵延伸)
 //   6. 幂等:连续两次 seed counts / role id 稳定 + policy updatedAt 不 bump
@@ -336,7 +336,7 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
   it('5. 零指派 + 零漂移:3 新角色无任何持有者;ops-admin 91(PR11 起)/ member 9 / biz-admin 72(摘码微刀起)不变;保留码不绑', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-5' }).code).toBe(0);
 
-    // 3 新角色零 user 持有(判权唯一读源 RoleBinding 全类型 + 冻结的 UserRole 双查;
+    // 3 新角色零 user 持有(判权唯一读源 RoleBinding 全类型;
     // RbacService.can 只读 GLOBAL RoleBinding → 新角色对现有判权零影响)
     const newRoles = await prisma.rbacRole.findMany({
       where: { code: { in: [...NEW_ROLE_CODES] } },
@@ -345,7 +345,6 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     expect(newRoles).toHaveLength(3);
     const newRoleIds = newRoles.map((r) => r.id);
     expect(await prisma.roleBinding.count({ where: { roleId: { in: newRoleIds } } })).toBe(0);
-    expect(await prisma.userRole.count({ where: { roleId: { in: newRoleIds } } })).toBe(0);
 
     // 既有 3 角色绑定数零漂移
     for (const [code, expected] of [
@@ -412,9 +411,8 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
       select: { id: true },
     });
     // 零持有(冻结稿 BD-2:生产绑定 = PR11 公告导入建立真实任职后运营经 role-bindings CRUD 挂;
-    // seed 绝不发绑定 —— RoleBinding 全类型 + 冻结的 UserRole 双查)
+    // seed 绝不发绑定 —— RoleBinding 全类型)
     expect(await prisma.roleBinding.count({ where: { roleId: role.id } })).toBe(0);
-    expect(await prisma.userRole.count({ where: { roleId: role.id } })).toBe(0);
     // 零 policy 行(终审不随职务自动推导,必须显式 RoleBinding;与 org-supervisor 同为非 policy 目标)
     expect(await prisma.organizationPositionRolePolicy.count({ where: { roleId: role.id } })).toBe(
       0,

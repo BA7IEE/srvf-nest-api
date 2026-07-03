@@ -347,7 +347,7 @@ export async function seedBizAdminPermissionsAndRole(
 
 // 给 user 绑 biz-admin + 主动失效缓存(模拟运行时"绑角色后 POST /rbac/reload"流程)。
 // 终态 scoped-authz PR6:判权唯一读源 = global RoleBinding,故 grant 写 RoleBinding(USER, GLOBAL, ACTIVE);
-//   无 Prisma 复合唯一键 → findFirst active 缺则 create(幂等)。UserRole 表冻结、fixture 不再写。
+//   无 Prisma 复合唯一键 → findFirst active 缺则 create(幂等)。旧 UserRole 表已 DROP,fixture 不写该表。
 export async function grantBizAdminToUser(
   app: INestApplication,
   userId: string,
