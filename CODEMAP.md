@@ -28,7 +28,7 @@
 | `emergency-contacts/` | S (571L) | N:1 紧急联系人 | 子资源 | — |
 | `health/` | S (137L) | 健康检查(live / ready) | **模块结构例外**:只有 module + controller,**无 service** | [`AGENTS.md §2`](AGENTS.md) |
 | `insurances/` | M (1551L) | 自购保险(App self-scope)+ 队保单 + 覆盖名单 + 报名门槛查询 | 覆盖名单 partial unique 在 migration 直写;`InsuranceRequirementService` 是唯一跨模块出口(activity-registration 单向依赖) | [`docs/archive/reviews/insurance-module-review.md`](docs/archive/reviews/insurance-module-review.md) |
-| `member-departments/` | S (329L) | 一人一部门 partial unique | partial unique 在 schema 显式 | — |
+| `member-departments/` | S (329L) | 一人一部门 partial unique(旧面)+ memberships 终态全归属面(新面);两面共写 `member_organization_memberships` | partial unique 在 schema 显式;4 处写点(memberships create/end,legacy set/remove)接 `AuditLogEvent`(`membership.set`/`membership.end`,viaPath 区分),PATCH 不审计 | [`CLAUDE.md`](src/modules/member-departments/CLAUDE.md) |
 | `member-profiles/` | M (1258L) | 1:1 子资源,含敏感字段(身份证默认掩码后 4 位) | **L3 字段不外暴**;白名单严格 | [`docs/security.md`](docs/security.md) |
 | `members/` | S (501L) | 全局 `memberNo` **不复用** | memberNo 唯一性铁律 | [`docs/srvf-foundation-baseline.md`](docs/srvf-foundation-baseline.md) |
 | `notifications/` | M | 生日祝福短信 job(G-7;本仓唯一 `@Cron`,09:00 Asia/Shanghai)+ **统一通知模块 S1 站内信渠道**(admin 撰写/发布 8 端点 + 会员站内信拉取 4 端点;镜像 content 状态机 + 可见性〔复用 content.visibility 去 public = 4 档〕+ NotificationRead 已读 + readCount)| no-cron 解锁范围仅生日批(站内 = 纯 pull 零 cron);统一形状列 audienceType/sourceType/channels 前向兼容(S1 仅 broadcast/admin/in-app;微信 quota / 短信兜底 / producer 定向 = S2-S5 additive);可见性复用 content.visibility 无第二套 | [`CLAUDE.md`](src/modules/notifications/CLAUDE.md) · [`docs/archive/reviews/unified-notification-dispatcher-review.md`](docs/archive/reviews/unified-notification-dispatcher-review.md) |

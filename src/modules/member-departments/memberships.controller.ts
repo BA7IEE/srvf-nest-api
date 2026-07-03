@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
@@ -8,6 +9,7 @@ import {
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { CreateMembershipDto, MembershipResponseDto, UpdateMembershipDto } from './memberships.dto';
 import { MembershipsService } from './memberships.service';
 
@@ -17,6 +19,16 @@ import { MembershipsService } from './memberships.service';
 // **权限标注**:入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;全部判权在 MembershipsService 内 rbac.can()。
 // 4 码 membership.{list,set,end}.record 绑 ops-admin(沿 member-department.* 现绑;POST/PATCH 共用 set)。
 // membership.read.record 已 seed(冻结稿 §4.3;为未来 GET :id 预留),本刀无端点承接。
+
+// 从 @Req() 构造 AuditMeta(沿 position-assignments / content-admin 范式;D8 拍板不引入 ALS)。
+function buildAuditMeta(req: Request): AuditMeta {
+  return {
+    requestId: req.id as string,
+    ip: req.ip ?? null,
+    ua: req.headers['user-agent'] ?? null,
+  };
+}
+
 @ApiTags('Admin - Member Memberships')
 @ApiBearerAuth()
 @Controller('admin/v1/members/:memberId/memberships')
@@ -60,8 +72,9 @@ export class MembershipsController {
     @CurrentUser() user: CurrentUserPayload,
     @Param('memberId') memberId: string,
     @Body() dto: CreateMembershipDto,
+    @Req() req: Request,
   ): Promise<MembershipResponseDto> {
-    return this.service.create(user, memberId, dto);
+    return this.service.create(user, memberId, dto, buildAuditMeta(req));
   }
 
   @Patch(':id')
@@ -100,7 +113,8 @@ export class MembershipsController {
     @CurrentUser() user: CurrentUserPayload,
     @Param('memberId') memberId: string,
     @Param('id') id: string,
+    @Req() req: Request,
   ): Promise<MembershipResponseDto> {
-    return this.service.end(user, memberId, id);
+    return this.service.end(user, memberId, id, buildAuditMeta(req));
   }
 }
