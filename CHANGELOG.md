@@ -9,6 +9,7 @@
 - **feat(rbac): 摘码微刀 — biz-admin 摘除考勤终审两码(74→72),终审权正式只归 scoped 通路 + SUPER_ADMIN 兜底**(2026-07-03,goal「终态 scoped-authz 收尾【摘码微刀】」;PR9 B 方案 / RBAC_MAP §5 挂账正式关闭,解除理由 = 项目尚未进入生产〔无现网操作,终审真空不存在〕+ SA 经 `super_admin_pass` 恒可终审他人〔自审 22074 照拒〕兜底不断;档 D)。**⚠️ 判权行为真变(下一版发布即现网可感,务必读)**:持 `biz-admin` 的 ADMIN 不再持全局终审 —— `PATCH admin/v1/attendance-sheets/:id/final-approve|final-reject` 对其返 **30100**(原 200);终审权 = **scoped 绑定(任职 + `attendance-final-reviewer` 角色,BD-2)或 SUPER_ADMIN**;原「单管理员部署终审链需第二人」运维注更新为「**终审 = SA 或建任职+绑定**」。实现为纯 seed+测试刀(src 零改):`prisma/seed.ts` `BIZ_ADMIN_EXCLUDED_CODES` 过滤集 1→3 码(`member.delete.record` + 终审两码)+ **targeted 幂等清理**(跑过 v0.34.0 及以前 seed 的库残留 2 行旧绑定 deleteMany;干净库 no-op、二跑 diff 空,e2e 自证);**两码保留 Permission 表不删**(权限码 191 / ops-admin 91 / `EXPECTED_ROUTES` 292 / controller 63 / migration 38 / 模块 34 / 角色 7 全不变;org-admin 56 零影响〔派生过滤本就排除终审两码〕;attendance-final-reviewer 3 不动);biz-admin 其余 6 考勤动作(create/read/update/delete/approve/reject)不受影响(e2e 锁边界);e2e 语义翻面 + 流程用例统一换持权终审身份(SA / scoped 绑定者),业务断言零改(0 schema / 0 端点 / 0 新码 / 0 BizCode;contract snapshot 零路由变化)
 - **compliance(R13): 全仓文档/注释示例人名与编号化名化**(review #484 G1 前向修订;零行为/零 schema 语义/零端点/零 RBAC)
 - **fix(recruitment): markThreshold/evaluate/resolveManual 响应接入 read.sensitive 脱敏闸**(review #484 G4;现网 seed 角色行为不变,presenter 单一真相源不动)
+- **fix(role-bindings): 写路径三处边界收紧**——PATCH 禁写「ACTIVE+已过期」矛盾态、绑定主体校验收紧至 active 任职/active 用户(review #484 G7/G13/G16;判权路径零改动,BizCode +0)
 
 ## v0.34.0 - 2026-07-03
 

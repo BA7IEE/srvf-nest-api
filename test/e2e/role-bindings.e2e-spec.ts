@@ -1,5 +1,12 @@
 import type { INestApplication } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import {
+  AssignmentStatus,
+  BindingScopeType,
+  BindingStatus,
+  PrincipalType,
+  Role,
+  UserStatus,
+} from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -478,6 +485,143 @@ describe('role-bindings 带 scope 的角色绑定管理 + 行为锁边界', () =
         .delete('/api/admin/v1/role-bindings/nonexistent000000000000000000')
         .set('Authorization', adminAuth);
       expectBizError(res, BizCode.ROLE_BINDING_NOT_FOUND);
+    });
+  });
+
+  // ============ 判权硬化批(review #484 G7/G13/G16)写路径边界收紧 ============
+
+  describe('G7:PATCH 拒绝「status=ACTIVE + endedAt 已过期」自相矛盾组合', () => {
+    it('触碰 endedAt(晚于 startedAt,但早于当前时间)、ACTIVE 未变 → TENURE_INVALID(34005,新守卫)', async () => {
+      const u = await createTestUser(app, { username: 'rb-g7-a', role: Role.USER });
+      const created = await post(adminAuth, {
+        principalType: 'USER',
+        principalId: u.id,
+        roleId: roleScopedId,
+        scopeType: 'SELF',
+        startedAt: '2020-01-01T00:00:00.000Z',
+      });
+      expect(created.status).toBe(201);
+      const id = created.body.data.id as string;
+
+      // 2020-06-01 晚于 startedAt(过旧的相对顺序检查),但早于「现在」→ 只触发新守卫。
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/role-bindings/${id}`)
+        .set('Authorization', adminAuth)
+        .send({ endedAt: '2020-06-01T00:00:00.000Z' });
+      expectBizError(res, BizCode.ROLE_BINDING_TENURE_INVALID);
+    });
+
+    it('触碰 status 但结果态非 ACTIVE(SUSPENDED)+ 过期 endedAt → 200(不拦非 ACTIVE 结果)', async () => {
+      const u = await createTestUser(app, { username: 'rb-g7-b', role: Role.USER });
+      const created = await post(adminAuth, {
+        principalType: 'USER',
+        principalId: u.id,
+        roleId: roleScopedId,
+        scopeType: 'SELF',
+        startedAt: '2020-01-01T00:00:00.000Z',
+      });
+      expect(created.status).toBe(201);
+      const id = created.body.data.id as string;
+
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/role-bindings/${id}`)
+        .set('Authorization', adminAuth)
+        .send({ status: 'SUSPENDED', endedAt: '2020-06-01T00:00:00.000Z' });
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('SUSPENDED');
+    });
+
+    it('纯 note PATCH 不触碰任期/状态字段,即便当前行已是 ACTIVE+过期态(历史遗留)→ 200', async () => {
+      const freshRole = await prisma.rbacRole.create({
+        data: { code: 'rb-g7-stale-role', displayName: 'RB G7 过期态测试角色' },
+        select: { id: true },
+      });
+      // 直插模拟历史遗留的自相矛盾行(本守卫上线前可能产生,或未来仅因时间流逝产生;
+      // 走 prisma 直插而非 API,不受 create() 的建时校验影响)。
+      const stale = await prisma.roleBinding.create({
+        data: {
+          principalType: PrincipalType.SYSTEM,
+          principalId: null,
+          roleId: freshRole.id,
+          scopeType: BindingScopeType.GLOBAL,
+          status: BindingStatus.ACTIVE,
+          startedAt: new Date('2020-01-01T00:00:00.000Z'),
+          endedAt: new Date('2020-06-01T00:00:00.000Z'),
+        },
+        select: { id: true },
+      });
+
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/role-bindings/${stale.id}`)
+        .set('Authorization', adminAuth)
+        .send({ note: '仅改备注' });
+      expect(res.status).toBe(200);
+      expect(res.body.data.note).toBe('仅改备注');
+      expect(res.body.data.status).toBe('ACTIVE'); // 未被改动,矛盾态原样保留(不静默清空/纠正)
+    });
+
+    it('触碰 endedAt 设为未来(ACTIVE 未变)→ 200(合法路径不回归)', async () => {
+      const u = await createTestUser(app, { username: 'rb-g7-d', role: Role.USER });
+      const created = await post(adminAuth, {
+        principalType: 'USER',
+        principalId: u.id,
+        roleId: roleScopedId,
+        scopeType: 'SELF',
+      });
+      expect(created.status).toBe(201);
+      const id = created.body.data.id as string;
+
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/role-bindings/${id}`)
+        .set('Authorization', adminAuth)
+        .send({ endedAt: '2099-01-01T00:00:00.000Z' });
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('G13:建绑定拒绝已 REVOKED 的 POSITION_ASSIGNMENT 主体', () => {
+    it('principalId 指向 REVOKED(未软删)任职 → POSITION_ASSIGNMENT_NOT_FOUND(32020)', async () => {
+      const position = await prisma.organizationPosition.create({
+        data: { code: 'rb-g13-pos', name: '副组长', categoryCode: 'LEADER' },
+        select: { id: true },
+      });
+      const revokedPa = await prisma.organizationPositionAssignment.create({
+        data: {
+          organizationId: orgId,
+          positionId: position.id,
+          memberId,
+          status: AssignmentStatus.REVOKED,
+          startedAt: new Date(startedAt),
+          endedAt: new Date(),
+        },
+        select: { id: true },
+      });
+
+      const res = await post(adminAuth, {
+        principalType: 'POSITION_ASSIGNMENT',
+        principalId: revokedPa.id,
+        roleId: roleScopedId,
+        scopeType: 'GLOBAL',
+      });
+      expectBizError(res, BizCode.POSITION_ASSIGNMENT_NOT_FOUND);
+    });
+  });
+
+  describe('G16:建绑定拒绝 DISABLED 的 USER 主体', () => {
+    it('principalId 指向 DISABLED(未软删)用户 → USER_NOT_FOUND(对齐 UserRolesService 口径)', async () => {
+      const disabledUser = await createTestUser(app, {
+        username: 'rb-g16-disabled',
+        role: Role.USER,
+        status: UserStatus.DISABLED,
+      });
+
+      const res = await post(adminAuth, {
+        principalType: 'USER',
+        principalId: disabledUser.id,
+        roleId: roleScopedId,
+        scopeType: 'GLOBAL',
+      });
+      expectBizError(res, BizCode.USER_NOT_FOUND);
     });
   });
 
