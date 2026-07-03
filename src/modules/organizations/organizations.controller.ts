@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
@@ -11,6 +12,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   CreateOrganizationDto,
   ListOrganizationsQueryDto,
@@ -31,6 +33,17 @@ import { OrganizationsService } from './organizations.service';
 // 映射 seed 新增 4 条权限点:org.{read,create,update,delete}.node。
 // D3=A:org softDelete 从 v1 仅 SUPER_ADMIN 放宽至 ops-admin 可调
 // (sub-protection 仍在 service 内:HAS_CHILDREN / HAS_MEMBERS / LAST_ROOT_PROTECTED)。
+
+// 审计留痕批(2026-07-03;review #484 G18 → NEXT_TASKS P1-16):从 @Req() 构造 AuditMeta
+//(沿 position-assignments / content-admin 范式;D8 拍板不引入 ALS)。create/updateStatus/move/
+// softDelete 4 个写点传给 service;update(PATCH)不审计,不需要 AuditMeta。
+function buildAuditMeta(req: Request): AuditMeta {
+  return {
+    requestId: req.id as string,
+    ip: req.ip ?? null,
+    ua: req.headers['user-agent'] ?? null,
+  };
+}
 
 @ApiTags('Admin - Organizations')
 @ApiBearerAuth()
@@ -79,8 +92,9 @@ export class OrganizationsController {
   create(
     @CurrentUser() user: CurrentUserPayload,
     @Body() dto: CreateOrganizationDto,
+    @Req() req: Request,
   ): Promise<OrganizationResponseDto> {
-    return this.service.create(user, dto);
+    return this.service.create(user, dto, buildAuditMeta(req));
   }
 
   @Get(':id')
@@ -139,8 +153,9 @@ export class OrganizationsController {
     @CurrentUser() user: CurrentUserPayload,
     @Param() params: IdParamDto,
     @Body() dto: UpdateOrganizationStatusDto,
+    @Req() req: Request,
   ): Promise<OrganizationResponseDto> {
-    return this.service.updateStatus(user, params.id, dto);
+    return this.service.updateStatus(user, params.id, dto, buildAuditMeta(req));
   }
 
   // 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §8.3/§11 PR1):reparent 重挂父级。
@@ -164,8 +179,9 @@ export class OrganizationsController {
     @CurrentUser() user: CurrentUserPayload,
     @Param() params: IdParamDto,
     @Body() dto: MoveOrganizationDto,
+    @Req() req: Request,
   ): Promise<OrganizationResponseDto> {
-    return this.service.move(user, params.id, dto);
+    return this.service.move(user, params.id, dto, buildAuditMeta(req));
   }
 
   @Delete(':id')
@@ -186,7 +202,8 @@ export class OrganizationsController {
   softDelete(
     @CurrentUser() user: CurrentUserPayload,
     @Param() params: IdParamDto,
+    @Req() req: Request,
   ): Promise<OrganizationResponseDto> {
-    return this.service.softDelete(user, params.id);
+    return this.service.softDelete(user, params.id, buildAuditMeta(req));
   }
 }

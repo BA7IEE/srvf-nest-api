@@ -153,7 +153,17 @@ export type AuditLogEvent =
   // 区分入口(沿 role-binding.* extra.viaPath 范式)。PATCH(memberships.update)不写 audit——沿 role-binding.update /
   // supervision-assignment.update 均不审计的既有先例(仅改 status/note 等非建/终字段,不构成建/终事件)。
   | 'membership.set' // 建 / 设归属(memberships.service: create;member-departments.service: set 幂等分支〔同 org 无变更〕不写);extra.viaPath ∈ {membership, department}
-  | 'membership.end'; // 结束归属(memberships.service: end;member-departments.service: remove〔软删旧 PRIMARY 行〕);extra.viaPath ∈ {membership, department}
+  | 'membership.end' // 结束归属(memberships.service: end;member-departments.service: remove〔软删旧 PRIMARY 行〕);extra.viaPath ∈ {membership, department}
+  // organizations 写面审计留痕补齐(2026-07-03;review #484 G18 → NEXT_TASKS P1-16)。resourceType='organization'。
+  // PR1(2026-07-01)遗留缺口:OrganizationsService 写路径全程无 audit;PR11 announcement-import 把
+  // create() 推到单请求最多 200 行的批量规模,放大"谁在何时批量建了哪些组"缺失审计轨迹的暴露面。
+  // 审计范围收窄至「建 / 树结构变更 / 授权相关状态变更 / 终」四类,沿 role-binding.*/supervision-assignment.*
+  // 均不审计纯 cosmetic update 的既有先例:update(name/sortOrder/nodeTypeCode)**不写 audit**——非建/终
+  // 字段变更,不构成审计事件(详见 src/modules/organizations/CLAUDE.md)。
+  | 'organization.create' // admin 建组织节点(organizations.service: create 1 处;含 announcement-import 批量复用同一方法;after 快照,无 before)
+  | 'organization.move' // admin 重挂父级/reparent(organizations.service: move 1 处;before/after.parentId;树结构 + scoped 判权范围变更;同父幂等 no-op 分支不写)
+  | 'organization.status-change' // admin 启停(organizations.service: updateStatus 1 处;before/after.status;INACTIVE 会使 covers() 拒绝 scoped grant)
+  | 'organization.delete'; // admin 软删组织节点(organizations.service: softDelete 1 处;仅 before 快照,沿 certificate.delete/content.delete 纯删除既有先例)
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

@@ -137,6 +137,7 @@ describe('AnnouncementImportService — 组织行', () => {
         nodeTypeCode: 'group',
         establishmentStatusCode: 'provisional',
       }),
+      META,
       { dryRun: true },
     );
   });
@@ -154,7 +155,9 @@ describe('AnnouncementImportService — 组织行', () => {
       { organizations: [{ code: 'G1', parentCode: 'PARENT', name: '新组' }] },
       META,
     );
-    expect(organizations.create).toHaveBeenCalledWith(USER, expect.anything(), { dryRun: false });
+    expect(organizations.create).toHaveBeenCalledWith(USER, expect.anything(), META, {
+      dryRun: false,
+    });
   });
 
   it('code 在批内重复 → 第二行 blocked,第一行不受影响', async () => {

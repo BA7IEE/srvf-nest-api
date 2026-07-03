@@ -1,13 +1,16 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { OrganizationsController } from './organizations.controller';
 import { OrganizationsService } from './organizations.service';
 
 // P0-F PR-2A(2026-05-18):imports PermissionsModule 供 OrganizationsService 注入 RbacService
 // (沿 PR-1 attachments F5 v1.0 范本)。
+// 审计留痕批(2026-07-03;review #484 G18 → NEXT_TASKS P1-16):imports AuditLogsModule 供注入
+// AuditLogsService(create/updateStatus/move/softDelete 写 audit;沿 position-assignments 范式)。
 @Module({
-  imports: [DatabaseModule, PermissionsModule],
+  imports: [DatabaseModule, PermissionsModule, AuditLogsModule],
   controllers: [OrganizationsController],
   providers: [OrganizationsService],
   // 终态 scoped-authz PR11(2026-07-02):announcement-import 模块需注入 OrganizationsService
