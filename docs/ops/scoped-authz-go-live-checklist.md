@@ -20,7 +20,7 @@
 ## 1. 部署 ≥ v0.34.0 + 摘码微刀 #482
 
 - [ ] 部署版本 ≥ `v0.34.0` 且包含摘码微刀([#482](https://github.com/BA7IEE/srvf-nest-api/pull/482));`git log` 应能看到该 squash commit
-- [ ] `prisma migrate deploy` 执行到第 38 个 migration(终态 scoped-authz 8 张新表齐全:`organization_closure` / `member_organization_memberships` / `organization_positions` / `organization_position_rules` / `organization_position_assignments` / `organization_supervision_assignments` / `role_bindings` / `organization_position_role_policies`)
+- [ ] `prisma migrate deploy` 执行完毕、`prisma migrate status` 无 pending:部署 current `main`(含 v0.35.0 发版后的冻结表 cleanup [#494](https://github.com/BA7IEE/srvf-nest-api/pull/494))共 **39** 个 migration —— 终态 scoped-authz 8 张新表在第 **38** 个 migration 时已建齐(`organization_closure` / `member_organization_memberships` / `organization_positions` / `organization_position_rules` / `organization_position_assignments` / `organization_supervision_assignments` / `role_bindings` / `organization_position_role_policies`),第 **39** 个(`20260703100000_drop_frozen_member_department_user_role`)DROP 掉已零生产读写的两张冻结旧表 `MemberDepartment` + `user_roles`(对外行为逐字不变,详见 [`CHANGELOG.md` `## Unreleased`](../../CHANGELOG.md));若部署的恰是 `v0.34.0` / `v0.35.0` tag(#494 之前)则为 38 个,以实际 `migrate status` 为准
 - [ ] `pnpm prisma:seed` 幂等执行:权限码 **191** 条 / 7 个内置角色(`biz-admin` **72** / `ops-admin` **91** / `member` 9 / `org-admin` 56 / `group-manager` 22 / `org-supervisor` 4 / `attendance-final-reviewer` 3)/ 6 个内置职务(队长 / 副队长 / 部长 / 副部长 / 组长 / 副组长)/ 30 条默认职务规则全部到位
 
 **校验**:
