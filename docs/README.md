@@ -29,6 +29,7 @@
 | [`ops/wechat-mini-production-rollout-checklist.md`](./ops/wechat-mini-production-rollout-checklist.md) | 运维侧微信小程序登录真实通道上线 SOP(注册小程序 → AppID/AppSecret → admin 录凭证〔仅 SA〕→ DevStub 全链 → 真实验收;系统侧已"正确但休眠") |
 | [`ops/scoped-authz-go-live-checklist.md`](./ops/scoped-authz-go-live-checklist.md) | 维护者/运营侧「组织职务 + 分管 + scoped RBAC + 统一鉴权」上线初始化 SOP(一次性动作:部署迁移+seed → 建管理账号 → 录入队员 → 公告 rows 导入 → BD-2 终审绑定 → authz/explain 验收 → env 项确认) |
 | [`ai-harness/README.md`](./ai-harness/README.md) | **AI Harness 操作层单页**(derived,**非规则源**,与权威源冲突时让步;必读三件套之一):铁律速查表 / AI 修改三档 + 触发即停 / 全仓读写分区;同目录另两文件 = `RBAC_MAP.md`(权限地图,`docs:rbacmap:check` 守护)+ `NEXT_TASKS.md`(后续任务清单);2026-06-10 Review 冻结档见 `archive/ai-harness/` |
+| [`reviews/full-repo-systematic-review-v0.34.0.md`](./reviews/full-repo-systematic-review-v0.34.0.md) | **全仓多维度系统性 review 报告第二轮**(2026-07-03 冻结,base `082b5477` = v0.34.0 + #482/#483;A 档只读审查,**本批不修**):0 P0 / **1 confirmed P1**(真实队员 PII 已进入公开仓库 git history,待用户拍板修复方式)/ 9 P2 / 19 P3;修复分批建议见报告 §7。**本批修复落地前不归档**(沿 v0.26.0 报告归档流程,修复收口后随 review-then-fix goal 移入 `archive/reviews/`) |
 
 V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威源**):
 
