@@ -1,6 +1,6 @@
 # announcement-import — 本地铁律
 
-> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);架构边界读 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md);权限地图读 [`/docs/ai-harness/RBAC_MAP.md`](../../../docs/ai-harness/RBAC_MAP.md)。**设计权威源 = T0 冻结评审稿 [`/docs/reviews/org-position-scoped-authz-terminal-design-review.md`](../../../docs/reviews/org-position-scoped-authz-terminal-design-review.md) §8.4 / §11 PR11**。本文件只记录在本目录工作时容易踩雷的本地铁律。
+> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);架构边界读 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md);权限地图读 [`/docs/ai-harness/RBAC_MAP.md`](../../../docs/ai-harness/RBAC_MAP.md)。**设计权威源 = T0 冻结评审稿 [`/docs/archive/reviews/org-position-scoped-authz-terminal-design-review.md`](../../../docs/archive/reviews/org-position-scoped-authz-terminal-design-review.md) §8.4 / §11 PR11**。本文件只记录在本目录工作时容易踩雷的本地铁律。
 
 ## Scope
 
