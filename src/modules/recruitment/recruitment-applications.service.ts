@@ -579,6 +579,7 @@ export class RecruitmentApplicationsService {
     now: Date,
   ): Promise<RecruitmentApplicationAdminDto> {
     await this.assertCanOrThrow(user, 'recruitment-application.resolve.manual');
+    const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
     return this.prisma.$transaction(async (tx) => {
       const row = await tx.recruitmentApplication.findFirst({ where: { id, deletedAt: null } });
       if (!row) {
@@ -624,7 +625,7 @@ export class RecruitmentApplicationsService {
         extra: { tempNo: updated.tempNo, eliminationStage: updated.eliminationStage },
         tx,
       });
-      return toAdminApplicationDto(updated, false);
+      return toAdminApplicationDto(updated, !canSensitive);
     });
   }
 

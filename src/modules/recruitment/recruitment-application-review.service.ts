@@ -58,6 +58,7 @@ export class RecruitmentApplicationReviewService {
     now: Date,
   ): Promise<RecruitmentApplicationAdminDto> {
     await this.assertCanOrThrow(user, 'recruitment-application.mark.threshold');
+    const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
     return this.prisma.$transaction(async (tx) => {
       const row = await tx.recruitmentApplication.findFirst({ where: { id, deletedAt: null } });
       if (!row) {
@@ -96,7 +97,7 @@ export class RecruitmentApplicationReviewService {
         extra: { thresholdCode: code, completed: dto.completed, allComplete },
         tx,
       });
-      return toAdminApplicationDto(updated, false);
+      return toAdminApplicationDto(updated, !canSensitive);
     });
   }
 
@@ -204,6 +205,7 @@ export class RecruitmentApplicationReviewService {
     now: Date,
   ): Promise<RecruitmentApplicationAdminDto> {
     await this.assertCanOrThrow(user, 'recruitment-application.evaluate.assessment');
+    const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
     return this.prisma.$transaction(async (tx) => {
       const row = await tx.recruitmentApplication.findFirst({ where: { id, deletedAt: null } });
       if (!row) {
@@ -250,7 +252,7 @@ export class RecruitmentApplicationReviewService {
         extra: { approved: dto.approved, eliminationStage },
         tx,
       });
-      return toAdminApplicationDto(updated, false);
+      return toAdminApplicationDto(updated, !canSensitive);
     });
   }
 
