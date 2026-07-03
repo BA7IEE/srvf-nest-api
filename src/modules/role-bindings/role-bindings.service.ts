@@ -1,5 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { BindingScopeType, BindingStatus, PrincipalType, Prisma } from '@prisma/client';
+import {
+  AssignmentStatus,
+  BindingScopeType,
+  BindingStatus,
+  PrincipalType,
+  Prisma,
+  UserStatus,
+} from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -77,8 +84,11 @@ export class RoleBindingsService {
     };
   }
 
-  // principalType ↔ principalId 一致性 + 被引用主体存在性(多态,无 FK)。
-  // SYSTEM → principalId 必须为空;非 SYSTEM → principalId 必填且指向存在的实体(按类型选表)。
+  // principalType ↔ principalId 一致性 + 被引用主体存在且 active(多态,无 FK)。
+  // SYSTEM → principalId 必须为空;非 SYSTEM → principalId 必填且指向存在且 active 的实体(按类型选表)。
+  // USER 对齐 UserRolesService.assertUserAccessibleOrThrow 口径要求 status=ACTIVE(review G16);
+  // POSITION_ASSIGNMENT 要求 status=ACTIVE、拒绝已 REVOKED/ENDED 但未软删的任职(review G13);
+  // MEMBER 无 DISABLED 语义,维持仅校验未软删。
   private async validatePrincipalOrThrow(
     tx: PrismaTx,
     principalType: PrincipalType,
@@ -91,7 +101,7 @@ export class RoleBindingsService {
     if (principalId == null) throw new BizException(BizCode.ROLE_BINDING_PRINCIPAL_INVALID);
     if (principalType === PrincipalType.USER) {
       const u = await tx.user.findFirst({
-        where: { id: principalId, deletedAt: null },
+        where: { id: principalId, deletedAt: null, status: UserStatus.ACTIVE },
         select: { id: true },
       });
       if (!u) throw new BizException(BizCode.USER_NOT_FOUND);
@@ -104,7 +114,7 @@ export class RoleBindingsService {
     } else {
       // POSITION_ASSIGNMENT
       const pa = await tx.organizationPositionAssignment.findFirst({
-        where: notDeletedWhere({ id: principalId }),
+        where: notDeletedWhere({ id: principalId, status: AssignmentStatus.ACTIVE }),
         select: { id: true },
       });
       if (!pa) throw new BizException(BizCode.POSITION_ASSIGNMENT_NOT_FOUND);
@@ -280,12 +290,14 @@ export class RoleBindingsService {
   // 改状态 / 任期 / note(全可选)。不改 principal / role / scope(换绑定 = 软删旧建新)。
   // 找不到未软删记录 → NOT_FOUND;endedAt(新旧综合)须 > startedAt(新旧综合)→ TENURE_INVALID;
   // 改 status→ACTIVE 撞全 scope 维度唯一 → P2002 → ROLE_BINDING_ALREADY_EXISTS。**不写 audit**(沿 PR5 update)。
+  // review G7:仅当本次 PATCH 触碰 status/startedAt/endedAt 任一字段时,额外拒绝结果态自相矛盾的
+  // 「status=ACTIVE 但 endedAt 已过期」组合(→ TENURE_INVALID);纯改 note 不受影响(不触碰任期/状态字段)。
   async update(user: CurrentUserPayload, id: string, dto: UpdateRoleBindingDto) {
     await this.assertCanOrThrow(user, 'role-binding.update.record');
     const result = await this.prisma.$transaction(async (tx) => {
       const current = await tx.roleBinding.findFirst({
         where: notDeletedWhere({ id }),
-        select: { id: true, startedAt: true, endedAt: true },
+        select: { id: true, status: true, startedAt: true, endedAt: true },
       });
       if (!current) throw new BizException(BizCode.ROLE_BINDING_NOT_FOUND);
 
@@ -294,6 +306,20 @@ export class RoleBindingsService {
       const effectiveEndedAt = dto.endedAt !== undefined ? new Date(dto.endedAt) : current.endedAt;
       if (effectiveEndedAt !== null && effectiveEndedAt.getTime() <= effectiveStartedAt.getTime()) {
         throw new BizException(BizCode.ROLE_BINDING_TENURE_INVALID);
+      }
+
+      const touchesTenureOrStatus =
+        dto.status !== undefined || dto.startedAt !== undefined || dto.endedAt !== undefined;
+      if (touchesTenureOrStatus) {
+        const effectiveStatus = dto.status ?? current.status;
+        const now = new Date();
+        if (
+          effectiveStatus === BindingStatus.ACTIVE &&
+          effectiveEndedAt !== null &&
+          effectiveEndedAt.getTime() <= now.getTime()
+        ) {
+          throw new BizException(BizCode.ROLE_BINDING_TENURE_INVALID);
+        }
       }
 
       const data: Prisma.RoleBindingUpdateInput = {};
