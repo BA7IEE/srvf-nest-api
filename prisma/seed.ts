@@ -408,6 +408,7 @@ const V2_DICT_SEED = [
     // docs/archive/reviews/unified-notification-dispatcher-review.md §9.4 / member-notification-review.md §7):
     // notification.notificationTypeCode ∈ 本字典 ACTIVE item;label 占位待运营细化。
     // code 沿通知域 kebab-case 风格(对齐 schema channels=['in-app']);后续可按招新六触发 / 活动 / 考勤细化。
+    // 防误删守卫:闭集 → 已登记 dictionaries.service.ts SYSTEM + ITEM_PROTECTED_DICT_TYPES(review #484 G2 补登记)。
     type: { code: 'notification_type', label: '通知类型', sortOrder: 22 },
     items: [
       { code: 'activity-reminder', label: '活动提醒', sortOrder: 0 },

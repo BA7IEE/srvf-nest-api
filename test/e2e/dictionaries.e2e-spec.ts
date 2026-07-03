@@ -618,6 +618,26 @@ describe('dictionaries 模块', () => {
       expectBizError(res, BizCode.DICT_ITEM_SYSTEM_PROTECTED);
     });
 
+    it('DELETE 内置类型(notification_type)及其项 → 均 SYSTEM_PROTECTED(review #484 G2 补登记;同一 code 唯一约束,类型/项两断言合一测试)', async () => {
+      const t = await prisma.dictType.create({
+        data: { code: 'notification_type', label: '通知类型' },
+        select: { id: true },
+      });
+      const i = await prisma.dictItem.create({
+        data: { typeId: t.id, code: 'general', label: '一般通知' },
+        select: { id: true },
+      });
+      const itemRes = await request(httpServer(app))
+        .delete(`/api/system/v1/dict-items/${i.id}`)
+        .set('Authorization', superAdminAuth);
+      expectBizError(itemRes, BizCode.DICT_ITEM_SYSTEM_PROTECTED);
+
+      const typeRes = await request(httpServer(app))
+        .delete(`/api/system/v1/dict-types/${t.id}`)
+        .set('Authorization', superAdminAuth);
+      expectBizError(typeRes, BizCode.DICT_TYPE_SYSTEM_PROTECTED);
+    });
+
     it('DELETE 开放分类类型下的项(content_type / announcement)→ 200(运营可维护)', async () => {
       const t = await prisma.dictType.create({
         data: { code: 'content_type', label: '内容类型' },

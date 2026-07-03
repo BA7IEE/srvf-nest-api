@@ -99,6 +99,9 @@ const SYSTEM_PROTECTED_DICT_TYPES: ReadonlySet<string> = new Set<string>([
   //(formal/provisional;Organization.establishmentStatusCode 引用);items 亦受 ② 保护。
   // 注:留口字典 group_function(R3;空 items、无校验路径)沿 join_source 自由串候选字典惯例**不登记**。
   'org_establishment_status',
+  // 统一通知模块 S1(2026-06-25 PR #449):通知类型闭集,`assertNotificationTypeValid` 硬校验
+  //(review #484 G2 补登记;items 亦受 ② 保护)。
+  'notification_type',
 ]);
 
 // ② 闭集 + 国标参照 + 队内内置类型 → 其下【项】禁软删(SYSTEM_PROTECTED_DICT_TYPES 的子集;
@@ -127,6 +130,8 @@ const ITEM_PROTECTED_DICT_TYPES: ReadonlySet<string> = new Set<string>([
   'recruitment_stage',
   // 终态 scoped-authz PR1(2026-07-01 goal「组织基座」;冻结稿 §3.0.1 R1):组织设立状态闭集 formal/provisional。
   'org_establishment_status',
+  // 统一通知模块 S1(2026-06-25 PR #449):通知类型闭集(review #484 G2 补登记)。
+  'notification_type',
 ]);
 
 @Injectable()
