@@ -578,4 +578,206 @@ describe('announcement-import 公告导入 preview/execute', () => {
       expect(created).not.toBeNull();
     });
   });
+
+  // ============ 组织行 already-exists 锚点一致性校验 + 毒丸传播(review #484 G8)============
+  describe('组织行 already-exists 锚点一致性校验 + 毒丸传播(review #484 G8)', () => {
+    it('code 撞既有异构组织(nodeTypeCode 非 group)→ blocked + reason,不视为 already-exists', async () => {
+      const collide = await prisma.organization.create({
+        data: {
+          name: '异构组织-类型不符',
+          code: 'AIE2E-COLLIDE-TYPE',
+          nodeTypeCode: 'rescue-team',
+          parentId: orgTeamId,
+        },
+        select: { id: true },
+      });
+
+      const res = await execute(adminAuth, {
+        organizations: [
+          { code: 'AIE2E-COLLIDE-TYPE', parentCode: 'AIE2E-TEAM', name: '尝试导入同 code' },
+        ],
+      });
+
+      expect(res.status).toBe(200);
+      const data = res.body.data as {
+        organizations: Array<{
+          status: string;
+          organizationId: string | null;
+          reasons: Array<{ bizCode: number | null; message: string }>;
+        }>;
+      };
+      expect(data.organizations[0].status).toBe('blocked');
+      expect(data.organizations[0].organizationId ?? null).toBeNull();
+      expect(data.organizations[0].reasons[0].bizCode).toBeNull(); // synthetic 诊断,非底层 BizException
+
+      // 既有异构组织本身未被篡改,也没有新组织被创建顶替它
+      const stillThere = await prisma.organization.findUnique({
+        where: { id: collide.id },
+        select: { nodeTypeCode: true, parentId: true, name: true },
+      });
+      expect(stillThere!.nodeTypeCode).toBe('rescue-team');
+      expect(stillThere!.name).toBe('异构组织-类型不符');
+    });
+
+    it('code 撞既有异构组织(nodeTypeCode=group 但父级不同)→ blocked + reason', async () => {
+      const otherParent = await prisma.organization.create({
+        data: {
+          name: '另一个父组织',
+          code: 'AIE2E-COLLIDE-OTHERPARENT',
+          nodeTypeCode: 'group',
+          parentId: orgTeamId,
+        },
+        select: { id: true },
+      });
+      const collide = await prisma.organization.create({
+        data: {
+          name: '异构组织-父级不符',
+          code: 'AIE2E-COLLIDE-PARENT',
+          nodeTypeCode: 'group',
+          parentId: otherParent.id,
+        },
+        select: { id: true },
+      });
+
+      const res = await execute(adminAuth, {
+        organizations: [
+          { code: 'AIE2E-COLLIDE-PARENT', parentCode: 'AIE2E-TEAM', name: '尝试导入同 code' },
+        ],
+      });
+
+      const data = res.body.data as {
+        organizations: Array<{ status: string; organizationId: string | null }>;
+      };
+      expect(data.organizations[0].status).toBe('blocked');
+      expect(data.organizations[0].organizationId ?? null).toBeNull();
+
+      const stillThere = await prisma.organization.findUnique({
+        where: { id: collide.id },
+        select: { parentId: true },
+      });
+      expect(stillThere!.parentId).toBe(otherParent.id); // 未被篡改
+    });
+
+    it('毒丸传播:锚点冲突组织行的 code 阻断同请求任职/分管行落库,不影响同批其它未声明 code', async () => {
+      // 构造"若毒丸拦截失效,resolveOrg 直查 DB 会正常命中"的既有异构组织——nodeType=group、
+      // rule/membership 前提均满足,唯独 parentId 不同,确保拦截一旦失效任职/分管行会真的落库成功,
+      // 而不是恰好被其它校验挡住导致测试失去区分力。
+      const poisonParent = await prisma.organization.create({
+        data: {
+          name: '毒丸-其它父',
+          code: 'AIE2E-POISON-OTHERPARENT',
+          nodeTypeCode: 'group',
+          parentId: orgTeamId,
+        },
+        select: { id: true },
+      });
+      await prisma.organizationClosure.createMany({
+        data: [
+          { ancestorId: poisonParent.id, descendantId: poisonParent.id, depth: 0 },
+          { ancestorId: orgTeamId, descendantId: poisonParent.id, depth: 1 },
+        ],
+      });
+      const collideOrg = await prisma.organization.create({
+        data: {
+          name: '毒丸-冲突组',
+          code: 'AIE2E-POISON-ORG',
+          nodeTypeCode: 'group',
+          parentId: poisonParent.id,
+        },
+        select: { id: true },
+      });
+      await prisma.organizationClosure.createMany({
+        data: [
+          { ancestorId: collideOrg.id, descendantId: collideOrg.id, depth: 0 },
+          { ancestorId: poisonParent.id, descendantId: collideOrg.id, depth: 1 },
+          { ancestorId: orgTeamId, descendantId: collideOrg.id, depth: 2 },
+        ],
+      });
+
+      const memberPoisonPos = await newMember('poison-pos');
+      await addMembership(memberPoisonPos.id, orgTeamId); // collideOrg 的祖先,若误挂会满足 requireMembership
+      const memberPoisonSup = await newMember('poison-sup');
+      const memberSafe = await newMember('poison-safe');
+      await addMembership(memberSafe.id, orgTeamId); // orgGroupId 的祖先,合法路径
+
+      const res = await execute(adminAuth, {
+        organizations: [
+          { code: 'AIE2E-POISON-ORG', parentCode: 'AIE2E-TEAM', name: '尝试复用(应判 blocked)' },
+        ],
+        positions: [
+          {
+            memberNo: memberPoisonPos.memberNo,
+            orgCode: 'AIE2E-POISON-ORG',
+            positionCode: 'ai-e2e-group-leader',
+            startedAt,
+          },
+          {
+            memberNo: memberSafe.memberNo,
+            orgCode: 'AIE2E-GRP', // 未在本请求 organizations[] 中声明,既有合法组织
+            positionCode: 'ai-e2e-group-leader',
+            startedAt,
+          },
+        ],
+        supervisions: [
+          { supervisorMemberNo: memberPoisonSup.memberNo, orgCode: 'AIE2E-POISON-ORG', startedAt },
+        ],
+      });
+
+      expect(res.status).toBe(200);
+      const data = res.body.data as {
+        organizations: Array<{ status: string }>;
+        positions: Array<{ status: string }>;
+        supervisions: Array<{ status: string }>;
+      };
+      expect(data.organizations[0].status).toBe('blocked');
+      expect(data.positions[0].status).toBe('blocked'); // 毒丸传播
+      expect(data.positions[1].status).toBe('ok'); // 未声明于 organizations[] 的既有 code,不受影响
+      expect(data.supervisions[0].status).toBe('blocked'); // 毒丸传播
+
+      const poisonedPa = await prisma.organizationPositionAssignment.findFirst({
+        where: { memberId: memberPoisonPos.id },
+      });
+      expect(poisonedPa).toBeNull();
+      const poisonedSup = await prisma.organizationSupervisionAssignment.findFirst({
+        where: { supervisorMemberId: memberPoisonSup.id },
+      });
+      expect(poisonedSup).toBeNull();
+      const safePa = await prisma.organizationPositionAssignment.findFirst({
+        where: { memberId: memberSafe.id },
+      });
+      expect(safePa).not.toBeNull();
+      expect(safePa!.organizationId).toBe(orgGroupId);
+    });
+
+    it('preview 与 execute 对锚点冲突分类完全一致(dryRun 不影响判断)', async () => {
+      const collide = await prisma.organization.create({
+        data: {
+          name: '异构-一致性核对',
+          code: 'AIE2E-COLLIDE-PARITY',
+          nodeTypeCode: 'rescue-team',
+          parentId: orgTeamId,
+        },
+        select: { id: true },
+      });
+      const body = {
+        organizations: [
+          { code: 'AIE2E-COLLIDE-PARITY', parentCode: 'AIE2E-TEAM', name: '一致性核对' },
+        ],
+      };
+
+      const previewRes = await preview(adminAuth, body);
+      const executeRes = await execute(adminAuth, body);
+
+      const previewData = previewRes.body.data as { organizations: Array<{ status: string }> };
+      const executeData = executeRes.body.data as { organizations: Array<{ status: string }> };
+      expect(previewData.organizations[0].status).toBe('blocked');
+      expect(executeData.organizations[0].status).toBe('blocked');
+
+      const stillThere = await prisma.organization.findUnique({
+        where: { id: collide.id },
+        select: { nodeTypeCode: true },
+      });
+      expect(stillThere!.nodeTypeCode).toBe('rescue-team'); // 双方均未篡改既有组织
+    });
+  });
 });

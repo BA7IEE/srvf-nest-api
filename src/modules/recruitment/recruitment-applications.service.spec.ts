@@ -150,6 +150,142 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
   });
 });
 
+// review #484 G3(2026-07-03):主证件照 putObject + 两次裁剪图 storeCropImage 原位于拥有 FM-B 补偿的
+// try 之外——裁剪图落图抛错时,已写成功的主证件照(及先成功的裁剪图)key 从未被补偿删,成永久存储孤儿。
+// 修复把三次落图纳入与事务同一个 try/catch 失败域,复用既有 storedKeys 补偿循环(见上方 describe)。
+// mainlandOcr 需带 cardImageBase64/portraitImageBase64 才会触发 step 10b 的两次 storeCropImage 调用
+// ——上面的 FM-B 回归组 realname.recognize 桩不含这两个字段,故单独建组覆盖。
+describe('RecruitmentApplicationsService · 落图失败孤儿补偿(review #484 G3)', () => {
+  const VALID_MAINLAND_ID = '110101199003070038'; // GB11643 有效校验位 + 36 岁(2026 基准)
+
+  function buildPayload(): RecruitmentSubmitPayloadDto {
+    return {
+      wechatCode: 'code-x',
+      realName: '张三',
+      idCardNumber: VALID_MAINLAND_ID,
+      documentTypeCode: 'mainland_id',
+      phone: '13900000001',
+      detailedAddress: '北京市朝阳区某街道 1 号',
+      cityDistrict: '北京市朝阳区',
+      sourceChannel: 'wechat_moments',
+      emergencyContacts: [
+        { name: '李四', relation: '父亲', phone: '13900000002' },
+        { name: '王五', relation: '母亲', phone: '13900000003' },
+      ],
+    };
+  }
+
+  const image: UploadedImageFile = {
+    buffer: Buffer.from('fake-id-card-bytes'),
+    mimetype: 'image/jpeg',
+    size: 100,
+  };
+  const meta: AuditMeta = { requestId: 'r1', ip: null, ua: null };
+  const now = new Date('2026-06-18T00:00:00.000Z');
+
+  // mainland 鉴伪版返回主体框 + 头像裁剪图 base64 → step 10b 两次 storeCropImage 均实际调用 putObject。
+  function buildServiceWithCrops() {
+    const storage = {
+      putObject: jest.fn(),
+      deleteObject: jest.fn().mockResolvedValue(undefined),
+      generateUploadUrl: jest.fn(),
+      generateDownloadUrl: jest.fn(),
+      headObject: jest.fn(),
+    };
+    const prisma = {
+      recruitmentCycle: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'cyc1', capacity: null, year: 2026 }),
+      },
+      recruitmentApplication: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      dictItem: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'rel1' }),
+      },
+      // 本组测试均在落图阶段先抛错,事务不应被调用
+      $transaction: jest.fn(),
+    };
+    const wechat = { code2session: jest.fn().mockResolvedValue({ openid: 'op1' }) };
+    const realname = {
+      recognize: jest.fn().mockResolvedValue({
+        recognized: true,
+        name: '张三',
+        idCardNumber: VALID_MAINLAND_ID,
+        warnings: [],
+        cardImageBase64: 'ZmFrZS1jYXJkLWNyb3A=',
+        portraitImageBase64: 'ZmFrZS1wb3J0cmFpdA==',
+      }),
+    };
+    const rbac = { can: jest.fn() };
+    const auditLogs = { log: jest.fn() };
+    const identity = { assertPhoneSessionValid: jest.fn(), consumePhoneSession: jest.fn() };
+    const service = new RecruitmentApplicationsService(
+      prisma as never,
+      rbac as never,
+      auditLogs as never,
+      wechat as never,
+      realname as never,
+      identity as never,
+      storage,
+    );
+    return { service, storage, prisma };
+  }
+
+  it('头像裁剪图(第 3 次 putObject)抛错 → 主证件照 + 主体裁剪图 key 全部补偿删除 + 原错误照抛', async () => {
+    const { service, storage, prisma } = buildServiceWithCrops();
+    storage.putObject
+      .mockResolvedValueOnce({ key: 'k1', etag: null }) // 主证件照
+      .mockResolvedValueOnce({ key: 'k2', etag: null }) // 主体框裁剪图
+      .mockRejectedValueOnce(new Error('portrait crop putObject boom')); // 头像裁剪图
+
+    await expect(service.submit(buildPayload(), image, meta, now)).rejects.toThrow(
+      'portrait crop putObject boom',
+    );
+
+    expect(storage.putObject).toHaveBeenCalledTimes(3);
+    expect(prisma.$transaction).not.toHaveBeenCalled(); // 落图先抛,事务从未开启
+    expect(storage.deleteObject).toHaveBeenCalledTimes(2);
+    expect(storage.deleteObject).toHaveBeenCalledWith(
+      expect.stringContaining('recruitment/id-card/cyc1/'),
+    );
+    expect(storage.deleteObject).toHaveBeenCalledWith(
+      expect.stringContaining('recruitment/id-card-crop/cyc1/'),
+    );
+  });
+
+  it('主体框裁剪图(第 2 次 putObject)抛错 → 仅先前已写的主证件照 key 被补偿删除,头像裁剪图从未调用', async () => {
+    const { service, storage, prisma } = buildServiceWithCrops();
+    storage.putObject
+      .mockResolvedValueOnce({ key: 'k1', etag: null }) // 主证件照
+      .mockRejectedValueOnce(new Error('body crop putObject boom')); // 主体框裁剪图
+
+    await expect(service.submit(buildPayload(), image, meta, now)).rejects.toThrow(
+      'body crop putObject boom',
+    );
+
+    expect(storage.putObject).toHaveBeenCalledTimes(2); // 头像裁剪图短路未调用
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(storage.deleteObject).toHaveBeenCalledTimes(1);
+    expect(storage.deleteObject).toHaveBeenCalledWith(
+      expect.stringContaining('recruitment/id-card/cyc1/'),
+    );
+  });
+
+  it('主证件照(第 1 次 putObject)自身抛错 → 该 key 补偿删为空操作(从未真正写入),原错误照抛', async () => {
+    const { service, storage, prisma } = buildServiceWithCrops();
+    storage.putObject.mockRejectedValueOnce(new Error('main image putObject boom'));
+
+    await expect(service.submit(buildPayload(), image, meta, now)).rejects.toThrow(
+      'main image putObject boom',
+    );
+
+    expect(storage.putObject).toHaveBeenCalledTimes(1); // 两次裁剪图短路未调用
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    // 主证件照 key 在 storedKeys 初始化时已预置,即使自身落图失败也仍走一次 best-effort 删(空操作)
+    expect(storage.deleteObject).toHaveBeenCalledTimes(1);
+  });
+});
+
 // review #484 G4(2026-07-03):resolveManual 写响应曾恒 toAdminApplicationDto(updated, false) 明文,
 // 未检查 read.sensitive —— 与详情/导出(recruitment-applications-query.service.ts)口径矛盾。
 // 镜像 query.service.spec.ts 的 rbac.can mock 范式(SENSITIVE 常量同款),锁定双分支。

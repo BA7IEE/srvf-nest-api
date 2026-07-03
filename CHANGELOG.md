@@ -10,6 +10,7 @@
 - **compliance(R13): 全仓文档/注释示例人名与编号化名化**(review #484 G1 前向修订;零行为/零 schema 语义/零端点/零 RBAC)
 - **fix(recruitment): markThreshold/evaluate/resolveManual 响应接入 read.sensitive 脱敏闸**(review #484 G4;现网 seed 角色行为不变,presenter 单一真相源不动)
 - **fix(role-bindings): 写路径三处边界收紧**——PATCH 禁写「ACTIVE+已过期」矛盾态、绑定主体校验收紧至 active 任职/active 用户(review #484 G7/G13/G16;判权路径零改动,BizCode +0)
+- **fix(recruitment,announcement-import): OCR 落图失败孤儿补偿收口 + 导入 already-exists 组织一致性校验与毒丸传播**(review #484 G3/G8;成功路径行为不变,BizCode +0)
 
 ## v0.34.0 - 2026-07-03
 
