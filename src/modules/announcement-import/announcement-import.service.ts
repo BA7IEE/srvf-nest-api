@@ -45,6 +45,14 @@ import {
 // **批内重复检测(seenXxx 系列)只在本文件存在**:这不是重复业务校验,而是 dry-run 的固有盲区 ——
 // 同一批内两行都引用同一个"即将创建"的资源时,各自的 dry-run 都会各自独立回滚,互相看不见对方,
 // 单靠被复用 service 的 DB 级防重查询无法在 preview 阶段发现批内冲突,必须在编排层显式去重。
+//
+// **already-exists 一致性校验 + 毒丸传播(review #484 G8)**:组织行撞 ORGANIZATION_CODE_ALREADY_EXISTS
+// 时不再无条件"视为就是这个组"——先核对既有组织 nodeTypeCode=group 且 parentId 与本行已解析的
+// parent.id 一致,匹配才判 already-exists(幂等语义不变);不匹配(code 误撞语义不同的既有异构组织,
+// 如 seed 内置真实缩写)→ 该行改判 blocked,并把 code 计入本请求的 poisonedOrgCodes——resolveOrg 是
+// "先查 map 再查库",即使这里不写 orgCodeMap,后续 positions[]/supervisions[] 行经 DB 直查仍会命中
+// 同一个错误组织,必须显式毒丸传播才挡得住静默挂错。从未在本请求 organizations[] 声明过的 code 不受
+// 影响(直查 DB 放行——双锚设计下引用 seed 内置组织的合法路径必须原样工作)。
 
 const DEFAULT_APPOINTMENT_SOURCE = 'announcement-2026';
 const GROUP_NODE_TYPE_CODE = 'group';
@@ -148,10 +156,20 @@ export class AnnouncementImportService {
     // organizations[] 必须先于 positions[]/supervisions[] 处理完毕,后两者才能引用本批新建组织。
     const orgCodeMap = new Map<string, OrgAnchor>();
     const seenOrgCodes = new Set<string>();
+    // 本请求内因 already-exists 锚点冲突改判 blocked 的组织 code(毒丸集;review #484 G8)——
+    // positions[]/supervisions[] 引用这些 code 的行一律随之 blocked,不落库。
+    const poisonedOrgCodes = new Set<string>();
     const organizations: ImportOrganizationRowResultDto[] = [];
     for (const row of organizationRows) {
       organizations.push(
-        await this.processOrganizationRow(user, row, orgCodeMap, seenOrgCodes, dryRun),
+        await this.processOrganizationRow(
+          user,
+          row,
+          orgCodeMap,
+          seenOrgCodes,
+          poisonedOrgCodes,
+          dryRun,
+        ),
       );
     }
 
@@ -159,7 +177,15 @@ export class AnnouncementImportService {
     const positions: ImportPositionRowResultDto[] = [];
     for (const row of positionRows) {
       positions.push(
-        await this.processPositionRow(user, row, orgCodeMap, seenPositionKeys, meta, dryRun),
+        await this.processPositionRow(
+          user,
+          row,
+          orgCodeMap,
+          poisonedOrgCodes,
+          seenPositionKeys,
+          meta,
+          dryRun,
+        ),
       );
     }
 
@@ -167,7 +193,15 @@ export class AnnouncementImportService {
     const supervisions: ImportSupervisionRowResultDto[] = [];
     for (const row of supervisionRows) {
       supervisions.push(
-        await this.processSupervisionRow(user, row, orgCodeMap, seenSupervisionKeys, meta, dryRun),
+        await this.processSupervisionRow(
+          user,
+          row,
+          orgCodeMap,
+          poisonedOrgCodes,
+          seenSupervisionKeys,
+          meta,
+          dryRun,
+        ),
       );
     }
 
@@ -258,6 +292,7 @@ export class AnnouncementImportService {
     row: ImportOrganizationRowDto,
     orgCodeMap: Map<string, OrgAnchor>,
     seenCodes: Set<string>,
+    poisonedOrgCodes: Set<string>,
     dryRun: boolean,
   ): Promise<ImportOrganizationRowResultDto> {
     if (!row.code || !row.parentCode || !row.name) {
@@ -306,18 +341,40 @@ export class AnnouncementImportService {
     } catch (err) {
       if (!(err instanceof BizException)) throw err;
       if (err.biz.code === BizCode.ORGANIZATION_CODE_ALREADY_EXISTS.code) {
-        // 幂等(决断⑤):code 已被占用 → 视为"就是这个组",取现有行 id 供后续行引用。
+        // 幂等(决断⑤,已收窄见 review #484 G8):code 已被占用 → 先核对锚点一致性(nodeType=group
+        // 且父级 = 本行已解析的 parent.id)才"视为就是这个组"。名称/设立状态/组功能差异不纳入比对
+        // (名称漂移合法;锚 = 类型 + 父级)。
         const existing = await this.prisma.organization.findFirst({
           where: notDeletedWhere({ code: row.code }),
-          select: { id: true, nodeTypeCode: true },
+          select: { id: true, nodeTypeCode: true, parentId: true },
         });
-        if (existing) {
-          orgCodeMap.set(row.code, existing);
+        if (
+          existing &&
+          existing.nodeTypeCode === GROUP_NODE_TYPE_CODE &&
+          existing.parentId === parent.id
+        ) {
+          orgCodeMap.set(row.code, { id: existing.id, nodeTypeCode: existing.nodeTypeCode });
           return {
             row,
             status: 'already-exists',
             reasons: [fromBizException(err)],
             organizationId: existing.id,
+          };
+        }
+        if (existing) {
+          // 锚点不一致:code 撞了语义不同的既有组织(如 seed 内置真实缩写)。不复用、改判 blocked,
+          // 并把 code 打入毒丸集阻断同请求内 positions[]/supervisions[] 行静默挂错(见 processPositionRow
+          // / processSupervisionRow 的 poisonedOrgCodes 拦截)。
+          poisonedOrgCodes.add(row.code);
+          return {
+            row,
+            status: 'blocked',
+            reasons: [
+              synthetic(
+                `code=${row.code} 撞既有异构组织:期望 nodeType=${GROUP_NODE_TYPE_CODE}/parentId=${parent.id},` +
+                  `实际 nodeType=${existing.nodeTypeCode}/parentId=${existing.parentId ?? 'null'}`,
+              ),
+            ],
           };
         }
       }
@@ -331,6 +388,7 @@ export class AnnouncementImportService {
     user: CurrentUserPayload,
     row: ImportPositionRowDto,
     orgCodeMap: Map<string, OrgAnchor>,
+    poisonedOrgCodes: ReadonlySet<string>,
     seenKeys: Set<string>,
     meta: AuditMeta,
     dryRun: boolean,
@@ -341,6 +399,19 @@ export class AnnouncementImportService {
     if (!row.startedAt) missing.push('startedAt');
     if (missing.length > 0) {
       return { row, status: 'blocked', reasons: [synthetic(`缺必填字段:${missing.join(', ')}`)] };
+    }
+    // 毒丸传播(review #484 G8):orgCode 对应的组织行本请求内因锚点冲突已判 blocked——resolveOrg
+    // 的 DB 直查仍会命中该异构既有组织,必须在此显式拦截,不能让本行静默挂到错误组织上。
+    if (poisonedOrgCodes.has(row.orgCode!)) {
+      return {
+        row,
+        status: 'blocked',
+        reasons: [
+          synthetic(
+            `orgCode=${row.orgCode} 对应的组织行在本请求内锚点冲突已判 blocked,本行随之阻断`,
+          ),
+        ],
+      };
     }
 
     const anchor = await this.resolveMemberAnchor(row.memberNo, row.displayName, dryRun);
@@ -411,6 +482,7 @@ export class AnnouncementImportService {
     user: CurrentUserPayload,
     row: ImportSupervisionRowDto,
     orgCodeMap: Map<string, OrgAnchor>,
+    poisonedOrgCodes: ReadonlySet<string>,
     seenKeys: Set<string>,
     meta: AuditMeta,
     dryRun: boolean,
@@ -420,6 +492,19 @@ export class AnnouncementImportService {
     if (!row.startedAt) missing.push('startedAt');
     if (missing.length > 0) {
       return { row, status: 'blocked', reasons: [synthetic(`缺必填字段:${missing.join(', ')}`)] };
+    }
+    // 毒丸传播(review #484 G8):同 processPositionRow——orgCode 对应的组织行本请求内因锚点冲突
+    // 已判 blocked,本行随之阻断,不能经 resolveOrg 的 DB 直查静默挂到错误组织上。
+    if (poisonedOrgCodes.has(row.orgCode!)) {
+      return {
+        row,
+        status: 'blocked',
+        reasons: [
+          synthetic(
+            `orgCode=${row.orgCode} 对应的组织行在本请求内锚点冲突已判 blocked,本行随之阻断`,
+          ),
+        ],
+      };
     }
 
     const anchor = await this.resolveMemberAnchor(row.supervisorMemberNo, row.displayName, dryRun);

@@ -327,35 +327,38 @@ export class RecruitmentApplicationsService {
     }
     const record = decision.record as NonNullable<typeof decision.record>; // disposition='submitted' → record 必有
 
-    // 10. 落图 → key(失败不建记录)。collect 全部已落 storage key,事务失败时逐个 best-effort 补偿删(FM-B 扩为多 key)。
+    // 10. 落图 → key(失败不建记录)。collect 全部已落 storage key,失败逐个 best-effort 补偿删(FM-B 扩为多 key)。
+    //     主证件照 putObject + 两次裁剪图 storeCropImage 与下方事务同属一个失败域(见 catch)——
+    //     任一环节抛错,此前已成功落 storage 的 key 都不留孤儿(系统性审查 review #484 G3)。
     const ext = image.mimetype === 'image/png' ? 'png' : 'jpg';
     const idCardImageKey = `${ID_CARD_IMAGE_KEY_PREFIX}/${cycle.id}/${randomUUID()}.${ext}`;
     const storedKeys: string[] = [idCardImageKey];
-    await this.storage.putObject({
-      key: idCardImageKey,
-      body: image.buffer,
-      contentType: image.mimetype,
-    });
-    // 10b. 鉴伪版充分利用:主体框 / 头像裁剪图(腾讯返 base64 JPEG)解码入库(仅 mainland 鉴伪版返回时);
-    //      缺省/接口未返 → key 留 null 不阻断提交(E3/E7)。裁剪图入库后即弃 base64(不入日志)。
-    const idCardCropImageKey = await this.storeCropImage(
-      mainlandOcr?.cardImageBase64,
-      ID_CARD_CROP_IMAGE_KEY_PREFIX,
-      cycle.id,
-      storedKeys,
-    );
-    const idCardPortraitImageKey = await this.storeCropImage(
-      mainlandOcr?.portraitImageBase64,
-      ID_CARD_PORTRAIT_IMAGE_KEY_PREFIX,
-      cycle.id,
-      storedKeys,
-    );
 
     // 11. 单事务建终态:verified → 原子发号(容量同事务校验,FM-C)+ tempNo;manual_review → 无 tempNo + OCR 六分流字段。
     //    audit submit(actor 置空)+ (大陆)audit realname-verify(每次付费 OCR 必留痕,resourceId=新 id)。
     const ageGroup = birthDate ? ageGroupOf(computeAge(birthDate, now)) : null;
     let finalApp: RecruitmentApplication;
     try {
+      await this.storage.putObject({
+        key: idCardImageKey,
+        body: image.buffer,
+        contentType: image.mimetype,
+      });
+      // 10b. 鉴伪版充分利用:主体框 / 头像裁剪图(腾讯返 base64 JPEG)解码入库(仅 mainland 鉴伪版返回时);
+      //      缺省/接口未返 → key 留 null 不阻断提交(E3/E7)。裁剪图入库后即弃 base64(不入日志)。
+      const idCardCropImageKey = await this.storeCropImage(
+        mainlandOcr?.cardImageBase64,
+        ID_CARD_CROP_IMAGE_KEY_PREFIX,
+        cycle.id,
+        storedKeys,
+      );
+      const idCardPortraitImageKey = await this.storeCropImage(
+        mainlandOcr?.portraitImageBase64,
+        ID_CARD_PORTRAIT_IMAGE_KEY_PREFIX,
+        cycle.id,
+        storedKeys,
+      );
+
       finalApp = await this.prisma.$transaction(async (tx) => {
         // H5:事务内消费会话行(与建终态记录同事务,建失败回滚则 token 保活可重试);得手机身份链落点。
         let phoneIdentity: ConsumedPhoneIdentity | null = null;
@@ -462,8 +465,11 @@ export class RecruitmentApplicationsService {
         return row;
       });
     } catch (err) {
-      // 单事务失败(并发撞 partial unique 或任何 DB 错误)→ 第 10/10b 步刚落 storage 的证件照 + 裁剪图成孤儿。
-      // best-effort 逐个补偿删(原图 + 主体裁剪 + 头像裁剪),失败仅告警、不掩盖原错(FM-B;系统性审查 §3)。
+      // 落图(原图/两次裁剪图 putObject)或单事务失败(并发撞 partial unique 或任何 DB 错误)→
+      // 此前已成功落 storage 的证件照 + 裁剪图成孤儿。best-effort 逐个补偿删 storedKeys 里的 key
+      // (裁剪图仅在 storeCropImage 自身 putObject 成功后才推入,失败的那次不会重复进来;
+      // 删除本就未写入的 key 是空操作,不影响原错误照抛),失败仅告警、不掩盖原错
+      // (FM-B;系统性审查 review #484 G3)。
       for (const k of storedKeys) {
         await this.safeDeleteOrphanImage(k);
       }

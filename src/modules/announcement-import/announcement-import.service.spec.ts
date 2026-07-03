@@ -180,11 +180,12 @@ describe('AnnouncementImportService — 组织行', () => {
     expect(organizations.create).toHaveBeenCalledTimes(1);
   });
 
-  it('ORGANIZATION_CODE_ALREADY_EXISTS → 幂等标 already-exists 并回填现有行 id 供后续引用', async () => {
+  it('ORGANIZATION_CODE_ALREADY_EXISTS 且锚点匹配(nodeType=group + 父级一致)→ 幂等标 already-exists 并回填现有行 id 供后续引用', async () => {
     const prisma = makePrismaMock();
     prisma.organization.findFirst
       .mockResolvedValueOnce({ id: 'parent-1', nodeTypeCode: 'rescue-team' }) // parentCode 解析
-      .mockResolvedValueOnce({ id: 'existing-org-1', nodeTypeCode: 'group' }); // 冲突后二次查现有行
+      // 冲突后二次查现有行:review #484 G8 起 select 含 parentId,匹配才视为幂等 already-exists
+      .mockResolvedValueOnce({ id: 'existing-org-1', nodeTypeCode: 'group', parentId: 'parent-1' });
     const { svc, organizations } = build(prisma);
     (organizations.create as jest.Mock).mockRejectedValue(
       new BizException(BizCode.ORGANIZATION_CODE_ALREADY_EXISTS),
@@ -196,6 +197,136 @@ describe('AnnouncementImportService — 组织行', () => {
     );
     expect(res.organizations[0].status).toBe('already-exists');
     expect(res.organizations[0].organizationId).toBe('existing-org-1');
+  });
+
+  // review #484 G8(2026-07-03):code 撞既有组织但 nodeType/父级与本行锚点不一致 → 不再无条件幂等复用,
+  // 改判 blocked 并把 code 计入毒丸集(见下方"毒丸传播"describe)。
+  describe('ORGANIZATION_CODE_ALREADY_EXISTS 且锚点不一致 → blocked(不再盲目复用,review #484 G8)', () => {
+    it('nodeTypeCode 非 group(异构类型)→ blocked,不回填 organizationId,不进 orgCodeMap', async () => {
+      const prisma = makePrismaMock();
+      prisma.organization.findFirst
+        .mockResolvedValueOnce({ id: 'parent-1', nodeTypeCode: 'rescue-team' }) // parentCode 解析
+        .mockResolvedValueOnce({
+          id: 'existing-org-1',
+          nodeTypeCode: 'rescue-team',
+          parentId: 'parent-1',
+        }); // 类型不是 group
+      const { svc, organizations, positionAssignments } = build(prisma);
+      (organizations.create as jest.Mock).mockRejectedValue(
+        new BizException(BizCode.ORGANIZATION_CODE_ALREADY_EXISTS),
+      );
+      const res = await svc.execute(
+        USER,
+        {
+          organizations: [{ code: 'COLLIDE', parentCode: 'PARENT', name: '异构撞车' }],
+          positions: [
+            {
+              memberNo: 'T0001',
+              orgCode: 'COLLIDE',
+              positionCode: 'POS',
+              startedAt: '2026-07-01T00:00:00.000Z',
+            },
+          ],
+        },
+        META,
+      );
+      expect(res.organizations[0].status).toBe('blocked');
+      expect(res.organizations[0].organizationId ?? null).toBeNull();
+      expect(res.organizations[0].reasons[0].bizCode).toBeNull(); // synthetic 诊断,非底层 BizException
+      // 毒丸传播:引用同 code 的任职行随之 blocked,绝不经 resolveOrg 直查 DB 静默挂到异构组织
+      expect(res.positions[0].status).toBe('blocked');
+      expect(positionAssignments.create).not.toHaveBeenCalled();
+    });
+
+    it('nodeTypeCode=group 但父级不一致(异父)→ blocked', async () => {
+      const prisma = makePrismaMock();
+      prisma.organization.findFirst
+        .mockResolvedValueOnce({ id: 'parent-1', nodeTypeCode: 'rescue-team' }) // parentCode 解析
+        .mockResolvedValueOnce({
+          id: 'existing-org-1',
+          nodeTypeCode: 'group',
+          parentId: 'other-parent',
+        }); // 父级不同
+      const { svc, organizations } = build(prisma);
+      (organizations.create as jest.Mock).mockRejectedValue(
+        new BizException(BizCode.ORGANIZATION_CODE_ALREADY_EXISTS),
+      );
+      const res = await svc.execute(
+        USER,
+        { organizations: [{ code: 'COLLIDE2', parentCode: 'PARENT', name: '异父撞车' }] },
+        META,
+      );
+      expect(res.organizations[0].status).toBe('blocked');
+      expect(res.organizations[0].organizationId ?? null).toBeNull();
+    });
+
+    it('毒丸传播同样拦截分管行(镜像任职行)', async () => {
+      const prisma = makePrismaMock();
+      prisma.organization.findFirst
+        .mockResolvedValueOnce({ id: 'parent-1', nodeTypeCode: 'rescue-team' }) // parentCode 解析
+        .mockResolvedValueOnce({
+          id: 'existing-org-1',
+          nodeTypeCode: 'rescue-team',
+          parentId: 'parent-1',
+        }); // 冲突二次查(异构)
+      const { svc, organizations, supervisionAssignments } = build(prisma);
+      (organizations.create as jest.Mock).mockRejectedValue(
+        new BizException(BizCode.ORGANIZATION_CODE_ALREADY_EXISTS),
+      );
+      const res = await svc.execute(
+        USER,
+        {
+          organizations: [{ code: 'COLLIDE3', parentCode: 'PARENT', name: '异构撞车' }],
+          supervisions: [
+            {
+              supervisorMemberNo: 'T0001',
+              orgCode: 'COLLIDE3',
+              startedAt: '2026-07-01T00:00:00.000Z',
+            },
+          ],
+        },
+        META,
+      );
+      expect(res.organizations[0].status).toBe('blocked');
+      expect(res.supervisions[0].status).toBe('blocked');
+      expect(supervisionAssignments.create).not.toHaveBeenCalled();
+    });
+  });
+
+  it('preview 与 execute 对锚点冲突分类完全一致(dryRun 不影响判断)', async () => {
+    function buildMismatchPrisma() {
+      const prisma = makePrismaMock();
+      prisma.organization.findFirst
+        .mockResolvedValueOnce({ id: 'parent-1', nodeTypeCode: 'rescue-team' })
+        .mockResolvedValueOnce({
+          id: 'existing-org-1',
+          nodeTypeCode: 'rescue-team',
+          parentId: 'parent-1',
+        });
+      return prisma;
+    }
+    const previewSetup = build(buildMismatchPrisma());
+    (previewSetup.organizations.create as jest.Mock).mockRejectedValue(
+      new BizException(BizCode.ORGANIZATION_CODE_ALREADY_EXISTS),
+    );
+    const previewRes = await previewSetup.svc.preview(
+      USER,
+      { organizations: [{ code: 'COLLIDE4', parentCode: 'PARENT', name: '一致性核对' }] },
+      META,
+    );
+
+    const executeSetup = build(buildMismatchPrisma());
+    (executeSetup.organizations.create as jest.Mock).mockRejectedValue(
+      new BizException(BizCode.ORGANIZATION_CODE_ALREADY_EXISTS),
+    );
+    const executeRes = await executeSetup.svc.execute(
+      USER,
+      { organizations: [{ code: 'COLLIDE4', parentCode: 'PARENT', name: '一致性核对' }] },
+      META,
+    );
+
+    expect(previewRes.organizations[0].status).toBe('blocked');
+    expect(executeRes.organizations[0].status).toBe('blocked');
   });
 
   it('其它 BizException(如 ORGANIZATION_PARENT_NOT_FOUND)→ blocked,原样携带 bizCode/message', async () => {
