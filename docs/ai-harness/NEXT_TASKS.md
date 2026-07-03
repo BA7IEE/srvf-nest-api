@@ -32,6 +32,10 @@
 - **候选方案**:镜像 `announcement-import` 的 preview/execute 两段式设计(零写入诊断 + 幂等落库 + 逐行 `ok`/`blocked`/`already-exists` 结果),但目标表是 `Member`(可能含基础档案字段)而非组织/任职/分管;**同样受 R13 约束**——测试与文档示例一律用假数据,真实姓名/证件信息不进本仓库任何位置。
 - **触发条件**:出现批量导入存量队员(> 逐个可接受量级)的真实诉求时单独立项评审(D 档,涉及 schema 是否需要新增批量端点、字段集范围、与 `POST admin/v1/members` 单条端点的关系)。
 
+### P1-16 organizations.create/update 面审计留痕补齐 — **⏸ 不自动启动,诉求触发再立项**
+- **背景**(review #484 G18):`OrganizationsService.create()` 全程无 audit 写入,是 PR1(2026-07-01)遗留的既有决策(模块 CLAUDE.md 已记录、非 PR11 announcement-import 新引入);PR11(2026-07-02)是第一个把这条路径推到批量规模(单请求最多 200 行)并用于真实公告场景的调用方,放大了"谁在何时批量建了哪些组"缺失审计轨迹的实际暴露面。
+- **触发条件**:若需补齐,应作为 `organizations.service.ts` 独立立项(同时惠及既有单条创建/更新端点),**不应**在 announcement-import 模块内单独造一份 audit 逻辑。
+
 ### P2-3 分页 skip/take 换算的轻度重复 — **❌ 不做**
 - 依据:现状可接受(逻辑两行,已验证);主动抽 util 违反 AGENTS §2 grab-bag 禁令。重开条件 = 后续出现第 3 处分页 bug 时单独评估,**不**预先立项。
 
@@ -41,20 +45,20 @@
 ### P2-6 #399 review P2 修复残余(4 项;**均无当前运行时危害,诉求/接线时处理**) — 2026-06-20 收口登记
 > #399 全仓 review P2 六项已修(#400-#404,见 [`current-state §4`](../current-state.md) + 冻结报告顶部 ✅);以下为修复时显式接受、留待后续的残余:
 - **F2 残余:attachment key owner-绑定**(P3)— F2 现把 create() 的 key 约束到 `attachments/<envPrefix>/` 派生格式正则,关闭「任意 COS 路径」面;残余 = 命名空间内、已知**完整 96-bit 随机段** key 仍可签(已知即已有权)。彻底闭合 = key↔owner 派生绑定 / 弃用模式 A 全量走模式 B(upload-url + HMAC token)。**COS 休眠,运维接通前非紧急**。
-- **F1 关联:attachment.`*.other` 接 enforcement 时复核保留集**(P3)— 11 条 `attachment.*.other` 权限码当前 seed 不绑任何 meta 角色、且无 enforcement(绑了也不授能力,scoping 对);**将来 attachment.other 接线启用 enforcement 时**,需复核是否纳入 F1 `RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES`(`seed-rbac.e2e` 漂移哨兵 + 常量 completeness 测试会抓不一致)。
+- **F1 关联:attachment.`*.other` 接 enforcement 时复核保留集**(P3)— **8 条**(review #484 G26 true-up:实测非「11」)`attachment.*.other` 权限码(member/certificate 两 owner × upload/view/update/delete 四动作);**PR7 起 `group-manager` 已绑其中 4 条**(`upload`/`view` × member/certificate,设计内决定非疏漏——绑了也不授能力因全 8 条均无 enforcement,scoping 对);余 4 条(`update`/`delete` × member/certificate)当前 seed 不绑任何 meta 角色。**将来 attachment.other 接线启用 enforcement 时**,需复核是否纳入 F1 `RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES`(`seed-rbac.e2e` 漂移哨兵 + 常量 completeness 测试会抓不一致)。
 - **F5/F6 关联:dev-only 依赖 CVE**(P3)— ~~`fast-uri`(`@nestjs/cli>…>ajv`,path-traversal/host-confusion high)~~ **✅ 已随 review #484 G25 批的全局 `fast-uri` override 一并解决(本 PR,2026-07-03;见下)**;`@types/supertest>…>form-data`(CRLF high)仍 **dev/构建/测试链、运行期不触达**,待 `@types` 更新。**+ `cos>fast-xml-parser` <5.7.0 moderate**(XMLBuilder 注入;需 4→5 **breaking major**,cos 仅解析腾讯云响应、不以不可信输入构造 XML,低危,本批拍板范围外,现状不变)。
 - **F18(报告 §3):CI `pnpm audit` 门禁**(P3)— 全仓无 audit gate;建议 CI 加 `pnpm audit --audit-level high`(先告警再门禁)或 G-12 正式立项,把残余 CVE 分类「修/接受+理由」登记。
 - **review #484 G10/G25:生产可达依赖 CVE overrides 收口** ✅(本 PR,2026-07-03;`pnpm audit -P` **9 → 3**)——**G10(已修)**:`qs`(经 `@nestjs/platform-express>express`,DoS)+ `js-yaml`(经 `@nestjs/swagger`,DoS)两条生产可达 moderate CVE 已通过 `pnpm.overrides` 收口(`qs` 全局 `^6.15.2` 同时覆盖 COS `request>qs` 路径;`js-yaml` 因树上另有不相关 `3.14.2` 消费者,改用 `@nestjs/swagger>js-yaml` scoped `^4.2.0` 避免误伤)。**G25(best-effort,部分收口)**:COS `request` 传递链——`tough-cookie`(`request>tough-cookie` `^4.1.3`)/ `ajv`(`conf>ajv` `^8.18.0`)/ `uuid`(仅 `tencentcloud-sdk-nodejs-common>uuid` `^11.1.1` 路径)三项已 override 收口。**残留(逐条注明,均非本批可解)**:① `request` 本体(SSRF,`.>cos-nodejs-sdk-v5>request`)——advisory 明示 patched 版本 `<0.0.0`(即无解),upstream 已弃用永不再发版,**等 COS SDK 换传输层**(或弃用 `cos-nodejs-sdk-v5`)才可能消除;② `uuid` 经 `request>uuid` 路径——**曾尝试 override 到 `^11.1.1` 但导致 2 个 unit 测试套件(`attachments.service.spec.ts` / `storage-provider.router.spec.ts`)整体加载失败**,根因是 `request` 自身冻结代码 `lib/auth.js` 用旧式深路径 `require('uuid/v4')`(uuid 7.x 起废弃该子路径导出),与 CVE patched 下限 `>=11.1.1` **结构性不可兼容**(无论选哪个 ≥11.1.1 版本都会炸),已撤销该条 override,不硬上;③ `fast-xml-parser`(`.>cos-nodejs-sdk-v5>fast-xml-parser`)——现状不变,见上 F5/F6 行(4→5 major,本批范围外)。**副作用(已处理)**:`ajv` override 到 8.x 后,ajv 自身传递依赖 `fast-uri` 引入 2 条**更高severity**(high)的新 CVE(path-traversal + host-confusion);已追加全局 `fast-uri: ^3.1.2` override 一并解决(全树仅此一个 fast-uri 消费来源 `ajv`,零冲突),此举同时消除了上面 F5/F6 登记的 dev-only fast-uri 项。回归自证:build/lint/typecheck 0 错误,unit 71 suites/2140 全绿,contract 525 全绿(snapshot 零 diff),full e2e 123 suites/2438 全绿。
 
-### P2-7 #399 review P3 处理残余(接受+登记 3 项;**均无当前运行时危害**) — 2026-06-20 收口登记
-> #399 §3 的 13 项 P3:**9 项已修**(#409-#413,见归档区 + 冻结报告 ✅ P3 处理状态)、**1 项延后**(F18 CI audit gate,见上 P2-6 末项 → 归 G-12),以下 3 项 R0 triage 复核后**接受+登记**:
+### P2-7 #399 review P3 处理残余(接受+登记 2 项;**均无当前运行时危害**) — 2026-06-20 收口登记
+> #399 §3 的 13 项 P3:**9 项已修**(#409-#413,见归档区 + 冻结报告 ✅ P3 处理状态)、**1 项延后**(F18 CI audit gate,见上 P2-6 末项 → 归 G-12)、**1 项已完成移入已完成项归档区**(F13,见文末;review #484 G27),以下 2 项 R0 triage 复核后**接受+登记**:
 - **F7 付费核验 cost-DoS**(P3)— 同 openid 可用不同伪造身份证号无限提交、每条直达付费实名核验(去重键 `(cycleId,idCardNumber)` 无 per-openid 上限),与已接受的 28003 枚举面**同源**(current-state §4)。**真实腾讯云实名核验休眠(DevStub 免费)→ 今日零成本**;接通才激活(类 F2/COS 接通前非紧急)。彻底修 = per-openid 配额(改报名去重语义,属产品决策)→ **真实通道接通触发再评**。
 - **F8 promote 写字典码契约**(P3)— promote 写 `MemberProfile.genderCode`/`documentTypeCode` 不经 canonical 字典校验。**R0 复核降级**:`isForeignDocument` 令非 `mainland_id` 即 foreign(不进一键发号),故 promote 只写固定 canonical 码 `mainland_id`/`male`/`female`(身份证派生 / 非用户可控,**无 F3 式注入污染**),且 profile 码当前无字典校验消费点 → **零运行时危害**。真修 = 保证 prod 字典 seed 含 `male`/`female`/`mainland_id` item code(**seed/ops 不变量**;加 promote 断言反会把潜在不一致硬化成 promote 失败、且 demo seed `demo-*` 会打挂既有 e2e)→ seed/字典治理时一并保障。
-- **F13 `BIZ_ADMIN_DESCRIPTION` 计数过时**(P3,cosmetic)— seed 持久化的 biz-admin `role.description` 枚举停在「48 中绑 47」,实际 58/57(漏整个 team-join);rbacmap 不校 description 文本故逃门禁。**纯 cosmetic doc-drift**,无功能影响;改 `prisma/seed.ts`=D 档,值不抵 → 留待 **seed 下次改动顺手校准**(建议改 `*_PERMISSION_SEED.length` 动态拼接,根除复发)。
-
 ---
 
 ## 已完成项归档区
+
+- **F13 `BIZ_ADMIN_DESCRIPTION` 计数过时** ✅(review #484 G27,2026-07-03 记录;已于同日摘码微刀 #482 顺手校准)——`prisma/seed.ts` 的 `BIZ_ADMIN_DESCRIPTION` 现读「75 条中绑 72」,与摘码后实际绑定数(72)一致;此前「48 中绑 47」等旧计数已随 #482 自然更新,无需再单独立项。
 
 - **队员/审批「跨轴只读查询」补全(交接层 GAP-001 Tier2 / GAP-002 Tier3)** ✅(2026-06-23 goal「队员/审批『跨轴只读查询』补全」,支撑前端 srvf-admin-web 任务驱动后台;`## Unreleased` 累计,**未 bump**):前端自查确诊「资源后台」症结 = 后端按所有权轴(活动/队员)嵌套查询、前端把嵌套子资源拍平成顶级菜单 + 手选父级(上下文丢失)。后端 URL 树本是任务驱动 IA,沿轴下钻全有;本 goal 只补**跨轴横扫**只读缺口 **+5 admin 端点**(全 `/api/admin/v1/*`):Tier2 审批工作台 = `GET /registrations` + `GET /attendance-sheets`(跨活动按 statusCode 横扫;后者扩既有 `AttendanceSheetsResourceController` 加根 `@Get` 不新增 class)· Tier3 队员 360 = `GET /members/:memberId/{registrations,attendance-records,contribution-summary}`(报名履历 / 考勤记录〔仅 approved〕/ 贡献值生涯累计 capped)。贡献值实时算不落库,抽出 `team-join-progress.ts` 封顶核 `computeCappedContribution(cutoff: Date|null)`(`computeContribution` 委托之,team-join 调用方零变化;**禁裸 SUM**,生涯 cutoff=null + 北京日封顶 1.5)。**footprint**:复用现成 read 码**零新权限码**(155 不变)· 零 BizCode / 零 migration / 零 schema 列 / 零 enum / 零 audit / 零新模块 / 零新依赖;controller 49→**52**(+3 class);EXPECTED_ROUTES 229→**234**;e2e +2 spec(跨轴 registrations 11 + attendances 12)+ unit +1 spec(team-join-progress 7,封顶聚合 capped<裸SUM/生涯/null→0)+ contract +5 路由/+4 schema(snapshot 仅新增)。**同 PR 更新交接层**(反漂铁律):`docs/handoff/admin-web.md` GAP-001/002→已发、§2.2/2.3 ⛔→✅ + `docs/handoff/openapi.json` 刷新。`docs:rbacmap:check`(155)/`docs:codemap:check` 0 FAIL/0 WARN(WARN 仅既有 god-service 体量观察)。**v1 不做**(后续诉求触发):跨轴写操作 / 队员 360 证书·部门·档案 5 子资源已现成不动 / 贡献值年度窗口参数化 / 拆 god-service。
 

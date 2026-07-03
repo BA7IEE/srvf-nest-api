@@ -52,10 +52,10 @@
 
 红区精确清单:六大红区文档(`AGENTS.md` / `ARCHITECTURE.md` / `CLAUDE.md` / `docs/srvf-foundation-baseline.md` / `docs/V2红线与复活路径.md` / `docs/api-surface-policy.md`)+ `.github/workflows/**` + `prisma/{schema.prisma, migrations/**, seed.ts}` + `src/common/{guards,filters,interceptors}/**` + `src/modules/auth/**`(P0-E 行为冻结)+ `src/modules/storage/storage-crypto.service.ts` + `docs/archive/**`(只读)+ 已发布 CHANGELOG 段。
 
-定位路径:[`current-state.md`](../current-state.md) →(领任务)→ 根 [`CODEMAP.md`](../../CODEMAP.md)(src 模块地图,`docs:codemap:check` 守护)→ 模块级 `CLAUDE.md`(9 个:activities / activity-registrations / attendances / attachments / auth / notifications / permissions / modules/storage / prisma,动模块时顺手校准)→ 改权限再读 [`RBAC_MAP.md`](./RBAC_MAP.md)。**勿整读**:`docs/archive/**` 正文、contract snapshot(~36k 行,用 diff 看)、`pnpm-lock.yaml`。
+定位路径:[`current-state.md`](../current-state.md) →(领任务)→ 根 [`CODEMAP.md`](../../CODEMAP.md)(src 模块地图,`docs:codemap:check` 守护)→ 模块级 `CLAUDE.md`(11 个:activities / activity-registrations / announcement-import / attachments / attendances / auth / authz / member-departments / notifications / permissions / storage,动模块时顺手校准;另有 `prisma/CLAUDE.md` 不在 src/modules 下但同守护〔review #484 G22 true-up:此前「9 个」漏列 authz/announcement-import/member-departments〕)→ 改权限再读 [`RBAC_MAP.md`](./RBAC_MAP.md)。**勿整读**:`docs/archive/**` 正文、contract snapshot(~36k 行,用 diff 看)、`pnpm-lock.yaml`。
 
 ## 4. 目录说明
 
-本目录恰 3 文件:**README.md**(本页)/ **RBAC_MAP.md**(权限地图:双轨现状、controller × 权限码对照、76 权限码全集、保护不变式、AI 硬规则;`pnpm docs:rbacmap:check` 守护)/ **NEXT_TASKS.md**(后续任务清单;逐项单独立项,AI 不自动启动)。
+本目录恰 3 文件:**README.md**(本页)/ **RBAC_MAP.md**(权限地图:双轨现状、controller × 权限码对照、191 权限码全集〔review #484 G21 true-up:此前「76」〕、保护不变式、AI 硬规则;`pnpm docs:rbacmap:check` 守护)/ **NEXT_TASKS.md**(后续任务清单;逐项单独立项,AI 不自动启动)。
 
 2026-06-10 Review 总报告与底座设计两份冻结档已归档至 [`archive/ai-harness/`](../archive/ai-harness/)(不回改;其内指向旧操作层文件的链接为预期死链)。本目录更新一律走 A 档 PR(权限**事实**变更本身是 D 档,本目录只能事后 true-up);沿 [`process.md §6`](../process.md)"无守护不留"原则,不再新增无守护的派生地图。

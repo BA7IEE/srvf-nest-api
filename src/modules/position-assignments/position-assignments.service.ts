@@ -18,9 +18,11 @@ import {
 // 判权单轨 service 层 rbac.can(0 @Roles;沿 memberships / positions 范式)。任命 / 撤销写 audit(inline,
 // 沿 content 范式;resourceType='position_assignment')。
 //
-// **本表 = 数据 + 任命校验:绝不被任何 rbac.can / AuthzService 判权路径读**(判权是 PR8;RoleBinding 是 PR6)。
+// **本表自身 CRUD/校验逻辑不读角色/权限表(单向)**;但 **PR8 起 AuthzService 会读本表**做 3b 职务推导 grant 的
+// 输入之一(review #484 G6 true-up:此前"绝不被判权路径读"措辞已过时)——任职生命周期(建/撤/过期)变化
+// 直接联动授权结果,不是"与判权无关"。
 // 任命校验(create)读 organization_closure(求 O 的祖先集)+ member_organization_memberships(active 判定)
-// **纯属任命业务合法性(requireMembership),绝非判权** —— closure 不进 rbac.can/AuthzService。
+// **纯属任命业务合法性(requireMembership),绝非判权** —— closure 本身不进 rbac.can/AuthzService。
 
 const AUDIT_RESOURCE_TYPE = 'position_assignment';
 

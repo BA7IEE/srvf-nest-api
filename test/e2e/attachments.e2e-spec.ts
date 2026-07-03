@@ -87,6 +87,7 @@ describe('attachments 主模块', () => {
   let memberB: { id: string };
   let activity: { id: string };
   let certificateA: { id: string }; // memberA 持有
+  let contentA: { id: string }; // review #484 G29:content-image/content-file F2 矩阵复跑用 owner
   let typeConfigMember: { id: string };
   let typeConfigCertificate: { id: string };
 
@@ -143,6 +144,19 @@ describe('attachments 主模块', () => {
       select: { id: true },
     });
 
+    // review #484 G29:F2 矩阵复跑覆盖 content-image/content-file 需要一个真实 Content owner
+    // (assertOwnerExists 对这两个 ownerType 查 contents 表)。直建 Prisma 行,不经 service DTO 校验。
+    contentA = await prisma.content.create({
+      data: {
+        title: 'TestContent',
+        body: 'test body',
+        contentTypeCode: 'announcement',
+        statusCode: 'draft',
+        visibilityCode: 'public',
+      },
+      select: { id: true },
+    });
+
     // ============ 3. 创建 type config(member / certificate / activity)+ mime + size ============
     typeConfigMember = await prisma.attachmentTypeConfig.create({
       data: {
@@ -171,6 +185,26 @@ describe('attachments 主模块', () => {
         ownerTable: 'activity',
         defaultMaxSizeBytes: 10_485_760,
         defaultMimeWhitelist: ['image/jpeg'],
+      },
+    });
+    // review #484 G29:content-image/content-file 两 type config(镜像 content-admin.e2e-spec.ts
+    // seedContentPrereqs 写法),供下方 F2 矩阵复跑使用。
+    await prisma.attachmentTypeConfig.create({
+      data: {
+        code: 'content-image',
+        displayName: '内容图片',
+        ownerTable: 'contents',
+        defaultMaxSizeBytes: 10_485_760,
+        defaultMimeWhitelist: ['image/jpeg', 'image/png'],
+      },
+    });
+    await prisma.attachmentTypeConfig.create({
+      data: {
+        code: 'content-file',
+        displayName: '内容文件附件',
+        ownerTable: 'contents',
+        defaultMaxSizeBytes: 20_971_520,
+        defaultMimeWhitelist: ['application/pdf'],
       },
     });
 
@@ -541,6 +575,47 @@ describe('attachments 主模块', () => {
       const row = await prisma.attachment.findFirst({ where: { key: badKey } });
       expect(row).toBeNull();
     });
+
+    // review #484 G29:此前 F2 六坏 key 矩阵只曾用 ownerType='member' 跑过;content-image/content-file
+    // 走同一条 create() 校验链(F2 key 检查不区分 ownerType),此处复用同一矩阵 + ownerType 维度扩展,
+    // 复核 content-* 未被特殊放行绕过 F2。mime 按各 ownerType 的 type config 白名单取值,避免在到达
+    // key 校验前先被 mime 校验(step 5,早于 step 7.5 F2)拦截。
+    it.each([
+      ['content-image', '短任意 key(旧 "k1" 式)', 'k1'],
+      [
+        'content-image',
+        '命名空间外(非 attachments/)',
+        'other/test/2026/05/15/Ab1_cD2-eF3gH4iJ.jpg',
+      ],
+      ['content-image', 'envPrefix 不符(prod)', 'attachments/prod/2026/05/15/Ab1_cD2-eF3gH4iJ.jpg'],
+      ['content-image', '缺 day 段', 'attachments/test/2026/05/Ab1_cD2-eF3gH4iJ.jpg'],
+      ['content-image', '随机段 <16 字符', 'attachments/test/2026/05/15/short.jpg'],
+      ['content-image', '路径穿越', 'attachments/test/2026/05/15/../../../etc/passwd.jpg'],
+      ['content-file', '短任意 key(旧 "k1" 式)', 'k1'],
+      ['content-file', '命名空间外(非 attachments/)', 'other/test/2026/05/15/Ab1_cD2-eF3gH4iJ.jpg'],
+      ['content-file', 'envPrefix 不符(prod)', 'attachments/prod/2026/05/15/Ab1_cD2-eF3gH4iJ.jpg'],
+      ['content-file', '缺 day 段', 'attachments/test/2026/05/Ab1_cD2-eF3gH4iJ.jpg'],
+      ['content-file', '随机段 <16 字符', 'attachments/test/2026/05/15/short.jpg'],
+      ['content-file', '路径穿越', 'attachments/test/2026/05/15/../../../etc/passwd.jpg'],
+    ])(
+      'content-* ownerType 同样受 F2 约束:非法 key(%s / %s)→ 13014,且不落库',
+      async (ownerType, _label, badKey) => {
+        const res = await request(httpServer(app))
+          .post('/api/admin/v1/attachments')
+          .set('Authorization', superAuth)
+          .send(
+            buildBody({
+              ownerType,
+              ownerId: contentA.id,
+              key: badKey,
+              mime: ownerType === 'content-file' ? 'application/pdf' : 'image/jpeg',
+            }),
+          );
+        expectBizError(res, BizCode.ATTACHMENT_KEY_INVALID);
+        const row = await prisma.attachment.findFirst({ where: { key: badKey, ownerType } });
+        expect(row).toBeNull();
+      },
+    );
 
     it('模式 B 不受影响:upload-url 返回的服务端派生 key 通过 F2 校验(生成器↔校验器一致)', async () => {
       const res = await request(httpServer(app))

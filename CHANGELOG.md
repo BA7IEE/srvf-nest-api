@@ -13,6 +13,7 @@
 - **fix(recruitment,announcement-import): OCR 落图失败孤儿补偿收口 + 导入 already-exists 组织一致性校验与毒丸传播**(review #484 G3/G8;成功路径行为不变,BizCode +0)
 - **fix(deps,dictionaries): 生产可达 CVE overrides(qs/js-yaml + COS 链 best-effort)+ notification_type 入字典防误删保护集**(review #484 G10/G25/G2;零行为变更,BizCode +0)
 - **feat(member-departments): memberships 双入口写路径补齐审计留痕**(review #484 G5;+2 AuditLogEvent,viaPath 区分入口;业务行为零变化)
+- **chore(review): 第二轮全仓 review 收口刀——测试补强 G12/G29 + 14 条文档/注释 true-up + P3 记账 + 报告处置终章与归档**(review #484 全 31 findings〔0 P0 / 1 P1 / 9 P2 / 19 P3 / 1 known-dup〕处置完毕;冻结报告移至 `docs/archive/reviews/full-repo-systematic-review-v0.34.0.md`;`action-constraints.spec.ts` + `attachments.e2e-spec.ts` 新增测试锁定 22074/22075 优先级与 content-*  F2 矩阵覆盖;`AGENTS.md` §9 联动撤销场景行 surgical 精确化〔受保护文档,范围内单行〕;零行为——权限码 191 / ops-admin 91 / `EXPECTED_ROUTES` 292 / controller 63 / migration 38 / 模块 34 / 角色 7 全不变)
 
 ## v0.34.0 - 2026-07-03
 

@@ -17,7 +17,7 @@
 - **BD-2 终审中枢不 hardcode**:终审身份只认 `RoleBinding(principalType=POSITION_ASSIGNMENT, …)` 配置行;本模块禁止出现任何 "APD" / 部门字面量门控。分管监督角色锚点 = 常量 `SUPERVISOR_ROLE_CODE`('org-supervisor',BD-3)
 - **POSITION_ASSIGNMENT 主体绑定随任职失效**:底层 assignment 非 ACTIVE / 出任期 / 软删 → 该绑定不产权(换届即失权,无需清绑定行)
 - **conditionJson 保守跳过**:`OrganizationPositionRolePolicy.conditionJson` 非 null 的行本刀不评估、直接跳过(fail-close 不越权;seed 全 null)。首个真实条件需求出现时再落评估器,禁止"忽略条件当无条件"的过渡实现
-- **ActionConstraint 对 SUPER_ADMIN 也生效**(域不变量非权限):注册表只有 `attendance.final-approve.sheet` 两条(自审禁止〔永不可配〕 + 同人终审禁止〔默认禁;PR9 起经 `ActionConstraintContext` 从 app.config 注入 env `ATTENDANCE_ALLOW_SAME_REVIEWER`,严格 === 'true' 才放开,PR8 代码常量已移除〕);**final-reject 不在注册表 = 无自审/同人约束(e2e 锁不对称语义,扩注册面是行为变更须 goal 授权)**;未注册 action 零约束;`sensitive_denied` 是保留 reason(敏感分级由 §4.2 独立权限码承载,不在此双轨)
+- **ActionConstraint 对 SUPER_ADMIN 也生效**(域不变量非权限):注册表只有 `attendance.final-approve.sheet` 两条(自审禁止〔永不可配〕 + 同人终审禁止〔默认禁;PR9 起经 `ActionConstraintContext` 从 app.config 注入 env `ATTENDANCE_ALLOW_SAME_REVIEWER`,严格 === 'true' 才放开,PR8 代码常量已移除〕);**final-reject 不在注册表 = 无自审/同人约束(e2e 锁不对称语义,扩注册面是行为变更须 goal 授权)**——安全依据(review #484 §6 known-dup 补充论证,2026-07-03):驳回自己提交的单据不存在自肥式利益冲突方向(不像批准那样有直接得利动机),`test/e2e/attendances-final-review-authz.e2e-spec.ts` 已有具名用例锁定该不对称行为;未注册 action 零约束;`sensitive_denied` 是保留 reason(敏感分级由 §4.2 独立权限码承载,不在此双轨)
 - **resolver 口径**:member 的归属组织 = active PRIMARY membership;recruitment_application 恒无 org/owner(D-R-1);notification 广播态 org=null(多组织「任一覆盖」covers 留消费面迁移时扩展);attachment 仅委派 member/certificate/activity 三类 ownerType,其余(content-*)null fail-close;链上父资源软删不阻断解析,scope org 的 ACTIVE 闸门在 `covers()`
 - **性能口径(goal 决断④)**:三源每 decision 现查、无新缓存层;`RbacService.getRoleIdsWithPermission` 是 PR8 additive(批量角色含码,RolePermission roleId 索引);优化留口 = 角色→码集合 TTL 缓存,做之前先看真实 QPS
 - **deny reason 归因优先级**:resource_not_found > 约束否决 >(covers 失败后)inactive_org > expired_grant > out_of_[supervised_]scope > no_permission;失效 grant 只参与归因**绝不参与 allow**
@@ -41,4 +41,4 @@
 - `pnpm lint` + `pnpm typecheck`
 - `pnpm test` — `action-constraints.spec.ts`(约束注册表)
 - `pnpm test:e2e` — **四件套必跑**:`authz-rbac-equivalence`(🔴 等价矩阵行为锁)/ `authz-three-source`(队长甲/副队长乙/BD-2 终审+自审/R5 副职/失效族/SELF)/ `authz-resource-resolver`(11 类逐类 + 软删 fail-close + attachment 委派)/ `authz-explain`(PR10 端点:五 allow 形态 + 四 deny-as-data + 10001/400/30100 + reason 枚举完备锁)
-- 改判权流程 / covers / 三源归集 → 四件套全跑 + `pnpm test:contract`(端点不变式:路由 290 恒定,authz 面仅 explain 一路)
+- 改判权流程 / covers / 三源归集 → 四件套全跑 + `pnpm test:contract`(端点不变式:路由 292 恒定〔review #484 G20 true-up:此前「290」〕,authz 面仅 explain 一路)

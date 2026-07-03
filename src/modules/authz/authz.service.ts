@@ -410,6 +410,8 @@ export class AuthzService {
   // scope 覆盖判定。ORGANIZATION / ORGANIZATION_TREE 要求 scope org ACTIVE 且未软删(失效 → inactive_org,
   // 不覆盖);TREE 判定 = scopeOrgId ∈ resource.organizationPath(closure 反查祖先链,含自身,与
   // EXISTS closure(ancestor,descendant) 等价)。资源无组织归属(organizationId=null)时 org 型 scope 恒不覆盖。
+  // review #484 G17:本 switch 与下方 coversGeometrically() 的 switch 分支结构逐一对应——新增 scopeType 时
+  // 须同步改两处,否则 expired_grant 归因会悄悄失步(不影响 allow/deny,仅影响错误归因准确度)。
   private covers(
     grant: InternalGrant,
     resource: ResolvedResource,
@@ -450,6 +452,7 @@ export class AuthzService {
 
   // 纯几何覆盖(不看 scope org 状态):仅用于 deny 归因 —— 判断某条**失效** grant「若在期是否本可覆盖」
   // (expired_grant reason)。绝不用于 allow。
+  // review #484 G17:本 switch 与上方 covers() 的 switch 分支结构逐一对应,新增 scopeType 时两处必须同步。
   private coversGeometrically(
     grant: InternalGrant,
     resource: ResolvedResource,

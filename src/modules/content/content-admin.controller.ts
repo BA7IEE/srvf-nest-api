@@ -75,7 +75,6 @@ export class ContentAdminController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.CONTENT_TYPE_INVALID,
-    BizCode.CONTENT_VISIBILITY_INVALID,
     BizCode.CONTENT_VISIBLE_ORG_INVALID,
   )
   create(
@@ -122,7 +121,6 @@ export class ContentAdminController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.CONTENT_NOT_FOUND,
     BizCode.CONTENT_TYPE_INVALID,
-    BizCode.CONTENT_VISIBILITY_INVALID,
     BizCode.CONTENT_VISIBLE_ORG_INVALID,
     BizCode.CONTENT_INVALID_STATUS_TRANSITION,
   )
