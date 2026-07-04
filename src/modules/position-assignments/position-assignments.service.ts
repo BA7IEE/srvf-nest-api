@@ -1,14 +1,27 @@
 import { Injectable } from '@nestjs/common';
 import { AssignmentStatus, PolicyStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
-import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { PageResultDto } from '../../common/dto/pagination.dto';
+import { parseExpandQuery } from '../../common/dto/expand-query.util';
+import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
-import { CreatePositionAssignmentDto } from './position-assignments.dto';
+import {
+  CreatePositionAssignmentDto,
+  POSITION_ASSIGNMENT_EXPAND_TOKENS,
+  PagePositionAssignmentsQueryDto,
+  PositionAssignmentExpandedMemberDto,
+  PositionAssignmentExpandedOrganizationDto,
+  PositionAssignmentExpandedPositionDto,
+  PositionAssignmentPreviewResponseDto,
+  PositionAssignmentResponseDto,
+  PositionAssignmentViolationDto,
+  PreviewPositionAssignmentDto,
+} from './position-assignments.dto';
 import {
   positionAssignmentSafeSelect,
   type SafePositionAssignment,
@@ -355,6 +368,246 @@ export class PositionAssignmentsService {
       orderBy: [{ startedAt: 'asc' }, { createdAt: 'asc' }],
     });
     return rows.map((r) => this.toResponseDto(r));
+  }
+
+  // ============ F5/E1(2026-07-04;路线图 §4)以下为全局总表 / detail / preview 增强面 ============
+
+  // ============ GET /api/admin/v1/position-assignments(全局分页总表) ============
+
+  // 跨组织跨队员横扫(缺省含 REVOKED 历史 —— 总表口径,与组织轴「仅 ACTIVE」刻意不同;status 过滤收窄)。
+  // includeDescendants 直读 organization_closure(沿本 service create() requireMembership 既有直读范式;
+  // 仅列表数据过滤,绝不进判权路径)。q 命中队员/职务/组织(relation 过滤单查询);
+  // expand=member,position,organization(D6:缺省不展开,响应形状与既有端点一致,批量取回零 N+1)。
+  async page(
+    user: CurrentUserPayload,
+    query: PagePositionAssignmentsQueryDto,
+  ): Promise<PageResultDto<PositionAssignmentResponseDto>> {
+    await this.assertCanOrThrow(user, 'position-assignment.read.record');
+    const expand = parseExpandQuery(query.expand, POSITION_ASSIGNMENT_EXPAND_TOKENS);
+
+    const where: Prisma.OrganizationPositionAssignmentWhereInput = { deletedAt: null };
+    if (query.memberId !== undefined) where.memberId = query.memberId;
+    if (query.positionId !== undefined) where.positionId = query.positionId;
+    if (query.status !== undefined) where.status = query.status;
+    if (query.organizationId !== undefined) {
+      if (query.includeDescendants === true) {
+        const rows = await this.prisma.organizationClosure.findMany({
+          where: { ancestorId: query.organizationId },
+          select: { descendantId: true },
+        });
+        where.organizationId = { in: rows.map((r) => r.descendantId) };
+      } else {
+        where.organizationId = query.organizationId;
+      }
+    }
+    if (query.q !== undefined && query.q !== '') {
+      const contains = { contains: query.q, mode: 'insensitive' as const };
+      where.OR = [
+        { member: { memberNo: contains } },
+        { member: { displayName: contains } },
+        { position: { code: contains } },
+        { position: { name: contains } },
+        { organization: { name: contains } },
+        { organization: { code: contains } },
+      ];
+    }
+
+    const [rows, total] = await Promise.all([
+      this.prisma.organizationPositionAssignment.findMany({
+        where,
+        select: positionAssignmentSafeSelect,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.organizationPositionAssignment.count({ where }),
+    ]);
+
+    let items: PositionAssignmentResponseDto[] = rows.map((r) => this.toResponseDto(r));
+    if (expand.size > 0) {
+      items = await this.attachExpansions(items, {
+        member: expand.has('member'),
+        position: expand.has('position'),
+        organization: expand.has('organization'),
+      });
+    }
+    return { items, total, page: query.page, pageSize: query.pageSize };
+  }
+
+  // expand 展开(D6):按命中 token 批量取回摘要后逐行挂载(零 N+1)。
+  private async attachExpansions(
+    items: PositionAssignmentResponseDto[],
+    want: { member: boolean; position: boolean; organization: boolean },
+  ): Promise<PositionAssignmentResponseDto[]> {
+    const memberMap = new Map<string, PositionAssignmentExpandedMemberDto>();
+    const positionMap = new Map<string, PositionAssignmentExpandedPositionDto>();
+    const orgMap = new Map<string, PositionAssignmentExpandedOrganizationDto>();
+    if (items.length > 0) {
+      if (want.member) {
+        const rows = await this.prisma.member.findMany({
+          where: { id: { in: [...new Set(items.map((i) => i.memberId))] } },
+          select: { id: true, memberNo: true, displayName: true, gradeCode: true },
+        });
+        for (const r of rows) memberMap.set(r.id, r);
+      }
+      if (want.position) {
+        const rows = await this.prisma.organizationPosition.findMany({
+          where: { id: { in: [...new Set(items.map((i) => i.positionId))] } },
+          select: { id: true, code: true, name: true, categoryCode: true },
+        });
+        for (const r of rows) positionMap.set(r.id, r);
+      }
+      if (want.organization) {
+        const rows = await this.prisma.organization.findMany({
+          where: { id: { in: [...new Set(items.map((i) => i.organizationId))] } },
+          select: { id: true, name: true, code: true, nodeTypeCode: true },
+        });
+        for (const r of rows) orgMap.set(r.id, r);
+      }
+    }
+    return items.map((item) => {
+      const out = { ...item };
+      if (want.member) {
+        const m = memberMap.get(item.memberId);
+        if (m) out.member = m;
+      }
+      if (want.position) {
+        const p = positionMap.get(item.positionId);
+        if (p) out.position = p;
+      }
+      if (want.organization) {
+        const o = orgMap.get(item.organizationId);
+        if (o) out.organization = o;
+      }
+      return out;
+    });
+  }
+
+  // ============ GET /api/admin/v1/position-assignments/:id(detail) ============
+
+  // 此前只有 :id/history 与 :id/revoke;找不到未软删记录 → 32020。同读码。
+  async findOne(user: CurrentUserPayload, id: string): Promise<PositionAssignmentResponseDto> {
+    await this.assertCanOrThrow(user, 'position-assignment.read.record');
+    const row = await this.prisma.organizationPositionAssignment.findFirst({
+      where: notDeletedWhere({ id }),
+      select: positionAssignmentSafeSelect,
+    });
+    if (!row) throw new BizException(BizCode.POSITION_ASSIGNMENT_NOT_FOUND);
+    return this.toResponseDto(row);
+  }
+
+  // ============ POST /api/admin/v1/position-assignments/preview(dry-run 任命预检) ============
+
+  // 逐项收集全部违规(区别于 create() 的 first-failure 抛错):任期 / 存在性(org/position/member)/
+  // 任命 5 校验(职务适配 32022 / requireMembership 32025 / 兼任 32024 / 防重 32021 / 单人独占 32023)。
+  // **校验逐项镜像 create() 编号 0-6 的同一批查询**(那边在事务内 first-failure 抛,这边只读逐项收集;
+  // 改 create 校验时必须同步本方法 —— e2e 双向矩阵为锁)。刻意**不**复用 create(dryRun) 沙箱:
+  //   ① dryRun 只能报第一个违规,preview 契约要 violations[] 全量;② dryRun 走 create.record 码,
+  //   goal 拍板 preview 复用 read 码(dry-run 只读;可见面 = 持 read 码本可 list 到的任职行,无越面泄露);
+  //   ③ 沙箱含真实 insert+audit+回滚,纯预检不必付事务成本。零写入。
+  async preview(
+    user: CurrentUserPayload,
+    dto: PreviewPositionAssignmentDto,
+  ): Promise<PositionAssignmentPreviewResponseDto> {
+    await this.assertCanOrThrow(user, 'position-assignment.read.record');
+    const violations: PositionAssignmentViolationDto[] = [];
+    const push = (biz: BizCodeEntry): void => {
+      violations.push({ bizCode: biz.code, message: biz.message });
+    };
+
+    // 1. 任期(镜像 create 步骤 1;纯输入)
+    const startedAt = new Date(dto.startedAt);
+    const endedAt = dto.endedAt !== undefined ? new Date(dto.endedAt) : null;
+    if (endedAt !== null && endedAt.getTime() <= startedAt.getTime()) {
+      push(BizCode.POSITION_ASSIGNMENT_TENURE_INVALID);
+    }
+
+    // 0. 存在性(镜像 create 步骤 0;缺任一硬前提则后续业务校验判不了,就此返回)
+    const [org, position, member] = await Promise.all([
+      this.prisma.organization.findFirst({
+        where: notDeletedWhere({ id: dto.organizationId }),
+        select: { id: true, nodeTypeCode: true },
+      }),
+      this.prisma.organizationPosition.findFirst({
+        where: notDeletedWhere({ id: dto.positionId }),
+        select: { id: true, allowMultiple: true, allowConcurrent: true },
+      }),
+      this.prisma.member.findFirst({
+        where: notDeletedWhere({ id: dto.memberId }),
+        select: { id: true },
+      }),
+    ]);
+    if (!org) push(BizCode.ORGANIZATION_NOT_FOUND);
+    if (!position) push(BizCode.POSITION_NOT_FOUND);
+    if (!member) push(BizCode.MEMBER_NOT_FOUND);
+    if (!org || !position || !member) {
+      return { valid: false, violations };
+    }
+
+    // 2. 职务适配(镜像 create 步骤 2)
+    const rule = await this.prisma.organizationPositionRule.findFirst({
+      where: {
+        nodeTypeCode: org.nodeTypeCode,
+        positionId: position.id,
+        status: PolicyStatus.ACTIVE,
+        deletedAt: null,
+      },
+      select: { requireMembership: true },
+    });
+    if (!rule) push(BizCode.POSITION_ASSIGNMENT_RULE_NOT_MATCHED);
+
+    // 3. requireMembership(镜像 create 步骤 3;规则缺席时判不了,跳过)
+    if (rule?.requireMembership) {
+      const ancestorRows = await this.prisma.organizationClosure.findMany({
+        where: { descendantId: dto.organizationId },
+        select: { ancestorId: true },
+      });
+      const membership = await this.prisma.memberOrganizationMembership.findFirst({
+        where: {
+          memberId: dto.memberId,
+          status: 'ACTIVE',
+          deletedAt: null,
+          organizationId: { in: ancestorRows.map((r) => r.ancestorId) },
+        },
+        select: { id: true },
+      });
+      if (!membership) push(BizCode.POSITION_ASSIGNMENT_MEMBERSHIP_REQUIRED);
+    }
+
+    // 4. 兼任(镜像 create 步骤 4)
+    if (!position.allowConcurrent) {
+      const otherActive = await this.prisma.organizationPositionAssignment.count({
+        where: { memberId: dto.memberId, status: AssignmentStatus.ACTIVE, deletedAt: null },
+      });
+      if (otherActive > 0) push(BizCode.POSITION_ASSIGNMENT_CONCURRENT_FORBIDDEN);
+    }
+
+    // 5. 防重(镜像 create 步骤 5)
+    const dup = await this.prisma.organizationPositionAssignment.count({
+      where: {
+        organizationId: dto.organizationId,
+        positionId: position.id,
+        memberId: dto.memberId,
+        status: AssignmentStatus.ACTIVE,
+        deletedAt: null,
+      },
+    });
+    if (dup > 0) push(BizCode.POSITION_ASSIGNMENT_ALREADY_EXISTS);
+
+    // 6. 单人独占(镜像 create 步骤 6;此人已由步骤 5 报重,这里报"坑已有他人")
+    if (!position.allowMultiple && dup === 0) {
+      const holders = await this.prisma.organizationPositionAssignment.count({
+        where: {
+          organizationId: dto.organizationId,
+          positionId: position.id,
+          status: AssignmentStatus.ACTIVE,
+          deletedAt: null,
+        },
+      });
+      if (holders > 0) push(BizCode.POSITION_ASSIGNMENT_SINGLE_HOLDER);
+    }
+
+    return { valid: violations.length === 0, violations };
   }
 
   // ============ P2002 兜底 ============

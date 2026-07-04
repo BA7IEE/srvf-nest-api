@@ -8048,6 +8048,107 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "PositionAssignmentExpandedMemberDto": {
+    "properties": {
+      "displayName": {
+        "description": "队员显示名",
+        "type": "string",
+      },
+      "gradeCode": {
+        "description": "等级字典 code",
+        "nullable": true,
+        "type": "object",
+      },
+      "id": {
+        "description": "队员主键(cuid)",
+        "type": "string",
+      },
+      "memberNo": {
+        "description": "队员业务编号",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "memberNo",
+      "displayName",
+    ],
+    "type": "object",
+  },
+  "PositionAssignmentExpandedOrganizationDto": {
+    "properties": {
+      "code": {
+        "description": "组织缩写(可空)",
+        "nullable": true,
+        "type": "object",
+      },
+      "id": {
+        "description": "组织节点主键(cuid)",
+        "type": "string",
+      },
+      "name": {
+        "description": "组织名称",
+        "type": "string",
+      },
+      "nodeTypeCode": {
+        "description": "节点类型字典 code",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "name",
+      "nodeTypeCode",
+    ],
+    "type": "object",
+  },
+  "PositionAssignmentExpandedPositionDto": {
+    "properties": {
+      "categoryCode": {
+        "description": "职务类别(LEADER 正职 / DEPUTY 副职 / STAFF 干事)",
+        "type": "string",
+      },
+      "code": {
+        "description": "职务 code(kebab,如 team-leader)",
+        "type": "string",
+      },
+      "id": {
+        "description": "职务定义主键(cuid)",
+        "type": "string",
+      },
+      "name": {
+        "description": "职务名称",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "name",
+      "categoryCode",
+    ],
+    "type": "object",
+  },
+  "PositionAssignmentPreviewResponseDto": {
+    "properties": {
+      "valid": {
+        "description": "是否可任命(violations 为空即 true;dry-run 结论,零写入)",
+        "type": "boolean",
+      },
+      "violations": {
+        "description": "违规项列表(逐项收集 —— 区别于 create 的 first-failure 抛错;valid=true 时为空数组)",
+        "items": {
+          "$ref": "#/components/schemas/PositionAssignmentViolationDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "valid",
+      "violations",
+    ],
+    "type": "object",
+  },
   "PositionAssignmentResponseDto": {
     "properties": {
       "appointedByUserId": {
@@ -8080,6 +8181,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "example": false,
         "type": "boolean",
       },
+      "member": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PositionAssignmentExpandedMemberDto",
+          },
+        ],
+        "description": "队员摘要(仅 GET /position-assignments 总表且 ?expand 含 member 时返回;默认省略)",
+      },
       "memberId": {
         "description": "队员外键(指向 members.id)",
         "type": "string",
@@ -8089,9 +8198,25 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "nullable": true,
         "type": "object",
       },
+      "organization": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PositionAssignmentExpandedOrganizationDto",
+          },
+        ],
+        "description": "组织摘要(仅 GET /position-assignments 总表且 ?expand 含 organization 时返回;默认省略)",
+      },
       "organizationId": {
         "description": "组织节点外键(指向 organizations.id)",
         "type": "string",
+      },
+      "position": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PositionAssignmentExpandedPositionDto",
+          },
+        ],
+        "description": "职务摘要(仅 GET /position-assignments 总表且 ?expand 含 position 时返回;默认省略)",
       },
       "positionId": {
         "description": "职务定义外键(指向 organization_positions.id)",
@@ -8133,6 +8258,23 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "isConcurrent",
       "createdAt",
       "updatedAt",
+    ],
+    "type": "object",
+  },
+  "PositionAssignmentViolationDto": {
+    "properties": {
+      "bizCode": {
+        "description": "底层 BizCode(镜像任命 5 校验各自的码:32022 职务适配 / 32025 归属要求 / 32024 兼任 / 32021 防重 / 32023 单人独占 / 32026 任期;存在性 11001/32001/15001)",
+        "type": "number",
+      },
+      "message": {
+        "description": "人类可读说明(与 create 抛出的 BizException.message 同源)",
+        "type": "string",
+      },
+    },
+    "required": [
+      "bizCode",
+      "message",
     ],
     "type": "object",
   },
@@ -8342,6 +8484,58 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "status",
       "createdAt",
       "updatedAt",
+    ],
+    "type": "object",
+  },
+  "PreviewPositionAssignmentDto": {
+    "properties": {
+      "appointmentSource": {
+        "description": "任命来源(与 create 参数集对齐;不参与校验)",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "endedAt": {
+        "description": "任期止(ISO 8601;可空;有值须晚于任期起)",
+        "type": "string",
+      },
+      "isConcurrent": {
+        "description": "兼任标记(与 create 参数集对齐;纯展示,不参与校验)",
+        "type": "boolean",
+      },
+      "memberId": {
+        "description": "被任命队员 id",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "note": {
+        "description": "备注(与 create 参数集对齐;不参与校验)",
+        "maxLength": 200,
+        "type": "string",
+      },
+      "organizationId": {
+        "description": "目标组织节点 id",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "positionId": {
+        "description": "职务定义 id",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "startedAt": {
+        "description": "任期起(ISO 8601;必填,与 create 同参)",
+        "example": "2026-07-01T00:00:00.000Z",
+        "type": "string",
+      },
+    },
+    "required": [
+      "organizationId",
+      "positionId",
+      "memberId",
+      "startedAt",
     ],
     "type": "object",
   },
@@ -10826,6 +11020,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "nullable": true,
         "type": "object",
       },
+      "organization": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SupervisionExpandedOrganizationDto",
+          },
+        ],
+        "description": "组织摘要(仅 GET /supervision-assignments/page 且 ?expand 含 organization 时返回;默认省略)",
+      },
       "organizationId": {
         "description": "被分管组织外键(指向 organizations.id)",
         "type": "string",
@@ -10859,6 +11061,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "example": "ACTIVE",
         "type": "string",
       },
+      "supervisor": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SupervisionExpandedSupervisorDto",
+          },
+        ],
+        "description": "分管人摘要(仅 GET /supervision-assignments/page 且 ?expand 含 supervisor 时返回;默认省略)",
+      },
       "supervisorMemberId": {
         "description": "分管人队员外键(指向 members.id)",
         "type": "string",
@@ -10878,6 +11088,112 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "startedAt",
       "createdAt",
       "updatedAt",
+    ],
+    "type": "object",
+  },
+  "SupervisionCoveragePreviewDto": {
+    "properties": {
+      "organizationId": {
+        "description": "拟被分管组织 id(须存在,未软删)",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "scopeMode": {
+        "default": "TREE",
+        "description": "范围模式(默认 TREE,与 create 默认一致)",
+        "enum": [
+          "EXACT",
+          "TREE",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "organizationId",
+    ],
+    "type": "object",
+  },
+  "SupervisionCoveragePreviewResponseDto": {
+    "properties": {
+      "expandedOrganizationIds": {
+        "description": "将覆盖的组织 id 集(EXACT=[organizationId];TREE=该组织+全部后代,含自身)",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "organizationId": {
+        "description": "拟被分管组织 id(入参回显)",
+        "type": "string",
+      },
+      "scopeMode": {
+        "description": "生效的范围模式(缺省补 TREE 后回显)",
+        "enum": [
+          "EXACT",
+          "TREE",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "organizationId",
+      "scopeMode",
+      "expandedOrganizationIds",
+    ],
+    "type": "object",
+  },
+  "SupervisionExpandedOrganizationDto": {
+    "properties": {
+      "code": {
+        "description": "组织缩写(可空)",
+        "nullable": true,
+        "type": "object",
+      },
+      "id": {
+        "description": "组织节点主键(cuid)",
+        "type": "string",
+      },
+      "name": {
+        "description": "组织名称",
+        "type": "string",
+      },
+      "nodeTypeCode": {
+        "description": "节点类型字典 code",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "name",
+      "nodeTypeCode",
+    ],
+    "type": "object",
+  },
+  "SupervisionExpandedSupervisorDto": {
+    "properties": {
+      "displayName": {
+        "description": "队员显示名",
+        "type": "string",
+      },
+      "gradeCode": {
+        "description": "等级字典 code",
+        "nullable": true,
+        "type": "object",
+      },
+      "id": {
+        "description": "分管人队员主键(cuid)",
+        "type": "string",
+      },
+      "memberNo": {
+        "description": "队员业务编号",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "memberNo",
+      "displayName",
     ],
     "type": "object",
   },
@@ -37365,6 +37681,624 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/admin/v1/position-assignments": {
+    "get": {
+      "operationId": "PositionAssignmentsController_page",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "按组织节点精确过滤",
+          "in": "query",
+          "name": "organizationId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "配合 organizationId:是否展开其全部后代组织(默认 false)",
+          "in": "query",
+          "name": "includeDescendants",
+          "required": false,
+          "schema": {
+            "default": false,
+            "type": "boolean",
+          },
+        },
+        {
+          "description": "按队员精确过滤",
+          "in": "query",
+          "name": "memberId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按职务定义精确过滤",
+          "in": "query",
+          "name": "positionId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按任职状态过滤(缺省 = 全部未软删,含 REVOKED 历史 —— 总表口径,与组织轴「仅 ACTIVE」刻意不同)",
+          "in": "query",
+          "name": "status",
+          "required": false,
+          "schema": {
+            "enum": [
+              "ACTIVE",
+              "ENDED",
+              "REVOKED",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "模糊搜索(命中队员 memberNo+displayName + 职务 code+name + 组织 name+code;contains + insensitive)",
+          "in": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "maxLength": 100,
+            "type": "string",
+          },
+        },
+        {
+          "description": "expand 展开(逗号分隔白名单:member,position,organization;缺省 = 不展开,响应形状与既有端点一致)",
+          "in": "query",
+          "name": "expand",
+          "required": false,
+          "schema": {
+            "example": "member,position,organization",
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/PositionAssignmentResponseDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "全局分页任职总表(organizationId+includeDescendants/memberId/positionId/status/q 过滤 + expand=member,position,organization;缺省含 REVOKED 历史) [rbac: position-assignment.read.record]",
+      "tags": [
+        "Admin - Position Assignments",
+      ],
+    },
+  },
+  "/api/admin/v1/position-assignments/preview": {
+    "post": {
+      "operationId": "PositionAssignmentsController_preview",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PreviewPositionAssignmentDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/PositionAssignmentPreviewResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "预检任命(dry-run:任期 + 存在性 + 任命 5 校验逐项收集 violations,零写入;violations 是数据) [rbac: position-assignment.read.record]",
+      "tags": [
+        "Admin - Position Assignments",
+      ],
+    },
+  },
+  "/api/admin/v1/position-assignments/{id}": {
+    "get": {
+      "operationId": "PositionAssignmentsController_findOne",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/PositionAssignmentResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "32020: 任职记录不存在",
+                    "enum": [
+                      32020,
+                    ],
+                    "example": 32020,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "任职记录不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "任职记录不存在(code=32020)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "查单条任职(detail;找不到未软删记录 → 32020) [rbac: position-assignment.read.record]",
+      "tags": [
+        "Admin - Position Assignments",
+      ],
+    },
+  },
   "/api/admin/v1/position-assignments/{id}/history": {
     "get": {
       "operationId": "PositionAssignmentsController_history",
@@ -45220,7 +46154,660 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/admin/v1/supervision-assignments/coverage-preview": {
+    "post": {
+      "operationId": "SupervisionAssignmentsController_coveragePreview",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SupervisionCoveragePreviewDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/SupervisionCoveragePreviewResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "11001: 组织节点不存在",
+                    "enum": [
+                      11001,
+                    ],
+                    "example": 11001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "组织节点不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "组织节点不存在(code=11001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "覆盖范围预演(dry-run:某待建分管将覆盖哪些组织;EXACT=[该节点] / TREE=closure 展开含后代;零写入,展示读非判权) [rbac: supervision-assignment.read.record]",
+      "tags": [
+        "Admin - Supervision Assignments",
+      ],
+    },
+  },
+  "/api/admin/v1/supervision-assignments/page": {
+    "get": {
+      "operationId": "SupervisionAssignmentsController_page",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "按分管人队员精确过滤",
+          "in": "query",
+          "name": "supervisorMemberId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按被分管组织精确过滤",
+          "in": "query",
+          "name": "organizationId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "配合 organizationId:是否展开其全部后代组织(默认 false)",
+          "in": "query",
+          "name": "includeDescendants",
+          "required": false,
+          "schema": {
+            "default": false,
+            "type": "boolean",
+          },
+        },
+        {
+          "description": "按范围模式过滤",
+          "in": "query",
+          "name": "scopeMode",
+          "required": false,
+          "schema": {
+            "enum": [
+              "EXACT",
+              "TREE",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "按分管状态过滤(缺省 = 全部未软删,含 REVOKED 历史 —— 总表口径,与旧数组端点「仅 ACTIVE」刻意不同)",
+          "in": "query",
+          "name": "status",
+          "required": false,
+          "schema": {
+            "enum": [
+              "ACTIVE",
+              "ENDED",
+              "REVOKED",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "模糊搜索(命中分管人 memberNo+displayName + 组织 name+code;contains + insensitive)",
+          "in": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "maxLength": 100,
+            "type": "string",
+          },
+        },
+        {
+          "description": "expand 展开(逗号分隔白名单:supervisor,organization;缺省 = 不展开,响应形状与旧端点一致)",
+          "in": "query",
+          "name": "expand",
+          "required": false,
+          "schema": {
+            "example": "supervisor,organization",
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/SupervisionAssignmentResponseDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页分管总表(supervisorMemberId/organizationId+includeDescendants/scopeMode/status/q 过滤 + expand=supervisor,organization;缺省含 REVOKED 历史) [rbac: supervision-assignment.read.record]",
+      "tags": [
+        "Admin - Supervision Assignments",
+      ],
+    },
+  },
   "/api/admin/v1/supervision-assignments/{id}": {
+    "get": {
+      "operationId": "SupervisionAssignmentsController_findOne",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/SupervisionAssignmentResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "33001: 分管记录不存在",
+                    "enum": [
+                      33001,
+                    ],
+                    "example": 33001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "分管记录不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "分管记录不存在(code=33001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "查单条分管(detail;找不到未软删记录 → 33001) [rbac: supervision-assignment.read.record]",
+      "tags": [
+        "Admin - Supervision Assignments",
+      ],
+    },
     "patch": {
       "operationId": "SupervisionAssignmentsController_update",
       "parameters": [
