@@ -576,6 +576,24 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/organizations/{orgId}/memberships'],
   ['get', '/api/admin/v1/organizations/{orgId}/members/options'],
   ['get', '/api/admin/v1/organizations/tree-with-summary'],
+  // F5「E 组:任职/分管总表 + preview」(2026-07-04;冻结路线图
+  //   admin-api-fe-integration-roadmap.md §4 E1/E2),+6 → 319 = 路线图 F1–F5 全量落地终值。
+  //   E1 任职:全局分页总表(organizationId+includeDescendants〔closure 直读仅列表过滤,沿本模块
+  //   create() requireMembership 既有范式,非判权〕/memberId/positionId/status/q + expand=
+  //   member,position,organization,D6;缺省含 REVOKED 历史,与组织轴仅 ACTIVE 刻意不同)+
+  //   GET :id detail + POST preview(dry-run:任期+存在性+任命 5 校验**逐项收集** violations,
+  //   零写入;goal 拍板复用 read 码不设新码;刻意不复用 create(dryRun) 沙箱——那是 first-failure
+  //   + create 码 + 真实事务成本,见 service 注释)。扩既有 PositionAssignmentsController。
+  ['get', '/api/admin/v1/position-assignments'],
+  ['post', '/api/admin/v1/position-assignments/preview'],
+  ['get', '/api/admin/v1/position-assignments/{id}'],
+  //   E2 分管(D9 同型):/page 分页兄弟路由(旧 bare 数组端点〔仅 ACTIVE〕逐字不动;总表缺省含
+  //   REVOKED 历史 + expand=supervisor,organization)+ GET :id detail + POST coverage-preview
+  //   (dry-run 覆盖预演:EXACT=[该节点] / TREE=closure 展开含后代;展示读非判权,零写入;复用 read 码)。
+  //   扩既有 SupervisionAssignmentsController;静态段(page/coverage-preview)先于 GET :id 声明。
+  ['get', '/api/admin/v1/supervision-assignments/page'],
+  ['post', '/api/admin/v1/supervision-assignments/coverage-preview'],
+  ['get', '/api/admin/v1/supervision-assignments/{id}'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -1070,6 +1088,18 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'MembershipConflictsResponseDto',
   'TransferMembershipDto',
   'OrganizationTreeWithSummaryNodeDto',
+
+  // F5「E 组」(2026-07-04;路线图 §4 E1/E2):任职/分管总表 expand 子对象 + 两 preview 请求/响应。
+  'PositionAssignmentExpandedMemberDto',
+  'PositionAssignmentExpandedPositionDto',
+  'PositionAssignmentExpandedOrganizationDto',
+  'PreviewPositionAssignmentDto',
+  'PositionAssignmentPreviewResponseDto',
+  'PositionAssignmentViolationDto',
+  'SupervisionExpandedSupervisorDto',
+  'SupervisionExpandedOrganizationDto',
+  'SupervisionCoveragePreviewDto',
+  'SupervisionCoveragePreviewResponseDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

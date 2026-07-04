@@ -7,6 +7,8 @@ import {
   SupervisionStatus,
 } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import type { PageResultDto } from '../../common/dto/pagination.dto';
+import { parseExpandQuery } from '../../common/dto/expand-query.util';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
@@ -17,6 +19,13 @@ import { RbacService } from '../permissions/rbac.service';
 import {
   CreateSupervisionAssignmentDto,
   OrganizationSupervisorDto,
+  PageSupervisionAssignmentsQueryDto,
+  SUPERVISION_EXPAND_TOKENS,
+  SupervisionAssignmentResponseDto,
+  SupervisionCoveragePreviewDto,
+  SupervisionCoveragePreviewResponseDto,
+  SupervisionExpandedOrganizationDto,
+  SupervisionExpandedSupervisorDto,
   SupervisionScopeEntryDto,
   UpdateSupervisionAssignmentDto,
 } from './supervision-assignments.dto';
@@ -379,6 +388,150 @@ export class SupervisionAssignmentsService {
 
       return this.toResponseDto(updated);
     });
+  }
+
+  // ============ F5/E2(2026-07-04;路线图 §4)以下为分页总表 / detail / 覆盖预演增强面 ============
+
+  // ============ GET /api/admin/v1/supervision-assignments/page(D9 同型) ============
+
+  // 分页总表(旧 bare 数组端点〔仅 ACTIVE〕逐字不动的兄弟路由;本总表缺省含 REVOKED 历史,status 过滤收窄)。
+  // includeDescendants 直读 organization_closure(沿本 service scope/supervisors 既有直读范式;
+  // 仅列表数据过滤,绝不进判权路径)。expand=supervisor,organization(D6:缺省不展开,批量取回零 N+1)。
+  async page(
+    user: CurrentUserPayload,
+    query: PageSupervisionAssignmentsQueryDto,
+  ): Promise<PageResultDto<SupervisionAssignmentResponseDto>> {
+    await this.assertCanOrThrow(user, 'supervision-assignment.read.record');
+    const expand = parseExpandQuery(query.expand, SUPERVISION_EXPAND_TOKENS);
+
+    const where: Prisma.OrganizationSupervisionAssignmentWhereInput = { deletedAt: null };
+    if (query.supervisorMemberId !== undefined) where.supervisorMemberId = query.supervisorMemberId;
+    if (query.scopeMode !== undefined) where.scopeMode = query.scopeMode;
+    if (query.status !== undefined) where.status = query.status;
+    if (query.organizationId !== undefined) {
+      if (query.includeDescendants === true) {
+        const rows = await this.prisma.organizationClosure.findMany({
+          where: { ancestorId: query.organizationId },
+          select: { descendantId: true },
+        });
+        where.organizationId = { in: rows.map((r) => r.descendantId) };
+      } else {
+        where.organizationId = query.organizationId;
+      }
+    }
+    if (query.q !== undefined && query.q !== '') {
+      const contains = { contains: query.q, mode: 'insensitive' as const };
+      where.OR = [
+        { supervisor: { memberNo: contains } },
+        { supervisor: { displayName: contains } },
+        { organization: { name: contains } },
+        { organization: { code: contains } },
+      ];
+    }
+
+    const [rows, total] = await Promise.all([
+      this.prisma.organizationSupervisionAssignment.findMany({
+        where,
+        select: supervisionAssignmentSafeSelect,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.organizationSupervisionAssignment.count({ where }),
+    ]);
+
+    let items: SupervisionAssignmentResponseDto[] = rows.map((r) => this.toResponseDto(r));
+    if (expand.size > 0) {
+      items = await this.attachExpansions(items, {
+        supervisor: expand.has('supervisor'),
+        organization: expand.has('organization'),
+      });
+    }
+    return { items, total, page: query.page, pageSize: query.pageSize };
+  }
+
+  // expand 展开(D6):按命中 token 批量取回摘要后逐行挂载(零 N+1)。
+  private async attachExpansions(
+    items: SupervisionAssignmentResponseDto[],
+    want: { supervisor: boolean; organization: boolean },
+  ): Promise<SupervisionAssignmentResponseDto[]> {
+    const supervisorMap = new Map<string, SupervisionExpandedSupervisorDto>();
+    const orgMap = new Map<string, SupervisionExpandedOrganizationDto>();
+    if (items.length > 0) {
+      if (want.supervisor) {
+        const rows = await this.prisma.member.findMany({
+          where: { id: { in: [...new Set(items.map((i) => i.supervisorMemberId))] } },
+          select: { id: true, memberNo: true, displayName: true, gradeCode: true },
+        });
+        for (const r of rows) supervisorMap.set(r.id, r);
+      }
+      if (want.organization) {
+        const rows = await this.prisma.organization.findMany({
+          where: { id: { in: [...new Set(items.map((i) => i.organizationId))] } },
+          select: { id: true, name: true, code: true, nodeTypeCode: true },
+        });
+        for (const r of rows) orgMap.set(r.id, r);
+      }
+    }
+    return items.map((item) => {
+      const out = { ...item };
+      if (want.supervisor) {
+        const s = supervisorMap.get(item.supervisorMemberId);
+        if (s) out.supervisor = s;
+      }
+      if (want.organization) {
+        const o = orgMap.get(item.organizationId);
+        if (o) out.organization = o;
+      }
+      return out;
+    });
+  }
+
+  // ============ GET /api/admin/v1/supervision-assignments/:id(detail) ============
+
+  // 此前只有列表 / PATCH / revoke;找不到未软删记录 → 33001。同读码。
+  async findOne(user: CurrentUserPayload, id: string): Promise<SupervisionAssignmentResponseDto> {
+    await this.assertCanOrThrow(user, 'supervision-assignment.read.record');
+    const row = await this.prisma.organizationSupervisionAssignment.findFirst({
+      where: notDeletedWhere({ id }),
+      select: supervisionAssignmentSafeSelect,
+    });
+    if (!row) throw new BizException(BizCode.SUPERVISION_ASSIGNMENT_NOT_FOUND);
+    return this.toResponseDto(row);
+  }
+
+  // ============ POST /api/admin/v1/supervision-assignments/coverage-preview ============
+
+  // dry-run 覆盖预演:「这条分管建下去会覆盖哪些组织」——EXACT=[organizationId];TREE=closure 展开
+  // (该组织 + 全部后代,含自身;沿 getSupervisionScope 同一展开口径)。**纯展示读 closure,绝非判权;
+  // 零写入**(建前给运营看清覆盖面;不校验 supervisor —— 分管与职务正交,覆盖面只由 org × scopeMode 决定)。
+  async coveragePreview(
+    user: CurrentUserPayload,
+    dto: SupervisionCoveragePreviewDto,
+  ): Promise<SupervisionCoveragePreviewResponseDto> {
+    await this.assertCanOrThrow(user, 'supervision-assignment.read.record');
+    await this.findOrganizationOrThrow(dto.organizationId, this.prisma);
+    const scopeMode = dto.scopeMode ?? SupervisionScopeMode.TREE;
+    if (scopeMode === SupervisionScopeMode.EXACT) {
+      return {
+        organizationId: dto.organizationId,
+        scopeMode,
+        expandedOrganizationIds: [dto.organizationId],
+      };
+    }
+    const rows = await this.prisma.organizationClosure.findMany({
+      where: { ancestorId: dto.organizationId },
+      select: { descendantId: true },
+    });
+    const ids = rows.map((r) => r.descendantId);
+    return {
+      organizationId: dto.organizationId,
+      scopeMode,
+      // closure 缺 depth-0 自身时兜底纳入(镜像 getSupervisors 的 scopeIds 兜底口径)
+      expandedOrganizationIds: ids.includes(dto.organizationId)
+        ? ids
+        : [dto.organizationId, ...ids],
+    };
   }
 
   // ============ P2002 兜底 ============

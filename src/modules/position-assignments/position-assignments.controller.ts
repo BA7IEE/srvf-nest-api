@@ -1,18 +1,33 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
   ApiWrappedOkResponse,
+  ApiWrappedPageResponse,
 } from '../../common/decorators/api-response.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import type { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   CreatePositionAssignmentDto,
+  PagePositionAssignmentsQueryDto,
+  PositionAssignmentPreviewResponseDto,
   PositionAssignmentResponseDto,
+  PreviewPositionAssignmentDto,
 } from './position-assignments.dto';
 import { PositionAssignmentsService } from './position-assignments.service';
 
@@ -104,6 +119,56 @@ export class PositionAssignmentsController {
     @Param('memberId') memberId: string,
   ): Promise<PositionAssignmentResponseDto[]> {
     return this.service.listByMember(user, memberId);
+  }
+
+  // ============ F5/E1(路线图 §4):扁平总表 / 预检 / detail ============
+
+  @Get('position-assignments')
+  @ApiOperation({
+    summary:
+      '全局分页任职总表(organizationId+includeDescendants/memberId/positionId/status/q 过滤 + expand=member,position,organization;缺省含 REVOKED 历史) [rbac: position-assignment.read.record]',
+  })
+  @ApiWrappedPageResponse(PositionAssignmentResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  page(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: PagePositionAssignmentsQueryDto,
+  ): Promise<PageResultDto<PositionAssignmentResponseDto>> {
+    return this.service.page(user, query);
+  }
+
+  // 显式 @HttpCode(200):dry-run 诊断读,violations 是数据不是错误(沿 authz/explain 决断②范式)。
+  @Post('position-assignments/preview')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '预检任命(dry-run:任期 + 存在性 + 任命 5 校验逐项收集 violations,零写入;violations 是数据) [rbac: position-assignment.read.record]',
+  })
+  @ApiWrappedOkResponse(PositionAssignmentPreviewResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  preview(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() dto: PreviewPositionAssignmentDto,
+  ): Promise<PositionAssignmentPreviewResponseDto> {
+    return this.service.preview(user, dto);
+  }
+
+  @Get('position-assignments/:id')
+  @ApiOperation({
+    summary: '查单条任职(detail;找不到未软删记录 → 32020) [rbac: position-assignment.read.record]',
+  })
+  @ApiWrappedOkResponse(PositionAssignmentResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.POSITION_ASSIGNMENT_NOT_FOUND,
+  )
+  findOne(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ): Promise<PositionAssignmentResponseDto> {
+    return this.service.findOne(user, id);
   }
 
   // ============ 扁平:撤销 + 历史 ============

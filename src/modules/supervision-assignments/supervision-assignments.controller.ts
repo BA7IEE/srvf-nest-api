@@ -1,19 +1,35 @@
-import { Body, Controller, Get, Param, Patch, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
   ApiWrappedOkResponse,
+  ApiWrappedPageResponse,
 } from '../../common/decorators/api-response.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import type { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   CreateSupervisionAssignmentDto,
   OrganizationSupervisorDto,
+  PageSupervisionAssignmentsQueryDto,
   SupervisionAssignmentResponseDto,
+  SupervisionCoveragePreviewDto,
+  SupervisionCoveragePreviewResponseDto,
   SupervisionScopeEntryDto,
   UpdateSupervisionAssignmentDto,
 } from './supervision-assignments.dto';
@@ -50,6 +66,62 @@ export class SupervisionAssignmentsController {
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
   list(@CurrentUser() user: CurrentUserPayload): Promise<SupervisionAssignmentResponseDto[]> {
     return this.service.list(user);
+  }
+
+  // F5/E2(路线图 §4;D9 同型):/page 兄弟路由 —— 旧 bare 数组端点逐字不动。
+  // 静态段路由(page / coverage-preview)须先于下方 GET :id 声明(Nest 按声明序注册)。
+  @Get('supervision-assignments/page')
+  @ApiOperation({
+    summary:
+      '分页分管总表(supervisorMemberId/organizationId+includeDescendants/scopeMode/status/q 过滤 + expand=supervisor,organization;缺省含 REVOKED 历史) [rbac: supervision-assignment.read.record]',
+  })
+  @ApiWrappedPageResponse(SupervisionAssignmentResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  page(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: PageSupervisionAssignmentsQueryDto,
+  ): Promise<PageResultDto<SupervisionAssignmentResponseDto>> {
+    return this.service.page(user, query);
+  }
+
+  // 显式 @HttpCode(200):dry-run 展示读(沿 authz/explain 决断②范式)。
+  @Post('supervision-assignments/coverage-preview')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '覆盖范围预演(dry-run:某待建分管将覆盖哪些组织;EXACT=[该节点] / TREE=closure 展开含后代;零写入,展示读非判权) [rbac: supervision-assignment.read.record]',
+  })
+  @ApiWrappedOkResponse(SupervisionCoveragePreviewResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ORGANIZATION_NOT_FOUND,
+  )
+  coveragePreview(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() dto: SupervisionCoveragePreviewDto,
+  ): Promise<SupervisionCoveragePreviewResponseDto> {
+    return this.service.coveragePreview(user, dto);
+  }
+
+  @Get('supervision-assignments/:id')
+  @ApiOperation({
+    summary:
+      '查单条分管(detail;找不到未软删记录 → 33001) [rbac: supervision-assignment.read.record]',
+  })
+  @ApiWrappedOkResponse(SupervisionAssignmentResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.SUPERVISION_ASSIGNMENT_NOT_FOUND,
+  )
+  findOne(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('id') id: string,
+  ): Promise<SupervisionAssignmentResponseDto> {
+    return this.service.findOne(user, id);
   }
 
   @Post('supervision-assignments')
