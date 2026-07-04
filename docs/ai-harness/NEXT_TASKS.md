@@ -32,6 +32,12 @@
 - **候选方案**:镜像 `announcement-import` 的 preview/execute 两段式设计(零写入诊断 + 幂等落库 + 逐行 `ok`/`blocked`/`already-exists` 结果),但目标表是 `Member`(可能含基础档案字段)而非组织/任职/分管;**同样受 R13 约束**——测试与文档示例一律用假数据,真实姓名/证件信息不进本仓库任何位置。
 - **触发条件**:出现批量导入存量队员(> 逐个可接受量级)的真实诉求时单独立项评审(D 档,涉及 schema 是否需要新增批量端点、字段集范围、与 `POST admin/v1/members` 单条端点的关系)。
 
+### P1-17 后台前端对接接口批次(A–E 五组)— **🧊 规划已冻结,待维护者拍板后逐批立项**
+- **背景**:后台前端 srvf-admin-web(任务驱动后台)对接需要一批横切能力——搜索(`q`/日期区间/组织子树)、选择器(`options`/`resolve-labels`)、授权诊断(`explain-batch`/`action-state`)、scoped-authz 三表(role-bindings/任职/分管)分页总表+detail+preview、memberships 组织轴+transfer+tree-with-summary。2026-07-04 plan-only 分析规划(A 档 docs-only)已产出冻结路线图 [`docs/plans/admin-api-fe-integration-roadmap.md`](../plans/admin-api-fe-integration-roadmap.md)。
+- **规划结论**:15 子项全部 **零 schema / 零 migration / 零新表 / 零 breaking**(既有 list +可选 query 参数 = additive;bare-array list 不就地改分页而新增 `/page` 兄弟路由);预计权限码 191→~194–197(+3~6)、EXPECTED_ROUTES 292→~318、模块 34→~35(+meta);QueryService 首次触发解锁(architecture-boundary §5 deferred→active)。
+- **待拍板**:路线图 §3 决策清单 **D1–D10** + §8 分批序列 **F1–F5**(刚需先:A 搜索&选择器 → B 工作台增强 → C role-bindings/authz 批量 → D memberships 组织轴 → E 任职/分管总表殿后)。唯一 surface 决策 = D4(`roles/options` 落 system/v1 vs admin/v1)。
+- **触发条件**:维护者对 §11 回执区勾选拍板后,按 F1→F5 逐批起 per-batch goal 实现(**AI 不自动启动**,沿 process §7);全序列 ship 后路线图归档至 `docs/archive/reviews/`(scoped-authz 先例)。
+
 ### P2-3 分页 skip/take 换算的轻度重复 — **❌ 不做**
 - 依据:现状可接受(逻辑两行,已验证);主动抽 util 违反 AGENTS §2 grab-bag 禁令。重开条件 = 后续出现第 3 处分页 bug 时单独评估,**不**预先立项。
 
