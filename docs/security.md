@@ -128,3 +128,9 @@ req.body.refreshToken
 6. **升级条件**:见 [`ARCHITECTURE.md`](../ARCHITECTURE.md) §9。**AI 不得在 P0-E 范围内实现**,需用户明确确认升级后单独立项(沿 P0-E v1 D-4 + [`AGENTS.md §1 B 档`](../AGENTS.md) "默认不做,可评审解锁")
 
 **为什么 P0-E 没做**:`status=DISABLED` 即时阻断 + access TTL 15m 自然过期 + refresh 撤销联动已覆盖绝大多数场景;`tokenVersion` 增加 schema 维护与 JWT payload 字段(破坏 zero drift),投入 / 回报不匹配。仅在出现"5s 内必须失效"硬性诉求时再立项。
+
+---
+
+## RBAC / scoped-authz 交叉引用
+
+本文件不是 RBAC / scoped-authz(组织职务 + 分管 + 统一鉴权)的权威源,只覆盖认证(登录 / 密码 / token)相关安全策略,不重复判权设计。权威源:[`AGENTS.md`](../AGENTS.md) §8 / §13(RBAC / 判权铁律)、[`src/modules/authz/CLAUDE.md`](../src/modules/authz/CLAUDE.md)(判权大脑本地事实)、[`docs/ops/scoped-authz-go-live-checklist.md`](ops/scoped-authz-go-live-checklist.md)(上线初始化 SOP,含考勤终审绑定 / `22074`-`22075` 行为)。

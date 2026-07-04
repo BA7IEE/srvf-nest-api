@@ -30,6 +30,13 @@ export default registerAs('jwt', (): JwtConfig => {
   if (secret.length < 32) {
     throw new Error(`JWT_SECRET 长度不足:实际 ${secret.length} 字符,要求 ≥ 32`);
   }
+  // 2026-07-04 pre-go-live readiness review v0.35.0 §4 B-2:此处严格 `=== 'production'`
+  // 字面比较,不用 app.config.ts 的 isProductionLike(env)(该 helper 2026-05-16 才引入,
+  // 晚于本校验 2026-05-05 首次落地,历史上从未回补)——结果 smoke 环境不受本条默认密钥
+  // 拒绝保护,这是继 storage_settings fail-fast 之外第二处未文档化的 smoke 豁免。
+  // 判断为非风险而非待修复缺口:smoke 仅供 docker-smoke.yml CI 一次性容器 boot 测试
+  // 使用、明令不得真实部署(见 app.config.ts 顶部注释);真实生产强制
+  // APP_ENV=production,本校验对生产路径从未失效。是否收紧留待诉求出现再评估。
   if (process.env.APP_ENV === 'production' && secret === DEFAULT_JWT_SECRET) {
     throw new Error(
       "生产环境 JWT_SECRET 不能等于 .env.example 默认值;推荐用 'openssl rand -base64 48' 生成",

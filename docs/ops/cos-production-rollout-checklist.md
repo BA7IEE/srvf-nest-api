@@ -1,7 +1,7 @@
 # SRVF API — 腾讯云 COS 生产上线运维清单(C-7.5 Provider)
 
 > **定位**:**运维 SOP**(操作清单 + 命令模板 + 验收锚点),用于 v0.11.0(C-7.5 Provider 全栈实施收口)之后,**队组织运维侧 + 维护者**协作把腾讯云 COS 真实接入生产链路。
-> **本文件不是设计文档**:决议细节见 [`docs/批次7_provider选型_API前评审.md §6.4-§6.6`](../批次7_provider选型_API前评审.md);版本现状见 [`docs/handoff/v0.11.0.md §4-§7`](../handoff/v0.11.0.md)。本文件不重复决议背景,只给可执行步骤。
+> **本文件不是设计文档**:决议细节见 [`docs/archive/batches/批次7_provider选型_API前评审.md §6.4-§6.6`](../archive/batches/批次7_provider选型_API前评审.md);版本现状见 [`docs/archive/handoff/v0.11.0.md §4-§7`](../archive/handoff/v0.11.0.md)。本文件不重复决议背景,只给可执行步骤。
 > **冲突优先级**:`ARCHITECTURE.md` > `CLAUDE.md` > `docs/V2红线与复活路径.md` > C-7.5 评审稿 > 本文件。本文件不覆盖任何铁律;若发现冲突,以上层为准并暂停。
 
 ---
@@ -65,7 +65,7 @@
 
 ## 2. 腾讯云 COS bucket 创建
 
-### 2.1 命名建议(沿 [评审稿 §6.4.3](../批次7_provider选型_API前评审.md))
+### 2.1 命名建议(沿 [评审稿 §6.4.3](../archive/batches/批次7_provider选型_API前评审.md))
 
 | 维度 | 推荐 | 备注 |
 |---|---|---|
@@ -177,7 +177,7 @@
 
 ## 4. CORS 规则
 
-### 4.1 CORS JSON 模板(沿 [评审稿 §6.4.6](../批次7_provider选型_API前评审.md))
+### 4.1 CORS JSON 模板(沿 [评审稿 §6.4.6](../archive/batches/批次7_provider选型_API前评审.md))
 
 **生产 CORS**:
 
@@ -217,7 +217,7 @@
 }
 ```
 
-**注**:dev / test bucket(若与 prod 不同 bucket)单独配置;若沿 Q18 单 bucket + key 前缀,**CORS 必须按生产严格度配置**,dev 走 LocalProvider 而非 COS(沿 [handoff §4.4](../handoff/v0.11.0.md))。
+**注**:dev / test bucket(若与 prod 不同 bucket)单独配置;若沿 Q18 单 bucket + key 前缀,**CORS 必须按生产严格度配置**,dev 走 LocalProvider 而非 COS(沿 [handoff §4.4](../archive/handoff/v0.11.0.md))。
 
 ### 4.4 配置步骤
 
@@ -236,7 +236,7 @@
 
 ## 5. lifecycle / versioning / SSE-COS
 
-### 5.1 versioning(沿 [评审稿 §6.4.5](../批次7_provider选型_API前评审.md))
+### 5.1 versioning(沿 [评审稿 §6.4.5](../archive/batches/批次7_provider选型_API前评审.md))
 
 - **启用**:腾讯云 COS 控制台 → 存储桶 → 版本控制 → 开启
 - **作用**:DELETE 操作只生成 DeleteMarker;真实对象保留 30 天(配合 §5.2 lifecycle 规则 1)
@@ -281,7 +281,7 @@
 </LifecycleConfiguration>
 ```
 
-### 5.4 SSE-COS 加密(沿 [评审稿 §6.4.4](../批次7_provider选型_API前评审.md))
+### 5.4 SSE-COS 加密(沿 [评审稿 §6.4.4](../archive/batches/批次7_provider选型_API前评审.md))
 
 - **算法**:`AES256`(SSE-COS 默认;等价 AWS SSE-S3)
 - **配置**:腾讯云 COS 控制台 → 存储桶 → 加密 → 服务端加密 SSE-COS
@@ -313,7 +313,7 @@ openssl rand -base64 32
 
 - **长度 ≥ 32 字节**(沿 `.env.example` 注释 + handoff §4.6)
 - ⚠️ **禁止用 `.env.example` 默认值**(任何 `please-change-me` / `your-key-here` 占位字符串)
-- ⚠️ **永不**与 `<your-secret-id>` / `<your-secret-key>` 同存(沿 [handoff §8.2](../handoff/v0.11.0.md):加密 key 与凭证密文分离)
+- ⚠️ **永不**与 `<your-secret-id>` / `<your-secret-key>` 同存(沿 [handoff §8.2](../archive/handoff/v0.11.0.md):加密 key 与凭证密文分离)
 - 生成后立即注入部署平台(§6.2);**不要本地长期保存**
 
 ### 6.2 部署平台注入路径
@@ -372,7 +372,7 @@ sudo systemctl restart srvf-api
 
 ### 6.3 注入后校验
 
-应用启动日志应出现(沿 [handoff §4.6](../handoff/v0.11.0.md) 启动 fail-fast):
+应用启动日志应出现(沿 [handoff §4.6](../archive/handoff/v0.11.0.md) 启动 fail-fast):
 
 ```
 INFO StorageCryptoService initialized (algorithm=aes-256-gcm)
@@ -395,13 +395,13 @@ INFO StorageCryptoService initialized (algorithm=aes-256-gcm)
 
 ## 7. 后台 Storage Settings 初始化
 
-### 7.1 端点(沿 [handoff §4.9](../handoff/v0.11.0.md))
+### 7.1 端点(沿 [handoff §4.9](../archive/handoff/v0.11.0.md))
 
 - `GET /api/system/v1/storage-settings`:读当前配置(凭证字段返 `credentialStatus`,**永不返明文**)
 - `PATCH /api/system/v1/storage-settings`:改非凭证字段(PATCH upsert;首次自动创建 default row)
 - `POST /api/system/v1/storage-settings/reset-credentials`:重置凭证(详见 §8)
 
-**权限**:全部 `@Roles(SUPER_ADMIN, ADMIN)` 入口。
+**权限**:入口仅 `JwtAuthGuard`,**不**挂 `@Roles(SUPER_ADMIN, ADMIN)`;判权在 Service 层走 `rbac.can()`(`storage-setting.{read,update}.singleton` / `.reset.credentials` 三个权限点)。读 / 改配置绑 `ops-admin`(`ADMIN` 需额外持有该角色才能过);**`reset-credentials` 不绑 `ops-admin`,仅 `SUPER_ADMIN` 短路可过**,其余账号(含持 `ops-admin` 的 `ADMIN`)调用一律 `30100`。
 
 ### 7.2 首次初始化:PATCH 非凭证字段
 
@@ -547,7 +547,7 @@ unset TMPBODY
 
 ### 8.5 重新录入(凭证轮换)
 
-同 §8.3 流程;再次 POST 即覆盖旧密文。**`StorageSettingsService.invalidate()` 自动主动失效缓存**;**下一次 Provider 调用 ≤ 60s 内自动用新凭证**(沿 [handoff §4.4 Router 动态路由](../handoff/v0.11.0.md))。
+同 §8.3 流程;再次 POST 即覆盖旧密文。**`StorageSettingsService.invalidate()` 自动主动失效缓存**;**下一次 Provider 调用 ≤ 60s 内自动用新凭证**(沿 [handoff §4.4 Router 动态路由](../archive/handoff/v0.11.0.md))。
 
 ---
 
@@ -720,21 +720,21 @@ unset UPLOAD_URL UPLOAD_TOKEN ATTACHMENT_ID ACCESS_URL
 
 | # | 禁止项 | 为什么 |
 |---|---|---|
-| 1 | **禁止开启 bucket 公有读**(任何 ACL = public-read / public-read-write) | 沿 [评审稿 §6.4.1 Q16](../批次7_provider选型_API前评审.md);所有访问 100% 走 signed URL;公有读 = 全量数据可被未授权抓取 |
+| 1 | **禁止开启 bucket 公有读**(任何 ACL = public-read / public-read-write) | 沿 [评审稿 §6.4.1 Q16](../archive/batches/批次7_provider选型_API前评审.md);所有访问 100% 走 signed URL;公有读 = 全量数据可被未授权抓取 |
 | 2 | **禁止把 SecretId / SecretKey commit 进 git**(`.env` / 源代码 / 配置文件 / 任何 git tracked 文件) | git 历史不可逆;一旦 commit,即使 force-push 删除,GitHub 缓存 / fork / clone 仍可能保留 |
 | 3 | **禁止把 SecretId / SecretKey 贴入 PR / Issue / 文档 / Slack / 邮件 / 协作工具** | 同 #2;协作平台日志 / 通知 / 归档不可控 |
-| 4 | **禁止把 SecretId / SecretKey 写入日志 / audit_logs / 应用 stdout / stderr** | 沿 [评审稿 §6.6.5 + handoff §8.2](../批次7_provider选型_API前评审.md);日志聚合系统(Loki / Datadog / ES)长期存储 |
+| 4 | **禁止把 SecretId / SecretKey 写入日志 / audit_logs / 应用 stdout / stderr** | 沿 [评审稿 §6.6.5 + handoff §8.2](../archive/batches/批次7_provider选型_API前评审.md);日志聚合系统(Loki / Datadog / ES)长期存储 |
 | 5 | **禁止 CORS `AllowedOrigins: ["*"]`** | 沿 §4.2 + 评审稿 §6.4.6;任意源都可发起 PUT / GET,signed URL 一旦泄漏可被滥用 |
 | 6 | **禁止 IAM Policy 用 wildcard `Resource: "*"`**(必须限定本 bucket `qcs::cos:...:<bucket>/*`)| 子账号一旦泄漏可越权操作其他 bucket / 服务 |
 | 7 | **禁止 IAM 子账号绑定预设全权策略**(`QcloudCOSFullAccess` / `AdministratorAccess` 等)| 越权风险 |
 | 8 | **禁止启用 SSE-KMS / SSE-C** | 沿 §5.4;复杂度 + 成本不必要 |
 | 9 | **禁止跳过 versioning**(误删后无 30 天兜底) | 沿 §5.1 + 评审稿 §6.4.5;v1.0 删除策略依赖 versioning + lifecycle |
-| 10 | **禁止把 `STORAGE_ENCRYPTION_KEY` 与凭证密文同存储**(同 DB / 同 env / 同 git) | 沿 [handoff §8.2](../handoff/v0.11.0.md);双因素分离 = DB dump 单泄漏不解密 |
+| 10 | **禁止把 `STORAGE_ENCRYPTION_KEY` 与凭证密文同存储**(同 DB / 同 env / 同 git) | 沿 [handoff §8.2](../archive/handoff/v0.11.0.md);双因素分离 = DB dump 单泄漏不解密 |
 | 11 | **禁止 shell history 留下凭证录入命令** | 沿 §8.2;同机用户 / 攻击者读 `~/.bash_history` 即获凭证 |
-| 12 | **禁止用 `.env.example` 默认值作真实 `STORAGE_ENCRYPTION_KEY`** | 沿 §6.1 + [handoff §4.6](../handoff/v0.11.0.md);任何 `please-change-me` / `your-key-here` 占位 = 攻击者已知 key |
+| 12 | **禁止用 `.env.example` 默认值作真实 `STORAGE_ENCRYPTION_KEY`** | 沿 §6.1 + [handoff §4.6](../archive/handoff/v0.11.0.md);任何 `please-change-me` / `your-key-here` 占位 = 攻击者已知 key |
 | 13 | **禁止本文档替换占位符为真实值并 commit** | `<your-secret-id>` / `<your-bucket>` / `<your-appid>` / `<your-frontend-domain>` 等占位永不替换 |
-| 14 | **禁止 AI 在任何 PR / 评论中输出真实凭证 / bucket 名 / 域名** | AI 边界(沿 [handoff §8.3](../handoff/v0.11.0.md)反模式表) |
-| 15 | **禁止运维擅自在生产环境跑 §9 闭环验收使用业务真实数据**(用 `/dev/urandom` 生成测试文件) | 测试文件不要含 PII / 敏感数据;沿 [评审稿 §6.5 PII 检测](../批次7_provider选型_API前评审.md) |
+| 14 | **禁止 AI 在任何 PR / 评论中输出真实凭证 / bucket 名 / 域名** | AI 边界(沿 [handoff §8.3](../archive/handoff/v0.11.0.md)反模式表) |
+| 15 | **禁止运维擅自在生产环境跑 §9 闭环验收使用业务真实数据**(用 `/dev/urandom` 生成测试文件) | 测试文件不要含 PII / 敏感数据;沿 [评审稿 §6.5 PII 检测](../archive/batches/批次7_provider选型_API前评审.md) |
 
 ---
 
@@ -745,8 +745,8 @@ unset UPLOAD_URL UPLOAD_TOKEN ATTACHMENT_ID ACCESS_URL
 - **不在本文件范围**:
   - 真实 bucket / IAM / 凭证录入(队组织运维侧执行)
   - 实际生产 SOP 流程(`docs/deployment.md` 等运维通用流程)
-  - 设计决议背景(见 [`docs/批次7_provider选型_API前评审.md §6`](../批次7_provider选型_API前评审.md))
-  - 阶段交接现状(见 [`docs/handoff/v0.11.0.md`](../handoff/v0.11.0.md))
+  - 设计决议背景(见 [`docs/archive/batches/批次7_provider选型_API前评审.md §6`](../archive/batches/批次7_provider选型_API前评审.md))
+  - 阶段交接现状(见 [`docs/archive/handoff/v0.11.0.md`](../archive/handoff/v0.11.0.md))
   - Provider v1.1+ 扩展项(bootstrap fallback / test-connection / multipart / STS / 配置变更 audit;沿 handoff §7.7)
 - **撰写者签名**:Claude Code(基于 C-7.5 v1.0 评审稿 35 项决议 + v0.11.0 handoff §4-§8 + 用户 Step 1 11 项拍板;**未动任何代码 / schema / 现有文档**)
 
@@ -754,13 +754,13 @@ unset UPLOAD_URL UPLOAD_TOKEN ATTACHMENT_ID ACCESS_URL
 
 | 引用 | 内容 |
 |---|---|
-| [`docs/批次7_provider选型_API前评审.md §6.4`](../批次7_provider选型_API前评审.md) | COS 落地技术细节(私有桶 / key 命名 / 环境隔离 / SSE-COS / versioning / lifecycle / CORS / STS) |
-| [`docs/批次7_provider选型_API前评审.md §6.5`](../批次7_provider选型_API前评审.md) | Storage Settings 架构设计(15 字段 / Q24 一次设计完整) |
-| [`docs/批次7_provider选型_API前评审.md §6.6`](../批次7_provider选型_API前评审.md) | 凭证安全边界(Q21 加密存储 / Q22 永不回显 / 三态化 / DB 泄漏防御) |
-| [`docs/handoff/v0.11.0.md §4`](../handoff/v0.11.0.md) | C-7.5 当前能力(11 子节)|
-| [`docs/handoff/v0.11.0.md §5.3`](../handoff/v0.11.0.md) | 运维侧落地 8 项清单 |
-| [`docs/handoff/v0.11.0.md §7.2`](../handoff/v0.11.0.md) | Slow-2 生产侧 COS 运维配置 |
-| [`docs/handoff/v0.11.0.md §8.2`](../handoff/v0.11.0.md) | v0.11.0 段红线(凭证 6 层防护 / AES-256-GCM 参数固定 / 私有桶 + 100% signed URL) |
+| [`docs/archive/batches/批次7_provider选型_API前评审.md §6.4`](../archive/batches/批次7_provider选型_API前评审.md) | COS 落地技术细节(私有桶 / key 命名 / 环境隔离 / SSE-COS / versioning / lifecycle / CORS / STS) |
+| [`docs/archive/batches/批次7_provider选型_API前评审.md §6.5`](../archive/batches/批次7_provider选型_API前评审.md) | Storage Settings 架构设计(15 字段 / Q24 一次设计完整) |
+| [`docs/archive/batches/批次7_provider选型_API前评审.md §6.6`](../archive/batches/批次7_provider选型_API前评审.md) | 凭证安全边界(Q21 加密存储 / Q22 永不回显 / 三态化 / DB 泄漏防御) |
+| [`docs/archive/handoff/v0.11.0.md §4`](../archive/handoff/v0.11.0.md) | C-7.5 当前能力(11 子节)|
+| [`docs/archive/handoff/v0.11.0.md §5.3`](../archive/handoff/v0.11.0.md) | 运维侧落地 8 项清单 |
+| [`docs/archive/handoff/v0.11.0.md §7.2`](../archive/handoff/v0.11.0.md) | Slow-2 生产侧 COS 运维配置 |
+| [`docs/archive/handoff/v0.11.0.md §8.2`](../archive/handoff/v0.11.0.md) | v0.11.0 段红线(凭证 6 层防护 / AES-256-GCM 参数固定 / 私有桶 + 100% signed URL) |
 | [`.env.example`](../../.env.example) | `STORAGE_ENCRYPTION_KEY` + `STORAGE_LOCAL_ROOT` env 文档 |
 
 ---
