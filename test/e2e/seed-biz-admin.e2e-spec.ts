@@ -23,10 +23,11 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 3. biz-admin 绑定 72 条 RolePermission;member.delete.record 与终审两码 **不**在绑定中
 // 4. 幂等补挂:seed 前已存在的 ADMIN 用户(含 DISABLED)跑 seed 后持有 biz-admin;
 //    SUPER_ADMIN / USER 不被挂;软删 ADMIN 不补挂(D-S4-7)
-// 5. 零变化项:ops-admin 绑定数(92;WECHAT T2 58→61 + 招新 T1 REALNAME settings 61→63 授权 true-up
+// 5. 零变化项:ops-admin 绑定数(94;WECHAT T2 58→61 + 招新 T1 REALNAME settings 61→63 授权 true-up
 //    + 终态 scoped-authz PR1 org.move.node 63→64 + PR2 membership 4 码 64→68 + PR3 position/rule 8 码 68→76
 //    + PR4 position-assignment 4 码 76→80 + PR5 supervision-assignment 4 码 80→84 + PR6 role-binding 4 码 84→88
-//    + PR10 authz.explain.decision 88→89 + PR11 announcement-import 2 码 89→91 + F1「A 组」meta.resolve.label 91→92;
+//    + PR10 authz.explain.decision 88→89 + PR11 announcement-import 2 码 89→91 + F1「A 组」meta.resolve.label 91→92
+//    + F3「C 组」authz.{explain-batch,action-state}.decision 2 码 92→94;
 //    业务面 seed 不绑 ops-admin 的不变式仍成立)
 //    与 member 角色绑定数(9)不受业务面 seed 影响
 // 6. seed 连续执行两次完全幂等:Permission 总数 / biz-admin role id /
@@ -189,8 +190,9 @@ const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 3; // 7
 // 2026-07-02 终态 scoped-authz PR10 authz.explain.decision +1 → 88→89;与 seed-rbac 的 94-5=89 推导一致;
 // 2026-07-02 终态 scoped-authz PR11 announcement-import.{preview,execute}.record +2 → 89→91;
 // 与 seed-rbac 的 96-5=91 推导一致;
-// 2026-07-04 F1「A 组」meta.resolve.label +1 → 91→92;与 seed-rbac 的 97-5=92 推导一致)
-const EXPECTED_OPS_ADMIN_BINDING_COUNT = 92;
+// 2026-07-04 F1「A 组」meta.resolve.label +1 → 91→92;与 seed-rbac 的 97-5=92 推导一致;
+// 2026-07-04 F3「C 组」authz.{explain-batch,action-state}.decision +2 → 92→94;与 seed-rbac 的 99-5=94 推导一致)
+const EXPECTED_OPS_ADMIN_BINDING_COUNT = 94;
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
 
 const SEED_ENV = {

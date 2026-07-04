@@ -11,11 +11,11 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 沿 D7 v1.1 §10 + 用户拍板六项决策 + 既有 seed.e2e-spec.ts 子进程范式。
 //
 // 覆盖(沿用户决策方案 B):
-// 1. 空 db → seed 后 97 条 permission 全部存在(14 rbac.* + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME + 1 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META;终态 scoped-authz PR1 PR-2A 19→20 +org.move.node,PR2 20→24 +membership 4,PR3 24→32 +position 4 / position-rule 4,PR4 32→36 +position-assignment 4,PR5 36→40 +supervision-assignment 4,PR6 40→44 +role-binding 4,PR10 +1 authz.explain.decision,PR11 +2 announcement-import.{preview,execute}.record;F1「A 组」+1 meta.resolve.label)
+// 1. 空 db → seed 后 99 条 permission 全部存在(14 rbac.* + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME + 3 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META;终态 scoped-authz PR1 PR-2A 19→20 +org.move.node,PR2 20→24 +membership 4,PR3 24→32 +position 4 / position-rule 4,PR4 32→36 +position-assignment 4,PR5 36→40 +supervision-assignment 4,PR6 40→44 +role-binding 4,PR10 +1 authz.explain.decision,PR11 +2 announcement-import.{preview,execute}.record;F1「A 组」+1 meta.resolve.label;F3「C 组」+2 authz.{explain-batch,action-state}.decision)
 // 2. ops-admin RbacRole 存在
-// 3. ops-admin 绑定 92 条(14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME + 1 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META;**不含**
+// 3. ops-admin 绑定 94 条(14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME + 3 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META;**不含**
 //    storage-setting.reset.credentials(沿 PR-2 D2=A)+ user.update.role(沿 PR-3 D1=A);
-//    PR-4B D2=B audit-log.read.entry 整条加入;PR11 announcement-import 2 码整条加入;F1 meta.resolve.label 整条加入)
+//    PR-4B D2=B audit-log.read.entry 整条加入;PR11 announcement-import 2 码整条加入;F1 meta.resolve.label / F3 authz 批量 2 码整条加入)
 // 4. 至少 1 个 user_role 持有 ops-admin(强校验通过)
 // 5. fallback 路径:无 RBAC_INITIAL_OPS_ADMIN_USER_ID 时绑到 SUPER_ADMIN
 // 6. 连续跑两次 seed 完全幂等:Permission / RbacRole / RolePermission / UserRole 数量不重复
@@ -190,8 +190,11 @@ const EXPECTED_RBAC_PERMISSION_CODES = [
   'realname-setting.read.singleton',
   'realname-setting.update.singleton',
   REALNAME_RESET_CREDENTIALS_CODE,
-  // 1 条 AUTHZ(终态 scoped-authz PR10;权限解释诊断码,整条绑 ops-admin)
+  // 3 条 AUTHZ(终态 scoped-authz PR10 权限解释 + F3「C 组」explain-batch/action-state
+  // 〔admin-api-fe-integration-roadmap.md §4 C2/C3 + §6.2 D8〕;诊断码,整条绑 ops-admin)
   'authz.explain.decision',
+  'authz.explain-batch.decision',
+  'authz.action-state.decision',
   // 2 条 ANNOUNCEMENT-IMPORT(终态 scoped-authz PR11;公告导入 preview/execute,整条绑 ops-admin)
   'announcement-import.preview.record',
   'announcement-import.execute.record',
@@ -202,7 +205,7 @@ const EXPECTED_RBAC_PERMISSION_CODES = [
 const EXPECTED_PERMISSION_COUNT = EXPECTED_RBAC_PERMISSION_CODES.length;
 // ops-admin RolePermission 数(过滤 reset.credentials(PR-2 D2=A)+ user.update.role(PR-3 D1=A)
 // + sms-setting.reset.credentials(SMS T2 镜像 D2=A)+ wechat-setting.reset.credentials(WECHAT T2)
-// + realname-setting.reset.credentials(REALNAME T1 镜像 D2=A,招新评审稿 §3.4)→ 97 - 5 = 92)
+// + realname-setting.reset.credentials(REALNAME T1 镜像 D2=A,招新评审稿 §3.4)→ 99 - 5 = 94)
 const EXPECTED_OPS_ADMIN_ROLE_PERMISSION_COUNT = EXPECTED_PERMISSION_COUNT - 5;
 const EXPECTED_OPS_ADMIN_BOUND_CODES = EXPECTED_RBAC_PERMISSION_CODES.filter(
   (c) =>
@@ -231,7 +234,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     await resetDb(app);
   });
 
-  it('空 db + 合法 env → 97 条 permission(14 rbac + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME + 1 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META) + ops-admin role + 92 条 role-permission(D2=A 4 把凭证 reset + D1=A user.update.role 共 5 不绑;D2=B audit-log.read.entry 整条绑;PR11 announcement-import 2 码整条绑;F1 meta.resolve.label 整条绑) + 强校验通过', async () => {
+  it('空 db + 合法 env → 99 条 permission(14 rbac + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME + 3 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META) + ops-admin role + 94 条 role-permission(D2=A 4 把凭证 reset + D1=A user.update.role 共 5 不绑;D2=B audit-log.read.entry 整条绑;PR11 announcement-import 2 码整条绑;F1 meta.resolve.label / F3 authz 批量 2 码整条绑) + 强校验通过', async () => {
     const result = runSeed({
       APP_ENV: 'test',
       SUPER_ADMIN_USERNAME: 'rbac-seed-su',

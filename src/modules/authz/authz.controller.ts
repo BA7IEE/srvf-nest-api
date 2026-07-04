@@ -8,7 +8,12 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { AuthzExplainService } from './authz-explain.service';
-import { ExplainAuthzDto, ExplainAuthzResponseDto } from './authz.dto';
+import {
+  ExplainAuthzBatchDto,
+  ExplainAuthzBatchResponseDto,
+  ExplainAuthzDto,
+  ExplainAuthzResponseDto,
+} from './authz.dto';
 
 // 终态 scoped-authz PR10「authz/explain 端点」(2026-07-02;冻结稿 §7.6 + §9 行 20):
 // authz 模块第一个 controller(1 路由)—— 可解释性出口:「谁,因哪个角色/职务/分管,在什么范围,
@@ -40,5 +45,27 @@ export class AuthzController {
     @Body() dto: ExplainAuthzDto,
   ): Promise<ExplainAuthzResponseDto> {
     return this.service.explain(user, dto);
+  }
+
+  // F3/C2(路线图 §4 C2 / D8 拍板;2026-07-04):单条 explain 的批量壳(≤200)。
+  // 同一套 AuthzReason 11 值枚举;deny 仍是 200 数据;任一 userId 不存在/已软删 → 整请求 10001(镜像单条输入错误语义)。
+  @Post('authz/explain-batch')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '批量权限解释(诊断读):逐条返 allow/deny + reason(同单条 11 值枚举)+ matchedGrant;deny 是 200 数据非错误 [rbac: authz.explain-batch.decision]',
+  })
+  @ApiWrappedOkResponse(ExplainAuthzBatchResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.USER_NOT_FOUND,
+  )
+  explainBatch(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() dto: ExplainAuthzBatchDto,
+  ): Promise<ExplainAuthzBatchResponseDto> {
+    return this.service.explainBatch(user, dto);
   }
 }
