@@ -39,7 +39,7 @@ export class AdminRegistrationsController {
   @Get()
   @ApiOperation({
     summary:
-      '跨活动报名横扫(审批工作台;分页 + 可选 statusCode;脱离 :activityId 路径段;item 带 activity 上下文) [rbac: activity-registration.read.record]',
+      '跨活动报名横扫(审批工作台;分页 + 可选 statusCode/q/memberQ/activityQ/memberId/activityId/organizationId/includeDescendants/dateFrom/dateTo/expand=member,activity;脱离 :activityId 路径段;item 带 activity 上下文) [rbac: activity-registration.read.record]',
   })
   @ApiWrappedPageResponse(AdminRegistrationListItemDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)

@@ -6,6 +6,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { NotificationDispatcher } from '../notifications/notification-dispatcher';
+import type { OrganizationsService } from '../organizations/organizations.service';
 import type { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import { AttendancePresenter } from './attendance-presenter';
 import type {
@@ -276,6 +277,16 @@ function makeNotificationDispatcherMock() {
 }
 type NotificationDispatcherMock = ReturnType<typeof makeNotificationDispatcherMock>;
 
+// F2/B2(2026-07-04):listAllSheetsForAdmin 新增 organizationId+includeDescendants 注入
+// OrganizationsService.queryDescendantOrgIds();本 spec 不覆盖该分支(归 e2e
+// admin-cross-axis-attendances),mock 仅满足构造器类型,不返回有意义值。
+function makeOrganizationsMock() {
+  return {
+    queryDescendantOrgIds: jest.fn<Promise<string[]>, [string]>().mockResolvedValue([]),
+  };
+}
+type OrganizationsMock = ReturnType<typeof makeOrganizationsMock>;
+
 function makeService(
   prisma: PrismaMock,
   opts: {
@@ -285,6 +296,7 @@ function makeService(
     stateMachine?: StateMachineMock;
     dispatcher?: NotificationDispatcherMock;
     authz?: AuthzMock;
+    organizations?: OrganizationsMock;
     // PR9:resource_not_found 回退路径读 rbac.can(行为锁「先判码后查单」);默认 true
     rbacCan?: boolean;
   } = {},
@@ -295,6 +307,7 @@ function makeService(
   const stateMachine = opts.stateMachine ?? makeStateMachineMock(DENY_DECISION);
   const dispatcher = opts.dispatcher ?? makeNotificationDispatcherMock();
   const authz = opts.authz ?? makeAuthzMock();
+  const organizations = opts.organizations ?? makeOrganizationsMock();
   return new AttendancesService(
     prisma as unknown as PrismaService,
     recorder as unknown as AttendanceAuditRecorder,
@@ -311,6 +324,7 @@ function makeService(
     // PR9:终审两方法判权走 authz.explain(默认 allow;deny 映射见专属 describe)
     authz as unknown as AuthzService,
     dispatcher as unknown as NotificationDispatcher,
+    organizations as unknown as OrganizationsService,
   );
 }
 

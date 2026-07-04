@@ -1,8 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsNumber,
   IsOptional,
@@ -15,6 +16,13 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
+
+// query boolean 从 GET query string 解析:原始值是字符串 'true'/'false',@Type(() => Boolean)
+// 会用 `Boolean(value)` 转换 —— 任何非空字符串(含 'false')都会变 true,是已知陷阱,
+// 故显式判等而非用 @Type(沿 F1/A1 members.dto.ts / A6 activities.dto.ts 同名 helper 惯例,
+// 本仓约定按 DTO 文件各自持有一份,不抽共享)。
+const parseQueryBoolean = ({ value }: { value: unknown }): unknown =>
+  value === true || value === 'true' ? true : value === false || value === 'false' ? false : value;
 
 // V2 第一阶段批次 3B attendances 模块 DTO 集合。
 // 详见 docs:
@@ -226,12 +234,76 @@ export class FinalRejectAttendanceSheetDto {
 
 // ============ 列表 query ============
 
+// F2/B2(admin-api-fe-integration-roadmap.md §4 B2;D1/D6/D7 拍板,2026-07-04):+可选
+// q(全局跨轴横扫 admin/v1/attendance-sheets 命中 activityTitle+submitter 的 username/nickname)/
+// activityQ(仅命中活动标题)/ organizationId(经 activity→org)/ includeDescendants(配合
+// organizationId 展开后代)/ dateFrom+dateTo(按 submittedAt 区间)/ expand(activity 逗号白名单)。
+// **本 DTO 同时被嵌套路径 `activities/:activityId/attendance-sheets`(list)复用**——新字段在该
+// 端点上溢出但不生效(仅 listAllSheetsForAdmin/B2 消费),沿路线图 §"嵌套轴共享 list DTO 可接受
+// 溢出" 拍板。旧字段/响应形状不变(additive)。
 export class ListAttendanceSheetsQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ description: '按 Sheet 状态过滤', maxLength: 64 })
   @IsOptional()
   @IsString()
   @MaxLength(64)
   statusCode?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '模糊搜索(仅 admin/v1/attendance-sheets 全局横扫生效;命中活动 title + 提交人 username/nickname;contains + insensitive)',
+    maxLength: 200,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  q?: string;
+
+  @ApiPropertyOptional({
+    description: '模糊搜索(仅命中活动 title;仅 admin/v1/attendance-sheets 全局横扫生效)',
+    maxLength: 200,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  activityQ?: string;
+
+  @ApiPropertyOptional({
+    description: '按承办组织过滤(经活动 organizationId;仅 admin/v1/attendance-sheets 全局横扫生效)',
+    maxLength: 64,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  organizationId?: string;
+
+  @ApiPropertyOptional({
+    description: '配合 organizationId:是否展开其全部后代组织(默认 false)',
+    default: false,
+  })
+  @IsOptional()
+  @Transform(parseQueryBoolean)
+  @IsBoolean()
+  includeDescendants?: boolean;
+
+  @ApiPropertyOptional({ description: '按 submittedAt 区间过滤(起,ISO8601,含边界)' })
+  @IsOptional()
+  @IsDateString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({ description: '按 submittedAt 区间过滤(止,ISO8601,含边界)' })
+  @IsOptional()
+  @IsDateString()
+  dateTo?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '按需展开关联字段(逗号分隔白名单:activity;默认不展开,响应形状不变;仅 admin/v1/attendance-sheets 全局横扫生效)',
+    example: 'activity',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  expand?: string;
 }
 
 export class MyAttendanceRecordsQueryDto extends PaginationQueryDto {
@@ -462,9 +534,28 @@ export class AttendanceSheetReviewDetailDto {
 
 // ============ 跨轴只读出参(2026-06-23 队员/审批跨轴只读查询 goal)============
 
+// F2/B2(路线图 §4;D6 拍板)expand 展开子对象 —— 独立 admin-surface class,不 extends / Pick /
+// Omit AttendanceSheetActivitySummaryDto(该 8 字段 class 是 review-detail 完整视图,D6 要求
+// 更小的最小展开字段集,两者用途不同,沿本文件既有隔离惯例物理隔离)。仅 `?expand=activity`
+// 命中时出现在响应里。
+export class AdminAttendanceSheetExpandedActivityDto {
+  @ApiProperty({ description: '活动主键(cuid)' })
+  id!: string;
+
+  @ApiProperty({ description: '活动标题' })
+  title!: string;
+
+  @ApiProperty({ description: '活动开始时间' })
+  startAt!: Date;
+
+  @ApiProperty({ description: '承办组织节点 id' })
+  organizationId!: string;
+}
+
 // 跨活动考勤单据列表项(审批工作台 Tier2):AttendanceSheetListItemDto 字段 + activityTitle。
 // 跨活动横扫时 item 脱离 :activityId 路径段,自带活动上下文。独立 admin-surface class,
 // **不** extends / Pick / Omit AttendanceSheetListItemDto(同 surface 也物理隔离)。
+// F2/B2(路线图 §4;D6 拍板):+可选 activity(expand 命中时才出现;默认响应形状不变)。
 export class AdminAttendanceSheetListItemDto {
   @ApiProperty({ description: '主键' })
   id!: string;
@@ -492,6 +583,12 @@ export class AdminAttendanceSheetListItemDto {
 
   @ApiProperty({ description: '创建时间' })
   createdAt!: Date;
+
+  @ApiPropertyOptional({
+    description: '活动摘要(仅 ?expand 含 activity 时返回;默认省略)',
+    type: () => AdminAttendanceSheetExpandedActivityDto,
+  })
+  activity?: AdminAttendanceSheetExpandedActivityDto;
 }
 
 // 某队员考勤记录项(队员 360 Tier3):复用 attendance-presenter 的 record 字段集(admin 字段集,

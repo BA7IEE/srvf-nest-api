@@ -32,6 +32,7 @@ describe('跨轴只读:报名(Tier2 跨活动 + Tier3 队员履历)', () => {
   let memberBId: string;
   let act1Id: string;
   let act2Id: string;
+  let rootOrgId: string; // F2/B1:供 organizationId/includeDescendants 测试复用根组织 id
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -62,6 +63,7 @@ describe('跨轴只读:报名(Tier2 跨活动 + Tier3 队员履历)', () => {
       data: { name: 'XReg Org', nodeTypeCode: 'team' },
       select: { id: true },
     });
+    rootOrgId = org.id;
     const act1 = await prisma.activity.create({
       data: {
         title: 'XReg Activity 1',
@@ -215,6 +217,209 @@ describe('跨轴只读:报名(Tier2 跨活动 + Tier3 队员履历)', () => {
         .set('Authorization', noPermAuth);
 
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+  });
+
+  // ============ F2/B1 搜索 & 组织过滤 & expand(admin-api-fe-integration-roadmap.md §4 B1)============
+
+  describe('GET /api/admin/v1/registrations(F2/B1 q/memberQ/activityQ/memberId/activityId/organizationId/includeDescendants/dateFrom/dateTo/expand)', () => {
+    let memberCId: string;
+    let childOrgId: string;
+    let activityInChildId: string;
+    const OLD_REGISTERED_AT = new Date('2020-06-01T00:00:00.000Z');
+
+    beforeAll(async () => {
+      const mc = await prisma.member.create({
+        data: { memberNo: 'xreg-c', displayName: 'XReg Member C' },
+        select: { id: true },
+      });
+      memberCId = mc.id;
+
+      // 子组织(直接经 Prisma 建,镜像既有 `org` fixture 手法;手写 closure 行模拟真实
+      // OrganizationsService.create() 维护的闭包表状态,供 queryDescendantOrgIds() 读取)。
+      const childOrg = await prisma.organization.create({
+        data: { name: 'XReg Child Org', nodeTypeCode: 'team', parentId: rootOrgId },
+        select: { id: true },
+      });
+      childOrgId = childOrg.id;
+      await prisma.organizationClosure.createMany({
+        data: [
+          { ancestorId: rootOrgId, descendantId: rootOrgId, depth: 0 },
+          { ancestorId: childOrgId, descendantId: childOrgId, depth: 0 },
+          { ancestorId: rootOrgId, descendantId: childOrgId, depth: 1 },
+        ],
+      });
+
+      const activityInChild = await prisma.activity.create({
+        data: {
+          title: 'XReg Activity In Child',
+          activityTypeCode: 'demo',
+          organizationId: childOrgId,
+          startAt: new Date('2026-06-03T00:00:00.000Z'),
+          endAt: new Date('2026-06-03T10:00:00.000Z'),
+          location: 'L3',
+          statusCode: 'published',
+        },
+        select: { id: true },
+      });
+      activityInChildId = activityInChild.id;
+
+      // memberC 在子组织活动下的报名,registeredAt 显式设为远早于其它 fixture 的旧日期,
+      // 供 dateFrom/dateTo 区间过滤断言;同时唯一挂在 childOrgId,供 organizationId 断言。
+      await prisma.activityRegistration.create({
+        data: {
+          activityId: activityInChildId,
+          memberId: memberCId,
+          statusCode: 'pending',
+          registeredAt: OLD_REGISTERED_AT,
+        },
+      });
+    });
+
+    it('q 跨字段命中 memberNo+memberDisplayName+activityTitle(命中 memberA 两条,不看 activity)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
+        .query({ q: 'xreg-a' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(2);
+      const items = res.body.data.items as Array<{ memberId: string }>;
+      expect(items.every((i) => i.memberId === memberAId)).toBe(true);
+    });
+
+    it('memberQ 仅命中队员字段(memberB)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
+        .query({ memberQ: 'xreg-b' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(1);
+      expect(res.body.data.items[0].memberId).toBe(memberBId);
+    });
+
+    it('activityQ 仅命中活动标题(Activity 2)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
+        .query({ activityQ: 'Activity 2' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(1);
+      expect(res.body.data.items[0].activityId).toBe(act2Id);
+    });
+
+    it('memberId 精确过滤', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
+        .query({ memberId: memberBId })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(1);
+      expect(res.body.data.items[0].activityId).toBe(act1Id);
+    });
+
+    it('activityId 精确过滤(act1 命中 memberA + memberB 两条)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
+        .query({ activityId: act1Id })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(2);
+    });
+
+    it('organizationId(不展开后代):仅根组织下活动的报名,不含子组织', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
+        .query({ organizationId: rootOrgId })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(3);
+      const items = res.body.data.items as Array<{ memberId: string }>;
+      expect(items.some((i) => i.memberId === memberCId)).toBe(false);
+    });
+
+    it('organizationId + includeDescendants:展开后代组织,含子组织报名', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
+        .query({ organizationId: rootOrgId, includeDescendants: 'true' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(4);
+      const items = res.body.data.items as Array<{ memberId: string }>;
+      expect(items.some((i) => i.memberId === memberCId)).toBe(true);
+    });
+
+    it('dateFrom 按 registeredAt 过滤:排除旧报名(memberC),仅返近期 3 条', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
+        .query({ dateFrom: '2026-01-01T00:00:00.000Z' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(3);
+      const items = res.body.data.items as Array<{ memberId: string }>;
+      expect(items.some((i) => i.memberId === memberCId)).toBe(false);
+    });
+
+    it('dateTo 按 registeredAt 过滤:仅命中旧报名(memberC)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
+        .query({ dateTo: '2021-01-01T00:00:00.000Z' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(1);
+      expect(res.body.data.items[0].memberId).toBe(memberCId);
+    });
+
+    it('expand=member,activity:附带队员/活动摘要子对象', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
+        .query({ activityId: act1Id, memberId: memberAId, expand: 'member,activity' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(1);
+      const item = res.body.data.items[0];
+      expect(item.member).toEqual({
+        id: memberAId,
+        memberNo: 'xreg-a',
+        displayName: 'XReg Member A',
+        gradeCode: null,
+      });
+      expect(item.activity).toEqual({
+        id: act1Id,
+        title: 'XReg Activity 1',
+        startAt: '2026-06-01T00:00:00.000Z',
+        organizationId: rootOrgId,
+      });
+    });
+
+    it('expand 默认关闭:响应形状逐字不变(不含 member/activity 键)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
+        .query({ activityId: act1Id, memberId: memberAId })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      const item = res.body.data.items[0] as Record<string, unknown>;
+      expect(item).not.toHaveProperty('member');
+      expect(item).not.toHaveProperty('activity');
+    });
+
+    it('expand 白名单外值 → BAD_REQUEST', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
+        .query({ expand: 'bogus' })
+        .set('Authorization', adminAuth);
+
+      expectBizError(res, BizCode.BAD_REQUEST);
     });
   });
 });

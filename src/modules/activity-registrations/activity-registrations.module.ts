@@ -6,6 +6,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
 import { ActivitiesModule } from '../activities/activities.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { OrganizationsModule } from '../organizations/organizations.module';
 import { UsersModule } from '../users/users.module';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
@@ -48,6 +49,9 @@ import { AppMyRegistrationsController } from './controllers/app-my-registrations
     // 统一通知 S4(评审稿 §6.4 / §11):报名审批结果定向通知(NotificationDispatcher;
     // producer → notifications **单向**,本模块 commit 后直调,防环:通知绝不回调报名)。
     NotificationsModule,
+    // F2/B1(admin-api-fe-integration-roadmap.md §4 B1;D7 拍板):供 listAllForAdmin 注入
+    // OrganizationsService.queryDescendantOrgIds()(closure 只读展开,非判权)。
+    OrganizationsModule,
   ],
   controllers: [
     ActivityRegistrationsAdminController,

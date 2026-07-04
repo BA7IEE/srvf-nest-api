@@ -37,6 +37,7 @@ describe('跨轴只读:考勤 + 贡献值(Tier2 跨活动 + Tier3 队员 360)', 
   let memberEmptyId: string; // 无 approved 记录的队员(空集用)
   let act1Id: string;
   let act2Id: string;
+  let rootOrgId: string; // F2/B2:供 organizationId/includeDescendants 测试复用根组织 id
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -73,6 +74,7 @@ describe('跨轴只读:考勤 + 贡献值(Tier2 跨活动 + Tier3 队员 360)', 
       data: { name: 'XAtt Org', nodeTypeCode: 'team' },
       select: { id: true },
     });
+    rootOrgId = org.id;
     const act1 = await prisma.activity.create({
       data: {
         title: 'XAtt Activity 1',
@@ -324,6 +326,195 @@ describe('跨轴只读:考勤 + 贡献值(Tier2 跨活动 + Tier3 队员 360)', 
         .set('Authorization', noPermAuth);
 
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+  });
+
+  // ============ F2/B2 搜索 & 组织过滤 & expand(admin-api-fe-integration-roadmap.md §4 B2)============
+
+  describe('GET /api/admin/v1/attendance-sheets(F2/B2 q/activityQ/organizationId/includeDescendants/dateFrom/dateTo/expand)', () => {
+    let childOrgId: string;
+    let activityInChildId: string;
+    let submitter2UserId: string;
+    const OLD_SUBMITTED_AT = new Date('2020-06-01T00:00:00.000Z');
+
+    beforeAll(async () => {
+      const submitter2 = await prisma.user.create({
+        data: {
+          username: 'xatt-submitter2',
+          passwordHash: 'not-used-in-this-spec',
+          nickname: 'XAtt昵称哥',
+        },
+        select: { id: true },
+      });
+      submitter2UserId = submitter2.id;
+
+      // 子组织(直接经 Prisma 建,镜像既有 `org` fixture 手法;手写 closure 行模拟真实
+      // OrganizationsService.create() 维护的闭包表状态,供 queryDescendantOrgIds() 读取)。
+      const childOrg = await prisma.organization.create({
+        data: { name: 'XAtt Child Org', nodeTypeCode: 'team', parentId: rootOrgId },
+        select: { id: true },
+      });
+      childOrgId = childOrg.id;
+      await prisma.organizationClosure.createMany({
+        data: [
+          { ancestorId: rootOrgId, descendantId: rootOrgId, depth: 0 },
+          { ancestorId: childOrgId, descendantId: childOrgId, depth: 0 },
+          { ancestorId: rootOrgId, descendantId: childOrgId, depth: 1 },
+        ],
+      });
+
+      const activityInChild = await prisma.activity.create({
+        data: {
+          title: 'XAtt Activity In Child',
+          activityTypeCode: 'demo',
+          organizationId: childOrgId,
+          startAt: new Date('2026-06-04T00:00:00.000Z'),
+          endAt: new Date('2026-06-04T10:00:00.000Z'),
+          location: 'L4',
+          statusCode: 'completed',
+        },
+        select: { id: true },
+      });
+      activityInChildId = activityInChild.id;
+
+      // submitter2 在子组织活动下提交的单据,submittedAt 显式设为远早于其它 fixture 的旧日期,
+      // 供 dateFrom/dateTo 区间过滤断言;同时唯一挂在 childOrgId,供 organizationId 断言。
+      await prisma.attendanceSheet.create({
+        data: {
+          activityId: activityInChildId,
+          submitterUserId: submitter2UserId,
+          statusCode: 'pending',
+          submittedAt: OLD_SUBMITTED_AT,
+        },
+      });
+    });
+
+    it('q 命中活动标题(Activity 2 → sheet2)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-sheets')
+        .query({ q: 'XAtt Activity 2' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(1);
+      expect(res.body.data.items[0].activityId).toBe(act2Id);
+    });
+
+    it('q 命中提交人 username(submitter2 唯一挂子组织单据)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-sheets')
+        .query({ q: 'xatt-submitter2' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(1);
+      expect(res.body.data.items[0].submitterUserId).toBe(submitter2UserId);
+    });
+
+    it('q 命中提交人 nickname', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-sheets')
+        .query({ q: 'XAtt昵称哥' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(1);
+      expect(res.body.data.items[0].submitterUserId).toBe(submitter2UserId);
+    });
+
+    it('activityQ 仅命中活动标题(Activity 2 → sheet2)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-sheets')
+        .query({ activityQ: 'Activity 2' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(1);
+      expect(res.body.data.items[0].activityId).toBe(act2Id);
+    });
+
+    it('organizationId(不展开后代):仅根组织下活动的单据,不含子组织', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-sheets')
+        .query({ organizationId: rootOrgId })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(3);
+      const items = res.body.data.items as Array<{ submitterUserId: string }>;
+      expect(items.some((i) => i.submitterUserId === submitter2UserId)).toBe(false);
+    });
+
+    it('organizationId + includeDescendants:展开后代组织,含子组织单据', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-sheets')
+        .query({ organizationId: rootOrgId, includeDescendants: 'true' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(4);
+      const items = res.body.data.items as Array<{ submitterUserId: string }>;
+      expect(items.some((i) => i.submitterUserId === submitter2UserId)).toBe(true);
+    });
+
+    it('dateFrom 按 submittedAt 过滤:排除旧单据(submitter2),仅返近期 3 条', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-sheets')
+        .query({ dateFrom: '2026-01-01T00:00:00.000Z' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(3);
+      const items = res.body.data.items as Array<{ submitterUserId: string }>;
+      expect(items.some((i) => i.submitterUserId === submitter2UserId)).toBe(false);
+    });
+
+    it('dateTo 按 submittedAt 过滤:仅命中旧单据(submitter2)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-sheets')
+        .query({ dateTo: '2021-01-01T00:00:00.000Z' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(1);
+      expect(res.body.data.items[0].submitterUserId).toBe(submitter2UserId);
+    });
+
+    it('expand=activity:附带活动摘要子对象', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-sheets')
+        .query({ activityQ: 'Activity 2', expand: 'activity' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.total).toBe(1);
+      const item = res.body.data.items[0];
+      expect(item.activity).toEqual({
+        id: act2Id,
+        title: 'XAtt Activity 2',
+        startAt: '2026-06-02T00:00:00.000Z',
+        organizationId: rootOrgId,
+      });
+    });
+
+    it('expand 默认关闭:响应形状逐字不变(不含 activity 键)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-sheets')
+        .query({ activityQ: 'Activity 2' })
+        .set('Authorization', adminAuth);
+
+      expect(res.status).toBe(200);
+      const item = res.body.data.items[0] as Record<string, unknown>;
+      expect(item).not.toHaveProperty('activity');
+    });
+
+    it('expand 白名单外值 → BAD_REQUEST', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-sheets')
+        .query({ expand: 'bogus' })
+        .set('Authorization', adminAuth);
+
+      expectBizError(res, BizCode.BAD_REQUEST);
     });
   });
 });
