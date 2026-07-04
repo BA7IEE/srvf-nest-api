@@ -539,6 +539,25 @@ const EXPECTED_ROUTES: ReadonlyArray<
   //   { refs: [{type,id}] }(refs≤200),出 {[type]:{[id]:{label,...}}};per-type 读权限
   //   过滤 + 无权/不存在静默省略(D5)。R 模式 meta.resolve.label 1 码,无 @Roles,无 audit。
   ['post', '/api/admin/v1/meta/resolve-labels'],
+  // F3「C 组:授权诊断 & role-bindings」(2026-07-04;冻结路线图
+  //   admin-api-fe-integration-roadmap.md §4 C1/C2/C3 + D8/D9),+6 → 306。
+  //   C1(D9):role-bindings /page 分页兄弟路由(旧 bare 数组端点逐字不动)+ GET :id detail +
+  //   GET preview(dry-run 与 create 同参同校验,零写入)+ POST batch(≤200 逐条
+  //   ok/blocked/already-exists,幂等,镜像 announcement-import);读三路复用 role-binding.read.record,
+  //   batch 复用 role-binding.create.record(goal 拍板:preview 不设新码)。
+  //   静态段(page/preview)在 controller 内先于 GET :id 声明(Nest 按声明序注册)。
+  ['get', '/api/admin/v1/role-bindings/page'],
+  ['get', '/api/admin/v1/role-bindings/preview'],
+  ['get', '/api/admin/v1/role-bindings/{id}'],
+  ['post', '/api/admin/v1/role-bindings/batch'],
+  //   C2(D8):explain-batch = 单条 explain 的批量壳(≤200;同 11 值 reason 枚举,deny 是 200 数据;
+  //   任一 userId 不存在 → 整请求 10001);扩 AuthzController;+1 码 authz.explain-batch.decision。
+  ['post', '/api/admin/v1/authz/explain-batch'],
+  //   C3(D8):action-state/batch = 批量业务态闸(调用者本人;allowed = authz 判权 ∧ 已注册 action 的
+  //   状态机只读校验;reason ∈ 11 值 ∪ state_forbidden 入 OpenAPI)。第二个 controller
+  //   ActionStateController(authz 模块内;三 StateMachine 以零依赖纯类入 providers,不 import 业务
+  //   module 不成环);+1 码 authz.action-state.decision。
+  ['post', '/api/admin/v1/authz/action-state/batch'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -1003,6 +1022,27 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'ImportSupervisionRowResultDto',
   'ImportRowIssueDto',
   'ImportSummaryDto',
+
+  // F3「C 组」(2026-07-04;路线图 §4 C1/C2/C3):
+  //   C1 role-bindings /page(expand=role,principal)+ preview(dry-run)+ batch(逐条结果);
+  //   C2 explain-batch(同 11 值 reason 枚举);C3 action-state/batch(reason ∪ state_forbidden 入 OpenAPI)。
+  'RoleBindingExpandedRoleDto',
+  'RoleBindingExpandedPrincipalDto',
+  'RoleBindingPreviewResponseDto',
+  'RoleBindingPreviewConflictDto',
+  'RoleBindingResolvedScopeDto',
+  'BatchCreateRoleBindingsDto',
+  'BatchCreateRoleBindingsResponseDto',
+  'RoleBindingBatchItemResultDto',
+  'RoleBindingBatchSummaryDto',
+  'ExplainAuthzBatchDto',
+  'ExplainBatchItemDto',
+  'ExplainAuthzBatchResponseDto',
+  'ExplainBatchResultItemDto',
+  'ActionStateBatchDto',
+  'ActionStateItemDto',
+  'ActionStateBatchResponseDto',
+  'ActionStateResultItemDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

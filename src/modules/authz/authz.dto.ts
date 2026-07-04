@@ -2,6 +2,9 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { BindingScopeType, Role, UserStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsIn,
   IsNotEmpty,
   IsObject,
@@ -13,6 +16,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import type { AuthzReason, GrantSource, ResourceSensitivityLevel } from './authz.types';
+import type { ActionStateReason } from './action-state-checks';
 
 // 终态 scoped-authz PR10「authz/explain 端点」(2026-07-02;冻结稿 §7.6 + §9 行 20):
 // 权限解释端点 DTO。响应侧逐字段镜像 authz.types 的 AuthzDecision / MatchedGrant / ResolvedResource
@@ -261,4 +265,155 @@ export class ExplainAuthzResponseDto {
     type: AuthzDecisionDto,
   })
   decision!: AuthzDecisionDto;
+}
+
+// ============ F3/C2 批量权限解释(POST /authz/explain-batch;路线图 §4 C2 / D8)============
+
+// 单条 explain 的批量壳:逐条镜像 ExplainAuthzDto 字段与校验;≤200。
+// **同一套 AuthzReason 11 值枚举**(不扩值);deny 仍是 200 数据。
+// 输入错误语义镜像单条:任一 userId 不存在/已软删 → 整请求 10001(items 内无「用户不存在」通道 —— reason 枚举是契约锁)。
+export class ExplainBatchItemDto {
+  @ApiProperty({ description: '目标用户 id(被解释判权的人,非调用者)' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  userId!: string;
+
+  @ApiProperty({
+    description: 'action 权限码(D2 v1.2 正则口径;不要求码存在,同单条 explain)',
+    example: 'attendance.final-approve.sheet',
+  })
+  @IsString()
+  @MinLength(5)
+  @MaxLength(80)
+  @Matches(ACTION_CODE_PATTERN, {
+    message:
+      'action 必须为 kebab-case 3-4 段权限码形态(<module>.<action>.<resource_type>[.<scope>])',
+  })
+  action!: string;
+
+  @ApiPropertyOptional({
+    description: '可选资源引用;缺省 = 无 ref 退化路径(等价 rbac.can 全局判定)',
+    type: ExplainResourceRefDto,
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ExplainResourceRefDto)
+  resourceRef?: ExplainResourceRefDto;
+}
+
+export class ExplainAuthzBatchDto {
+  @ApiProperty({
+    description: '待解释项列表(≤200;逐条独立判定,decision 互不影响)',
+    type: () => [ExplainBatchItemDto],
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => ExplainBatchItemDto)
+  items!: ExplainBatchItemDto[];
+}
+
+export class ExplainBatchResultItemDto {
+  @ApiProperty({ description: '目标用户 id(入参回显)' })
+  userId!: string;
+
+  @ApiProperty({ description: 'action 权限码(入参回显)' })
+  action!: string;
+
+  @ApiPropertyOptional({
+    description: '资源引用(入参回显;未传则缺省)',
+    type: ExplainResourceRefDto,
+  })
+  resourceRef?: ExplainResourceRefDto;
+
+  @ApiProperty({
+    description: '判权决断(同单条 explain:reason 同一套 11 值稳定枚举;deny 是 200 数据)',
+    type: AuthzDecisionDto,
+  })
+  decision!: AuthzDecisionDto;
+}
+
+export class ExplainAuthzBatchResponseDto {
+  @ApiProperty({ type: () => [ExplainBatchResultItemDto] })
+  items!: ExplainBatchResultItemDto[];
+}
+
+// ============ F3/C3 批量业务态闸(POST /authz/action-state/batch;路线图 §4 C3 / D8)============
+
+// reason 全集 = AuthzReason 11 值 ∪ 'state_forbidden'(状态机只读否决;前端友好新枚举值,入 OpenAPI 契约)。
+// 完备性由 authz-action-state e2e 的 Record 覆盖锁双向兜底(镜像 AUTHZ_REASON_VALUES 范式)。
+export const ACTION_STATE_REASON_VALUES = [
+  ...AUTHZ_REASON_VALUES,
+  'state_forbidden',
+] as const satisfies readonly ActionStateReason[];
+
+export class ActionStateItemDto {
+  @ApiProperty({
+    description: 'action 权限码(判权 + 已注册项叠加状态机只读校验)',
+    example: 'attendance.final-approve.sheet',
+  })
+  @IsString()
+  @MinLength(5)
+  @MaxLength(80)
+  @Matches(ACTION_CODE_PATTERN, {
+    message:
+      'action 必须为 kebab-case 3-4 段权限码形态(<module>.<action>.<resource_type>[.<scope>])',
+  })
+  action!: string;
+
+  @ApiProperty({
+    description: '资源类型(ResourceResolver 支持的 11 类;同 explain 白名单)',
+    enum: EXPLAINABLE_RESOURCE_TYPES,
+    example: 'attendance_sheet',
+  })
+  @IsIn(EXPLAINABLE_RESOURCE_TYPES)
+  resourceType!: string;
+
+  @ApiProperty({ description: '资源主键 id' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  resourceId!: string;
+}
+
+export class ActionStateBatchDto {
+  @ApiProperty({
+    description: '待判定项列表(≤200;判定对象 = 调用者本人 ——「这组按钮对我该不该亮」)',
+    type: () => [ActionStateItemDto],
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => ActionStateItemDto)
+  items!: ActionStateItemDto[];
+}
+
+export class ActionStateResultItemDto {
+  @ApiProperty({ description: 'action 权限码(入参回显)' })
+  action!: string;
+
+  @ApiProperty({ description: '资源主键 id(入参回显)' })
+  resourceId!: string;
+
+  @ApiProperty({
+    description: '是否可执行(= authz 判权 ∧ 已注册项的状态机只读校验;deny 是 200 数据)',
+  })
+  allowed!: boolean;
+
+  @ApiProperty({
+    description:
+      '判定原因:authz 11 值稳定枚举 ∪ state_forbidden(判权放行但资源当前状态不允许该动作);' +
+      'allowed=true 时为 super_admin_pass / matched',
+    enum: ACTION_STATE_REASON_VALUES,
+  })
+  reason!: ActionStateReason;
+}
+
+export class ActionStateBatchResponseDto {
+  @ApiProperty({ type: () => [ActionStateResultItemDto] })
+  items!: ActionStateResultItemDto[];
 }

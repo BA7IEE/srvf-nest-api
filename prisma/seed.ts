@@ -1458,6 +1458,8 @@ const ROLE_BINDING_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 // 终态 scoped-authz PR10「authz/explain 端点」(2026-07-02;冻结稿 §7.6):权限解释诊断码(1 条)。
 // POST admin/v1/authz/explain 的调用者判权码(goal 决断①:R 模式 rbac.can 单轨;绑 ops-admin,非 reserved);
 // deny 是数据不是错误 —— 入参合法即 200 返 decision(goal 决断②),端点无 audit(决断④)。
+// F3「C 组」(2026-07-04;冻结路线图 admin-api-fe-integration-roadmap.md §4 C2/C3 + §6.2 D8):
+// +2 诊断码(explain-batch 批量壳 / action-state 批量业务态闸;均绑 ops-admin,镜像单条 explain;1→3 条)。
 const AUTHZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
     code: 'authz.explain.decision',
@@ -1466,6 +1468,22 @@ const AUTHZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
     resourceType: 'decision',
     description:
       '权限解释(诊断读):目标用户对 action(+可选资源)的 allow/deny + reason + matchedGrant',
+  },
+  {
+    code: 'authz.explain-batch.decision',
+    module: 'authz',
+    action: 'explain-batch',
+    resourceType: 'decision',
+    description:
+      '批量权限解释(诊断读,≤200):逐条 allow/deny + reason(同单条 11 值枚举)+ matchedGrant',
+  },
+  {
+    code: 'authz.action-state.decision',
+    module: 'authz',
+    action: 'action-state',
+    resourceType: 'decision',
+    description:
+      '批量业务态闸(诊断读,≤200):调用者对 action×资源 的 allowed(判权 ∧ 状态机只读)+ reason',
   },
 ];
 
@@ -1929,7 +1947,7 @@ const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...META_PERMISSION_SEED,
 ];
 
-// ops-admin 完整绑定集合(14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME + 1 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META = 92 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4 / REALNAME E-R-19;PR-2A 44 = base 20 + 终态 scoped-authz PR1 org.move.node + PR2 membership 4 + PR3 position 4 + position-rule 4 + PR4 position-assignment 4 + PR5 supervision-assignment 4 + PR6 role-binding 4 码,全绑 ops-admin 无过滤;AUTHZ 1 = PR10 authz.explain.decision 诊断码,整条绑;ANNOUNCEMENT-IMPORT 2 = PR11 announcement-import.{preview,execute}.record,整条绑;META 1 = F1「A 组」meta.resolve.label 诊断码,整条绑)
+// ops-admin 完整绑定集合(14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME + 3 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META = 94 条;沿 D1=A / D2=B / D3=A / PR-4B D2=B / SMS E-3 / WECHAT 评审稿 §3.4 / REALNAME E-R-19;PR-2A 44 = base 20 + 终态 scoped-authz PR1 org.move.node + PR2 membership 4 + PR3 position 4 + position-rule 4 + PR4 position-assignment 4 + PR5 supervision-assignment 4 + PR6 role-binding 4 码,全绑 ops-admin 无过滤;AUTHZ 3 = PR10 authz.explain.decision + F3「C 组」authz.{explain-batch,action-state}.decision 诊断码,整条绑;ANNOUNCEMENT-IMPORT 2 = PR11 announcement-import.{preview,execute}.record,整条绑;META 1 = F1「A 组」meta.resolve.label 诊断码,整条绑)
 // 注:`storage-setting.reset.credentials` 从 PR_2B_PERMISSION_SEED 过滤掉(沿 PR-2 D2=A;§6.2)
 // 注:`user.update.role` 从 USER_PERMISSION_SEED 过滤掉(沿 PR-3 D1=A;§6.2)
 // 注:`audit-log.read.entry` 整条加入,不过滤(沿 PR-4 D2=B;§6.2)
@@ -1954,7 +1972,7 @@ const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 const OPS_ADMIN_ROLE_CODE = 'ops-admin';
 const OPS_ADMIN_DISPLAY_NAME = '运营管理员';
 const OPS_ADMIN_DESCRIPTION =
-  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / membership / contribution-rule / position / position-rule / position-assignment / supervision-assignment / role-binding + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条 + WECHAT: wechat-setting / user.wechat.clear 3 条 + REALNAME: realname-setting 2 条 + AUTHZ: authz.explain 诊断 1 条 + ANNOUNCEMENT-IMPORT: 公告导入 preview/execute 2 条 + META: resolve-labels 诊断 1 条)的 meta 角色;14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME + 1 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META = 92 条权限点;凭证 reset(storage / sms / wechat / realname)与 user 角色修改仅 SUPER_ADMIN';
+  'RBAC 自身配置 + 用户角色分配 + 配置类接口(PR-2A: dict / org / member-department / membership / contribution-rule / position / position-rule / position-assignment / supervision-assignment / role-binding + PR-2B: attachment-config / storage-setting + PR-3B: user 管理 6 条 + PR-4B: audit-log 读 1 条 + SMS: sms-setting / sms-send-log / user.phone.clear 4 条 + WECHAT: wechat-setting / user.wechat.clear 3 条 + REALNAME: realname-setting 2 条 + AUTHZ: authz explain / explain-batch / action-state 诊断 3 条 + ANNOUNCEMENT-IMPORT: 公告导入 preview/execute 2 条 + META: resolve-labels 诊断 1 条)的 meta 角色;14 rbac.* + 44 PR-2A + 14 PR-2B + 6 PR-3B + 1 PR-4B + 4 SMS + 3 WECHAT + 2 REALNAME + 3 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META = 94 条权限点;凭证 reset(storage / sms / wechat / realname)与 user 角色修改仅 SUPER_ADMIN';
 
 // V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集
 // (沿 D7-attachments v1.0 §6.1 + Q11 v1.0 锁清单 + 用户 PR #6a 拍板)。
@@ -2197,11 +2215,11 @@ async function countActiveGlobalRoleHolders(
 // 幂等性:全部 upsert(Permission.code / RbacRole.code / RolePermission 复合唯一键);
 // 终态 scoped-authz PR6 起 bootstrap 授予改写 global RoleBinding(ensureGlobalUserRoleBinding 幂等)。
 async function seedRbac(prisma: PrismaClient): Promise<void> {
-  // 1. upsert Permission 全集(14 rbac.* + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME + 1 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META = 97 条;
+  // 1. upsert Permission 全集(14 rbac.* + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME + 3 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META = 99 条;
   //    沿 D7 §10.2 + 历次 P0-F / 基建 / 终态 scoped-authz PR1(org.move.node)·PR2(membership 4 码)…PR10(authz.explain.decision)·PR11(announcement-import 2 码)·
-  //    F1「A 组」(meta.resolve.label)增量)
-  //    全部 97 条都进 Permission 表(含 4 把 reset.credentials + user.update.role);
-  //    ops-admin 仅绑 92 条(沿 PR-2 / SMS / WECHAT / REALNAME D2=A 凭证收紧 + PR-3 D1=A user.update.role 收紧;PR-4 D2=B audit-log 整条加入)
+  //    F1「A 组」(meta.resolve.label)· F3「C 组」(authz.{explain-batch,action-state}.decision 2 码)增量)
+  //    全部 99 条都进 Permission 表(含 4 把 reset.credentials + user.update.role);
+  //    ops-admin 仅绑 94 条(沿 PR-2 / SMS / WECHAT / REALNAME D2=A 凭证收紧 + PR-3 D1=A user.update.role 收紧;PR-4 D2=B audit-log 整条加入)
   for (const perm of ALL_PERMISSION_SEED) {
     await prisma.permission.upsert({
       where: { code: perm.code },

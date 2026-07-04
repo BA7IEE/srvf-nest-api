@@ -6,7 +6,9 @@
 
 - **统一判权大脑(终态 scoped-authz PR8,2026-07-02)**:`AuthzService.can/explain(user, action, ref?)` —— 三源 grant 归集(直接 RoleBinding ∪ 职务 policy 推导 ∪ 分管推导)+ `covers()` scope 覆盖判定 + `ActionConstraint` 域不变量否决
 - **`ResourceResolverService`**:11 类资源归属解析(activity / attendance_sheet / attendance_record / activity_registration / member / member_profile / certificate / team_join_application / recruitment_application / notification / attachment〔按 ownerType 委派〕),输出统一 `ResolvedResource`;解析失败一律 null → deny(resource_not_found)fail-close
-- **explain 诊断端点(终态 scoped-authz PR10,2026-07-02;冻结稿 §7.6)**:`AuthzController` — `POST admin/v1/authz/explain`(模块唯一 controller / 1 端点 / 1 码 `authz.explain.decision` 绑 ops-admin;0 schema / 0 BizCode);薄编排 `AuthzExplainService` = 调用者 `rbac.can` → 目标用户加载 → **纯消费** `AuthzService.explain` 原样返 `{targetUser, decision}`,不改判权语义
+- **explain 诊断端点(终态 scoped-authz PR10,2026-07-02;冻结稿 §7.6)**:`AuthzController` — `POST admin/v1/authz/explain`(1 码 `authz.explain.decision` 绑 ops-admin;0 schema / 0 BizCode);薄编排 `AuthzExplainService` = 调用者 `rbac.can` → 目标用户加载 → **纯消费** `AuthzService.explain` 原样返 `{targetUser, decision}`,不改判权语义
+- **批量诊断面(F3「C 组」,2026-07-04;路线图 `admin-api-fe-integration-roadmap.md §4 C2/C3 + D8`)**:`POST admin/v1/authz/explain-batch`(扩 `AuthzController`;单条的批量壳 ≤200,**同一套 11 值 reason 枚举不扩值**,任一 userId 不存在 → 整请求 10001)+ `POST admin/v1/authz/action-state/batch`(**模块第二个 controller** `ActionStateController` + `ActionStateService`;判定对象 = 调用者本人,`allowed = authz.explain ∧ 已注册 action 的状态机只读校验`,reason ∈ 11 值 ∪ `state_forbidden` 入 OpenAPI;注册表 [`action-state-checks.ts`](action-state-checks.ts) 12 项 = attendance_sheet 6 + activity 3 + activity_registration 3);+2 码 `authz.{explain-batch,action-state}.decision` 绑 ops-admin;**两批量面都是 AuthzService.explain 的纯消费者,判权语义零新增**
+- **D8 模块环规避(F3 落地方式)**:三个业务 StateMachine(attendance-sheet / activity / activity-registration)是零依赖纯决策类,以 **providers 直列**进 authz.module(TS 类 import,非 Nest module import)——本模块**不** import 任何业务 module(它们反向依赖本模块,import 即成环);若未来某状态机长出依赖,回 D8 mini-T0 重议,禁止顺手 import 业务 module
 - **不负责**:全局判权入口仍是 [`/src/modules/permissions/`](../permissions/) 的 `RbacService`(业务面现全部走它);列表读 scope 下推(QueryService 过滤)按 architecture-boundary 决议 deferred,不在本模块
 
 ## Local facts
@@ -40,5 +42,5 @@
 
 - `pnpm lint` + `pnpm typecheck`
 - `pnpm test` — `action-constraints.spec.ts`(约束注册表)
-- `pnpm test:e2e` — **四件套必跑**:`authz-rbac-equivalence`(🔴 等价矩阵行为锁)/ `authz-three-source`(队长甲/副队长乙/BD-2 终审+自审/R5 副职/失效族/SELF)/ `authz-resource-resolver`(11 类逐类 + 软删 fail-close + attachment 委派)/ `authz-explain`(PR10 端点:五 allow 形态 + 四 deny-as-data + 10001/400/30100 + reason 枚举完备锁)
-- 改判权流程 / covers / 三源归集 → 四件套全跑 + `pnpm test:contract`(端点不变式:路由 292 恒定〔review #484 G20 true-up:此前「290」〕,authz 面仅 explain 一路)
+- `pnpm test:e2e` — **四件套必跑**:`authz-rbac-equivalence`(🔴 等价矩阵行为锁)/ `authz-three-source`(队长甲/副队长乙/BD-2 终审+自审/R5 副职/失效族/SELF)/ `authz-resource-resolver`(11 类逐类 + 软删 fail-close + attachment 委派)/ `authz-explain`(PR10 端点:五 allow 形态 + 四 deny-as-data + 10001/400/30100 + reason 枚举完备锁);改 F3 批量面另跑 `authz-explain-batch` + `authz-action-state`(壳行为 + state_forbidden 矩阵 + 枚举完备锁)
+- 改判权流程 / covers / 三源归集 → 四件套全跑 + `pnpm test:contract`(端点不变式:路由 306 恒定〔F3「C 组」起;此前 292→F1 300→F3 306〕,authz 面 = explain + explain-batch + action-state/batch 三路)

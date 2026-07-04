@@ -8,6 +8,8 @@ import {
   UserStatus,
 } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import type { PageResultDto } from '../../common/dto/pagination.dto';
+import { parseExpandQuery } from '../../common/dto/expand-query.util';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
@@ -17,8 +19,19 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacCacheService } from '../permissions/rbac-cache.service';
 import { RbacService } from '../permissions/rbac.service';
 import {
+  BatchCreateRoleBindingsDto,
+  BatchCreateRoleBindingsResponseDto,
   CreateRoleBindingDto,
   ListRoleBindingsQueryDto,
+  PageRoleBindingsQueryDto,
+  PreviewRoleBindingQueryDto,
+  ROLE_BINDING_EXPAND_TOKENS,
+  RoleBindingBatchItemResultDto,
+  RoleBindingExpandedPrincipalDto,
+  RoleBindingExpandedRoleDto,
+  RoleBindingPreviewConflictDto,
+  RoleBindingPreviewResponseDto,
+  RoleBindingResponseDto,
   UpdateRoleBindingDto,
 } from './role-bindings.dto';
 import { roleBindingSafeSelect, type SafeRoleBinding } from './role-bindings.select';
@@ -183,6 +196,385 @@ export class RoleBindingsService {
       orderBy: [{ createdAt: 'asc' }],
     });
     return rows.map((r) => this.toResponseDto(r));
+  }
+
+  // ============ F3/C1:GET /api/admin/v1/role-bindings/page(D9 拍板) ============
+
+  // 分页总表(旧 bare 数组端点逐字不动的兄弟路由)。过滤 = 既有 5 项 + scopeOrgId / roleCode /
+  // principalQ(多态主体模糊,批量解析 id 集,零 N+1)/ includeExpired(默认 false = 仅当前生效)/
+  // q(note + 角色 code/显示名)/ expand=role,principal(D6 约定;缺省不展开,响应形状与旧端点一致)。
+  // 仅展示,不判权(scoped 绑定入库即止铁律不变)。
+  async page(
+    user: CurrentUserPayload,
+    query: PageRoleBindingsQueryDto,
+  ): Promise<PageResultDto<RoleBindingResponseDto>> {
+    await this.assertCanOrThrow(user, 'role-binding.read.record');
+    const expand = parseExpandQuery(query.expand, ROLE_BINDING_EXPAND_TOKENS);
+
+    const where: Prisma.RoleBindingWhereInput = { deletedAt: null };
+    const and: Prisma.RoleBindingWhereInput[] = [];
+    if (query.principalType !== undefined) where.principalType = query.principalType;
+    if (query.principalId !== undefined) where.principalId = query.principalId;
+    if (query.roleId !== undefined) where.roleId = query.roleId;
+    if (query.scopeType !== undefined) where.scopeType = query.scopeType;
+    if (query.scopeOrgId !== undefined) where.scopeOrgId = query.scopeOrgId;
+    if (query.roleCode !== undefined) where.role = { code: query.roleCode };
+
+    // status 显式传参优先;否则 includeExpired=false(默认)收窄为「当前生效」
+    // (status=ACTIVE 且 endedAt 为空或未到 —— startedAt 未来的排期绑定仍展示,与判权侧 isWithinTerm 刻意不同:
+    //  列表是管理面,排期中的绑定也要能看见)。
+    if (query.status !== undefined) {
+      where.status = query.status;
+    } else if (query.includeExpired !== true) {
+      where.status = BindingStatus.ACTIVE;
+      and.push({ OR: [{ endedAt: null }, { endedAt: { gt: new Date() } }] });
+    }
+
+    if (query.principalQ !== undefined && query.principalQ !== '') {
+      and.push({ OR: await this.buildPrincipalQOr(query.principalQ) });
+    }
+
+    if (query.q !== undefined && query.q !== '') {
+      const contains = { contains: query.q, mode: 'insensitive' as const };
+      and.push({
+        OR: [{ note: contains }, { role: { code: contains } }, { role: { displayName: contains } }],
+      });
+    }
+    if (and.length > 0) where.AND = and;
+
+    const [rows, total] = await Promise.all([
+      this.prisma.roleBinding.findMany({
+        where,
+        select: roleBindingSafeSelect,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.roleBinding.count({ where }),
+    ]);
+
+    let items: RoleBindingResponseDto[] = rows.map((r) => this.toResponseDto(r));
+    if (expand.size > 0) {
+      items = await this.attachExpansions(items, {
+        role: expand.has('role'),
+        principal: expand.has('principal'),
+      });
+    }
+    return { items, total, page: query.page, pageSize: query.pageSize };
+  }
+
+  // principalQ 多态主体模糊命中 → 三型 id 集(user / member / member 背后的任职)。
+  // 三次批量查询(零 N+1);`in: []` 在 Prisma 恒不命中,故三支 OR 可无条件拼装。
+  private async buildPrincipalQOr(principalQ: string): Promise<Prisma.RoleBindingWhereInput[]> {
+    const contains = { contains: principalQ, mode: 'insensitive' as const };
+    const [users, members] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { deletedAt: null, OR: [{ username: contains }, { nickname: contains }] },
+        select: { id: true },
+      }),
+      this.prisma.member.findMany({
+        where: notDeletedWhere({ OR: [{ displayName: contains }, { memberNo: contains }] }),
+        select: { id: true },
+      }),
+    ]);
+    const memberIds = members.map((m) => m.id);
+    const assignments =
+      memberIds.length > 0
+        ? await this.prisma.organizationPositionAssignment.findMany({
+            where: { deletedAt: null, memberId: { in: memberIds } },
+            select: { id: true },
+          })
+        : [];
+    return [
+      { principalType: PrincipalType.USER, principalId: { in: users.map((u) => u.id) } },
+      { principalType: PrincipalType.MEMBER, principalId: { in: memberIds } },
+      {
+        principalType: PrincipalType.POSITION_ASSIGNMENT,
+        principalId: { in: assignments.map((a) => a.id) },
+      },
+    ];
+  }
+
+  // expand 展开(D6):按命中 token 批量取回 role / principal 摘要后逐行挂载(零 N+1)。
+  private async attachExpansions(
+    items: RoleBindingResponseDto[],
+    want: { role: boolean; principal: boolean },
+  ): Promise<RoleBindingResponseDto[]> {
+    const roleMap = new Map<string, RoleBindingExpandedRoleDto>();
+    if (want.role && items.length > 0) {
+      const roleIds = [...new Set(items.map((i) => i.roleId))];
+      const roles = await this.prisma.rbacRole.findMany({
+        where: { id: { in: roleIds } },
+        select: { id: true, code: true, displayName: true },
+      });
+      for (const r of roles) roleMap.set(r.id, r);
+    }
+
+    const userMap = new Map<string, { id: string; username: string; nickname: string | null }>();
+    const memberMap = new Map<string, { id: string; memberNo: string; displayName: string }>();
+    const assignmentMap = new Map<
+      string,
+      {
+        id: string;
+        organizationId: string;
+        positionId: string;
+        memberId: string;
+        member: { displayName: string };
+      }
+    >();
+    if (want.principal && items.length > 0) {
+      const idsOf = (t: PrincipalType): string[] => [
+        ...new Set(
+          items
+            .filter((i) => i.principalType === t && i.principalId !== null)
+            .map((i) => i.principalId as string),
+        ),
+      ];
+      const userIds = idsOf(PrincipalType.USER);
+      const memberIds = idsOf(PrincipalType.MEMBER);
+      const assignmentIds = idsOf(PrincipalType.POSITION_ASSIGNMENT);
+      const [users, members, assignments] = await Promise.all([
+        userIds.length > 0
+          ? this.prisma.user.findMany({
+              where: { id: { in: userIds } },
+              select: { id: true, username: true, nickname: true },
+            })
+          : Promise.resolve([]),
+        memberIds.length > 0
+          ? this.prisma.member.findMany({
+              where: { id: { in: memberIds } },
+              select: { id: true, memberNo: true, displayName: true },
+            })
+          : Promise.resolve([]),
+        assignmentIds.length > 0
+          ? this.prisma.organizationPositionAssignment.findMany({
+              where: { id: { in: assignmentIds } },
+              select: {
+                id: true,
+                organizationId: true,
+                positionId: true,
+                memberId: true,
+                member: { select: { displayName: true } },
+              },
+            })
+          : Promise.resolve([]),
+      ]);
+      for (const u of users) userMap.set(u.id, u);
+      for (const m of members) memberMap.set(m.id, m);
+      for (const a of assignments) assignmentMap.set(a.id, a);
+    }
+
+    return items.map((item) => {
+      const out = { ...item };
+      if (want.role) {
+        const role = roleMap.get(item.roleId);
+        if (role) out.role = role;
+      }
+      if (want.principal && item.principalId !== null) {
+        out.principal = this.toExpandedPrincipal(item.principalType, item.principalId, {
+          userMap,
+          memberMap,
+          assignmentMap,
+        });
+      }
+      return out;
+    });
+  }
+
+  private toExpandedPrincipal(
+    type: PrincipalType,
+    id: string,
+    maps: {
+      userMap: ReadonlyMap<string, { id: string; username: string; nickname: string | null }>;
+      memberMap: ReadonlyMap<string, { id: string; memberNo: string; displayName: string }>;
+      assignmentMap: ReadonlyMap<
+        string,
+        {
+          id: string;
+          organizationId: string;
+          positionId: string;
+          memberId: string;
+          member: { displayName: string };
+        }
+      >;
+    },
+  ): RoleBindingExpandedPrincipalDto | undefined {
+    if (type === PrincipalType.USER) {
+      const u = maps.userMap.get(id);
+      return u ? { type, id, username: u.username, nickname: u.nickname } : undefined;
+    }
+    if (type === PrincipalType.MEMBER) {
+      const m = maps.memberMap.get(id);
+      return m ? { type, id, memberNo: m.memberNo, displayName: m.displayName } : undefined;
+    }
+    if (type === PrincipalType.POSITION_ASSIGNMENT) {
+      const a = maps.assignmentMap.get(id);
+      return a
+        ? {
+            type,
+            id,
+            organizationId: a.organizationId,
+            positionId: a.positionId,
+            memberId: a.memberId,
+            displayName: a.member.displayName,
+          }
+        : undefined;
+    }
+    return undefined; // SYSTEM 主体无实体(调用方已按 principalId=null 跳过,此处兜底)
+  }
+
+  // ============ F3/C1:GET /api/admin/v1/role-bindings/:id ============
+
+  // detail(此前无)。找不到未软删记录 → ROLE_BINDING_NOT_FOUND;同读码。
+  async findOne(user: CurrentUserPayload, id: string): Promise<RoleBindingResponseDto> {
+    await this.assertCanOrThrow(user, 'role-binding.read.record');
+    const row = await this.prisma.roleBinding.findFirst({
+      where: notDeletedWhere({ id }),
+      select: roleBindingSafeSelect,
+    });
+    if (!row) throw new BizException(BizCode.ROLE_BINDING_NOT_FOUND);
+    return this.toResponseDto(row);
+  }
+
+  // ============ F3/C1:GET /api/admin/v1/role-bindings/preview(dry-run) ============
+
+  // 待建绑定合法性/冲突预检:与 create 走**同一批私有校验器**(scope 形状 / 任期 / 主体 / 角色 /
+  // scope 实体存在性),逐项捕获 BizException 收集为 conflicts,绝不写库;防重用只读 findFirst
+  // 模拟 partial unique(全 8 scope 维度 + status=ACTIVE + 未软删)—— 与 DB 约束存在提交竞态窗口,
+  // preview 是咨询性结论,create 时约束仍兜底(P2002 → 34002)。
+  // 权限:复用 read 码(goal 拍板:preview 是 dry-run 只读;冲突可见面 = 持 read 码本可 list 到的绑定行,无泄露)。
+  async preview(
+    user: CurrentUserPayload,
+    query: PreviewRoleBindingQueryDto,
+  ): Promise<RoleBindingPreviewResponseDto> {
+    await this.assertCanOrThrow(user, 'role-binding.read.record');
+    const conflicts: RoleBindingPreviewConflictDto[] = [];
+    const collect = async (check: () => void | Promise<void>): Promise<void> => {
+      try {
+        await check();
+      } catch (err) {
+        if (err instanceof BizException) {
+          conflicts.push({ bizCode: err.biz.code, message: err.biz.message });
+          return;
+        }
+        throw err;
+      }
+    };
+
+    await collect(() => this.validateScopeShapeOrThrow(query));
+
+    const startedAt = query.startedAt !== undefined ? new Date(query.startedAt) : new Date();
+    const endedAt = query.endedAt !== undefined ? new Date(query.endedAt) : null;
+    await collect(() => {
+      if (endedAt !== null && endedAt.getTime() <= startedAt.getTime()) {
+        throw new BizException(BizCode.ROLE_BINDING_TENURE_INVALID);
+      }
+    });
+
+    const rawPrincipalId = query.principalId ?? null;
+    await collect(() =>
+      this.validatePrincipalOrThrow(this.prisma, query.principalType, rawPrincipalId),
+    );
+    await collect(() => this.findRoleOrThrow(this.prisma, query.roleId));
+
+    if (
+      query.scopeType === BindingScopeType.ORGANIZATION ||
+      query.scopeType === BindingScopeType.ORGANIZATION_TREE
+    ) {
+      await collect(async () => {
+        if (query.scopeOrgId === undefined) return; // 形状校验已报 SCOPE_INVALID,不重复报
+        const org = await this.prisma.organization.findFirst({
+          where: notDeletedWhere({ id: query.scopeOrgId }),
+          select: { id: true },
+        });
+        if (!org) throw new BizException(BizCode.ORGANIZATION_NOT_FOUND);
+      });
+    }
+    if (query.scopeType === BindingScopeType.ACTIVITY) {
+      await collect(async () => {
+        if (query.scopeActivityId === undefined) return;
+        const activity = await this.prisma.activity.findFirst({
+          where: notDeletedWhere({ id: query.scopeActivityId }),
+          select: { id: true },
+        });
+        if (!activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+      });
+    }
+
+    // 防重预检(镜像 role_bindings_active_unique 全 8 维度 NULLS NOT DISTINCT:相等含「均为 null」)
+    await collect(async () => {
+      const dup = await this.prisma.roleBinding.findFirst({
+        where: {
+          principalType: query.principalType,
+          principalId: rawPrincipalId,
+          roleId: query.roleId,
+          scopeType: query.scopeType,
+          scopeOrgId: query.scopeOrgId ?? null,
+          scopeActivityId: query.scopeActivityId ?? null,
+          scopeResourceType: query.scopeResourceType ?? null,
+          scopeResourceId: query.scopeResourceId ?? null,
+          status: BindingStatus.ACTIVE,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (dup) throw new BizException(BizCode.ROLE_BINDING_ALREADY_EXISTS);
+    });
+
+    return {
+      valid: conflicts.length === 0,
+      conflicts,
+      resolvedScope: {
+        scopeType: query.scopeType,
+        scopeOrgId: query.scopeOrgId ?? null,
+        scopeActivityId: query.scopeActivityId ?? null,
+        scopeResourceType: query.scopeResourceType ?? null,
+        scopeResourceId: query.scopeResourceId ?? null,
+      },
+    };
+  }
+
+  // ============ F3/C1:POST /api/admin/v1/role-bindings/batch ============
+
+  // 批量建绑定:逐条独立复用 create()(校验 / audit / 缓存失效全走既有单条路径,零旁路),
+  // 单条失败不影响其它条(镜像 announcement-import「deny/blocked 是数据」范式):
+  //   ok = 已建;already-exists = 撞同维度 ACTIVE 唯一(34002,幂等 skip —— 重跑同一批不报错);
+  //   blocked = 其它校验拒(带底层 BizCode + message)。
+  // 调用者判权在循环外整批一次(create 内的同码判定经 RbacCache 命中,不放大查询)。
+  async createBatch(
+    user: CurrentUserPayload,
+    dto: BatchCreateRoleBindingsDto,
+    meta: AuditMeta,
+  ): Promise<BatchCreateRoleBindingsResponseDto> {
+    await this.assertCanOrThrow(user, 'role-binding.create.record');
+    const items: RoleBindingBatchItemResultDto[] = [];
+    for (const [index, item] of dto.items.entries()) {
+      try {
+        const created = await this.create(user, item, meta);
+        items.push({ index, outcome: 'ok', bindingId: created.id, bizCode: null, message: null });
+      } catch (err) {
+        if (!(err instanceof BizException)) throw err;
+        items.push({
+          index,
+          outcome:
+            err.biz.code === BizCode.ROLE_BINDING_ALREADY_EXISTS.code
+              ? 'already-exists'
+              : 'blocked',
+          bindingId: null,
+          bizCode: err.biz.code,
+          message: err.biz.message,
+        });
+      }
+    }
+    return {
+      items,
+      summary: {
+        total: items.length,
+        ok: items.filter((i) => i.outcome === 'ok').length,
+        blocked: items.filter((i) => i.outcome === 'blocked').length,
+        alreadyExists: items.filter((i) => i.outcome === 'already-exists').length,
+      },
+    };
   }
 
   // ============ POST /api/admin/v1/role-bindings ============

@@ -2,6 +2,113 @@
 
 exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集合与类型) 1`] = `
 {
+  "ActionStateBatchDto": {
+    "properties": {
+      "items": {
+        "description": "待判定项列表(≤200;判定对象 = 调用者本人 ——「这组按钮对我该不该亮」)",
+        "items": {
+          "$ref": "#/components/schemas/ActionStateItemDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "items",
+    ],
+    "type": "object",
+  },
+  "ActionStateBatchResponseDto": {
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/ActionStateResultItemDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "items",
+    ],
+    "type": "object",
+  },
+  "ActionStateItemDto": {
+    "properties": {
+      "action": {
+        "description": "action 权限码(判权 + 已注册项叠加状态机只读校验)",
+        "example": "attendance.final-approve.sheet",
+        "type": "string",
+      },
+      "resourceId": {
+        "description": "资源主键 id",
+        "type": "string",
+      },
+      "resourceType": {
+        "description": "资源类型(ResourceResolver 支持的 11 类;同 explain 白名单)",
+        "enum": [
+          "activity",
+          "attendance_sheet",
+          "attendance_record",
+          "activity_registration",
+          "member",
+          "member_profile",
+          "certificate",
+          "team_join_application",
+          "recruitment_application",
+          "notification",
+          "attachment",
+        ],
+        "example": "attendance_sheet",
+        "type": "string",
+      },
+    },
+    "required": [
+      "action",
+      "resourceType",
+      "resourceId",
+    ],
+    "type": "object",
+  },
+  "ActionStateResultItemDto": {
+    "properties": {
+      "action": {
+        "description": "action 权限码(入参回显)",
+        "type": "string",
+      },
+      "allowed": {
+        "description": "是否可执行(= authz 判权 ∧ 已注册项的状态机只读校验;deny 是 200 数据)",
+        "type": "boolean",
+      },
+      "reason": {
+        "description": "判定原因:authz 11 值稳定枚举 ∪ state_forbidden(判权放行但资源当前状态不允许该动作);allowed=true 时为 super_admin_pass / matched",
+        "enum": [
+          "super_admin_pass",
+          "matched",
+          "no_permission",
+          "out_of_scope",
+          "out_of_supervised_scope",
+          "expired_grant",
+          "inactive_org",
+          "self_approval_forbidden",
+          "same_reviewer_forbidden",
+          "sensitive_denied",
+          "resource_not_found",
+          "state_forbidden",
+        ],
+        "type": "string",
+      },
+      "resourceId": {
+        "description": "资源主键 id(入参回显)",
+        "type": "string",
+      },
+    },
+    "required": [
+      "action",
+      "resourceId",
+      "allowed",
+      "reason",
+    ],
+    "type": "object",
+  },
   "ActivityListItemDto": {
     "properties": {
       "activityTypeCode": {
@@ -2950,6 +3057,39 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "BatchCreateRoleBindingsDto": {
+    "properties": {
+      "items": {
+        "description": "待建绑定列表(≤200;逐条独立处理,单条失败不影响其它条;镜像 announcement-import 幂等)",
+        "items": {
+          "$ref": "#/components/schemas/CreateRoleBindingDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "items",
+    ],
+    "type": "object",
+  },
+  "BatchCreateRoleBindingsResponseDto": {
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/RoleBindingBatchItemResultDto",
+        },
+        "type": "array",
+      },
+      "summary": {
+        "$ref": "#/components/schemas/RoleBindingBatchSummaryDto",
+      },
+    },
+    "required": [
+      "items",
+      "summary",
+    ],
+    "type": "object",
+  },
   "BatchMarkThresholdDto": {
     "properties": {
       "completed": {
@@ -5620,6 +5760,35 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "ExplainAuthzBatchDto": {
+    "properties": {
+      "items": {
+        "description": "待解释项列表(≤200;逐条独立判定,decision 互不影响)",
+        "items": {
+          "$ref": "#/components/schemas/ExplainBatchItemDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "items",
+    ],
+    "type": "object",
+  },
+  "ExplainAuthzBatchResponseDto": {
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/ExplainBatchResultItemDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "items",
+    ],
+    "type": "object",
+  },
   "ExplainAuthzDto": {
     "properties": {
       "action": {
@@ -5667,6 +5836,66 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     },
     "required": [
       "targetUser",
+      "decision",
+    ],
+    "type": "object",
+  },
+  "ExplainBatchItemDto": {
+    "properties": {
+      "action": {
+        "description": "action 权限码(D2 v1.2 正则口径;不要求码存在,同单条 explain)",
+        "example": "attendance.final-approve.sheet",
+        "type": "string",
+      },
+      "resourceRef": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ExplainResourceRefDto",
+          },
+        ],
+        "description": "可选资源引用;缺省 = 无 ref 退化路径(等价 rbac.can 全局判定)",
+      },
+      "userId": {
+        "description": "目标用户 id(被解释判权的人,非调用者)",
+        "type": "string",
+      },
+    },
+    "required": [
+      "userId",
+      "action",
+    ],
+    "type": "object",
+  },
+  "ExplainBatchResultItemDto": {
+    "properties": {
+      "action": {
+        "description": "action 权限码(入参回显)",
+        "type": "string",
+      },
+      "decision": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AuthzDecisionDto",
+          },
+        ],
+        "description": "判权决断(同单条 explain:reason 同一套 11 值稳定枚举;deny 是 200 数据)",
+      },
+      "resourceRef": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ExplainResourceRefDto",
+          },
+        ],
+        "description": "资源引用(入参回显;未传则缺省)",
+      },
+      "userId": {
+        "description": "目标用户 id(入参回显)",
+        "type": "string",
+      },
+    },
+    "required": [
+      "userId",
+      "action",
       "decision",
     ],
     "type": "object",
@@ -9596,6 +9825,228 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "RoleBindingBatchItemResultDto": {
+    "properties": {
+      "bindingId": {
+        "description": "outcome=ok 时:新建绑定 id",
+        "nullable": true,
+        "type": "object",
+      },
+      "bizCode": {
+        "description": "outcome=blocked/already-exists 时:底层 BizCode(ok 为 null)",
+        "nullable": true,
+        "type": "object",
+      },
+      "index": {
+        "description": "对应入参 items 下标(0 起)",
+        "type": "number",
+      },
+      "message": {
+        "description": "人类可读说明(ok 为 null)",
+        "nullable": true,
+        "type": "object",
+      },
+      "outcome": {
+        "description": "逐条结果:ok=已建 / already-exists=同维度 ACTIVE 绑定已存在(幂等 skip)/ blocked=校验失败",
+        "enum": [
+          "ok",
+          "blocked",
+          "already-exists",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "index",
+      "outcome",
+    ],
+    "type": "object",
+  },
+  "RoleBindingBatchSummaryDto": {
+    "properties": {
+      "alreadyExists": {
+        "description": "outcome='already-exists' 条数(幂等 skip)",
+        "type": "number",
+      },
+      "blocked": {
+        "type": "number",
+      },
+      "ok": {
+        "type": "number",
+      },
+      "total": {
+        "description": "本次请求总条数",
+        "type": "number",
+      },
+    },
+    "required": [
+      "total",
+      "ok",
+      "blocked",
+      "alreadyExists",
+    ],
+    "type": "object",
+  },
+  "RoleBindingExpandedPrincipalDto": {
+    "properties": {
+      "displayName": {
+        "description": "type=MEMBER / POSITION_ASSIGNMENT 时:队员显示名(任职主体取其背后队员)",
+        "type": "string",
+      },
+      "id": {
+        "description": "主体实体 id(= 绑定行 principalId)",
+        "type": "string",
+      },
+      "memberId": {
+        "description": "type=POSITION_ASSIGNMENT 时:任职队员 id",
+        "type": "string",
+      },
+      "memberNo": {
+        "description": "type=MEMBER 时:队员业务编号",
+        "type": "string",
+      },
+      "nickname": {
+        "description": "type=USER 时:昵称(可空)",
+        "nullable": true,
+        "type": "object",
+      },
+      "organizationId": {
+        "description": "type=POSITION_ASSIGNMENT 时:任职组织 id",
+        "type": "string",
+      },
+      "positionId": {
+        "description": "type=POSITION_ASSIGNMENT 时:职务 id",
+        "type": "string",
+      },
+      "type": {
+        "description": "主体类型(回显绑定行 principalType)",
+        "enum": [
+          "USER",
+          "MEMBER",
+          "POSITION_ASSIGNMENT",
+          "SYSTEM",
+        ],
+        "type": "string",
+      },
+      "username": {
+        "description": "type=USER 时:用户名",
+        "type": "string",
+      },
+    },
+    "required": [
+      "type",
+      "id",
+    ],
+    "type": "object",
+  },
+  "RoleBindingExpandedRoleDto": {
+    "properties": {
+      "code": {
+        "description": "角色 code(如 ops-admin / biz-admin)",
+        "type": "string",
+      },
+      "displayName": {
+        "description": "角色显示名",
+        "type": "string",
+      },
+      "id": {
+        "description": "角色主键(cuid)",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "displayName",
+    ],
+    "type": "object",
+  },
+  "RoleBindingPreviewConflictDto": {
+    "properties": {
+      "bizCode": {
+        "description": "底层 BizCode(如 34003 scope 形状非法 / 34002 已存在同维度 ACTIVE 绑定)",
+        "nullable": true,
+        "type": "object",
+      },
+      "message": {
+        "description": "人类可读说明(取自被复用校验抛出的 BizException.message)",
+        "type": "string",
+      },
+    },
+    "required": [
+      "message",
+    ],
+    "type": "object",
+  },
+  "RoleBindingPreviewResponseDto": {
+    "properties": {
+      "conflicts": {
+        "description": "冲突/非法原因列表(与 create 同一套校验逐项收集;valid=true 时为空数组)",
+        "items": {
+          "$ref": "#/components/schemas/RoleBindingPreviewConflictDto",
+        },
+        "type": "array",
+      },
+      "resolvedScope": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RoleBindingResolvedScopeDto",
+          },
+        ],
+        "description": "归一化后的 scope(缺省 scope 字段落 null;供前端回显确认)",
+      },
+      "valid": {
+        "description": "是否可建(conflicts 为空即 true;dry-run 结论,零写入)",
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "valid",
+      "conflicts",
+      "resolvedScope",
+    ],
+    "type": "object",
+  },
+  "RoleBindingResolvedScopeDto": {
+    "properties": {
+      "scopeActivityId": {
+        "description": "scope 活动 id(归一化)",
+        "nullable": true,
+        "type": "object",
+      },
+      "scopeOrgId": {
+        "description": "scope 组织 id(归一化;未提供为 null)",
+        "nullable": true,
+        "type": "object",
+      },
+      "scopeResourceId": {
+        "description": "scope 资源 id(归一化)",
+        "nullable": true,
+        "type": "object",
+      },
+      "scopeResourceType": {
+        "description": "scope 资源类型(归一化)",
+        "nullable": true,
+        "type": "object",
+      },
+      "scopeType": {
+        "description": "scope 类型(入参回显)",
+        "enum": [
+          "GLOBAL",
+          "ORGANIZATION",
+          "ORGANIZATION_TREE",
+          "ACTIVITY",
+          "RESOURCE",
+          "SELF",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "scopeType",
+    ],
+    "type": "object",
+  },
   "RoleBindingResponseDto": {
     "properties": {
       "createdAt": {
@@ -9623,6 +10074,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "nullable": true,
         "type": "object",
       },
+      "principal": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RoleBindingExpandedPrincipalDto",
+          },
+        ],
+        "description": "主体摘要(仅 GET /role-bindings/page 且 ?expand 含 principal 时返回;SYSTEM 主体恒省略;默认省略)",
+      },
       "principalId": {
         "description": "主体 id(多态,随 principalType 指 user/member/position_assignment;SYSTEM 时可空)",
         "nullable": true,
@@ -9638,6 +10097,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         ],
         "example": "USER",
         "type": "string",
+      },
+      "role": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RoleBindingExpandedRoleDto",
+          },
+        ],
+        "description": "角色摘要(仅 GET /role-bindings/page 且 ?expand 含 role 时返回;默认省略)",
       },
       "roleId": {
         "description": "角色外键(指向 roles.id)",
@@ -19925,6 +20392,164 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/admin/v1/authz/action-state/batch": {
+    "post": {
+      "operationId": "ActionStateController_batch",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ActionStateBatchDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ActionStateBatchResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "批量业务态闸(诊断读):调用者对一组 action×资源 的 allowed + reason(authz 11 值 ∪ state_forbidden);deny 是 200 数据非错误 [rbac: authz.action-state.decision]",
+      "tags": [
+        "Admin - Authz",
+      ],
+    },
+  },
   "/api/admin/v1/authz/explain": {
     "post": {
       "operationId": "AuthzController_explain",
@@ -20112,6 +20737,198 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "权限解释(诊断读):目标用户对 action(+可选 resourceRef)的 allow/deny + reason + matchedGrant;deny 是 200 数据非错误 [rbac: authz.explain.decision]",
+      "tags": [
+        "Admin - Authz",
+      ],
+    },
+  },
+  "/api/admin/v1/authz/explain-batch": {
+    "post": {
+      "operationId": "AuthzController_explainBatch",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ExplainAuthzBatchDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ExplainAuthzBatchResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "10001: 用户不存在",
+                    "enum": [
+                      10001,
+                    ],
+                    "example": 10001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "用户不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "用户不存在(code=10001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "批量权限解释(诊断读):逐条返 allow/deny + reason(同单条 11 值枚举)+ matchedGrant;deny 是 200 数据非错误 [rbac: authz.explain-batch.decision]",
       "tags": [
         "Admin - Authz",
       ],
@@ -40931,6 +41748,763 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/admin/v1/role-bindings/batch": {
+    "post": {
+      "operationId": "RoleBindingsController_createBatch",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BatchCreateRoleBindingsDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/BatchCreateRoleBindingsResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "批量建角色绑定(≤200 条,逐条 ok/blocked/already-exists;already-exists=幂等 skip,重跑同批不报错) [rbac: role-binding.create.record]",
+      "tags": [
+        "Admin - Role Bindings",
+      ],
+    },
+  },
+  "/api/admin/v1/role-bindings/page": {
+    "get": {
+      "operationId": "RoleBindingsController_page",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "按主体类型过滤",
+          "in": "query",
+          "name": "principalType",
+          "required": false,
+          "schema": {
+            "enum": [
+              "USER",
+              "MEMBER",
+              "POSITION_ASSIGNMENT",
+              "SYSTEM",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "按主体 id 过滤",
+          "in": "query",
+          "name": "principalId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按角色 id 过滤",
+          "in": "query",
+          "name": "roleId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按 scope 类型过滤",
+          "in": "query",
+          "name": "scopeType",
+          "required": false,
+          "schema": {
+            "enum": [
+              "GLOBAL",
+              "ORGANIZATION",
+              "ORGANIZATION_TREE",
+              "ACTIVITY",
+              "RESOURCE",
+              "SELF",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "按绑定状态过滤(显式传本参数时优先于 includeExpired 的默认收窄 —— 如需查 ENDED/SUSPENDED 直接传本参数)",
+          "in": "query",
+          "name": "status",
+          "required": false,
+          "schema": {
+            "enum": [
+              "ACTIVE",
+              "ENDED",
+              "SUSPENDED",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "按 scope 组织 id 精确过滤",
+          "in": "query",
+          "name": "scopeOrgId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "按角色 code 精确过滤(如 ops-admin)",
+          "in": "query",
+          "name": "roleCode",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "主体模糊搜索(USER 命中 username+nickname;MEMBER 命中 memberNo+displayName;POSITION_ASSIGNMENT 命中其背后队员的 memberNo+displayName;contains + insensitive)",
+          "in": "query",
+          "name": "principalQ",
+          "required": false,
+          "schema": {
+            "maxLength": 100,
+            "type": "string",
+          },
+        },
+        {
+          "description": "是否包含已失效绑定(默认 false = 仅「当前生效」:status=ACTIVE 且未过任期;true 返回全部未软删绑定。显式传 status 参数时本参数的默认收窄不生效)",
+          "in": "query",
+          "name": "includeExpired",
+          "required": false,
+          "schema": {
+            "default": false,
+            "type": "boolean",
+          },
+        },
+        {
+          "description": "模糊搜索(命中 note + 角色 code + 角色显示名;contains + insensitive)",
+          "in": "query",
+          "name": "q",
+          "required": false,
+          "schema": {
+            "maxLength": 200,
+            "type": "string",
+          },
+        },
+        {
+          "description": "expand 展开(逗号分隔白名单:role,principal;缺省 = 不展开,响应形状与旧端点一致)",
+          "in": "query",
+          "name": "expand",
+          "required": false,
+          "schema": {
+            "example": "role,principal",
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/RoleBindingResponseDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页列角色绑定(既有 5 过滤 + scopeOrgId/roleCode/principalQ/includeExpired/q + expand=role,principal;默认仅当前生效) [rbac: role-binding.read.record]",
+      "tags": [
+        "Admin - Role Bindings",
+      ],
+    },
+  },
+  "/api/admin/v1/role-bindings/preview": {
+    "get": {
+      "operationId": "RoleBindingsController_preview",
+      "parameters": [
+        {
+          "description": "主体类型(USER / MEMBER / POSITION_ASSIGNMENT / SYSTEM)",
+          "in": "query",
+          "name": "principalType",
+          "required": true,
+          "schema": {
+            "enum": [
+              "USER",
+              "MEMBER",
+              "POSITION_ASSIGNMENT",
+              "SYSTEM",
+            ],
+            "example": "USER",
+            "type": "string",
+          },
+        },
+        {
+          "description": "主体 id(非 SYSTEM 必填;多态,随 principalType 指 user/member/position_assignment)",
+          "in": "query",
+          "name": "principalId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        {
+          "description": "角色 id(RbacRole.id)",
+          "in": "query",
+          "name": "roleId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "scope 类型(GLOBAL / ORGANIZATION / ORGANIZATION_TREE / ACTIVITY / RESOURCE / SELF)",
+          "in": "query",
+          "name": "scopeType",
+          "required": true,
+          "schema": {
+            "enum": [
+              "GLOBAL",
+              "ORGANIZATION",
+              "ORGANIZATION_TREE",
+              "ACTIVITY",
+              "RESOURCE",
+              "SELF",
+            ],
+            "example": "GLOBAL",
+            "type": "string",
+          },
+        },
+        {
+          "description": "scope 组织 id(ORGANIZATION / ORGANIZATION_TREE 必填)",
+          "in": "query",
+          "name": "scopeOrgId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "scope 活动 id(ACTIVITY 必填)",
+          "in": "query",
+          "name": "scopeActivityId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "scope 资源类型(RESOURCE 必填)",
+          "in": "query",
+          "name": "scopeResourceType",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "description": "scope 资源 id(RESOURCE 必填)",
+          "in": "query",
+          "name": "scopeResourceId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        {
+          "description": "任期起(ISO 8601;可空,默认预检时刻)",
+          "in": "query",
+          "name": "startedAt",
+          "required": false,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "任期止(ISO 8601;可空;有值须晚于任期起)",
+          "in": "query",
+          "name": "endedAt",
+          "required": false,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "备注(与 create 参数集对齐;不参与校验)",
+          "in": "query",
+          "name": "note",
+          "required": false,
+          "schema": {
+            "maxLength": 200,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/RoleBindingPreviewResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "预检待建角色绑定(dry-run:与 create 同参同校验,零写入;冲突/非法逐项返 conflicts,deny 是数据) [rbac: role-binding.read.record]",
+      "tags": [
+        "Admin - Role Bindings",
+      ],
+    },
+  },
   "/api/admin/v1/role-bindings/{id}": {
     "delete": {
       "operationId": "RoleBindingsController_remove",
@@ -41117,6 +42691,195 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "软删角色绑定(status=ENDED + endedAt + deletedAt;保历史) [rbac: role-binding.delete.record]",
+      "tags": [
+        "Admin - Role Bindings",
+      ],
+    },
+    "get": {
+      "operationId": "RoleBindingsController_findOne",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/RoleBindingResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "34001: 角色绑定不存在",
+                    "enum": [
+                      34001,
+                    ],
+                    "example": 34001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "角色绑定不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "角色绑定不存在(code=34001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "查单条角色绑定(detail;找不到未软删记录 → 34001) [rbac: role-binding.read.record]",
       "tags": [
         "Admin - Role Bindings",
       ],
