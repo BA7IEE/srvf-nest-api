@@ -85,6 +85,8 @@ curl -X POST https://<API_HOST>/api/admin/v1/announcement-import/execute \
 
 ## 5. BD-2 终审中枢绑定
 
+> ⚠️ **完成本节前必须至少建 2 条绑定**(正 + 副两人互备,如部长 + 副部长)。仅建 1 条会在该人请假 / 离职 / 换届期间造成终审链单点故障(届时只剩 `SUPER_ADMIN` 可终审)——完整风险说明见 §7「单一终审人风险」。
+
 考勤终审(`final-approve`/`final-reject`)摘码后**不再随 `biz-admin` 天然生效**(见 [`admin-web.md` §2.1](../handoff/admin-web.md)),必须显式建立至少一条 `attendance-final-reviewer` 的 role-binding,否则**没有任何 `ADMIN` 能终审,只能靠 `SUPER_ADMIN` 兜底**。
 
 - [ ] 查 `attendance-final-reviewer` 角色 id:`GET /api/system/v1/roles` → 找 `code === 'attendance-final-reviewer'` 的 `id`
@@ -105,7 +107,7 @@ curl -X POST https://<API_HOST>/api/admin/v1/role-bindings \
   }'
 ```
 
-- [ ] 副部长同法再建一条(两人互为备份,规避"终审链只有一人"的单点风险;见 §7)
+- [ ] **必须**:副部长(或其他备份人选)同法再建第二条绑定——重复上一步 `curl`,仅将 `principalId` 换成副部长任职的 `OrganizationPositionAssignment.id`。两人互为备份,规避"终审链只有一人"的单点风险;完整风险说明见 §7「单一终审人风险」
 - [ ] 该 role-binding 是终审中枢的**唯一真相**,换届只需撤销旧绑定(`DELETE .../role-bindings/:id`)+ 建新绑定,**代码零改动**
 
 **校验**:AuthzService 不缓存判权结果(现读实时库),绑定创建后**立即生效**,无需等待或手动重载缓存——直接进入 §6 验收即可确认。
