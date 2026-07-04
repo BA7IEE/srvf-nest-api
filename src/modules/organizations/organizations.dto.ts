@@ -342,3 +342,36 @@ export class OrganizationTreeOptionItemDto {
   })
   children!: OrganizationTreeOptionItemDto[];
 }
+
+// ============ F4/D 组:整树 + 归属计数(路线图 §4;GET /tree-with-summary)============
+
+// 树节点 + 每节点 membership 计数(active 归属**条数**,非去重队员数 —— 一名队员多类型归属会计多条;
+// directMembershipCount = 直属本节点;subtreeMembershipCount = 含全部后代,树上 O(N) 后序折叠,零额外查询)。
+export class OrganizationTreeWithSummaryNodeDto {
+  @ApiProperty({ description: '主键(cuid)' })
+  id!: string;
+
+  @ApiProperty({ description: '组织名称' })
+  name!: string;
+
+  @ApiPropertyOptional({ description: '组织缩写', nullable: true })
+  code!: string | null;
+
+  @ApiProperty({ description: '节点类型字典 code' })
+  nodeTypeCode!: string;
+
+  @ApiProperty({ description: '组织状态', enum: OrganizationStatus })
+  status!: OrganizationStatus;
+
+  @ApiProperty({ description: '直属本节点的 ACTIVE 归属条数' })
+  directMembershipCount!: number;
+
+  @ApiProperty({ description: '本节点 + 全部后代的 ACTIVE 归属条数合计' })
+  subtreeMembershipCount!: number;
+
+  @ApiProperty({
+    description: '子节点(空数组表示叶子);深度无限制',
+    type: () => [OrganizationTreeWithSummaryNodeDto],
+  })
+  children!: OrganizationTreeWithSummaryNodeDto[];
+}

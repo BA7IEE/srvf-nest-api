@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { DictItemStatus, DictTypeStatus, OrganizationStatus, Prisma } from '@prisma/client';
+import {
+  DictItemStatus,
+  DictTypeStatus,
+  MembershipStatus,
+  OrganizationStatus,
+  Prisma,
+} from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -25,6 +31,7 @@ import {
   OrganizationTreeNodeDto,
   OrganizationTreeOptionItemDto,
   OrganizationTreeQueryDto,
+  OrganizationTreeWithSummaryNodeDto,
   UpdateOrganizationDto,
   UpdateOrganizationStatusDto,
 } from './organizations.dto';
@@ -637,6 +644,40 @@ export class OrganizationsService {
         code: n.code,
         children: project(n.children),
       }));
+    return project(tree);
+  }
+
+  // F4/D 组(2026-07-04;路线图 §4):整树 + 每节点 membership 计数(组织管理页概览)。
+  // 复用 getTree() 的 O(N) 拼装 + **一次** groupBy 批量聚合 ACTIVE 归属条数(禁 N+1);
+  // subtree 合计在树上后序折叠,零额外查询。计数是展示读,memberships 表绝不被读作授权(PR2 铁律不变)。
+  // 同码 org.read.node(D2;getTree 内判)。
+  async treeWithSummary(
+    user: CurrentUserPayload,
+    query: OrganizationTreeQueryDto,
+  ): Promise<OrganizationTreeWithSummaryNodeDto[]> {
+    const tree = await this.getTree(user, query);
+    const counts = await this.prisma.memberOrganizationMembership.groupBy({
+      by: ['organizationId'],
+      where: { deletedAt: null, status: MembershipStatus.ACTIVE },
+      _count: { _all: true },
+    });
+    const directById = new Map(counts.map((c) => [c.organizationId, c._count._all]));
+    const project = (nodes: OrganizationTreeNodeDto[]): OrganizationTreeWithSummaryNodeDto[] =>
+      nodes.map((n) => {
+        const children = project(n.children);
+        const direct = directById.get(n.id) ?? 0;
+        return {
+          id: n.id,
+          name: n.name,
+          code: n.code,
+          nodeTypeCode: n.nodeTypeCode,
+          status: n.status,
+          directMembershipCount: direct,
+          subtreeMembershipCount:
+            direct + children.reduce((sum, c) => sum + c.subtreeMembershipCount, 0),
+          children,
+        };
+      });
     return project(tree);
   }
 

@@ -23,6 +23,7 @@ import {
   OrganizationTreeNodeDto,
   OrganizationTreeOptionItemDto,
   OrganizationTreeQueryDto,
+  OrganizationTreeWithSummaryNodeDto,
   UpdateOrganizationDto,
   UpdateOrganizationStatusDto,
 } from './organizations.dto';
@@ -102,6 +103,22 @@ export class OrganizationsController {
     @Query() query: OrganizationTreeQueryDto,
   ): Promise<OrganizationTreeOptionItemDto[]> {
     return this.service.treeOptions(user, query);
+  }
+
+  // F4/D 组(路线图 §4):树 + 每节点 ACTIVE 归属计数(直属 + 子树合计;单 groupBy 批量聚合禁 N+1)。
+  // 静态段须先于下方 GET :id 声明(specific-before-dynamic;沿 /tree、/options 既例)。
+  @Get('tree-with-summary')
+  @ApiOperation({
+    summary:
+      '组织树 + 每节点归属计数(directMembershipCount 直属 / subtreeMembershipCount 含后代;ACTIVE 归属条数,展示读) [rbac: org.read.node]',
+  })
+  @ApiWrappedArrayResponse(OrganizationTreeWithSummaryNodeDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  treeWithSummary(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: OrganizationTreeQueryDto,
+  ): Promise<OrganizationTreeWithSummaryNodeDto[]> {
+    return this.service.treeWithSummary(user, query);
   }
 
   @Post()

@@ -67,6 +67,14 @@ function makePrisma(tx: ReturnType<typeof makeTx>): PrismaService {
 const rbacAllow = { can: jest.fn().mockResolvedValue(true) } as unknown as RbacService;
 const auditLogMock = jest.fn().mockResolvedValue(undefined);
 const auditNoop = { log: auditLogMock } as unknown as AuditLogsService;
+// F4(2026-07-04):MembershipsService 新增 organizations / members 两依赖(仅 F4 扁平/组织轴方法用;
+// 本文件既有用例只测队员轴 CRUD,不触达 —— 传最小 stub,F4 方法行为由 e2e memberships-f4-admin 覆盖)。
+const organizationsStub = {
+  queryDescendantOrgIds: jest.fn().mockResolvedValue([]),
+} as unknown as import('../organizations/organizations.service').OrganizationsService;
+const membersStub = {
+  options: jest.fn().mockResolvedValue({ items: [] }),
+} as unknown as import('../members/members.service').MembersService;
 
 describe('MemberDepartmentsService(重指向 PRIMARY membership)', () => {
   beforeEach(() => {
@@ -205,7 +213,13 @@ describe('MembershipsService(终态全归属面)', () => {
       membershipType: 'SECONDARY',
       status: 'ACTIVE',
     });
-    const svc = new MembershipsService(makePrisma(tx), rbacAllow, auditNoop);
+    const svc = new MembershipsService(
+      makePrisma(tx),
+      rbacAllow,
+      auditNoop,
+      organizationsStub,
+      membersStub,
+    );
 
     await svc.create(USER, 'm1', { organizationId: 'org1', membershipType: 'SECONDARY' }, META);
 
@@ -236,7 +250,13 @@ describe('MembershipsService(终态全归属面)', () => {
   it('create 撞 P2002 → MEMBERSHIP_ALREADY_EXISTS(17004,新面码)', async () => {
     const tx = makeTx();
     tx.memberOrganizationMembership.create.mockRejectedValue(realP2002);
-    const svc = new MembershipsService(makePrisma(tx), rbacAllow, auditNoop);
+    const svc = new MembershipsService(
+      makePrisma(tx),
+      rbacAllow,
+      auditNoop,
+      organizationsStub,
+      membersStub,
+    );
     await expect(
       svc.create(USER, 'm1', { organizationId: 'org1', membershipType: 'PRIMARY' }, META),
     ).rejects.toEqual(new BizException(BizCode.MEMBERSHIP_ALREADY_EXISTS));
@@ -252,7 +272,13 @@ describe('MembershipsService(终态全归属面)', () => {
       endedAt: new Date(),
       endedByUserId: 'u1',
     });
-    const svc = new MembershipsService(makePrisma(tx), rbacAllow, auditNoop);
+    const svc = new MembershipsService(
+      makePrisma(tx),
+      rbacAllow,
+      auditNoop,
+      organizationsStub,
+      membersStub,
+    );
 
     await svc.end(USER, 'm1', 'mom1', META);
 
@@ -284,7 +310,13 @@ describe('MembershipsService(终态全归属面)', () => {
   });
 
   it('end 找不到 active 归属 → MEMBERSHIP_NOT_FOUND(17003),不写 audit', async () => {
-    const svc = new MembershipsService(makePrisma(makeTx()), rbacAllow, auditNoop);
+    const svc = new MembershipsService(
+      makePrisma(makeTx()),
+      rbacAllow,
+      auditNoop,
+      organizationsStub,
+      membersStub,
+    );
     await expect(svc.end(USER, 'm1', 'nope', META)).rejects.toEqual(
       new BizException(BizCode.MEMBERSHIP_NOT_FOUND),
     );
@@ -292,7 +324,13 @@ describe('MembershipsService(终态全归属面)', () => {
   });
 
   it('update 找不到归属 → MEMBERSHIP_NOT_FOUND(17003)', async () => {
-    const svc = new MembershipsService(makePrisma(makeTx()), rbacAllow, auditNoop);
+    const svc = new MembershipsService(
+      makePrisma(makeTx()),
+      rbacAllow,
+      auditNoop,
+      organizationsStub,
+      membersStub,
+    );
     await expect(svc.update(USER, 'm1', 'nope', { reason: 'x' })).rejects.toEqual(
       new BizException(BizCode.MEMBERSHIP_NOT_FOUND),
     );
@@ -302,7 +340,13 @@ describe('MembershipsService(终态全归属面)', () => {
     const tx = makeTx();
     tx.memberOrganizationMembership.findFirst.mockResolvedValue({ id: 'mom1' });
     tx.memberOrganizationMembership.update.mockResolvedValue({ id: 'mom1', reason: 'x' });
-    const svc = new MembershipsService(makePrisma(tx), rbacAllow, auditNoop);
+    const svc = new MembershipsService(
+      makePrisma(tx),
+      rbacAllow,
+      auditNoop,
+      organizationsStub,
+      membersStub,
+    );
 
     await svc.update(USER, 'm1', 'mom1', { reason: 'x' });
 
