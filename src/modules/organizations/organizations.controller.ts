@@ -17,8 +17,11 @@ import {
   CreateOrganizationDto,
   ListOrganizationsQueryDto,
   MoveOrganizationDto,
+  OrganizationOptionsQueryDto,
+  OrganizationOptionsResponseDto,
   OrganizationResponseDto,
   OrganizationTreeNodeDto,
+  OrganizationTreeOptionItemDto,
   OrganizationTreeQueryDto,
   UpdateOrganizationDto,
   UpdateOrganizationStatusDto,
@@ -72,6 +75,33 @@ export class OrganizationsController {
     @Query() query: OrganizationTreeQueryDto,
   ): Promise<OrganizationTreeNodeDto[]> {
     return this.service.getTree(user, query);
+  }
+
+  // F1/A3(路线图 §4;D2/D3 拍板):选择器投影,必须先于 /:id 定义(specific-before-dynamic)。
+  @Get('options')
+  @ApiOperation({
+    summary: '组织选择器投影(q 模糊 name+code;limit≤100,默认 20) [rbac: org.read.node]',
+  })
+  @ApiWrappedOkResponse(OrganizationOptionsResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  options(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: OrganizationOptionsQueryDto,
+  ): Promise<OrganizationOptionsResponseDto> {
+    return this.service.options(user, query);
+  }
+
+  @Get('tree-options')
+  @ApiOperation({
+    summary: '组织树极简投影(id/label/code/children,表单级联选择器用) [rbac: org.read.node]',
+  })
+  @ApiWrappedArrayResponse(OrganizationTreeOptionItemDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  treeOptions(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: OrganizationTreeQueryDto,
+  ): Promise<OrganizationTreeOptionItemDto[]> {
+    return this.service.treeOptions(user, query);
   }
 
   @Post()

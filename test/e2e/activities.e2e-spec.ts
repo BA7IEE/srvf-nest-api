@@ -490,6 +490,169 @@ describe('activities 模块', () => {
     });
   });
 
+  // ============ F1/A6 搜索 & 选择器(admin-api-fe-integration-roadmap.md §4 A6)============
+
+  describe('list 增强(q/dateFrom/dateTo/includeDescendants/includeStats)+ GET /options', () => {
+    let statsParentOrgId: string;
+    let statsChildOrgId: string;
+    let activityInParent: string;
+    let activityInChild: string;
+
+    const createOrg = async (name: string, parentId: string) => {
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/organizations')
+        .set('Authorization', superAdminAuth)
+        .send({ name, parentId, nodeTypeCode: 'demo-child' });
+      expect(res.status).toBe(201);
+      return res.body.data.id as string;
+    };
+
+    beforeAll(async () => {
+      // 独立子树(经真实 API 建,保证 closure 正确);挂在既有 childOrgId 之下,不动 rootOrgId 单根状态。
+      statsParentOrgId = await createOrg('F1统计父组织', childOrgId);
+      statsChildOrgId = await createOrg('F1统计子组织', statsParentOrgId);
+
+      const parentAct = await request(httpServer(app))
+        .post('/api/admin/v1/activities')
+        .set('Authorization', adminAuth)
+        .send(
+          baseCreatePayload({
+            title: 'F1统计唯一标题ABC',
+            organizationId: statsParentOrgId,
+            startAt: '2027-03-01T08:00:00.000Z',
+            endAt: '2027-03-01T12:00:00.000Z',
+          }),
+        );
+      activityInParent = parentAct.body.data.id;
+
+      const childAct = await request(httpServer(app))
+        .post('/api/admin/v1/activities')
+        .set('Authorization', adminAuth)
+        .send(
+          baseCreatePayload({
+            title: 'F1子组织活动',
+            organizationId: statsChildOrgId,
+            startAt: '2027-06-01T08:00:00.000Z',
+            endAt: '2027-06-01T12:00:00.000Z',
+          }),
+        );
+      activityInChild = childAct.body.data.id;
+
+      // 给 activityInParent 加一条报名 + 一张考勤单,供 includeStats 聚合断言。
+      const member = await prisma.member.create({
+        data: { memberNo: 'f1stats-mem-1', displayName: 'F1统计队员' },
+      });
+      await prisma.activityRegistration.create({
+        data: { activityId: activityInParent, memberId: member.id, statusCode: 'pending' },
+      });
+      await prisma.attendanceSheet.create({
+        data: {
+          activityId: activityInParent,
+          submitterUserId: (await prisma.user.findFirstOrThrow({ where: { username: 'act-adm' } }))
+            .id,
+          statusCode: 'draft',
+        },
+      });
+    });
+
+    it('q 模糊命中 title', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/activities')
+        .query({ q: '统计唯一标题ABC' })
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(200);
+      const ids = (res.body.data.items as Array<{ id: string }>).map((i) => i.id);
+      expect(ids).toEqual([activityInParent]);
+    });
+
+    it('dateFrom/dateTo 按 startAt 区间过滤(含边界)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/activities')
+        .query({ dateFrom: '2027-02-01T00:00:00.000Z', dateTo: '2027-04-01T00:00:00.000Z' })
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(200);
+      const ids = (res.body.data.items as Array<{ id: string }>).map((i) => i.id);
+      expect(ids).toContain(activityInParent);
+      expect(ids).not.toContain(activityInChild);
+    });
+
+    it('organizationId + includeDescendants 展开后代组织', async () => {
+      const parentOnly = await request(httpServer(app))
+        .get('/api/admin/v1/activities')
+        .query({ organizationId: statsParentOrgId })
+        .set('Authorization', adminAuth);
+      const parentOnlyIds = (parentOnly.body.data.items as Array<{ id: string }>).map((i) => i.id);
+      expect(parentOnlyIds).toContain(activityInParent);
+      expect(parentOnlyIds).not.toContain(activityInChild);
+
+      const withDescendants = await request(httpServer(app))
+        .get('/api/admin/v1/activities')
+        .query({ organizationId: statsParentOrgId, includeDescendants: 'true' })
+        .set('Authorization', adminAuth);
+      expect(withDescendants.status).toBe(200);
+      const ids = (withDescendants.body.data.items as Array<{ id: string }>).map((i) => i.id);
+      expect(ids).toEqual(expect.arrayContaining([activityInParent, activityInChild]));
+    });
+
+    it('includeStats=true 附带 registrationCount/attendanceSheetCount(批量聚合);默认省略', async () => {
+      const withStats = await request(httpServer(app))
+        .get('/api/admin/v1/activities')
+        .query({ organizationId: statsParentOrgId, includeStats: 'true' })
+        .set('Authorization', adminAuth);
+      expect(withStats.status).toBe(200);
+      const item = (
+        withStats.body.data.items as Array<{
+          id: string;
+          registrationCount: number;
+          attendanceSheetCount: number;
+        }>
+      ).find((i) => i.id === activityInParent);
+      expect(item).toMatchObject({ registrationCount: 1, attendanceSheetCount: 1 });
+
+      const withoutStats = await request(httpServer(app))
+        .get('/api/admin/v1/activities')
+        .query({ organizationId: statsParentOrgId })
+        .set('Authorization', adminAuth);
+      const plainItem = (withoutStats.body.data.items as Array<Record<string, unknown>>).find(
+        (i) => i.id === activityInParent,
+      );
+      expect(plainItem).not.toHaveProperty('registrationCount');
+      expect(plainItem).not.toHaveProperty('attendanceSheetCount');
+    });
+
+    it('GET /options → 200,items 含 {id,label,startAt,statusCode},label=title,[auth]仅登录', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/activities/options')
+        .query({ q: '统计唯一标题ABC' })
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(200);
+      expect(Object.keys(res.body.data as object).sort()).toEqual(['items']);
+      expect(res.body.data.items).toEqual([
+        {
+          id: activityInParent,
+          label: 'F1统计唯一标题ABC',
+          startAt: '2027-03-01T08:00:00.000Z',
+          statusCode: 'draft',
+        },
+      ]);
+    });
+
+    it('/options 对 USER 角色同样强制只见 published/completed(镜像 list Q-A7)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/activities/options')
+        .query({ q: '统计唯一标题ABC' })
+        .set('Authorization', userAuth);
+      // draft 状态,USER 不可见 → q 命中但强制状态过滤后为空
+      expect(res.status).toBe(200);
+      expect(res.body.data.items).toEqual([]);
+    });
+
+    it('未登录调用 /options → 401', async () => {
+      const res = await request(httpServer(app)).get('/api/admin/v1/activities/options');
+      expectBizError(res, BizCode.UNAUTHORIZED);
+    });
+  });
+
   // ============ GET detail + Role 过滤 ============
 
   describe('GET detail + Q-A7 Role 过滤', () => {

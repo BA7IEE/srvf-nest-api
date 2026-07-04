@@ -1,7 +1,25 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MemberStatus } from '@prisma/client';
-import { IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
+
+// query boolean 从 GET query string 解析:原始值是字符串 'true'/'false',@Type(() => Boolean)
+// 会用 `Boolean(value)` 转换 —— 任何非空字符串(含 'false')都会变 true,是已知陷阱,
+// 故显式判等而非用 @Type。
+const parseQueryBoolean = ({ value }: { value: unknown }): unknown =>
+  value === true || value === 'true' ? true : value === false || value === 'false' ? false : value;
 
 // V2 第一阶段 members 模块 DTO 集合。
 // 出参显式列字段(永不含 deletedAt 软删内部状态);入参严格白名单 + class-validator,
@@ -115,6 +133,9 @@ export class UpdateMemberStatusDto {
 
 // 列表 query:支持 memberNo 精确查询(完整匹配,不做模糊 — 编号即身份)、
 // gradeCode 过滤、status 过滤。
+// F1/A1(路线图 §4;D1/D7 拍板):新增可选 q(模糊命中 displayName+memberNo)/
+// organizationId(经 memberOrganizationMemberships 关联过滤)/ includeDescendants
+// (配合 organizationId 展开后代组织,默认 false)。旧字段/响应形状不变(additive)。
 export class ListMembersQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ description: 'memberNo 精确查询(完整匹配)', maxLength: 32 })
   @IsOptional()
@@ -132,4 +153,86 @@ export class ListMembersQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsEnum(MemberStatus)
   status?: MemberStatus;
+
+  @ApiPropertyOptional({
+    description: '模糊搜索(跨字段命中 displayName + memberNo;contains + insensitive)',
+    maxLength: 100,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({
+    description: '按组织归属过滤(经 active membership 关联;任意 membershipType 均计入)',
+    maxLength: 64,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  organizationId?: string;
+
+  @ApiPropertyOptional({
+    description: '配合 organizationId:是否展开其全部后代组织(默认 false)',
+    default: false,
+  })
+  @IsOptional()
+  @Transform(parseQueryBoolean)
+  @IsBoolean()
+  includeDescendants?: boolean;
+}
+
+// ============ F1/A1 选择器(路线图 §4;D2/D3 拍板)============
+
+export class MemberOptionsQueryDto {
+  @ApiPropertyOptional({
+    description: '模糊搜索(跨字段命中 displayName + memberNo)',
+    maxLength: 100,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({ description: '按组织归属过滤(经 active membership 关联)', maxLength: 64 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  organizationId?: string;
+
+  @ApiPropertyOptional({
+    description: '配合 organizationId:是否展开其全部后代组织(默认 false)',
+    default: false,
+  })
+  @IsOptional()
+  @Transform(parseQueryBoolean)
+  @IsBoolean()
+  includeDescendants?: boolean;
+
+  @ApiPropertyOptional({ description: '结果条数上限(默认 20,上限 100)', minimum: 1, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
+
+export class MemberOptionItemDto {
+  @ApiProperty({ description: '主键(cuid)' })
+  id!: string;
+
+  @ApiProperty({ description: '展示标签(= displayName)' })
+  label!: string;
+
+  @ApiProperty({ description: '队员业务唯一编号' })
+  memberNo!: string;
+
+  @ApiPropertyOptional({ description: '等级字典 code', nullable: true })
+  gradeCode!: string | null;
+}
+
+export class MemberOptionsResponseDto {
+  @ApiProperty({ description: '结果列表(不分页,受 limit 截断)', type: () => [MemberOptionItemDto] })
+  items!: MemberOptionItemDto[];
 }

@@ -34,6 +34,7 @@ import { AttachmentConfigsModule } from './modules/attachment-configs/attachment
 import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { MemberProfilesModule } from './modules/member-profiles/member-profiles.module';
 import { MembersModule } from './modules/members/members.module';
+import { MetaModule } from './modules/meta/meta.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { PositionsModule } from './modules/positions/positions.module';
@@ -138,6 +139,10 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   2 码;导入本身只做锚定解析 + 编排,复用 OrganizationsService/PositionAssignmentsService/
     //   SupervisionAssignmentsService 的 create()(dryRun 沙箱哨兵驱动 preview 零写入)。0 schema。
     AnnouncementImportModule,
+    // F1/A7(admin-api-fe-integration-roadmap.md §4 A7;net-new):跨资源批量 id→label 解析(第 35 模块)。
+    //   1 路由 POST admin/v1/meta/resolve-labels;R 模式 meta.resolve.label 1 码(绑 ops-admin);
+    //   per-type 读权限过滤(D2 复用各资源既有 .read.* 码)+ 无权/不存在静默省略(D5/R13 防枚举)。0 schema。
+    MetaModule,
     // V2.x C-7 attachments:attachment-configs 三子模块 CRUD
     //   (D7 v1.0 §4.2 / §16 Q1-Q7;path /api/system/v1/attachment-{type,mime,size-limit}-configs;130xx 段位)。
     //   AttachmentTypeConfig / Mime / Size 三子表 CRUD 全部实装。

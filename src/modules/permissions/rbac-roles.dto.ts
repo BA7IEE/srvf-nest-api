@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { PermissionResponseDto } from './permissions.dto';
 
@@ -106,4 +107,40 @@ export class ListRbacRolesQueryDto extends PaginationQueryDto {
   @IsString()
   @MaxLength(33)
   code?: string;
+}
+
+// ============ F1/A4 选择器(路线图 §4;D2/D3/D4 拍板)============
+//
+// 落 system/v1/roles/options(D4:roles 属 System/RBAC 基础设施资源,不与 admin/v1 分裂 surface)。
+
+export class RoleOptionsQueryDto {
+  @ApiPropertyOptional({ description: '模糊搜索(跨字段命中 code + displayName)', maxLength: 100 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({ description: '结果条数上限(默认 20,上限 100)', minimum: 1, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
+
+export class RoleOptionItemDto {
+  @ApiProperty({ description: '主键(cuid)' })
+  id!: string;
+
+  @ApiProperty({ description: '展示标签(= displayName)' })
+  label!: string;
+
+  @ApiProperty({ description: '角色 code' })
+  code!: string;
+}
+
+export class RoleOptionsResponseDto {
+  @ApiProperty({ description: '结果列表(不分页,受 limit 截断)', type: () => [RoleOptionItemDto] })
+  items!: RoleOptionItemDto[];
 }

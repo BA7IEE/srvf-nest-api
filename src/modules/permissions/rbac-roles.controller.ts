@@ -16,6 +16,8 @@ import {
   ListRbacRolesQueryDto,
   RbacRoleDetailResponseDto,
   RbacRoleResponseDto,
+  RoleOptionsQueryDto,
+  RoleOptionsResponseDto,
   UpdateRbacRoleDto,
 } from './rbac-roles.dto';
 import { RbacRolesService } from './rbac-roles.service';
@@ -53,6 +55,20 @@ export class RbacRolesController {
     @Query() query: ListRbacRolesQueryDto,
   ): Promise<PageResultDto<RbacRoleResponseDto>> {
     return this.service.list(user, query);
+  }
+
+  // F1/A4(路线图 §4;D2/D3/D4 拍板):选择器投影,必须先于 /:id 定义(specific-before-dynamic)。
+  @Get('options')
+  @ApiOperation({
+    summary: '角色选择器投影(q 模糊 code+displayName;limit≤100,默认 20) [rbac: rbac.role.read]',
+  })
+  @ApiWrappedOkResponse(RoleOptionsResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  options(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query() query: RoleOptionsQueryDto,
+  ): Promise<RoleOptionsResponseDto> {
+    return this.service.options(user, query);
   }
 
   @Get(':id')

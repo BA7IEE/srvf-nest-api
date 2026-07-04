@@ -15,6 +15,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import {
   CreateMemberDto,
   ListMembersQueryDto,
+  MemberOptionsQueryDto,
+  MemberOptionsResponseDto,
   MemberResponseDto,
   UpdateMemberDto,
   UpdateMemberStatusDto,
@@ -44,6 +46,21 @@ export class MembersController {
     @CurrentUser() currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<MemberResponseDto>> {
     return this.service.list(query, currentUser);
+  }
+
+  // F1/A1(路线图 §4;D2/D3 拍板):选择器投影,必须先于 /:id 定义(specific-before-dynamic)。
+  @Get('options')
+  @ApiOperation({
+    summary:
+      '队员选择器投影(q 模糊 displayName+memberNo;limit≤100,默认 20) [rbac: member.read.record]',
+  })
+  @ApiWrappedOkResponse(MemberOptionsResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  options(
+    @Query() query: MemberOptionsQueryDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ): Promise<MemberOptionsResponseDto> {
+    return this.service.options(query, currentUser);
   }
 
   @Post()

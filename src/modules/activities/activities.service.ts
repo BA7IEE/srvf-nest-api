@@ -12,11 +12,15 @@ import {
   NOTIFICATION_TYPE_ACTIVITY_REMINDER,
 } from '../notifications/notification.constants';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher';
+import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import {
   ActivityListItemDto,
+  ActivityOptionItemDto,
+  ActivityOptionsQueryDto,
+  ActivityOptionsResponseDto,
   ActivityResponseDto,
   CancelActivityDto,
   CreateActivityDto,
@@ -137,6 +141,9 @@ export class ActivitiesService {
     // 统一通知 S4(评审稿 §6.4):活动取消 → 已报名者定向通知派发器(producer → notifications 单向直调,
     // commit 后事务外、try-catch 永不抛;防环:本服务绝不被通知模块回调)。
     private readonly notificationDispatcher: NotificationDispatcher,
+    // F1/A6(路线图 §4;D7 拍板):供 queryDescendantOrgIds() 只读 helper 展开 includeDescendants
+    // (closure 非判权)。
+    private readonly organizations: OrganizationsService,
   ) {}
 
   // ============ helpers ============
@@ -295,23 +302,82 @@ export class ActivitiesService {
 
   // ============ list ============
 
-  async list(
-    query: ListActivitiesQueryDto,
-    currentUser: CurrentUserPayload,
-  ): Promise<PageResultDto<ActivityListItemDto>> {
-    const { page, pageSize, statusCode, activityTypeCode, organizationId, isPublicRegistration } =
-      query;
+  // F1/A6(D7):批量聚合 registrationCount/attendanceSheetCount(includeStats=true 时),
+  // 两条 groupBy 一次查完当前页全部 activityId,禁 N+1。
+  private async attachStats(items: ActivityListItemDto[]): Promise<ActivityListItemDto[]> {
+    if (items.length === 0) return items;
+    const activityIds = items.map((i) => i.id);
+    const [regGroups, sheetGroups] = await Promise.all([
+      this.prisma.activityRegistration.groupBy({
+        by: ['activityId'],
+        where: { activityId: { in: activityIds }, deletedAt: null },
+        _count: { _all: true },
+      }),
+      this.prisma.attendanceSheet.groupBy({
+        by: ['activityId'],
+        where: { activityId: { in: activityIds }, deletedAt: null },
+        _count: { _all: true },
+      }),
+    ]);
+    const regCountByActivity = new Map(regGroups.map((g) => [g.activityId, g._count._all]));
+    const sheetCountByActivity = new Map(sheetGroups.map((g) => [g.activityId, g._count._all]));
+    return items.map((item) => ({
+      ...item,
+      registrationCount: regCountByActivity.get(item.id) ?? 0,
+      attendanceSheetCount: sheetCountByActivity.get(item.id) ?? 0,
+    }));
+  }
 
-    const filters: Prisma.ActivityWhereInput = {};
+  // Q-A7:USER 强制白名单状态(忽略入参 statusCode,防 draft/cancelled 存在性泄漏);
+  // list/options 共用同一份状态过滤构造。
+  private applyStatusCodeFilter(
+    filters: Prisma.ActivityWhereInput,
+    currentUser: CurrentUserPayload,
+    statusCode: string | undefined,
+  ): void {
     if (currentUser.role === Role.USER) {
-      // Q-A7:USER 强制白名单状态,忽略入参 statusCode。
       filters.statusCode = { in: [...USER_VISIBLE_STATUS_CODES] };
     } else if (statusCode !== undefined) {
       filters.statusCode = statusCode;
     }
+  }
+
+  async list(
+    query: ListActivitiesQueryDto,
+    currentUser: CurrentUserPayload,
+  ): Promise<PageResultDto<ActivityListItemDto>> {
+    const {
+      page,
+      pageSize,
+      statusCode,
+      activityTypeCode,
+      organizationId,
+      isPublicRegistration,
+      q,
+      dateFrom,
+      dateTo,
+      includeDescendants,
+      includeStats,
+    } = query;
+
+    const filters: Prisma.ActivityWhereInput = {};
+    this.applyStatusCodeFilter(filters, currentUser, statusCode);
     if (activityTypeCode !== undefined) filters.activityTypeCode = activityTypeCode;
-    if (organizationId !== undefined) filters.organizationId = organizationId;
+    if (organizationId !== undefined) {
+      filters.organizationId = includeDescendants
+        ? { in: await this.organizations.queryDescendantOrgIds(organizationId) }
+        : organizationId;
+    }
     if (isPublicRegistration !== undefined) filters.isPublicRegistration = isPublicRegistration;
+    if (q !== undefined) {
+      filters.title = { contains: q, mode: 'insensitive' };
+    }
+    if (dateFrom !== undefined || dateTo !== undefined) {
+      filters.startAt = {
+        ...(dateFrom !== undefined ? { gte: new Date(dateFrom) } : {}),
+        ...(dateTo !== undefined ? { lte: new Date(dateTo) } : {}),
+      };
+    }
 
     const where = notDeletedWhere(filters);
 
@@ -326,12 +392,48 @@ export class ActivitiesService {
       this.prisma.activity.count({ where }),
     ]);
 
+    const items = rows.map((r) => this.toListItemDto(r));
+
     return {
-      items: rows.map((r) => this.toListItemDto(r)),
+      items: includeStats ? await this.attachStats(items) : items,
       total,
       page,
       pageSize,
     };
+  }
+
+  // ============ F1/A6 选择器(路线图 §4;D2/D3 拍板)============
+
+  // options = list 的轻量投影。**无 rbac 码**(镜像 list/findOne 现状:活动读无码仅登录,
+  // RBAC_MAP §2.4 BD-3 已就"是否新增 activity.read.* 码"结论 won't-do——活动详情
+  // login-only 天然可读,新增读码属收紧而非 additive,故沿用现状不新增)。
+  async options(
+    query: ActivityOptionsQueryDto,
+    currentUser: CurrentUserPayload,
+  ): Promise<ActivityOptionsResponseDto> {
+    const { q, statusCode, organizationId, limit } = query;
+
+    const filters: Prisma.ActivityWhereInput = {};
+    this.applyStatusCodeFilter(filters, currentUser, statusCode);
+    if (organizationId !== undefined) filters.organizationId = organizationId;
+    if (q !== undefined) {
+      filters.title = { contains: q, mode: 'insensitive' };
+    }
+
+    const rows = await this.prisma.activity.findMany({
+      where: notDeletedWhere(filters),
+      select: { id: true, title: true, startAt: true, statusCode: true },
+      orderBy: { createdAt: 'desc' },
+      take: limit ?? 20,
+    });
+
+    const items: ActivityOptionItemDto[] = rows.map((r) => ({
+      id: r.id,
+      label: r.title,
+      startAt: r.startAt,
+      statusCode: r.statusCode,
+    }));
+    return { items };
   }
 
   // ============ findOne ============

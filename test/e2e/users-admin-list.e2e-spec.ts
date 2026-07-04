@@ -200,6 +200,115 @@ describe('GET /api/admin/v1/users(管理列表)', () => {
     });
   });
 
+  describe('F1/A2 list 增强(q/role/status/memberId)+ GET /options', () => {
+    let opsCallerAuth: string;
+    let markedUserId: string;
+
+    beforeAll(async () => {
+      const opsCaller = await createTestUser(app, { username: 'f1useropslist', role: Role.ADMIN });
+      await grantOpsAdminToUser(app, opsCaller.id, opsAdminRoleId);
+      opsCallerAuth = (await loginAs(app, 'f1useropslist')).authHeader;
+
+      const marked = await createTestUser(app, {
+        username: 'f1uniquenamexyz',
+        role: Role.USER,
+        nickname: 'F1唯一昵称ABC',
+      });
+      markedUserId = marked.id;
+    });
+
+    it('q 跨字段模糊命中 username + nickname', async () => {
+      const byUsername = await request(httpServer(app))
+        .get('/api/admin/v1/users')
+        .query({ q: 'f1uniquenamexyz' })
+        .set('Authorization', opsCallerAuth);
+      expect(byUsername.status).toBe(200);
+      expect((byUsername.body.data.items as Array<{ id: string }>).map((i) => i.id)).toEqual([
+        markedUserId,
+      ]);
+
+      const byNickname = await request(httpServer(app))
+        .get('/api/admin/v1/users')
+        .query({ q: '唯一昵称ABC' })
+        .set('Authorization', opsCallerAuth);
+      expect((byNickname.body.data.items as Array<{ id: string }>).map((i) => i.id)).toEqual([
+        markedUserId,
+      ]);
+    });
+
+    it('status 过滤生效', async () => {
+      await request(httpServer(app))
+        .patch(`/api/admin/v1/users/${markedUserId}/status`)
+        .set('Authorization', opsCallerAuth)
+        .send({ status: 'DISABLED' });
+
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/users')
+        .query({ status: 'DISABLED' })
+        .set('Authorization', opsCallerAuth);
+      expect(res.status).toBe(200);
+      const ids = (res.body.data.items as Array<{ id: string }>).map((i) => i.id);
+      expect(ids).toContain(markedUserId);
+      for (const item of res.body.data.items as Array<{ status: string }>) {
+        expect(item.status).toBe('DISABLED');
+      }
+    });
+
+    it('role 过滤与 canViewUser 可见性求交:ADMIN+ops-admin 传 role=SUPER_ADMIN → 空结果非报错', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/users')
+        .query({ role: 'SUPER_ADMIN' })
+        .set('Authorization', opsCallerAuth);
+      expect(res.status).toBe(200);
+      expect(res.body.data.items).toEqual([]);
+    });
+
+    it('memberId 过滤生效', async () => {
+      const member = await prisma.member.create({
+        data: { memberNo: 'f1useropt-mem-1', displayName: 'F1用户选择器队员' },
+      });
+      const linked = await createTestUser(app, { username: 'f1memberlinked', role: Role.USER });
+      await prisma.user.update({ where: { id: linked.id }, data: { memberId: member.id } });
+
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/users')
+        .query({ memberId: member.id })
+        .set('Authorization', opsCallerAuth);
+      expect(res.status).toBe(200);
+      expect((res.body.data.items as Array<{ id: string }>).map((i) => i.id)).toEqual([linked.id]);
+    });
+
+    it('GET /options → 200,items 含 {id,label,username},label=nickname||username', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/users/options')
+        .query({ q: 'f1uniquenamexyz' })
+        .set('Authorization', opsCallerAuth);
+      expect(res.status).toBe(200);
+      expect(Object.keys(res.body.data as object).sort()).toEqual(['items']);
+      expect(res.body.data.items).toEqual([
+        { id: markedUserId, label: 'F1唯一昵称ABC', username: 'f1uniquenamexyz' },
+      ]);
+    });
+
+    it('/options 的 canViewUser 可见性裁剪保留:ADMIN+ops-admin 看不到 SUPER_ADMIN/ADMIN 账号', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/users/options')
+        .query({ q: 'f1useropslist' })
+        .set('Authorization', opsCallerAuth);
+      expect(res.status).toBe(200);
+      expect(res.body.data.items).toEqual([]);
+    });
+
+    it('USER 调用 /options → RBAC_FORBIDDEN(复用 user.read.account,D2 不新增码)', async () => {
+      await createTestUser(app, { username: 'f1useroptplain', role: Role.USER });
+      const { authHeader } = await loginAs(app, 'f1useroptplain');
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/users/options')
+        .set('Authorization', authHeader);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+  });
+
   describe('软删过滤', () => {
     it('软删的用户不出现在列表(notDeletedWhere 生效)', async () => {
       await createTestUser(app, { username: 'softdelop1', role: Role.SUPER_ADMIN });

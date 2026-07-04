@@ -25,6 +25,8 @@ import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import {
   CreatePositionDto,
+  PositionOptionsQueryDto,
+  PositionOptionsResponseDto,
   PositionQueryDto,
   PositionResponseDto,
   UpdatePositionDto,
@@ -51,6 +53,20 @@ export class PositionsController {
     @Query() query: PositionQueryDto,
   ): Promise<PageResultDto<PositionResponseDto>> {
     return this.service.list(currentUser, query);
+  }
+
+  // F1/A5(路线图 §4;D2/D3 拍板):选择器投影,必须先于 /:id 定义(specific-before-dynamic)。
+  @Get('options')
+  @ApiOperation({
+    summary: '职务选择器投影(q 模糊 name;limit≤100,默认 20) [rbac: position.read.definition]',
+  })
+  @ApiWrappedOkResponse(PositionOptionsResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  options(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Query() query: PositionOptionsQueryDto,
+  ): Promise<PositionOptionsResponseDto> {
+    return this.service.options(currentUser, query);
   }
 
   @Post()

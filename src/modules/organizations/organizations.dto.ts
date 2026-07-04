@@ -9,6 +9,7 @@ import {
   IsString,
   Length,
   Matches,
+  Max,
   MaxLength,
   Min,
   MinLength,
@@ -209,6 +210,8 @@ export class MoveOrganizationDto {
 
 // 列表 query:parentId 接受字面值 'null'(过滤根节点)/ cuid(过滤指定父下子节点);
 // 不传则不限制(列出全部活跃节点)。
+// F1/A3(路线图 §4;D1 拍板):新增可选 q(跨字段模糊命中 name+code)/ nameContains / codeContains
+// (D1 精确子串备用);全部 contains + mode:'insensitive'。旧字段/响应形状不变(additive)。
 export class ListOrganizationsQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     description: "parentId 过滤;字面值 'null' 表示根节点;不传不限制",
@@ -230,6 +233,33 @@ export class ListOrganizationsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsEnum(OrganizationStatus)
   status?: OrganizationStatus;
+
+  @ApiPropertyOptional({
+    description: '模糊搜索(跨字段命中 name + code;contains + insensitive)',
+    maxLength: 100,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({
+    description: '按 name 精确子串过滤(contains + insensitive)',
+    maxLength: 100,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  nameContains?: string;
+
+  @ApiPropertyOptional({
+    description: '按 code 精确子串过滤(contains + insensitive)',
+    maxLength: 32,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  codeContains?: string;
 }
 
 export class OrganizationTreeQueryDto {
@@ -237,4 +267,78 @@ export class OrganizationTreeQueryDto {
   @IsOptional()
   @IsEnum(OrganizationStatus)
   status?: OrganizationStatus;
+}
+
+// ============ F1/A3 选择器(路线图 §4;D2/D3 拍板)============
+//
+// options = list 的轻量投影(同一批数据,复用 org.read.node 码,不新增权限码);
+// 独立 /options 路由(D3),响应 {items:[...]},非分页(无 total/page)。
+
+export class OrganizationOptionsQueryDto {
+  @ApiPropertyOptional({ description: '模糊搜索(跨字段命中 name + code)', maxLength: 100 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({ description: '按 nodeTypeCode 过滤', maxLength: 64 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  nodeTypeCode?: string;
+
+  @ApiPropertyOptional({ description: '按状态过滤', enum: OrganizationStatus })
+  @IsOptional()
+  @IsEnum(OrganizationStatus)
+  status?: OrganizationStatus;
+
+  @ApiPropertyOptional({ description: '结果条数上限(默认 20,上限 100)', minimum: 1, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
+
+export class OrganizationOptionItemDto {
+  @ApiProperty({ description: '主键(cuid)' })
+  id!: string;
+
+  @ApiProperty({ description: '展示标签(= name)' })
+  label!: string;
+
+  @ApiPropertyOptional({ description: '组织缩写', nullable: true })
+  code!: string | null;
+
+  @ApiProperty({ description: '节点类别字典 code' })
+  nodeTypeCode!: string;
+
+  @ApiPropertyOptional({ description: '父级 id(null = 根节点)', nullable: true })
+  parentId!: string | null;
+}
+
+export class OrganizationOptionsResponseDto {
+  @ApiProperty({
+    description: '结果列表(不分页,受 limit 截断)',
+    type: () => [OrganizationOptionItemDto],
+  })
+  items!: OrganizationOptionItemDto[];
+}
+
+export class OrganizationTreeOptionItemDto {
+  @ApiProperty({ description: '主键(cuid)' })
+  id!: string;
+
+  @ApiProperty({ description: '展示标签(= name)' })
+  label!: string;
+
+  @ApiPropertyOptional({ description: '组织缩写', nullable: true })
+  code!: string | null;
+
+  @ApiProperty({
+    description: '子节点(空数组表示叶子);深度无限制',
+    type: () => [OrganizationTreeOptionItemDto],
+  })
+  children!: OrganizationTreeOptionItemDto[];
 }

@@ -232,6 +232,64 @@ describe('positions / position-rules CRUD', () => {
     });
   });
 
+  // ============ F1/A5 选择器(admin-api-fe-integration-roadmap.md §4 A5)============
+
+  describe('GET /options 选择器投影', () => {
+    it('SUPER_ADMIN → 200,items 含 {id,label,categoryCode},label=name', async () => {
+      const id = await newPosition({ name: 'F1选择器职务', categoryCode: 'STAFF' });
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/positions/options')
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      expect(Object.keys(res.body.data as object).sort()).toEqual(['items']);
+      const item = (res.body.data.items as Array<Record<string, unknown>>).find((i) => i.id === id);
+      expect(item).toEqual({ id, label: 'F1选择器职务', categoryCode: 'STAFF' });
+    });
+
+    it('q 模糊命中 name', async () => {
+      await newPosition({ name: 'F1选择器唯一名称XYZ', categoryCode: 'STAFF' });
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/positions/options')
+        .query({ q: '唯一名称XYZ' })
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      const names = (res.body.data.items as Array<{ label: string }>).map((i) => i.label);
+      expect(names).toEqual(['F1选择器唯一名称XYZ']);
+    });
+
+    it('categoryCode 过滤生效', async () => {
+      const id = await newPosition({ name: 'F1过滤LEADER', categoryCode: 'LEADER' });
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/positions/options')
+        .query({ categoryCode: 'LEADER' })
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      const ids = (res.body.data.items as Array<{ id: string; categoryCode: string }>).map(
+        (i) => i.id,
+      );
+      expect(ids).toContain(id);
+      for (const item of res.body.data.items as Array<{ categoryCode: string }>) {
+        expect(item.categoryCode).toBe('LEADER');
+      }
+    });
+
+    it('limit 截断生效', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/positions/options')
+        .query({ limit: 1 })
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      expect((res.body.data.items as unknown[]).length).toBeLessThanOrEqual(1);
+    });
+
+    it('USER 调用 → RBAC_FORBIDDEN(同 list 复用 position.read.definition,D2 不新增码)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/positions/options')
+        .set('Authorization', userAuth);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+  });
+
   // ============ 删除守卫(冻结稿 §7.2)============
 
   describe('删除守卫', () => {

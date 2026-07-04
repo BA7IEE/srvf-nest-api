@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { AuthzModule } from '../authz/authz.module';
+import { OrganizationsModule } from '../organizations/organizations.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -44,6 +45,7 @@ import { AppActivitiesController } from './controllers/app-activities.controller
     AuthzModule,
     UsersModule,
     NotificationsModule,
+    OrganizationsModule,
   ],
   controllers: [ActivitiesController, AppActivitiesController],
   providers: [
