@@ -3,6 +3,7 @@ import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { parseExpandQuery } from '../../common/dto/expand-query.util';
 import { eventPlaceholder } from '../../common/event/event-placeholder';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -16,6 +17,7 @@ import {
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher';
+import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
 // 跨轴只读(2026-06-23):复用 team-join 贡献值封顶核(单一真相源;生涯累计 cutoff=null)。
 // 纯函数调用,非 DI provider → 无 AttendancesModule → TeamJoinModule 依赖;team-join 不反向
@@ -46,6 +48,11 @@ import {
   RejectAttendanceSheetDto,
   UpdateAttendanceSheetDto,
 } from './attendances.dto';
+
+// F2/B2(admin-api-fe-integration-roadmap.md §4 B2;D6 拍板):expand 白名单,仅
+// listAllSheetsForAdmin(admin/v1/attendance-sheets 全局横扫)消费。类型由 parseExpandQuery
+// 的泛型从此白名单字面量推导,无需单独导出 key 类型(镜像本文件其余「不为已推导类型再起别名」惯例)。
+const ATTENDANCE_EXPAND_WHITELIST = ['activity'] as const;
 
 // V2 第一阶段批次 3B attendances service(批次 4-B 升级:终审 / D14 预填 / D11 推动)。
 // 详见 docs:
@@ -186,12 +193,17 @@ const sheetFullSelect = {
 // - adminMemberRecordSelect:Record + Member 嵌套 + sheet{activityId, activity{title}}(队员 360 考勤记录上下文)。
 // 活动标题经 Prisma 嵌套关系一次取(无 N+1);activity.deletedAt 不过滤(FK onDelete=Restrict 保证行存在,
 // 软删态字段仍可读,不暴露 deletedAt)。
+// F2/B2(D6 拍板,2026-07-04):activity 子 select 扩至 expand 展开所需的最小字段集
+// (+startAt+organizationId)——activity 是既有 Prisma 嵌套关系,一次 JOIN 单查询取回(非二次查询,
+// 天然满足 D6"禁 N+1");是否投影进响应完全由 listAllSheetsForAdmin 的 expand 参数决定。
 const adminSheetListSelect = {
   ...sheetListSelect,
   activity: {
     select: {
       id: true,
       title: true,
+      startAt: true,
+      organizationId: true,
     },
   },
 } as const satisfies Prisma.AttendanceSheetSelect;
@@ -234,6 +246,9 @@ export class AttendancesService {
     // 统一通知 S4(评审稿 §6.4):考勤终审通过 → 本人考勤结果/贡献值定向通知派发器(producer → notifications
     // 单向直调,commit 后事务外、try-catch 永不抛;防环:本服务绝不被通知模块回调)。
     private readonly notificationDispatcher: NotificationDispatcher,
+    // F2/B2(路线图 §4;D7 拍板):供 queryDescendantOrgIds() 只读 helper 展开 includeDescendants
+    // (closure 非判权,镜像 F1/A6 activities.service.ts 用法)。
+    private readonly organizations: OrganizationsService,
   ) {}
 
   // Slow-4 T3(2026-06-11,评审稿 §3.7 / D-S4-8)起点;终态 scoped-authz PR12(2026-07-02;
@@ -659,15 +674,60 @@ export class AttendancesService {
   // 2026-06-23 跨轴只读(GET admin/v1/attendance-sheets):脱离 :activityId 路径段,按 statusCode
   // 跨所有活动横扫考勤单据(审批工作台)。判权复用 read 码;item 自带 activity 上下文。
   // 序列化复用 presenter.toSheetListItemDto + activityTitle;既有 list(activityId,...) 行为零变更。
+  // F2/B2(admin-api-fe-integration-roadmap.md §4 B2;D1/D6/D7 拍板,2026-07-04):+可选
+  // q/activityQ/organizationId/includeDescendants/dateFrom/dateTo/expand。全部省略时行为逐字
+  // 不变(additive)。q/submitter 搜索命中提交人 User.username/nickname(AttendanceSheet 本身无
+  // 提交人姓名冗余字段,经既有 submitter 关联 join 过滤,零新 select 字段、零 N+1)。
   async listAllSheetsForAdmin(
     query: ListAttendanceSheetsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<AdminAttendanceSheetListItemDto>> {
     await this.assertCanOrThrow(currentUser, 'attendance.read.sheet');
 
-    const { page, pageSize, statusCode } = query;
+    const {
+      page,
+      pageSize,
+      statusCode,
+      q,
+      activityQ,
+      organizationId,
+      includeDescendants,
+      dateFrom,
+      dateTo,
+      expand,
+    } = query;
+    const expandSet = parseExpandQuery(expand, ATTENDANCE_EXPAND_WHITELIST);
+
     const filters: Prisma.AttendanceSheetWhereInput = {};
     if (statusCode !== undefined) filters.statusCode = statusCode;
+    if (dateFrom !== undefined || dateTo !== undefined) {
+      filters.submittedAt = {
+        ...(dateFrom !== undefined ? { gte: new Date(dateFrom) } : {}),
+        ...(dateTo !== undefined ? { lte: new Date(dateTo) } : {}),
+      };
+    }
+
+    // activity 关联过滤累加(activityQ + organizationId/includeDescendants 可共存)。
+    const activityWhere: Prisma.ActivityWhereInput = {};
+    if (activityQ !== undefined) {
+      activityWhere.title = { contains: activityQ, mode: 'insensitive' };
+    }
+    if (organizationId !== undefined) {
+      activityWhere.organizationId = includeDescendants
+        ? { in: await this.organizations.queryDescendantOrgIds(organizationId) }
+        : organizationId;
+    }
+    if (Object.keys(activityWhere).length > 0) filters.activity = activityWhere;
+
+    // q:跨 activity(title)+ submitter(username+nickname)全局模糊命中。
+    if (q !== undefined) {
+      filters.OR = [
+        { activity: { title: { contains: q, mode: 'insensitive' } } },
+        { submitter: { username: { contains: q, mode: 'insensitive' } } },
+        { submitter: { nickname: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
+
     const where = notDeletedWhere(filters);
 
     const [rows, total] = await this.prisma.$transaction([
@@ -685,6 +745,16 @@ export class AttendancesService {
       items: rows.map((r) => ({
         ...this.attendancePresenter.toSheetListItemDto(r),
         activityTitle: r.activity?.title ?? null,
+        ...(expandSet.has('activity') && r.activity
+          ? {
+              activity: {
+                id: r.activity.id,
+                title: r.activity.title,
+                startAt: r.activity.startAt,
+                organizationId: r.activity.organizationId,
+              },
+            }
+          : {}),
       })),
       total,
       page,

@@ -5,6 +5,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { parseExpandQuery } from '../../common/dto/expand-query.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -14,6 +15,7 @@ import {
   NOTIFICATION_TYPE_ACTIVITY_REMINDER,
 } from '../notifications/notification.constants';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher';
+import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
@@ -32,6 +34,11 @@ import {
   ListRegistrationsQueryDto,
   RejectRegistrationDto,
 } from './activity-registrations.dto';
+
+// F2/B1(admin-api-fe-integration-roadmap.md §4 B1;D6 拍板):expand 白名单,仅
+// listAllForAdmin(admin/v1/registrations 全局横扫)消费。
+const REGISTRATION_EXPAND_WHITELIST = ['member', 'activity'] as const;
+type RegistrationExpandKey = (typeof REGISTRATION_EXPAND_WHITELIST)[number];
 
 // V2 第一阶段批次 3A activity-registrations service。
 // 详见 docs:
@@ -108,12 +115,26 @@ const registrationListSelect = {
 // 跨轴只读列表 select(2026-06-23):列表精简 select + activity{id,title} 上下文。
 // 跨活动 / 跨队员横扫时 item 脱离 :activityId 路径段,经 Prisma 嵌套关系一次取活动标题(无 N+1);
 // activity.deletedAt 不过滤:FK onDelete=Restrict 保证 activity 行存在,软删态字段仍可读,不暴露 deletedAt。
+// F2/B1(D6 拍板,2026-07-04):member/activity 子 select 扩至 expand 展开所需的最小字段集
+// (member +id+gradeCode;activity +startAt+organizationId)——member/activity 均是既有 Prisma
+// 嵌套关系,一次 JOIN 单查询取回(非二次查询,天然满足 D6"禁 N+1");是否投影进响应完全由
+// toAdminListItemDto 的 expand 参数决定(默认不展开,select 多取的字段不出现在响应里)。
 const registrationAdminListSelect = {
   ...registrationListSelect,
+  member: {
+    select: {
+      id: true,
+      memberNo: true,
+      displayName: true,
+      gradeCode: true,
+    },
+  },
   activity: {
     select: {
       id: true,
       title: true,
+      startAt: true,
+      organizationId: true,
     },
   },
 } as const satisfies Prisma.ActivityRegistrationSelect;
@@ -146,6 +167,9 @@ export class ActivityRegistrationsService {
     // 统一通知 S4(评审稿 §6.4):审批结果定向通知派发器(producer → notifications 单向直调,
     // commit 后事务外、try-catch 永不抛;防环:本服务绝不被通知模块回调)。
     private readonly notificationDispatcher: NotificationDispatcher,
+    // F2/B1(路线图 §4;D7 拍板):供 queryDescendantOrgIds() 只读 helper 展开 includeDescendants
+    // (closure 非判权,镜像 F1/A6 activities.service.ts 用法)。
+    private readonly organizations: OrganizationsService,
   ) {}
 
   // ============ helpers ============
@@ -213,7 +237,12 @@ export class ActivityRegistrationsService {
   }
 
   // 跨轴只读列表项映射(2026-06-23):复用 toListItemDto 同字段集 + activityTitle 上下文。
-  private toAdminListItemDto(row: RegistrationAdminListRow): AdminRegistrationListItemDto {
+  // F2/B1(D6 拍板):expand 参数由调用方显式传入(listAllForAdmin 传解析后的集合;
+  // listForMemberAdmin 恒传空集 —— 本 goal 范围仅 B1/admin/v1/registrations 支持 expand)。
+  private toAdminListItemDto(
+    row: RegistrationAdminListRow,
+    expand: ReadonlySet<RegistrationExpandKey>,
+  ): AdminRegistrationListItemDto {
     return {
       id: row.id,
       activityId: row.activityId,
@@ -226,6 +255,26 @@ export class ActivityRegistrationsService {
       reviewedAt: row.reviewedAt,
       cancelledAt: row.cancelledAt,
       createdAt: row.createdAt,
+      ...(expand.has('member') && row.member
+        ? {
+            member: {
+              id: row.member.id,
+              memberNo: row.member.memberNo,
+              displayName: row.member.displayName,
+              gradeCode: row.member.gradeCode,
+            },
+          }
+        : {}),
+      ...(expand.has('activity') && row.activity
+        ? {
+            activity: {
+              id: row.activity.id,
+              title: row.activity.title,
+              startAt: row.activity.startAt,
+              organizationId: row.activity.organizationId,
+            },
+          }
+        : {}),
     };
   }
 
@@ -431,15 +480,74 @@ export class ActivityRegistrationsService {
   // 2026-06-23 跨轴只读(GET admin/v1/registrations):脱离 :activityId 路径段,按 statusCode
   // 跨所有活动横扫报名(审批工作台「待我审批的」)。判权复用 read 码;item 自带 activity 上下文。
   // 既有 `list(activityId, ...)` 行为零变更——此为新增只读方法,不动旧路径。
+  // F2/B1(admin-api-fe-integration-roadmap.md §4 B1;D1/D6/D7 拍板,2026-07-04):+可选
+  // q/memberQ/activityQ/memberId/activityId/organizationId/includeDescendants/dateFrom/dateTo/
+  // expand。全部省略时行为逐字不变(additive)。
   async listAllForAdmin(
     query: ListRegistrationsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<AdminRegistrationListItemDto>> {
     await this.assertCanOrThrow(currentUser, 'activity-registration.read.record');
 
-    const { page, pageSize, statusCode } = query;
+    const {
+      page,
+      pageSize,
+      statusCode,
+      q,
+      memberQ,
+      activityQ,
+      memberId,
+      activityId,
+      organizationId,
+      includeDescendants,
+      dateFrom,
+      dateTo,
+      expand,
+    } = query;
+    const expandSet = parseExpandQuery(expand, REGISTRATION_EXPAND_WHITELIST);
+
     const filters: Prisma.ActivityRegistrationWhereInput = {};
     if (statusCode !== undefined) filters.statusCode = statusCode;
+    if (memberId !== undefined) filters.memberId = memberId;
+    if (activityId !== undefined) filters.activityId = activityId;
+    if (dateFrom !== undefined || dateTo !== undefined) {
+      filters.registeredAt = {
+        ...(dateFrom !== undefined ? { gte: new Date(dateFrom) } : {}),
+        ...(dateTo !== undefined ? { lte: new Date(dateTo) } : {}),
+      };
+    }
+
+    // activity 关联过滤累加(activityQ + organizationId/includeDescendants 可共存)。
+    const activityWhere: Prisma.ActivityWhereInput = {};
+    if (activityQ !== undefined) {
+      activityWhere.title = { contains: activityQ, mode: 'insensitive' };
+    }
+    if (organizationId !== undefined) {
+      activityWhere.organizationId = includeDescendants
+        ? { in: await this.organizations.queryDescendantOrgIds(organizationId) }
+        : organizationId;
+    }
+    if (Object.keys(activityWhere).length > 0) filters.activity = activityWhere;
+
+    // member 关联过滤(memberQ)。
+    if (memberQ !== undefined) {
+      filters.member = {
+        OR: [
+          { memberNo: { contains: memberQ, mode: 'insensitive' } },
+          { displayName: { contains: memberQ, mode: 'insensitive' } },
+        ],
+      };
+    }
+
+    // q:跨 member(memberNo+displayName)+ activity(title)全局模糊命中。
+    if (q !== undefined) {
+      filters.OR = [
+        { member: { memberNo: { contains: q, mode: 'insensitive' } } },
+        { member: { displayName: { contains: q, mode: 'insensitive' } } },
+        { activity: { title: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
+
     const where = notDeletedWhere(filters);
 
     const [rows, total] = await this.prisma.$transaction([
@@ -454,7 +562,7 @@ export class ActivityRegistrationsService {
     ]);
 
     return {
-      items: rows.map((r) => this.toAdminListItemDto(r)),
+      items: rows.map((r) => this.toAdminListItemDto(r, expandSet)),
       total,
       page,
       pageSize,
@@ -466,6 +574,10 @@ export class ActivityRegistrationsService {
   // 2026-06-23 跨轴只读(GET admin/v1/members/:memberId/registrations):某队员跨活动报名履历
   // (队员 360「活动履历」tab)。镜像 admin-member-insurances 结构 + MEMBER_NOT_FOUND 守卫;
   // 判权复用 read 码;item 自带 activity 上下文。可选 statusCode 过滤。
+  // F2/B1 范围仅覆盖 admin/v1/registrations(listAllForAdmin);本方法不消费 query 内新增的
+  // q/memberQ/activityQ/memberId/activityId/organizationId/includeDescendants/dateFrom/dateTo/
+  // expand 字段(DTO 共享导致的溢出,沿路线图拍板可接受),toAdminListItemDto 恒传空 expand 集,
+  // 响应形状逐字不变。
   async listForMemberAdmin(
     memberId: string,
     query: ListRegistrationsQueryDto,
@@ -496,7 +608,7 @@ export class ActivityRegistrationsService {
     ]);
 
     return {
-      items: rows.map((r) => this.toAdminListItemDto(r)),
+      items: rows.map((r) => this.toAdminListItemDto(r, new Set())),
       total,
       page,
       pageSize,

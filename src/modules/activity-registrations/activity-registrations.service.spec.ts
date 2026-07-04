@@ -6,6 +6,7 @@ import type { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import type { NotificationDispatcher } from '../notifications/notification-dispatcher';
+import type { OrganizationsService } from '../organizations/organizations.service';
 import type { RbacService } from '../permissions/rbac.service';
 import type { AuthzService } from '../authz/authz.service';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
@@ -209,12 +210,23 @@ function makeNotificationDispatcherMock() {
 }
 type NotificationDispatcherMock = ReturnType<typeof makeNotificationDispatcherMock>;
 
+// F2/B1(2026-07-04):listAllForAdmin 新增 organizationId+includeDescendants 注入
+// OrganizationsService.queryDescendantOrgIds();本 spec 不覆盖该分支(归 e2e
+// admin-cross-axis-registrations),mock 仅满足构造器类型,不返回有意义值。
+function makeOrganizationsMock() {
+  return {
+    queryDescendantOrgIds: jest.fn<Promise<string[]>, [string]>().mockResolvedValue([]),
+  };
+}
+type OrganizationsMock = ReturnType<typeof makeOrganizationsMock>;
+
 function makeService(
   prisma: PrismaMock,
   recorder: AuditRecorderMock,
   stateMachine: StateMachineMock,
   dispatcher: NotificationDispatcherMock = makeNotificationDispatcherMock(),
   authz: AuthzMock = makeAuthzMock(),
+  organizations: OrganizationsMock = makeOrganizationsMock(),
 ): ActivityRegistrationsService {
   // stateMachine mock 仅含 decide,结构上可直接赋给 ActivityRegistrationStateMachine,无需断言。
   return new ActivityRegistrationsService(
@@ -225,6 +237,7 @@ function makeService(
     authz as unknown as AuthzService,
     makeInsuranceRequirementMock() as unknown as InsuranceRequirementService,
     dispatcher as unknown as NotificationDispatcher,
+    organizations as unknown as OrganizationsService,
   );
 }
 

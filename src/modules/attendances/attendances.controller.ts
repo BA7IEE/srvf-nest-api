@@ -136,7 +136,7 @@ export class AttendanceSheetsResourceController {
   @Get()
   @ApiOperation({
     summary:
-      '跨活动考勤单据横扫(审批工作台;分页 + 可选 statusCode;脱离 :activityId 路径段;item 带 activity 上下文) [rbac: attendance.read.sheet]',
+      '跨活动考勤单据横扫(审批工作台;分页 + 可选 statusCode/q/activityQ/organizationId/includeDescendants/dateFrom/dateTo/expand=activity;脱离 :activityId 路径段;item 带 activity 上下文) [rbac: attendance.read.sheet]',
   })
   @ApiWrappedPageResponse(AdminAttendanceSheetListItemDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
