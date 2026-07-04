@@ -6,10 +6,14 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
 import {
   CreateMemberDto,
   ListMembersQueryDto,
+  MemberOptionItemDto,
+  MemberOptionsQueryDto,
+  MemberOptionsResponseDto,
   MemberResponseDto,
   UpdateMemberDto,
   UpdateMemberStatusDto,
@@ -38,6 +42,7 @@ export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
+    private readonly organizations: OrganizationsService,
   ) {}
 
   // ============ helpers ============
@@ -120,17 +125,44 @@ export class MembersService {
 
   // ============ list ============
 
+  // F1/A1(D7):organizationId 经 memberOrganizationMemberships 关联过滤(active,任意
+  // membershipType 均计入;沿 position-assignments requireMembership 校验同口径)。
+  // includeDescendants=true 时展开 organizationId 及其全部后代(D7 helper,closure 非判权)。
+  private async buildOrganizationScopeFilter(
+    organizationId: string | undefined,
+    includeDescendants: boolean | undefined,
+  ): Promise<Prisma.MemberWhereInput | undefined> {
+    if (organizationId === undefined) return undefined;
+    const orgIds = includeDescendants
+      ? await this.organizations.queryDescendantOrgIds(organizationId)
+      : [organizationId];
+    return {
+      memberOrganizationMemberships: {
+        some: { organizationId: { in: orgIds }, status: 'ACTIVE', deletedAt: null },
+      },
+    };
+  }
+
   async list(
     query: ListMembersQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<MemberResponseDto>> {
     await this.assertCanOrThrow(currentUser, 'member.read.record');
-    const { page, pageSize, memberNo, gradeCode, status } = query;
+    const { page, pageSize, memberNo, gradeCode, status, q, organizationId, includeDescendants } =
+      query;
 
     const filters: Prisma.MemberWhereInput = {};
     if (memberNo !== undefined) filters.memberNo = memberNo; // 精确匹配(完整字符串相等)
     if (gradeCode !== undefined) filters.gradeCode = gradeCode;
     if (status !== undefined) filters.status = status;
+    if (q !== undefined) {
+      filters.OR = [
+        { displayName: { contains: q, mode: 'insensitive' } },
+        { memberNo: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+    const orgScope = await this.buildOrganizationScopeFilter(organizationId, includeDescendants);
+    if (orgScope !== undefined) Object.assign(filters, orgScope);
 
     const where = notDeletedWhere(filters);
 
@@ -145,6 +177,42 @@ export class MembersService {
       this.prisma.member.count({ where }),
     ]);
     return { items, total, page, pageSize };
+  }
+
+  // ============ F1/A1 选择器(路线图 §4;D2/D3 拍板)============
+
+  // options = list 的轻量投影;复用 member.read.record(D2,不新增权限码)。
+  async options(
+    query: MemberOptionsQueryDto,
+    currentUser: CurrentUserPayload,
+  ): Promise<MemberOptionsResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'member.read.record');
+    const { q, organizationId, includeDescendants, limit } = query;
+
+    const filters: Prisma.MemberWhereInput = {};
+    if (q !== undefined) {
+      filters.OR = [
+        { displayName: { contains: q, mode: 'insensitive' } },
+        { memberNo: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+    const orgScope = await this.buildOrganizationScopeFilter(organizationId, includeDescendants);
+    if (orgScope !== undefined) Object.assign(filters, orgScope);
+
+    const rows = await this.prisma.member.findMany({
+      where: notDeletedWhere(filters),
+      select: memberSafeSelect,
+      orderBy: { createdAt: 'desc' },
+      take: limit ?? 20,
+    });
+
+    const items: MemberOptionItemDto[] = rows.map((r) => ({
+      id: r.id,
+      label: r.displayName,
+      memberNo: r.memberNo,
+      gradeCode: r.gradeCode,
+    }));
+    return { items };
   }
 
   // ============ create ============

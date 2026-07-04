@@ -13,6 +13,9 @@ import {
   ListRbacRolesQueryDto,
   RbacRoleDetailResponseDto,
   RbacRoleResponseDto,
+  RoleOptionItemDto,
+  RoleOptionsQueryDto,
+  RoleOptionsResponseDto,
   UpdateRbacRoleDto,
 } from './rbac-roles.dto';
 import { rbacRoleSelect } from './rbac-roles.select';
@@ -123,6 +126,39 @@ export class RbacRolesService {
       this.prisma.rbacRole.count({ where }),
     ]);
     return { items, total, page, pageSize };
+  }
+
+  // ============ F1/A4 选择器(路线图 §4;D2/D3/D4 拍板)============
+
+  // options = list 的轻量投影;复用 rbac.role.read(D2,不新增权限码)。落 system/v1(D4)。
+  async options(
+    user: CurrentUserPayload,
+    query: RoleOptionsQueryDto,
+  ): Promise<RoleOptionsResponseDto> {
+    await this.assertCanOrThrow(user, 'rbac.role.read');
+    const { q, limit } = query;
+    const filters: Prisma.RbacRoleWhereInput = {};
+    if (q !== undefined) {
+      filters.OR = [
+        { code: { contains: q, mode: 'insensitive' } },
+        { displayName: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+    const where = notDeletedWhere(filters);
+
+    const rows = await this.prisma.rbacRole.findMany({
+      where,
+      select: { id: true, code: true, displayName: true },
+      orderBy: { createdAt: 'desc' },
+      take: limit ?? 20,
+    });
+
+    const items: RoleOptionItemDto[] = rows.map((r) => ({
+      id: r.id,
+      label: r.displayName,
+      code: r.code,
+    }));
+    return { items };
   }
 
   async findOne(user: CurrentUserPayload, id: string): Promise<RbacRoleDetailResponseDto> {

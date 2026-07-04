@@ -394,4 +394,129 @@ describe('members 模块', () => {
       expect(after?.status).toBe(MemberStatus.INACTIVE);
     });
   });
+
+  // ============ F1/A1 搜索 & 选择器(admin-api-fe-integration-roadmap.md §4 A1)============
+
+  describe('list 增强 + GET /options', () => {
+    let rootOrgId: string;
+    let childOrgId: string;
+    let memberInChild: string;
+    let memberOutside: string;
+
+    const createOrg = async (name: string, parentId?: string) => {
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/organizations')
+        .set('Authorization', superAdminAuth)
+        .send({ name, parentId, nodeTypeCode: 'demo-wrong-grade' });
+      expect(res.status).toBe(201);
+      return res.body.data.id as string;
+    };
+
+    beforeAll(async () => {
+      // 自包含:清空 Organization(级联清 memberships/closure),重建根+子两级(D7 includeDescendants 用)。
+      await prisma.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
+      rootOrgId = await createOrg('F1成员搜索根');
+      childOrgId = await createOrg('F1成员搜索子', rootOrgId);
+
+      const inChild = await prisma.member.create({
+        data: { memberNo: 'f1opt-in-child', displayName: 'F1唯一姓名张三XYZ' },
+        select: { id: true },
+      });
+      memberInChild = inChild.id;
+      await prisma.memberOrganizationMembership.create({
+        data: { memberId: memberInChild, organizationId: childOrgId },
+      });
+
+      const outside = await prisma.member.create({
+        data: { memberNo: 'f1opt-outside', displayName: 'F1不在组织内' },
+        select: { id: true },
+      });
+      memberOutside = outside.id;
+    });
+
+    it('list q 跨字段模糊命中 displayName + memberNo', async () => {
+      const byName = await request(httpServer(app))
+        .get('/api/admin/v1/members')
+        .query({ q: '唯一姓名张三XYZ' })
+        .set('Authorization', adminAuth);
+      expect((byName.body.data.items as Array<{ id: string }>).map((i) => i.id)).toEqual([
+        memberInChild,
+      ]);
+
+      const byMemberNo = await request(httpServer(app))
+        .get('/api/admin/v1/members')
+        .query({ q: 'f1opt-in-child' })
+        .set('Authorization', adminAuth);
+      expect((byMemberNo.body.data.items as Array<{ id: string }>).map((i) => i.id)).toEqual([
+        memberInChild,
+      ]);
+    });
+
+    it('list organizationId 过滤(经 active membership 关联),includeDescendants 展开后代', async () => {
+      // 不带 includeDescendants:按 rootOrgId 过滤 → 无人(memberInChild 挂在 childOrgId,非 rootOrgId 本身)
+      const rootOnly = await request(httpServer(app))
+        .get('/api/admin/v1/members')
+        .query({ organizationId: rootOrgId })
+        .set('Authorization', adminAuth);
+      expect((rootOnly.body.data.items as Array<{ id: string }>).map((i) => i.id)).not.toContain(
+        memberInChild,
+      );
+
+      // includeDescendants=true:rootOrgId 展开含 childOrgId → 命中 memberInChild
+      const withDescendants = await request(httpServer(app))
+        .get('/api/admin/v1/members')
+        .query({ organizationId: rootOrgId, includeDescendants: true })
+        .set('Authorization', adminAuth);
+      expect((withDescendants.body.data.items as Array<{ id: string }>).map((i) => i.id)).toContain(
+        memberInChild,
+      );
+      expect(
+        (withDescendants.body.data.items as Array<{ id: string }>).map((i) => i.id),
+      ).not.toContain(memberOutside);
+
+      // 直接按 childOrgId 过滤(无需 includeDescendants)也命中
+      const childDirect = await request(httpServer(app))
+        .get('/api/admin/v1/members')
+        .query({ organizationId: childOrgId })
+        .set('Authorization', adminAuth);
+      expect((childDirect.body.data.items as Array<{ id: string }>).map((i) => i.id)).toEqual([
+        memberInChild,
+      ]);
+    });
+
+    it('GET /options → 200,items 含 {id,label,memberNo,gradeCode},label=displayName', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/members/options')
+        .query({ q: '唯一姓名张三XYZ' })
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(200);
+      expect(Object.keys(res.body.data as object).sort()).toEqual(['items']);
+      expect(res.body.data.items).toEqual([
+        {
+          id: memberInChild,
+          label: 'F1唯一姓名张三XYZ',
+          memberNo: 'f1opt-in-child',
+          gradeCode: null,
+        },
+      ]);
+    });
+
+    it('/options 同样支持 organizationId + includeDescendants', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/members/options')
+        .query({ organizationId: rootOrgId, includeDescendants: true })
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(200);
+      const ids = (res.body.data.items as Array<{ id: string }>).map((i) => i.id);
+      expect(ids).toContain(memberInChild);
+      expect(ids).not.toContain(memberOutside);
+    });
+
+    it('USER 调用 /options → RBAC_FORBIDDEN(复用 member.read.record,D2 不新增码)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/members/options')
+        .set('Authorization', userAuth);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+  });
 });

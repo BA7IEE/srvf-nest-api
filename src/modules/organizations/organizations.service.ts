@@ -18,8 +18,12 @@ import {
   CreateOrganizationDto,
   ListOrganizationsQueryDto,
   MoveOrganizationDto,
+  OrganizationOptionItemDto,
+  OrganizationOptionsQueryDto,
+  OrganizationOptionsResponseDto,
   OrganizationResponseDto,
   OrganizationTreeNodeDto,
+  OrganizationTreeOptionItemDto,
   OrganizationTreeQueryDto,
   UpdateOrganizationDto,
   UpdateOrganizationStatusDto,
@@ -181,12 +185,20 @@ export class OrganizationsService {
 
   // ============ list ============
 
+  // F1/A3(D1):q 跨字段模糊命中 name+code;list/options 共用同一份 OR 子句构造。
+  private buildNameCodeSearchOr(q: string): Prisma.OrganizationWhereInput['OR'] {
+    return [
+      { name: { contains: q, mode: 'insensitive' } },
+      { code: { contains: q, mode: 'insensitive' } },
+    ];
+  }
+
   async list(
     user: CurrentUserPayload,
     query: ListOrganizationsQueryDto,
   ): Promise<PageResultDto<OrganizationResponseDto>> {
     await this.assertCanOrThrow(user, 'org.read.node');
-    const { page, pageSize, parentId, nodeTypeCode, status } = query;
+    const { page, pageSize, parentId, nodeTypeCode, status, q, nameContains, codeContains } = query;
 
     const filters: Prisma.OrganizationWhereInput = {};
     if (parentId !== undefined) {
@@ -195,6 +207,14 @@ export class OrganizationsService {
     }
     if (nodeTypeCode !== undefined) filters.nodeTypeCode = nodeTypeCode;
     if (status !== undefined) filters.status = status;
+    // nameContains/codeContains 精确子串备用(D1)。
+    if (q !== undefined) filters.OR = this.buildNameCodeSearchOr(q);
+    if (nameContains !== undefined) {
+      filters.name = { contains: nameContains, mode: 'insensitive' };
+    }
+    if (codeContains !== undefined) {
+      filters.code = { contains: codeContains, mode: 'insensitive' };
+    }
 
     const where = notDeletedWhere(filters);
 
@@ -569,5 +589,67 @@ export class OrganizationsService {
 
       return updated;
     });
+  }
+
+  // ============ F1/A3 选择器(路线图 §4;D2/D3 拍板)============
+
+  // options = list 的轻量投影;复用 org.read.node(D2,不新增权限码)。
+  async options(
+    user: CurrentUserPayload,
+    query: OrganizationOptionsQueryDto,
+  ): Promise<OrganizationOptionsResponseDto> {
+    await this.assertCanOrThrow(user, 'org.read.node');
+    const { q, nodeTypeCode, status, limit } = query;
+
+    const filters: Prisma.OrganizationWhereInput = {};
+    if (nodeTypeCode !== undefined) filters.nodeTypeCode = nodeTypeCode;
+    if (status !== undefined) filters.status = status;
+    if (q !== undefined) filters.OR = this.buildNameCodeSearchOr(q);
+
+    const rows = await this.prisma.organization.findMany({
+      where: notDeletedWhere(filters),
+      select: organizationSelect,
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+      take: limit ?? 20,
+    });
+
+    const items: OrganizationOptionItemDto[] = rows.map((r) => ({
+      id: r.id,
+      label: r.name,
+      code: r.code,
+      nodeTypeCode: r.nodeTypeCode,
+      parentId: r.parentId,
+    }));
+    return { items };
+  }
+
+  // 整树极简投影(表单级联选择器用);复用 getTree() 的 O(N) 拼装,仅重塑输出字段。
+  // 同码 org.read.node(D2)。
+  async treeOptions(
+    user: CurrentUserPayload,
+    query: OrganizationTreeQueryDto,
+  ): Promise<OrganizationTreeOptionItemDto[]> {
+    const tree = await this.getTree(user, query);
+    const project = (nodes: OrganizationTreeNodeDto[]): OrganizationTreeOptionItemDto[] =>
+      nodes.map((n) => ({
+        id: n.id,
+        label: n.name,
+        code: n.code,
+        children: project(n.children),
+      }));
+    return project(tree);
+  }
+
+  // ============ D7 只读 helper(路线图 §3 D7;冻结 §4 契约)============
+
+  // 给定 orgId,展开该组织及其全部后代组织 id(含自身)。读 organization_closure
+  // WHERE ancestorId = orgId。**纯读、零 schema、仅供列表数据过滤展开,绝不进任何判权路径**
+  // (closure 非 judge;判权路径见 authz/ 模块三源推导,本 helper 与之无关)。
+  async queryDescendantOrgIds(orgId: string): Promise<string[]> {
+    const rows = await this.prisma.organizationClosure.findMany({
+      where: { ancestorId: orgId },
+      select: { descendantId: true },
+    });
+    return rows.map((r) => r.descendantId);
   }
 }

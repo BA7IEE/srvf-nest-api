@@ -15,6 +15,7 @@ import { ActivitiesService } from './activities.service';
 import type { ActivityAuditRecorder } from './activity-audit-recorder';
 import type { ActivityStateDecision } from './activity-state-machine';
 import type { NotificationDispatcher } from '../notifications/notification-dispatcher';
+import type { OrganizationsService } from '../organizations/organizations.service';
 import type { RbacService } from '../permissions/rbac.service';
 import type { AuthzService } from '../authz/authz.service';
 
@@ -229,6 +230,15 @@ function makeNotificationDispatcherMock() {
 }
 type NotificationDispatcherMock = ReturnType<typeof makeNotificationDispatcherMock>;
 
+// F1/A6(路线图 §4;D7 拍板):organizations mock —— 仅 queryDescendantOrgIds 供
+// includeDescendants 展开,既有 characterization 断言零修改(未传 includeDescendants 时不调用)。
+function makeOrganizationsMock() {
+  return {
+    queryDescendantOrgIds: jest.fn<Promise<string[]>, [string]>().mockResolvedValue([]),
+  };
+}
+type OrganizationsMock = ReturnType<typeof makeOrganizationsMock>;
+
 function makeService(
   prisma: PrismaMock,
   opts: {
@@ -236,12 +246,14 @@ function makeService(
     recorder?: RecorderMock;
     dispatcher?: NotificationDispatcherMock;
     authz?: AuthzMock;
+    organizations?: OrganizationsMock;
   } = {},
 ): ActivitiesService {
   const stateMachine = opts.stateMachine ?? makeStateMachineMock(DENY_DECISION);
   const recorder = opts.recorder ?? makeRecorderMock();
   const dispatcher = opts.dispatcher ?? makeNotificationDispatcherMock();
   const authz = opts.authz ?? makeAuthzMock();
+  const organizations = opts.organizations ?? makeOrganizationsMock();
   return new ActivitiesService(
     prisma as unknown as PrismaService,
     stateMachine,
@@ -249,6 +261,7 @@ function makeService(
     makeRbacMock() as unknown as RbacService,
     authz as unknown as AuthzService,
     dispatcher as unknown as NotificationDispatcher,
+    organizations as unknown as OrganizationsService,
   );
 }
 

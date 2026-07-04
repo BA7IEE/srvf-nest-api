@@ -9,6 +9,9 @@ import { PrismaService } from '../../database/prisma.service';
 import { RbacService } from '../permissions/rbac.service';
 import {
   CreatePositionDto,
+  PositionOptionItemDto,
+  PositionOptionsQueryDto,
+  PositionOptionsResponseDto,
   PositionQueryDto,
   PositionResponseDto,
   UpdatePositionDto,
@@ -81,6 +84,39 @@ export class PositionsService {
     ]);
 
     return { items: rows.map((r) => this.toResponseDto(r)), total, page, pageSize };
+  }
+
+  // ============ F1/A5 选择器(路线图 §4;D2/D3 拍板)============
+
+  // options = list 的轻量投影;复用 position.read.definition(D2,不新增权限码)。
+  // 未抽 QueryService(架构映射 §7:options 是窄投影,内联主 service 即可)。
+  async options(
+    user: CurrentUserPayload,
+    query: PositionOptionsQueryDto,
+  ): Promise<PositionOptionsResponseDto> {
+    await this.assertCanOrThrow(user, 'position.read.definition');
+    const { categoryCode, status, q, limit } = query;
+    const filters: Prisma.OrganizationPositionWhereInput = {};
+    if (categoryCode !== undefined) filters.categoryCode = categoryCode;
+    if (status !== undefined) filters.status = status;
+    if (q !== undefined) {
+      filters.name = { contains: q, mode: 'insensitive' };
+    }
+    const where = notDeletedWhere(filters);
+
+    const rows = await this.prisma.organizationPosition.findMany({
+      where,
+      select: { id: true, name: true, categoryCode: true },
+      orderBy: [{ sortOrder: 'asc' }, { rank: 'asc' }, { createdAt: 'asc' }],
+      take: limit ?? 20,
+    });
+
+    const items: PositionOptionItemDto[] = rows.map((r) => ({
+      id: r.id,
+      label: r.name,
+      categoryCode: r.categoryCode,
+    }));
+    return { items };
   }
 
   // ============ findOne ============

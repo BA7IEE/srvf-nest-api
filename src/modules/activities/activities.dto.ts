@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -8,11 +9,18 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
+
+// query boolean 从 GET query string 解析:原始值是字符串 'true'/'false',@Type(() => Boolean)
+// 会用 `Boolean(value)` 转换 —— 任何非空字符串(含 'false')都会变 true,是已知陷阱,
+// 故显式判等而非用 @Type(镜像 members.dto.ts 同名 helper,DTO 文件各自内联不共享)。
+const parseQueryBoolean = ({ value }: { value: unknown }): unknown =>
+  value === true || value === 'true' ? true : value === false || value === 'false' ? false : value;
 
 // V2 第一阶段批次 3A activities 模块 DTO 集合。
 // 详见 docs:
@@ -233,6 +241,13 @@ export class ActivityListItemDto {
 
   @ApiProperty({ description: '更新时间' })
   updatedAt!: Date;
+
+  // F1/A6(路线图 §4;additive):仅 query.includeStats=true 时附带,批量聚合禁 N+1。
+  @ApiPropertyOptional({ description: '报名人数(仅 includeStats=true 时返回)' })
+  registrationCount?: number;
+
+  @ApiPropertyOptional({ description: '考勤单数(仅 includeStats=true 时返回)' })
+  attendanceSheetCount?: number;
 }
 
 // ============ 入参:Create ============
@@ -544,4 +559,97 @@ export class ListActivitiesQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsBoolean()
   isPublicRegistration?: boolean;
+
+  // F1/A6(路线图 §4;D1/D6/D7 拍板):新增可选 q(模糊命中 title)/ dateFrom+dateTo
+  // (按 startAt 区间)/ includeDescendants(配合 organizationId 展开后代)/ includeStats
+  // (默认 false;true 时附带 registrationCount/attendanceSheetCount,批量聚合禁 N+1)。
+  // 旧字段/响应形状不变(additive)。
+  @ApiPropertyOptional({
+    description: '模糊搜索(命中 title;contains + insensitive)',
+    maxLength: 200,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  q?: string;
+
+  @ApiPropertyOptional({ description: '按 startAt 区间过滤(起,ISO8601,含边界)' })
+  @IsOptional()
+  @IsDateString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({ description: '按 startAt 区间过滤(止,ISO8601,含边界)' })
+  @IsOptional()
+  @IsDateString()
+  dateTo?: string;
+
+  @ApiPropertyOptional({
+    description: '配合 organizationId:是否展开其全部后代组织(默认 false)',
+    default: false,
+  })
+  @IsOptional()
+  @Transform(parseQueryBoolean)
+  @IsBoolean()
+  includeDescendants?: boolean;
+
+  @ApiPropertyOptional({
+    description: '是否附带每行统计(registrationCount/attendanceSheetCount;默认 false)',
+    default: false,
+  })
+  @IsOptional()
+  @Transform(parseQueryBoolean)
+  @IsBoolean()
+  includeStats?: boolean;
+}
+
+// ============ F1/A6 选择器(路线图 §4;D2/D3 拍板)============
+
+export class ActivityOptionsQueryDto {
+  @ApiPropertyOptional({ description: '模糊搜索(命中 title)', maxLength: 200 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  q?: string;
+
+  @ApiPropertyOptional({ description: '按活动状态过滤', maxLength: 64 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  statusCode?: string;
+
+  @ApiPropertyOptional({ description: '按承办组织节点 id 过滤', maxLength: 64 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  organizationId?: string;
+
+  @ApiPropertyOptional({ description: '结果条数上限(默认 20,上限 100)', minimum: 1, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
+
+export class ActivityOptionItemDto {
+  @ApiProperty({ description: '主键(cuid)' })
+  id!: string;
+
+  @ApiProperty({ description: '展示标签(= title)' })
+  label!: string;
+
+  @ApiProperty({ description: '开始时间' })
+  startAt!: Date;
+
+  @ApiProperty({ description: '活动状态字典 code' })
+  statusCode!: string;
+}
+
+export class ActivityOptionsResponseDto {
+  @ApiProperty({
+    description: '结果列表(不分页,受 limit 截断)',
+    type: () => [ActivityOptionItemDto],
+  })
+  items!: ActivityOptionItemDto[];
 }

@@ -779,4 +779,114 @@ describe('organizations 模块', () => {
       expect(Number(orphan[0].n)).toBe(0);
     });
   });
+
+  // ============ F1/A3 选择器(admin-api-fe-integration-roadmap.md §4 A3)============
+
+  describe('GET /options + /tree-options 选择器', () => {
+    let rootId: string;
+    let childId: string;
+
+    const createNode = async (name: string, parentId?: string, code?: string) => {
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/organizations')
+        .set('Authorization', superAdminAuth)
+        .send({ name, parentId, nodeTypeCode: activeNodeTypeCode, code });
+      expect(res.status).toBe(201);
+      return res.body.data.id as string;
+    };
+
+    beforeAll(async () => {
+      // 自包含(沿"closure + reparent"块范式):清空 Organization 重建单根 + 一个子节点。
+      await prisma.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
+      rootId = await createNode('F1选择器根', undefined, 'F1ROOT');
+      childId = await createNode('F1选择器子节点唯一名XYZ', rootId, 'F1CHILDXYZ');
+    });
+
+    it('GET /options → 200,items 含 {id,label,code,nodeTypeCode,parentId}', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/organizations/options')
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(200);
+      expect(Object.keys(res.body.data as object).sort()).toEqual(['items']);
+      const item = (res.body.data.items as Array<Record<string, unknown>>).find(
+        (i) => i.id === childId,
+      );
+      expect(item).toEqual({
+        id: childId,
+        label: 'F1选择器子节点唯一名XYZ',
+        code: 'F1CHILDXYZ',
+        nodeTypeCode: activeNodeTypeCode,
+        parentId: rootId,
+      });
+    });
+
+    it('/options 的 q 跨字段模糊命中 name + code', async () => {
+      const byName = await request(httpServer(app))
+        .get('/api/admin/v1/organizations/options')
+        .query({ q: '唯一名XYZ' })
+        .set('Authorization', adminAuth);
+      expect((byName.body.data.items as Array<{ id: string }>).map((i) => i.id)).toEqual([childId]);
+
+      const byCode = await request(httpServer(app))
+        .get('/api/admin/v1/organizations/options')
+        .query({ q: 'F1CHILDXYZ' })
+        .set('Authorization', adminAuth);
+      expect((byCode.body.data.items as Array<{ id: string }>).map((i) => i.id)).toEqual([childId]);
+    });
+
+    it('list 增强:q 命中 + nameContains / codeContains 精确子串', async () => {
+      const q = await request(httpServer(app))
+        .get('/api/admin/v1/organizations')
+        .query({ q: '唯一名XYZ' })
+        .set('Authorization', adminAuth);
+      expect((q.body.data.items as Array<{ id: string }>).map((i) => i.id)).toEqual([childId]);
+
+      const nameContains = await request(httpServer(app))
+        .get('/api/admin/v1/organizations')
+        .query({ nameContains: '唯一名XYZ' })
+        .set('Authorization', adminAuth);
+      expect((nameContains.body.data.items as Array<{ id: string }>).map((i) => i.id)).toEqual([
+        childId,
+      ]);
+
+      const codeContains = await request(httpServer(app))
+        .get('/api/admin/v1/organizations')
+        .query({ codeContains: 'CHILDXYZ' })
+        .set('Authorization', adminAuth);
+      expect((codeContains.body.data.items as Array<{ id: string }>).map((i) => i.id)).toEqual([
+        childId,
+      ]);
+    });
+
+    it('GET /tree-options → 200,树形 {id,label,code,children} 含子节点', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/organizations/tree-options')
+        .set('Authorization', adminAuth);
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      const root = (
+        res.body.data as Array<{ id: string; label: string; code: string; children: unknown[] }>
+      ).find((n) => n.id === rootId);
+      expect(root).toMatchObject({ id: rootId, label: 'F1选择器根', code: 'F1ROOT' });
+      expect(root?.children).toEqual([
+        expect.objectContaining({
+          id: childId,
+          label: 'F1选择器子节点唯一名XYZ',
+          code: 'F1CHILDXYZ',
+        }),
+      ]);
+    });
+
+    it('USER 调用 /options 或 /tree-options → RBAC_FORBIDDEN(复用 org.read.node,D2 不新增码)', async () => {
+      const optionsRes = await request(httpServer(app))
+        .get('/api/admin/v1/organizations/options')
+        .set('Authorization', userAuth);
+      expectBizError(optionsRes, BizCode.RBAC_FORBIDDEN);
+
+      const treeOptionsRes = await request(httpServer(app))
+        .get('/api/admin/v1/organizations/tree-options')
+        .set('Authorization', userAuth);
+      expectBizError(treeOptionsRes, BizCode.RBAC_FORBIDDEN);
+    });
+  });
 });

@@ -21,6 +21,8 @@ import {
   UpdateUserDto,
   UpdateUserRoleDto,
   UpdateUserStatusDto,
+  UserOptionsQueryDto,
+  UserOptionsResponseDto,
   UserResponseDto,
 } from './users.dto';
 import { UsersService } from './users.service';
@@ -60,6 +62,21 @@ export class UsersController {
     @Query() query: ListUsersQueryDto,
   ): Promise<PageResultDto<UserResponseDto>> {
     return this.usersService.list(currentUser, query);
+  }
+
+  // F1/A2(路线图 §4;D2/D3 拍板):选择器投影,必须先于 /:id 定义(specific-before-dynamic)。
+  @Get('options')
+  @ApiOperation({
+    summary:
+      '用户选择器投影(q 模糊 username+nickname+email+phone;canViewUser 可见性裁剪保留) [rbac: user.read.account]',
+  })
+  @ApiWrappedOkResponse(UserOptionsResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  options(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Query() query: UserOptionsQueryDto,
+  ): Promise<UserOptionsResponseDto> {
+    return this.usersService.options(currentUser, query);
   }
 
   @Post()

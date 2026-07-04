@@ -188,6 +188,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/system/v1/permissions/{id}'],
   ['delete', '/api/system/v1/permissions/{id}'],
   ['get', '/api/system/v1/roles'],
+  // F1/A4(admin-api-fe-integration-roadmap.md §4 A4;D4:roles 选择器落 system/v1)。
+  ['get', '/api/system/v1/roles/options'],
   ['post', '/api/system/v1/roles'],
   ['get', '/api/system/v1/roles/{id}'],
   ['patch', '/api/system/v1/roles/{id}'],
@@ -249,6 +251,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 任意登录用户返本人身份 9 字段,不内联角色/权限——权限走 system/v1/rbac/me/permissions)。
   ['get', '/api/admin/v1/me'],
   ['get', '/api/admin/v1/users'],
+  // F1/A2(admin-api-fe-integration-roadmap.md §4 A2)。
+  ['get', '/api/admin/v1/users/options'],
   ['post', '/api/admin/v1/users'],
   ['get', '/api/admin/v1/users/{id}'],
   ['patch', '/api/admin/v1/users/{id}'],
@@ -262,6 +266,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['delete', '/api/admin/v1/users/{id}/wechat'],
   ['get', '/api/admin/v1/organizations'],
   ['get', '/api/admin/v1/organizations/tree'],
+  // F1/A3(admin-api-fe-integration-roadmap.md §4 A3)。
+  ['get', '/api/admin/v1/organizations/options'],
+  ['get', '/api/admin/v1/organizations/tree-options'],
   ['post', '/api/admin/v1/organizations'],
   ['get', '/api/admin/v1/organizations/{id}'],
   ['patch', '/api/admin/v1/organizations/{id}'],
@@ -270,6 +277,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/admin/v1/organizations/{id}/move'],
   ['delete', '/api/admin/v1/organizations/{id}'],
   ['get', '/api/admin/v1/members'],
+  // F1/A1(admin-api-fe-integration-roadmap.md §4 A1)。
+  ['get', '/api/admin/v1/members/options'],
   ['post', '/api/admin/v1/members'],
   ['get', '/api/admin/v1/members/{id}'],
   ['patch', '/api/admin/v1/members/{id}'],
@@ -314,6 +323,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['delete', '/api/admin/v1/team-insurance-policies/{id}/members/{memberId}'],
   ['get', '/api/admin/v1/members/{memberId}/insurances'],
   ['get', '/api/admin/v1/activities'],
+  // F1/A6(admin-api-fe-integration-roadmap.md §4 A6)。
+  ['get', '/api/admin/v1/activities/options'],
   ['post', '/api/admin/v1/activities'],
   ['get', '/api/admin/v1/activities/{id}'],
   ['patch', '/api/admin/v1/activities/{id}'],
@@ -470,6 +481,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   //   (GET 列〔按 nodeTypeCode 过滤〕/ POST 建 / PATCH :id / DELETE :id;GET :id §7.2 未列不实装)。
   //   R 模式 position.*.definition 4 + position-rule.*.record 4,无 @Roles。
   ['get', '/api/admin/v1/positions'],
+  // F1/A5(admin-api-fe-integration-roadmap.md §4 A5)。
+  ['get', '/api/admin/v1/positions/options'],
   ['post', '/api/admin/v1/positions'],
   ['get', '/api/admin/v1/positions/{id}'],
   ['patch', '/api/admin/v1/positions/{id}'],
@@ -520,6 +533,12 @@ const EXPECTED_ROUTES: ReadonlyArray<
   //   R 模式 announcement-import.{preview,execute}.record 2 码,无 @Roles。
   ['post', '/api/admin/v1/announcement-import/preview'],
   ['post', '/api/admin/v1/announcement-import/execute'],
+  // F1「A 组:搜索 & 选择器 + resolve-labels」(2026-07-04;冻结路线图
+  //   admin-api-fe-integration-roadmap.md §4 A7;net-new meta 模块),+1 → 300(连同上方
+  //   6 处 /options·/tree-options 插入共 +8,292→300)。跨资源批量 id→label 解析:POST 入
+  //   { refs: [{type,id}] }(refs≤200),出 {[type]:{[id]:{label,...}}};per-type 读权限
+  //   过滤 + 无权/不存在静默省略(D5)。R 模式 meta.resolve.label 1 码,无 @Roles,无 audit。
+  ['post', '/api/admin/v1/meta/resolve-labels'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。

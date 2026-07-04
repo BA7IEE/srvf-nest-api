@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, Role, SmsPurpose, User, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
-import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
@@ -23,11 +23,15 @@ import type { AppMeWechatDto, BindMyWechatDto } from './dto/app/app-me-wechat.dt
 import {
   ChangeMyPasswordDto,
   CreateUserDto,
+  ListUsersQueryDto,
   ResetUserPasswordDto,
   UpdateMyProfileDto,
   UpdateUserDto,
   UpdateUserRoleDto,
   UpdateUserStatusDto,
+  UserOptionItemDto,
+  UserOptionsQueryDto,
+  UserOptionsResponseDto,
   UserResponseDto,
 } from './users.dto';
 import { canChangeRole, canCreateRole, canManageUser, canViewUser } from './users.policy';
@@ -323,25 +327,45 @@ export class UsersService {
 
   // ============ admin: list ============
 
+  // canViewUser 可见范围求交:role 入参必须落在调用者可见角色集内,否则该过滤条件下
+  // 恒空结果(不报错、不放宽 —— 沿本方法既有可见性裁剪红线,F1 新增过滤严禁绕过)。
+  private effectiveVisibleRoles(currentUser: CurrentUserPayload, role?: Role): Role[] {
+    const visibleRoles = (Object.values(Role) as Role[]).filter((r) =>
+      canViewUser(currentUser.role, r),
+    );
+    if (role === undefined) return visibleRoles;
+    return visibleRoles.includes(role) ? [role] : [];
+  }
+
+  private buildSearchOr(q: string): Prisma.UserWhereInput['OR'] {
+    return [
+      { username: { contains: q, mode: 'insensitive' } },
+      { nickname: { contains: q, mode: 'insensitive' } },
+      { email: { contains: q, mode: 'insensitive' } },
+      { phone: { contains: q, mode: 'insensitive' } },
+    ];
+  }
+
   async list(
     currentUser: CurrentUserPayload,
-    query: PaginationQueryDto,
+    query: ListUsersQueryDto,
   ): Promise<PageResultDto<UserResponseDto>> {
     await this.assertCanOrThrow(currentUser, 'user.read.account');
-    const { page, pageSize } = query;
+    const { page, pageSize, q, role, status, memberId } = query;
     const where: Prisma.UserWhereInput = this.notDeletedWhere({});
 
     // 列表可见范围由 users.policy.canViewUser 统一定义:
     //   SUPER_ADMIN 可看 SUPER_ADMIN/ADMIN/USER,ADMIN 仅可看 USER。
     // 把允许看到的角色压成 IN 子句喂给 Prisma,避免在 service 里再写一次角色 if-else。
-    const visibleRoles = (Object.values(Role) as Role[]).filter((r) =>
-      canViewUser(currentUser.role, r),
-    );
-    if (visibleRoles.length === 0) {
+    const visibleRoles = this.effectiveVisibleRoles(currentUser, role);
+    if (visibleRoles.length === 0 && role === undefined) {
       // defensive,Guard 已拦截非 SUPER_ADMIN/ADMIN
       throw new BizException(BizCode.FORBIDDEN);
     }
     where.role = { in: visibleRoles };
+    if (status !== undefined) where.status = status;
+    if (memberId !== undefined) where.memberId = memberId;
+    if (q !== undefined) where.OR = this.buildSearchOr(q);
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({
@@ -355,6 +379,36 @@ export class UsersService {
     ]);
 
     return { items, total, page, pageSize };
+  }
+
+  // ============ F1/A2 选择器(路线图 §4;D2/D3 拍板)============
+
+  // options = list 的轻量投影;复用 user.read.account(D2,不新增权限码);
+  // canViewUser 可见性裁剪同 list 保留(防止 ADMIN 经选择器枚举到不可见角色的账号)。
+  async options(
+    currentUser: CurrentUserPayload,
+    query: UserOptionsQueryDto,
+  ): Promise<UserOptionsResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'user.read.account');
+    const { q, limit } = query;
+    const where: Prisma.UserWhereInput = this.notDeletedWhere({
+      role: { in: this.effectiveVisibleRoles(currentUser) },
+    });
+    if (q !== undefined) where.OR = this.buildSearchOr(q);
+
+    const rows = await this.prisma.user.findMany({
+      where,
+      select: { id: true, username: true, nickname: true },
+      orderBy: { createdAt: 'desc' },
+      take: limit ?? 20,
+    });
+
+    const items: UserOptionItemDto[] = rows.map((r) => ({
+      id: r.id,
+      label: r.nickname ?? r.username,
+      username: r.username,
+    }));
+    return { items };
   }
 
   // ============ admin: create ============

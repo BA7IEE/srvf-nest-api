@@ -16,6 +16,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   ActivityListItemDto,
+  ActivityOptionsQueryDto,
+  ActivityOptionsResponseDto,
   ActivityResponseDto,
   CancelActivityDto,
   CreateActivityDto,
@@ -64,6 +66,21 @@ export class ActivitiesController {
     @CurrentUser() currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<ActivityListItemDto>> {
     return this.service.list(query, currentUser);
+  }
+
+  // F1/A6(路线图 §4;D2/D3 拍板):选择器投影,必须先于 /:id 定义(specific-before-dynamic)。
+  // 无码仅登录(镜像 list/findOne 现状;RBAC_MAP §2.4 BD-3 已决 won't-do 新增 activity.read.* 码)。
+  @Get('options')
+  @ApiOperation({
+    summary: '活动选择器投影(q 模糊 title;USER 强制只见 published/completed) [auth]',
+  })
+  @ApiWrappedOkResponse(ActivityOptionsResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED)
+  options(
+    @Query() query: ActivityOptionsQueryDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ): Promise<ActivityOptionsResponseDto> {
+    return this.service.options(query, currentUser);
   }
 
   @Post()

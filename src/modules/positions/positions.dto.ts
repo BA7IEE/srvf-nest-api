@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PolicyStatus, PositionCategory } from '@prisma/client';
+import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsEnum,
@@ -7,6 +8,7 @@ import {
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
   Min,
   MinLength,
@@ -206,4 +208,51 @@ export class PositionQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsEnum(PolicyStatus)
   status?: PolicyStatus;
+}
+
+// ============ F1/A5 选择器(路线图 §4;D2/D3 拍板)============
+
+export class PositionOptionsQueryDto {
+  @ApiPropertyOptional({ description: '按职务类别过滤', enum: PositionCategory })
+  @IsOptional()
+  @IsEnum(PositionCategory)
+  categoryCode?: PositionCategory;
+
+  @ApiPropertyOptional({ description: '按状态过滤', enum: PolicyStatus })
+  @IsOptional()
+  @IsEnum(PolicyStatus)
+  status?: PolicyStatus;
+
+  @ApiPropertyOptional({ description: '模糊搜索(命中 name)', maxLength: 100 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({ description: '结果条数上限(默认 20,上限 100)', minimum: 1, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
+
+export class PositionOptionItemDto {
+  @ApiProperty({ description: '主键(cuid)' })
+  id!: string;
+
+  @ApiProperty({ description: '展示标签(= name)' })
+  label!: string;
+
+  @ApiProperty({ description: '职务类别', enum: PositionCategory })
+  categoryCode!: PositionCategory;
+}
+
+export class PositionOptionsResponseDto {
+  @ApiProperty({
+    description: '结果列表(不分页,受 limit 截断)',
+    type: () => [PositionOptionItemDto],
+  })
+  items!: PositionOptionItemDto[];
 }

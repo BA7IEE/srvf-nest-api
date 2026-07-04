@@ -1,13 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role, UserStatus } from '@prisma/client';
+import { Type } from 'class-transformer';
 import {
   IsEmail,
   IsEnum,
+  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
   ValidateIf,
 } from 'class-validator';
@@ -215,5 +219,69 @@ export class UpdateUserStatusDto {
   status!: UserStatus;
 }
 
-// v1 不引入 q / role / status 过滤,仅继承分页参数。
-export class ListUsersQueryDto extends PaginationQueryDto {}
+// F1/A2(路线图 §4;D1 拍板):新增可选 q(模糊命中 username+nickname+email+phone)/
+// role / status / memberId。canViewUser 可见性裁剪保留(service 层 AND 叠加,不放宽)。
+// 旧字段(空)/响应形状不变(additive)。
+export class ListUsersQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({
+    description: '模糊搜索(跨字段命中 username + nickname + email + phone)',
+    maxLength: 100,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({ description: '按内置角色过滤', enum: Role })
+  @IsOptional()
+  @IsEnum(Role)
+  role?: Role;
+
+  @ApiPropertyOptional({ description: '按账号状态过滤', enum: UserStatus })
+  @IsOptional()
+  @IsEnum(UserStatus)
+  status?: UserStatus;
+
+  @ApiPropertyOptional({ description: '按绑定的 member id 过滤', maxLength: 64 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  memberId?: string;
+}
+
+// ============ F1/A2 选择器(路线图 §4;D2/D3 拍板)============
+
+export class UserOptionsQueryDto {
+  @ApiPropertyOptional({
+    description: '模糊搜索(跨字段命中 username + nickname + email + phone)',
+    maxLength: 100,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({ description: '结果条数上限(默认 20,上限 100)', minimum: 1, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
+
+export class UserOptionItemDto {
+  @ApiProperty({ description: '主键(cuid)' })
+  id!: string;
+
+  @ApiProperty({ description: '展示标签(= nickname || username)' })
+  label!: string;
+
+  @ApiProperty({ description: '用户名' })
+  username!: string;
+}
+
+export class UserOptionsResponseDto {
+  @ApiProperty({ description: '结果列表(不分页,受 limit 截断)', type: () => [UserOptionItemDto] })
+  items!: UserOptionItemDto[];
+}

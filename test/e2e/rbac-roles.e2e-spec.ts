@@ -192,6 +192,59 @@ describe('rbac-roles 模块', () => {
     });
   });
 
+  // ============ F1/A4 选择器(admin-api-fe-integration-roadmap.md §4 A4;D4:落 system/v1)============
+
+  describe('GET /options 选择器投影', () => {
+    beforeAll(async () => {
+      await prisma.rbacRole.createMany({
+        data: [
+          { code: 'f1opt-role-a', displayName: 'F1选择器角色甲' },
+          { code: 'f1opt-role-b', displayName: 'F1选择器角色乙' },
+          { code: 'f1opt-softdel', displayName: 'F1已软删角色', deletedAt: new Date() },
+        ],
+      });
+    });
+
+    it('SUPER_ADMIN → 200,items 含 {id,label,code},label=displayName,排除软删', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/system/v1/roles/options')
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      expect(Object.keys(res.body.data as object).sort()).toEqual(['items']);
+      const items: Array<{ id: string; label: string; code: string }> = res.body.data.items;
+      const codes = items.map((i) => i.code);
+      expect(codes).toContain('f1opt-role-a');
+      expect(codes).not.toContain('f1opt-softdel');
+      const found = items.find((i) => i.code === 'f1opt-role-a');
+      expect(found).toMatchObject({ label: 'F1选择器角色甲', code: 'f1opt-role-a' });
+    });
+
+    it('q 模糊命中 code + displayName', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/system/v1/roles/options')
+        .query({ q: 'f1opt-role' })
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      const codes = (res.body.data.items as Array<{ code: string }>).map((i) => i.code);
+      expect(codes).toEqual(expect.arrayContaining(['f1opt-role-a', 'f1opt-role-b']));
+
+      const byDisplayName = await request(httpServer(app))
+        .get('/api/system/v1/roles/options')
+        .query({ q: '选择器角色甲' })
+        .set('Authorization', superAdminAuth);
+      expect((byDisplayName.body.data.items as Array<{ code: string }>).map((i) => i.code)).toEqual(
+        ['f1opt-role-a'],
+      );
+    });
+
+    it('USER 调用 → RBAC_FORBIDDEN(复用 rbac.role.read,D2 不新增码)', async () => {
+      const res = await request(httpServer(app))
+        .get('/api/system/v1/roles/options')
+        .set('Authorization', userAuth);
+      expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+  });
+
   // ============ detail ============
 
   describe('detail GET /api/system/v1/roles/:id', () => {

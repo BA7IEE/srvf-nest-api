@@ -73,30 +73,31 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。判权唯一服务入口 = `RbacService.can()`;`RbacCacheService` 是权限解析缓存(TTL 1800s,三档失效),不是身份缓存。
 
-## 2. controller × 鉴权模式对照(63 个 controller class)
+## 2. controller × 鉴权模式对照(64 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
 | controller(路径前缀) | 权限码域 |
 |---|---|
 | `system/v1/permissions` | `rbac.permission.*`(4) |
-| `system/v1/roles` | `rbac.role.*`(4) |
+| `system/v1/roles` | `rbac.role.*`(4;F1/A4 新增 `GET /options` 选择器投影,复用 `rbac.role.read`,D4 拍板落 system/v1 而非 admin/v1) |
 | `system/v1/roles/:id/permissions` | `rbac.role-permission.*`(2) |
 | `system/v1/users/:userId/roles` | `rbac.user-role.*`(3) |
 | `system/v1/rbac`(reload) | `rbac.config.reload`(1);`GET me/permissions` 仅登录(方法级 Mixed 存量) |
-| `admin/v1/users` | `user.*`(9;其中 `user.update.role` 不绑 ops-admin,仅 SA 短路 = D1=A 拍板;`user.phone.clear` 为 SMS T3 清号端点;`user.wechat.clear` 为 WECHAT T3 清除端点)|
+| `admin/v1/users` | `user.*`(9;其中 `user.update.role` 不绑 ops-admin,仅 SA 短路 = D1=A 拍板;`user.phone.clear` 为 SMS T3 清号端点;`user.wechat.clear` 为 WECHAT T3 清除端点;F1/A2 新增 `GET /options` 选择器投影 + list 增强 `q`/`role`/`status`/`memberId`,均复用 `user.read.account`,canViewUser 可见性裁剪保留)|
 | `system/v1/audit-logs` | `audit-log.read.entry`(1) |
 | `system/v1/dict-types` + `dict-items` | `dict.*.type` / `dict.*.item`(8) |
-| `admin/v1/organizations` | `org.*.node`(4) |
+| `admin/v1/organizations` | `org.*.node`(4;F1/A3 新增 `GET /options` + `GET /tree-options` 选择器投影 + list 增强 `q`/`nameContains`/`codeContains`,均复用 `org.read.node`;新增只读 helper `queryDescendantOrgIds()` 供 members/activities 的 `includeDescendants` 复用,D7 拍板——**closure 非判权,仅列表数据过滤**)|
 | `admin/v1/members/:id/department` | `member-department.*.current`(3;deprecated,重指向 PRIMARY membership)|
 | `admin/v1/members/:memberId/memberships` | `membership.{list,set,end}.record`(3 端点用码;`read.record` 预留孤码;终态 scoped-authz PR2)|
-| `admin/v1/positions`(职务定义 PR3) | `position.*.definition`(4;list/detail 共用 read;删除守卫职务被规则引用禁删 32003)|
+| `admin/v1/positions`(职务定义 PR3) | `position.*.definition`(4;list/detail 共用 read;删除守卫职务被规则引用禁删 32003;F1/A5 新增 `GET /options` 选择器投影,复用 `position.read.definition`)|
 | `admin/v1/position-rules`(职务规则 PR3) | `position-rule.*.record`(4;list 按 nodeTypeCode 过滤;nodeTypeCode 校验 node_type 字典有效)|
 | `admin/v1/*` 任职双轴(任职 PR4;单 `PositionAssignmentsController` 跨 org/member/flat 3 根) | `position-assignment.{read,create,revoke}.record` + `.read.history`(4;双轴读共用 read.record;任命 5 校验;撤销;历史链;**绝不进判权路径**)|
 | `admin/v1/*` 分管(分管 PR5;单 `SupervisionAssignmentsController` 跨 flat/member/org 3 根) | `supervision-assignment.{read,create,update,revoke}.record`(4;三读端点〔列/某人分管范围/某组织被谁分管〕共用 read.record;分管与职务正交、create 不要求持职务;scope/supervisors 读 closure 仅展示;**绝不进判权路径**)|
 | `admin/v1/role-bindings[/:id]` 角色绑定(RoleBinding PR6;单 `RoleBindingsController`) | `role-binding.{read,create,update,delete}.record`(4;列/建 + 改/软删;principal × role × scope × 任期;UserRole→global RoleBinding 无损升级 = **判权唯一读源**,RbacService 只读 GLOBAL;**scoped 各型入库即止、绝不进判权路径**,判权是 PR8)|
 | `admin/v1/authz/explain` 权限解释(PR10;`AuthzController` = authz 模块第一个 controller) | `authz.explain.decision`(1;POST 诊断读:目标用户 × action × 可选 resourceRef → 200 返 `{targetUser, decision}`;**deny 是数据非错误**〔resource_not_found 亦 decision reason〕;目标不存在/软删 10001;入参白名单不过通用 400;matchedGrant 内部 id 原样返 ops-admin 面可见;无 audit)|
 | `admin/v1/announcement-import/{preview,execute}` 公告导入(PR11;`AnnouncementImportController`) | `announcement-import.{preview,execute}.record`(2;preview 零写入逐行诊断/execute 幂等落库;组织行 nodeType 恒 `group`;双锚铁律 execute 无 memberNo 即拒;只做锚定解析+编排,任命 5 校验/分管校验/closure/audit 全部只存在于被复用的 `OrganizationsService`/`PositionAssignmentsService`/`SupervisionAssignmentsService`)|
+| `admin/v1/meta/resolve-labels`(F1/A7;net-new `MetaController`) | `meta.resolve.label`(1;POST 批量 id→label 诊断读:入 `{refs:[{type,id}]}`〔type 白名单闭集 member/user/organization/role/position/activity,refs≤200〕,出 `{[type]:{[id]:{label,...}}}`;两层权限——入口码门控"能否调用本工具"〔绑 ops-admin〕+ per-type 复用各资源既有 `.read.*` 码〔D2〕门控"能解析哪些 type"〔activity 无码,镜像 list/findOne `[auth]` 现状〕;无权 type / 不存在 id 静默省略,不报错,不进判权路径;无 audit)|
 | `system/v1/contribution-rules` | `contribution.*.rule`(4) |
 | `system/v1/attachment-{type,mime,size-limit}-configs` | `attachment-config.*`(12) |
 | `system/v1/storage-settings` | `storage-setting.*`(3;`reset.credentials` 不绑 ops-admin = D2=A 拍板) |
@@ -105,11 +106,11 @@
 | `system/v1/wechat-settings` | `wechat-setting.*`(3;`reset.credentials` 不绑 ops-admin,镜像 D2=A;WECHAT T2)|
 | `system/v1/realname-settings` | `realname-setting.*`(3;`reset.credentials` 不绑 ops-admin,镜像 D2=A;招新 T2)|
 | `admin/v1/attachments`(业务面首批) | `attachment.*`(20:member/certificate 各 8 含 `.self`/`.other`,activity 4) |
-| `admin/v1/members`(Slow-4 T2) | `member.*`(5;DELETE = `member.delete.record` 仅 SA 短路不绑 biz-admin) |
+| `admin/v1/members`(Slow-4 T2) | `member.*`(5;DELETE = `member.delete.record` 仅 SA 短路不绑 biz-admin;F1/A1 新增 `GET /options` 选择器投影 + list 增强 `q`/`organizationId`/`includeDescendants`,均复用 `member.read.record`;`organizationId` 经 `memberOrganizationMemberships` 关联过滤,`includeDescendants` 复用 organizations 模块 `queryDescendantOrgIds()`)|
 | `admin/v1/members/:memberId/profile`(Slow-4 T2) | `member-profile.*.record`(3) |
 | `admin/v1/members/:memberId/emergency-contacts`(Slow-4 T2) | `emergency-contact.*.record`(4) |
 | `admin/v1/members/:memberId/certificates`(Slow-4 T2) | `certificate.*.record`(6;list/detail/qualification-flag 共用 read) |
-| `admin/v1/activities`(Slow-4 T3) | `activity.*.record`(5,仅 5 个写端点;**列表/详情无码仅登录 `[auth]`**) |
+| `admin/v1/activities`(Slow-4 T3) | `activity.*.record`(5,仅 5 个写端点;**列表/详情无码仅登录 `[auth]`**;F1/A6 新增 `GET /options` 选择器投影,同样 `[auth]`——RBAC_MAP §5 已决「BD-3 两候选码 won't-do」不新增 `activity.read.*`,options 沿 list/detail 现状不新增码;list 增强 `q`/`dateFrom`/`dateTo`/`includeDescendants`/`includeStats`〔批量 groupBy 聚合 registrationCount/attendanceSheetCount,禁 N+1〕) |
 | `admin/v1/activities/:activityId/registrations`(Slow-4 T3) | `activity-registration.*.record`(5;list/export 共用 read) |
 | `admin/v1/registrations`(跨轴只读 2026-06-23) | `activity-registration.read.record`(1;跨活动报名横扫,审批工作台,复用 read 零新码) |
 | `admin/v1/members/:memberId/registrations`(跨轴只读 2026-06-23) | `activity-registration.read.record`(1;某队员报名履历,队员 360,复用 read;MEMBER_NOT_FOUND 守卫) |
@@ -147,7 +148,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(191 条,seed 幂等 upsert)
+## 3. 权限码全集(192 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -163,6 +164,7 @@
 | 角色绑定(终态 scoped-authz PR6) | 4 | `role-binding.{read,create,update,delete}.record`(带 scope 的角色绑定 CRUD;全绑 ops-admin;**UserRole→global RoleBinding 无损升级 = 判权唯一读源,RbacService 只读 GLOBAL;scoped 各型入库即止、绝不进判权路径**,判权是 PR8)|
 | 权限解释(终态 scoped-authz PR10) | 1 | `authz.explain.decision`(`POST admin/v1/authz/explain` 调用者判权码;绑 ops-admin;**explain 是 AuthzService 的只读诊断出口,不改判权语义;deny 是 200 数据非错误**)|
 | 公告导入(终态 scoped-authz PR11) | 2 | `announcement-import.{preview,execute}.record`(`POST admin/v1/announcement-import/{preview,execute}`;全绑 ops-admin;**preview 零写入靠三个被复用 service `create()` 新增的 `{dryRun?}` 沙箱哨兵参数,不是另起只读校验;execute 幂等可重跑;双锚铁律 R7,不按姓名自动落库**)|
+| 批量解析(F1「A 组」) | 1 | `meta.resolve.label`(`POST admin/v1/meta/resolve-labels`;绑 ops-admin;入口码门控"能否调用本工具",per-type 实际可读范围仍由各资源既有 `.read.*` 码另行过滤——两层权限互不替代)|
 | 贡献规则 | 4 | `contribution.{read,create,update,delete}.rule` |
 | 附件配置 | 12 | `attachment-config.{read,create,update,delete}.{type,mime,size-limit}` |
 | 存储设置 | 3 | `storage-setting.{read,update}.singleton` / `storage-setting.reset.credentials` |
@@ -192,7 +194,7 @@
 | 统一通知 S2 微信订阅 quota 渠道(2026-06-25) | 1 | `notification.update.template`(`admin/v1/notification-wechat-templates` upsert;微信模板配置写权,运营可配 D-N3;读复用 `notification.read.record`;app 订阅 ack/status 零码 = canUseApp 闸;全绑 biz-admin;**实装即用 0 孤码**)|
 | 统一通知 S5 短信兜底渠道(2026-06-27) | 1 | `notification.send.sms`(`admin/v1/notifications/:id/send-sms`;显式发起短信兜底〔紧急召集〕成本动作单独 gating,计费确认必需 confirmed=true;全绑 biz-admin;**实装即用 0 孤码**)|
 
-内置角色:`ops-admin`(绑 91 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**;终态 scoped-authz PR1 `org.move.node` 绑入 63→64,PR2 `membership.{list,read,set,end}.record` 4 码绑入 64→68,PR3-PR6 职务定义/规则/任职/分管/角色绑定 20 码绑入 68→88,PR10 `authz.explain.decision` 绑入 88→89,PR11 `announcement-import.{preview,execute}.record` 2 码绑入 89→91)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新一/二/三期入队 + 招新闭环 S3 + CMS content + 统一通知 S1/S2/S5,绑 **72** 条 = 75 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕+ `attendance.final-{approve,reject}.sheet`〔2026-07-03 摘码微刀:终审 = attendance-final-reviewer scoped 绑定或 SUPER_ADMIN 兜底,码保留不删〕;attachment 存量 20 码〔member/certificate/activity〕不绑,CMS content-* 4 码 + notification 7 码〔S1 5 + S2 `update.template` 1 + S5 `send.sms` 1〕绑入〔α / 统一通知 S1 §9.2 + S2 §9.2 + S5 §9.2;演进 Slow-4 §6「biz-admin 不含 attachment.* 码」不变式 = 仅含 CMS content-* 4 码〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。终态 scoped-authz PR7(2026-07-01)另 seed **3 个纯定义角色(零 user 持有,PR8 才由职务/分管推导;绝不进当前判权)**:`org-admin`(绑 56 = biz-admin 72〔2026-07-03 摘码后已不含终审两码,派生排除项转防御性 no-op〕过滤敏感 1 + recruitment-* 8 + team-join-* 7;职务 policy 目标:team-leader/dept-leader)+ `group-manager`(绑 22,本组资料/内容/考勤一级;职务 policy 目标:group-leader)+ `org-supervisor`(绑 4,BD-3 只读定稿;分管推导用,非职务 policy 目标)。终态 scoped-authz PR9(2026-07-02)另 seed **第 7 角色 `attendance-final-reviewer`**(考勤终审员;绑 **3** 条既有码 `attendance.{read,final-approve,final-reject}.sheet`,0 新码;**零持有、零 policy 行,终审绝不随职务推导** —— 终审身份 = 显式 RoleBinding〔标准形态 POSITION_ASSIGNMENT 主体 + ORGANIZATION_TREE@root,换届撤任职即失权〕,生产绑定待 PR11 公告导入后运营挂;biz-admin 终审两码 B 方案保留至 **2026-07-03 摘码微刀摘除**〔§5 挂账已关闭,终审权只归本角色 scoped 绑定 + SA 兜底〕)。seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN,其余无"代码用码未 seed"。
+内置角色:`ops-admin`(绑 92 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**;终态 scoped-authz PR1 `org.move.node` 绑入 63→64,PR2 `membership.{list,read,set,end}.record` 4 码绑入 64→68,PR3-PR6 职务定义/规则/任职/分管/角色绑定 20 码绑入 68→88,PR10 `authz.explain.decision` 绑入 88→89,PR11 `announcement-import.{preview,execute}.record` 2 码绑入 89→91,F1「A 组」`meta.resolve.label` 1 码绑入 91→92)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新一/二/三期入队 + 招新闭环 S3 + CMS content + 统一通知 S1/S2/S5,绑 **72** 条 = 75 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕+ `attendance.final-{approve,reject}.sheet`〔2026-07-03 摘码微刀:终审 = attendance-final-reviewer scoped 绑定或 SUPER_ADMIN 兜底,码保留不删〕;attachment 存量 20 码〔member/certificate/activity〕不绑,CMS content-* 4 码 + notification 7 码〔S1 5 + S2 `update.template` 1 + S5 `send.sms` 1〕绑入〔α / 统一通知 S1 §9.2 + S2 §9.2 + S5 §9.2;演进 Slow-4 §6「biz-admin 不含 attachment.* 码」不变式 = 仅含 CMS content-* 4 码〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。终态 scoped-authz PR7(2026-07-01)另 seed **3 个纯定义角色(零 user 持有,PR8 才由职务/分管推导;绝不进当前判权)**:`org-admin`(绑 56 = biz-admin 72〔2026-07-03 摘码后已不含终审两码,派生排除项转防御性 no-op〕过滤敏感 1 + recruitment-* 8 + team-join-* 7;职务 policy 目标:team-leader/dept-leader)+ `group-manager`(绑 22,本组资料/内容/考勤一级;职务 policy 目标:group-leader)+ `org-supervisor`(绑 4,BD-3 只读定稿;分管推导用,非职务 policy 目标)。终态 scoped-authz PR9(2026-07-02)另 seed **第 7 角色 `attendance-final-reviewer`**(考勤终审员;绑 **3** 条既有码 `attendance.{read,final-approve,final-reject}.sheet`,0 新码;**零持有、零 policy 行,终审绝不随职务推导** —— 终审身份 = 显式 RoleBinding〔标准形态 POSITION_ASSIGNMENT 主体 + ORGANIZATION_TREE@root,换届撤任职即失权〕,生产绑定待 PR11 公告导入后运营挂;biz-admin 终审两码 B 方案保留至 **2026-07-03 摘码微刀摘除**〔§5 挂账已关闭,终审权只归本角色 scoped 绑定 + SA 兜底〕)。seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN,其余无"代码用码未 seed"。
 
 ## 4. 保护不变式(改 users / permissions 前必读)
 
