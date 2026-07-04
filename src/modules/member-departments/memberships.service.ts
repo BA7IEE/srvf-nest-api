@@ -1,14 +1,39 @@
 import { Injectable } from '@nestjs/common';
-import { MemberStatus, MembershipStatus, OrganizationStatus, Prisma } from '@prisma/client';
+import {
+  MemberStatus,
+  MembershipStatus,
+  MembershipType,
+  OrganizationStatus,
+  Prisma,
+} from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import type { PageResultDto } from '../../common/dto/pagination.dto';
+import { parseExpandQuery } from '../../common/dto/expand-query.util';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import type { MemberOptionsResponseDto } from '../members/members.dto';
+import { MembersService } from '../members/members.service';
+import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
-import { CreateMembershipDto, MembershipResponseDto, UpdateMembershipDto } from './memberships.dto';
+import {
+  CreateMembershipDto,
+  MEMBERSHIP_EXPAND_TOKENS,
+  MembershipConflictItemDto,
+  MembershipConflictsQueryDto,
+  MembershipConflictsResponseDto,
+  MembershipExpandedMemberDto,
+  MembershipExpandedOrganizationDto,
+  MembershipResponseDto,
+  OrgMembersOptionsQueryDto,
+  OrgMembershipsQueryDto,
+  PageMembershipsQueryDto,
+  TransferMembershipDto,
+  UpdateMembershipDto,
+} from './memberships.dto';
 
 // 终态 scoped-authz PR2(2026-07-01;冻结稿 §3.1 / §7.1):组织归属(memberships)管理面。
 // 沿队员轴嵌套 admin/v1/members/:memberId/memberships;判权单轨 service 层 rbac.can(0 @Roles)。
@@ -48,6 +73,10 @@ export class MembershipsService {
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
+    // F4/D 组(2026-07-04):organizations 注入仅用 queryDescendantOrgIds()(D7 只读 helper,
+    // closure 仅列表数据过滤非判权);members 注入仅用 options()(F1/A1 选择器投影,组织轴 sugar 复用)。
+    private readonly organizations: OrganizationsService,
+    private readonly members: MembersService,
   ) {}
 
   // ============ helpers(自包含;沿 member-departments 范式,不抽共享类)============
@@ -247,6 +276,358 @@ export class MembershipsService {
       });
 
       return updated;
+    });
+  }
+
+  // ============ F4/D 组(2026-07-04;路线图 §4)以下为扁平/组织轴增强面 ============
+
+  // organizationId(±includeDescendants)→ 组织 id 过滤集(undefined = 不过滤)。
+  // closure 展开走 OrganizationsService.queryDescendantOrgIds(D7 只读 helper,绝不进判权路径)。
+  private async buildOrgScopeIds(
+    organizationId: string | undefined,
+    includeDescendants: boolean | undefined,
+  ): Promise<string[] | undefined> {
+    if (organizationId === undefined) return undefined;
+    if (includeDescendants !== true) return [organizationId];
+    return this.organizations.queryDescendantOrgIds(organizationId);
+  }
+
+  // ============ F4:GET /api/admin/v1/memberships(分页总表) ============
+
+  // 全库归属分页(缺省含 ENDED/SUSPENDED 历史,不含软删行;status 显式过滤可收窄)。
+  // q 命中队员 memberNo+displayName + 组织 name+code(relation 过滤,单查询);
+  // expand=member,organization(D6 约定:缺省不展开,响应形状与队员轴端点一致)。仅展示,不判权。
+  async page(
+    user: CurrentUserPayload,
+    query: PageMembershipsQueryDto,
+  ): Promise<PageResultDto<MembershipResponseDto>> {
+    await this.assertCanOrThrow(user, 'membership.list.record');
+    const expand = parseExpandQuery(query.expand, MEMBERSHIP_EXPAND_TOKENS);
+
+    const where: Prisma.MemberOrganizationMembershipWhereInput = { deletedAt: null };
+    if (query.memberId !== undefined) where.memberId = query.memberId;
+    const orgScope = await this.buildOrgScopeIds(query.organizationId, query.includeDescendants);
+    if (orgScope !== undefined) where.organizationId = { in: orgScope };
+    if (query.membershipType !== undefined) where.membershipType = query.membershipType;
+    if (query.status !== undefined) where.status = query.status;
+    if (query.q !== undefined && query.q !== '') {
+      const contains = { contains: query.q, mode: 'insensitive' as const };
+      where.OR = [
+        { member: { memberNo: contains } },
+        { member: { displayName: contains } },
+        { organization: { name: contains } },
+        { organization: { code: contains } },
+      ];
+    }
+
+    const [rows, total] = await Promise.all([
+      this.prisma.memberOrganizationMembership.findMany({
+        where,
+        select: membershipSelect,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.memberOrganizationMembership.count({ where }),
+    ]);
+
+    let items: MembershipResponseDto[] = rows;
+    if (expand.size > 0) {
+      items = await this.attachExpansions(items, {
+        member: expand.has('member'),
+        organization: expand.has('organization'),
+      });
+    }
+    return { items, total, page: query.page, pageSize: query.pageSize };
+  }
+
+  // expand 展开(D6):按命中 token 批量取回 member / organization 摘要后逐行挂载(零 N+1)。
+  private async attachExpansions(
+    items: MembershipResponseDto[],
+    want: { member: boolean; organization: boolean },
+  ): Promise<MembershipResponseDto[]> {
+    const memberMap = new Map<string, MembershipExpandedMemberDto>();
+    const orgMap = new Map<string, MembershipExpandedOrganizationDto>();
+    if (want.member && items.length > 0) {
+      const rows = await this.prisma.member.findMany({
+        where: { id: { in: [...new Set(items.map((i) => i.memberId))] } },
+        select: { id: true, memberNo: true, displayName: true, gradeCode: true },
+      });
+      for (const r of rows) memberMap.set(r.id, r);
+    }
+    if (want.organization && items.length > 0) {
+      const rows = await this.prisma.organization.findMany({
+        where: { id: { in: [...new Set(items.map((i) => i.organizationId))] } },
+        select: { id: true, name: true, code: true, nodeTypeCode: true },
+      });
+      for (const r of rows) orgMap.set(r.id, r);
+    }
+    return items.map((item) => {
+      const out = { ...item };
+      if (want.member) {
+        const m = memberMap.get(item.memberId);
+        if (m) out.member = m;
+      }
+      if (want.organization) {
+        const o = orgMap.get(item.organizationId);
+        if (o) out.organization = o;
+      }
+      return out;
+    });
+  }
+
+  // ============ F4:GET /api/admin/v1/memberships/:id(detail) ============
+
+  // 找不到未软删记录 → MEMBERSHIP_NOT_FOUND(17003)。`membership.read.record` 自 PR2 预埋,本端点实装(孤码 WARN 清零)。
+  async findOne(user: CurrentUserPayload, id: string): Promise<MembershipResponseDto> {
+    await this.assertCanOrThrow(user, 'membership.read.record');
+    const row = await this.prisma.memberOrganizationMembership.findFirst({
+      where: { id, deletedAt: null },
+      select: membershipSelect,
+    });
+    if (!row) throw new BizException(BizCode.MEMBERSHIP_NOT_FOUND);
+    return row;
+  }
+
+  // ============ F4:GET /api/admin/v1/memberships/conflicts(只读诊断) ============
+
+  // 数据体检面(闭集 4 类,见 DTO 注释):多 ACTIVE PRIMARY(partial unique 之外的 legacy 兜底)/
+  // 悬空队员 / 悬空组织 / 停用组织上的在任归属。四类各一次批量查询,零 N+1;零写入。
+  async conflicts(
+    user: CurrentUserPayload,
+    query: MembershipConflictsQueryDto,
+  ): Promise<MembershipConflictsResponseDto> {
+    await this.assertCanOrThrow(user, 'membership.list.record');
+    const orgScope = await this.buildOrgScopeIds(query.organizationId, query.includeDescendants);
+    const base: Prisma.MemberOrganizationMembershipWhereInput = {
+      deletedAt: null,
+      status: MembershipStatus.ACTIVE,
+      ...(orgScope !== undefined ? { organizationId: { in: orgScope } } : {}),
+    };
+
+    const items: MembershipConflictItemDto[] = [];
+
+    // a. multiple_active_primary:同队员 >1 条 ACTIVE PRIMARY
+    const primaryGroups = await this.prisma.memberOrganizationMembership.groupBy({
+      by: ['memberId'],
+      where: { ...base, membershipType: MembershipType.PRIMARY },
+      _count: { _all: true },
+      having: { memberId: { _count: { gt: 1 } } },
+    });
+    if (primaryGroups.length > 0) {
+      const rows = await this.prisma.memberOrganizationMembership.findMany({
+        where: {
+          ...base,
+          membershipType: MembershipType.PRIMARY,
+          memberId: { in: primaryGroups.map((g) => g.memberId) },
+        },
+        select: { id: true, memberId: true },
+        orderBy: [{ memberId: 'asc' }, { createdAt: 'asc' }],
+      });
+      const byMember = new Map<string, string[]>();
+      for (const r of rows) {
+        const list = byMember.get(r.memberId) ?? [];
+        list.push(r.id);
+        byMember.set(r.memberId, list);
+      }
+      for (const [memberId, membershipIds] of byMember) {
+        items.push({
+          type: 'multiple_active_primary',
+          memberId,
+          organizationId: null,
+          membershipIds,
+        });
+      }
+    }
+
+    // b/c/d. 悬空/停用(逐行一条;各自单查询)
+    const pushRows = (
+      rows: Array<{ id: string; memberId: string; organizationId: string }>,
+      type: MembershipConflictItemDto['type'],
+    ): void => {
+      for (const r of rows) {
+        items.push({
+          type,
+          memberId: r.memberId,
+          organizationId: r.organizationId,
+          membershipIds: [r.id],
+        });
+      }
+    };
+    const rowSelect = { id: true, memberId: true, organizationId: true } as const;
+    pushRows(
+      await this.prisma.memberOrganizationMembership.findMany({
+        where: { ...base, member: { deletedAt: { not: null } } },
+        select: rowSelect,
+        orderBy: { createdAt: 'asc' },
+      }),
+      'dangling_member',
+    );
+    pushRows(
+      await this.prisma.memberOrganizationMembership.findMany({
+        where: { ...base, organization: { deletedAt: { not: null } } },
+        select: rowSelect,
+        orderBy: { createdAt: 'asc' },
+      }),
+      'dangling_organization',
+    );
+    pushRows(
+      await this.prisma.memberOrganizationMembership.findMany({
+        where: {
+          ...base,
+          organization: { deletedAt: null, status: OrganizationStatus.INACTIVE },
+        },
+        select: rowSelect,
+        orderBy: { createdAt: 'asc' },
+      }),
+      'inactive_organization',
+    );
+
+    return { items, total: items.length };
+  }
+
+  // ============ F4:GET /api/admin/v1/organizations/:orgId/memberships(组织轴分页) ============
+
+  // 组织存在性先验(镜像 organizations/:orgId/position-assignments 嵌套资源范式;判权先于存在性)。
+  async listForOrganization(
+    user: CurrentUserPayload,
+    orgId: string,
+    query: OrgMembershipsQueryDto,
+  ): Promise<PageResultDto<MembershipResponseDto>> {
+    await this.assertCanOrThrow(user, 'membership.list.record');
+    await this.findOrganizationOrThrow(orgId);
+    const orgScope = await this.buildOrgScopeIds(orgId, query.includeDescendants);
+    const where: Prisma.MemberOrganizationMembershipWhereInput = {
+      deletedAt: null,
+      organizationId: { in: orgScope! },
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.memberOrganizationMembership.findMany({
+        where,
+        select: membershipSelect,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.memberOrganizationMembership.count({ where }),
+    ]);
+    return { items: rows, total, page: query.page, pageSize: query.pageSize };
+  }
+
+  // ============ F4:GET /api/admin/v1/organizations/:orgId/members/options(组织轴队员下拉) ============
+
+  // 组织轴 sugar:等价 GET members/options?organizationId=:orgId(F1/A1),复用 MembersService.options
+  // 的同一份投影与过滤(active membership 关联 + includeDescendants);仅多一道组织存在性先验(嵌套资源范式)。
+  // 判权同 F1:member.read.record(委托方法内亦判,缓存命中不放大)。
+  async orgMembersOptions(
+    user: CurrentUserPayload,
+    orgId: string,
+    query: OrgMembersOptionsQueryDto,
+  ): Promise<MemberOptionsResponseDto> {
+    await this.assertCanOrThrow(user, 'member.read.record');
+    await this.findOrganizationOrThrow(orgId);
+    return this.members.options(
+      {
+        q: query.q,
+        organizationId: orgId,
+        includeDescendants: query.includeDescendants,
+        limit: query.limit,
+      },
+      user,
+    );
+  }
+
+  // ============ F4:POST /api/admin/v1/memberships/transfer(唯一写端点) ============
+
+  // 单事务「end 旧 + create 新」:受既有 partial unique 约束(先 end 后 create,PRIMARY 唯一槽位先释放)。
+  // 校验镜像 create()/end() 同口径(member ACTIVE / 目标 org 存在且 ACTIVE / 源侧对应类型 ACTIVE 行存在);
+  // **源组织不做存在性/ACTIVE 校验** —— 迁出已软删/停用组织正是 conflicts 诊断后的治理场景,源侧只认归属行。
+  // 源 = 目标 → 通用 400(无迁移语义;BizCode +0,沿 goal「优先复用既有码」);
+  // 目标撞同维度 ACTIVE 唯一 → P2002 → MEMBERSHIP_ALREADY_EXISTS(17004)。
+  // audit:单条 `membership.transfer` 事件(第三写入口,viaPath='membership-transfer' 沿本模块
+  // CLAUDE.md「新写入口取新 viaPath 值」铁律;end+create 两腿不再各写 set/end 事件 —— 一次迁移一条留痕)。
+  async transfer(
+    user: CurrentUserPayload,
+    dto: TransferMembershipDto,
+    meta: AuditMeta,
+  ): Promise<MembershipResponseDto> {
+    await this.assertCanOrThrow(user, 'membership.transfer.record');
+    if (dto.fromOrganizationId === dto.toOrganizationId) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const member = await this.findMemberOrThrow(dto.memberId, tx);
+      if (member.status !== MemberStatus.ACTIVE) {
+        throw new BizException(BizCode.MEMBER_INACTIVE);
+      }
+      const toOrg = await this.findOrganizationOrThrow(dto.toOrganizationId, tx);
+      if (toOrg.status !== OrganizationStatus.ACTIVE) {
+        throw new BizException(BizCode.ORGANIZATION_INACTIVE);
+      }
+
+      const current = await tx.memberOrganizationMembership.findFirst({
+        where: {
+          memberId: dto.memberId,
+          organizationId: dto.fromOrganizationId,
+          membershipType: dto.membershipType,
+          status: MembershipStatus.ACTIVE,
+          deletedAt: null,
+        },
+        select: { id: true, status: true },
+      });
+      if (!current) throw new BizException(BizCode.MEMBERSHIP_NOT_FOUND);
+
+      const now = new Date();
+      await tx.memberOrganizationMembership.update({
+        where: { id: current.id },
+        data: { status: MembershipStatus.ENDED, endedAt: now, endedByUserId: user.id },
+        select: { id: true },
+      });
+
+      const created = await this.runWithUniqueConstraintGuard(() =>
+        tx.memberOrganizationMembership.create({
+          data: {
+            memberId: dto.memberId,
+            organizationId: dto.toOrganizationId,
+            membershipType: dto.membershipType,
+            status: MembershipStatus.ACTIVE,
+            reason: dto.reason ?? null,
+            createdByUserId: user.id,
+          },
+          select: membershipSelect,
+        }),
+      );
+
+      await this.auditLogs.log({
+        event: 'membership.transfer',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: created.id,
+        meta,
+        before: {
+          membershipId: current.id,
+          organizationId: dto.fromOrganizationId,
+          status: MembershipStatus.ACTIVE,
+        },
+        after: {
+          membershipId: created.id,
+          organizationId: created.organizationId,
+          membershipType: created.membershipType,
+          status: created.status,
+        },
+        extra: {
+          viaPath: 'membership-transfer',
+          operation: 'transfer',
+          targetMemberId: dto.memberId,
+          fromOrganizationId: dto.fromOrganizationId,
+          toOrganizationId: dto.toOrganizationId,
+          endedMembershipId: current.id,
+        },
+        tx,
+      });
+
+      return created;
     });
   }
 }

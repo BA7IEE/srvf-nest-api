@@ -154,6 +154,9 @@ export type AuditLogEvent =
   // supervision-assignment.update 均不审计的既有先例(仅改 status/note 等非建/终字段,不构成建/终事件)。
   | 'membership.set' // 建 / 设归属(memberships.service: create;member-departments.service: set 幂等分支〔同 org 无变更〕不写);extra.viaPath ∈ {membership, department}
   | 'membership.end' // 结束归属(memberships.service: end;member-departments.service: remove〔软删旧 PRIMARY 行〕);extra.viaPath ∈ {membership, department}
+  // F4「D 组」transfer(2026-07-04;路线图 §4;goal 显式预授权的唯一 +1 AuditLogEvent):
+  // 第三写入口取新 viaPath 值(本模块 CLAUDE.md 铁律);一次迁移一条留痕(end+create 两腿不再各写 set/end)。
+  | 'membership.transfer' // 归属迁移(memberships.service: transfer,单事务 end 旧 + create 新;resourceId=新行;extra.viaPath='membership-transfer' + from/toOrganizationId + endedMembershipId)
   // organizations 写面审计留痕补齐(2026-07-03;review #484 G18 → NEXT_TASKS P1-16)。resourceType='organization'。
   // PR1(2026-07-01)遗留缺口:OrganizationsService 写路径全程无 audit;PR11 announcement-import 把
   // create() 推到单请求最多 200 行的批量规模,放大"谁在何时批量建了哪些组"缺失审计轨迹的暴露面。

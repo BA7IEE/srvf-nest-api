@@ -558,6 +558,24 @@ const EXPECTED_ROUTES: ReadonlyArray<
   //   ActionStateController(authz 模块内;三 StateMachine 以零依赖纯类入 providers,不 import 业务
   //   module 不成环);+1 码 authz.action-state.decision。
   ['post', '/api/admin/v1/authz/action-state/batch'],
+  // F4「D 组:memberships 扁平/组织轴增强 + transfer」(2026-07-04;冻结路线图
+  //   admin-api-fe-integration-roadmap.md §4 D 组),+7 → 313。
+  //   扁平:分页总表(过滤 + expand=member,organization,D6)+ conflicts 只读诊断(多 ACTIVE PRIMARY /
+  //   悬空队员 / 悬空组织 / 停用组织;数据体检面)+ transfer(唯一写端点:单事务 end 旧 + create 新,
+  //   受既有 partial unique;+1 码 membership.transfer.record 绑 biz-admin + 1 audit event
+  //   membership.transfer〔goal 显式预授权〕)+ GET :id detail(membership.read.record 预埋孤码实装,
+  //   WARN 清零)。新 MembershipsAdminController(@Controller('admin/v1') 跨 memberships/organizations
+  //   两根;既有队员轴 4 端点逐字不动)。静态段(conflicts/transfer)先于 GET :id 声明。
+  ['get', '/api/admin/v1/memberships'],
+  ['get', '/api/admin/v1/memberships/conflicts'],
+  ['post', '/api/admin/v1/memberships/transfer'],
+  ['get', '/api/admin/v1/memberships/{id}'],
+  //   组织轴:归属分页(includeDescendants 展开)+ 队员下拉(复用 F1 members/options 同一份投影,
+  //   member.read.record)+ 整树归属计数(直属/子树合计,单 groupBy 禁 N+1;org.read.node;
+  //   OrganizationsController 静态段先于 :id)。
+  ['get', '/api/admin/v1/organizations/{orgId}/memberships'],
+  ['get', '/api/admin/v1/organizations/{orgId}/members/options'],
+  ['get', '/api/admin/v1/organizations/tree-with-summary'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -1043,6 +1061,15 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'ActionStateItemDto',
   'ActionStateBatchResponseDto',
   'ActionStateResultItemDto',
+
+  // F4「D 组」(2026-07-04;路线图 §4):memberships 分页总表(expand=member,organization)+
+  // conflicts 只读诊断 + transfer(单事务 end+create)+ 组织树归属计数。
+  'MembershipExpandedMemberDto',
+  'MembershipExpandedOrganizationDto',
+  'MembershipConflictItemDto',
+  'MembershipConflictsResponseDto',
+  'TransferMembershipDto',
+  'OrganizationTreeWithSummaryNodeDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
