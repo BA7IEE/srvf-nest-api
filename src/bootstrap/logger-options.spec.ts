@@ -72,6 +72,35 @@ describe('LOG_REDACT_PATHS — v1 既有清单兜底', () => {
   });
 });
 
+describe('LOG_REDACT_PATHS — pre-go-live readiness review v0.35.0 §4 F-1 补洞(2026-07-04)', () => {
+  const paths = getRedactPaths();
+
+  it.each(['req.body.oldPassword', '*.oldPassword'])(
+    '包含本人改密 %s(ChangeMyPasswordDto.oldPassword;文档一直声称存在、代码此前从未覆盖)',
+    (field) => {
+      expect(paths).toContain(field);
+    },
+  );
+
+  describe('证件 OCR 识别中间字段(RecruitmentOcrDetailDto / RealnameOcrField 同构兄弟字段;address 已由既有 *.address 覆盖)', () => {
+    it.each(['*.sex', '*.nation', '*.birth', '*.authority', '*.validDate'])('包含 %s', (field) => {
+      expect(paths).toContain(field);
+    });
+  });
+
+  describe('证件号 / 姓名结构性缺口', () => {
+    it.each(['*.documentNumber', '*.realName'])('包含 %s', (field) => {
+      expect(paths).toContain(field);
+    });
+  });
+
+  describe('命名口径纠偏(落表真实字段名;旧 *.certificateNo / *.policyNo 保留不删)', () => {
+    it.each(['*.certNumber', '*.policyNumber'])('包含 %s', (field) => {
+      expect(paths).toContain(field);
+    });
+  });
+});
+
 describe('LOG_REDACT_PATHS — V2 baseline §8.2 预扩展字段', () => {
   const paths = getRedactPaths();
 
