@@ -31,12 +31,14 @@ const LOG_REDACT_PATHS: readonly string[] = [
   'res.headers["set-cookie"]',
   // 请求 body 中的敏感字段(若将来配置打 body,这里兜底屏蔽)
   'req.body.password',
+  'req.body.oldPassword',
   'req.body.newPassword',
   'req.body.token',
   'req.body.accessToken',
   'req.body.refreshToken',
   // v1 通配:任意嵌套层级出现的同名字段(响应日志 / 自定义日志)
   '*.password',
+  '*.oldPassword',
   '*.newPassword',
   '*.passwordHash',
   '*.token',
@@ -99,6 +101,24 @@ const LOG_REDACT_PATHS: readonly string[] = [
   '*.certificateNo',
   '*.licenseNo',
   '*.policyNo',
+
+  // pre-go-live readiness review v0.35.0 §4 F-1(2026-07-04)— 兜底网补洞,additive:
+  // 证件 OCR 识别中间字段(RecruitmentOcrDetailDto / RealnameOcrField 同构兄弟字段;
+  // 同组的 address 已被上方 *.address 覆盖,这里补齐其余 5 个同级字段)
+  '*.sex',
+  '*.nation',
+  '*.birth',
+  '*.authority',
+  '*.validDate',
+  // 证件号 / 姓名类结构性缺口(MemberProfile.documentNumber "MP-5 高敏感" /
+  // MemberProfile.realName "MP-1" / RecruitmentApplication.realName 同名字段)
+  '*.documentNumber',
+  '*.realName',
+  // 命名口径纠偏:上方 *.certificateNo / *.policyNo 与实际落表字段名不一致,
+  // 这里补齐真实字段名(certificates.certNumber / insurances.policyNumber);
+  // 旧两条保留不删(additive)
+  '*.certNumber',
+  '*.policyNumber',
 ];
 
 // V1.1 §17.5 / TASKS.md 15.2:HTTP 自动日志只打 method / url / status / responseTime

@@ -32,6 +32,8 @@
 
 ### 日志 redact 清单
 
+> 与 [`src/bootstrap/logger-options.ts`](../src/bootstrap/logger-options.ts) 的 `LOG_REDACT_PATHS` 逐条一致(2026-07-04 pre-go-live readiness review v0.35.0 §4 F-1 true-up);新增字段时两处同步追加,不能只在某条日志手工裁剪。分类背景见 [`srvf-foundation-baseline.md` §8.2](srvf-foundation-baseline.md)。
+
 ```
 req.headers.authorization
 req.headers.cookie
@@ -50,6 +52,55 @@ req.body.refreshToken
 *.accessToken
 *.refreshToken
 *.secret
+*.idCard
+*.idCardNumber
+*.idNumber
+*.nationalId
+*.phone
+*.phoneNumber
+*.mobile
+*.mobileNumber
+*.tel
+*.emergencyContact
+*.emergencyContactName
+*.emergencyContactPhone
+*.emergencyContactRelation
+*.medicalInfo
+*.medicalHistory
+*.medicalNotes
+*.allergies
+*.chronicDiseases
+*.bloodType
+*.remarksSensitive
+*.bankAccount
+*.bankCard
+*.bankCardNumber
+*.cardNumber
+*.creditCard
+*.cvv
+*.homeAddress
+*.address
+*.residenceAddress
+*.dateOfBirth
+*.dob
+*.birthDate
+*.wechat
+*.wechatId
+*.openId
+*.openid
+*.unionId
+*.certificateNo
+*.licenseNo
+*.policyNo
+*.sex
+*.nation
+*.birth
+*.authority
+*.validDate
+*.documentNumber
+*.realName
+*.certNumber
+*.policyNumber
 ```
 
 新增字段时同步追加,不能只在某条日志手工裁剪。
