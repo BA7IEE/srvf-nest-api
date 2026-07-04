@@ -432,26 +432,26 @@
 
 ## 11. 决策拍板回执区(维护者勾选)
 
-**横切决策**(默认「按推荐」即全 ✅):
+**横切决策**(✅ 已拍板 2026-07-04,维护者:全按推荐):
 
-- D1 命名(`q`+`*Contains`,弃 Like):☐ 按推荐 ☐ 其他
-- D2 options 复用 `.read.record`:☐ 按推荐 ☐ 其他
-- D3 独立 `/options` 路由:☐ 按推荐 ☐ 其他
-- D4 roles/options → **system/v1**:☐ 按推荐(system)☐ 备选(admin)☐ 其他 ← **唯一 surface 决策**
-- D5 resolve-labels 契约 + 静默省略 + refs≤200:☐ 按推荐 ☐ 其他
-- D6 expand 白名单 + 禁 N+1 + 默认关:☐ 按推荐 ☐ 其他
-- D7 includeDescendants 只读 helper + closure 非判权:☐ 按推荐 ☐ 其他
-- D8 explain-batch/action-state 出契约级 + authz 模块 + 殿后 + 无二级 T0:☐ 按推荐 ☐ 要二级 T0 ☐ 其他
-- D9 role-bindings 新 `/page`、旧数组不动:☐ 按推荐 ☐ 其他
-- D10 F 序列 A→B→C→D→E:☐ 按推荐 ☐ 调整
+- D1 命名(`q`+`*Contains`,弃 Like):☑ 按推荐
+- D2 options 复用 `.read.record`:☑ 按推荐
+- D3 独立 `/options` 路由:☑ 按推荐
+- D4 roles/options → **system/v1**:☑ 按推荐(system) ← 唯一 surface 决策,实拍确认落 `system/v1`
+- D5 resolve-labels 契约 + 静默省略 + refs≤200:☑ 按推荐
+- D6 expand 白名单 + 禁 N+1 + 默认关:☑ 按推荐
+- D7 includeDescendants 只读 helper + closure 非判权:☑ 按推荐
+- D8 explain-batch/action-state 出契约级 + authz 模块 + 殿后 + 无二级 T0:☑ 按推荐
+- D9 role-bindings 新 `/page`、旧数组不动:☑ 按推荐
+- D10 F 序列 A→B→C→D→E:☑ 按推荐
 
-**遗留小决策**(可随实现批拍):
+**遗留小决策**(推迟到对应实现批拍板,本轮不定):
 
-- preview 端点(role-binding/position-assignment)复用 `read.record` 还是独立 `.preview.record` 码:☐ 复用 ☐ 独立码
-- action-state 的状态机 `state_forbidden` reason 是否并入 `AuthzReason` 枚举还是独立:☐ 并入 ☐ 独立
+- preview 端点(role-binding/position-assignment)复用 `read.record` 还是独立 `.preview.record` 码:☐ 复用 ☐ 独立码 —— 留 F3/F5 实现批
+- action-state 的状态机 `state_forbidden` reason 是否并入 `AuthzReason` 枚举还是独立:☐ 并入 ☐ 独立 —— 留 F3 实现批
 
-**分批启动授权**:☐ F1 可先起 per-batch goal ☐ 全序列一次授权 ☐ 逐批回头确认
+**分批启动授权**:☑ F1 可先起 per-batch goal(逐批;非全序列一次授权)
 
 ---
 
-> **下一步(不自动启动)**:维护者对 §11 勾选拍板 → 按拍板 true-up 本文冻结 → 起 F1 per-batch goal 实现。全序列 ship 后本文归档至 `docs/archive/reviews/`(沿 scoped-authz 先例)。
+> **下一步**:✅ §11 已拍板(2026-07-04)→ F1 per-batch goal 已起草下发(A 组搜索&选择器 + resolve-labels)。F2–F5 逐批回头起。全序列 ship 后本文归档至 `docs/archive/reviews/`(沿 scoped-authz 先例)。
