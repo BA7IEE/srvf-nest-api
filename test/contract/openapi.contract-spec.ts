@@ -594,6 +594,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/supervision-assignments/page'],
   ['post', '/api/admin/v1/supervision-assignments/coverage-preview'],
   ['get', '/api/admin/v1/supervision-assignments/{id}'],
+  // GAP-003(handoff/admin-web.md §4;goal「GAP-003 收口」),+1 → 320。工作台/首页待办
+  //   汇总:三个可省略块(registrations.pending / attendanceSheets.{pending,
+  //   pendingFinalReview} / activities.published),零 query 参数。registrations/
+  //   attendanceSheets 各凭对应既有读码(GLOBAL 口径,与 admin/v1/registrations ·
+  //   admin/v1/attendance-sheets 两个扁平列表一致);activities 无码(沿 list 现状)。
+  //   无对应块权限时静默省略(镜像 resolve-labels),响应恒 200。扩既有 MetaController。
+  ['get', '/api/admin/v1/meta/dashboard-summary'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -1100,6 +1107,13 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'SupervisionExpandedOrganizationDto',
   'SupervisionCoveragePreviewDto',
   'SupervisionCoveragePreviewResponseDto',
+
+  // GAP-003(2026-07-05;goal「GAP-003 收口」):工作台/首页待办汇总,三个可省略块各自
+  // 物理隔离子 DTO(镜像 RecruitmentCycleStatsDto 嵌套子 DTO 的既有惯例)。
+  'DashboardSummaryResponseDto',
+  'DashboardRegistrationsSummaryDto',
+  'DashboardAttendanceSheetsSummaryDto',
+  'DashboardActivitiesSummaryDto',
 ];
 
 describe('OpenAPI 契约快照', () => {

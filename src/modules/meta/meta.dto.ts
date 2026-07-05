@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -63,3 +63,48 @@ export class ResolveLabelsDto {
 // 涉及的 type 动态决定,Swagger 无法静态枚举字段,故本 DTO 刻意不声明具体属性(沿 D5
 // "静默省略"语义:某 type 全部 id 都被过滤后,该 type key 本身也不出现)。
 export class ResolveLabelsResponseDto {}
+
+// GAP-003(handoff/admin-web.md §4;goal「GAP-003 收口」):工作台/首页待办汇总。三个
+// 可省略块,与 resolve-labels 同源的静默省略哲学——block 级权限裁剪,无权限省略整块,
+// 不报错(响应恒 200)。字段形状固定(不像 resolve-labels 那样按 type 动态出现),故
+// 可正常声明具体属性。
+
+export class DashboardRegistrationsSummaryDto {
+  @ApiProperty({ description: '全局待审报名数(registration_status=pending,未软删)' })
+  pending!: number;
+}
+
+export class DashboardAttendanceSheetsSummaryDto {
+  @ApiProperty({ description: '待一级(APD)审核数(attendance_sheet_status=pending,未软删)' })
+  pending!: number;
+
+  @ApiProperty({
+    description: '待终审数(attendance_sheet_status=pending_final_review,未软删)',
+  })
+  pendingFinalReview!: number;
+}
+
+export class DashboardActivitiesSummaryDto {
+  @ApiProperty({ description: '进行中活动数(activity_status=published,未软删)' })
+  published!: number;
+}
+
+export class DashboardSummaryResponseDto {
+  @ApiPropertyOptional({
+    type: DashboardRegistrationsSummaryDto,
+    description: '报名待办(需 activity-registration.read.record;无权省略本块,非报错)',
+  })
+  registrations?: DashboardRegistrationsSummaryDto;
+
+  @ApiPropertyOptional({
+    type: DashboardAttendanceSheetsSummaryDto,
+    description: '考勤待办(需 attendance.read.sheet;无权省略本块,非报错)',
+  })
+  attendanceSheets?: DashboardAttendanceSheetsSummaryDto;
+
+  @ApiPropertyOptional({
+    type: DashboardActivitiesSummaryDto,
+    description: '活动概况(无码,同 activities list/detail 现状,任意已登录用户可见)',
+  })
+  activities?: DashboardActivitiesSummaryDto;
+}
