@@ -419,6 +419,91 @@ describe('F3/C3 authz/action-state/batch(批量业务态闸)', () => {
     });
   });
 
+  // ============ 可选 key 透传回显(三处收尾 2026-07-05)============
+
+  describe('可选 key 透传回显(三处收尾 2026-07-05)', () => {
+    it('allow 分支:带 key 的 item 在响应里原样回显该 key', async () => {
+      const res = await postBatch(saAuth, [
+        {
+          action: 'attendance.read.sheet',
+          resourceType: 'attendance_sheet',
+          resourceId: sheetPendingId,
+          key: 'row-allow',
+        },
+      ]);
+      expect(res.body.data.items[0]).toMatchObject({ key: 'row-allow', allowed: true });
+    });
+
+    it('deny(no_permission)分支:带 key 的 item 在响应里原样回显该 key', async () => {
+      const res = await postBatch(opsAuth, [
+        {
+          action: 'attendance.final-approve.sheet',
+          resourceType: 'attendance_sheet',
+          resourceId: sheetPendingFinalId,
+          key: 'row-deny',
+        },
+      ]);
+      expect(res.body.data.items[0]).toMatchObject({
+        key: 'row-deny',
+        allowed: false,
+        reason: 'no_permission',
+      });
+    });
+
+    it('state_forbidden 分支:带 key 的 item 在响应里原样回显该 key', async () => {
+      const res = await postBatch(saAuth, [
+        {
+          action: 'attendance.final-approve.sheet',
+          resourceType: 'attendance_sheet',
+          resourceId: sheetPendingId,
+          key: 'row-state-forbidden',
+        },
+      ]);
+      expect(res.body.data.items[0]).toMatchObject({
+        key: 'row-state-forbidden',
+        allowed: false,
+        reason: 'state_forbidden',
+      });
+    });
+
+    it('不带 key → 响应对应 item 不出现 key 字段(而非 key:undefined)', async () => {
+      const res = await postBatch(saAuth, [
+        {
+          action: 'attendance.read.sheet',
+          resourceType: 'attendance_sheet',
+          resourceId: sheetPendingId,
+        },
+      ]);
+      expect('key' in res.body.data.items[0]).toBe(false);
+    });
+
+    it('混合(同批部分 item 带 key、部分不带)→ 逐 item 各自独立正确、互不污染', async () => {
+      const res = await postBatch(saAuth, [
+        {
+          action: 'attendance.read.sheet',
+          resourceType: 'attendance_sheet',
+          resourceId: sheetPendingId,
+          key: 'mixed-0',
+        },
+        {
+          action: 'attendance.approve.sheet',
+          resourceType: 'attendance_sheet',
+          resourceId: sheetPendingId,
+        },
+        {
+          action: 'attendance.final-approve.sheet',
+          resourceType: 'attendance_sheet',
+          resourceId: sheetPendingId,
+          key: 'mixed-2',
+        },
+      ]);
+      const items = res.body.data.items;
+      expect(items[0]).toMatchObject({ key: 'mixed-0' });
+      expect('key' in items[1]).toBe(false);
+      expect(items[2]).toMatchObject({ key: 'mixed-2', reason: 'state_forbidden' });
+    });
+  });
+
   // ============ 入参校验 + 枚举契约 ============
 
   describe('入参校验与 reason 枚举契约', () => {
