@@ -377,6 +377,18 @@ export class ActionStateItemDto {
   @IsNotEmpty()
   @MaxLength(64)
   resourceId!: string;
+
+  @ApiPropertyOptional({
+    description:
+      '调用方自定义关联键(可选,原样透传回显;不参与判权/去重/入库,仅做长度约束 —— 是否重复由调用方自行处理;' +
+      '供前端跨区域合并请求或缓存合并场景做第二自然键,三处收尾 2026-07-05 additive)',
+    maxLength: 64,
+    example: 'sheet-row-42',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  key?: string;
 }
 
 export class ActionStateBatchDto {
@@ -405,6 +417,15 @@ export class ActionStateResultItemDto {
 
   @ApiProperty({ description: '资源主键 id(入参回显)' })
   resourceId!: string;
+
+  @ApiPropertyOptional({
+    description:
+      '调用方自定义关联键(入参回显;仅当该 item 的请求携带 `key` 时才出现在响应里,缺省该字段不存在 —— ' +
+      'additive,三处收尾 2026-07-05)',
+    maxLength: 64,
+    example: 'sheet-row-42',
+  })
+  key?: string;
 
   @ApiProperty({
     description: '是否可执行(= authz 判权 ∧ 已注册项的状态机只读校验;deny 是 200 数据)',

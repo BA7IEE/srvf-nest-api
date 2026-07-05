@@ -26,7 +26,7 @@ export class ActionStateController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '批量业务态闸(诊断读):调用者对一组 action×资源 的 allowed + reason(authz 11 值 ∪ state_forbidden);items 回显 action/resourceType/resourceId 且顺序 = 请求顺序;deny 是 200 数据非错误 [rbac: authz.action-state.decision]',
+      '批量业务态闸(诊断读):调用者对一组 action×资源 的 allowed + reason(authz 11 值 ∪ state_forbidden);items 回显 action/resourceType/resourceId 且顺序 = 请求顺序;可选 key 逐 item 透传回显(仅请求携带时出现,不参与判定);deny 是 200 数据非错误 [rbac: authz.action-state.decision]',
   })
   @ApiWrappedOkResponse(ActionStateBatchResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)

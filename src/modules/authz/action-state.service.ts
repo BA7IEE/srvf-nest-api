@@ -11,6 +11,7 @@ import { AuthzService } from './authz.service';
 import type {
   ActionStateBatchDto,
   ActionStateBatchResponseDto,
+  ActionStateItemDto,
   ActionStateResultItemDto,
 } from './authz.dto';
 
@@ -48,6 +49,15 @@ export class ActionStateService {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
     }
 
+    // echo() 承载三处 push 共用的入参回显字段(action/resourceType/resourceId + 可选 key);
+    // key 仅当请求携带时才透传进响应对象,缺省该 key 完全不存在(不是 undefined 值)。
+    const echo = (item: ActionStateItemDto) => ({
+      action: item.action,
+      resourceType: item.resourceType,
+      resourceId: item.resourceId,
+      ...(item.key !== undefined ? { key: item.key } : {}),
+    });
+
     const items: ActionStateResultItemDto[] = [];
     for (const item of dto.items) {
       const decision = await this.authz.explain(caller, item.action, {
@@ -55,13 +65,7 @@ export class ActionStateService {
         id: item.resourceId,
       });
       if (!decision.allow) {
-        items.push({
-          action: item.action,
-          resourceType: item.resourceType,
-          resourceId: item.resourceId,
-          allowed: false,
-          reason: decision.reason,
-        });
+        items.push({ ...echo(item), allowed: false, reason: decision.reason });
         continue;
       }
 
@@ -71,24 +75,12 @@ export class ActionStateService {
       const statusCode = decision.resource?.statusCode ?? null;
       if (check && check.resourceType === item.resourceType && statusCode !== null) {
         if (!check.decide(statusCode)) {
-          items.push({
-            action: item.action,
-            resourceType: item.resourceType,
-            resourceId: item.resourceId,
-            allowed: false,
-            reason: 'state_forbidden',
-          });
+          items.push({ ...echo(item), allowed: false, reason: 'state_forbidden' });
           continue;
         }
       }
 
-      items.push({
-        action: item.action,
-        resourceType: item.resourceType,
-        resourceId: item.resourceId,
-        allowed: true,
-        reason: decision.reason,
-      });
+      items.push({ ...echo(item), allowed: true, reason: decision.reason });
     }
     return { items };
   }
