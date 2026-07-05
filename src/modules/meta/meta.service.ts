@@ -3,9 +3,10 @@ import { Role } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { RbacService } from '../permissions/rbac.service';
-import { ResolveLabelsDto } from './meta.dto';
+import { DashboardSummaryResponseDto, ResolveLabelsDto } from './meta.dto';
 
 // F1/A7(路线图 §4 A7;架构映射 §7):跨资源批量 id→label 解析。**只读、无 audit、无
 // schema**;不复用其它模块的 service(镜像 authz/resource-resolver.service.ts 的自包含
@@ -39,6 +40,16 @@ const TYPE_READ_PERMISSION: Record<string, string | null> = {
 // 镜像 activities.service.ts 的 USER_VISIBLE_STATUS_CODES(Q-A7);不跨模块导入两个
 // 字符串字面量,字典值一致性由 activities 自己的 e2e 覆盖。
 const ACTIVITY_USER_VISIBLE_STATUS_CODES = ['published', 'completed'] as const;
+
+// GAP-003 工作台/首页待办汇总(D5 同源静默省略,见 meta.dto.ts 头注):字典码字面量不跨
+// 模块导入(镜像上一条 ACTIVITY_USER_VISIBLE_STATUS_CODES 的既有惯例),与 registrations
+// (activity-registration.read.record)/attendance-sheets(attendance.read.sheet)两个扁平
+// 跨轴列表(admin/v1/registrations · admin/v1/attendance-sheets)的 statusCode 过滤同值,
+// 字典一致性由各自模块 e2e + 本端点的 count-vs-list-total 对账 e2e 双重覆盖。
+const DASHBOARD_REGISTRATION_STATUS_PENDING = 'pending';
+const DASHBOARD_ATTENDANCE_SHEET_STATUS_PENDING = 'pending';
+const DASHBOARD_ATTENDANCE_SHEET_STATUS_PENDING_FINAL_REVIEW = 'pending_final_review';
+const DASHBOARD_ACTIVITY_STATUS_PUBLISHED = 'published';
 
 @Injectable()
 export class MetaService {
@@ -74,6 +85,57 @@ export class MetaService {
       if (Object.keys(entries).length > 0) result[type] = entries;
     }
     return result;
+  }
+
+  // GAP-003:三块可省略聚合,块级权限裁剪(registrations/attendanceSheets 各凭对应读码,
+  // R 模式 rbac.can 不传 resource = GLOBAL 口径,与 admin/v1/registrations · admin/v1/
+  // attendance-sheets 两个扁平跨轴列表的 GLOBAL-only 边界刻意一致;scoped-only 持有者本
+  // 块不可见是既定边界,非缺陷)。activities 无码(沿 activities list/detail/options 现状,
+  // 任意已登录用户可见)。无权限的块整体省略、不报错——响应恒 200(镜像 resolve-labels 静默
+  // 省略哲学,唯一差异:本端点字段形状固定,可用具体 DTO 而非动态 key)。
+  //
+  // 4 个 prisma.count 与 2 个 rbac.can 同一个 Promise.all 内并发(结构性零 N+1,无缓存/
+  // 无物化——当前规模即时算);activities 块无条件计算,registrations/attendanceSheets
+  // 两块算完后按权限结果决定是否挂进返回对象。
+  async dashboardSummary(user: CurrentUserPayload): Promise<DashboardSummaryResponseDto> {
+    const [
+      canReadRegistrations,
+      canReadAttendanceSheets,
+      registrationsPending,
+      attendanceSheetsPending,
+      attendanceSheetsPendingFinalReview,
+      activitiesPublished,
+    ] = await Promise.all([
+      this.rbac.can(user, 'activity-registration.read.record'),
+      this.rbac.can(user, 'attendance.read.sheet'),
+      this.prisma.activityRegistration.count({
+        where: notDeletedWhere({ statusCode: DASHBOARD_REGISTRATION_STATUS_PENDING }),
+      }),
+      this.prisma.attendanceSheet.count({
+        where: notDeletedWhere({ statusCode: DASHBOARD_ATTENDANCE_SHEET_STATUS_PENDING }),
+      }),
+      this.prisma.attendanceSheet.count({
+        where: notDeletedWhere({
+          statusCode: DASHBOARD_ATTENDANCE_SHEET_STATUS_PENDING_FINAL_REVIEW,
+        }),
+      }),
+      this.prisma.activity.count({
+        where: notDeletedWhere({ statusCode: DASHBOARD_ACTIVITY_STATUS_PUBLISHED }),
+      }),
+    ]);
+
+    return {
+      ...(canReadRegistrations ? { registrations: { pending: registrationsPending } } : {}),
+      ...(canReadAttendanceSheets
+        ? {
+            attendanceSheets: {
+              pending: attendanceSheetsPending,
+              pendingFinalReview: attendanceSheetsPendingFinalReview,
+            },
+          }
+        : {}),
+      activities: { published: activitiesPublished },
+    };
   }
 
   private async resolveType(
