@@ -184,6 +184,9 @@ export class PageMembershipsQueryDto extends PaginationQueryDto {
 
 // ============ F4/D 组 入参:组织轴列表(GET /organizations/:orgId/memberships) ============
 
+// F 批小修(2026-07-05):参数集对齐扁平总表 PageMembershipsQueryDto(155-182 行)—— +status/
+// membershipType/q/expand 四项(organizationId 由路径段固定,不在此重复收)。**默认行为不变**:
+// 缺省仍三态全返(ACTIVE/ENDED/SUSPENDED 混返),additive 红线,组织成员页请显式传 status=ACTIVE。
 export class OrgMembershipsQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     description: '是否展开该组织全部后代组织(默认 false = 仅该节点直属)',
@@ -193,6 +196,39 @@ export class OrgMembershipsQueryDto extends PaginationQueryDto {
   @Transform(parseQueryBoolean)
   @IsBoolean()
   includeDescendants?: boolean;
+
+  @ApiPropertyOptional({ description: '按归属类型过滤', enum: MembershipType })
+  @IsOptional()
+  @IsEnum(MembershipType)
+  membershipType?: MembershipType;
+
+  @ApiPropertyOptional({
+    description:
+      '按归属状态过滤(缺省 = 全部未软删,含 ENDED/SUSPENDED 历史;组织成员页只看现有人员请传 status=ACTIVE)',
+    enum: MembershipStatus,
+  })
+  @IsOptional()
+  @IsEnum(MembershipStatus)
+  status?: MembershipStatus;
+
+  @ApiPropertyOptional({
+    description: '模糊搜索(命中队员 memberNo+displayName + 组织 name+code;contains + insensitive)',
+    maxLength: 100,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'expand 展开(逗号分隔白名单:member,organization;缺省 = 不展开,响应形状与队员轴端点一致)',
+    example: 'member,organization',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  expand?: string;
 }
 
 // ============ F4/D 组 入参:冲突诊断(GET /memberships/conflicts) ============

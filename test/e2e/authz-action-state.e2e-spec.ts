@@ -225,12 +225,14 @@ describe('F3/C3 authz/action-state/batch(批量业务态闸)', () => {
       const items = res.body.data.items;
       expect(items[0]).toEqual({
         action: 'attendance.final-approve.sheet',
+        resourceType: 'attendance_sheet',
         resourceId: sheetPendingFinalId,
         allowed: true,
         reason: 'super_admin_pass',
       });
       expect(items[1]).toEqual({
         action: 'attendance.final-approve.sheet',
+        resourceType: 'attendance_sheet',
         resourceId: sheetPendingId,
         allowed: false,
         reason: 'state_forbidden',
@@ -317,6 +319,7 @@ describe('F3/C3 authz/action-state/batch(批量业务态闸)', () => {
       ]);
       expect(res.body.data.items[0]).toEqual({
         action: 'attendance.final-approve.sheet',
+        resourceType: 'attendance_sheet',
         resourceId: sheetPendingFinalId,
         allowed: false,
         reason: 'no_permission',
@@ -371,6 +374,47 @@ describe('F3/C3 authz/action-state/batch(批量业务态闸)', () => {
       expect(res.body.data.items[0]).toMatchObject({
         allowed: false,
         reason: 'self_approval_forbidden',
+      });
+    });
+  });
+
+  // ============ F 批小修(2026-07-05):resourceType 回显 + items 顺序 = 请求顺序 ============
+
+  describe('resourceType 回显 + 顺序保证(F 批小修 2026-07-05)', () => {
+    it('三元组(action,resourceType,resourceId)逐项回显;跨资源类型混排 + allow/deny/state_forbidden 混排下响应顺序与请求一致', async () => {
+      const requestItems = [
+        {
+          action: 'attendance.read.sheet',
+          resourceType: 'attendance_sheet',
+          resourceId: sheetPendingId,
+        },
+        {
+          action: 'activity.cancel.record',
+          resourceType: 'activity',
+          resourceId: activityCancelledId, // state_forbidden(已取消不可再取消)
+        },
+        {
+          action: 'activity-registration.approve.record',
+          resourceType: 'activity_registration',
+          resourceId: regPassId, // state_forbidden(已过审不可再批)
+        },
+        {
+          action: 'attendance.final-approve.sheet',
+          resourceType: 'attendance_sheet',
+          resourceId: sheetPendingId, // state_forbidden(未到终审态)
+        },
+      ];
+      const res = await postBatch(saAuth, requestItems);
+      expect(res.status).toBe(200);
+      const items: Array<{ action: string; resourceType: string; resourceId: string }> =
+        res.body.data.items;
+      expect(items).toHaveLength(requestItems.length);
+      items.forEach((item, i) => {
+        expect(item).toMatchObject({
+          action: requestItems[i].action,
+          resourceType: requestItems[i].resourceType,
+          resourceId: requestItems[i].resourceId,
+        });
       });
     });
   });

@@ -396,6 +396,13 @@ export class ActionStateResultItemDto {
   @ApiProperty({ description: 'action 权限码(入参回显)' })
   action!: string;
 
+  @ApiProperty({
+    description: '资源类型(入参回显;F 批小修 2026-07-05 additive,对齐 explain-batch 全回显口径)',
+    enum: EXPLAINABLE_RESOURCE_TYPES,
+    example: 'attendance_sheet',
+  })
+  resourceType!: string;
+
   @ApiProperty({ description: '资源主键 id(入参回显)' })
   resourceId!: string;
 
@@ -414,6 +421,9 @@ export class ActionStateResultItemDto {
 }
 
 export class ActionStateBatchResponseDto {
-  @ApiProperty({ type: () => [ActionStateResultItemDto] })
+  @ApiProperty({
+    description: 'items 顺序 = 请求 items 顺序(逐条一一对应,按下标回填按钮状态)',
+    type: () => [ActionStateResultItemDto],
+  })
   items!: ActionStateResultItemDto[];
 }
