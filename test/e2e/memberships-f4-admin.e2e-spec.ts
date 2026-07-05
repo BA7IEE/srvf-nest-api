@@ -81,6 +81,14 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
   let msDanglingOrgId: string;
   let msInactiveOrgId: string;
 
+  // F 批小修(2026-07-05):组织轴参数集对齐扁平总表 —— 独立 filterOrg + 3 名专用队员,
+  // 与上方共享 fixture(会被 transfer 用例逐步 mutate)完全隔离,不受测试执行顺序影响。
+  let filterOrgId: string;
+  let fltAId: string;
+  let msFilterActiveId: string; // TEMPORARY/ACTIVE
+  let msFilterEndedId: string; // PRIMARY/ENDED
+  let msFilterSuspendedId: string; // SECONDARY/SUSPENDED
+
   beforeAll(async () => {
     app = await createTestApp();
     await resetDb(app);
@@ -172,6 +180,25 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
     msDanglingMemberId = (await mkMs(mDeletedId, deptId, MembershipType.SECONDARY)).id;
     msDanglingOrgId = (await mkMs(mCarolId, deletedOrgId, MembershipType.SECONDARY)).id;
     msInactiveOrgId = (await mkMs(mAliceId, inactiveOrgId, MembershipType.SECONDARY)).id;
+
+    // F 批小修:filterOrg 是 root 子级但零 closure 边 —— 对任何 includeDescendants 查询天然隐形,
+    // 3 名专用队员(非 alice/bob/carol)避免撞上面 page 过滤矩阵用例的精确断言(如全局 membershipType
+    // =SUPPORT / memberId=carol 等 exact-match)。
+    const filterOrg = await mkOrg('F4 小修-过滤组织', rootId, OrganizationStatus.ACTIVE);
+    filterOrgId = filterOrg.id;
+    const fltA = await mkMember('flt-a', 'F4 过滤队员甲');
+    const fltB = await mkMember('flt-b', 'F4 过滤队员乙');
+    const fltC = await mkMember('flt-c', 'F4 过滤队员丙');
+    fltAId = fltA.id;
+    msFilterActiveId = (
+      await mkMs(fltA.id, filterOrgId, MembershipType.TEMPORARY, MembershipStatus.ACTIVE)
+    ).id;
+    msFilterEndedId = (
+      await mkMs(fltB.id, filterOrgId, MembershipType.PRIMARY, MembershipStatus.ENDED)
+    ).id;
+    msFilterSuspendedId = (
+      await mkMs(fltC.id, filterOrgId, MembershipType.SECONDARY, MembershipStatus.SUSPENDED)
+    ).id;
   });
 
   afterAll(async () => {
@@ -183,6 +210,13 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
   }
   const idsOf = (res: request.Response): string[] =>
     res.body.data.items.map((i: { id: string }) => i.id);
+
+  function getOrgMemberships(auth: string, orgId: string, query: Record<string, string> = {}) {
+    return request(httpServer(app))
+      .get(`/api/admin/v1/organizations/${orgId}/memberships`)
+      .query(query)
+      .set('Authorization', auth);
+  }
 
   // ============ RBAC 门 ============
 
@@ -575,6 +609,37 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
           .set('Authorization', adminAuth),
         BizCode.ORGANIZATION_NOT_FOUND,
       );
+    });
+
+    it('F 批小修(2026-07-05):status/membershipType/q/expand 参数集对齐扁平总表;缺省仍三态全返(additive 红线)', async () => {
+      const all = await getOrgMemberships(adminAuth, filterOrgId);
+      expect(all.status).toBe(200);
+      expect(idsOf(all).sort()).toEqual(
+        [msFilterActiveId, msFilterEndedId, msFilterSuspendedId].sort(),
+      );
+
+      const active = await getOrgMemberships(adminAuth, filterOrgId, { status: 'ACTIVE' });
+      expect(idsOf(active)).toEqual([msFilterActiveId]);
+
+      const primary = await getOrgMemberships(adminAuth, filterOrgId, {
+        membershipType: 'PRIMARY',
+      });
+      expect(idsOf(primary)).toEqual([msFilterEndedId]);
+
+      const byQ = await getOrgMemberships(adminAuth, filterOrgId, { q: 'flt-a' });
+      expect(idsOf(byQ)).toEqual([msFilterActiveId]);
+
+      const expanded = await getOrgMemberships(adminAuth, filterOrgId, {
+        status: 'ACTIVE',
+        expand: 'member',
+      });
+      expect(expanded.body.data.items[0].member).toEqual({
+        id: fltAId,
+        memberNo: 'flt-a',
+        displayName: 'F4 过滤队员甲',
+        gradeCode: null,
+      });
+      expect(expanded.body.data.items[0]).not.toHaveProperty('organization');
     });
 
     it('队员下拉:active 归属关联(F1 投影形状 id/label/memberNo/gradeCode);q 过滤;组织不存在 → 11001', async () => {

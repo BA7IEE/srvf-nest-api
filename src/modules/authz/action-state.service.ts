@@ -57,6 +57,7 @@ export class ActionStateService {
       if (!decision.allow) {
         items.push({
           action: item.action,
+          resourceType: item.resourceType,
           resourceId: item.resourceId,
           allowed: false,
           reason: decision.reason,
@@ -72,6 +73,7 @@ export class ActionStateService {
         if (!check.decide(statusCode)) {
           items.push({
             action: item.action,
+            resourceType: item.resourceType,
             resourceId: item.resourceId,
             allowed: false,
             reason: 'state_forbidden',
@@ -82,6 +84,7 @@ export class ActionStateService {
 
       items.push({
         action: item.action,
+        resourceType: item.resourceType,
         resourceId: item.resourceId,
         allowed: true,
         reason: decision.reason,

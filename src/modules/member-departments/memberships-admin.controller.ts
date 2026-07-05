@@ -121,7 +121,7 @@ export class MembershipsAdminController {
   @Get('organizations/:orgId/memberships')
   @ApiOperation({
     summary:
-      '组织轴列归属(分页;includeDescendants 展开后代;组织不存在 → 11001) [rbac: membership.list.record]',
+      '组织轴列归属(分页;includeDescendants 展开后代 + membershipType/status/q 过滤 + expand=member,organization;含历史与暂停,组织成员页请传 status=ACTIVE;组织不存在 → 11001) [rbac: membership.list.record]',
   })
   @ApiWrappedPageResponse(MembershipResponseDto)
   @ApiBizErrorResponse(

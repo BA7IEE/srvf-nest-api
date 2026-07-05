@@ -292,6 +292,32 @@ export class MembershipsService {
     return this.organizations.queryDescendantOrgIds(organizationId);
   }
 
+  // 共享查询构造(F 批小修 2026-07-05):page()/listForOrganization() 两处过滤条件同一份口径,
+  // 只有 memberId 是扁平总表独有(组织轴由路径段固定 organizationId,不接受再收窄到某队员)。
+  private buildMembershipsWhere(params: {
+    memberId?: string;
+    orgScope?: string[];
+    membershipType?: MembershipType;
+    status?: MembershipStatus;
+    q?: string;
+  }): Prisma.MemberOrganizationMembershipWhereInput {
+    const where: Prisma.MemberOrganizationMembershipWhereInput = { deletedAt: null };
+    if (params.memberId !== undefined) where.memberId = params.memberId;
+    if (params.orgScope !== undefined) where.organizationId = { in: params.orgScope };
+    if (params.membershipType !== undefined) where.membershipType = params.membershipType;
+    if (params.status !== undefined) where.status = params.status;
+    if (params.q !== undefined && params.q !== '') {
+      const contains = { contains: params.q, mode: 'insensitive' as const };
+      where.OR = [
+        { member: { memberNo: contains } },
+        { member: { displayName: contains } },
+        { organization: { name: contains } },
+        { organization: { code: contains } },
+      ];
+    }
+    return where;
+  }
+
   // ============ F4:GET /api/admin/v1/memberships(分页总表) ============
 
   // 全库归属分页(缺省含 ENDED/SUSPENDED 历史,不含软删行;status 显式过滤可收窄)。
@@ -304,21 +330,14 @@ export class MembershipsService {
     await this.assertCanOrThrow(user, 'membership.list.record');
     const expand = parseExpandQuery(query.expand, MEMBERSHIP_EXPAND_TOKENS);
 
-    const where: Prisma.MemberOrganizationMembershipWhereInput = { deletedAt: null };
-    if (query.memberId !== undefined) where.memberId = query.memberId;
     const orgScope = await this.buildOrgScopeIds(query.organizationId, query.includeDescendants);
-    if (orgScope !== undefined) where.organizationId = { in: orgScope };
-    if (query.membershipType !== undefined) where.membershipType = query.membershipType;
-    if (query.status !== undefined) where.status = query.status;
-    if (query.q !== undefined && query.q !== '') {
-      const contains = { contains: query.q, mode: 'insensitive' as const };
-      where.OR = [
-        { member: { memberNo: contains } },
-        { member: { displayName: contains } },
-        { organization: { name: contains } },
-        { organization: { code: contains } },
-      ];
-    }
+    const where = this.buildMembershipsWhere({
+      memberId: query.memberId,
+      orgScope,
+      membershipType: query.membershipType,
+      status: query.status,
+      q: query.q,
+    });
 
     const [rows, total] = await Promise.all([
       this.prisma.memberOrganizationMembership.findMany({
@@ -489,6 +508,8 @@ export class MembershipsService {
   // ============ F4:GET /api/admin/v1/organizations/:orgId/memberships(组织轴分页) ============
 
   // 组织存在性先验(镜像 organizations/:orgId/position-assignments 嵌套资源范式;判权先于存在性)。
+  // F 批小修(2026-07-05):过滤/expand 参数集与 page() 对齐(复用 buildMembershipsWhere +
+  // attachExpansions 同一份口径);organizationId 由路径段固定,**默认行为不变**——缺省仍三态全返。
   async listForOrganization(
     user: CurrentUserPayload,
     orgId: string,
@@ -496,11 +517,15 @@ export class MembershipsService {
   ): Promise<PageResultDto<MembershipResponseDto>> {
     await this.assertCanOrThrow(user, 'membership.list.record');
     await this.findOrganizationOrThrow(orgId);
+    const expand = parseExpandQuery(query.expand, MEMBERSHIP_EXPAND_TOKENS);
     const orgScope = await this.buildOrgScopeIds(orgId, query.includeDescendants);
-    const where: Prisma.MemberOrganizationMembershipWhereInput = {
-      deletedAt: null,
-      organizationId: { in: orgScope! },
-    };
+    const where = this.buildMembershipsWhere({
+      orgScope,
+      membershipType: query.membershipType,
+      status: query.status,
+      q: query.q,
+    });
+
     const [rows, total] = await Promise.all([
       this.prisma.memberOrganizationMembership.findMany({
         where,
@@ -511,7 +536,15 @@ export class MembershipsService {
       }),
       this.prisma.memberOrganizationMembership.count({ where }),
     ]);
-    return { items: rows, total, page: query.page, pageSize: query.pageSize };
+
+    let items: MembershipResponseDto[] = rows;
+    if (expand.size > 0) {
+      items = await this.attachExpansions(items, {
+        member: expand.has('member'),
+        organization: expand.has('organization'),
+      });
+    }
+    return { items, total, page: query.page, pageSize: query.pageSize };
   }
 
   // ============ F4:GET /api/admin/v1/organizations/:orgId/members/options(组织轴队员下拉) ============
