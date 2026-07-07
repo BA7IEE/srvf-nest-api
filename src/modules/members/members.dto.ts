@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { MemberStatus } from '@prisma/client';
+import { MemberStatus, Role, UserStatus } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
@@ -14,6 +14,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { MAINLAND_PHONE_PATTERN } from '../sms/sms.constants';
 
 // query boolean 从 GET query string 解析:原始值是字符串 'true'/'false',@Type(() => Boolean)
 // 会用 `Boolean(value)` 转换 —— 任何非空字符串(含 'false')都会变 true,是已知陷阱,
@@ -55,6 +56,25 @@ export class MemberResponseDto {
 
   @ApiProperty({ description: '在队 / 离队状态', enum: MemberStatus })
   status!: MemberStatus;
+
+  @ApiProperty({
+    description:
+      '是否已开通登录账号(队员账号闭环 v1;存在关联 User 即 true,含已禁用/软删的绑定 —— 不代表当前可登录,仅表示该 memberId 槽位已被占用)',
+  })
+  hasAccount!: boolean;
+
+  @ApiPropertyOptional({
+    description: '关联账号状态(无关联为 null;队员账号闭环 v1)',
+    enum: UserStatus,
+    nullable: true,
+  })
+  accountStatus!: UserStatus | null;
+
+  @ApiPropertyOptional({
+    description: '关联账号 id(无关联为 null;队员账号闭环 v1)',
+    nullable: true,
+  })
+  userId!: string | null;
 
   @ApiProperty({ description: '创建时间' })
   createdAt!: Date;
@@ -180,6 +200,14 @@ export class ListMembersQueryDto extends PaginationQueryDto {
   @Transform(parseQueryBoolean)
   @IsBoolean()
   includeDescendants?: boolean;
+
+  @ApiPropertyOptional({
+    description: '按是否已开通登录账号过滤(队员账号闭环 v1;不传 = 不过滤)',
+  })
+  @IsOptional()
+  @Transform(parseQueryBoolean)
+  @IsBoolean()
+  hasAccount?: boolean;
 }
 
 // ============ F1/A1 选择器(路线图 §4;D2/D3 拍板)============
@@ -235,4 +263,40 @@ export class MemberOptionItemDto {
 export class MemberOptionsResponseDto {
   @ApiProperty({ description: '结果列表(不分页,受 limit 截断)', type: () => [MemberOptionItemDto] })
   items!: MemberOptionItemDto[];
+}
+
+// ============ 队员账号闭环 v1(MVP)：POST /:id/account ============
+
+// 开号 = 建一个绑定手机号的 User(memberId 指向该队员、role=USER、username=memberNo、
+// 随机不可用 passwordHash),队员用现有 login-sms 手机验证码登录;不设密码、不接收
+// role / status / password 入参(v1 范围红线)。
+export class GrantMemberAccountDto {
+  @ApiProperty({
+    description:
+      '账号级手机号(必填;写入 User.phone,供 login-sms 登录;与 Member.phonePrimary 互不相干、不合并不同步)',
+    example: '13800001234',
+  })
+  @IsString()
+  @Matches(MAINLAND_PHONE_PATTERN, { message: 'phone 必须是大陆 11 位手机号' })
+  phone!: string;
+}
+
+export class GrantMemberAccountResponseDto {
+  @ApiProperty({ description: '新建账号 id(cuid)' })
+  userId!: string;
+
+  @ApiProperty({ description: '登录用户名(= memberNo,不做大小写归一化)', example: 'M-0001' })
+  username!: string;
+
+  @ApiProperty({ description: '账号级手机号(login-sms 登录用)', example: '13800001234' })
+  phone!: string;
+
+  @ApiProperty({ description: '手机号验证时间(管理员背书,非用户自证短信验证)' })
+  phoneVerifiedAt!: Date;
+
+  @ApiProperty({ description: '角色(恒 USER)', enum: Role, example: Role.USER })
+  role!: Role;
+
+  @ApiProperty({ description: '关联队员 id', example: 'cl9z3a8b00000abcd1234efgh' })
+  memberId!: string;
 }

@@ -35,7 +35,7 @@ import {
   UserResponseDto,
 } from './users.dto';
 import { canChangeRole, canCreateRole, canManageUser, canViewUser } from './users.policy';
-import { SafeUser, userSafeSelect } from './users.select';
+import { SafeUser, SafeUserWithMember, userAdminSelect, userSafeSelect } from './users.select';
 
 const BCRYPT_SALT_ROUNDS = 10;
 
@@ -191,6 +191,18 @@ export class UsersService {
     const user = await this.prisma.user.findFirst({
       where: this.notDeletedWhere({ id }),
       select: userSafeSelect,
+    });
+    if (!user) throw new BizException(BizCode.USER_NOT_FOUND);
+    return user;
+  }
+
+  // 队员账号闭环 v1(2026-07-07):同上,但叠加 memberId + member 摘要(userAdminSelect)。
+  // 仅供 admin findOne() 详情端点使用;findByIdOrThrow 保持不变(App 自助等其余 10 处调用方
+  // 零影响)。
+  private async findByIdWithMemberOrThrow(id: string): Promise<SafeUserWithMember> {
+    const user = await this.prisma.user.findFirst({
+      where: this.notDeletedWhere({ id }),
+      select: userAdminSelect,
     });
     if (!user) throw new BizException(BizCode.USER_NOT_FOUND);
     return user;
@@ -368,9 +380,11 @@ export class UsersService {
     if (q !== undefined) where.OR = this.buildSearchOr(q);
 
     const [items, total] = await this.prisma.$transaction([
+      // 队员账号闭环 v1(2026-07-07):list 走 userAdminSelect,additive 暴露
+      // memberId + member 摘要(见 users.select.ts 顶部注释)。
       this.prisma.user.findMany({
         where,
-        select: userSafeSelect,
+        select: userAdminSelect,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -451,7 +465,9 @@ export class UsersService {
     const target = await this.findRawByIdOrThrow(id);
     // 详情查看走 canViewUser(V1.3-1):与管理类操作的 canManageUser 在语义上拆开。
     this.assertCanViewUser(currentUser, target);
-    return this.findByIdOrThrow(id);
+    // 队员账号闭环 v1(2026-07-07):详情走 userAdminSelect,additive 暴露
+    // memberId + member 摘要(见 findByIdWithMemberOrThrow 注释)。
+    return this.findByIdWithMemberOrThrow(id);
   }
 
   // ============ admin: update profile ============

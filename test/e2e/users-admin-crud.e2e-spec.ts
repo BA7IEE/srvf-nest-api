@@ -33,6 +33,15 @@ const EXPECTED_USER_RESPONSE_KEYS = [
   'username',
 ].sort();
 
+// 队员账号闭环 v1(2026-07-07):GET /:id 详情走 userAdminSelect,additive 叠加
+// memberId + member(仅本端点;create/update/密码流等其余生产者仍用 userSafeSelect,
+// 字段集不变,见 EXPECTED_USER_RESPONSE_KEYS)。
+const EXPECTED_USER_DETAIL_RESPONSE_KEYS = [
+  ...EXPECTED_USER_RESPONSE_KEYS,
+  'memberId',
+  'member',
+].sort();
+
 // PATCH /api/admin/v1/users/:id 禁字段(UpdateUserDto 仅允许 email/nickname/avatarKey)
 // 7 字段 it.each:三件断言 HTTP 400 + BizCode.BAD_REQUEST + message 含字段名
 const FORBIDDEN_PATCH_FIELDS: Array<[string, unknown]> = [
@@ -301,7 +310,7 @@ describe('users 管理接口 CRUD 基础路径', () => {
       ({ authHeader } = await loginAs(app, 'getidsuper1'));
     });
 
-    it('SUPER_ADMIN GET 任意活跃用户 → 200,字段集严格', async () => {
+    it('SUPER_ADMIN GET 任意活跃用户 → 200,字段集严格(含队员账号闭环 v1 additive memberId/member)', async () => {
       const target = await createTestUser(app, { username: 'getidtarget1' });
 
       const res = await request(httpServer(app))
@@ -309,8 +318,33 @@ describe('users 管理接口 CRUD 基础路径', () => {
         .set('Authorization', authHeader);
 
       expect(res.status).toBe(200);
-      expect(Object.keys(res.body.data as object).sort()).toEqual(EXPECTED_USER_RESPONSE_KEYS);
+      expect(Object.keys(res.body.data as object).sort()).toEqual(
+        EXPECTED_USER_DETAIL_RESPONSE_KEYS,
+      );
       expect(res.body.data.id).toBe(target.id);
+      // 无绑定队员 → memberId/member 为 null(而非缺省 key)
+      expect(res.body.data.memberId).toBeNull();
+      expect(res.body.data.member).toBeNull();
+    });
+
+    it('GET 已绑定队员的用户 → memberId + member{memberNo,displayName} 摘要回显', async () => {
+      const member = await prisma.member.create({
+        data: { memberNo: 'getid-linked-1', displayName: 'GetId Linked' },
+        select: { id: true, memberNo: true, displayName: true },
+      });
+      const target = await createTestUser(app, { username: 'getidlinked1' });
+      await prisma.user.update({ where: { id: target.id }, data: { memberId: member.id } });
+
+      const res = await request(httpServer(app))
+        .get(`/api/admin/v1/users/${target.id}`)
+        .set('Authorization', authHeader);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.memberId).toBe(member.id);
+      expect(res.body.data.member).toEqual({
+        memberNo: member.memberNo,
+        displayName: member.displayName,
+      });
     });
 
     it('GET 不存在 id → USER_NOT_FOUND(10001 / 404)', async () => {

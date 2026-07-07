@@ -1,15 +1,29 @@
 import { Injectable } from '@nestjs/common';
-import { DictItemStatus, DictTypeStatus, MemberStatus, Prisma } from '@prisma/client';
+import {
+  DictItemStatus,
+  DictTypeStatus,
+  MemberStatus,
+  Prisma,
+  Role,
+  UserStatus,
+} from '@prisma/client';
+import { randomBytes } from 'node:crypto';
+import * as bcrypt from 'bcryptjs';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
+import { maskPhone } from '../sms/sms.constants';
 import {
   CreateMemberDto,
+  GrantMemberAccountDto,
+  GrantMemberAccountResponseDto,
   ListMembersQueryDto,
   MemberOptionItemDto,
   MemberOptionsQueryDto,
@@ -18,6 +32,10 @@ import {
   UpdateMemberDto,
   UpdateMemberStatusDto,
 } from './members.dto';
+
+// 队员账号闭环 v1(MVP,2026-07-07):BCRYPT_SALT_ROUNDS 与 users.service / recruitment-promotion.service
+// 同值(各模块级声明,沿既有惯例)。
+const BCRYPT_SALT_ROUNDS = 10;
 
 // 队员等级 dict_type code(seed 内置真实值 member_grade,R13 收窄后队内分类可内置;详见 prisma/seed.ts V2_DICT_SEED)。
 // 模块内常量化:Step 4 organizations 自有 'node_type';如未来需跨模块复用再抽 common。
@@ -43,6 +61,7 @@ export class MembersService {
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly organizations: OrganizationsService,
+    private readonly auditLogs: AuditLogsService,
   ) {}
 
   // ============ helpers ============
@@ -108,7 +127,9 @@ export class MembersService {
     if (existing) throw new BizException(BizCode.MEMBER_NO_ALREADY_EXISTS);
   }
 
-  // P2002 兜底:并发场景下预检查通过但 create 撞唯一约束(沿用 v1 users.service 模式)
+  // P2002 兜底:并发场景下预检查通过但 create 撞唯一约束(沿用 v1 users.service 模式)。
+  // 队员账号闭环 v1:补 username / phone 两个 User 侧唯一约束目标(grantAccount 专用;
+  // memberNo 目标服务本模块既有 create())。
   private async runWithUniqueConstraintGuard<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
@@ -118,9 +139,58 @@ export class MembersService {
         if (target.includes('memberNo')) {
           throw new BizException(BizCode.MEMBER_NO_ALREADY_EXISTS);
         }
+        if (target.includes('username')) {
+          throw new BizException(BizCode.USERNAME_ALREADY_EXISTS);
+        }
+        if (target.includes('phone')) {
+          throw new BizException(BizCode.PHONE_ALREADY_BOUND);
+        }
       }
       throw err;
     }
+  }
+
+  // ============ 队员账号闭环 v1:hasAccount / accountStatus 批量计算(避免 N+1)============
+
+  // User.memberId 已 @unique:每个 member 至多关联 1 条 User(含软删,槽位一旦占用不可二次占用,
+  // 沿 DB 约束现实;故 hasAccount 语义 = "该 memberId 槽位是否已被占用"而非"当前是否可登录" ——
+  // 与 grantAccount() 的 MEMBER_HAS_LINKED_USER 判定同一份查询基准,语义自洽。
+  private async loadLinkedUsersByMemberIds(
+    memberIds: string[],
+    tx?: PrismaTx,
+  ): Promise<Map<string, { id: string; status: UserStatus }>> {
+    if (memberIds.length === 0) return new Map();
+    const client = tx ?? this.prisma;
+    const users = await client.user.findMany({
+      where: { memberId: { in: memberIds } },
+      select: { id: true, memberId: true, status: true },
+    });
+    return new Map(users.map((u) => [u.memberId as string, { id: u.id, status: u.status }]));
+  }
+
+  private attachAccountInfo(
+    member: SafeMember,
+    linked: { id: string; status: UserStatus } | undefined,
+  ): MemberResponseDto {
+    return {
+      ...member,
+      hasAccount: linked !== undefined,
+      accountStatus: linked?.status ?? null,
+      userId: linked?.id ?? null,
+    };
+  }
+
+  // 单条查询版(findOne / update / updateStatus / softDelete 共用;list 走批量版避免 N+1)。
+  private async findLinkedUser(
+    memberId: string,
+    tx?: PrismaTx,
+  ): Promise<{ id: string; status: UserStatus } | undefined> {
+    const client = tx ?? this.prisma;
+    const user = await client.user.findFirst({
+      where: { memberId },
+      select: { id: true, status: true },
+    });
+    return user ?? undefined;
   }
 
   // ============ list ============
@@ -148,8 +218,17 @@ export class MembersService {
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<MemberResponseDto>> {
     await this.assertCanOrThrow(currentUser, 'member.read.record');
-    const { page, pageSize, memberNo, gradeCode, status, q, organizationId, includeDescendants } =
-      query;
+    const {
+      page,
+      pageSize,
+      memberNo,
+      gradeCode,
+      status,
+      q,
+      organizationId,
+      includeDescendants,
+      hasAccount,
+    } = query;
 
     const filters: Prisma.MemberWhereInput = {};
     if (memberNo !== undefined) filters.memberNo = memberNo; // 精确匹配(完整字符串相等)
@@ -163,6 +242,9 @@ export class MembersService {
     }
     const orgScope = await this.buildOrganizationScopeFilter(organizationId, includeDescendants);
     if (orgScope !== undefined) Object.assign(filters, orgScope);
+    // 队员账号闭环 v1:hasAccount 经 user 反向关联过滤(User.memberId 已 @unique 一对一)。
+    if (hasAccount === true) filters.user = { isNot: null };
+    if (hasAccount === false) filters.user = { is: null };
 
     const where = notDeletedWhere(filters);
 
@@ -176,7 +258,14 @@ export class MembersService {
       }),
       this.prisma.member.count({ where }),
     ]);
-    return { items, total, page, pageSize };
+
+    const linkedByMemberId = await this.loadLinkedUsersByMemberIds(items.map((m) => m.id));
+    return {
+      items: items.map((m) => this.attachAccountInfo(m, linkedByMemberId.get(m.id))),
+      total,
+      page,
+      pageSize,
+    };
   }
 
   // ============ F1/A1 选择器(路线图 §4;D2/D3 拍板)============
@@ -230,7 +319,7 @@ export class MembersService {
       // 2. memberNo 唯一性预检查(包含软删)
       await this.assertMemberNoUnique(memberNo, tx);
 
-      return this.runWithUniqueConstraintGuard(() =>
+      const created = await this.runWithUniqueConstraintGuard(() =>
         tx.member.create({
           data: {
             memberNo,
@@ -240,6 +329,8 @@ export class MembersService {
           select: memberSafeSelect,
         }),
       );
+      // 新建 member.id 刚生成,不可能已有关联 User(队员账号闭环 v1;免一次多余查询)。
+      return this.attachAccountInfo(created, undefined);
     });
   }
 
@@ -247,7 +338,9 @@ export class MembersService {
 
   async findOne(id: string, currentUser: CurrentUserPayload): Promise<MemberResponseDto> {
     await this.assertCanOrThrow(currentUser, 'member.read.record');
-    return this.findMemberOrThrow(id);
+    const member = await this.findMemberOrThrow(id);
+    const linked = await this.findLinkedUser(id);
+    return this.attachAccountInfo(member, linked);
   }
 
   // ============ update ============
@@ -270,11 +363,13 @@ export class MembersService {
       if (dto.displayName !== undefined) data.displayName = dto.displayName;
       if (dto.gradeCode !== undefined) data.gradeCode = dto.gradeCode;
 
-      return tx.member.update({
+      const updated = await tx.member.update({
         where: { id },
         data,
         select: memberSafeSelect,
       });
+      const linked = await this.findLinkedUser(id, tx);
+      return this.attachAccountInfo(updated, linked);
     });
   }
 
@@ -287,11 +382,13 @@ export class MembersService {
   ): Promise<MemberResponseDto> {
     await this.assertCanOrThrow(currentUser, 'member.update.status');
     await this.findMemberOrThrow(id);
-    return this.prisma.member.update({
+    const updated = await this.prisma.member.update({
       where: { id },
       data: { status: dto.status },
       select: memberSafeSelect,
     });
+    const linked = await this.findLinkedUser(id);
+    return this.attachAccountInfo(updated, linked);
   }
 
   // ============ softDelete ============
@@ -321,11 +418,106 @@ export class MembersService {
         throw new BizException(BizCode.MEMBER_HAS_LINKED_USER);
       }
 
-      return tx.member.update({
+      const updated = await tx.member.update({
         where: { id },
         data: { deletedAt: new Date(), status: MemberStatus.INACTIVE },
         select: memberSafeSelect,
       });
+      const linked = await this.findLinkedUser(id, tx);
+      return this.attachAccountInfo(updated, linked);
+    });
+  }
+
+  // ============ 队员账号闭环 v1(MVP)：grantAccount ============
+
+  // POST /:id/account:给已存在队员开通"手机验证码登录"账号(不设密码)。
+  // 建号镜像 recruitment-promotion.service.ts:125-188 先例:随机不可用 passwordHash +
+  // username=memberNo + role=USER;不复用 UsersService(防环 + 零漂移,沿 promote 同一先例)。
+  //
+  // 校验顺序(先业务后唯一性,与本模块 create() 同口径):
+  //   1. member 存在且未软删 → 否则 MEMBER_NOT_FOUND
+  //   2. member.status === ACTIVE → 否则 MEMBER_INACTIVE
+  //   3. 该 memberId 槽位未被占用(User.memberId 已 @unique,含软删 —— 槽位一旦占用
+  //      永不可二次占用,DB 约束现实;故检查含软删,而非仅 deletedAt: null)→ 否则 MEMBER_HAS_LINKED_USER
+  //   4. username(=memberNo)唯一性预检查含软删占用(沿 AGENTS §10 不复用范式)→ 否则 USERNAME_ALREADY_EXISTS
+  //   5. phone 唯一性预检查含软删占用 → 否则 PHONE_ALREADY_BOUND
+  async grantAccount(
+    id: string,
+    dto: GrantMemberAccountDto,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<GrantMemberAccountResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'member.grant.account');
+
+    return this.prisma.$transaction(async (tx) => {
+      const member = await tx.member.findFirst({
+        where: notDeletedWhere({ id }),
+        select: { id: true, memberNo: true, status: true },
+      });
+      if (!member) throw new BizException(BizCode.MEMBER_NOT_FOUND);
+      if (member.status !== MemberStatus.ACTIVE) {
+        throw new BizException(BizCode.MEMBER_INACTIVE);
+      }
+
+      const existingLink = await tx.user.findFirst({
+        where: { memberId: id },
+        select: { id: true },
+      });
+      if (existingLink) throw new BizException(BizCode.MEMBER_HAS_LINKED_USER);
+
+      const existingUsername = await tx.user.findUnique({
+        where: { username: member.memberNo },
+        select: { id: true },
+      });
+      if (existingUsername) throw new BizException(BizCode.USERNAME_ALREADY_EXISTS);
+
+      const existingPhone = await tx.user.findUnique({
+        where: { phone: dto.phone },
+        select: { id: true },
+      });
+      if (existingPhone) throw new BizException(BizCode.PHONE_ALREADY_BOUND);
+
+      // 随机不可用口令(镜像 recruitment-promotion.service.ts:122-127;SMS 登录无密码可强制,
+      // v1 不设初始密码入参)。
+      const passwordHash = await bcrypt.hash(
+        randomBytes(48).toString('base64'),
+        BCRYPT_SALT_ROUNDS,
+      );
+      const now = new Date();
+
+      const created = await this.runWithUniqueConstraintGuard(() =>
+        tx.user.create({
+          data: {
+            username: member.memberNo,
+            phone: dto.phone,
+            phoneVerifiedAt: now, // 管理员背书,非用户自证短信验证
+            passwordHash,
+            role: Role.USER,
+            memberId: id,
+          },
+          select: { id: true, username: true, phone: true, phoneVerifiedAt: true, role: true },
+        }),
+      );
+
+      await this.auditLogs.log({
+        event: 'member.account-granted',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'member',
+        resourceId: id,
+        meta: auditMeta,
+        extra: { memberId: id, userId: created.id, phone: maskPhone(dto.phone) },
+        tx,
+      });
+
+      return {
+        userId: created.id,
+        username: created.username,
+        phone: created.phone as string,
+        phoneVerifiedAt: created.phoneVerifiedAt as Date,
+        role: created.role,
+        memberId: id,
+      };
     });
   }
 }
