@@ -21,12 +21,15 @@ import { createTestApp } from '../setup/test-app';
 // 覆盖:
 // - 绑定既有悬空账号(权限边界 / member 状态 / 目标账号状态四类拒绝 + 成功)
 // - 解绑(只断链,账号回悬空 ACTIVE,不停用不软删)
+// - 解绑后再开号(队员账号闭环 v2 收尾修复,2026-07-08):computeNextUsername 改探测式,
+//   修复"悬空账号仍占 username → 误撞 USERNAME_ALREADY_EXISTS"边角;全链验证新号可登录
 // - 退号重开(单事务原子;username 代际后缀;phone 结构性冲突固化为有意行为)
 // - 队员面启停账号(禁自我操作;禁用联动撤销 refresh token;不写 audit)
 // - 完整生命周期链:开号 → 解绑 → 绑定回 → 退号重开 → 启停,全程两面回显正确翻转
 // - auth 既有 e2e zero-touch(本文件未修改任何既有 auth spec)
 
 const MEMBER_ACCOUNT_CODES = ['member.grant.account', 'member.bind.account'] as const;
+const LOGIN_SMS_FIXED_CODE = '888888'; // DEV_STUB 固定验证码(沿 auth-login-sms.e2e-spec.ts 范式)
 
 async function seedMemberAccountCodesAndBind(
   prisma: PrismaService,
@@ -261,6 +264,52 @@ describe('队员账号闭环 v2:完整生命周期(bind/unbind/reopen/status)', 
       expect(unbound.memberId).toBeNull();
       expect(unbound.deletedAt).toBeNull();
       expect(unbound.status).toBe(UserStatus.ACTIVE);
+    });
+
+    // 队员账号闭环 v2 收尾修复:unbind 只断链不软删,悬空账号仍占用 username=memberNo;
+    // computeNextUsername 曾按 count(memberId) 推算代际,断链后 count 归零而误判"从未
+    // 开过号"重取裸 memberNo,100% 撞上悬空行(USERNAME_ALREADY_EXISTS)。改探测式后
+    // 直接检测 username 是否被占用,不再依赖 memberId,修复此边角。
+    it('解绑后再开号(非 reopen):成功且 username 追加代际后缀,新号可用新手机号登录', async () => {
+      const member = await newMember();
+
+      const firstGrant = await grant(member.id, '13900006001', opsAdminAuth);
+      expect(firstGrant.status).toBe(201);
+      expect(firstGrant.body.data.username).toBe(member.memberNo); // 首次仍裸 memberNo
+      const firstUserId = firstGrant.body.data.userId;
+
+      const unbound = await unbind(member.id, opsAdminAuth);
+      expect(unbound.status).toBe(200);
+
+      // 悬空账号仍占用 username=memberNo(只断链不软删)——修复前的撞车根源。
+      const dangling = await prisma.user.findUniqueOrThrow({ where: { id: firstUserId } });
+      expect(dangling.memberId).toBeNull();
+      expect(dangling.username).toBe(member.memberNo);
+
+      const phone = '13900006002';
+      const secondGrant = await grant(member.id, phone, opsAdminAuth);
+      expect(secondGrant.status).toBe(201); // 修复前:此处会 400 USERNAME_ALREADY_EXISTS
+      expect(secondGrant.body.data.username).toBe(`${member.memberNo}-2`);
+      expect(secondGrant.body.data.memberId).toBe(member.id);
+      const secondUserId = secondGrant.body.data.userId;
+      expect(secondUserId).not.toBe(firstUserId);
+
+      const secondUser = await prisma.user.findUniqueOrThrow({ where: { id: secondUserId } });
+      expect(secondUser.deletedAt).toBeNull();
+      expect(secondUser.status).toBe(UserStatus.ACTIVE);
+      expect(secondUser.memberId).toBe(member.id);
+
+      // 新账号可用新手机号走 login-sms 登录(全链验证新号确实可用,非仅 DB 状态正确)。
+      const sendCode = await request(httpServer(app))
+        .post('/api/auth/v1/login-sms/send-code')
+        .send({ phone });
+      expect(sendCode.status).toBe(200);
+
+      const login = await request(httpServer(app))
+        .post('/api/auth/v1/login-sms')
+        .send({ phone, code: LOGIN_SMS_FIXED_CODE });
+      expect(login.status).toBe(200);
+      expect(typeof login.body.data.accessToken).toBe('string');
     });
   });
 

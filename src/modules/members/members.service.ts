@@ -169,21 +169,25 @@ export class MembersService {
   }
 
   // 队员账号闭环 v2(评审稿 §1.2 E-7):username 结构性冲突。User.username 仍是全量
-  // @unique(不在本次改造范围,AGENTS §10"不复用"永久铁律),故一旦某 memberId 曾经
-  // 创建过账号(即使已软删),那条历史行永久占用裸 `memberNo` 这个 username——D-2 放宽
-  // existingLink 为"仅 live"后,grantAccount / reopenAccount 都可能在"曾有历史、现无
-  // live"的槽位上再次创建新行,若仍固定用裸 memberNo 会 100% 撞历史行的 username。
+  // @unique(不在本次改造范围,AGENTS §10"不复用"永久铁律),故一旦某 memberNo 曾经
+  // 创建过账号(即使已软删,或曾 unbind 成悬空 memberId=null),那条历史/悬空行永久
+  // 占用其 username——早期按 count(memberId) 推算"代际"曾在"grant → unbind → 再
+  // grant"路径下失灵:unbind 只断链不软删,断链后 count(memberId) 归零而误判"从未
+  // 开过号"重取裸 memberNo,100% 撞上那条仍占位的悬空行(队员账号闭环 v2 收尾修复)。
   //
-  // 已用代码验证 login-sms 完全按 phone 解析账号、从不读 username(auth/login-sms.service.ts
-  // resolveActiveUserByPhone),故安全地按"代际"后缀化:第 1 次(该 memberId 从未创建过
-  // 任何 User,含软删)用裸 memberNo(v1 行为逐字不变);第 N 次(N≥2)用 `${memberNo}-N`。
-  private async computeNextUsername(
-    memberId: string,
-    memberNo: string,
-    tx: PrismaTx,
-  ): Promise<string> {
-    const priorCount = await tx.user.count({ where: { memberId } });
-    return priorCount === 0 ? memberNo : `${memberNo}-${priorCount + 1}`;
+  // 改为直接探测:已用代码验证 login-sms 完全按 phone 解析账号、从不读 username
+  // (auth/login-sms.service.ts resolveActiveUserByPhone),故安全地从裸 memberNo 起
+  // 依次尝试 `${memberNo}-2`、`${memberNo}-3`……直到找到第一个未被任何 User(含软删、
+  // 含悬空 memberId=null)占用的 username 为止——不依赖 memberId,天然覆盖历史行/悬空行
+  // 两类占用来源。
+  private async computeNextUsername(memberNo: string, tx: PrismaTx): Promise<string> {
+    let candidate = memberNo;
+    let generation = 2;
+    while (await tx.user.findUnique({ where: { username: candidate }, select: { id: true } })) {
+      candidate = `${memberNo}-${generation}`;
+      generation += 1;
+    }
+    return candidate;
   }
 
   // ============ 队员账号闭环 v1:hasAccount / accountStatus 批量计算(避免 N+1)============
@@ -521,10 +525,10 @@ export class MembersService {
       });
       if (existingLink) throw new BizException(BizCode.MEMBER_HAS_LINKED_USER);
 
-      // 队员账号闭环 v2(评审稿 §1.2 E-7):该 memberId 曾有历史行(即使已软删)时,
-      // 裸 memberNo 这个 username 被永久占用,须按代际后缀化;首次开号(v1 常见路径)
-      // 逐字不变,仍是裸 memberNo。
-      const username = await this.computeNextUsername(id, member.memberNo, tx);
+      // 队员账号闭环 v2(评审稿 §1.2 E-7):该 memberNo 曾有历史行/悬空行(即使已软删
+      // 或已 unbind)时,裸 memberNo 这个 username 被占用,探测式自动后缀化;首次开号
+      // (v1 常见路径)逐字不变,仍是裸 memberNo。
+      const username = await this.computeNextUsername(member.memberNo, tx);
 
       const existingUsername = await tx.user.findUnique({
         where: { username },
@@ -730,10 +734,11 @@ export class MembersService {
       });
       if (!oldLink) throw new BizException(BizCode.MEMBER_HAS_NO_LINKED_USER);
 
-      // 复用 computeNextUsername(此刻 count 含即将被软删的 oldLink 1 条,故 reopen 恒
-      // 落入 N≥1 分支,取到 -2/-3/... 后缀;理论上 reopen 恒有 ≥1 条历史,裸 memberNo
-      // 分支不会在 reopen 路径触发,仅 computeNextUsername 与 grantAccount 共用防御性保留)。
-      const newUsername = await this.computeNextUsername(id, member.memberNo, tx);
+      // 复用探测式 computeNextUsername:此刻 oldLink 仍 live(软删滞后到下方发生),
+      // 其占用的 username 仍未释放,故探测必然跳过该值取到更高代际(-2/-3/...);
+      // 裸 memberNo 分支不会在 reopen 路径触发(oldLink 存在本身就证明 memberNo 或
+      // 某代际后缀已被占用)。
+      const newUsername = await this.computeNextUsername(member.memberNo, tx);
 
       const existingUsername = await tx.user.findUnique({
         where: { username: newUsername },

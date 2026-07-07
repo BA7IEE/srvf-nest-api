@@ -23,8 +23,9 @@ import { createTestApp } from '../setup/test-app';
 // - 权限边界:未登录 401 / USER 30100 / ADMIN+biz-admin(无 ops-admin)30100(码绑 ops-admin,
 //   不绑 biz-admin,goal 工程代决)/ ADMIN+ops-admin 200 / SUPER_ADMIN 短路 200
 // - 校验顺序:member 不存在 15001(含已软删)/ member 非 ACTIVE 17030 / 已有绑定(含软删占用
-//   槽位不放行)15031 / username(=memberNo)被占用(含软删)10001-USERNAME / phone 被占用
-//   (含软删)24002 / phone 缺失格式错 400
+//   槽位不放行)15031 / username(=memberNo)被占用 → 探测式自动取下一代 username 开号成功
+//   (队员账号闭环 v2 收尾,computeNextUsername 改探测式后不再硬拒绝,2026-07-08)/ phone
+//   被占用(含软删)24002 / phone 缺失格式错 400
 // - 成功路径:User 建成(username=memberNo / phone / phoneVerifiedAt=now / role=USER /
 //   memberId);audit `member.account-granted`(resourceType=member,extra 掩码,零明文号/hash)
 // - hasAccount / accountStatus / userId 在 GET 详情 + list(含 `?hasAccount=` 过滤)正确反映
@@ -205,13 +206,17 @@ describe('队员账号闭环 v1:POST /api/admin/v1/members/:id/account', () => {
       );
     });
 
-    it('memberNo 恰与某已有 username 冲突 → USERNAME_ALREADY_EXISTS', async () => {
+    // 队员账号闭环 v2 收尾(computeNextUsername 改探测式,2026-07-08):不再区分冲突
+    // 来源是"本队员自己的历史/悬空账号"还是"纯属巧合的无关用户"——两者在 DB 里本就
+    // 无法区分(悬空账号 unbind 后 memberId 同样为 null),探测式统一按 username 是否
+    // 被占用自动跳到下一代,不再对"无关巧合冲突"单独硬拒绝(v1 行为变更,已与维护者
+    // 确认:见 PR 描述"探测式冲突"拍板记录)。
+    it('memberNo 恰与某已有 username 冲突 → 探测式自动取下一代 username 开号成功', async () => {
       const member = await newMember();
       await createTestUser(app, { username: member.memberNo }); // 抢占 username 命名空间
-      expectBizError(
-        await grant(member.id, '13800002003', opsAdminAuth),
-        BizCode.USERNAME_ALREADY_EXISTS,
-      );
+      const res = await grant(member.id, '13800002003', opsAdminAuth);
+      expect(res.status).toBe(201);
+      expect(res.body.data.username).toBe(`${member.memberNo}-2`);
     });
 
     it('队员已有绑定 User → MEMBER_HAS_LINKED_USER(重复开号拒绝,非幂等)', async () => {
