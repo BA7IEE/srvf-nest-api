@@ -76,6 +76,10 @@ export class BirthdayGreetingService {
 
     // 选取(E-B5):JOIN 链一次取回,月日匹配在内存判定(Prisma 无月日函数;
     // 候选集 = 全部活跃队员 profile,内部系统百人级量级可承受)
+    // 队员账号闭环 v2:User.memberId 改一对多(partial unique,仅 DB 层保证至多 1 条
+    // live),`users` 查询显式收窄 `deletedAt: null` + `take: 1` 取当前 live 关联账号
+    // ——与 v1 逐字等价(原 `user.deletedAt !== null` 应用层过滤现改为查询层 where,
+    // 软删账号同样被排除在候选之外)。
     const candidates = await this.prisma.memberProfile.findMany({
       where: {
         deletedAt: null,
@@ -85,7 +89,11 @@ export class BirthdayGreetingService {
         birthDate: true,
         member: {
           select: {
-            user: { select: { phone: true, status: true, deletedAt: true } },
+            users: {
+              where: { deletedAt: null },
+              select: { phone: true, status: true },
+              take: 1,
+            },
           },
         },
       },
@@ -95,8 +103,8 @@ export class BirthdayGreetingService {
     for (const row of candidates) {
       const bd = utc8MonthDay(row.birthDate);
       if (bd.month !== month || bd.day !== day) continue;
-      const user = row.member.user;
-      if (!user || user.phone === null || user.deletedAt !== null) continue;
+      const user = row.member.users[0];
+      if (!user || user.phone === null) continue;
       if (user.status !== UserStatus.ACTIVE) continue;
       targets.push(user.phone);
     }

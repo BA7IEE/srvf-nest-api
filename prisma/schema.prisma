@@ -39,7 +39,12 @@ model User {
   // 评审稿 E-19);admin 清除置 null(解除绑定唯一路径,D-W3)。
   openid String? @unique
 
-  memberId String? @unique
+  // 队员账号闭环 v2(2026-07-07;评审稿 docs/archive/reviews/member-account-loop-v2-review.md
+  // §3.1/E-1/E-2):去 @unique,改手写 partial unique index `User_memberId_active_key`
+  // WHERE "deletedAt" IS NULL(migration 末尾追加,沿 role_bindings / member_organization_memberships
+  // 等既有范式)——同一 memberId 至多 1 条"活跃"关联,软删后释放槽位供重新绑定/开号/重开。
+  // 普通 @@index([memberId]) 兜底覆盖跨软删状态的既有查询(existingLink 预检查等)。
+  memberId String?
   member   Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
 
   // V2 第一阶段批次 3 反向 relation(详见 docs:批次3_schema草案_*.md §12.1)
@@ -84,6 +89,7 @@ model User {
 
   @@index([deletedAt])
   @@index([status])
+  @@index([memberId])
 }
 
 enum Role {
@@ -421,7 +427,12 @@ model Member {
   updatedAt   DateTime     @updatedAt
   deletedAt   DateTime?
 
-  user                          User?
+  // 队员账号闭环 v2(2026-07-07):User.memberId 去 @unique 改一对多——Prisma 要求
+  // 一对一关系的 FK 侧字段必须 schema 级 @unique,而 partial unique(仅 DB 层约束
+  // "至多 1 条 live")无法在 Prisma DSL 表达,故 Prisma 类型系统诚实反映"1 个 member
+  // 可对应多条历史 User(软删)+ 至多 1 条 live"。消费方(resource-resolver.service.ts /
+  // birthday-greeting.service.ts)已同步改为按 `where: { deletedAt: null }, take: 1` 取用。
+  users                          User[]
   // 终态 scoped-authz PR2(2026-07-01;冻结稿 §3.1):组织归属反向 relation(仅关系映射,不算业务字段新增,沿 R2 范式)。
   memberOrganizationMemberships MemberOrganizationMembership[]
   // 终态 scoped-authz PR4(2026-07-01;冻结稿 §3.4):任职反向 relation(仅关系映射,不算业务字段新增,沿 R2 范式)。

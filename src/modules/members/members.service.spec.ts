@@ -69,6 +69,16 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
     );
   });
 
+  it('target 含手写 partial index 字面量名 User_memberId_active_key → 仍 MEMBER_HAS_LINKED_USER(队员账号闭环 v2,评审稿 §1.2 E-4)', async () => {
+    const tx = makeTx();
+    tx.user.create.mockRejectedValue(p2002(['User_memberId_active_key']));
+    const service = new MembersService(makePrisma(tx), rbacAllow, organizationsStub, auditNoop);
+
+    await expect(service.grantAccount('m1', { phone: '13800000006' }, USER, META)).rejects.toEqual(
+      new BizException(BizCode.MEMBER_HAS_LINKED_USER),
+    );
+  });
+
   it('target 含 username → 仍 USERNAME_ALREADY_EXISTS(既有分支回归哨兵,逐字不动)', async () => {
     const tx = makeTx();
     tx.user.create.mockRejectedValue(p2002(['username']));

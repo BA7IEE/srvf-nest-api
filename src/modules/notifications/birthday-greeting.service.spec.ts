@@ -8,15 +8,22 @@ import type { SmsSettingsService } from '../sms/sms-settings.service';
 // 锁定选取六条件逐一反例 / 2-29 闰年判定 / UTC+8 日界换算 / 单条失败继续 /
 // 前置检查跳过 / 幂等跳过 / 日志掩码——e2e(notifications-birthday)覆盖真实 DB 链路。
 
+// 队员账号闭环 v2:User.memberId 改一对多(partial unique),真实查询已在 `where` 内
+// 收窄 `deletedAt: null` + `take: 1`——软删的 user 从查询结果里直接消失,不再像 v1
+// 那样以 `deletedAt` 非空的形式出现在返回行里。故 mock 候选行的 `users` 数组只表示
+// "查询层过滤后還剩下的 live 候选"(0 或 1 条),不再携带 `deletedAt` 字段。
 type CandidateRow = {
   birthDate: Date;
   member: {
-    user: { phone: string | null; status: 'ACTIVE' | 'DISABLED'; deletedAt: Date | null } | null;
+    users: Array<{ phone: string | null; status: 'ACTIVE' | 'DISABLED' }>;
   };
 };
 
-function activeUser(phone: string | null): CandidateRow['member']['user'] {
-  return { phone, status: 'ACTIVE', deletedAt: null };
+function liveUser(
+  phone: string | null,
+  status: 'ACTIVE' | 'DISABLED' = 'ACTIVE',
+): CandidateRow['member']['users'] {
+  return [{ phone, status }];
 }
 
 // 固定测试时刻:2026-06-11 12:00 UTC+8(= 04:00 UTC)
@@ -85,20 +92,15 @@ describe('BirthdayGreetingService.runOnce(直调;mock 依赖)', () => {
     expect(findManyMock).not.toHaveBeenCalled();
   });
 
-  it('选取:月日命中 + 全链 ACTIVE + 绑 phone → 发送;六条件反例逐一不选', async () => {
+  it('选取:月日命中 + 全链 ACTIVE + 绑 phone → 发送;反例逐一不选', async () => {
     candidates = [
-      { birthDate: bd(6, 11), member: { user: activeUser('13900000001') } }, // 命中
-      { birthDate: bd(6, 12), member: { user: activeUser('13900000002') } }, // 月日不符
-      { birthDate: bd(6, 11), member: { user: activeUser(null) } }, // 无 phone
-      { birthDate: bd(6, 11), member: { user: null } }, // 未绑 user
-      {
-        birthDate: bd(6, 11),
-        member: { user: { phone: '13900000005', status: 'DISABLED', deletedAt: null } },
-      }, // user DISABLED
-      {
-        birthDate: bd(6, 11),
-        member: { user: { phone: '13900000006', status: 'ACTIVE', deletedAt: new Date() } },
-      }, // user 软删
+      { birthDate: bd(6, 11), member: { users: liveUser('13900000001') } }, // 命中
+      { birthDate: bd(6, 12), member: { users: liveUser('13900000002') } }, // 月日不符
+      { birthDate: bd(6, 11), member: { users: liveUser(null) } }, // 无 phone
+      // 无 live 关联账号(未绑定 或 唯一关联已软删)——查询层 `where: {deletedAt:null}`
+      // 已排除,二者在返回结果里等价,故合并为同一条 `users: []`。
+      { birthDate: bd(6, 11), member: { users: [] } },
+      { birthDate: bd(6, 11), member: { users: liveUser('13900000005', 'DISABLED') } }, // user DISABLED
     ];
     const summary = await service.runOnce(NOW);
     expect(summary).toEqual({ selected: 1, sent: 1, skippedIdempotent: 0, failed: 0 });
@@ -118,7 +120,7 @@ describe('BirthdayGreetingService.runOnce(直调;mock 依赖)', () => {
   });
 
   it('2/29 生日仅闰年当天发:非闰年 2/28 与 3/1 均不选(不顺延)', async () => {
-    candidates = [{ birthDate: bd(2, 29, 2000), member: { user: activeUser('13900000007') } }];
+    candidates = [{ birthDate: bd(2, 29, 2000), member: { users: liveUser('13900000007') } }];
     // 2026 非闰年:2/28 与 3/1 都不发
     const on228 = await service.runOnce(new Date('2026-02-28T04:00:00.000Z'));
     expect(on228.selected).toBe(0);
@@ -130,7 +132,7 @@ describe('BirthdayGreetingService.runOnce(直调;mock 依赖)', () => {
   });
 
   it('UTC+8 日界:UTC 晚 23 点(=UTC+8 次日早 7 点)按次日月日匹配', async () => {
-    candidates = [{ birthDate: bd(6, 12), member: { user: activeUser('13900000008') } }];
+    candidates = [{ birthDate: bd(6, 12), member: { users: liveUser('13900000008') } }];
     // 2026-06-11T23:00Z = UTC+8 2026-06-12 07:00 → 6/12 生日命中
     const summary = await service.runOnce(new Date('2026-06-11T23:00:00.000Z'));
     expect(summary.selected).toBe(1);
@@ -138,7 +140,7 @@ describe('BirthdayGreetingService.runOnce(直调;mock 依赖)', () => {
   });
 
   it('幂等:当日已有 SENT 行 → skippedIdempotent,不再发送', async () => {
-    candidates = [{ birthDate: bd(6, 11), member: { user: activeUser('13900000009') } }];
+    candidates = [{ birthDate: bd(6, 11), member: { users: liveUser('13900000009') } }];
     alreadySentCount = 1;
     const summary = await service.runOnce(NOW);
     expect(summary).toEqual({ selected: 1, sent: 0, skippedIdempotent: 1, failed: 0 });
@@ -147,8 +149,8 @@ describe('BirthdayGreetingService.runOnce(直调;mock 依赖)', () => {
 
   it('单条失败:写 FAILED 行后继续下一人,不重试不阻断;日志掩码不输出完整号码', async () => {
     candidates = [
-      { birthDate: bd(6, 11), member: { user: activeUser('13911110001') } },
-      { birthDate: bd(6, 11), member: { user: activeUser('13911110002') } },
+      { birthDate: bd(6, 11), member: { users: liveUser('13911110001') } },
+      { birthDate: bd(6, 11), member: { users: liveUser('13911110002') } },
     ];
     sendImpl = (input) =>
       input.phone === '13911110001'
@@ -175,8 +177,8 @@ describe('BirthdayGreetingService.runOnce(直调;mock 依赖)', () => {
 
   it('通道整体不可用:resolveProviderType 抛 → 剩余整批跳过,零 FAILED 行', async () => {
     candidates = [
-      { birthDate: bd(6, 11), member: { user: activeUser('13911110003') } },
-      { birthDate: bd(6, 11), member: { user: activeUser('13911110004') } },
+      { birthDate: bd(6, 11), member: { users: liveUser('13911110003') } },
+      { birthDate: bd(6, 11), member: { users: liveUser('13911110004') } },
     ];
     resolveProviderTypeMock.mockRejectedValue(new Error('SMS_CHANNEL_UNAVAILABLE: 运维已关闭'));
     const summary = await service.runOnce(NOW);
