@@ -128,8 +128,11 @@ export class MembersService {
   }
 
   // P2002 兜底:并发场景下预检查通过但 create 撞唯一约束(沿用 v1 users.service 模式)。
-  // 队员账号闭环 v1:补 username / phone 两个 User 侧唯一约束目标(grantAccount 专用;
-  // memberNo 目标服务本模块既有 create())。
+  // 队员账号闭环 v1:补 username / phone / memberId 三个 User 侧唯一约束目标(grantAccount 专用;
+  // memberNo 目标服务本模块既有 create())。memberId 分支收尾补齐(2026-07-07,元核验 P3):
+  // 两个管理员并发对同一队员开号时,输家的 INSERT 同时违反 username(=memberNo 两者相同)与
+  // memberId 两个唯一约束,DB 只报其一且不保证是哪个 —— 未映射的一侧会裸 500;语义同
+  // grantAccount 第 462-466 行 existingLink 预检查(该 memberId 槽位已被占用)。
   private async runWithUniqueConstraintGuard<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
@@ -144,6 +147,9 @@ export class MembersService {
         }
         if (target.includes('phone')) {
           throw new BizException(BizCode.PHONE_ALREADY_BOUND);
+        }
+        if (target.includes('memberId')) {
+          throw new BizException(BizCode.MEMBER_HAS_LINKED_USER);
         }
       }
       throw err;
