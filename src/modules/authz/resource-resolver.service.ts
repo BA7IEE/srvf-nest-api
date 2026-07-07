@@ -170,9 +170,16 @@ export class ResourceResolverService {
   }
 
   private async resolveMember(id: string): Promise<ResolvedResource | null> {
+    // 队员账号闭环 v2:User.memberId 改一对多(partial unique,仅 DB 层保证至多 1 条
+    // live),`users` 查询显式收窄 `deletedAt: null` + `take: 1` 取当前 live 关联账号,
+    // 与 v1 行为等价(软删账号从不可能是 currentUser,不影响任何 self-scope 判定结果)。
     const row = await this.prisma.member.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true, status: true, user: { select: { id: true } } },
+      select: {
+        id: true,
+        status: true,
+        users: { where: { deletedAt: null }, select: { id: true }, take: 1 },
+      },
     });
     if (!row) return null;
     const organizationId = await this.primaryMembershipOrgId(row.id);
@@ -182,7 +189,7 @@ export class ResourceResolverService {
       organizationId,
       organizationPath: await this.organizationPath(organizationId),
       ownerMemberId: row.id,
-      ownerUserId: row.user?.id ?? null,
+      ownerUserId: row.users[0]?.id ?? null,
       activityId: null,
       statusCode: row.status,
       sensitivityLevel: null,

@@ -1256,7 +1256,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     const li = await prisma.member.findFirstOrThrow({
       where: { memberNo: '26001' },
       include: {
-        user: true,
+        users: true,
         memberProfile: true,
         emergencyContacts: true,
         memberOrganizationMemberships: true,
@@ -1271,10 +1271,13 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(li.memberOrganizationMemberships[0].deletedAt).toBeNull();
     expect(li.displayName).toBe('李四');
     // wrinkle③ User:openid 绑定、username=memberNo、passwordHash 非空(密码登录天然关闭)、memberId 回链
-    expect(li.user?.openid).toBe('dev-openid-p3-l');
-    expect(li.user?.username).toBe('26001');
-    expect(li.user?.passwordHash).toBeTruthy();
-    expect(li.user?.memberId).toBe(li.id);
+    // 队员账号闭环 v2:User.memberId 改一对多(partial unique),users 数组;刚 promote
+    // 出的队员恰好只有这一条 live 关联,故 users[0] 与 v1 单条 user 断言逐字等价。
+    expect(li.users.length).toBe(1);
+    expect(li.users[0]?.openid).toBe('dev-openid-p3-l');
+    expect(li.users[0]?.username).toBe('26001');
+    expect(li.users[0]?.passwordHash).toBeTruthy();
+    expect(li.users[0]?.memberId).toBe(li.id);
     // MemberProfile 映射 + email null(M-1)+ 证件照搬入(wrinkle①)
     expect(li.memberProfile?.realName).toBe('李四');
     expect(li.memberProfile?.documentNumber).toBe(ID_MATCH_B);

@@ -238,6 +238,40 @@ describe('队员账号闭环 v1:POST /api/admin/v1/members/:id/account', () => {
     });
   });
 
+  // ============ 并发开号:P2002 兜底(真实 Postgres,队员账号闭环 v2 评审稿 §1.2 E-4)============
+
+  // memberId 唯一约束自本 PR 起是手写 partial unique index(User_memberId_active_key),
+  // 不再是 schema 声明的 @unique;此测试用真实并发请求(非 mock target)验证
+  // runWithUniqueConstraintGuard 在真实 Postgres 下仍能把撞车正确映射为 BizException,
+  // 不裸抛 500。两个并发请求打同一队员时,输家 INSERT 同时违反 username(=memberNo
+  // 两者相同)与 memberId 两个唯一约束,PG 只报其一且不保证是哪个(#516 commit 原文
+  // 已载明此非确定性),故断言接受两种码中的任一种,而非武断锁死一种。
+  describe('并发开号:P2002 兜底(真实 Postgres)', () => {
+    it('两个并发请求打同一 live 且无账号的队员 → 恰好一个 201,另一个干净 4xx(非裸 500)', async () => {
+      const member = await newMember();
+      const [resA, resB] = await Promise.all([
+        grant(member.id, '13800008001', opsAdminAuth),
+        grant(member.id, '13800008002', opsAdminAuth),
+      ]);
+
+      const winners = [resA, resB].filter((r) => r.status === 201);
+      const losers = [resA, resB].filter((r) => r.status !== 201);
+      expect(winners.length).toBe(1);
+      expect(losers.length).toBe(1);
+
+      const loserCode = losers[0].body.code as number;
+      expect([BizCode.MEMBER_HAS_LINKED_USER.code, BizCode.USERNAME_ALREADY_EXISTS.code]).toContain(
+        loserCode,
+      );
+
+      // 恰好 1 条 live User 关联该队员(赢家),不多不少——partial unique 正确生效。
+      const linkedCount = await prisma.user.count({
+        where: { memberId: member.id, deletedAt: null },
+      });
+      expect(linkedCount).toBe(1);
+    });
+  });
+
   // ============ 成功路径 + 审计 ============
 
   describe('成功路径 + 审计', () => {

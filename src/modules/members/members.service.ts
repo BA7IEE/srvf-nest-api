@@ -148,7 +148,13 @@ export class MembersService {
         if (target.includes('phone')) {
           throw new BizException(BizCode.PHONE_ALREADY_BOUND);
         }
-        if (target.includes('memberId')) {
+        // 队员账号闭环 v2(评审稿 §1.2 E-4):memberId 的唯一约束自本迁移起是手写
+        // partial unique index(`User_memberId_active_key`),不再是 schema 声明的
+        // `@unique`。本仓 position-assignments/supervision-assignments 已验证:手写
+        // partial index 的 P2002 `meta.target` 不可靠(可能是列名,也可能是索引字面量
+        // 名)。两条 OR 分支任一命中即映射同一 BizCode,不影响其余分支与既有"不含已
+        // 映射键 → 原样上抛"单测契约。
+        if (target.includes('memberId') || target.includes('User_memberId_active_key')) {
           throw new BizException(BizCode.MEMBER_HAS_LINKED_USER);
         }
       }
@@ -248,9 +254,15 @@ export class MembersService {
     }
     const orgScope = await this.buildOrganizationScopeFilter(organizationId, includeDescendants);
     if (orgScope !== undefined) Object.assign(filters, orgScope);
-    // 队员账号闭环 v1:hasAccount 经 user 反向关联过滤(User.memberId 已 @unique 一对一)。
-    if (hasAccount === true) filters.user = { isNot: null };
-    if (hasAccount === false) filters.user = { is: null };
+    // 队员账号闭环 v1:hasAccount 经 users 反向关联过滤。
+    // 队员账号闭环 v2(评审稿 §1.2 E-1/E-2):User.memberId 改一对多(partial unique),
+    // 关系过滤语法从一对一 `is`/`isNot` 改一对多 `some`/`none`;本 PR(schema 根改造)
+    // 刻意**不**收窄 `deletedAt: null`——此时尚无任何端点能让同一 memberId 产生第二条
+    // 历史行,`{some:{}}`/`{none:{}}` 与收窄后结果集逐字相同,保持本 PR 零行为变化
+    // (评审稿 E-5)。hasAccount 语义收窄为"仅计 live 绑定"随 D-2 + reopen 端点一并在
+    // Endpoint PR 落地(评审稿 E-6)。
+    if (hasAccount === true) filters.users = { some: {} };
+    if (hasAccount === false) filters.users = { none: {} };
 
     const where = notDeletedWhere(filters);
 
