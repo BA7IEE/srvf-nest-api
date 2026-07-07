@@ -99,9 +99,10 @@
 | 队员详情页"解绑账号"(只断链,账号回悬空 `ACTIVE`,**不**顺手停用/删除——要停用/删除走既有用户管理端点)| `POST /api/admin/v1/members/{id}/account/unbind`(无 body)→ 200 | `[rbac: member.bind.account]` |
 | 队员详情页"退号重开"("账号打错了"一步修复:软删旧号 + 用新手机号开新号,单事务原子)| `POST /api/admin/v1/members/{id}/account/reopen`(body: `{phone}`,须与旧号不同——同号会命中 `PHONE_ALREADY_BOUND`,这是有意行为)→ 返新账号 `{userId,username,phone,phoneVerifiedAt,role,memberId}`;**`username` 从第 2 次起追加代际后缀**(如 `M-0001-2`),不影响登录(登录只认手机号) | `[rbac: member.grant.account]`(复用) |
 | 队员详情页"启用/停用关联账号"| `PATCH /api/admin/v1/members/{id}/account/status`(body: `{status: 'ACTIVE'\|'DISABLED'}`)→ 200 返更新后的队员详情;禁止管理员对**自己绑定的账号**操作(`CANNOT_OPERATE_SELF`);置 `DISABLED` 时联动撤销该账号全部未过期 refresh token(与用户管理页"禁用用户"同一效果) | `[rbac: user.update.status]`(复用既有用户管理码,0 新码) |
+| 队员批量导入后"一键批量开号"(整队历史队员一次性开号;逐行 skip-on-error,单行失败不影响其余行)| `POST /api/admin/v1/members/accounts/bulk-grant`(body: `{items:[{memberId,phone}]}`,1-200 条)→ 返 `{items:[{memberId,status:'ok'\|'blocked',userId,reason}],summary:{total,ok,blocked}}`(`userId`/`reason` 恒回显两键,不适用为 `null`) | `[rbac: member.grant.account]`(复用) |
 | 用户列表/详情反查"这个账号属于哪个队员"| `memberId`/`member:{memberNo,displayName}\|null` 两字段 additive 出现在 `GET /api/admin/v1/users`(list)与 `GET /api/admin/v1/users/{id}`(detail)响应里 | `[rbac: user.read.account]` |
 
-**v2 仍不做**(诉求触发再立项,见 `NEXT_TASKS` P1-18):批量开号(整队历史队员一次性开号,另立项镜像 announcement-import 批模式)。
+**v2 完整生命周期(单条 bind/unbind/reopen/status + 批量开号)已全部落地,`NEXT_TASKS` P1-18 已关**。
 
 ### 2.5 通知管理(站内信撰写 / 发布 + 微信订阅渠道 + 系统定向 + 短信兜底)— ✅ S1+S2+S3+S4+S5 后端就绪(v0.32.0 已发)
 

@@ -2,6 +2,9 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MemberStatus, Role, UserStatus } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsEnum,
   IsInt,
@@ -13,6 +16,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { MAINLAND_PHONE_PATTERN } from '../sms/sms.constants';
@@ -330,4 +334,82 @@ export class UpdateMemberAccountStatusDto {
   })
   @IsEnum(UserStatus)
   status!: UserStatus;
+}
+
+// ============ 队员账号闭环 v2:POST members/accounts/bulk-grant ============
+
+// 批量开号:镜像 announcement-import 批模式——逐行 skip-on-error(每行各自独立事务,
+// 单行失败不影响其余行)+ 逐行结果回报,非全或无。判权复用 member.grant.account(0 新码);
+// 逐行校验顺序与单条 grantAccount 完全一致(见 grantAccountCore)。
+
+const BULK_GRANT_MAX_ITEMS = 200;
+
+export class BulkGrantAccountItemDto {
+  @ApiProperty({ description: '队员 id', example: 'cl9z3a8b00000abcd1234efgh' })
+  @IsString()
+  @Length(8, 64, { message: 'memberId 必须是 8-64 位字符串' })
+  memberId!: string;
+
+  @ApiProperty({
+    description: '账号级手机号(必填;写入 User.phone,供 login-sms 登录)',
+    example: '13800001234',
+  })
+  @IsString()
+  @Matches(MAINLAND_PHONE_PATTERN, { message: 'phone 必须是大陆 11 位手机号' })
+  phone!: string;
+}
+
+export class BulkGrantMemberAccountsDto {
+  @ApiProperty({
+    description: `批量开号明细,1-${BULK_GRANT_MAX_ITEMS} 条`,
+    type: () => [BulkGrantAccountItemDto],
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(BULK_GRANT_MAX_ITEMS)
+  @ValidateNested({ each: true })
+  @Type(() => BulkGrantAccountItemDto)
+  items!: BulkGrantAccountItemDto[];
+}
+
+export const BULK_GRANT_ITEM_STATUS_VALUES = ['ok', 'blocked'] as const;
+export type BulkGrantItemStatus = (typeof BULK_GRANT_ITEM_STATUS_VALUES)[number];
+
+export class BulkGrantAccountResultItemDto {
+  @ApiProperty({ description: '队员 id(原样回显入参)' })
+  memberId!: string;
+
+  @ApiProperty({ enum: BULK_GRANT_ITEM_STATUS_VALUES })
+  status!: BulkGrantItemStatus;
+
+  // 队员账号闭环 v2:`!:`(非 `?:`)+ 显式 null,沿本文件 MemberResponseDto.userId/accountStatus
+  // 既有范式——`?: string | null` 在 @nestjs/swagger 类型推断下会退化成 `type: object`
+  // (已由 contract snapshot 实测发现),故恒回显两键、不适用时为 null,而非省略键。
+  @ApiPropertyOptional({ description: '新建账号 id(仅 status=ok,否则 null)', nullable: true })
+  userId!: string | null;
+
+  @ApiPropertyOptional({
+    description: '失败原因(仅 status=blocked,否则 null;取自对应 BizException 的 message)',
+    nullable: true,
+  })
+  reason!: string | null;
+}
+
+export class BulkGrantSummaryDto {
+  @ApiProperty({ description: '本次请求总行数' })
+  total!: number;
+
+  @ApiProperty({ description: '成功行数' })
+  ok!: number;
+
+  @ApiProperty({ description: '失败行数(不阻断其余行)' })
+  blocked!: number;
+}
+
+export class BulkGrantMemberAccountsResponseDto {
+  @ApiProperty({ type: () => [BulkGrantAccountResultItemDto] })
+  items!: BulkGrantAccountResultItemDto[];
+
+  @ApiProperty({ type: () => BulkGrantSummaryDto })
+  summary!: BulkGrantSummaryDto;
 }

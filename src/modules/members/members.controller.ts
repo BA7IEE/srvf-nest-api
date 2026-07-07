@@ -28,6 +28,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   BindMemberAccountDto,
+  BulkGrantMemberAccountsDto,
+  BulkGrantMemberAccountsResponseDto,
   CreateMemberDto,
   GrantMemberAccountDto,
   GrantMemberAccountResponseDto,
@@ -41,7 +43,7 @@ import {
 } from './members.dto';
 import { MembersService } from './members.service';
 
-// /api/admin/v1/members(12 接口,含 F1/A1 options 与队员账号闭环 v1+v2 account 全生命周期);
+// /api/admin/v1/members(13 接口,含 F1/A1 options 与队员账号闭环 v1+v2 account 全生命周期 + 批量开号);
 // 路径前缀:全局 /api(main.ts)+ 'admin/v1/members'。
 // 权限(Slow-4 T2,2026-06-11,评审稿 §3.1):入口仅 JwtAuthGuard,判权下沉 service 层
 // `rbac.can('member.*')`(SUPER_ADMIN 短路;biz-admin 绑 read/create/update/status);
@@ -86,6 +88,24 @@ export class MembersController {
     @CurrentUser() currentUser: CurrentUserPayload,
   ): Promise<MemberOptionsResponseDto> {
     return this.service.options(query, currentUser);
+  }
+
+  // 队员账号闭环 v2(2026-07-07;冻结评审稿 docs/archive/reviews/member-account-loop-v2-review.md
+  // §1.2 E-12):批量开号,必须先于 /:id 定义(specific-before-dynamic,镜像 options 先例)。
+  // 镜像 announcement-import 批模式:逐行 skip-on-error + 逐行结果回报,非全或无。
+  @Post('accounts/bulk-grant')
+  @ApiOperation({
+    summary:
+      '批量开号(逐行 skip-on-error,单行失败不影响其余行;≤200 条) [rbac: member.grant.account]',
+  })
+  @ApiWrappedOkResponse(BulkGrantMemberAccountsResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  bulkGrantAccounts(
+    @Body() dto: BulkGrantMemberAccountsDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<BulkGrantMemberAccountsResponseDto> {
+    return this.service.bulkGrantAccounts(dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Post()
