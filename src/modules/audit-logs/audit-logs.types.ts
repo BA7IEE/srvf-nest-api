@@ -166,7 +166,10 @@ export type AuditLogEvent =
   | 'organization.create' // admin 建组织节点(organizations.service: create 1 处;含 announcement-import 批量复用同一方法;after 快照,无 before)
   | 'organization.move' // admin 重挂父级/reparent(organizations.service: move 1 处;before/after.parentId;树结构 + scoped 判权范围变更;同父幂等 no-op 分支不写)
   | 'organization.status-change' // admin 启停(organizations.service: updateStatus 1 处;before/after.status;INACTIVE 会使 covers() 拒绝 scoped grant)
-  | 'organization.delete'; // admin 软删组织节点(organizations.service: softDelete 1 处;仅 before 快照,沿 certificate.delete/content.delete 纯删除既有先例)
+  | 'organization.delete' // admin 软删组织节点(organizations.service: softDelete 1 处;仅 before 快照,沿 certificate.delete/content.delete 纯删除既有先例)
+  // 队员账号闭环 v1(MVP,2026-07-07;goal「队员账号闭环 v1(MVP)」显式预授权的唯一 +1 AuditLogEvent)。
+  // resourceType='member' / resourceId=memberId(建号是"给队员挂账号",非 user 自身操作,归 member 域)。
+  | 'member.account-granted'; // admin 给队员开通登录账号(members.service: grantAccount 1 处;extra.{memberId,userId,phone:掩码};禁明文号 / passwordHash;无 before/after——建号非改属性)
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

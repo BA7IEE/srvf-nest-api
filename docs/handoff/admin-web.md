@@ -1,7 +1,7 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
 > **canonical**(本文件在后端仓,改契约同 PR 改本文件;见 [`README.md`](README.md))。
-> 字段级真相 = live `/api/docs-json`;权限码 = [`RBAC_MAP.md`](../ai-harness/RBAC_MAP.md)(195)。
+> 字段级真相 = live `/api/docs-json`;权限码 = [`RBAC_MAP.md`](../ai-harness/RBAC_MAP.md)(196)。
 > 本文件只讲这两样讲不了的:**轴模型 + 任务→端点图 + 踩坑 + 缺口**。
 
 ---
@@ -85,6 +85,17 @@
 
 ### 2.4 其它资源管理页(CRUD,沿现状)
 活动列表 `GET /api/admin/v1/activities`(多字段过滤)· 队员列表 `GET /api/admin/v1/members`(memberNo/gradeCode/status)· 字典 `system/v1/dict-*` · 组织 · 贡献值**规则** `system/v1/contribution-rules`(注:是规则,不是队员的分)· 用户/RBAC/审计 `system/v1/*`。
+
+**队员账号闭环 v1(MVP,2026-07-07)— ✅ 已发 main**:给已存在队员(手动建档 / 未走招新 promote 的历史队员)开通登录账号。开号 = 建一个绑手机号的 `User`(`username=memberNo`、随机不可用密码、`role=USER`),队员**用手机验证码登录**(现有 `POST auth/v1/login-sms{,/send-code}`),**不设密码**。以后队员想自己设密码,走现有"手机验证码找回/设置密码"(`POST auth/v1/password-reset{,/send-code}`,用队员自己手机号)即可,**前端无需为此单独造页面**。
+
+| 任务 / 页面 | 端点 | 鉴权 |
+|---|---|---|
+| 队员列表按"有没有账号"过滤(找出还没开号的队员)| `GET /api/admin/v1/members?hasAccount=false` | `[rbac: member.read.record]` |
+| 队员列表/详情显示"是否已开号 + 账号状态"| `hasAccount`/`accountStatus`(`ACTIVE`\|`DISABLED`\|`null`)/`userId` 三字段 additive 出现在 `GET /api/admin/v1/members`(list)与 `GET /api/admin/v1/members/{id}`(detail)响应里,**无需新调用** | 同上 |
+| 队员详情页"开通账号"按钮(仅 `hasAccount=false` 时可点)| `POST /api/admin/v1/members/{id}/account`(body: `{phone}`,大陆 11 位手机号)→ 返 `{userId,username,phone,phoneVerifiedAt,role,memberId}` | `[rbac: member.grant.account]`(**绑 ops-admin**,与队员列表其余 5 码归 biz-admin **不同**——若持 biz-admin 的运营也要能开号,维护者可后续单独把该码也授予 biz-admin,一行绑定、不改前端) |
+| 用户列表/详情反查"这个账号属于哪个队员"| `memberId`/`member:{memberNo,displayName}\|null` 两字段 additive 出现在 `GET /api/admin/v1/users`(list)与 `GET /api/admin/v1/users/{id}`(detail)响应里 | `[rbac: user.read.account]` |
+
+**v1 明确不做**(诉求触发再立项,见 `NEXT_TASKS`):把已存在的"悬空账号"(`POST admin/v1/users` 建的、未绑 memberId 的账号)后补绑定到某队员 / 解绑 / 换绑。当前唯一开号路径就是本节这一个端点,只造"从零开号",不造"绑定既有账号"。
 
 ### 2.5 通知管理(站内信撰写 / 发布 + 微信订阅渠道 + 系统定向 + 短信兜底)— ✅ S1+S2+S3+S4+S5 后端就绪(v0.32.0 已发)
 

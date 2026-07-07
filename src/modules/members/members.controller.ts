@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
@@ -12,8 +13,11 @@ import {
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   CreateMemberDto,
+  GrantMemberAccountDto,
+  GrantMemberAccountResponseDto,
   ListMembersQueryDto,
   MemberOptionsQueryDto,
   MemberOptionsResponseDto,
@@ -23,10 +27,13 @@ import {
 } from './members.dto';
 import { MembersService } from './members.service';
 
-// /api/admin/v1/members(6 接口);路径前缀:全局 /api(main.ts)+ 'admin/v1/members'。
+// /api/admin/v1/members(8 接口,含 F1/A1 options 与队员账号闭环 v1 account true-up);
+// 路径前缀:全局 /api(main.ts)+ 'admin/v1/members'。
 // 权限(Slow-4 T2,2026-06-11,评审稿 §3.1):入口仅 JwtAuthGuard,判权下沉 service 层
 // `rbac.can('member.*')`(SUPER_ADMIN 短路;biz-admin 绑 read/create/update/status);
-// DELETE 走 `member.delete.record`(不绑 biz-admin,仅 SUPER_ADMIN 短路,D1=A 镜像)。
+// DELETE 走 `member.delete.record`(不绑 biz-admin,仅 SUPER_ADMIN 短路,D1=A 镜像);
+// POST :id/account 走 `member.grant.account`(队员账号闭环 v1,2026-07-07;绑 **ops-admin**
+// 而非 biz-admin —— 账号铸造归系统/账号面,与 user.*.account 族一致)。
 
 @ApiTags('Admin - Members')
 @ApiBearerAuth()
@@ -158,5 +165,42 @@ export class MembersController {
     @CurrentUser() currentUser: CurrentUserPayload,
   ): Promise<MemberResponseDto> {
     return this.service.softDelete(params.id, currentUser);
+  }
+
+  // 队员账号闭环 v1(MVP,2026-07-07):给已存在队员开通"手机验证码登录"账号(不设密码)。
+  // 以后想设密码走既有"手机验证码找回/设置密码"(auth/v1/password-reset,队员自己手机号收码)。
+  @Post(':id/account')
+  @ApiOperation({
+    summary:
+      '给已存在队员开通登录账号(手机验证码登录,不设密码;队员已有绑定账号则拒绝) [rbac: member.grant.account]',
+  })
+  @ApiWrappedOkResponse(GrantMemberAccountResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.MEMBER_NOT_FOUND,
+    BizCode.MEMBER_INACTIVE,
+    BizCode.MEMBER_HAS_LINKED_USER,
+    BizCode.USERNAME_ALREADY_EXISTS,
+    BizCode.PHONE_ALREADY_BOUND,
+  )
+  grantAccount(
+    @Param() params: IdParamDto,
+    @Body() dto: GrantMemberAccountDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<GrantMemberAccountResponseDto> {
+    return this.service.grantAccount(params.id, dto, currentUser, this.buildAuditMeta(req));
+  }
+
+  // 沿 users.controller.ts / emergency-contacts.controller.ts 范式:从 @Req() 显式构造
+  // AuditMeta 传给 service(D6 v1.1 §11.2 / D8 拍板;不引入 cls-rs / AsyncLocalStorage)。
+  private buildAuditMeta(req: Request): AuditMeta {
+    return {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    };
   }
 }

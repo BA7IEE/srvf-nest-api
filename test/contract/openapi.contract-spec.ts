@@ -284,6 +284,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/members/{id}'],
   ['patch', '/api/admin/v1/members/{id}/status'],
   ['delete', '/api/admin/v1/members/{id}'],
+  // 队员账号闭环 v1(MVP,2026-07-07):开号(手机验证码登录,不设密码),320→321。
+  ['post', '/api/admin/v1/members/{id}/account'],
   ['get', '/api/admin/v1/members/{memberId}/department'],
   ['put', '/api/admin/v1/members/{memberId}/department'],
   ['delete', '/api/admin/v1/members/{memberId}/department'],

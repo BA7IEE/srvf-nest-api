@@ -276,6 +276,29 @@ describe('GET /api/admin/v1/users(管理列表)', () => {
         .set('Authorization', opsCallerAuth);
       expect(res.status).toBe(200);
       expect((res.body.data.items as Array<{ id: string }>).map((i) => i.id)).toEqual([linked.id]);
+
+      // 队员账号闭环 v1(2026-07-07):list 出参 additive 暴露 memberId + member 摘要
+      const item = (
+        res.body.data.items as Array<{
+          id: string;
+          memberId: string | null;
+          member: { memberNo: string; displayName: string } | null;
+        }>
+      )[0];
+      expect(item.memberId).toBe(member.id);
+      expect(item.member).toEqual({ memberNo: member.memberNo, displayName: member.displayName });
+    });
+
+    it('list 未绑定队员的用户 → memberId/member 为 null(而非缺省 key)', async () => {
+      await createTestUser(app, { username: 'f1nomember1', role: Role.USER });
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/users')
+        .query({ q: 'f1nomember1' })
+        .set('Authorization', opsCallerAuth);
+      expect(res.status).toBe(200);
+      const item = (res.body.data.items as Array<{ memberId: unknown; member: unknown }>)[0];
+      expect(item.memberId).toBeNull();
+      expect(item.member).toBeNull();
     });
 
     it('GET /options → 200,items 含 {id,label,username},label=nickname||username', async () => {

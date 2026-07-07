@@ -17,6 +17,18 @@ import {
 } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 
+// 队员账号闭环 v1(2026-07-07):关联队员摘要投影(仅 memberNo + displayName,不含任何
+// 敏感字段)。**仅** admin list / findOne 两处填充(userAdminSelect);其余 UserResponseDto
+// 生产者(App 自助 / phone / wechat / 密码流)不选本字段,故字段在响应体里整体缺失
+// (TS 可选属性语义,非 null)。
+export class UserLinkedMemberDto {
+  @ApiProperty({ description: '队员业务唯一编号', example: 'M-0001' })
+  memberNo!: string;
+
+  @ApiProperty({ description: '队员称呼 / 显示名', example: 'Demo Member' })
+  displayName!: string;
+}
+
 // ============ 出参 DTO ============
 // UserResponseDto 字段必须与 userSafeSelect 严格同步(详见 §7.9 + users.select.ts)。
 // 永不包含 passwordHash / deletedAt。
@@ -50,6 +62,22 @@ export class UserResponseDto {
 
   @ApiProperty({ description: '更新时间' })
   updatedAt!: Date;
+
+  // 队员账号闭环 v1(2026-07-07):additive、**可选**——仅 admin list / findOne 填充
+  // (userAdminSelect);App 自助面(me/password 等)响应体里本字段整体不出现,详见
+  // UserLinkedMemberDto 顶部注释。
+  @ApiPropertyOptional({
+    description: '关联队员 id(仅 admin 列表/详情返回;未关联为 null)',
+    nullable: true,
+  })
+  memberId?: string | null;
+
+  @ApiPropertyOptional({
+    description: '关联队员摘要(仅 admin 列表/详情返回;未关联为 null)',
+    type: () => UserLinkedMemberDto,
+    nullable: true,
+  })
+  member?: UserLinkedMemberDto | null;
 }
 
 // ============ 入参 DTO ============

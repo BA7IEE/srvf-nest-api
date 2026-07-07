@@ -31,6 +31,14 @@
 - **背景**:终态 scoped-authz 序列(GAP-007,PR1–PR12 + 摘码微刀,已全量落地)的 PR11 只建了 `announcement-import`(preview/execute 两段式,导组织/任职/分管),**不建 `Member`**——双锚铁律(R7)要求执行前每条行都能按 `memberNo` 命中已存在的队员。当前给全新队员群体(如整队历史存量数据)批量建 `Member` 记录尚无专用端点,只能逐个 `POST admin/v1/members` 或运维 `psql` 直灌([`ops/scoped-authz-go-live-checklist.md` §3`](../ops/scoped-authz-go-live-checklist.md) 已登记此缺口)。
 - **候选方案**:镜像 `announcement-import` 的 preview/execute 两段式设计(零写入诊断 + 幂等落库 + 逐行 `ok`/`blocked`/`already-exists` 结果),但目标表是 `Member`(可能含基础档案字段)而非组织/任职/分管;**同样受 R13 约束**——测试与文档示例一律用假数据,真实姓名/证件信息不进本仓库任何位置。
 - **触发条件**:出现批量导入存量队员(> 逐个可接受量级)的真实诉求时单独立项评审(D 档,涉及 schema 是否需要新增批量端点、字段集范围、与 `POST admin/v1/members` 单条端点的关系)。
+- **与 P1-18(队员账号闭环)关系**:P1-15 解决"批量把队员**档案**（`Member`)灌进来";P1-18 解决"给**已存在**队员开**登录账号**(`User`)"。两者正交——P1-15 若落地,批量导入出的 `Member` 仍需逐个或另出批量变体走开号能力(v1 `POST admin/v1/members/:id/account` 单条,批量开号不在 v1 范围)。
+
+### P1-18 队员账号闭环 v1 后续(绑定既有悬空账号 / 解绑 / 换绑 / 批量开号)— **⏸ 不自动启动,诉求触发再立项**
+- **背景**:队员账号闭环 v1(MVP,2026-07-07)已落地"给已存在队员开通全新登录账号"单条端点(`POST admin/v1/members/:id/account`,详见 [`handoff/admin-web.md` §2.4`](../handoff/admin-web.md))。v1 范围明确排除以下三类,均已知且非 bug:
+  - **绑定既有悬空账号**:`POST admin/v1/users` 建的、从未绑 `memberId` 的账号,当前无法后补绑定到某个队员(只能"从零开号",不能"认领已有账号")。
+  - **解绑 / 换绑**:`User.memberId` 是**非 partial** `@unique`(不是"仅约束 ACTIVE 行"的过滤索引)——一旦某队员关联过某个 `User`(即使后来那个 `User` 被软删),该 `memberId` 槽位永久占用,无法解绑后关联到新账号。这是**结构性限制**,非 v1 疏漏;真要支持解绑/换绑,需要评估把该约束改成部分唯一索引(partial unique,WHERE `deletedAt IS NULL`)—— **触发 schema 变更,须 D 档降速**(`srvf-prisma-change` 流程)。
+  - **批量开号**:v1 只有单条端点;若未来出现"整队历史队员一次性批量开号"的真实诉求(类似 P1-15 的批量导入场景),可镜像 `announcement-import` 或招新 promote 的批处理模式另出设计,而非在单条端点上加数组入参。
+- **触发条件**:业务侧出现"队员的账号打错了 / 队员离职后账号要转给继任者 / 需要一次性给一批历史队员开号"等真实诉求时单独立项评审(D 档,涉及是否改 `User.memberId` 唯一约束形态)。
 
 ### P1-17 后台前端对接接口批次(A–E 五组)— **✅ 已全量落地关账(2026-07-04;F1 #502 → F2 #503 → F3 #504 → F4 #505 → F5 #506)**
 - **背景**:后台前端 srvf-admin-web(任务驱动后台)对接需要一批横切能力——搜索(`q`/日期区间/组织子树)、选择器(`options`/`resolve-labels`)、授权诊断(`explain-batch`/`action-state`)、scoped-authz 三表(role-bindings/任职/分管)分页总表+detail+preview、memberships 组织轴+transfer+tree-with-summary。2026-07-04 plan-only 分析规划(A 档 docs-only)已产出冻结路线图 [`admin-api-fe-integration-roadmap.md`](../archive/reviews/admin-api-fe-integration-roadmap.md)(原 `docs/plans/`,落地后已归档);同日 §11 回执区**已拍板(全按推荐)**。
