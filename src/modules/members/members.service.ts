@@ -22,6 +22,10 @@ import { RbacService } from '../permissions/rbac.service';
 import { maskPhone } from '../sms/sms.constants';
 import {
   BindMemberAccountDto,
+  BulkGrantAccountResultItemDto,
+  BulkGrantMemberAccountsDto,
+  BulkGrantMemberAccountsResponseDto,
+  BulkGrantSummaryDto,
   CreateMemberDto,
   GrantMemberAccountDto,
   GrantMemberAccountResponseDto,
@@ -488,7 +492,19 @@ export class MembersService {
     auditMeta: AuditMeta,
   ): Promise<GrantMemberAccountResponseDto> {
     await this.assertCanOrThrow(currentUser, 'member.grant.account');
+    return this.grantAccountCore(id, dto.phone, currentUser, auditMeta);
+  }
 
+  // 队员账号闭环 v2(评审稿 §1.2 E-11):从 grantAccount() 抽出的核心逻辑(校验 + 创建 +
+  // audit,不含权限检查),供单条端点与 bulkGrantAccounts() 批量循环共用——批量场景下
+  // 权限只需在循环外检查一次,每行仍各自独立开一个事务(E-10,故本方法自己调用
+  // `this.prisma.$transaction`,不接受调用方传入的 tx)。
+  private async grantAccountCore(
+    id: string,
+    phone: string,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<GrantMemberAccountResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const member = await tx.member.findFirst({
         where: notDeletedWhere({ id }),
@@ -517,7 +533,7 @@ export class MembersService {
       if (existingUsername) throw new BizException(BizCode.USERNAME_ALREADY_EXISTS);
 
       const existingPhone = await tx.user.findUnique({
-        where: { phone: dto.phone },
+        where: { phone },
         select: { id: true },
       });
       if (existingPhone) throw new BizException(BizCode.PHONE_ALREADY_BOUND);
@@ -534,7 +550,7 @@ export class MembersService {
         tx.user.create({
           data: {
             username,
-            phone: dto.phone,
+            phone,
             phoneVerifiedAt: now, // 管理员背书,非用户自证短信验证
             passwordHash,
             role: Role.USER,
@@ -551,7 +567,7 @@ export class MembersService {
         resourceType: 'member',
         resourceId: id,
         meta: auditMeta,
-        extra: { memberId: id, userId: created.id, phone: maskPhone(dto.phone) },
+        extra: { memberId: id, userId: created.id, phone: maskPhone(phone) },
         tx,
       });
 
@@ -833,5 +849,53 @@ export class MembersService {
 
       return this.attachAccountInfo(member, { id: updated.id, status: updated.status });
     });
+  }
+
+  // ============ 队员账号闭环 v2:bulkGrantAccounts ============
+
+  // POST members/accounts/bulk-grant:批量开号,镜像 announcement-import 批模式。
+  // 权限只在循环外检查一次;逐行调用 grantAccountCore(各自独立 $transaction,E-10)——
+  // 单行失败(BizException)不影响其余行,记 blocked + 原因继续;非 BizException 的
+  // 意外错误原样上抛,不吞入批量结果(与既有 P2002 兜底"未映射 target 原样上抛"同一原则)。
+  async bulkGrantAccounts(
+    dto: BulkGrantMemberAccountsDto,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<BulkGrantMemberAccountsResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'member.grant.account');
+
+    const items: BulkGrantAccountResultItemDto[] = [];
+    for (const item of dto.items) {
+      try {
+        const result = await this.grantAccountCore(
+          item.memberId,
+          item.phone,
+          currentUser,
+          auditMeta,
+        );
+        items.push({
+          memberId: item.memberId,
+          status: 'ok',
+          userId: result.userId,
+          reason: null,
+        });
+      } catch (err) {
+        if (!(err instanceof BizException)) throw err;
+        items.push({
+          memberId: item.memberId,
+          status: 'blocked',
+          userId: null,
+          reason: err.biz.message,
+        });
+      }
+    }
+
+    const summary: BulkGrantSummaryDto = {
+      total: items.length,
+      ok: items.filter((i) => i.status === 'ok').length,
+      blocked: items.filter((i) => i.status === 'blocked').length,
+    };
+
+    return { items, summary };
   }
 }

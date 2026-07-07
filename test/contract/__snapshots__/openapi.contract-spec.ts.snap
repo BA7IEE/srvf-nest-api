@@ -3309,6 +3309,110 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "BulkGrantAccountItemDto": {
+    "properties": {
+      "memberId": {
+        "description": "队员 id",
+        "example": "cl9z3a8b00000abcd1234efgh",
+        "type": "string",
+      },
+      "phone": {
+        "description": "账号级手机号(必填;写入 User.phone,供 login-sms 登录)",
+        "example": "13800001234",
+        "type": "string",
+      },
+    },
+    "required": [
+      "memberId",
+      "phone",
+    ],
+    "type": "object",
+  },
+  "BulkGrantAccountResultItemDto": {
+    "properties": {
+      "memberId": {
+        "description": "队员 id(原样回显入参)",
+        "type": "string",
+      },
+      "reason": {
+        "description": "失败原因(仅 status=blocked,否则 null;取自对应 BizException 的 message)",
+        "nullable": true,
+        "type": "object",
+      },
+      "status": {
+        "enum": [
+          "ok",
+          "blocked",
+        ],
+        "type": "string",
+      },
+      "userId": {
+        "description": "新建账号 id(仅 status=ok,否则 null)",
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "memberId",
+      "status",
+    ],
+    "type": "object",
+  },
+  "BulkGrantMemberAccountsDto": {
+    "properties": {
+      "items": {
+        "description": "批量开号明细,1-200 条",
+        "items": {
+          "$ref": "#/components/schemas/BulkGrantAccountItemDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "items",
+    ],
+    "type": "object",
+  },
+  "BulkGrantMemberAccountsResponseDto": {
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/BulkGrantAccountResultItemDto",
+        },
+        "type": "array",
+      },
+      "summary": {
+        "$ref": "#/components/schemas/BulkGrantSummaryDto",
+      },
+    },
+    "required": [
+      "items",
+      "summary",
+    ],
+    "type": "object",
+  },
+  "BulkGrantSummaryDto": {
+    "properties": {
+      "blocked": {
+        "description": "失败行数(不阻断其余行)",
+        "type": "number",
+      },
+      "ok": {
+        "description": "成功行数",
+        "type": "number",
+      },
+      "total": {
+        "description": "本次请求总行数",
+        "type": "number",
+      },
+    },
+    "required": [
+      "total",
+      "ok",
+      "blocked",
+    ],
+    "type": "object",
+  },
   "CancelActivityDto": {
     "properties": {
       "cancelReason": {
@@ -24530,6 +24634,164 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "创建队员(memberNo 必填,全局唯一不复用;不接收任何敏感字段) [rbac: member.create.record]",
+      "tags": [
+        "Admin - Members",
+      ],
+    },
+  },
+  "/api/admin/v1/members/accounts/bulk-grant": {
+    "post": {
+      "operationId": "MembersController_bulkGrantAccounts",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/BulkGrantMemberAccountsDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/BulkGrantMemberAccountsResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "批量开号(逐行 skip-on-error,单行失败不影响其余行;≤200 条) [rbac: member.grant.account]",
       "tags": [
         "Admin - Members",
       ],
