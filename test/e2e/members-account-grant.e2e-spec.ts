@@ -223,7 +223,10 @@ describe('队员账号闭环 v1:POST /api/admin/v1/members/:id/account', () => {
       );
     });
 
-    it('队员的绑定 User 已被软删(槽位仍占用,User.memberId 唯一约束不可二次占用)→ 仍 MEMBER_HAS_LINKED_USER', async () => {
+    // 队员账号闭环 v2(评审稿 D-2)对 v1 唯一有意的行为变更:User.memberId 从全量 @unique
+    // 改 partial unique(WHERE deletedAt IS NULL)后,existingLink 预检查改"仅 live"——
+    // 队员的绑定 User 一旦软删,槽位随即释放,可重新开号成功(此前 v1 逻辑下仍会拒绝)。
+    it('队员的绑定 User 已被软删(槽位已释放)→ 可重新开号成功(队员账号闭环 v2 D-2)', async () => {
       const member = await newMember();
       const granted = await grant(member.id, '13800003003', opsAdminAuth);
       expect(granted.status).toBe(201);
@@ -231,10 +234,16 @@ describe('队员账号闭环 v1:POST /api/admin/v1/members/:id/account', () => {
         where: { id: granted.body.data.userId },
         data: { deletedAt: new Date(), status: UserStatus.DISABLED },
       });
-      expectBizError(
-        await grant(member.id, '13800003004', opsAdminAuth),
-        BizCode.MEMBER_HAS_LINKED_USER,
-      );
+      const reGranted = await grant(member.id, '13800003004', opsAdminAuth);
+      expect(reGranted.status).toBe(201);
+      expect(reGranted.body.data.memberId).toBe(member.id);
+      expect(reGranted.body.data.userId).not.toBe(granted.body.data.userId);
+
+      // 软删旧行仍在(历史记录),新行 live 且是该 memberId 唯一的 live 关联。
+      const liveCount = await prisma.user.count({
+        where: { memberId: member.id, deletedAt: null },
+      });
+      expect(liveCount).toBe(1);
     });
   });
 

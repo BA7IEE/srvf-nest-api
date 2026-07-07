@@ -319,6 +319,18 @@ export const BizCode = {
     message: '队员已被 user 绑定,不能删除',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 队员账号闭环 v2(评审稿 docs/archive/reviews/member-account-loop-v2-review.md §3.3):
+  // bind/unbind/reopen/status 四端点新增 2 码,延续 15030-15099"资源状态非法/引用约束"子段。
+  MEMBER_ACCOUNT_TARGET_ALREADY_LINKED: {
+    code: 15032,
+    message: '目标账号已绑定其他队员',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  MEMBER_HAS_NO_LINKED_USER: {
+    code: 15033,
+    message: '队员当前无绑定账号',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // organizations 模块业务级(110xx + 111xx)。详见 docs/v2-api-contract.md §3.5。
   // 子段(对齐 baseline §1.3):

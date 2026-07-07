@@ -21,6 +21,7 @@ import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
 import { maskPhone } from '../sms/sms.constants';
 import {
+  BindMemberAccountDto,
   CreateMemberDto,
   GrantMemberAccountDto,
   GrantMemberAccountResponseDto,
@@ -29,6 +30,7 @@ import {
   MemberOptionsQueryDto,
   MemberOptionsResponseDto,
   MemberResponseDto,
+  UpdateMemberAccountStatusDto,
   UpdateMemberDto,
   UpdateMemberStatusDto,
 } from './members.dto';
@@ -162,11 +164,31 @@ export class MembersService {
     }
   }
 
+  // 队员账号闭环 v2(评审稿 §1.2 E-7):username 结构性冲突。User.username 仍是全量
+  // @unique(不在本次改造范围,AGENTS §10"不复用"永久铁律),故一旦某 memberId 曾经
+  // 创建过账号(即使已软删),那条历史行永久占用裸 `memberNo` 这个 username——D-2 放宽
+  // existingLink 为"仅 live"后,grantAccount / reopenAccount 都可能在"曾有历史、现无
+  // live"的槽位上再次创建新行,若仍固定用裸 memberNo 会 100% 撞历史行的 username。
+  //
+  // 已用代码验证 login-sms 完全按 phone 解析账号、从不读 username(auth/login-sms.service.ts
+  // resolveActiveUserByPhone),故安全地按"代际"后缀化:第 1 次(该 memberId 从未创建过
+  // 任何 User,含软删)用裸 memberNo(v1 行为逐字不变);第 N 次(N≥2)用 `${memberNo}-N`。
+  private async computeNextUsername(
+    memberId: string,
+    memberNo: string,
+    tx: PrismaTx,
+  ): Promise<string> {
+    const priorCount = await tx.user.count({ where: { memberId } });
+    return priorCount === 0 ? memberNo : `${memberNo}-${priorCount + 1}`;
+  }
+
   // ============ 队员账号闭环 v1:hasAccount / accountStatus 批量计算(避免 N+1)============
 
-  // User.memberId 已 @unique:每个 member 至多关联 1 条 User(含软删,槽位一旦占用不可二次占用,
-  // 沿 DB 约束现实;故 hasAccount 语义 = "该 memberId 槽位是否已被占用"而非"当前是否可登录" ——
-  // 与 grantAccount() 的 MEMBER_HAS_LINKED_USER 判定同一份查询基准,语义自洽。
+  // 队员账号闭环 v1:User.memberId 曾是 @unique(每 member 至多 1 条历史 User,含软删)。
+  // 队员账号闭环 v2(评审稿 §1.2 E-6):改 partial unique 后,reopen 可让同一 memberId
+  // 同时存在 1 条软删历史行 + 1 条 live 行,查询显式收窄 `deletedAt: null`——hasAccount
+  // 语义随之从"槽位是否被任何行占用过"收窄为"当前是否有 live 绑定",与 grantAccount()
+  // 的 MEMBER_HAS_LINKED_USER 判定(同样只查 live)口径一致。
   private async loadLinkedUsersByMemberIds(
     memberIds: string[],
     tx?: PrismaTx,
@@ -174,7 +196,7 @@ export class MembersService {
     if (memberIds.length === 0) return new Map();
     const client = tx ?? this.prisma;
     const users = await client.user.findMany({
-      where: { memberId: { in: memberIds } },
+      where: { memberId: { in: memberIds }, deletedAt: null },
       select: { id: true, memberId: true, status: true },
     });
     return new Map(users.map((u) => [u.memberId as string, { id: u.id, status: u.status }]));
@@ -193,13 +215,14 @@ export class MembersService {
   }
 
   // 单条查询版(findOne / update / updateStatus / softDelete 共用;list 走批量版避免 N+1)。
+  // 队员账号闭环 v2(评审稿 §1.2 E-6):同 loadLinkedUsersByMemberIds,显式收窄 live。
   private async findLinkedUser(
     memberId: string,
     tx?: PrismaTx,
   ): Promise<{ id: string; status: UserStatus } | undefined> {
     const client = tx ?? this.prisma;
     const user = await client.user.findFirst({
-      where: { memberId },
+      where: { memberId, deletedAt: null },
       select: { id: true, status: true },
     });
     return user ?? undefined;
@@ -255,14 +278,12 @@ export class MembersService {
     const orgScope = await this.buildOrganizationScopeFilter(organizationId, includeDescendants);
     if (orgScope !== undefined) Object.assign(filters, orgScope);
     // 队员账号闭环 v1:hasAccount 经 users 反向关联过滤。
-    // 队员账号闭环 v2(评审稿 §1.2 E-1/E-2):User.memberId 改一对多(partial unique),
-    // 关系过滤语法从一对一 `is`/`isNot` 改一对多 `some`/`none`;本 PR(schema 根改造)
-    // 刻意**不**收窄 `deletedAt: null`——此时尚无任何端点能让同一 memberId 产生第二条
-    // 历史行,`{some:{}}`/`{none:{}}` 与收窄后结果集逐字相同,保持本 PR 零行为变化
-    // (评审稿 E-5)。hasAccount 语义收窄为"仅计 live 绑定"随 D-2 + reopen 端点一并在
-    // Endpoint PR 落地(评审稿 E-6)。
-    if (hasAccount === true) filters.users = { some: {} };
-    if (hasAccount === false) filters.users = { none: {} };
+    // 队员账号闭环 v2(评审稿 §1.2 E-1/E-2/E-6):User.memberId 改一对多(partial unique),
+    // 关系过滤语法从一对一 `is`/`isNot` 改一对多 `some`/`none`;reopen 落地后同一 memberId
+    // 可能有多条软删历史行,显式收窄 `deletedAt: null`——hasAccount 语义与 findLinkedUser /
+    // loadLinkedUsersByMemberIds(同一收窄)、grantAccount 的 existingLink(D-2 仅 live)保持一致。
+    if (hasAccount === true) filters.users = { some: { deletedAt: null } };
+    if (hasAccount === false) filters.users = { none: { deletedAt: null } };
 
     const where = notDeletedWhere(filters);
 
@@ -455,8 +476,9 @@ export class MembersService {
   // 校验顺序(先业务后唯一性,与本模块 create() 同口径):
   //   1. member 存在且未软删 → 否则 MEMBER_NOT_FOUND
   //   2. member.status === ACTIVE → 否则 MEMBER_INACTIVE
-  //   3. 该 memberId 槽位未被占用(User.memberId 已 @unique,含软删 —— 槽位一旦占用
-  //      永不可二次占用,DB 约束现实;故检查含软删,而非仅 deletedAt: null)→ 否则 MEMBER_HAS_LINKED_USER
+  //   3. 该 memberId 槽位无 live 关联(队员账号闭环 v2:User.memberId 已改 partial unique
+  //      WHERE deletedAt IS NULL,槽位仅在 live 时占用;历史软删行不再阻塞——这是对 v1
+  //      唯一有意的行为变更,评审稿 D-2)→ 否则 MEMBER_HAS_LINKED_USER
   //   4. username(=memberNo)唯一性预检查含软删占用(沿 AGENTS §10 不复用范式)→ 否则 USERNAME_ALREADY_EXISTS
   //   5. phone 唯一性预检查含软删占用 → 否则 PHONE_ALREADY_BOUND
   async grantAccount(
@@ -478,13 +500,18 @@ export class MembersService {
       }
 
       const existingLink = await tx.user.findFirst({
-        where: { memberId: id },
+        where: { memberId: id, deletedAt: null },
         select: { id: true },
       });
       if (existingLink) throw new BizException(BizCode.MEMBER_HAS_LINKED_USER);
 
+      // 队员账号闭环 v2(评审稿 §1.2 E-7):该 memberId 曾有历史行(即使已软删)时,
+      // 裸 memberNo 这个 username 被永久占用,须按代际后缀化;首次开号(v1 常见路径)
+      // 逐字不变,仍是裸 memberNo。
+      const username = await this.computeNextUsername(id, member.memberNo, tx);
+
       const existingUsername = await tx.user.findUnique({
-        where: { username: member.memberNo },
+        where: { username },
         select: { id: true },
       });
       if (existingUsername) throw new BizException(BizCode.USERNAME_ALREADY_EXISTS);
@@ -506,7 +533,7 @@ export class MembersService {
       const created = await this.runWithUniqueConstraintGuard(() =>
         tx.user.create({
           data: {
-            username: member.memberNo,
+            username,
             phone: dto.phone,
             phoneVerifiedAt: now, // 管理员背书,非用户自证短信验证
             passwordHash,
@@ -536,6 +563,275 @@ export class MembersService {
         role: created.role,
         memberId: id,
       };
+    });
+  }
+
+  // ============ 队员账号闭环 v2:bindAccount ============
+
+  // POST /:id/account/bind:认领一个已存在、live 且未绑定任何队员(memberId=null)的悬空
+  // 账号(如 POST admin/v1/users 建的)到本队员。账号保留其原有登录方式(密码 / openid /
+  // phone),不改 username / passwordHash,不强制手机号。
+  //
+  // 校验顺序(评审稿 §5):
+  //   1. member 存在且未软删 → 否则 MEMBER_NOT_FOUND
+  //   2. member.status === ACTIVE → 否则 MEMBER_INACTIVE
+  //   3. 本队员无 live 关联账号 → 否则 MEMBER_HAS_LINKED_USER
+  //   4. 目标 userId 存在且未软删 → 否则 USER_NOT_FOUND(跨实体引用复用被引用方 NOT_FOUND,
+  //      沿 position-assignments/supervision-assignments 既有范式)
+  //   5. 目标账号 memberId === null(未被他人绑定)→ 否则 MEMBER_ACCOUNT_TARGET_ALREADY_LINKED
+  async bindAccount(
+    id: string,
+    dto: BindMemberAccountDto,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<MemberResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'member.bind.account');
+
+    return this.prisma.$transaction(async (tx) => {
+      const member = await this.findMemberOrThrow(id, tx);
+      if (member.status !== MemberStatus.ACTIVE) {
+        throw new BizException(BizCode.MEMBER_INACTIVE);
+      }
+
+      const existingLink = await tx.user.findFirst({
+        where: { memberId: id, deletedAt: null },
+        select: { id: true },
+      });
+      if (existingLink) throw new BizException(BizCode.MEMBER_HAS_LINKED_USER);
+
+      const target = await tx.user.findFirst({
+        where: notDeletedWhere({ id: dto.userId }),
+        select: { id: true, memberId: true, status: true },
+      });
+      if (!target) throw new BizException(BizCode.USER_NOT_FOUND);
+      if (target.memberId !== null) {
+        throw new BizException(BizCode.MEMBER_ACCOUNT_TARGET_ALREADY_LINKED);
+      }
+
+      const updated = await this.runWithUniqueConstraintGuard(() =>
+        tx.user.update({
+          where: { id: dto.userId },
+          data: { memberId: id },
+          select: { id: true, status: true },
+        }),
+      );
+
+      await this.auditLogs.log({
+        event: 'member.account-bound',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'member',
+        resourceId: id,
+        meta: auditMeta,
+        extra: { memberId: id, userId: updated.id },
+        tx,
+      });
+
+      return this.attachAccountInfo(member, { id: updated.id, status: updated.status });
+    });
+  }
+
+  // ============ 队员账号闭环 v2:unbindAccount ============
+
+  // POST /:id/account/unbind:只断链(置 memberId=null),不顺手停用/软删账号(D-4 维护者
+  // 定稿)。账号回到"悬空 ACTIVE"(= bindAccount 的逆);要停用/删除走既有用户管理端点。
+  async unbindAccount(
+    id: string,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<MemberResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'member.bind.account');
+
+    return this.prisma.$transaction(async (tx) => {
+      const member = await this.findMemberOrThrow(id, tx);
+
+      const linked = await tx.user.findFirst({
+        where: { memberId: id, deletedAt: null },
+        select: { id: true },
+      });
+      if (!linked) throw new BizException(BizCode.MEMBER_HAS_NO_LINKED_USER);
+
+      await tx.user.update({
+        where: { id: linked.id },
+        data: { memberId: null },
+      });
+
+      await this.auditLogs.log({
+        event: 'member.account-unbound',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'member',
+        resourceId: id,
+        meta: auditMeta,
+        extra: { memberId: id, userId: linked.id },
+        tx,
+      });
+
+      return this.attachAccountInfo(member, undefined);
+    });
+  }
+
+  // ============ 队员账号闭环 v2:reopenAccount ============
+
+  // POST /:id/account/reopen:"账号打错了"一步修复——软删旧号(deletedAt + status=
+  // DISABLED)+ 开新号(新手机号),单事务原子;靠 User.memberId 的 partial unique
+  // 根改造让新号取到released 槽位。
+  //
+  // username 结构性冲突(评审稿 §1.2 E-7):User.username 仍是全量 @unique(不在本次
+  // 改造范围,AGENTS §10"不复用"永久铁律),旧行软删后仍永久占用其 username——若新行
+  // 沿用同一 memberNo 会 100% 撞车。已用代码验证 login-sms 完全按 phone 解析账号、
+  // 从不读 username,故重开时安全地用 `${memberNo}-{generation}` 后缀化(第 1 次
+  // grant 仍是裸 memberNo,v1 行为逐字不变;仅第 2 次起 reopen 才出现后缀)。
+  //
+  // 校验顺序(评审稿 §5):
+  //   1. member 存在且未软删 → 否则 MEMBER_NOT_FOUND
+  //   2. member.status === ACTIVE → 否则 MEMBER_INACTIVE
+  //   3. member 有 live 关联账号 → 否则 MEMBER_HAS_NO_LINKED_USER(无账号可重开,应走开号)
+  //   4. 新 username 唯一性预检查(理论恒过,防御性保留,沿 grantAccount 同款)
+  //   5. phone 唯一性预检查含软删占用(与旧行同手机号会在此命中 PHONE_ALREADY_BOUND——
+  //      phone 同样不在本次改造范围,这是有意行为而非缺陷)
+  async reopenAccount(
+    id: string,
+    dto: GrantMemberAccountDto,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<GrantMemberAccountResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'member.grant.account');
+
+    return this.prisma.$transaction(async (tx) => {
+      const member = await tx.member.findFirst({
+        where: notDeletedWhere({ id }),
+        select: { id: true, memberNo: true, status: true },
+      });
+      if (!member) throw new BizException(BizCode.MEMBER_NOT_FOUND);
+      if (member.status !== MemberStatus.ACTIVE) {
+        throw new BizException(BizCode.MEMBER_INACTIVE);
+      }
+
+      const oldLink = await tx.user.findFirst({
+        where: { memberId: id, deletedAt: null },
+        select: { id: true },
+      });
+      if (!oldLink) throw new BizException(BizCode.MEMBER_HAS_NO_LINKED_USER);
+
+      // 复用 computeNextUsername(此刻 count 含即将被软删的 oldLink 1 条,故 reopen 恒
+      // 落入 N≥1 分支,取到 -2/-3/... 后缀;理论上 reopen 恒有 ≥1 条历史,裸 memberNo
+      // 分支不会在 reopen 路径触发,仅 computeNextUsername 与 grantAccount 共用防御性保留)。
+      const newUsername = await this.computeNextUsername(id, member.memberNo, tx);
+
+      const existingUsername = await tx.user.findUnique({
+        where: { username: newUsername },
+        select: { id: true },
+      });
+      if (existingUsername) throw new BizException(BizCode.USERNAME_ALREADY_EXISTS);
+
+      const existingPhone = await tx.user.findUnique({
+        where: { phone: dto.phone },
+        select: { id: true },
+      });
+      if (existingPhone) throw new BizException(BizCode.PHONE_ALREADY_BOUND);
+
+      // 先软删旧行释放 partial unique 槽位,再建新行——顺序不可颠倒(先建会与仍
+      // live 的旧行同时违反 partial unique)。
+      await tx.user.update({
+        where: { id: oldLink.id },
+        data: { deletedAt: new Date(), status: UserStatus.DISABLED },
+      });
+
+      const passwordHash = await bcrypt.hash(
+        randomBytes(48).toString('base64'),
+        BCRYPT_SALT_ROUNDS,
+      );
+      const now = new Date();
+
+      const created = await this.runWithUniqueConstraintGuard(() =>
+        tx.user.create({
+          data: {
+            username: newUsername,
+            phone: dto.phone,
+            phoneVerifiedAt: now,
+            passwordHash,
+            role: Role.USER,
+            memberId: id,
+          },
+          select: { id: true, username: true, phone: true, phoneVerifiedAt: true, role: true },
+        }),
+      );
+
+      await this.auditLogs.log({
+        event: 'member.account-reopened',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'member',
+        resourceId: id,
+        meta: auditMeta,
+        extra: {
+          memberId: id,
+          oldUserId: oldLink.id,
+          newUserId: created.id,
+          phone: maskPhone(dto.phone),
+        },
+        tx,
+      });
+
+      return {
+        userId: created.id,
+        username: created.username,
+        phone: created.phone as string,
+        phoneVerifiedAt: created.phoneVerifiedAt as Date,
+        role: created.role,
+        memberId: id,
+      };
+    });
+  }
+
+  // ============ 队员账号闭环 v2:updateAccountStatus ============
+
+  // PATCH /:id/account/status:队员面直接启停关联账号。判权复用 user.update.status
+  // (D-6,不新增权限码)。不复用 UsersService.updateStatus()(该服务 exports 未包含
+  // UsersService,沿既有模块边界;本模块对 User 表写入的既定范式就是直连 prisma,
+  // 不经 UsersService,镜像 grantAccount"不复用 UsersService,防环 + 零漂移"先例),
+  // 改为直连 prisma 显式复刻其唯一必要副作用:禁用时撤销该 user 全部未撤销未过期
+  // refresh token(revokedReason='admin-disable',AGENTS §9 联动撤销场景 4 的第二条
+  // 触发路径);跳过"最后一个 SUPER_ADMIN 保护"(结构上不可能触发——bind/grant/reopen
+  // 恒 role=USER,来源账号最高只能是 API 建的 ADMIN,AGENTS §13 业务 API 禁止创建
+  // SUPER_ADMIN);仅当置 DISABLED 时做自我保护检查(镜像 UsersService.updateStatus,
+  // 防管理员通过队员轴误禁自己绑定的账号);刻意不写 audit(镜像 UsersService.updateStatus
+  // 自身"不为 status 改动写 audit"的既有决定 D-PR3-2,保持两轴对称)。
+  async updateAccountStatus(
+    id: string,
+    dto: UpdateMemberAccountStatusDto,
+    currentUser: CurrentUserPayload,
+  ): Promise<MemberResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'user.update.status');
+
+    return this.prisma.$transaction(async (tx) => {
+      const member = await this.findMemberOrThrow(id, tx);
+
+      const linked = await tx.user.findFirst({
+        where: { memberId: id, deletedAt: null },
+        select: { id: true, status: true },
+      });
+      if (!linked) throw new BizException(BizCode.MEMBER_HAS_NO_LINKED_USER);
+
+      if (dto.status === UserStatus.DISABLED && linked.id === currentUser.id) {
+        throw new BizException(BizCode.CANNOT_OPERATE_SELF);
+      }
+
+      const updated = await tx.user.update({
+        where: { id: linked.id },
+        data: { status: dto.status },
+        select: { id: true, status: true },
+      });
+
+      if (dto.status === UserStatus.DISABLED) {
+        await tx.refreshToken.updateMany({
+          where: { userId: linked.id, revokedAt: null, expiresAt: { gt: new Date() } },
+          data: { revokedAt: new Date(), revokedReason: 'admin-disable' },
+        });
+      }
+
+      return this.attachAccountInfo(member, { id: updated.id, status: updated.status });
     });
   }
 }

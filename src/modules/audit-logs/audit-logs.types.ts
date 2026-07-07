@@ -169,7 +169,13 @@ export type AuditLogEvent =
   | 'organization.delete' // admin 软删组织节点(organizations.service: softDelete 1 处;仅 before 快照,沿 certificate.delete/content.delete 纯删除既有先例)
   // 队员账号闭环 v1(MVP,2026-07-07;goal「队员账号闭环 v1(MVP)」显式预授权的唯一 +1 AuditLogEvent)。
   // resourceType='member' / resourceId=memberId(建号是"给队员挂账号",非 user 自身操作,归 member 域)。
-  | 'member.account-granted'; // admin 给队员开通登录账号(members.service: grantAccount 1 处;extra.{memberId,userId,phone:掩码};禁明文号 / passwordHash;无 before/after——建号非改属性)
+  | 'member.account-granted' // admin 给队员开通登录账号(members.service: grantAccount 1 处;extra.{memberId,userId,phone:掩码};禁明文号 / passwordHash;无 before/after——建号非改属性)
+  // 队员账号闭环 v2(2026-07-07;冻结评审稿 docs/archive/reviews/member-account-loop-v2-review.md
+  // §3.4)。同 resourceType='member' / resourceId=memberId 口径;队员面启停账号(D-6/E-9)复用既有
+  // user.update.status 的"不写 audit"决定,不新增第 4 个 event。
+  | 'member.account-bound' // admin 绑定既有悬空账号到队员(members.service: bindAccount 1 处;extra.{memberId,userId})
+  | 'member.account-unbound' // admin 解绑队员账号(members.service: unbindAccount 1 处;extra.{memberId,userId}——userId 为断链前的值)
+  | 'member.account-reopened'; // admin 退号重开(members.service: reopenAccount 1 处;extra.{memberId,oldUserId,newUserId,phone:掩码})
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

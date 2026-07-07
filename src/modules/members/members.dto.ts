@@ -7,6 +7,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Length,
   Matches,
   Max,
   MaxLength,
@@ -299,4 +300,34 @@ export class GrantMemberAccountResponseDto {
 
   @ApiProperty({ description: '关联队员 id', example: 'cl9z3a8b00000abcd1234efgh' })
   memberId!: string;
+}
+
+// ============ 队员账号闭环 v2:POST /:id/account/bind ============
+
+// 绑定 = 认领一个已存在、live 且未被任何队员绑定(memberId=null)的悬空账号
+// (如 POST admin/v1/users 建的)到本队员;账号保留其原有登录方式(密码 / openid / phone),
+// 不强制手机号、不改 username/passwordHash。
+export class BindMemberAccountDto {
+  @ApiProperty({
+    description: '待绑定的既有账号 id(必须 live 且当前 memberId 为 null)',
+    example: 'cl9z3a8b00000abcd1234efgh',
+    minLength: 8,
+    maxLength: 64,
+  })
+  @IsString()
+  @Length(8, 64, { message: 'userId 必须是 8-64 位字符串' })
+  userId!: string;
+}
+
+// ============ 队员账号闭环 v2:PATCH /:id/account/status ============
+
+// 队员面启停关联账号;判权复用 user.update.status(D-6),不新增权限码。
+export class UpdateMemberAccountStatusDto {
+  @ApiProperty({
+    description: '目标账号状态(ACTIVE / DISABLED)',
+    enum: UserStatus,
+    example: UserStatus.DISABLED,
+  })
+  @IsEnum(UserStatus)
+  status!: UserStatus;
 }

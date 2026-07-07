@@ -88,14 +88,20 @@
 
 **队员账号闭环 v1(MVP,2026-07-07)— ✅ 已发 main**:给已存在队员(手动建档 / 未走招新 promote 的历史队员)开通登录账号。开号 = 建一个绑手机号的 `User`(`username=memberNo`、随机不可用密码、`role=USER`),队员**用手机验证码登录**(现有 `POST auth/v1/login-sms{,/send-code}`),**不设密码**。以后队员想自己设密码,走现有"手机验证码找回/设置密码"(`POST auth/v1/password-reset{,/send-code}`,用队员自己手机号)即可,**前端无需为此单独造页面**。
 
+**队员账号闭环 v2(完整生命周期,2026-07-07)— ✅ 已发 main**(冻结评审稿 [`member-account-loop-v2-review.md`](../archive/reviews/member-account-loop-v2-review.md)):`User.memberId` 根改造为 partial unique(软删旧号即释放槽位),补齐绑定既有悬空账号 / 解绑 / 退号重开 / 队员面启停账号四条能力,v1 单条"从零开号"闭环成完整生命周期。
+
 | 任务 / 页面 | 端点 | 鉴权 |
 |---|---|---|
 | 队员列表按"有没有账号"过滤(找出还没开号的队员)| `GET /api/admin/v1/members?hasAccount=false` | `[rbac: member.read.record]` |
-| 队员列表/详情显示"是否已开号 + 账号状态"| `hasAccount`/`accountStatus`(`ACTIVE`\|`DISABLED`\|`null`)/`userId` 三字段 additive 出现在 `GET /api/admin/v1/members`(list)与 `GET /api/admin/v1/members/{id}`(detail)响应里,**无需新调用** | 同上 |
-| 队员详情页"开通账号"按钮(仅 `hasAccount=false` 时可点)| `POST /api/admin/v1/members/{id}/account`(body: `{phone}`,大陆 11 位手机号)→ 返 `{userId,username,phone,phoneVerifiedAt,role,memberId}` | `[rbac: member.grant.account]`(**绑 ops-admin**,与队员列表其余 5 码归 biz-admin **不同**——若持 biz-admin 的运营也要能开号,维护者可后续单独把该码也授予 biz-admin,一行绑定、不改前端) |
+| 队员列表/详情显示"是否已开号 + 账号状态"| `hasAccount`/`accountStatus`(`ACTIVE`\|`DISABLED`\|`null`)/`userId` 三字段 additive 出现在 `GET /api/admin/v1/members`(list)与 `GET /api/admin/v1/members/{id}`(detail)响应里,**无需新调用**;v2 起语义收窄为"仅计当前 live 绑定"(历史软删账号不再计入) | 同上 |
+| 队员详情页"开通账号"按钮(仅 `hasAccount=false` 时可点)| `POST /api/admin/v1/members/{id}/account`(body: `{phone}`,大陆 11 位手机号)→ 返 `{userId,username,phone,phoneVerifiedAt,role,memberId}`;v2 起该队员历史软删过账号也可再次开号(槽位已释放) | `[rbac: member.grant.account]`(**绑 ops-admin**,与队员列表其余 5 码归 biz-admin **不同**——若持 biz-admin 的运营也要能开号,维护者可后续单独把该码也授予 biz-admin,一行绑定、不改前端) |
+| 队员详情页"绑定既有账号"(把 `POST admin/v1/users` 建的、还没绑队员的悬空账号认领给本队员;账号保留原密码/openid/phone 等登录方式,不强制手机号)| `POST /api/admin/v1/members/{id}/account/bind`(body: `{userId}`)→ 200 返更新后的队员详情 | `[rbac: member.bind.account]`(绑 ops-admin,不绑 biz-admin) |
+| 队员详情页"解绑账号"(只断链,账号回悬空 `ACTIVE`,**不**顺手停用/删除——要停用/删除走既有用户管理端点)| `POST /api/admin/v1/members/{id}/account/unbind`(无 body)→ 200 | `[rbac: member.bind.account]` |
+| 队员详情页"退号重开"("账号打错了"一步修复:软删旧号 + 用新手机号开新号,单事务原子)| `POST /api/admin/v1/members/{id}/account/reopen`(body: `{phone}`,须与旧号不同——同号会命中 `PHONE_ALREADY_BOUND`,这是有意行为)→ 返新账号 `{userId,username,phone,phoneVerifiedAt,role,memberId}`;**`username` 从第 2 次起追加代际后缀**(如 `M-0001-2`),不影响登录(登录只认手机号) | `[rbac: member.grant.account]`(复用) |
+| 队员详情页"启用/停用关联账号"| `PATCH /api/admin/v1/members/{id}/account/status`(body: `{status: 'ACTIVE'\|'DISABLED'}`)→ 200 返更新后的队员详情;禁止管理员对**自己绑定的账号**操作(`CANNOT_OPERATE_SELF`);置 `DISABLED` 时联动撤销该账号全部未过期 refresh token(与用户管理页"禁用用户"同一效果) | `[rbac: user.update.status]`(复用既有用户管理码,0 新码) |
 | 用户列表/详情反查"这个账号属于哪个队员"| `memberId`/`member:{memberNo,displayName}\|null` 两字段 additive 出现在 `GET /api/admin/v1/users`(list)与 `GET /api/admin/v1/users/{id}`(detail)响应里 | `[rbac: user.read.account]` |
 
-**v1 明确不做**(诉求触发再立项,见 `NEXT_TASKS`):把已存在的"悬空账号"(`POST admin/v1/users` 建的、未绑 memberId 的账号)后补绑定到某队员 / 解绑 / 换绑。当前唯一开号路径就是本节这一个端点,只造"从零开号",不造"绑定既有账号"。
+**v2 仍不做**(诉求触发再立项,见 `NEXT_TASKS` P1-18):批量开号(整队历史队员一次性开号,另立项镜像 announcement-import 批模式)。
 
 ### 2.5 通知管理(站内信撰写 / 发布 + 微信订阅渠道 + 系统定向 + 短信兜底)— ✅ S1+S2+S3+S4+S5 后端就绪(v0.32.0 已发)
 
