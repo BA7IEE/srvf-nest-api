@@ -202,8 +202,9 @@ const EXPECTED_FINAL_REVIEWER_CODES = [
 // 2026-07-03 摘码微刀:biz-admin 摘终审两码 74→72;
 // 2026-07-04 F1「A 组」meta.resolve.label 绑 ops-admin 91→92;
 // 2026-07-04 F3「C 组」authz.{explain-batch,action-state}.decision 绑 ops-admin 92→94;
-// 2026-07-07 队员账号闭环 v1 member.grant.account 绑 ops-admin 94→95)。
-const EXPECTED_OPS_ADMIN_BINDING_COUNT = 95;
+// 2026-07-07 队员账号闭环 v1 member.grant.account 绑 ops-admin 94→95;
+// 2026-07-07 队员账号闭环 v2 member.bind.account 绑 ops-admin 95→96)。
+const EXPECTED_OPS_ADMIN_BINDING_COUNT = 96;
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
 const EXPECTED_BIZ_ADMIN_BINDING_COUNT = 73;
 

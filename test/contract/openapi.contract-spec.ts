@@ -286,6 +286,12 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['delete', '/api/admin/v1/members/{id}'],
   // 队员账号闭环 v1(MVP,2026-07-07):开号(手机验证码登录,不设密码),320→321。
   ['post', '/api/admin/v1/members/{id}/account'],
+  // 队员账号闭环 v2(2026-07-07;冻结评审稿 docs/archive/reviews/member-account-loop-v2-review.md):
+  // 绑定既有悬空账号 / 解绑(只断链)/ 退号重开 / 队员面启停账号,+4 路由,321→325。
+  ['post', '/api/admin/v1/members/{id}/account/bind'],
+  ['post', '/api/admin/v1/members/{id}/account/unbind'],
+  ['post', '/api/admin/v1/members/{id}/account/reopen'],
+  ['patch', '/api/admin/v1/members/{id}/account/status'],
   ['get', '/api/admin/v1/members/{memberId}/department'],
   ['put', '/api/admin/v1/members/{memberId}/department'],
   ['delete', '/api/admin/v1/members/{memberId}/department'],

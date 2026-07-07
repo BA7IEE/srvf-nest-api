@@ -34,6 +34,9 @@ function makeTx() {
     user: {
       findFirst: jest.fn().mockResolvedValue(null), // existingLink 预检查未命中(竞态窗口)
       findUnique: jest.fn().mockResolvedValue(null), // username/phone 预检查未命中(两次调用共用)
+      // 队员账号闭环 v2:computeNextUsername 的 count(0 = 该 memberId 从未创建过 User,
+      // 沿用裸 memberNo,与本文件既有用例的 v1 行为逐字一致)。
+      count: jest.fn().mockResolvedValue(0),
       create: jest.fn(), // 逐用例覆写
     },
   };
