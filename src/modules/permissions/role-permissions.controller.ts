@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Param, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
@@ -8,10 +9,21 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { PermissionResponseDto } from './permissions.dto';
 import { RbacRoleDetailResponseDto, RbacRoleResponseDto } from './rbac-roles.dto';
 import { AssignRolePermissionsDto, RevokeRolePermissionParamDto } from './role-permissions.dto';
 import { RolePermissionsService } from './role-permissions.service';
+
+// 从 @Req() 构造 AuditMeta(沿 user-roles.controller 范式)。第三轮 review §F&A-2:
+// 角色权限点授予/撤销写 audit(resourceType='role_permission')。
+function buildAuditMeta(req: Request): AuditMeta {
+  return {
+    requestId: req.id as string,
+    ip: req.ip ?? null,
+    ua: req.headers['user-agent'] ?? null,
+  };
+}
 
 // V2.x C-6 RBAC 实施 PR #4:RolePermission 关联表 Controller。
 // 2 个端点(沿 D7 v1.1 §5.1 端点 10-11):
@@ -57,8 +69,9 @@ export class RolePermissionsController {
     @CurrentUser() user: CurrentUserPayload,
     @Param() params: IdParamDto,
     @Body() dto: AssignRolePermissionsDto,
+    @Req() req: Request,
   ): Promise<RbacRoleDetailResponseDto> {
-    return this.service.assign(user, params.id, dto);
+    return this.service.assign(user, params.id, dto, buildAuditMeta(req));
   }
 
   @Delete(':permissionId')
@@ -79,7 +92,8 @@ export class RolePermissionsController {
   revoke(
     @CurrentUser() user: CurrentUserPayload,
     @Param() params: RevokeRolePermissionParamDto,
+    @Req() req: Request,
   ): Promise<RbacRoleDetailResponseDto> {
-    return this.service.revoke(user, params.id, params.permissionId);
+    return this.service.revoke(user, params.id, params.permissionId, buildAuditMeta(req));
   }
 }

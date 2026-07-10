@@ -5,6 +5,8 @@ import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { writeConfigAudit } from './config-audit.util';
 import {
   CreatePermissionDto,
   ListPermissionsQueryDto,
@@ -107,7 +109,11 @@ export class PermissionsService {
     return { items, total, page, pageSize };
   }
 
-  async create(user: CurrentUserPayload, dto: CreatePermissionDto): Promise<PermissionResponseDto> {
+  async create(
+    user: CurrentUserPayload,
+    dto: CreatePermissionDto,
+    meta: AuditMeta,
+  ): Promise<PermissionResponseDto> {
     await this.assertCanOrThrow(user, 'rbac.permission.create');
     // 1. 显式格式校验(30008)
     this.assertCodeFormatValid(dto.code);
@@ -121,17 +127,33 @@ export class PermissionsService {
       throw new BizException(BizCode.PERMISSION_CODE_ALREADY_EXISTS);
     }
 
-    // 3. 写入(P2002 兜底)
+    // 3. 写入 + audit(单事务原子;P2002 兜底)。第三轮 review §F&A-2:授权配置写面留痕。
     return this.runCodeUniqueGuard(() =>
-      this.prisma.permission.create({
-        data: {
-          code: dto.code,
-          module: dto.module,
-          action: dto.action,
-          resourceType: dto.resourceType,
-          description: dto.description,
-        },
-        select: permissionSelect,
+      this.prisma.$transaction(async (tx) => {
+        const created = await tx.permission.create({
+          data: {
+            code: dto.code,
+            module: dto.module,
+            action: dto.action,
+            resourceType: dto.resourceType,
+            description: dto.description,
+          },
+          select: permissionSelect,
+        });
+        await writeConfigAudit(tx, {
+          event: 'permission.create',
+          actor: user,
+          resourceType: 'permission',
+          resourceId: created.id,
+          meta,
+          after: {
+            code: created.code,
+            module: created.module,
+            action: created.action,
+            resourceType: created.resourceType,
+          },
+        });
+        return created;
       }),
     );
   }
@@ -140,27 +162,59 @@ export class PermissionsService {
     user: CurrentUserPayload,
     id: string,
     dto: UpdatePermissionDto,
+    meta: AuditMeta,
   ): Promise<PermissionResponseDto> {
     await this.assertCanOrThrow(user, 'rbac.permission.update');
-    // 1. 先确认存在(30001)
-    await this.findByIdOrThrow(id);
+    // 1. 先确认存在(30001);顺带取 before 快照。
+    const before = await this.findByIdOrThrow(id);
 
-    // 2. 更新(仅允许 description;DTO 层已白名单 + ValidationPipe forbidNonWhitelisted 兜底)
-    return this.prisma.permission.update({
-      where: { id },
-      data: { description: dto.description },
-      select: permissionSelect,
+    // 2. 更新 + audit(单事务;仅允许 description;DTO 层已白名单 + ValidationPipe forbidNonWhitelisted 兜底)
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.permission.update({
+        where: { id },
+        data: { description: dto.description },
+        select: permissionSelect,
+      });
+      await writeConfigAudit(tx, {
+        event: 'permission.update',
+        actor: user,
+        resourceType: 'permission',
+        resourceId: id,
+        meta,
+        before: { description: before.description },
+        after: { description: updated.description },
+      });
+      return updated;
     });
   }
 
-  async delete(user: CurrentUserPayload, id: string): Promise<PermissionResponseDto> {
+  async delete(
+    user: CurrentUserPayload,
+    id: string,
+    meta: AuditMeta,
+  ): Promise<PermissionResponseDto> {
     await this.assertCanOrThrow(user, 'rbac.permission.delete');
     // 1. 先确认存在(30001)
     const existing = await this.findByIdOrThrow(id);
 
-    // 2. 物理删(D4 v1.0:Permission 物理删,无 deletedAt;
+    // 2. 物理删 + audit(单事务;D4 v1.0:Permission 物理删,无 deletedAt;
     //    RolePermission FK Cascade 自动联级清理 — 沿 schema 设计)
-    await this.prisma.permission.delete({ where: { id } });
-    return existing;
+    return this.prisma.$transaction(async (tx) => {
+      await tx.permission.delete({ where: { id } });
+      await writeConfigAudit(tx, {
+        event: 'permission.delete',
+        actor: user,
+        resourceType: 'permission',
+        resourceId: id,
+        meta,
+        before: {
+          code: existing.code,
+          module: existing.module,
+          action: existing.action,
+          resourceType: existing.resourceType,
+        },
+      });
+      return existing;
+    });
   }
 }

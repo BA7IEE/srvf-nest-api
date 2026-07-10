@@ -6,6 +6,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { writeConfigAudit } from './config-audit.util';
 import { permissionSelect } from './permissions.select';
 import { RbacService } from './rbac.service';
 import {
@@ -181,7 +183,11 @@ export class RbacRolesService {
     return { ...role, permissions };
   }
 
-  async create(user: CurrentUserPayload, dto: CreateRbacRoleDto): Promise<RbacRoleResponseDto> {
+  async create(
+    user: CurrentUserPayload,
+    dto: CreateRbacRoleDto,
+    meta: AuditMeta,
+  ): Promise<RbacRoleResponseDto> {
     await this.assertCanOrThrow(user, 'rbac.role.create');
     // 1. 显式格式校验(30009)
     this.assertCodeFormatValid(dto.code);
@@ -197,15 +203,30 @@ export class RbacRolesService {
       throw new BizException(BizCode.ROLE_CODE_ALREADY_EXISTS);
     }
 
-    // 3. 写入(P2002 兜底处理并发场景)
+    // 3. 写入 + audit(单事务原子;P2002 兜底处理并发场景)。第三轮 review §F&A-2:授权配置写面留痕。
     return this.runCodeUniqueGuard(() =>
-      this.prisma.rbacRole.create({
-        data: {
-          code: dto.code,
-          displayName: dto.displayName,
-          description: dto.description,
-        },
-        select: rbacRoleSelect,
+      this.prisma.$transaction(async (tx) => {
+        const created = await tx.rbacRole.create({
+          data: {
+            code: dto.code,
+            displayName: dto.displayName,
+            description: dto.description,
+          },
+          select: rbacRoleSelect,
+        });
+        await writeConfigAudit(tx, {
+          event: 'rbac-role.create',
+          actor: user,
+          resourceType: 'rbac_role',
+          resourceId: created.id,
+          meta,
+          after: {
+            code: created.code,
+            displayName: created.displayName,
+            description: created.description,
+          },
+        });
+        return created;
       }),
     );
   }
@@ -214,37 +235,64 @@ export class RbacRolesService {
     user: CurrentUserPayload,
     id: string,
     dto: UpdateRbacRoleDto,
+    meta: AuditMeta,
   ): Promise<RbacRoleResponseDto> {
     await this.assertCanOrThrow(user, 'rbac.role.update');
-    // 1. 先确认活跃(不存在 + 已软删都返 30003,沿 v1 §10 信息泄漏防御)
-    await this.findActiveByIdOrThrow(id);
+    // 1. 先确认活跃(不存在 + 已软删都返 30003,沿 v1 §10 信息泄漏防御);顺带取 before 快照。
+    const before = await this.findActiveByIdOrThrow(id);
 
-    // 2. 更新(仅允许 displayName / description;DTO 层已白名单 +
+    // 2. 更新 + audit(单事务;仅允许 displayName / description;DTO 层已白名单 +
     //    ValidationPipe forbidNonWhitelisted 兜底)
-    return this.prisma.rbacRole.update({
-      where: { id },
-      data: {
-        displayName: dto.displayName,
-        description: dto.description,
-      },
-      select: rbacRoleSelect,
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.rbacRole.update({
+        where: { id },
+        data: {
+          displayName: dto.displayName,
+          description: dto.description,
+        },
+        select: rbacRoleSelect,
+      });
+      await writeConfigAudit(tx, {
+        event: 'rbac-role.update',
+        actor: user,
+        resourceType: 'rbac_role',
+        resourceId: id,
+        meta,
+        before: { displayName: before.displayName, description: before.description },
+        after: { displayName: updated.displayName, description: updated.description },
+      });
+      return updated;
     });
   }
 
-  async softDelete(user: CurrentUserPayload, id: string): Promise<RbacRoleResponseDto> {
+  async softDelete(
+    user: CurrentUserPayload,
+    id: string,
+    meta: AuditMeta,
+  ): Promise<RbacRoleResponseDto> {
     await this.assertCanOrThrow(user, 'rbac.role.delete');
     // 1. 先确认活跃(不存在 + 已软删都返 30003)
     const existing = await this.findActiveByIdOrThrow(id);
 
-    // 2. 软删(D4 v1.0;沿 v1 §10:update deletedAt = new Date();
-    //    user_roles / role_permissions 不联动,沿 D7 §6.3 "最后一个运营管理员保护" 决策)
-    //
-    //    **不实装 deletedByUserId**(沿用户拍板方案 A;schema + D7 v1.1 均无此字段;
-    //    删除责任后续由 audit_logs 的 rbac.role.delete 事件 + actorUserId 记录)
-    await this.prisma.rbacRole.update({
-      where: { id },
-      data: { deletedAt: new Date() },
+    // 2. 软删 + audit(单事务;D4 v1.0;沿 v1 §10:update deletedAt = new Date();
+    //    user_roles / role_permissions 不联动,沿 D7 §6.3 "最后一个运营管理员保护" 决策)。
+    //    **不实装 deletedByUserId**(沿用户拍板方案 A;schema + D7 v1.1 均无此字段);删除责任由
+    //    audit_logs 的 rbac-role.delete 事件 + actorUserId 记录(第三轮 review §F&A-2 补齐;
+    //    此前该留痕不存在——旧注释假称已有,系僵尸注释,现落地为真)。
+    return this.prisma.$transaction(async (tx) => {
+      await tx.rbacRole.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
+      await writeConfigAudit(tx, {
+        event: 'rbac-role.delete',
+        actor: user,
+        resourceType: 'rbac_role',
+        resourceId: id,
+        meta,
+        before: { code: existing.code, displayName: existing.displayName },
+      });
+      return existing;
     });
-    return existing;
   }
 }
