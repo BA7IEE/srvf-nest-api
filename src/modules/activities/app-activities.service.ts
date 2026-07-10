@@ -79,7 +79,10 @@ export class AppActivitiesService {
     query: PaginationQueryDto,
   ): Promise<PageResultDto<AppAvailableActivityListItemDto>> {
     const { page, pageSize } = query;
-    const where = notDeletedWhere({ statusCode: 'published' });
+    // 参与域生命周期收口③(v0.40.0):可报名池过滤已结束活动 —— 追加 endAt >= now,已结束
+    // (endAt < now)的 published 活动退出 App 可报名列表。detail(findVisibleByIdForMember)
+    // 口径**刻意不动**:published 即可见,已报名者回看已结束活动无碍。
+    const where = notDeletedWhere({ statusCode: 'published', endAt: { gte: new Date() } });
 
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.activity.findMany({

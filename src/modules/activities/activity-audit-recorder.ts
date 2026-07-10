@@ -288,4 +288,39 @@ export class ActivityAuditRecorder {
       tx: args.tx,
     });
   }
+
+  // ============ logComplete(v0.40.0 参与域生命周期收口③ 管理端手动完结) ============
+  // event: 'activity.publish'(第 6 处调用点,复用既有伞事件,event 名不动);
+  // before + after = toAuditSnapshot(...);
+  // extra 3 字段:{ operation: 'complete', priorStatusCode, nextStatusCode }
+  // 注:attendances 首提直写 completed 走 attendance-audit-recorder,**不**经本方法;
+  //     本方法仅服务管理端 `complete` 端点(published → completed)。
+  async logComplete(args: {
+    activityId: string;
+    before: AuditActivitySnapshotInput;
+    after: AuditActivitySnapshotInput;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    priorStatusCode: string;
+    nextStatusCode: string;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: ACTIVITY_AUDIT_EVENT,
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.activityId,
+      meta: args.auditMeta,
+      before: this.toAuditSnapshot(args.before),
+      after: this.toAuditSnapshot(args.after),
+      extra: {
+        operation: 'complete',
+        priorStatusCode: args.priorStatusCode,
+        nextStatusCode: args.nextStatusCode,
+      },
+      tx: args.tx,
+    });
+  }
 }

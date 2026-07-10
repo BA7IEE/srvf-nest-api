@@ -352,6 +352,48 @@ describe('ActivitiesService audit characterization', () => {
     });
   });
 
+  // ============ D2. complete audit shape(v0.40.0;event 复用 activity.publish 伞事件)============
+  describe('D2. complete audit shape', () => {
+    beforeEach(isolateFixtures);
+
+    it('event=activity.publish + extra={operation:complete, priorStatusCode:published, nextStatusCode:completed} + before+after present', async () => {
+      const created = await ctx.service.create(createDto(), ctx.adminPayload, AUDIT_META);
+      await ctx.service.publish(created.id, ctx.adminPayload, AUDIT_META);
+      await ctx.prisma.auditLog.deleteMany({});
+
+      await ctx.service.complete(created.id, ctx.adminPayload, AUDIT_META);
+
+      const audits = await ctx.prisma.auditLog.findMany({
+        where: { event: ACTIVITY_EVENT, resourceId: created.id },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(audits).toHaveLength(1);
+      const a = audits[0];
+      assertCommonAuditFields(a, { resourceId: created.id });
+
+      const c = a.context as unknown as ReadAuditContext<{
+        operation?: string;
+        priorStatusCode?: string;
+        nextStatusCode?: string;
+      }>;
+      assertContextMeta(c);
+
+      expect(c.before).toBeDefined();
+      expect(c.after).toBeDefined();
+      const before = c.before as { statusCode: string };
+      const after = c.after as { statusCode: string };
+      expect(before.statusCode).toBe('published');
+      expect(after.statusCode).toBe('completed');
+
+      // extra 字段集逐字锁(3 字段)
+      expect(c.extra).toEqual({
+        operation: 'complete',
+        priorStatusCode: 'published',
+        nextStatusCode: 'completed',
+      });
+    });
+  });
+
   // ============ E. cancel audit shape ============
   describe('E. cancel audit shape', () => {
     beforeEach(isolateFixtures);

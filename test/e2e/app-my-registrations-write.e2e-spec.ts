@@ -177,8 +177,8 @@ describe('App /api/app/v1/my/* (P2-5b 写 2 endpoint)', () => {
       title: `P2-5b ${state} ${titleSuffix}`,
       activityTypeCode,
       organizationId: childOrgId,
-      startAt: new Date('2026-07-01T08:00:00.000Z'),
-      endAt: new Date('2026-07-01T12:00:00.000Z'),
+      startAt: new Date('2099-07-01T08:00:00.000Z'), // v0.40.0 endAt 闸:远未来避免墙钟越过
+      endAt: new Date('2099-07-01T12:00:00.000Z'),
       location: '梧桐山',
       coverImageUrl: 'https://example.test/cover.png',
       capacity: opts.capacity === undefined ? 30 : opts.capacity,

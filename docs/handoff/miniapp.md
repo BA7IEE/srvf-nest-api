@@ -21,8 +21,8 @@
 |---|---|
 | 登录 | `POST /api/auth/v1/login`(密码) · `login-sms`(验证码) · `login-wechat`(小程序 openid;未绑返 `bindingRequired`) |
 | 我的身份/资料/能力 | `GET /api/app/v1/me` · `me/account` · `PATCH me/profile` · `PUT me/password` · `GET me/capabilities` |
-| 活动池 / 我的活动 | `GET /api/app/v1/activities` · `GET /api/app/v1/my/activities` |
-| 我的报名(报名/查/取消) | `GET /api/app/v1/my/registrations` · `POST` 报名 · `PATCH` 取消 |
+| 活动池 / 我的活动 | `GET /api/app/v1/activities`(**v0.40.0:已结束〔`endAt < now`〕活动不再出现在可报名池;活动详情 `GET /api/app/v1/activities/:id` 口径不变,已报名者仍能回看已结束活动**) · `GET /api/app/v1/my/activities` |
+| 我的报名(报名/查/取消) | `GET /api/app/v1/my/registrations` · `POST` 报名(**v0.40.0:活动已结束 `endAt < now` → `20125`「活动已结束,不可报名」;报名截止 `registrationDeadline` 仍为独立闸 `20123`**)· `PATCH` 取消(**v0.40.0:该报名已有考勤记录 → `21033`「报名已有考勤记录,不可取消」**) |
 | 我的考勤 / 证书 | `GET /api/app/v1/my/attendance-records` · `GET /api/app/v1/my/certificates` |
 | 公开(无账号) | `POST /api/open/v1/recruitment/applications/*`(招新报名) · `GET /api/open/v1/contents`(内容) |
 | 招新本人进度(无账号) | `POST /api/open/v1/recruitment/applications/query`(凭 wx.login code 换 openid;**返进度模型**:业务态 `stage` + 字典 `stageText` + `nextAction` + 门槛 `todoList` 真投影 + 临时编号;`memberNo` 恒 null——发号后经登录态 app 侧查,见 §3 GAP-006) |

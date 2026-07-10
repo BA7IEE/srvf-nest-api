@@ -169,8 +169,8 @@ describe('attendances 模块', () => {
         title: 'ATT-MAIN',
         activityTypeCode: ti.code,
         organizationId: childOrg.id,
-        startAt: '2026-06-01T08:00:00.000Z',
-        endAt: '2026-06-01T18:00:00.000Z',
+        startAt: '2099-06-01T08:00:00.000Z',
+        endAt: '2099-06-01T18:00:00.000Z',
         location: '演示',
       });
     activityId = actCreate.body.data.id;
@@ -186,8 +186,8 @@ describe('attendances 模块', () => {
         title: 'ATT-CANCEL',
         activityTypeCode: ti.code,
         organizationId: childOrg.id,
-        startAt: '2026-06-01T08:00:00.000Z',
-        endAt: '2026-06-01T18:00:00.000Z',
+        startAt: '2099-06-01T08:00:00.000Z',
+        endAt: '2099-06-01T18:00:00.000Z',
         location: '演示',
       });
     activityCancelledId = actCancel.body.data.id;
@@ -207,8 +207,8 @@ describe('attendances 模块', () => {
         title: 'ATT-OTHER',
         activityTypeCode: ti.code,
         organizationId: childOrg.id,
-        startAt: '2026-06-02T08:00:00.000Z',
-        endAt: '2026-06-02T18:00:00.000Z',
+        startAt: '2099-06-02T08:00:00.000Z',
+        endAt: '2099-06-02T18:00:00.000Z',
         location: '演示',
       });
     activityOtherId = actOther.body.data.id;
@@ -240,8 +240,8 @@ describe('attendances 模块', () => {
   const baseRecord = (override: Record<string, unknown> = {}): Record<string, unknown> => ({
     memberId: memberAId,
     roleCode: 'member',
-    checkInAt: '2026-06-01T08:00:00.000Z',
-    checkOutAt: '2026-06-01T12:00:00.000Z',
+    checkInAt: '2099-06-01T08:00:00.000Z',
+    checkOutAt: '2099-06-01T12:00:00.000Z',
     attendanceStatusCode: 'present',
     ...override,
   });
@@ -396,8 +396,8 @@ describe('attendances 模块', () => {
           records: [
             baseRecord({
               memberId: memberBId,
-              checkInAt: '2026-06-01T09:00:00.000Z',
-              checkOutAt: '2026-06-01T11:00:00.000Z',
+              checkInAt: '2099-06-01T09:00:00.000Z',
+              checkOutAt: '2099-06-01T11:00:00.000Z',
             }),
           ],
         });
@@ -422,13 +422,13 @@ describe('attendances 模块', () => {
           records: [
             baseRecord({
               memberId: memberCId,
-              checkInAt: '2026-06-02T09:00:00.000Z',
-              checkOutAt: '2026-06-02T11:00:00.000Z',
+              checkInAt: '2099-06-02T09:00:00.000Z',
+              checkOutAt: '2099-06-02T11:00:00.000Z',
             }),
             baseRecord({
               memberId: memberBId,
-              checkInAt: '2026-06-02T13:00:00.000Z',
-              checkOutAt: '2026-06-02T15:00:00.000Z',
+              checkInAt: '2099-06-02T13:00:00.000Z',
+              checkOutAt: '2099-06-02T15:00:00.000Z',
             }),
           ],
         });
@@ -439,8 +439,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-01T10:00:00.000Z',
-          checkOutAt: '2026-06-01T13:30:00.000Z',
+          checkInAt: '2099-06-01T10:00:00.000Z',
+          checkOutAt: '2099-06-01T13:30:00.000Z',
         }),
       ]);
       const records = await prisma.attendanceRecord.findMany({ where: { sheetId: id } });
@@ -451,8 +451,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: otherMemberId,
-          checkInAt: '2026-06-01T14:00:00.000Z',
-          checkOutAt: '2026-06-01T17:00:00.000Z',
+          checkInAt: '2099-06-01T14:00:00.000Z',
+          checkOutAt: '2099-06-01T17:00:00.000Z',
           serviceHours: 2.5,
         }),
       ]);
@@ -469,8 +469,8 @@ describe('attendances 模块', () => {
           records: [
             baseRecord({
               memberId: memberAId,
-              checkInAt: '2026-06-01T15:00:00.000Z',
-              checkOutAt: '2026-06-01T17:30:00.000Z',
+              checkInAt: '2099-06-01T15:00:00.000Z',
+              checkOutAt: '2099-06-01T17:30:00.000Z',
               registrationId: registrationAId,
             }),
           ],
@@ -536,8 +536,8 @@ describe('attendances 模块', () => {
           records: [
             baseRecord({
               memberId: memberCId,
-              checkInAt: '2026-06-01T10:00:00.000Z',
-              checkOutAt: '2026-06-01T10:00:00.000Z',
+              checkInAt: '2099-06-01T10:00:00.000Z',
+              checkOutAt: '2099-06-01T10:00:00.000Z',
             }),
           ],
         });
@@ -552,8 +552,8 @@ describe('attendances 模块', () => {
           records: [
             baseRecord({
               memberId: memberCId,
-              checkInAt: '2026-06-01T12:00:00.000Z',
-              checkOutAt: '2026-06-01T13:00:00.000Z',
+              checkInAt: '2099-06-01T12:00:00.000Z',
+              checkOutAt: '2099-06-01T13:00:00.000Z',
               serviceHours: 0,
             }),
           ],
@@ -570,8 +570,8 @@ describe('attendances 模块', () => {
           records: [
             baseRecord({
               memberId: memberCId,
-              checkInAt: '2026-06-01T13:00:00.000Z',
-              checkOutAt: '2026-06-01T14:00:00.000Z',
+              checkInAt: '2099-06-01T13:00:00.000Z',
+              checkOutAt: '2099-06-01T14:00:00.000Z',
               serviceHours: 5,
             }),
           ],
@@ -588,8 +588,8 @@ describe('attendances 模块', () => {
           records: [
             baseRecord({
               memberId: memberAId,
-              checkInAt: '2026-06-01T16:00:00.000Z',
-              checkOutAt: '2026-06-01T17:00:00.000Z',
+              checkInAt: '2099-06-01T16:00:00.000Z',
+              checkOutAt: '2099-06-01T17:00:00.000Z',
               registrationId: registrationOtherActivityId,
             }),
           ],
@@ -605,8 +605,8 @@ describe('attendances 模块', () => {
           records: [
             baseRecord({
               memberId: memberAId,
-              checkInAt: '2026-06-03T10:00:00.000Z',
-              checkOutAt: '2026-06-03T12:00:00.000Z',
+              checkInAt: '2099-06-03T10:00:00.000Z',
+              checkOutAt: '2099-06-03T12:00:00.000Z',
               registrationId: 'cl0000000000000000000000',
             }),
           ],
@@ -683,8 +683,8 @@ describe('attendances 模块', () => {
       await createPendingSheet(activityId, [
         baseRecord({
           memberId: overlapMember,
-          checkInAt: '2026-06-05T08:00:00.000Z',
-          checkOutAt: '2026-06-05T10:00:00.000Z',
+          checkInAt: '2099-06-05T08:00:00.000Z',
+          checkOutAt: '2099-06-05T10:00:00.000Z',
         }),
       ]);
     });
@@ -697,8 +697,8 @@ describe('attendances 模块', () => {
           records: [
             baseRecord({
               memberId: overlapMember,
-              checkInAt: '2026-06-05T08:00:00.000Z',
-              checkOutAt: '2026-06-05T10:00:00.000Z',
+              checkInAt: '2099-06-05T08:00:00.000Z',
+              checkOutAt: '2099-06-05T10:00:00.000Z',
             }),
           ],
         });
@@ -713,8 +713,8 @@ describe('attendances 模块', () => {
           records: [
             baseRecord({
               memberId: overlapMember,
-              checkInAt: '2026-06-05T09:00:00.000Z',
-              checkOutAt: '2026-06-05T11:00:00.000Z',
+              checkInAt: '2099-06-05T09:00:00.000Z',
+              checkOutAt: '2099-06-05T11:00:00.000Z',
             }),
           ],
         });
@@ -729,8 +729,8 @@ describe('attendances 模块', () => {
           records: [
             baseRecord({
               memberId: overlapMember,
-              checkInAt: '2026-06-05T10:00:00.000Z',
-              checkOutAt: '2026-06-05T12:00:00.000Z',
+              checkInAt: '2099-06-05T10:00:00.000Z',
+              checkOutAt: '2099-06-05T12:00:00.000Z',
             }),
           ],
         });
@@ -746,8 +746,8 @@ describe('attendances 模块', () => {
           records: [
             baseRecord({
               memberId: overlapMember,
-              checkInAt: '2026-06-05T09:30:00.000Z',
-              checkOutAt: '2026-06-05T10:30:00.000Z',
+              checkInAt: '2099-06-05T09:30:00.000Z',
+              checkOutAt: '2099-06-05T10:30:00.000Z',
             }),
           ],
         });
@@ -768,13 +768,13 @@ describe('attendances 模块', () => {
           records: [
             baseRecord({
               memberId: otherM,
-              checkInAt: '2026-06-06T08:00:00.000Z',
-              checkOutAt: '2026-06-06T10:00:00.000Z',
+              checkInAt: '2099-06-06T08:00:00.000Z',
+              checkOutAt: '2099-06-06T10:00:00.000Z',
             }),
             baseRecord({
               memberId: otherM,
-              checkInAt: '2026-06-06T09:00:00.000Z',
-              checkOutAt: '2026-06-06T11:00:00.000Z',
+              checkInAt: '2099-06-06T09:00:00.000Z',
+              checkOutAt: '2099-06-06T11:00:00.000Z',
             }),
           ],
         });
@@ -791,8 +791,8 @@ describe('attendances 模块', () => {
       createdId = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-10T08:00:00.000Z',
-          checkOutAt: '2026-06-10T10:00:00.000Z',
+          checkInAt: '2099-06-10T08:00:00.000Z',
+          checkOutAt: '2099-06-10T10:00:00.000Z',
         }),
       ]);
     });
@@ -873,8 +873,8 @@ describe('attendances 模块', () => {
       pendingId = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-15T08:00:00.000Z',
-          checkOutAt: '2026-06-15T10:00:00.000Z',
+          checkInAt: '2099-06-15T08:00:00.000Z',
+          checkOutAt: '2099-06-15T10:00:00.000Z',
         }),
       ]);
 
@@ -883,8 +883,8 @@ describe('attendances 模块', () => {
       approvedId = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-15T11:00:00.000Z',
-          checkOutAt: '2026-06-15T12:00:00.000Z',
+          checkInAt: '2099-06-15T11:00:00.000Z',
+          checkOutAt: '2099-06-15T12:00:00.000Z',
         }),
       ]);
       await fillContributionPoints(approvedId);
@@ -894,8 +894,8 @@ describe('attendances 模块', () => {
       rejectedId = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-15T13:00:00.000Z',
-          checkOutAt: '2026-06-15T14:00:00.000Z',
+          checkInAt: '2099-06-15T13:00:00.000Z',
+          checkOutAt: '2099-06-15T14:00:00.000Z',
         }),
       ]);
       await request(httpServer(app))
@@ -916,8 +916,8 @@ describe('attendances 模块', () => {
           records: [
             baseRecord({
               memberId: memberCId,
-              checkInAt: '2026-06-15T08:30:00.000Z',
-              checkOutAt: '2026-06-15T09:30:00.000Z',
+              checkInAt: '2099-06-15T08:30:00.000Z',
+              checkOutAt: '2099-06-15T09:30:00.000Z',
             }),
           ],
         });
@@ -938,7 +938,7 @@ describe('attendances 模块', () => {
         where: { sheetId: pendingId, deletedAt: null },
       });
       expect(activeRecords.length).toBe(1);
-      expect(activeRecords[0].checkInAt.toISOString()).toBe('2026-06-15T08:30:00.000Z');
+      expect(activeRecords[0].checkInAt.toISOString()).toBe('2099-06-15T08:30:00.000Z');
       const allRecords = await prisma.attendanceRecord.findMany({
         where: { sheetId: pendingId },
       });
@@ -973,8 +973,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-16T08:00:00.000Z',
-          checkOutAt: '2026-06-16T09:00:00.000Z',
+          checkInAt: '2099-06-16T08:00:00.000Z',
+          checkOutAt: '2099-06-16T09:00:00.000Z',
         }),
       ]);
       const res = await request(httpServer(app))
@@ -988,8 +988,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-16T10:00:00.000Z',
-          checkOutAt: '2026-06-16T11:00:00.000Z',
+          checkInAt: '2099-06-16T10:00:00.000Z',
+          checkOutAt: '2099-06-16T11:00:00.000Z',
         }),
       ]);
       const res = await request(httpServer(app))
@@ -1003,8 +1003,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-16T12:00:00.000Z',
-          checkOutAt: '2026-06-16T13:00:00.000Z',
+          checkInAt: '2099-06-16T12:00:00.000Z',
+          checkOutAt: '2099-06-16T13:00:00.000Z',
         }),
       ]);
       const res = await request(httpServer(app))
@@ -1018,8 +1018,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-16T14:00:00.000Z',
-          checkOutAt: '2026-06-16T15:00:00.000Z',
+          checkInAt: '2099-06-16T14:00:00.000Z',
+          checkOutAt: '2099-06-16T15:00:00.000Z',
         }),
       ]);
       const res = await request(httpServer(app))
@@ -1037,8 +1037,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-20T08:00:00.000Z',
-          checkOutAt: '2026-06-20T10:00:00.000Z',
+          checkInAt: '2099-06-20T08:00:00.000Z',
+          checkOutAt: '2099-06-20T10:00:00.000Z',
         }),
       ]);
       const del = await request(httpServer(app))
@@ -1062,8 +1062,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-20T11:00:00.000Z',
-          checkOutAt: '2026-06-20T12:00:00.000Z',
+          checkInAt: '2099-06-20T11:00:00.000Z',
+          checkOutAt: '2099-06-20T12:00:00.000Z',
         }),
       ]);
       await fillContributionPoints(id);
@@ -1079,8 +1079,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-20T13:00:00.000Z',
-          checkOutAt: '2026-06-20T14:00:00.000Z',
+          checkInAt: '2099-06-20T13:00:00.000Z',
+          checkOutAt: '2099-06-20T14:00:00.000Z',
         }),
       ]);
       await request(httpServer(app))
@@ -1109,8 +1109,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-25T08:00:00.000Z',
-          checkOutAt: '2026-06-25T10:00:00.000Z',
+          checkInAt: '2099-06-25T08:00:00.000Z',
+          checkOutAt: '2099-06-25T10:00:00.000Z',
         }),
       ]);
       const res = await request(httpServer(app))
@@ -1124,8 +1124,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-25T11:00:00.000Z',
-          checkOutAt: '2026-06-25T13:00:00.000Z',
+          checkInAt: '2099-06-25T11:00:00.000Z',
+          checkOutAt: '2099-06-25T13:00:00.000Z',
         }),
       ]);
       await fillContributionPoints(id, 2);
@@ -1150,8 +1150,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-25T14:00:00.000Z',
-          checkOutAt: '2026-06-25T15:00:00.000Z',
+          checkInAt: '2099-06-25T14:00:00.000Z',
+          checkOutAt: '2099-06-25T15:00:00.000Z',
         }),
       ]);
       await fillContributionPoints(id);
@@ -1170,8 +1170,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-25T16:00:00.000Z',
-          checkOutAt: '2026-06-25T17:00:00.000Z',
+          checkInAt: '2099-06-25T16:00:00.000Z',
+          checkOutAt: '2099-06-25T17:00:00.000Z',
         }),
       ]);
       await request(httpServer(app))
@@ -1201,8 +1201,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-26T08:00:00.000Z',
-          checkOutAt: '2026-06-26T09:00:00.000Z',
+          checkInAt: '2099-06-26T08:00:00.000Z',
+          checkOutAt: '2099-06-26T09:00:00.000Z',
         }),
       ]);
       const res = await request(httpServer(app))
@@ -1218,8 +1218,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-26T10:00:00.000Z',
-          checkOutAt: '2026-06-26T11:00:00.000Z',
+          checkInAt: '2099-06-26T10:00:00.000Z',
+          checkOutAt: '2099-06-26T11:00:00.000Z',
         }),
       ]);
       const res = await request(httpServer(app))
@@ -1233,8 +1233,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-26T12:00:00.000Z',
-          checkOutAt: '2026-06-26T13:00:00.000Z',
+          checkInAt: '2099-06-26T12:00:00.000Z',
+          checkOutAt: '2099-06-26T13:00:00.000Z',
         }),
       ]);
       await fillContributionPoints(id);
@@ -1268,8 +1268,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-28T08:00:00.000Z',
-          checkOutAt: '2026-06-28T09:00:00.000Z',
+          checkInAt: '2099-06-28T08:00:00.000Z',
+          checkOutAt: '2099-06-28T09:00:00.000Z',
         }),
       ]);
       await request(httpServer(app))
@@ -1284,8 +1284,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-28T10:00:00.000Z',
-          checkOutAt: '2026-06-28T11:00:00.000Z',
+          checkInAt: '2099-06-28T10:00:00.000Z',
+          checkOutAt: '2099-06-28T11:00:00.000Z',
         }),
       ]);
       await fillContributionPoints(id, 1);
@@ -1315,8 +1315,8 @@ describe('attendances 模块', () => {
       pendingFinalReviewId = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-29T08:00:00.000Z',
-          checkOutAt: '2026-06-29T09:00:00.000Z',
+          checkInAt: '2099-06-29T08:00:00.000Z',
+          checkOutAt: '2099-06-29T09:00:00.000Z',
         }),
       ]);
       await fillContributionPoints(pendingFinalReviewId, 1);
@@ -1325,8 +1325,8 @@ describe('attendances 模块', () => {
       alreadyApprovedId = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-29T09:30:00.000Z',
-          checkOutAt: '2026-06-29T10:30:00.000Z',
+          checkInAt: '2099-06-29T09:30:00.000Z',
+          checkOutAt: '2099-06-29T10:30:00.000Z',
         }),
       ]);
       await fillContributionPoints(alreadyApprovedId, 1);
@@ -1335,8 +1335,8 @@ describe('attendances 模块', () => {
       alreadyFinalRejectedId = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-29T11:00:00.000Z',
-          checkOutAt: '2026-06-29T12:00:00.000Z',
+          checkInAt: '2099-06-29T11:00:00.000Z',
+          checkOutAt: '2099-06-29T12:00:00.000Z',
         }),
       ]);
       await fillContributionPoints(alreadyFinalRejectedId, 1);
@@ -1347,8 +1347,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-29T13:00:00.000Z',
-          checkOutAt: '2026-06-29T14:00:00.000Z',
+          checkInAt: '2099-06-29T13:00:00.000Z',
+          checkOutAt: '2099-06-29T14:00:00.000Z',
         }),
       ]);
       await fillContributionPoints(id, 1.5);
@@ -1385,8 +1385,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-29T14:00:00.000Z',
-          checkOutAt: '2026-06-29T15:00:00.000Z',
+          checkInAt: '2099-06-29T14:00:00.000Z',
+          checkOutAt: '2099-06-29T15:00:00.000Z',
         }),
       ]);
       await fillContributionPoints(id, 1);
@@ -1415,8 +1415,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-29T15:30:00.000Z',
-          checkOutAt: '2026-06-29T16:00:00.000Z',
+          checkInAt: '2099-06-29T15:30:00.000Z',
+          checkOutAt: '2099-06-29T16:00:00.000Z',
         }),
       ]);
       const res = await request(httpServer(app))
@@ -1453,8 +1453,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-29T16:30:00.000Z',
-          checkOutAt: '2026-06-29T17:30:00.000Z',
+          checkInAt: '2099-06-29T16:30:00.000Z',
+          checkOutAt: '2099-06-29T17:30:00.000Z',
         }),
       ]);
       await fillContributionPoints(id, 1);
@@ -1479,8 +1479,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-29T18:00:00.000Z',
-          checkOutAt: '2026-06-29T18:30:00.000Z',
+          checkInAt: '2099-06-29T18:00:00.000Z',
+          checkOutAt: '2099-06-29T18:30:00.000Z',
         }),
       ]);
       await fillContributionPoints(id, 1);
@@ -1496,8 +1496,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-29T19:00:00.000Z',
-          checkOutAt: '2026-06-29T19:30:00.000Z',
+          checkInAt: '2099-06-29T19:00:00.000Z',
+          checkOutAt: '2099-06-29T19:30:00.000Z',
         }),
       ]);
       await fillContributionPoints(id, 1);
@@ -1538,8 +1538,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-29T20:00:00.000Z',
-          checkOutAt: '2026-06-29T20:30:00.000Z',
+          checkInAt: '2099-06-29T20:00:00.000Z',
+          checkOutAt: '2099-06-29T20:30:00.000Z',
         }),
       ]);
       await fillContributionPoints(id, 1);
@@ -1555,8 +1555,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(activityId, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-06-29T21:00:00.000Z',
-          checkOutAt: '2026-06-29T21:30:00.000Z',
+          checkInAt: '2099-06-29T21:00:00.000Z',
+          checkOutAt: '2099-06-29T21:30:00.000Z',
         }),
       ]);
       await fillContributionPoints(id, 1);
@@ -1794,8 +1794,8 @@ describe('attendances 模块', () => {
           title: 'D11 推动测试',
           activityTypeCode: ti.code,
           organizationId: childOrg.id,
-          startAt: new Date('2026-08-01T08:00:00.000Z'),
-          endAt: new Date('2026-08-01T18:00:00.000Z'),
+          startAt: new Date('2099-08-01T08:00:00.000Z'),
+          endAt: new Date('2099-08-01T18:00:00.000Z'),
           location: '示例',
           statusCode: 'published',
         },
@@ -1805,8 +1805,8 @@ describe('attendances 模块', () => {
       await createPendingSheet(act.id, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-08-01T09:00:00.000Z',
-          checkOutAt: '2026-08-01T10:00:00.000Z',
+          checkInAt: '2099-08-01T09:00:00.000Z',
+          checkOutAt: '2099-08-01T10:00:00.000Z',
         }),
       ]);
 
@@ -1831,8 +1831,8 @@ describe('attendances 模块', () => {
           title: 'D11 多 Sheet 幂等',
           activityTypeCode: ti.code,
           organizationId: childOrg.id,
-          startAt: new Date('2026-08-02T08:00:00.000Z'),
-          endAt: new Date('2026-08-02T18:00:00.000Z'),
+          startAt: new Date('2099-08-02T08:00:00.000Z'),
+          endAt: new Date('2099-08-02T18:00:00.000Z'),
           location: '示例',
           statusCode: 'published',
         },
@@ -1842,16 +1842,16 @@ describe('attendances 模块', () => {
       await createPendingSheet(act.id, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-08-02T09:00:00.000Z',
-          checkOutAt: '2026-08-02T10:00:00.000Z',
+          checkInAt: '2099-08-02T09:00:00.000Z',
+          checkOutAt: '2099-08-02T10:00:00.000Z',
         }),
       ]);
       // 第二张
       await createPendingSheet(act.id, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-08-02T11:00:00.000Z',
-          checkOutAt: '2026-08-02T12:00:00.000Z',
+          checkInAt: '2099-08-02T11:00:00.000Z',
+          checkOutAt: '2099-08-02T12:00:00.000Z',
         }),
       ]);
       const after = await prisma.activity.findUnique({
@@ -1875,8 +1875,8 @@ describe('attendances 模块', () => {
           title: 'D11 不回退',
           activityTypeCode: ti.code,
           organizationId: childOrg.id,
-          startAt: new Date('2026-08-03T08:00:00.000Z'),
-          endAt: new Date('2026-08-03T18:00:00.000Z'),
+          startAt: new Date('2099-08-03T08:00:00.000Z'),
+          endAt: new Date('2099-08-03T18:00:00.000Z'),
           location: '示例',
           statusCode: 'published',
         },
@@ -1886,8 +1886,8 @@ describe('attendances 模块', () => {
       const sheetId = await createPendingSheet(act.id, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-08-03T09:00:00.000Z',
-          checkOutAt: '2026-08-03T10:00:00.000Z',
+          checkInAt: '2099-08-03T09:00:00.000Z',
+          checkOutAt: '2099-08-03T10:00:00.000Z',
         }),
       ]);
       // 此时 activity 已 completed
@@ -1916,8 +1916,8 @@ describe('attendances 模块', () => {
           title: 'D11 already completed',
           activityTypeCode: ti.code,
           organizationId: childOrg.id,
-          startAt: new Date('2026-08-04T08:00:00.000Z'),
-          endAt: new Date('2026-08-04T18:00:00.000Z'),
+          startAt: new Date('2099-08-04T08:00:00.000Z'),
+          endAt: new Date('2099-08-04T18:00:00.000Z'),
           location: '示例',
           statusCode: 'completed', // 直接 completed
         },
@@ -1927,8 +1927,8 @@ describe('attendances 模块', () => {
       const id = await createPendingSheet(act.id, [
         baseRecord({
           memberId: memberCId,
-          checkInAt: '2026-08-04T09:00:00.000Z',
-          checkOutAt: '2026-08-04T10:00:00.000Z',
+          checkInAt: '2099-08-04T09:00:00.000Z',
+          checkOutAt: '2099-08-04T10:00:00.000Z',
         }),
       ]);
       expect(id).toBeTruthy();

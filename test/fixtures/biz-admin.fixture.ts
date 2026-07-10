@@ -131,7 +131,7 @@ const BIZ_PERMISSIONS = [
     action: 'reject',
     resourceType: 'record',
   },
-  // ============ activity 5 条(列表/详情无码,仅登录;评审稿 §3.5) ============
+  // ============ activity 6 条(列表/详情无码,仅登录;评审稿 §3.5;v0.40.0 +complete) ============
   { code: 'activity.create.record', module: 'activity', action: 'create', resourceType: 'record' },
   { code: 'activity.update.record', module: 'activity', action: 'update', resourceType: 'record' },
   { code: 'activity.delete.record', module: 'activity', action: 'delete', resourceType: 'record' },
@@ -142,6 +142,12 @@ const BIZ_PERMISSIONS = [
     resourceType: 'record',
   },
   { code: 'activity.cancel.record', module: 'activity', action: 'cancel', resourceType: 'record' },
+  {
+    code: 'activity.complete.record',
+    module: 'activity',
+    action: 'complete',
+    resourceType: 'record',
+  },
   // ============ activity-registration 6 条(v0.40.0 +reopen)============
   {
     code: 'activity-registration.read.record',

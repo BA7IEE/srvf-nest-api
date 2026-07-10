@@ -32,9 +32,9 @@ interface ResBody {
   data: Record<string, unknown>;
 }
 
-// 活动期(北京时间 7/1 16:00 - 20:00;归一活动日 = 2026-07-01)
-const ACT_START = new Date('2026-07-01T08:00:00.000Z');
-const ACT_END = new Date('2026-07-01T12:00:00.000Z');
+// 活动期(北京时间 7/1 16:00 - 20:00;归一活动日 = 2099-07-01)
+const ACT_START = new Date('2099-07-01T08:00:00.000Z');
+const ACT_END = new Date('2099-07-01T12:00:00.000Z');
 
 describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
   let app: INestApplication;
@@ -188,8 +188,8 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
   it('② 开 + 自购有效(含起保覆盖)→ 报名成功', async () => {
     const me = await setupLinkedUser('gate-self-valid');
     await giveSelfInsurance(me.memberId, {
-      coverageStart: '2026-01-01',
-      coverageEnd: '2026-12-31',
+      coverageStart: '2099-01-01',
+      coverageEnd: '2099-12-31',
     });
     const act = await createPublishedActivity(true);
 
@@ -199,7 +199,7 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
 
   it('②b 自购无起保日(coverageStart=null)且到期覆盖 → 通过(起保可选不参与校验)', async () => {
     const me = await setupLinkedUser('gate-self-nostart');
-    await giveSelfInsurance(me.memberId, { coverageStart: null, coverageEnd: '2026-12-31' });
+    await giveSelfInsurance(me.memberId, { coverageStart: null, coverageEnd: '2099-12-31' });
     const act = await createPublishedActivity(true);
     await registerSelf(me.authHeader, act.id).expect(201);
   });
@@ -209,8 +209,8 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
   it('③ 开 + 队保单覆盖名单内(保单期覆盖活动)→ 报名成功;admin 代报名同语义', async () => {
     const me = await setupLinkedUser('gate-policy-ok');
     await givePolicyCoverage(me.memberId, {
-      coverageStart: '2026-01-01',
-      coverageEnd: '2026-12-31',
+      coverageStart: '2099-01-01',
+      coverageEnd: '2099-12-31',
     });
     const act = await createPublishedActivity(true);
 
@@ -244,8 +244,8 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
   it('⑤ 开 + 自购已过期(到期 < 活动日)→ 26030;过期与无保险同码不细分', async () => {
     const me = await setupLinkedUser('gate-expired');
     await giveSelfInsurance(me.memberId, {
-      coverageStart: '2026-01-01',
-      coverageEnd: '2026-06-01', // 活动 2026-07-01,已过期
+      coverageStart: '2099-01-01',
+      coverageEnd: '2099-06-01', // 活动 2099-07-01,已过期
     });
     const act = await createPublishedActivity(true);
 
@@ -258,8 +258,8 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
   it('边界:coverageEnd = 活动结束日当天 → 通过(到期≥活动日期含等号,北京日粒度)', async () => {
     const me = await setupLinkedUser('gate-boundary-eq');
     await giveSelfInsurance(me.memberId, {
-      coverageStart: '2026-01-01',
-      coverageEnd: '2026-07-01', // = 活动归一日
+      coverageStart: '2099-01-01',
+      coverageEnd: '2099-07-01', // = 活动归一日
     });
     const act = await createPublishedActivity(true);
     await registerSelf(me.authHeader, act.id).expect(201);
@@ -268,8 +268,8 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
   it('边界:coverageStart > 活动开始日(起保太晚)→ 26030', async () => {
     const me = await setupLinkedUser('gate-boundary-late');
     await giveSelfInsurance(me.memberId, {
-      coverageStart: '2026-07-02', // 晚于活动开始日 07-01
-      coverageEnd: '2026-12-31',
+      coverageStart: '2099-07-02', // 晚于活动开始日 2099-07-01
+      coverageEnd: '2099-12-31',
     });
     const act = await createPublishedActivity(true);
 
@@ -280,8 +280,8 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
   it('边界:队保单已软删 → 覆盖失效 → 26030(E-4 不级联但 join 失效)', async () => {
     const me = await setupLinkedUser('gate-policy-deleted');
     await givePolicyCoverage(me.memberId, {
-      coverageStart: '2026-01-01',
-      coverageEnd: '2026-12-31',
+      coverageStart: '2099-01-01',
+      coverageEnd: '2099-12-31',
       policyDeleted: true,
     });
     const act = await createPublishedActivity(true);
@@ -293,8 +293,8 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
   it('快照:报名成功后删除保险不回溯(报名仍 pending;E-12)', async () => {
     const me = await setupLinkedUser('gate-snapshot');
     await giveSelfInsurance(me.memberId, {
-      coverageStart: '2026-01-01',
-      coverageEnd: '2026-12-31',
+      coverageStart: '2099-01-01',
+      coverageEnd: '2099-12-31',
     });
     const act = await createPublishedActivity(true);
     const res = await registerSelf(me.authHeader, act.id).expect(201);

@@ -341,6 +341,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['delete', '/api/admin/v1/activities/{id}'],
   ['patch', '/api/admin/v1/activities/{id}/publish'],
   ['patch', '/api/admin/v1/activities/{id}/cancel'],
+  ['post', '/api/admin/v1/activities/{id}/complete'],
   ['post', '/api/admin/v1/activities/{activityId}/registrations'],
   ['get', '/api/admin/v1/activities/{activityId}/registrations'],
   ['get', '/api/admin/v1/activities/{activityId}/registrations/export'],
