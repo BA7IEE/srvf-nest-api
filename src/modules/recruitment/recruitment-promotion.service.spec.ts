@@ -389,6 +389,7 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
     opts: {
       canResult?: boolean;
       boundOpenids?: string[];
+      boundPhones?: string[];
       cycle?: { id: string; year: number; memberNoSeq: number } | null;
     } = {},
   ) {
@@ -404,9 +405,16 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
       },
       recruitmentApplication: { findMany: jest.fn().mockResolvedValue(apps) },
       user: {
+        // v0.40.0 H5 手机通道:promotePrecheck 现两查 user(loadBoundOpenids where openid /
+        // loadBoundPhones where phone);mock 按 where 分流返对应占用行。
         findMany: jest
           .fn()
-          .mockResolvedValue((opts.boundOpenids ?? []).map((o) => ({ openid: o }))),
+          .mockImplementation((args: { where?: { openid?: unknown; phone?: unknown } }) => {
+            if (args?.where?.phone !== undefined) {
+              return Promise.resolve((opts.boundPhones ?? []).map((p) => ({ phone: p })));
+            }
+            return Promise.resolve((opts.boundOpenids ?? []).map((o) => ({ openid: o })));
+          }),
       },
     };
     const rbac = { can: jest.fn().mockResolvedValue(opts.canResult ?? true) };
@@ -428,37 +436,65 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
       { willIssue: boolean; skipReason: string | null } & Record<string, unknown>
     >;
 
-  it('六类跳过原因映射(+ willIssue):foreign / openid-bound / missing-openid / missing-derived / incomplete-data', async () => {
+  it('跳过原因映射(+ willIssue;v0.40.0 H5 手机通道):foreign / openid-bound / missing-login-channel / missing-derived / incomplete-data;无 openid 有 phone 可发', async () => {
     const apps: PrecheckApp[] = [
-      papp({ id: 'ok1' }), // 可发
+      papp({ id: 'ok1' }), // 可发(有 openid)
+      papp({ id: 'phoneok', openid: null }), // v0.40.0:无 openid 有已验证手机 → 手机通道可发
       papp({ id: 'foreign', isForeigner: true }), // foreign-manual-build
       papp({ id: 'bound', openid: 'op-bound' }), // openid-already-bound(boundOpenids 注入)
-      papp({ id: 'noopenid', openid: null }), // missing-openid
+      papp({ id: 'nochannel', openid: null, phone: null }), // missing-login-channel(openid+phone 皆无)
       papp({ id: 'nobirth', birthDate: null, genderCode: null }), // missing-derived-field
-      papp({ id: 'noname', realName: null, phone: null }), // incomplete-data
+      papp({ id: 'noname', realName: null, phone: null }), // incomplete-data(有 openid,realName 缺)
     ];
     const { service } = buildPrecheck(apps, { boundOpenids: ['op-bound'] });
     const res = await service.promotePrecheck('cyc1', user);
 
-    expect(res.total).toBe(6);
-    expect(res.promotableCount).toBe(1);
+    expect(res.total).toBe(7);
+    expect(res.promotableCount).toBe(2); // ok1(openid)+ phoneok(手机通道)
     expect(res.skipCount).toBe(5);
 
     const m = byId(res.rows);
     expect(m.ok1).toMatchObject({ willIssue: true, skipReason: null });
+    expect(m.phoneok).toMatchObject({ willIssue: true, skipReason: null }); // 手机通道发号
     expect(m.foreign).toMatchObject({ willIssue: false, skipReason: 'foreign-manual-build' });
     expect(m.bound).toMatchObject({ willIssue: false, skipReason: 'openid-already-bound' });
-    expect(m.noopenid).toMatchObject({ willIssue: false, skipReason: 'missing-openid' });
+    expect(m.nochannel).toMatchObject({ willIssue: false, skipReason: 'missing-login-channel' });
     expect(m.nobirth).toMatchObject({ willIssue: false, skipReason: 'missing-derived-field' });
     expect(m.noname).toMatchObject({ willIssue: false, skipReason: 'incomplete-data' });
 
-    // 展示 flag(独立观察,不改判定):缺字段 / 特殊证件 / openid 占用
+    // 展示 flag(独立观察,不改判定)。
     expect(m.foreign.isForeigner).toBe(true);
     expect(m.bound.openidAlreadyBound).toBe(true);
-    expect(m.noopenid.missingOpenid).toBe(true);
+    expect(m.phoneok.missingOpenid).toBe(true); // 无 openid,但不再阻断(手机通道)
+    expect(m.nochannel.missingOpenid).toBe(true);
+    expect(m.nochannel.missingPhone).toBe(true);
     expect(m.nobirth.missingBirthDate).toBe(true);
     expect(m.nobirth.missingGender).toBe(true);
     expect(m.noname.missingPhone).toBe(true);
+  });
+
+  it('v0.40.0 H5 手机通道:phone 被既有账号占用 → phone-already-bound;批内同 phone 仅次行 skip → duplicate-phone-in-batch', async () => {
+    const apps: PrecheckApp[] = [
+      papp({ id: 'pbound', openid: null, phone: '13911110000' }), // phone-already-bound(boundPhones 注入)
+      papp({ id: 'pdupA', openid: null, phone: '13922220000', realName: '甲' }),
+      papp({ id: 'pdupB', openid: null, phone: '13922220000', realName: '乙' }),
+    ];
+    const { service } = buildPrecheck(apps, { boundPhones: ['13911110000'] });
+    const res = await service.promotePrecheck('cyc1', user);
+
+    const m = byId(res.rows);
+    // phone 占用 → skip + flag。
+    expect(m.pbound).toMatchObject({ willIssue: false, skipReason: 'phone-already-bound' });
+    expect(m.pbound.phoneAlreadyBound).toBe(true);
+    // 批内同 phone:两行高亮,仅发号序次行 skip(与实发同序去重)。
+    expect(m.pdupA.duplicatePhoneInBatch).toBe(true);
+    expect(m.pdupB.duplicatePhoneInBatch).toBe(true);
+    const phoneDupIssued = [m.pdupA, m.pdupB].filter((r) => r.willIssue);
+    const phoneDupSkipped = [m.pdupA, m.pdupB].filter((r) => !r.willIssue);
+    expect(phoneDupIssued).toHaveLength(1);
+    expect(phoneDupSkipped).toHaveLength(1);
+    expect(phoneDupSkipped[0].skipReason).toBe('duplicate-phone-in-batch');
+    expect(res.promotableCount).toBe(1); // 仅批内首行手机通道发号
   });
 
   it('批内重复 openid:双行均高亮 duplicateOpenidInBatch,仅发号序次行 skip(duplicate-openid-in-batch)', async () => {
