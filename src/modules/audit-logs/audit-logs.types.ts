@@ -175,7 +175,23 @@ export type AuditLogEvent =
   // user.update.status 的"不写 audit"决定,不新增第 4 个 event。
   | 'member.account-bound' // admin 绑定既有悬空账号到队员(members.service: bindAccount 1 处;extra.{memberId,userId})
   | 'member.account-unbound' // admin 解绑队员账号(members.service: unbindAccount 1 处;extra.{memberId,userId}——userId 为断链前的值)
-  | 'member.account-reopened'; // admin 退号重开(members.service: reopenAccount 1 处;extra.{memberId,oldUserId,newUserId,phone:掩码})
+  | 'member.account-reopened' // admin 退号重开(members.service: reopenAccount 1 处;extra.{memberId,oldUserId,newUserId,phone:掩码})
+  // RBAC 授权配置写面审计留痕补齐(2026-07-10;第三轮全仓 review v0.38.0 §F&A-2 →
+  // NEXT_TASKS P1-19;冻结报告 docs/archive/reviews/full-repo-first-principles-adversarial-review-v0.38.0.md)。
+  // 此前 RBAC 授权模型自身的运行时变更(RbacRole 建/改/软删、RolePermission 授予/撤销、Permission CRUD)
+  // 全程无 audit,与项目"可审计"红线(A-1)冲突;且 rbac-roles.service 有假称已存在 rbac.role.delete
+  // 事件的僵尸注释(该事件从不产生)。8 事件命名沿 kebab-case `<resource>.<verb>` 既有范式
+  // (对称 role-binding.create / organization.create)。三服务**直写** auditLog(见
+  // permissions/config-audit.util.ts;避免 PermissionsModule↔AuditLogsModule 模块环,镜像 user-roles
+  // writeRoleBindingAudit 先例)。纯 cosmetic 读/列表不写;config-audit 权威规则见 docs/security.md。
+  | 'rbac-role.create' // admin 建 RBAC 角色(rbac-roles.service: create;resourceType='rbac_role';after 快照 code/displayName/description)
+  | 'rbac-role.update' // admin 改角色(rbac-roles.service: update;before/after displayName/description)
+  | 'rbac-role.delete' // admin 软删角色(rbac-roles.service: softDelete;before 快照 code/displayName)
+  | 'role-permission.grant' // admin 授予角色权限点(role-permissions.service: assign;resourceType='role_permission' / resourceId=roleId;extra.{permissionCodes,requestedCount})
+  | 'role-permission.revoke' // admin 撤销角色权限点(role-permissions.service: revoke;resourceId=roleId;extra.permissionId)
+  | 'permission.create' // admin 建权限点(permissions.service: create;resourceType='permission';after 快照 code/module/action/resourceType)
+  | 'permission.update' // admin 改权限点描述(permissions.service: update;before/after description)
+  | 'permission.delete'; // admin 物理删权限点(permissions.service: delete;before 快照;RolePermission FK cascade 自动清理)
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

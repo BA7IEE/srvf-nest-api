@@ -185,3 +185,31 @@ req.body.refreshToken
 ## RBAC / scoped-authz 交叉引用
 
 本文件不是 RBAC / scoped-authz(组织职务 + 分管 + 统一鉴权)的权威源,只覆盖认证(登录 / 密码 / token)相关安全策略,不重复判权设计。权威源:[`AGENTS.md`](../AGENTS.md) §8 / §13(RBAC / 判权铁律)、[`src/modules/authz/CLAUDE.md`](../src/modules/authz/CLAUDE.md)(判权大脑本地事实)、[`docs/ops/scoped-authz-go-live-checklist.md`](ops/scoped-authz-go-live-checklist.md)(上线初始化 SOP,含考勤终审绑定 / `22074`-`22075` 行为)。
+
+## 配置面审计(config-audit)权威规则
+
+> 收敛「哪些配置面写 audit / 哪些刻意不写」的单一权威表述。承接 v0.11.0 handoff 的隐性 deferral(Storage Settings 配置变更 audit「留独立专项 PR」/ v2 数据模型草案「第一阶段 4 模型写不接入 audit_logs」),经三轮全仓 review(第三轮 v0.38.0 §F&A-2)后**就此成文闭环**:该 deferral 的当前生效范围已随各模块反向补齐而漂移,不再作为「所有 config 面一律不 audit」的依据。
+
+**判据**:一条配置面写操作是否写 audit,取决于它是否改变「谁能做什么 / 谁归属哪个组织」的**授权/组织事实**,而非配置本身的敏感度。授权/组织事实的运行时变更必须可取证(A-1「可审计」红线);纯运营开关 / 字典 / 凭据类 settings 不进 audit(其变更不改判权,且部分含凭据不宜落 audit context)。
+
+### 写 audit(授权 / 组织事实变更)
+
+| 配置面 | 事件(resourceType) | 落地 |
+|---|---|---|
+| **RBAC 授权配置**:RbacRole 建/改/软删、RolePermission 授予/撤销、Permission CRUD | `rbac-role.{create,update,delete}` / `role-permission.{grant,revoke}` / `permission.{create,update,delete}`(`rbac_role` / `role_permission` / `permission`) | 第三轮 review v0.38.0 §F&A-2 补齐(三服务经 [`permissions/config-audit.util.ts`](../src/modules/permissions/config-audit.util.ts) 直写,避 PermissionsModule↔AuditLogsModule 模块环) |
+| **user-role / role-binding**:角色分配/撤销、scoped 绑定建/撤 | `role-binding.{create,revoke}`(`role_binding`;`extra.viaPath ∈ {user-role, role-binding}`) | scoped-authz PR6 |
+| **organizations**:建 / reparent / 启停 / 软删(纯 cosmetic update 不写) | `organization.{create,move,status-change,delete}`(`organization`) | #495(review #484 G18) |
+| **memberships**:建 / 结束 / 迁移(纯 PATCH 不写) | `membership.{set,end,transfer}`(`membership`) | #490 / F4 transfer |
+| **position / supervision assignments**:任命/撤销、建/撤分管 | `position-assignment.{create,revoke}` / `supervision-assignment.{create,revoke}` | scoped-authz PR4 / PR5 |
+| **attachment-configs**:三表建/改/改状态/删 | `attachment.config.change`(伞事件;`extra.configType` + `extra.operation`) | attachments PR #6d |
+| **contribution-rules**:建/改/软删 | `contribution-rule.{create,update,delete}` | audit PR #3 |
+
+### 刻意不写 audit(不改判权 / 凭据类 / 纯运营配置)
+
+| 配置面 | 理由 |
+|---|---|
+| **sms / wechat / storage / realname settings** | 供应商开关 + 凭据类配置,变更不改判权;凭据不宜落 audit context(承接 v0.11.0 handoff「留独立专项 PR」——经本次成文确认为**刻意不做**而非遗漏;未来若有合规诉求再单独立项) |
+| **dictionaries(字典类型 / 字典项)** | 分类字典,变更不改授权事实;属 v2 早期「4 模型写不接 audit」的原始范围,保持不写 |
+| **member.update.status / 队员轴账号 status(D-PR3-2)** | status 改动不写 audit 的既有对称决定(`users.service` / `members.service` 两轴一致) |
+
+> 变更本表任一归属(把某 config 面从「不写」挪到「写」或反之)= 判权 / 审计事实变更,按 D 档降速,先与维护者对齐。

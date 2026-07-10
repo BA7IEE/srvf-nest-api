@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
@@ -10,6 +11,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { PermissionResponseDto } from './permissions.dto';
 import {
   CreateRbacRoleDto,
@@ -21,6 +23,16 @@ import {
   UpdateRbacRoleDto,
 } from './rbac-roles.dto';
 import { RbacRolesService } from './rbac-roles.service';
+
+// 从 @Req() 构造 AuditMeta(沿 user-roles.controller / supervision-assignments 范式;D8 拍板不引入 ALS)。
+// 第三轮 review §F&A-2:RbacRole 建/改/软删写 audit(resourceType='rbac_role')。
+function buildAuditMeta(req: Request): AuditMeta {
+  return {
+    requestId: req.id as string,
+    ip: req.ip ?? null,
+    ua: req.headers['user-agent'] ?? null,
+  };
+}
 
 // V2.x C-6 RBAC 实施 PR #3:RbacRole 模块 Controller。
 // 5 个端点(沿 D7 v1.1 §5.1 5-9):
@@ -107,8 +119,9 @@ export class RbacRolesController {
   create(
     @CurrentUser() user: CurrentUserPayload,
     @Body() dto: CreateRbacRoleDto,
+    @Req() req: Request,
   ): Promise<RbacRoleResponseDto> {
-    return this.service.create(user, dto);
+    return this.service.create(user, dto, buildAuditMeta(req));
   }
 
   @Patch(':id')
@@ -127,8 +140,9 @@ export class RbacRolesController {
     @CurrentUser() user: CurrentUserPayload,
     @Param() params: IdParamDto,
     @Body() dto: UpdateRbacRoleDto,
+    @Req() req: Request,
   ): Promise<RbacRoleResponseDto> {
-    return this.service.update(user, params.id, dto);
+    return this.service.update(user, params.id, dto, buildAuditMeta(req));
   }
 
   @Delete(':id')
@@ -146,7 +160,8 @@ export class RbacRolesController {
   delete(
     @CurrentUser() user: CurrentUserPayload,
     @Param() params: IdParamDto,
+    @Req() req: Request,
   ): Promise<RbacRoleResponseDto> {
-    return this.service.softDelete(user, params.id);
+    return this.service.softDelete(user, params.id, buildAuditMeta(req));
   }
 }

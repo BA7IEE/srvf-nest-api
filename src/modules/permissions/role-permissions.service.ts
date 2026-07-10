@@ -5,6 +5,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { writeConfigAudit } from './config-audit.util';
 import { permissionSelect } from './permissions.select';
 import { RbacCacheService } from './rbac-cache.service';
 import { RbacService } from './rbac.service';
@@ -112,6 +114,7 @@ export class RolePermissionsService {
     user: CurrentUserPayload,
     roleId: string,
     dto: AssignRolePermissionsDto,
+    meta: AuditMeta,
   ): Promise<RbacRoleDetailResponseDto> {
     await this.assertCanOrThrow(user, 'rbac.role-permission.create');
     // 1. role 必须存在 + 未软删
@@ -133,11 +136,25 @@ export class RolePermissionsService {
       throw new BizException(BizCode.PERMISSION_NOT_FOUND);
     }
 
-    // 4. 幂等批量写入(沿用户拍板;Prisma createMany skipDuplicates 利用
-    //    schema unique([roleId, permissionId]),已存在的关系静默跳过)
-    await this.prisma.rolePermission.createMany({
-      data: perms.map((p) => ({ roleId, permissionId: p.id })),
-      skipDuplicates: true,
+    // 4. 幂等批量写入 + audit(单事务原子;第三轮 review §F&A-2:授权配置写面留痕)。
+    //    Prisma createMany skipDuplicates 利用 schema unique([roleId, permissionId]),已存在的关系静默跳过。
+    await this.prisma.$transaction(async (tx) => {
+      await tx.rolePermission.createMany({
+        data: perms.map((p) => ({ roleId, permissionId: p.id })),
+        skipDuplicates: true,
+      });
+      await writeConfigAudit(tx, {
+        event: 'role-permission.grant',
+        actor: user,
+        resourceType: 'role_permission',
+        resourceId: roleId,
+        meta,
+        extra: {
+          operation: 'grant',
+          permissionCodes: uniqueCodes,
+          requestedCount: uniqueCodes.length,
+        },
+      });
     });
 
     // 5. 缓存失效(沿 D7 §9.4):所有持有该角色的 user cache 清掉。
@@ -152,6 +169,7 @@ export class RolePermissionsService {
     user: CurrentUserPayload,
     roleId: string,
     permissionId: string,
+    meta: AuditMeta,
   ): Promise<RbacRoleDetailResponseDto> {
     await this.assertCanOrThrow(user, 'rbac.role-permission.delete');
     // 1. role 必须存在 + 未软删
@@ -164,9 +182,8 @@ export class RolePermissionsService {
     });
     if (!perm) throw new BizException(BizCode.PERMISSION_NOT_FOUND);
 
-    // 3. 撤权(deleteMany;不存在的关系返 count=0,据此抛 30011)
-    //    用 deleteMany 而非 delete 避免 P2025 异常(prisma delete 不存在抛错);
-    //    沿现有项目"先查再操作"范式更可读。
+    // 3. 撤权 + audit(单事务原子)。先查存在性(不存在 → 30011),再删 + 留痕。
+    //    用先查再删范式避免 prisma delete P2025;沿现有项目"先查再操作"范式更可读。
     const existing = await this.prisma.rolePermission.findUnique({
       where: { roleId_permissionId: { roleId, permissionId } },
       select: { id: true },
@@ -174,8 +191,18 @@ export class RolePermissionsService {
     if (!existing) {
       throw new BizException(BizCode.ROLE_PERMISSION_NOT_FOUND);
     }
-    await this.prisma.rolePermission.delete({
-      where: { roleId_permissionId: { roleId, permissionId } },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.rolePermission.delete({
+        where: { roleId_permissionId: { roleId, permissionId } },
+      });
+      await writeConfigAudit(tx, {
+        event: 'role-permission.revoke',
+        actor: user,
+        resourceType: 'role_permission',
+        resourceId: roleId,
+        meta,
+        extra: { operation: 'revoke', permissionId },
+      });
     });
 
     // 4. 缓存失效(沿 D7 §9.4)

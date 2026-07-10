@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
@@ -10,6 +11,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   CreatePermissionDto,
   ListPermissionsQueryDto,
@@ -17,6 +19,16 @@ import {
   UpdatePermissionDto,
 } from './permissions.dto';
 import { PermissionsService } from './permissions.service';
+
+// 从 @Req() 构造 AuditMeta(沿 user-roles.controller 范式)。第三轮 review §F&A-2:
+// Permission CRUD 写 audit(resourceType='permission')。
+function buildAuditMeta(req: Request): AuditMeta {
+  return {
+    requestId: req.id as string,
+    ip: req.ip ?? null,
+    ua: req.headers['user-agent'] ?? null,
+  };
+}
 
 // V2.x C-6 RBAC 实施 PR #2:permissions 模块 Controller。
 // 4 个端点(沿 D7 v1.1 §5.1 1-4):
@@ -66,8 +78,9 @@ export class PermissionsController {
   create(
     @CurrentUser() user: CurrentUserPayload,
     @Body() dto: CreatePermissionDto,
+    @Req() req: Request,
   ): Promise<PermissionResponseDto> {
-    return this.service.create(user, dto);
+    return this.service.create(user, dto, buildAuditMeta(req));
   }
 
   @Patch(':id')
@@ -86,8 +99,9 @@ export class PermissionsController {
     @CurrentUser() user: CurrentUserPayload,
     @Param() params: IdParamDto,
     @Body() dto: UpdatePermissionDto,
+    @Req() req: Request,
   ): Promise<PermissionResponseDto> {
-    return this.service.update(user, params.id, dto);
+    return this.service.update(user, params.id, dto, buildAuditMeta(req));
   }
 
   @Delete(':id')
@@ -105,7 +119,8 @@ export class PermissionsController {
   delete(
     @CurrentUser() user: CurrentUserPayload,
     @Param() params: IdParamDto,
+    @Req() req: Request,
   ): Promise<PermissionResponseDto> {
-    return this.service.delete(user, params.id);
+    return this.service.delete(user, params.id, buildAuditMeta(req));
   }
 }
