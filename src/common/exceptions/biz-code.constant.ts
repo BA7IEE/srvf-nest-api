@@ -331,6 +331,25 @@ export const BizCode = {
     message: '队员当前无绑定账号',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 第三轮全仓 review 护栏收口(docs/archive/reviews/full-repo-first-principles-adversarial-review-v0.38.0.md
+  // §F&A-1/A-4):队员轴账号端点只管理 role=USER 的普通账号,防止把特权账号(ADMIN/SUPER_ADMIN)
+  // 经队员轴绕过用户轴 assertNotLastSuperAdmin + assertCanManageUser 两道护栏。新增 3 码,
+  // 延续 15030-15099"资源状态非法/引用约束"子段。
+  MEMBER_ACCOUNT_TARGET_ROLE_NOT_ALLOWED: {
+    code: 15034,
+    message: '目标账号不是普通用户,不能绑定为队员账号',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  MEMBER_ACCOUNT_TARGET_NOT_ACTIVE: {
+    code: 15035,
+    message: '目标账号未启用,不能绑定',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE: {
+    code: 15036,
+    message: '关联账号不是普通用户,请通过用户管理端点操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // organizations 模块业务级(110xx + 111xx)。详见 docs/v2-api-contract.md §3.5。
   // 子段(对齐 baseline §1.3):

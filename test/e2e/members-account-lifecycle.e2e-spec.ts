@@ -19,7 +19,9 @@ import { createTestApp } from '../setup/test-app';
 // 两码 + 绑 ops-admin,不改共享 fixture。user.update.status 已在共享 fixture 56 码内。
 //
 // 覆盖:
-// - 绑定既有悬空账号(权限边界 / member 状态 / 目标账号状态四类拒绝 + 成功)
+// - 绑定既有悬空账号(权限边界 / member 状态 / 目标账号状态 + 成功)
+// - 第三轮 review 护栏收口(F&A-1/A-4):bind 拒非 USER(ADMIN/SUPER_ADMIN)与非 ACTIVE 目标;
+//   已绑账号经用户轴提权为 ADMIN 后,队员轴 status/reopen 拒(MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE)
 // - 解绑(只断链,账号回悬空 ACTIVE,不停用不软删)
 // - 解绑后再开号(队员账号闭环 v2 收尾修复,2026-07-08):computeNextUsername 改探测式,
 //   修复"悬空账号仍占 username → 误撞 USERNAME_ALREADY_EXISTS"边角;全链验证新号可登录
@@ -58,7 +60,7 @@ describe('队员账号闭环 v2:完整生命周期(bind/unbind/reopen/status)', 
   let prisma: PrismaService;
   let superAdminAuth: string;
   let opsAdminAuth: string;
-  let opsAdminUserId: string;
+  let opsAdminRoleId: string;
   let userAuth: string;
 
   let memberSeq = 0;
@@ -78,6 +80,17 @@ describe('队员账号闭环 v2:完整生命周期(bind/unbind/reopen/status)', 
     danglingSeq += 1;
     const username = `mal-dangling-${danglingSeq}`;
     const user = await createTestUser(app, { username });
+    return { id: user.id, username: user.username };
+  }
+
+  // 第三轮 review 护栏收口:构造指定 role/status 的悬空账号,验证 bind 目标校验(F&A-1/A-4)。
+  async function newDanglingUserAs(
+    role: Role,
+    status: UserStatus = UserStatus.ACTIVE,
+  ): Promise<{ id: string; username: string }> {
+    danglingSeq += 1;
+    const username = `mal-dangling-${danglingSeq}`;
+    const user = await createTestUser(app, { username, role, status });
     return { id: user.id, username: user.username };
   }
 
@@ -125,7 +138,6 @@ describe('队员账号闭环 v2:完整生命周期(bind/unbind/reopen/status)', 
 
     await createTestUser(app, { username: 'mal-su', role: Role.SUPER_ADMIN });
     const opsAdmin = await createTestUser(app, { username: 'mal-ops', role: Role.ADMIN });
-    opsAdminUserId = opsAdmin.id;
     await createTestUser(app, { username: 'mal-user', role: Role.USER });
 
     superAdminAuth = (await loginAs(app, 'mal-su')).authHeader;
@@ -133,8 +145,9 @@ describe('队员账号闭环 v2:完整生命周期(bind/unbind/reopen/status)', 
     userAuth = (await loginAs(app, 'mal-user')).authHeader;
 
     const rbacSeed = await seedRbacPermissionsAndOpsAdmin(app);
-    await seedMemberAccountCodesAndBind(prisma, rbacSeed.opsAdminRoleId);
-    await grantOpsAdminToUser(app, opsAdmin.id, rbacSeed.opsAdminRoleId);
+    opsAdminRoleId = rbacSeed.opsAdminRoleId;
+    await seedMemberAccountCodesAndBind(prisma, opsAdminRoleId);
+    await grantOpsAdminToUser(app, opsAdmin.id, opsAdminRoleId);
   });
 
   afterAll(async () => {
@@ -206,6 +219,36 @@ describe('队员账号闭环 v2:完整生命周期(bind/unbind/reopen/status)', 
       expectBizError(
         await bind(member.id, granted.body.data.userId, opsAdminAuth),
         BizCode.MEMBER_ACCOUNT_TARGET_ALREADY_LINKED,
+      );
+    });
+
+    it('目标账号是 ADMIN(悬空)→ MEMBER_ACCOUNT_TARGET_ROLE_NOT_ALLOWED(第三轮 review F&A-1)', async () => {
+      const member = await newMember();
+      const admin = await newDanglingUserAs(Role.ADMIN);
+      expectBizError(
+        await bind(member.id, admin.id, opsAdminAuth),
+        BizCode.MEMBER_ACCOUNT_TARGET_ROLE_NOT_ALLOWED,
+      );
+    });
+
+    it('目标账号是 SUPER_ADMIN(悬空)→ 拒(阻断"经队员轴停用最后一个 SUPER_ADMIN"攻击链首步)', async () => {
+      const member = await newMember();
+      const su = await newDanglingUserAs(Role.SUPER_ADMIN);
+      expectBizError(
+        await bind(member.id, su.id, opsAdminAuth),
+        BizCode.MEMBER_ACCOUNT_TARGET_ROLE_NOT_ALLOWED,
+      );
+      // 攻击在 bind 阶段即被挡下:目标 SUPER_ADMIN 未被绑定,memberId 仍 null。
+      const untouched = await prisma.user.findUniqueOrThrow({ where: { id: su.id } });
+      expect(untouched.memberId).toBeNull();
+    });
+
+    it('目标账号是 DISABLED 的 USER(悬空)→ MEMBER_ACCOUNT_TARGET_NOT_ACTIVE(A-4)', async () => {
+      const member = await newMember();
+      const disabled = await newDanglingUserAs(Role.USER, UserStatus.DISABLED);
+      expectBizError(
+        await bind(member.id, disabled.id, opsAdminAuth),
+        BizCode.MEMBER_ACCOUNT_TARGET_NOT_ACTIVE,
       );
     });
 
@@ -446,15 +489,23 @@ describe('队员账号闭环 v2:完整生命周期(bind/unbind/reopen/status)', 
     });
 
     it('禁自我操作:currentUser 绑定的账号恰是被操作对象 → CANNOT_OPERATE_SELF', async () => {
+      // 第三轮 review 护栏收口后:bind 只认领 role=USER 账号,故自我操作场景的 actor 必须是
+      // 被授予 ops-admin RBAC 的 USER-role 账号(原用例自绑 opsAdmin〔ADMIN〕,护栏收口后其
+      // 账号已不可绑定——正是本轮要挡的 anti-pattern)。改用 USER-role self actor 后语义等价:
+      // "自己停用自己绑定的账号"仍被 CANNOT_OPERATE_SELF 挡下,且 role 护栏对 USER 放行。
       const member = await newMember();
-      const bound = await bind(member.id, opsAdminUserId, opsAdminAuth);
+      const selfActor = await createTestUser(app, { username: 'mal-selfop', role: Role.USER });
+      await grantOpsAdminToUser(app, selfActor.id, opsAdminRoleId);
+      const selfAuth = (await loginAs(app, 'mal-selfop')).authHeader;
+
+      const bound = await bind(member.id, selfActor.id, selfAuth);
       expect(bound.status).toBe(200);
       expectBizError(
-        await setStatus(member.id, UserStatus.DISABLED, opsAdminAuth),
+        await setStatus(member.id, UserStatus.DISABLED, selfAuth),
         BizCode.CANNOT_OPERATE_SELF,
       );
-      // 解绑清理,避免污染后续用例复用 opsAdminUserId
-      await unbind(member.id, opsAdminAuth);
+      // 解绑清理,避免污染后续用例
+      await unbind(member.id, selfAuth);
     });
 
     it('启停成功 + 禁用联动撤销 refresh token + 不写 audit', async () => {
@@ -489,6 +540,44 @@ describe('队员账号闭环 v2:完整生命周期(bind/unbind/reopen/status)', 
       const enabled = await setStatus(member.id, UserStatus.ACTIVE, opsAdminAuth);
       expect(enabled.status).toBe(200);
       expect(enabled.body.data.accountStatus).toBe(UserStatus.ACTIVE);
+    });
+  });
+
+  // ============ 跨轴护栏:提权后队员轴不得停用/重开(第三轮 review F&A-1) ============
+
+  describe('跨轴护栏:linked 账号经用户轴提权后,队员轴 status/reopen 拒绝', () => {
+    // 报告 §F&A-1 攻击序列:bind 一个 USER 账号 → 用户轴 updateRole 提为 ADMIN → 队员轴
+    // status 停用 / reopen 软删,借此绕过用户轴 assertCanManageUser / assertNotLastSuperAdmin。
+    // 护栏:updateAccountStatus / reopenAccount 前置校验 linked.role===USER,非 USER 拒。
+    // 这里用 prisma 直接置 role=ADMIN 复刻"用户轴 updateRole 提权后"的库态(等价前提)。
+
+    it('提为 ADMIN 后 status 停用 → MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE(账号未被停用)', async () => {
+      const member = await newMember();
+      const target = await newDanglingUser();
+      expect((await bind(member.id, target.id, opsAdminAuth)).status).toBe(200);
+      await prisma.user.update({ where: { id: target.id }, data: { role: Role.ADMIN } });
+
+      expectBizError(
+        await setStatus(member.id, UserStatus.DISABLED, opsAdminAuth),
+        BizCode.MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE,
+      );
+      const untouched = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+      expect(untouched.status).toBe(UserStatus.ACTIVE); // 护栏在写入前挡下
+    });
+
+    it('提为 ADMIN 后 reopen → MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE(不软删特权账号)', async () => {
+      const member = await newMember();
+      const target = await newDanglingUser();
+      expect((await bind(member.id, target.id, opsAdminAuth)).status).toBe(200);
+      await prisma.user.update({ where: { id: target.id }, data: { role: Role.ADMIN } });
+
+      expectBizError(
+        await reopen(member.id, '13900007001', opsAdminAuth),
+        BizCode.MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE,
+      );
+      const untouched = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+      expect(untouched.deletedAt).toBeNull();
+      expect(untouched.status).toBe(UserStatus.ACTIVE);
     });
   });
 

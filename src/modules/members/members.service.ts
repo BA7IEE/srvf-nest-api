@@ -621,11 +621,21 @@ export class MembersService {
 
       const target = await tx.user.findFirst({
         where: notDeletedWhere({ id: dto.userId }),
-        select: { id: true, memberId: true, status: true },
+        select: { id: true, memberId: true, status: true, role: true },
       });
       if (!target) throw new BizException(BizCode.USER_NOT_FOUND);
       if (target.memberId !== null) {
         throw new BizException(BizCode.MEMBER_ACCOUNT_TARGET_ALREADY_LINKED);
+      }
+      // 第三轮 review 护栏收口(§F&A-1/A-4):只认领 role=USER 且 status=ACTIVE 的悬空账号。
+      // 否则可把特权账号(ADMIN/SUPER_ADMIN)经队员轴挂到队员,此后经 updateAccountStatus /
+      // reopenAccount 停用/软删它,绕过用户轴 assertNotLastSuperAdmin + assertCanManageUser
+      // 两道刻意写死的护栏(报告 §F&A-1 攻击序列)。role 先于 status 判,诊断更精确。
+      if (target.role !== Role.USER) {
+        throw new BizException(BizCode.MEMBER_ACCOUNT_TARGET_ROLE_NOT_ALLOWED);
+      }
+      if (target.status !== UserStatus.ACTIVE) {
+        throw new BizException(BizCode.MEMBER_ACCOUNT_TARGET_NOT_ACTIVE);
       }
 
       const updated = await this.runWithUniqueConstraintGuard(() =>
@@ -730,9 +740,15 @@ export class MembersService {
 
       const oldLink = await tx.user.findFirst({
         where: { memberId: id, deletedAt: null },
-        select: { id: true },
+        select: { id: true, role: true },
       });
       if (!oldLink) throw new BizException(BizCode.MEMBER_HAS_NO_LINKED_USER);
+      // 第三轮 review 护栏收口(§F&A-1):reopen 会软删旧号——若旧号经用户轴 updateRole 提权为
+      // 非 USER(如 ADMIN),软删它会绕过用户轴 last-SA / manage-user 护栏。非 USER 一律拒,
+      // 提示走用户管理端点。
+      if (oldLink.role !== Role.USER) {
+        throw new BizException(BizCode.MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE);
+      }
 
       // 复用探测式 computeNextUsername:此刻 oldLink 仍 live(软删滞后到下方发生),
       // 其占用的 username 仍未释放,故探测必然跳过该值取到更高代际(-2/-3/...);
@@ -814,9 +830,12 @@ export class MembersService {
   // 不经 UsersService,镜像 grantAccount"不复用 UsersService,防环 + 零漂移"先例),
   // 改为直连 prisma 显式复刻其唯一必要副作用:禁用时撤销该 user 全部未撤销未过期
   // refresh token(revokedReason='admin-disable',AGENTS §9 联动撤销场景 4 的第二条
-  // 触发路径);跳过"最后一个 SUPER_ADMIN 保护"(结构上不可能触发——bind/grant/reopen
-  // 恒 role=USER,来源账号最高只能是 API 建的 ADMIN,AGENTS §13 业务 API 禁止创建
-  // SUPER_ADMIN);仅当置 DISABLED 时做自我保护检查(镜像 UsersService.updateStatus,
+  // 触发路径);不做"最后一个 SUPER_ADMIN 保护":队员轴只管理 role=USER 的关联账号——下方
+  // 前置校验 linked.role===USER 拒非 USER(bind 亦只认领 role=USER+ACTIVE 悬空账号,
+  // grant/reopen 恒建 role=USER),故非 USER(含唯一能触发 last-SA 保护的 SUPER_ADMIN)在
+  // 到达这里前已被挡下(第三轮 review §F&A-1 收口;原注释"bind/grant/reopen 恒 role=USER"
+  // 的前提对 bind 不成立——bind 挂的是既有任意角色账号,故以前置校验替代该失效前提);
+  // 仅当置 DISABLED 时做自我保护检查(镜像 UsersService.updateStatus,
   // 防管理员通过队员轴误禁自己绑定的账号);刻意不写 audit(镜像 UsersService.updateStatus
   // 自身"不为 status 改动写 audit"的既有决定 D-PR3-2,保持两轴对称)。
   async updateAccountStatus(
@@ -831,9 +850,17 @@ export class MembersService {
 
       const linked = await tx.user.findFirst({
         where: { memberId: id, deletedAt: null },
-        select: { id: true, status: true },
+        select: { id: true, status: true, role: true },
       });
       if (!linked) throw new BizException(BizCode.MEMBER_HAS_NO_LINKED_USER);
+
+      // 第三轮 review 护栏收口(§F&A-1):队员轴只启停 role=USER 的关联账号。若该账号经用户轴
+      // updateRole 被提权(如提为 ADMIN),停用它会绕过用户轴 assertCanManageUser /
+      // assertNotLastSuperAdmin——非 USER 一律拒,提示走用户管理端点。前置于自我保护检查:
+      // "此账号不归本轴管理"是更根本的判定。
+      if (linked.role !== Role.USER) {
+        throw new BizException(BizCode.MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE);
+      }
 
       if (dto.status === UserStatus.DISABLED && linked.id === currentUser.id) {
         throw new BizException(BizCode.CANNOT_OPERATE_SELF);
