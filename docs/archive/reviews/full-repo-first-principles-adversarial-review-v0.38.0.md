@@ -7,6 +7,23 @@
 
 ---
 
+## ✅ 修复落地状态(2026-07-10;review-then-fix goal「第三轮 review findings 收口」)
+
+本报告 report-only;findings 经 review-then-fix goal 分四刀落地 + 发版 **v0.39.0**,状态汇总如下(计数亲核一致):
+
+| finding | 级 | 处置 | PR |
+|---|---|---|---|
+| **F&A-1 + A-4** 队员轴 bind/status/reopen 绕过 last-SA / manage-user 护栏 | P1(边界 P0) | ✅ **已修**:bind 拒非 USER / 非 ACTIVE 目标(15034/15035)+ status/reopen 前置校验 linked `role===USER`(15036)+ true-up `:817-819` 假前提注释 | [#527](https://github.com/BA7IEE/srvf-nest-api/pull/527) |
+| **F&A-2** RBAC 授权配置写面无 audit + `rbac-roles:243` 僵尸注释 | P2 | ✅ **已修**:三服务 8 写点直写 auditLog(+8 AuditLogEvent)+ 删僵尸注释 + `security.md` config-audit 权威规则成文 | [#528](https://github.com/BA7IEE/srvf-nest-api/pull/528) |
+| **F&A-3** member-profiles 档案面明文 PII(待复核) | P3 | ✅ **已修(取掩码分级)**:新码 `member-profile.read.sensitive`,`documentNumber`/`mobile` 默认掩码(197→198 码 / biz-admin 73→74) | [#529](https://github.com/BA7IEE/srvf-nest-api/pull/529) |
+| **F-7** `seed.ts:3165`「48 vs 76」等过时计数注释 | P3(文档卫生) | ✅ **已修**:并入 F&A-3 刀 true-up | [#529](https://github.com/BA7IEE/srvf-nest-api/pull/529) |
+| **A-5** `bulkGrantAccounts` 逐行串行 bcrypt | P3 | ⛔ **接受 / 不做**:已封顶 200 + ops-admin 高信任 + skip-on-error 语义正确,轻度性能面非 DoS;诉求触发再优化(登记 NEXT_TASKS P1-19) | — |
+| **A-6** authz batch 每项重算 `collectGrants`(N+1 放大) | P3 | ⛔ **接受 / 不做**:封顶 ≤200 + 诊断码 + caller 恒定,近低效非 DoS;诉求触发再做(登记 NEXT_TASKS P1-19) | — |
+
+> 结论:**P0=0 / P1(1)✅ / P2(1)✅ / P3(5):3 ✅ + 2 接受不做**。上线阻断项(P1 F&A-1)已于上线前修复;发版 v0.39.0 ⚠️ 行为变更 4 条置顶(见 Release notes / CHANGELOG)。台账 `NEXT_TASKS` P1-19 已翻 ✅,`current-state §4` 相关行同步。
+
+---
+
 ## 0. 报告顶部 —— 上线判断 + 疑似 P0 标红
 
 - **是否存在阻上线的 P0(越权 / 数据丢失 / PII 泄漏级且现网可利用):无。** 项目尚未上线,零现网风险。
