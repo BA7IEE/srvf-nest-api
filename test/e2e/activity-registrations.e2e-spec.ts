@@ -158,6 +158,8 @@ describe('activity-registrations 模块', () => {
     publish: boolean;
     cancel?: boolean;
     registrationDeadline?: string;
+    startAt?: string;
+    endAt?: string;
   }): Promise<string> {
     const create = await request(httpServer(app))
       .post('/api/admin/v1/activities')
@@ -166,8 +168,9 @@ describe('activity-registrations 模块', () => {
         title: opts.title,
         activityTypeCode,
         organizationId: childOrgId,
-        startAt: '2026-06-01T08:00:00.000Z',
-        endAt: '2026-06-01T12:00:00.000Z',
+        // v0.40.0 endAt 闸:默认远未来避免墙钟越过;可覆写为已结束(过去 endAt)测 endAt 闸。
+        startAt: opts.startAt ?? '2099-06-01T08:00:00.000Z',
+        endAt: opts.endAt ?? '2099-06-01T12:00:00.000Z',
         location: '演示地点',
         isPublicRegistration: opts.isPublicRegistration,
         ...(opts.capacity !== undefined ? { capacity: opts.capacity } : {}),
@@ -367,6 +370,53 @@ describe('activity-registrations 模块', () => {
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId });
       expectBizError(res, BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED);
+    });
+
+    it('活动已结束(endAt < now)→ 代报名拒 ACTIVITY_ENDED_REGISTRATION_FORBIDDEN(v0.40.0)', async () => {
+      const id = await createActivityHelper({
+        title: 'ENDED-ACT',
+        isPublicRegistration: true,
+        capacity: undefined,
+        publish: true,
+        // 昨日已结束(startAt < endAt 均在过去,create/publish 允许;报名闸拦 endAt < now)。
+        startAt: '2020-01-01T08:00:00.000Z',
+        endAt: '2020-01-01T12:00:00.000Z',
+      });
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${id}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: memberCId });
+      expectBizError(res, BizCode.ACTIVITY_ENDED_REGISTRATION_FORBIDDEN);
+    });
+
+    it('联动:complete 活动后,该活动 pending 报名 approve 被 T1 活动状态闸拦(20124)', async () => {
+      // published + future endAt → 先代报名成功(pending)。
+      const id = await createActivityHelper({
+        title: 'COMPLETE-THEN-APPROVE',
+        isPublicRegistration: true,
+        capacity: undefined,
+        publish: true,
+      });
+      const regRes = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${id}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: memberCId });
+      expect(regRes.status).toBe(201);
+      const regId = regRes.body.data.id as string;
+
+      // 经 complete 端点完结活动(published → completed)。
+      const completeRes = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${id}/complete`)
+        .set('Authorization', adminAuth);
+      expect(completeRes.status).toBe(201);
+      expect(completeRes.body.data.statusCode).toBe('completed');
+
+      // 完结后 approve 该 pending 报名 → T1 活动状态闸拦(20124)。
+      const approveRes = await request(httpServer(app))
+        .patch(`/api/admin/v1/activities/${id}/registrations/${regId}/approve`)
+        .set('Authorization', adminAuth)
+        .send({});
+      expectBizError(approveRes, BizCode.ACTIVITY_ENDED_OR_CANCELLED_APPROVE_FORBIDDEN);
     });
 
     it('deadline=null → 不拦(代报名成功 pending)', async () => {

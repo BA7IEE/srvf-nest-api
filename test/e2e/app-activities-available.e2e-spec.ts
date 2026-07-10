@@ -157,14 +157,15 @@ describe('App GET /api/app/v1/activities/available (P2-4a)', () => {
       title: `P2-4a ${state} ${titleSuffix}`,
       activityTypeCode,
       organizationId: childOrgId,
-      startAt: new Date('2026-07-01T08:00:00.000Z'),
-      endAt: new Date('2026-07-01T12:00:00.000Z'),
+      // 固定远未来 startAt/endAt,与 wall-clock 解耦(v0.40.0 参与域生命周期收口③:App 可报名池
+      // 新增 endAt >= now 过滤;原 2026-07-01 硬编码已被墙钟越过 → 改远未来杜绝误触。已结束活动的
+      // 过滤行为由本 spec 新增专门用例覆盖)。
+      startAt: new Date('2099-06-01T08:00:00.000Z'),
+      endAt: new Date('2099-06-01T12:00:00.000Z'),
       location: '梧桐山',
       coverImageUrl: 'https://example.test/cover.png',
       capacity: 30,
       // 固定远未来,与 wall-clock 解耦(镜像 #452 app-my-registrations-write 同款 fixture 修复)。
-      // available 可见性仅 statusCode='published' + 未软删,不按截止闸过滤,原近未来默认值当前不 failing;
-      // 但属硬编码潜在时间炸弹 → 改远未来杜绝墙钟越过误触。test/** fixture 修复,零业务行为变更。
       registrationDeadline: new Date('2099-12-31T23:59:59.000Z'),
     };
     if (state === 'draft') {
@@ -277,6 +278,38 @@ describe('App GET /api/app/v1/activities/available (P2-4a)', () => {
       for (const it of data.items) {
         expect(it.statusCode).toBe('published');
       }
+    });
+
+    // v0.40.0 参与域生命周期收口③:已结束(endAt < now)的 published 活动不出现在可报名池
+    // (detail 口径不变,此处只测 list 过滤)。
+    it('已结束(endAt < now)的 published 活动不出现在 available list', async () => {
+      const { authHeader } = await setupLinkedUser({
+        username: 'p24a_ended_activity',
+        memberNo: 'P24A-ENDED',
+      });
+      // 一条昨日已结束的 published 活动 + 一条远未来 published 活动。
+      const ended = await prisma.activity.create({
+        data: {
+          title: 'P2-4a ended',
+          activityTypeCode,
+          organizationId: childOrgId,
+          startAt: new Date('2020-01-01T08:00:00.000Z'),
+          endAt: new Date('2020-01-01T12:00:00.000Z'), // 远过去,必 < now
+          location: '梧桐山',
+          capacity: 30,
+          statusCode: 'published',
+          publishedAt: new Date(),
+        },
+        select: { id: true },
+      });
+      const upcoming = await createActivity('published', 'upcoming');
+
+      const res = await get('/api/app/v1/activities/available?pageSize=100', authHeader);
+      expect(res.status).toBe(200);
+      const data = res.body.data as { items: Array<{ id: string }> };
+      const ids = data.items.map((it) => it.id);
+      expect(ids).not.toContain(ended.id); // 已结束 → 不返
+      expect(ids).toContain(upcoming.id); // 未结束 → 返
     });
   });
 

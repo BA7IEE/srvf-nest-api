@@ -195,6 +195,7 @@ function makeRecorderMock() {
     logSoftDelete: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
     logPublish: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
     logCancel: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
+    logComplete: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
   };
 }
 type RecorderMock = ReturnType<typeof makeRecorderMock>;
@@ -731,6 +732,49 @@ describe('ActivitiesService (characterization)', () => {
       const res = await service.cancel('act-1', makeCancelDto('原因'), makeCurrentUser(), META);
       expect(res.statusCode).toBe('cancelled'); // 业务成功(派发失败被吞)
       expect(dispatcher.dispatchTargeted).toHaveBeenCalledTimes(2); // 单人失败不阻断其余
+    });
+  });
+
+  // ============ G2. complete:state-machine 接线(v0.40.0)============
+  describe('complete — state-machine wiring', () => {
+    it('非 published → 抛 decision.biz;不 update', async () => {
+      const prisma = makePrismaMock();
+      const stateMachine = makeStateMachineMock(DENY_DECISION);
+      prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ statusCode: 'draft' }));
+      const service = makeService(prisma, { stateMachine });
+
+      await expect(service.complete('act-1', makeCurrentUser(), META)).rejects.toEqual(
+        new BizException(BizCode.ACTIVITY_STATUS_INVALID),
+      );
+      expect(stateMachine.decide).toHaveBeenCalledWith('complete', 'draft');
+      expect(prisma.activity.update).not.toHaveBeenCalled();
+    });
+
+    it('published → update statusCode=completed;logComplete(prior/next);无通知派发', async () => {
+      const prisma = makePrismaMock();
+      const recorder = makeRecorderMock();
+      const dispatcher = makeNotificationDispatcherMock();
+      const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'completed' });
+      prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ statusCode: 'published' }));
+      prisma.activity.update.mockResolvedValue(makeActivityRow({ statusCode: 'completed' }));
+      const service = makeService(prisma, { stateMachine, recorder, dispatcher });
+
+      const res = await service.complete('act-1', makeCurrentUser({ id: 'admin-1' }), META);
+
+      const updateArg = prisma.activity.update.mock.calls[0][0] as {
+        data: { statusCode: string };
+      };
+      expect(updateArg.data.statusCode).toBe('completed');
+      expect(recorder.logComplete).toHaveBeenCalledWith(
+        expect.objectContaining({
+          priorStatusCode: 'published',
+          nextStatusCode: 'completed',
+          tx: prisma,
+        }),
+      );
+      // complete 不发通知(区别于 cancel 的 fan-out)
+      expect(dispatcher.dispatchTargeted).not.toHaveBeenCalled();
+      expect(res.statusCode).toBe('completed');
     });
   });
 

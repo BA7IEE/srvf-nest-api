@@ -16,13 +16,14 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // scoped 绑定或 SUPER_ADMIN 兜底;seed 新增 targeted 幂等清理老库残留,见用例 7)。
 // 2026-07-10 第三轮 review §F&A-3:member-profile.read.sensitive 敏感明文码 +1(全绑 biz-admin)→ **77 码绑 74**。
 // 2026-07-11 参与域生命周期收口②(v0.40.0):activity-registration.reopen.record +1(全绑 biz-admin)→ **78 码绑 75**。
+// 2026-07-11 参与域生命周期收口③(v0.40.0):activity.complete.record +1(全绑 biz-admin)→ **79 码绑 76**。
 // 沿冻结评审稿 docs/archive/reviews/slow4-rbac-business-face-review.md §5 + D-S4-7
 // + seed-attachment-permissions.e2e-spec.ts 子进程范式。
 //
 // 覆盖(评审稿 §5 验收项):
-// 1. 跑 seed 后存在 78 条业务面 permission(17 域,byModule 逐码一致)
+// 1. 跑 seed 后存在 79 条业务面 permission(17 域,byModule 逐码一致)
 // 2. 存在 biz-admin RbacRole(displayName / description 正确)
-// 3. biz-admin 绑定 74 条 RolePermission;member.delete.record 与终审两码 **不**在绑定中
+// 3. biz-admin 绑定 76 条 RolePermission;member.delete.record 与终审两码 **不**在绑定中
 // 4. 幂等补挂:seed 前已存在的 ADMIN 用户(含 DISABLED)跑 seed 后持有 biz-admin;
 //    SUPER_ADMIN / USER 不被挂;软删 ADMIN 不补挂(D-S4-7)
 // 5. 零变化项:ops-admin 绑定数(96;WECHAT T2 58→61 + 招新 T1 REALNAME settings 61→63 授权 true-up
@@ -95,12 +96,13 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   'certificate.delete.record',
   'certificate.verify.record',
   'certificate.reject.record',
-  // activity 5(列表/详情无码,仅登录;评审稿 §3.5)
+  // activity 6(列表/详情无码,仅登录;评审稿 §3.5;v0.40.0 +complete)
   'activity.create.record',
   'activity.update.record',
   'activity.delete.record',
   'activity.publish.record',
   'activity.cancel.record',
+  'activity.complete.record',
   // activity-registration 6(v0.40.0 +reopen)
   'activity-registration.read.record',
   'activity-registration.create.record',
@@ -171,7 +173,7 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   // membership.{list,read,set,end} 4 条 ops-admin 管理面码,module 同为 'membership' 但归业务面 seed)
   'membership.transfer.record',
 ] as const;
-const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 78(2026-06-25 统一通知 S1 +5 / S2 +1;2026-06-27 S5 +1;2026-07-04 F4 transfer +1;2026-07-10 §F&A-3 member-profile.read.sensitive +1;2026-07-11 v0.40.0 activity-registration.reopen +1)
+const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 79(2026-06-25 统一通知 S1 +5 / S2 +1;2026-06-27 S5 +1;2026-07-04 F4 transfer +1;2026-07-10 §F&A-3 member-profile.read.sensitive +1;2026-07-11 v0.40.0 activity-registration.reopen +1)
 
 // D1=A 镜像:不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
@@ -182,7 +184,7 @@ const BIZ_ADMIN_UNBOUND_CODES: ReadonlyArray<string> = [
   'attendance.final-approve.sheet',
   'attendance.final-reject.sheet',
 ];
-const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 3; // 75(v0.40.0 起;78 - 3 excluded)
+const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 3; // 76(v0.40.0 起;79 - 3 excluded)
 
 // 零变化基线(评审稿 §6):本断言意图 = 业务面 seed 不改 ops-admin / member 绑定;
 // 基线数跟随 ops-admin 当前合法总数(2026-06-12 WECHAT T2 +3 → 58→61;
@@ -228,7 +230,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     await resetDb(app);
   });
 
-  it('1. 空 db → seed 跑完后 78 条业务面 permission 全部存在(17 域分布一致)', async () => {
+  it('1. 空 db → seed 跑完后 79 条业务面 permission 全部存在(17 域分布一致)', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-1' });
     expect(result.code).toBe(0);
 
@@ -248,7 +250,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
       'member-profile': 4,
       'emergency-contact': 4,
       certificate: 6,
-      activity: 5,
+      activity: 6,
       'activity-registration': 6,
       attendance: 8,
       'team-insurance-policy': 6,
@@ -264,7 +266,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     });
   });
 
-  it('2 + 3. biz-admin RbacRole 存在;绑定恰 75 条;member.delete.record 与终审两码不在绑定中', async () => {
+  it('2 + 3. biz-admin RbacRole 存在;绑定恰 76 条;member.delete.record 与终审两码不在绑定中', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-2' });
     expect(result.code).toBe(0);
 

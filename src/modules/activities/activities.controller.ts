@@ -26,17 +26,17 @@ import {
 } from './activities.dto';
 import { ActivitiesService } from './activities.service';
 
-// V2 第一阶段批次 3A activities controller(7 路由)。
+// V2 第一阶段批次 3A activities controller(8 路由;v0.40.0 +complete)。
 // 路径前缀:全局 /api(main.ts)+ 'admin/v1/activities'。
 //
 // 权限(Slow-4 T3,2026-06-11,评审稿 §3.5;取代批次 3A @Roles 策略):
 // - GET list / GET detail:无码化,仅登录(`[auth]`;原 @Roles 含 USER = 全角色放行,
 //   等价仅登录;service 内 Q-A7 USER 过滤逻辑原样保留)
-// - POST / PATCH / DELETE / publish / cancel:判权下沉 service 层
-//   `rbac.can('activity.*.record')`(SUPER_ADMIN 短路;biz-admin 绑全部 5 码)
+// - POST / PATCH / DELETE / publish / cancel / complete:判权下沉 service 层
+//   `rbac.can('activity.*.record')`(SUPER_ADMIN 短路;biz-admin 绑全部 6 码)
 //
 // 路由声明顺序(NestJS 优先级要求,字面段优先于 :id 占位段):
-//   list / create / detail / update / softDelete / publish / cancel(后两个挂 :id/<action>)
+//   list / create / detail / update / softDelete / publish / cancel / complete(后三个挂 :id/<action>)
 
 @ApiTags('Admin - Activities')
 @ApiBearerAuth()
@@ -208,5 +208,27 @@ export class ActivitiesController {
     @Req() req: Request,
   ): Promise<ActivityResponseDto> {
     return this.service.cancel(params.id, dto, currentUser, this.buildAuditMeta(req));
+  }
+
+  // 参与域生命周期收口③(v0.40.0):管理端手动完结活动。POST(action 非幂等更新语义,沿 goal 指定动词)。
+  @Post(':id/complete')
+  @ApiOperation({
+    summary:
+      '完结活动(published → completed;非 published → 20030;考勤首提亦自动完结) [rbac: activity.complete.record]',
+  })
+  @ApiWrappedOkResponse(ActivityResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+  )
+  complete(
+    @Param() params: IdParamDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<ActivityResponseDto> {
+    return this.service.complete(params.id, currentUser, this.buildAuditMeta(req));
   }
 }

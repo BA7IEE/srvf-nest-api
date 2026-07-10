@@ -380,6 +380,12 @@ export class ActivityRegistrationsService {
     if (act.registrationDeadline !== null && new Date() > act.registrationDeadline) {
       throw new BizException(BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED);
     }
+    // 参与域生命周期收口③(v0.40.0):活动已结束(now > endAt)→ 不可报名。位于 registrationDeadline
+    // 闸之后;精确时刻比较,不做北京日归一(沿 20123 先例)。registrationDeadline 管"报名截止",
+    // endAt 管"活动本身已结束";二者独立(截止可早于结束,也可为 null 不设截止)。
+    if (new Date() > act.endAt) {
+      throw new BizException(BizCode.ACTIVITY_ENDED_REGISTRATION_FORBIDDEN);
+    }
     // 保险 T3:透传门槛三字段给 create()/createMy() 的 assertMemberInsuredForActivity(E-10)
     return {
       id: act.id,

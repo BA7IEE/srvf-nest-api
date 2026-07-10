@@ -546,4 +546,57 @@ describe('ActivitiesService state transitions (characterization)', () => {
       expect(audits).toHaveLength(0);
     });
   });
+
+  // ============ G. complete(v0.40.0 管理端手动完结;published → completed) ============
+  describe('G. complete (published → completed)', () => {
+    beforeEach(isolateFixtures);
+
+    it('G1. 成功:published → completed + audit activity.publish (operation=complete, priorStatusCode=published, nextStatusCode=completed)', async () => {
+      const seed = await seedActivity({ statusCode: 'published' });
+
+      const result = await ctx.service.complete(seed.id, ctx.adminPayload, AUDIT_META);
+
+      expect(result.statusCode).toBe('completed');
+
+      const db = await ctx.prisma.activity.findUniqueOrThrow({
+        where: { id: seed.id },
+        select: { statusCode: true },
+      });
+      expect(db.statusCode).toBe('completed');
+
+      const audits = await ctx.prisma.auditLog.findMany({
+        where: { resourceId: seed.id },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(audits).toHaveLength(1);
+      const a = audits[0];
+      expect(a.event).toBe(ACTIVITY_EVENT);
+      const c = a.context as {
+        extra?: { operation?: string; priorStatusCode?: string; nextStatusCode?: string };
+      };
+      expect(c.extra?.operation).toBe('complete');
+      expect(c.extra?.priorStatusCode).toBe('published');
+      expect(c.extra?.nextStatusCode).toBe('completed');
+    });
+
+    it.each<ActivityStatus>(['draft', 'cancelled', 'completed'])(
+      'G2. wrong source %s → ACTIVITY_STATUS_INVALID,DB status 不变,无 audit',
+      async (fromStatus) => {
+        const seed = await seedActivity({ statusCode: fromStatus });
+
+        await expect(
+          ctx.service.complete(seed.id, ctx.adminPayload, AUDIT_META),
+        ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_STATUS_INVALID });
+
+        const db = await ctx.prisma.activity.findUniqueOrThrow({
+          where: { id: seed.id },
+          select: { statusCode: true },
+        });
+        expect(db.statusCode).toBe(fromStatus);
+
+        const audits = await ctx.prisma.auditLog.findMany({ where: { resourceId: seed.id } });
+        expect(audits).toHaveLength(0);
+      },
+    );
+  });
 });

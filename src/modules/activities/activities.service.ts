@@ -781,6 +781,49 @@ export class ActivitiesService {
     return result.dto;
   }
 
+  // ============ complete(v0.40.0 参与域生命周期收口③ 管理端手动完结)============
+
+  // 状态机:published → completed;其他态拒(20030;沿 ActivityStateMachine complete decision)。
+  // 与 attendances 首提直写 completed(attendances.service.ts:571-577)语义等价、并存不冲突;
+  // audit 复用 activity-audit-recorder 既有伞事件 'activity.publish'(extra.operation='complete')。
+  // **不发通知**(完结不是需要通知报名者的事件;沿 publish 无通知范式,区别于 cancel)。
+  async complete(
+    id: string,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<ActivityResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'activity.complete.record', { type: 'activity', id });
+    return this.prisma.$transaction(async (tx) => {
+      const current = await this.findActivityOrThrow(id, tx);
+
+      const transition = this.activityStateMachine.decide('complete', current.statusCode);
+      if (!transition.allowed) {
+        throw new BizException(transition.biz);
+      }
+      const { nextStatusCode } = transition;
+
+      const updated = await tx.activity.update({
+        where: { id: current.id },
+        data: { statusCode: nextStatusCode },
+        select: activitySafeSelect,
+      });
+
+      await this.activityAuditRecorder.logComplete({
+        activityId: current.id,
+        before: current,
+        after: updated,
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        priorStatusCode: current.statusCode,
+        nextStatusCode,
+        auditMeta,
+        tx,
+      });
+
+      return this.toResponseDto(updated);
+    });
+  }
+
   // 派发「活动取消」定向通知(仅站内,goal:S4 站内为主、微信 opt-in 延后 —— 避免对 N 报名者微信 fan-out 延迟)。
   // 收件人 = 该活动仍在册报名者(pending + pass;registration→member 解析,memberId 去重)。
   // **整体 try-catch 永不抛 + 单人派发再各自吞**:任一人派发失败只记日志,不阻断其余、不破坏已 commit 的取消(行为锁)。

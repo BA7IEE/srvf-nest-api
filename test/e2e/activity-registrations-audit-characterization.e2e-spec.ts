@@ -126,8 +126,8 @@ describe('ActivityRegistrationsService audit characterization', () => {
         title: 'Reg Audit Activity',
         activityTypeCode: 'reg-audit-type',
         organizationId: rootOrg.id,
-        startAt: new Date('2026-04-20T08:00:00.000Z'),
-        endAt: new Date('2026-04-20T12:00:00.000Z'),
+        startAt: new Date('2099-04-20T08:00:00.000Z'), // v0.40.0 endAt 闸:远未来避免墙钟越过
+        endAt: new Date('2099-04-20T12:00:00.000Z'),
         location: 'audit',
         statusCode: 'published',
         isPublicRegistration: true,

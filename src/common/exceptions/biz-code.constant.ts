@@ -562,6 +562,15 @@ export const BizCode = {
     message: '活动已取消或已完结,报名不可审批通过',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 参与域生命周期收口③(v0.40.0):活动已结束(now > endAt)→ 不可报名。两路公共闸
+  // assertActivityRegistrable(create 代报名 + createMy 自助,App createMyForApp 薄壳经此)在
+  // registrationDeadline 闸之后追加此闸;精确时刻比较,不做北京日归一。沿 20120/20121/20123
+  // 报名时活动态阻断家族,409。
+  ACTIVITY_ENDED_REGISTRATION_FORBIDDEN: {
+    code: 20125,
+    message: '活动已结束,不可报名',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
