@@ -69,6 +69,8 @@
 > 2026-07-07 队员账号闭环 v2(完整生命周期)Schema+Endpoint 刀戳(goal「队员账号闭环 v2(完整生命周期)」;冻结评审稿 [`member-account-loop-v2-review.md`](../archive/reviews/member-account-loop-v2-review.md)):`User.memberId` 全量 `@unique` → partial unique(`WHERE deletedAt IS NULL`)根改造,migration 39→**40**(Schema 刀,零 API 可见行为变化)。权限码 196→**197**(member +1:`member.bind.account`,绑定既有悬空账号 + 解绑共用同一码,**绑 ops-admin**,不绑 biz-admin);ops-admin 95→**96**;biz-admin 73 / org-admin 57 / member 9 零变化;controller **66** 不变(扩既有 `MembersController`);endpoint 321→**325**(`POST :id/account/bind` + `POST :id/account/unbind`〔均走新码〕+ `POST :id/account/reopen`〔复用 `member.grant.account`〕+ `PATCH :id/account/status`〔复用既有 `user.update.status`,**0 新码**〕)。**+2 BizCode**(15032 `MEMBER_ACCOUNT_TARGET_ALREADY_LINKED` / 15033 `MEMBER_HAS_NO_LINKED_USER`,延续 150xx 段);**+3 audit event**(`member.account-{bound,unbound,reopened}`;队员面启停复用 `user.update.status` 的"不写 audit"决定,不新增第 4 个)。**D-2 唯一有意行为变更**:grantAccount 的 `existingLink` 预检查从"含软删"改"仅 live"——软删旧号后可重新开号 / 重开成功。**行为锁**:`src/modules/auth/**` 零 diff;既有 19 例 `members-account-grant.e2e-spec.ts` 仅 1 条断言随 D-2 有意翻转(其余逐字不变)。`docs:rbacmap:check` **0 FAIL / 1 WARN**(`membership.read.record` 预埋,非本刀)。
 
 > 2026-07-07 队员账号闭环 v2 批量刀戳(同 goal,收尾;冻结评审稿同上):**权限事实零变化**(197 码 / ops-admin 96 / 绑定 / 内置角色不动,批量端点复用既有 `member.grant.account`);endpoint 325→**326**(`POST admin/v1/members/accounts/bulk-grant`,body `{items:[{memberId,phone}]}` 1-200 条;镜像 announcement-import 逐行 skip-on-error;路由注册于 `/:id` 系列之前,specific-before-dynamic 镜像 `options` 先例);controller **66** 不变(扩既有 `MembersController`)。`grantAccountCore` 私有共享方法从 `grantAccount()` 抽出,单条端点与批量循环共用,批量每行各自独立 `$transaction`。0 schema / 0 migration / 0 新权限码 / 0 新 BizCode / 0 新 audit event。**队员账号闭环 v2 全部完成**(`NEXT_TASKS` P1-18 已关)。`docs:rbacmap:check` **0 FAIL / 1 WARN**(`membership.read.record` 预埋,非本刀)。
+>
+> 2026-07-10 第三轮全仓 review(v0.38.0)findings 收口 T3 戳(goal「第三轮 review findings 收口」;冻结报告 [`full-repo-first-principles-adversarial-review-v0.38.0.md §F&A-3`](../archive/reviews/full-repo-first-principles-adversarial-review-v0.38.0.md)):权限码 197→**198**(member-profile +1:`member-profile.read.sensitive`,敏感明文闸,**绑 biz-admin**〔镜像 `recruitment-application.read.sensitive`,`read.record` 收窄为脱敏〕,**实装即用 0 孤码**);**biz-admin 73→74**;**org-admin 57 不变**(派生自动继承但入 `ORG_ADMIN_EXCLUDED_CODES`,与 recruitment sensitive 同款「敏感码不下放」,逐码不变);ops-admin 96 / member 9 零变化;controller **66** / endpoint **326** 不变(0 新端点;`admin/v1/members/:memberId/profile` 三端点 findOne/create/update 出口按码分级掩码,入口闸仍 `read.record`)。0 schema / 0 migration〔仍 40〕/ 0 新 BizCode;**掩码是值变换非 schema 变更**(DTO 字段名/类型不变,`documentNumber`/`mobile` 无 `read.sensitive` 时经 `maskIdCard`/`maskPhone` 打码)。同刀顺修 F-7:`seed.ts:3165` 等过时计数注释 true-up。`docs:rbacmap:check` **0 FAIL / 0 WARN**(198 码;controller 66 / 326 @ApiOperation 一致)。
 
 ---
 
@@ -118,7 +120,7 @@
 | `system/v1/realname-settings` | `realname-setting.*`(3;`reset.credentials` 不绑 ops-admin,镜像 D2=A;招新 T2)|
 | `admin/v1/attachments`(业务面首批) | `attachment.*`(20:member/certificate 各 8 含 `.self`/`.other`,activity 4) |
 | `admin/v1/members`(Slow-4 T2) | `member.*`(5;DELETE = `member.delete.record` 仅 SA 短路不绑 biz-admin;F1/A1 新增 `GET /options` 选择器投影 + list 增强 `q`/`organizationId`/`includeDescendants`,均复用 `member.read.record`;`organizationId` 经 `memberOrganizationMemberships` 关联过滤,`includeDescendants` 复用 organizations 模块 `queryDescendantOrgIds()`;队员账号闭环 v1〔2026-07-07〕:list + detail additive 暴露 `hasAccount`/`accountStatus`/`userId`〔User.memberId 已改一对多 partial unique,v2 起收窄仅计 live 绑定〕+ list 新增 `?hasAccount=` 过滤;新增 `POST /:id/account` 走独立码 `member.grant.account`〔**绑 ops-admin**,不绑 biz-admin,与本行其余 5 码归属不同〕;队员账号闭环 v2〔2026-07-07〕:`POST /:id/account/{bind,unbind}` 走新码 `member.bind.account`〔同绑 ops-admin〕/ `POST /:id/account/reopen` 复用 `member.grant.account` / `PATCH /:id/account/status` 复用既有 `user.update.status`〔0 新码〕/ `POST /accounts/bulk-grant` 批量开号复用 `member.grant.account`〔0 新码〕)|
-| `admin/v1/members/:memberId/profile`(Slow-4 T2) | `member-profile.*.record`(3) |
+| `admin/v1/members/:memberId/profile`(Slow-4 T2;§F&A-3 敏感分级) | `member-profile.*.record`(3;入口 `read.record`)+ `member-profile.read.sensitive`(documentNumber/mobile 明文闸,无则掩码) |
 | `admin/v1/members/:memberId/emergency-contacts`(Slow-4 T2) | `emergency-contact.*.record`(4) |
 | `admin/v1/members/:memberId/certificates`(Slow-4 T2) | `certificate.*.record`(6;list/detail/qualification-flag 共用 read) |
 | `admin/v1/activities`(Slow-4 T3) | `activity.*.record`(5,仅 5 个写端点;**列表/详情无码仅登录 `[auth]`**;F1/A6 新增 `GET /options` 选择器投影,同样 `[auth]`——RBAC_MAP §5 已决「BD-3 两候选码 won't-do」不新增 `activity.read.*`,options 沿 list/detail 现状不新增码;list 增强 `q`/`dateFrom`/`dateTo`/`includeDescendants`/`includeStats`〔批量 groupBy 聚合 registrationCount/attendanceSheetCount,禁 N+1〕) |
@@ -159,7 +161,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(197 条,seed 幂等 upsert)
+## 3. 权限码全集(198 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -188,7 +190,7 @@
 | 队员(Slow-4 T1) | 5 | `member.{read,create,update,delete}.record` / `member.update.status` |
 | 队员账号开通(队员账号闭环 v1,2026-07-07) | 1 | `member.grant.account`(`POST admin/v1/members/:id/account`;**绑 ops-admin**,不绑 biz-admin——账号铸造归系统/账号面,与 `user.*.account` 族一致,区别于本表上一行"队员"5 码〔均绑 biz-admin〕)|
 | 队员账号绑定/解绑(队员账号闭环 v2,2026-07-07) | 1 | `member.bind.account`(`POST .../account/{bind,unbind}`;**绑 ops-admin**,不绑 biz-admin,与 `member.grant.account` 同族;reopen 复用 `member.grant.account`,队员面启停复用既有 `user.update.status`,均 0 新码)|
-| 队员扩展档案(Slow-4 T1) | 3 | `member-profile.{read,create,update}.record` |
+| 队员扩展档案(Slow-4 T1;第三轮 review §F&A-3) | 4 | `member-profile.{read,create,update}.record` / `member-profile.read.sensitive`(敏感明文闸:`documentNumber` / `mobile` 明文;`read.record` 收窄为脱敏;绑 biz-admin,org-admin 派生排除,镜像 `recruitment-application.read.sensitive`) |
 | 紧急联系人(Slow-4 T1) | 4 | `emergency-contact.{read,create,update,delete}.record` |
 | 证书(Slow-4 T1) | 6 | `certificate.{read,create,update,delete}.record` / `certificate.{verify,reject}.record` |
 | 活动(Slow-4 T1) | 5 | `activity.{create,update,delete}.record` / `activity.{publish,cancel}.record`(列表/详情无码,仅登录) |

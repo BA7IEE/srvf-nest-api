@@ -12,14 +12,14 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 //
 // 覆盖(goal DoD 5 / 7):
 //   1. 内置角色 3→6:org-admin / group-manager / org-supervisor 存在,码集逐码相等
-//      (org-admin 57 = biz-admin 73〔2026-07-03 摘码微刀后已不含终审两码;2026-07-04 F4 +membership.transfer.record
-//       自动继承,seed 注释「biz-admin 新增业务码 org-admin 自动继承」的设计语义〕- 敏感 1
+//      (org-admin 57 = biz-admin 74〔2026-07-03 摘码微刀后已不含终审两码;2026-07-04 F4 +membership.transfer.record;
+//       2026-07-10 §F&A-3 +member-profile.read.sensitive 自动继承但被排除〕- 敏感 2
 //       - recruitment-* 8 - team-join-* 7;group-manager 22;org-supervisor 4 = BD-3 定稿,2 候选码不加)
 //   2. 3 条默认 policy(仅正职,scopeMode 全 TREE);org-supervisor 不是 policy 目标
 //   3. 🔴 R5 CI 断言:副职(vice-captain / dept-deputy / deputy-group-leader)policy 行数恒 = 0
 //   4. R5 运行时护栏生效:人为给副职塞行后重跑 seed → 非 0 退出
 //   5. 零指派 + 零漂移:3 新角色无任何 RoleBinding 持有者(判权零影响);
-//      ops-admin 95(队员账号闭环 v1 起)/ member 9 / biz-admin 73(F4「D 组」起)绑定数不变;
+//      ops-admin 95(队员账号闭环 v1 起)/ member 9 / biz-admin 74(§F&A-3 起)绑定数不变;
 //      6 保留码不绑 3 新角色(F1 哨兵延伸)
 //   6. 幂等:连续两次 seed counts / role id 稳定 + policy updatedAt 不 bump
 //
@@ -62,10 +62,11 @@ const SEED_ENV = {
   RBAC_INITIAL_OPS_ADMIN_USER_ID: '',
 };
 
-// org-admin 57 码(独立期望集;= biz-admin 73〔2026-07-03 摘码微刀后终审两码已不在 biz-admin,
-// seed 侧排除项转为防御性 no-op;2026-07-04 F4 起含 membership.transfer.record —— 「biz-admin 新增业务码
-// org-admin 自动继承」设计语义,队长/部长本组织树内组织变更〕过滤 recruitment-application.read.sensitive
-// 〔§4.2 敏感分级〕+ recruitment-* 8 + team-join-* 7〔招新/入队中央流程不随组织业务下放〕)。
+// org-admin 57 码(独立期望集;= biz-admin 74〔2026-07-03 摘码微刀后终审两码已不在 biz-admin,
+// seed 侧排除项转为防御性 no-op;2026-07-04 F4 起含 membership.transfer.record;2026-07-10 §F&A-3 起含
+// member-profile.read.sensitive —— 「biz-admin 新增业务码 org-admin 自动继承,除非落排除规则」设计语义〕
+// 过滤 recruitment-application.read.sensitive + member-profile.read.sensitive〔敏感明文,§4.2 / §F&A-3 分级,
+// 不下放〕+ recruitment-* 8 + team-join-* 7〔招新/入队中央流程不随组织业务下放〕→ 57 恒定,逐码不变)。
 const EXPECTED_ORG_ADMIN_CODES = [
   // member 4(member.delete.record 仅 SA,biz-admin 本就不含)
   'member.read.record',
@@ -196,7 +197,7 @@ const EXPECTED_FINAL_REVIEWER_CODES = [
   'attendance.final-reject.sheet',
 ] as const;
 
-// 既有 3 角色绑定数零漂移基线(seed-rbac 95 / seed-attachment 9 / seed-biz-admin 73 同口径;
+// 既有 3 角色绑定数零漂移基线(seed-rbac 95 / seed-attachment 9 / seed-biz-admin 74〔§F&A-3 起〕同口径;
 // 2026-07-02 终态 scoped-authz PR10 authz.explain.decision 绑 ops-admin 88→89;
 // PR11 announcement-import 2 码绑 ops-admin 89→91;
 // 2026-07-03 摘码微刀:biz-admin 摘终审两码 74→72;
@@ -206,7 +207,7 @@ const EXPECTED_FINAL_REVIEWER_CODES = [
 // 2026-07-07 队员账号闭环 v2 member.bind.account 绑 ops-admin 95→96)。
 const EXPECTED_OPS_ADMIN_BINDING_COUNT = 96;
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
-const EXPECTED_BIZ_ADMIN_BINDING_COUNT = 73;
+const EXPECTED_BIZ_ADMIN_BINDING_COUNT = 74; // §F&A-3 起(2026-07-10 member-profile.read.sensitive +1)
 
 async function boundCodesOf(prisma: PrismaService, roleCode: string): Promise<string[]> {
   const rows = await prisma.rolePermission.findMany({
@@ -341,7 +342,7 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     expect(second.stderr).toContain('R5');
   });
 
-  it('5. 零指派 + 零漂移:3 新角色无任何持有者;ops-admin 95(队员账号闭环 v1 起)/ member 9 / biz-admin 73(F4「D 组」起)不变;保留码不绑', async () => {
+  it('5. 零指派 + 零漂移:3 新角色无任何持有者;ops-admin 95(队员账号闭环 v1 起)/ member 9 / biz-admin 74(§F&A-3 起)不变;保留码不绑', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-5' }).code).toBe(0);
 
     // 3 新角色零 user 持有(判权唯一读源 RoleBinding 全类型;

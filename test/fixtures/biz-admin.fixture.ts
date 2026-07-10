@@ -20,8 +20,8 @@ import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.servi
 
 export interface BizAdminSeedResult {
   bizAdminRoleId: string;
-  bizPermissionCount: number; // 51(2026-06-19 招新二期 +3)
-  bizAdminRolePermissionCount: number; // 48(过滤 member.delete.record + 终审两码)
+  bizPermissionCount: number; // = seeded 业务面码数(动态 = 本 fixture 列表长度;勿硬编码,防漂移)
+  bizAdminRolePermissionCount: number; // = 绑定数(动态,过滤 member.delete.record + 终审两码;§F&A-3 起含 member-profile.read.sensitive)
 }
 
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;不绑 biz-admin(评审稿 §6)
@@ -44,7 +44,7 @@ const BIZ_PERMISSIONS = [
   { code: 'member.update.record', module: 'member', action: 'update', resourceType: 'record' },
   { code: 'member.update.status', module: 'member', action: 'update', resourceType: 'status' },
   { code: MEMBER_DELETE_RECORD_CODE, module: 'member', action: 'delete', resourceType: 'record' },
-  // ============ member-profile 3 条 ============
+  // ============ member-profile 4 条(第三轮 review §F&A-3:+read.sensitive) ============
   {
     code: 'member-profile.read.record',
     module: 'member-profile',
@@ -62,6 +62,12 @@ const BIZ_PERMISSIONS = [
     module: 'member-profile',
     action: 'update',
     resourceType: 'record',
+  },
+  {
+    code: 'member-profile.read.sensitive',
+    module: 'member-profile',
+    action: 'read',
+    resourceType: 'sensitive',
   },
   // ============ emergency-contact 4 条 ============
   {

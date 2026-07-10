@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { auditPlaceholder } from '../../common/audit/audit-placeholder';
+import { maskIdCard, maskPhone } from '../../common/audit/mask-pii.util';
 import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -70,6 +71,25 @@ const memberProfileSafeSelect = {
 } as const satisfies Prisma.MemberProfileSelect;
 
 type PrismaTx = Prisma.TransactionClient;
+
+// 第三轮全仓 review(v0.38.0)§F&A-3 收口:管理档案面敏感字段分级。入口码 member-profile.read.record
+// 仍是门闸;无更严的 member-profile.read.sensitive 者,在全部 3 个响应出口(findOne / create 回显 /
+// update 回显)看到掩码后的 documentNumber(证件号)与 mobile(本人手机)。掩码格式复用 mask-pii.util
+// (documentNumber → maskIdCard〔15/18 位保前 6 后 4,余长度 → '****'〕/ mobile → maskPhone〔138****1234〕,
+// 该 helper 注释即预留「member_profiles 复活时使用」)。**掩码是值变换,非 schema 变更**:DTO 字段名/类型
+// 不变(masked 值仍是 string)。范围仅此两字段;其余字段(含医疗类)不动;App 自助面另有 documentNumberMasked
+// 字段、emergency-contacts 均零碰。maskX 对 null/空串短路返回 null,`?? 原值` 兜底(空值本无 PII)。
+function presentMemberProfile(
+  profile: MemberProfileResponseDto,
+  masked: boolean,
+): MemberProfileResponseDto {
+  if (!masked) return profile;
+  return {
+    ...profile,
+    documentNumber: maskIdCard(profile.documentNumber) ?? profile.documentNumber,
+    mobile: maskPhone(profile.mobile) ?? profile.mobile,
+  };
+}
 
 // 字典 type code 常量(对应 prisma/seed.ts V2_DICT_SEED 必开 6 个 + 草案 §12.1)。
 const DICT_TYPE_GENDER = 'gender';
@@ -217,11 +237,15 @@ export class MemberProfilesService {
       targetMemberId: memberId,
     });
 
+    // §F&A-3:无 read.sensitive 者见掩码(入口码仍是 read.record)。
+    const masked = !(await this.rbac.can(currentUser, 'member-profile.read.sensitive'));
+
     const profile = await this.prisma.memberProfile.findFirst({
       where: notDeletedWhere({ memberId }),
       select: memberProfileSafeSelect,
     });
-    return profile as MemberProfileResponseDto | null;
+    if (!profile) return null;
+    return presentMemberProfile(profile as MemberProfileResponseDto, masked);
   }
 
   // ============ create ============
@@ -234,6 +258,8 @@ export class MemberProfilesService {
     currentUser: CurrentUserPayload,
   ): Promise<MemberProfileResponseDto> {
     await this.assertCanOrThrow(currentUser, 'member-profile.create.record');
+    // §F&A-3:create 回显同 findOne 分级(无 read.sensitive 见掩码 documentNumber / mobile)。
+    const masked = !(await this.rbac.can(currentUser, 'member-profile.read.sensitive'));
     return this.prisma.$transaction(async (tx) => {
       // 1. 校验 member 存在
       await this.findMemberOrThrow(memberId, tx);
@@ -299,12 +325,13 @@ export class MemberProfilesService {
         data.privacyConsentSignedAt = normalizeDateOnly(dto.privacyConsentSignedAt);
       }
 
-      return this.runWithUniqueConstraintGuard(() =>
+      const created = await this.runWithUniqueConstraintGuard(() =>
         tx.memberProfile.create({
           data,
           select: memberProfileSafeSelect,
         }),
-      ) as Promise<MemberProfileResponseDto>;
+      );
+      return presentMemberProfile(created as MemberProfileResponseDto, masked);
     });
   }
 
@@ -316,6 +343,8 @@ export class MemberProfilesService {
     currentUser: CurrentUserPayload,
   ): Promise<MemberProfileResponseDto> {
     await this.assertCanOrThrow(currentUser, 'member-profile.update.record');
+    // §F&A-3:update 回显同 findOne 分级(无 read.sensitive 见掩码 documentNumber / mobile)。
+    const masked = !(await this.rbac.can(currentUser, 'member-profile.read.sensitive'));
     return this.prisma.$transaction(async (tx) => {
       // 1. 校验 member 存在
       await this.findMemberOrThrow(memberId, tx);
@@ -384,7 +413,7 @@ export class MemberProfilesService {
         data,
         select: memberProfileSafeSelect,
       });
-      return updated as MemberProfileResponseDto;
+      return presentMemberProfile(updated as MemberProfileResponseDto, masked);
     });
   }
 }
