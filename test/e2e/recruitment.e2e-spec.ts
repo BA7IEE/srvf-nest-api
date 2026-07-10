@@ -164,6 +164,8 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     await prisma.realnameVerificationSettings.create({
       data: { providerType: 'DEV_STUB', enabled: true },
     });
+    // v0.40.0 H5 手机通道发号:sms DevStub(固定验证码 888888),供「H5 发号 → login-sms 登录」集成用例。
+    await prisma.smsSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
 
     await createTestUser(app, { username: 'recruit_admin', role: Role.SUPER_ADMIN });
     adminAuth = (await loginAs(app, 'recruit_admin')).authHeader;
@@ -229,6 +231,18 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     // 二期 promote 跨测会撞 memberNo/openid @unique,phase-1 测试无 member 为 no-op),再清报名/轮次/审计。
     await prisma.emergencyContact.deleteMany({});
     await prisma.memberProfile.deleteMany({});
+    // v0.40.0 H5 手机通道用例走 login-sms 登录 → 建 refreshToken(FK→User Restrict)+ 登录 audit
+    // (actorUserId FK→User Restrict);二者须先于 promote 建的 User 清。
+    await prisma.refreshToken.deleteMany({});
+    const promoteUsers = await prisma.user.findMany({
+      where: { memberId: { not: null } },
+      select: { id: true },
+    });
+    if (promoteUsers.length > 0) {
+      await prisma.auditLog.deleteMany({
+        where: { actorUserId: { in: promoteUsers.map((u) => u.id) } },
+      });
+    }
     await prisma.user.deleteMany({ where: { memberId: { not: null } } }); // promote 建的 User 都绑 member
     await prisma.memberOrganizationMembership.deleteMany({}); // S5:promote 建的 VOL 归口 PRIMARY 归属(FK RESTRICT,须先于 member 清)
     // 统一通知 S3:promote 发号定向通知(recipientMemberId FK→Member Restrict)+ 投递须先于 member 清。
@@ -2142,6 +2156,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         publicityRow({
           cycleId: cycle.id,
           openid: null,
+          phone: null, // v0.40.0:openid + phone 皆无 → missing-login-channel(无任何登录通道,不可发号)
           realName: '鄂七',
           idCardNumber: 'S6P0007',
         }),
@@ -2190,7 +2205,8 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(reasons).toContain('foreign-manual-build');
     expect(reasons).toContain('openid-already-bound');
     expect(reasons).toContain('duplicate-openid-in-batch');
-    expect(reasons).toContain('missing-openid');
+    // v0.40.0 H5 手机通道:missing-openid 停用,openid+phone 皆无 → missing-login-channel。
+    expect(reasons).toContain('missing-login-channel');
   });
 
   it('㉟(S6) 发号预检:重复 openid 高亮 + 缺字段 flag + 特殊证件;RBAC USER → 30100;轮次不存在 → 28001', async () => {
@@ -2254,5 +2270,111 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         .set('Authorization', adminAuth),
       BizCode.RECRUITMENT_CYCLE_NOT_FOUND,
     );
+  });
+
+  // ============ v0.40.0 H5 手机通道发号 ============
+
+  it('H5 手机通道:无 openid 有已验证手机 → 发号成功,User.phone/phoneVerifiedAt 落库、openid=null,可走 login-sms 登录', async () => {
+    const cycle = await openCycle();
+    const h5Phone = '13800108001';
+    await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        openid: null, // 无微信
+        phone: h5Phone, // 有已验证手机(H5 经 RECRUITMENT_BIND 实证)
+        realName: '槐H五',
+        idCardNumber: 'H5PHONE001',
+      }),
+    });
+
+    const prom = await promote(cycle.id);
+    expect(prom.status).toBe(200);
+    const promoted = prom.body.data.promoted as Array<{ applicationId: string; memberId: string }>;
+    expect(promoted).toHaveLength(1);
+    const memberId = promoted[0].memberId;
+
+    // User:phone + phoneVerifiedAt 落库,openid=null(手机通道);username=memberNo、role=USER。
+    const linkedUser = await prisma.user.findFirstOrThrow({
+      where: { memberId, deletedAt: null },
+      select: { phone: true, phoneVerifiedAt: true, openid: true, role: true },
+    });
+    expect(linkedUser.phone).toBe(h5Phone);
+    expect(linkedUser.phoneVerifiedAt).not.toBeNull();
+    expect(linkedUser.openid).toBeNull();
+    expect(linkedUser.role).toBe('USER');
+
+    // 可走 login-sms(DevStub 888888)登录。
+    const sendCode = await request(httpServer(app))
+      .post('/api/auth/v1/login-sms/send-code')
+      .send({ phone: h5Phone });
+    expect(sendCode.status).toBe(200);
+    const login = await request(httpServer(app))
+      .post('/api/auth/v1/login-sms')
+      .send({ phone: h5Phone, code: '888888' });
+    expect(login.status).toBe(200);
+    expect(typeof login.body.data.accessToken).toBe('string');
+  });
+
+  it('H5 手机通道:phone 被既有账号占用 → skip phone-already-bound(不发号)', async () => {
+    const cycle = await openCycle();
+    const occupiedPhone = '13800108101';
+    await prisma.user.create({
+      data: {
+        username: 'h5-phone-occupier',
+        passwordHash: 'x',
+        role: 'USER',
+        phone: occupiedPhone,
+      },
+    });
+    const appRow = await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        openid: null,
+        phone: occupiedPhone,
+        realName: '占H用',
+        idCardNumber: 'H5PHONE002',
+      }),
+    });
+
+    const prom = await promote(cycle.id);
+    expect(prom.status).toBe(200);
+    expect(prom.body.data.promotedCount).toBe(0);
+    const skipped = prom.body.data.skipped as Array<{ applicationId: string; reason: string }>;
+    const mine = skipped.find((s) => s.applicationId === appRow.id);
+    expect(mine?.reason).toBe('phone-already-bound');
+  });
+
+  it('H5 手机通道:批内同 phone(均无 openid)→ 发号序首行发号、次行 skip duplicate-phone-in-batch', async () => {
+    const cycle = await openCycle();
+    const dupPhone = '13800108201';
+    await prisma.recruitmentApplication.createMany({
+      data: [
+        publicityRow({
+          cycleId: cycle.id,
+          openid: null,
+          phone: dupPhone,
+          realName: '甲重',
+          idCardNumber: 'H5PHONE003',
+        }),
+        publicityRow({
+          cycleId: cycle.id,
+          openid: null,
+          phone: dupPhone,
+          realName: '乙重',
+          idCardNumber: 'H5PHONE004',
+        }),
+      ],
+    });
+
+    const prom = await promote(cycle.id);
+    expect(prom.status).toBe(200);
+    // 恰一行发号(批内首行)、一行 skip duplicate-phone-in-batch(免第二行入事务撞 phone @unique 整批回滚)。
+    expect(prom.body.data.promotedCount).toBe(1);
+    const skipped = prom.body.data.skipped as Array<{ reason: string }>;
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0].reason).toBe('duplicate-phone-in-batch');
+    // phone @unique 未被撞:仅一个 User 持有该 phone。
+    const usersWithPhone = await prisma.user.count({ where: { phone: dupPhone } });
+    expect(usersWithPhone).toBe(1);
   });
 });

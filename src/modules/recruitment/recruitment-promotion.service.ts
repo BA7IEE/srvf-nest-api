@@ -19,6 +19,7 @@ import {
 } from '../notifications/notification.constants';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { RbacService } from '../permissions/rbac.service';
+import { maskPhone } from '../sms/sms.constants';
 import {
   APP_STATUS_PROMOTED,
   APP_STATUS_PUBLICITY,
@@ -99,15 +100,17 @@ export class RecruitmentPromotionService {
     });
 
     // F16(#399):openid 占用一次性批量查(取代逐行 findFirst,N 顺序往返 → 1;行为/原子性零变)。
+    // v0.40.0 H5 手机通道:同批查 phone 占用(仅无 openid 的 app;镜像 openid,占用者 skip 不 block)。
     const boundOpenids = await this.loadBoundOpenids(apps);
+    const boundPhones = await this.loadBoundPhones(apps);
 
     // 事务前分区(纯查询):先按发号序排,再用与公示预览共享的 decidePromotionIssuance 判定 —— 结构性
-    // 保证「公示拟发号 = 实发」(#399 F9)、批内同 openid 仅首行发号余项 skip(#399 F15,免第二行入
-    // 事务撞 User.openid @unique 整批回滚)。skip 项 report 不 block(外籍/缺字段/openid 占用;M-1)。
+    // 保证「公示拟发号 = 实发」(#399 F9)、批内同 openid/phone 仅首行发号余项 skip(#399 F15,免第二行入
+    // 事务撞 User.openid/phone @unique 整批回滚)。skip 项 report 不 block(外籍/缺字段/openid·phone 占用;M-1)。
     const sortedApps = [...apps].sort(comparePromotionOrder);
     const promotable: RecruitmentApplication[] = [];
     const skipped: PromoteSkippedItemDto[] = [];
-    for (const d of decidePromotionIssuance(sortedApps, boundOpenids)) {
+    for (const d of decidePromotionIssuance(sortedApps, boundOpenids, boundPhones)) {
       if (d.willIssue) {
         promotable.push(d.app);
       } else {
@@ -173,14 +176,19 @@ export class RecruitmentPromotionService {
             await tx.memberOrganizationMembership.create({
               data: { memberId: member.id, organizationId: volOrgId },
             });
-            // User(微信-only:openid 主、随机口令密码登录天然关闭、username=memberNo;零 auth 改)
-            // passwordHash 取事务前预算结果(bcrypt 不在事务回调内执行 = 超时硬化)
+            // User:随机口令(密码登录天然关闭)、username=memberNo;passwordHash 取事务前预算结果
+            // (bcrypt 不在事务回调内执行 = 超时硬化)。**登录通道分流(v0.40.0 H5 手机通道)**:
+            // - 有 openid → 现状逐字不动(openid-only,不写 phone,微信登录;行为锁);
+            // - 无 openid 有 phone → phone + phoneVerifiedAt=now(H5 手机经 RECRUITMENT_BIND 短信实证,
+            //   管理员发号背书;镜像 grantAccountCore 先例),openid=null,可走 login-sms 登录。
             const passwordHash = passwordHashes[i];
             await tx.user.create({
               data: {
                 username: memberNo,
                 passwordHash,
-                openid: a.openid,
+                ...(a.openid != null
+                  ? { openid: a.openid }
+                  : { phone: a.phone as string, phoneVerifiedAt: now }),
                 role: 'USER',
                 memberId: member.id,
               },
@@ -255,7 +263,10 @@ export class RecruitmentPromotionService {
                 memberNo,
                 memberId: member.id,
                 tempNo: a.tempNo,
-                openid: this.maskOpenid(a.openid as string),
+                // 微信通道:掩码 openid(现状逐字不变);v0.40.0 H5 手机通道(无 openid):openid=null +
+                // 记掩码手机(禁明文;auditability)。有 openid 者 openid 字段形状不变 = 行为锁。
+                openid: a.openid != null ? this.maskOpenid(a.openid) : null,
+                ...(a.openid == null && a.phone != null ? { phone: maskPhone(a.phone) } : {}),
               },
               tx,
             });
@@ -333,40 +344,50 @@ export class RecruitmentPromotionService {
       where: { cycleId, statusCode: APP_STATUS_PUBLICITY, deletedAt: null },
     });
     const boundOpenids = await this.loadBoundOpenids(apps);
+    const boundPhones = await this.loadBoundPhones(apps);
     const sortedApps = [...apps].sort(comparePromotionOrder);
 
-    // 「openid 批内重复」高亮:出现 ≥2 行的非空 openid(展示辅助,不改发号判定)。
+    // 「openid / phone 批内重复」高亮:出现 ≥2 行的非空值(展示辅助,不改发号判定)。
+    // phone 仅统计无 openid 的行(手机通道;有 openid 者走微信通道 phone 不参与)。
     const openidCounts = new Map<string, number>();
+    const phoneCounts = new Map<string, number>();
     for (const a of sortedApps) {
       if (a.openid != null) openidCounts.set(a.openid, (openidCounts.get(a.openid) ?? 0) + 1);
+      else if (a.phone != null) phoneCounts.set(a.phone, (phoneCounts.get(a.phone) ?? 0) + 1);
     }
 
     // 拟发编号推算与 publicityList 同口径(willIssue 行依序占号)。
     let seq = cycle.memberNoSeq;
-    const rows: PromotePrecheckRowDto[] = decidePromotionIssuance(sortedApps, boundOpenids).map(
-      ({ app, willIssue, reason }) => {
-        let proposedMemberNo: string | null = null;
-        if (willIssue) {
-          seq += 1;
-          proposedMemberNo = seq <= MEMBER_NO_MAX_SEQ ? formatMemberNo(cycle.year, seq) : null;
-        }
-        return {
-          applicationId: app.id,
-          realName: app.realName,
-          willIssue,
-          skipReason: reason,
-          proposedMemberNo,
-          isForeigner: app.isForeigner,
-          documentTypeCode: app.documentTypeCode,
-          missingOpenid: app.openid == null,
-          openidAlreadyBound: app.openid != null && boundOpenids.has(app.openid),
-          duplicateOpenidInBatch: app.openid != null && (openidCounts.get(app.openid) ?? 0) > 1,
-          missingPhone: app.phone == null,
-          missingBirthDate: app.birthDate == null,
-          missingGender: app.genderCode == null,
-        };
-      },
-    );
+    const rows: PromotePrecheckRowDto[] = decidePromotionIssuance(
+      sortedApps,
+      boundOpenids,
+      boundPhones,
+    ).map(({ app, willIssue, reason }) => {
+      let proposedMemberNo: string | null = null;
+      if (willIssue) {
+        seq += 1;
+        proposedMemberNo = seq <= MEMBER_NO_MAX_SEQ ? formatMemberNo(cycle.year, seq) : null;
+      }
+      const usesPhoneChannel = app.openid == null && app.phone != null;
+      return {
+        applicationId: app.id,
+        realName: app.realName,
+        willIssue,
+        skipReason: reason,
+        proposedMemberNo,
+        isForeigner: app.isForeigner,
+        documentTypeCode: app.documentTypeCode,
+        missingOpenid: app.openid == null,
+        openidAlreadyBound: app.openid != null && boundOpenids.has(app.openid),
+        duplicateOpenidInBatch: app.openid != null && (openidCounts.get(app.openid) ?? 0) > 1,
+        // v0.40.0 H5 手机通道:仅无 openid 走手机通道的行才有 phone 占用/去重语义。
+        phoneAlreadyBound: usesPhoneChannel && boundPhones.has(app.phone as string),
+        duplicatePhoneInBatch: usesPhoneChannel && (phoneCounts.get(app.phone as string) ?? 0) > 1,
+        missingPhone: app.phone == null,
+        missingBirthDate: app.birthDate == null,
+        missingGender: app.genderCode == null,
+      };
+    });
 
     const promotableCount = rows.filter((r) => r.willIssue).length;
     const skipCount = rows.length - promotableCount;
@@ -421,6 +442,25 @@ export class RecruitmentPromotionService {
       select: { openid: true },
     });
     return new Set(rows.map((r) => r.openid).filter((o): o is string => o != null));
+  }
+
+  // v0.40.0 H5 手机通道发号:phone 占用一次性批量查(沿 User.phone @unique 含软删占用语义)→ Set。
+  // **仅无 openid 的 app 才走手机通道**,故只查这些 app 的 phone(镜像 loadBoundOpenids 只查相关值;
+  // 有 openid 者走微信通道,其 phone 不参与占用判定 = 行为锁)。发号资格判定/skipReason 已并入
+  // constants.decidePromotionIssuance。
+  private async loadBoundPhones(
+    apps: readonly { openid: string | null; phone: string | null }[],
+  ): Promise<Set<string>> {
+    const phones = apps
+      .filter((a) => a.openid == null)
+      .map((a) => a.phone)
+      .filter((p): p is string => p != null);
+    if (phones.length === 0) return new Set<string>();
+    const rows = await this.prisma.user.findMany({
+      where: { phone: { in: phones } },
+      select: { phone: true },
+    });
+    return new Set(rows.map((r) => r.phone).filter((p): p is string => p != null));
   }
 
   private parseContacts(json: Prisma.JsonValue | null): EmergencyContactJson[] {

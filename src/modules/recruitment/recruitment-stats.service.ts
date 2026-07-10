@@ -61,6 +61,7 @@ const STATS_SELECT = {
   birthDate: true,
   genderCode: true,
   openid: true,
+  phone: true, // v0.40.0 H5 手机通道:decidePromotionIssuance 判定需 phone(无 openid 走手机通道)
   realName: true,
 } as const;
 
@@ -185,7 +186,8 @@ export class RecruitmentStatsService {
     const manualNormal = manualTotal - manualHigh - manualSystem;
 
     // 可一键发号 / 需手动建档:与 publicityList / 实际 promote 同序(comparePromotionOrder)、
-    // 同判(decidePromotionIssuance:isPromotable + openid 未被既有 User 占用 + 批内 openid 去重)。
+    // 同判(decidePromotionIssuance:isPromotable + openid/phone 未被既有 User 占用 + 批内去重)。
+    // v0.40.0 H5 手机通道:无 openid 走手机通道,同查 phone 占用(仅无 openid 的行;镜像 openid)。
     const publicityOpenids = publicityApps
       .map((a) => a.openid)
       .filter((o): o is string => o != null);
@@ -198,8 +200,21 @@ export class RecruitmentStatsService {
     const boundOpenids = new Set(
       boundRows.map((r) => r.openid).filter((o): o is string => o != null),
     );
+    const publicityPhones = publicityApps
+      .filter((a) => a.openid == null)
+      .map((a) => a.phone)
+      .filter((p): p is string => p != null);
+    const boundPhoneRows = publicityPhones.length
+      ? await this.prisma.user.findMany({
+          where: { phone: { in: publicityPhones } },
+          select: { phone: true },
+        })
+      : [];
+    const boundPhones = new Set(
+      boundPhoneRows.map((r) => r.phone).filter((p): p is string => p != null),
+    );
     const sortedPublicity = [...publicityApps].sort(comparePromotionOrder);
-    const decisions = decidePromotionIssuance(sortedPublicity, boundOpenids);
+    const decisions = decidePromotionIssuance(sortedPublicity, boundOpenids, boundPhones);
     const oneClickIssuable = decisions.filter((d) => d.willIssue).length;
     const needManualBuild = decisions.length - oneClickIssuable;
 

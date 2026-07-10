@@ -993,7 +993,7 @@ export class PromotePrecheckRowDto {
   willIssue!: boolean;
   @ApiPropertyOptional({
     description:
-      '跳过原因(§8.2 六类:foreign-manual-build / openid-already-bound / missing-openid / duplicate-openid-in-batch / missing-derived-field / incomplete-data;willIssue=true 为 null)',
+      '跳过原因(foreign-manual-build / openid-already-bound / phone-already-bound〔v0.40.0 H5〕/ missing-login-channel〔v0.40.0;openid+phone 皆无,取代 missing-openid〕/ duplicate-openid-in-batch / duplicate-phone-in-batch〔v0.40.0 H5〕/ missing-derived-field / incomplete-data;willIssue=true 为 null)',
     nullable: true,
   })
   skipReason!: string | null;
@@ -1006,12 +1006,22 @@ export class PromotePrecheckRowDto {
   isForeigner!: boolean;
   @ApiProperty({ description: '证件类型(特殊证件标识)' })
   documentTypeCode!: string;
-  @ApiProperty({ description: '缺 openid(无法建账号)' })
+  @ApiProperty({
+    description: '缺 openid(无微信通道;v0.40.0 起有已验证手机亦可发号,不再必然阻断)',
+  })
   missingOpenid!: boolean;
   @ApiProperty({ description: 'openid 已被既有账号占用' })
   openidAlreadyBound!: boolean;
   @ApiProperty({ description: 'openid 在本批重复(高亮:≥2 申请人共用同一 openid)' })
   duplicateOpenidInBatch!: boolean;
+  @ApiProperty({
+    description: '手机通道 phone 已被既有账号占用(v0.40.0;仅无 openid 走手机通道的行有此语义)',
+  })
+  phoneAlreadyBound!: boolean;
+  @ApiProperty({
+    description: '手机通道 phone 在本批重复(v0.40.0;高亮:≥2 无 openid 申请人共用同一 phone)',
+  })
+  duplicatePhoneInBatch!: boolean;
   @ApiProperty({ description: '缺手机' })
   missingPhone!: boolean;
   @ApiProperty({ description: '缺生日(身份证派生失败 / 外籍未填)' })

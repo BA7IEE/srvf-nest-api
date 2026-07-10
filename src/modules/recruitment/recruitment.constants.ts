@@ -110,19 +110,24 @@ export function comparePromotionOrder(a: PromotionOrderItem, b: PromotionOrderIt
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-/** 是否可一键发号(M-1:仅大陆可派生 birthDate+genderCode + 有 openid;外籍/缺字段走 admin 手动建档)*/
+/**
+ * 是否可一键发号(M-1:仅大陆可派生 birthDate+genderCode;外籍/缺字段走 admin 手动建档)。
+ * v0.40.0 H5 手机通道发号:登录通道条件由「有 openid」放宽为「有 openid **或** 有已验证手机(phone)」——
+ * 无 openid 但有已验证手机的 H5 申请人亦可一键发号(建 SMS 登录通道 User);微信路径(有 openid)逐字不变。
+ */
 export function isPromotable(app: {
   isForeigner: boolean;
   birthDate: Date | null;
   genderCode: string | null;
   openid: string | null;
+  phone: string | null;
   realName: string | null;
 }): boolean {
   return (
     !app.isForeigner &&
     app.birthDate != null &&
     app.genderCode != null &&
-    app.openid != null &&
+    (app.openid != null || app.phone != null) &&
     app.realName != null
   );
 }
@@ -134,6 +139,7 @@ export interface PromotionIssuanceItem {
   birthDate: Date | null;
   genderCode: string | null;
   openid: string | null;
+  phone: string | null;
   realName: string | null;
 }
 
@@ -144,16 +150,27 @@ export interface PromotionIssuanceDecision<T> {
   reason: string | null;
 }
 
-/** 跳过原因(promote 与公示同源;判定顺序即优先级) */
+/**
+ * 跳过原因(promote 与公示同源;判定顺序即优先级)。
+ * v0.40.0 H5 手机通道发号三变:
+ * - `missing-openid` → `missing-login-channel`(openid **与** phone 皆无时;⚠️ 字符串变更,missing-openid 停用);
+ * - 新增 `phone-already-bound`(无 openid 走手机通道,但 phone 被既有 User 占用〔含软删〕,镜像 openid 语义);
+ * - 新增 `duplicate-phone-in-batch`(无 openid 走手机通道,批内同 phone 仅发号序最先一行可发,镜像 openid 批内去重)。
+ * 手机通道相关判定仅在 `app.openid == null` 时生效 —— 有 openid 的申请人走微信通道,phone 占用/去重不参与(行为锁)。
+ */
 export function promotionSkipReason(
   app: PromotionIssuanceItem,
   openidBound: boolean,
   duplicateOpenidInBatch: boolean,
+  phoneBound: boolean,
+  duplicatePhoneInBatch: boolean,
 ): string {
   if (app.isForeigner) return 'foreign-manual-build';
   if (openidBound) return 'openid-already-bound';
-  if (app.openid == null) return 'missing-openid';
+  if (phoneBound) return 'phone-already-bound';
+  if (app.openid == null && app.phone == null) return 'missing-login-channel';
   if (duplicateOpenidInBatch) return 'duplicate-openid-in-batch';
+  if (duplicatePhoneInBatch) return 'duplicate-phone-in-batch';
   if (app.birthDate == null || app.genderCode == null) return 'missing-derived-field';
   if (app.realName == null) return 'incomplete-data';
   return 'not-promotable';
@@ -163,23 +180,49 @@ export function promotionSkipReason(
  * 发号资格判定(一键发号 promote 与公示预览 publicityList 共享,结构性保证「公示预览 = 实发」;#399 F9/F15)。
  * - sortedApps 须已按 comparePromotionOrder 排序(两处同序 → 批内去重 tie-break 一致);
  * - boundOpenids = 已被既有 User(含软删,沿 openid @unique 占用语义)占用的 openid 集;
+ * - boundPhones = 已被既有 User(含软删,沿 phone @unique 占用语义)占用的 phone 集(v0.40.0 H5 手机通道);
  * - 批内同一 openid 仅发号序最先一行可发,其余记 'duplicate-openid-in-batch'(原先第二行入事务
  *   撞 User.openid @unique → P2002 → 整批回滚零发号;#399 F15)。
+ * - **通道分流(v0.40.0 行为锁核心)**:`app.openid != null` 走微信通道(openid 占用/去重,逐字不变);
+ *   `app.openid == null` 才走手机通道(phone 占用/去重)——有 openid 者 phone 相关判定一律不参与,
+ *   保证微信路径 promote 行为逐字不动。同理批内去重:openid 通道进 seenOpenids、phone 通道进 seenPhones。
  */
 export function decidePromotionIssuance<T extends PromotionIssuanceItem>(
   sortedApps: readonly T[],
   boundOpenids: ReadonlySet<string>,
+  boundPhones: ReadonlySet<string>,
 ): PromotionIssuanceDecision<T>[] {
   const seenOpenids = new Set<string>();
+  const seenPhones = new Set<string>();
   return sortedApps.map((app) => {
+    // 手机通道仅在无 openid 时启用(有 openid = 微信通道,phone 占用/去重不参与)。
+    const usesPhoneChannel = app.openid == null && app.phone != null;
     const openidBound = app.openid != null && boundOpenids.has(app.openid);
     const duplicateOpenidInBatch = app.openid != null && seenOpenids.has(app.openid);
-    const willIssue = isPromotable(app) && !openidBound && !duplicateOpenidInBatch;
-    if (willIssue && app.openid != null) seenOpenids.add(app.openid);
+    const phoneBound = usesPhoneChannel && boundPhones.has(app.phone as string);
+    const duplicatePhoneInBatch = usesPhoneChannel && seenPhones.has(app.phone as string);
+    const willIssue =
+      isPromotable(app) &&
+      !openidBound &&
+      !duplicateOpenidInBatch &&
+      !phoneBound &&
+      !duplicatePhoneInBatch;
+    if (willIssue) {
+      if (app.openid != null) seenOpenids.add(app.openid);
+      else if (app.phone != null) seenPhones.add(app.phone);
+    }
     return {
       app,
       willIssue,
-      reason: willIssue ? null : promotionSkipReason(app, openidBound, duplicateOpenidInBatch),
+      reason: willIssue
+        ? null
+        : promotionSkipReason(
+            app,
+            openidBound,
+            duplicateOpenidInBatch,
+            phoneBound,
+            duplicatePhoneInBatch,
+          ),
     };
   });
 }
