@@ -38,11 +38,12 @@ const BIZ_ADMIN_UNBOUND_CODES: ReadonlySet<string> = new Set([
 // 沿 prisma/seed.ts BIZ_PERMISSION_SEED(51 条;Slow-4 §4 + 保险 §3.4 + 招新一期/二期 §3.4 锁定);
 // 本 fixture 维护独立集合,与 seed 内部表对照防漂移(沿 rbac.fixture.ts 范式)。
 const BIZ_PERMISSIONS = [
-  // ============ member 5 条 ============
+  // ============ member 6 条(v0.40.0 +offboard)============
   { code: 'member.read.record', module: 'member', action: 'read', resourceType: 'record' },
   { code: 'member.create.record', module: 'member', action: 'create', resourceType: 'record' },
   { code: 'member.update.record', module: 'member', action: 'update', resourceType: 'record' },
   { code: 'member.update.status', module: 'member', action: 'update', resourceType: 'status' },
+  { code: 'member.offboard.record', module: 'member', action: 'offboard', resourceType: 'record' },
   { code: MEMBER_DELETE_RECORD_CODE, module: 'member', action: 'delete', resourceType: 'record' },
   // ============ member-profile 4 条(第三轮 review §F&A-3:+read.sensitive) ============
   {

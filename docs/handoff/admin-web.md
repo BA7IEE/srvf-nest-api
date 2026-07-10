@@ -110,8 +110,11 @@
 | 队员详情页"启用/停用关联账号"| `PATCH /api/admin/v1/members/{id}/account/status`(body: `{status: 'ACTIVE'\|'DISABLED'}`)→ 200 返更新后的队员详情;禁止管理员对**自己绑定的账号**操作(`CANNOT_OPERATE_SELF`);置 `DISABLED` 时联动撤销该账号全部未过期 refresh token(与用户管理页"禁用用户"同一效果) | `[rbac: user.update.status]`(复用既有用户管理码,0 新码) |
 | 队员批量导入后"一键批量开号"(整队历史队员一次性开号;逐行 skip-on-error,单行失败不影响其余行)| `POST /api/admin/v1/members/accounts/bulk-grant`(body: `{items:[{memberId,phone}]}`,1-200 条)→ 返 `{items:[{memberId,status:'ok'\|'blocked',userId,reason}],summary:{total,ok,blocked}}`(`userId`/`reason` 恒回显两键,不适用为 `null`) | `[rbac: member.grant.account]`(复用) |
 | 用户列表/详情反查"这个账号属于哪个队员"| `memberId`/`member:{memberNo,displayName}\|null` 两字段 additive 出现在 `GET /api/admin/v1/users`(list)与 `GET /api/admin/v1/users/{id}`(detail)响应里 | `[rbac: user.read.account]` |
+| **队员详情页"一键离队"(v0.40.0)**——一步完成离队:队员置 `INACTIVE` + 结束该队员**全部**在编归属(全类型;留 ENDED 历史行)+ 停用关联登录账号并撤销其全部未过期 refresh(该账号 access/refresh 立即失效)| `POST /api/admin/v1/members/{id}/offboard`(无 body)→ 返 `{member, memberDeactivated, membershipsEnded, accountDisabled, refreshTokensRevoked, linkedUserId, residualActivePositionAssignments, residualActiveSupervisions}` | `[rbac: member.offboard.record]`(**绑 biz-admin**,与队员管理 5 码同族;区别于账号面 ops-admin 码) |
 
 **v2 完整生命周期(单条 bind/unbind/reopen/status + 批量开号)已全部落地,`NEXT_TASKS` P1-18 已关**。
+
+> ⚠️ **一键离队(v0.40.0)前端注意**:①**幂等**——已离队队员重复点 offboard 返 200、各腿 skip(`memberDeactivated`/`accountDisabled` 为 `false`、`membershipsEnded`/`refreshTokensRevoked` 为 0),可安全重试;②**残留 advisory**——响应回显 `residualActivePositionAssignments`/`residualActiveSupervisions`,**offboard 刻意不级联撤任职/分管/角色绑定**(账号已停无越权风险,各有独立撤销端点),若这两个数 > 0,前端应提示管理员「该队员仍有 N 项在任职务 / M 项分管,如需一并解除请到组织架构/系统管理侧操作」;③**守卫**——队员不存在 `15001`;若队员绑定的账号已被提权为**非 USER**(如 ADMIN)→ `15036`(须先走用户管理端点处理该账号,离队端点只管 `role=USER` 的关联账号);④账号腿对**无关联账号**的队员自动跳过(`accountDisabled=false`、`linkedUserId=null`),仍正常离队。
 
 ### 2.5 通知管理(站内信撰写 / 发布 + 微信订阅渠道 + 系统定向 + 短信兜底)— ✅ S1+S2+S3+S4+S5 后端就绪(v0.32.0 已发)
 

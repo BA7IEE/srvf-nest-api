@@ -292,6 +292,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/admin/v1/members/{id}/account/unbind'],
   ['post', '/api/admin/v1/members/{id}/account/reopen'],
   ['patch', '/api/admin/v1/members/{id}/account/status'],
+  // 参与域生命周期收口⑤(v0.40.0):一键离队,+1 路由,328→329。
+  ['post', '/api/admin/v1/members/{id}/offboard'],
   // 队员账号闭环 v2 批量开号(2026-07-07):+1 路由,325→326。
   ['post', '/api/admin/v1/members/accounts/bulk-grant'],
   ['get', '/api/admin/v1/members/{memberId}/department'],

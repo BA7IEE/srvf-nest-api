@@ -3,6 +3,7 @@ import {
   DictItemStatus,
   DictTypeStatus,
   MemberStatus,
+  MembershipStatus,
   Prisma,
   Role,
   UserStatus,
@@ -30,6 +31,7 @@ import {
   GrantMemberAccountDto,
   GrantMemberAccountResponseDto,
   ListMembersQueryDto,
+  MemberOffboardResponseDto,
   MemberOptionItemDto,
   MemberOptionsQueryDto,
   MemberOptionsResponseDto,
@@ -929,5 +931,124 @@ export class MembersService {
     };
 
     return { items, summary };
+  }
+
+  // ============ 参与域生命周期收口⑤:一键离队编排(member offboard)============
+
+  // POST admin/v1/members/:id/offboard(v0.40.0):单事务四腿编排,一步完成"离队"。
+  // **直连 prisma、不复用 member-departments/members 其它 service 方法**(Prisma 嵌套交互事务不支持 +
+  // 防环,镜像 team-join-enrollment.service 一键入队先例)。四腿:
+  //   ① member.status=INACTIVE(已 INACTIVE → skip,幂等);
+  //   ② END 该队员**全部** ACTIVE memberships(全类型 PRIMARY/SECONDARY/TEMPORARY/SUPPORT,
+  //      status=ENDED + endedAt + endedByUserId;无 active → 0 条,幂等);
+  //   ③ 若有 linked live User(role=USER)且非 DISABLED → status=DISABLED + 撤销全部未撤销未过期
+  //      refresh(revokedReason='admin-disable',镜像 updateAccountStatus 唯一必要副作用);无 linked
+  //      账号 → 跳过账号腿正常完成;
+  //   ④ 写 **1 条**伞 audit `member.offboard`(resourceType='member',extra 记各腿实际发生计数)。
+  // 守卫(复用现成码,0 新 BizCode):member 不存在 → 15001;linked 账号 role≠USER → 15036
+  // (先走用户轴处理,堵经队员轴绕过 last-SA / manage-user 护栏的提权,沿第三轮 review §F&A-1);
+  // linked 是操作者本人 → CANNOT_OPERATE_SELF。**不级联**任职/分管/role-bindings(账号已停无越权风险,
+  // 各有独立撤销端点);响应体回显残留 active 任职数 / 分管数(advisory 只读,提醒管理员)。
+  // 幂等:已 INACTIVE / 已 DISABLED / 无 active 归属重跑返 200,各腿 skip、extra 计数如实。
+  async offboard(
+    id: string,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<MemberOffboardResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'member.offboard.record');
+    return this.prisma.$transaction(async (tx) => {
+      // 守卫:member 存在(不存在 / 软删 → 15001)。
+      const member = await this.findMemberOrThrow(id, tx);
+
+      // linked live 账号(含 role 用于护栏)。
+      const linked = await tx.user.findFirst({
+        where: { memberId: id, deletedAt: null },
+        select: { id: true, status: true, role: true },
+      });
+      if (linked) {
+        // 护栏(§F&A-1):队员轴只停 role=USER 的关联账号;非 USER(含 ADMIN/SUPER_ADMIN)一律拒,
+        // 提示走用户管理端点(否则经离队旁路可停用特权账号,绕过用户轴 last-SA / manage-user 护栏)。
+        if (linked.role !== Role.USER) {
+          throw new BizException(BizCode.MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE);
+        }
+        // 自我保护:不允许离队会停用自己绑定的账号。
+        if (linked.id === currentUser.id) {
+          throw new BizException(BizCode.CANNOT_OPERATE_SELF);
+        }
+      }
+
+      const now = new Date();
+
+      // ① member INACTIVE(幂等 skip)。
+      const memberDeactivated = member.status === MemberStatus.ACTIVE;
+      if (memberDeactivated) {
+        await tx.member.update({ where: { id }, data: { status: MemberStatus.INACTIVE } });
+      }
+
+      // ② END 全部 ACTIVE memberships(全类型)。
+      const endedMemberships = await tx.memberOrganizationMembership.updateMany({
+        where: { memberId: id, status: MembershipStatus.ACTIVE, deletedAt: null },
+        data: { status: MembershipStatus.ENDED, endedAt: now, endedByUserId: currentUser.id },
+      });
+
+      // ③ 停用 linked 账号 + 撤 refresh(幂等 skip:无 linked / 已 DISABLED)。
+      let accountDisabled = false;
+      let refreshTokensRevoked = 0;
+      if (linked && linked.status !== UserStatus.DISABLED) {
+        await tx.user.update({ where: { id: linked.id }, data: { status: UserStatus.DISABLED } });
+        const revoked = await tx.refreshToken.updateMany({
+          where: { userId: linked.id, revokedAt: null, expiresAt: { gt: now } },
+          data: { revokedAt: now, revokedReason: 'admin-disable' },
+        });
+        accountDisabled = true;
+        refreshTokensRevoked = revoked.count;
+      }
+
+      // 残留 active 任职 / 分管(advisory 只读;不级联,提醒管理员另走独立撤销端点)。
+      const [residualActivePositionAssignments, residualActiveSupervisions] = await Promise.all([
+        tx.organizationPositionAssignment.count({
+          where: { memberId: id, status: 'ACTIVE', deletedAt: null },
+        }),
+        tx.organizationSupervisionAssignment.count({
+          where: { supervisorMemberId: id, status: 'ACTIVE', deletedAt: null },
+        }),
+      ]);
+
+      // ④ 伞 audit(一条 member.offboard,extra 记各腿实际发生计数)。
+      await this.auditLogs.log({
+        event: 'member.offboard',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'member',
+        resourceId: id,
+        meta: auditMeta,
+        extra: {
+          memberDeactivated,
+          membershipsEnded: endedMemberships.count,
+          accountDisabled,
+          refreshTokensRevoked,
+          linkedUserId: linked?.id ?? null,
+          residualActivePositionAssignments,
+          residualActiveSupervisions,
+        },
+        tx,
+      });
+
+      // 回读 member(INACTIVE 后)+ 账号信息,组装响应。
+      const after = await this.findMemberOrThrow(id, tx);
+      return {
+        member: this.attachAccountInfo(
+          after,
+          linked ? { id: linked.id, status: UserStatus.DISABLED } : undefined,
+        ),
+        memberDeactivated,
+        membershipsEnded: endedMemberships.count,
+        accountDisabled,
+        refreshTokensRevoked,
+        linkedUserId: linked?.id ?? null,
+        residualActivePositionAssignments,
+        residualActiveSupervisions,
+      };
+    });
   }
 }

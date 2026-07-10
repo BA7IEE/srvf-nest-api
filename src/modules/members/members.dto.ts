@@ -88,6 +88,41 @@ export class MemberResponseDto {
   updatedAt!: Date;
 }
 
+// 参与域生命周期收口⑤(v0.40.0):一键离队编排响应。四腿实际发生计数 + 残留 active 任职/分管
+// (advisory 只读,提醒管理员另走独立撤销端点;offboard 刻意不级联任职/分管/role-bindings)。
+export class MemberOffboardResponseDto {
+  @ApiProperty({
+    description: '离队后队员档案(status=INACTIVE;含账号信息)',
+    type: MemberResponseDto,
+  })
+  member!: MemberResponseDto;
+
+  @ApiProperty({ description: '本次是否将队员从 ACTIVE 置为 INACTIVE(已 INACTIVE 则 false)' })
+  memberDeactivated!: boolean;
+
+  @ApiProperty({ description: '本次结束(ENDED)的 active 归属条数(全类型;无 active 则 0)' })
+  membershipsEnded!: number;
+
+  @ApiProperty({ description: '本次是否停用了关联登录账号(无 linked / 已 DISABLED 则 false)' })
+  accountDisabled!: boolean;
+
+  @ApiProperty({ description: '本次撤销的未过期 refresh token 条数' })
+  refreshTokensRevoked!: number;
+
+  @ApiPropertyOptional({ description: '关联账号 id(无关联为 null)', nullable: true })
+  linkedUserId!: string | null;
+
+  @ApiProperty({
+    description: '残留 active 任职数(advisory;offboard 不级联撤职,须另走任职撤销端点)',
+  })
+  residualActivePositionAssignments!: number;
+
+  @ApiProperty({
+    description: '残留 active 分管数(advisory;offboard 不级联撤分管,须另走分管撤销端点)',
+  })
+  residualActiveSupervisions!: number;
+}
+
 // ============ 入参 ============
 
 // memberNo 校验:DTO 层 @MinLength(1) + @MaxLength(32) + 字符集 [A-Za-z0-9-];

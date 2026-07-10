@@ -75,6 +75,8 @@
 > 2026-07-11 参与域生命周期收口 T1 戳(goal「参与域生命周期收口 + 归属结束语义收敛 + 一键离队 + H5 手机通道发号」T1;v0.40.0):权限码 198→**199**(activity-registration +1:`activity-registration.reopen.record`,审批后悔药 reject→pending,**绑 biz-admin**,org-admin 派生自动继承 57→**58**);**biz-admin 74→75**;ops-admin 96 / member 9 零变化;controller **66** 不变;endpoint 326→**327**(`POST admin/v1/activities/:activityId/registrations/:id/reopen`)。0 schema / 0 migration〔仍 40〕/ **+2 BizCode**(20124 `ACTIVITY_ENDED_OR_CANCELLED_APPROVE_FORBIDDEN` approve 时活动 cancelled/completed 禁批 + 21033 `ACTIVITY_REGISTRATION_HAS_ATTENDANCE` 已考勤报名禁取消)。`docs:rbacmap:check` **0 FAIL / 0 WARN**(199 码;controller 66 / 327 @ApiOperation 一致)。
 >
 > 2026-07-11 参与域生命周期收口 T2 戳(同 goal T2;v0.40.0):权限码 199→**200**(activity +1:`activity.complete.record`,管理端手动完结 published→completed,**绑 biz-admin**,org-admin 派生自动继承 58→**59**);**biz-admin 75→76**;ops-admin 96 / member 9 零变化;controller **66** 不变;endpoint 327→**328**(`POST admin/v1/activities/:id/complete`)。0 schema / 0 migration〔仍 40〕/ **+1 BizCode**(20125 `ACTIVITY_ENDED_REGISTRATION_FORBIDDEN` 活动已结束〔now > endAt〕不可报名)。App 可报名池新增 `endAt >= now` 过滤(已结束活动退出列表;detail 口径不动)。`docs:rbacmap:check` **0 FAIL / 0 WARN**(200 码;controller 66 / 328 @ApiOperation 一致)。
+>
+> 2026-07-11 参与域生命周期收口 T4 戳(同 goal T4;v0.40.0):权限码 200→**201**(member +1:`member.offboard.record`,一键离队 INACTIVE + 结束全部归属 + 停用关联账号并撤 refresh,**绑 biz-admin**,org-admin 派生自动继承 59→**60**);**biz-admin 76→77**;ops-admin 96 / member〔内置角色〕9 零变化;controller **66** 不变;endpoint 328→**329**(`POST admin/v1/members/:id/offboard`)。0 schema / 0 migration〔仍 40〕/ 0 新 BizCode(守卫复用 15001/15036/CANNOT_OPERATE_SELF)/ **+1 AuditLogEvent**(`member.offboard`,伞事件记各腿计数)。单事务四腿直连 prisma 防环(镜像 team-join enrollment);不级联任职/分管/role-bindings,残留数 advisory 回显。`docs:rbacmap:check` **0 FAIL / 0 WARN**(201 码;controller 66 / 329 @ApiOperation 一致)。
 
 ---
 
@@ -123,7 +125,7 @@
 | `system/v1/wechat-settings` | `wechat-setting.*`(3;`reset.credentials` 不绑 ops-admin,镜像 D2=A;WECHAT T2)|
 | `system/v1/realname-settings` | `realname-setting.*`(3;`reset.credentials` 不绑 ops-admin,镜像 D2=A;招新 T2)|
 | `admin/v1/attachments`(业务面首批) | `attachment.*`(20:member/certificate 各 8 含 `.self`/`.other`,activity 4) |
-| `admin/v1/members`(Slow-4 T2) | `member.*`(5;DELETE = `member.delete.record` 仅 SA 短路不绑 biz-admin;F1/A1 新增 `GET /options` 选择器投影 + list 增强 `q`/`organizationId`/`includeDescendants`,均复用 `member.read.record`;`organizationId` 经 `memberOrganizationMemberships` 关联过滤,`includeDescendants` 复用 organizations 模块 `queryDescendantOrgIds()`;队员账号闭环 v1〔2026-07-07〕:list + detail additive 暴露 `hasAccount`/`accountStatus`/`userId`〔User.memberId 已改一对多 partial unique,v2 起收窄仅计 live 绑定〕+ list 新增 `?hasAccount=` 过滤;新增 `POST /:id/account` 走独立码 `member.grant.account`〔**绑 ops-admin**,不绑 biz-admin,与本行其余 5 码归属不同〕;队员账号闭环 v2〔2026-07-07〕:`POST /:id/account/{bind,unbind}` 走新码 `member.bind.account`〔同绑 ops-admin〕/ `POST /:id/account/reopen` 复用 `member.grant.account` / `PATCH /:id/account/status` 复用既有 `user.update.status`〔0 新码〕/ `POST /accounts/bulk-grant` 批量开号复用 `member.grant.account`〔0 新码〕)|
+| `admin/v1/members`(Slow-4 T2;v0.40.0 +offboard) | `member.*`(6;DELETE = `member.delete.record` 仅 SA 短路不绑 biz-admin;F1/A1 新增 `GET /options` 选择器投影 + list 增强 `q`/`organizationId`/`includeDescendants`,均复用 `member.read.record`;`organizationId` 经 `memberOrganizationMemberships` 关联过滤,`includeDescendants` 复用 organizations 模块 `queryDescendantOrgIds()`;队员账号闭环 v1〔2026-07-07〕:list + detail additive 暴露 `hasAccount`/`accountStatus`/`userId`〔User.memberId 已改一对多 partial unique,v2 起收窄仅计 live 绑定〕+ list 新增 `?hasAccount=` 过滤;新增 `POST /:id/account` 走独立码 `member.grant.account`〔**绑 ops-admin**,不绑 biz-admin,与本行其余码归属不同〕;队员账号闭环 v2〔2026-07-07〕:`POST /:id/account/{bind,unbind}` 走新码 `member.bind.account`〔同绑 ops-admin〕/ `POST /:id/account/reopen` 复用 `member.grant.account` / `PATCH /:id/account/status` 复用既有 `user.update.status`〔0 新码〕/ `POST /accounts/bulk-grant` 批量开号复用 `member.grant.account`〔0 新码〕;**v0.40.0 一键离队** `POST /:id/offboard` 走新码 `member.offboard.record`〔**绑 biz-admin**,业务面,与账号面 ops-admin 码不同族;单事务四腿 INACTIVE + 结束全部归属 + 停用 linked 账号并撤 refresh + 1 条 `member.offboard` audit;守卫复用 15001/15036/CANNOT_OPERATE_SELF;不级联任职/分管,残留数 advisory 回显〕)|
 | `admin/v1/members/:memberId/profile`(Slow-4 T2;§F&A-3 敏感分级) | `member-profile.*.record`(3;入口 `read.record`)+ `member-profile.read.sensitive`(documentNumber/mobile 明文闸,无则掩码) |
 | `admin/v1/members/:memberId/emergency-contacts`(Slow-4 T2) | `emergency-contact.*.record`(4) |
 | `admin/v1/members/:memberId/certificates`(Slow-4 T2) | `certificate.*.record`(6;list/detail/qualification-flag 共用 read) |
@@ -165,7 +167,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(200 条,seed 幂等 upsert)
+## 3. 权限码全集(201 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -191,7 +193,7 @@
 | 用户管理 | 9 | `user.{read,create,update,delete}.account` / `user.reset.password` / `user.update.role` / `user.update.status` / `user.phone.clear`(SMS T2 seed,T3 端点已实装)/ `user.wechat.clear`(WECHAT T2 seed,T3 端点实装前孤码 WARN 预期)|
 | 审计 | 1 | `audit-log.read.entry` |
 | 附件业务 | 20 | `attachment.{upload,view,update,delete}.member.{self,other}`(8)/ `…certificate.{self,other}`(8)/ `…activity`(4) |
-| 队员(Slow-4 T1) | 5 | `member.{read,create,update,delete}.record` / `member.update.status` |
+| 队员(Slow-4 T1;v0.40.0 +offboard) | 6 | `member.{read,create,update,delete}.record` / `member.update.status` / `member.offboard.record`(v0.40.0 一键离队:INACTIVE + 结束全部归属 + 停用关联账号;绑 biz-admin,org-admin 派生继承;`member.delete.record` 仍仅 SUPER_ADMIN) |
 | 队员账号开通(队员账号闭环 v1,2026-07-07) | 1 | `member.grant.account`(`POST admin/v1/members/:id/account`;**绑 ops-admin**,不绑 biz-admin——账号铸造归系统/账号面,与 `user.*.account` 族一致,区别于本表上一行"队员"5 码〔均绑 biz-admin〕)|
 | 队员账号绑定/解绑(队员账号闭环 v2,2026-07-07) | 1 | `member.bind.account`(`POST .../account/{bind,unbind}`;**绑 ops-admin**,不绑 biz-admin,与 `member.grant.account` 同族;reopen 复用 `member.grant.account`,队员面启停复用既有 `user.update.status`,均 0 新码)|
 | 队员扩展档案(Slow-4 T1;第三轮 review §F&A-3) | 4 | `member-profile.{read,create,update}.record` / `member-profile.read.sensitive`(敏感明文闸:`documentNumber` / `mobile` 明文;`read.record` 收窄为脱敏;绑 biz-admin,org-admin 派生排除,镜像 `recruitment-application.read.sensitive`) |
