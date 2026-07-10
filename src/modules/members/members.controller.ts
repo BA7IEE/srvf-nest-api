@@ -34,6 +34,7 @@ import {
   GrantMemberAccountDto,
   GrantMemberAccountResponseDto,
   ListMembersQueryDto,
+  MemberOffboardResponseDto,
   MemberOptionsQueryDto,
   MemberOptionsResponseDto,
   MemberResponseDto,
@@ -43,7 +44,7 @@ import {
 } from './members.dto';
 import { MembersService } from './members.service';
 
-// /api/admin/v1/members(13 接口,含 F1/A1 options 与队员账号闭环 v1+v2 account 全生命周期 + 批量开号);
+// /api/admin/v1/members(14 接口,含 F1/A1 options 与队员账号闭环 v1+v2 account 全生命周期 + 批量开号 + v0.40.0 一键离队 offboard);
 // 路径前缀:全局 /api(main.ts)+ 'admin/v1/members'。
 // 权限(Slow-4 T2,2026-06-11,评审稿 §3.1):入口仅 JwtAuthGuard,判权下沉 service 层
 // `rbac.can('member.*')`(SUPER_ADMIN 短路;biz-admin 绑 read/create/update/status);
@@ -329,6 +330,31 @@ export class MembersController {
     @CurrentUser() currentUser: CurrentUserPayload,
   ): Promise<MemberResponseDto> {
     return this.service.updateAccountStatus(params.id, dto, currentUser);
+  }
+
+  // 参与域生命周期收口⑤(v0.40.0):一键离队编排。POST(action 非幂等更新语义);无 body;
+  // 单事务四腿(member INACTIVE + END 全部 active 归属 + 停用/撤 refresh linked 账号 + 1 条伞 audit);
+  // 响应回显各腿计数 + 残留 active 任职/分管(advisory)。
+  @Post(':id/offboard')
+  @ApiOperation({
+    summary:
+      '一键离队(INACTIVE + 结束全部归属 + 停用关联账号并撤 refresh;不级联撤任职/分管,残留数回显) [rbac: member.offboard.record]',
+  })
+  @ApiWrappedOkResponse(MemberOffboardResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.MEMBER_NOT_FOUND,
+    BizCode.MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE,
+    BizCode.CANNOT_OPERATE_SELF,
+  )
+  offboard(
+    @Param() params: IdParamDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<MemberOffboardResponseDto> {
+    return this.service.offboard(params.id, currentUser, this.buildAuditMeta(req));
   }
 
   // 沿 users.controller.ts / emergency-contacts.controller.ts 范式:从 @Req() 显式构造

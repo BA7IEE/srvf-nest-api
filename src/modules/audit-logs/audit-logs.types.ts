@@ -153,7 +153,7 @@ export type AuditLogEvent =
   // 区分入口(沿 role-binding.* extra.viaPath 范式)。PATCH(memberships.update)不写 audit——沿 role-binding.update /
   // supervision-assignment.update 均不审计的既有先例(仅改 status/note 等非建/终字段,不构成建/终事件)。
   | 'membership.set' // 建 / 设归属(memberships.service: create;member-departments.service: set 幂等分支〔同 org 无变更〕不写);extra.viaPath ∈ {membership, department}
-  | 'membership.end' // 结束归属(memberships.service: end;member-departments.service: remove〔软删旧 PRIMARY 行〕);extra.viaPath ∈ {membership, department}
+  | 'membership.end' // 结束归属(memberships.service: end;member-departments.service: remove〔v0.40.0 起 status=ENDED + endedAt + endedByUserId,不再软删〕);extra.viaPath ∈ {membership, department}
   // F4「D 组」transfer(2026-07-04;路线图 §4;goal 显式预授权的唯一 +1 AuditLogEvent):
   // 第三写入口取新 viaPath 值(本模块 CLAUDE.md 铁律);一次迁移一条留痕(end+create 两腿不再各写 set/end)。
   | 'membership.transfer' // 归属迁移(memberships.service: transfer,单事务 end 旧 + create 新;resourceId=新行;extra.viaPath='membership-transfer' + from/toOrganizationId + endedMembershipId)
@@ -176,6 +176,9 @@ export type AuditLogEvent =
   | 'member.account-bound' // admin 绑定既有悬空账号到队员(members.service: bindAccount 1 处;extra.{memberId,userId})
   | 'member.account-unbound' // admin 解绑队员账号(members.service: unbindAccount 1 处;extra.{memberId,userId}——userId 为断链前的值)
   | 'member.account-reopened' // admin 退号重开(members.service: reopenAccount 1 处;extra.{memberId,oldUserId,newUserId,phone:掩码})
+  // 参与域生命周期收口⑤(v0.40.0;goal「参与域生命周期收口…」T4 显式预授权的唯一 +1 AuditLogEvent)。
+  // resourceType='member' / resourceId=memberId;一键离队单事务四腿的伞事件(一条留痕记各腿实际计数)。
+  | 'member.offboard' // admin 一键离队(members.service: offboard 1 处;extra.{memberDeactivated,membershipsEnded,accountDisabled,refreshTokensRevoked,linkedUserId,residualActivePositionAssignments,residualActiveSupervisions})
   // RBAC 授权配置写面审计留痕补齐(2026-07-10;第三轮全仓 review v0.38.0 §F&A-2 →
   // NEXT_TASKS P1-19;冻结报告 docs/archive/reviews/full-repo-first-principles-adversarial-review-v0.38.0.md)。
   // 此前 RBAC 授权模型自身的运行时变更(RbacRole 建/改/软删、RolePermission 授予/撤销、Permission CRUD)

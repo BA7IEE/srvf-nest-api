@@ -2503,6 +2503,15 @@ const MEMBER_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
     description: '切换队员 status(ACTIVE↔INACTIVE;镜像 user.update.status 命名)',
   },
   {
+    // 参与域生命周期收口⑤(v0.40.0):一键离队(INACTIVE + 结束全部归属 + 停用关联账号)。绑 biz-admin。
+    code: 'member.offboard.record',
+    module: 'member',
+    action: 'offboard',
+    resourceType: 'record',
+    description:
+      '一键离队(单事务:INACTIVE + 结束全部归属 + 停用关联账号并撤 refresh;不级联撤任职/分管)',
+  },
+  {
     code: 'member.delete.record',
     module: 'member',
     action: 'delete',
@@ -3181,7 +3190,7 @@ const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISS
 const BIZ_ADMIN_ROLE_CODE = 'biz-admin';
 const BIZ_ADMIN_DISPLAY_NAME = '业务管理员';
 const BIZ_ADMIN_DESCRIPTION =
-  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 §5 + 保险 §3.4 + 招新一/二/三期 §3.4 + 招新闭环优化 S3 §11 + CMS 内容模块评审稿 §7 + 统一通知模块 S1/S2/S5 §9.2 + F4「D 组」路线图 §6.2):member 5 + member-profile 4 + emergency-contact 4 + certificate 6 + activity 6 + activity-registration 6 + attendance 8 + team-insurance-policy 6 + member-insurance 1 + recruitment-cycle 3 + recruitment-application 6 + team-join-cycle 3 + team-join-application 4 + content 5 + content-attachment 4 + notification 7 + membership-transfer 1 = 79 条中绑 76(第三轮 review §F&A-3:member-profile +read.sensitive 敏感明文码全绑 biz-admin;v0.40.0 参与域生命周期收口②/③:activity-registration +reopen.record + activity +complete.record 全绑 biz-admin);member.delete.record 仅 SUPER_ADMIN(D1=A 镜像),attendance.final-approve.sheet / attendance.final-reject.sheet 不绑(2026-07-03 摘码微刀:终审 = attendance-final-reviewer scoped 绑定或 SUPER_ADMIN 兜底,BD-2);attachment 存量 20 码(member / certificate / activity)不在本角色,CMS content-image / content-file 写路径 4 码因内容授权绑入(评审稿 α / §5.2);notification 7 码(S1 站内信 5 + S2 微信模板配置 1 + S5 短信发起 1)统一通知模块绑入(2026-06-25 ~ 2026-06-27,评审稿 §9.2);membership.transfer.record 归属迁移业务写 1 码 F4 绑入(2026-07-04,membership 其余 4 码仍属 ops-admin 管理面);每个 ADMIN 用户由 seed 自动补挂本角色';
+  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 §5 + 保险 §3.4 + 招新一/二/三期 §3.4 + 招新闭环优化 S3 §11 + CMS 内容模块评审稿 §7 + 统一通知模块 S1/S2/S5 §9.2 + F4「D 组」路线图 §6.2):member 6 + member-profile 4 + emergency-contact 4 + certificate 6 + activity 6 + activity-registration 6 + attendance 8 + team-insurance-policy 6 + member-insurance 1 + recruitment-cycle 3 + recruitment-application 6 + team-join-cycle 3 + team-join-application 4 + content 5 + content-attachment 4 + notification 7 + membership-transfer 1 = 80 条中绑 77(第三轮 review §F&A-3:member-profile +read.sensitive 敏感明文码全绑 biz-admin;v0.40.0 参与域生命周期收口②/③/⑤:activity-registration +reopen.record + activity +complete.record + member +offboard.record 全绑 biz-admin);member.delete.record 仅 SUPER_ADMIN(D1=A 镜像),attendance.final-approve.sheet / attendance.final-reject.sheet 不绑(2026-07-03 摘码微刀:终审 = attendance-final-reviewer scoped 绑定或 SUPER_ADMIN 兜底,BD-2);attachment 存量 20 码(member / certificate / activity)不在本角色,CMS content-image / content-file 写路径 4 码因内容授权绑入(评审稿 α / §5.2);notification 7 码(S1 站内信 5 + S2 微信模板配置 1 + S5 短信发起 1)统一通知模块绑入(2026-06-25 ~ 2026-06-27,评审稿 §9.2);membership.transfer.record 归属迁移业务写 1 码 F4 绑入(2026-07-04,membership 其余 4 码仍属 ops-admin 管理面);每个 ADMIN 用户由 seed 自动补挂本角色';
 
 // Slow-4 T1(36/35)+ 保险模块 T1 增量(2026-06-13,+7 全绑 → 43/42)+ 招新一期 T1 增量(2026-06-18,+5 全绑 → 48/47):
 // 业务面权限点 + biz-admin 角色 + 绑定 + ADMIN 全员补挂 + 强校验。
