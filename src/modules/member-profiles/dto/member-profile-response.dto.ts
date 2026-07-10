@@ -22,7 +22,10 @@ export class MemberProfileResponseDto {
   @ApiProperty({ description: '证件类型字典 code(MP-4;字典 document_type)' })
   documentTypeCode!: string;
 
-  @ApiProperty({ description: '证件号(MP-5;高敏感)' })
+  @ApiProperty({
+    description:
+      '证件号(MP-5;高敏感;默认掩码〔保前 6 后 4〕,持 member-profile.read.sensitive 见明文,§F&A-3)',
+  })
   documentNumber!: string;
 
   @ApiPropertyOptional({ description: '民族字典 code(MP-6;候选字典 ethnicity)', nullable: true })
@@ -61,7 +64,10 @@ export class MemberProfileResponseDto {
   @ApiPropertyOptional({ description: '工作区行政区粒度(MP-14)', nullable: true })
   workArea!: string | null;
 
-  @ApiProperty({ description: '本人手机(MP-15;高敏感)' })
+  @ApiProperty({
+    description:
+      '本人手机(MP-15;高敏感;默认掩码〔138****1234〕,持 member-profile.read.sensitive 见明文,§F&A-3)',
+  })
   mobile!: string;
 
   @ApiPropertyOptional({ description: '座机(MP-16;选填)', nullable: true })
