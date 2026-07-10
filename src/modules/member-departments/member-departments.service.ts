@@ -27,6 +27,14 @@ import { MemberDepartmentResponseDto, SetMemberDepartmentDto } from './member-de
 // 审计留痕批(2026-07-03;review #484 G5):set / remove 写 audit(inline-in-transaction,复用
 // memberships.service 同一 AuditLogEvent 联合;resourceType='membership';extra.viaPath='department'
 // 区分新 memberships 入口)。set 的幂等分支(同 organizationId,无 DB 写)**不写 audit**(无状态变更)。
+//
+// 参与域生命周期收口⑥(v0.40.0):`remove` + `set`(换部门分支)两个写点由**软删**(deletedAt=now)收敛为
+// **status=ENDED + endedAt + endedByUserId**(对齐新面 `end`;镜像 transfer「先 end 后 create 释放 PRIMARY
+// 唯一槽位」)。旧面**不再产生软删痕**——ENDED 历史行 deletedAt=null 留在表内,新面 memberships 列表可见
+// (本刀存在的理由)。对外契约逐字不变:primaryMembershipSelect 不含 status/deletedAt/endedAt;
+// activePrimaryWhere 同查 deletedAt=null AND status=ACTIVE(ENDED 不匹配)故 DELETE 后 GET 仍 null;
+// partial unique 仅约束 ACTIVE 故槽位释放正常。remove 的 audit `after` 载荷相应由 deletedAt 翻面为
+// {status, endedAt, endedByUserId}(set audit before/after 仅 id/memberId/organizationId,不受影响)。
 
 const AUDIT_RESOURCE_TYPE = 'membership';
 
@@ -167,10 +175,18 @@ export class MemberDepartmentsService {
           // 幂等:同 organizationId 直接返回现归属(无副作用,无状态变更 → 不写 audit)
           return current;
         }
-        // 软删旧 PRIMARY 归属(避免撞 partial unique index)
+        // 参与域生命周期收口⑥(v0.40.0):结束旧 PRIMARY 归属 —— status=ENDED + endedAt + endedByUserId
+        // (镜像新面 transfer「先 end 后 create 释放 PRIMARY 唯一槽位」;partial unique 仅约束 ACTIVE,
+        // ENDED 行不占槽故新 PRIMARY 可建)。**不再软删**:旧行留在 memberships 表做 ENDED 历史,
+        // 新面 GET members/:id/memberships 可见;旧面对外契约不变(primaryMembershipSelect 不含
+        // status/deletedAt/endedAt;activePrimaryWhere 同查 deletedAt=null AND status=ACTIVE,ENDED 行不匹配)。
         await tx.memberOrganizationMembership.update({
           where: { id: current.id },
-          data: { deletedAt: new Date() },
+          data: {
+            status: MembershipStatus.ENDED,
+            endedAt: new Date(),
+            endedByUserId: user.id,
+          },
         });
       }
 
@@ -230,11 +246,19 @@ export class MemberDepartmentsService {
       });
       if (!current) throw new BizException(BizCode.MEMBER_DEPARTMENT_NOT_FOUND);
 
-      // 软删 = update({ deletedAt: now });不物理删除(baseline §10)
-      const deletedAt = new Date();
+      // 参与域生命周期收口⑥(v0.40.0):结束归属 —— status=ENDED + endedAt + endedByUserId(对齐新面
+      // end;逻辑结束、保留行做历史留痕,**不再软删**)。旧面对外契约不变:primaryMembershipSelect 不含
+      // status/deletedAt/endedAt;DELETE 后 GET 仍 NOT_FOUND(activePrimaryWhere 同查 deletedAt=null AND
+      // status=ACTIVE,ENDED 行不匹配);partial unique 仅约束 ACTIVE 故槽位释放。新面 GET
+      // members/:id/memberships 可见该 ENDED 历史行(本刀存在的理由)。
+      const endedAt = new Date();
       const updated = await tx.memberOrganizationMembership.update({
         where: { id: current.id },
-        data: { deletedAt },
+        data: {
+          status: MembershipStatus.ENDED,
+          endedAt,
+          endedByUserId: user.id,
+        },
         select: primaryMembershipSelect,
       });
 
@@ -254,7 +278,9 @@ export class MemberDepartmentsService {
           id: updated.id,
           memberId: updated.memberId,
           organizationId: updated.organizationId,
-          deletedAt,
+          status: MembershipStatus.ENDED,
+          endedAt,
+          endedByUserId: user.id,
         },
         extra: { viaPath: 'department', operation: 'remove', targetMemberId: memberId },
         tx,

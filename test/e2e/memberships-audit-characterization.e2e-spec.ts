@@ -351,11 +351,21 @@ describe('memberships / member-departments audit characterization', () => {
       const c = a.context as unknown as ReadAuditContext<ViaPathExtra>;
       assertContextMeta(c);
       const before = c.before as { id: string; organizationId: string };
-      const after = c.after as { id: string; organizationId: string; deletedAt: string };
+      // v0.40.0 参与域生命周期收口⑥:remove 由软删(after.deletedAt)翻面为 status=ENDED + endedAt +
+      // endedByUserId(逻辑结束、保留行做历史留痕)。
+      const after = c.after as {
+        id: string;
+        organizationId: string;
+        status: string;
+        endedAt: string;
+        endedByUserId: string;
+      };
       expect(before.id).toBe(created.id);
       expect(before.organizationId).toBe(ctx.orgIdA);
       expect(after.id).toBe(created.id);
-      expect(after.deletedAt).not.toBeNull();
+      expect(after.status).toBe('ENDED');
+      expect(after.endedAt).not.toBeNull();
+      expect(after.endedByUserId).toBe(ctx.adminUserId);
       expect(c.extra).toEqual({
         viaPath: 'department',
         operation: 'remove',

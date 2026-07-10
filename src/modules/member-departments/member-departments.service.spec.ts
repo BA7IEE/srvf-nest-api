@@ -95,7 +95,7 @@ describe('MemberDepartmentsService(重指向 PRIMARY membership)', () => {
     expect(where.status).toBe('ACTIVE');
   });
 
-  it('set 换部门:软删旧 active PRIMARY + 建新 PRIMARY(单事务)+ 写 audit(viaPath=department,before=旧行)', async () => {
+  it('set 换部门:结束旧 active PRIMARY(status=ENDED,不再软删)+ 建新 PRIMARY(单事务)+ 写 audit(viaPath=department,before=旧行)', async () => {
     const tx = makeTx();
     tx.memberOrganizationMembership.findFirst.mockResolvedValue({
       id: 'old',
@@ -108,7 +108,11 @@ describe('MemberDepartmentsService(重指向 PRIMARY membership)', () => {
 
     const upd = arg0(tx.memberOrganizationMembership.update);
     expect(upd.where).toEqual({ id: 'old' });
-    expect((upd.data ?? {}).deletedAt).toBeInstanceOf(Date);
+    // v0.40.0 参与域生命周期收口⑥:换部门结束旧 PRIMARY 改 status=ENDED + endedAt + endedByUserId(不再软删)。
+    expect((upd.data ?? {}).status).toBe('ENDED');
+    expect((upd.data ?? {}).endedAt).toBeInstanceOf(Date);
+    expect((upd.data ?? {}).endedByUserId).toBe('u1');
+    expect((upd.data ?? {}).deletedAt).toBeUndefined();
     const data = arg0(tx.memberOrganizationMembership.create).data ?? {};
     expect(data.memberId).toBe('m1');
     expect(data.organizationId).toBe('org1');
