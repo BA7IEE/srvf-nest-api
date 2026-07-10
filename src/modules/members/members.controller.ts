@@ -250,6 +250,8 @@ export class MembersController {
     BizCode.MEMBER_HAS_LINKED_USER,
     BizCode.USER_NOT_FOUND,
     BizCode.MEMBER_ACCOUNT_TARGET_ALREADY_LINKED,
+    BizCode.MEMBER_ACCOUNT_TARGET_ROLE_NOT_ALLOWED,
+    BizCode.MEMBER_ACCOUNT_TARGET_NOT_ACTIVE,
   )
   bindAccount(
     @Param() params: IdParamDto,
@@ -293,6 +295,7 @@ export class MembersController {
     BizCode.MEMBER_NOT_FOUND,
     BizCode.MEMBER_INACTIVE,
     BizCode.MEMBER_HAS_NO_LINKED_USER,
+    BizCode.MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE,
     BizCode.USERNAME_ALREADY_EXISTS,
     BizCode.PHONE_ALREADY_BOUND,
   )
@@ -317,6 +320,7 @@ export class MembersController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.MEMBER_NOT_FOUND,
     BizCode.MEMBER_HAS_NO_LINKED_USER,
+    BizCode.MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE,
     BizCode.CANNOT_OPERATE_SELF,
   )
   updateAccountStatus(
