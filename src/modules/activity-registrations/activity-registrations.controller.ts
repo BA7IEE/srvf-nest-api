@@ -52,15 +52,15 @@ function buildAuditMeta(req: Request): AuditMeta {
   };
 }
 
-// V2 第一阶段批次 3A activity-registrations admin controller(6 路由)。
+// V2 第一阶段批次 3A activity-registrations admin controller(7 路由;v0.40.0 +reopen)。
 //
-// 管理端(admin/v1/activities/:activityId/registrations,6 路由):
+// 管理端(admin/v1/activities/:activityId/registrations,7 路由):
 //   GET '' list / POST '' 代报名 / GET 'export' / PATCH ':id/approve' /
-//   PATCH ':id/reject' / PATCH ':id/cancel'
+//   PATCH ':id/reject' / PATCH ':id/cancel' / POST ':id/reopen'(v0.40.0 审批后悔药)
 //
 // 权限(Slow-4 T3,2026-06-11,评审稿 §3.6;取代批次 3A @Roles 策略):
 // 入口仅 JwtAuthGuard,判权下沉 service 层 `rbac.can('activity-registration.*')`
-// (SUPER_ADMIN 短路;biz-admin 绑全部 5 码;list / export 共用 read,D4=A 判例)。
+// (SUPER_ADMIN 短路;biz-admin 绑全部 6 码;list / export 共用 read,D4=A 判例)。
 //
 // 队员自助报名流(原 `/v2/users/me/*` 4 路由:POST 报名 / GET list / GET detail / PATCH cancel)
 // 现位于 `controllers/app-my-registrations.controller.ts`(`@Controller('app/v1/my')`);
@@ -169,6 +169,7 @@ export class ActivityRegistrationsAdminController {
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_REGISTRATION_NOT_FOUND,
     BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
+    BizCode.ACTIVITY_ENDED_OR_CANCELLED_APPROVE_FORBIDDEN,
     BizCode.ACTIVITY_CAPACITY_EXCEEDED,
   )
   approve(
@@ -212,7 +213,7 @@ export class ActivityRegistrationsAdminController {
   @Patch(':id/cancel')
   @ApiOperation({
     summary:
-      '管理员代取消(pending|pass → cancelled;cancelled 释放名额) [rbac: activity-registration.cancel.record]',
+      '管理员代取消(pending|pass → cancelled;cancelled 释放名额;已有考勤记录 → 拒) [rbac: activity-registration.cancel.record]',
   })
   @ApiWrappedOkResponse(ActivityRegistrationResponseDto)
   @ApiBizErrorResponse(
@@ -222,6 +223,7 @@ export class ActivityRegistrationsAdminController {
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_REGISTRATION_NOT_FOUND,
     BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
+    BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE,
   )
   cancel(
     @Param() params: ActivityRegistrationIdParamDto,
@@ -236,6 +238,30 @@ export class ActivityRegistrationsAdminController {
       currentUser,
       buildAuditMeta(req),
     );
+  }
+
+  // 参与域生命周期收口②(v0.40.0):审批后悔药。撤销驳回、回待审(reject → pending)。
+  // POST(action 非幂等创建/更新语义,沿 goal 指定动词);置 pending 同时清空审核三字段;不发通知。
+  @Post(':id/reopen')
+  @ApiOperation({
+    summary:
+      '撤销驳回、回待审(reject → pending;清空审核字段;不发通知) [rbac: activity-registration.reopen.record]',
+  })
+  @ApiWrappedOkResponse(ActivityRegistrationResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_REGISTRATION_NOT_FOUND,
+    BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
+  )
+  reopen(
+    @Param() params: ActivityRegistrationIdParamDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<ActivityRegistrationResponseDto> {
+    return this.service.reopen(params.activityId, params.id, currentUser, buildAuditMeta(req));
   }
 }
 

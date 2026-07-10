@@ -73,6 +73,7 @@ type RegistrationExpandKey = (typeof REGISTRATION_EXPAND_WHITELIST)[number];
 // (read/export 行为,无 DB mutation,沿 Q1=A 当前阶段不记录查看行为)。
 
 const ACTIVITY_STATUS_CANCELLED = 'cancelled';
+const ACTIVITY_STATUS_COMPLETED = 'completed';
 const REGISTRATION_STATUS_PENDING = 'pending';
 const REGISTRATION_STATUS_PASS = 'pass';
 const REGISTRATION_STATUS_CANCELLED = 'cancelled';
@@ -425,6 +426,19 @@ export class ActivityRegistrationsService {
     }
   }
 
+  // 参与域生命周期收口⑦(v0.40.0):已考勤报名禁取消守卫。cancelAdmin + cancelMy 两路共用。
+  // 直连 prisma 查 AttendanceRecord.registrationId 反向引用(未软删)——**不引 attendances service**
+  // (防跨模块环:attendances → activity-registration 是既有单向依赖,反向会成环)。存在即拒;
+  // 不做贡献值回滚(贡献值属考勤域;撤销参与先走考勤面处理记录,报名取消自然解锁)。
+  private async assertNoAttendanceRecords(registrationId: string, tx: PrismaTx): Promise<void> {
+    const attendanceCount = await tx.attendanceRecord.count({
+      where: { registrationId, deletedAt: null },
+    });
+    if (attendanceCount > 0) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE);
+    }
+  }
+
   // P2002 兜底(partial unique index name:activity_registrations_activity_member_active_unique)。
   private async runWithUniqueConstraintGuard<T>(fn: () => Promise<T>): Promise<T> {
     try {
@@ -729,6 +743,14 @@ export class ActivityRegistrationsService {
       // race」不成立)。对 activity 行加 FOR UPDATE 排他锁,令同一 activity 的并发 approve 串行化:后到者
       // 阻塞至前者提交,再 COUNT 即见已提交 pass → 正确拒。仅限名额活动需锁(capacity=null 不限名额免锁)。
       const act = await this.findActivityOrThrow(activityId, tx);
+      // 参与域生命周期收口①(v0.40.0):取消 / 完结活动禁批报名。活动 statusCode ∈ {cancelled, completed}
+      // → 拒 approve(reject / cancelAdmin 刻意不拦,留作清理残留待审队列的手段;见 cancelAdmin / reject 无此闸)。
+      if (
+        act.statusCode === ACTIVITY_STATUS_CANCELLED ||
+        act.statusCode === ACTIVITY_STATUS_COMPLETED
+      ) {
+        throw new BizException(BizCode.ACTIVITY_ENDED_OR_CANCELLED_APPROVE_FORBIDDEN);
+      }
       if (act.capacity !== null) {
         await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${activityId} FOR UPDATE`;
       }
@@ -888,6 +910,9 @@ export class ActivityRegistrationsService {
         throw new BizException(transition.biz);
       }
 
+      // 参与域生命周期收口⑦(v0.40.0):已考勤报名禁取消(状态机放行后、写库前拦)。
+      await this.assertNoAttendanceRecords(reg.id, tx);
+
       const updated = await tx.activityRegistration.update({
         where: { id: reg.id },
         data: {
@@ -909,6 +934,61 @@ export class ActivityRegistrationsService {
         nextStatusCode: transition.nextStatusCode,
         cancelledByPath: 'admin',
         cancelReason: dto.cancelReason ?? null,
+        activityId,
+        targetMemberId: reg.memberId,
+        auditMeta,
+        tx,
+      });
+
+      return this.toResponseDto(updated);
+    });
+  }
+
+  // ============ 管理端:reopen(审批后悔药:reject → pending)============
+
+  // 参与域生命周期收口②(v0.40.0):撤销驳回、回待审。状态机新边 reject → pending;其余态
+  // ACTIVITY_REGISTRATION_STATUS_INVALID。置 pending 同时清空 reviewedBy / reviewedAt / reviewNote
+  // (回到"从未审过"形态);**刻意不开 reject → pass 直通**(改判必须重走审批)。audit 复用
+  // registration.review 事件、extra.action='reopen'(不发通知——后续 approve/reject 才发结果);
+  // reopen 不占 capacity(pending 不计数)。判权沿 approve 范式带 ref {type:'activity_registration', id}。
+  async reopen(
+    activityId: string,
+    id: string,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<ActivityRegistrationResponseDto> {
+    await this.assertCanOrThrow(currentUser, 'activity-registration.reopen.record', {
+      type: 'activity_registration',
+      id,
+    });
+    return this.prisma.$transaction(async (tx) => {
+      const reg = await this.findRegistrationOrThrow(activityId, id, tx);
+
+      const transition = this.registrationStateMachine.decide('reopen', reg.statusCode);
+      if (!transition.allowed) {
+        throw new BizException(transition.biz);
+      }
+
+      const updated = await tx.activityRegistration.update({
+        where: { id: reg.id },
+        data: {
+          statusCode: transition.nextStatusCode,
+          reviewedBy: null,
+          reviewedAt: null,
+          reviewNote: null,
+        },
+        select: registrationSafeSelect,
+      });
+
+      await this.registrationAuditRecorder.logReview({
+        registrationId: reg.id,
+        before: reg,
+        after: updated,
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        action: 'reopen',
+        priorStatusCode: reg.statusCode,
+        nextStatusCode: transition.nextStatusCode,
         activityId,
         targetMemberId: reg.memberId,
         auditMeta,
@@ -993,6 +1073,9 @@ export class ActivityRegistrationsService {
       if (!transition.allowed) {
         throw new BizException(transition.biz);
       }
+
+      // 参与域生命周期收口⑦(v0.40.0):已考勤报名禁取消(队员自助路径同样拦)。
+      await this.assertNoAttendanceRecords(reg.id, tx);
 
       const updated = await tx.activityRegistration.update({
         where: { id: reg.id },

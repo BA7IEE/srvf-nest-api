@@ -111,18 +111,19 @@ export class ActivityRegistrationAuditRecorder {
     });
   }
 
-  // ============ logReview(approve / reject 共用) ============
+  // ============ logReview(approve / reject / reopen 共用) ============
   // event: `registration.review`;
   // `before` = `toAuditSnapshot(before)`;`after` = `toAuditSnapshot(after)`;
   // `extra` 6 字段:`{ operation: 'review', action, priorStatusCode, nextStatusCode, activityId, targetMemberId }`
-  // 沿 PR #196 audit-characterization C1 / D1 case 锁定形状。
+  // 沿 PR #196 audit-characterization C1 / D1 case 锁定形状。v0.40.0 参与域生命周期收口②:
+  // `action` 追加 `'reopen'`(reject → pending;event 名 / extra 字段集逐字不变,characterization 加新 case 不动旧)。
   async logReview(args: {
     registrationId: string;
     before: AuditRegistrationSnapshotInput;
     after: AuditRegistrationSnapshotInput;
     actorUserId: string;
     actorRoleSnap: Role;
-    action: 'approve' | 'reject';
+    action: 'approve' | 'reject' | 'reopen';
     priorStatusCode: string;
     nextStatusCode: string;
     activityId: string;

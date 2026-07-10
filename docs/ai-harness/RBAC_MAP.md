@@ -71,6 +71,8 @@
 > 2026-07-07 队员账号闭环 v2 批量刀戳(同 goal,收尾;冻结评审稿同上):**权限事实零变化**(197 码 / ops-admin 96 / 绑定 / 内置角色不动,批量端点复用既有 `member.grant.account`);endpoint 325→**326**(`POST admin/v1/members/accounts/bulk-grant`,body `{items:[{memberId,phone}]}` 1-200 条;镜像 announcement-import 逐行 skip-on-error;路由注册于 `/:id` 系列之前,specific-before-dynamic 镜像 `options` 先例);controller **66** 不变(扩既有 `MembersController`)。`grantAccountCore` 私有共享方法从 `grantAccount()` 抽出,单条端点与批量循环共用,批量每行各自独立 `$transaction`。0 schema / 0 migration / 0 新权限码 / 0 新 BizCode / 0 新 audit event。**队员账号闭环 v2 全部完成**(`NEXT_TASKS` P1-18 已关)。`docs:rbacmap:check` **0 FAIL / 1 WARN**(`membership.read.record` 预埋,非本刀)。
 >
 > 2026-07-10 第三轮全仓 review(v0.38.0)findings 收口 T3 戳(goal「第三轮 review findings 收口」;冻结报告 [`full-repo-first-principles-adversarial-review-v0.38.0.md §F&A-3`](../archive/reviews/full-repo-first-principles-adversarial-review-v0.38.0.md)):权限码 197→**198**(member-profile +1:`member-profile.read.sensitive`,敏感明文闸,**绑 biz-admin**〔镜像 `recruitment-application.read.sensitive`,`read.record` 收窄为脱敏〕,**实装即用 0 孤码**);**biz-admin 73→74**;**org-admin 57 不变**(派生自动继承但入 `ORG_ADMIN_EXCLUDED_CODES`,与 recruitment sensitive 同款「敏感码不下放」,逐码不变);ops-admin 96 / member 9 零变化;controller **66** / endpoint **326** 不变(0 新端点;`admin/v1/members/:memberId/profile` 三端点 findOne/create/update 出口按码分级掩码,入口闸仍 `read.record`)。0 schema / 0 migration〔仍 40〕/ 0 新 BizCode;**掩码是值变换非 schema 变更**(DTO 字段名/类型不变,`documentNumber`/`mobile` 无 `read.sensitive` 时经 `maskIdCard`/`maskPhone` 打码)。同刀顺修 F-7:`seed.ts:3165` 等过时计数注释 true-up。`docs:rbacmap:check` **0 FAIL / 0 WARN**(198 码;controller 66 / 326 @ApiOperation 一致)。
+>
+> 2026-07-11 参与域生命周期收口 T1 戳(goal「参与域生命周期收口 + 归属结束语义收敛 + 一键离队 + H5 手机通道发号」T1;v0.40.0):权限码 198→**199**(activity-registration +1:`activity-registration.reopen.record`,审批后悔药 reject→pending,**绑 biz-admin**,org-admin 派生自动继承 57→**58**);**biz-admin 74→75**;ops-admin 96 / member 9 零变化;controller **66** 不变;endpoint 326→**327**(`POST admin/v1/activities/:activityId/registrations/:id/reopen`)。0 schema / 0 migration〔仍 40〕/ **+2 BizCode**(20124 `ACTIVITY_ENDED_OR_CANCELLED_APPROVE_FORBIDDEN` approve 时活动 cancelled/completed 禁批 + 21033 `ACTIVITY_REGISTRATION_HAS_ATTENDANCE` 已考勤报名禁取消)。`docs:rbacmap:check` **0 FAIL / 0 WARN**(199 码;controller 66 / 327 @ApiOperation 一致)。
 
 ---
 
@@ -124,7 +126,7 @@
 | `admin/v1/members/:memberId/emergency-contacts`(Slow-4 T2) | `emergency-contact.*.record`(4) |
 | `admin/v1/members/:memberId/certificates`(Slow-4 T2) | `certificate.*.record`(6;list/detail/qualification-flag 共用 read) |
 | `admin/v1/activities`(Slow-4 T3) | `activity.*.record`(5,仅 5 个写端点;**列表/详情无码仅登录 `[auth]`**;F1/A6 新增 `GET /options` 选择器投影,同样 `[auth]`——RBAC_MAP §5 已决「BD-3 两候选码 won't-do」不新增 `activity.read.*`,options 沿 list/detail 现状不新增码;list 增强 `q`/`dateFrom`/`dateTo`/`includeDescendants`/`includeStats`〔批量 groupBy 聚合 registrationCount/attendanceSheetCount,禁 N+1〕) |
-| `admin/v1/activities/:activityId/registrations`(Slow-4 T3) | `activity-registration.*.record`(5;list/export 共用 read) |
+| `admin/v1/activities/:activityId/registrations`(Slow-4 T3;v0.40.0 +reopen) | `activity-registration.*.record`(6;list/export 共用 read;`:id/reopen` = `reopen.record`) |
 | `admin/v1/registrations`(跨轴只读 2026-06-23) | `activity-registration.read.record`(1;跨活动报名横扫,审批工作台,复用 read 零新码) |
 | `admin/v1/members/:memberId/registrations`(跨轴只读 2026-06-23) | `activity-registration.read.record`(1;某队员报名履历,队员 360,复用 read;MEMBER_NOT_FOUND 守卫) |
 | `admin/v1/…attendance-sheets`(2 个 Admin class;Slow-4 T3;跨轴只读 2026-06-23 加根 @Get) | `attendance.*.sheet`(8;list/detail/review-detail/跨活动根 list 共用 read;终审两码独立,ADMIN 级沿 P1-5 方案 A) |
@@ -161,7 +163,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(198 条,seed 幂等 upsert)
+## 3. 权限码全集(199 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -194,7 +196,7 @@
 | 紧急联系人(Slow-4 T1) | 4 | `emergency-contact.{read,create,update,delete}.record` |
 | 证书(Slow-4 T1) | 6 | `certificate.{read,create,update,delete}.record` / `certificate.{verify,reject}.record` |
 | 活动(Slow-4 T1) | 5 | `activity.{create,update,delete}.record` / `activity.{publish,cancel}.record`(列表/详情无码,仅登录) |
-| 活动报名(Slow-4 T1) | 5 | `activity-registration.{read,create}.record` / `activity-registration.{approve,reject,cancel}.record` |
+| 活动报名(Slow-4 T1;v0.40.0 +reopen) | 6 | `activity-registration.{read,create}.record` / `activity-registration.{approve,reject,cancel}.record` / `activity-registration.reopen.record`(v0.40.0 审批后悔药:reject → pending;绑 biz-admin,org-admin 派生自动继承) |
 | 考勤(Slow-4 T1) | 8 | `attendance.{create,read,update,delete}.sheet` / `attendance.{approve,reject,final-approve,final-reject}.sheet` |
 | 队保单(保险 T1) | 6 | `team-insurance-policy.{read,create,update,delete}.record` / `team-insurance-policy.{add,remove}.member`(T2 端点实装前孤码 WARN 预期) |
 | 队员自购保险(保险 T1) | 1 | `member-insurance.read.other`(admin 查队员保险;App 本人侧 self-scope 无码;T2 实装) |

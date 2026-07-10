@@ -347,6 +347,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/activities/{activityId}/registrations/{id}/approve'],
   ['patch', '/api/admin/v1/activities/{activityId}/registrations/{id}/reject'],
   ['patch', '/api/admin/v1/activities/{activityId}/registrations/{id}/cancel'],
+  ['post', '/api/admin/v1/activities/{activityId}/registrations/{id}/reopen'],
   ['post', '/api/admin/v1/activities/{activityId}/attendance-sheets'],
   ['get', '/api/admin/v1/activities/{activityId}/attendance-sheets'],
   ['get', '/api/admin/v1/attendance-sheets/{id}/review-detail'],
