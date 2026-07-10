@@ -785,8 +785,8 @@ describe('audit-logs 写入迁移', () => {
           title: '梧桐山轮值演练',
           activityTypeCode,
           organizationId: childOrgId,
-          startAt: '2026-06-01T08:00:00.000Z',
-          endAt: '2026-06-01T12:00:00.000Z',
+          startAt: '2099-06-01T08:00:00.000Z',
+          endAt: '2099-06-01T12:00:00.000Z',
           location: '梧桐山',
           ...overrides,
         });
@@ -1006,8 +1006,8 @@ describe('audit-logs 写入迁移', () => {
           title: '回滚测试',
           activityTypeCode: 'non-existent-code',
           organizationId: childOrgId,
-          startAt: '2026-06-01T08:00:00.000Z',
-          endAt: '2026-06-01T12:00:00.000Z',
+          startAt: '2099-06-01T08:00:00.000Z',
+          endAt: '2099-06-01T12:00:00.000Z',
           location: 'X',
         });
       expect(res.status).toBe(400);
@@ -1112,8 +1112,8 @@ describe('audit-logs 写入迁移', () => {
           title: 'Reg Mig Activity',
           activityTypeCode,
           organizationId: regChildOrgId,
-          startAt: new Date('2026-06-01T08:00:00.000Z'),
-          endAt: new Date('2026-06-01T12:00:00.000Z'),
+          startAt: new Date('2099-06-01T08:00:00.000Z'),
+          endAt: new Date('2099-06-01T12:00:00.000Z'),
           location: 'Demo',
           statusCode: 'published',
           isPublicRegistration: overrides.isPublic ?? true,
@@ -1504,8 +1504,8 @@ describe('audit-logs 写入迁移', () => {
           title: 'Att Mig Activity',
           activityTypeCode,
           organizationId: attChildOrgId,
-          startAt: new Date('2026-06-01T08:00:00.000Z'),
-          endAt: new Date('2026-06-01T18:00:00.000Z'),
+          startAt: new Date('2099-06-01T08:00:00.000Z'),
+          endAt: new Date('2099-06-01T18:00:00.000Z'),
           location: 'Demo',
           statusCode: 'published',
           ...(overrides.capacity !== undefined ? { capacity: overrides.capacity } : {}),
@@ -1534,7 +1534,7 @@ describe('audit-logs 写入迁移', () => {
     const submitPendingSheet = async (
       actId: string,
       records: Record<string, unknown>[] = [
-        buildRecord(attMemberAId, '2026-06-01T09:00:00.000Z', '2026-06-01T11:00:00.000Z', {
+        buildRecord(attMemberAId, '2099-06-01T09:00:00.000Z', '2099-06-01T11:00:00.000Z', {
           contributionPoints: 1.0,
         }),
       ],
@@ -1586,7 +1586,7 @@ describe('audit-logs 写入迁移', () => {
         .set('Authorization', adminAuth)
         .send({
           records: [
-            buildRecord(attMemberBId, '2026-06-01T10:00:00.000Z', '2026-06-01T12:00:00.000Z', {
+            buildRecord(attMemberBId, '2099-06-01T10:00:00.000Z', '2099-06-01T12:00:00.000Z', {
               contributionPoints: 1.0,
             }),
           ],
@@ -1820,7 +1820,7 @@ describe('audit-logs 写入迁移', () => {
         .set('Authorization', adminAuth)
         .send({
           records: [
-            buildRecord(attMemberBId, '2026-06-01T10:00:00.000Z', '2026-06-01T12:00:00.000Z', {
+            buildRecord(attMemberBId, '2099-06-01T10:00:00.000Z', '2099-06-01T12:00:00.000Z', {
               contributionPoints: 1.0,
             }),
           ],
@@ -1895,7 +1895,7 @@ describe('audit-logs 写入迁移', () => {
         .set('Authorization', adminAuth)
         .send({
           records: [
-            buildRecord(attMemberAId, '2026-06-01T09:00:00.000Z', '2026-06-01T11:00:00.000Z', {
+            buildRecord(attMemberAId, '2099-06-01T09:00:00.000Z', '2099-06-01T11:00:00.000Z', {
               roleCode: 'invalid-role-code',
               contributionPoints: 1.0,
             }),
@@ -1911,7 +1911,7 @@ describe('audit-logs 写入迁移', () => {
       const actId = await createActivity();
       // submit records 时 contributionPoints 显式 null(R31 校验在 approve)
       const sheetId = await submitPendingSheet(actId, [
-        buildRecord(attMemberAId, '2026-06-01T09:00:00.000Z', '2026-06-01T11:00:00.000Z', {
+        buildRecord(attMemberAId, '2099-06-01T09:00:00.000Z', '2099-06-01T11:00:00.000Z', {
           contributionPoints: null,
         }),
       ]);
