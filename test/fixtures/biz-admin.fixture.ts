@@ -142,7 +142,7 @@ const BIZ_PERMISSIONS = [
     resourceType: 'record',
   },
   { code: 'activity.cancel.record', module: 'activity', action: 'cancel', resourceType: 'record' },
-  // ============ activity-registration 5 条 ============
+  // ============ activity-registration 6 条(v0.40.0 +reopen)============
   {
     code: 'activity-registration.read.record',
     module: 'activity-registration',
@@ -171,6 +171,12 @@ const BIZ_PERMISSIONS = [
     code: 'activity-registration.cancel.record',
     module: 'activity-registration',
     action: 'cancel',
+    resourceType: 'record',
+  },
+  {
+    code: 'activity-registration.reopen.record',
+    module: 'activity-registration',
+    action: 'reopen',
     resourceType: 'record',
   },
   // ============ attendance 8 条 ============

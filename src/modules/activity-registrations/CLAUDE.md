@@ -4,8 +4,8 @@
 
 ## Scope
 
-- **活动报名记录**:create / approve / reject / cancel 4 态闭集
-- **状态机 4 态**:`pending → (pass | reject)`;`pending|pass → cancelled`(`pass` 之后仍可 cancel);**只 `pass` 占活动 capacity 名额**(Q-D17)
+- **活动报名记录**:create / approve / reject / cancel / reopen 4 态闭集
+- **状态机 4 态 + reopen 边**:`pending → (pass | reject)`;`pending|pass → cancelled`(`pass` 之后仍可 cancel);`reject → pending`(v0.40.0 审批后悔药 reopen;**刻意不开 `reject → pass` 直通**);**只 `pass` 占活动 capacity 名额**(Q-D17);reopen 不占 capacity(pending 不计数)
 - **两 surface**:Admin 代报名 + 审核 + CSV 导出(`admin/v1/activities/:activityId/registrations`);App 本人报名 / 查询 / 取消(`app/v1/my`)。历史 Legacy `/v2/users/me/*` 4 端点已于 Route B Phase 4d2 删除(队员流由 App surface 承载)
 - **不负责**:活动主资源生命周期(`activities/`)、考勤(`attendances/`)、贡献值预填(`contribution-rules/` + `attendances/contribution-calculator.ts`);`AttendanceRecord.registrationId` 由 attendances 反向引用,本模块**不**主动维护
 
@@ -18,8 +18,9 @@
 - DTO 隔离:Admin DTO 在 `activity-registrations.dto.ts`;App DTO 在 `dto/app/`(5 文件)
 - **Partial unique** `activity_registrations_activity_member_active_unique` 由 migration 直写(Prisma schema 上**不可见**);service 用 `P2002` 兜底转 `BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS = 21002`
 - Capacity 复核 `assertCapacityNotExceeded`:create + approve 共用;**approve 转 pass 前对 `Activity` 行加 `FOR UPDATE` 排他锁**串行化并发 approve 防超容量(F11 #399;原「事务内重新计数避免 race」在 READ COMMITTED 下不成立)。`capacity=null` 不限名额免锁;create 仅建 pending 不占名额,容量校验为前置提示
-- Audit events(2 个):`registration.create`(create 路径)/ `registration.review`(approve / reject / cancel 共用,通过 `extra.action` 区分;`cancelAdmin` vs `cancelMy` 由 `extra.cancelledByPath` 字段记录,**不**进 StateMachine)
+- Audit events(2 个):`registration.create`(create 路径)/ `registration.review`(approve / reject / cancel / **reopen**〔v0.40.0〕共用,通过 `extra.action` 区分;`cancelAdmin` vs `cancelMy` 由 `extra.cancelledByPath` 字段记录,**不**进 StateMachine)
 - 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID`
+- **参与域生命周期收口(v0.40.0)**:① **approve 活动状态闸** —— approve 事务内 `findActivityOrThrow` 后校验活动 `statusCode ∈ {cancelled, completed}` → `ACTIVITY_ENDED_OR_CANCELLED_APPROVE_FORBIDDEN`(20124);**reject / cancelAdmin / cancelMy 刻意不加此闸**(留作清理已取消/已完结活动残留待审队列的手段)。② **reopen 边** —— `reject → pending`,新端点 `POST admin/v1/activities/:activityId/registrations/:id/reopen`,新码 `activity-registration.reopen.record`(判权带 ref `{type:'activity_registration', id}`);置 pending 同时清空 `reviewedBy/reviewedAt/reviewNote`;audit 复用 `registration.review` 事件、`extra.action='reopen'`;**不发通知**。⑦ **cancel 考勤守卫** —— cancelAdmin + cancelMy 状态机放行后、写库前经 `assertNoAttendanceRecords`(直连 `tx.attendanceRecord.count({registrationId, deletedAt:null})`,**不引 attendances service** 防环)> 0 → `ACTIVITY_REGISTRATION_HAS_ATTENDANCE`(21033);不做贡献值回滚(贡献值属考勤域)
 - CSV 导出:`GET admin/v1/activities/:activityId/registrations/export` 手写 `escapeCsvField`,**不**引 `csv-stringify`;**不**写 `export_logs` / **不**生成 `AttendanceRecord`(Q-A6 三禁)
 - **报名截止**(活动闭环硬化 2026-06-21):`assertActivityRegistrable`(create 代报名 + createMy 自助 + App `createMyForApp` 共用闸)在 isPublicRegistration 之后判 `registrationDeadline !== null && now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`(精确时刻,不做北京日归一);**approve 不加此闸**(截止只管报名动作,截止前已报 pending 仍可批)
 - E2E:`activity-registrations.e2e-spec.ts` / `activity-registrations-rbac-boundary.e2e-spec.ts` / `activity-registrations-state-transition.e2e-spec.ts` / `activity-registrations-audit-characterization.e2e-spec.ts` / `activity-registrations-insurance-gate.e2e-spec.ts` / `app-my-registrations-read.e2e-spec.ts` / `app-my-registrations-write.e2e-spec.ts`;scoped 判权矩阵在 `participation-scoped-authz.e2e-spec.ts`(与 activities / attendances 共用一个文件)

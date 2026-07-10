@@ -461,6 +461,72 @@ describe('ActivityRegistrationsService audit characterization', () => {
     });
   });
 
+  // ============ D2. reopen audit shape(v0.40.0 审批后悔药;event 复用 registration.review) ============
+  describe('D2. reopen audit shape', () => {
+    beforeEach(isolateFixtures);
+
+    it('reopen: event=registration.review + extra={action:reopen, priorStatusCode:reject, nextStatusCode:pending, ...} + after 清空审核字段', async () => {
+      const regId = await seedRegistration({
+        memberId: ctx.memberCId,
+        statusCode: 'reject',
+        reviewerUserId: ctx.adminUserId,
+        reviewedAtIso: '2026-04-10T10:00:00.000Z',
+        reviewNote: '资质不符',
+      });
+
+      await ctx.service.reopen(ctx.publishedActivityId, regId, ctx.adminPayload, AUDIT_META);
+
+      const audits = await ctx.prisma.auditLog.findMany({
+        where: { event: 'registration.review', resourceId: regId },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(audits).toHaveLength(1);
+      const a = audits[0];
+
+      assertCommonAuditMetaFields(a, {
+        event: 'registration.review',
+        actorUserId: ctx.adminUserId,
+        actorRoleSnap: Role.ADMIN,
+      });
+
+      const c = a.context as unknown as ReadAuditContext<{
+        operation?: string;
+        action?: string;
+        priorStatusCode?: string;
+        nextStatusCode?: string;
+        activityId?: string;
+        targetMemberId?: string;
+      }>;
+      assertContextMeta(c);
+
+      expect(c.before).toBeDefined();
+      expect(c.after).toBeDefined();
+      const before = c.before as { statusCode: string; reviewNote: string | null };
+      const after = c.after as {
+        statusCode: string;
+        reviewedBy: string | null;
+        reviewedAt: string | Date | null;
+        reviewNote: string | null;
+      };
+      expect(before.statusCode).toBe('reject');
+      expect(before.reviewNote).toBe('资质不符');
+      expect(after.statusCode).toBe('pending');
+      // 审核三字段清空反映在 after 快照
+      expect(after.reviewedBy).toBeNull();
+      expect(after.reviewedAt).toBeNull();
+      expect(after.reviewNote).toBeNull();
+
+      expect(c.extra).toEqual({
+        operation: 'review',
+        action: 'reopen',
+        priorStatusCode: 'reject',
+        nextStatusCode: 'pending',
+        activityId: ctx.publishedActivityId,
+        targetMemberId: ctx.memberCId,
+      });
+    });
+  });
+
   // ============ E. cancelAdmin audit shape ============
   describe('E. cancelAdmin audit shape', () => {
     beforeEach(isolateFixtures);

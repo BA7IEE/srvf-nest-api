@@ -66,7 +66,8 @@ const SEED_ENV = {
 // seed 侧排除项转为防御性 no-op;2026-07-04 F4 起含 membership.transfer.record;2026-07-10 §F&A-3 起含
 // member-profile.read.sensitive —— 「biz-admin 新增业务码 org-admin 自动继承,除非落排除规则」设计语义〕
 // 过滤 recruitment-application.read.sensitive + member-profile.read.sensitive〔敏感明文,§4.2 / §F&A-3 分级,
-// 不下放〕+ recruitment-* 8 + team-join-* 7〔招新/入队中央流程不随组织业务下放〕→ 57 恒定,逐码不变)。
+// 不下放〕+ recruitment-* 8 + team-join-* 7〔招新/入队中央流程不随组织业务下放〕→ v0.40.0 起 58
+// (activity-registration.reopen.record 随 biz-admin 自动继承,排除规则不命中))。
 const EXPECTED_ORG_ADMIN_CODES = [
   // member 4(member.delete.record 仅 SA,biz-admin 本就不含)
   'member.read.record',
@@ -95,12 +96,13 @@ const EXPECTED_ORG_ADMIN_CODES = [
   'activity.delete.record',
   'activity.publish.record',
   'activity.cancel.record',
-  // activity-registration 5
+  // activity-registration 6(v0.40.0 +reopen)
   'activity-registration.read.record',
   'activity-registration.create.record',
   'activity-registration.approve.record',
   'activity-registration.reject.record',
   'activity-registration.cancel.record',
+  'activity-registration.reopen.record',
   // attendance 6(一级审批;final-approve / final-reject 归终审中枢,BD-2 排除)
   'attendance.create.sheet',
   'attendance.read.sheet',
@@ -207,7 +209,7 @@ const EXPECTED_FINAL_REVIEWER_CODES = [
 // 2026-07-07 队员账号闭环 v2 member.bind.account 绑 ops-admin 95→96)。
 const EXPECTED_OPS_ADMIN_BINDING_COUNT = 96;
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
-const EXPECTED_BIZ_ADMIN_BINDING_COUNT = 74; // §F&A-3 起(2026-07-10 member-profile.read.sensitive +1)
+const EXPECTED_BIZ_ADMIN_BINDING_COUNT = 75; // v0.40.0 起(2026-07-11 activity-registration.reopen.record +1;§F&A-3 起 74)
 
 async function boundCodesOf(prisma: PrismaService, roleCode: string): Promise<string[]> {
   const rows = await prisma.rolePermission.findMany({
@@ -234,7 +236,7 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     await resetDb(app);
   });
 
-  it('1. 内置角色全集 = 7(PR7 3→6 + PR9 attendance-final-reviewer);org-admin(57)/ group-manager(22)/ org-supervisor(4)码集逐码相等', async () => {
+  it('1. 内置角色全集 = 7(PR7 3→6 + PR9 attendance-final-reviewer);org-admin(58)/ group-manager(22)/ org-supervisor(4)码集逐码相等', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-1' }).code).toBe(0);
 
     const roles = await prisma.rbacRole.findMany({
@@ -342,7 +344,7 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     expect(second.stderr).toContain('R5');
   });
 
-  it('5. 零指派 + 零漂移:3 新角色无任何持有者;ops-admin 95(队员账号闭环 v1 起)/ member 9 / biz-admin 74(§F&A-3 起)不变;保留码不绑', async () => {
+  it('5. 零指派 + 零漂移:3 新角色无任何持有者;ops-admin 95(队员账号闭环 v1 起)/ member 9 / biz-admin 75(v0.40.0 起)不变;保留码不绑', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-5' }).code).toBe(0);
 
     // 3 新角色零 user 持有(判权唯一读源 RoleBinding 全类型;

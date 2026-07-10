@@ -554,6 +554,14 @@ export const BizCode = {
     message: '活动报名已截止',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 参与域生命周期收口①(v0.40.0):approve 时活动状态闸。活动 statusCode ∈ {cancelled, completed}
+  // → 报名不可审批通过(reject / cancel 刻意不拦:留作清理已取消/已完结活动残留待审队列的唯一手段)。
+  // 沿 20120/20121 报名时活动态阻断家族,409。
+  ACTIVITY_ENDED_OR_CANCELLED_APPROVE_FORBIDDEN: {
+    code: 20124,
+    message: '活动已取消或已完结,报名不可审批通过',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
@@ -580,6 +588,14 @@ export const BizCode = {
   ACTIVITY_CAPACITY_EXCEEDED: {
     code: 21032,
     message: '活动名额已满',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 参与域生命周期收口⑦(v0.40.0):已考勤报名禁取消。报名已有未软删考勤记录
+  // (AttendanceRecord.registrationId 反向引用)→ cancelAdmin / cancelMy 两路均拒。
+  // 不做贡献值回滚(贡献值属考勤域;要撤销参与先走考勤面处理记录,报名取消自然解锁)。
+  ACTIVITY_REGISTRATION_HAS_ATTENDANCE: {
+    code: 21033,
+    message: '报名已有考勤记录,不可取消',
     httpStatus: HttpStatus.CONFLICT,
   },
 

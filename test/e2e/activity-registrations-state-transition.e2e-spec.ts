@@ -864,4 +864,295 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       expect(audits).toHaveLength(0);
     });
   });
+
+  // ============ G. reopen(reject → pending;v0.40.0 审批后悔药) ============
+  describe('G. reopen(reject → pending)', () => {
+    beforeEach(isolateFixtures);
+
+    it('G1. reject → pending:清空 reviewedBy/reviewedAt/reviewNote + audit registration.review.reopen', async () => {
+      const regId = await seedRegistration({
+        memberId: ctx.memberCId,
+        statusCode: 'reject',
+        reviewerUserId: ctx.adminUserId,
+        reviewedAtIso: '2026-04-10T10:00:00.000Z',
+        reviewNote: '资质不符',
+      });
+
+      const result = await ctx.service.reopen(
+        ctx.publishedActivityId,
+        regId,
+        ctx.adminPayload,
+        AUDIT_META,
+      );
+
+      expect(result.statusCode).toBe('pending');
+      // 审核三字段清空
+      expect(result.reviewedBy).toBeNull();
+      expect(result.reviewedAt).toBeNull();
+      expect(result.reviewNote).toBeNull();
+
+      const db = await ctx.prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: regId },
+        select: { statusCode: true, reviewedBy: true, reviewedAt: true, reviewNote: true },
+      });
+      expect(db.statusCode).toBe('pending');
+      expect(db.reviewedBy).toBeNull();
+      expect(db.reviewedAt).toBeNull();
+      expect(db.reviewNote).toBeNull();
+
+      // audit:event = registration.review,extra.action = reopen
+      const audits = await ctx.prisma.auditLog.findMany({ where: { resourceId: regId } });
+      expect(audits).toHaveLength(1);
+      expect(audits[0].event).toBe('registration.review');
+      const c = audits[0].context as {
+        extra?: { action?: string; priorStatusCode?: string; nextStatusCode?: string };
+      };
+      expect(c.extra?.action).toBe('reopen');
+      expect(c.extra?.priorStatusCode).toBe('reject');
+      expect(c.extra?.nextStatusCode).toBe('pending');
+    });
+
+    it.each<RegistrationStatus>(['pending', 'pass', 'cancelled'])(
+      'G2. 错误起始状态 %s → 抛 ACTIVITY_REGISTRATION_STATUS_INVALID,DB 状态不变,无 audit',
+      async (fromStatus) => {
+        const regId = await seedRegistration({ memberId: ctx.memberCId, statusCode: fromStatus });
+
+        await expect(
+          ctx.service.reopen(ctx.publishedActivityId, regId, ctx.adminPayload, AUDIT_META),
+        ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID });
+
+        const db = await ctx.prisma.activityRegistration.findUniqueOrThrow({
+          where: { id: regId },
+          select: { statusCode: true },
+        });
+        expect(db.statusCode).toBe(fromStatus);
+
+        const audits = await ctx.prisma.auditLog.findMany({ where: { resourceId: regId } });
+        expect(audits).toHaveLength(0);
+      },
+    );
+
+    it('G3. reopen 后可重新 approve(pending → pass):解锁"被拒者占槽无法重报"死锁的完整闭环', async () => {
+      const regId = await seedRegistration({
+        memberId: ctx.memberCId,
+        statusCode: 'reject',
+        reviewerUserId: ctx.adminUserId,
+        reviewNote: '先拒',
+      });
+
+      await ctx.service.reopen(ctx.publishedActivityId, regId, ctx.adminPayload, AUDIT_META);
+      const approved = await ctx.service.approve(
+        ctx.publishedActivityId,
+        regId,
+        { reviewNote: '改判通过' },
+        ctx.adminPayload,
+        AUDIT_META,
+      );
+      expect(approved.statusCode).toBe('pass');
+    });
+  });
+
+  // ============ H. approve 活动状态闸(cancelled / completed 禁批) ============
+  describe('H. approve 活动状态闸(v0.40.0 收口①)', () => {
+    beforeEach(isolateFixtures);
+
+    async function createActivityWithStatus(statusCode: string): Promise<string> {
+      const a = await ctx.prisma.activity.create({
+        data: {
+          title: `Reg State Activity ${statusCode}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          activityTypeCode: 'reg-state-type',
+          organizationId: ctx.organizationId,
+          startAt: new Date('2026-04-20T08:00:00.000Z'),
+          endAt: new Date('2026-04-20T12:00:00.000Z'),
+          location: 'state-approve-gate',
+          statusCode,
+          isPublicRegistration: true,
+        },
+        select: { id: true },
+      });
+      return a.id;
+    }
+
+    it.each(['cancelled', 'completed'])(
+      'H1. 活动 %s 时 approve pending 报名 → ACTIVITY_ENDED_OR_CANCELLED_APPROVE_FORBIDDEN,DB 不变,无 audit',
+      async (activityStatus) => {
+        const activityId = await createActivityWithStatus(activityStatus);
+        const regId = await seedRegistration({
+          activityId,
+          memberId: ctx.memberCId,
+          statusCode: 'pending',
+        });
+
+        await expect(
+          ctx.service.approve(activityId, regId, { reviewNote: 'x' }, ctx.adminPayload, AUDIT_META),
+        ).rejects.toMatchObject({
+          biz: BizCode.ACTIVITY_ENDED_OR_CANCELLED_APPROVE_FORBIDDEN,
+        });
+
+        const db = await ctx.prisma.activityRegistration.findUniqueOrThrow({
+          where: { id: regId },
+          select: { statusCode: true, reviewedBy: true },
+        });
+        expect(db.statusCode).toBe('pending'); // 未变
+        expect(db.reviewedBy).toBeNull();
+
+        const audits = await ctx.prisma.auditLog.findMany({ where: { resourceId: regId } });
+        expect(audits).toHaveLength(0);
+      },
+    );
+
+    it('H2. reject / cancelAdmin 刻意不受活动状态闸限制(清理残留待审队列):cancelled 活动仍可 reject / cancel', async () => {
+      const activityId = await createActivityWithStatus('cancelled');
+      const rejectRegId = await seedRegistration({
+        activityId,
+        memberId: ctx.memberCId,
+        statusCode: 'pending',
+      });
+      const rejected = await ctx.service.reject(
+        activityId,
+        rejectRegId,
+        { reviewNote: '活动已取消,清理' },
+        ctx.adminPayload,
+        AUDIT_META,
+      );
+      expect(rejected.statusCode).toBe('reject');
+
+      const cancelRegId = await seedRegistration({
+        activityId,
+        memberId: ctx.memberBId,
+        statusCode: 'pending',
+      });
+      const cancelled = await ctx.service.cancelAdmin(
+        activityId,
+        cancelRegId,
+        { cancelReason: '活动已取消,清理' },
+        ctx.adminPayload,
+        AUDIT_META,
+      );
+      expect(cancelled.statusCode).toBe('cancelled');
+    });
+  });
+
+  // ============ I. cancel 考勤守卫(已考勤报名禁取消) ============
+  describe('I. cancel 考勤守卫(v0.40.0 收口⑦)', () => {
+    beforeEach(isolateFixtures);
+
+    afterEach(async () => {
+      await ctx.prisma.attendanceRecord.deleteMany({});
+      await ctx.prisma.attendanceSheet.deleteMany({});
+    });
+
+    // 造一条引用该 registration 的未软删 AttendanceRecord(经最小 AttendanceSheet)。
+    async function seedAttendanceForRegistration(
+      registrationId: string,
+      memberId: string,
+    ): Promise<void> {
+      const sheet = await ctx.prisma.attendanceSheet.create({
+        data: {
+          activityId: ctx.publishedActivityId,
+          submitterUserId: ctx.adminUserId,
+          statusCode: 'pending',
+        },
+        select: { id: true },
+      });
+      await ctx.prisma.attendanceRecord.create({
+        data: {
+          sheetId: sheet.id,
+          memberId,
+          roleCode: 'member',
+          checkInAt: new Date('2026-04-01T08:00:00.000Z'),
+          checkOutAt: new Date('2026-04-01T12:00:00.000Z'),
+          serviceHours: 4,
+          attendanceStatusCode: 'present',
+          registrationId,
+        },
+      });
+    }
+
+    it('I1. cancelAdmin:pass 报名有考勤记录 → ACTIVITY_REGISTRATION_HAS_ATTENDANCE,DB 不变,无 audit', async () => {
+      const regId = await seedRegistration({
+        memberId: ctx.memberCId,
+        statusCode: 'pass',
+        reviewerUserId: ctx.adminUserId,
+      });
+      await seedAttendanceForRegistration(regId, ctx.memberCId);
+
+      await expect(
+        ctx.service.cancelAdmin(
+          ctx.publishedActivityId,
+          regId,
+          { cancelReason: '试取消' },
+          ctx.adminPayload,
+          AUDIT_META,
+        ),
+      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE });
+
+      const db = await ctx.prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: regId },
+        select: { statusCode: true, cancelledByUserId: true },
+      });
+      expect(db.statusCode).toBe('pass'); // 未变
+      expect(db.cancelledByUserId).toBeNull();
+
+      const audits = await ctx.prisma.auditLog.findMany({ where: { resourceId: regId } });
+      expect(audits).toHaveLength(0);
+    });
+
+    it('I2. cancelMy:本人 pass 报名有考勤记录 → ACTIVITY_REGISTRATION_HAS_ATTENDANCE,DB 不变', async () => {
+      const regId = await seedRegistration({
+        memberId: ctx.memberAId, // selfA owns memberA
+        statusCode: 'pass',
+        reviewerUserId: ctx.adminUserId,
+      });
+      await seedAttendanceForRegistration(regId, ctx.memberAId);
+
+      await expect(
+        ctx.service.cancelMy(regId, { cancelReason: '试取消' }, ctx.selfAPayload, AUDIT_META),
+      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE });
+
+      const db = await ctx.prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: regId },
+        select: { statusCode: true },
+      });
+      expect(db.statusCode).toBe('pass');
+    });
+
+    it('I3. 软删考勤记录不阻断取消:仅未软删记录计数', async () => {
+      const regId = await seedRegistration({
+        memberId: ctx.memberCId,
+        statusCode: 'pass',
+        reviewerUserId: ctx.adminUserId,
+      });
+      const sheet = await ctx.prisma.attendanceSheet.create({
+        data: {
+          activityId: ctx.publishedActivityId,
+          submitterUserId: ctx.adminUserId,
+          statusCode: 'pending',
+        },
+        select: { id: true },
+      });
+      await ctx.prisma.attendanceRecord.create({
+        data: {
+          sheetId: sheet.id,
+          memberId: ctx.memberCId,
+          roleCode: 'member',
+          checkInAt: new Date('2026-04-01T08:00:00.000Z'),
+          checkOutAt: new Date('2026-04-01T12:00:00.000Z'),
+          serviceHours: 4,
+          attendanceStatusCode: 'present',
+          registrationId: regId,
+          deletedAt: new Date('2026-04-02T00:00:00.000Z'), // 已软删
+        },
+      });
+
+      const cancelled = await ctx.service.cancelAdmin(
+        ctx.publishedActivityId,
+        regId,
+        { cancelReason: '考勤已撤,可取消' },
+        ctx.adminPayload,
+        AUDIT_META,
+      );
+      expect(cancelled.statusCode).toBe('cancelled');
+    });
+  });
 });

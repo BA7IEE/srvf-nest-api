@@ -137,8 +137,13 @@ function makePrismaMock() {
   };
   const member = { findFirst: jest.fn<Promise<MemberRow | null>, [unknown]>() };
   const user = { findFirst: jest.fn<Promise<UserRow | null>, [unknown]>() };
+  // v0.40.0 参与域生命周期收口⑦:cancelAdmin / cancelMy 事务内查考勤记录守卫(直连 tx.attendanceRecord.count)。
+  // 默认 0(无考勤 → 放行),既有 cancel characterization 用例断言零影响;有考勤守卫用例显式覆写返回 >0。
+  const attendanceRecord = {
+    count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
+  };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
-  const prisma = { activityRegistration, activity, member, user, $transaction };
+  const prisma = { activityRegistration, activity, member, user, attendanceRecord, $transaction };
   // 双模:回调式把 prisma mock 自身当 tx 传入(service 在 tx 与 this.prisma 上调同名方法);
   // 数组式($transaction([findMany, count]))走 Promise.all。
   $transaction.mockImplementation((arg: unknown) =>
@@ -537,6 +542,43 @@ describe('ActivityRegistrationsService (characterization)', () => {
         expect.objectContaining({ cancelledByPath: 'admin', cancelReason: null }),
       );
       expect(result.statusCode).toBe('cancelled');
+    });
+
+    it('reopen: reject → pending,清空审核三字段,logReview action=reopen', async () => {
+      const prisma = makePrismaMock();
+      const recorder = makeAuditRecorderMock();
+      const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'pending' });
+      prisma.activityRegistration.findFirst.mockResolvedValue(
+        makeRegRow({ statusCode: 'reject', activityId: 'act-1' }),
+      );
+      prisma.activityRegistration.update.mockResolvedValue(makeRegRow({ statusCode: 'pending' }));
+      const service = makeService(prisma, recorder, stateMachine);
+
+      const result = await service.reopen(
+        'act-1',
+        'reg-1',
+        makeCurrentUser({ id: 'admin-1' }),
+        META,
+      );
+
+      expect(stateMachine.decide).toHaveBeenCalledWith('reopen', 'reject');
+      // 审核三字段清空写入 update.data
+      const updateArg = prisma.activityRegistration.update.mock.calls[0][0] as {
+        data: {
+          reviewedBy: unknown;
+          reviewedAt: unknown;
+          reviewNote: unknown;
+          statusCode: unknown;
+        };
+      };
+      expect(updateArg.data.reviewedBy).toBeNull();
+      expect(updateArg.data.reviewedAt).toBeNull();
+      expect(updateArg.data.reviewNote).toBeNull();
+      expect(updateArg.data.statusCode).toBe('pending');
+      expect(recorder.logReview).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'reopen', nextStatusCode: 'pending' }),
+      );
+      expect(result.statusCode).toBe('pending');
     });
   });
 

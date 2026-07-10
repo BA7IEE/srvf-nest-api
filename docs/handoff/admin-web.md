@@ -39,12 +39,17 @@
 | 区块 | 端点 |
 |---|---|
 | 活动头部 + 发布/取消 | `GET /api/admin/v1/activities/:id` · `PATCH .../:id/publish` · `PATCH .../:id/cancel` |
-| 报名 tab | `GET /api/admin/v1/activities/:id/registrations?statusCode=` · `POST` 代报名 · `PATCH .../:rid/{approve,reject,cancel}` · `GET .../export`(CSV) |
+| 报名 tab | `GET /api/admin/v1/activities/:id/registrations?statusCode=` · `POST` 代报名 · `PATCH .../:rid/{approve,reject,cancel}` · `POST .../:rid/reopen`(v0.40.0 审批后悔药 reject→pending)· `GET .../export`(CSV) |
 | 考勤 tab | `GET /api/admin/v1/activities/:id/attendance-sheets?statusCode=` · `POST` 提交单据 |
 | 考勤审核详情 | `GET /api/admin/v1/attendance-sheets/:id/review-detail`(**活动摘要+单据+records含队员嵌套**,为审核页量身做的)· `PATCH .../:id/{approve,reject,final-approve,final-reject}` · `DELETE` |
 
 > 关键:报名/考勤接口**本来就按 activityId 嵌套**——作战室是它们的自然消费者。
 > `activityId` 从**路由参数**来,不要在页面顶部摆"选择活动"下拉。
+
+> ⚠️ **报名审批生命周期新规(v0.40.0 参与域生命周期收口)**:
+> ① **取消/完结活动禁批报名** —— 活动 `statusCode ∈ {cancelled, completed}` 时 `PATCH .../:rid/approve` 返 **`20124`**(`ACTIVITY_ENDED_OR_CANCELLED_APPROVE_FORBIDDEN`,「活动已取消或已完结,报名不可审批通过」);**但 `reject` / `cancel` 不受此闸**——活动取消/完结后仍可驳回/代取消,用来清理残留待审队列。前端审批工作台在活动已取消/完结时应**禁用"通过"按钮、保留"驳回/取消"**。
+> ② **审批后悔药 reopen** —— 驳回后想改判:`POST .../:rid/reopen`(**只 `reject → pending`**;无 body;成功后 `reviewedBy/reviewedAt/reviewNote` 清空,回到待审)。**没有 `reject → 直接通过`**——改判必须 reopen 回待审后重走 approve。reopen 需 `activity-registration.reopen.record` 码(biz-admin 默认有)。reopen 也解决了「被驳回的队员无法对同一活动重新报名」——驳回记录占着报名唯一槽,reopen 回待审后即可正常重审。
+> ③ **已考勤报名禁取消** —— 报名一旦有未撤销的考勤记录,`PATCH .../:rid/cancel`(及 App 端 `cancelMy`)返 **`21033`**(`ACTIVITY_REGISTRATION_HAS_ATTENDANCE`,「报名已有考勤记录,不可取消」)。要撤销这类参与,先去考勤面处理该考勤记录(软删),报名即自然解锁可取消。前端给出对应文案,别笼统按"操作失败"。
 
 > ⚠️ **考勤终审判权收紧(终态 scoped-authz PR9,2026-07-02 起生效;考勤终审是全仓首个真正切到 scoped 判权的业务面;**2026-07-03 摘码微刀 #482 后终审权彻底改道**,取代下方旧版"biz-admin 全局终审不变"口径)**:`final-approve` 新增两个专用错误码——**`22074` 自审拒绝**(提交人 == 终审人;**SUPER_ADMIN 也拒**,没有任何配置能放开)/ **`22075` 同人拒绝**(一级审核人 == 终审人;**默认禁止**,运维可设 env `ATTENDANCE_ALLOW_SAME_REVIEWER=true` 放开,严格字符串匹配)。**`final-reject` 不受这两条约束**——同一张单据,驳回操作没有自审/同人限制(不对称设计,e2e 已锁死这个差异,不是漏做)。前端终审按钮**必须单独处理 22074/22075**,给出对应文案(如「不能终审自己提交的考勤单据」/「一级审核人不得再终审同一张考勤单据」),不能笼统按旧的"权限不足"(`30100`)文案兜底——这两个码本质是"数据完整性约束"而不是"没权限",文案不该说"你没有权限"。**🔴 权限来源(2026-07-03 摘码微刀 #482 后终态)**:持 `biz-admin` 的 ADMIN **不再天然拥有**终审权——不建任何绑定直接调 `final-approve`/`final-reject` 会拿**权限不足 `30100`**(不是 22074/22075,见下方判定顺序)。终审权只来自两条路径之一:① 给某人的组织任职挂一条 `attendance-final-reviewer` 角色的 role-binding(经 `POSITION_ASSIGNMENT` 主体绑定,**换届撤任职即自动失权**,零代码改动;详见 §2.6)② `SUPER_ADMIN` 兜底(不受摘码影响,但自审 `22074` 对 SA 一样拒)。`biz-admin` 的其余 6 个考勤动作(create/read/update/delete + 一级 approve/reject)**不受影响**,仍全局可用。**判定顺序(易错点)**:约束否决只发生在"确实持有终审权"之后——没有 scoped 绑定、也不是 SUPER_ADMIN 的人直接调终审端点,会先撞**权限不足 `30100`**,根本走不到 22074/22075 这一层判断;只有真正持有终审权的人才可能撞上这两个数据完整性码。**单管理员部署注意**:若唯一的管理员只持 `biz-admin`(无 scoped 终审绑定),他**终审不了任何单据**——终审要么用 `SUPER_ADMIN` 账号,要么先给某人建任职 + 绑 `attendance-final-reviewer`(参数样例见 [`RBAC_MAP.md` §5](../ai-harness/RBAC_MAP.md)/上线步骤见 [`ops/scoped-authz-go-live-checklist.md`](../ops/scoped-authz-go-live-checklist.md));`ATTENDANCE_ALLOW_SAME_REVIEWER` env 只影响 22075(同人),不能替代持权问题。想确认"某人到底能不能终审某张单" → 用 §2.6 的「权限解释」端点(PR10)直接查,不用猜或翻权限表。
 
