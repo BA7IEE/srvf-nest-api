@@ -141,6 +141,8 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   'recruitment-application.promote.member',
   // 招新闭环优化 S3 +1(2026-06-24;评审稿 recruitment-phase4-loop-optimization-review.md §11,全绑无例外)
   'recruitment-application.read.sensitive',
+  // 招新可用性收口 F2 +1(2026-07-11;评审稿 recruitment-usability-closeout-review.md §3 R1,全绑无例外)
+  'recruitment-application.update.record',
   // 招新三期入队 T2 +6(2026-06-19;评审稿 recruitment-phase3-review.md §3.4,全绑无例外;
   // join.member 随 T4 controller 落)
   'team-join-cycle.read.record',
@@ -175,7 +177,7 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   // membership.{list,read,set,end} 4 条 ops-admin 管理面码,module 同为 'membership' 但归业务面 seed)
   'membership.transfer.record',
 ] as const;
-const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 80(2026-06-25 统一通知 S1 +5 / S2 +1;2026-06-27 S5 +1;2026-07-04 F4 transfer +1;2026-07-10 §F&A-3 member-profile.read.sensitive +1;2026-07-11 v0.40.0 activity-registration.reopen +1)
+const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 81(2026-07-11 招新可用性收口 F2 update.record +1;前值 80 = …统一通知 S1 +5 / S2 +1 / S5 +1 / F4 transfer +1 / §F&A-3 +1 / v0.40.0 reopen +1)
 
 // D1=A 镜像:不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
@@ -186,7 +188,7 @@ const BIZ_ADMIN_UNBOUND_CODES: ReadonlyArray<string> = [
   'attendance.final-approve.sheet',
   'attendance.final-reject.sheet',
 ];
-const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 3; // 77(v0.40.0 起;80 - 3 excluded)
+const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 3; // 78(招新可用性收口 F2 起;81 - 3 excluded)
 
 // 零变化基线(评审稿 §6):本断言意图 = 业务面 seed 不改 ops-admin / member 绑定;
 // 基线数跟随 ops-admin 当前合法总数(2026-06-12 WECHAT T2 +3 → 58→61;
@@ -258,7 +260,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
       'team-insurance-policy': 6,
       'member-insurance': 1,
       'recruitment-cycle': 3,
-      'recruitment-application': 6,
+      'recruitment-application': 7, // 招新可用性收口 F2 +update.record(2026-07-11)
       'team-join-cycle': 3,
       'team-join-application': 4,
       content: 5,
