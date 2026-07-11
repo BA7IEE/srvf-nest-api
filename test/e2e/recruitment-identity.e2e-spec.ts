@@ -550,6 +550,37 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
     expect(rows.map((r) => r.statusCode).sort()).toEqual(['verified', 'withdrawn']);
   });
 
+  // ============ 招新可用性收口 F7:证书图上传(手机通道)============
+
+  it('F7-④ 手机通道上传证书图 → 消费一码 + 落 keys + audit(actor 置空)', async () => {
+    const cycle = await openCycle();
+    await seedApp(cycle.id, { phone: '13900000001', statusCode: 'verified' });
+    await sendCode('13900000001');
+    const res = await request(httpServer(app))
+      .post('/api/open/v1/recruitment/applications/certificates')
+      .field('category', 'first_aid')
+      .field('phone', '13900000001')
+      .field('code', FIXED_CODE)
+      .attach('images', Buffer.from('fake-cert'), {
+        filename: 'c.png',
+        contentType: 'image/png',
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ category: 'first_aid', imageCount: 1 });
+    const row = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { phone: '13900000001' },
+    });
+    expect((row.certificateImages as Record<string, string[]>).first_aid).toHaveLength(1);
+    const audit = await prisma.auditLog.findFirst({
+      where: { event: 'recruitment-application.certificate-upload', resourceId: row.id },
+    });
+    expect(audit).not.toBeNull();
+    expect(audit?.actorUserId).toBeNull();
+    const ctx = audit?.context as { extra?: { channel?: string; category?: string } } | null;
+    expect(ctx?.extra?.channel).toBe('phone');
+    expect(ctx?.extra?.category).toBe('first_aid');
+  });
+
   // ============ 小程序链向后兼容 ============
 
   it('⑪ 小程序链向后兼容:submit(wechatCode 无 token)→ verified + openid 落;query(wechat)可查', async () => {

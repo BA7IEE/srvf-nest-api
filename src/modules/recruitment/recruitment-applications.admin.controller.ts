@@ -35,6 +35,7 @@ import {
   IdCardImageUrlResponseDto,
   MarkThresholdDto,
   PromoteSingleResultDto,
+  RecruitmentCertificateImageUrlsResponseDto,
   RecruitmentApplicationAdminDto,
   RecruitmentApplicationListQueryDto,
   ResolveRecruitmentApplicationDto,
@@ -199,6 +200,25 @@ export class RecruitmentApplicationsAdminController {
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<IdCardImageUrlResponseDto> {
     return this.queryService.getIdCardImageUrl(id, user);
+  }
+
+  // 招新可用性收口 F7(评审稿 §2.9):admin 取证书图 signed-URL(镜像 id-card-image-url;0 新码)。
+  @Get(':id/certificate-image-urls')
+  @ApiOperation({
+    summary:
+      '取申请人证书图短 TTL signed-URL(按类别分组;无图类别不出现,全无 → 空数组;L3 不入日志/snapshot;读图记审计;复用敏感读码) [rbac: recruitment-application.read.sensitive]',
+  })
+  @ApiWrappedOkResponse(RecruitmentCertificateImageUrlsResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
+  )
+  certificateImageUrls(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<RecruitmentCertificateImageUrlsResponseDto> {
+    return this.queryService.getCertificateImageUrls(id, user);
   }
 
   @Post(':id/resolve')

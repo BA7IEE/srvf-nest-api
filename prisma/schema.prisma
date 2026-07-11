@@ -701,6 +701,10 @@ model Certificate {
   isInternal         Boolean   @default(false) // CT-11 是否本会颁发
   supersededByCertId String? // CT-12 自引用 FK 可空(Q-D2)
   expireNotifyDueAt  DateTime? // HK-1 60 天提醒 hook;Q-D6 不加索引
+  // 招新可用性收口 F7(2026-07-11;评审稿 §2.9 R6;第 44 migration,additive 可空):
+  // 证书图 storage keys(promote 从 recruitment_applications.certificateImages 按类别搬入;
+  // blob 单一属主=certificate;app 侧 my/certificates DTO v1 不暴露——另议,NEXT_TASKS 登记)。
+  imageKeys Json? // 证书图 storage keys(string[];招新自报材料,verify/reject 人工核验参考)
 
   member       Member        @relation("CertificateMember", fields: [memberId], references: [id], onDelete: Restrict)
   verifier     Member?       @relation("CertificateVerifier", fields: [verifiedBy], references: [id], onDelete: Restrict)
@@ -1791,6 +1795,11 @@ model RecruitmentApplication {
   // 签名图 = 责任文件——promote 搬 member_profiles.signatureImageKey 长期留存 + 报名行清空
   // (镜像 idCardImageKey 搬运范式);未发号(rejected/withdrawn)行的 blob 随既有留存 SOP 按 key 删。
   signatureImageKey String? // 申请人签名图 storage key(multipart 可选文件位 signatureImage)
+  // 招新可用性收口 F7(2026-07-11;评审稿 §2.9 R6;第 44 migration,additive 可空):
+  // 申请人证书图(公开上传,双通道凭证;category ∈ cert_type 既有码 first_aid/bsafe,每类 ≤3 张
+  // 重传覆盖)。promote 时按类别自动建 pending Certificate 行 + 图 key 搬 Certificate.imageKeys,
+  // 本列清空;未发号行的 blob 随既有留存 SOP 清理。形如 { [category]: string[] }。
+  certificateImages Json? // 证书图 storage keys(按类别分组;R6 长期档案的暂存位)
 
   // ===== 脱敏留存字段(永久行级保留)=====
   documentTypeCode String // 证件类型(判外籍/人工;非高敏)

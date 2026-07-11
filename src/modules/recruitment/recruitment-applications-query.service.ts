@@ -32,6 +32,8 @@ import type {
   PublicityListItemDto,
   PublicityListResponseDto,
   RecruitmentApplicationAdminDto,
+  RecruitmentCertificateImageUrlsResponseDto,
+  RecruitmentCertificateImagesItemDto,
 } from './recruitment.dto';
 
 // 招新报名 admin 读面 QueryService(god-service 拆分 2026-06-28,沿 architecture-boundary §3.2 QueryService)。
@@ -165,6 +167,39 @@ export class RecruitmentApplicationsQueryService {
     });
     // url 是 L3,不入日志/snapshot;仅出参回显
     return { url: result.url, expiresAt: result.expiresAt, cropImageUrl, portraitImageUrl };
+  }
+
+  // ============ 招新可用性收口 F7:admin 取证书图 signed-URL(镜像 id-card-image-url;评审稿 §2.9)============
+  // 复用 read.sensitive(0 新码;证书图=申请人自报材料,与证件照同敏感面);短 TTL;L3 不入日志。
+  // 无图类别不出现;全无 → items 空数组(200,不 404——「有没有传」本身是合法业务信息)。
+  async getCertificateImageUrls(
+    id: string,
+    user: CurrentUserPayload,
+  ): Promise<RecruitmentCertificateImageUrlsResponseDto> {
+    await this.assertCanOrThrow(user, 'recruitment-application.read.sensitive');
+    const row = await this.findAppOrThrow(id);
+    const images = (row.certificateImages as Record<string, string[]> | null) ?? {};
+    const expiresAt = new Date(Date.now() + ID_CARD_IMAGE_SIGNED_URL_TTL_SECONDS * 1000);
+    const items: RecruitmentCertificateImagesItemDto[] = [];
+    for (const [category, keys] of Object.entries(images)) {
+      if (!Array.isArray(keys) || keys.length === 0) continue;
+      const urls: string[] = [];
+      for (const key of keys) {
+        const r = await this.storage.generateDownloadUrl({
+          key,
+          expiresIn: ID_CARD_IMAGE_SIGNED_URL_TTL_SECONDS,
+        });
+        urls.push(r.url);
+      }
+      items.push({ category, urls });
+    }
+    auditPlaceholder('recruitment-application.read.other', {
+      adminId: user.id,
+      operation: 'certificate-images',
+      applicationId: id,
+      categories: items.map((i) => i.category),
+    });
+    return { items, expiresAt };
   }
 
   // 裁剪图 key → signed-URL(null key → null;TTL 同原图)。

@@ -359,6 +359,12 @@ export const ID_CARD_PORTRAIT_IMAGE_KEY_PREFIX = 'recruitment/id-card-portrait';
 // 招新可用性收口 F5(2026-07-11;评审稿 §2.8 R5):申请人签名图(multipart 可选文件位 signatureImage;
 // 校验镜像 idCardImage〔jpeg/png ≤5MB〕;promote 搬 member_profiles 长期留存,报名行清空)。
 export const SIGNATURE_IMAGE_KEY_PREFIX = 'recruitment/signature';
+// 招新可用性收口 F7(2026-07-11;评审稿 §2.9 R6):申请人证书图(公开上传,双通道凭证;
+// category ∈ cert_type 既有码;每类 ≤3 张重传覆盖;promote 建 pending Certificate 搬 imageKeys)。
+// 字面镜像 seed 稳定契约(cert_type 字典项 first_aid / bsafe;certificates.service CERT_STATUS_PENDING)。
+export const CERTIFICATE_IMAGE_KEY_PREFIX = 'recruitment/certificate';
+export const RECRUITMENT_CERT_CATEGORIES = ['first_aid', 'bsafe'] as const;
+export const CERTIFICATE_IMAGES_MAX_PER_CATEGORY = 3;
 
 // ===== 紧急联系人(评审稿 D-R + E-R-13;JSON 数组,≥2)=====
 export const EMERGENCY_CONTACTS_MIN = 2;

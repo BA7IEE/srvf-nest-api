@@ -45,6 +45,7 @@ describe('RecruitmentIdentityService.assertPhoneSessionValid', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never, // F7:storage(本组不触上传)
     );
     return { svc, prisma };
   }
@@ -143,7 +144,13 @@ describe('RecruitmentIdentityService.consumePhoneSession', () => {
   }
 
   it('原子消费成功 → 返手机身份;updateMany 命中 consumedAt:null', async () => {
-    const svc = new RecruitmentIdentityService({} as never, {} as never, {} as never, {} as never);
+    const svc = new RecruitmentIdentityService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
     const verifiedAt = new Date('2026-06-24T00:00:00.000Z');
     const tx = buildTx(
       {
@@ -172,7 +179,13 @@ describe('RecruitmentIdentityService.consumePhoneSession', () => {
   });
 
   it('并发竞态:updateMany 命中 0 行(已被另一请求抢消费)→ 28050', async () => {
-    const svc = new RecruitmentIdentityService({} as never, {} as never, {} as never, {} as never);
+    const svc = new RecruitmentIdentityService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
     const tx = buildTx(
       {
         id: 's1',

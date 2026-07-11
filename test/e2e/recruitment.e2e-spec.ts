@@ -267,6 +267,8 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     await prisma.notificationDelivery.deleteMany({});
     await prisma.notificationRead.deleteMany({});
     await prisma.notification.deleteMany({});
+    // F7:promote 现为证书图类别建 pending Certificate(FK→Member Restrict,须先于 member 清)
+    await prisma.certificate.deleteMany({});
     await prisma.member.deleteMany({});
     await prisma.recruitmentApplication.deleteMany({});
     await prisma.recruitmentCycle.deleteMany({});
@@ -1043,6 +1045,167 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(profile.privacyConsentSigned).toBe(false); // 存量 null → false(当事人从未签署)
     expect(profile.privacyConsentSignedAt).toBeNull();
     expect(profile.signatureImageKey).toBeNull();
+  });
+
+  // ===== 招新可用性收口 F7(评审稿 §2.9 R6):证书图上传与长期档案 =====
+
+  const OPEN_CERTS = '/api/open/v1/recruitment/applications/certificates';
+
+  function uploadCerts(fields: Record<string, string>, fileCount: number) {
+    let req = request(httpServer(app)).post(OPEN_CERTS);
+    for (const [k, v] of Object.entries(fields)) req = req.field(k, v);
+    for (let i = 0; i < fileCount; i++) {
+      req = req.attach('images', Buffer.from(`fake-cert-bytes-${i}`), {
+        filename: `cert-${i}.png`,
+        contentType: 'image/png',
+      });
+    }
+    return req;
+  }
+
+  it('F7-① 上传(微信通道):落 keys → 重传整类覆盖(旧 key 换新);非法 category/超 3 张/双通道错 → 400;终态行 → 28041', async () => {
+    const cycle = await openCycle();
+    await createAppRow(cycle.id, { openid: 'dev-openid-f7-a', phone: '13900009101' });
+
+    const r1 = await uploadCerts({ category: 'first_aid', wechatCode: 'f7-a' }, 2);
+    expect(r1.status).toBe(200);
+    expect(r1.body.data).toEqual({ category: 'first_aid', imageCount: 2 });
+    const row1 = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-f7-a' },
+    });
+    const imgs1 = row1.certificateImages as Record<string, string[]>;
+    expect(imgs1.first_aid).toHaveLength(2);
+    expect(imgs1.first_aid[0]).toMatch(/^recruitment\/certificate\/first_aid\//);
+
+    // 重传覆盖(2 → 1;key 全换)
+    const r2 = await uploadCerts({ category: 'first_aid', wechatCode: 'f7-a' }, 1);
+    expect(r2.body.data.imageCount).toBe(1);
+    const row2 = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-f7-a' },
+    });
+    const imgs2 = row2.certificateImages as Record<string, string[]>;
+    expect(imgs2.first_aid).toHaveLength(1);
+    expect(imgs1.first_aid).not.toContain(imgs2.first_aid[0]);
+
+    // 第二类并存(bsafe 不覆盖 first_aid)
+    const r3 = await uploadCerts({ category: 'bsafe', wechatCode: 'f7-a' }, 1);
+    expect(r3.body.data.imageCount).toBe(1);
+    const row3 = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-f7-a' },
+    });
+    const imgs3 = row3.certificateImages as Record<string, string[]>;
+    expect(Object.keys(imgs3).sort()).toEqual(['bsafe', 'first_aid']);
+
+    // 非法 category → 400(DTO @IsIn)
+    expectBizError(
+      await uploadCerts({ category: 'not-a-cert', wechatCode: 'f7-a' }, 1),
+      BizCode.BAD_REQUEST,
+      { strictMessage: false },
+    );
+    // 双通道 both → 400
+    expectBizError(
+      await uploadCerts(
+        { category: 'bsafe', wechatCode: 'f7-a', phone: '13900009101', code: '888888' },
+        1,
+      ),
+      BizCode.BAD_REQUEST,
+      { strictMessage: false },
+    );
+    // 零文件 → 400
+    expectBizError(
+      await uploadCerts({ category: 'bsafe', wechatCode: 'f7-a' }, 0),
+      BizCode.BAD_REQUEST,
+      {
+        strictMessage: false,
+      },
+    );
+
+    // 终态行(rejected)→ 28041
+    await createAppRow(cycle.id, {
+      statusCode: 'rejected',
+      idCardNumber: 'F7ID0002',
+      phone: '13900009102',
+      openid: 'dev-openid-f7-b',
+    });
+    expectBizError(
+      await uploadCerts({ category: 'first_aid', wechatCode: 'f7-b' }, 1),
+      BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
+    );
+  });
+
+  it('F7-② admin 取证书图 signed-URL:仅 read.record → 30100;read.sensitive → 按类别 urls;无图 → 空 items', async () => {
+    const cycle = await openCycle();
+    const row = await createAppRow(cycle.id, { openid: 'dev-openid-f7-c', phone: '13900009103' });
+    await uploadCerts({ category: 'bsafe', wechatCode: 'f7-c' }, 2).expect(200);
+
+    const urlPath = `${ADMIN_APPS}/${row.id}/certificate-image-urls`;
+    expectBizError(
+      await request(httpServer(app)).get(urlPath).set('Authorization', recordOnlyAuth),
+      BizCode.RBAC_FORBIDDEN,
+    );
+    const ok = await request(httpServer(app)).get(urlPath).set('Authorization', sensitiveAuth);
+    expect(ok.status).toBe(200);
+    expect(ok.body.data.items).toHaveLength(1);
+    expect(ok.body.data.items[0].category).toBe('bsafe');
+    expect(ok.body.data.items[0].urls).toHaveLength(2);
+    expect(ok.body.data.expiresAt).toEqual(expect.any(String));
+
+    // 无图行 → 空 items(200,非 404:「有没有传」是合法业务信息)
+    const bare = await createAppRow(cycle.id, {
+      idCardNumber: 'F7ID0003',
+      phone: '13900009104',
+      openid: 'dev-openid-f7-d',
+    });
+    const empty = await request(httpServer(app))
+      .get(`${ADMIN_APPS}/${bare.id}/certificate-image-urls`)
+      .set('Authorization', sensitiveAuth);
+    expect(empty.status).toBe(200);
+    expect(empty.body.data.items).toEqual([]);
+  });
+
+  it('F7-③ DoD:上传 → promote 后按类别建 pending Certificate + imageKeys 搬运 + 报名行清空', async () => {
+    const cycle = await openCycle();
+    await createAppRow(cycle.id, {
+      statusCode: 'publicity',
+      realName: '寅丙',
+      idCardNumber: 'F7ID0005',
+      phone: '13900009105',
+      openid: 'dev-openid-f7-e',
+      birthDate: new Date('1995-03-07T00:00:00.000Z'),
+      genderCode: 'male',
+    });
+    await uploadCerts({ category: 'first_aid', wechatCode: 'f7-e' }, 2).expect(200);
+    await uploadCerts({ category: 'bsafe', wechatCode: 'f7-e' }, 1).expect(200);
+    const before = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-f7-e' },
+    });
+    const uploaded = before.certificateImages as Record<string, string[]>;
+
+    const pr = await promote(cycle.id);
+    expect(pr.body.data.promotedCount).toBe(1);
+    const memberId = pr.body.data.promoted[0].memberId as string;
+
+    const certs = await prisma.certificate.findMany({
+      where: { memberId },
+      orderBy: { certTypeCode: 'asc' },
+    });
+    expect(certs).toHaveLength(2);
+    expect(certs.map((c) => c.certTypeCode)).toEqual(['bsafe', 'first_aid']);
+    for (const c of certs) {
+      expect(c.certStatusCode).toBe('pending'); // 走既有 certificates verify/reject 核验流
+      expect(c.isInternal).toBe(false);
+    }
+    expect(certs.find((c) => c.certTypeCode === 'first_aid')?.imageKeys).toEqual(
+      uploaded.first_aid,
+    );
+    expect(certs.find((c) => c.certTypeCode === 'bsafe')?.imageKeys).toEqual(uploaded.bsafe);
+
+    // 报名行清空(blob 单一属主 = certificate)
+    const after = await prisma.recruitmentApplication.findUniqueOrThrow({
+      where: { id: before.id },
+    });
+    expect(after.certificateImages).toBeNull();
+    expect(after.statusCode).toBe('promoted');
   });
 
   // ⑥ 轮次开关:无 open 轮 → 28030

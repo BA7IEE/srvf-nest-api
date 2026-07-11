@@ -9,7 +9,7 @@ import {
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
@@ -24,9 +24,14 @@ import { RecruitmentThrottle } from '../../common/decorators/recruitment-throttl
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
-import { ID_CARD_IMAGE_MAX_BYTES } from './recruitment.constants';
+import {
+  CERTIFICATE_IMAGES_MAX_PER_CATEGORY,
+  ID_CARD_IMAGE_MAX_BYTES,
+} from './recruitment.constants';
 import {
   RecruitmentApplicationProgressDto,
+  RecruitmentCertificateUploadDto,
+  RecruitmentCertificateUploadResultDto,
   RecruitmentOcrCardWarningsDto,
   RecruitmentOcrDetailDto,
   RecruitmentOcrFieldDto,
@@ -317,6 +322,61 @@ export class RecruitmentPublicController {
     @Body() dto: RecruitmentQueryByPhoneDto,
   ): Promise<RecruitmentApplicationProgressDto> {
     return this.identity.queryByPhone(dto.phone, dto.code);
+  }
+
+  // 招新可用性收口 F7(评审稿 §2.9 R6):证书图上传(双通道凭证;每类 ≤3 张重传覆盖)。
+  @Public()
+  @RecruitmentThrottle()
+  @Post('applications/certificates')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FilesInterceptor('images', CERTIFICATE_IMAGES_MAX_PER_CATEGORY, {
+      limits: { fileSize: ID_CARD_IMAGE_MAX_BYTES, files: CERTIFICATE_IMAGES_MAX_PER_CATEGORY },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['category', 'images'],
+      properties: {
+        category: {
+          type: 'string',
+          enum: ['first_aid', 'bsafe'],
+          description: '证书类别(cert_type 既有码;每类 ≤3 张,重传整类覆盖)',
+        },
+        wechatCode: {
+          type: 'string',
+          description: '通道①:微信 wx.login code(与 phone+code 二选一)',
+        },
+        phone: { type: 'string', description: '通道②:手机号(配合 code)' },
+        code: { type: 'string', description: '通道②:短信验证码(消费一码)' },
+        images: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+          description: '证书图(1~3 张;jpeg/png 每张 ≤5MB)',
+        },
+      },
+    },
+  })
+  @ApiOperation({
+    summary:
+      '公开上传证书图(无账号;凭证双通道二选一:wechatCode 或 phone+code;category ∈ first_aid/bsafe〔cert_type 既有码〕;每类 ≤3 张重传整类覆盖〔旧图即删〕;终态行 → 28041;发号时按类别自动建 pending Certificate 长期档案〔R6〕,审核动作仍 = 既有标门槛;审计 certificate-upload;throttler recruitment) [public]',
+  })
+  @ApiWrappedOkResponse(RecruitmentCertificateUploadResultDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.SMS_CODE_INVALID,
+    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
+    BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  uploadCertificates(
+    @Body() dto: RecruitmentCertificateUploadDto,
+    @UploadedFiles() images: UploadedImageFile[] | undefined,
+    @Req() req: Request,
+  ): Promise<RecruitmentCertificateUploadResultDto> {
+    return this.identity.uploadCertificateImages(dto, images ?? [], buildAuditMeta(req));
   }
 
   // 招新可用性收口 F6(评审稿 §3 R4):自助撤销(凭证双通道镜像 query / query-by-phone)。

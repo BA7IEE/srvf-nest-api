@@ -394,6 +394,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/open/v1/recruitment/applications/query-by-phone'],
   // 招新可用性收口 F6(2026-07-11;评审稿 §3 R4):自助撤销(公开双通道;0 新码)。
   ['post', '/api/open/v1/recruitment/applications/withdraw'],
+  // 招新可用性收口 F7(2026-07-11;评审稿 §2.9 R6):证书图上传(公开双通道;0 新码)。
+  ['post', '/api/open/v1/recruitment/applications/certificates'],
   ['post', '/api/open/v1/recruitment/applications/rebind-wechat'],
   ['post', '/api/open/v1/recruitment/applications/rebind-phone'],
   ['post', '/api/admin/v1/recruitment/cycles'],
@@ -405,6 +407,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 招新可用性收口 F2(2026-07-11;评审稿 recruitment-usability-closeout-review.md §3 R1):admin 改报名资料。
   ['patch', '/api/admin/v1/recruitment/applications/{id}'],
   ['get', '/api/admin/v1/recruitment/applications/{id}/id-card-image-url'],
+  // 招新可用性收口 F7:admin 取证书图 signed-URL(复用 read.sensitive,0 新码)。
+  ['get', '/api/admin/v1/recruitment/applications/{id}/certificate-image-urls'],
   ['post', '/api/admin/v1/recruitment/applications/{id}/resolve'],
   // 招新可用性收口 F3(2026-07-11;评审稿 §3 R3):单人手动建档(批量 skip 项收尾通道)。
   ['post', '/api/admin/v1/recruitment/applications/{id}/promote-single'],
