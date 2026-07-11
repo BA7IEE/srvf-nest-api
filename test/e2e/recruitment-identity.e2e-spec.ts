@@ -168,9 +168,14 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
 
   // ============ 发码 / 验码 ============
 
-  it('① 无 open 轮 → send-code 28030(省发码)', async () => {
+  // F4 行为变更翻面(评审稿 §2.3;goal ⚠️ 列明):原「无 open 轮 → 28030」改为防枚举泛化 200
+  // (闭轮陌生手机与真发码路径不可区分;省发码语义保留 = 零 code 行)。命中报名者的放行见 F4-a。
+  it('① 无 open 轮 + 无报名命中 → send-code 防枚举泛化 200(原 28030;F4 行为变更)', async () => {
     const res = await request(httpServer(app)).post(SEND).send({ phone: '13900000001' });
-    expectBizError(res, BizCode.RECRUITMENT_CYCLE_NOT_OPEN);
+    expect(res.status).toBe(200);
+    expect(res.body.code).toBe(0);
+    expect(res.body.data).toEqual({ expiresInSeconds: 300 });
+    expect(await prisma.smsVerificationCode.count()).toBe(0); // 不真发码(省发码)
   });
 
   it('② 发码 200 + 验码 → 发 token(落会话行;明文 token 仅返一次)', async () => {
@@ -289,6 +294,154 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
       .post(QUERY_PHONE)
       .send({ phone: '13900000002', code: FIXED_CODE });
     expectBizError(none, BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+  });
+
+  // ============ 招新可用性收口 F4(评审稿 §2.3/E-U-5):闭轮发码放行 + 发号后查询引导态 ============
+
+  it('F4-a 闭轮 + 手机命中未清除报名 → 发码放行 + 验码发 token + 查询②/换绑链全通(3a 修复)', async () => {
+    const cycle = await openCycle({ statusCode: 'closed' });
+    await seedApp(cycle.id, { phone: '13900000001', statusCode: 'verified' });
+
+    // 发码放行(真发:code 行存在)
+    await sendCode('13900000001');
+    expect(await prisma.smsVerificationCode.count({ where: { phone: '13900000001' } })).toBe(1);
+
+    // 验码 → 发 token(轮次锚 = 报名行所在轮)
+    const verify = await request(httpServer(app))
+      .post(VERIFY)
+      .send({ phone: '13900000001', code: FIXED_CODE });
+    expect(verify.status).toBe(200);
+    expect(verify.body.data.phoneVerificationToken).toEqual(expect.any(String));
+    const sess = await prisma.recruitmentIdentitySession.findFirst({
+      where: { phone: '13900000001' },
+    });
+    expect(sess?.cycleId).toBe(cycle.id);
+
+    // 查询②(再发一码会撞 60s 间隔 → 直接用新码流:等价用 rebind-wechat 校验链亦通)
+    await prisma.smsVerificationCode.deleteMany({}); // 释放 60s 间隔(测试隔离,不影响语义)
+    await sendCode('13900000001');
+    const q = await request(httpServer(app))
+      .post(QUERY_PHONE)
+      .send({ phone: '13900000001', code: FIXED_CODE });
+    expect(q.status).toBe(200);
+    expect(q.body.data.stage).toBe('threshold');
+  });
+
+  it('F4-b 闭轮 + 陌生手机 → send-code 防枚举泛化 200(零 code 行零 send_log);verify-code → 24010', async () => {
+    await openCycle({ statusCode: 'closed' });
+
+    const res = await request(httpServer(app)).post(SEND).send({ phone: '13900000009' });
+    expect(res.status).toBe(200);
+    expect(res.body.code).toBe(0);
+    expect(res.body.data).toEqual({ expiresInSeconds: 300 }); // 与真发码路径同形同值(沿 login-sms)
+    expect(await prisma.smsVerificationCode.count()).toBe(0); // 不发码
+    expect(await prisma.smsSendLog.count()).toBe(0); // 零留痕
+
+    const verify = await request(httpServer(app))
+      .post(VERIFY)
+      .send({ phone: '13900000009', code: FIXED_CODE });
+    expectBizError(verify, BizCode.SMS_CODE_INVALID); // 与码错同形(防枚举)
+  });
+
+  it('F4-c 发号后查询②(User.phone 锚,H5 手机通道)→ stage=volunteer 引导态;INACTIVE 队员 → 28002', async () => {
+    const cycle = await openCycle(); // 开放轮供发码(闭轮下发号者 phone 已清,send-code 走泛化 = E-U-5 已知边界)
+    const member = await prisma.member.create({
+      data: { memberNo: '26901', displayName: '辛八', status: 'ACTIVE', gradeCode: 'volunteer' },
+    });
+    await prisma.user.create({
+      data: {
+        username: '26901',
+        passwordHash: 'x',
+        role: 'USER',
+        memberId: member.id,
+        phone: '13900000031',
+        phoneVerifiedAt: new Date(),
+      },
+    });
+    await prisma.recruitmentApplication.create({
+      data: {
+        cycleId: cycle.id,
+        statusCode: 'promoted',
+        promotedMemberId: member.id,
+        documentTypeCode: 'mainland_id',
+        isForeigner: false,
+        sensitivePurgedAt: new Date(),
+        tempNo: 'T20260031',
+        thresholdMarks: {
+          patrol1: { at: 'x', by: 'y' },
+          patrol2: { at: 'x', by: 'y' },
+          training: { at: 'x', by: 'y' },
+          redCross: { at: 'x', by: 'y' },
+          bsafe: { at: 'x', by: 'y' },
+        },
+      },
+    });
+
+    await sendCode('13900000031');
+    const res = await request(httpServer(app))
+      .post(QUERY_PHONE)
+      .send({ phone: '13900000031', code: FIXED_CODE });
+    expect(res.status).toBe(200);
+    expect(res.body.data.stage).toBe('volunteer'); // 引导态:已转志愿者 / 待入队
+    expect(res.body.data.nextAction).toBe('apply-teamjoin');
+    expect(res.body.data.memberNo).toBeNull(); // 公开面不泄编号
+    expect(res.body.data.tempNo).toBe('T20260031');
+
+    // INACTIVE 队员(已离队)→ 维持 28002(不泄状态)
+    await prisma.member.update({ where: { id: member.id }, data: { status: 'INACTIVE' } });
+    await prisma.smsVerificationCode.deleteMany({});
+    await sendCode('13900000031');
+    const gone = await request(httpServer(app))
+      .post(QUERY_PHONE)
+      .send({ phone: '13900000031', code: FIXED_CODE });
+    expectBizError(gone, BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+  });
+
+  it('F4-d 发号后查询②(member_profiles.mobile 锚,微信通道发号 User 无 phone)→ 同引导态', async () => {
+    const cycle = await openCycle();
+    const member = await prisma.member.create({
+      data: { memberNo: '26902', displayName: '壬九', status: 'ACTIVE', gradeCode: 'volunteer' },
+    });
+    await prisma.user.create({
+      data: {
+        username: '26902',
+        passwordHash: 'x',
+        role: 'USER',
+        memberId: member.id,
+        openid: 'f4d-openid', // 微信通道:User 无 phone
+      },
+    });
+    await prisma.memberProfile.create({
+      data: {
+        memberId: member.id,
+        realName: '壬九',
+        genderCode: 'male',
+        birthDate: new Date('1990-01-01T00:00:00.000Z'),
+        documentTypeCode: 'mainland_id',
+        documentNumber: 'F4D0001',
+        mobile: '13900000032', // 报名手机搬进档案
+        joinedDate: new Date('2026-07-01T00:00:00.000Z'),
+        joinSourceCode: 'recruitment',
+        privacyConsentSigned: true,
+      },
+    });
+    await prisma.recruitmentApplication.create({
+      data: {
+        cycleId: cycle.id,
+        statusCode: 'promoted',
+        promotedMemberId: member.id,
+        documentTypeCode: 'mainland_id',
+        isForeigner: false,
+        sensitivePurgedAt: new Date(),
+      },
+    });
+
+    await sendCode('13900000032');
+    const res = await request(httpServer(app))
+      .post(QUERY_PHONE)
+      .send({ phone: '13900000032', code: FIXED_CODE });
+    expect(res.status).toBe(200);
+    expect(res.body.data.stage).toBe('volunteer');
   });
 
   // ============ 小程序链向后兼容 ============

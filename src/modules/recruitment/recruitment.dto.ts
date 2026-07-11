@@ -445,7 +445,7 @@ export class RecruitmentApplicationProgressDto {
 
   @ApiPropertyOptional({
     description:
-      '永久编号(promoted 后;**公开查询恒 null**——发号即清 openid 不可达,经登录态 app 侧另见)',
+      '永久编号(**公开查询恒 null**,无账号面不泄编号;F4 起发号后查询返 stage=volunteer 引导态「已发号,请登录小程序查看」,编号经登录态 app 侧另见)',
     nullable: true,
   })
   memberNo!: string | null;

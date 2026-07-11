@@ -7,7 +7,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { SmsCodeService } from '../sms/sms-code.service';
-import { maskPhone } from '../sms/sms.constants';
+import { SMS_CODE_TTL_SECONDS, maskPhone } from '../sms/sms.constants';
 import { WechatService } from '../wechat/wechat.service';
 import {
   CYCLE_STATUS_OPEN,
@@ -62,10 +62,20 @@ export class RecruitmentIdentityService {
   ) {}
 
   // ============ H5 发码(open/v1;无账号;SmsPurpose.RECRUITMENT_BIND,userId=null)============
-  // 无 open 轮即 28030 快速失败(省发码);限流由 controller @RecruitmentThrottle + SmsCodeService
-  // 自带手机维度 60s 间隔 / 10 条日限(跨 purpose 合计)双层兜底。
+  // 招新可用性收口 F4-3a(评审稿 §2.3/E-U-5):放行条件 = 存在开放轮 **或** 手机号命中未清除报名记录
+  // (报名行 phone 仍在 = 未脱敏;闭轮后本人仍可走 查询②/rebind 自助链)。**防枚举沿 login-sms 范式**:
+  // 闭轮期陌生手机返与有效路径同形状同值的泛化 200(不发码、不写 codes/send_logs、不调 provider、零留痕)。
+  // 开放轮行为逐字不变(任意手机可发码 = 报名前身份链本义)。限流由 controller @RecruitmentThrottle +
+  // SmsCodeService 自带手机维度 60s 间隔 / 10 条日限(跨 purpose 合计)双层兜底。
   async sendCode(phone: string, ip: string | null): Promise<RecruitmentSendCodeResponseDto> {
-    await this.findOpenCycleIdOrThrow();
+    const openCycleId = await this.findOpenCycleId();
+    if (openCycleId === null) {
+      const app = await this.findLatestAppByPhone(phone);
+      if (app === null) {
+        // 防枚举泛化 200:不发码、不留痕;300 与 SmsCodeService.issue 成功路径同值(沿 login-sms)
+        return { expiresInSeconds: SMS_CODE_TTL_SECONDS };
+      }
+    }
     return this.smsCode.issue({
       phone,
       purpose: SmsPurpose.RECRUITMENT_BIND,
@@ -75,11 +85,20 @@ export class RecruitmentIdentityService {
   }
 
   // ============ H5 验码 → 发 token(验码成功落会话行 + 发短时一次性 token)============
+  // F4-3a:轮次锚 = 开放轮 **或** 手机命中的未清除报名行所在轮(闭轮自助链恢复;该会话 token 只可能
+  // 被 submit 消费,而 submit 自有开放轮闸 → 闭轮 token 天然不可用于报名,无越权面)。
+  // 防枚举:闭轮 + 无命中 → 直抛 24010(与码错同形;沿 login-sms「先解析锚,null 即统一失败」范式)。
   async verifyCode(
     dto: RecruitmentVerifyCodeDto,
     now: Date,
   ): Promise<RecruitmentVerifyCodeResponseDto> {
-    const cycleId = await this.findOpenCycleIdOrThrow();
+    const cycleId =
+      (await this.findOpenCycleId()) ??
+      (await this.findLatestAppByPhone(dto.phone))?.cycleId ??
+      null;
+    if (cycleId === null) {
+      throw new BizException(BizCode.SMS_CODE_INVALID);
+    }
     // 验码失败统一 SMS_CODE_INVALID=24010(防枚举;匿名 userId=null,归属 null===null 放行)
     await this.smsCode.verifyAndConsume({
       phone: dto.phone,
@@ -206,6 +225,11 @@ export class RecruitmentIdentityService {
 
   // ============ 查询②:手机 + 验证码(查本人最近一条报名进度;Q-P4-6)============
   // 直验码(消费一码)→ 手机定位最近活跃报名 → 进度模型(与微信 code 查询同出参 / 同派生口径)。
+  // 招新可用性收口 F4-3b(评审稿 §2.3/E-U-5):报名行 miss(promote 已清 phone)→ fall-through 经
+  // live User.phone(H5 手机通道发号)∪ member_profiles.mobile(微信通道发号)反查 ACTIVE 队员 →
+  // 用其 promotedMemberId 定位**真实报名行**(promoted 态,PII 已清但 stage 派生字段俱在)组装引导态
+  // (stage=volunteer「已转志愿者 / 待入队」,memberNo 恒 null)——**零新增 PII 留存,零合成 DTO**。
+  // 验码在前 = 已证手机控制权,无枚举面;member 非 ACTIVE 或无报名行 → 维持 28002。
   async queryByPhone(phone: string, code: string): Promise<RecruitmentApplicationProgressDto> {
     await this.smsCode.verifyAndConsume({
       phone,
@@ -213,8 +237,15 @@ export class RecruitmentIdentityService {
       code,
       userId: null,
     });
-    const app = await this.findLatestAppByPhoneOrThrow(phone);
-    return this.assembleProgressFor(app);
+    const app = await this.findLatestAppByPhone(phone);
+    if (app) {
+      return this.assembleProgressFor(app);
+    }
+    const promotedApp = await this.findPromotedAppByPhoneAnchor(phone);
+    if (!promotedApp) {
+      throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+    }
+    return this.assembleProgressFor(promotedApp);
   }
 
   // ============ 自助换微信换绑(锚当前手机;§3.4)============
@@ -330,29 +361,62 @@ export class RecruitmentIdentityService {
 
   // === helpers ===
 
-  // 当前唯一 open 轮 id(无 → 28030;沿 RecruitmentApplicationsService.findOpenCycleOrThrow 口径,不卡容量)
-  private async findOpenCycleIdOrThrow(): Promise<string> {
+  // 当前唯一 open 轮 id(可空;F4-3a 闭轮放行判定用;沿 findOpenCycleOrThrow 查询口径,不卡容量)
+  private async findOpenCycleId(): Promise<string | null> {
     const cycle = await this.prisma.recruitmentCycle.findFirst({
       where: { statusCode: CYCLE_STATUS_OPEN, deletedAt: null },
       orderBy: { createdAt: 'desc' },
       select: { id: true },
     });
-    if (!cycle) {
-      throw new BizException(BizCode.RECRUITMENT_CYCLE_NOT_OPEN);
-    }
-    return cycle.id;
+    return cycle?.id ?? null;
   }
 
-  // 手机定位最近一条活跃报名(任轮,沿 query-by-wechat 不卡轮口径;phone 非去重键,取最近一条)
-  private async findLatestAppByPhoneOrThrow(phone: string): Promise<RecruitmentApplication> {
-    const app = await this.prisma.recruitmentApplication.findFirst({
+  // 手机定位最近一条活跃报名(可空;任轮,沿 query-by-wechat 不卡轮口径;phone 非去重键,取最近一条)
+  private async findLatestAppByPhone(phone: string): Promise<RecruitmentApplication | null> {
+    return this.prisma.recruitmentApplication.findFirst({
       where: { phone, deletedAt: null },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  // 手机定位最近一条活跃报名(无 → 28002;rebind 链用)
+  private async findLatestAppByPhoneOrThrow(phone: string): Promise<RecruitmentApplication> {
+    const app = await this.findLatestAppByPhone(phone);
     if (!app) {
       throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
     }
     return app;
+  }
+
+  // F4-3b:手机锚 → 已发号队员的 promoted 报名行(fall-through;E-U-5)。
+  // 锚点两路并查:① live User.phone(H5 手机通道发号建的 SMS 登录 User);② member_profiles.mobile
+  // (微信通道发号的 User 无 phone,报名手机搬进了档案)。命中后守 Member ACTIVE(非 ACTIVE →
+  // null,维持 28002 不泄离队者状态),再以 promotedMemberId 取最近一条真实报名行。
+  private async findPromotedAppByPhoneAnchor(
+    phone: string,
+  ): Promise<RecruitmentApplication | null> {
+    const user = await this.prisma.user.findFirst({
+      where: { phone, deletedAt: null, memberId: { not: null } },
+      select: { memberId: true },
+    });
+    let memberId = user?.memberId ?? null;
+    if (memberId === null) {
+      const profile = await this.prisma.memberProfile.findFirst({
+        where: { mobile: phone, deletedAt: null },
+        select: { memberId: true },
+      });
+      memberId = profile?.memberId ?? null;
+    }
+    if (memberId === null) return null;
+    const member = await this.prisma.member.findFirst({
+      where: { id: memberId, deletedAt: null, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    if (!member) return null;
+    return this.prisma.recruitmentApplication.findFirst({
+      where: { promotedMemberId: memberId, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   // 组装进度模型(复用 S1 presenter + stageText 字典;与 RecruitmentApplicationsService.query 同口径)
