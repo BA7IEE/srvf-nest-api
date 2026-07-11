@@ -5,6 +5,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsDateString,
   IsIn,
   IsInt,
   IsObject,
@@ -648,6 +649,89 @@ export class MarkThresholdDto {
   @ApiProperty({ description: 'true=标记完成;false=清除标记(补课纠错)' })
   @IsBoolean()
   completed!: boolean;
+}
+
+// ============ 招新可用性收口 F2:admin 改资料(评审稿 recruitment-usability-closeout-review.md §3 R1)============
+// 白名单字段集(全可选,至少一项):
+// - 非身份字段(恒可改,promoted/已脱敏行除外):detailedAddress / cityDistrict / sourceChannel /
+//   emergencyContacts(逐项 relation 字典校验,镜像 submit)/ profileExtra;
+// - 身份字段(条件闸:仅 manual_review 或外籍记录;verified 大陆 → 28045):realName / idCardNumber /
+//   birthDate / genderCode。大陆记录 birthDate/genderCode **恒由证件号派生**(直接传 → 40000);
+//   大陆改 idCardNumber → 校验位 + 年龄复检 + 重派生 + 同轮去重(镜像 submit 语义)。
+// **不含** phone / openid(各有自助换绑通道 rebind-phone/rebind-wechat,双验 + 换绑历史;admin 直改会
+// 绕过验证链破坏 H5 身份锚,评审稿 R3 取舍)。
+export class UpdateRecruitmentApplicationDto {
+  @ApiPropertyOptional({ description: '真实姓名(身份字段;仅 manual_review 或外籍记录可改)' })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(NAME_MAX)
+  realName?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '证件号(身份字段;大陆记录改号 → 校验位/年龄复检 + birthDate/genderCode 重派生 + 同轮去重)',
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(32)
+  idCardNumber?: string;
+
+  @ApiPropertyOptional({
+    description: '出生日期(ISO 日期;**仅外籍记录**可直改——大陆恒由证件号派生,传了 → 40000)',
+  })
+  @IsOptional()
+  @IsDateString()
+  birthDate?: string;
+
+  @ApiPropertyOptional({
+    description: '性别(male/female;**仅外籍记录**可直改——大陆恒由证件号派生,传了 → 40000)',
+    enum: ['male', 'female'],
+  })
+  @IsOptional()
+  @IsIn(['male', 'female'])
+  genderCode?: string;
+
+  @ApiPropertyOptional({ description: '详细住址(非身份字段,恒可改)' })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(ADDR_MAX)
+  detailedAddress?: string;
+
+  @ApiPropertyOptional({ description: '城市到区(非身份字段)' })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(CODE_MAX)
+  cityDistrict?: string;
+
+  @ApiPropertyOptional({ description: '来源渠道(非身份字段)' })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(CODE_MAX)
+  sourceChannel?: string;
+
+  @ApiPropertyOptional({
+    description: `紧急联系人(整组替换;≥${EMERGENCY_CONTACTS_MIN};relation 逐项字典校验)`,
+    type: [EmergencyContactInputDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(EMERGENCY_CONTACTS_MIN, {
+    message: `紧急联系人至少需要 ${EMERGENCY_CONTACTS_MIN} 位`,
+  })
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => EmergencyContactInputDto)
+  emergencyContacts?: EmergencyContactInputDto[];
+
+  @ApiPropertyOptional({ description: '其余报名字段(整对象替换;非身份字段)' })
+  @IsOptional()
+  @IsObject()
+  profileExtra?: Record<string, unknown>;
 }
 
 // 综合评定 / 淘汰(单一人工闸,评审稿 D-R2-3 / 流程冻结 §4)

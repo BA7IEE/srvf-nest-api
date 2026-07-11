@@ -538,6 +538,182 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(foreign.body.data.statusCode).toBe('manual_review');
   });
 
+  // ===== 招新可用性收口 F2(评审稿 §3 R1):admin 改报名资料(PATCH :id)=====
+
+  function updateApp(id: string, body: Record<string, unknown>, auth = adminAuth) {
+    return request(httpServer(app))
+      .patch(`${ADMIN_APPS}/${id}`)
+      .set('Authorization', auth)
+      .send(body);
+  }
+
+  // 直插 fixture(免 OCR/去重链干扰;字段镜像 identity spec seedApp 范式)
+  function createAppRow(cycleId: string, over: Record<string, unknown> = {}) {
+    return prisma.recruitmentApplication.create({
+      data: {
+        cycleId,
+        statusCode: 'verified',
+        documentTypeCode: 'mainland_id',
+        isForeigner: false,
+        realName: '张三',
+        idCardNumber: ID_MATCH_A,
+        birthDate: new Date('1990-03-07T00:00:00.000Z'),
+        genderCode: 'male',
+        phone: '13900007001',
+        detailedAddress: '北京市朝阳区某街道 1 号',
+        openid: 'dev-openid-f2-x',
+        ...over,
+      },
+    });
+  }
+
+  it('F2-① 权限边界:无码 USER → 30100;SA 短路可改', async () => {
+    const cycle = await openCycle();
+    const row = await createAppRow(cycle.id, { statusCode: 'manual_review' });
+    expectBizError(
+      await updateApp(row.id, { detailedAddress: '新地址 1 号' }, userAuth),
+      BizCode.RBAC_FORBIDDEN,
+    );
+    const ok = await updateApp(row.id, { detailedAddress: '新地址 1 号' });
+    expect(ok.status).toBe(200);
+  });
+
+  it('F2-② verified 大陆改姓名(身份字段)→ 28045;manual_review 改姓名 → 200 + audit 掩码', async () => {
+    const cycle = await openCycle();
+    const verified = await createAppRow(cycle.id, { openid: 'dev-openid-f2-a' });
+    expectBizError(
+      await updateApp(verified.id, { realName: '张三丰' }),
+      BizCode.RECRUITMENT_IDENTITY_FIELDS_LOCKED,
+    );
+
+    const manual = await createAppRow(cycle.id, {
+      statusCode: 'manual_review',
+      idCardNumber: ID_MATCH_B,
+      phone: '13900007002',
+      openid: 'dev-openid-f2-b',
+    });
+    const res = await updateApp(manual.id, { realName: '张三丰' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.realName).toBe('张三丰');
+    const audit = await prisma.auditLog.findFirst({
+      where: { event: 'recruitment-application.update', resourceId: manual.id },
+    });
+    expect(audit).not.toBeNull();
+    const ctx = audit?.context as {
+      before?: unknown;
+      after?: unknown;
+      extra?: { identityChanged?: boolean };
+    } | null;
+    expect(ctx?.extra?.identityChanged).toBe(true);
+    // 身份字段前后值仅掩码入 audit(明文姓名不落)
+    expect(JSON.stringify(ctx?.before)).not.toContain('张三');
+    expect(JSON.stringify(ctx?.after)).not.toContain('张三丰');
+  });
+
+  it('F2-③ 大陆记录 birthDate/genderCode 恒派生:直改 → 40000;改证件号 → 重派生 + 校验位/年龄/同轮去重闸', async () => {
+    const cycle = await openCycle();
+    const manual = await createAppRow(cycle.id, { statusCode: 'manual_review' });
+    // 直改派生字段 → 40000
+    expectBizError(await updateApp(manual.id, { birthDate: '1991-01-01' }), BizCode.BAD_REQUEST, {
+      strictMessage: false,
+    });
+    // 校验位错误 → 40000
+    expectBizError(await updateApp(manual.id, { idCardNumber: ID_INVALID }), BizCode.BAD_REQUEST, {
+      strictMessage: false,
+    });
+    // 年龄越界 → 28010
+    expectBizError(
+      await updateApp(manual.id, { idCardNumber: ID_UNDERAGE }),
+      BizCode.RECRUITMENT_AGE_OUT_OF_RANGE,
+    );
+    // 撞同轮活跃证件号 → 28003
+    await createAppRow(cycle.id, {
+      idCardNumber: ID_MATCH_C,
+      phone: '13900007003',
+      openid: 'dev-openid-f2-c',
+    });
+    expectBizError(
+      await updateApp(manual.id, { idCardNumber: ID_MATCH_C }),
+      BizCode.RECRUITMENT_DUPLICATE_APPLICATION,
+    );
+    // 有效改号 → birthDate/genderCode 随新号重派生(镜像 submit 派生权威)
+    const ok = await updateApp(manual.id, { idCardNumber: ID_MATCH_B });
+    expect(ok.status).toBe(200);
+    const row = await prisma.recruitmentApplication.findUniqueOrThrow({
+      where: { id: manual.id },
+    });
+    expect(row.idCardNumber).toBe(ID_MATCH_B);
+    expect(row.birthDate?.toISOString()).toBe('1990-03-07T00:00:00.000Z');
+    expect(row.genderCode).toBe(Number(ID_MATCH_B[16]) % 2 === 1 ? 'male' : 'female');
+  });
+
+  it('F2-④ 外籍补录 birthDate/genderCode(F3 手动建档前置)→ 200 归一落库(verified 外籍亦可改身份字段)', async () => {
+    const cycle = await openCycle();
+    const foreign = await createAppRow(cycle.id, {
+      documentTypeCode: 'passport',
+      isForeigner: true,
+      idCardNumber: 'E55667788',
+      birthDate: null,
+      genderCode: null,
+      phone: '13900007004',
+      openid: 'dev-openid-f2-f',
+    });
+    const res = await updateApp(foreign.id, { birthDate: '1992-05-20', genderCode: 'female' });
+    expect(res.status).toBe(200);
+    const row = await prisma.recruitmentApplication.findUniqueOrThrow({
+      where: { id: foreign.id },
+    });
+    expect(row.birthDate?.toISOString()).toBe('1992-05-20T00:00:00.000Z');
+    expect(row.genderCode).toBe('female');
+  });
+
+  it('F2-⑤ 非身份字段恒可改(verified 大陆);非法 relation → 19010;promoted/脱敏行 → 28041;空 body → 40000', async () => {
+    const cycle = await openCycle();
+    const verified = await createAppRow(cycle.id);
+    const res = await updateApp(verified.id, {
+      detailedAddress: '深圳市南山区新址 8 号',
+      emergencyContacts: [
+        { name: '赵一', relation: 'parent', phone: '13900007101' },
+        { name: '钱二', relation: 'family', phone: '13900007102' },
+      ],
+    });
+    expect(res.status).toBe(200);
+    const audit = await prisma.auditLog.findFirst({
+      where: { event: 'recruitment-application.update', resourceId: verified.id },
+    });
+    const ctx = audit?.context as { extra?: { identityChanged?: boolean } } | null;
+    expect(ctx?.extra?.identityChanged).toBe(false);
+    // audit 不落非身份字段内容(地址明文不进 extra/before/after)
+    expect(JSON.stringify(audit?.context)).not.toContain('深圳市南山区');
+
+    expectBizError(
+      await updateApp(verified.id, {
+        emergencyContacts: [
+          { name: '赵一', relation: 'not-a-relation', phone: '13900007101' },
+          { name: '钱二', relation: 'family', phone: '13900007102' },
+        ],
+      }),
+      BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID,
+    );
+
+    const promoted = await createAppRow(cycle.id, {
+      statusCode: 'promoted',
+      sensitivePurgedAt: new Date(),
+      realName: null,
+      idCardNumber: null,
+      phone: null,
+      openid: null,
+    });
+    expectBizError(
+      await updateApp(promoted.id, { detailedAddress: '不该写入' }),
+      BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
+    );
+
+    expectBizError(await updateApp(verified.id, {}), BizCode.BAD_REQUEST, {
+      strictMessage: false,
+    });
+  });
+
   // ⑥ 轮次开关:无 open 轮 → 28030
   it('⑥ 无 open 轮次 → 报名 28030', async () => {
     await openCycle({ statusCode: 'closed' });

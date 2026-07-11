@@ -1,23 +1,36 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { assertEmergencyRelationCodeValid } from '../emergency-contacts/emergency-relation.validation';
 import { RbacService } from '../permissions/rbac.service';
+import { maskIdCard, maskName } from '../realname/realname.constants';
 import {
+  APP_INACTIVE_STATUS_CODES,
+  APP_STATUS_MANUAL,
   APP_STATUS_PENDING_EVALUATION,
+  APP_STATUS_PROMOTED,
   APP_STATUS_PUBLICITY,
   APP_STATUS_REJECTED,
   APP_STATUS_VERIFIED,
   ELIM_STAGE_EVALUATION,
   ELIM_STAGE_THRESHOLD_TIMEOUT,
+  RECRUITMENT_MAX_AGE,
+  RECRUITMENT_MIN_AGE,
   type ThresholdCode,
   type ThresholdMarks,
   allThresholdsComplete,
+  computeAge,
+  extractBirthDate,
+  extractGenderCode,
+  isMainlandId,
+  isValidChineseId,
 } from './recruitment.constants';
 import { resolveBatchMatches } from './recruitment-batch-matching';
 import { toAdminApplicationDto } from './recruitment-applications.presenter';
@@ -28,6 +41,7 @@ import type {
   EvaluateRecruitmentApplicationDto,
   MarkThresholdDto,
   RecruitmentApplicationAdminDto,
+  UpdateRecruitmentApplicationDto,
 } from './recruitment.dto';
 
 // 招新报名 admin 评审写动作 service(god-service 拆分 2026-06-28)。
@@ -250,6 +264,165 @@ export class RecruitmentApplicationReviewService {
         before: { statusCode: row.statusCode },
         after: { statusCode: nextStatus },
         extra: { approved: dto.approved, eliminationStage },
+        tx,
+      });
+      return toAdminApplicationDto(updated, !canSensitive);
+    });
+  }
+
+  // ============ 招新可用性收口 F2:admin 改资料(评审稿 recruitment-usability-closeout-review.md §3 R1)============
+  // 白名单 + 身份字段条件闸:
+  // - 非身份字段(detailedAddress/cityDistrict/sourceChannel/emergencyContacts/profileExtra)恒可改;
+  // - 身份字段(realName/idCardNumber/birthDate/genderCode)仅 statusCode='manual_review' **或** 外籍记录
+  //   可改(已 verified 的大陆记录 OCR 已核验 → 28045 不开);
+  // - 大陆记录 birthDate/genderCode 恒由证件号派生(直接传 → 40000);大陆改 idCardNumber → 校验位 +
+  //   年龄复检(28010)+ birthDate/genderCode 重派生 + 同轮活跃去重(28003;镜像 submit 语义);
+  // - promoted / 已脱敏(sensitivePurgedAt 置)行不可改(28041)——回写 PII 会与留存 SOP「已清不再触」冲突;
+  // - phone/openid 不在白名单(自助换绑通道已存在,admin 直改会绕过双验破坏身份锚;R3 取舍)。
+  // 必落 audit('recruitment-application.update'):before/after 仅身份字段掩码值,非身份字段只记字段名。
+  async updateApplication(
+    id: string,
+    dto: UpdateRecruitmentApplicationDto,
+    user: CurrentUserPayload,
+    meta: AuditMeta,
+    now: Date,
+  ): Promise<RecruitmentApplicationAdminDto> {
+    await this.assertCanOrThrow(user, 'recruitment-application.update.record');
+    const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
+
+    const identityKeys = ['realName', 'idCardNumber', 'birthDate', 'genderCode'] as const;
+    const nonIdentityKeys = [
+      'detailedAddress',
+      'cityDistrict',
+      'sourceChannel',
+      'emergencyContacts',
+      'profileExtra',
+    ] as const;
+    const changedFields = [...identityKeys, ...nonIdentityKeys].filter((k) => dto[k] !== undefined);
+    if (changedFields.length === 0) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    const identityChanged = identityKeys.some((k) => dto[k] !== undefined);
+
+    // 紧急联系人 relation 字典校验(免费 fail-fast;镜像 submit / promote 双层一致)
+    if (dto.emergencyContacts !== undefined) {
+      for (const contact of dto.emergencyContacts) {
+        await assertEmergencyRelationCodeValid(this.prisma, contact.relation);
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.recruitmentApplication.findFirst({ where: { id, deletedAt: null } });
+      if (!row) {
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+      }
+      // promoted / 已脱敏行:PII 已清并搬 member,回写与留存 SOP 冲突 → 一律不可改
+      if (row.statusCode === APP_STATUS_PROMOTED || row.sensitivePurgedAt !== null) {
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
+      }
+      // 身份字段条件闸(R1):仅 manual_review 或外籍记录可改
+      if (identityChanged && row.statusCode !== APP_STATUS_MANUAL && !row.isForeigner) {
+        throw new BizException(BizCode.RECRUITMENT_IDENTITY_FIELDS_LOCKED);
+      }
+      const mainland = isMainlandId(row.documentTypeCode);
+      // 大陆记录 birthDate/genderCode 恒由证件号派生,不可直改(镜像「OCR 值不覆盖派生权威」口径)
+      if (mainland && (dto.birthDate !== undefined || dto.genderCode !== undefined)) {
+        throw new BizException(BizCode.BAD_REQUEST);
+      }
+
+      const data: Prisma.RecruitmentApplicationUpdateInput = {};
+      if (dto.realName !== undefined) data.realName = dto.realName;
+      if (dto.detailedAddress !== undefined) data.detailedAddress = dto.detailedAddress;
+      if (dto.cityDistrict !== undefined) data.cityDistrict = dto.cityDistrict;
+      if (dto.sourceChannel !== undefined) data.sourceChannel = dto.sourceChannel;
+      if (dto.emergencyContacts !== undefined) {
+        data.emergencyContacts = dto.emergencyContacts as unknown as Prisma.InputJsonValue;
+      }
+      if (dto.profileExtra !== undefined) {
+        data.profileExtra = dto.profileExtra as Prisma.InputJsonValue;
+      }
+
+      if (dto.idCardNumber !== undefined && dto.idCardNumber !== row.idCardNumber) {
+        if (mainland) {
+          // 镜像 submit 第 2 步:校验位 → 生日派生 → 年龄 → 性别派生(改号即重派生,派生权威不漂移)
+          if (!isValidChineseId(dto.idCardNumber)) {
+            throw new BizException(BizCode.BAD_REQUEST);
+          }
+          const birthDate = extractBirthDate(dto.idCardNumber);
+          if (!birthDate) {
+            throw new BizException(BizCode.BAD_REQUEST);
+          }
+          const age = computeAge(birthDate, now);
+          if (age < RECRUITMENT_MIN_AGE || age > RECRUITMENT_MAX_AGE) {
+            throw new BizException(BizCode.RECRUITMENT_AGE_OUT_OF_RANGE);
+          }
+          data.birthDate = birthDate;
+          data.genderCode = extractGenderCode(dto.idCardNumber);
+        }
+        // 同轮活跃去重(排除自身;镜像 submit 第 5 步;partial unique P2002 兜底同码)
+        const dup = await tx.recruitmentApplication.findFirst({
+          where: {
+            cycleId: row.cycleId,
+            idCardNumber: dto.idCardNumber,
+            deletedAt: null,
+            statusCode: { notIn: [...APP_INACTIVE_STATUS_CODES] },
+            id: { not: row.id },
+          },
+          select: { id: true },
+        });
+        if (dup) {
+          throw new BizException(BizCode.RECRUITMENT_DUPLICATE_APPLICATION);
+        }
+        data.idCardNumber = dto.idCardNumber;
+      }
+      // 外籍补录(F3 手动建档前置):birthDate 归一日期,genderCode 直存
+      if (!mainland && dto.birthDate !== undefined) {
+        data.birthDate = normalizeDateOnly(dto.birthDate);
+      }
+      if (!mainland && dto.genderCode !== undefined) {
+        data.genderCode = dto.genderCode;
+      }
+
+      let updated;
+      try {
+        updated = await tx.recruitmentApplication.update({ where: { id }, data });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          throw new BizException(BizCode.RECRUITMENT_DUPLICATE_APPLICATION);
+        }
+        throw err;
+      }
+
+      // audit:身份字段记掩码前后值;非身份字段只记字段名(PII 不进 audit 明文,沿 D6 掩码三不)
+      const maskedIdentity = (r: {
+        realName: string | null;
+        idCardNumber: string | null;
+        birthDate: Date | null;
+        genderCode: string | null;
+      }): Record<string, unknown> => ({
+        ...(dto.realName !== undefined
+          ? { realName: r.realName ? maskName(r.realName) : null }
+          : {}),
+        ...(dto.idCardNumber !== undefined
+          ? { idCard: r.idCardNumber ? maskIdCard(r.idCardNumber) : null }
+          : {}),
+        ...(dto.birthDate !== undefined || dto.idCardNumber !== undefined
+          ? { hasBirthDate: r.birthDate !== null }
+          : {}),
+        ...(dto.genderCode !== undefined || dto.idCardNumber !== undefined
+          ? { genderCode: r.genderCode }
+          : {}),
+      });
+      await this.auditLogs.log({
+        event: 'recruitment-application.update',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: id,
+        meta,
+        before: identityChanged ? maskedIdentity(row) : undefined,
+        after: identityChanged ? maskedIdentity(updated) : undefined,
+        extra: { changedFields, identityChanged },
         tx,
       });
       return toAdminApplicationDto(updated, !canSensitive);
