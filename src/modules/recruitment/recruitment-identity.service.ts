@@ -10,6 +10,9 @@ import { SmsCodeService } from '../sms/sms-code.service';
 import { SMS_CODE_TTL_SECONDS, maskPhone } from '../sms/sms.constants';
 import { WechatService } from '../wechat/wechat.service';
 import {
+  APP_STATUS_PROMOTED,
+  APP_STATUS_REJECTED,
+  APP_STATUS_WITHDRAWN,
   CYCLE_STATUS_OPEN,
   PHONE_CHANGE_REASON_SELF_REBIND,
   PHONE_VERIFICATION_METHOD_SMS,
@@ -28,6 +31,7 @@ import type {
   RecruitmentSendCodeResponseDto,
   RecruitmentVerifyCodeDto,
   RecruitmentVerifyCodeResponseDto,
+  RecruitmentWithdrawDto,
 } from './recruitment.dto';
 
 // 招新四期 S4a(H5 + 手机身份链;2026-06-24;评审稿 recruitment-phase4-loop-optimization-review.md §3)。
@@ -246,6 +250,80 @@ export class RecruitmentIdentityService {
       throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
     }
     return this.assembleProgressFor(promotedApp);
+  }
+
+  // ============ 招新可用性收口 F6:自助撤销(评审稿 §3 R4)============
+  // 凭证双通道镜像 query / query-by-phone:通道① wechatCode(code2session → openid 定位)/
+  // 通道② phone+code(验码消费一码 → 手机定位);双通道二选一(both/neither → 40000)。
+  // 非终态(promoted/rejected/withdrawn 之外)皆可撤 → statusCode='withdrawn'(终态;非淘汰,
+  // 不写 eliminationStage);终态命中(含幂等重撤)→ 28052。撤销后同轮同证件号/同 openid/同手机
+  // 可重报(APP_INACTIVE_STATUS_CODES + partial unique 排除集已含 withdrawn)。必落 audit。
+  async withdraw(
+    dto: RecruitmentWithdrawDto,
+    meta: AuditMeta,
+  ): Promise<RecruitmentApplicationProgressDto> {
+    const viaWechat = typeof dto.wechatCode === 'string' && dto.wechatCode.length > 0;
+    const viaPhone = typeof dto.phone === 'string' && dto.phone.length > 0;
+    if (viaWechat === viaPhone) {
+      // 双通道二选一(both / neither 均拒)
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    let app: RecruitmentApplication | null;
+    let channel: 'wechat' | 'phone';
+    if (viaWechat) {
+      channel = 'wechat';
+      const { openid } = await this.wechat.code2session(dto.wechatCode as string);
+      app = await this.prisma.recruitmentApplication.findFirst({
+        where: { openid, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+      });
+    } else {
+      channel = 'phone';
+      if (typeof dto.code !== 'string' || dto.code.length === 0) {
+        throw new BizException(BizCode.BAD_REQUEST);
+      }
+      await this.smsCode.verifyAndConsume({
+        phone: dto.phone as string,
+        purpose: SmsPurpose.RECRUITMENT_BIND,
+        code: dto.code,
+        userId: null,
+      });
+      app = await this.findLatestAppByPhone(dto.phone as string);
+    }
+    if (!app) {
+      throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+    }
+    if (
+      app.statusCode === APP_STATUS_PROMOTED ||
+      app.statusCode === APP_STATUS_REJECTED ||
+      app.statusCode === APP_STATUS_WITHDRAWN
+    ) {
+      throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE);
+    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.recruitmentApplication.update({
+        where: { id: app.id },
+        data: { statusCode: APP_STATUS_WITHDRAWN },
+      });
+      await this.auditLogs.log({
+        event: 'recruitment-application.withdraw',
+        actorUserId: null, // 无账号自助撤销
+        actorRoleSnap: null,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: app.id,
+        meta,
+        before: { statusCode: app.statusCode },
+        after: { statusCode: APP_STATUS_WITHDRAWN },
+        extra: {
+          channel,
+          ...(channel === 'phone' ? { phone: maskPhone(dto.phone as string) } : {}),
+          ...(channel === 'wechat' && app.openid ? { openid: this.maskOpenid(app.openid) } : {}),
+        },
+        tx,
+      });
+      return row;
+    });
+    return this.assembleProgressFor(updated);
   }
 
   // ============ 自助换微信换绑(锚当前手机;§3.4)============

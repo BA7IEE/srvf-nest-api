@@ -42,6 +42,7 @@ import {
   RecruitmentTodoItemDto,
   RecruitmentVerifyCodeDto,
   RecruitmentVerifyCodeResponseDto,
+  RecruitmentWithdrawDto,
 } from './recruitment.dto';
 import {
   RecruitmentApplicationsService,
@@ -316,6 +317,30 @@ export class RecruitmentPublicController {
     @Body() dto: RecruitmentQueryByPhoneDto,
   ): Promise<RecruitmentApplicationProgressDto> {
     return this.identity.queryByPhone(dto.phone, dto.code);
+  }
+
+  // 招新可用性收口 F6(评审稿 §3 R4):自助撤销(凭证双通道镜像 query / query-by-phone)。
+  @Public()
+  @RecruitmentThrottle()
+  @Post('applications/withdraw')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '自助撤销报名(无账号;凭证双通道二选一:wechatCode〔code2session 定位〕或 phone+code〔验码消费一码〕;非终态皆可撤 → withdrawn 终态,撤销后同轮同证件号/同微信/同手机可重报;已发号/未通过/已撤销 → 28052;返更新后进度模型 stage=withdrawn;审计 withdraw;throttler recruitment) [public]',
+  })
+  @ApiWrappedOkResponse(RecruitmentApplicationProgressDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.SMS_CODE_INVALID,
+    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
+    BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  withdraw(
+    @Body() dto: RecruitmentWithdrawDto,
+    @Req() req: Request,
+  ): Promise<RecruitmentApplicationProgressDto> {
+    return this.identity.withdraw(dto, buildAuditMeta(req));
   }
 
   @Public()

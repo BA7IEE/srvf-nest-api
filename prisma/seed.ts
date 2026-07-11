@@ -662,6 +662,8 @@ const RECRUITMENT_STAGE_SEED = [
   { code: 'retake', label: '待重拍', sortOrder: 7 },
   { code: 'confirm', label: '待核对', sortOrder: 8 },
   { code: 'manual_high', label: '待人工核验', sortOrder: 9 }, // 申请人侧中性,等同 manual;高风险分流仅后台
+  // 招新可用性收口 F6(2026-07-11;评审稿 §3 R4):自助撤销终态(可同轮/下轮重报)。
+  { code: 'withdrawn', label: '已撤销报名', sortOrder: 10 },
 ] as const;
 
 async function seedRecruitmentStageDict(prisma: PrismaClient): Promise<void> {

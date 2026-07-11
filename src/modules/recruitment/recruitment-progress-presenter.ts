@@ -6,6 +6,7 @@ import {
   APP_STATUS_PUBLICITY,
   APP_STATUS_REJECTED,
   APP_STATUS_VERIFIED,
+  APP_STATUS_WITHDRAWN,
   RISK_LEVEL_HIGH,
   THRESHOLD_CODES,
   type ThresholdCode,
@@ -44,6 +45,7 @@ export const STAGE_EVALUATION = 'evaluation'; // pending_evaluation
 export const STAGE_PUBLICITY = 'publicity'; // publicity
 export const STAGE_VOLUNTEER = 'volunteer'; // promoted(展示「已转志愿者/待入队」,**禁「已晋升」** Q-P4-8)
 export const STAGE_REJECTED = 'rejected'; // rejected
+export const STAGE_WITHDRAWN = 'withdrawn'; // withdrawn(F6 自助撤销终态;可同轮/下轮重报)
 // 招新闭环优化 S4b【已实现】(会话态 / riskLevel 落地;评审稿 §4.2):
 export const STAGE_RETAKE = 'retake'; // 待重拍(会话态:OCR 模糊/防伪重拍循环 requiresRetake=true;报名记录未创建)
 export const STAGE_CONFIRM = 'confirm'; // 待核对(会话态:mismatch 待三选一;报名记录未创建)
@@ -149,6 +151,9 @@ export function deriveRecruitmentStage(input: RecruitmentStageInput): Recruitmen
       };
     case APP_STATUS_REJECTED:
       return { stage: STAGE_REJECTED, nextAction: null, identityText: IDENTITY_APPLICANT };
+    case APP_STATUS_WITHDRAWN:
+      // F6 自助撤销(评审稿 §3 R4):终态,无下一步动作(重报 = 重新走 submit,非本记录动作)。
+      return { stage: STAGE_WITHDRAWN, nextAction: null, identityText: IDENTITY_APPLICANT };
     case APP_STATUS_MANUAL:
       // 高风险复核分流(riskLevel=high):stage 区分 manual_high(后台三栏用),申请人侧文案中性同 manual。
       return {
