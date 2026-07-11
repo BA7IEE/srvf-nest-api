@@ -34,6 +34,7 @@ import {
   ExportRecruitmentApplicationsDto,
   IdCardImageUrlResponseDto,
   MarkThresholdDto,
+  PromoteSingleResultDto,
   RecruitmentApplicationAdminDto,
   RecruitmentApplicationListQueryDto,
   ResolveRecruitmentApplicationDto,
@@ -42,6 +43,7 @@ import {
 import { RecruitmentApplicationReviewService } from './recruitment-application-review.service';
 import { RecruitmentApplicationsQueryService } from './recruitment-applications-query.service';
 import { RecruitmentApplicationsService } from './recruitment-applications.service';
+import { RecruitmentPromotionService } from './recruitment-promotion.service';
 
 // 招新一期 T3(2026-06-18):招新报名 admin surface(评审稿 §3.2 端点 10-13)。
 // 入口仅 JwtAuthGuard,判权全在 service rbac.can();读 PII 记 placeholder 审计。
@@ -73,6 +75,7 @@ export class RecruitmentApplicationsAdminController {
     private readonly service: RecruitmentApplicationsService,
     private readonly queryService: RecruitmentApplicationsQueryService,
     private readonly reviewService: RecruitmentApplicationReviewService,
+    private readonly promotionService: RecruitmentPromotionService,
   ) {}
 
   @Get()
@@ -241,6 +244,35 @@ export class RecruitmentApplicationsAdminController {
     @Req() req: Request,
   ): Promise<RecruitmentApplicationAdminDto> {
     return this.reviewService.markThreshold(id, dto, user, buildAuditMeta(req), new Date());
+  }
+
+  // 招新可用性收口 F3(评审稿 §3 R3 / §6.1 E-U-3/E-U-4):单人手动建档(批量 skip 项收尾通道)。
+  @Post(':id/promote-single')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '单人手动建档(publicity 报名逐条发号建 User+Member;与批量共用同一建档内核/原子号段/通知派发;放行外籍〔birthDate/genderCode 先经改资料补录,缺 → 28047〕;锚点择优 openid 未占用→微信 / openid 缺·占用且 phone 未占用→手机 / 双缺双占→28046;非 publicity〔含已 promoted 重跑〕→ 28041 幂等零重复) [rbac: recruitment-application.promote.single]',
+  })
+  @ApiWrappedOkResponse(PromoteSingleResultDto)
+  @ApiBizErrorResponse(
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
+    BizCode.RECRUITMENT_CYCLE_NOT_FOUND,
+    BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
+    BizCode.RECRUITMENT_PROFILE_INCOMPLETE_FOR_PROMOTE,
+    BizCode.RECRUITMENT_LOGIN_ANCHOR_UNAVAILABLE,
+    BizCode.RECRUITMENT_APPLICATION_NOT_PROMOTABLE,
+    BizCode.RECRUITMENT_MEMBER_NO_EXHAUSTED,
+    BizCode.RECRUITMENT_VOLUNTEER_ORG_UNAVAILABLE,
+    BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID,
+  )
+  promoteSingle(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<PromoteSingleResultDto> {
+    return this.promotionService.promoteSingle(id, user, buildAuditMeta(req), new Date());
   }
 
   @Post(':id/evaluate')

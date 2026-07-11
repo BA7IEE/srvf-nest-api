@@ -2937,6 +2937,15 @@ const RECRUITMENT_APPLICATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed>
     description:
       'admin 改报名资料(R1 白名单:非身份字段恒可改;身份字段仅 manual_review 或外籍;必落 audit)',
   },
+  // 招新可用性收口 F3(2026-07-11;评审稿 §3 R3 / §6.1 E-U-3/E-U-4,绑 biz-admin):
+  {
+    code: 'recruitment-application.promote.single',
+    module: 'recruitment-application',
+    action: 'promote',
+    resourceType: 'single',
+    description:
+      '单人手动建档(批量 skip 项收尾:与批量共用建档内核/原子号段;放行外籍;锚点择优 openid→phone)',
+  },
 ];
 
 // 招新三期(入队:志愿者→队员)T2(2026-06-19;冻结评审稿 recruitment-phase3-review.md §3.4 / E-J-8):

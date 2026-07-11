@@ -31,6 +31,7 @@ import {
 import type {
   PromoteResultDto,
   PromoteSkippedItemDto,
+  PromoteSingleResultDto,
   PromotePrecheckResultDto,
   PromotePrecheckRowDto,
   PromotedItemDto,
@@ -160,117 +161,22 @@ export class RecruitmentPromotionService {
           const a = promotable[i];
           const memberNo = formatMemberNo(bumped.year, startSeq + i + 1);
           try {
-            // Member:招新闭环优化 S5(§5.2a)即赋志愿者身份 —— gradeCode='volunteer' + 同事务建 VOL
-            // 归口部门(下一步)。入队(team-join 一键入队)才软删 VOL 行、换目标部门并升 level-1。
-            const member = await tx.member.create({
-              data: {
-                memberNo,
-                displayName: a.realName as string,
-                status: 'ACTIVE',
-                gradeCode: VOLUNTEER_GRADE_CODE,
-              },
-              select: { id: true },
-            });
-            // VOL 归口部门 —— 终态 scoped-authz PR2:重指向 member_organization_memberships 的 PRIMARY 行
-            //(默认 membershipType=PRIMARY/status=ACTIVE = 旧单部门语义;primary_active_unique 兜底:此刻仅此一条 active PRIMARY)。
-            await tx.memberOrganizationMembership.create({
-              data: { memberId: member.id, organizationId: volOrgId },
-            });
-            // User:随机口令(密码登录天然关闭)、username=memberNo;passwordHash 取事务前预算结果
-            // (bcrypt 不在事务回调内执行 = 超时硬化)。**登录通道分流(v0.40.0 H5 手机通道)**:
-            // - 有 openid → 现状逐字不动(openid-only,不写 phone,微信登录;行为锁);
-            // - 无 openid 有 phone → phone + phoneVerifiedAt=now(H5 手机经 RECRUITMENT_BIND 短信实证,
-            //   管理员发号背书;镜像 grantAccountCore 先例),openid=null,可走 login-sms 登录。
-            const passwordHash = passwordHashes[i];
-            await tx.user.create({
-              data: {
-                username: memberNo,
-                passwordHash,
-                ...(a.openid != null
-                  ? { openid: a.openid }
-                  : { phone: a.phone as string, phoneVerifiedAt: now }),
-                role: 'USER',
-                memberId: member.id,
-              },
-              select: { id: true },
-            });
-            // MemberProfile(§6 逐字段映射;email=null〔M-1〕;joinedDate=发号日;privacyConsentSigned=true)
-            await tx.memberProfile.create({
-              data: {
-                memberId: member.id,
-                realName: a.realName as string,
-                genderCode: a.genderCode as string,
-                birthDate: a.birthDate as Date, // 已在提交期归一 UTC 午夜
-                documentTypeCode: a.documentTypeCode,
-                documentNumber: a.idCardNumber as string,
-                mobile: a.phone as string,
-                joinedDate: normalizeDateOnly(now.toISOString()),
-                joinSourceCode: JOIN_SOURCE_RECRUITMENT,
-                privacyConsentSigned: true,
-                ...(a.idCardImageKey ? { idCardImageKey: a.idCardImageKey } : {}),
-              },
-              select: { id: true },
-            });
-            // EmergencyContact(Json → 行;priority=序)
-            // 本次修订前为「relationCode 原样 best-effort」→ 绕过字典校验持久化非法码(#399 F3)。
-            // 现复用 canonical assertEmergencyRelationCodeValid(纯函数、直连 tx,不引 service;防环铁律不破):
-            // 非法 relationCode → EMERGENCY_CONTACT_RELATION_CODE_INVALID,整批事务回滚(沿「失败可恢复」)。
-            const contacts = this.parseContacts(a.emergencyContacts);
-            for (let j = 0; j < contacts.length; j++) {
-              await assertEmergencyRelationCodeValid(tx, contacts[j].relation);
-              await tx.emergencyContact.create({
-                data: {
-                  memberId: member.id,
-                  contactName: contacts[j].name,
-                  relationCode: contacts[j].relation,
-                  phonePrimary: contacts[j].phone,
-                  priority: j,
-                },
-                select: { id: true },
-              });
-            }
-            // 标 promoted + 链 + 即时清敏感(PII 已搬 member;blob 归 member,留存 SOP 不再触 promoted 行)。
-            // F12(#399):openid + reviewNote 亦属留存 SOP §1 须置 NULL 的敏感字段;promote 即时清后
-            // SOP「WHERE sensitivePurgedAt IS NULL」永久跳过本行 —— 漏清则两再识别字段在「已脱敏」行永久残留。
-            await tx.recruitmentApplication.update({
-              where: { id: a.id },
-              data: {
-                statusCode: APP_STATUS_PROMOTED,
-                promotedMemberId: member.id,
-                sensitivePurgedAt: now,
-                realName: null,
-                idCardNumber: null,
-                birthDate: null,
-                phone: null,
-                detailedAddress: null,
-                emergencyContacts: Prisma.DbNull,
-                profileExtra: Prisma.DbNull,
-                idCardImageKey: null,
-                openid: null,
-                reviewNote: null,
-              },
-            });
-            await this.auditLogs.log({
-              event: 'recruitment-application.promote',
-              actorUserId: user.id,
-              actorRoleSnap: user.role,
-              resourceType: AUDIT_RESOURCE_TYPE,
-              resourceId: a.id,
-              meta,
-              before: { statusCode: APP_STATUS_PUBLICITY },
-              after: { statusCode: APP_STATUS_PROMOTED },
-              extra: {
-                memberNo,
-                memberId: member.id,
-                tempNo: a.tempNo,
-                // 微信通道:掩码 openid(现状逐字不变);v0.40.0 H5 手机通道(无 openid):openid=null +
-                // 记掩码手机(禁明文;auditability)。有 openid 者 openid 字段形状不变 = 行为锁。
-                openid: a.openid != null ? this.maskOpenid(a.openid) : null,
-                ...(a.openid == null && a.phone != null ? { phone: maskPhone(a.phone) } : {}),
-              },
+            // 单行建档内核抽取(招新可用性收口 F3):批量与单人手动建档共用同一份建档语义
+            // (Member+VOL 归口+User+档案+紧急联系人+标 promoted 清敏感+audit)。批量通道派生
+            // 逐字保持 v0.40.0 语义:有 openid → 微信通道;无 openid(decidePromotionIssuance
+            // 已保证 phone 非空)→ 手机通道。try/catch 位置不变 = 整批回滚语义不变(行为锁)。
+            const item = await this.buildOnePromotion(
               tx,
-            });
-            out.push({ applicationId: a.id, memberId: member.id, memberNo, realName: a.realName });
+              a,
+              memberNo,
+              passwordHashes[i],
+              volOrgId,
+              a.openid != null ? 'wechat' : 'phone',
+              user,
+              meta,
+              now,
+            );
+            out.push(item);
           } catch (err) {
             // memberNo / openid / username @unique 冲突(撞既有号 or 并发竞态)→ 整批回滚不跳号(28042)
             if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -411,7 +317,246 @@ export class RecruitmentPromotionService {
     };
   }
 
+  // ============ 招新可用性收口 F3:单人手动建档(评审稿 §3 R3 / §6.1 E-U-3/E-U-4)============
+  // 批量 promote 的 skip 项(外籍/锚点占用等)的收尾通道:对单条 publicity 报名走与批量**同一份**
+  // 建档内核(buildOnePromotion)+ 同一原子号段(memberNoSeq 行级自增,连续无空洞)+ 同一通知派发。
+  // 差异仅三点:① **放行外籍**(不判 isForeigner;birthDate/genderCode 由 F2 补录);② **锚点择优**
+  // (E-U-4:openid 未占用 → 微信;openid 缺/占用且 phone 未占用 → 手机;双缺/双占 → 28046,R3
+  // 「不建无登录锚点的号」);③ 逐条判可建(缺 realName/birthDate/genderCode → 28047 提示先 F2 补录)。
+  // 幂等:promoted 已离开 publicity → 重跑 28041、零重复建档(E-U-3)。批量 promote 行为逐字不变。
+  async promoteSingle(
+    applicationId: string,
+    user: CurrentUserPayload,
+    meta: AuditMeta,
+    now: Date,
+  ): Promise<PromoteSingleResultDto> {
+    await this.assertCanOrThrow(user, 'recruitment-application.promote.single');
+
+    const app = await this.prisma.recruitmentApplication.findFirst({
+      where: { id: applicationId, deletedAt: null },
+    });
+    if (!app) {
+      throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+    }
+    const cycle = await this.prisma.recruitmentCycle.findFirst({
+      where: { id: app.cycleId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!cycle) {
+      throw new BizException(BizCode.RECRUITMENT_CYCLE_NOT_FOUND);
+    }
+    // 仅 publicity 可建(与批量同源目标态);promoted 重跑亦落此闸 = 幂等零重复(E-U-3)
+    if (app.statusCode !== APP_STATUS_PUBLICITY) {
+      throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
+    }
+    // 建档资料齐备闸(放行外籍;缺派生字段/姓名 → 先走 F2 admin 改资料补录)
+    if (app.realName == null || app.birthDate == null || app.genderCode == null) {
+      throw new BizException(BizCode.RECRUITMENT_PROFILE_INCOMPLETE_FOR_PROMOTE);
+    }
+    // 锚点择优(E-U-4;占用语义沿 User openid/phone @unique 含软删,镜像 loadBoundOpenids/Phones)
+    const openidBound =
+      app.openid != null &&
+      (await this.prisma.user.findFirst({
+        where: { openid: app.openid },
+        select: { id: true },
+      })) !== null;
+    const phoneBound =
+      app.phone != null &&
+      (await this.prisma.user.findFirst({
+        where: { phone: app.phone },
+        select: { id: true },
+      })) !== null;
+    let channel: 'wechat' | 'phone';
+    if (app.openid != null && !openidBound) {
+      channel = 'wechat';
+    } else if (app.phone != null && !phoneBound) {
+      channel = 'phone';
+    } else {
+      throw new BizException(BizCode.RECRUITMENT_LOGIN_ANCHOR_UNAVAILABLE);
+    }
+
+    // bcrypt 预算在事务外(镜像批量超时硬化);VOL 归口部门守 ACTIVE(缺失 → 28044 清晰失败)
+    const passwordHash = await bcrypt.hash(randomBytes(48).toString('base64'), BCRYPT_SALT_ROUNDS);
+    const volOrgId = await this.resolveVolOrgIdOrThrow();
+
+    const promoted = await this.prisma.$transaction(
+      async (tx) => {
+        // 与批量共享同一原子号段:cycle 行锁自增 1(失败回滚撤销自增,号段连续无空洞)
+        const bumped = await tx.recruitmentCycle.update({
+          where: { id: app.cycleId },
+          data: { memberNoSeq: { increment: 1 } },
+          select: { memberNoSeq: true, year: true },
+        });
+        if (bumped.memberNoSeq > MEMBER_NO_MAX_SEQ) {
+          throw new BizException(BizCode.RECRUITMENT_MEMBER_NO_EXHAUSTED);
+        }
+        const memberNo = formatMemberNo(bumped.year, bumped.memberNoSeq);
+        try {
+          return await this.buildOnePromotion(
+            tx,
+            app,
+            memberNo,
+            passwordHash,
+            volOrgId,
+            channel,
+            user,
+            meta,
+            now,
+            'promote-single',
+          );
+        } catch (err) {
+          // 撞既有 memberNo / openid / phone / username @unique → 回滚不跳号(28042,与批量同码)
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+            throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_PROMOTABLE);
+          }
+          throw err;
+        }
+      },
+      { timeout: PROMOTE_TX_TIMEOUT_MS },
+    );
+
+    this.logger.log(
+      `recruitment promote-single app=${app.id} member=${promoted.memberId} channel=${channel}`,
+    );
+    // 通知派发沿批量语义(commit 后事务外;失败只记日志不阻断)
+    await this.dispatchPromotionNotifications([promoted]);
+
+    return { ...promoted, loginChannel: channel };
+  }
+
   // === helpers ===
+
+  // 单行建档内核(招新可用性收口 F3 抽取;批量 promote 与单人 promote-single 共用)。
+  // 语义 = 原批量事务循环体逐字搬家:Member(volunteer)+ VOL 归口 PRIMARY + User(通道分流)+
+  // MemberProfile + EmergencyContact + 标 promoted 清敏感 + audit。**不含** try/catch(P2002 处理
+  // 留在调用方,批量整批回滚语义不变)。channel 由调用方决定:批量 = openid 有无派生(v0.40.0 逐字);
+  // 单人 = E-U-4 锚点择优(可在 openid 被占时强制手机通道)。viaPath 仅单人传(audit extra additive)。
+  private async buildOnePromotion(
+    tx: Prisma.TransactionClient,
+    a: RecruitmentApplication,
+    memberNo: string,
+    passwordHash: string,
+    volOrgId: string,
+    channel: 'wechat' | 'phone',
+    user: CurrentUserPayload,
+    meta: AuditMeta,
+    now: Date,
+    viaPath?: string,
+  ): Promise<PromotedItemDto> {
+    // Member:招新闭环优化 S5(§5.2a)即赋志愿者身份 —— gradeCode='volunteer' + 同事务建 VOL
+    // 归口部门(下一步)。入队(team-join 一键入队)才软删 VOL 行、换目标部门并升 level-1。
+    const member = await tx.member.create({
+      data: {
+        memberNo,
+        displayName: a.realName as string,
+        status: 'ACTIVE',
+        gradeCode: VOLUNTEER_GRADE_CODE,
+      },
+      select: { id: true },
+    });
+    // VOL 归口部门 —— 终态 scoped-authz PR2:重指向 member_organization_memberships 的 PRIMARY 行
+    //(默认 membershipType=PRIMARY/status=ACTIVE = 旧单部门语义;primary_active_unique 兜底:此刻仅此一条 active PRIMARY)。
+    await tx.memberOrganizationMembership.create({
+      data: { memberId: member.id, organizationId: volOrgId },
+    });
+    // User:随机口令(密码登录天然关闭)、username=memberNo;passwordHash 取事务前预算结果
+    // (bcrypt 不在事务回调内执行 = 超时硬化)。**登录通道分流(v0.40.0 H5 手机通道)**:
+    // - wechat → openid-only,不写 phone(微信登录;批量对有 openid 行为锁逐字);
+    // - phone → phone + phoneVerifiedAt=now(H5 手机经 RECRUITMENT_BIND 短信实证 / F3 管理员发号背书,
+    //   镜像 grantAccountCore 先例),openid=null,可走 login-sms 登录。
+    await tx.user.create({
+      data: {
+        username: memberNo,
+        passwordHash,
+        ...(channel === 'wechat'
+          ? { openid: a.openid as string }
+          : { phone: a.phone as string, phoneVerifiedAt: now }),
+        role: 'USER',
+        memberId: member.id,
+      },
+      select: { id: true },
+    });
+    // MemberProfile(§6 逐字段映射;email=null〔M-1〕;joinedDate=发号日;privacyConsentSigned=true)
+    await tx.memberProfile.create({
+      data: {
+        memberId: member.id,
+        realName: a.realName as string,
+        genderCode: a.genderCode as string,
+        birthDate: a.birthDate as Date, // 已在提交期归一 UTC 午夜
+        documentTypeCode: a.documentTypeCode,
+        documentNumber: a.idCardNumber as string,
+        mobile: a.phone as string,
+        joinedDate: normalizeDateOnly(now.toISOString()),
+        joinSourceCode: JOIN_SOURCE_RECRUITMENT,
+        privacyConsentSigned: true,
+        ...(a.idCardImageKey ? { idCardImageKey: a.idCardImageKey } : {}),
+      },
+      select: { id: true },
+    });
+    // EmergencyContact(Json → 行;priority=序)
+    // 本次修订前为「relationCode 原样 best-effort」→ 绕过字典校验持久化非法码(#399 F3)。
+    // 现复用 canonical assertEmergencyRelationCodeValid(纯函数、直连 tx,不引 service;防环铁律不破):
+    // 非法 relationCode → EMERGENCY_CONTACT_RELATION_CODE_INVALID,整批事务回滚(沿「失败可恢复」)。
+    const contacts = this.parseContacts(a.emergencyContacts);
+    for (let j = 0; j < contacts.length; j++) {
+      await assertEmergencyRelationCodeValid(tx, contacts[j].relation);
+      await tx.emergencyContact.create({
+        data: {
+          memberId: member.id,
+          contactName: contacts[j].name,
+          relationCode: contacts[j].relation,
+          phonePrimary: contacts[j].phone,
+          priority: j,
+        },
+        select: { id: true },
+      });
+    }
+    // 标 promoted + 链 + 即时清敏感(PII 已搬 member;blob 归 member,留存 SOP 不再触 promoted 行)。
+    // F12(#399):openid + reviewNote 亦属留存 SOP §1 须置 NULL 的敏感字段;promote 即时清后
+    // SOP「WHERE sensitivePurgedAt IS NULL」永久跳过本行 —— 漏清则两再识别字段在「已脱敏」行永久残留。
+    await tx.recruitmentApplication.update({
+      where: { id: a.id },
+      data: {
+        statusCode: APP_STATUS_PROMOTED,
+        promotedMemberId: member.id,
+        sensitivePurgedAt: now,
+        realName: null,
+        idCardNumber: null,
+        birthDate: null,
+        phone: null,
+        detailedAddress: null,
+        emergencyContacts: Prisma.DbNull,
+        profileExtra: Prisma.DbNull,
+        idCardImageKey: null,
+        openid: null,
+        reviewNote: null,
+      },
+    });
+    await this.auditLogs.log({
+      event: 'recruitment-application.promote',
+      actorUserId: user.id,
+      actorRoleSnap: user.role,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: a.id,
+      meta,
+      before: { statusCode: APP_STATUS_PUBLICITY },
+      after: { statusCode: APP_STATUS_PROMOTED },
+      extra: {
+        memberNo,
+        memberId: member.id,
+        tempNo: a.tempNo,
+        // 微信通道:掩码 openid(现状逐字不变);v0.40.0 H5 手机通道(无 openid):openid=null +
+        // 记掩码手机(禁明文;auditability)。有 openid 者 openid 字段形状不变 = 行为锁。
+        openid: a.openid != null ? this.maskOpenid(a.openid) : null,
+        ...(a.openid == null && a.phone != null ? { phone: maskPhone(a.phone) } : {}),
+        // F3 单人建档 additive:viaPath + 实际登录通道(批量不传 → extra 形状逐字不变 = 行为锁;
+        // 单人在 openid 被占强制手机通道时,channel 是唯一能说明真实锚点的字段)。
+        ...(viaPath ? { viaPath, channel } : {}),
+      },
+      tx,
+    });
+    return { applicationId: a.id, memberId: member.id, memberNo, realName: a.realName };
+  }
 
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
     if (!(await this.rbac.can(user, action))) {
