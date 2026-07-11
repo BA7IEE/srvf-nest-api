@@ -39,7 +39,8 @@
 - [ ] 版本 ≥ 含招新实名 OCR 改造的 release(招新表 migration 早已 deploy;**OCR 改造本身零新 migration**;`prisma migrate status` 无 pending)
 - [ ] seed 已跑(权限码含 `realname-setting.*` 3 条;OCR 改造**零新权限码**)
 - [ ] 生产 env 已注入 `REALNAME_ENCRYPTION_KEY`(≥32 字符,推荐 `openssl rand -base64 32`;**与 STORAGE / SMS / WECHAT 三把 key 均不同值**;缺失时 production 启动 fail-fast,这是预期保护)
-- [ ] 可选 env:`RECRUITMENT_THROTTLE_LIMIT` / `_TTL_SECONDS`(留空默认公开报名/识别 IP 10 次/3600 秒)
+- [ ] 可选 env:`RECRUITMENT_THROTTLE_LIMIT` / `_TTL_SECONDS`(留空默认公开报名/识别 IP 10 次/3600 秒)。**招新活动期 runbook(v0.41.0,评审稿 §2.4)**:8 个公开端点各自独立 10 次/时/IP 桶——现场共享出口 IP(同一 WiFi 集中报名)时按端点互挤、OCR 重拍最易打满 → 活动期临时调 `RECRUITMENT_THROTTLE_LIMIT=30~60`(重启生效),活动结束调回;**不改代码/不改限流器分桶**(冻结取舍)
+- [ ] 可选 env:`RECRUITMENT_OCR_DAILY_IP_LIMIT`(v0.41.0 F1 付费 OCR 成本线;留空默认 30 次/IP/北京自然日,recognize+submit 共享持久化计数,超限 28060/HTTP 429;现场集中报名同样按出口 IP 计——预估「当日同 IP 报名人数 × ~2 次识别」调高,如 100 人现场设 300)
 
 ### 1.2 运维侧准备
 
