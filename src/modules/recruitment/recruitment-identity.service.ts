@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { DictItemStatus, Prisma, SmsPurpose, type RecruitmentApplication } from '@prisma/client';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -8,12 +9,18 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { SmsCodeService } from '../sms/sms-code.service';
 import { SMS_CODE_TTL_SECONDS, maskPhone } from '../sms/sms.constants';
+import { STORAGE_PROVIDER } from '../storage/storage.constants';
+import type { StorageProvider } from '../storage/storage.interface';
 import { WechatService } from '../wechat/wechat.service';
 import {
   APP_STATUS_PROMOTED,
   APP_STATUS_REJECTED,
   APP_STATUS_WITHDRAWN,
+  CERTIFICATE_IMAGES_MAX_PER_CATEGORY,
+  CERTIFICATE_IMAGE_KEY_PREFIX,
   CYCLE_STATUS_OPEN,
+  ID_CARD_IMAGE_ALLOWED_MIME,
+  ID_CARD_IMAGE_MAX_BYTES,
   PHONE_CHANGE_REASON_SELF_REBIND,
   PHONE_VERIFICATION_METHOD_SMS,
   RECRUITMENT_IDENTITY_SESSION_TTL_SECONDS,
@@ -26,6 +33,8 @@ import {
 } from './recruitment-progress-presenter';
 import type {
   RecruitmentApplicationProgressDto,
+  RecruitmentCertificateUploadDto,
+  RecruitmentCertificateUploadResultDto,
   RecruitmentRebindPhoneDto,
   RecruitmentRebindWechatDto,
   RecruitmentSendCodeResponseDto,
@@ -33,6 +42,7 @@ import type {
   RecruitmentVerifyCodeResponseDto,
   RecruitmentWithdrawDto,
 } from './recruitment.dto';
+import type { UploadedImageFile } from './recruitment-applications.service';
 
 // 招新四期 S4a(H5 + 手机身份链;2026-06-24;评审稿 recruitment-phase4-loop-optimization-review.md §3)。
 //
@@ -63,6 +73,8 @@ export class RecruitmentIdentityService {
     private readonly smsCode: SmsCodeService,
     private readonly wechat: WechatService,
     private readonly auditLogs: AuditLogsService,
+    // F7 证书图上传落 storage(镜像 applications.service 注入范式)
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
   // ============ H5 发码(open/v1;无账号;SmsPurpose.RECRUITMENT_BIND,userId=null)============
@@ -324,6 +336,124 @@ export class RecruitmentIdentityService {
       return row;
     });
     return this.assembleProgressFor(updated);
+  }
+
+  // ============ 招新可用性收口 F7:证书图上传(评审稿 §2.9 R6)============
+  // 凭证双通道二选一(镜像 F6 withdraw);category ∈ cert_type 既有码(DTO @IsIn);每类 ≤3 张
+  // **重传整类覆盖**(替换语义,免增量删除口;旧 blob best-effort 删不留孤儿);单图校验镜像
+  // idCardImage(jpeg/png ≤5MB)。存 recruitment_applications.certificateImages Json
+  // ({ [category]: string[] } 暂存位);promote 建 pending Certificate 搬 imageKeys(R6)。
+  // 终态行(promoted/rejected/withdrawn)不可传 → 28041。审核动作仍 = 既有标门槛,不新建审核流。
+  async uploadCertificateImages(
+    dto: RecruitmentCertificateUploadDto,
+    files: UploadedImageFile[],
+    meta: AuditMeta,
+  ): Promise<RecruitmentCertificateUploadResultDto> {
+    const viaWechat = typeof dto.wechatCode === 'string' && dto.wechatCode.length > 0;
+    const viaPhone = typeof dto.phone === 'string' && dto.phone.length > 0;
+    if (viaWechat === viaPhone) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    if (files.length === 0 || files.length > CERTIFICATE_IMAGES_MAX_PER_CATEGORY) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    for (const f of files) {
+      if (f.size > ID_CARD_IMAGE_MAX_BYTES || !ID_CARD_IMAGE_ALLOWED_MIME.includes(f.mimetype)) {
+        throw new BizException(BizCode.BAD_REQUEST);
+      }
+    }
+    let app: RecruitmentApplication | null;
+    let channel: 'wechat' | 'phone';
+    if (viaWechat) {
+      channel = 'wechat';
+      const { openid } = await this.wechat.code2session(dto.wechatCode as string);
+      app = await this.prisma.recruitmentApplication.findFirst({
+        where: { openid, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+      });
+    } else {
+      channel = 'phone';
+      if (typeof dto.code !== 'string' || dto.code.length === 0) {
+        throw new BizException(BizCode.BAD_REQUEST);
+      }
+      await this.smsCode.verifyAndConsume({
+        phone: dto.phone as string,
+        purpose: SmsPurpose.RECRUITMENT_BIND,
+        code: dto.code,
+        userId: null,
+      });
+      app = await this.findLatestAppByPhone(dto.phone as string);
+    }
+    if (!app) {
+      throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+    }
+    if (
+      app.statusCode === APP_STATUS_PROMOTED ||
+      app.statusCode === APP_STATUS_REJECTED ||
+      app.statusCode === APP_STATUS_WITHDRAWN
+    ) {
+      throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
+    }
+
+    // 落图(失败域:任一 putObject 失败 → best-effort 删本批已落新 key,不动旧图;镜像 FM-B)
+    const newKeys: string[] = [];
+    try {
+      for (const f of files) {
+        const ext = f.mimetype === 'image/png' ? 'png' : 'jpg';
+        const key = `${CERTIFICATE_IMAGE_KEY_PREFIX}/${dto.category}/${app.cycleId}/${randomUUID()}.${ext}`;
+        await this.storage.putObject({ key, body: f.buffer, contentType: f.mimetype });
+        newKeys.push(key);
+      }
+    } catch (err) {
+      for (const k of newKeys) {
+        await this.safeDeleteBlob(k);
+      }
+      throw err;
+    }
+
+    const existing = (app.certificateImages as Record<string, string[]> | null) ?? {};
+    const oldKeys = Array.isArray(existing[dto.category]) ? existing[dto.category] : [];
+    const nextImages: Record<string, string[]> = { ...existing, [dto.category]: newKeys };
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.recruitmentApplication.update({
+        where: { id: app.id },
+        data: { certificateImages: nextImages },
+      });
+      await this.auditLogs.log({
+        event: 'recruitment-application.certificate-upload',
+        actorUserId: null, // 无账号自助上传
+        actorRoleSnap: null,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: app.id,
+        meta,
+        extra: {
+          channel,
+          category: dto.category,
+          imageCount: newKeys.length,
+          replacedCount: oldKeys.length,
+          ...(channel === 'phone' ? { phone: maskPhone(dto.phone as string) } : {}),
+        },
+        tx,
+      });
+    });
+
+    // 重传覆盖:旧 blob best-effort 删(库行已指向新 key;删失败仅告警,不影响本次结果)
+    for (const k of oldKeys) {
+      await this.safeDeleteBlob(k);
+    }
+    return { category: dto.category, imageCount: newKeys.length };
+  }
+
+  // 证书图 blob best-effort 删(重传覆盖旧图 / 落图失败补偿;失败仅告警不外抛,镜像 safeDeleteOrphanImage)
+  private async safeDeleteBlob(key: string): Promise<void> {
+    try {
+      await this.storage.deleteObject(key);
+    } catch (e) {
+      this.logger.warn(
+        `recruitment certificate image cleanup failed key=${key}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   }
 
   // ============ 自助换微信换绑(锚当前手机;§3.4)============

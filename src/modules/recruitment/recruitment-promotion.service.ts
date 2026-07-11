@@ -61,6 +61,11 @@ const JOIN_SOURCE_RECRUITMENT = 'recruitment'; // member_profiles.joinSourceCode
 //(member_grade 'volunteer' 项 + Organization.code='VOL' ≠ VOD 志愿者组织部),不 import team-join(保持自洽)。
 const VOLUNTEER_GRADE_CODE = 'volunteer';
 const VOL_ORG_CODE = 'VOL';
+// 招新可用性收口 F7(评审稿 §2.9 R6):promote 为已上传证书图的类别自动建 pending Certificate。
+// 字面镜像 certificates.service 的建行契约(certStatusCode='pending';后续走既有 verify/reject 核验);
+// issuingOrg/issuedAt 为待核验占位(申请人自报材料,核验人确认后经既有 certificates 面修正)。
+const CERT_STATUS_PENDING = 'pending';
+const RECRUITMENT_CERT_ISSUING_ORG = '申请人自报(招新上传,待核验)';
 
 interface EmergencyContactJson {
   name: string;
@@ -518,6 +523,27 @@ export class RecruitmentPromotionService {
         select: { id: true },
       });
     }
+    // F7(R6):为已上传证书图的类别自动建 pending Certificate(图 key 搬入,blob 单一属主=certificate;
+    // 走既有 certificates verify/reject 核验流,不新建审核流)。占位字段待核验人修正;legacy 行无
+    // certificateImages → 零建行(批量 promote 行为锁)。
+    const certImages = a.certificateImages as Record<string, string[]> | null;
+    if (certImages) {
+      for (const [category, keys] of Object.entries(certImages)) {
+        if (!Array.isArray(keys) || keys.length === 0) continue;
+        await tx.certificate.create({
+          data: {
+            memberId: member.id,
+            certTypeCode: category,
+            issuingOrg: RECRUITMENT_CERT_ISSUING_ORG,
+            issuedAt: normalizeDateOnly(now.toISOString()),
+            certStatusCode: CERT_STATUS_PENDING,
+            isInternal: false,
+            imageKeys: keys,
+          },
+          select: { id: true },
+        });
+      }
+    }
     // 标 promoted + 链 + 即时清敏感(PII 已搬 member;blob 归 member,留存 SOP 不再触 promoted 行)。
     // F12(#399):openid + reviewNote 亦属留存 SOP §1 须置 NULL 的敏感字段;promote 即时清后
     // SOP「WHERE sensitivePurgedAt IS NULL」永久跳过本行 —— 漏清则两再识别字段在「已脱敏」行永久残留。
@@ -540,6 +566,8 @@ export class RecruitmentPromotionService {
         // F5(R5):签名图已搬 member_profiles 长期留存 → 报名行 key 清空(blob 单一属主=member);
         // privacyConsentAcceptedAt/Version 为脱敏留存字段,不清。
         signatureImageKey: null,
+        // F7(R6):证书图已按类别搬 Certificate.imageKeys → 报名行清空(blob 单一属主=certificate)。
+        certificateImages: Prisma.DbNull,
       },
     });
     await this.auditLogs.log({
