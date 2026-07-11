@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigType } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import {
   DictItemStatus,
@@ -7,6 +8,7 @@ import {
   type RecruitmentCycle,
 } from '@prisma/client';
 
+import appConfig from '../../config/app.config';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -27,6 +29,7 @@ import { STORAGE_PROVIDER } from '../storage/storage.constants';
 import type { StorageProvider } from '../storage/storage.interface';
 import { WechatService } from '../wechat/wechat.service';
 import {
+  APP_INACTIVE_STATUS_CODES,
   APP_STATUS_MANUAL,
   APP_STATUS_REJECTED,
   APP_STATUS_VERIFIED,
@@ -37,10 +40,12 @@ import {
   ID_CARD_IMAGE_KEY_PREFIX,
   ID_CARD_IMAGE_MAX_BYTES,
   ID_CARD_PORTRAIT_IMAGE_KEY_PREFIX,
+  OCR_COUNTER_UNKNOWN_IP,
   RECRUITMENT_MAX_AGE,
   RECRUITMENT_MIN_AGE,
   VERIFY_OUTCOME_CATEGORY_MISMATCH,
   ageGroupOf,
+  beijingDateKey,
   computeAge,
   extractBirthDate,
   extractGenderCode,
@@ -106,6 +111,7 @@ export class RecruitmentApplicationsService {
     private readonly realname: RealnameVerificationService,
     private readonly identity: RecruitmentIdentityService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
+    @Inject(appConfig.KEY) private readonly config: ConfigType<typeof appConfig>,
   ) {}
 
   // ============ 公开 OCR 识别预填(open/v1;无账号;OCR 改造端点 4b;评审稿 §4)============
@@ -117,7 +123,7 @@ export class RecruitmentApplicationsService {
     image: UploadedImageFile | undefined,
     meta: AuditMeta,
   ): Promise<RecruitmentOcrRecognizeResponseDto> {
-    void meta; // 公开识别不写 DB 审计(无 resource);保留签名一致
+    // 公开识别不写 DB 审计(无 resource);meta 仅取 ip 供 F1 OCR 日封顶计数。
     await this.findOpenCycleOrThrow(); // 无 open 轮 → 28030(省 OCR);识别不卡容量
     if (!image) {
       throw new BizException(BizCode.RECRUITMENT_ID_CARD_IMAGE_REQUIRED);
@@ -140,6 +146,8 @@ export class RecruitmentApplicationsService {
         ocrDetail: null,
       };
     }
+    // F1 成本线(评审稿 §2.5/E-U-1):付费 OCR 前按 IP 北京自然日封顶(免费分支不计;超限 28060)。
+    await this.assertOcrDailyQuotaAndCount(meta.ip, new Date());
     // dev 安全诊断(logger.debug:生产默认不输出;无 PII)——核对 multipart 文件是否正常读入
     this.logger.debug(
       `[recruitment ocr recognize] documentType=${documentTypeCode} mime=${image.mimetype} ` +
@@ -246,18 +254,50 @@ export class RecruitmentApplicationsService {
       );
     }
 
-    // 5. 同轮去重预检(身份证号;P2002 兜底见单事务;省付费 OCR)
+    // 5. 同轮去重预检(身份证号;P2002 兜底见单事务;省付费 OCR)。排除态集合共用
+    //    APP_INACTIVE_STATUS_CODES(现 = rejected;F6 撤销落地后追加 withdrawn,单一真相源)。
     const dup = await this.prisma.recruitmentApplication.findFirst({
       where: {
         cycleId: cycle.id,
         idCardNumber: payload.idCardNumber,
         deletedAt: null,
-        statusCode: { not: APP_STATUS_REJECTED },
+        statusCode: { notIn: [...APP_INACTIVE_STATUS_CODES] },
       },
       select: { id: true },
     });
     if (dup) {
       throw new BizException(BizCode.RECRUITMENT_DUPLICATE_APPLICATION);
+    }
+
+    // 5b. F1 防重前移(评审稿 §2.5/E-U-2):同轮活跃报名 openid / phone 去重,付费 OCR **之前**
+    //     命中即拒 —— 换证件号也无法用同一微信/手机重复触发付费 OCR。openid 仅小程序链可判
+    //     (code2session 已在第 4 步换得;H5 会话 openid 恒 null 不参与);phone 恒可判(payload 必填)。
+    //     共用手机的罕见正常场景由 admin 单人手动建档兜底(评审稿已记为已知取舍)。
+    if (wechatOpenid !== null) {
+      const dupOpenid = await this.prisma.recruitmentApplication.findFirst({
+        where: {
+          cycleId: cycle.id,
+          openid: wechatOpenid,
+          deletedAt: null,
+          statusCode: { notIn: [...APP_INACTIVE_STATUS_CODES] },
+        },
+        select: { id: true },
+      });
+      if (dupOpenid) {
+        throw new BizException(BizCode.RECRUITMENT_DUPLICATE_OPENID_ACTIVE);
+      }
+    }
+    const dupPhone = await this.prisma.recruitmentApplication.findFirst({
+      where: {
+        cycleId: cycle.id,
+        phone: payload.phone,
+        deletedAt: null,
+        statusCode: { notIn: [...APP_INACTIVE_STATUS_CODES] },
+      },
+      select: { id: true },
+    });
+    if (dupPhone) {
+      throw new BizException(BizCode.RECRUITMENT_DUPLICATE_PHONE_ACTIVE);
     }
 
     // 6. 证件照(缺 → 28011;mime/大小校验)
@@ -279,6 +319,8 @@ export class RecruitmentApplicationsService {
     // 鉴伪版充分利用:mainland OCR 完整结果(扩展字段 + 裁剪图 base64);仅 submitted 路径消费(落 4 列 + 2 裁剪图)。
     let mainlandOcr: RealnameOcrResult | null = null;
     if (mainland) {
+      // F1 成本线(评审稿 §2.5/E-U-1):付费 OCR 前按 IP 北京自然日封顶(与 recognize 共享计数;超限 28060)。
+      await this.assertOcrDailyQuotaAndCount(meta.ip, now);
       const cls = await this.classifyMainlandOcr(payload, image);
       outcome = cls.outcome;
       recognized = cls.recognized;
@@ -640,6 +682,27 @@ export class RecruitmentApplicationsService {
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
     if (!(await this.rbac.can(user, action))) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+  }
+
+  // F1 成本线(评审稿 §2.5/E-U-1):付费 OCR 按 IP × 北京自然日封顶(recognize + submit 共享)。
+  // 原子 upsert increment 后判限(Prisma 简单 upsert 走原生 ON CONFLICT,并发安全):
+  // 先加后判 → 拒者恒拒;超限尝试也计数(保守防滥用,沿 sms 日限「含失败行」口径 E-11)。
+  // 持久化计数表独立于 @RecruitmentThrottle 内存限流器,进程重启不清零;ip 缺省归一 'unknown' 桶不可绕计。
+  private async assertOcrDailyQuotaAndCount(ip: string | null, now: Date): Promise<void> {
+    const ipKey = ip && ip.length > 0 ? ip : OCR_COUNTER_UNKNOWN_IP;
+    const dateKey = beijingDateKey(now);
+    const row = await this.prisma.recruitmentOcrDailyCounter.upsert({
+      where: { ip_dateKey: { ip: ipKey, dateKey } },
+      create: { ip: ipKey, dateKey, count: 1 },
+      update: { count: { increment: 1 } },
+      select: { count: true },
+    });
+    if (row.count > this.config.recruitmentOcr.dailyIpLimit) {
+      this.logger.warn(
+        `recruitment ocr daily limit hit ip=${ipKey} dateKey=${dateKey} count=${row.count}`,
+      );
+      throw new BizException(BizCode.RECRUITMENT_OCR_DAILY_LIMIT);
     }
   }
 

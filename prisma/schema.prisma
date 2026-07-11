@@ -1889,6 +1889,26 @@ model RecruitmentIdentitySession {
   @@map("recruitment_identity_sessions")
 }
 
+// 招新可用性收口 F1(2026-07-11;评审稿 recruitment-usability-closeout-review.md §2.5/E-U-1)。
+// 付费 OCR 调用(recognize + submit 共享)按 IP × 北京自然日(UTC+8)封顶的持久化计数表:
+// 独立于内存态限流器(重启不清零),env `RECRUITMENT_OCR_DAILY_IP_LIMIT`(默认 30)判限。
+// 纯基建计数行(非业务行):无 deletedAt / 无 FK;原子 upsert increment 后判限(先加后判,
+// 拒者恒拒,超限尝试也计数 = 保守防滥用,沿 sms 日限「含失败行」口径 E-11)。
+// 旧日期行由留存 SOP 按 dateKey 清理(不建 cron)。
+model RecruitmentOcrDailyCounter {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ip      String // 请求出口 IP(req.ip;缺省归一 'unknown' 桶,不可绕计)
+  dateKey String // 北京自然日 YYYY-MM-DD(固定 UTC+8 日界,沿 sms/stats 各模块级实现口径)
+  count   Int    @default(0) // 当日该 IP 已发起的付费 OCR 调用数(含被上游拒/失败的尝试)
+
+  @@unique([ip, dateKey])
+  @@index([dateKey])
+  @@map("recruitment_ocr_daily_counters")
+}
+
 model RealnameVerificationSettings {
   id String @id @default(cuid())
 

@@ -48,13 +48,22 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   let sensitiveAuth: string; // 非 SA:read.record + read.sensitive(S3 敏感查看)
   let recordOnlyAuth: string; // 非 SA:仅 read.record(S3 脱敏查看)
 
+  // F1(招新可用性收口):同轮活跃报名 phone 去重落地后,默认 fixture 手机随 wechatCode 唯一化
+  // (镜像 DevStub `dev-openid-<code>` 的确定性派生;显式传 phone 的用例不受影响)。
+  // 确定性哈希、非随机 → 可复现;同一 code 恒同号(测试内引用可用 phoneFor 回查)。
+  function phoneFor(code: string): string {
+    let h = 0;
+    for (let i = 0; i < code.length; i++) h = (h * 31 + code.charCodeAt(i)) >>> 0;
+    return `139${String(h % 100000000).padStart(8, '0')}`;
+  }
+
   function validPayload(over: Record<string, unknown> = {}): Record<string, unknown> {
     return {
       wechatCode: 'code-default',
       realName: '张三',
       idCardNumber: ID_MATCH_A,
       documentTypeCode: 'mainland_id',
-      phone: '13900000001',
+      phone: phoneFor(typeof over.wechatCode === 'string' ? over.wechatCode : 'code-default'),
       detailedAddress: '北京市朝阳区某街道 1 号院 2 单元',
       cityDistrict: '北京市朝阳区',
       sourceChannel: 'wechat_moments',
@@ -252,6 +261,8 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     await prisma.member.deleteMany({});
     await prisma.recruitmentApplication.deleteMany({});
     await prisma.recruitmentCycle.deleteMany({});
+    // F1:OCR 日封顶按 IP 持久计数 —— 每测清零,防同文件多测累计打满 30 上限误伤无关用例。
+    await prisma.recruitmentOcrDailyCounter.deleteMany({});
     await prisma.auditLog.deleteMany({
       where: { resourceType: { in: ['recruitment_application', 'recruitment_cycle'] } },
     });
@@ -409,6 +420,122 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expectBizError(dup, BizCode.RECRUITMENT_DUPLICATE_APPLICATION);
     // 防重发生在付费核验前:只有第一条留下 realname-verify 审计
     expect(await realnameVerifyAuditCount()).toBe(1);
+  });
+
+  // ===== 招新可用性收口 F1(评审稿 recruitment-usability-closeout-review.md §2.5/E-U-2):
+  //       防重前移(同轮活跃 openid/phone)+ OCR 按 IP 北京自然日封顶 =====
+
+  async function ocrCounterTotal(): Promise<number> {
+    const rows = await prisma.recruitmentOcrDailyCounter.findMany({ select: { count: true } });
+    return rows.reduce((s, r) => s + r.count, 0);
+  }
+
+  it('⑤b(F1) 同轮同微信(换证件号)二次提交 → 28004,且不触付费 OCR(日封顶计数零增长)', async () => {
+    await openCycle();
+    await submit(validPayload({ wechatCode: 'code-dup-o', idCardNumber: ID_MATCH_A }));
+    const afterFirst = await ocrCounterTotal();
+    expect(afterFirst).toBe(1); // 首笔 mainland 提交计 1 次付费 OCR
+
+    // 同 openid(同 wechatCode)+ 不同证件号 + 不同手机 → openid 去重命中(证件号键绕不过成本线)
+    const dup = await submit(
+      validPayload({
+        wechatCode: 'code-dup-o',
+        idCardNumber: ID_MATCH_B,
+        phone: '13911100001',
+      }),
+    );
+    expectBizError(dup, BizCode.RECRUITMENT_DUPLICATE_OPENID_ACTIVE);
+    expect(await ocrCounterTotal()).toBe(afterFirst); // 被拒提交零 OCR、零计数
+    expect(await realnameVerifyAuditCount()).toBe(1);
+  });
+
+  it('⑤c(F1) 同轮同手机(换证件号/换微信)二次提交 → 28005,且不触付费 OCR', async () => {
+    await openCycle();
+    await submit(validPayload({ wechatCode: 'code-dup-p1', idCardNumber: ID_MATCH_A }));
+    const afterFirst = await ocrCounterTotal();
+
+    const dup = await submit(
+      validPayload({
+        wechatCode: 'code-dup-p2',
+        idCardNumber: ID_MATCH_B,
+        phone: phoneFor('code-dup-p1'), // 与首笔同手机
+      }),
+    );
+    expectBizError(dup, BizCode.RECRUITMENT_DUPLICATE_PHONE_ACTIVE);
+    expect(await ocrCounterTotal()).toBe(afterFirst);
+  });
+
+  it('⑤d(F1) rejected 后同 openid/同手机可重报(排除集 = 非活跃态不占键)', async () => {
+    await openCycle();
+    // mismatch + 确认③ → manual_review(活跃行)→ 人工 reject → rejected
+    await submit(
+      validPayload({
+        wechatCode: 'code-dup-r',
+        idCardNumber: ID_MATCH_A,
+        applicantConfirmedOcrWrong: true,
+      }),
+      { ocr: { name: '别人', idCardNumber: ID_MATCH_A, clarity: true } },
+    );
+    const row = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-code-dup-r' },
+    });
+    await request(httpServer(app))
+      .post(`${ADMIN_APPS}/${row.id}/resolve`)
+      .set('Authorization', adminAuth)
+      .send({ approved: false })
+      .expect(200);
+
+    // 同 openid + 同手机 + 换证件号重报 → 三键(idCard/openid/phone)均不撞 rejected 行 → verified
+    const again = await submit(
+      validPayload({ wechatCode: 'code-dup-r', idCardNumber: ID_MATCH_B }),
+    );
+    expect(again.status).toBe(201);
+    expect(again.body.data.statusCode).toBe('verified');
+  });
+
+  it('⑤e(F1) OCR 日封顶:当日计数达上限 → recognize/submit 28060(HTTP 429);外籍不调 OCR 不受限', async () => {
+    await openCycle();
+    // 先跑一次 recognize 学到本环境请求 IP 的计数键(不猜 IP 形态)
+    const warm = await recognize('mainland_id', {
+      name: '张三',
+      idCardNumber: ID_MATCH_A,
+      clarity: true,
+      warnings: [],
+    });
+    expect(warm.status).toBe(200);
+    const counter = await prisma.recruitmentOcrDailyCounter.findFirstOrThrow();
+    expect(counter.count).toBe(1);
+
+    // 把当日该 IP 计数顶到默认上限 30(造「已打满」持久状态;env 未设 → 默认 30)
+    await prisma.recruitmentOcrDailyCounter.update({
+      where: { id: counter.id },
+      data: { count: 30 },
+    });
+
+    const blockedRecognize = await recognize('mainland_id', {
+      name: '张三',
+      idCardNumber: ID_MATCH_A,
+      clarity: true,
+      warnings: [],
+    });
+    expectBizError(blockedRecognize, BizCode.RECRUITMENT_OCR_DAILY_LIMIT); // 429 语义由 helper 反向锁定
+
+    // submit(mainland)与 recognize 共享同一计数 → 同样 28060;不落图、不落记录
+    const blockedSubmit = await submit(
+      validPayload({ wechatCode: 'code-cap-ip', idCardNumber: ID_MATCH_B }),
+    );
+    expectBizError(blockedSubmit, BizCode.RECRUITMENT_OCR_DAILY_LIMIT);
+    expect(await prisma.recruitmentApplication.count()).toBe(0);
+
+    // 外籍不调付费 OCR → 不受日封顶影响(免费人工通道照常)
+    const foreign = await submit(
+      validPayload({
+        wechatCode: 'code-cap-f',
+        documentTypeCode: 'passport',
+        idCardNumber: 'E00112233',
+      }),
+    );
+    expect(foreign.body.data.statusCode).toBe('manual_review');
   });
 
   // ⑥ 轮次开关:无 open 轮 → 28030
@@ -1295,7 +1422,8 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     // MemberProfile 映射 + email null(M-1)+ 证件照搬入(wrinkle①)
     expect(li.memberProfile?.realName).toBe('李四');
     expect(li.memberProfile?.documentNumber).toBe(ID_MATCH_B);
-    expect(li.memberProfile?.mobile).toBe('13900000001');
+    // F1 fixture 手机唯一化后动态引用(语义不变:profile.mobile = 报名行 phone 原值搬运)
+    expect(li.memberProfile?.mobile).toBe(phoneFor('p3-l'));
     expect(li.memberProfile?.email).toBeNull();
     expect(li.memberProfile?.joinSourceCode).toBe('recruitment');
     expect(li.memberProfile?.privacyConsentSigned).toBe(true);
@@ -1956,9 +2084,22 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
 
   it('㉙(S6) 批量标门槛:手机重复→ambiguous;状态非法行→failed(逐行容错,不整批断,其余行照标)', async () => {
     const cycle = await openCycle();
-    // 两 app 共用手机 → 手机匹配 ambiguous(绝不猜)
+    // 两 app 共用手机 → 手机匹配 ambiguous(绝不猜)。F1 防重前移后该状态不可再经公开 submit 产生
+    // (同轮同 phone 二次提交 → 28005),但跨轮/历史数据仍可能存在 → 第二行改直插 fixture,
+    // 批量匹配的 ambiguous 语义与断言逐字保留。
     await submitVerifiedPhone('s6-da', ID_MATCH_A, '周一', '13900002000');
-    await submitVerifiedPhone('s6-db', ID_MATCH_B, '吴二', '13900002000');
+    await prisma.recruitmentApplication.create({
+      data: {
+        cycleId: cycle.id,
+        statusCode: 'verified',
+        documentTypeCode: 'mainland_id',
+        isForeigner: false,
+        realName: '吴二',
+        idCardNumber: ID_MATCH_B,
+        phone: '13900002000',
+        openid: 'dev-openid-s6-db',
+      },
+    });
     // manual_review 行(状态非法标门槛 → failed):mismatch + 申请人确认③ + 独立手机
     const mmRes = await submit(
       validPayload({
@@ -2052,7 +2193,10 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
 
   it('㉜(S6) 批量导出 CSV:持 read.sensitive → 明文列;仅 read.record → 脱敏列(明文不泄露);无码 → 30100', async () => {
     const cycle = await openCycle();
-    await submit(validPayload({ wechatCode: 's6-ex', idCardNumber: ID_MATCH_A })); // verified;phone 13900000001
+    // 显式传 phone(F1 fixture 手机唯一化后,本测的 CSV 明文/脱敏断言仍锚定固定号)
+    await submit(
+      validPayload({ wechatCode: 's6-ex', idCardNumber: ID_MATCH_A, phone: '13900000001' }),
+    ); // verified
 
     // 持 read.sensitive → 明文证件号 / 手机列
     const plain = await request(httpServer(app))

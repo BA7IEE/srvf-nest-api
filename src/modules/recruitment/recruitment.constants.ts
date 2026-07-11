@@ -233,6 +233,27 @@ export const RECRUITMENT_MAX_AGE = 60;
 // 北京日界(UTC+8)固定偏移,沿 sms 自然日口径,不引 tz 依赖
 const BEIJING_UTC_OFFSET_HOURS = 8;
 
+// =============================================================================
+// 招新可用性收口 F1(2026-07-11;评审稿 recruitment-usability-closeout-review.md §2.5/§6.1)
+// =============================================================================
+
+// 「同轮活跃报名」排除态集合(openid/phone/idCardNumber 三键去重共用;与 partial unique 的
+// `statusCode <> 'rejected'` 排除语义同源)。F6 自助撤销落地后追加 'withdrawn'(R4)。
+export const APP_INACTIVE_STATUS_CODES: ReadonlyArray<string> = [APP_STATUS_REJECTED];
+
+// 付费 OCR 按 IP 北京自然日封顶(E-U-1):计数键 = ip × dateKey;req.ip 缺省归一 'unknown' 桶
+//(不可作为绕计通道)。dateKey 用固定 UTC+8 日界(沿 sms/stats 各模块级实现口径,不抽共享 util)。
+export const OCR_COUNTER_UNKNOWN_IP = 'unknown';
+
+/** 北京自然日 key(YYYY-MM-DD;固定 UTC+8 偏移,不引 tz 依赖)。 */
+export function beijingDateKey(now: Date): string {
+  const shifted = new Date(now.getTime() + BEIJING_UTC_OFFSET_HOURS * 3600_000);
+  const y = shifted.getUTCFullYear();
+  const m = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(shifted.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 // ===== 证件类型(documentTypeCode;判外籍 / OCR 自动放行资格)=====
 // OCR 改造(2026-06-22):身份证 / 护照 / 回乡证走 OCR(isOcrDocument,见 realname.constants);
 // **仅 mainland_id 可自动放行 verified**(OCR 匹配+防伪+清晰);护照/回乡证 OCR 后恒人工;其余不 OCR 人工。

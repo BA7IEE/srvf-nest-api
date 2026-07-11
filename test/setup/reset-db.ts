@@ -89,6 +89,10 @@ import { assertTestDatabaseUrl } from './test-db';
 // 顺序:recruitment_applications(子)→ recruitment_cycles(父);CASCADE 兜底。recruitment 两表 T3 报名 e2e 用,
 // 本期一并加入,避免与 realname 同款「表不在 truncate 列表 → 跨 run 残留行污染 GET 空库断言」隔离 bug。
 //
+// 招新可用性收口 F1 追加(2026-07-11):recruitment_ocr_daily_counters(物理名小写,Prisma `@@map`);
+//   无 DB FK(纯基建计数行),**不**被任何 CASCADE 覆盖 → 必须显式列出(沿 PR3 教训:
+//   否则跨 spec 残留计数 → OCR 日封顶用例污染)。放无 FK 独立段(recruitment 两表之后)。
+//
 // 统一通知模块 S1 站内信渠道追加(2026-06-25):2 张新表(物理名小写,Prisma `@@map`):
 //   notification_reads(FK notificationId → notifications,memberId → Member,均 Restrict;子表)/ notifications(无被引父表)。
 // 顺序:notification_reads(子)→ notifications(父),均在 Member 之前;CASCADE 兜底。
@@ -130,6 +134,6 @@ export async function resetDb(app: INestApplication): Promise<void> {
 
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "organization_position_role_policies", "role_bindings", "role_permissions", "roles", "permissions", "audit_logs", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "realname_verification_settings", "recruitment_applications", "recruitment_cycles", "team_join_applications", "team_join_cycles", "notification_reads", "notifications", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "member_organization_memberships", "organization_supervision_assignments", "organization_position_assignments", "organization_position_rules", "organization_positions", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "organization_position_role_policies", "role_bindings", "role_permissions", "roles", "permissions", "audit_logs", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "realname_verification_settings", "recruitment_applications", "recruitment_cycles", "recruitment_ocr_daily_counters", "team_join_applications", "team_join_cycles", "notification_reads", "notifications", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "ContributionRule", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "member_organization_memberships", "organization_supervision_assignments", "organization_position_assignments", "organization_position_rules", "organization_positions", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }

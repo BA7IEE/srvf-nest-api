@@ -161,6 +161,8 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
     await prisma.smsSendLog.deleteMany({});
     await prisma.recruitmentApplication.deleteMany({});
     await prisma.recruitmentCycle.deleteMany({});
+    // F1:OCR 日封顶按 IP 持久计数 —— 每测清零,防同文件多测累计打满 30 上限误伤无关用例。
+    await prisma.recruitmentOcrDailyCounter.deleteMany({});
     await prisma.auditLog.deleteMany({});
   });
 

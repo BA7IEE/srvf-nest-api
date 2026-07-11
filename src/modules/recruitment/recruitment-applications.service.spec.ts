@@ -60,13 +60,17 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
       recruitmentCycle: {
         findFirst: jest.fn().mockResolvedValue({ id: 'cyc1', capacity: null, year: 2026 }),
       },
-      // 同轮去重 precheck:无重复
+      // 同轮去重 precheck(身份证号 + F1 openid/phone):无重复
       recruitmentApplication: {
         findFirst: jest.fn().mockResolvedValue(null),
       },
       // F3:relation 字典校验(assertEmergencyRelationCodeValid)→ 命中 ACTIVE 项(校验通过)
       dictItem: {
         findFirst: jest.fn().mockResolvedValue({ id: 'rel1' }),
+      },
+      // F1 OCR 日封顶计数(mainland 付费 OCR 前 upsert increment;未超限)
+      recruitmentOcrDailyCounter: {
+        upsert: jest.fn().mockResolvedValue({ count: 1 }),
       },
       // tx1:建库事务失败(putObject 已成功 → blob 成孤儿)
       $transaction: jest.fn().mockRejectedValue(txError),
@@ -94,6 +98,7 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
       realname as never,
       identity as never,
       storage,
+      { recruitmentOcr: { dailyIpLimit: 30 } } as never, // F1:OCR 日封顶 config
     );
     return { service, storage, prisma, realname };
   }
@@ -202,6 +207,10 @@ describe('RecruitmentApplicationsService · 落图失败孤儿补偿(review #484
       dictItem: {
         findFirst: jest.fn().mockResolvedValue({ id: 'rel1' }),
       },
+      // F1 OCR 日封顶计数(mainland 付费 OCR 前 upsert increment;未超限)
+      recruitmentOcrDailyCounter: {
+        upsert: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       // 本组测试均在落图阶段先抛错,事务不应被调用
       $transaction: jest.fn(),
     };
@@ -227,6 +236,7 @@ describe('RecruitmentApplicationsService · 落图失败孤儿补偿(review #484
       realname as never,
       identity as never,
       storage,
+      { recruitmentOcr: { dailyIpLimit: 30 } } as never, // F1:OCR 日封顶 config
     );
     return { service, storage, prisma };
   }
@@ -347,6 +357,7 @@ describe('RecruitmentApplicationsService.resolveManual · S3 敏感字段分级(
       {} as never,
       {} as never,
       {} as never,
+      { recruitmentOcr: { dailyIpLimit: 30 } } as never, // F1:OCR 日封顶 config(本组不触 submit)
     );
     return { service };
   }
@@ -365,5 +376,122 @@ describe('RecruitmentApplicationsService.resolveManual · S3 敏感字段分级(
     const dto = await service.resolveManual('app-1', { approved: false }, user, meta, now);
     expect(dto.idCardNumber).toBe(RAW_ID);
     expect(dto.phone).toBe(RAW_PHONE);
+  });
+});
+
+// 招新可用性收口 F1(2026-07-11;评审稿 recruitment-usability-closeout-review.md §2.5/E-U-2):
+// ① 同轮活跃报名 openid/phone 去重发生在付费 OCR **之前**(命中 28004/28005,recognize 与落图零调用);
+// ② 付费 OCR 按 IP 北京自然日封顶(upsert increment 后判限;超限 28060,recognize 零调用)。
+describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封顶', () => {
+  const VALID_MAINLAND_ID = '110101199003070038';
+
+  function buildPayload(): RecruitmentSubmitPayloadDto {
+    return {
+      wechatCode: 'code-x',
+      realName: '张三',
+      idCardNumber: VALID_MAINLAND_ID,
+      documentTypeCode: 'mainland_id',
+      phone: '13900000001',
+      detailedAddress: '北京市朝阳区某街道 1 号',
+      cityDistrict: '北京市朝阳区',
+      sourceChannel: 'wechat_moments',
+      emergencyContacts: [
+        { name: '李四', relation: '父亲', phone: '13900000002' },
+        { name: '王五', relation: '母亲', phone: '13900000003' },
+      ],
+    };
+  }
+
+  const image: UploadedImageFile = {
+    buffer: Buffer.from('fake-id-card-bytes'),
+    mimetype: 'image/jpeg',
+    size: 100,
+  };
+  const meta: AuditMeta = { requestId: 'r1', ip: '203.0.113.9', ua: null };
+  const now = new Date('2026-07-11T00:00:00.000Z');
+
+  // dupHits:按 findFirst 调用序(① idCard ② openid ③ phone)指定哪一步命中;quotaCount:upsert 返回值。
+  function buildService(opts: { dupHits?: Array<null | { id: string }>; quotaCount?: number }) {
+    const findFirst = jest.fn();
+    for (const hit of opts.dupHits ?? [null, null, null]) {
+      findFirst.mockResolvedValueOnce(hit);
+    }
+    const storage = {
+      putObject: jest.fn().mockResolvedValue({ key: 'k', etag: null }),
+      deleteObject: jest.fn().mockResolvedValue(undefined),
+      generateUploadUrl: jest.fn(),
+      generateDownloadUrl: jest.fn(),
+      headObject: jest.fn(),
+    };
+    const prisma = {
+      recruitmentCycle: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'cyc1', capacity: null, year: 2026 }),
+      },
+      recruitmentApplication: { findFirst },
+      dictItem: { findFirst: jest.fn().mockResolvedValue({ id: 'rel1' }) },
+      recruitmentOcrDailyCounter: {
+        upsert: jest.fn().mockResolvedValue({ count: opts.quotaCount ?? 1 }),
+      },
+      $transaction: jest.fn(),
+    };
+    const wechat = { code2session: jest.fn().mockResolvedValue({ openid: 'op1' }) };
+    const realname = { recognize: jest.fn() };
+    const identity = { assertPhoneSessionValid: jest.fn(), consumePhoneSession: jest.fn() };
+    const service = new RecruitmentApplicationsService(
+      prisma as never,
+      { can: jest.fn() } as never,
+      { log: jest.fn() } as never,
+      wechat as never,
+      realname as never,
+      identity as never,
+      storage,
+      { recruitmentOcr: { dailyIpLimit: 30 } } as never,
+    );
+    return { service, storage, prisma, realname };
+  }
+
+  it('同轮活跃 openid 命中 → 28004;付费 OCR / 落图 / 事务零调用', async () => {
+    const { service, storage, prisma, realname } = buildService({
+      dupHits: [null, { id: 'dup-openid' }],
+    });
+    await expect(service.submit(buildPayload(), image, meta, now)).rejects.toMatchObject({
+      biz: { code: BizCode.RECRUITMENT_DUPLICATE_OPENID_ACTIVE.code },
+    });
+    expect(realname.recognize).not.toHaveBeenCalled();
+    expect(storage.putObject).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.recruitmentOcrDailyCounter.upsert).not.toHaveBeenCalled(); // 去重在配额计数之前 → 被拒提交不占当日 OCR 配额
+  });
+
+  it('同轮活跃 phone 命中 → 28005;付费 OCR / 落图 / 事务零调用', async () => {
+    const { service, storage, prisma, realname } = buildService({
+      dupHits: [null, null, { id: 'dup-phone' }],
+    });
+    await expect(service.submit(buildPayload(), image, meta, now)).rejects.toMatchObject({
+      biz: { code: BizCode.RECRUITMENT_DUPLICATE_PHONE_ACTIVE.code },
+    });
+    expect(realname.recognize).not.toHaveBeenCalled();
+    expect(storage.putObject).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('OCR 日封顶超限(upsert 返回 count > limit)→ 28060;recognize 零调用、计数键 = ip × 北京日', async () => {
+    const { service, prisma, realname } = buildService({ quotaCount: 31 });
+    await expect(service.submit(buildPayload(), image, meta, now)).rejects.toMatchObject({
+      biz: { code: BizCode.RECRUITMENT_OCR_DAILY_LIMIT.code },
+    });
+    expect(realname.recognize).not.toHaveBeenCalled();
+    expect(prisma.recruitmentOcrDailyCounter.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { ip_dateKey: { ip: '203.0.113.9', dateKey: '2026-07-11' } },
+      }),
+    );
+  });
+
+  it('恰达上限(count == limit)→ 放行继续 OCR(先加后判,拒者恒拒边界)', async () => {
+    const { service, realname } = buildService({ quotaCount: 30 });
+    // recognize 桩未配置返回值 → 后续流程会抛(本用例只锁「配额不拦」),吞掉即可。
+    await service.submit(buildPayload(), image, meta, now).catch(() => undefined);
+    expect(realname.recognize).toHaveBeenCalledTimes(1);
   });
 });
