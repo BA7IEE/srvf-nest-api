@@ -190,6 +190,12 @@ export interface RecruitmentThrottleConfig {
   ttlSeconds: number;
 }
 
+// 招新可用性收口 F1(2026-07-11;评审稿 recruitment-usability-closeout-review.md §2.5/E-U-1):
+// 付费 OCR 调用(recognize + submit 共享)按 IP × 北京自然日封顶(持久化计数表,独立于上面的限流器)。
+export interface RecruitmentOcrConfig {
+  dailyIpLimit: number;
+}
+
 // CMS 内容发布模块(第 28 模块)T3(2026-06-21):open/v1 内容读取面限流(评审稿 §7;
 // 第 10 个独立 throttler 实例 content-public,默认 60/60s——读取适配,比写入/付费端点宽松,仍挡高频扫库)。
 export interface ContentPublicThrottleConfig {
@@ -328,6 +334,7 @@ export interface AppConfig {
   loginSmsThrottle: LoginSmsThrottleConfig;
   loginWechatThrottle: LoginWechatThrottleConfig;
   recruitmentThrottle: RecruitmentThrottleConfig;
+  recruitmentOcr: RecruitmentOcrConfig;
   contentPublicThrottle: ContentPublicThrottleConfig;
 }
 
@@ -527,6 +534,19 @@ export default registerAs('app', (): AppConfig => {
     ),
   };
 
+  // 招新可用性收口 F1(2026-07-11;评审稿 §2.5/E-U-1):付费 OCR 按 IP 北京自然日封顶(默认 30/日)。
+  const recruitmentOcr: RecruitmentOcrConfig = {
+    dailyIpLimit: parsePositiveInt(
+      process.env.RECRUITMENT_OCR_DAILY_IP_LIMIT,
+      30,
+      'RECRUITMENT_OCR_DAILY_IP_LIMIT',
+      {
+        min: 1,
+        max: 100000,
+      },
+    ),
+  };
+
   // CMS 内容发布模块 T3(2026-06-21):open/v1 内容读取面限流(评审稿 §7;默认 60/60 读取适配)。
   const contentPublicThrottle: ContentPublicThrottleConfig = {
     limit: parsePositiveInt(
@@ -564,6 +584,7 @@ export default registerAs('app', (): AppConfig => {
     loginSmsThrottle,
     loginWechatThrottle,
     recruitmentThrottle,
+    recruitmentOcr,
     contentPublicThrottle,
   };
 });

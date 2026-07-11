@@ -142,11 +142,16 @@ export class RecruitmentPublicController {
     BizCode.RECRUITMENT_CYCLE_CAPACITY_FULL,
     BizCode.RECRUITMENT_AGE_OUT_OF_RANGE,
     BizCode.RECRUITMENT_DUPLICATE_APPLICATION,
+    // 招新可用性收口 F1:同轮活跃报名 openid/phone 去重(付费 OCR 前命中即拒;温和文案引导查进度)
+    BizCode.RECRUITMENT_DUPLICATE_OPENID_ACTIVE,
+    BizCode.RECRUITMENT_DUPLICATE_PHONE_ACTIVE,
     BizCode.RECRUITMENT_ID_CARD_IMAGE_REQUIRED,
     // F3(#399):紧急联系人 relation 字典码校验(报名侧;与 promote 一致)
     BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID,
     // S4a:H5 phoneVerificationToken 无效/过期/已用(分叉前 fail-fast)
     BizCode.RECRUITMENT_IDENTITY_SESSION_INVALID,
+    // F1 成本线:付费 OCR 按 IP 北京自然日封顶(与 recognize 共享计数;HTTP 429 语义)
+    BizCode.RECRUITMENT_OCR_DAILY_LIMIT,
     // OCR 改造:提交端不再外抛 27030/27031(转 manual_review,分叉③);仅识别端点浮现
     BizCode.TOO_MANY_REQUESTS,
   )
@@ -193,6 +198,8 @@ export class RecruitmentPublicController {
     // 识别端点浮现 OCR 通道错误供前端提示(提交端则转人工不外抛,分叉③)
     BizCode.REALNAME_CHANNEL_NOT_CONFIGURED,
     BizCode.REALNAME_API_FAILED,
+    // F1 成本线:付费 OCR 按 IP 北京自然日封顶(与 submit 共享计数;HTTP 429 语义;识别契约不加身份参数)
+    BizCode.RECRUITMENT_OCR_DAILY_LIMIT,
     BizCode.TOO_MANY_REQUESTS,
   )
   recognize(

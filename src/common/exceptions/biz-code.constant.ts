@@ -958,6 +958,20 @@ export const BizCode = {
     message: '本轮招新你已提交报名,请勿重复报名',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 招新可用性收口 F1(2026-07-11;评审稿 recruitment-usability-closeout-review.md §2.5):
+  // - 28004/28005:同轮活跃报名(非 rejected/withdrawn)openid / phone 去重,付费 OCR **之前**命中即拒
+  //   (换证件号也无法用同一微信/手机重复触发付费 OCR;温和文案引导查进度)。共用手机的罕见正常
+  //   场景(如家人同机报名)由 admin 单人手动建档路径兜底 —— 评审稿已记为已知取舍。
+  RECRUITMENT_DUPLICATE_OPENID_ACTIVE: {
+    code: 28004,
+    message: '该微信本轮已有报名进行中,请直接查询报名进度;如非本人操作请联系管理员',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  RECRUITMENT_DUPLICATE_PHONE_ACTIVE: {
+    code: 28005,
+    message: '该手机号本轮已有报名进行中,请查询报名进度;如需共用手机报名请联系管理员协助',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   RECRUITMENT_AGE_OUT_OF_RANGE: {
     code: 28010,
     message: '报名年龄须在 18 至 60 周岁之间',
@@ -1024,6 +1038,14 @@ export const BizCode = {
     code: 28051,
     message: '该微信已绑定本轮其它报名,无法换绑',
     httpStatus: HttpStatus.CONFLICT,
+  },
+  // 招新可用性收口 F1(2026-07-11;评审稿 §2.5/E-U-1):
+  // - 28060:付费 OCR 按 IP 北京自然日封顶(recognize + submit 共享;env RECRUITMENT_OCR_DAILY_IP_LIMIT
+  //   默认 30;持久化计数表,重启不清零;HTTP 429 语义,独立于 @RecruitmentThrottle 限流器)。
+  RECRUITMENT_OCR_DAILY_LIMIT: {
+    code: 28060,
+    message: '今日证件识别次数已达上限,请明日再试;如有疑问请联系管理员',
+    httpStatus: HttpStatus.TOO_MANY_REQUESTS,
   },
 
   // team-join 招新三期(入队:志愿者→队员)业务级(282xx)。T2 引入(2026-06-19)。
