@@ -105,12 +105,14 @@ export class TeamJoinCyclesService {
 
       if (dto.statusCode !== undefined && dto.statusCode !== existing.statusCode) {
         if (dto.statusCode === CYCLE_STATUS_OPEN) {
-          // 至多一个 open 轮——开本轮前确认无其它 open 轮
+          // 至多一个 open 轮——count 预检仅友好快速失败(READ COMMITTED 下并发开两轮可穿透);
+          // 权威兜底 = team_join_cycles_single_open_unique partial unique,update 处捕 P2002
+          // 同转 28231(十项收口刀B,镜像 recruitment-cycles)。
           const otherOpen = await tx.teamJoinCycle.count({
             where: { statusCode: CYCLE_STATUS_OPEN, deletedAt: null, id: { not: id } },
           });
           if (otherOpen > 0) {
-            throw new BizException(BizCode.BAD_REQUEST);
+            throw new BizException(BizCode.TEAM_JOIN_CYCLE_OPEN_CONFLICT);
           }
           data.statusCode = CYCLE_STATUS_OPEN;
           data.openedAt = new Date();
@@ -122,7 +124,16 @@ export class TeamJoinCyclesService {
         }
       }
 
-      const row = await tx.teamJoinCycle.update({ where: { id }, data });
+      let row;
+      try {
+        row = await tx.teamJoinCycle.update({ where: { id }, data });
+      } catch (err) {
+        // 并发开轮穿透被 partial unique 兜底(本表唯一的 unique 面即单 open 索引)
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          throw new BizException(BizCode.TEAM_JOIN_CYCLE_OPEN_CONFLICT);
+        }
+        throw err;
+      }
       await this.auditLogs.log({
         event: 'team-join-cycle.update',
         actorUserId: user.id,

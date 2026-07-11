@@ -76,9 +76,15 @@ type PrismaTx = Prisma.TransactionClient;
 // 仍是门闸;无更严的 member-profile.read.sensitive 者,在全部 3 个响应出口(findOne / create 回显 /
 // update 回显)看到掩码后的 documentNumber(证件号)与 mobile(本人手机)。掩码格式复用 mask-pii.util
 // (documentNumber → maskIdCard〔15/18 位保前 6 后 4,余长度 → '****'〕/ mobile → maskPhone〔138****1234〕,
-// 该 helper 注释即预留「member_profiles 复活时使用」)。**掩码是值变换,非 schema 变更**:DTO 字段名/类型
-// 不变(masked 值仍是 string)。范围仅此两字段;其余字段(含医疗类)不动;App 自助面另有 documentNumberMasked
-// 字段、emergency-contacts 均零碰。maskX 对 null/空串短路返回 null,`?? 原值` 兜底(空值本无 PII)。
+// 该 helper 注释即预留「member_profiles 复活时使用」)。maskX 对 null/空串短路返回 null,`?? 原值` 兜底。
+//
+// 十项收口刀D(2026-07-11「全收紧」拍板;⚠️ 行为变更):掩码集由 2 字段扩为全量敏感面——精确生日、
+// 座机、email/QQ/微信、医疗五项(身高/体重/血型/视力/病史)无 sensitive 码时一律置 null(生日等无
+// 在型掩码格式,统一 null 化;birthDate/email 响应类型随之放宽为 nullable)。背景:组长(group-manager)
+// 持 read.record 可见全队明文生日/病史,与招新面「连持 sensitive 的 admin 都只见年龄段」口径倒挂。
+// 带队应急需要明文者按人绑 member-profile.read.sensitive(role-binding)。App 自助面(本人)零碰。
+// ⚠️ FE 回写陷阱:编辑表单 round-trip 会把 null/掩码值写回覆盖真值——admin-web 须沿 hasPerms 镜像
+// + 无权字段 delete 的既有范式适配(首例 member-profile v0.39.0)。
 function presentMemberProfile(
   profile: MemberProfileResponseDto,
   masked: boolean,
@@ -88,6 +94,16 @@ function presentMemberProfile(
     ...profile,
     documentNumber: maskIdCard(profile.documentNumber) ?? profile.documentNumber,
     mobile: maskPhone(profile.mobile) ?? profile.mobile,
+    birthDate: null,
+    landline: null,
+    email: null,
+    qq: null,
+    wechat: null,
+    heightCm: null,
+    weightKg: null,
+    bloodTypeCode: null,
+    eyesight: null,
+    medicalNotes: null,
   };
 }
 

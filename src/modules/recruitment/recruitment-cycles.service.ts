@@ -120,12 +120,14 @@ export class RecruitmentCyclesService {
 
       if (dto.statusCode !== undefined && dto.statusCode !== existing.statusCode) {
         if (dto.statusCode === CYCLE_STATUS_OPEN) {
-          // E-R-11:至多一个 open 轮——开本轮前确认无其它 open 轮
+          // E-R-11:至多一个 open 轮——count 预检仅友好快速失败(READ COMMITTED 下两管理员并发开
+          // 两个不同轮可双双看到 0 而穿透);权威兜底 = recruitment_cycles_single_open_unique
+          // partial unique,update 处捕 P2002 同转 28032(十项收口刀B)。
           const otherOpen = await tx.recruitmentCycle.count({
             where: { statusCode: CYCLE_STATUS_OPEN, deletedAt: null, id: { not: id } },
           });
           if (otherOpen > 0) {
-            throw new BizException(BizCode.BAD_REQUEST);
+            throw new BizException(BizCode.RECRUITMENT_CYCLE_OPEN_CONFLICT);
           }
           data.statusCode = CYCLE_STATUS_OPEN;
           data.openedAt = new Date();
@@ -137,7 +139,16 @@ export class RecruitmentCyclesService {
         }
       }
 
-      const row = await tx.recruitmentCycle.update({ where: { id }, data });
+      let row;
+      try {
+        row = await tx.recruitmentCycle.update({ where: { id }, data });
+      } catch (err) {
+        // 并发开轮穿透被 partial unique 兜底(本表唯一的 unique 面即单 open 索引)
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          throw new BizException(BizCode.RECRUITMENT_CYCLE_OPEN_CONFLICT);
+        }
+        throw err;
+      }
       await this.auditLogs.log({
         event: 'recruitment-cycle.update',
         actorUserId: user.id,

@@ -207,4 +207,57 @@ describe('emergency-contacts RBAC 权限边界(Slow-4 T2)', () => {
       expect(okSa.status).toBe(200);
     });
   });
+
+  // ============ 十项收口刀D:read.record 收窄为脱敏,明文走 emergency-contact.read.sensitive ============
+  describe('刀D 敏感分级', () => {
+    it('仅持 read.record(无 sensitive)→ list 掩码;biz-admin(fixture 含 sensitive)→ 明文', async () => {
+      // 手工造只持 read.record 的角色 + GLOBAL RoleBinding(镜像 grantBizAdminToUser 形状)
+      const recordOnly = await createTestUser(app, {
+        username: 'ecrb-record-only',
+        role: Role.ADMIN,
+      });
+      const perm = await prisma.permission.findUniqueOrThrow({
+        where: { code: 'emergency-contact.read.record' },
+        select: { id: true },
+      });
+      const role = await prisma.rbacRole.create({
+        data: { code: 'ecrb-record-only-role', displayName: 'record-only' },
+        select: { id: true },
+      });
+      await prisma.rolePermission.create({ data: { roleId: role.id, permissionId: perm.id } });
+      await prisma.roleBinding.create({
+        data: {
+          principalType: 'USER',
+          principalId: recordOnly.id,
+          roleId: role.id,
+          scopeType: 'GLOBAL',
+          status: 'ACTIVE',
+        },
+      });
+      const recordOnlyAuth = (await loginAs(app, 'ecrb-record-only')).authHeader;
+
+      // 前序 ④ 用例已把共享 contactId 软删,这里自建一条专用联系人再断言
+      const created = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/emergency-contacts`)
+        .set('Authorization', saAuth)
+        .send({ contactName: '刀D联系人', relationCode, phonePrimary: '13800000099' })
+        .expect(201);
+      const freshId = created.body.data.id as string;
+
+      const masked = await request(httpServer(app))
+        .get(`/api/admin/v1/members/${memberA}/emergency-contacts`)
+        .set('Authorization', recordOnlyAuth)
+        .expect(200);
+      const m = masked.body.data.find((c: { id: string }) => c.id === freshId);
+      expect(m.phonePrimary).toContain('*'); // 掩码(138****XXXX)
+
+      const plain = await request(httpServer(app))
+        .get(`/api/admin/v1/members/${memberA}/emergency-contacts`)
+        .set('Authorization', admBizAuth)
+        .expect(200);
+      const pRow = plain.body.data.find((c: { id: string }) => c.id === freshId);
+      expect(pRow.phonePrimary).not.toContain('*'); // biz-admin 全绑含 sensitive → 明文
+      expect(pRow.phonePrimary).toMatch(/^\d+$/);
+    });
+  });
 });

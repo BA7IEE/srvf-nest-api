@@ -90,6 +90,8 @@
 >
 > 2026-07-11 招新可用性收口 F7 戳(goal「招新可用性收口」F7;冻结评审稿 §2.9 R6):**0 权限码**(admin 取证书图**复用** `recruitment-application.read.sensitive`——证书图=申请人自报材料与证件照同敏感面,亲核拍板复用);endpoint 332→**334**(`POST open/v1/recruitment/applications/certificates` 公开上传〔双通道凭证,无 RBAC 码〕+ `GET admin/v1/recruitment/applications/:id/certificate-image-urls`);**migration 43→44**(`recruitment_applications.certificateImages Json` + `Certificate.imageKeys Json`,全 additive);+1 AuditLogEvent(`recruitment-application.certificate-upload`)。promote 自动建 pending Certificate(走既有 certificates verify/reject 核验;0 certificates 面契约变更;app `my/certificates` DTO v1 不动)。权限码仍 **203** / biz-admin 79 / org-admin 60 / ops-admin 96 / controller 66。`docs:rbacmap:check` **0 FAIL**(203 码;controller 66 / 334 @ApiOperation 一致)。
 
+> 2026-07-11 十项收口一刀 戳(招新/入队十项问题核查〔7 确认 / 3 部分确认〕+ 六项拍板,刀 A–F 合一 PR;判定与拍板全文见 PR 描述):权限码 203→**204**(emergency-contact +1:`emergency-contact.read.sensitive`,紧急联系人明文闸——`read.record` 收窄为脱敏〔list/create/update/softDelete 4 出口掩码 contactName/phonePrimary/phoneBackup/address〕,**绑 biz-admin**,镜像 member-profile §F&A-3 先例,实装即用 0 孤码);**biz-admin 79→80**;**org-admin 60 零变化**(入 `ORG_ADMIN_EXCLUDED_CODES` 敏感码不下放;group-manager 22 不绑 = 组长默认见掩码,带队需要按人 role-binding);ops-admin 96 / member 9 零变化;controller **66** 不变;endpoint 334→**335**(`GET open/v1/recruitment/publicity` 公开公示名单,@Public 无 RBAC 码——view-publicity 悬空动作收口,复用 admin 公示预览同一取数内核 = 公示所见即实发)。**migration 44→45**(`recruitment_cycles_single_open_unique` + `team_join_cycles_single_open_unique` 两手写 partial unique〔至多一个 open 轮 DB 兜底,service P2002 转专码〕+ `MemberProfile` +`detailedAddress`/`profileExtra`〔promote 搬运落点,本刀无读出口〕;全 additive)。**+3 BizCode**(28032/28231 开轮唯一性冲突〔原通用 40000〕/ 28243 gate 完成日在未来)/ 0 audit event。⚠️ 判权外行为变更(CHANGELOG Unreleased 置顶 7 条):member-profile 掩码集 2→12 字段(无 sensitive 一律 null;birthDate/email 响应放宽 nullable)/ 公开 stage 折叠 manual_high→manual / submit documentTypeCode 白名单六值 / 年龄闸补 F2 外籍补录与 promote-single / promote 即时清扩容 + 建档搬运补齐 + 头像 avatarKey / 考勤终审 Effect 追加贡献值达标站内提醒(additive)。
+
 ---
 
 ## 1. 双轨架构现状(一句话版)
@@ -139,7 +141,7 @@
 | `admin/v1/attachments`(业务面首批) | `attachment.*`(20:member/certificate 各 8 含 `.self`/`.other`,activity 4) |
 | `admin/v1/members`(Slow-4 T2;v0.40.0 +offboard) | `member.*`(6;DELETE = `member.delete.record` 仅 SA 短路不绑 biz-admin;F1/A1 新增 `GET /options` 选择器投影 + list 增强 `q`/`organizationId`/`includeDescendants`,均复用 `member.read.record`;`organizationId` 经 `memberOrganizationMemberships` 关联过滤,`includeDescendants` 复用 organizations 模块 `queryDescendantOrgIds()`;队员账号闭环 v1〔2026-07-07〕:list + detail additive 暴露 `hasAccount`/`accountStatus`/`userId`〔User.memberId 已改一对多 partial unique,v2 起收窄仅计 live 绑定〕+ list 新增 `?hasAccount=` 过滤;新增 `POST /:id/account` 走独立码 `member.grant.account`〔**绑 ops-admin**,不绑 biz-admin,与本行其余码归属不同〕;队员账号闭环 v2〔2026-07-07〕:`POST /:id/account/{bind,unbind}` 走新码 `member.bind.account`〔同绑 ops-admin〕/ `POST /:id/account/reopen` 复用 `member.grant.account` / `PATCH /:id/account/status` 复用既有 `user.update.status`〔0 新码〕/ `POST /accounts/bulk-grant` 批量开号复用 `member.grant.account`〔0 新码〕;**v0.40.0 一键离队** `POST /:id/offboard` 走新码 `member.offboard.record`〔**绑 biz-admin**,业务面,与账号面 ops-admin 码不同族;单事务四腿 INACTIVE + 结束全部归属 + 停用 linked 账号并撤 refresh + 1 条 `member.offboard` audit;守卫复用 15001/15036/CANNOT_OPERATE_SELF;不级联任职/分管,残留数 advisory 回显〕)|
 | `admin/v1/members/:memberId/profile`(Slow-4 T2;§F&A-3 敏感分级) | `member-profile.*.record`(3;入口 `read.record`)+ `member-profile.read.sensitive`(documentNumber/mobile 明文闸,无则掩码) |
-| `admin/v1/members/:memberId/emergency-contacts`(Slow-4 T2) | `emergency-contact.*.record`(4) |
+| `admin/v1/members/:memberId/emergency-contacts`(Slow-4 T2;刀D 出口按 `emergency-contact.read.sensitive` 分级掩码) | `emergency-contact.*.record`(4) |
 | `admin/v1/members/:memberId/certificates`(Slow-4 T2) | `certificate.*.record`(6;list/detail/qualification-flag 共用 read) |
 | `admin/v1/activities`(Slow-4 T3;v0.40.0 +complete) | `activity.*.record`(6,6 个写端点含 `:id/complete`;**列表/详情无码仅登录 `[auth]`**;F1/A6 新增 `GET /options` 选择器投影,同样 `[auth]`——RBAC_MAP §5 已决「BD-3 两候选码 won't-do」不新增 `activity.read.*`,options 沿 list/detail 现状不新增码;list 增强 `q`/`dateFrom`/`dateTo`/`includeDescendants`/`includeStats`〔批量 groupBy 聚合 registrationCount/attendanceSheetCount,禁 N+1〕) |
 | `admin/v1/activities/:activityId/registrations`(Slow-4 T3;v0.40.0 +reopen) | `activity-registration.*.record`(6;list/export 共用 read;`:id/reopen` = `reopen.record`) |
@@ -179,7 +181,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(203 条,seed 幂等 upsert)
+## 3. 权限码全集(204 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -209,7 +211,7 @@
 | 队员账号开通(队员账号闭环 v1,2026-07-07) | 1 | `member.grant.account`(`POST admin/v1/members/:id/account`;**绑 ops-admin**,不绑 biz-admin——账号铸造归系统/账号面,与 `user.*.account` 族一致,区别于本表上一行"队员"5 码〔均绑 biz-admin〕)|
 | 队员账号绑定/解绑(队员账号闭环 v2,2026-07-07) | 1 | `member.bind.account`(`POST .../account/{bind,unbind}`;**绑 ops-admin**,不绑 biz-admin,与 `member.grant.account` 同族;reopen 复用 `member.grant.account`,队员面启停复用既有 `user.update.status`,均 0 新码)|
 | 队员扩展档案(Slow-4 T1;第三轮 review §F&A-3) | 4 | `member-profile.{read,create,update}.record` / `member-profile.read.sensitive`(敏感明文闸:`documentNumber` / `mobile` 明文;`read.record` 收窄为脱敏;绑 biz-admin,org-admin 派生排除,镜像 `recruitment-application.read.sensitive`) |
-| 紧急联系人(Slow-4 T1) | 4 | `emergency-contact.{read,create,update,delete}.record` |
+| 紧急联系人(Slow-4 T1;十项收口刀D +read.sensitive) | 5 | `emergency-contact.{read,create,update,delete}.record` / `emergency-contact.read.sensitive`(敏感明文闸:read.record 收窄为脱敏,4 出口掩码姓名/两电话/住址;绑 biz-admin,org-admin 排除、group-manager 不绑) |
 | 证书(Slow-4 T1) | 6 | `certificate.{read,create,update,delete}.record` / `certificate.{verify,reject}.record` |
 | 活动(Slow-4 T1;v0.40.0 +complete) | 6 | `activity.{create,update,delete}.record` / `activity.{publish,cancel}.record` / `activity.complete.record`(v0.40.0 管理端手动完结 published→completed;绑 biz-admin,org-admin 派生继承;列表/详情无码,仅登录) |
 | 活动报名(Slow-4 T1;v0.40.0 +reopen) | 6 | `activity-registration.{read,create}.record` / `activity-registration.{approve,reject,cancel}.record` / `activity-registration.reopen.record`(v0.40.0 审批后悔药:reject → pending;绑 biz-admin,org-admin 派生自动继承) |

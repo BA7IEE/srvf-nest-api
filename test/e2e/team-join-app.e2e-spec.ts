@@ -49,6 +49,12 @@ describe('招新三期(入队)App 自助面 e2e', () => {
   }
 
   async function openCycle(): Promise<string> {
+    // 十项收口刀B:DB 级「至多一个 open 轮」partial unique 落地——夹具先关旧 open 再开新
+    // (此前夹具可堆多个 open 轮,靠"最新创建"侥幸;现与生产语义一致)。
+    await prisma.teamJoinCycle.updateMany({
+      where: { statusCode: 'open' },
+      data: { statusCode: 'closed', closedAt: new Date() },
+    });
     const c = await prisma.teamJoinCycle.create({
       data: { year: CYCLE_YEAR, name: '2026 年度入队', statusCode: 'open', openedAt: new Date() },
     });

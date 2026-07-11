@@ -38,6 +38,11 @@
 - **触发条件**:出现批量导入存量队员(> 逐个可接受量级)的真实诉求时单独立项评审(D 档,涉及 schema 是否需要新增批量端点、字段集范围、与 `POST admin/v1/members` 单条端点的关系)。
 - **与 P1-18(队员账号闭环,✅ 已完成)关系**:P1-15 解决"批量把队员**档案**（`Member`)灌进来";P1-18 解决"给**已存在**队员开**登录账号**(`User`)"。两者正交——P1-15 若落地,批量导入出的 `Member` 仍可用 P1-18 已交付的 `POST admin/v1/members/accounts/bulk-grant` 批量开号能力。
 
+### P1-21 document_type 词表统一(`mainland_id` ↔ `id_card`)— **⏸ 诉求触发再立项**
+- **背景**(十项收口一刀 2026-07-11 核查发现):招新权威值 `DOC_TYPE_MAINLAND_ID='mainland_id'` **不在**内置 `document_type` 字典(字典项是 `id_card`);`realname.constants.ts` 注释声称「documentTypeCode = 字典 document_type 码」与事实不符;每次大陆 promote 都在往 `MemberProfile.documentTypeCode` 写字典外码 `mainland_id`,而 member-profiles 自己的 CRUD 对同值会拒(`assertDictItemValid`)。**已做的止血**(同日十项收口一刀):submit `documentTypeCode` 白名单六值落代码常量(刻意不接字典,防误拒合法值)。
+- **候选方案**:(a) seed 给 `document_type` 字典补 `mainland_id` 项(additive 最小,label 同「身份证」;两码并存需展示层归并);(b) 统一改码 `mainland_id → id_card`(D 档:动 recruitment 常量/白名单/OCR 路由字面/存量 `recruitment_applications`+`MemberProfile` 行回填)。倾向 (a) 起步。
+- **触发条件**:member-profiles 面需要按字典校验/展示证件类型标签,或档案数据治理(C-8)启动时一并拍板。
+
 ### P1-17 后台前端对接接口批次(A–E 五组)— **✅ 已全量落地关账(2026-07-04;F1 #502 → F2 #503 → F3 #504 → F4 #505 → F5 #506)**
 - **背景**:后台前端 srvf-admin-web(任务驱动后台)对接需要一批横切能力——搜索(`q`/日期区间/组织子树)、选择器(`options`/`resolve-labels`)、授权诊断(`explain-batch`/`action-state`)、scoped-authz 三表(role-bindings/任职/分管)分页总表+detail+preview、memberships 组织轴+transfer+tree-with-summary。2026-07-04 plan-only 分析规划(A 档 docs-only)已产出冻结路线图 [`admin-api-fe-integration-roadmap.md`](../archive/reviews/admin-api-fe-integration-roadmap.md)(原 `docs/plans/`,落地后已归档);同日 §11 回执区**已拍板(全按推荐)**。
 - **F1(A 组:搜索 & 选择器 + resolve-labels)已实现并发 main**(goal per-batch;详见 [`docs/handoff/admin-web.md` §2.7`](../handoff/admin-web.md)/GAP-008):members/users/organizations/positions/activities 5 资源 list 增强 + 6 个 `/options`(含 `organizations/tree-options`)+ net-new `POST admin/v1/meta/resolve-labels`;D4 拍板结果 = `roles/options` 落 `system/v1`(唯一跨 surface 例外);计数实测权限码 191→**192**(仅 `meta.resolve.label`)/ EXPECTED_ROUTES 292→**300**(+8)/ 模块 34→**35**(+meta)/ controller 63→**64**;migration/角色/AuditLogEvent **0 变**;架构映射按边界判断保留 inline(list/options 逻辑内联既有 service + 抽小型 private 去重 helper,未抽独立 QueryService 类——复杂度实测未达 architecture-boundary §3.2/§6 抽类阈值,决策权在实现 PR)。

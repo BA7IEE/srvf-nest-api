@@ -610,6 +610,13 @@ model MemberProfile {
   // (同一 storage 对象),application 侧清空,blob 单一属主=member;**不随任何脱敏/留存清除**(R5)。
   signatureImageKey String? // MP-33 申请人签名图 storage key(镜像 MP-32 搬运范式)
 
+  // 十项收口刀E(2026-07-11;第 45 migration,additive 可空):promote 建档搬运落点——
+  // 此前报名行 detailedAddress / profileExtra 在 promote 事务内被置空但未复制到任何表(真丢失);
+  // 现搬入档案长期承载。detailedAddress 与 residenceArea(MP-13 行政区粒度)互补,为完整住址;
+  // profileExtra 为报名自由填写项 JSON 原样归档(Q7 精简后冻结,当前无页面消费,仅留档)。
+  detailedAddress String? // MP-34 详细住址(高敏感;promote 搬自 recruitment_applications.detailedAddress)
+  profileExtra    Json? // MP-35 报名附加资料(promote 搬自 recruitment_applications.profileExtra)
+
   member Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
 
   @@index([volunteerNo])
@@ -1763,6 +1770,10 @@ model RecruitmentCycle {
   applications     RecruitmentApplication[]
   identitySessions RecruitmentIdentitySession[]
 
+  // 业务唯一约束(partial unique;migration.sql 手写,Prisma DSL 不支持带 WHERE;十项收口刀B):
+  // - recruitment_cycles_single_open_unique ON ("statusCode")
+  //   WHERE "statusCode" = 'open' AND "deletedAt" IS NULL —— 至多一个 open 轮 DB 兜底
+  //   (开轮 count-then-update 在 READ COMMITTED 下可并发穿透);service P2002 兜底转 28032
   @@index([year])
   @@index([statusCode])
   @@index([deletedAt])
@@ -1840,8 +1851,8 @@ model RecruitmentApplication {
   phoneVerifiedAt         DateTime? // H5 验码成功时刻(小程序链恒 null);submit/rebind-phone 落
   phoneVerificationMethod String? // sms(H5 验码)/ wechat(小程序辅);提交时落
   phoneChangedAt          DateTime? // 自助换手机换绑时刻(rebind-phone)
-  phoneChangeReason       String? // 换手机原因(自由短串;rebind-phone)
-  phoneBindingHistory     Json? // 换绑历史追加 [{from,to,at,reason,method}](rebind-phone;DB 内可存明文,沿 phone 列同敏感级)
+  phoneChangeReason       String? // 换手机原因(自由短串,可含 PII;rebind-phone;留存/promote 清——十项收口刀C)
+  phoneBindingHistory     Json? // 换绑历史追加 [{from,to,at,reason,method}](rebind-phone;DB 内可存明文,沿 phone 列同敏感级;留存/promote 清——十项收口刀C)
   phoneRiskFlag           String? // 风险标记(后台解绑纠错切片用;本刀仅建列不写)
 
   // ===== 招新四期 S4b(OCR 六分流 + 重拍计数;2026-06-24,评审稿 recruitment-phase4-loop-optimization-review.md §2)=====
@@ -1858,12 +1869,14 @@ model RecruitmentApplication {
   // (可空,纯加列无破坏,无 enum、无默认、无回填)。OCR 读取值 = **顾问式存档,非权威**;gender/birth 仍由身份证号
   // 推导(genderCode/birthDate),本组**不参与**派生、OCR 的 Sex/Birth 仅 recognize 回显不持久。住址为高敏感 PII,
   // 与 idCardNumber 同级、纳入 read.sensitive 门控(masked→null)。裁剪图仅 submit 解码入库,base64 不入响应/日志(L3)。
-  ocrAddress             String? // OCR 住址(顾问式存档;≠ applicant 自填 detailedAddress;高敏感,read.sensitive 门控)
-  ocrNation              String? // OCR 民族
-  ocrAuthority           String? // OCR 签发机关
-  ocrValidDate           String? // OCR 有效期(腾讯返串,如 2010.07.21-2020.07.21 / 2010.07.21-长期;不解析 DateTime)
-  idCardCropImageKey     String? // 主体框裁剪图 storage key(CardImage;后台人工复核查看;留存按 key 删 blob)
-  idCardPortraitImageKey String? // 头像裁剪图 storage key(PortraitImage;存档;「设为队员头像」留后续 goal)
+  // 十项收口刀C(2026-07-11):本组 6 列 promote 时即时清(OCR 4 列置 NULL;主体裁剪图先删 blob 再清 key;
+  // 头像裁剪图搬 User.avatarKey 后清 key)——promote 置 sensitivePurgedAt 会使留存 SOP 永久跳过该行,漏清即永久残留。
+  ocrAddress             String? // OCR 住址(顾问式存档;≠ applicant 自填 detailedAddress;高敏感,read.sensitive 门控;留存/promote 清)
+  ocrNation              String? // OCR 民族(民族属敏感个人信息;留存/promote 清)
+  ocrAuthority           String? // OCR 签发机关(留存/promote 清)
+  ocrValidDate           String? // OCR 有效期(腾讯返串,如 2010.07.21-2020.07.21 / 2010.07.21-长期;不解析 DateTime;留存/promote 清)
+  idCardCropImageKey     String? // 主体框裁剪图 storage key(CardImage;后台人工复核查看;留存/promote 按 key 删 blob 后清)
+  idCardPortraitImageKey String? // 头像裁剪图 storage key(PortraitImage;十项收口刀E:promote 搬 User.avatarKey 设为队员头像,同一 blob 属主转 user、本列清空;未发号行留存按 key 删 blob)
 
   cycle RecruitmentCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict)
 
@@ -1984,12 +1997,16 @@ model TeamJoinCycle {
 
   year       Int // 入队年份(贡献值 cutoff = {year}-03-31 北京日界;级别/编号无关)
   name       String // 轮次名(长度由 DTO 约束)
-  statusCode String // open / closed(后台开关;至多一个 open 由 service 守)
+  statusCode String // open / closed(后台开关;至多一个 open:service 预检 + partial unique DB 兜底)
   openedAt   DateTime?
   closedAt   DateTime?
 
   applications TeamJoinApplication[]
 
+  // 业务唯一约束(partial unique;migration.sql 手写,Prisma DSL 不支持带 WHERE;十项收口刀B):
+  // - team_join_cycles_single_open_unique ON ("statusCode")
+  //   WHERE "statusCode" = 'open' AND "deletedAt" IS NULL —— 至多一个 open 轮 DB 兜底
+  //   (镜像 recruitment_cycles_single_open_unique);service P2002 兜底转 28231
   @@index([year])
   @@index([statusCode])
   @@index([deletedAt])

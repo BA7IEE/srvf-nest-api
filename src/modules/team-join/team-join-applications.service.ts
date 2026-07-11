@@ -21,6 +21,7 @@ import {
   type GateMark,
   type GateMarks,
   allGeneralGatesSatisfied,
+  beijingDayNumber,
   isExtendableGate,
 } from './team-join.constants';
 import {
@@ -125,6 +126,12 @@ export class TeamJoinApplicationsService {
         throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
       }
       const code = dto.gateCode as GateCode; // DTO @IsIn 已校验 ∈ ALL_GATE_CODES
+      // 十项收口刀A(28243):完成日不得晚于今天(北京日口径,允许"今天"拒"明天")——此前填未来
+      // 日期会立即判满足并当场自动推进(years 类 gate 还把有效期虚推更远);extendedUntil 本义即
+      // 未来日期(延长期),不受此闸。与 isGateSatisfied 的本轮边界共用 beijingDayNumber 同口径。
+      if (beijingDayNumber(new Date(dto.completionDate)) > beijingDayNumber(now)) {
+        throw new BizException(BizCode.TEAM_JOIN_GATE_COMPLETION_IN_FUTURE);
+      }
       const marks: GateMarks = { ...((row.gateMarks as GateMarks | null) ?? {}) };
       const mark: GateMark = {
         at: now.toISOString(),

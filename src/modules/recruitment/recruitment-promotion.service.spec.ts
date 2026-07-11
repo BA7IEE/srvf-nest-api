@@ -129,11 +129,14 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
     });
     const notificationDispatcher = { dispatchTargeted };
 
+    // 十项收口刀C:storage mock(promote commit 后 best-effort 删主体裁剪图 blob;失败不阻断)
+    const storage = { deleteObject: jest.fn().mockResolvedValue(undefined) };
     const service = new RecruitmentPromotionService(
       prisma as never,
       rbac as never,
       auditLogs as never,
       notificationDispatcher as never,
+      storage as never,
     );
 
     return {
@@ -421,11 +424,14 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
     const auditLogs = { log: jest.fn().mockResolvedValue(undefined) };
     // promotePrecheck 纯读不派发;dispatcher 注 no-op 仅满足构造签名(断言其零调用见 it 内)。
     const notificationDispatcher = { dispatchTargeted: jest.fn().mockResolvedValue({ id: 'n' }) };
+    // 十项收口刀C:storage mock(promote commit 后 best-effort 删主体裁剪图 blob;失败不阻断)
+    const storage = { deleteObject: jest.fn().mockResolvedValue(undefined) };
     const service = new RecruitmentPromotionService(
       prisma as never,
       rbac as never,
       auditLogs as never,
       notificationDispatcher as never,
+      storage as never,
     );
     return { service, prisma, rbac, dispatchTargeted: notificationDispatcher.dispatchTargeted };
   }

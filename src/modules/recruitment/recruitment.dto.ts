@@ -22,6 +22,7 @@ import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import {
   EMERGENCY_CONTACTS_MIN,
   RECRUITMENT_CERT_CATEGORIES,
+  RECRUITMENT_DOCUMENT_TYPE_CODES,
   RISK_LEVEL_HIGH,
   RISK_LEVEL_NORMAL,
   RISK_LEVEL_SYSTEM,
@@ -99,10 +100,13 @@ export class RecruitmentSubmitPayloadDto {
   @MaxLength(32)
   idCardNumber!: string;
 
-  @ApiProperty({ description: '证件类型(mainland_id 走核验;其余走人工待核)' })
+  @ApiProperty({
+    description:
+      '证件类型(白名单六值,十项收口刀A ⚠️ 契约收紧:名单外一律 400;mainland_id 走核验,其余走人工待核)',
+    enum: RECRUITMENT_DOCUMENT_TYPE_CODES as unknown as string[],
+  })
   @IsString()
-  @MinLength(1)
-  @MaxLength(32)
+  @IsIn(RECRUITMENT_DOCUMENT_TYPE_CODES, { message: '证件类型非法' })
   documentTypeCode!: string;
 
   @ApiProperty({ description: '手机号(仅通知用途,非身份证据;大陆手机号)' })
@@ -850,6 +854,25 @@ export class EvaluateRecruitmentApplicationDto {
 }
 
 // ============ 招新二期:公示名单(D-R2-4;姓名 + 拟发编号,拼音序,零敏感)============
+
+// ============ 十项收口刀F:公开公示名单(open/v1 无账号;view-publicity 悬空动作收口)============
+
+export class PublicRecruitmentPublicityItemDto {
+  @ApiPropertyOptional({ description: '姓名(公示名单本就对外公示;拼音序)', nullable: true })
+  realName!: string | null;
+  @ApiPropertyOptional({
+    description: '拟发永久编号 {YY}{NNN}(与后台公示预览/实发同源推算;待人工建档者为 null)',
+    nullable: true,
+  })
+  proposedMemberNo!: string | null;
+}
+
+export class PublicRecruitmentPublicityResponseDto {
+  @ApiPropertyOptional({ description: '公示轮次年份(当前无公示中名单时为 null)', nullable: true })
+  cycleYear!: number | null;
+  @ApiProperty({ type: [PublicRecruitmentPublicityItemDto], description: '公示名单(可为空数组)' })
+  items!: PublicRecruitmentPublicityItemDto[];
+}
 
 export class PublicityListItemDto {
   @ApiProperty() applicationId!: string;

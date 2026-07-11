@@ -938,7 +938,7 @@ export const BizCode = {
   // - 28003:唯一约束冲突(同轮同身份证防重复;partial unique P2002 兜底同码)
   // - 28010/28011:业务级输入校验(年龄越界 / 证件照缺;身份证号格式·校验位走通用 422/40000,
   //   紧急联系人<2 走 DTO @ArrayMinSize 通用 422,评审稿 E-R-12/13)
-  // - 28030/28031:轮次状态冲突(无 open 轮·已关 / 容量已满)
+  // - 28030/28031/28032:轮次状态冲突(无 open 轮·已关 / 容量已满 / 开轮唯一性冲突〔十项收口刀B〕)
   // - 28040:人工 resolve 前置态冲突(非可解态 / pending_verification 核验在途 verifyOutcome 空 / mismatch 卡死行 approve)
   //
   // 不开的码(评审稿 §3.3):281xx FORBIDDEN_*(权限拒绝走通用 30100/40300);
@@ -990,6 +990,13 @@ export const BizCode = {
   RECRUITMENT_CYCLE_CAPACITY_FULL: {
     code: 28031,
     message: '本轮招新名额已满',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 十项收口刀B(2026-07-11):开轮唯一性冲突专码(原 count 预检抛通用 40000)。
+  // 命中面:count 预检发现其它 open 轮,或并发穿透被 recruitment_cycles_single_open_unique 兜底(P2002 转码)。
+  RECRUITMENT_CYCLE_OPEN_CONFLICT: {
+    code: 28032,
+    message: '已存在开放中的招新轮次,请先关闭后再开启',
     httpStatus: HttpStatus.CONFLICT,
   },
   RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL: {
@@ -1087,8 +1094,8 @@ export const BizCode = {
   // - 28201/28202:NOT_FOUND(入队轮 / 入队申请)
   // - 28203:唯一约束冲突(同轮同人活跃申请去重;partial unique P2002 兜底,T3)
   // - 28210:已入队(member 已有部门/级别,非新志愿者;T3 自助 create 前置)
-  // - 28230:无 open 入队轮(T3 自助 create 前置)
-  // - 28240:状态机闸(标 gate / 综合评估 / 改候选目标态不符)
+  // - 28230:无 open 入队轮(T3 自助 create 前置);28231:开轮唯一性冲突(十项收口刀B)
+  // - 28240:状态机闸(标 gate / 综合评估 / 改候选目标态不符);28243:gate 完成日在未来(十项收口刀A)
   // 候选/选定部门 org 存在+ACTIVE 校验复用既有 ORGANIZATION_NOT_FOUND / ORGANIZATION_INACTIVE(不另开码)。
   // - 28241:一键入队兜底重校验失败(approved 后通用门槛/贡献值过期;T4)
   // - 28242:选定部门不在候选 / 选了专业队但对应 team-* gate 未过(T4)
@@ -1119,6 +1126,12 @@ export const BizCode = {
     message: '当前没有开放的入队轮',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 十项收口刀B(2026-07-11):开轮唯一性冲突专码(镜像 28032;原 count 预检抛通用 40000)。
+  TEAM_JOIN_CYCLE_OPEN_CONFLICT: {
+    code: 28231,
+    message: '已存在开放中的入队轮,请先关闭后再开启',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   TEAM_JOIN_APPLICATION_WRONG_STATE: {
     code: 28240,
     message: '该入队申请当前状态不允许此操作',
@@ -1133,6 +1146,14 @@ export const BizCode = {
     code: 28242,
     message: '选定部门不在候选范围,或专业队考核未通过,无法入队',
     httpStatus: HttpStatus.CONFLICT,
+  },
+  // 十项收口刀A(2026-07-11):gate 完成日不得晚于当天(北京日口径,允许"今天"拒"明天")——
+  // 此前可填未来日期立即判满足并当场自动推进(years 类还会把有效期虚推更远);extendedUntil 本义
+  // 即未来日期,不受此闸。
+  TEAM_JOIN_GATE_COMPLETION_IN_FUTURE: {
+    code: 28243,
+    message: 'gate 完成日期不能晚于今天',
+    httpStatus: HttpStatus.BAD_REQUEST,
   },
 
   // content 模块业务级(290xx)。CMS 内容发布模块(第 28 模块)引入(2026-06-21;评审稿 §7)。

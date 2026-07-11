@@ -216,9 +216,14 @@ export function assembleRecruitmentProgress(
     promotedMemberId: app.promotedMemberId,
     riskLevel: app.riskLevel,
   });
-  const stageText = stageTextByCode.get(stage) ?? stage;
+  // 十项收口刀C(⚠️ 公开契约变化:公开面 stage 值域不再出现 manual_high):高风险分流仅后台三栏用,
+  // S4b 只中性化了文案层(两码字典 label 同为「待人工核验」),stage 机器码原样透传仍会让申请人/
+  // 抓包者得知被归入高风险,与 submit DTO「绝不暴露 riskLevel/forgery 分级」隐私口径矛盾。
+  // deriveRecruitmentStage 保持区分(admin 三栏 / 工作台 stats 不走本组装),仅公开出口折叠。
+  const publicStage = stage === STAGE_MANUAL_HIGH ? STAGE_MANUAL : stage;
+  const stageText = stageTextByCode.get(publicStage) ?? publicStage;
   return {
-    stage,
+    stage: publicStage,
     stageText,
     statusText: stageText,
     nextAction,

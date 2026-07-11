@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { OrganizationStatus, Prisma, type RecruitmentApplication } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -20,11 +20,16 @@ import {
 import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { RbacService } from '../permissions/rbac.service';
 import { maskPhone } from '../sms/sms.constants';
+import { STORAGE_PROVIDER } from '../storage/storage.constants';
+import type { StorageProvider } from '../storage/storage.interface';
 import {
   APP_STATUS_PROMOTED,
   APP_STATUS_PUBLICITY,
   MEMBER_NO_MAX_SEQ,
+  RECRUITMENT_MAX_AGE,
+  RECRUITMENT_MIN_AGE,
   comparePromotionOrder,
+  computeAge,
   decidePromotionIssuance,
   formatMemberNo,
 } from './recruitment.constants';
@@ -83,6 +88,8 @@ export class RecruitmentPromotionService {
     private readonly auditLogs: AuditLogsService,
     // 统一通知 S3:发号定向通知(producer → notifications **单向**直调,D-N5 无事件总线;防环:绝不被 notifications 回调)。
     private readonly notificationDispatcher: NotificationDispatcher,
+    // 十项收口刀C:主体裁剪图 blob 无档案落点,promote commit 后 best-effort 删(safeDeleteCropBlob)
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
   async promote(
@@ -202,6 +209,12 @@ export class RecruitmentPromotionService {
     // 发号定向通知(统一通知 S3;评审稿 §6.4 + 招新 §9.1):**事务 commit 之后、事务外**对每个新建 member 派发。
     // **绝不破坏 promote 行为锁**(号段连续无空洞 / 全或无 / 幂等已在事务内完成并 commit);派发失败只记日志。
     await this.dispatchPromotionNotifications(promoted);
+
+    // 十项收口刀C:主体裁剪图 blob 无档案落点,commit 后按事务前快照 key best-effort 删
+    // (行内 key 已在事务中清空;失败仅告警,不阻断已 commit 的发号)。
+    for (const a of promotable) {
+      await this.safeDeleteCropBlob(a.idCardCropImageKey);
+    }
 
     return {
       cycleId,
@@ -358,6 +371,13 @@ export class RecruitmentPromotionService {
     if (app.realName == null || app.birthDate == null || app.genderCode == null) {
       throw new BizException(BizCode.RECRUITMENT_PROFILE_INCOMPLETE_FOR_PROMOTE);
     }
+    // 十项收口刀A:发号前年龄闸(18-60,发号日复检)——外籍此前从提交到建档全程零年龄校验
+    // (submit 年龄闸包在大陆分支;F2 补录本刀同步加闸,此处兜底两通道)。大陆行提交期已校,
+    // 此处为同口径复检(极端跨年发号超龄一并拒)。
+    const age = computeAge(app.birthDate, now);
+    if (age < RECRUITMENT_MIN_AGE || age > RECRUITMENT_MAX_AGE) {
+      throw new BizException(BizCode.RECRUITMENT_AGE_OUT_OF_RANGE);
+    }
     // 锚点择优(E-U-4;占用语义沿 User openid/phone @unique 含软删,镜像 loadBoundOpenids/Phones)
     const openidBound =
       app.openid != null &&
@@ -425,6 +445,8 @@ export class RecruitmentPromotionService {
     );
     // 通知派发沿批量语义(commit 后事务外;失败只记日志不阻断)
     await this.dispatchPromotionNotifications([promoted]);
+    // 十项收口刀C:主体裁剪图 blob 清理沿批量语义(commit 后按事务前快照 key)
+    await this.safeDeleteCropBlob(app.idCardCropImageKey);
 
     return { ...promoted, loginChannel: channel };
   }
@@ -436,6 +458,20 @@ export class RecruitmentPromotionService {
   // MemberProfile + EmergencyContact + 标 promoted 清敏感 + audit。**不含** try/catch(P2002 处理
   // 留在调用方,批量整批回滚语义不变)。channel 由调用方决定:批量 = openid 有无派生(v0.40.0 逐字);
   // 单人 = E-U-4 锚点择优(可在 openid 被占时强制手机通道)。viaPath 仅单人传(audit extra additive)。
+  // 十项收口刀C:promote commit 后删主体框裁剪图 blob(镜像 applications.service
+  // safeDeleteOrphanImage 的 best-effort 语义;失败仅告警——key 已随行清空,不阻断已 commit 的发号)。
+  // 头像裁剪图 blob 不走此路:已随刀E 转为 User.avatarKey(属主转移,同一 storage 对象)。
+  private async safeDeleteCropBlob(key: string | null): Promise<void> {
+    if (!key) return;
+    try {
+      await this.storage.deleteObject(key);
+    } catch (e) {
+      this.logger.warn(
+        `promote crop-image blob cleanup failed key=${key}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
   private async buildOnePromotion(
     tx: Prisma.TransactionClient,
     a: RecruitmentApplication,
@@ -476,12 +512,15 @@ export class RecruitmentPromotionService {
         ...(channel === 'wechat'
           ? { openid: a.openid as string }
           : { phone: a.phone as string, phoneVerifiedAt: now }),
+        // 十项收口刀E:OCR 头像裁剪图设为队员账号头像(schema 原注释「留后续 goal」本刀兑现;
+        // 同一 storage 对象属主转 user,报名行 key 随下方清理清空,blob 不删)
+        ...(a.idCardPortraitImageKey ? { avatarKey: a.idCardPortraitImageKey } : {}),
         role: 'USER',
         memberId: member.id,
       },
       select: { id: true },
     });
-    // MemberProfile(§6 逐字段映射;email=null〔M-1〕;joinedDate=发号日;privacyConsentSigned=true)
+    // MemberProfile(§6 逐字段映射;email=null〔M-1〕;joinedDate=发号日;privacyConsentSigned=F5 搬真值)
     await tx.memberProfile.create({
       data: {
         memberId: member.id,
@@ -502,6 +541,11 @@ export class RecruitmentPromotionService {
           : {}),
         ...(a.idCardImageKey ? { idCardImageKey: a.idCardImageKey } : {}),
         ...(a.signatureImageKey ? { signatureImageKey: a.signatureImageKey } : {}),
+        // 十项收口刀E:建档搬运补齐——此前 detailedAddress/profileExtra 在下方清理中被置空且无
+        // 档案落点(真丢失),现搬 MP-34/MP-35;cityDistrict 搬现成 residenceArea(MP-13)。
+        ...(a.cityDistrict ? { residenceArea: a.cityDistrict } : {}),
+        ...(a.detailedAddress ? { detailedAddress: a.detailedAddress } : {}),
+        ...(a.profileExtra != null ? { profileExtra: a.profileExtra } : {}),
       },
       select: { id: true },
     });
@@ -544,9 +588,12 @@ export class RecruitmentPromotionService {
         });
       }
     }
-    // 标 promoted + 链 + 即时清敏感(PII 已搬 member;blob 归 member,留存 SOP 不再触 promoted 行)。
+    // 标 promoted + 链 + 即时清敏感(PII 已搬 member/user;blob 归 member/user,留存 SOP 不再触 promoted 行)。
     // F12(#399):openid + reviewNote 亦属留存 SOP §1 须置 NULL 的敏感字段;promote 即时清后
-    // SOP「WHERE sensitivePurgedAt IS NULL」永久跳过本行 —— 漏清则两再识别字段在「已脱敏」行永久残留。
+    // SOP「WHERE sensitivePurgedAt IS NULL」永久跳过本行 —— 漏清则再识别字段在「已脱敏」行永久残留。
+    // 十项收口刀C:补清 OCR 4 列 + 两裁剪图 key + 换绑史/原因(此前全部漏清 = promoted 行永久残留
+    // 高敏 PII;民族/OCR 住址属敏感个人信息,换绑史含明文手机)。主体裁剪图 blob 在 commit 后
+    // best-effort 删(safeDeleteCropBlob);头像裁剪图 blob 已转 User.avatarKey(刀E)仅清 key。
     await tx.recruitmentApplication.update({
       where: { id: a.id },
       data: {
@@ -568,6 +615,15 @@ export class RecruitmentPromotionService {
         signatureImageKey: null,
         // F7(R6):证书图已按类别搬 Certificate.imageKeys → 报名行清空(blob 单一属主=certificate)。
         certificateImages: Prisma.DbNull,
+        // 十项收口刀C:OCR 产物与换绑轨迹一并即时清
+        ocrAddress: null,
+        ocrNation: null,
+        ocrAuthority: null,
+        ocrValidDate: null,
+        idCardCropImageKey: null,
+        idCardPortraitImageKey: null,
+        phoneChangeReason: null,
+        phoneBindingHistory: Prisma.DbNull,
       },
     });
     await this.auditLogs.log({
