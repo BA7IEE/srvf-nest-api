@@ -1025,6 +1025,14 @@ export const BizCode = {
     message: '志愿者归口部门(VOL)缺失或未启用,无法发号转志愿者',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 招新可用性收口 F2(2026-07-11;评审稿 recruitment-usability-closeout-review.md §3 R1):
+  // - 28045:admin 改资料的身份字段条件闸——身份字段(realName/idCardNumber/birthDate/genderCode)
+  //   仅 manual_review 态或外籍记录可改;已 verified 的大陆记录(OCR 已核验)不开。
+  RECRUITMENT_IDENTITY_FIELDS_LOCKED: {
+    code: 28045,
+    message: '该报名已通过证件核验,身份字段不可修改(仅人工待核或外籍记录可改)',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   // 招新四期 S4a(H5 + 手机身份链;2026-06-24;评审稿 recruitment-phase4-loop-optimization-review.md §3.3/§3.4):
   // - 28050:报名前身份会话凭证(phoneVerificationToken)无效 / 过期 / 已消费(H5 提交端;前端据此引导重新验码)
   // - 28051:换微信换绑时新 openid 已被本轮另一活跃报名占用(防绑到他人报名 → 查询串号)

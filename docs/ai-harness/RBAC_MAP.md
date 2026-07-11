@@ -79,6 +79,10 @@
 > 2026-07-11 参与域生命周期收口 T4 戳(同 goal T4;v0.40.0):权限码 200→**201**(member +1:`member.offboard.record`,一键离队 INACTIVE + 结束全部归属 + 停用关联账号并撤 refresh,**绑 biz-admin**,org-admin 派生自动继承 59→**60**);**biz-admin 76→77**;ops-admin 96 / member〔内置角色〕9 零变化;controller **66** 不变;endpoint 328→**329**(`POST admin/v1/members/:id/offboard`)。0 schema / 0 migration〔仍 40〕/ 0 新 BizCode(守卫复用 15001/15036/CANNOT_OPERATE_SELF)/ **+1 AuditLogEvent**(`member.offboard`,伞事件记各腿计数)。单事务四腿直连 prisma 防环(镜像 team-join enrollment);不级联任职/分管/role-bindings,残留数 advisory 回显。`docs:rbacmap:check` **0 FAIL / 0 WARN**(201 码;controller 66 / 329 @ApiOperation 一致)。
 >
 > 2026-07-11 参与域生命周期收口 T5 戳(同 goal T5;v0.40.0;**权限事实全零变化**):**0 权限码 / 0 路由 / 0 BizCode / 0 audit event / 0 schema / 0 migration**(权限码仍 **201** / biz-admin 77 / org-admin 60 / ops-admin 96 / endpoint 329 / controller 66 / migration 40 全不变)。H5 手机通道发号:`recruitment` 一键发号 `isPromotable` 登录通道条件由「有 openid」放宽为「有 openid **或** 有已验证手机」——无 openid 但有已验证手机的 H5 申请人建 SMS 登录通道 User(`phone`+`phoneVerifiedAt`,openid=null);**微信路径(有 openid)promote 逐字不变**(通道分流以 `openid==null` 门控)。⚠️ **promote skip reason 字符串变更**(前端/运维注):`missing-openid` **停用** → `missing-login-channel`(openid+phone 皆无);新增 `phone-already-bound` / `duplicate-phone-in-batch`(镜像 openid 占用/批内去重)。`PromotePrecheckRowDto` additive +2 布尔 `phoneAlreadyBound`/`duplicatePhoneInBatch`(contract snapshot 仅 schema 属性 additive,0 path 变更)。`docs:rbacmap:check` **0 FAIL / 0 WARN**(201 码不变)。
+>
+> 2026-07-11 招新可用性收口 F1 戳(goal「招新可用性收口」F1;冻结评审稿 [`recruitment-usability-closeout-review.md §2.5`](../archive/reviews/recruitment-usability-closeout-review.md);**权限事实零变化**):**0 权限码 / 0 路由**(权限码仍 201 / endpoint 329 / controller 66);**migration 40→41**(纯加空表 `recruitment_ocr_daily_counters`,OCR 按 IP 北京自然日封顶持久计数);**+3 BizCode**(28004 同轮同 openid 活跃报名 / 28005 同轮同 phone / 28060 OCR 日封顶〔HTTP 429〕);⚠️ 行为变更:同轮活跃 openid/phone 二次提交改拒(付费 OCR 前);env `RECRUITMENT_OCR_DAILY_IP_LIMIT`(默认 30)。
+>
+> 2026-07-11 招新可用性收口 F2 戳(goal「招新可用性收口」F2;冻结评审稿 §3 R1):权限码 201→**202**(recruitment-application +1:`recruitment-application.update.record`,admin 改报名资料——R1 白名单:非身份字段恒可改,身份字段仅 manual_review 或外籍〔verified 大陆 → 28045〕,大陆 birthDate/genderCode 恒由证件号派生,改证件号镜像 submit 校验位/年龄/同轮去重;**绑 biz-admin**);**biz-admin 77→78**;org-admin 60 **零变化**(`recruitment-` 前缀派生排除,敏感域不下放);ops-admin 96 / member 9 零变化;controller **66** 不变;endpoint 329→**330**(`PATCH admin/v1/recruitment/applications/:id`)。+1 BizCode(28045)/ **+1 AuditLogEvent**(`recruitment-application.update`:before/after 仅身份字段掩码值,非身份字段只记字段名)。phone/openid **不在白名单**(自助换绑通道已存在,admin 直改会绕过双验破坏 H5 身份锚)。`docs:rbacmap:check` **0 FAIL**(202 码;controller 66 / 330 @ApiOperation 一致)。
 
 ---
 
@@ -140,7 +144,7 @@
 | `admin/v1/team-insurance-policies`(保险 T2) | `team-insurance-policy.*`(6;list/detail/覆盖名单共用 read;add/remove 覆盖名单两码独立) |
 | `admin/v1/members/:memberId/insurances`(保险 T2) | `member-insurance.read.other`(1;数组无分页镜像 certificates;本人侧走 App self-scope 无码) |
 | `admin/v1/recruitment/cycles`(招新 T3) | `recruitment-cycle.*.record`(3;list/detail 共用 read;开/关轮 + 容量/通知模板走 update) |
-| `admin/v1/recruitment/applications`(招新 T3;二期 T2;闭环优化 S3) | `recruitment-application.*`(5;list/脱敏详情共用 `read.record`;详情明文证件号·手机 + 证件照 signed-URL `read.sensitive`〔S3 §11〕;人工待核 `resolve.manual`;标门槛 `mark.threshold`;综合评定 `evaluate.assessment`)|
+| `admin/v1/recruitment/applications`(招新 T3;二期 T2;闭环优化 S3;可用性收口 F2) | `recruitment-application.*`(6;list/脱敏详情共用 `read.record`;详情明文证件号·手机 + 证件照 signed-URL `read.sensitive`〔S3 §11〕;人工待核 `resolve.manual`;标门槛 `mark.threshold`;综合评定 `evaluate.assessment`;F2 改资料 `update.record`〔PATCH :id;R1 白名单 + 身份字段条件闸〕)|
 | `admin/v1/team-join/cycles`(招新三期入队 T2) | `team-join-cycle.*.record`(3;list/detail 共用 read;开/关轮 + 轮次名走 update) |
 | `admin/v1/team-join/applications`(招新三期入队 T2/T4) | `team-join-application.*`(4;list/detail 共用 `read.record`;标 gate `mark.gate`;综合评估 `evaluate.assessment`;一键入队 `join.member`〔T4 设部门+级别 level-1〕)|
 | `admin/v1/contents`(CMS 内容 T2) | `content.*.record`(5;list/detail 共用 `read.record`;状态机 publish/unpublish/archive 共用 `publish.record`;封面 set/clear 走 `update.record`)。附件端点 upload-url/confirm/删 经 `AttachmentsService` 写路径判 `attachment.{upload,delete}.content-image\|content-file`〔`[rbac: attachment.upload.*]`/`[rbac: attachment.delete.*]` 通配族〕;confirm 仅 JWT + token〔`[auth]`〕|
@@ -169,7 +173,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(201 条,seed 幂等 upsert)
+## 3. 权限码全集(202 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -208,7 +212,7 @@
 | 队员自购保险(保险 T1) | 1 | `member-insurance.read.other`(admin 查队员保险;App 本人侧 self-scope 无码;T2 实装) |
 | 实名核验设置(招新 T1) | 3 | `realname-setting.{read,update}.singleton` / `realname-setting.reset.credentials`(`reset` 不绑 ops-admin 镜像 D2=A;T2 端点实装前孤码 WARN 预期) |
 | 招新轮次(招新 T1;T3 实装) | 3 | `recruitment-cycle.{read,create,update}.record`(`admin/v1/recruitment/cycles`;孤码 T3 清零) |
-| 招新报名(招新一期 T1→T3;二期 T1→T2/T3;闭环优化 S3) | 6 | `recruitment-application.read.record`(普通查看:脱敏列表 + 脱敏详情 + 公示名单 + 工作台 stats 共用)/ `recruitment-application.read.sensitive`(敏感查看:详情明文证件号·手机 + 证件照 signed-URL;S3 §11.1 从 read.record 切出,全绑 biz-admin)/ `recruitment-application.resolve.manual`(人工待核 resolve)/ `recruitment-application.mark.threshold`(标门槛)/ `recruitment-application.evaluate.assessment`(综合评定/淘汰)/ `recruitment-application.promote.member`(一键发号建 User+Member);`admin/v1/recruitment/*` |
+| 招新报名(招新一期 T1→T3;二期 T1→T2/T3;闭环优化 S3;可用性收口 F2) | 7 | `recruitment-application.read.record`(普通查看:脱敏列表 + 脱敏详情 + 公示名单 + 工作台 stats 共用)/ `recruitment-application.read.sensitive`(敏感查看:详情明文证件号·手机 + 证件照 signed-URL;S3 §11.1 从 read.record 切出,全绑 biz-admin)/ `recruitment-application.resolve.manual`(人工待核 resolve)/ `recruitment-application.mark.threshold`(标门槛)/ `recruitment-application.evaluate.assessment`(综合评定/淘汰)/ `recruitment-application.promote.member`(一键发号建 User+Member)/ `recruitment-application.update.record`(F2 admin 改资料:R1 白名单,身份字段条件闸 28045);`admin/v1/recruitment/*` |
 | 入队轮(招新三期入队 T2) | 3 | `team-join-cycle.{read,create,update}.record`(`admin/v1/team-join/cycles`;list/detail 共用 read;至多一个 open 轮) |
 | 入队申请(招新三期入队 T2/T4) | 4 | `team-join-application.read.record`(列表/详情共用)/ `team-join-application.mark.gate`(标 gate)/ `team-join-application.evaluate.assessment`(综合评估/淘汰)/ `team-join-application.join.member`(一键入队 = 设部门 + 级别 level-1,T4);`admin/v1/team-join/applications`;自助 `app/v1/me/team-join/*` 发起/查进度/改候选 **self-scope 无码** |
 | 内容发布(CMS T1 seed;T2 admin 实装) | 5 | `content.{read,create,update,delete,publish}.record`(`admin/v1/contents`;list/detail 共用 read;状态机 publish/unpublish/archive 共用 publish;封面 set/clear 走 update;app/open 读零码 T3/T4;**T2 controller 实装后孤码 WARN 清零**) |

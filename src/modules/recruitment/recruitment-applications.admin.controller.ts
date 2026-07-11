@@ -37,6 +37,7 @@ import {
   RecruitmentApplicationAdminDto,
   RecruitmentApplicationListQueryDto,
   ResolveRecruitmentApplicationDto,
+  UpdateRecruitmentApplicationDto,
 } from './recruitment.dto';
 import { RecruitmentApplicationReviewService } from './recruitment-application-review.service';
 import { RecruitmentApplicationsQueryService } from './recruitment-applications-query.service';
@@ -150,6 +151,33 @@ export class RecruitmentApplicationsAdminController {
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<RecruitmentApplicationAdminDto> {
     return this.queryService.detailForAdmin(id, user);
+  }
+
+  // 招新可用性收口 F2(评审稿 recruitment-usability-closeout-review.md §3 R1):admin 改报名资料。
+  @Patch(':id')
+  @ApiOperation({
+    summary:
+      'admin 改报名资料(R1 白名单:非身份字段恒可改;身份字段 realName/idCardNumber/birthDate/genderCode 仅 manual_review 或外籍记录,verified 大陆 → 28045;大陆 birthDate/genderCode 恒由证件号派生不可直改;大陆改证件号 → 校验位/年龄复检 + 重派生 + 同轮去重;promoted/已脱敏行 → 28041;不含 phone/openid〔走自助换绑〕;必落 audit) [rbac: recruitment-application.update.record]',
+  })
+  @ApiWrappedOkResponse(RecruitmentApplicationAdminDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
+    BizCode.RECRUITMENT_IDENTITY_FIELDS_LOCKED,
+    BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
+    BizCode.RECRUITMENT_DUPLICATE_APPLICATION,
+    BizCode.RECRUITMENT_AGE_OUT_OF_RANGE,
+    BizCode.EMERGENCY_CONTACT_RELATION_CODE_INVALID,
+  )
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateRecruitmentApplicationDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<RecruitmentApplicationAdminDto> {
+    return this.reviewService.updateApplication(id, dto, user, buildAuditMeta(req), new Date());
   }
 
   @Get(':id/id-card-image-url')

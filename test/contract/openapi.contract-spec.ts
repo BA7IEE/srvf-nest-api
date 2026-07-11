@@ -400,6 +400,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/recruitment/cycles/{id}'],
   ['get', '/api/admin/v1/recruitment/applications'],
   ['get', '/api/admin/v1/recruitment/applications/{id}'],
+  // 招新可用性收口 F2(2026-07-11;评审稿 recruitment-usability-closeout-review.md §3 R1):admin 改报名资料。
+  ['patch', '/api/admin/v1/recruitment/applications/{id}'],
   ['get', '/api/admin/v1/recruitment/applications/{id}/id-card-image-url'],
   ['post', '/api/admin/v1/recruitment/applications/{id}/resolve'],
   // 招新二期(招新后段)T2(2026-06-19;冻结评审稿 recruitment-phase2-review.md §3.2):

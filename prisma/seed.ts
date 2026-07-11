@@ -2928,6 +2928,15 @@ const RECRUITMENT_APPLICATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed>
     description:
       '一键发号:公示报名按拼音序批量发永久编号 + 建 User+Member+档案+紧急联系人(评审稿 D-R2-5)',
   },
+  // 招新可用性收口 F2(2026-07-11;评审稿 recruitment-usability-closeout-review.md §3 R1,绑 biz-admin):
+  {
+    code: 'recruitment-application.update.record',
+    module: 'recruitment-application',
+    action: 'update',
+    resourceType: 'record',
+    description:
+      'admin 改报名资料(R1 白名单:非身份字段恒可改;身份字段仅 manual_review 或外籍;必落 audit)',
+  },
 ];
 
 // 招新三期(入队:志愿者→队员)T2(2026-06-19;冻结评审稿 recruitment-phase3-review.md §3.4 / E-J-8):
