@@ -219,7 +219,7 @@ export class RecruitmentPublicController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '公开查询本人报名进度(凭新 wx.login code 换 openid;返回本人最近一条进度模型:业务态 stage + 字典文案 + 门槛 todoList 真投影 + 临时编号 + 轮次通知;无匹配→28002;throttler recruitment) [public]',
+      '公开查询本人报名进度(凭新 wx.login code 换 openid;返回本人最近一条进度模型:业务态 stage + 字典文案 + 门槛 todoList 真投影 + 临时编号 + 轮次通知;F4:发号后〔报名行 openid 已清〕经账号 openid 锚 fall-through 返 stage=volunteer 引导态〔已转志愿者/待入队,memberNo 恒 null〕;无匹配→28002;throttler recruitment) [public]',
   })
   @ApiWrappedOkResponse(RecruitmentApplicationProgressDto)
   @ApiBizErrorResponse(
@@ -239,12 +239,12 @@ export class RecruitmentPublicController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'H5 报名前手机发码(无账号;SmsPurpose=RECRUITMENT_BIND;无 open 轮→28030;手机维度 60s 间隔/10 条日限〔跨 purpose 合计〕+ throttler recruitment 双层兜底) [public]',
+      'H5 报名前手机发码(无账号;SmsPurpose=RECRUITMENT_BIND;F4:放行=有开放轮 或 手机命中未清除报名记录〔闭轮自助查询/换绑链恢复〕,闭轮陌生手机返防枚举泛化 200 不发码零留痕;手机维度 60s 间隔/10 条日限〔跨 purpose 合计〕+ throttler recruitment 双层兜底) [public]',
   })
   @ApiWrappedOkResponse(RecruitmentSendCodeResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
-    BizCode.RECRUITMENT_CYCLE_NOT_OPEN,
+    // F4:28030 不再可达(闭轮改「命中报名放行 / 陌生手机防枚举泛化 200」)
     BizCode.SMS_SEND_INTERVAL_LIMIT,
     BizCode.SMS_PHONE_DAILY_LIMIT,
     BizCode.SMS_CHANNEL_NOT_CONFIGURED,
@@ -264,12 +264,12 @@ export class RecruitmentPublicController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'H5 报名前验码 → 发短时一次性身份令牌(无账号;验码成功落会话行 + 返 phoneVerificationToken〔30min 内随报名提交出示,明文仅一次性返回〕;码错/过期/超次统一 24010;无 open 轮→28030;throttler recruitment) [public]',
+      'H5 报名前验码 → 发短时一次性身份令牌(无账号;验码成功落会话行 + 返 phoneVerificationToken〔30min 内随报名提交出示,明文仅一次性返回〕;码错/过期/超次统一 24010;F4:轮次锚=开放轮 或 手机命中未清除报名记录所在轮〔闭轮+无命中→防枚举统一 24010〕;throttler recruitment) [public]',
   })
   @ApiWrappedOkResponse(RecruitmentVerifyCodeResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
-    BizCode.RECRUITMENT_CYCLE_NOT_OPEN,
+    // F4:28030 不再可达(闭轮无命中防枚举统一 24010)
     BizCode.SMS_CODE_INVALID,
     BizCode.TOO_MANY_REQUESTS,
   )
@@ -283,7 +283,7 @@ export class RecruitmentPublicController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '公开查询本人报名进度②(手机+验证码;无账号;验码消费一码 → 手机定位最近一条报名进度模型,与微信 code 查询同出参/同派生口径;码错→24010 / 无匹配→28002;throttler recruitment) [public]',
+      '公开查询本人报名进度②(手机+验证码;无账号;验码消费一码 → 手机定位最近一条报名进度模型,与微信 code 查询同出参/同派生口径;F4:发号后〔报名行 phone 已清〕经账号 phone / 档案手机锚 fall-through 返 stage=volunteer 引导态;码错→24010 / 无匹配→28002;throttler recruitment) [public]',
   })
   @ApiWrappedOkResponse(RecruitmentApplicationProgressDto)
   @ApiBizErrorResponse(

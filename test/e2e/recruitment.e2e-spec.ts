@@ -888,6 +888,70 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expectBizError(await promoteSingle(rowNone.id), BizCode.RECRUITMENT_LOGIN_ANCHOR_UNAVAILABLE);
   });
 
+  // ===== 招新可用性收口 F4-3b(评审稿 §2.3/E-U-5):发号后微信查询 fall-through 引导态 =====
+
+  it('F4-w 发号后 query(微信)→ 报名行 openid 已清仍返 stage=volunteer 引导态;无报名行/INACTIVE → 28002', async () => {
+    const cycle = await openCycle();
+    // 发号后形态:报名行 promoted + PII 清空(openid null),User 持 openid,Member ACTIVE
+    const member = await prisma.member.create({
+      data: { memberNo: '26903', displayName: '癸十', status: 'ACTIVE', gradeCode: 'volunteer' },
+    });
+    await prisma.user.create({
+      data: {
+        username: '26903',
+        passwordHash: 'x',
+        role: 'USER',
+        memberId: member.id,
+        openid: 'dev-openid-f4w', // = code2session('f4w') 的 DevStub openid
+      },
+    });
+    await prisma.recruitmentApplication.create({
+      data: {
+        cycleId: cycle.id,
+        statusCode: 'promoted',
+        promotedMemberId: member.id,
+        documentTypeCode: 'mainland_id',
+        isForeigner: false,
+        sensitivePurgedAt: new Date(),
+        openid: null,
+        tempNo: 'T20260033',
+      },
+    });
+
+    const res = await request(httpServer(app)).post(OPEN_QUERY).send({ wechatCode: 'f4w' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.stage).toBe('volunteer'); // 「已转志愿者 / 待入队」引导态
+    expect(res.body.data.stageText).toBe('已转志愿者 / 待入队');
+    expect(res.body.data.nextAction).toBe('apply-teamjoin');
+    expect(res.body.data.memberNo).toBeNull(); // 公开面不泄编号
+    expect(res.body.data.tempNo).toBe('T20260033');
+
+    // 有账号但非招新出身(无 promotedMemberId 报名行)→ 维持 28002
+    const member2 = await prisma.member.create({
+      data: { memberNo: '26904', displayName: '子甲', status: 'ACTIVE', gradeCode: 'volunteer' },
+    });
+    await prisma.user.create({
+      data: {
+        username: '26904',
+        passwordHash: 'x',
+        role: 'USER',
+        memberId: member2.id,
+        openid: 'dev-openid-f4w2',
+      },
+    });
+    expectBizError(
+      await request(httpServer(app)).post(OPEN_QUERY).send({ wechatCode: 'f4w2' }),
+      BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
+    );
+
+    // INACTIVE(已离队)→ 维持 28002(不泄状态)
+    await prisma.member.update({ where: { id: member.id }, data: { status: 'INACTIVE' } });
+    expectBizError(
+      await request(httpServer(app)).post(OPEN_QUERY).send({ wechatCode: 'f4w' }),
+      BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
+    );
+  });
+
   // ⑥ 轮次开关:无 open 轮 → 28030
   it('⑥ 无 open 轮次 → 报名 28030', async () => {
     await openCycle({ statusCode: 'closed' });

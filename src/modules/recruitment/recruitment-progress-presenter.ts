@@ -195,7 +195,8 @@ export type RecruitmentProgressCycle = {
  * 组装公开本人进度模型(评审稿 §6.1)。`stageText` 由调用方传入的 `recruitment_stage` 字典 map 解析
  * (本模块不碰 Prisma,守 §4.1「后端不存展示文案明文」);字典缺该 stage 时回退 stage 机器码(防空、可自证)。
  * `statusText` 本切片同 `stageText`(主文案在字典;更细/动态文案延后,守 §4.1)。
- * `memberNo` 恒 null:promote 即清 openid → 公开查询天然查不到发号后记录(覆盖边界,见 goal DoD#3)。
+ * `memberNo` 恒 null(公开无账号查询不泄编号;经登录态 app 侧另见)。招新可用性收口 F4-3b 起,
+ * promoted 行经 User openid/phone 锚 fall-through 可达 → stage=volunteer 引导态(「已转志愿者 / 待入队」)。
  */
 export function assembleRecruitmentProgress(
   app: RecruitmentProgressSource,

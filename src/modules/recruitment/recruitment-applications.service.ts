@@ -580,14 +580,21 @@ export class RecruitmentApplicationsService {
   // ============ 公开查询(凭新 wx.login code → openid → 本人最近报名)============
   // 招新闭环优化 S1(评审稿 §4/§6):出参 enrich 为新人进度模型(业务态 stage + 字典文案 +
   // 门槛 todoList 真投影);statusCode 流转逻辑 / 状态机零改动,纯展示派生。
-  // 覆盖边界:promote 即清 openid → 本查询天然查不到发号后记录,故 stage 不会是 volunteer、
-  // memberNo 恒 null(尾段经登录态 app 侧另见,非本切片)。
+  // 招新可用性收口 F4-3b(评审稿 §2.3/E-U-5):promote 即清 openid 使旧查询「查无 28002」体验像
+  // 报名消失 —— 现 miss 后 fall-through 经 live User.openid 反查 ACTIVE 队员,用其 promotedMemberId
+  // 定位**真实报名行**(promoted 态;PII 已清但 statusCode/thresholdMarks/promotedMemberId 俱在)组装
+  // 引导态(stage=volunteer「已转志愿者 / 待入队」,nextAction=apply-teamjoin,memberNo 恒 null)——
+  // **零新增 PII 留存,零合成 DTO**;wx.login code 即微信身份自证,无枚举面。member 非 ACTIVE 或
+  // 无报名行(非招新出身队员)→ 维持 28002。
   async query(wechatCode: string): Promise<RecruitmentApplicationProgressDto> {
     const { openid } = await this.wechat.code2session(wechatCode);
-    const app = await this.prisma.recruitmentApplication.findFirst({
+    let app = await this.prisma.recruitmentApplication.findFirst({
       where: { openid, deletedAt: null },
       orderBy: { createdAt: 'desc' },
     });
+    if (!app) {
+      app = await this.findPromotedAppByOpenidAnchor(openid);
+    }
     if (!app) {
       throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
     }
@@ -596,6 +603,27 @@ export class RecruitmentApplicationsService {
     });
     const stageTextByCode = await this.loadStageTextMap();
     return assembleRecruitmentProgress(app, cycle, stageTextByCode);
+  }
+
+  // F4-3b:openid 锚 → 已发号队员的 promoted 报名行(fall-through;E-U-5;镜像 identity service
+  // 的手机锚版本,各模块级实现不抽共享 util)。live User.openid → Member ACTIVE 守卫 → promotedMemberId。
+  private async findPromotedAppByOpenidAnchor(
+    openid: string,
+  ): Promise<RecruitmentApplication | null> {
+    const user = await this.prisma.user.findFirst({
+      where: { openid, deletedAt: null, memberId: { not: null } },
+      select: { memberId: true },
+    });
+    if (!user?.memberId) return null;
+    const member = await this.prisma.member.findFirst({
+      where: { id: user.memberId, deletedAt: null, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    if (!member) return null;
+    return this.prisma.recruitmentApplication.findFirst({
+      where: { promotedMemberId: user.memberId, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   // recruitment_stage 字典 → { stage code → stageText } map(§4.1「展示文案在字典」)。
