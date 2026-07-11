@@ -9,6 +9,7 @@ import {
   APP_STATUS_PUBLICITY,
   APP_STATUS_REJECTED,
   APP_STATUS_VERIFIED,
+  APP_STATUS_WITHDRAWN,
   type ThresholdMarks,
   allThresholdsComplete,
   isPromotable,
@@ -204,6 +205,8 @@ export function recruitmentExportStatusWhere(
       return { statusCode: APP_STATUS_PROMOTED };
     case 'rejected':
       return { statusCode: APP_STATUS_REJECTED };
+    case 'withdrawn': // F6 自助撤销终态
+      return { statusCode: APP_STATUS_WITHDRAWN };
     case 'all':
     default:
       return {};

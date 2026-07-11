@@ -392,6 +392,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/open/v1/recruitment/identity/send-code'],
   ['post', '/api/open/v1/recruitment/identity/verify-code'],
   ['post', '/api/open/v1/recruitment/applications/query-by-phone'],
+  // 招新可用性收口 F6(2026-07-11;评审稿 §3 R4):自助撤销(公开双通道;0 新码)。
+  ['post', '/api/open/v1/recruitment/applications/withdraw'],
   ['post', '/api/open/v1/recruitment/applications/rebind-wechat'],
   ['post', '/api/open/v1/recruitment/applications/rebind-phone'],
   ['post', '/api/admin/v1/recruitment/cycles'],

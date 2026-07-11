@@ -1063,6 +1063,13 @@ export const BizCode = {
     message: '该微信已绑定本轮其它报名,无法换绑',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 招新可用性收口 F6(2026-07-11;评审稿 §3 R4):自助撤销——非终态(promoted/rejected/withdrawn
+  // 之外)皆可撤;终态命中 → 本码(温和文案,含幂等重撤)。
+  RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE: {
+    code: 28052,
+    message: '该报名已处于终态(已发号/未通过/已撤销),无法撤销',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   // 招新可用性收口 F1(2026-07-11;评审稿 §2.5/E-U-1):
   // - 28060:付费 OCR 按 IP 北京自然日封顶(recognize + submit 共享;env RECRUITMENT_OCR_DAILY_IP_LIMIT
   //   默认 30;持久化计数表,重启不清零;HTTP 429 语义,独立于 @RecruitmentThrottle 限流器)。

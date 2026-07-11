@@ -227,6 +227,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         { typeId: stageType.id, code: 'publicity', label: '公示中', sortOrder: 4 },
         { typeId: stageType.id, code: 'volunteer', label: '已转志愿者 / 待入队', sortOrder: 5 },
         { typeId: stageType.id, code: 'rejected', label: '未通过', sortOrder: 6 },
+        { typeId: stageType.id, code: 'withdrawn', label: '已撤销报名', sortOrder: 10 }, // F6
       ],
     });
 

@@ -1860,8 +1860,9 @@ model RecruitmentApplication {
 
   // 业务唯一约束(partial unique;migration.sql 末尾手写,E-R-9/10;Prisma DSL 不支持带 WHERE):
   // - recruitment_applications_cycle_idcard_active_unique ON (cycleId, idCardNumber)
-  //   WHERE "deletedAt" IS NULL AND "statusCode" <> 'rejected' —— 防重复报名(同轮同人),
-  //   允许 rejected 后同轮重试;service P2002 兜底转 28003(沿 activity_registrations 范式)
+  //   WHERE "deletedAt" IS NULL AND "statusCode" NOT IN ('rejected','withdrawn') —— 防重复报名
+  //   (同轮同人),允许 rejected / withdrawn(F6 自助撤销,R4)后同轮重试;service P2002 兜底转
+  //   28003(沿 activity_registrations 范式;排除集 F6 第 43 migration 重建)
   // - recruitment_applications_cycle_tempno_unique ON (cycleId, tempNo)
   //   WHERE "tempNo" IS NOT NULL —— 临时编号同轮唯一(配合 tempNoSeq 原子自增兜底并发)
   @@index([cycleId])

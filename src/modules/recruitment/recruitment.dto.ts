@@ -314,6 +314,31 @@ export class RecruitmentQueryByPhoneDto {
   code!: string;
 }
 
+// ============ 招新可用性收口 F6:自助撤销(评审稿 §3 R4;凭证双通道镜像 query / query-by-phone)============
+export class RecruitmentWithdrawDto {
+  @ApiPropertyOptional({
+    description: '微信 wx.login code(通道①:换 openid 定位本人最近活跃报名;与 phone+code 二选一)',
+    maxLength: 128,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  wechatCode?: string;
+
+  @ApiPropertyOptional({ description: '手机号(通道②:配合验证码;与 wechatCode 二选一)' })
+  @IsOptional()
+  @IsString()
+  @Matches(MAINLAND_PHONE, { message: '手机号格式不正确' })
+  phone?: string;
+
+  @ApiPropertyOptional({ description: '短信验证码(6 位数字;通道② 必带,消费一码)' })
+  @IsOptional()
+  @IsString()
+  @Matches(SMS_CODE_6, { message: '验证码格式不正确' })
+  code?: string;
+}
+
 export class RecruitmentRebindWechatDto {
   @ApiProperty({ description: '当前已绑手机号(校验本人;须先验码)' })
   @IsString()
@@ -958,6 +983,8 @@ export class RecruitmentCycleStatsDto {
   evaluation!: RecruitmentStatsEvaluationDto;
   @ApiProperty({ type: RecruitmentStatsIssuanceDto, description: '公示发号' })
   issuance!: RecruitmentStatsIssuanceDto;
+  @ApiProperty({ description: '已自助撤销数(F6 终态;additive,不入任何待处理桶)' })
+  withdrawnCount!: number;
 }
 
 // ============ 招新闭环优化 S6:批量操作(评审稿 §8;纯加端点,零 schema / 零新 RBAC 码)============
@@ -1078,6 +1105,7 @@ export const RECRUITMENT_EXPORT_FILTERS = [
   'publicity',
   'promoted',
   'rejected',
+  'withdrawn', // F6 自助撤销终态(additive)
 ] as const;
 
 export class ExportRecruitmentApplicationsDto {

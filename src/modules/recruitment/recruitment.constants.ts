@@ -22,6 +22,9 @@ export const APP_STATUS_REJECTED = 'rejected'; // 未通过
 export const APP_STATUS_PENDING_EVALUATION = 'pending_evaluation'; // 待综合评定(5 门槛全完成自动推进)
 export const APP_STATUS_PUBLICITY = 'publicity'; // 公示中(综合评定通过)
 export const APP_STATUS_PROMOTED = 'promoted'; // 已发永久编号(建 User+Member;终态)
+// 招新可用性收口 F6(2026-07-11;评审稿 §3 R4):申请人自助撤销终态(允许下轮及同轮重报;
+// partial unique 排除集 rejected → rejected+withdrawn 已随第 43 migration 重建)。
+export const APP_STATUS_WITHDRAWN = 'withdrawn'; // 已自助撤销(终态;非淘汰,不写 eliminationStage)
 
 // ===== 核验结果记账(verifyOutcome;String,零 migration;OCR 改造分叉⑥加细分值)=====
 export const VERIFY_OUTCOME_MATCHED = 'matched'; // 大陆 OCR 匹配+清晰+无防伪告警 → verified
@@ -238,8 +241,11 @@ const BEIJING_UTC_OFFSET_HOURS = 8;
 // =============================================================================
 
 // 「同轮活跃报名」排除态集合(openid/phone/idCardNumber 三键去重共用;与 partial unique 的
-// `statusCode <> 'rejected'` 排除语义同源)。F6 自助撤销落地后追加 'withdrawn'(R4)。
-export const APP_INACTIVE_STATUS_CODES: ReadonlyArray<string> = [APP_STATUS_REJECTED];
+// `statusCode NOT IN ('rejected','withdrawn')` 排除语义同源;F6/R4 起含 withdrawn)。
+export const APP_INACTIVE_STATUS_CODES: ReadonlyArray<string> = [
+  APP_STATUS_REJECTED,
+  APP_STATUS_WITHDRAWN,
+];
 
 // 付费 OCR 按 IP 北京自然日封顶(E-U-1):计数键 = ip × dateKey;req.ip 缺省归一 'unknown' 桶
 //(不可作为绕计通道)。dateKey 用固定 UTC+8 日界(沿 sms/stats 各模块级实现口径,不抽共享 util)。

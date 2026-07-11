@@ -24,6 +24,7 @@ import {
   STAGE_REJECTED,
   STAGE_THRESHOLD,
   STAGE_VOLUNTEER,
+  STAGE_WITHDRAWN,
   THRESHOLD_NAMES,
   deriveRecruitmentStage,
 } from './recruitment-progress-presenter';
@@ -122,6 +123,7 @@ export class RecruitmentStatsService {
     let inPublicity = 0;
     let promotedCount = 0;
     let evalEliminated = 0;
+    let withdrawnCount = 0; // F6:自助撤销终态(不入任何 pending 桶,独立计数)
     // 门槛进度
     let thresholdTracking = 0;
     const thresholdCompleted: Record<ThresholdCode, number> = {
@@ -178,6 +180,9 @@ export class RecruitmentStatsService {
           break;
         case STAGE_REJECTED:
           if (a.eliminationStage === ELIM_STAGE_EVALUATION) evalEliminated += 1;
+          break;
+        case STAGE_WITHDRAWN:
+          withdrawnCount += 1; // F6:终态独立计数(防落 default 桶污染 manualTotal)
           break;
         // STAGE_THRESHOLD_DONE 为瞬态(verified+门槛齐,markThreshold 末次完成即自动→pending_evaluation),
         // 几乎不持久;既非「门槛跟踪中」(未齐)亦非「待评定」(尚未推进),本切片不计入任何 pending 桶(防重复)。
@@ -253,6 +258,7 @@ export class RecruitmentStatsService {
         needManualBuild,
         promoted: promotedCount,
       },
+      withdrawnCount,
     };
   }
 

@@ -147,6 +147,7 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
         { typeId: stageType.id, code: 'retake', label: '待重拍', sortOrder: 7 },
         { typeId: stageType.id, code: 'confirm', label: '待核对', sortOrder: 8 },
         { typeId: stageType.id, code: 'manual_high', label: '待人工核验', sortOrder: 9 },
+        { typeId: stageType.id, code: 'withdrawn', label: '已撤销报名', sortOrder: 10 },
       ],
     });
   });
@@ -443,6 +444,110 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
       .send({ phone: '13900000032', code: FIXED_CODE });
     expect(res.status).toBe(200);
     expect(res.body.data.stage).toBe('volunteer');
+  });
+
+  // ============ 招新可用性收口 F6(评审稿 §3 R4):自助撤销 ============
+
+  const WITHDRAW = '/api/open/v1/recruitment/applications/withdraw';
+
+  it('F6-① 手机通道撤销 → withdrawn 终态 + 进度模型 stage=withdrawn + audit;重撤 → 28052(幂等语义)', async () => {
+    const cycle = await openCycle();
+    const app0 = await seedApp(cycle.id, { phone: '13900000001', statusCode: 'verified' });
+    await sendCode('13900000001');
+    const res = await request(httpServer(app))
+      .post(WITHDRAW)
+      .send({ phone: '13900000001', code: FIXED_CODE });
+    expect(res.status).toBe(200);
+    expect(res.body.data.stage).toBe('withdrawn');
+    expect(res.body.data.stageText).toBe('已撤销报名');
+    expect(res.body.data.nextAction).toBeNull();
+
+    const row = await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: app0.id } });
+    expect(row.statusCode).toBe('withdrawn');
+    expect(row.eliminationStage).toBeNull(); // 非淘汰:不写 eliminationStage
+
+    const audit = await prisma.auditLog.findFirst({
+      where: { event: 'recruitment-application.withdraw', resourceId: app0.id },
+    });
+    expect(audit).not.toBeNull();
+    expect(audit?.actorUserId).toBeNull(); // 无账号自助
+    const ctx = audit?.context as { extra?: { channel?: string; phone?: string } } | null;
+    expect(ctx?.extra?.channel).toBe('phone');
+    expect(ctx?.extra?.phone).toContain('*'); // 掩码
+
+    // 重撤(终态命中)→ 28052
+    await prisma.smsVerificationCode.deleteMany({});
+    await sendCode('13900000001');
+    const again = await request(httpServer(app))
+      .post(WITHDRAW)
+      .send({ phone: '13900000001', code: FIXED_CODE });
+    expectBizError(again, BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE);
+  });
+
+  it('F6-② 微信通道撤销 → withdrawn;promoted/rejected 终态 → 28052;双通道 both/neither → 40000', async () => {
+    const cycle = await openCycle();
+    await seedApp(cycle.id, {
+      phone: '13900000021',
+      openid: 'dev-openid-wd-a',
+      statusCode: 'manual_review',
+      tempNo: null,
+    });
+    const ok = await request(httpServer(app)).post(WITHDRAW).send({ wechatCode: 'wd-a' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.data.stage).toBe('withdrawn');
+
+    // rejected 终态 → 28052
+    await seedApp(cycle.id, {
+      phone: '13900000022',
+      openid: 'dev-openid-wd-b',
+      statusCode: 'rejected',
+      tempNo: null,
+      idCardNumber: 'WDID0002',
+    });
+    expectBizError(
+      await request(httpServer(app)).post(WITHDRAW).send({ wechatCode: 'wd-b' }),
+      BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE,
+    );
+
+    // both / neither → 40000
+    expectBizError(
+      await request(httpServer(app))
+        .post(WITHDRAW)
+        .send({ wechatCode: 'wd-a', phone: '13900000021', code: FIXED_CODE }),
+      BizCode.BAD_REQUEST,
+      { strictMessage: false },
+    );
+    expectBizError(await request(httpServer(app)).post(WITHDRAW).send({}), BizCode.BAD_REQUEST, {
+      strictMessage: false,
+    });
+  });
+
+  it('F6-③ DoD:撤销后同轮同证件号重报成功(partial unique 排除集 + 三键去重排除集均含 withdrawn)', async () => {
+    await openCycle();
+    // 首报(H5 链)→ verified
+    const token = await getToken('13900000001');
+    await submit(basePayload('13900000001', { phoneVerificationToken: token })).expect(201);
+
+    // 自助撤销
+    await prisma.smsVerificationCode.deleteMany({});
+    await sendCode('13900000001');
+    await request(httpServer(app))
+      .post(WITHDRAW)
+      .send({ phone: '13900000001', code: FIXED_CODE })
+      .expect(200);
+
+    // 同轮 同证件号 + 同手机 重报 → 成功(撤销行不再占键)
+    await prisma.smsVerificationCode.deleteMany({});
+    const token2 = await getToken('13900000001');
+    const again = await submit(basePayload('13900000001', { phoneVerificationToken: token2 }));
+    expect(again.status).toBe(201);
+    expect(again.body.data.statusCode).toBe('verified');
+    // 两行并存:一 withdrawn 一 verified(同 idCardNumber/同 phone;partial unique 只约束活跃行)
+    const rows = await prisma.recruitmentApplication.findMany({
+      where: { phone: '13900000001' },
+      select: { statusCode: true },
+    });
+    expect(rows.map((r) => r.statusCode).sort()).toEqual(['verified', 'withdrawn']);
   });
 
   // ============ 小程序链向后兼容 ============
