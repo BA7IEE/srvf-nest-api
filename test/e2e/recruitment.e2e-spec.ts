@@ -71,6 +71,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         { name: '李四', relation: 'parent', phone: '13900000002' },
         { name: '王五', relation: 'family', phone: '13900000003' },
       ],
+      privacyConsentAccepted: true, // F5 契约收紧:submit 必填(fixture 缺省即真)
       ...over,
     };
   }
@@ -79,7 +80,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   // opts.ocr 覆盖造不一致/告警/不清晰(评审稿 §3.7);opts.withImage=false 造缺图。
   function submit(
     payload: Record<string, unknown>,
-    opts: { withImage?: boolean; ocr?: Record<string, unknown> } = {},
+    opts: { withImage?: boolean; ocr?: Record<string, unknown>; signature?: Buffer } = {},
   ): request.Test {
     const withImage = opts.withImage ?? true;
     const envelope = opts.ocr ?? {
@@ -93,6 +94,13 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       req = req.attach('idCardImage', Buffer.from(JSON.stringify(envelope)), {
         filename: 'id.jpg',
         contentType: 'image/jpeg',
+      });
+    }
+    // F5:可选签名图文件位(校验镜像 idCardImage)
+    if (opts.signature) {
+      req = req.attach('signatureImage', opts.signature, {
+        filename: 'sig.png',
+        contentType: 'image/png',
       });
     }
     return req;
@@ -950,6 +958,90 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       await request(httpServer(app)).post(OPEN_QUERY).send({ wechatCode: 'f4w' }),
       BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
     );
+  });
+
+  // ===== 招新可用性收口 F5(评审稿 §2.8 R5):知情同意 + 签名图 =====
+
+  it('F5-① 契约收紧:payload 缺 privacyConsentAccepted → 40000;显式 false → 40000(⚠️ 行为变更)', async () => {
+    await openCycle();
+    const base = validPayload({ wechatCode: 'f5-c0', idCardNumber: ID_MATCH_A });
+    delete base.privacyConsentAccepted;
+    expectBizError(await submit(base), BizCode.BAD_REQUEST, { strictMessage: false });
+
+    expectBizError(
+      await submit(
+        validPayload({
+          wechatCode: 'f5-c1',
+          idCardNumber: ID_MATCH_A,
+          privacyConsentAccepted: false,
+        }),
+      ),
+      BizCode.BAD_REQUEST,
+      { strictMessage: false },
+    );
+    expect(await prisma.recruitmentApplication.count()).toBe(0); // 双拒零落库
+  });
+
+  it('F5-② 同意留痕 + 签名图全链:submit 落 stamps/key → promote 搬 profile + 报名行清空 + signed 真值', async () => {
+    const cycle = await openCycle();
+    const res = await submit(
+      validPayload({
+        wechatCode: 'f5-sig',
+        idCardNumber: ID_MATCH_A,
+        privacyConsentVersion: '2026-07',
+      }),
+      { signature: Buffer.from('fake-signature-bytes') },
+    );
+    expect(res.status).toBe(201);
+    expect(res.body.data.statusCode).toBe('verified');
+
+    const row = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-f5-sig' },
+    });
+    expect(row.privacyConsentAcceptedAt).not.toBeNull();
+    expect(row.privacyConsentVersion).toBe('2026-07');
+    expect(row.signatureImageKey).toMatch(/^recruitment\/signature\//);
+    const sigKey = row.signatureImageKey as string;
+
+    // 推到 publicity 后批量 promote(签名搬运走批量与单发共用内核)
+    await prisma.recruitmentApplication.update({
+      where: { id: row.id },
+      data: { statusCode: 'publicity' },
+    });
+    const pr = await promote(cycle.id);
+    expect(pr.body.data.promotedCount).toBe(1);
+    const memberId = pr.body.data.promoted[0].memberId as string;
+
+    const profile = await prisma.memberProfile.findFirstOrThrow({ where: { memberId } });
+    expect(profile.privacyConsentSigned).toBe(true); // 搬真值(非硬编码)
+    expect(profile.privacyConsentSignedAt?.toISOString()).toBe(
+      row.privacyConsentAcceptedAt?.toISOString(),
+    );
+    expect(profile.signatureImageKey).toBe(sigKey); // R5:同一 storage 对象搬入档案
+
+    const after = await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after.signatureImageKey).toBeNull(); // 报名行清空(blob 单一属主=member)
+    expect(after.privacyConsentAcceptedAt).not.toBeNull(); // 同意留痕为脱敏留存字段,不清
+  });
+
+  it('F5-③ 存量无 consent 行 promote → privacyConsentSigned=false(⚠️ 行为变更:不再硬编码 true)', async () => {
+    const cycle = await openCycle();
+    await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        realName: '丑乙',
+        idCardNumber: 'F5ID0001',
+        openid: 'f5-legacy-openid',
+        phone: '13900009001',
+      }) as never,
+    });
+    const pr = await promote(cycle.id);
+    expect(pr.body.data.promotedCount).toBe(1);
+    const memberId = pr.body.data.promoted[0].memberId as string;
+    const profile = await prisma.memberProfile.findFirstOrThrow({ where: { memberId } });
+    expect(profile.privacyConsentSigned).toBe(false); // 存量 null → false(当事人从未签署)
+    expect(profile.privacyConsentSignedAt).toBeNull();
+    expect(profile.signatureImageKey).toBeNull();
   });
 
   // ⑥ 轮次开关:无 open 轮 → 28030

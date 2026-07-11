@@ -350,6 +350,9 @@ export const ID_CARD_IMAGE_SIGNED_URL_TTL_SECONDS = 300;
 // 裁剪图为腾讯返 base64 JPEG,ext 恒 jpg)。仅 mainland_id 鉴伪版 submit 路径写入。
 export const ID_CARD_CROP_IMAGE_KEY_PREFIX = 'recruitment/id-card-crop';
 export const ID_CARD_PORTRAIT_IMAGE_KEY_PREFIX = 'recruitment/id-card-portrait';
+// 招新可用性收口 F5(2026-07-11;评审稿 §2.8 R5):申请人签名图(multipart 可选文件位 signatureImage;
+// 校验镜像 idCardImage〔jpeg/png ≤5MB〕;promote 搬 member_profiles 长期留存,报名行清空)。
+export const SIGNATURE_IMAGE_KEY_PREFIX = 'recruitment/signature';
 
 // ===== 紧急联系人(评审稿 D-R + E-R-13;JSON 数组,≥2)=====
 export const EMERGENCY_CONTACTS_MIN = 2;

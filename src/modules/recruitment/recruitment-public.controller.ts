@@ -6,9 +6,10 @@ import {
   Post,
   Req,
   UploadedFile,
+  UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
@@ -113,8 +114,15 @@ export class RecruitmentPublicController {
   @Post('applications')
   // 证件照大小闸下沉到 multer 解析层:超 5MB 在落盘/入内存阶段即 413 拒,
   // 不再先全量 buffer 进内存才在 service 校验(F-1 防内存 DoS;系统性审查 §4)。
+  // F5:+可选签名图文件位 signatureImage(FileFields 双具名位;每文件仍 5MB 上限,总数 ≤2)。
   @UseInterceptors(
-    FileInterceptor('idCardImage', { limits: { fileSize: ID_CARD_IMAGE_MAX_BYTES, files: 1 } }),
+    FileFieldsInterceptor(
+      [
+        { name: 'idCardImage', maxCount: 1 },
+        { name: 'signatureImage', maxCount: 1 },
+      ],
+      { limits: { fileSize: ID_CARD_IMAGE_MAX_BYTES, files: 2 } },
+    ),
   )
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -125,15 +133,20 @@ export class RecruitmentPublicController {
         payload: {
           type: 'string',
           description:
-            'RecruitmentSubmitPayloadDto 的 JSON 串(realName/idCardNumber/…;身份链 wechatCode〔小程序〕或 phoneVerificationToken〔H5,verify-code 所发〕至少二选一)',
+            'RecruitmentSubmitPayloadDto 的 JSON 串(realName/idCardNumber/…;身份链 wechatCode〔小程序〕或 phoneVerificationToken〔H5,verify-code 所发〕至少二选一;⚠️ F5 起必含 privacyConsentAccepted=true)',
         },
         idCardImage: { type: 'string', format: 'binary', description: '证件照(jpeg/png ≤5MB)' },
+        signatureImage: {
+          type: 'string',
+          format: 'binary',
+          description: '申请人签名图(可选;jpeg/png ≤5MB;F5——发号后随档案长期留存)',
+        },
       },
     },
   })
   @ApiOperation({
     summary:
-      '公开报名提交(无账号;multipart:payload JSON 串 + idCardImage 文件;身份链 wechatCode〔小程序〕或 phoneVerificationToken〔H5 验码令牌〕至少二选一,S4a;免费校验通过后才调付费 OCR;大陆证件 OCR 匹配+防伪+清晰→发临时编号,否则/其余证件→人工待核;OCR 改造后提交端对 OCR 永不硬报错,通道未配/上游失败均转人工;throttler recruitment) [public]',
+      '公开报名提交(无账号;multipart:payload JSON 串 + idCardImage 文件 + 可选 signatureImage 签名图〔F5,发号后随档案长期留存〕;⚠️ F5 契约收紧:payload.privacyConsentAccepted 必须为 true,缺省/false → 40000;身份链 wechatCode〔小程序〕或 phoneVerificationToken〔H5 验码令牌〕至少二选一,S4a;免费校验通过后才调付费 OCR;大陆证件 OCR 匹配+防伪+清晰→发临时编号,否则/其余证件→人工待核;OCR 改造后提交端对 OCR 永不硬报错,通道未配/上游失败均转人工;throttler recruitment) [public]',
   })
   @ApiWrappedOkResponse(RecruitmentSubmitResultDto)
   @ApiBizErrorResponse(
@@ -157,11 +170,18 @@ export class RecruitmentPublicController {
   )
   async submit(
     @Body('payload') payloadJson: string | undefined,
-    @UploadedFile() image: UploadedImageFile | undefined,
+    @UploadedFiles()
+    files: { idCardImage?: UploadedImageFile[]; signatureImage?: UploadedImageFile[] } | undefined,
     @Req() req: Request,
   ): Promise<RecruitmentSubmitResultDto> {
     const dto = await parseSubmitPayload(payloadJson);
-    return this.service.submit(dto, image, buildAuditMeta(req), new Date());
+    return this.service.submit(
+      dto,
+      files?.idCardImage?.[0],
+      files?.signatureImage?.[0],
+      buildAuditMeta(req),
+      new Date(),
+    );
   }
 
   @Public()

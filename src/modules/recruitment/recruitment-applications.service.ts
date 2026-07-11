@@ -41,6 +41,7 @@ import {
   ID_CARD_IMAGE_MAX_BYTES,
   ID_CARD_PORTRAIT_IMAGE_KEY_PREFIX,
   OCR_COUNTER_UNKNOWN_IP,
+  SIGNATURE_IMAGE_KEY_PREFIX,
   RECRUITMENT_MAX_AGE,
   RECRUITMENT_MIN_AGE,
   VERIFY_OUTCOME_CATEGORY_MISMATCH,
@@ -199,9 +200,15 @@ export class RecruitmentApplicationsService {
   async submit(
     payload: RecruitmentSubmitPayloadDto,
     image: UploadedImageFile | undefined,
+    signatureImage: UploadedImageFile | undefined,
     meta: AuditMeta,
     now: Date,
   ): Promise<RecruitmentSubmitResultDto> {
+    // 0. F5 知情同意闸(评审稿 §2.8;⚠️ 契约收紧):必须显式 true(缺省由 DTO @IsBoolean 先挡)。
+    if (payload.privacyConsentAccepted !== true) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+
     // 1. 当前唯一 open 轮(无 → 28030;容量满 → 28031 快速失败,省付费 OCR)
     const cycle = await this.resolveOpenCycleOrThrow();
 
@@ -310,6 +317,14 @@ export class RecruitmentApplicationsService {
     ) {
       throw new BizException(BizCode.BAD_REQUEST);
     }
+    // 6b. F5 签名图(可选;校验镜像 idCardImage:jpeg/png ≤5MB → 否则 40000)
+    if (
+      signatureImage &&
+      (signatureImage.size > ID_CARD_IMAGE_MAX_BYTES ||
+        !ID_CARD_IMAGE_ALLOWED_MIME.includes(signatureImage.mimetype))
+    ) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
 
     // 7. OCR 六分流分类(评审稿 §2.1;分叉②:仅大陆重识别;护照/回乡证/非 OCR 类型 → manual,提交端不再 OCR)。
     //    分叉③:大陆 OCR 通道未配/上游失败不外抛 → outcome='ocr_error'(classifyMainlandOcr try/catch 归一)。
@@ -400,6 +415,18 @@ export class RecruitmentApplicationsService {
         cycle.id,
         storedKeys,
       );
+      // 10c. F5 签名图落图(可选;与主图/裁剪图同失败域,storedKeys 补偿删覆盖)
+      let signatureImageKey: string | null = null;
+      if (signatureImage) {
+        const sigExt = signatureImage.mimetype === 'image/png' ? 'png' : 'jpg';
+        signatureImageKey = `${SIGNATURE_IMAGE_KEY_PREFIX}/${cycle.id}/${randomUUID()}.${sigExt}`;
+        await this.storage.putObject({
+          key: signatureImageKey,
+          body: signatureImage.buffer,
+          contentType: signatureImage.mimetype,
+        });
+        storedKeys.push(signatureImageKey);
+      }
 
       finalApp = await this.prisma.$transaction(async (tx) => {
         // H5:事务内消费会话行(与建终态记录同事务,建失败回滚则 token 保活可重试);得手机身份链落点。
@@ -439,6 +466,12 @@ export class RecruitmentApplicationsService {
               : {}),
             detailedAddress: payload.detailedAddress,
             idCardImageKey,
+            // F5 知情同意留痕 + 签名图(评审稿 §2.8;consent 已在第 0 步硬闸为 true)
+            privacyConsentAcceptedAt: now,
+            ...(payload.privacyConsentVersion
+              ? { privacyConsentVersion: payload.privacyConsentVersion }
+              : {}),
+            ...(signatureImageKey ? { signatureImageKey } : {}),
             // 鉴伪版充分利用(§5):4 OCR 列(顾问式存档,来自 extendedFields.*.content;缺 → null)+ 2 裁剪图 key
             // (storeCropImage 返 string|null)。**gender/birth 不在此组**(仍由 idCardNumber 推导,见第 2 步,不被 OCR 覆盖)。
             idCardCropImageKey,

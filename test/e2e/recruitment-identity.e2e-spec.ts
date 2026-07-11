@@ -45,6 +45,7 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
         { name: '李四', relation: 'parent', phone: '13900000002' },
         { name: '王五', relation: 'family', phone: '13900000003' },
       ],
+      privacyConsentAccepted: true, // F5 契约收紧:submit 必填(fixture 缺省即真)
       ...over,
     };
   }

@@ -488,8 +488,15 @@ export class RecruitmentPromotionService {
         mobile: a.phone as string,
         joinedDate: normalizeDateOnly(now.toISOString()),
         joinSourceCode: JOIN_SOURCE_RECRUITMENT,
-        privacyConsentSigned: true,
+        // F5(评审稿 §2.8;⚠️ 行为变更):privacyConsentSigned 由硬编码 true 改搬申请真值——
+        // 报名期已确认知情同意(acceptedAt 置)才 true;存量历史行(F5 前无 consent 字段)→ false。
+        // signedAt 一并搬真实确认时刻;签名图 key 搬入档案长期留存(R5,镜像 idCardImageKey)。
+        privacyConsentSigned: a.privacyConsentAcceptedAt != null,
+        ...(a.privacyConsentAcceptedAt
+          ? { privacyConsentSignedAt: a.privacyConsentAcceptedAt }
+          : {}),
         ...(a.idCardImageKey ? { idCardImageKey: a.idCardImageKey } : {}),
+        ...(a.signatureImageKey ? { signatureImageKey: a.signatureImageKey } : {}),
       },
       select: { id: true },
     });
@@ -530,6 +537,9 @@ export class RecruitmentPromotionService {
         idCardImageKey: null,
         openid: null,
         reviewNote: null,
+        // F5(R5):签名图已搬 member_profiles 长期留存 → 报名行 key 清空(blob 单一属主=member);
+        // privacyConsentAcceptedAt/Version 为脱敏留存字段,不清。
+        signatureImageKey: null,
       },
     });
     await this.auditLogs.log({

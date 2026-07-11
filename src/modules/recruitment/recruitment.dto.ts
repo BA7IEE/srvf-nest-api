@@ -152,6 +152,20 @@ export class RecruitmentSubmitPayloadDto {
   @IsOptional()
   @IsBoolean()
   applicantConfirmedOcrWrong?: boolean;
+
+  // 招新可用性收口 F5(评审稿 §2.8;⚠️ 契约收紧:旧客户端缺此字段 → 40000):
+  @ApiProperty({
+    description:
+      '知情同意确认(**必须为 true**;⚠️ F5 契约收紧——缺省或 false 均 40000;落 privacyConsentAcceptedAt 时间戳)',
+  })
+  @IsBoolean()
+  privacyConsentAccepted!: boolean;
+
+  @ApiPropertyOptional({ description: '知情同意文本版本号(前端传,如 2026-07;后端只存不校验内容)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  privacyConsentVersion?: string;
 }
 
 // ============ 公开 OCR 识别预填(OCR 改造 2026-06-22;评审稿 §3.2 端点 4b / §4)============

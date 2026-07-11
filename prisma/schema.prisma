@@ -605,6 +605,11 @@ model MemberProfile {
   // promote 从 recruitment_applications.idCardImageKey 搬入(同一 storage 对象),application 侧清空,blob 单一属主=member。
   idCardImageKey String? // MP-32 证件照 storage key
 
+  // 招新可用性收口 F5(2026-07-11;评审稿 §2.8 R5;第 42 migration,additive 可空):
+  // 签名图 = 责任文件长期留存——promote 从 recruitment_applications.signatureImageKey 搬入
+  // (同一 storage 对象),application 侧清空,blob 单一属主=member;**不随任何脱敏/留存清除**(R5)。
+  signatureImageKey String? // MP-33 申请人签名图 storage key(镜像 MP-32 搬运范式)
+
   member Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
 
   @@index([volunteerNo])
@@ -1782,6 +1787,10 @@ model RecruitmentApplication {
   idCardImageKey    String? // 证件照 storage key(分叉③A;留存按 key 删 storage blob)
   emergencyContacts Json? // 紧急联系人 ≥2:[{name, relation, phone}](留存清)
   profileExtra      Json? // 其余报名字段(Q7 精简后冻结,本期最小;留存清)
+  // 招新可用性收口 F5(2026-07-11;评审稿 §2.8 R5;第 42 migration,全 additive 可空):
+  // 签名图 = 责任文件——promote 搬 member_profiles.signatureImageKey 长期留存 + 报名行清空
+  // (镜像 idCardImageKey 搬运范式);未发号(rejected/withdrawn)行的 blob 随既有留存 SOP 按 key 删。
+  signatureImageKey String? // 申请人签名图 storage key(multipart 可选文件位 signatureImage)
 
   // ===== 脱敏留存字段(永久行级保留)=====
   documentTypeCode String // 证件类型(判外籍/人工;非高敏)
@@ -1799,6 +1808,13 @@ model RecruitmentApplication {
   reviewedAt        DateTime?
   reviewNote        String?
   sensitivePurgedAt DateTime? // 留存清理(字段 NULL + blob 删)执行时刻
+
+  // 招新可用性收口 F5(2026-07-11;评审稿 §2.8;第 42 migration,全 additive 可空):
+  // 知情同意留痕——submit 必填 privacyConsentAccepted=true(⚠️ 契约收紧)落时间戳 + 前端传版本号;
+  // promote 的 member_profiles.privacyConsentSigned 由硬编码 true 改搬真值(acceptedAt != null)。
+  // 本组为脱敏留存字段(非 PII,永久行级保留,不随留存 SOP 清)。
+  privacyConsentAcceptedAt DateTime? // 勾选知情同意的时刻(submit 落 now;存量历史行 null)
+  privacyConsentVersion    String? // 同意文本版本号(前端传,如 '2026-07';后端只存不校验内容)
 
   // ===== 招新二期(后段;2026-06-19,评审稿 recruitment-phase2-review.md)=====
   // 状态机扩展为 +3 String 态(pending_evaluation / publicity / promoted),沿 statusCode String 范式无 migration;
