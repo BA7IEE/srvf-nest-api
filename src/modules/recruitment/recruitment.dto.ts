@@ -807,6 +807,22 @@ export class PromoteResultDto {
   skipped!: PromoteSkippedItemDto[];
 }
 
+// ============ 招新可用性收口 F3:单人手动建档(评审稿 §3 R3 / §6.1 E-U-3/E-U-4)============
+// promote-single 出参(物理隔离独立 class,禁继承/Pick;沿 api-surface-policy §2.1)。
+export class PromoteSingleResultDto {
+  @ApiProperty() applicationId!: string;
+  @ApiProperty({ description: '新建 Member id' }) memberId!: string;
+  @ApiProperty({ description: '永久编号 {YY}{NNN}(与批量发号共享同一原子号段,连续无空洞)' })
+  memberNo!: string;
+  @ApiPropertyOptional({ nullable: true }) realName!: string | null;
+  @ApiProperty({
+    description:
+      '登录通道(E-U-4 锚点择优:openid 未被占用 → wechat;openid 缺/占用且 phone 未占用 → phone)',
+    enum: ['wechat', 'phone'],
+  })
+  loginChannel!: string;
+}
+
 // 人工 resolve(分叉④A):通过 → 发临时编号;不通过 → rejected
 export class ResolveRecruitmentApplicationDto {
   @ApiProperty({ description: 'true=人工核验通过(发临时编号);false=不通过(rejected)' })

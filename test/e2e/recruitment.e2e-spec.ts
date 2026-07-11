@@ -714,6 +714,180 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     });
   });
 
+  // ===== 招新可用性收口 F3(评审稿 §3 R3 / §6.1 E-U-3/E-U-4):单人手动建档 promote-single =====
+
+  function promoteSingle(id: string, auth = adminAuth) {
+    return request(httpServer(app))
+      .post(`${ADMIN_APPS}/${id}/promote-single`)
+      .set('Authorization', auth)
+      .send({});
+  }
+
+  it('F3-① 权限边界:无码 USER → 30100;非 publicity(verified)→ 28041', async () => {
+    const cycle = await openCycle();
+    const row = await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        statusCode: 'verified',
+        realName: '甲一',
+        idCardNumber: 'F3ID0001',
+        openid: 'f3-a-openid',
+        phone: '13900008001',
+      }) as never,
+    });
+    expectBizError(await promoteSingle(row.id, userAuth), BizCode.RBAC_FORBIDDEN);
+    expectBizError(await promoteSingle(row.id), BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
+  });
+
+  it('F3-② 外籍手动建档全链:缺派生 28047 → F2 补录 → 建档成功(号段与批量连续)→ 幂等重跑 28041 零重复', async () => {
+    const cycle = await openCycle();
+    const membersBefore = await prisma.member.count();
+
+    // 大陆 publicity 行走批量 promote 占 26001(证明单发与批量共享同一原子号段)
+    await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        realName: '乙二',
+        idCardNumber: 'F3ID0002',
+        openid: 'f3-cn-openid',
+        phone: '13900008002',
+      }) as never,
+    });
+    const batch = await promote(cycle.id);
+    expect(batch.body.data.promotedCount).toBe(1);
+    expect(batch.body.data.promoted[0].memberNo).toBe('26001');
+
+    // 外籍 publicity 行(缺 birthDate/genderCode;批量 skip 的 foreign-manual-build 场景)
+    const foreign = await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        documentTypeCode: 'passport',
+        isForeigner: true,
+        realName: '阿福',
+        idCardNumber: 'E33445566',
+        birthDate: null,
+        genderCode: null,
+        openid: 'f3-fr-openid',
+        phone: '13900008003',
+        emergencyContacts: [
+          { name: '丙三', relation: 'parent', phone: '13900008101' },
+          { name: '丁四', relation: 'family', phone: '13900008102' },
+        ],
+      }) as never,
+    });
+    // 缺派生字段 → 28047(提示先 F2 补录)
+    expectBizError(
+      await promoteSingle(foreign.id),
+      BizCode.RECRUITMENT_PROFILE_INCOMPLETE_FOR_PROMOTE,
+    );
+    // F2 补录(外籍身份字段可改)
+    await updateApp(foreign.id, { birthDate: '1993-08-15', genderCode: 'male' }).expect(200);
+
+    // 单人建档成功:与批量共享号段 → 26002 连续;微信通道(openid 未被占用)
+    const res = await promoteSingle(foreign.id);
+    expect(res.status).toBe(200);
+    expect(res.body.data.memberNo).toBe('26002');
+    expect(res.body.data.loginChannel).toBe('wechat');
+    expect(await prisma.member.count()).toBe(membersBefore + 2);
+
+    const member = await prisma.member.findUniqueOrThrow({
+      where: { id: res.body.data.memberId },
+      include: { users: true, memberProfile: true, emergencyContacts: true },
+    });
+    expect(member.memberNo).toBe('26002');
+    expect(member.gradeCode).toBe('volunteer');
+    expect(member.users[0]?.openid).toBe('f3-fr-openid');
+    expect(member.users[0]?.username).toBe('26002');
+    expect(member.memberProfile?.documentNumber).toBe('E33445566');
+    expect(member.memberProfile?.birthDate.toISOString()).toBe('1993-08-15T00:00:00.000Z');
+    expect(member.emergencyContacts.length).toBe(2);
+
+    // 报名行:promoted + 敏感即时清(镜像批量)
+    const appRow = await prisma.recruitmentApplication.findUniqueOrThrow({
+      where: { id: foreign.id },
+    });
+    expect(appRow.statusCode).toBe('promoted');
+    expect(appRow.promotedMemberId).toBe(member.id);
+    expect(appRow.realName).toBeNull();
+    expect(appRow.idCardNumber).toBeNull();
+    expect(appRow.openid).toBeNull();
+    expect(appRow.phone).toBeNull();
+    expect(appRow.sensitivePurgedAt).not.toBeNull();
+
+    // audit:同批量事件名 + F3 additive viaPath/channel
+    const audit = await prisma.auditLog.findFirst({
+      where: { event: 'recruitment-application.promote', resourceId: foreign.id },
+    });
+    const ctx = audit?.context as {
+      extra?: { viaPath?: string; channel?: string };
+    } | null;
+    expect(ctx?.extra?.viaPath).toBe('promote-single');
+    expect(ctx?.extra?.channel).toBe('wechat');
+
+    // 幂等重跑:promoted 已离开 publicity → 28041,members 零增长(DoD「幂等重跑 0」)
+    expectBizError(await promoteSingle(foreign.id), BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
+    expect(await prisma.member.count()).toBe(membersBefore + 2);
+  });
+
+  it('F3-③ 锚点择优(E-U-4):openid 被占 + phone 空闲 → 手机通道;双占 → 28046;双缺 → 28046', async () => {
+    const cycle = await openCycle();
+
+    // openid 被既有 User 占用 + phone 空闲 → 手机通道(User.phone 落 + openid 不写)
+    await prisma.user.upsert({
+      where: { username: 'f3-occupier-1' },
+      update: {},
+      create: {
+        username: 'f3-occupier-1',
+        passwordHash: 'x',
+        role: 'USER',
+        openid: 'f3-occ-openid',
+      },
+    });
+    const rowPhone = await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        realName: '戊五',
+        idCardNumber: 'F3ID0005',
+        openid: 'f3-occ-openid',
+        phone: '13900008005',
+      }) as never,
+    });
+    const res = await promoteSingle(rowPhone.id);
+    expect(res.status).toBe(200);
+    expect(res.body.data.loginChannel).toBe('phone');
+    const member = await prisma.member.findUniqueOrThrow({
+      where: { id: res.body.data.memberId },
+      include: { users: true },
+    });
+    expect(member.users[0]?.openid).toBeNull();
+    expect(member.users[0]?.phone).toBe('13900008005');
+    expect(member.users[0]?.phoneVerifiedAt).not.toBeNull();
+
+    // 双占 → 28046(openid 占用 + phone 占用〔上一步建的 User 已占 13900008005〕)
+    const rowBoth = await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        realName: '己六',
+        idCardNumber: 'F3ID0006',
+        openid: 'f3-occ-openid',
+        phone: '13900008005',
+      }) as never,
+    });
+    expectBizError(await promoteSingle(rowBoth.id), BizCode.RECRUITMENT_LOGIN_ANCHOR_UNAVAILABLE);
+
+    // 双缺 → 28046(R3:不建无登录锚点的号)
+    const rowNone = await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        realName: '庚七',
+        idCardNumber: 'F3ID0007',
+        openid: null,
+        phone: null,
+      }) as never,
+    });
+    expectBizError(await promoteSingle(rowNone.id), BizCode.RECRUITMENT_LOGIN_ANCHOR_UNAVAILABLE);
+  });
+
   // ⑥ 轮次开关:无 open 轮 → 28030
   it('⑥ 无 open 轮次 → 报名 28030', async () => {
     await openCycle({ statusCode: 'closed' });

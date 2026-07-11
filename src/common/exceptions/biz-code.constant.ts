@@ -1033,6 +1033,22 @@ export const BizCode = {
     message: '该报名已通过证件核验,身份字段不可修改(仅人工待核或外籍记录可改)',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 招新可用性收口 F3(2026-07-11;评审稿 §3 R3 / §6.1 E-U-4):单人手动建档 promote-single。
+  // - 28046:登录锚点不可用——openid 与 phone 双缺或双被既有账号占用(R3「不建无登录锚点的号」;
+  //   引导先走自助换绑 rebind-wechat / rebind-phone 释放或换新锚,再手动发号)。
+  // - 28047:建档资料不全——缺 realName / birthDate / genderCode(外籍未补录;提示先走 F2 admin
+  //   改资料 PATCH 补录派生字段,再单人建档)。
+  RECRUITMENT_LOGIN_ANCHOR_UNAVAILABLE: {
+    code: 28046,
+    message:
+      '该报名无可用登录锚点(微信与手机均缺失或已被既有账号占用),请先引导申请人自助换绑后再建档',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  RECRUITMENT_PROFILE_INCOMPLETE_FOR_PROMOTE: {
+    code: 28047,
+    message: '建档资料不全(缺姓名/出生日期/性别),请先在报名资料编辑中补录后再建档',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   // 招新四期 S4a(H5 + 手机身份链;2026-06-24;评审稿 recruitment-phase4-loop-optimization-review.md §3.3/§3.4):
   // - 28050:报名前身份会话凭证(phoneVerificationToken)无效 / 过期 / 已消费(H5 提交端;前端据此引导重新验码)
   // - 28051:换微信换绑时新 openid 已被本轮另一活跃报名占用(防绑到他人报名 → 查询串号)

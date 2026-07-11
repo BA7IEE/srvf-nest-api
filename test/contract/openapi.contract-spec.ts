@@ -404,6 +404,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/recruitment/applications/{id}'],
   ['get', '/api/admin/v1/recruitment/applications/{id}/id-card-image-url'],
   ['post', '/api/admin/v1/recruitment/applications/{id}/resolve'],
+  // 招新可用性收口 F3(2026-07-11;评审稿 §3 R3):单人手动建档(批量 skip 项收尾通道)。
+  ['post', '/api/admin/v1/recruitment/applications/{id}/promote-single'],
   // 招新二期(招新后段)T2(2026-06-19;冻结评审稿 recruitment-phase2-review.md §3.2):
   //   admin 标门槛 + 综合评定 + 公示名单,196→199(均 admin/v1,仅新增)。
   ['patch', '/api/admin/v1/recruitment/applications/{id}/thresholds'],
