@@ -4,7 +4,7 @@
 
 ## Scope
 
-- **storage 抽象层**:`StorageProvider` 接口(5 方法:putObject / deleteObject / generateUploadUrl / generateDownloadUrl / headObject)+ `LocalStorageProvider` + `CosStorageProvider`(腾讯云 COS)
+- **storage 抽象层**:`StorageProvider` 接口(6 方法:putObject / deleteObject / generateUploadUrl / generateDownloadUrl / headObject / `readObjectPrefix`)+ `LocalStorageProvider` + `CosStorageProvider`(腾讯云 COS);`readObjectPrefix` 仅供 confirm-upload 魔数校验,固定小前缀,COS 必须 ranged getObject,不得扩成通用下载面(finding #23)
 - **动态路由** `StorageProviderRouter`:每次方法调用 `resolve()` 根据 `storage_settings.providerType` 切换 provider;`STORAGE_PROVIDER` DI token = `useExisting StorageProviderRouter`(沿 [`storage.module.ts:37`](storage.module.ts:37))
 - **配置 singleton** `storage_settings` row(沿 §6.5.4)+ `StorageSettingsService` 60s 缓存 + 主动 invalidate
 - **凭证加密** `StorageCryptoService`(AES-256-GCM)+ **uploadToken HMAC-SHA256**(`upload-token.util.ts`,签名 key 由 `STORAGE_ENCRYPTION_KEY` scrypt 派生)

@@ -22,7 +22,8 @@ import {
   formatMemberNo,
 } from './recruitment.constants';
 import {
-  formatApplicationsCsv,
+  formatApplicationCsvRow,
+  RECRUITMENT_APPLICATION_CSV_HEADERS,
   recruitmentExportStatusWhere,
   toAdminApplicationDto,
 } from './recruitment-applications.presenter';
@@ -36,6 +37,34 @@ import type {
   RecruitmentCertificateImageUrlsResponseDto,
   RecruitmentCertificateImagesItemDto,
 } from './recruitment.dto';
+
+const RECRUITMENT_CSV_BATCH_SIZE = 500;
+const recruitmentCsvSelect = {
+  id: true,
+  cycleId: true,
+  statusCode: true,
+  tempNo: true,
+  realName: true,
+  idCardNumber: true,
+  phone: true,
+  documentTypeCode: true,
+  isForeigner: true,
+  genderCode: true,
+  ageGroup: true,
+  cityDistrict: true,
+  verifyOutcome: true,
+  riskLevel: true,
+  manualReviewReason: true,
+  eliminationStage: true,
+  thresholdMarks: true,
+  birthDate: true,
+  openid: true,
+  createdAt: true,
+} as const satisfies Prisma.RecruitmentApplicationSelect;
+
+type RecruitmentCsvRow = Prisma.RecruitmentApplicationGetPayload<{
+  select: typeof recruitmentCsvSelect;
+}>;
 
 // 招新报名 admin 读面 QueryService(god-service 拆分 2026-06-28,沿 architecture-boundary §3.2 QueryService)。
 // 从 RecruitmentApplicationsService 抽出读侧查询构造 + 脱敏分级读取 + CSV 导出 + 公示预览,
@@ -104,11 +133,11 @@ export class RecruitmentApplicationsQueryService {
   //(S3 §11.1 分级):脱敏单一真相源在 presenter(masked = !canSensitive),CSV 仅消费已脱敏 DTO —— 明文
   // 绝不在无 read.sensitive 时出列。读操作 export placeholder 审计(含 admin / 范围 filter / 脱敏级;
   // 复用既有 read.other pino 事件 + operation 区分,沿 registrations export 范式,不扩 locked AuditEvent union)。
-  // 返回纯 CSV 字符串(controller 包 StreamableFile + BOM,沿 activity-registrations CSV 导出范式;不引新依赖)。
+  // 返回游标分页 async generator(controller 用 Readable.from 包 StreamableFile;不引新依赖)。
   async exportApplicationsCsv(
     dto: ExportRecruitmentApplicationsDto,
     user: CurrentUserPayload,
-  ): Promise<string> {
+  ): Promise<AsyncGenerator<string, void, undefined>> {
     await this.assertCanOrThrow(user, 'recruitment-application.read.record');
     const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
     const filter = dto.filter ?? 'all';
@@ -118,29 +147,50 @@ export class RecruitmentApplicationsQueryService {
       ...(dto.cycleId ? { cycleId: dto.cycleId } : {}),
       ...recruitmentExportStatusWhere(filter),
     };
-    const rows = await this.prisma.recruitmentApplication.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-    });
-    // threshold-incomplete:verified 且门槛未齐(post-filter,沿 stats tracking 口径;
-    // verified 门槛齐为瞬态,markThreshold 末次完成即自动→pending_evaluation)。
-    const filtered =
-      filter === 'threshold-incomplete'
-        ? rows.filter((r) => !allThresholdsComplete(r.thresholdMarks as ThresholdMarks | null))
-        : rows;
+    return this.streamApplicationsCsv(where, filter, !canSensitive, user.id);
+  }
 
-    // 脱敏随码:复用 S3 presenter(masked = !canSensitive)→ 零第二套口径。
-    const dtos = filtered.map((r) => toAdminApplicationDto(r, !canSensitive));
+  private async *streamApplicationsCsv(
+    where: Prisma.RecruitmentApplicationWhereInput,
+    filter: string,
+    masked: boolean,
+    adminId: string,
+  ): AsyncGenerator<string, void, undefined> {
+    yield '\uFEFF';
+    yield RECRUITMENT_APPLICATION_CSV_HEADERS.join(',');
+
+    let cursor: string | undefined;
+    let rowsCount = 0;
+    while (true) {
+      const rows: RecruitmentCsvRow[] = await this.prisma.recruitmentApplication.findMany({
+        where,
+        select: recruitmentCsvSelect,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: RECRUITMENT_CSV_BATCH_SIZE,
+        ...(cursor !== undefined ? { cursor: { id: cursor }, skip: 1 } : {}),
+      });
+      for (const row of rows) {
+        // threshold-incomplete:verified 且门槛未齐(post-filter,沿 stats tracking 口径)。
+        if (
+          filter === 'threshold-incomplete' &&
+          allThresholdsComplete(row.thresholdMarks as ThresholdMarks | null)
+        ) {
+          continue;
+        }
+        yield `\n${formatApplicationCsvRow(row, masked)}`;
+        rowsCount += 1;
+      }
+      if (rows.length < RECRUITMENT_CSV_BATCH_SIZE) break;
+      cursor = rows.at(-1)!.id;
+    }
 
     auditPlaceholder('recruitment-application.read.other', {
-      adminId: user.id,
+      adminId,
       operation: 'export',
       filter,
-      maskLevel: canSensitive ? 'plain' : 'masked',
-      rowsCount: dtos.length,
+      maskLevel: masked ? 'masked' : 'plain',
+      rowsCount,
     });
-
-    return formatApplicationsCsv(dtos);
   }
 
   // ============ admin 取证件照 signed-URL(配套②;L3;短 TTL;S3:敏感查看 read.sensitive)============

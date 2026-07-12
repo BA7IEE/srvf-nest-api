@@ -14,7 +14,7 @@ import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
 // V2.x C-7.5 PR #10:upload-url + confirm-upload e2e(沿评审 §8 + Q-10-1 到 Q-10-15 拍板)
-// 29 用例(15 upload-url + 14 confirm-upload;#29 = F10 #399 owner 软删窗口复校)
+// v0.44.0 findings #22/#23/#24 增补系统黑名单与 confirm 魔数不符拒绝行为锁。
 
 const SUPER_USERNAME = 'upl-su';
 const SELF_USERNAME = 'upl-self';
@@ -330,12 +330,12 @@ describe('attachments upload-url + confirm-upload', () => {
       expectBizError(res, BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED);
     });
 
-    it('10. mime 不在白名单(image/svg+xml 不在 member typeConfig)→ 13012', async () => {
+    it('10. finding #24:image/svg+xml 恒入系统黑名单 → 13033', async () => {
       const res = await request(httpServer(app))
         .post('/api/admin/v1/attachments/upload-url')
         .set('Authorization', superAuth)
         .send(buildUploadUrlBody({ mime: 'image/svg+xml' }));
-      expectBizError(res, BizCode.ATTACHMENT_MIME_NOT_ALLOWED);
+      expectBizError(res, BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED);
     });
 
     it('11. size 超过 typeConfig.defaultMaxSizeBytes → 13013', async () => {
@@ -385,7 +385,7 @@ describe('attachments upload-url + confirm-upload', () => {
   });
 
   // ============================================================================
-  // confirm-upload 端点(13 用例)
+  // confirm-upload 端点
   // ============================================================================
 
   describe('POST /confirm-upload', () => {
@@ -405,13 +405,19 @@ describe('attachments upload-url + confirm-upload', () => {
     }
 
     // 工具:把 key 用 LocalProvider 实写到 tmp 目录,模拟 client 已上传完
-    async function fakeUploadToLocal(key: string, sizeBytes: number = 1024): Promise<void> {
+    async function fakeUploadToLocal(
+      key: string,
+      sizeBytes: number = 1024,
+      prefix: Buffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+    ): Promise<void> {
       const { promises: fs } = await import('node:fs');
       const path = await import('node:path');
       const localCfg = app.get<{ storage: { localRoot: string } }>(appConfig.KEY);
       const filePath = path.resolve(localCfg.storage.localRoot, key);
       await fs.mkdir(path.dirname(filePath), { recursive: true });
-      await fs.writeFile(filePath, Buffer.alloc(sizeBytes));
+      const body = Buffer.alloc(sizeBytes);
+      prefix.copy(body, 0, 0, Math.min(prefix.length, body.length));
+      await fs.writeFile(filePath, body);
     }
 
     it('16. confirm 成功 → attachments 落库', async () => {
@@ -538,6 +544,18 @@ describe('attachments upload-url + confirm-upload', () => {
         .set('Authorization', selfAuth)
         .send({ uploadToken: token });
       expectBizError(res, BizCode.ATTACHMENT_SIZE_EXCEEDED);
+    });
+
+    it('finding #23:声明 image/jpeg 实传文本字节 → confirm 13016,不落库', async () => {
+      const { token, key } = await getValidToken(selfAuth, { mime: 'image/jpeg' });
+      await fakeUploadToLocal(key, 1024, Buffer.from('plain text', 'utf8'));
+
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/attachments/confirm-upload')
+        .set('Authorization', selfAuth)
+        .send({ uploadToken: token });
+      expectBizError(res, BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH);
+      expect(await prisma.attachment.count({ where: { key } })).toBe(0);
     });
 
     it('25. confirm 二次提交(同 token 撞 attachment.key UNIQUE)→ 13001(沿 Q-10-8)', async () => {

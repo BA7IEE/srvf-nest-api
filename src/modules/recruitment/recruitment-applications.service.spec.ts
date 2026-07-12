@@ -61,6 +61,7 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
       generateUploadUrl: jest.fn(),
       generateDownloadUrl: jest.fn(),
       headObject: jest.fn(),
+      readObjectPrefix: jest.fn(),
     };
     const prisma = {
       // resolveOpenCycleOrThrow:存在 open 轮、不限容量(跳过 count)
@@ -217,6 +218,7 @@ describe('RecruitmentApplicationsService · 落图失败孤儿补偿(review #484
       generateUploadUrl: jest.fn(),
       generateDownloadUrl: jest.fn(),
       headObject: jest.fn(),
+      readObjectPrefix: jest.fn(),
     };
     const prisma = {
       recruitmentCycle: {
@@ -450,6 +452,7 @@ describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封�
       generateUploadUrl: jest.fn(),
       generateDownloadUrl: jest.fn(),
       headObject: jest.fn(),
+      readObjectPrefix: jest.fn(),
     };
     const prisma = {
       recruitmentCycle: {

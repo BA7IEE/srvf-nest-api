@@ -18,7 +18,8 @@ import type {
 // V2.x C-7.5 Provider 选型实施 PR #8:CosStorageProvider(沿 F3 + F5 + Q5 + §6.4)
 //
 // 范围(PR #8):
-// - 实装 StorageProvider 5 方法,通过 cos-nodejs-sdk-v5 调腾讯云 COS
+// - 原始实现 StorageProvider 5 方法,通过 cos-nodejs-sdk-v5 调腾讯云 COS;
+//   v0.44.0 finding #23 追加 ranged getObject 固定前缀 readObjectPrefix
 // - 凭证 + bucket + region 从 StorageSettingsService.getActiveSettings() 读(沿 Q23 不依赖 env)
 // - 每次方法调用 requireCosContext():settings 60s 缓存削减 DB 压力(沿 PR #87)
 // - 4 档守护:settings null / providerType ≠ COS / credentialStatus ≠ CONFIGURED / bucket+region 缺失
@@ -158,6 +159,19 @@ export class CosStorageProvider implements StorageProvider {
       if (isNotFoundError(err)) return { exists: false };
       throw err;
     }
+  }
+
+  async readObjectPrefix(key: string, maxBytes: number): Promise<Buffer> {
+    const ctx = await this.requireCosContext();
+    const result = await ctx.cos.getObject({
+      Bucket: ctx.bucket,
+      Region: ctx.region,
+      Key: key,
+      Range: `bytes=0-${maxBytes - 1}`,
+    });
+    return Buffer.isBuffer(result.Body)
+      ? result.Body
+      : Buffer.from(result.Body as unknown as Uint8Array);
   }
 
   // 解析 settings + 构造 COS 实例 + 4 档守护

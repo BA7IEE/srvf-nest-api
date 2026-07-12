@@ -41,6 +41,9 @@ const SYSTEM_MIME_BLOCKLIST_EXACT: ReadonlySet<string> = new Set([
   'application/zip',
   'application/x-zip-compressed',
   'application/x-rar-compressed',
+  'image/svg+xml',
+  'text/html',
+  'application/xhtml+xml',
 ]);
 
 // 通配前缀黑名单(`video/*` 完整禁;沿 D7 §6.6 注释"走独立多媒体管理评审")

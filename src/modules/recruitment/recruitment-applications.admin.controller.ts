@@ -12,6 +12,7 @@ import {
   Res,
   StreamableFile,
 } from '@nestjs/common';
+import { Readable } from 'node:stream';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 
@@ -136,8 +137,7 @@ export class RecruitmentApplicationsAdminController {
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': 'attachment; filename="recruitment-applications.csv"',
     });
-    // UTF-8 BOM(让 Excel 自动识别中文)。
-    return new StreamableFile(Buffer.from('﻿' + csv, 'utf8'));
+    return new StreamableFile(Readable.from(csv));
   }
 
   @Get(':id')

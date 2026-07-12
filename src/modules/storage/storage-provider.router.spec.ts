@@ -13,7 +13,7 @@ import { StorageProviderRouter } from './storage-provider.router';
 // 2. providerType=LOCAL → Local
 // 3. providerType=COS → Cos
 // 4. 未知 providerType → fallback Local + WARN(防御)
-// 5. 5 方法各自路由到对应 Provider
+// 5. 6 方法各自路由到对应 Provider
 // 6. 每次方法调用都 resolve(确保 settings invalidate 后能拿到新 provider)
 
 function makeSettings(overrides: Partial<StorageSettingsResolved> = {}): StorageSettingsResolved {
@@ -58,6 +58,7 @@ interface MockProvider<T> {
   generateUploadUrl: jest.Mock;
   generateDownloadUrl: jest.Mock;
   headObject: jest.Mock;
+  readObjectPrefix: jest.Mock;
 }
 
 function makeLocalMock(): MockProvider<LocalStorageProvider> {
@@ -66,14 +67,24 @@ function makeLocalMock(): MockProvider<LocalStorageProvider> {
   const generateUploadUrl = jest.fn().mockResolvedValue({});
   const generateDownloadUrl = jest.fn().mockResolvedValue({});
   const headObject = jest.fn().mockResolvedValue({ exists: false });
+  const readObjectPrefix = jest.fn().mockResolvedValue(Buffer.from('prefix'));
   const instance = {
     putObject,
     deleteObject,
     generateUploadUrl,
     generateDownloadUrl,
     headObject,
+    readObjectPrefix,
   } as unknown as LocalStorageProvider;
-  return { instance, putObject, deleteObject, generateUploadUrl, generateDownloadUrl, headObject };
+  return {
+    instance,
+    putObject,
+    deleteObject,
+    generateUploadUrl,
+    generateDownloadUrl,
+    headObject,
+    readObjectPrefix,
+  };
 }
 
 function makeCosMock(): MockProvider<CosStorageProvider> {
@@ -82,14 +93,24 @@ function makeCosMock(): MockProvider<CosStorageProvider> {
   const generateUploadUrl = jest.fn().mockResolvedValue({});
   const generateDownloadUrl = jest.fn().mockResolvedValue({});
   const headObject = jest.fn().mockResolvedValue({ exists: false });
+  const readObjectPrefix = jest.fn().mockResolvedValue(Buffer.from('prefix'));
   const instance = {
     putObject,
     deleteObject,
     generateUploadUrl,
     generateDownloadUrl,
     headObject,
+    readObjectPrefix,
   } as unknown as CosStorageProvider;
-  return { instance, putObject, deleteObject, generateUploadUrl, generateDownloadUrl, headObject };
+  return {
+    instance,
+    putObject,
+    deleteObject,
+    generateUploadUrl,
+    generateDownloadUrl,
+    headObject,
+    readObjectPrefix,
+  };
 }
 
 describe('StorageProviderRouter', () => {
@@ -152,7 +173,7 @@ describe('StorageProviderRouter', () => {
     });
   });
 
-  describe('5 方法路由', () => {
+  describe('6 方法路由', () => {
     it('putObject 路由到 COS', async () => {
       const { service } = makeSettingsServiceMock(makeSettings({ providerType: 'COS' }));
       const localMock = makeLocalMock();
@@ -198,6 +219,16 @@ describe('StorageProviderRouter', () => {
       const router = new StorageProviderRouter(service, localMock.instance, cosMock.instance);
       await router.headObject('k');
       expect(cosMock.headObject).toHaveBeenCalledWith('k');
+    });
+
+    it('readObjectPrefix 路由到 Local', async () => {
+      const { service } = makeSettingsServiceMock(makeSettings({ providerType: 'LOCAL' }));
+      const localMock = makeLocalMock();
+      const cosMock = makeCosMock();
+      const router = new StorageProviderRouter(service, localMock.instance, cosMock.instance);
+      await router.readObjectPrefix('k', 12);
+      expect(localMock.readObjectPrefix).toHaveBeenCalledWith('k', 12);
+      expect(cosMock.readObjectPrefix).not.toHaveBeenCalled();
     });
   });
 

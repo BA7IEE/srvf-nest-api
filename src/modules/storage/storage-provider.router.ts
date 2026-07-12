@@ -72,4 +72,8 @@ export class StorageProviderRouter implements StorageProvider {
   async headObject(key: string): Promise<HeadObjectResult> {
     return (await this.resolve()).headObject(key);
   }
+
+  async readObjectPrefix(key: string, maxBytes: number): Promise<Buffer> {
+    return (await this.resolve()).readObjectPrefix(key, maxBytes);
+  }
 }

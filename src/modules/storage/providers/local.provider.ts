@@ -20,8 +20,8 @@ import type {
 // V2.x C-7.5 Provider 选型实施 PR #7:LocalStorageProvider(沿 F2 + Q5 + §4 模式 D)
 //
 // 范围(PR #7):
-// - 实装 StorageProvider 5 方法(putObject / deleteObject / generateUploadUrl /
-//   generateDownloadUrl / headObject)
+// - 原始实现 StorageProvider 5 方法(putObject / deleteObject / generateUploadUrl /
+//   generateDownloadUrl / headObject);v0.44.0 finding #23 追加固定前缀 readObjectPrefix
 // - 写入本地 fs;根目录由 STORAGE_LOCAL_ROOT env 配置(沿 Q-88-1)
 // - generateUploadUrl 返 stub URL(沿 Q-88-4;dev/test 主路径走模式 D POST attachments)
 // - generateDownloadUrl 返相对 URL(沿 Q-88-5 + 评审 §4 line 207)
@@ -106,6 +106,17 @@ export class LocalStorageProvider implements StorageProvider {
         return { exists: false };
       }
       throw err;
+    }
+  }
+
+  async readObjectPrefix(key: string, maxBytes: number): Promise<Buffer> {
+    const file = await fs.open(this.resolveKey(key), 'r');
+    try {
+      const buffer = Buffer.alloc(maxBytes);
+      const { bytesRead } = await file.read(buffer, 0, maxBytes, 0);
+      return buffer.subarray(0, bytesRead);
+    } finally {
+      await file.close();
     }
   }
 

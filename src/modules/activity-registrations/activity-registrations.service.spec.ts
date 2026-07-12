@@ -615,7 +615,7 @@ describe('ActivityRegistrationsService (characterization)', () => {
   });
 
   describe('exportCsv (no audit)', () => {
-    it('返回 CSV 字符串,且不调用 auditRecorder', async () => {
+    it('返回流式 CSV,且不调用 auditRecorder', async () => {
       const prisma = makePrismaMock();
       const recorder = makeAuditRecorderMock();
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow());
@@ -624,13 +624,48 @@ describe('ActivityRegistrationsService (characterization)', () => {
       ]);
       const service = makeService(prisma, recorder, makeStateMachineMock(DENY_DECISION));
 
-      const csv = await service.exportCsv('act-1', {}, makeCurrentUser());
+      const chunks = await service.exportCsv('act-1', {}, makeCurrentUser());
+      let csv = '';
+      for await (const chunk of chunks) csv += chunk;
 
-      expect(typeof csv).toBe('string');
+      expect(csv.startsWith('\uFEFF')).toBe(true);
       expect(csv).toContain('registration_id');
+      const calls = prisma.activityRegistration.findMany.mock.calls as unknown as Array<
+        [{ take: number; select: unknown }]
+      >;
+      expect(calls[0][0].take).toBe(500);
+      expect(calls[0][0].select).toBeDefined();
       expect(recorder.logCreate).not.toHaveBeenCalled();
       expect(recorder.logReview).not.toHaveBeenCalled();
       expect(recorder.logCancel).not.toHaveBeenCalled();
+    });
+
+    it('findings #13/#14:500 行后用 id cursor 拉下一批,常驻集合不超过 batch', async () => {
+      const prisma = makePrismaMock();
+      prisma.activity.findFirst.mockResolvedValue(makeActivityRow());
+      const firstBatch = Array.from({ length: 500 }, (_, index) =>
+        makeRegRow({ id: `reg-${index}`, member: null }),
+      );
+      prisma.activityRegistration.findMany
+        .mockResolvedValueOnce(firstBatch)
+        .mockResolvedValueOnce([makeRegRow({ id: 'reg-tail', member: null })]);
+      const service = makeService(
+        prisma,
+        makeAuditRecorderMock(),
+        makeStateMachineMock(DENY_DECISION),
+      );
+
+      let csv = '';
+      for await (const chunk of await service.exportCsv('act-1', {}, makeCurrentUser())) {
+        csv += chunk;
+      }
+
+      expect(prisma.activityRegistration.findMany).toHaveBeenCalledTimes(2);
+      expect(prisma.activityRegistration.findMany).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ cursor: { id: 'reg-499' }, skip: 1, take: 500 }),
+      );
+      expect(csv).toContain('reg-tail');
     });
   });
 });

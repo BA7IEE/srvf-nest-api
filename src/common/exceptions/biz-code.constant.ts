@@ -1720,6 +1720,12 @@ export const BizCode = {
     message: '附件元数据包含个人敏感信息(身份证号),已拒绝',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+  // v0.44.0 findings #22/#23/#24:confirm-upload 回读固定前缀,声明 MIME 与文件签名不符即拒绝。
+  ATTACHMENT_CONTENT_TYPE_MISMATCH: {
+    code: 13016,
+    message: '附件内容与声明的 MIME 类型不符',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];
