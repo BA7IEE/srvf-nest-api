@@ -4,7 +4,14 @@
 
 ## Unreleased
 
-> 下一个 minor 候选(当前为空)。
+> **⚠️ 行为变更(前端/运营须知)**:① 非 SUPER_ADMIN 通过 RoleBinding 绑定 `ops-admin` 或含 `role-binding.*`/`rbac.*` 高权码的角色改返 30102;撤销/停用最后一个 GLOBAL ops-admin 绑定改返 30101;② 同一报名/考勤单并发 approve/reject 仅一方成功,败者返对应 `*_STATUS_INVALID`;③ CSV 危险首字符(`= + - @ Tab CR`)统一前缀单引号;④ 未命中的 garbage refresh token logout 仍返 200,但不再产生 `auth.logout` 审计行;⑤ SVG/HTML/XHTML 恒拒上传,声明 jpg/png/webp/gif/pdf 但对象字节签名不符时 confirm 改返 13016;⑥ 同一队员并发写入重叠考勤仅一方成功。
+>
+> 主题:**安全·并发·性能加固线(2026-07-13 全仓审计 26 findings)**。25 条属实:#1–#7/#9/#11/#13–#15/#17–#18/#22–#26 已修;#8/#10/#12/#19–#21 接受并登记;#16 经代码复核不成立。范围 = 冻结评审 #570 + P1 #571 + P2 #572 + P3 #573;0 schema / 0 migration / 0 新端点 / 0 权限码 / 0 controller / 0 模块 / 0 角色 / 0 新依赖。
+
+- **P1 安全/正确性**:RoleBinding 补高权分级、最后 ops-admin 保护与 `role-binding.update` before/after audit;报名审批、考勤一级/终审改条件式原子更新,拒绝败者不再先软删明细;角色/权限软删即时失效 RBAC cache,持有人查询失败退化全清;两处 CSV 共用公式注入转义;logout 未命中不写污染审计。
+- **P2 附件/并发/内存**:MIME 精确黑名单 +3,confirm ranged 回读至多 12 字节做 jpg/png/webp/gif/pdf 魔数校验(唯一新码 13016);两处 CSV 改 async generator + `Readable.from()` 游标批次流式导出,BOM 首 chunk;考勤 submit/edit 在重叠检查前按队员 advisory transaction lock 串行化。
+- **P3 性能/已知项**:certificate 附件列表把逐行 `findFirst` 收敛为一次 `findMany` + Map(K→1);#8 DB `btree_gist` 排他约束、#10/#12 附件全量扫描/内存分页、#19 多实例 RBAC cache、#20/#21 commit 后通知丢失均接受并写入 `NEXT_TASKS`/模块台账,不引 DB 扩展、queue、cron 或事件总线;#16 撤权旧权限续效不成立。
+- **footprint**:权限码 205 / biz-admin 81 / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` 336 / controller 66 / 模块 35 / migration 48 / 角色 7 全不变;BizCode 230→**231**(`ATTACHMENT_CONTENT_TYPE_MISMATCH=13016`);AuditLogEvent 98→**99**(`role-binding.update`);`SYSTEM_MIME_BLOCKLIST_EXACT` 8→**11**。main 终验 lint/typecheck/build + unit **80/2347** + contract **606** + e2e **138/2792** 全绿。
 
 ## v0.43.0 - 2026-07-13
 

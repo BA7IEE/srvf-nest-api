@@ -8,13 +8,15 @@
 | 项 | 当前值 |
 |---|---|
 | 版本(六处一致) | **v0.43.0**(2026-07-13;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;沿本 goal 明确拍板,tag `v0.43.0` 指向 bump #567 `f9625708`;GitHub Release「v0.43.0 — 招新证书闭环补强（刀A）+ team-join 小刀（刀B）」标 Latest。**⚠️ 前端须适配五条**:证书上传必填 `issuingOrg`/`issuedAt`;approved 类别禁重传;证书标门槛须先 approved;微信查进度改活跃优先;一键入队复查开放部门清单) |
-| `main` HEAD | v0.43.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = bump #567 `f9625708`;收口链 = 刀A #564 + 刀B #565 + landing #566 + bump #567 + handoff #568 + tag/Release + 本回填 PR) |
-| open PR / 工作树 / Unreleased | **本回填 PR 合入后 0** open PR / clean / `## Unreleased` **0 条**。终值:权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` **336** / controller 66 / 模块 35 / migration **48** / 角色 7 / BizCode **230** / AuditLogEvent **98** |
+| `main` HEAD | v0.44.0 安全·并发·性能加固 landing 候选点(冻结评审 #570 + P1 #571 + P2 #572 + P3 #573;版本仍为 v0.43.0,待独立 bump/handoff/tag/Release) |
+| open PR / 工作树 / Unreleased | **本 landing PR 合入后 0** open PR / clean / `## Unreleased` **1 个 v0.44.0 候选块**。终值:权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` **336** / controller 66 / 模块 35 / migration **48** / 角色 7 / BizCode **231** / AuditLogEvent **99** |
 | 最新 handoff | [`archive/handoff/v0.43.0.md`](archive/handoff/v0.43.0.md)(历史快照;沿本 goal 的 tag@bump 拍板,tag 指 bump `f9625708` 而非 handoff #568 `fd9dfed1`;合入后不回改;接续 [`v0.42.0.md`](archive/handoff/v0.42.0.md)) |
 
 ## 2. 当前系统已具备能力
 
 > 清单级;事实权威:字段 = [`schema.prisma`](../prisma/schema.prisma);接口 = `/api/docs` + [`EXPECTED_ROUTES`](../test/contract/openapi.contract-spec.ts) + snapshot;BizCode = `biz-code.constant.ts` + CHANGELOG。
+
+- **v0.44.0 安全·并发·性能加固候选(2026-07-13;D 档)**:2026-07-13 全仓审计 26 findings 中 25 条属实——#1–#7/#9/#11/#13–#15/#17–#18/#22–#26 已修,#8/#10/#12/#19–#21 接受登记,#16 不成立。RoleBinding 高权/末位保护与 update audit、审批原子竞争守卫、RBAC 写侧失效、CSV 公式转义、logout 审计去污染、附件 MIME+魔数、CSV 真流式、考勤按人串行、certificate 附件 K→1 均已落地。0 schema/migration/endpoint/permission/controller/module/role/dependency;唯一新增 BizCode 13016 + AuditLogEvent `role-binding.update`;MIME 精确黑名单 +3。main E 档终验 unit 80/2347 + contract 606 + e2e 138/2792 全绿。
 
 - **v0.43.0 招新证书闭环刀A(已发布 2026-07-13;D 档)**:公开证书上传契约新增必填 `issuingOrg`/`issuedAt` + 第 48 migration `certificateIssuanceInfo Json?`;已 approved 类别禁重传(28054);红十字/BSAFE 直接/批量标门槛须对应证书 approved(28055);上传写改为 `FOR UPDATE` 后重算三份 JSON,避免整 JSON 并发覆盖;promote 搬发证真值、存量回退占位并把招新 approved 结论写 `Certificate.verifyNote`(终态仍 pending);admin 报名 DTO additive `certificates` 摘要;微信 query 与手机 query-by-phone 统一「活跃优先→最近终态→promoted 锚」。0 新端点 / 0 权限码 / 0 controller / 0 模块 / 0 角色;`EXPECTED_ROUTES` 336 不变;BizCode +2;migration 47→48。
 
@@ -88,7 +90,7 @@
 - **不**把历史评审稿([`docs/archive/batches/`](archive/batches/) / [`docs/archive/reviews/`](archive/reviews/))当作"当前事实"— 它们是各批次冻结时刻的决策依据
 - **Route B 全量迁移已完成**(2026-06-01;取代原"Phase 1B 暂缓 / 方案 C")— 见 [`api-surface-migration-plan.md`](api-surface-migration-plan.md) + [`AGENTS.md §21 D-9`](../AGENTS.md);**Phase 0 映射已签字冻结**(2026-06-01;[§3](api-surface-migration-plan.md) 全 156 路由 `tag→surface` + 终态验收基线 + 8 个 legacy mobile-like 端点纳入 Phase 4 删除);**Phase 1 alias 已完成**(1a auth+health 7 + 1b system 56 + 1c admin 70 = 133 非-app 路由双挂,contract 423 + e2e 双路径绿,老路径零回归);**Phase 2 完成**(老前缀 OpenAPI 标 `deprecated`、新前缀 canonical);**Phase 3 deprecation 窗口豁免**(无生产消费者,用户 2026-06-01 确认 → 直接 Phase 4);**Phase 4 removal 完成**(4a auth+health / 4b system / 4c admin / 4d `/api/users/me*` / 4e attachments / 4d2 registrations-me + attendances-me-records legacy + 主 spec 队员流迁 `app/v1/my` + 移除 apply-swagger deprecation 后处理 + 终态 contract 断言;contract 280 + full e2e 72 suites/1664 绿);**🎉 Route B 终态达成:全仓 API 只剩 `admin/v1` + `app/v1` + `auth/v1` + `system/v1`,零 `v2` / 零裸 `auth`·`health`·`users` / 零 legacy**(终态由 contract"全部路由仅落 4 canonical 前缀"断言锁定);`/api/open/v1/*` 已于 **2026-06-18 招新一期 T3 首用**(4 → 5 canonical 前缀,见 §2.1 + [`api-surface-policy.md §0`](api-surface-policy.md))。**A 档收尾已完成**:src/ 注释 / 模块 CLAUDE.md / contract-spec header(#269)+ docs 活文档(cos runbook / current-state / api-surface-policy §0+§5/§6 / development / security / docker-smoke / participation / attachment-config)均已 true-up 到终态;历史 v2 设计档(`v2-api-contract.md` / `V2红线与复活路径.md`)按设计意图保留
 - **P1-C(Mixed Controller 物理拆分)已被 Route B 全量迁移收口**:原 `controllers/*-legacy.controller.ts`(users / attachments / activity-registrations / attendances)已于 Phase 4 删除,队员自助流在 `/api/app/v1/me*` / `/api/app/v1/my/*`;god-service 现状见 §4 P2 行(P1-4 拆分系列已于 2026-06-10 调研收口)
-- **不**自动拆分 `attendances.service.ts`(1428 行,2026-06-23 跨轴只读 +3 只读方法)/ `attachments.service.ts`(911 行)/ `activity-registrations.service.ts`(1020 行,2026-06-23 跨轴只读 +2 只读方法)等 god-service — **P1-4 拆分系列已于 2026-06-10 调研收口**(用户逐项拍板):三模块均已达 [`architecture-boundary.md`](architecture-boundary.md) 政策下的合理形态(详见 §4 P2 行),重新开拆需出现 §6 新触发条件并单独立项;**跨轴只读 goal 只准新增只读方法、不拆 god-service**(沿 api-surface-policy §8)
+- **不**自动拆分 `attendances.service.ts`(1596 行)/ `attachments.service.ts`(968 行)/ `activity-registrations.service.ts`(1248 行)等 god-service — **P1-4 拆分系列已于 2026-06-10 调研收口**(用户逐项拍板):三模块均已达 [`architecture-boundary.md`](architecture-boundary.md) 政策下的合理形态(详见 §4 P2 行),重新开拆需出现 §6 新触发条件并单独立项;本轮新增均为原有事务/导出职责内守卫与流式化,未拆 god-service
 - **不**自动引入 repository / `*.repository.ts` 抽象层 — service 直连 Prisma 沿用
 - **不**在无 contract 审批 / 单独立项的情况下改 controller path / 改 OpenAPI snapshot;Route B 全量迁移已于 2026-06-01 完成(终态 4 前缀),新 endpoint 一律落 `admin/v1` / `app/v1` / `auth/v1` / `system/v1`(沿 [`api-surface-policy.md §0`](api-surface-policy.md))
 
@@ -98,7 +100,8 @@
 |---|---|---|
 | P1 | 前端联调包剩运维侧 P0-H 演练 + P0-I 排错 SOP | 运维侧立项;系统侧无动作 |
 | P1 | 招新/入队两项发布后债务仍在账:**P1-22** 专业队类型/gate 定义配置化;**P1-23** `recruitment_applications.isForeigner` 历史 DB 列改名(当前对外 DTO/CSV 已用 `isNonMainlandDocument`) | 沿 [`ai-harness/NEXT_TASKS.md`](ai-harness/NEXT_TASKS.md) P1-22/P1-23 诉求触发再立项;本 release 不启动 |
-| P2 | god-service 体量观察(`pnpm docs:codemap:check` 2026-07-12 实时口径,LOC > 700):attendances **1557** / activity-registrations **1221** / members **1054** / users **941** / attachments **911** / activities **867** / recruitment-applications **842** / role-bindings **789** / recruitment-identity **763** / recruitment-promotion **727** | 仅观察;重开需 architecture-boundary §6 新触发 + 单独立项 |
+| P2 | god-service 体量观察(`pnpm docs:codemap:check` 2026-07-13 实时口径,LOC > 700):attendances **1596** / activity-registrations **1248** / members **1054** / attachments **968** / users **941** / role-bindings **917** / activities **867** / recruitment-applications **867** / recruitment-identity **818** / recruitment-promotion **743** | 仅观察;重开需 architecture-boundary §6 新触发 + 单独立项 |
+| P2/P3 | v0.44.0 审计接受项:#8 考勤仅应用锁、无 `btree_gist`;#10/#12 附件 owner 列表仍全量扫描后内存分页;#19 RBAC cache 仍单进程;#20/#21 commit 后站内通知可能丢失 | 已登记 [`ai-harness/NEXT_TASKS.md`](ai-harness/NEXT_TASKS.md) P2-8 + 各模块 `CLAUDE.md`;当前单实例/小规模下接受,不引 DB 扩展、queue、cron 或事件总线;触发条件出现再单独立项 |
 | P2 | service 单测占比 ~11.8%(26/221 实测) | 刻意策略(e2e 为主,见 §2 测试行) |
 | P2 | Mixed Controller 存量 2 处(见 §2.1) | 冻结仅兼容;详 api-surface-policy §5.1 |
 | P2 | contract snapshot ~1MB / 35,777 行 | 已接受;review 用 diff,勿整读 |
