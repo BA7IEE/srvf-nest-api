@@ -156,6 +156,7 @@ export class RoleBindingsController {
     BizCode.POSITION_ASSIGNMENT_NOT_FOUND,
     BizCode.ROLE_NOT_FOUND,
     BizCode.ROLE_DELETED,
+    BizCode.CANNOT_ASSIGN_HIGHER_ROLE,
     BizCode.ORGANIZATION_NOT_FOUND,
     BizCode.ACTIVITY_NOT_FOUND,
   )
@@ -180,13 +181,15 @@ export class RoleBindingsController {
     BizCode.ROLE_BINDING_NOT_FOUND,
     BizCode.ROLE_BINDING_TENURE_INVALID,
     BizCode.ROLE_BINDING_ALREADY_EXISTS,
+    BizCode.LAST_OPS_ADMIN_PROTECTED,
   )
   update(
     @CurrentUser() user: CurrentUserPayload,
     @Param('id') id: string,
     @Body() dto: UpdateRoleBindingDto,
+    @Req() req: Request,
   ): Promise<RoleBindingResponseDto> {
-    return this.service.update(user, id, dto);
+    return this.service.update(user, id, dto, buildAuditMeta(req));
   }
 
   @Delete('role-bindings/:id')
@@ -200,6 +203,7 @@ export class RoleBindingsController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.ROLE_BINDING_NOT_FOUND,
+    BizCode.LAST_OPS_ADMIN_PROTECTED,
   )
   remove(
     @CurrentUser() user: CurrentUserPayload,

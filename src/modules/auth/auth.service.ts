@@ -341,7 +341,7 @@ export class AuthService {
 
   // P0-E PR-3:POST /api/auth/v1/logout(沿评审稿 §4.3 + §7.1)。
   // 幂等:不存在 / 已撤销 / 已过期 → 仍返 200;只撤销当前 row(同 family 其他链不动)。
-  // access token 不消费 / 不吊销(沿 D-4);写 audit extra.found 区分真撤销 vs 幂等命中。
+  // access token 不消费 / 不吊销(沿 D-4);仅真实撤销写 audit,未知/失效 token 零留痕(finding #9)。
   async logout(dto: LogoutDto, meta: AuditMeta): Promise<null> {
     const tokenHash = hashRefreshToken(dto.refreshToken);
 
@@ -351,24 +351,22 @@ export class AuthService {
         select: { id: true, userId: true, revokedAt: true, expiresAt: true },
       });
 
-      let found = false;
       const now = new Date();
-      if (row && row.revokedAt === null && row.expiresAt > now) {
-        await tx.refreshToken.update({
-          where: { id: row.id },
-          data: { revokedAt: now, revokedReason: 'logout' },
-        });
-        found = true;
-      }
+      if (!row || row.revokedAt !== null || row.expiresAt <= now) return;
+
+      await tx.refreshToken.update({
+        where: { id: row.id },
+        data: { revokedAt: now, revokedReason: 'logout' },
+      });
 
       await this.auditLogs.log({
         event: 'auth.logout',
-        actorUserId: row?.userId ?? null,
+        actorUserId: row.userId,
         actorRoleSnap: null,
         resourceType: 'refresh_token',
-        resourceId: row?.id ?? null,
+        resourceId: row.id,
         meta,
-        extra: { found },
+        extra: { found: true },
         tx,
       });
     });

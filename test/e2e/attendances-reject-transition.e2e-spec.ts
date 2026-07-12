@@ -262,6 +262,39 @@ describe('AttendancesService reject transition (characterization)', () => {
       // F4:reject 软删 records → 审计写 recordsCount(被软删条数)
       expect(ctx0.extra?.recordsCount).toBe(1);
     });
+
+    it('findings #4/#6:同一 pending approve || reject 仅一方成功且明细与 winner 一致', async () => {
+      const sheetId = await seedSheet({ statusCode: 'pending' });
+      const results = await Promise.allSettled([
+        ctx.service.approve(
+          sheetId,
+          { reviewNote: 'race approve' },
+          ctx.reviewerPayload,
+          AUDIT_META,
+        ),
+        ctx.service.reject(sheetId, { reviewNote: 'race reject' }, ctx.reviewerPayload, AUDIT_META),
+      ]);
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(results.find((r) => r.status === 'rejected')).toMatchObject({
+        status: 'rejected',
+        reason: { biz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID },
+      });
+      const sheet = await ctx.prisma.attendanceSheet.findUniqueOrThrow({
+        where: { id: sheetId },
+        select: { statusCode: true },
+      });
+      const record = await ctx.prisma.attendanceRecord.findFirstOrThrow({
+        where: { sheetId },
+        select: { deletedAt: true },
+      });
+      if (sheet.statusCode === 'pending_final_review') expect(record.deletedAt).toBeNull();
+      else {
+        expect(sheet.statusCode).toBe('rejected');
+        expect(record.deletedAt).not.toBeNull();
+      }
+      expect(await ctx.prisma.auditLog.count({ where: { resourceId: sheetId } })).toBe(1);
+    });
   });
 
   // ============ B. reject 错误状态护栏(非 pending 一律拒)============

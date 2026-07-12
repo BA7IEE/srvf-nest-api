@@ -155,11 +155,12 @@ export type AuditLogEvent =
   // extra.viaPath ∈ {'role-binding','user-role'} 区分来源:'role-binding' = role-bindings CRUD 面(scoped 各型);
   //   'user-role' = 兼容面 user-roles CRUD(现经 global RoleBinding;UserRolesService 直写 auditLog,避免模块环)。
   | 'role-binding.create' // admin 建角色绑定(role-bindings.service: create + user-roles.service: assign;extra.viaPath 区分)
+  | 'role-binding.update' // admin 改角色绑定状态/任期/note(role-bindings.service: update;before/after 可变字段)
   | 'role-binding.revoke' // admin 撤销 / 软删角色绑定(role-bindings.service: remove + user-roles.service: revoke;before/after status)
   // 审计留痕批(2026-07-03;review #484 G5):memberships 双入口写路径补齐 audit。resourceType='membership'。
   // 两个写入口共用同一张 member_organization_memberships 表,伞事件 + extra.viaPath ∈ {'membership','department'}
-  // 区分入口(沿 role-binding.* extra.viaPath 范式)。PATCH(memberships.update)不写 audit——沿 role-binding.update /
-  // supervision-assignment.update 均不审计的既有先例(仅改 status/note 等非建/终字段,不构成建/终事件)。
+  // 区分入口(沿 role-binding.* extra.viaPath 范式)。PATCH(memberships.update)仍不写 audit——仅改
+  // status/note 等非建/终字段；role-binding.update 已由 2026-07-13 finding #25 单独补审计,不再作此先例。
   | 'membership.set' // 建 / 设归属(memberships.service: create;member-departments.service: set 幂等分支〔同 org 无变更〕不写);extra.viaPath ∈ {membership, department}
   | 'membership.end' // 结束归属(memberships.service: end;member-departments.service: remove〔v0.40.0 起 status=ENDED + endedAt + endedByUserId,不再软删〕);extra.viaPath ∈ {membership, department}
   // F4「D 组」transfer(2026-07-04;路线图 §4;goal 显式预授权的唯一 +1 AuditLogEvent):

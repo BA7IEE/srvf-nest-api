@@ -367,6 +367,39 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
         expect(audits).toHaveLength(0);
       },
     );
+
+    it('finding #3:同一 pending approve || reject 仅一方成功,败者 21030', async () => {
+      const regId = await seedRegistration({ memberId: ctx.memberCId, statusCode: 'pending' });
+      const results = await Promise.allSettled([
+        ctx.service.approve(
+          ctx.publishedActivityId,
+          regId,
+          { reviewNote: 'race approve' },
+          ctx.adminPayload,
+          AUDIT_META,
+        ),
+        ctx.service.reject(
+          ctx.publishedActivityId,
+          regId,
+          { reviewNote: 'race reject' },
+          ctx.adminPayload,
+          AUDIT_META,
+        ),
+      ]);
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const loser = results.find((r) => r.status === 'rejected');
+      expect(loser).toMatchObject({
+        status: 'rejected',
+        reason: { biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID },
+      });
+      const row = await ctx.prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: regId },
+        select: { statusCode: true },
+      });
+      expect(['pass', 'reject']).toContain(row.statusCode);
+      expect(await ctx.prisma.auditLog.count({ where: { resourceId: regId } })).toBe(1);
+    });
   });
 
   // ============ B. reject(pending → reject) ============

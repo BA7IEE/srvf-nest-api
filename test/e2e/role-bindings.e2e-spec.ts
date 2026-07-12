@@ -60,6 +60,8 @@ describe('role-bindings 带 scope 的角色绑定管理 + 行为锁边界', () =
   let adminAuth: string; // ops-admin 持有者
   let plainAdminAuth: string; // ADMIN 不持 ops-admin
   let userAuth: string;
+  let adminUserId: string;
+  let opsAdminRoleId: string;
 
   // 判权测试用角色(带可辨识的权限码,供 /me/permissions 断言 scoped 是否泄进判权)。
   let roleGlobalId: string; // 含 'rbtest.read.global'
@@ -80,6 +82,7 @@ describe('role-bindings 带 scope 的角色绑定管理 + 行为锁边界', () =
     prisma = app.get(PrismaService);
 
     const admin = await createTestUser(app, { username: 'rb-adm', role: Role.ADMIN });
+    adminUserId = admin.id;
     await createTestUser(app, { username: 'rb-adm-plain', role: Role.ADMIN });
     await createTestUser(app, { username: 'rb-user', role: Role.USER });
     adminAuth = (await loginAs(app, 'rb-adm')).authHeader;
@@ -87,6 +90,7 @@ describe('role-bindings 带 scope 的角色绑定管理 + 行为锁边界', () =
     userAuth = (await loginAs(app, 'rb-user')).authHeader;
 
     const seed = await seedRbacPermissionsAndOpsAdmin(app);
+    opsAdminRoleId = seed.opsAdminRoleId;
     await seedRoleBindingCodesAndBind(prisma, seed.opsAdminRoleId);
     await grantOpsAdminToUser(app, admin.id, seed.opsAdminRoleId);
 
@@ -438,6 +442,87 @@ describe('role-bindings 带 scope 的角色绑定管理 + 行为锁边界', () =
   });
 
   // ============ PATCH 改 + DELETE 软删 ============
+
+  describe('findings #1/#2/#25/#26:高权分级、最后管理员与 update audit', () => {
+    it('ops-admin 给自己或他人绑定 ops-admin → 30102', async () => {
+      const target = await createTestUser(app, { username: 'rb-priv-target', role: Role.USER });
+      const self = await post(adminAuth, {
+        principalType: 'USER',
+        principalId: adminUserId,
+        roleId: opsAdminRoleId,
+        scopeType: 'SELF',
+      });
+      expectBizError(self, BizCode.CANNOT_ASSIGN_HIGHER_ROLE);
+
+      const other = await post(adminAuth, {
+        principalType: 'USER',
+        principalId: target.id,
+        roleId: opsAdminRoleId,
+        scopeType: 'GLOBAL',
+      });
+      expectBizError(other, BizCode.CANNOT_ASSIGN_HIGHER_ROLE);
+    });
+
+    it('删除或 PATCH 最后一条 GLOBAL ops-admin ACTIVE 绑定 → 30101', async () => {
+      const binding = await prisma.roleBinding.findFirstOrThrow({
+        where: {
+          principalType: PrincipalType.USER,
+          principalId: adminUserId,
+          roleId: opsAdminRoleId,
+          scopeType: BindingScopeType.GLOBAL,
+          status: BindingStatus.ACTIVE,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+
+      const patched = await request(httpServer(app))
+        .patch(`/api/admin/v1/role-bindings/${binding.id}`)
+        .set('Authorization', adminAuth)
+        .send({ status: BindingStatus.SUSPENDED });
+      expectBizError(patched, BizCode.LAST_OPS_ADMIN_PROTECTED);
+
+      const removed = await request(httpServer(app))
+        .delete(`/api/admin/v1/role-bindings/${binding.id}`)
+        .set('Authorization', adminAuth);
+      expectBizError(removed, BizCode.LAST_OPS_ADMIN_PROTECTED);
+    });
+
+    it('PATCH mutable fields writes exactly one role-binding.update audit with before/after', async () => {
+      const u = await createTestUser(app, { username: 'rb-update-audit', role: Role.USER });
+      const created = await post(adminAuth, {
+        principalType: 'USER',
+        principalId: u.id,
+        roleId: roleScopedId,
+        scopeType: 'SELF',
+      });
+      const id = created.body.data.id as string;
+      const beforeCount = await prisma.auditLog.count({
+        where: { event: 'role-binding.update', resourceId: id },
+      });
+
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/role-bindings/${id}`)
+        .set('Authorization', adminAuth)
+        .send({ note: 'finding-25', status: BindingStatus.SUSPENDED });
+      expect(res.status).toBe(200);
+
+      const audits = await prisma.auditLog.findMany({
+        where: { event: 'role-binding.update', resourceId: id },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(audits).toHaveLength(beforeCount + 1);
+      const context = audits.at(-1)?.context as {
+        before?: { status?: string; note?: string | null };
+        after?: { status?: string; note?: string | null };
+      };
+      expect(context.before).toMatchObject({ status: BindingStatus.ACTIVE, note: null });
+      expect(context.after).toMatchObject({
+        status: BindingStatus.SUSPENDED,
+        note: 'finding-25',
+      });
+    });
+  });
 
   describe('PATCH 改 / DELETE 软删', () => {
     it('PATCH note/status → 200;DELETE → 200 status=ENDED,列表不再含', async () => {

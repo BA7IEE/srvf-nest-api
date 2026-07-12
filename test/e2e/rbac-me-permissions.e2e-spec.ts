@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.service';
+import { RbacRolesService } from '../../src/modules/permissions/rbac-roles.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
@@ -322,6 +323,38 @@ describe('rbac me/permissions', () => {
       expect(res.status).toBe(200);
       const dataKeys = Object.keys(res.body.data as object);
       expect(dataKeys.sort()).toEqual(['effectiveRoles', 'permissions']);
+    });
+  });
+
+  describe('finding #18:角色软删主动撤权', () => {
+    it('缓存命中后软删角色,持有者下一次请求立即失去旧权限', async () => {
+      await request(httpServer(app))
+        .get('/api/system/v1/rbac/me/permissions')
+        .set('Authorization', userWithRolesAuth);
+      expect(cache.get(userWithRolesId)).not.toBeNull();
+
+      const superAdmin = await prisma.user.findFirstOrThrow({
+        where: { username: 'rbac-me-su' },
+        select: { id: true, username: true, status: true },
+      });
+      await app.get(RbacRolesService).softDelete(
+        {
+          id: superAdmin.id,
+          username: superAdmin.username,
+          role: Role.SUPER_ADMIN,
+          status: superAdmin.status,
+          memberId: null,
+        },
+        roleAId,
+        { requestId: 'finding-18', ip: '127.0.0.1', ua: 'jest' },
+      );
+
+      expect(cache.get(userWithRolesId)).toBeNull();
+      const res = await request(httpServer(app))
+        .get('/api/system/v1/rbac/me/permissions')
+        .set('Authorization', userWithRolesAuth);
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual({ permissions: [], effectiveRoles: [] });
     });
   });
 });

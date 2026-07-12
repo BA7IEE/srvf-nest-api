@@ -1,5 +1,6 @@
 import { Prisma, type RecruitmentApplication, type RecruitmentCycle } from '@prisma/client';
 
+import { escapeCsvField } from '../../common/csv/csv.util';
 import { maskIdCard } from '../realname/realname.constants';
 import type { RealnameOcrResult } from '../realname/realname.types';
 import {
@@ -281,37 +282,29 @@ export function formatApplicationsCsv(rows: RecruitmentApplicationAdminDto[]): s
     'needs_manual_build',
     'created_at',
   ];
-  const escapeField = (value: string | number | boolean | Date | null): string => {
-    if (value === null || value === undefined) return '';
-    const s = value instanceof Date ? value.toISOString() : String(value);
-    if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
-      return `"${s.replace(/"/g, '""')}"`;
-    }
-    return s;
-  };
   const lines: string[] = [HEADERS.join(',')];
   for (const r of rows) {
     lines.push(
       [
-        escapeField(r.id),
-        escapeField(r.cycleId),
-        escapeField(r.statusCode),
-        escapeField(r.tempNo),
-        escapeField(r.realName),
-        escapeField(r.idCardNumber),
-        escapeField(r.phone),
-        escapeField(r.documentTypeCode),
-        escapeField(r.isNonMainlandDocument),
-        escapeField(r.genderCode),
-        escapeField(r.ageGroup),
-        escapeField(r.cityDistrict),
-        escapeField(r.verifyOutcome),
-        escapeField(r.riskLevel),
-        escapeField(r.manualReviewReason),
-        escapeField(r.eliminationStage),
-        escapeField(r.thresholdsComplete),
-        escapeField(r.needsManualBuild),
-        escapeField(r.createdAt),
+        escapeCsvField(r.id),
+        escapeCsvField(r.cycleId),
+        escapeCsvField(r.statusCode),
+        escapeCsvField(r.tempNo),
+        escapeCsvField(r.realName),
+        escapeCsvField(r.idCardNumber),
+        escapeCsvField(r.phone),
+        escapeCsvField(r.documentTypeCode),
+        escapeCsvField(r.isNonMainlandDocument),
+        escapeCsvField(r.genderCode),
+        escapeCsvField(r.ageGroup),
+        escapeCsvField(r.cityDistrict),
+        escapeCsvField(r.verifyOutcome),
+        escapeCsvField(r.riskLevel),
+        escapeCsvField(r.manualReviewReason),
+        escapeCsvField(r.eliminationStage),
+        escapeCsvField(r.thresholdsComplete),
+        escapeCsvField(r.needsManualBuild),
+        escapeCsvField(r.createdAt),
       ].join(','),
     );
   }
