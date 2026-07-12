@@ -1829,6 +1829,11 @@ model RecruitmentApplication {
   reviewNote        String?
   sensitivePurgedAt DateTime? // 留存清理(字段 NULL + blob 删)执行时刻
 
+  // 业务唯一约束(partial unique;migration.sql 手写,Prisma DSL 不支持带 WHERE):
+  // - (cycleId,idCardNumber/openid/phone) 各自 WHERE deletedAt IS NULL AND
+  //   statusCode NOT IN ('rejected','withdrawn') AND 身份列 IS NOT NULL —— 同轮每个身份键至多
+  //   一条活跃报名；service 预检负责友好失败，DB 约束兜底并发穿透后按 target 分流 28003/28004/28005。
+
   // 招新可用性收口 F5(2026-07-11;评审稿 §2.8;第 42 migration,全 additive 可空):
   // 知情同意留痕——submit 必填 privacyConsentAccepted=true(⚠️ 契约收紧)落时间戳 + 前端传版本号;
   // promote 的 member_profiles.privacyConsentSigned 由硬编码 true 改搬真值(acceptedAt != null)。

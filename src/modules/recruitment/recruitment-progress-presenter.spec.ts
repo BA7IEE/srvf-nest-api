@@ -6,6 +6,7 @@ import {
   APP_STATUS_PUBLICITY,
   APP_STATUS_REJECTED,
   APP_STATUS_VERIFIED,
+  APP_STATUS_WITHDRAWN,
   RISK_LEVEL_HIGH,
   RISK_LEVEL_NORMAL,
   RISK_LEVEL_SYSTEM,
@@ -289,6 +290,27 @@ describe('assembleRecruitmentProgress(进度模型组装)', () => {
     expect(dto.stage).toBe(STAGE_VOLUNTEER);
     expect(dto.memberNo).toBeNull();
     expect(JSON.stringify(dto)).not.toContain('已晋升');
+  });
+
+  it.each([
+    ['manual', APP_STATUS_MANUAL, null],
+    ['rejected-with-old-tempNo', APP_STATUS_REJECTED, 'T20260088'],
+    ['withdrawn-with-old-tempNo', APP_STATUS_WITHDRAWN, 'T20260089'],
+  ])('刀A1 %s → 见面会/群/notice 恒 null', (_name, statusCode, tempNo) => {
+    const dto = assembleRecruitmentProgress(
+      {
+        statusCode,
+        tempNo,
+        thresholdMarks: null,
+        promotedMemberId: null,
+        riskLevel: null,
+      },
+      cycle,
+      stageTextByCode,
+    );
+    expect(dto.meetingInfo).toBeNull();
+    expect(dto.qqGroup).toBeNull();
+    expect(dto.notice).toBeNull();
   });
 
   it('十项收口刀C:manual_review + riskLevel=high 行组装 → 公开面 stage 折叠为 manual(高风险分级不外露)', () => {

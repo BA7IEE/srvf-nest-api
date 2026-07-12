@@ -147,6 +147,7 @@ describe('RecruitmentApplicationReviewService · S3 敏感字段分级(响应脱
   // $transaction 回调式 mock:把 tx 桩传入 service 内部的 tx.recruitmentApplication.* 调用。
   function buildReviewService(canMap: Record<string, boolean>, entryRow: Record<string, unknown>) {
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'app-1' }]),
       recruitmentApplication: {
         findFirst: jest.fn().mockResolvedValue(entryRow),
         update: jest.fn().mockResolvedValue(UPDATED_ROW),

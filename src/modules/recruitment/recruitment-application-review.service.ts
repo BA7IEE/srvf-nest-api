@@ -75,6 +75,9 @@ export class RecruitmentApplicationReviewService {
     await this.assertCanOrThrow(user, 'recruitment-application.mark.threshold');
     const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "recruitment_applications" WHERE "id" = ${id} FOR UPDATE`,
+      );
       const row = await tx.recruitmentApplication.findFirst({ where: { id, deletedAt: null } });
       if (!row) {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);

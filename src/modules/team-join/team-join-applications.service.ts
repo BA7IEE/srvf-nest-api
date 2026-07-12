@@ -117,6 +117,9 @@ export class TeamJoinApplicationsService {
   ): Promise<TeamJoinApplicationAdminDto> {
     await this.assertCanOrThrow(user, 'team-join-application.mark.gate');
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "team_join_applications" WHERE "id" = ${id} FOR UPDATE`,
+      );
       const row = await this.findOrThrow(id, tx);
       // 仅 joining / pending_evaluation 可标(approved/joined/rejected 后门槛锁死)
       if (

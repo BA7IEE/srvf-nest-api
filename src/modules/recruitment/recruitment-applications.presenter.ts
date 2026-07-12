@@ -112,6 +112,10 @@ export function toRecruitmentSubmitResult(
   app: RecruitmentApplication,
   cycle: RecruitmentCycle,
 ): RecruitmentSubmitResultDto {
+  const canViewMeetingInfo =
+    app.tempNo !== null &&
+    app.statusCode !== APP_STATUS_REJECTED &&
+    app.statusCode !== APP_STATUS_WITHDRAWN;
   return {
     outcome: 'submitted',
     statusCode: app.statusCode,
@@ -122,9 +126,11 @@ export function toRecruitmentSubmitResult(
     hint: null,
     recognized: null,
     cycleName: cycle.name,
-    meetingInfo: cycle.meetingInfo,
-    qqGroup: cycle.qqGroup,
-    notifyTemplate: cycle.notifyTemplate as Record<string, unknown> | null,
+    meetingInfo: canViewMeetingInfo ? cycle.meetingInfo : null,
+    qqGroup: canViewMeetingInfo ? cycle.qqGroup : null,
+    notifyTemplate: canViewMeetingInfo
+      ? (cycle.notifyTemplate as Record<string, unknown> | null)
+      : null,
   };
 }
 
@@ -181,9 +187,9 @@ export function buildRecruitmentDeferResult(
     hint,
     recognized: disposition === 'confirm' ? recognized : null,
     cycleName: cycle.name,
-    meetingInfo: cycle.meetingInfo,
-    qqGroup: cycle.qqGroup,
-    notifyTemplate: cycle.notifyTemplate as Record<string, unknown> | null,
+    meetingInfo: null,
+    qqGroup: null,
+    notifyTemplate: null,
   };
 }
 

@@ -27,6 +27,7 @@ const REBIND_PHONE = '/api/open/v1/recruitment/applications/rebind-phone';
 const FIXED_CODE = '888888';
 const ID_A = '110101199003070038'; // 有效校验位大陆身份证
 const ID_B = '110101199003070046';
+const ID_C = '110101199003070054';
 
 describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
   let app: INestApplication;
@@ -682,6 +683,144 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
       newPhoneCode: FIXED_CODE,
     });
     expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
+  });
+
+  it('刀A1 公开见面会信息双门控:verified 可见;manual/rejected/withdrawn 恒 null', async () => {
+    const cycle = await openCycle({
+      meetingInfo: '周六 09:00 见面会',
+      qqGroup: '123456',
+      notifyTemplate: { verified: '欢迎' },
+    });
+    const rows = [
+      { phone: '13900000101', statusCode: 'verified', tempNo: 'T20260101', visible: true },
+      { phone: '13900000102', statusCode: 'manual_review', tempNo: null, visible: false },
+      { phone: '13900000103', statusCode: 'rejected', tempNo: 'T20260103', visible: false },
+      { phone: '13900000104', statusCode: 'withdrawn', tempNo: 'T20260104', visible: false },
+    ];
+    for (const [index, row] of rows.entries()) {
+      const { visible, ...seed } = row;
+      await seedApp(cycle.id, {
+        ...seed,
+        idCardNumber: `A1-${index}`,
+        openid: `a1-openid-${index}`,
+      });
+      await sendCode(row.phone);
+      const res = await request(httpServer(app))
+        .post(QUERY_PHONE)
+        .send({ phone: row.phone, code: FIXED_CODE });
+      expect(res.status).toBe(200);
+      expect(res.body.data.meetingInfo).toBe(visible ? '周六 09:00 见面会' : null);
+      expect(res.body.data.qqGroup).toBe(visible ? '123456' : null);
+      expect(res.body.data.notice).toEqual(visible ? { verified: '欢迎' } : null);
+    }
+  });
+
+  it('刀A2 手机锚活跃优先:较新的 withdrawn 不遮蔽旧活跃行;rebind 只更新活跃行', async () => {
+    const cycle = await openCycle();
+    const active = await seedApp(cycle.id, {
+      phone: '13900000111',
+      openid: 'a2-active',
+      idCardNumber: 'A2-active',
+      createdAt: new Date('2026-07-11T00:00:00.000Z'),
+    });
+    const terminal = await seedApp(cycle.id, {
+      phone: '13900000111',
+      openid: 'a2-terminal',
+      idCardNumber: 'A2-terminal',
+      statusCode: 'withdrawn',
+      tempNo: 'T20260112',
+      createdAt: new Date('2026-07-12T00:00:00.000Z'),
+    });
+
+    await sendCode('13900000111');
+    const progress = await request(httpServer(app))
+      .post(QUERY_PHONE)
+      .send({ phone: '13900000111', code: FIXED_CODE });
+    expect(progress.status).toBe(200);
+    expect(progress.body.data.stage).toBe('threshold');
+    expect(progress.body.data.tempNo).toBe('T20260001');
+
+    await prisma.smsVerificationCode.deleteMany({});
+    await sendCode('13900000111');
+    await sendCode('13900000112');
+    await request(httpServer(app))
+      .post(REBIND_PHONE)
+      .send({
+        phone: '13900000111',
+        code: FIXED_CODE,
+        newPhone: '13900000112',
+        newPhoneCode: FIXED_CODE,
+      })
+      .expect(200);
+    expect(
+      (await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: active.id } })).phone,
+    ).toBe('13900000112');
+    expect(
+      (await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: terminal.id } })).phone,
+    ).toBe('13900000111');
+  });
+
+  it('刀A3 rebind-phone 目标手机已被本轮另一活跃行占用 → 28005,两行不变', async () => {
+    const cycle = await openCycle();
+    const mine = await seedApp(cycle.id, {
+      phone: '13900000121',
+      openid: 'a3-mine',
+      idCardNumber: 'A3-mine',
+    });
+    const other = await seedApp(cycle.id, {
+      phone: '13900000122',
+      openid: 'a3-other',
+      idCardNumber: 'A3-other',
+      tempNo: 'T20260122',
+    });
+    await sendCode('13900000121');
+    await sendCode('13900000122');
+    const res = await request(httpServer(app)).post(REBIND_PHONE).send({
+      phone: '13900000121',
+      code: FIXED_CODE,
+      newPhone: '13900000122',
+      newPhoneCode: FIXED_CODE,
+    });
+    expectBizError(res, BizCode.RECRUITMENT_DUPLICATE_PHONE_ACTIVE);
+    expect(
+      (await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: mine.id } })).phone,
+    ).toBe('13900000121');
+    expect(
+      (await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: other.id } })).phone,
+    ).toBe('13900000122');
+  });
+
+  it.each([
+    {
+      name: 'idcard',
+      expected: BizCode.RECRUITMENT_DUPLICATE_APPLICATION,
+      left: { wechatCode: 'b-id-a', phone: '13900000131', idCardNumber: ID_A },
+      right: { wechatCode: 'b-id-b', phone: '13900000132', idCardNumber: ID_A },
+    },
+    {
+      name: 'openid',
+      expected: BizCode.RECRUITMENT_DUPLICATE_OPENID_ACTIVE,
+      left: { wechatCode: 'b-openid', phone: '13900000133', idCardNumber: ID_A },
+      right: { wechatCode: 'b-openid', phone: '13900000134', idCardNumber: ID_B },
+    },
+    {
+      name: 'phone',
+      expected: BizCode.RECRUITMENT_DUPLICATE_PHONE_ACTIVE,
+      left: { wechatCode: 'b-phone-a', phone: '13900000135', idCardNumber: ID_A },
+      right: { wechatCode: 'b-phone-b', phone: '13900000135', idCardNumber: ID_C },
+    },
+  ])('刀B 并发 submit 穿透预检后由 DB partial unique 分流 $name 专码', async (c) => {
+    await openCycle();
+    const [left, right] = await Promise.all([
+      submit(basePayload(c.left.phone, c.left)),
+      submit(basePayload(c.right.phone, c.right)),
+    ]);
+    const success = [left, right].filter((r) => r.status === 201);
+    const rejected = [left, right].find((r) => r.status !== 201);
+    expect(success).toHaveLength(1);
+    expect(rejected).toBeDefined();
+    expectBizError(rejected as never, c.expected);
+    expect(await prisma.recruitmentApplication.count()).toBe(1);
   });
 
   // ============ 容量 / 去重不被会话行影响 ============

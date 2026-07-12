@@ -1135,7 +1135,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       },
     );
 
-    // 终态行(rejected)→ 28041
+    // 刀A2:终态行(rejected)不再作为写动作锚点 → 28002
     await createAppRow(cycle.id, {
       statusCode: 'rejected',
       idCardNumber: 'F7ID0002',
@@ -1144,7 +1144,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     });
     expectBizError(
       await uploadCerts({ category: 'first_aid', wechatCode: 'f7-b' }, 1),
-      BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
+      BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
     );
   });
 
@@ -1949,6 +1949,22 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(bad.body.code).toBe(BizCode.BAD_REQUEST.code);
   });
 
+  it('刀A4 markThreshold 并发标不同项 → 行锁后两项均保留,JSON 不丢更新', async () => {
+    await openCycle();
+    const appRow = await submitVerified('a4-lock', ID_MATCH_A);
+    const [a, b] = await Promise.all([
+      markThreshold(appRow.id, 'patrol1', true),
+      markThreshold(appRow.id, 'patrol2', true),
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    const row = await prisma.recruitmentApplication.findUniqueOrThrow({
+      where: { id: appRow.id },
+    });
+    const marks = row.thresholdMarks as Record<string, unknown>;
+    expect(Object.keys(marks).sort()).toEqual(['patrol1', 'patrol2']);
+  });
+
   it('㉓(二期) 综合评定:pending_evaluation 通过→publicity / 不通过→rejected(evaluation)', async () => {
     await openCycle();
     const a1 = await submitVerified('p2-3a', ID_MATCH_A);
@@ -2402,6 +2418,12 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   // =====================================================================
 
   function publicityRow(over: Record<string, unknown>) {
+    const rawPhoneSeed = over.idCardNumber ?? over.openid ?? over.realName;
+    const phoneSeed = typeof rawPhoneSeed === 'string' ? rawPhoneSeed : 'publicity';
+    let phoneHash = 0;
+    for (let i = 0; i < phoneSeed.length; i++) {
+      phoneHash = (phoneHash * 31 + phoneSeed.charCodeAt(i)) >>> 0;
+    }
     return {
       cycleId: '', // 调用处填
       statusCode: 'publicity',
@@ -2409,7 +2431,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       isForeigner: false,
       genderCode: 'male',
       birthDate: new Date('1995-03-07T00:00:00.000Z'),
-      phone: '13900000000',
+      phone: `138${String(phoneHash % 100000000).padStart(8, '0')}`,
       ...over,
     };
   }
@@ -2441,41 +2463,30 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(row.idCardNumber).toBeNull();
   });
 
-  it('㉝(二期 F15) 同批共享 openid:仅发号序首行发号、次行 skip(duplicate-openid-in-batch),不整批回滚零发号', async () => {
+  it('刀B 同轮活跃 openid DB 防重:第二行 P2002;首行转 rejected 后释放槽位', async () => {
     const cycle = await openCycle();
-    const membersBefore = await prisma.member.count();
-    // 两行共享 openid 'f15-dup' + 一行独立;原先第二行入事务撞 User.openid @unique → P2002 → 整批回滚
-    await prisma.recruitmentApplication.createMany({
-      data: [
-        publicityRow({
-          cycleId: cycle.id,
-          openid: 'f15-dup',
-          realName: '钱一',
-          idCardNumber: 'F15ID0001',
-        }),
-        publicityRow({
-          cycleId: cycle.id,
-          openid: 'f15-dup',
-          realName: '钱二',
-          idCardNumber: 'F15ID0002',
-        }),
-        publicityRow({
-          cycleId: cycle.id,
-          openid: 'f15-uniq',
-          realName: '孙三',
-          idCardNumber: 'F15ID0003',
-        }),
-      ],
+    const first = await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        openid: 'f15-dup',
+        realName: '钱一',
+        idCardNumber: 'F15ID0001',
+      }),
     });
-    const res = await promote(cycle.id);
-    expect(res.status).toBe(200);
-    // 去重后 2 发号(共享 openid 仅发号序首行)+ 1 skip;不整批回滚(否则 promotedCount=0)
-    expect(res.body.data.promotedCount).toBe(2);
-    expect(res.body.data.skippedCount).toBe(1);
-    expect(res.body.data.skipped[0]).toMatchObject({ reason: 'duplicate-openid-in-batch' });
-    expect(await prisma.member.count()).toBe(membersBefore + 2);
-    // 共享 openid 仅一个 User 持有(@unique 未被撞)
-    expect(await prisma.user.count({ where: { openid: 'f15-dup' } })).toBe(1);
+    const secondData = publicityRow({
+      cycleId: cycle.id,
+      openid: 'f15-dup',
+      realName: '钱二',
+      idCardNumber: 'F15ID0002',
+    });
+    await expect(prisma.recruitmentApplication.create({ data: secondData })).rejects.toMatchObject({
+      code: 'P2002',
+    });
+    await prisma.recruitmentApplication.update({
+      where: { id: first.id },
+      data: { statusCode: 'rejected' },
+    });
+    await expect(prisma.recruitmentApplication.create({ data: secondData })).resolves.toBeTruthy();
   });
 
   it('㉞(二期 F9) 公示预览 = 实发:openid 已被既有 User 占用的行 needsManualBuild + 不占号,其余拟发号与 promote 实发一致', async () => {
@@ -2807,24 +2818,11 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(auditCount).toBeGreaterThanOrEqual(2);
   });
 
-  it('㉙(S6) 批量标门槛:手机重复→ambiguous;状态非法行→failed(逐行容错,不整批断,其余行照标)', async () => {
+  it('㉙(S6) 批量标门槛:状态非法行→failed(逐行容错,不整批断,其余唯一命中行照标)', async () => {
     const cycle = await openCycle();
-    // 两 app 共用手机 → 手机匹配 ambiguous(绝不猜)。F1 防重前移后该状态不可再经公开 submit 产生
-    // (同轮同 phone 二次提交 → 28005),但跨轮/历史数据仍可能存在 → 第二行改直插 fixture,
-    // 批量匹配的 ambiguous 语义与断言逐字保留。
-    await submitVerifiedPhone('s6-da', ID_MATCH_A, '周一', '13900002000');
-    await prisma.recruitmentApplication.create({
-      data: {
-        cycleId: cycle.id,
-        statusCode: 'verified',
-        documentTypeCode: 'mainland_id',
-        isForeigner: false,
-        realName: '吴二',
-        idCardNumber: ID_MATCH_B,
-        phone: '13900002000',
-        openid: 'dev-openid-s6-db',
-      },
-    });
+    // 同轮 active phone 已由刀B DB 约束保证唯一；历史/跨轮 ambiguous 的纯匹配行为由
+    // recruitment-batch-matching.spec.ts 精确锁定。本 e2e 聚焦逐行失败不阻断其余写入。
+    const first = await submitVerifiedPhone('s6-da', ID_MATCH_A, '周一', '13900002000');
     // manual_review 行(状态非法标门槛 → failed):mismatch + 申请人确认③ + 独立手机
     const mmRes = await submit(
       validPayload({
@@ -2836,7 +2834,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       { ocr: { name: '别人', idCardNumber: ID_MISMATCH, clarity: true } },
     );
     expect(mmRes.body.data.statusCode).toBe('manual_review');
-    // 一个可正常标的 verified 行(证明逐行容错:它不受 ambiguous/failed 行影响)
+    // 一个可正常标的 verified 行(证明逐行容错:它不受 failed 行影响)
     const ok = await submitVerifiedPhone('s6-ok', ID_MATCH_C, '郑三', '13900002600');
 
     const res = await batchMarkThreshold({
@@ -2844,15 +2842,15 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       thresholdCode: 'patrol1',
       completed: true,
       matches: [
-        { phone: '13900002000' }, // ambiguous(dupA/dupB)
+        { phone: '13900002000' }, // 唯一命中 → marked
         { phone: '13900002500' }, // 命中 manual_review → failed(状态非法)
         { phone: '13900002600' }, // 正常 → marked
       ],
     });
     expect(res.status).toBe(200);
     const d = res.body.data;
-    expect(d).toMatchObject({ total: 3, marked: 1, unmatched: 1, failed: 1 });
-    expect(d.results[0]).toMatchObject({ status: 'unmatched', unmatchedReason: 'ambiguous' });
+    expect(d).toMatchObject({ total: 3, marked: 2, unmatched: 0, failed: 1 });
+    expect(d.results[0]).toMatchObject({ status: 'marked', applicationId: first.id });
     expect(d.results[1]).toMatchObject({
       status: 'failed',
       errorCode: BizCode.RECRUITMENT_APPLICATION_WRONG_STATE.code,
@@ -2981,7 +2979,8 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     await prisma.user.create({
       data: { username: 's6-bound-occupier', passwordHash: 'x', role: 'USER', openid: 's6p-bound' },
     });
-    // 混合公示集:2 可发 + 外籍 + openid 占用 + 批内重复 + 缺 openid(直接造行,沿 ㉞ F9 手法)
+    // 混合公示集:3 可发 + 外籍 + openid 占用 + 缺登录通道。
+    // 批内重复防御纯函数由 recruitment-promotion.service.spec.ts 锁定；DB 刀B 后生产态不可再造。
     await prisma.recruitmentApplication.createMany({
       data: [
         publicityRow({
@@ -3012,22 +3011,16 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         }),
         publicityRow({
           cycleId: cycle.id,
-          openid: 's6p-dup',
+          openid: 's6p-3',
           realName: '丁五',
           idCardNumber: 'S6P0005',
-        }),
-        publicityRow({
-          cycleId: cycle.id,
-          openid: 's6p-dup',
-          realName: '丁六',
-          idCardNumber: 'S6P0006',
         }),
         publicityRow({
           cycleId: cycle.id,
           openid: null,
           phone: null, // v0.40.0:openid + phone 皆无 → missing-login-channel(无任何登录通道,不可发号)
           realName: '鄂七',
-          idCardNumber: 'S6P0007',
+          idCardNumber: 'S6P0006',
         }),
       ],
     });
@@ -3063,9 +3056,9 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     // 汇总一致
     expect(pre.body.data.promotableCount).toBe(prom.body.data.promotedCount);
     expect(pre.body.data.skipCount).toBe(prom.body.data.skippedCount);
-    expect(pre.body.data.total).toBe(7);
+    expect(pre.body.data.total).toBe(6);
 
-    // 覆盖到的六类跳过原因(本夹具命中四类)
+    // 覆盖生产可达的三类跳过原因。
     const reasons = new Set(
       Object.values(preById)
         .filter((r) => !r.willIssue)
@@ -3073,24 +3066,23 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     );
     expect(reasons).toContain('foreign-manual-build');
     expect(reasons).toContain('openid-already-bound');
-    expect(reasons).toContain('duplicate-openid-in-batch');
     // v0.40.0 H5 手机通道:missing-openid 停用,openid+phone 皆无 → missing-login-channel。
     expect(reasons).toContain('missing-login-channel');
   });
 
-  it('㉟(S6) 发号预检:重复 openid 高亮 + 缺字段 flag + 特殊证件;RBAC USER → 30100;轮次不存在 → 28001', async () => {
+  it('㉟(S6) 发号预检:唯一 openid 不误报重复 + 缺字段 flag;RBAC USER → 30100;轮次不存在 → 28001', async () => {
     const cycle = await openCycle();
     await prisma.recruitmentApplication.createMany({
       data: [
         publicityRow({
           cycleId: cycle.id,
-          openid: 's6h-dup',
+          openid: 's6h-a',
           realName: '甲',
           idCardNumber: 'S6H001',
         }),
         publicityRow({
           cycleId: cycle.id,
-          openid: 's6h-dup',
+          openid: 's6h-b',
           realName: '乙',
           idCardNumber: 'S6H002',
         }),
@@ -3116,9 +3108,9 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       skipReason: string | null;
     };
     const rows = pre.body.data.rows as HRow[];
-    // 重复 openid 两行均高亮
-    const dupRows = rows.filter((r) => r.realName === '甲' || r.realName === '乙');
-    expect(dupRows.every((r) => r.duplicateOpenidInBatch)).toBe(true);
+    // 刀B 后同轮活跃 openid DB 唯一；生产可达行不应误报重复。
+    const uniqueRows = rows.filter((r) => r.realName === '甲' || r.realName === '乙');
+    expect(uniqueRows.every((r) => !r.duplicateOpenidInBatch)).toBe(true);
     // 缺生日/性别行:flag + missing-derived-field
     const nb = rows.find((r) => r.realName === '丙')!;
     expect(nb.missingBirthDate).toBe(true);
@@ -3213,37 +3205,32 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(mine?.reason).toBe('phone-already-bound');
   });
 
-  it('H5 手机通道:批内同 phone(均无 openid)→ 发号序首行发号、次行 skip duplicate-phone-in-batch', async () => {
+  it('刀B H5 手机通道同轮活跃 phone DB 防重:第二行 P2002;首行转 rejected 后释放槽位', async () => {
     const cycle = await openCycle();
     const dupPhone = '13800108201';
-    await prisma.recruitmentApplication.createMany({
-      data: [
-        publicityRow({
-          cycleId: cycle.id,
-          openid: null,
-          phone: dupPhone,
-          realName: '甲重',
-          idCardNumber: 'H5PHONE003',
-        }),
-        publicityRow({
-          cycleId: cycle.id,
-          openid: null,
-          phone: dupPhone,
-          realName: '乙重',
-          idCardNumber: 'H5PHONE004',
-        }),
-      ],
+    const first = await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        openid: null,
+        phone: dupPhone,
+        realName: '甲重',
+        idCardNumber: 'H5PHONE003',
+      }),
     });
-
-    const prom = await promote(cycle.id);
-    expect(prom.status).toBe(200);
-    // 恰一行发号(批内首行)、一行 skip duplicate-phone-in-batch(免第二行入事务撞 phone @unique 整批回滚)。
-    expect(prom.body.data.promotedCount).toBe(1);
-    const skipped = prom.body.data.skipped as Array<{ reason: string }>;
-    expect(skipped).toHaveLength(1);
-    expect(skipped[0].reason).toBe('duplicate-phone-in-batch');
-    // phone @unique 未被撞:仅一个 User 持有该 phone。
-    const usersWithPhone = await prisma.user.count({ where: { phone: dupPhone } });
-    expect(usersWithPhone).toBe(1);
+    const secondData = publicityRow({
+      cycleId: cycle.id,
+      openid: null,
+      phone: dupPhone,
+      realName: '乙重',
+      idCardNumber: 'H5PHONE004',
+    });
+    await expect(prisma.recruitmentApplication.create({ data: secondData })).rejects.toMatchObject({
+      code: 'P2002',
+    });
+    await prisma.recruitmentApplication.update({
+      where: { id: first.id },
+      data: { statusCode: 'rejected' },
+    });
+    await expect(prisma.recruitmentApplication.create({ data: secondData })).resolves.toBeTruthy();
   });
 });
