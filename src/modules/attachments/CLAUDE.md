@@ -9,6 +9,7 @@
 - **首个业务模块接入 `rbac.can()`**(管理面 rbac / config / users / audit-logs 已于 P0-F / v0.15.0 收紧;业务面除本模块外细粒度 RBAC 仍归 Slow-4;接入边界以 [`/docs/current-state.md`](../../../docs/current-state.md) §3 / §4 为准)。
 - 配置三表在独立模块 `attachment-configs/`:`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig`。
 - **上传内容校验(v0.44.0 findings #22/#23/#24)**:`image/svg+xml` / `text/html` / `application/xhtml+xml` 属系统永久黑名单;confirm-upload 对 JPG/PNG/WEBP/GIF/PDF 回读最多 12 字节核对魔数,不符返 `13016`;签名表外的既有 Office MIME 保持原契约。
+- **列表性能边界(v0.44.0 findings #10/#11/#12)**:certificate owner 的 scope 映射必须先 collect ownerId、一次 `certificate.findMany in` 后走 Map,K 张证书附件只查 1 次 Certificate;`list`/`listByOwner` 的全量 ownership 过滤后内存分页暂接受(#10/#12,现规模理论问题),不得把 #11 优化误写回逐行 `findFirst`。
 
 ## 不要做(踩雷区)
 
