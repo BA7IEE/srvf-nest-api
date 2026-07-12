@@ -324,11 +324,11 @@ export class RecruitmentApplicationsService {
     ) {
       throw new BizException(BizCode.BAD_REQUEST);
     }
-    // 6b. F5 签名图(可选;校验镜像 idCardImage:jpeg/png ≤5MB → 否则 40000)
+    // 6b. 签名图必填;校验镜像 idCardImage:jpeg/png ≤5MB → 否则 40000。
     if (
-      signatureImage &&
-      (signatureImage.size > ID_CARD_IMAGE_MAX_BYTES ||
-        !ID_CARD_IMAGE_ALLOWED_MIME.includes(signatureImage.mimetype))
+      !signatureImage ||
+      signatureImage.size > ID_CARD_IMAGE_MAX_BYTES ||
+      !ID_CARD_IMAGE_ALLOWED_MIME.includes(signatureImage.mimetype)
     ) {
       throw new BizException(BizCode.BAD_REQUEST);
     }
@@ -422,7 +422,7 @@ export class RecruitmentApplicationsService {
         cycle.id,
         storedKeys,
       );
-      // 10c. F5 签名图落图(可选;与主图/裁剪图同失败域,storedKeys 补偿删覆盖)
+      // 10c. 签名图落图(新提交必填;与主图/裁剪图同失败域,storedKeys 补偿删覆盖)
       let signatureImageKey: string | null = null;
       if (signatureImage) {
         const sigExt = signatureImage.mimetype === 'image/png' ? 'png' : 'jpg';
@@ -516,7 +516,7 @@ export class RecruitmentApplicationsService {
           after: {
             cycleId: cycle.id,
             createStatus: record.statusCode,
-            isForeigner: foreign,
+            isNonMainlandDocument: foreign,
             riskLevel: record.riskLevel,
           },
           extra: {

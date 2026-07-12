@@ -232,7 +232,7 @@ export class TeamJoinApplicationsService {
       };
       if (dto.note !== undefined) data.evaluationNote = dto.note;
       if (eliminationStage) data.eliminationStage = eliminationStage;
-      // 综合评估延长期仅 approve 时记(approved 态跨轮入队仍认;评审稿 §4.2)
+      // 综合评估延长期仅 approve 时记(自本版起仅存档;approved 不随轮关闭失效)
       if (nextStatus === APP_STATUS_APPROVED && dto.evaluationExtendedUntil !== undefined) {
         data.evaluationExtendedUntil = new Date(dto.evaluationExtendedUntil);
       }

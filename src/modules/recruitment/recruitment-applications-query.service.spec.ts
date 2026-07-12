@@ -177,6 +177,8 @@ describe('RecruitmentApplicationsQueryService.exportApplicationsCsv · S3 脱敏
     const csv = await service.exportApplicationsCsv({}, ADMIN_USER);
     const [header, line1] = csv.split('\n');
     expect(header.split(',')).toContain('id_card_number');
+    expect(header.split(',')).toContain('is_non_mainland_document');
+    expect(header.split(',')).not.toContain('is_foreigner');
     expect(line1).toContain(RAW_ID); // 明文
     expect(line1).toContain(RAW_PHONE);
   });
