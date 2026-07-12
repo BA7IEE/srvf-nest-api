@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+> 下一个 minor 候选(当前为空)。
+
+## v0.44.0 - 2026-07-13
+
 > **⚠️ 行为变更(前端/运营须知)**:① 非 SUPER_ADMIN 通过 RoleBinding 绑定 `ops-admin` 或含 `role-binding.*`/`rbac.*` 高权码的角色改返 30102;撤销/停用最后一个 GLOBAL ops-admin 绑定改返 30101;② 同一报名/考勤单并发 approve/reject 仅一方成功,败者返对应 `*_STATUS_INVALID`;③ CSV 危险首字符(`= + - @ Tab CR`)统一前缀单引号;④ 未命中的 garbage refresh token logout 仍返 200,但不再产生 `auth.logout` 审计行;⑤ SVG/HTML/XHTML 恒拒上传,声明 jpg/png/webp/gif/pdf 但对象字节签名不符时 confirm 改返 13016;⑥ 同一队员并发写入重叠考勤仅一方成功。
 >
 > 主题:**安全·并发·性能加固线(2026-07-13 全仓审计 26 findings)**。25 条属实:#1–#7/#9/#11/#13–#15/#17–#18/#22–#26 已修;#8/#10/#12/#19–#21 接受并登记;#16 经代码复核不成立。范围 = 冻结评审 #570 + P1 #571 + P2 #572 + P3 #573;0 schema / 0 migration / 0 新端点 / 0 权限码 / 0 controller / 0 模块 / 0 角色 / 0 新依赖。
