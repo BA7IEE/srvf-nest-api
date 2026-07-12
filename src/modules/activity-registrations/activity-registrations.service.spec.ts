@@ -125,6 +125,7 @@ function makePrismaMock() {
     findMany: jest.fn<Promise<RegRow[]>, [unknown]>(),
     create: jest.fn<Promise<RegRow>, [unknown]>(),
     update: jest.fn<Promise<RegRow>, [unknown]>(),
+    updateMany: jest.fn<Promise<{ count: number }>, [unknown]>().mockResolvedValue({ count: 1 }),
     count: jest.fn<Promise<number>, [unknown]>(),
   };
   const activity = {

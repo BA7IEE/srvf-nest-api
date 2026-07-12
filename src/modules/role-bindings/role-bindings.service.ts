@@ -5,6 +5,7 @@ import {
   BindingStatus,
   PrincipalType,
   Prisma,
+  Role,
   UserStatus,
 } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -38,7 +39,7 @@ import { roleBindingSafeSelect, type SafeRoleBinding } from './role-bindings.sel
 
 // 终态 scoped-authz PR6「RoleBinding」(2026-07-01 goal;冻结稿 §3.6 / §7.5 / §4.3 / §10.6 / §11 PR6):
 //   带 scope 的角色绑定管理面 service。判权单轨 service 层 rbac.can(0 @Roles;沿 supervision-assignments 范式)。
-//   建 / 软删写 audit(inline;resourceType='role_binding';event role-binding.{create,revoke} + extra.viaPath='role-binding')。
+//   建 / 改 / 软删写 audit(inline;resourceType='role_binding';event role-binding.{create,update,revoke} + extra.viaPath='role-binding')。
 //
 // **🔴 scoped 绑定可存不判(PR8 边界):** 本 service 建的 GLOBAL / ORGANIZATION / ORGANIZATION_TREE / ACTIVITY /
 //   RESOURCE / SELF 各型绑定**入库即止**;RbacService 只读 scopeType=GLOBAL(全局判权),**绝不判 scoped 行**
@@ -47,6 +48,8 @@ import { roleBindingSafeSelect, type SafeRoleBinding } from './role-bindings.sel
 //   仅 roleId→RbacRole、scopeOrgId→Organization 是真 FK(Restrict)。
 
 const AUDIT_RESOURCE_TYPE = 'role_binding';
+const OPS_ADMIN_CODE = 'ops-admin';
+const PRIVILEGED_PERMISSION_PREFIXES = ['role-binding.', 'rbac.'] as const;
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -168,13 +171,97 @@ export class RoleBindingsService {
   }
 
   // roleId → RbacRole 存在且未软删(沿 user-roles findRoleOrThrow 范式)。
-  private async findRoleOrThrow(tx: PrismaTx, roleId: string): Promise<void> {
+  private async findRoleOrThrow(tx: PrismaTx, roleId: string) {
     const role = await tx.rbacRole.findUnique({
       where: { id: roleId },
-      select: { id: true, deletedAt: true },
+      select: {
+        id: true,
+        code: true,
+        deletedAt: true,
+        rolePermissions: { select: { permission: { select: { code: true } } } },
+      },
     });
     if (!role) throw new BizException(BizCode.ROLE_NOT_FOUND);
     if (role.deletedAt !== null) throw new BizException(BizCode.ROLE_DELETED);
+    return role;
+  }
+
+  // Finding #1:移植 user-roles 的角色分级保护。SUPER_ADMIN 可绑任意角色；ops-admin
+  // 只能绑不含 role-binding.*/rbac.* 的低权角色；其余调用者即使偶然持入口码也不得分配角色。
+  private async assertCanAssignRoleOrThrow(
+    actor: CurrentUserPayload,
+    tx: PrismaTx,
+    targetRole: Awaited<ReturnType<RoleBindingsService['findRoleOrThrow']>>,
+  ): Promise<void> {
+    if (actor.role === Role.SUPER_ADMIN) return;
+
+    const targetIsPrivileged =
+      targetRole.code === OPS_ADMIN_CODE ||
+      targetRole.rolePermissions.some(({ permission }) =>
+        PRIVILEGED_PERMISSION_PREFIXES.some((prefix) => permission.code.startsWith(prefix)),
+      );
+    if (targetIsPrivileged) throw new BizException(BizCode.CANNOT_ASSIGN_HIGHER_ROLE);
+
+    const actorOpsAdminBinding = await tx.roleBinding.findFirst({
+      where: {
+        principalType: PrincipalType.USER,
+        principalId: actor.id,
+        scopeType: BindingScopeType.GLOBAL,
+        status: BindingStatus.ACTIVE,
+        deletedAt: null,
+        role: { code: OPS_ADMIN_CODE, deletedAt: null },
+      },
+      select: { id: true },
+    });
+    if (!actorOpsAdminBinding) throw new BizException(BizCode.CANNOT_ASSIGN_HIGHER_ROLE);
+  }
+
+  // Findings #2/#26:GLOBAL ops-admin USER 的最后一条 ACTIVE 绑定不得离开 ACTIVE。
+  // advisory xact lock 让并发撤两名管理员也串行,避免两边都看到“还有一个”。
+  private async assertNotLastOpsAdminOrThrow(
+    tx: PrismaTx,
+    binding: {
+      id: string;
+      principalType: PrincipalType;
+      principalId: string | null;
+      scopeType: BindingScopeType;
+      status: BindingStatus;
+      role: { code: string };
+    },
+  ): Promise<void> {
+    if (
+      binding.principalType !== PrincipalType.USER ||
+      binding.principalId === null ||
+      binding.scopeType !== BindingScopeType.GLOBAL ||
+      binding.status !== BindingStatus.ACTIVE ||
+      binding.role.code !== OPS_ADMIN_CODE
+    ) {
+      return;
+    }
+
+    // Prisma 不支持 PostgreSQL void 结果型，显式 cast text 仅为驱动可反序列化；锁语义不变。
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('role-bindings:last-ops-admin'))::text AS locked`;
+    const otherBindings = await tx.roleBinding.findMany({
+      where: {
+        principalType: PrincipalType.USER,
+        scopeType: BindingScopeType.GLOBAL,
+        status: BindingStatus.ACTIVE,
+        deletedAt: null,
+        role: { code: OPS_ADMIN_CODE, deletedAt: null },
+        NOT: { id: binding.id },
+      },
+      select: { principalId: true },
+    });
+    const candidateIds = otherBindings
+      .map(({ principalId }) => principalId)
+      .filter((id): id is string => id !== null);
+    const remaining =
+      candidateIds.length === 0
+        ? 0
+        : await tx.user.count({
+            where: { id: { in: candidateIds }, deletedAt: null, status: UserStatus.ACTIVE },
+          });
+    if (remaining === 0) throw new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED);
   }
 
   // ============ GET /api/admin/v1/role-bindings ============
@@ -475,7 +562,9 @@ export class RoleBindingsService {
     await collect(() =>
       this.validatePrincipalOrThrow(this.prisma, query.principalType, rawPrincipalId),
     );
-    await collect(() => this.findRoleOrThrow(this.prisma, query.roleId));
+    await collect(async () => {
+      await this.findRoleOrThrow(this.prisma, query.roleId);
+    });
 
     if (
       query.scopeType === BindingScopeType.ORGANIZATION ||
@@ -604,7 +693,8 @@ export class RoleBindingsService {
 
     const result = await this.prisma.$transaction(async (tx) => {
       await this.validatePrincipalOrThrow(tx, dto.principalType, rawPrincipalId);
-      await this.findRoleOrThrow(tx, dto.roleId);
+      const role = await this.findRoleOrThrow(tx, dto.roleId);
+      await this.assertCanAssignRoleOrThrow(user, tx, role);
 
       if (
         dto.scopeType === BindingScopeType.ORGANIZATION ||
@@ -681,15 +771,15 @@ export class RoleBindingsService {
 
   // 改状态 / 任期 / note(全可选)。不改 principal / role / scope(换绑定 = 软删旧建新)。
   // 找不到未软删记录 → NOT_FOUND;endedAt(新旧综合)须 > startedAt(新旧综合)→ TENURE_INVALID;
-  // 改 status→ACTIVE 撞全 scope 维度唯一 → P2002 → ROLE_BINDING_ALREADY_EXISTS。**不写 audit**(沿 PR5 update)。
+  // 改 status→ACTIVE 撞全 scope 维度唯一 → P2002 → ROLE_BINDING_ALREADY_EXISTS。
   // review G7:仅当本次 PATCH 触碰 status/startedAt/endedAt 任一字段时,额外拒绝结果态自相矛盾的
   // 「status=ACTIVE 但 endedAt 已过期」组合(→ TENURE_INVALID);纯改 note 不受影响(不触碰任期/状态字段)。
-  async update(user: CurrentUserPayload, id: string, dto: UpdateRoleBindingDto) {
+  async update(user: CurrentUserPayload, id: string, dto: UpdateRoleBindingDto, meta: AuditMeta) {
     await this.assertCanOrThrow(user, 'role-binding.update.record');
     const result = await this.prisma.$transaction(async (tx) => {
       const current = await tx.roleBinding.findFirst({
         where: notDeletedWhere({ id }),
-        select: { id: true, status: true, startedAt: true, endedAt: true },
+        select: { ...roleBindingSafeSelect, role: { select: { code: true } } },
       });
       if (!current) throw new BizException(BizCode.ROLE_BINDING_NOT_FOUND);
 
@@ -714,6 +804,14 @@ export class RoleBindingsService {
         }
       }
 
+      if (
+        current.status === BindingStatus.ACTIVE &&
+        dto.status !== undefined &&
+        dto.status !== BindingStatus.ACTIVE
+      ) {
+        await this.assertNotLastOpsAdminOrThrow(tx, current);
+      }
+
       const data: Prisma.RoleBindingUpdateInput = {};
       if (dto.status !== undefined) data.status = dto.status;
       if (dto.startedAt !== undefined) data.startedAt = new Date(dto.startedAt);
@@ -723,6 +821,34 @@ export class RoleBindingsService {
       const updated = await this.runWithUniqueGuard(() =>
         tx.roleBinding.update({ where: { id }, data, select: roleBindingSafeSelect }),
       );
+
+      await this.auditLogs.log({
+        event: 'role-binding.update',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: updated.id,
+        meta,
+        before: {
+          status: current.status,
+          startedAt: current.startedAt,
+          endedAt: current.endedAt,
+          note: current.note,
+        },
+        after: {
+          status: updated.status,
+          startedAt: updated.startedAt,
+          endedAt: updated.endedAt,
+          note: updated.note,
+        },
+        extra: {
+          viaPath: 'role-binding',
+          operation: 'update',
+          scopeType: updated.scopeType,
+          roleId: updated.roleId,
+        },
+        tx,
+      });
       return this.toResponseDto(updated);
     });
 
@@ -740,9 +866,11 @@ export class RoleBindingsService {
     const result = await this.prisma.$transaction(async (tx) => {
       const current = await tx.roleBinding.findFirst({
         where: notDeletedWhere({ id }),
-        select: { id: true, status: true },
+        select: { ...roleBindingSafeSelect, role: { select: { code: true } } },
       });
       if (!current) throw new BizException(BizCode.ROLE_BINDING_NOT_FOUND);
+
+      await this.assertNotLastOpsAdminOrThrow(tx, current);
 
       const now = new Date();
       const updated = await tx.roleBinding.update({

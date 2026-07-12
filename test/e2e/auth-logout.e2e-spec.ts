@@ -63,12 +63,15 @@ describe('POST /api/auth/v1/logout', () => {
   });
 
   describe('幂等', () => {
-    it('不存在的 refresh → 仍 200', async () => {
+    it('不存在的 refresh → 仍 200 且 auth.logout audit 零新增(finding #9)', async () => {
+      const before = await prisma.auditLog.count({ where: { event: 'auth.logout' } });
       const res = await request(httpServer(app))
         .post('/api/auth/v1/logout')
         .send({ refreshToken: 'nonexistent-raw' });
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ code: 0, message: 'ok', data: null });
+      const after = await prisma.auditLog.count({ where: { event: 'auth.logout' } });
+      expect(after).toBe(before);
     });
 
     it('已撤销的 refresh → 仍 200(幂等)', async () => {

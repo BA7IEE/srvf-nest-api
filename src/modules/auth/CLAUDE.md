@@ -20,7 +20,7 @@
 - **refresh expiresAt absolute**:rotation 后继承原 family 首个 token 的 `expiresAt`,**不**延长(沿 [`auth.service.ts:278`](auth.service.ts:278))
 - **login 失败统一** `BizCode.LOGIN_FAILED = 10004`,5 类失败场景同响应体(防账号枚举);任一路径**必跑**一次 `bcrypt.compare`(命中走真 hash / 未命中走 `TIMING_DUMMY_HASH`)(沿 [`auth.service.ts:43`](auth.service.ts:43))
 - **refresh 失败统一** `BizCode.REFRESH_TOKEN_INVALID = 10007`,4 子原因(不存在 / 已撤销 / 已过期 / 重放)不区分;token 不存在时**不写 audit**
-- **logout 幂等 / 限流当前事实**:`/auth/logout` 不存在 / 已撤销 / 已过期均返 200,写 audit `extra.found` 区分;当前**未挂限流装饰器**(沿评审稿 §3.7 D-7,避免攻击者吃光合法用户配额);保持当前 logout / logout-all 的幂等、撤销与限流语义,如需调整幂等或限流策略,必须先做安全评审并补测试
+- **logout 幂等 / 限流当前事实**:`/auth/logout` 不存在 / 已撤销 / 已过期均返 200,但 finding #9 加固后**仅真实命中并完成撤销时**写 `auth.logout`(`extra.found=true`),未知/失效 token 零 audit;当前**未挂限流装饰器**(沿评审稿 §3.7 D-7,避免攻击者吃光合法用户配额);保持当前 logout / logout-all 的幂等、撤销与限流语义,如需调整幂等或限流策略,必须先做安全评审并补测试
 - **logout-all** 撤销该 user 全部未过期且未撤销的 refresh;当前复用 `@PasswordChangeThrottle()`
 - **access token 当前不主动吊销**(沿 D-4):由 `JWT_EXPIRES_IN` 自然过期 + JwtStrategy 每请求查库阻断 DISABLED / 软删用户;保持当前策略,如需引入 blacklist / Redis / tokenVersion 必须走设计决议
 - **password change**:本人改密在 [`users.service.ts:249`](../users/users.service.ts:249) 主动撤销该 user 全部未过期 refresh(`revokedReason='self-password-change'`);旧 access 仍可调直至自然过期(e2e 反向锁定)
@@ -42,7 +42,7 @@
 - ❌ **不**让 login 失败响应在 5 类场景间出现可区分 timing / message / status — 防账号枚举
 - ❌ **不**绕过 `TIMING_DUMMY_HASH`;命中或未命中都必须跑一次 `bcrypt.compare`
 - ❌ **不**在本 PR / 普通改动里调整 `/auth/logout` 幂等或限流策略;如需调整必须先做安全评审并补测试
-- ❌ **不**引入 LocalStrategy / OAuth / passport-* 其他策略(无设计决议)
+- ❌ **不**引入 LocalStrategy / OAuth / passport-\* 其他策略(无设计决议)
 - ❌ **不**改 `AuditMeta` 构造方式为隐式(cls-rs / AsyncLocalStorage);沿 controller `buildAuditMeta(req)` 显式传(沿 D6 v1.1 §11.2 / D8)
 - ❌ **不**破坏 password-reset 防枚举一致性:不为"号码不存在 / 禁用 / 软删"开任何可区分响应(字段 / message / 错误码细分);不在 send-code 写无效号侧痕;不把 10006 检查挪到码预检之前(密码 oracle);不让 reset 返回 token / 用户字段
 - ❌ **不**破坏 login-sms 防枚举一致性(同上范式):登录失败永远统一 24010,**不**细分、不混用 10004/10005;不在密码登录端点混入手机号/验证码入参(AGENTS §8 改写后契约);不给 OTP 登录加"自动注册"或"OTP+密码二要素"(goal 禁止域)

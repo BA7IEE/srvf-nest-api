@@ -9,6 +9,7 @@ import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { writeConfigAudit } from './config-audit.util';
 import { permissionSelect } from './permissions.select';
+import { RbacCacheService } from './rbac-cache.service';
 import { RbacService } from './rbac.service';
 import {
   CreateRbacRoleDto,
@@ -37,6 +38,7 @@ export class RbacRolesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
+    private readonly cache: RbacCacheService,
   ) {}
 
   // ============ helpers ============
@@ -279,7 +281,7 @@ export class RbacRolesService {
     //    **不实装 deletedByUserId**(沿用户拍板方案 A;schema + D7 v1.1 均无此字段);删除责任由
     //    audit_logs 的 rbac-role.delete 事件 + actorUserId 记录(第三轮 review §F&A-2 补齐;
     //    此前该留痕不存在——旧注释假称已有,系僵尸注释,现落地为真)。
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await tx.rbacRole.update({
         where: { id },
         data: { deletedAt: new Date() },
@@ -294,5 +296,8 @@ export class RbacRolesService {
       });
       return existing;
     });
+    // Finding #18:角色软删是对全部持有者的批量撤权；commit 后立即失效。
+    await this.cache.invalidateAllUsersWithRole(id);
+    return result;
   }
 }

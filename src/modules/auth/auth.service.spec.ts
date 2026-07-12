@@ -828,7 +828,7 @@ describe('AuthService (characterization, scoped)', () => {
       expect(logArg.extra).toEqual({ found: true });
     });
 
-    it('幂等:token 不存在 → 不抛仍返 null;不 update;audit found=false 且 actor/resource 为 null', async () => {
+    it('finding #9:token 不存在 → 不抛仍返 null;不 update;不写 audit', async () => {
       const prisma = makePrismaMock();
       const auditLogs = makeAuditLogsMock();
       prisma.refreshToken.findUnique.mockResolvedValue(null);
@@ -838,18 +838,10 @@ describe('AuthService (characterization, scoped)', () => {
 
       expect(res).toBeNull();
       expect(prisma.refreshToken.update).not.toHaveBeenCalled();
-      expect(auditLogs.log).toHaveBeenCalledWith(
-        expect.objectContaining({
-          event: 'auth.logout',
-          actorUserId: null,
-          resourceId: null,
-        }),
-      );
-      const logArg = auditLogs.log.mock.calls[0][0] as { extra: Record<string, unknown> };
-      expect(logArg.extra).toEqual({ found: false });
+      expect(auditLogs.log).not.toHaveBeenCalled();
     });
 
-    it('幂等:已撤销 → 不二次 update 仍返 null;audit found=false(actor 取 row.userId)', async () => {
+    it('finding #9:已撤销 → 不二次 update 仍返 null;不写 audit', async () => {
       const prisma = makePrismaMock();
       const auditLogs = makeAuditLogsMock();
       prisma.refreshToken.findUnique.mockResolvedValue(
@@ -861,14 +853,10 @@ describe('AuthService (characterization, scoped)', () => {
 
       expect(res).toBeNull();
       expect(prisma.refreshToken.update).not.toHaveBeenCalled();
-      expect(auditLogs.log).toHaveBeenCalledWith(
-        expect.objectContaining({ event: 'auth.logout', actorUserId: 'u-1', resourceId: 'rt-1' }),
-      );
-      const logArg = auditLogs.log.mock.calls[0][0] as { extra: Record<string, unknown> };
-      expect(logArg.extra).toEqual({ found: false });
+      expect(auditLogs.log).not.toHaveBeenCalled();
     });
 
-    it('幂等:已过期 → 不 update 仍返 null;audit found=false', async () => {
+    it('finding #9:已过期 → 不 update 仍返 null;不写 audit', async () => {
       const prisma = makePrismaMock();
       const auditLogs = makeAuditLogsMock();
       prisma.refreshToken.findUnique.mockResolvedValue(
@@ -880,8 +868,7 @@ describe('AuthService (characterization, scoped)', () => {
 
       expect(res).toBeNull();
       expect(prisma.refreshToken.update).not.toHaveBeenCalled();
-      const logArg = auditLogs.log.mock.calls[0][0] as { extra: Record<string, unknown> };
-      expect(logArg.extra).toEqual({ found: false });
+      expect(auditLogs.log).not.toHaveBeenCalled();
     });
   });
 

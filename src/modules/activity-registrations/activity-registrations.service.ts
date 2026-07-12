@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { auditPlaceholder } from '../../common/audit/audit-placeholder';
+import { escapeCsvField } from '../../common/csv/csv.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -760,8 +761,21 @@ export class ActivityRegistrationsService {
       if (act.capacity !== null) {
         await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${activityId} FOR UPDATE`;
       }
+      // Finding #3:条件式 no-op UPDATE 先锁定期望状态；并发 approve/reject 只有一方 count=1。
+      // 锁持有到事务结束,后续实际 update 不再存在读写窗口；败者在 audit/通知前退出。
+      const claimed = await tx.activityRegistration.updateMany({
+        where: {
+          id: reg.id,
+          activityId,
+          statusCode: reg.statusCode,
+          deletedAt: null,
+        },
+        data: { statusCode: reg.statusCode },
+      });
+      if (claimed.count === 0) {
+        throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+      }
       await this.assertCapacityNotExceeded(activityId, act.capacity, tx);
-
       const updated = await tx.activityRegistration.update({
         where: { id: reg.id },
         data: {
@@ -825,6 +839,18 @@ export class ActivityRegistrationsService {
         throw new BizException(transition.biz);
       }
 
+      const claimed = await tx.activityRegistration.updateMany({
+        where: {
+          id: reg.id,
+          activityId,
+          statusCode: reg.statusCode,
+          deletedAt: null,
+        },
+        data: { statusCode: reg.statusCode },
+      });
+      if (claimed.count === 0) {
+        throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
+      }
       const updated = await tx.activityRegistration.update({
         where: { id: reg.id },
         data: {
@@ -1189,30 +1215,20 @@ export class ActivityRegistrationsService {
       'cancelled_at',
       'cancel_reason',
     ];
-    // 入参类型显式收紧为标量(string / Date / null),避免落 Object.toString 的
-    // '[object Object]' 默认序列化(@typescript-eslint/no-base-to-string)。
-    const escapeField = (value: string | Date | null): string => {
-      if (value === null) return '';
-      const s = value instanceof Date ? value.toISOString() : value;
-      if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
-        return `"${s.replace(/"/g, '""')}"`;
-      }
-      return s;
-    };
     const lines: string[] = [HEADERS.join(',')];
     for (const r of rows) {
       lines.push(
         [
-          escapeField(r.id),
-          escapeField(r.memberId),
-          escapeField(r.member?.memberNo ?? null),
-          escapeField(r.member?.displayName ?? null),
-          escapeField(r.statusCode),
-          escapeField(r.registeredAt),
-          escapeField(r.reviewedAt),
-          escapeField(r.reviewNote),
-          escapeField(r.cancelledAt),
-          escapeField(r.cancelReason),
+          escapeCsvField(r.id),
+          escapeCsvField(r.memberId),
+          escapeCsvField(r.member?.memberNo ?? null),
+          escapeCsvField(r.member?.displayName ?? null),
+          escapeCsvField(r.statusCode),
+          escapeCsvField(r.registeredAt),
+          escapeCsvField(r.reviewedAt),
+          escapeCsvField(r.reviewNote),
+          escapeCsvField(r.cancelledAt),
+          escapeCsvField(r.cancelReason),
         ].join(','),
       );
     }

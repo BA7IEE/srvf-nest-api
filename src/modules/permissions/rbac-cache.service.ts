@@ -72,7 +72,8 @@ export class RbacCacheService {
 
   // 批量清"持有该角色的所有 users"的 cache(沿 D7 v1.1 §9.4)。
   // 终态 scoped-authz PR6:判权读源 = global RoleBinding,故失效集读 active global USER 绑定的 principalId
-  //   (等价替换旧 user_roles 读;回填后集合与旧一致)。失败仅 logger.warn,不抛(沿 v1 lastLoginAt 范式)。
+  //   (等价替换旧 user_roles 读;回填后集合与旧一致)。撤权方向查询失败时 fail-closed:
+  //   清空本进程全部权限缓存,让所有请求回源 DB(finding #17),仍不把缓存故障抛给主写路径。
   async invalidateAllUsersWithRole(roleId: string): Promise<void> {
     try {
       const bindings = await this.prisma.roleBinding.findMany({
@@ -90,9 +91,10 @@ export class RbacCacheService {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      this.invalidateAll();
       this.logger.warn(
         { errMessage: message, roleId },
-        '[RbacCache] invalidateAllUsersWithRole failed; cache state may be stale',
+        '[RbacCache] invalidateAllUsersWithRole failed; fell back to invalidateAll',
       );
     }
   }

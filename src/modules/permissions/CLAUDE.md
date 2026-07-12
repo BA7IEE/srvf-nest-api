@@ -17,7 +17,7 @@
 - **`UserRolesService` 内部换存储、对外契约零变(PR6)**:assign/list/revoke **读写 global RoleBinding**;端点路径 + 码(`rbac.user-role.{read,create,delete}`)+ 请求/响应 DTO 逐字不变;**撤销 = 软删**(status=ENDED + endedAt + deletedAt,非物理删);建/撤写 audit(`role-binding.{create,revoke}` + extra.viaPath='user-role';**直写 auditLog** 规避 PermissionsModule↔AuditLogsModule 模块环,本仓 forwardRef 零使用)
 - **`RbacService.getRoleIdsWithPermission(roleIds, code)` 是 PR8 additive**(终态 scoped-authz;冻结稿 §5.2「roleHasPermission」批量形态):仅供 `authz/` 模块三源虚拟 grant 的"角色含码"过滤;排除软删角色;**不走 RbacCacheService**(per-user 缓存键形不同,per-role 缓存留性能优化口);`can()/judge()/getUserPermissionCodes()` 逐字不变 —— 改此方法必跑 authz 等价矩阵 e2e(`authz-rbac-equivalence`)
 - **`RbacCacheService` 已 export**(PR6):供 `role-bindings/` 模块在 USER 主体的 GLOBAL 绑定建/改/软删后失效该 user 权限缓存(失效链不破)
-- **`RbacCacheService` 是 permission resolution cache**(Map + TTL,沿 `RBAC_CACHE_TTL_SECONDS` env / app.config 默认 1800s);**不是**用户身份有效性缓存(身份每请求查库,在 JwtStrategy);invalidate 入口 3 个:`invalidateUser` / `invalidateAllUsersWithRole`(失败仅 logger.warn 不抛)/ `invalidateAll`
+- **`RbacCacheService` 是 permission resolution cache**(Map + TTL,沿 `RBAC_CACHE_TTL_SECONDS` env / app.config 默认 1800s);**不是**用户身份有效性缓存(身份每请求查库,在 JwtStrategy);invalidate 入口 3 个:`invalidateUser` / `invalidateAllUsersWithRole`(finding #17 起持有人查询失败会 fail-closed 退化 `invalidateAll`,仍不抛)/ `invalidateAll`
 - **raw permission ≠ app capability**(沿 D-5.3 + Phase 0.7 §3.2):
   - `GET /api/system/v1/rbac/me/permissions`(本模块,raw `Permission.code` 集合 + 业务角色摘要;SUPER_ADMIN 返 Permission.code 全集而**非** `["*"]`)
   - `GET /api/app/v1/me/capabilities`(在 `users/` 模块,product-level capability map,经四维降权;**不是**授权证明,后端写端点必须重新做四维校验)
@@ -40,7 +40,7 @@
 - ❌ **不**弱化 `SUPER_ADMIN > ADMIN > USER` 三档身份边界;**不**让 RBAC 业务角色拿到等同 `SUPER_ADMIN` 的短路语义
 - ❌ **不**引入 CASL / 完整动态权限平台 / 新权限 DSL(无设计决议)
 - ❌ **不**把 `RbacCacheService` 当用户身份缓存用 — invalidate 链路也只清权限点缓存,不阻断已签 JWT
-- ❌ **不**改 `rbac-cache.service.ts` 失败语义(`invalidateAllUsersWithRole` 失败 logger.warn 不抛是显式范式)
+- ❌ **不**让 `invalidateAllUsersWithRole` 查询失败后保留旧权限缓存:finding #17 已锁定 fail-closed `invalidateAll()` + warn + 不抛；不改成 fail-open 或阻断主写路径
 
 ## Validation
 

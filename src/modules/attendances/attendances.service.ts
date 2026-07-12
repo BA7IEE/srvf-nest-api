@@ -1150,6 +1150,13 @@ export class AttendancesService {
       }
 
       const reviewedAt = new Date();
+      const claimed = await tx.attendanceSheet.updateMany({
+        where: { id: sheet.id, statusCode: sheet.statusCode, deletedAt: null },
+        data: { statusCode: sheet.statusCode },
+      });
+      if (claimed.count === 0) {
+        throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+      }
       const updated = await tx.attendanceSheet.update({
         where: { id: sheet.id },
         data: {
@@ -1210,6 +1217,15 @@ export class AttendancesService {
         select: recordWithMemberSelect,
         orderBy: { checkInAt: 'asc' },
       });
+
+      // Findings #4/#6:先用期望状态原子占有 Sheet；并发败者在任何明细软删前 abort。
+      const claimed = await tx.attendanceSheet.updateMany({
+        where: { id: sheet.id, statusCode: sheet.statusCode, deletedAt: null },
+        data: { statusCode: sheet.statusCode },
+      });
+      if (claimed.count === 0) {
+        throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+      }
       await tx.attendanceRecord.updateMany({
         where: { sheetId: id, deletedAt: null },
         data: { deletedAt: reviewedAt },
@@ -1278,6 +1294,13 @@ export class AttendancesService {
       }
 
       const finalReviewedAt = new Date();
+      const claimed = await tx.attendanceSheet.updateMany({
+        where: { id: sheet.id, statusCode: sheet.statusCode, deletedAt: null },
+        data: { statusCode: sheet.statusCode },
+      });
+      if (claimed.count === 0) {
+        throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
+      }
       const updated = await tx.attendanceSheet.update({
         where: { id: sheet.id },
         data: {
@@ -1479,6 +1502,14 @@ export class AttendancesService {
       });
 
       const finalReviewedAt = new Date();
+      // Findings #5/#6:终审状态守卫先于明细软删；并发败者不再破坏 winner 的 records。
+      const claimed = await tx.attendanceSheet.updateMany({
+        where: { id: sheet.id, statusCode: sheet.statusCode, deletedAt: null },
+        data: { statusCode: sheet.statusCode },
+      });
+      if (claimed.count === 0) {
+        throw new BizException(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID);
+      }
       // records 跟随软删(沿 D8 主路径)
       await tx.attendanceRecord.updateMany({
         where: { sheetId: id, deletedAt: null },
