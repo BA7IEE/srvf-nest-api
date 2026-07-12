@@ -1813,6 +1813,9 @@ model RecruitmentApplication {
   certificateImages Json? // 证书图 storage keys(按类别分组;R6 长期档案的暂存位)
   // 招新证书审核闭环:按类别记录 approved/rejected + at/by/note(无 PII);promote 时与证书图一并清空。
   certificateReviewStatus Json?
+  // 招新证书发证信息:按类别记录 { issuingOrg, issuedAt:'YYYY-MM-DD' }(无 PII)。
+  // promote 时搬入 Certificate 真值并清空;存量 null 由 promote 沿既有占位机构/当天日期回退。
+  certificateIssuanceInfo Json?
 
   // ===== 脱敏留存字段(永久行级保留)=====
   documentTypeCode String // 证件类型(判非大陆证件/人工核验;非高敏)

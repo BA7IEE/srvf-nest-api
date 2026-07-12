@@ -14,9 +14,15 @@ import {
   allThresholdsComplete,
   isPromotable,
 } from './recruitment.constants';
+import {
+  certificateIssuanceForCategory,
+  certificateJsonRecord,
+  certificateReviewForCategory,
+} from './recruitment-certificate-json';
 import { deriveRecruitmentStage } from './recruitment-progress-presenter';
 import type {
   RecruitmentApplicationAdminDto,
+  RecruitmentCertificateAdminSummaryDto,
   RecruitmentOcrDetailDto,
   RecruitmentSubmitResultDto,
 } from './recruitment.dto';
@@ -35,6 +41,33 @@ export function maskPhone(phone: string): string {
 /** openid 掩码(<=8 全掩;否则留前 4 后 4)。 */
 export function maskOpenid(openid: string): string {
   return openid.length <= 8 ? '***' : `${openid.slice(0, 4)}****${openid.slice(-4)}`;
+}
+
+export function buildAdminCertificateSummaries(
+  certificateImages: unknown,
+  certificateReviewStatus: unknown,
+  certificateIssuanceInfo: unknown,
+): RecruitmentCertificateAdminSummaryDto[] {
+  const images = certificateJsonRecord(certificateImages);
+  const reviews = certificateJsonRecord(certificateReviewStatus);
+  const issuanceInfo = certificateJsonRecord(certificateIssuanceInfo);
+  const categories = [
+    ...new Set([...Object.keys(images), ...Object.keys(reviews), ...Object.keys(issuanceInfo)]),
+  ].sort();
+  return categories.map((category) => {
+    const review = certificateReviewForCategory(reviews, category);
+    const issuance = certificateIssuanceForCategory(issuanceInfo, category);
+    return {
+      category,
+      imageCount: Array.isArray(images[category]) ? images[category].length : 0,
+      issuingOrg: issuance?.issuingOrg ?? null,
+      issuedAt: issuance?.issuedAt ?? null,
+      reviewStatus: review?.status ?? null,
+      reviewedAt: review?.at ?? null,
+      reviewedBy: review?.by ?? null,
+      reviewNote: review?.note ?? null,
+    };
+  });
 }
 
 /**
@@ -97,6 +130,11 @@ export function toAdminApplicationDto(
     ocrValidDate: masked ? null : app.ocrValidDate,
     hasIdCardCropImage: app.idCardCropImageKey !== null,
     hasIdCardPortraitImage: app.idCardPortraitImageKey !== null,
+    certificates: buildAdminCertificateSummaries(
+      app.certificateImages,
+      app.certificateReviewStatus,
+      app.certificateIssuanceInfo,
+    ),
     thresholdMarks:
       (app.thresholdMarks as Record<string, { at: string; by: string }> | null) ?? null,
     thresholdsComplete: allThresholdsComplete(app.thresholdMarks as ThresholdMarks | null),

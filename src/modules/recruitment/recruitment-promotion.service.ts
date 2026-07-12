@@ -33,6 +33,10 @@ import {
   decidePromotionIssuance,
   formatMemberNo,
 } from './recruitment.constants';
+import {
+  certificateIssuanceForCategory,
+  certificateReviewForCategory,
+} from './recruitment-certificate-json';
 import type {
   PromoteResultDto,
   PromoteSkippedItemDto,
@@ -68,7 +72,7 @@ const VOLUNTEER_GRADE_CODE = 'volunteer';
 const VOL_ORG_CODE = 'VOL';
 // 招新可用性收口 F7(评审稿 §2.9 R6):promote 为已上传证书图的类别自动建 pending Certificate。
 // 字面镜像 certificates.service 的建行契约(certStatusCode='pending';后续走既有 verify/reject 核验);
-// issuingOrg/issuedAt 为待核验占位(申请人自报材料,核验人确认后经既有 certificates 面修正)。
+// 存量报名没有 certificateIssuanceInfo 时才回退以下占位；新上传按申请人填写真值搬运。
 const CERT_STATUS_PENDING = 'pending';
 const RECRUITMENT_CERT_ISSUING_ORG = '申请人自报(招新上传,待核验)';
 
@@ -574,15 +578,26 @@ export class RecruitmentPromotionService {
     if (certImages) {
       for (const [category, keys] of Object.entries(certImages)) {
         if (!Array.isArray(keys) || keys.length === 0) continue;
+        const issuance = certificateIssuanceForCategory(a.certificateIssuanceInfo, category);
+        const review = certificateReviewForCategory(a.certificateReviewStatus, category);
+        let verifyNote: string | undefined;
+        if (review?.status === 'approved') {
+          const reviewer = await tx.user.findUnique({
+            where: { id: review.by },
+            select: { username: true },
+          });
+          verifyNote = `招新阶段图片审核已通过 ${review.at} by ${reviewer?.username ?? review.by}`;
+        }
         await tx.certificate.create({
           data: {
             memberId: member.id,
             certTypeCode: category,
-            issuingOrg: RECRUITMENT_CERT_ISSUING_ORG,
-            issuedAt: normalizeDateOnly(now.toISOString()),
+            issuingOrg: issuance?.issuingOrg ?? RECRUITMENT_CERT_ISSUING_ORG,
+            issuedAt: normalizeDateOnly(issuance?.issuedAt ?? now.toISOString()),
             certStatusCode: CERT_STATUS_PENDING,
             isInternal: false,
             imageKeys: keys,
+            ...(verifyNote ? { verifyNote } : {}),
           },
           select: { id: true },
         });
@@ -616,6 +631,7 @@ export class RecruitmentPromotionService {
         // F7(R6):证书图已按类别搬 Certificate.imageKeys → 报名行清空(blob 单一属主=certificate)。
         certificateImages: Prisma.DbNull,
         certificateReviewStatus: Prisma.DbNull,
+        certificateIssuanceInfo: Prisma.DbNull,
         // 十项收口刀C:OCR 产物与换绑轨迹一并即时清
         ocrAddress: null,
         ocrNation: null,

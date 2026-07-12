@@ -3,7 +3,9 @@ import { HttpStatus } from '@nestjs/common';
 // BizCode 常量表
 //
 // 当前状态(随实施滚动维护;每次新增模块码后校对):
-// - 175 个 BizCode(2026-06-25 亲核:grep 'httpStatus:' / 'code: NNNNN' / 去重三法交叉;含 CMS content 290xx +5
+// - 招新证书闭环刀A(2026-07-13):28xxx +2(28054 已审核通过禁止重传 / 28055 未审核通过禁止标门槛)
+// - 230 个 BizCode(2026-07-13 亲核:grep `httpStatus: HttpStatus` 共 230;本刀新增 2 枚后终值)
+// - 历史 2026-06-25 快照为 175 个 BizCode(彼时含 CMS content 290xx +5
 //   + 活动闭环硬化 20123 报名截止 +1 + 统一通知 310xx +5;2026-06-13 的「141」系彼时快照,此后 realname 27xxx
 //   + 招新·入队 28xxx(280xx/281xx/282xx)+ #399 review 错误码增量(13014 / 19010 / 30103)+ CMS content 290xx 5 码
 //   + 20123 ACTIVITY_REGISTRATION_DEADLINE_PASSED〔201xx activities 段〕+ 通知 310xx 5 码),覆盖 25 个编号段
@@ -1082,6 +1084,19 @@ export const BizCode = {
     code: 28053,
     message: '请先上传对应证书图片后再标记门槛完成',
     httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  // 招新证书闭环刀A(2026-07-13):
+  // - 28054:申请人不得覆盖已 approved 类别;管理员驳回后图片与门槛清除,上传自然复通。
+  // - 28055:直接/批量标证书类门槛须先有对应类别 approved 审核结论;清标不受影响。
+  RECRUITMENT_CERTIFICATE_ALREADY_APPROVED: {
+    code: 28054,
+    message: '该类证书已审核通过,如需更换请联系管理员',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  RECRUITMENT_CERTIFICATE_NOT_APPROVED: {
+    code: 28055,
+    message: '该类证书尚未审核通过,无法标记门槛完成',
+    httpStatus: HttpStatus.CONFLICT,
   },
   // 招新可用性收口 F1(2026-07-11;评审稿 §2.5/E-U-1):
   // - 28060:付费 OCR 按 IP 北京自然日封顶(recognize + submit 共享;env RECRUITMENT_OCR_DAILY_IP_LIMIT

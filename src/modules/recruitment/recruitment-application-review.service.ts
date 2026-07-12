@@ -41,7 +41,10 @@ import {
   isProfileExtraWithinLimit,
   isValidChineseId,
 } from './recruitment.constants';
-import { certificateJsonOrDbNull } from './recruitment-certificate-json';
+import {
+  certificateJsonOrDbNull,
+  certificateReviewForCategory,
+} from './recruitment-certificate-json';
 import { resolveBatchMatches } from './recruitment-batch-matching';
 import { toAdminApplicationDto } from './recruitment-applications.presenter';
 import type {
@@ -109,6 +112,12 @@ export class RecruitmentApplicationReviewService {
           images[certificateCategory].length === 0
         ) {
           throw new BizException(BizCode.RECRUITMENT_CERTIFICATE_IMAGE_REQUIRED);
+        }
+        if (
+          certificateReviewForCategory(row.certificateReviewStatus, certificateCategory)?.status !==
+          'approved'
+        ) {
+          throw new BizException(BizCode.RECRUITMENT_CERTIFICATE_NOT_APPROVED);
         }
       }
       const { marks, allComplete, nextStatus } = this.buildThresholdMutation(
