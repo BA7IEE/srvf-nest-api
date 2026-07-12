@@ -7,16 +7,16 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(六处一致) | **v0.43.0**(2026-07-13;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;沿本 goal 明确拍板,tag `v0.43.0` 指向 bump #567 `f9625708`;GitHub Release「v0.43.0 — 招新证书闭环补强（刀A）+ team-join 小刀（刀B）」标 Latest。**⚠️ 前端须适配五条**:证书上传必填 `issuingOrg`/`issuedAt`;approved 类别禁重传;证书标门槛须先 approved;微信查进度改活跃优先;一键入队复查开放部门清单) |
-| `main` HEAD | v0.44.0 安全·并发·性能加固 landing 候选点(冻结评审 #570 + P1 #571 + P2 #572 + P3 #573;版本仍为 v0.43.0,待独立 bump/handoff/tag/Release) |
-| open PR / 工作树 / Unreleased | **本 landing PR 合入后 0** open PR / clean / `## Unreleased` **1 个 v0.44.0 候选块**。终值:权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` **336** / controller 66 / 模块 35 / migration **48** / 角色 7 / BizCode **231** / AuditLogEvent **99** |
-| 最新 handoff | [`archive/handoff/v0.43.0.md`](archive/handoff/v0.43.0.md)(历史快照;沿本 goal 的 tag@bump 拍板,tag 指 bump `f9625708` 而非 handoff #568 `fd9dfed1`;合入后不回改;接续 [`v0.42.0.md`](archive/handoff/v0.42.0.md)) |
+| 版本(六处一致) | **v0.44.0**(2026-07-13;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #576 squash `af347055`;GitHub Release「v0.44.0 — 安全·并发·性能加固」标 Latest。**⚠️ 行为变化六条**:RoleBinding 新增 30102/30101 拒绝;审批竞争败者 STATUS_INVALID;CSV 危险首字符前缀单引号;garbage logout 不写 audit;SVG/HTML/XHTML 恒拒且魔数不符 13016;同人重叠考勤并发仅一方成功) |
+| `main` HEAD | v0.44.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #576 `af347055`;收口链 = 冻结评审 #570 + P1 #571 + P2 #572 + P3 #573 + landing #574 + bump #575 + handoff #576 + tag/Release + 本回填 PR) |
+| open PR / 工作树 / Unreleased | **本回填 PR 合入后 0** open PR / clean / `## Unreleased` **0 条**。终值:权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` **336** / controller 66 / 模块 35 / migration **48** / 角色 7 / BizCode **231** / AuditLogEvent **99** |
+| 最新 handoff | [`archive/handoff/v0.44.0.md`](archive/handoff/v0.44.0.md)(历史快照;tag 指向该 handoff #576 squash `af347055`;接续 [`v0.43.0.md`](archive/handoff/v0.43.0.md);合入后不回改) |
 
 ## 2. 当前系统已具备能力
 
 > 清单级;事实权威:字段 = [`schema.prisma`](../prisma/schema.prisma);接口 = `/api/docs` + [`EXPECTED_ROUTES`](../test/contract/openapi.contract-spec.ts) + snapshot;BizCode = `biz-code.constant.ts` + CHANGELOG。
 
-- **v0.44.0 安全·并发·性能加固候选(2026-07-13;D 档)**:2026-07-13 全仓审计 26 findings 中 25 条属实——#1–#7/#9/#11/#13–#15/#17–#18/#22–#26 已修,#8/#10/#12/#19–#21 接受登记,#16 不成立。RoleBinding 高权/末位保护与 update audit、审批原子竞争守卫、RBAC 写侧失效、CSV 公式转义、logout 审计去污染、附件 MIME+魔数、CSV 真流式、考勤按人串行、certificate 附件 K→1 均已落地。0 schema/migration/endpoint/permission/controller/module/role/dependency;唯一新增 BizCode 13016 + AuditLogEvent `role-binding.update`;MIME 精确黑名单 +3。main E 档终验 unit 80/2347 + contract 606 + e2e 138/2792 全绿。
+- **v0.44.0 安全·并发·性能加固(已发布 2026-07-13;D 档)**:2026-07-13 全仓审计 26 findings 终态 = 19 已修 / 6 接受登记 / 1 不成立。RoleBinding 高权/末位保护与 update audit、审批原子竞争守卫、RBAC 写侧失效、CSV 公式转义、logout 审计去污染、附件 MIME+魔数、CSV 真流式、考勤按人串行、certificate 附件 K→1 均已落地。0 schema/migration/endpoint/permission/controller/module/role/dependency;唯一新增 BizCode 13016 + AuditLogEvent `role-binding.update`;MIME 精确黑名单 +3。main E 档终验 unit 80/2347 + contract 606 + e2e 138/2792 全绿;bump CI + Docker build + Docker Smoke 全绿。
 
 - **v0.43.0 招新证书闭环刀A(已发布 2026-07-13;D 档)**:公开证书上传契约新增必填 `issuingOrg`/`issuedAt` + 第 48 migration `certificateIssuanceInfo Json?`;已 approved 类别禁重传(28054);红十字/BSAFE 直接/批量标门槛须对应证书 approved(28055);上传写改为 `FOR UPDATE` 后重算三份 JSON,避免整 JSON 并发覆盖;promote 搬发证真值、存量回退占位并把招新 approved 结论写 `Certificate.verifyNote`(终态仍 pending);admin 报名 DTO additive `certificates` 摘要;微信 query 与手机 query-by-phone 统一「活跃优先→最近终态→promoted 锚」。0 新端点 / 0 权限码 / 0 controller / 0 模块 / 0 角色;`EXPECTED_ROUTES` 336 不变;BizCode +2;migration 47→48。
 
