@@ -18,6 +18,7 @@
 - **`RbacService.getRoleIdsWithPermission(roleIds, code)` 是 PR8 additive**(终态 scoped-authz;冻结稿 §5.2「roleHasPermission」批量形态):仅供 `authz/` 模块三源虚拟 grant 的"角色含码"过滤;排除软删角色;**不走 RbacCacheService**(per-user 缓存键形不同,per-role 缓存留性能优化口);`can()/judge()/getUserPermissionCodes()` 逐字不变 —— 改此方法必跑 authz 等价矩阵 e2e(`authz-rbac-equivalence`)
 - **`RbacCacheService` 已 export**(PR6):供 `role-bindings/` 模块在 USER 主体的 GLOBAL 绑定建/改/软删后失效该 user 权限缓存(失效链不破)
 - **`RbacCacheService` 是 permission resolution cache**(Map + TTL,沿 `RBAC_CACHE_TTL_SECONDS` env / app.config 默认 1800s);**不是**用户身份有效性缓存(身份每请求查库,在 JwtStrategy);invalidate 入口 3 个:`invalidateUser` / `invalidateAllUsersWithRole`(finding #17 起持有人查询失败会 fail-closed 退化 `invalidateAll`,仍不抛)/ `invalidateAll`
+- **多实例已知边界(finding #19,接受记录)**:该 Map 与 invalidate 都仅作用本进程;当前部署事实是单实例,今日无危害。横向扩容前必须按 `docs/deployment.md` checklist 改为跨实例失效广播/共享缓存或缩短 TTL;本线不引 Redis/pub-sub。
 - **raw permission ≠ app capability**(沿 D-5.3 + Phase 0.7 §3.2):
   - `GET /api/system/v1/rbac/me/permissions`(本模块,raw `Permission.code` 集合 + 业务角色摘要;SUPER_ADMIN 返 Permission.code 全集而**非** `["*"]`)
   - `GET /api/app/v1/me/capabilities`(在 `users/` 模块,product-level capability map,经四维降权;**不是**授权证明,后端写端点必须重新做四维校验)

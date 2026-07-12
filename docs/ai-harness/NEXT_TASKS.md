@@ -86,6 +86,13 @@
 > #399 §3 的 13 项 P3:**9 项已修**(#409-#413,见归档区 + 冻结报告 ✅ P3 处理状态)、**1 项延后**(F18 CI audit gate,见上 P2-6 末项 → 归 G-12)、**1 项已完成移入已完成项归档区**(F13,见文末;review #484 G27),以下 2 项 R0 triage 复核后**接受+登记**:
 - **F7 付费核验 cost-DoS**(P3)— 同 openid 可用不同伪造身份证号无限提交、每条直达付费实名核验(去重键 `(cycleId,idCardNumber)` 无 per-openid 上限),与已接受的 28003 枚举面**同源**(current-state §4)。**真实腾讯云实名核验休眠(DevStub 免费)→ 今日零成本**;接通才激活(类 F2/COS 接通前非紧急)。彻底修 = per-openid 配额(改报名去重语义,属产品决策)→ **真实通道接通触发再评**。
 - **F8 promote 写字典码契约**(P3)— promote 写 `MemberProfile.genderCode`/`documentTypeCode` 不经 canonical 字典校验。**R0 复核降级**:`isForeignDocument` 令非 `mainland_id` 即 foreign(不进一键发号),故 promote 只写固定 canonical 码 `mainland_id`/`male`/`female`(身份证派生 / 非用户可控,**无 F3 式注入污染**),且 profile 码当前无字典校验消费点 → **零运行时危害**。真修 = 保证 prod 字典 seed 含 `male`/`female`/`mainland_id` item code(**seed/ops 不变量**;加 promote 断言反会把潜在不一致硬化成 promote 失败、且 demo seed `demo-*` 会打挂既有 e2e)→ seed/字典治理时一并保障。
+
+### P2-8 v0.44.0 安全·并发·性能审计接受项 — **✅ 结论冻结,诉求/扩容触发再立项**
+- **finding #8 考勤 DB 排他约束**:不引 `btree_gist` / range exclusion constraint;本仓首个 DB 扩展、腾讯云托管库可用性未验、同人同时录两单触发极罕见。#7 已以事务 advisory lock 保护所有应用写路径;若出现绕过应用直写或真实冲突,再单独评审 DB 约束。
+- **findings #10/#12 附件全量扫描后内存分页**:`list` 与 `listByOwner` 仍先做 ownership 可见性过滤再分页,当前规模下是理论性能问题(#12 单 owner 更小);若命中总量达到万级或接口延迟/内存指标越线,再设计可见性下推/两阶段分页。#11 certificate N+1 已在 v0.44.0 单独修复为批量 Map。
+- **finding #19 RBAC 多实例缓存失效**:进程内 Map 无跨节点广播属实,但当前部署为单实例且 `deployment.md` 已列扩容 checklist;身份禁用/软删仍由 JwtStrategy 每请求查库即时生效。横向扩容前再选跨实例失效广播、共享缓存或缩短 TTL;本线不引 Redis/pub-sub。
+- **findings #20/#21 post-commit 通知可能永久丢失**:涉及活动报名审批与考勤终审两处仅站内、非权威提醒;业务结果已安全落库可另查。可靠补发需 outbox/queue/后台任务,与 no-cron/queue 红线冲突,收益不足,故不写补发代码。
+- **finding #16 不成立**:常规撤权路径均同步失效缓存,1800s TTL 仅兜底;真实残余已由 #17 查询失败退全清、#18 角色/权限删除失效、#19 多实例边界分别覆盖,不另改代码。
 ---
 
 ## 已完成项归档区

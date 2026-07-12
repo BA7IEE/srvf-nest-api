@@ -197,6 +197,7 @@ function makePrismaMock() {
   const member = { findFirst: jest.fn<Promise<{ id: string } | null>, [unknown]>() };
   const certificate = {
     findFirst: jest.fn<Promise<{ id: string; memberId: string } | null>, [unknown]>(),
+    findMany: jest.fn<Promise<Array<{ id: string; memberId: string }>>, [unknown]>(),
   };
   const activity = { findFirst: jest.fn<Promise<{ id: string } | null>, [unknown]>() };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
@@ -882,6 +883,53 @@ describe('AttachmentsService (characterization)', () => {
       expect(page.total).toBe(1);
       expect(page.items).toHaveLength(1);
       expect(page.items[0].id).toBe('a-self');
+    });
+
+    it('finding #11:list 含 K 张证书附件时 Certificate 查询由 K 降为 1', async () => {
+      const prisma = makePrismaMock();
+      prisma.attachment.findMany.mockResolvedValue([
+        makeAttachmentRow({ id: 'cert-att-1', ownerType: 'certificate', ownerId: 'cert-1' }),
+        makeAttachmentRow({ id: 'cert-att-2', ownerType: 'certificate', ownerId: 'cert-1' }),
+        makeAttachmentRow({ id: 'cert-att-3', ownerType: 'certificate', ownerId: 'cert-2' }),
+      ]);
+      prisma.certificate.findMany.mockResolvedValue([
+        { id: 'cert-1', memberId: 'mem-1' },
+        { id: 'cert-2', memberId: 'mem-2' },
+      ]);
+      const service = makeService(prisma, { rbac: makeRbacMock(true) });
+
+      const page = await service.list(
+        { page: 1, pageSize: 20 },
+        makeCurrentUser({ memberId: 'mem-1' }),
+      );
+
+      expect(page.total).toBe(3);
+      expect(prisma.certificate.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.certificate.findMany).toHaveBeenCalledWith({
+        where: { id: { in: ['cert-1', 'cert-2'] }, deletedAt: null },
+        select: { id: true, memberId: true },
+      });
+      expect(prisma.certificate.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('finding #11:listByOwner certificate 真实性与 K 行 scope 共用 1 次批量查询', async () => {
+      const prisma = makePrismaMock();
+      prisma.attachmentTypeConfig.findFirst.mockResolvedValue(makeTypeConfig());
+      prisma.certificate.findMany.mockResolvedValue([{ id: 'cert-1', memberId: 'mem-1' }]);
+      prisma.attachment.findMany.mockResolvedValue([
+        makeAttachmentRow({ id: 'cert-att-1', ownerType: 'certificate', ownerId: 'cert-1' }),
+        makeAttachmentRow({ id: 'cert-att-2', ownerType: 'certificate', ownerId: 'cert-1' }),
+      ]);
+      const service = makeService(prisma, { rbac: makeRbacMock(true) });
+
+      const page = await service.listByOwner(
+        { page: 1, pageSize: 20, ownerType: 'certificate', ownerId: 'cert-1' },
+        makeCurrentUser({ memberId: 'mem-1' }),
+      );
+
+      expect(page.total).toBe(2);
+      expect(prisma.certificate.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.certificate.findFirst).not.toHaveBeenCalled();
     });
 
     it('listMyUploaded:按 uploadedBy 过滤,且不调用 rbac.can(本人查自己豁免)', async () => {

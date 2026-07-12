@@ -253,6 +253,7 @@ export class AttachmentsService {
     ownerType: AttachmentOwnerType,
     ownerId: string,
     user: CurrentUserPayload,
+    certificateMemberById?: ReadonlyMap<string, string>,
   ): Promise<{
     resource: { ownerType: 'member'; ownerId: string } | undefined;
     scope: 'self' | 'other' | null;
@@ -265,6 +266,12 @@ export class AttachmentsService {
     let rbacMemberId: string;
     if (ownerType === 'member') {
       rbacMemberId = ownerId;
+    } else if (certificateMemberById !== undefined) {
+      const memberId = certificateMemberById.get(ownerId);
+      if (memberId === undefined) {
+        throw new BizException(BizCode.ATTACHMENT_OWNER_NOT_FOUND);
+      }
+      rbacMemberId = memberId;
     } else {
       // certificate:先查 Certificate.memberId
       const cert = await this.prisma.certificate.findFirst({
@@ -282,6 +289,19 @@ export class AttachmentsService {
       resource: { ownerType: 'member', ownerId: rbacMemberId },
       scope: isSelf ? 'self' : 'other',
     };
+  }
+
+  // finding #11:list/listByOwner 的 certificate scope 映射一次批量取齐,避免每行 findFirst。
+  private async loadCertificateMemberMap(
+    certificateIds: readonly string[],
+  ): Promise<ReadonlyMap<string, string>> {
+    const ids = [...new Set(certificateIds)];
+    if (ids.length === 0) return new Map();
+    const certificates = await this.prisma.certificate.findMany({
+      where: notDeletedWhere({ id: { in: ids } }),
+      select: { id: true, memberId: true },
+    });
+    return new Map(certificates.map((certificate) => [certificate.id, certificate.memberId]));
   }
 
   // 4. mime 白名单校验(D7 §6.2 step 6):
@@ -513,16 +533,19 @@ export class AttachmentsService {
 
     // 先取全部命中行(沿 D7 v1.0 §6.x:逐条 ownership 过滤后再分页;
     // 用户拍板 Q12:total 按"过滤后可见数量"返,避免泄露不可见资源数量)。
-    // 性能边界:管理后台列表场景;若数据膨胀至万级再走批量 ownership 优化(后续 PR)。
+    // 性能边界:finding #11 certificate scope 已批量映射;#10 全量扫描+内存分页按现规模接受。
     const allRows = await this.prisma.attachment.findMany({
       where,
       select: attachmentSelect,
       orderBy: { createdAt: 'desc' },
     });
+    const certificateMemberById = await this.loadCertificateMemberMap(
+      allRows.filter((row) => row.ownerType === 'certificate').map((row) => row.ownerId),
+    );
 
     const visible: SafeAttachment[] = [];
     for (const row of allRows) {
-      if (await this.canViewAttachment(user, row)) {
+      if (await this.canViewAttachment(user, row, certificateMemberById)) {
         visible.push(row);
       }
     }
@@ -648,8 +671,18 @@ export class AttachmentsService {
     // 1. ownerType 双层校验(避免 enum 之外的字符串被传)
     await this.assertOwnerTypeAllowed(query.ownerType);
 
-    // 2. ownerId 真实性校验(避免无效 cuid 返空列表泄露语义)
-    await this.assertOwnerExists(query.ownerType as AttachmentOwnerType, query.ownerId);
+    // 2. ownerId 真实性校验(避免无效 cuid 返空列表泄露语义)。certificate 同批量映射查询合并。
+    const certificateMemberById =
+      query.ownerType === 'certificate'
+        ? await this.loadCertificateMemberMap([query.ownerId])
+        : undefined;
+    if (query.ownerType === 'certificate') {
+      if (!certificateMemberById?.has(query.ownerId)) {
+        throw new BizException(BizCode.ATTACHMENT_OWNER_NOT_FOUND);
+      }
+    } else {
+      await this.assertOwnerExists(query.ownerType as AttachmentOwnerType, query.ownerId);
+    }
 
     // 3. 拉全部归属附件,逐条 ownership 过滤
     const allRows = await this.prisma.attachment.findMany({
@@ -659,7 +692,7 @@ export class AttachmentsService {
     });
     const visible: SafeAttachment[] = [];
     for (const row of allRows) {
-      if (await this.canViewAttachment(user, row)) {
+      if (await this.canViewAttachment(user, row, certificateMemberById)) {
         visible.push(row);
       }
     }
@@ -703,7 +736,11 @@ export class AttachmentsService {
   // ============ 内部:list / by-owner 共用 view ownership 判定 ============
 
   // 给定一条 attachment 行,判当前用户能否 view(走 .self / .other / 粗粒度 RBAC)。
-  private async canViewAttachment(user: CurrentUserPayload, row: SafeAttachment): Promise<boolean> {
+  private async canViewAttachment(
+    user: CurrentUserPayload,
+    row: SafeAttachment,
+    certificateMemberById?: ReadonlyMap<string, string>,
+  ): Promise<boolean> {
     if (!ATTACHMENT_OWNER_TYPES.includes(row.ownerType as AttachmentOwnerType)) {
       // 数据库行 ownerType 不在 enum 内(理论上不该发生;防御性返 false)
       return false;
@@ -712,6 +749,7 @@ export class AttachmentsService {
       row.ownerType as AttachmentOwnerType,
       row.ownerId,
       user,
+      certificateMemberById,
     );
     const action = `attachment.view.${row.ownerType}${scope ? '.' + scope : ''}`;
     return this.rbac.can(user, action, resource);
@@ -722,7 +760,7 @@ export class AttachmentsService {
   // 沿评审 §8.3 + §8.4 + Q-10-1 到 Q-10-15 拍板:
   // - upload-url:校验 owner/RBAC/mime/size/PII → 生成 key + signed URL + uploadToken;**不落库 / 不审计**
   // - confirm-upload:验 token + headObject + size + 受支持 MIME 魔数一致 → 落库 + audit `attachment.upload`
-  // - 0 新 BizCode(沿 §8.3.5 + §8.4.5;复用 13001/13010-13013/13015/30100/40100)
+  // - v0.44.0 finding #23 唯一新增 13016(内容与声明 MIME 不符);其余继续复用既有码
   // - 0 新 AuditLogEvent(沿 B4)
   // - 0 新 RBAC 权限点(沿 B3;复用 attachment.upload.<type>.<scope>)
 
