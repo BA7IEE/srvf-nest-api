@@ -8,12 +8,17 @@ import {
   APP_STATUS_VERIFIED,
   APP_STATUS_WITHDRAWN,
   RISK_LEVEL_HIGH,
+  RECRUITMENT_CERT_CATEGORIES,
   THRESHOLD_CODES,
   type ThresholdCode,
   type ThresholdMarks,
   allThresholdsComplete,
 } from './recruitment.constants';
-import type { RecruitmentApplicationProgressDto, RecruitmentTodoItemDto } from './recruitment.dto';
+import type {
+  RecruitmentApplicationProgressDto,
+  RecruitmentCertificateProgressItemDto,
+  RecruitmentTodoItemDto,
+} from './recruitment.dto';
 
 // 招新闭环优化 S1(评审稿 §4 状态业务化 + §6 新人进度模型;goal「招新闭环优化 S1」)。
 //
@@ -188,6 +193,8 @@ export type RecruitmentProgressSource = {
   thresholdMarks: unknown; // Prisma Json
   promotedMemberId: string | null;
   riskLevel: string | null; // S4b:manual_review + high → manual_high(申请人侧文案中性)
+  certificateImages?: unknown;
+  certificateReviewStatus?: unknown;
 };
 
 export type RecruitmentProgressCycle = {
@@ -235,8 +242,33 @@ export function assembleRecruitmentProgress(
     memberNo: null,
     identityText,
     todoList: buildRecruitmentTodoList(marks),
+    certificates: buildCertificateProgress(app.certificateImages, app.certificateReviewStatus),
     meetingInfo: canViewMeetingInfo ? cycle.meetingInfo : null,
     qqGroup: canViewMeetingInfo ? cycle.qqGroup : null,
     notice: canViewMeetingInfo ? (cycle.notifyTemplate as Record<string, unknown> | null) : null,
   };
+}
+
+function buildCertificateProgress(
+  imagesRaw: unknown,
+  reviewsRaw: unknown,
+): RecruitmentCertificateProgressItemDto[] {
+  const images = (imagesRaw as Record<string, string[]> | null) ?? {};
+  const reviews = (reviewsRaw as Record<string, { status?: string; note?: string }> | null) ?? {};
+  return RECRUITMENT_CERT_CATEGORIES.map((category) => {
+    const imageCount = Array.isArray(images[category]) ? images[category].length : 0;
+    const review = reviews[category];
+    const status =
+      review?.status === 'approved' || review?.status === 'rejected'
+        ? review.status
+        : imageCount > 0
+          ? 'uploaded'
+          : 'none';
+    return {
+      category,
+      status,
+      imageCount,
+      note: status === 'rejected' ? (review?.note ?? null) : null,
+    };
+  });
 }

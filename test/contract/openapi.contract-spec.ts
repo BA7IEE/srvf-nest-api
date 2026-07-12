@@ -412,6 +412,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 招新可用性收口 F7:admin 取证书图 signed-URL(复用 read.sensitive,0 新码)。
   ['get', '/api/admin/v1/recruitment/applications/{id}/certificate-image-urls'],
   ['post', '/api/admin/v1/recruitment/applications/{id}/resolve'],
+  // 十三项收口刀G(2026-07-12):证书审核闭环(通过自动标门槛;驳回清图并退标记)。
+  ['post', '/api/admin/v1/recruitment/applications/{id}/certificates/{category}/review'],
   // 招新可用性收口 F3(2026-07-11;评审稿 §3 R3):单人手动建档(批量 skip 项收尾通道)。
   ['post', '/api/admin/v1/recruitment/applications/{id}/promote-single'],
   // 招新二期(招新后段)T2(2026-06-19;冻结评审稿 recruitment-phase2-review.md §3.2):

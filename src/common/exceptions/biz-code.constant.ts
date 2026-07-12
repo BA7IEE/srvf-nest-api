@@ -1077,6 +1077,12 @@ export const BizCode = {
     message: '该报名已处于终态(已发号/未通过/已撤销),无法撤销',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // 招新证书审核闭环:红十字/BSAFE 门槛标完成前须有对应类别证书图。
+  RECRUITMENT_CERTIFICATE_IMAGE_REQUIRED: {
+    code: 28053,
+    message: '请先上传对应证书图片后再标记门槛完成',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
   // 招新可用性收口 F1(2026-07-11;评审稿 §2.5/E-U-1):
   // - 28060:付费 OCR 按 IP 北京自然日封顶(recognize + submit 共享;env RECRUITMENT_OCR_DAILY_IP_LIMIT
   //   默认 30;持久化计数表,重启不清零;HTTP 429 语义,独立于 @RecruitmentThrottle 限流器)。

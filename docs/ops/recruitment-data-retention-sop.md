@@ -36,7 +36,7 @@
 
 > **刀C true-up(2026-07-11)**:上表后 10 行为 F5/F7/S4a/鉴伪版加列后的补登——此前 SOP 只列了 phase-1 的 10 字段,新列一直不在清理范围(留存承诺悬空)。同日起 **promote 也即时清同一集合**(`recruitment-promotion.service.ts`;promoted 行仍由 `sensitivePurgedAt` 跳过,不重复清)。
 
-**保留(脱敏统计维度,招新漏斗分析)**:`cycleId`(轮次)/ `ageGroup`(年龄段)/ `genderCode`(性别)/ `cityDistrict`(城市到区)/ `sourceChannel`(来源渠道)/ `eliminationStage`(淘汰环节)/ `isForeigner`(是否外籍)/ `documentTypeCode` / `statusCode` / `verifyOutcome` / `createdAt`。
+**保留(脱敏统计维度,招新漏斗分析)**:`cycleId`(轮次)/ `ageGroup`(年龄段)/ `genderCode`(性别)/ `cityDistrict`(城市到区)/ `sourceChannel`(来源渠道)/ `eliminationStage`(淘汰环节)/ `isForeigner`(历史 DB 列,语义=非大陆证件)/ `documentTypeCode` / `statusCode` / `verifyOutcome` / `createdAt`。`certificateReviewStatus` 只存类别审核态、时间、审核人 id 与审核备注(约束为不写 PII),不是证书图或申请人身份数据;未发号脱敏行可保留为流程证据,**promote 会与 `certificateImages` 同时清空**避免搬档后双份状态。
 
 **标记**:清理后置 `sensitivePurgedAt = now()`(幂等锚——已清行不再重复处理)。
 

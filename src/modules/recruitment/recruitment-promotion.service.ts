@@ -615,6 +615,7 @@ export class RecruitmentPromotionService {
         signatureImageKey: null,
         // F7(R6):证书图已按类别搬 Certificate.imageKeys → 报名行清空(blob 单一属主=certificate)。
         certificateImages: Prisma.DbNull,
+        certificateReviewStatus: Prisma.DbNull,
         // 十项收口刀C:OCR 产物与换绑轨迹一并即时清
         ocrAddress: null,
         ocrNation: null,

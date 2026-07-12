@@ -2,7 +2,10 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
-import { ID_CARD_IMAGE_MAX_BYTES } from '../../src/modules/recruitment/recruitment.constants';
+import {
+  ID_CARD_IMAGE_MAX_BYTES,
+  hashPhoneVerificationToken,
+} from '../../src/modules/recruitment/recruitment.constants';
 import { NotificationDispatcher } from '../../src/modules/notifications/notification-dispatcher';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
@@ -47,6 +50,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   let userAuth: string; // 普通 USER(RBAC 边界)
   let sensitiveAuth: string; // 非 SA:read.record + read.sensitive(S3 敏感查看)
   let recordOnlyAuth: string; // 非 SA:仅 read.record(S3 脱敏查看)
+  let submitTokenSeq = 0;
 
   // F1(招新可用性收口):同轮活跃报名 phone 去重落地后,默认 fixture 手机随 wechatCode 唯一化
   // (镜像 DevStub `dev-openid-<code>` 的确定性派生;显式传 phone 的用例不受影响)。
@@ -78,18 +82,44 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
 
   // 提交:multipart payload + idCardImage(= DevStub OCR 信封)。默认信封 = 与 payload 一致(matched);
   // opts.ocr 覆盖造不一致/告警/不清晰(评审稿 §3.7);opts.withImage=false 造缺图。
-  function submit(
+  async function submit(
     payload: Record<string, unknown>,
     opts: { withImage?: boolean; ocr?: Record<string, unknown>; signature?: Buffer | null } = {},
-  ): request.Test {
+  ): Promise<request.Response> {
+    const submitPayload = { ...payload };
+    if (submitPayload.phoneVerificationToken === undefined) {
+      const cycle = await prisma.recruitmentCycle.findFirst({
+        where: { statusCode: 'open', deletedAt: null },
+        select: { id: true },
+      });
+      const rawToken = `e2e-submit-token-${++submitTokenSeq}-${String(payload.phone)}`;
+      submitPayload.phoneVerificationToken = rawToken;
+      if (cycle) {
+        await prisma.recruitmentIdentitySession.create({
+          data: {
+            cycleId: cycle.id,
+            phone: String(payload.phone),
+            phoneVerifiedAt: new Date(),
+            phoneVerificationMethod: 'sms',
+            phoneVerificationTokenHash: hashPhoneVerificationToken(rawToken),
+            expiresAt: new Date(Date.now() + 30 * 60_000),
+          },
+        });
+      }
+    }
+    if (submitPayload.phoneVerificationToken === null) {
+      delete submitPayload.phoneVerificationToken;
+    }
     const withImage = opts.withImage ?? true;
     const envelope = opts.ocr ?? {
-      name: payload.realName,
-      idCardNumber: payload.idCardNumber,
+      name: submitPayload.realName,
+      idCardNumber: submitPayload.idCardNumber,
       clarity: true,
       warnings: [],
     };
-    let req = request(httpServer(app)).post(OPEN_SUBMIT).field('payload', JSON.stringify(payload));
+    let req = request(httpServer(app))
+      .post(OPEN_SUBMIT)
+      .field('payload', JSON.stringify(submitPayload));
     if (withImage) {
       req = req.attach('idCardImage', Buffer.from(JSON.stringify(envelope)), {
         filename: 'id.jpg',
@@ -1235,6 +1265,62 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(after.statusCode).toBe('promoted');
   });
 
+  it('G 证书审核闭环:无图禁标 → 上传 → 通过自动标门槛 → 驳回清图退标 → 进度可见 → 重传复位', async () => {
+    const cycle = await openCycle();
+    const row = await createAppRow(cycle.id, {
+      statusCode: 'verified',
+      tempNo: 'T20269991',
+      openid: 'dev-openid-g-cert',
+      phone: '13900009991',
+      idCardNumber: 'GCERT001',
+    });
+    expectBizError(
+      await markThreshold(row.id, 'redCross', true),
+      BizCode.RECRUITMENT_CERTIFICATE_IMAGE_REQUIRED,
+    );
+    await uploadCerts({ category: 'first_aid', wechatCode: 'g-cert' }, 1).expect(200);
+    const reviewPath = `${ADMIN_APPS}/${row.id}/certificates/first_aid/review`;
+    const approved = await request(httpServer(app))
+      .post(reviewPath)
+      .set('Authorization', adminAuth)
+      .send({ approved: true });
+    expect(approved.status).toBe(200);
+    let db = await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: row.id } });
+    expect((db.thresholdMarks as Record<string, unknown>).redCross).toBeTruthy();
+
+    const rejected = await request(httpServer(app))
+      .post(reviewPath)
+      .set('Authorization', adminAuth)
+      .send({ approved: false, note: '照片模糊,请重传' });
+    expect(rejected.status).toBe(200);
+    db = await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: row.id } });
+    expect((db.thresholdMarks as Record<string, unknown>).redCross).toBeUndefined();
+    expect(db.certificateImages).toBeNull();
+    const progress = await request(httpServer(app)).post(OPEN_QUERY).send({ wechatCode: 'g-cert' });
+    expect(progress.body.data.certificates).toContainEqual({
+      category: 'first_aid',
+      status: 'rejected',
+      imageCount: 0,
+      note: '照片模糊,请重传',
+    });
+
+    await uploadCerts({ category: 'first_aid', wechatCode: 'g-cert' }, 1).expect(200);
+    const afterRetransmit = await request(httpServer(app))
+      .post(OPEN_QUERY)
+      .send({ wechatCode: 'g-cert' });
+    expect(afterRetransmit.body.data.certificates).toContainEqual({
+      category: 'first_aid',
+      status: 'uploaded',
+      imageCount: 1,
+      note: null,
+    });
+    expect(
+      await prisma.auditLog.count({
+        where: { event: 'recruitment-application.certificate-review', resourceId: row.id },
+      }),
+    ).toBe(2);
+  });
+
   // ⑥ 轮次开关:无 open 轮 → 28030
   it('⑥ 无 open 轮次 → 报名 28030', async () => {
     await openCycle({ statusCode: 'closed' });
@@ -1880,7 +1966,19 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       .set('Authorization', auth)
       .send({ thresholdCode, completed });
   }
+  async function seedThresholdCertificateImages(id: string) {
+    await prisma.recruitmentApplication.update({
+      where: { id },
+      data: {
+        certificateImages: {
+          first_aid: [`recruitment/certificate/first_aid/test/${id}.png`],
+          bsafe: [`recruitment/certificate/bsafe/test/${id}.png`],
+        },
+      },
+    });
+  }
   async function markAll(id: string) {
+    await seedThresholdCertificateImages(id);
     for (const c of THRESHOLDS) await markThreshold(id, c, true);
   }
   function evaluate(id: string, approved: boolean, note?: string, auth = adminAuth) {
@@ -1893,6 +1991,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   it('㉑(二期) 门槛标记:逐项标 → 末次自动 pending_evaluation;清一项回退 verified;谁标/何时落库', async () => {
     await openCycle();
     const appRow = await submitVerified('p2-1', ID_MATCH_A);
+    await seedThresholdCertificateImages(appRow.id);
     for (const c of ['patrol1', 'patrol2', 'training', 'redCross']) {
       const r = await markThreshold(appRow.id, c, true);
       expect(r.status).toBe(200);
@@ -2877,6 +2976,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   it('㉚(S6) 批量标门槛:批量标末次门槛触发自动推进 pending_evaluation(autoAdvanced 计数;保留单行自动推进语义)', async () => {
     const cycle = await openCycle();
     const a = await submitVerifiedPhone('s6-aa', ID_MATCH_A, '郑一', '13900003000');
+    await seedThresholdCertificateImages(a.id);
     for (const c of ['patrol1', 'patrol2', 'training', 'redCross'])
       await markThreshold(a.id, c, true);
 

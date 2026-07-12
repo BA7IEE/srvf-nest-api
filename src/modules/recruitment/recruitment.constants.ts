@@ -389,6 +389,14 @@ export const SIGNATURE_IMAGE_KEY_PREFIX = 'recruitment/signature';
 // 字面镜像 seed 稳定契约(cert_type 字典项 first_aid / bsafe;certificates.service CERT_STATUS_PENDING)。
 export const CERTIFICATE_IMAGE_KEY_PREFIX = 'recruitment/certificate';
 export const RECRUITMENT_CERT_CATEGORIES = ['first_aid', 'bsafe'] as const;
+export type RecruitmentCertificateCategory = (typeof RECRUITMENT_CERT_CATEGORIES)[number];
+export const CERTIFICATE_THRESHOLD_BY_CATEGORY: Record<
+  RecruitmentCertificateCategory,
+  ThresholdCode
+> = {
+  first_aid: 'redCross',
+  bsafe: 'bsafe',
+};
 export const CERTIFICATE_IMAGES_MAX_PER_CATEGORY = 3;
 
 // ===== 紧急联系人(评审稿 D-R + E-R-13;JSON 数组,≥2)=====

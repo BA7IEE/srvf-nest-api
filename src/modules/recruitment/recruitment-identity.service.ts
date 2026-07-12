@@ -426,13 +426,22 @@ export class RecruitmentIdentityService {
     }
 
     const existing = (app.certificateImages as Record<string, string[]> | null) ?? {};
+    const existingReviews = (app.certificateReviewStatus as Record<string, unknown> | null) ?? {};
+    const nextReviews = { ...existingReviews };
+    delete nextReviews[dto.category];
     const oldKeys = Array.isArray(existing[dto.category]) ? existing[dto.category] : [];
     const nextImages: Record<string, string[]> = { ...existing, [dto.category]: newKeys };
 
     await this.prisma.$transaction(async (tx) => {
       await tx.recruitmentApplication.update({
         where: { id: app.id },
-        data: { certificateImages: nextImages },
+        data: {
+          certificateImages: nextImages,
+          certificateReviewStatus:
+            Object.keys(nextReviews).length > 0
+              ? (nextReviews as Prisma.InputJsonValue)
+              : Prisma.DbNull,
+        },
       });
       await this.auditLogs.log({
         event: 'recruitment-application.certificate-upload',

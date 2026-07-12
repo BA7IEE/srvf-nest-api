@@ -64,8 +64,7 @@ export class EmergencyContactInputDto {
 
 export class RecruitmentSubmitPayloadDto {
   @ApiPropertyOptional({
-    description:
-      '微信 wx.login code(小程序链 code2session 换 openid;与 phoneVerificationToken 至少二选一)',
+    description: '微信 wx.login code(可选;提供时另取 openid,手机验码 token 仍必填)',
     maxLength: 128,
   })
   @IsOptional()
@@ -74,16 +73,15 @@ export class RecruitmentSubmitPayloadDto {
   @MaxLength(128)
   wechatCode?: string;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     description:
-      'H5 手机身份链令牌(verify-code 端点验码后所发,绑手机+轮次,一次性;与 wechatCode 至少二选一,H5 链必填)',
+      '已验手机身份令牌(verify-code 端点验码后所发,绑手机+轮次,一次性;所有提交必填,小程序亦须先验手机)',
     maxLength: 128,
   })
-  @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(128)
-  phoneVerificationToken?: string;
+  phoneVerificationToken!: string;
 
   @ApiProperty({ description: '真实姓名(实名核验二要素;高敏感)' })
   @IsString()
@@ -527,6 +525,16 @@ export class RecruitmentTodoItemDto {
   done!: boolean;
 }
 
+export class RecruitmentCertificateProgressItemDto {
+  @ApiProperty({ enum: RECRUITMENT_CERT_CATEGORIES as unknown as string[] })
+  category!: string;
+  @ApiProperty({ enum: ['none', 'uploaded', 'approved', 'rejected'] })
+  status!: string;
+  @ApiProperty() imageCount!: number;
+  @ApiPropertyOptional({ description: '驳回说明(申请人可见)', type: String, nullable: true })
+  note!: string | null;
+}
+
 export class RecruitmentApplicationProgressDto {
   @ApiProperty({ description: '业务态枚举(评审稿 §4.2;statusCode 派生,机器态不外露)' })
   stage!: string;
@@ -561,6 +569,9 @@ export class RecruitmentApplicationProgressDto {
     description: '门槛清单(5 项;done 来自实际标记数据)',
   })
   todoList!: RecruitmentTodoItemDto[];
+
+  @ApiProperty({ type: [RecruitmentCertificateProgressItemDto] })
+  certificates!: RecruitmentCertificateProgressItemDto[];
 
   @ApiPropertyOptional({ description: '见面会信息(轮次配置)', nullable: true })
   meetingInfo!: string | null;
@@ -753,6 +764,18 @@ export class MarkThresholdDto {
   @ApiProperty({ description: 'true=标记完成;false=清除标记(补课纠错)' })
   @IsBoolean()
   completed!: boolean;
+}
+
+export class ReviewRecruitmentCertificateDto {
+  @ApiProperty({ description: 'true=通过并自动标对应门槛;false=驳回、清图并取消对应门槛' })
+  @IsBoolean()
+  approved!: boolean;
+
+  @ApiPropertyOptional({ description: '审核备注(驳回说明会对申请人可见)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }
 
 // ============ 招新可用性收口 F2:admin 改资料(评审稿 recruitment-usability-closeout-review.md §3 R1)============

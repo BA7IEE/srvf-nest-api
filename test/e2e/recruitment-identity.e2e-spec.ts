@@ -4,13 +4,14 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { RealnameSettingsService } from '../../src/modules/realname/realname-settings.service';
+import { hashPhoneVerificationToken } from '../../src/modules/recruitment/recruitment.constants';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
 // 招新四期 S4a(H5 + 手机身份链)e2e:发码 → 验码发 token → H5 报名提交 → 手机查询② → 自助换绑;
-// + token 一次性失效 + 小程序链向后兼容 + 容量/去重不被会话行影响(冻结评审稿
+// + token 一次性失效 + 小程序链短信验码收紧 + 容量/去重不被会话行影响(冻结评审稿
 // docs/archive/reviews/recruitment-phase4-loop-optimization-review.md §3)。
 //
 // DevStub 三通道:wechat code2session → openid=`dev-openid-<code>`;realname OCR 回显图信封;
@@ -19,7 +20,6 @@ import { createTestApp } from '../setup/test-app';
 const SEND = '/api/open/v1/recruitment/identity/send-code';
 const VERIFY = '/api/open/v1/recruitment/identity/verify-code';
 const SUBMIT = '/api/open/v1/recruitment/applications';
-const QUERY_WECHAT = '/api/open/v1/recruitment/applications/query';
 const QUERY_PHONE = '/api/open/v1/recruitment/applications/query-by-phone';
 const REBIND_WECHAT = '/api/open/v1/recruitment/applications/rebind-wechat';
 const REBIND_PHONE = '/api/open/v1/recruitment/applications/rebind-phone';
@@ -83,6 +83,21 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
     expect(res.status).toBe(200);
     expect(res.body.code).toBe(0);
     return res.body.data.phoneVerificationToken as string;
+  }
+
+  async function seedToken(cycleId: string, phone: string, suffix: string): Promise<string> {
+    const rawToken = `e2e-concurrent-token-${suffix}-${phone}`;
+    await prisma.recruitmentIdentitySession.create({
+      data: {
+        cycleId,
+        phone,
+        phoneVerifiedAt: new Date(),
+        phoneVerificationMethod: 'sms',
+        phoneVerificationTokenHash: hashPhoneVerificationToken(rawToken),
+        expiresAt: new Date(Date.now() + 30 * 60_000),
+      },
+    });
+    return rawToken;
   }
 
   function openCycle(over: Record<string, unknown> = {}) {
@@ -586,23 +601,16 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
     expect(ctx?.extra?.category).toBe('first_aid');
   });
 
-  // ============ 小程序链向后兼容 ============
+  // ============ 小程序提交同样须验手机 ============
 
-  it('⑪ 小程序链向后兼容:submit(wechatCode 无 token)→ verified + openid 落;query(wechat)可查', async () => {
+  it('⑪ 契约收紧:仅 wechatCode、无 phoneVerificationToken → 40000,零落库', async () => {
     await openCycle();
     const res = await submit(basePayload('13900000001', { wechatCode: 'code-mini' }));
-    expect(res.status).toBe(201);
-    expect(res.body.data.statusCode).toBe('verified');
+    expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
     const row = await prisma.recruitmentApplication.findFirst({
       where: { openid: 'dev-openid-code-mini' },
     });
-    expect(row?.openid).toBe('dev-openid-code-mini');
-    expect(row?.phoneVerifiedAt).toBeNull(); // 小程序链不验手机
-
-    // query(wechat)向后兼容:同 code → 同 openid(DevStub)→ 查得本人进度模型
-    const q = await request(httpServer(app)).post(QUERY_WECHAT).send({ wechatCode: 'code-mini' });
-    expect(q.status).toBe(200);
-    expect(q.body.data.stage).toBe('threshold');
+    expect(row).toBeNull();
   });
 
   // ============ 自助换微信换绑 ============
@@ -814,10 +822,14 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
       right: { wechatCode: 'b-phone-b', phone: '13900000135', idCardNumber: ID_C },
     },
   ])('刀B 并发 submit 穿透预检后由 DB partial unique 分流 $name 专码', async (c) => {
-    await openCycle();
+    const cycle = await openCycle();
+    const [leftToken, rightToken] = await Promise.all([
+      seedToken(cycle.id, c.left.phone, `${c.name}-left`),
+      seedToken(cycle.id, c.right.phone, `${c.name}-right`),
+    ]);
     const [left, right] = await Promise.all([
-      submit(basePayload(c.left.phone, c.left)),
-      submit(basePayload(c.right.phone, c.right)),
+      submit(basePayload(c.left.phone, { ...c.left, phoneVerificationToken: leftToken })),
+      submit(basePayload(c.right.phone, { ...c.right, phoneVerificationToken: rightToken })),
     ]);
     const success = [left, right].filter((r) => r.status === 201);
     const rejected = [left, right].find((r) => r.status !== 201);

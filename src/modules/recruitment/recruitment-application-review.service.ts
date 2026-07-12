@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { normalizeDateOnly } from '../../common/datetime/date-only.util';
@@ -10,6 +10,8 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { assertEmergencyRelationCodeValid } from '../emergency-contacts/emergency-relation.validation';
 import { RbacService } from '../permissions/rbac.service';
+import { STORAGE_PROVIDER } from '../storage/storage.constants';
+import type { StorageProvider } from '../storage/storage.interface';
 import { maskIdCard, maskName } from '../realname/realname.constants';
 import {
   APP_INACTIVE_STATUS_CODES,
@@ -19,10 +21,14 @@ import {
   APP_STATUS_PUBLICITY,
   APP_STATUS_REJECTED,
   APP_STATUS_VERIFIED,
+  APP_STATUS_WITHDRAWN,
+  CERTIFICATE_THRESHOLD_BY_CATEGORY,
   ELIM_STAGE_EVALUATION,
   ELIM_STAGE_THRESHOLD_TIMEOUT,
   RECRUITMENT_MAX_AGE,
   RECRUITMENT_MIN_AGE,
+  RECRUITMENT_CERT_CATEGORIES,
+  type RecruitmentCertificateCategory,
   type ThresholdCode,
   type ThresholdMarks,
   allThresholdsComplete,
@@ -41,6 +47,7 @@ import type {
   BatchMarkThresholdRowResultDto,
   EvaluateRecruitmentApplicationDto,
   MarkThresholdDto,
+  ReviewRecruitmentCertificateDto,
   RecruitmentApplicationAdminDto,
   UpdateRecruitmentApplicationDto,
 } from './recruitment.dto';
@@ -62,6 +69,7 @@ export class RecruitmentApplicationReviewService {
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
+    @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
   // ============ 招新二期:标/清门槛(M-3 / E-R2-2;幂等;末次完成自动推进 pending_evaluation)============
@@ -89,16 +97,26 @@ export class RecruitmentApplicationReviewService {
       ) {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
       }
-      const marks: ThresholdMarks = { ...((row.thresholdMarks as ThresholdMarks | null) ?? {}) };
       const code = dto.thresholdCode as ThresholdCode; // DTO @IsIn 已校验 ∈ THRESHOLD_CODES
-      if (dto.completed) {
-        marks[code] = { at: now.toISOString(), by: user.id };
-      } else {
-        delete marks[code];
+      const certificateCategory =
+        code === 'redCross' ? 'first_aid' : code === 'bsafe' ? 'bsafe' : null;
+      if (dto.completed && certificateCategory) {
+        const images = (row.certificateImages as Record<string, string[]> | null) ?? {};
+        if (
+          !Array.isArray(images[certificateCategory]) ||
+          images[certificateCategory].length === 0
+        ) {
+          throw new BizException(BizCode.RECRUITMENT_CERTIFICATE_IMAGE_REQUIRED);
+        }
       }
-      const allComplete = allThresholdsComplete(marks);
-      // 单一真相源自动推进:全完成→pending_evaluation / 否→回退 verified(仅此二态切换)
-      const nextStatus = allComplete ? APP_STATUS_PENDING_EVALUATION : APP_STATUS_VERIFIED;
+      const { marks, allComplete, nextStatus } = this.buildThresholdMutation(
+        row.statusCode,
+        row.thresholdMarks,
+        code,
+        dto.completed,
+        user.id,
+        now,
+      );
       const updated = await tx.recruitmentApplication.update({
         where: { id },
         data: { thresholdMarks: marks as Prisma.InputJsonValue, statusCode: nextStatus },
@@ -117,6 +135,93 @@ export class RecruitmentApplicationReviewService {
       });
       return toAdminApplicationDto(updated, !canSensitive);
     });
+  }
+
+  async reviewCertificate(
+    id: string,
+    category: string,
+    dto: ReviewRecruitmentCertificateDto,
+    user: CurrentUserPayload,
+    meta: AuditMeta,
+    now: Date,
+  ): Promise<RecruitmentApplicationAdminDto> {
+    await this.assertCanOrThrow(user, 'recruitment-application.review.certificate');
+    if (!RECRUITMENT_CERT_CATEGORIES.includes(category as RecruitmentCertificateCategory)) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "recruitment_applications" WHERE "id" = ${id} FOR UPDATE`,
+      );
+      const row = await tx.recruitmentApplication.findFirst({ where: { id, deletedAt: null } });
+      if (!row) throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+      if (
+        row.statusCode === APP_STATUS_PROMOTED ||
+        row.statusCode === APP_STATUS_REJECTED ||
+        row.statusCode === APP_STATUS_WITHDRAWN
+      ) {
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
+      }
+      const typedCategory = category as RecruitmentCertificateCategory;
+      const images = (row.certificateImages as Record<string, string[]> | null) ?? {};
+      const categoryImages = Array.isArray(images[typedCategory]) ? images[typedCategory] : [];
+      if (categoryImages.length === 0) {
+        throw new BizException(BizCode.RECRUITMENT_CERTIFICATE_IMAGE_REQUIRED);
+      }
+      const reviews = (row.certificateReviewStatus as Record<string, unknown> | null) ?? {};
+      const nextReviews = {
+        ...reviews,
+        [typedCategory]: {
+          status: dto.approved ? 'approved' : 'rejected',
+          at: now.toISOString(),
+          by: user.id,
+          ...(dto.note ? { note: dto.note } : {}),
+        },
+      };
+      const thresholdCode = CERTIFICATE_THRESHOLD_BY_CATEGORY[typedCategory];
+      const threshold = this.buildThresholdMutation(
+        row.statusCode,
+        row.thresholdMarks,
+        thresholdCode,
+        dto.approved,
+        user.id,
+        now,
+      );
+      const nextImages = { ...images };
+      if (!dto.approved) delete nextImages[typedCategory];
+      const updated = await tx.recruitmentApplication.update({
+        where: { id },
+        data: {
+          certificateReviewStatus: nextReviews as Prisma.InputJsonValue,
+          certificateImages:
+            Object.keys(nextImages).length > 0
+              ? (nextImages as Prisma.InputJsonValue)
+              : Prisma.DbNull,
+          thresholdMarks: threshold.marks as Prisma.InputJsonValue,
+          statusCode: threshold.nextStatus,
+        },
+      });
+      await this.auditLogs.log({
+        event: 'recruitment-application.certificate-review',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: id,
+        meta,
+        before: { statusCode: row.statusCode },
+        after: { statusCode: threshold.nextStatus },
+        extra: {
+          category: typedCategory,
+          approved: dto.approved,
+          imageCount: categoryImages.length,
+        },
+        tx,
+      });
+      return { updated, deleteKeys: dto.approved ? [] : categoryImages };
+    });
+    for (const key of result.deleteKeys) await this.safeDeleteBlob(key);
+    return toAdminApplicationDto(result.updated, !canSensitive);
   }
 
   // ============ 招新闭环优化 S6:批量标门槛(评审稿 §8.1;复用单行 markThreshold,零第二套)============
@@ -445,6 +550,39 @@ export class RecruitmentApplicationReviewService {
   }
 
   // === helpers ===
+
+  private buildThresholdMutation(
+    currentStatus: string,
+    rawMarks: unknown,
+    code: ThresholdCode,
+    completed: boolean,
+    by: string,
+    now: Date,
+  ): { marks: ThresholdMarks; allComplete: boolean; nextStatus: string } {
+    const marks: ThresholdMarks = { ...((rawMarks as ThresholdMarks | null) ?? {}) };
+    if (completed) marks[code] = { at: now.toISOString(), by };
+    else delete marks[code];
+    const allComplete = allThresholdsComplete(marks);
+    const nextStatus =
+      currentStatus === APP_STATUS_MANUAL
+        ? APP_STATUS_MANUAL
+        : currentStatus === APP_STATUS_PUBLICITY && allComplete
+          ? APP_STATUS_PUBLICITY
+          : allComplete
+            ? APP_STATUS_PENDING_EVALUATION
+            : APP_STATUS_VERIFIED;
+    return { marks, allComplete, nextStatus };
+  }
+
+  private async safeDeleteBlob(key: string): Promise<void> {
+    try {
+      await this.storage.deleteObject(key);
+    } catch (err) {
+      this.logger.warn(
+        `recruitment certificate rejected image cleanup failed key=${key}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
     if (!(await this.rbac.can(user, action))) {

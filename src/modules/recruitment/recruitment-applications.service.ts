@@ -245,14 +245,14 @@ export class RecruitmentApplicationsService {
       throw new BizException(BizCode.BAD_REQUEST);
     }
 
-    // 4. 身份链(评审稿 §3.1 两套入口;E-P4-4):小程序 wechatCode → openid,或 H5 phoneVerificationToken。
-    //    至少二选一(否则 40000,不全匿名);两者皆可(小程序用户也验了手机)。code2session 免费,失败沿 25030/25031 上抛。
+    // 4. 身份链:已验手机 phoneVerificationToken 必填;wechatCode 可选(提供时另取 openid)。
+    //    小程序与 H5 均先验手机,缺 token → 40000。code2session 免费,失败沿 25030/25031 上抛。
     //    openid 最终在终态单事务内确定(可来自 wechat 或会话行);phone 身份链落点同事务消费会话行后写。
     const hasWechat = typeof payload.wechatCode === 'string' && payload.wechatCode.length > 0;
     const hasToken =
       typeof payload.phoneVerificationToken === 'string' &&
       payload.phoneVerificationToken.length > 0;
-    if (!hasWechat && !hasToken) {
+    if (!hasToken) {
       throw new BizException(BizCode.BAD_REQUEST);
     }
     const wechatOpenid = hasWechat
@@ -261,7 +261,7 @@ export class RecruitmentApplicationsService {
     // H5 token 非消费预校验(fail-fast:省后续付费 OCR / 落图;真正消费在终态单事务内,建记录失败回滚则 token 保活可重试)
     if (hasToken) {
       await this.identity.assertPhoneSessionValid(
-        payload.phoneVerificationToken as string,
+        payload.phoneVerificationToken,
         cycle.id,
         payload.phone,
         now,
@@ -356,9 +356,7 @@ export class RecruitmentApplicationsService {
     let sessionPriorCount: number | null = null;
     let sessionPriorLastOutcome: string | null = null;
     if (hasToken) {
-      const state = await this.identity.readOcrAttemptState(
-        payload.phoneVerificationToken as string,
-      );
+      const state = await this.identity.readOcrAttemptState(payload.phoneVerificationToken);
       sessionPriorCount = state?.ocrAttemptCount ?? 0;
       sessionPriorLastOutcome = state?.lastOcrOutcome ?? null;
     }
@@ -373,10 +371,7 @@ export class RecruitmentApplicationsService {
     //    不消费 token → 身份链保活可重试)+ 返中性引导(不落图、不暴露 riskLevel/forgery);付费 OCR 仅 pino 留痕。
     if (decision.disposition !== 'submitted') {
       if (decision.sessionBump && hasToken) {
-        await this.identity.writeOcrAttempt(
-          payload.phoneVerificationToken as string,
-          decision.sessionBump,
-        );
+        await this.identity.writeOcrAttempt(payload.phoneVerificationToken, decision.sessionBump);
       }
       this.logger.log(
         `recruitment ocr defer disposition=${decision.disposition} outcome=${outcome} ` +
@@ -441,7 +436,7 @@ export class RecruitmentApplicationsService {
         if (hasToken) {
           phoneIdentity = await this.identity.consumePhoneSession(
             tx,
-            payload.phoneVerificationToken as string,
+            payload.phoneVerificationToken,
             cycle.id,
             now,
           );

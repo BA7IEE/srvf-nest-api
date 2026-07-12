@@ -24,6 +24,7 @@ describe('RecruitmentApplicationReviewService.batchMarkThreshold · 编排(复�
       prisma as never,
       rbac as never,
       { log: jest.fn() } as never,
+      { deleteObject: jest.fn() } as never,
     );
     return { service };
   }
@@ -95,6 +96,7 @@ describe('RecruitmentApplicationReviewService.batchMarkThreshold · 编排(复�
       prisma as never,
       rbac as never,
       { log: jest.fn() } as never,
+      { deleteObject: jest.fn() } as never,
     );
     await expect(service.batchMarkThreshold(dto() as never, user, meta, now)).rejects.toMatchObject(
       {
@@ -164,6 +166,7 @@ describe('RecruitmentApplicationReviewService · S3 敏感字段分级(响应脱
       prisma as never,
       rbac as never,
       auditLogs as never,
+      { deleteObject: jest.fn() } as never,
     );
     return { service };
   }

@@ -2962,6 +2962,13 @@ const RECRUITMENT_APPLICATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed>
     description:
       '单人手动建档(批量 skip 项收尾:与批量共用建档内核/原子号段;放行外籍;锚点择优 openid→phone)',
   },
+  {
+    code: 'recruitment-application.review.certificate',
+    module: 'recruitment-application',
+    action: 'review',
+    resourceType: 'certificate',
+    description: '审核申请人证书(通过自动标门槛;驳回清图并取消门槛)',
+  },
 ];
 
 // 招新三期(入队:志愿者→队员)T2(2026-06-19;冻结评审稿 recruitment-phase3-review.md §3.4 / E-J-8):
@@ -3193,10 +3200,10 @@ const BIZ_ADMIN_EXCLUDED_CODES: ReadonlySet<string> = new Set([
   ...ATTENDANCE_FINAL_REVIEW_CODES,
 ]);
 
-// 业务面权限码全集(各子数组求和,当前 83 条;运行期日志用 `.length` 输出为准,本注释不逐项维护数字,
+// 业务面权限码全集(各子数组求和,当前 84 条;运行期日志用 `.length` 输出为准,本注释不逐项维护数字,
 // 组成明细见下方 BIZ_ADMIN_DESCRIPTION。第三轮 review〔v0.38.0〕§F&A-3 使 member-profile 3→4、总 76→77;
 // v0.40.0 参与域收口 +3〔已并入各子数组〕;招新可用性收口 F2/F3 使 recruitment-application 6→8、总 80→82;
-// 十项收口刀D〔2026-07-11〕使 emergency-contact 4→5、总 82→83)
+// 十项收口刀D〔2026-07-11〕使 emergency-contact 4→5、总 82→83;十三项收口刀G 证书审核 +1 →84)
 const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...MEMBER_PERMISSION_SEED,
   ...MEMBER_PROFILE_PERMISSION_SEED,
@@ -3217,9 +3224,9 @@ const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...MEMBERSHIP_TRANSFER_PERMISSION_SEED,
 ];
 
-// biz-admin 绑定集合(80 条 = 83 过滤 BIZ_ADMIN_EXCLUDED_CODES 3 码;Slow-4 §5/§6 + 保险 E-6
+// biz-admin 绑定集合(81 条 = 84 过滤 BIZ_ADMIN_EXCLUDED_CODES 3 码;Slow-4 §5/§6 + 保险 E-6
 // + 招新 E-R-19/E-R2-11 + 摘码微刀 2026-07-03 + F4「D 组」membership.transfer.record 2026-07-04
-// + 招新可用性收口 F2/F3 与十项收口刀D 2026-07-11)
+// + 招新可用性收口 F2/F3、十项收口刀D 与十三项收口刀G 2026-07-11/12)
 const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISSION_SEED.filter(
   (p) => !BIZ_ADMIN_EXCLUDED_CODES.has(p.code),
 );
@@ -3227,7 +3234,7 @@ const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISS
 const BIZ_ADMIN_ROLE_CODE = 'biz-admin';
 const BIZ_ADMIN_DISPLAY_NAME = '业务管理员';
 const BIZ_ADMIN_DESCRIPTION =
-  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 §5 + 保险 §3.4 + 招新一/二/三期 §3.4 + 招新闭环优化 S3 §11 + CMS 内容模块评审稿 §7 + 统一通知模块 S1/S2/S5 §9.2 + F4「D 组」路线图 §6.2):member 6 + member-profile 4 + emergency-contact 5 + certificate 6 + activity 6 + activity-registration 6 + attendance 8 + team-insurance-policy 6 + member-insurance 1 + recruitment-cycle 3 + recruitment-application 8 + team-join-cycle 3 + team-join-application 4 + content 5 + content-attachment 4 + notification 7 + membership-transfer 1 = 83 条中绑 80(第三轮 review §F&A-3:member-profile +read.sensitive 敏感明文码全绑 biz-admin;v0.40.0 参与域生命周期收口②/③/⑤:activity-registration +reopen.record + activity +complete.record + member +offboard.record 全绑 biz-admin;招新可用性收口 F2/F3:recruitment-application +update.record/+promote.single;十项收口刀D 2026-07-11:emergency-contact +read.sensitive 敏感明文码全绑 biz-admin);member.delete.record 仅 SUPER_ADMIN(D1=A 镜像),attendance.final-approve.sheet / attendance.final-reject.sheet 不绑(2026-07-03 摘码微刀:终审 = attendance-final-reviewer scoped 绑定或 SUPER_ADMIN 兜底,BD-2);attachment 存量 20 码(member / certificate / activity)不在本角色,CMS content-image / content-file 写路径 4 码因内容授权绑入(评审稿 α / §5.2);notification 7 码(S1 站内信 5 + S2 微信模板配置 1 + S5 短信发起 1)统一通知模块绑入(2026-06-25 ~ 2026-06-27,评审稿 §9.2);membership.transfer.record 归属迁移业务写 1 码 F4 绑入(2026-07-04,membership 其余 4 码仍属 ops-admin 管理面);每个 ADMIN 用户由 seed 自动补挂本角色';
+  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 §5 + 保险 §3.4 + 招新一/二/三期 §3.4 + 招新闭环优化 S3 §11 + CMS 内容模块评审稿 §7 + 统一通知模块 S1/S2/S5 §9.2 + F4「D 组」路线图 §6.2):member 6 + member-profile 4 + emergency-contact 5 + certificate 6 + activity 6 + activity-registration 6 + attendance 8 + team-insurance-policy 6 + member-insurance 1 + recruitment-cycle 3 + recruitment-application 9 + team-join-cycle 3 + team-join-application 4 + content 5 + content-attachment 4 + notification 7 + membership-transfer 1 = 84 条中绑 81(第三轮 review §F&A-3:member-profile +read.sensitive 敏感明文码全绑 biz-admin;v0.40.0 参与域生命周期收口②/③/⑤:activity-registration +reopen.record + activity +complete.record + member +offboard.record 全绑 biz-admin;招新可用性收口 F2/F3:recruitment-application +update.record/+promote.single;十项收口刀D 2026-07-11:emergency-contact +read.sensitive;十三项收口刀G 2026-07-12:recruitment-application +review.certificate,均全绑 biz-admin);member.delete.record 仅 SUPER_ADMIN(D1=A 镜像),attendance.final-approve.sheet / attendance.final-reject.sheet 不绑(2026-07-03 摘码微刀:终审 = attendance-final-reviewer scoped 绑定或 SUPER_ADMIN 兜底,BD-2);attachment 存量 20 码(member / certificate / activity)不在本角色,CMS content-image / content-file 写路径 4 码因内容授权绑入(评审稿 α / §5.2);notification 7 码(S1 站内信 5 + S2 微信模板配置 1 + S5 短信发起 1)统一通知模块绑入(2026-06-25 ~ 2026-06-27,评审稿 §9.2);membership.transfer.record 归属迁移业务写 1 码 F4 绑入(2026-07-04,membership 其余 4 码仍属 ops-admin 管理面);每个 ADMIN 用户由 seed 自动补挂本角色';
 
 // Slow-4 T1(36/35)+ 保险模块 T1 增量(2026-06-13,+7 全绑 → 43/42)+ 招新一期 T1 增量(2026-06-18,+5 全绑 → 48/47):
 // 业务面权限点 + biz-admin 角色 + 绑定 + ADMIN 全员补挂 + 强校验。
@@ -3279,7 +3286,7 @@ async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
   });
   console.log(`[seed] RBAC role '${bizAdminRole.code}' ensured`);
 
-  // 3. upsert RolePermission 映射:biz-admin → 74 条(77 过滤 BIZ_ADMIN_EXCLUDED_CODES 3 码;F4 起含 membership.transfer.record;§F&A-3 起含 member-profile.read.sensitive)
+  // 3. upsert RolePermission 映射:数量由 BIZ_ADMIN_PERMISSION_SEED.length 单一推导(当前 81 = 84 - 3 excluded)
   const bizPermissions = await prisma.permission.findMany({
     where: { code: { in: BIZ_ADMIN_PERMISSION_SEED.map((p) => p.code) } },
     select: { id: true, code: true },

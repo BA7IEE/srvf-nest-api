@@ -315,6 +315,7 @@
 > - admin 报名 DTO/发号预检 DTO 的 `isForeigner` 已改名为 **`isNonMainlandDocument`**,CSV 表头同步为 `is_non_mainland_document`;含义固定为「非大陆证件(身份需人工核验;不代表国籍)」。前端模型、表格列与导出映射须同步改名。DB 历史列名不属于接口契约。
 > - 批量发号改为**纯资料齐备口径**:非大陆证件申请人补齐 `realName/birthDate/genderCode` 且有 `openid|phone` 登录锚后,可进入公示预览/预检/批量实发;`foreign-manual-build` skip reason 已退役。仍缺派生字段时自然落 `missing-derived-field`。
 > - `approved` 入队资格**不随轮次关闭失效**;一键入队不再依赖 `evaluationExtendedUntil`。该字段继续回显但仅存档;专业队 gate、8 项通用门槛有效期与贡献值仍由后端在入队时重校验。
+> - 证书审核正路为 `POST admin/v1/recruitment/applications/:id/certificates/:category/review`,权限码 `recruitment-application.review.certificate`,路径 `category ∈ {first_aid,bsafe}`,body `{approved,note?}`。通过自动标对应门槛(`first_aid→redCross`,`bsafe→bsafe`);驳回写原因、清该类图片并同步退门槛标记。直接/批量标 `redCross`/`bsafe` 前也要求对应类别已有证书图,缺图返 `28053`;详情「证书材料」面板应以此审核端点提供通过/驳回动作,不要再把门槛勾选当作审核本身。
 | 内容发布 | `contents` | `content.read.record` | 富文本 + 封面 `el-upload` + 可见性下拉(5 档)+ 状态机按钮 |
 | 用户管理 | `admin/v1/users` | `user.read.account` | CRUD;自我保护 / 最后超管后端拦,按错误码提示 |
 | 角色与权限 | `system/v1/{roles,permissions,user-roles}` | `rbac.role.read` / `rbac.permission.read` | 角色授权 `el-tree`/`el-transfer`;仅 USER+GLOBAL 简单授权,契约不变;scoped 场景改用下方「角色绑定(scoped)」页 |
