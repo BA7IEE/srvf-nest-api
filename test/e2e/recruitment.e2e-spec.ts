@@ -678,6 +678,21 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(row.genderCode).toBe('female');
   });
 
+  it('F2-④b 十项收口刀A:外籍补录 birthDate 同样过 18-60 年龄闸(未成年 → 28010;此前补录零年龄校验)', async () => {
+    const cycle = await openCycle();
+    const foreign = await createAppRow(cycle.id, {
+      documentTypeCode: 'passport',
+      isForeigner: true,
+      idCardNumber: 'E55667789',
+      birthDate: null,
+      genderCode: null,
+      phone: '13900007005',
+      openid: 'dev-openid-f2-g',
+    });
+    const res = await updateApp(foreign.id, { birthDate: '2015-01-01' });
+    expectBizError(res, BizCode.RECRUITMENT_AGE_OUT_OF_RANGE);
+  });
+
   it('F2-⑤ 非身份字段恒可改(verified 大陆);非法 relation → 19010;promoted/脱敏行 → 28041;空 body → 40000', async () => {
     const cycle = await openCycle();
     const verified = await createAppRow(cycle.id);
@@ -1215,8 +1230,9 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expectBizError(res, BizCode.RECRUITMENT_CYCLE_NOT_OPEN);
   });
 
-  // ⑥b 轮次开关:admin 已有 open 轮时再开第二个 open → 400(至多一个 open)
-  it('⑥b admin 开第二个 open 轮 → 400(至多一个 open 轮)', async () => {
+  // ⑥b 轮次开关:admin 已有 open 轮时再开第二个 open → 28032(至多一个 open;十项收口刀B 由通用
+  //    40000 升专码,并发穿透另有 partial unique P2002 兜底同码)
+  it('⑥b admin 开第二个 open 轮 → 28032(至多一个 open 轮)', async () => {
     await openCycle(); // 已存在一个 open
     const closed = await prisma.recruitmentCycle.create({
       data: { year: 2027, name: '2027 招新', statusCode: 'closed' },
@@ -1225,7 +1241,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       .patch(`${ADMIN_CYCLES}/${closed.id}`)
       .set('Authorization', adminAuth)
       .send({ statusCode: 'open' });
-    expectBizError(res, BizCode.BAD_REQUEST);
+    expectBizError(res, BizCode.RECRUITMENT_CYCLE_OPEN_CONFLICT);
   });
 
   // ⑥c 容量满 → 28031
@@ -1234,6 +1250,13 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     await submit(validPayload({ wechatCode: 'code-h1', idCardNumber: ID_MATCH_A })); // 占 1 个 verified
     const full = await submit(validPayload({ wechatCode: 'code-h2', idCardNumber: ID_MATCH_B }));
     expectBizError(full, BizCode.RECRUITMENT_CYCLE_CAPACITY_FULL);
+  });
+
+  // ⑥d 十项收口刀A:documentTypeCode 白名单(⚠️ 契约收紧)——名单外任意串此前会被当外籍进人工队列
+  it('⑥d 提交 documentTypeCode 名单外值(abc)→ 40000(DTO @IsIn 白名单)', async () => {
+    await openCycle();
+    const res = await submit(validPayload({ wechatCode: 'code-dt', documentTypeCode: 'abc' }));
+    expectBizError(res, BizCode.BAD_REQUEST);
   });
 
   // ⑦ 付费核验前置免费校验:无效校验位身份证 → 40000,且**零** realname-verify 审计(未进付费通道)
@@ -2047,6 +2070,22 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     await toPublicity('p3-l', ID_MATCH_B, '李四'); // li
     await toPublicity('p3-w', ID_MATCH_C, '王五'); // wang
 
+    // 十项收口刀C/E fixture:给「李四」行预置 OCR 产物/裁剪图/换绑轨迹——promote 须即时清
+    // (刀C,此前漏清=永久残留),头像裁剪图须转 User.avatarKey(刀E)。
+    await prisma.recruitmentApplication.updateMany({
+      where: { cycleId: cycle.id, realName: '李四' },
+      data: {
+        ocrAddress: '身份证OCR住址某某路1号',
+        ocrNation: '汉',
+        ocrAuthority: '某某公安局',
+        ocrValidDate: '2020.01.01-2040.01.01',
+        idCardCropImageKey: 'recruitment-id-card-crop/test/li-crop.jpg',
+        idCardPortraitImageKey: 'recruitment-id-card-portrait/test/li-portrait.jpg',
+        phoneChangeReason: '换机',
+        phoneBindingHistory: [{ from: '13800000000', to: '13800000001', at: '2026-07-01' }],
+      },
+    });
+
     const res = await promote(cycle.id);
     expect(res.status).toBe(200);
     expect(res.body.data.promotedCount).toBe(3);
@@ -2098,6 +2137,12 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(li.memberProfile?.joinSourceCode).toBe('recruitment');
     expect(li.memberProfile?.privacyConsentSigned).toBe(true);
     expect(li.memberProfile?.idCardImageKey).toBeTruthy();
+    // 十项收口刀E:建档搬运补齐——区县→residenceArea、详址→detailedAddress(此前被销毁无落点);
+    // 未填 profileExtra 不无中生有;OCR 头像裁剪图 → 账号头像(同一 storage 对象属主转 user)
+    expect(li.memberProfile?.residenceArea).toBeTruthy();
+    expect(li.memberProfile?.detailedAddress).toBeTruthy();
+    expect(li.memberProfile?.profileExtra).toBeNull();
+    expect(li.users[0]?.avatarKey).toBe('recruitment-id-card-portrait/test/li-portrait.jpg');
     // 紧急联系人迁移(2 个,priority 0/1)
     expect(li.emergencyContacts.length).toBe(2);
     // 报名行:promoted + 链 + 敏感清 + blob 归 member + 脱敏统计留存
@@ -2112,6 +2157,16 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(liApp.idCardImageKey).toBeNull();
     expect(liApp.openid).toBeNull(); // F12(#399):openid 一并即时清
     expect(liApp.reviewNote).toBeNull(); // F12(#399):reviewNote 一并即时清
+    expect(liApp.detailedAddress).toBeNull();
+    // 十项收口刀C:OCR 产物/裁剪图 key/换绑轨迹一并即时清(此前漏清 → promoted 行永久残留高敏 PII)
+    expect(liApp.ocrAddress).toBeNull();
+    expect(liApp.ocrNation).toBeNull();
+    expect(liApp.ocrAuthority).toBeNull();
+    expect(liApp.ocrValidDate).toBeNull();
+    expect(liApp.idCardCropImageKey).toBeNull();
+    expect(liApp.idCardPortraitImageKey).toBeNull();
+    expect(liApp.phoneChangeReason).toBeNull();
+    expect(liApp.phoneBindingHistory).toBeNull();
     expect(liApp.sensitivePurgedAt).toBeTruthy();
     expect(liApp.cityDistrict).toBe('北京市朝阳区'); // 脱敏统计永久留存
     // cycle.memberNoSeq 自增到 3

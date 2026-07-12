@@ -291,7 +291,7 @@ describe('assembleRecruitmentProgress(进度模型组装)', () => {
     expect(JSON.stringify(dto)).not.toContain('已晋升');
   });
 
-  it('S4b:manual_review + riskLevel=high 行组装 → stage=manual_high,stageText 取字典中性文案', () => {
+  it('十项收口刀C:manual_review + riskLevel=high 行组装 → 公开面 stage 折叠为 manual(高风险分级不外露)', () => {
     const app = {
       statusCode: APP_STATUS_MANUAL,
       tempNo: null,
@@ -299,11 +299,16 @@ describe('assembleRecruitmentProgress(进度模型组装)', () => {
       promotedMemberId: null,
       riskLevel: RISK_LEVEL_HIGH,
     };
-    // 字典 manual_high 文案 = 中性「待人工核验」(与 manual 同;申请人侧不暴露高风险分级)
-    const map = new Map<string, string>([[STAGE_MANUAL_HIGH, '待人工核验']]);
+    // 刀C 行为变更:S4b 只中性化了文案层,stage 机器码此前原样透传 manual_high(抓包可知高风险);
+    // 现公开组装出口折叠 → stage/stageText 一律按 manual 取值;derive 层仍区分(admin 三栏用,见上组用例)。
+    const map = new Map<string, string>([
+      [STAGE_MANUAL, '待人工核验'],
+      [STAGE_MANUAL_HIGH, '待人工核验'],
+    ]);
     const dto = assembleRecruitmentProgress(app, cycle, map);
-    expect(dto.stage).toBe(STAGE_MANUAL_HIGH);
+    expect(dto.stage).toBe(STAGE_MANUAL);
     expect(dto.stageText).toBe('待人工核验'); // 中性,无「高风险/疑似」字样
-    expect(JSON.stringify(dto)).not.toMatch(/高风险|疑似|造假|forgery/);
+    // 负面词表补 manual_high/high 本身(此前断言「不暴露」却漏了机器码字面)
+    expect(JSON.stringify(dto)).not.toMatch(/高风险|疑似|造假|forgery|manual_high/);
   });
 });

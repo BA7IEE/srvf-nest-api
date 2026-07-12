@@ -23,6 +23,18 @@
 | `idCardImageKey` | 证件照 storage key(**先删 blob 再置 NULL**,§3 步 3-4) |
 | `openid` | 微信 openid(可再识别个人,无统计价值;一并清) |
 | `reviewNote` | 人工核验备注(可能含 PII) |
+| `signatureImageKey` | 申请人签名图 storage key(F5;**先删 blob 再置 NULL**;promote 已搬 member 的行不在本 SOP 范围) |
+| `certificateImages` | 证书图 storage keys JSON(F7,形如 `{category:[keys]}`;**先逐 key 删 blob 再置 NULL**) |
+| `ocrAddress` | OCR 住址(与 idCardNumber 同级高敏;十项收口刀C true-up) |
+| `ocrNation` | OCR 民族(民族属敏感个人信息;刀C true-up) |
+| `ocrAuthority` | OCR 签发机关(刀C true-up) |
+| `ocrValidDate` | OCR 有效期串(刀C true-up,随组清) |
+| `idCardCropImageKey` | 主体框裁剪图 storage key(**先删 blob 再置 NULL**;刀C true-up) |
+| `idCardPortraitImageKey` | 头像裁剪图 storage key(**先删 blob 再置 NULL**;刀C true-up) |
+| `phoneChangeReason` | 换手机原因自由短串(可含 PII;刀C true-up) |
+| `phoneBindingHistory` | 换绑历史 JSON(含明文手机;刀C true-up) |
+
+> **刀C true-up(2026-07-11)**:上表后 10 行为 F5/F7/S4a/鉴伪版加列后的补登——此前 SOP 只列了 phase-1 的 10 字段,新列一直不在清理范围(留存承诺悬空)。同日起 **promote 也即时清同一集合**(`recruitment-promotion.service.ts`;promoted 行仍由 `sensitivePurgedAt` 跳过,不重复清)。
 
 **保留(脱敏统计维度,招新漏斗分析)**:`cycleId`(轮次)/ `ageGroup`(年龄段)/ `genderCode`(性别)/ `cityDistrict`(城市到区)/ `sourceChannel`(来源渠道)/ `eliminationStage`(淘汰环节)/ `isForeigner`(是否外籍)/ `documentTypeCode` / `statusCode` / `verifyOutcome` / `createdAt`。
 
@@ -85,6 +97,26 @@ pg_dump "$DATABASE_URL" -t recruitment_applications -t recruitment_cycles \
 ) TO 'recruitment-idcard-keys-to-delete.txt';
 ```
 
+**步骤 3b(刀C true-up)— 其余图 key 一并导出**(签名图 / 两裁剪图列同上把 `"idCardImageKey"` 换成对应列各跑一遍;证书图为 JSON 分组数组,用下式展开):
+
+```sql
+\copy (
+  SELECT k.key
+  FROM recruitment_applications a
+  JOIN recruitment_cycles c ON c.id = a."cycleId",
+  LATERAL (
+    SELECT jsonb_array_elements_text(v.value) AS key
+    FROM jsonb_each(a."certificateImages"::jsonb) AS v
+  ) k
+  WHERE a."deletedAt" IS NULL AND a."sensitivePurgedAt" IS NULL
+    AND a."certificateImages" IS NOT NULL
+    AND (
+      (a."statusCode" = 'rejected' AND a."createdAt" < now() - interval '30 days')
+      OR (c."statusCode" = 'closed' AND c."closedAt" < now() - interval '30 days' AND a."statusCode" NOT IN ('verified', 'pending_evaluation', 'publicity', 'promoted'))
+    )
+) TO 'recruitment-cert-keys-to-delete.txt';
+```
+
 **步骤 4 — 删除 storage blob(按 §3 清单逐 key 删)**:
 
 - **LOCAL provider**:key 映射到 `<STORAGE_LOCAL_ROOT>/<key>`(key 形如 `recruitment/id-card/<cycleId>/<uuid>.jpg`)。逐行 `rm -f -- "<STORAGE_LOCAL_ROOT>/<key>"`(用 §3 清单;确认 root 路径无误,避免误删)。
@@ -120,6 +152,17 @@ SET "realName" = NULL,
     "idCardImageKey" = NULL,
     "openid" = NULL,
     "reviewNote" = NULL,
+    -- 刀C true-up(2026-07-11):F5/F7/S4a/鉴伪版新列一并清(与 promote 即时清同一集合)
+    "signatureImageKey" = NULL,
+    "certificateImages" = NULL,
+    "ocrAddress" = NULL,
+    "ocrNation" = NULL,
+    "ocrAuthority" = NULL,
+    "ocrValidDate" = NULL,
+    "idCardCropImageKey" = NULL,
+    "idCardPortraitImageKey" = NULL,
+    "phoneChangeReason" = NULL,
+    "phoneBindingHistory" = NULL,
     "sensitivePurgedAt" = now()
 FROM recruitment_cycles c
 WHERE c.id = a."cycleId"
@@ -150,11 +193,30 @@ ANALYZE recruitment_applications;
 
 **步骤 7 — 登记执行记录**(§5 表格加一行)。
 
+## 3x. 报名前身份会话表 `recruitment_identity_sessions`(刀C true-up,2026-07-11)
+
+该表存**明文手机 + token hash + OCR 尝试轨迹**,TTL 30 分钟为纯查询时过滤,行不自动删。
+应用层第一道防线已于同日落地:验码成功建新行前顺手硬删**同手机**的过期行
+(`recruitment-identity.service.ts` verifyCode;镜像 SmsCodeService「发新作废旧」先例,不建 cron)。
+本节为全量兜底(覆盖再未回访的手机号),随 §2 触发条件一并执行:
+
+```bash
+pg_dump "$DATABASE_URL" -t recruitment_identity_sessions \
+  -f recruitment-identity-sessions-backup-$(date +%Y%m%d).sql
+```
+
+```sql
+-- 过期超 7 天的会话行直接硬删(无统计价值;expiresAt 建有索引)
+DELETE FROM recruitment_identity_sessions WHERE "expiresAt" < now() - interval '7 days';
+```
+
+> 窗口数值可改(沿 §1「数值可改」声明;**禁止** < 1 天——保排障回溯窗)。无 blob、无外键级联,幂等安全。
+
 ## 4. 边界与禁止
 
 - ❌ **不**删行(`DELETE` / 软删):脱敏维度留作招新漏斗统计;只清敏感字段
 - ❌ **不**清 phase-2 在途行 `statusCode IN ('verified','pending_evaluation','publicity')`(正流转中,含外籍待手动建档的 publicity 行;§1 注);`promoted` 行 promote 已即时清(`sensitivePurgedAt` 已置,WHERE 自动跳过,不重复清)
-- ❌ **不**碰 `members` / `users` / `member_profiles` / 任何非招新表
+- ❌ **不**碰 `members` / `users` / `MemberProfile`(队员档案)/ 任何非招新表(§3x 身份会话表除外)
 - ❌ **不**先清 DB 后删 blob(次序反 = blob 孤儿);**不**用 `TRUNCATE`
 - ❌ **不**改 §1 触发 `WHERE` 列(`statusCode` / `createdAt` / 轮次 `closedAt` 为窗口锚)
 - ❌ **不**把本 SOP 改造成 cron / 定时任务 / 应用层"自动清理开关"(需新 D 档评审解锁)

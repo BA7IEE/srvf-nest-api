@@ -76,9 +76,12 @@ export class AppMeTeamJoinService {
   }
 
   // 当前唯一 open 入队轮;无 → 28230。
+  // 十项收口刀B:补 orderBy——此前无排序,若历史上曾并发穿透出双 open 轮,选轮非确定
+  // (partial unique 落地后至多一行,此排序为防御性确定化,镜像 recruitment 侧口径)。
   private async findOpenCycleOrThrow(tx: PrismaTx): Promise<{ id: string }> {
     const cycle = await tx.teamJoinCycle.findFirst({
       where: { statusCode: CYCLE_STATUS_OPEN, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
       select: { id: true },
     });
     if (!cycle) {

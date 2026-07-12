@@ -165,7 +165,11 @@ describe('member-profiles sensitive masking (F&A-3)', () => {
       expect(dto!.documentNumber).toBe(MASKED_ID);
       expect(dto!.mobile).toBe(MASKED_MOBILE);
       expect(dto!.realName).toBe('Mask Test'); // 非敏感字段不动
-      expect(dto!.email).toBe('mask@test.local');
+      // 十项收口刀D「全收紧」:生日/座机/网络联系方式/医疗字段无 sensitive 码时一律 null
+      expect(dto!.email).toBeNull();
+      expect(dto!.birthDate).toBeNull();
+      expect(dto!.landline).toBeNull();
+      expect(dto!.medicalNotes).toBeNull();
     });
 
     it('A2. 持 read.sensitive → documentNumber / mobile 明文', async () => {
@@ -174,6 +178,9 @@ describe('member-profiles sensitive masking (F&A-3)', () => {
       const dto = await service.findOne(memberId, sensitivePayload);
       expect(dto!.documentNumber).toBe(PLAIN_ID);
       expect(dto!.mobile).toBe(PLAIN_MOBILE);
+      // 刀D:持 sensitive 者生日/邮箱等全明文
+      expect(dto!.email).toBe('mask@test.local');
+      expect(dto!.birthDate).toEqual(new Date('1990-01-01T00:00:00.000Z'));
     });
 
     it('A3. SUPER_ADMIN → 明文(rbac.can 短路)', async () => {
@@ -213,6 +220,8 @@ describe('member-profiles sensitive masking (F&A-3)', () => {
       const dto = await service.create(memberId, payload(), recordOnlyPayload);
       expect(dto.documentNumber).toBe(MASKED_ID);
       expect(dto.mobile).toBe(MASKED_MOBILE);
+      expect(dto.email).toBeNull(); // 刀D:回显同 findOne 分级
+      expect(dto.birthDate).toBeNull();
       // 库内明文(掩码仅出口值变换,不改存储)
       const row = await prisma.memberProfile.findUniqueOrThrow({ where: { memberId } });
       expect(row.documentNumber).toBe(PLAIN_ID);

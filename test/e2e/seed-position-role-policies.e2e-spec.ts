@@ -211,7 +211,7 @@ const EXPECTED_FINAL_REVIEWER_CODES = [
 // 2026-07-07 队员账号闭环 v2 member.bind.account 绑 ops-admin 95→96)。
 const EXPECTED_OPS_ADMIN_BINDING_COUNT = 96;
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
-const EXPECTED_BIZ_ADMIN_BINDING_COUNT = 79; // 招新可用性收口 F3 起(2026-07-11 update.record + promote.single +2;v0.40.0 起 77)
+const EXPECTED_BIZ_ADMIN_BINDING_COUNT = 80; // 十项收口刀D 起(2026-07-11 emergency-contact.read.sensitive +1;招新可用性收口 F2/F3 起 79;v0.40.0 起 77)
 
 async function boundCodesOf(prisma: PrismaService, roleCode: string): Promise<string[]> {
   const rows = await prisma.rolePermission.findMany({

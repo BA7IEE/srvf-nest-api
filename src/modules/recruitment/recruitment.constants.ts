@@ -276,6 +276,32 @@ export function isForeignDocument(documentTypeCode: string): boolean {
   return documentTypeCode !== DOC_TYPE_MAINLAND_ID;
 }
 
+// 十项收口刀A(2026-07-11;拍板六值):documentTypeCode 白名单(submit DTO @IsIn)。
+// 此前仅"非空字符串"校验,任意串(如 'abc')会被 isForeignDocument 判外籍进普通人工队列,
+// 且可经 F2 补录 + promote-single 一路写进 member_profiles.documentTypeCode 污染档案。
+// ⚠️ 词表错位已知:权威值 mainland_id 不在 document_type 字典(字典是 id_card),统一挂账
+// NEXT_TASKS——本白名单落代码常量,不接字典校验。recognize 端点不挂白名单(未知类型已优雅
+// 返 ocrSupported:false 且不烧钱,收紧无收益)。
+export const RECRUITMENT_DOCUMENT_TYPE_CODES = [
+  DOC_TYPE_MAINLAND_ID,
+  'passport',
+  'hk_macau_permit',
+  'taiwan_permit',
+  'foreigner_permit',
+  'other',
+] as const;
+
+// 十项收口刀A:profileExtra 自由 JSON 的体积/键数上限(DTO @IsObject 只保证形;此前无任何
+// 结构约束,仅靠 multipart fieldSize 隐式兜底)。submit 与 F2 admin 改资料共用同一判定。
+export const PROFILE_EXTRA_MAX_BYTES = 4096;
+export const PROFILE_EXTRA_MAX_KEYS = 20;
+
+/** profileExtra 是否在体积(4KB)/顶层键数(20)限内(纯函数;超限调用方抛 40000)。 */
+export function isProfileExtraWithinLimit(extra: Record<string, unknown>): boolean {
+  if (Object.keys(extra).length > PROFILE_EXTRA_MAX_KEYS) return false;
+  return Buffer.byteLength(JSON.stringify(extra), 'utf8') <= PROFILE_EXTRA_MAX_BYTES;
+}
+
 // ===== 临时编号格式 T{year}{seq:04d}(评审稿 D-R-5 / E-R-9)=====
 export function formatTempNo(year: number, seq: number): string {
   return `T${year}${String(seq).padStart(4, '0')}`;

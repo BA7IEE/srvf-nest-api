@@ -70,7 +70,7 @@ const BIZ_PERMISSIONS = [
     action: 'read',
     resourceType: 'sensitive',
   },
-  // ============ emergency-contact 4 条 ============
+  // ============ emergency-contact 5 条(十项收口刀D:+read.sensitive) ============
   {
     code: 'emergency-contact.read.record',
     module: 'emergency-contact',
@@ -94,6 +94,12 @@ const BIZ_PERMISSIONS = [
     module: 'emergency-contact',
     action: 'delete',
     resourceType: 'record',
+  },
+  {
+    code: 'emergency-contact.read.sensitive',
+    module: 'emergency-contact',
+    action: 'read',
+    resourceType: 'sensitive',
   },
   // ============ certificate 6 条 ============
   {

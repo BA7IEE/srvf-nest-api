@@ -830,7 +830,7 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
     expect(row?.applicantConfirmedOcrWrong).toBe(true);
   });
 
-  it('㉒ 进度模型 manual_high 申请人侧中性:query-by-phone → stage=manual_high / stageText=待人工核验', async () => {
+  it('㉒ 十项收口刀C:高风险行公开面 stage 折叠为 manual(机器码不再泄露分级):query-by-phone', async () => {
     const cycle = await openCycle();
     await seedApp(cycle.id, {
       phone: '13900000001',
@@ -846,8 +846,54 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
       .post(QUERY_PHONE)
       .send({ phone: '13900000001', code: FIXED_CODE });
     expect(res.status).toBe(200);
-    expect(res.body.data.stage).toBe('manual_high');
+    // 刀C 行为变更:此前 stage 原样透传 manual_high(抓包即知被归入高风险);现公开出口折叠为 manual。
+    expect(res.body.data.stage).toBe('manual');
     expect(res.body.data.stageText).toBe('待人工核验'); // 中性,不暴露高风险
-    expect(JSON.stringify(res.body.data)).not.toMatch(/高风险|疑似|造假|forgery/);
+    // 负面词表补 manual_high(此前断言「不暴露」却漏了机器码字面)
+    expect(JSON.stringify(res.body.data)).not.toMatch(/高风险|疑似|造假|forgery|manual_high/);
+  });
+
+  // ===== 十项收口刀F:公开公示名单(view-publicity 悬空动作收口)=====
+
+  it('刀F-a 公开公示名单:无公示中名单 → 200 + cycleYear=null + items=[](空窗合法,不 404)', async () => {
+    await openCycle();
+    const res = await request(httpServer(app)).get('/api/open/v1/recruitment/publicity');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ cycleYear: null, items: [] });
+  });
+
+  it('刀F-b 公开公示名单:publicity 行 → 姓名+拟发号(与后台预览/实发同源);不出内部字段', async () => {
+    const cycle = await openCycle();
+    await seedApp(cycle.id, {
+      statusCode: 'publicity',
+      birthDate: new Date('1990-03-07T00:00:00.000Z'),
+      genderCode: 'male',
+    });
+    const res = await request(httpServer(app)).get('/api/open/v1/recruitment/publicity');
+    expect(res.status).toBe(200);
+    expect(res.body.data.cycleYear).toBe(2026);
+    expect(res.body.data.items).toEqual([{ realName: '张三', proposedMemberNo: '26001' }]);
+  });
+
+  // ===== 十项收口刀C:验码顺手清同手机过期会话行 =====
+
+  it('刀C-a 验码成功 → 同手机过期会话行被硬删(明文手机/OCR 轨迹不再累积)', async () => {
+    const cycle = await openCycle();
+    await prisma.recruitmentIdentitySession.create({
+      data: {
+        cycleId: cycle.id,
+        phone: '13900000001',
+        phoneVerifiedAt: new Date(Date.now() - 3600_000),
+        phoneVerificationMethod: 'sms',
+        phoneVerificationTokenHash: 'expired-hash-13900000001',
+        expiresAt: new Date(Date.now() - 1800_000), // 已过期
+      },
+    });
+    await getToken('13900000001'); // 验码成功 → 建新会话行前顺手删同手机过期行
+    const rows = await prisma.recruitmentIdentitySession.findMany({
+      where: { phone: '13900000001' },
+    });
+    expect(rows.length).toBe(1); // 只剩新行(过期行已硬删,非标记)
+    expect(rows[0].expiresAt.getTime()).toBeGreaterThan(Date.now());
   });
 });

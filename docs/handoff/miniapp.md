@@ -44,6 +44,13 @@
 > **H5 链失败码**:验码错/过期统一 `24010`;token 无效/过期/已用 `28050`;无 open 轮 `28030`;换微信撞他人 `28051`;无报名 `28002`。
 > **⚠️ S5 语义变(Unreleased)**:`GET /api/app/v1/me`(及任何回带 `Member.gradeCode` 的 app 出参)对**未入队志愿者**现返 `gradeCode='volunteer'`(S5 前恒 `null`)。前端**勿再用 `gradeCode==null` 等价"志愿者/未入队"**;"是否正式队员"应判 `gradeCode ∈ level-1..7`。历史(S5 前)发号的志愿者仍为 `null`,故"未入队志愿者"= `gradeCode ∈ {null, 'volunteer'}`。
 
+### 2.x 十项收口一刀增量(2026-07-11)
+
+- **公示落点补齐**:进度 `nextAction='view-publicity'` 终于有得跳——`GET /api/open/v1/recruitment/publicity`(无账号、throttler recruitment):`{ cycleYear, items:[{ realName, proposedMemberNo }] }`,与后台公示预览/实发同源;`proposedMemberNo` 为 null = 待人工建档;无公示中名单返 `cycleYear=null + items=[]`(渲染空态,不是错误)。
+- **⚠️ stage 值域收窄**:进度接口 `stage` 不再出现 `manual_high`(公开出口折叠为 `manual`,文案本就同「待人工核验」);若曾按 `manual_high` 分支渲染,删掉该分支。
+- **⚠️ submit `documentTypeCode` 白名单**:仅 `mainland_id / passport / hk_macau_permit / taiwan_permit / foreigner_permit / other` 六值,名单外 400——证件类型用选择器,别放自由输入。
+- **新站内通知(additive)**:入队贡献值达标提醒(type=`recruitment`,title「入队贡献值已达标」)随考勤终审自动触达本人,复用既有 notifications 拉取端点,无新契约。
+
 ## 3. 缺口台账(gap-ledger)
 
 | # | 诉求 | 期望端点 | 状态 |

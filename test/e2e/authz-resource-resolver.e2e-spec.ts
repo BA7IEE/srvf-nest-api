@@ -200,6 +200,10 @@ describe('authz ResourceResolver(§5.1 11 类资源归属解析)', () => {
     certificateId = certificate.id;
 
     // ===== 入队 / 招新 =====
+    await prisma.teamJoinCycle.updateMany({
+      where: { statusCode: 'open' },
+      data: { statusCode: 'closed', closedAt: new Date() },
+    }); // 刀B partial unique:至多一个 open 轮
     const tjCycle = await prisma.teamJoinCycle.create({
       data: { year: 2026, name: 'RR 入队轮', statusCode: 'open' },
       select: { id: true },

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { Prisma, type RecruitmentApplication } from '@prisma/client';
+import { Prisma, type RecruitmentApplication, type RecruitmentCycle } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { auditPlaceholder } from '../../common/audit/audit-placeholder';
@@ -29,6 +29,7 @@ import {
 import type {
   ExportRecruitmentApplicationsDto,
   IdCardImageUrlResponseDto,
+  PublicRecruitmentPublicityResponseDto,
   PublicityListItemDto,
   PublicityListResponseDto,
   RecruitmentApplicationAdminDto,
@@ -227,8 +228,41 @@ export class RecruitmentApplicationsQueryService {
     if (!cycle) {
       throw new BizException(BizCode.RECRUITMENT_CYCLE_NOT_FOUND);
     }
+    return this.buildPublicityList(cycle);
+  }
+
+  // ============ 十项收口刀F:公开公示名单(open/v1 无账号;拍板「后端出公开名单接口」)============
+  // 悬空动作收口:公开进度返回 nextAction='view-publicity',但公开 surface 此前无任何公示资源可看。
+  // 与 admin 公示预览共用 buildPublicityList 取数内核 → 公示所见 = 后台预览 = 实发(结构性一致);
+  // 出参收敛为 { cycleYear, items:[{ realName, proposedMemberNo }] }——姓名本就对外公示,拟发号
+  // 待人工建档者为 null;不出 applicationId / isForeigner / needsManualBuild(内部运营语义不外露)。
+  // 轮次解析:取最近(createdAt desc)存在公示中报名行的轮(公示期可能已闭轮,不锚 open 轮);
+  // 无任何公示中名单 → 200 + cycleYear=null + items=[](空窗是合法状态);不记审计(公开台账类)。
+  async publicPublicityList(): Promise<PublicRecruitmentPublicityResponseDto> {
+    const cycle = await this.prisma.recruitmentCycle.findFirst({
+      where: {
+        deletedAt: null,
+        applications: { some: { statusCode: APP_STATUS_PUBLICITY, deletedAt: null } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!cycle) {
+      return { cycleYear: null, items: [] };
+    }
+    const full = await this.buildPublicityList(cycle);
+    return {
+      cycleYear: full.cycleYear,
+      items: full.items.map((i) => ({
+        realName: i.realName,
+        proposedMemberNo: i.proposedMemberNo,
+      })),
+    };
+  }
+
+  // 公示名单取数内核(admin 预览 + 刀F 公开名单共用;单一真相源,公示=实发的结构保证在此)。
+  private async buildPublicityList(cycle: RecruitmentCycle): Promise<PublicityListResponseDto> {
     const rows = await this.prisma.recruitmentApplication.findMany({
-      where: { cycleId, statusCode: APP_STATUS_PUBLICITY, deletedAt: null },
+      where: { cycleId: cycle.id, statusCode: APP_STATUS_PUBLICITY, deletedAt: null },
     });
     // F9(#399):公示拟发号与一键发号共享 decidePromotionIssuance —— 同序(comparePromotionOrder)、同判
     // (isPromotable + openid/phone 未被既有 User 占用 + 批内去重)→ 预览 = 实发,杜绝「公示显示拟发号、

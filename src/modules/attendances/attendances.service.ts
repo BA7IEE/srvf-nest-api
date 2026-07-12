@@ -13,6 +13,7 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_TYPE_ACTIVITY_REMINDER,
+  NOTIFICATION_TYPE_RECRUITMENT,
 } from '../notifications/notification.constants';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
@@ -22,7 +23,13 @@ import { RbacService } from '../permissions/rbac.service';
 // 跨轴只读(2026-06-23):复用 team-join 贡献值封顶核(单一真相源;生涯累计 cutoff=null)。
 // 纯函数调用,非 DI provider → 无 AttendancesModule → TeamJoinModule 依赖;team-join 不反向
 // import attendances(team-join.constants 自洽),无循环。
-import { computeCappedContribution } from '../team-join/team-join-progress';
+// 十项收口刀F(2026-07-11):终审 Effect 内再复用 computeContribution(入队年 cutoff 口径)判
+// 「贡献值达标」定向提醒——仍是纯函数 import,依赖形状不变。
+import { computeCappedContribution, computeContribution } from '../team-join/team-join-progress';
+import {
+  APP_STATUS_JOINING as TEAM_JOIN_APP_STATUS_JOINING,
+  CONTRIBUTION_THRESHOLD,
+} from '../team-join/team-join.constants';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import { AttendancePresenter } from './attendance-presenter';
 import { AttendanceSheetStateMachine } from './attendance-sheet-state-machine';
@@ -1340,6 +1347,10 @@ export class AttendancesService {
     // commit);派发失败只记日志,不阻断、不回滚。
     await this.dispatchAttendanceNotifications(result.activityId, result.recipients);
 
+    // 十项收口刀F(#8 拍板「只发达标提醒,不动状态机」):本次终审使入队贡献值跨过阈值者,追发一条
+    // 「贡献值已达标」站内提醒(同为 commit 后事务外 additive Effect,失败只记日志)。
+    await this.dispatchTeamJoinContributionMetNotifications(result.recipients);
+
     return result.dto;
   }
 
@@ -1376,6 +1387,54 @@ export class AttendancesService {
       this.logger.error(
         `attendance result notification fan-out failed (activity=${activityId}): ${(err as Error).message}`,
       );
+    }
+  }
+
+  // 十项收口刀F(#8;拍板「只发达标提醒,不动状态机」):考勤终审 commit 后,对持 joining 态入队
+  // 申请、且本次终审使贡献值跨过阈值(before<5≤after)的队员,发「入队贡献值已达标」站内定向通知。
+  // **纯 additive Effect**:整体+单条 try-catch 永不抛,不改任何状态(推进仍走 admin 重标 gate 的
+  // 既有自愈通道);复用 team-join 纯函数直连 prisma(本模块既有先例),不引 service 防环。
+  // 跨阈判定:before 下界 = after − 本 sheet 未封顶增量(封顶/超 cutoff 记录可致少数重复提醒,
+  // 可接受——已推进者不再命中 joining,天然收敛)。
+  private async dispatchTeamJoinContributionMetNotifications(
+    recipients: Array<{ memberId: string; contributionPoints: string | null }>,
+  ): Promise<void> {
+    if (recipients.length === 0) return;
+    try {
+      // 按 member 聚合本 sheet 增量(一人多时段多 record)
+      const deltas = new Map<string, Prisma.Decimal>();
+      for (const r of recipients) {
+        const prev = deltas.get(r.memberId) ?? new Prisma.Decimal(0);
+        deltas.set(r.memberId, prev.add(r.contributionPoints ?? 0));
+      }
+      for (const [memberId, delta] of deltas) {
+        try {
+          const app = await this.prisma.teamJoinApplication.findFirst({
+            where: { memberId, statusCode: TEAM_JOIN_APP_STATUS_JOINING, deletedAt: null },
+            orderBy: { createdAt: 'desc' },
+            select: { cycle: { select: { year: true } } },
+          });
+          if (!app) continue;
+          const after = await computeContribution(this.prisma, memberId, app.cycle.year);
+          // 未达标,或扣除本次增量后本就达标(存量已达标者)→ 不提醒
+          if (!after.satisfied || after.points.minus(delta).gte(CONTRIBUTION_THRESHOLD)) {
+            continue;
+          }
+          await this.notificationDispatcher.dispatchTargeted({
+            recipientMemberId: memberId,
+            notificationTypeCode: NOTIFICATION_TYPE_RECRUITMENT,
+            title: '入队贡献值已达标',
+            body: `您的贡献值已达到入队要求(当前 ${after.points.toString()} 分)。管理员核对门槛后将安排综合评估,请留意后续通知。`,
+            channels: [NOTIFICATION_CHANNEL_IN_APP],
+          });
+        } catch (err) {
+          this.logger.error(
+            `team-join contribution-met notification failed (member=${memberId}): ${(err as Error).message}`,
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.error(`team-join contribution-met fan-out failed: ${(err as Error).message}`);
     }
   }
 

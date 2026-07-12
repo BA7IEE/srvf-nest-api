@@ -18,6 +18,8 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 2026-07-11 参与域生命周期收口②(v0.40.0):activity-registration.reopen.record +1(全绑 biz-admin)→ **78 码绑 75**。
 // 2026-07-11 参与域生命周期收口③(v0.40.0):activity.complete.record +1(全绑 biz-admin)→ **79 码绑 76**。
 // 2026-07-11 参与域生命周期收口⑤(v0.40.0):member.offboard.record +1(全绑 biz-admin)→ **80 码绑 77**。
+// 2026-07-11 招新可用性收口 F2/F3:recruitment-application +update.record/+promote.single(全绑)→ **82 码绑 79**。
+// 2026-07-11 十项收口刀D:emergency-contact.read.sensitive +1(全绑 biz-admin)→ **83 码绑 80**。
 // 沿冻结评审稿 docs/archive/reviews/slow4-rbac-business-face-review.md §5 + D-S4-7
 // + seed-attachment-permissions.e2e-spec.ts 子进程范式。
 //
@@ -86,11 +88,13 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   'member-profile.create.record',
   'member-profile.update.record',
   'member-profile.read.sensitive',
-  // emergency-contact 4
+  // emergency-contact 5(十项收口刀D 2026-07-11:+read.sensitive 敏感明文码,全绑 biz-admin;
+  // org-admin 派生排除、group-manager 不绑)
   'emergency-contact.read.record',
   'emergency-contact.create.record',
   'emergency-contact.update.record',
   'emergency-contact.delete.record',
+  'emergency-contact.read.sensitive',
   // certificate 6
   'certificate.read.record',
   'certificate.create.record',
@@ -178,7 +182,7 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   // membership.{list,read,set,end} 4 条 ops-admin 管理面码,module 同为 'membership' 但归业务面 seed)
   'membership.transfer.record',
 ] as const;
-const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 82(2026-07-11 招新可用性收口 F2 update.record + F3 promote.single +2;前值 80 = …统一通知 S1 +5 / S2 +1 / S5 +1 / F4 transfer +1 / §F&A-3 +1 / v0.40.0 reopen +1)
+const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 83(2026-07-11 十项收口刀D emergency-contact.read.sensitive +1;前值 82 = 招新可用性收口 F2 update.record + F3 promote.single +2;更前 80 = …统一通知 S1 +5 / S2 +1 / S5 +1 / F4 transfer +1 / §F&A-3 +1 / v0.40.0 reopen +1)
 
 // D1=A 镜像:不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
@@ -189,7 +193,7 @@ const BIZ_ADMIN_UNBOUND_CODES: ReadonlyArray<string> = [
   'attendance.final-approve.sheet',
   'attendance.final-reject.sheet',
 ];
-const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 3; // 79(招新可用性收口 F3 起;82 - 3 excluded)
+const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 3; // 80(十项收口刀D 起;83 - 3 excluded)
 
 // 零变化基线(评审稿 §6):本断言意图 = 业务面 seed 不改 ops-admin / member 绑定;
 // 基线数跟随 ops-admin 当前合法总数(2026-06-12 WECHAT T2 +3 → 58→61;
@@ -253,7 +257,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     expect(byModule).toEqual({
       member: 6,
       'member-profile': 4,
-      'emergency-contact': 4,
+      'emergency-contact': 5,
       certificate: 6,
       activity: 6,
       'activity-registration': 6,

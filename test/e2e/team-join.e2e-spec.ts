@@ -86,6 +86,12 @@ describe('招新三期(入队)admin 面 e2e', () => {
   }
 
   async function openCycle(openedAt: Date = new Date()): Promise<string> {
+    // 十项收口刀B:DB 级「至多一个 open 轮」partial unique 落地——夹具先关旧 open 再开新
+    // (此前夹具可堆多个 open 轮,靠"最新创建"侥幸;现与生产语义一致)。
+    await prisma.teamJoinCycle.updateMany({
+      where: { statusCode: 'open' },
+      data: { statusCode: 'closed', closedAt: new Date() },
+    });
     const c = await prisma.teamJoinCycle.create({
       data: { year: CYCLE_YEAR, name: '2026 年度入队', statusCode: 'open', openedAt },
     });
@@ -220,6 +226,12 @@ describe('招新三期(入队)admin 面 e2e', () => {
     evaluationExtendedUntil?: Date;
     cycleStatus?: 'open' | 'closed';
   }): Promise<{ appId: string; memberId: string; cycleId: string }> {
+    // 十项收口刀B:DB 级「至多一个 open 轮」partial unique 落地——夹具先关旧 open 再开新
+    // (此前夹具可堆多个 open 轮,靠"最新创建"侥幸;现与生产语义一致)。
+    await prisma.teamJoinCycle.updateMany({
+      where: { statusCode: 'open' },
+      data: { statusCode: 'closed', closedAt: new Date() },
+    });
     const cycle = await prisma.teamJoinCycle.create({
       data: {
         year: CYCLE_YEAR,
@@ -301,7 +313,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
   });
 
   // ===== 入队轮 CRUD + 至多一个 open =====
-  it('① 入队轮 create(closed)→ PATCH open → detail open;第二个轮开 open → BAD_REQUEST', async () => {
+  it('① 入队轮 create(closed)→ PATCH open → detail open;第二个轮开 open → 28231(十项收口刀B 专码)', async () => {
     const created = await request(httpServer(app))
       .post(ADMIN_CYCLES)
       .set('Authorization', adminAuth)
@@ -334,7 +346,8 @@ describe('招新三期(入队)admin 面 e2e', () => {
       .patch(`${ADMIN_CYCLES}/${c2.body.data.id}`)
       .set('Authorization', adminAuth)
       .send({ statusCode: 'open' });
-    expectBizError(res, BizCode.BAD_REQUEST);
+    // 十项收口刀B:由通用 40000 升专码(并发穿透另有 team_join_cycles_single_open_unique P2002 兜底同码)
+    expectBizError(res, BizCode.TEAM_JOIN_CYCLE_OPEN_CONFLICT);
   });
 
   it('② 入队轮详情不存在 → TEAM_JOIN_CYCLE_NOT_FOUND', async () => {
@@ -420,6 +433,18 @@ describe('招新三期(入队)admin 面 e2e', () => {
     // 旧直接 SUM = 7.0;新按北京日封顶:min(6.0,1.5)=1.5 + 1.0 = 2.5。
     expect(detail.body.data.contributionPoints).toBe('2.5');
     expect(detail.body.data.contributionSatisfied).toBe(false);
+  });
+
+  // ===== 十项收口刀A:gate 完成日不得晚于今天(28243)=====
+  it('刀A markGate 完成日在未来(明天)→ 28243;完成日=今天 → 200(允许"今天"拒"明天")', async () => {
+    const cycleId = await openCycle();
+    const memberId = await createMember();
+    const appId = await createApplication(cycleId, memberId);
+    // 此前未来日期会立即判满足并可当场自动推进(years 类还把有效期虚推更远)
+    const tomorrow = new Date(Date.now() + 24 * 3600_000).toISOString();
+    const res = await markGate(appId, 'fitness', { completionDate: tomorrow });
+    expectBizError(res, BizCode.TEAM_JOIN_GATE_COMPLETION_IN_FUTURE);
+    await markGate(appId, 'fitness', { completionDate: new Date().toISOString() }).expect(200);
   });
 
   // ===== gate 有效期 =====

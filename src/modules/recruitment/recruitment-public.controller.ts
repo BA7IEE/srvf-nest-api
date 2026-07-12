@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Post,
@@ -29,6 +30,8 @@ import {
   ID_CARD_IMAGE_MAX_BYTES,
 } from './recruitment.constants';
 import {
+  PublicRecruitmentPublicityItemDto,
+  PublicRecruitmentPublicityResponseDto,
   RecruitmentApplicationProgressDto,
   RecruitmentCertificateUploadDto,
   RecruitmentCertificateUploadResultDto,
@@ -53,6 +56,7 @@ import {
   RecruitmentApplicationsService,
   type UploadedImageFile,
 } from './recruitment-applications.service';
+import { RecruitmentApplicationsQueryService } from './recruitment-applications-query.service';
 import { RecruitmentIdentityService } from './recruitment-identity.service';
 
 // 招新一期 T3(2026-06-18):公开报名 surface(评审稿 §3.2 端点 4-5)。
@@ -107,13 +111,31 @@ async function parseSubmitPayload(
   RecruitmentOcrCardWarningsDto,
   RecruitmentSendCodeResponseDto,
   RecruitmentVerifyCodeResponseDto,
+  // 十项收口刀F:公开公示名单 DTO
+  PublicRecruitmentPublicityItemDto,
+  PublicRecruitmentPublicityResponseDto,
 )
 @Controller('open/v1/recruitment')
 export class RecruitmentPublicController {
   constructor(
     private readonly service: RecruitmentApplicationsService,
     private readonly identity: RecruitmentIdentityService,
+    // 十项收口刀F:公开公示名单复用 admin 预览同一取数内核(公示=实发)
+    private readonly queryService: RecruitmentApplicationsQueryService,
   ) {}
+
+  // ============ 十项收口刀F:公开公示名单(view-publicity 悬空动作收口)============
+  @Public()
+  @RecruitmentThrottle()
+  @Get('publicity')
+  @ApiOperation({
+    summary:
+      '公开公示名单(无账号;当前公示中轮次的姓名+拟发编号,与后台预览/实发同源推算;无公示中名单返回 cycleYear=null + 空 items;throttler recruitment) [public]',
+  })
+  @ApiWrappedOkResponse(PublicRecruitmentPublicityResponseDto)
+  publicity(): Promise<PublicRecruitmentPublicityResponseDto> {
+    return this.queryService.publicPublicityList();
+  }
 
   @Public()
   @RecruitmentThrottle()

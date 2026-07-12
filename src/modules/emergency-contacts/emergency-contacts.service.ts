@@ -30,6 +30,11 @@ import { assertEmergencyRelationCodeValid } from './emergency-relation.validatio
 //   - list  → auditPlaceholder('emergency-contact.read.other', ...)  pino-only(批次 6 PR #2 未迁移,沿 F2)
 //   - create / update / softDelete → AuditLogsService.log({ event: 'emergency-contact.write', ... })
 //     批次 6 PR #2 迁移(D-A 修订 / D6 v1.1 §8.2),敏感字段经 maskName / maskPhone / maskAddress 打码
+// - 十项收口刀D(2026-07-11;⚠️ 行为变更):read.record 语义收窄为脱敏——4 个响应出口(list /
+//   create·update·softDelete 回显)对无 emergency-contact.read.sensitive 者掩码 contactName /
+//   phonePrimary / phoneBackup / address(镜像 member-profile §F&A-3 分级)。此前全明文且
+//   read.record 下放 org-admin / group-manager(组长可见全队联系人姓名电话住址),与同为电话类的
+//   member-profile.mobile 掩码口径倒挂;带队应急需要明文者按人绑 sensitive 码(role-binding)。
 
 const emergencyContactSafeSelect = {
   id: true,
@@ -49,6 +54,19 @@ type SafeEmergencyContact = Prisma.EmergencyContactGetPayload<{
 }>;
 
 type PrismaTx = Prisma.TransactionClient;
+
+// 十项收口刀D:响应出口分级掩码(掩码是值变换非 schema 变更,DTO 字段名/类型不变;maskX 对
+// null/空串短路返 null,`?? 原值` 兜底——镜像 member-profiles.presentMemberProfile 范式)。
+function presentEmergencyContact(c: SafeEmergencyContact, masked: boolean): SafeEmergencyContact {
+  if (!masked) return c;
+  return {
+    ...c,
+    contactName: maskName(c.contactName) ?? c.contactName,
+    phonePrimary: maskPhone(c.phonePrimary) ?? c.phonePrimary,
+    phoneBackup: maskPhone(c.phoneBackup) ?? c.phoneBackup,
+    address: maskAddress(c.address) ?? c.address,
+  };
+}
 
 @Injectable()
 export class EmergencyContactsService {
@@ -131,6 +149,8 @@ export class EmergencyContactsService {
     currentUser: CurrentUserPayload,
   ): Promise<EmergencyContactResponseDto[]> {
     await this.assertCanOrThrow(currentUser, 'emergency-contact.read.record');
+    // 十项收口刀D:脱敏随码(masked = 无 sensitive 码;零第二套口径)
+    const masked = !(await this.rbac.can(currentUser, 'emergency-contact.read.sensitive'));
     await this.findMemberOrThrow(memberId);
 
     const items = await this.prisma.emergencyContact.findMany({
@@ -145,7 +165,7 @@ export class EmergencyContactsService {
       contactIds: items.map((i) => i.id),
     });
 
-    return items;
+    return items.map((c) => presentEmergencyContact(c, masked));
   }
 
   // ============ create ============
@@ -157,6 +177,8 @@ export class EmergencyContactsService {
     auditMeta: AuditMeta,
   ): Promise<EmergencyContactResponseDto> {
     await this.assertCanOrThrow(currentUser, 'emergency-contact.create.record');
+    // 十项收口刀D:回显同 list 分级(判权在事务外,tx 内零外调)
+    const masked = !(await this.rbac.can(currentUser, 'emergency-contact.read.sensitive'));
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       await this.assertRelationCodeValid(dto.relationCode, tx);
@@ -187,7 +209,7 @@ export class EmergencyContactsService {
         tx,
       });
 
-      return created;
+      return presentEmergencyContact(created, masked);
     });
   }
 
@@ -201,6 +223,8 @@ export class EmergencyContactsService {
     auditMeta: AuditMeta,
   ): Promise<EmergencyContactResponseDto> {
     await this.assertCanOrThrow(currentUser, 'emergency-contact.update.record');
+    // 十项收口刀D:回显同 list 分级
+    const masked = !(await this.rbac.can(currentUser, 'emergency-contact.read.sensitive'));
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findContactInMemberOrThrow(memberId, contactId, tx);
@@ -236,7 +260,7 @@ export class EmergencyContactsService {
         tx,
       });
 
-      return updated;
+      return presentEmergencyContact(updated, masked);
     });
   }
 
@@ -251,6 +275,8 @@ export class EmergencyContactsService {
     auditMeta: AuditMeta,
   ): Promise<EmergencyContactResponseDto> {
     await this.assertCanOrThrow(currentUser, 'emergency-contact.delete.record');
+    // 十项收口刀D:回显同 list 分级
+    const masked = !(await this.rbac.can(currentUser, 'emergency-contact.read.sensitive'));
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findContactInMemberOrThrow(memberId, contactId, tx);
@@ -273,7 +299,7 @@ export class EmergencyContactsService {
         tx,
       });
 
-      return removed;
+      return presentEmergencyContact(removed, masked);
     });
   }
 }

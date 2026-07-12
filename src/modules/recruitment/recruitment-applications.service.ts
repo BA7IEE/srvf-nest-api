@@ -53,6 +53,7 @@ import {
   formatTempNo,
   isForeignDocument,
   isMainlandId,
+  isProfileExtraWithinLimit,
   isValidChineseId,
 } from './recruitment.constants';
 import {
@@ -236,6 +237,11 @@ export class RecruitmentApplicationsService {
     // 3. 紧急联系人 relation 字典校验(免费,fail-fast,省后续外部开销;F3 #399 报名侧与 promote 一致)
     for (const contact of payload.emergencyContacts) {
       await assertEmergencyRelationCodeValid(this.prisma, contact.relation);
+    }
+
+    // 3b. 十项收口刀A:profileExtra 体积/键数上限(免费 fail-fast;与 F2 admin 改资料共用同一判定)
+    if (payload.profileExtra && !isProfileExtraWithinLimit(payload.profileExtra)) {
+      throw new BizException(BizCode.BAD_REQUEST);
     }
 
     // 4. 身份链(评审稿 §3.1 两套入口;E-P4-4):小程序 wechatCode → openid,或 H5 phoneVerificationToken。
@@ -779,16 +785,14 @@ export class RecruitmentApplicationsService {
     return cycle;
   }
 
-  // open 轮 + 容量预检(提交端用;满 → 28031 快速失败省付费 OCR;原子兜底在 issueTempNo,FM-C)
+  // open 轮 + 容量预检(提交端用;满 → 28031 快速失败省付费 OCR;原子兜底在 issueTempNo,FM-C)。
+  // 十项收口刀A:预检口径由「verified 现员数」对齐权威闸的 tempNoSeq 累计口径——verified 现员数
+  // 随推进/淘汰下降而 tempNo 永不回收,旧口径系统性偏松,恰在满员场景放行 → 烧付费 OCR 后被
+  // 权威闸 28031 整单回滚。同口径后预检 = 权威闸的无锁快照(轻微陈旧无害),并省一次 count 查询。
   private async resolveOpenCycleOrThrow(): Promise<RecruitmentCycle> {
     const cycle = await this.findOpenCycleOrThrow();
-    if (cycle.capacity !== null) {
-      const issued = await this.prisma.recruitmentApplication.count({
-        where: { cycleId: cycle.id, statusCode: APP_STATUS_VERIFIED, deletedAt: null },
-      });
-      if (issued >= cycle.capacity) {
-        throw new BizException(BizCode.RECRUITMENT_CYCLE_CAPACITY_FULL);
-      }
+    if (cycle.capacity !== null && cycle.tempNoSeq >= cycle.capacity) {
+      throw new BizException(BizCode.RECRUITMENT_CYCLE_CAPACITY_FULL);
     }
     return cycle;
   }

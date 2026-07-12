@@ -398,6 +398,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/open/v1/recruitment/applications/certificates'],
   ['post', '/api/open/v1/recruitment/applications/rebind-wechat'],
   ['post', '/api/open/v1/recruitment/applications/rebind-phone'],
+  // 十项收口刀F(2026-07-11):公开公示名单(view-publicity 悬空动作收口;姓名+拟发号,公示=实发同源)。
+  ['get', '/api/open/v1/recruitment/publicity'],
   ['post', '/api/admin/v1/recruitment/cycles'],
   ['get', '/api/admin/v1/recruitment/cycles'],
   ['get', '/api/admin/v1/recruitment/cycles/{id}'],

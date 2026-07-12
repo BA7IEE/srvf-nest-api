@@ -30,6 +30,7 @@ import {
   extractBirthDate,
   extractGenderCode,
   isMainlandId,
+  isProfileExtraWithinLimit,
   isValidChineseId,
 } from './recruitment.constants';
 import { resolveBatchMatches } from './recruitment-batch-matching';
@@ -339,6 +340,10 @@ export class RecruitmentApplicationReviewService {
         data.emergencyContacts = dto.emergencyContacts as unknown as Prisma.InputJsonValue;
       }
       if (dto.profileExtra !== undefined) {
+        // 十项收口刀A:体积/键数上限(与 submit 共用同一判定)
+        if (!isProfileExtraWithinLimit(dto.profileExtra)) {
+          throw new BizException(BizCode.BAD_REQUEST);
+        }
         data.profileExtra = dto.profileExtra as Prisma.InputJsonValue;
       }
 
@@ -375,9 +380,16 @@ export class RecruitmentApplicationReviewService {
         }
         data.idCardNumber = dto.idCardNumber;
       }
-      // 外籍补录(F3 手动建档前置):birthDate 归一日期,genderCode 直存
+      // 外籍补录(F3 手动建档前置):birthDate 归一日期,genderCode 直存。
+      // 十项收口刀A:补录同样过 18-60 年龄闸——此前外籍从提交到建档全程零年龄校验
+      // (submit 年龄闸包在大陆分支;promote-single 齐备闸此前也只查非空)。
       if (!mainland && dto.birthDate !== undefined) {
-        data.birthDate = normalizeDateOnly(dto.birthDate);
+        const birthDate = normalizeDateOnly(dto.birthDate);
+        const age = computeAge(birthDate, now);
+        if (age < RECRUITMENT_MIN_AGE || age > RECRUITMENT_MAX_AGE) {
+          throw new BizException(BizCode.RECRUITMENT_AGE_OUT_OF_RANGE);
+        }
+        data.birthDate = birthDate;
       }
       if (!mainland && dto.genderCode !== undefined) {
         data.genderCode = dto.genderCode;

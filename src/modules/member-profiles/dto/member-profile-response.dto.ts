@@ -16,8 +16,12 @@ export class MemberProfileResponseDto {
   @ApiProperty({ description: '性别字典 code(MP-2;字典 gender)' })
   genderCode!: string;
 
-  @ApiProperty({ description: '出生日期(MP-3;ISO 8601)' })
-  birthDate!: Date;
+  @ApiProperty({
+    description:
+      '出生日期(MP-3;ISO 8601;高敏感——无 member-profile.read.sensitive 时为 null,十项收口刀D;⚠️ 编辑表单回写须先剔除 null)',
+    nullable: true,
+  })
+  birthDate!: Date | null;
 
   @ApiProperty({ description: '证件类型字典 code(MP-4;字典 document_type)' })
   documentTypeCode!: string;
@@ -70,35 +74,52 @@ export class MemberProfileResponseDto {
   })
   mobile!: string;
 
-  @ApiPropertyOptional({ description: '座机(MP-16;选填)', nullable: true })
+  @ApiPropertyOptional({
+    description: '座机(MP-16;选填;无 sensitive 码时为 null,十项收口刀D)',
+    nullable: true,
+  })
   landline!: string | null;
 
-  @ApiProperty({ description: '邮箱(MP-17)' })
-  email!: string;
+  @ApiPropertyOptional({
+    description:
+      '邮箱(MP-17;promote 建档可为 null;无 sensitive 码时为 null,十项收口刀D——类型随之修正为可空,与 DB 一致)',
+    nullable: true,
+  })
+  email!: string | null;
 
-  @ApiPropertyOptional({ description: 'QQ(MP-18a)', nullable: true })
+  @ApiPropertyOptional({ description: 'QQ(MP-18a;无 sensitive 码时为 null,刀D)', nullable: true })
   qq!: string | null;
 
-  @ApiPropertyOptional({ description: '微信(MP-18b)', nullable: true })
+  @ApiPropertyOptional({ description: '微信(MP-18b;无 sensitive 码时为 null,刀D)', nullable: true })
   wechat!: string | null;
 
-  @ApiPropertyOptional({ description: '身高 cm(MP-19a;高敏感医疗)', nullable: true })
+  @ApiPropertyOptional({
+    description: '身高 cm(MP-19a;高敏感医疗;无 sensitive 码时为 null,刀D)',
+    nullable: true,
+  })
   heightCm!: number | null;
 
-  @ApiPropertyOptional({ description: '体重 kg(MP-19b;高敏感医疗)', nullable: true })
+  @ApiPropertyOptional({
+    description: '体重 kg(MP-19b;高敏感医疗;无 sensitive 码时为 null,刀D)',
+    nullable: true,
+  })
   weightKg!: number | null;
 
   @ApiPropertyOptional({
-    description: '血型字典 code(MP-19c;字典 blood_type;高敏感医疗)',
+    description: '血型字典 code(MP-19c;字典 blood_type;高敏感医疗;无 sensitive 码时为 null,刀D)',
     nullable: true,
   })
   bloodTypeCode!: string | null;
 
-  @ApiPropertyOptional({ description: '视力(MP-20;选填)', nullable: true })
+  @ApiPropertyOptional({
+    description: '视力(MP-20;选填;医疗类,无 sensitive 码时为 null,刀D)',
+    nullable: true,
+  })
   eyesight!: string | null;
 
   @ApiPropertyOptional({
-    description: '过往病史 JSON 数组(MP-21;高敏感医疗;元素 { categoryCode, note })',
+    description:
+      '过往病史 JSON 数组(MP-21;高敏感医疗;元素 { categoryCode, note };无 sensitive 码时为 null,刀D)',
     type: [MedicalNoteItemDto],
     nullable: true,
   })

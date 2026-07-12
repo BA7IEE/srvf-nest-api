@@ -122,6 +122,12 @@ export class RecruitmentIdentityService {
       code: dto.code,
       userId: null,
     });
+    // 十项收口刀C:顺手硬删本手机的过期会话行(明文手机 + OCR 轨迹属临时凭证,过期即无业务价值;
+    // 镜像 SmsCodeService「发新作废旧」先例,不建 cron——全库过期行的兜底清理走留存 SOP
+    // recruitment_identity_sessions 节)。放在验码成功后:仅真实机主触发,错码尝试不触库删。
+    await this.prisma.recruitmentIdentitySession.deleteMany({
+      where: { phone: dto.phone, expiresAt: { lt: now } },
+    });
     const rawToken = generatePhoneVerificationToken();
     const expiresAt = new Date(now.getTime() + RECRUITMENT_IDENTITY_SESSION_TTL_SECONDS * 1000);
     await this.prisma.recruitmentIdentitySession.create({
