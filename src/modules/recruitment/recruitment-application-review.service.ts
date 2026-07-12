@@ -16,6 +16,7 @@ import { maskIdCard, maskName } from '../realname/realname.constants';
 import {
   APP_INACTIVE_STATUS_CODES,
   APP_STATUS_MANUAL,
+  APP_STATUS_PENDING,
   APP_STATUS_PENDING_EVALUATION,
   APP_STATUS_PROMOTED,
   APP_STATUS_PUBLICITY,
@@ -32,6 +33,7 @@ import {
   type ThresholdCode,
   type ThresholdMarks,
   allThresholdsComplete,
+  certificateCategoryForThreshold,
   computeAge,
   extractBirthDate,
   extractGenderCode,
@@ -39,6 +41,7 @@ import {
   isProfileExtraWithinLimit,
   isValidChineseId,
 } from './recruitment.constants';
+import { certificateJsonOrDbNull } from './recruitment-certificate-json';
 import { resolveBatchMatches } from './recruitment-batch-matching';
 import { toAdminApplicationDto } from './recruitment-applications.presenter';
 import type {
@@ -98,8 +101,7 @@ export class RecruitmentApplicationReviewService {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
       }
       const code = dto.thresholdCode as ThresholdCode; // DTO @IsIn 已校验 ∈ THRESHOLD_CODES
-      const certificateCategory =
-        code === 'redCross' ? 'first_aid' : code === 'bsafe' ? 'bsafe' : null;
+      const certificateCategory = certificateCategoryForThreshold(code);
       if (dto.completed && certificateCategory) {
         const images = (row.certificateImages as Record<string, string[]> | null) ?? {};
         if (
@@ -193,11 +195,8 @@ export class RecruitmentApplicationReviewService {
       const updated = await tx.recruitmentApplication.update({
         where: { id },
         data: {
-          certificateReviewStatus: nextReviews as Prisma.InputJsonValue,
-          certificateImages:
-            Object.keys(nextImages).length > 0
-              ? (nextImages as Prisma.InputJsonValue)
-              : Prisma.DbNull,
+          certificateReviewStatus: certificateJsonOrDbNull(nextReviews),
+          certificateImages: certificateJsonOrDbNull(nextImages),
           thresholdMarks: threshold.marks as Prisma.InputJsonValue,
           statusCode: threshold.nextStatus,
         },
@@ -564,8 +563,8 @@ export class RecruitmentApplicationReviewService {
     else delete marks[code];
     const allComplete = allThresholdsComplete(marks);
     const nextStatus =
-      currentStatus === APP_STATUS_MANUAL
-        ? APP_STATUS_MANUAL
+      currentStatus === APP_STATUS_MANUAL || currentStatus === APP_STATUS_PENDING
+        ? currentStatus
         : currentStatus === APP_STATUS_PUBLICITY && allComplete
           ? APP_STATUS_PUBLICITY
           : allComplete

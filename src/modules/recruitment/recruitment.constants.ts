@@ -115,12 +115,10 @@ export function comparePromotionOrder(a: PromotionOrderItem, b: PromotionOrderIt
 
 /**
  * 是否可一键发号:资料齐备(realName/birthDate/genderCode + openid|phone 锚)即可。
- * `isForeigner` 是历史 DB 字段,语义为「非大陆证件」而非国籍,不参与发号资格判定。
  * v0.40.0 H5 手机通道发号:登录通道条件由「有 openid」放宽为「有 openid **或** 有已验证手机(phone)」——
  * 无 openid 但有已验证手机的 H5 申请人亦可一键发号(建 SMS 登录通道 User);微信路径(有 openid)逐字不变。
  */
 export function isPromotable(app: {
-  isForeigner: boolean;
   birthDate: Date | null;
   genderCode: string | null;
   openid: string | null;
@@ -138,7 +136,6 @@ export function isPromotable(app: {
 /** promote / 公示预览共享的发号判定项(isPromotable 字段集 + id;RecruitmentApplication 天然满足) */
 export interface PromotionIssuanceItem {
   id: string;
-  isForeigner: boolean;
   birthDate: Date | null;
   genderCode: string | null;
   openid: string | null;
@@ -397,6 +394,17 @@ export const CERTIFICATE_THRESHOLD_BY_CATEGORY: Record<
   first_aid: 'redCross',
   bsafe: 'bsafe',
 };
+
+/** 由类别→门槛单一映射反查门槛对应证书类别；非证书门槛返回 null。 */
+export function certificateCategoryForThreshold(
+  code: ThresholdCode,
+): RecruitmentCertificateCategory | null {
+  return (
+    RECRUITMENT_CERT_CATEGORIES.find(
+      (category) => CERTIFICATE_THRESHOLD_BY_CATEGORY[category] === code,
+    ) ?? null
+  );
+}
 export const CERTIFICATE_IMAGES_MAX_PER_CATEGORY = 3;
 
 // ===== 紧急联系人(评审稿 D-R + E-R-13;JSON 数组,≥2)=====

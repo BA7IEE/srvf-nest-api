@@ -28,6 +28,7 @@ import {
   generatePhoneVerificationToken,
   hashPhoneVerificationToken,
 } from './recruitment.constants';
+import { certificateJsonOrDbNull } from './recruitment-certificate-json';
 import { recruitmentDuplicateExceptionForP2002 } from './recruitment-prisma-errors';
 import {
   RECRUITMENT_STAGE_DICT_TYPE,
@@ -437,10 +438,7 @@ export class RecruitmentIdentityService {
         where: { id: app.id },
         data: {
           certificateImages: nextImages,
-          certificateReviewStatus:
-            Object.keys(nextReviews).length > 0
-              ? (nextReviews as Prisma.InputJsonValue)
-              : Prisma.DbNull,
+          certificateReviewStatus: certificateJsonOrDbNull(nextReviews),
         },
       });
       await this.auditLogs.log({
