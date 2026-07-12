@@ -5,6 +5,7 @@
 ## Unreleased
 
 - 招新证书闭环刀A:证书上传新增必填 `issuingOrg`/`issuedAt` 并以第 48 migration 暂存发证真值;已 approved 类别禁止重传,红十字/BSAFE 直接/批量标门槛须先审核 approved;上传按行锁后快照合并写,promote 搬真值/审核备注,admin DTO 增证书摘要,微信查进度改为活跃优先(0 新端点/0 新权限码)。
+- team-join 小刀B:改候选部门改写独立 audit event `team-join-application.update-targets`;一键入队在写入前复查本轮 `openOrganizationIds`(非空清单外复用 28242,空/null 仍代表全部 ACTIVE),避免 approved 后轮配置收窄被绕过(0 schema/0 migration/0 路由/0 权限码)。
 
 ## v0.42.0 - 2026-07-12
 

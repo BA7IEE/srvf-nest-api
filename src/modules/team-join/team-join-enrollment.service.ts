@@ -114,6 +114,12 @@ export class TeamJoinEnrollmentService {
       if (!org || org.status !== OrganizationStatus.ACTIVE) {
         throw new BizException(BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE);
       }
+      const openOrganizationIds = Array.isArray(app.cycle.openOrganizationIds)
+        ? (app.cycle.openOrganizationIds as string[])
+        : [];
+      if (openOrganizationIds.length > 0 && !openOrganizationIds.includes(dto.organizationId)) {
+        throw new BizException(BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE);
+      }
 
       const marks = (app.gateMarks as GateMarks | null) ?? null;
 

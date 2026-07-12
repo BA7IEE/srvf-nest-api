@@ -226,7 +226,7 @@ export class AppMeTeamJoinService {
         include: APP_APPLICATION_INCLUDE,
       });
       await this.auditLogs.log({
-        event: 'team-join-application.submit',
+        event: 'team-join-application.update-targets',
         actorUserId: currentUser.id,
         actorRoleSnap: currentUser.role,
         resourceType: AUDIT_RESOURCE_TYPE,

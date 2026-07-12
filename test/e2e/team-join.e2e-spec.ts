@@ -886,6 +886,33 @@ describe('招新三期(入队)admin 面 e2e', () => {
     ).toBe(0);
   });
 
+  it('⑳b【T4】一键入队复查本轮开放清单:收窄拒绝、加回放行、空清单全开放', async () => {
+    const narrowedOrg = await makeOrg();
+    const allowedOrg = await makeOrg();
+    const narrowed = await setupApproved({ targets: [narrowedOrg] });
+    await prisma.teamJoinCycle.update({
+      where: { id: narrowed.cycleId },
+      data: { openOrganizationIds: [allowedOrg] },
+    });
+    expectBizError(
+      await join(narrowed.appId, narrowedOrg),
+      BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE,
+    );
+    await prisma.teamJoinCycle.update({
+      where: { id: narrowed.cycleId },
+      data: { openOrganizationIds: [narrowedOrg] },
+    });
+    await join(narrowed.appId, narrowedOrg).expect(200);
+
+    const openOrg = await makeOrg();
+    const openToAll = await setupApproved({ targets: [openOrg] });
+    await prisma.teamJoinCycle.update({
+      where: { id: openToAll.cycleId },
+      data: { openOrganizationIds: [] },
+    });
+    await join(openToAll.appId, openOrg).expect(200);
+  });
+
   it('㉑【T4】选专业队:缺对应 team-* gate → 28242;补 gate → joined', async () => {
     const proOrg = await makeOrg('professional-water'); // 水队 → 需 team-water gate
     const { appId } = await setupApproved({ targets: [proOrg] }); // 仅 8 通用,无 team-water

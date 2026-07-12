@@ -102,7 +102,15 @@ export function buildGateStatus(
 // ===== admin 行查询 include + presenter(admin list/detail/标 gate/评估/一键入队 共用)=====
 // cycle.statusCode 供一键入队判「综合评估本轮有效 / 延长期」(T4);member 供展示编号/称呼。
 export const TEAM_JOIN_APPLICATION_INCLUDE = {
-  cycle: { select: { openedAt: true, year: true, statusCode: true, name: true } },
+  cycle: {
+    select: {
+      openedAt: true,
+      year: true,
+      statusCode: true,
+      name: true,
+      openOrganizationIds: true,
+    },
+  },
   member: { select: { memberNo: true, displayName: true } },
 } as const;
 

@@ -114,7 +114,8 @@ export type AuditLogEvent =
   | 'team-join-application.mark-gate' // admin 标 gate;before/after status;extra {gateCode, passed, generalGatesSatisfied, contributionSatisfied}
   | 'team-join-application.evaluate' // admin 综合评估/淘汰;before/after status;extra {approved, eliminationStage?}
   // 招新三期(入队)T3(2026-06-19;评审稿 §3.5):App 自助发起 / 改候选部门(actorUserId = 本人 User):
-  | 'team-join-application.submit' // 自助发起入队申请(after status/cycle/targetCount)+ 改候选部门复用(before/after targetCount)
+  | 'team-join-application.submit' // 自助发起入队申请(after status/cycle/targetCount)
+  | 'team-join-application.update-targets' // 改候选部门(before/after targetCount)
   // 招新三期(入队)T4(2026-06-19;评审稿 §4.5):admin 一键入队(志愿者→队员;设部门 + 级别 level-1):
   | 'team-join-application.join' // before/after status;extra {organizationId, gradeCode, memberId}
   // CMS 内容发布模块(第 28 模块)T2(2026-06-21;评审稿 content-module-review.md §7):admin 内容写 4 事件。

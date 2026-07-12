@@ -13,7 +13,7 @@ import { createTestApp } from '../setup/test-app';
 
 // 招新三期(入队)T3 App 自助面 e2e(冻结评审稿 docs/archive/reviews/recruitment-phase3-review.md §7)。
 // 覆盖:准入(unlinked/INACTIVE → 403)/ 发起申请(open 轮 + 未入队 + 候选 org 存在 ACTIVE + 防重)/
-// 查进度(self-scope,gate 实况 + 实时贡献值)/ 改候选部门(仅本人 + joining 态)/ audit submit。
+// 查进度(self-scope,gate 实况 + 实时贡献值)/ 改候选部门(仅本人 + joining 态)/ audit submit + update-targets。
 
 const APPS = '/api/app/v1/me/team-join/applications';
 const CURRENT = '/api/app/v1/me/team-join/applications/current';
@@ -319,7 +319,7 @@ describe('招新三期(入队)App 自助面 e2e', () => {
   });
 
   // ===== audit =====
-  it('⑪ audit:发起 + 改候选各落 team-join-application.submit(actorUserId = 本人)', async () => {
+  it('⑪ audit:发起与改候选分别落 submit/update-targets(actorUserId = 本人)', async () => {
     await openCycle();
     const orgA = await makeOrg();
     const orgB = await makeOrg();
@@ -330,9 +330,17 @@ describe('招新三期(入队)App 自助面 e2e', () => {
       .send({ targetOrganizationIds: [orgA, orgB] })
       .expect(200);
     const logs = await prisma.auditLog.findMany({
-      where: { event: 'team-join-application.submit' },
+      where: {
+        event: {
+          in: ['team-join-application.submit', 'team-join-application.update-targets'],
+        },
+      },
+      orderBy: { createdAt: 'asc' },
     });
-    expect(logs.length).toBe(2);
+    expect(logs.map((log) => log.event)).toEqual([
+      'team-join-application.submit',
+      'team-join-application.update-targets',
+    ]);
     expect(logs.every((l) => l.actorUserId === volA.userId)).toBe(true);
   });
 });
