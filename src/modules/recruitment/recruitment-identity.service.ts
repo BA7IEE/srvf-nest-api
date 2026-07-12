@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DictItemStatus, Prisma, SmsPurpose, type RecruitmentApplication } from '@prisma/client';
 
+import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
@@ -28,7 +29,11 @@ import {
   generatePhoneVerificationToken,
   hashPhoneVerificationToken,
 } from './recruitment.constants';
-import { certificateJsonOrDbNull } from './recruitment-certificate-json';
+import {
+  certificateJsonOrDbNull,
+  certificateJsonRecord,
+  certificateReviewForCategory,
+} from './recruitment-certificate-json';
 import { recruitmentDuplicateExceptionForP2002 } from './recruitment-prisma-errors';
 import {
   RECRUITMENT_STAGE_DICT_TYPE,
@@ -367,6 +372,16 @@ export class RecruitmentIdentityService {
     files: UploadedImageFile[],
     meta: AuditMeta,
   ): Promise<RecruitmentCertificateUploadResultDto> {
+    const issuingOrg = dto.issuingOrg.trim();
+    if (issuingOrg.length === 0) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    const issuedAt = normalizeDateOnly(dto.issuedAt);
+    const today = normalizeDateOnly(new Date().toISOString());
+    if (issuedAt.getTime() > today.getTime()) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    const issuedAtDateOnly = issuedAt.toISOString().slice(0, 10);
     const viaWechat = typeof dto.wechatCode === 'string' && dto.wechatCode.length > 0;
     const viaPhone = typeof dto.phone === 'string' && dto.phone.length > 0;
     if (viaWechat === viaPhone) {
@@ -402,20 +417,15 @@ export class RecruitmentIdentityService {
     if (!app) {
       throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
     }
-    if (
-      app.statusCode === APP_STATUS_PROMOTED ||
-      app.statusCode === APP_STATUS_REJECTED ||
-      app.statusCode === APP_STATUS_WITHDRAWN
-    ) {
-      throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
-    }
+    this.assertCertificateUploadAllowed(app, dto.category);
+    const targetApp = app;
 
     // 落图(失败域:任一 putObject 失败 → best-effort 删本批已落新 key,不动旧图;镜像 FM-B)
     const newKeys: string[] = [];
     try {
       for (const f of files) {
         const ext = f.mimetype === 'image/png' ? 'png' : 'jpg';
-        const key = `${CERTIFICATE_IMAGE_KEY_PREFIX}/${dto.category}/${app.cycleId}/${randomUUID()}.${ext}`;
+        const key = `${CERTIFICATE_IMAGE_KEY_PREFIX}/${dto.category}/${targetApp.cycleId}/${randomUUID()}.${ext}`;
         await this.storage.putObject({ key, body: f.buffer, contentType: f.mimetype });
         newKeys.push(key);
       }
@@ -426,44 +436,89 @@ export class RecruitmentIdentityService {
       throw err;
     }
 
-    const existing = (app.certificateImages as Record<string, string[]> | null) ?? {};
-    const existingReviews = (app.certificateReviewStatus as Record<string, unknown> | null) ?? {};
-    const nextReviews = { ...existingReviews };
-    delete nextReviews[dto.category];
-    const oldKeys = Array.isArray(existing[dto.category]) ? existing[dto.category] : [];
-    const nextImages: Record<string, string[]> = { ...existing, [dto.category]: newKeys };
+    let oldKeys: string[];
+    try {
+      oldKeys = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(
+          Prisma.sql`SELECT "id" FROM "recruitment_applications" WHERE "id" = ${targetApp.id} FOR UPDATE`,
+        );
+        const locked = await tx.recruitmentApplication.findFirst({
+          where: { id: targetApp.id, deletedAt: null },
+        });
+        if (!locked) {
+          throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
+        }
+        // 落图窗口内状态/审核结论可能变化；合并写只认 FOR UPDATE 后的最新行。
+        this.assertCertificateUploadAllowed(locked, dto.category);
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.recruitmentApplication.update({
-        where: { id: app.id },
-        data: {
-          certificateImages: nextImages,
-          certificateReviewStatus: certificateJsonOrDbNull(nextReviews),
-        },
+        const existing = certificateJsonRecord(locked.certificateImages);
+        const existingReviews = certificateJsonRecord(locked.certificateReviewStatus);
+        const existingIssuance = certificateJsonRecord(locked.certificateIssuanceInfo);
+        const nextReviews = { ...existingReviews };
+        delete nextReviews[dto.category];
+        const replacedKeys = Array.isArray(existing[dto.category])
+          ? (existing[dto.category] as string[])
+          : [];
+        const nextImages = { ...existing, [dto.category]: newKeys };
+        const nextIssuance = {
+          ...existingIssuance,
+          [dto.category]: { issuingOrg, issuedAt: issuedAtDateOnly },
+        };
+
+        await tx.recruitmentApplication.update({
+          where: { id: targetApp.id },
+          data: {
+            certificateImages: nextImages as Prisma.InputJsonValue,
+            certificateReviewStatus: certificateJsonOrDbNull(nextReviews),
+            certificateIssuanceInfo: nextIssuance as Prisma.InputJsonValue,
+          },
+        });
+        await this.auditLogs.log({
+          event: 'recruitment-application.certificate-upload',
+          actorUserId: null, // 无账号自助上传
+          actorRoleSnap: null,
+          resourceType: AUDIT_RESOURCE_TYPE,
+          resourceId: targetApp.id,
+          meta,
+          extra: {
+            channel,
+            category: dto.category,
+            imageCount: newKeys.length,
+            replacedCount: replacedKeys.length,
+            issuingOrg,
+            ...(channel === 'phone' ? { phone: maskPhone(dto.phone as string) } : {}),
+          },
+          tx,
+        });
+        return replacedKeys;
       });
-      await this.auditLogs.log({
-        event: 'recruitment-application.certificate-upload',
-        actorUserId: null, // 无账号自助上传
-        actorRoleSnap: null,
-        resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: app.id,
-        meta,
-        extra: {
-          channel,
-          category: dto.category,
-          imageCount: newKeys.length,
-          replacedCount: oldKeys.length,
-          ...(channel === 'phone' ? { phone: maskPhone(dto.phone as string) } : {}),
-        },
-        tx,
-      });
-    });
+    } catch (err) {
+      for (const k of newKeys) {
+        await this.safeDeleteBlob(k);
+      }
+      throw err;
+    }
 
     // 重传覆盖:旧 blob best-effort 删(库行已指向新 key;删失败仅告警,不影响本次结果)
     for (const k of oldKeys) {
       await this.safeDeleteBlob(k);
     }
     return { category: dto.category, imageCount: newKeys.length };
+  }
+
+  private assertCertificateUploadAllowed(app: RecruitmentApplication, category: string): void {
+    if (
+      app.statusCode === APP_STATUS_PROMOTED ||
+      app.statusCode === APP_STATUS_REJECTED ||
+      app.statusCode === APP_STATUS_WITHDRAWN
+    ) {
+      throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
+    }
+    if (
+      certificateReviewForCategory(app.certificateReviewStatus, category)?.status === 'approved'
+    ) {
+      throw new BizException(BizCode.RECRUITMENT_CERTIFICATE_ALREADY_APPROVED);
+    }
   }
 
   // 证书图 blob best-effort 删(重传覆盖旧图 / 落图失败补偿;失败仅告警不外抛,镜像 safeDeleteOrphanImage)

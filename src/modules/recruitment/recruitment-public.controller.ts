@@ -360,12 +360,22 @@ export class RecruitmentPublicController {
   @ApiBody({
     schema: {
       type: 'object',
-      required: ['category', 'images'],
+      required: ['category', 'issuingOrg', 'issuedAt', 'images'],
       properties: {
         category: {
           type: 'string',
           enum: ['first_aid', 'bsafe'],
           description: '证书类别(cert_type 既有码;每类 ≤3 张,重传整类覆盖)',
+        },
+        issuingOrg: {
+          type: 'string',
+          maxLength: 128,
+          description: '发证机构(自由文本;前端可提供红十字会/深圳市急救中心快捷项)',
+        },
+        issuedAt: {
+          type: 'string',
+          format: 'date',
+          description: '发证日期(YYYY-MM-DD;不得晚于今天)',
         },
         wechatCode: {
           type: 'string',
@@ -383,7 +393,7 @@ export class RecruitmentPublicController {
   })
   @ApiOperation({
     summary:
-      '公开上传证书图(无账号;凭证双通道二选一:wechatCode 或 phone+code;category ∈ first_aid/bsafe〔cert_type 既有码〕;每类 ≤3 张重传整类覆盖〔旧图即删〕;终态行 → 28041;发号时按类别自动建 pending Certificate 长期档案〔R6〕,审核动作仍 = 既有标门槛;审计 certificate-upload;throttler recruitment) [public]',
+      '公开上传证书图(无账号;multipart 必填 category+issuingOrg+issuedAt+images;凭证双通道二选一:wechatCode 或 phone+code;每类 ≤3 张整类覆盖;已审核通过类别 → 28054;发号时按类别建 pending Certificate 并搬发证真值;审计 certificate-upload;throttler recruitment) [public]',
   })
   @ApiWrappedOkResponse(RecruitmentCertificateUploadResultDto)
   @ApiBizErrorResponse(
@@ -391,6 +401,7 @@ export class RecruitmentPublicController {
     BizCode.SMS_CODE_INVALID,
     BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
     BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
+    BizCode.RECRUITMENT_CERTIFICATE_ALREADY_APPROVED,
     BizCode.TOO_MANY_REQUESTS,
   )
   uploadCertificates(

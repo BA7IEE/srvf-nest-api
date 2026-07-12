@@ -328,6 +328,21 @@ export class RecruitmentCertificateUploadDto {
   @IsIn(RECRUITMENT_CERT_CATEGORIES, { message: '证书类别非法' })
   category!: string;
 
+  @ApiProperty({
+    description: '发证机构(自由文本;前端可提供红十字会/深圳市急救中心快捷项)',
+    maxLength: 128,
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  issuingOrg!: string;
+
+  @ApiProperty({ description: '发证日期(YYYY-MM-DD;不得晚于今天)', example: '2026-07-13' })
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: '发证日期须为 YYYY-MM-DD' })
+  @IsDateString({ strict: true })
+  issuedAt!: string;
+
   @ApiPropertyOptional({
     description: '微信 wx.login code(通道①:换 openid 定位本人最近活跃报名;与 phone+code 二选一)',
     maxLength: 128,
@@ -535,6 +550,21 @@ export class RecruitmentCertificateProgressItemDto {
   note!: string | null;
 }
 
+export class RecruitmentCertificateAdminSummaryDto {
+  @ApiProperty({ enum: RECRUITMENT_CERT_CATEGORIES as unknown as string[] })
+  category!: string;
+  @ApiProperty() imageCount!: number;
+  @ApiPropertyOptional({ type: String, nullable: true }) issuingOrg!: string | null;
+  @ApiPropertyOptional({ type: String, description: '发证日期(YYYY-MM-DD)', nullable: true })
+  issuedAt!: string | null;
+  @ApiPropertyOptional({ enum: ['approved', 'rejected'], nullable: true })
+  reviewStatus!: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) reviewedAt!: string | null;
+  @ApiPropertyOptional({ type: String, description: '审核人 User.id', nullable: true })
+  reviewedBy!: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) reviewNote!: string | null;
+}
+
 export class RecruitmentApplicationProgressDto {
   @ApiProperty({ description: '业务态枚举(评审稿 §4.2;statusCode 派生,机器态不外露)' })
   stage!: string;
@@ -728,6 +758,11 @@ export class RecruitmentApplicationAdminDto {
   hasIdCardCropImage!: boolean;
   @ApiProperty({ description: '是否有头像裁剪图(身份证鉴伪版;取图走 portraitImageUrl)' })
   hasIdCardPortraitImage!: boolean;
+  @ApiProperty({
+    type: [RecruitmentCertificateAdminSummaryDto],
+    description: '证书摘要(images/reviewStatus/issuanceInfo 类别并集;无材料时空数组)',
+  })
+  certificates!: RecruitmentCertificateAdminSummaryDto[];
   // ===== 招新二期(后段)字段 =====
   @ApiPropertyOptional({
     description:

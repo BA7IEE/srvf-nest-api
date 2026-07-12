@@ -21,6 +21,7 @@ const SEND = '/api/open/v1/recruitment/identity/send-code';
 const VERIFY = '/api/open/v1/recruitment/identity/verify-code';
 const SUBMIT = '/api/open/v1/recruitment/applications';
 const QUERY_PHONE = '/api/open/v1/recruitment/applications/query-by-phone';
+const QUERY_WECHAT = '/api/open/v1/recruitment/applications/query';
 const REBIND_WECHAT = '/api/open/v1/recruitment/applications/rebind-wechat';
 const REBIND_PHONE = '/api/open/v1/recruitment/applications/rebind-phone';
 
@@ -579,6 +580,8 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
     const res = await request(httpServer(app))
       .post('/api/open/v1/recruitment/applications/certificates')
       .field('category', 'first_aid')
+      .field('issuingOrg', '深圳市红十字会')
+      .field('issuedAt', '2026-07-01')
       .field('phone', '13900000001')
       .field('code', FIXED_CODE)
       .attach('images', Buffer.from('fake-cert'), {
@@ -727,6 +730,39 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
     }
   });
 
+  it('A7 双通道活跃优先:closed 轮活跃行不被较新终态遮蔽', async () => {
+    const activeCycle = await openCycle({ statusCode: 'closed', name: '已关闭旧轮' });
+    const terminalCycle = await openCycle({ statusCode: 'closed', name: '较新终态轮' });
+    await seedApp(activeCycle.id, {
+      phone: '13900000111',
+      openid: 'dev-openid-a7-priority',
+      idCardNumber: 'A2-active',
+      createdAt: new Date('2026-07-11T00:00:00.000Z'),
+    });
+    await seedApp(terminalCycle.id, {
+      phone: '13900000111',
+      openid: 'dev-openid-a7-priority',
+      idCardNumber: 'A2-terminal',
+      statusCode: 'withdrawn',
+      tempNo: 'T20260112',
+      createdAt: new Date('2026-07-12T00:00:00.000Z'),
+    });
+
+    await sendCode('13900000111');
+    const progress = await request(httpServer(app))
+      .post(QUERY_PHONE)
+      .send({ phone: '13900000111', code: FIXED_CODE });
+    expect(progress.status).toBe(200);
+    expect(progress.body.data.stage).toBe('threshold');
+    expect(progress.body.data.tempNo).toBe('T20260001');
+    const wechatProgress = await request(httpServer(app))
+      .post(QUERY_WECHAT)
+      .send({ wechatCode: 'a7-priority' });
+    expect(wechatProgress.status).toBe(200);
+    expect(wechatProgress.body.data.stage).toBe(progress.body.data.stage);
+    expect(wechatProgress.body.data.tempNo).toBe(progress.body.data.tempNo);
+  });
+
   it('刀A2 手机锚活跃优先:较新的 withdrawn 不遮蔽旧活跃行;rebind 只更新活跃行', async () => {
     const cycle = await openCycle();
     const active = await seedApp(cycle.id, {
@@ -744,15 +780,6 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
       createdAt: new Date('2026-07-12T00:00:00.000Z'),
     });
 
-    await sendCode('13900000111');
-    const progress = await request(httpServer(app))
-      .post(QUERY_PHONE)
-      .send({ phone: '13900000111', code: FIXED_CODE });
-    expect(progress.status).toBe(200);
-    expect(progress.body.data.stage).toBe('threshold');
-    expect(progress.body.data.tempNo).toBe('T20260001');
-
-    await prisma.smsVerificationCode.deleteMany({});
     await sendCode('13900000111');
     await sendCode('13900000112');
     await request(httpServer(app))

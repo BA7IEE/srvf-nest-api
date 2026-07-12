@@ -4,7 +4,7 @@
 
 ## Unreleased
 
-> 下一个 minor 候选(当前为空)。
+- 招新证书闭环刀A:证书上传新增必填 `issuingOrg`/`issuedAt` 并以第 48 migration 暂存发证真值;已 approved 类别禁止重传,红十字/BSAFE 直接/批量标门槛须先审核 approved;上传按行锁后快照合并写,promote 搬真值/审核备注,admin DTO 增证书摘要,微信查进度改为活跃优先(0 新端点/0 新权限码)。
 
 ## v0.42.0 - 2026-07-12
 

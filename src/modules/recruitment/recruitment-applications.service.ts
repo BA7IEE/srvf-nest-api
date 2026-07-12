@@ -622,10 +622,9 @@ export class RecruitmentApplicationsService {
   // 无报名行(非招新出身队员)→ 维持 28002。
   async query(wechatCode: string): Promise<RecruitmentApplicationProgressDto> {
     const { openid } = await this.wechat.code2session(wechatCode);
-    let app = await this.prisma.recruitmentApplication.findFirst({
-      where: { openid, deletedAt: null },
-      orderBy: { createdAt: 'desc' },
-    });
+    let app =
+      (await this.findLatestActiveAppByOpenidForProgress(openid)) ??
+      (await this.findLatestTerminalAppByOpenidForProgress(openid));
     if (!app) {
       app = await this.findPromotedAppByOpenidAnchor(openid);
     }
@@ -637,6 +636,32 @@ export class RecruitmentApplicationsService {
     });
     const stageTextByCode = await this.loadStageTextMap();
     return assembleRecruitmentProgress(app, cycle, stageTextByCode);
+  }
+
+  private async findLatestActiveAppByOpenidForProgress(
+    openid: string,
+  ): Promise<RecruitmentApplication | null> {
+    return this.prisma.recruitmentApplication.findFirst({
+      where: {
+        openid,
+        deletedAt: null,
+        statusCode: { notIn: [...APP_INACTIVE_STATUS_CODES] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  private async findLatestTerminalAppByOpenidForProgress(
+    openid: string,
+  ): Promise<RecruitmentApplication | null> {
+    return this.prisma.recruitmentApplication.findFirst({
+      where: {
+        openid,
+        deletedAt: null,
+        statusCode: { in: [...APP_INACTIVE_STATUS_CODES] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   // F4-3b:openid 锚 → 已发号队员的 promoted 报名行(fall-through;E-U-5;镜像 identity service

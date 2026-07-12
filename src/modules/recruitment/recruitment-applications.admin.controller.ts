@@ -280,7 +280,7 @@ export class RecruitmentApplicationsAdminController {
   @Patch(':id/thresholds')
   @ApiOperation({
     summary:
-      '标/清门槛(巡山×2/培训/红十字/BSAFE;幂等;仅 verified/pending_evaluation 态;末次完成自动→待综合评定) [rbac: recruitment-application.mark.threshold]',
+      '标/清门槛(巡山×2/培训/红十字/BSAFE;证书类标完成须对应图片审核 approved;清标不受闸;幂等;仅 verified/pending_evaluation 态;末次完成自动→待综合评定) [rbac: recruitment-application.mark.threshold]',
   })
   @ApiWrappedOkResponse(RecruitmentApplicationAdminDto)
   @ApiBizErrorResponse(
@@ -289,6 +289,8 @@ export class RecruitmentApplicationsAdminController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
     BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
+    BizCode.RECRUITMENT_CERTIFICATE_IMAGE_REQUIRED,
+    BizCode.RECRUITMENT_CERTIFICATE_NOT_APPROVED,
   )
   markThreshold(
     @Param('id') id: string,
