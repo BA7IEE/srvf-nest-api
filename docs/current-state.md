@@ -9,7 +9,7 @@
 |---|---|
 | 版本(六处一致) | **v0.42.0**(2026-07-12;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag `v0.42.0` 指向 handoff `e5119ee7`;GitHub Release「v0.42.0 — 招新/入队问题核查双收口（十项 + 十三项 + 评审微清理）」标 Latest。**⚠️ 部署前小程序须完成签名图 + 验码流适配**:`signatureImage` 与 `phoneVerificationToken` 均为公开 submit 必填,旧客户端未适配时一律 400;项目 pre-production 未部署,本次发版本身无现网影响) |
 | `main` HEAD | v0.42.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #562 `e5119ee7`;收口链 = #554–#559 + landing #560 + bump #561 + handoff #562 + 本回填 PR) |
-| open PR / 工作树 / Unreleased | v0.43.0 刀A feature PR 合入后 0 open PR / clean / `## Unreleased` **1 条**。终值:权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` **336** / controller 66 / 模块 35 / migration **48** / 角色 7;版本仍 v0.42.0(待 v0.43.0 bump) |
+| open PR / 工作树 / Unreleased | v0.43.0 刀A + 刀B feature PR 合入后 0 open PR / clean / `## Unreleased` **2 条**。终值:权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` **336** / controller 66 / 模块 35 / migration **48** / 角色 7;版本仍 v0.42.0(待 v0.43.0 bump) |
 | 最新 handoff | [`archive/handoff/v0.42.0.md`](archive/handoff/v0.42.0.md)(历史快照;tag 指其合并点 `e5119ee7`;合入后不回改;接续 [`v0.41.0.md`](archive/handoff/v0.41.0.md)) |
 
 ## 2. 当前系统已具备能力
@@ -17,6 +17,8 @@
 > 清单级;事实权威:字段 = [`schema.prisma`](../prisma/schema.prisma);接口 = `/api/docs` + [`EXPECTED_ROUTES`](../test/contract/openapi.contract-spec.ts) + snapshot;BizCode = `biz-code.constant.ts` + CHANGELOG。
 
 - **v0.43.0 招新证书闭环刀A(Unreleased;D 档)**:公开证书上传契约新增必填 `issuingOrg`/`issuedAt` + 第 48 migration `certificateIssuanceInfo Json?`;已 approved 类别禁重传(28054);红十字/BSAFE 直接/批量标门槛须对应证书 approved(28055);上传写改为 `FOR UPDATE` 后重算三份 JSON,避免整 JSON 并发覆盖;promote 搬发证真值、存量回退占位并把招新 approved 结论写 `Certificate.verifyNote`(终态仍 pending);admin 报名 DTO additive `certificates` 摘要;微信 query 与手机 query-by-phone 统一「活跃优先→最近终态→promoted 锚」。0 新端点 / 0 权限码 / 0 controller / 0 模块 / 0 角色;`EXPECTED_ROUTES` 336 不变;BizCode +2;migration 47→48。
+
+- **v0.43.0 team-join 小刀B(Unreleased;C 档)**:App 改候选部门由复用 `team-join-application.submit` 改为独立 audit event `team-join-application.update-targets`;admin 一键入队在候选/部门 ACTIVE 检查后复查本轮 `openOrganizationIds`,非空清单外复用 28242,空/null 仍代表全部 ACTIVE。0 schema / 0 migration / 0 endpoint / 0 DTO / 0 RBAC / 0 BizCode;AuditLogEvent +1。
 
 - **v1 + V1.1 底座**:NestJS + Prisma + PostgreSQL + JWT + 三层 Role + 软删除 + 统一返回 + Swagger 100%;pino 日志 + 请求 ID + helmet + 限流 + 健康检查 + 优雅关闭 + CI
 - **V2 模型全量**:dictionaries / organizations / members(`memberNo` 不复用)/ member_departments / member_profiles / emergency_contacts / certificates / activities / activity_registrations(+CSV)/ attendance_sheets+records(5 态含终审)/ contribution_rules(D14)/ audit_logs(A-1 不可改删)
