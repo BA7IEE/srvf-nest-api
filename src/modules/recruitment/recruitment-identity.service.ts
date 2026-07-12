@@ -13,6 +13,7 @@ import { STORAGE_PROVIDER } from '../storage/storage.constants';
 import type { StorageProvider } from '../storage/storage.interface';
 import { WechatService } from '../wechat/wechat.service';
 import {
+  APP_INACTIVE_STATUS_CODES,
   APP_STATUS_PROMOTED,
   APP_STATUS_REJECTED,
   APP_STATUS_WITHDRAWN,
@@ -27,6 +28,7 @@ import {
   generatePhoneVerificationToken,
   hashPhoneVerificationToken,
 } from './recruitment.constants';
+import { recruitmentDuplicateExceptionForP2002 } from './recruitment-prisma-errors';
 import {
   RECRUITMENT_STAGE_DICT_TYPE,
   assembleRecruitmentProgress,
@@ -86,7 +88,7 @@ export class RecruitmentIdentityService {
   async sendCode(phone: string, ip: string | null): Promise<RecruitmentSendCodeResponseDto> {
     const openCycleId = await this.findOpenCycleId();
     if (openCycleId === null) {
-      const app = await this.findLatestAppByPhone(phone);
+      const app = await this.findLatestAppByPhoneForProgress(phone);
       if (app === null) {
         // 防枚举泛化 200:不发码、不留痕;300 与 SmsCodeService.issue 成功路径同值(沿 login-sms)
         return { expiresInSeconds: SMS_CODE_TTL_SECONDS };
@@ -110,7 +112,7 @@ export class RecruitmentIdentityService {
   ): Promise<RecruitmentVerifyCodeResponseDto> {
     const cycleId =
       (await this.findOpenCycleId()) ??
-      (await this.findLatestAppByPhone(dto.phone))?.cycleId ??
+      (await this.findLatestAppByPhoneForProgress(dto.phone))?.cycleId ??
       null;
     if (cycleId === null) {
       throw new BizException(BizCode.SMS_CODE_INVALID);
@@ -259,7 +261,7 @@ export class RecruitmentIdentityService {
       code,
       userId: null,
     });
-    const app = await this.findLatestAppByPhone(phone);
+    const app = await this.findLatestAppByPhoneForProgress(phone);
     if (app) {
       return this.assembleProgressFor(app);
     }
@@ -291,10 +293,13 @@ export class RecruitmentIdentityService {
     if (viaWechat) {
       channel = 'wechat';
       const { openid } = await this.wechat.code2session(dto.wechatCode as string);
-      app = await this.prisma.recruitmentApplication.findFirst({
-        where: { openid, deletedAt: null },
-        orderBy: { createdAt: 'desc' },
-      });
+      app = await this.findLatestActiveAppByOpenid(openid);
+      if (!app) {
+        const terminal = await this.findLatestTerminalAppByOpenid(openid);
+        if (terminal) {
+          throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE);
+        }
+      }
     } else {
       channel = 'phone';
       if (typeof dto.code !== 'string' || dto.code.length === 0) {
@@ -306,7 +311,13 @@ export class RecruitmentIdentityService {
         code: dto.code,
         userId: null,
       });
-      app = await this.findLatestAppByPhone(dto.phone as string);
+      app = await this.findLatestActiveAppByPhone(dto.phone as string);
+      if (!app) {
+        const terminal = await this.findLatestTerminalAppByPhone(dto.phone as string);
+        if (terminal) {
+          throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE);
+        }
+      }
     }
     if (!app) {
       throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
@@ -373,10 +384,7 @@ export class RecruitmentIdentityService {
     if (viaWechat) {
       channel = 'wechat';
       const { openid } = await this.wechat.code2session(dto.wechatCode as string);
-      app = await this.prisma.recruitmentApplication.findFirst({
-        where: { openid, deletedAt: null },
-        orderBy: { createdAt: 'desc' },
-      });
+      app = await this.findLatestActiveAppByOpenid(openid);
     } else {
       channel = 'phone';
       if (typeof dto.code !== 'string' || dto.code.length === 0) {
@@ -388,7 +396,7 @@ export class RecruitmentIdentityService {
         code: dto.code,
         userId: null,
       });
-      app = await this.findLatestAppByPhone(dto.phone as string);
+      app = await this.findLatestActiveAppByPhone(dto.phone as string);
     }
     if (!app) {
       throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
@@ -474,22 +482,35 @@ export class RecruitmentIdentityService {
       code: dto.code,
       userId: null,
     });
-    const app = await this.findLatestAppByPhoneOrThrow(dto.phone);
+    const app = await this.findLatestActiveAppByPhoneOrThrow(dto.phone);
     const { openid: newOpenid } = await this.wechat.code2session(dto.newWechatCode);
     const oldOpenid = app.openid;
     const updated = await this.prisma.$transaction(async (tx) => {
       // 防换绑到他人:新 openid 已被本轮另一活跃报名占用 → 28051(否则查询串号)
       const conflict = await tx.recruitmentApplication.findFirst({
-        where: { cycleId: app.cycleId, openid: newOpenid, deletedAt: null, id: { not: app.id } },
+        where: {
+          cycleId: app.cycleId,
+          openid: newOpenid,
+          deletedAt: null,
+          statusCode: { notIn: [...APP_INACTIVE_STATUS_CODES] },
+          id: { not: app.id },
+        },
         select: { id: true },
       });
       if (conflict) {
         throw new BizException(BizCode.RECRUITMENT_WECHAT_ALREADY_BOUND);
       }
-      const row = await tx.recruitmentApplication.update({
-        where: { id: app.id },
-        data: { openid: newOpenid },
-      });
+      let row: RecruitmentApplication;
+      try {
+        row = await tx.recruitmentApplication.update({
+          where: { id: app.id },
+          data: { openid: newOpenid },
+        });
+      } catch (err) {
+        const duplicate = recruitmentDuplicateExceptionForP2002(err);
+        if (duplicate) throw duplicate;
+        throw err;
+      }
       await this.auditLogs.log({
         event: 'recruitment-application.rebind-wechat',
         actorUserId: null, // 无账号自助换绑
@@ -524,7 +545,7 @@ export class RecruitmentIdentityService {
       code: dto.code,
       userId: null,
     });
-    const app = await this.findLatestAppByPhoneOrThrow(dto.phone);
+    const app = await this.findLatestActiveAppByPhoneOrThrow(dto.phone);
     // ② 校验新手机控制权
     await this.smsCode.verifyAndConsume({
       phone: dto.newPhone,
@@ -545,17 +566,37 @@ export class RecruitmentIdentityService {
       },
     ];
     const updated = await this.prisma.$transaction(async (tx) => {
-      const row = await tx.recruitmentApplication.update({
-        where: { id: app.id },
-        data: {
+      const conflict = await tx.recruitmentApplication.findFirst({
+        where: {
+          cycleId: app.cycleId,
           phone: dto.newPhone,
-          phoneChangedAt: now,
-          phoneChangeReason: reason,
-          phoneVerifiedAt: now,
-          phoneVerificationMethod: PHONE_VERIFICATION_METHOD_SMS,
-          phoneBindingHistory: history,
+          deletedAt: null,
+          statusCode: { notIn: [...APP_INACTIVE_STATUS_CODES] },
+          id: { not: app.id },
         },
+        select: { id: true },
       });
+      if (conflict) {
+        throw new BizException(BizCode.RECRUITMENT_DUPLICATE_PHONE_ACTIVE);
+      }
+      let row: RecruitmentApplication;
+      try {
+        row = await tx.recruitmentApplication.update({
+          where: { id: app.id },
+          data: {
+            phone: dto.newPhone,
+            phoneChangedAt: now,
+            phoneChangeReason: reason,
+            phoneVerifiedAt: now,
+            phoneVerificationMethod: PHONE_VERIFICATION_METHOD_SMS,
+            phoneBindingHistory: history,
+          },
+        });
+      } catch (err) {
+        const duplicate = recruitmentDuplicateExceptionForP2002(err);
+        if (duplicate) throw duplicate;
+        throw err;
+      }
       await this.auditLogs.log({
         event: 'recruitment-application.rebind-phone',
         actorUserId: null,
@@ -585,21 +626,72 @@ export class RecruitmentIdentityService {
     return cycle?.id ?? null;
   }
 
-  // 手机定位最近一条活跃报名(可空;任轮,沿 query-by-wechat 不卡轮口径;phone 非去重键,取最近一条)
-  private async findLatestAppByPhone(phone: string): Promise<RecruitmentApplication | null> {
+  // 写动作口径:手机只锚最近活跃报名(rejected/withdrawn 终态永不被更新)。
+  private async findLatestActiveAppByPhone(phone: string): Promise<RecruitmentApplication | null> {
     return this.prisma.recruitmentApplication.findFirst({
-      where: { phone, deletedAt: null },
+      where: {
+        phone,
+        deletedAt: null,
+        statusCode: { notIn: [...APP_INACTIVE_STATUS_CODES] },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  // 手机定位最近一条活跃报名(无 → 28002;rebind 链用)
-  private async findLatestAppByPhoneOrThrow(phone: string): Promise<RecruitmentApplication> {
-    const app = await this.findLatestAppByPhone(phone);
+  private async findLatestTerminalAppByPhone(
+    phone: string,
+  ): Promise<RecruitmentApplication | null> {
+    return this.prisma.recruitmentApplication.findFirst({
+      where: {
+        phone,
+        deletedAt: null,
+        statusCode: { in: [...APP_INACTIVE_STATUS_CODES] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  // 查进度口径:活跃优先；没有活跃行才回落最近 rejected/withdrawn 终态行。
+  private async findLatestAppByPhoneForProgress(
+    phone: string,
+  ): Promise<RecruitmentApplication | null> {
+    return (
+      (await this.findLatestActiveAppByPhone(phone)) ?? this.findLatestTerminalAppByPhone(phone)
+    );
+  }
+
+  private async findLatestActiveAppByPhoneOrThrow(phone: string): Promise<RecruitmentApplication> {
+    const app = await this.findLatestActiveAppByPhone(phone);
     if (!app) {
       throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
     }
     return app;
+  }
+
+  private async findLatestActiveAppByOpenid(
+    openid: string,
+  ): Promise<RecruitmentApplication | null> {
+    return this.prisma.recruitmentApplication.findFirst({
+      where: {
+        openid,
+        deletedAt: null,
+        statusCode: { notIn: [...APP_INACTIVE_STATUS_CODES] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  private async findLatestTerminalAppByOpenid(
+    openid: string,
+  ): Promise<RecruitmentApplication | null> {
+    return this.prisma.recruitmentApplication.findFirst({
+      where: {
+        openid,
+        deletedAt: null,
+        statusCode: { in: [...APP_INACTIVE_STATUS_CODES] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   // F4-3b:手机锚 → 已发号队员的 promoted 报名行(fall-through;E-U-5)。

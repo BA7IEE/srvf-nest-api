@@ -222,6 +222,10 @@ export function assembleRecruitmentProgress(
   // deriveRecruitmentStage 保持区分(admin 三栏 / 工作台 stats 不走本组装),仅公开出口折叠。
   const publicStage = stage === STAGE_MANUAL_HIGH ? STAGE_MANUAL : stage;
   const stageText = stageTextByCode.get(publicStage) ?? publicStage;
+  const canViewMeetingInfo =
+    app.tempNo !== null &&
+    app.statusCode !== APP_STATUS_REJECTED &&
+    app.statusCode !== APP_STATUS_WITHDRAWN;
   return {
     stage: publicStage,
     stageText,
@@ -231,8 +235,8 @@ export function assembleRecruitmentProgress(
     memberNo: null,
     identityText,
     todoList: buildRecruitmentTodoList(marks),
-    meetingInfo: cycle.meetingInfo,
-    qqGroup: cycle.qqGroup,
-    notice: cycle.notifyTemplate as Record<string, unknown> | null,
+    meetingInfo: canViewMeetingInfo ? cycle.meetingInfo : null,
+    qqGroup: canViewMeetingInfo ? cycle.qqGroup : null,
+    notice: canViewMeetingInfo ? (cycle.notifyTemplate as Record<string, unknown> | null) : null,
   };
 }

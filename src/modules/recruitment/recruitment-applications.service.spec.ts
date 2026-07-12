@@ -124,6 +124,7 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
     const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
       code: 'P2002',
       clientVersion: 'test',
+      meta: { target: ['idCardNumber'] },
     });
     const { service, storage } = buildService(p2002);
 
@@ -153,6 +154,7 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
     const p2002 = new Prisma.PrismaClientKnownRequestError('dup', {
       code: 'P2002',
       clientVersion: 'test',
+      meta: { target: ['recruitment_applications_cycle_idcard_active_unique'] },
     });
     const { service } = buildService(p2002);
     await service.submit(buildPayload(), image, undefined, meta, now).catch((e) => {

@@ -397,6 +397,24 @@ describe('招新三期(入队)admin 面 e2e', () => {
     expect(res.body.data.statusCode).toBe('joining');
   });
 
+  it('刀A4 markGate 并发标不同项 → 行锁后两项均保留,JSON 不丢更新', async () => {
+    const cycleId = await openCycle();
+    const memberId = await createMember();
+    const appId = await createApplication(cycleId, memberId);
+    const completionDate = new Date(Date.now() - 86_400_000).toISOString();
+    const [a, b] = await Promise.all([
+      markGate(appId, 'fitness', { completionDate }),
+      markGate(appId, 'psych', { completionDate }),
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    const row = await prisma.teamJoinApplication.findUniqueOrThrow({ where: { id: appId } });
+    expect(Object.keys(row.gateMarks as Record<string, unknown>).sort()).toEqual([
+      'fitness',
+      'psych',
+    ]);
+  });
+
   it('⑥ 贡献值仅算 approved sheet + before-cutoff(after-cutoff/非 approved 不计)', async () => {
     const cycleId = await openCycle();
     const memberId = await createMember();

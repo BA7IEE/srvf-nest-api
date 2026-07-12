@@ -73,6 +73,7 @@ import {
   toAdminApplicationDto,
   toRecruitmentSubmitResult,
 } from './recruitment-applications.presenter';
+import { recruitmentDuplicateExceptionForP2002 } from './recruitment-prisma-errors';
 import type {
   RecruitmentApplicationAdminDto,
   RecruitmentApplicationProgressDto,
@@ -554,9 +555,8 @@ export class RecruitmentApplicationsService {
       for (const k of storedKeys) {
         await this.safeDeleteOrphanImage(k);
       }
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        throw new BizException(BizCode.RECRUITMENT_DUPLICATE_APPLICATION);
-      }
+      const duplicate = recruitmentDuplicateExceptionForP2002(err);
+      if (duplicate) throw duplicate;
       throw err;
     }
 
