@@ -4,6 +4,14 @@
 
 ## Unreleased
 
+> 下一个 minor 候选(当前为空)。
+
+## v0.43.0 - 2026-07-13
+
+> **⚠️ 行为/契约变更(前端须适配,置顶五条)**:① 公开证书上传新增必填 multipart 字段 `issuingOrg` / `issuedAt`,小程序/H5 表单须同步升级(发证机构快捷项建议:红十字会 / 深圳市急救中心 / 其他手填);② 已 approved 类别禁止申请人重传,需联系管理员驳回后才重新开放;③ 红十字/BSAFE 直接与批量标门槛均须对应证书先审核 approved;④ 微信查进度改为「最近活跃 → 最近终态 → promoted 锚」,与手机查询同口径;⑤ admin 一键入队在写入前复查本轮开放部门清单,approved 后清单收窄也会拒绝清单外部门(28242)。
+>
+> 主题:**招新证书闭环补强(刀A)+ team-join 小刀(刀B)**。范围 = #564–#566;第 48 migration 为纯 additive nullable JSONB,0 新端点 / 0 新权限码 / 0 controller / 0 模块 / 0 角色;BizCode +2,AuditLogEvent +1。
+
 - 招新证书闭环刀A:证书上传新增必填 `issuingOrg`/`issuedAt` 并以第 48 migration 暂存发证真值;已 approved 类别禁止重传,红十字/BSAFE 直接/批量标门槛须先审核 approved;上传按行锁后快照合并写,promote 搬真值/审核备注,admin DTO 增证书摘要,微信查进度改为活跃优先(0 新端点/0 新权限码)。
 - team-join 小刀B:改候选部门改写独立 audit event `team-join-application.update-targets`;一键入队在写入前复查本轮 `openOrganizationIds`(非空清单外复用 28242,空/null 仍代表全部 ACTIVE),避免 approved 后轮配置收窄被绕过(0 schema/0 migration/0 路由/0 权限码)。
 
