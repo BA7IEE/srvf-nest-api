@@ -187,13 +187,23 @@ describe('CMS 内容发布模块(第 28 模块)admin e2e', () => {
   }
 
   // 把 key 用 LocalProvider 实写到 tmp 目录,模拟 client 已上传完(沿 attachments.upload.e2e)
-  async function fakeUploadToLocal(key: string, sizeBytes = 1024): Promise<void> {
+  async function fakeUploadToLocal(
+    key: string,
+    sizeBytes = 1024,
+    mime = 'image/jpeg',
+  ): Promise<void> {
     const { promises: fs } = await import('node:fs');
     const path = await import('node:path');
     const localCfg = app.get<{ storage: { localRoot: string } }>(appConfig.KEY);
     const filePath = path.resolve(localCfg.storage.localRoot, key);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, Buffer.alloc(sizeBytes));
+    const body = Buffer.alloc(sizeBytes);
+    const prefix =
+      mime === 'application/pdf'
+        ? Buffer.from('%PDF-1.7', 'ascii')
+        : Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+    prefix.copy(body, 0, 0, Math.min(prefix.length, body.length));
+    await fs.writeFile(filePath, body);
   }
 
   // Mode B:upload-url → fakeUpload → confirm,返回落库的 attachment view
@@ -209,7 +219,11 @@ describe('CMS 内容发布模块(第 28 模块)admin e2e', () => {
     expect(urlRes.status).toBe(200);
     const key = urlRes.body.data.key as string;
     const token = urlRes.body.data.uploadToken as string;
-    await fakeUploadToLocal(key, (body.sizeBytes as number) ?? 1024);
+    await fakeUploadToLocal(
+      key,
+      (body.sizeBytes as number) ?? 1024,
+      (body.mime as string) ?? 'image/jpeg',
+    );
     const confirmRes = await request(httpServer(app))
       .post(`${ADMIN_CONTENTS}/${contentId}/attachments/confirm`)
       .set('Authorization', auth)
