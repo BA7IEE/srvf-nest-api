@@ -8,7 +8,7 @@
 | 项 | 当前值 |
 |---|---|
 | 版本(六处一致) | **v0.42.0**(2026-07-12;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag `v0.42.0` 指向 handoff `e5119ee7`;GitHub Release「v0.42.0 — 招新/入队问题核查双收口（十项 + 十三项 + 评审微清理）」标 Latest。**⚠️ 部署前小程序须完成签名图 + 验码流适配**:`signatureImage` 与 `phoneVerificationToken` 均为公开 submit 必填,旧客户端未适配时一律 400;项目 pre-production 未部署,本次发版本身无现网影响) |
-| `main` HEAD | v0.42.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #562 `e5119ee7`;收口链 = #554–#559 + landing #560 + bump #561 + handoff #562 + 本回填 PR) |
+| `main` HEAD | v0.43.0 release landing 点(刀A #564 `dc9efaa5` + 刀B #565 `351e9720`;本 landing PR 合入后进入 bump / handoff / tag / Release / 回填串行收口) |
 | open PR / 工作树 / Unreleased | v0.43.0 刀A + 刀B feature PR 合入后 0 open PR / clean / `## Unreleased` **2 条**。终值:权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` **336** / controller 66 / 模块 35 / migration **48** / 角色 7;版本仍 v0.42.0(待 v0.43.0 bump) |
 | 最新 handoff | [`archive/handoff/v0.42.0.md`](archive/handoff/v0.42.0.md)(历史快照;tag 指其合并点 `e5119ee7`;合入后不回改;接续 [`v0.41.0.md`](archive/handoff/v0.41.0.md)) |
 
