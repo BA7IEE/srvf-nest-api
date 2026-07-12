@@ -43,6 +43,16 @@
 - **候选方案**:(a) seed 给 `document_type` 字典补 `mainland_id` 项(additive 最小,label 同「身份证」;两码并存需展示层归并);(b) 统一改码 `mainland_id → id_card`(D 档:动 recruitment 常量/白名单/OCR 路由字面/存量 `recruitment_applications`+`MemberProfile` 行回填)。倾向 (a) 起步。
 - **触发条件**:member-profiles 面需要按字典校验/展示证件类型标签,或档案数据治理(C-8)启动时一并拍板。
 
+### P1-22 入队专业队类型 / gate 定义配置化 — **⏸ 诉求触发再立项**
+- **背景**(招新/入队十三项收口问题⑨):`PROFESSIONAL_GATE_CODES` / `GATE_VALIDITY` / `PROFESSIONAL_TEAM_GATE_BY_NODE_TYPE` 当前在 `team-join.constants.ts` 硬编码 4 种专业队及全部 gate 有效期;新增专业队、改 gate 或调整有效期都必须发后端版本。P⑦ 已拍板本 goal 只挂账,不顺手扩动态配置面。
+- **候选方案**:D 档新增 gate 定义表(建议字段:`code`/`professional`/`validityType`/`validityYears`/`extendable`/`status`) + 专业队 nodeType→gate 映射表(建议字段:`nodeTypeCode`/`gateCode`/`status`),由 Query/Policy 层一次加载后供标 gate、进度派生与一键入队重校验共用;须同步设计 admin 配置端点、RBAC、audit、缓存失效与存量常量迁移/回滚方案,禁止只把其中一个消费者改成读表造成双轨。
+- **触发条件**:业务提出新增第 5 种专业队、运营需自行调整 gate/有效期,或 node_type 约定开始跨版本频繁变化时单独立项。
+
+### P1-23 `recruitment_applications.isForeigner` 历史 DB 列改名 — **⏸ 与 P1-21 同域合并处理**
+- **背景**(招新/入队十三项收口刀C2 遗留):API DTO/CSV/stats/audit 对外已统一改为 `isNonMainlandDocument` / `is_non_mainland_document`,含义锁定为「非大陆证件,不代表国籍」;仅 Prisma/DB 历史列仍名 `isForeigner`。直接 rename 属 D 档破坏性 schema 变更,本 goal 明确禁区,故不改列名。
+- **候选方案**:与 P1-21 `document_type` 词表统一同一数据治理窗口处理——先盘点所有 SQL/报表/导出/备份消费者,再做 Prisma field 映射过渡或单次 rename + 存量验证;同步 current-state/CODEMAP/留存 SOP 与回滚 SQL。不得先新增第二列长期双写。
+- **触发条件**:P1-21 启动、外部 BI/报表开始直读该列,或合规审查要求物理字段名也去除“外籍”误述时合并立项。
+
 ### P1-17 后台前端对接接口批次(A–E 五组)— **✅ 已全量落地关账(2026-07-04;F1 #502 → F2 #503 → F3 #504 → F4 #505 → F5 #506)**
 - **背景**:后台前端 srvf-admin-web(任务驱动后台)对接需要一批横切能力——搜索(`q`/日期区间/组织子树)、选择器(`options`/`resolve-labels`)、授权诊断(`explain-batch`/`action-state`)、scoped-authz 三表(role-bindings/任职/分管)分页总表+detail+preview、memberships 组织轴+transfer+tree-with-summary。2026-07-04 plan-only 分析规划(A 档 docs-only)已产出冻结路线图 [`admin-api-fe-integration-roadmap.md`](../archive/reviews/admin-api-fe-integration-roadmap.md)(原 `docs/plans/`,落地后已归档);同日 §11 回执区**已拍板(全按推荐)**。
 - **F1(A 组:搜索 & 选择器 + resolve-labels)已实现并发 main**(goal per-batch;详见 [`docs/handoff/admin-web.md` §2.7`](../handoff/admin-web.md)/GAP-008):members/users/organizations/positions/activities 5 资源 list 增强 + 6 个 `/options`(含 `organizations/tree-options`)+ net-new `POST admin/v1/meta/resolve-labels`;D4 拍板结果 = `roles/options` 落 `system/v1`(唯一跨 surface 例外);计数实测权限码 191→**192**(仅 `meta.resolve.label`)/ EXPECTED_ROUTES 292→**300**(+8)/ 模块 34→**35**(+meta)/ controller 63→**64**;migration/角色/AuditLogEvent **0 变**;架构映射按边界判断保留 inline(list/options 逻辑内联既有 service + 抽小型 private 去重 helper,未抽独立 QueryService 类——复杂度实测未达 architecture-boundary §3.2/§6 抽类阈值,决策权在实现 PR)。

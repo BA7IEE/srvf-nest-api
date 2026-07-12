@@ -48,7 +48,7 @@ describe('招新三期(入队)App 自助面 e2e', () => {
     return { userId: user.id, memberId: member.id, authHeader };
   }
 
-  async function openCycle(): Promise<string> {
+  async function openCycle(over: Record<string, unknown> = {}): Promise<string> {
     // 十项收口刀B:DB 级「至多一个 open 轮」partial unique 落地——夹具先关旧 open 再开新
     // (此前夹具可堆多个 open 轮,靠"最新创建"侥幸;现与生产语义一致)。
     await prisma.teamJoinCycle.updateMany({
@@ -56,7 +56,13 @@ describe('招新三期(入队)App 自助面 e2e', () => {
       data: { statusCode: 'closed', closedAt: new Date() },
     });
     const c = await prisma.teamJoinCycle.create({
-      data: { year: CYCLE_YEAR, name: '2026 年度入队', statusCode: 'open', openedAt: new Date() },
+      data: {
+        year: CYCLE_YEAR,
+        name: '2026 年度入队',
+        statusCode: 'open',
+        openedAt: new Date(),
+        ...over,
+      },
     });
     return c.id;
   }
@@ -208,6 +214,34 @@ describe('招新三期(入队)App 自助面 e2e', () => {
     );
     const inactiveOrg = await makeOrg('INACTIVE');
     expectBizError(await submit(volA.authHeader, [inactiveOrg]), BizCode.ORGANIZATION_INACTIVE);
+  });
+
+  it('H 本轮开放清单/候选上限:发起与改候选均拒清单外或超上限,合法候选回显有效配置', async () => {
+    const orgA = await makeOrg();
+    const orgB = await makeOrg();
+    const outside = await makeOrg();
+    await openCycle({ openOrganizationIds: [orgA, orgB], maxTargetOrgs: 1 });
+
+    expectBizError(
+      await submit(volA.authHeader, [outside]),
+      BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE,
+    );
+    expectBizError(
+      await submit(volA.authHeader, [orgA, orgB]),
+      BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE,
+    );
+    const created = await submit(volA.authHeader, [orgA]).expect(201);
+    expect(created.body.data.openOrganizationIds).toEqual([orgA, orgB]);
+    expect(created.body.data.maxTargetOrgs).toBe(1);
+
+    const id = created.body.data.id as string;
+    for (const targets of [[outside], [orgA, orgB]]) {
+      const res = await request(httpServer(app))
+        .patch(`${APPS}/${id}/targets`)
+        .set('Authorization', volA.authHeader)
+        .send({ targetOrganizationIds: targets });
+      expectBizError(res, BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE);
+    }
   });
 
   it('⑥ 空候选 → 400(ArrayMinSize)', async () => {

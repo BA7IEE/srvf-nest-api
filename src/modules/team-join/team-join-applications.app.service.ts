@@ -16,6 +16,7 @@ import {
 import {
   APP_STATUS_JOINING,
   CYCLE_STATUS_OPEN,
+  TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS,
   type GateMarks,
   allGeneralGatesSatisfied,
   isUnenrolledVolunteer,
@@ -34,7 +35,13 @@ const AUDIT_RESOURCE_TYPE = 'team_join_application';
 
 type PrismaTx = Prisma.TransactionClient;
 
-const APP_CYCLE_SELECT = { name: true, year: true, openedAt: true } as const;
+const APP_CYCLE_SELECT = {
+  name: true,
+  year: true,
+  openedAt: true,
+  openOrganizationIds: true,
+  maxTargetOrgs: true,
+} as const;
 const APP_APPLICATION_INCLUDE = { cycle: { select: APP_CYCLE_SELECT } } as const;
 type AppApplicationRow = Prisma.TeamJoinApplicationGetPayload<{
   include: typeof APP_APPLICATION_INCLUDE;
@@ -78,11 +85,11 @@ export class AppMeTeamJoinService {
   // 当前唯一 open 入队轮;无 → 28230。
   // 十项收口刀B:补 orderBy——此前无排序,若历史上曾并发穿透出双 open 轮,选轮非确定
   // (partial unique 落地后至多一行,此排序为防御性确定化,镜像 recruitment 侧口径)。
-  private async findOpenCycleOrThrow(tx: PrismaTx): Promise<{ id: string }> {
+  private async findOpenCycleOrThrow(tx: PrismaTx) {
     const cycle = await tx.teamJoinCycle.findFirst({
       where: { statusCode: CYCLE_STATUS_OPEN, deletedAt: null },
       orderBy: { createdAt: 'desc' },
-      select: { id: true },
+      select: { id: true, openOrganizationIds: true, maxTargetOrgs: true },
     });
     if (!cycle) {
       throw new BizException(BizCode.TEAM_JOIN_CYCLE_NOT_OPEN);
@@ -92,19 +99,34 @@ export class AppMeTeamJoinService {
 
   // 候选部门校验(维护者点名 T3):去重后每个 org 须存在 + ACTIVE(targetOrganizationIds 无 FK,
   // selectedOrganizationId 才 FK RESTRICT 兜底)。返回去重后的列表。
-  private async validateTargetOrgsOrThrow(orgIds: string[], tx: PrismaTx): Promise<string[]> {
+  private async validateTargetOrgsOrThrow(
+    orgIds: string[],
+    cycle: { openOrganizationIds: unknown; maxTargetOrgs: number | null },
+    tx: PrismaTx,
+  ): Promise<string[]> {
     const unique = [...new Set(orgIds)];
-    for (const orgId of unique) {
-      const org = await tx.organization.findFirst({
-        where: { id: orgId, deletedAt: null },
-        select: { status: true },
-      });
-      if (!org) {
-        throw new BizException(BizCode.ORGANIZATION_NOT_FOUND);
-      }
-      if (org.status !== OrganizationStatus.ACTIVE) {
-        throw new BizException(BizCode.ORGANIZATION_INACTIVE);
-      }
+    const maxTargetOrgs = cycle.maxTargetOrgs ?? TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS;
+    if (unique.length > maxTargetOrgs) {
+      throw new BizException(BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE);
+    }
+    const orgs = await tx.organization.findMany({
+      where: { id: { in: unique }, deletedAt: null },
+      select: { id: true, status: true },
+    });
+    if (orgs.length !== unique.length) {
+      throw new BizException(BizCode.ORGANIZATION_NOT_FOUND);
+    }
+    if (orgs.some((org) => org.status !== OrganizationStatus.ACTIVE)) {
+      throw new BizException(BizCode.ORGANIZATION_INACTIVE);
+    }
+    const openOrganizationIds = Array.isArray(cycle.openOrganizationIds)
+      ? (cycle.openOrganizationIds as string[])
+      : [];
+    if (
+      openOrganizationIds.length > 0 &&
+      unique.some((orgId) => !openOrganizationIds.includes(orgId))
+    ) {
+      throw new BizException(BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE);
     }
     return unique;
   }
@@ -120,7 +142,7 @@ export class AppMeTeamJoinService {
     return this.prisma.$transaction(async (tx) => {
       await this.assertNotEnrolledOrThrow(memberId, tx);
       const cycle = await this.findOpenCycleOrThrow(tx);
-      const targets = await this.validateTargetOrgsOrThrow(dto.targetOrganizationIds, tx);
+      const targets = await this.validateTargetOrgsOrThrow(dto.targetOrganizationIds, cycle, tx);
 
       let created: AppApplicationRow;
       try {
@@ -193,7 +215,11 @@ export class AppMeTeamJoinService {
       if (row.statusCode !== APP_STATUS_JOINING) {
         throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
       }
-      const targets = await this.validateTargetOrgsOrThrow(dto.targetOrganizationIds, tx);
+      const targets = await this.validateTargetOrgsOrThrow(
+        dto.targetOrganizationIds,
+        row.cycle,
+        tx,
+      );
       const updated = await tx.teamJoinApplication.update({
         where: { id },
         data: { targetOrganizationIds: targets },
@@ -228,6 +254,10 @@ export class AppMeTeamJoinService {
       cycleYear: row.cycle.year,
       statusCode: row.statusCode,
       targetOrganizationIds: (row.targetOrganizationIds as string[] | null) ?? [],
+      openOrganizationIds: Array.isArray(row.cycle.openOrganizationIds)
+        ? (row.cycle.openOrganizationIds as string[])
+        : [],
+      maxTargetOrgs: row.cycle.maxTargetOrgs ?? TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS,
       selectedOrganizationId: row.selectedOrganizationId,
       gates: buildGateStatus(marks, row.cycle.openedAt, now),
       generalGatesSatisfied: allGeneralGatesSatisfied(marks, row.cycle.openedAt, now),

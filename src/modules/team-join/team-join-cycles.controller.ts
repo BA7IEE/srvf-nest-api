@@ -42,10 +42,17 @@ export class TeamJoinCyclesController {
 
   @Post()
   @ApiOperation({
-    summary: '创建入队轮(默认 closed,需显式开轮) [rbac: team-join-cycle.create.record]',
+    summary:
+      '创建入队轮(默认 closed;可配置开放候选部门清单与候选数上限,清单 org 须 ACTIVE) [rbac: team-join-cycle.create.record]',
   })
   @ApiWrappedOkResponse(TeamJoinCycleResponseDto)
-  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ORGANIZATION_NOT_FOUND,
+    BizCode.ORGANIZATION_INACTIVE,
+  )
   create(
     @Body() dto: CreateTeamJoinCycleDto,
     @CurrentUser() user: CurrentUserPayload,
@@ -69,6 +76,8 @@ export class TeamJoinCyclesController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.TEAM_JOIN_CYCLE_NOT_FOUND,
+    BizCode.ORGANIZATION_NOT_FOUND,
+    BizCode.ORGANIZATION_INACTIVE,
   )
   detail(
     @Param('id') id: string,
@@ -80,7 +89,7 @@ export class TeamJoinCyclesController {
   @Patch(':id')
   @ApiOperation({
     summary:
-      '更新入队轮(开/关轮、轮次名;开 open 轮要求当前无其它 open 轮) [rbac: team-join-cycle.update.record]',
+      '更新入队轮(开/关轮、轮次名、开放候选部门清单与候选数上限;开 open 轮要求当前无其它 open 轮) [rbac: team-join-cycle.update.record]',
   })
   @ApiWrappedOkResponse(TeamJoinCycleResponseDto)
   @ApiBizErrorResponse(

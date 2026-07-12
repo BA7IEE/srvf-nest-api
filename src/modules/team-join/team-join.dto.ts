@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
   IsIn,
@@ -7,12 +8,13 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  Max,
   Min,
   MinLength,
 } from 'class-validator';
 
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
-import { ALL_GATE_CODES } from './team-join.constants';
+import { ALL_GATE_CODES, TEAM_JOIN_MAX_TARGET_ORGS } from './team-join.constants';
 
 // 招新三期(入队)T2(2026-06-19):team-join DTO 集合(评审稿 §3.2)。
 // admin 面 = 入队轮 CRUD + 报名 list/detail + 标 gate + 综合评估;app 自助面 DTO 在 T3 追加。
@@ -52,6 +54,30 @@ export class CreateTeamJoinCycleDto {
   @MinLength(1)
   @MaxLength(NAME_MAX)
   name!: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    description: '本轮开放候选部门 orgId 清单(null/空=全部 ACTIVE 部门)',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(CODE_MAX, { each: true })
+  openOrganizationIds?: string[] | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    minimum: 1,
+    maximum: TEAM_JOIN_MAX_TARGET_ORGS,
+    description: '本轮候选部门数上限(null=默认 8)',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(TEAM_JOIN_MAX_TARGET_ORGS)
+  maxTargetOrgs?: number | null;
 }
 
 export class UpdateTeamJoinCycleDto {
@@ -67,6 +93,30 @@ export class UpdateTeamJoinCycleDto {
   @MinLength(1)
   @MaxLength(NAME_MAX)
   name?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    description: '本轮开放候选部门 orgId 清单(null/空=全部 ACTIVE 部门)',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(CODE_MAX, { each: true })
+  openOrganizationIds?: string[] | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    minimum: 1,
+    maximum: TEAM_JOIN_MAX_TARGET_ORGS,
+    description: '本轮候选部门数上限(null=默认 8)',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(TEAM_JOIN_MAX_TARGET_ORGS)
+  maxTargetOrgs?: number | null;
 }
 
 export class TeamJoinCycleResponseDto {
@@ -76,6 +126,8 @@ export class TeamJoinCycleResponseDto {
   @ApiProperty() statusCode!: string;
   @ApiPropertyOptional({ nullable: true }) openedAt!: Date | null;
   @ApiPropertyOptional({ nullable: true }) closedAt!: Date | null;
+  @ApiPropertyOptional({ type: [String], nullable: true }) openOrganizationIds!: string[] | null;
+  @ApiPropertyOptional({ type: Number, nullable: true }) maxTargetOrgs!: number | null;
   @ApiProperty() createdAt!: Date;
 }
 
