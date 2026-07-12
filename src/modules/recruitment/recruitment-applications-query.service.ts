@@ -215,7 +215,7 @@ export class RecruitmentApplicationsQueryService {
 
   // ============ 招新二期:公示名单(D-R2-4;姓名 + 拟发编号,拼音序,零敏感)============
   // 计算式预览:拟发编号 = 同一确定性拼音排序 + 当前 memberNoSeq 推算(发号时一致);
-  // 仅大陆可发号项编号,外籍/不可发号项 needsManualBuild=true + proposedMemberNo=null(M-1 发号前可见)。
+  // 资料齐备且登录锚可用的项编号;其余 needsManualBuild=true + proposedMemberNo=null(发号前可见)。
   // 公示名单读不记审计(配置台账类,姓名本就对外公示;评审稿 §3.5)。
   async publicityList(
     cycleId: string,
@@ -235,7 +235,7 @@ export class RecruitmentApplicationsQueryService {
   // 悬空动作收口:公开进度返回 nextAction='view-publicity',但公开 surface 此前无任何公示资源可看。
   // 与 admin 公示预览共用 buildPublicityList 取数内核 → 公示所见 = 后台预览 = 实发(结构性一致);
   // 出参收敛为 { cycleYear, items:[{ realName, proposedMemberNo }] }——姓名本就对外公示,拟发号
-  // 待人工建档者为 null;不出 applicationId / isForeigner / needsManualBuild(内部运营语义不外露)。
+  // 待人工建档者为 null;不出 applicationId / isNonMainlandDocument / needsManualBuild(内部运营语义不外露)。
   // 轮次解析:取最近(createdAt desc)存在公示中报名行的轮(公示期可能已闭轮,不锚 open 轮);
   // 无任何公示中名单 → 200 + cycleYear=null + items=[](空窗是合法状态);不记审计(公开台账类)。
   async publicPublicityList(): Promise<PublicRecruitmentPublicityResponseDto> {
@@ -308,7 +308,7 @@ export class RecruitmentApplicationsQueryService {
         applicationId: r.id,
         realName: r.realName,
         proposedMemberNo,
-        isForeigner: r.isForeigner,
+        isNonMainlandDocument: r.isForeigner,
         needsManualBuild: !willIssue,
       };
     });

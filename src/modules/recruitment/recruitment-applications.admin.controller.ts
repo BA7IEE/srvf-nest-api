@@ -161,7 +161,7 @@ export class RecruitmentApplicationsAdminController {
   @Patch(':id')
   @ApiOperation({
     summary:
-      'admin 改报名资料(R1 白名单:非身份字段恒可改;身份字段 realName/idCardNumber/birthDate/genderCode 仅 manual_review 或外籍记录,verified 大陆 → 28045;大陆 birthDate/genderCode 恒由证件号派生不可直改;大陆改证件号 → 校验位/年龄复检 + 重派生 + 同轮去重;promoted/已脱敏行 → 28041;不含 phone/openid〔走自助换绑〕;必落 audit) [rbac: recruitment-application.update.record]',
+      'admin 改报名资料(R1 白名单:非身份字段恒可改;身份字段 realName/idCardNumber/birthDate/genderCode 仅 manual_review 或非大陆证件记录,verified 大陆 → 28045;大陆 birthDate/genderCode 恒由证件号派生不可直改;大陆改证件号 → 校验位/年龄复检 + 重派生 + 同轮去重;promoted/已脱敏行 → 28041;不含 phone/openid〔走自助换绑〕;必落 audit) [rbac: recruitment-application.update.record]',
   })
   @ApiWrappedOkResponse(RecruitmentApplicationAdminDto)
   @ApiBizErrorResponse(
@@ -271,7 +271,7 @@ export class RecruitmentApplicationsAdminController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '单人手动建档(publicity 报名逐条发号建 User+Member;与批量共用同一建档内核/原子号段/通知派发;放行外籍〔birthDate/genderCode 先经改资料补录,缺 → 28047〕;锚点择优 openid 未占用→微信 / openid 缺·占用且 phone 未占用→手机 / 双缺双占→28046;非 publicity〔含已 promoted 重跑〕→ 28041 幂等零重复) [rbac: recruitment-application.promote.single]',
+      '单人手动建档(publicity 报名逐条发号建 User+Member;与批量共用同一建档内核/原子号段/通知派发;非大陆证件须先补齐 birthDate/genderCode,缺 → 28047;锚点择优 openid 未占用→微信 / openid 缺·占用且 phone 未占用→手机 / 双缺双占→28046;非 publicity〔含已 promoted 重跑〕→ 28041 幂等零重复) [rbac: recruitment-application.promote.single]',
   })
   @ApiWrappedOkResponse(PromoteSingleResultDto)
   @ApiBizErrorResponse(

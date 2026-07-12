@@ -123,7 +123,7 @@ export class EvaluateTeamJoinApplicationDto {
   note?: string;
 
   @ApiPropertyOptional({
-    description: '综合评估延长期(ISO;approve 时可设;approved 态跨轮入队时未到仍认)',
+    description: '综合评估延长期(ISO;自本版起 approved 资格不随轮关闭失效,该字段仅存档)',
   })
   @IsOptional()
   @IsDateString()
@@ -183,7 +183,11 @@ export class TeamJoinApplicationAdminDto {
   contributionSatisfied!: boolean | null;
   @ApiPropertyOptional({ nullable: true }) evaluationNote!: string | null;
   @ApiPropertyOptional({ nullable: true }) evaluatedAt!: Date | null;
-  @ApiPropertyOptional({ nullable: true }) evaluationExtendedUntil!: Date | null;
+  @ApiPropertyOptional({
+    description: '综合评估延长期(自本版起 approved 资格不随轮关闭失效,该字段仅存档)',
+    nullable: true,
+  })
+  evaluationExtendedUntil!: Date | null;
   @ApiPropertyOptional({ nullable: true }) eliminationStage!: string | null;
   @ApiPropertyOptional({ nullable: true }) joinedAt!: Date | null;
   @ApiProperty() createdAt!: Date;

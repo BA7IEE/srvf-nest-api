@@ -1805,7 +1805,7 @@ model RecruitmentApplication {
   // 招新可用性收口 F5(2026-07-11;评审稿 §2.8 R5;第 42 migration,全 additive 可空):
   // 签名图 = 责任文件——promote 搬 member_profiles.signatureImageKey 长期留存 + 报名行清空
   // (镜像 idCardImageKey 搬运范式);未发号(rejected/withdrawn)行的 blob 随既有留存 SOP 按 key 删。
-  signatureImageKey String? // 申请人签名图 storage key(multipart 可选文件位 signatureImage)
+  signatureImageKey String? // 申请人签名图 storage key(multipart 必填文件位 signatureImage;存量可为 null)
   // 招新可用性收口 F7(2026-07-11;评审稿 §2.9 R6;第 44 migration,additive 可空):
   // 申请人证书图(公开上传,双通道凭证;category ∈ cert_type 既有码 first_aid/bsafe,每类 ≤3 张
   // 重传覆盖)。promote 时按类别自动建 pending Certificate 行 + 图 key 搬 Certificate.imageKeys,
@@ -1813,8 +1813,8 @@ model RecruitmentApplication {
   certificateImages Json? // 证书图 storage keys(按类别分组;R6 长期档案的暂存位)
 
   // ===== 脱敏留存字段(永久行级保留)=====
-  documentTypeCode String // 证件类型(判外籍/人工;非高敏)
-  isForeigner      Boolean @default(false)
+  documentTypeCode String // 证件类型(判非大陆证件/人工核验;非高敏)
+  isForeigner      Boolean @default(false) // 历史 DB 列:非大陆证件(不代表国籍;列改名另行挂账)
   genderCode       String?
   ageGroup         String? // 年龄段(提交时从生日派生)
   cityDistrict     String? // 城市到区(提交时从住址派生)
@@ -2036,7 +2036,7 @@ model TeamJoinApplication {
   evaluatedByUserId       String? // 综合评估操作人(不建外键,沿 reviewedByUserId / SmsSettings.updatedBy)
   evaluatedAt             DateTime?
   evaluationNote          String?
-  evaluationExtendedUntil DateTime? // 综合评估延长期(admin 设;超本轮仍认)
+  evaluationExtendedUntil DateTime? // 综合评估延长期(自本版起仅存档;approved 不随轮关闭失效)
 
   eliminationStage String? // evaluation / gate-timeout(rejected 时记)
   joinedAt         DateTime? // 一键入队执行时刻

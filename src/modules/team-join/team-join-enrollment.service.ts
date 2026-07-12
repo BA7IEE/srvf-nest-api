@@ -22,7 +22,6 @@ import { RbacService } from '../permissions/rbac.service';
 import {
   APP_STATUS_APPROVED,
   APP_STATUS_JOINED,
-  CYCLE_STATUS_OPEN,
   type GateMarks,
   JOIN_GRADE_CODE,
   MEMBER_GRADE_DICT_CODE,
@@ -101,15 +100,7 @@ export class TeamJoinEnrollmentService {
         throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
       }
 
-      // 2. 综合评估本轮有效 / 延长期消费(评审稿 §4.2;maintainer T4 ②):
-      //    cycle 仍 open(同轮入队)→ 认;cycle 已关(跨轮)→ 须 evaluationExtendedUntil 设且未到。
-      const cycleOpen = app.cycle.statusCode === CYCLE_STATUS_OPEN;
-      const evalExtended =
-        app.evaluationExtendedUntil != null &&
-        now.getTime() <= app.evaluationExtendedUntil.getTime();
-      if (!cycleOpen && !evalExtended) {
-        throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
-      }
+      // 2. approved 资格不随轮关闭失效;有效期类 gate 与贡献值仍在后续步骤兜底重校验。
 
       // 3. 选定部门 ∈ 候选 + 存在 + ACTIVE(否则 28242)
       const candidates = (app.targetOrganizationIds as string[] | null) ?? [];

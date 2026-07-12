@@ -50,7 +50,7 @@ import type {
 // - 单一事务(全或无、号段连续无空洞、无半建态;吸取 phase-1 FM-A);
 // - 幂等(promoted 已离开 publicity,重跑命中 0 / promotedMemberId 置则不会重入 + @unique 兜底;不双建 VOL 部门);
 // - 失败可恢复(事务任一步失败 → 整批回滚、seq 复位,admin 修后重跑);
-// - 外籍/不可发号项 = 事务前分区 skip + report(不 block、不静默丢;M-1 维护者澄清);
+// - 资料或登录锚不齐的不可发号项 = 事务前分区 skip + report(不 block、不静默丢);
 // - 志愿者身份(招新闭环优化 S5;评审稿 §5.2a,推翻 phase-3 E-J-6「双表示」取舍):建的 Member 即赋
 //   gradeCode='volunteer' + **同事务建 VOL 归口部门**(Organization.code='VOL',≠ VOD 志愿者组织部);
 //   入队(team-join 一键入队)才软删 VOL 行、换目标部门并升 level-1。VOL 缺失/非 ACTIVE → 建任何 member 前清晰失败;
@@ -119,7 +119,7 @@ export class RecruitmentPromotionService {
 
     // 事务前分区(纯查询):先按发号序排,再用与公示预览共享的 decidePromotionIssuance 判定 —— 结构性
     // 保证「公示拟发号 = 实发」(#399 F9)、批内同 openid/phone 仅首行发号余项 skip(#399 F15,免第二行入
-    // 事务撞 User.openid/phone @unique 整批回滚)。skip 项 report 不 block(外籍/缺字段/openid·phone 占用;M-1)。
+    // 事务撞 User.openid/phone @unique 整批回滚)。skip 项 report 不 block(缺字段/openid·phone 占用)。
     const sortedApps = [...apps].sort(comparePromotionOrder);
     const promotable: RecruitmentApplication[] = [];
     const skipped: PromoteSkippedItemDto[] = [];
@@ -299,7 +299,7 @@ export class RecruitmentPromotionService {
         willIssue,
         skipReason: reason,
         proposedMemberNo,
-        isForeigner: app.isForeigner,
+        isNonMainlandDocument: app.isForeigner,
         documentTypeCode: app.documentTypeCode,
         missingOpenid: app.openid == null,
         openidAlreadyBound: app.openid != null && boundOpenids.has(app.openid),
@@ -336,12 +336,12 @@ export class RecruitmentPromotionService {
   }
 
   // ============ 招新可用性收口 F3:单人手动建档(评审稿 §3 R3 / §6.1 E-U-3/E-U-4)============
-  // 批量 promote 的 skip 项(外籍/锚点占用等)的收尾通道:对单条 publicity 报名走与批量**同一份**
+  // 批量 promote 的 skip 项(资料不齐/锚点占用等)的收尾通道:对单条 publicity 报名走与批量**同一份**
   // 建档内核(buildOnePromotion)+ 同一原子号段(memberNoSeq 行级自增,连续无空洞)+ 同一通知派发。
-  // 差异仅三点:① **放行外籍**(不判 isForeigner;birthDate/genderCode 由 F2 补录);② **锚点择优**
+  // 差异仅三点:① **放行非大陆证件**(birthDate/genderCode 由 F2 补录);② **锚点择优**
   // (E-U-4:openid 未占用 → 微信;openid 缺/占用且 phone 未占用 → 手机;双缺/双占 → 28046,R3
   // 「不建无登录锚点的号」);③ 逐条判可建(缺 realName/birthDate/genderCode → 28047 提示先 F2 补录)。
-  // 幂等:promoted 已离开 publicity → 重跑 28041、零重复建档(E-U-3)。批量 promote 行为逐字不变。
+  // 幂等:promoted 已离开 publicity → 重跑 28041、零重复建档(E-U-3);单发通道行为保持不变。
   async promoteSingle(
     applicationId: string,
     user: CurrentUserPayload,
@@ -367,11 +367,11 @@ export class RecruitmentPromotionService {
     if (app.statusCode !== APP_STATUS_PUBLICITY) {
       throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
     }
-    // 建档资料齐备闸(放行外籍;缺派生字段/姓名 → 先走 F2 admin 改资料补录)
+    // 建档资料齐备闸(放行非大陆证件;缺派生字段/姓名 → 先走 F2 admin 改资料补录)
     if (app.realName == null || app.birthDate == null || app.genderCode == null) {
       throw new BizException(BizCode.RECRUITMENT_PROFILE_INCOMPLETE_FOR_PROMOTE);
     }
-    // 十项收口刀A:发号前年龄闸(18-60,发号日复检)——外籍此前从提交到建档全程零年龄校验
+    // 十项收口刀A:发号前年龄闸(18-60,发号日复检)——非大陆证件此前从提交到建档全程零年龄校验
     // (submit 年龄闸包在大陆分支;F2 补录本刀同步加闸,此处兜底两通道)。大陆行提交期已校,
     // 此处为同口径复检(极端跨年发号超龄一并拒)。
     const age = computeAge(app.birthDate, now);

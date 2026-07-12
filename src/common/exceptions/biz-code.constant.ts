@@ -1007,7 +1007,7 @@ export const BizCode = {
   // 招新二期(后段)T2/T3(2026-06-19;评审稿 recruitment-phase2-review.md §3.3 / E-R2-10):
   // - 28041:状态机闸——标门槛/综合评定/发号目标态不符(T2)
   // - 28042:一键发号时编号/账号唯一冲突(撞既有 memberNo / openid / username;整批事务回滚不跳号,
-  //   admin 排查后重试)。**外籍/不可发号项不走此码**——它们在事务前分区 skip + report、不 block(E-R2-6)。
+  //   admin 排查后重试)。**不可发号项不走此码**——它们在事务前分区 skip + report、不 block(E-R2-6)。
   // - 28043:当年永久编号流水撞 999 上限(T3 promote;M-4 报错不扩位)
   RECRUITMENT_APPLICATION_WRONG_STATE: {
     code: 28041,
@@ -1034,16 +1034,16 @@ export const BizCode = {
   },
   // 招新可用性收口 F2(2026-07-11;评审稿 recruitment-usability-closeout-review.md §3 R1):
   // - 28045:admin 改资料的身份字段条件闸——身份字段(realName/idCardNumber/birthDate/genderCode)
-  //   仅 manual_review 态或外籍记录可改;已 verified 的大陆记录(OCR 已核验)不开。
+  //   仅 manual_review 态或非大陆证件记录可改;已 verified 的大陆记录(OCR 已核验)不开。
   RECRUITMENT_IDENTITY_FIELDS_LOCKED: {
     code: 28045,
-    message: '该报名已通过证件核验,身份字段不可修改(仅人工待核或外籍记录可改)',
+    message: '该报名已通过证件核验,身份字段不可修改(仅人工待核或非大陆证件记录可改)',
     httpStatus: HttpStatus.CONFLICT,
   },
   // 招新可用性收口 F3(2026-07-11;评审稿 §3 R3 / §6.1 E-U-4):单人手动建档 promote-single。
   // - 28046:登录锚点不可用——openid 与 phone 双缺或双被既有账号占用(R3「不建无登录锚点的号」;
   //   引导先走自助换绑 rebind-wechat / rebind-phone 释放或换新锚,再手动发号)。
-  // - 28047:建档资料不全——缺 realName / birthDate / genderCode(外籍未补录;提示先走 F2 admin
+  // - 28047:建档资料不全——缺 realName / birthDate / genderCode(非大陆证件未补录;提示先走 F2 admin
   //   改资料 PATCH 补录派生字段,再单人建档)。
   RECRUITMENT_LOGIN_ANCHOR_UNAVAILABLE: {
     code: 28046,

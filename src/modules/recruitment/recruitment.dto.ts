@@ -93,7 +93,7 @@ export class RecruitmentSubmitPayloadDto {
 
   @ApiProperty({
     description:
-      '证件号(大陆身份证 18 位 / 外籍证件号;高敏感;大陆证件校验位 + 年龄在 service 校验)',
+      '证件号(大陆身份证 18 位 / 非大陆证件号;高敏感;大陆证件校验位 + 年龄在 service 校验)',
   })
   @IsString()
   @MinLength(1)
@@ -680,7 +680,8 @@ export class RecruitmentApplicationAdminDto {
   idCardNumber!: string | null;
   @ApiPropertyOptional({ nullable: true }) phone!: string | null;
   @ApiProperty() documentTypeCode!: string;
-  @ApiProperty() isForeigner!: boolean;
+  @ApiProperty({ description: '非大陆证件(身份需人工核验;不代表国籍)' })
+  isNonMainlandDocument!: boolean;
   @ApiPropertyOptional({ nullable: true }) genderCode!: string | null;
   @ApiPropertyOptional({ nullable: true }) ageGroup!: string | null;
   @ApiPropertyOptional({ nullable: true }) cityDistrict!: string | null;
@@ -732,7 +733,7 @@ export class RecruitmentApplicationAdminDto {
     nullable: true,
   })
   promotedMemberId!: string | null;
-  @ApiProperty({ description: '一键发号不含、需 admin 手动建档(M-1:外籍/缺派生字段)' })
+  @ApiProperty({ description: '一键发号不含、需 admin 手动建档(资料或登录锚不齐)' })
   needsManualBuild!: boolean;
   @ApiProperty() createdAt!: Date;
 }
@@ -758,13 +759,13 @@ export class MarkThresholdDto {
 // 白名单字段集(全可选,至少一项):
 // - 非身份字段(恒可改,promoted/已脱敏行除外):detailedAddress / cityDistrict / sourceChannel /
 //   emergencyContacts(逐项 relation 字典校验,镜像 submit)/ profileExtra;
-// - 身份字段(条件闸:仅 manual_review 或外籍记录;verified 大陆 → 28045):realName / idCardNumber /
+// - 身份字段(条件闸:仅 manual_review 或非大陆证件记录;verified 大陆 → 28045):realName / idCardNumber /
 //   birthDate / genderCode。大陆记录 birthDate/genderCode **恒由证件号派生**(直接传 → 40000);
 //   大陆改 idCardNumber → 校验位 + 年龄复检 + 重派生 + 同轮去重(镜像 submit 语义)。
 // **不含** phone / openid(各有自助换绑通道 rebind-phone/rebind-wechat,双验 + 换绑历史;admin 直改会
 // 绕过验证链破坏 H5 身份锚,评审稿 R3 取舍)。
 export class UpdateRecruitmentApplicationDto {
-  @ApiPropertyOptional({ description: '真实姓名(身份字段;仅 manual_review 或外籍记录可改)' })
+  @ApiPropertyOptional({ description: '真实姓名(身份字段;仅 manual_review 或非大陆证件记录可改)' })
   @IsOptional()
   @IsString()
   @MinLength(1)
@@ -782,14 +783,14 @@ export class UpdateRecruitmentApplicationDto {
   idCardNumber?: string;
 
   @ApiPropertyOptional({
-    description: '出生日期(ISO 日期;**仅外籍记录**可直改——大陆恒由证件号派生,传了 → 40000)',
+    description: '出生日期(ISO 日期;**仅非大陆证件记录**可直改——大陆恒由证件号派生,传了 → 40000)',
   })
   @IsOptional()
   @IsDateString()
   birthDate?: string;
 
   @ApiPropertyOptional({
-    description: '性别(male/female;**仅外籍记录**可直改——大陆恒由证件号派生,传了 → 40000)',
+    description: '性别(male/female;**仅非大陆证件记录**可直改——大陆恒由证件号派生,传了 → 40000)',
     enum: ['male', 'female'],
   })
   @IsOptional()
@@ -879,13 +880,13 @@ export class PublicityListItemDto {
   @ApiPropertyOptional({ description: '公示姓名(拼音序)', nullable: true })
   realName!: string | null;
   @ApiPropertyOptional({
-    description: '拟发永久编号 {YY}{NNN}(仅可发号项;外籍/不可发号为 null)',
+    description: '拟发永久编号 {YY}{NNN}(仅可发号项;资料或登录锚不齐时为 null)',
     nullable: true,
   })
   proposedMemberNo!: string | null;
-  @ApiProperty({ description: '是否外籍' })
-  isForeigner!: boolean;
-  @ApiProperty({ description: 'true=一键发号不含、需 admin 手动建档(M-1 边界,发号前可见)' })
+  @ApiProperty({ description: '非大陆证件(身份需人工核验;不代表国籍)' })
+  isNonMainlandDocument!: boolean;
+  @ApiProperty({ description: 'true=一键发号不含、需 admin 手动建档(资料或登录锚不齐)' })
   needsManualBuild!: boolean;
 }
 
@@ -894,9 +895,9 @@ export class PublicityListResponseDto {
   @ApiProperty() cycleYear!: number;
   @ApiProperty({ type: [PublicityListItemDto], description: '公示中报名(拼音序)' })
   items!: PublicityListItemDto[];
-  @ApiProperty({ description: '可一键发号数(大陆可派生)' })
+  @ApiProperty({ description: '可一键发号数(资料齐备且登录锚可用)' })
   promotableCount!: number;
-  @ApiProperty({ description: '需手动建档数(外籍等;一键发号不含)' })
+  @ApiProperty({ description: '需手动建档数(资料或登录锚不齐;一键发号不含)' })
   manualBuildCount!: number;
 }
 
@@ -914,7 +915,7 @@ export class PromoteSkippedItemDto {
   @ApiPropertyOptional({ nullable: true }) realName!: string | null;
   @ApiProperty({
     description:
-      '跳过原因:foreign-manual-build / openid-already-bound / missing-derived-field / ...(需 admin 手动建档)',
+      '跳过原因:openid-already-bound / phone-already-bound / missing-login-channel / missing-derived-field / incomplete-data / ...(需 admin 手动建档)',
   })
   reason!: string;
 }
@@ -922,7 +923,8 @@ export class PromoteSkippedItemDto {
 export class PromoteResultDto {
   @ApiProperty() cycleId!: string;
   @ApiProperty({ description: '本批已发号建档数' }) promotedCount!: number;
-  @ApiProperty({ description: '本批跳过数(外籍等;需 admin 手动建档)' }) skippedCount!: number;
+  @ApiProperty({ description: '本批跳过数(资料或登录锚不齐;需 admin 手动建档)' })
+  skippedCount!: number;
   @ApiProperty({ type: [PromotedItemDto], description: '已发号(拼音序)' })
   promoted!: PromotedItemDto[];
   @ApiProperty({ type: [PromoteSkippedItemDto], description: '跳过项(一键发号不含,需手动建档)' })
@@ -1046,7 +1048,7 @@ export class RecruitmentStatsIssuanceDto {
   })
   oneClickIssuable!: number;
   @ApiProperty({
-    description: '需手动建档数(decidePromotionIssuance 跳过项;外籍/缺派生字段/openid 占用)',
+    description: '需手动建档数(decidePromotionIssuance 跳过项;资料或登录锚不齐/openid·phone 占用)',
   })
   needManualBuild!: number;
   @ApiProperty({ description: '已发号(stage=volunteer;= promoted 态)' })
@@ -1218,7 +1220,7 @@ export class PromotePrecheckRowDto {
   willIssue!: boolean;
   @ApiPropertyOptional({
     description:
-      '跳过原因(foreign-manual-build / openid-already-bound / phone-already-bound〔v0.40.0 H5〕/ missing-login-channel〔v0.40.0;openid+phone 皆无,取代 missing-openid〕/ duplicate-openid-in-batch / duplicate-phone-in-batch〔v0.40.0 H5〕/ missing-derived-field / incomplete-data;willIssue=true 为 null)',
+      '跳过原因(openid-already-bound / phone-already-bound〔v0.40.0 H5〕/ missing-login-channel〔v0.40.0;openid+phone 皆无,取代 missing-openid〕/ duplicate-openid-in-batch / duplicate-phone-in-batch〔v0.40.0 H5〕/ missing-derived-field / incomplete-data;willIssue=true 为 null)',
     nullable: true,
   })
   skipReason!: string | null;
@@ -1227,9 +1229,9 @@ export class PromotePrecheckRowDto {
     nullable: true,
   })
   proposedMemberNo!: string | null;
-  @ApiProperty({ description: '是否外籍(特殊证件标识;需手动建档)' })
-  isForeigner!: boolean;
-  @ApiProperty({ description: '证件类型(特殊证件标识)' })
+  @ApiProperty({ description: '非大陆证件(身份需人工核验;不代表国籍)' })
+  isNonMainlandDocument!: boolean;
+  @ApiProperty({ description: '证件类型(非大陆证件标识)' })
   documentTypeCode!: string;
   @ApiProperty({
     description: '缺 openid(无微信通道;v0.40.0 起有已验证手机亦可发号,不再必然阻断)',
@@ -1249,7 +1251,7 @@ export class PromotePrecheckRowDto {
   duplicatePhoneInBatch!: boolean;
   @ApiProperty({ description: '缺手机' })
   missingPhone!: boolean;
-  @ApiProperty({ description: '缺生日(身份证派生失败 / 外籍未填)' })
+  @ApiProperty({ description: '缺生日(身份证派生失败 / 非大陆证件未填)' })
   missingBirthDate!: boolean;
   @ApiProperty({ description: '缺性别' })
   missingGender!: boolean;

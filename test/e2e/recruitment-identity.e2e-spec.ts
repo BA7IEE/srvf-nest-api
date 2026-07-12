@@ -65,6 +65,10 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
       .attach('idCardImage', Buffer.from(JSON.stringify(envelope)), {
         filename: 'id.jpg',
         contentType: 'image/jpeg',
+      })
+      .attach('signatureImage', Buffer.from('default-signature'), {
+        filename: 'sig.png',
+        contentType: 'image/png',
       });
   }
 

@@ -442,11 +442,11 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
       { willIssue: boolean; skipReason: string | null } & Record<string, unknown>
     >;
 
-  it('跳过原因映射(+ willIssue;v0.40.0 H5 手机通道):foreign / openid-bound / missing-login-channel / missing-derived / incomplete-data;无 openid 有 phone 可发', async () => {
+  it('跳过原因映射(+ willIssue):非大陆证件资料齐备可发 / openid-bound / missing-login-channel / missing-derived / incomplete-data', async () => {
     const apps: PrecheckApp[] = [
       papp({ id: 'ok1' }), // 可发(有 openid)
       papp({ id: 'phoneok', openid: null }), // v0.40.0:无 openid 有已验证手机 → 手机通道可发
-      papp({ id: 'foreign', isForeigner: true }), // foreign-manual-build
+      papp({ id: 'foreign', isForeigner: true }), // 历史 DB 标志为真,但资料齐备仍可发
       papp({ id: 'bound', openid: 'op-bound' }), // openid-already-bound(boundOpenids 注入)
       papp({ id: 'nochannel', openid: null, phone: null }), // missing-login-channel(openid+phone 皆无)
       papp({ id: 'nobirth', birthDate: null, genderCode: null }), // missing-derived-field
@@ -456,20 +456,20 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
     const res = await service.promotePrecheck('cyc1', user);
 
     expect(res.total).toBe(7);
-    expect(res.promotableCount).toBe(2); // ok1(openid)+ phoneok(手机通道)
-    expect(res.skipCount).toBe(5);
+    expect(res.promotableCount).toBe(3); // ok1 + phoneok + 非大陆证件资料齐备
+    expect(res.skipCount).toBe(4);
 
     const m = byId(res.rows);
     expect(m.ok1).toMatchObject({ willIssue: true, skipReason: null });
     expect(m.phoneok).toMatchObject({ willIssue: true, skipReason: null }); // 手机通道发号
-    expect(m.foreign).toMatchObject({ willIssue: false, skipReason: 'foreign-manual-build' });
+    expect(m.foreign).toMatchObject({ willIssue: true, skipReason: null });
     expect(m.bound).toMatchObject({ willIssue: false, skipReason: 'openid-already-bound' });
     expect(m.nochannel).toMatchObject({ willIssue: false, skipReason: 'missing-login-channel' });
     expect(m.nobirth).toMatchObject({ willIssue: false, skipReason: 'missing-derived-field' });
     expect(m.noname).toMatchObject({ willIssue: false, skipReason: 'incomplete-data' });
 
     // 展示 flag(独立观察,不改判定)。
-    expect(m.foreign.isForeigner).toBe(true);
+    expect(m.foreign.isNonMainlandDocument).toBe(true);
     expect(m.bound.openidAlreadyBound).toBe(true);
     expect(m.phoneok.missingOpenid).toBe(true); // 无 openid,但不再阻断(手机通道)
     expect(m.nochannel.missingOpenid).toBe(true);

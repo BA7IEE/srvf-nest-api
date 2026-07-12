@@ -887,10 +887,11 @@ describe('招新三期(入队)admin 面 e2e', () => {
     expectBizError(await join(appId, org), BizCode.TEAM_JOIN_GATES_NOT_SATISFIED);
   });
 
-  it('㉓【T4】跨轮(cycle closed)无延长期 → 28240;有延长期(未到)→ joined', async () => {
+  it('㉓【T4】approved 资格不随闭轮失效:无延长期与有延长期均可 joined', async () => {
     const org = await makeOrg();
     const s1 = await setupApproved({ targets: [org], cycleStatus: 'closed' });
-    expectBizError(await join(s1.appId, org), BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
+    const r1 = await join(s1.appId, org).expect(200);
+    expect(r1.body.data.statusCode).toBe('joined');
 
     const org2 = await makeOrg();
     const nextYear = new Date(Date.now() + 365 * 24 * 3600_000);

@@ -142,7 +142,7 @@ export class RecruitmentPublicController {
   @Post('applications')
   // 证件照大小闸下沉到 multer 解析层:超 5MB 在落盘/入内存阶段即 413 拒,
   // 不再先全量 buffer 进内存才在 service 校验(F-1 防内存 DoS;系统性审查 §4)。
-  // F5:+可选签名图文件位 signatureImage(FileFields 双具名位;每文件仍 5MB 上限,总数 ≤2)。
+  // 签名图文件位 signatureImage 必填(FileFields 双具名位;每文件仍 5MB 上限,总数 ≤2)。
   @UseInterceptors(
     FileFieldsInterceptor(
       [
@@ -156,7 +156,7 @@ export class RecruitmentPublicController {
   @ApiBody({
     schema: {
       type: 'object',
-      required: ['payload', 'idCardImage'],
+      required: ['payload', 'idCardImage', 'signatureImage'],
       properties: {
         payload: {
           type: 'string',
@@ -167,14 +167,14 @@ export class RecruitmentPublicController {
         signatureImage: {
           type: 'string',
           format: 'binary',
-          description: '申请人签名图(可选;jpeg/png ≤5MB;F5——发号后随档案长期留存)',
+          description: '申请人签名图(必填;jpeg/png ≤5MB;发号后随档案长期留存)',
         },
       },
     },
   })
   @ApiOperation({
     summary:
-      '公开报名提交(无账号;multipart:payload JSON 串 + idCardImage 文件 + 可选 signatureImage 签名图〔F5,发号后随档案长期留存〕;⚠️ F5 契约收紧:payload.privacyConsentAccepted 必须为 true,缺省/false → 40000;身份链 wechatCode〔小程序〕或 phoneVerificationToken〔H5 验码令牌〕至少二选一,S4a;免费校验通过后才调付费 OCR;大陆证件 OCR 匹配+防伪+清晰→发临时编号,否则/其余证件→人工待核;OCR 改造后提交端对 OCR 永不硬报错,通道未配/上游失败均转人工;throttler recruitment) [public]',
+      '公开报名提交(无账号;multipart:payload JSON 串 + idCardImage 文件 + 必填 signatureImage 签名图〔发号后随档案长期留存〕;⚠️ 契约收紧:signatureImage 与 payload.privacyConsentAccepted=true 均必填,缺省/false → 40000;身份链 wechatCode〔小程序〕或 phoneVerificationToken〔H5 验码令牌〕至少二选一,S4a;免费校验通过后才调付费 OCR;大陆证件 OCR 匹配+防伪+清晰→发临时编号,否则/其余证件→人工待核;OCR 改造后提交端对 OCR 永不硬报错,通道未配/上游失败均转人工;throttler recruitment) [public]',
   })
   @ApiWrappedOkResponse(RecruitmentSubmitResultDto)
   @ApiBizErrorResponse(

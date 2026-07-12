@@ -150,7 +150,7 @@ export class RecruitmentCyclesController {
   @Get(':id/publicity-list')
   @ApiOperation({
     summary:
-      '公示名单(姓名 + 拟发编号,拼音序,零敏感;外籍 needsManualBuild=true 不占号、一键发号不含) [rbac: recruitment-application.read.record]',
+      '公示名单(姓名 + 拟发编号,拼音序,零敏感;资料或登录锚不齐的项 needsManualBuild=true 不占号) [rbac: recruitment-application.read.record]',
   })
   @ApiWrappedOkResponse(PublicityListResponseDto)
   @ApiBizErrorResponse(
@@ -205,7 +205,7 @@ export class RecruitmentCyclesController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '公示结束一键发号:对公示报名按拼音序批量发永久编号 {YY}{NNN} + 建 User+Member+档案+紧急联系人(单事务原子/幂等;外籍 skip+report 不 block;空集零发) [rbac: recruitment-application.promote.member]',
+      '公示结束一键发号:对公示报名按拼音序批量发永久编号 {YY}{NNN} + 建 User+Member+档案+紧急联系人(单事务原子/幂等;非大陆证件资料齐备亦可批量发号;不可发项 skip+report 不 block;空集零发) [rbac: recruitment-application.promote.member]',
   })
   @ApiWrappedOkResponse(PromoteResultDto)
   @ApiBizErrorResponse(

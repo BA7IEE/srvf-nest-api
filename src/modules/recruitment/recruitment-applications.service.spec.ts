@@ -45,6 +45,11 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
     mimetype: 'image/jpeg',
     size: 100,
   };
+  const signatureImage: UploadedImageFile = {
+    buffer: Buffer.from('fake-signature-bytes'),
+    mimetype: 'image/png',
+    size: 100,
+  };
   const meta: AuditMeta = { requestId: 'r1', ip: null, ua: null };
   const now = new Date('2026-06-18T00:00:00.000Z');
 
@@ -107,12 +112,12 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
   it('单事务普通错误失败 → 补偿删孤儿 blob + 原错上抛;OCR 已在事务前调一次', async () => {
     const { service, storage, realname } = buildService(new Error('tx boom'));
 
-    await expect(service.submit(buildPayload(), image, undefined, meta, now)).rejects.toThrow(
+    await expect(service.submit(buildPayload(), image, signatureImage, meta, now)).rejects.toThrow(
       'tx boom',
     );
 
-    expect(storage.putObject).toHaveBeenCalledTimes(1);
-    expect(storage.deleteObject).toHaveBeenCalledTimes(1);
+    expect(storage.putObject).toHaveBeenCalledTimes(2);
+    expect(storage.deleteObject).toHaveBeenCalledTimes(2);
     expect(storage.deleteObject).toHaveBeenCalledWith(
       expect.stringContaining('recruitment/id-card/cyc1/'),
     );
@@ -128,12 +133,12 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
     });
     const { service, storage } = buildService(p2002);
 
-    await expect(service.submit(buildPayload(), image, undefined, meta, now)).rejects.toMatchObject(
-      {
-        biz: { code: BizCode.RECRUITMENT_DUPLICATE_APPLICATION.code },
-      },
-    );
-    expect(storage.deleteObject).toHaveBeenCalledTimes(1);
+    await expect(
+      service.submit(buildPayload(), image, signatureImage, meta, now),
+    ).rejects.toMatchObject({
+      biz: { code: BizCode.RECRUITMENT_DUPLICATE_APPLICATION.code },
+    });
+    expect(storage.deleteObject).toHaveBeenCalledTimes(2);
     expect(storage.deleteObject).toHaveBeenCalledWith(
       expect.stringContaining('recruitment/id-card/cyc1/'),
     );
@@ -144,10 +149,10 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
     storage.deleteObject.mockRejectedValueOnce(new Error('storage down'));
 
     // deleteObject 抛错被 safeDeleteOrphanImage 吞掉 → 仍以原 tx1 错误结束
-    await expect(service.submit(buildPayload(), image, undefined, meta, now)).rejects.toThrow(
+    await expect(service.submit(buildPayload(), image, signatureImage, meta, now)).rejects.toThrow(
       'tx1 boom',
     );
-    expect(storage.deleteObject).toHaveBeenCalledTimes(1);
+    expect(storage.deleteObject).toHaveBeenCalledTimes(2);
   });
 
   it('BizException 形态正确(P2002 → 28003 的 httpStatus 一致)', async () => {
@@ -157,7 +162,7 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
       meta: { target: ['recruitment_applications_cycle_idcard_active_unique'] },
     });
     const { service } = buildService(p2002);
-    await service.submit(buildPayload(), image, undefined, meta, now).catch((e) => {
+    await service.submit(buildPayload(), image, signatureImage, meta, now).catch((e) => {
       expect(e).toBeInstanceOf(BizException);
       expect((e as BizException).biz).toEqual(BizCode.RECRUITMENT_DUPLICATE_APPLICATION);
     });
@@ -258,7 +263,7 @@ describe('RecruitmentApplicationsService · 落图失败孤儿补偿(review #484
       .mockResolvedValueOnce({ key: 'k2', etag: null }) // 主体框裁剪图
       .mockRejectedValueOnce(new Error('portrait crop putObject boom')); // 头像裁剪图
 
-    await expect(service.submit(buildPayload(), image, undefined, meta, now)).rejects.toThrow(
+    await expect(service.submit(buildPayload(), image, image, meta, now)).rejects.toThrow(
       'portrait crop putObject boom',
     );
 
@@ -279,7 +284,7 @@ describe('RecruitmentApplicationsService · 落图失败孤儿补偿(review #484
       .mockResolvedValueOnce({ key: 'k1', etag: null }) // 主证件照
       .mockRejectedValueOnce(new Error('body crop putObject boom')); // 主体框裁剪图
 
-    await expect(service.submit(buildPayload(), image, undefined, meta, now)).rejects.toThrow(
+    await expect(service.submit(buildPayload(), image, image, meta, now)).rejects.toThrow(
       'body crop putObject boom',
     );
 
@@ -295,7 +300,7 @@ describe('RecruitmentApplicationsService · 落图失败孤儿补偿(review #484
     const { service, storage, prisma } = buildServiceWithCrops();
     storage.putObject.mockRejectedValueOnce(new Error('main image putObject boom'));
 
-    await expect(service.submit(buildPayload(), image, undefined, meta, now)).rejects.toThrow(
+    await expect(service.submit(buildPayload(), image, image, meta, now)).rejects.toThrow(
       'main image putObject boom',
     );
 
@@ -465,11 +470,9 @@ describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封�
     const { service, storage, prisma, realname } = buildService({
       dupHits: [null, { id: 'dup-openid' }],
     });
-    await expect(service.submit(buildPayload(), image, undefined, meta, now)).rejects.toMatchObject(
-      {
-        biz: { code: BizCode.RECRUITMENT_DUPLICATE_OPENID_ACTIVE.code },
-      },
-    );
+    await expect(service.submit(buildPayload(), image, image, meta, now)).rejects.toMatchObject({
+      biz: { code: BizCode.RECRUITMENT_DUPLICATE_OPENID_ACTIVE.code },
+    });
     expect(realname.recognize).not.toHaveBeenCalled();
     expect(storage.putObject).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -480,11 +483,9 @@ describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封�
     const { service, storage, prisma, realname } = buildService({
       dupHits: [null, null, { id: 'dup-phone' }],
     });
-    await expect(service.submit(buildPayload(), image, undefined, meta, now)).rejects.toMatchObject(
-      {
-        biz: { code: BizCode.RECRUITMENT_DUPLICATE_PHONE_ACTIVE.code },
-      },
-    );
+    await expect(service.submit(buildPayload(), image, image, meta, now)).rejects.toMatchObject({
+      biz: { code: BizCode.RECRUITMENT_DUPLICATE_PHONE_ACTIVE.code },
+    });
     expect(realname.recognize).not.toHaveBeenCalled();
     expect(storage.putObject).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -492,11 +493,9 @@ describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封�
 
   it('OCR 日封顶超限(upsert 返回 count > limit)→ 28060;recognize 零调用、计数键 = ip × 北京日', async () => {
     const { service, prisma, realname } = buildService({ quotaCount: 31 });
-    await expect(service.submit(buildPayload(), image, undefined, meta, now)).rejects.toMatchObject(
-      {
-        biz: { code: BizCode.RECRUITMENT_OCR_DAILY_LIMIT.code },
-      },
-    );
+    await expect(service.submit(buildPayload(), image, image, meta, now)).rejects.toMatchObject({
+      biz: { code: BizCode.RECRUITMENT_OCR_DAILY_LIMIT.code },
+    });
     expect(realname.recognize).not.toHaveBeenCalled();
     expect(prisma.recruitmentOcrDailyCounter.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -508,7 +507,7 @@ describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封�
   it('恰达上限(count == limit)→ 放行继续 OCR(先加后判,拒者恒拒边界)', async () => {
     const { service, realname } = buildService({ quotaCount: 30 });
     // recognize 桩未配置返回值 → 后续流程会抛(本用例只锁「配额不拦」),吞掉即可。
-    await service.submit(buildPayload(), image, undefined, meta, now).catch(() => undefined);
+    await service.submit(buildPayload(), image, image, meta, now).catch(() => undefined);
     expect(realname.recognize).toHaveBeenCalledTimes(1);
   });
 });

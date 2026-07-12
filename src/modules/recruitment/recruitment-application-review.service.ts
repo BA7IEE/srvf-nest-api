@@ -277,7 +277,7 @@ export class RecruitmentApplicationReviewService {
   // ============ 招新可用性收口 F2:admin 改资料(评审稿 recruitment-usability-closeout-review.md §3 R1)============
   // 白名单 + 身份字段条件闸:
   // - 非身份字段(detailedAddress/cityDistrict/sourceChannel/emergencyContacts/profileExtra)恒可改;
-  // - 身份字段(realName/idCardNumber/birthDate/genderCode)仅 statusCode='manual_review' **或** 外籍记录
+  // - 身份字段(realName/idCardNumber/birthDate/genderCode)仅 statusCode='manual_review' **或** 非大陆证件记录
   //   可改(已 verified 的大陆记录 OCR 已核验 → 28045 不开);
   // - 大陆记录 birthDate/genderCode 恒由证件号派生(直接传 → 40000);大陆改 idCardNumber → 校验位 +
   //   年龄复检(28010)+ birthDate/genderCode 重派生 + 同轮活跃去重(28003;镜像 submit 语义);
@@ -324,7 +324,7 @@ export class RecruitmentApplicationReviewService {
       if (row.statusCode === APP_STATUS_PROMOTED || row.sensitivePurgedAt !== null) {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
       }
-      // 身份字段条件闸(R1):仅 manual_review 或外籍记录可改
+      // 身份字段条件闸(R1):仅 manual_review 或非大陆证件记录可改
       if (identityChanged && row.statusCode !== APP_STATUS_MANUAL && !row.isForeigner) {
         throw new BizException(BizCode.RECRUITMENT_IDENTITY_FIELDS_LOCKED);
       }
@@ -383,8 +383,8 @@ export class RecruitmentApplicationReviewService {
         }
         data.idCardNumber = dto.idCardNumber;
       }
-      // 外籍补录(F3 手动建档前置):birthDate 归一日期,genderCode 直存。
-      // 十项收口刀A:补录同样过 18-60 年龄闸——此前外籍从提交到建档全程零年龄校验
+      // 非大陆证件补录(F3 手动建档前置):birthDate 归一日期,genderCode 直存。
+      // 十项收口刀A:补录同样过 18-60 年龄闸——此前非大陆证件从提交到建档全程零年龄校验
       // (submit 年龄闸包在大陆分支;promote-single 齐备闸此前也只查非空)。
       if (!mainland && dto.birthDate !== undefined) {
         const birthDate = normalizeDateOnly(dto.birthDate);

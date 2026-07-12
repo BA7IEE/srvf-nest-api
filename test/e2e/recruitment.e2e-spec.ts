@@ -14,7 +14,7 @@ import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
 // 招新报名全链 e2e(OCR 改造冻结评审稿 docs/archive/reviews/recruitment-realname-ocr-review.md §4/§8):
-// 识别端点 + 报名全链(大陆 OCR 匹配→verified / 不匹配·防伪告警·不清晰→manual_review)+ 外籍人工 +
+// 识别端点 + 报名全链(大陆 OCR 匹配→verified / 不匹配·防伪告警·不清晰→manual_review)+ 非大陆证件人工 +
 // 编号按序唯一 + 防重复 + 轮次开关 + 付费 OCR 前置免费校验 + 每次 OCR 入 audit + signed-URL + members 零增长。
 //
 // DevStub 双通道驱动:
@@ -80,7 +80,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   // opts.ocr 覆盖造不一致/告警/不清晰(评审稿 §3.7);opts.withImage=false 造缺图。
   function submit(
     payload: Record<string, unknown>,
-    opts: { withImage?: boolean; ocr?: Record<string, unknown>; signature?: Buffer } = {},
+    opts: { withImage?: boolean; ocr?: Record<string, unknown>; signature?: Buffer | null } = {},
   ): request.Test {
     const withImage = opts.withImage ?? true;
     const envelope = opts.ocr ?? {
@@ -96,9 +96,11 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         contentType: 'image/jpeg',
       });
     }
-    // F5:可选签名图文件位(校验镜像 idCardImage)
-    if (opts.signature) {
-      req = req.attach('signatureImage', opts.signature, {
+    // 签名图必填:fixture 默认补齐;显式 signature:null 仅用于缺签名契约断言。
+    const signature =
+      opts.signature === undefined ? Buffer.from('default-signature') : opts.signature;
+    if (signature) {
+      req = req.attach('signatureImage', signature, {
         filename: 'sig.png',
         contentType: 'image/png',
       });
@@ -363,8 +365,8 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(await prisma.recruitmentApplication.count()).toBe(0);
   });
 
-  // ③ 外籍 → manual_review(不调付费核验);admin 人工 resolve approved → verified + 发号
-  it('③ 外籍证件 → manual_review(零付费核验调用);人工 resolve 通过 → verified + 临时编号', async () => {
+  // ③ 非大陆证件 → manual_review(不调付费核验);admin 人工 resolve approved → verified + 发号
+  it('③ 非大陆证件 → manual_review(零付费核验调用);人工 resolve 通过 → verified + 临时编号', async () => {
     await openCycle();
     const res = await submit(
       validPayload({
@@ -376,7 +378,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(res.status).toBe(201);
     expect(res.body.data.statusCode).toBe('manual_review');
     expect(res.body.data.tempNo).toBeNull();
-    // 外籍根本不进付费核验:零 realname-verify 审计
+    // 非大陆证件根本不进付费核验:零 realname-verify 审计
     expect(await realnameVerifyAuditCount()).toBe(0);
 
     const row = await prisma.recruitmentApplication.findFirst({
@@ -504,7 +506,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(again.body.data.statusCode).toBe('verified');
   });
 
-  it('⑤e(F1) OCR 日封顶:当日计数达上限 → recognize/submit 28060(HTTP 429);外籍不调 OCR 不受限', async () => {
+  it('⑤e(F1) OCR 日封顶:当日计数达上限 → recognize/submit 28060(HTTP 429);非大陆证件不调 OCR 不受限', async () => {
     await openCycle();
     // 先跑一次 recognize 学到本环境请求 IP 的计数键(不猜 IP 形态)
     const warm = await recognize('mainland_id', {
@@ -538,7 +540,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expectBizError(blockedSubmit, BizCode.RECRUITMENT_OCR_DAILY_LIMIT);
     expect(await prisma.recruitmentApplication.count()).toBe(0);
 
-    // 外籍不调付费 OCR → 不受日封顶影响(免费人工通道照常)
+    // 非大陆证件不调付费 OCR → 不受日封顶影响(免费人工通道照常)
     const foreign = await submit(
       validPayload({
         wechatCode: 'code-cap-f',
@@ -658,7 +660,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(row.genderCode).toBe(Number(ID_MATCH_B[16]) % 2 === 1 ? 'male' : 'female');
   });
 
-  it('F2-④ 外籍补录 birthDate/genderCode(F3 手动建档前置)→ 200 归一落库(verified 外籍亦可改身份字段)', async () => {
+  it('F2-④ 非大陆证件补录 birthDate/genderCode(F3 手动建档前置)→ 200 归一落库(verified 行亦可改身份字段)', async () => {
     const cycle = await openCycle();
     const foreign = await createAppRow(cycle.id, {
       documentTypeCode: 'passport',
@@ -678,7 +680,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(row.genderCode).toBe('female');
   });
 
-  it('F2-④b 十项收口刀A:外籍补录 birthDate 同样过 18-60 年龄闸(未成年 → 28010;此前补录零年龄校验)', async () => {
+  it('F2-④b 十项收口刀A:非大陆证件补录 birthDate 同样过 18-60 年龄闸(未成年 → 28010;此前补录零年龄校验)', async () => {
     const cycle = await openCycle();
     const foreign = await createAppRow(cycle.id, {
       documentTypeCode: 'passport',
@@ -765,7 +767,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expectBizError(await promoteSingle(row.id), BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
   });
 
-  it('F3-② 外籍手动建档全链:缺派生 28047 → F2 补录 → 建档成功(号段与批量连续)→ 幂等重跑 28041 零重复', async () => {
+  it('F3-② 非大陆证件手动建档全链:缺派生 28047 → F2 补录 → 建档成功(号段与批量连续)→ 幂等重跑 28041 零重复', async () => {
     const cycle = await openCycle();
     const membersBefore = await prisma.member.count();
 
@@ -783,7 +785,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(batch.body.data.promotedCount).toBe(1);
     expect(batch.body.data.promoted[0].memberNo).toBe('26001');
 
-    // 外籍 publicity 行(缺 birthDate/genderCode;批量 skip 的 foreign-manual-build 场景)
+    // 非大陆证件 publicity 行(缺 birthDate/genderCode;批量因 missing-derived-field 跳过)
     const foreign = await prisma.recruitmentApplication.create({
       data: publicityRow({
         cycleId: cycle.id,
@@ -806,7 +808,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       await promoteSingle(foreign.id),
       BizCode.RECRUITMENT_PROFILE_INCOMPLETE_FOR_PROMOTE,
     );
-    // F2 补录(外籍身份字段可改)
+    // F2 补录(非大陆证件身份字段可改)
     await updateApp(foreign.id, { birthDate: '1993-08-15', genderCode: 'male' }).expect(200);
 
     // 单人建档成功:与批量共享号段 → 26002 连续;微信通道(openid 未被占用)
@@ -1000,7 +1002,17 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(await prisma.recruitmentApplication.count()).toBe(0); // 双拒零落库
   });
 
-  it('F5-② 同意留痕 + 签名图全链:submit 落 stamps/key → promote 搬 profile + 报名行清空 + signed 真值', async () => {
+  it('F5-② 契约收紧:缺 signatureImage → 40000,零落库(⚠️ 行为变更)', async () => {
+    await openCycle();
+    expectBizError(
+      await submit(validPayload({ wechatCode: 'f5-no-signature' }), { signature: null }),
+      BizCode.BAD_REQUEST,
+      { strictMessage: false },
+    );
+    expect(await prisma.recruitmentApplication.count()).toBe(0);
+  });
+
+  it('F5-③ 同意留痕 + 签名图全链:submit 落 stamps/key → promote 搬 profile + 报名行清空 + signed 真值', async () => {
     const cycle = await openCycle();
     const res = await submit(
       validPayload({
@@ -1042,7 +1054,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(after.privacyConsentAcceptedAt).not.toBeNull(); // 同意留痕为脱敏留存字段,不清
   });
 
-  it('F5-③ 存量无 consent 行 promote → privacyConsentSigned=false(⚠️ 行为变更:不再硬编码 true)', async () => {
+  it('F5-④ 存量无 consent 行 promote → privacyConsentSigned=false(⚠️ 行为变更:不再硬编码 true)', async () => {
     const cycle = await openCycle();
     await prisma.recruitmentApplication.create({
       data: publicityRow({
@@ -1252,7 +1264,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expectBizError(full, BizCode.RECRUITMENT_CYCLE_CAPACITY_FULL);
   });
 
-  // ⑥d 十项收口刀A:documentTypeCode 白名单(⚠️ 契约收紧)——名单外任意串此前会被当外籍进人工队列
+  // ⑥d 十项收口刀A:documentTypeCode 白名单(⚠️ 契约收紧)——名单外任意串此前会被当非大陆证件进人工队列
   it('⑥d 提交 documentTypeCode 名单外值(abc)→ 40000(DTO @IsIn 白名单)', async () => {
     await openCycle();
     const res = await submit(validPayload({ wechatCode: 'code-dt', documentTypeCode: 'abc' }));
@@ -1309,6 +1321,9 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       where: { event: 'recruitment-application.submit' },
     });
     expect(submitAudit?.actorUserId).toBeNull(); // 无账号自助提交
+    const submitAfter = (submitAudit?.context as { after?: Record<string, unknown> }).after;
+    expect(submitAfter?.isNonMainlandDocument).toBe(false);
+    expect(submitAfter?.isForeigner).toBeUndefined();
   });
 
   // ⑨ signed-URL 取图:admin 取证件照短 TTL URL → 200 + url/expiresAt
@@ -1992,7 +2007,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expectBizError(await evaluate(a2.id, true), BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
   });
 
-  it('㉕(二期) 公示名单:拼音序 + 拟发编号预览 + 零敏感 + 外籍 needsManualBuild 不占号', async () => {
+  it('㉕(二期) 公示名单:拼音序 + 拟发编号预览 + 零敏感 + 非大陆证件缺派生字段不占号', async () => {
     const cycle = await openCycle();
     // 三大陆:张三/李四/王五(拼音 zhang/li/wang)
     const zhang = await submitVerified('p2-5z', ID_MATCH_A, '张三');
@@ -2002,7 +2017,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       await markAll(a.id);
       await evaluate(a.id, true);
     }
-    // 外籍(护照):拼音 '阿' a 排最前;manual_review → resolve → 门槛 → 评定 → publicity
+    // 非大陆证件(护照):拼音 '阿' a 排最前;manual_review → resolve → 门槛 → 评定 → publicity
     const fs = await submit(
       validPayload({
         wechatCode: 'p2-5f',
@@ -2037,10 +2052,10 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       '王五',
       '张三',
     ]);
-    // 外籍排首但不占号(needsManualBuild + null);大陆按拼音序 26001/26002/26003
+    // 非大陆证件行因缺 birthDate/genderCode 仍不占号;大陆按拼音序 26001/26002/26003
     expect(data.items[0]).toMatchObject({
       realName: '阿福',
-      isForeigner: true,
+      isNonMainlandDocument: true,
       needsManualBuild: true,
       proposedMemberNo: null,
     });
@@ -2054,7 +2069,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     // 零敏感:item 仅 5 字段,无身份证号/手机/住址
     expect(Object.keys(data.items[1] as Record<string, unknown>).sort()).toEqual([
       'applicationId',
-      'isForeigner',
+      'isNonMainlandDocument',
       'needsManualBuild',
       'proposedMemberNo',
       'realName',
@@ -2312,13 +2327,13 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     ).toBe(1);
   });
 
-  it('㉘(二期) 外籍 skip+report:不进一键发号(foreign-manual-build)、不建 Member、仍 publicity;大陆照常发', async () => {
+  it('㉘(二期) 港澳台证件补齐资料后进入批量发号,与大陆申请同批建档', async () => {
     const cycle = await openCycle();
     const fs = await submit(
       validPayload({
         wechatCode: 'p3f-f',
-        documentTypeCode: 'passport',
-        idCardNumber: 'E99887766',
+        documentTypeCode: 'hk_macau_permit',
+        idCardNumber: 'H99887766',
         realName: '周吴',
       }),
     );
@@ -2330,21 +2345,19 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       .post(`${ADMIN_APPS2}/${foreign.id}/resolve`)
       .set('Authorization', adminAuth)
       .send({ approved: true });
+    await updateApp(foreign.id, { birthDate: '1992-05-20', genderCode: 'female' }).expect(200);
     await markAll(foreign.id);
     await evaluate(foreign.id, true);
     await toPublicity('p3f-m', ID_MATCH_A, '王五');
     const membersBefore = await prisma.member.count();
 
     const res = await promote(cycle.id);
-    expect(res.body.data.promotedCount).toBe(1); // 仅大陆
-    expect(res.body.data.skippedCount).toBe(1);
-    expect(res.body.data.skipped[0]).toMatchObject({ reason: 'foreign-manual-build' });
-    expect(await prisma.member.count()).toBe(membersBefore + 1); // 外籍未建 Member
-    const fa = await prisma.recruitmentApplication.findFirstOrThrow({
-      where: { openid: 'dev-openid-p3f-f' },
-    });
-    expect(fa.statusCode).toBe('publicity'); // 仍 publicity,待 admin 手动建档
-    expect(fa.promotedMemberId).toBeNull();
+    expect(res.body.data.promotedCount).toBe(2);
+    expect(res.body.data.skippedCount).toBe(0);
+    expect(await prisma.member.count()).toBe(membersBefore + 2);
+    const fa = await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: foreign.id } });
+    expect(fa.statusCode).toBe('promoted');
+    expect(fa.promotedMemberId).not.toBeNull();
   });
 
   it('㉙(二期) 空公示集→零发;撞 999 上限→28043(整批回滚:seq 复位、报名仍 publicity、零 Member)', async () => {
@@ -2624,7 +2637,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
           createdAt: OLD,
           realName: '评定一',
         },
-        // 公示 ×3:甲/乙 大陆可发号、丙 外籍需手动建档
+        // 公示 ×3:甲/乙 大陆可发号、丙非大陆证件缺派生字段需手动建档
         {
           cycleId: cycle.id,
           statusCode: 'publicity',
@@ -2979,7 +2992,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     await prisma.user.create({
       data: { username: 's6-bound-occupier', passwordHash: 'x', role: 'USER', openid: 's6p-bound' },
     });
-    // 混合公示集:3 可发 + 外籍 + openid 占用 + 缺登录通道。
+    // 混合公示集:资料齐备的非大陆证件也可发 + openid 占用 + 缺登录通道。
     // 批内重复防御纯函数由 recruitment-promotion.service.spec.ts 锁定；DB 刀B 后生产态不可再造。
     await prisma.recruitmentApplication.createMany({
       data: [
@@ -3024,6 +3037,10 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         }),
       ],
     });
+    const nonMainland = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { cycleId: cycle.id, openid: 's6p-f' },
+      select: { id: true },
+    });
 
     // 1) 预检(纯读;promote 之前)
     const pre = await request(httpServer(app))
@@ -3064,7 +3081,8 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         .filter((r) => !r.willIssue)
         .map((r) => r.skipReason),
     );
-    expect(reasons).toContain('foreign-manual-build');
+    expect(preById[nonMainland.id]).toMatchObject({ willIssue: true, skipReason: null });
+    expect(promotedIds).toContain(nonMainland.id);
     expect(reasons).toContain('openid-already-bound');
     // v0.40.0 H5 手机通道:missing-openid 停用,openid+phone 皆无 → missing-login-channel。
     expect(reasons).toContain('missing-login-channel');

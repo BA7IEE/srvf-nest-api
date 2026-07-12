@@ -9,7 +9,7 @@ import { RecruitmentStatsService } from './recruitment-stats.service';
 // ① 五组(今日/待处理/门槛/综合评定/公示发号)在一份多态夹具下逐组精确计数;
 // ② 今日数据走**北京日界**(含「UTC 日 ≠ 北京日」的两个边界行,证明非 naive UTC 日);
 // ③ 待人工 normal/high/system 三栏 = **真 riskLevel 口径**(S4b 落地;去 verifyOutcome 代理);
-// ④ 公示「可一键发号/需手动建档」复用 decidePromotionIssuance(外籍 + openid 占用均落 needManualBuild);
+// ④ 公示「可一键发号/需手动建档」复用 decidePromotionIssuance(资料齐备的非大陆证件同样可发号);
 // ⑤ RBAC 拒绝 → RBAC_FORBIDDEN;轮次不存在 → RECRUITMENT_CYCLE_NOT_FOUND。
 
 const user = { id: 'admin1', role: 'SUPER_ADMIN' } as unknown as CurrentUserPayload;
@@ -110,7 +110,7 @@ describe('RecruitmentStatsService.getCycleStats · 五组聚合(多态夹具)', 
     // 待综合评定 2
     app({ id: 'e1', statusCode: 'pending_evaluation' }),
     app({ id: 'e2', statusCode: 'pending_evaluation' }),
-    // 公示 3:p1/p2 可发号(大陆 + openid + 字段齐)、pf 外籍(needManualBuild)
+    // 公示 3:p1/p2/pf 均可发号(资料 + openid 齐;pf 为非大陆证件但不因此阻断)
     app({ id: 'p1', statusCode: 'publicity', openid: 'oa', realName: '陈一' }),
     app({ id: 'p2', statusCode: 'publicity', openid: 'ob', realName: '陈二' }),
     app({ id: 'pf', statusCode: 'publicity', isForeigner: true, openid: 'oc', realName: '安三' }),
@@ -166,13 +166,13 @@ describe('RecruitmentStatsService.getCycleStats · 五组聚合(多态夹具)', 
     expect(res.evaluation).toEqual({ pending: 2, passed: 3, eliminated: 1 });
   });
 
-  it('公示发号:公示中 3 / 可一键发号 2 / 需手动建档 1(外籍)/ 已发号 2 —— 复用 decidePromotionIssuance', async () => {
+  it('公示发号:资料齐备的非大陆证件也可一键发号 —— 复用 decidePromotionIssuance', async () => {
     const { service, prismaMock } = buildService(apps);
     const res = await service.getCycleStats('cyc1', user, NOW);
     expect(res.issuance).toEqual({
       inPublicity: 3,
-      oneClickIssuable: 2, // p1/p2 大陆可发;pf 外籍跳过
-      needManualBuild: 1,
+      oneClickIssuable: 3,
+      needManualBuild: 0,
       promoted: 2,
     });
     // openid 占用判定只查公示子集的 openid(oa/ob/oc),不跨轮全表扫描

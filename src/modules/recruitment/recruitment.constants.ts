@@ -16,7 +16,7 @@ export const CYCLE_STATUS_CLOSED = 'closed';
 // APP_STATUS_PENDING 常量保留仅为历史兼容/防御,**报名主流程不再写入**(评审稿 §3.1/§4)。
 export const APP_STATUS_PENDING = 'pending_verification'; // 退役:OCR 改造后报名不再产生(历史兼容)
 export const APP_STATUS_VERIFIED = 'verified'; // 核验通过(临时编号已发;二期 = 门槛跟踪中)
-export const APP_STATUS_MANUAL = 'manual_review'; // 人工待核(外籍等)
+export const APP_STATUS_MANUAL = 'manual_review'; // 人工待核(非大陆证件等)
 export const APP_STATUS_REJECTED = 'rejected'; // 未通过
 // 招新二期(后段;评审稿 M-2 / E-R2-1):+3 字符串态,无 migration
 export const APP_STATUS_PENDING_EVALUATION = 'pending_evaluation'; // 待综合评定(5 门槛全完成自动推进)
@@ -114,7 +114,8 @@ export function comparePromotionOrder(a: PromotionOrderItem, b: PromotionOrderIt
 }
 
 /**
- * 是否可一键发号(M-1:仅大陆可派生 birthDate+genderCode;外籍/缺字段走 admin 手动建档)。
+ * 是否可一键发号:资料齐备(realName/birthDate/genderCode + openid|phone 锚)即可。
+ * `isForeigner` 是历史 DB 字段,语义为「非大陆证件」而非国籍,不参与发号资格判定。
  * v0.40.0 H5 手机通道发号:登录通道条件由「有 openid」放宽为「有 openid **或** 有已验证手机(phone)」——
  * 无 openid 但有已验证手机的 H5 申请人亦可一键发号(建 SMS 登录通道 User);微信路径(有 openid)逐字不变。
  */
@@ -127,7 +128,6 @@ export function isPromotable(app: {
   realName: string | null;
 }): boolean {
   return (
-    !app.isForeigner &&
     app.birthDate != null &&
     app.genderCode != null &&
     (app.openid != null || app.phone != null) &&
@@ -168,7 +168,6 @@ export function promotionSkipReason(
   phoneBound: boolean,
   duplicatePhoneInBatch: boolean,
 ): string {
-  if (app.isForeigner) return 'foreign-manual-build';
   if (openidBound) return 'openid-already-bound';
   if (phoneBound) return 'phone-already-bound';
   if (app.openid == null && app.phone == null) return 'missing-login-channel';
@@ -260,7 +259,7 @@ export function beijingDateKey(now: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-// ===== 证件类型(documentTypeCode;判外籍 / OCR 自动放行资格)=====
+// ===== 证件类型(documentTypeCode;判非大陆证件 / OCR 自动放行资格)=====
 // OCR 改造(2026-06-22):身份证 / 护照 / 回乡证走 OCR(isOcrDocument,见 realname.constants);
 // **仅 mainland_id 可自动放行 verified**(OCR 匹配+防伪+清晰);护照/回乡证 OCR 后恒人工;其余不 OCR 人工。
 export const DOC_TYPE_MAINLAND_ID = 'mainland_id';
@@ -270,14 +269,14 @@ export function isMainlandId(documentTypeCode: string): boolean {
   return documentTypeCode === DOC_TYPE_MAINLAND_ID;
 }
 
-/** 是否外籍证件(承载 birthDate/gender 派生跳过 + phase-2 手动建档边界;= 非大陆身份证,语义不变)。
- *  注:护照/回乡证既 isForeigner=true 又 isOcrDocument=true(OCR 识别 + 人工最终)。 */
+/** 是否使用非大陆证件(身份需人工核验;不代表国籍;= 非大陆身份证)。
+ *  注:护照/回乡证既命中历史 DB 字段 isForeigner=true 又 isOcrDocument=true(OCR 识别 + 人工最终)。 */
 export function isForeignDocument(documentTypeCode: string): boolean {
   return documentTypeCode !== DOC_TYPE_MAINLAND_ID;
 }
 
 // 十项收口刀A(2026-07-11;拍板六值):documentTypeCode 白名单(submit DTO @IsIn)。
-// 此前仅"非空字符串"校验,任意串(如 'abc')会被 isForeignDocument 判外籍进普通人工队列,
+// 此前仅"非空字符串"校验,任意串(如 'abc')会被 isForeignDocument 判非大陆证件进普通人工队列,
 // 且可经 F2 补录 + promote-single 一路写进 member_profiles.documentTypeCode 污染档案。
 // ⚠️ 词表错位已知:权威值 mainland_id 不在 document_type 字典(字典是 id_card),统一挂账
 // NEXT_TASKS——本白名单落代码常量,不接字典校验。recognize 端点不挂白名单(未知类型已优雅
@@ -382,7 +381,7 @@ export const ID_CARD_IMAGE_SIGNED_URL_TTL_SECONDS = 300;
 // 裁剪图为腾讯返 base64 JPEG,ext 恒 jpg)。仅 mainland_id 鉴伪版 submit 路径写入。
 export const ID_CARD_CROP_IMAGE_KEY_PREFIX = 'recruitment/id-card-crop';
 export const ID_CARD_PORTRAIT_IMAGE_KEY_PREFIX = 'recruitment/id-card-portrait';
-// 招新可用性收口 F5(2026-07-11;评审稿 §2.8 R5):申请人签名图(multipart 可选文件位 signatureImage;
+// 招新可用性收口 F5(2026-07-11;评审稿 §2.8 R5):申请人签名图(multipart 必填文件位 signatureImage;
 // 校验镜像 idCardImage〔jpeg/png ≤5MB〕;promote 搬 member_profiles 长期留存,报名行清空)。
 export const SIGNATURE_IMAGE_KEY_PREFIX = 'recruitment/signature';
 // 招新可用性收口 F7(2026-07-11;评审稿 §2.9 R6):申请人证书图(公开上传,双通道凭证;
