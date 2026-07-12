@@ -2,6 +2,80 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RecruitmentApplicationReviewService } from './recruitment-application-review.service';
+import { APP_STATUS_PENDING } from './recruitment.constants';
+
+describe('RecruitmentApplicationReviewService.reviewCertificate · 退役态防御', () => {
+  it('pending_verification 历史行证书通过后保持原状态,不自动翻为 pending_evaluation', async () => {
+    const now = new Date('2026-07-12T00:00:00.000Z');
+    const row = {
+      id: 'app-legacy-pending',
+      cycleId: 'cycle-1',
+      statusCode: APP_STATUS_PENDING,
+      tempNo: null,
+      realName: '历史申请人',
+      idCardNumber: null,
+      phone: null,
+      documentTypeCode: 'mainland_id',
+      isForeigner: false,
+      birthDate: new Date('1990-01-01T00:00:00.000Z'),
+      genderCode: 'female',
+      ageGroup: null,
+      cityDistrict: null,
+      verifyOutcome: null,
+      riskLevel: null,
+      manualReviewReason: null,
+      eliminationStage: null,
+      idCardImageKey: null,
+      ocrAddress: null,
+      ocrNation: null,
+      ocrAuthority: null,
+      ocrValidDate: null,
+      idCardCropImageKey: null,
+      idCardPortraitImageKey: null,
+      certificateImages: { first_aid: ['recruitment/certificate/legacy.jpg'] },
+      certificateReviewStatus: null,
+      thresholdMarks: {
+        patrol1: { at: now.toISOString(), by: 'admin1' },
+        patrol2: { at: now.toISOString(), by: 'admin1' },
+        training: { at: now.toISOString(), by: 'admin1' },
+        bsafe: { at: now.toISOString(), by: 'admin1' },
+      },
+      evaluationNote: null,
+      promotedMemberId: null,
+      openid: null,
+      createdAt: new Date('2026-06-18T00:00:00.000Z'),
+    };
+    const update = jest.fn().mockImplementation(({ data }: { data: Record<string, unknown> }) => {
+      expect(data.statusCode).toBe(APP_STATUS_PENDING);
+      return Promise.resolve({ ...row, ...data });
+    });
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: row.id }]),
+      recruitmentApplication: {
+        findFirst: jest.fn().mockResolvedValue(row),
+        update,
+      },
+    };
+    const service = new RecruitmentApplicationReviewService(
+      { $transaction: jest.fn((cb: (arg: unknown) => unknown) => cb(tx)) } as never,
+      { can: jest.fn().mockResolvedValue(true) } as never,
+      { log: jest.fn() } as never,
+      { deleteObject: jest.fn() } as never,
+    );
+
+    const result = await service.reviewCertificate(
+      row.id,
+      'first_aid',
+      { approved: true },
+      { id: 'admin1', role: 'SUPER_ADMIN' } as never,
+      { requestId: 'r1', ip: null, ua: null },
+      now,
+    );
+
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(result.statusCode).toBe(APP_STATUS_PENDING);
+  });
+});
 
 // god-service 拆分(2026-06-28):批量标门槛编排 characterization 随方法从
 // RecruitmentApplicationsService 迁来(断言不变,仅构造目标类改为 ReviewService;

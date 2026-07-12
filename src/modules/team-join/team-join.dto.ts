@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -22,6 +23,7 @@ import { ALL_GATE_CODES, TEAM_JOIN_MAX_TARGET_ORGS } from './team-join.constants
 const NAME_MAX = 100;
 const NOTE_MAX = 500;
 const CODE_MAX = 64;
+const OPEN_ORGANIZATION_IDS_MAX = 64;
 
 // 入队申请列表 query(分页 + 可选 cycleId / statusCode 过滤;白名单进 DTO,
 // 否则全局 forbidNonWhitelisted 拒额外 query 参数)
@@ -58,10 +60,12 @@ export class CreateTeamJoinCycleDto {
   @ApiPropertyOptional({
     type: [String],
     nullable: true,
-    description: '本轮开放候选部门 orgId 清单(null/空=全部 ACTIVE 部门)',
+    maxItems: OPEN_ORGANIZATION_IDS_MAX,
+    description: '本轮开放候选部门 orgId 清单(最多 64 项;null/空=全部 ACTIVE 部门)',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(OPEN_ORGANIZATION_IDS_MAX)
   @IsString({ each: true })
   @MaxLength(CODE_MAX, { each: true })
   openOrganizationIds?: string[] | null;
@@ -97,10 +101,12 @@ export class UpdateTeamJoinCycleDto {
   @ApiPropertyOptional({
     type: [String],
     nullable: true,
-    description: '本轮开放候选部门 orgId 清单(null/空=全部 ACTIVE 部门)',
+    maxItems: OPEN_ORGANIZATION_IDS_MAX,
+    description: '本轮开放候选部门 orgId 清单(最多 64 项;null/空=全部 ACTIVE 部门)',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(OPEN_ORGANIZATION_IDS_MAX)
   @IsString({ each: true })
   @MaxLength(CODE_MAX, { each: true })
   openOrganizationIds?: string[] | null;
