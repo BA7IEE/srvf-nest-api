@@ -4,7 +4,15 @@
 
 ## Unreleased
 
-> 累计下一个 minor 候选(**未 bump 版本 / 未发 Release**;沿 #554 拍板「合并所有子 PR 进 main + 累计 `## Unreleased`」)。
+> 下一个 minor 候选(当前为空)。
+
+## v0.42.0 - 2026-07-12
+
+> **⚠️ 部署前小程序须完成签名图 + 验码流适配。** 本版包含两条破坏性公开提交契约收紧,旧小程序客户端未适配时提交一律 400:**① `signatureImage` 必填;② `phoneVerificationToken` 必填**。项目仍处于 pre-production、尚未部署,因此本次发版本身无现网影响;部署前必须先完成客户端联调与回归。
+>
+> **⚠️ 行为/契约变更总清单(15 条,置顶)** —— **#554 七条**:① 公开进度 `stage` 不再暴露 `manual_high`,统一折叠为 `manual`;② submit `documentTypeCode` 收紧为六值白名单;③ member-profile 12 个敏感字段与 emergency-contacts 4 个出口按权限掩码;④ 招新/入队开轮唯一性新增专码 + partial unique 并发兜底;⑤ 入队 gate 完成日禁止未来日期;⑥ 非大陆补录与单发建档补齐 18–60 岁年龄闸;⑦ 新增公开公示端点 `GET open/v1/recruitment/publicity`。**十三项八条(#555–#558)**:① `meetingInfo/qqGroup/notice` 仅已发临时号且非 rejected/withdrawn 返回;② 资料齐备的非大陆证件申请人可进入批量发号;③ admin DTO/预检/CSV 的 `isForeigner` 对外改名 `isNonMainlandDocument`/`is_non_mainland_document`;④ **破坏性:`signatureImage` 必填,缺图 40000**;⑤ approved 入队资格不再随轮关闭失效;⑥ **破坏性:`phoneVerificationToken` 对 H5/小程序统一必填,仅 `wechatCode` 提交 40000**;⑦ 新增证书审核端点,通过自动标门槛、驳回清图退标并回显 note,redCross/bsafe 标记前须有图;⑧ 入队轮新增 `openOrganizationIds`/`maxTargetOrgs`,候选须属于开放清单且不超上限。
+>
+> 主题:**招新/入队问题核查双收口(十项 + 十三项 + 评审微清理)**。范围 = #554–#559;完整逐笔事实保留在以下恰 3 条折叠记录中。
 
 - **招新/入队十三项收口(2026-07-12 主会话核查 + 七项拍板;PR-1~PR-4,本 goal 不 bump 不发版)** —— 13 项中 ①~⑧、⑩~⑬ 已由刀A–H 落地,⑨ 由刀I 挂账。**⚠️ 行为/契约变更总清单**:① 公开报名结果/进度的 `meetingInfo/qqGroup/notice` 仅已发临时号且非 rejected/withdrawn 才返回;② 资料齐备的非大陆证件申请人现可进入批量发号,`foreign-manual-build` 退役;③ admin DTO/预检/CSV 对外 `isForeigner`→`isNonMainlandDocument`/`is_non_mainland_document`(DB 历史列不改);④ multipart `signatureImage` 必填,缺图 40000;⑤ approved 入队资格不再随轮关闭失效;⑥ submit 的 `phoneVerificationToken` 对 H5/小程序统一必填,仅 wechatCode 40000;⑦ 新证书审核端点 `POST admin/v1/recruitment/applications/:id/certificates/:category/review`(+权限码 `recruitment-application.review.certificate`):通过自动标门槛,驳回清图退标并向申请人回显 note,重传复位;直接/批量标 redCross/bsafe 亦须先有图(28053);⑧ 入队轮新增 `openOrganizationIds`/`maxTargetOrgs` 配置,发起/改候选强制候选属于开放清单且不超上限(28242)。**正确性收口**:手机写动作只锚最近活跃行、查进度活跃优先终态回落;rebindPhone 加同轮活跃冲突闸;threshold/gate JSON 读改写加行锁;同轮 active openid/phone 加 partial unique + P2002 三码分流。两条/最终 migration:active openid/phone partial unique + `certificateReviewStatus`/入队轮配置列,总数 45→**47**。终值:权限码 204→**205** / biz-admin 80→**81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` 335→**336** / controller 66 / 模块 35 / migration 47 / 角色 7;`src/modules/auth/**`、`RbacService.can()`、Authz 核心零 diff;专业队 gate 配置化与 DB `isForeigner` 列改名已挂 NEXT_TASKS P1-22/P1-23。
 
