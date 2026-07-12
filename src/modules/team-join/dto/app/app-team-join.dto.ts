@@ -1,23 +1,26 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsString, MaxLength } from 'class-validator';
 
+import {
+  TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS,
+  TEAM_JOIN_MAX_TARGET_ORGS,
+} from '../../team-join.constants';
 import { GateStatusDto } from '../../team-join.dto';
 
 // 招新三期(入队)T3(2026-06-19):App 自助面 DTO(评审稿 §3.2)。
 // dto/app/ 隔离(沿 insurances 范式);self-scope,**永不返回 L3**;候选部门数组 ≥1。
 
 const ORG_ID_MAX = 64;
-const TARGET_ORGS_MAX = 8; // 候选目标部门上限(可同时面试多部门;评审稿 Q3)
-
 // 候选目标部门入参(发起 / 改候选共用校验:≥1 且每个 orgId 字符串;存在+ACTIVE 由 service 校验)
 class TargetOrganizationsInput {
   @ApiProperty({
     type: [String],
-    description: '候选目标部门 orgId(≥1;可同时面试多部门;每个须存在且 ACTIVE,由 service 校验)',
+    description:
+      '候选目标部门 orgId(≥1;每个须存在且 ACTIVE、属于本轮开放清单,去重后数量不得超过轮上限)',
   })
   @IsArray()
   @ArrayMinSize(1, { message: '至少选择一个目标部门' })
-  @ArrayMaxSize(TARGET_ORGS_MAX)
+  @ArrayMaxSize(TEAM_JOIN_MAX_TARGET_ORGS)
   @IsString({ each: true })
   @MaxLength(ORG_ID_MAX, { each: true })
   targetOrganizationIds!: string[];
@@ -37,6 +40,12 @@ export class AppTeamJoinApplicationDto {
   statusCode!: string;
   @ApiProperty({ type: [String], description: '候选目标部门 orgId' })
   targetOrganizationIds!: string[];
+  @ApiProperty({ type: [String], description: '本轮开放部门清单(空=全部 ACTIVE 部门)' })
+  openOrganizationIds!: string[];
+  @ApiProperty({
+    description: `本轮候选部门数上限(未配置时默认 ${TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS})`,
+  })
+  maxTargetOrgs!: number;
   @ApiPropertyOptional({ description: '最终选定部门(一键入队后)', nullable: true })
   selectedOrganizationId!: string | null;
   @ApiProperty({ type: [GateStatusDto], description: '各 gate 实况(8 通用 + 4 专业队)' })

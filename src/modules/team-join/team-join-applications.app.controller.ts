@@ -42,7 +42,7 @@ export class TeamJoinApplicationsAppController {
   @Post('applications')
   @ApiOperation({
     summary:
-      '发起入队申请(选候选部门,可同时面试多部门;需有 open 入队轮 + 本人未入队;同轮防重) [auth]',
+      '发起入队申请(候选须属于本轮开放清单且不超过轮上限;需有 open 入队轮 + 本人未入队;同轮防重) [auth]',
   })
   @ApiWrappedOkResponse(AppTeamJoinApplicationDto)
   @ApiBizErrorResponse(
@@ -52,6 +52,7 @@ export class TeamJoinApplicationsAppController {
     BizCode.TEAM_JOIN_MEMBER_ALREADY_ENROLLED,
     BizCode.TEAM_JOIN_CYCLE_NOT_OPEN,
     BizCode.TEAM_JOIN_DUPLICATE_APPLICATION,
+    BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE,
     BizCode.ORGANIZATION_NOT_FOUND,
     BizCode.ORGANIZATION_INACTIVE,
   )
@@ -79,7 +80,8 @@ export class TeamJoinApplicationsAppController {
 
   @Patch('applications/:id/targets')
   @ApiOperation({
-    summary: '改候选目标部门(仅本人 + joining 态;每个 org 须存在+ACTIVE) [auth]',
+    summary:
+      '改候选目标部门(仅本人 + joining 态;每个 org 须存在+ACTIVE、属于本轮开放清单且不超过轮上限) [auth]',
   })
   @ApiWrappedOkResponse(AppTeamJoinApplicationDto)
   @ApiBizErrorResponse(
@@ -88,6 +90,7 @@ export class TeamJoinApplicationsAppController {
     BizCode.FORBIDDEN,
     BizCode.TEAM_JOIN_APPLICATION_NOT_FOUND,
     BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE,
+    BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE,
     BizCode.ORGANIZATION_NOT_FOUND,
     BizCode.ORGANIZATION_INACTIVE,
   )

@@ -357,6 +357,43 @@ describe('招新三期(入队)admin 面 e2e', () => {
     expectBizError(res, BizCode.TEAM_JOIN_CYCLE_NOT_FOUND);
   });
 
+  it('H 入队轮配置:创建/更新回显开放部门与候选上限;清单 org 必须存在且 ACTIVE', async () => {
+    const active = await prisma.organization.create({
+      data: { name: '开放部门', nodeTypeCode: 'demo-node-type-1', status: 'ACTIVE' },
+    });
+    const inactive = await prisma.organization.create({
+      data: { name: '停用部门', nodeTypeCode: 'demo-node-type-1', status: 'INACTIVE' },
+    });
+    const created = await request(httpServer(app))
+      .post(ADMIN_CYCLES)
+      .set('Authorization', adminAuth)
+      .send({
+        year: CYCLE_YEAR,
+        name: '配置化入队轮',
+        openOrganizationIds: [active.id, active.id],
+        maxTargetOrgs: 2,
+      })
+      .expect(201);
+    expect(created.body.data.openOrganizationIds).toEqual([active.id]);
+    expect(created.body.data.maxTargetOrgs).toBe(2);
+
+    const cleared = await request(httpServer(app))
+      .patch(`${ADMIN_CYCLES}/${created.body.data.id}`)
+      .set('Authorization', adminAuth)
+      .send({ openOrganizationIds: [], maxTargetOrgs: null })
+      .expect(200);
+    expect(cleared.body.data.openOrganizationIds).toBeNull();
+    expect(cleared.body.data.maxTargetOrgs).toBeNull();
+
+    expectBizError(
+      await request(httpServer(app))
+        .patch(`${ADMIN_CYCLES}/${created.body.data.id}`)
+        .set('Authorization', adminAuth)
+        .send({ openOrganizationIds: [inactive.id] }),
+      BizCode.ORGANIZATION_INACTIVE,
+    );
+  });
+
   // ===== RBAC 边界 =====
   it('③ 普通 USER 标 gate → RBAC_FORBIDDEN', async () => {
     const cycleId = await openCycle();

@@ -94,6 +94,8 @@
 
 > 2026-07-12 招新/入队十三项收口 PR-3 刀F/G 戳:权限码 204→**205**(recruitment-application +1:`recruitment-application.review.certificate`,证书审核通过自动标对应门槛、驳回清图并退标记,**绑 biz-admin**);**biz-admin 80→81**;org-admin 60 零变化(`recruitment-` 前缀派生排除);ops-admin 96 / member 9 零变化;controller 66 不变;endpoint 335→**336**(`POST admin/v1/recruitment/applications/:id/certificates/:category/review`)。**migration 46→47**(第二条/最终授权 migration 合并刀G+刀H additive 列:`recruitment_applications.certificateReviewStatus Json?` + `team_join_cycles.openOrganizationIds Json?`/`maxTargetOrgs Int?`;刀H 消费代码在 PR-4);+1 BizCode(28053 证书图前置)/+1 AuditLogEvent(`recruitment-application.certificate-review`)。⚠️ 契约收紧:公开 submit `phoneVerificationToken` 必填、仅 wechatCode 一律 400;申请人进度 additive `certificates[]` 回显审核/驳回态。
 
+> 2026-07-12 招新/入队十三项收口 PR-4 刀H/I + 收尾戳(**权限事实零变化**):权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / member 9 / controller 66 / endpoint **336** / migration **47** 全不变。刀H 仅消费 PR-3 已加 TeamJoinCycle 两列并扩既有 DTO/业务闸,0 新端点/0 新权限码/0 新 BizCode/0 audit event;刀I 仅 NEXT_TASKS 挂账。
+
 ---
 
 ## 1. 双轨架构现状(一句话版)

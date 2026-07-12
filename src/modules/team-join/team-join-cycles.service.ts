@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, type TeamJoinCycle } from '@prisma/client';
+import { OrganizationStatus, Prisma, type TeamJoinCycle } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
@@ -43,9 +43,19 @@ export class TeamJoinCyclesService {
   ): Promise<TeamJoinCycleResponseDto> {
     await this.assertCanOrThrow(user, 'team-join-cycle.create.record');
     return this.prisma.$transaction(async (tx) => {
+      const openOrganizationIds = await this.validateOpenOrganizationIds(
+        dto.openOrganizationIds,
+        tx,
+      );
       // 默认 closed,显式开轮(开轮走 update 的至多一个 open 校验)
       const row = await tx.teamJoinCycle.create({
-        data: { year: dto.year, name: dto.name, statusCode: CYCLE_STATUS_CLOSED },
+        data: {
+          year: dto.year,
+          name: dto.name,
+          statusCode: CYCLE_STATUS_CLOSED,
+          openOrganizationIds: openOrganizationIds === null ? Prisma.DbNull : openOrganizationIds,
+          maxTargetOrgs: dto.maxTargetOrgs ?? null,
+        },
       });
       await this.auditLogs.log({
         event: 'team-join-cycle.create',
@@ -54,7 +64,13 @@ export class TeamJoinCyclesService {
         resourceType: AUDIT_RESOURCE_TYPE,
         resourceId: row.id,
         meta,
-        after: { year: row.year, name: row.name, statusCode: row.statusCode },
+        after: {
+          year: row.year,
+          name: row.name,
+          statusCode: row.statusCode,
+          openOrganizationCount: openOrganizationIds?.length ?? 0,
+          maxTargetOrgs: row.maxTargetOrgs,
+        },
         tx,
       });
       return this.toResponseDto(row);
@@ -102,6 +118,15 @@ export class TeamJoinCyclesService {
 
       const data: Prisma.TeamJoinCycleUpdateInput = {};
       if (dto.name !== undefined) data.name = dto.name;
+      if (dto.openOrganizationIds !== undefined) {
+        const openOrganizationIds = await this.validateOpenOrganizationIds(
+          dto.openOrganizationIds,
+          tx,
+        );
+        data.openOrganizationIds =
+          openOrganizationIds === null ? Prisma.DbNull : openOrganizationIds;
+      }
+      if (dto.maxTargetOrgs !== undefined) data.maxTargetOrgs = dto.maxTargetOrgs;
 
       if (dto.statusCode !== undefined && dto.statusCode !== existing.statusCode) {
         if (dto.statusCode === CYCLE_STATUS_OPEN) {
@@ -141,8 +166,18 @@ export class TeamJoinCyclesService {
         resourceType: AUDIT_RESOURCE_TYPE,
         resourceId: row.id,
         meta,
-        before: { statusCode: existing.statusCode, name: existing.name },
-        after: { statusCode: row.statusCode, name: row.name },
+        before: {
+          statusCode: existing.statusCode,
+          name: existing.name,
+          openOrganizationCount: ((existing.openOrganizationIds as string[] | null) ?? []).length,
+          maxTargetOrgs: existing.maxTargetOrgs,
+        },
+        after: {
+          statusCode: row.statusCode,
+          name: row.name,
+          openOrganizationCount: ((row.openOrganizationIds as string[] | null) ?? []).length,
+          maxTargetOrgs: row.maxTargetOrgs,
+        },
         tx,
       });
       return this.toResponseDto(row);
@@ -157,6 +192,25 @@ export class TeamJoinCyclesService {
     return row;
   }
 
+  private async validateOpenOrganizationIds(
+    orgIds: string[] | null | undefined,
+    client: PrismaService | Prisma.TransactionClient,
+  ): Promise<string[] | null> {
+    if (orgIds == null || orgIds.length === 0) return null;
+    const unique = [...new Set(orgIds)];
+    const rows = await client.organization.findMany({
+      where: { id: { in: unique }, deletedAt: null },
+      select: { id: true, status: true },
+    });
+    if (rows.length !== unique.length) {
+      throw new BizException(BizCode.ORGANIZATION_NOT_FOUND);
+    }
+    if (rows.some((row) => row.status !== OrganizationStatus.ACTIVE)) {
+      throw new BizException(BizCode.ORGANIZATION_INACTIVE);
+    }
+    return unique;
+  }
+
   private toResponseDto(row: TeamJoinCycle): TeamJoinCycleResponseDto {
     return {
       id: row.id,
@@ -165,6 +219,8 @@ export class TeamJoinCyclesService {
       statusCode: row.statusCode,
       openedAt: row.openedAt,
       closedAt: row.closedAt,
+      openOrganizationIds: (row.openOrganizationIds as string[] | null) ?? null,
+      maxTargetOrgs: row.maxTargetOrgs,
       createdAt: row.createdAt,
     };
   }
