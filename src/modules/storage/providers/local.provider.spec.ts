@@ -193,6 +193,16 @@ describe('LocalStorageProvider', () => {
     });
   });
 
+  describe('readObjectPrefix', () => {
+    it('只读取指定上限且短文件按实际长度返回', async () => {
+      await svc.putObject({ key: 'prefix.bin', body: Buffer.from('abcdefghijklmnop') });
+      await expect(svc.readObjectPrefix('prefix.bin', 5)).resolves.toEqual(Buffer.from('abcde'));
+
+      await svc.putObject({ key: 'short.bin', body: Buffer.from('xy') });
+      await expect(svc.readObjectPrefix('short.bin', 12)).resolves.toEqual(Buffer.from('xy'));
+    });
+  });
+
   describe('resolveKey 安全防御', () => {
     it('key 含 ../ 逃逸 root → throw', async () => {
       await expect(svc.putObject({ key: '../escape.txt', body: Buffer.from('x') })).rejects.toThrow(

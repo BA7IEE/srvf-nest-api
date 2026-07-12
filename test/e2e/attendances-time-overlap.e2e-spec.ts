@@ -384,6 +384,33 @@ describe('AttendancesService time overlap (characterization)', () => {
       expect(await ctx.prisma.attendanceSheet.count()).toBe(2);
       expect(await countActiveRecordsForSheet(sheetBId)).toBe(1);
     });
+
+    it('finding #7:同 member 重叠双并发仅一方成功,败者 22060', async () => {
+      const attempts = await Promise.allSettled([
+        submitSheet(ctx.activityAId, [
+          {
+            memberId: ctx.memberAId,
+            checkInAt: '2026-01-06T10:00:00.000Z',
+            checkOutAt: '2026-01-06T12:00:00.000Z',
+          },
+        ]),
+        submitSheet(ctx.activityBId, [
+          {
+            memberId: ctx.memberAId,
+            checkInAt: '2026-01-06T11:00:00.000Z',
+            checkOutAt: '2026-01-06T13:00:00.000Z',
+          },
+        ]),
+      ]);
+
+      expect(attempts.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const rejected = attempts.find(
+        (result): result is PromiseRejectedResult => result.status === 'rejected',
+      );
+      expect(rejected?.reason).toMatchObject({ biz: BizCode.ATTENDANCE_TIME_OVERLAP });
+      expect(await ctx.prisma.attendanceSheet.count()).toBe(1);
+      expect(await ctx.prisma.attendanceRecord.count({ where: { deletedAt: null } })).toBe(1);
+    });
   });
 
   // ============ C. edit 重叠(assertNoTimeOverlap;excludeSheetId === sheetId)============

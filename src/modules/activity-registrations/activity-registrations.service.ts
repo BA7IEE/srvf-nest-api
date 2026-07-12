@@ -114,6 +114,36 @@ const registrationListSelect = {
   },
 } as const satisfies Prisma.ActivityRegistrationSelect;
 
+const registrationCsvSelect = {
+  id: true,
+  memberId: true,
+  statusCode: true,
+  registeredAt: true,
+  reviewedAt: true,
+  reviewNote: true,
+  cancelledAt: true,
+  cancelReason: true,
+  member: { select: { memberNo: true, displayName: true } },
+} as const satisfies Prisma.ActivityRegistrationSelect;
+
+type RegistrationCsvRow = Prisma.ActivityRegistrationGetPayload<{
+  select: typeof registrationCsvSelect;
+}>;
+
+const CSV_EXPORT_BATCH_SIZE = 500;
+const REGISTRATION_CSV_HEADERS = [
+  'registration_id',
+  'member_id',
+  'member_no',
+  'display_name',
+  'status_code',
+  'registered_at',
+  'reviewed_at',
+  'review_note',
+  'cancelled_at',
+  'cancel_reason',
+] as const;
+
 // 跨轴只读列表 select(2026-06-23):列表精简 select + activity{id,title} 上下文。
 // 跨活动 / 跨队员横扫时 item 脱离 :activityId 路径段,经 Prisma 嵌套关系一次取活动标题(无 N+1);
 // activity.deletedAt 不过滤:FK onDelete=Restrict 保证 activity 行存在,软删态字段仍可读,不暴露 deletedAt。
@@ -1142,13 +1172,13 @@ export class ActivityRegistrationsService {
 
   // ============ 管理端:CSV export(Q-A6)============
 
-  // 返回纯字符串(BOM + CSV);controller 包成 StreamableFile。
+  // 返回游标分页 async generator;controller 用 Readable.from 包成 StreamableFile。
   // **不写库 / 不落 export_logs / 不生成 AttendanceRecord**(Q-A6 三条副作用禁止)。
   async exportCsv(
     activityId: string,
     query: ExportRegistrationsQueryDto,
     currentUser: CurrentUserPayload,
-  ): Promise<string> {
+  ): Promise<AsyncGenerator<string, void, undefined>> {
     await this.assertCanOrThrow(currentUser, 'activity-registration.read.record', {
       type: 'activity',
       id: activityId,
@@ -1162,76 +1192,57 @@ export class ActivityRegistrationsService {
     }
     const where = notDeletedWhere(filters);
 
-    const rows = await this.prisma.activityRegistration.findMany({
-      where,
-      select: {
-        id: true,
-        memberId: true,
-        statusCode: true,
-        registeredAt: true,
-        reviewedAt: true,
-        reviewNote: true,
-        cancelledAt: true,
-        cancelReason: true,
-        member: { select: { memberNo: true, displayName: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    return this.streamRowsAsCsv(where, currentUser.id, activityId, scope);
+  }
+
+  private async *streamRowsAsCsv(
+    where: Prisma.ActivityRegistrationWhereInput,
+    operatorUserId: string,
+    activityId: string,
+    scope: string,
+  ): AsyncGenerator<string, void, undefined> {
+    yield '\uFEFF';
+    yield REGISTRATION_CSV_HEADERS.join(',');
+
+    let cursor: string | undefined;
+    let rowsCount = 0;
+    while (true) {
+      const rows: RegistrationCsvRow[] = await this.prisma.activityRegistration.findMany({
+        where,
+        select: registrationCsvSelect,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: CSV_EXPORT_BATCH_SIZE,
+        ...(cursor !== undefined ? { cursor: { id: cursor }, skip: 1 } : {}),
+      });
+      for (const row of rows) {
+        yield `\n${this.formatCsvRow(row)}`;
+        rowsCount += 1;
+      }
+      if (rows.length < CSV_EXPORT_BATCH_SIZE) break;
+      cursor = rows.at(-1)!.id;
+    }
 
     auditPlaceholder('registration.review', {
-      operatorUserId: currentUser.id,
+      operatorUserId,
       activityId,
       operation: 'export',
       scope,
-      rowsCount: rows.length,
+      rowsCount,
     });
-
-    return this.formatRowsAsCsv(rows);
   }
 
-  // 简单 CSV encoder(沿"不引入新依赖"):双引号转义 + 含逗号/换行/双引号字段用双引号包裹。
-  private formatRowsAsCsv(
-    rows: Array<{
-      id: string;
-      memberId: string;
-      statusCode: string;
-      registeredAt: Date;
-      reviewedAt: Date | null;
-      reviewNote: string | null;
-      cancelledAt: Date | null;
-      cancelReason: string | null;
-      member: { memberNo: string; displayName: string } | null;
-    }>,
-  ): string {
-    const HEADERS = [
-      'registration_id',
-      'member_id',
-      'member_no',
-      'display_name',
-      'status_code',
-      'registered_at',
-      'reviewed_at',
-      'review_note',
-      'cancelled_at',
-      'cancel_reason',
-    ];
-    const lines: string[] = [HEADERS.join(',')];
-    for (const r of rows) {
-      lines.push(
-        [
-          escapeCsvField(r.id),
-          escapeCsvField(r.memberId),
-          escapeCsvField(r.member?.memberNo ?? null),
-          escapeCsvField(r.member?.displayName ?? null),
-          escapeCsvField(r.statusCode),
-          escapeCsvField(r.registeredAt),
-          escapeCsvField(r.reviewedAt),
-          escapeCsvField(r.reviewNote),
-          escapeCsvField(r.cancelledAt),
-          escapeCsvField(r.cancelReason),
-        ].join(','),
-      );
-    }
-    return lines.join('\n');
+  private formatCsvRow(row: RegistrationCsvRow): string {
+    return [
+      escapeCsvField(row.id),
+      escapeCsvField(row.memberId),
+      escapeCsvField(row.member?.memberNo ?? null),
+      escapeCsvField(row.member?.displayName ?? null),
+      escapeCsvField(row.statusCode),
+      escapeCsvField(row.registeredAt),
+      escapeCsvField(row.reviewedAt),
+      escapeCsvField(row.reviewNote),
+      escapeCsvField(row.cancelledAt),
+      escapeCsvField(row.cancelReason),
+    ].join(',');
   }
 }

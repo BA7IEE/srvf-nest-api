@@ -529,6 +529,10 @@ export class AttendancesService {
       // 3. 数组内部时间不重叠 + 与已有跨 Sheet 全局不重叠
       // 抽出至 TimeOverlapPolicy(refactor PR;算法 / 边界 / excludeSheetId 语义零变化)。
       this.timeOverlapPolicy.assertNoInternalOverlap(normalized);
+      await this.timeOverlapPolicy.lockMembersForOverlapCheck(
+        normalized.map((record) => record.memberId),
+        tx,
+      );
       for (const r of normalized) {
         await this.timeOverlapPolicy.assertNoTimeOverlap(
           r.memberId,
@@ -987,6 +991,10 @@ export class AttendancesService {
 
       // 抽出至 TimeOverlapPolicy(refactor PR;edit 路径透传 excludeSheetId=id 语义不变)。
       this.timeOverlapPolicy.assertNoInternalOverlap(normalized);
+      await this.timeOverlapPolicy.lockMembersForOverlapCheck(
+        normalized.map((record) => record.memberId),
+        tx,
+      );
       for (const r of normalized) {
         // edit 路径:排除本 Sheet 旧 records(它们将被软删)
         await this.timeOverlapPolicy.assertNoTimeOverlap(

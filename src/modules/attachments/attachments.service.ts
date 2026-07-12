@@ -24,6 +24,11 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
 import { AttachmentAuditRecorder } from './attachment-audit-recorder';
 import {
+  ATTACHMENT_SIGNATURE_PREFIX_BYTES,
+  matchesAttachmentSignature,
+  supportsAttachmentSignature,
+} from './attachment-signature';
+import {
   ATTACHMENT_OWNER_TYPES,
   AttachmentOwnerType,
   detectPii,
@@ -716,7 +721,7 @@ export class AttachmentsService {
   //
   // 沿评审 §8.3 + §8.4 + Q-10-1 到 Q-10-15 拍板:
   // - upload-url:校验 owner/RBAC/mime/size/PII → 生成 key + signed URL + uploadToken;**不落库 / 不审计**
-  // - confirm-upload:验 token + headObject + size 一致 → 落库 + audit `attachment.upload`(沿 B4)
+  // - confirm-upload:验 token + headObject + size + 受支持 MIME 魔数一致 → 落库 + audit `attachment.upload`
   // - 0 新 BizCode(沿 §8.3.5 + §8.4.5;复用 13001/13010-13013/13015/30100/40100)
   // - 0 新 AuditLogEvent(沿 B4)
   // - 0 新 RBAC 权限点(沿 B3;复用 attachment.upload.<type>.<scope>)
@@ -820,7 +825,21 @@ export class AttachmentsService {
       throw new BizException(BizCode.ATTACHMENT_SIZE_EXCEEDED);
     }
 
-    // === Step 6:contentType 不校验(沿 Q-10-9) ===
+    // === Step 6:v0.44.0 findings #22/#23/#24:永久黑名单复校 + 固定前缀魔数校验 ===
+    // upload-url 签发与 confirm 之间配置 / 代码可能已变;confirm 必须独立 fail-close。
+    if (isMimeBlocked(claims.mime)) {
+      throw new BizException(BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED);
+    }
+    if (supportsAttachmentSignature(claims.mime)) {
+      const prefix = await this.provider.readObjectPrefix(
+        claims.key,
+        ATTACHMENT_SIGNATURE_PREFIX_BYTES,
+      );
+      if (!matchesAttachmentSignature(claims.mime, prefix)) {
+        throw new BizException(BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH);
+      }
+    }
+
     // === Step 7:PII 不重做(沿 §8.4 Q10 + Q-10-X) ===
 
     // === Step 7.5(F10 #399):owner 仍存活复校 —— upload-url 签发后 owner 可能软删,confirm 落库前

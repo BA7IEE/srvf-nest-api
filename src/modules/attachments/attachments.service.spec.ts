@@ -235,6 +235,9 @@ function makeProviderMock() {
       .fn<Promise<{ url: string }>, [unknown]>()
       .mockResolvedValue({ url: 'https://signed.example/download' }),
     headObject: jest.fn<Promise<{ exists: boolean; size?: number; etag?: string }>, [string]>(),
+    readObjectPrefix: jest
+      .fn<Promise<Buffer>, [string, number]>()
+      .mockResolvedValue(Buffer.from('89504e470d0a1a0a00000000', 'hex')),
   };
 }
 type ProviderMock = ReturnType<typeof makeProviderMock>;
@@ -711,6 +714,40 @@ describe('AttachmentsService (characterization)', () => {
       await expect(
         service.confirmUpload(makeConfirmDto(token), makeCurrentUser({ id: 'u1' }), META),
       ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_SIZE_EXCEEDED));
+      expect(prisma.attachment.create).not.toHaveBeenCalled();
+    });
+
+    it('声明 image/jpeg 但回读为文本 → 13016;不写库', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      provider.headObject.mockResolvedValue({ exists: true, size: 1024 });
+      provider.readObjectPrefix.mockResolvedValue(Buffer.from('plain text', 'utf8'));
+      const service = makeService(prisma, { provider });
+
+      await expect(
+        service.confirmUpload(
+          makeConfirmDto(makeUploadToken({ mime: 'image/jpeg' })),
+          makeCurrentUser({ id: 'u1' }),
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH));
+      expect(prisma.attachment.create).not.toHaveBeenCalled();
+    });
+
+    it('旧 token 声明 image/svg+xml → confirm 永久黑名单 13033;不回读 / 不写库', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      provider.headObject.mockResolvedValue({ exists: true, size: 1024 });
+      const service = makeService(prisma, { provider });
+
+      await expect(
+        service.confirmUpload(
+          makeConfirmDto(makeUploadToken({ mime: 'image/svg+xml' })),
+          makeCurrentUser({ id: 'u1' }),
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED));
+      expect(provider.readObjectPrefix).not.toHaveBeenCalled();
       expect(prisma.attachment.create).not.toHaveBeenCalled();
     });
 

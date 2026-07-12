@@ -14,6 +14,7 @@ jest.mock('cos-nodejs-sdk-v5', () => {
     deleteObject: jest.fn(),
     getObjectUrl: jest.fn(),
     headObject: jest.fn(),
+    getObject: jest.fn(),
   };
   const Constructor = jest.fn().mockImplementation(() => mockInstance);
   // 暴露给测试用例引用
@@ -27,6 +28,7 @@ const COSMock = COS as unknown as jest.Mock & {
     deleteObject: jest.Mock;
     getObjectUrl: jest.Mock;
     headObject: jest.Mock;
+    getObject: jest.Mock;
   };
 };
 
@@ -72,6 +74,7 @@ describe('CosStorageProvider', () => {
     COSMock.__mockInstance.deleteObject.mockReset();
     COSMock.__mockInstance.getObjectUrl.mockReset();
     COSMock.__mockInstance.headObject.mockReset();
+    COSMock.__mockInstance.getObject.mockReset();
   });
 
   describe('putObject', () => {
@@ -257,6 +260,24 @@ describe('CosStorageProvider', () => {
       COSMock.__mockInstance.headObject.mockRejectedValue({ statusCode: 500 });
       const svc = new CosStorageProvider(service);
       await expect(svc.headObject('k')).rejects.toEqual({ statusCode: 500 });
+    });
+  });
+
+  describe('readObjectPrefix', () => {
+    it('使用 COS Range 回读固定前缀', async () => {
+      const { service } = makeSettingsServiceMock(makeSettings());
+      COSMock.__mockInstance.getObject.mockResolvedValue({ Body: Buffer.from('prefix-bytes') });
+      const svc = new CosStorageProvider(service);
+
+      await expect(svc.readObjectPrefix('attachments/prod/a.jpg', 12)).resolves.toEqual(
+        Buffer.from('prefix-bytes'),
+      );
+      expect(COSMock.__mockInstance.getObject).toHaveBeenCalledWith({
+        Bucket: 'srvf-attachments-1250000000',
+        Region: 'ap-shanghai',
+        Key: 'attachments/prod/a.jpg',
+        Range: 'bytes=0-11',
+      });
     });
   });
 

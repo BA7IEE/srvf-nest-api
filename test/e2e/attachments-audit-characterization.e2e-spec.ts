@@ -258,7 +258,9 @@ describe('AttachmentsService audit characterization', () => {
   async function fakeUploadToLocal(key: string, sizeBytes = 1024): Promise<void> {
     const filePath = path.resolve(localRoot, key);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, Buffer.alloc(sizeBytes));
+    const body = Buffer.alloc(sizeBytes);
+    Buffer.from([0xff, 0xd8, 0xff, 0xe0]).copy(body);
+    await fs.writeFile(filePath, body);
   }
 
   // ============ A. create audit shape(legacy 直传 create) ============

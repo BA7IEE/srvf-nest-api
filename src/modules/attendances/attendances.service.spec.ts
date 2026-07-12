@@ -249,6 +249,9 @@ type ContributionCalculatorMock = ReturnType<typeof makeContributionCalculatorMo
 function makeTimeOverlapPolicyMock() {
   return {
     assertNoInternalOverlap: jest.fn<void, [unknown[]]>(),
+    lockMembersForOverlapCheck: jest
+      .fn<Promise<void>, [readonly string[], unknown]>()
+      .mockResolvedValue(undefined),
     assertNoTimeOverlap: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
   };
 }

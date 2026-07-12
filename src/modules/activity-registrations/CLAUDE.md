@@ -13,6 +13,7 @@
 
 - `activity-registrations.service.ts` **1020L**(god-service,沿 CODEMAP;true-up 自陈旧 750L 记载);`activity-registration-state-machine.ts`(71L)/ `activity-registration-audit-recorder.ts`(197L)/ `app-my-registrations.service.ts`(280L)已抽离
 - **判权(终态 scoped-authz PR12,2026-07-02)**:8 处调用位点判权走 `assertCanOrThrow` → `authz.explain`;`list`/`exportCsv`(嵌套 `:activityId`)带 `{type:'activity', id: activityId}` 父 ref;`approve`/`reject`/`cancelAdmin` 带 `{type:'activity_registration', id}`(点动作,scoped 持有者树内可用);`create`(代报名)/ `listAllForAdmin`(扁平跨轴)/ `listForMemberAdmin`(队员轴跨活动)无 ref(GLOBAL-only,不在冻结稿①点动作枚举内);`resource_not_found` 回退 `rbac.can` 全局码判定,持码者 return 交回既有 `findActivityOrThrow`/`findRegistrationOrThrow` 抛 `ACTIVITY_NOT_FOUND`/`ACTIVITY_REGISTRATION_NOT_FOUND`,无码者 30100。App 自助端点(`createMy`/`listMy`/`findMy`/`cancelMy`)不受影响,self-scope 不变。e2e 见 `test/e2e/participation-scoped-authz.e2e-spec.ts`。
+- **CSV 导出(v0.44.0 finding #13)**:`exportCsv` 必须保持 500 行游标分页 async generator + BOM 首 chunk,controller 用 `Readable.from`;禁止恢复全量 `findMany` / `string[]` / 整串 Buffer。
 - Admin Controller:`activity-registrations.controller.ts` `@Controller('admin/v1/activities/:activityId/registrations')` `@ApiTags('Admin - Registrations')`
 - App Controller:`controllers/app-my-registrations.controller.ts` `@Controller('app/v1/my')` `@ApiTags('Mobile - My Registrations')`;**方法级**追加 `@ApiTags('Mobile - My Activities')` 于 `GET /my/activities`(刻意保留)
 - DTO 隔离:Admin DTO 在 `activity-registrations.dto.ts`;App DTO 在 `dto/app/`(5 文件)

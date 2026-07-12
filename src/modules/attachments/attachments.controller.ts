@@ -134,7 +134,7 @@ export class AttachmentsController {
   @Post('confirm-upload')
   @ApiOperation({
     summary:
-      '确认上传完成(模式 B;验 uploadToken + headObject + size 一致 → 落库 + audit attachment.upload;沿 §8.4 v1.0) [rbac: attachment.upload.*]',
+      '确认上传完成(模式 B;验 uploadToken + headObject + size + 文件签名一致 → 落库 + audit attachment.upload;findings #22/#23/#24) [rbac: attachment.upload.*]',
   })
   @ApiWrappedOkResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(
@@ -144,6 +144,8 @@ export class AttachmentsController {
     BizCode.ATTACHMENT_NOT_FOUND,
     BizCode.ATTACHMENT_OWNER_NOT_FOUND, // F10(#399):owner 软删窗口复校(与 create/upload-url 对齐)
     BizCode.ATTACHMENT_SIZE_EXCEEDED,
+    BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED,
+    BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH,
   )
   confirmUpload(
     @Body() dto: ConfirmUploadDto,

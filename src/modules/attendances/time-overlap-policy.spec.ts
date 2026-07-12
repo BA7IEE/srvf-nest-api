@@ -142,4 +142,16 @@ describe('TimeOverlapPolicy', () => {
       );
     });
   });
+
+  describe('lockMembersForOverlapCheck(finding #7)', () => {
+    it('memberId 去重排序后逐个获取 transaction advisory lock', async () => {
+      const queryRaw = jest.fn().mockResolvedValue([{ locked: '' }]);
+      const tx = { $queryRaw: queryRaw } as unknown as Prisma.TransactionClient;
+
+      await policy.lockMembersForOverlapCheck(['m2', 'm1', 'm2'], tx);
+
+      expect(queryRaw).toHaveBeenCalledTimes(2);
+      expect(queryRaw.mock.calls.map((call: unknown[]) => call[1])).toEqual(['m1', 'm2']);
+    });
+  });
 });

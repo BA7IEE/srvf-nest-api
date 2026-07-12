@@ -27,9 +27,11 @@ import type {
 //        'POST' 路径留未来 multipart upload 启用时再实施
 //
 // 仍不收录的方法(留 v1.1+ 评审):
-// - getStream / range:走 signed URL 直下(沿 F2)
+// - getStream:走 signed URL 直下(沿 F2)
 // - copyObject / moveObject:本批次不实装
 // - getMultipartUploadId / completeMultipartUpload:Q13 锁不实施(单文件 ≤ 5GB 走 PUT signed URL)
+// v0.44.0 finding #23 仅为 confirm-upload 安全校验增加固定上限前缀读取;
+// 不开放通用 range / download 能力,调用方不得用它承载文件下载。
 export interface StorageProvider {
   // === v1 已有(沿用)===
   putObject(input: PutObjectInput): Promise<StoredObject>;
@@ -39,4 +41,5 @@ export interface StorageProvider {
   generateUploadUrl(input: GenerateUploadUrlInput): Promise<UploadUrlResult>;
   generateDownloadUrl(input: GenerateDownloadUrlInput): Promise<DownloadUrlResult>;
   headObject(key: string): Promise<HeadObjectResult>;
+  readObjectPrefix(key: string, maxBytes: number): Promise<Buffer>;
 }

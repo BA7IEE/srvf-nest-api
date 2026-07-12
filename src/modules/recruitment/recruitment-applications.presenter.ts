@@ -44,6 +44,14 @@ export function maskOpenid(openid: string): string {
   return openid.length <= 8 ? '***' : `${openid.slice(0, 4)}****${openid.slice(-4)}`;
 }
 
+function presentIdCard(value: string | null, masked: boolean): string | null {
+  return value ? (masked ? maskIdCard(value) : value) : null;
+}
+
+function presentPhone(value: string | null, masked: boolean): string | null {
+  return value ? (masked ? maskPhone(value) : value) : null;
+}
+
 export function buildAdminCertificateSummaries(
   certificateImages: unknown,
   certificateReviewStatus: unknown,
@@ -107,12 +115,8 @@ export function toAdminApplicationDto(
     statusCode: app.statusCode,
     tempNo: app.tempNo,
     realName: app.realName,
-    idCardNumber: app.idCardNumber
-      ? masked
-        ? maskIdCard(app.idCardNumber)
-        : app.idCardNumber
-      : null,
-    phone: app.phone ? (masked ? maskPhone(app.phone) : app.phone) : null,
+    idCardNumber: presentIdCard(app.idCardNumber, masked),
+    phone: presentPhone(app.phone, masked),
     documentTypeCode: app.documentTypeCode,
     isNonMainlandDocument: app.isForeigner,
     genderCode: app.genderCode,
@@ -258,55 +262,76 @@ export function recruitmentExportStatusWhere(
   }
 }
 
-// 简单 CSV encoder(沿 activity-registrations「不引入新依赖」):双引号转义 + 含逗号/换行/双引号字段加引号。
-// 入参为**已脱敏** RecruitmentApplicationAdminDto(idCardNumber/phone 列已随 S3 码掩码/明文);CSV 只投影,不二次脱敏。
-export function formatApplicationsCsv(rows: RecruitmentApplicationAdminDto[]): string {
-  const HEADERS = [
-    'id',
-    'cycle_id',
-    'status_code',
-    'temp_no',
-    'real_name',
-    'id_card_number',
-    'phone',
-    'document_type_code',
-    'is_non_mainland_document',
-    'gender_code',
-    'age_group',
-    'city_district',
-    'verify_outcome',
-    'risk_level',
-    'manual_review_reason',
-    'elimination_stage',
-    'thresholds_complete',
-    'needs_manual_build',
-    'created_at',
-  ];
-  const lines: string[] = [HEADERS.join(',')];
-  for (const r of rows) {
-    lines.push(
-      [
-        escapeCsvField(r.id),
-        escapeCsvField(r.cycleId),
-        escapeCsvField(r.statusCode),
-        escapeCsvField(r.tempNo),
-        escapeCsvField(r.realName),
-        escapeCsvField(r.idCardNumber),
-        escapeCsvField(r.phone),
-        escapeCsvField(r.documentTypeCode),
-        escapeCsvField(r.isNonMainlandDocument),
-        escapeCsvField(r.genderCode),
-        escapeCsvField(r.ageGroup),
-        escapeCsvField(r.cityDistrict),
-        escapeCsvField(r.verifyOutcome),
-        escapeCsvField(r.riskLevel),
-        escapeCsvField(r.manualReviewReason),
-        escapeCsvField(r.eliminationStage),
-        escapeCsvField(r.thresholdsComplete),
-        escapeCsvField(r.needsManualBuild),
-        escapeCsvField(r.createdAt),
-      ].join(','),
-    );
-  }
-  return lines.join('\n');
+export const RECRUITMENT_APPLICATION_CSV_HEADERS = [
+  'id',
+  'cycle_id',
+  'status_code',
+  'temp_no',
+  'real_name',
+  'id_card_number',
+  'phone',
+  'document_type_code',
+  'is_non_mainland_document',
+  'gender_code',
+  'age_group',
+  'city_district',
+  'verify_outcome',
+  'risk_level',
+  'manual_review_reason',
+  'elimination_stage',
+  'thresholds_complete',
+  'needs_manual_build',
+  'created_at',
+] as const;
+
+export interface RecruitmentApplicationCsvSource {
+  id: string;
+  cycleId: string;
+  statusCode: string;
+  tempNo: string | null;
+  realName: string | null;
+  idCardNumber: string | null;
+  phone: string | null;
+  documentTypeCode: string;
+  isForeigner: boolean;
+  genderCode: string | null;
+  ageGroup: string | null;
+  cityDistrict: string | null;
+  verifyOutcome: string | null;
+  riskLevel: string | null;
+  manualReviewReason: string | null;
+  eliminationStage: string | null;
+  thresholdMarks: unknown;
+  birthDate: Date | null;
+  openid: string | null;
+  createdAt: Date;
+}
+
+// findings #13/#14:逐行投影,由 QueryService 游标分页 generator 消费;不构造全量 DTO / string[]。
+// 身份证与手机继续复用本 presenter 的同一掩码函数,避免导出口径分叉。
+export function formatApplicationCsvRow(
+  app: RecruitmentApplicationCsvSource,
+  masked: boolean,
+): string {
+  return [
+    escapeCsvField(app.id),
+    escapeCsvField(app.cycleId),
+    escapeCsvField(app.statusCode),
+    escapeCsvField(app.tempNo),
+    escapeCsvField(app.realName),
+    escapeCsvField(presentIdCard(app.idCardNumber, masked)),
+    escapeCsvField(presentPhone(app.phone, masked)),
+    escapeCsvField(app.documentTypeCode),
+    escapeCsvField(app.isForeigner),
+    escapeCsvField(app.genderCode),
+    escapeCsvField(app.ageGroup),
+    escapeCsvField(app.cityDistrict),
+    escapeCsvField(app.verifyOutcome),
+    escapeCsvField(app.riskLevel),
+    escapeCsvField(app.manualReviewReason),
+    escapeCsvField(app.eliminationStage),
+    escapeCsvField(allThresholdsComplete(app.thresholdMarks as ThresholdMarks | null)),
+    escapeCsvField(!isPromotable(app)),
+    escapeCsvField(app.createdAt),
+  ].join(',');
 }

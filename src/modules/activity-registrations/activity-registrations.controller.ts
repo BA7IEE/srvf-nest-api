@@ -10,6 +10,7 @@ import {
   Res,
   StreamableFile,
 } from '@nestjs/common';
+import { Readable } from 'node:stream';
 import { ApiBearerAuth, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import {
@@ -153,8 +154,7 @@ export class ActivityRegistrationsAdminController {
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': `attachment; filename="${fileName}"`,
     });
-    // UTF-8 BOM(让 Excel 自动识别中文)。
-    return new StreamableFile(Buffer.from('﻿' + csv, 'utf8'));
+    return new StreamableFile(Readable.from(csv));
   }
 
   @Patch(':id/approve')

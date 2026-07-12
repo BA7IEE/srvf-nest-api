@@ -28,6 +28,17 @@ type OverlapRecordLike = {
 
 @Injectable()
 export class TimeOverlapPolicy {
+  // finding #7:同一 member 的重叠检查与后续写入必须在事务内串行。
+  // 排序后逐个取 PostgreSQL transaction advisory lock,避免多成员 batch 反向取锁死锁。
+  async lockMembersForOverlapCheck(memberIds: readonly string[], tx: PrismaTx): Promise<void> {
+    const orderedIds = [...new Set(memberIds)].sort();
+    for (const memberId of orderedIds) {
+      await tx.$queryRaw<Array<{ locked: string }>>`
+        SELECT pg_advisory_xact_lock(hashtext(${memberId}))::text AS locked
+      `;
+    }
+  }
+
   // 时间不重叠校验(R16 / Q-S15):同 memberId × [checkInAt, checkOutAt) 左闭右开
   // 跨 Sheet / 跨 Activity 全局,deletedAt IS NULL。
   // excludeSheetId:edit 时排除旧 Sheet 的 records(因为它们将被替换)。

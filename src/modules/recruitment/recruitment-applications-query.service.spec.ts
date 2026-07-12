@@ -62,6 +62,7 @@ describe('RecruitmentApplicationsQueryService · S3 敏感字段分级判权', (
         .fn()
         .mockResolvedValue({ url: 'https://signed-url', expiresAt: new Date() }),
       headObject: jest.fn(),
+      readObjectPrefix: jest.fn(),
     };
     const service = new RecruitmentApplicationsQueryService(
       prisma as never,
@@ -172,9 +173,15 @@ describe('RecruitmentApplicationsQueryService.exportApplicationsCsv · S3 脱敏
     return { service, findMany };
   }
 
+  async function collectCsv(source: AsyncIterable<string>): Promise<string> {
+    let result = '';
+    for await (const chunk of source) result += chunk;
+    return result;
+  }
+
   it('持 read.sensitive → CSV 明文列(id_card_number/phone 原值)', async () => {
     const { service } = buildExportService({ [RECORD]: true, [SENSITIVE]: true }, [row()]);
-    const csv = await service.exportApplicationsCsv({}, ADMIN_USER);
+    const csv = await collectCsv(await service.exportApplicationsCsv({}, ADMIN_USER));
     const [header, line1] = csv.split('\n');
     expect(header.split(',')).toContain('id_card_number');
     expect(header.split(',')).toContain('is_non_mainland_document');
@@ -185,7 +192,7 @@ describe('RecruitmentApplicationsQueryService.exportApplicationsCsv · S3 脱敏
 
   it('仅 read.record(无 sensitive)→ CSV 脱敏列(掩码,绝不出明文)', async () => {
     const { service } = buildExportService({ [RECORD]: true, [SENSITIVE]: false }, [row()]);
-    const csv = await service.exportApplicationsCsv({}, ADMIN_USER);
+    const csv = await collectCsv(await service.exportApplicationsCsv({}, ADMIN_USER));
     expect(csv).not.toContain(RAW_ID); // 明文绝不泄露
     expect(csv).not.toContain(RAW_PHONE);
     expect(csv).toContain('*'); // 掩码(复用 toAdminApplicationDto)
@@ -208,7 +215,9 @@ describe('RecruitmentApplicationsQueryService.exportApplicationsCsv · S3 脱敏
 
   it('filter=manual → where.statusCode=manual_review;filter 缺省 all → 无 statusCode 约束', async () => {
     const { service, findMany } = buildExportService({ [RECORD]: true }, []);
-    await service.exportApplicationsCsv({ filter: 'manual', cycleId: 'cyc-9' }, ADMIN_USER);
+    await collectCsv(
+      await service.exportApplicationsCsv({ filter: 'manual', cycleId: 'cyc-9' }, ADMIN_USER),
+    );
     expect(whereOfCall(findMany)).toMatchObject({
       deletedAt: null,
       cycleId: 'cyc-9',
@@ -216,7 +225,7 @@ describe('RecruitmentApplicationsQueryService.exportApplicationsCsv · S3 脱敏
     });
 
     findMany.mockClear();
-    await service.exportApplicationsCsv({}, ADMIN_USER);
+    await collectCsv(await service.exportApplicationsCsv({}, ADMIN_USER));
     expect(whereOfCall(findMany).statusCode).toBeUndefined(); // all:无态约束
   });
 
@@ -232,10 +241,30 @@ describe('RecruitmentApplicationsQueryService.exportApplicationsCsv · S3 脱敏
       row({ id: 'incomplete', thresholdMarks: { patrol1: { at: 'x', by: 'u' } } }),
       row({ id: 'done', thresholdMarks: complete }),
     ]);
-    const csv = await service.exportApplicationsCsv({ filter: 'threshold-incomplete' }, ADMIN_USER);
+    const csv = await collectCsv(
+      await service.exportApplicationsCsv({ filter: 'threshold-incomplete' }, ADMIN_USER),
+    );
     // DB where 仍按 verified 取(post-filter 在内存)
     expect(whereOfCall(findMany)).toMatchObject({ statusCode: 'verified' });
     expect(csv).toContain('incomplete');
     expect(csv).not.toContain('done'); // 门槛已齐被滤除
+  });
+
+  it('findings #13/#14:500 行后以 id cursor 继续,查询保持 select 投影', async () => {
+    const { service, findMany } = buildExportService({ [RECORD]: true }, []);
+    findMany
+      .mockReset()
+      .mockResolvedValueOnce(Array.from({ length: 500 }, (_, index) => row({ id: `app-${index}` })))
+      .mockResolvedValueOnce([row({ id: 'app-tail' })]);
+
+    const csv = await collectCsv(await service.exportApplicationsCsv({}, ADMIN_USER));
+
+    expect(findMany).toHaveBeenCalledTimes(2);
+    const calls = findMany.mock.calls as unknown as Array<
+      [{ cursor?: { id: string }; skip?: number; take: number; select: unknown }]
+    >;
+    expect(calls[1][0]).toMatchObject({ cursor: { id: 'app-499' }, skip: 1, take: 500 });
+    expect(calls[1][0].select).toBeDefined();
+    expect(csv).toContain('app-tail');
   });
 });
