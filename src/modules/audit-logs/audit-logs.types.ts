@@ -106,6 +106,7 @@ export type AuditLogEvent =
   | 'recruitment-application.withdraw' // 申请人自助撤销(actor 置空);before/after status;extra {channel: wechat|phone, phone/openid 掩码}
   // 招新可用性收口 F7(2026-07-11;评审稿 §2.9 R6):
   | 'recruitment-application.certificate-upload' // 申请人自助上传证书图(actor 置空);extra {channel, category, imageCount, replacedCount, phone 掩码}
+  | 'recruitment-application.certificate-review' // admin 审核申请人证书;extra {category, approved, imageCount},零 PII
   // 招新三期(入队:志愿者→队员)T2(2026-06-19;评审稿 recruitment-phase3-review.md §3.5 / E-J-8;
   // 本 PR 仅 admin 4 项,自助 submit〔T3〕/ join〔T4〕后续追加):
   | 'team-join-cycle.create' // admin 建入队轮;after

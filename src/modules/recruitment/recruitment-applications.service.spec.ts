@@ -25,6 +25,7 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
   function buildPayload(): RecruitmentSubmitPayloadDto {
     return {
       wechatCode: 'code-x',
+      phoneVerificationToken: 'token-x',
       realName: '张三',
       idCardNumber: VALID_MAINLAND_ID,
       documentTypeCode: 'mainland_id',
@@ -94,8 +95,12 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
     const rbac = { can: jest.fn() };
     const auditLogs = { log: jest.fn() };
 
-    // S4a:identity service(本组测试走 wechatCode 路径,hasToken=false,故 assert/consume 不被调用)
-    const identity = { assertPhoneSessionValid: jest.fn(), consumePhoneSession: jest.fn() };
+    const identity = {
+      assertPhoneSessionValid: jest.fn(),
+      consumePhoneSession: jest.fn(),
+      readOcrAttemptState: jest.fn().mockResolvedValue(null),
+      writeOcrAttempt: jest.fn().mockResolvedValue(undefined),
+    };
     const service = new RecruitmentApplicationsService(
       prisma as never,
       rbac as never,
@@ -180,6 +185,7 @@ describe('RecruitmentApplicationsService · 落图失败孤儿补偿(review #484
   function buildPayload(): RecruitmentSubmitPayloadDto {
     return {
       wechatCode: 'code-x',
+      phoneVerificationToken: 'token-x',
       realName: '张三',
       idCardNumber: VALID_MAINLAND_ID,
       documentTypeCode: 'mainland_id',
@@ -242,7 +248,12 @@ describe('RecruitmentApplicationsService · 落图失败孤儿补偿(review #484
     };
     const rbac = { can: jest.fn() };
     const auditLogs = { log: jest.fn() };
-    const identity = { assertPhoneSessionValid: jest.fn(), consumePhoneSession: jest.fn() };
+    const identity = {
+      assertPhoneSessionValid: jest.fn(),
+      consumePhoneSession: jest.fn(),
+      readOcrAttemptState: jest.fn().mockResolvedValue(null),
+      writeOcrAttempt: jest.fn().mockResolvedValue(undefined),
+    };
     const service = new RecruitmentApplicationsService(
       prisma as never,
       rbac as never,
@@ -403,6 +414,7 @@ describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封�
   function buildPayload(): RecruitmentSubmitPayloadDto {
     return {
       wechatCode: 'code-x',
+      phoneVerificationToken: 'token-x',
       realName: '张三',
       idCardNumber: VALID_MAINLAND_ID,
       documentTypeCode: 'mainland_id',
@@ -452,7 +464,12 @@ describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封�
     };
     const wechat = { code2session: jest.fn().mockResolvedValue({ openid: 'op1' }) };
     const realname = { recognize: jest.fn() };
-    const identity = { assertPhoneSessionValid: jest.fn(), consumePhoneSession: jest.fn() };
+    const identity = {
+      assertPhoneSessionValid: jest.fn(),
+      consumePhoneSession: jest.fn(),
+      readOcrAttemptState: jest.fn().mockResolvedValue(null),
+      writeOcrAttempt: jest.fn().mockResolvedValue(undefined),
+    };
     const service = new RecruitmentApplicationsService(
       prisma as never,
       { can: jest.fn() } as never,

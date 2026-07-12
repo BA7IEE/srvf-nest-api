@@ -1811,6 +1811,8 @@ model RecruitmentApplication {
   // 重传覆盖)。promote 时按类别自动建 pending Certificate 行 + 图 key 搬 Certificate.imageKeys,
   // 本列清空;未发号行的 blob 随既有留存 SOP 清理。形如 { [category]: string[] }。
   certificateImages Json? // 证书图 storage keys(按类别分组;R6 长期档案的暂存位)
+  // 招新证书审核闭环:按类别记录 approved/rejected + at/by/note(无 PII);promote 时与证书图一并清空。
+  certificateReviewStatus Json?
 
   // ===== 脱敏留存字段(永久行级保留)=====
   documentTypeCode String // 证件类型(判非大陆证件/人工核验;非高敏)
@@ -2005,6 +2007,10 @@ model TeamJoinCycle {
   statusCode String // open / closed(后台开关;至多一个 open:service 预检 + partial unique DB 兜底)
   openedAt   DateTime?
   closedAt   DateTime?
+
+  // 入队候选部门配置(PR-4 才接业务):null/空=全部 ACTIVE;max null=默认 8。
+  openOrganizationIds Json?
+  maxTargetOrgs        Int?
 
   applications TeamJoinApplication[]
 

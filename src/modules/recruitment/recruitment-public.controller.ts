@@ -161,7 +161,7 @@ export class RecruitmentPublicController {
         payload: {
           type: 'string',
           description:
-            'RecruitmentSubmitPayloadDto 的 JSON 串(realName/idCardNumber/…;身份链 wechatCode〔小程序〕或 phoneVerificationToken〔H5,verify-code 所发〕至少二选一;⚠️ F5 起必含 privacyConsentAccepted=true)',
+            'RecruitmentSubmitPayloadDto 的 JSON 串(realName/idCardNumber/…;phoneVerificationToken 必填〔小程序/H5 均先验手机〕,wechatCode 可选;另必含 privacyConsentAccepted=true)',
         },
         idCardImage: { type: 'string', format: 'binary', description: '证件照(jpeg/png ≤5MB)' },
         signatureImage: {
@@ -174,7 +174,7 @@ export class RecruitmentPublicController {
   })
   @ApiOperation({
     summary:
-      '公开报名提交(无账号;multipart:payload JSON 串 + idCardImage 文件 + 必填 signatureImage 签名图〔发号后随档案长期留存〕;⚠️ 契约收紧:signatureImage 与 payload.privacyConsentAccepted=true 均必填,缺省/false → 40000;身份链 wechatCode〔小程序〕或 phoneVerificationToken〔H5 验码令牌〕至少二选一,S4a;免费校验通过后才调付费 OCR;大陆证件 OCR 匹配+防伪+清晰→发临时编号,否则/其余证件→人工待核;OCR 改造后提交端对 OCR 永不硬报错,通道未配/上游失败均转人工;throttler recruitment) [public]',
+      '公开报名提交(无账号;multipart:payload JSON 串 + idCardImage 文件 + 必填 signatureImage 签名图〔发号后随档案长期留存〕;⚠️ 契约收紧:signatureImage、payload.privacyConsentAccepted=true、已验手机 phoneVerificationToken 均必填,缺省/false → 40000;wechatCode 可选〔提供时另取 openid〕;免费校验通过后才调付费 OCR;大陆证件 OCR 匹配+防伪+清晰→发临时编号,否则/其余证件→人工待核;OCR 改造后提交端对 OCR 永不硬报错,通道未配/上游失败均转人工;throttler recruitment) [public]',
   })
   @ApiWrappedOkResponse(RecruitmentSubmitResultDto)
   @ApiBizErrorResponse(

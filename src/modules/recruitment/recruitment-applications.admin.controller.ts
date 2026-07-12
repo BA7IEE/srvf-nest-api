@@ -38,6 +38,7 @@ import {
   RecruitmentCertificateImageUrlsResponseDto,
   RecruitmentApplicationAdminDto,
   RecruitmentApplicationListQueryDto,
+  ReviewRecruitmentCertificateDto,
   ResolveRecruitmentApplicationDto,
   UpdateRecruitmentApplicationDto,
 } from './recruitment.dto';
@@ -219,6 +220,38 @@ export class RecruitmentApplicationsAdminController {
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<RecruitmentCertificateImageUrlsResponseDto> {
     return this.queryService.getCertificateImageUrls(id, user);
+  }
+
+  @Post(':id/certificates/:category/review')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '审核申请人证书(通过→自动标对应红十字/BSAFE 门槛;驳回→清该类图并取消门槛;驳回说明申请人进度可见) [rbac: recruitment-application.review.certificate]',
+  })
+  @ApiWrappedOkResponse(RecruitmentApplicationAdminDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.RECRUITMENT_APPLICATION_NOT_FOUND,
+    BizCode.RECRUITMENT_APPLICATION_WRONG_STATE,
+    BizCode.RECRUITMENT_CERTIFICATE_IMAGE_REQUIRED,
+  )
+  reviewCertificate(
+    @Param('id') id: string,
+    @Param('category') category: string,
+    @Body() dto: ReviewRecruitmentCertificateDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<RecruitmentApplicationAdminDto> {
+    return this.reviewService.reviewCertificate(
+      id,
+      category,
+      dto,
+      user,
+      buildAuditMeta(req),
+      new Date(),
+    );
   }
 
   @Post(':id/resolve')

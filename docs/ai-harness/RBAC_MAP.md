@@ -92,6 +92,8 @@
 
 > 2026-07-11 十项收口一刀 戳(招新/入队十项问题核查〔7 确认 / 3 部分确认〕+ 六项拍板,刀 A–F 合一 PR;判定与拍板全文见 PR 描述):权限码 203→**204**(emergency-contact +1:`emergency-contact.read.sensitive`,紧急联系人明文闸——`read.record` 收窄为脱敏〔list/create/update/softDelete 4 出口掩码 contactName/phonePrimary/phoneBackup/address〕,**绑 biz-admin**,镜像 member-profile §F&A-3 先例,实装即用 0 孤码);**biz-admin 79→80**;**org-admin 60 零变化**(入 `ORG_ADMIN_EXCLUDED_CODES` 敏感码不下放;group-manager 22 不绑 = 组长默认见掩码,带队需要按人 role-binding);ops-admin 96 / member 9 零变化;controller **66** 不变;endpoint 334→**335**(`GET open/v1/recruitment/publicity` 公开公示名单,@Public 无 RBAC 码——view-publicity 悬空动作收口,复用 admin 公示预览同一取数内核 = 公示所见即实发)。**migration 44→45**(`recruitment_cycles_single_open_unique` + `team_join_cycles_single_open_unique` 两手写 partial unique〔至多一个 open 轮 DB 兜底,service P2002 转专码〕+ `MemberProfile` +`detailedAddress`/`profileExtra`〔promote 搬运落点,本刀无读出口〕;全 additive)。**+3 BizCode**(28032/28231 开轮唯一性冲突〔原通用 40000〕/ 28243 gate 完成日在未来)/ 0 audit event。⚠️ 判权外行为变更(CHANGELOG Unreleased 置顶 7 条):member-profile 掩码集 2→12 字段(无 sensitive 一律 null;birthDate/email 响应放宽 nullable)/ 公开 stage 折叠 manual_high→manual / submit documentTypeCode 白名单六值 / 年龄闸补 F2 外籍补录与 promote-single / promote 即时清扩容 + 建档搬运补齐 + 头像 avatarKey / 考勤终审 Effect 追加贡献值达标站内提醒(additive)。
 
+> 2026-07-12 招新/入队十三项收口 PR-3 刀F/G 戳:权限码 204→**205**(recruitment-application +1:`recruitment-application.review.certificate`,证书审核通过自动标对应门槛、驳回清图并退标记,**绑 biz-admin**);**biz-admin 80→81**;org-admin 60 零变化(`recruitment-` 前缀派生排除);ops-admin 96 / member 9 零变化;controller 66 不变;endpoint 335→**336**(`POST admin/v1/recruitment/applications/:id/certificates/:category/review`)。**migration 46→47**(第二条/最终授权 migration 合并刀G+刀H additive 列:`recruitment_applications.certificateReviewStatus Json?` + `team_join_cycles.openOrganizationIds Json?`/`maxTargetOrgs Int?`;刀H 消费代码在 PR-4);+1 BizCode(28053 证书图前置)/+1 AuditLogEvent(`recruitment-application.certificate-review`)。⚠️ 契约收紧:公开 submit `phoneVerificationToken` 必填、仅 wechatCode 一律 400;申请人进度 additive `certificates[]` 回显审核/驳回态。
+
 ---
 
 ## 1. 双轨架构现状(一句话版)
@@ -181,7 +183,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(204 条,seed 幂等 upsert)
+## 3. 权限码全集(205 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -220,7 +222,7 @@
 | 队员自购保险(保险 T1) | 1 | `member-insurance.read.other`(admin 查队员保险;App 本人侧 self-scope 无码;T2 实装) |
 | 实名核验设置(招新 T1) | 3 | `realname-setting.{read,update}.singleton` / `realname-setting.reset.credentials`(`reset` 不绑 ops-admin 镜像 D2=A;T2 端点实装前孤码 WARN 预期) |
 | 招新轮次(招新 T1;T3 实装) | 3 | `recruitment-cycle.{read,create,update}.record`(`admin/v1/recruitment/cycles`;孤码 T3 清零) |
-| 招新报名(招新一期 T1→T3;二期 T1→T2/T3;闭环优化 S3;可用性收口 F2/F3) | 8 | `recruitment-application.read.record`(普通查看:脱敏列表 + 脱敏详情 + 公示名单 + 工作台 stats 共用)/ `recruitment-application.read.sensitive`(敏感查看:详情明文证件号·手机 + 证件照 signed-URL;S3 §11.1 从 read.record 切出,全绑 biz-admin)/ `recruitment-application.resolve.manual`(人工待核 resolve)/ `recruitment-application.mark.threshold`(标门槛)/ `recruitment-application.evaluate.assessment`(综合评定/淘汰)/ `recruitment-application.promote.member`(一键发号建 User+Member)/ `recruitment-application.update.record`(F2 admin 改资料:R1 白名单,身份字段条件闸 28045)/ `recruitment-application.promote.single`(F3 单人手动建档:批量 skip 收尾,放行外籍 + 锚点择优);`admin/v1/recruitment/*` |
+| 招新报名(招新一期 T1→T3;二期 T1→T2/T3;闭环优化 S3;可用性收口 F2/F3;十三项收口刀G) | 9 | `recruitment-application.read.record`(普通查看:脱敏列表 + 脱敏详情 + 公示名单 + 工作台 stats 共用)/ `recruitment-application.read.sensitive`(敏感查看:详情明文证件号·手机 + 证件照 signed-URL;S3 §11.1 从 read.record 切出,全绑 biz-admin)/ `recruitment-application.resolve.manual`(人工待核 resolve)/ `recruitment-application.mark.threshold`(标门槛)/ `recruitment-application.evaluate.assessment`(综合评定/淘汰)/ `recruitment-application.promote.member`(一键发号建 User+Member)/ `recruitment-application.update.record`(F2 admin 改资料:R1 白名单,身份字段条件闸 28045)/ `recruitment-application.promote.single`(F3 单人手动建档:批量 skip 收尾,放行外籍 + 锚点择优)/ `recruitment-application.review.certificate`(刀G:证书审核闭环,通过自动标门槛、驳回清图并退标记);`admin/v1/recruitment/*` |
 | 入队轮(招新三期入队 T2) | 3 | `team-join-cycle.{read,create,update}.record`(`admin/v1/team-join/cycles`;list/detail 共用 read;至多一个 open 轮) |
 | 入队申请(招新三期入队 T2/T4) | 4 | `team-join-application.read.record`(列表/详情共用)/ `team-join-application.mark.gate`(标 gate)/ `team-join-application.evaluate.assessment`(综合评估/淘汰)/ `team-join-application.join.member`(一键入队 = 设部门 + 级别 level-1,T4);`admin/v1/team-join/applications`;自助 `app/v1/me/team-join/*` 发起/查进度/改候选 **self-scope 无码** |
 | 内容发布(CMS T1 seed;T2 admin 实装) | 5 | `content.{read,create,update,delete,publish}.record`(`admin/v1/contents`;list/detail 共用 read;状态机 publish/unpublish/archive 共用 publish;封面 set/clear 走 update;app/open 读零码 T3/T4;**T2 controller 实装后孤码 WARN 清零**) |

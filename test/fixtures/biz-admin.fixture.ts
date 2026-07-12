@@ -5,9 +5,9 @@ import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.servi
 // Slow-4 T2/T3(2026-06-11):biz-admin 业务面角色 e2e fixture。
 // 沿冻结评审稿 docs/archive/reviews/slow4-rbac-business-face-review.md §8 + rbac.fixture.ts 范式。
 //
-// 背景:test/setup/reset-db.ts 把 RBAC 4 表清空,prisma/seed.ts 的 51 条业务面码 + biz-admin
+// 背景:test/setup/reset-db.ts 把 RBAC 4 表清空,prisma/seed.ts 的业务面码 + biz-admin
 // 角色不在 e2e 数据库里。本 fixture 在 spec 的 beforeAll 调用:
-// - seedBizAdminPermissionsAndRole:幂等 upsert 51 条业务面码 + biz-admin 角色 + 48 条绑定
+// - seedBizAdminPermissionsAndRole:幂等 upsert 本 fixture 所需业务面码 + biz-admin 角色 + 对应绑定
 //   (`member.delete.record`〔D1=A 镜像,评审稿 §6〕+ `attendance.final-{approve,reject}.sheet`
 //   〔2026-07-03 摘码微刀:终审归 scoped 绑定 / SUPER_ADMIN 兜底〕进 Permission 表但**不**绑,
 //   与 prisma/seed.ts BIZ_ADMIN_EXCLUDED_CODES 同口径镜像)
@@ -35,7 +35,7 @@ const BIZ_ADMIN_UNBOUND_CODES: ReadonlySet<string> = new Set([
   'attendance.final-reject.sheet',
 ]);
 
-// 沿 prisma/seed.ts BIZ_PERMISSION_SEED(51 条;Slow-4 §4 + 保险 §3.4 + 招新一期/二期 §3.4 锁定);
+// 沿 prisma/seed.ts BIZ_PERMISSION_SEED 取 e2e 实际使用子集;
 // 本 fixture 维护独立集合,与 seed 内部表对照防漂移(沿 rbac.fixture.ts 范式)。
 const BIZ_PERMISSIONS = [
   // ============ member 6 条(v0.40.0 +offboard)============
@@ -329,9 +329,15 @@ const BIZ_PERMISSIONS = [
     action: 'promote',
     resourceType: 'member',
   },
+  {
+    code: 'recruitment-application.review.certificate',
+    module: 'recruitment-application',
+    action: 'review',
+    resourceType: 'certificate',
+  },
 ] as const;
 
-// 在 e2e 的 beforeAll 调用一次,seed 51 条业务面码 + biz-admin 角色 + 48 条 RolePermission
+// 在 e2e 的 beforeAll 调用一次,seed 本 fixture 所需业务面码 + biz-admin 角色 + 对应 RolePermission
 // 绑定(过滤 `member.delete.record` + 终审两码;沿 D1=A 镜像 + 摘码微刀)。
 // 幂等:多次调用不出错(upsert + skipDuplicates)。
 export async function seedBizAdminPermissionsAndRole(
@@ -351,7 +357,7 @@ export async function seedBizAdminPermissionsAndRole(
     create: { code: 'biz-admin', displayName: '业务管理员' },
     select: { id: true },
   });
-  // 按 code 精确取本 fixture 声明的 51 条(避免被其它 spec 在同一 DB 注入的码干扰)
+  // 按 code 精确取本 fixture 声明集合(避免被其它 spec 在同一 DB 注入的码干扰)
   const seeded = await prisma.permission.findMany({
     where: { code: { in: BIZ_PERMISSIONS.map((p) => p.code) } },
     select: { id: true, code: true },

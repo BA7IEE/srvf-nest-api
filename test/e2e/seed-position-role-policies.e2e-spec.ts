@@ -211,7 +211,7 @@ const EXPECTED_FINAL_REVIEWER_CODES = [
 // 2026-07-07 队员账号闭环 v2 member.bind.account 绑 ops-admin 95→96)。
 const EXPECTED_OPS_ADMIN_BINDING_COUNT = 96;
 const EXPECTED_MEMBER_ROLE_BINDING_COUNT = 9;
-const EXPECTED_BIZ_ADMIN_BINDING_COUNT = 80; // 十项收口刀D 起(2026-07-11 emergency-contact.read.sensitive +1;招新可用性收口 F2/F3 起 79;v0.40.0 起 77)
+const EXPECTED_BIZ_ADMIN_BINDING_COUNT = 81; // 十三项收口刀G +review.certificate(2026-07-12);十项收口刀D 起 80
 
 async function boundCodesOf(prisma: PrismaService, roleCode: string): Promise<string[]> {
   const rows = await prisma.rolePermission.findMany({
@@ -346,7 +346,7 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     expect(second.stderr).toContain('R5');
   });
 
-  it('5. 零指派 + 零漂移:3 新角色无任何持有者;ops-admin 95(队员账号闭环 v1 起)/ member 9 / biz-admin 77(v0.40.0 起)不变;保留码不绑', async () => {
+  it('5. 零指派 + 零漂移:3 新角色无任何持有者;ops-admin 96 / member 9 / biz-admin 81;保留码不绑', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-5' }).code).toBe(0);
 
     // 3 新角色零 user 持有(判权唯一读源 RoleBinding 全类型;
