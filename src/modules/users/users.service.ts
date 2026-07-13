@@ -8,6 +8,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import { RbacService } from '../permissions/rbac.service';
 import { SmsCodeService } from '../sms/sms-code.service';
 import { maskPhone } from '../sms/sms.constants';
@@ -39,8 +40,6 @@ import { SafeUser, SafeUserWithMember, userAdminSelect, userSafeSelect } from '.
 
 const BCRYPT_SALT_ROUNDS = 10;
 
-type PrismaTx = Prisma.TransactionClient;
-
 // admin/v1/me 本人身份只读投影(2026-06-14)。字段集 = User 本体身份 9 项,
 // **不**含 member 业务字段 / L3(passwordHash / *token* / secret*)/ createdAt / updatedAt;
 // 故**不**复用 userSafeSelect(其服务于 admin/v1/users 详情 DTO,含 createdAt/updatedAt
@@ -64,6 +63,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
     private readonly rbac: RbacService,
+    private readonly lastAdminProtection: LastAdminProtectionPolicy,
     private readonly smsCode: SmsCodeService,
     private readonly wechat: WechatService,
   ) {}
@@ -73,8 +73,8 @@ export class UsersService {
   // P0-F PR-3B(2026-05-18):RBAC 业务模块判权(沿 PR-1 permissions.service.ts:41-45 字面范式)。
   // 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100);RbacService.can 内部已实现
   // SUPER_ADMIN 短路 + cache + ownership(.self),users 8 端点粗粒度无 resource。
-  // service 内 6 项业务护栏(canViewUser / canManageUser / canCreateRole / canChangeRole /
-  // assertNotSelf / assertNotLastSuperAdmin)在 assertCanOrThrow 之后保留并执行,**不挪动**。
+  // service 内业务护栏(canViewUser / canManageUser / canCreateRole / canChangeRole / assertNotSelf /
+  // LastAdminProtectionPolicy)在 assertCanOrThrow 之后保留并执行,**不挪动**。
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
     if (!(await this.rbac.can(user, action))) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
@@ -126,22 +126,6 @@ export class UsersService {
   private assertNotSelf(currentUser: CurrentUserPayload, targetId: string): void {
     if (currentUser.id === targetId) {
       throw new BizException(BizCode.CANNOT_OPERATE_SELF);
-    }
-  }
-
-  // 最后一个 SUPER_ADMIN 保护:必须在调用方 transaction 内运行(§12 + §13)。
-  // 排除目标用户自身后,剩余活跃 super admin 必须 ≥ 1。
-  private async assertNotLastSuperAdmin(tx: PrismaTx, userIdAffected: string): Promise<void> {
-    const remaining = await tx.user.count({
-      where: {
-        role: Role.SUPER_ADMIN,
-        status: UserStatus.ACTIVE,
-        deletedAt: null,
-        id: { not: userIdAffected },
-      },
-    });
-    if (remaining === 0) {
-      throw new BizException(BizCode.LAST_SUPER_ADMIN_PROTECTED);
     }
   }
 
@@ -558,7 +542,7 @@ export class UsersService {
   ): Promise<UserResponseDto> {
     // P0-F PR-3B D1=A:user.update.role 不绑 ops-admin;仅 SUPER_ADMIN 经 RbacService 短路通过。
     // RBAC 通过后仍走 service 内 4 项业务护栏(assertNotSelf + assertCanManageUser +
-    // canChangeRole 永禁升 SA + assertNotLastSuperAdmin 降级时);全部保留不动。
+    // canChangeRole 永禁升 SA + LastAdminProtectionPolicy 降级时);全部保留不动。
     await this.assertCanOrThrow(currentUser, 'user.update.role');
     // 自我保护(§7.11):自改 role 永远拦
     this.assertNotSelf(currentUser, id);
@@ -574,7 +558,7 @@ export class UsersService {
     // 最后一个保护:目标当前是 SUPER_ADMIN 且新 role 不是 SUPER_ADMIN(降级)
     return this.prisma.$transaction(async (tx) => {
       if (target.role === Role.SUPER_ADMIN && dto.role !== Role.SUPER_ADMIN) {
-        await this.assertNotLastSuperAdmin(tx, id);
+        await this.lastAdminProtection.assertCanRemoveSuperAdmin(tx, id);
       }
       return tx.user.update({
         where: { id },
@@ -603,7 +587,10 @@ export class UsersService {
     // 最后一个保护:目标当前是 SUPER_ADMIN 且新 status === DISABLED
     return this.prisma.$transaction(async (tx) => {
       if (target.role === Role.SUPER_ADMIN && dto.status === UserStatus.DISABLED) {
-        await this.assertNotLastSuperAdmin(tx, id);
+        await this.lastAdminProtection.assertCanRemoveSuperAdmin(tx, id);
+      }
+      if (dto.status === UserStatus.DISABLED) {
+        await this.lastAdminProtection.assertCanDeactivateOpsAdminUser(tx, id);
       }
       const updated = await tx.user.update({
         where: { id },
@@ -640,8 +627,9 @@ export class UsersService {
     // 删除走 update,而非 prisma.user.delete()(§7.8)
     return this.prisma.$transaction(async (tx) => {
       if (target.role === Role.SUPER_ADMIN) {
-        await this.assertNotLastSuperAdmin(tx, id);
+        await this.lastAdminProtection.assertCanRemoveSuperAdmin(tx, id);
       }
+      await this.lastAdminProtection.assertCanDeactivateOpsAdminUser(tx, id);
       const updated = await tx.user.update({
         where: { id },
         data: {

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { PermissionsController } from './permissions.controller';
 import { PermissionsService } from './permissions.service';
+import { LastAdminProtectionPolicy } from './last-admin-protection.policy';
 import { RbacCacheService } from './rbac-cache.service';
 import { RbacController } from './rbac.controller';
 import { RbacService } from './rbac.service';
@@ -64,11 +65,12 @@ import { UserRolesService } from './user-roles.service';
     RbacCacheService,
     RbacService,
     RoleDelegationPolicy,
+    LastAdminProtectionPolicy,
   ],
   // export RbacService 供业务模块在 Service 层接入 rbac.can()
   // (D7 v1.1 §8 / D7-attachments §6.2;首个消费方 AttachmentsModule,P0-F 后已扩展到管理面等多模块)。
   // 终态 scoped-authz PR6:export RbacCacheService 供 role-bindings 模块在建/改/软删 USER 主体的 GLOBAL 绑定后
   //   失效该 user 的权限缓存(判权读源 = global RoleBinding,失效链不破;沿 UserRolesService 现范式)。
-  exports: [RbacService, RbacCacheService, RoleDelegationPolicy],
+  exports: [RbacService, RbacCacheService, RoleDelegationPolicy, LastAdminProtectionPolicy],
 })
 export class PermissionsModule {}

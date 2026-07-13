@@ -39,7 +39,7 @@ import { UsersService } from './users.service';
 //   PATCH  /api/admin/v1/users/:id/status   → user.update.status    (绑 ops-admin)
 //   DELETE /api/admin/v1/users/:id          → user.delete.account   (绑 ops-admin)
 // service 内 6 项业务护栏全保留:canViewUser / canManageUser / canCreateRole /
-// canChangeRole / assertNotSelf / assertNotLastSuperAdmin(沿评审稿 §8.3)。
+// canChangeRole / assertNotSelf / LastAdminProtectionPolicy(沿评审稿 §8.3)。
 //
 // 本 Controller 仅承载 Admin 管理端点(`@Controller('admin/v1/users')`),class-level
 // @ApiTags = 'Admin - Users'。队员自助端点(GET / PATCH /me + PUT /me/password)现位于
