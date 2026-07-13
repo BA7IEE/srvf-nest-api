@@ -5,6 +5,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditContext, AuditLogEvent, AuditMeta } from '../audit-logs/audit-logs.types';
+import { LastAdminProtectionPolicy } from './last-admin-protection.policy';
 import { RbacCacheService } from './rbac-cache.service';
 import { RbacService } from './rbac.service';
 import { RoleDelegationPolicy, type RoleDelegationTarget } from './role-delegation.policy';
@@ -35,11 +36,8 @@ import { AssignUserRoleDto, UserRoleResponseDto } from './user-roles.dto';
 //    - 其他(ADMIN / USER / 仅业务角色)→ 30102
 // 3. **重复分配 → 30006**(D7 §12 锁定,**报错**而非幂等;与 RolePermission 批量幂等不同)
 // 4. **最后一个 ops-admin 保护**(沿 D7 §6.3 触发场景 1):
-//    - DELETE 撤销 ops-admin 角色时,事务内 count 剩余活跃 ops-admin 持有者数 ≥ 1
+//    - DELETE 撤销 ops-admin 角色时,与 role-bindings/users 共用 advisory lock 后重算,剩余活跃持有者数 ≥ 1
 //    - 否则抛 30101(沿 v1 §13 最后一个 SUPER_ADMIN 保护范式)
-
-// 运营管理员角色 code(沿 D7 §10.1 placeholder seed;`.env.seed.local` 真实角色名不变此 code)
-const OPS_ADMIN_CODE = 'ops-admin';
 
 type PrismaTx = Prisma.TransactionClient;
 type UserRoleDelegationTarget = RoleDelegationTarget & {
@@ -54,6 +52,7 @@ export class UserRolesService {
     private readonly cache: RbacCacheService,
     private readonly rbac: RbacService,
     private readonly roleDelegation: RoleDelegationPolicy,
+    private readonly lastAdminProtection: LastAdminProtectionPolicy,
   ) {}
 
   // ============ helpers ============
@@ -292,31 +291,15 @@ export class UserRolesService {
       });
       if (!existing) throw new BizException(BizCode.USER_ROLE_NOT_FOUND);
 
-      // 4b. 如果撤销的是 ops-admin 角色,事务内 count 剩余活跃 ops-admin 持有者数 ≥ 1
-      //     (排除当前正在撤销的 targetUser;沿 D7 §6.3 + v1 §13 范式)。RoleBinding 无 user relation(principalId 多态),
-      //     故先取其他 active global ops-admin 绑定的 principalId,再 count 其中 active user 数 = 等价语义。
-      if (role.code === OPS_ADMIN_CODE) {
-        const otherOpsAdminBindings = await tx.roleBinding.findMany({
-          where: {
-            ...this.activeGlobalUserWhere(),
-            role: { code: OPS_ADMIN_CODE, deletedAt: null },
-            NOT: { principalId: targetUserId },
-          },
-          select: { principalId: true },
-        });
-        const candidateIds = otherOpsAdminBindings
-          .map((b) => b.principalId)
-          .filter((id): id is string => id !== null);
-        const remainingActiveOpsAdmins =
-          candidateIds.length === 0
-            ? 0
-            : await tx.user.count({
-                where: { id: { in: candidateIds }, deletedAt: null, status: UserStatus.ACTIVE },
-              });
-        if (remainingActiveOpsAdmins === 0) {
-          throw new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED);
-        }
-      }
+      // 4b. 与 role-bindings / users 削权路径共用同一 advisory lock + 锁后计数策略。
+      await this.lastAdminProtection.assertCanRemoveOpsAdminBinding(tx, {
+        id: existing.id,
+        principalType: PrincipalType.USER,
+        principalId: targetUserId,
+        scopeType: BindingScopeType.GLOBAL,
+        status: BindingStatus.ACTIVE,
+        role: { code: role.code },
+      });
 
       // 4c. 软删(终态 scoped-authz PR6:status=ENDED + endedAt + deletedAt,保历史;
       //     外部行为等同旧物理删 —— judgment/list 只读 active,软删行不再出现,partial unique 释放槽位可再分配)。

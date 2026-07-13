@@ -16,6 +16,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import type { AppConfig } from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import { RbacService } from '../permissions/rbac.service';
+import { isWithinTerm } from '../permissions/role-binding-validity';
 import { getConstraintsForAction, type ActionConstraintContext } from './action-constraints';
 import type { AuthzDecision, MatchedGrant, ResolvedResource, ResourceRef } from './authz.types';
 import { ResourceResolverService } from './resource-resolver.service';
@@ -97,12 +98,6 @@ const SCOPE_ORDER: Record<BindingScopeType, number> = {
   [BindingScopeType.RESOURCE]: 4,
   [BindingScopeType.SELF]: 5,
 };
-
-function isWithinTerm(startedAt: Date, endedAt: Date | null, now: Date): boolean {
-  return (
-    startedAt.getTime() <= now.getTime() && (endedAt === null || endedAt.getTime() >= now.getTime())
-  );
-}
 
 @Injectable()
 export class AuthzService {

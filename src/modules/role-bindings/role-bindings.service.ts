@@ -16,6 +16,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import { RbacCacheService } from '../permissions/rbac-cache.service';
 import { RbacService } from '../permissions/rbac.service';
 import {
@@ -52,7 +53,6 @@ import { roleBindingSafeSelect, type SafeRoleBinding } from './role-bindings.sel
 //   仅 roleId→RbacRole、scopeOrgId→Organization 是真 FK(Restrict)。
 
 const AUDIT_RESOURCE_TYPE = 'role_binding';
-const OPS_ADMIN_CODE = 'ops-admin';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -64,9 +64,10 @@ export class RoleBindingsService {
     private readonly auditLogs: AuditLogsService,
     private readonly cache: RbacCacheService,
     private readonly roleDelegation: RoleDelegationPolicy,
+    private readonly lastAdminProtection: LastAdminProtectionPolicy,
   ) {}
 
-  // ============ helpers(自包含;沿 supervision-assignments 范式,不抽共享类)============
+  // ============ helpers(模块内聚；跨入口最后管理员不变量统一委托 LastAdminProtectionPolicy)============
 
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
     if (!(await this.rbac.can(user, action))) {
@@ -188,54 +189,6 @@ export class RoleBindingsService {
     if (!role) throw new BizException(BizCode.ROLE_NOT_FOUND);
     if (role.deletedAt !== null) throw new BizException(BizCode.ROLE_DELETED);
     return role;
-  }
-
-  // Findings #2/#26:GLOBAL ops-admin USER 的最后一条 ACTIVE 绑定不得离开 ACTIVE。
-  // advisory xact lock 让并发撤两名管理员也串行,避免两边都看到“还有一个”。
-  private async assertNotLastOpsAdminOrThrow(
-    tx: PrismaTx,
-    binding: {
-      id: string;
-      principalType: PrincipalType;
-      principalId: string | null;
-      scopeType: BindingScopeType;
-      status: BindingStatus;
-      role: { code: string };
-    },
-  ): Promise<void> {
-    if (
-      binding.principalType !== PrincipalType.USER ||
-      binding.principalId === null ||
-      binding.scopeType !== BindingScopeType.GLOBAL ||
-      binding.status !== BindingStatus.ACTIVE ||
-      binding.role.code !== OPS_ADMIN_CODE
-    ) {
-      return;
-    }
-
-    // Prisma 不支持 PostgreSQL void 结果型，显式 cast text 仅为驱动可反序列化；锁语义不变。
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('role-bindings:last-ops-admin'))::text AS locked`;
-    const otherBindings = await tx.roleBinding.findMany({
-      where: {
-        principalType: PrincipalType.USER,
-        scopeType: BindingScopeType.GLOBAL,
-        status: BindingStatus.ACTIVE,
-        deletedAt: null,
-        role: { code: OPS_ADMIN_CODE, deletedAt: null },
-        NOT: { id: binding.id },
-      },
-      select: { principalId: true },
-    });
-    const candidateIds = otherBindings
-      .map(({ principalId }) => principalId)
-      .filter((id): id is string => id !== null);
-    const remaining =
-      candidateIds.length === 0
-        ? 0
-        : await tx.user.count({
-            where: { id: { in: candidateIds }, deletedAt: null, status: UserStatus.ACTIVE },
-          });
-    if (remaining === 0) throw new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED);
   }
 
   // ============ GET /api/admin/v1/role-bindings ============
@@ -811,7 +764,7 @@ export class RoleBindingsService {
         dto.status !== undefined &&
         dto.status !== BindingStatus.ACTIVE
       ) {
-        await this.assertNotLastOpsAdminOrThrow(tx, current);
+        await this.lastAdminProtection.assertCanRemoveOpsAdminBinding(tx, current);
       }
 
       const data: Prisma.RoleBindingUpdateInput = {};
@@ -872,7 +825,7 @@ export class RoleBindingsService {
       });
       if (!current) throw new BizException(BizCode.ROLE_BINDING_NOT_FOUND);
 
-      await this.assertNotLastOpsAdminOrThrow(tx, current);
+      await this.lastAdminProtection.assertCanRemoveOpsAdminBinding(tx, current);
 
       const now = new Date();
       const updated = await tx.roleBinding.update({

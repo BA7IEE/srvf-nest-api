@@ -95,7 +95,11 @@ describe('authz ↔ rbac 等价矩阵(🔴 无 ref 行为锁)', () => {
     };
   }
 
-  async function bindGlobalRole(userId: string, roleCode: string): Promise<void> {
+  async function bindGlobalRole(
+    userId: string,
+    roleCode: string,
+    tenure: { startedAt?: Date; endedAt?: Date | null } = {},
+  ): Promise<void> {
     const role = await prisma.rbacRole.findFirstOrThrow({
       where: { code: roleCode, deletedAt: null },
       select: { id: true },
@@ -107,6 +111,7 @@ describe('authz ↔ rbac 等价矩阵(🔴 无 ref 行为锁)', () => {
         roleId: role.id,
         scopeType: BindingScopeType.GLOBAL,
         status: BindingStatus.ACTIVE,
+        ...tenure,
       },
     });
     cache.invalidateUser(userId);
@@ -213,6 +218,62 @@ describe('authz ↔ rbac 等价矩阵(🔴 无 ref 行为锁)', () => {
 
     const bare = await authz.explain(bareUserPayload, 'member.read.record');
     expect(bare).toEqual({ allow: false, reason: 'no_permission' });
+  });
+
+  it('finding 5 任期统一：未来/过期/在期 GLOBAL 绑定在 rbac.can、effectiveRoles、authz.explain 三处一致', async () => {
+    const referenceNow = new Date();
+    const resource = await prisma.member.create({
+      data: { memberNo: 'term-equiv-resource', displayName: 'Term Equivalence Resource' },
+      select: { id: true },
+    });
+    const cases = [
+      {
+        label: '未来 startedAt',
+        payload: await createUser('term-equiv-future', Role.USER),
+        startedAt: new Date(referenceNow.getTime() + 60 * 60 * 1000),
+        endedAt: null,
+        expected: false,
+      },
+      {
+        label: '已过 endedAt',
+        payload: await createUser('term-equiv-expired', Role.USER),
+        startedAt: new Date(referenceNow.getTime() - 2 * 60 * 60 * 1000),
+        endedAt: new Date(referenceNow.getTime() - 60 * 60 * 1000),
+        expected: false,
+      },
+      {
+        label: '当前在期',
+        payload: await createUser('term-equiv-active', Role.USER),
+        startedAt: new Date(referenceNow.getTime() - 60 * 60 * 1000),
+        endedAt: new Date(referenceNow.getTime() + 60 * 60 * 1000),
+        expected: true,
+      },
+    ];
+
+    for (const c of cases) {
+      await bindGlobalRole(c.payload.id, 'biz-admin', {
+        startedAt: c.startedAt,
+        endedAt: c.endedAt,
+      });
+
+      const viaRbac = await rbac.can(c.payload, 'member.read.record');
+      const myPermissions = await rbac.getMyPermissions(c.payload);
+      const viaAuthz = await authz.explain(c.payload, 'member.read.record', {
+        type: 'member',
+        id: resource.id,
+      });
+
+      expect({ label: c.label, viaRbac }).toEqual({ label: c.label, viaRbac: c.expected });
+      expect({
+        label: c.label,
+        hasEffectiveRole: myPermissions.effectiveRoles.some(({ code }) => code === 'biz-admin'),
+      }).toEqual({ label: c.label, hasEffectiveRole: c.expected });
+      expect({ label: c.label, viaAuthz: viaAuthz.allow }).toEqual({
+        label: c.label,
+        viaAuthz: c.expected,
+      });
+      expect(viaAuthz.reason).toBe(c.expected ? 'matched' : 'expired_grant');
+    }
   });
 
   it('🔴 scoped 绑定无感:建 ORGANIZATION_TREE@root 绑定后,该 user 无 ref 判权仍 === rbac 且逐码不变', async () => {

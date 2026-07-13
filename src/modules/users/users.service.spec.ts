@@ -7,6 +7,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import type { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import type { RbacService } from '../permissions/rbac.service';
 import type { SmsCodeService } from '../sms/sms-code.service';
 import type { WechatService } from '../wechat/wechat.service';
@@ -163,6 +164,19 @@ function makeRbacMock(allow = true) {
 }
 type RbacMock = ReturnType<typeof makeRbacMock>;
 
+function makeLastAdminProtectionMock() {
+  return {
+    assertCanRemoveSuperAdmin: jest.fn<Promise<void>, [unknown, string]>().mockResolvedValue(),
+    assertCanRemoveOpsAdminBinding: jest
+      .fn<Promise<void>, [unknown, unknown]>()
+      .mockResolvedValue(),
+    assertCanDeactivateOpsAdminUser: jest
+      .fn<Promise<void>, [unknown, string]>()
+      .mockResolvedValue(),
+  };
+}
+type LastAdminProtectionMock = ReturnType<typeof makeLastAdminProtectionMock>;
+
 // 微信 T3:UsersService 构造器新增 WechatService 依赖;既有 characterization 用例
 // 不触达 wechat 方法,mock 仅满足构造器形参(沿 smsCode mock 范式)。
 function makeWechatMock() {
@@ -177,18 +191,21 @@ function makeService(
   opts: {
     auditLogs?: AuditLogsMock;
     rbac?: RbacMock;
+    lastAdminProtection?: LastAdminProtectionMock;
     smsCode?: SmsCodeMock;
     wechat?: WechatMock;
   } = {},
 ): UsersService {
   const auditLogs = opts.auditLogs ?? makeAuditLogsMock();
   const rbac = opts.rbac ?? makeRbacMock();
+  const lastAdminProtection = opts.lastAdminProtection ?? makeLastAdminProtectionMock();
   const smsCode = opts.smsCode ?? makeSmsCodeMock();
   const wechat = opts.wechat ?? makeWechatMock();
   return new UsersService(
     prisma as unknown as PrismaService,
     auditLogs as unknown as AuditLogsService,
     rbac as unknown as RbacService,
+    lastAdminProtection as unknown as LastAdminProtectionPolicy,
     smsCode as unknown as SmsCodeService,
     wechat as unknown as WechatService,
   );
@@ -632,13 +649,16 @@ describe('UsersService (characterization, scoped)', () => {
 
     it('SA 降级最后一个 SUPER_ADMIN(remaining=0)→ LAST_SUPER_ADMIN_PROTECTED;不 update', async () => {
       const prisma = makePrismaMock();
+      const lastAdminProtection = makeLastAdminProtectionMock();
       prisma.user.findFirst.mockResolvedValue({
         id: 'u-2',
         role: Role.SUPER_ADMIN,
         status: UserStatus.ACTIVE,
       });
-      prisma.user.count.mockResolvedValue(0);
-      const service = makeService(prisma);
+      lastAdminProtection.assertCanRemoveSuperAdmin.mockRejectedValue(
+        new BizException(BizCode.LAST_SUPER_ADMIN_PROTECTED),
+      );
+      const service = makeService(prisma, { lastAdminProtection });
 
       await expect(
         service.updateRole(makeCurrentUser({ id: 'admin-1' }), 'u-2', makeRoleDto(Role.USER)),
@@ -648,14 +668,14 @@ describe('UsersService (characterization, scoped)', () => {
 
     it('SA 降级 SUPER_ADMIN(remaining≥1)→ update role', async () => {
       const prisma = makePrismaMock();
+      const lastAdminProtection = makeLastAdminProtectionMock();
       prisma.user.findFirst.mockResolvedValue({
         id: 'u-2',
         role: Role.SUPER_ADMIN,
         status: UserStatus.ACTIVE,
       });
-      prisma.user.count.mockResolvedValue(1);
       prisma.user.update.mockResolvedValue(makeSafeUser({ id: 'u-2', role: Role.USER }));
-      const service = makeService(prisma);
+      const service = makeService(prisma, { lastAdminProtection });
 
       const res = await service.updateRole(
         makeCurrentUser({ id: 'admin-1' }),
@@ -666,21 +686,23 @@ describe('UsersService (characterization, scoped)', () => {
       const updateArg = prisma.user.update.mock.calls[0][0] as { data: { role: Role } };
       expect(updateArg.data.role).toBe(Role.USER);
       expect(res.role).toBe(Role.USER);
+      expect(lastAdminProtection.assertCanRemoveSuperAdmin).toHaveBeenCalledWith(prisma, 'u-2');
     });
 
     it('SA 把 USER 升 ADMIN(目标非 SA)→ update;不做 last-SA count', async () => {
       const prisma = makePrismaMock();
+      const lastAdminProtection = makeLastAdminProtectionMock();
       prisma.user.findFirst.mockResolvedValue({
         id: 'u-2',
         role: Role.USER,
         status: UserStatus.ACTIVE,
       });
       prisma.user.update.mockResolvedValue(makeSafeUser({ id: 'u-2', role: Role.ADMIN }));
-      const service = makeService(prisma);
+      const service = makeService(prisma, { lastAdminProtection });
 
       await service.updateRole(makeCurrentUser({ id: 'admin-1' }), 'u-2', makeRoleDto(Role.ADMIN));
 
-      expect(prisma.user.count).not.toHaveBeenCalled();
+      expect(lastAdminProtection.assertCanRemoveSuperAdmin).not.toHaveBeenCalled();
       const updateArg = prisma.user.update.mock.calls[0][0] as { data: { role: Role } };
       expect(updateArg.data.role).toBe(Role.ADMIN);
     });
@@ -709,13 +731,16 @@ describe('UsersService (characterization, scoped)', () => {
 
     it('禁用最后一个 SUPER_ADMIN → LAST_SUPER_ADMIN_PROTECTED;不 update', async () => {
       const prisma = makePrismaMock();
+      const lastAdminProtection = makeLastAdminProtectionMock();
       prisma.user.findFirst.mockResolvedValue({
         id: 'u-2',
         role: Role.SUPER_ADMIN,
         status: UserStatus.ACTIVE,
       });
-      prisma.user.count.mockResolvedValue(0);
-      const service = makeService(prisma);
+      lastAdminProtection.assertCanRemoveSuperAdmin.mockRejectedValue(
+        new BizException(BizCode.LAST_SUPER_ADMIN_PROTECTED),
+      );
+      const service = makeService(prisma, { lastAdminProtection });
 
       await expect(
         service.updateStatus(
@@ -724,6 +749,29 @@ describe('UsersService (characterization, scoped)', () => {
           makeStatusDto(UserStatus.DISABLED),
         ),
       ).rejects.toEqual(new BizException(BizCode.LAST_SUPER_ADMIN_PROTECTED));
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('禁用最后一个 ops-admin 持有人 → LAST_OPS_ADMIN_PROTECTED;不 update', async () => {
+      const prisma = makePrismaMock();
+      const lastAdminProtection = makeLastAdminProtectionMock();
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'u-2',
+        role: Role.USER,
+        status: UserStatus.ACTIVE,
+      });
+      lastAdminProtection.assertCanDeactivateOpsAdminUser.mockRejectedValue(
+        new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED),
+      );
+      const service = makeService(prisma, { lastAdminProtection });
+
+      await expect(
+        service.updateStatus(
+          makeCurrentUser({ id: 'admin-1' }),
+          'u-2',
+          makeStatusDto(UserStatus.DISABLED),
+        ),
+      ).rejects.toEqual(new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED));
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
 
@@ -787,16 +835,38 @@ describe('UsersService (characterization, scoped)', () => {
 
     it('软删最后一个 SUPER_ADMIN → LAST_SUPER_ADMIN_PROTECTED;不 update', async () => {
       const prisma = makePrismaMock();
+      const lastAdminProtection = makeLastAdminProtectionMock();
       prisma.user.findFirst.mockResolvedValue({
         id: 'u-2',
         role: Role.SUPER_ADMIN,
         status: UserStatus.ACTIVE,
       });
-      prisma.user.count.mockResolvedValue(0);
-      const service = makeService(prisma);
+      lastAdminProtection.assertCanRemoveSuperAdmin.mockRejectedValue(
+        new BizException(BizCode.LAST_SUPER_ADMIN_PROTECTED),
+      );
+      const service = makeService(prisma, { lastAdminProtection });
 
       await expect(service.softDelete(makeCurrentUser({ id: 'admin-1' }), 'u-2')).rejects.toEqual(
         new BizException(BizCode.LAST_SUPER_ADMIN_PROTECTED),
+      );
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('软删最后一个 ops-admin 持有人 → LAST_OPS_ADMIN_PROTECTED;不 update', async () => {
+      const prisma = makePrismaMock();
+      const lastAdminProtection = makeLastAdminProtectionMock();
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'u-2',
+        role: Role.USER,
+        status: UserStatus.ACTIVE,
+      });
+      lastAdminProtection.assertCanDeactivateOpsAdminUser.mockRejectedValue(
+        new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED),
+      );
+      const service = makeService(prisma, { lastAdminProtection });
+
+      await expect(service.softDelete(makeCurrentUser({ id: 'admin-1' }), 'u-2')).rejects.toEqual(
+        new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED),
       );
       expect(prisma.user.update).not.toHaveBeenCalled();
     });

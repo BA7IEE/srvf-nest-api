@@ -4,7 +4,7 @@ import { HttpStatus } from '@nestjs/common';
 //
 // 当前状态(随实施滚动维护;每次新增模块码后校对):
 // - 招新证书闭环刀A(2026-07-13):28xxx +2(28054 已审核通过禁止重传 / 28055 未审核通过禁止标门槛)
-// - 230 个 BizCode(2026-07-13 亲核:grep `httpStatus: HttpStatus` 共 230;本刀新增 2 枚后终值)
+// - 232 个 BizCode(2026-07-13 亲核:Object.keys(BizCode).length;第一档 RBAC 安全收口新增 30104 后终值,本档 +0)
 // - 历史 2026-06-25 快照为 175 个 BizCode(彼时含 CMS content 290xx +5
 //   + 活动闭环硬化 20123 报名截止 +1 + 统一通知 310xx +5;2026-06-13 的「141」系彼时快照,此后 realname 27xxx
 //   + 招新·入队 28xxx(280xx/281xx/282xx)+ #399 review 错误码增量(13014 / 19010 / 30103)+ CMS content 290xx 5 码

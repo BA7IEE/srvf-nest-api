@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { BindingScopeType, BindingStatus, PrincipalType, Role } from '@prisma/client';
+import { Role } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -11,6 +11,7 @@ import type {
   ReloadRbacResponseDto,
 } from './rbac.dto';
 import { RbacCacheService } from './rbac-cache.service';
+import { effectiveGlobalUserRoleBindingWhere } from './role-binding-validity';
 
 // V2.x C-6 RBAC 实施 PR #6:RbacService 判权核心。
 // 沿 D7 v1.1 §7.1 判权优先级 + §8 judge 函数 + §9 缓存策略 + 用户拍板三项决策。
@@ -68,9 +69,9 @@ export class RbacService {
 
   // 取当前用户的有效权限点集合(走缓存)。
   //
-  // **判权唯一读源(终态 scoped-authz PR6 起,冻结稿 §8.2 行为锁)**:读 RoleBinding
-  //   (principalType=USER, scopeType=GLOBAL, status=ACTIVE, 未软删)聚合权限点 —— 等价替换旧
-  //   `user_roles` 读(每条 UserRole 已由第 37 migration 回填为该形态的 RoleBinding),**全局判权语义逐字不变**。
+  // **判权唯一读源(终态 scoped-authz PR6 起)**:读当前在期的 RoleBinding
+  //   (principalType=USER, scopeType=GLOBAL, status=ACTIVE, startedAt<=now<=endedAt〔null=不限〕,未软删)
+  //   聚合权限点。2026-07-13 finding 5 起,未来/过期绑定不再进入 legacy RBAC；在期绑定语义不变。
   // **🔴 只读 scopeType=GLOBAL,绝不判 scoped**:经 role-bindings CRUD 建的 ORGANIZATION/TREE/ACTIVITY/
   //   RESOURCE/SELF 绑定入库即止,本函数忽略非 GLOBAL 行(scoped 判权是 PR8 AuthzService)。旧 UserRole 表已 DROP。
   // **行为**:
@@ -78,19 +79,12 @@ export class RbacService {
   //   (SUPER_ADMIN 的短路在 `can()` / `getMyPermissions()` 中各自实现,语义不同)
   // - cache miss → 查 DB → set cache;cache hit → 直接返
   // - 排除已软删的 RbacRole(沿 D7 §13 失效场景:RbacRole 软删时 role_bindings 不联动,join 过滤)
-  async getUserPermissionCodes(userId: string): Promise<Set<string>> {
+  async getUserPermissionCodes(userId: string, now: Date = new Date()): Promise<Set<string>> {
     const cached = this.cache.get(userId);
     if (cached !== null) return cached;
 
     const bindings = await this.prisma.roleBinding.findMany({
-      where: {
-        principalType: PrincipalType.USER,
-        principalId: userId,
-        scopeType: BindingScopeType.GLOBAL,
-        status: BindingStatus.ACTIVE,
-        deletedAt: null,
-        role: { deletedAt: null },
-      },
+      where: effectiveGlobalUserRoleBindingWhere(userId, now),
       select: {
         role: {
           select: {
@@ -161,16 +155,17 @@ export class RbacService {
   //
   // **SUPER_ADMIN 处理**(沿用户拍板方案 B):
   // - `permissions`:返 DB 中 `Permission.code` 全集(短路语义实体化;不返 ["*"];不返空数组)
-  // - `effectiveRoles`:仍按 user_roles 查询(SUPER_ADMIN 通常未持任何 RBAC 角色,返空数组)
+  // - `effectiveRoles`:仍按当前在期 global RoleBinding 查询(SUPER_ADMIN 通常未持任何 RBAC 角色,返空数组)
   //
   // **非 SUPER_ADMIN**:`permissions` 走 getUserPermissionCodes(走缓存);`effectiveRoles` 查表。
   async getMyPermissions(user: CurrentUserPayload): Promise<MyPermissionsResponseDto> {
+    const now = new Date();
     const permissions =
       user.role === Role.SUPER_ADMIN
         ? await this.getAllPermissionCodes()
-        : Array.from(await this.getUserPermissionCodes(user.id)).sort();
+        : Array.from(await this.getUserPermissionCodes(user.id, now)).sort();
 
-    const effectiveRoles = await this.getEffectiveRoles(user.id);
+    const effectiveRoles = await this.getEffectiveRoles(user.id, now);
 
     return { permissions, effectiveRoles };
   }
@@ -258,18 +253,11 @@ export class RbacService {
   }
 
   // 查当前用户持有的 RBAC 业务角色摘要(沿 D7 §5.2.6 嵌套结构)。
-  // 终态 scoped-authz PR6:读 global RoleBinding(等价替换旧 user_roles 读;回填保 createdAt → 排序逐字不变)。
+  // 终态 scoped-authz PR6:读当前在期 global RoleBinding(回填保 createdAt → 排序逐字不变)。
   // 排除已软删的 RbacRole;按 createdAt 升序(与 UserRolesService.list 一致)。只读 GLOBAL,scoped 不计入摘要。
-  private async getEffectiveRoles(userId: string): Promise<EffectiveRoleDto[]> {
+  private async getEffectiveRoles(userId: string, now: Date): Promise<EffectiveRoleDto[]> {
     const rows = await this.prisma.roleBinding.findMany({
-      where: {
-        principalType: PrincipalType.USER,
-        principalId: userId,
-        scopeType: BindingScopeType.GLOBAL,
-        status: BindingStatus.ACTIVE,
-        deletedAt: null,
-        role: { deletedAt: null },
-      },
+      where: effectiveGlobalUserRoleBindingWhere(userId, now),
       select: {
         role: { select: { code: true, displayName: true } },
       },
