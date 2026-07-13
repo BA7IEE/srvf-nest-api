@@ -4,6 +4,7 @@ import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AttachmentAuditRecorder } from './attachment-audit-recorder';
+import { AttachmentContentValidator } from './attachment-content-validator';
 import { AttachmentsController } from './attachments.controller';
 import { AttachmentsService } from './attachments.service';
 
@@ -23,9 +24,9 @@ import { AttachmentsService } from './attachments.service';
 @Module({
   imports: [DatabaseModule, PermissionsModule, AuditLogsModule, StorageModule],
   controllers: [AttachmentsController],
-  providers: [AttachmentsService, AttachmentAuditRecorder],
+  providers: [AttachmentsService, AttachmentAuditRecorder, AttachmentContentValidator],
   // CMS 内容模块(2026-06-21,评审稿 §5.2):导出 AttachmentsService 供 content 模块复用
   // 上传/确认/删(写路径 rbac.can)+ listOwnerAttachmentsTrusted / resolveSignedUrlTrusted(可信只读)。
-  exports: [AttachmentsService],
+  exports: [AttachmentsService, AttachmentContentValidator],
 })
 export class AttachmentsModule {}

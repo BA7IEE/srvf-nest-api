@@ -12,6 +12,7 @@ import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { Prisma, Role } from '@prisma/client';
 import { expectBizError } from '../helpers/biz-code.assert';
+import { devStubOcrImage, VALID_PNG_IMAGE } from '../helpers/file-fixtures';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -84,7 +85,12 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
   // opts.ocr 覆盖造不一致/告警/不清晰(评审稿 §3.7);opts.withImage=false 造缺图。
   async function submit(
     payload: Record<string, unknown>,
-    opts: { withImage?: boolean; ocr?: Record<string, unknown>; signature?: Buffer | null } = {},
+    opts: {
+      withImage?: boolean;
+      ocr?: Record<string, unknown>;
+      image?: Buffer;
+      signature?: Buffer | null;
+    } = {},
   ): Promise<request.Response> {
     const submitPayload = { ...payload };
     if (submitPayload.phoneVerificationToken === undefined) {
@@ -121,14 +127,13 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       .post(OPEN_SUBMIT)
       .field('payload', JSON.stringify(submitPayload));
     if (withImage) {
-      req = req.attach('idCardImage', Buffer.from(JSON.stringify(envelope)), {
+      req = req.attach('idCardImage', opts.image ?? devStubOcrImage(envelope), {
         filename: 'id.jpg',
         contentType: 'image/jpeg',
       });
     }
     // 签名图必填:fixture 默认补齐;显式 signature:null 仅用于缺签名契约断言。
-    const signature =
-      opts.signature === undefined ? Buffer.from('default-signature') : opts.signature;
+    const signature = opts.signature === undefined ? VALID_PNG_IMAGE : opts.signature;
     if (signature) {
       req = req.attach('signatureImage', signature, {
         filename: 'sig.png',
@@ -147,7 +152,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       .post(OPEN_RECOGNIZE)
       .field('documentTypeCode', documentTypeCode);
     if (envelope === null) return req;
-    return req.attach('idCardImage', Buffer.from(JSON.stringify(envelope)), {
+    return req.attach('idCardImage', devStubOcrImage(envelope), {
       filename: 'id.jpg',
       contentType: 'image/jpeg',
     });
@@ -1042,6 +1047,39 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(await prisma.recruitmentApplication.count()).toBe(0);
   });
 
+  it('finding #10:主证件照声明 image/jpeg 但字节为文本 → 13016,零 OCR/零落库', async () => {
+    await openCycle();
+    const res = await submit(validPayload({ wechatCode: 'content-fake-id-card' }), {
+      image: Buffer.from('plain text pretending to be jpeg'),
+    });
+
+    expectBizError(res, BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH);
+    expect(await prisma.recruitmentApplication.count()).toBe(0);
+  });
+
+  it('finding #10:签名图声明 image/png 但字节为文本 → 13016,零 OCR/零落库', async () => {
+    await openCycle();
+    const res = await submit(validPayload({ wechatCode: 'content-fake-signature' }), {
+      signature: Buffer.from('plain text pretending to be png'),
+    });
+
+    expectBizError(res, BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH);
+    expect(await prisma.recruitmentApplication.count()).toBe(0);
+  });
+
+  it('finding #10:OCR 转发前拒绝伪装 JPEG 字节 → 13016', async () => {
+    await openCycle();
+    const res = await request(httpServer(app))
+      .post(OPEN_RECOGNIZE)
+      .field('documentTypeCode', 'mainland_id')
+      .attach('idCardImage', Buffer.from('plain text pretending to be jpeg'), {
+        filename: 'fake.jpg',
+        contentType: 'image/jpeg',
+      });
+
+    expectBizError(res, BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH);
+  });
+
   it('F5-③ 同意留痕 + 签名图全链:submit 落 stamps/key → promote 搬 profile + 报名行清空 + signed 真值', async () => {
     const cycle = await openCycle();
     const res = await submit(
@@ -1050,7 +1088,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         idCardNumber: ID_MATCH_A,
         privacyConsentVersion: '2026-07',
       }),
-      { signature: Buffer.from('fake-signature-bytes') },
+      { signature: VALID_PNG_IMAGE },
     );
     expect(res.status).toBe(201);
     expect(res.body.data.statusCode).toBe('verified');
@@ -1117,13 +1155,38 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     }))
       req = req.field(k, v);
     for (let i = 0; i < fileCount; i++) {
-      req = req.attach('images', Buffer.from(`fake-cert-bytes-${i}`), {
+      req = req.attach('images', VALID_PNG_IMAGE, {
         filename: `cert-${i}.png`,
         contentType: 'image/png',
       });
     }
     return req;
   }
+
+  it('finding #10:证书图声明 image/png 但字节为文本 → 13016,不落 key', async () => {
+    const cycle = await openCycle();
+    await createAppRow(cycle.id, {
+      openid: 'dev-openid-fake-cert',
+      phone: '13900009109',
+    });
+
+    const res = await request(httpServer(app))
+      .post(OPEN_CERTS)
+      .field('category', 'first_aid')
+      .field('issuingOrg', '深圳市红十字会')
+      .field('issuedAt', '2026-07-01')
+      .field('wechatCode', 'fake-cert')
+      .attach('images', Buffer.from('plain text pretending to be png'), {
+        filename: 'fake.png',
+        contentType: 'image/png',
+      });
+
+    expectBizError(res, BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH);
+    const row = await prisma.recruitmentApplication.findFirstOrThrow({
+      where: { openid: 'dev-openid-fake-cert' },
+    });
+    expect(row.certificateImages).toBeNull();
+  });
 
   it('A1/F7-① 上传必填发证信息并落库;重传整类覆盖;非法/缺字段/未来日期 → 400', async () => {
     const cycle = await openCycle();
@@ -1819,8 +1882,8 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
 
   // 富信封:DevStub 注入扩展字段 + 证件类型 + 卡片级告警 + 两裁剪图 base64。
   // 故意令 OCR 的 sex/birth 与号码推导**不同**(沿 D2:OCR 仅回显不覆盖);address 等供落库/回显。
-  const CARD_CROP_B64 = Buffer.from('fake-card-crop-bytes').toString('base64');
-  const PORTRAIT_CROP_B64 = Buffer.from('fake-portrait-crop-bytes').toString('base64');
+  const CARD_CROP_B64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x01]).toString('base64');
+  const PORTRAIT_CROP_B64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x02]).toString('base64');
   function richOcr(over: Record<string, unknown> = {}): Record<string, unknown> {
     return {
       name: '张三',

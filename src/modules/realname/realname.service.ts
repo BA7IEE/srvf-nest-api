@@ -4,6 +4,7 @@ import { ConfigType } from '@nestjs/config';
 import appConfig, { isProductionLike } from '../../config/app.config';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { AttachmentContentValidator } from '../attachments/attachment-content-validator';
 import { DevStubRealnameProvider } from './providers/dev-stub.provider';
 import { TencentRealnameProvider } from './providers/tencent-realname.provider';
 import { RealnameSettingsService } from './realname-settings.service';
@@ -37,6 +38,7 @@ export class RealnameVerificationService {
     private readonly settings: RealnameSettingsService,
     private readonly devStub: DevStubRealnameProvider,
     private readonly tencent: TencentRealnameProvider,
+    private readonly contentValidator: AttachmentContentValidator,
     @Inject(appConfig.KEY)
     private readonly cfg: ConfigType<typeof appConfig>,
   ) {}
@@ -48,6 +50,7 @@ export class RealnameVerificationService {
    */
   async recognize(input: RealnameOcrInput): Promise<RealnameOcrResult> {
     try {
+      this.contentValidator.validateFromBuffer({ mime: input.mimeType, buffer: input.image });
       const provider = await this.resolve();
       return await provider.recognize(input);
     } catch (err) {

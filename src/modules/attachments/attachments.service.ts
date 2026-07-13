@@ -23,11 +23,7 @@ import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
 import { AttachmentAuditRecorder } from './attachment-audit-recorder';
-import {
-  ATTACHMENT_SIGNATURE_PREFIX_BYTES,
-  matchesAttachmentSignature,
-  supportsAttachmentSignature,
-} from './attachment-signature';
+import { AttachmentContentValidator } from './attachment-content-validator';
 import {
   ATTACHMENT_OWNER_TYPES,
   AttachmentOwnerType,
@@ -95,6 +91,7 @@ export class AttachmentsService {
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly attachmentAuditRecorder: AttachmentAuditRecorder,
+    private readonly contentValidator: AttachmentContentValidator,
     @Inject(STORAGE_PROVIDER) private readonly provider: StorageProvider,
     private readonly storageSettings: StorageSettingsService,
     @Inject(appConfig.KEY)
@@ -105,13 +102,27 @@ export class AttachmentsService {
   // Provider 不可用(凭证缺失 / 网络抖动 / settings invalid)→ 降级 null(沿 §6.6.3 信息泄漏防御)。
   // toResponseDto 改为实例 async method(沿 Q-90-1;访问 this.provider / this.storageSettings)。
   private async toResponseDto(row: SafeAttachment): Promise<AttachmentResponseDto> {
-    const accessUrl = await this.resolveAccessUrl(row.key);
+    const accessUrl = await this.resolveAccessUrl(row.key, row.expireAt);
     return { ...row, accessUrl };
   }
 
-  // PR #90:accessUrl 解析失败统一降级 null;不向 client 抛凭证状态(沿 Q13 / §6.6 安全边界)
-  private async resolveAccessUrl(key: string): Promise<string | null> {
+  // PR #90:accessUrl 解析失败统一降级 null;不向 client 抛凭证状态(沿 Q13 / §6.6 安全边界)。
+  // finding #11:expireAt 在本单点生效;调用方已持行时显式传值,仅 key 直签路径补查附件行。
+  private async resolveAccessUrl(key: string, expireAt?: Date | null): Promise<string | null> {
     try {
+      const effectiveExpireAt =
+        expireAt === undefined
+          ? ((
+              await this.prisma.attachment.findUnique({
+                where: { key },
+                select: { expireAt: true },
+              })
+            )?.expireAt ?? null)
+          : expireAt;
+      if (effectiveExpireAt !== null && effectiveExpireAt.getTime() <= Date.now()) {
+        return null;
+      }
+
       // TTL 来源:storage_settings.downloadUrlTtlSeconds(沿 Q8 + Q-90-2);
       // settings null(DB 空 / Router fallback Local)→ 兜底 300s
       const settings = await this.storageSettings.getActiveSettings();
@@ -155,19 +166,22 @@ export class AttachmentsService {
         size: true,
         key: true,
         createdAt: true,
+        expireAt: true,
       },
       orderBy: { createdAt: 'asc' },
     });
     return Promise.all(
-      rows.map(async (r) => ({
-        id: r.id,
-        ownerType: r.ownerType,
-        mime: r.mime,
-        originalName: r.originalName,
-        size: r.size,
-        createdAt: r.createdAt,
-        accessUrl: await this.resolveAccessUrl(r.key),
-      })),
+      rows
+        .filter((r) => r.expireAt === null || r.expireAt.getTime() > Date.now())
+        .map(async (r) => ({
+          id: r.id,
+          ownerType: r.ownerType,
+          mime: r.mime,
+          originalName: r.originalName,
+          size: r.size,
+          createdAt: r.createdAt,
+          accessUrl: await this.resolveAccessUrl(r.key, r.expireAt),
+        })),
     );
   }
 
@@ -477,6 +491,13 @@ export class AttachmentsService {
     if (!isDerivedAttachmentKey(dto.key, keyEnvPrefix)) {
       throw new BizException(BizCode.ATTACHMENT_KEY_INVALID);
     }
+
+    // 7.6. finding #9:旧 create 端点原地加固。对象必须真实存在,且实际 size / 魔数与声明一致。
+    await this.contentValidator.validateFromObject({
+      key: dto.key,
+      mime: dto.mime,
+      size: dto.size,
+    });
 
     // 8. 事务内:写主表 + audit 落库(沿 D7 §7.2 同事务 fail-fast)。
     //    校验链(步骤 1-7)留事务外(PR #6c Q7 拍板;读不需事务);
@@ -849,34 +870,12 @@ export class AttachmentsService {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
     }
 
-    // === Step 4:provider.headObject 校验文件已上传 ===
-    const head = await this.provider.headObject(claims.key);
-    if (!head.exists) {
-      // 沿 Q13 信息泄漏防御:不存在统一返 13001(沿 §8.4.5)
-      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
-    }
-
-    // === Step 5:size 一致性校验(沿 §8.4.3 Step 3) ===
-    // head.size === undefined(LocalProvider 不持久化时也会返 size;COS 走 content-length)
-    // 严格 ===;不一致返 13013
-    if (head.size !== undefined && head.size !== claims.sizeBytes) {
-      throw new BizException(BizCode.ATTACHMENT_SIZE_EXCEEDED);
-    }
-
-    // === Step 6:v0.44.0 findings #22/#23/#24:永久黑名单复校 + 固定前缀魔数校验 ===
-    // upload-url 签发与 confirm 之间配置 / 代码可能已变;confirm 必须独立 fail-close。
-    if (isMimeBlocked(claims.mime)) {
-      throw new BizException(BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED);
-    }
-    if (supportsAttachmentSignature(claims.mime)) {
-      const prefix = await this.provider.readObjectPrefix(
-        claims.key,
-        ATTACHMENT_SIGNATURE_PREFIX_BYTES,
-      );
-      if (!matchesAttachmentSignature(claims.mime, prefix)) {
-        throw new BizException(BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH);
-      }
-    }
+    // === Step 4-6:对象存在 + size + blocklist + 魔数统一走 AttachmentContentValidator ===
+    const head = await this.contentValidator.validateFromObject({
+      key: claims.key,
+      mime: claims.mime,
+      size: claims.sizeBytes,
+    });
 
     // === Step 7:PII 不重做(沿 §8.4 Q10 + Q-10-X) ===
 

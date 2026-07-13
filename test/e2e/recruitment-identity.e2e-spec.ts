@@ -6,6 +6,7 @@ import { PrismaService } from '../../src/database/prisma.service';
 import { RealnameSettingsService } from '../../src/modules/realname/realname-settings.service';
 import { hashPhoneVerificationToken } from '../../src/modules/recruitment/recruitment.constants';
 import { expectBizError } from '../helpers/biz-code.assert';
+import { devStubOcrImage, VALID_PNG_IMAGE } from '../helpers/file-fixtures';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -63,11 +64,11 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
     return request(httpServer(app))
       .post(SUBMIT)
       .field('payload', JSON.stringify(payload))
-      .attach('idCardImage', Buffer.from(JSON.stringify(envelope)), {
+      .attach('idCardImage', devStubOcrImage(envelope), {
         filename: 'id.jpg',
         contentType: 'image/jpeg',
       })
-      .attach('signatureImage', Buffer.from('default-signature'), {
+      .attach('signatureImage', VALID_PNG_IMAGE, {
         filename: 'sig.png',
         contentType: 'image/png',
       });
@@ -611,7 +612,7 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
       .field('issuedAt', '2026-07-01')
       .field('phone', '13900000001')
       .field('code', FIXED_CODE)
-      .attach('images', Buffer.from('fake-cert'), {
+      .attach('images', VALID_PNG_IMAGE, {
         filename: 'c.png',
         contentType: 'image/png',
       });

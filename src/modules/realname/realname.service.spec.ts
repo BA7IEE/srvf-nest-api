@@ -70,6 +70,7 @@ function makeService(opts: {
     settings,
     { recognize: devStub } as unknown as DevStubRealnameProvider,
     { recognize: tencent } as unknown as TencentRealnameProvider,
+    { validateFromBuffer: jest.fn() } as never,
     { env: opts.env ?? 'test' } as unknown as ConfigType<typeof appConfig>,
   );
   return { service, devStub, tencent };

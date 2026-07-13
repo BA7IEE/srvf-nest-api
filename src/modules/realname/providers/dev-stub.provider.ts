@@ -11,7 +11,8 @@ import type {
 // 招新实名环节 OCR 改造(2026-06-22):DevStub OCR Provider(评审稿 E-RO-9)
 //
 // 非生产联调通道:不调任何外部服务,返**确定性** OCR 识别结果——
-// 把上传的证件照 buffer 当作 UTF-8 JSON「OCR 信封」解析回显:
+// 从上传证件照 buffer 的首个 `{` 起解析 UTF-8 JSON「OCR 信封」并回显（信封前必须保留
+// 合法图片签名，RealnameVerificationService 会先走 AttachmentContentValidator）:
 //   { name?, idCardNumber?, warnings?: string[], clarity?: boolean, documentCategory?: string }
 // e2e / 本地联调据此造每条链路(大陆自动通过 / 匹配不一致转人工 / 不清晰 / 防伪告警 / 回乡证类别)。
 // 解析失败(非 JSON)→ 兜底返「清晰、无告警、空字段」结果(本地随手联调用)。
@@ -74,7 +75,9 @@ export class DevStubRealnameProvider implements RealnameProvider {
   private parseEnvelope(image: Buffer): DevStubOcrEnvelope | null {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(image.toString('utf8'));
+      const jsonStart = image.indexOf(0x7b); // `{`;仅 DevStub 测试信封定位，不承担文件签名校验
+      if (jsonStart < 0) return null;
+      parsed = JSON.parse(image.subarray(jsonStart).toString('utf8'));
     } catch {
       return null;
     }

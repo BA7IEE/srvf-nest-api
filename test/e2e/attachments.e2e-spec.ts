@@ -1,6 +1,10 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+
 import type { INestApplication } from '@nestjs/common';
 import { AttachmentAccessLevel, Role } from '@prisma/client';
 import request from 'supertest';
+import appConfig from '../../src/config/app.config';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { isDerivedAttachmentKey } from '../../src/modules/attachments/attachment-key-format';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -8,6 +12,7 @@ import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { conformingAttachmentKey } from '../helpers/attachment-key';
 import { expectBizError } from '../helpers/biz-code.assert';
+import { attachmentBytesForMime } from '../helpers/file-fixtures';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -76,6 +81,9 @@ const ATTACHMENT_PERMISSION_CODES = [
 describe('attachments 主模块', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let localRoot: string;
+  let envPrefix: string;
+  let superUserId: string;
 
   let superAuth: string;
   let adminAuth: string;
@@ -97,7 +105,11 @@ describe('attachments 主模块', () => {
     prisma = app.get(PrismaService);
 
     // ============ 1. 创建 User ============
-    await createTestUser(app, { username: SUPER_USERNAME, role: Role.SUPER_ADMIN });
+    const superUser = await createTestUser(app, {
+      username: SUPER_USERNAME,
+      role: Role.SUPER_ADMIN,
+    });
+    superUserId = superUser.id;
     await createTestUser(app, { username: ADMIN_USERNAME, role: Role.ADMIN });
     const selfUser = await createTestUser(app, { username: SELF_USERNAME });
     const otherUser = await createTestUser(app, { username: OTHER_USERNAME });
@@ -264,6 +276,9 @@ describe('attachments 主模块', () => {
     selfAuth = (await loginAs(app, SELF_USERNAME)).authHeader;
     otherAuth = (await loginAs(app, OTHER_USERNAME)).authHeader;
     noMemberAuth = (await loginAs(app, NO_MEMBER_USERNAME)).authHeader;
+    const cfg = app.get<{ env: string; storage: { localRoot: string } }>(appConfig.KEY);
+    localRoot = cfg.storage.localRoot;
+    envPrefix = cfg.env;
   });
 
   afterAll(async () => {
@@ -276,15 +291,30 @@ describe('attachments 主模块', () => {
   };
 
   // 帮助函数:构造一个合法的 POST body
-  const buildBody = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-    key: conformingAttachmentKey(), // F2:服务端派生格式合规 key(原任意 key 已被 13014 校验拒)
-    originalName: 'test.jpg',
-    mime: 'image/jpeg',
-    size: 100_000,
-    ownerType: 'member',
-    ownerId: memberA.id,
-    ...overrides,
-  });
+  const buildBody = (overrides: Record<string, unknown> = {}): Record<string, unknown> => {
+    const body = {
+      key: conformingAttachmentKey(), // F2:服务端派生格式合规 key(原任意 key 已被 13014 校验拒)
+      originalName: 'test.jpg',
+      mime: 'image/jpeg',
+      size: 100_000,
+      ownerType: 'member',
+      ownerId: memberA.id,
+      ...overrides,
+    };
+    if (
+      typeof body.key === 'string' &&
+      typeof body.mime === 'string' &&
+      typeof body.size === 'number' &&
+      body.size >= 0 &&
+      body.size <= 20_000_000 &&
+      isDerivedAttachmentKey(body.key, envPrefix)
+    ) {
+      const filePath = resolve(localRoot, body.key);
+      mkdirSync(dirname(filePath), { recursive: true });
+      writeFileSync(filePath, attachmentBytesForMime(body.mime, body.size));
+    }
+    return body;
+  };
 
   // ============ 权限边界 ============
 
@@ -542,6 +572,72 @@ describe('attachments 主模块', () => {
       expect(d.etag).toBeUndefined();
       expect(d.uploadedBy).toBeTruthy();
       expect(d.originalUploaderName).toBe(SUPER_USERNAME);
+    });
+
+    it('finding #9:旧 create 声明 image/jpeg 但对象字节为文本 → 13016,且不落库', async () => {
+      const body = buildBody();
+      const filePath = resolve(localRoot, body.key as string);
+      writeFileSync(filePath, Buffer.alloc(body.size as number, 0x61));
+
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/attachments')
+        .set('Authorization', superAuth)
+        .send(body);
+
+      expectBizError(res, BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH);
+      expect(await prisma.attachment.findUnique({ where: { key: body.key as string } })).toBeNull();
+    });
+  });
+
+  describe('finding #11:expireAt 下载出口', () => {
+    beforeEach(truncateAttachments);
+
+    it('getById/list:过去时间不发 accessUrl；未来 / 未设置正常发', async () => {
+      const rows = await Promise.all(
+        (
+          [
+            ['expired', new Date('2000-01-01T00:00:00.000Z')],
+            ['future', new Date('2286-01-01T00:00:00.000Z')],
+            ['unset', null],
+          ] as const
+        ).map(([label, expireAt]) =>
+          prisma.attachment.create({
+            data: {
+              key: conformingAttachmentKey(),
+              originalName: `${label}.jpg`,
+              mime: 'image/jpeg',
+              size: 100,
+              uploadedBy: superUserId,
+              ownerType: 'member',
+              ownerId: memberA.id,
+              tags: [],
+              originalUploaderName: SUPER_USERNAME,
+              expireAt,
+            },
+          }),
+        ),
+      );
+      const [expired, future, unset] = rows;
+
+      const detail = await request(httpServer(app))
+        .get(`/api/admin/v1/attachments/${expired.id}`)
+        .set('Authorization', superAuth);
+      expect(detail.status).toBe(200);
+      expect(detail.body.data.accessUrl).toBeNull();
+
+      const list = await request(httpServer(app))
+        .get('/api/admin/v1/attachments?pageSize=100')
+        .set('Authorization', superAuth);
+      expect(list.status).toBe(200);
+      const byId = new Map(
+        (list.body.data.items as Array<{ id: string; accessUrl: string | null }>).map((item) => [
+          item.id,
+          item.accessUrl,
+        ]),
+      );
+      expect(byId.get(expired.id)).toBeNull();
+      expect(byId.get(future.id)).toMatch(/^\/uploads\//);
+      expect(byId.get(unset.id)).toMatch(/^\/uploads\//);
     });
   });
 

@@ -1,8 +1,11 @@
 import type { INestApplication } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { createTestUser } from '../fixtures/users.fixture';
+import { conformingAttachmentKey } from '../helpers/attachment-key';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -24,6 +27,7 @@ const OPEN_CONTENTS = '/api/open/v1/contents';
 describe('CMS 内容发布模块(第 28 模块)open/v1 公开读取面 e2e', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let uploaderUserId: string;
 
   // 直接造一条内容(绕过 admin 写路径;读取面不校验 contentTypeCode 字典)。
   async function makeContent(over: {
@@ -35,6 +39,7 @@ describe('CMS 内容发布模块(第 28 模块)open/v1 公开读取面 e2e', () 
     tags?: string[];
     publishedAt?: Date | null;
     authorUserId?: string | null;
+    coverImageKey?: string | null;
   }): Promise<string> {
     const row = await prisma.content.create({
       data: {
@@ -48,6 +53,7 @@ describe('CMS 内容发布模块(第 28 模块)open/v1 公开读取面 e2e', () 
         tags: over.tags ?? [],
         publishedAt: over.publishedAt ?? new Date(),
         authorUserId: over.authorUserId ?? null,
+        coverImageKey: over.coverImageKey ?? null,
       },
       select: { id: true },
     });
@@ -65,6 +71,9 @@ describe('CMS 内容发布模块(第 28 模块)open/v1 公开读取面 e2e', () 
     app = await createTestApp();
     prisma = app.get(PrismaService);
     await resetDb(app);
+    uploaderUserId = (
+      await createTestUser(app, { username: 'content-public-uploader', role: Role.SUPER_ADMIN })
+    ).id;
   });
 
   afterAll(async () => {
@@ -166,6 +175,95 @@ describe('CMS 内容发布模块(第 28 模块)open/v1 公开读取面 e2e', () 
       const id = await makeContent({ visibilityCode: 'public' });
       await prisma.content.update({ where: { id }, data: { deletedAt: new Date() } });
       expectBizError(await detailOpen(id), BizCode.CONTENT_NOT_FOUND);
+    });
+
+    it('finding #11:public 内容过滤过期附件/封面；未来与未设置仍返回 URL', async () => {
+      const expiredCoverKey = conformingAttachmentKey();
+      const futureCoverKey = conformingAttachmentKey();
+      const expiredContentId = await makeContent({ coverImageKey: expiredCoverKey });
+      const activeContentId = await makeContent({ coverImageKey: futureCoverKey });
+      const futureFileKey = conformingAttachmentKey();
+      const unsetFileKey = conformingAttachmentKey();
+      const expiredFileKey = conformingAttachmentKey();
+
+      await prisma.attachment.createMany({
+        data: [
+          {
+            key: expiredCoverKey,
+            originalName: 'expired-cover.jpg',
+            mime: 'image/jpeg',
+            size: 100,
+            uploadedBy: uploaderUserId,
+            ownerType: 'content-image',
+            ownerId: expiredContentId,
+            tags: [],
+            expireAt: new Date('2000-01-01T00:00:00.000Z'),
+          },
+          {
+            key: futureCoverKey,
+            originalName: 'future-cover.jpg',
+            mime: 'image/jpeg',
+            size: 100,
+            uploadedBy: uploaderUserId,
+            ownerType: 'content-image',
+            ownerId: activeContentId,
+            tags: [],
+            expireAt: new Date('2286-01-01T00:00:00.000Z'),
+          },
+          {
+            key: expiredFileKey,
+            originalName: 'expired.pdf',
+            mime: 'application/pdf',
+            size: 100,
+            uploadedBy: uploaderUserId,
+            ownerType: 'content-file',
+            ownerId: activeContentId,
+            tags: [],
+            expireAt: new Date('2000-01-01T00:00:00.000Z'),
+          },
+          {
+            key: futureFileKey,
+            originalName: 'future.pdf',
+            mime: 'application/pdf',
+            size: 100,
+            uploadedBy: uploaderUserId,
+            ownerType: 'content-file',
+            ownerId: activeContentId,
+            tags: [],
+            expireAt: new Date('2286-01-01T00:00:00.000Z'),
+          },
+          {
+            key: unsetFileKey,
+            originalName: 'unset.pdf',
+            mime: 'application/pdf',
+            size: 100,
+            uploadedBy: uploaderUserId,
+            ownerType: 'content-file',
+            ownerId: activeContentId,
+            tags: [],
+            expireAt: null,
+          },
+        ],
+      });
+
+      const expiredDetail = await detailOpen(expiredContentId);
+      expect(expiredDetail.status).toBe(200);
+      expect(expiredDetail.body.data.coverImageUrl).toBeNull();
+      expect(expiredDetail.body.data.attachments).toEqual([]);
+
+      const activeDetail = await detailOpen(activeContentId);
+      expect(activeDetail.status).toBe(200);
+      expect(activeDetail.body.data.coverImageUrl).toMatch(/^\/uploads\//);
+      const attachments = activeDetail.body.data.attachments as Array<{
+        originalName: string;
+        url: string | null;
+      }>;
+      expect(attachments.map((item) => item.originalName).sort()).toEqual([
+        'future-cover.jpg',
+        'future.pdf',
+        'unset.pdf',
+      ]);
+      expect(attachments.every((item) => item.url?.startsWith('/uploads/'))).toBe(true);
     });
   });
 

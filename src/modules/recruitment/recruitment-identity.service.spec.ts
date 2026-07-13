@@ -45,6 +45,7 @@ describe('RecruitmentIdentityService.assertPhoneSessionValid', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
       {} as never, // F7:storage(本组不触上传)
     );
     return { svc, prisma };
@@ -150,6 +151,7 @@ describe('RecruitmentIdentityService.consumePhoneSession', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     const verifiedAt = new Date('2026-06-24T00:00:00.000Z');
     const tx = buildTx(
@@ -180,6 +182,7 @@ describe('RecruitmentIdentityService.consumePhoneSession', () => {
 
   it('并发竞态:updateMany 命中 0 行(已被另一请求抢消费)→ 28050', async () => {
     const svc = new RecruitmentIdentityService(
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -266,6 +269,7 @@ describe('RecruitmentIdentityService.uploadCertificateImages · FOR UPDATE 后�
       {} as never,
       { code2session: jest.fn().mockResolvedValue({ openid: 'openid-1' }) } as never,
       { log: jest.fn().mockResolvedValue(undefined) } as never,
+      { validateFromBuffer: jest.fn() } as never,
       storage as never,
     );
     return { service, update, storage, getUpdatedData: () => updatedData };

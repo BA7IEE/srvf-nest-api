@@ -13,6 +13,7 @@ import type { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { RbacService } from '../permissions/rbac.service';
 import type { AttachmentAuditRecorder } from './attachment-audit-recorder';
+import { AttachmentContentValidator } from './attachment-content-validator';
 import type {
   ConfirmUploadDto,
   CreateAttachmentDto,
@@ -185,6 +186,7 @@ function makeUploadToken(overrides: Partial<UploadTokenClaims> = {}): string {
 function makePrismaMock() {
   const attachment = {
     findFirst: jest.fn<Promise<AttachmentRow | null>, [unknown]>(),
+    findUnique: jest.fn<Promise<{ expireAt: Date | null } | null>, [unknown]>(),
     findMany: jest.fn<Promise<AttachmentRow[]>, [unknown]>(),
     create: jest.fn<Promise<AttachmentRow>, [unknown]>(),
     update: jest.fn<Promise<AttachmentRow>, [unknown]>(),
@@ -235,7 +237,9 @@ function makeProviderMock() {
     generateDownloadUrl: jest
       .fn<Promise<{ url: string }>, [unknown]>()
       .mockResolvedValue({ url: 'https://signed.example/download' }),
-    headObject: jest.fn<Promise<{ exists: boolean; size?: number; etag?: string }>, [string]>(),
+    headObject: jest
+      .fn<Promise<{ exists: boolean; size?: number; etag?: string }>, [string]>()
+      .mockResolvedValue({ exists: true, size: 1024 }),
     readObjectPrefix: jest
       .fn<Promise<Buffer>, [string, number]>()
       .mockResolvedValue(Buffer.from('89504e470d0a1a0a00000000', 'hex')),
@@ -289,6 +293,7 @@ function makeService(
     prisma as unknown as PrismaService,
     rbac as unknown as RbacService,
     recorder as unknown as AttachmentAuditRecorder,
+    new AttachmentContentValidator(provider as unknown as StorageProvider),
     provider as unknown as StorageProvider,
     settings as unknown as StorageSettingsService,
     cfg,
@@ -333,6 +338,39 @@ describe('AttachmentsService (characterization)', () => {
       const res = await service.getById('att-1', makeCurrentUser({ memberId: 'mem-1' }));
 
       expect(res.accessUrl).toBeNull();
+    });
+
+    it('expireAt 已到期 → accessUrl=null，且不取 settings / 不签 URL', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      const settings = makeSettingsMock();
+      prisma.attachment.findFirst.mockResolvedValue(
+        makeAttachmentRow({ expireAt: new Date('2000-01-01T00:00:00.000Z') }),
+      );
+      const service = makeService(prisma, { provider, settings });
+
+      const res = await service.getById('att-1', makeCurrentUser({ memberId: 'mem-1' }));
+
+      expect(res.accessUrl).toBeNull();
+      expect(settings.getActiveSettings).not.toHaveBeenCalled();
+      expect(provider.generateDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('expireAt 未来或未设置 → 正常签 URL', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      prisma.attachment.findFirst
+        .mockResolvedValueOnce(makeAttachmentRow({ expireAt: new Date('2286-01-01T00:00:00Z') }))
+        .mockResolvedValueOnce(makeAttachmentRow({ expireAt: null }));
+      const service = makeService(prisma, { provider });
+
+      await expect(
+        service.getById('future', makeCurrentUser({ memberId: 'mem-1' })),
+      ).resolves.toMatchObject({ accessUrl: 'https://signed.example/download' });
+      await expect(
+        service.getById('unset', makeCurrentUser({ memberId: 'mem-1' })),
+      ).resolves.toMatchObject({ accessUrl: 'https://signed.example/download' });
+      expect(provider.generateDownloadUrl).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -1010,6 +1048,49 @@ describe('AttachmentsService (characterization)', () => {
       await expect(
         service.listOwnerAttachmentsTrusted('content-file', 'content-1'),
       ).resolves.toEqual([]);
+    });
+
+    it('已过期 content 附件从 public 可信列表移除；未来 / 未设置正常返回 URL', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      prisma.attachment.findMany.mockResolvedValue([
+        makeAttachmentRow({
+          id: 'expired',
+          ownerType: 'content-file',
+          expireAt: new Date('2000-01-01T00:00:00.000Z'),
+        }),
+        makeAttachmentRow({
+          id: 'future',
+          ownerType: 'content-file',
+          expireAt: new Date('2286-01-01T00:00:00.000Z'),
+        }),
+        makeAttachmentRow({ id: 'unset', ownerType: 'content-file', expireAt: null }),
+      ]);
+      const service = makeService(prisma, { provider });
+
+      const views = await service.listOwnerAttachmentsTrusted('content-file', 'content-1');
+
+      expect(views.map((view) => view.id)).toEqual(['future', 'unset']);
+      expect(views.every((view) => view.accessUrl === 'https://signed.example/download')).toBe(
+        true,
+      );
+      expect(provider.generateDownloadUrl).toHaveBeenCalledTimes(2);
+    });
+
+    it('resolveSignedUrlTrusted 按 key 补查 expireAt，已过期不签 URL', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      prisma.attachment.findUnique.mockResolvedValue({
+        expireAt: new Date('2000-01-01T00:00:00.000Z'),
+      });
+      const service = makeService(prisma, { provider });
+
+      await expect(service.resolveSignedUrlTrusted('expired-key')).resolves.toBeNull();
+      expect(prisma.attachment.findUnique).toHaveBeenCalledWith({
+        where: { key: 'expired-key' },
+        select: { expireAt: true },
+      });
+      expect(provider.generateDownloadUrl).not.toHaveBeenCalled();
     });
   });
 });

@@ -16,6 +16,7 @@ import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { AttachmentContentValidator } from '../attachments/attachment-content-validator';
 import { assertEmergencyRelationCodeValid } from '../emergency-contacts/emergency-relation.validation';
 import { RbacService } from '../permissions/rbac.service';
 import { RealnameVerificationService } from '../realname/realname.service';
@@ -114,6 +115,7 @@ export class RecruitmentApplicationsService {
     private readonly wechat: WechatService,
     private readonly realname: RealnameVerificationService,
     private readonly identity: RecruitmentIdentityService,
+    private readonly contentValidator: AttachmentContentValidator,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     @Inject(appConfig.KEY) private readonly config: ConfigType<typeof appConfig>,
   ) {}
@@ -333,6 +335,11 @@ export class RecruitmentApplicationsService {
     ) {
       throw new BizException(BizCode.BAD_REQUEST);
     }
+    this.contentValidator.validateFromBuffer({ mime: image.mimetype, buffer: image.buffer });
+    this.contentValidator.validateFromBuffer({
+      mime: signatureImage.mimetype,
+      buffer: signatureImage.buffer,
+    });
 
     // 7. OCR 六分流分类(评审稿 §2.1;分叉②:仅大陆重识别;护照/回乡证/非 OCR 类型 → manual,提交端不再 OCR)。
     //    分叉③:大陆 OCR 通道未配/上游失败不外抛 → outcome='ocr_error'(classifyMainlandOcr try/catch 归一)。
@@ -851,9 +858,11 @@ export class RecruitmentApplicationsService {
   ): Promise<string | null> {
     if (!base64) return null;
     const key = `${prefix}/${cycleId}/${randomUUID()}.jpg`;
+    const body = Buffer.from(base64, 'base64');
+    this.contentValidator.validateFromBuffer({ mime: 'image/jpeg', buffer: body });
     await this.storage.putObject({
       key,
-      body: Buffer.from(base64, 'base64'),
+      body,
       contentType: 'image/jpeg',
     });
     storedKeys.push(key);
