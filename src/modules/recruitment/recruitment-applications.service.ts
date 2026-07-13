@@ -12,6 +12,7 @@ import appConfig from '../../config/app.config';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -723,6 +724,12 @@ export class RecruitmentApplicationsService {
       if (row.statusCode !== APP_STATUS_MANUAL) {
         throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
       }
+      await claimAtStatus(tx, {
+        target: 'recruitmentApplication',
+        id: row.id,
+        expectedStatus: row.statusCode,
+        invalidStatusBiz: BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL,
+      });
       let updated: RecruitmentApplication;
       if (dto.approved) {
         const tempNo = await this.issueTempNo(tx, row.cycleId);

@@ -5,6 +5,7 @@ import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -49,6 +50,15 @@ const CERT_STATUS_PENDING = 'pending';
 const CERT_STATUS_VERIFIED = 'verified';
 const CERT_STATUS_REJECTED = 'rejected';
 // CERT_STATUS_EXPIRED 由后台任务推动,本批次 service 不主动写入
+
+const CERTIFICATE_CORE_FIELDS = [
+  'certTypeCode',
+  'certSubTypeCode',
+  'issuingOrg',
+  'certNumber',
+  'issuedAt',
+  'expiredAt',
+] as const satisfies readonly (keyof UpdateCertificateDto)[];
 
 // 详情 / 写操作返回的完整 select(永不含 deletedAt 软删内部状态、永不含 expireNotifyDueAt
 // hook 字段);必须与 CertificateResponseDto 同步维护。
@@ -347,7 +357,7 @@ export class CertificatesService {
         );
       }
 
-      const data: Prisma.CertificateUpdateInput = {};
+      const data: Prisma.CertificateUncheckedUpdateInput = {};
       if (dto.certTypeCode !== undefined) data.certTypeCode = dto.certTypeCode;
       if (dto.certSubTypeCode !== undefined) data.certSubTypeCode = dto.certSubTypeCode;
       if (dto.issuingOrg !== undefined) data.issuingOrg = dto.issuingOrg;
@@ -355,6 +365,20 @@ export class CertificatesService {
       if (dto.issuedAt !== undefined) data.issuedAt = normalizeDateOnly(dto.issuedAt);
       if (dto.expiredAt !== undefined) data.expiredAt = normalizeDateOnly(dto.expiredAt);
 
+      const coreFieldEdited = CERTIFICATE_CORE_FIELDS.some((field) => dto[field] !== undefined);
+      if (coreFieldEdited && before.certStatusCode !== CERT_STATUS_PENDING) {
+        data.certStatusCode = CERT_STATUS_PENDING;
+        data.verifiedBy = null;
+        data.verifiedAt = null;
+        data.verifyNote = null;
+      }
+
+      await claimAtStatus(tx, {
+        target: 'certificate',
+        id: before.id,
+        expectedStatus: before.certStatusCode,
+        invalidStatusBiz: BizCode.CERTIFICATE_INVALID_STATE_TRANSITION,
+      });
       const updated = await tx.certificate.update({
         where: { id: before.id },
         data,
@@ -440,6 +464,12 @@ export class CertificatesService {
         throw new BizException(BizCode.CERTIFICATE_INVALID_STATE_TRANSITION);
       }
 
+      await claimAtStatus(tx, {
+        target: 'certificate',
+        id: before.id,
+        expectedStatus: before.certStatusCode,
+        invalidStatusBiz: BizCode.CERTIFICATE_INVALID_STATE_TRANSITION,
+      });
       const verifierMemberId = await this.getVerifierMemberId(currentUser.id, tx);
 
       const updated = await tx.certificate.update({
@@ -491,6 +521,12 @@ export class CertificatesService {
         throw new BizException(BizCode.CERTIFICATE_INVALID_STATE_TRANSITION);
       }
 
+      await claimAtStatus(tx, {
+        target: 'certificate',
+        id: before.id,
+        expectedStatus: before.certStatusCode,
+        invalidStatusBiz: BizCode.CERTIFICATE_INVALID_STATE_TRANSITION,
+      });
       const verifierMemberId = await this.getVerifierMemberId(currentUser.id, tx);
 
       const updated = await tx.certificate.update({

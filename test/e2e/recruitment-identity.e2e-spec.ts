@@ -543,6 +543,33 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
     });
   });
 
+  it('finding #6:微信通道并发 withdraw 两次 → 恰一方成功,败者 NOT_WITHDRAWABLE', async () => {
+    const cycle = await openCycle();
+    const target = await seedApp(cycle.id, {
+      phone: '13900000023',
+      openid: 'dev-openid-wd-race',
+      statusCode: 'manual_review',
+      tempNo: null,
+      idCardNumber: 'WDID-RACE-001',
+    });
+    const results = await Promise.all([
+      request(httpServer(app)).post(WITHDRAW).send({ wechatCode: 'wd-race' }),
+      request(httpServer(app)).post(WITHDRAW).send({ wechatCode: 'wd-race' }),
+    ]);
+
+    expect(results.filter((result) => result.status === 200)).toHaveLength(1);
+    const loser = results.find((result) => result.status !== 200);
+    expect(loser).toBeDefined();
+    expectBizError(loser!, BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE);
+    expect(
+      await prisma.recruitmentApplication.findUniqueOrThrow({
+        where: { id: target.id },
+        select: { statusCode: true },
+      }),
+    ).toEqual({ statusCode: 'withdrawn' });
+    expect(await prisma.auditLog.count({ where: { resourceId: target.id } })).toBe(1);
+  });
+
   it('F6-③ DoD:撤销后同轮同证件号重报成功(partial unique 排除集 + 三键去重排除集均含 withdrawn)', async () => {
     await openCycle();
     // 首报(H5 链)→ verified

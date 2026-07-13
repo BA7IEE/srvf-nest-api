@@ -131,6 +131,7 @@ function makePrismaMock() {
     findFirst: jest.fn<Promise<CertRow | null>, [unknown]>(),
     findMany: jest.fn<Promise<CertRow[]>, [unknown]>(),
     create: jest.fn<Promise<CertRow>, [unknown]>(),
+    updateMany: jest.fn<Promise<{ count: number }>, [unknown]>().mockResolvedValue({ count: 1 }),
     update: jest.fn<Promise<CertRow>, [unknown]>(),
   };
   const dictItem = { findFirst: jest.fn<Promise<{ id: string } | null>, [unknown]>() };

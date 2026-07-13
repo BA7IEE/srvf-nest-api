@@ -5,9 +5,14 @@
 ## Unreleased
 
 > **⚠️ 行为变更(后台权限配置须适配)**:非 SUPER_ADMIN 不能通过任何角色委派入口授予/撤销特权角色,也不能向角色分配控制面权限码;7 个 seed 内置角色对所有身份禁止 API 删除。未来/过期 GLOBAL 角色绑定不再经 legacy RBAC 产权限或角色摘要;禁用/软删最后一个 active GLOBAL ops-admin 持有人改返 30101。端点、DTO、OpenAPI path/schema 均不变。
+>
+> **⚠️ 行为变更(并发状态写)**:受保护状态迁移统一增加期望旧态原子认领;同一旧态的并发写败者不再静默覆盖赢家,改返各模块既有 `*_STATUS_INVALID` / `WRONG_STATE`。
+>
+> **⚠️ 行为变更(证书信任回退)**:已 verified / rejected 证书编辑任一核心字段后统一回退 pending 重审,并清空 `verifiedBy` / `verifiedAt` / `verifyNote`;pending 证书编辑不变。
 
 - **第一档 RBAC 安全收口(findings 1/2/3)**:新增单一 `isControlPlanePermissionCode()`(`rbac.*` ∪ `role-binding.*` ∪ 6 条 SA-only 保留码)+ 单一 `RoleDelegationPolicy`,统一覆盖 role-bindings create/preview/特权 update 与 user-roles assign/revoke(非 SA 拒 `30102`,SA 短路;普通业务角色委派不变);role-permissions 对非 SA 分配任一控制面码整批拒既有 `30103`;7 个内置角色 API 删除统一拒新增 `PROTECTED_ROLE_DELETE_FORBIDDEN=30104`,自定义角色删除不变;seed 漂移哨兵锁定 7 角色。0 schema / 0 migration / 0 新端点 / 0 新权限码 / 0 角色或绑定变化;权限码 205 / biz-admin 81 / org-admin 60 / ops-admin 96 / endpoint 336 / controller 66 / module 35 / migration 48 / role 7 不变;BizCode 231→**232**。
 - **第二档 RBAC 安全收口(findings 4/5)**:新增共享 GLOBAL 绑定任期谓词/Prisma where(`startedAt<=now` 且 `endedAt=null|>=now`),legacy `RbacService.getUserPermissionCodes/getEffectiveRoles` 与 `AuthzService` 共用,未来/过期绑定三处一致失效、在期行为不变;新增 `LastAdminProtectionPolicy` 与单一 advisory-lock helper,最后 SUPER_ADMIN 固定锁键 `users:last-super-admin`,最后 ops-admin 固定复用 `role-bindings:last-ops-admin`,统一覆盖 role-bindings status/remove、user-roles revoke、users disable/soft-delete,最后持有人返既有 `30101`;跨入口并发仅一方成功。0 schema / 0 migration / 0 新端点 / 0 DTO / 0 OpenAPI schema / 0 新权限码 / 0 BizCode;计数全不变。
+- **第三档状态迁移/证书信任收口(findings 6/7)**:新增单一公共 `claimAtStatus` no-op CAS 原语,接入 activities 的 update/softDelete/publish/cancel/complete、activity-registrations 的 cancelAdmin/reopen/cancelMy、attendances 的 edit/softDelete(置于 records 读取/破坏性写之前)、certificates 的 update/verify/reject、recruitment 的 resolveManual/withdraw、team-join evaluate;withdraw 的报名行读+判态移入同一事务。证书 6 个核心字段任一被编辑且旧态非 pending 时,同写回退 pending 并清空三项核验信任字段。各状态机 from→to 矩阵零改动;0 schema / 0 migration(仍 48)/ 0 新端点(仍 336)/ 0 DTO/OpenAPI schema / 0 新权限码(仍 205)/ 0 角色(仍 7)/ BizCode +0(仍 232)。
 
 ## v0.44.0 - 2026-07-13
 

@@ -487,6 +487,39 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
   describe('C. cancelAdmin(pending|pass → cancelled)', () => {
     beforeEach(isolateFixtures);
 
+    it('C0. 同一 pending 并发 cancelAdmin 两次 → 恰一方成功,败者 ACTIVITY_REGISTRATION_STATUS_INVALID', async () => {
+      const regId = await seedRegistration({ memberId: ctx.memberCId, statusCode: 'pending' });
+      const results = await Promise.allSettled([
+        ctx.service.cancelAdmin(
+          ctx.publishedActivityId,
+          regId,
+          { cancelReason: 'race left' },
+          ctx.adminPayload,
+          AUDIT_META,
+        ),
+        ctx.service.cancelAdmin(
+          ctx.publishedActivityId,
+          regId,
+          { cancelReason: 'race right' },
+          ctx.adminPayload,
+          AUDIT_META,
+        ),
+      ]);
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(results.find((result) => result.status === 'rejected')).toMatchObject({
+        status: 'rejected',
+        reason: { biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID },
+      });
+      expect(
+        await ctx.prisma.activityRegistration.findUniqueOrThrow({
+          where: { id: regId },
+          select: { statusCode: true },
+        }),
+      ).toEqual({ statusCode: 'cancelled' });
+      expect(await ctx.prisma.auditLog.count({ where: { resourceId: regId } })).toBe(1);
+    });
+
     it('C1. pending → cancelled:cancelledByPath=admin + cancelReason 入库 + audit', async () => {
       const regId = await seedRegistration({ memberId: ctx.memberCId, statusCode: 'pending' });
 

@@ -6,6 +6,7 @@ import { PageResultDto } from '../../common/dto/pagination.dto';
 import type { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -237,6 +238,12 @@ export class TeamJoinApplicationsService {
         data.evaluationExtendedUntil = new Date(dto.evaluationExtendedUntil);
       }
 
+      await claimAtStatus(tx, {
+        target: 'teamJoinApplication',
+        id: row.id,
+        expectedStatus: row.statusCode,
+        invalidStatusBiz: BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE,
+      });
       const updated = await tx.teamJoinApplication.update({
         where: { id },
         data,

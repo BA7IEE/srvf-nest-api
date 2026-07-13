@@ -466,6 +466,78 @@ describe('certificates 模块', () => {
       expect(res.body.data.certNumber).toBe('PATCH-001-UPDATED');
     });
 
+    it('finding #7:verified 核心字段编辑 → pending + 核验三字段清空,随后可重新 verify', async () => {
+      const created = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ certNumber: 'RESET-VERIFIED-BEFORE' }));
+      const certificateId = created.body.data.id as string;
+      await request(httpServer(app))
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${certificateId}/verify`)
+        .set('Authorization', adminWithMemberAuth)
+        .send({ verifyNote: '首次核验通过' })
+        .expect(200);
+
+      const edited = await request(httpServer(app))
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${certificateId}`)
+        .set('Authorization', adminAuth)
+        .send({ certNumber: 'RESET-VERIFIED-AFTER' })
+        .expect(200);
+      expect(edited.body.data.certStatusCode).toBe('pending');
+      expect(edited.body.data.verifiedBy).toBeNull();
+      expect(edited.body.data.verifiedAt).toBeNull();
+      expect(edited.body.data.verifyNote).toBeNull();
+
+      const reverified = await request(httpServer(app))
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${certificateId}/verify`)
+        .set('Authorization', adminWithMemberAuth)
+        .send({ verifyNote: '核心字段修改后重审' })
+        .expect(200);
+      expect(reverified.body.data.certStatusCode).toBe('verified');
+      expect(reverified.body.data.verifiedBy).toBe(adminMemberId);
+    });
+
+    it('finding #7:rejected 核心字段编辑 → pending + 核验三字段清空', async () => {
+      const created = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ certNumber: 'RESET-REJECTED-BEFORE' }));
+      const certificateId = created.body.data.id as string;
+      await request(httpServer(app))
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${certificateId}/reject`)
+        .set('Authorization', adminWithMemberAuth)
+        .send({ verifyNote: '首次核验驳回' })
+        .expect(200);
+
+      const edited = await request(httpServer(app))
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${certificateId}`)
+        .set('Authorization', adminAuth)
+        .send({ issuingOrg: '修正后的颁发机构' })
+        .expect(200);
+      expect(edited.body.data.certStatusCode).toBe('pending');
+      expect(edited.body.data.verifiedBy).toBeNull();
+      expect(edited.body.data.verifiedAt).toBeNull();
+      expect(edited.body.data.verifyNote).toBeNull();
+    });
+
+    it('finding #7:pending 核心字段编辑保持 pending,不改变既有核验空值语义', async () => {
+      const created = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ certNumber: 'RESET-PENDING-BEFORE' }));
+      const certificateId = created.body.data.id as string;
+
+      const edited = await request(httpServer(app))
+        .patch(`/api/admin/v1/members/${memberA}/certificates/${certificateId}`)
+        .set('Authorization', adminAuth)
+        .send({ certNumber: 'RESET-PENDING-AFTER' })
+        .expect(200);
+      expect(edited.body.data.certStatusCode).toBe('pending');
+      expect(edited.body.data.verifiedBy).toBeNull();
+      expect(edited.body.data.verifiedAt).toBeNull();
+      expect(edited.body.data.verifyNote).toBeNull();
+    });
+
     it('Q-A4:更新 issuedAt + expiredAt → 200', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberA}/certificates/${certIdA}`)
@@ -649,6 +721,36 @@ describe('certificates 模块', () => {
       expect(res.body.data.certStatusCode).toBe('verified');
       expect(res.body.data.verifiedBy).toBe(adminMemberId);
       expect(res.body.data.verifyNote).toBeNull();
+    });
+
+    it('finding #6:同一 pending 并发 verify || reject → 恰一方成功,败者 INVALID_STATE_TRANSITION', async () => {
+      const created = await request(httpServer(app))
+        .post(`/api/admin/v1/members/${memberA}/certificates`)
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ certNumber: 'CERT-VERIFY-RACE' }));
+      const certificateId = created.body.data.id as string;
+
+      const results = await Promise.all([
+        request(httpServer(app))
+          .patch(`/api/admin/v1/members/${memberA}/certificates/${certificateId}/verify`)
+          .set('Authorization', adminWithMemberAuth)
+          .send({ verifyNote: 'race verify' }),
+        request(httpServer(app))
+          .patch(`/api/admin/v1/members/${memberA}/certificates/${certificateId}/reject`)
+          .set('Authorization', adminWithMemberAuth)
+          .send({ verifyNote: 'race reject' }),
+      ]);
+
+      expect(results.filter((result) => result.status === 200)).toHaveLength(1);
+      const loser = results.find((result) => result.status !== 200);
+      expect(loser).toBeDefined();
+      expectBizError(loser!, BizCode.CERTIFICATE_INVALID_STATE_TRANSITION);
+      const row = await prisma.certificate.findUniqueOrThrow({
+        where: { id: certificateId },
+        select: { certStatusCode: true },
+      });
+      expect(['verified', 'rejected']).toContain(row.certStatusCode);
+      expect(await prisma.auditLog.count({ where: { resourceId: certificateId } })).toBe(2);
     });
 
     it('已 verified 再 verify → CERTIFICATE_INVALID_STATE_TRANSITION', async () => {
