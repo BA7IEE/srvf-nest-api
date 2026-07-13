@@ -5,7 +5,6 @@ import {
   BindingStatus,
   PrincipalType,
   Prisma,
-  Role,
   UserStatus,
 } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -19,6 +18,11 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacCacheService } from '../permissions/rbac-cache.service';
 import { RbacService } from '../permissions/rbac.service';
+import {
+  isPrivilegedRole,
+  RoleDelegationPolicy,
+  type RoleDelegationTarget,
+} from '../permissions/role-delegation.policy';
 import {
   BatchCreateRoleBindingsDto,
   BatchCreateRoleBindingsResponseDto,
@@ -49,7 +53,6 @@ import { roleBindingSafeSelect, type SafeRoleBinding } from './role-bindings.sel
 
 const AUDIT_RESOURCE_TYPE = 'role_binding';
 const OPS_ADMIN_CODE = 'ops-admin';
-const PRIVILEGED_PERMISSION_PREFIXES = ['role-binding.', 'rbac.'] as const;
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -60,6 +63,7 @@ export class RoleBindingsService {
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
     private readonly cache: RbacCacheService,
+    private readonly roleDelegation: RoleDelegationPolicy,
   ) {}
 
   // ============ helpers(自包含;沿 supervision-assignments 范式,不抽共享类)============
@@ -184,36 +188,6 @@ export class RoleBindingsService {
     if (!role) throw new BizException(BizCode.ROLE_NOT_FOUND);
     if (role.deletedAt !== null) throw new BizException(BizCode.ROLE_DELETED);
     return role;
-  }
-
-  // Finding #1:移植 user-roles 的角色分级保护。SUPER_ADMIN 可绑任意角色；ops-admin
-  // 只能绑不含 role-binding.*/rbac.* 的低权角色；其余调用者即使偶然持入口码也不得分配角色。
-  private async assertCanAssignRoleOrThrow(
-    actor: CurrentUserPayload,
-    tx: PrismaTx,
-    targetRole: Awaited<ReturnType<RoleBindingsService['findRoleOrThrow']>>,
-  ): Promise<void> {
-    if (actor.role === Role.SUPER_ADMIN) return;
-
-    const targetIsPrivileged =
-      targetRole.code === OPS_ADMIN_CODE ||
-      targetRole.rolePermissions.some(({ permission }) =>
-        PRIVILEGED_PERMISSION_PREFIXES.some((prefix) => permission.code.startsWith(prefix)),
-      );
-    if (targetIsPrivileged) throw new BizException(BizCode.CANNOT_ASSIGN_HIGHER_ROLE);
-
-    const actorOpsAdminBinding = await tx.roleBinding.findFirst({
-      where: {
-        principalType: PrincipalType.USER,
-        principalId: actor.id,
-        scopeType: BindingScopeType.GLOBAL,
-        status: BindingStatus.ACTIVE,
-        deletedAt: null,
-        role: { code: OPS_ADMIN_CODE, deletedAt: null },
-      },
-      select: { id: true },
-    });
-    if (!actorOpsAdminBinding) throw new BizException(BizCode.CANNOT_ASSIGN_HIGHER_ROLE);
   }
 
   // Findings #2/#26:GLOBAL ops-admin USER 的最后一条 ACTIVE 绑定不得离开 ACTIVE。
@@ -562,9 +536,16 @@ export class RoleBindingsService {
     await collect(() =>
       this.validatePrincipalOrThrow(this.prisma, query.principalType, rawPrincipalId),
     );
+    let targetRole: RoleDelegationTarget | null = null;
     await collect(async () => {
-      await this.findRoleOrThrow(this.prisma, query.roleId);
+      targetRole = await this.findRoleOrThrow(this.prisma, query.roleId);
     });
+    const roleForDelegation = targetRole;
+    if (roleForDelegation !== null) {
+      await collect(() =>
+        this.roleDelegation.assertActorMayConferRole(user, roleForDelegation, this.prisma),
+      );
+    }
 
     if (
       query.scopeType === BindingScopeType.ORGANIZATION ||
@@ -694,7 +675,7 @@ export class RoleBindingsService {
     const result = await this.prisma.$transaction(async (tx) => {
       await this.validatePrincipalOrThrow(tx, dto.principalType, rawPrincipalId);
       const role = await this.findRoleOrThrow(tx, dto.roleId);
-      await this.assertCanAssignRoleOrThrow(user, tx, role);
+      await this.roleDelegation.assertActorMayConferRole(user, role, tx);
 
       if (
         dto.scopeType === BindingScopeType.ORGANIZATION ||
@@ -779,7 +760,15 @@ export class RoleBindingsService {
     const result = await this.prisma.$transaction(async (tx) => {
       const current = await tx.roleBinding.findFirst({
         where: notDeletedWhere({ id }),
-        select: { ...roleBindingSafeSelect, role: { select: { code: true } } },
+        select: {
+          ...roleBindingSafeSelect,
+          role: {
+            select: {
+              code: true,
+              rolePermissions: { select: { permission: { select: { code: true } } } },
+            },
+          },
+        },
       });
       if (!current) throw new BizException(BizCode.ROLE_BINDING_NOT_FOUND);
 
@@ -802,6 +791,19 @@ export class RoleBindingsService {
         ) {
           throw new BizException(BizCode.ROLE_BINDING_TENURE_INVALID);
         }
+      }
+
+      const reactivatesBinding =
+        current.status !== BindingStatus.ACTIVE && dto.status === BindingStatus.ACTIVE;
+      const startsEarlier =
+        dto.startedAt !== undefined &&
+        new Date(dto.startedAt).getTime() < current.startedAt.getTime();
+      const endsLater =
+        dto.endedAt !== undefined &&
+        current.endedAt !== null &&
+        new Date(dto.endedAt).getTime() > current.endedAt.getTime();
+      if ((reactivatesBinding || startsEarlier || endsLater) && isPrivilegedRole(current.role)) {
+        await this.roleDelegation.assertActorMayConferRole(user, current.role, tx);
       }
 
       if (

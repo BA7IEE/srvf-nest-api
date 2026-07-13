@@ -4,7 +4,9 @@
 
 ## Unreleased
 
-> 下一个 minor 候选(当前为空)。
+> **⚠️ 行为变更(后台权限配置须适配)**:非 SUPER_ADMIN 不能通过任何角色委派入口授予/撤销特权角色,也不能向角色分配控制面权限码;7 个 seed 内置角色对所有身份禁止 API 删除。端点、DTO、OpenAPI path/schema 均不变。
+
+- **第一档 RBAC 安全收口(findings 1/2/3)**:新增单一 `isControlPlanePermissionCode()`(`rbac.*` ∪ `role-binding.*` ∪ 6 条 SA-only 保留码)+ 单一 `RoleDelegationPolicy`,统一覆盖 role-bindings create/preview/特权 update 与 user-roles assign/revoke(非 SA 拒 `30102`,SA 短路;普通业务角色委派不变);role-permissions 对非 SA 分配任一控制面码整批拒既有 `30103`;7 个内置角色 API 删除统一拒新增 `PROTECTED_ROLE_DELETE_FORBIDDEN=30104`,自定义角色删除不变;seed 漂移哨兵锁定 7 角色。0 schema / 0 migration / 0 新端点 / 0 新权限码 / 0 角色或绑定变化;权限码 205 / biz-admin 81 / org-admin 60 / ops-admin 96 / endpoint 336 / controller 66 / module 35 / migration 48 / role 7 不变;BizCode 231→**232**。
 
 ## v0.44.0 - 2026-07-13
 

@@ -7,6 +7,7 @@ import { RbacController } from './rbac.controller';
 import { RbacService } from './rbac.service';
 import { RbacRolesController } from './rbac-roles.controller';
 import { RbacRolesService } from './rbac-roles.service';
+import { RoleDelegationPolicy } from './role-delegation.policy';
 import { RolePermissionsController } from './role-permissions.controller';
 import { RolePermissionsService } from './role-permissions.service';
 import { UserRolesController } from './user-roles.controller';
@@ -62,11 +63,12 @@ import { UserRolesService } from './user-roles.service';
     UserRolesService,
     RbacCacheService,
     RbacService,
+    RoleDelegationPolicy,
   ],
   // export RbacService 供业务模块在 Service 层接入 rbac.can()
   // (D7 v1.1 §8 / D7-attachments §6.2;首个消费方 AttachmentsModule,P0-F 后已扩展到管理面等多模块)。
   // 终态 scoped-authz PR6:export RbacCacheService 供 role-bindings 模块在建/改/软删 USER 主体的 GLOBAL 绑定后
   //   失效该 user 的权限缓存(判权读源 = global RoleBinding,失效链不破;沿 UserRolesService 现范式)。
-  exports: [RbacService, RbacCacheService],
+  exports: [RbacService, RbacCacheService, RoleDelegationPolicy],
 })
 export class PermissionsModule {}
