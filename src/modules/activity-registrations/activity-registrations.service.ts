@@ -7,6 +7,7 @@ import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { parseExpandQuery } from '../../common/dto/expand-query.util';
+import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -972,6 +973,12 @@ export class ActivityRegistrationsService {
         throw new BizException(transition.biz);
       }
 
+      await claimAtStatus(tx, {
+        target: 'activityRegistration',
+        id: reg.id,
+        expectedStatus: reg.statusCode,
+        invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
+      });
       // 参与域生命周期收口⑦(v0.40.0):已考勤报名禁取消(状态机放行后、写库前拦)。
       await this.assertNoAttendanceRecords(reg.id, tx);
 
@@ -1031,6 +1038,12 @@ export class ActivityRegistrationsService {
         throw new BizException(transition.biz);
       }
 
+      await claimAtStatus(tx, {
+        target: 'activityRegistration',
+        id: reg.id,
+        expectedStatus: reg.statusCode,
+        invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
+      });
       const updated = await tx.activityRegistration.update({
         where: { id: reg.id },
         data: {
@@ -1136,6 +1149,12 @@ export class ActivityRegistrationsService {
         throw new BizException(transition.biz);
       }
 
+      await claimAtStatus(tx, {
+        target: 'activityRegistration',
+        id: reg.id,
+        expectedStatus: reg.statusCode,
+        invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
+      });
       // 参与域生命周期收口⑦(v0.40.0):已考勤报名禁取消(队员自助路径同样拦)。
       await this.assertNoAttendanceRecords(reg.id, tx);
 

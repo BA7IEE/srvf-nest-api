@@ -367,6 +367,7 @@ describe('RecruitmentApplicationsService.resolveManual · S3 敏感字段分级(
     const tx = {
       recruitmentApplication: {
         findFirst: jest.fn().mockResolvedValue({ id: 'app-1', statusCode: 'manual_review' }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         update: jest.fn().mockResolvedValue(UPDATED_ROW),
       },
     };

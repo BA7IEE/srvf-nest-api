@@ -648,6 +648,31 @@ describe('招新三期(入队)admin 面 e2e', () => {
     expect(res.body.data.eliminationStage).toBe('evaluation');
   });
 
+  it('finding #6:同一 pending_evaluation 并发 approve || reject → 恰一方成功,败者 WRONG_STATE', async () => {
+    const cycleId = await openCycle();
+    const memberId = await createMember();
+    await addContribution(memberId, '5.00');
+    const appId = await createApplication(cycleId, memberId);
+    await markAllGeneralPassed(appId);
+
+    const results = await Promise.all([evaluate(appId, true), evaluate(appId, false)]);
+
+    expect(results.filter((result) => result.status === 200)).toHaveLength(1);
+    const loser = results.find((result) => result.status !== 200);
+    expect(loser).toBeDefined();
+    expectBizError(loser!, BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
+    const row = await prisma.teamJoinApplication.findUniqueOrThrow({
+      where: { id: appId },
+      select: { statusCode: true },
+    });
+    expect(['approved', 'rejected']).toContain(row.statusCode);
+    expect(
+      await prisma.auditLog.count({
+        where: { resourceType: 'team_join_application', resourceId: appId },
+      }),
+    ).toBe(9);
+  });
+
   it('⑬ joining + approved → WRONG_STATE(门槛未齐);joining + !approved → rejected(gate-timeout)', async () => {
     const cycleId = await openCycle();
     const memberId = await createMember();

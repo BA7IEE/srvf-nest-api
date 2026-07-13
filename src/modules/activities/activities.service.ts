@@ -4,6 +4,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -621,6 +622,12 @@ export class ActivitiesService {
       if (dto.locationLongitude !== undefined) data.locationLongitude = dto.locationLongitude;
       if (dto.locationLatitude !== undefined) data.locationLatitude = dto.locationLatitude;
 
+      await claimAtStatus(tx, {
+        target: 'activity',
+        id: current.id,
+        expectedStatus: current.statusCode,
+        invalidStatusBiz: BizCode.ACTIVITY_STATUS_INVALID,
+      });
       const updated = await tx.activity.update({
         where: { id: current.id },
         data,
@@ -654,6 +661,12 @@ export class ActivitiesService {
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 
+      await claimAtStatus(tx, {
+        target: 'activity',
+        id: current.id,
+        expectedStatus: current.statusCode,
+        invalidStatusBiz: BizCode.ACTIVITY_STATUS_INVALID,
+      });
       const removed = await tx.activity.update({
         where: { id: current.id },
         data: { deletedAt: new Date() },
@@ -692,6 +705,12 @@ export class ActivitiesService {
       }
       const { nextStatusCode } = transition;
 
+      await claimAtStatus(tx, {
+        target: 'activity',
+        id: current.id,
+        expectedStatus: current.statusCode,
+        invalidStatusBiz: BizCode.ACTIVITY_STATUS_INVALID,
+      });
       const updated = await tx.activity.update({
         where: { id: current.id },
         data: {
@@ -737,6 +756,12 @@ export class ActivitiesService {
       }
       const { nextStatusCode } = transition;
 
+      await claimAtStatus(tx, {
+        target: 'activity',
+        id: current.id,
+        expectedStatus: current.statusCode,
+        invalidStatusBiz: BizCode.ACTIVITY_STATUS_INVALID,
+      });
       const updated = await tx.activity.update({
         where: { id: current.id },
         data: {
@@ -802,6 +827,12 @@ export class ActivitiesService {
       }
       const { nextStatusCode } = transition;
 
+      await claimAtStatus(tx, {
+        target: 'activity',
+        id: current.id,
+        expectedStatus: current.statusCode,
+        invalidStatusBiz: BizCode.ACTIVITY_STATUS_INVALID,
+      });
       const updated = await tx.activity.update({
         where: { id: current.id },
         data: { statusCode: nextStatusCode },

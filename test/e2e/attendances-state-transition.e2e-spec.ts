@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { Role, UserStatus } from '@prisma/client';
+import { Prisma, Role, UserStatus } from '@prisma/client';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -306,6 +306,60 @@ describe('AttendancesService state transitions (characterization)', () => {
         where: { resourceId: sheetId, event: 'attendance-sheet.review' },
       });
       expect(audits).toHaveLength(0);
+    });
+  });
+
+  describe('finding #6:edit/softDelete 前置 claim', () => {
+    beforeEach(isolateFixtures);
+
+    it('同一 pending softDelete 并发且两边均已读旧态 → 恰一方成功,败者 STATUS_INVALID 且仅赢家软删 records', async () => {
+      const sheetId = await seedSheet({ statusCode: 'pending', recordsContributionPoints: [1] });
+      const serviceInternals = ctx.service as unknown as {
+        findSheetOrThrow: (
+          targetId: string,
+          tx: Prisma.TransactionClient,
+        ) => Promise<{ id: string; statusCode: string }>;
+      };
+      const originalFind = serviceInternals.findSheetOrThrow.bind(ctx.service);
+      let readCount = 0;
+      let releaseBothReads: () => void = () => undefined;
+      const bothReads = new Promise<void>((resolve) => {
+        releaseBothReads = resolve;
+      });
+      const findSpy = jest
+        .spyOn(serviceInternals, 'findSheetOrThrow')
+        .mockImplementation(async (targetId, tx) => {
+          const row = await originalFind(targetId, tx);
+          readCount += 1;
+          if (readCount === 2) releaseBothReads();
+          await bothReads;
+          return row;
+        });
+
+      const results = await Promise.allSettled([
+        ctx.service.softDelete(sheetId, ctx.reviewerPayload, AUDIT_META),
+        ctx.service.softDelete(sheetId, ctx.reviewerPayload, AUDIT_META),
+      ]);
+      findSpy.mockRestore();
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(results.find((result) => result.status === 'rejected')).toMatchObject({
+        status: 'rejected',
+        reason: { biz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID },
+      });
+      expect(
+        await ctx.prisma.attendanceSheet.findUniqueOrThrow({
+          where: { id: sheetId },
+          select: { deletedAt: true },
+        }),
+      ).toEqual({ deletedAt: expect.any(Date) });
+      const records = await ctx.prisma.attendanceRecord.findMany({
+        where: { sheetId },
+        select: { deletedAt: true },
+      });
+      expect(records).toHaveLength(1);
+      expect(records[0].deletedAt).toEqual(expect.any(Date));
+      expect(await ctx.prisma.auditLog.count({ where: { resourceId: sheetId } })).toBe(1);
     });
   });
 

@@ -272,6 +272,28 @@ describe('ActivitiesService state transitions (characterization)', () => {
         expect(audits).toHaveLength(0);
       },
     );
+
+    it('A3. 同一 draft 并发 publish 两次 → 恰一方成功,败者 ACTIVITY_STATUS_INVALID', async () => {
+      const seed = await seedActivity({ statusCode: 'draft', titleSuffix: 'publish-race' });
+
+      const results = await Promise.allSettled([
+        ctx.service.publish(seed.id, ctx.adminPayload, AUDIT_META),
+        ctx.service.publish(seed.id, ctx.adminPayload, AUDIT_META),
+      ]);
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(results.find((result) => result.status === 'rejected')).toMatchObject({
+        status: 'rejected',
+        reason: { biz: BizCode.ACTIVITY_STATUS_INVALID },
+      });
+      expect(
+        await ctx.prisma.activity.findUniqueOrThrow({
+          where: { id: seed.id },
+          select: { statusCode: true },
+        }),
+      ).toEqual({ statusCode: 'published' });
+      expect(await ctx.prisma.auditLog.count({ where: { resourceId: seed.id } })).toBe(1);
+    });
   });
 
   // ============ B. cancel(非 cancelled → cancelled;Q-A12 防重复) ============

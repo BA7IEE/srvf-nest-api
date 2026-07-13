@@ -2016,6 +2016,37 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(res.body.data.eliminationStage).toBe('manual');
   });
 
+  it('finding #6:同一 manual_review 并发 approve || reject → 恰一方成功,败者 NOT_PENDING_MANUAL', async () => {
+    const cycle = await openCycle();
+    const manual = await createAppRow(cycle.id, {
+      statusCode: 'manual_review',
+      openid: 'dev-openid-manual-race',
+      phone: '13900007991',
+      idCardNumber: 'MANUAL-RACE-001',
+    });
+    const results = await Promise.all([
+      request(httpServer(app))
+        .post(`${ADMIN_APPS}/${manual.id}/resolve`)
+        .set('Authorization', adminAuth)
+        .send({ approved: true, reviewNote: 'race approve' }),
+      request(httpServer(app))
+        .post(`${ADMIN_APPS}/${manual.id}/resolve`)
+        .set('Authorization', adminAuth)
+        .send({ approved: false, reviewNote: 'race reject' }),
+    ]);
+
+    expect(results.filter((result) => result.status === 200)).toHaveLength(1);
+    const loser = results.find((result) => result.status !== 200);
+    expect(loser).toBeDefined();
+    expectBizError(loser!, BizCode.RECRUITMENT_APPLICATION_NOT_PENDING_MANUAL);
+    const row = await prisma.recruitmentApplication.findUniqueOrThrow({
+      where: { id: manual.id },
+      select: { statusCode: true },
+    });
+    expect(['verified', 'rejected']).toContain(row.statusCode);
+    expect(await prisma.auditLog.count({ where: { resourceId: manual.id } })).toBe(1);
+  });
+
   // FM-C(沿用):容量满时 manual_review resolve approve 也被发号事务原子挡(28031);自增回滚;reject 不受限。
   // manual_review 行直接造(容量满时 submit 在容量预检即 28031,无法经 submit 建);issueTempNo 容量校验仍兜底。
   it('Ⓒ 容量满 → manual_review resolve approve 也 28031(发号原子校验 + tempNoSeq 回滚);reject 仍可', async () => {

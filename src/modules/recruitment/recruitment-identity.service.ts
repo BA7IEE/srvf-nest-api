@@ -5,6 +5,7 @@ import { DictItemStatus, Prisma, SmsPurpose, type RecruitmentApplication } from 
 import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -294,48 +295,53 @@ export class RecruitmentIdentityService {
       // 双通道二选一(both / neither 均拒)
       throw new BizException(BizCode.BAD_REQUEST);
     }
-    let app: RecruitmentApplication | null;
     let channel: 'wechat' | 'phone';
+    let openid: string | null = null;
+    let phone: string | null = null;
     if (viaWechat) {
       channel = 'wechat';
-      const { openid } = await this.wechat.code2session(dto.wechatCode as string);
-      app = await this.findLatestActiveAppByOpenid(openid);
-      if (!app) {
-        const terminal = await this.findLatestTerminalAppByOpenid(openid);
-        if (terminal) {
-          throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE);
-        }
-      }
+      ({ openid } = await this.wechat.code2session(dto.wechatCode as string));
     } else {
       channel = 'phone';
       if (typeof dto.code !== 'string' || dto.code.length === 0) {
         throw new BizException(BizCode.BAD_REQUEST);
       }
+      phone = dto.phone as string;
       await this.smsCode.verifyAndConsume({
-        phone: dto.phone as string,
+        phone,
         purpose: SmsPurpose.RECRUITMENT_BIND,
         code: dto.code,
         userId: null,
       });
-      app = await this.findLatestActiveAppByPhone(dto.phone as string);
+    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const app =
+        channel === 'wechat'
+          ? await this.findLatestActiveAppByOpenid(openid as string, tx)
+          : await this.findLatestActiveAppByPhone(phone as string, tx);
       if (!app) {
-        const terminal = await this.findLatestTerminalAppByPhone(dto.phone as string);
+        const terminal =
+          channel === 'wechat'
+            ? await this.findLatestTerminalAppByOpenid(openid as string, tx)
+            : await this.findLatestTerminalAppByPhone(phone as string, tx);
         if (terminal) {
           throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE);
         }
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
       }
-    }
-    if (!app) {
-      throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
-    }
-    if (
-      app.statusCode === APP_STATUS_PROMOTED ||
-      app.statusCode === APP_STATUS_REJECTED ||
-      app.statusCode === APP_STATUS_WITHDRAWN
-    ) {
-      throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE);
-    }
-    const updated = await this.prisma.$transaction(async (tx) => {
+      if (
+        app.statusCode === APP_STATUS_PROMOTED ||
+        app.statusCode === APP_STATUS_REJECTED ||
+        app.statusCode === APP_STATUS_WITHDRAWN
+      ) {
+        throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE);
+      }
+      await claimAtStatus(tx, {
+        target: 'recruitmentApplication',
+        id: app.id,
+        expectedStatus: app.statusCode,
+        invalidStatusBiz: BizCode.RECRUITMENT_APPLICATION_NOT_WITHDRAWABLE,
+      });
       const row = await tx.recruitmentApplication.update({
         where: { id: app.id },
         data: { statusCode: APP_STATUS_WITHDRAWN },
@@ -351,7 +357,7 @@ export class RecruitmentIdentityService {
         after: { statusCode: APP_STATUS_WITHDRAWN },
         extra: {
           channel,
-          ...(channel === 'phone' ? { phone: maskPhone(dto.phone as string) } : {}),
+          ...(channel === 'phone' ? { phone: maskPhone(phone as string) } : {}),
           ...(channel === 'wechat' && app.openid ? { openid: this.maskOpenid(app.openid) } : {}),
         },
         tx,
@@ -689,8 +695,11 @@ export class RecruitmentIdentityService {
   }
 
   // 写动作口径:手机只锚最近活跃报名(rejected/withdrawn 终态永不被更新)。
-  private async findLatestActiveAppByPhone(phone: string): Promise<RecruitmentApplication | null> {
-    return this.prisma.recruitmentApplication.findFirst({
+  private async findLatestActiveAppByPhone(
+    phone: string,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
+  ): Promise<RecruitmentApplication | null> {
+    return client.recruitmentApplication.findFirst({
       where: {
         phone,
         deletedAt: null,
@@ -702,8 +711,9 @@ export class RecruitmentIdentityService {
 
   private async findLatestTerminalAppByPhone(
     phone: string,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
   ): Promise<RecruitmentApplication | null> {
-    return this.prisma.recruitmentApplication.findFirst({
+    return client.recruitmentApplication.findFirst({
       where: {
         phone,
         deletedAt: null,
@@ -732,8 +742,9 @@ export class RecruitmentIdentityService {
 
   private async findLatestActiveAppByOpenid(
     openid: string,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
   ): Promise<RecruitmentApplication | null> {
-    return this.prisma.recruitmentApplication.findFirst({
+    return client.recruitmentApplication.findFirst({
       where: {
         openid,
         deletedAt: null,
@@ -745,8 +756,9 @@ export class RecruitmentIdentityService {
 
   private async findLatestTerminalAppByOpenid(
     openid: string,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
   ): Promise<RecruitmentApplication | null> {
-    return this.prisma.recruitmentApplication.findFirst({
+    return client.recruitmentApplication.findFirst({
       where: {
         openid,
         deletedAt: null,

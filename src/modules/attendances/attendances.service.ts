@@ -7,6 +7,7 @@ import { parseExpandQuery } from '../../common/dto/expand-query.util';
 import { eventPlaceholder } from '../../common/event/event-placeholder';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -936,6 +937,12 @@ export class AttendancesService {
         throw new BizException(editTransition.biz);
       }
 
+      await claimAtStatus(tx, {
+        target: 'attendanceSheet',
+        id: sheet.id,
+        expectedStatus: sheet.statusCode,
+        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
+      });
       // 没有 records 字段 → 等同于 no-op(不动 records,仍生成 snapshot + version+1)
       if (dto.records === undefined) {
         // 仅 version+1 + snapshot 保存当前状态
@@ -1088,6 +1095,12 @@ export class AttendancesService {
         throw new BizException(deleteTransition.biz);
       }
 
+      await claimAtStatus(tx, {
+        target: 'attendanceSheet',
+        id: sheet.id,
+        expectedStatus: sheet.statusCode,
+        invalidStatusBiz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
+      });
       // PR #6 audit:before 需要 records 完整快照(软删之前抓取)
       const currentRecords = await tx.attendanceRecord.findMany({
         where: { sheetId: id, deletedAt: null },
