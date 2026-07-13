@@ -1,12 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  BindingScopeType,
-  BindingStatus,
-  PrincipalType,
-  Prisma,
-  Role,
-  UserStatus,
-} from '@prisma/client';
+import { BindingScopeType, BindingStatus, PrincipalType, Prisma, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -14,6 +7,7 @@ import { PrismaService } from '../../database/prisma.service';
 import type { AuditContext, AuditLogEvent, AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacCacheService } from './rbac-cache.service';
 import { RbacService } from './rbac.service';
+import { RoleDelegationPolicy, type RoleDelegationTarget } from './role-delegation.policy';
 import { AssignUserRoleDto, UserRoleResponseDto } from './user-roles.dto';
 
 // V2.x C-6 RBAC 实施 PR #5:UserRole 模块业务逻辑。
@@ -48,6 +42,10 @@ import { AssignUserRoleDto, UserRoleResponseDto } from './user-roles.dto';
 const OPS_ADMIN_CODE = 'ops-admin';
 
 type PrismaTx = Prisma.TransactionClient;
+type UserRoleDelegationTarget = RoleDelegationTarget & {
+  id: string;
+  displayName: string;
+};
 
 @Injectable()
 export class UserRolesService {
@@ -55,6 +53,7 @@ export class UserRolesService {
     private readonly prisma: PrismaService,
     private readonly cache: RbacCacheService,
     private readonly rbac: RbacService,
+    private readonly roleDelegation: RoleDelegationPolicy,
   ) {}
 
   // ============ helpers ============
@@ -72,9 +71,9 @@ export class UserRolesService {
   }
 
   // P0-F PR-1:RBAC 元接口入口判权(沿 attachments F5 v1.0 范本)。
-  // 与 canAssignRole(Q7 角色分级业务保护)是两层独立校验:
+  // 与 RoleDelegationPolicy(角色分级业务保护)是两层独立校验:
   // - 本 helper 拦"actor 是否有权进入 user-role 管理接口"(rbac.* permission)
-  // - canAssignRole 拦"actor 能分配 / 撤销哪些 RBAC 角色"(目标角色分级)
+  // - RoleDelegationPolicy 拦"actor 能分配 / 撤销哪些 RBAC 角色"(目标角色分级)
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
     if (!(await this.rbac.can(user, action))) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
@@ -96,52 +95,38 @@ export class UserRolesService {
   }
 
   // 沿 PR #3 RbacRole 范式:role 不存在 → 30003;role 已软删 → 30005(写操作披露)。
-  private async findRoleOrThrow(
-    roleId: string,
-  ): Promise<{ id: string; code: string; displayName: string }> {
+  private async findRoleOrThrow(roleId: string): Promise<UserRoleDelegationTarget> {
     const raw = await this.prisma.rbacRole.findUnique({
       where: { id: roleId },
-      select: { id: true, code: true, displayName: true, deletedAt: true },
+      select: {
+        id: true,
+        code: true,
+        displayName: true,
+        deletedAt: true,
+        rolePermissions: { select: { permission: { select: { code: true } } } },
+      },
     });
     if (!raw) throw new BizException(BizCode.ROLE_NOT_FOUND);
     if (raw.deletedAt !== null) throw new BizException(BizCode.ROLE_DELETED);
-    return { id: raw.id, code: raw.code, displayName: raw.displayName };
+    const { deletedAt, ...role } = raw;
+    void deletedAt;
+    return role;
   }
 
   // 沿 PR #3 范式:按 code 查 role(POST 入参 roleCode);软删的视为不存在(沿 v1 §10 信息泄漏防御
   // — POST 时用户传 code,如果该 code 是已软删角色,不应披露存在过)。
-  private async findActiveRoleByCodeOrThrow(
-    code: string,
-  ): Promise<{ id: string; code: string; displayName: string }> {
+  private async findActiveRoleByCodeOrThrow(code: string): Promise<UserRoleDelegationTarget> {
     const role = await this.prisma.rbacRole.findFirst({
       where: { code, deletedAt: null },
-      select: { id: true, code: true, displayName: true },
+      select: {
+        id: true,
+        code: true,
+        displayName: true,
+        rolePermissions: { select: { permission: { select: { code: true } } } },
+      },
     });
     if (!role) throw new BizException(BizCode.ROLE_NOT_FOUND);
     return role;
-  }
-
-  // Q7 角色分级 C2 中庸方案(沿用户拍板;inline private helper)。
-  //
-  // 注:P0-F PR-1 起入口 Guard `@Roles` 已撤;`assertCanOrThrow('rbac.user-role.*')`
-  // 已挡 v1 USER 系统级(USER 默认无 rbac.* permission)。本函数仅做"角色目标 vs 来源"
-  // 的二次业务级判定,**不再依赖 Guard 前置**。
-  private async canAssignRole(actor: CurrentUserPayload, targetRoleCode: string): Promise<boolean> {
-    // 1. SUPER_ADMIN(系统级)→ 通过任何
-    if (actor.role === Role.SUPER_ADMIN) return true;
-
-    // 2. 查 actor 持有的活跃 RBAC 角色(global RoleBinding;排除已软删角色)
-    const actorBindings = await this.prisma.roleBinding.findMany({
-      where: { ...this.activeGlobalUserWhere(actor.id), role: { deletedAt: null } },
-      select: { role: { select: { code: true } } },
-    });
-    const hasOpsAdmin = actorBindings.some((b) => b.role.code === OPS_ADMIN_CODE);
-
-    // 3. actor 持有 ops-admin → 可分配/撤销非 ops-admin 目标
-    if (hasOpsAdmin && targetRoleCode !== OPS_ADMIN_CODE) return true;
-
-    // 4. 其他 → 30102(C2 中庸:不实施 dept-chief / dept-deputy 层级)
-    return false;
   }
 
   // 审计直写(终态 scoped-authz PR6):user-role assign/remove 现经 RoleBinding,写 audit(冻结稿 §10.6 / DoD#7)。
@@ -221,15 +206,14 @@ export class UserRolesService {
     // 0. RBAC 入口判权(P0-F PR-1):actor 是否能进入 user-role 分配接口
     await this.assertCanOrThrow(actor, 'rbac.user-role.create');
 
-    // 1. Q7 角色分级判定(canAssignRole)— 进入接口后的二次业务级保护
-    const canAssign = await this.canAssignRole(actor, dto.roleCode);
-    if (!canAssign) throw new BizException(BizCode.CANNOT_ASSIGN_HIGHER_ROLE);
-
-    // 2. target user 必须存在 + 未 disabled + 未软删
-    await this.assertUserAccessibleOrThrow(targetUserId);
-
-    // 3. target role 必须存在 + 未软删(按 code 查 — POST 入参是 roleCode)
+    // 1. target role 必须存在 + 未软删(按 code 查 — POST 入参是 roleCode)
     const role = await this.findActiveRoleByCodeOrThrow(dto.roleCode);
+
+    // 2. 单一委派入口:SA 短路；ops-admin 仅能授予不含控制面权限的普通角色。
+    await this.roleDelegation.assertActorMayConferRole(actor, role);
+
+    // 3. target user 必须存在 + 未 disabled + 未软删
+    await this.assertUserAccessibleOrThrow(targetUserId);
 
     // 4. 检查重复分配(沿 D7 §12 锁定:报错而非幂等)—— 读 active global 绑定(软删/失效行不算重复,可再分配)。
     const existing = await this.prisma.roleBinding.findFirst({
@@ -296,9 +280,8 @@ export class UserRolesService {
     // 2. target role 必须存在 + 未软删(按 id 查 — DELETE 路径是 roleId)
     const role = await this.findRoleOrThrow(targetRoleId);
 
-    // 3. Q7 角色分级判定(此时已拿到 role.code)
-    const canRevoke = await this.canAssignRole(actor, role.code);
-    if (!canRevoke) throw new BizException(BizCode.CANNOT_ASSIGN_HIGHER_ROLE);
+    // 3. 赋予/撤销共用同一个委派入口。
+    await this.roleDelegation.assertActorMayConferRole(actor, role);
 
     // 4. 关系存在性 + 最后一个 ops-admin 保护 + 软删必须原子(沿 v1 §13 范式)
     return this.prisma.$transaction(async (tx) => {

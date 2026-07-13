@@ -2,6 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
 import { execSync } from 'child_process';
 import { PrismaService } from '../../src/database/prisma.service';
+import { PROTECTED_ROLE_CODES } from '../../src/modules/permissions/protected-role-codes';
 import { RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES } from '../../src/modules/permissions/reserved-super-admin-permission-codes';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -365,6 +366,24 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
       select: { role: { select: { code: true } }, permission: { select: { code: true } } },
     });
     expect(bindings).toEqual([]);
+  });
+
+  it('D3 漂移哨兵:PROTECTED_ROLE_CODES 的 7 个内置角色均由 seed 建立', async () => {
+    const result = runSeed({
+      APP_ENV: 'test',
+      SUPER_ADMIN_USERNAME: 'rbac-seed-protected',
+      SUPER_ADMIN_PASSWORD: 'Passw0rd1!',
+      SUPER_ADMIN_EMAIL: '',
+      RBAC_INITIAL_OPS_ADMIN_USER_ID: '',
+    });
+    expect(result.code).toBe(0);
+
+    const roles = await prisma.rbacRole.findMany({
+      where: { code: { in: [...PROTECTED_ROLE_CODES] } },
+      select: { code: true, deletedAt: true },
+    });
+    expect(new Set(roles.map((role) => role.code))).toEqual(new Set(PROTECTED_ROLE_CODES));
+    expect(roles.every((role) => role.deletedAt === null)).toBe(true);
   });
 
   it('fallback 路径:RBAC_INITIAL_OPS_ADMIN_USER_ID 留空 → 绑到 SUPER_ADMIN(本 seed 刚创建的)', async () => {

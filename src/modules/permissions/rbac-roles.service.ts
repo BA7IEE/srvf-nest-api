@@ -9,6 +9,7 @@ import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { writeConfigAudit } from './config-audit.util';
 import { permissionSelect } from './permissions.select';
+import { PROTECTED_ROLE_CODE_SET } from './protected-role-codes';
 import { RbacCacheService } from './rbac-cache.service';
 import { RbacService } from './rbac.service';
 import {
@@ -275,6 +276,9 @@ export class RbacRolesService {
     await this.assertCanOrThrow(user, 'rbac.role.delete');
     // 1. 先确认活跃(不存在 + 已软删都返 30003)
     const existing = await this.findActiveByIdOrThrow(id);
+    if (PROTECTED_ROLE_CODE_SET.has(existing.code)) {
+      throw new BizException(BizCode.PROTECTED_ROLE_DELETE_FORBIDDEN);
+    }
 
     // 2. 软删 + audit(单事务;D4 v1.0;沿 v1 §10:update deletedAt = new Date();
     //    user_roles / role_permissions 不联动,沿 D7 §6.3 "最后一个运营管理员保护" 决策)。

@@ -11,7 +11,8 @@
 //
 // 但 `RolePermissionsService.assign()` 此前只判 `rbac.role-permission.create`,
 // **未阻止**持 ops-admin 的运营者把这些保留码"自授"给任意角色 → 间接获得
-// SA-only 能力(#399 F1 授权洞)。`assertNoReservedCodesOrThrow` 在写入前显式拦截。
+// SA-only 能力(#399 F1 授权洞)。2026-07-13 起由 `isControlPlanePermissionCode()` 引用
+// 本 SoT,与 `rbac.*` / `role-binding.*` 前缀合并后统一在授码与角色委派入口拦截。
 //
 // **单一事实来源**:本集合与 seed「不绑」清单一一对应。改动 seed 的角色绑定矩阵
 // (新增/重命名/改绑任一保留码)时**必须同步本集合**;`seed-rbac.e2e-spec.ts` 的

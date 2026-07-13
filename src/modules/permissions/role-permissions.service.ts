@@ -13,7 +13,7 @@ import { RbacService } from './rbac.service';
 import { RbacRoleDetailResponseDto } from './rbac-roles.dto';
 import { rbacRoleSelect } from './rbac-roles.select';
 import { AssignRolePermissionsDto } from './role-permissions.dto';
-import { RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET } from './reserved-super-admin-permission-codes';
+import { isControlPlanePermissionCode } from './role-delegation.policy';
 
 // V2.x C-6 RBAC 实施 PR #4:RolePermission 关联表业务逻辑。
 // 沿 D7 v1.1 §5.1 端点 10-11 + §6.1 + §9.4 缓存失效 + 用户拍板。
@@ -55,8 +55,8 @@ export class RolePermissionsService {
     }
   }
 
-  // F1(#399 全仓 review):role-permission 分级闸 —— 非 SUPER_ADMIN 不得把
-  // SA-only 保留码(RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET)分配给**任何**角色。
+  // 第一档安全收口 D2:role-permission 分级闸 —— 非 SUPER_ADMIN 不得把任何控制面权限码
+  // (6 个 SA-only 保留码 + rbac.* + role-binding.*)分配给任何角色。
   //
   // 这组保留码在 seed 中有意不绑 biz-admin / ops-admin(仅 SUPER_ADMIN 短路);
   // assign() 原先只判 `rbac.role-permission.create`,未阻止持 ops-admin 者把保留码
@@ -67,12 +67,9 @@ export class RolePermissionsService {
   // - 在请求码(已去重)字符串层面拦截,**早于** Permission 存在性查询 —— 即便保留码
   //   尚未 seed,非 SA 也拿 30103(fail-close,不退化成 30001 泄漏存在性);
   // - 命中即整批拒绝(不部分写入),与 30001 整批拒绝语义一致。
-  private assertNoReservedCodesOrThrow(user: CurrentUserPayload, uniqueCodes: string[]): void {
+  private assertNoControlPlaneCodesOrThrow(user: CurrentUserPayload, uniqueCodes: string[]): void {
     if (user.role === Role.SUPER_ADMIN) return;
-    const hitsReserved = uniqueCodes.some((code) =>
-      RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET.has(code),
-    );
-    if (hitsReserved) {
+    if (uniqueCodes.some(isControlPlanePermissionCode)) {
       throw new BizException(BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY);
     }
   }
@@ -123,8 +120,8 @@ export class RolePermissionsService {
     //    去重处理:即使 DTO 重复传同一 code 也能正常工作
     const uniqueCodes = Array.from(new Set(dto.permissionCodes));
 
-    // 2. F1 分级闸:非 SUPER_ADMIN 不得分配 SA-only 保留码(早于存在性查询;命中即整批拒绝)
-    this.assertNoReservedCodesOrThrow(user, uniqueCodes);
+    // 2. D2 分级闸:非 SUPER_ADMIN 不得分配控制面权限码(早于存在性查询;命中即整批拒绝)
+    this.assertNoControlPlaneCodesOrThrow(user, uniqueCodes);
 
     // 3. 按 codes 查 permissions;**任一 code 不存在 → 30001**(整批拒绝,不部分成功)
     const perms = await this.prisma.permission.findMany({
