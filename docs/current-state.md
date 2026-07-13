@@ -7,14 +7,16 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(六处一致) | **v0.44.0**(2026-07-13;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #576 squash `af347055`;GitHub Release「v0.44.0 — 安全·并发·性能加固」标 Latest。**⚠️ 行为变化六条**:RoleBinding 新增 30102/30101 拒绝;审批竞争败者 STATUS_INVALID;CSV 危险首字符前缀单引号;garbage logout 不写 audit;SVG/HTML/XHTML 恒拒且魔数不符 13016;同人重叠考勤并发仅一方成功) |
-| `main` HEAD | v0.44.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #576 `af347055`;收口链 = 冻结评审 #570 + P1 #571 + P2 #572 + P3 #573 + landing #574 + bump #575 + handoff #576 + tag/Release + 本回填 PR) |
-| open PR / 工作树 / Unreleased | **本回填 PR 合入后 0** open PR / clean / `## Unreleased` **0 条**。终值:权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` **336** / controller 66 / 模块 35 / migration **48** / 角色 7 / BizCode **231** / AuditLogEvent **99** |
-| 最新 handoff | [`archive/handoff/v0.44.0.md`](archive/handoff/v0.44.0.md)(历史快照;tag 指向该 handoff #576 squash `af347055`;接续 [`v0.43.0.md`](archive/handoff/v0.43.0.md);合入后不回改) |
+| 版本(六处一致) | **v0.45.0**(2026-07-13;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #583 squash `09d9b786`;GitHub Release「v0.45.0 — 系统性安全收口(委派·任期·状态迁移·证书信任)」标 Latest。**⚠️ 行为变更三组**:委派收窄/内置角色禁删/任期失效/最后 ops-admin 30101;并发状态写败者 `*_STATUS_INVALID`;已核验证书编辑核心字段回退 pending) |
+| `main` HEAD | v0.45.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #583 `09d9b786`;收口链 = 委派 #578 + 任期/末位 #579 + 状态迁移/证书 #580 + 队员轴残留 #581 + bump #582 + handoff #583 + tag/Release + 本回填 PR) |
+| open PR / 工作树 / Unreleased | **本回填 PR 合入后 0** open PR / clean / `## Unreleased` **0 条**。终值:权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` **336** / controller 66 / 模块 35 / migration **48** / 角色 7 / BizCode **232** / AuditLogEvent **99** |
+| 最新 handoff | [`archive/handoff/v0.45.0.md`](archive/handoff/v0.45.0.md)(历史快照;tag 指向该 handoff #583 squash `09d9b786`;接续 [`v0.44.0.md`](archive/handoff/v0.44.0.md);合入后不回改) |
 
 ## 2. 当前系统已具备能力
 
 > 清单级;事实权威:字段 = [`schema.prisma`](../prisma/schema.prisma);接口 = `/api/docs` + [`EXPECTED_ROUTES`](../test/contract/openapi.contract-spec.ts) + snapshot;BizCode = `biz-code.constant.ts` + CHANGELOG。
+
+- **v0.45.0 系统性安全收口(已发布 2026-07-13;D 档)**:承接 v0.44.0 审计,维护者定「把权限委派 / 状态迁移 / 并发计数 / 文件验证做成所有入口必经的统一底层规则,而非逐接口补刀」。15 项二次核实 findings 1–7 全属实,四刀以「单一原语 + 全兄弟路径接线 + 漂移/并发测试」收口:委派 `isControlPlanePermissionCode` + `RoleDelegationPolicy` + 7 内置角色禁删(#578)、任期 `role-binding-validity`(rbac/authz 共用)+ 末位管理员 `LastAdminProtectionPolicy` 一把共享 advisory 锁(#579)、状态迁移 `claimAtStatus` CAS 16 处 + 证书信任回退(#580)、队员轴三削权门同类残留(#581);findings 8–15 接受登记(记 NEXT_TASKS,除 #12 outbox 撞无 queue/cron 红线)。四刀均主会话 commit-diff 元核验 PASS。0 schema/migration/endpoint/permission/controller/module/role/dependency;唯一新增 BizCode `30104`(231→232),其余计数不变。各刀 CI(Lint/Typecheck/E2E + Docker build + smoke)全绿。
 
 - **v0.44.0 安全·并发·性能加固(已发布 2026-07-13;D 档)**:2026-07-13 全仓审计 26 findings 终态 = 19 已修 / 6 接受登记 / 1 不成立。RoleBinding 高权/末位保护与 update audit、审批原子竞争守卫、RBAC 写侧失效、CSV 公式转义、logout 审计去污染、附件 MIME+魔数、CSV 真流式、考勤按人串行、certificate 附件 K→1 均已落地。0 schema/migration/endpoint/permission/controller/module/role/dependency;唯一新增 BizCode 13016 + AuditLogEvent `role-binding.update`;MIME 精确黑名单 +3。main E 档终验 unit 80/2347 + contract 606 + e2e 138/2792 全绿;bump CI + Docker build + Docker Smoke 全绿。
 
