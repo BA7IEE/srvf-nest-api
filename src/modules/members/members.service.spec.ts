@@ -5,6 +5,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { PrismaService } from '../../database/prisma.service';
 import type { OrganizationsService } from '../organizations/organizations.service';
+import type { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import type { RbacService } from '../permissions/rbac.service';
 import { MembersService } from './members.service';
 
@@ -50,6 +51,9 @@ function makePrisma(tx: ReturnType<typeof makeTx>): PrismaService {
 }
 
 const rbacAllow = { can: jest.fn().mockResolvedValue(true) } as unknown as RbacService;
+const lastAdminProtectionNoop = {
+  assertCanDeactivateOpsAdminUser: jest.fn().mockResolvedValue(undefined),
+} as unknown as LastAdminProtectionPolicy;
 const auditNoop = { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogsService;
 const organizationsStub = {} as unknown as OrganizationsService; // grantAccount 不触达
 
@@ -65,7 +69,13 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
   it('target 含 memberId → MEMBER_HAS_LINKED_USER(并发双开号,输家 INSERT 撞 memberId 唯一约束)', async () => {
     const tx = makeTx();
     tx.user.create.mockRejectedValue(p2002(['memberId']));
-    const service = new MembersService(makePrisma(tx), rbacAllow, organizationsStub, auditNoop);
+    const service = new MembersService(
+      makePrisma(tx),
+      rbacAllow,
+      lastAdminProtectionNoop,
+      organizationsStub,
+      auditNoop,
+    );
 
     await expect(service.grantAccount('m1', { phone: '13800000001' }, USER, META)).rejects.toEqual(
       new BizException(BizCode.MEMBER_HAS_LINKED_USER),
@@ -75,7 +85,13 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
   it('target 含手写 partial index 字面量名 User_memberId_active_key → 仍 MEMBER_HAS_LINKED_USER(队员账号闭环 v2,评审稿 §1.2 E-4)', async () => {
     const tx = makeTx();
     tx.user.create.mockRejectedValue(p2002(['User_memberId_active_key']));
-    const service = new MembersService(makePrisma(tx), rbacAllow, organizationsStub, auditNoop);
+    const service = new MembersService(
+      makePrisma(tx),
+      rbacAllow,
+      lastAdminProtectionNoop,
+      organizationsStub,
+      auditNoop,
+    );
 
     await expect(service.grantAccount('m1', { phone: '13800000006' }, USER, META)).rejects.toEqual(
       new BizException(BizCode.MEMBER_HAS_LINKED_USER),
@@ -85,7 +101,13 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
   it('target 含 username → 仍 USERNAME_ALREADY_EXISTS(既有分支回归哨兵,逐字不动)', async () => {
     const tx = makeTx();
     tx.user.create.mockRejectedValue(p2002(['username']));
-    const service = new MembersService(makePrisma(tx), rbacAllow, organizationsStub, auditNoop);
+    const service = new MembersService(
+      makePrisma(tx),
+      rbacAllow,
+      lastAdminProtectionNoop,
+      organizationsStub,
+      auditNoop,
+    );
 
     await expect(service.grantAccount('m1', { phone: '13800000002' }, USER, META)).rejects.toEqual(
       new BizException(BizCode.USERNAME_ALREADY_EXISTS),
@@ -96,7 +118,13 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
     const tx = makeTx();
     const unmapped = p2002(['someOtherColumn']);
     tx.user.create.mockRejectedValue(unmapped);
-    const service = new MembersService(makePrisma(tx), rbacAllow, organizationsStub, auditNoop);
+    const service = new MembersService(
+      makePrisma(tx),
+      rbacAllow,
+      lastAdminProtectionNoop,
+      organizationsStub,
+      auditNoop,
+    );
 
     await expect(service.grantAccount('m1', { phone: '13800000003' }, USER, META)).rejects.toBe(
       unmapped,
@@ -107,7 +135,13 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
     const tx = makeTx();
     const other = new Error('boom');
     tx.user.create.mockRejectedValue(other);
-    const service = new MembersService(makePrisma(tx), rbacAllow, organizationsStub, auditNoop);
+    const service = new MembersService(
+      makePrisma(tx),
+      rbacAllow,
+      lastAdminProtectionNoop,
+      organizationsStub,
+      auditNoop,
+    );
 
     await expect(service.grantAccount('m1', { phone: '13800000004' }, USER, META)).rejects.toBe(
       other,
