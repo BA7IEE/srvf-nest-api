@@ -1,6 +1,10 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+
 import type { INestApplication } from '@nestjs/common';
 import { AttachmentAccessLevel, Role } from '@prisma/client';
 import request from 'supertest';
+import appConfig from '../../src/config/app.config';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
@@ -8,6 +12,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { conformingAttachmentKey } from '../helpers/attachment-key';
 import { truncateAuditLogsTestOnly } from '../helpers/audit-logs-cleanup';
 import { expectBizError } from '../helpers/biz-code.assert';
+import { attachmentBytesForMime } from '../helpers/file-fixtures';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -62,6 +67,7 @@ const ATTACHMENT_PERMISSION_CODES = [
 describe('attachments audit_logs 集成', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let localRoot: string;
 
   let superAuth: string;
   let selfAuth: string;
@@ -75,6 +81,7 @@ describe('attachments audit_logs 集成', () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
+    localRoot = app.get<{ storage: { localRoot: string } }>(appConfig.KEY).storage.localRoot;
 
     // ============ User / Member 绑定 ============
     const superUser = await createTestUser(app, {
@@ -172,15 +179,23 @@ describe('attachments audit_logs 集成', () => {
 
   // ============ Helpers ============
 
-  const buildBody = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-    key: conformingAttachmentKey(), // F2:服务端派生格式合规 key(原任意 key 已被 13014 校验拒)
-    originalName: 'test.jpg',
-    mime: 'image/jpeg',
-    size: 100_000,
-    ownerType: 'member',
-    ownerId: memberA.id,
-    ...overrides,
-  });
+  const buildBody = (overrides: Record<string, unknown> = {}): Record<string, unknown> => {
+    const body = {
+      key: conformingAttachmentKey(),
+      originalName: 'test.jpg',
+      mime: 'image/jpeg',
+      size: 100_000,
+      ownerType: 'member',
+      ownerId: memberA.id,
+      ...overrides,
+    };
+    if (typeof body.size === 'number' && body.size <= 20_000_000) {
+      const filePath = resolve(localRoot, body.key);
+      mkdirSync(dirname(filePath), { recursive: true });
+      writeFileSync(filePath, attachmentBytesForMime(body.mime, body.size));
+    }
+    return body;
+  };
 
   // ============ upload 成功路径 ============
 

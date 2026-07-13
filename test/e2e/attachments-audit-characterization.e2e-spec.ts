@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs';
+import { mkdirSync, promises as fs, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 
 import type { INestApplication } from '@nestjs/common';
@@ -17,6 +17,7 @@ import type {
 import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { conformingAttachmentKey } from '../helpers/attachment-key';
+import { attachmentBytesForMime } from '../helpers/file-fixtures';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -239,7 +240,13 @@ describe('AttachmentsService audit characterization', () => {
       ownerType: 'member',
       ownerId: memberA.id,
     };
-    return { ...base, ...override };
+    const dto = { ...base, ...override };
+    if (dto.size <= 20_000_000 && (dto.mime === 'image/jpeg' || dto.mime === 'image/png')) {
+      const filePath = path.resolve(localRoot, dto.key);
+      mkdirSync(path.dirname(filePath), { recursive: true });
+      writeFileSync(filePath, attachmentBytesForMime(dto.mime, dto.size));
+    }
+    return dto;
   }
 
   function buildUploadUrlDto(override: Partial<GenerateUploadUrlDto> = {}): GenerateUploadUrlDto {

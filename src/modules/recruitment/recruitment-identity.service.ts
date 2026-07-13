@@ -9,6 +9,7 @@ import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { AttachmentContentValidator } from '../attachments/attachment-content-validator';
 import { SmsCodeService } from '../sms/sms-code.service';
 import { SMS_CODE_TTL_SECONDS, maskPhone } from '../sms/sms.constants';
 import { STORAGE_PROVIDER } from '../storage/storage.constants';
@@ -82,6 +83,7 @@ export class RecruitmentIdentityService {
     private readonly smsCode: SmsCodeService,
     private readonly wechat: WechatService,
     private readonly auditLogs: AuditLogsService,
+    private readonly contentValidator: AttachmentContentValidator,
     // F7 证书图上传落 storage(镜像 applications.service 注入范式)
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
@@ -400,6 +402,7 @@ export class RecruitmentIdentityService {
       if (f.size > ID_CARD_IMAGE_MAX_BYTES || !ID_CARD_IMAGE_ALLOWED_MIME.includes(f.mimetype)) {
         throw new BizException(BizCode.BAD_REQUEST);
       }
+      this.contentValidator.validateFromBuffer({ mime: f.mimetype, buffer: f.buffer });
     }
     let app: RecruitmentApplication | null;
     let channel: 'wechat' | 'phone';

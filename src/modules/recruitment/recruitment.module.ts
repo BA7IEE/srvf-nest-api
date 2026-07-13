@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AttachmentsModule } from '../attachments/attachments.module';
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -26,6 +27,7 @@ import { RecruitmentStatsService } from './recruitment-stats.service';
 // 不导出任何 provider(招新前段自成闭环;phase-2 promote 出范围)。
 @Module({
   imports: [
+    AttachmentsModule,
     DatabaseModule,
     PermissionsModule,
     AuditLogsModule,

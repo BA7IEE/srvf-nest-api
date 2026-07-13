@@ -4,7 +4,11 @@
 
 ## Unreleased
 
-> 下一个 minor 候选(当前为空)。
+> **⚠️ 行为变更(旧附件 create)**:`POST /api/admin/v1/attachments` 端点与入参契约保留,但现在会读取已上传对象并核对对象存在性、实际大小、系统 MIME 黑名单及 JPG/PNG/WEBP/GIF/PDF 内容签名;声明 MIME 与对象字节不符统一返既有 `ATTACHMENT_CONTENT_TYPE_MISMATCH=13016`。`confirm-upload` 的既有校验与成功行为不变。
+>
+> **⚠️ 行为变更(附件过期)**:`Attachment.expireAt <= now` 时不再签发或返回 `accessUrl`;公开内容列表/详情会移除已过期附件行,过期封面 URL 返 null。`expireAt` 为未来时间或 null 的既有返回行为不变。
+
+- **第五档文件校验统一收口(findings 9/10/11)**:新增单一可注入并由 attachments module 导出的 `AttachmentContentValidator`,复用既有 MIME 黑名单与签名表,统一承接对象链(`confirm-upload` / legacy create)和 buffer 链(招新证件照/签名图/证书图/OCR 裁剪图、realname OCR 转发);所有受支持图片/PDF 只读前 12 字节比对声明 MIME,不新增第二套签名表或黑名单。签名 URL 解析集中检查 `expireAt`,公开 content owner 附件在组装前过滤过期行。0 schema / 0 migration(仍 48)/ 0 新端点(`EXPECTED_ROUTES` 仍 336)/ 0 DTO/OpenAPI schema / 0 新权限码(仍 205)/ 0 角色(仍 7)/ 0 BizCode(仍 232)。
 
 ## v0.45.0 - 2026-07-13
 

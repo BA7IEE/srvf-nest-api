@@ -109,6 +109,7 @@ describe('RecruitmentApplicationsService · FM-B 孤儿 blob 补偿删', () => {
       wechat as never,
       realname as never,
       identity as never,
+      { validateFromBuffer: jest.fn() } as never,
       storage,
       { recruitmentOcr: { dailyIpLimit: 30 } } as never, // F1:OCR 日封顶 config
     );
@@ -263,6 +264,7 @@ describe('RecruitmentApplicationsService · 落图失败孤儿补偿(review #484
       wechat as never,
       realname as never,
       identity as never,
+      { validateFromBuffer: jest.fn() } as never,
       storage,
       { recruitmentOcr: { dailyIpLimit: 30 } } as never, // F1:OCR 日封顶 config
     );
@@ -386,6 +388,7 @@ describe('RecruitmentApplicationsService.resolveManual · S3 敏感字段分级(
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
       { recruitmentOcr: { dailyIpLimit: 30 } } as never, // F1:OCR 日封顶 config(本组不触 submit)
     );
     return { service };
@@ -481,6 +484,7 @@ describe('RecruitmentApplicationsService.submit · F1 防重前移 + OCR 日封�
       wechat as never,
       realname as never,
       identity as never,
+      { validateFromBuffer: jest.fn() } as never,
       storage,
       { recruitmentOcr: { dailyIpLimit: 30 } } as never,
     );
