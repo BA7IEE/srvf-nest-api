@@ -7,6 +7,8 @@ import { PrismaService } from '../../database/prisma.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
 import { SmsCryptoDecryptError, SmsCryptoService } from './sms-crypto.service';
 import type {
@@ -29,8 +31,8 @@ import { SmsCredentialStatus, type SmsSettingsResolved } from './sms.types';
 //   TENCENT_SMS(录凭证即意味着真实通道;镜像 storage Q-11-2 语义)
 //
 // singleton 不在 DB 层强制(镜像 storage Q-87-2):>1 行 WARN + 取 createdAt 最早。
-// 凭证安全(L3 红线):response / 日志 / audit 永不含明文或密文;SmsSettings 变更
-// **不写 audit_logs**(沿 L-3 挂起,D-SMS-9)。
+// 凭证安全(L3 红线):response / 日志 / audit 永不含明文或密文;第六刀已补 update/reset
+// in-tx audit(update 只记 changedFields;reset 不记任何凭证字段或值)。
 
 const CACHE_TTL_MS = 60_000;
 
@@ -47,6 +49,7 @@ export class SmsSettingsService {
     private readonly prisma: PrismaService,
     private readonly crypto: SmsCryptoService,
     private readonly rbac: RbacService,
+    private readonly auditLogs: AuditLogsService,
     @Inject(appConfig.KEY)
     private readonly cfg: ConfigType<typeof appConfig>,
   ) {}
@@ -119,37 +122,55 @@ export class SmsSettingsService {
   async updateSettings(
     dto: UpdateSmsSettingsDto,
     user: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<SmsSettingsResponseDto> {
     await this.assertCanOrThrow(user, 'sms-setting.update.singleton');
-
-    const existing = await this.prisma.smsSettings.findFirst({
-      orderBy: { createdAt: 'asc' },
-      select: { id: true, providerType: true },
-    });
-
-    // E-15 第①重:production-like 禁 DEV_STUB(显式传入或"不存在则建 default"两条路径都拦)
-    const effectiveProviderType = dto.providerType ?? existing?.providerType ?? 'DEV_STUB';
-    if (isProductionLike(this.cfg.env) && effectiveProviderType === 'DEV_STUB') {
-      throw new BizException(BizCode.BAD_REQUEST);
-    }
-
     const data = this.buildUpdateData(dto);
+    const changedFields = Object.entries(dto)
+      .filter(([, value]) => value !== undefined)
+      .map(([key]) => key)
+      .sort();
 
-    let row: SmsSettingsRow;
-    if (existing) {
-      row = await this.prisma.smsSettings.update({
-        where: { id: existing.id },
-        data: { ...data, updatedBy: user.id },
+    const row = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.smsSettings.findFirst({
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, providerType: true },
       });
-    } else {
-      row = await this.prisma.smsSettings.create({
-        data: {
-          ...(data as Prisma.SmsSettingsCreateInput),
-          providerType: dto.providerType ?? 'DEV_STUB',
-          updatedBy: user.id,
-        },
+
+      // E-15 第①重:production-like 禁 DEV_STUB(显式传入或"不存在则建 default"两条路径都拦)
+      const effectiveProviderType = dto.providerType ?? existing?.providerType ?? 'DEV_STUB';
+      if (isProductionLike(this.cfg.env) && effectiveProviderType === 'DEV_STUB') {
+        throw new BizException(BizCode.BAD_REQUEST);
+      }
+
+      let updated: SmsSettingsRow;
+      if (existing) {
+        updated = await tx.smsSettings.update({
+          where: { id: existing.id },
+          data: { ...data, updatedBy: user.id },
+        });
+      } else {
+        updated = await tx.smsSettings.create({
+          data: {
+            ...(data as Prisma.SmsSettingsCreateInput),
+            providerType: dto.providerType ?? 'DEV_STUB',
+            updatedBy: user.id,
+          },
+        });
+      }
+
+      await this.auditLogs.log({
+        event: 'sms-setting.update',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: 'sms_setting',
+        resourceId: updated.id,
+        meta: auditMeta,
+        extra: { changedFields },
+        tx,
       });
-    }
+      return updated;
+    });
 
     this.invalidate();
     return this.toResponseDto(row);
@@ -160,40 +181,55 @@ export class SmsSettingsService {
   async resetCredentials(
     dto: ResetSmsCredentialsDto,
     user: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<SmsSettingsResponseDto> {
     await this.assertCanOrThrow(user, 'sms-setting.reset.credentials');
     // SMS_ENCRYPTION_KEY 缺失(dev/test 留空)时抛 SmsCryptoUnavailableError → 全局过滤器 500
     const secretIdEncrypted = this.crypto.encrypt(dto.secretId);
     const secretKeyEncrypted = this.crypto.encrypt(dto.secretKey);
 
-    const existing = await this.prisma.smsSettings.findFirst({
-      orderBy: { createdAt: 'asc' },
-      select: { id: true },
-    });
+    const row = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.smsSettings.findFirst({
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
 
-    let row: SmsSettingsRow;
-    if (existing) {
-      row = await this.prisma.smsSettings.update({
-        where: { id: existing.id },
-        data: {
-          secretIdEncrypted,
-          secretKeyEncrypted,
-          credentialConfigured: true,
-          updatedBy: user.id,
-        },
+      let updated: SmsSettingsRow;
+      if (existing) {
+        updated = await tx.smsSettings.update({
+          where: { id: existing.id },
+          data: {
+            secretIdEncrypted,
+            secretKeyEncrypted,
+            credentialConfigured: true,
+            updatedBy: user.id,
+          },
+        });
+      } else {
+        // 录凭证即意味着真实通道:default TENCENT_SMS(镜像 storage reset 默认 COS 语义)
+        updated = await tx.smsSettings.create({
+          data: {
+            providerType: 'TENCENT_SMS',
+            secretIdEncrypted,
+            secretKeyEncrypted,
+            credentialConfigured: true,
+            updatedBy: user.id,
+          },
+        });
+      }
+
+      // 最硬红线:reset audit 只保留 actor / row.id / AuditMeta;不传 before/after/extra。
+      await this.auditLogs.log({
+        event: 'sms-setting.reset-credentials',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: 'sms_setting',
+        resourceId: updated.id,
+        meta: auditMeta,
+        tx,
       });
-    } else {
-      // 录凭证即意味着真实通道:default TENCENT_SMS(镜像 storage reset 默认 COS 语义)
-      row = await this.prisma.smsSettings.create({
-        data: {
-          providerType: 'TENCENT_SMS',
-          secretIdEncrypted,
-          secretKeyEncrypted,
-          credentialConfigured: true,
-          updatedBy: user.id,
-        },
-      });
-    }
+      return updated;
+    });
 
     // 仅 pino 日志记动作 + actorUserId;不含 secret 明文 / 密文(L3 红线)
     this.logger.log(`sms_settings credentials reset by user.id=${user.id}; row.id=${row.id}`);

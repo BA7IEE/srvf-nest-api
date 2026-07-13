@@ -539,6 +539,7 @@ export class UsersService {
     currentUser: CurrentUserPayload,
     id: string,
     dto: UpdateUserRoleDto,
+    auditMeta: AuditMeta,
   ): Promise<UserResponseDto> {
     // P0-F PR-3B D1=A:user.update.role 不绑 ops-admin;仅 SUPER_ADMIN 经 RbacService 短路通过。
     // RBAC 通过后仍走 service 内 4 项业务护栏(assertNotSelf + assertCanManageUser +
@@ -560,11 +561,25 @@ export class UsersService {
       if (target.role === Role.SUPER_ADMIN && dto.role !== Role.SUPER_ADMIN) {
         await this.lastAdminProtection.assertCanRemoveSuperAdmin(tx, id);
       }
-      return tx.user.update({
+      const updated = await tx.user.update({
         where: { id },
         data: { role: dto.role },
         select: userSafeSelect,
       });
+
+      await this.auditLogs.log({
+        event: 'user.role.update',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'user',
+        resourceId: id,
+        meta: auditMeta,
+        before: { role: target.role },
+        after: { role: updated.role },
+        tx,
+      });
+
+      return updated;
     });
   }
 
@@ -574,6 +589,7 @@ export class UsersService {
     currentUser: CurrentUserPayload,
     id: string,
     dto: UpdateUserStatusDto,
+    auditMeta: AuditMeta,
   ): Promise<UserResponseDto> {
     await this.assertCanOrThrow(currentUser, 'user.update.status');
     const target = await this.findRawByIdOrThrow(id);
@@ -602,8 +618,7 @@ export class UsersService {
       // (revokedReason='admin-disable';沿评审稿 §7.3 + §9 联动撤销 4 场景之一)。
       // 仅当 dto.status === DISABLED 时撤销;ACTIVE → ACTIVE 不动 refresh(沿评审稿 §7.5);
       // access token 由 JwtStrategy 每请求查库即时阻断(沿现状)。
-      // 本 PR 范围:**不**为 status 改动写 audit(沿评审稿 D-PR3-2 用户拍板 §7.3 不补 audit;
-      // 仅撤销 refresh,audit 由独立 PR 处理)。
+      // 第六刀已补 in-tx audit(2026-07-13;推翻 D-PR3-2 的“不写 audit”挂起决定)。
       if (dto.status === UserStatus.DISABLED) {
         await tx.refreshToken.updateMany({
           where: { userId: id, revokedAt: null, expiresAt: { gt: new Date() } },
@@ -611,13 +626,29 @@ export class UsersService {
         });
       }
 
+      await this.auditLogs.log({
+        event: 'user.status.update',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'user',
+        resourceId: id,
+        meta: auditMeta,
+        before: { status: target.status },
+        after: { status: updated.status },
+        tx,
+      });
+
       return updated;
     });
   }
 
   // ============ admin: soft delete ============
 
-  async softDelete(currentUser: CurrentUserPayload, id: string): Promise<UserResponseDto> {
+  async softDelete(
+    currentUser: CurrentUserPayload,
+    id: string,
+    auditMeta: AuditMeta,
+  ): Promise<UserResponseDto> {
     await this.assertCanOrThrow(currentUser, 'user.delete.account');
     this.assertNotSelf(currentUser, id);
 
@@ -642,10 +673,22 @@ export class UsersService {
       // P0-E PR-3(2026-05-18):用户被软删时**主动撤销**目标 user 全部 refresh token
       // (revokedReason='admin-delete';沿评审稿 §7.4 + §9 联动撤销 4 场景之一)。
       // access token 由 JwtStrategy 每请求查库即时阻断(deletedAt != null;沿现状)。
-      // 本 PR 范围:**不**为软删写 audit(沿 D-PR3-2 用户拍板;仅撤销 refresh)。
+      // 第六刀已补 in-tx audit(2026-07-13;推翻 D-PR3-2 的“不写 audit”挂起决定)。
       await tx.refreshToken.updateMany({
         where: { userId: id, revokedAt: null, expiresAt: { gt: new Date() } },
         data: { revokedAt: new Date(), revokedReason: 'admin-delete' },
+      });
+
+      await this.auditLogs.log({
+        event: 'user.soft-delete',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'user',
+        resourceId: id,
+        meta: auditMeta,
+        before: { deleted: false, status: target.status },
+        after: { deleted: true, status: updated.status },
+        tx,
       });
 
       return updated;

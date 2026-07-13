@@ -188,11 +188,11 @@ req.body.refreshToken
 
 本文件不是 RBAC / scoped-authz(组织职务 + 分管 + 统一鉴权)的权威源,只覆盖认证(登录 / 密码 / token)相关安全策略,不重复判权设计。权威源:[`AGENTS.md`](../AGENTS.md) §8 / §13(RBAC / 判权铁律)、[`src/modules/authz/CLAUDE.md`](../src/modules/authz/CLAUDE.md)(判权大脑本地事实)、[`docs/ops/scoped-authz-go-live-checklist.md`](ops/scoped-authz-go-live-checklist.md)(上线初始化 SOP,含考勤终审绑定 / `22074`-`22075` 行为)。
 
-## 配置面审计(config-audit)权威规则
+## 控制面审计(control-plane audit)权威规则
 
-> 收敛「哪些配置面写 audit / 哪些刻意不写」的单一权威表述。承接 v0.11.0 handoff 的隐性 deferral(Storage Settings 配置变更 audit「留独立专项 PR」/ v2 数据模型草案「第一阶段 4 模型写不接入 audit_logs」),经三轮全仓 review(第三轮 v0.38.0 §F&A-2)后**就此成文闭环**:该 deferral 的当前生效范围已随各模块反向补齐而漂移,不再作为「所有 config 面一律不 audit」的依据。
+> 收敛「哪些控制面高危写必须 audit / 哪些刻意不写」的单一权威表述。2026-07-13 第六刀 finding 15 由维护者拍板系统性全覆盖,推翻 users D-PR3-2 / sms D-SMS-9 / storage §6.6.5 的“不写 / 留专项”挂起决定;四类 settings 与 users 三类高危写均已接入同事务审计。
 
-**判据**:一条配置面写操作是否写 audit,取决于它是否改变「谁能做什么 / 谁归属哪个组织」的**授权/组织事实**,而非配置本身的敏感度。授权/组织事实的运行时变更必须可取证(A-1「可审计」红线);纯运营开关 / 字典 / 凭据类 settings 不进 audit(其变更不改判权,且部分含凭据不宜落 audit context)。
+**判据**:授权 / 组织事实、账号角色 / 状态 / 删除、供应商开关与凭据重置均属必须可取证的控制面高危写。敏感度不是跳过审计的理由,而是约束 audit payload:**凭据 / 密码 / secret 的明文和密文永不进入 audit**;settings update 只记非敏感变更字段名,reset-credentials 只记动作、actor 与 row.id。
 
 ### 写 audit(授权 / 组织事实变更)
 
@@ -205,13 +205,14 @@ req.body.refreshToken
 | **position / supervision assignments**:任命/撤销、建/撤分管 | `position-assignment.{create,revoke}` / `supervision-assignment.{create,revoke}` | scoped-authz PR4 / PR5 |
 | **attachment-configs**:三表建/改/改状态/删 | `attachment.config.change`(伞事件;`extra.configType` + `extra.operation`) | attachments PR #6d |
 | **contribution-rules**:建/改/软删 | `contribution-rule.{create,update,delete}` | audit PR #3 |
+| **users**:角色 / 状态 / 软删 | `user.role.update` / `user.status.update` / `user.soft-delete`(`user`;before/after 仅 role/status/delete) | 2026-07-13 第六刀 finding 15;推翻 users D-PR3-2 |
+| **storage / sms / wechat / realname settings**:update / reset credentials | `<provider>-setting.update` / `<provider>-setting.reset-credentials`(`<provider>_setting`;update 仅 `extra.changedFields`,reset 无 before/after/extra) | 2026-07-13 第六刀 finding 15;凭据明文/密文永不入 audit |
 
-### 刻意不写 audit(不改判权 / 凭据类 / 纯运营配置)
+### 刻意不写 audit(当前明确范围)
 
 | 配置面 | 理由 |
 |---|---|
-| **sms / wechat / storage / realname settings** | 供应商开关 + 凭据类配置,变更不改判权;凭据不宜落 audit context(承接 v0.11.0 handoff「留独立专项 PR」——经本次成文确认为**刻意不做**而非遗漏;未来若有合规诉求再单独立项) |
 | **dictionaries(字典类型 / 字典项)** | 分类字典,变更不改授权事实;属 v2 早期「4 模型写不接 audit」的原始范围,保持不写 |
-| **member.update.status / 队员轴账号 status(D-PR3-2)** | status 改动不写 audit 的既有对称决定(`users.service` / `members.service` 两轴一致) |
+| **member.update.status / 队员轴账号 status** | `members.service.ts:updateAccountStatus` 不在第六刀列明的 11 写点内,本刀不扩范围;不再以 users D-PR3-2 的“对称”决定作为依据 |
 
 > 变更本表任一归属(把某 config 面从「不写」挪到「写」或反之)= 判权 / 审计事实变更,按 D 档降速,先与维护者对齐。

@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 
 import {
   ApiBizErrorResponse,
@@ -10,6 +11,7 @@ import {
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   ResetRealnameCredentialsDto,
   RealnameSettingsResponseDto,
@@ -29,7 +31,7 @@ import { RealnameSettingsService } from './realname-settings.service';
 //
 // **凭证安全边界**(L3 红线):
 //   - response **永不**包含 secretId / secretKey / *Encrypted / credentials
-//   - RealnameVerificationSettings 变更不写 audit_logs(沿 L-3 挂起;pino 日志仅记 user.id + 动作)
+//   - 第六刀已补 update/reset-credentials 同事务 audit;reset audit 不含任何凭证值
 
 @ApiTags('Ops - Realname Settings')
 @ApiBearerAuth()
@@ -59,8 +61,9 @@ export class RealnameSettingsController {
   update(
     @Body() dto: UpdateRealnameSettingsDto,
     @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<RealnameSettingsResponseDto> {
-    return this.service.updateSettings(dto, user);
+    return this.service.updateSettings(dto, user, this.buildAuditMeta(req));
   }
 
   @Post('reset-credentials')
@@ -73,7 +76,16 @@ export class RealnameSettingsController {
   resetCredentials(
     @Body() dto: ResetRealnameCredentialsDto,
     @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<RealnameSettingsResponseDto> {
-    return this.service.resetCredentials(dto, user);
+    return this.service.resetCredentials(dto, user, this.buildAuditMeta(req));
+  }
+
+  private buildAuditMeta(req: Request): AuditMeta {
+    return {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    };
   }
 }

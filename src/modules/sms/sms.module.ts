@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { DatabaseModule } from '../../database/database.module';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { DevStubSmsProvider } from './providers/dev-stub.provider';
 import { TencentSmsProvider } from './providers/tencent-sms.provider';
@@ -22,7 +23,7 @@ import { SmsSettingsService } from './sms-settings.service';
 // AGENTS §2 例外:providers/ 子目录经 2026-06-10 goal 拍板解锁(评审稿 §5,
 // 仅限本模块本子目录;镜像 modules/storage/providers/ 形态)。
 @Module({
-  imports: [DatabaseModule, PermissionsModule],
+  imports: [DatabaseModule, AuditLogsModule, PermissionsModule],
   controllers: [SmsSettingsController, SmsSendLogsController],
   providers: [
     SmsSettingsService,

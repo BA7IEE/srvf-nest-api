@@ -7,6 +7,8 @@ import { PrismaService } from '../../database/prisma.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
 import { RealnameCryptoDecryptError, RealnameCryptoService } from './realname-crypto.service';
 import type {
@@ -27,7 +29,7 @@ import { RealnameCredentialStatus, type RealnameSettingsResolved } from './realn
 // 共性(沿 wechat/sms):60s 内存缓存(单实例前提)+ singleton 不在 DB 层强制(>1 行 WARN + 取
 // createdAt 最早)+ production-like 禁 DEV_STUB(写入口第①重,运行时第②重在 RealnameVerificationService)。
 // 凭证安全(L3 红线):response / 日志 / audit 永不含 secretId / secretKey 明文或密文;
-// RealnameVerificationSettings 变更**不写 audit_logs**(沿 L-3 挂起,镜像 wechat E-7)。
+// 第六刀已补 update/reset-credentials 同事务 audit;reset audit 仅记动作,不含任何凭证值。
 
 const CACHE_TTL_MS = 60_000;
 
@@ -44,6 +46,7 @@ export class RealnameSettingsService {
     private readonly prisma: PrismaService,
     private readonly crypto: RealnameCryptoService,
     private readonly rbac: RbacService,
+    private readonly auditLogs: AuditLogsService,
     @Inject(appConfig.KEY)
     private readonly cfg: ConfigType<typeof appConfig>,
   ) {}
@@ -116,37 +119,54 @@ export class RealnameSettingsService {
   async updateSettings(
     dto: UpdateRealnameSettingsDto,
     user: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<RealnameSettingsResponseDto> {
     await this.assertCanOrThrow(user, 'realname-setting.update.singleton');
 
-    const existing = await this.prisma.realnameVerificationSettings.findFirst({
-      orderBy: { createdAt: 'asc' },
-      select: { id: true, providerType: true },
-    });
-
-    // production-like 禁 DEV_STUB(显式传入或"不存在则建 default"两条路径都拦)
-    const effectiveProviderType = dto.providerType ?? existing?.providerType ?? 'DEV_STUB';
-    if (isProductionLike(this.cfg.env) && effectiveProviderType === 'DEV_STUB') {
-      throw new BizException(BizCode.BAD_REQUEST);
-    }
-
     const data = this.buildUpdateData(dto);
+    const changedFields = Object.entries(dto)
+      .filter(([, value]) => value !== undefined)
+      .map(([field]) => field)
+      .sort();
 
-    let row: RealnameSettingsRow;
-    if (existing) {
-      row = await this.prisma.realnameVerificationSettings.update({
-        where: { id: existing.id },
-        data: { ...data, updatedBy: user.id },
+    const row = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.realnameVerificationSettings.findFirst({
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, providerType: true },
       });
-    } else {
-      row = await this.prisma.realnameVerificationSettings.create({
-        data: {
-          ...(data as Prisma.RealnameVerificationSettingsCreateInput),
-          providerType: dto.providerType ?? 'DEV_STUB',
-          updatedBy: user.id,
-        },
+
+      // production-like 禁 DEV_STUB(显式传入或"不存在则建 default"两条路径都拦)
+      const effectiveProviderType = dto.providerType ?? existing?.providerType ?? 'DEV_STUB';
+      if (isProductionLike(this.cfg.env) && effectiveProviderType === 'DEV_STUB') {
+        throw new BizException(BizCode.BAD_REQUEST);
+      }
+
+      const updated = existing
+        ? await tx.realnameVerificationSettings.update({
+            where: { id: existing.id },
+            data: { ...data, updatedBy: user.id },
+          })
+        : await tx.realnameVerificationSettings.create({
+            data: {
+              ...(data as Prisma.RealnameVerificationSettingsCreateInput),
+              providerType: dto.providerType ?? 'DEV_STUB',
+              updatedBy: user.id,
+            },
+          });
+
+      await this.auditLogs.log({
+        event: 'realname-setting.update',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: 'realname_setting',
+        resourceId: updated.id,
+        meta: auditMeta,
+        extra: { changedFields },
+        tx,
       });
-    }
+
+      return updated;
+    });
 
     this.invalidate();
     return this.toResponseDto(row);
@@ -157,40 +177,54 @@ export class RealnameSettingsService {
   async resetCredentials(
     dto: ResetRealnameCredentialsDto,
     user: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<RealnameSettingsResponseDto> {
     await this.assertCanOrThrow(user, 'realname-setting.reset.credentials');
     // REALNAME_ENCRYPTION_KEY 缺失(dev/test 留空)时抛 RealnameCryptoUnavailableError → 全局过滤器 500
     const secretIdEncrypted = this.crypto.encrypt(dto.secretId);
     const secretKeyEncrypted = this.crypto.encrypt(dto.secretKey);
 
-    const existing = await this.prisma.realnameVerificationSettings.findFirst({
-      orderBy: { createdAt: 'asc' },
-      select: { id: true },
-    });
+    const row = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.realnameVerificationSettings.findFirst({
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
 
-    let row: RealnameSettingsRow;
-    if (existing) {
-      row = await this.prisma.realnameVerificationSettings.update({
-        where: { id: existing.id },
-        data: {
-          secretIdEncrypted,
-          secretKeyEncrypted,
-          credentialConfigured: true,
-          updatedBy: user.id,
-        },
+      const updated = existing
+        ? await tx.realnameVerificationSettings.update({
+            where: { id: existing.id },
+            data: {
+              secretIdEncrypted,
+              secretKeyEncrypted,
+              credentialConfigured: true,
+              updatedBy: user.id,
+            },
+          })
+        : await tx.realnameVerificationSettings.create({
+            // 录凭证即意味着真实通道:default TENCENT_CLOUD(镜像 wechat reset 默认 WECHAT 语义)
+            data: {
+              providerType: 'TENCENT_CLOUD',
+              secretIdEncrypted,
+              secretKeyEncrypted,
+              credentialConfigured: true,
+              updatedBy: user.id,
+            },
+          });
+
+      // 最硬红线:reset audit 只记动作与 row.id,不传 before/after/extra,
+      // 因而不可能携带 secretId / secretKey 的明文或密文。
+      await this.auditLogs.log({
+        event: 'realname-setting.reset-credentials',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: 'realname_setting',
+        resourceId: updated.id,
+        meta: auditMeta,
+        tx,
       });
-    } else {
-      // 录凭证即意味着真实通道:default TENCENT_CLOUD(镜像 wechat reset 默认 WECHAT 语义)
-      row = await this.prisma.realnameVerificationSettings.create({
-        data: {
-          providerType: 'TENCENT_CLOUD',
-          secretIdEncrypted,
-          secretKeyEncrypted,
-          credentialConfigured: true,
-          updatedBy: user.id,
-        },
-      });
-    }
+
+      return updated;
+    });
 
     // 仅 pino 日志记动作 + actorUserId;不含 secretId / secretKey 明文 / 密文(L3 红线)
     this.logger.log(

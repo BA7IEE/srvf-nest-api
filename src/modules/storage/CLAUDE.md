@@ -22,7 +22,7 @@
 - **signed URL**:COS PUT 上传约定客户端必须带 `Content-Type` 与签名一致;`response-content-disposition` 通过 query 参数附加(沿 §6.4.6 CORS);Local provider 返非路由 stub URL(`/internal/storage/local-stub-upload/...`;接口对称用,不会被实际命中)
 - **uploadToken** 紧凑格式 `<base64url(claims)>.<base64url(hmac)>`,**不**引 jsonwebtoken;HMAC key 由 `STORAGE_ENCRYPTION_KEY` 经 scrypt 派生(单独 salt);验签 `timingSafeEqual`;失败统一映射 `13001`(信息泄漏防御)
 - **入口判权当前事实**:`StorageSettingsController` 三端点入口仅 `JwtAuthGuard`,**不**挂 `@Roles`,经 Service 内 `rbac.can()`;`storage-setting.reset.credentials` 当前**未**绑 `ops-admin`,仅 SUPER_ADMIN 经 `RbacService.can` 短路通过(沿 P0-F PR-2B D2=A);此处仅作为当前事实记录,**不得**在 docs-only PR 中改变权限策略
-- **credential write audit 当前事实**:当前 reset-credentials 路径**未**写 `audit_logs`(沿 §6.6.5);日志仅记 `user.id + 动作`,**不**含 secret 明文 / 密文;此处仅作为当前事实记录,**不得**在 docs-only PR 中改变审计策略,是否补 credential write audit 必须单独设计
+- **credential write audit 当前事实(2026-07-13 第六刀)**:`PATCH` 与 `reset-credentials` 均与 settings 行写入在同一事务记录 `storage-setting.update` / `storage-setting.reset-credentials`;update 只记非敏感 `changedFields` 字段名,reset context 严格只有请求元数据,**不**传 before/after/extra,明文 / 密文 / SecretId / SecretKey / signed URL 永不入 audit。
 - **`accessUrl` 字段语义**:`attachments` 模块的 response field;Provider 接通后由 `generateDownloadUrl` 生成,解析失败统一**降级返 null**,不向 client 抛凭证状态;**不**写入 audit snapshot(沿 [`attachments.service.ts:93`](../../modules/attachments/attachments.service.ts:93))
 - **0 新依赖**:仅 `crypto` 原生 + `cos-nodejs-sdk-v5`(已在 package.json);**不**新增 lru-cache / node-cache / jsonwebtoken / ms
 

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { DatabaseModule } from '../../database/database.module';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { CosStorageProvider } from './providers/cos.provider';
 import { LocalStorageProvider } from './providers/local.provider';
@@ -26,7 +27,7 @@ import { StorageSettingsService } from './storage-settings.service';
 // - 映射 seed 新增 3 条 storage-setting.* 权限点
 // - D2=A:`storage-setting.reset.credentials` 不绑 ops-admin(仅 SUPER_ADMIN 短路通过)
 @Module({
-  imports: [DatabaseModule, PermissionsModule],
+  imports: [DatabaseModule, AuditLogsModule, PermissionsModule],
   controllers: [StorageSettingsController],
   providers: [
     StorageSettingsService,

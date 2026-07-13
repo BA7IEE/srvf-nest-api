@@ -13,6 +13,7 @@
 - **最后管理员保护(2026-07-13 第二档安全收口)**:`UsersService.updateRole/updateStatus/softDelete` 不再自建 count。三条 last-SUPER_ADMIN 削权路径统一委托 `LastAdminProtectionPolicy` 并取 `users:last-super-admin` advisory lock；禁用/软删用户还须取 `role-bindings:last-ops-admin` 锁，若目标是唯一 active GLOBAL `ops-admin` 持有人则返既有 `LAST_OPS_ADMIN_PROTECTED=30101`。
 - **事务边界**:上述 guard 与实际角色/状态/软删写入必须在同一 `prisma.$transaction` 内；锁后重算、再写入，禁止把检查移到事务外。
 - **联动撤销不变**:禁用/软删成功仍在同事务撤销 refresh token，reason 分别为 `admin-disable` / `admin-delete`；保护守卫拒绝时用户与 refresh token 均不得变化。
+- **控制面审计(2026-07-13 第六刀)**:`updateRole` / `updateStatus` / `softDelete` 与用户行写入在同一事务记录 `user.role.update` / `user.status.update` / `user.soft-delete`；before/after 仅含 role/status/delete 动作，不得含 `passwordHash` 或任何 secret。该决定推翻 users D-PR3-2 的“不写 audit”挂起结论。
 - **角色边界不变**:`SUPER_ADMIN > ADMIN > USER`、自我保护、`assertCanManageUser`、最后一个 SUPER_ADMIN 保护均沿 `AGENTS.md §13`；不得把 RBAC 业务角色当作系统 `Role.SUPER_ADMIN`。
 
 ## Risk points

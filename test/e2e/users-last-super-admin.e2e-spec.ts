@@ -171,8 +171,18 @@ describe('最后管理员事务保护', () => {
     const b = await createTestUser(app, { username: 'lsa-concurrent-b', role: Role.SUPER_ADMIN });
 
     const results = await Promise.allSettled([
-      usersService.updateStatus(currentUserPayload(a), b.id, { status: UserStatus.DISABLED }),
-      usersService.updateStatus(currentUserPayload(b), a.id, { status: UserStatus.DISABLED }),
+      usersService.updateStatus(
+        currentUserPayload(a),
+        b.id,
+        { status: UserStatus.DISABLED },
+        { requestId: 'last-sa-concurrency-a', ip: '127.0.0.1', ua: 'jest' },
+      ),
+      usersService.updateStatus(
+        currentUserPayload(b),
+        a.id,
+        { status: UserStatus.DISABLED },
+        { requestId: 'last-sa-concurrency-b', ip: '127.0.0.1', ua: 'jest' },
+      ),
     ]);
 
     expectOneSuccessOneProtected(results, BizCode.LAST_SUPER_ADMIN_PROTECTED);
@@ -193,9 +203,14 @@ describe('最后管理员事务保护', () => {
     await bindOpsAdmin(target.id, role.id);
 
     await expect(
-      usersService.updateStatus(currentUserPayload(actor), target.id, {
-        status: UserStatus.DISABLED,
-      }),
+      usersService.updateStatus(
+        currentUserPayload(actor),
+        target.id,
+        {
+          status: UserStatus.DISABLED,
+        },
+        { requestId: 'last-ops-disable', ip: '127.0.0.1', ua: 'jest' },
+      ),
     ).rejects.toEqual(new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED));
     expect((await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).status).toBe(
       UserStatus.ACTIVE,
@@ -212,9 +227,13 @@ describe('最后管理员事务保护', () => {
     const role = await createOpsAdminRole();
     await bindOpsAdmin(target.id, role.id);
 
-    await expect(usersService.softDelete(currentUserPayload(actor), target.id)).rejects.toEqual(
-      new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED),
-    );
+    await expect(
+      usersService.softDelete(currentUserPayload(actor), target.id, {
+        requestId: 'last-ops-delete',
+        ip: '127.0.0.1',
+        ua: 'jest',
+      }),
+    ).rejects.toEqual(new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED));
     expect(
       (await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).deletedAt,
     ).toBeNull();
@@ -229,9 +248,14 @@ describe('最后管理员事务保护', () => {
     await bindOpsAdmin(second.id, role.id);
 
     await expect(
-      usersService.updateStatus(currentUserPayload(actor), first.id, {
-        status: UserStatus.DISABLED,
-      }),
+      usersService.updateStatus(
+        currentUserPayload(actor),
+        first.id,
+        {
+          status: UserStatus.DISABLED,
+        },
+        { requestId: 'two-ops-disable', ip: '127.0.0.1', ua: 'jest' },
+      ),
     ).resolves.toMatchObject({ id: first.id, status: UserStatus.DISABLED });
     expect(await countActiveOpsAdminHolders(role.id)).toBe(1);
   });
@@ -249,7 +273,12 @@ describe('最后管理员事务保护', () => {
     const actorPayload = currentUserPayload(actor);
 
     const results = await Promise.allSettled([
-      usersService.updateStatus(actorPayload, a.id, { status: UserStatus.DISABLED }),
+      usersService.updateStatus(
+        actorPayload,
+        a.id,
+        { status: UserStatus.DISABLED },
+        { requestId: 'last-ops-concurrency-disable', ip: '127.0.0.1', ua: 'jest' },
+      ),
       userRolesService.revoke(actorPayload, b.id, role.id, {
         requestId: 'last-ops-admin-concurrency',
         ip: '127.0.0.1',
