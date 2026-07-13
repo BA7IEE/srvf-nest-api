@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+> 下一个 minor 候选(当前为空)。
+
+## v0.45.0 - 2026-07-13
+
 > **⚠️ 行为变更(后台权限配置须适配)**:非 SUPER_ADMIN 不能通过任何角色委派入口授予/撤销特权角色,也不能向角色分配控制面权限码;7 个 seed 内置角色对所有身份禁止 API 删除。未来/过期 GLOBAL 角色绑定不再经 legacy RBAC 产权限或角色摘要;禁用/软删最后一个 active GLOBAL ops-admin 持有人改返 30101。端点、DTO、OpenAPI path/schema 均不变。
 >
 > **⚠️ 行为变更(并发状态写)**:受保护状态迁移统一增加期望旧态原子认领;同一旧态的并发写败者不再静默覆盖赢家,改返各模块既有 `*_STATUS_INVALID` / `WRONG_STATE`。
