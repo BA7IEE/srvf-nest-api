@@ -19,6 +19,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { OrganizationsService } from '../organizations/organizations.service';
+import { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import { RbacService } from '../permissions/rbac.service';
 import { maskPhone } from '../sms/sms.constants';
 import {
@@ -68,6 +69,7 @@ export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
+    private readonly lastAdminProtection: LastAdminProtectionPolicy,
     private readonly organizations: OrganizationsService,
     private readonly auditLogs: AuditLogsService,
   ) {}
@@ -772,6 +774,7 @@ export class MembersService {
 
       // 先软删旧行释放 partial unique 槽位,再建新行——顺序不可颠倒(先建会与仍
       // live 的旧行同时违反 partial unique)。
+      await this.lastAdminProtection.assertCanDeactivateOpsAdminUser(tx, oldLink.id);
       await tx.user.update({
         where: { id: oldLink.id },
         data: { deletedAt: new Date(), status: UserStatus.DISABLED },
@@ -864,8 +867,11 @@ export class MembersService {
         throw new BizException(BizCode.MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE);
       }
 
-      if (dto.status === UserStatus.DISABLED && linked.id === currentUser.id) {
-        throw new BizException(BizCode.CANNOT_OPERATE_SELF);
+      if (dto.status === UserStatus.DISABLED) {
+        if (linked.id === currentUser.id) {
+          throw new BizException(BizCode.CANNOT_OPERATE_SELF);
+        }
+        await this.lastAdminProtection.assertCanDeactivateOpsAdminUser(tx, linked.id);
       }
 
       const updated = await tx.user.update({
@@ -978,6 +984,11 @@ export class MembersService {
       }
 
       const now = new Date();
+
+      // linked live 账号仅在当前仍启用时会进入停用腿；幂等 skip 不取锁。
+      if (linked && linked.status !== UserStatus.DISABLED) {
+        await this.lastAdminProtection.assertCanDeactivateOpsAdminUser(tx, linked.id);
+      }
 
       // ① member INACTIVE(幂等 skip)。
       const memberDeactivated = member.status === MemberStatus.ACTIVE;
