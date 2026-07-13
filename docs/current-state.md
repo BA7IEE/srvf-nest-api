@@ -8,15 +8,17 @@
 | 项 | 当前值 |
 |---|---|
 | 版本(六处一致) | **v0.45.0**(2026-07-13;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #583 squash `09d9b786`;GitHub Release「v0.45.0 — 系统性安全收口(委派·任期·状态迁移·证书信任)」标 Latest。**⚠️ 行为变更三组**:委派收窄/内置角色禁删/任期失效/最后 ops-admin 30101;并发状态写败者 `*_STATUS_INVALID`;已核验证书编辑核心字段回退 pending) |
-| `main` HEAD | v0.45.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #583 `09d9b786`;收口链 = 委派 #578 + 任期/末位 #579 + 状态迁移/证书 #580 + 队员轴残留 #581 + bump #582 + handoff #583 + tag/Release + 本回填 PR) |
-| open PR / 工作树 / Unreleased | **本回填 PR 合入后 0** open PR / clean / `## Unreleased` **0 条**。终值:权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` **336** / controller 66 / 模块 35 / migration **48** / 角色 7 / BizCode **232** / AuditLogEvent **99** |
+| `main` HEAD | v0.45.0 发布链之后累计 `## Unreleased`:第五刀文件验证 #585 + 本第六刀控制面审计(合入后);本刀继续随下个 minor 发布,不单独 bump/tag |
+| open PR / 工作树 / Unreleased | 本刀合入后 0 open PR / clean / `## Unreleased` **2 条**(第五刀文件验证 #585 + 第六刀控制面审计)。终值:权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` **336** / controller 66 / 模块 35 / migration **48** / 角色 7 / BizCode **232** / AuditLogEvent **110** |
 | 最新 handoff | [`archive/handoff/v0.45.0.md`](archive/handoff/v0.45.0.md)(历史快照;tag 指向该 handoff #583 squash `09d9b786`;接续 [`v0.44.0.md`](archive/handoff/v0.44.0.md);合入后不回改) |
 
 ## 2. 当前系统已具备能力
 
 > 清单级;事实权威:字段 = [`schema.prisma`](../prisma/schema.prisma);接口 = `/api/docs` + [`EXPECTED_ROUTES`](../test/contract/openapi.contract-spec.ts) + snapshot;BizCode = `biz-code.constant.ts` + CHANGELOG。
 
-- **v0.45.0 系统性安全收口(已发布 2026-07-13;D 档)**:承接 v0.44.0 审计,维护者定「把权限委派 / 状态迁移 / 并发计数 / 文件验证做成所有入口必经的统一底层规则,而非逐接口补刀」。15 项二次核实 findings 1–7 全属实,四刀以「单一原语 + 全兄弟路径接线 + 漂移/并发测试」收口:委派 `isControlPlanePermissionCode` + `RoleDelegationPolicy` + 7 内置角色禁删(#578)、任期 `role-binding-validity`(rbac/authz 共用)+ 末位管理员 `LastAdminProtectionPolicy` 一把共享 advisory 锁(#579)、状态迁移 `claimAtStatus` CAS 16 处 + 证书信任回退(#580)、队员轴三削权门同类残留(#581);findings 8–15 接受登记(记 NEXT_TASKS,除 #12 outbox 撞无 queue/cron 红线)。四刀均主会话 commit-diff 元核验 PASS。0 schema/migration/endpoint/permission/controller/module/role/dependency;唯一新增 BizCode `30104`(231→232),其余计数不变。各刀 CI(Lint/Typecheck/E2E + Docker build + smoke)全绿。
+- **Unreleased 系统性安全收口第五/第六刀**(2026-07-13):第五刀 #585 将 findings 9/10/11 文件验证与过期附件规则统一收口;第六刀关闭 finding 15,给 users 角色/状态/软删与 storage/sms/wechat/realname settings update/reset-credentials 共 11 个控制面高危写补同事务 audit。第六刀新增 11 个 `AuditLogEvent`(**99→110**),凭据 reset audit context 严格只有请求元数据,明文/密文/SecretId/SecretKey 永不入 audit。findings 8c/13/14 维持不做,#12 因无 queue/cron 红线不做。两刀累计 0 schema / 0 migration(48) / 0 endpoint(336) / 0 permission(205) / 0 BizCode(232)。第六刀本地 D 档终验:unit **86 suites / 2395**、contract **606**(snapshots 2/2)、e2e **141 suites / 2865** 全绿;seed 幂等二跑;rbacmap 0 FAIL/0 WARN、codemap 0 FAIL(仅既有 god-service WARN)。
+
+- **v0.45.0 系统性安全收口(已发布 2026-07-13;D 档)**:承接 v0.44.0 审计,维护者定「把权限委派 / 状态迁移 / 并发计数 / 文件验证做成所有入口必经的统一底层规则,而非逐接口补刀」。15 项二次核实 findings 1–7 由前四刀收口;后续第五刀收 findings 9/10/11、第六刀收 finding 15;8c/13/14 维持不做,#12 撞无 queue/cron 红线不做。前四刀以「单一原语 + 全兄弟路径接线 + 漂移/并发测试」落地:委派 `isControlPlanePermissionCode` + `RoleDelegationPolicy` + 7 内置角色禁删(#578)、任期 `role-binding-validity`(rbac/authz 共用)+ 末位管理员 `LastAdminProtectionPolicy` 一把共享 advisory 锁(#579)、状态迁移 `claimAtStatus` CAS 16 处 + 证书信任回退(#580)、队员轴三削权门同类残留(#581)。0 schema/migration/endpoint/permission/controller/module/role/dependency;唯一新增 BizCode `30104`(231→232)。
 
 - **v0.44.0 安全·并发·性能加固(已发布 2026-07-13;D 档)**:2026-07-13 全仓审计 26 findings 终态 = 19 已修 / 6 接受登记 / 1 不成立。RoleBinding 高权/末位保护与 update audit、审批原子竞争守卫、RBAC 写侧失效、CSV 公式转义、logout 审计去污染、附件 MIME+魔数、CSV 真流式、考勤按人串行、certificate 附件 K→1 均已落地。0 schema/migration/endpoint/permission/controller/module/role/dependency;唯一新增 BizCode 13016 + AuditLogEvent `role-binding.update`;MIME 精确黑名单 +3。main E 档终验 unit 80/2347 + contract 606 + e2e 138/2792 全绿;bump CI + Docker build + Docker Smoke 全绿。
 
@@ -78,7 +80,7 @@
 - **Slow-3 主决议已拍板,Slow-4 已完成**(2026-06-11 goal「权限双轨收口」#314-#317;冻结评审稿 [`archive/reviews/slow4-rbac-business-face-review.md`](archive/reviews/slow4-rbac-business-face-review.md)):ADMIN 内置角色边界 = 全量业务权限,由 `biz-admin` 承载(绑 35;`member.delete.record` 仅 SA;attachment 存量 20 码不绑);业务面 7 模块 44 端点已全部接入 `rbac.can()`,全仓活跃 `@Roles` = 0。**仍挂起的 Slow-3 子议题**:考勤终审部门级细分(2026-06-10 方案 A 沿用:维持 ADMIN 级终审〔现 = 持 biz-admin 的 ADMIN 或 SA〕,`finalReviewerUserId` 仅审计记录;"部长"职务无数据模型承载;重开需单独立项,详 [`participation-bounded-context.md §4`](participation-bounded-context.md))— **不**自动启动
 - **不**自动启动 Slow-5(B8 入队同意书正文 / Q8 退队清理 N 值)— 等业务方提供
 - **不**自动启动 Slow-7(uploadToken 重放黑名单 / 失败回滚 Provider 文件 / test-connection / multipart / STS / 跨 Provider 迁移)— 等真实使用反馈
-- **不**自动启动 L-3(Storage Settings 配置变更 audit_logs)— 等用户授权
+- **L-3(Storage Settings 配置变更 audit_logs)已完成**(2026-07-13 第六刀 finding 15):storage 与同型 sms/wechat/realname settings update/reset-credentials 共 8 写点已同事务审计;凭据不入 audit。后续不得再按“留独立专项”视为未做。
 - **不**自动启动 `events` / `event_participants` / `member_profiles 扩展敏感字段` 等延后模型(沿 [`docs/V2红线与复活路径.md §4.3`](V2红线与复活路径.md))
 - **不**自动引入 LLM / vector / Redis / queue(沿 [ARCHITECTURE.md §9](../ARCHITECTURE.md) 升级路径);**cron 已按升级路径解锁,范围仅生日批**(2026-06-11 B 队列拍板④,冻结评审稿 [`archive/reviews/queue-b-otp-birthday-infra-review.md`](archive/reviews/queue-b-otp-birthday-infra-review.md) R-5:`@nestjs/schedule` 仅承载 notifications 生日 job 一个 `@Cron`;**新增任何定时任务 = 新 D 档评审**;数据清理不解锁,沿 retention 手动 SOP)
 - **不**自动启动新 schema / migration / Permission seed / Role 扩展(A-3 / A-4 红线)

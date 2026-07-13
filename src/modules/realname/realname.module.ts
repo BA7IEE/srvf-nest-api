@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { DatabaseModule } from '../../database/database.module';
 import { AttachmentsModule } from '../attachments/attachments.module';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { DevStubRealnameProvider } from './providers/dev-stub.provider';
 import { TencentRealnameProvider } from './providers/tencent-realname.provider';
@@ -20,7 +21,7 @@ import { RealnameSettingsService } from './realname-settings.service';
 // AGENTS §2 例外:providers/ 子目录沿 sms/wechat 既有解锁(评审稿 E-R-21,
 // 仅限本模块本子目录;第三/四例之后第五例,不构成默认范式)。
 @Module({
-  imports: [DatabaseModule, PermissionsModule, AttachmentsModule],
+  imports: [DatabaseModule, PermissionsModule, AttachmentsModule, AuditLogsModule],
   controllers: [RealnameSettingsController],
   providers: [
     RealnameSettingsService,

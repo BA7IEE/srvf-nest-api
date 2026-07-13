@@ -176,8 +176,9 @@ export class UsersController {
     @CurrentUser() currentUser: CurrentUserPayload,
     @Param() params: IdParamDto,
     @Body() dto: UpdateUserRoleDto,
+    @Req() req: Request,
   ): Promise<UserResponseDto> {
-    return this.usersService.updateRole(currentUser, params.id, dto);
+    return this.usersService.updateRole(currentUser, params.id, dto, this.buildAuditMeta(req));
   }
 
   @Patch(':id/status')
@@ -196,8 +197,9 @@ export class UsersController {
     @CurrentUser() currentUser: CurrentUserPayload,
     @Param() params: IdParamDto,
     @Body() dto: UpdateUserStatusDto,
+    @Req() req: Request,
   ): Promise<UserResponseDto> {
-    return this.usersService.updateStatus(currentUser, params.id, dto);
+    return this.usersService.updateStatus(currentUser, params.id, dto, this.buildAuditMeta(req));
   }
 
   @Delete(':id')
@@ -217,8 +219,9 @@ export class UsersController {
   softDelete(
     @CurrentUser() currentUser: CurrentUserPayload,
     @Param() params: IdParamDto,
+    @Req() req: Request,
   ): Promise<UserResponseDto> {
-    return this.usersService.softDelete(currentUser, params.id);
+    return this.usersService.softDelete(currentUser, params.id, this.buildAuditMeta(req));
   }
 
   // SMS 基础设施 T3(2026-06-10):管理员清除用户绑定手机号(冻结评审稿
@@ -272,7 +275,7 @@ export class UsersController {
 
   // P0-D PR-3:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
   // 不引入 cls-rs / AsyncLocalStorage)。沿 emergency-contacts.controller.ts 范式。
-  // 本 helper 服务 resetPassword(管理员重置密码端点)。队员自助改密走 AppMeController
+  // 本 helper 服务管理员重置密码 / 改角色 / 改状态 / 软删 / 清号 / 清微信写端点。队员自助改密走 AppMeController
   // (`app/v1/me`,PUT /me/password);沿 emergency-contacts.controller.ts 范式。
   private buildAuditMeta(req: Request): AuditMeta {
     return {

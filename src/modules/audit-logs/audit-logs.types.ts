@@ -1,7 +1,7 @@
 // V2 第一阶段批次 6 audit_logs 模块类型契约(D6 v1.1 §8 / §10 / §11)。
 //
 // 本文件承载 3 个类型契约,与 audit-logs.service.ts 同进同退:
-//   1. AuditLogEvent  — 落库入口 union(首批 6 项起渐进迁入;2026-06-13 保险 T2 后共 43 项)
+//   1. AuditLogEvent  — 落库入口 union(首批 6 项起渐进迁入;第六刀后共 110 项)
 //   2. AuditContext   — Prisma AuditLog.context Json 字段的运行时锁形(6 字段:3 必填 + 3 可选)
 //   3. AuditMeta      — controller 层从 @Req() 构造,显式传给 service
 //
@@ -14,7 +14,7 @@
 // - 第二波第三步(PR #5)+2 项落库:registration.create / registration.review(activity-registrations.service: 6 处写;2 个事件名共用,extra.viaPath / extra.action 区分;exportCsv 仍 pino-only 不迁移)
 // - 第二波最后一批(PR #6)+5 项落库:attendance-sheet.{submit,edit,delete,review,final-review}(attendances.service: 8 处写;5 个事件名共用,extra.operation / extra.action 区分;3 处 read.other 仍 pino-only)
 // - 其余继续 pino-only,等后续批次按需迁出(D1 决议)
-// - **绝对禁止**:在本 union 自行新增字符串值;新增审计事件必须先经评审稿决议(D6 v1.1 §8.1 / §16)
+// - **绝对禁止**:在本 union 自行新增字符串值;新增审计事件必须先经评审稿或 goal 显式预授权(D6 v1.1 §8.1 / §16)
 
 export type AuditLogEvent =
   | 'emergency-contact.write' // PR #2 接入(emergency-contacts.service: create / update / softDelete 共 3 处)
@@ -53,7 +53,8 @@ export type AuditLogEvent =
   // SMS 基础设施 T3(2026-06-10)接入(冻结评审稿 sms-verification-infra-review.md §3.5 / D-SMS-9)。
   // 3 项命名沿 kebab-case `<resource>.<action>.<scope>` 范式(对称 password.change.self / password.reset.by-admin)。
   // detail(before / after / extra)中手机号**一律掩码** 138****1234(maskPhone,评审稿 E-21/E-24);
-  // **禁止**写入:明文验证码 / codeHash / 完整手机号。SmsSettings 变更不写 audit(沿 L-3 挂起)。
+  // **禁止**写入:明文验证码 / codeHash / 完整手机号。SmsSettings 控制面写已由第六刀接入专用事件,
+  // reset-credentials context 不含任何凭证字段名或值。
   | 'phone.bind.self' // T3 接入(users.service.bindMyPhone 首绑路径;after.phone 掩码;extra.codeId)
   | 'phone.rebind.self' // T3 接入(users.service.bindMyPhone 换绑路径;before/after.phone 掩码;extra.codeId)
   | 'phone.clear.by-admin' // T3 接入(users.service.clearUserPhone;仅实际清除时写〔幂等空清不写〕;before.phone 掩码)
@@ -180,8 +181,8 @@ export type AuditLogEvent =
   // resourceType='member' / resourceId=memberId(建号是"给队员挂账号",非 user 自身操作,归 member 域)。
   | 'member.account-granted' // admin 给队员开通登录账号(members.service: grantAccount 1 处;extra.{memberId,userId,phone:掩码};禁明文号 / passwordHash;无 before/after——建号非改属性)
   // 队员账号闭环 v2(2026-07-07;冻结评审稿 docs/archive/reviews/member-account-loop-v2-review.md
-  // §3.4)。同 resourceType='member' / resourceId=memberId 口径;队员面启停账号(D-6/E-9)复用既有
-  // user.update.status 的"不写 audit"决定,不新增第 4 个 event。
+  // §3.4)。同 resourceType='member' / resourceId=memberId 口径;队员面启停账号仍不在本 goal 的
+  // 11 处控制面写范围内,不新增第 4 个 member.account-* event。
   | 'member.account-bound' // admin 绑定既有悬空账号到队员(members.service: bindAccount 1 处;extra.{memberId,userId})
   | 'member.account-unbound' // admin 解绑队员账号(members.service: unbindAccount 1 处;extra.{memberId,userId}——userId 为断链前的值)
   | 'member.account-reopened' // admin 退号重开(members.service: reopenAccount 1 处;extra.{memberId,oldUserId,newUserId,phone:掩码})
@@ -203,7 +204,22 @@ export type AuditLogEvent =
   | 'role-permission.revoke' // admin 撤销角色权限点(role-permissions.service: revoke;resourceId=roleId;extra.permissionId)
   | 'permission.create' // admin 建权限点(permissions.service: create;resourceType='permission';after 快照 code/module/action/resourceType)
   | 'permission.update' // admin 改权限点描述(permissions.service: update;before/after description)
-  | 'permission.delete'; // admin 物理删权限点(permissions.service: delete;before 快照;RolePermission FK cascade 自动清理)
+  | 'permission.delete' // admin 物理删权限点(permissions.service: delete;before 快照;RolePermission FK cascade 自动清理)
+  // 第六刀·控制面审计补全(2026-07-13;finding 15;goal 显式预授权 +11,99→110)。
+  // users 三项 before/after 仅含 role/status/删除布尔;四 provider settings update 只记 DTO
+  // changedFields 字段名,不记配置值;reset-credentials context 仅含 requestId/ip/ua,**禁止**任何
+  // 凭证明文、密文、字段值、passwordHash、SecretId/SecretKey/AppSecret。
+  | 'user.role.update' // admin 改用户角色;resourceType='user';before/after.role
+  | 'user.status.update' // admin 启停用户;resourceType='user';before/after.status
+  | 'user.soft-delete' // admin 软删用户;resourceType='user';before/after.deleted + status
+  | 'storage-setting.update' // storage settings upsert;resourceType='storage_setting';extra.changedFields
+  | 'storage-setting.reset-credentials' // storage credentials reset;无 before/after/extra
+  | 'sms-setting.update' // sms settings upsert;resourceType='sms_setting';extra.changedFields
+  | 'sms-setting.reset-credentials' // sms credentials reset;无 before/after/extra
+  | 'wechat-setting.update' // wechat settings upsert;resourceType='wechat_setting';extra.changedFields
+  | 'wechat-setting.reset-credentials' // wechat credentials reset;无 before/after/extra
+  | 'realname-setting.update' // realname settings upsert;resourceType='realname_setting';extra.changedFields
+  | 'realname-setting.reset-credentials'; // realname credentials reset;无 before/after/extra
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

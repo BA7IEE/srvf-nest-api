@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { DatabaseModule } from '../../database/database.module';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { DevStubWechatProvider } from './providers/dev-stub.provider';
 import { WechatMiniRealProvider } from './providers/wechat.provider';
@@ -20,7 +21,7 @@ import { WechatSettingsService } from './wechat-settings.service';
 // AGENTS §2 例外:providers/ 子目录经 2026-06-12 goal 拍板解锁(评审稿 §5,
 // 仅限本模块本子目录;镜像 modules/sms/providers/ / modules/storage/providers/ 形态,第三例)。
 @Module({
-  imports: [DatabaseModule, PermissionsModule],
+  imports: [DatabaseModule, AuditLogsModule, PermissionsModule],
   controllers: [WechatSettingsController],
   providers: [
     WechatSettingsService,

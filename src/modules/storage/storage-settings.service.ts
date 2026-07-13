@@ -7,6 +7,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
 import { StorageCryptoDecryptError, StorageCryptoService } from './storage-crypto.service';
 import type {
@@ -48,6 +50,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
     private readonly prisma: PrismaService,
     private readonly crypto: StorageCryptoService,
     private readonly rbac: RbacService,
+    private readonly auditLogs: AuditLogsService,
     @Inject(appConfig.KEY)
     private readonly cfg: ConfigType<typeof appConfig>,
   ) {}
@@ -257,7 +260,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
   // - getForAdmin():singleton row 不存在返 null(沿 Q-11-1;不强行构造空 DTO)
   // - updateSettings(dto, user):upsert(不存在创建 default;沿 Q-11-1 + Q-11-17)
   // - resetCredentials(dto, user):AES-256-GCM 加密 SecretId/SecretKey 落库;不写日志凭证(沿 §6.6.2)
-  // - 0 audit_logs(沿 §6.6.5;凭证写不审计;配置变更 audit 留独立专项 PR)
+  // - 第六刀补齐 update/reset in-tx audit;update 只记 changedFields 字段名,reset 不记任何凭证字段或值
   // - 0 新 BizCode(沿 Q-11-4;复用 BAD_REQUEST / UNAUTHORIZED / FORBIDDEN / INTERNAL_ERROR)
   // - PATCH / reset 末尾 invalidate() 清缓存(沿 Q-11-8 / Q-11-17)
 
@@ -285,33 +288,52 @@ export class StorageSettingsService implements OnApplicationBootstrap {
   async updateSettings(
     dto: UpdateStorageSettingsDto,
     user: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<StorageSettingsResponseDto> {
     await this.assertCanOrThrow(user, 'storage-setting.update.singleton');
-    const existing = await this.prisma.storageSettings.findFirst({
-      orderBy: { createdAt: 'asc' },
-      select: { id: true },
-    });
-
     // 字段转换(maxObjectSizeBytes string → BigInt;沿 Q-11-10)
     const data = this.buildUpdateData(dto);
+    const changedFields = Object.entries(dto)
+      .filter(([, value]) => value !== undefined)
+      .map(([key]) => key)
+      .sort();
 
-    let row: StorageSettingsRow;
-    if (existing) {
-      row = await this.prisma.storageSettings.update({
-        where: { id: existing.id },
-        data: { ...data, updatedBy: user.id },
+    const row = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.storageSettings.findFirst({
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
       });
-    } else {
-      // upsert 创建 default;providerType 缺省 LOCAL(沿 Q-11-2)
-      // create input 类型严格;data 是 update input,字段子集兼容,as 转通用 record
-      row = await this.prisma.storageSettings.create({
-        data: {
-          ...(data as Prisma.StorageSettingsCreateInput),
-          providerType: dto.providerType ?? 'LOCAL',
-          updatedBy: user.id,
-        },
+
+      let updated: StorageSettingsRow;
+      if (existing) {
+        updated = await tx.storageSettings.update({
+          where: { id: existing.id },
+          data: { ...data, updatedBy: user.id },
+        });
+      } else {
+        // upsert 创建 default;providerType 缺省 LOCAL(沿 Q-11-2)
+        // create input 类型严格;data 是 update input,字段子集兼容,as 转通用 record
+        updated = await tx.storageSettings.create({
+          data: {
+            ...(data as Prisma.StorageSettingsCreateInput),
+            providerType: dto.providerType ?? 'LOCAL',
+            updatedBy: user.id,
+          },
+        });
+      }
+
+      await this.auditLogs.log({
+        event: 'storage-setting.update',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: 'storage_setting',
+        resourceId: updated.id,
+        meta: auditMeta,
+        extra: { changedFields },
+        tx,
       });
-    }
+      return updated;
+    });
 
     this.invalidate();
     return this.toResponseDto(row);
@@ -324,6 +346,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
   async resetCredentials(
     dto: ResetStorageCredentialsDto,
     user: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<StorageSettingsResponseDto> {
     // P0-F PR-2B D2=A:`storage-setting.reset.credentials` 不绑 ops-admin;
     // SUPER_ADMIN 经 RbacService.can 短路通过;ADMIN+ops-admin → RBAC_FORBIDDEN(30100)
@@ -333,36 +356,50 @@ export class StorageSettingsService implements OnApplicationBootstrap {
     const secretIdEncrypted = this.crypto.encrypt(dto.secretId);
     const secretKeyEncrypted = this.crypto.encrypt(dto.secretKey);
 
-    const existing = await this.prisma.storageSettings.findFirst({
-      orderBy: { createdAt: 'asc' },
-      select: { id: true },
+    const row = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.storageSettings.findFirst({
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+
+      let updated: StorageSettingsRow;
+      if (existing) {
+        updated = await tx.storageSettings.update({
+          where: { id: existing.id },
+          data: {
+            secretIdEncrypted,
+            secretKeyEncrypted,
+            credentialConfigured: true,
+            updatedBy: user.id,
+          },
+        });
+      } else {
+        // upsert 创建 default;providerType=COS(沿 Q-11-2:reset 场景默认 COS)
+        updated = await tx.storageSettings.create({
+          data: {
+            providerType: 'COS',
+            secretIdEncrypted,
+            secretKeyEncrypted,
+            credentialConfigured: true,
+            updatedBy: user.id,
+          },
+        });
+      }
+
+      // 最硬红线:reset audit 只保留 actor / row.id / AuditMeta;不传 before/after/extra。
+      await this.auditLogs.log({
+        event: 'storage-setting.reset-credentials',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: 'storage_setting',
+        resourceId: updated.id,
+        meta: auditMeta,
+        tx,
+      });
+      return updated;
     });
 
-    let row: StorageSettingsRow;
-    if (existing) {
-      row = await this.prisma.storageSettings.update({
-        where: { id: existing.id },
-        data: {
-          secretIdEncrypted,
-          secretKeyEncrypted,
-          credentialConfigured: true,
-          updatedBy: user.id,
-        },
-      });
-    } else {
-      // upsert 创建 default;providerType=COS(沿 Q-11-2:reset 场景默认 COS)
-      row = await this.prisma.storageSettings.create({
-        data: {
-          providerType: 'COS',
-          secretIdEncrypted,
-          secretKeyEncrypted,
-          credentialConfigured: true,
-          updatedBy: user.id,
-        },
-      });
-    }
-
-    // 仅 pino 日志记 reset 动作 + actorUserId(沿 §6.6.5);不含 secret 明文 / 密文
+    // 仅 pino 日志记 reset 动作 + actorUserId;不含 secret 明文 / 密文
     this.logger.log(`storage_settings credentials reset by user.id=${user.id}; row.id=${row.id}`);
 
     this.invalidate();

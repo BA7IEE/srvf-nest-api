@@ -623,7 +623,12 @@ describe('UsersService (characterization, scoped)', () => {
       const service = makeService(prisma);
 
       await expect(
-        service.updateRole(makeCurrentUser({ id: 'admin-1' }), 'admin-1', makeRoleDto(Role.ADMIN)),
+        service.updateRole(
+          makeCurrentUser({ id: 'admin-1' }),
+          'admin-1',
+          makeRoleDto(Role.ADMIN),
+          META,
+        ),
       ).rejects.toEqual(new BizException(BizCode.CANNOT_OPERATE_SELF));
       expect(prisma.user.findFirst).not.toHaveBeenCalled();
     });
@@ -642,6 +647,7 @@ describe('UsersService (characterization, scoped)', () => {
           makeCurrentUser({ id: 'admin-1', role: Role.ADMIN }),
           'u-2',
           makeRoleDto(Role.ADMIN),
+          META,
         ),
       ).rejects.toEqual(new BizException(BizCode.FORBIDDEN_ROLE_OPERATION));
       expect(prisma.user.update).not.toHaveBeenCalled();
@@ -661,7 +667,7 @@ describe('UsersService (characterization, scoped)', () => {
       const service = makeService(prisma, { lastAdminProtection });
 
       await expect(
-        service.updateRole(makeCurrentUser({ id: 'admin-1' }), 'u-2', makeRoleDto(Role.USER)),
+        service.updateRole(makeCurrentUser({ id: 'admin-1' }), 'u-2', makeRoleDto(Role.USER), META),
       ).rejects.toEqual(new BizException(BizCode.LAST_SUPER_ADMIN_PROTECTED));
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
@@ -681,6 +687,7 @@ describe('UsersService (characterization, scoped)', () => {
         makeCurrentUser({ id: 'admin-1' }),
         'u-2',
         makeRoleDto(Role.USER),
+        META,
       );
 
       const updateArg = prisma.user.update.mock.calls[0][0] as { data: { role: Role } };
@@ -700,7 +707,12 @@ describe('UsersService (characterization, scoped)', () => {
       prisma.user.update.mockResolvedValue(makeSafeUser({ id: 'u-2', role: Role.ADMIN }));
       const service = makeService(prisma, { lastAdminProtection });
 
-      await service.updateRole(makeCurrentUser({ id: 'admin-1' }), 'u-2', makeRoleDto(Role.ADMIN));
+      await service.updateRole(
+        makeCurrentUser({ id: 'admin-1' }),
+        'u-2',
+        makeRoleDto(Role.ADMIN),
+        META,
+      );
 
       expect(lastAdminProtection.assertCanRemoveSuperAdmin).not.toHaveBeenCalled();
       const updateArg = prisma.user.update.mock.calls[0][0] as { data: { role: Role } };
@@ -724,6 +736,7 @@ describe('UsersService (characterization, scoped)', () => {
           makeCurrentUser({ id: 'admin-1' }),
           'admin-1',
           makeStatusDto(UserStatus.DISABLED),
+          META,
         ),
       ).rejects.toEqual(new BizException(BizCode.CANNOT_OPERATE_SELF));
       expect(prisma.user.update).not.toHaveBeenCalled();
@@ -747,6 +760,7 @@ describe('UsersService (characterization, scoped)', () => {
           makeCurrentUser({ id: 'admin-1' }),
           'u-2',
           makeStatusDto(UserStatus.DISABLED),
+          META,
         ),
       ).rejects.toEqual(new BizException(BizCode.LAST_SUPER_ADMIN_PROTECTED));
       expect(prisma.user.update).not.toHaveBeenCalled();
@@ -770,6 +784,7 @@ describe('UsersService (characterization, scoped)', () => {
           makeCurrentUser({ id: 'admin-1' }),
           'u-2',
           makeStatusDto(UserStatus.DISABLED),
+          META,
         ),
       ).rejects.toEqual(new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED));
       expect(prisma.user.update).not.toHaveBeenCalled();
@@ -791,6 +806,7 @@ describe('UsersService (characterization, scoped)', () => {
         makeCurrentUser({ id: 'admin-1' }),
         'u-2',
         makeStatusDto(UserStatus.DISABLED),
+        META,
       );
 
       const updateArg = prisma.user.update.mock.calls[0][0] as { data: { status: UserStatus } };
@@ -815,6 +831,7 @@ describe('UsersService (characterization, scoped)', () => {
         makeCurrentUser({ id: 'admin-1' }),
         'u-2',
         makeStatusDto(UserStatus.ACTIVE),
+        META,
       );
 
       expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
@@ -828,7 +845,7 @@ describe('UsersService (characterization, scoped)', () => {
       const service = makeService(prisma);
 
       await expect(
-        service.softDelete(makeCurrentUser({ id: 'admin-1' }), 'admin-1'),
+        service.softDelete(makeCurrentUser({ id: 'admin-1' }), 'admin-1', META),
       ).rejects.toEqual(new BizException(BizCode.CANNOT_OPERATE_SELF));
       expect(prisma.user.findFirst).not.toHaveBeenCalled();
     });
@@ -846,9 +863,9 @@ describe('UsersService (characterization, scoped)', () => {
       );
       const service = makeService(prisma, { lastAdminProtection });
 
-      await expect(service.softDelete(makeCurrentUser({ id: 'admin-1' }), 'u-2')).rejects.toEqual(
-        new BizException(BizCode.LAST_SUPER_ADMIN_PROTECTED),
-      );
+      await expect(
+        service.softDelete(makeCurrentUser({ id: 'admin-1' }), 'u-2', META),
+      ).rejects.toEqual(new BizException(BizCode.LAST_SUPER_ADMIN_PROTECTED));
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
 
@@ -865,9 +882,9 @@ describe('UsersService (characterization, scoped)', () => {
       );
       const service = makeService(prisma, { lastAdminProtection });
 
-      await expect(service.softDelete(makeCurrentUser({ id: 'admin-1' }), 'u-2')).rejects.toEqual(
-        new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED),
-      );
+      await expect(
+        service.softDelete(makeCurrentUser({ id: 'admin-1' }), 'u-2', META),
+      ).rejects.toEqual(new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED));
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
 
@@ -883,7 +900,7 @@ describe('UsersService (characterization, scoped)', () => {
       );
       const service = makeService(prisma);
 
-      await service.softDelete(makeCurrentUser({ id: 'admin-1' }), 'u-2');
+      await service.softDelete(makeCurrentUser({ id: 'admin-1' }), 'u-2', META);
 
       const updateArg = prisma.user.update.mock.calls[0][0] as {
         data: { deletedAt: unknown; status: UserStatus };

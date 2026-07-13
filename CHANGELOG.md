@@ -9,6 +9,7 @@
 > **⚠️ 行为变更(附件过期)**:`Attachment.expireAt <= now` 时不再签发或返回 `accessUrl`;公开内容列表/详情会移除已过期附件行,过期封面 URL 返 null。`expireAt` 为未来时间或 null 的既有返回行为不变。
 
 - **第五档文件校验统一收口(findings 9/10/11)**:新增单一可注入并由 attachments module 导出的 `AttachmentContentValidator`,复用既有 MIME 黑名单与签名表,统一承接对象链(`confirm-upload` / legacy create)和 buffer 链(招新证件照/签名图/证书图/OCR 裁剪图、realname OCR 转发);所有受支持图片/PDF 只读前 12 字节比对声明 MIME,不新增第二套签名表或黑名单。签名 URL 解析集中检查 `expireAt`,公开 content owner 附件在组装前过滤过期行。0 schema / 0 migration(仍 48)/ 0 新端点(`EXPECTED_ROUTES` 仍 336)/ 0 DTO/OpenAPI schema / 0 新权限码(仍 205)/ 0 角色(仍 7)/ 0 BizCode(仍 232)。
+- **第六刀控制面审计补全(finding 15)**:users `updateRole`/`updateStatus`/`softDelete` 与 storage/sms/wechat/realname settings 的 `updateSettings`/`resetCredentials` 共 11 个高危写全部在既有/新增 `$transaction` 内写 `audit_logs`,推翻 users D-PR3-2、sms D-SMS-9 与 storage §6.6.5 的“不写/留专项”挂起决定。新增 `user.role.update`/`user.status.update`/`user.soft-delete` + 四组 `<provider>-setting.{update,reset-credentials}` 共 11 个 AuditLogEvent(**99→110**);users before/after 只含 role/status/delete,settings update 只记 `changedFields`,reset context 不传 before/after/extra,凭据/密码/secret 明文与密文永不入 audit。新 e2e `control-plane-audit-characterization` 锁 11 写点各一行 + audit 失败后业务行/audit 行同事务回滚。0 schema / 0 migration(仍 48)/ 0 新端点(`EXPECTED_ROUTES` 仍 336)/ 0 新权限码(仍 205)/ 0 BizCode(仍 232)。
 
 ## v0.45.0 - 2026-07-13
 
