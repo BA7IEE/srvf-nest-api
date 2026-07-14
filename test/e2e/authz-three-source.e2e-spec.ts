@@ -31,7 +31,8 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 //   场景 4(BD-2 终审):RoleBinding(principalType=POSITION_ASSIGNMENT〔APD 部长任职〕,终审测试角色,
 //     TREE@root)→ 任意 sheet 终审 ALLOW;自己提交的 sheet DENY self_approval_forbidden(SUPER_ADMIN 亦拒);
 //     一级同人 DENY same_reviewer_forbidden;任职 ENDED 后绑定随之失效(换届即失权,expired_grant)
-//   R5(副职红线):仅持 vice-captain 任职(零 policy 行)→ 管理 action + ref 全 DENY no_permission(3b 零产出)
+//   R5 v0.49(副职恒只读):仅持 vice-captain@root 任职→全树读 ALLOW(source=position,
+//     org-readonly);写 DENY no_permission
 //   失效族:任职 REVOKED / 任职过期 / 分管 ENDED / 绑定过期 → expired_grant;scope org INACTIVE → inactive_org;
 //     resource 不存在 / 已软删 → resource_not_found
 //   SELF:RoleBinding(MEMBER, scopeType=SELF, org-supervisor)→ 本人 member ref ALLOW / 他人 DENY out_of_scope
@@ -322,7 +323,7 @@ describe('authz 三源推导(§5.2 3a/3b/3c + §6 场景 + R5 + 失效族 + SELF
         select: { id: true },
       })
     ).id;
-    // R5:副队长任职 @root,零 policy 行 → 3b 零产出
+    // R5 v0.49:副队长任职 @root → org-readonly@TREE(root),全队只读
     await mkAssignment(vice.memberId, rootId, viceCaptainId);
     // SELF:MEMBER 主体 + SELF scope + org-supervisor(含 member.read.record)
     selfBindingId = (
@@ -503,18 +504,29 @@ describe('authz 三源推导(§5.2 3a/3b/3c + §6 场景 + R5 + 失效族 + SELF
     }
   });
 
-  // ============ R5:副职零推导(安全红线) ============
+  // ============ R5 v0.49:副职恒只读(安全红线) ============
 
-  it('R5:仅持 vice-captain 任职(零 policy 行)→ 管理 action + ref 全 DENY no_permission', async () => {
+  it('R5 v0.49:仅持 vice-captain@root 任职→全队只读 ALLOW,写 DENY no_permission', async () => {
     const read = await authz.explain(vice.payload, 'attendance.read.sheet', sheetRef(sheet1Id));
-    expect(read).toMatchObject({ allow: false, reason: 'no_permission' });
-    expect(read.matchedGrant).toBeUndefined();
+    expect(read).toMatchObject({ allow: true, reason: 'matched' });
+    expect(read.matchedGrant).toMatchObject({
+      source: 'position',
+      roleCode: 'org-readonly',
+      scopeType: 'ORGANIZATION_TREE',
+      scopeId: rootId,
+    });
     const memberRead = await authz.explain(
       vice.payload,
       'member.read.record',
       memberRef(sectMemberId),
     );
-    expect(memberRead).toMatchObject({ allow: false, reason: 'no_permission' });
+    expect(memberRead).toMatchObject({ allow: true, reason: 'matched' });
+    expect(memberRead.matchedGrant).toMatchObject({
+      source: 'position',
+      roleCode: 'org-readonly',
+      scopeType: 'ORGANIZATION_TREE',
+      scopeId: rootId,
+    });
     const update = await authz.explain(
       vice.payload,
       'member.update.record',
