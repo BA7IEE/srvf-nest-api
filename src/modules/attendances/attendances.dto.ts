@@ -658,14 +658,14 @@ export class AdminMemberAttendanceRecordDto {
 }
 
 // 某队员贡献值生涯累计汇总(队员 360 Tier3):实时算不落库,复用 team-join computeCappedContribution
-// 封顶核(approved sheet + 全局每日封顶 1.5,生涯无 cutoff;**禁裸 SUM** 绕过封顶会算多)。
+// 封顶核(approved sheet + 全局每日封顶 3,生涯无 cutoff;**禁裸 SUM** 绕过封顶会算多)。
 export class MemberContributionSummaryDto {
   @ApiProperty({ description: '队员 Member.id' })
   memberId!: string;
 
   @ApiProperty({
     description:
-      '生涯累计贡献值 capped 总分(Decimal;序列化为 string;approved sheet + 北京日封顶 1.5)',
+      '生涯累计贡献值 capped 总分(Decimal;序列化为 string;approved sheet + 北京日封顶 3)',
     type: 'string',
   })
   contributionPoints!: string;

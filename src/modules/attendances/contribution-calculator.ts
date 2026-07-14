@@ -48,7 +48,7 @@ export class ContributionCalculator {
   //   直接取 rule.pointsBelow(pointsAbove 不参与)
   // 每日封顶(活动闭环硬化 2026-06-21):本计算器不再 per-record 钳制;预填 = candidatePoints 原始规则分。
   //   全局每日上限改落汇总处(team-join `computeContribution`:按北京日分组封顶
-  //   GLOBAL_DAILY_CONTRIBUTION_CAP=1.5);ContributionRule.dailyCap 列保留但本计算器不再读。
+  //   GLOBAL_DAILY_CONTRIBUTION_CAP=3);ContributionRule.dailyCap 列保留但本计算器不再读。
   //
   // NULL durationThreshold 选取(沿 §3.1 复核报告):
   //   ORDER BY createdAt ASC LIMIT 1(明确,不随机)。

@@ -1615,7 +1615,7 @@ describe('attendances 模块', () => {
           durationThreshold: 6,
           pointsBelow: 1,
           pointsAbove: 3,
-          dailyCap: 1.5, // 列保留但 calculator 不再读;不再每条封顶
+          dailyCap: 1.25, // 列保留但 calculator 不再读;不再每条封顶
           status: 'ACTIVE',
         },
         select: { id: true },
@@ -1633,7 +1633,7 @@ describe('attendances 模块', () => {
           where: { sheetId: id, deletedAt: null },
           select: { contributionPoints: true },
         });
-        // 旧:MIN(3, dailyCap 1.5)=1.5;新:不每条封顶 → 原始规则分 3(全局每日封顶改落 team-join 汇总处)
+        // 旧:MIN(3, dailyCap 1.25)=1.25;新:不每条封顶 → 原始规则分 3(全局每日封顶改落 team-join 汇总处)
         expect(records[0].contributionPoints?.toString()).toBe('3');
       } finally {
         await prisma.contributionRule.delete({ where: { id: rule.id } });

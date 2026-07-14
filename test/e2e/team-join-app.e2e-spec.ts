@@ -98,12 +98,12 @@ describe('招新三期(入队)App 自助面 e2e', () => {
     const sheet = await prisma.attendanceSheet.create({
       data: { activityId: activity.id, submitterUserId: volA.userId, statusCode: 'approved' },
     });
-    // 活动闭环硬化(2026-06-21):全局每日封顶 1.5/北京日。把 points 摊到多个不同北京日
-    // (每日 ≤ 1.5,各日不触顶 → 封顶后汇总 = points);单条大分值已不现实(单北京日最多计 1.5)。
+    // 活动闭环硬化(2026-06-21;上限于 v0.48.0 调整为 3):把 points 摊到多个不同北京日
+    // (每日 ≤ 3,各日不触顶 → 封顶后汇总 = points);单条大分值已不现实(单北京日最多计 3)。
     let cents = Math.round(Number(points) * 100);
     let dayOffset = 0;
     while (cents > 0) {
-      const take = Math.min(cents, 150);
+      const take = Math.min(cents, 300);
       const checkInAt = new Date(BEFORE_CUTOFF.getTime() - dayOffset * 86_400_000);
       await prisma.attendanceRecord.create({
         data: {

@@ -13,7 +13,7 @@ import { createTestApp } from '../setup/test-app';
 
 // 跨轴只读 e2e:考勤 + 贡献值(2026-06-23 队员/审批跨轴只读查询 goal · GAP-001 Tier2 / GAP-002 Tier3)。
 // 覆盖每端点:存在 + statusCode 过滤 + member-scope 命中 + 空集 + MEMBER_NOT_FOUND + RBAC_FORBIDDEN;
-// 贡献值另验:生涯累计 + 全局每日封顶 1.5 生效(capped < 裸 SUM)+ 仅 approved sheet 计入。
+// 贡献值另验:生涯累计 + 全局每日封顶 3 生效(capped < 裸 SUM)+ 仅 approved sheet 计入。
 //
 // 端点:
 //   GET /api/admin/v1/attendance-sheets(跨活动横扫;审批工作台)[attendance.read.sheet]
@@ -103,8 +103,8 @@ describe('跨轴只读:考勤 + 贡献值(Tier2 跨活动 + Tier3 队员 360)', 
     act2Id = act2.id;
 
     // sheet1(act1, approved):memberA 3 条 record。
-    //   同北京日(Jun 1)2 条各 1.0 → 当日 2.0 封顶 1.5;另一北京日(Jun 3)0.5。
-    //   生涯累计 capped = 1.5 + 0.5 = 2.0;裸 SUM = 2.5(封顶生效护栏)。
+    //   同北京日(Jun 1)2 条各 2.0 → 当日 4.0 封顶 3;另一北京日(Jun 3)0.5。
+    //   生涯累计 capped = 3 + 0.5 = 3.5;裸 SUM = 4.5(封顶生效护栏)。
     const sheet1 = await prisma.attendanceSheet.create({
       data: { activityId: act1Id, submitterUserId: suUserId, statusCode: 'approved' },
       select: { id: true },
@@ -119,7 +119,7 @@ describe('跨轴只读:考勤 + 贡献值(Tier2 跨活动 + Tier3 队员 360)', 
           checkOutAt: new Date('2026-06-01T12:00:00.000Z'),
           serviceHours: 4,
           attendanceStatusCode: 'present',
-          contributionPoints: 1.0,
+          contributionPoints: 2.0,
         },
         {
           sheetId: sheet1.id,
@@ -129,7 +129,7 @@ describe('跨轴只读:考勤 + 贡献值(Tier2 跨活动 + Tier3 队员 360)', 
           checkOutAt: new Date('2026-06-01T13:00:00.000Z'),
           serviceHours: 4,
           attendanceStatusCode: 'present',
-          contributionPoints: 1.0,
+          contributionPoints: 2.0,
         },
         {
           sheetId: sheet1.id,
@@ -291,16 +291,16 @@ describe('跨轴只读:考勤 + 贡献值(Tier2 跨活动 + Tier3 队员 360)', 
   });
 
   describe('GET /api/admin/v1/members/:memberId/contribution-summary(Tier3 贡献值生涯累计)', () => {
-    it('生涯累计 capped:memberA = 2.0(封顶生效,严格 < 裸 SUM 2.5;pending sheet 不计)', async () => {
+    it('生涯累计 capped:memberA = 3.5(封顶生效,严格 < 裸 SUM 4.5;pending sheet 不计)', async () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${memberAId}/contribution-summary`)
         .set('Authorization', adminAuth);
 
       expect(res.status).toBe(200);
       expect(res.body.data.memberId).toBe(memberAId);
-      // Jun1: 1.0+1.0=2.0 → 封顶 1.5;Jun3: 0.5;总 2.0。裸 SUM(含封顶前)= 2.5。
-      expect(Number(res.body.data.contributionPoints)).toBe(2);
-      expect(Number(res.body.data.contributionPoints)).toBeLessThan(2.5);
+      // Jun1: 2.0+2.0=4.0 → 封顶 3;Jun3: 0.5;总 3.5。裸 SUM(含封顶前)= 4.5。
+      expect(Number(res.body.data.contributionPoints)).toBe(3.5);
+      expect(Number(res.body.data.contributionPoints)).toBeLessThan(4.5);
     });
 
     it('生涯累计:无记录队员 → "0"', async () => {

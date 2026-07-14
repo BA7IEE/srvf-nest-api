@@ -153,10 +153,10 @@ describe('招新三期(入队)admin 面 e2e', () => {
     }
   }
 
-  // 把目标总分按「每北京日 ≤ 全局封顶 1.5」拆成多条(分为单位精确拆,避免浮点误差)。
+  // 把目标总分按「每北京日 ≤ 全局封顶 3」拆成多条(分为单位精确拆,避免浮点误差)。
   function splitAcrossDays(points: string): string[] {
     let cents = Math.round(Number(points) * 100);
-    const DAILY_CAP_CENTS = 150;
+    const DAILY_CAP_CENTS = 300;
     const out: string[] = [];
     while (cents > 0) {
       const take = Math.min(cents, DAILY_CAP_CENTS);
@@ -168,8 +168,8 @@ describe('招新三期(入队)admin 面 e2e', () => {
   }
 
   // 给 member 加贡献值,使「全局每日封顶后的汇总总分」恰为 points。
-  // 活动闭环硬化(2026-06-21):每北京日封顶 1.5,故把 points 摊到多个不同北京日(每日 ≤ 1.5,
-  // 各日不触顶 → 封顶后汇总 = points)。单条大分值已不现实(任何单北京日最多计 1.5);锚在
+  // 活动闭环硬化(2026-06-21;上限于 v0.48.0 调整为 3):把 points 摊到多个不同北京日(每日 ≤ 3,
+  // 各日不触顶 → 封顶后汇总 = points)。单条大分值已不现实(任何单北京日最多计 3);锚在
   // opts.checkInAt(默认 BEFORE_CUTOFF)往前逐日推,各条占一个独立北京日。after-cutoff / 非 approved
   // 记录由 cutoff / status 过滤排除,其日序与 before-cutoff approved 记录重叠也不进汇总。
   async function addContribution(
@@ -466,12 +466,12 @@ describe('招新三期(入队)admin 面 e2e', () => {
     expect(body.statusCode).toBe('joining');
   });
 
-  it('⑥b【全局每日封顶】同一北京日多条记录 → 当日封顶 1.5;跨日再累加', async () => {
+  it('⑥b【全局每日封顶】同一北京日多条记录 → 当日封顶 3;跨日再累加', async () => {
     const cycleId = await openCycle();
     const memberId = await createMember();
     const appId = await createApplication(cycleId, memberId);
 
-    // dayA 同一北京日 3 条 × 2.0 = 6.0 → 当日封顶 1.5;dayB 另一北京日 1 条 × 1.0(不触顶)。
+    // dayA 同一北京日 3 条 × 2.0 = 6.0 → 当日封顶 3;dayB 另一北京日 1 条 × 1.0(不触顶)。
     const dayA = BEFORE_CUTOFF;
     const dayB = new Date(BEFORE_CUTOFF.getTime() - 86_400_000);
     await insertContributionRecords(memberId, [
@@ -485,8 +485,8 @@ describe('招新三期(入队)admin 面 e2e', () => {
       .get(`${ADMIN_APPS}/${appId}`)
       .set('Authorization', adminAuth)
       .expect(200);
-    // 旧直接 SUM = 7.0;新按北京日封顶:min(6.0,1.5)=1.5 + 1.0 = 2.5。
-    expect(detail.body.data.contributionPoints).toBe('2.5');
+    // 旧直接 SUM = 7.0;新按北京日封顶:min(6.0,3)=3 + 1.0 = 4。
+    expect(detail.body.data.contributionPoints).toBe('4');
     expect(detail.body.data.contributionSatisfied).toBe(false);
   });
 

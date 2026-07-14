@@ -827,7 +827,7 @@ export class AttendancesService {
 
   // 2026-06-23 跨轴只读(GET admin/v1/members/:memberId/contribution-summary):某队员贡献值
   // 生涯累计 capped 总分(队员 360「贡献值」tab)。实时算不落库,复用 team-join 封顶核
-  // computeCappedContribution(approved sheet + 全局每日封顶 1.5,生涯无 cutoff);**禁裸 SUM**
+  // computeCappedContribution(approved sheet + 全局每日封顶 3,生涯无 cutoff);**禁裸 SUM**
   // ——绕过封顶会算多。MEMBER_NOT_FOUND 守卫;判权复用 attendance.read.sheet。
   async getMemberContributionSummary(
     memberId: string,

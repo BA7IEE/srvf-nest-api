@@ -19,7 +19,7 @@ import { AttendancesService } from '../attendances.service';
 // admin/v1/members/:memberId 轴下的两个 attendance 派生只读端点(队员 360「考勤记录」「贡献值」tab):
 //   1. GET attendance-records:某队员跨 sheet 考勤记录(仅 approved;复用 attendance-presenter;
 //      item 带 activity 上下文);
-//   2. GET contribution-summary:某队员贡献值生涯累计 capped 总分(实时算,复用 team-join 封顶核 1.5)。
+//   2. GET contribution-summary:某队员贡献值生涯累计 capped 总分(实时算,复用 team-join 封顶核 3)。
 //
 // 落 admin member 轴(贡献汇总是 attendance 派生读,非 contribution-rules 的 System surface 规则面;
 // 沿 api-surface-policy §9.1)。入口仅全局 JwtAuthGuard,判权下沉 service 层 rbac.can('attendance.read.sheet')
@@ -55,7 +55,7 @@ export class AdminMemberAttendanceController {
   @Get('contribution-summary')
   @ApiOperation({
     summary:
-      '某队员贡献值生涯累计 capped 总分(队员 360;实时算不落库;approved sheet + 北京日封顶 1.5;不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet]',
+      '某队员贡献值生涯累计 capped 总分(队员 360;实时算不落库;approved sheet + 北京日封顶 3;不存在/软删 → MEMBER_NOT_FOUND) [rbac: attendance.read.sheet]',
   })
   @ApiWrappedOkResponse(MemberContributionSummaryDto)
   @ApiBizErrorResponse(

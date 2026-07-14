@@ -73,10 +73,11 @@ export class ContributionRuleResponseDto {
   pointsAbove!: number | null;
 
   @ApiPropertyOptional({
-    description: '每日上限(Decimal(5,2);null = 由 attendance 预填走 DEFAULT_DAILY_CAP=1.5 兜底)',
+    description:
+      '已废弃的历史每日上限字段(Decimal(5,2);attendance 预填与贡献聚合均不读取;全局上限由 GLOBAL_DAILY_CONTRIBUTION_CAP 决定)',
     nullable: true,
     type: 'number',
-    example: 1.5,
+    example: null,
   })
   dailyCap!: number | null;
 
@@ -160,7 +161,7 @@ export class CreateContributionRuleDto {
 
   @ApiPropertyOptional({
     description:
-      '每日上限(Decimal(5,2);可省略 / 显式 null;落库 null,attendance 预填走 DEFAULT_DAILY_CAP=1.5 兜底)',
+      '已废弃的历史每日上限字段(Decimal(5,2);可省略 / 显式 null;attendance 预填与贡献聚合均不读取)',
     nullable: true,
     type: 'number',
   })

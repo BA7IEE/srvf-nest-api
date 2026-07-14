@@ -100,7 +100,7 @@ Certificate (不在 participation 图内)
 **关键 invariant**:
 
 - `AttendanceRecord.contributionPoints` 字段层可空;**业务**层在 Step 9(approved)之前或 Step 11 reopen 回 pending 后可由 APD 现场修订;仅 approved 时"语义生效"。
-- **全局每日封顶在本 context 之外**(活动闭环硬化 2026-06-21):队员单个北京日历日的贡献值总分封顶 1.5(`GLOBAL_DAILY_CONTRIBUTION_CAP`),封顶**只**发生在 recruitment 侧 team-join `computeContribution`(按 `checkInAt` 北京日分组 → 每日封顶 → 加总),**不**在 participation 侧落库——`AttendanceRecord.contributionPoints` 仍存原始规则分。`ContributionRule.dailyCap` 列保留但已 deprecated、calculator 不再读。
+- **全局每日封顶在本 context 之外**(活动闭环硬化 2026-06-21;v0.48.0 上限调整):队员单个北京日历日的贡献值总分封顶 3(`GLOBAL_DAILY_CONTRIBUTION_CAP`),封顶**只**发生在 recruitment 侧 team-join `computeContribution`(按 `checkInAt` 北京日分组 → 每日封顶 → 加总),**不**在 participation 侧落库——`AttendanceRecord.contributionPoints` 仍存原始规则分。历史记录同样按当前上限读时实时重算;`ContributionRule.dailyCap` 列保留但已 deprecated、calculator 不再读。
 - `attendance.recorded` 事件是 participation context **向外的唯一已锁定出口语义**;其它消费方(未来 contribution 聚合 / 仪表盘 / 队员个人贡献值汇总)应当订阅它,**不应**直接读 `AttendanceSheet` / `AttendanceRecord` 表。
 - Activity → completed 由 attendances submit 推动,这是**已知的跨 aggregate 写**;在 §5.2 中明确允许,**不再扩散**到其它方向。
 - **终审/撤回授权现状(2026-07-02 scoped-authz;v0.47.0 F2)**:Step 9/10/11 的 `finalApprove` / `finalReject` / `reopen` 均由 service 层 `authz.explain(...,{type:'attendance_sheet',id})` 判权;权限只来自显式 `attendance-final-reviewer` scoped RoleBinding(通常绑定有效任职并覆盖组织树)或 SUPER_ADMIN 兜底。`biz-admin` 不持这 3 个动作码;角色另含 `attendance.read.sheet`,合计 4 码。只有 finalApprove 受自审 22074 / 一级同人 22075 约束,reopen 不复用这两条终审完整性约束。
