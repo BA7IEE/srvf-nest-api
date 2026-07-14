@@ -648,9 +648,11 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
         .set('Authorization', adminAuth);
       expect(res.status).toBe(200);
       const items: Array<{ id: string; label: string; memberNo: string }> = res.body.data.items;
-      // group 现有 active 归属:bob(PRIMARY 原有 + SUPPORT 迁入)+ alice(PRIMARY 迁入)+ carol(SECONDARY 迁入)
+      // v0.49 部门队员下拉只认 ACTIVE PRIMARY：bob(PRIMARY 原有)+alice(PRIMARY 迁入)；
+      // carol 的 SECONDARY 迁入不得扩大 member-axis 可见范围。
       const ids = items.map((i) => i.id);
-      expect(ids).toEqual(expect.arrayContaining([mAliceId, mBobId, mCarolId]));
+      expect(ids).toEqual(expect.arrayContaining([mAliceId, mBobId]));
+      expect(ids).not.toContain(mCarolId);
       expect(items.find((i) => i.id === mAliceId)).toMatchObject({
         label: 'F4 队员甲',
         memberNo: 'f4m-a',
