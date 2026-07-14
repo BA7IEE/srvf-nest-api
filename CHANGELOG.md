@@ -4,7 +4,11 @@
 
 ## Unreleased
 
-> 下一个 minor 候选:**v0.49.0 — 部门数据范围全面接线**。范围 = 冻结评审 #604 + 副职只读角色 #605 + 可见组织集/FE 有效权限出口 #606 + 队员轴 #607 + 参与域扁平入口 #608。0 schema / 0 migration(仍 50) / 0 新权限码(仍 206) / 0 BizCode(仍 232) / 0 AuditLogEvent(仍 113) / +1 endpoint(337→338) / +1 controller(66→67) / 内置角色 7→9。
+> 下一个 minor 候选(当前为空)。
+
+## v0.49.0 - 2026-07-14
+
+> 主题:**部门数据范围全面接线**。范围 = 冻结评审 #604 + 副职只读角色 #605 + 可见组织集/FE 有效权限出口 #606 + 队员轴 #607 + 参与域扁平入口 #608。0 schema / 0 migration(仍 50) / 0 新权限码(仍 206) / 0 BizCode(仍 232) / 0 AuditLogEvent(仍 113) / +1 endpoint(337→338) / +1 controller(66→67) / 内置角色 7→9。
 >
 > **⚠️ 行为变更 1（副职首次自动只读）**:active `vice-captain` / `dept-deputy` / `deputy-group-leader` 任职分别经 TREE policy 派生 `org-readonly` / `group-readonly`；副队长在 root 任职可全队只读，副部长/专业队副队长只读本部门树，副组长只读本组树。两角色权限码分别从 `org-admin` / `group-manager` 动态投影 `*.read.*` 与 `attachment.view.*`，恒排除 `*.read.sensitive` 与全部写码；换届、到期或撤销任职后即时失权。
 >
