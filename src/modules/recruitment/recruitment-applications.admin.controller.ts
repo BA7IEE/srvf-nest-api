@@ -226,7 +226,7 @@ export class RecruitmentApplicationsAdminController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '审核申请人证书(通过→自动标对应红十字/BSAFE 门槛;驳回→清该类图并取消门槛;驳回说明申请人进度可见) [rbac: recruitment-application.review.certificate]',
+      '审核申请人证书(通过→自动标对应急救资质/BSAFE 门槛;驳回→清该类图并取消门槛;驳回说明申请人进度可见) [rbac: recruitment-application.review.certificate]',
   })
   @ApiWrappedOkResponse(RecruitmentApplicationAdminDto)
   @ApiBizErrorResponse(
@@ -280,7 +280,7 @@ export class RecruitmentApplicationsAdminController {
   @Patch(':id/thresholds')
   @ApiOperation({
     summary:
-      '标/清门槛(巡山×2/培训/红十字/BSAFE;证书类标完成须对应图片审核 approved;清标不受闸;幂等;仅 verified/pending_evaluation 态;末次完成自动→待综合评定) [rbac: recruitment-application.mark.threshold]',
+      '标/清门槛(巡山×2/培训/急救资质/BSAFE;证书类标完成须对应图片审核 approved;清标不受闸;幂等;仅 verified/pending_evaluation 态;末次完成自动→待综合评定) [rbac: recruitment-application.mark.threshold]',
   })
   @ApiWrappedOkResponse(RecruitmentApplicationAdminDto)
   @ApiBizErrorResponse(

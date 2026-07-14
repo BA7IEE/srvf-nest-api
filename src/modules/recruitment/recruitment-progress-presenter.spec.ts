@@ -260,6 +260,8 @@ describe('assembleRecruitmentProgress(进度模型组装)', () => {
     expect(dto.identityText).toBe('报名申请人');
     expect(dto.todoList.find((i) => i.code === 'patrol1')?.done).toBe(true);
     expect(dto.todoList.find((i) => i.code === 'patrol2')?.done).toBe(false);
+    // 显示名去「红十字」化(2026-07-14):内部 code 仍 redCross,展示名为「急救资质」。
+    expect(dto.todoList.find((i) => i.code === 'redCross')?.name).toBe('急救资质');
     expect(dto.meetingInfo).toBe('6/30 见面会');
     expect(dto.qqGroup).toBe('QQ-123');
     expect(dto.notice).toEqual({ verified: '已发临时号' });

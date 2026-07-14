@@ -70,10 +70,12 @@ const JOIN_SOURCE_RECRUITMENT = 'recruitment'; // member_profiles.joinSourceCode
 //(member_grade 'volunteer' 项 + Organization.code='VOL' ≠ VOD 志愿者组织部),不 import team-join(保持自洽)。
 const VOLUNTEER_GRADE_CODE = 'volunteer';
 const VOL_ORG_CODE = 'VOL';
-// 招新可用性收口 F7(评审稿 §2.9 R6):promote 为已上传证书图的类别自动建 pending Certificate。
-// 字面镜像 certificates.service 的建行契约(certStatusCode='pending';后续走既有 verify/reject 核验);
+// 招新可用性收口 F7(评审稿 §2.9 R6):promote 为已上传证书图的类别自动建 Certificate。
+// 字面镜像 certificates.service 的建行契约;仅上传未审的类别建 pending 走既有 verify/reject 核验;
 // 存量报名没有 certificateIssuanceInfo 时才回退以下占位；新上传按申请人填写真值搬运。
+// 证书审核只审一次(2026-07-14):招新阶段已 approved 的类别在此继承审核结论建为 verified(见建行块)。
 const CERT_STATUS_PENDING = 'pending';
+const CERT_STATUS_VERIFIED = 'verified';
 const RECRUITMENT_CERT_ISSUING_ORG = '申请人自报(招新上传,待核验)';
 
 interface EmergencyContactJson {
@@ -571,36 +573,38 @@ export class RecruitmentPromotionService {
         select: { id: true },
       });
     }
-    // F7(R6):为已上传证书图的类别自动建 pending Certificate(图 key 搬入,blob 单一属主=certificate;
-    // 走既有 certificates verify/reject 核验流,不新建审核流)。占位字段待核验人修正;legacy 行无
-    // certificateImages → 零建行(批量 promote 行为锁)。
+    // F7(R6)+ 证书审核只审一次(2026-07-14):为已上传证书图的类别自动建 Certificate(图 key 搬入,
+    // blob 单一属主=certificate)。招新阶段已 approved 的类别**继承**审核结论建为 verified(审核人/时间/
+    // 备注一并搬入),不再重建成 pending 让核验人二次审核;仅上传未审的类别仍建 pending 走既有
+    // certificates verify/reject 核验流。legacy 行无 certificateImages → 零建行(批量 promote 行为锁)。
     const certImages = a.certificateImages as Record<string, string[]> | null;
     if (certImages) {
       for (const [category, keys] of Object.entries(certImages)) {
         if (!Array.isArray(keys) || keys.length === 0) continue;
         const issuance = certificateIssuanceForCategory(a.certificateIssuanceInfo, category);
         const review = certificateReviewForCategory(a.certificateReviewStatus, category);
-        let verifyNote: string | undefined;
+        const data: Prisma.CertificateUncheckedCreateInput = {
+          memberId: member.id,
+          certTypeCode: category,
+          issuingOrg: issuance?.issuingOrg ?? RECRUITMENT_CERT_ISSUING_ORG,
+          issuedAt: normalizeDateOnly(issuance?.issuedAt ?? now.toISOString()),
+          certStatusCode: CERT_STATUS_PENDING,
+          isInternal: false,
+          imageKeys: keys,
+        };
         if (review?.status === 'approved') {
+          // 继承审核状态/人/时间/备注:审核人 review.by 为 User.id,映射其 Member.id 作 verifiedBy;
+          // 无 memberId(如 SUPER_ADMIN)合法为 null,沿 certificates.service Q-I2,不卡核验流。
           const reviewer = await tx.user.findUnique({
             where: { id: review.by },
-            select: { username: true },
+            select: { memberId: true },
           });
-          verifyNote = `招新阶段图片审核已通过 ${review.at} by ${reviewer?.username ?? review.by}`;
+          data.certStatusCode = CERT_STATUS_VERIFIED;
+          data.verifiedBy = reviewer?.memberId ?? null;
+          data.verifiedAt = new Date(review.at);
+          if (review.note) data.verifyNote = review.note;
         }
-        await tx.certificate.create({
-          data: {
-            memberId: member.id,
-            certTypeCode: category,
-            issuingOrg: issuance?.issuingOrg ?? RECRUITMENT_CERT_ISSUING_ORG,
-            issuedAt: normalizeDateOnly(issuance?.issuedAt ?? now.toISOString()),
-            certStatusCode: CERT_STATUS_PENDING,
-            isInternal: false,
-            imageKeys: keys,
-            ...(verifyNote ? { verifyNote } : {}),
-          },
-          select: { id: true },
-        });
+        await tx.certificate.create({ data, select: { id: true } });
       }
     }
     // 标 promoted + 链 + 即时清敏感(PII 已搬 member/user;blob 归 member/user,留存 SOP 不再触 promoted 行)。
