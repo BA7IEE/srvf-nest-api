@@ -370,7 +370,8 @@ export class RecruitmentPublicController {
         issuingOrg: {
           type: 'string',
           maxLength: 128,
-          description: '发证机构(自由文本;任一被认可的急救资质发证机构均可,前端可提供红十字会/深圳市急救中心等快捷项)',
+          description:
+            '发证机构(自由文本;任一被认可的急救资质发证机构均可,前端可提供红十字会/深圳市急救中心等快捷项)',
         },
         issuedAt: {
           type: 'string',

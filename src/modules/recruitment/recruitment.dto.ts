@@ -329,7 +329,8 @@ export class RecruitmentCertificateUploadDto {
   category!: string;
 
   @ApiProperty({
-    description: '发证机构(自由文本;任一被认可的急救资质发证机构均可,前端可提供红十字会/深圳市急救中心等快捷项)',
+    description:
+      '发证机构(自由文本;任一被认可的急救资质发证机构均可,前端可提供红十字会/深圳市急救中心等快捷项)',
     maxLength: 128,
   })
   @IsString()
