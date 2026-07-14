@@ -624,7 +624,7 @@ describe('dictionaries 模块', () => {
         select: { id: true },
       });
       const i = await prisma.dictItem.create({
-        data: { typeId: t.id, code: 'general', label: '一般通知' },
+        data: { typeId: t.id, code: 'expiry-reminder', label: '到期提醒' },
         select: { id: true },
       });
       const itemRes = await request(httpServer(app))

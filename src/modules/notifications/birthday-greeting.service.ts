@@ -11,8 +11,8 @@ import { SmsChannelUnavailableError, SmsProviderSendError } from '../sms/sms.typ
 // B 队列 F5-T2(2026-06-11):生日祝福短信 job——G-7(通知/短信/推送)首个落地点
 // (冻结评审稿 docs/archive/reviews/queue-b-otp-birthday-infra-review.md §6,下称"评审稿")。
 //
-// no-cron 升级路径(拍板④):@nestjs/schedule 解锁范围**仅本 job 一个 @Cron**;
-// 新增任何定时任务 = 新 D 档评审(评审稿 R-5);retention 清理永走手动 SOP(D-QB-3)。
+// no-cron 首次升级路径(拍板④):@nestjs/schedule 最初仅解锁本 job；v0.47.0 经新 D 档评审
+// 追加唯一第二个 expiry-reminder cron。第三个仍须新 D 档评审；retention 永走手动 SOP(D-QB-3)。
 //
 // 选取口径(评审稿 E-B5,拍板⑤「仅 User.phone」),全条件同时满足:
 //   MemberProfile.birthDate 月日 = 今天(固定 UTC+8 日界;birthDate 为必填列)

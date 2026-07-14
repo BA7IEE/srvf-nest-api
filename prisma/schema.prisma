@@ -1677,6 +1677,7 @@ model MemberInsurance {
   policyNumber  String // 保单号;长度 128 由 DTO 约束(沿 certNumber;无唯一约束,E-2)
   coverageStart DateTime? // 起保日(可选;有值时门槛校验 coverageStart <= 活动 startAt,E-11)
   coverageEnd   DateTime // 到期时间(必填;有效性唯一依据,D-INS-5)
+  expireNotifiedAt DateTime? // v0.47.0 到期提醒幂等 marker;首次命中 30 天窗口后置 now,不因改期自动清空
 
   member Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
 
@@ -1697,6 +1698,7 @@ model TeamInsurancePolicy {
   policyNumber  String // 保单号;长度 128 由 DTO 约束
   coverageStart DateTime // 起保(必填,goal ②)
   coverageEnd   DateTime // 到期
+  expireNotifiedAt DateTime? // v0.47.0 管理面到期提醒幂等 marker;首次命中 30 天窗口后置 now
   note          String? // 备注;长度 500 由 DTO 约束
 
   coverages TeamInsuranceCoverage[]
@@ -2128,7 +2130,7 @@ model Notification {
 
   title                String // 标题(DTO ≤ 200)
   body                 String // 站内信正文(PG text;纯文本 / 轻 Markdown;DTO ≤ 5000,v1 无正文图 / 附件)
-  notificationTypeCode String // ∈ notification_type 字典 item(activity-reminder / recruitment / emergency / general)
+  notificationTypeCode String // ∈ notification_type 字典 item(activity-reminder / recruitment / emergency / general / expiry-reminder)
   statusCode           String // draft / published / archived(String 常量,无 enum,镜像 content)
   visibilityCode       String // member / formal_member / department / management(4 档;去 public,会员面专属)
 

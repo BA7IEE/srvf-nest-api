@@ -49,7 +49,7 @@ const DICT_TYPE_CERT_SUB_TYPE = 'cert_sub_type';
 const CERT_STATUS_PENDING = 'pending';
 const CERT_STATUS_VERIFIED = 'verified';
 const CERT_STATUS_REJECTED = 'rejected';
-// CERT_STATUS_EXPIRED 由后台任务推动,本批次 service 不主动写入
+// CERT_STATUS_EXPIRED 由 v0.47.0 ExpiryReminderService 到期扫描推动,本 service 不主动写入
 
 const CERTIFICATE_CORE_FIELDS = [
   'certTypeCode',

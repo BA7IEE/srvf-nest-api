@@ -4,9 +4,11 @@ import { type Notification } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import {
   NOTIFICATION_AUDIENCE_DIRECTED,
+  NOTIFICATION_AUDIENCE_BROADCAST,
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_CHANNEL_WECHAT,
   NOTIFICATION_DIRECTED_VISIBILITY,
+  NOTIFICATION_VISIBILITY_MANAGEMENT,
   NOTIFICATION_SOURCE_SYSTEM,
   NOTIFICATION_STATUS_PUBLISHED,
 } from './notification.constants';
@@ -32,6 +34,12 @@ export interface DispatchTargetedInput {
   body: string;
   // 目标渠道(默认仅站内;发号传 ['in-app','wechat']、入队传 ['in-app']);站内恒发,normalize 强制含 in-app。
   channels?: string[];
+}
+
+export interface DispatchSystemBroadcastInput {
+  notificationTypeCode: string;
+  title: string;
+  body: string;
 }
 
 @Injectable()
@@ -71,6 +79,26 @@ export class NotificationDispatcher {
     }
 
     return row;
+  }
+
+  // 系统管理面广播：直接建 published 行，management 可见、仅站内、无收件人 fan-out。
+  // v0.47.0 队保单到期提醒使用；不走 admin 草稿状态机，也不触发微信 / 短信。
+  async dispatchSystemBroadcast(input: DispatchSystemBroadcastInput): Promise<Notification> {
+    return this.prisma.notification.create({
+      data: {
+        title: input.title,
+        body: input.body,
+        notificationTypeCode: input.notificationTypeCode,
+        statusCode: NOTIFICATION_STATUS_PUBLISHED,
+        publishedAt: new Date(),
+        visibilityCode: NOTIFICATION_VISIBILITY_MANAGEMENT,
+        audienceType: NOTIFICATION_AUDIENCE_BROADCAST,
+        sourceType: NOTIFICATION_SOURCE_SYSTEM,
+        channels: [NOTIFICATION_CHANNEL_IN_APP],
+        recipientMemberId: null,
+        authorUserId: null,
+      },
+    });
   }
 
   // 渠道归一:站内恒发 → 强制含 in-app;去重保序(in-app 在前)。producer 传码非用户输入,不做白名单校验。
