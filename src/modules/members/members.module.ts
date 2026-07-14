@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { AuthzModule } from '../authz/authz.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { MembersController } from './members.controller';
@@ -15,7 +16,7 @@ import { MembersService } from './members.service';
 // 队员账号闭环 v1(2026-07-07):imports AuditLogsModule 供 grantAccount() 写 audit
 // (`member.account-granted`;沿 users/recruitment 模块同款 DI 范式)。
 @Module({
-  imports: [DatabaseModule, PermissionsModule, OrganizationsModule, AuditLogsModule],
+  imports: [DatabaseModule, PermissionsModule, AuthzModule, OrganizationsModule, AuditLogsModule],
   controllers: [MembersController],
   providers: [MembersService],
   exports: [MembersService],

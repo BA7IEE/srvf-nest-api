@@ -6,6 +6,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuthzService } from '../authz/authz.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { RbacService } from '../permissions/rbac.service';
 import type {
@@ -157,6 +158,10 @@ function makeRbacMock() {
   return { can: jest.fn<Promise<boolean>, [unknown, string]>().mockResolvedValue(true) };
 }
 
+function makeAuthzMock() {
+  return { explain: jest.fn().mockResolvedValue({ allow: true, reason: 'matched' }) };
+}
+
 function makeService(
   prisma: PrismaMock,
   opts: { auditLogs?: AuditLogsMock } = {},
@@ -166,6 +171,7 @@ function makeService(
     prisma as unknown as PrismaService,
     auditLogs as unknown as AuditLogsService,
     makeRbacMock() as unknown as RbacService,
+    makeAuthzMock() as unknown as AuthzService,
   );
 }
 

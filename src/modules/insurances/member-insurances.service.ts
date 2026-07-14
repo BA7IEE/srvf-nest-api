@@ -6,6 +6,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuthzService } from '../authz/authz.service';
 import { RbacService } from '../permissions/rbac.service';
 import { MemberInsuranceAdminResponseDto } from './insurances.dto';
 
@@ -34,13 +35,22 @@ export class MemberInsurancesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
+    private readonly authz: AuthzService,
   ) {}
 
   async listForMember(
     memberId: string,
     currentUser: CurrentUserPayload,
   ): Promise<MemberInsuranceAdminResponseDto[]> {
-    if (!(await this.rbac.can(currentUser, 'member-insurance.read.other'))) {
+    const action = 'member-insurance.read.other';
+    const decision = await this.authz.explain(currentUser, action, {
+      type: 'member',
+      id: memberId,
+    });
+    if (
+      !decision.allow &&
+      !(decision.reason === 'resource_not_found' && (await this.rbac.can(currentUser, action)))
+    ) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
     }
 

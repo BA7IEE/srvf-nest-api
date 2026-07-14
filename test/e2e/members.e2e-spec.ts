@@ -26,6 +26,8 @@ describe('members 模块', () => {
   let superAdminAuth: string;
   let adminAuth: string;
   let userAuth: string;
+  let adminId: string;
+  let bizAdminRoleId: string;
 
   let activeGradeCode: string;
   let inactiveGradeCode: string;
@@ -38,6 +40,7 @@ describe('members 模块', () => {
 
     await createTestUser(app, { username: 'mem-su', role: Role.SUPER_ADMIN });
     const admin = await createTestUser(app, { username: 'mem-adm', role: Role.ADMIN });
+    adminId = admin.id;
     await createTestUser(app, { username: 'mem-user', role: Role.USER });
     superAdminAuth = (await loginAs(app, 'mem-su')).authHeader;
     adminAuth = (await loginAs(app, 'mem-adm')).authHeader;
@@ -45,7 +48,8 @@ describe('members 模块', () => {
 
     // Slow-4 T2:seed 36 条业务面码 + biz-admin;给 mem-adm 全局 grant(沿 org e2e 范式)
     const bizSeed = await seedBizAdminPermissionsAndRole(app);
-    await grantBizAdminToUser(app, admin.id, bizSeed.bizAdminRoleId);
+    bizAdminRoleId = bizSeed.bizAdminRoleId;
+    await grantBizAdminToUser(app, adminId, bizAdminRoleId);
 
     // 准备 member_grade 字典 + 1 ACTIVE / 1 INACTIVE
     const gradeType = await prisma.dictType.create({
@@ -414,7 +418,10 @@ describe('members 模块', () => {
 
     beforeAll(async () => {
       // 自包含:清空 Organization(级联清 memberships/closure),重建根+子两级(D7 includeDescendants 用)。
+      // TRUNCATE ... CASCADE 会同时清空带 organizationId 外键的整张 RoleBinding 表，
+      // 包括本 spec 的 GLOBAL biz-admin 绑定；重绑后再验证列表契约。
       await prisma.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
+      await grantBizAdminToUser(app, adminId, bizAdminRoleId);
       rootOrgId = await createOrg('F1成员搜索根');
       childOrgId = await createOrg('F1成员搜索子', rootOrgId);
 

@@ -9,6 +9,9 @@
 
 ## Local facts
 
+- **部门数据范围(v0.49)**:`list/options` 先取 `AuthzService.getVisibleOrganizationScope('member.read.record')`，再与用户 `organizationId/includeDescendants` 过滤取交集；成员归属只认 active PRIMARY，SECONDARY/TEMPORARY/SUPPORT 不扩大可见范围。有效持码但组织集合为空返回空列表，无码才返 30100。
+- **point auth**:除 `create` 保持 no-ref/GLOBAL-only 外，成员详情及全部单项写操作都用 `{type:'member', id}`；bulk grant 每项独立 point auth。证书点动作按 certificate ref，档案/联系人/保险按 member ref；`resource_not_found` 仅对旧 GLOBAL 持码者回退既有业务 NOT_FOUND，scoped 调用者统一 30100。
+- **敏感二次授权**:`member-profile.read.sensitive` 与 `emergency-contact.read.sensitive` 也必须带 member ref；基础 read 通过但 sensitive 未通过时继续掩码。副职只读投影明确不含任何 `*.read.sensitive`。
 - **最后 ops-admin 保护(2026-07-13 finding-4 同类残留收口)**:`MembersService` 注入 permissions 模块导出的 `LastAdminProtectionPolicy`。三条会让 live 关联账号退出 active holder 集合的路径，均在原事务内、实际停用/软删前调用同一个 `assertCanDeactivateOpsAdminUser(tx, userId)`：`updateAccountStatus` 仅 `status=DISABLED`；`offboard` 仅 linked 存在且尚未 DISABLED；`reopenAccount` 软删 `oldLink` 前。
 - **跨轴同锁**:上述调用复用 policy 内唯一锁键 `role-bindings:last-ops-admin`，与 users disable/soft-delete、role-bindings、user-roles 削权路径串行；禁止在 members 内复制 count、任期谓词、advisory-lock SQL 或另造锁键。
 - **事务与副作用顺序不变**:守卫拒绝时账号、ops-admin 绑定、member/offboard 其它腿、refresh token 与 reopen 新号均不得变化；放行后仍沿既有顺序执行 refresh 撤销、探测式 username、先软删旧号再建新号及 audit。
@@ -25,5 +28,6 @@
 
 ## Validation
 
+- `pnpm test:e2e -- department-data-scope-members.e2e-spec.ts`
 - `pnpm test:e2e -- members-last-ops-admin members-account-lifecycle members-offboard users-last-super-admin control-plane-audit-characterization`
 - 依赖 permissions policy 的安全改动必须跑 `pnpm agent:check:full`，并确认 contract snapshot 零漂移。

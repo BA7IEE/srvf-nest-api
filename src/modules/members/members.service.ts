@@ -4,6 +4,7 @@ import {
   DictTypeStatus,
   MemberStatus,
   MembershipStatus,
+  MembershipType,
   Prisma,
   Role,
   UserStatus,
@@ -18,6 +19,8 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { AuthzService } from '../authz/authz.service';
+import type { ResourceRef } from '../authz/authz.types';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import { RbacService } from '../permissions/rbac.service';
@@ -69,6 +72,7 @@ export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
+    private readonly authz: AuthzService,
     private readonly lastAdminProtection: LastAdminProtectionPolicy,
     private readonly organizations: OrganizationsService,
     private readonly auditLogs: AuditLogsService,
@@ -76,13 +80,19 @@ export class MembersService {
 
   // ============ helpers ============
 
-  // Slow-4 T2(2026-06-11,评审稿 §3.1 / D-S4-8):RBAC 判权(沿 P0-F assertCanOrThrow 范式)。
-  // 每个 public 方法第一条语句调用——先判权后查资源,保持与原 Guard 前置语义一致。
-  // `member.delete.record` 不绑 biz-admin(仅 SUPER_ADMIN 短路;D1=A 镜像)。
-  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
-    if (!(await this.rbac.can(user, action))) {
-      throw new BizException(BizCode.RBAC_FORBIDDEN);
+  // v0.49 部门数据范围:带 member ref 的点动作走三源 scoped authz。资源不存在时仅原本持有
+  // GLOBAL RBAC 码者回退到既有业务 NOT_FOUND；scoped 调用者统一 30100，避免跨范围枚举。
+  private async assertCanOrThrow(
+    user: CurrentUserPayload,
+    action: string,
+    ref?: ResourceRef,
+  ): Promise<void> {
+    const decision = await this.authz.explain(user, action, ref);
+    if (decision.allow) return;
+    if (ref && decision.reason === 'resource_not_found' && (await this.rbac.can(user, action))) {
+      return;
     }
+    throw new BizException(BizCode.RBAC_FORBIDDEN);
   }
 
   // memberNo 入库前 trim(保留原大小写,与 v1 username 的 toLowerCase 不同 — 编号即身份)
@@ -242,20 +252,43 @@ export class MembersService {
 
   // ============ list ============
 
-  // F1/A1(D7):organizationId 经 memberOrganizationMemberships 关联过滤(active,任意
-  // membershipType 均计入;沿 position-assignments requireMembership 校验同口径)。
-  // includeDescendants=true 时展开 organizationId 及其全部后代(D7 helper,closure 非判权)。
+  // v0.49:成员列表的 organizationId 用户过滤与授权组织集合取交集。成员归属严格只认
+  // active PRIMARY，SECONDARY/TEMPORARY/SUPPORT 均不得扩大可见范围。
   private async buildOrganizationScopeFilter(
+    currentUser: CurrentUserPayload,
     organizationId: string | undefined,
     includeDescendants: boolean | undefined,
   ): Promise<Prisma.MemberWhereInput | undefined> {
-    if (organizationId === undefined) return undefined;
-    const orgIds = includeDescendants
-      ? await this.organizations.queryDescendantOrgIds(organizationId)
-      : [organizationId];
+    const authScope = await this.authz.getVisibleOrganizationScope(
+      currentUser,
+      'member.read.record',
+    );
+    if (!authScope.hasPermission) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+
+    const requestedOrgIds =
+      organizationId === undefined
+        ? undefined
+        : includeDescendants
+          ? await this.organizations.queryDescendantOrgIds(organizationId)
+          : [organizationId];
+
+    if (authScope.global && requestedOrgIds === undefined) return undefined;
+    const orgIds = authScope.global
+      ? (requestedOrgIds ?? [])
+      : requestedOrgIds === undefined
+        ? authScope.organizationIds
+        : requestedOrgIds.filter((id) => authScope.organizationIds.includes(id));
+
     return {
       memberOrganizationMemberships: {
-        some: { organizationId: { in: orgIds }, status: 'ACTIVE', deletedAt: null },
+        some: {
+          organizationId: { in: orgIds },
+          membershipType: MembershipType.PRIMARY,
+          status: MembershipStatus.ACTIVE,
+          deletedAt: null,
+        },
       },
     };
   }
@@ -264,7 +297,6 @@ export class MembersService {
     query: ListMembersQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<MemberResponseDto>> {
-    await this.assertCanOrThrow(currentUser, 'member.read.record');
     const {
       page,
       pageSize,
@@ -287,7 +319,11 @@ export class MembersService {
         { memberNo: { contains: q, mode: 'insensitive' } },
       ];
     }
-    const orgScope = await this.buildOrganizationScopeFilter(organizationId, includeDescendants);
+    const orgScope = await this.buildOrganizationScopeFilter(
+      currentUser,
+      organizationId,
+      includeDescendants,
+    );
     if (orgScope !== undefined) Object.assign(filters, orgScope);
     // 队员账号闭环 v1:hasAccount 经 users 反向关联过滤。
     // 队员账号闭环 v2(评审稿 §1.2 E-1/E-2/E-6):User.memberId 改一对多(partial unique),
@@ -326,7 +362,6 @@ export class MembersService {
     query: MemberOptionsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<MemberOptionsResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'member.read.record');
     const { q, organizationId, includeDescendants, limit } = query;
 
     const filters: Prisma.MemberWhereInput = {};
@@ -336,7 +371,11 @@ export class MembersService {
         { memberNo: { contains: q, mode: 'insensitive' } },
       ];
     }
-    const orgScope = await this.buildOrganizationScopeFilter(organizationId, includeDescendants);
+    const orgScope = await this.buildOrganizationScopeFilter(
+      currentUser,
+      organizationId,
+      includeDescendants,
+    );
     if (orgScope !== undefined) Object.assign(filters, orgScope);
 
     const rows = await this.prisma.member.findMany({
@@ -388,7 +427,7 @@ export class MembersService {
   // ============ findOne ============
 
   async findOne(id: string, currentUser: CurrentUserPayload): Promise<MemberResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'member.read.record');
+    await this.assertCanOrThrow(currentUser, 'member.read.record', { type: 'member', id });
     const member = await this.findMemberOrThrow(id);
     const linked = await this.findLinkedUser(id);
     return this.attachAccountInfo(member, linked);
@@ -402,7 +441,7 @@ export class MembersService {
     dto: UpdateMemberDto,
     currentUser: CurrentUserPayload,
   ): Promise<MemberResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'member.update.record');
+    await this.assertCanOrThrow(currentUser, 'member.update.record', { type: 'member', id });
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(id, tx);
 
@@ -431,7 +470,7 @@ export class MembersService {
     dto: UpdateMemberStatusDto,
     currentUser: CurrentUserPayload,
   ): Promise<MemberResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'member.update.status');
+    await this.assertCanOrThrow(currentUser, 'member.update.status', { type: 'member', id });
     await this.findMemberOrThrow(id);
     const updated = await this.prisma.member.update({
       where: { id },
@@ -449,7 +488,7 @@ export class MembersService {
   //   - 有 v1 user 绑定(users.memberId=:id, deletedAt=null)→ 拒绝(防悬空外键)
   // 离队走 PATCH /:id/status → INACTIVE(不软删档案);软删仅"档案彻底无效"场景。
   async softDelete(id: string, currentUser: CurrentUserPayload): Promise<MemberResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'member.delete.record');
+    await this.assertCanOrThrow(currentUser, 'member.delete.record', { type: 'member', id });
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(id, tx);
 
@@ -499,7 +538,7 @@ export class MembersService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<GrantMemberAccountResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'member.grant.account');
+    await this.assertCanOrThrow(currentUser, 'member.grant.account', { type: 'member', id });
     return this.grantAccountCore(id, dto.phone, currentUser, auditMeta);
   }
 
@@ -609,7 +648,7 @@ export class MembersService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<MemberResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'member.bind.account');
+    await this.assertCanOrThrow(currentUser, 'member.bind.account', { type: 'member', id });
 
     return this.prisma.$transaction(async (tx) => {
       const member = await this.findMemberOrThrow(id, tx);
@@ -674,7 +713,7 @@ export class MembersService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<MemberResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'member.bind.account');
+    await this.assertCanOrThrow(currentUser, 'member.bind.account', { type: 'member', id });
 
     return this.prisma.$transaction(async (tx) => {
       const member = await this.findMemberOrThrow(id, tx);
@@ -730,7 +769,7 @@ export class MembersService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<GrantMemberAccountResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'member.grant.account');
+    await this.assertCanOrThrow(currentUser, 'member.grant.account', { type: 'member', id });
 
     return this.prisma.$transaction(async (tx) => {
       const member = await tx.member.findFirst({
@@ -849,7 +888,7 @@ export class MembersService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<MemberResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'user.update.status');
+    await this.assertCanOrThrow(currentUser, 'user.update.status', { type: 'member', id });
 
     return this.prisma.$transaction(async (tx) => {
       const member = await this.findMemberOrThrow(id, tx);
@@ -918,11 +957,18 @@ export class MembersService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<BulkGrantMemberAccountsResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'member.grant.account');
+    const scope = await this.authz.getVisibleOrganizationScope(currentUser, 'member.grant.account');
+    if (!scope.hasPermission) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
 
     const items: BulkGrantAccountResultItemDto[] = [];
     for (const item of dto.items) {
       try {
+        await this.assertCanOrThrow(currentUser, 'member.grant.account', {
+          type: 'member',
+          id: item.memberId,
+        });
         const result = await this.grantAccountCore(
           item.memberId,
           item.phone,
@@ -977,7 +1023,7 @@ export class MembersService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<MemberOffboardResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'member.offboard.record');
+    await this.assertCanOrThrow(currentUser, 'member.offboard.record', { type: 'member', id });
     return this.prisma.$transaction(async (tx) => {
       // 守卫:member 存在(不存在 / 软删 → 15001)。
       const member = await this.findMemberOrThrow(id, tx);

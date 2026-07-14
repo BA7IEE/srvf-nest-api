@@ -8,6 +8,7 @@ import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.con
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuthzService } from '../authz/authz.service';
 import { RbacService } from '../permissions/rbac.service';
 import { CreateMemberProfileDto } from './dto/create-member-profile.dto';
 import { MemberProfileResponseDto } from './dto/member-profile-response.dto';
@@ -119,16 +120,22 @@ export class MemberProfilesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
+    private readonly authz: AuthzService,
   ) {}
 
   // ============ helpers ============
 
-  // Slow-4 T2(2026-06-11,评审稿 §3.2 / D-S4-8):RBAC 判权(沿 P0-F assertCanOrThrow 范式)。
-  // 每个 public 方法第一条语句调用——先判权后查资源,保持与原 Guard 前置语义一致。
-  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
-    if (!(await this.rbac.can(user, action))) {
-      throw new BizException(BizCode.RBAC_FORBIDDEN);
-    }
+  // v0.49:档案管理统一按 member 的 active PRIMARY 组织归属做 point auth；不存在资源仅对
+  // 原 GLOBAL 持码者保留既有 MEMBER_NOT_FOUND。
+  private async assertCanOrThrow(
+    user: CurrentUserPayload,
+    action: string,
+    memberId: string,
+  ): Promise<void> {
+    const decision = await this.authz.explain(user, action, { type: 'member', id: memberId });
+    if (decision.allow) return;
+    if (decision.reason === 'resource_not_found' && (await this.rbac.can(user, action))) return;
+    throw new BizException(BizCode.RBAC_FORBIDDEN);
   }
 
   // 校验 member 存在且未软删(沿用 member-departments / members 模式)。
@@ -245,7 +252,7 @@ export class MemberProfilesService {
     memberId: string,
     currentUser: CurrentUserPayload,
   ): Promise<MemberProfileResponseDto | null> {
-    await this.assertCanOrThrow(currentUser, 'member-profile.read.record');
+    await this.assertCanOrThrow(currentUser, 'member-profile.read.record', memberId);
     await this.findMemberOrThrow(memberId);
 
     auditPlaceholder('profile.read.other', {
@@ -254,7 +261,10 @@ export class MemberProfilesService {
     });
 
     // §F&A-3:无 read.sensitive 者见掩码(入口码仍是 read.record)。
-    const masked = !(await this.rbac.can(currentUser, 'member-profile.read.sensitive'));
+    const masked = !(await this.authz.can(currentUser, 'member-profile.read.sensitive', {
+      type: 'member',
+      id: memberId,
+    }));
 
     const profile = await this.prisma.memberProfile.findFirst({
       where: notDeletedWhere({ memberId }),
@@ -273,9 +283,12 @@ export class MemberProfilesService {
     dto: CreateMemberProfileDto,
     currentUser: CurrentUserPayload,
   ): Promise<MemberProfileResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'member-profile.create.record');
+    await this.assertCanOrThrow(currentUser, 'member-profile.create.record', memberId);
     // §F&A-3:create 回显同 findOne 分级(无 read.sensitive 见掩码 documentNumber / mobile)。
-    const masked = !(await this.rbac.can(currentUser, 'member-profile.read.sensitive'));
+    const masked = !(await this.authz.can(currentUser, 'member-profile.read.sensitive', {
+      type: 'member',
+      id: memberId,
+    }));
     return this.prisma.$transaction(async (tx) => {
       // 1. 校验 member 存在
       await this.findMemberOrThrow(memberId, tx);
@@ -358,9 +371,12 @@ export class MemberProfilesService {
     dto: UpdateMemberProfileDto,
     currentUser: CurrentUserPayload,
   ): Promise<MemberProfileResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'member-profile.update.record');
+    await this.assertCanOrThrow(currentUser, 'member-profile.update.record', memberId);
     // §F&A-3:update 回显同 findOne 分级(无 read.sensitive 见掩码 documentNumber / mobile)。
-    const masked = !(await this.rbac.can(currentUser, 'member-profile.read.sensitive'));
+    const masked = !(await this.authz.can(currentUser, 'member-profile.read.sensitive', {
+      type: 'member',
+      id: memberId,
+    }));
     return this.prisma.$transaction(async (tx) => {
       // 1. 校验 member 存在
       await this.findMemberOrThrow(memberId, tx);
