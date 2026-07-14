@@ -102,13 +102,17 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
 
   // 直造 pending_final_review sheet(显式 submitter / 一级 reviewer;绕过 submit/approve 状态机,
   // 约束只读这两个事实字段)。时间窗不建 record —— 终审判权/状态机不读 records。
-  async function mkSheet(submitterUserId: string, reviewerUserId?: string): Promise<string> {
+  async function mkSheet(
+    submitterUserId: string,
+    reviewerUserId?: string,
+    statusCode = 'pending_final_review',
+  ): Promise<string> {
     const sheet = await prisma.attendanceSheet.create({
       data: {
         activityId,
         submitterUserId,
         reviewerUserId: reviewerUserId ?? null,
-        statusCode: 'pending_final_review',
+        statusCode,
         version: 1,
       },
       select: { id: true },
@@ -121,6 +125,13 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
       .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
       .set('Authorization', auth)
       .send({ finalReviewNote: 'authz matrix' });
+  }
+
+  function reopen(sheetId: string, auth: string) {
+    return request(httpServer(app))
+      .post(`/api/admin/v1/attendance-sheets/${sheetId}/reopen`)
+      .set('Authorization', auth)
+      .send({ reason: '终审后发现需重新修订' });
   }
 
   beforeAll(async () => {
@@ -305,7 +316,7 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
 
   // ============ 摘码翻面(2026-07-03;原 B 方案 GLOBAL ALLOW 翻转)============
 
-  it('④持 biz-admin 的 ADMIN 终审他人单 → 30100(摘码翻面);终审两码不在 biz-admin 绑定', async () => {
+  it('④持 biz-admin 的 ADMIN 终审/reopen 他人单 → 30100;三码不在 biz-admin 绑定', async () => {
     const sheetId = await mkSheet(subAdminId, revAdminId);
     // 原 B 方案:200(GLOBAL grant 通路);摘码后:no_permission → 30100
     expectBizError(await finalApprove(sheetId, finalAdminAuth), BizCode.RBAC_FORBIDDEN);
@@ -316,6 +327,8 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
         .send({ finalReviewNote: 'X' }),
       BizCode.RBAC_FORBIDDEN,
     );
+    const approvedSheetId = await mkSheet(subAdminId, revAdminId, 'approved');
+    expectBizError(await reopen(approvedSheetId, finalAdminAuth), BizCode.RBAC_FORBIDDEN);
     // 单据零变化(deny 在事务前)
     const db = await prisma.attendanceSheet.findUniqueOrThrow({
       where: { id: sheetId },
@@ -333,7 +346,13 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
         where: {
           roleId: bizRole.id,
           permission: {
-            code: { in: ['attendance.final-approve.sheet', 'attendance.final-reject.sheet'] },
+            code: {
+              in: [
+                'attendance.final-approve.sheet',
+                'attendance.final-reject.sheet',
+                'attendance.reopen.sheet',
+              ],
+            },
           },
         },
       }),
@@ -346,6 +365,13 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     expect(res.status).toBe(200);
     expect(res.body.data.statusCode).toBe('approved');
     expect(res.body.data.finalReviewerUserId).toBe(saUserId);
+    const reopened = await reopen(sheetId, saAuth);
+    expect(reopened.status).toBe(201);
+    expect(reopened.body.data).toMatchObject({
+      statusCode: 'pending',
+      reviewerUserId: null,
+      finalReviewerUserId: null,
+    });
   });
 
   it('⑤裸 USER / 无 biz-admin 的 ADMIN → 30100(权限拒绝面契约零变)', async () => {
@@ -374,7 +400,11 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     for (const action of stillAllowed) {
       expect(await authz.can(finalAdminPayload, action)).toBe(true);
     }
-    for (const action of ['attendance.final-approve.sheet', 'attendance.final-reject.sheet']) {
+    for (const action of [
+      'attendance.final-approve.sheet',
+      'attendance.final-reject.sheet',
+      'attendance.reopen.sheet',
+    ]) {
       expect(await authz.can(finalAdminPayload, action)).toBe(false);
     }
   });
@@ -395,6 +425,16 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     const resAllow = await finalApprove(sheetA, deptHeadAuth);
     expect(resAllow.status).toBe(200);
     expect(resAllow.body.data.statusCode).toBe('approved');
+
+    const explainReopen = await authz.explain(deptHeadPayload, 'attendance.reopen.sheet', {
+      type: 'attendance_sheet',
+      id: sheetA,
+    });
+    expect(explainReopen.allow).toBe(true);
+    expect(explainReopen.matchedGrant?.roleCode).toBe(FINAL_REVIEWER_ROLE_CODE);
+    const reopened = await reopen(sheetA, deptHeadAuth);
+    expect(reopened.status).toBe(201);
+    expect(reopened.body.data.statusCode).toBe('pending');
 
     // 换届:任职 ENDED → POSITION_ASSIGNMENT 主体绑定随之失效(不动绑定行)
     await prisma.organizationPositionAssignment.update({

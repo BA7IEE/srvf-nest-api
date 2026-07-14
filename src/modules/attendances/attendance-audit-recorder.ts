@@ -5,7 +5,8 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 
 // V2 第一阶段批次 6 attendance audit assembly 单一职责类(沿 PR #176 / #177 / #182 /
-// PR #184 characterization 锁定的 8 处 audit 行为 + audit failure rollback 零变化抽出)。
+// PR #184 characterization 锁定的 8 处 audit 行为 + audit failure rollback 零变化抽出;
+// v0.47.0 F2 additive 承接第 9 处 reopen audit)。
 //
 // 三抽完成后(PR #178 ContributionCalculator / PR #180 TimeOverlapPolicy /
 // PR #183 AttendanceSheetStateMachine),`attendances.service.ts` 剩余最大单一职责是
@@ -348,6 +349,41 @@ export class AttendanceAuditRecorder {
       before,
       after: this.toSheetAuditSnapshot(args.afterSheet),
       extra,
+      tx: args.tx,
+    });
+  }
+
+  // ============ reopen ============
+  // event: `attendance-sheet.reopen`;before / after 都含 Sheet + 未软删 Records 完整快照。
+  async logReopen(args: {
+    sheetId: string;
+    beforeSheet: AuditSheetSnapshotInput;
+    afterSheet: AuditSheetSnapshotInput;
+    records: AuditRecordSnapshotInput[];
+    actorUserId: string;
+    actorRoleSnap: Role;
+    reason: string;
+    priorStatusCode: string;
+    nextStatusCode: string;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: 'attendance-sheet.reopen',
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.sheetId,
+      meta: args.auditMeta,
+      before: this.toSheetAuditSnapshot(args.beforeSheet, args.records),
+      after: this.toSheetAuditSnapshot(args.afterSheet, args.records),
+      extra: {
+        operation: 'reopen',
+        reason: args.reason,
+        priorStatusCode: args.priorStatusCode,
+        nextStatusCode: args.nextStatusCode,
+        recordsCount: args.records.length,
+      },
       tx: args.tx,
     });
   }

@@ -361,6 +361,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/attendance-sheets/{id}/reject'],
   ['patch', '/api/admin/v1/attendance-sheets/{id}/final-approve'],
   ['patch', '/api/admin/v1/attendance-sheets/{id}/final-reject'],
+  ['post', '/api/admin/v1/attendance-sheets/{id}/reopen'],
   // 队员/审批跨轴只读查询(2026-06-23;前端任务驱动后台 · GAP-001 Tier2 / GAP-002 Tier3):
   //   5 个 admin 只读端点,224→229(仅新增;复用 read 码零新码 / 零 schema 列 / 零 migration)。
   //   Tier2 跨活动横扫(审批工作台):registrations + attendance-sheets(根 @Get 加在既有

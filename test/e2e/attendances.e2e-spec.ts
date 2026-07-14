@@ -1939,4 +1939,177 @@ describe('attendances 模块', () => {
       expect(after?.statusCode).toBe('completed');
     });
   });
+
+  describe('v0.47.0 attendance reopen 完整链路', () => {
+    it('pending→approve→finalApprove→reopen→edit→approve→finalApprove;贡献值下降后恢复', async () => {
+      const member = await prisma.member.create({
+        data: { memberNo: 'att-reopen-m-001', displayName: 'Reopen Member' },
+        select: { id: true },
+      });
+      const childOrg = await prisma.organization.findFirstOrThrow({
+        where: { nodeTypeCode: 'att-child' },
+        select: { id: true },
+      });
+      const activity = await prisma.activity.create({
+        data: {
+          title: 'ATT-REOPEN-FULL-CHAIN',
+          activityTypeCode: 'att-demo',
+          organizationId: childOrg.id,
+          startAt: new Date('2100-01-05T08:00:00.000Z'),
+          endAt: new Date('2100-01-05T18:00:00.000Z'),
+          location: '重开链路',
+          statusCode: 'published',
+        },
+        select: { id: true },
+      });
+      const cycle = await prisma.teamJoinCycle.create({
+        data: { year: 2100, name: 'Reopen invariant', statusCode: 'closed' },
+        select: { id: true },
+      });
+      const historicalAdmission = await prisma.teamJoinApplication.create({
+        data: {
+          cycleId: cycle.id,
+          memberId: member.id,
+          statusCode: 'joined',
+          targetOrganizationIds: [],
+          joinedAt: new Date('2099-12-31T00:00:00.000Z'),
+        },
+        select: { id: true, statusCode: true, joinedAt: true },
+      });
+
+      const summary = async (): Promise<string> => {
+        const res = await request(httpServer(app))
+          .get(`/api/admin/v1/members/${member.id}/contribution-summary`)
+          .set('Authorization', adminAuth);
+        expect(res.status).toBe(200);
+        return res.body.data.contributionPoints as string;
+      };
+      expect(await summary()).toBe('0');
+
+      const sheetId = await createPendingSheet(activity.id, [
+        baseRecord({
+          memberId: member.id,
+          checkInAt: '2100-01-05T09:00:00.000Z',
+          checkOutAt: '2100-01-05T10:00:00.000Z',
+        }),
+      ]);
+      await fillContributionPoints(sheetId, 1);
+      await approveToPendingFinalReview(sheetId);
+      const firstFinal = await request(httpServer(app))
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
+        .set('Authorization', finalAdminAuth)
+        .send({ finalReviewNote: '首次终审' });
+      expect(firstFinal.status).toBe(200);
+      expect(firstFinal.body.data.statusCode).toBe('approved');
+      expect(await summary()).toBe('1');
+
+      const notificationCountAfterFirstFinal = await prisma.notification.count({
+        where: { recipientMemberId: member.id, deletedAt: null },
+      });
+      for (const invalidBody of [{}, { reason: '   ' }]) {
+        expectBizError(
+          await request(httpServer(app))
+            .post(`/api/admin/v1/attendance-sheets/${sheetId}/reopen`)
+            .set('Authorization', finalAdminAuth)
+            .send(invalidBody),
+          BizCode.BAD_REQUEST,
+          { strictMessage: false },
+        );
+      }
+      const reopen = await request(httpServer(app))
+        .post(`/api/admin/v1/attendance-sheets/${sheetId}/reopen`)
+        .set('Authorization', finalAdminAuth)
+        .send({ reason: '  记录时间需要修订  ' });
+      expect(reopen.status).toBe(201);
+      expect(reopen.body.data).toMatchObject({
+        statusCode: 'pending',
+        reviewerUserId: null,
+        reviewedAt: null,
+        reviewNote: null,
+        finalReviewerUserId: null,
+        finalReviewedAt: null,
+        finalReviewNote: null,
+        version: 1,
+      });
+      expect(await summary()).toBe('0');
+      expect(
+        await prisma.notification.count({
+          where: { recipientMemberId: member.id, deletedAt: null },
+        }),
+      ).toBe(notificationCountAfterFirstFinal);
+
+      expectBizError(
+        await request(httpServer(app))
+          .post(`/api/admin/v1/attendance-sheets/${sheetId}/reopen`)
+          .set('Authorization', finalAdminAuth)
+          .send({ reason: '不能重复撤回' }),
+        BizCode.ATTENDANCE_SHEET_STATUS_INVALID,
+      );
+
+      const reopenAudit = await prisma.auditLog.findFirstOrThrow({
+        where: { resourceId: sheetId, event: 'attendance-sheet.reopen' },
+        orderBy: { createdAt: 'desc' },
+      });
+      const reopenContext = reopenAudit.context as {
+        before?: { sheet?: { statusCode?: string }; records?: unknown[] };
+        after?: { sheet?: { statusCode?: string }; records?: unknown[] };
+        extra?: { reason?: string; recordsCount?: number };
+      };
+      expect(reopenContext.before?.sheet?.statusCode).toBe('approved');
+      expect(reopenContext.after?.sheet?.statusCode).toBe('pending');
+      expect(reopenContext.before?.records).toHaveLength(1);
+      expect(reopenContext.after?.records).toHaveLength(1);
+      expect(reopenContext.extra).toMatchObject({
+        reason: '记录时间需要修订',
+        recordsCount: 1,
+      });
+
+      const edited = await request(httpServer(app))
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}`)
+        .set('Authorization', adminAuth)
+        .send({
+          records: [
+            baseRecord({
+              memberId: member.id,
+              checkInAt: '2100-01-05T11:00:00.000Z',
+              checkOutAt: '2100-01-05T12:00:00.000Z',
+              note: '撤回后修订',
+            }),
+          ],
+        });
+      expect(edited.status).toBe(200);
+      expect(edited.body.data).toMatchObject({ statusCode: 'pending', version: 2 });
+      await fillContributionPoints(sheetId, 1);
+      await approveToPendingFinalReview(sheetId);
+      const secondFinal = await request(httpServer(app))
+        .patch(`/api/admin/v1/attendance-sheets/${sheetId}/final-approve`)
+        .set('Authorization', finalAdminAuth)
+        .send({ finalReviewNote: '修订后重审' });
+      expect(secondFinal.status).toBe(200);
+      expect(secondFinal.body.data.statusCode).toBe('approved');
+      expect(await summary()).toBe('1');
+      expect(
+        await prisma.notification.count({
+          where: { recipientMemberId: member.id, deletedAt: null },
+        }),
+      ).toBe(notificationCountAfterFirstFinal + 1);
+
+      const records = await prisma.attendanceRecord.findMany({
+        where: { sheetId },
+        select: { deletedAt: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(records).toHaveLength(2);
+      expect(records.filter((r) => r.deletedAt === null)).toHaveLength(1);
+      expect(
+        await prisma.teamJoinApplication.findUniqueOrThrow({
+          where: { id: historicalAdmission.id },
+          select: { statusCode: true, joinedAt: true },
+        }),
+      ).toEqual({
+        statusCode: historicalAdmission.statusCode,
+        joinedAt: historicalAdmission.joinedAt,
+      });
+    });
+  });
 });

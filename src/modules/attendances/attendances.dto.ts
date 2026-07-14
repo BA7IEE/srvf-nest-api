@@ -198,6 +198,15 @@ export class RejectAttendanceSheetDto {
   reviewNote!: string;
 }
 
+export class ReopenAttendanceSheetDto {
+  @ApiProperty({ description: '撤回终审原因(必填,去除首尾空白后 1-500 字符)', maxLength: 500 })
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(500)
+  reason!: string;
+}
+
 // ============ 入参:终审 final-approve / final-reject(批次 4-B 新增)============
 // 详见 docs:
 //   - 批次4_贡献值业务规则_API草案.md v1.0 D-A2

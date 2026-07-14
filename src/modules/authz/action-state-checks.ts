@@ -45,7 +45,7 @@ export interface ActionStateMachines {
 
 // 注册面 = 三个既有状态机动作与权限码的既有对应(各 service 判权位点的 action 码 × 状态机 decide 动作;
 // 见 attendances/activities/activity-registrations 各 service):
-//   attendance_sheet 6 项 / activity 3 项(delete 无状态机动作,不注册)/ activity_registration 3 项。
+//   attendance_sheet 7 项 / activity 3 项(delete 无状态机动作,不注册)/ activity_registration 3 项。
 export function buildActionStateChecks(
   machines: ActionStateMachines,
 ): ReadonlyMap<string, ActionStateCheck> {
@@ -69,6 +69,7 @@ export function buildActionStateChecks(
     ['attendance.reject.sheet', sheet('reject')],
     ['attendance.final-approve.sheet', sheet('finalApprove')],
     ['attendance.final-reject.sheet', sheet('finalReject')],
+    ['attendance.reopen.sheet', sheet('reopen')],
     ['activity.update.record', activity('update')],
     ['activity.publish.record', activity('publish')],
     ['activity.cancel.record', activity('cancel')],
