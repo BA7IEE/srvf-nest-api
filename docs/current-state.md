@@ -7,14 +7,16 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(六处一致) | **v0.48.0**(2026-07-14;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #602 squash `5a5f8442`;GitHub Release「v0.48.0」标 Latest。**⚠️ 行为变更两组**:全局每日贡献值上限调整为 3 且历史记录读时重算;App 入队申请意向部门上限 8→2、Admin 配轮仅收 `[1,2]`,旧轮库值不订正但 App 有效上限钳制为 2) |
-| `main` HEAD | v0.48.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #602 `5a5f8442`;收口链 = 贡献值封顶 #599 + 意向部门上限 #600 + bump #601 + handoff #602 + tag/Release + 本回填 PR) |
-| open PR / 工作树 / Unreleased | **本回填 PR 合入后 0** open PR / clean / `## Unreleased` **0 条**。终值:权限码 **206** / biz-admin **81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` **337** / controller 66 / 模块 35 / migration **50** / 角色 7 / BizCode **232** / AuditLogEvent **113** |
-| 最新 handoff | [`archive/handoff/v0.48.0.md`](archive/handoff/v0.48.0.md)(历史快照;tag 指向该 handoff #602 squash `5a5f8442`;接续 [`v0.47.0.md`](archive/handoff/v0.47.0.md);合入后不回改) |
+| 版本(六处一致) | **v0.49.0**(2026-07-14;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #611 squash `b6853a0e`;GitHub Release「v0.49.0 — 部门数据范围全面接线」标 Latest。**⚠️ 行为变更两组**:副职三职务首次自动获得对应组织树只读;分管人首次真实获得所分管范围内队员/证书/报名/考勤只读) |
+| `main` HEAD | v0.49.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #611 `b6853a0e`;收口链 = 冻结评审 #604 + 副职只读 #605 + visible scope/FE outlet #606 + member-axis #607 + participation #608 + docs #609 + bump #610 + handoff #611 + tag/Release + 本回填 PR) |
+| open PR / 工作树 / Unreleased | **本回填 PR 合入后 0** open PR / clean / `## Unreleased` **0 条**。终值:权限码 **206** / biz-admin **81** / org-admin 60 / org-readonly 10 / group-manager 22 / group-readonly 11 / org-supervisor 4 / ops-admin 96 / `EXPECTED_ROUTES` **338** / controller **67** / 模块 35 / migration **50** / 角色 **9** / BizCode **232** / AuditLogEvent **113** |
+| 最新 handoff | [`archive/handoff/v0.49.0.md`](archive/handoff/v0.49.0.md)(历史快照;tag 指向该 handoff #611 squash `b6853a0e`;接续 [`v0.48.0.md`](archive/handoff/v0.48.0.md);合入后不回改) |
 
 ## 2. 当前系统已具备能力
 
 > 清单级;事实权威:字段 = [`schema.prisma`](../prisma/schema.prisma);接口 = `/api/docs` + [`EXPECTED_ROUTES`](../test/contract/openapi.contract-spec.ts) + snapshot;BizCode = `biz-code.constant.ts` + CHANGELOG。
+
+- **v0.49.0 部门数据范围全面接线(已发布 2026-07-14;D/E 档串行)**:新增 `org-readonly`(10 码) / `group-readonly`(11 码)两受保护只读投影角色，副队长/副部长(专业队副队长)/副组长 active 任职按 TREE policy 自动派生，任职撤销/到期即时失权；码集从正职角色动态过滤 `*.read.*` / `attachment.view.*`，恒零写、零 `*.read.sensitive`。`AuthzService.getVisibleOrganizationScope()` 聚合 direct RoleBinding + 职务 policy + 分管三源，GLOBAL 直通，非 GLOBAL 展开 closure；members 列表/options/detail/全部写，certificates/member-profiles/emergency-contacts/member-insurances，以及 registrations/attendance-sheets 两条扁平列表 + 三条 member-axis participation 查询完成接线。member/certificate 组织归属只认 active PRIMARY membership，participation 按 activity.organizationId；显式组织筛选与鉴权范围求交；有码但范围空返 200 空列表，无码/跨范围 detail/write 返 30100。新增 `GET system/v1/authz/me/effective-permissions` 供后台聚合三源权限点亮菜单；旧 `rbac/me/permissions` 与 `RbacService` USER+GLOBAL 语义 0 diff。Recruitment/team-join/auth 判权代码、schema/migrations、BizCode、AuditLogEvent 0 diff。endpoint **337→338** / controller **66→67** / role **7→9**；permission 206 / migration 50 / BizCode 232 / AuditLogEvent 113 / module 35 不变。
 
 - **v0.48.0 贡献值每日上限调整(已发布 2026-07-14;C 档)**:单一真相源 `GLOBAL_DAILY_CONTRIBUTION_CAP` 调整为 **3**;`computeContribution` / `computeCappedContribution` 仍按 `checkInAt` 北京日分组后逐日封顶,实时算、不落库,因此历史考勤记录也按新上限读时重算。影响 team-join ≥5 门槛、App 入队进度与 admin 队员 360 生涯累计;`CONTRIBUTION_THRESHOLD=5` 与 deprecated `ContributionRule.dailyCap` 均不动。0 schema / 0 migration / 0 新端点 / 0 DTO 字段 / 0 权限码 / 0 BizCode / 0 audit event / 0 依赖。
 
@@ -87,7 +89,7 @@
 
 > 这些事项**不**由 AI 自行启动,需要用户拍板。
 
-- **Slow-3 主决议已拍板,Slow-4 已完成**(2026-06-11 goal「权限双轨收口」#314-#317;冻结评审稿 [`archive/reviews/slow4-rbac-business-face-review.md`](archive/reviews/slow4-rbac-business-face-review.md)):ADMIN 内置角色边界 = 全量业务权限,由 `biz-admin` 承载(绑 35;`member.delete.record` 仅 SA;attachment 存量 20 码不绑);业务面 7 模块 44 端点已全部接入 `rbac.can()`,全仓活跃 `@Roles` = 0。**仍挂起的 Slow-3 子议题**:考勤终审部门级细分(2026-06-10 方案 A 沿用:维持 ADMIN 级终审〔现 = 持 biz-admin 的 ADMIN 或 SA〕,`finalReviewerUserId` 仅审计记录;"部长"职务无数据模型承载;重开需单独立项,详 [`participation-bounded-context.md §4`](participation-bounded-context.md))— **不**自动启动
+- **Slow-4 的 `@Roles` 清零与 GLOBAL RBAC 基线已完成；scoped-authz 部门级能力已于 v0.34.0 + v0.49.0 分两段接通**:考勤终审/participation 点动作先接，v0.49.0 再接 members/certificates/profile/contacts/insurance 与 participation 扁平/member-axis 读入口，并新增副职只读派生与 FE effective-permissions 出口。旧 `RbacService` 继续只认 USER+GLOBAL 是兼容锁，不代表 Authz 消费面未接。**仍不自动启动**:users/content/notifications/audit-logs 的 scoped 可见性、attachment self-scope 收敛；Recruitment/team-join 明确维持中央流程与显式授权，不列入职务自动派生 TODO。全仓活跃 `@Roles` 仍为 0。
 - **不**自动启动 Slow-5(B8 入队同意书正文 / Q8 退队清理 N 值)— 等业务方提供
 - **不**自动启动 Slow-7(uploadToken 重放黑名单 / 失败回滚 Provider 文件 / test-connection / multipart / STS / 跨 Provider 迁移)— 等真实使用反馈
 - **L-3(Storage Settings 配置变更 audit_logs)已完成**(2026-07-13 第六刀 finding 15):storage 与同型 sms/wechat/realname settings update/reset-credentials 共 8 写点已同事务审计;凭据不入 audit。后续不得再按“留独立专项”视为未做。
@@ -114,7 +116,8 @@
 |---|---|---|
 | P1 | 前端联调包剩运维侧 P0-H 演练 + P0-I 排错 SOP | 运维侧立项;系统侧无动作 |
 | P1 | 招新/入队两项发布后债务仍在账:**P1-22** 专业队类型/gate 定义配置化;**P1-23** `recruitment_applications.isForeigner` 历史 DB 列改名(当前对外 DTO/CSV 已用 `isNonMainlandDocument`) | 沿 [`ai-harness/NEXT_TASKS.md`](ai-harness/NEXT_TASKS.md) P1-22/P1-23 诉求触发再立项;本 release 不启动 |
-| P2 | god-service 体量观察(`pnpm docs:codemap:check` 2026-07-14 实时口径,LOC > 700):attendances **1678** / activity-registrations **1267** / members **1081** / users **972** / attachments **967** / activities **898** / recruitment-applications **883** / role-bindings **872** / recruitment-identity **833** / recruitment-promotion **747** | 仅观察;重开需 architecture-boundary §6 新触发 + 单独立项 |
+| P2 | v0.49.0 后仍未接 scoped 可见性的面:users/content/notifications/audit-logs 与 attachment self-scope；Recruitment/team-join 是中央流程边界，不属于遗漏 | 前四项等真实需求触发后按模块逐面评审；Recruitment/team-join 审核人保留显式授权，不做职务自动派生 |
+| P2 | god-service 体量观察(`pnpm docs:codemap:check` 2026-07-14 实时口径,LOC > 700):attendances **1714** / activity-registrations **1301** / members **1127** / users **972** / attachments **967** / activities **898** / recruitment-applications **883** / role-bindings **872** / recruitment-identity **833** / recruitment-promotion **747** | 仅观察;重开需 architecture-boundary §6 新触发 + 单独立项 |
 | P2/P3 | v0.44.0 审计接受项:#8 考勤仅应用锁、无 `btree_gist`;#10/#12 附件 owner 列表仍全量扫描后内存分页;#19 RBAC cache 仍单进程;#20/#21 commit 后站内通知可能丢失。v0.47.0 到期提醒为同类可靠性边界:marker claim commit 后、站内 create 前崩溃可能丢一次提醒(at-most-once) | 已登记 [`ai-harness/NEXT_TASKS.md`](ai-harness/NEXT_TASKS.md) P2-8 + 各模块 `CLAUDE.md`;当前单实例/小规模下接受,不引 DB 扩展、queue、第三个 cron 或事件总线;触发条件出现再单独立项 |
 | P2 | service 单测占比 ~11.8%(26/221 实测) | 刻意策略(e2e 为主,见 §2 测试行) |
 | P2 | Mixed Controller 存量 2 处(见 §2.1) | 冻结仅兼容;详 api-surface-policy §5.1 |
