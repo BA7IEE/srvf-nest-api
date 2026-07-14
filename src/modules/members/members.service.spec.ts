@@ -3,6 +3,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuthzService } from '../authz/authz.service';
 import type { PrismaService } from '../../database/prisma.service';
 import type { OrganizationsService } from '../organizations/organizations.service';
 import type { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
@@ -51,6 +52,9 @@ function makePrisma(tx: ReturnType<typeof makeTx>): PrismaService {
 }
 
 const rbacAllow = { can: jest.fn().mockResolvedValue(true) } as unknown as RbacService;
+const authzAllow = {
+  explain: jest.fn().mockResolvedValue({ allow: true, reason: 'matched' }),
+} as unknown as AuthzService;
 const lastAdminProtectionNoop = {
   assertCanDeactivateOpsAdminUser: jest.fn().mockResolvedValue(undefined),
 } as unknown as LastAdminProtectionPolicy;
@@ -72,6 +76,7 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
     const service = new MembersService(
       makePrisma(tx),
       rbacAllow,
+      authzAllow,
       lastAdminProtectionNoop,
       organizationsStub,
       auditNoop,
@@ -88,6 +93,7 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
     const service = new MembersService(
       makePrisma(tx),
       rbacAllow,
+      authzAllow,
       lastAdminProtectionNoop,
       organizationsStub,
       auditNoop,
@@ -104,6 +110,7 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
     const service = new MembersService(
       makePrisma(tx),
       rbacAllow,
+      authzAllow,
       lastAdminProtectionNoop,
       organizationsStub,
       auditNoop,
@@ -121,6 +128,7 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
     const service = new MembersService(
       makePrisma(tx),
       rbacAllow,
+      authzAllow,
       lastAdminProtectionNoop,
       organizationsStub,
       auditNoop,
@@ -138,6 +146,7 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
     const service = new MembersService(
       makePrisma(tx),
       rbacAllow,
+      authzAllow,
       lastAdminProtectionNoop,
       organizationsStub,
       auditNoop,

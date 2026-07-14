@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { AuthzModule } from '../authz/authz.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { UsersModule } from '../users/users.module';
 import { AdminMemberInsurancesController } from './admin-member-insurances.controller';
@@ -25,7 +26,7 @@ import { TeamInsurancePoliciesService } from './team-insurance-policies.service'
 //   import 本模块接线,依赖单向 activity-registration → insurances,评审稿 E-13;
 //   **不** exports 其余 service——跨模块只暴露门槛校验一个口)。
 @Module({
-  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, UsersModule],
+  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, AuthzModule, UsersModule],
   controllers: [
     TeamInsurancePoliciesController,
     AdminMemberInsurancesController,

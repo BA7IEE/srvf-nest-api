@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { AuthzModule } from '../authz/authz.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { UsersModule } from '../users/users.module';
 import { AppMyCertificatesService } from './app-my-certificates.service';
@@ -23,7 +24,7 @@ import { AppMyCertificatesController } from './controllers/app-my-certificates.c
 // Slow-4 T2(2026-06-11):imports PermissionsModule 供 CertificatesService 注入 RbacService
 // (评审稿 slow4-rbac-business-face-review.md §3.4;App surface 不走 RBAC,AppMyCertificatesService 不动)。
 @Module({
-  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, UsersModule],
+  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, AuthzModule, UsersModule],
   controllers: [CertificatesController, AppMyCertificatesController],
   providers: [CertificatesService, AppMyCertificatesService],
 })

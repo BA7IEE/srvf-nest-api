@@ -10,6 +10,8 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { AuthzService } from '../authz/authz.service';
+import type { ResourceRef } from '../authz/authz.types';
 import { RbacService } from '../permissions/rbac.service';
 import {
   CertificateListItemDto,
@@ -107,17 +109,20 @@ export class CertificatesService {
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
     private readonly rbac: RbacService,
+    private readonly authz: AuthzService,
   ) {}
 
   // ============ helpers ============
 
-  // Slow-4 T2(2026-06-11,评审稿 §3.4 / D-S4-8):RBAC 判权(沿 P0-F assertCanOrThrow 范式)。
-  // 每个 public 方法第一条语句调用——先判权后查资源,保持与原 Guard 前置语义一致。
-  // list / findOne / qualification-flag 共用 read(沿 PR-4B D4=A 判例)。
-  private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
-    if (!(await this.rbac.can(user, action))) {
-      throw new BizException(BizCode.RBAC_FORBIDDEN);
-    }
+  private async assertCanOrThrow(
+    user: CurrentUserPayload,
+    action: string,
+    ref: ResourceRef,
+  ): Promise<void> {
+    const decision = await this.authz.explain(user, action, ref);
+    if (decision.allow) return;
+    if (decision.reason === 'resource_not_found' && (await this.rbac.can(user, action))) return;
+    throw new BizException(BizCode.RBAC_FORBIDDEN);
   }
 
   private async findMemberOrThrow(memberId: string, tx?: PrismaTx): Promise<{ id: string }> {
@@ -211,7 +216,10 @@ export class CertificatesService {
   // ============ list ============
 
   async list(memberId: string, currentUser: CurrentUserPayload): Promise<CertificateListItemDto[]> {
-    await this.assertCanOrThrow(currentUser, 'certificate.read.record');
+    await this.assertCanOrThrow(currentUser, 'certificate.read.record', {
+      type: 'member',
+      id: memberId,
+    });
     await this.findMemberOrThrow(memberId);
 
     const items = await this.prisma.certificate.findMany({
@@ -237,7 +245,10 @@ export class CertificatesService {
     certificateId: string,
     currentUser: CurrentUserPayload,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.read.record');
+    await this.assertCanOrThrow(currentUser, 'certificate.read.record', {
+      type: 'certificate',
+      id: certificateId,
+    });
     await this.findMemberOrThrow(memberId);
 
     const cert = await this.prisma.certificate.findFirst({
@@ -270,7 +281,10 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.create.record');
+    await this.assertCanOrThrow(currentUser, 'certificate.create.record', {
+      type: 'member',
+      id: memberId,
+    });
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
 
@@ -335,7 +349,10 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.update.record');
+    await this.assertCanOrThrow(currentUser, 'certificate.update.record', {
+      type: 'certificate',
+      id: certificateId,
+    });
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
@@ -412,7 +429,10 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.delete.record');
+    await this.assertCanOrThrow(currentUser, 'certificate.delete.record', {
+      type: 'certificate',
+      id: certificateId,
+    });
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
@@ -455,7 +475,10 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.verify.record');
+    await this.assertCanOrThrow(currentUser, 'certificate.verify.record', {
+      type: 'certificate',
+      id: certificateId,
+    });
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
@@ -512,7 +535,10 @@ export class CertificatesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.reject.record');
+    await this.assertCanOrThrow(currentUser, 'certificate.reject.record', {
+      type: 'certificate',
+      id: certificateId,
+    });
     return this.prisma.$transaction(async (tx) => {
       await this.findMemberOrThrow(memberId, tx);
       const before = await this.findCertificateInMemberOrThrow(memberId, certificateId, tx);
@@ -568,7 +594,10 @@ export class CertificatesService {
     certTypeCode: string,
     currentUser: CurrentUserPayload,
   ): Promise<QualificationFlagResponseDto> {
-    await this.assertCanOrThrow(currentUser, 'certificate.read.record');
+    await this.assertCanOrThrow(currentUser, 'certificate.read.record', {
+      type: 'member',
+      id: memberId,
+    });
     await this.findMemberOrThrow(memberId);
     await this.assertDictItemValid(
       DICT_TYPE_CERT_TYPE,
