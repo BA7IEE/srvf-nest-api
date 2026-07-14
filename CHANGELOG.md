@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+> 下一个 minor 候选(当前为空)。
+
+## v0.46.0 - 2026-07-14
+
 > **⚠️ 行为变更(旧附件 create)**:`POST /api/admin/v1/attachments` 端点与入参契约保留,但现在会读取已上传对象并核对对象存在性、实际大小、系统 MIME 黑名单及 JPG/PNG/WEBP/GIF/PDF 内容签名;声明 MIME 与对象字节不符统一返既有 `ATTACHMENT_CONTENT_TYPE_MISMATCH=13016`。`confirm-upload` 的既有校验与成功行为不变。
 >
 > **⚠️ 行为变更(附件过期)**:`Attachment.expireAt <= now` 时不再签发或返回 `accessUrl`;公开内容列表/详情会移除已过期附件行,过期封面 URL 返 null。`expireAt` 为未来时间或 null 的既有返回行为不变。
