@@ -190,6 +190,11 @@ function makeAuthzMock(
     explain: jest
       .fn<Promise<{ allow: boolean; reason: string }>, [unknown, string, unknown]>()
       .mockResolvedValue(decision),
+    getVisibleOrganizationScope: jest.fn().mockResolvedValue({
+      hasPermission: true,
+      global: true,
+      organizationIds: [],
+    }),
   };
 }
 type AuthzMock = ReturnType<typeof makeAuthzMock>;

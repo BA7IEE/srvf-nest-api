@@ -1,5 +1,14 @@
 import type { INestApplication } from '@nestjs/common';
-import { AssignmentStatus, Role, SupervisionScopeMode, SupervisionStatus } from '@prisma/client';
+import {
+  AssignmentStatus,
+  BindingScopeType,
+  MembershipStatus,
+  MembershipType,
+  PrincipalType,
+  Role,
+  SupervisionScopeMode,
+  SupervisionStatus,
+} from '@prisma/client';
 import { execSync } from 'child_process';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -32,7 +41,8 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 //     activity.update DENY(角色无码,no_permission)
 //   ③org-supervisor(SupervisionAssignment@SMRT,TREE):分管树内单 sheet read ALLOW
 //     (BD-3 候选码②③关闭依据的活证),树外 DENY out_of_supervised_scope→30100
-//   ④纯 scoped 者(team-leader,无 GLOBAL)访问扁平跨轴列表 → 30100(决断④设计内状态)
+//   ④v0.49:扁平跨轴列表按活动组织范围下推;member-axis 按 active PRIMARY 主归属点授权;
+//     GLOBAL 保持全量,有权限但空 scope 返回空集,无码者 30100
 //   ⑤NOT_FOUND 回退(沿 PR9 范式,三模块各一例):GLOBAL 持码者(biz-admin)→ 既有模块 NOT_FOUND
 //     BizCode;无码者(bare USER)→ 30100 防枚举
 
@@ -70,6 +80,7 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
   let groupLeaderAuth: string;
   let supervisorAuth: string;
   let bizAdminAuth: string;
+  let emptyScopeAuth: string;
   let bareUserAuth: string;
 
   // 目标资源
@@ -86,6 +97,7 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
   let regTargetMemberId: string;
   let attTargetMemberId: string;
   let groupTargetMemberId: string;
+  let crossTargetMemberId: string;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -173,6 +185,20 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
     await grantBizAdminToUser(app, bizAdminUser.id, bizAdminRoleId);
     bizAdminAuth = (await loginAs(app, 'psa-biz-admin')).authHeader;
 
+    const emptyScopeUser = await createTestUser(app, {
+      username: 'psa-empty-scope',
+      role: Role.USER,
+    });
+    await prisma.roleBinding.create({
+      data: {
+        principalType: PrincipalType.USER,
+        principalId: emptyScopeUser.id,
+        roleId: bizAdminRoleId,
+        scopeType: BindingScopeType.SELF,
+      },
+    });
+    emptyScopeAuth = (await loginAs(app, 'psa-empty-scope')).authHeader;
+
     await createTestUser(app, { username: 'psa-bare-user', role: Role.USER });
     bareUserAuth = (await loginAs(app, 'psa-bare-user')).authHeader;
 
@@ -246,6 +272,36 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
     regTargetMemberId = await mkTargetMember('reg');
     attTargetMemberId = await mkTargetMember('att');
     groupTargetMemberId = await mkTargetMember('grp');
+    crossTargetMemberId = await mkTargetMember('cross');
+
+    await prisma.memberOrganizationMembership.createMany({
+      data: [
+        {
+          memberId: regTargetMemberId,
+          organizationId: smrtId,
+          membershipType: MembershipType.PRIMARY,
+          status: MembershipStatus.ACTIVE,
+        },
+        {
+          memberId: attTargetMemberId,
+          organizationId: smrtId,
+          membershipType: MembershipType.PRIMARY,
+          status: MembershipStatus.ACTIVE,
+        },
+        {
+          memberId: groupTargetMemberId,
+          organizationId: groupId,
+          membershipType: MembershipType.PRIMARY,
+          status: MembershipStatus.ACTIVE,
+        },
+        {
+          memberId: crossTargetMemberId,
+          organizationId: swrtId,
+          membershipType: MembershipType.PRIMARY,
+          status: MembershipStatus.ACTIVE,
+        },
+      ],
+    });
 
     smrtRegId = (
       await prisma.activityRegistration.create({
@@ -284,6 +340,26 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
         select: { id: true },
       })
     ).id;
+    await prisma.attendanceSheet.create({
+      data: {
+        activityId: smrtActivity2Id,
+        submitterUserId: bizAdminUser.id,
+        statusCode: 'approved',
+        records: {
+          create: [
+            {
+              memberId: attTargetMemberId,
+              roleCode: 'member',
+              checkInAt: new Date('2026-06-02T01:00:00.000Z'),
+              checkOutAt: new Date('2026-06-02T05:00:00.000Z'),
+              serviceHours: 4,
+              attendanceStatusCode: 'present',
+              contributionPoints: 2,
+            },
+          ],
+        },
+      },
+    });
     groupSheetId = (
       await prisma.attendanceSheet.create({
         data: {
@@ -488,21 +564,139 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
     });
   });
 
-  // ============ ④纯 scoped 者扁平跨轴列表 → 30100(决断④设计内状态) ============
+  // ============ ④v0.49 扁平列表 + member-axis 部门数据范围 ============
 
-  it('④纯 scoped 者(team-leader,无 GLOBAL)访问扁平跨轴列表 → 30100(无 ref = GLOBAL-only)', async () => {
-    expectBizError(
-      await request(httpServer(app))
-        .get('/api/admin/v1/attendance-sheets')
-        .set('Authorization', teamLeaderAuth),
-      BizCode.RBAC_FORBIDDEN,
-    );
-    expectBizError(
-      await request(httpServer(app))
+  describe('④v0.49 部门数据范围全面接线(participation 五入口)', () => {
+    const idsOf = (res: request.Response): string[] =>
+      res.body.data.items.map((item: { id: string }) => item.id);
+
+    it('team-leader@SMRT:扁平报名/考勤仅返本树;用户组织筛选与授权范围取交集', async () => {
+      const registrations = await request(httpServer(app))
         .get('/api/admin/v1/registrations')
-        .set('Authorization', teamLeaderAuth),
-      BizCode.RBAC_FORBIDDEN,
-    );
+        .query({ pageSize: 100 })
+        .set('Authorization', teamLeaderAuth);
+      expect(registrations.status).toBe(200);
+      expect(idsOf(registrations)).toContain(smrtRegId);
+      expect(idsOf(registrations)).not.toContain(swrtRegId);
+
+      const crossRegistrations = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
+        .query({ organizationId: swrtId })
+        .set('Authorization', teamLeaderAuth);
+      expect(crossRegistrations.status).toBe(200);
+      expect(crossRegistrations.body.data).toMatchObject({ items: [], total: 0 });
+
+      const sheets = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-sheets')
+        .query({ pageSize: 100 })
+        .set('Authorization', teamLeaderAuth);
+      expect(sheets.status).toBe(200);
+      expect(idsOf(sheets)).toEqual(expect.arrayContaining([smrtSheetId, groupSheetId]));
+      expect(idsOf(sheets)).not.toContain(swrtSheetId);
+
+      const exactSmrtSheets = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-sheets')
+        .query({ organizationId: smrtId, pageSize: 100 })
+        .set('Authorization', teamLeaderAuth);
+      expect(idsOf(exactSmrtSheets)).toContain(smrtSheetId);
+      expect(idsOf(exactSmrtSheets)).not.toContain(groupSheetId);
+
+      const smrtTreeSheets = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-sheets')
+        .query({ organizationId: smrtId, includeDescendants: true, pageSize: 100 })
+        .set('Authorization', teamLeaderAuth);
+      expect(idsOf(smrtTreeSheets)).toEqual(expect.arrayContaining([smrtSheetId, groupSheetId]));
+    });
+
+    it('分管/组长/GLOBAL/空 scope/no-permission 扁平矩阵', async () => {
+      const supervised = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
+        .query({ pageSize: 100 })
+        .set('Authorization', supervisorAuth);
+      expect(supervised.status).toBe(200);
+      expect(idsOf(supervised)).toContain(smrtRegId);
+      expect(idsOf(supervised)).not.toContain(swrtRegId);
+
+      const groupSheets = await request(httpServer(app))
+        .get('/api/admin/v1/attendance-sheets')
+        .query({ pageSize: 100 })
+        .set('Authorization', groupLeaderAuth);
+      expect(groupSheets.status).toBe(200);
+      expect(idsOf(groupSheets)).toContain(groupSheetId);
+      expect(idsOf(groupSheets)).not.toContain(smrtSheetId);
+
+      const globalRegistrations = await request(httpServer(app))
+        .get('/api/admin/v1/registrations')
+        .query({ pageSize: 100 })
+        .set('Authorization', bizAdminAuth);
+      expect(idsOf(globalRegistrations)).toEqual(expect.arrayContaining([smrtRegId, swrtRegId]));
+
+      for (const path of ['/api/admin/v1/registrations', '/api/admin/v1/attendance-sheets']) {
+        const empty = await request(httpServer(app)).get(path).set('Authorization', emptyScopeAuth);
+        expect(empty.status).toBe(200);
+        expect(empty.body.data).toMatchObject({ items: [], total: 0 });
+
+        expectBizError(
+          await request(httpServer(app)).get(path).set('Authorization', bareUserAuth),
+          BizCode.RBAC_FORBIDDEN,
+        );
+      }
+    });
+
+    it('member-axis 按 active PRIMARY 主归属点授权,不按历史活动所属组织裁剪', async () => {
+      const registrations = await request(httpServer(app))
+        .get(`/api/admin/v1/members/${regTargetMemberId}/registrations`)
+        .query({ pageSize: 100 })
+        .set('Authorization', teamLeaderAuth);
+      expect(registrations.status).toBe(200);
+      expect(idsOf(registrations)).toEqual(expect.arrayContaining([smrtRegId, swrtRegId]));
+
+      const records = await request(httpServer(app))
+        .get(`/api/admin/v1/members/${attTargetMemberId}/attendance-records`)
+        .query({ pageSize: 100 })
+        .set('Authorization', teamLeaderAuth);
+      expect(records.status).toBe(200);
+      expect(records.body.data.total).toBe(1);
+
+      const summary = await request(httpServer(app))
+        .get(`/api/admin/v1/members/${attTargetMemberId}/contribution-summary`)
+        .set('Authorization', supervisorAuth);
+      expect(summary.status).toBe(200);
+      expect(summary.body.data).toEqual({
+        memberId: attTargetMemberId,
+        contributionPoints: '2',
+      });
+
+      const groupSummary = await request(httpServer(app))
+        .get(`/api/admin/v1/members/${groupTargetMemberId}/contribution-summary`)
+        .set('Authorization', groupLeaderAuth);
+      expect(groupSummary.status).toBe(200);
+      expect(groupSummary.body.data.memberId).toBe(groupTargetMemberId);
+
+      for (const suffix of ['registrations', 'attendance-records', 'contribution-summary']) {
+        expectBizError(
+          await request(httpServer(app))
+            .get(`/api/admin/v1/members/${crossTargetMemberId}/${suffix}`)
+            .set('Authorization', teamLeaderAuth),
+          BizCode.RBAC_FORBIDDEN,
+        );
+      }
+    });
+
+    it('member-axis 不存在资源:GLOBAL 持码者保留 MEMBER_NOT_FOUND,scoped 持码者 30100 防枚举', async () => {
+      expectBizError(
+        await request(httpServer(app))
+          .get('/api/admin/v1/members/no-such-member/registrations')
+          .set('Authorization', bizAdminAuth),
+        BizCode.MEMBER_NOT_FOUND,
+      );
+      expectBizError(
+        await request(httpServer(app))
+          .get('/api/admin/v1/members/no-such-member/registrations')
+          .set('Authorization', teamLeaderAuth),
+        BizCode.RBAC_FORBIDDEN,
+      );
+    });
   });
 
   // ============ ⑤NOT_FOUND 回退(沿 PR9 范式;三模块各一例) ============

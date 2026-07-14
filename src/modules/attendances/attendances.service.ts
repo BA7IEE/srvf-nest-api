@@ -265,8 +265,8 @@ export class AttendancesService {
   //   - submit(create.sheet)/ list(嵌套 :activityId)传 {type:'activity', id: activityId}
   //   - findOne / reviewDetail / edit / softDelete / approve / reject 传 {type:'attendance_sheet', id}
   //     (点动作)
-  //   - listAllSheetsForAdmin(扁平跨轴)/ listRecordsForMemberAdmin / getMemberContributionSummary
-  //     (队员轴跨活动)无 ref(no-ref = GLOBAL-only,行为锁天然成立)
+  //   - listAllSheetsForAdmin 通过 getVisibleOrganizationScope 下推活动所属组织范围
+  //   - listRecordsForMemberAdmin / getMemberContributionSummary 传 {type:'member', id: memberId}
   // NOT_FOUND 回退沿 assertFinalReviewAuthzOrThrow 同范式:resource_not_found 时退回 rbac.can 全局码
   // 判定——持码者 return(交回调用方后续 assertActivityExists / findSheetOrThrow 抛既有 NOT_FOUND,
   // 「先判权后查资源」行为锁不变),无码者 30100 防枚举。8 个管理端方法(不含终审两方法)第一条语句
@@ -284,6 +284,35 @@ export class AttendancesService {
       return;
     }
     throw new BizException(BizCode.RBAC_FORBIDDEN);
+  }
+
+  // v0.49:扁平考勤工作台按 activity.organizationId 下推授权范围；用户显式组织筛选
+  // 与授权组织集合取交集。GLOBAL 且无筛选时保持旧查询，不额外加 where。
+  private async resolveVisibleOrganizationIds(
+    currentUser: CurrentUserPayload,
+    organizationId: string | undefined,
+    includeDescendants: boolean | undefined,
+  ): Promise<string[] | undefined> {
+    const authScope = await this.authz.getVisibleOrganizationScope(
+      currentUser,
+      'attendance.read.sheet',
+    );
+    if (!authScope.hasPermission) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+
+    const requestedOrgIds =
+      organizationId === undefined
+        ? undefined
+        : includeDescendants
+          ? await this.organizations.queryDescendantOrgIds(organizationId)
+          : [organizationId];
+
+    if (authScope.global) return requestedOrgIds;
+    if (requestedOrgIds === undefined) return authScope.organizationIds;
+
+    const visibleOrgIds = new Set(authScope.organizationIds);
+    return requestedOrgIds.filter((id) => visibleOrgIds.has(id));
   }
 
   // 终态 scoped-authz PR9(2026-07-02;冻结稿 §5.2/§5.3 + BD-2):终审与 v0.47.0 reopen
@@ -695,8 +724,6 @@ export class AttendancesService {
     query: ListAttendanceSheetsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<AdminAttendanceSheetListItemDto>> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet');
-
     const {
       page,
       pageSize,
@@ -709,6 +736,11 @@ export class AttendancesService {
       dateTo,
       expand,
     } = query;
+    const visibleOrganizationIds = await this.resolveVisibleOrganizationIds(
+      currentUser,
+      organizationId,
+      includeDescendants,
+    );
     const expandSet = parseExpandQuery(expand, ATTENDANCE_EXPAND_WHITELIST);
 
     const filters: Prisma.AttendanceSheetWhereInput = {};
@@ -725,10 +757,8 @@ export class AttendancesService {
     if (activityQ !== undefined) {
       activityWhere.title = { contains: activityQ, mode: 'insensitive' };
     }
-    if (organizationId !== undefined) {
-      activityWhere.organizationId = includeDescendants
-        ? { in: await this.organizations.queryDescendantOrgIds(organizationId) }
-        : organizationId;
+    if (visibleOrganizationIds !== undefined) {
+      activityWhere.organizationId = { in: visibleOrganizationIds };
     }
     if (Object.keys(activityWhere).length > 0) filters.activity = activityWhere;
 
@@ -786,7 +816,10 @@ export class AttendancesService {
     query: PaginationQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<AdminMemberAttendanceRecordDto>> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet');
+    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
+      type: 'member',
+      id: memberId,
+    });
     // 队员存在性守卫(不存在 / 软删 → 15001,镜像 admin-member-insurances inline 检查)。
     const member = await this.prisma.member.findFirst({
       where: notDeletedWhere({ id: memberId }),
@@ -833,7 +866,10 @@ export class AttendancesService {
     memberId: string,
     currentUser: CurrentUserPayload,
   ): Promise<MemberContributionSummaryDto> {
-    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet');
+    await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
+      type: 'member',
+      id: memberId,
+    });
     const member = await this.prisma.member.findFirst({
       where: notDeletedWhere({ id: memberId }),
       select: { id: true },
