@@ -26,7 +26,7 @@ import { createTestApp } from '../setup/test-app';
 // - 解绑后再开号(队员账号闭环 v2 收尾修复,2026-07-08):computeNextUsername 改探测式,
 //   修复"悬空账号仍占 username → 误撞 USERNAME_ALREADY_EXISTS"边角;全链验证新号可登录
 // - 退号重开(单事务原子;username 代际后缀;phone 结构性冲突固化为有意行为)
-// - 队员面启停账号(禁自我操作;禁用联动撤销 refresh token;不写 audit)
+// - 队员面启停账号(禁自我操作;禁用联动撤销 refresh token;同事务结构化 audit)
 // - 完整生命周期链:开号 → 解绑 → 绑定回 → 退号重开 → 启停,全程两面回显正确翻转
 // - auth 既有 e2e zero-touch(本文件未修改任何既有 auth spec)
 
@@ -508,7 +508,7 @@ describe('队员账号闭环 v2:完整生命周期(bind/unbind/reopen/status)', 
       await unbind(member.id, selfAuth);
     });
 
-    it('启停成功 + 禁用联动撤销 refresh token + 不写 audit', async () => {
+    it('启停成功 + 禁用联动撤销 refresh token + 每次状态变更写一条安全 audit', async () => {
       const member = await newMember();
       const target = await newDanglingUser();
       const bound = await bind(member.id, target.id, opsAdminAuth);
@@ -530,16 +530,46 @@ describe('队员账号闭环 v2:完整生命周期(bind/unbind/reopen/status)', 
       expect(afterDisable?.revokedAt).not.toBeNull();
       expect(afterDisable?.revokedReason).toBe('admin-disable');
 
-      const auditCount = await prisma.auditLog.count({
-        where: { event: { in: ['member.account-granted'] }, resourceId: member.id },
+      const afterDisableAudits = await prisma.auditLog.findMany({
+        where: { event: 'member.account.status-change', resourceId: member.id },
+        orderBy: { createdAt: 'asc' },
       });
-      // 本用例未走 grant,granted 数应为 0;更关键的是没有任何"member 状态改动"事件被写入
-      // (队员面启停刻意不写 audit,镜像 UsersService.updateStatus 的 D-PR3-2 决定)。
-      expect(auditCount).toBe(0);
+      expect(afterDisableAudits).toHaveLength(1);
+      const disableContext = afterDisableAudits[0].context as {
+        before?: { status?: string };
+        after?: { status?: string };
+        extra?: { linkedUserId?: string; refreshTokensRevoked?: number };
+      };
+      expect(disableContext.before).toEqual({ status: UserStatus.ACTIVE });
+      expect(disableContext.after).toEqual({ status: UserStatus.DISABLED });
+      expect(disableContext.extra).toEqual({
+        linkedUserId: target.id,
+        refreshTokensRevoked: 1,
+      });
+      expect(JSON.stringify(disableContext)).not.toMatch(
+        /secret|credential|password|tokenHash|openid/i,
+      );
 
       const enabled = await setStatus(member.id, UserStatus.ACTIVE, opsAdminAuth);
       expect(enabled.status).toBe(200);
       expect(enabled.body.data.accountStatus).toBe(UserStatus.ACTIVE);
+
+      const afterEnableAudits = await prisma.auditLog.findMany({
+        where: { event: 'member.account.status-change', resourceId: member.id },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(afterEnableAudits).toHaveLength(2);
+      const enableContext = afterEnableAudits[1].context as {
+        before?: { status?: string };
+        after?: { status?: string };
+        extra?: { linkedUserId?: string; refreshTokensRevoked?: number };
+      };
+      expect(enableContext.before).toEqual({ status: UserStatus.DISABLED });
+      expect(enableContext.after).toEqual({ status: UserStatus.ACTIVE });
+      expect(enableContext.extra).toEqual({
+        linkedUserId: target.id,
+        refreshTokensRevoked: 0,
+      });
     });
   });
 

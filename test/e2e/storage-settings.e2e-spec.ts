@@ -141,19 +141,25 @@ describe('storage-settings admin', () => {
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('6. PATCH upsert 创建 singleton row(不存在 → 创建 default;providerType 缺省 LOCAL)', async () => {
-      const res = await request(httpServer(app))
-        .patch('/api/system/v1/storage-settings')
-        .set('Authorization', adminAuth)
-        .send({ enabled: true, bucket: 'srvf-test' });
-      expect(res.status).toBe(200);
-      const d = res.body.data;
+    it('6. 空表并发 PATCH 均成功且只创建一个 singleton row(providerType 缺省 LOCAL)', async () => {
+      const sendPatch = () =>
+        request(httpServer(app))
+          .patch('/api/system/v1/storage-settings')
+          .set('Authorization', adminAuth)
+          .send({ enabled: true, bucket: 'srvf-test' });
+      const [first, second] = await Promise.all([sendPatch(), sendPatch()]);
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      const d = first.body.data;
       expect(d.providerType).toBe('LOCAL');
       expect(d.enabled).toBe(true);
       expect(d.bucket).toBe('srvf-test');
       expect(d.credentialStatus).toBe('missing');
       expect(d.credentialConfigured).toBe(false);
-      assertNoSecret(res.body);
+      assertNoSecret(first.body);
+      assertNoSecret(second.body);
+      expect(await prisma.storageSettings.count()).toBe(1);
     });
 
     it('7. PATCH 更新 enabled / bucket / region / envPrefix', async () => {

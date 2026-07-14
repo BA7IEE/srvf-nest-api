@@ -841,12 +841,13 @@ export class MembersService {
   // 到达这里前已被挡下(第三轮 review §F&A-1 收口;原注释"bind/grant/reopen 恒 role=USER"
   // 的前提对 bind 不成立——bind 挂的是既有任意角色账号,故以前置校验替代该失效前提);
   // 仅当置 DISABLED 时做自我保护检查(镜像 UsersService.updateStatus,
-  // 防管理员通过队员轴误禁自己绑定的账号);刻意不写 audit(镜像 UsersService.updateStatus
-  // 自身"不为 status 改动写 audit"的既有决定 D-PR3-2,保持两轴对称)。
+  // 防管理员通过队员轴误禁自己绑定的账号)。第七刀补齐本入口的结构化审计:
+  // user status 写、refresh 撤销与 member.account.status-change 必须同事务提交 / 回滚。
   async updateAccountStatus(
     id: string,
     dto: UpdateMemberAccountStatusDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<MemberResponseDto> {
     await this.assertCanOrThrow(currentUser, 'user.update.status');
 
@@ -880,12 +881,27 @@ export class MembersService {
         select: { id: true, status: true },
       });
 
+      let refreshTokensRevoked = 0;
       if (dto.status === UserStatus.DISABLED) {
-        await tx.refreshToken.updateMany({
+        const revoked = await tx.refreshToken.updateMany({
           where: { userId: linked.id, revokedAt: null, expiresAt: { gt: new Date() } },
           data: { revokedAt: new Date(), revokedReason: 'admin-disable' },
         });
+        refreshTokensRevoked = revoked.count;
       }
+
+      await this.auditLogs.log({
+        event: 'member.account.status-change',
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        resourceType: 'member',
+        resourceId: id,
+        meta: auditMeta,
+        before: { status: linked.status },
+        after: { status: updated.status },
+        extra: { linkedUserId: updated.id, refreshTokensRevoked },
+        tx,
+      });
 
       return this.attachAccountInfo(member, { id: updated.id, status: updated.status });
     });

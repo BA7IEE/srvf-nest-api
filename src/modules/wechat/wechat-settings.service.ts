@@ -29,7 +29,8 @@ import { WechatCredentialStatus, type WechatSettingsResolved } from './wechat.ty
 // - PATCH upsert 缺省 providerType=DEV_STUB(联调通道);reset-credentials upsert 缺省
 //   WECHAT(录凭证即意味着真实通道;镜像 sms reset 默认 TENCENT_SMS 语义)
 //
-// singleton 不在 DB 层强制(镜像 sms):>1 行 WARN + 取 createdAt 最早。
+// 第七刀 #13:singleton 由第 49 migration 的 unique index on constant((true)) 在 DB 层强制;
+// 并发首配由 P2002 后重跑同一事务映射到既有单行,不新增 BizCode。
 // 凭证安全(L3 红线):response / 日志 / audit 永不含 appSecret 明文或密文;第六刀已补
 // update/reset in-tx audit(update 只记 changedFields;reset 不记任何凭证字段或值)。
 
@@ -65,30 +66,21 @@ export class WechatSettingsService {
   /**
    * 读取当前生效配置(singleton row;60s 缓存,E-27 单实例部署前提)
    * - DB 空 → null(调用路径由 WechatService 映射 25030)
-   * - DB > 1 条 → WARN + 取 createdAt 最早
+   * - 第 49 migration 后 DB 层保证至多一条
    */
   async getActiveSettings(): Promise<WechatSettingsResolved | null> {
     if (this.cache !== null && this.cache.expiresAt > Date.now()) {
       return this.cache.resolved;
     }
 
-    const rows = await this.prisma.wechatSettings.findMany({
-      orderBy: { createdAt: 'asc' },
-      take: 2, // 只取 2 条即可判断是否违反 singleton
-    });
+    const row = await this.prisma.wechatSettings.findFirst();
 
-    if (rows.length === 0) {
+    if (row === null) {
       this.setCache(null);
       return null;
     }
 
-    if (rows.length > 1) {
-      this.logger.warn(
-        `wechat_settings singleton violated: found ${rows.length}+ rows; using earliest (createdAt=${rows[0].createdAt.toISOString()})`,
-      );
-    }
-
-    const resolved = this.toResolved(rows[0]);
+    const resolved = this.toResolved(row);
     this.setCache(resolved);
     return resolved;
   }
@@ -103,17 +95,8 @@ export class WechatSettingsService {
   // GET /api/system/v1/wechat-settings:不存在返 null(不抛码);永不回显凭证
   async getForAdmin(user: CurrentUserPayload): Promise<WechatSettingsResponseDto | null> {
     await this.assertCanOrThrow(user, 'wechat-setting.read.singleton');
-    const rows = await this.prisma.wechatSettings.findMany({
-      orderBy: { createdAt: 'asc' },
-      take: 2,
-    });
-    if (rows.length === 0) return null;
-    if (rows.length > 1) {
-      this.logger.warn(
-        `wechat_settings singleton violated: found ${rows.length}+ rows; returning earliest (id=${rows[0].id})`,
-      );
-    }
-    return this.toResponseDto(rows[0]);
+    const row = await this.prisma.wechatSettings.findFirst();
+    return row === null ? null : this.toResponseDto(row);
   }
 
   // PATCH /api/system/v1/wechat-settings:upsert;不存在创建 default(providerType=DEV_STUB);
@@ -130,9 +113,8 @@ export class WechatSettingsService {
       .map(([key]) => key)
       .sort();
 
-    const row = await this.prisma.$transaction(async (tx) => {
+    const row = await this.runSingletonWriteWithUniqueRetry(async (tx) => {
       const existing = await tx.wechatSettings.findFirst({
-        orderBy: { createdAt: 'asc' },
         select: { id: true, providerType: true },
       });
 
@@ -186,9 +168,8 @@ export class WechatSettingsService {
     // WECHAT_ENCRYPTION_KEY 缺失(dev/test 留空)时抛 WechatCryptoUnavailableError → 全局过滤器 500
     const appSecretEncrypted = this.crypto.encrypt(dto.appSecret);
 
-    const row = await this.prisma.$transaction(async (tx) => {
+    const row = await this.runSingletonWriteWithUniqueRetry(async (tx) => {
       const existing = await tx.wechatSettings.findFirst({
-        orderBy: { createdAt: 'asc' },
         select: { id: true },
       });
 
@@ -235,6 +216,20 @@ export class WechatSettingsService {
   }
 
   // === helpers ===
+
+  private async runSingletonWriteWithUniqueRetry<T>(
+    operation: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    const execute = () => this.prisma.$transaction(operation);
+    try {
+      return await execute();
+    } catch (err) {
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') {
+        throw err;
+      }
+      return execute();
+    }
+  }
 
   private setCache(resolved: WechatSettingsResolved | null): void {
     this.cache = { resolved, expiresAt: Date.now() + CACHE_TTL_MS };

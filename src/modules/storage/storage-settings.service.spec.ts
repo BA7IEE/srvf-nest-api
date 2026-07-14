@@ -18,26 +18,21 @@ import { CredentialStatus } from './storage-settings.types';
 // 3. DB 1 条 + credentialConfigured=true + 解密成功 → CONFIGURED + credentials 含明文
 // 4. DB 1 条 + credentialConfigured=true + 解密失败 → INVALID + credentials=null
 // 5. DB 1 条 + credentialConfigured=true + 加密列为 null(数据不一致防御)→ MISSING
-// 6. DB 多条记录 → 取最早 + 打 WARN 日志
-// 7. 缓存命中(60s 内不再调 prisma)
-// 8. invalidate() 主动清缓存
-
-type FindManyArgs = {
-  orderBy?: unknown;
-  take?: number;
-};
+// 6. 缓存命中(60s 内不再调 prisma)
+// 7. invalidate() 主动清缓存
+// singleton 多行已由第 49 migration 的 DB constant unique 约束消除,不再保留取最早分支。
 
 function makePrismaMock(rows: StorageSettingsRow[]): {
   prisma: PrismaService;
-  findManyMock: jest.Mock<Promise<StorageSettingsRow[]>, [FindManyArgs]>;
+  findFirstMock: jest.Mock<Promise<StorageSettingsRow | null>, []>;
 } {
-  const findManyMock = jest
-    .fn<Promise<StorageSettingsRow[]>, [FindManyArgs]>()
-    .mockResolvedValue(rows);
+  const findFirstMock = jest
+    .fn<Promise<StorageSettingsRow | null>, []>()
+    .mockResolvedValue(rows[0] ?? null);
   const prisma = {
-    storageSettings: { findMany: findManyMock },
+    storageSettings: { findFirst: findFirstMock },
   } as unknown as PrismaService;
-  return { prisma, findManyMock };
+  return { prisma, findFirstMock };
 }
 
 // 类型完整的 StorageSettingsRow 工厂(Prisma 生成的 row 类型必须全字段就位)
@@ -233,41 +228,9 @@ describe('StorageSettingsService', () => {
     });
   });
 
-  describe('DB 多条记录(singleton 违反)', () => {
-    it('取 createdAt 最早的一条 + 打 WARN', async () => {
-      const earlier = makeRow({
-        id: 'cuid-earlier',
-        createdAt: new Date('2026-05-16T00:00:00Z'),
-        bucket: 'first',
-      });
-      const later = makeRow({
-        id: 'cuid-later',
-        createdAt: new Date('2026-05-16T01:00:00Z'),
-        bucket: 'second',
-      });
-      // findMany orderBy=asc,所以传入顺序就是 [earlier, later]
-      const { prisma } = makePrismaMock([earlier, later]);
-      const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(
-        prisma,
-        crypto,
-        makeRbacMock(),
-        makeAuditLogsMock(),
-        DEV_CFG,
-      );
-
-      const result = await svc.getActiveSettings();
-      expect(result!.id).toBe('cuid-earlier');
-      expect(result!.bucket).toBe('first');
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('storage_settings singleton violated'),
-      );
-    });
-  });
-
   describe('缓存', () => {
     it('60s 内第二次调用不查 DB', async () => {
-      const { prisma, findManyMock } = makePrismaMock([makeRow()]);
+      const { prisma, findFirstMock } = makePrismaMock([makeRow()]);
       const crypto = makeCryptoMock({});
       const svc = new StorageSettingsService(
         prisma,
@@ -280,11 +243,11 @@ describe('StorageSettingsService', () => {
       await svc.getActiveSettings();
       await svc.getActiveSettings();
       await svc.getActiveSettings();
-      expect(findManyMock).toHaveBeenCalledTimes(1);
+      expect(findFirstMock).toHaveBeenCalledTimes(1);
     });
 
     it('DB 空时也缓存 null', async () => {
-      const { prisma, findManyMock } = makePrismaMock([]);
+      const { prisma, findFirstMock } = makePrismaMock([]);
       const crypto = makeCryptoMock({});
       const svc = new StorageSettingsService(
         prisma,
@@ -298,11 +261,11 @@ describe('StorageSettingsService', () => {
       const r2 = await svc.getActiveSettings();
       expect(r1).toBeNull();
       expect(r2).toBeNull();
-      expect(findManyMock).toHaveBeenCalledTimes(1);
+      expect(findFirstMock).toHaveBeenCalledTimes(1);
     });
 
     it('invalidate() 后再查 DB', async () => {
-      const { prisma, findManyMock } = makePrismaMock([makeRow()]);
+      const { prisma, findFirstMock } = makePrismaMock([makeRow()]);
       const crypto = makeCryptoMock({});
       const svc = new StorageSettingsService(
         prisma,
@@ -315,7 +278,7 @@ describe('StorageSettingsService', () => {
       await svc.getActiveSettings();
       svc.invalidate();
       await svc.getActiveSettings();
-      expect(findManyMock).toHaveBeenCalledTimes(2);
+      expect(findFirstMock).toHaveBeenCalledTimes(2);
     });
   });
 

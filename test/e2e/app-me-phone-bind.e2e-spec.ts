@@ -1,9 +1,14 @@
 import type { INestApplication } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
 import { Role } from '@prisma/client';
-import { createHash } from 'node:crypto';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import appConfig from '../../src/config/app.config';
 import { PrismaService } from '../../src/database/prisma.service';
+import {
+  deriveSmsCodePepperKey,
+  hashSmsVerificationCode,
+} from '../../src/modules/sms/sms-code-hash.util';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -29,10 +34,6 @@ const PHONE_A = '13811112222';
 const PHONE_B = '13833334444';
 const PHONE_C = '13855556666';
 
-function sha256Hex(v: string): string {
-  return createHash('sha256').update(v, 'utf8').digest('hex');
-}
-
 describe('App 手机号绑定全链(T3 e2e 组 2)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -42,6 +43,7 @@ describe('App 手机号绑定全链(T3 e2e 组 2)', () => {
   let opsHeader: string;
   let u1Id: string;
   let u2Id: string;
+  let smsCodePepperKey: Buffer;
 
   // 间隔回拨 helper:把某号最新 code 行的 createdAt 拨回 61s 前,绕开 60s 间隔
   async function rewindInterval(phone: string): Promise<void> {
@@ -71,6 +73,8 @@ describe('App 手机号绑定全链(T3 e2e 组 2)', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
+    const cfg = app.get<ConfigType<typeof appConfig>>(appConfig.KEY);
+    smsCodePepperKey = deriveSmsCodePepperKey(cfg.sms.encryptionKey);
     prisma = app.get(PrismaService);
     await resetDb(app);
 
@@ -131,7 +135,7 @@ describe('App 手机号绑定全链(T3 e2e 组 2)', () => {
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
     });
 
-    it('正常发码 → 200 expiresInSeconds=300;明文码不入库(只存 sha256)+ send_log SENT 关联', async () => {
+    it('正常发码 → 200 expiresInSeconds=300;明文码不入库(只存域分离 HMAC)+ send_log SENT 关联', async () => {
       const res = await sendCode(u1Header, PHONE_A);
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual({ expiresInSeconds: 300 });
@@ -142,7 +146,12 @@ describe('App 手机号绑定全链(T3 e2e 组 2)', () => {
         where: { phone: PHONE_A },
         orderBy: { createdAt: 'desc' },
       });
-      expect(row.codeHash).toBe(sha256Hex(FIXED_CODE));
+      expect(row.codeHash).toBe(
+        hashSmsVerificationCode(
+          { phone: PHONE_A, purpose: 'PHONE_BIND', code: FIXED_CODE },
+          smsCodePepperKey,
+        ),
+      );
       expect(row.codeHash).not.toContain(FIXED_CODE);
       expect(row.userId).toBe(u1Id);
       expect(row.purpose).toBe('PHONE_BIND');

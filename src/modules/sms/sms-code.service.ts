@@ -1,10 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigType } from '@nestjs/config';
 import type { SmsPurpose } from '@prisma/client';
-import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
+import { randomInt, timingSafeEqual } from 'node:crypto';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
+import {
+  deriveSmsCodePepperKey,
+  hashSmsVerificationCode,
+  SmsCodePepperUnavailableError,
+} from './sms-code-hash.util';
 import { SmsProviderRouter } from './sms-provider.router';
 import {
   maskPhone,
@@ -26,17 +33,24 @@ import { SmsChannelUnavailableError, SmsProviderSendError } from './sms.types';
 // 映射边界(SmsChannelUnavailableError → 24030;SmsProviderSendError → 24031)。
 //
 // 明文码纪律(D-SMS-5):明文只存在于"生成 → 交给 provider"内存链路;
-// 入库只存 sha256 hex(E-27);不入 pino 日志(DevStub debug 例外在 provider 内);
-// 不入响应 / audit / OpenAPI 示例。
+// 入库只存 HMAC-SHA256(pepper, phone:purpose:code) hex;pepper 由 SMS_ENCRYPTION_KEY
+// 经独立 salt 的 scrypt 派生且仅驻内存;不入 pino 日志 / 响应 / audit / OpenAPI 示例。
 
 @Injectable()
 export class SmsCodeService {
   private readonly logger = new Logger(SmsCodeService.name);
+  private readonly codePepperKey: Buffer | null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly router: SmsProviderRouter,
-  ) {}
+    @Inject(appConfig.KEY)
+    private readonly cfg: ConfigType<typeof appConfig>,
+  ) {
+    this.codePepperKey = this.cfg.sms.encryptionKey
+      ? deriveSmsCodePepperKey(this.cfg.sms.encryptionKey)
+      : null;
+  }
 
   /**
    * 签发验证码并发送(评审稿 §4 检查链:间隔 → 日限 → 通道 → 单活码 → 发送 → 落日志)。
@@ -107,7 +121,7 @@ export class SmsCodeService {
         data: {
           phone: input.phone,
           purpose: input.purpose,
-          codeHash: sha256Hex(code),
+          codeHash: this.hashCode({ phone: input.phone, purpose: input.purpose, code }),
           userId: input.userId,
           expiresAt: new Date(now.getTime() + SMS_CODE_TTL_SECONDS * 1000),
           ip: input.ip,
@@ -235,8 +249,9 @@ export class SmsCodeService {
       throw new BizException(BizCode.SMS_CODE_INVALID);
     }
 
-    // 码值比对(timingSafeEqual 卫生习惯;两侧均为 64 字符 sha256 hex 定长)
-    if (!hashEquals(sha256Hex(input.code), active.codeHash)) {
+    // 码值比对(timingSafeEqual 卫生习惯;两侧均为 64 字符 HMAC-SHA256 hex 定长)
+    const candidateHash = this.hashCode(input);
+    if (!hashEquals(candidateHash, active.codeHash)) {
       // 错码计数独立提交(见 verifyAndConsume 方法注释);达到上限后续走上面的 attempts>=MAX 统一无效
       await this.prisma.smsVerificationCode.update({
         where: { id: active.id },
@@ -247,20 +262,23 @@ export class SmsCodeService {
 
     return { id: active.id };
   }
+
+  private hashCode(input: { phone: string; purpose: SmsPurpose; code: string }): string {
+    if (this.codePepperKey === null) {
+      throw new SmsCodePepperUnavailableError();
+    }
+    return hashSmsVerificationCode(input, this.codePepperKey);
+  }
 }
 
 // === helpers(模块内私有;不入 common grab-bag)===
-
-function sha256Hex(value: string): string {
-  return createHash('sha256').update(value, 'utf8').digest('hex');
-}
 
 // 6 位纯数字 CSPRNG(E-29;禁 Math.random)
 function generateNumericCode(): string {
   return randomInt(0, 1_000_000).toString().padStart(6, '0');
 }
 
-// 两侧均为 sha256 hex(64 字符定长),timingSafeEqual 直接可用
+// 两侧均为 HMAC-SHA256 hex(64 字符定长),timingSafeEqual 直接可用
 function hashEquals(a: string, b: string): boolean {
   const ba = Buffer.from(a, 'utf8');
   const bb = Buffer.from(b, 'utf8');

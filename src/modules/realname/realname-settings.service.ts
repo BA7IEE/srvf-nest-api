@@ -26,8 +26,9 @@ import { RealnameCredentialStatus, type RealnameSettingsResolved } from './realn
 // - region 替 appId(腾讯云运行参数,非 secret)
 // - reset-credentials upsert 缺省 TENCENT_CLOUD(录凭证即意味着真实通道;镜像 sms/wechat 语义)
 //
-// 共性(沿 wechat/sms):60s 内存缓存(单实例前提)+ singleton 不在 DB 层强制(>1 行 WARN + 取
-// createdAt 最早)+ production-like 禁 DEV_STUB(写入口第①重,运行时第②重在 RealnameVerificationService)。
+// 共性(沿 wechat/sms):60s 内存缓存(单实例前提)+ production-like 禁 DEV_STUB(写入口第①重,
+// 运行时第②重在 RealnameVerificationService)。第七刀 #13 起 singleton 由第 49 migration 的
+// unique index on constant((true)) 在 DB 层强制;并发首配 P2002 后重跑事务命中既有单行。
 // 凭证安全(L3 红线):response / 日志 / audit 永不含 secretId / secretKey 明文或密文;
 // 第六刀已补 update/reset-credentials 同事务 audit;reset audit 仅记动作,不含任何凭证值。
 
@@ -63,30 +64,21 @@ export class RealnameSettingsService {
   /**
    * 读取当前生效配置(singleton row;60s 缓存,单实例部署前提)
    * - DB 空 → null(调用路径由 RealnameVerificationService 映射 27030)
-   * - DB > 1 条 → WARN + 取 createdAt 最早
+   * - 第 49 migration 后 DB 层保证至多一条
    */
   async getActiveSettings(): Promise<RealnameSettingsResolved | null> {
     if (this.cache !== null && this.cache.expiresAt > Date.now()) {
       return this.cache.resolved;
     }
 
-    const rows = await this.prisma.realnameVerificationSettings.findMany({
-      orderBy: { createdAt: 'asc' },
-      take: 2, // 只取 2 条即可判断是否违反 singleton
-    });
+    const row = await this.prisma.realnameVerificationSettings.findFirst();
 
-    if (rows.length === 0) {
+    if (row === null) {
       this.setCache(null);
       return null;
     }
 
-    if (rows.length > 1) {
-      this.logger.warn(
-        `realname_verification_settings singleton violated: found ${rows.length}+ rows; using earliest (createdAt=${rows[0].createdAt.toISOString()})`,
-      );
-    }
-
-    const resolved = this.toResolved(rows[0]);
+    const resolved = this.toResolved(row);
     this.setCache(resolved);
     return resolved;
   }
@@ -101,17 +93,8 @@ export class RealnameSettingsService {
   // GET /api/system/v1/realname-settings:不存在返 null(不抛码);永不回显凭证
   async getForAdmin(user: CurrentUserPayload): Promise<RealnameSettingsResponseDto | null> {
     await this.assertCanOrThrow(user, 'realname-setting.read.singleton');
-    const rows = await this.prisma.realnameVerificationSettings.findMany({
-      orderBy: { createdAt: 'asc' },
-      take: 2,
-    });
-    if (rows.length === 0) return null;
-    if (rows.length > 1) {
-      this.logger.warn(
-        `realname_verification_settings singleton violated: found ${rows.length}+ rows; returning earliest (id=${rows[0].id})`,
-      );
-    }
-    return this.toResponseDto(rows[0]);
+    const row = await this.prisma.realnameVerificationSettings.findFirst();
+    return row === null ? null : this.toResponseDto(row);
   }
 
   // PATCH /api/system/v1/realname-settings:upsert;不存在创建 default(providerType=DEV_STUB);
@@ -129,9 +112,8 @@ export class RealnameSettingsService {
       .map(([field]) => field)
       .sort();
 
-    const row = await this.prisma.$transaction(async (tx) => {
+    const row = await this.runSingletonWriteWithUniqueRetry(async (tx) => {
       const existing = await tx.realnameVerificationSettings.findFirst({
-        orderBy: { createdAt: 'asc' },
         select: { id: true, providerType: true },
       });
 
@@ -184,9 +166,8 @@ export class RealnameSettingsService {
     const secretIdEncrypted = this.crypto.encrypt(dto.secretId);
     const secretKeyEncrypted = this.crypto.encrypt(dto.secretKey);
 
-    const row = await this.prisma.$transaction(async (tx) => {
+    const row = await this.runSingletonWriteWithUniqueRetry(async (tx) => {
       const existing = await tx.realnameVerificationSettings.findFirst({
-        orderBy: { createdAt: 'asc' },
         select: { id: true },
       });
 
@@ -236,6 +217,20 @@ export class RealnameSettingsService {
   }
 
   // === helpers ===
+
+  private async runSingletonWriteWithUniqueRetry<T>(
+    operation: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    const execute = () => this.prisma.$transaction(operation);
+    try {
+      return await execute();
+    } catch (err) {
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') {
+        throw err;
+      }
+      return execute();
+    }
+  }
 
   private setCache(resolved: RealnameSettingsResolved | null): void {
     this.cache = { resolved, expiresAt: Date.now() + CACHE_TTL_MS };

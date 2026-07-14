@@ -31,9 +31,8 @@ import { CredentialStatus, type StorageSettingsResolved } from './storage-settin
 // - POST /reset-credentials 接收明文 + 加密落库
 // - bootstrap fallback 从 env 兜底创建首条记录(沿 Q23 / Q-87-3)
 //
-// singleton 不在 DB 层强制(沿 Q-87-2 / §6.5.4):
-// - 本 Service 发现 > 1 条记录时打 WARN 日志 + 用 createdAt 最早的一条
-// - 留 PR #11 后台 CRUD POST 做 count() 检 → 抛 422 兜底
+// 第七刀 #13:singleton 由第 49 migration 的 unique index on constant((true)) 在 DB 层强制。
+// 并发首配由 P2002 后重跑同一事务映射到既有单行,不新增 BizCode。
 
 const CACHE_TTL_MS = 60_000;
 
@@ -143,7 +142,7 @@ export class StorageSettingsService implements OnApplicationBootstrap {
    * 读取当前生效配置(单条 singleton row;沿 §6.5.4)
    * - DB 空 → 返 null
    * - DB 有 1 条 → 解密 + 返 resolved
-   * - DB 有 > 1 条 → 打 WARN + 用 createdAt 最早的一条(防御性;singleton 违反由 PR #11 修)
+   * - 第 49 migration 后 DB 层保证至多一条,不再保留“取最早 + WARN”分支
    * - 缓存 60s
    */
   async getActiveSettings(): Promise<StorageSettingsResolved | null> {
@@ -151,23 +150,14 @@ export class StorageSettingsService implements OnApplicationBootstrap {
       return this.cache.resolved;
     }
 
-    const rows = await this.prisma.storageSettings.findMany({
-      orderBy: { createdAt: 'asc' },
-      take: 2, // 只取 2 条即可判断是否违反 singleton;沿 PG 范式
-    });
+    const row = await this.prisma.storageSettings.findFirst();
 
-    if (rows.length === 0) {
+    if (row === null) {
       this.setCache(null);
       return null;
     }
 
-    if (rows.length > 1) {
-      this.logger.warn(
-        `storage_settings singleton violated: found ${rows.length}+ rows; using earliest (createdAt=${rows[0].createdAt.toISOString()}). Fix via PR #11 backstage CRUD.`,
-      );
-    }
-
-    const resolved = this.toResolved(rows[0]);
+    const resolved = this.toResolved(row);
     this.setCache(resolved);
     return resolved;
   }
@@ -268,17 +258,8 @@ export class StorageSettingsService implements OnApplicationBootstrap {
   // 单 singleton row 不存在 → 返 null(沿 Q-11-1);不抛 BizCode
   async getForAdmin(user: CurrentUserPayload): Promise<StorageSettingsResponseDto | null> {
     await this.assertCanOrThrow(user, 'storage-setting.read.singleton');
-    const rows = await this.prisma.storageSettings.findMany({
-      orderBy: { createdAt: 'asc' },
-      take: 2,
-    });
-    if (rows.length === 0) return null;
-    if (rows.length > 1) {
-      this.logger.warn(
-        `storage_settings singleton violated: found ${rows.length}+ rows; returning earliest (id=${rows[0].id})`,
-      );
-    }
-    return this.toResponseDto(rows[0]);
+    const row = await this.prisma.storageSettings.findFirst();
+    return row === null ? null : this.toResponseDto(row);
   }
 
   // PATCH /api/system/v1/storage-settings(upsert;沿 Q-11-1 + Q-11-17)
@@ -298,9 +279,8 @@ export class StorageSettingsService implements OnApplicationBootstrap {
       .map(([key]) => key)
       .sort();
 
-    const row = await this.prisma.$transaction(async (tx) => {
+    const row = await this.runSingletonWriteWithUniqueRetry(async (tx) => {
       const existing = await tx.storageSettings.findFirst({
-        orderBy: { createdAt: 'asc' },
         select: { id: true },
       });
 
@@ -356,9 +336,8 @@ export class StorageSettingsService implements OnApplicationBootstrap {
     const secretIdEncrypted = this.crypto.encrypt(dto.secretId);
     const secretKeyEncrypted = this.crypto.encrypt(dto.secretKey);
 
-    const row = await this.prisma.$transaction(async (tx) => {
+    const row = await this.runSingletonWriteWithUniqueRetry(async (tx) => {
       const existing = await tx.storageSettings.findFirst({
-        orderBy: { createdAt: 'asc' },
         select: { id: true },
       });
 
@@ -407,6 +386,24 @@ export class StorageSettingsService implements OnApplicationBootstrap {
   }
 
   // === helpers ===
+
+  /**
+   * 两个首配请求可同时读到空表；DB constant unique 令其中一个 create 以 P2002 失败。
+   * 失败事务已整体回滚，重跑同一事务即可命中赢家创建的单行并走 update。
+   */
+  private async runSingletonWriteWithUniqueRetry<T>(
+    operation: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    const execute = () => this.prisma.$transaction(operation);
+    try {
+      return await execute();
+    } catch (err) {
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') {
+        throw err;
+      }
+      return execute();
+    }
+  }
 
   // DTO → Prisma data 字段转换(maxObjectSizeBytes string → BigInt;沿 Q-11-10)
   // 仅转换 dto 已提供字段(沿 PATCH 部分更新语义)
