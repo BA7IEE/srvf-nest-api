@@ -7,18 +7,18 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(六处一致) | **v0.47.0**(2026-07-14;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #597 squash `d31e009b`;GitHub Release「v0.47.0 — 招新证书信任继承·到期提醒·考勤终审撤回」标 Latest。**⚠️ 行为变更/新增三组**:招新 promote 对已 approved 急救资质/BSAFE 证书继承 verified 结论;证书/保险到期提醒使全仓终态恰好 2 个 cron;新增 approved 考勤单受控 reopen→pending) |
-| `main` HEAD | v0.47.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #597 `d31e009b`;收口链 = 招新三改 #592 + 冻结评审 #593 + 到期提醒 #594 + 考勤撤回 #595 + bump #596 + handoff #597 + tag/Release + 本回填 PR) |
+| 版本(六处一致) | **v0.48.0**(2026-07-14;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #602 squash `5a5f8442`;GitHub Release「v0.48.0」标 Latest。**⚠️ 行为变更两组**:全局每日贡献值上限调整为 3 且历史记录读时重算;App 入队申请意向部门上限 8→2、Admin 配轮仅收 `[1,2]`,旧轮库值不订正但 App 有效上限钳制为 2) |
+| `main` HEAD | v0.48.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #602 `5a5f8442`;收口链 = 贡献值封顶 #599 + 意向部门上限 #600 + bump #601 + handoff #602 + tag/Release + 本回填 PR) |
 | open PR / 工作树 / Unreleased | **本回填 PR 合入后 0** open PR / clean / `## Unreleased` **0 条**。终值:权限码 **206** / biz-admin **81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` **337** / controller 66 / 模块 35 / migration **50** / 角色 7 / BizCode **232** / AuditLogEvent **113** |
-| 最新 handoff | [`archive/handoff/v0.47.0.md`](archive/handoff/v0.47.0.md)(历史快照;tag 指向该 handoff #597 squash `d31e009b`;接续 [`v0.46.0.md`](archive/handoff/v0.46.0.md);合入后不回改) |
+| 最新 handoff | [`archive/handoff/v0.48.0.md`](archive/handoff/v0.48.0.md)(历史快照;tag 指向该 handoff #602 squash `5a5f8442`;接续 [`v0.47.0.md`](archive/handoff/v0.47.0.md);合入后不回改) |
 
 ## 2. 当前系统已具备能力
 
 > 清单级;事实权威:字段 = [`schema.prisma`](../prisma/schema.prisma);接口 = `/api/docs` + [`EXPECTED_ROUTES`](../test/contract/openapi.contract-spec.ts) + snapshot;BizCode = `biz-code.constant.ts` + CHANGELOG。
 
-- **v0.48.0 候选·贡献值每日上限调整(2026-07-14;Unreleased;C 档)**:单一真相源 `GLOBAL_DAILY_CONTRIBUTION_CAP` 调整为 **3**;`computeContribution` / `computeCappedContribution` 仍按 `checkInAt` 北京日分组后逐日封顶,实时算、不落库,因此历史考勤记录也按新上限读时重算。影响 team-join ≥5 门槛、App 入队进度与 admin 队员 360 生涯累计;`CONTRIBUTION_THRESHOLD=5` 与 deprecated `ContributionRule.dailyCap` 均不动。0 schema / 0 migration / 0 新端点 / 0 DTO 字段 / 0 权限码 / 0 BizCode / 0 audit event / 0 依赖。
+- **v0.48.0 贡献值每日上限调整(已发布 2026-07-14;C 档)**:单一真相源 `GLOBAL_DAILY_CONTRIBUTION_CAP` 调整为 **3**;`computeContribution` / `computeCappedContribution` 仍按 `checkInAt` 北京日分组后逐日封顶,实时算、不落库,因此历史考勤记录也按新上限读时重算。影响 team-join ≥5 门槛、App 入队进度与 admin 队员 360 生涯累计;`CONTRIBUTION_THRESHOLD=5` 与 deprecated `ContributionRule.dailyCap` 均不动。0 schema / 0 migration / 0 新端点 / 0 DTO 字段 / 0 权限码 / 0 BizCode / 0 audit event / 0 依赖。
 
-- **v0.48.0 候选·入队意向部门上限收紧(2026-07-14;Unreleased;C 档)**:`TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS` / `TEAM_JOIN_MAX_TARGET_ORGS` 均由 8 调整为 **2**;App 发起/修改申请最多 2 个目标部门,Admin 开轮/改轮 `maxTargetOrgs` 域收紧为 `[1,2]`。旧轮存值 >2 不做数据订正;App 写校验与响应回显统一按 `min(cycle.maxTargetOrgs ?? 2,2)` 钳制,历史已提交的 >2 部门申请数组保持原样有效,仅新写入受限。0 schema / 0 migration / 0 新端点 / 0 DTO 字段 / 0 权限码 / 0 BizCode / 0 audit event / 0 依赖。
+- **v0.48.0 入队意向部门上限收紧(已发布 2026-07-14;C 档)**:`TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS` / `TEAM_JOIN_MAX_TARGET_ORGS` 均由 8 调整为 **2**;App 发起/修改申请最多 2 个目标部门,Admin 开轮/改轮 `maxTargetOrgs` 域收紧为 `[1,2]`。旧轮存值 >2 不做数据订正;App 写校验与响应回显统一按 `min(cycle.maxTargetOrgs ?? 2,2)` 钳制,历史已提交的 >2 部门申请数组保持原样有效,仅新写入受限。0 schema / 0 migration / 0 新端点 / 0 DTO 字段 / 0 权限码 / 0 BizCode / 0 audit event / 0 依赖。
 
 - **v0.47.0 招新业务三改(急救资质命名 + 人数默认不限 + 证书审核只审一次;已发布 2026-07-14)**(**0 schema / 0 migration / 0 新端点 / 0 权限码 / 0 BizCode / 0 audit event / 0 依赖**):① **急救资质命名**——门槛显示名「红十字」统一为「急救资质」(单一真相源 `THRESHOLD_NAMES.redCross`〔[`recruitment-progress-presenter.ts`](../src/modules/recruitment/recruitment-progress-presenter.ts)〕,同驱动申请人进度 todoList 名与工作台 stats),连同证书审核/门槛 Swagger 文案、发证机构提示文案同步;**内部门槛 code 仍为 `redCross`**(暂保留,避免历史数据/接口兼容问题);发证机构本就自由文本,措辞改为「任一被认可的急救资质发证机构均可」(不限红十字会,深圳市急救中心等救护员证同样有效)。② **人数默认不限 + 可清空回不限**——确认 `RecruitmentCycle.capacity` 缺省即 `null`=不限、仅填数字才校验(后端本已满足);`UpdateRecruitmentCycleDto.capacity` 放宽为可空,传 `null` 清空=改回不限(向后兼容)。临时编号退出不释放容量维持现状。③ **证书审核只审一次(⚠️ 行为变更)**——promote 对招新阶段已 `approved` 的急救资质/BSAFE 证书由此前一律建 `pending` 改为**继承审核结论建为 `verified`**(审核人 `verifiedBy`=招新审核人 `User.memberId`〔无 member 如 SUPER_ADMIN 合法为 null,沿 certificates Q-I2〕/ 审核时间 `verifiedAt`=`review.at` / 审核备注 `verifyNote` 原样继承),核验人不再二次审核;仅上传未审的类别仍建 `pending`。契约面:若干 Swagger 描述文案 + `UpdateRecruitmentCycleDto.capacity` 放宽可空(contract 快照受控更新 2 处,`EXPECTED_ROUTES` 336 零变);unit 86/2398 · contract 606 · 全量 e2e 141 suites/**2867** 全绿 · rbacmap(205)/codemap 0 FAIL;同 PR 更新 [`handoff/miniapp.md`](handoff/miniapp.md)(急救资质概念 + 发号继承审核)+ `handoff/openapi.json` true-up。
 
