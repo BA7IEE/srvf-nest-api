@@ -161,6 +161,7 @@
 | **角色绑定 列表 / 建 / 改 / 软删**(带 scope 的角色绑定;PR6;2026-07-13 委派闸 + 任期/末位保护收口)| `GET/POST /api/admin/v1/role-bindings` · `PATCH/DELETE .../:id` | `[rbac: role-binding.{read,create,update,delete}.record]`;非 SUPER_ADMIN 对特权角色的 create / reactivation / 任期扩张 → 30102;特权角色 = ops-admin 或含 `role-binding.*` / `rbac.*` / 6 条 SA-only 保留码;PATCH/DELETE 或用户管理的禁用/软删若使最后一个 active GLOBAL ops-admin 持有人离场 → 30101;PATCH 成功写 `role-binding.update` before/after audit |
 | **角色绑定 分页总表 / 详情 / 预检 / 批量建**(F3「C 组」;管理页主列表建议直接用 `/page`)| `GET /api/admin/v1/role-bindings/page`(分页 + 过滤 + `expand=role,principal`)· `GET .../role-bindings/:id` · `GET .../role-bindings/preview`(dry-run 零写入)· `POST .../role-bindings/batch`(≤200 逐条 ok/blocked/already-exists)| 读三路 `[rbac: role-binding.read.record]` / batch `[rbac: role-binding.create.record]`(0 新码)|
 | **权限解释 / 判权诊断**(诊断读,deny 是 200 数据;PR10 + F3 批量壳)| `POST /api/admin/v1/authz/explain` · `POST .../authz/explain-batch`(≤200,同 11 值枚举)| `[rbac: authz.explain.decision]` / `[rbac: authz.explain-batch.decision]` |
+| **当前用户有效权限码**(v0.49.0;前端路由/按钮可见性)| `GET /api/system/v1/authz/me/effective-permissions` → `{permissions:string[]}`(直接 RoleBinding + 正/副职 policy + 分管三源,去重排序)| `[auth]` 仅登录；SUPER_ADMIN 返 Permission 全集 |
 | **批量业务态闸**(「这组按钮对我该不该亮」;F3「C 组」)| `POST /api/admin/v1/authz/action-state/batch`(≤200;判定对象 = 调用者本人;`allowed = 判权 ∧ 资源状态机只读`)| `[rbac: authz.action-state.decision]` |
 | **归属总表 / 详情 / 冲突诊断**(F4「D 组」;跨队员跨组织横扫)| `GET /api/admin/v1/memberships`(分页 + 过滤 + `expand=member,organization`)· `GET .../memberships/:id` · `GET .../memberships/conflicts`(只读体检:悬空/停用/多主)| `[rbac: membership.{list,read}.record]` |
 | **归属迁移(transfer)**(F4 唯一写端点;把队员某类型归属从 orgA 迁到 orgB)| `POST /api/admin/v1/memberships/transfer`(单事务:结束旧 + 新建;audit `membership.transfer`)| `[rbac: membership.transfer.record]`(绑 biz-admin)|
@@ -222,11 +223,13 @@
 
 **工作台/首页待办汇总(meta/dashboard-summary,GAP-003,net-new)**:`GET admin/v1/meta/dashboard-summary`,零 query 参数。出三个**可省略**块:`registrations:{pending}`(凭既有 `activity-registration.read.record`)/ `attendanceSheets:{pending,pendingFinalReview}`(凭既有 `attendance.read.sheet`,两数分别对应一级〔APD〕待审与待终审)/ `activities:{published}`(无码,沿 activities list/options 现状,任意已登录用户可见)。**权限裁剪同 resolve-labels 哲学**:调用者缺对应块的读码 → 该块整体不出现在响应里(不是 0,是 key 缺失),**不报错**——零权限时仍 200,只是块更少。三个数字分别与 `admin/v1/registrations?statusCode=pending`、`admin/v1/attendance-sheets?statusCode=pending|pending_final_review`、`admin/v1/activities?statusCode=published` 三个既有列表端点同条件的分页 `total` 严格一致,可直接当作"跳转到对应列表页"的角标数字使用。
 
+**v0.49.0 前端有效权限出口(本 PR,Unreleased)**:`GET system/v1/authz/me/effective-permissions` 是后台登录后的 permission code 真值出口，聚合 direct RoleBinding、职务策略(含副职只读投影)与分管三源的当前有效码。响应只含稳定排序的 `permissions:string[]`，不暴露 role/binding/scope 明细；SUPER_ADMIN 返回 Permission 全集。既有 `GET system/v1/rbac/me/permissions` **保留且语义零变化**，仍只聚合当前用户主体的 GLOBAL RoleBinding，因此 derived-only 的正/副职或分管用户在旧端点可为空、在新端点非空。后台菜单和按钮从 v0.49.0 起应读新出口；App 的 `/me/capabilities` 不受影响。
+
 ---
 
 ## 3. 踩坑表(gotchas)
 
-1. **登录是 3-call**:`POST /api/auth/v1/login` → `GET /api/admin/v1/me`(身份) + `GET /api/system/v1/rbac/me/permissions`(权限码)。三个端点拆开,别假设 login 返回身份/权限。
+1. **登录是 3-call(v0.49.0)**:`POST /api/auth/v1/login` → `GET /api/admin/v1/me`(身份) + `GET /api/system/v1/authz/me/effective-permissions`(含职务/分管派生的有效权限码)。三个端点拆开,别假设 login 返回身份/权限；旧 `rbac/me/permissions` 只认 USER+GLOBAL 绑定，保留兼容但不能用来点亮 derived-only 用户的后台菜单。
 2. **字段以 live `/api/docs-json` 为准**。任何手写指南(含本文件)的字段名都可能漂;类型从 docs-json 取。
 3. **权限码不要臆造**:用真实码(如 `member.read.record` / `attendance.final-approve.sheet`),来源 = 各端点 `[rbac: x]` summary 或 [`RBAC_MAP.md`](../ai-harness/RBAC_MAP.md);禁 `*:*:*` / `permission:btn:*`。
 4. **贡献值别在前端裸 SUM**:存在**全局每日封顶 3**(一人单北京日封顶;v0.48.0 起历史记录同样按 3 读时实时重算)。前端把 `attendance_records.contributionPoints` 直接相加会**算多**。要总分用后端给的 capped 值(见 GAP-002 的 contribution-summary),贡献值总分一律走后端,不在前端算。

@@ -9,6 +9,7 @@ import { ActionStateService } from './action-state.service';
 import { AuthzController } from './authz.controller';
 import { AuthzExplainService } from './authz-explain.service';
 import { AuthzService } from './authz.service';
+import { EffectivePermissionsController } from './effective-permissions.controller';
 import { ResourceResolverService } from './resource-resolver.service';
 
 // 终态 scoped-authz PR8「AuthzService / ResourceResolver」(2026-07-02;冻结稿 §5.1/§5.2/§5.3):
@@ -23,7 +24,8 @@ import { ResourceResolverService } from './resource-resolver.service';
 // 复用 rbac.judge〔行为锁〕+ getRoleIdsWithPermission〔角色含码批量判定,PR8 additive〕)。
 // **🔴 本模块是叶子(无被反向 import;PermissionsModule 不依赖本模块),不成模块环**(forwardRef 零使用铁律)。
 //
-// 消费者接线进度:PR9 考勤终审(finalApprove/finalReject)+ PR10 explain 端点;逐面迁移是 PR12。
+// 消费者接线进度:PR9 考勤终审 + PR10 explain + PR12 participation 点动作；v0.49 新增
+// 可见组织范围解析与独立 System effective-permissions 出口，RbacService 旧出口保持并行。
 //
 // F3/C2+C3(路线图 §4 / D8 拍板;2026-07-04):+explain-batch(扩 AuthzController)+
 // action-state/batch(第二个 controller ActionStateController + ActionStateService)。
@@ -32,7 +34,7 @@ import { ResourceResolverService } from './resource-resolver.service';
 // (attendances/activities/activity-registrations 反向依赖本模块,import 即成环),叶子铁律不破。
 @Module({
   imports: [DatabaseModule, PermissionsModule],
-  controllers: [AuthzController, ActionStateController],
+  controllers: [AuthzController, ActionStateController, EffectivePermissionsController],
   providers: [
     AuthzService,
     ResourceResolverService,
