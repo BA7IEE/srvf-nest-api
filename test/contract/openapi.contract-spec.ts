@@ -161,7 +161,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 行为契约沿 D-P2-7-15 + §11.1 锁定。
   ['get', '/api/app/v1/my/certificates'],
 
-  // System surface(Ops-* tag;56 路由):终态前缀 /api/system/v1/*
+  // System surface(Ops-* tag;57 路由):终态前缀 /api/system/v1/*
   // (Route B 终态;v2 老前缀已于 Phase 4 删除,沿 docs/api-surface-migration-plan.md §3.4)。
   ['get', '/api/system/v1/dict-types'],
   ['post', '/api/system/v1/dict-types'],
@@ -201,6 +201,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['delete', '/api/system/v1/users/{userId}/roles/{roleId}'],
   ['get', '/api/system/v1/rbac/me/permissions'],
   ['post', '/api/system/v1/rbac/reload'],
+  // v0.49 部门数据范围:三源授权有效权限码前端出口；旧 rbac/me/permissions 语义零变化。
+  ['get', '/api/system/v1/authz/me/effective-permissions'],
   ['get', '/api/system/v1/attachment-type-configs'],
   ['post', '/api/system/v1/attachment-type-configs'],
   ['get', '/api/system/v1/attachment-type-configs/{id}'],
@@ -792,6 +794,9 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // 注册为独立 named schema)。
   'MyPermissionsResponseDto',
   'EffectiveRoleDto',
+
+  // v0.49 部门数据范围:direct RoleBinding + 职务 policy + 分管三源的有效 permission code 并集。
+  'EffectivePermissionsResponseDto',
 
   // V2.x C-6 RBAC 实施 PR #7 rbac reload(2026-05-14;沿 D7 v1.1 §5.2.5 / §5.4)
   // ReloadRbacDto 是 @Body() DTO + ReloadRbacResponseDto 是出参,均注册为 named schema。

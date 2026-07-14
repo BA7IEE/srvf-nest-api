@@ -33,7 +33,7 @@ import { ResourceResolverService } from './resource-resolver.service';
 //      3a. 直接 RoleBinding:principalType=USER(user.id)∪ MEMBER(user.memberId)∪
 //          POSITION_ASSIGNMENT(该 member 全部任职 id;BD-2 终审中枢绑定走此,绝不 hardcode 部门)
 //      3b. 职务推导:active PositionAssignment × active PositionRolePolicy(positionId→roleId),
-//          scope = 任职组织 + policy.scopeMode。🔴 R5 由数据保证:副职零 policy 行 → 本步对副职天然零产出
+//          scope = 任职组织 + policy.scopeMode。v0.49 起正职推导管理角色、副职推导只读投影角色
 //      3c. 分管推导:active SupervisionAssignment → `org-supervisor` 只读角色 @ 被分管组织 + scopeMode(BD-3)
 //   4. 过滤「角色含 action 码」的 grant(RbacService.getRoleIdsWithPermission,批量;RolePermission 有 roleId 索引)
 //   5. scope 覆盖判定 covers()(命中即 allow,带 matchedGrant 可解释性)
@@ -46,7 +46,7 @@ import { ResourceResolverService } from './resource-resolver.service';
 // test/e2e/authz-rbac-equivalence.e2e-spec.ts。注意:MEMBER / POSITION_ASSIGNMENT 主体的 GLOBAL 绑定
 // 仅在**带 ref** 的完整三源路径生效 —— 无 ref 路径只认 USER 主体(= rbac 现语义),这是行为锁的刻意收窄。
 //
-// **🔴 安全默认(冻结稿 §5.2 红线,R5)**:副职不自动推导管理角色(3b 只对有 policy 行的正职产出);
+// **🔴 安全默认(冻结稿 §5.2 红线,v0.49)**:副职只自动推导只读投影角色,不自动获得管理写角色;
 // 全局/全树管辖只能来自显式 RoleBinding(3a)或分管(3c),绝不来自头衔;默认拒绝 —— 无命中 grant 即 deny。
 //
 // **legacy `.self` 不搬(goal 决断①)**:attachments 等现网 `.self` 判权继续走 rbac.can(RbacResource
@@ -77,6 +77,14 @@ interface InternalGrant {
   // status=ACTIVE 且 now∈[startedAt,endedAt〔null=不限〕](POSITION_ASSIGNMENT 主体绑定另要求底层任职有效);
   // false 的 grant 不参与 allow,仅用于 deny 归因(expired_grant)
   valid: boolean;
+}
+
+// v0.49 部门数据范围统一出口:hasPermission 与 organizationIds 刻意分离——持有有效码但仅有
+// 非组织 scope / 失效组织根时,调用方返回空列表而不是误报 30100。
+export interface VisibleOrganizationScope {
+  hasPermission: boolean;
+  global: boolean;
+  organizationIds: string[];
 }
 
 // BD-3:分管推导的监督角色(seed PR7 内置,只读 4 码)。角色码是配置锚点:如未来要换监督角色,
@@ -126,6 +134,93 @@ export class AuthzService {
   async can(user: CurrentUserPayload, action: string, ref?: ResourceRef): Promise<boolean> {
     const decision = await this.explain(user, action, ref);
     return decision.allow;
+  }
+
+  // v0.49:按与 explain() 完全相同的三源 grant 归集某 action 的可见组织集合。
+  // GLOBAL 不下推 where;ORGANIZATION_TREE 通过 closure 展开含根在内的后代;非组织 scope
+  // 保守不扩大列表范围。这里只解析授权范围,业务模块仍负责自己的 organization filter 交集。
+  async getVisibleOrganizationScope(
+    user: CurrentUserPayload,
+    action: string,
+  ): Promise<VisibleOrganizationScope> {
+    if (user.role === Role.SUPER_ADMIN) {
+      return { hasPermission: true, global: true, organizationIds: [] };
+    }
+
+    const grants = await this.collectGrants(user);
+    const roleIds = [...new Set(grants.map((g) => g.roleId))];
+    const rolesWithCode = await this.rbac.getRoleIdsWithPermission(roleIds, action);
+    const validWithCode = grants.filter((g) => g.valid && rolesWithCode.has(g.roleId));
+    if (validWithCode.length === 0) {
+      return { hasPermission: false, global: false, organizationIds: [] };
+    }
+    if (validWithCode.some((g) => g.scopeType === BindingScopeType.GLOBAL)) {
+      return { hasPermission: true, global: true, organizationIds: [] };
+    }
+
+    const orgStates = await this.loadOrgActiveStates(validWithCode);
+    const exactOrgIds = new Set<string>();
+    const treeRootIds = new Set<string>();
+    for (const grant of validWithCode) {
+      if (!grant.scopeOrgId || orgStates.get(grant.scopeOrgId) !== true) continue;
+      if (grant.scopeType === BindingScopeType.ORGANIZATION) {
+        exactOrgIds.add(grant.scopeOrgId);
+      } else if (grant.scopeType === BindingScopeType.ORGANIZATION_TREE) {
+        treeRootIds.add(grant.scopeOrgId);
+      }
+    }
+
+    if (treeRootIds.size > 0) {
+      const descendants = await this.prisma.organizationClosure.findMany({
+        where: { ancestorId: { in: [...treeRootIds] } },
+        select: { descendantId: true },
+      });
+      for (const row of descendants) exactOrgIds.add(row.descendantId);
+    }
+
+    return {
+      hasPermission: true,
+      global: false,
+      organizationIds: [...exactOrgIds].sort(),
+    };
+  }
+
+  // v0.49 前端按钮出口:把 direct RoleBinding、职务 policy、分管三源的当前有效角色权限码
+  // 做稳定并集。与 RbacService.getMyPermissions 的 GLOBAL USER-binding 旧读源严格并行、互不替换。
+  async getEffectivePermissionCodes(user: CurrentUserPayload): Promise<string[]> {
+    if (user.role === Role.SUPER_ADMIN) {
+      const rows = await this.prisma.permission.findMany({
+        select: { code: true },
+        orderBy: { code: 'asc' },
+      });
+      return rows.map((row) => row.code);
+    }
+
+    const grants = await this.collectGrants(user);
+    const validGrants = grants.filter((g) => g.valid);
+    const orgStates = await this.loadOrgActiveStates(validGrants);
+    const roleIds = [
+      ...new Set(
+        validGrants
+          .filter((grant) => {
+            if (
+              grant.scopeType !== BindingScopeType.ORGANIZATION &&
+              grant.scopeType !== BindingScopeType.ORGANIZATION_TREE
+            ) {
+              return true;
+            }
+            return grant.scopeOrgId !== null && orgStates.get(grant.scopeOrgId) === true;
+          })
+          .map((grant) => grant.roleId),
+      ),
+    ];
+    if (roleIds.length === 0) return [];
+
+    const rows = await this.prisma.rolePermission.findMany({
+      where: { roleId: { in: roleIds }, role: { deletedAt: null } },
+      select: { permission: { select: { code: true } } },
+    });
+    return [...new Set(rows.map((row) => row.permission.code))].sort();
   }
 
   // 全解释:allow/deny + reason + matchedGrant(可解释性总纲 —— 每个 allow 必能指出命中的授权行)。
@@ -314,7 +409,7 @@ export class AuthzService {
       });
     }
 
-    // 3b. 职务推导:任职 × policy(🔴 R5:副职零 policy 行 → 对副职天然零产出;
+    // 3b. 职务推导:任职 × policy(v0.49:正职管理角色 + 副职只读投影角色;
     //     conditionJson 非 null 的行保守跳过 —— seed 全 null,评估器待首个真实条件需求时再落,fail-close 不越权)
     if (assignments.length > 0) {
       const policies = await this.prisma.organizationPositionRolePolicy.findMany({
