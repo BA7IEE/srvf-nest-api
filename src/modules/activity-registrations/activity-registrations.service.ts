@@ -211,8 +211,9 @@ export class ActivityRegistrationsService {
   // 冻结稿 §11 + 决断①②)升级:判权走 authz.explain,ref 矩阵——
   //   - list / exportCsv(嵌套 :activityId)传 {type:'activity', id: activityId} 父 ref
   //   - approve / reject / cancelAdmin 传 {type:'activity_registration', id}(点动作)
-  //   - create(代报名)/ listAllForAdmin(扁平跨轴)/ listForMemberAdmin(队员轴跨活动)无 ref
-  //     (no-ref = GLOBAL-only,行为锁天然成立;不在冻结稿①点动作枚举内,DoD scoped e2e 亦未列)
+  //   - create(代报名)无 ref(GLOBAL-only)
+  //   - listAllForAdmin 通过 getVisibleOrganizationScope 下推活动所属组织范围
+  //   - listForMemberAdmin 传 {type:'member', id: memberId}(成员主归属点授权)
   // NOT_FOUND 回退沿 PR9 范式:resource_not_found 时退回 rbac.can 全局码判定——持码者 return
   // (交回调用方后续 findActivityOrThrow / findRegistrationOrThrow 抛既有 NOT_FOUND,「先判权后查
   // 资源」行为锁不变),无码者 30100 防枚举。管理端 8 端点第一条语句调用;list / exportCsv 共用 read
@@ -228,6 +229,35 @@ export class ActivityRegistrationsService {
       return;
     }
     throw new BizException(BizCode.RBAC_FORBIDDEN);
+  }
+
+  // v0.49:扁平报名工作台按 activity.organizationId 下推授权范围；用户显式组织筛选
+  // 与授权组织集合取交集。GLOBAL 且无筛选时保持旧查询，不额外加 where。
+  private async resolveVisibleOrganizationIds(
+    currentUser: CurrentUserPayload,
+    organizationId: string | undefined,
+    includeDescendants: boolean | undefined,
+  ): Promise<string[] | undefined> {
+    const authScope = await this.authz.getVisibleOrganizationScope(
+      currentUser,
+      'activity-registration.read.record',
+    );
+    if (!authScope.hasPermission) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+
+    const requestedOrgIds =
+      organizationId === undefined
+        ? undefined
+        : includeDescendants
+          ? await this.organizations.queryDescendantOrgIds(organizationId)
+          : [organizationId];
+
+    if (authScope.global) return requestedOrgIds;
+    if (requestedOrgIds === undefined) return authScope.organizationIds;
+
+    const visibleOrgIds = new Set(authScope.organizationIds);
+    return requestedOrgIds.filter((id) => visibleOrgIds.has(id));
   }
 
   private jsonAsObject(v: Prisma.JsonValue | null): Record<string, unknown> | null {
@@ -539,8 +569,6 @@ export class ActivityRegistrationsService {
     query: ListRegistrationsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<AdminRegistrationListItemDto>> {
-    await this.assertCanOrThrow(currentUser, 'activity-registration.read.record');
-
     const {
       page,
       pageSize,
@@ -556,6 +584,11 @@ export class ActivityRegistrationsService {
       dateTo,
       expand,
     } = query;
+    const visibleOrganizationIds = await this.resolveVisibleOrganizationIds(
+      currentUser,
+      organizationId,
+      includeDescendants,
+    );
     const expandSet = parseExpandQuery(expand, REGISTRATION_EXPAND_WHITELIST);
 
     const filters: Prisma.ActivityRegistrationWhereInput = {};
@@ -574,10 +607,8 @@ export class ActivityRegistrationsService {
     if (activityQ !== undefined) {
       activityWhere.title = { contains: activityQ, mode: 'insensitive' };
     }
-    if (organizationId !== undefined) {
-      activityWhere.organizationId = includeDescendants
-        ? { in: await this.organizations.queryDescendantOrgIds(organizationId) }
-        : organizationId;
+    if (visibleOrganizationIds !== undefined) {
+      activityWhere.organizationId = { in: visibleOrganizationIds };
     }
     if (Object.keys(activityWhere).length > 0) filters.activity = activityWhere;
 
@@ -635,7 +666,10 @@ export class ActivityRegistrationsService {
     query: ListRegistrationsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<PageResultDto<AdminRegistrationListItemDto>> {
-    await this.assertCanOrThrow(currentUser, 'activity-registration.read.record');
+    await this.assertCanOrThrow(currentUser, 'activity-registration.read.record', {
+      type: 'member',
+      id: memberId,
+    });
     // 队员存在性守卫(不存在 / 软删 → 15001,镜像 admin-member-insurances inline 检查)。
     const member = await this.prisma.member.findFirst({
       where: notDeletedWhere({ id: memberId }),
