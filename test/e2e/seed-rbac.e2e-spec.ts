@@ -368,7 +368,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
     expect(bindings).toEqual([]);
   });
 
-  it('D3 漂移哨兵:PROTECTED_ROLE_CODES 的 7 个内置角色均由 seed 建立', async () => {
+  it('D3 漂移哨兵:PROTECTED_ROLE_CODES 的 9 个内置角色均由 seed 建立', async () => {
     const result = runSeed({
       APP_ENV: 'test',
       SUPER_ADMIN_USERNAME: 'rbac-seed-protected',
