@@ -7,8 +7,11 @@
 > 下一个 minor 候选:v0.48.0。
 >
 > **⚠️ 行为变更(贡献值)**:全局每日贡献值上限调整为 **3**。聚合仍按 `checkInAt` 北京日分组、approved sheet only、读时实时计算;历史记录不分生效日,会一并按新上限重算,因此 App 入队进度与 admin 队员 360 生涯累计数字可能变大。`CONTRIBUTION_THRESHOLD=5` 不变。
+>
+> **⚠️ 行为变更(入队意向部门)**:App 发起/修改入队申请的 `targetOrganizationIds` 与 Admin 配轮 `maxTargetOrgs` 硬上限由 **8** 收紧为 **2**。旧轮数据库值不订正;App 写侧校验与响应回显均按 `min(轮配置或默认 2,硬上限 2)`。历史已提交的三部门以上申请保持原样有效,仅新写入受限。
 
 - **贡献值每日上限调整**:单一真相源 `GLOBAL_DAILY_CONTRIBUTION_CAP` 改为 `Prisma.Decimal('3')`;team-join `computeContribution` / `computeCappedContribution` 与 attendances 队员 360 跨轴复用同一封顶核,历史考勤记录按新值实时重算。同步翻面 unit、team-join e2e 与 admin cross-axis e2e,并更新 App/admin handoff 与 active 非归档表述。0 schema / 0 migration / 0 数据订正 / 0 新端点 / 0 DTO 字段 / 0 权限码 / 0 BizCode / 0 audit event / 0 依赖;`ContributionRule.dailyCap` deprecated 列保持不动。
+- **入队意向部门上限收紧**:`TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS` / `TEAM_JOIN_MAX_TARGET_ORGS` 均改为 `2`;App 发起/修改 DTO 最多 2 项,Admin 开轮/改轮 `maxTargetOrgs` 仅收 `[1,2]`。旧轮 `maxTargetOrgs>2` 不改行、不回填,App 校验与回显统一钳制为 2;历史已提交的 >2 部门数组原样保留。新增真实 DB e2e 锁定旧轮回显 2、历史数组保留及新提交三部门返 `40000`。0 schema / 0 migration / 0 数据订正 / 0 新端点 / 0 DTO 字段 / 0 权限码 / 0 BizCode / 0 audit event / 0 依赖。
 
 ## v0.47.0 - 2026-07-14
 

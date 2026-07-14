@@ -17,6 +17,7 @@ import {
   APP_STATUS_JOINING,
   CYCLE_STATUS_OPEN,
   TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS,
+  TEAM_JOIN_MAX_TARGET_ORGS,
   type GateMarks,
   allGeneralGatesSatisfied,
   isUnenrolledVolunteer,
@@ -105,7 +106,11 @@ export class AppMeTeamJoinService {
     tx: PrismaTx,
   ): Promise<string[]> {
     const unique = [...new Set(orgIds)];
-    const maxTargetOrgs = cycle.maxTargetOrgs ?? TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS;
+    // 旧轮可能存有 > 当前硬上限的历史配置;不订正存量行,所有新写校验按有效上限钳制。
+    const maxTargetOrgs = Math.min(
+      cycle.maxTargetOrgs ?? TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS,
+      TEAM_JOIN_MAX_TARGET_ORGS,
+    );
     if (unique.length > maxTargetOrgs) {
       throw new BizException(BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE);
     }
@@ -257,7 +262,11 @@ export class AppMeTeamJoinService {
       openOrganizationIds: Array.isArray(row.cycle.openOrganizationIds)
         ? (row.cycle.openOrganizationIds as string[])
         : [],
-      maxTargetOrgs: row.cycle.maxTargetOrgs ?? TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS,
+      // 与写侧校验保持同一有效口径;旧轮原值不改,App 只回显硬上限内的有效值。
+      maxTargetOrgs: Math.min(
+        row.cycle.maxTargetOrgs ?? TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS,
+        TEAM_JOIN_MAX_TARGET_ORGS,
+      ),
       selectedOrganizationId: row.selectedOrganizationId,
       gates: buildGateStatus(marks, row.cycle.openedAt, now),
       generalGatesSatisfied: allGeneralGatesSatisfied(marks, row.cycle.openedAt, now),

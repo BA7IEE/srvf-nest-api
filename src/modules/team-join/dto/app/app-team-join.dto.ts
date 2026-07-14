@@ -15,8 +15,9 @@ const ORG_ID_MAX = 64;
 class TargetOrganizationsInput {
   @ApiProperty({
     type: [String],
-    description:
-      '候选目标部门 orgId(≥1;每个须存在且 ACTIVE、属于本轮开放清单,去重后数量不得超过轮上限)',
+    minItems: 1,
+    maxItems: TEAM_JOIN_MAX_TARGET_ORGS,
+    description: `候选目标部门 orgId(1..${TEAM_JOIN_MAX_TARGET_ORGS};每个须存在且 ACTIVE、属于本轮开放清单,去重后数量不得超过轮有效上限)`,
   })
   @IsArray()
   @ArrayMinSize(1, { message: '至少选择一个目标部门' })
@@ -43,7 +44,9 @@ export class AppTeamJoinApplicationDto {
   @ApiProperty({ type: [String], description: '本轮开放部门清单(空=全部 ACTIVE 部门)' })
   openOrganizationIds!: string[];
   @ApiProperty({
-    description: `本轮候选部门数上限(未配置时默认 ${TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS})`,
+    minimum: 1,
+    maximum: TEAM_JOIN_MAX_TARGET_ORGS,
+    description: `本轮候选部门数有效上限(未配置时默认 ${TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS};旧轮存值超过硬上限 ${TEAM_JOIN_MAX_TARGET_ORGS} 时按 ${TEAM_JOIN_MAX_TARGET_ORGS} 回显)`,
   })
   maxTargetOrgs!: number;
   @ApiPropertyOptional({ description: '最终选定部门(一键入队后)', nullable: true })
