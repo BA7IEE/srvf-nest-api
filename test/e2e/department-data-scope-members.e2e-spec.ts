@@ -48,6 +48,7 @@ interface Person {
 describe('v0.49 department data scope — member axis', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let rootId: string;
   let sectId: string;
   let childId: string;
   let swrtId: string;
@@ -60,6 +61,7 @@ describe('v0.49 department data scope — member axis', () => {
   let sectCertificateId: string;
   let sectContactId: string;
   let leader: Person;
+  let viceCaptain: Person;
   let deputy: Person;
   let groupDeputy: Person;
   let noPermission: Person;
@@ -110,6 +112,9 @@ describe('v0.49 department data scope — member axis', () => {
     runSeed();
     prisma = app.get(PrismaService);
 
+    rootId = (
+      await prisma.organization.findFirstOrThrow({ where: { code: 'SRVF' }, select: { id: true } })
+    ).id;
     sectId = (
       await prisma.organization.findFirstOrThrow({ where: { code: 'SECT' }, select: { id: true } })
     ).id;
@@ -153,6 +158,7 @@ describe('v0.49 department data scope — member axis', () => {
     });
 
     leader = await mkPerson('leader');
+    viceCaptain = await mkPerson('vice-captain');
     deputy = await mkPerson('deputy');
     groupDeputy = await mkPerson('group-deputy');
     noPermission = await mkPerson('none');
@@ -161,7 +167,9 @@ describe('v0.49 department data scope — member axis', () => {
     scopedWriter = await mkPerson('writer');
 
     const positions = await prisma.organizationPosition.findMany({
-      where: { code: { in: ['dept-leader', 'dept-deputy', 'deputy-group-leader'] } },
+      where: {
+        code: { in: ['dept-leader', 'vice-captain', 'dept-deputy', 'deputy-group-leader'] },
+      },
       select: { id: true, code: true },
     });
     const positionId = (code: string): string =>
@@ -172,6 +180,12 @@ describe('v0.49 department data scope — member axis', () => {
           memberId: leader.memberId,
           organizationId: sectId,
           positionId: positionId('dept-leader'),
+          startedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+        {
+          memberId: viceCaptain.memberId,
+          organizationId: rootId,
+          positionId: positionId('vice-captain'),
           startedAt: new Date('2026-01-01T00:00:00.000Z'),
         },
         {
@@ -386,6 +400,36 @@ describe('v0.49 department data scope — member axis', () => {
       .set('Authorization', leader.authHeader)
       .send({ displayName: '越界更新' });
     expectBizError(writeCross, BizCode.RBAC_FORBIDDEN);
+
+    for (const path of [
+      `/api/admin/v1/members/${crossMemberId}/profile`,
+      `/api/admin/v1/members/${crossMemberId}/certificates`,
+    ]) {
+      const nestedCross = await request(httpServer(app))
+        .get(path)
+        .set('Authorization', leader.authHeader);
+      expectBizError(nestedCross, BizCode.RBAC_FORBIDDEN);
+    }
+  });
+
+  it('vice-captain@root 自动全队只读，但任何成员写动作仍 30100', async () => {
+    const list = await request(httpServer(app))
+      .get('/api/admin/v1/members?page=1&pageSize=100')
+      .set('Authorization', viceCaptain.authHeader);
+    expect(list.status).toBe(200);
+    const ids = list.body.data.items.map((item: { id: string }) => item.id);
+    expect(ids).toEqual(expect.arrayContaining([sectMemberId, childMemberId, crossMemberId]));
+
+    const crossProfile = await request(httpServer(app))
+      .get(`/api/admin/v1/members/${crossMemberId}/profile`)
+      .set('Authorization', viceCaptain.authHeader);
+    expect(crossProfile.status).toBe(200);
+
+    const write = await request(httpServer(app))
+      .patch(`/api/admin/v1/members/${crossMemberId}`)
+      .set('Authorization', viceCaptain.authHeader)
+      .send({ displayName: '副队长不可写' });
+    expectBizError(write, BizCode.RBAC_FORBIDDEN);
   });
 
   it('副职继承只读投影：本树可读、敏感字段掩码、全部写仍 30100', async () => {
