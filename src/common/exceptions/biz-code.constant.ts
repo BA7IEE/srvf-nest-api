@@ -1079,7 +1079,7 @@ export const BizCode = {
     message: '该报名已处于终态(已发号/未通过/已撤销),无法撤销',
     httpStatus: HttpStatus.CONFLICT,
   },
-  // 招新证书审核闭环:红十字/BSAFE 门槛标完成前须有对应类别证书图。
+  // 招新证书审核闭环:急救资质/BSAFE 门槛标完成前须有对应类别证书图。
   RECRUITMENT_CERTIFICATE_IMAGE_REQUIRED: {
     code: 28053,
     message: '请先上传对应证书图片后再标记门槛完成',

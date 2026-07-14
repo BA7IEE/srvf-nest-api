@@ -155,7 +155,7 @@ describe('RecruitmentStatsService.getCycleStats · 五组聚合(多态夹具)', 
       { code: 'patrol1', name: '巡山一', completedCount: 3 }, // t1 + t2 + td
       { code: 'patrol2', name: '巡山二', completedCount: 2 }, // t1 + td
       { code: 'training', name: '培训', completedCount: 2 }, // t2 + td
-      { code: 'redCross', name: '红十字', completedCount: 1 }, // td
+      { code: 'redCross', name: '急救资质', completedCount: 1 }, // td
       { code: 'bsafe', name: 'BSAFE', completedCount: 1 }, // td
     ]);
   });

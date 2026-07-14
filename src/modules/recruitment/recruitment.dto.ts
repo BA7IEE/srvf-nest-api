@@ -329,7 +329,8 @@ export class RecruitmentCertificateUploadDto {
   category!: string;
 
   @ApiProperty({
-    description: '发证机构(自由文本;前端可提供红十字会/深圳市急救中心快捷项)',
+    description:
+      '发证机构(自由文本;任一被认可的急救资质发证机构均可,前端可提供红十字会/深圳市急救中心等快捷项)',
     maxLength: 128,
   })
   @IsString()
@@ -641,11 +642,14 @@ export class UpdateRecruitmentCycleDto {
   @MaxLength(16)
   statusCode?: string;
 
-  @ApiPropertyOptional({ description: '容量上限(可临时增容)' })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: '容量上限(可临时增容;传 null 清空=改回不限人数)',
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
-  capacity?: number;
+  capacity?: number | null;
 
   @ApiPropertyOptional({ description: '见面会信息(后填)' })
   @IsOptional()

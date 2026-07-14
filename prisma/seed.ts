@@ -2926,7 +2926,7 @@ const RECRUITMENT_APPLICATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed>
     action: 'mark',
     resourceType: 'threshold',
     description:
-      '标/清门槛完成(巡山×2/培训/红十字/BSAFE;幂等;末次完成自动推进待综合评定;评审稿 E-R2-2)',
+      '标/清门槛完成(巡山×2/培训/急救资质/BSAFE;幂等;末次完成自动推进待综合评定;评审稿 E-R2-2)',
   },
   {
     code: 'recruitment-application.evaluate.assessment',

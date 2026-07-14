@@ -1311,7 +1311,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(empty.body.data.items).toEqual([]);
   });
 
-  it('A5/F7-③ promote 搬发证真值,approved 写 verifyNote,未审不写,并清三列', async () => {
+  it('A5/F7-③ promote 搬发证真值,approved 继承 verified(审核人/时间/备注),未审仍 pending,并清三列', async () => {
     const cycle = await openCycle();
     await createAppRow(cycle.id, {
       statusCode: 'publicity',
@@ -1338,7 +1338,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     const uploaded = before.certificateImages as Record<string, string[]>;
     const reviewer = await prisma.user.findUniqueOrThrow({
       where: { username: 'recruit_admin' },
-      select: { id: true },
+      select: { id: true, memberId: true },
     });
     await prisma.recruitmentApplication.update({
       where: { id: before.id },
@@ -1348,6 +1348,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
             status: 'approved',
             at: '2026-07-12T08:00:00.000Z',
             by: reviewer.id,
+            note: '招新期审核已通过,证件与本人一致',
           },
         },
       },
@@ -1364,16 +1365,22 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(certs).toHaveLength(2);
     expect(certs.map((c) => c.certTypeCode)).toEqual(['bsafe', 'first_aid']);
     for (const c of certs) {
-      expect(c.certStatusCode).toBe('pending'); // 走既有 certificates verify/reject 核验流
       expect(c.isInternal).toBe(false);
     }
+    // 招新期 approved → 继承为 verified(审核人=reviewer.memberId〔SUPER_ADMIN 无 member → null〕/
+    // 审核时间=review.at / 审核备注原样继承),不再重建成 pending。
     const firstAid = certs.find((c) => c.certTypeCode === 'first_aid');
+    expect(firstAid?.certStatusCode).toBe('verified');
+    expect(firstAid?.verifiedBy).toBe(reviewer.memberId);
+    expect(firstAid?.verifiedAt?.toISOString()).toBe('2026-07-12T08:00:00.000Z');
+    expect(firstAid?.verifyNote).toBe('招新期审核已通过,证件与本人一致');
     expect(firstAid?.issuingOrg).toBe('深圳市红十字会');
     expect(firstAid?.issuedAt.toISOString()).toBe('2026-07-01T00:00:00.000Z');
-    expect(firstAid?.verifyNote).toBe(
-      '招新阶段图片审核已通过 2026-07-12T08:00:00.000Z by recruit_admin',
-    );
+    // 未审类别仍建 pending,verify 三字段留空,走既有 certificates verify/reject 核验流。
     const bsafe = certs.find((c) => c.certTypeCode === 'bsafe');
+    expect(bsafe?.certStatusCode).toBe('pending');
+    expect(bsafe?.verifiedBy).toBeNull();
+    expect(bsafe?.verifiedAt).toBeNull();
     expect(bsafe?.issuingOrg).toBe('深圳市急救中心');
     expect(bsafe?.issuedAt.toISOString()).toBe('2026-06-15T00:00:00.000Z');
     expect(bsafe?.verifyNote).toBeNull();
@@ -1422,9 +1429,12 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(cert.issuingOrg).toBe('申请人自报(招新上传,待核验)');
     const beijingToday = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
     expect(cert.issuedAt.toISOString().slice(0, 10)).toBe(beijingToday);
-    expect(cert.verifyNote).toBe(
-      '招新阶段图片审核已通过 2026-07-10T08:00:00.000Z by missing-reviewer-id',
-    );
+    // 招新期 approved 继承 verified:审核人 review.by 查无对应 User → verifiedBy 合法为 null(沿 Q-I2);
+    // 审核时间继承 review.at;该存量夹具无 note → verifyNote 为空。
+    expect(cert.certStatusCode).toBe('verified');
+    expect(cert.verifiedBy).toBeNull();
+    expect(cert.verifiedAt?.toISOString()).toBe('2026-07-10T08:00:00.000Z');
+    expect(cert.verifyNote).toBeNull();
   });
 
   it('A2/A3/G:未审不可标、approved 禁重传、清标后可再标、驳回后复通上传', async () => {
@@ -1538,6 +1548,25 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     await submit(validPayload({ wechatCode: 'code-h1', idCardNumber: ID_MATCH_A })); // 占 1 个 verified
     const full = await submit(validPayload({ wechatCode: 'code-h2', idCardNumber: ID_MATCH_B }));
     expectBizError(full, BizCode.RECRUITMENT_CYCLE_CAPACITY_FULL);
+  });
+
+  // ⑥c2 招新人数默认不限 + capacity 可清空回不限:更新传 capacity=null → 清空 → 超原上限仍可报名
+  it('⑥c2 更新 capacity=null 清空回不限 → 报名不再受 28031 限', async () => {
+    const cycle = await openCycle({ capacity: 1 });
+    const patched = await request(httpServer(app))
+      .patch(`${ADMIN_CYCLES}/${cycle.id}`)
+      .set('Authorization', adminAuth)
+      .send({ capacity: null });
+    expect(patched.status).toBe(200);
+    expect(patched.body.data.capacity).toBeNull();
+    expect(
+      (await prisma.recruitmentCycle.findUniqueOrThrow({ where: { id: cycle.id } })).capacity,
+    ).toBeNull();
+    // 原上限 1,清空后连报两个均 verified(不限人数)
+    const first = await submit(validPayload({ wechatCode: 'code-h3', idCardNumber: ID_MATCH_A }));
+    expect(first.body.data.statusCode).toBe('verified');
+    const second = await submit(validPayload({ wechatCode: 'code-h4', idCardNumber: ID_MATCH_B }));
+    expect(second.body.data.statusCode).toBe('verified');
   });
 
   // ⑥d 十项收口刀A:documentTypeCode 白名单(⚠️ 契约收紧)——名单外任意串此前会被当非大陆证件进人工队列
@@ -3039,7 +3068,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         { code: 'patrol1', name: '巡山一', completedCount: 1 },
         { code: 'patrol2', name: '巡山二', completedCount: 1 },
         { code: 'training', name: '培训', completedCount: 0 },
-        { code: 'redCross', name: '红十字', completedCount: 0 },
+        { code: 'redCross', name: '急救资质', completedCount: 0 },
         { code: 'bsafe', name: 'BSAFE', completedCount: 0 },
       ],
     });

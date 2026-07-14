@@ -4,7 +4,12 @@
 
 ## Unreleased
 
-> 下一个 minor 候选(当前为空)。
+> **⚠️ 行为变更(招新一键发号)**:promote 对招新阶段已 `approved` 的急救资质 / BSAFE 证书,由此前一律建 `pending` 改为**继承审核结论建为 `verified`**(审核人 `verifiedBy` / 审核时间 `verifiedAt` / 审核备注 `verifyNote` 一并搬入),核验人不再二次审核;仅上传未审的类别仍建 `pending` 走既有 verify/reject 核验流。
+
+- 招新业务三改(均落 `recruitment` 模块,**0 schema / 0 migration / 0 新端点 / 0 权限码 / 0 BizCode / 0 audit event / 0 依赖**):
+  - **急救资质命名(去「红十字」化)**:门槛显示名「红十字」统一为「急救资质」(单一真相源 `THRESHOLD_NAMES.redCross`,同驱动申请人进度 todoList 名与工作台 stats),连同证书审核 / 门槛 Swagger 文案、发证机构提示文案同步。**内部门槛 code 仍为 `redCross`**(暂保留,避免历史数据/接口兼容问题);发证机构本就自由文本,提示措辞改为「任一被认可的急救资质发证机构均可」(不限于红十字会,深圳市急救中心等救护员证同样有效)。
+  - **招新人数默认不限 + 可清空回不限**:确认 `RecruitmentCycle.capacity` 缺省即 `null`=不限、仅填数字才校验(后端本已满足);`UpdateRecruitmentCycleDto.capacity` 放宽为可空,传 `null` 清空=改回不限(向后兼容,老客户端不受影响)。临时编号退出不释放容量维持现状(正常业务基本不设上限)。
+  - **证书审核只审一次**:见顶部行为变更。审核人取招新审核人 `User.memberId`(无 member〔如 SUPER_ADMIN〕合法为 null,沿 certificates Q-I2);审核备注原样继承招新审核备注。
 
 ## v0.46.0 - 2026-07-14
 
