@@ -244,6 +244,35 @@ describe('招新三期(入队)App 自助面 e2e', () => {
     }
   });
 
+  it('H2 旧轮 maxTargetOrgs>2:App 回显钳制为 2,历史三部门申请保留,新提交三部门 → 40000', async () => {
+    const orgA = await makeOrg();
+    const orgB = await makeOrg();
+    const orgC = await makeOrg();
+    const cycleId = await openCycle({
+      openOrganizationIds: [orgA, orgB, orgC],
+      maxTargetOrgs: 8,
+    });
+    // 直连 Prisma 模拟上限收紧前已存在的旧轮与已提交三部门申请;生产不做数据订正。
+    await prisma.teamJoinApplication.create({
+      data: {
+        cycleId,
+        memberId: volA.memberId,
+        statusCode: 'joining',
+        targetOrganizationIds: [orgA, orgB, orgC],
+      },
+    });
+
+    const current = await request(httpServer(app))
+      .get(CURRENT)
+      .set('Authorization', volA.authHeader)
+      .expect(200);
+    expect(current.body.data.maxTargetOrgs).toBe(2);
+    expect(current.body.data.targetOrganizationIds).toEqual([orgA, orgB, orgC]);
+
+    const rejected = await submit(volB.authHeader, [orgA, orgB, orgC]);
+    expectBizError(rejected, BizCode.BAD_REQUEST, { strictMessage: false });
+  });
+
   it('⑥ 空候选 → 400(ArrayMinSize)', async () => {
     await openCycle();
     const res = await request(httpServer(app))

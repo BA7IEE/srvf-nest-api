@@ -8,8 +8,8 @@ import { Prisma } from '@prisma/client';
 // ===== 入队轮状态(String;后台开关;沿 recruitment CYCLE_STATUS 范式)=====
 export const CYCLE_STATUS_OPEN = 'open';
 export const CYCLE_STATUS_CLOSED = 'closed';
-export const TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS = 8;
-export const TEAM_JOIN_MAX_TARGET_ORGS = 8;
+export const TEAM_JOIN_DEFAULT_MAX_TARGET_ORGS = 2;
+export const TEAM_JOIN_MAX_TARGET_ORGS = 2;
 
 // ===== 入队申请状态机(String,无 enum;评审稿 E-J-3)=====
 export const APP_STATUS_JOINING = 'joining'; // 考核中(初态)

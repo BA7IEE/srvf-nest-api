@@ -377,6 +377,12 @@ describe('招新三期(入队)admin 面 e2e', () => {
     expect(created.body.data.openOrganizationIds).toEqual([active.id]);
     expect(created.body.data.maxTargetOrgs).toBe(2);
 
+    const overLimit = await request(httpServer(app))
+      .patch(`${ADMIN_CYCLES}/${created.body.data.id}`)
+      .set('Authorization', adminAuth)
+      .send({ maxTargetOrgs: 3 });
+    expectBizError(overLimit, BizCode.BAD_REQUEST, { strictMessage: false });
+
     const cleared = await request(httpServer(app))
       .patch(`${ADMIN_CYCLES}/${created.body.data.id}`)
       .set('Authorization', adminAuth)
