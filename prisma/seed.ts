@@ -3394,10 +3394,9 @@ async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
 // - `org-supervisor`(分管推导用只读角色,BD-3 定稿 4 码;`activity.read.record` /
 //   `attendance-record.read.record` 2 个候选码本刀不加,沿 §4.3 表末 🟡 维持未 seed)。
 //
-// **🔴 R5 安全红线:** 副职(vice-captain / dept-deputy / deputy-group-leader)**零** policy 行 ——
-// 下方 POSITION_ROLE_POLICY_SEED 只登记 3 条正职映射,不为副职写任何行;`seedPositionRolePolicies`
-// 末尾另有运行时断言兜底(防未来误改)。**这 3 角色本刀不指派给任何 user**(PR8 才据职务/分管动态推导),
-// 不影响 RbacService.can() 判权语义;policy 表本身纯配置,绝不被任何判权路径读。
+// **R5 v0.49 新不变量(2026-07-14 明文授权取代旧「副职零 policy」):** 三个副职仅映射到
+// 对应正职码集的只读投影角色,scope=TREE;投影恒排除 *.read.sensitive 与所有写码。
+// `seedPositionRolePolicies` 末尾做运行时等值断言,防未来把管理角色或写码误配给副职。
 const ORG_ADMIN_ROLE_CODE = 'org-admin';
 const ORG_ADMIN_DISPLAY_NAME = '组织业务管理员(队长/部长)';
 const ORG_ADMIN_DESCRIPTION =
@@ -3418,6 +3417,20 @@ const GROUP_MANAGER_DESCRIPTION =
   'activity-registration.read.record);不含 member 增删改/状态、attendance.final-*、*.read.sensitive、' +
   'activity 增删改/发布/取消、招新/入队/保险管理、content-image/content-file 附件写。本刀零 user 持有,' +
   'PR8 起由职务任职动态推导。';
+
+const ORG_READONLY_ROLE_CODE = 'org-readonly';
+const ORG_READONLY_DISPLAY_NAME = '组织只读观察员(副队长/副部长)';
+const ORG_READONLY_DESCRIPTION =
+  '职务→角色只读投影(v0.49.0 R5 新不变量):vice-captain / dept-deputy 经 ' +
+  'PositionRolePolicy 映射本角色,scope=TREE。码集从 org-admin 动态过滤 *.read.* / ' +
+  'attachment.view.*,恒排除 *.read.sensitive 与所有写码;不手工维护第二份权限清单。';
+
+const GROUP_READONLY_ROLE_CODE = 'group-readonly';
+const GROUP_READONLY_DISPLAY_NAME = '小组只读观察员(副组长)';
+const GROUP_READONLY_DESCRIPTION =
+  '职务→角色只读投影(v0.49.0 R5 新不变量):deputy-group-leader 经 ' +
+  'PositionRolePolicy 映射本角色,scope=TREE。码集从 group-manager 动态过滤 *.read.* / ' +
+  'attachment.view.*,恒排除 *.read.sensitive 与所有写码;正职没有的可见性副职也没有。';
 
 const ORG_SUPERVISOR_ROLE_CODE = 'org-supervisor';
 const ORG_SUPERVISOR_DISPLAY_NAME = '分管监督员(只读)';
@@ -3486,6 +3499,18 @@ const GROUP_MANAGER_PERMISSION_CODES: ReadonlyArray<string> = [
   'activity-registration.read.record',
 ];
 
+// v0.49.0 副职只读投影:唯一来源是对应正职码集,禁止手抄列表。attachment.view.* 是既有
+// 非 read 命名的只读能力;敏感明文码无条件排除,即使未来误进入正职码集也不会下放。
+const isReadonlyProjectionCode = (code: string): boolean =>
+  !code.endsWith('.read.sensitive') &&
+  (code.includes('.read.') || code.startsWith('attachment.view.'));
+
+const ORG_READONLY_PERMISSION_CODES: ReadonlyArray<string> = ORG_ADMIN_PERMISSION_SEED.map(
+  (permission) => permission.code,
+).filter(isReadonlyProjectionCode);
+const GROUP_READONLY_PERMISSION_CODES: ReadonlyArray<string> =
+  GROUP_MANAGER_PERMISSION_CODES.filter(isReadonlyProjectionCode);
+
 // org-supervisor 码集(冻结稿 §2.4 BD-3 定稿;4 条,不含 2 个候选码)。
 const ORG_SUPERVISOR_PERMISSION_CODES: ReadonlyArray<string> = [
   'member.read.record',
@@ -3494,8 +3519,8 @@ const ORG_SUPERVISOR_PERMISSION_CODES: ReadonlyArray<string> = [
   'certificate.read.record',
 ];
 
-// 默认职务→角色 policy(冻结稿 §3.7;**仅正职**,R5 副职不登记任何行)。scopeMode 全 TREE
-// (相对任职组织;root 队长/部长 = 全组织,非 root = 本队/本部/本组)。
+// 默认职务→角色 policy:3 个正职映射管理角色 + 3 个副职映射对应只读投影角色。
+// scopeMode 全 TREE(相对任职组织;root 任职 = 全组织,非 root = 本队/本部/本组)。
 const POSITION_ROLE_POLICY_SEED: ReadonlyArray<{
   positionCode: string;
   roleCode: string;
@@ -3508,21 +3533,35 @@ const POSITION_ROLE_POLICY_SEED: ReadonlyArray<{
     roleCode: GROUP_MANAGER_ROLE_CODE,
     scopeMode: PolicyScopeMode.TREE,
   },
+  {
+    positionCode: 'vice-captain',
+    roleCode: ORG_READONLY_ROLE_CODE,
+    scopeMode: PolicyScopeMode.TREE,
+  },
+  {
+    positionCode: 'dept-deputy',
+    roleCode: ORG_READONLY_ROLE_CODE,
+    scopeMode: PolicyScopeMode.TREE,
+  },
+  {
+    positionCode: 'deputy-group-leader',
+    roleCode: GROUP_READONLY_ROLE_CODE,
+    scopeMode: PolicyScopeMode.TREE,
+  },
 ];
 
-// R5 安全红线断言目标:副职职务 code(冻结稿 §3.7 🔴;这 3 个职务在本表必须恒为 0 行)。
-const R5_VICE_POSITION_CODES: ReadonlyArray<string> = [
-  'vice-captain',
-  'dept-deputy',
-  'deputy-group-leader',
-];
+const R5_VICE_POLICY_EXPECTED: ReadonlyMap<string, string> = new Map([
+  ['vice-captain', ORG_READONLY_ROLE_CODE],
+  ['dept-deputy', ORG_READONLY_ROLE_CODE],
+  ['deputy-group-leader', GROUP_READONLY_ROLE_CODE],
+]);
 
 // 依赖 seedPositions(职务 id)+ seedAttachmentPermissions(attachment.* 码)+ seedBizAdminRbac
 // (biz-admin 码集,org-admin 借其过滤而来)均已完成,故放在 main() 最后一步。
 // 幂等:RbacRole.upsert by code / RolePermission.upsert by (roleId,permissionId) /
 // OrganizationPositionRolePolicy.upsert by (positionId,roleId)。
 async function seedPositionRolePolicies(prisma: PrismaClient): Promise<void> {
-  // 1. upsert 3 个管理/监督角色(本刀不绑定给任何 user)。
+  // 1. upsert 3 个管理/监督角色 + 2 个副职只读投影角色(均不直接绑定给 user)。
   const orgAdminRole = await prisma.rbacRole.upsert({
     where: { code: ORG_ADMIN_ROLE_CODE },
     update: {},
@@ -3543,6 +3582,26 @@ async function seedPositionRolePolicies(prisma: PrismaClient): Promise<void> {
     },
     select: { id: true, code: true },
   });
+  const orgReadonlyRole = await prisma.rbacRole.upsert({
+    where: { code: ORG_READONLY_ROLE_CODE },
+    update: {},
+    create: {
+      code: ORG_READONLY_ROLE_CODE,
+      displayName: ORG_READONLY_DISPLAY_NAME,
+      description: ORG_READONLY_DESCRIPTION,
+    },
+    select: { id: true, code: true },
+  });
+  const groupReadonlyRole = await prisma.rbacRole.upsert({
+    where: { code: GROUP_READONLY_ROLE_CODE },
+    update: {},
+    create: {
+      code: GROUP_READONLY_ROLE_CODE,
+      displayName: GROUP_READONLY_DISPLAY_NAME,
+      description: GROUP_READONLY_DESCRIPTION,
+    },
+    select: { id: true, code: true },
+  });
   const orgSupervisorRole = await prisma.rbacRole.upsert({
     where: { code: ORG_SUPERVISOR_ROLE_CODE },
     update: {},
@@ -3555,7 +3614,7 @@ async function seedPositionRolePolicies(prisma: PrismaClient): Promise<void> {
   });
   console.log(
     `[seed] RBAC roles '${orgAdminRole.code}' / '${groupManagerRole.code}' / ` +
-      `'${orgSupervisorRole.code}' ensured`,
+      `'${orgReadonlyRole.code}' / '${groupReadonlyRole.code}' / '${orgSupervisorRole.code}' ensured`,
   );
 
   // 2. RolePermission 绑定(强校验:期望码数必须全部命中已 seed 的 Permission,否则说明调用顺序
@@ -3564,6 +3623,7 @@ async function seedPositionRolePolicies(prisma: PrismaClient): Promise<void> {
     roleId: string,
     roleCode: string,
     codes: ReadonlyArray<string>,
+    exact = false,
   ): Promise<void> => {
     const perms = await prisma.permission.findMany({
       where: { code: { in: [...codes] } },
@@ -3585,6 +3645,11 @@ async function seedPositionRolePolicies(prisma: PrismaClient): Promise<void> {
         create: { roleId, permissionId: perm.id },
       });
     }
+    if (exact) {
+      await prisma.rolePermission.deleteMany({
+        where: { roleId, permissionId: { notIn: perms.map((permission) => permission.id) } },
+      });
+    }
   };
 
   await bindRolePermissions(
@@ -3598,6 +3663,18 @@ async function seedPositionRolePolicies(prisma: PrismaClient): Promise<void> {
     GROUP_MANAGER_PERMISSION_CODES,
   );
   await bindRolePermissions(
+    orgReadonlyRole.id,
+    orgReadonlyRole.code,
+    ORG_READONLY_PERMISSION_CODES,
+    true,
+  );
+  await bindRolePermissions(
+    groupReadonlyRole.id,
+    groupReadonlyRole.code,
+    GROUP_READONLY_PERMISSION_CODES,
+    true,
+  );
+  await bindRolePermissions(
     orgSupervisorRole.id,
     orgSupervisorRole.code,
     ORG_SUPERVISOR_PERMISSION_CODES,
@@ -3605,14 +3682,18 @@ async function seedPositionRolePolicies(prisma: PrismaClient): Promise<void> {
   console.log(
     `[seed] RBAC role-permissions ensured ('${orgAdminRole.code}' ↔ ` +
       `${ORG_ADMIN_PERMISSION_SEED.length} / '${groupManagerRole.code}' ↔ ` +
-      `${GROUP_MANAGER_PERMISSION_CODES.length} / '${orgSupervisorRole.code}' ↔ ` +
+      `${GROUP_MANAGER_PERMISSION_CODES.length} / '${orgReadonlyRole.code}' ↔ ` +
+      `${ORG_READONLY_PERMISSION_CODES.length} / '${groupReadonlyRole.code}' ↔ ` +
+      `${GROUP_READONLY_PERMISSION_CODES.length} / '${orgSupervisorRole.code}' ↔ ` +
       `${ORG_SUPERVISOR_PERMISSION_CODES.length})`,
   );
 
-  // 3. upsert 默认 policy(仅正职;R5 副职不在 POSITION_ROLE_POLICY_SEED 中,本就不会写入)。
+  // 3. upsert 默认 policy(正职管理 + 副职只读投影)。
   const roleIdByCode = new Map<string, string>([
     [orgAdminRole.code, orgAdminRole.id],
     [groupManagerRole.code, groupManagerRole.id],
+    [orgReadonlyRole.code, orgReadonlyRole.id],
+    [groupReadonlyRole.code, groupReadonlyRole.id],
   ]);
   const positions = await prisma.organizationPosition.findMany({
     where: { code: { in: POSITION_ROLE_POLICY_SEED.map((p) => p.positionCode) } },
@@ -3636,19 +3717,54 @@ async function seedPositionRolePolicies(prisma: PrismaClient): Promise<void> {
     });
   }
   console.log(
-    `[seed] organization position role policies ensured (${POSITION_ROLE_POLICY_SEED.length} 条默认映射;仅正职,R5 副职零行)`,
+    `[seed] organization position role policies ensured (${POSITION_ROLE_POLICY_SEED.length} 条默认映射;副职只读投影)`,
   );
 
-  // 4. R5 安全红线运行时断言(冻结稿 §3.7 🔴 / §10.5):副职必须零 policy 行,防未来任何改动
-  //    误给副职塞入管理映射(总队 6 副队长各得近全组织管理 = goal 明禁的"部长=管理员")。
-  const viceViolationCount = await prisma.organizationPositionRolePolicy.count({
-    where: { position: { code: { in: [...R5_VICE_POSITION_CODES] } }, deletedAt: null },
+  // 4. R5 v0.49 运行时断言:副职 policy 必须与只读角色 1:1 等值,角色码集必须与动态投影
+  //    完全相等且恒零敏感/写码。任何额外管理 policy 或脏 RolePermission 都让 seed fail closed。
+  const vicePolicies = await prisma.organizationPositionRolePolicy.findMany({
+    where: { position: { code: { in: [...R5_VICE_POLICY_EXPECTED.keys()] } }, deletedAt: null },
+    select: {
+      scopeMode: true,
+      status: true,
+      position: { select: { code: true } },
+      role: { select: { code: true } },
+    },
   });
-  if (viceViolationCount > 0) {
-    throw new Error(
-      `[seed] R5 安全红线破坏:副职(${R5_VICE_POSITION_CODES.join('/')})存在 ` +
-        `${viceViolationCount} 条管理 policy 行,副职默认不得推导任何管理角色(冻结稿 §3.7 🔴 R5)。`,
+  const vicePoliciesValid =
+    vicePolicies.length === R5_VICE_POLICY_EXPECTED.size &&
+    vicePolicies.every(
+      (policy) =>
+        policy.role.code === R5_VICE_POLICY_EXPECTED.get(policy.position.code) &&
+        policy.scopeMode === PolicyScopeMode.TREE &&
+        policy.status === 'ACTIVE',
     );
+  if (!vicePoliciesValid) {
+    throw new Error(
+      `[seed] R5 安全红线破坏:副职 policy 必须恰好映射只读角色且 scope=TREE;` +
+        `实际=${vicePolicies.map((p) => `${p.position.code}->${p.role.code}@${p.scopeMode}`).join(',')}`,
+    );
+  }
+
+  for (const [roleCode, expectedCodes] of [
+    [ORG_READONLY_ROLE_CODE, ORG_READONLY_PERMISSION_CODES],
+    [GROUP_READONLY_ROLE_CODE, GROUP_READONLY_PERMISSION_CODES],
+  ] as const) {
+    const actual = await prisma.rolePermission.findMany({
+      where: { role: { code: roleCode } },
+      select: { permission: { select: { code: true } } },
+    });
+    const actualCodes = actual.map((row) => row.permission.code).sort();
+    const expected = [...expectedCodes].sort();
+    if (
+      actualCodes.length !== expected.length ||
+      actualCodes.some((code, index) => code !== expected[index]) ||
+      actualCodes.some((code) => !isReadonlyProjectionCode(code))
+    ) {
+      throw new Error(
+        `[seed] R5 安全红线破坏:只读角色 '${roleCode}' 码集必须等于正职只读投影且零敏感/写码`,
+      );
+    }
   }
 }
 
@@ -3832,7 +3948,7 @@ async function main(): Promise<void> {
     await seedBizAdminRbac(prisma);
 
     // 终态 scoped-authz PR7「职务→角色 policy」(2026-07-01;冻结稿 §3.7):3 管理/监督角色 +
-    //   绑定 + 3 条默认职务→角色映射(仅正职,R5 副职零行)。放在最后一步:依赖 seedPositions
+    //   绑定 + 6 条默认职务→角色映射(3 正职管理 + 3 副职只读投影)。放在最后一步:依赖 seedPositions
     //   (职务 id)+ seedAttachmentPermissions(attachment.* 码)+ seedBizAdminRbac(biz-admin
     //   码集,org-admin 借其过滤而来)均已完成。
     await seedPositionRolePolicies(prisma);

@@ -11,17 +11,18 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // (execSync pnpm tsx prisma/seed.ts;期望码集为本 spec 独立维护,与 seed 内部表对照防漂移)。
 //
 // 覆盖(goal DoD 5 / 7):
-//   1. 内置角色 3→6:org-admin / group-manager / org-supervisor 存在,码集逐码相等
+//   1. 内置角色 7→9:新增 org-readonly / group-readonly,码集从对应正职动态投影并逐码相等
 //      (org-admin 57 = biz-admin 74〔2026-07-03 摘码微刀后已不含终审两码;2026-07-04 F4 +membership.transfer.record;
 //       2026-07-10 §F&A-3 +member-profile.read.sensitive 自动继承但被排除〕- 敏感 2
 //       - recruitment-* 8 - team-join-* 7;group-manager 22;org-supervisor 4 = BD-3 定稿,2 候选码不加)
-//   2. 3 条默认 policy(仅正职,scopeMode 全 TREE);org-supervisor 不是 policy 目标
-//   3. 🔴 R5 CI 断言:副职(vice-captain / dept-deputy / deputy-group-leader)policy 行数恒 = 0
-//   4. R5 运行时护栏生效:人为给副职塞行后重跑 seed → 非 0 退出
-//   5. 零指派 + 零漂移:3 新角色无任何 RoleBinding 持有者(判权零影响);
+//   2. 6 条默认 policy(3 正职管理 + 3 副职只读,scopeMode 全 TREE);org-supervisor 不是 policy 目标
+//   3. R5 v0.49 CI 断言:副职只映射对应只读角色,码集恒零写/零敏感
+//   4. R5 运行时护栏生效:人为给副职塞管理 policy 后重跑 seed → 非 0 退出
+//   5. 只读角色 RolePermission 精确同步:补缺失、删脏写码
+//   6. 零指派 + 零漂移:5 个职务/分管角色无任何 RoleBinding 持有者(判权零影响);
 //      ops-admin 95(队员账号闭环 v1 起)/ member 9 / biz-admin 74(§F&A-3 起)绑定数不变;
 //      6 保留码不绑 3 新角色(F1 哨兵延伸)
-//   6. 幂等:连续两次 seed counts / role id 稳定 + policy updatedAt 不 bump
+//   7. 幂等:连续两次 seed counts / role id 稳定 + policy updatedAt 不 bump
 //
 // 终态 scoped-authz PR9(2026-07-02)追加:第 7 内置角色 `attendance-final-reviewer`(冻结稿
 // 场景 4 / BD-2 终审中枢显式绑定载体)—— 角色全集 6→7;专属用例 7 锁「绑 3 既有码 + 零持有 +
@@ -173,6 +174,13 @@ const EXPECTED_GROUP_MANAGER_CODES = [
   'activity-registration.read.record',
 ] as const;
 
+const isReadonlyProjectionCode = (code: string): boolean =>
+  !code.endsWith('.read.sensitive') &&
+  (code.includes('.read.') || code.startsWith('attachment.view.'));
+
+const EXPECTED_ORG_READONLY_CODES = EXPECTED_ORG_ADMIN_CODES.filter(isReadonlyProjectionCode);
+const EXPECTED_GROUP_READONLY_CODES = EXPECTED_GROUP_MANAGER_CODES.filter(isReadonlyProjectionCode);
+
 // org-supervisor 4 码(BD-3 定稿;activity.read.record / attendance-record.read.record 2 候选码不加)。
 const EXPECTED_ORG_SUPERVISOR_CODES = [
   'member.read.record',
@@ -181,17 +189,27 @@ const EXPECTED_ORG_SUPERVISOR_CODES = [
   'certificate.read.record',
 ] as const;
 
-// 3 条默认 policy(冻结稿 §3.7;仅正职,R5)。
+// v0.49.0 默认 policy:3 正职管理 + 3 副职只读投影。
 const EXPECTED_POLICIES = [
   { positionCode: 'team-leader', roleCode: 'org-admin', scopeMode: 'TREE' },
   { positionCode: 'dept-leader', roleCode: 'org-admin', scopeMode: 'TREE' },
   { positionCode: 'group-leader', roleCode: 'group-manager', scopeMode: 'TREE' },
+  { positionCode: 'vice-captain', roleCode: 'org-readonly', scopeMode: 'TREE' },
+  { positionCode: 'dept-deputy', roleCode: 'org-readonly', scopeMode: 'TREE' },
+  { positionCode: 'deputy-group-leader', roleCode: 'group-readonly', scopeMode: 'TREE' },
 ] as const;
 
-// 🔴 R5:副职职务 code(policy 行数必须恒 = 0)。
-const VICE_POSITION_CODES = ['vice-captain', 'dept-deputy', 'deputy-group-leader'] as const;
+const EXPECTED_VICE_POLICIES = EXPECTED_POLICIES.filter((policy) =>
+  ['vice-captain', 'dept-deputy', 'deputy-group-leader'].includes(policy.positionCode),
+);
 
-const NEW_ROLE_CODES = ['org-admin', 'group-manager', 'org-supervisor'] as const;
+const NEW_ROLE_CODES = [
+  'org-admin',
+  'group-manager',
+  'org-readonly',
+  'group-readonly',
+  'org-supervisor',
+] as const;
 
 // 终态 scoped-authz PR9:第 7 内置角色(冻结稿场景 4 / BD-2);
 // v0.47.0 F2 后承载 read + 终审两码 + reopen 共 4 码。
@@ -223,7 +241,7 @@ async function boundCodesOf(prisma: PrismaService, roleCode: string): Promise<st
   return rows.map((r) => r.permission.code).sort();
 }
 
-describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内置角色 7)', () => {
+describe('prisma/seed.ts — position role policies + v0.49 vice readonly(内置角色 9)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -240,7 +258,7 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     await resetDb(app);
   });
 
-  it('1. 内置角色全集 = 7(PR7 3→6 + PR9 attendance-final-reviewer);org-admin(60)/ group-manager(22)/ org-supervisor(4)码集逐码相等', async () => {
+  it('1. 内置角色全集 = 9;正职/分管码集不变,两只读角色等于对应正职动态投影', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-1' }).code).toBe(0);
 
     const roles = await prisma.rbacRole.findMany({
@@ -253,7 +271,9 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
         'member',
         'biz-admin',
         'org-admin',
+        'org-readonly',
         'group-manager',
+        'group-readonly',
         'org-supervisor',
         FINAL_REVIEWER_ROLE_CODE,
       ]),
@@ -265,6 +285,12 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     );
     expect(await boundCodesOf(prisma, 'org-supervisor')).toEqual(
       [...EXPECTED_ORG_SUPERVISOR_CODES].sort(),
+    );
+    expect(await boundCodesOf(prisma, 'org-readonly')).toEqual(
+      [...EXPECTED_ORG_READONLY_CODES].sort(),
+    );
+    expect(await boundCodesOf(prisma, 'group-readonly')).toEqual(
+      [...EXPECTED_GROUP_READONLY_CODES].sort(),
     );
 
     // org-admin 负向自证(BD-1 ≠ SUPER_ADMIN / BD-2 终审归中枢 / §4.2 敏感 / 中央流程不下放):
@@ -288,9 +314,15 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     expect(supCodes.some((c) => /\.(create|update|delete|approve|reject|set|end)\./.test(c))).toBe(
       false,
     );
+    for (const roleCode of ['org-readonly', 'group-readonly']) {
+      const readonlyCodes = await boundCodesOf(prisma, roleCode);
+      expect(readonlyCodes.length).toBeGreaterThan(0);
+      expect(readonlyCodes.every(isReadonlyProjectionCode)).toBe(true);
+      expect(readonlyCodes.some((code) => code.endsWith('.read.sensitive'))).toBe(false);
+    }
   });
 
-  it('2. 3 条默认 policy(仅正职,scopeMode 全 TREE);org-supervisor 不是 policy 目标', async () => {
+  it('2. 6 条默认 policy(正职管理 + 副职只读,scopeMode 全 TREE);org-supervisor 不是 policy 目标', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-2' }).code).toBe(0);
 
     const policies = await prisma.organizationPositionRolePolicy.findMany({
@@ -303,7 +335,7 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
         role: { select: { code: true } },
       },
     });
-    expect(policies).toHaveLength(3);
+    expect(policies).toHaveLength(6);
     const got = policies
       .map((p) => ({
         positionCode: p.position.code,
@@ -314,23 +346,43 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     expect(got).toEqual(
       [...EXPECTED_POLICIES].sort((a, b) => a.positionCode.localeCompare(b.positionCode)),
     );
-    // conditionJson 本刀不用(3 角色合用后无需 nodeTypeCode 分流);status 全 ACTIVE
+    // conditionJson 不用;status 全 ACTIVE
     expect(policies.every((p) => p.conditionJson === null)).toBe(true);
     expect(policies.every((p) => p.status === 'ACTIVE')).toBe(true);
     // org-supervisor 不经职务 policy(分管与职务正交,PR8 由分管推导)
     expect(policies.some((p) => p.role.code === 'org-supervisor')).toBe(false);
   });
 
-  it('3. 🔴 R5 CI 断言:副职(vice-captain / dept-deputy / deputy-group-leader)policy 行数 = 0', async () => {
+  it('3. R5 v0.49:三个副职恰好映射对应只读角色且 scope=TREE', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-3' }).code).toBe(0);
 
-    const viceCount = await prisma.organizationPositionRolePolicy.count({
-      where: { position: { code: { in: [...VICE_POSITION_CODES] } }, deletedAt: null },
+    const policies = await prisma.organizationPositionRolePolicy.findMany({
+      where: {
+        position: {
+          code: { in: EXPECTED_VICE_POLICIES.map((policy) => policy.positionCode) },
+        },
+        deletedAt: null,
+      },
+      select: {
+        scopeMode: true,
+        position: { select: { code: true } },
+        role: { select: { code: true } },
+      },
     });
-    expect(viceCount).toBe(0);
+    expect(
+      policies
+        .map((policy) => ({
+          positionCode: policy.position.code,
+          roleCode: policy.role.code,
+          scopeMode: policy.scopeMode,
+        }))
+        .sort((a, b) => a.positionCode.localeCompare(b.positionCode)),
+    ).toEqual(
+      [...EXPECTED_VICE_POLICIES].sort((a, b) => a.positionCode.localeCompare(b.positionCode)),
+    );
   });
 
-  it('4. R5 运行时护栏:人为给副职塞 policy 行后重跑 seed → 非 0 退出', async () => {
+  it('4. R5 运行时护栏:人为给副职塞管理 policy 后重跑 seed → 非 0 退出', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-4' }).code).toBe(0);
 
     const viceCaptain = await prisma.organizationPosition.findUniqueOrThrow({
@@ -350,16 +402,46 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     expect(second.stderr).toContain('R5');
   });
 
-  it('5. 零指派 + 零漂移:3 新角色无任何持有者;ops-admin 96 / member 9 / biz-admin 81;保留码不绑', async () => {
+  it('5. 只读角色精确同步:重跑 seed 会补回缺失读码并删除脏写码', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-5' }).code).toBe(0);
 
-    // 3 新角色零 user 持有(判权唯一读源 RoleBinding 全类型;
+    const role = await prisma.rbacRole.findUniqueOrThrow({
+      where: { code: 'org-readonly' },
+      select: { id: true },
+    });
+    const [readPermission, writePermission] = await Promise.all([
+      prisma.permission.findUniqueOrThrow({
+        where: { code: 'member.read.record' },
+        select: { id: true },
+      }),
+      prisma.permission.findUniqueOrThrow({
+        where: { code: 'member.update.record' },
+        select: { id: true },
+      }),
+    ]);
+    await prisma.rolePermission.delete({
+      where: { roleId_permissionId: { roleId: role.id, permissionId: readPermission.id } },
+    });
+    await prisma.rolePermission.create({
+      data: { roleId: role.id, permissionId: writePermission.id },
+    });
+
+    expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-5' }).code).toBe(0);
+    expect(await boundCodesOf(prisma, 'org-readonly')).toEqual(
+      [...EXPECTED_ORG_READONLY_CODES].sort(),
+    );
+  });
+
+  it('6. 零指派 + 零漂移:5 个职务/分管角色无持有者;ops-admin 96 / member 9 / biz-admin 81;保留码不绑', async () => {
+    expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-6' }).code).toBe(0);
+
+    // 5 个职务/分管角色零直接持有(判权唯一读源 RoleBinding 全类型;
     // RbacService.can 只读 GLOBAL RoleBinding → 新角色对现有判权零影响)
     const newRoles = await prisma.rbacRole.findMany({
       where: { code: { in: [...NEW_ROLE_CODES] } },
       select: { id: true },
     });
-    expect(newRoles).toHaveLength(3);
+    expect(newRoles).toHaveLength(5);
     const newRoleIds = newRoles.map((r) => r.id);
     expect(await prisma.roleBinding.count({ where: { roleId: { in: newRoleIds } } })).toBe(0);
 
@@ -382,8 +464,8 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     expect(reservedBindings).toEqual([]);
   });
 
-  it('6. 幂等:连续两次 seed counts / role id 稳定 + policy updatedAt 不 bump', async () => {
-    expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-6' }).code).toBe(0);
+  it('7. 幂等:连续两次 seed counts / role id 稳定 + policy updatedAt 不 bump', async () => {
+    expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-7' }).code).toBe(0);
 
     const roleCount1 = await prisma.rbacRole.count();
     const rolePermCount1 = await prisma.rolePermission.count();
@@ -393,7 +475,7 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
       select: { id: true },
     });
 
-    expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-6' }).code).toBe(0);
+    expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-7' }).code).toBe(0);
 
     expect(await prisma.rbacRole.count()).toBe(roleCount1);
     expect(await prisma.rolePermission.count()).toBe(rolePermCount1);
@@ -411,12 +493,12 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     const policies = await prisma.organizationPositionRolePolicy.findMany({
       select: { createdAt: true, updatedAt: true },
     });
-    expect(policies).toHaveLength(3);
+    expect(policies).toHaveLength(6);
     expect(policies.every((p) => p.updatedAt.getTime() === p.createdAt.getTime())).toBe(true);
   });
 
-  it('7. attendance-final-reviewer:绑且仅绑 4 码(含 reopen);零持有;零 policy 行', async () => {
-    expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr9-seed-su-7' }).code).toBe(0);
+  it('8. attendance-final-reviewer:绑且仅绑 4 码(含 reopen);零持有;零 policy 行', async () => {
+    expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr9-seed-su-8' }).code).toBe(0);
 
     // 码集逐码相等(read + 终审两码 + reopen)。
     expect(await boundCodesOf(prisma, FINAL_REVIEWER_ROLE_CODE)).toEqual(

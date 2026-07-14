@@ -8,7 +8,9 @@ export const PROTECTED_ROLE_CODES = [
   'member',
   'biz-admin',
   'org-admin',
+  'org-readonly',
   'group-manager',
+  'group-readonly',
   'org-supervisor',
   'attendance-final-reviewer',
 ] as const;
