@@ -1,7 +1,7 @@
 // V2 第一阶段批次 6 audit_logs 模块类型契约(D6 v1.1 §8 / §10 / §11)。
 //
 // 本文件承载 3 个类型契约,与 audit-logs.service.ts 同进同退:
-//   1. AuditLogEvent  — 落库入口 union(首批 6 项起渐进迁入;第七刀后共 111 项)
+//   1. AuditLogEvent  — 落库入口 union(首批 6 项起渐进迁入;v0.47.0 F1 后共 112 项)
 //   2. AuditContext   — Prisma AuditLog.context Json 字段的运行时锁形(6 字段:3 必填 + 3 可选)
 //   3. AuditMeta      — controller 层从 @Req() 构造,显式传给 service
 //
@@ -23,6 +23,7 @@ export type AuditLogEvent =
   | 'certificate.delete' // PR #2 接入(certificates.service: softDelete)
   | 'certificate.verify' // PR #2 接入(certificates.service: verify)
   | 'certificate.reject' // PR #2 接入(certificates.service: reject)
+  | 'certificate.expire' // v0.47.0 到期扫描:verified → expired,同事务落 before/after;系统 actor 为空
   | 'contribution-rule.create' // PR #3 接入(contribution-rules.service: create)
   | 'contribution-rule.update' // PR #3 接入(contribution-rules.service: update)
   | 'contribution-rule.delete' // PR #3 接入(contribution-rules.service: softDelete)

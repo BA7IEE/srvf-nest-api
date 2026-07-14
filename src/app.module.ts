@@ -184,11 +184,12 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   content 读取面自签;状态机 draft/published/archived 立即生效无 cron;app/open 面 T3/T4 后续追加)。
     ContentModule,
     // B 队列 F5-T2(2026-06-11):@nestjs/schedule 全局装配——no-cron 铁律升级路径正式触发
-    //   (冻结评审稿 docs/archive/reviews/queue-b-otp-birthday-infra-review.md 拍板④/R-5;
-    //    解锁范围仅 notifications 生日批一个 @Cron;新增任何定时任务 = 新 D 档评审;
+    //   (生日批冻结稿 docs/archive/reviews/queue-b-otp-birthday-infra-review.md 拍板④/R-5;
+    //    v0.47.0 冻结稿 expiry-reminder-attendance-reopen-v0.47.0-review.md 再解锁到期扫描;
+    //    终态恰好 2 个 @Cron〔生日 + 到期提醒〕;新增第三个仍须新 D 档评审;
     //    数据清理不解锁,沿 docs/ops/sms-data-retention-sop.md 手动 SOP)。
     ScheduleModule.forRoot(),
-    // 生日祝福 job(G-7 首个落地点;零端点/零权限码;单实例部署前提,多实例需先加锁)
+    // notifications 两个 job(生日 + 到期提醒;零新增定时基础设施;单实例部署前提,多实例需先加锁)
     NotificationsModule,
   ],
   providers: [

@@ -49,6 +49,8 @@ export const NOTIFICATION_TYPE_RECRUITMENT = 'recruitment';
 // 活动/考勤 producer 定向通知类型(S4:考勤结果 / 报名审批 / 活动取消;三者同属活动域,复用 seed
 // notification_type item 'activity-reminder' 已内置 = '活动提醒';S4 不新增字典 type,评审稿 §9.4)。
 export const NOTIFICATION_TYPE_ACTIVITY_REMINDER = 'activity-reminder';
+// v0.47.0 到期提醒 producer：证书 / 个人保险定向提醒 + 队保单管理面广播共用一个类型。
+export const NOTIFICATION_TYPE_EXPIRY_REMINDER = 'expiry-reminder';
 
 // 定向(directed)通知的可见档(统一通知 S3):收件人恒为 member,故置 member 档。
 // feed 的广播分支已按 audienceType=broadcast 收窄,定向行**不借**可见档泄漏(仅 recipientMemberId=本人可见);

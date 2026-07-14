@@ -1,12 +1,13 @@
 # notifications — 本地铁律
 
-> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);冻结评审稿 [`/docs/archive/reviews/queue-b-otp-birthday-infra-review.md §6`](../../../docs/archive/reviews/queue-b-otp-birthday-infra-review.md);运维送审 SOP [`/docs/ops/sms-production-rollout-checklist.md`](../../../docs/ops/sms-production-rollout-checklist.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
+> 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);生日冻结评审稿 [`/docs/archive/reviews/queue-b-otp-birthday-infra-review.md §6`](../../../docs/archive/reviews/queue-b-otp-birthday-infra-review.md);到期提醒冻结评审稿 [`/docs/archive/reviews/expiry-reminder-attendance-reopen-v0.47.0-review.md`](../../../docs/archive/reviews/expiry-reminder-attendance-reopen-v0.47.0-review.md);运维送审 SOP [`/docs/ops/sms-production-rollout-checklist.md`](../../../docs/ops/sms-production-rollout-checklist.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
 
 ## Scope
 
 本模块自 2026-06-25 由「生日批单服务」扩为**统一通知中枢**(GAP-005;冻结评审稿 [`/docs/archive/reviews/unified-notification-dispatcher-review.md`](../../../docs/archive/reviews/unified-notification-dispatcher-review.md))。四个并存关注点:
 
-- **生日祝福短信 job**(G-7 首个落地点;2026-06-11 B 队列 goal F5):每日 09:00(Asia/Shanghai)`@Cron`,选取当日生日活跃队员经 [`/src/modules/sms/`](../sms/)`SmsProviderRouter.sendBirthdayGreeting` 逐个单发;**本仓唯一 `@Cron`**,流水落 `sms_send_logs`。
+- **生日祝福短信 job**(G-7 首个落地点;2026-06-11 B 队列 goal F5):每日 09:00(Asia/Shanghai)`@Cron`,选取当日生日活跃队员经 [`/src/modules/sms/`](../sms/)`SmsProviderRouter.sendBirthdayGreeting` 逐个单发;本仓两个 `@Cron` 之一,流水落 `sms_send_logs`。
+- **到期提醒 job**(v0.47.0):每日 09:00(Asia/Shanghai)第二个 `@Cron`;证书 60 天提醒 + 到期 `verified→expired` 同事务 audit、个人保险 30 天定向本人、队保单 30 天 management 系统广播;复用 `NotificationDispatcher`,保险 marker + 证书既有 marker/状态条件更新保证二跑幂等。
 - **统一通知 S1 站内信渠道**(2026-06-25):admin 撰写/发布面(`NotificationAdminController` 8 端点)+ 会员 app 拉取面(`NotificationAppController` 4 端点);`Notification` 广播 + `NotificationRead` 已读;**站内 = pull 零发送**;可见性**复用 `content.visibility`**(去 public = 4 档)。
 - **统一通知 S2 微信订阅 quota 渠道**(2026-06-25):admin 勾微信渠道 → publish **事务外**同步派发(`NotificationWechatDispatchService`);quota ack/status(`NotificationSubscriptionService`)+ 模板配置(`WechatSubscribeTemplateService` + `NotificationWechatTemplateAdminController`);`NotificationDelivery` 投递态 + `WechatSubscriptionQuota` 配额 + `WechatSubscribeTemplate` 模板;发送能力 additive 在 `wechat/` 模块。
 - **统一通知 S3 producer 接入 + 派发器 Effect 正式化**(2026-06-25):`NotificationDispatcher`(architecture-boundary §3.6 **首个真实 Effect**;`dispatchTargeted` 建**已发布定向行** = directed/system/authorUserId=null/跳过 draft 直 published → 站内 + 微信〔复用 S2 `dispatchDirected` 单收件人〕)由 **producer**(招新发号 `recruitment-promotion` / 入队 `team-join-enrollment`)在业务事务 **commit 后**直调(D-N5 单向直调,无事件总线);`Notification.recipientMemberId`(定向收件人,FK→Member Restrict)+ feed 扩 `buildFeedWhere`(广播可见 ∪ 本人定向,广播分支按 audienceType 收窄防泄漏,他人 31001 防枚举)。
@@ -17,17 +18,17 @@
 
 ## Local facts
 
-- **本仓唯一 `@Cron`**:no-cron 铁律升级路径 2026-06-11 正式触发(评审稿拍板④),解锁范围**仅生日批**;`ScheduleModule.forRoot()` 在 `app.module.ts` 全局装配
+- **本仓恰好两个 `@Cron`**:生日批 + v0.47.0 到期提醒;`ScheduleModule.forRoot()` 在 `app.module.ts` 全局装配。第三个 cron / interval / timeout 仍须独立 D 档评审
 - **选取六条件**(评审稿 E-B5,全部同时满足):`MemberProfile.birthDate` 月日=今天(固定 UTC+8 日界)/ profile 未软删 / Member ACTIVE 未软删 / User 存在 / `User.phone` 非空 / User ACTIVE 未软删;**仅发 `User.phone`**(拍板⑤,`MemberProfile.mobile` 永不使用);2/29 仅闰年当天发(不顺延)
 - **幂等防重发**(E-B6):发前查 `sms_send_logs`{同号 + templateKey=`birthday-greeting` + SENT + 当日 UTC+8};重启不重发(以 DB 为准);FAILED 不挡同日重跑(FAILED ≠ 已触达)
 - **失败语义**(E-B7):单条失败写 FAILED 行不重试不阻断;通道整体不可用(settings 缺失 / templateIdBirthday 空 / production-like DEV_STUB)→ 整批跳过零行
 - **不进 `audit_logs`**(E-B8,运营触达);应用日志一律 `maskPhone`;首版模板**零变量**(`TemplateParamSet=[]`)
-- **`runOnce()` 是唯一逻辑入口**(`@Cron` 为薄壳);e2e / unit 直调 `runOnce`,不等真实定时
+- **`runOnce()` 是两个 job 的唯一逻辑入口**(`@Cron` 都是薄壳);e2e / unit 直调 `runOnce`,不等真实定时
 - **docker-smoke 锚行**:`NotificationsModule.onModuleInit` 输出 `Birthday greeting cron registered (09:00 Asia/Shanghai)`,smoke workflow grep 该行;改文案必须同步 [`/.github/workflows/docker-smoke.yml`](../../../.github/workflows/docker-smoke.yml)
 
 ## Risk points (不要做)
 
-- ❌ **不**在本模块新增第二个 `@Cron` / interval / timeout(解锁范围仅生日批;新定时任务 = 新 D 档评审,评审稿 R-5)
+- ❌ **不**在本模块新增第三个 `@Cron` / interval / timeout(v0.47.0 只解锁第二个到期扫描;后续新定时任务 = 新 D 档评审)
 - ❌ **不**把 retention 清理做成定时任务(拍板③:永走 [`/docs/ops/sms-data-retention-sop.md`](../../../docs/ops/sms-data-retention-sop.md) 手动 SOP)
 - ❌ **不**改发 `MemberProfile.mobile` / 不加模板变量(姓名等)/ 不做群发、退订、农历生日、2-29 顺延(goal 禁止域;需变更先回评审)
 - ❌ **不**给生日批写 audit_logs / 不在日志输出完整手机号

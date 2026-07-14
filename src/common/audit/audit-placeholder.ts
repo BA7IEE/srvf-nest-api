@@ -24,11 +24,11 @@ import { Logger } from '@nestjs/common';
 //   B2 certificate.read.other                 实装(GET list / detail)
 //   B3 certificate.read.qualification-flag    实装(Q-I1:沿 batch 1 风格 <res>.<action>.<scope>)
 //   B4 certificate.create                     实装
-//   B5 certificate.update                     实装(不含 verify / reject / softDelete / expire)
+//   B5 certificate.update                     实装(不含 verify / reject / softDelete)
 //   B5b certificate.delete                    实装(softDelete 独立事件;Q-A5 决议)
 //   B6.verify certificate.verify              实装(Q-A5:与 reject 拆分)
 //   B6.reject certificate.reject              实装(Q-A5:与 verify 拆分)
-//   B7 certificate.expire                     占位(系统任务,本批次不实装)
+//   B7 certificate.expire                     已于 v0.47.0 迁入 AuditLogEvent 并由到期 job 实装
 //   B8 certificate.attachment.read            占位(批次 6a 接入)
 //
 // 批次 3 追加 8 项(详见 docs:批次3_schema草案_activities_attendances.md §20.2 + 决议表 v1.4):
@@ -58,7 +58,6 @@ export type AuditEvent =
   | 'certificate.delete'
   | 'certificate.verify'
   | 'certificate.reject'
-  | 'certificate.expire'
   | 'certificate.attachment.read'
   // batch 3 新增 8 项
   | 'activity.publish'

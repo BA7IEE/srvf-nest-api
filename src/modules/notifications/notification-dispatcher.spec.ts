@@ -98,4 +98,26 @@ describe('NotificationDispatcher · dispatchTargeted(定向派发 Effect)', () =
     });
     expect(dispatchDirected).not.toHaveBeenCalled();
   });
+
+  it('系统管理面广播 → published / management / broadcast / system / 仅站内且不触发微信', async () => {
+    const { dispatcher, createCalls, dispatchDirected } = build();
+    await dispatcher.dispatchSystemBroadcast({
+      notificationTypeCode: 'expiry-reminder',
+      title: '队保单即将到期',
+      body: '一张队保单已进入 30 天到期窗口。',
+    });
+
+    expect(createCalls()[0][0].data).toMatchObject({
+      notificationTypeCode: 'expiry-reminder',
+      statusCode: 'published',
+      visibilityCode: 'management',
+      audienceType: 'broadcast',
+      sourceType: 'system',
+      channels: ['in-app'],
+      recipientMemberId: null,
+      authorUserId: null,
+    });
+    expect(createCalls()[0][0].data.publishedAt).toBeInstanceOf(Date);
+    expect(dispatchDirected).not.toHaveBeenCalled();
+  });
 });

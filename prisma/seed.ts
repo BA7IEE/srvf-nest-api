@@ -415,6 +415,7 @@ const V2_DICT_SEED = [
       { code: 'recruitment', label: '招新公告', sortOrder: 1 },
       { code: 'emergency', label: '紧急召集', sortOrder: 2 },
       { code: 'general', label: '一般通知', sortOrder: 3 },
+      { code: 'expiry-reminder', label: '到期提醒', sortOrder: 4 },
     ],
   },
   {
@@ -3886,6 +3887,7 @@ const WECHAT_SUBSCRIBE_TEMPLATE_SEED = [
   'recruitment',
   'emergency',
   'general',
+  'expiry-reminder',
 ] as const;
 
 async function seedWechatSubscribeTemplates(prisma: PrismaClient): Promise<void> {
