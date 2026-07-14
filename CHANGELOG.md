@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+> 下一个 minor 候选(当前为空)。
+
+## v0.47.0 - 2026-07-14
+
+> 主题:**招新证书信任继承 + 到期提醒 + 考勤终审撤回**。范围 = 招新三改 #592 + 冻结评审 #593 + 到期提醒 F1 #594 + 考勤撤回 F2 #595;终态恰好 2 个 cron。权限码 205→**206** / endpoint 336→**337** / migration 49→**50** / AuditLogEvent 111→**113**;BizCode 232 / controller 66 / module 35 / role 7 不变。
+>
 > **⚠️ 行为变更(招新一键发号)**:promote 对招新阶段已 `approved` 的急救资质 / BSAFE 证书,由此前一律建 `pending` 改为**继承审核结论建为 `verified`**(审核人 `verifiedBy` / 审核时间 `verifiedAt` / 审核备注 `verifyNote` 一并搬入),核验人不再二次审核;仅上传未审的类别仍建 `pending` 走既有 verify/reject 核验流。
 
 - **证书 / 保险到期提醒（v0.47.0 F1）**:经独立 D 档评审解锁本仓第二个且仅新增一个每日 09:00 `Asia/Shanghai` cron（终态恰好 2 个；第三个仍禁）。证书提前 60 天定向本人站内 + 微信 best-effort 提醒，到期日原子翻 `verified→expired` 并同事务写 `certificate.expire` audit、commit 后再通知本人；个人保险提前 30 天定向本人，队保单提前 30 天建 management 系统站内广播。复用证书既有 marker，两张保险表由第 50 migration 各加 nullable `expireNotifiedAt`，条件 claim 保证二跑幂等；首跑补齐已在窗口内或已过期存量。新增内置通知类型 / 空微信模板配置 `expiry-reminder`；0 endpoint / 0 DTO/OpenAPI / 0 权限码 / 0 BizCode，AuditLogEvent **111→112**，migration **49→50**。
