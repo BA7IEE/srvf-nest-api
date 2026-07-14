@@ -136,13 +136,17 @@ describe('WeChat Settings(T2 e2e)', () => {
       expect(res.body.data).toBeNull();
     });
 
-    it('PATCH 不存在则建 default(providerType=DEV_STUB;credentialStatus=missing)', async () => {
-      const res = await request(httpServer(app))
-        .patch(SETTINGS_PATH)
-        .set('Authorization', opsHeader)
-        .send({ enabled: true, remarks: 'e2e 初建' });
-      expect(res.status).toBe(200);
-      const data = res.body.data as Record<string, unknown>;
+    it('空表并发 PATCH 均成功且只创建一个 default singleton row', async () => {
+      const sendPatch = () =>
+        request(httpServer(app))
+          .patch(SETTINGS_PATH)
+          .set('Authorization', opsHeader)
+          .send({ enabled: true, remarks: 'e2e 初建' });
+      const [first, second] = await Promise.all([sendPatch(), sendPatch()]);
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      const data = first.body.data as Record<string, unknown>;
       expect(data.providerType).toBe('DEV_STUB');
       expect(data.enabled).toBe(true);
       expect(data.credentialStatus).toBe('missing');
@@ -151,6 +155,7 @@ describe('WeChat Settings(T2 e2e)', () => {
       expect(data).not.toHaveProperty('appSecret');
       expect(data).not.toHaveProperty('appSecretEncrypted');
       expect(data).not.toHaveProperty('credentials');
+      expect(await prisma.wechatSettings.count()).toBe(1);
     });
 
     it('PATCH 携带凭证字段 → 40000(forbidNonWhitelisted 白名单拒绝)', async () => {

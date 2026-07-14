@@ -1,7 +1,7 @@
 // V2 第一阶段批次 6 audit_logs 模块类型契约(D6 v1.1 §8 / §10 / §11)。
 //
 // 本文件承载 3 个类型契约,与 audit-logs.service.ts 同进同退:
-//   1. AuditLogEvent  — 落库入口 union(首批 6 项起渐进迁入;第六刀后共 110 项)
+//   1. AuditLogEvent  — 落库入口 union(首批 6 项起渐进迁入;第七刀后共 111 项)
 //   2. AuditContext   — Prisma AuditLog.context Json 字段的运行时锁形(6 字段:3 必填 + 3 可选)
 //   3. AuditMeta      — controller 层从 @Req() 构造,显式传给 service
 //
@@ -181,11 +181,13 @@ export type AuditLogEvent =
   // resourceType='member' / resourceId=memberId(建号是"给队员挂账号",非 user 自身操作,归 member 域)。
   | 'member.account-granted' // admin 给队员开通登录账号(members.service: grantAccount 1 处;extra.{memberId,userId,phone:掩码};禁明文号 / passwordHash;无 before/after——建号非改属性)
   // 队员账号闭环 v2(2026-07-07;冻结评审稿 docs/archive/reviews/member-account-loop-v2-review.md
-  // §3.4)。同 resourceType='member' / resourceId=memberId 口径;队员面启停账号仍不在本 goal 的
-  // 11 处控制面写范围内,不新增第 4 个 member.account-* event。
+  // §3.4)。同 resourceType='member' / resourceId=memberId 口径。
   | 'member.account-bound' // admin 绑定既有悬空账号到队员(members.service: bindAccount 1 处;extra.{memberId,userId})
   | 'member.account-unbound' // admin 解绑队员账号(members.service: unbindAccount 1 处;extra.{memberId,userId}——userId 为断链前的值)
   | 'member.account-reopened' // admin 退号重开(members.service: reopenAccount 1 处;extra.{memberId,oldUserId,newUserId,phone:掩码})
+  // 第七刀·members 轴审计残留(2026-07-14;goal 显式预授权 +1,110→111)。before/after
+  // 仅含账号 status;extra 仅含 linkedUserId / refreshTokensRevoked,不含 phone/openid/secret。
+  | 'member.account.status-change' // admin 从队员面启停关联 USER 账号(members.service:updateAccountStatus;与 user status 写 / refresh 撤销同事务)
   // 参与域生命周期收口⑤(v0.40.0;goal「参与域生命周期收口…」T4 显式预授权的唯一 +1 AuditLogEvent)。
   // resourceType='member' / resourceId=memberId;一键离队单事务四腿的伞事件(一条留痕记各腿实际计数)。
   | 'member.offboard' // admin 一键离队(members.service: offboard 1 处;extra.{memberDeactivated,membershipsEnded,accountDisabled,refreshTokensRevoked,linkedUserId,residualActivePositionAssignments,residualActiveSupervisions})

@@ -1,8 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import type { ConfigType } from '@nestjs/config';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import appConfig from '../../src/config/app.config';
 import { PrismaService } from '../../src/database/prisma.service';
+import {
+  deriveSmsCodePepperKey,
+  hashSmsVerificationCode,
+} from '../../src/modules/sms/sms-code-hash.util';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser, TEST_PASSWORD } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
@@ -34,16 +39,17 @@ const PHONE_CHAIN = '13900000006';
 const PHONE_ISO = '13900000007';
 const PHONE_CROSS = '13900000008';
 
-function sha256Hex(value: string): string {
-  return createHash('sha256').update(value, 'utf8').digest('hex');
-}
-
 describe('找回密码 — 组 A:防枚举 / 全链后效 / 码语义(IP 限流调大)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let uActiveId: string;
   let uChainId: string;
   let uIsoId: string;
+  let smsCodePepperKey: Buffer;
+
+  function codeHash(phone: string, purpose: string, code: string): string {
+    return hashSmsVerificationCode({ phone, purpose, code }, smsCodePepperKey);
+  }
 
   function sendCode(phone: string): Promise<request.Response> {
     return request(httpServer(app)).post(SEND_PATH).send({ phone });
@@ -68,6 +74,8 @@ describe('找回密码 — 组 A:防枚举 / 全链后效 / 码语义(IP 限流�
   beforeAll(async () => {
     process.env.PASSWORD_RESET_THROTTLE_LIMIT = '100';
     app = await createTestApp();
+    const cfg = app.get<ConfigType<typeof appConfig>>(appConfig.KEY);
+    smsCodePepperKey = deriveSmsCodePepperKey(cfg.sms.encryptionKey);
     prisma = app.get(PrismaService);
     await resetDb(app);
     await prisma.smsSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
@@ -250,7 +258,7 @@ describe('找回密码 — 组 A:防枚举 / 全链后效 / 码语义(IP 限流�
         data: {
           phone: PHONE_ISO,
           purpose: 'PHONE_BIND',
-          codeHash: sha256Hex(FIXED_CODE),
+          codeHash: codeHash(PHONE_ISO, 'PHONE_BIND', FIXED_CODE),
           userId: uIsoId,
           expiresAt: new Date(Date.now() + 5 * 60 * 1000),
         },

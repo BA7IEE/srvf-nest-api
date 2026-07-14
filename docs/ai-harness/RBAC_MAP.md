@@ -98,6 +98,8 @@
 >
 > 2026-07-13 第一档 RBAC 安全收口戳(findings 1/2/3):**权限事实零变化**(权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / member 9 / 内置角色 7);controller **66** / endpoint **336** / migration **48** 全不变。新增单一控制面谓词(`rbac.*` ∪ `role-binding.*` ∪ 6 条 SA-only 保留码)与单一角色委派闸,覆盖 role-bindings create/preview/特权 update + user-roles assign/revoke;非 SA 授控制面码统一 `30103`;7 个 seed 内置角色禁止任何身份经 API 删除,新增 BizCode `30104`(总数 231→**232**),自定义角色删除不变。0 schema / 0 migration / 0 新端点 / 0 新权限码 / 0 角色与绑定变化;`RbacService` / `AuthzService` 判权语义不动。
 
+> 2026-07-14 第七刀 settings/SMS/members 安全收口戳:**权限/API 契约事实零变化**(权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / member 9 / 内置角色 7 / controller **66** / endpoint **336** / BizCode **232**);migration **48→49**(四 settings constant unique + 安全去重),AuditLogEvent **110→111**(仅 `member.account.status-change`)。0 新端点 / 0 新权限码 / 0 DTO/OpenAPI/限流变化。
+
 ---
 
 ## 1. 双轨架构现状(一句话版)

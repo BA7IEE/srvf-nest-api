@@ -14,6 +14,8 @@
 - **事务与副作用顺序不变**:守卫拒绝时账号、ops-admin 绑定、member/offboard 其它腿、refresh token 与 reopen 新号均不得变化；放行后仍沿既有顺序执行 refresh 撤销、探测式 username、先软删旧号再建新号及 audit。
 - **非削权路径不接守卫**:`bindAccount` 只写 `memberId`；`unbindAccount` 只置 `memberId=null`，账号仍 live，二者不调用最后管理员策略。
 - **role 护栏优先**:三条削权路径继续先拒 `role!==USER` 的关联账号；SUPER_ADMIN 不进入 last-ops-admin 检查，沿既有 `MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE` 行为。
+- **账号启停审计(2026-07-14 第七刀)**:`updateAccountStatus` 的 user status 写、禁用时 refresh token 撤销与 `member.account.status-change` 必须在同一事务；before/after 只含 status，extra 只含 linkedUserId/refreshTokensRevoked，禁止 phone/openid/secret。
+- **offboard/reopen 已覆盖**:`offboard` 用伞事件 `member.offboard` 记录账号停用腿与撤销计数；`reopenAccount` 用 `member.account-reopened` 记录旧号软删/新号创建结果，两者原本即与业务写同事务，第七刀不新增重复事件。
 
 ## Risk points
 
@@ -23,5 +25,5 @@
 
 ## Validation
 
-- `pnpm test:e2e -- members-last-ops-admin members-account-lifecycle members-offboard users-last-super-admin`
+- `pnpm test:e2e -- members-last-ops-admin members-account-lifecycle members-offboard users-last-super-admin control-plane-audit-characterization`
 - 依赖 permissions policy 的安全改动必须跑 `pnpm agent:check:full`，并确认 contract snapshot 零漂移。

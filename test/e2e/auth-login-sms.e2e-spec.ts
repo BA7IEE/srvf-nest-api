@@ -1,8 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import type { ConfigType } from '@nestjs/config';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import appConfig from '../../src/config/app.config';
 import { PrismaService } from '../../src/database/prisma.service';
+import {
+  deriveSmsCodePepperKey,
+  hashSmsVerificationCode,
+} from '../../src/modules/sms/sms-code-hash.util';
 import { createTestUser, TEST_PASSWORD } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
@@ -33,16 +38,17 @@ const PHONE_NEVER = '13910000005'; // 从未绑定
 const PHONE_CHAIN = '13910000006';
 const PHONE_ISO = '13910000007';
 
-function sha256Hex(value: string): string {
-  return createHash('sha256').update(value, 'utf8').digest('hex');
-}
-
 describe('OTP 登录 — 组 A:防枚举 / 全链同构 / 码语义(IP 限流调大)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let uActiveId: string;
   let uChainId: string;
   let uIsoId: string;
+  let smsCodePepperKey: Buffer;
+
+  function codeHash(phone: string, purpose: string, code: string): string {
+    return hashSmsVerificationCode({ phone, purpose, code }, smsCodePepperKey);
+  }
 
   function sendCode(phone: string): Promise<request.Response> {
     return request(httpServer(app)).post(SEND_PATH).send({ phone });
@@ -80,6 +86,8 @@ describe('OTP 登录 — 组 A:防枚举 / 全链同构 / 码语义(IP 限流调
   beforeAll(async () => {
     process.env.LOGIN_SMS_THROTTLE_LIMIT = '100';
     app = await createTestApp();
+    const cfg = app.get<ConfigType<typeof appConfig>>(appConfig.KEY);
+    smsCodePepperKey = deriveSmsCodePepperKey(cfg.sms.encryptionKey);
     prisma = app.get(PrismaService);
     await resetDb(app);
     await prisma.smsSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
@@ -211,7 +219,7 @@ describe('OTP 登录 — 组 A:防枚举 / 全链同构 / 码语义(IP 限流调
         data: {
           phone: PHONE_ISO,
           purpose: 'PASSWORD_RESET',
-          codeHash: sha256Hex(FIXED_CODE),
+          codeHash: codeHash(PHONE_ISO, 'PASSWORD_RESET', FIXED_CODE),
           userId: uIsoId,
           expiresAt: new Date(Date.now() + 5 * 60 * 1000),
         },
@@ -232,7 +240,7 @@ describe('OTP 登录 — 组 A:防枚举 / 全链同构 / 码语义(IP 限流调
         data: {
           phone: PHONE_ISO,
           purpose: 'LOGIN',
-          codeHash: sha256Hex(FIXED_CODE),
+          codeHash: codeHash(PHONE_ISO, 'LOGIN', FIXED_CODE),
           userId: uIsoId,
           expiresAt: new Date(Date.now() + 5 * 60 * 1000),
         },

@@ -1416,7 +1416,8 @@ model AttachmentSizeLimitConfig {
 // 一次设计 15+ 字段;首期允许部分字段闲置(`null`);**严禁未来推翻 schema**。
 // 加密字段 `secretIdEncrypted` / `secretKeyEncrypted` 由 StorageCryptoService 处理;
 // 明文永不入库(沿 Q21 / Q22)。
-// singleton 约束 Prisma 层不强制;由 Service 层保证(留 PR #11 后台 CRUD POST 时检 count)。
+// singleton 由第 49 migration 的 unique index on constant((true)) 在 DB 层强制;
+// Prisma schema DSL 无法表达 expression index,故此处仅保留注释,不可误删 migration 索引。
 // =============================================================================
 model StorageSettings {
   id String @id @default(cuid())
@@ -1513,9 +1514,11 @@ model RefreshToken {
 //
 // 沿评审稿 docs/archive/reviews/sms-verification-infra-review.md §3.1(冻结文本;
 // 维护者 2026-06-10 goal 拍板)。一次设计,允许部分字段首期闲置(null);严禁未来推翻 schema。
-// - sms_settings 镜像 StorageSettings 范式:singleton 由 Service 层保证,DB 不强制;
+// - sms_settings 镜像 StorageSettings 范式:singleton 由第 49 migration 的
+//   unique index on constant((true)) 在 DB 层强制(Prisma schema DSL 无法表达 expression index);
 //   凭证 AES-256-GCM 加密(SmsCryptoService,T2),明文永不入库。
-// - sms_verification_codes:明文验证码永不入库,只存 sha256 hex(沿 refresh tokenHash 范式,E-27);
+// - sms_verification_codes:明文验证码永不入库,只存
+//   HMAC-SHA256(scrypt(SMS_ENCRYPTION_KEY,独立 salt),phone:purpose:code) hex(第七刀 F2);
 //   同 phone+purpose 单活码由 supersededAt 实现(E-9);userId / codeId 不建外键(E-28)。
 // - sms_send_logs:append-only 发送留痕,无更新/删除路径;响应层手机号一律掩码(E-20/E-21)。
 // - retention:两表本期不清理,待办挂 NEXT_TASKS P2-6。
@@ -1559,7 +1562,7 @@ model SmsVerificationCode {
 
   phone    String
   purpose  SmsPurpose
-  codeHash String // sha256(code) hex;明文码永不入库
+  codeHash String // HMAC-SHA256(pepper, phone:purpose:code) hex;明文码/pepper 永不入库
   userId   String? // 签发归属用户;PHONE_BIND=当前登录用户,PASSWORD_RESET=按 phone 解析的目标用户(password-reset 评审稿 E-7);字段可空留未来消费者;不建外键
 
   expiresAt    DateTime // 签发 +5min(常量,T3)
@@ -1611,7 +1614,8 @@ enum SmsSendStatus {
 // 微信小程序登录基础设施 T1(2026-06-12;冻结评审稿
 // docs/archive/reviews/wechat-mini-login-review.md §3.1,镜像 SmsSettings 范式)
 //
-// 凭证单例表(singleton 不在 DB 层强制,>1 行 Service 层 WARN 取最早,E-3);
+// 凭证单例表(singleton 由第 49 migration 的 unique index on constant((true)) 在 DB 层强制;
+// Prisma schema DSL 无法表达 expression index,E-3 的 Service WARN/取最早旧策略已退役);
 // 与 SmsSettings 的差异:凭证仅 appSecret **一段**加密(SMS 是 secretId+secretKey 两段);
 // 无 send-logs 对应物(code2session 免费查询类 API,无资费无触达,E-8)。
 // =========================================================================
@@ -1958,6 +1962,8 @@ model RecruitmentOcrDailyCounter {
   @@map("recruitment_ocr_daily_counters")
 }
 
+// singleton 由第 49 migration 的 unique index on constant((true)) 在 DB 层强制;
+// Prisma schema DSL 无法表达 expression index,故此处仅保留注释,不可误删 migration 索引。
 model RealnameVerificationSettings {
   id String @id @default(cuid())
 

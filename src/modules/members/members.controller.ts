@@ -328,8 +328,9 @@ export class MembersController {
     @Param() params: IdParamDto,
     @Body() dto: UpdateMemberAccountStatusDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<MemberResponseDto> {
-    return this.service.updateAccountStatus(params.id, dto, currentUser);
+    return this.service.updateAccountStatus(params.id, dto, currentUser, this.buildAuditMeta(req));
   }
 
   // 参与域生命周期收口⑤(v0.40.0):一键离队编排。POST(action 非幂等更新语义);无 body;

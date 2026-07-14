@@ -1,10 +1,11 @@
 import type { INestApplication } from '@nestjs/common';
-import { Role, UserStatus } from '@prisma/client';
+import { MemberStatus, Role, UserStatus } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { PrismaService } from '../../src/database/prisma.service';
 import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import type { AuditLogEvent, AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
+import { MembersService } from '../../src/modules/members/members.service';
 import { RealnameSettingsService } from '../../src/modules/realname/realname-settings.service';
 import { SmsSettingsService } from '../../src/modules/sms/sms-settings.service';
 import { StorageSettingsService } from '../../src/modules/storage/storage-settings.service';
@@ -15,10 +16,10 @@ import { createTestApp } from '../setup/test-app';
 
 // 第六刀 finding 15:控制面高危写 audit characterization。
 //
-// 覆盖矩阵(恰好 11 个本 goal 预授权事件):
+// 覆盖矩阵(第六刀 11 个事件 + 第七刀 members 轴 1 个事件):
 // A. user.{role.update,status.update,soft-delete}
 // B-E. storage/sms/wechat/realname setting.{update,reset-credentials}
-// F. audit 写入后故意失败 → user 写与 audit 行同事务回滚
+// F. audit 写入后故意失败 → user / member 业务写与 audit 行同事务回滚
 //
 // 最硬红线锁定:
 // - update 只在 context.extra.changedFields 记非敏感字段名,不记字段值。
@@ -45,6 +46,7 @@ describe('control-plane audit characterization (finding 15)', () => {
   let prisma: PrismaService;
   let auditLogs: AuditLogsService;
   let users: UsersService;
+  let members: MembersService;
   let storage: StorageSettingsService;
   let sms: SmsSettingsService;
   let wechat: WechatSettingsService;
@@ -59,6 +61,7 @@ describe('control-plane audit characterization (finding 15)', () => {
     prisma = app.get(PrismaService);
     auditLogs = app.get(AuditLogsService);
     users = app.get(UsersService);
+    members = app.get(MembersService);
     storage = app.get(StorageSettingsService);
     sms = app.get(SmsSettingsService);
     wechat = app.get(WechatSettingsService);
@@ -93,6 +96,7 @@ describe('control-plane audit characterization (finding 15)', () => {
     await prisma.wechatSettings.deleteMany({});
     await prisma.realnameVerificationSettings.deleteMany({});
     await prisma.user.deleteMany({ where: { id: { not: actor.id } } });
+    await prisma.member.deleteMany({});
     storage.invalidate();
     sms.invalidate();
     wechat.invalidate();
@@ -333,6 +337,37 @@ describe('control-plane audit characterization (finding 15)', () => {
         Role.USER,
       );
       expect(await prisma.auditLog.count({ where: { event: 'user.role.update' } })).toBe(0);
+    });
+
+    it('F2. members audit writes then fails → account status and audit row both roll back', async () => {
+      targetSeq += 1;
+      const member = await prisma.member.create({
+        data: {
+          memberNo: `control-audit-member-${targetSeq}`,
+          displayName: `Control Audit Member ${targetSeq}`,
+          status: MemberStatus.ACTIVE,
+        },
+        select: { id: true },
+      });
+      const targetId = await createTarget(Role.USER, UserStatus.ACTIVE);
+      await prisma.user.update({ where: { id: targetId }, data: { memberId: member.id } });
+
+      const realLog = auditLogs.log.bind(auditLogs);
+      jest.spyOn(auditLogs, 'log').mockImplementationOnce(async (input) => {
+        await realLog(input);
+        throw new Error('synthetic member audit failure after insert');
+      });
+
+      await expect(
+        members.updateAccountStatus(member.id, { status: UserStatus.DISABLED }, actor, AUDIT_META),
+      ).rejects.toThrow('synthetic member audit failure after insert');
+
+      expect((await prisma.user.findUniqueOrThrow({ where: { id: targetId } })).status).toBe(
+        UserStatus.ACTIVE,
+      );
+      expect(
+        await prisma.auditLog.count({ where: { event: 'member.account.status-change' } }),
+      ).toBe(0);
     });
   });
 });

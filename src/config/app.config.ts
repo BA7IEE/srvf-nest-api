@@ -205,6 +205,7 @@ export interface ContentPublicThrottleConfig {
 
 // SMS 基础设施 T2(2026-06-10):sms_settings 凭证加密 key(评审稿 D-SMS-8;沿 STORAGE 范式)。
 // 独立 env `SMS_ENCRYPTION_KEY`,与 STORAGE_ENCRYPTION_KEY 互不复用;
+// 第七刀起同一 env 还经独立固定 salt + scrypt 派生短信验证码 HMAC pepper key,不直接作为 HMAC key 使用;
 // production / smoke fail-fast,dev / test 留空允许 → SmsCryptoService.isAvailable()=false。
 export interface SmsConfig {
   encryptionKey: string; // 空字符串 = 未配置(dev / test 允许;production / smoke 启动已 fail)

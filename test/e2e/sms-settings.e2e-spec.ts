@@ -138,13 +138,17 @@ describe('SMS Settings + Send Logs(T3 e2e 组 1)', () => {
       expect(res.body.data).toBeNull();
     });
 
-    it('PATCH 不存在则建 default(providerType=DEV_STUB;credentialStatus=missing)', async () => {
-      const res = await request(httpServer(app))
-        .patch(SETTINGS_PATH)
-        .set('Authorization', opsHeader)
-        .send({ enabled: true, remarks: 'e2e 初建' });
-      expect(res.status).toBe(200);
-      const data = res.body.data as Record<string, unknown>;
+    it('空表并发 PATCH 均成功且只创建一个 default singleton row', async () => {
+      const sendPatch = () =>
+        request(httpServer(app))
+          .patch(SETTINGS_PATH)
+          .set('Authorization', opsHeader)
+          .send({ enabled: true, remarks: 'e2e 初建' });
+      const [first, second] = await Promise.all([sendPatch(), sendPatch()]);
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      const data = first.body.data as Record<string, unknown>;
       expect(data.providerType).toBe('DEV_STUB');
       expect(data.enabled).toBe(true);
       expect(data.credentialStatus).toBe('missing');
@@ -155,6 +159,7 @@ describe('SMS Settings + Send Logs(T3 e2e 组 1)', () => {
       expect(data).not.toHaveProperty('secretIdEncrypted');
       expect(data).not.toHaveProperty('secretKeyEncrypted');
       expect(data).not.toHaveProperty('credentials');
+      expect(await prisma.smsSettings.count()).toBe(1);
     });
 
     it('PATCH 携带凭证字段 → 40000(forbidNonWhitelisted 白名单拒绝)', async () => {

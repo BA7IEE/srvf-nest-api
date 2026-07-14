@@ -1,8 +1,15 @@
-import { createHash } from 'node:crypto';
+import { Logger } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import appConfig from '../../config/app.config';
 import type { PrismaService } from '../../database/prisma.service';
+import {
+  deriveSmsCodePepperKey,
+  hashSmsVerificationCode,
+  SmsCodePepperUnavailableError,
+} from './sms-code-hash.util';
 import type { SmsProviderRouter } from './sms-provider.router';
 import { SmsCodeService } from './sms-code.service';
 import { SMS_DEV_STUB_FIXED_CODE } from './sms.constants';
@@ -11,8 +18,15 @@ import { SmsChannelUnavailableError, SmsProviderSendError } from './sms.types';
 // SMS 基础设施 T3:sms-code.service 单元测试(评审稿 §10;mock prisma + router,
 // 沿 users.service.spec mock 范式;时序/竞态全链交给 e2e sms-throttle 组)。
 
-function sha256Hex(v: string): string {
-  return createHash('sha256').update(v, 'utf8').digest('hex');
+const TEST_ENV_SECRET = 'test-sms-code-pepper-key-32-characters-long';
+
+function hmacCode(
+  phone: string,
+  purpose: string,
+  code: string,
+  envSecret = TEST_ENV_SECRET,
+): string {
+  return hashSmsVerificationCode({ phone, purpose, code }, deriveSmsCodePepperKey(envSecret));
 }
 
 interface PrismaMockShape {
@@ -62,10 +76,12 @@ function makeRouterMock(opts: {
 function makeService(
   prisma: PrismaMockShape,
   router: ReturnType<typeof makeRouterMock>,
+  encryptionKey = TEST_ENV_SECRET,
 ): SmsCodeService {
   return new SmsCodeService(
     prisma as unknown as PrismaService,
     router as unknown as SmsProviderRouter,
+    { sms: { encryptionKey } } as ConfigType<typeof appConfig>,
   );
 }
 
@@ -123,6 +139,17 @@ describe('SmsCodeService.issue', () => {
     expect(prisma.smsVerificationCode.create).not.toHaveBeenCalled();
   });
 
+  it('dev/test env secret 缺失 → 运行时显式失败且不建 code 行', async () => {
+    const prisma = makePrismaMock();
+    prisma.smsVerificationCode.findFirst.mockResolvedValue(null);
+    prisma.smsVerificationCode.count.mockResolvedValue(0);
+    prisma.smsVerificationCode.updateMany.mockResolvedValue({ count: 0 });
+    const svc = makeService(prisma, makeRouterMock({ providerType: 'DEV_STUB' }), '');
+
+    await expect(svc.issue(ISSUE_INPUT)).rejects.toThrow(SmsCodePepperUnavailableError);
+    expect(prisma.smsVerificationCode.create).not.toHaveBeenCalled();
+  });
+
   it('DEV_STUB 成功:固定码 888888 入 hash / 旧活码 superseded / send_log SENT 关联 codeId / 返 300s', async () => {
     const prisma = makePrismaMock();
     prisma.smsVerificationCode.findFirst.mockResolvedValue(null);
@@ -145,11 +172,13 @@ describe('SmsCodeService.issue', () => {
       consumedAt: null,
       supersededAt: null,
     });
-    // 明文码不入库:只存 sha256 hex(E-27);DEV_STUB 固定码(E-29)
+    // 明文码不入库:只存 phone+purpose+code 域分离后的 HMAC-SHA256 hex;DEV_STUB 固定码(E-29)
     const createArg = firstArgOf<{ data: { codeHash: string; userId: string; ip: string } }>(
       prisma.smsVerificationCode.create,
     );
-    expect(createArg.data.codeHash).toBe(sha256Hex(SMS_DEV_STUB_FIXED_CODE));
+    expect(createArg.data.codeHash).toBe(
+      hmacCode(ISSUE_INPUT.phone, ISSUE_INPUT.purpose, SMS_DEV_STUB_FIXED_CODE),
+    );
     expect(createArg.data.codeHash).toMatch(/^[0-9a-f]{64}$/);
     expect(createArg.data.userId).toBe('user-1');
     // provider 收到明文码 + ttl 分钟
@@ -164,6 +193,7 @@ describe('SmsCodeService.issue', () => {
   });
 
   it('TENCENT_SMS 发送失败 → send_log FAILED(errCode/errMsg)+ SMS_SEND_FAILED;code 行保留', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const prisma = makePrismaMock();
     prisma.smsVerificationCode.findFirst.mockResolvedValue(null);
     prisma.smsVerificationCode.count.mockResolvedValue(0);
@@ -183,13 +213,15 @@ describe('SmsCodeService.issue', () => {
       errMsg: 'provider daily limit',
       codeId: 'code-2',
     });
+    expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(TEST_ENV_SECRET);
+    warnSpy.mockRestore();
   });
 });
 
 describe('SmsCodeService.verifyAndConsume', () => {
   const ACTIVE = {
     id: 'code-9',
-    codeHash: sha256Hex('654321'),
+    codeHash: hmacCode('13800001234', 'PHONE_BIND', '654321'),
     userId: 'user-1',
     expiresAt: new Date(Date.now() + 60_000),
     attempts: 0,
@@ -262,7 +294,7 @@ describe('SmsCodeService.verifyAndConsume', () => {
 describe('SmsCodeService.assertValid(只验不消费;PASSWORD_RESET 接线)', () => {
   const ACTIVE = {
     id: 'code-pr-1',
-    codeHash: sha256Hex('654321'),
+    codeHash: hmacCode('13800001234', 'PASSWORD_RESET', '654321'),
     userId: 'user-1',
     expiresAt: new Date(Date.now() + 60_000),
     attempts: 0,
@@ -327,5 +359,36 @@ describe('SmsCodeService.assertValid(只验不消费;PASSWORD_RESET 接线)', ()
       data: { attempts: { increment: 1 } },
     });
     expect(prisma.smsVerificationCode.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('SMS code HMAC pepper boundary', () => {
+  it('同 code 在不同 phone / purpose 下产生不同 hash', () => {
+    const byPhone = hmacCode('13800001234', 'PHONE_BIND', '654321');
+    const otherPhone = hmacCode('13900001234', 'PHONE_BIND', '654321');
+    const otherPurpose = hmacCode('13800001234', 'PASSWORD_RESET', '654321');
+
+    expect(byPhone).toMatch(/^[0-9a-f]{64}$/);
+    expect(otherPhone).not.toBe(byPhone);
+    expect(otherPurpose).not.toBe(byPhone);
+  });
+
+  it('不同 env secret 派生的 pepper key 产生不同 hash', () => {
+    const first = hmacCode('13800001234', 'PHONE_BIND', '654321');
+    const second = hmacCode(
+      '13800001234',
+      'PHONE_BIND',
+      '654321',
+      'another-test-sms-pepper-key-32-characters-long',
+    );
+
+    expect(second).not.toBe(first);
+  });
+
+  it('env secret 缺失时显式失败且错误信息不包含任何 secret', () => {
+    expect(() => deriveSmsCodePepperKey('')).toThrow(SmsCodePepperUnavailableError);
+    expect(() => deriveSmsCodePepperKey('')).toThrow(
+      'SMS_CODE_PEPPER_UNAVAILABLE: SMS code hashing key is not configured',
+    );
   });
 });

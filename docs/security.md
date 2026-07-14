@@ -28,6 +28,7 @@
 | 改密 / 重置 / 禁用 / 软删联动撤销 refresh(P0-E PR-3;2026-06-11 +第 5 场景) | `users.service.ts` / `auth/password-reset.service.ts` 同事务 `tx.refreshToken.updateMany` | 本人改密 → `self-password-change` / 本人短信重置(找回密码)→ `self-password-reset`(+ audit `password.reset.by-sms`)/ 管理员重置 → `admin-password-reset`(+ audit `password.reset.by-admin`)/ 用户被禁用 → `admin-disable` / 用户软删 → `admin-delete`;**access token 仍不主动吊销**(沿 D-4;15m 自然过期 + `JwtStrategy.validate` 每请求查库阻断 DISABLED / 软删);**JWT payload 严格 zero drift** `{ sub, username }` |
 | 找回密码防枚举(2026-06-11;冻结评审稿 [`password-reset-by-sms-review.md`](archive/reviews/password-reset-by-sms-review.md) §4) | `auth/password-reset.service.ts` + `@PasswordResetThrottle()` | `POST /api/auth/v1/password-reset{,/send-code}` 两公开端点:四种无效号码场景(不存在 / 未绑定 / 禁用 / 软删)send-code 返回**完全相同**泛化 200 且零留痕;reset 一切失败统一 `SMS_CODE_INVALID=24010`;10006 不消费验证码且仅对已验码者可达(防密码 oracle);第 6 throttler 实例 IP 3/60s(`PASSWORD_RESET_THROTTLE_LIMIT` / `PASSWORD_RESET_THROTTLE_TTL_SECONDS` 可配);残余侧信道与图形码重启条件见评审稿 R-1 / §9 |
 | OTP(验证码)登录防枚举(2026-06-11;冻结评审稿 [`queue-b-otp-birthday-infra-review.md`](archive/reviews/queue-b-otp-birthday-infra-review.md) §5) | `auth/login-sms.service.ts` + `@LoginSmsThrottle()` | `POST /api/auth/v1/login-sms{,/send-code}` 两公开端点(密码登录的**并行方式**,AGENTS §8 行已解锁改写、密码登录契约零变化):send-code 四无效场景同泛化 200 零留痕;登录一切失败统一 24010(**不用 10004**,两套防枚举体系各自闭合);会话签发经 `AuthService.createSession` 与密码登录同构(同 refresh family / lastLoginAt;audit `auth.login.sms` 掩码);第 7 throttler 实例 IP 5/60s(`LOGIN_SMS_THROTTLE_LIMIT` / `LOGIN_SMS_THROTTLE_TTL_SECONDS` 可配) |
+| 短信验证码静态库防护(2026-07-14 第七刀) | `sms-code.service.ts` + `sms-code-hash.util.ts` | 入库值固定为 `HMAC-SHA256(pepperKey, phone:purpose:code)` 的 64 字符 hex;`pepperKey` 由既有 `SMS_ENCRYPTION_KEY` 经独立固定 salt + scrypt 派生,不新增 env、不直接复用凭据加密 key;同验证码跨手机号/用途不可关联,pepper / key 永不进入日志、audit、响应或 fixture,明文验证码不入库/audit/响应;dev/test 未配置 key 时发码/验码运行时拒绝且不留验证码 row;旧短效验证码不回填,按原 TTL 自然失效 |
 | 微信小程序登录防侧写(2026-06-12;冻结评审稿 [`wechat-mini-login-review.md`](archive/reviews/wechat-mini-login-review.md) §4) | `auth/login-wechat.service.ts` + `src/modules/wechat/` + `@LoginWechatThrottle()` | `POST /api/auth/v1/login-wechat` + `POST /api/auth/v1/wechat-bind{,/send-code}` 三公开端点(**第三个独立认证端点**,AGENTS §8 微信行已解锁、密码登录契约零变化):login-wechat 未绑 200 `{bindingRequired:true}`(非枚举面:openid 须经持微信账号的 wx.login code 换取),命中但账号禁用/软删统一 25010 防侧写;wechat-bind/send-code 四无效号码场景同泛化 200 零留痕,绑定**七步顺序冻结**(25002 仅对已证手机控制权者可达,防绑定关系 oracle);会话签发经 `AuthService.createSession` 同构(audit `auth.login.wechat` openid 一律掩码;wx code / session_key 零出现);第 8 throttler 实例 IP 5/60s(`LOGIN_WECHAT_THROTTLE_LIMIT` / `LOGIN_WECHAT_THROTTLE_TTL_SECONDS` 可配,三端点共用一实例);上游 code2session 硬编码微信域 + 8s 超时 + 失败路径 warn 日志(仅 err.name/status,零 secret/URL,2026-06-12 增量审计①收口) |
 
 附件内容类型纵深校验(v0.44.0 findings #22/#23/#24):`image/svg+xml` / `text/html` / `application/xhtml+xml` 永久拒绝;confirm-upload 对 JPG/PNG/WEBP/GIF/PDF 经 `StorageProvider.readObjectPrefix` 回读最多 12 字节核对魔数,COS 使用 ranged getObject;不符返 `ATTACHMENT_CONTENT_TYPE_MISMATCH=13016`,不因客户端声明或运营白名单放行。
@@ -190,7 +191,7 @@ req.body.refreshToken
 
 ## 控制面审计(control-plane audit)权威规则
 
-> 收敛「哪些控制面高危写必须 audit / 哪些刻意不写」的单一权威表述。2026-07-13 第六刀 finding 15 由维护者拍板系统性全覆盖,推翻 users D-PR3-2 / sms D-SMS-9 / storage §6.6.5 的“不写 / 留专项”挂起决定;四类 settings 与 users 三类高危写均已接入同事务审计。
+> 收敛「哪些控制面高危写必须 audit / 哪些刻意不写」的单一权威表述。2026-07-13 第六刀 finding 15 由维护者拍板系统性全覆盖,推翻 users D-PR3-2 / sms D-SMS-9 / storage §6.6.5 的“不写 / 留专项”挂起决定;四类 settings 与 users 三类高危写均已接入同事务审计。2026-07-14 第七刀补齐 members 轴关联账号启停入口。
 
 **判据**:授权 / 组织事实、账号角色 / 状态 / 删除、供应商开关与凭据重置均属必须可取证的控制面高危写。敏感度不是跳过审计的理由,而是约束 audit payload:**凭据 / 密码 / secret 的明文和密文永不进入 audit**;settings update 只记非敏感变更字段名,reset-credentials 只记动作、actor 与 row.id。
 
@@ -206,6 +207,7 @@ req.body.refreshToken
 | **attachment-configs**:三表建/改/改状态/删 | `attachment.config.change`(伞事件;`extra.configType` + `extra.operation`) | attachments PR #6d |
 | **contribution-rules**:建/改/软删 | `contribution-rule.{create,update,delete}` | audit PR #3 |
 | **users**:角色 / 状态 / 软删 | `user.role.update` / `user.status.update` / `user.soft-delete`(`user`;before/after 仅 role/status/delete) | 2026-07-13 第六刀 finding 15;推翻 users D-PR3-2 |
+| **members 轴关联账号**:启停 | `member.account.status-change`(`member`;before/after 仅 status;extra 仅 linkedUserId/refreshTokensRevoked) | 2026-07-14 第七刀 finding 15 残留;user 写/refresh 撤销/audit 同事务 |
 | **storage / sms / wechat / realname settings**:update / reset credentials | `<provider>-setting.update` / `<provider>-setting.reset-credentials`(`<provider>_setting`;update 仅 `extra.changedFields`,reset 无 before/after/extra) | 2026-07-13 第六刀 finding 15;凭据明文/密文永不入 audit |
 
 ### 刻意不写 audit(当前明确范围)
@@ -213,6 +215,5 @@ req.body.refreshToken
 | 配置面 | 理由 |
 |---|---|
 | **dictionaries(字典类型 / 字典项)** | 分类字典,变更不改授权事实;属 v2 早期「4 模型写不接 audit」的原始范围,保持不写 |
-| **member.update.status / 队员轴账号 status** | `members.service.ts:updateAccountStatus` 不在第六刀列明的 11 写点内,本刀不扩范围;不再以 users D-PR3-2 的“对称”决定作为依据 |
 
 > 变更本表任一归属(把某 config 面从「不写」挪到「写」或反之)= 判权 / 审计事实变更,按 D 档降速,先与维护者对齐。

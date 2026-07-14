@@ -8,15 +8,15 @@
 | 项 | 当前值 |
 |---|---|
 | 版本(六处一致) | **v0.45.0**(2026-07-13;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #583 squash `09d9b786`;GitHub Release「v0.45.0 — 系统性安全收口(委派·任期·状态迁移·证书信任)」标 Latest。**⚠️ 行为变更三组**:委派收窄/内置角色禁删/任期失效/最后 ops-admin 30101;并发状态写败者 `*_STATUS_INVALID`;已核验证书编辑核心字段回退 pending) |
-| `main` HEAD | v0.45.0 发布链之后累计 `## Unreleased`:第五刀文件验证 #585 + 本第六刀控制面审计(合入后);本刀继续随下个 minor 发布,不单独 bump/tag |
-| open PR / 工作树 / Unreleased | 本刀合入后 0 open PR / clean / `## Unreleased` **2 条**(第五刀文件验证 #585 + 第六刀控制面审计)。终值:权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` **336** / controller 66 / 模块 35 / migration **48** / 角色 7 / BizCode **232** / AuditLogEvent **110** |
+| `main` HEAD | v0.45.0 发布链之后累计 `## Unreleased`:第五刀文件验证 #585 + 第六刀控制面审计 #586 + 本第七刀 settings/SMS/members 安全收口(合入后);三刀继续随下个 minor v0.46.0 发布,本刀不单独 bump/tag |
+| open PR / 工作树 / Unreleased | 本刀合入后 0 open PR / clean / `## Unreleased` **3 条**(第五刀文件验证 + 第六刀控制面审计 + 第七刀 settings/SMS/members)。终值:权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / `EXPECTED_ROUTES` **336** / controller 66 / 模块 35 / migration **49** / 角色 7 / BizCode **232** / AuditLogEvent **111** |
 | 最新 handoff | [`archive/handoff/v0.45.0.md`](archive/handoff/v0.45.0.md)(历史快照;tag 指向该 handoff #583 squash `09d9b786`;接续 [`v0.44.0.md`](archive/handoff/v0.44.0.md);合入后不回改) |
 
 ## 2. 当前系统已具备能力
 
 > 清单级;事实权威:字段 = [`schema.prisma`](../prisma/schema.prisma);接口 = `/api/docs` + [`EXPECTED_ROUTES`](../test/contract/openapi.contract-spec.ts) + snapshot;BizCode = `biz-code.constant.ts` + CHANGELOG。
 
-- **Unreleased 系统性安全收口第五/第六刀**(2026-07-13):第五刀 #585 将 findings 9/10/11 文件验证与过期附件规则统一收口;第六刀关闭 finding 15,给 users 角色/状态/软删与 storage/sms/wechat/realname settings update/reset-credentials 共 11 个控制面高危写补同事务 audit。第六刀新增 11 个 `AuditLogEvent`(**99→110**),凭据 reset audit context 严格只有请求元数据,明文/密文/SecretId/SecretKey 永不入 audit。findings 8c/13/14 维持不做,#12 因无 queue/cron 红线不做。两刀累计 0 schema / 0 migration(48) / 0 endpoint(336) / 0 permission(205) / 0 BizCode(232)。第六刀本地 D 档终验:unit **86 suites / 2395**、contract **606**(snapshots 2/2)、e2e **141 suites / 2865** 全绿;seed 幂等二跑;rbacmap 0 FAIL/0 WARN、codemap 0 FAIL(仅既有 god-service WARN)。
+- **Unreleased 系统性安全收口第五/第六/第七刀**(2026-07-13~14):第五刀 #585 将 findings 9/10/11 文件验证与过期附件规则统一收口;第六刀 #586 给 users 角色/状态/软删与四 provider settings 共 11 个控制面高危写补同事务 audit(**AuditLogEvent 99→110**);第七刀关闭 findings 8c/13 与 finding 15 members 残留:第 49 migration 对 storage/sms/wechat/realname settings 安全去重保留最新行并加 constant unique,四服务并发首配 P2002 重试;SMS 验证码 hash 升级为带 phone/purpose 域分离的 scrypt-pepper HMAC;members 关联账号启停同事务写 `member.account.status-change`(**110→111**),offboard/reopen 既有伞审计继续复用。三刀累计 0 新 endpoint(336) / 0 permission(205) / 0 BizCode(232);migration **48→49**。#14 附件权限内存分页维持接受项,#12 outbox 因 queue/cron 红线不做。第七刀本地 D 档终验:真实本地 `app` / reset 前 `app_test` 四表去重候选均 **0**(未触碰 `app`);临时库 clean `migrate reset` 49 个 migration 全量重放,合成重复行演练四表各删 2 条并保留最新行、四索引均拒第二行;`app_test` reset 后 seed 二跑 14 组关键计数完全一致;unit **86 suites / 2398**、contract **606**(snapshots 2/2)、定向 e2e **12 suites / 182**、全量 e2e **141 suites / 2866** 全绿;rbacmap 0 FAIL/0 WARN、codemap 0 FAIL(仅既有 god-service WARN)。
 
 - **v0.45.0 系统性安全收口(已发布 2026-07-13;D 档)**:承接 v0.44.0 审计,维护者定「把权限委派 / 状态迁移 / 并发计数 / 文件验证做成所有入口必经的统一底层规则,而非逐接口补刀」。15 项二次核实 findings 1–7 由前四刀收口;后续第五刀收 findings 9/10/11、第六刀收 finding 15;8c/13/14 维持不做,#12 撞无 queue/cron 红线不做。前四刀以「单一原语 + 全兄弟路径接线 + 漂移/并发测试」落地:委派 `isControlPlanePermissionCode` + `RoleDelegationPolicy` + 7 内置角色禁删(#578)、任期 `role-binding-validity`(rbac/authz 共用)+ 末位管理员 `LastAdminProtectionPolicy` 一把共享 advisory 锁(#579)、状态迁移 `claimAtStatus` CAS 16 处 + 证书信任回退(#580)、队员轴三削权门同类残留(#581)。0 schema/migration/endpoint/permission/controller/module/role/dependency;唯一新增 BizCode `30104`(231→232)。
 
@@ -104,7 +104,7 @@
 |---|---|---|
 | P1 | 前端联调包剩运维侧 P0-H 演练 + P0-I 排错 SOP | 运维侧立项;系统侧无动作 |
 | P1 | 招新/入队两项发布后债务仍在账:**P1-22** 专业队类型/gate 定义配置化;**P1-23** `recruitment_applications.isForeigner` 历史 DB 列改名(当前对外 DTO/CSV 已用 `isNonMainlandDocument`) | 沿 [`ai-harness/NEXT_TASKS.md`](ai-harness/NEXT_TASKS.md) P1-22/P1-23 诉求触发再立项;本 release 不启动 |
-| P2 | god-service 体量观察(`pnpm docs:codemap:check` 2026-07-13 实时口径,LOC > 700):attendances **1596** / activity-registrations **1248** / members **1054** / attachments **968** / users **941** / role-bindings **917** / activities **867** / recruitment-applications **867** / recruitment-identity **818** / recruitment-promotion **743** | 仅观察;重开需 architecture-boundary §6 新触发 + 单独立项 |
+| P2 | god-service 体量观察(`pnpm docs:codemap:check` 2026-07-14 实时口径,LOC > 700):attendances **1609** / activity-registrations **1267** / members **1081** / users **972** / attachments **967** / activities **898** / recruitment-applications **883** / role-bindings **872** / recruitment-identity **833** / recruitment-promotion **743** | 仅观察;重开需 architecture-boundary §6 新触发 + 单独立项 |
 | P2/P3 | v0.44.0 审计接受项:#8 考勤仅应用锁、无 `btree_gist`;#10/#12 附件 owner 列表仍全量扫描后内存分页;#19 RBAC cache 仍单进程;#20/#21 commit 后站内通知可能丢失 | 已登记 [`ai-harness/NEXT_TASKS.md`](ai-harness/NEXT_TASKS.md) P2-8 + 各模块 `CLAUDE.md`;当前单实例/小规模下接受,不引 DB 扩展、queue、cron 或事件总线;触发条件出现再单独立项 |
 | P2 | service 单测占比 ~11.8%(26/221 实测) | 刻意策略(e2e 为主,见 §2 测试行) |
 | P2 | Mixed Controller 存量 2 处(见 §2.1) | 冻结仅兼容;详 api-surface-policy §5.1 |
