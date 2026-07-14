@@ -187,12 +187,12 @@ describe('ContributionCalculator', () => {
   });
 
   describe('无每条封顶(活动闭环硬化 2026-06-21:去 per-record dailyCap 钳制,预填回归原始规则分;全局每日封顶改落 team-join computeContribution)', () => {
-    // 旧行为:MIN(candidate, dailyCap ?? 1.5);新行为:预填 = candidate 原始规则分,本计算器不封顶。
+    // 旧行为:MIN(candidate, dailyCap ?? 默认值);新行为:预填 = candidate 原始规则分,本计算器不封顶。
     const noCapCases: Array<[name: string, below: string, expected: number]> = [
-      ['原会被默认 1.5 封顶的 2.00 → 现回归 2.0', '2.00', 2],
-      ['远超旧 1.5 上限的 10.00 → 现回归 10', '10.00', 10],
+      ['原会被默认值封顶的 2.00 → 现回归 2.0', '2.00', 2],
+      ['远超旧上限的 10.00 → 现回归 10', '10.00', 10],
       ['未触旧上限的 0.75 → 仍 0.75(原值不变)', '0.75', 0.75],
-      ['恰为旧默认上限的 1.50 → 1.5', '1.50', 1.5],
+      ['普通两位小数 1.25 → 1.25', '1.25', 1.25],
     ];
 
     it.each(noCapCases)('%s', async (_name, below, expected) => {

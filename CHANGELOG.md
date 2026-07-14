@@ -4,7 +4,11 @@
 
 ## Unreleased
 
-> 下一个 minor 候选(当前为空)。
+> 下一个 minor 候选:v0.48.0。
+>
+> **⚠️ 行为变更(贡献值)**:全局每日贡献值上限调整为 **3**。聚合仍按 `checkInAt` 北京日分组、approved sheet only、读时实时计算;历史记录不分生效日,会一并按新上限重算,因此 App 入队进度与 admin 队员 360 生涯累计数字可能变大。`CONTRIBUTION_THRESHOLD=5` 不变。
+
+- **贡献值每日上限调整**:单一真相源 `GLOBAL_DAILY_CONTRIBUTION_CAP` 改为 `Prisma.Decimal('3')`;team-join `computeContribution` / `computeCappedContribution` 与 attendances 队员 360 跨轴复用同一封顶核,历史考勤记录按新值实时重算。同步翻面 unit、team-join e2e 与 admin cross-axis e2e,并更新 App/admin handoff 与 active 非归档表述。0 schema / 0 migration / 0 数据订正 / 0 新端点 / 0 DTO 字段 / 0 权限码 / 0 BizCode / 0 audit event / 0 依赖;`ContributionRule.dailyCap` deprecated 列保持不动。
 
 ## v0.47.0 - 2026-07-14
 

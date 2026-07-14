@@ -143,7 +143,7 @@ export const CONTRIBUTION_THRESHOLD = new Prisma.Decimal(5);
 // 全局每日封顶(活动闭环硬化 2026-06-21):一个队员单个北京日历日的贡献值总分封顶在统一值。
 // 由「每条记录各自封顶」改为「全局每日上限」——封顶落在汇总处 computeContribution(不落库、
 // 不在 calculator 每条钳制)。v1 常量(配置化后置);ContributionRule.dailyCap 列已 deprecated 不再读。
-export const GLOBAL_DAILY_CONTRIBUTION_CAP = new Prisma.Decimal('1.5');
+export const GLOBAL_DAILY_CONTRIBUTION_CAP = new Prisma.Decimal('3');
 const BEIJING_UTC_OFFSET_HOURS = 8;
 
 /**

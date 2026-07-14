@@ -385,7 +385,7 @@ describe('AttendancesService contribution prefill (characterization)', () => {
       expect(decimalToNumberOrNull(rec.contributionPoints)).toBe(2.0);
     });
 
-    it('Case 7:dailyCap = null 也不再兜底 1.5 封顶 → 预填 = 原始规则分', async () => {
+    it('Case 7:dailyCap = null 也不再兜底默认值封顶 → 预填 = 原始规则分', async () => {
       const activityId = await createActivity(ACTIVITY_TYPE_DEMO);
       await createRule({
         activityTypeCode: ACTIVITY_TYPE_DEMO,
@@ -403,7 +403,7 @@ describe('AttendancesService contribution prefill (characterization)', () => {
       });
 
       const rec = await getOnlyRecord(sheetId);
-      // candidate = 2.0;旧默认 cap 1.5 封顶 → 1.5,新不每条封顶 → 2.0
+      // candidate = 2.0;旧逻辑会按默认 cap 封顶,新逻辑不做每条封顶 → 2.0
       expect(decimalToNumberOrNull(rec.contributionPoints)).toBe(2.0);
     });
 

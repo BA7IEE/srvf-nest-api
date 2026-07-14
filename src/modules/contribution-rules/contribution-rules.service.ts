@@ -31,7 +31,7 @@ import { contributionRuleSafeSelect, type SafeContributionRule } from './contrib
 // - audit hook 3 个写操作;list / detail 不 hook(E6)
 // - 排序契约:(activityTypeCode ASC, attendanceRoleCode ASC, durationThreshold ASC 辅助, createdAt ASC)
 //   durationThreshold NULL 顺位由 PG 默认行为决定,不作硬契约(D6 v1.1 §4.4 修订)
-// - dailyCap 落库保持 null(B5);attendance 预填走 DEFAULT_DAILY_CAP=1.5 兜底(本模块不动)
+// - dailyCap 是 deprecated 历史列;既有 CRUD 契约保留,attendance 预填与贡献聚合均不再读取
 //
 // V2 批次 6 PR #3(第二波第一步):3 处 write hook 从 `auditPlaceholder` 迁移到
 // `AuditLogsService.log()` 同事务落库;字段全部非敏感(无打码矩阵命中);

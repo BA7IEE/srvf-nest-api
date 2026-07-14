@@ -366,7 +366,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   //   5 个 admin 只读端点,224→229(仅新增;复用 read 码零新码 / 零 schema 列 / 零 migration)。
   //   Tier2 跨活动横扫(审批工作台):registrations + attendance-sheets(根 @Get 加在既有
   //   AttendanceSheetsResourceController);Tier3 队员 360:members/:memberId/{registrations,
-  //   attendance-records,contribution-summary}(贡献值实时算复用 team-join 封顶核,生涯累计 1.5/北京日)。
+  //   attendance-records,contribution-summary}(贡献值实时算复用 team-join 封顶核,生涯累计 3/北京日)。
   ['get', '/api/admin/v1/registrations'],
   ['get', '/api/admin/v1/attendance-sheets'],
   ['get', '/api/admin/v1/members/{memberId}/registrations'],

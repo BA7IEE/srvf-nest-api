@@ -25,14 +25,14 @@ export interface ContributionResult {
 
 // 贡献值封顶核(单一真相源):approved sheet only,Decimal 精度,实时算不落库。
 // 全局每日封顶(活动闭环硬化 2026-06-21):一个队员单个北京日历日的贡献值总分封顶在
-// GLOBAL_DAILY_CONTRIBUTION_CAP(默认 1.5)。按记录 checkInAt 的北京日历日分组 → 每日总和封顶 →
-// 再加总。封顶在此汇总处、不落库 → 旧记录存值照旧,无 migration / 无回溯重算。in-memory 取数分组
+// GLOBAL_DAILY_CONTRIBUTION_CAP(当前 3)。按记录 checkInAt 的北京日历日分组 → 每日总和封顶 →
+// 再加总。封顶在此汇总处、不落库 → 旧记录存值照旧、读取时按当前上限重算,无 migration / 无数据回填。in-memory 取数分组
 //(成员记录有界);contributionPoints 为 null(APD 未填 / 无匹配规则)按 0 计,沿旧 SQL SUM 跳 NULL 语义。
 //
 // cutoff 参数化(2026-06-23,队员 360 跨轴只读复用):
 //   - Date  → 仅计 checkInAt < cutoff 的记录(入队 gate「本轮 3-31 截至」语义,team-join 调用方传入)
 //   - null  → 不设上界,**生涯累计**(admin 队员贡献汇总,无入队年 cutoff)
-// **禁裸 SUM**:任何贡献值总分都必须走本函数的北京日分组封顶,绕过会算多(超 1.5/日)。
+// **禁裸 SUM**:任何贡献值总分都必须走本函数的北京日分组封顶,绕过会算多(超 3/日)。
 export async function computeCappedContribution(
   client: PrismaService | Prisma.TransactionClient,
   memberId: string,
