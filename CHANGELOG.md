@@ -4,7 +4,16 @@
 
 ## Unreleased
 
-> 下一个 minor 候选(当前为空)。
+> 下一个 minor 候选:**v0.49.0 — 部门数据范围全面接线**。范围 = 冻结评审 #604 + 副职只读角色 #605 + 可见组织集/FE 有效权限出口 #606 + 队员轴 #607 + 参与域扁平入口 #608。0 schema / 0 migration(仍 50) / 0 新权限码(仍 206) / 0 BizCode(仍 232) / 0 AuditLogEvent(仍 113) / +1 endpoint(337→338) / +1 controller(66→67) / 内置角色 7→9。
+>
+> **⚠️ 行为变更 1（副职首次自动只读）**:active `vice-captain` / `dept-deputy` / `deputy-group-leader` 任职分别经 TREE policy 派生 `org-readonly` / `group-readonly`；副队长在 root 任职可全队只读，副部长/专业队副队长只读本部门树，副组长只读本组树。两角色权限码分别从 `org-admin` / `group-manager` 动态投影 `*.read.*` 与 `attachment.view.*`，恒排除 `*.read.sensitive` 与全部写码；换届、到期或撤销任职后即时失权。
+>
+> **⚠️ 行为变更 2（分管只读首次真实落到队员轴）**:仅由 supervision 派生 `org-supervisor` 的用户，现在可在所分管组织范围内读取队员、证书以及报名/考勤扁平列表；跨范围详情与写动作仍返 `30100`。成员/证书组织归属严格取 active PRIMARY membership，SECONDARY/TEMPORARY/SUPPORT 不扩大可见性。
+
+- **Authz 可见组织集 + 后台有效权限出口**:`AuthzService.getVisibleOrganizationScope()` 聚合 direct RoleBinding、职务 policy、分管三源，GLOBAL 直通，非 GLOBAL 展开组织 closure；有权限但有效范围为空时列表返回空集，无权限仍返 `30100`。新增 `GET /api/system/v1/authz/me/effective-permissions`，返回三源聚合、去重排序的 `permissions:string[]`，供后台菜单/按钮渲染；SUPER_ADMIN 返回 Permission 全集。既有 `GET /api/system/v1/rbac/me/permissions` 与 `RbacService` 只读 USER+GLOBAL 的语义逐字不变。
+- **队员轴全面接线**:members 列表/options 按 active PRIMARY membership 下推可见组织集，并与调用者显式 `organizationId`/`includeDescendants` 过滤求交；member detail/全部写动作、certificates、member-profiles、emergency-contacts、member-insurances 均改为基于对应 member/resource ref 的 `authz.explain`。部长/队长可管范围内资源，副职与分管人只读；范围外详情/写统一 `30100`，不存在资源的 GLOBAL 回退与既有 BizCode 行为不变。
+- **参与域五个扁平入口接线**:`activity-registrations.listAllForAdmin`、`attendances.listAllSheetsForAdmin` 按 `activity.organizationId` 下推可见组织集并与显式组织过滤求交；队员轴 `listForMemberAdmin`、`listRecordsForMemberAdmin`、`getMemberContributionSummary` 改为对 member ref 点判。部长视角仅见本部门树，GLOBAL/SUPER_ADMIN 仍全量，合法空 scope 返回空列表。
+- **冻结边界**:`src/modules/recruitment/**`、`src/modules/team-join/**`、`src/modules/auth/**`、`RbacService`、Prisma schema/migrations、BizCode、AuditLogEvent 相对 v0.48.0 均 0 diff；招新/入队继续是中央流程，不随职务派生；users/content/notifications/audit-logs/App API 可见性不在本版范围。
 
 ## v0.48.0 - 2026-07-14
 

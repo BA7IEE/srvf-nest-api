@@ -17,11 +17,11 @@
 - **R13 红线贯穿全篇**:真实姓名 / 身份证号 / 手机号 / `memberNo` 的对照关系绝不写入本仓库任何文件(含 issue、PR 描述、commit message、AI 协作会话记录);本清单所有示例一律用假数据(`T0001`/`张三` 类占位)。
 - 占位符:`<API_HOST>` / `<ACCESS_TOKEN>`(SUPER_ADMIN 或持权账号的登录 token)。
 
-## 1. 部署 ≥ v0.34.0 + 摘码微刀 #482
+## 1. 部署 ≥ v0.49.0
 
-- [ ] 部署版本 ≥ `v0.34.0` 且包含摘码微刀([#482](https://github.com/BA7IEE/srvf-nest-api/pull/482));`git log` 应能看到该 squash commit
-- [ ] `prisma migrate deploy` 执行完毕、`prisma migrate status` 无 pending:部署 v0.47.0 current `main` 共 **50** 个 migration;终态 scoped-authz 8 张表在第 38 个 migration 建齐,第 39 个 migration 清理冻结旧表,后续 migration 见当前 release notes。若部署旧 tag,以该 tag 的 `migrate status` 为准
-- [ ] `pnpm prisma:seed` 幂等执行:权限码 **206** 条 / 7 个内置角色(`biz-admin` **81** / `ops-admin` **96** / `member` 9 / `org-admin` 60 / `group-manager` 22 / `org-supervisor` 4 / `attendance-final-reviewer` 4)/ 6 个内置职务(队长 / 副队长 / 部长 / 副部长 / 组长 / 副组长)/ 30 条默认职务规则全部到位
+- [ ] 部署版本 ≥ `v0.49.0`；该版本包含摘码微刀([#482](https://github.com/BA7IEE/srvf-nest-api/pull/482))及部门数据范围全面接线 #604–#608
+- [ ] `prisma migrate deploy` 执行完毕、`prisma migrate status` 无 pending:v0.49.0 共 **50** 个 migration（本版 0 migration）；终态 scoped-authz 8 张表在第 38 个 migration 建齐,第 39 个 migration 清理冻结旧表。若部署旧 tag,以该 tag 的 `migrate status` 为准
+- [ ] `pnpm prisma:seed` 幂等执行:权限码 **206** 条 / 9 个内置角色(`biz-admin` **81** / `ops-admin` **96** / `member` 9 / `org-admin` 60 / `org-readonly` 10 / `group-manager` 22 / `group-readonly` 11 / `org-supervisor` 4 / `attendance-final-reviewer` 4)/ 6 个内置职务(队长 / 副队长 / 部长 / 副部长 / 组长 / 副组长)/ 30 条默认职务规则全部到位
 
 **校验**:
 
@@ -30,7 +30,7 @@ curl -s https://<API_HOST>/api/system/v1/health/ready
 # 期望:{"code":0,...,"data":{"status":"ok"}}
 ```
 
-`GET /api/system/v1/roles`(需 SUPER_ADMIN token)应看到 7 条内置角色,`attendance-final-reviewer` 绑 4 码(`attendance.{read,final-approve,final-reject,reopen}.sheet`)。
+`GET /api/system/v1/roles`(需 SUPER_ADMIN token)应看到 9 条内置角色；`org-readonly` 绑 10 个只读码、`group-readonly` 绑 11 个只读码，均零 `*.read.sensitive`/零写码；`attendance-final-reviewer` 绑 4 码(`attendance.{read,final-approve,final-reject,reopen}.sheet`)。
 
 ## 2. 建 SUPER_ADMIN 与管理账号
 
@@ -38,7 +38,7 @@ curl -s https://<API_HOST>/api/system/v1/health/ready
 - [ ] 首个 `ops-admin` 持有者默认 fallback 到该 `SUPER_ADMIN`(env `RBAC_INITIAL_OPS_ADMIN_USER_ID` 留空即可);如需指定他人,部署前将该 env 设为目标 `User.id`
 - [ ] 日常操作组织/职务/任职录入的管理员账号:`SUPER_ADMIN` 登录后 `POST admin/v1/users` 建账号,再用既有端点分配角色(`POST system/v1/users/:userId/roles`,body `{"roleCode":"biz-admin"}` 或 `"ops-admin"`;仅 USER+GLOBAL 契约不变,继续可用)
 
-**校验**:`GET /api/system/v1/rbac/me/permissions`(SA token)返回 `Permission.code` 全集;新建管理员账号登录后 `GET admin/v1/me` 能查到身份与角色。
+**校验**:`GET /api/system/v1/rbac/me/permissions`(SA token)返回 GLOBAL 兼容口径；后台实际菜单权限改查 `GET /api/system/v1/authz/me/effective-permissions`，SA 返回 `Permission.code` 全集。新建管理员账号登录后 `GET admin/v1/me` 能查到身份与角色。
 
 ## 3. 录入队员(公告涉及人员)
 
@@ -130,6 +130,25 @@ curl -X POST https://<API_HOST>/api/admin/v1/authz/explain \
 
 全部通过 = 判权链路验收完成。
 
+### 6.1 v0.49.0 部门数据范围抽查
+
+- [ ] **正职范围**:仅有 `dept-leader` active 任职、零 GLOBAL 绑定的账号，`members` 列表/options 只含本部门树 active PRIMARY 队员；本部门队员详情/更新可用，跨部门详情/更新/证书/档案均 `30100`
+- [ ] **副职只读**:`vice-captain` / `dept-deputy` / `deputy-group-leader` 的有效权限出口分别含 `org-readonly` / `group-readonly` 投影读码；范围内列表/详情可读，任一 create/update/delete/approve 写动作 `30100`
+- [ ] **分管首次生效**:仅 supervision 派生、零 GLOBAL 绑定的分管人，可读所分管组织内队员/证书/报名/考勤列表；范围外不可见，写动作 `30100`
+- [ ] **扁平列表求交**:`registrations` / `attendance-sheets` 显式传 `organizationId` + `includeDescendants=true` 时，结果必须同时落在用户筛选树和 Authz 可见组织集内；有效范围为空返 200 空列表
+- [ ] **换届失权**:撤销或结束一条副职/正职任职后，重调 effective-permissions 与上述列表，派生码/范围立即消失（Authz 不缓存）
+
+### 6.2 v0.49.0 上线后运维重配 runbook
+
+> 目标是把此前为“能看到菜单”临时授予部长/队长/副职的 `biz-admin` GLOBAL 绑定收回，恢复职务派生的最小权限。按人串行执行，任一步抽查失败就先回滚该人，不批量裸删。
+
+1. **补真实任职**:为队长/部长/组长及副职补齐 active `OrganizationPositionAssignment`；组织和职务必须匹配，副队长应落 root，部长/专业队队长落对应部门节点，副组长落对应组节点。
+2. **先验派生结果**:使用目标账号登录，调用 `GET system/v1/authz/me/effective-permissions`；再由持 `authz.explain.decision` 的管理员抽查 `authz/explain`，确认正职为 `org-admin`/`group-manager`，副职为 `org-readonly`/`group-readonly`，组织范围与任职节点一致。
+3. **再收回旧 GLOBAL**:只撤销该人原有的 `biz-admin` GLOBAL RoleBinding，不动真实业务仍需的其他显式绑定；每次只处理一个人。
+4. **行为矩阵抽查**:按 §6.1 验证 members/options/detail、证书/档案/联系人/保险、registrations/attendance-sheets 与写动作；副职和分管必须只读，正职只能写本范围。
+5. **中央流程例外**:Recruitment/team-join 不随职务派生。确需招新/入队审核的人必须保留或另建明确的 GLOBAL/显式授权；不要因为“该人是部长”而默认给，也不要在收回 biz-admin 时误删其经业务确认仍需的中央流程授权。
+6. **回滚**:若抽查出现非预期拒权且不能立即确认配置原因，恢复该人撤销前的**同一条** `biz-admin` GLOBAL 绑定（相同 user/role/scope/任期），记录 binding id 与时间，再排查任职状态、组织闭包和 effective-permissions；禁止用给更多人批量授 biz-admin 作为兜底。
+
 ## 7. env 项确认
 
 - [ ] `ATTENDANCE_ALLOW_SAME_REVIEWER`:留空 / 非 `'true'`(默认,推荐)= 禁止"一级审核人 == 终审人";若运营规模小、终审人手不足,可显式设 `'true'` 放开同人限制——**但自审限制(提交人 == 终审人)不受此开关影响,永远禁止,`SUPER_ADMIN` 也不例外**
@@ -149,5 +168,6 @@ curl -X POST https://<API_HOST>/api/admin/v1/authz/explain \
 ## 9. 本清单不覆盖(已知事项 / 后续)
 
 - **存量队员批量导入工具**:preview/execute 两段式镜像 announcement-import 尚未建,已登记 [`NEXT_TASKS.md`](../ai-harness/NEXT_TASKS.md) 候选项,诉求触发再立项
-- **members / certificates / content / notifications 等其余业务面 scoped 判权迁移**:见 [`admin-web.md` GAP-007](../handoff/admin-web.md#4-缺口台账-gap-ledger) 序列外候选清单
+- **仍未接线的业务面**:users / content / notifications / audit-logs 与 attachment self-scope 等，见 [`admin-web.md` GAP-007 v0.49.0 扩展关账](../handoff/admin-web.md#4-缺口台账-gap-ledger)。members / certificates / profile / contacts / insurance 与 participation 五个扁平/member-axis 入口已在 v0.49.0 划账完成
+- **Recruitment / team-join**:明确维持中央流程，不随职务/分管自动派生；审核人按 §6.2 保留显式授权，这不是 scoped 迁移 TODO
 - **换届 SOP**:本清单只覆盖首次上线初始化;后续常态化换届(撤销旧任职/绑定 + 建新任职/绑定)沿 §5 末尾的"撤销 + 重建"操作即可,暂不需要独立 SOP,诉求增长后可另立
