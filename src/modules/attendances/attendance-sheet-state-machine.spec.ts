@@ -8,12 +8,13 @@ import {
 // AttendanceSheetStateMachine 组件级全矩阵 unit spec(B 档 test-only;沿 PR #176/#181/#182 characterization)。
 // 行为权威仍是 attendances-state-transition / attendances-reject-transition /
 // attendances-status-guards e2e(HTTP 层真实状态流转);本 spec 锁纯决策表本身:
-// 5 态 × 6 action = 30 判定点 + 未知态 × 6 = 36 全矩阵。
+// 5 态 × 7 action = 35 判定点 + 未知态 × 7 = 42 全矩阵。
 // 本状态机最有价值的锁定点是 **wrong-state 错误码三分映射**:
 //   - edit/softDelete 按终态细分:approved → 22040 / rejected → 22041 / final_rejected → 22043,
 //     pending_final_review 与未知态 → 22030(STATUS_INVALID);
 //   - approve/reject(一审)wrong state → 22030;
 //   - finalApprove/finalReject(终审)wrong state → 22045(FINAL_REVIEW_STATUS_INVALID)。
+//   - reopen 仅 approved → pending;wrong state → 22030。
 // 终审授权语义(方案 A,2026-06-10 拍板)不在状态机内:finalReviewerUserId 仅审计记录。
 // 与 attendances.service.spec.ts 边界互补(该 spec mock 状态机返回值,不复刻内部矩阵)。
 
@@ -80,14 +81,21 @@ describe('AttendanceSheetStateMachine', () => {
     ['finalReject', REJECTED, deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID)],
     ['finalReject', FINAL_REJECTED, deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID)],
     ['finalReject', UNKNOWN, deny(BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID)],
+    // reopen(撤回终审):仅 approved → pending;wrong state 统一 22030
+    ['reopen', APPROVED, allow(PENDING)],
+    ['reopen', PENDING, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
+    ['reopen', PENDING_FINAL_REVIEW, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
+    ['reopen', REJECTED, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
+    ['reopen', FINAL_REJECTED, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
+    ['reopen', UNKNOWN, deny(BizCode.ATTENDANCE_SHEET_STATUS_INVALID)],
   ];
 
   it.each(cases)('%s @ %s', (action, current, expected) => {
     expect(machine.decide(action, current)).toEqual(expected);
   });
 
-  it('矩阵穷尽(6 action × (5 态 + 未知态) = 36)', () => {
-    expect(cases).toHaveLength(6 * (STATUSES.length + 1));
+  it('矩阵穷尽(7 action × (5 态 + 未知态) = 42)', () => {
+    expect(cases).toHaveLength(7 * (STATUSES.length + 1));
   });
 
   it('唯一可达 approved 的路径是 finalApprove @ pending_final_review(终审两段制)', () => {

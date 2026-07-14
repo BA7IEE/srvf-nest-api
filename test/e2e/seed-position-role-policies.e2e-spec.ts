@@ -105,7 +105,7 @@ const EXPECTED_ORG_ADMIN_CODES = [
   'activity-registration.reject.record',
   'activity-registration.cancel.record',
   'activity-registration.reopen.record',
-  // attendance 6(一级审批;final-approve / final-reject 归终审中枢,BD-2 排除)
+  // attendance 6(一级审批;final-approve / final-reject / reopen 归终审中枢,BD-2 排除)
   'attendance.create.sheet',
   'attendance.read.sheet',
   'attendance.update.sheet',
@@ -193,12 +193,14 @@ const VICE_POSITION_CODES = ['vice-captain', 'dept-deputy', 'deputy-group-leader
 
 const NEW_ROLE_CODES = ['org-admin', 'group-manager', 'org-supervisor'] as const;
 
-// 终态 scoped-authz PR9:第 7 内置角色(冻结稿场景 4 / BD-2)—— 3 条既有 attendance 码,0 新码。
+// 终态 scoped-authz PR9:第 7 内置角色(冻结稿场景 4 / BD-2);
+// v0.47.0 F2 后承载 read + 终审两码 + reopen 共 4 码。
 const FINAL_REVIEWER_ROLE_CODE = 'attendance-final-reviewer';
 const EXPECTED_FINAL_REVIEWER_CODES = [
   'attendance.read.sheet',
   'attendance.final-approve.sheet',
   'attendance.final-reject.sheet',
+  'attendance.reopen.sheet',
 ] as const;
 
 // 既有 3 角色绑定数零漂移基线(seed-rbac 95 / seed-attachment 9 / seed-biz-admin 74〔§F&A-3 起〕同口径;
@@ -269,6 +271,7 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     const orgAdminCodes = await boundCodesOf(prisma, 'org-admin');
     expect(orgAdminCodes).not.toContain('attendance.final-approve.sheet');
     expect(orgAdminCodes).not.toContain('attendance.final-reject.sheet');
+    expect(orgAdminCodes).not.toContain('attendance.reopen.sheet');
     expect(orgAdminCodes.some((c) => c.endsWith('.read.sensitive'))).toBe(false);
     expect(orgAdminCodes.some((c) => c.startsWith('recruitment-'))).toBe(false);
     expect(orgAdminCodes.some((c) => c.startsWith('team-join-'))).toBe(false);
@@ -278,6 +281,7 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     const gmCodes = await boundCodesOf(prisma, 'group-manager');
     expect(gmCodes).not.toContain('member.update.record');
     expect(gmCodes).not.toContain('attendance.final-approve.sheet');
+    expect(gmCodes).not.toContain('attendance.reopen.sheet');
     expect(gmCodes.some((c) => c.startsWith('activity.'))).toBe(false); // 活动增删改/发布/取消不给组长
     // org-supervisor 只读自证(BD-3:无写、无敏感、无审批)
     const supCodes = await boundCodesOf(prisma, 'org-supervisor');
@@ -411,10 +415,10 @@ describe('prisma/seed.ts — PR7 position role policies + PR9 final reviewer(内
     expect(policies.every((p) => p.updatedAt.getTime() === p.createdAt.getTime())).toBe(true);
   });
 
-  it('7. PR9 attendance-final-reviewer:绑且仅绑 3 既有码;零持有;零 policy 行(终审不随职务推导)', async () => {
+  it('7. attendance-final-reviewer:绑且仅绑 4 码(含 reopen);零持有;零 policy 行', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr9-seed-su-7' }).code).toBe(0);
 
-    // 码集逐码相等(0 新权限码 —— 3 条全是既有 attendance 码)
+    // 码集逐码相等(read + 终审两码 + reopen)。
     expect(await boundCodesOf(prisma, FINAL_REVIEWER_ROLE_CODE)).toEqual(
       [...EXPECTED_FINAL_REVIEWER_CODES].sort(),
     );

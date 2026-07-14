@@ -19,6 +19,7 @@ export const ATTENDANCE_SHEET_TRANSITION_ACTIONS = [
   'reject',
   'finalApprove',
   'finalReject',
+  'reopen',
 ] as const;
 
 export type AttendanceSheetTransitionAction = (typeof ATTENDANCE_SHEET_TRANSITION_ACTIONS)[number];
@@ -64,6 +65,11 @@ export class AttendanceSheetStateMachine {
           return { allowed: true, nextStatusCode: ATTENDANCE_SHEET_STATUS.FINAL_REJECTED };
         }
         return { allowed: false, biz: BizCode.ATTENDANCE_SHEET_FINAL_REVIEW_STATUS_INVALID };
+      case 'reopen':
+        if (currentStatusCode === ATTENDANCE_SHEET_STATUS.APPROVED) {
+          return { allowed: true, nextStatusCode: ATTENDANCE_SHEET_STATUS.PENDING };
+        }
+        return { allowed: false, biz: BizCode.ATTENDANCE_SHEET_STATUS_INVALID };
     }
   }
 

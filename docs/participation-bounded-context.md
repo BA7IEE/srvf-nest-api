@@ -94,15 +94,16 @@ Certificate (不在 participation 图内)
 | 8. APD 一级审核 | attendances | `approve` → `pending → pending_final_review`;`reject` → `pending → rejected` | **不**触发 `attendance.recorded`(沿 D-S7;触发点已移到 final-approve) |
 | 9. APD 终审通过 | attendances | `finalApprove` → `pending_final_review → approved` | **`contributionPoints` 在此刻语义上生效**;同事务内 `eventPlaceholder('attendance.recorded')` 发出([`attendances.service.ts:1003`](../src/modules/attendances/attendances.service.ts:1003));未来 contribution-points 聚合器从此事件消费 |
 | 10. APD 终审驳回 | attendances | `finalReject` → `pending_final_review → final_rejected` | 不触发 `attendance.recorded`;records 跟随软删 |
+| 11. 撤回终审通过 | attendances | `reopen` → `approved → pending` | 保留 records / previousSnapshot / version,清空一审与终审责任字段;所有 approved-only 贡献读模型立即不再计入,重新 edit → approve → finalApprove 后恢复。撤回本身不发通知、不回滚历史报名准入 / 招新入队晋级结果;再次 finalApprove 复用既有通知。 |
 | —. ContributionRule 维护 | contribution-rules | ops 后台 CRUD;`status: ACTIVE / INACTIVE` | **不是流程状态实体**;仅作为预填配置,在 Step 7 被读取;`active_unique (activityTypeCode, attendanceRoleCode, durationThreshold) WHERE deletedAt IS NULL AND status = 'ACTIVE'` 由 migration SQL 加 partial unique |
 
 **关键 invariant**:
 
-- `AttendanceRecord.contributionPoints` 字段层可空;**业务**层在 Step 9(approved)之前可由 APD 现场修订;终审通过即"语义生效"。
+- `AttendanceRecord.contributionPoints` 字段层可空;**业务**层在 Step 9(approved)之前或 Step 11 reopen 回 pending 后可由 APD 现场修订;仅 approved 时"语义生效"。
 - **全局每日封顶在本 context 之外**(活动闭环硬化 2026-06-21):队员单个北京日历日的贡献值总分封顶 1.5(`GLOBAL_DAILY_CONTRIBUTION_CAP`),封顶**只**发生在 recruitment 侧 team-join `computeContribution`(按 `checkInAt` 北京日分组 → 每日封顶 → 加总),**不**在 participation 侧落库——`AttendanceRecord.contributionPoints` 仍存原始规则分。`ContributionRule.dailyCap` 列保留但已 deprecated、calculator 不再读。
 - `attendance.recorded` 事件是 participation context **向外的唯一已锁定出口语义**;其它消费方(未来 contribution 聚合 / 仪表盘 / 队员个人贡献值汇总)应当订阅它,**不应**直接读 `AttendanceSheet` / `AttendanceRecord` 表。
 - Activity → completed 由 attendances submit 推动,这是**已知的跨 aggregate 写**;在 §5.2 中明确允许,**不再扩散**到其它方向。
-- **终审授权现状(2026-06-10 方案 A 拍板;2026-06-11 Slow-4 收口更新)**:Step 9/10 的 `finalApprove` / `finalReject` 由 service 层 `rbac.can('attendance.final-{approve,reject}.sheet')` 判权(两码绑 `biz-admin`)——**终审 = SUPER_ADMIN(短路)或持 `biz-admin` 的 ADMIN**,任何持权 ADMIN 可终审任何部门;`AttendanceSheet.finalReviewerUserId` 仅作审计记录,**不参与授权**。"部长 / 副部长"职务在数据模型中不存在(`member_departments` 仅人↔部门归属,无职务字段),部门级细分**刻意后置**,作为 Slow-3 决议(主决议已于 2026-06-11 落地为 `biz-admin`)的**仍挂起子议题**,未单独立项前**不**实现、**不**新增权限码、**不**补部门级 e2e。
+- **终审/撤回授权现状(2026-07-02 scoped-authz;v0.47.0 F2)**:Step 9/10/11 的 `finalApprove` / `finalReject` / `reopen` 均由 service 层 `authz.explain(...,{type:'attendance_sheet',id})` 判权;权限只来自显式 `attendance-final-reviewer` scoped RoleBinding(通常绑定有效任职并覆盖组织树)或 SUPER_ADMIN 兜底。`biz-admin` 不持这 3 个动作码;角色另含 `attendance.read.sheet`,合计 4 码。只有 finalApprove 受自审 22074 / 一级同人 22075 约束,reopen 不复用这两条终审完整性约束。
 
 ---
 
@@ -207,7 +208,7 @@ Certificate (不在 participation 图内)
 - 不改 [`src/modules/permissions/`](../src/modules/permissions/) / RBAC 权限点(沿现行 P0-F 收紧范围)。
 - 不改 BizCode 段位(沿现行 [`biz-code.constant.ts`](../src/common/exceptions/biz-code.constant.ts) 与 BizCode range index)。
 - 不动 [`src/modules/certificates/`](../src/modules/certificates/) — 它是独立的 member-qualifications 上下文,本文只是把它从 participation 排除。
-- 不引入新 audit / event 主题;`attendance.recorded` 仍然是唯一对外事件出口。
+- 不引入新业务 event 主题;`attendance.recorded` 仍然是唯一对外事件出口。v0.47.0 F2 仅新增内部审计事件 `attendance-sheet.reopen`,与业务 event 分层。
 - 不对 `app/v1/*` ↔ `v2/users/me/*` 两路径做合并或迁移。
 - 不动 [`src/common/exceptions/biz-code.constant.ts`](../src/common/exceptions/biz-code.constant.ts) 中跨 participation 的共享 BizCode 命名(`ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN` / `ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH` / `CONTRIBUTION_RULE_*` 等)。
 

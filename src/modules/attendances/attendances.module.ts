@@ -21,7 +21,7 @@ import { AdminMemberAttendanceController } from './controllers/admin-member-atte
 import { AppMyAttendanceRecordsController } from './controllers/app-my-attendance-records.controller';
 
 // V2 批次 6 PR #6(D6 v1.1 §8 / 第二波最后一批):导入 AuditLogsModule 以注入 AuditLogsService,
-// attendances 8 处写操作(submit / edit × 2 / softDelete / approve / reject / finalApprove / finalReject)
+// attendances 9 处写操作(submit / edit × 2 / softDelete / approve / reject / finalApprove / finalReject / reopen)
 // 调 log() 替代 auditPlaceholder;3 处 read.other(list / findOne / reviewDetail)仍走 pino-only
 // auditPlaceholder(沿 Q1=A 当前阶段不记录查看行为)。
 //
@@ -36,8 +36,8 @@ import { AppMyAttendanceRecordsController } from './controllers/app-my-attendanc
 @Module({
   // 统一通知 S4(评审稿 §6.4 / §11):考勤终审通过 → 本人考勤结果/贡献值定向通知(NotificationDispatcher;
   // producer → notifications **单向**,finalApprove commit 后直调,防环:通知绝不回调考勤)。
-  // 终态 scoped-authz PR9(2026-07-02):导入 AuthzModule 注入 AuthzService —— 终审两方法判权切
-  // authz.explain(首个消费者;authz 是叶子模块,无反向依赖,不成环);其余 6 动作仍走 rbac.can。
+  // 终态 scoped-authz PR9 + v0.47.0 F2:导入 AuthzModule 注入 AuthzService —— 终审与 reopen
+  // 共用带 ref 的 authz.explain;authz 是叶子模块,无反向依赖,不成环。
   imports: [
     DatabaseModule,
     AuditLogsModule,

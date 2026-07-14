@@ -53,6 +53,7 @@ import {
   ListAttendanceSheetsQueryDto,
   MemberContributionSummaryDto,
   MyAttendanceRecordsQueryDto,
+  ReopenAttendanceSheetDto,
   RejectAttendanceSheetDto,
   UpdateAttendanceSheetDto,
 } from './attendances.dto';
@@ -285,11 +286,11 @@ export class AttendancesService {
     throw new BizException(BizCode.RBAC_FORBIDDEN);
   }
 
-  // 终态 scoped-authz PR9(2026-07-02;冻结稿 §5.2/§5.3 + BD-2):终审两方法判权切 AuthzService,
-  // 本仓**首个 authz 消费者**。带 ref 判权 = GLOBAL 绑定(biz-admin 终审两码保留,B 方案,ADMIN
-  // 全局终审契约照旧)∪ scoped 三源(如 POSITION_ASSIGNMENT 主体 RoleBinding —— 终审中枢经
-  // role-bindings 配置行决定,绝不 hardcode 部门)+ ActionConstraint 否决(自审禁止,SUPER_ADMIN
-  // 亦拒;同人默认禁止,env ATTENDANCE_ALLOW_SAME_REVIEWER 可放开)。
+  // 终态 scoped-authz PR9(2026-07-02;冻结稿 §5.2/§5.3 + BD-2):终审与 v0.47.0 reopen
+  // 判权共用此 AuthzService 入口。带 ref 判权 = attendance-final-reviewer scoped 三源
+  // (如 POSITION_ASSIGNMENT 主体 RoleBinding —— 终审中枢经 role-bindings 配置行决定,
+  // 绝不 hardcode 部门)+ SUPER_ADMIN 兜底;biz-admin 不持终审/reopen 三码。
+  // ActionConstraint 仅 finalApprove 咬合自审/同人限制;finalReject/reopen 不受这两条限制。
   //
   // deny 映射(goal 决断①):
   // - self_approval_forbidden → 22074 / same_reviewer_forbidden → 22075(域不变量否决,非权限不足)
@@ -1560,6 +1561,74 @@ export class AttendancesService {
         nextStatusCode: finalRejectTransition.nextStatusCode,
         recordsCount: currentRecords.length,
         finalReviewNote: dto.finalReviewNote,
+        auditMeta,
+        tx,
+      });
+
+      return this.attendancePresenter.toSheetResponseDto(updated);
+    });
+  }
+
+  // ============ reopen(POST;撤回终审通过)============
+
+  // v0.47.0 F2:
+  // - 状态机仅允许 approved → pending,不增加新状态;
+  // - 保留所有 records / previousSnapshot / version,只清空一审+终审责任字段;
+  // - 终审已生效的贡献值依赖 approved 读模型,回 pending 后自然不再计入;
+  // - 同事务写 attendance-sheet.reopen before/after 全快照;
+  // - 本动作不发通知;后续再次 finalApprove 依既有路径正常发通知。
+  async reopen(
+    id: string,
+    dto: ReopenAttendanceSheetDto,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<AttendanceSheetResponseDto> {
+    await this.assertFinalReviewAuthzOrThrow(currentUser, 'attendance.reopen.sheet', id);
+    const reason = dto.reason.trim();
+    if (reason.length === 0) throw new BizException(BizCode.BAD_REQUEST);
+
+    return this.prisma.$transaction(async (tx) => {
+      const sheet = await this.findSheetOrThrow(id, tx);
+      const reopenTransition = this.sheetStateMachine.decide('reopen', sheet.statusCode);
+      if (!reopenTransition.allowed) throw new BizException(reopenTransition.biz);
+
+      const claimed = await tx.attendanceSheet.updateMany({
+        where: { id: sheet.id, statusCode: sheet.statusCode, deletedAt: null },
+        data: { statusCode: sheet.statusCode },
+      });
+      if (claimed.count === 0) {
+        throw new BizException(BizCode.ATTENDANCE_SHEET_STATUS_INVALID);
+      }
+
+      const records = await tx.attendanceRecord.findMany({
+        where: { sheetId: id, deletedAt: null },
+        select: recordWithMemberSelect,
+        orderBy: { checkInAt: 'asc' },
+      });
+      const updated = await tx.attendanceSheet.update({
+        where: { id: sheet.id },
+        data: {
+          statusCode: reopenTransition.nextStatusCode,
+          reviewerUserId: null,
+          reviewedAt: null,
+          reviewNote: null,
+          finalReviewerUserId: null,
+          finalReviewedAt: null,
+          finalReviewNote: null,
+        },
+        select: sheetSafeSelect,
+      });
+
+      await this.attendanceAuditRecorder.logReopen({
+        sheetId: id,
+        beforeSheet: sheet,
+        afterSheet: updated,
+        records,
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        reason,
+        priorStatusCode: sheet.statusCode,
+        nextStatusCode: reopenTransition.nextStatusCode,
         auditMeta,
         tx,
       });

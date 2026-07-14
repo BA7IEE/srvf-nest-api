@@ -2799,6 +2799,13 @@ const ATTENDANCE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
     resourceType: 'sheet',
     description: '终审驳回(pending_final_review → final_rejected)',
   },
+  {
+    code: 'attendance.reopen.sheet',
+    module: 'attendance',
+    action: 'reopen',
+    resourceType: 'sheet',
+    description: '撤回终审通过(approved → pending;保留 records,清空审核责任字段)',
+  },
 ];
 
 // 保险模块 T1(2026-06-13;冻结评审稿 docs/archive/reviews/insurance-module-review.md §3.4):
@@ -3187,24 +3194,27 @@ const MEMBERSHIP_TRANSFER_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;码进 Permission 表但不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
 
-// 摘码微刀(2026-07-03;RBAC_MAP §5 挂账关闭):考勤终审两码不再绑 biz-admin —— 终审权只归
+// 摘码微刀(2026-07-03;RBAC_MAP §5 挂账关闭)+ v0.47.0 F2:考勤终审/撤回三码
+// 不绑 biz-admin —— 终审面只归
 // scoped 通路(attendance-final-reviewer 显式 RoleBinding,BD-2)+ SUPER_ADMIN 短路兜底
-// (自审 22074 对 SA 亦拒不受影响)。两码本身保留在 Permission 表(权限码 191 不变),仅解绑。
-const ATTENDANCE_FINAL_REVIEW_CODES = [
+// (自审 22074 对 SA 亦拒不受影响)。
+const ATTENDANCE_REVIEWER_ONLY_CODES = [
   'attendance.final-approve.sheet',
   'attendance.final-reject.sheet',
+  'attendance.reopen.sheet',
 ] as const;
 
-// biz-admin 不绑 3 码:member.delete.record(D1=A 镜像)+ 终审两码(摘码微刀)
+// biz-admin 不绑 4 码:member.delete.record(D1=A 镜像)+ 终审/撤回三码。
 const BIZ_ADMIN_EXCLUDED_CODES: ReadonlySet<string> = new Set([
   MEMBER_DELETE_RECORD_CODE,
-  ...ATTENDANCE_FINAL_REVIEW_CODES,
+  ...ATTENDANCE_REVIEWER_ONLY_CODES,
 ]);
 
-// 业务面权限码全集(各子数组求和,当前 84 条;运行期日志用 `.length` 输出为准,本注释不逐项维护数字,
+// 业务面权限码全集(各子数组求和,当前 85 条;运行期日志用 `.length` 输出为准,本注释不逐项维护数字,
 // 组成明细见下方 BIZ_ADMIN_DESCRIPTION。第三轮 review〔v0.38.0〕§F&A-3 使 member-profile 3→4、总 76→77;
 // v0.40.0 参与域收口 +3〔已并入各子数组〕;招新可用性收口 F2/F3 使 recruitment-application 6→8、总 80→82;
-// 十项收口刀D〔2026-07-11〕使 emergency-contact 4→5、总 82→83;十三项收口刀G 证书审核 +1 →84)
+// 十项收口刀D〔2026-07-11〕使 emergency-contact 4→5、总 82→83;十三项收口刀G 证书审核 +1 →84;
+// v0.47.0 F2 attendance.reopen.sheet +1 →85)
 const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...MEMBER_PERMISSION_SEED,
   ...MEMBER_PROFILE_PERMISSION_SEED,
@@ -3225,7 +3235,7 @@ const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...MEMBERSHIP_TRANSFER_PERMISSION_SEED,
 ];
 
-// biz-admin 绑定集合(81 条 = 84 过滤 BIZ_ADMIN_EXCLUDED_CODES 3 码;Slow-4 §5/§6 + 保险 E-6
+// biz-admin 绑定集合(81 条 = 85 过滤 BIZ_ADMIN_EXCLUDED_CODES 4 码;Slow-4 §5/§6 + 保险 E-6
 // + 招新 E-R-19/E-R2-11 + 摘码微刀 2026-07-03 + F4「D 组」membership.transfer.record 2026-07-04
 // + 招新可用性收口 F2/F3、十项收口刀D 与十三项收口刀G 2026-07-11/12)
 const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISSION_SEED.filter(
@@ -3235,7 +3245,7 @@ const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISS
 const BIZ_ADMIN_ROLE_CODE = 'biz-admin';
 const BIZ_ADMIN_DISPLAY_NAME = '业务管理员';
 const BIZ_ADMIN_DESCRIPTION =
-  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 §5 + 保险 §3.4 + 招新一/二/三期 §3.4 + 招新闭环优化 S3 §11 + CMS 内容模块评审稿 §7 + 统一通知模块 S1/S2/S5 §9.2 + F4「D 组」路线图 §6.2):member 6 + member-profile 4 + emergency-contact 5 + certificate 6 + activity 6 + activity-registration 6 + attendance 8 + team-insurance-policy 6 + member-insurance 1 + recruitment-cycle 3 + recruitment-application 9 + team-join-cycle 3 + team-join-application 4 + content 5 + content-attachment 4 + notification 7 + membership-transfer 1 = 84 条中绑 81(第三轮 review §F&A-3:member-profile +read.sensitive 敏感明文码全绑 biz-admin;v0.40.0 参与域生命周期收口②/③/⑤:activity-registration +reopen.record + activity +complete.record + member +offboard.record 全绑 biz-admin;招新可用性收口 F2/F3:recruitment-application +update.record/+promote.single;十项收口刀D 2026-07-11:emergency-contact +read.sensitive;十三项收口刀G 2026-07-12:recruitment-application +review.certificate,均全绑 biz-admin);member.delete.record 仅 SUPER_ADMIN(D1=A 镜像),attendance.final-approve.sheet / attendance.final-reject.sheet 不绑(2026-07-03 摘码微刀:终审 = attendance-final-reviewer scoped 绑定或 SUPER_ADMIN 兜底,BD-2);attachment 存量 20 码(member / certificate / activity)不在本角色,CMS content-image / content-file 写路径 4 码因内容授权绑入(评审稿 α / §5.2);notification 7 码(S1 站内信 5 + S2 微信模板配置 1 + S5 短信发起 1)统一通知模块绑入(2026-06-25 ~ 2026-06-27,评审稿 §9.2);membership.transfer.record 归属迁移业务写 1 码 F4 绑入(2026-07-04,membership 其余 4 码仍属 ops-admin 管理面);每个 ADMIN 用户由 seed 自动补挂本角色';
+  '业务面全量权限 meta 角色(Slow-3 决议 2026-06-11:ADMIN 内置角色边界 = 全量业务权限;Slow-4 §5 + 保险 §3.4 + 招新一/二/三期 §3.4 + 招新闭环优化 S3 §11 + CMS 内容模块评审稿 §7 + 统一通知模块 S1/S2/S5 §9.2 + F4「D 组」路线图 §6.2):member 6 + member-profile 4 + emergency-contact 5 + certificate 6 + activity 6 + activity-registration 6 + attendance 9 + team-insurance-policy 6 + member-insurance 1 + recruitment-cycle 3 + recruitment-application 9 + team-join-cycle 3 + team-join-application 4 + content 5 + content-attachment 4 + notification 7 + membership-transfer 1 = 85 条中绑 81(第三轮 review §F&A-3:member-profile +read.sensitive 敏感明文码全绑 biz-admin;v0.40.0 参与域生命周期收口②/③/⑤:activity-registration +reopen.record + activity +complete.record + member +offboard.record 全绑 biz-admin;招新可用性收口 F2/F3:recruitment-application +update.record/+promote.single;十项收口刀D 2026-07-11:emergency-contact +read.sensitive;十三项收口刀G 2026-07-12:recruitment-application +review.certificate,均全绑 biz-admin);member.delete.record 仅 SUPER_ADMIN(D1=A 镜像),attendance.final-approve.sheet / attendance.final-reject.sheet / attendance.reopen.sheet 不绑(2026-07-03 摘码微刀 + v0.47.0 F2:终审/撤回 = attendance-final-reviewer scoped 绑定或 SUPER_ADMIN 兜底,BD-2);attachment 存量 20 码(member / certificate / activity)不在本角色,CMS content-image / content-file 写路径 4 码因内容授权绑入(评审稿 α / §5.2);notification 7 码(S1 站内信 5 + S2 微信模板配置 1 + S5 短信发起 1)统一通知模块绑入(2026-06-25 ~ 2026-06-27,评审稿 §9.2);membership.transfer.record 归属迁移业务写 1 码 F4 绑入(2026-07-04,membership 其余 4 码仍属 ops-admin 管理面);每个 ADMIN 用户由 seed 自动补挂本角色';
 
 // Slow-4 T1(36/35)+ 保险模块 T1 增量(2026-06-13,+7 全绑 → 43/42)+ 招新一期 T1 增量(2026-06-18,+5 全绑 → 48/47):
 // 业务面权限点 + biz-admin 角色 + 绑定 + ADMIN 全员补挂 + 强校验。
@@ -3287,7 +3297,7 @@ async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
   });
   console.log(`[seed] RBAC role '${bizAdminRole.code}' ensured`);
 
-  // 3. upsert RolePermission 映射:数量由 BIZ_ADMIN_PERMISSION_SEED.length 单一推导(当前 81 = 84 - 3 excluded)
+  // 3. upsert RolePermission 映射:数量由 BIZ_ADMIN_PERMISSION_SEED.length 单一推导(当前 81 = 85 - 4 excluded)
   const bizPermissions = await prisma.permission.findMany({
     where: { code: { in: BIZ_ADMIN_PERMISSION_SEED.map((p) => p.code) } },
     select: { id: true, code: true },
@@ -3311,19 +3321,18 @@ async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
       `excluded: ${[...BIZ_ADMIN_EXCLUDED_CODES].join(', ')} —— D1=A 镜像 + 摘码微刀 2026-07-03)`,
   );
 
-  // 3.5 摘码幂等清理(2026-07-03 摘码微刀):v0.34.0 及以前的 seed 为 biz-admin 绑过终审两码,
-  //     且本 seed 无全量对账删除(纯 upsert 补挂)—— 跑过旧 seed 的库须 targeted 清理残留。
-  //     干净库 0 行 no-op;连续两跑 diff 空;仅动 biz-admin × 终审两码,其余角色/绑定零触碰。
-  const staleFinalReviewBindings = await prisma.rolePermission.deleteMany({
+  // 3.5 reviewer-only 幂等清理:纯 upsert seed 不会自动删旧绑定;因此对
+  //     biz-admin × (终审两码 + reopen) targeted 对账。干净库 0 行 no-op,不触碰其他角色。
+  const staleReviewerOnlyBindings = await prisma.rolePermission.deleteMany({
     where: {
       roleId: bizAdminRole.id,
-      permission: { code: { in: [...ATTENDANCE_FINAL_REVIEW_CODES] } },
+      permission: { code: { in: [...ATTENDANCE_REVIEWER_ONLY_CODES] } },
     },
   });
-  if (staleFinalReviewBindings.count > 0) {
+  if (staleReviewerOnlyBindings.count > 0) {
     console.log(
-      `[seed] biz-admin stale final-review bindings removed ` +
-        `(${staleFinalReviewBindings.count} rows; 摘码微刀 2026-07-03)`,
+      `[seed] biz-admin stale reviewer-only bindings removed ` +
+        `(${staleReviewerOnlyBindings.count} rows; reviewer-only set)`,
     );
   }
 
@@ -3419,14 +3428,16 @@ const ORG_SUPERVISOR_DESCRIPTION =
   '`activity.read.record` / `attendance-record.read.record` 2 个候选码(§4.3 表末 🟡)本刀不加。' +
   '本刀零 user 持有,PR8 起由分管关系动态推导(不经本刀的 PositionRolePolicy——分管与职务正交)。';
 
-// org-admin 排除项(冻结稿 §2.4 BD-1 + BD-2 + §4.2;+ 第三轮 review §F&A-3 + 十项收口刀D):终审 2 码 + 敏感 3 码,精确排除。
-// 2026-07-03 摘码微刀后终审两码已不在 BIZ_ADMIN_PERMISSION_SEED,前两项为防御性 no-op(防未来回绑漂移),不删。
+// org-admin 排除项(冻结稿 §2.4 BD-1 + BD-2 + §4.2;+ 第三轮 review §F&A-3 + 十项收口刀D):
+// 终审/reopen 3 码 + 敏感 3 码,精确排除。前三项已不在 BIZ_ADMIN_PERMISSION_SEED,
+// 作为防御性 no-op 保留,防未来回绑漂移。
 // member-profile.read.sensitive(§F&A-3)/ emergency-contact.read.sensitive(十项收口刀D 2026-07-11):
 // 敏感明文码不随「本组织业务管理」下放,与 recruitment sensitive 同款排除
 // —— 故 org-admin 码集在 biz-admin +1 后仍逐码不变(60 恒定)。
 const ORG_ADMIN_EXCLUDED_CODES: ReadonlySet<string> = new Set([
   'attendance.final-approve.sheet',
   'attendance.final-reject.sheet',
+  'attendance.reopen.sheet',
   'recruitment-application.read.sensitive',
   'member-profile.read.sensitive',
   'emergency-contact.read.sensitive',
@@ -3646,8 +3657,9 @@ async function seedPositionRolePolicies(prisma: PrismaClient): Promise<void> {
 // 第 7 个内置角色:`attendance-final-reviewer` —— 终审中枢的**显式绑定**载体:业务上的终审部门
 // 部长/副部长经 RoleBinding(标准形态 principalType=POSITION_ASSIGNMENT + ORGANIZATION_TREE@root)
 // 持有本角色行使终审;换届 = 任职 ENDED 即失权,零代码改动(BD-2「只改绑定行不改代码」)。
-// 绑 3 条**既有**码(0 新权限码):attendance.final-approve.sheet / attendance.final-reject.sheet /
-// attendance.read.sheet(读码让终审人可看单;一级 approve/reject 不含 —— 同人约束语义下终审与一级分人)。
+// 绑 4 条码:attendance.final-approve.sheet / attendance.final-reject.sheet /
+// attendance.reopen.sheet + attendance.read.sheet(读码让终审人可看单;一级
+// approve/reject 不含 —— 同人约束语义下终审与一级分人)。
 //
 // **🔴 本 seed 零持有、零 policy 行**:不 seed 任何 RoleBinding(生产绑定 = PR11 公告导入建立真实
 // 任职后运营挂),也绝不进 PositionRolePolicy(终审不随职务自动推导,必须显式绑定 —— 冻结稿 BD-2);
@@ -3657,17 +3669,18 @@ const ATTENDANCE_FINAL_REVIEWER_ROLE_CODE = 'attendance-final-reviewer';
 const ATTENDANCE_FINAL_REVIEWER_DISPLAY_NAME = '考勤终审员';
 const ATTENDANCE_FINAL_REVIEWER_DESCRIPTION =
   '考勤终审中枢角色(冻结稿场景 4 / BD-2):经显式 RoleBinding(标准形态 POSITION_ASSIGNMENT 主体 + ' +
-  'ORGANIZATION_TREE@root)持有,行使 attendance.final-approve.sheet / final-reject.sheet + read.sheet;' +
+  'ORGANIZATION_TREE@root)持有,行使 attendance.final-approve.sheet / final-reject.sheet / ' +
+  'reopen.sheet + read.sheet;' +
   '不随职务自动推导(零 PositionRolePolicy 行),换届撤任职即失权。自审禁止(SUPER_ADMIN 亦拒)与' +
   '一级同人默认禁止由 authz ActionConstraint 承载,不在角色码集内。seed 零持有;绑定经 ' +
   'role-bindings CRUD 显式建(PR11 公告导入后运营挂)。';
 const ATTENDANCE_FINAL_REVIEWER_PERMISSION_CODES: ReadonlyArray<string> = [
   'attendance.read.sheet',
-  ...ATTENDANCE_FINAL_REVIEW_CODES,
+  ...ATTENDANCE_REVIEWER_ONLY_CODES,
 ];
 
 // 幂等:RbacRole.upsert by code / RolePermission.upsert by (roleId,permissionId);
-// 强校验镜像 seedPositionRolePolicies.bindRolePermissions(3 码必须已被 seedBizAdminRbac upsert)。
+// 强校验镜像 seedPositionRolePolicies.bindRolePermissions(4 码必须已被 seedBizAdminRbac upsert)。
 async function seedAttendanceFinalReviewerRole(prisma: PrismaClient): Promise<void> {
   const role = await prisma.rbacRole.upsert({
     where: { code: ATTENDANCE_FINAL_REVIEWER_ROLE_CODE },
@@ -3825,7 +3838,7 @@ async function main(): Promise<void> {
     await seedPositionRolePolicies(prisma);
 
     // 终态 scoped-authz PR9「考勤终审员」(2026-07-02;冻结稿场景 4 / BD-2):第 7 内置角色
-    //   attendance-final-reviewer,绑 3 条既有 attendance 码;零持有、零 policy(生产绑定 =
+    //   attendance-final-reviewer,绑 4 条 attendance 码;零持有、零 policy(生产绑定 =
     //   PR11 公告导入建立真实任职后,运营经 role-bindings CRUD 显式挂)。依赖 seedBizAdminRbac
     //   已把 attendance.* 码 upsert 进 Permission 表。
     await seedAttendanceFinalReviewerRole(prisma);

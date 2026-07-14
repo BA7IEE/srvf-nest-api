@@ -100,6 +100,8 @@
 
 > 2026-07-14 第七刀 settings/SMS/members 安全收口戳:**权限/API 契约事实零变化**(权限码 **205** / biz-admin **81** / org-admin 60 / ops-admin 96 / member 9 / 内置角色 7 / controller **66** / endpoint **336** / BizCode **232**);migration **48→49**(四 settings constant unique + 安全去重),AuditLogEvent **110→111**(仅 `member.account.status-change`)。0 新端点 / 0 新权限码 / 0 DTO/OpenAPI/限流变化。
 
+> 2026-07-14 v0.47.0 F1/F2 戳:F1 migration **49→50**、AuditLogEvent **111→112**,权限/API 零变化;F2 权限码 **205→206**(`attendance.reopen.sheet`,不绑 biz-admin/org-admin,绑 `attendance-final-reviewer`)、endpoint **336→337**(`POST admin/v1/attendance-sheets/:id/reopen`)、AuditLogEvent **112→113**(`attendance-sheet.reopen`)。终值:biz-admin **81** / org-admin **60** / ops-admin **96** / member 9 / attendance-final-reviewer **4** / controller 66 / module 35 / migration 50 / BizCode 232。
+
 ---
 
 ## 1. 双轨架构现状(一句话版)
@@ -155,7 +157,7 @@
 | `admin/v1/activities/:activityId/registrations`(Slow-4 T3;v0.40.0 +reopen) | `activity-registration.*.record`(6;list/export 共用 read;`:id/reopen` = `reopen.record`) |
 | `admin/v1/registrations`(跨轴只读 2026-06-23) | `activity-registration.read.record`(1;跨活动报名横扫,审批工作台,复用 read 零新码) |
 | `admin/v1/members/:memberId/registrations`(跨轴只读 2026-06-23) | `activity-registration.read.record`(1;某队员报名履历,队员 360,复用 read;MEMBER_NOT_FOUND 守卫) |
-| `admin/v1/…attendance-sheets`(2 个 Admin class;Slow-4 T3;跨轴只读 2026-06-23 加根 @Get) | `attendance.*.sheet`(8;list/detail/review-detail/跨活动根 list 共用 read;终审两码独立,ADMIN 级沿 P1-5 方案 A) |
+| `admin/v1/…attendance-sheets`(2 个 Admin class;Slow-4 T3;跨轴只读 2026-06-23 加根 @Get;v0.47.0 +reopen) | `attendance.*.sheet`(9;list/detail/review-detail/跨活动根 list 共用 read;final-approve/final-reject/reopen 三码只归 scoped reviewer 或 SA) |
 | `admin/v1/members/:memberId`(attendance 派生跨轴只读 2026-06-23) | `attendance.read.sheet`(1 码 2 端点:考勤记录 attendance-records + 贡献值汇总 contribution-summary;贡献值实时算复用 team-join 封顶核;MEMBER_NOT_FOUND 守卫) |
 | `admin/v1/team-insurance-policies`(保险 T2) | `team-insurance-policy.*`(6;list/detail/覆盖名单共用 read;add/remove 覆盖名单两码独立) |
 | `admin/v1/members/:memberId/insurances`(保险 T2) | `member-insurance.read.other`(1;数组无分页镜像 certificates;本人侧走 App self-scope 无码) |
@@ -189,7 +191,7 @@
 
 `auth/v1`:login / refresh / logout(logout-all 走 JWT)/ password-reset×2 / login-sms×2 / **login-wechat + wechat-bind×2(WECHAT T3,第 8 throttler 'login-wechat' 5/60)**;`system/v1/health`:live / ready。
 
-## 3. 权限码全集(205 条,seed 幂等 upsert)
+## 3. 权限码全集(206 条,seed 幂等 upsert)
 
 | 域 | 条数 | 码 |
 |---|---|---|
@@ -223,7 +225,7 @@
 | 证书(Slow-4 T1) | 6 | `certificate.{read,create,update,delete}.record` / `certificate.{verify,reject}.record` |
 | 活动(Slow-4 T1;v0.40.0 +complete) | 6 | `activity.{create,update,delete}.record` / `activity.{publish,cancel}.record` / `activity.complete.record`(v0.40.0 管理端手动完结 published→completed;绑 biz-admin,org-admin 派生继承;列表/详情无码,仅登录) |
 | 活动报名(Slow-4 T1;v0.40.0 +reopen) | 6 | `activity-registration.{read,create}.record` / `activity-registration.{approve,reject,cancel}.record` / `activity-registration.reopen.record`(v0.40.0 审批后悔药:reject → pending;绑 biz-admin,org-admin 派生自动继承) |
-| 考勤(Slow-4 T1) | 8 | `attendance.{create,read,update,delete}.sheet` / `attendance.{approve,reject,final-approve,final-reject}.sheet` |
+| 考勤(Slow-4 T1;v0.47.0 +reopen) | 9 | `attendance.{create,read,update,delete}.sheet` / `attendance.{approve,reject,final-approve,final-reject,reopen}.sheet`;reopen 仅 `approved→pending` |
 | 队保单(保险 T1) | 6 | `team-insurance-policy.{read,create,update,delete}.record` / `team-insurance-policy.{add,remove}.member`(T2 端点实装前孤码 WARN 预期) |
 | 队员自购保险(保险 T1) | 1 | `member-insurance.read.other`(admin 查队员保险;App 本人侧 self-scope 无码;T2 实装) |
 | 实名核验设置(招新 T1) | 3 | `realname-setting.{read,update}.singleton` / `realname-setting.reset.credentials`(`reset` 不绑 ops-admin 镜像 D2=A;T2 端点实装前孤码 WARN 预期) |
@@ -237,7 +239,9 @@
 | 统一通知 S2 微信订阅 quota 渠道(2026-06-25) | 1 | `notification.update.template`(`admin/v1/notification-wechat-templates` upsert;微信模板配置写权,运营可配 D-N3;读复用 `notification.read.record`;app 订阅 ack/status 零码 = canUseApp 闸;全绑 biz-admin;**实装即用 0 孤码**)|
 | 统一通知 S5 短信兜底渠道(2026-06-27) | 1 | `notification.send.sms`(`admin/v1/notifications/:id/send-sms`;显式发起短信兜底〔紧急召集〕成本动作单独 gating,计费确认必需 confirmed=true;全绑 biz-admin;**实装即用 0 孤码**)|
 
-内置角色:`ops-admin`(绑 96 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**;终态 scoped-authz PR1 `org.move.node` 绑入 63→64,PR2 `membership.{list,read,set,end}.record` 4 码绑入 64→68,PR3-PR6 职务定义/规则/任职/分管/角色绑定 20 码绑入 68→88,PR10 `authz.explain.decision` 绑入 88→89,PR11 `announcement-import.{preview,execute}.record` 2 码绑入 89→91,F1「A 组」`meta.resolve.label` 1 码绑入 91→92,F3「C 组」`authz.{explain-batch,action-state}.decision` 2 码绑入 92→94,队员账号闭环 v1 `member.grant.account` 1 码绑入 94→95,队员账号闭环 v2 `member.bind.account` 1 码绑入 95→96)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新一/二/三期入队 + 招新闭环 S3 + CMS content + 统一通知 S1/S2/S5 + F4「D 组」`membership.transfer.record`,绑 **73** 条 = 76 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕+ `attendance.final-{approve,reject}.sheet`〔2026-07-03 摘码微刀:终审 = attendance-final-reviewer scoped 绑定或 SUPER_ADMIN 兜底,码保留不删〕;attachment 存量 20 码〔member/certificate/activity〕不绑,CMS content-* 4 码 + notification 7 码〔S1 5 + S2 `update.template` 1 + S5 `send.sms` 1〕绑入〔α / 统一通知 S1 §9.2 + S2 §9.2 + S5 §9.2;演进 Slow-4 §6「biz-admin 不含 attachment.* 码」不变式 = 仅含 CMS content-* 4 码〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。终态 scoped-authz PR7(2026-07-01)另 seed **3 个纯定义角色(零 user 持有,PR8 才由职务/分管推导;绝不进当前判权)**:`org-admin`(绑 57 = biz-admin 73〔2026-07-03 摘码后已不含终审两码,派生排除项转防御性 no-op;F4 起含 `membership.transfer.record` —— seed「biz-admin 新增业务码自动继承」设计语义〕过滤敏感 1 + recruitment-* 8 + team-join-* 7;职务 policy 目标:team-leader/dept-leader)+ `group-manager`(绑 22,本组资料/内容/考勤一级;职务 policy 目标:group-leader)+ `org-supervisor`(绑 4,BD-3 只读定稿;分管推导用,非职务 policy 目标)。终态 scoped-authz PR9(2026-07-02)另 seed **第 7 角色 `attendance-final-reviewer`**(考勤终审员;绑 **3** 条既有码 `attendance.{read,final-approve,final-reject}.sheet`,0 新码;**零持有、零 policy 行,终审绝不随职务推导** —— 终审身份 = 显式 RoleBinding〔标准形态 POSITION_ASSIGNMENT 主体 + ORGANIZATION_TREE@root,换届撤任职即失权〕,生产绑定待 PR11 公告导入后运营挂;biz-admin 终审两码 B 方案保留至 **2026-07-03 摘码微刀摘除**〔§5 挂账已关闭,终审权只归本角色 scoped 绑定 + SA 兜底〕)。**7 个内置角色均属于系统基座,任何身份含 SUPER_ADMIN 经角色 API 删除都返 `30104`;只有自定义角色保持既有删除语义。** seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN,其余无"代码用码未 seed"。
+当前内置角色计数:`ops-admin` 96 / `member` 9 / `biz-admin` 81 / `org-admin` 60 / `group-manager` 22 / `org-supervisor` 4 / `attendance-final-reviewer` 4。biz-admin 从 85 条业务码中排除 `member.delete.record` 与 `attendance.{final-approve,final-reject,reopen}.sheet`;终审/撤回角色绑定 `attendance.{read,final-approve,final-reject,reopen}.sheet`,零默认持有、零 policy 行。
+
+角色演进背景(含历史中间值,非当前计数):`ops-admin`(绑 96 条:全集过滤 `user.update.role` + `storage-setting.reset.credentials` + `sms-setting.reset.credentials` + `wechat-setting.reset.credentials` + `realname-setting.reset.credentials`,五者仅 SUPER_ADMIN 短路可用——**这是已拍板设计 D1=A / D2=A 及 SMS E-3 / WECHAT §3.4 / 招新 E-R-19 镜像,不是缺口**;终态 scoped-authz PR1 `org.move.node` 绑入 63→64,PR2 `membership.{list,read,set,end}.record` 4 码绑入 64→68,PR3-PR6 职务定义/规则/任职/分管/角色绑定 20 码绑入 68→88,PR10 `authz.explain.decision` 绑入 88→89,PR11 `announcement-import.{preview,execute}.record` 2 码绑入 89→91,F1「A 组」`meta.resolve.label` 1 码绑入 91→92,F3「C 组」`authz.{explain-batch,action-state}.decision` 2 码绑入 92→94,队员账号闭环 v1 `member.grant.account` 1 码绑入 94→95,队员账号闭环 v2 `member.bind.account` 1 码绑入 95→96)+ `member`(占位,绑 9 条 attachment self 权限)+ **`biz-admin`(Slow-4 + 保险 T1 + 招新一/二/三期入队 + 招新闭环 S3 + CMS content + 统一通知 S1/S2/S5 + F4「D 组」`membership.transfer.record`,绑 **73** 条 = 76 业务面码过滤 `member.delete.record`〔仅 SA 短路,D1=A 镜像〕+ `attendance.final-{approve,reject}.sheet`〔2026-07-03 摘码微刀:终审 = attendance-final-reviewer scoped 绑定或 SUPER_ADMIN 兜底,码保留不删〕;attachment 存量 20 码〔member/certificate/activity〕不绑,CMS content-* 4 码 + notification 7 码〔S1 5 + S2 `update.template` 1 + S5 `send.sms` 1〕绑入〔α / 统一通知 S1 §9.2 + S2 §9.2 + S5 §9.2;演进 Slow-4 §6「biz-admin 不含 attachment.* 码」不变式 = 仅含 CMS content-* 4 码〕;seed 幂等补挂「每个非软删 ADMIN 持有 biz-admin」+ 强校验;运行时新建 ADMIN 走既有 user-roles 端点显式授予)**。终态 scoped-authz PR7(2026-07-01)另 seed **3 个纯定义角色(零 user 持有,PR8 才由职务/分管推导;绝不进当前判权)**:`org-admin`(绑 57 = biz-admin 73〔2026-07-03 摘码后已不含终审两码,派生排除项转防御性 no-op;F4 起含 `membership.transfer.record` —— seed「biz-admin 新增业务码自动继承」设计语义〕过滤敏感 1 + recruitment-* 8 + team-join-* 7;职务 policy 目标:team-leader/dept-leader)+ `group-manager`(绑 22,本组资料/内容/考勤一级;职务 policy 目标:group-leader)+ `org-supervisor`(绑 4,BD-3 只读定稿;分管推导用,非职务 policy 目标)。终态 scoped-authz PR9(2026-07-02)另 seed **第 7 角色 `attendance-final-reviewer`**(考勤终审员;绑 **3** 条既有码 `attendance.{read,final-approve,final-reject}.sheet`,0 新码;**零持有、零 policy 行,终审绝不随职务推导** —— 终审身份 = 显式 RoleBinding〔标准形态 POSITION_ASSIGNMENT 主体 + ORGANIZATION_TREE@root,换届撤任职即失权〕,生产绑定待 PR11 公告导入后运营挂;biz-admin 终审两码 B 方案保留至 **2026-07-03 摘码微刀摘除**〔§5 挂账已关闭,终审权只归本角色 scoped 绑定 + SA 兜底〕)。**7 个内置角色均属于系统基座,任何身份含 SUPER_ADMIN 经角色 API 删除都返 `30104`;只有自定义角色保持既有删除语义。** seed 与代码调用对齐口径:管理面码 T2/T3 实装前为孤码 WARN,其余无"代码用码未 seed"。
 
 ## 4. 保护不变式(改 users / permissions 前必读)
 

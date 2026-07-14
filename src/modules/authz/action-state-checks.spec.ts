@@ -14,8 +14,8 @@ describe('buildActionStateChecks(action→状态机只读注册表)', () => {
     activityRegistration: new ActivityRegistrationStateMachine(),
   });
 
-  it('注册面 = 12 项(attendance_sheet 6 + activity 3 + activity_registration 3),resourceType 对齐', () => {
-    expect(checks.size).toBe(12);
+  it('注册面 = 13 项(attendance_sheet 7 + activity 3 + activity_registration 3),resourceType 对齐', () => {
+    expect(checks.size).toBe(13);
     const byType = (t: string): string[] =>
       [...checks.entries()].filter(([, c]) => c.resourceType === t).map(([a]) => a);
     expect(byType('attendance_sheet').sort()).toEqual(
@@ -24,6 +24,7 @@ describe('buildActionStateChecks(action→状态机只读注册表)', () => {
         'attendance.delete.sheet',
         'attendance.final-approve.sheet',
         'attendance.final-reject.sheet',
+        'attendance.reopen.sheet',
         'attendance.reject.sheet',
         'attendance.update.sheet',
       ].sort(),
@@ -53,6 +54,10 @@ describe('buildActionStateChecks(action→状态机只读注册表)', () => {
     const edit = checks.get('attendance.update.sheet')!;
     expect(edit.decide('pending')).toBe(true);
     expect(edit.decide('approved')).toBe(false);
+
+    const reopen = checks.get('attendance.reopen.sheet')!;
+    expect(reopen.decide('approved')).toBe(true);
+    expect(reopen.decide('pending')).toBe(false);
   });
 
   it('activity:cancelled 不可再 update/cancel;publish 仅 draft 可行(D8「活动已取消」示例)', () => {

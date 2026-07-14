@@ -1,7 +1,7 @@
 // V2 第一阶段批次 6 audit_logs 模块类型契约(D6 v1.1 §8 / §10 / §11)。
 //
 // 本文件承载 3 个类型契约,与 audit-logs.service.ts 同进同退:
-//   1. AuditLogEvent  — 落库入口 union(首批 6 项起渐进迁入;v0.47.0 F1 后共 112 项)
+//   1. AuditLogEvent  — 落库入口 union(首批 6 项起渐进迁入;v0.47.0 F2 后共 113 项)
 //   2. AuditContext   — Prisma AuditLog.context Json 字段的运行时锁形(6 字段:3 必填 + 3 可选)
 //   3. AuditMeta      — controller 层从 @Req() 构造,显式传给 service
 //
@@ -35,6 +35,7 @@ export type AuditLogEvent =
   | 'attendance-sheet.delete' // PR #6 接入(attendances.service: softDelete 1 处;pending Sheet 软删 + records 级联软删)
   | 'attendance-sheet.review' // PR #6 接入(attendances.service: approve / reject 共 2 处;extra.action ∈ {approve, reject} 区分;approve 走 pending → pending_final_review)
   | 'attendance-sheet.final-review' // PR #6 接入(attendances.service: finalApprove / finalReject 共 2 处;extra.action ∈ {final-approve, final-reject} 区分;final-approve 触发 attendance.recorded 业务事件,final-reject records 跟随软删;APD 细分权限后置)
+  | 'attendance-sheet.reopen' // v0.47.0 F2:撤回终审 approved → pending;同事务 before/after 含完整 records + extra.reason
   | 'attachment.upload' // V2.x C-7 PR #6c 接入(attachments.service: create 1 处;沿 D7-attachments v1.0 §7.1)
   | 'attachment.delete' // V2.x C-7 PR #6c 接入(attachments.service: delete 1 处;extra.deletedByPath ∈ {owner, admin} 区分;沿 D7-attachments v1.0 §7.1)
   | 'attachment.config.change' // V2.x C-7 PR #6d 接入(配置三表 11 处写共用单事件;沿 D7-attachments v1.0 §7.1 路线 A:extra.configType ∈ {type, mime, sizeLimit} + extra.operation ∈ {create, update, update-status, delete} 区分;updateStatus 沿 Q1 PR #6d 拍板细分独立 operation)
