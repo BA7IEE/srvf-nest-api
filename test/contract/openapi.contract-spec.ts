@@ -160,6 +160,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/app/v1/my/activities/{activityId}/check-out'],
   ['get', '/api/app/v1/my/activities/{activityId}/check-in'],
 
+  // 活动评价 F2：本人 PUT/GET；GET 无评价恒 200/null，PUT 只认 completed + 窗口 + approved 到场。
+  ['put', '/api/app/v1/my/activities/{activityId}/feedback'],
+  ['get', '/api/app/v1/my/activities/{activityId}/feedback'],
+
   // Phase 2 P2-7(2026-05-20):App /api/app/v1/my/certificates 1 endpoint
   // 沿 docs/app-api-p2-7-my-certificates-review.md §4 endpoint 契约 + §5 字段集恰好 12;
   // 独立 AppMyCertificatesService(沿 D-P2-7-9;**不** thin-wrap certificates.service.list;
@@ -1241,8 +1245,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('活动自助 GPS 签到 F3 后路由足迹精确为 350', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(350);
+  it('活动评价 F2 后路由足迹精确为 352', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(352);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

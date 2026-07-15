@@ -25,6 +25,7 @@
 | 我的报名(报名/查/取消) | `GET /api/app/v1/my/registrations` · `POST` 报名(**满员不再返 21031，而是成功创建 `statusCode='waitlisted'`；列表/详情以 `waitlistPosition` 展示排位**) · `PATCH` 取消(候补可随时退出)。活动已结束 `20125`、报名截止 `20123`、已有考勤不可取消 `21033` 等既有闸不变 |
 | 我的考勤 / 参与汇总 / 证书 | `GET /api/app/v1/my/attendance-records` · `GET /api/app/v1/my/participation-summary` · `GET /api/app/v1/my/certificates`。参与汇总严格锁当前 `AppIdentityResolver.memberId`，只统计 approved Sheet：`totalServiceHours` / distinct `activityCount` / `recordCount`；`contributionPoints` 复用生涯累计封顶核，与 Admin 旧 `contribution-summary` 同源。**不返回 memberId / no-show / 他人数据**，前端直接展示，勿自行 SUM |
 | **活动 GPS 自助签到 / 签退(F2)** | `POST /api/app/v1/my/activities/:activityId/check-in` · `POST .../check-out` · `GET .../check-in`。只认本人当前 `pass` 报名；首次与合法网络重试都返回 200 同一证据。App 仅收到时间、距离与 `geoVerified/outOfRange`，**不返回原始经纬度、accuracy 或 memberId** |
+| **活动评价(F2)** | `GET /api/app/v1/my/activities/:activityId/feedback` 初始化本人评价与 `canSubmit/windowClosesAt`；`PUT` 同路径提交 `{rating,comment?}`。只认 completed + 窗口内 + approved 到场，本人 scope；不返回他人评价/人数/均分 |
 | 公开(无账号) | `POST /api/open/v1/recruitment/applications/*`(招新报名) · `GET /api/open/v1/contents`(内容;`expireAt <= now` 的附件行不返回、过期封面 URL 为 null,未来时间/null 不变) |
 | 招新本人进度(无账号) | `POST /api/open/v1/recruitment/applications/query`(凭 wx.login code 换 openid;**返进度模型**:业务态 `stage` + 字典 `stageText` + `nextAction` + 门槛 `todoList` 真投影 + 临时编号;`memberNo` 恒 null——发号后经登录态 app 侧查,见 §3 GAP-006)。**F4(v0.41.0-pre)**:发号后(报名行 openid 已清)不再「查无 28002」——经账号 openid 锚 fall-through 返 **stage=volunteer 引导态**(「已转志愿者 / 待入队」+ `nextAction=apply-teamjoin`),前端见此态引导用户登录小程序/申请入队;已离队(INACTIVE)或非招新出身仍 28002 |
 | **H5 报名前手机身份链(无账号;S4a)** | `POST /api/open/v1/recruitment/identity/send-code`(`{phone}`→发验证码) → `POST .../identity/verify-code`(`{phone,code}`→返一次性 `phoneVerificationToken`〔30min,明文仅返一次〕) → 提交报名(见下行 H5 链)。**F4(v0.41.0-pre)**:闭轮期两端点对「手机命中未清除报名记录」者放行(自助查询/换绑链闭轮不再断);闭轮陌生手机 send-code 返防枚举泛化 200(不真发码),verify-code 统一 24010——前端不必对闭轮做特殊分支 |
@@ -61,6 +62,13 @@
 - **自动递补**：已有通过者取消或管理员扩容时，后端按报名时间、同时间按 id 自动把队首候补转为 pending，并发送标题「候补已递补」的 `registration-result` 站内信。前端收到后刷新报名详情，展示“待审核”，**不是直接通过**。
 - **退出候补**：候补沿既有取消端点退出；取消 pending 或 waitlisted 不影响其他候补排位，取消 pass 才会腾出名额并触发一人递补。
 - **签到边界**：waitlisted/pending 都不能签到；只有当前 pass 报名可走 GPS 签到。`21031` 不再用于满员报名提示，但可保留旧版本兼容文案。
+
+### 2.3 活动评价（审计刀 6 · 第三件 F2）
+
+- **入口初始化**：活动详情/我的活动进入评价区先调 GET；无评价仍是 200，`feedback=null`。按钮只看后端 `canSubmit`，倒计时以 `windowClosesAt` 为准，不在客户端自行推算。
+- **提交**：PUT `{rating:1..5,comment?}`；窗口内可反复修改同一条，缺省/null comment 会清空文字。App 永远只拿本人评价，不展示人数、均分、直方图或他人内容。
+- **资格**：只有 approved 考勤表内有未软删到场记录才可评；pass 报名、waitlisted 或仅 GPS 打卡都不等于评价资格。
+- **提示码**：`35030` 活动未完结；`35031` 窗口已关闭；`35032` 无 approved 到场记录；`35002` 首次并发冲突时刷新 GET 后重试 PUT。rating 0/6、comment 超 500 或未知字段统一 40000。
 
 ### 2.x 十项收口一刀增量(2026-07-11)
 

@@ -28,7 +28,7 @@
 | [`src/modules/activity-registrations/`](../src/modules/activity-registrations/) | `ActivityRegistration` | 报名 5 态(`pending/pass/reject/cancelled/waitlisted`);活动 ↔ 队员 关联 |
 | [`src/modules/attendances/`](../src/modules/attendances/) | `AttendanceSheet` / `AttendanceRecord` / `ActivityCheckIn` | 考勤、终审、贡献值落地；`ActivityCheckIn` 是 append-only 打卡证据，F2 提供 canonical App self 写/读，F3 提供 canonical Admin 证据列表与只读考勤草稿 |
 | [`src/modules/contribution-rules/`](../src/modules/contribution-rules/) | `ContributionRule` | 字典码键 lookup;配置实体而非流程实体 |
-| [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) | `ActivityFeedback` | 已完结活动评价；F1 仅落 additive 空表与 module skeleton，后续 App 写入资格以 approved Sheet 下 live Record 为准，模块只写自有表 |
+| [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) | `ActivityFeedback` | 已完结活动评价；F2 App PUT/GET 以 approved Sheet 下 live Record 判资格，`currentUser.memberId` 锁本人，模块只写自有表 |
 
 ### 2.2 Explicitly excluded(明确不在 participation 范围内)
 
@@ -64,7 +64,7 @@ Activity (statusCode: draft / published / completed / cancelled)
   │     └─ Member              [FK memberId → Member.id, Restrict;
   │                            partial unique (activityId, memberId)
   │                            WHERE deletedAt IS NULL;
-  │                            F1 schema only,0 endpoint]
+  │                            F2 App self PUT/GET]
   │
   └─ activityTypeCode ────┐
                           ├─ ContributionRule lookup
@@ -113,7 +113,7 @@ Certificate (不在 participation 图内)
 | 9. APD 终审通过 | attendances | `finalApprove` → `pending_final_review → approved` | **`contributionPoints` 在此刻语义上生效**;同事务内 `eventPlaceholder('attendance.recorded')` 发出([`attendances.service.ts:1003`](../src/modules/attendances/attendances.service.ts:1003));未来 contribution-points 聚合器从此事件消费 |
 | 10. APD 终审驳回 | attendances | `finalReject` → `pending_final_review → final_rejected` | 不触发 `attendance.recorded`;records 跟随软删 |
 | 11. 撤回终审通过 | attendances | `reopen` → `approved → pending` | 保留 records / previousSnapshot / version,清空一审与终审责任字段;所有 approved-only 贡献读模型立即不再计入,重新 edit → approve → finalApprove 后恢复。撤回本身不发通知、不回滚历史报名准入 / 招新入队晋级结果;再次 finalApprove 复用既有通知。 |
-| 12. 活动评价（F1 schema） | activity-feedbacks | `ActivityFeedback` additive 空表；运行时写路径尚未启用 | 预留 completed + `endAt` 窗口 + approved AttendanceRecord 资格；只写模块自有表，不改变 Attendance / Contribution / settlement 语义 |
+| 12. 活动评价（F2 App） | activity-feedbacks | 本人 `PUT/GET feedback`；completed + `endAt + N 天` + approved AttendanceRecord 资格 | PUT 在模块自有事务内 create/update `ActivityFeedback`；GET 无评价恒 200/null；不改变 Attendance / Contribution / settlement 语义 |
 | —. ContributionRule 维护 | contribution-rules | ops 后台 CRUD;`status: ACTIVE / INACTIVE` | **不是流程状态实体**;仅作为预填配置,在 Step 7 被读取;`active_unique (activityTypeCode, attendanceRoleCode, durationThreshold) WHERE deletedAt IS NULL AND status = 'ACTIVE'` 由 migration SQL 加 partial unique |
 
 > **F2/F3 当前事实**:`ActivityCheckIn` 已提供 App 本人签到/签退/当前状态 3 个 canonical 端点，
@@ -151,7 +151,7 @@ Certificate (不在 participation 图内)
 | `activities` / `activity-registrations` 在调用方事务内执行 `promoteActivityWaitlist` | ✅ 限定例外 | 纯函数入口，固定 Activity → Registration 锁序，只写 waitlisted → pending + 同事务 `registration.review(action=promote)`；不引入兄弟 Service 依赖 |
 | `activity-registrations` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | 同上 |
 | `contribution-rules` 在事务内读 / 写其它 participation 表 | ❌ 不允许 | ContributionRule 是配置实体,只被读,不读人 |
-| `activity-feedbacks` 读取 `Activity` / `AttendanceSheet` / `AttendanceRecord` | ✅ 限定例外 | 只为 completed/window 与 approved-only 到场资格；F1 尚无运行时读写，后续实现不得 import 三个兄弟 god-service |
+| `activity-feedbacks` 读取 `Activity` / `AttendanceSheet` / `AttendanceRecord` | ✅ 限定例外 | 只为 completed/window 与 approved-only 到场资格；F2 直接读 Prisma，不 import 三个兄弟 god-service |
 | `activity-feedbacks` 写其它 participation 表 | ❌ 不允许 | 评价写只落 `ActivityFeedback`；不得改 Attendance / Contribution / settlement |
 | 任一模块通过 `import { *Service } from '../<sibling>/...'` 调用兄弟 service | ❌ 不允许(当前 0 命中) | participation 5 模块之间 service-to-service import 保持零态 |
 | 任何 **非** participation 模块读写 `Activity` / `ActivityRegistration` / `ActivityCheckIn` / `AttendanceSheet` / `AttendanceRecord` / `ActivityFeedback` / `ContributionRule` 表 | ❌ 不允许 | 必须通过 participation 模块的 service 入口或 `attendance.recorded` 事件 |
@@ -166,8 +166,9 @@ Certificate (不在 participation 图内)
 - **ActivityCheckIn F3**:Admin list/draft 只读 `Activity`、当前 pass `ActivityRegistration`、
   `ActivityCheckIn` 与 Member 摘要；两端点各固定 4 次业务查询（authz 查询分开计），不写
   `ActivityCheckIn`、Sheet、Record，也不扩散任何 cross-aggregate write。
-- **ActivityFeedback F1**:仅 additive 空表与 FK / index 约束，无运行时事务；后续 App PUT 的事务 owner
-  只能写 `ActivityFeedback`，不得把评价逻辑混入 activities / attendances / activity-registrations god-service。
+- **ActivityFeedback F2**:App PUT 在模块自有事务内固定读 Activity → approved attendance exists →
+  live feedback，再 create/update `ActivityFeedback`；GET 同样固定三读、零写。不得把评价逻辑混入
+  activities / attendances / activity-registrations god-service。
 - **候补递补**:取消 pass 或 capacity 调大/改 null 的主写、Activity `FOR UPDATE`、
   FIFO `registeredAt ASC,id ASC` 选队首、逐行 `claimAtStatus` CAS、waitlisted → pending
   与 `registration.review(action=promote)` audit 全在同一事务；通知在 commit 后通过既有
@@ -194,7 +195,7 @@ Certificate (不在 participation 图内)
 | Admin Registrations | `v2/activities/:activityId/registrations` | [`activity-registrations.controller.ts`](../src/modules/activity-registrations/activity-registrations.controller.ts) |
 | Admin Attendances | `v2/activities/:activityId/attendance-sheets` + `v2/attendance-sheets` | [`attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts) |
 | Admin ActivityCheckIns | `GET /api/admin/v1/activities/:activityId/check-ins` + `GET /api/admin/v1/activities/:activityId/attendance-sheet-draft`（`attendance.read.sheet` + activity ref；只读） | [`controllers/admin-activity-check-ins.controller.ts`](../src/modules/attendances/controllers/admin-activity-check-ins.controller.ts) |
-| ActivityFeedbacks | F1 尚无 endpoint；F2/F3 才分别新增 App / Admin canonical 路径 | [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) |
+| ActivityFeedbacks | F2 已有 App self PUT/GET；F3 才新增 Admin canonical 路径 | [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) |
 | Ops ContributionRules | `v2/contribution-rules` | [`contribution-rules.controller.ts`](../src/modules/contribution-rules/contribution-rules.controller.ts) |
 
 ### 6.2 App surface(participation 视角的 mobile 路径)
@@ -205,6 +206,7 @@ Certificate (不在 participation 图内)
 | `app/v1/my/activities` / `app/v1/my/registrations` / `app/v1/my/registrations/:id` / `POST app/v1/my/registrations` / `PATCH app/v1/my/registrations/:id/cancel` | [`controllers/app-my-registrations.controller.ts`](../src/modules/activity-registrations/controllers/app-my-registrations.controller.ts) |
 | `app/v1/my/attendance-records` | [`controllers/app-my-attendance-records.controller.ts`](../src/modules/attendances/controllers/app-my-attendance-records.controller.ts) |
 | `POST app/v1/my/activities/:activityId/check-in` / `POST .../check-out` / `GET .../check-in` | [`controllers/app-activity-check-ins.controller.ts`](../src/modules/attendances/controllers/app-activity-check-ins.controller.ts) |
+| `PUT / GET app/v1/my/activities/:activityId/feedback` | [`controllers/app-activity-feedbacks.controller.ts`](../src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts) |
 
 > 沿 [`api-surface-policy.md`](api-surface-policy.md) Mobile App 段,App API DTO 严格独立于 Admin DTO,以 `currentUser.memberId` 锁定本人;`scope = self`。
 
@@ -215,6 +217,7 @@ Certificate (不在 participation 图内)
 | `POST /api/app/v1/my/registrations` + `GET /api/app/v1/my/registrations*`(报名 / 查询 / 取消) | [`controllers/app-my-registrations.controller.ts`](../src/modules/activity-registrations/controllers/app-my-registrations.controller.ts) |
 | `GET /api/app/v1/my/attendance-records` | [`controllers/app-my-attendance-records.controller.ts`](../src/modules/attendances/controllers/app-my-attendance-records.controller.ts) |
 | `POST /api/app/v1/my/activities/:activityId/check-in` / `POST .../check-out` / `GET .../check-in`（当前 pass 报名打卡） | [`controllers/app-activity-check-ins.controller.ts`](../src/modules/attendances/controllers/app-activity-check-ins.controller.ts) |
+| `PUT / GET /api/app/v1/my/activities/:activityId/feedback`（approved 到场者本人评价；无评价 GET 仍 200） | [`controllers/app-activity-feedbacks.controller.ts`](../src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts) |
 
 > 队员自助流统一落 App surface `/api/app/v1/my/*`,where 子句永远以 `currentUser.memberId` 锁本人(`scope = self`)。历史 `/v2/users/me/*` legacy controller 已于 **Route B Phase 4d2 删除**(原 legacy 与 app 双路径边界问题已收口);新移动端能力**只在** `/api/app/v1/*` 落地。
 

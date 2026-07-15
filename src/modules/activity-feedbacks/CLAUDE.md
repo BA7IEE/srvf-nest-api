@@ -19,7 +19,9 @@
 - `(activityId, memberId) WHERE deletedAt IS NULL` 由 migration 手写 partial unique；P2002 必须转
   `ACTIVITY_FEEDBACK_ALREADY_EXISTS`，不得泄露 Prisma 错误。
 
-## F1 当前事实
+## 当前事实
 
 - Prisma model `ActivityFeedback` 映射物理表 `activity_feedbacks`；两条 FK 均 Restrict。
-- F1 只有 schema / migration 与模块骨架，0 endpoint；F2/F3 才注册运行时 controller/service。
+- F2 已注册 App PUT/GET 2 endpoint；两路只走 JwtAuthGuard + AppIdentityResolver，业务查询固定
+  Activity + approved attendance exists + 本人 live feedback 三次，PUT 再写自有表一次。
+- F3 才注册 Admin controller/query service 与 participation-summary 聚合出口。

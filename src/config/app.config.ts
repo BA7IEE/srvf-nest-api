@@ -128,6 +128,8 @@ export interface AttendanceConfig {
   windowToleranceHours: number;
   // App GPS 自助签到 geofence 半径（米）；默认 500，范围 50-10000。
   checkInRadiusMeters: number;
+  // 已完结活动评价窗口（从 Activity.endAt 起算的天数）；默认 30，范围 1-365。
+  feedbackWindowDays: number;
 }
 
 // V2.x C-7.5 Provider 选型实施 PR #6:storage 凭证加密 key(沿 §6.6.1 + Q23 例外)。
@@ -437,6 +439,12 @@ export default registerAs('app', (): AppConfig => {
       500,
       'ATTENDANCE_CHECKIN_RADIUS_METERS',
       { min: 50, max: 10000 },
+    ),
+    feedbackWindowDays: parsePositiveInt(
+      process.env.ATTENDANCE_FEEDBACK_WINDOW_DAYS,
+      30,
+      'ATTENDANCE_FEEDBACK_WINDOW_DAYS',
+      { min: 1, max: 365 },
     ),
   };
 

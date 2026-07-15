@@ -54,3 +54,7 @@
 ## 4. Unreleased 对接增量（2026-07-15，审计刀 5）
 
 本批新增 7 个 additive endpoint（`EXPECTED_ROUTES` 338→345）：活动核对/参与汇总、Admin/App 个人参与汇总、组织月度参与 overview、报名批量通过/驳回。Admin 任务映射见 [`admin-web.md`](admin-web.md) §2.1–§2.3/§2.7，App 本人汇总见 [`miniapp.md`](miniapp.md) §2；字段、状态码与响应 schema 仍只以 live `/api/docs-json` 为准。
+
+## 5. Unreleased 对接增量（2026-07-16，活动评价 F2）
+
+新增 App self PUT/GET 2 个 additive endpoint（`EXPECTED_ROUTES` 350→352）：本人活动评价提交/修改与按钮态初始化。前端流程、资格与提示码见 [`miniapp.md`](miniapp.md) §2.3；字段真相仍以 live `/api/docs-json` 为准。Admin 评价面留 F3。
