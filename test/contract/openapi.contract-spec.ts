@@ -151,6 +151,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 0 新 BizCode / 0 schema / 0 migration / 0 新依赖;
   // 行为契约沿 D-P2-6-15 + §11.1 path stability 锁定。
   ['get', '/api/app/v1/my/attendance-records'],
+  // 审计刀 5 F4：App self-scope 个人参与累计，只返正向 approved 时长/次数/封顶贡献。
+  ['get', '/api/app/v1/my/participation-summary'],
 
   // Phase 2 P2-7(2026-05-20):App /api/app/v1/my/certificates 1 endpoint
   // 沿 docs/app-api-p2-7-my-certificates-review.md §4 endpoint 契约 + §5 字段集恰好 12;
@@ -346,9 +348,15 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/activities/{id}/publish'],
   ['patch', '/api/admin/v1/activities/{id}/cancel'],
   ['post', '/api/admin/v1/activities/{id}/complete'],
+  // 审计刀 5 F1/F2：活动报名×实到核对 + 活动参与合计；两项读码带 activity ref。
+  ['get', '/api/admin/v1/activities/{activityId}/reconciliation'],
+  ['get', '/api/admin/v1/activities/{activityId}/participation-summary'],
   ['post', '/api/admin/v1/activities/{activityId}/registrations'],
   ['get', '/api/admin/v1/activities/{activityId}/registrations'],
   ['get', '/api/admin/v1/activities/{activityId}/registrations/export'],
+  // 审计刀 5 F6：字面段先于 :id，逐条独立复用单条 approve/reject 全语义。
+  ['patch', '/api/admin/v1/activities/{activityId}/registrations/bulk-approve'],
+  ['patch', '/api/admin/v1/activities/{activityId}/registrations/bulk-reject'],
   ['patch', '/api/admin/v1/activities/{activityId}/registrations/{id}/approve'],
   ['patch', '/api/admin/v1/activities/{activityId}/registrations/{id}/reject'],
   ['patch', '/api/admin/v1/activities/{activityId}/registrations/{id}/cancel'],
@@ -374,6 +382,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/members/{memberId}/registrations'],
   ['get', '/api/admin/v1/members/{memberId}/attendance-records'],
   ['get', '/api/admin/v1/members/{memberId}/contribution-summary'],
+  // 审计刀 5 F3：队员 360 个人参与累计，既有 contribution-summary 原样保留。
+  ['get', '/api/admin/v1/members/{memberId}/participation-summary'],
   ['post', '/api/admin/v1/attachments'],
   ['get', '/api/admin/v1/attachments'],
   ['post', '/api/admin/v1/attachments/upload-url'],
@@ -632,6 +642,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   //   admin/v1/attendance-sheets 两个扁平列表一致);activities 无码(沿 list 现状)。
   //   无对应块权限时静默省略(镜像 resolve-labels),响应恒 200。扩既有 MetaController。
   ['get', '/api/admin/v1/meta/dashboard-summary'],
+  // 审计刀 5 F5：两项读码可见组织范围求交，按 Activity.startAt UTC 月份聚合。
+  ['get', '/api/admin/v1/meta/participation-overview'],
 ];
 
 // 至少必须出现的 schema(DTO)清单。新增重要 DTO 时按需扩充。
@@ -1149,6 +1161,21 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'DashboardRegistrationsSummaryDto',
   'DashboardAttendanceSheetsSummaryDto',
   'DashboardActivitiesSummaryDto',
+
+  // 审计刀 5 F1–F6：活动/个人/总览度量与逐条批量审批。
+  'DurationHistogramDto',
+  'ActivityRegistrationCountsDto',
+  'ActivityParticipationSummaryDto',
+  'ActivityReconciliationRegisteredParticipantDto',
+  'ActivityReconciliationTemporaryParticipantDto',
+  'ActivityReconciliationDto',
+  'MemberParticipationSummaryDto',
+  'AppMyParticipationSummaryDto',
+  'ParticipationOverviewMonthDto',
+  'ParticipationOverviewResponseDto',
+  'BulkReviewRegistrationsDto',
+  'BulkReviewFailureDto',
+  'BulkReviewRegistrationsResponseDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
@@ -1188,6 +1215,10 @@ describe('OpenAPI 契约快照', () => {
     // 每个 operation 必须声明响应,避免漏写 @ApiWrappedXxxResponse 装饰器
     expect(item[method]?.responses).toBeDefined();
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
+  });
+
+  it('审计刀 5 后路由足迹精确为 345', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(345);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

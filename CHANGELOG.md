@@ -2,6 +2,14 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+> 主题:**活动参与度量与批量审批（审计刀 5）**。纯 additive 新增 7 个 endpoint（338→345）与 2 个 controller（67→69）；0 schema / 0 migration（仍 51）/ 0 Permission（仍 206）/ 0 BizCode（仍 238）/ 0 AuditLogEvent（仍 113）/ 0 内置角色（仍 9）。本批不做 version bump / tag / GitHub Release。
+
+- **活动核对与参与汇总**:新增 `GET admin/v1/activities/:activityId/reconciliation`（仅 completed）与 `GET .../participation-summary`，两端点均要求 `attendance.read.sheet` + `activity-registration.read.record` 并带 activity ref 判权。no-show 严格定义为 completed 活动中 pass 报名且零未软删考勤记录；pending Sheet 上的记录也代表已到场，cancelled 报名不计 no-show。时长、贡献原始合计与固定 `[0,2)/[2,4)/[4,8)/[8,∞)` 分桶只统计 approved Sheet records。
+- **个人与组织月度投影**:新增 Admin `GET admin/v1/members/:memberId/participation-summary` 与 App `GET app/v1/my/participation-summary`。时长/活动数/记录数只看 approved Sheet，活动数按 distinct activityId；累计贡献继续复用 `computeCappedContribution(memberId, null)`，与既有 `contribution-summary` 完全同源。新增 `GET admin/v1/meta/participation-overview`，按 Activity.startAt 的 UTC 月聚合，调用者显式组织筛选与两项读权限各自可见范围求交，合法空 scope 返回空月份。
+- **报名批量审批**:新增 `PATCH admin/v1/activities/:activityId/registrations/bulk-approve` 与 `bulk-reject`，`ids` 去重且限 1–100；按输入顺序逐条复用既有单条 approve/reject（含独立事务、状态/容量/审计/通知语义），一条失败不回滚已成功项，返回逐项 success/failed。批量驳回未传有效备注时使用固定「批量驳回」。
+
 ## v0.50.0 - 2026-07-15
 
 > 主题:**活动模块一致性收口（审计刀1–刀4）**。范围 = 29 问审计报告刀 1–4（正确性/闸门/通知/生命周期,#613 单 squash）。0 新端点 / 0 新权限码(仍 206) / 0 AuditLogEvent(仍 113) / +1 additive nullable migration(50→51) / +6 BizCode(232→238) / 2 组契约变更（publish body 强确认；响应字段 additive）。

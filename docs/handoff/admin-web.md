@@ -1,7 +1,7 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
 > **canonical**(本文件在后端仓,改契约同 PR 改本文件;见 [`README.md`](README.md))。
-> 字段级真相 = live `/api/docs-json`;权限码 = [`RBAC_MAP.md`](../ai-harness/RBAC_MAP.md)(196)。
+> 字段级真相 = live `/api/docs-json`;权限码 = [`RBAC_MAP.md`](../ai-harness/RBAC_MAP.md)(206)。
 > 本文件只讲这两样讲不了的:**轴模型 + 任务→端点图 + 踩坑 + 缺口**。
 
 ---
@@ -13,7 +13,8 @@
 ```
 活动轴   admin/v1/activities/:id
            ├─ /registrations            报名(activityId 是路径必填段)
-           └─ /attendance-sheets        考勤(同上)
+           ├─ /attendance-sheets        考勤(同上)
+           └─ /reconciliation · /participation-summary  跨报名×考勤核对/汇总
 队员轴   admin/v1/members/:id
            ├─ /certificates  /memberships  /profile   (/department 旧单部门面 deprecated → memberships)
            └─ /emergency-contacts  /insurances
@@ -39,12 +40,15 @@
 | 区块 | 端点 |
 |---|---|
 | 活动头部 + 发布/取消/完结 | `GET /api/admin/v1/activities/:id`(含派生 `phase`) · `PATCH .../:id/publish`(body 必填 `{requiresInsuranceConfirmed:true}`) · `PATCH .../:id/cancel`(仅 draft|published) · `POST .../:id/complete`(**唯一**完结通路 published→completed) |
-| 报名 tab | `GET /api/admin/v1/activities/:id/registrations?statusCode=` · `POST` 代报名 · `PATCH .../:rid/{approve,reject,cancel}` · `POST .../:rid/reopen`(v0.40.0 审批后悔药 reject→pending)· `GET .../export`(CSV) |
+| 报名 tab | `GET /api/admin/v1/activities/:id/registrations?statusCode=` · `POST` 代报名 · `PATCH .../:rid/{approve,reject,cancel}` · `POST .../:rid/reopen`(v0.40.0 审批后悔药 reject→pending)· `PATCH .../{bulk-approve,bulk-reject}`(1–100 条逐项结果) · `GET .../export`(CSV) |
 | 考勤 tab | `GET /api/admin/v1/activities/:id/attendance-sheets?statusCode=` · `POST` 提交单据 |
 | 考勤审核详情 | `GET /api/admin/v1/attendance-sheets/:id/review-detail`(**活动摘要+单据+records含队员嵌套**,为审核页量身做的)· `PATCH .../:id/{approve,reject,final-approve,final-reject}` · `POST .../:id/reopen` · `DELETE` |
+| 参与核对 / 汇总 | `GET /api/admin/v1/activities/:id/reconciliation`(**仅 completed**) · `GET .../:id/participation-summary`；两者均需 `attendance.read.sheet` + `activity-registration.read.record` |
 
 > 关键:报名/考勤接口**本来就按 activityId 嵌套**——作战室是它们的自然消费者。
 > `activityId` 从**路由参数**来,不要在页面顶部摆"选择活动"下拉。
+
+> **审计刀 5 参与口径**:`reconciliation` 的 no-show = completed 活动中 pass 报名且**零未软删考勤记录**；考勤 Sheet 即使仍 pending，只要已有 record 就算到场。cancelled 报名不计 no-show。`participation-summary` 的 `totalServiceHours` / `totalContributionPoints` / 四档时长 histogram 则只统计 approved Sheet records；不要把“是否到场”和“是否已审批生效”混成同一过滤条件。
 
 > ⚠️ **报名审批生命周期新规(v0.40.0 参与域生命周期收口)**:
 > ① **未发布/取消/完结/已结束活动禁批报名** —— `approve` 仅在 activity=published 且 `endAt >= now` 时允许；draft 返 `20126`，cancelled/completed/已结束返 `20124`。`reject` / `cancel` 仍可用于清理残留队列。
@@ -58,16 +62,18 @@
 
 > ⚠️ **考勤终审撤回(v0.47.0 F2)**:`POST /api/admin/v1/attendance-sheets/:id/reopen`,body 必填 `{ "reason": "撤回原因" }`,成功 HTTP 201。只允许 `approved → pending`;后端保留全部 records / previousSnapshot / version,清空一审与终审责任字段。前端撤回后应重新开放 records 编辑与一级/终审流程;approved-only 的队员贡献值/考勤记录会暂时消失,再次 finalApprove 后恢复。撤回本身不发通知、也不回滚历史报名准入或招新/入队晋级;再次 finalApprove 仍发既有考勤通知。权限码 `attendance.reopen.sheet` 与终审同属 `attendance-final-reviewer` scoped 角色或 SUPER_ADMIN,biz-admin 不持有;reopen 不触发 22074/22075。
 
-### 2.2 队员 360(沿队员轴下钻)— ✅ 6 子资源(部门→memberships 升级 PR2;+任职 PR4)+ 3 跨轴查询全就绪(跨轴只读 2026-06-23)
+### 2.2 队员 360(沿队员轴下钻)— ✅ 6 子资源(部门→memberships 升级 PR2;+任职 PR4)+ 4 跨轴查询全就绪
 | tab | 端点 | 状态 |
 |---|---|---|
 | 基本信息 | `GET /api/admin/v1/members/:id` | ✅ |
 | 证书 / 档案 / 紧急联系人 / 保险 | `GET /api/admin/v1/members/:id/{certificates,profile,emergency-contacts,insurances}` | ✅ |
 | **组织归属(memberships)** — 主/兼/临时/支援多归属 + 任期 | `GET/POST .../members/:id/memberships` · `PATCH/DELETE .../members/:id/memberships/:id`(**终态 scoped-authz PR2**,已发 main)| ✅(旧 `/department` 单部门面 deprecated,见下备注)|
 | **任职(position-assignments)** — 该队员在组织体系内担任的职务,含撤销历史 | `GET .../members/:id/position-assignments`(**终态 scoped-authz PR4**,已发 main;含 ACTIVE/REVOKED 全量,任命/撤销动作在组织架构侧发起,见 §2.6)| ✅ |
-| 活动履历 / 考勤记录 / 贡献值 | `GET .../members/:id/registrations?statusCode=` · `GET .../members/:id/attendance-records` · `GET .../members/:id/contribution-summary` | ✅(跨轴只读 2026-06-23,见 [GAP-002](#4-缺口台账-gap-ledger))|
+| 活动履历 / 考勤记录 / 参与汇总 / 贡献值 | `GET .../members/:id/registrations?statusCode=` · `GET .../members/:id/attendance-records` · `GET .../members/:id/participation-summary` · `GET .../members/:id/contribution-summary` | ✅ |
 
 > 队员 360 跨轴查询备注:`registrations`/`attendance-records` 分页(`page`/`pageSize`)+ item 自带 activity 上下文(`activityId`/`activityTitle`);`attendance-records` **仅返 approved sheet 内 records**(已生效记录,镜像 app `/me` 口径);`contribution-summary` 返**生涯累计 capped 总分**(`{ memberId, contributionPoints }`,后端已按北京日封顶 3,**前端直接展示别再加**)。v0.48.0 起历史记录也按新上限读时实时重算,生涯累计数字可能变大;不存在/软删队员 → `MEMBER_NOT_FOUND`(15001)。
+
+> **新增 `participation-summary`** 把 approved-only 的 `totalServiceHours` / distinct `activityCount` / `recordCount` 与生涯 capped `contributionPoints` 合成一个卡片 DTO；贡献字段和旧 `contribution-summary` 都调用同一 `computeCappedContribution(memberId, null)`，可做等值迁移但旧端点保留。该个人端点刻意不返回 no-show。
 
 > **v0.49.0 队员轴 scoped-authz 已接通**:members 列表/options 只返回调用者可见组织树内、具有 active **PRIMARY** membership 的队员；SECONDARY/TEMPORARY/SUPPORT 不扩大鉴权范围。显式 `organizationId` + `includeDescendants` 是用户筛选条件，服务端会再与鉴权范围求交，绝不越界。队员 detail/全部写动作、证书、档案、紧急联系人、个人保险以及本节三条跨轴查询都对 member/resource ref 重做 authz 判定：范围外 detail/写返 `30100`；有读码但有效范围为空时列表返回 200 空集。队长/部长沿 `org-admin` 可读可管本树，组长沿 `group-manager` 管本组；副职 `org-readonly`/`group-readonly` 与分管 `org-supervisor` 只读，写动作恒 `30100`。敏感明文码仍不随派生角色下放。
 
@@ -79,6 +85,8 @@
 
 ### 2.3 审批工作台(跨活动横扫"待我处理")— ✅ 后端扁平查询就绪(跨轴只读 2026-06-23;F2「B 组」搜索/组织过滤/expand 已发 main)
 跨所有活动按 `statusCode` 横扫报名/考勤,**脱离 `:activityId` 路径段**:`GET /api/admin/v1/registrations?statusCode=` · `GET /api/admin/v1/attendance-sheets?statusCode=`(均分页 + item 自带 activity 上下文 `activityId`/`activityTitle`)。见 [GAP-001](#4-缺口台账-gap-ledger)。
+
+> 报名批量动作仍落在具体活动轴：`PATCH admin/v1/activities/:activityId/registrations/bulk-approve` / `bulk-reject`。body `ids` 去重且 1–100；后端按输入顺序逐条复用单条 approve/reject 的事务、容量、状态、审计与通知语义，返回逐项 success/failed，一条失败不会回滚此前成功项。前端必须展示失败行及其 BizCode，不能把 HTTP 200 等价成“全批成功”；批量驳回未填备注时后端使用「批量驳回」。
 
 > ⚠️ 过滤参数名是 **`statusCode`**(不是草拟期写的 `status`;沿既有嵌套列表口径)。值用 registration_status / attendance_sheet_status 字典码(如 `pending`/`pass`/`approved`)。
 
@@ -230,6 +238,8 @@
 
 **工作台/首页待办汇总(meta/dashboard-summary,GAP-003)**:`GET admin/v1/meta/dashboard-summary`,零 query 参数。出三个**可省略**块:`registrations:{pending}` / `attendanceSheets:{pending,pendingFinalReview}` / `activities:{published,pendingCompletion}`；`pendingCompletion` = published 且 `endAt < now`，用于提示管理员走手动 complete。块级权限裁剪语义不变：无权时整个块缺失，不是 0。
 
+**参与月度 overview（审计刀 5）**:`GET admin/v1/meta/participation-overview`，按 `Activity.startAt` 的 UTC 月输出组织范围内活动数、报名/到场/no-show、approved 时长与固定四桶。入口同时要求 `attendance.read.sheet` + `activity-registration.read.record`；两项权限各自的可见组织集先求交，再与显式 `organizationId`/`includeDescendants` 筛选求交。有码但合法 scope 为空返回 `months:[]`，不是越权扩成全量；每月数值与同范围逐活动 `participation-summary` 求和一致。
+
 **v0.49.0 前端有效权限出口**:`GET system/v1/authz/me/effective-permissions` 是后台登录后的 permission code 真值出口，聚合 direct RoleBinding、职务策略(含副职只读投影)与分管三源的当前有效码。响应只含稳定排序的 `permissions:string[]`，不暴露 role/binding/scope 明细；SUPER_ADMIN 返回 Permission 全集。既有 `GET system/v1/rbac/me/permissions` **保留且语义零变化**，仍只聚合当前用户主体的 GLOBAL RoleBinding，因此 derived-only 的正/副职或分管用户在旧端点可为空、在新端点非空。后台菜单和按钮从 v0.49.0 起应读新出口；App 的 `/me/capabilities` 不受影响。
 
 **FE 适配最小规则**:登录后固定三调 `login → admin/v1/me → authz/me/effective-permissions`；菜单树仍由前端静态维护，仅以新出口 `permissions[]` 过滤，不新增后端菜单接口。`vice-captain`/`dept-deputy` 映射 `org-readonly`，`deputy-group-leader` 映射 `group-readonly`；两只读角色只含 `*.read.*`/`attachment.view.*` 且排除 `*.read.sensitive`。前端不能仅凭有读码点亮写按钮，写按钮仍按对应 create/update/delete/approve 等真实 action 码过滤；最终是否允许由后端 resource ref + scope 判定。
@@ -324,9 +334,9 @@
 
 | 页面 | 主端点(详见 §2) | 进入/列表可见性码 | 骨架要点 |
 |---|---|---|---|
-| 活动列表 → 作战室 | `activities` + `/:id/{registrations,attendance-sheets}` | 列表 `[auth]` 仅登录;写操作 `activity.*.record` | `el-tabs` 三 tab;`activityId` 取**路由参数**不放下拉;考勤进 `review-detail` 审核页(初审/终审);**终审按钮须处理 22074/22075 专用错误码**(§2.1) |
-| 审批工作台 | `registrations?statusCode=` · `attendance-sheets?statusCode=` | `activity-registration.read.record` · `attendance.read.sheet` | 跨活动扁平列表 + `statusCode` 切;item 自带活动上下文;`el-drawer` 内审批;**终审(final-approve/final-reject)专用错误码 22074(自审拒)/22075(同人拒,env 可放开)须单独处理文案,别混进通用权限不足提示**(§2.1/§3 #8) |
-| 队员列表 → 360 | `members` + 子资源(§2.2;含**组织归属 memberships** CRUD + **任职 position-assignments** 只读)| `member.read.record`(各子 tab 另持各自 read 码;组织归属 tab:`membership.list.record` 看 + `membership.set.record` 增/改 + `membership.end.record` 结束;任职 tab:`position-assignment.read.record` 看,任命/撤销动作在组织架构页发起)| `el-tabs` 十 tab(**部门 tab 升级为组织归属**:主 / 兼 / 临时 / 支援多归属 + 任期;新增**任职 tab**:该队员在组织体系担任的职务 + 历史,`isConcurrent` 显示"（兼）",纯只读);贡献值用 `contribution-summary` capped 值,**别裸 SUM**(§3 #4) |
+| 活动列表 → 作战室 | `activities` + `/:id/{registrations,attendance-sheets,reconciliation,participation-summary}` | 列表 `[auth]` 仅登录;写操作 `activity.*.record`;参与核对需两项读码 | `el-tabs` 增「参与核对」；`activityId` 取**路由参数**不放下拉；completed 才拉 reconciliation；考勤进 `review-detail` 审核页(初审/终审) |
+| 审批工作台 | `registrations?statusCode=` · `attendance-sheets?statusCode=` · 活动轴 `registrations/{bulk-approve,bulk-reject}` | `activity-registration.read.record` · `attendance.read.sheet` | 跨活动扁平列表 + `statusCode` 切；选中项按 activityId 分组后调用批量端点；展示逐项失败 BizCode；终审 22074/22075 仍单独处理 |
+| 队员列表 → 360 | `members` + 子资源(§2.2;含**组织归属 memberships** CRUD + **任职 position-assignments** 只读 + `participation-summary`)| `member.read.record`(各子 tab 另持各自 read 码;参与汇总另需 `attendance.read.sheet`)| `el-tabs` 十 tab；参与汇总卡展示 approved 时长/活动数/记录数 + capped 贡献值，**别裸 SUM**(§3 #4) |
 | 队保单 | `team-insurance-policies` | `team-insurance-policy.read.record` | 左保单表 + 右覆盖名单(`el-transfer` 或加/移弹窗) |
 | 招新轮次 / 报名审核 | `recruitment/{cycles,applications}`(列表 `?cycleId=&statusCode=&riskLevel=normal\|high\|system` 过滤〔三参均 query DTO 白名单、可选;早期 loose `@Query` 旁路曾被全局 `forbidNonWhitelisted` 误拒 400,已纳入 `RecruitmentApplicationListQueryDto` 修复〕,**S4b**) | `recruitment-cycle.read.record` · `recruitment-application.read.record`(列表/脱敏详情)· `recruitment-application.read.sensitive`(详情明文证件号·手机 + 证件照 signed-URL;**S3 敏感分级**) | `el-steps` 表流程;**详情默认脱敏,持 `read.sensitive` 才显明文证件号/手机 + 取证件照 signed-URL**(无该码 → signed-URL 30100;字段集不变只 masking 随码);**S4b 人工队列三栏**:列表按 `riskLevel`(普通/高风险/系统异常)切栏,DTO 含 `riskLevel`/`manualReviewReason`(`forgery_suspected`/`system_ocr_error`/`ocr_mismatch_confirmed`/`special_document`)分组筛;`el-drawer` 标门槛/综合评定/一键发号;**S6 批量操作**:`POST applications/batch-mark-threshold`(批量标门槛,匹配键 临时编号/手机/姓名+手机,`mark.threshold` 码,返 per-row + 批次汇总)· `POST applications/export`(导 CSV,`read.record` 脱敏列 / `read.sensitive` 明文列)· `GET cycles/:id/promote-precheck`(发号前预检,`promote.member` 码,预检=实发;**v0.40.0 H5 手机通道**:无微信 openid 但有已验证手机的申请人**现可一键发号**〔建 SMS 登录通道账号〕,`PromotePrecheckRowDto` additive +`phoneAlreadyBound`/`duplicatePhoneInBatch` 两 flag;⚠️ **skipReason 字符串变**:`missing-openid` 停用 → `missing-login-channel`〔openid+phone 皆无〕,另新增 `phone-already-bound`/`duplicate-phone-in-batch`——前端若硬编码 `missing-openid` 文案须改);**OCR 鉴伪版充分利用(已发 v0.33.0)**:`GET applications/{id}/id-card-image-url` 现返**三图 signed-URL**(`url` 原图 + `cropImageUrl` 主体框裁剪 + `portraitImageUrl` 头像裁剪;裁剪图仅大陆身份证鉴伪版且已入库才有、否则 null;**仍 `read.sensitive` 闸**),报名详情 DTO **+4 OCR 顾问式列** `ocrAddress`/`ocrNation`/`ocrAuthority`/`ocrValidDate`(**随 `read.sensitive` 分级:脱敏级 → null**,住址等同证件号敏感)+ `hasIdCardCropImage`/`hasIdCardPortraitImage` 布尔 flag;**OCR 仅顾问式存档,gender/birth 仍由证件号推导权威、不被 OCR 覆盖**;**F2 改资料(v0.41.0-pre)**:`PATCH applications/:id`(新码 `recruitment-application.update.record`)——非身份字段(地址/紧急联系人〔整组替换〕/profileExtra/来源渠道/城区)恒可改,身份字段(realName/idCardNumber/birthDate/genderCode)**仅 `manual_review` 或外籍记录**(verified 大陆 → `28045` 文案「已通过证件核验不可修改身份字段」);大陆记录 birthDate/genderCode 由证件号派生**不可直改**(表单该两项对大陆记录禁用),改证件号会自动重派生;promoted/已脱敏行 → `28041`;**phone/openid 改绑不在此端点**(引导申请人走自助换绑)——发号预检 skip 的 `missing-derived-field`/`incomplete-data` 行在此补录后即可走 F3 单人建档;**F3 单人手动建档(v0.41.0-pre)**:`POST applications/:id/promote-single`(新码 `recruitment-application.promote.single`)——批量发号 skip 项(外籍/锚点占用/缺派生)逐条收尾:与批量共用建档内核 + 原子号段(编号连续)+ 发号通知;**放行外籍**(缺姓名/生日/性别 → `28047`「先补录再建档」,前端直接跳 F2 编辑);锚点自动择优(openid 可用→微信登录,否则手机→SMS 登录,响应 `loginChannel` 回显;双缺/双占 → `28046`「引导申请人先自助换绑」);已发号重跑 → `28041`(幂等零重复)。公示页/预检页每个 skip 行的「手动建档」按钮即接此端点;**F7 证书图(v0.41.0-pre)**:`GET applications/:id/certificate-image-urls`(**复用 `read.sensitive`**,短 TTL signed-URL 按类别分组〔first_aid/bsafe〕,无图 → 空 items)——报名详情「证书材料」面板取图;标 redCross/bsafe 门槛前可先看申请人自报证书图;发号后图随档案进 certificates(pending 行,占位 issuingOrg/issuedAt 待核验人经证书面修正) |
 | 招新工作台(进度看板) | `recruitment/cycles/:id/stats` | `recruitment-application.read.record` | 五组聚合卡片(今日数据/待处理事项/门槛进度/综合评定/公示发号);**纯读**,计数与报名 stage 同源;`el-statistic` 数字卡 + `el-progress` 门槛分布;待人工 normal/high/system 三栏为**真 `riskLevel` 口径**(S4b 落地,去 verifyOutcome 代理);**S6 发号前预检**(`cycles/:id/promote-precheck`)可在「公示发号」卡上做发号前体检(逐行可发/跳过原因);**F6(v0.41.0-pre)**:stats 出参 additive +`withdrawnCount`(自助撤销终态独立计数,不入待处理桶);报名列表/导出筛选支持 `withdrawn` 态 |

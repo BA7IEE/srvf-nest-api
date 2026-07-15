@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   ApiBizErrorResponse,
@@ -15,6 +15,11 @@ import {
   ResolveLabelsResponseDto,
 } from './meta.dto';
 import { MetaService } from './meta.service';
+import {
+  ParticipationOverviewQueryDto,
+  ParticipationOverviewResponseDto,
+} from './participation-overview.dto';
+import { ParticipationOverviewQueryService } from './participation-overview-query.service';
 
 // F1/A7(路线图 §4 A7;net-new 模块):跨资源批量 id→label 解析,供前端选择器/详情页
 // 回显用。POST 语义 = 批量查询(入参是结构体,复用 announcement-import/authz-explain
@@ -25,7 +30,10 @@ import { MetaService } from './meta.service';
 @ApiBearerAuth()
 @Controller('admin/v1/meta')
 export class MetaController {
-  constructor(private readonly service: MetaService) {}
+  constructor(
+    private readonly service: MetaService,
+    private readonly participationOverview: ParticipationOverviewQueryService,
+  ) {}
 
   @Post('resolve-labels')
   @HttpCode(HttpStatus.OK)
@@ -55,5 +63,19 @@ export class MetaController {
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED)
   dashboardSummary(@CurrentUser() user: CurrentUserPayload): Promise<DashboardSummaryResponseDto> {
     return this.service.dashboardSummary(user);
+  }
+
+  @Get('participation-overview')
+  @ApiOperation({
+    summary:
+      '参与度月度总览(活动日期/类型/组织筛选；两项读权限可见组织范围求交；无可见范围返空) [auth]',
+  })
+  @ApiWrappedOkResponse(ParticipationOverviewResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  participationOverviewSummary(
+    @Query() query: ParticipationOverviewQueryDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<ParticipationOverviewResponseDto> {
+    return this.participationOverview.getOverview(query, user);
   }
 }

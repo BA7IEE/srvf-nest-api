@@ -31,12 +31,15 @@ import {
   ActivityRegistrationListItemDto,
   ActivityRegistrationResponseDto,
   ApproveRegistrationDto,
+  BulkReviewRegistrationsDto,
+  BulkReviewRegistrationsResponseDto,
   CancelRegistrationDto,
   CreateRegistrationDto,
   ExportRegistrationsQueryDto,
   ListRegistrationsQueryDto,
   RejectRegistrationDto,
 } from './activity-registrations.dto';
+import { ActivityRegistrationBulkService } from './activity-registration-bulk.service';
 import { ActivityRegistrationsService } from './activity-registrations.service';
 
 // V2 批次 6 PR #5 helper:从 @Req() 构造 AuditMeta(D6 v1.1 §11.2 / D8 拍板;
@@ -53,11 +56,12 @@ function buildAuditMeta(req: Request): AuditMeta {
   };
 }
 
-// V2 第一阶段批次 3A activity-registrations admin controller(7 路由;v0.40.0 +reopen)。
+// V2 第一阶段批次 3A activity-registrations admin controller(审计刀 5 后 9 路由)。
 //
-// 管理端(admin/v1/activities/:activityId/registrations,7 路由):
+// 管理端(admin/v1/activities/:activityId/registrations,9 路由):
 //   GET '' list / POST '' 代报名 / GET 'export' / PATCH ':id/approve' /
-//   PATCH ':id/reject' / PATCH ':id/cancel' / POST ':id/reopen'(v0.40.0 审批后悔药)
+//   PATCH ':id/reject' / PATCH ':id/cancel' / POST ':id/reopen'(v0.40.0 审批后悔药) /
+//   PATCH 'bulk-approve' / PATCH 'bulk-reject'(审计刀 5,逐条独立事务 + 部分成功)
 //
 // 权限(Slow-4 T3,2026-06-11,评审稿 §3.6;取代批次 3A @Roles 策略):
 // 入口仅 JwtAuthGuard,判权下沉 service 层 `rbac.can('activity-registration.*')`
@@ -68,7 +72,8 @@ function buildAuditMeta(req: Request): AuditMeta {
 // 历史 legacy controller 已于 Route B Phase 4d2 删除(沿 docs/api-surface-migration-plan.md §6 Phase 4)。
 //
 // 路由声明顺序(NestJS 字面段优先于 :id 占位段):
-//   list / create / export(字面)/ approve / reject / cancel(均挂 :id/<action>)
+//   list / create / export(字面) / bulk-approve / bulk-reject(字面) /
+//   approve / reject / cancel / reopen(均挂 :id/<action>)
 //
 // Q-A6 CSV export:
 //   - Controller 返回 StreamableFile;ResponseInterceptor 已自动跳过(instanceof 判断)
@@ -81,7 +86,10 @@ function buildAuditMeta(req: Request): AuditMeta {
 @ApiBearerAuth()
 @Controller('admin/v1/activities/:activityId/registrations')
 export class ActivityRegistrationsAdminController {
-  constructor(private readonly service: ActivityRegistrationsService) {}
+  constructor(
+    private readonly service: ActivityRegistrationsService,
+    private readonly bulk: ActivityRegistrationBulkService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -155,6 +163,39 @@ export class ActivityRegistrationsAdminController {
       'Content-Disposition': `attachment; filename="${fileName}"`,
     });
     return new StreamableFile(Readable.from(csv));
+  }
+
+  // 字面段必须先于 :id/<action>，防止 bulk-approve/bulk-reject 被解析为报名 id。
+  @Patch('bulk-approve')
+  @ApiOperation({
+    summary:
+      '批量审核通过(ids 1–100；逐条独立事务/判权/capacity/audit/通知；部分成功) [rbac: activity-registration.approve.record]',
+  })
+  @ApiWrappedOkResponse(BulkReviewRegistrationsResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED)
+  bulkApprove(
+    @Param() params: ActivityIdParamDto,
+    @Body() dto: BulkReviewRegistrationsDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<BulkReviewRegistrationsResponseDto> {
+    return this.bulk.approve(params.activityId, dto, currentUser, buildAuditMeta(req));
+  }
+
+  @Patch('bulk-reject')
+  @ApiOperation({
+    summary:
+      '批量审核拒绝(ids 1–100；逐条独立事务/判权/audit/通知；部分成功；空备注默认“批量驳回”) [rbac: activity-registration.reject.record]',
+  })
+  @ApiWrappedOkResponse(BulkReviewRegistrationsResponseDto)
+  @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED)
+  bulkReject(
+    @Param() params: ActivityIdParamDto,
+    @Body() dto: BulkReviewRegistrationsDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<BulkReviewRegistrationsResponseDto> {
+    return this.bulk.reject(params.activityId, dto, currentUser, buildAuditMeta(req));
   }
 
   @Patch(':id/approve')

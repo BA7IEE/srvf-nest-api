@@ -50,3 +50,7 @@
 - **后端 → 前端**:改了能力 → 更新 admin-web/miniapp 的能力图 + 刷 openapi;前端据此对接。
 - **前端 → 后端**:前端发现"想做的任务后端没接口" → 在对应文件的 **gap-ledger 登记一行**
   (诉求 / 涉及任务 / 期望端点);维护者据此决定出不出 goal。goal 出了/发了 → 回来更新这行状态。
+
+## 4. Unreleased 对接增量（2026-07-15，审计刀 5）
+
+本批新增 7 个 additive endpoint（`EXPECTED_ROUTES` 338→345）：活动核对/参与汇总、Admin/App 个人参与汇总、组织月度参与 overview、报名批量通过/驳回。Admin 任务映射见 [`admin-web.md`](admin-web.md) §2.1–§2.3/§2.7，App 本人汇总见 [`miniapp.md`](miniapp.md) §2；字段、状态码与响应 schema 仍只以 live `/api/docs-json` 为准。

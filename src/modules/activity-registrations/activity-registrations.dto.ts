@@ -1,6 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  ArrayUnique,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsIn,
@@ -260,6 +264,52 @@ export class RejectRegistrationDto {
   @MinLength(1)
   @MaxLength(500)
   reviewNote!: string;
+}
+
+// ============ 入参/出参:Bulk approve/reject（审计刀 5 F6）============
+
+export class BulkReviewRegistrationsDto {
+  @ApiProperty({
+    description: '待逐条审批的报名 id（1–100；去重；每条独立事务）',
+    minItems: 1,
+    maxItems: 100,
+    uniqueItems: true,
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @Length(8, 64, { each: true })
+  ids!: string[];
+
+  @ApiPropertyOptional({
+    description: '统一审核备注；bulk-reject 未传/空白时写入“批量驳回”',
+    maxLength: 500,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reviewNote?: string;
+}
+
+export class BulkReviewFailureDto {
+  @ApiProperty({ description: '失败的报名 id' })
+  id!: string;
+
+  @ApiProperty({ description: '该条失败的 BizCode 数值' })
+  code!: number;
+
+  @ApiProperty({ description: '该条失败的安全业务提示' })
+  message!: string;
+}
+
+export class BulkReviewRegistrationsResponseDto {
+  @ApiProperty({ description: '审批成功的报名 id（保持请求顺序）', type: [String] })
+  succeeded!: string[];
+
+  @ApiProperty({ description: '逐条失败结果（保持请求顺序）', type: [BulkReviewFailureDto] })
+  failed!: BulkReviewFailureDto[];
 }
 
 // ============ 入参:Cancel ============
