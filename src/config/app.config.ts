@@ -126,6 +126,8 @@ export interface AttendanceConfig {
   allowSameReviewer: boolean;
   // 考勤记录允许落在活动起止两侧的容差小时数；默认 2，供 submit/edit 时间窗校验。
   windowToleranceHours: number;
+  // App GPS 自助签到 geofence 半径（米）；默认 500，范围 50-10000。
+  checkInRadiusMeters: number;
 }
 
 // V2.x C-7.5 Provider 选型实施 PR #6:storage 凭证加密 key(沿 §6.6.1 + Q23 例外)。
@@ -429,6 +431,12 @@ export default registerAs('app', (): AppConfig => {
       2,
       'ATTENDANCE_WINDOW_TOLERANCE_HOURS',
       { min: 0, max: 168 },
+    ),
+    checkInRadiusMeters: parsePositiveInt(
+      process.env.ATTENDANCE_CHECKIN_RADIUS_METERS,
+      500,
+      'ATTENDANCE_CHECKIN_RADIUS_METERS',
+      { min: 50, max: 10000 },
     ),
   };
 

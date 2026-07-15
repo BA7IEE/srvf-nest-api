@@ -8,6 +8,10 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { AppMyAttendanceRecordsService } from './app-my-attendance-records.service';
+import { ActivityCheckInFieldPolicy } from './activity-check-in-field-policy';
+import { ActivityCheckInPolicy } from './activity-check-in-policy';
+import { ActivityCheckInPresenter } from './activity-check-in-presenter';
+import { AppActivityCheckInsService } from './app-activity-check-ins.service';
 import { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import { AttendancePresenter } from './attendance-presenter';
 import {
@@ -19,6 +23,7 @@ import { AttendancesService } from './attendances.service';
 import { ContributionCalculator } from './contribution-calculator';
 import { TimeOverlapPolicy } from './time-overlap-policy';
 import { AdminMemberAttendanceController } from './controllers/admin-member-attendance.controller';
+import { AppActivityCheckInsController } from './controllers/app-activity-check-ins.controller';
 import { AppMyAttendanceRecordsController } from './controllers/app-my-attendance-records.controller';
 import { AppMyParticipationSummaryController } from './controllers/app-my-participation-summary.controller';
 import { ParticipationSummaryQueryService } from './participation-summary-query.service';
@@ -57,12 +62,17 @@ import { ParticipationSummaryQueryService } from './participation-summary-query.
     AttendanceSheetsCollectionController,
     AttendanceSheetsResourceController,
     AdminMemberAttendanceController,
+    AppActivityCheckInsController,
     AppMyAttendanceRecordsController,
     AppMyParticipationSummaryController,
   ],
   providers: [
     AttendancesService,
     AppMyAttendanceRecordsService,
+    AppActivityCheckInsService,
+    ActivityCheckInPolicy,
+    ActivityCheckInFieldPolicy,
+    ActivityCheckInPresenter,
     ContributionCalculator,
     TimeOverlapPolicy,
     AttendanceSheetStateMachine,
