@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
+import { ActivityFeedbacksModule } from '../activity-feedbacks/activity-feedbacks.module';
 import { AuthzModule } from '../authz/authz.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { PermissionsModule } from '../permissions/permissions.module';
@@ -49,6 +50,7 @@ import { ActivityParticipationQueryService } from './activity-participation-quer
     UsersModule,
     NotificationsModule,
     OrganizationsModule,
+    ActivityFeedbacksModule,
   ],
   controllers: [
     ActivitiesController,

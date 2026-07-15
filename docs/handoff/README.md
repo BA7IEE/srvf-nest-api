@@ -58,3 +58,7 @@
 ## 5. Unreleased 对接增量（2026-07-16，活动评价 F2）
 
 新增 App self PUT/GET 2 个 additive endpoint（`EXPECTED_ROUTES` 350→352）：本人活动评价提交/修改与按钮态初始化。前端流程、资格与提示码见 [`miniapp.md`](miniapp.md) §2.3；字段真相仍以 live `/api/docs-json` 为准。Admin 评价面留 F3。
+
+## 6. Unreleased 对接增量（2026-07-16，活动评价 F3）
+
+新增 Admin GET 2 个 additive endpoint（`EXPECTED_ROUTES` 352→354）：活动评价实名分页列表与均分/五桶/评价率汇总；既有 activity participation-summary additive 增加 `feedback.count/avgRating`。页面归位与展示口径见 [`admin-web.md`](admin-web.md) §2.1；字段真相仍以 live `/api/docs-json` 为准。

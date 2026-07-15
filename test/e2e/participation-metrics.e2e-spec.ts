@@ -265,6 +265,7 @@ describe('participation metrics F1-F4', () => {
         from4To8Hours: 0,
         atLeast8Hours: 0,
       },
+      feedback: { count: 0, avgRating: null },
     });
   });
 

@@ -18,6 +18,9 @@
 - Admin Controller:`activities.controller.ts` `@Controller('admin/v1/activities')` `@ApiTags('Admin - Activities')`
 - App Controller:`controllers/app-activities.controller.ts` `@Controller('app/v1/activities')` `@ApiTags('Mobile - Activities')`(单文件单 class,**非** Mixed Controller)
 - DTO 隔离:Admin DTO 在 `activities.dto.ts`(524L);App DTO 在 `dto/app/`(4 文件)
+- **活动 participation-summary 评价扩展(F3)**:`ActivityParticipationQueryService` 只调用
+  `ActivityFeedbacksQueryService.aggregateForActivity(activityId)` 追加 `{feedback:{count,avgRating}}`；
+  单次 aggregate、总业务查询固定 4 次；不在本模块复制评价统计，也不改既有度量字段算法。
 - Audit:写路径全部走 `activity-audit-recorder.ts`;**event 名 6 处共用 `'activity.publish'`(v0.40.0 +logComplete),不动**(沿 PR #199 characterization 锁定;`extra.operation` 区分 create/update/softDelete/publish/cancel/complete)
 - 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_STATUS_INVALID`
 - **受保护状态写(2026-07-13 finding #6)**:`update`/`softDelete`/`publish`/`cancel`/`complete` 在真实写前统一调用 [`/src/common/prisma/claim-at-status.util.ts`](../../common/prisma/claim-at-status.util.ts) `claimAtStatus` 做期望旧态 no-op CAS;并发败者复用 `ACTIVITY_STATUS_INVALID`。helper **只认领、不判断迁移合法性**;合法矩阵仍只在 `activity-state-machine.ts`。

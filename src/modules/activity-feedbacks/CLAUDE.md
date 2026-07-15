@@ -24,4 +24,7 @@
 - Prisma model `ActivityFeedback` 映射物理表 `activity_feedbacks`；两条 FK 均 Restrict。
 - F2 已注册 App PUT/GET 2 endpoint；两路只走 JwtAuthGuard + AppIdentityResolver，业务查询固定
   Activity + approved attendance exists + 本人 live feedback 三次，PUT 再写自有表一次。
-- F3 才注册 Admin controller/query service 与 participation-summary 聚合出口。
+- F3 已注册 Admin feedbacks / feedback-summary 2 endpoint；复用 `attendance.read.sheet` + activity ref，
+  列表/汇总固定 3/4 次业务读，member relation select 与固定五桶均无 N+1。
+- `ActivityFeedbacksQueryService.aggregateForActivity()` 作为唯一单查询聚合出口，被 activity
+  participation-summary 复用；该端点总业务查询从 3 additive 增至 4，既有度量算法不变。
