@@ -2,9 +2,9 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
+## v0.50.0 - 2026-07-15
 
-> 主题候选:**活动模块一致性收口（审计刀1–刀4）**。0 新端点 / 0 新权限码(仍 206) / 0 AuditLogEvent(仍 113) / +1 additive nullable migration(50→51) / +6 BizCode(232→238) / 2 组契约变更（publish body 强确认；响应字段 additive）。版本 bump 与 release 不在本批执行。
+> 主题:**活动模块一致性收口（审计刀1–刀4）**。范围 = 29 问审计报告刀 1–4（正确性/闸门/通知/生命周期,#613 单 squash）。0 新端点 / 0 新权限码(仍 206) / 0 AuditLogEvent(仍 113) / +1 additive nullable migration(50→51) / +6 BizCode(232→238) / 2 组契约变更（publish body 强确认；响应字段 additive）。
 
 ### 行为变更对照（恰好 12 条）
 
