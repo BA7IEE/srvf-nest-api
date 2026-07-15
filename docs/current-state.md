@@ -7,10 +7,10 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(六处一致) | **v0.49.0**(2026-07-14;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #611 squash `b6853a0e`;GitHub Release「v0.49.0 — 部门数据范围全面接线」标 Latest。**⚠️ 行为变更两组**:副职三职务首次自动获得对应组织树只读;分管人首次真实获得所分管范围内队员/证书/报名/考勤只读) |
-| `main` HEAD | v0.49.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #611 `b6853a0e`;收口链 = 冻结评审 #604 + 副职只读 #605 + visible scope/FE outlet #606 + member-axis #607 + participation #608 + docs #609 + bump #610 + handoff #611 + tag/Release + 本回填 PR) |
-| open PR / 工作树 / Unreleased | `codex/activity-consistency-audit-knives-1-4` 正在承载活动一致性收口；`## Unreleased` 已登记。终值候选:权限码 **206** / biz-admin **81** / org-admin 60 / org-readonly 10 / group-manager 22 / group-readonly 11 / org-supervisor 4 / ops-admin 96 / `EXPECTED_ROUTES` **338** / controller **67** / 模块 35 / migration **51** / 角色 **9** / BizCode **238** / AuditLogEvent **113** |
-| 最新 handoff | [`archive/handoff/v0.49.0.md`](archive/handoff/v0.49.0.md)(历史快照;tag 指向该 handoff #611 squash `b6853a0e`;接续 [`v0.48.0.md`](archive/handoff/v0.48.0.md);合入后不回改) |
+| 版本(六处一致) | **v0.50.0**(2026-07-15;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #615 squash `5ecb2e5a`;GitHub Release「v0.50.0 — 活动模块一致性收口（审计刀1–刀4）」标 Latest。**⚠️ 行为变更恰好 12 条**(对照表见 CHANGELOG `## v0.50.0`):最显著四条 = publish 必填 `requiresInsuranceConfirmed:true`;考勤首提不再直写 completed(手动 complete 唯一通路);draft 活动代报名/审批/交考勤全拒;考勤记录须落活动时间窗±容差) |
+| `main` HEAD | v0.50.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #615 `5ecb2e5a`;收口链 = 29 问审计 + 七拍板 D1-D7 → 实现 #613 `f73ac8e9`(单 squash,goal 会话 + 主会话 2 笔 docs true-up)→ bump #614 `93400f98` → handoff #615 → tag/Release → 本回填 PR) |
+| open PR / 工作树 / Unreleased | **0 open PR**;`## Unreleased` 空。终值:权限码 **206** / biz-admin **81** / org-admin 60 / org-readonly 10 / group-manager 22 / group-readonly 11 / org-supervisor 4 / ops-admin 96 / `EXPECTED_ROUTES` **338** / controller **67** / 模块 35 / migration **51** / 角色 **9** / BizCode **238** / AuditLogEvent **113** |
+| 最新 handoff | [`archive/handoff/v0.50.0.md`](archive/handoff/v0.50.0.md)(历史快照;tag 指向该 handoff #615 squash `5ecb2e5a`;接续 [`v0.49.0.md`](archive/handoff/v0.49.0.md);合入后不回改) |
 
 ## 2. 当前系统已具备能力
 
