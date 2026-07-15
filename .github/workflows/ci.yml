@@ -9,7 +9,9 @@ jobs:
   test:
     name: Lint / Typecheck / E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # v0.51.0 起全量 e2e(147 suites)稳定在 ~14.5m,15m 硬超时开始误杀(#618 首跑被 cancel);
+    # 提到 25m 留余量。docker-build/docker-smoke 各自仍 15m 不动。
+    timeout-minutes: 25
 
     # 与 .env.test 对齐(测试环境配置在仓库公开,值均为非敏感)。
     # 见 .env.test:1-19。SUPER_ADMIN_EMAIL 故意留空,seed 校验在 APP_ENV=test 下放行默认值。
