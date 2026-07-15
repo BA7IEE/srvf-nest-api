@@ -4,7 +4,7 @@ import { HttpStatus } from '@nestjs/common';
 //
 // 当前状态(随实施滚动维护;每次新增模块码后校对):
 // - 招新证书闭环刀A(2026-07-13):28xxx +2(28054 已审核通过禁止重传 / 28055 未审核通过禁止标门槛)
-// - 240 个 BizCode(2026-07-15 亲核:Object.keys(BizCode).length;活动自助 GPS 签到新增 2 码)
+// - 244 个 BizCode(2026-07-16 亲核:Object.keys(BizCode).length;活动评价新增 4 码)
 // - 历史 2026-06-25 快照为 175 个 BizCode(彼时含 CMS content 290xx +5
 //   + 活动闭环硬化 20123 报名截止 +1 + 统一通知 310xx +5;2026-06-13 的「141」系彼时快照,此后 realname 27xxx
 //   + 招新·入队 28xxx(280xx/281xx/282xx)+ #399 review 错误码增量(13014 / 19010 / 30103)+ CMS content 290xx 5 码
@@ -51,8 +51,10 @@ import { HttpStatus } from '@nestjs/common';
 // - 31xxx + 311xx: notifications(统一通知模块 S1 站内信渠道,2026-06-25;310xx 5 码,311xx 预留)
 // - 32xxx: organization positions + position rules + position assignments(职务定义 320xx 3 码 + 职务规则 3201x 3 码 + 任职 3202x 8 码;终态 scoped-authz PR3/PR4,2026-07-01)
 // - 33xxx: organization supervision assignments(分管关系 330xx 4 码;终态 scoped-authz PR5,2026-07-01)
+// - 34xxx: role bindings(角色绑定 340xx 5 码;终态 scoped-authz PR6,2026-07-01)
+// - 35xxx: activity feedbacks(活动评价 350xx 4 码;2026-07-16)
 // - 40xxx / 42xxx / 50xxx: 通用 HTTP / infrastructure(BAD_REQUEST / UNAUTHORIZED / FORBIDDEN / NOT_FOUND / TOO_MANY_REQUESTS / INTERNAL_ERROR)
-// - 未规划模块预留(训练 / 装备 / 财务等):33xxx 之后顺延(realname 27xxx / recruitment 28xxx / content 29xxx / notification 31xxx / position 32xxx / supervision 33xxx 已实装)
+// - 未规划模块预留(训练 / 装备 / 财务等):35xxx 之后顺延(realname 27xxx / recruitment 28xxx / content 29xxx / notification 31xxx / position 32xxx / supervision 33xxx / role-binding 34xxx / feedback 35xxx 已实装)
 export const BizCode = {
   // 通用 HTTP 级
   BAD_REQUEST: { code: 40000, message: '请求参数错误', httpStatus: HttpStatus.BAD_REQUEST },
@@ -1432,6 +1434,31 @@ export const BizCode = {
     code: 34005,
     message: '任期止必须晚于任期起',
     httpStatus: HttpStatus.BAD_REQUEST,
+  },
+
+  // - 350xx:活动评价(activity-feedbacks)—— 审计刀 6 第三件 F2(2026-07-16;冻结稿 §4.2)。
+  //   评价资格只认 approved Sheet 内 live AttendanceRecord；活动必须 completed，窗口按
+  //   Activity.endAt + ATTENDANCE_FEEDBACK_WINDOW_DAYS。DTO 的 rating/comment 边界仍走通用 40000。
+  //   partial unique 首次并发撞 P2002 → 35002；三种业务闸给 App 精确按钮提示。
+  ACTIVITY_FEEDBACK_ALREADY_EXISTS: {
+    code: 35002,
+    message: '该活动评价已存在，请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_FEEDBACK_ACTIVITY_NOT_COMPLETED: {
+    code: 35030,
+    message: '活动尚未完结，暂不能评价',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_FEEDBACK_WINDOW_CLOSED: {
+    code: 35031,
+    message: '活动评价窗口已关闭',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_FEEDBACK_ATTENDANCE_REQUIRED: {
+    code: 35032,
+    message: '仅有审核通过到场记录的队员可以评价',
+    httpStatus: HttpStatus.CONFLICT,
   },
 
   // audit_logs 模块业务级(140xx + 141xx)。批次 6 PR #1 引入(2026-05-12)。

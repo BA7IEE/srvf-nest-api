@@ -106,6 +106,7 @@
 > 2026-07-15 活动模块度量与批量审批（审计刀 5）戳：**权限事实零变化**（权限码 **206** / 全部内置角色绑定不动）；endpoint **338→345**（活动 reconciliation + participation-summary、member/app participation-summary、meta participation-overview、registration bulk approve/reject）；controller **67→69**（新增 `AdminActivityParticipationController` + `AppMyParticipationSummaryController`，其余 5 端点扩既有 controller）。活动级两读端点逐项 `AuthzService.explain` 两码并带 activity ref；overview 对两码 `getVisibleOrganizationScope` 求交；member 点读复用 `attendance.read.sheet` member ref；App self-scope 无码；bulk 逐 id 复用原单条 action 码与事务/audit。module 35 / migration 51 / BizCode 238 / AuditLogEvent 113 均不变；`docs:rbacmap:check` 0 FAIL / 0 WARN。
 > 2026-07-15 活动自助 GPS 签到 F2 戳：**权限事实零变化**（权限码 **206** / 内置角色及绑定不动）；endpoint **345→348**（App self-scope check-in / check-out / 当前状态）；controller **69→70**（新增 `AppActivityCheckInsController`）；App endpoint **33→36**。三路只走 JwtAuthGuard + AppIdentityResolver，where/事务锁定本人当前 pass registration，无 RBAC 码、无 `@Roles`、无 legacy alias。module 35 / migration 52 / BizCode 240 / AuditLogEvent 113 / cron 2 均不变。
 > 2026-07-15 活动自助 GPS 签到 F3 戳：**权限事实零变化**（权限码 **206** / 内置角色及绑定不动）；endpoint **348→350**（Admin 活动打卡列表 + 只读考勤草稿）；controller **70→71**（新增 `AdminActivityCheckInsController`）。两路均复用 `attendance.read.sheet`，由 Admin application service 调 `AuthzService.explain` 并带 `{type:'activity',id:activityId}` ref；仅 `resource_not_found` 且全局 `rbac.can` 为真时回退，再由 QueryService 校验真实 Activity 存在；无新码、无写入。
+> 2026-07-16 活动评价 F2 戳：**权限事实零变化**（权限码 **206** / 内置角色及绑定不动）；endpoint **350→352**（App self PUT/GET feedback）；controller **71→72**（新增 `AppActivityFeedbacksController`）；App endpoint **36→38**。两路只走 JwtAuthGuard + AppIdentityResolver，where 锁本人 memberId；正常路径 Activity + approved attendance exists + live feedback 固定三读，PUT 只写自有表；0 RBAC / 0 audit / 0 cron。module 36 / migration 53 / BizCode **240→244**。
 
 ---
 
@@ -118,7 +119,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。`RbacCacheService` 只缓存 GLOBAL 权限解析(TTL 1800s,三档失效)，不是身份缓存；`AuthzService` 当前不缓存判权/可见范围结果。
 
-## 2. controller × 鉴权模式对照(71 个 controller class)
+## 2. controller × 鉴权模式对照(72 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 

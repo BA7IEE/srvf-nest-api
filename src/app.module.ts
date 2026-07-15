@@ -16,6 +16,7 @@ import databaseConfig from './config/database.config';
 import jwtConfig from './config/jwt.config';
 import { DatabaseModule } from './database/database.module';
 import { ActivitiesModule } from './modules/activities/activities.module';
+import { ActivityFeedbacksModule } from './modules/activity-feedbacks/activity-feedbacks.module';
 import { ActivityRegistrationsModule } from './modules/activity-registrations/activity-registrations.module';
 import { AnnouncementImportModule } from './modules/announcement-import/announcement-import.module';
 import { AttendancesModule } from './modules/attendances/attendances.module';
@@ -114,6 +115,9 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     ActivitiesModule,
     ActivityRegistrationsModule,
     AttendancesModule,
+    // 活动评价 F2(2026-07-16):App self PUT/GET；approved 到场资格 + completed/endAt 窗口；
+    // 0 RBAC / 0 audit / 0 cron，不 import participation 兄弟 service。
+    ActivityFeedbacksModule,
     // V2 第一阶段批次 5-A(2026-05-12):contribution-rules CRUD
     //   (沿 D6 v1.1;path /api/system/v1/contribution-rules;230xx 段位;
     //    attendance 预填仍由 AttendancesService.applyContributionRulePrefill 完成,本模块不动 attendance)
