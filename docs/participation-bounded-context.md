@@ -4,17 +4,17 @@
 >
 > **本文不是**:重构计划、模块合并提案、代码迁移路线图。
 >
-> **当前 layout 仍是 model-as-module**([`src/modules/activities/`](../src/modules/activities/) / [`src/modules/activity-registrations/`](../src/modules/activity-registrations/) / [`src/modules/attendances/`](../src/modules/attendances/) / [`src/modules/contribution-rules/`](../src/modules/contribution-rules/) / [`src/modules/certificates/`](../src/modules/certificates/) 各自独立目录)— 本文档**不**改变这一布局,只把已经存在的"边界"和"地图"显式化,供后续 PR review 与新会话理解业务链条参考。
+> **当前 layout 仍是 model-as-module**([`src/modules/activities/`](../src/modules/activities/) / [`src/modules/activity-registrations/`](../src/modules/activity-registrations/) / [`src/modules/attendances/`](../src/modules/attendances/) / [`src/modules/contribution-rules/`](../src/modules/contribution-rules/) / [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) / [`src/modules/certificates/`](../src/modules/certificates/) 各自独立目录)— 本文档**不**改变这一布局,只把已经存在的"边界"和"地图"显式化,供后续 PR review 与新会话理解业务链条参考。
 
 ---
 
 ## 1. Purpose
 
 - 命名并描述当前 participation 业务上下文的边界范围。
-- **不改代码、不动 schema、不合并模块、不改 API path**。
+- **不发起额外代码 / schema 重构、不合并模块、不改 API path**；本文随各已批准批次登记已经落地的事实。
 - 把现有跨模块耦合(`attendances` → `Activity` / `ActivityRegistration` / `ContributionRule`)从"凭经验知道"提升为显式文档。
 - 让后续 PR review 与新会话能在一页内理解 `Activity → ActivityRegistration → AttendanceSheet → AttendanceRecord + ContributionRule` 这一链条的状态语义与事务边界。
-- 让"是否物理合并 4 模块、是否新建 `src/modules/participation/` 子树"的决策有一份明确基线可对照。
+- 让"是否物理合并 5 模块、是否新建 `src/modules/participation/` 子树"的决策有一份明确基线可对照。
 
 ---
 
@@ -28,6 +28,7 @@
 | [`src/modules/activity-registrations/`](../src/modules/activity-registrations/) | `ActivityRegistration` | 报名 5 态(`pending/pass/reject/cancelled/waitlisted`);活动 ↔ 队员 关联 |
 | [`src/modules/attendances/`](../src/modules/attendances/) | `AttendanceSheet` / `AttendanceRecord` / `ActivityCheckIn` | 考勤、终审、贡献值落地；`ActivityCheckIn` 是 append-only 打卡证据，F2 提供 canonical App self 写/读，F3 提供 canonical Admin 证据列表与只读考勤草稿 |
 | [`src/modules/contribution-rules/`](../src/modules/contribution-rules/) | `ContributionRule` | 字典码键 lookup;配置实体而非流程实体 |
+| [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) | `ActivityFeedback` | 已完结活动评价；F1 仅落 additive 空表与 module skeleton，后续 App 写入资格以 approved Sheet 下 live Record 为准，模块只写自有表 |
 
 ### 2.2 Explicitly excluded(明确不在 participation 范围内)
 
@@ -59,6 +60,11 @@ Activity (statusCode: draft / published / completed / cancelled)
   │     │                      1 Activity 多 Sheet(D47 / R30)]
   │     └─ AttendanceRecord[]  [FK sheetId → AttendanceSheet.id, Restrict]
   │           └─ Member        [FK memberId → Member.id, Restrict]
+  ├─ ActivityFeedback[]        [FK activityId → Activity.id, Restrict;
+  │     └─ Member              [FK memberId → Member.id, Restrict;
+  │                            partial unique (activityId, memberId)
+  │                            WHERE deletedAt IS NULL;
+  │                            F1 schema only,0 endpoint]
   │
   └─ activityTypeCode ────┐
                           ├─ ContributionRule lookup
@@ -85,6 +91,8 @@ Certificate (不在 participation 图内)
 | `Activity` ← `AttendanceSheet.activityId` | FK NOT NULL | Restrict | 1 Activity 多 Sheet |
 | `AttendanceSheet` ← `AttendanceRecord.sheetId` | FK NOT NULL | Restrict | 记录必须挂在 Sheet 上 |
 | `ActivityRegistration` ← `AttendanceRecord.registrationId` | FK **NULLABLE** | Restrict(Q-S21 明确**不**是 SetNull) | 临时参加 / 非公开报名时为 null |
+| `Activity` ← `ActivityFeedback.activityId` | FK NOT NULL | Restrict | 评价稳定锚定活动；不级联删除 |
+| `Member` ← `ActivityFeedback.memberId` | FK NOT NULL | Restrict | 评价稳定锚定实名队员；live `(activityId,memberId)` partial unique |
 | `ContributionRule` ↔ `AttendanceRecord` | **不是 FK** | — | 业务键 lookup,仅在 submit 事务内查表预填 `contributionPoints` |
 | `Certificate` ↔ 上面任何实体 | **无关系** | — | 仅 `Member` 关联;不在本上下文 |
 
@@ -100,11 +108,12 @@ Certificate (不在 participation 图内)
 | 4. 报名(admin / app) | activity-registrations | `create` / `createMy` → `pending \| waitlisted` | 全部前置闸通过后，`capacity=null` 或未满落 pending，已满落 waitlisted；partial unique 防重复;**报名截止生效**(`registrationDeadline` 非 null 且 `now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`;approve 不加此闸) |
 | 5. 报名审核 / 递补 | activity-registrations + activities | `approve: pending → pass`;`reject: pending\|waitlisted → reject`;`promote: waitlisted → pending` | promote 仅事务内 FIFO 引擎使用，不开手动端点，不开 waitlisted → pass 直通 |
 | 6. 报名取消 | activity-registrations | `cancelAdmin` / `cancelMy`: `pending\|pass\|waitlisted → cancelled` | 取消 pass 同事务 FIFO 递补队首一人至 pending；取消 pending/waitlisted 不递补；partial unique 允许同人再次报名 |
-| 7. 考勤表首次提交 | attendances | `submit` → `Sheet.statusCode='pending'` + 多条 `Record` 同事务建立 | **跨模块写**:`Activity.statusCode` 从 `published → completed`(D11 / D-S10;[`attendances.service.ts:495`](../src/modules/attendances/attendances.service.ts:495));**跨模块读**:`tx.contributionRule.findMany` 预填 `AttendanceRecord.contributionPoints`(D14 5.B;[`contribution-calculator.ts:87`](../src/modules/attendances/contribution-calculator.ts:87);2026-06-21 起预填回归原始规则分,**不再 per-record dailyCap 钳制**,见下 invariant「全局每日封顶」);**跨模块读**:`assertRegistrationMatchesActivity` 校验 `registrationId.activityId === sheet.activityId`(R23;[`attendances.service.ts:299`](../src/modules/attendances/attendances.service.ts:299)) |
+| 7. 考勤表首次提交 | attendances | `submit` → `Sheet.statusCode='pending'` + 多条 `Record` 同事务建立 | **不再推动 Activity.completed**；**跨模块读**:`tx.contributionRule.findMany` 预填 `AttendanceRecord.contributionPoints`(D14 5.B;[`contribution-calculator.ts`](../src/modules/attendances/contribution-calculator.ts);2026-06-21 起预填回归原始规则分,**不再 per-record dailyCap 钳制**,见下 invariant「全局每日封顶」);**跨模块读**并批量校验 `registration.activityId/memberId/statusCode(pass)` 与 records 一致 |
 | 8. APD 一级审核 | attendances | `approve` → `pending → pending_final_review`;`reject` → `pending → rejected` | **不**触发 `attendance.recorded`(沿 D-S7;触发点已移到 final-approve) |
 | 9. APD 终审通过 | attendances | `finalApprove` → `pending_final_review → approved` | **`contributionPoints` 在此刻语义上生效**;同事务内 `eventPlaceholder('attendance.recorded')` 发出([`attendances.service.ts:1003`](../src/modules/attendances/attendances.service.ts:1003));未来 contribution-points 聚合器从此事件消费 |
 | 10. APD 终审驳回 | attendances | `finalReject` → `pending_final_review → final_rejected` | 不触发 `attendance.recorded`;records 跟随软删 |
 | 11. 撤回终审通过 | attendances | `reopen` → `approved → pending` | 保留 records / previousSnapshot / version,清空一审与终审责任字段;所有 approved-only 贡献读模型立即不再计入,重新 edit → approve → finalApprove 后恢复。撤回本身不发通知、不回滚历史报名准入 / 招新入队晋级结果;再次 finalApprove 复用既有通知。 |
+| 12. 活动评价（F1 schema） | activity-feedbacks | `ActivityFeedback` additive 空表；运行时写路径尚未启用 | 预留 completed + `endAt` 窗口 + approved AttendanceRecord 资格；只写模块自有表，不改变 Attendance / Contribution / settlement 语义 |
 | —. ContributionRule 维护 | contribution-rules | ops 后台 CRUD;`status: ACTIVE / INACTIVE` | **不是流程状态实体**;仅作为预填配置,在 Step 7 被读取;`active_unique (activityTypeCode, attendanceRoleCode, durationThreshold) WHERE deletedAt IS NULL AND status = 'ACTIVE'` 由 migration SQL 加 partial unique |
 
 > **F2/F3 当前事实**:`ActivityCheckIn` 已提供 App 本人签到/签退/当前状态 3 个 canonical 端点，
@@ -116,16 +125,16 @@ Certificate (不在 participation 图内)
 - `AttendanceRecord.contributionPoints` 字段层可空;**业务**层在 Step 9(approved)之前或 Step 11 reopen 回 pending 后可由 APD 现场修订;仅 approved 时"语义生效"。
 - **全局每日封顶在本 context 之外**(活动闭环硬化 2026-06-21;v0.48.0 上限调整):队员单个北京日历日的贡献值总分封顶 3(`GLOBAL_DAILY_CONTRIBUTION_CAP`),封顶**只**发生在 recruitment 侧 team-join `computeContribution`(按 `checkInAt` 北京日分组 → 每日封顶 → 加总),**不**在 participation 侧落库——`AttendanceRecord.contributionPoints` 仍存原始规则分。历史记录同样按当前上限读时实时重算;`ContributionRule.dailyCap` 列保留但已 deprecated、calculator 不再读。
 - `attendance.recorded` 事件是 participation context **向外的唯一已锁定出口语义**;其它消费方(未来 contribution 聚合 / 仪表盘 / 队员个人贡献值汇总)应当订阅它,**不应**直接读 `AttendanceSheet` / `AttendanceRecord` 表。
-- Activity → completed 由 attendances submit 推动,这是**已知的跨 aggregate 写**;在 §5.2 中明确允许,**不再扩散**到其它方向。
+- Activity → completed 的唯一通路是 activities 模块 `complete` action；attendances submit 不再执行该跨 aggregate 写。
 - **终审/撤回授权现状(2026-07-02 scoped-authz;v0.47.0 F2)**:Step 9/10/11 的 `finalApprove` / `finalReject` / `reopen` 均由 service 层 `authz.explain(...,{type:'attendance_sheet',id})` 判权;权限只来自显式 `attendance-final-reviewer` scoped RoleBinding(通常绑定有效任职并覆盖组织树)或 SUPER_ADMIN 兜底。`biz-admin` 不持这 3 个动作码;角色另含 `attendance.read.sheet`,合计 4 码。只有 finalApprove 受自审 22074 / 一级同人 22075 约束,reopen 不复用这两条终审完整性约束。
 
 ---
 
 ## 5. Current code boundary
 
-### 5.1 保留 4 个 module 目录
+### 5.1 保留 5 个 module 目录
 
-本期**保留** [`src/modules/activities/`](../src/modules/activities/) / [`src/modules/activity-registrations/`](../src/modules/activity-registrations/) / [`src/modules/attendances/`](../src/modules/attendances/) / [`src/modules/contribution-rules/`](../src/modules/contribution-rules/) 四个独立目录;**不**做 `src/modules/participation/<sub>/` 大合并(参见 §8 Deferred work)。
+本期**保留** [`src/modules/activities/`](../src/modules/activities/) / [`src/modules/activity-registrations/`](../src/modules/activity-registrations/) / [`src/modules/attendances/`](../src/modules/attendances/) / [`src/modules/contribution-rules/`](../src/modules/contribution-rules/) / [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) 五个独立目录;**不**做 `src/modules/participation/<sub>/` 大合并(参见 §8 Deferred work)。
 
 ### 5.2 允许 / 禁止的跨模块访问形式
 
@@ -142,12 +151,14 @@ Certificate (不在 participation 图内)
 | `activities` / `activity-registrations` 在调用方事务内执行 `promoteActivityWaitlist` | ✅ 限定例外 | 纯函数入口，固定 Activity → Registration 锁序，只写 waitlisted → pending + 同事务 `registration.review(action=promote)`；不引入兄弟 Service 依赖 |
 | `activity-registrations` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | 同上 |
 | `contribution-rules` 在事务内读 / 写其它 participation 表 | ❌ 不允许 | ContributionRule 是配置实体,只被读,不读人 |
-| 任一模块通过 `import { *Service } from '../<sibling>/...'` 调用兄弟 service | ❌ 不允许(当前 0 命中) | 当前 grep 验证 5 模块之间 service-to-service import = 0;**保持**该零态 |
-| 任何 **非** participation 模块读写 `Activity` / `ActivityRegistration` / `ActivityCheckIn` / `AttendanceSheet` / `AttendanceRecord` / `ContributionRule` 表 | ❌ 不允许 | 必须通过 participation 模块的 service 入口或 `attendance.recorded` 事件 |
+| `activity-feedbacks` 读取 `Activity` / `AttendanceSheet` / `AttendanceRecord` | ✅ 限定例外 | 只为 completed/window 与 approved-only 到场资格；F1 尚无运行时读写，后续实现不得 import 三个兄弟 god-service |
+| `activity-feedbacks` 写其它 participation 表 | ❌ 不允许 | 评价写只落 `ActivityFeedback`；不得改 Attendance / Contribution / settlement |
+| 任一模块通过 `import { *Service } from '../<sibling>/...'` 调用兄弟 service | ❌ 不允许(当前 0 命中) | participation 5 模块之间 service-to-service import 保持零态 |
+| 任何 **非** participation 模块读写 `Activity` / `ActivityRegistration` / `ActivityCheckIn` / `AttendanceSheet` / `AttendanceRecord` / `ActivityFeedback` / `ContributionRule` 表 | ❌ 不允许 | 必须通过 participation 模块的 service 入口或 `attendance.recorded` 事件 |
 
 ### 5.3 Transaction boundary
 
-- **submit 路径**:Activity 检查 + ContributionRule 预填 + Sheet 创建 + N 条 Record 创建 + Activity 推完成 + audit 写入,**全部在一个 `prisma.$transaction(...)` 内**。
+- **submit 路径**:Activity 检查 + ContributionRule 预填 + Sheet 创建 + N 条 Record 创建 + audit 写入,**全部在一个 `prisma.$transaction(...)` 内**；不写 Activity 状态。
 - **finalApprove 路径**:Sheet 状态翻转 + Record 复查 + `attendance.recorded` 事件 + audit 写入,**全部在一个 `prisma.$transaction(...)` 内**。
 - **ActivityCheckIn F2**:App 自助打卡写事务固定按 Activity → 当前 pass ActivityRegistration
   取共享锁并在锁后重跑状态/pass 闸，只写 attendances 自有的 `ActivityCheckIn`（create / 单向
@@ -155,6 +166,8 @@ Certificate (不在 participation 图内)
 - **ActivityCheckIn F3**:Admin list/draft 只读 `Activity`、当前 pass `ActivityRegistration`、
   `ActivityCheckIn` 与 Member 摘要；两端点各固定 4 次业务查询（authz 查询分开计），不写
   `ActivityCheckIn`、Sheet、Record，也不扩散任何 cross-aggregate write。
+- **ActivityFeedback F1**:仅 additive 空表与 FK / index 约束，无运行时事务；后续 App PUT 的事务 owner
+  只能写 `ActivityFeedback`，不得把评价逻辑混入 activities / attendances / activity-registrations god-service。
 - **候补递补**:取消 pass 或 capacity 调大/改 null 的主写、Activity `FOR UPDATE`、
   FIFO `registeredAt ASC,id ASC` 选队首、逐行 `claimAtStatus` CAS、waitlisted → pending
   与 `registration.review(action=promote)` audit 全在同一事务；通知在 commit 后通过既有
@@ -181,6 +194,7 @@ Certificate (不在 participation 图内)
 | Admin Registrations | `v2/activities/:activityId/registrations` | [`activity-registrations.controller.ts`](../src/modules/activity-registrations/activity-registrations.controller.ts) |
 | Admin Attendances | `v2/activities/:activityId/attendance-sheets` + `v2/attendance-sheets` | [`attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts) |
 | Admin ActivityCheckIns | `GET /api/admin/v1/activities/:activityId/check-ins` + `GET /api/admin/v1/activities/:activityId/attendance-sheet-draft`（`attendance.read.sheet` + activity ref；只读） | [`controllers/admin-activity-check-ins.controller.ts`](../src/modules/attendances/controllers/admin-activity-check-ins.controller.ts) |
+| ActivityFeedbacks | F1 尚无 endpoint；F2/F3 才分别新增 App / Admin canonical 路径 | [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) |
 | Ops ContributionRules | `v2/contribution-rules` | [`contribution-rules.controller.ts`](../src/modules/contribution-rules/contribution-rules.controller.ts) |
 
 ### 6.2 App surface(participation 视角的 mobile 路径)
@@ -210,15 +224,15 @@ Certificate (不在 participation 图内)
 
 新增 participation 相关代码或规则时,**必须**逐条对照:
 
-1. **判定归属**:新规则是属于某一个实体(Activity / Registration / CheckIn / Sheet / Record / Rule),还是属于整体流程?
+1. **判定归属**:新规则是属于某一个实体(Activity / Registration / CheckIn / Sheet / Record / Feedback / Rule),还是属于整体流程?
    - 如果属于单实体,落在对应模块的 service;
    - 如果属于流程(跨实体的状态决策 / 校验 / 计算),默认落在 `attendances/` 下并通过 `*-policy.ts` / `*-state-machine.ts` / `*-calculator.ts` 命名(沿现有 4 抽:[`time-overlap-policy.ts`](../src/modules/attendances/time-overlap-policy.ts) / [`attendance-sheet-state-machine.ts`](../src/modules/attendances/attendance-sheet-state-machine.ts) / [`contribution-calculator.ts`](../src/modules/attendances/contribution-calculator.ts) / [`attendance-audit-recorder.ts`](../src/modules/attendances/attendance-audit-recorder.ts))。
 
-2. **禁止大搬目录**:**不**为了"统一上下文"把 4 模块挪到 `src/modules/participation/<sub>/`;**除非**先开 D 档评审并落 ADR,并由用户拍板。
+2. **禁止大搬目录**:**不**为了"统一上下文"把 5 模块挪到 `src/modules/participation/<sub>/`;**除非**先开 D 档评审并落 ADR,并由用户拍板。
 
 3. **禁止扩 certificates 边界**:**不**把 [`certificates/`](../src/modules/certificates/) 模块纳入 participation;**除非**未来出现明确的"完成活动后系统颁发 Certificate"发证规则,且 `Certificate` 引入 FK 指向 `Activity` / `AttendanceSheet`。届时**必须**先开评审。
 
-4. **新增跨表写**:**必须**在 PR 描述中明确说明 transaction boundary;**必须**说明是否扩散了 §5.2 表中现有的"跨 aggregate 写"许可。默认**不扩散**——即只有 `attendances → Activity.statusCode='completed'` 这一条已存在的跨 aggregate 写被允许。
+4. **新增跨表写**:**必须**在 PR 描述中明确说明 transaction boundary;**必须**说明是否扩散了 §5.2 的写边界。默认**不扩散**；当前 attendances submit 已不再写 Activity.completed。
    `attendances → ActivityCheckIn` 是模块自有 evidence 表写，不构成跨 aggregate 写；不得以此为由修改 Activity / Registration。
 
 5. **新增 ContributionRule 消费方**:**必须**说明是否复用 `attendances` 现有的 `applyContributionRulePrefill` 语义;如果新消费方走自己的 lookup 路径,**必须**说明为什么不复用以及如何保持语义一致(档位 / cap / 默认值兜底)。
@@ -233,10 +247,10 @@ Certificate (不在 participation 图内)
 
 明确**不**在本 PR 范围内,需要时各自单独立项:
 
-- 不立即重组 4 个模块,**不**创建 `src/modules/participation/<sub>/` 目录树。
+- 不立即重组 5 个模块,**不**创建 `src/modules/participation/<sub>/` 目录树。
 - 不删除 legacy `v2/users/me/*` / `v2/users/me/attendance-records`(沿 [`api-surface-policy.md`](api-surface-policy.md) "只维护兼容、不扩展")。
 - 不抽 `participation/` 共享 module / 共享 service / 共享 DTO 基座。
-- 不移动既有 Prisma model 在 [`prisma/schema.prisma`](../prisma/schema.prisma) 内的位置,不改既有 FK / 字段；F1 新增 `ActivityCheckIn` 及其三条 FK 是已冻结的 additive 例外。
+- 不移动既有 Prisma model 在 [`prisma/schema.prisma`](../prisma/schema.prisma) 内的位置,不改既有 FK / 字段；`ActivityCheckIn` 与本批 `ActivityFeedback` 及各自 FK 是已冻结的 additive 例外。
 - 不改 [`src/modules/permissions/`](../src/modules/permissions/) / RBAC 权限点(沿现行 P0-F 收紧范围)。
 - 不改 BizCode 段位(沿现行 [`biz-code.constant.ts`](../src/common/exceptions/biz-code.constant.ts) 与 BizCode range index)。
 - 不动 [`src/modules/certificates/`](../src/modules/certificates/) — 它是独立的 member-qualifications 上下文,本文只是把它从 participation 排除。
@@ -254,12 +268,13 @@ Certificate (不在 participation 图内)
 - [`src/modules/activity-registrations/`](../src/modules/activity-registrations/)
 - [`src/modules/attendances/`](../src/modules/attendances/) — 含 4 抽:[`contribution-calculator.ts`](../src/modules/attendances/contribution-calculator.ts) / [`time-overlap-policy.ts`](../src/modules/attendances/time-overlap-policy.ts) / [`attendance-sheet-state-machine.ts`](../src/modules/attendances/attendance-sheet-state-machine.ts) / [`attendance-audit-recorder.ts`](../src/modules/attendances/attendance-audit-recorder.ts)
 - [`src/modules/contribution-rules/`](../src/modules/contribution-rules/)
+- [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) — F1 schema / module skeleton；运行时端点留 F2/F3
 - [`src/modules/certificates/`](../src/modules/certificates/) — **明确排除**,作为对照引用
 - [`src/common/exceptions/biz-code.constant.ts`](../src/common/exceptions/biz-code.constant.ts) — BizCode 来源(其中 `ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN` / `ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH` / `CONTRIBUTION_RULE_*` 等为跨模块共享词汇)
 
 ### Schema
 
-- [`prisma/schema.prisma`](../prisma/schema.prisma)(`Activity` / `ActivityRegistration` / `ActivityCheckIn` / `AttendanceSheet` / `AttendanceRecord` / `ContributionRule` / `Certificate` 段;后者为对照排除)
+- [`prisma/schema.prisma`](../prisma/schema.prisma)(`Activity` / `ActivityRegistration` / `ActivityCheckIn` / `AttendanceSheet` / `AttendanceRecord` / `ActivityFeedback` / `ContributionRule` / `Certificate` 段;后者为对照排除)
 
 ### 文档
 

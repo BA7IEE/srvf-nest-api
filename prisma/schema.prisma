@@ -452,6 +452,7 @@ model Member {
   // V2 第一阶段批次 3 反向 relation(沿批次 1 / 批次 2 R2 范式)
   activityRegistrations ActivityRegistration[]
   activityCheckIns      ActivityCheckIn[]
+  activityFeedbacks     ActivityFeedback[]
   attendanceRecords     AttendanceRecord[]
 
   // 保险模块反向 relation(2026-06-13;沿 R2 范式,仅关系映射不算业务字段;
@@ -796,12 +797,13 @@ model Activity {
   locationLongitude Decimal? @db.Decimal(10, 7)
   locationLatitude  Decimal? @db.Decimal(10, 7)
 
-  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  publisher        User?                  @relation("ActivityPublisher", fields: [publishedBy], references: [id], onDelete: Restrict)
-  canceller        User?                  @relation("ActivityCanceller", fields: [cancelledBy], references: [id], onDelete: Restrict)
-  registrations    ActivityRegistration[]
-  activityCheckIns ActivityCheckIn[]
-  attendanceSheets AttendanceSheet[]
+  organization      Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  publisher         User?                  @relation("ActivityPublisher", fields: [publishedBy], references: [id], onDelete: Restrict)
+  canceller         User?                  @relation("ActivityCanceller", fields: [cancelledBy], references: [id], onDelete: Restrict)
+  registrations     ActivityRegistration[]
+  activityCheckIns  ActivityCheckIn[]
+  activityFeedbacks ActivityFeedback[]
+  attendanceSheets  AttendanceSheet[]
 
   @@index([deletedAt])
   @@index([createdAt])
@@ -908,6 +910,36 @@ model ActivityCheckIn {
   @@index([deletedAt])
   @@index([createdAt])
   @@map("activity_check_ins")
+}
+
+// ===== 活动评价 F1:activity_feedbacks =====
+//
+// 真到场者在 Activity.endAt + 配置窗口内对 completed 活动提交 1～5 星评价。
+// 资格由业务层读取 approved AttendanceSheet 内未软删 AttendanceRecord 判定；
+// 本表不保存 registrationId，也不影响考勤 / 贡献值 / 结算。
+// live (activityId, memberId) partial unique 由 migration.sql 末尾手写；
+// Prisma DSL 6.x 无法表达 WHERE "deletedAt" IS NULL。
+// goal 明确要求物理表名 activity_feedbacks，本模型使用 @@map 固定该名称。
+model ActivityFeedback {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  activityId String
+  memberId   String
+  rating     Int
+  comment    String?
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  member   Member   @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  @@index([activityId])
+  @@index([memberId])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([rating])
+  @@map("activity_feedbacks")
 }
 
 // ===== V2 第一阶段批次 3:attendance_sheets =====
