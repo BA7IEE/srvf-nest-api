@@ -25,7 +25,7 @@
 | 模块 | Prisma 模型 | 角色 |
 |---|---|---|
 | [`src/modules/activities/`](../src/modules/activities/) | `Activity` | 流程发起点;状态机 4 态 |
-| [`src/modules/activity-registrations/`](../src/modules/activity-registrations/) | `ActivityRegistration` | 报名 4 态;活动 ↔ 队员 关联 |
+| [`src/modules/activity-registrations/`](../src/modules/activity-registrations/) | `ActivityRegistration` | 报名 5 态(`pending/pass/reject/cancelled/waitlisted`);活动 ↔ 队员 关联 |
 | [`src/modules/attendances/`](../src/modules/attendances/) | `AttendanceSheet` / `AttendanceRecord` / `ActivityCheckIn` | 考勤、终审、贡献值落地；`ActivityCheckIn` 是 append-only 打卡证据，F2 提供 canonical App self 写/读，F3 提供 canonical Admin 证据列表与只读考勤草稿 |
 | [`src/modules/contribution-rules/`](../src/modules/contribution-rules/) | `ContributionRule` | 字典码键 lookup;配置实体而非流程实体 |
 
@@ -44,6 +44,7 @@
 ```
 Activity (statusCode: draft / published / completed / cancelled)
   ├─ ActivityRegistration[]   [FK activityId → Activity.id, Restrict;
+  │     │                      statusCode: pending/pass/reject/cancelled/waitlisted;
   │     │                      partial unique (activityId, memberId)
   │     │                      WHERE deletedAt IS NULL AND statusCode != 'cancelled']
   │     └─ AttendanceRecord[]  [FK registrationId → ActivityRegistration.id,
@@ -95,10 +96,10 @@ Certificate (不在 participation 图内)
 |---|---|---|---|
 | 1. 活动起草 | activities | `create` → `statusCode='draft'` | 仅创建,无下游 |
 | 2. 活动发布 | activities | `publish` → `draft → published` | 解锁 Registration 创建与 AttendanceSheet 提交 |
-| 3. 活动取消 | activities | `cancel` → `* → cancelled` | 阻断所有下游写;attendances 在 `findActivityForSubmissionFull` 内会拒绝 `ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN` |
-| 4. 报名(admin / app / legacy) | activity-registrations | `create` / `createMy` → `pending` | 不影响 Activity 状态;partial unique 防重复;**报名截止生效**(`assertActivityRegistrable` 两路公共闸:`registrationDeadline` 非 null 且 `now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`;approve **不**加此闸,截止前已报 pending 仍可批) |
-| 5. 报名审核 | activity-registrations | `approve` / `reject` → `pass` / `reject` | 仅服务内部状态 |
-| 6. 报名取消 | activity-registrations | `cancelAdmin` / `cancelMy` → `cancelled` | partial unique 允许同人再次报名 |
+| 3. 活动取消 | activities | `cancel` → `* → cancelled` | 同事务联动 live `pending + waitlisted → cancelled`(pass 保留历史审批结果);阻断所有下游写;attendances 在 `findActivityForSubmissionFull` 内会拒绝 `ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN` |
+| 4. 报名(admin / app) | activity-registrations | `create` / `createMy` → `pending \| waitlisted` | 全部前置闸通过后，`capacity=null` 或未满落 pending，已满落 waitlisted；partial unique 防重复;**报名截止生效**(`registrationDeadline` 非 null 且 `now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`;approve 不加此闸) |
+| 5. 报名审核 / 递补 | activity-registrations + activities | `approve: pending → pass`;`reject: pending\|waitlisted → reject`;`promote: waitlisted → pending` | promote 仅事务内 FIFO 引擎使用，不开手动端点，不开 waitlisted → pass 直通 |
+| 6. 报名取消 | activity-registrations | `cancelAdmin` / `cancelMy`: `pending\|pass\|waitlisted → cancelled` | 取消 pass 同事务 FIFO 递补队首一人至 pending；取消 pending/waitlisted 不递补；partial unique 允许同人再次报名 |
 | 7. 考勤表首次提交 | attendances | `submit` → `Sheet.statusCode='pending'` + 多条 `Record` 同事务建立 | **跨模块写**:`Activity.statusCode` 从 `published → completed`(D11 / D-S10;[`attendances.service.ts:495`](../src/modules/attendances/attendances.service.ts:495));**跨模块读**:`tx.contributionRule.findMany` 预填 `AttendanceRecord.contributionPoints`(D14 5.B;[`contribution-calculator.ts:87`](../src/modules/attendances/contribution-calculator.ts:87);2026-06-21 起预填回归原始规则分,**不再 per-record dailyCap 钳制**,见下 invariant「全局每日封顶」);**跨模块读**:`assertRegistrationMatchesActivity` 校验 `registrationId.activityId === sheet.activityId`(R23;[`attendances.service.ts:299`](../src/modules/attendances/attendances.service.ts:299)) |
 | 8. APD 一级审核 | attendances | `approve` → `pending → pending_final_review`;`reject` → `pending → rejected` | **不**触发 `attendance.recorded`(沿 D-S7;触发点已移到 final-approve) |
 | 9. APD 终审通过 | attendances | `finalApprove` → `pending_final_review → approved` | **`contributionPoints` 在此刻语义上生效**;同事务内 `eventPlaceholder('attendance.recorded')` 发出([`attendances.service.ts:1003`](../src/modules/attendances/attendances.service.ts:1003));未来 contribution-points 聚合器从此事件消费 |
@@ -138,6 +139,7 @@ Certificate (不在 participation 图内)
 | `attendances` 读 / 写 `ActivityCheckIn` | ✅ 自有表 | 模型 ownership 归 attendances；F2 App production write 只允许 append-only create / 单向 checkout CAS；F3 Admin 只读 list/draft，不写 Sheet/Record；两者均不得借此写 Activity / ActivityRegistration |
 | `attendances` 在事务内读 `tx.contributionRule.findMany` | ✅ 允许 | D14 5.B 系统预填;走 [`contribution-calculator.ts`](../src/modules/attendances/contribution-calculator.ts) |
 | `activities` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | Activity 是上游,不下探;若需要派生统计,通过 `attendance.recorded` 事件或独立 service |
+| `activities` / `activity-registrations` 在调用方事务内执行 `promoteActivityWaitlist` | ✅ 限定例外 | 纯函数入口，固定 Activity → Registration 锁序，只写 waitlisted → pending + 同事务 `registration.review(action=promote)`；不引入兄弟 Service 依赖 |
 | `activity-registrations` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | 同上 |
 | `contribution-rules` 在事务内读 / 写其它 participation 表 | ❌ 不允许 | ContributionRule 是配置实体,只被读,不读人 |
 | 任一模块通过 `import { *Service } from '../<sibling>/...'` 调用兄弟 service | ❌ 不允许(当前 0 命中) | 当前 grep 验证 5 模块之间 service-to-service import = 0;**保持**该零态 |
@@ -153,6 +155,10 @@ Certificate (不在 participation 图内)
 - **ActivityCheckIn F3**:Admin list/draft 只读 `Activity`、当前 pass `ActivityRegistration`、
   `ActivityCheckIn` 与 Member 摘要；两端点各固定 4 次业务查询（authz 查询分开计），不写
   `ActivityCheckIn`、Sheet、Record，也不扩散任何 cross-aggregate write。
+- **候补递补**:取消 pass 或 capacity 调大/改 null 的主写、Activity `FOR UPDATE`、
+  FIFO `registeredAt ASC,id ASC` 选队首、逐行 `claimAtStatus` CAS、waitlisted → pending
+  与 `registration.review(action=promote)` audit 全在同一事务；通知在 commit 后通过既有
+  `NotificationDispatcher` 派发。pass 取消与打卡写路径统一使用 Activity → Registration 锁序。
 - 跨 aggregate 写**只允许在同事务内发生**;**禁止**用"先 attendances 改完,再回调 activities"的两阶段方式;**禁止**用 `setTimeout` / `Promise.then` 把后续写挪出事务。
 
 ### 5.4 ContributionRule 是配置,不是流程

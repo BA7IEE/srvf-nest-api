@@ -2,6 +2,24 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+> 主题:**活动报名候补与自动递补（审计刀 6 · 第二件）**。关闭审计项 #5。版本仍为 v0.52.0；0 schema / 0 migration（52）/ 0 新端点（350）/ 0 权限码（206）/ 0 BizCode（240）/ 0 AuditLogEvent（113）/ 0 cron（2）/ 0 新依赖。`registration_status` seed 仅 additive 增加 `waitlisted`。
+
+### 行为变更对照（恰好 5 条）
+
+| # | 前 | 后 |
+|---:|---|---|
+| 1 | 满员时 Admin 代报、自助报名和 App 报名返 `21031` | 全部既有报名闸通过后创建 `waitlisted`；`capacity=null` 或未满仍创建 `pending` |
+| 2 | 取消 pass 只释放名额 | 同事务按 `registeredAt ASC,id ASC` 自动把队首 `waitlisted→pending`，commit 后通知本人进入待审；取消 pending/waitlisted 不递补 |
+| 3 | capacity 调大或改不限不处理候补 | 调大 N 自动递补最多 N 人，改 `null` 递补全部；缩容不递补且不得低于 pass 数的守卫不变 |
+| 4 | 报名状态机 cancel/reject 不接受候补态 | cancel 接受 `pending/pass/waitlisted`，reject 接受 `pending/waitlisted`；approve 仍仅接受 pending，不开候补直通 pass |
+| 5 | 活动取消只联动 pending 报名为 cancelled | 同事务联动 pending + waitlisted 为 cancelled，pass 历史结果保持 |
+
+- **并发与审计**:递补在调用方事务内先锁 Activity，再按 FIFO 逐行 `claimAtStatus` CAS；取消 pass 统一 Activity→Registration 锁序，并发双取消不会死锁、重复递补或漏递补。递补审计复用 `registration.review` + `extra.action='promote'`，通知复用 `registration-result` 且只在 commit 后派发。
+- **读侧 additive**:App 我的报名列表/详情与 Admin 报名列表新增 nullable `waitlistPosition`（候补从 1 开始，其他状态为 null；列表批量计算无 N+1）；dashboard `registrations` 新增 `waitlisted`。
+- **边界不变**:approve 容量复核与 `FOR UPDATE` 不动；参与度量、考勤、结算路径不动，签到继续只认当前 pass 报名；无手动递补端点、无候补上限、无新定时任务。
+
 ## v0.52.0 - 2026-07-15
 
 > 主题:**活动自助 GPS 签到（审计刀 6 · 第一件）**。范围 = F0 冻结评审 #622 + F1 证据表 #623 + F2 App 自助面 #624 + F3 Admin 只读面 #625 + F4 收口 #626。纯 additive 新增 5 个 endpoint（345→350）、2 个 controller（69→71）、1 张 `activity_check_ins` 空表与第 52 migration；BizCode 238→240。**0 行为变更**;Permission 206 / AuditLogEvent 113 / cron 2 / 内置角色 9 / module 35 均不变，0 新依赖。

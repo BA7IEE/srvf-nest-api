@@ -22,7 +22,7 @@
 | 登录 | `POST /api/auth/v1/login`(密码) · `login-sms`(验证码) · `login-wechat`(小程序 openid;未绑返 `bindingRequired`) |
 | 我的身份/资料/能力 | `GET /api/app/v1/me` · `me/account` · `PATCH me/profile` · `PUT me/password` · `GET me/capabilities` |
 | 活动池 / 我的活动 | `GET /api/app/v1/activities/available`(**仅 `public` 且未结束活动;详情 `GET /api/app/v1/activities/:id` 新增 `phase` / `genderRequirementCode` / `requiresInsurance` / `passCount`,已报名者仍能回看已结束活动**) · `GET /api/app/v1/my/activities` |
-| 我的报名(报名/查/取消) | `GET /api/app/v1/my/registrations` · `POST` 报名(**v0.40.0:活动已结束 `endAt < now` → `20125`「活动已结束,不可报名」;报名截止 `registrationDeadline` 仍为独立闸 `20123`**)· `PATCH` 取消(**v0.40.0:该报名已有考勤记录 → `21033`「报名已有考勤记录,不可取消」**) |
+| 我的报名(报名/查/取消) | `GET /api/app/v1/my/registrations` · `POST` 报名(**满员不再返 21031，而是成功创建 `statusCode='waitlisted'`；列表/详情以 `waitlistPosition` 展示排位**) · `PATCH` 取消(候补可随时退出)。活动已结束 `20125`、报名截止 `20123`、已有考勤不可取消 `21033` 等既有闸不变 |
 | 我的考勤 / 参与汇总 / 证书 | `GET /api/app/v1/my/attendance-records` · `GET /api/app/v1/my/participation-summary` · `GET /api/app/v1/my/certificates`。参与汇总严格锁当前 `AppIdentityResolver.memberId`，只统计 approved Sheet：`totalServiceHours` / distinct `activityCount` / `recordCount`；`contributionPoints` 复用生涯累计封顶核，与 Admin 旧 `contribution-summary` 同源。**不返回 memberId / no-show / 他人数据**，前端直接展示，勿自行 SUM |
 | **活动 GPS 自助签到 / 签退(F2)** | `POST /api/app/v1/my/activities/:activityId/check-in` · `POST .../check-out` · `GET .../check-in`。只认本人当前 `pass` 报名；首次与合法网络重试都返回 200 同一证据。App 仅收到时间、距离与 `geoVerified/outOfRange`，**不返回原始经纬度、accuracy 或 memberId** |
 | 公开(无账号) | `POST /api/open/v1/recruitment/applications/*`(招新报名) · `GET /api/open/v1/contents`(内容;`expireAt <= now` 的附件行不返回、过期封面 URL 为 null,未来时间/null 不变) |
@@ -40,7 +40,7 @@
 | **会员站内信 feed(统一通知 S1)** | `GET /api/app/v1/notifications`(分页 feed,每项带 `read` 已读标志)· `GET .../notifications/unread-count`(未读红点 badge:`{unreadCount}`)· `GET .../notifications/{id}`(详情含 body;**不自动已读**)· `POST .../notifications/{id}/read`(标记已读;**幂等**,二次 no-op 不重复计数)。准入 canUseApp(否则 403);**4 档可见性**(member/formal_member/department/management,**去 public**,复用 content.visibility);不可见/未发布通知 → 404 防枚举。出参零敏感(无 authorUserId/visibleOrganizationIds/statusCode/readCount) |
 | **微信订阅授权上报 / 查配额(统一通知 S2)** | `POST /api/app/v1/notifications/subscriptions/ack`(`{templateIds:[...]}` → 各模板 `availableCount`;**前端在 `wx.requestSubscribeMessage` 用户接受后调本端点上报授权**)· `GET .../subscriptions/status?templateIds=a,b`(逗号分隔 → 各模板剩余配额)。准入 canUseApp(否则 403)。**补授权交互**:小程序高频按钮点击后调 `wx.requestSubscribeMessage` 拿一次授权 → 接受则 ack 上报(后端 quota **+1 封顶 5**);**ack 本质 additive 非去重幂等**(微信无授权回执 ID,可累积,靠封顶 + 前端只在真授权后上报缓解);后端真正发送时扣 1,配额耗尽即停发 → 前端据 `status` 的 `availableCount` 判断**何时再次引导用户补授权**。**前端只拿授权 + 上报,绝不直接发消息**(发送权全在后端 publish 派发);**templateId = 小程序后台订阅消息模板 ID,须与后端模板配置一致**(后端 admin 配置 `notification-wechat-templates`) |
 | **系统定向通知(统一通知 S3;发号/入队)** | **无新端点** —— 复用上面 S1 feed 4 端点。招新**发号**(转志愿者发永久编号)和**入队**(志愿者→队员)完成后,后端自动向当事队员发一条 `notificationTypeCode='recruitment'` 的**定向**站内信(发号那条 `channels` 含 wechat,若该会员订阅了 recruitment 模板则也推一条订阅消息;入队那条仅站内)。**定向通知仅本人 feed 可见**(他人列表不含、详情/标已读 → 404 防枚举);展示与广播通知同形(title/body/read/pinned/publishedAt)。**前端无需特殊处理**:发号/入队后引导用户回站内信即可看到;发号成功**正是引导用户 `wx.requestSubscribeMessage` 订阅 recruitment 模板的好时机**(后续节点订阅消息触达)。报名**前**阶段(报名受理/转人工/门槛/评定/公示)**无定向通知**——申请人那时还没账号/队员身份,仍走 `query`/`query-by-phone` **查询进度**(见上「招新本人进度」)|
-| **活动域系统通知(Unreleased)** | **无新端点** —— 继续复用 S1 feed 4 端点、仅站内 `channels=['in-app']`:公开活动发布 → `activity-published` 会员广播;时间/地点变更、活动取消、队员取消已通过报名 → `activity-changed`;报名审批通过/驳回 → `registration-result`;考勤终审 → `attendance-result`;开场前 24 小时仅向仍为 `pass` 的报名者发一次 `activity-reminder`。定向通知仅本人 feed 可见;广播按既有会员可见性展示。前端按 `notificationTypeCode` 选图标/文案即可,红点与已读复用 S1。|
+| **活动域系统通知(Unreleased)** | **无新端点** —— 继续复用 S1 feed 4 端点、仅站内 `channels=['in-app']`:公开活动发布 → `activity-published` 会员广播;时间/地点变更、活动取消、队员取消已通过报名 → `activity-changed`;报名审批通过/驳回及候补自动递补进入待审 → `registration-result`;考勤终审 → `attendance-result`;开场前 24 小时仅向仍为 `pass` 的报名者发一次 `activity-reminder`。定向通知仅本人 feed 可见;广播按既有会员可见性展示。前端按 `notificationTypeCode` 选图标/文案即可,红点与已读复用 S1。|
 
 > 任务→端点的细化(注册流、入队流等)等建仓时按真实页面补,别提前臆造。
 > **H5 链失败码**:验码错/过期统一 `24010`;token 无效/过期/已用 `28050`;无 open 轮 `28030`;换微信撞他人 `28051`;无报名 `28002`。
@@ -53,6 +53,14 @@
 - **成功告警**：`outOfRange=true` 和 `geoVerified=false` 都是 200 成功态，不要自动重试或当作失败；分别提示“已记录，位置超出活动范围”和“已记录，活动位置暂未校验”。后端不会把原始定位值回显给 App。
 - **安全重试**：网络超时可重发同一动作；状态与当前 `pass` 闸仍合法时，重复/并发请求返回同一个 winner，首次签退位置不会被后续重试覆盖。
 - **错误提示**：`22076` 当前报名未通过/已取消；`22077` 超出活动时间窗；`22078` 尚未签到不可签退；`22070` 签到后不足 36 秒不可首次签退；`20030` completed 不可新签到；`20122` 活动已取消；`20126` 活动尚未发布。定位字段缺失、越界、小数位或夹带未知字段统一按 400 表单错误处理。
+
+### 2.2 活动报名候补与排位（审计刀 6 · 第二件）
+
+- **满员仍是成功态**：报名响应若为 `statusCode='waitlisted'`，表示已进入候补队列，不要按异常提示“报名失败”；建议成功页显示“已进入候补，第 N 位”。
+- **排位字段**：`GET /api/app/v1/my/registrations` 的列表项与详情、报名成功响应均有 `waitlistPosition:number|null`。仅 waitlisted 时从 1 开始；pending/pass/reject/cancelled 均为 null。
+- **自动递补**：已有通过者取消或管理员扩容时，后端按报名时间、同时间按 id 自动把队首候补转为 pending，并发送标题「候补已递补」的 `registration-result` 站内信。前端收到后刷新报名详情，展示“待审核”，**不是直接通过**。
+- **退出候补**：候补沿既有取消端点退出；取消 pending 或 waitlisted 不影响其他候补排位，取消 pass 才会腾出名额并触发一人递补。
+- **签到边界**：waitlisted/pending 都不能签到；只有当前 pass 报名可走 GPS 签到。`21031` 不再用于满员报名提示，但可保留旧版本兼容文案。
 
 ### 2.x 十项收口一刀增量(2026-07-11)
 

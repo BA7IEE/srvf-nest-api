@@ -93,6 +93,8 @@
 
 > 报名批量动作仍落在具体活动轴：`PATCH admin/v1/activities/:activityId/registrations/bulk-approve` / `bulk-reject`。body `ids` 去重且 1–100；后端按输入顺序逐条复用单条 approve/reject 的事务、容量、状态、审计与通知语义，返回逐项 success/failed，一条失败不会回滚此前成功项。前端必须展示失败行及其 BizCode，不能把 HTTP 200 等价成“全批成功”；批量驳回未填备注时后端使用「批量驳回」。
 
+> **候补（Unreleased）**：不新增列表或手动递补端点。活动内列表与跨活动扁平列表继续使用既有 `statusCode=waitlisted` 过滤；列表项 additive `waitlistPosition:number|null`，候补从 1 开始，其余状态为 null。满员代报成功返回 waitlisted，不再返 21031。取消 pass 会自动把 FIFO 队首转 pending，capacity 调大递补 delta、改 null 递补全部；后台只需刷新列表/工作台，**不要提供 waitlisted→pass 的直通按钮**。候补可沿既有 reject/cancel 清理，approve 仍仅允许 pending。
+
 > ⚠️ 过滤参数名是 **`statusCode`**(不是草拟期写的 `status`;沿既有嵌套列表口径)。值用 registration_status / attendance_sheet_status 字典码(如 `pending`/`pass`/`approved`)。
 
 > **v0.49.0 scoped-authz 提示**:本页两个扁平跨轴列表已按调用者的可见组织集下推到 `activity.organizationId`。仅职务/分管派生、零 GLOBAL 绑定的用户可进入页面：队长/部长见对应组织树，组长见本组，副职与分管人只读可见；显式 `organizationId`/`includeDescendants` 与鉴权范围求交。GLOBAL 角色与 SUPER_ADMIN 仍看全量；有码但范围空返 200 空列表，无码返 `30100`。点动作仍在具体 resource ref 上独立判权，列表可见不等于拥有审批/写权限。
@@ -241,7 +243,7 @@
 
 **批量 id→label 解析(meta/resolve-labels,net-new)**:`POST admin/v1/meta/resolve-labels`,入 `{refs:[{type,id}]}`(`type` ∈ `member`/`user`/`organization`/`role`/`position`/`activity` 闭集,`refs` ≤200 条,超限 `400`;单请求可混合多 type)。出 `{[type]:{[id]:{label,...极少字段}}}`——**顶层 key 按实际命中的 type 动态出现**,未命中/无权的 type 整体不出现(不是空对象)。典型用途:审计日志的 `actorUserId`、角色绑定的 `principalId`、各种跨资源外键 id,批量换成人类可读文案,不用逐条单查。**两层权限**(务必分清,前端遇到"有的类型解析出来有的没有"不是 bug):① 入口码 `meta.resolve.label`(绑 ops-admin,门控"能否用这个工具");② per-type 各资源既有读码(门控"能读到哪些 type"——例如纯 ops-admin 身份没有 `member.read.record`,同一请求里 `member` 类型会被静默拿掉,`organization`/`role`/`position`/`user`/`activity` 仍正常返)。**id 不存在 / 已软删 / 无权** 三种情况处理一致:该 id 不出现在结果里,**不报错、不占位**(防枚举;前端拿到的"缺失" id 一律当"这条不可用",不要区分成因)。`activity` 类型额外套用 Q-A7 规则:USER 角色只能解析到 published/completed 的活动。
 
-**工作台/首页待办汇总(meta/dashboard-summary,GAP-003)**:`GET admin/v1/meta/dashboard-summary`,零 query 参数。出三个**可省略**块:`registrations:{pending}` / `attendanceSheets:{pending,pendingFinalReview}` / `activities:{published,pendingCompletion}`；`pendingCompletion` = published 且 `endAt < now`，用于提示管理员走手动 complete。块级权限裁剪语义不变：无权时整个块缺失，不是 0。
+**工作台/首页待办汇总(meta/dashboard-summary,GAP-003)**:`GET admin/v1/meta/dashboard-summary`,零 query 参数。出三个**可省略**块:`registrations:{pending,waitlisted}` / `attendanceSheets:{pending,pendingFinalReview}` / `activities:{published,pendingCompletion}`；`waitlisted` 是全局未软删候补数，`pendingCompletion` = published 且 `endAt < now`。块级权限裁剪语义不变：无权时整个块缺失，不是 0。
 
 **参与月度 overview（审计刀 5）**:`GET admin/v1/meta/participation-overview`，按 `Activity.startAt` 的 UTC 月输出组织范围内活动数、报名/到场/no-show、approved 时长与固定四桶。入口同时要求 `attendance.read.sheet` + `activity-registration.read.record`；两项权限各自的可见组织集先求交，再与显式 `organizationId`/`includeDescendants` 筛选求交。有码但合法 scope 为空返回 `months:[]`，不是越权扩成全量；每月数值与同范围逐活动 `participation-summary` 求和一致。
 
