@@ -10,9 +10,15 @@ import type { OrganizationsService } from '../organizations/organizations.servic
 import type { RbacService } from '../permissions/rbac.service';
 import type { AuthzService } from '../authz/authz.service';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
+import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import type { ActivityRegistrationTransitionDecision } from './activity-registration-state-machine';
+import type { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
 import { ActivityRegistrationsService } from './activity-registrations.service';
+
+jest.mock('../activities/activity-waitlist-promotion', () => ({
+  promoteActivityWaitlist: jest.fn().mockResolvedValue({ activityTitle: '测试活动', promoted: [] }),
+}));
 
 // activity-registrations service-level characterization spec(B 档,沿 srvf-god-service-refactor）。
 // 锁定 service 内部「编排契约」现状行为,作为后续 Presenter / QueryService 抽离前的快速重构护栏。
@@ -249,6 +255,15 @@ function makeOrganizationsMock() {
 }
 type OrganizationsMock = ReturnType<typeof makeOrganizationsMock>;
 
+function makeWaitlistQueryMock() {
+  return {
+    getPosition: jest.fn<Promise<number | null>, [RegRow]>().mockResolvedValue(null),
+    getPositions: jest
+      .fn<Promise<Map<string, number | null>>, [RegRow[]]>()
+      .mockImplementation((rows) => Promise.resolve(new Map(rows.map((row) => [row.id, null])))),
+  };
+}
+
 function makeService(
   prisma: PrismaMock,
   recorder: AuditRecorderMock,
@@ -262,12 +277,14 @@ function makeService(
     prisma as unknown as PrismaService,
     recorder as unknown as ActivityRegistrationAuditRecorder,
     stateMachine,
+    { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogsService,
     makeRbacMock() as unknown as RbacService,
     authz as unknown as AuthzService,
     makeInsuranceRequirementMock() as unknown as InsuranceRequirementService,
     dispatcher as unknown as NotificationDispatcher,
     organizations as unknown as OrganizationsService,
     new ActivityParticipationPolicy(),
+    makeWaitlistQueryMock() as unknown as ActivityRegistrationWaitlistQueryService,
   );
 }
 
@@ -392,27 +409,18 @@ describe('ActivityRegistrationsService (characterization)', () => {
       prisma.activityRegistration.create.mockResolvedValue(
         makeRegRow({ statusCode: 'waitlisted' }),
       );
-      const service = makeService(
-        prisma,
-        recorder,
-        makeStateMachineMock(DENY_DECISION),
-      );
+      const service = makeService(prisma, recorder, makeStateMachineMock(DENY_DECISION));
 
-      const result = await service.create(
-        'act-1',
-        { memberId: 'mem-1' },
-        makeCurrentUser(),
-        META,
-      );
+      const result = await service.create('act-1', { memberId: 'mem-1' }, makeCurrentUser(), META);
 
-      expect(prisma.activityRegistration.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ statusCode: 'waitlisted' }),
-        }),
-      );
-      expect(recorder.logCreate).toHaveBeenCalledWith(
-        expect.objectContaining({ created: expect.objectContaining({ statusCode: 'waitlisted' }) }),
-      );
+      const createArg = prisma.activityRegistration.create.mock.calls[0][0] as {
+        data: { statusCode: string };
+      };
+      const auditArg = recorder.logCreate.mock.calls[0][0] as {
+        created: { statusCode: string };
+      };
+      expect(createArg.data.statusCode).toBe('waitlisted');
+      expect(auditArg.created.statusCode).toBe('waitlisted');
       expect(result.statusCode).toBe('waitlisted');
     });
   });

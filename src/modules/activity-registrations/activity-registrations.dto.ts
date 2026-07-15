@@ -49,7 +49,8 @@ export class ActivityRegistrationResponseDto {
   memberId!: string;
 
   @ApiProperty({
-    description: '报名状态字典 code(registration_status:pending / pass / reject / cancelled)',
+    description:
+      '报名状态字典 code(registration_status:pending / pass / reject / cancelled / waitlisted)',
   })
   statusCode!: string;
 
@@ -111,6 +112,13 @@ export class ActivityRegistrationListItemDto {
 
   @ApiProperty({ description: '报名状态字典 code' })
   statusCode!: string;
+
+  @ApiProperty({
+    description: '候补排位(statusCode=waitlisted 时从 1 开始；其他状态为 null)',
+    nullable: true,
+    type: Number,
+  })
+  waitlistPosition!: number | null;
 
   @ApiProperty({ description: '报名时间' })
   registeredAt!: Date;
@@ -183,6 +191,13 @@ export class AdminRegistrationListItemDto {
 
   @ApiProperty({ description: '报名状态字典 code' })
   statusCode!: string;
+
+  @ApiProperty({
+    description: '候补排位(statusCode=waitlisted 时从 1 开始；其他状态为 null)',
+    nullable: true,
+    type: Number,
+  })
+  waitlistPosition!: number | null;
 
   @ApiProperty({ description: '报名时间' })
   registeredAt!: Date;

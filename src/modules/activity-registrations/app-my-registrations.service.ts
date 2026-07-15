@@ -12,6 +12,7 @@ import { AppMyActivityListItemDto } from '../activities/dto/app/app-my-activity-
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
 import { ActivityRegistrationsService } from './activity-registrations.service';
+import { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
 import { ListMyRegistrationsQueryDto } from './activity-registrations.dto';
 import { AppMyRegistrationListItemDto } from './dto/app/app-my-registration-list-item.dto';
 import { AppMyRegistrationDto } from './dto/app/app-my-registration.dto';
@@ -48,6 +49,7 @@ export class AppMyRegistrationsService {
     private readonly registrationsService: ActivityRegistrationsService,
     private readonly appMyActivities: AppMyActivitiesService,
     private readonly prisma: PrismaService,
+    private readonly waitlistQuery: ActivityRegistrationWaitlistQueryService,
   ) {}
 
   // ============ GET /api/app/v1/my/registrations(P2-5a)============
@@ -93,7 +95,8 @@ export class AppMyRegistrationsService {
     await this.assertCanUseAppOrThrow(currentUser);
     // thin-wrap 既有 findMy(owner 校验 + 404 防侧信道沿现状)
     const reg = await this.registrationsService.findMy(id, currentUser);
-    return AppMyRegistrationsService.toAppDetailDto(reg);
+    const waitlistPosition = await this.waitlistQuery.getPosition(reg);
+    return AppMyRegistrationsService.toAppDetailDto(reg, waitlistPosition);
   }
 
   // ============ GET /api/app/v1/my/activities(P2-5a)============
@@ -143,7 +146,8 @@ export class AppMyRegistrationsService {
       currentUser,
       auditMeta,
     );
-    return AppMyRegistrationsService.toAppDetailDto(reg);
+    const waitlistPosition = await this.waitlistQuery.getPosition(reg);
+    return AppMyRegistrationsService.toAppDetailDto(reg, waitlistPosition);
   }
 
   // ============ PATCH /api/app/v1/my/registrations/:id/cancel(P2-5b)============
@@ -173,7 +177,7 @@ export class AppMyRegistrationsService {
       currentUser,
       auditMeta,
     );
-    return AppMyRegistrationsService.toAppDetailDto(reg);
+    return AppMyRegistrationsService.toAppDetailDto(reg, null);
   }
 
   // ============ 内部 helpers ============
@@ -222,6 +226,7 @@ export class AppMyRegistrationsService {
       id: string;
       activityId: string;
       statusCode: string;
+      waitlistPosition: number | null;
       registeredAt: Date;
       reviewedAt: Date | null;
       cancelledAt: Date | null;
@@ -241,6 +246,7 @@ export class AppMyRegistrationsService {
       activityEndAt: act?.endAt ?? reg.createdAt,
       activityCoverImageUrl: act?.coverImageUrl ?? null,
       statusCode: reg.statusCode,
+      waitlistPosition: reg.waitlistPosition,
       registeredAt: reg.registeredAt,
       reviewedAt: reg.reviewedAt,
       cancelledAt: reg.cancelledAt,
@@ -248,25 +254,29 @@ export class AppMyRegistrationsService {
     };
   }
 
-  // 详情 mapper(沿 §8.2.2 严格 11 字段;**删除** memberId / reviewedBy /
-  // cancelledByUserId,沿 §16.B.2 + §8.2.2 字段表)。
-  private static toAppDetailDto(reg: {
-    id: string;
-    activityId: string;
-    statusCode: string;
-    registeredAt: Date;
-    reviewedAt: Date | null;
-    reviewNote: string | null;
-    extras: Record<string, unknown> | null;
-    cancelledAt: Date | null;
-    cancelReason: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-  }): AppMyRegistrationDto {
+  // 详情 mapper(沿 §8.2.2 基线字段集 additive 增加 waitlistPosition；仍**删除** memberId /
+  // reviewedBy / cancelledByUserId，沿 §16.B.2 + §8.2.2 字段表)。
+  private static toAppDetailDto(
+    reg: {
+      id: string;
+      activityId: string;
+      statusCode: string;
+      registeredAt: Date;
+      reviewedAt: Date | null;
+      reviewNote: string | null;
+      extras: Record<string, unknown> | null;
+      cancelledAt: Date | null;
+      cancelReason: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+    },
+    waitlistPosition: number | null,
+  ): AppMyRegistrationDto {
     return {
       id: reg.id,
       activityId: reg.activityId,
       statusCode: reg.statusCode,
+      waitlistPosition,
       registeredAt: reg.registeredAt,
       reviewedAt: reg.reviewedAt,
       reviewNote: reg.reviewNote,

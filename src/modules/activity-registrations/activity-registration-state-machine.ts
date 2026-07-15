@@ -58,40 +58,48 @@ export class ActivityRegistrationStateMachine {
     action: ActivityRegistrationTransitionAction,
     currentStatusCode: string,
   ): ActivityRegistrationTransitionDecision {
-    switch (action) {
-      case 'approve':
-        if (currentStatusCode === ACTIVITY_REGISTRATION_STATUS.PENDING) {
-          return { allowed: true, nextStatusCode: ACTIVITY_REGISTRATION_STATUS.PASS };
-        }
-        return { allowed: false, biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID };
-      case 'reject':
-        if (
-          currentStatusCode === ACTIVITY_REGISTRATION_STATUS.PENDING ||
-          currentStatusCode === ACTIVITY_REGISTRATION_STATUS.WAITLISTED
-        ) {
-          return { allowed: true, nextStatusCode: ACTIVITY_REGISTRATION_STATUS.REJECT };
-        }
-        return { allowed: false, biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID };
-      case 'cancel':
-        if (
-          currentStatusCode === ACTIVITY_REGISTRATION_STATUS.PENDING ||
-          currentStatusCode === ACTIVITY_REGISTRATION_STATUS.PASS ||
-          currentStatusCode === ACTIVITY_REGISTRATION_STATUS.WAITLISTED
-        ) {
-          return { allowed: true, nextStatusCode: ACTIVITY_REGISTRATION_STATUS.CANCELLED };
-        }
-        return { allowed: false, biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID };
-      case 'reopen':
-        // v0.40.0 参与域生命周期收口②:撤销驳回回待审(reject → pending);其余态拒。
-        if (currentStatusCode === ACTIVITY_REGISTRATION_STATUS.REJECT) {
-          return { allowed: true, nextStatusCode: ACTIVITY_REGISTRATION_STATUS.PENDING };
-        }
-        return { allowed: false, biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID };
-      case 'promote':
-        if (currentStatusCode === ACTIVITY_REGISTRATION_STATUS.WAITLISTED) {
-          return { allowed: true, nextStatusCode: ACTIVITY_REGISTRATION_STATUS.PENDING };
-        }
-        return { allowed: false, biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID };
-    }
+    return decideActivityRegistrationTransition(action, currentStatusCode);
+  }
+}
+
+// 纯决策函数供活动聚合内的候补递补引擎复用；Injectable 外壳继续承接既有调用方。
+export function decideActivityRegistrationTransition(
+  action: ActivityRegistrationTransitionAction,
+  currentStatusCode: string,
+): ActivityRegistrationTransitionDecision {
+  switch (action) {
+    case 'approve':
+      if (currentStatusCode === ACTIVITY_REGISTRATION_STATUS.PENDING) {
+        return { allowed: true, nextStatusCode: ACTIVITY_REGISTRATION_STATUS.PASS };
+      }
+      return { allowed: false, biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID };
+    case 'reject':
+      if (
+        currentStatusCode === ACTIVITY_REGISTRATION_STATUS.PENDING ||
+        currentStatusCode === ACTIVITY_REGISTRATION_STATUS.WAITLISTED
+      ) {
+        return { allowed: true, nextStatusCode: ACTIVITY_REGISTRATION_STATUS.REJECT };
+      }
+      return { allowed: false, biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID };
+    case 'cancel':
+      if (
+        currentStatusCode === ACTIVITY_REGISTRATION_STATUS.PENDING ||
+        currentStatusCode === ACTIVITY_REGISTRATION_STATUS.PASS ||
+        currentStatusCode === ACTIVITY_REGISTRATION_STATUS.WAITLISTED
+      ) {
+        return { allowed: true, nextStatusCode: ACTIVITY_REGISTRATION_STATUS.CANCELLED };
+      }
+      return { allowed: false, biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID };
+    case 'reopen':
+      // v0.40.0 参与域生命周期收口②:撤销驳回回待审(reject → pending);其余态拒。
+      if (currentStatusCode === ACTIVITY_REGISTRATION_STATUS.REJECT) {
+        return { allowed: true, nextStatusCode: ACTIVITY_REGISTRATION_STATUS.PENDING };
+      }
+      return { allowed: false, biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID };
+    case 'promote':
+      if (currentStatusCode === ACTIVITY_REGISTRATION_STATUS.WAITLISTED) {
+        return { allowed: true, nextStatusCode: ACTIVITY_REGISTRATION_STATUS.PENDING };
+      }
+      return { allowed: false, biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID };
   }
 }

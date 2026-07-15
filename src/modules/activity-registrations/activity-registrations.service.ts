@@ -10,8 +10,10 @@ import { parseExpandQuery } from '../../common/dto/expand-query.util';
 import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
+import { promoteActivityWaitlist } from '../activities/activity-waitlist-promotion';
 import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
@@ -25,6 +27,7 @@ import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import { ActivityRegistrationStateMachine } from './activity-registration-state-machine';
+import { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
 import {
   ActivityRegistrationListItemDto,
   ActivityRegistrationResponseDto,
@@ -192,6 +195,7 @@ export class ActivityRegistrationsService {
     private readonly prisma: PrismaService,
     private readonly registrationAuditRecorder: ActivityRegistrationAuditRecorder,
     private readonly registrationStateMachine: ActivityRegistrationStateMachine,
+    private readonly auditLogs: AuditLogsService,
     private readonly rbac: RbacService,
     // 终态 scoped-authz PR12(2026-07-02;冻结稿 §11 逐面迁移第一批):统一判权大脑,管理端
     // 判权从 rbac.can 切 authz.explain(见 assertCanOrThrow)。
@@ -205,6 +209,7 @@ export class ActivityRegistrationsService {
     // (closure 非判权,镜像 F1/A6 activities.service.ts 用法)。
     private readonly organizations: OrganizationsService,
     private readonly activityParticipationPolicy: ActivityParticipationPolicy,
+    private readonly waitlistQuery: ActivityRegistrationWaitlistQueryService,
   ) {}
 
   // ============ helpers ============
@@ -286,7 +291,10 @@ export class ActivityRegistrationsService {
     };
   }
 
-  private toListItemDto(row: RegistrationListRow): ActivityRegistrationListItemDto {
+  private toListItemDto(
+    row: RegistrationListRow,
+    waitlistPosition: number | null,
+  ): ActivityRegistrationListItemDto {
     return {
       id: row.id,
       activityId: row.activityId,
@@ -294,6 +302,7 @@ export class ActivityRegistrationsService {
       memberNo: row.member?.memberNo ?? null,
       memberDisplayName: row.member?.displayName ?? null,
       statusCode: row.statusCode,
+      waitlistPosition,
       registeredAt: row.registeredAt,
       reviewedAt: row.reviewedAt,
       cancelledAt: row.cancelledAt,
@@ -307,6 +316,7 @@ export class ActivityRegistrationsService {
   private toAdminListItemDto(
     row: RegistrationAdminListRow,
     expand: ReadonlySet<RegistrationExpandKey>,
+    waitlistPosition: number | null,
   ): AdminRegistrationListItemDto {
     return {
       id: row.id,
@@ -316,6 +326,7 @@ export class ActivityRegistrationsService {
       memberNo: row.member?.memberNo ?? null,
       memberDisplayName: row.member?.displayName ?? null,
       statusCode: row.statusCode,
+      waitlistPosition,
       registeredAt: row.registeredAt,
       reviewedAt: row.reviewedAt,
       cancelledAt: row.cancelledAt,
@@ -571,9 +582,10 @@ export class ActivityRegistrationsService {
       }),
       this.prisma.activityRegistration.count({ where }),
     ]);
+    const waitlistPositions = await this.waitlistQuery.getPositions(rows);
 
     return {
-      items: rows.map((r) => this.toListItemDto(r)),
+      items: rows.map((r) => this.toListItemDto(r, waitlistPositions.get(r.id) ?? null)),
       total,
       page,
       pageSize,
@@ -666,9 +678,12 @@ export class ActivityRegistrationsService {
       }),
       this.prisma.activityRegistration.count({ where }),
     ]);
+    const waitlistPositions = await this.waitlistQuery.getPositions(rows);
 
     return {
-      items: rows.map((r) => this.toAdminListItemDto(r, expandSet)),
+      items: rows.map((r) =>
+        this.toAdminListItemDto(r, expandSet, waitlistPositions.get(r.id) ?? null),
+      ),
       total,
       page,
       pageSize,
@@ -715,9 +730,12 @@ export class ActivityRegistrationsService {
       }),
       this.prisma.activityRegistration.count({ where }),
     ]);
+    const waitlistPositions = await this.waitlistQuery.getPositions(rows);
 
     return {
-      items: rows.map((r) => this.toAdminListItemDto(r, new Set())),
+      items: rows.map((r) =>
+        this.toAdminListItemDto(r, new Set(), waitlistPositions.get(r.id) ?? null),
+      ),
       total,
       page,
       pageSize,
@@ -1018,7 +1036,7 @@ export class ActivityRegistrationsService {
       type: 'activity_registration',
       id,
     });
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const reg = await this.findRegistrationOrThrow(activityId, id, tx);
 
       const transition = this.registrationStateMachine.decide('cancel', reg.statusCode);
@@ -1026,6 +1044,11 @@ export class ActivityRegistrationsService {
         throw new BizException(transition.biz);
       }
 
+      // pass 取消会进入 Activity 候补队列，必须先按 Activity→Registration 固定锁序取聚合锁。
+      // 否则并发取消会先各持一条 pass registration，再争 Activity 锁形成 40P01 死锁。
+      if (reg.statusCode === REGISTRATION_STATUS_PASS) {
+        await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${activityId} FOR UPDATE`;
+      }
       await claimAtStatus(tx, {
         target: 'activityRegistration',
         id: reg.id,
@@ -1062,8 +1085,32 @@ export class ActivityRegistrationsService {
         tx,
       });
 
-      return this.toResponseDto(updated);
+      const promotion =
+        reg.statusCode === REGISTRATION_STATUS_PASS
+          ? await promoteActivityWaitlist({
+              activityId,
+              maxPromotions: 1,
+              actorUserId: currentUser.id,
+              actorRoleSnap: currentUser.role,
+              auditMeta,
+              tx,
+              auditLogs: this.auditLogs,
+            })
+          : { activityTitle: '活动', promoted: [] };
+
+      return {
+        dto: this.toResponseDto(updated),
+        activityTitle: promotion.activityTitle,
+        promotedMemberIds: promotion.promoted.map((item) => item.memberId),
+      };
     });
+
+    await this.dispatchWaitlistPromotionNotifications(
+      activityId,
+      result.activityTitle,
+      result.promotedMemberIds,
+    );
+    return result.dto;
   }
 
   // ============ 管理端:reopen(审批后悔药:reject → pending)============
@@ -1150,9 +1197,10 @@ export class ActivityRegistrationsService {
       }),
       this.prisma.activityRegistration.count({ where }),
     ]);
+    const waitlistPositions = await this.waitlistQuery.getPositions(rows);
 
     return {
-      items: rows.map((r) => this.toListItemDto(r)),
+      items: rows.map((r) => this.toListItemDto(r, waitlistPositions.get(r.id) ?? null)),
       total,
       page,
       pageSize,
@@ -1210,6 +1258,9 @@ export class ActivityRegistrationsService {
         throw new BizException(transition.biz);
       }
 
+      if (reg.statusCode === REGISTRATION_STATUS_PASS) {
+        await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${reg.activityId} FOR UPDATE`;
+      }
       await claimAtStatus(tx, {
         target: 'activityRegistration',
         id: reg.id,
@@ -1246,6 +1297,19 @@ export class ActivityRegistrationsService {
         tx,
       });
 
+      const promotion =
+        reg.statusCode === REGISTRATION_STATUS_PASS
+          ? await promoteActivityWaitlist({
+              activityId: reg.activityId,
+              maxPromotions: 1,
+              actorUserId: currentUser.id,
+              actorRoleSnap: currentUser.role,
+              auditMeta,
+              tx,
+              auditLogs: this.auditLogs,
+            })
+          : { activityTitle: activity?.title ?? '活动', promoted: [] };
+
       return {
         dto: this.toResponseDto(updated),
         activityId: reg.activityId,
@@ -1253,11 +1317,39 @@ export class ActivityRegistrationsService {
         publisherMemberId: activity?.publisher?.memberId ?? null,
         cancellingMemberId: reg.memberId,
         cancelReason: dto.cancelReason ?? null,
+        promotedMemberIds: promotion.promoted.map((item) => item.memberId),
       };
     });
 
     await this.dispatchSelfCancellationNotification(result);
+    await this.dispatchWaitlistPromotionNotifications(
+      result.activityId,
+      result.activityTitle,
+      result.promotedMemberIds,
+    );
     return result.dto;
+  }
+
+  private async dispatchWaitlistPromotionNotifications(
+    activityId: string,
+    activityTitle: string,
+    memberIds: string[],
+  ): Promise<void> {
+    for (const memberId of memberIds) {
+      try {
+        await this.notificationDispatcher.dispatchTargeted({
+          recipientMemberId: memberId,
+          notificationTypeCode: NOTIFICATION_TYPE_REGISTRATION_RESULT,
+          title: '候补已递补',
+          body: `您报名的「${activityTitle}」已从候补递补，现已进入待审核。`,
+          channels: [NOTIFICATION_CHANNEL_IN_APP],
+        });
+      } catch (err) {
+        this.logger.error(
+          `waitlist promotion notification failed (activity=${activityId}, member=${memberId}): ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
   private async dispatchSelfCancellationNotification(input: {

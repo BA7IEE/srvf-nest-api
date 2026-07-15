@@ -19,6 +19,7 @@ import {
 } from './controllers/admin-registrations.controller';
 import { AppMyRegistrationsController } from './controllers/app-my-registrations.controller';
 import { ActivityRegistrationBulkService } from './activity-registration-bulk.service';
+import { ActivityRegistrationWaitlistQueryService } from './activity-registration-waitlist-query.service';
 
 // V2 批次 6 PR #5(D6 v1.1 §8 / 第二波第三步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activity-registrations 6 处写操作(create / createMy / approve / reject / cancelAdmin / cancelMy)
@@ -66,6 +67,7 @@ import { ActivityRegistrationBulkService } from './activity-registration-bulk.se
     AppMyRegistrationsService,
     ActivityRegistrationStateMachine,
     ActivityRegistrationAuditRecorder,
+    ActivityRegistrationWaitlistQueryService,
   ],
 })
 export class ActivityRegistrationsModule {}

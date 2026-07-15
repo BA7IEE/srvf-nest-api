@@ -47,6 +47,7 @@ const ACTIVITY_USER_VISIBLE_STATUS_CODES = ['published', 'completed'] as const;
 // 跨轴列表(admin/v1/registrations · admin/v1/attendance-sheets)的 statusCode 过滤同值,
 // 字典一致性由各自模块 e2e + 本端点的 count-vs-list-total 对账 e2e 双重覆盖。
 const DASHBOARD_REGISTRATION_STATUS_PENDING = 'pending';
+const DASHBOARD_REGISTRATION_STATUS_WAITLISTED = 'waitlisted';
 const DASHBOARD_ATTENDANCE_SHEET_STATUS_PENDING = 'pending';
 const DASHBOARD_ATTENDANCE_SHEET_STATUS_PENDING_FINAL_REVIEW = 'pending_final_review';
 const DASHBOARD_ACTIVITY_STATUS_PUBLISHED = 'published';
@@ -94,7 +95,7 @@ export class MetaService {
   // 任意已登录用户可见)。无权限的块整体省略、不报错——响应恒 200(镜像 resolve-labels 静默
   // 省略哲学,唯一差异:本端点字段形状固定,可用具体 DTO 而非动态 key)。
   //
-  // 4 个 prisma.count 与 2 个 rbac.can 同一个 Promise.all 内并发(结构性零 N+1,无缓存/
+  // 5 个 prisma.count 与 2 个 rbac.can 同一个 Promise.all 内并发(结构性零 N+1,无缓存/
   // 无物化——当前规模即时算);activities 块无条件计算,registrations/attendanceSheets
   // 两块算完后按权限结果决定是否挂进返回对象。
   async dashboardSummary(user: CurrentUserPayload): Promise<DashboardSummaryResponseDto> {
@@ -102,6 +103,7 @@ export class MetaService {
       canReadRegistrations,
       canReadAttendanceSheets,
       registrationsPending,
+      registrationsWaitlisted,
       attendanceSheetsPending,
       attendanceSheetsPendingFinalReview,
       activitiesPublished,
@@ -111,6 +113,9 @@ export class MetaService {
       this.rbac.can(user, 'attendance.read.sheet'),
       this.prisma.activityRegistration.count({
         where: notDeletedWhere({ statusCode: DASHBOARD_REGISTRATION_STATUS_PENDING }),
+      }),
+      this.prisma.activityRegistration.count({
+        where: notDeletedWhere({ statusCode: DASHBOARD_REGISTRATION_STATUS_WAITLISTED }),
       }),
       this.prisma.attendanceSheet.count({
         where: notDeletedWhere({ statusCode: DASHBOARD_ATTENDANCE_SHEET_STATUS_PENDING }),
@@ -132,7 +137,14 @@ export class MetaService {
     ]);
 
     return {
-      ...(canReadRegistrations ? { registrations: { pending: registrationsPending } } : {}),
+      ...(canReadRegistrations
+        ? {
+            registrations: {
+              pending: registrationsPending,
+              waitlisted: registrationsWaitlisted,
+            },
+          }
+        : {}),
       ...(canReadAttendanceSheets
         ? {
             attendanceSheets: {
