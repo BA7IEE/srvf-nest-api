@@ -1000,6 +1000,36 @@ describe('attendances 模块', () => {
       expect(allRecords.length).toBe(2); // 1 旧软删 + 1 新
     });
 
+    it('edit pending Sheet 记录越过活动时间窗 → ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW', async () => {
+      const id = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: '2099-06-17T08:00:00.000Z',
+          checkOutAt: '2099-06-17T09:00:00.000Z',
+        }),
+      ]);
+
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/attendance-sheets/${id}`)
+        .set('Authorization', adminAuth)
+        .send({
+          records: [
+            baseRecord({
+              memberId: memberCId,
+              checkInAt: '2099-06-01T05:59:59.999Z',
+              checkOutAt: '2099-06-01T09:00:00.000Z',
+            }),
+          ],
+        });
+      expectBizError(res, BizCode.ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW);
+
+      const activeRecords = await prisma.attendanceRecord.findMany({
+        where: { sheetId: id, deletedAt: null },
+      });
+      expect(activeRecords).toHaveLength(1);
+      expect(activeRecords[0].checkInAt.toISOString()).toBe('2099-06-17T08:00:00.000Z');
+    });
+
     it('edit approved Sheet → 22040 ATTENDANCE_SHEET_APPROVED_NOT_EDITABLE', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/attendance-sheets/${approvedId}`)
