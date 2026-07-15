@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, Length } from 'class-validator';
+import { ActivityFeedbackAggregateDto } from '../activity-feedbacks/activity-feedback.dto';
 
 export class ActivityParticipationIdParamDto {
   @ApiProperty({
@@ -81,6 +82,12 @@ export class ActivityParticipationSummaryDto {
     type: DurationHistogramDto,
   })
   durationHistogram!: DurationHistogramDto;
+
+  @ApiProperty({
+    description: '该活动未软删评价数与两位平均星级',
+    type: ActivityFeedbackAggregateDto,
+  })
+  feedback!: ActivityFeedbackAggregateDto;
 }
 
 export class ActivityReconciliationRegisteredParticipantDto {

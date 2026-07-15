@@ -7,6 +7,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { ACTIVITY_REGISTRATION_STATUS } from '../activity-registrations/activity-registration-state-machine';
+import { ActivityFeedbacksQueryService } from '../activity-feedbacks/activity-feedbacks-query.service';
 import { ATTENDANCE_SHEET_STATUS } from '../attendances/attendances.dto';
 import { RbacService } from '../permissions/rbac.service';
 import {
@@ -26,6 +27,7 @@ export class ActivityParticipationQueryService {
     private readonly prisma: PrismaService,
     private readonly authz: AuthzService,
     private readonly rbac: RbacService,
+    private readonly feedbacks: ActivityFeedbacksQueryService,
   ) {}
 
   private async assertCanReadActivity(
@@ -159,8 +161,8 @@ export class ActivityParticipationQueryService {
     await this.assertCanReadActivity(currentUser, activityId);
     const activity = await this.findActivityOrThrow(activityId);
 
-    // 业务数据固定 3 次查询：activity + registrations + records；无 group loop / N+1。
-    const [registrations, records] = await Promise.all([
+    // 业务数据固定 4 次查询：activity + registrations + records + feedback aggregate；无 N+1。
+    const [registrations, records, feedback] = await Promise.all([
       this.prisma.activityRegistration.findMany({
         where: { activityId, deletedAt: null },
         select: { id: true, memberId: true, statusCode: true },
@@ -174,6 +176,7 @@ export class ActivityParticipationQueryService {
           sheet: { select: { statusCode: true } },
         },
       }),
+      this.feedbacks.aggregateForActivity(activityId),
     ]);
     const metrics = buildActivityParticipationMetrics(activity.statusCode, registrations, records);
 
@@ -189,6 +192,7 @@ export class ActivityParticipationQueryService {
       totalServiceHours: metrics.totalServiceHours.toString(),
       totalContributionPoints: metrics.totalContributionPoints.toString(),
       durationHistogram: metrics.durationHistogram,
+      feedback,
     };
   }
 }

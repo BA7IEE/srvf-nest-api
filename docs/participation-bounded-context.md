@@ -28,7 +28,7 @@
 | [`src/modules/activity-registrations/`](../src/modules/activity-registrations/) | `ActivityRegistration` | 报名 5 态(`pending/pass/reject/cancelled/waitlisted`);活动 ↔ 队员 关联 |
 | [`src/modules/attendances/`](../src/modules/attendances/) | `AttendanceSheet` / `AttendanceRecord` / `ActivityCheckIn` | 考勤、终审、贡献值落地；`ActivityCheckIn` 是 append-only 打卡证据，F2 提供 canonical App self 写/读，F3 提供 canonical Admin 证据列表与只读考勤草稿 |
 | [`src/modules/contribution-rules/`](../src/modules/contribution-rules/) | `ContributionRule` | 字典码键 lookup;配置实体而非流程实体 |
-| [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) | `ActivityFeedback` | 已完结活动评价；F2 App PUT/GET 以 approved Sheet 下 live Record 判资格，`currentUser.memberId` 锁本人，模块只写自有表 |
+| [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) | `ActivityFeedback` | 已完结活动评价；App 以 approved Sheet 下 live Record 判资格并锁本人；Admin 实名 list/summary；单次 aggregate 接入 activity participation-summary |
 
 ### 2.2 Explicitly excluded(明确不在 participation 范围内)
 
@@ -64,7 +64,7 @@ Activity (statusCode: draft / published / completed / cancelled)
   │     └─ Member              [FK memberId → Member.id, Restrict;
   │                            partial unique (activityId, memberId)
   │                            WHERE deletedAt IS NULL;
-  │                            F2 App self PUT/GET]
+  │                            F2 App self PUT/GET + F3 Admin list/summary]
   │
   └─ activityTypeCode ────┐
                           ├─ ContributionRule lookup
@@ -151,9 +151,10 @@ Certificate (不在 participation 图内)
 | `activities` / `activity-registrations` 在调用方事务内执行 `promoteActivityWaitlist` | ✅ 限定例外 | 纯函数入口，固定 Activity → Registration 锁序，只写 waitlisted → pending + 同事务 `registration.review(action=promote)`；不引入兄弟 Service 依赖 |
 | `activity-registrations` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | 同上 |
 | `contribution-rules` 在事务内读 / 写其它 participation 表 | ❌ 不允许 | ContributionRule 是配置实体,只被读,不读人 |
-| `activity-feedbacks` 读取 `Activity` / `AttendanceSheet` / `AttendanceRecord` | ✅ 限定例外 | 只为 completed/window 与 approved-only 到场资格；F2 直接读 Prisma，不 import 三个兄弟 god-service |
+| `activity-feedbacks` 读取 `Activity` / `AttendanceSheet` / `AttendanceRecord` | ✅ 限定例外 | 只为 completed/window、approved-only 到场资格与 Admin 评价率分母；直接读 Prisma，不 import 三个兄弟 god-service |
 | `activity-feedbacks` 写其它 participation 表 | ❌ 不允许 | 评价写只落 `ActivityFeedback`；不得改 Attendance / Contribution / settlement |
-| 任一模块通过 `import { *Service } from '../<sibling>/...'` 调用兄弟 service | ❌ 不允许(当前 0 命中) | participation 5 模块之间 service-to-service import 保持零态 |
+| `activities` 的 `ActivityParticipationQueryService` 调 `ActivityFeedbacksQueryService.aggregateForActivity` | ✅ 限定例外 | F0 冻结的单向只读聚合出口；`ActivitiesModule → ActivityFeedbacksModule`，恰好 1 次 aggregate、无写入、不成环 |
+| 除上行外任一模块通过 `import { *Service } from '../<sibling>/...'` 调用兄弟 service | ❌ 不允许 | 不得借评价聚合例外扩散新的 participation service-to-service 调用；三个 god-service 仍保持零互调 |
 | 任何 **非** participation 模块读写 `Activity` / `ActivityRegistration` / `ActivityCheckIn` / `AttendanceSheet` / `AttendanceRecord` / `ActivityFeedback` / `ContributionRule` 表 | ❌ 不允许 | 必须通过 participation 模块的 service 入口或 `attendance.recorded` 事件 |
 
 ### 5.3 Transaction boundary
@@ -169,6 +170,9 @@ Certificate (不在 participation 图内)
 - **ActivityFeedback F2**:App PUT 在模块自有事务内固定读 Activity → approved attendance exists →
   live feedback，再 create/update `ActivityFeedback`；GET 同样固定三读、零写。不得把评价逻辑混入
   activities / attendances / activity-registrations god-service。
+- **ActivityFeedback F3**:Admin list 固定 3 读（Activity + items + count），summary 固定 4 读
+  （Activity + aggregate + rating groupBy + approved distinct members）；activity participation-summary
+  复用单次 aggregate，总业务查询固定 4 次。全部只读、无 N+1、无 audit。
 - **候补递补**:取消 pass 或 capacity 调大/改 null 的主写、Activity `FOR UPDATE`、
   FIFO `registeredAt ASC,id ASC` 选队首、逐行 `claimAtStatus` CAS、waitlisted → pending
   与 `registration.review(action=promote)` audit 全在同一事务；通知在 commit 后通过既有
@@ -195,7 +199,7 @@ Certificate (不在 participation 图内)
 | Admin Registrations | `v2/activities/:activityId/registrations` | [`activity-registrations.controller.ts`](../src/modules/activity-registrations/activity-registrations.controller.ts) |
 | Admin Attendances | `v2/activities/:activityId/attendance-sheets` + `v2/attendance-sheets` | [`attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts) |
 | Admin ActivityCheckIns | `GET /api/admin/v1/activities/:activityId/check-ins` + `GET /api/admin/v1/activities/:activityId/attendance-sheet-draft`（`attendance.read.sheet` + activity ref；只读） | [`controllers/admin-activity-check-ins.controller.ts`](../src/modules/attendances/controllers/admin-activity-check-ins.controller.ts) |
-| ActivityFeedbacks | F2 已有 App self PUT/GET；F3 才新增 Admin canonical 路径 | [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) |
+| ActivityFeedbacks | App self PUT/GET + Admin `GET /api/admin/v1/activities/:activityId/{feedbacks,feedback-summary}` | [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) |
 | Ops ContributionRules | `v2/contribution-rules` | [`contribution-rules.controller.ts`](../src/modules/contribution-rules/contribution-rules.controller.ts) |
 
 ### 6.2 App surface(participation 视角的 mobile 路径)
@@ -271,7 +275,7 @@ Certificate (不在 participation 图内)
 - [`src/modules/activity-registrations/`](../src/modules/activity-registrations/)
 - [`src/modules/attendances/`](../src/modules/attendances/) — 含 4 抽:[`contribution-calculator.ts`](../src/modules/attendances/contribution-calculator.ts) / [`time-overlap-policy.ts`](../src/modules/attendances/time-overlap-policy.ts) / [`attendance-sheet-state-machine.ts`](../src/modules/attendances/attendance-sheet-state-machine.ts) / [`attendance-audit-recorder.ts`](../src/modules/attendances/attendance-audit-recorder.ts)
 - [`src/modules/contribution-rules/`](../src/modules/contribution-rules/)
-- [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) — F1 schema / module skeleton；运行时端点留 F2/F3
+- [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) — App self 评价、Admin 实名列表/聚合与 activity summary 聚合出口
 - [`src/modules/certificates/`](../src/modules/certificates/) — **明确排除**,作为对照引用
 - [`src/common/exceptions/biz-code.constant.ts`](../src/common/exceptions/biz-code.constant.ts) — BizCode 来源(其中 `ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN` / `ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH` / `CONTRIBUTION_RULE_*` 等为跨模块共享词汇)
 

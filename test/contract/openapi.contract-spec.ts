@@ -361,6 +361,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 审计刀 5 F1/F2：活动报名×实到核对 + 活动参与合计；两项读码带 activity ref。
   ['get', '/api/admin/v1/activities/{activityId}/reconciliation'],
   ['get', '/api/admin/v1/activities/{activityId}/participation-summary'],
+  // 活动评价 F3：Admin 实名分页 + 均分/五桶/评价率；复用 attendance.read.sheet + activity ref。
+  ['get', '/api/admin/v1/activities/{activityId}/feedbacks'],
+  ['get', '/api/admin/v1/activities/{activityId}/feedback-summary'],
   ['post', '/api/admin/v1/activities/{activityId}/registrations'],
   ['get', '/api/admin/v1/activities/{activityId}/registrations'],
   ['get', '/api/admin/v1/activities/{activityId}/registrations/export'],
@@ -1245,8 +1248,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('活动评价 F2 后路由足迹精确为 352', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(352);
+  it('活动评价 F3 后路由足迹精确为 354', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(354);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {
