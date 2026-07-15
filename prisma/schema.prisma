@@ -451,6 +451,7 @@ model Member {
 
   // V2 第一阶段批次 3 反向 relation(沿批次 1 / 批次 2 R2 范式)
   activityRegistrations ActivityRegistration[]
+  activityCheckIns      ActivityCheckIn[]
   attendanceRecords     AttendanceRecord[]
 
   // 保险模块反向 relation(2026-06-13;沿 R2 范式,仅关系映射不算业务字段;
@@ -799,6 +800,7 @@ model Activity {
   publisher        User?                  @relation("ActivityPublisher", fields: [publishedBy], references: [id], onDelete: Restrict)
   canceller        User?                  @relation("ActivityCanceller", fields: [cancelledBy], references: [id], onDelete: Restrict)
   registrations    ActivityRegistration[]
+  activityCheckIns ActivityCheckIn[]
   attendanceSheets AttendanceSheet[]
 
   @@index([deletedAt])
@@ -854,6 +856,7 @@ model ActivityRegistration {
   reviewer          User?              @relation("RegistrationReviewer", fields: [reviewedBy], references: [id], onDelete: Restrict)
   canceller         User?              @relation("RegistrationCanceller", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
   attendanceRecords AttendanceRecord[]
+  activityCheckIns  ActivityCheckIn[]
 
   @@index([activityId])
   @@index([memberId])
@@ -861,6 +864,50 @@ model ActivityRegistration {
   @@index([deletedAt])
   @@index([createdAt])
   @@index([registeredAt])
+}
+
+// ===== 活动自助 GPS 签到 F1:activity_check_ins =====
+//
+// append-only 证据表；第一版不开放修改 / 删除端点，deletedAt 仅作 schema 预留。
+// 三条 FK 均 Restrict：证据必须稳定锚定活动、队员与当次报名。
+// live registrationId partial unique 由 migration.sql 末尾手写；Prisma DSL 6.x
+// 无法表达 WHERE "deletedAt" IS NULL。
+// 本模型获冻结稿一次性 @@map 例外，物理表名固定为 activity_check_ins。
+model ActivityCheckIn {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  activityId     String
+  memberId       String
+  registrationId String
+  checkInAt      DateTime
+  checkOutAt     DateTime?
+
+  checkInLongitude  Decimal? @db.Decimal(10, 7)
+  checkInLatitude   Decimal? @db.Decimal(10, 7)
+  checkInAccuracy   Decimal? @db.Decimal(10, 2)
+  checkInDistance   Decimal? @db.Decimal(10, 2)
+  checkOutLongitude Decimal? @db.Decimal(10, 7)
+  checkOutLatitude  Decimal? @db.Decimal(10, 7)
+  checkOutAccuracy  Decimal? @db.Decimal(10, 2)
+  checkOutDistance  Decimal? @db.Decimal(10, 2)
+
+  geoVerified Boolean
+  outOfRange  Boolean @default(false)
+
+  activity     Activity             @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  member       Member               @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  registration ActivityRegistration @relation(fields: [registrationId], references: [id], onDelete: Restrict)
+
+  @@index([activityId])
+  @@index([memberId])
+  @@index([registrationId])
+  @@index([checkInAt])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("activity_check_ins")
 }
 
 // ===== V2 第一阶段批次 3:attendance_sheets =====

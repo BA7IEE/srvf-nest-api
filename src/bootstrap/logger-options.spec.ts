@@ -187,6 +187,23 @@ describe('LOG_REDACT_PATHS — 落表拼写对齐(2026-06-12 增量审计⑧)', 
   });
 });
 
+describe('LOG_REDACT_PATHS — 活动自助 GPS 签到位置轨迹(F1,2026-07-15)', () => {
+  const paths = getRedactPaths();
+
+  it.each([
+    'req.body.longitude',
+    'req.body.latitude',
+    '*.longitude',
+    '*.latitude',
+    '*.checkInLongitude',
+    '*.checkInLatitude',
+    '*.checkOutLongitude',
+    '*.checkOutLatitude',
+  ])('包含原始位置字段 %s', (field) => {
+    expect(paths).toContain(field);
+  });
+});
+
 describe('LOG_REDACT_PATHS — 整体属性', () => {
   const paths = getRedactPaths();
 

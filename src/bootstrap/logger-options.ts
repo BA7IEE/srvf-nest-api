@@ -114,6 +114,16 @@ const LOG_REDACT_PATHS: readonly string[] = [
   // MemberProfile.realName "MP-1" / RecruitmentApplication.realName 同名字段)
   '*.documentNumber',
   '*.realName',
+  // 活动自助 GPS 签到 F1(2026-07-15):位置轨迹原始坐标只落证据表，
+  // 请求 DTO 与 Prisma row 的实际字段名必须同批进入 redact 清单。
+  'req.body.longitude',
+  'req.body.latitude',
+  '*.longitude',
+  '*.latitude',
+  '*.checkInLongitude',
+  '*.checkInLatitude',
+  '*.checkOutLongitude',
+  '*.checkOutLatitude',
   // 命名口径纠偏:上方 *.certificateNo / *.policyNo 与实际落表字段名不一致,
   // 这里补齐真实字段名(certificates.certNumber / insurances.policyNumber);
   // 旧两条保留不删(additive)
