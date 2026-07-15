@@ -7,10 +7,10 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(六处一致) | **v0.51.0**(2026-07-15;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #620 squash `0d931336`;GitHub Release「v0.51.0 — 活动参与度量与批量审批（审计刀 5）」标 Latest。**纯 additive,0 行为变更**:+7 度量/批量端点(核对/活动合计/队员与 App 个人累计/运营总览/bulk-approve/bulk-reject);上一版 v0.50.0 的 12 条行为变更对照表仍见 CHANGELOG `## v0.50.0`) |
-| `main` HEAD | v0.51.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #620 `0d931336`;收口链 = 审计刀 5 goal(产物留主仓工作树,主会话四点元核验后代提交)→ 实现 #617 `90fc41d0` → CI e2e 超时 15m→25m 修复 #619 `c5c02200`(全量 e2e ~15.5m 撞旧硬超时,非测试失败)→ bump #618 `027bfbdf` → handoff #620 → tag/Release → 本回填 PR) |
-| open PR / 工作树 / Unreleased | **0 open PR**;`## Unreleased` 空。终值:权限码 **206** / biz-admin **81** / org-admin 60 / org-readonly 10 / group-manager 22 / group-readonly 11 / org-supervisor 4 / ops-admin 96 / `EXPECTED_ROUTES` **345** / controller **69** / 模块 35 / migration **51** / 角色 **9** / BizCode **238** / AuditLogEvent **113** |
-| 最新 handoff | [`archive/handoff/v0.51.0.md`](archive/handoff/v0.51.0.md)(历史快照;tag 指向该 handoff #620 squash `0d931336`;接续 [`v0.50.0.md`](archive/handoff/v0.50.0.md);合入后不回改) |
+| 版本(六处一致) | **v0.52.0**(2026-07-15;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #628 squash `faac6b70`;GitHub Release「v0.52.0 — 活动自助 GPS 签到（审计刀 6 · 第一件）」标 Latest。**纯 additive,0 行为变更**:App 自助签到/签退/状态三端点(仅 pass 报名者;geofence 宽进严出留痕)+ Admin 打卡证据列表与只读考勤草稿两端点;证据 append-only 不进结算,结算仍唯一走既有考勤两级审批) |
+| `main` HEAD | v0.52.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #628 `faac6b70`;收口链 = 四拍板(GPS/仅 pass/忘签退留空/宽进严出)→ goal 五 PR 全绿自合:T0 冻结 #622 → 证据表 #623(migration 52)→ App 自助面 #624 → Admin 只读面 #625 → 收口 #626 → 主会话元核验四点全过 → bump #627 `32b6f4e3` → handoff #628 → tag/Release → 本回填 PR;冻结评审稿 `docs/archive/reviews/activity-self-checkin-t0-review.md`) |
+| open PR / 工作树 / Unreleased | **0 open PR**;`## Unreleased` 空。终值:权限码 **206** / biz-admin **81** / org-admin 60 / org-readonly 10 / group-manager 22 / group-readonly 11 / org-supervisor 4 / ops-admin 96 / `EXPECTED_ROUTES` **350** / controller **71** / 模块 35 / migration **52** / 角色 **9** / BizCode **240** / AuditLogEvent **113** |
+| 最新 handoff | [`archive/handoff/v0.52.0.md`](archive/handoff/v0.52.0.md)(历史快照;tag 指向该 handoff #628 squash `faac6b70`;接续 [`v0.51.0.md`](archive/handoff/v0.51.0.md);合入后不回改) |
 
 ## 2. 当前系统已具备能力
 
