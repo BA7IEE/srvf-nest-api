@@ -1,8 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // Phase 2 P2-5a App /api/app/v1/my/registrations/:id 详情出参。
-// 沿 docs/app-api-p2-5-registrations-review.md §8.2.2 v0.1 字段集 12 项 - §16.B.2
-// memberId **不返** = **恰好 11 项**;P2-5b POST / PATCH cancel 共用本 DTO 作出参。
+// 沿 docs/app-api-p2-5-registrations-review.md §8.2.2 v0.1 基线字段集，memberId 仍不返，
+// additive 增加 waitlistPosition；P2-5b POST / PATCH cancel 共用本 DTO 作出参。
 //
 // **严禁**继承 / Pick / Omit / IntersectionType / PartialType / OmitType / Mapped Types
 // admin DTO(沿 docs/code-architecture-boundary-review.md §2.2 + 评审稿 §8.1)。
@@ -21,10 +21,18 @@ export class AppMyRegistrationDto {
   activityId!: string;
 
   @ApiProperty({
-    description: '报名状态字典 code(registration_status:pending / pass / reject / cancelled)',
+    description:
+      '报名状态字典 code(registration_status:pending / pass / reject / cancelled / waitlisted)',
     example: 'pending',
   })
   statusCode!: string;
+
+  @ApiProperty({
+    description: '候补排位(statusCode=waitlisted 时从 1 开始；其他状态为 null)',
+    nullable: true,
+    type: Number,
+  })
+  waitlistPosition!: number | null;
 
   @ApiProperty({ description: '报名时间' })
   registeredAt!: Date;

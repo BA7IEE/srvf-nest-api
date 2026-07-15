@@ -40,7 +40,7 @@ interface ResBody {
   data: Record<string, unknown>;
 }
 
-// AppMyRegistrationDto 恰好 11 项(沿评审稿 §8.2.2 + §16.B.2 不返 memberId)
+// AppMyRegistrationDto 基线 11 项 + waitlistPosition additive；§16.B.2 仍不返 memberId。
 const APP_MY_REG_DETAIL_KEYS = [
   'activityId',
   'cancelReason',
@@ -53,6 +53,7 @@ const APP_MY_REG_DETAIL_KEYS = [
   'reviewedAt',
   'statusCode',
   'updatedAt',
+  'waitlistPosition',
 ].sort();
 
 // 禁返字段(沿 §8.2.1 / §8.2.2 + 风险 14.1)
@@ -253,7 +254,7 @@ describe('App /api/app/v1/my/* (P2-5b 写 2 endpoint)', () => {
   // =====================================================
 
   describe('POST /my/registrations — success + 字段集', () => {
-    it('success: 200 + 字段集恰好 11 + 不返 sensitive + statusCode=pending', async () => {
+    it('success: 201 + 字段集 12 项 + 不返 sensitive + statusCode=pending', async () => {
       const u = nextSeq();
       const { memberId, authHeader } = await setupLinkedUser({
         username: `p25b-c-${u}`,
@@ -273,6 +274,7 @@ describe('App /api/app/v1/my/* (P2-5b 写 2 endpoint)', () => {
       }
       expect(data.activityId).toBe(act.id);
       expect(data.statusCode).toBe('pending');
+      expect(data.waitlistPosition).toBeNull();
       expect(data.extras).toBeNull();
 
       // DB 落地核对(memberId 必须 = 当前用户 memberId,反越权)
@@ -348,7 +350,7 @@ describe('App /api/app/v1/my/* (P2-5b 写 2 endpoint)', () => {
   // =====================================================
 
   describe('PATCH /my/registrations/:id/cancel — success', () => {
-    it('pending → cancelled 200 + 字段集 11 + 不返 sensitive', async () => {
+    it('pending → cancelled 200 + 字段集 12 项 + 不返 sensitive', async () => {
       const u = nextSeq();
       const { memberId, authHeader } = await setupLinkedUser({
         username: `p25b-x-${u}`,
@@ -365,6 +367,7 @@ describe('App /api/app/v1/my/* (P2-5b 写 2 endpoint)', () => {
         expect(data).not.toHaveProperty(f);
       }
       expect(data.statusCode).toBe('cancelled');
+      expect(data.waitlistPosition).toBeNull();
       expect(data.cancelReason).toBe('plan change');
       expect(data.cancelledAt).not.toBeNull();
     });
@@ -636,7 +639,7 @@ describe('App /api/app/v1/my/* (P2-5b 写 2 endpoint)', () => {
       );
     });
 
-    it('capacity exceeded → 21032', async () => {
+    it('capacity 已满 → 201 成功进入 waitlisted 并返回排位', async () => {
       const u = nextSeq();
       const { authHeader } = await setupLinkedUser({
         username: `p25b-cap-${u}`,
@@ -650,10 +653,11 @@ describe('App /api/app/v1/my/* (P2-5b 写 2 endpoint)', () => {
         activityId: act.id,
         statusCode: 'pass',
       });
-      expectBizError(
-        await post(APP_POST, { activityId: act.id }, authHeader),
-        BizCode.ACTIVITY_CAPACITY_EXCEEDED,
-      );
+      const res = await post(APP_POST, { activityId: act.id }, authHeader);
+      expect(res.status).toBe(201);
+      const data = (res.body as ResBody).data;
+      expect(data.statusCode).toBe('waitlisted');
+      expect(data.waitlistPosition).toBe(1);
     });
 
     it('cancel reject 状态 → 21030', async () => {

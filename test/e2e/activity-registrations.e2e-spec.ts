@@ -574,8 +574,8 @@ describe('activity-registrations 模块', () => {
       expect(a.body.data.statusCode).toBe('pass');
     });
 
-    it('capacity 满时,POST 新报名直接拒绝(create 路径 ACTIVITY_CAPACITY_EXCEEDED)', async () => {
-      // 造一个 capacity=1 的活动,1 pass + 第二个 member create → 21032
+    it('capacity 满时,POST 新报名创建 waitlisted', async () => {
+      // 造一个 capacity=1 的活动,1 pass + 第二个 member create → waitlisted
       const id = await createActivityHelper({
         title: 'CAP-FULL',
         isPublicRegistration: true,
@@ -592,12 +592,13 @@ describe('activity-registrations 模块', () => {
         .set('Authorization', adminAuth)
         .send({});
 
-      // memberD create → 21032
+      // memberD create → 201 + waitlisted
       const r2 = await request(httpServer(app))
         .post(`/api/admin/v1/activities/${id}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberDId });
-      expectBizError(r2, BizCode.ACTIVITY_CAPACITY_EXCEEDED);
+      expect(r2.status).toBe(201);
+      expect(r2.body.data.statusCode).toBe('waitlisted');
     });
 
     it('capacity=1 并发 approve 两条 pending → 恰一条 pass、一条 21032(FOR UPDATE 串行化防超容量;F11 #399)', async () => {

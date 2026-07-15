@@ -32,14 +32,14 @@ import { createTestApp } from '../setup/test-app';
 //     (沿 attendances-audit-characterization spec D1 范式)。
 //
 // 覆盖矩阵:
-//   A. approve(pending → pass + 3 个 wrong source state)
-//   B. reject(pending → reject + 3 个 wrong source state)
-//   C. cancelAdmin(pending → cancelled / pass → cancelled + 2 个 wrong source state)
-//   D. cancelMy(pending → cancelled / pass → cancelled + 2 个 wrong source state + ownership)
+//   A. approve(pending → pass + 4 个 wrong source state，含 waitlisted 不可直通)
+//   B. reject(pending|waitlisted → reject + 3 个 wrong source state)
+//   C. cancelAdmin(pending|pass|waitlisted → cancelled + 2 个 wrong source state)
+//   D. cancelMy(pending|pass|waitlisted → cancelled + 2 个 wrong source state + ownership)
 //   E. Uniqueness & capacity(active dup + cancelled allows re-register + capacity full ×2)
 //   F. Audit failure rollback(create 路径)
 
-type RegistrationStatus = 'pending' | 'pass' | 'reject' | 'cancelled';
+type RegistrationStatus = 'pending' | 'pass' | 'reject' | 'cancelled' | 'waitlisted';
 
 const AUDIT_META: AuditMeta = {
   requestId: 'reg-state-req-0000000000000001',
@@ -321,7 +321,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       expect(c.extra?.nextStatusCode).toBe('pass');
     });
 
-    it.each<RegistrationStatus>(['pass', 'reject', 'cancelled'])(
+    it.each<RegistrationStatus>(['pass', 'reject', 'cancelled', 'waitlisted'])(
       'A2. 错误起始状态 %s → 抛 ACTIVITY_REGISTRATION_STATUS_INVALID,DB 状态不变,无 audit',
       async (fromStatus) => {
         const regId = await seedRegistration({
@@ -441,6 +441,31 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       expect(c.extra?.action).toBe('reject');
       expect(c.extra?.priorStatusCode).toBe('pending');
       expect(c.extra?.nextStatusCode).toBe('reject');
+    });
+
+    it('B1b. waitlisted → reject:管理员可清理候补 + audit priorStatusCode=waitlisted', async () => {
+      const regId = await seedRegistration({
+        memberId: ctx.memberCId,
+        statusCode: 'waitlisted',
+      });
+
+      const result = await ctx.service.reject(
+        ctx.publishedActivityId,
+        regId,
+        { reviewNote: '候补清理' },
+        ctx.adminPayload,
+        AUDIT_META,
+      );
+
+      expect(result.statusCode).toBe('reject');
+      const audit = await ctx.prisma.auditLog.findFirstOrThrow({ where: { resourceId: regId } });
+      expect(audit.context).toMatchObject({
+        extra: {
+          action: 'reject',
+          priorStatusCode: 'waitlisted',
+          nextStatusCode: 'reject',
+        },
+      });
     });
 
     it.each<RegistrationStatus>(['pass', 'reject', 'cancelled'])(
@@ -563,6 +588,31 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       expect(c.extra?.nextStatusCode).toBe('cancelled');
     });
 
+    it('C1b. waitlisted → cancelled:管理员可移出候补且不触发递补', async () => {
+      const regId = await seedRegistration({
+        memberId: ctx.memberCId,
+        statusCode: 'waitlisted',
+      });
+
+      const result = await ctx.service.cancelAdmin(
+        ctx.publishedActivityId,
+        regId,
+        { cancelReason: '退出候补' },
+        ctx.adminPayload,
+        AUDIT_META,
+      );
+
+      expect(result.statusCode).toBe('cancelled');
+      expect(
+        await ctx.prisma.auditLog.count({
+          where: {
+            resourceId: { not: regId },
+            event: 'registration.review',
+          },
+        }),
+      ).toBe(0);
+    });
+
     it('C2. pass → cancelled:已审核字段保留 + cancel 三字段写入', async () => {
       const regId = await seedRegistration({
         memberId: ctx.memberCId,
@@ -671,6 +721,23 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       };
       expect(c.extra?.action).toBe('cancel');
       expect(c.extra?.cancelledByPath).toBe('self');
+    });
+
+    it('D1b. waitlisted → cancelled:本人可退出候补', async () => {
+      const regId = await seedRegistration({
+        memberId: ctx.memberAId,
+        statusCode: 'waitlisted',
+      });
+
+      const result = await ctx.service.cancelMy(
+        regId,
+        { cancelReason: '不再等待' },
+        ctx.selfAPayload,
+        AUDIT_META,
+      );
+
+      expect(result.statusCode).toBe('cancelled');
+      expect(result.cancelReason).toBe('不再等待');
     });
 
     it('D2. pass → cancelled:既有 reviewer 保留 + cancel 三字段写入', async () => {
@@ -818,7 +885,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       expect(audits).toHaveLength(1);
     });
 
-    it('E3. capacity=1 + 1 pass 时,create 新 reg → ACTIVITY_CAPACITY_EXCEEDED,无新 reg / 无 audit', async () => {
+    it('E3. capacity=1 + 1 pass 时,create 新 reg → waitlisted + create audit', async () => {
       const capacityActivityId = await createActivity({ capacity: 1 });
       // 已存在 1 个 pass
       await seedRegistration({
@@ -833,24 +900,27 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
         where: { activityId: capacityActivityId },
       });
 
-      await expect(
-        ctx.service.create(
-          capacityActivityId,
-          { memberId: ctx.memberCId },
-          ctx.adminPayload,
-          AUDIT_META,
-        ),
-      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_CAPACITY_EXCEEDED });
+      const result = await ctx.service.create(
+        capacityActivityId,
+        { memberId: ctx.memberCId },
+        ctx.adminPayload,
+        AUDIT_META,
+      );
+      expect(result.statusCode).toBe('waitlisted');
 
       const afterCount = await ctx.prisma.activityRegistration.count({
         where: { activityId: capacityActivityId },
       });
-      expect(afterCount).toBe(beforeCount); // 无新 reg
+      expect(afterCount).toBe(beforeCount + 1);
 
       const audits = await ctx.prisma.auditLog.findMany({
-        where: { event: 'registration.create' },
+        where: { event: 'registration.create', resourceId: result.id },
       });
-      expect(audits).toHaveLength(0);
+      expect(audits).toHaveLength(1);
+      const context = audits[0].context as unknown as {
+        after?: { statusCode?: string };
+      };
+      expect(context.after).toMatchObject({ statusCode: 'waitlisted' });
     });
 
     it('E4. capacity=1 + 1 pass 时,approve 第二条 pending → ACTIVITY_CAPACITY_EXCEEDED,DB 状态不变,无 audit', async () => {

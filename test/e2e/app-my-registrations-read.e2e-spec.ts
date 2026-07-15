@@ -35,7 +35,7 @@ interface ResBody {
   data: Record<string, unknown>;
 }
 
-// 字段集:AppMyRegistrationListItemDto 恰好 11 项(沿评审稿 §8.2.1 + §16.B.2 不返 memberId)
+// 字段集:AppMyRegistrationListItemDto 基线 11 项 + waitlistPosition additive；仍不返 memberId。
 const APP_MY_REG_LIST_KEYS = [
   'activityCoverImageUrl',
   'activityEndAt',
@@ -48,9 +48,10 @@ const APP_MY_REG_LIST_KEYS = [
   'registeredAt',
   'reviewedAt',
   'statusCode',
+  'waitlistPosition',
 ].sort();
 
-// AppMyRegistrationDto 恰好 11 项(沿评审稿 §8.2.2 + §16.B.2 不返 memberId)
+// AppMyRegistrationDto 基线 11 项 + waitlistPosition additive；仍不返 memberId。
 const APP_MY_REG_DETAIL_KEYS = [
   'activityId',
   'cancelReason',
@@ -63,6 +64,7 @@ const APP_MY_REG_DETAIL_KEYS = [
   'reviewedAt',
   'statusCode',
   'updatedAt',
+  'waitlistPosition',
 ].sort();
 
 // AppMyActivityListItemDto 恰好 11 项(沿评审稿 §8.2.3)
@@ -293,7 +295,7 @@ describe('App /api/app/v1/my/* (P2-5a 只读 3 endpoint)', () => {
   // =====================================================
 
   describe('GET /my/registrations — success + 字段集', () => {
-    it('200 + 字段集恰好 11 + 仅本人 + 不含 sensitive 字段', async () => {
+    it('200 + 字段集 12 项 + 仅本人 + 不含 sensitive 字段', async () => {
       const u = nextSeq();
       const { memberId, authHeader } = await setupLinkedUser({
         username: `p25a-list-${u}`,
@@ -331,6 +333,7 @@ describe('App /api/app/v1/my/* (P2-5a 只读 3 endpoint)', () => {
         // 派生字段一定有值
         expect(typeof item.activityTitle).toBe('string');
         expect(item.activityStartAt).toBeDefined();
+        expect(item.waitlistPosition).toBeNull();
       }
     });
 
@@ -471,7 +474,7 @@ describe('App /api/app/v1/my/* (P2-5a 只读 3 endpoint)', () => {
   // =====================================================
 
   describe('GET /my/registrations/:id — detail', () => {
-    it('200 + 字段集恰好 11 + 不含 sensitive', async () => {
+    it('200 + 字段集 12 项 + 不含 sensitive', async () => {
       const u = nextSeq();
       const { memberId, authHeader } = await setupLinkedUser({
         username: `p25a-det-${u}`,
@@ -495,6 +498,7 @@ describe('App /api/app/v1/my/* (P2-5a 只读 3 endpoint)', () => {
       }
       expect(data.id).toBe(reg.id);
       expect(data.statusCode).toBe('reject');
+      expect(data.waitlistPosition).toBeNull();
       // L1 对本人:reviewNote 可返
       expect(data.reviewNote).toBe('docs incomplete');
       // extras 透传(沿 D-P2-5-12 不嵌套校验)

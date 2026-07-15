@@ -455,11 +455,16 @@ export class UpdateActivityDto {
   @MaxLength(500)
   description?: string;
 
-  @ApiPropertyOptional({ description: '名额上限', minimum: 1 })
+  @ApiPropertyOptional({
+    description: '名额上限(NULL = 不限名额)',
+    minimum: 1,
+    nullable: true,
+    type: Number,
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
-  capacity?: number;
+  capacity?: number | null;
 
   @ApiPropertyOptional({ description: '性别限制字典 code', maxLength: 64 })
   @IsOptional()

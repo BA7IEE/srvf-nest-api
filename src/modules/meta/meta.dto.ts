@@ -72,6 +72,9 @@ export class ResolveLabelsResponseDto {}
 export class DashboardRegistrationsSummaryDto {
   @ApiProperty({ description: '全局待审报名数(registration_status=pending,未软删)' })
   pending!: number;
+
+  @ApiProperty({ description: '全局候补报名数(registration_status=waitlisted,未软删)' })
+  waitlisted!: number;
 }
 
 export class DashboardAttendanceSheetsSummaryDto {

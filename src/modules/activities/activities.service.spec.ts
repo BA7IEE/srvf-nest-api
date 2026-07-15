@@ -13,11 +13,16 @@ import type {
 } from './activities.dto';
 import { ActivitiesService } from './activities.service';
 import type { ActivityAuditRecorder } from './activity-audit-recorder';
+import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { ActivityStateDecision } from './activity-state-machine';
 import type { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import type { OrganizationsService } from '../organizations/organizations.service';
 import type { RbacService } from '../permissions/rbac.service';
 import type { AuthzService } from '../authz/authz.service';
+
+jest.mock('./activity-waitlist-promotion', () => ({
+  promoteActivityWaitlist: jest.fn().mockResolvedValue({ activityTitle: '测试活动', promoted: [] }),
+}));
 
 // activities service-level characterization spec(B 档 test-only,沿 srvf-god-service-refactor）。
 // 锁定 `activities.service.ts`(607L,L 体量)内部「编排契约」现状行为,作为后续
@@ -275,6 +280,7 @@ function makeService(
     prisma as unknown as PrismaService,
     stateMachine,
     recorder as unknown as ActivityAuditRecorder,
+    { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogsService,
     makeRbacMock() as unknown as RbacService,
     authz as unknown as AuthzService,
     dispatcher as unknown as NotificationDispatcher,
@@ -676,7 +682,7 @@ describe('ActivitiesService (characterization)', () => {
     });
 
     // ===== 统一通知 S4(评审稿 §6.4 / §6.2):取消 → 已报名者 fan-out 定向通知 =====
-    it('S4:取消 → fan-out 已报名者(pending+pass,去重)各一条 directed/in-app/activity-changed(含活动名+原因);事务外', async () => {
+    it('S4:取消 → fan-out 已报名者(pending+pass+waitlisted,去重)各一条 directed/in-app/activity-changed(含活动名+原因);事务外', async () => {
       const prisma = makePrismaMock();
       const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'cancelled' });
       const dispatcher = makeNotificationDispatcherMock();
@@ -698,7 +704,7 @@ describe('ActivitiesService (characterization)', () => {
       const findArg = prisma.activityRegistration.findMany.mock.calls[0][0] as {
         where: { statusCode: { in: string[] }; deletedAt: null };
       };
-      expect(findArg.where.statusCode.in).toEqual(['pending', 'pass']);
+      expect(findArg.where.statusCode.in).toEqual(['pending', 'pass', 'waitlisted']);
       expect(findArg.where.deletedAt).toBeNull();
 
       // 去重后 2 派发,各 directed in-app activity-changed + 活动名 + 原因

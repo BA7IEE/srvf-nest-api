@@ -7,11 +7,13 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_TYPE_ACTIVITY_CHANGED,
   NOTIFICATION_TYPE_ACTIVITY_PUBLISHED,
+  NOTIFICATION_TYPE_REGISTRATION_RESULT,
 } from '../notifications/notification.constants';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { OrganizationsService } from '../organizations/organizations.service';
@@ -33,6 +35,7 @@ import {
 import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { deriveActivityPhase } from './activity-phase';
 import { ActivityStateMachine } from './activity-state-machine';
+import { promoteActivityWaitlist } from './activity-waitlist-promotion';
 
 // V2 第一阶段批次 3A activities service。
 // 详见 docs:
@@ -138,10 +141,11 @@ type ActivityFullRow = Prisma.ActivityGetPayload<{ select: typeof activitySafeSe
 type ActivityListRow = Prisma.ActivityGetPayload<{ select: typeof activityListItemSelect }>;
 type PrismaTx = Prisma.TransactionClient;
 
-// 统一通知 S4(评审稿 §6.4):活动取消通知收件人 = 仍在册报名者 —— pending(待审)+ pass(已通过);
+// 统一通知 S4(评审稿 §6.4):活动取消通知收件人 = 仍在册报名者 —— pending(待审)+ pass(已通过)+ waitlisted(候补);
 // reject / cancelled 已出局不打扰。状态字面量镜像 activity-registration-state-machine 的
 // ACTIVITY_REGISTRATION_STATUS(此处刻意用字面量,避免 activities → activity-registrations 跨模块耦合)。
-const ACTIVE_REGISTRATION_STATUS_CODES = ['pending', 'pass'] as const;
+const ACTIVE_REGISTRATION_STATUS_CODES = ['pending', 'pass', 'waitlisted'] as const;
+const ACTIVITY_CANCELLED_REGISTRATION_STATUS_CODES = ['pending', 'waitlisted'] as const;
 
 @Injectable()
 export class ActivitiesService {
@@ -151,6 +155,7 @@ export class ActivitiesService {
     private readonly prisma: PrismaService,
     private readonly activityStateMachine: ActivityStateMachine,
     private readonly activityAuditRecorder: ActivityAuditRecorder,
+    private readonly auditLogs: AuditLogsService,
     private readonly rbac: RbacService,
     // 终态 scoped-authz PR12(2026-07-02;冻结稿 §11 逐面迁移第一批):统一判权大脑,5 个写方法
     // 判权从 rbac.can 切 authz.explain(见 assertCanOrThrow);list / findOne 仍无码仅登录不变。
@@ -630,13 +635,21 @@ export class ActivitiesService {
         this.assertRegistrationDeadlineValid(nextDeadline, nextEnd);
       }
 
+      let waitlistPromotionLimit: number | null | undefined;
       if (dto.capacity !== undefined) {
         await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${current.id} FOR UPDATE`;
         const passCount = await tx.activityRegistration.count({
           where: notDeletedWhere({ activityId: current.id, statusCode: 'pass' }),
         });
-        if (dto.capacity < passCount) {
+        if (dto.capacity !== null && dto.capacity < passCount) {
           throw new BizException(BizCode.ACTIVITY_CAPACITY_INVALID);
+        }
+        if (current.capacity !== null) {
+          if (dto.capacity === null) {
+            waitlistPromotionLimit = null;
+          } else if (dto.capacity > current.capacity) {
+            waitlistPromotionLimit = dto.capacity - current.capacity;
+          }
         }
       }
 
@@ -701,6 +714,19 @@ export class ActivitiesService {
         tx,
       });
 
+      const promotion =
+        waitlistPromotionLimit !== undefined
+          ? await promoteActivityWaitlist({
+              activityId: current.id,
+              maxPromotions: waitlistPromotionLimit,
+              actorUserId: currentUser.id,
+              actorRoleSnap: currentUser.role,
+              auditMeta,
+              tx,
+              auditLogs: this.auditLogs,
+            })
+          : { activityTitle: updated.title, promoted: [] };
+
       const scheduleChanged =
         current.startAt.getTime() !== updated.startAt.getTime() ||
         current.endAt.getTime() !== updated.endAt.getTime() ||
@@ -737,12 +763,18 @@ export class ActivitiesService {
         },
         requiresInsurance: updated.requiresInsurance,
         notificationMemberIds,
+        promotedMemberIds: promotion.promoted.map((item) => item.memberId),
       };
     });
 
     if (result.notificationMemberIds.length > 0) {
       await this.dispatchScheduleChangeNotifications(result);
     }
+    await this.dispatchWaitlistPromotionNotifications(
+      result.activityId,
+      result.activityTitle,
+      result.promotedMemberIds,
+    );
     return result.dto;
   }
 
@@ -923,7 +955,10 @@ export class ActivitiesService {
       });
 
       const cancelledPending = await tx.activityRegistration.updateMany({
-        where: notDeletedWhere({ activityId: current.id, statusCode: 'pending' }),
+        where: notDeletedWhere({
+          activityId: current.id,
+          statusCode: { in: [...ACTIVITY_CANCELLED_REGISTRATION_STATUS_CODES] },
+        }),
         data: {
           statusCode: 'cancelled',
           cancelledByUserId: currentUser.id,
@@ -1110,6 +1145,28 @@ export class ActivitiesService {
       } catch (err) {
         this.logger.error(
           `activity change notification failed (activity=${input.activityId}, member=${memberId}): ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
+  private async dispatchWaitlistPromotionNotifications(
+    activityId: string,
+    activityTitle: string,
+    memberIds: string[],
+  ): Promise<void> {
+    for (const memberId of memberIds) {
+      try {
+        await this.notificationDispatcher.dispatchTargeted({
+          recipientMemberId: memberId,
+          notificationTypeCode: NOTIFICATION_TYPE_REGISTRATION_RESULT,
+          title: '候补已递补',
+          body: `您报名的「${activityTitle}」已从候补递补，现已进入待审核。`,
+          channels: [NOTIFICATION_CHANNEL_IN_APP],
+        });
+      } catch (err) {
+        this.logger.error(
+          `waitlist promotion notification failed (activity=${activityId}, member=${memberId}): ${(err as Error).message}`,
         );
       }
     }
