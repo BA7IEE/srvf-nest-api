@@ -7,10 +7,10 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(六处一致) | **v0.52.0**(2026-07-15;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #628 squash `faac6b70`;GitHub Release「v0.52.0 — 活动自助 GPS 签到（审计刀 6 · 第一件）」标 Latest。**纯 additive,0 行为变更**:App 自助签到/签退/状态三端点(仅 pass 报名者;geofence 宽进严出留痕)+ Admin 打卡证据列表与只读考勤草稿两端点;证据 append-only 不进结算,结算仍唯一走既有考勤两级审批) |
-| `main` HEAD | v0.52.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #628 `faac6b70`;收口链 = 四拍板(GPS/仅 pass/忘签退留空/宽进严出)→ goal 五 PR 全绿自合:T0 冻结 #622 → 证据表 #623(migration 52)→ App 自助面 #624 → Admin 只读面 #625 → 收口 #626 → 主会话元核验四点全过 → bump #627 `32b6f4e3` → handoff #628 → tag/Release → 本回填 PR;冻结评审稿 `docs/archive/reviews/activity-self-checkin-t0-review.md`) |
-| open PR / 工作树 / Unreleased | v0.52.0 基线为 **0 open PR**；Unreleased = 活动报名候补与自动递补（审计刀 6 · 第二件），版本不 bump。终值:权限码 **206** / biz-admin **81** / org-admin 60 / org-readonly 10 / group-manager 22 / group-readonly 11 / org-supervisor 4 / ops-admin 96 / `EXPECTED_ROUTES` **350** / controller **71** / 模块 35 / migration **52** / 角色 **9** / BizCode **240** / AuditLogEvent **113** / cron **2** |
-| 最新 handoff | [`archive/handoff/v0.52.0.md`](archive/handoff/v0.52.0.md)(历史快照;tag 指向该 handoff #628 squash `faac6b70`;接续 [`v0.51.0.md`](archive/handoff/v0.51.0.md);合入后不回改) |
+| 版本(六处一致) | **v0.53.0**(2026-07-15;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #633 squash `b971cc5b`;GitHub Release「v0.53.0 — 活动报名候补与自动递补（审计刀 6 · 第二件）」标 Latest。**⚠️ 行为变更恰好 5 条**(对照表见 CHANGELOG `## v0.53.0`):满员报名不再拒 21031 改落 `waitlisted` 并给排位;取消 pass 同事务自动递补队首→pending+通知;capacity 调大/改 null 自动递补(缩容不递补);状态机 cancel/reject 扩含候补态(approve 仍仅 pending,不开候补直通 pass);活动 cancel 联动扩为 pending+waitlisted→cancelled) |
+| `main` HEAD | v0.53.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #633 `b971cc5b`;收口链 = 三拍板(递补自动转待审/满员自动进候补/扩容自动递补)→ goal 单 PR #630 `a76b14b2` → 主会话五维元核验 + 对抗性复核 → **发现并修复并发缺陷 #631 `44f10e9c`**(扩容递补 delta 基线取自取锁前无锁读,并发/重试超额递补且缩容误递补;修为取锁后重读 + 并发回归 e2e〔变异验证过〕)→ bump #632 `500f84bf` → handoff #633 → tag/Release → 本回填 PR;冻结评审稿 `docs/archive/reviews/activity-waitlist-t0-review.md`) |
+| open PR / 工作树 / Unreleased | **0 open PR**;`## Unreleased` 空。终值(相对 v0.52.0 **全部恒定**):权限码 **206** / biz-admin **81** / org-admin 60 / org-readonly 10 / group-manager 22 / group-readonly 11 / org-supervisor 4 / ops-admin 96 / `EXPECTED_ROUTES` **350** / controller **71** / 模块 35 / migration **52** / 角色 **9** / BizCode **240** / AuditLogEvent **113** / cron **2**;`registration_status` 字典 4 态→**5 态**(+`waitlisted`,seed additive) |
+| 最新 handoff | [`archive/handoff/v0.53.0.md`](archive/handoff/v0.53.0.md)(历史快照;tag 指向该 handoff #633 squash `b971cc5b`;接续 [`v0.52.0.md`](archive/handoff/v0.52.0.md);合入后不回改) |
 
 ## 2. 当前系统已具备能力
 
