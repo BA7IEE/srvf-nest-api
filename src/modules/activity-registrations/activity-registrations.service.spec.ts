@@ -382,21 +382,38 @@ describe('ActivityRegistrationsService (characterization)', () => {
       expect(result.statusCode).toBe('pending');
     });
 
-    it('capacity 已满 → ACTIVITY_CAPACITY_EXCEEDED;不写库', async () => {
+    it('capacity 已满 → 创建 waitlisted 并写 create audit', async () => {
       const prisma = makePrismaMock();
+      const recorder = makeAuditRecorderMock();
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ capacity: 1 }));
       prisma.member.findFirst.mockResolvedValue(makeMemberRow());
+      prisma.activityRegistration.findFirst.mockResolvedValue(null);
       prisma.activityRegistration.count.mockResolvedValue(1);
+      prisma.activityRegistration.create.mockResolvedValue(
+        makeRegRow({ statusCode: 'waitlisted' }),
+      );
       const service = makeService(
         prisma,
-        makeAuditRecorderMock(),
+        recorder,
         makeStateMachineMock(DENY_DECISION),
       );
 
-      await expect(
-        service.create('act-1', { memberId: 'mem-1' }, makeCurrentUser(), META),
-      ).rejects.toEqual(new BizException(BizCode.ACTIVITY_CAPACITY_EXCEEDED));
-      expect(prisma.activityRegistration.create).not.toHaveBeenCalled();
+      const result = await service.create(
+        'act-1',
+        { memberId: 'mem-1' },
+        makeCurrentUser(),
+        META,
+      );
+
+      expect(prisma.activityRegistration.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ statusCode: 'waitlisted' }),
+        }),
+      );
+      expect(recorder.logCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ created: expect.objectContaining({ statusCode: 'waitlisted' }) }),
+      );
+      expect(result.statusCode).toBe('waitlisted');
     });
   });
 

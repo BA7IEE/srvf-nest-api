@@ -44,8 +44,8 @@ import * as bcrypt from 'bcryptjs';
 //   - activity_type: 开放,**二级树**(D11);由独立函数 seedActivityTypeHierarchy 处理
 //     父子 upsert(parentId 引用同 type 父项 id)
 //   - activity_status: 闭集 4 态(D3;Q-D7 保留 completed):draft/published/cancelled/completed
-//   - registration_status: 闭集 **4 态**(F28/Q011 + Q-D15 v0.3 新增 cancelled):
-//     pending/pass/reject/cancelled
+//   - registration_status: 闭集 **5 态**(F28/Q011 + Q-D15 v0.3 新增 cancelled;
+//     2026-07-15 活动候补 T0 新增 waitlisted):pending/pass/reject/cancelled/waitlisted
 //   - attendance_sheet_status: 闭集 3 态(D18,v0.4.0):pending/approved/rejected
 //     **v0.5.0 批次 4-A 扩展为 5 态**(D-S6):新增 pending_final_review + final_rejected
 //   - attendance_status: 闭集 **3 态**(D44/D51 v0.2.4 撤销 absent/leave):
@@ -256,6 +256,7 @@ const V2_DICT_SEED = [
       { code: 'pass', label: '已通过', sortOrder: 1 },
       { code: 'reject', label: '未通过', sortOrder: 2 },
       { code: 'cancelled', label: '已取消', sortOrder: 3 }, // Q-D15 v0.3 新增
+      { code: 'waitlisted', label: '候补中', sortOrder: 4 }, // 活动候补 T0 additive
     ],
   },
   {

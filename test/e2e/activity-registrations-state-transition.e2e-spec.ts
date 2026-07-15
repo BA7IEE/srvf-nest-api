@@ -39,7 +39,7 @@ import { createTestApp } from '../setup/test-app';
 //   E. Uniqueness & capacity(active dup + cancelled allows re-register + capacity full ×2)
 //   F. Audit failure rollback(create 路径)
 
-type RegistrationStatus = 'pending' | 'pass' | 'reject' | 'cancelled';
+type RegistrationStatus = 'pending' | 'pass' | 'reject' | 'cancelled' | 'waitlisted';
 
 const AUDIT_META: AuditMeta = {
   requestId: 'reg-state-req-0000000000000001',
@@ -818,7 +818,7 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       expect(audits).toHaveLength(1);
     });
 
-    it('E3. capacity=1 + 1 pass 时,create 新 reg → ACTIVITY_CAPACITY_EXCEEDED,无新 reg / 无 audit', async () => {
+    it('E3. capacity=1 + 1 pass 时,create 新 reg → waitlisted + create audit', async () => {
       const capacityActivityId = await createActivity({ capacity: 1 });
       // 已存在 1 个 pass
       await seedRegistration({
@@ -833,24 +833,27 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
         where: { activityId: capacityActivityId },
       });
 
-      await expect(
-        ctx.service.create(
-          capacityActivityId,
-          { memberId: ctx.memberCId },
-          ctx.adminPayload,
-          AUDIT_META,
-        ),
-      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_CAPACITY_EXCEEDED });
+      const result = await ctx.service.create(
+        capacityActivityId,
+        { memberId: ctx.memberCId },
+        ctx.adminPayload,
+        AUDIT_META,
+      );
+      expect(result.statusCode).toBe('waitlisted');
 
       const afterCount = await ctx.prisma.activityRegistration.count({
         where: { activityId: capacityActivityId },
       });
-      expect(afterCount).toBe(beforeCount); // 无新 reg
+      expect(afterCount).toBe(beforeCount + 1);
 
       const audits = await ctx.prisma.auditLog.findMany({
-        where: { event: 'registration.create' },
+        where: { event: 'registration.create', resourceId: result.id },
       });
-      expect(audits).toHaveLength(0);
+      expect(audits).toHaveLength(1);
+      const context = audits[0].context as unknown as {
+        after?: { statusCode?: string };
+      };
+      expect(context.after).toMatchObject({ statusCode: 'waitlisted' });
     });
 
     it('E4. capacity=1 + 1 pass 时,approve 第二条 pending → ACTIVITY_CAPACITY_EXCEEDED,DB 状态不变,无 audit', async () => {

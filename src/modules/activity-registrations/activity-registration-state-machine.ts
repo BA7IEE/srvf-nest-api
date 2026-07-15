@@ -14,13 +14,14 @@ import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.con
 //
 // **action 语义(对应 PR #196 characterization cases)**:
 // - approve:      pending → pass(其他态拒;沿 PR #196 A1 + A2 ×3)
-// - reject:       pending → reject(其他态拒;沿 PR #196 B1 + B2 ×3)
-// - cancel:       pending|pass → cancelled(reject/cancelled/其他态拒;沿 PR #196 C1+C2+C3 ×2 + D1+D2+D3 ×2)
+// - reject:       pending|waitlisted → reject(其他态拒;活动候补 T0 白名单第 4 条)
+// - cancel:       pending|pass|waitlisted → cancelled(reject/cancelled/其他态拒;活动候补 T0 白名单第 4 条)
 //   注:`cancelAdmin` 与 `cancelMy` 共用同一 `cancel` action;路径差异(admin vs self)由调用方
 //      service 通过 `auditLogs.log` extra.cancelledByPath 字段记录,**不进** StateMachine。
 // - reopen:       reject → pending(其他态拒;v0.40.0 参与域生命周期收口②「审批后悔药」新增唯一边)。
 //   撤销驳回、回待审;**刻意不开 reject → pass 直通**(改判必须重走审批)。顺带解开「被拒者仍占
 //   partial unique 槽(reject != cancelled)无法重报」死锁 —— reopen 后重审,不动 unique 语义。
+// - promote:      waitlisted → pending(仅递补引擎内部使用;无手动端点,不开 waitlisted → pass)。
 //
 // 错误码统一沿现状:wrong state → `BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID`(沿 PR #196 全部
 // wrong-state cases:approve A2 / reject B2 / cancelAdmin C3 / cancelMy D3 + v0.40.0 reopen)。
@@ -30,6 +31,7 @@ export const ACTIVITY_REGISTRATION_STATUS = {
   PASS: 'pass',
   REJECT: 'reject',
   CANCELLED: 'cancelled',
+  WAITLISTED: 'waitlisted',
 } as const;
 
 export type ActivityRegistrationStatusCode =
@@ -40,6 +42,7 @@ export const ACTIVITY_REGISTRATION_TRANSITION_ACTIONS = [
   'reject',
   'cancel',
   'reopen',
+  'promote',
 ] as const;
 
 export type ActivityRegistrationTransitionAction =
@@ -62,14 +65,18 @@ export class ActivityRegistrationStateMachine {
         }
         return { allowed: false, biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID };
       case 'reject':
-        if (currentStatusCode === ACTIVITY_REGISTRATION_STATUS.PENDING) {
+        if (
+          currentStatusCode === ACTIVITY_REGISTRATION_STATUS.PENDING ||
+          currentStatusCode === ACTIVITY_REGISTRATION_STATUS.WAITLISTED
+        ) {
           return { allowed: true, nextStatusCode: ACTIVITY_REGISTRATION_STATUS.REJECT };
         }
         return { allowed: false, biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID };
       case 'cancel':
         if (
           currentStatusCode === ACTIVITY_REGISTRATION_STATUS.PENDING ||
-          currentStatusCode === ACTIVITY_REGISTRATION_STATUS.PASS
+          currentStatusCode === ACTIVITY_REGISTRATION_STATUS.PASS ||
+          currentStatusCode === ACTIVITY_REGISTRATION_STATUS.WAITLISTED
         ) {
           return { allowed: true, nextStatusCode: ACTIVITY_REGISTRATION_STATUS.CANCELLED };
         }
@@ -77,6 +84,11 @@ export class ActivityRegistrationStateMachine {
       case 'reopen':
         // v0.40.0 参与域生命周期收口②:撤销驳回回待审(reject → pending);其余态拒。
         if (currentStatusCode === ACTIVITY_REGISTRATION_STATUS.REJECT) {
+          return { allowed: true, nextStatusCode: ACTIVITY_REGISTRATION_STATUS.PENDING };
+        }
+        return { allowed: false, biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID };
+      case 'promote':
+        if (currentStatusCode === ACTIVITY_REGISTRATION_STATUS.WAITLISTED) {
           return { allowed: true, nextStatusCode: ACTIVITY_REGISTRATION_STATUS.PENDING };
         }
         return { allowed: false, biz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID };
