@@ -13,6 +13,15 @@ interface CertificateFindManyInput {
   where: { expiredAt?: { gt: Date; lte: Date } };
 }
 
+interface ActivityUpdateManyInput {
+  where: {
+    id: string;
+    statusCode: string;
+    startReminderSentAt: null;
+  };
+  data: { startReminderSentAt: Date };
+}
+
 describe('ExpiryReminderService · runOnce', () => {
   function build() {
     const certificateFindMany = jest.fn().mockResolvedValue([]);
@@ -26,6 +35,13 @@ describe('ExpiryReminderService · runOnce', () => {
       },
     };
     const prisma = {
+      activity: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      activityRegistration: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       certificate: {
         findMany: certificateFindMany,
         updateMany: certificateUpdateMany,
@@ -109,6 +125,8 @@ describe('ExpiryReminderService · runOnce', () => {
     const summary = await fixture.service.runOnce(new Date('2026-07-14T09:00:00+08:00'));
 
     expect(summary).toEqual({
+      activityReminderCandidates: 0,
+      activityRemindersDispatched: 0,
       certificateReminderCandidates: 1,
       certificateRemindersDispatched: 1,
       certificateExpiryCandidates: 1,
@@ -149,6 +167,48 @@ describe('ExpiryReminderService · runOnce', () => {
     const auditCalls = fixture.auditLogs.log.mock.calls as Array<[Record<string, unknown>]>;
     const auditInput = auditCalls[0][0];
     expect(JSON.stringify(auditInput)).not.toMatch(/certNumber|policyNumber|password|secret/i);
+  });
+
+  it('活动开始提醒：24h 窗内 published 原子 claim，仅 pass 去重派发，二跑不重复', async () => {
+    const fixture = build();
+    const now = new Date('2026-07-14T01:00:00.000Z');
+    fixture.prisma.activity.findMany.mockResolvedValue([
+      {
+        id: 'activity-upcoming',
+        title: '山野训练',
+        startAt: new Date('2026-07-15T00:00:00.000Z'),
+        location: '梧桐山',
+      },
+    ]);
+    fixture.prisma.activityRegistration.findMany.mockResolvedValue([
+      { memberId: 'member-1' },
+      { memberId: 'member-1' },
+      { memberId: 'member-2' },
+    ]);
+
+    const first = await fixture.service.runOnce(now);
+    fixture.prisma.activity.updateMany.mockResolvedValueOnce({ count: 0 });
+    const second = await fixture.service.runOnce(now);
+
+    expect(first.activityReminderCandidates).toBe(1);
+    expect(first.activityRemindersDispatched).toBe(2);
+    expect(second.activityReminderCandidates).toBe(1);
+    expect(second.activityRemindersDispatched).toBe(0);
+    const activityUpdateCalls = fixture.prisma.activity.updateMany.mock.calls as Array<
+      [ActivityUpdateManyInput]
+    >;
+    expect(activityUpdateCalls[0][0]).toMatchObject({
+      where: {
+        id: 'activity-upcoming',
+        statusCode: 'published',
+        startReminderSentAt: null,
+      },
+      data: { startReminderSentAt: now },
+    });
+    const activityCalls = fixture.dispatcher.dispatchTargeted.mock.calls.filter(
+      ([input]: [TargetedCallInput]) => input.notificationTypeCode === 'activity-reminder',
+    );
+    expect(activityCalls).toHaveLength(2);
   });
 
   it('查询窗口跳过终身证书；条件 claim 失败视为并发败者，不派发', async () => {

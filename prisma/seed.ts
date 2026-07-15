@@ -416,6 +416,10 @@ const V2_DICT_SEED = [
       { code: 'emergency', label: '紧急召集', sortOrder: 2 },
       { code: 'general', label: '一般通知', sortOrder: 3 },
       { code: 'expiry-reminder', label: '到期提醒', sortOrder: 4 },
+      { code: 'activity-published', label: '活动发布', sortOrder: 5 },
+      { code: 'activity-changed', label: '活动变更', sortOrder: 6 },
+      { code: 'registration-result', label: '报名结果', sortOrder: 7 },
+      { code: 'attendance-result', label: '考勤结果', sortOrder: 8 },
     ],
   },
   {
@@ -436,6 +440,15 @@ const V2_DICT_SEED = [
     // 无校验路径)→ 沿 join_source 惯例**不登记**防误删守卫(留口可不保护;goal DoD3)。
     type: { code: 'group_function', label: '组功能', sortOrder: 24 },
     items: [],
+  },
+  {
+    // 活动报名性别闸闭集；`any` 沿既有 activities e2e 先例，male/female 与 gender 字典同码。
+    type: { code: 'gender_requirement', label: '活动性别要求', sortOrder: 25 },
+    items: [
+      { code: 'any', label: '不限', sortOrder: 0 },
+      { code: 'male', label: '仅男', sortOrder: 1 },
+      { code: 'female', label: '仅女', sortOrder: 2 },
+    ],
   },
 ] as const;
 

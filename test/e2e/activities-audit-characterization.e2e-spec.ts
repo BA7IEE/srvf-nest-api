@@ -149,8 +149,8 @@ describe('ActivitiesService audit characterization', () => {
       title: '审计形状测试活动',
       activityTypeCode: ctx.activityTypeCode,
       organizationId: ctx.childOrgId,
-      startAt: '2026-08-01T08:00:00.000Z',
-      endAt: '2026-08-01T12:00:00.000Z',
+      startAt: '2099-08-01T08:00:00.000Z',
+      endAt: '2099-08-01T12:00:00.000Z',
       location: '测试场地',
       ...override,
     };
@@ -316,7 +316,12 @@ describe('ActivitiesService audit characterization', () => {
       const created = await ctx.service.create(createDto(), ctx.adminPayload, AUDIT_META);
       await ctx.prisma.auditLog.deleteMany({});
 
-      await ctx.service.publish(created.id, ctx.adminPayload, AUDIT_META);
+      await ctx.service.publish(
+        created.id,
+        { requiresInsuranceConfirmed: true },
+        ctx.adminPayload,
+        AUDIT_META,
+      );
 
       const audits = await ctx.prisma.auditLog.findMany({
         where: { event: ACTIVITY_EVENT, resourceId: created.id },
@@ -358,7 +363,12 @@ describe('ActivitiesService audit characterization', () => {
 
     it('event=activity.publish + extra={operation:complete, priorStatusCode:published, nextStatusCode:completed} + before+after present', async () => {
       const created = await ctx.service.create(createDto(), ctx.adminPayload, AUDIT_META);
-      await ctx.service.publish(created.id, ctx.adminPayload, AUDIT_META);
+      await ctx.service.publish(
+        created.id,
+        { requiresInsuranceConfirmed: true },
+        ctx.adminPayload,
+        AUDIT_META,
+      );
       await ctx.prisma.auditLog.deleteMany({});
 
       await ctx.service.complete(created.id, ctx.adminPayload, AUDIT_META);
@@ -444,6 +454,7 @@ describe('ActivitiesService audit characterization', () => {
         priorStatusCode: 'draft',
         nextStatusCode: 'cancelled',
         cancelReason: '雨天延期',
+        pendingRegistrationsCancelled: 0,
       });
     });
 
@@ -471,6 +482,7 @@ describe('ActivitiesService audit characterization', () => {
         priorStatusCode: 'draft',
         nextStatusCode: 'cancelled',
         cancelReason: null,
+        pendingRegistrationsCancelled: 0,
       });
     });
   });

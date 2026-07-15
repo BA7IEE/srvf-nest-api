@@ -46,9 +46,13 @@ export type NotificationVisibility = (typeof NOTIFICATION_VISIBILITIES)[number];
 export const NOTIFICATION_TYPE_DICT_CODE = 'notification_type';
 // 招新 producer 定向通知类型(发号 / 入队结果;seed notification_type item 'recruitment' 已内置 = '招新公告')。
 export const NOTIFICATION_TYPE_RECRUITMENT = 'recruitment';
-// 活动/考勤 producer 定向通知类型(S4:考勤结果 / 报名审批 / 活动取消;三者同属活动域,复用 seed
-// notification_type item 'activity-reminder' 已内置 = '活动提醒';S4 不新增字典 type,评审稿 §9.4)。
+// 活动域通知语义闭集：activity-reminder 仅承载开场提醒；其余 producer 使用独立类型，避免前端
+// 模板、筛选与统计把发布/变更/报名结果/考勤结果混作同一种提醒。
 export const NOTIFICATION_TYPE_ACTIVITY_REMINDER = 'activity-reminder';
+export const NOTIFICATION_TYPE_ACTIVITY_PUBLISHED = 'activity-published';
+export const NOTIFICATION_TYPE_ACTIVITY_CHANGED = 'activity-changed';
+export const NOTIFICATION_TYPE_REGISTRATION_RESULT = 'registration-result';
+export const NOTIFICATION_TYPE_ATTENDANCE_RESULT = 'attendance-result';
 // v0.47.0 到期提醒 producer：证书 / 个人保险定向提醒 + 队保单管理面广播共用一个类型。
 export const NOTIFICATION_TYPE_EXPIRY_REMINDER = 'expiry-reminder';
 

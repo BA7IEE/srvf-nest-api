@@ -105,7 +105,7 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
         activityTypeCode: 'atrb-type',
         organizationId: rootOrg.id,
         startAt: new Date('2026-09-01T00:00:00.000Z'),
-        endAt: new Date('2026-09-02T00:00:00.000Z'),
+        endAt: new Date('2026-09-03T00:00:00.000Z'),
         location: '边界演示',
         statusCode: 'published',
         isPublicRegistration: true,

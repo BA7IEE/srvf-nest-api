@@ -1,19 +1,22 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { parseExpandQuery } from '../../common/dto/expand-query.util';
 import { eventPlaceholder } from '../../common/event/event-placeholder';
-import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
+import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
-  NOTIFICATION_TYPE_ACTIVITY_REMINDER,
+  NOTIFICATION_TYPE_ATTENDANCE_RESULT,
   NOTIFICATION_TYPE_RECRUITMENT,
 } from '../notifications/notification.constants';
 import { AuthzService } from '../authz/authz.service';
@@ -63,11 +66,11 @@ import {
 // 的泛型从此白名单字面量推导,无需单独导出 key 类型(镜像本文件其余「不为已推导类型再起别名」惯例)。
 const ATTENDANCE_EXPAND_WHITELIST = ['activity'] as const;
 
-// V2 第一阶段批次 3B attendances service(批次 4-B 升级:终审 / D14 预填 / D11 推动)。
+// V2 第一阶段批次 3B attendances service(批次 4-B 升级:终审 / D14 预填；D11 推动已由 D2-a 撤销)。
 // 详见 docs:
 //   - 批次3_API前评审决议表.md v1.0 §1.8 / §1.9 / §1.14
 //   - 批次3_schema草案_activities_attendances.md v0.5 §13 / §15 / §16 / §19
-//   - 批次4_贡献值业务规则前评审决议表 v1.0(D5 候选 B 终审 / D11 推动 / D14 5.B 预填)
+//   - 批次4_贡献值业务规则前评审决议表 v1.0(D5 候选 B 终审 / D11 历史项已由 D2-a 撤销 / D14 5.B 预填)
 //   - 批次4_贡献值业务规则_schema草案评审决议表 v1.0(D-S5 / D-S6 / D-S7 / D-S8 / D-S10 / D-S11)
 //   - 批次4_贡献值业务规则_API草案 v1.0(D-A1 ~ D-A13)
 //   - 批次4_贡献值业务规则_实现前业务规则说明 v1.0
@@ -85,7 +88,7 @@ const ATTENDANCE_EXPAND_WHITELIST = ['activity'] as const;
 //   终审身份由 role-bindings 配置行决定,代码不含部门字面量门控(BD-2)。
 // - submit:事务内一次性 create Sheet + N records;activity statusCode != cancelled
 //   批次 4-B 新增:**D14 5.B 系统预填** contributionPoints(根据 ContributionRule 查表)+
-//   **D11 推动** Activity.statusCode = 'completed'(若当前 published)。
+//   **D2-a 当前规则**:submit 不写 Activity.statusCode，completed 仅由 activities.complete 推进。
 // - edit:仅 pending → pending;后端生成 previousSnapshot(R28 / Q-S16);version+1;
 //   旧 records 软删 + 新 records 创建(D38);重跑全部校验。
 //   批次 4-B:pending_final_review / final_rejected 也不可 edit(沿 22030 / 22043)。
@@ -123,10 +126,6 @@ const ATTENDANCE_EXPAND_WHITELIST = ['activity'] as const;
 // (F4 #399:reject 也软删 records,审计含软删前快照,对称 finalReject)必含;
 // approve / finalApprove 只放 sheet 快照,`extra.recordsCount` 元数据(records 不变)。
 // 字段非敏感(打码矩阵未命中,沿 PR #3 / PR #4 / PR #5 不打码范式)。
-
-const ACTIVITY_STATUS_PUBLISHED = 'published';
-const ACTIVITY_STATUS_CANCELLED = 'cancelled';
-const ACTIVITY_STATUS_COMPLETED = 'completed';
 
 // Sheet 状态机闭集别名(单一来源:ATTENDANCE_SHEET_STATUS,定义在 attendances.dto.ts)。
 const SHEET_STATUS_PENDING = ATTENDANCE_SHEET_STATUS.PENDING;
@@ -258,6 +257,9 @@ export class AttendancesService {
     // F2/B2(路线图 §4;D7 拍板):供 queryDescendantOrgIds() 只读 helper 展开 includeDescendants
     // (closure 非判权,镜像 F1/A6 activities.service.ts 用法)。
     private readonly organizations: OrganizationsService,
+    @Inject(appConfig.KEY)
+    private readonly config: ConfigType<typeof appConfig>,
+    private readonly activityParticipationPolicy: ActivityParticipationPolicy,
   ) {}
 
   // Slow-4 T3(2026-06-11,评审稿 §3.7 / D-S4-8)起点;终态 scoped-authz PR12(2026-07-02;
@@ -356,34 +358,10 @@ export class AttendancesService {
   // `.toSheetListItemDto(...)` / `.toRecordResponseDto(...)` / `.decimalToString(...)` 委托;
   // 事务边界与查询 select 策略不随迁,仍由本 service 持有。
 
-  // ============ helpers:字典校验 ============
-
-  private async assertDictItemValid(
-    typeCode: string,
-    code: string,
-    biz: BizCodeEntry,
-    tx: PrismaTx,
-  ): Promise<void> {
-    const item = await tx.dictItem.findFirst({
-      where: {
-        code,
-        status: DictItemStatus.ACTIVE,
-        deletedAt: null,
-        type: {
-          code: typeCode,
-          status: DictTypeStatus.ACTIVE,
-          deletedAt: null,
-        },
-      },
-      select: { id: true },
-    });
-    if (!item) throw new BizException(biz);
-  }
-
   // ============ helpers:Activity / Sheet / Member 查找 ============
 
   // 批次 4-B 重构:findActivityForSubmission 旧版返回 {id, statusCode} 已被 findActivityForSubmissionFull
-  // (返回 {id, statusCode, activityTypeCode})替代,用于 D14 预填 + D11 推动;旧函数删除。
+  // (返回 activityType/status/time-window)替代，用于 D14 预填与参与状态/时间窗校验；旧函数删除。
 
   private async assertActivityExists(activityId: string, tx: PrismaTx): Promise<void> {
     const act = await tx.activity.findFirst({
@@ -391,30 +369,6 @@ export class AttendancesService {
       select: { id: true },
     });
     if (!act) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-  }
-
-  private async assertMemberExists(memberId: string, tx: PrismaTx): Promise<void> {
-    const m = await tx.member.findFirst({
-      where: notDeletedWhere({ id: memberId }),
-      select: { id: true },
-    });
-    if (!m) throw new BizException(BizCode.MEMBER_NOT_FOUND);
-  }
-
-  // R23 跨表校验:registrationId 非空时 registration.activityId === sheet.activityId。
-  // 找不到 registration → MISMATCH(沿 §1.7 风格,USER 越权一律 mismatch / 404)。
-  private async assertRegistrationMatchesActivity(
-    registrationId: string,
-    activityId: string,
-    tx: PrismaTx,
-  ): Promise<void> {
-    const reg = await tx.activityRegistration.findFirst({
-      where: notDeletedWhere({ id: registrationId }),
-      select: { activityId: true },
-    });
-    if (!reg || reg.activityId !== activityId) {
-      throw new BizException(BizCode.ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH);
-    }
   }
 
   // 找 Sheet 完整数据(含 previousSnapshot,用于 edit 路径)。
@@ -506,6 +460,104 @@ export class AttendancesService {
     };
   }
 
+  private assertRecordWithinActivityWindow(
+    record: ReturnType<AttendancesService['normalizeRecord']>,
+    activity: { startAt: Date; endAt: Date },
+  ): void {
+    const toleranceMs = this.config.attendance.windowToleranceHours * 3_600_000;
+    if (
+      record.checkInAt.getTime() < activity.startAt.getTime() - toleranceMs ||
+      record.checkOutAt.getTime() > activity.endAt.getTime() + toleranceMs
+    ) {
+      throw new BizException(BizCode.ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW);
+    }
+  }
+
+  // F1/F3/F4:一个 records 请求固定用 3 次 IN 预取字典项、队员与报名行；随后按原输入顺序
+  // 复现错误优先级并完成 normalize。查询次数不随 records 数增长，且 registrationId 同时校验
+  // activityId、memberId 与 pass 状态。
+  private async validateAndNormalizeRecordsBatch(
+    inputs: AttendanceRecordInputDto[],
+    activity: { id: string; startAt: Date; endAt: Date },
+    tx: PrismaTx,
+  ): Promise<Array<ReturnType<AttendancesService['normalizeRecord']>>> {
+    const roleCodes = [...new Set(inputs.map((input) => input.roleCode))];
+    const attendanceStatusCodes = [...new Set(inputs.map((input) => input.attendanceStatusCode))];
+    const memberIds = [...new Set(inputs.map((input) => input.memberId))];
+    const registrationIds = [
+      ...new Set(
+        inputs.map((input) => input.registrationId).filter((id): id is string => id !== undefined),
+      ),
+    ];
+
+    const [dictItems, members, registrations] = await Promise.all([
+      tx.dictItem.findMany({
+        where: {
+          status: DictItemStatus.ACTIVE,
+          deletedAt: null,
+          OR: [
+            {
+              code: { in: roleCodes },
+              type: {
+                code: DICT_TYPE_ATTENDANCE_ROLE,
+                status: DictTypeStatus.ACTIVE,
+                deletedAt: null,
+              },
+            },
+            {
+              code: { in: attendanceStatusCodes },
+              type: {
+                code: DICT_TYPE_ATTENDANCE_STATUS,
+                status: DictTypeStatus.ACTIVE,
+                deletedAt: null,
+              },
+            },
+          ],
+        },
+        select: { code: true, type: { select: { code: true } } },
+      }),
+      tx.member.findMany({
+        where: notDeletedWhere({ id: { in: memberIds } }),
+        select: { id: true },
+      }),
+      tx.activityRegistration.findMany({
+        where: notDeletedWhere({ id: { in: registrationIds } }),
+        select: { id: true, activityId: true, memberId: true, statusCode: true },
+      }),
+    ]);
+
+    const dictKeys = new Set(dictItems.map((item) => `${item.type.code}:${item.code}`));
+    const existingMemberIds = new Set(members.map((member) => member.id));
+    const registrationById = new Map(
+      registrations.map((registration) => [registration.id, registration]),
+    );
+
+    return inputs.map((input) => {
+      if (!dictKeys.has(`${DICT_TYPE_ATTENDANCE_ROLE}:${input.roleCode}`)) {
+        throw new BizException(BizCode.ATTENDANCE_ROLE_CODE_INVALID);
+      }
+      if (!dictKeys.has(`${DICT_TYPE_ATTENDANCE_STATUS}:${input.attendanceStatusCode}`)) {
+        throw new BizException(BizCode.ATTENDANCE_STATUS_CODE_INVALID);
+      }
+      if (!existingMemberIds.has(input.memberId)) {
+        throw new BizException(BizCode.MEMBER_NOT_FOUND);
+      }
+      if (input.registrationId !== undefined) {
+        const registration = registrationById.get(input.registrationId);
+        if (!registration || registration.activityId !== activity.id) {
+          throw new BizException(BizCode.ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH);
+        }
+        if (registration.memberId !== input.memberId || registration.statusCode !== 'pass') {
+          throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
+        }
+      }
+
+      const normalized = this.normalizeRecord(input);
+      this.assertRecordWithinActivityWindow(normalized, activity);
+      return normalized;
+    });
+  }
+
   // 时间不重叠校验(R16 / Q-S15)已抽至 `time-overlap-policy.ts` 的 `TimeOverlapPolicy`
   // (refactor PR;沿 PR #179 9 个 characterization case 锁定的现状行为零变化)。
   // submit(...) / edit(...) 内通过 `this.timeOverlapPolicy.assertNoInternalOverlap(...)` +
@@ -519,8 +571,7 @@ export class AttendancesService {
   //   规则匹配维度:activityType × attendanceRole × durationThreshold;
   //   NULL durationThreshold 多条规则按 createdAt ASC LIMIT 1(明确选取策略,沿 §3.1 复核报告);
   //   无匹配规则 → service 兜底 null,不抛错(沿 D-S11 22048 不开)。
-  // - D11 推动:Activity.statusCode = 'published' → 'completed'(沿 D-S10);
-  //   多 Sheet 场景下,后续 Sheet 创建时已是 completed,update 不再生效(幂等)。
+  // - D2-a:提交只创建 pending Sheet，不再隐式推动 Activity.completed。
   async submit(
     activityId: string,
     dto: CreateAttendanceSheetDto,
@@ -532,30 +583,11 @@ export class AttendancesService {
       id: activityId,
     });
     return this.prisma.$transaction(async (tx) => {
-      // 1. activity 存在 + 非 cancelled;同时取 activityTypeCode + statusCode 用于 D14 预填 + D11 推动
+      // 1. activity 存在 + 参与状态合法；同时取 activityTypeCode 与时间窗。
       const activity = await this.findActivityForSubmissionFull(activityId, tx);
 
-      // 2. 逐条 record 字典校验 + 时间规范化 + serviceHours 校验
-      const normalized: ReturnType<AttendancesService['normalizeRecord']>[] = [];
-      for (const input of dto.records) {
-        await this.assertDictItemValid(
-          DICT_TYPE_ATTENDANCE_ROLE,
-          input.roleCode,
-          BizCode.ATTENDANCE_ROLE_CODE_INVALID,
-          tx,
-        );
-        await this.assertDictItemValid(
-          DICT_TYPE_ATTENDANCE_STATUS,
-          input.attendanceStatusCode,
-          BizCode.ATTENDANCE_STATUS_CODE_INVALID,
-          tx,
-        );
-        await this.assertMemberExists(input.memberId, tx);
-        if (input.registrationId !== undefined) {
-          await this.assertRegistrationMatchesActivity(input.registrationId, activityId, tx);
-        }
-        normalized.push(this.normalizeRecord(input));
-      }
+      // 2. 固定 3 次 IN 批量预取 + 按输入顺序完成字典/队员/报名/时间窗/时长校验。
+      const normalized = await this.validateAndNormalizeRecordsBatch(dto.records, activity, tx);
 
       // 3. 数组内部时间不重叠 + 与已有跨 Sheet 全局不重叠
       // 抽出至 TimeOverlapPolicy(refactor PR;算法 / 边界 / excludeSheetId 语义零变化)。
@@ -564,15 +596,7 @@ export class AttendancesService {
         normalized.map((record) => record.memberId),
         tx,
       );
-      for (const r of normalized) {
-        await this.timeOverlapPolicy.assertNoTimeOverlap(
-          r.memberId,
-          r.checkInAt,
-          r.checkOutAt,
-          undefined,
-          tx,
-        );
-      }
+      await this.timeOverlapPolicy.assertNoTimeOverlapForRecords(normalized, undefined, tx);
 
       // 4. D14 5.B 预填:仅当 record.contributionPoints === null 时按规则查表预填;
       //    传值不覆盖(沿 D-A8);无匹配规则保持 null。
@@ -607,16 +631,8 @@ export class AttendancesService {
         select: sheetSafeSelect,
       });
 
-      // 6. D11 推动:首张 Sheet 创建 → Activity.completed(沿 D-S10);
-      //    幂等:若已是 completed,update 不会改 statusCode(但走一次写减少负担,故先判定 published 才动)。
-      //    cancelled 在 step 1 已拒绝;publish 状态机 draft → published → completed 单向。
-      const activityPushedToCompleted = activity.statusCode === ACTIVITY_STATUS_PUBLISHED;
-      if (activityPushedToCompleted) {
-        await tx.activity.update({
-          where: { id: activityId },
-          data: { statusCode: ACTIVITY_STATUS_COMPLETED },
-        });
-      }
+      // D2-a:completed 仅由管理端 complete 动作推进；字段保留供审计契约兼容且恒 false。
+      const activityPushedToCompleted = false;
 
       // PR #6 audit:after 含 sheet + records 完整快照(records 创建后回查一次取完整字段)
       const createdRecords = await tx.attendanceRecord.findMany({
@@ -641,23 +657,45 @@ export class AttendancesService {
     });
   }
 
-  // 批次 4-B 新增:findActivityForSubmissionFull,返回 activityTypeCode + statusCode(用于 D14 + D11)。
-  // 与 findActivityForSubmission 复用 22001 / 20122 校验路径,只是 select 字段更多。
+  // 返回预填所需 activityTypeCode、参与状态与考勤时间窗。
   private async findActivityForSubmissionFull(
     activityId: string,
     tx: PrismaTx,
-  ): Promise<{ id: string; statusCode: string; activityTypeCode: string }> {
+  ): Promise<{
+    id: string;
+    statusCode: string;
+    activityTypeCode: string;
+    startAt: Date;
+    endAt: Date;
+  }> {
     const act = await tx.activity.findFirst({
       where: notDeletedWhere({ id: activityId }),
-      select: { id: true, statusCode: true, activityTypeCode: true },
+      select: {
+        id: true,
+        statusCode: true,
+        activityTypeCode: true,
+        startAt: true,
+        endAt: true,
+      },
     });
     if (!act) {
       throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     }
-    if (act.statusCode === ACTIVITY_STATUS_CANCELLED) {
-      throw new BizException(BizCode.ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN);
-    }
+    const decision = this.activityParticipationPolicy.canSubmitAttendance(act);
+    if (!decision.allowed) throw new BizException(decision.biz);
     return act;
+  }
+
+  private async findActivityWindowOrThrow(
+    activityId: string,
+    tx: PrismaTx,
+  ): Promise<{ id: string; startAt: Date; endAt: Date }> {
+    const activity = await tx.activity.findFirst({
+      where: notDeletedWhere({ id: activityId }),
+      select: { id: true, startAt: true, endAt: true },
+    });
+    if (!activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+    return activity;
   }
 
   // 批次 4-B D14 5.B contribution prefill 已抽至 `contribution-calculator.ts` 的
@@ -1011,27 +1049,9 @@ export class AttendancesService {
         return this.attendancePresenter.toSheetResponseDto(updated);
       }
 
-      // 1. 校验新 records
-      const normalized: ReturnType<AttendancesService['normalizeRecord']>[] = [];
-      for (const input of dto.records) {
-        await this.assertDictItemValid(
-          DICT_TYPE_ATTENDANCE_ROLE,
-          input.roleCode,
-          BizCode.ATTENDANCE_ROLE_CODE_INVALID,
-          tx,
-        );
-        await this.assertDictItemValid(
-          DICT_TYPE_ATTENDANCE_STATUS,
-          input.attendanceStatusCode,
-          BizCode.ATTENDANCE_STATUS_CODE_INVALID,
-          tx,
-        );
-        await this.assertMemberExists(input.memberId, tx);
-        if (input.registrationId !== undefined) {
-          await this.assertRegistrationMatchesActivity(input.registrationId, sheet.activityId, tx);
-        }
-        normalized.push(this.normalizeRecord(input));
-      }
+      // 1. 校验新 records；edit 同样按所属活动时间窗复核。
+      const activity = await this.findActivityWindowOrThrow(sheet.activityId, tx);
+      const normalized = await this.validateAndNormalizeRecordsBatch(dto.records, activity, tx);
 
       // 抽出至 TimeOverlapPolicy(refactor PR;edit 路径透传 excludeSheetId=id 语义不变)。
       this.timeOverlapPolicy.assertNoInternalOverlap(normalized);
@@ -1039,16 +1059,8 @@ export class AttendancesService {
         normalized.map((record) => record.memberId),
         tx,
       );
-      for (const r of normalized) {
-        // edit 路径:排除本 Sheet 旧 records(它们将被软删)
-        await this.timeOverlapPolicy.assertNoTimeOverlap(
-          r.memberId,
-          r.checkInAt,
-          r.checkOutAt,
-          id,
-          tx,
-        );
-      }
+      // edit 路径:排除本 Sheet 旧 records(它们将被软删)
+      await this.timeOverlapPolicy.assertNoTimeOverlapForRecords(normalized, id, tx);
 
       // 2. 生成 previousSnapshot(在旧 records 软删之前抓取)
       const currentRecords = await tx.attendanceRecord.findMany({
@@ -1453,7 +1465,7 @@ export class AttendancesService {
         try {
           await this.notificationDispatcher.dispatchTargeted({
             recipientMemberId: r.memberId,
-            notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_REMINDER,
+            notificationTypeCode: NOTIFICATION_TYPE_ATTENDANCE_RESULT,
             title: '考勤结果已确认',
             body: `您在「${activityTitle}」的考勤已终审通过,本次贡献值 ${r.contributionPoints ?? '0'}。`,
             channels: [NOTIFICATION_CHANNEL_IN_APP],

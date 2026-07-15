@@ -9,6 +9,7 @@ import type { NotificationDispatcher } from '../notifications/notification-dispa
 import type { OrganizationsService } from '../organizations/organizations.service';
 import type { RbacService } from '../permissions/rbac.service';
 import type { AuthzService } from '../authz/authz.service';
+import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
 import type { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
 import type { ActivityRegistrationTransitionDecision } from './activity-registration-state-machine';
 import { ActivityRegistrationsService } from './activity-registrations.service';
@@ -50,6 +51,9 @@ interface ActivityRow {
   statusCode: string;
   isPublicRegistration: boolean;
   capacity: number | null;
+  registrationDeadline: Date | null;
+  endAt: Date;
+  genderRequirementCode: string | null;
 }
 
 interface MemberRow {
@@ -109,6 +113,9 @@ function makeActivityRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
     statusCode: 'published',
     isPublicRegistration: true,
     capacity: null,
+    registrationDeadline: null,
+    endAt: new Date('2099-01-01T00:00:00.000Z'),
+    genderRequirementCode: null,
     ...overrides,
   };
 }
@@ -137,6 +144,7 @@ function makePrismaMock() {
       .mockResolvedValue({ title: '测试活动' }),
   };
   const member = { findFirst: jest.fn<Promise<MemberRow | null>, [unknown]>() };
+  const memberProfile = { findFirst: jest.fn().mockResolvedValue({ genderCode: 'male' }) };
   const user = { findFirst: jest.fn<Promise<UserRow | null>, [unknown]>() };
   // v0.40.0 参与域生命周期收口⑦:cancelAdmin / cancelMy 事务内查考勤记录守卫(直连 tx.attendanceRecord.count)。
   // 默认 0(无考勤 → 放行),既有 cancel characterization 用例断言零影响;有考勤守卫用例显式覆写返回 >0。
@@ -144,7 +152,17 @@ function makePrismaMock() {
     count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
   };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
-  const prisma = { activityRegistration, activity, member, user, attendanceRecord, $transaction };
+  const $queryRaw = jest.fn().mockResolvedValue([]);
+  const prisma = {
+    activityRegistration,
+    activity,
+    member,
+    memberProfile,
+    user,
+    attendanceRecord,
+    $transaction,
+    $queryRaw,
+  };
   // 双模:回调式把 prisma mock 自身当 tx 传入(service 在 tx 与 this.prisma 上调同名方法);
   // 数组式($transaction([findMany, count]))走 Promise.all。
   $transaction.mockImplementation((arg: unknown) =>
@@ -249,6 +267,7 @@ function makeService(
     makeInsuranceRequirementMock() as unknown as InsuranceRequirementService,
     dispatcher as unknown as NotificationDispatcher,
     organizations as unknown as OrganizationsService,
+    new ActivityParticipationPolicy(),
   );
 }
 
@@ -454,7 +473,7 @@ describe('ActivityRegistrationsService (characterization)', () => {
       return { service, prisma, dispatcher };
     }
 
-    it('approve 成功 → 派给报名本人(directed/in-app/activity-reminder),且在 update 之后(commit 外)', async () => {
+    it('approve 成功 → 派给报名本人(directed/in-app/registration-result),且在 update 之后(commit 外)', async () => {
       const { service, prisma, dispatcher } = setupApprove();
       const result = await service.approve(
         'act-1',
@@ -468,7 +487,7 @@ describe('ActivityRegistrationsService (characterization)', () => {
       const arg = dispatcher.dispatchTargeted.mock.calls[0][0];
       expect(arg).toMatchObject({
         recipientMemberId: 'mem-42',
-        notificationTypeCode: 'activity-reminder',
+        notificationTypeCode: 'registration-result',
         channels: ['in-app'],
         title: '报名已通过',
       });
@@ -504,7 +523,7 @@ describe('ActivityRegistrationsService (characterization)', () => {
       const arg = dispatcher.dispatchTargeted.mock.calls[0][0];
       expect(arg).toMatchObject({
         recipientMemberId: 'mem-7',
-        notificationTypeCode: 'activity-reminder',
+        notificationTypeCode: 'registration-result',
         channels: ['in-app'],
         title: '报名未通过',
       });

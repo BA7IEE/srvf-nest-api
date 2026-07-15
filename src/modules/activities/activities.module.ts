@@ -10,6 +10,7 @@ import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ActivityStateMachine } from './activity-state-machine';
+import { ActivityParticipationPolicy } from './activity-participation-policy';
 import { AppActivitiesService } from './app-activities.service';
 import { AppMyActivitiesService } from './app-my-activities.service';
 import { AppActivitiesController } from './controllers/app-activities.controller';
@@ -52,9 +53,10 @@ import { AppActivitiesController } from './controllers/app-activities.controller
     ActivitiesService,
     ActivityAuditRecorder,
     ActivityStateMachine,
+    ActivityParticipationPolicy,
     AppActivitiesService,
     AppMyActivitiesService,
   ],
-  exports: [ActivitiesService, AppMyActivitiesService],
+  exports: [ActivitiesService, AppMyActivitiesService, ActivityParticipationPolicy],
 })
 export class ActivitiesModule {}

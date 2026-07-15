@@ -152,6 +152,7 @@ describe('App GET /api/app/v1/activities/available (P2-4a)', () => {
   async function createActivity(
     state: 'draft' | 'published' | 'cancelled' | 'completed' | 'softDeleted',
     titleSuffix: string,
+    isPublicRegistration = true,
   ): Promise<{ id: string }> {
     const base = {
       title: `P2-4a ${state} ${titleSuffix}`,
@@ -167,6 +168,7 @@ describe('App GET /api/app/v1/activities/available (P2-4a)', () => {
       capacity: 30,
       // 固定远未来,与 wall-clock 解耦(镜像 #452 app-my-registrations-write 同款 fixture 修复)。
       registrationDeadline: new Date('2099-12-31T23:59:59.000Z'),
+      isPublicRegistration,
     };
     if (state === 'draft') {
       return prisma.activity.create({
@@ -278,6 +280,20 @@ describe('App GET /api/app/v1/activities/available (P2-4a)', () => {
       for (const it of data.items) {
         expect(it.statusCode).toBe('published');
       }
+    });
+
+    it('invite-only published 活动不出现在 available list', async () => {
+      const { authHeader } = await setupLinkedUser({
+        username: 'p24a_invite_only',
+        memberNo: 'P24A-INVITE',
+      });
+      const inviteOnly = await createActivity('published', 'invite-only', false);
+
+      const res = await get('/api/app/v1/activities/available?pageSize=100', authHeader);
+      expect(res.status).toBe(200);
+      expect(res.body.data.items.map((item: { id: string }) => item.id)).not.toContain(
+        inviteOnly.id,
+      );
     });
 
     // v0.40.0 参与域生命周期收口③:已结束(endAt < now)的 published 活动不出现在可报名池
@@ -484,6 +500,7 @@ describe('App GET /api/app/v1/activities/available (P2-4a)', () => {
         'genderRequirementCode',
         'registrationDeadline',
         'statusCode',
+        'phase',
         'isPublicRegistration',
         // 保险 T3(2026-06-13,评审稿 insurance-module-review.md E-19):admin ListItem DTO
         // 加性新增 requiresInsurance,本锁同步 +1 字段(goal 明令的 DTO 变更之镜像,

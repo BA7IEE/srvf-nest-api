@@ -20,6 +20,7 @@ import {
   ActivityOptionsResponseDto,
   ActivityResponseDto,
   CancelActivityDto,
+  PublishActivityDto,
   CreateActivityDto,
   ListActivitiesQueryDto,
   UpdateActivityDto,
@@ -98,6 +99,7 @@ export class ActivitiesController {
     BizCode.ACTIVITY_TYPE_CODE_INVALID,
     BizCode.ACTIVITY_GENDER_REQUIREMENT_CODE_INVALID,
     BizCode.ACTIVITY_START_END_INVALID,
+    BizCode.ACTIVITY_REGISTRATION_DEADLINE_INVALID,
   )
   create(
     @Body() dto: CreateActivityDto,
@@ -123,7 +125,7 @@ export class ActivitiesController {
   @Patch(':id')
   @ApiOperation({
     summary:
-      '部分更新活动(Q-A12 cancelled 拒改;禁 statusCode / publishedBy/At / cancelledBy/At/Reason) [rbac: activity.update.record]',
+      '部分更新活动(completed/cancelled 仅展示字段可改;事实字段锁定) [rbac: activity.update.record]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(
@@ -137,6 +139,8 @@ export class ActivitiesController {
     BizCode.ACTIVITY_TYPE_CODE_INVALID,
     BizCode.ACTIVITY_GENDER_REQUIREMENT_CODE_INVALID,
     BizCode.ACTIVITY_START_END_INVALID,
+    BizCode.ACTIVITY_REGISTRATION_DEADLINE_INVALID,
+    BizCode.ACTIVITY_CAPACITY_INVALID,
   )
   update(
     @Param() params: IdParamDto,
@@ -150,7 +154,7 @@ export class ActivitiesController {
   @Delete(':id')
   @ApiOperation({
     summary:
-      '软删活动(写 deletedAt;D3:删除 ≠ 取消;cancelled 仍允许软删) [rbac: activity.delete.record]',
+      '软删活动(存在 pending/pass 报名或未软删考勤单时拒绝，须先取消活动) [rbac: activity.delete.record]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(
@@ -158,6 +162,7 @@ export class ActivitiesController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_PARTICIPATION_EXISTS_DELETE_FORBIDDEN,
   )
   softDelete(
     @Param() params: IdParamDto,
@@ -170,7 +175,7 @@ export class ActivitiesController {
   @Patch(':id/publish')
   @ApiOperation({
     summary:
-      '发布活动(draft → published;写 publishedBy/At;非 draft → 20030) [rbac: activity.publish.record]',
+      '发布活动(draft → published;请求体须显式确认保险，且活动/报名截止时间有效) [rbac: activity.publish.record]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(
@@ -179,19 +184,21 @@ export class ActivitiesController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_NOT_FOUND,
     BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED,
   )
   publish(
     @Param() params: IdParamDto,
+    @Body() dto: PublishActivityDto,
     @CurrentUser() currentUser: CurrentUserPayload,
     @Req() req: Request,
   ): Promise<ActivityResponseDto> {
-    return this.service.publish(params.id, currentUser, this.buildAuditMeta(req));
+    return this.service.publish(params.id, dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Patch(':id/cancel')
   @ApiOperation({
     summary:
-      '取消活动(* → cancelled;写 cancelledBy/At/Reason;已 cancelled → 20030) [rbac: activity.cancel.record]',
+      '取消活动(draft|published → cancelled；pending 报名联动取消，pass 保留) [rbac: activity.cancel.record]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(
@@ -214,7 +221,7 @@ export class ActivitiesController {
   @Post(':id/complete')
   @ApiOperation({
     summary:
-      '完结活动(published → completed;非 published → 20030;考勤首提亦自动完结) [rbac: activity.complete.record]',
+      '手动完结活动(published → completed；唯一完结通路，非 published → 20030) [rbac: activity.complete.record]',
   })
   @ApiWrappedOkResponse(ActivityResponseDto)
   @ApiBizErrorResponse(

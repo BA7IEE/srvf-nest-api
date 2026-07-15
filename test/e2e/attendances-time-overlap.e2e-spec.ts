@@ -139,17 +139,15 @@ describe('AttendancesService time overlap (characterization)', () => {
       data: { typeId: statDict.id, code: ATTENDANCE_STATUS_PRESENT, label: 'present' },
     });
 
-    // 预创 2 个 Activity(published):
-    // - activityA / activityB 跨 Sheet case 共用;Activity 在首次 submit 后会从 published 推到
-    //   completed(沿 D11),但 completed Activity 不被 submit 拒绝(只有 cancelled 拒),
-    //   因此整套 spec 复用同一对 Activity 不会出问题。
+    // 预创 2 个 Activity(published)，时间窗覆盖本 spec 的 2026-01-02～07 重叠矩阵；
+    // activityA / activityB 跨 Sheet case 共用，D2-a 下 submit 不再改变 Activity 状态。
     const activityA = await prisma.activity.create({
       data: {
         title: 'TOVR Activity A',
         activityTypeCode: ACTIVITY_TYPE_DEMO,
         organizationId: rootOrg.id,
         startAt: new Date('2026-01-01T00:00:00.000Z'),
-        endAt: new Date('2026-01-01T23:59:59.000Z'),
+        endAt: new Date('2026-01-07T23:59:59.000Z'),
         location: 'tovr',
         statusCode: 'published',
         isPublicRegistration: true,
@@ -162,7 +160,7 @@ describe('AttendancesService time overlap (characterization)', () => {
         activityTypeCode: ACTIVITY_TYPE_DEMO,
         organizationId: rootOrg.id,
         startAt: new Date('2026-01-01T00:00:00.000Z'),
-        endAt: new Date('2026-01-01T23:59:59.000Z'),
+        endAt: new Date('2026-01-07T23:59:59.000Z'),
         location: 'tovr',
         statusCode: 'published',
         isPublicRegistration: true,
@@ -194,7 +192,7 @@ describe('AttendancesService time overlap (characterization)', () => {
   });
 
   // 每个 case 清:records → sheets → audit_logs;
-  // 保留:user / member / org / dict / activity(共享 seed,Activity 可能为 completed,不影响后续 submit)。
+  // 保留:user / member / org / dict / activity(共享 seed，submit 后 Activity 仍为 published)。
   async function isolateFixtures(): Promise<void> {
     await ctx.prisma.attendanceRecord.deleteMany({});
     await ctx.prisma.attendanceSheet.deleteMany({});

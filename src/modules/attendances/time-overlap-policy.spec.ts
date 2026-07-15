@@ -144,14 +144,18 @@ describe('TimeOverlapPolicy', () => {
   });
 
   describe('lockMembersForOverlapCheck(finding #7)', () => {
-    it('memberId 去重排序后逐个获取 transaction advisory lock', async () => {
-      const queryRaw = jest.fn().mockResolvedValue([{ locked: '' }]);
+    it('memberId 去重排序后用一次批量查询获取 transaction advisory lock', async () => {
+      const queryRaw = jest
+        .fn<Promise<Array<{ locked: string }>>, [Prisma.Sql]>()
+        .mockResolvedValue([{ locked: '' }]);
       const tx = { $queryRaw: queryRaw } as unknown as Prisma.TransactionClient;
 
       await policy.lockMembersForOverlapCheck(['m2', 'm1', 'm2'], tx);
 
-      expect(queryRaw).toHaveBeenCalledTimes(2);
-      expect(queryRaw.mock.calls.map((call: unknown[]) => call[1])).toEqual(['m1', 'm2']);
+      expect(queryRaw).toHaveBeenCalledTimes(1);
+      const sql = queryRaw.mock.calls[0][0];
+      expect(sql.strings).toBeInstanceOf(Array);
+      expect(sql.values).toEqual(['m1', 'm2']);
     });
   });
 });

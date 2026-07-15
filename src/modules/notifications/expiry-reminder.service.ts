@@ -6,6 +6,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_CHANNEL_WECHAT,
+  NOTIFICATION_TYPE_ACTIVITY_REMINDER,
   NOTIFICATION_TYPE_EXPIRY_REMINDER,
 } from './notification.constants';
 import { NotificationDispatcher } from './notification-dispatcher';
@@ -16,6 +17,8 @@ const DAY_MS = 86_400_000;
 const UTC8_OFFSET_MS = 8 * 3_600_000;
 
 export interface ExpiryReminderRunSummary {
+  activityReminderCandidates: number;
+  activityRemindersDispatched: number;
   certificateReminderCandidates: number;
   certificateRemindersDispatched: number;
   certificateExpiryCandidates: number;
@@ -55,7 +58,8 @@ export class ExpiryReminderService {
     const insuranceReminderEnd = addDateOnlyDays(today, 30);
     const requestId = `cron:expiry-reminder:${formatDateOnly(today)}`;
 
-    // 顺序锁：证书预提醒 → 证书到期翻态/审计 → 个人保险 → 队保单管理面广播。
+    // 顺序锁：活动开场提醒 → 证书预提醒 → 证书到期翻态/审计 → 个人保险 → 队保单管理面广播。
+    await this.remindUpcomingActivities(now, summary);
     await this.remindCertificates(today, certificateReminderEnd, now, summary);
     await this.expireCertificates(today, requestId, summary);
     await this.remindMemberInsurances(today, insuranceReminderEnd, now, summary);
@@ -63,11 +67,68 @@ export class ExpiryReminderService {
 
     this.logger.log(
       `expiry reminder job done certReminders=${summary.certificateRemindersDispatched} ` +
+        `activityReminders=${summary.activityRemindersDispatched} ` +
         `certificatesExpired=${summary.certificatesExpired} ` +
         `memberInsurances=${summary.memberInsuranceNotificationsDispatched} ` +
         `teamPolicies=${summary.teamPolicyNotificationsDispatched} failed=${summary.failed}`,
     );
     return summary;
+  }
+
+  private async remindUpcomingActivities(
+    now: Date,
+    summary: ExpiryReminderRunSummary,
+  ): Promise<void> {
+    const reminderEnd = new Date(now.getTime() + DAY_MS);
+    const rows = await this.prisma.activity.findMany({
+      where: {
+        deletedAt: null,
+        statusCode: 'published',
+        startAt: { gt: now, lte: reminderEnd },
+        startReminderSentAt: null,
+      },
+      select: { id: true, title: true, startAt: true, location: true },
+    });
+    summary.activityReminderCandidates = rows.length;
+
+    for (const row of rows) {
+      try {
+        const claimed = await this.prisma.activity.updateMany({
+          where: {
+            id: row.id,
+            deletedAt: null,
+            statusCode: 'published',
+            startAt: { gt: now, lte: reminderEnd },
+            startReminderSentAt: null,
+          },
+          data: { startReminderSentAt: now },
+        });
+        if (claimed.count !== 1) continue;
+
+        const registrations = await this.prisma.activityRegistration.findMany({
+          where: { activityId: row.id, statusCode: 'pass', deletedAt: null },
+          select: { memberId: true },
+        });
+        for (const memberId of new Set(registrations.map((item) => item.memberId))) {
+          try {
+            await this.dispatcher.dispatchTargeted({
+              recipientMemberId: memberId,
+              notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_REMINDER,
+              title: '活动即将开始',
+              body: `您报名的「${row.title}」将于 ${row.startAt.toISOString()} 开始，地点 ${row.location}。`,
+              channels: [NOTIFICATION_CHANNEL_IN_APP],
+            });
+            summary.activityRemindersDispatched += 1;
+          } catch (error) {
+            summary.failed += 1;
+            this.logItemFailure('activity-reminder-recipient', `${row.id}:${memberId}`, error);
+          }
+        }
+      } catch (error) {
+        summary.failed += 1;
+        this.logItemFailure('activity-reminder', row.id, error);
+      }
+    }
   }
 
   private async remindCertificates(
@@ -292,6 +353,8 @@ export class ExpiryReminderService {
 
 function emptySummary(): ExpiryReminderRunSummary {
   return {
+    activityReminderCandidates: 0,
+    activityRemindersDispatched: 0,
     certificateReminderCandidates: 0,
     certificateRemindersDispatched: 0,
     certificateExpiryCandidates: 0,

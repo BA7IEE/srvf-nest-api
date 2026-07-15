@@ -166,13 +166,18 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
     attendances = app.get(AttendancesService);
     await resetDb(app);
 
-    // notification_type 字典('activity-reminder' 复用;dispatcher 不校验类型,但一致性沿用)
+    // 活动域通知类型语义分离；activity-reminder 只留给开场提醒。
     const dictType = await prisma.dictType.create({
       data: { code: 'notification_type', label: '通知类型', status: 'ACTIVE' },
       select: { id: true },
     });
-    await prisma.dictItem.create({
-      data: { typeId: dictType.id, code: 'activity-reminder', label: '活动提醒', status: 'ACTIVE' },
+    await prisma.dictItem.createMany({
+      data: [
+        { typeId: dictType.id, code: 'activity-reminder', label: '活动提醒', status: 'ACTIVE' },
+        { typeId: dictType.id, code: 'activity-changed', label: '活动变更', status: 'ACTIVE' },
+        { typeId: dictType.id, code: 'registration-result', label: '报名结果', status: 'ACTIVE' },
+        { typeId: dictType.id, code: 'attendance-result', label: '考勤结果', status: 'ACTIVE' },
+      ],
     });
 
     // Activity.organizationId FK(Restrict)
@@ -250,9 +255,124 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
     await prisma.activity.deleteMany({});
   });
 
+  describe('活动发布/改期/自助退出通知', () => {
+    it('公开活动 publish → 一条 member broadcast/activity-published；非公开不广播', async () => {
+      const makeDraft = (isPublicRegistration: boolean) =>
+        prisma.activity.create({
+          data: {
+            title: isPublicRegistration ? '公开新活动' : '定向邀请活动',
+            activityTypeCode: 's4-type',
+            organizationId: orgId,
+            startAt: new Date('2099-08-01T08:00:00.000Z'),
+            endAt: new Date('2099-08-01T12:00:00.000Z'),
+            location: '梧桐山',
+            statusCode: 'draft',
+            isPublicRegistration,
+          },
+        });
+      const publicActivity = await makeDraft(true);
+      const privateActivity = await makeDraft(false);
+
+      await activities.publish(
+        publicActivity.id,
+        { requiresInsuranceConfirmed: true },
+        adminPayload,
+        AUDIT_META,
+      );
+      await activities.publish(
+        privateActivity.id,
+        { requiresInsuranceConfirmed: true },
+        adminPayload,
+        AUDIT_META,
+      );
+
+      const broadcasts = await prisma.notification.findMany({
+        where: { audienceType: 'broadcast', sourceType: 'system' },
+      });
+      expect(broadcasts).toHaveLength(1);
+      expect(broadcasts[0]).toMatchObject({
+        notificationTypeCode: 'activity-published',
+        title: '新活动已发布',
+        recipientMemberId: null,
+      });
+      expect(await feedIds(alice.auth)).toContain(broadcasts[0].id);
+      expect(await feedIds(bob.auth)).toContain(broadcasts[0].id);
+    });
+
+    it('start/end/location 变更 → pending+pass 收 activity-changed，body 含新旧值与保险提示', async () => {
+      const activityId = await seedActivity('改期活动');
+      await prisma.activity.update({
+        where: { id: activityId },
+        data: { requiresInsurance: true },
+      });
+      await seedRegistration(activityId, alice.memberId, 'pending');
+      await seedRegistration(activityId, bob.memberId, 'pass');
+
+      await activities.update(
+        activityId,
+        {
+          startAt: '2026-08-02T08:00:00.000Z',
+          endAt: '2026-08-02T12:00:00.000Z',
+          location: '莲花山',
+        },
+        adminPayload,
+        AUDIT_META,
+      );
+
+      const notifications = await prisma.notification.findMany({
+        where: { notificationTypeCode: 'activity-changed' },
+      });
+      expect(notifications).toHaveLength(2);
+      expect(new Set(notifications.map((item) => item.recipientMemberId))).toEqual(
+        new Set([alice.memberId, bob.memberId]),
+      );
+      for (const notification of notifications) {
+        expect(notification.body).toContain('2026-08-01T08:00:00.000Z');
+        expect(notification.body).toContain('2026-08-02T08:00:00.000Z');
+        expect(notification.body).toContain('S4 演示 → 莲花山');
+        expect(notification.body).toContain('保险覆盖按原日期核验');
+      }
+    });
+
+    it('cancelMy → publishedBy 对应 member 收 activity-changed；派发失败不回滚取消', async () => {
+      const activityId = await seedActivity('自助退出活动');
+      await prisma.activity.update({
+        where: { id: activityId },
+        data: { publishedBy: alice.userId },
+      });
+      const registrationId = await seedRegistration(activityId, bob.memberId, 'pending');
+      const bobPayload = {
+        id: bob.userId,
+        username: 's4_bob',
+        role: Role.USER,
+        status: UserStatus.ACTIVE,
+        memberId: bob.memberId,
+      };
+
+      await registrations.cancelMy(
+        registrationId,
+        { cancelReason: '临时有事' },
+        bobPayload,
+        AUDIT_META,
+      );
+
+      const notification = await prisma.notification.findFirstOrThrow({
+        where: { recipientMemberId: alice.memberId },
+      });
+      expect(notification).toMatchObject({
+        notificationTypeCode: 'activity-changed',
+        title: '队员取消活动报名',
+      });
+      expect(notification.body).toContain('临时有事');
+      expect(
+        await prisma.activityRegistration.findUniqueOrThrow({ where: { id: registrationId } }),
+      ).toMatchObject({ statusCode: 'cancelled' });
+    });
+  });
+
   // ============ ① 报名审批结果(approve / reject)→ 报名本人 ============
   describe('报名审批结果定向通知(approve / reject → 报名本人;仅站内)', () => {
-    it('approve → alice 收一条 directed/system/activity-reminder/仅站内(含活动名);feed alice 可见、bob 404 防枚举', async () => {
+    it('approve → alice 收一条 directed/system/registration-result/仅站内(含活动名);feed alice 可见、bob 404 防枚举', async () => {
       const activityId = await seedActivity('周末巡山');
       const regId = await seedRegistration(activityId, alice.memberId, 'pending');
 
@@ -270,7 +390,7 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         audienceType: 'directed',
         sourceType: 'system',
         statusCode: 'published',
-        notificationTypeCode: 'activity-reminder',
+        notificationTypeCode: 'registration-result',
         authorUserId: null,
         recipientMemberId: alice.memberId,
       });
@@ -342,7 +462,7 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         expect(n).toMatchObject({
           audienceType: 'directed',
           sourceType: 'system',
-          notificationTypeCode: 'activity-reminder',
+          notificationTypeCode: 'activity-changed',
           title: '活动已取消',
         });
         expect(n.channels).toEqual(['in-app']);
@@ -405,7 +525,7 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         expect(n).toMatchObject({
           audienceType: 'directed',
           sourceType: 'system',
-          notificationTypeCode: 'activity-reminder',
+          notificationTypeCode: 'attendance-result',
           title: '考勤结果已确认',
         });
         expect(n.channels).toEqual(['in-app']);

@@ -7,6 +7,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AppActivityDetailDto } from './dto/app/app-activity-detail.dto';
 import { AppAvailableActivityListItemDto } from './dto/app/app-available-activity-list-item.dto';
+import { deriveActivityPhase } from './activity-phase';
 
 // Phase 2 P2-4a/P2-4b App /api/app/v1/activities/* service。
 // 沿 docs/app-api-p2-4-activities-review.md §8.2 决议 D-P2-4-4 = 方案 B:
@@ -61,6 +62,8 @@ const appActivityDetailSelect = {
   capacity: true,
   registrationDeadline: true,
   registrationNotes: true,
+  genderRequirementCode: true,
+  requiresInsurance: true,
   coverImageUrl: true,
   createdAt: true,
 } as const satisfies Prisma.ActivitySelect;
@@ -82,7 +85,11 @@ export class AppActivitiesService {
     // 参与域生命周期收口③(v0.40.0):可报名池过滤已结束活动 —— 追加 endAt >= now,已结束
     // (endAt < now)的 published 活动退出 App 可报名列表。detail(findVisibleByIdForMember)
     // 口径**刻意不动**:published 即可见,已报名者回看已结束活动无碍。
-    const where = notDeletedWhere({ statusCode: 'published', endAt: { gte: new Date() } });
+    const where = notDeletedWhere({
+      statusCode: 'published',
+      isPublicRegistration: true,
+      endAt: { gte: new Date() },
+    });
 
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.activity.findMany({
@@ -116,16 +123,21 @@ export class AppActivitiesService {
     // _memberId 是扩展槽(沿 listAvailableForMember 范式;v0.1 未参与 where 过滤,
     // 保留调用链显式语义);void 表达式标记刻意未用,避免触发 no-unused-vars。
     void _memberId;
-    const row = await this.prisma.activity.findFirst({
-      where: notDeletedWhere({ id, statusCode: 'published' }),
-      select: appActivityDetailSelect,
-    });
+    const [row, passCount] = await this.prisma.$transaction([
+      this.prisma.activity.findFirst({
+        where: notDeletedWhere({ id, statusCode: 'published' }),
+        select: appActivityDetailSelect,
+      }),
+      this.prisma.activityRegistration.count({
+        where: notDeletedWhere({ activityId: id, statusCode: 'pass' }),
+      }),
+    ]);
 
     if (row === null) {
       throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     }
 
-    return this.toDetailDto(row);
+    return this.toDetailDto(row, passCount);
   }
 
   // 私有 mapper(沿评审稿 §8.3.3;第一版不抽独立 Presenter class)。
@@ -145,19 +157,23 @@ export class AppActivitiesService {
     };
   }
 
-  private toDetailDto(row: AppActivityDetailRow): AppActivityDetailDto {
+  private toDetailDto(row: AppActivityDetailRow, passCount: number): AppActivityDetailDto {
     return {
       id: row.id,
       title: row.title,
       description: row.description,
       activityTypeCode: row.activityTypeCode,
       statusCode: row.statusCode,
+      phase: deriveActivityPhase(row.startAt, row.endAt),
       startAt: row.startAt,
       endAt: row.endAt,
       location: row.location,
       capacity: row.capacity,
       registrationDeadline: row.registrationDeadline,
       registrationNotes: row.registrationNotes,
+      genderRequirementCode: row.genderRequirementCode,
+      requiresInsurance: row.requiresInsurance,
+      passCount,
       coverImageUrl: row.coverImageUrl,
       createdAt: row.createdAt,
     };

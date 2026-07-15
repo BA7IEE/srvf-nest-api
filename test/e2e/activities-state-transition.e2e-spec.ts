@@ -26,8 +26,8 @@ import { createTestApp } from '../setup/test-app';
 //       **绕过 HTTP / JwtAuthGuard / RolesGuard**,纯锁 service 层行为。
 //   - 直接 Prisma seed 各起始状态(draft / published / cancelled / completed),
 //     避免为造状态绕完整业务流程(create + publish + cancel 多步);
-//     `completed` 状态在生产路径上由 `attendances.service.submit` 推进(沿
-//     attendances/attendance-audit-recorder.ts `activityPushedToCompleted`),
+//     `completed` 状态在生产路径上仅由 activities 模块 `complete` action 推进；
+//     attendances audit 中的 `activityPushedToCompleted` 仅作兼容字段且恒为 false。
 //     本 spec 仅锁 `activities.service.ts` 自己持有的 3 条迁移 + Q-A12 守卫 + softDelete D3。
 //   - audit failure rollback case 用 jest.spyOn(auditLogs, 'log').mockRejectedValueOnce 触发
 //     auditLogs.log 抛错,断言 service throw + DB 无落库 + audit 不存在
@@ -36,9 +36,9 @@ import { createTestApp } from '../setup/test-app';
 // 覆盖矩阵:
 //   A. publish:draft → published 成功(audit `operation=publish` / `priorStatusCode=draft` /
 //                                   `nextStatusCode=published`)+ 3 个 wrong source state
-//   B. cancel:draft / published / completed → cancelled 成功 + cancelled wrong-state(Q-A12 防重复)
-//   C. update:draft / published / completed 可更新 + cancelled wrong-state(Q-A12 拒改)
-//   D. softDelete:draft / published / cancelled 均允许(D3:删除 ≠ 取消;statusCode 不被改写)
+//   B. cancel:仅 draft / published → cancelled 成功；completed / cancelled 拒绝
+//   C. update:draft / published 常规更新；completed / cancelled 仅允许展示字段白名单
+//   D. softDelete:draft / published / cancelled 可删(D3:删除 ≠ 取消;statusCode 不被改写)
 //   E. create:invalid dict / root organization / start≥end 三类失败 → 无 activity 行 / 无 audit
 //   F. Audit failure rollback(create 路径)
 
@@ -151,6 +151,9 @@ describe('ActivitiesService state transitions (characterization)', () => {
 
   // 每个 case 之间清:Activity + AuditLog;保留 User / Dict / Organization。
   async function isolateFixtures(): Promise<void> {
+    await ctx.prisma.attendanceRecord.deleteMany({});
+    await ctx.prisma.attendanceSheet.deleteMany({});
+    await ctx.prisma.activityRegistration.deleteMany({});
     await ctx.prisma.activity.deleteMany({});
     await ctx.prisma.auditLog.deleteMany({});
   }
@@ -168,8 +171,8 @@ describe('ActivitiesService state transitions (characterization)', () => {
         title: `Act State ${opts.statusCode} ${suffix}`,
         activityTypeCode: ctx.activityTypeCode,
         organizationId: ctx.childOrgId,
-        startAt: new Date('2026-07-01T08:00:00.000Z'),
-        endAt: new Date('2026-07-01T12:00:00.000Z'),
+        startAt: new Date('2099-07-01T08:00:00.000Z'),
+        endAt: new Date('2099-07-01T12:00:00.000Z'),
         location: '梧桐山',
         statusCode: opts.statusCode,
         // publishedBy/At + cancelledBy/At/Reason 在 seed 阶段不写;
@@ -187,8 +190,8 @@ describe('ActivitiesService state transitions (characterization)', () => {
       title: '审计形状测试活动',
       activityTypeCode: ctx.activityTypeCode,
       organizationId: ctx.childOrgId,
-      startAt: '2026-07-01T08:00:00.000Z',
-      endAt: '2026-07-01T12:00:00.000Z',
+      startAt: '2099-07-01T08:00:00.000Z',
+      endAt: '2099-07-01T12:00:00.000Z',
       location: '梧桐山',
       ...override,
     };
@@ -201,7 +204,12 @@ describe('ActivitiesService state transitions (characterization)', () => {
     it('A1. 成功:返 published + DB statusCode/publishedBy/publishedAt 落库 + audit activity.publish (operation=publish, priorStatusCode=draft, nextStatusCode=published)', async () => {
       const seed = await seedActivity({ statusCode: 'draft' });
 
-      const result = await ctx.service.publish(seed.id, ctx.adminPayload, AUDIT_META);
+      const result = await ctx.service.publish(
+        seed.id,
+        { requiresInsuranceConfirmed: true },
+        ctx.adminPayload,
+        AUDIT_META,
+      );
 
       expect(result.statusCode).toBe('published');
       expect(result.publishedBy).toBe(ctx.adminUserId);
@@ -253,7 +261,12 @@ describe('ActivitiesService state transitions (characterization)', () => {
         const seed = await seedActivity({ statusCode: fromStatus });
 
         await expect(
-          ctx.service.publish(seed.id, ctx.adminPayload, AUDIT_META),
+          ctx.service.publish(
+            seed.id,
+            { requiresInsuranceConfirmed: true },
+            ctx.adminPayload,
+            AUDIT_META,
+          ),
         ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_STATUS_INVALID });
 
         const db = await ctx.prisma.activity.findUniqueOrThrow({
@@ -277,8 +290,18 @@ describe('ActivitiesService state transitions (characterization)', () => {
       const seed = await seedActivity({ statusCode: 'draft', titleSuffix: 'publish-race' });
 
       const results = await Promise.allSettled([
-        ctx.service.publish(seed.id, ctx.adminPayload, AUDIT_META),
-        ctx.service.publish(seed.id, ctx.adminPayload, AUDIT_META),
+        ctx.service.publish(
+          seed.id,
+          { requiresInsuranceConfirmed: true },
+          ctx.adminPayload,
+          AUDIT_META,
+        ),
+        ctx.service.publish(
+          seed.id,
+          { requiresInsuranceConfirmed: true },
+          ctx.adminPayload,
+          AUDIT_META,
+        ),
       ]);
 
       expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
@@ -296,11 +319,11 @@ describe('ActivitiesService state transitions (characterization)', () => {
     });
   });
 
-  // ============ B. cancel(非 cancelled → cancelled;Q-A12 防重复) ============
-  describe('B. cancel (non-cancelled → cancelled)', () => {
+  // ============ B. cancel(仅 draft|published → cancelled) ============
+  describe('B. cancel (only draft|published → cancelled)', () => {
     beforeEach(isolateFixtures);
 
-    it.each<ActivityStatus>(['draft', 'published', 'completed'])(
+    it.each<ActivityStatus>(['draft', 'published'])(
       'B1. %s → cancelled 成功 + cancelledBy/At/Reason 落库 + audit (operation=cancel)',
       async (fromStatus) => {
         const seed = await seedActivity({ statusCode: fromStatus });
@@ -344,32 +367,72 @@ describe('ActivitiesService state transitions (characterization)', () => {
       },
     );
 
-    it('B2. cancelled → cancel 拒绝(Q-A12 防重复)→ ACTIVITY_STATUS_INVALID,DB 不变,无 audit', async () => {
-      const seed = await seedActivity({ statusCode: 'cancelled' });
+    it.each<ActivityStatus>(['completed', 'cancelled'])(
+      'B2. %s → cancel 拒绝 → ACTIVITY_STATUS_INVALID,DB 不变,无 audit',
+      async (fromStatus) => {
+        const seed = await seedActivity({ statusCode: fromStatus });
 
-      await expect(
-        ctx.service.cancel(seed.id, {}, ctx.adminPayload, AUDIT_META),
-      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_STATUS_INVALID });
+        await expect(
+          ctx.service.cancel(seed.id, {}, ctx.adminPayload, AUDIT_META),
+        ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_STATUS_INVALID });
 
-      const db = await ctx.prisma.activity.findUniqueOrThrow({
-        where: { id: seed.id },
-        select: { statusCode: true, cancelledBy: true, cancelReason: true },
+        const db = await ctx.prisma.activity.findUniqueOrThrow({
+          where: { id: seed.id },
+          select: { statusCode: true, cancelledBy: true, cancelReason: true },
+        });
+        expect(db.statusCode).toBe(fromStatus);
+        // seed 阶段未写 cancelledBy / cancelReason;cancel 拒后也不应被写
+        expect(db.cancelledBy).toBeNull();
+        expect(db.cancelReason).toBeNull();
+
+        const audits = await ctx.prisma.auditLog.findMany({ where: { resourceId: seed.id } });
+        expect(audits).toHaveLength(0);
+      },
+    );
+
+    it('cancel 批量取消 pending、保留 pass，并在 audit 记录汇总数', async () => {
+      const seed = await seedActivity({ statusCode: 'published' });
+      const members = await Promise.all(
+        ['pending', 'pass'].map((statusCode) =>
+          ctx.prisma.member.create({
+            data: {
+              memberNo: `act-cancel-${statusCode}-${Math.random().toString(36).slice(2, 8)}`,
+              displayName: `Cancel ${statusCode}`,
+            },
+          }),
+        ),
+      );
+      await ctx.prisma.activityRegistration.createMany({
+        data: [
+          { activityId: seed.id, memberId: members[0].id, statusCode: 'pending' },
+          { activityId: seed.id, memberId: members[1].id, statusCode: 'pass' },
+        ],
       });
-      expect(db.statusCode).toBe('cancelled');
-      // seed 阶段未写 cancelledBy / cancelReason;cancel 拒后也不应被写
-      expect(db.cancelledBy).toBeNull();
-      expect(db.cancelReason).toBeNull();
 
-      const audits = await ctx.prisma.auditLog.findMany({ where: { resourceId: seed.id } });
-      expect(audits).toHaveLength(0);
+      await ctx.service.cancel(seed.id, { cancelReason: '天气原因' }, ctx.adminPayload, AUDIT_META);
+
+      const rows = await ctx.prisma.activityRegistration.findMany({
+        where: { activityId: seed.id },
+        orderBy: { memberId: 'asc' },
+      });
+      const pending = rows.find((row) => row.memberId === members[0].id)!;
+      const passed = rows.find((row) => row.memberId === members[1].id)!;
+      expect(pending).toMatchObject({ statusCode: 'cancelled', cancelReason: '活动已取消' });
+      expect(passed.statusCode).toBe('pass');
+      const audit = await ctx.prisma.auditLog.findFirstOrThrow({
+        where: { resourceId: seed.id },
+      });
+      expect((audit.context as { extra?: Record<string, unknown> }).extra).toMatchObject({
+        pendingRegistrationsCancelled: 1,
+      });
     });
   });
 
-  // ============ C. update(Q-A12:cancelled 拒改) ============
-  describe('C. update (Q-A12 cancelled 拒改)', () => {
+  // ============ C. update(终态仅展示字段可改) ============
+  describe('C. update (terminal display-only whitelist)', () => {
     beforeEach(isolateFixtures);
 
-    it.each<ActivityStatus>(['draft', 'published', 'completed'])(
+    it.each<ActivityStatus>(['draft', 'published'])(
       'C1. %s 可 update 成功 + audit (operation=update, statusCode 不变)',
       async (fromStatus) => {
         const seed = await seedActivity({ statusCode: fromStatus });
@@ -400,33 +463,51 @@ describe('ActivitiesService state transitions (characterization)', () => {
       },
     );
 
-    it('C2. cancelled → update 拒绝(Q-A12 锁)→ ACTIVITY_STATUS_INVALID,DB 字段不变,无 audit', async () => {
-      const seed = await seedActivity({ statusCode: 'cancelled', titleSuffix: 'q-a12-target' });
-      const original = await ctx.prisma.activity.findUniqueOrThrow({
-        where: { id: seed.id },
-        select: { title: true, location: true },
-      });
-
-      await expect(
-        ctx.service.update(
+    it.each<ActivityStatus>(['completed', 'cancelled'])(
+      'C2. %s → description 展示字段允许修改',
+      async (fromStatus) => {
+        const seed = await seedActivity({ statusCode: fromStatus });
+        const result = await ctx.service.update(
           seed.id,
-          { title: '试图修改', location: '试图修改地点' },
+          { description: '终态展示说明更新' },
           ctx.adminPayload,
           AUDIT_META,
-        ),
-      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_STATUS_INVALID });
+        );
+        expect(result.description).toBe('终态展示说明更新');
+        expect(result.statusCode).toBe(fromStatus);
+      },
+    );
 
-      const db = await ctx.prisma.activity.findUniqueOrThrow({
-        where: { id: seed.id },
-        select: { title: true, location: true, statusCode: true },
-      });
-      expect(db.title).toBe(original.title);
-      expect(db.location).toBe(original.location);
-      expect(db.statusCode).toBe('cancelled');
+    it.each<ActivityStatus>(['completed', 'cancelled'])(
+      'C3. %s → factual 字段拒绝,DB 不变,无 audit',
+      async (fromStatus) => {
+        const seed = await seedActivity({ statusCode: fromStatus, titleSuffix: 'terminal-target' });
+        const original = await ctx.prisma.activity.findUniqueOrThrow({
+          where: { id: seed.id },
+          select: { title: true, location: true },
+        });
 
-      const audits = await ctx.prisma.auditLog.findMany({ where: { resourceId: seed.id } });
-      expect(audits).toHaveLength(0);
-    });
+        await expect(
+          ctx.service.update(
+            seed.id,
+            { title: '试图修改', location: '试图修改地点' },
+            ctx.adminPayload,
+            AUDIT_META,
+          ),
+        ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_STATUS_INVALID });
+
+        const db = await ctx.prisma.activity.findUniqueOrThrow({
+          where: { id: seed.id },
+          select: { title: true, location: true, statusCode: true },
+        });
+        expect(db.title).toBe(original.title);
+        expect(db.location).toBe(original.location);
+        expect(db.statusCode).toBe(fromStatus);
+
+        const audits = await ctx.prisma.auditLog.findMany({ where: { resourceId: seed.id } });
+        expect(audits).toHaveLength(0);
+      },
+    );
   });
 
   // ============ D. softDelete(D3:删除 ≠ 取消;任意状态可软删) ============
@@ -469,6 +550,62 @@ describe('ActivitiesService state transitions (characterization)', () => {
         expect(c.extra?.priorStatusCode).toBe(fromStatus);
       },
     );
+
+    it.each(['pending', 'pass'])('%s 报名存在 → softDelete 拒 20127', async (statusCode) => {
+      const seed = await seedActivity({ statusCode: 'published' });
+      const member = await ctx.prisma.member.create({
+        data: {
+          memberNo: `act-del-${statusCode}-${Math.random().toString(36).slice(2, 8)}`,
+          displayName: 'Delete Guard Member',
+        },
+      });
+      await ctx.prisma.activityRegistration.create({
+        data: { activityId: seed.id, memberId: member.id, statusCode },
+      });
+
+      await expect(
+        ctx.service.softDelete(seed.id, ctx.adminPayload, AUDIT_META),
+      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_PARTICIPATION_EXISTS_DELETE_FORBIDDEN });
+    });
+
+    it('reject/cancelled 报名不挡删，但任意未软删考勤单挡删', async () => {
+      const seed = await seedActivity({ statusCode: 'published' });
+      const members = await Promise.all(
+        ['reject', 'cancelled'].map((statusCode) =>
+          ctx.prisma.member.create({
+            data: {
+              memberNo: `act-del-${statusCode}-${Math.random().toString(36).slice(2, 8)}`,
+              displayName: `Delete Guard ${statusCode}`,
+            },
+          }),
+        ),
+      );
+      await ctx.prisma.activityRegistration.createMany({
+        data: members.map((member, index) => ({
+          activityId: seed.id,
+          memberId: member.id,
+          statusCode: index === 0 ? 'reject' : 'cancelled',
+        })),
+      });
+      const sheet = await ctx.prisma.attendanceSheet.create({
+        data: {
+          activityId: seed.id,
+          submitterUserId: ctx.adminUserId,
+          statusCode: 'pending',
+        },
+      });
+      await expect(
+        ctx.service.softDelete(seed.id, ctx.adminPayload, AUDIT_META),
+      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_PARTICIPATION_EXISTS_DELETE_FORBIDDEN });
+
+      await ctx.prisma.attendanceSheet.update({
+        where: { id: sheet.id },
+        data: { deletedAt: new Date() },
+      });
+      await expect(
+        ctx.service.softDelete(seed.id, ctx.adminPayload, AUDIT_META),
+      ).resolves.toMatchObject({ id: seed.id });
+    });
   });
 
   // ============ E. create 失败:无 DB / 无 audit ============

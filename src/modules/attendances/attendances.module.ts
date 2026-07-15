@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { AuthzModule } from '../authz/authz.module';
+import { ActivitiesModule } from '../activities/activities.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
@@ -43,6 +44,7 @@ import { AppMyAttendanceRecordsController } from './controllers/app-my-attendanc
     AuditLogsModule,
     PermissionsModule,
     AuthzModule,
+    ActivitiesModule,
     UsersModule,
     NotificationsModule,
     // F2/B2(admin-api-fe-integration-roadmap.md §4 B2;D7 拍板):供 listAllSheetsForAdmin 注入

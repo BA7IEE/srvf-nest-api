@@ -248,8 +248,8 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
           title: `PR12 活动 @${organizationId}`,
           activityTypeCode: 'pr12-demo',
           organizationId,
-          startAt: new Date('2026-06-01T01:00:00.000Z'),
-          endAt: new Date('2026-06-01T05:00:00.000Z'),
+          startAt: new Date('2099-06-01T01:00:00.000Z'),
+          endAt: new Date('2099-06-01T05:00:00.000Z'),
           location: '训练场',
           statusCode,
           isPublicRegistration: true,
@@ -350,8 +350,8 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
             {
               memberId: attTargetMemberId,
               roleCode: 'member',
-              checkInAt: new Date('2026-06-02T01:00:00.000Z'),
-              checkOutAt: new Date('2026-06-02T05:00:00.000Z'),
+              checkInAt: new Date('2099-06-02T01:00:00.000Z'),
+              checkOutAt: new Date('2099-06-02T05:00:00.000Z'),
               serviceHours: 4,
               attendanceStatusCode: 'present',
               contributionPoints: 2,
@@ -371,8 +371,8 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
               {
                 memberId: groupTargetMemberId,
                 roleCode: 'member',
-                checkInAt: new Date('2026-06-01T01:00:00.000Z'),
-                checkOutAt: new Date('2026-06-01T05:00:00.000Z'),
+                checkInAt: new Date('2099-06-01T01:00:00.000Z'),
+                checkOutAt: new Date('2099-06-01T05:00:00.000Z'),
                 serviceHours: 4,
                 attendanceStatusCode: 'present',
                 contributionPoints: 1,
@@ -403,7 +403,7 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
       const pub = await request(httpServer(app))
         .patch(`/api/admin/v1/activities/${smrtActivityId}/publish`)
         .set('Authorization', teamLeaderAuth)
-        .send({});
+        .send({ requiresInsuranceConfirmed: true });
       expect(pub.status).toBe(200);
       expect(pub.body.data.statusCode).toBe('published');
 
@@ -427,7 +427,7 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
         await request(httpServer(app))
           .patch(`/api/admin/v1/activities/${swrtActivityId}/publish`)
           .set('Authorization', teamLeaderAuth)
-          .send({}),
+          .send({ requiresInsuranceConfirmed: true }),
         BizCode.RBAC_FORBIDDEN,
       );
       expectBizError(
@@ -482,8 +482,8 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
             {
               memberId: attTargetMemberId,
               roleCode: 'member',
-              checkInAt: '2026-06-01T01:00:00.000Z',
-              checkOutAt: '2026-06-01T05:00:00.000Z',
+              checkInAt: '2099-06-01T01:00:00.000Z',
+              checkOutAt: '2099-06-01T05:00:00.000Z',
               attendanceStatusCode: 'present',
               contributionPoints: 1,
             },
@@ -508,8 +508,8 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
               {
                 memberId: attTargetMemberId,
                 roleCode: 'member',
-                checkInAt: '2026-06-01T01:00:00.000Z',
-                checkOutAt: '2026-06-01T05:00:00.000Z',
+                checkInAt: '2099-06-01T01:00:00.000Z',
+                checkOutAt: '2099-06-01T05:00:00.000Z',
                 attendanceStatusCode: 'present',
                 contributionPoints: 1,
               },

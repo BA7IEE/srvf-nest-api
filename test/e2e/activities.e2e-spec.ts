@@ -125,8 +125,8 @@ describe('activities 模块', () => {
     title: '梧桐山轮值演练',
     activityTypeCode: activeActivityTypeCode,
     organizationId: childOrgId,
-    startAt: '2026-06-01T08:00:00.000Z',
-    endAt: '2026-06-01T12:00:00.000Z',
+    startAt: '2099-06-01T08:00:00.000Z',
+    endAt: '2099-06-01T12:00:00.000Z',
     location: '梧桐山',
     ...override,
   });
@@ -165,7 +165,8 @@ describe('activities 模块', () => {
     it('USER PATCH /publish → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
         .patch('/api/admin/v1/activities/cl000000000000000000xxxx/publish')
-        .set('Authorization', userAuth);
+        .set('Authorization', userAuth)
+        .send({ requiresInsuranceConfirmed: true });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
@@ -372,6 +373,14 @@ describe('activities 模块', () => {
       expect(res.status).toBe(400);
     });
 
+    it('registrationDeadline > endAt → ACTIVITY_REGISTRATION_DEADLINE_INVALID', async () => {
+      const res = await request(httpServer(app))
+        .post('/api/admin/v1/activities')
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ registrationDeadline: '2099-06-01T12:00:00.001Z' }));
+      expectBizError(res, BizCode.ACTIVITY_REGISTRATION_DEADLINE_INVALID);
+    });
+
     it('locationLongitude 精度 > 7 位 → 400', async () => {
       const res = await request(httpServer(app))
         .post('/api/admin/v1/activities')
@@ -428,7 +437,8 @@ describe('activities 模块', () => {
       publishedId = pubCreate.body.data.id;
       await request(httpServer(app))
         .patch(`/api/admin/v1/activities/${publishedId}/publish`)
-        .set('Authorization', adminAuth);
+        .set('Authorization', adminAuth)
+        .send({ requiresInsuranceConfirmed: true });
 
       const cancelCreate = await request(httpServer(app))
         .post('/api/admin/v1/activities')
@@ -673,7 +683,8 @@ describe('activities 模块', () => {
       publishedId = p.body.data.id;
       await request(httpServer(app))
         .patch(`/api/admin/v1/activities/${publishedId}/publish`)
-        .set('Authorization', adminAuth);
+        .set('Authorization', adminAuth)
+        .send({ requiresInsuranceConfirmed: true });
     });
 
     it('ADMIN 详情:draft 可见', async () => {
@@ -734,8 +745,42 @@ describe('activities 模块', () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/activities/${id}`)
         .set('Authorization', adminAuth)
-        .send({ startAt: '2026-06-01T15:00:00.000Z' });
+        .send({ startAt: '2099-06-01T15:00:00.000Z' });
       expectBizError(res, BizCode.ACTIVITY_START_END_INVALID);
+    });
+
+    it('更新 registrationDeadline 超过合并后的 endAt → 20016', async () => {
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/activities/${id}`)
+        .set('Authorization', adminAuth)
+        .send({ registrationDeadline: '2099-06-01T12:00:00.001Z' });
+      expectBizError(res, BizCode.ACTIVITY_REGISTRATION_DEADLINE_INVALID);
+    });
+
+    it('capacity 不得缩到当前 pass 报名数以下', async () => {
+      const created = await request(httpServer(app))
+        .post('/api/admin/v1/activities')
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ title: 'CAPACITY-SHRINK', capacity: 3 }));
+      const member1 = await prisma.member.create({
+        data: { memberNo: `cap-shrink-${Date.now()}-1`, displayName: 'cap1' },
+      });
+      const member2 = await prisma.member.create({
+        data: { memberNo: `cap-shrink-${Date.now()}-2`, displayName: 'cap2' },
+      });
+      await prisma.activityRegistration.createMany({
+        data: [member1, member2].map((member) => ({
+          activityId: created.body.data.id,
+          memberId: member.id,
+          statusCode: 'pass',
+        })),
+      });
+
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/activities/${created.body.data.id}`)
+        .set('Authorization', adminAuth)
+        .send({ capacity: 1 });
+      expectBizError(res, BizCode.ACTIVITY_CAPACITY_INVALID);
     });
 
     it('non-whitelisted statusCode → 400', async () => {
@@ -808,7 +853,8 @@ describe('activities 模块', () => {
       alreadyPublishedId = p.body.data.id;
       await request(httpServer(app))
         .patch(`/api/admin/v1/activities/${alreadyPublishedId}/publish`)
-        .set('Authorization', adminAuth);
+        .set('Authorization', adminAuth)
+        .send({ requiresInsuranceConfirmed: true });
 
       const c = await request(httpServer(app))
         .post('/api/admin/v1/activities')
@@ -821,10 +867,61 @@ describe('activities 模块', () => {
         .send({});
     });
 
+    it.each([undefined, false])(
+      'requiresInsuranceConfirmed=%s → 400 BAD_REQUEST 且活动仍为 draft',
+      async (confirmed) => {
+        const requestBody =
+          confirmed === undefined ? {} : { requiresInsuranceConfirmed: confirmed };
+        const res = await request(httpServer(app))
+          .patch(`/api/admin/v1/activities/${draftId}/publish`)
+          .set('Authorization', adminAuth)
+          .send(requestBody);
+        expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
+        const row = await prisma.activity.findUniqueOrThrow({ where: { id: draftId } });
+        expect(row.statusCode).toBe('draft');
+      },
+    );
+
+    it('endAt 已过 → publish 拒 ACTIVITY_STATUS_INVALID', async () => {
+      const created = await request(httpServer(app))
+        .post('/api/admin/v1/activities')
+        .set('Authorization', adminAuth)
+        .send(
+          baseCreatePayload({
+            title: 'PUB-ENDED',
+            startAt: '2020-01-01T08:00:00.000Z',
+            endAt: '2020-01-01T12:00:00.000Z',
+          }),
+        );
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/activities/${created.body.data.id}/publish`)
+        .set('Authorization', adminAuth)
+        .send({ requiresInsuranceConfirmed: true });
+      expectBizError(res, BizCode.ACTIVITY_STATUS_INVALID);
+    });
+
+    it('registrationDeadline 已过 → publish 拒 20123', async () => {
+      const created = await request(httpServer(app))
+        .post('/api/admin/v1/activities')
+        .set('Authorization', adminAuth)
+        .send(
+          baseCreatePayload({
+            title: 'PUB-DEADLINE-PAST',
+            registrationDeadline: '2020-01-01T00:00:00.000Z',
+          }),
+        );
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/activities/${created.body.data.id}/publish`)
+        .set('Authorization', adminAuth)
+        .send({ requiresInsuranceConfirmed: true });
+      expectBizError(res, BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED);
+    });
+
     it('draft → published 成功;写 publishedBy/At', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/activities/${draftId}/publish`)
-        .set('Authorization', adminAuth);
+        .set('Authorization', adminAuth)
+        .send({ requiresInsuranceConfirmed: true });
       expect(res.status).toBe(200);
       expect(res.body.data.statusCode).toBe('published');
       expect(res.body.data.publishedBy).toBeTruthy();
@@ -834,21 +931,24 @@ describe('activities 模块', () => {
     it('再次 publish 已 published → ACTIVITY_STATUS_INVALID', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/activities/${alreadyPublishedId}/publish`)
-        .set('Authorization', adminAuth);
+        .set('Authorization', adminAuth)
+        .send({ requiresInsuranceConfirmed: true });
       expectBizError(res, BizCode.ACTIVITY_STATUS_INVALID);
     });
 
     it('publish cancelled → ACTIVITY_STATUS_INVALID(Q-A12 / 状态机)', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/activities/${cancelledId}/publish`)
-        .set('Authorization', adminAuth);
+        .set('Authorization', adminAuth)
+        .send({ requiresInsuranceConfirmed: true });
       expectBizError(res, BizCode.ACTIVITY_STATUS_INVALID);
     });
 
     it('不存在 id → ACTIVITY_NOT_FOUND', async () => {
       const res = await request(httpServer(app))
         .patch('/api/admin/v1/activities/cl0000000000000000000000/publish')
-        .set('Authorization', adminAuth);
+        .set('Authorization', adminAuth)
+        .send({ requiresInsuranceConfirmed: true });
       expectBizError(res, BizCode.ACTIVITY_NOT_FOUND);
     });
   });
@@ -874,7 +974,8 @@ describe('activities 模块', () => {
       publishedId = p.body.data.id;
       await request(httpServer(app))
         .patch(`/api/admin/v1/activities/${publishedId}/publish`)
-        .set('Authorization', adminAuth);
+        .set('Authorization', adminAuth)
+        .send({ requiresInsuranceConfirmed: true });
 
       const c = await request(httpServer(app))
         .post('/api/admin/v1/activities')
@@ -946,7 +1047,8 @@ describe('activities 模块', () => {
     it('PATCH publish cancelled → ACTIVITY_STATUS_INVALID', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/activities/${cancelledId}/publish`)
-        .set('Authorization', adminAuth);
+        .set('Authorization', adminAuth)
+        .send({ requiresInsuranceConfirmed: true });
       expectBizError(res, BizCode.ACTIVITY_STATUS_INVALID);
     });
 

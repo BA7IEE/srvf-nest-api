@@ -15,6 +15,7 @@ import type {
 } from './attendance-sheet-state-machine';
 import type { RbacService } from '../permissions/rbac.service';
 import type { AuthzService } from '../authz/authz.service';
+import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
 import type { ContributionCalculator } from './contribution-calculator';
 import { ATTENDANCE_SHEET_STATUS } from './attendances.dto';
 import type {
@@ -40,8 +41,7 @@ import { AttendancesService } from './attendances.service';
 // - $transaction mock 同时支持 callback(写路径把 prisma mock 自身当 tx 传入)与 array(list / count)两种用法。
 //
 // 边界(本 spec **只到浅层编排**;不改任何业务代码 / BizCode / audit event 名):
-// - **不测 submit / edit 深事务 happy-path**(prefill / overlap / snapshot / 软删重建全链 → 归
-//   attendances-contribution-prefill / attendances-time-overlap / attendances-audit-characterization e2e)。
+// - submit 仅补一条批量预取编排用例，深层 prefill / overlap / snapshot 语义仍归对应 e2e。
 // - 不复刻 ContributionCalculator / TimeOverlapPolicy / AttendanceSheetStateMachine 内部矩阵(mock 返回值)。
 // - 不断言 AttendanceAuditRecorder 内部 snapshot 结构(只断言被调用 + 入参 tx / action 接线)。
 // - 不为覆盖率 mock 整个 Prisma 世界(仅 mock 浅层路径触达的最小模型面)。
@@ -165,8 +165,10 @@ function makeFinalRejectDto(finalReviewNote: string): FinalRejectAttendanceSheet
 function makeEditDto(records?: unknown[]): UpdateAttendanceSheetDto {
   return { records } as unknown as UpdateAttendanceSheetDto;
 }
-function makeSubmitDto(): CreateAttendanceSheetDto {
-  return { records: [] };
+function makeSubmitDto(
+  records: CreateAttendanceSheetDto['records'] = [],
+): CreateAttendanceSheetDto {
+  return { records };
 }
 function makeListQuery(statusCode?: string): ListAttendanceSheetsQueryDto {
   return { page: 1, pageSize: 20, statusCode };
@@ -183,6 +185,7 @@ function makePrismaMock() {
     findMany: jest.fn<Promise<SheetRow[]>, [unknown]>(),
     count: jest.fn<Promise<number>, [unknown]>(),
     update: jest.fn<Promise<SheetRow>, [unknown]>(),
+    create: jest.fn<Promise<SheetRow>, [unknown]>(),
     updateMany: jest.fn<Promise<{ count: number }>, [unknown]>().mockResolvedValue({ count: 1 }),
   };
   const attendanceRecord = {
@@ -192,15 +195,27 @@ function makePrismaMock() {
   };
   const user = { findFirst: jest.fn<Promise<{ memberId: string | null } | null>, [unknown]>() };
   const activity = {
-    findFirst: jest.fn<Promise<{ id: string; statusCode: string } | null>, [unknown]>(),
+    findFirst: jest.fn<Promise<unknown>, [unknown]>(),
     // 统一通知 S4:finalApprove 后 commit 外的派发 helper 读活动名(this.prisma.activity.findUnique);
     // 默认返标题,旧 characterization 用例不关心(helper try-catch 永不抛,断言零影响)。
     findUnique: jest
       .fn<Promise<{ title: string } | null>, [unknown]>()
       .mockResolvedValue({ title: '测试活动' }),
   };
+  const dictItem = { findMany: jest.fn<Promise<unknown[]>, [unknown]>() };
+  const member = { findMany: jest.fn<Promise<unknown[]>, [unknown]>() };
+  const activityRegistration = { findMany: jest.fn<Promise<unknown[]>, [unknown]>() };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
-  const prisma = { attendanceSheet, attendanceRecord, user, activity, $transaction };
+  const prisma = {
+    attendanceSheet,
+    attendanceRecord,
+    user,
+    activity,
+    dictItem,
+    member,
+    activityRegistration,
+    $transaction,
+  };
   // 双模:回调式把 prisma mock 自身当 tx 传入(service 在 tx 与 this.prisma 上调同名方法);
   // 数组式($transaction([findMany, count]))走 Promise.all。
   $transaction.mockImplementation((arg: unknown) =>
@@ -253,6 +268,7 @@ function makeTimeOverlapPolicyMock() {
       .fn<Promise<void>, [readonly string[], unknown]>()
       .mockResolvedValue(undefined),
     assertNoTimeOverlap: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
+    assertNoTimeOverlapForRecords: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
   };
 }
 type TimeOverlapPolicyMock = ReturnType<typeof makeTimeOverlapPolicyMock>;
@@ -334,6 +350,8 @@ function makeService(
     authz as unknown as AuthzService,
     dispatcher as unknown as NotificationDispatcher,
     organizations as unknown as OrganizationsService,
+    { attendance: { allowSameReviewer: false, windowToleranceHours: 2 } } as never,
+    new ActivityParticipationPolicy(),
   );
 }
 
@@ -766,7 +784,7 @@ describe('AttendancesService (characterization, scoped)', () => {
     });
 
     // ===== 统一通知 S4(评审稿 §6.4 / §6.2):终审通过 → 逐 record 本人考勤结果/贡献值定向通知 =====
-    it('S4:finalApprove → 逐 record 派给本人(directed/in-app/activity-reminder,含活动名+贡献值);事务外', async () => {
+    it('S4:finalApprove → 逐 record 派给本人(directed/in-app/attendance-result,含活动名+贡献值);事务外', async () => {
       const prisma = makePrismaMock();
       const stateMachine = makeStateMachineMock({
         allowed: true,
@@ -808,7 +826,7 @@ describe('AttendancesService (characterization, scoped)', () => {
       expect(new Set(recipients)).toEqual(new Set(['mem-1', 'mem-2']));
       for (const [arg] of dispatcher.dispatchTargeted.mock.calls) {
         expect(arg).toMatchObject({
-          notificationTypeCode: 'activity-reminder',
+          notificationTypeCode: 'attendance-result',
           channels: ['in-app'],
           title: '考勤结果已确认',
         });
@@ -933,6 +951,69 @@ describe('AttendancesService (characterization, scoped)', () => {
       expect(prisma.attendanceRecord.updateMany).not.toHaveBeenCalled();
       expect(prisma.attendanceSheet.update).not.toHaveBeenCalled();
       expect(recorder.logFinalReview).not.toHaveBeenCalled();
+    });
+
+    it('submit 两条 records：字典/成员/报名各一次 IN 预取，查询次数不随 records 数增长', async () => {
+      const prisma = makePrismaMock();
+      const recorder = makeRecorderMock();
+      const contributionCalculator = makeContributionCalculatorMock();
+      const timeOverlapPolicy = makeTimeOverlapPolicyMock();
+      prisma.activity.findFirst.mockResolvedValue({
+        id: 'act-1',
+        statusCode: 'published',
+        activityTypeCode: 'training',
+        startAt: new Date('2026-01-01T07:00:00.000Z'),
+        endAt: new Date('2026-01-01T18:00:00.000Z'),
+      });
+      prisma.dictItem.findMany.mockResolvedValue([
+        { code: 'volunteer', type: { code: 'attendance_role' } },
+        { code: 'present', type: { code: 'attendance_status' } },
+      ]);
+      prisma.member.findMany.mockResolvedValue([{ id: 'mem-1' }, { id: 'mem-2' }]);
+      prisma.activityRegistration.findMany.mockResolvedValue([]);
+      prisma.attendanceSheet.create.mockResolvedValue(makeSheetRow());
+      prisma.attendanceRecord.findMany.mockResolvedValue([
+        makeRecordRow(),
+        makeRecordRow({ id: 'rec-2', memberId: 'mem-2' }),
+      ]);
+      const service = makeService(prisma, {
+        recorder,
+        contributionCalculator,
+        timeOverlapPolicy,
+      });
+
+      const result = await service.submit(
+        'act-1',
+        makeSubmitDto([
+          {
+            memberId: 'mem-1',
+            roleCode: 'volunteer',
+            checkInAt: '2026-01-01T08:00:00.000Z',
+            checkOutAt: '2026-01-01T10:00:00.000Z',
+            attendanceStatusCode: 'present',
+          },
+          {
+            memberId: 'mem-2',
+            roleCode: 'volunteer',
+            checkInAt: '2026-01-01T10:00:00.000Z',
+            checkOutAt: '2026-01-01T12:00:00.000Z',
+            attendanceStatusCode: 'present',
+          },
+        ]),
+        makeCurrentUser(),
+        META,
+      );
+
+      expect(result.id).toBe('sheet-1');
+      expect(prisma.dictItem.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.member.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.activityRegistration.findMany).toHaveBeenCalledTimes(1);
+      expect(timeOverlapPolicy.lockMembersForOverlapCheck).toHaveBeenCalledTimes(1);
+      expect(timeOverlapPolicy.assertNoTimeOverlapForRecords).toHaveBeenCalledTimes(1);
+      expect(contributionCalculator.applyContributionRulePrefill).toHaveBeenCalledTimes(1);
+      expect(recorder.logSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ activityPushedToCompleted: false, recordsCount: 2 }),
+      );
     });
 
     it('submit:activity 不存在 → ACTIVITY_NOT_FOUND(浅层 guard,不进 record 循环)', async () => {

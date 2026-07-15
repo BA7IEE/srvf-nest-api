@@ -87,6 +87,9 @@ export class DashboardAttendanceSheetsSummaryDto {
 export class DashboardActivitiesSummaryDto {
   @ApiProperty({ description: '进行中活动数(activity_status=published,未软删)' })
   published!: number;
+
+  @ApiProperty({ description: '待人工完结活动数(published 且 endAt 已过去,未软删)' })
+  pendingCompletion!: number;
 }
 
 export class DashboardSummaryResponseDto {

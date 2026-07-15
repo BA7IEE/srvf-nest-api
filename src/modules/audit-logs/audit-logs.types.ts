@@ -30,7 +30,7 @@ export type AuditLogEvent =
   | 'activity.publish' // PR #4 接入(activities.service: create / update / softDelete / publish / cancel 共 5 处;5 个 operation 通过 extra.operation 区分,沿 batch3 草案 §20.2 A1 同名设计)
   | 'registration.create' // PR #5 接入(activity-registrations.service: create [ADMIN 代报名] / createMy [USER 自助] 共 2 处;extra.viaPath ∈ {admin, self} 区分)
   | 'registration.review' // PR #5 接入(activity-registrations.service: approve / reject / cancelAdmin / cancelMy 共 4 处写;extra.action ∈ {approve, reject, cancel} 区分;cancel 再用 extra.cancelledByPath ∈ {admin, self} 细分;exportCsv 仍 pino-only,read 不迁移)
-  | 'attendance-sheet.submit' // PR #6 接入(attendances.service: submit 1 处;Sheet+N records 一次性入库,D11 推动 Activity completed)
+  | 'attendance-sheet.submit' // PR #6 接入；Sheet+N records 一次性入库，D2-a 起不再推动 Activity.completed
   | 'attendance-sheet.edit' // PR #6 接入(attendances.service: edit 2 处共用;extra.operation ∈ {edit, edit-no-records} 区分;version+1 + previousSnapshot)
   | 'attendance-sheet.delete' // PR #6 接入(attendances.service: softDelete 1 处;pending Sheet 软删 + records 级联软删)
   | 'attendance-sheet.review' // PR #6 接入(attendances.service: approve / reject 共 2 处;extra.action ∈ {approve, reject} 区分;approve 走 pending → pending_final_review)

@@ -60,17 +60,20 @@ describe('buildActionStateChecks(action→状态机只读注册表)', () => {
     expect(reopen.decide('pending')).toBe(false);
   });
 
-  it('activity:cancelled 不可再 update/cancel;publish 仅 draft 可行(D8「活动已取消」示例)', () => {
+  it('activity:终态 update 入口可进（字段白名单由 service 判）；cancel 仅 draft|published；publish 仅 draft', () => {
     const update = checks.get('activity.update.record')!;
     expect(update.decide('published')).toBe(true);
-    expect(update.decide('cancelled')).toBe(false);
+    expect(update.decide('completed')).toBe(true);
+    expect(update.decide('cancelled')).toBe(true);
 
     const publish = checks.get('activity.publish.record')!;
     expect(publish.decide('draft')).toBe(true);
     expect(publish.decide('published')).toBe(false);
 
     const cancel = checks.get('activity.cancel.record')!;
+    expect(cancel.decide('draft')).toBe(true);
     expect(cancel.decide('published')).toBe(true);
+    expect(cancel.decide('completed')).toBe(false);
     expect(cancel.decide('cancelled')).toBe(false);
   });
 

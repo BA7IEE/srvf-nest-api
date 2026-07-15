@@ -1039,8 +1039,8 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       return a.id;
     }
 
-    it.each(['cancelled', 'completed'])(
-      'H1. 活动 %s 时 approve pending 报名 → ACTIVITY_ENDED_OR_CANCELLED_APPROVE_FORBIDDEN,DB 不变,无 audit',
+    it.each(['published', 'cancelled', 'completed'])(
+      'H1. 活动 %s（published 已过 endAt）时 approve pending 报名 → ACTIVITY_ENDED_OR_CANCELLED_APPROVE_FORBIDDEN,DB 不变,无 audit',
       async (activityStatus) => {
         const activityId = await createActivityWithStatus(activityStatus);
         const regId = await seedRegistration({

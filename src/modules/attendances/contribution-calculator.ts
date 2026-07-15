@@ -7,7 +7,7 @@ import { Prisma } from '@prisma/client';
 // `AttendancesService.submit(...)` 的 `this.prisma.$transaction(...)` 内调用)。
 //
 // 详见 docs:
-//   - 批次4_贡献值业务规则前评审决议表 v1.0(D5 候选 B 终审 / D11 推动 / D14 5.B 预填)
+//   - 批次4_贡献值业务规则前评审决议表 v1.0(D5 候选 B 终审 / D11 历史项已由 D2-a 撤销 / D14 5.B 预填)
 //   - 批次4_贡献值业务规则_API草案 v1.0(D-A8)
 //   - 批次4_贡献值业务规则_schema草案评审决议表 v1.0(D-S11)
 //
@@ -59,6 +59,39 @@ export class ContributionCalculator {
     activityTypeCode: string,
     tx: PrismaTx,
   ): Promise<T[]> {
+    const rolesNeedingPrefill = [
+      ...new Set(
+        records
+          .filter((record) => record.contributionPoints === undefined)
+          .map((record) => record.roleCode),
+      ),
+    ];
+    const candidates =
+      rolesNeedingPrefill.length === 0
+        ? []
+        : await tx.contributionRule.findMany({
+            where: {
+              activityTypeCode,
+              attendanceRoleCode: { in: rolesNeedingPrefill },
+              status: 'ACTIVE',
+              deletedAt: null,
+            },
+            select: {
+              attendanceRoleCode: true,
+              durationThreshold: true,
+              pointsBelow: true,
+              pointsAbove: true,
+              createdAt: true,
+            },
+            orderBy: { createdAt: 'asc' },
+          });
+    const firstCandidateByRole = new Map<string, (typeof candidates)[number]>();
+    for (const candidate of candidates) {
+      if (!firstCandidateByRole.has(candidate.attendanceRoleCode)) {
+        firstCandidateByRole.set(candidate.attendanceRoleCode, candidate);
+      }
+    }
+
     const result: T[] = [];
     for (const r of records) {
       // 显式 null = 跳过预填(v0.6 契约小修复);number = 已传值,不覆盖
@@ -67,42 +100,25 @@ export class ContributionCalculator {
         continue;
       }
       // undefined = 走预填
-      const points = await this.computePrefilledPoints(
-        activityTypeCode,
-        r.roleCode,
+      const points = this.computePrefilledPoints(
+        firstCandidateByRole.get(r.roleCode),
         r.serviceHours,
-        tx,
       );
       result.push({ ...r, contributionPoints: points });
     }
     return result;
   }
 
-  private async computePrefilledPoints(
-    activityTypeCode: string,
-    attendanceRoleCode: string,
+  private computePrefilledPoints(
+    chosen:
+      | {
+          durationThreshold: Prisma.Decimal | null;
+          pointsBelow: Prisma.Decimal;
+          pointsAbove: Prisma.Decimal | null;
+        }
+      | undefined,
     serviceHours: number,
-    tx: PrismaTx,
-  ): Promise<number | null> {
-    const candidates = await tx.contributionRule.findMany({
-      where: {
-        activityTypeCode,
-        attendanceRoleCode,
-        status: 'ACTIVE',
-        deletedAt: null,
-      },
-      select: {
-        durationThreshold: true,
-        pointsBelow: true,
-        pointsAbove: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'asc' },
-    });
-    // 选取规则:partial unique 已保证同维度非 NULL durationThreshold 至多 1 条;
-    // NULL durationThreshold 档位可能多条,按 createdAt ASC(见上 orderBy)取首条。
-    // 注:serviceHours 的档位匹配在下方用 threshold 比较完成,此处仅负责"选哪条规则"。
-    const chosen = candidates[0];
+  ): number | null {
     if (!chosen) {
       return null;
     }

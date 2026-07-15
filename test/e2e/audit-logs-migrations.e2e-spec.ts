@@ -862,7 +862,8 @@ describe('audit-logs 写入迁移', () => {
 
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/activities/${a.id}/publish`)
-        .set('Authorization', adminAuth);
+        .set('Authorization', adminAuth)
+        .send({ requiresInsuranceConfirmed: true });
       expect(res.status).toBe(200);
 
       const logs = await prisma.auditLog.findMany();
@@ -981,6 +982,7 @@ describe('audit-logs 写入迁移', () => {
       await request(httpServer(app))
         .patch(`/api/admin/v1/activities/${a.id}/publish`)
         .set('Authorization', adminAuth)
+        .send({ requiresInsuranceConfirmed: true })
         .expect(200);
 
       const log = (await prisma.auditLog.findFirst({ where: { resourceId: a.id } }))!;
@@ -1573,7 +1575,7 @@ describe('audit-logs 写入迁移', () => {
       expect(extra.operation).toBe('submit');
       expect(extra.activityId).toBe(actId);
       expect(extra.recordsCount).toBe(1);
-      expect(extra.activityPushedToCompleted).toBe(true); // published → completed
+      expect(extra.activityPushedToCompleted).toBe(false); // D2-a:completed 仅由 activities.complete 推进
     });
 
     it('PATCH edit(主路径)触发 → audit_logs +1(operation=edit,version+1)', async () => {

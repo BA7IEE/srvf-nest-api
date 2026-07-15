@@ -101,6 +101,26 @@ export class NotificationDispatcher {
     });
   }
 
+  // 系统会员面广播：一个 broadcast 行供所有可使用 App 的未删除会员读取；不展开 N 条定向行。
+  // 当前由公开活动发布使用，仍是 commit 后独立 Effect，失败由 producer 吞并记录。
+  async dispatchSystemMemberBroadcast(input: DispatchSystemBroadcastInput): Promise<Notification> {
+    return this.prisma.notification.create({
+      data: {
+        title: input.title,
+        body: input.body,
+        notificationTypeCode: input.notificationTypeCode,
+        statusCode: NOTIFICATION_STATUS_PUBLISHED,
+        publishedAt: new Date(),
+        visibilityCode: NOTIFICATION_DIRECTED_VISIBILITY,
+        audienceType: NOTIFICATION_AUDIENCE_BROADCAST,
+        sourceType: NOTIFICATION_SOURCE_SYSTEM,
+        channels: [NOTIFICATION_CHANNEL_IN_APP],
+        recipientMemberId: null,
+        authorUserId: null,
+      },
+    });
+  }
+
   // 渠道归一:站内恒发 → 强制含 in-app;去重保序(in-app 在前)。producer 传码非用户输入,不做白名单校验。
   private normalizeChannels(channels: string[] | undefined): string[] {
     const set = new Set<string>([NOTIFICATION_CHANNEL_IN_APP]);

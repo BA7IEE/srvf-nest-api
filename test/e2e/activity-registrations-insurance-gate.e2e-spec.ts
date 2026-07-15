@@ -84,7 +84,10 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
 
   // ============== helpers ==============
 
-  async function createPublishedActivity(requiresInsurance: boolean): Promise<{ id: string }> {
+  async function createPublishedActivity(
+    requiresInsurance: boolean,
+    genderRequirementCode: string | null = null,
+  ): Promise<{ id: string }> {
     return prisma.activity.create({
       data: {
         title: `Gate ${requiresInsurance ? 'on' : 'off'} ${nextSeq()}`,
@@ -98,6 +101,7 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
         publishedAt: new Date(),
         isPublicRegistration: true,
         requiresInsurance,
+        genderRequirementCode,
       },
       select: { id: true },
     });
@@ -118,6 +122,26 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
     await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id } });
     const { authHeader } = await loginAs(app, username);
     return { memberId: member.id, authHeader };
+  }
+
+  async function createMemberProfile(
+    memberId: string,
+    genderCode: 'male' | 'female',
+  ): Promise<void> {
+    await prisma.memberProfile.create({
+      data: {
+        memberId,
+        realName: '性别闸测试',
+        genderCode,
+        birthDate: new Date('1990-01-01T00:00:00.000Z'),
+        documentTypeCode: 'id_card',
+        documentNumber: `gender-gate-${nextSeq()}`,
+        mobile: `138${String(seq).padStart(8, '0')}`,
+        joinedDate: new Date('2020-01-01T00:00:00.000Z'),
+        joinSourceCode: 'recommend',
+        privacyConsentSigned: true,
+      },
+    });
   }
 
   // 自购保险直写 DB(门槛读 DB;记录形态已由 T2 app-me-insurances spec 锁定)
@@ -308,5 +332,29 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
     const reg = await prisma.activityRegistration.findUnique({ where: { id: regId } });
     expect(reg).not.toBeNull();
     expect(reg!.statusCode).toBe('pending');
+  });
+
+  describe('性别报名闸', () => {
+    it('限定性别但无 MemberProfile → admin 代报名拒 21034', async () => {
+      const me = await setupLinkedUser('gender-no-profile');
+      const act = await createPublishedActivity(false, 'male');
+      const res = await registerAdmin(act.id, me.memberId);
+      expectBizError(res, BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH);
+    });
+
+    it('MemberProfile 性别不匹配 → App 自助报名拒 21034', async () => {
+      const me = await setupLinkedUser('gender-mismatch');
+      await createMemberProfile(me.memberId, 'male');
+      const act = await createPublishedActivity(false, 'female');
+      const res = await registerSelf(me.authHeader, act.id);
+      expectBizError(res, BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH);
+    });
+
+    it('MemberProfile 性别匹配 → admin 代报名成功', async () => {
+      const me = await setupLinkedUser('gender-match');
+      await createMemberProfile(me.memberId, 'male');
+      const act = await createPublishedActivity(false, 'male');
+      await registerAdmin(act.id, me.memberId).expect(201);
+    });
   });
 });

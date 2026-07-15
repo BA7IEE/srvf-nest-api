@@ -240,7 +240,7 @@ describe('F3/C3 authz/action-state/batch(批量业务态闸)', () => {
       expect(items[2]).toMatchObject({ allowed: true });
     });
 
-    it('activity:「活动已取消 → 不可再 update/cancel」;published 可 cancel;draft 才可 publish', async () => {
+    it('activity:cancelled 不可 cancel 但可进 update 入口（字段白名单由 service 判）；published 可 cancel；draft 才可 publish', async () => {
       const res = await postBatch(saAuth, [
         {
           action: 'activity.cancel.record',
@@ -265,7 +265,7 @@ describe('F3/C3 authz/action-state/batch(批量业务态闸)', () => {
       ]);
       const items = res.body.data.items;
       expect(items[0]).toMatchObject({ allowed: false, reason: 'state_forbidden' });
-      expect(items[1]).toMatchObject({ allowed: false, reason: 'state_forbidden' });
+      expect(items[1]).toMatchObject({ allowed: true });
       expect(items[2]).toMatchObject({ allowed: true });
       expect(items[3]).toMatchObject({ allowed: false, reason: 'state_forbidden' });
     });

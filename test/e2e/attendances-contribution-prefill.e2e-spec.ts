@@ -25,7 +25,7 @@ import { createTestApp } from '../setup/test-app';
 //   - createTestApp + resetDb + 真实 PrismaService(test database)
 //   - service-level e2e:绕过 HTTP / Guard / RolesGuard,直接调 `app.get(AttendancesService).submit(...)`
 //   - per-test `isolateFixtures()` 清 sheets / records / rules / activities / audit_logs(保留共享 user/member/org/dict)
-//   - 每个 case 自建 Activity(submit 会把 Activity statusCode 从 published 推 completed,沿 D11,不复用)
+//   - 每个 case 自建 Activity，submit 后仍保持 published；不复用以隔离规则/记录夹具
 //   - Decimal 比较用 `Number(...)`(0/1/1.5 等可直接和 number 字面量比较;null 单独判等)
 //
 // 本 PR 范围(沿 only-read review 报告 §10):
@@ -163,7 +163,7 @@ describe('AttendancesService contribution prefill (characterization)', () => {
     await ctx.prisma.auditLog.deleteMany({});
   }
 
-  // 每个 case 新建 Activity(submit 会把 Activity 从 published 推 completed,沿 D11;不可跨 case 复用)
+  // 每个 case 新建 Activity，避免跨 case 的规则/记录夹具互相污染。
   async function createActivity(activityTypeCode: string = ACTIVITY_TYPE_DEMO): Promise<string> {
     const act = await ctx.prisma.activity.create({
       data: {

@@ -37,8 +37,8 @@ import type { AuthzService } from '../authz/authz.service';
 
 // ============ 固定 fixture ============
 
-const FIXED_START = new Date('2026-01-01T00:00:00.000Z');
-const FIXED_END = new Date('2026-01-02T00:00:00.000Z');
+const FIXED_START = new Date('2099-01-01T00:00:00.000Z');
+const FIXED_END = new Date('2099-01-02T00:00:00.000Z');
 const META: AuditMeta = { requestId: 'req-act-1', ip: '127.0.0.1', ua: 'jest' };
 
 // 占位 decision:list / findOne / create / softDelete 不调用 state machine,用它兜底。
@@ -130,8 +130,8 @@ function makeCreateDto(overrides: Partial<Record<string, unknown>> = {}): Create
     title: 'New Activity',
     activityTypeCode: 'rescue',
     organizationId: 'org-1',
-    startAt: '2026-01-01T00:00:00.000Z',
-    endAt: '2026-01-02T00:00:00.000Z',
+    startAt: '2099-01-01T00:00:00.000Z',
+    endAt: '2099-01-02T00:00:00.000Z',
     location: 'HQ',
     ...overrides,
   };
@@ -168,9 +168,21 @@ function makePrismaMock() {
   // 默认空(无报名者 → 零派发),旧 characterization 用例不关心(helper try-catch 永不抛,断言零影响)。
   const activityRegistration = {
     findMany: jest.fn<Promise<Array<{ memberId: string }>>, [unknown]>().mockResolvedValue([]),
+    updateMany: jest.fn<Promise<{ count: number }>, [unknown]>().mockResolvedValue({ count: 1 }),
+    count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
+  };
+  const attendanceSheet = {
+    count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
   };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
-  const prisma = { activity, dictItem, organization, activityRegistration, $transaction };
+  const prisma = {
+    activity,
+    dictItem,
+    organization,
+    activityRegistration,
+    attendanceSheet,
+    $transaction,
+  };
   // 双模:回调式把 prisma mock 自身当 tx 传入(service 在 tx 与 this.prisma 上调同名方法);
   // 数组式($transaction([findMany, count]))走 Promise.all。
   $transaction.mockImplementation((arg: unknown) =>
@@ -228,6 +240,9 @@ function makeNotificationDispatcherMock() {
     dispatchTargeted: jest
       .fn<Promise<{ id: string }>, [Record<string, unknown>]>()
       .mockResolvedValue({ id: 'notif-1' }),
+    dispatchSystemMemberBroadcast: jest
+      .fn<Promise<{ id: string }>, [Record<string, unknown>]>()
+      .mockResolvedValue({ id: 'notif-broadcast-1' }),
   };
 }
 type NotificationDispatcherMock = ReturnType<typeof makeNotificationDispatcherMock>;
@@ -562,9 +577,9 @@ describe('ActivitiesService (characterization)', () => {
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ statusCode: 'published' }));
       const service = makeService(prisma, { stateMachine });
 
-      await expect(service.publish('act-1', makeCurrentUser(), META)).rejects.toEqual(
-        new BizException(BizCode.ACTIVITY_STATUS_INVALID),
-      );
+      await expect(
+        service.publish('act-1', { requiresInsuranceConfirmed: true }, makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(BizCode.ACTIVITY_STATUS_INVALID));
       expect(stateMachine.decide).toHaveBeenCalledWith('publish', 'published');
       expect(prisma.activity.update).not.toHaveBeenCalled();
     });
@@ -579,7 +594,12 @@ describe('ActivitiesService (characterization)', () => {
       );
       const service = makeService(prisma, { stateMachine, recorder });
 
-      const res = await service.publish('act-1', makeCurrentUser({ id: 'admin-1' }), META);
+      const res = await service.publish(
+        'act-1',
+        { requiresInsuranceConfirmed: true },
+        makeCurrentUser({ id: 'admin-1' }),
+        META,
+      );
 
       const updateArg = prisma.activity.update.mock.calls[0][0] as {
         data: { statusCode: string; publishedBy: string };
@@ -656,7 +676,7 @@ describe('ActivitiesService (characterization)', () => {
     });
 
     // ===== 统一通知 S4(评审稿 §6.4 / §6.2):取消 → 已报名者 fan-out 定向通知 =====
-    it('S4:取消 → fan-out 已报名者(pending+pass,去重)各一条 directed/in-app/activity-reminder(含活动名+原因);事务外', async () => {
+    it('S4:取消 → fan-out 已报名者(pending+pass,去重)各一条 directed/in-app/activity-changed(含活动名+原因);事务外', async () => {
       const prisma = makePrismaMock();
       const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'cancelled' });
       const dispatcher = makeNotificationDispatcherMock();
@@ -681,13 +701,13 @@ describe('ActivitiesService (characterization)', () => {
       expect(findArg.where.statusCode.in).toEqual(['pending', 'pass']);
       expect(findArg.where.deletedAt).toBeNull();
 
-      // 去重后 2 派发,各 directed in-app activity-reminder + 活动名 + 原因
+      // 去重后 2 派发,各 directed in-app activity-changed + 活动名 + 原因
       expect(dispatcher.dispatchTargeted).toHaveBeenCalledTimes(2);
       const recipients = dispatcher.dispatchTargeted.mock.calls.map((c) => c[0].recipientMemberId);
       expect(new Set(recipients)).toEqual(new Set(['m1', 'm2']));
       for (const [arg] of dispatcher.dispatchTargeted.mock.calls) {
         expect(arg).toMatchObject({
-          notificationTypeCode: 'activity-reminder',
+          notificationTypeCode: 'activity-changed',
           channels: ['in-app'],
           title: '活动已取消',
         });

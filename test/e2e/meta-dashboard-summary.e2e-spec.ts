@@ -156,6 +156,13 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     const actPublished1 = await mkActivity('dashsum活动·已发布1', 'published');
     const actPublished2 = await mkActivity('dashsum活动·已发布2', 'published');
     const actDraft = await mkActivity('dashsum活动·草稿', 'draft');
+    await prisma.activity.update({
+      where: { id: actPublished1.id },
+      data: {
+        startAt: new Date('2020-02-01T08:00:00.000Z'),
+        endAt: new Date('2020-02-01T12:00:00.000Z'),
+      },
+    });
     // 进行中活动数(published)期望 = 2(actPublished1 + actPublished2;actDraft 不计入)
 
     const mkMember = (memberNo: string) =>
@@ -201,7 +208,7 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     const data = res.body.data;
     expect(data.registrations).toEqual({ pending: 3 });
     expect(data.attendanceSheets).toEqual({ pending: 2, pendingFinalReview: 1 });
-    expect(data.activities).toEqual({ published: 2 });
+    expect(data.activities).toEqual({ published: 2, pendingCompletion: 1 });
   });
 
   it('③ biz-admin(持 activity-registration.read.record + attendance.read.sheet)三块全见', async () => {
@@ -210,7 +217,7 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     const data = res.body.data;
     expect(data.registrations).toEqual({ pending: 3 });
     expect(data.attendanceSheets).toEqual({ pending: 2, pendingFinalReview: 1 });
-    expect(data.activities).toEqual({ published: 2 });
+    expect(data.activities).toEqual({ published: 2, pendingCompletion: 1 });
   });
 
   it('④ ops-admin(运营面,不持业务面两码)只见 activities 裸块——codeless 设计意图,非缺陷', async () => {
@@ -219,7 +226,7 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     const data = res.body.data;
     expect(data).not.toHaveProperty('registrations');
     expect(data).not.toHaveProperty('attendanceSheets');
-    expect(data.activities).toEqual({ published: 2 });
+    expect(data.activities).toEqual({ published: 2, pendingCompletion: 1 });
   });
 
   it('⑤ 仅持 activity-registration.read.record 的自定义角色 → 只见 registrations + activities', async () => {
@@ -228,7 +235,7 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     const data = res.body.data;
     expect(data.registrations).toEqual({ pending: 3 });
     expect(data).not.toHaveProperty('attendanceSheets');
-    expect(data.activities).toEqual({ published: 2 });
+    expect(data.activities).toEqual({ published: 2, pendingCompletion: 1 });
   });
 
   it('⑥ 零权限 ADMIN(无任何角色绑定)→ 只见 activities(codeless 块恒在,非字面空对象)', async () => {
@@ -237,7 +244,7 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     const data = res.body.data;
     expect(data).not.toHaveProperty('registrations');
     expect(data).not.toHaveProperty('attendanceSheets');
-    expect(data.activities).toEqual({ published: 2 });
+    expect(data.activities).toEqual({ published: 2, pendingCompletion: 1 });
   });
 
   it('⑦ 计数对账:三个数字与对应列表端点同条件 total 严格相等(唯一存在意义)', async () => {

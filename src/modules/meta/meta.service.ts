@@ -105,6 +105,7 @@ export class MetaService {
       attendanceSheetsPending,
       attendanceSheetsPendingFinalReview,
       activitiesPublished,
+      activitiesPendingCompletion,
     ] = await Promise.all([
       this.rbac.can(user, 'activity-registration.read.record'),
       this.rbac.can(user, 'attendance.read.sheet'),
@@ -122,6 +123,12 @@ export class MetaService {
       this.prisma.activity.count({
         where: notDeletedWhere({ statusCode: DASHBOARD_ACTIVITY_STATUS_PUBLISHED }),
       }),
+      this.prisma.activity.count({
+        where: notDeletedWhere({
+          statusCode: DASHBOARD_ACTIVITY_STATUS_PUBLISHED,
+          endAt: { lt: new Date() },
+        }),
+      }),
     ]);
 
     return {
@@ -134,7 +141,10 @@ export class MetaService {
             },
           }
         : {}),
-      activities: { published: activitiesPublished },
+      activities: {
+        published: activitiesPublished,
+        pendingCompletion: activitiesPendingCompletion,
+      },
     };
   }
 

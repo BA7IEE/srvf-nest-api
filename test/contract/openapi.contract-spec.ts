@@ -709,6 +709,7 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'CreateActivityDto',
   'UpdateActivityDto',
   'CancelActivityDto',
+  'PublishActivityDto',
   'ActivityResponseDto',
   'ActivityListItemDto',
   'CreateRegistrationDto',
@@ -891,8 +892,8 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'AppAvailableActivityListItemDto',
 
   // Phase 2 P2-4b(2026-05-20):App /api/app/v1/activities/{id} 详情 DTO
-  // AppActivityDetailDto:详情出参,字段恰好 13(沿 §5.1 v0.1 锁定);在 list 11 项
-  // 基础上追加 description + registrationNotes;独立 class,**禁止**继承 / Pick / Omit
+  // AppActivityDetailDto:详情出参 additive 扩为 17 项；在原 13 项基础上增加
+  // phase / genderRequirementCode / requiresInsurance / passCount；独立 class,**禁止**继承 / Pick / Omit
   // Admin DTO(沿 §5.4 + Phase 0.7 §2.2)。@ApiWrappedOkResponse 自动注册到 schemas。
   'AppActivityDetailDto',
 
