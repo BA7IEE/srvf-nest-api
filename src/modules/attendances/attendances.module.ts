@@ -7,6 +7,8 @@ import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
+import { AdminActivityCheckInsService } from './admin-activity-check-ins.service';
+import { ActivityCheckInQueryService } from './activity-check-in-query.service';
 import { AppMyAttendanceRecordsService } from './app-my-attendance-records.service';
 import { ActivityCheckInFieldPolicy } from './activity-check-in-field-policy';
 import { ActivityCheckInPolicy } from './activity-check-in-policy';
@@ -22,6 +24,7 @@ import { AttendanceSheetStateMachine } from './attendance-sheet-state-machine';
 import { AttendancesService } from './attendances.service';
 import { ContributionCalculator } from './contribution-calculator';
 import { TimeOverlapPolicy } from './time-overlap-policy';
+import { AdminActivityCheckInsController } from './controllers/admin-activity-check-ins.controller';
 import { AdminMemberAttendanceController } from './controllers/admin-member-attendance.controller';
 import { AppActivityCheckInsController } from './controllers/app-activity-check-ins.controller';
 import { AppMyAttendanceRecordsController } from './controllers/app-my-attendance-records.controller';
@@ -61,6 +64,7 @@ import { ParticipationSummaryQueryService } from './participation-summary-query.
   controllers: [
     AttendanceSheetsCollectionController,
     AttendanceSheetsResourceController,
+    AdminActivityCheckInsController,
     AdminMemberAttendanceController,
     AppActivityCheckInsController,
     AppMyAttendanceRecordsController,
@@ -68,6 +72,8 @@ import { ParticipationSummaryQueryService } from './participation-summary-query.
   ],
   providers: [
     AttendancesService,
+    AdminActivityCheckInsService,
+    ActivityCheckInQueryService,
     AppMyAttendanceRecordsService,
     AppActivityCheckInsService,
     ActivityCheckInPolicy,

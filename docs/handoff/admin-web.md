@@ -14,6 +14,8 @@
 活动轴   admin/v1/activities/:id
            ├─ /registrations            报名(activityId 是路径必填段)
            ├─ /attendance-sheets        考勤(同上)
+           ├─ /check-ins                GPS 打卡证据复核
+           ├─ /attendance-sheet-draft   只读生成考勤提交草稿
            └─ /reconciliation · /participation-summary  跨报名×考勤核对/汇总
 队员轴   admin/v1/members/:id
            ├─ /certificates  /memberships  /profile   (/department 旧单部门面 deprecated → memberships)
@@ -42,6 +44,7 @@
 | 活动头部 + 发布/取消/完结 | `GET /api/admin/v1/activities/:id`(含派生 `phase`) · `PATCH .../:id/publish`(body 必填 `{requiresInsuranceConfirmed:true}`) · `PATCH .../:id/cancel`(仅 draft|published) · `POST .../:id/complete`(**唯一**完结通路 published→completed) |
 | 报名 tab | `GET /api/admin/v1/activities/:id/registrations?statusCode=` · `POST` 代报名 · `PATCH .../:rid/{approve,reject,cancel}` · `POST .../:rid/reopen`(v0.40.0 审批后悔药 reject→pending)· `PATCH .../{bulk-approve,bulk-reject}`(1–100 条逐项结果) · `GET .../export`(CSV) |
 | 考勤 tab | `GET /api/admin/v1/activities/:id/attendance-sheets?statusCode=` · `POST` 提交单据 |
+| GPS 打卡证据 / 考勤草稿 | `GET /api/admin/v1/activities/:id/check-ins?page=&pageSize=` · `GET .../:id/attendance-sheet-draft`(只读、不落 Sheet/Record) |
 | 考勤审核详情 | `GET /api/admin/v1/attendance-sheets/:id/review-detail`(**活动摘要+单据+records含队员嵌套**,为审核页量身做的)· `PATCH .../:id/{approve,reject,final-approve,final-reject}` · `POST .../:id/reopen` · `DELETE` |
 | 参与核对 / 汇总 | `GET /api/admin/v1/activities/:id/reconciliation`(**仅 completed**) · `GET .../:id/participation-summary`；两者均需 `attendance.read.sheet` + `activity-registration.read.record` |
 
@@ -49,6 +52,8 @@
 > `activityId` 从**路由参数**来,不要在页面顶部摆"选择活动"下拉。
 
 > **审计刀 5 参与口径**:`reconciliation` 的 no-show = completed 活动中 pass 报名且**零未软删考勤记录**；考勤 Sheet 即使仍 pending，只要已有 record 就算到场。cancelled 报名不计 no-show。`participation-summary` 的 `totalServiceHours` / `totalContributionPoints` / 四档时长 histogram 则只统计 approved Sheet records；不要把“是否到场”和“是否已审批生效”混成同一过滤条件。
+
+> **活动 GPS 打卡 → 考勤草稿(F3)**:`check-ins` 与 `attendance-sheet-draft` 都只提供安全复核视图，**不返回原始 longitude/latitude 或 accuracy**。前端读取草稿后在本地结合 `flags` 编辑 `records`，再向既有 `POST /api/admin/v1/activities/:id/attendance-sheets` 提交 `{ "records": editedRecords }`；两条 GET 需 `attendance.read.sheet`，真正提交另需 `attendance.create.sheet`，读权不等于创建权。`absentRegistrations` 仅提示当前 pass 且零打卡的报名，不能伪造成 record；`records=[]` 时不要提交；超过 200 条按既有 `ArrayMaxSize(200)` 分批创建多个 Sheet，不能静默截断。
 
 > ⚠️ **报名审批生命周期新规(v0.40.0 参与域生命周期收口)**:
 > ① **未发布/取消/完结/已结束活动禁批报名** —— `approve` 仅在 activity=published 且 `endAt >= now` 时允许；draft 返 `20126`，cancelled/completed/已结束返 `20124`。`reject` / `cancel` 仍可用于清理残留队列。

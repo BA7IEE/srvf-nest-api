@@ -367,6 +367,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/activities/{activityId}/registrations/{id}/reject'],
   ['patch', '/api/admin/v1/activities/{activityId}/registrations/{id}/cancel'],
   ['post', '/api/admin/v1/activities/{activityId}/registrations/{id}/reopen'],
+  // 活动自助 GPS 签到 F3：Admin 证据分页 + 只读考勤提交草稿；两路复用
+  // attendance.read.sheet，并以 activity ref 支持 GLOBAL / scoped 判权。
+  ['get', '/api/admin/v1/activities/{activityId}/check-ins'],
+  ['get', '/api/admin/v1/activities/{activityId}/attendance-sheet-draft'],
   ['post', '/api/admin/v1/activities/{activityId}/attendance-sheets'],
   ['get', '/api/admin/v1/activities/{activityId}/attendance-sheets'],
   ['get', '/api/admin/v1/attendance-sheets/{id}/review-detail'],
@@ -948,6 +952,15 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'ActivityCheckInLocationDto',
   'AppActivityCheckInDto',
 
+  // 活动自助 GPS 签到 F3：Admin 证据列表与只读考勤草稿 6 个显式 schema。
+  // ListActivityCheckInsQueryDto 继承 PaginationQueryDto，仅内联为 query parameters。
+  'AdminActivityCheckInMemberDto',
+  'AdminActivityCheckInListItemDto',
+  'AttendanceSheetDraftRecordDto',
+  'AttendanceSheetDraftFlagDto',
+  'AttendanceSheetDraftAbsentRegistrationDto',
+  'AttendanceSheetDraftDto',
+
   // Phase 2 P2-7(2026-05-20):App /my/certificates 出参 DTO
   // 字段集严格沿 docs/app-api-p2-7-my-certificates-review.md §5.1 v0.1 锁定 12 项;
   // 独立 class,**禁止**继承 / Pick / Omit / IntersectionType / PartialType / OmitType /
@@ -1228,8 +1241,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('活动自助 GPS 签到 F2 后路由足迹精确为 348', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(348);
+  it('活动自助 GPS 签到 F3 后路由足迹精确为 350', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(350);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

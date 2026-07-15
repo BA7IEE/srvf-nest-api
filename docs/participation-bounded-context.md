@@ -26,7 +26,7 @@
 |---|---|---|
 | [`src/modules/activities/`](../src/modules/activities/) | `Activity` | 流程发起点;状态机 4 态 |
 | [`src/modules/activity-registrations/`](../src/modules/activity-registrations/) | `ActivityRegistration` | 报名 4 态;活动 ↔ 队员 关联 |
-| [`src/modules/attendances/`](../src/modules/attendances/) | `AttendanceSheet` / `AttendanceRecord` / `ActivityCheckIn` | 考勤、终审、贡献值落地；`ActivityCheckIn` 是 append-only 打卡证据，F2 已提供 canonical App self check-in/check-out/状态读取 |
+| [`src/modules/attendances/`](../src/modules/attendances/) | `AttendanceSheet` / `AttendanceRecord` / `ActivityCheckIn` | 考勤、终审、贡献值落地；`ActivityCheckIn` 是 append-only 打卡证据，F2 提供 canonical App self 写/读，F3 提供 canonical Admin 证据列表与只读考勤草稿 |
 | [`src/modules/contribution-rules/`](../src/modules/contribution-rules/) | `ContributionRule` | 字典码键 lookup;配置实体而非流程实体 |
 
 ### 2.2 Explicitly excluded(明确不在 participation 范围内)
@@ -52,7 +52,8 @@ Activity (statusCode: draft / published / completed / cancelled)
   │     ├─ FK registrationId → ActivityRegistration.id, Restrict;
   │     │  partial unique registrationId WHERE deletedAt IS NULL
   │     └─ FK memberId → Member.id, Restrict;
-  │        append-only evidence;F2 App create + 单向 checkout CAS]
+  │        append-only evidence;F2 App create + 单向 checkout CAS;
+  │        F3 Admin evidence list + read-only attendance draft]
   ├─ AttendanceSheet[]         [FK activityId → Activity.id, Restrict;
   │     │                      1 Activity 多 Sheet(D47 / R30)]
   │     └─ AttendanceRecord[]  [FK sheetId → AttendanceSheet.id, Restrict]
@@ -105,8 +106,9 @@ Certificate (不在 participation 图内)
 | 11. 撤回终审通过 | attendances | `reopen` → `approved → pending` | 保留 records / previousSnapshot / version,清空一审与终审责任字段;所有 approved-only 贡献读模型立即不再计入,重新 edit → approve → finalApprove 后恢复。撤回本身不发通知、不回滚历史报名准入 / 招新入队晋级结果;再次 finalApprove 复用既有通知。 |
 | —. ContributionRule 维护 | contribution-rules | ops 后台 CRUD;`status: ACTIVE / INACTIVE` | **不是流程状态实体**;仅作为预填配置,在 Step 7 被读取;`active_unique (activityTypeCode, attendanceRoleCode, durationThreshold) WHERE deletedAt IS NULL AND status = 'ACTIVE'` 由 migration SQL 加 partial unique |
 
-> **F2 当前事实**:`ActivityCheckIn` 已提供 App 本人签到/签退/当前状态 3 个 canonical 端点；
-> 写入仅为 append-only create 与同一行 `checkOutAt null → value` 单向 CAS。Admin 只读 surface 留 F3 登记。
+> **F2/F3 当前事实**:`ActivityCheckIn` 已提供 App 本人签到/签退/当前状态 3 个 canonical 端点，
+> 以及 Admin 证据列表/只读考勤草稿 2 个 canonical 端点。写入仍仅为 App append-only create 与
+> 同一行 `checkOutAt null → value` 单向 CAS；Admin 两端点不写 `ActivityCheckIn`、Sheet 或 Record。
 
 **关键 invariant**:
 
@@ -133,7 +135,7 @@ Certificate (不在 participation 图内)
 | `attendances` 在事务内读 `tx.activity.findFirst` | ✅ 允许 | `assertActivityExists` / `findActivityForSubmissionFull` 多处使用;Activity 是 attendances 的前置依赖 |
 | `attendances` 在事务内**写** `Activity.statusCode` | ❌ 禁止 | D2-a:考勤提交只建 pending Sheet；Activity.completed 只能由 activities 模块 `complete` action 推进 |
 | `attendances` 在事务内读 `tx.activityRegistration.findMany` | ✅ 允许 | 批量校验 `registration.activityId/memberId/statusCode(pass)` 与考勤记录一致 |
-| `attendances` 读 / 写 `ActivityCheckIn` | ✅ 自有表 | 模型 ownership 归 attendances；F2 App production write 只允许 append-only create / 单向 checkout CAS，不得借此写 Activity / ActivityRegistration |
+| `attendances` 读 / 写 `ActivityCheckIn` | ✅ 自有表 | 模型 ownership 归 attendances；F2 App production write 只允许 append-only create / 单向 checkout CAS；F3 Admin 只读 list/draft，不写 Sheet/Record；两者均不得借此写 Activity / ActivityRegistration |
 | `attendances` 在事务内读 `tx.contributionRule.findMany` | ✅ 允许 | D14 5.B 系统预填;走 [`contribution-calculator.ts`](../src/modules/attendances/contribution-calculator.ts) |
 | `activities` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | Activity 是上游,不下探;若需要派生统计,通过 `attendance.recorded` 事件或独立 service |
 | `activity-registrations` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | 同上 |
@@ -148,6 +150,9 @@ Certificate (不在 participation 图内)
 - **ActivityCheckIn F2**:App 自助打卡写事务固定按 Activity → 当前 pass ActivityRegistration
   取共享锁并在锁后重跑状态/pass 闸，只写 attendances 自有的 `ActivityCheckIn`（create / 单向
   checkout CAS），不扩散任何 cross-aggregate write。
+- **ActivityCheckIn F3**:Admin list/draft 只读 `Activity`、当前 pass `ActivityRegistration`、
+  `ActivityCheckIn` 与 Member 摘要；两端点各固定 4 次业务查询（authz 查询分开计），不写
+  `ActivityCheckIn`、Sheet、Record，也不扩散任何 cross-aggregate write。
 - 跨 aggregate 写**只允许在同事务内发生**;**禁止**用"先 attendances 改完,再回调 activities"的两阶段方式;**禁止**用 `setTimeout` / `Promise.then` 把后续写挪出事务。
 
 ### 5.4 ContributionRule 是配置,不是流程
@@ -169,6 +174,7 @@ Certificate (不在 participation 图内)
 | Admin Activities | `v2/activities` | [`activities.controller.ts`](../src/modules/activities/activities.controller.ts) |
 | Admin Registrations | `v2/activities/:activityId/registrations` | [`activity-registrations.controller.ts`](../src/modules/activity-registrations/activity-registrations.controller.ts) |
 | Admin Attendances | `v2/activities/:activityId/attendance-sheets` + `v2/attendance-sheets` | [`attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts) |
+| Admin ActivityCheckIns | `GET /api/admin/v1/activities/:activityId/check-ins` + `GET /api/admin/v1/activities/:activityId/attendance-sheet-draft`（`attendance.read.sheet` + activity ref；只读） | [`controllers/admin-activity-check-ins.controller.ts`](../src/modules/attendances/controllers/admin-activity-check-ins.controller.ts) |
 | Ops ContributionRules | `v2/contribution-rules` | [`contribution-rules.controller.ts`](../src/modules/contribution-rules/contribution-rules.controller.ts) |
 
 ### 6.2 App surface(participation 视角的 mobile 路径)
