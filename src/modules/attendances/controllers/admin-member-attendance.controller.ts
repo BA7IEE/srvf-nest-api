@@ -13,13 +13,16 @@ import { PageResultDto, PaginationQueryDto } from '../../../common/dto/paginatio
 import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import { AdminMemberAttendanceRecordDto, MemberContributionSummaryDto } from '../attendances.dto';
 import { AttendancesService } from '../attendances.service';
+import { MemberParticipationSummaryDto } from '../participation-summary.dto';
+import { ParticipationSummaryQueryService } from '../participation-summary-query.service';
 
 // 跨轴只读 admin controller(2026-06-23;队员/审批跨轴只读查询 goal · 队员 360 Tier3)。
 //
-// admin/v1/members/:memberId 轴下的两个 attendance 派生只读端点(队员 360「考勤记录」「贡献值」tab):
+// admin/v1/members/:memberId 轴下的三个 attendance 派生只读端点(队员 360):
 //   1. GET attendance-records:某队员跨 sheet 考勤记录(仅 approved;复用 attendance-presenter;
 //      item 带 activity 上下文);
 //   2. GET contribution-summary:某队员贡献值生涯累计 capped 总分(实时算,复用 team-join 封顶核 3)。
+//   3. GET participation-summary:approved 时长/distinct 活动数/记录数 + 同一生涯封顶贡献核。
 //
 // 落 admin member 轴(贡献汇总是 attendance 派生读,非 contribution-rules 的 System surface 规则面;
 // 沿 api-surface-policy §9.1)。入口仅全局 JwtAuthGuard,判权下沉 service 层 rbac.can('attendance.read.sheet')
@@ -30,7 +33,10 @@ import { AttendancesService } from '../attendances.service';
 @ApiBearerAuth()
 @Controller('admin/v1/members/:memberId')
 export class AdminMemberAttendanceController {
-  constructor(private readonly service: AttendancesService) {}
+  constructor(
+    private readonly service: AttendancesService,
+    private readonly participationQuery: ParticipationSummaryQueryService,
+  ) {}
 
   @Get('attendance-records')
   @ApiOperation({
@@ -69,5 +75,24 @@ export class AdminMemberAttendanceController {
     @CurrentUser() currentUser: CurrentUserPayload,
   ): Promise<MemberContributionSummaryDto> {
     return this.service.getMemberContributionSummary(memberId, currentUser);
+  }
+
+  @Get('participation-summary')
+  @ApiOperation({
+    summary:
+      '某队员参与累计(approved 时长/活动次数/记录数/生涯封顶贡献；member ref 点判) [rbac: attendance.read.sheet]',
+  })
+  @ApiWrappedOkResponse(MemberParticipationSummaryDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.MEMBER_NOT_FOUND,
+  )
+  participationSummary(
+    @Param('memberId') memberId: string,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ): Promise<MemberParticipationSummaryDto> {
+    return this.participationQuery.forMemberAdmin(memberId, currentUser);
   }
 }

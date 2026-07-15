@@ -3,6 +3,9 @@ import { DatabaseModule } from '../../database/database.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { MetaController } from './meta.controller';
 import { MetaService } from './meta.service';
+import { AuthzModule } from '../authz/authz.module';
+import { OrganizationsModule } from '../organizations/organizations.module';
+import { ParticipationOverviewQueryService } from './participation-overview-query.service';
 
 // F1/A7(路线图 §4 A7;net-new 模块):跨资源批量 id→label 解析(resolve-labels)。
 // imports PermissionsModule 供 MetaService 注入 RbacService(R 模式 rbac.can;沿
@@ -10,8 +13,8 @@ import { MetaService } from './meta.service';
 // service**(镜像 authz 模块 ResourceResolverService 的自包含范式);无 AuditLogsModule
 // (诊断读,无 audit)。
 @Module({
-  imports: [DatabaseModule, PermissionsModule],
+  imports: [DatabaseModule, PermissionsModule, AuthzModule, OrganizationsModule],
   controllers: [MetaController],
-  providers: [MetaService],
+  providers: [MetaService, ParticipationOverviewQueryService],
 })
 export class MetaModule {}

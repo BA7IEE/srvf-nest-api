@@ -14,6 +14,8 @@ import { ActivityParticipationPolicy } from './activity-participation-policy';
 import { AppActivitiesService } from './app-activities.service';
 import { AppMyActivitiesService } from './app-my-activities.service';
 import { AppActivitiesController } from './controllers/app-activities.controller';
+import { AdminActivityParticipationController } from './controllers/admin-activity-participation.controller';
+import { ActivityParticipationQueryService } from './activity-participation-query.service';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -48,12 +50,17 @@ import { AppActivitiesController } from './controllers/app-activities.controller
     NotificationsModule,
     OrganizationsModule,
   ],
-  controllers: [ActivitiesController, AppActivitiesController],
+  controllers: [
+    ActivitiesController,
+    AppActivitiesController,
+    AdminActivityParticipationController,
+  ],
   providers: [
     ActivitiesService,
     ActivityAuditRecorder,
     ActivityStateMachine,
     ActivityParticipationPolicy,
+    ActivityParticipationQueryService,
     AppActivitiesService,
     AppMyActivitiesService,
   ],
