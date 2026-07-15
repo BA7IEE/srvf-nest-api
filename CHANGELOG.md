@@ -2,9 +2,9 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
+## v0.53.0 - 2026-07-15
 
-> 主题:**活动报名候补与自动递补（审计刀 6 · 第二件）**。关闭审计项 #5。版本仍为 v0.52.0；0 schema / 0 migration（52）/ 0 新端点（350）/ 0 权限码（206）/ 0 BizCode（240）/ 0 AuditLogEvent（113）/ 0 cron（2）/ 0 新依赖。`registration_status` seed 仅 additive 增加 `waitlisted`。
+> 主题:**活动报名候补与自动递补（审计刀 6 · 第二件）**。范围 = 候补递补 #630 + 元核验发现的并发缺陷修复 #631。关闭审计项 #5。0 schema / 0 migration（52）/ 0 新端点（350）/ 0 权限码（206）/ 0 BizCode（240）/ 0 AuditLogEvent（113）/ 0 cron（2）/ 0 新依赖。`registration_status` seed 仅 additive 增加 `waitlisted`。
 
 ### 行为变更对照（恰好 5 条）
 
@@ -19,6 +19,8 @@
 - **并发与审计**:递补在调用方事务内先锁 Activity，再按 FIFO 逐行 `claimAtStatus` CAS；取消 pass 统一 Activity→Registration 锁序，并发双取消不会死锁、重复递补或漏递补。递补审计复用 `registration.review` + `extra.action='promote'`，通知复用 `registration-result` 且只在 commit 后派发。
 - **读侧 additive**:App 我的报名列表/详情与 Admin 报名列表新增 nullable `waitlistPosition`（候补从 1 开始，其他状态为 null；列表批量计算无 N+1）；dashboard `registrations` 新增 `waitlisted`。
 - **边界不变**:approve 容量复核与 `FOR UPDATE` 不动；参与度量、考勤、结算路径不动，签到继续只认当前 pass 报名；无手动递补端点、无候补上限、无新定时任务。
+- **并发缺陷修复（#631,元核验发现）**:扩容递补的 delta 基线原取自 `FOR UPDATE` 之前的无锁读,并发/重试的同值 capacity 调大会按陈旧基线各算一次 delta（净增 2 却递补 4）,先扩后缩的场景更会把缩容误判为扩容而递补（违反上条第 3 行）。基线改为取锁后重读,与同为取锁后读的 passCount 对齐同一快照；补并发回归 e2e（变异验证:还原旧逻辑该用例即红）与递补通知 `notificationTypeCode`/`channels` 断言。容量从未被击穿——approve 容量闸始终兜底,实际影响为多余递补与随之而来的错误通知。
+- **文档追认**:`docs/participation-bounded-context.md` 与 `src/modules/activity-registrations/CLAUDE.md` 的状态机 4 态→5 态 true-up 由维护者事后追认（实现必需,不改则文档失真；原 goal 授权清单遗漏该项）。
 
 ## v0.52.0 - 2026-07-15
 
