@@ -141,6 +141,33 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "ActivityCheckInLocationDto": {
+    "properties": {
+      "accuracy": {
+        "description": "定位精度(米；仅作证据，不参与 geofence 半径缩放；最多 2 位小数)",
+        "maximum": 99999999.99,
+        "minimum": 0,
+        "type": "number",
+      },
+      "latitude": {
+        "description": "当前位置纬度(WGS84 十进制度数；最多 7 位小数)",
+        "maximum": 90,
+        "minimum": -90,
+        "type": "number",
+      },
+      "longitude": {
+        "description": "当前位置经度(WGS84 十进制度数；最多 7 位小数)",
+        "maximum": 180,
+        "minimum": -180,
+        "type": "number",
+      },
+    },
+    "required": [
+      "longitude",
+      "latitude",
+    ],
+    "type": "object",
+  },
   "ActivityListItemDto": {
     "properties": {
       "activityTypeCode": {
@@ -1332,6 +1359,75 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "positions",
       "supervisions",
       "summary",
+    ],
+    "type": "object",
+  },
+  "AppActivityCheckInDto": {
+    "properties": {
+      "activityId": {
+        "description": "活动 Activity.id",
+        "type": "string",
+      },
+      "checkInAt": {
+        "description": "服务端签到时间(ISO 8601)",
+        "format": "date-time",
+        "type": "string",
+      },
+      "checkInDistance": {
+        "description": "签到点到活动坐标距离(米；Decimal 字符串)",
+        "nullable": true,
+        "type": "string",
+      },
+      "checkOutAt": {
+        "description": "服务端首次签退时间(ISO 8601)",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "checkOutDistance": {
+        "description": "签退点到活动坐标距离(米；Decimal 字符串)",
+        "nullable": true,
+        "type": "string",
+      },
+      "createdAt": {
+        "description": "证据创建时间(ISO 8601)",
+        "format": "date-time",
+        "type": "string",
+      },
+      "geoVerified": {
+        "description": "签到时活动坐标是否完整有效并完成 geofence 计算",
+        "type": "boolean",
+      },
+      "id": {
+        "description": "打卡证据主键(cuid)",
+        "type": "string",
+      },
+      "outOfRange": {
+        "description": "签到时未舍入距离是否严格大于配置半径",
+        "type": "boolean",
+      },
+      "registrationId": {
+        "description": "当前审核通过报名 ActivityRegistration.id",
+        "type": "string",
+      },
+      "updatedAt": {
+        "description": "证据最近更新时间(ISO 8601)",
+        "format": "date-time",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "activityId",
+      "registrationId",
+      "checkInAt",
+      "checkOutAt",
+      "checkInDistance",
+      "checkOutDistance",
+      "geoVerified",
+      "outOfRange",
+      "createdAt",
+      "updatedAt",
     ],
     "type": "object",
   },
@@ -62979,6 +63075,685 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "tags": [
         "Mobile - My Registrations",
         "Mobile - My Activities",
+      ],
+    },
+  },
+  "/api/app/v1/my/activities/{activityId}/check-in": {
+    "get": {
+      "operationId": "AppActivityCheckInsController_getCurrent",
+      "parameters": [
+        {
+          "description": "活动 Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityCheckInDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在; 22002: 活动打卡记录不存在",
+                    "enum": [
+                      20001,
+                      22002,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001) / 活动打卡记录不存在(code=22002)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "读取本人当前审核通过报名的打卡状态 [auth]",
+      "tags": [
+        "Mobile - My Activity Check-ins",
+      ],
+    },
+    "post": {
+      "operationId": "AppActivityCheckInsController_checkIn",
+      "parameters": [
+        {
+          "description": "活动 Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ActivityCheckInLocationDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityCheckInDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 22076: 关联报名必须属于该活动与该队员且已审核通过; 22077: 考勤时间超出活动时间窗",
+                    "enum": [
+                      40000,
+                      22076,
+                      22077,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 关联报名必须属于该活动与该队员且已审核通过(code=22076) / 考勤时间超出活动时间窗(code=22077)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 20122: 活动已取消,禁止录入考勤; 20126: 活动未发布,不可报名、审批或提交考勤",
+                    "enum": [
+                      20030,
+                      20122,
+                      20126,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 活动已取消,禁止录入考勤(code=20122) / 活动未发布,不可报名、审批或提交考勤(code=20126)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "本人 GPS 签到（首次与合法重试均返回当前证据） [auth]",
+      "tags": [
+        "Mobile - My Activity Check-ins",
+      ],
+    },
+  },
+  "/api/app/v1/my/activities/{activityId}/check-out": {
+    "post": {
+      "operationId": "AppActivityCheckInsController_checkOut",
+      "parameters": [
+        {
+          "description": "活动 Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ActivityCheckInLocationDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityCheckInDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 22076: 关联报名必须属于该活动与该队员且已审核通过; 22077: 考勤时间超出活动时间窗; 22070: 服务时长须大于 0",
+                    "enum": [
+                      40000,
+                      22076,
+                      22077,
+                      22070,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 关联报名必须属于该活动与该队员且已审核通过(code=22076) / 考勤时间超出活动时间窗(code=22077) / 服务时长须大于 0(code=22070)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20001: 活动不存在",
+                    "enum": [
+                      20001,
+                    ],
+                    "example": 20001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 20122: 活动已取消,禁止录入考勤; 20126: 活动未发布,不可报名、审批或提交考勤; 22078: 请先完成签到再签退",
+                    "enum": [
+                      20030,
+                      20122,
+                      20126,
+                      22078,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 活动已取消,禁止录入考勤(code=20122) / 活动未发布,不可报名、审批或提交考勤(code=20126) / 请先完成签到再签退(code=22078)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "本人 GPS 签退（首次与合法重试均返回当前证据） [auth]",
+      "tags": [
+        "Mobile - My Activity Check-ins",
       ],
     },
   },

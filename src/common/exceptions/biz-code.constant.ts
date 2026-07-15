@@ -4,7 +4,7 @@ import { HttpStatus } from '@nestjs/common';
 //
 // 当前状态(随实施滚动维护;每次新增模块码后校对):
 // - 招新证书闭环刀A(2026-07-13):28xxx +2(28054 已审核通过禁止重传 / 28055 未审核通过禁止标门槛)
-// - 238 个 BizCode(2026-07-15 亲核:Object.keys(BizCode).length;活动一致性收口新增 6 码)
+// - 240 个 BizCode(2026-07-15 亲核:Object.keys(BizCode).length;活动自助 GPS 签到新增 2 码)
 // - 历史 2026-06-25 快照为 175 个 BizCode(彼时含 CMS content 290xx +5
 //   + 活动闭环硬化 20123 报名截止 +1 + 统一通知 310xx +5;2026-06-13 的「141」系彼时快照,此后 realname 27xxx
 //   + 招新·入队 28xxx(280xx/281xx/282xx)+ #399 review 错误码增量(13014 / 19010 / 30103)+ CMS content 290xx 5 码
@@ -633,7 +633,7 @@ export const BizCode = {
   // attendances 模块业务级(220xx + 221xx)。批次 3B 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.8 / §1.14 + 批次3_schema草案 §18.2。
   // 子段(对齐 baseline §1.3):
-  // - 22001-22009:Sheet NOT_FOUND
+  // - 22001-22009:Sheet / ActivityCheckIn NOT_FOUND
   // - 22030-22049:Sheet 状态机 / 资源状态(STATUS_INVALID / APPROVED_NOT_EDITABLE / REJECTED_NOT_EDITABLE)
   // - 22050-22099:Record 实体级(字典 / 时间 / serviceHours / contributionPoints / registrationId 跨表)
   // - 221xx:暂留(FORBIDDEN_ATTENDANCE_* 不开,沿 baseline;USER 越权 → 404 沿 §1.7)
@@ -646,6 +646,11 @@ export const BizCode = {
   ATTENDANCE_SHEET_NOT_FOUND: {
     code: 22001,
     message: '考勤单据不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_CHECK_IN_NOT_FOUND: {
+    code: 22002,
+    message: '活动打卡记录不存在',
     httpStatus: HttpStatus.NOT_FOUND,
   },
   ATTENDANCE_SHEET_STATUS_INVALID: {
@@ -712,6 +717,11 @@ export const BizCode = {
     code: 22077,
     message: '考勤时间超出活动时间窗',
     httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_CHECK_OUT_REQUIRES_CHECK_IN: {
+    code: 22078,
+    message: '请先完成签到再签退',
+    httpStatus: HttpStatus.CONFLICT,
   },
 
   // V2 第一阶段批次 4-A 引入(2026-05-12)。详见 docs:批次4_贡献值业务规则_schema草案评审决议表 v1.0

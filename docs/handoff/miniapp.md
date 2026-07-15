@@ -24,6 +24,7 @@
 | 活动池 / 我的活动 | `GET /api/app/v1/activities/available`(**仅 `public` 且未结束活动;详情 `GET /api/app/v1/activities/:id` 新增 `phase` / `genderRequirementCode` / `requiresInsurance` / `passCount`,已报名者仍能回看已结束活动**) · `GET /api/app/v1/my/activities` |
 | 我的报名(报名/查/取消) | `GET /api/app/v1/my/registrations` · `POST` 报名(**v0.40.0:活动已结束 `endAt < now` → `20125`「活动已结束,不可报名」;报名截止 `registrationDeadline` 仍为独立闸 `20123`**)· `PATCH` 取消(**v0.40.0:该报名已有考勤记录 → `21033`「报名已有考勤记录,不可取消」**) |
 | 我的考勤 / 参与汇总 / 证书 | `GET /api/app/v1/my/attendance-records` · `GET /api/app/v1/my/participation-summary` · `GET /api/app/v1/my/certificates`。参与汇总严格锁当前 `AppIdentityResolver.memberId`，只统计 approved Sheet：`totalServiceHours` / distinct `activityCount` / `recordCount`；`contributionPoints` 复用生涯累计封顶核，与 Admin 旧 `contribution-summary` 同源。**不返回 memberId / no-show / 他人数据**，前端直接展示，勿自行 SUM |
+| **活动 GPS 自助签到 / 签退(F2)** | `POST /api/app/v1/my/activities/:activityId/check-in` · `POST .../check-out` · `GET .../check-in`。只认本人当前 `pass` 报名；首次与合法网络重试都返回 200 同一证据。App 仅收到时间、距离与 `geoVerified/outOfRange`，**不返回原始经纬度、accuracy 或 memberId** |
 | 公开(无账号) | `POST /api/open/v1/recruitment/applications/*`(招新报名) · `GET /api/open/v1/contents`(内容;`expireAt <= now` 的附件行不返回、过期封面 URL 为 null,未来时间/null 不变) |
 | 招新本人进度(无账号) | `POST /api/open/v1/recruitment/applications/query`(凭 wx.login code 换 openid;**返进度模型**:业务态 `stage` + 字典 `stageText` + `nextAction` + 门槛 `todoList` 真投影 + 临时编号;`memberNo` 恒 null——发号后经登录态 app 侧查,见 §3 GAP-006)。**F4(v0.41.0-pre)**:发号后(报名行 openid 已清)不再「查无 28002」——经账号 openid 锚 fall-through 返 **stage=volunteer 引导态**(「已转志愿者 / 待入队」+ `nextAction=apply-teamjoin`),前端见此态引导用户登录小程序/申请入队;已离队(INACTIVE)或非招新出身仍 28002 |
 | **H5 报名前手机身份链(无账号;S4a)** | `POST /api/open/v1/recruitment/identity/send-code`(`{phone}`→发验证码) → `POST .../identity/verify-code`(`{phone,code}`→返一次性 `phoneVerificationToken`〔30min,明文仅返一次〕) → 提交报名(见下行 H5 链)。**F4(v0.41.0-pre)**:闭轮期两端点对「手机命中未清除报名记录」者放行(自助查询/换绑链闭轮不再断);闭轮陌生手机 send-code 返防枚举泛化 200(不真发码),verify-code 统一 24010——前端不必对闭轮做特殊分支 |
@@ -44,6 +45,14 @@
 > 任务→端点的细化(注册流、入队流等)等建仓时按真实页面补,别提前臆造。
 > **H5 链失败码**:验码错/过期统一 `24010`;token 无效/过期/已用 `28050`;无 open 轮 `28030`;换微信撞他人 `28051`;无报名 `28002`。
 > **⚠️ S5 语义变(Unreleased)**:`GET /api/app/v1/me`(及任何回带 `Member.gradeCode` 的 app 出参)对**未入队志愿者**现返 `gradeCode='volunteer'`(S5 前恒 `null`)。前端**勿再用 `gradeCode==null` 等价"志愿者/未入队"**;"是否正式队员"应判 `gradeCode ∈ level-1..7`。历史(S5 前)发号的志愿者仍为 `null`,故"未入队志愿者"= `gradeCode ∈ {null, 'volunteer'}`。
+
+### 2.1 活动 GPS 自助打卡(F2)
+
+- **定位权限**：点击签到/签退后先请求定位权限；用户拒绝或客户端没有完整经纬度时，不发后端请求，展示重新授权指引。`accuracy` 可选且只作证据，不参与半径放大/缩小。
+- **按钮初始化**：进入活动页先调 `GET .../check-in`。`22002` = 尚无当前报名打卡，显示“签到”；200 且 `checkOutAt=null` = 已签到，显示“签退”；200 且 `checkOutAt!=null` = 已完成。GET 不受活动四态额外阻断，但只读取当前 `pass` 报名。
+- **成功告警**：`outOfRange=true` 和 `geoVerified=false` 都是 200 成功态，不要自动重试或当作失败；分别提示“已记录，位置超出活动范围”和“已记录，活动位置暂未校验”。后端不会把原始定位值回显给 App。
+- **安全重试**：网络超时可重发同一动作；状态与当前 `pass` 闸仍合法时，重复/并发请求返回同一个 winner，首次签退位置不会被后续重试覆盖。
+- **错误提示**：`22076` 当前报名未通过/已取消；`22077` 超出活动时间窗；`22078` 尚未签到不可签退；`22070` 签到后不足 36 秒不可首次签退；`20030` completed 不可新签到；`20122` 活动已取消；`20126` 活动尚未发布。定位字段缺失、越界、小数位或夹带未知字段统一按 400 表单错误处理。
 
 ### 2.x 十项收口一刀增量(2026-07-11)
 

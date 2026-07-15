@@ -154,6 +154,12 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 审计刀 5 F4：App self-scope 个人参与累计，只返正向 approved 时长/次数/封顶贡献。
   ['get', '/api/app/v1/my/participation-summary'],
 
+  // 活动自助 GPS 签到 F2：canonical App self surface；当前 pass registration 锚定，
+  // POST 首次/合法重试均 200，GET 只读本人当前报名证据。无 legacy alias / raw GPS 回显。
+  ['post', '/api/app/v1/my/activities/{activityId}/check-in'],
+  ['post', '/api/app/v1/my/activities/{activityId}/check-out'],
+  ['get', '/api/app/v1/my/activities/{activityId}/check-in'],
+
   // Phase 2 P2-7(2026-05-20):App /api/app/v1/my/certificates 1 endpoint
   // 沿 docs/app-api-p2-7-my-certificates-review.md §4 endpoint 契约 + §5 字段集恰好 12;
   // 独立 AppMyCertificatesService(沿 D-P2-7-9;**不** thin-wrap certificates.service.list;
@@ -937,6 +943,11 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // parameters,**不**注册到 components.schemas(沿 P2-5a query DTO 同范式)。
   'AppMyAttendanceRecordDto',
 
+  // 活动自助 GPS 签到 F2：独立 App location 入参 + 精确 11 字段安全响应。
+  // activityId path DTO 被 Swagger 内联为 parameter，不注册 component schema。
+  'ActivityCheckInLocationDto',
+  'AppActivityCheckInDto',
+
   // Phase 2 P2-7(2026-05-20):App /my/certificates 出参 DTO
   // 字段集严格沿 docs/app-api-p2-7-my-certificates-review.md §5.1 v0.1 锁定 12 项;
   // 独立 class,**禁止**继承 / Pick / Omit / IntersectionType / PartialType / OmitType /
@@ -1217,8 +1228,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('审计刀 5 后路由足迹精确为 345', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(345);
+  it('活动自助 GPS 签到 F2 后路由足迹精确为 348', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(348);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

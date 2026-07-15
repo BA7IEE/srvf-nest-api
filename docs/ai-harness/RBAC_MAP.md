@@ -104,6 +104,7 @@
 
 > 2026-07-14 v0.49.0 部门数据范围全面接线戳(冻结评审 #604 / seed #605 / scope+FE #606 / member-axis #607 / participation #608):权限码 **206 不变**；内置角色 **7→9**，新增 `org-readonly` **10** 码与 `group-readonly` **11** 码，两者从对应正职角色动态投影 `*.read.*` / `attachment.view.*`、恒排除 `*.read.sensitive` 与全部写码；默认职务 policy 3→6，副职三职务 TREE 派生只读。endpoint **337→338**(`GET system/v1/authz/me/effective-permissions` `[auth]`)，controller **66→67**；biz-admin 81 / org-admin 60 / group-manager 22 / org-supervisor 4 / attendance-final-reviewer 4 / ops-admin 96 / member 9 / module 35 / migration 50 / BizCode 232 / AuditLogEvent 113 均不变。`AuthzService.getVisibleOrganizationScope()` 将三源 grant 展开成 GLOBAL 或组织集；members/certificates/profile/contacts/insurance 与 participation 五个扁平/member-axis 入口完成消费接线。Recruitment/team-join/auth/旧 `RbacService` 判权读源 0 diff。
 > 2026-07-15 活动模块度量与批量审批（审计刀 5）戳：**权限事实零变化**（权限码 **206** / 全部内置角色绑定不动）；endpoint **338→345**（活动 reconciliation + participation-summary、member/app participation-summary、meta participation-overview、registration bulk approve/reject）；controller **67→69**（新增 `AdminActivityParticipationController` + `AppMyParticipationSummaryController`，其余 5 端点扩既有 controller）。活动级两读端点逐项 `AuthzService.explain` 两码并带 activity ref；overview 对两码 `getVisibleOrganizationScope` 求交；member 点读复用 `attendance.read.sheet` member ref；App self-scope 无码；bulk 逐 id 复用原单条 action 码与事务/audit。module 35 / migration 51 / BizCode 238 / AuditLogEvent 113 均不变；`docs:rbacmap:check` 0 FAIL / 0 WARN。
+> 2026-07-15 活动自助 GPS 签到 F2 戳：**权限事实零变化**（权限码 **206** / 内置角色及绑定不动）；endpoint **345→348**（App self-scope check-in / check-out / 当前状态）；controller **69→70**（新增 `AppActivityCheckInsController`）；App endpoint **33→36**。三路只走 JwtAuthGuard + AppIdentityResolver，where/事务锁定本人当前 pass registration，无 RBAC 码、无 `@Roles`、无 legacy alias。module 35 / migration 52 / BizCode 240 / AuditLogEvent 113 / cron 2 均不变。
 
 ---
 
@@ -116,7 +117,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。`RbacCacheService` 只缓存 GLOBAL 权限解析(TTL 1800s,三档失效)，不是身份缓存；`AuthzService` 当前不缓存判权/可见范围结果。
 
-## 2. controller × 鉴权模式对照(69 个 controller class)
+## 2. controller × 鉴权模式对照(70 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
@@ -187,9 +188,9 @@
 
 **2026-06-11 Slow-4 T2/T3(#316/#317)后不存在 G 模式 controller**:原 7 模块 44 处 `@Roles`(历史计数"48 处"系本表笔误,亲核 true-up 见评审稿 D-S4-1)全部迁入上方 R 模式或无码化;迁移前逐端点形态冻结于评审稿 §3 映射表。
 
-### 2.3 A 模式 — App surface(33 endpoint,JwtAuthGuard + 准入;SMS T3 +me/phone 两端点、WECHAT T3 +me/wechat 两端点均沿 me/password 账号级豁免;保险 T2 +me/insurances 4 端点 CRUD;招新三期入队 T3 +me/team-join 3 端点;CMS T4 +contents 2 端点可见性闸;统一通知 S1 +notifications 4 端点站内信拉取〔list/unread-count/detail/mark-read〕;审计刀 5 +my/participation-summary)
+### 2.3 A 模式 — App surface(36 endpoint,JwtAuthGuard + 准入;SMS T3 +me/phone 两端点、WECHAT T3 +me/wechat 两端点均沿 me/password 账号级豁免;保险 T2 +me/insurances 4 端点 CRUD;招新三期入队 T3 +me/team-join 3 端点;CMS T4 +contents 2 端点可见性闸;统一通知 S1 +notifications 4 端点站内信拉取〔list/unread-count/detail/mark-read〕;审计刀 5 +my/participation-summary;活动自助 GPS 签到 F2 +3)
 
-`app/v1/me`(7,含 GET/PUT me/wechat〔openid 一律掩码回显〕)/ `app/v1/me/insurances`(4,自购保险自助 CRUD,保险 T2;26001 防侧信道)/ `app/v1/me/team-join`(3,入队自助:发起申请/查进度/改候选部门,招新三期 T3;准入 AppIdentityResolver canUseApp=false→403,锁 currentUser.memberId 防 IDOR)/ `app/v1/activities`(2)/ `app/v1/my`×4 class(registrations 5 + attendance-records 1 + certificates 1 + participation-summary 1〔审计刀 5 F4：approved-only 时长/次数/封顶贡献，恒本人，独立 App DTO，不返 no-show/memberId〕)+ `app/v1/me/password`(继承 P0-D/P0-E 全套铁律)+ `app/v1/contents`(2,CMS 内容会员读取面 T4;准入 canUseApp=false→403,**非 self-scope 而是 5 档可见性闸**〔public/member/formal_member/department/management〕,详情不可见 → 404 防枚举,viewCount 自增)+ `app/v1/notifications`(4,统一通知 S1 站内信拉取:list/unread-count/detail/mark-read;准入 canUseApp=false→403,**4 档可见性闸**〔复用 content.visibility 去 public〕,详情/mark-read 不可见 → 404 防枚举;mark-read 幂等 upsert + readCount 原子 +1;**unread-count 字面段声明于 :id 之前**;读者出参零 authorUserId/visibleOrganizationIds/statusCode/readCount)。**永不返回 L3 字段**(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / `appSecret*` / `session_key` / 完整 signed URL;**例外 a**:content-* 签名 URL 仅在过文章可见级后于 open/v1+app/v1 内容读取面返回,见 `attachments/CLAUDE.md`)。
+`app/v1/me`(7,含 GET/PUT me/wechat〔openid 一律掩码回显〕)/ `app/v1/me/insurances`(4,自购保险自助 CRUD,保险 T2;26001 防侧信道)/ `app/v1/me/team-join`(3,入队自助:发起申请/查进度/改候选部门,招新三期 T3;准入 AppIdentityResolver canUseApp=false→403,锁 currentUser.memberId 防 IDOR)/ `app/v1/activities`(2)/ `app/v1/my`×5 class(registrations 5 + attendance-records 1 + certificates 1 + participation-summary 1〔审计刀 5 F4：approved-only 时长/次数/封顶贡献，恒本人，独立 App DTO，不返 no-show/memberId〕+ **activity-check-ins 3**〔F2：check-in/check-out/当前状态；当前 pass registration self-scope；状态/pass 先于幂等；原始坐标/accuracy/memberId 永不回显〕)+ `app/v1/me/password`(继承 P0-D/P0-E 全套铁律)+ `app/v1/contents`(2,CMS 内容会员读取面 T4;准入 canUseApp=false→403,**非 self-scope 而是 5 档可见性闸**〔public/member/formal_member/department/management〕,详情不可见 → 404 防枚举,viewCount 自增)+ `app/v1/notifications`(4,统一通知 S1 站内信拉取:list/unread-count/detail/mark-read;准入 canUseApp=false→403,**4 档可见性闸**〔复用 content.visibility 去 public〕,详情/mark-read 不可见 → 404 防枚举;mark-read 幂等 upsert + readCount 原子 +1;**unread-count 字面段声明于 :id 之前**;读者出参零 authorUserId/visibleOrganizationIds/statusCode/readCount)。**永不返回 L3 字段**(`passwordHash` / `refreshToken` / `tokenHash` / `secretKey*` / `secretId*` / `appSecret*` / `session_key` / 完整 signed URL;**例外 a**:content-* 签名 URL 仅在过文章可见级后于 open/v1+app/v1 内容读取面返回,见 `attachments/CLAUDE.md`)。
 
 ### 2.4 P 模式 — `@Public`
 
