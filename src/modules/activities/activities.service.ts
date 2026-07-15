@@ -638,17 +638,25 @@ export class ActivitiesService {
       let waitlistPromotionLimit: number | null | undefined;
       if (dto.capacity !== undefined) {
         await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${current.id} FOR UPDATE`;
+        // delta 基线必须在取锁**之后**重读:`current` 来自取锁前的无锁读,并发 / 重试的
+        // capacity update 会让它陈旧 —— 复用陈旧基线时两个 tx 各按 5→10 算出 delta=5,
+        // 合计递补 10 名(净增名额仅 5),缩容请求也可能被误判为扩容而递补(违反 W3)。
+        // passCount 同为取锁后的新鲜读,二者基线一致。
+        const locked = await tx.activity.findUniqueOrThrow({
+          where: { id: current.id },
+          select: { capacity: true },
+        });
         const passCount = await tx.activityRegistration.count({
           where: notDeletedWhere({ activityId: current.id, statusCode: 'pass' }),
         });
         if (dto.capacity !== null && dto.capacity < passCount) {
           throw new BizException(BizCode.ACTIVITY_CAPACITY_INVALID);
         }
-        if (current.capacity !== null) {
+        if (locked.capacity !== null) {
           if (dto.capacity === null) {
             waitlistPromotionLimit = null;
-          } else if (dto.capacity > current.capacity) {
-            waitlistPromotionLimit = dto.capacity - current.capacity;
+          } else if (dto.capacity > locked.capacity) {
+            waitlistPromotionLimit = dto.capacity - locked.capacity;
           }
         }
       }
