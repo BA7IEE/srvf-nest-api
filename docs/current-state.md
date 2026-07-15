@@ -7,10 +7,10 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(六处一致) | **v0.50.0**(2026-07-15;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #615 squash `5ecb2e5a`;GitHub Release「v0.50.0 — 活动模块一致性收口（审计刀1–刀4）」标 Latest。**⚠️ 行为变更恰好 12 条**(对照表见 CHANGELOG `## v0.50.0`):最显著四条 = publish 必填 `requiresInsuranceConfirmed:true`;考勤首提不再直写 completed(手动 complete 唯一通路);draft 活动代报名/审批/交考勤全拒;考勤记录须落活动时间窗±容差) |
-| `main` HEAD | v0.50.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #615 `5ecb2e5a`;收口链 = 29 问审计 + 七拍板 D1-D7 → 实现 #613 `f73ac8e9`(单 squash,goal 会话 + 主会话 2 笔 docs true-up)→ bump #614 `93400f98` → handoff #615 → tag/Release → 本回填 PR) |
-| open PR / 工作树 / Unreleased | **0 open PR**;`## Unreleased` = 活动参与度量与批量审批（审计刀 5），本批不 bump / release。当前 footprint:权限码 **206** / biz-admin **81** / org-admin 60 / org-readonly 10 / group-manager 22 / group-readonly 11 / org-supervisor 4 / ops-admin 96 / `EXPECTED_ROUTES` **345** / controller **69** / 模块 35 / migration **51** / 角色 **9** / BizCode **238** / AuditLogEvent **113** |
-| 最新 handoff | [`archive/handoff/v0.50.0.md`](archive/handoff/v0.50.0.md)(历史快照;tag 指向该 handoff #615 squash `5ecb2e5a`;接续 [`v0.49.0.md`](archive/handoff/v0.49.0.md);合入后不回改) |
+| 版本(六处一致) | **v0.51.0**(2026-07-15;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #620 squash `0d931336`;GitHub Release「v0.51.0 — 活动参与度量与批量审批（审计刀 5）」标 Latest。**纯 additive,0 行为变更**:+7 度量/批量端点(核对/活动合计/队员与 App 个人累计/运营总览/bulk-approve/bulk-reject);上一版 v0.50.0 的 12 条行为变更对照表仍见 CHANGELOG `## v0.50.0`) |
+| `main` HEAD | v0.51.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #620 `0d931336`;收口链 = 审计刀 5 goal(产物留主仓工作树,主会话四点元核验后代提交)→ 实现 #617 `90fc41d0` → CI e2e 超时 15m→25m 修复 #619 `c5c02200`(全量 e2e ~15.5m 撞旧硬超时,非测试失败)→ bump #618 `027bfbdf` → handoff #620 → tag/Release → 本回填 PR) |
+| open PR / 工作树 / Unreleased | **0 open PR**;`## Unreleased` 空。终值:权限码 **206** / biz-admin **81** / org-admin 60 / org-readonly 10 / group-manager 22 / group-readonly 11 / org-supervisor 4 / ops-admin 96 / `EXPECTED_ROUTES` **345** / controller **69** / 模块 35 / migration **51** / 角色 **9** / BizCode **238** / AuditLogEvent **113** |
+| 最新 handoff | [`archive/handoff/v0.51.0.md`](archive/handoff/v0.51.0.md)(历史快照;tag 指向该 handoff #620 squash `0d931336`;接续 [`v0.50.0.md`](archive/handoff/v0.50.0.md);合入后不回改) |
 
 ## 2. 当前系统已具备能力
 
