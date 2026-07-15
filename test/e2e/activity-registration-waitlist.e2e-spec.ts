@@ -235,9 +235,13 @@ describe('activity registration waitlist', () => {
     expect(
       await prisma.notification.findFirst({
         where: { recipientMemberId: fifoHeadMemberId, title: '候补已递补' },
-        select: { body: true },
+        select: { body: true, notificationTypeCode: true, channels: true },
       }),
-    ).toEqual({ body: expect.stringContaining('进入待审核') });
+    ).toEqual({
+      body: expect.stringContaining('进入待审核'),
+      notificationTypeCode: 'registration-result',
+      channels: ['in-app'],
+    });
   });
 
   it('取消 pending 或 waitlisted 不触发递补', async () => {
@@ -328,6 +332,42 @@ describe('activity registration waitlist', () => {
         select: { statusCode: true },
       }),
     ).toEqual({ statusCode: 'waitlisted' });
+  });
+
+  it('并发同值 capacity 调大只按净增名额递补（delta 基线取锁后重读）', async () => {
+    const activityId = await createActivity(1, 'concurrent-capacity');
+    await seedRegistration(activityId, await createMember('cap-race-pass'), 'pass');
+    const queue = await Promise.all(
+      [1, 2, 3, 4].map(async (n) =>
+        seedRegistration(
+          activityId,
+          await createMember(`cap-race-q${n}`),
+          'waitlisted',
+          new Date(`2026-07-15T0${n}:00:00.000Z`),
+        ),
+      ),
+    );
+
+    // 双击 / 重试:两个事务携同一 dto.capacity=3 并发。净增名额 = 3-1 = 2,故全程只应递补 2 名。
+    // delta 基线若沿用取锁前的陈旧 capacity,两个事务会各自算出 delta=2 → 误递补 4 名。
+    const results = await Promise.allSettled([
+      activities.update(activityId, { capacity: 3 }, admin, AUDIT_META),
+      activities.update(activityId, { capacity: 3 }, admin, AUDIT_META),
+    ]);
+    expect(results.some((r) => r.status === 'fulfilled')).toBe(true);
+
+    expect(
+      await prisma.activityRegistration.findMany({
+        where: { id: { in: queue.map((item) => item.id) } },
+        select: { id: true, statusCode: true },
+        orderBy: { registeredAt: 'asc' },
+      }),
+    ).toEqual([
+      { id: queue[0].id, statusCode: 'pending' },
+      { id: queue[1].id, statusCode: 'pending' },
+      { id: queue[2].id, statusCode: 'waitlisted' },
+      { id: queue[3].id, statusCode: 'waitlisted' },
+    ]);
   });
 
   it('并发取消两个 pass 由 Activity 行锁串行化，两个不同候补各递补一次', async () => {
