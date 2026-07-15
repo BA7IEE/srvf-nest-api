@@ -28,3 +28,5 @@
   列表/汇总固定 3/4 次业务读，member relation select 与固定五桶均无 N+1。
 - `ActivityFeedbacksQueryService.aggregateForActivity()` 作为唯一单查询聚合出口，被 activity
   participation-summary 复用；该端点总业务查询从 3 additive 增至 4，既有度量算法不变。
+- F4 真实 DB E2E 锁定无到场/非 approved Sheet 无资格、窗口与 DTO 边界、覆盖更新、本人 scope、
+  Admin 实名与统计、跨汇总自洽、并发只留一条 live row，以及评价写入不产生 AuditLog。
