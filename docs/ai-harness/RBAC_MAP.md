@@ -105,6 +105,7 @@
 > 2026-07-14 v0.49.0 部门数据范围全面接线戳(冻结评审 #604 / seed #605 / scope+FE #606 / member-axis #607 / participation #608):权限码 **206 不变**；内置角色 **7→9**，新增 `org-readonly` **10** 码与 `group-readonly` **11** 码，两者从对应正职角色动态投影 `*.read.*` / `attachment.view.*`、恒排除 `*.read.sensitive` 与全部写码；默认职务 policy 3→6，副职三职务 TREE 派生只读。endpoint **337→338**(`GET system/v1/authz/me/effective-permissions` `[auth]`)，controller **66→67**；biz-admin 81 / org-admin 60 / group-manager 22 / org-supervisor 4 / attendance-final-reviewer 4 / ops-admin 96 / member 9 / module 35 / migration 50 / BizCode 232 / AuditLogEvent 113 均不变。`AuthzService.getVisibleOrganizationScope()` 将三源 grant 展开成 GLOBAL 或组织集；members/certificates/profile/contacts/insurance 与 participation 五个扁平/member-axis 入口完成消费接线。Recruitment/team-join/auth/旧 `RbacService` 判权读源 0 diff。
 > 2026-07-15 活动模块度量与批量审批（审计刀 5）戳：**权限事实零变化**（权限码 **206** / 全部内置角色绑定不动）；endpoint **338→345**（活动 reconciliation + participation-summary、member/app participation-summary、meta participation-overview、registration bulk approve/reject）；controller **67→69**（新增 `AdminActivityParticipationController` + `AppMyParticipationSummaryController`，其余 5 端点扩既有 controller）。活动级两读端点逐项 `AuthzService.explain` 两码并带 activity ref；overview 对两码 `getVisibleOrganizationScope` 求交；member 点读复用 `attendance.read.sheet` member ref；App self-scope 无码；bulk 逐 id 复用原单条 action 码与事务/audit。module 35 / migration 51 / BizCode 238 / AuditLogEvent 113 均不变；`docs:rbacmap:check` 0 FAIL / 0 WARN。
 > 2026-07-15 活动自助 GPS 签到 F2 戳：**权限事实零变化**（权限码 **206** / 内置角色及绑定不动）；endpoint **345→348**（App self-scope check-in / check-out / 当前状态）；controller **69→70**（新增 `AppActivityCheckInsController`）；App endpoint **33→36**。三路只走 JwtAuthGuard + AppIdentityResolver，where/事务锁定本人当前 pass registration，无 RBAC 码、无 `@Roles`、无 legacy alias。module 35 / migration 52 / BizCode 240 / AuditLogEvent 113 / cron 2 均不变。
+> 2026-07-15 活动自助 GPS 签到 F3 戳：**权限事实零变化**（权限码 **206** / 内置角色及绑定不动）；endpoint **348→350**（Admin 活动打卡列表 + 只读考勤草稿）；controller **70→71**（新增 `AdminActivityCheckInsController`）。两路均复用 `attendance.read.sheet`，由 Admin application service 调 `AuthzService.explain` 并带 `{type:'activity',id:activityId}` ref；仅 `resource_not_found` 且全局 `rbac.can` 为真时回退，再由 QueryService 校验真实 Activity 存在；无新码、无写入。
 
 ---
 
@@ -117,7 +118,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。`RbacCacheService` 只缓存 GLOBAL 权限解析(TTL 1800s,三档失效)，不是身份缓存；`AuthzService` 当前不缓存判权/可见范围结果。
 
-## 2. controller × 鉴权模式对照(70 个 controller class)
+## 2. controller × 鉴权模式对照(71 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
@@ -159,6 +160,7 @@
 | `admin/v1/members/:memberId/emergency-contacts`(Slow-4 T2;刀D 出口按 `emergency-contact.read.sensitive` 分级掩码) | `emergency-contact.*.record`(4) |
 | `admin/v1/members/:memberId/certificates`(Slow-4 T2) | `certificate.*.record`(6;list/detail/qualification-flag 共用 read) |
 | `admin/v1/activities`(Slow-4 T3;v0.40.0 +complete;审计刀 5 F1/F2) | `activity.*.record`(6,6 个写端点含 `:id/complete`;**列表/详情无码仅登录 `[auth]`**;F1/A6 `GET /options` 同样 `[auth]`;list 增强过滤/批量 stats)。审计刀 5 新独立 `AdminActivityParticipationController` 两读端点 `:activityId/{reconciliation,participation-summary}` **同时**逐项判 `attendance.read.sheet` + `activity-registration.read.record`，均带 `{type:'activity',id}` ref；reconciliation 仅 completed；0 新码 |
+| `admin/v1/activities/:activityId/{check-ins,attendance-sheet-draft}`(活动自助 GPS 签到 F3；`AdminActivityCheckInsController`) | `attendance.read.sheet`(2 个只读端点；均由 Admin application service 调 `AuthzService.explain` 并带 `{type:'activity',id:activityId}` ref；`resource_not_found` 仅在全局 `rbac.can` 为真时回退后继续真实 Activity 存在性检查；0 新码) |
 | `admin/v1/activities/:activityId/registrations`(Slow-4 T3;v0.40.0 +reopen;审计刀 5 F6) | `activity-registration.*.record`(6;list/export 共用 read;`:id/reopen` = `reopen.record`;新增字面段 `bulk-approve`/`bulk-reject` 分别复用 approve/reject 码，逐 id 点判 + 独立事务，失败入结果不回滚成功项) |
 | `admin/v1/registrations`(跨轴只读 2026-06-23) | `activity-registration.read.record`(1;跨活动报名横扫,审批工作台,复用 read 零新码) |
 | `admin/v1/members/:memberId/registrations`(跨轴只读 2026-06-23) | `activity-registration.read.record`(1;某队员报名履历,队员 360,复用 read;MEMBER_NOT_FOUND 守卫) |
