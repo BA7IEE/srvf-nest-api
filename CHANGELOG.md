@@ -2,9 +2,9 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
+## v0.52.0 - 2026-07-15
 
-> 主题:**活动自助 GPS 签到（审计刀 6 · 第一件）**。范围 = F0 冻结评审 + F1 证据表 + F2 App 自助面 + F3 Admin 只读面；F0–F3 已合并，F4 为本次终态收口。纯 additive 新增 5 个 endpoint（345→350）、2 个 controller（69→71）、1 张 `activity_check_ins` 空表与第 52 migration；BizCode 238→240。Permission 206 / AuditLogEvent 113 / cron 2 / 内置角色 9 / module 35 均不变，0 新依赖；本批不 bump、不 tag、不发 GitHub Release。
+> 主题:**活动自助 GPS 签到（审计刀 6 · 第一件）**。范围 = F0 冻结评审 #622 + F1 证据表 #623 + F2 App 自助面 #624 + F3 Admin 只读面 #625 + F4 收口 #626。纯 additive 新增 5 个 endpoint（345→350）、2 个 controller（69→71）、1 张 `activity_check_ins` 空表与第 52 migration；BizCode 238→240。**0 行为变更**;Permission 206 / AuditLogEvent 113 / cron 2 / 内置角色 9 / module 35 均不变，0 新依赖。
 
 - **证据模型与 geofence**:`ActivityCheckIn` 按 live `registrationId` partial unique 保存首次签到、首次签退、活动/队员/报名三 FK 与经纬度、accuracy、distance、`geoVerified`、`outOfRange` 快照；生产写链真实调用 Haversine 消费活动经纬度，关闭审计项 #18。半径由 `ATTENDANCE_CHECKIN_RADIUS_METERS` 配置；活动无完整合法坐标仍成功并标 unverified，未舍入距离严格超半径仍成功并标 outOfRange。证据 append-only，仅允许首次 `checkOutAt null→value` CAS，不开放修改/删除端点，不写 audit。
 - **App 本人签到闭环**:新增 `POST /api/app/v1/my/activities/:activityId/check-in`、`POST .../check-out`、`GET .../check-in`，关闭审计项 #3。写入锁序固定 Activity→当前 pass registration，要求 canUseApp、本人当前 pass 报名、合法活动状态与既有活动时间窗；首次签退至少距签到 36 秒。签到/签退均幂等，8 路并发签到由 partial unique + winner 重查保证同一 live 行，首次签退由 CAS 保证不覆盖快照；取消旧报名后新 pass registration 可建立新证据。响应安全视图仅含 ID、时间、distance 与 flags，不回显坐标或 accuracy。
