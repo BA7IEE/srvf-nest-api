@@ -9,12 +9,14 @@ import { ContributionCalculator } from './contribution-calculator';
 //   2. 档位计算矩阵(threshold null / hours<=threshold / hours>threshold × pointsAbove 兜底);
 //      **无每条 dailyCap 钳制**(活动闭环硬化 2026-06-21:全局每日封顶改落汇总处 team-join
 //      computeContribution,calculator 预填回归原始规则分 pointsBelow/pointsAbove);
-//   3. 发往 tx 的查询形态(ACTIVE + deletedAt null + createdAt ASC,**不再 select dailyCap**;§3.1)。
+//   3. 发往 tx 的批量查询形态(ACTIVE + deletedAt null + role IN + createdAt ASC，
+//      **不再 select dailyCap**;§3.1)。
 // 与 attendances.service.spec.ts 的边界声明互补(该 spec 明确不复刻本组件内部矩阵)。
 
 const FIXED_DATE = new Date('2026-01-01T00:00:00.000Z');
 
 interface RuleRow {
+  attendanceRoleCode: string;
   durationThreshold: Prisma.Decimal | null;
   pointsBelow: Prisma.Decimal;
   pointsAbove: Prisma.Decimal | null;
@@ -24,6 +26,7 @@ interface RuleRow {
 // 活动闭环硬化(2026-06-21):calculator 不再读 dailyCap,RuleRow / makeRule 不再含该列。
 function makeRule(overrides: Partial<RuleRow> = {}): RuleRow {
   return {
+    attendanceRoleCode: 'volunteer',
     durationThreshold: null,
     pointsBelow: new Prisma.Decimal('1.00'),
     pointsAbove: null,
@@ -163,7 +166,7 @@ describe('ContributionCalculator', () => {
       expect(out[0].contributionPoints).toBe(0.5);
     });
 
-    it('查询形态锁定:ACTIVE + deletedAt null + 双维度匹配 + createdAt ASC', async () => {
+    it('查询形态锁定:ACTIVE + deletedAt null + role IN 批量匹配 + createdAt ASC', async () => {
       const { tx, findMany } = makeTx([]);
 
       await calculator.applyContributionRulePrefill([rec(4)], 'rescue', tx);
@@ -171,11 +174,12 @@ describe('ContributionCalculator', () => {
       expect(findMany).toHaveBeenCalledWith({
         where: {
           activityTypeCode: 'rescue',
-          attendanceRoleCode: 'volunteer',
+          attendanceRoleCode: { in: ['volunteer'] },
           status: 'ACTIVE',
           deletedAt: null,
         },
         select: {
+          attendanceRoleCode: true,
           durationThreshold: true,
           pointsBelow: true,
           pointsAbove: true,

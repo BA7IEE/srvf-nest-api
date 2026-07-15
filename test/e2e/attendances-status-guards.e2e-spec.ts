@@ -21,7 +21,7 @@ import { createTestApp } from '../setup/test-app';
 //
 //   submit(activityId, dto, currentUser, auditMeta):
 //     - Activity.statusCode === 'cancelled' → 拒(ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN)
-//     - Activity.statusCode === 'published' → submit 成功,事务内推 Activity → 'completed'(D11)
+//     - Activity.statusCode === 'published' → submit 成功，Activity 保持 published(D2-a)
 //     - Activity.statusCode === 'completed' → 当前实装仅 cancelled 拒,completed 仍接受 submit;
 //       Activity 不再 update(已是 completed,published 判定不命中)
 //
@@ -58,7 +58,7 @@ import { createTestApp } from '../setup/test-app';
 //   ✅ 只新增本测试文件
 
 type SheetStatus = 'pending' | 'pending_final_review' | 'approved' | 'rejected' | 'final_rejected';
-type ActivityStatus = 'published' | 'completed' | 'cancelled';
+type ActivityStatus = 'draft' | 'published' | 'completed' | 'cancelled';
 
 const AUDIT_META: AuditMeta = {
   requestId: 'sg-test-req-0000000000000000001',
@@ -225,7 +225,7 @@ describe('AttendancesService status guards (characterization)', () => {
     });
     for (let i = 0; i < recordCount; i++) {
       const checkIn = new Date(
-        new Date('2026-02-05T00:00:00.000Z').getTime() + (offsetHours + i * 6) * 60 * 60 * 1000,
+        new Date('2026-02-01T00:00:00.000Z').getTime() + (offsetHours + i * 6) * 60 * 60 * 1000,
       );
       const checkOut = new Date(checkIn.getTime() + 4 * 60 * 60 * 1000);
       await ctx.prisma.attendanceRecord.create({
@@ -251,8 +251,8 @@ describe('AttendancesService status guards (characterization)', () => {
     const record: AttendanceRecordInputDto = {
       memberId: ctx.memberId,
       roleCode: ROLE_MEMBER,
-      checkInAt: opts?.checkInAt ?? '2026-02-10T08:00:00.000Z',
-      checkOutAt: opts?.checkOutAt ?? '2026-02-10T12:00:00.000Z',
+      checkInAt: opts?.checkInAt ?? '2026-02-01T08:00:00.000Z',
+      checkOutAt: opts?.checkOutAt ?? '2026-02-01T12:00:00.000Z',
       attendanceStatusCode: ATTENDANCE_STATUS_PRESENT,
     };
     return { records: [record] };
@@ -265,8 +265,8 @@ describe('AttendancesService status guards (characterization)', () => {
     const record: AttendanceRecordInputDto = {
       memberId: ctx.memberId,
       roleCode: ROLE_MEMBER,
-      checkInAt: opts?.checkInAt ?? '2026-02-15T08:00:00.000Z',
-      checkOutAt: opts?.checkOutAt ?? '2026-02-15T12:00:00.000Z',
+      checkInAt: opts?.checkInAt ?? '2026-02-01T13:00:00.000Z',
+      checkOutAt: opts?.checkOutAt ?? '2026-02-01T17:00:00.000Z',
       attendanceStatusCode: ATTENDANCE_STATUS_PRESENT,
       contributionPoints: 1, // edit 不要求重填,但显式传值避免被预填污染断言
     };
@@ -317,7 +317,7 @@ describe('AttendancesService status guards (characterization)', () => {
   describe('A. submit Activity status side effects', () => {
     beforeEach(isolateFixtures);
 
-    it('Case A1:submit published Activity → submit 成功 + Sheet pending + Activity published→completed', async () => {
+    it('Case A1:submit published Activity → submit 成功 + Sheet pending + Activity 保持 published', async () => {
       const activityId = await createActivity('published');
 
       const submitted = await ctx.service.submit(
@@ -333,8 +333,8 @@ describe('AttendancesService status guards (characterization)', () => {
       expect(sheet.statusCode).toBe('pending');
       expect(sheet.deletedAt).toBeNull();
 
-      // Activity 从 published 推到 completed(D11)
-      expect(await getActivityStatus(activityId)).toBe('completed');
+      // D2-a:completed 纯手动，首提考勤不再推进活动。
+      expect(await getActivityStatus(activityId)).toBe('published');
 
       // audit log:存在 attendance-sheet.submit(沿 D-S7;不过度断字段)
       const audits = await ctx.prisma.auditLog.findMany({
@@ -346,7 +346,7 @@ describe('AttendancesService status guards (characterization)', () => {
     it('Case A2:submit completed Activity → 当前实装仍允许(只拒 cancelled);Activity 仍 completed', async () => {
       // 现状锁定:findActivityForSubmissionFull 只在 cancelled 时抛 ACTIVITY_CANCELLED_*;
       // completed 状态不在拒绝集合内,因此 submit 成功;Activity 已是 completed,
-      // D11 push 条件(activity.statusCode === 'published')不命中,因此不再 update。
+      // completed 允许补录，且 D2-a 下 submit 不写 Activity 状态。
       const activityId = await createActivity('completed');
 
       const submitted = await ctx.service.submit(
@@ -358,6 +358,16 @@ describe('AttendancesService status guards (characterization)', () => {
 
       expect(submitted.statusCode).toBe('pending');
       expect(await getActivityStatus(activityId)).toBe('completed');
+    });
+
+    it('Case A3:submit draft Activity → ACTIVITY_NOT_PUBLISHED_PARTICIPATION_FORBIDDEN', async () => {
+      const activityId = await createActivity('draft');
+      await expect(
+        ctx.service.submit(activityId, buildSubmitDto(), ctx.submitterPayload, AUDIT_META),
+      ).rejects.toMatchObject({
+        biz: BizCode.ACTIVITY_NOT_PUBLISHED_PARTICIPATION_FORBIDDEN,
+      });
+      expect(await getActivityStatus(activityId)).toBe('draft');
     });
 
     it('Case A3:submit cancelled Activity → ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN;无 Sheet/Records;Activity 仍 cancelled', async () => {
@@ -381,7 +391,7 @@ describe('AttendancesService status guards (characterization)', () => {
     beforeEach(isolateFixtures);
 
     it('Case B1:edit pending → 成功;version+1;旧 records 软删 + 新 records 创建', async () => {
-      // 用 completed Activity 直接 seed pending Sheet(避免 submit 触发 D11 push 干扰断言)
+      // 用 completed Activity 直接 seed pending Sheet，锁定 completed 补录语义。
       const activityId = await createActivity('completed');
       const sheetId = await seedSheet({
         activityId,
@@ -414,8 +424,8 @@ describe('AttendancesService status guards (characterization)', () => {
       const active = all.filter((r) => r.deletedAt === null);
       expect(softDeleted).toHaveLength(1);
       expect(active).toHaveLength(1);
-      // 新 active record 对应 buildEditDto 的 2026-02-15T08:00:00 时间
-      expect(active[0].checkInAt.toISOString()).toBe('2026-02-15T08:00:00.000Z');
+      // 新 active record 对应 buildEditDto 的活动窗内时间
+      expect(active[0].checkInAt.toISOString()).toBe('2026-02-01T13:00:00.000Z');
     });
 
     // it.each 显式表:status → 当前 BizCode(BizCode 因来源状态而异,沿 service.ts:673-690)

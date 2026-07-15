@@ -11,10 +11,12 @@ import { claimAtStatus } from '../../common/prisma/claim-at-status.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
 import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
-  NOTIFICATION_TYPE_ACTIVITY_REMINDER,
+  NOTIFICATION_TYPE_ACTIVITY_CHANGED,
+  NOTIFICATION_TYPE_REGISTRATION_RESULT,
 } from '../notifications/notification.constants';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { OrganizationsService } from '../organizations/organizations.service';
@@ -74,8 +76,6 @@ type RegistrationExpandKey = (typeof REGISTRATION_EXPAND_WHITELIST)[number];
 // **`exportCsv` 的 `auditPlaceholder('registration.review', ...)` 调用保持 pino-only 不迁移**
 // (read/export 行为,无 DB mutation,沿 Q1=A 当前阶段不记录查看行为)。
 
-const ACTIVITY_STATUS_CANCELLED = 'cancelled';
-const ACTIVITY_STATUS_COMPLETED = 'completed';
 const REGISTRATION_STATUS_PENDING = 'pending';
 const REGISTRATION_STATUS_PASS = 'pass';
 const REGISTRATION_STATUS_CANCELLED = 'cancelled';
@@ -203,6 +203,7 @@ export class ActivityRegistrationsService {
     // F2/B1(路线图 §4;D7 拍板):供 queryDescendantOrgIds() 只读 helper 展开 includeDescendants
     // (closure 非判权,镜像 F1/A6 activities.service.ts 用法)。
     private readonly organizations: OrganizationsService,
+    private readonly activityParticipationPolicy: ActivityParticipationPolicy,
   ) {}
 
   // ============ helpers ============
@@ -356,6 +357,7 @@ export class ActivityRegistrationsService {
     startAt: Date;
     endAt: Date;
     registrationDeadline: Date | null;
+    genderRequirementCode: string | null;
   }> {
     const client = tx ?? this.prisma;
     const act = await client.activity.findFirst({
@@ -371,6 +373,7 @@ export class ActivityRegistrationsService {
         // 活动闭环硬化(2026-06-21):报名截止闸取数(assertActivityRegistrable 读;
         // approve 不读,既有调用方零回归,返回超集)。
         registrationDeadline: true,
+        genderRequirementCode: true,
       },
     });
     if (!act) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
@@ -421,6 +424,7 @@ export class ActivityRegistrationsService {
   // 报名前的 Activity 状态 / 公开性 / 名额校验。
   private async assertActivityRegistrable(
     activityId: string,
+    path: 'admin' | 'self',
     tx: PrismaTx,
   ): Promise<{
     id: string;
@@ -428,26 +432,14 @@ export class ActivityRegistrationsService {
     requiresInsurance: boolean;
     startAt: Date;
     endAt: Date;
+    genderRequirementCode: string | null;
   }> {
     const act = await this.findActivityOrThrow(activityId, tx);
-    if (act.statusCode === ACTIVITY_STATUS_CANCELLED) {
-      throw new BizException(BizCode.ACTIVITY_CANCELLED_REGISTRATION_FORBIDDEN);
-    }
-    if (!act.isPublicRegistration) {
-      throw new BizException(BizCode.ACTIVITY_NOT_PUBLIC_REGISTRATION);
-    }
-    // 活动闭环硬化(2026-06-21):报名截止时刻生效。两路公共闸——create 代报名 + createMy 自助
-    // (App createMyForApp 经 createMy)都经此。registrationDeadline 为 null = 不设截止;精确时刻
-    // 比较 now > deadline,不做北京日归一(T0 确认)。approve 不经此闸 → 截止前已报 pending 仍可批。
-    if (act.registrationDeadline !== null && new Date() > act.registrationDeadline) {
-      throw new BizException(BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED);
-    }
-    // 参与域生命周期收口③(v0.40.0):活动已结束(now > endAt)→ 不可报名。位于 registrationDeadline
-    // 闸之后;精确时刻比较,不做北京日归一(沿 20123 先例)。registrationDeadline 管"报名截止",
-    // endAt 管"活动本身已结束";二者独立(截止可早于结束,也可为 null 不设截止)。
-    if (new Date() > act.endAt) {
-      throw new BizException(BizCode.ACTIVITY_ENDED_REGISTRATION_FORBIDDEN);
-    }
+    const decision =
+      path === 'self'
+        ? this.activityParticipationPolicy.canRegisterSelf(act)
+        : this.activityParticipationPolicy.canRegisterByAdmin(act);
+    if (!decision.allowed) throw new BizException(decision.biz);
     // 保险 T3:透传门槛三字段给 create()/createMy() 的 assertMemberInsuredForActivity(E-10)
     return {
       id: act.id,
@@ -455,7 +447,23 @@ export class ActivityRegistrationsService {
       requiresInsurance: act.requiresInsurance,
       startAt: act.startAt,
       endAt: act.endAt,
+      genderRequirementCode: act.genderRequirementCode,
     };
+  }
+
+  private async assertGenderRequirement(
+    memberId: string,
+    genderRequirementCode: string | null,
+    tx: PrismaTx,
+  ): Promise<void> {
+    if (genderRequirementCode === null || genderRequirementCode === 'any') return;
+    const profile = await tx.memberProfile.findFirst({
+      where: notDeletedWhere({ memberId }),
+      select: { genderCode: true },
+    });
+    if (!profile || profile.genderCode !== genderRequirementCode) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH);
+    }
   }
 
   // capacity 复核(create / approve 共用)。pass 占名额(决议表 Q-D17)。
@@ -711,8 +719,9 @@ export class ActivityRegistrationsService {
   ): Promise<ActivityRegistrationResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity-registration.create.record');
     return this.prisma.$transaction(async (tx) => {
-      const act = await this.assertActivityRegistrable(activityId, tx);
+      const act = await this.assertActivityRegistrable(activityId, 'admin', tx);
       await this.assertMemberExists(dto.memberId, tx);
+      await this.assertGenderRequirement(dto.memberId, act.genderRequirementCode, tx);
       await this.assertCapacityNotExceeded(activityId, act.capacity, tx);
       await this.assertNoActiveRegistration(activityId, dto.memberId, tx);
       // 保险 T3 报名门槛(admin 代报名同样拦截,C015 无旁路;requiresInsurance=false 零查询,
@@ -756,7 +765,8 @@ export class ActivityRegistrationsService {
   ): Promise<ActivityRegistrationResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const memberId = await this.resolveUserMemberIdOrThrow(currentUser.id, tx);
-      const act = await this.assertActivityRegistrable(activityId, tx);
+      const act = await this.assertActivityRegistrable(activityId, 'self', tx);
+      await this.assertGenderRequirement(memberId, act.genderRequirementCode, tx);
       await this.assertCapacityNotExceeded(activityId, act.capacity, tx);
       await this.assertNoActiveRegistration(activityId, memberId, tx);
       // 保险 T3 报名门槛(自助路径;App createMyForApp 薄壳经此同样拦截;评审稿 §4 / E-10)
@@ -814,17 +824,11 @@ export class ActivityRegistrationsService {
       // 两并发 approve 互不可见对方未提交写 → 双双过闸 → pass 超 capacity(原注释「事务内重新计数避免
       // race」不成立)。对 activity 行加 FOR UPDATE 排他锁,令同一 activity 的并发 approve 串行化:后到者
       // 阻塞至前者提交,再 COUNT 即见已提交 pass → 正确拒。仅限名额活动需锁(capacity=null 不限名额免锁)。
+      await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${activityId} FOR UPDATE`;
       const act = await this.findActivityOrThrow(activityId, tx);
-      // 参与域生命周期收口①(v0.40.0):取消 / 完结活动禁批报名。活动 statusCode ∈ {cancelled, completed}
-      // → 拒 approve(reject / cancelAdmin 刻意不拦,留作清理残留待审队列的手段;见 cancelAdmin / reject 无此闸)。
-      if (
-        act.statusCode === ACTIVITY_STATUS_CANCELLED ||
-        act.statusCode === ACTIVITY_STATUS_COMPLETED
-      ) {
-        throw new BizException(BizCode.ACTIVITY_ENDED_OR_CANCELLED_APPROVE_FORBIDDEN);
-      }
-      if (act.capacity !== null) {
-        await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${activityId} FOR UPDATE`;
+      const participationDecision = this.activityParticipationPolicy.canApprove(act);
+      if (!participationDecision.allowed) {
+        throw new BizException(participationDecision.biz);
       }
       // Finding #3:条件式 no-op UPDATE 先锁定期望状态；并发 approve/reject 只有一方 count=1。
       // 锁持有到事务结束,后续实际 update 不再存在读写窗口；败者在 audit/通知前退出。
@@ -972,7 +976,7 @@ export class ActivityRegistrationsService {
       const reasonSuffix = reviewNote ? ` 理由:${reviewNote}` : '';
       await this.notificationDispatcher.dispatchTargeted({
         recipientMemberId: memberId,
-        notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_REMINDER,
+        notificationTypeCode: NOTIFICATION_TYPE_REGISTRATION_RESULT,
         title: passed ? '报名已通过' : '报名未通过',
         body: passed
           ? `您报名的「${activityTitle}」已通过审核。${reasonSuffix}`
@@ -1167,7 +1171,7 @@ export class ActivityRegistrationsService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityRegistrationResponseDto> {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const memberId = await this.resolveUserMemberIdOrThrow(currentUser.id, tx);
 
       const reg = await tx.activityRegistration.findFirst({
@@ -1177,6 +1181,14 @@ export class ActivityRegistrationsService {
       if (!reg || reg.memberId !== memberId) {
         throw new BizException(BizCode.ACTIVITY_REGISTRATION_NOT_FOUND);
       }
+
+      const activity = await tx.activity.findFirst({
+        where: notDeletedWhere({ id: reg.activityId }),
+        select: {
+          title: true,
+          publisher: { select: { memberId: true } },
+        },
+      });
 
       const transition = this.registrationStateMachine.decide('cancel', reg.statusCode);
       if (!transition.allowed) {
@@ -1219,8 +1231,42 @@ export class ActivityRegistrationsService {
         tx,
       });
 
-      return this.toResponseDto(updated);
+      return {
+        dto: this.toResponseDto(updated),
+        activityId: reg.activityId,
+        activityTitle: activity?.title ?? '活动',
+        publisherMemberId: activity?.publisher?.memberId ?? null,
+        cancellingMemberId: reg.memberId,
+        cancelReason: dto.cancelReason ?? null,
+      };
     });
+
+    await this.dispatchSelfCancellationNotification(result);
+    return result.dto;
+  }
+
+  private async dispatchSelfCancellationNotification(input: {
+    activityId: string;
+    activityTitle: string;
+    publisherMemberId: string | null;
+    cancellingMemberId: string;
+    cancelReason: string | null;
+  }): Promise<void> {
+    if (input.publisherMemberId === null) return;
+    try {
+      const reason = input.cancelReason ? `，原因：${input.cancelReason}` : '';
+      await this.notificationDispatcher.dispatchTargeted({
+        recipientMemberId: input.publisherMemberId,
+        notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_CHANGED,
+        title: '队员取消活动报名',
+        body: `队员 ${input.cancellingMemberId} 已取消「${input.activityTitle}」报名${reason}。`,
+        channels: [NOTIFICATION_CHANNEL_IN_APP],
+      });
+    } catch (err) {
+      this.logger.error(
+        `registration self-cancel notification failed (activity=${input.activityId}, member=${input.cancellingMemberId}): ${(err as Error).message}`,
+      );
+    }
   }
 
   // ============ 管理端:CSV export(Q-A6)============

@@ -86,6 +86,7 @@ const SYSTEM_PROTECTED_DICT_TYPES: ReadonlySet<string> = new Set<string>([
   // 队内内置(items 亦受 ② 保护)。
   'member_grade',
   'activity_type',
+  'gender_requirement',
   // 闭集状态 / 角色机(items 亦受 ② 保护)。
   'cert_status',
   'activity_status',
@@ -119,6 +120,7 @@ const ITEM_PROTECTED_DICT_TYPES: ReadonlySet<string> = new Set<string>([
   // 队内内置
   'member_grade',
   'activity_type',
+  'gender_requirement',
   // 闭集状态 / 角色机
   'cert_status',
   'activity_status',

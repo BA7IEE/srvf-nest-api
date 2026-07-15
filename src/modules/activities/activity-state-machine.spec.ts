@@ -6,9 +6,8 @@ import { ActivityStateMachine, type ActivityStateAction } from './activity-state
 // 本 spec 锁纯决策表本身:4 态 × {update, publish, cancel, complete} + create 的 16+ 判定点,
 // 含两个易回归语义:
 //   - update 的 nextStatusCode 仅 echo currentStatusCode(类型完整性设计,service 不消费);
-//   - `completed` 推进有**两条并存通路**(v0.40.0 起):① attendances.submit 跨模块直写
-//     (D11 / D-S10,**不经本状态机**);② 管理端 `complete` 端点**经本状态机**(published →
-//     completed)。因此本表**仅 `complete` 一条** action 产出 nextStatusCode='completed',
+//   - `completed` 只由管理端 `complete` 端点推进(published → completed)。因此本表**仅
+//     `complete` 一条** action 产出 nextStatusCode='completed',
 //     publish / cancel 仍绝不产出。
 // wrong-state 错误码统一 ACTIVITY_STATUS_INVALID(20030;沿 PR #199 A2/B2/C2 + v0.40.0 complete)。
 // 与 activities.service.spec.ts 边界互补(该 spec mock 状态机返回值,不复刻内部矩阵)。
@@ -43,20 +42,20 @@ describe('ActivityStateMachine', () => {
     ];
 
     const cases: Case[] = [
-      // update:仅 cancelled 拒(Q-A12);允许时 echo current,不产生态迁移
+      // update:状态机恒放行；终态字段白名单由 service 承担
       ['update', 'draft', allow('draft')],
       ['update', 'published', allow('published')],
       ['update', 'completed', allow('completed')],
-      ['update', 'cancelled', deny(BizCode.ACTIVITY_STATUS_INVALID)],
+      ['update', 'cancelled', allow('cancelled')],
       // publish:仅 draft → published
       ['publish', 'draft', allow('published')],
       ['publish', 'published', deny(BizCode.ACTIVITY_STATUS_INVALID)],
       ['publish', 'completed', deny(BizCode.ACTIVITY_STATUS_INVALID)],
       ['publish', 'cancelled', deny(BizCode.ACTIVITY_STATUS_INVALID)],
-      // cancel:非 cancelled 均可 → cancelled;cancelled 拒重复
+      // cancel:仅 draft / published 可取消
       ['cancel', 'draft', allow('cancelled')],
       ['cancel', 'published', allow('cancelled')],
-      ['cancel', 'completed', allow('cancelled')],
+      ['cancel', 'completed', deny(BizCode.ACTIVITY_STATUS_INVALID)],
       ['cancel', 'cancelled', deny(BizCode.ACTIVITY_STATUS_INVALID)],
       // complete(v0.40.0):仅 published → completed;其他态拒
       ['complete', 'draft', deny(BizCode.ACTIVITY_STATUS_INVALID)],
@@ -76,7 +75,7 @@ describe('ActivityStateMachine', () => {
     it('publish / cancel 无任何路径产出 completed;completed 仅由 complete 产出(published→completed)', () => {
       // update 的 echo(update@completed → 回显 'completed')不算态迁移产出,排除在外。
       // v0.40.0:complete 是唯一经本状态机产出 completed 的 action(published → completed);
-      // publish / cancel 仍绝不产出 completed(其中 attendances 直写通路不经本状态机)。
+      // publish / cancel 仍绝不产出 completed。
       const publishCancelNexts = cases
         .filter(([action]) => action === 'publish' || action === 'cancel')
         .map(([action, current]) => machine.decide(action, current))

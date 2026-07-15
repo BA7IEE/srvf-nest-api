@@ -29,14 +29,19 @@ type OverlapRecordLike = {
 @Injectable()
 export class TimeOverlapPolicy {
   // finding #7:同一 member 的重叠检查与后续写入必须在事务内串行。
-  // 排序后逐个取 PostgreSQL transaction advisory lock,避免多成员 batch 反向取锁死锁。
+  // 去重排序后用一条 SQL 批量取 PostgreSQL transaction advisory lock，查询次数不随成员数增长；
+  // SQL 内 ORDER BY 保证跨 batch 取锁顺序一致，避免反向取锁死锁。
   async lockMembersForOverlapCheck(memberIds: readonly string[], tx: PrismaTx): Promise<void> {
     const orderedIds = [...new Set(memberIds)].sort();
-    for (const memberId of orderedIds) {
-      await tx.$queryRaw<Array<{ locked: string }>>`
-        SELECT pg_advisory_xact_lock(hashtext(${memberId}))::text AS locked
-      `;
-    }
+    if (orderedIds.length === 0) return;
+    await tx.$queryRaw<Array<{ locked: string }>>(
+      Prisma.sql`
+        SELECT pg_advisory_xact_lock(hashtext(member_id))::text AS locked
+        FROM (VALUES ${Prisma.join(orderedIds.map((memberId) => Prisma.sql`(${memberId})`))})
+          AS member_ids(member_id)
+        ORDER BY member_id
+      `,
+    );
   }
 
   // 时间不重叠校验(R16 / Q-S15):同 memberId × [checkInAt, checkOutAt) 左闭右开
@@ -59,6 +64,29 @@ export class TimeOverlapPolicy {
       take: 1,
     });
     if (conflicts.length > 0) {
+      throw new BizException(BizCode.ATTENDANCE_TIME_OVERLAP);
+    }
+  }
+
+  // F4:一次查询覆盖整批 records，避免每条 record 各发一次 findMany。
+  async assertNoTimeOverlapForRecords(
+    records: readonly OverlapRecordLike[],
+    excludeSheetId: string | undefined,
+    tx: PrismaTx,
+  ): Promise<void> {
+    if (records.length === 0) return;
+    const conflict = await tx.attendanceRecord.findFirst({
+      where: notDeletedWhere({
+        ...(excludeSheetId !== undefined ? { sheetId: { not: excludeSheetId } } : {}),
+        OR: records.map((record) => ({
+          memberId: record.memberId,
+          checkInAt: { lt: record.checkOutAt },
+          checkOutAt: { gt: record.checkInAt },
+        })),
+      }),
+      select: { id: true },
+    });
+    if (conflict) {
       throw new BizException(BizCode.ATTENDANCE_TIME_OVERLAP);
     }
   }

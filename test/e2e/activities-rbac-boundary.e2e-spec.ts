@@ -92,7 +92,8 @@ describe('activities RBAC 权限边界(Slow-4 T3)', () => {
     publishedActivityId = await createDraft('ARB-PUB');
     await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${publishedActivityId}/publish`)
-      .set('Authorization', saAuth);
+      .set('Authorization', saAuth)
+      .send({ requiresInsuranceConfirmed: true });
   });
 
   afterAll(async () => {
@@ -202,13 +203,15 @@ describe('activities RBAC 权限边界(Slow-4 T3)', () => {
       expectBizError(
         await request(httpServer(app))
           .patch(`/api/admin/v1/activities/${id}/publish`)
-          .set('Authorization', admDefaultAuth),
+          .set('Authorization', admDefaultAuth)
+          .send({ requiresInsuranceConfirmed: true }),
         BizCode.RBAC_FORBIDDEN,
       );
       expectBizError(
         await request(httpServer(app))
           .patch(`/api/admin/v1/activities/${id}/publish`)
-          .set('Authorization', userAuth),
+          .set('Authorization', userAuth)
+          .send({ requiresInsuranceConfirmed: true }),
         BizCode.RBAC_FORBIDDEN,
       );
       expect(
@@ -216,6 +219,7 @@ describe('activities RBAC 权限边界(Slow-4 T3)', () => {
           await request(httpServer(app))
             .patch(`/api/admin/v1/activities/${id}/publish`)
             .set('Authorization', admBizAuth)
+            .send({ requiresInsuranceConfirmed: true })
         ).status,
       ).toBe(200);
       // cancel 判权

@@ -182,7 +182,8 @@ describe('activity-registrations 模块', () => {
     if (opts.publish) {
       await request(httpServer(app))
         .patch(`/api/admin/v1/activities/${id}/publish`)
-        .set('Authorization', adminAuth);
+        .set('Authorization', adminAuth)
+        .send({ requiresInsuranceConfirmed: true });
     }
     if (opts.cancel) {
       await request(httpServer(app))
@@ -278,12 +279,17 @@ describe('activity-registrations 模块', () => {
       expectBizError(res, BizCode.ACTIVITY_NOT_FOUND);
     });
 
-    it('activity isPublicRegistration=false → ACTIVITY_NOT_PUBLIC_REGISTRATION', async () => {
+    it('admin 代报名 invite-only activity → 201(公开性只约束自助报名)', async () => {
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/activities/${privateActivityId}/registrations`)
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId });
-      expectBizError(res, BizCode.ACTIVITY_NOT_PUBLIC_REGISTRATION);
+      expect(res.status).toBe(201);
+      expect(res.body.data).toMatchObject({
+        activityId: privateActivityId,
+        memberId: memberCId,
+        statusCode: 'pending',
+      });
     });
 
     it('activity cancelled → ACTIVITY_CANCELLED_REGISTRATION_FORBIDDEN', async () => {
@@ -292,6 +298,38 @@ describe('activity-registrations 模块', () => {
         .set('Authorization', adminAuth)
         .send({ memberId: memberCId });
       expectBizError(res, BizCode.ACTIVITY_CANCELLED_REGISTRATION_FORBIDDEN);
+    });
+
+    it('draft activity → admin 代报名拒 ACTIVITY_NOT_PUBLISHED_PARTICIPATION_FORBIDDEN', async () => {
+      const draftId = await createActivityHelper({
+        title: 'DRAFT-ADMIN-REGISTER',
+        isPublicRegistration: true,
+        capacity: undefined,
+        publish: false,
+      });
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${draftId}/registrations`)
+        .set('Authorization', adminAuth)
+        .send({ memberId: memberCId });
+      expectBizError(res, BizCode.ACTIVITY_NOT_PUBLISHED_PARTICIPATION_FORBIDDEN);
+    });
+
+    it('draft activity → approve pending 报名拒 ACTIVITY_NOT_PUBLISHED_PARTICIPATION_FORBIDDEN', async () => {
+      const draftId = await createActivityHelper({
+        title: 'DRAFT-APPROVE',
+        isPublicRegistration: true,
+        capacity: undefined,
+        publish: false,
+      });
+      const registration = await prisma.activityRegistration.create({
+        data: { activityId: draftId, memberId: memberCId, statusCode: 'pending' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/activities/${draftId}/registrations/${registration.id}/approve`)
+        .set('Authorization', adminAuth)
+        .send({});
+      expectBizError(res, BizCode.ACTIVITY_NOT_PUBLISHED_PARTICIPATION_FORBIDDEN);
     });
 
     it('同一 member 同一活动二次报名 → ACTIVITY_REGISTRATION_ALREADY_EXISTS', async () => {
@@ -339,7 +377,7 @@ describe('activity-registrations 模块', () => {
 
   describe('报名截止(deadline 闸)', () => {
     const PAST_DEADLINE = '2020-01-01T00:00:00.000Z';
-    const FUTURE_DEADLINE = '2999-01-01T00:00:00.000Z';
+    const FUTURE_DEADLINE = '2099-05-31T23:59:59.000Z';
 
     it('截止前(deadline 未到)→ 代报名成功 pending', async () => {
       const id = await createActivityHelper({
@@ -363,7 +401,11 @@ describe('activity-registrations 模块', () => {
         isPublicRegistration: true,
         capacity: undefined,
         publish: true,
-        registrationDeadline: PAST_DEADLINE,
+      });
+      // publish 本身会拦过期 deadline；此处直写模拟发布后随时间自然越过截止点。
+      await prisma.activity.update({
+        where: { id },
+        data: { registrationDeadline: new Date(PAST_DEADLINE) },
       });
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/activities/${id}/registrations`)
@@ -378,9 +420,14 @@ describe('activity-registrations 模块', () => {
         isPublicRegistration: true,
         capacity: undefined,
         publish: true,
-        // 昨日已结束(startAt < endAt 均在过去,create/publish 允许;报名闸拦 endAt < now)。
-        startAt: '2020-01-01T08:00:00.000Z',
-        endAt: '2020-01-01T12:00:00.000Z',
+      });
+      // publish 本身会拦已结束活动；此处直写模拟发布后随时间自然跨过 endAt。
+      await prisma.activity.update({
+        where: { id },
+        data: {
+          startAt: new Date('2020-01-01T08:00:00.000Z'),
+          endAt: new Date('2020-01-01T12:00:00.000Z'),
+        },
       });
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/activities/${id}/registrations`)
@@ -441,7 +488,10 @@ describe('activity-registrations 模块', () => {
         isPublicRegistration: true,
         capacity: undefined,
         publish: true,
-        registrationDeadline: PAST_DEADLINE,
+      });
+      await prisma.activity.update({
+        where: { id },
+        data: { registrationDeadline: new Date(PAST_DEADLINE) },
       });
       // 模拟「截止前已报」的 pending(直接插入,绕过 create 闸);截止后 approve 仍应成功。
       const reg = await prisma.activityRegistration.create({

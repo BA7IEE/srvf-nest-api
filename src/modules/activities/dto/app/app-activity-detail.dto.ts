@@ -1,17 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ACTIVITY_PHASE_VALUES, type ActivityPhase } from '../../activity-phase';
 
 // Phase 2 P2-4b App /api/app/v1/activities/:id 详情出参。
-// 沿 docs/app-api-p2-4-activities-review.md §5.1 v0.1 字段集**恰好 13 个**;
+// 原 v0.1 13 字段；2026-07-15 additive 增 phase / genderRequirementCode /
+// requiresInsurance / passCount，当前恰好 17 个。
 // **严禁**继承 / Pick / Omit / Mapped Types Admin DTO(沿 Phase 0.7 §2.2 +
 // 评审稿 §5.4)。物理隔离于 src/modules/activities/dto/app/。
 //
 // 排除字段(沿 §5.2 v0.1 锁定,App 详情端永不返):
 //   - registrationSchema / galleryImageUrls / content
 //   - locationLongitude / locationLatitude / updatedAt
-//   - organizationId / genderRequirementCode / isPublicRegistration
+//   - organizationId / isPublicRegistration
 //   - deletedAt / publishedBy / publishedAt / cancelledBy / cancelledAt / cancelReason
 //
-// 详情 vs 列表:在 List 11 项基础上追加 description + registrationNotes 共 13 项;
+// 详情 vs 列表:在原 List 11 项基础上追加 description / registrationNotes，
+// 再 additive 追加上述 4 字段。
 // statusCode 由 service where 子句锁定 `published`,字段保留便于前端泛化。
 export class AppActivityDetailDto {
   @ApiProperty({ description: '活动主键(cuid)', example: 'cl9z3a8b00000abcd1234efgh' })
@@ -37,6 +40,12 @@ export class AppActivityDetailDto {
     example: 'published',
   })
   statusCode!: string;
+
+  @ApiProperty({
+    description: '按当前时间派生的阶段(upcoming / ongoing / ended)',
+    enum: ACTIVITY_PHASE_VALUES,
+  })
+  phase!: ActivityPhase;
 
   @ApiProperty({ description: '开始时间(ISO 8601)' })
   startAt!: Date;
@@ -65,6 +74,19 @@ export class AppActivityDetailDto {
     nullable: true,
   })
   registrationNotes!: string | null;
+
+  @ApiPropertyOptional({
+    description: '性别限制字典 code(typeCode=gender_requirement;NULL = 无限制)',
+    nullable: true,
+    type: String,
+  })
+  genderRequirementCode!: string | null;
+
+  @ApiProperty({ description: '是否要求保险' })
+  requiresInsurance!: boolean;
+
+  @ApiProperty({ description: '已审核通过报名数(statusCode=pass,未软删)' })
+  passCount!: number;
 
   @ApiPropertyOptional({
     description: '封面图片 URL(裸 URL 字符串,非 signed URL)',

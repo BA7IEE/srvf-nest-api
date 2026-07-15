@@ -776,6 +776,7 @@ model Activity {
   statusCode            String
   publishedBy           String?
   publishedAt           DateTime?
+  startReminderSentAt   DateTime?
   cancelledBy           String?
   cancelledAt           DateTime?
   cancelReason          String?

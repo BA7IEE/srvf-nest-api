@@ -10,7 +10,8 @@ import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
-  NOTIFICATION_TYPE_ACTIVITY_REMINDER,
+  NOTIFICATION_TYPE_ACTIVITY_CHANGED,
+  NOTIFICATION_TYPE_ACTIVITY_PUBLISHED,
 } from '../notifications/notification.constants';
 import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { OrganizationsService } from '../organizations/organizations.service';
@@ -26,9 +27,11 @@ import {
   CancelActivityDto,
   CreateActivityDto,
   ListActivitiesQueryDto,
+  PublishActivityDto,
   UpdateActivityDto,
 } from './activities.dto';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
+import { deriveActivityPhase } from './activity-phase';
 import { ActivityStateMachine } from './activity-state-machine';
 
 // V2 第一阶段批次 3A activities service。
@@ -39,8 +42,8 @@ import { ActivityStateMachine } from './activity-state-machine';
 // 关键约定:
 // - Role 过滤(Q-A7):USER 仅可见 statusCode ∈ {published, completed} 且 deletedAt=null
 // - 状态机闭集:draft / published / cancelled / completed(completed 留字典占位,Q-A11)
-// - 状态机转移:draft → published(publish);* → cancelled(cancel,但 cancelled → cancelled 抛 20030)
-// - Q-A12:cancelled Activity 拒改(update / publish 拒绝);软删允许(D3)
+// - 状态机转移:draft → published(publish);draft|published → cancelled(cancel);published → completed
+// - completed/cancelled 终态仅允许展示字段白名单更新；软删另受参与数据守卫约束
 // - 字典校验:activityTypeCode 必填,genderRequirementCode 传入时校验
 // - 组织节点禁根:organizationId 必填,但 service 校验 organization.parentId !== null
 // - 起止时间:startAt < endAt(创建必校;更新时若涉及任一字段则用合并后值复校)
@@ -58,6 +61,19 @@ const DICT_TYPE_GENDER_REQUIREMENT = 'gender_requirement';
 const ACTIVITY_STATUS_DRAFT = 'draft';
 const ACTIVITY_STATUS_PUBLISHED = 'published';
 const ACTIVITY_STATUS_COMPLETED = 'completed';
+const ACTIVITY_STATUS_CANCELLED = 'cancelled';
+
+const TERMINAL_ACTIVITY_STATUS_CODES = new Set([
+  ACTIVITY_STATUS_COMPLETED,
+  ACTIVITY_STATUS_CANCELLED,
+]);
+const TERMINAL_ACTIVITY_UPDATE_FIELDS = new Set<keyof UpdateActivityDto>([
+  'description',
+  'coverImageUrl',
+  'galleryImageUrls',
+  'content',
+  'registrationNotes',
+]);
 
 // USER 角色可见的状态白名单(Q-A7)。
 const USER_VISIBLE_STATUS_CODES = [ACTIVITY_STATUS_PUBLISHED, ACTIVITY_STATUS_COMPLETED] as const;
@@ -201,6 +217,7 @@ export class ActivitiesService {
       registrationDeadline: row.registrationDeadline,
       registrationNotes: row.registrationNotes,
       statusCode: row.statusCode,
+      phase: deriveActivityPhase(row.startAt, row.endAt),
       publishedBy: row.publishedBy,
       publishedAt: row.publishedAt,
       cancelledBy: row.cancelledBy,
@@ -233,6 +250,7 @@ export class ActivitiesService {
       genderRequirementCode: row.genderRequirementCode,
       registrationDeadline: row.registrationDeadline,
       statusCode: row.statusCode,
+      phase: deriveActivityPhase(row.startAt, row.endAt),
       isPublicRegistration: row.isPublicRegistration,
       requiresInsurance: row.requiresInsurance,
       coverImageUrl: row.coverImageUrl,
@@ -288,6 +306,12 @@ export class ActivitiesService {
   private assertStartEndValid(startAt: Date, endAt: Date): void {
     if (startAt.getTime() >= endAt.getTime()) {
       throw new BizException(BizCode.ACTIVITY_START_END_INVALID);
+    }
+  }
+
+  private assertRegistrationDeadlineValid(deadline: Date | null, endAt: Date): void {
+    if (deadline !== null && deadline.getTime() > endAt.getTime()) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_DEADLINE_INVALID);
     }
   }
 
@@ -466,6 +490,10 @@ export class ActivitiesService {
     const startAt = new Date(dto.startAt);
     const endAt = new Date(dto.endAt);
     this.assertStartEndValid(startAt, endAt);
+    this.assertRegistrationDeadlineValid(
+      dto.registrationDeadline !== undefined ? new Date(dto.registrationDeadline) : null,
+      endAt,
+    );
 
     return this.prisma.$transaction(async (tx) => {
       await this.assertDictItemValid(
@@ -548,13 +576,21 @@ export class ActivitiesService {
     auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity.update.record', { type: 'activity', id });
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 
       // Q-A12:cancelled 拒改(沿 ActivityStateMachine update decision)。
       const transition = this.activityStateMachine.decide('update', current.statusCode);
       if (!transition.allowed) {
         throw new BizException(transition.biz);
+      }
+      if (
+        TERMINAL_ACTIVITY_STATUS_CODES.has(current.statusCode) &&
+        Object.keys(dto).some(
+          (field) => !TERMINAL_ACTIVITY_UPDATE_FIELDS.has(field as keyof UpdateActivityDto),
+        )
+      ) {
+        throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
       }
 
       // 字典校验(传入时)
@@ -578,11 +614,30 @@ export class ActivitiesService {
         await this.assertOrganizationValidAndNonRoot(dto.organizationId, tx);
       }
 
-      // 起止时间复校(任一字段变化时,用合并后值)
-      if (dto.startAt !== undefined || dto.endAt !== undefined) {
+      // 起止时间 + 报名截止复校(任一字段变化时,用合并后值)
+      if (
+        dto.startAt !== undefined ||
+        dto.endAt !== undefined ||
+        dto.registrationDeadline !== undefined
+      ) {
         const nextStart = dto.startAt !== undefined ? new Date(dto.startAt) : current.startAt;
         const nextEnd = dto.endAt !== undefined ? new Date(dto.endAt) : current.endAt;
+        const nextDeadline =
+          dto.registrationDeadline !== undefined
+            ? new Date(dto.registrationDeadline)
+            : current.registrationDeadline;
         this.assertStartEndValid(nextStart, nextEnd);
+        this.assertRegistrationDeadlineValid(nextDeadline, nextEnd);
+      }
+
+      if (dto.capacity !== undefined) {
+        await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${current.id} FOR UPDATE`;
+        const passCount = await tx.activityRegistration.count({
+          where: notDeletedWhere({ activityId: current.id, statusCode: 'pass' }),
+        });
+        if (dto.capacity < passCount) {
+          throw new BizException(BizCode.ACTIVITY_CAPACITY_INVALID);
+        }
       }
 
       const data: Prisma.ActivityUpdateInput = {};
@@ -646,8 +701,49 @@ export class ActivitiesService {
         tx,
       });
 
-      return this.toResponseDto(updated);
+      const scheduleChanged =
+        current.startAt.getTime() !== updated.startAt.getTime() ||
+        current.endAt.getTime() !== updated.endAt.getTime() ||
+        current.location !== updated.location;
+      const notificationMemberIds = scheduleChanged
+        ? [
+            ...new Set(
+              (
+                await tx.activityRegistration.findMany({
+                  where: notDeletedWhere({
+                    activityId: current.id,
+                    statusCode: { in: [...ACTIVE_REGISTRATION_STATUS_CODES] },
+                  }),
+                  select: { memberId: true },
+                })
+              ).map((row) => row.memberId),
+            ),
+          ]
+        : [];
+
+      return {
+        dto: this.toResponseDto(updated),
+        activityId: current.id,
+        activityTitle: updated.title,
+        before: {
+          startAt: current.startAt,
+          endAt: current.endAt,
+          location: current.location,
+        },
+        after: {
+          startAt: updated.startAt,
+          endAt: updated.endAt,
+          location: updated.location,
+        },
+        requiresInsurance: updated.requiresInsurance,
+        notificationMemberIds,
+      };
     });
+
+    if (result.notificationMemberIds.length > 0) {
+      await this.dispatchScheduleChangeNotifications(result);
+    }
+    return result.dto;
   }
 
   // ============ softDelete ============
@@ -660,6 +756,21 @@ export class ActivitiesService {
     await this.assertCanOrThrow(currentUser, 'activity.delete.record', { type: 'activity', id });
     return this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
+
+      const [activeRegistrations, attendanceSheets] = await Promise.all([
+        tx.activityRegistration.count({
+          where: notDeletedWhere({
+            activityId: current.id,
+            statusCode: { in: [...ACTIVE_REGISTRATION_STATUS_CODES] },
+          }),
+        }),
+        tx.attendanceSheet.count({
+          where: notDeletedWhere({ activityId: current.id }),
+        }),
+      ]);
+      if (activeRegistrations > 0 || attendanceSheets > 0) {
+        throw new BizException(BizCode.ACTIVITY_PARTICIPATION_EXISTS_DELETE_FORBIDDEN);
+      }
 
       await claimAtStatus(tx, {
         target: 'activity',
@@ -692,11 +803,15 @@ export class ActivitiesService {
   // 状态机:draft → published;其他状态 → 20030(沿 ActivityStateMachine publish decision)。
   async publish(
     id: string,
+    dto: PublishActivityDto,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity.publish.record', { type: 'activity', id });
-    return this.prisma.$transaction(async (tx) => {
+    if (dto.requiresInsuranceConfirmed !== true) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    const result = await this.prisma.$transaction(async (tx) => {
       const current = await this.findActivityOrThrow(id, tx);
 
       const transition = this.activityStateMachine.decide('publish', current.statusCode);
@@ -704,6 +819,17 @@ export class ActivitiesService {
         throw new BizException(transition.biz);
       }
       const { nextStatusCode } = transition;
+
+      const now = new Date();
+      if (current.endAt.getTime() <= now.getTime()) {
+        throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+      }
+      if (
+        current.registrationDeadline !== null &&
+        current.registrationDeadline.getTime() < now.getTime()
+      ) {
+        throw new BizException(BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED);
+      }
 
       await claimAtStatus(tx, {
         target: 'activity',
@@ -716,7 +842,7 @@ export class ActivitiesService {
         data: {
           statusCode: nextStatusCode,
           publishedBy: currentUser.id,
-          publishedAt: new Date(),
+          publishedAt: now,
         },
         select: activitySafeSelect,
       });
@@ -733,8 +859,21 @@ export class ActivitiesService {
         tx,
       });
 
-      return this.toResponseDto(updated);
+      return {
+        dto: this.toResponseDto(updated),
+        activityId: updated.id,
+        activityTitle: updated.title,
+        startAt: updated.startAt,
+        location: updated.location,
+        requiresInsurance: updated.requiresInsurance,
+        isPublicRegistration: updated.isPublicRegistration,
+      };
     });
+
+    if (result.isPublicRegistration) {
+      await this.dispatchPublishedNotification(result);
+    }
+    return result.dto;
   }
 
   // ============ cancel ============
@@ -756,6 +895,16 @@ export class ActivitiesService {
       }
       const { nextStatusCode } = transition;
 
+      const registrations = await tx.activityRegistration.findMany({
+        where: notDeletedWhere({
+          activityId: current.id,
+          statusCode: { in: [...ACTIVE_REGISTRATION_STATUS_CODES] },
+        }),
+        select: { memberId: true },
+      });
+      const notificationMemberIds = [...new Set(registrations.map((row) => row.memberId))];
+      const cancelledAt = new Date();
+
       await claimAtStatus(tx, {
         target: 'activity',
         id: current.id,
@@ -767,10 +916,20 @@ export class ActivitiesService {
         data: {
           statusCode: nextStatusCode,
           cancelledBy: currentUser.id,
-          cancelledAt: new Date(),
+          cancelledAt,
           cancelReason: dto.cancelReason ?? null,
         },
         select: activitySafeSelect,
+      });
+
+      const cancelledPending = await tx.activityRegistration.updateMany({
+        where: notDeletedWhere({ activityId: current.id, statusCode: 'pending' }),
+        data: {
+          statusCode: 'cancelled',
+          cancelledByUserId: currentUser.id,
+          cancelledAt,
+          cancelReason: '活动已取消',
+        },
       });
 
       await this.activityAuditRecorder.logCancel({
@@ -782,6 +941,7 @@ export class ActivitiesService {
         priorStatusCode: current.statusCode,
         nextStatusCode,
         cancelReason: dto.cancelReason ?? null,
+        pendingRegistrationsCancelled: cancelledPending.count,
         auditMeta,
         tx,
       });
@@ -792,6 +952,7 @@ export class ActivitiesService {
         activityId: current.id,
         activityTitle: updated.title,
         cancelReason: dto.cancelReason ?? null,
+        notificationMemberIds,
       };
     });
 
@@ -801,6 +962,7 @@ export class ActivitiesService {
       result.activityId,
       result.activityTitle,
       result.cancelReason,
+      result.notificationMemberIds,
     );
 
     return result.dto;
@@ -809,7 +971,7 @@ export class ActivitiesService {
   // ============ complete(v0.40.0 参与域生命周期收口③ 管理端手动完结)============
 
   // 状态机:published → completed;其他态拒(20030;沿 ActivityStateMachine complete decision)。
-  // 与 attendances 首提直写 completed(attendances.service.ts:571-577)语义等价、并存不冲突;
+  // D2-a 唯一完结通路；attendances.submit 不再跨 aggregate 写 Activity.completed。
   // audit 复用 activity-audit-recorder 既有伞事件 'activity.publish'(extra.operation='complete')。
   // **不发通知**(完结不是需要通知报名者的事件;沿 publish 无通知范式,区别于 cancel)。
   async complete(
@@ -862,23 +1024,15 @@ export class ActivitiesService {
     activityId: string,
     activityTitle: string,
     cancelReason: string | null,
+    memberIds: string[],
   ): Promise<void> {
     try {
-      const registrations = await this.prisma.activityRegistration.findMany({
-        where: notDeletedWhere({
-          activityId,
-          statusCode: { in: [...ACTIVE_REGISTRATION_STATUS_CODES] },
-        }),
-        select: { memberId: true },
-      });
-      // 去重:同一 member 理论上 partial unique 仅一条 active 报名,稳妥去重防多发。
-      const memberIds = [...new Set(registrations.map((r) => r.memberId))];
       const reasonSuffix = cancelReason ? ` 取消原因:${cancelReason}` : '';
       for (const memberId of memberIds) {
         try {
           await this.notificationDispatcher.dispatchTargeted({
             recipientMemberId: memberId,
-            notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_REMINDER,
+            notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_CHANGED,
             title: '活动已取消',
             body: `您报名的「${activityTitle}」已取消。${reasonSuffix}`,
             channels: [NOTIFICATION_CHANNEL_IN_APP],
@@ -893,6 +1047,71 @@ export class ActivitiesService {
       this.logger.error(
         `activity cancel notification fan-out failed (activity=${activityId}): ${(err as Error).message}`,
       );
+    }
+  }
+
+  private async dispatchPublishedNotification(input: {
+    activityId: string;
+    activityTitle: string;
+    startAt: Date;
+    location: string;
+    requiresInsurance: boolean;
+  }): Promise<void> {
+    try {
+      const insurance = input.requiresInsurance
+        ? ' 本活动要求有效保险，请在报名前确认覆盖期。'
+        : '';
+      await this.notificationDispatcher.dispatchSystemMemberBroadcast({
+        notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_PUBLISHED,
+        title: '新活动已发布',
+        body: `「${input.activityTitle}」已发布，开始时间 ${input.startAt.toISOString()}，地点 ${input.location}。${insurance}`,
+      });
+    } catch (err) {
+      this.logger.error(
+        `activity publish notification failed (activity=${input.activityId}): ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private async dispatchScheduleChangeNotifications(input: {
+    activityId: string;
+    activityTitle: string;
+    before: { startAt: Date; endAt: Date; location: string };
+    after: { startAt: Date; endAt: Date; location: string };
+    requiresInsurance: boolean;
+    notificationMemberIds: string[];
+  }): Promise<void> {
+    const changed: string[] = [];
+    if (input.before.startAt.getTime() !== input.after.startAt.getTime()) {
+      changed.push(
+        `开始时间：${input.before.startAt.toISOString()} → ${input.after.startAt.toISOString()}`,
+      );
+    }
+    if (input.before.endAt.getTime() !== input.after.endAt.getTime()) {
+      changed.push(
+        `结束时间：${input.before.endAt.toISOString()} → ${input.after.endAt.toISOString()}`,
+      );
+    }
+    if (input.before.location !== input.after.location) {
+      changed.push(`地点：${input.before.location} → ${input.after.location}`);
+    }
+    const insurance = input.requiresInsurance
+      ? ' 保险覆盖按原日期核验，请按调整后的活动时段重新确认。'
+      : '';
+    for (const memberId of input.notificationMemberIds) {
+      try {
+        await this.notificationDispatcher.dispatchTargeted({
+          recipientMemberId: memberId,
+          notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_CHANGED,
+          title: '活动安排已变更',
+          body: `您报名的「${input.activityTitle}」安排有变更：${changed.join('；')}。${insurance}`,
+          channels: [NOTIFICATION_CHANNEL_IN_APP],
+        });
+      } catch (err) {
+        this.logger.error(
+          `activity change notification failed (activity=${input.activityId}, member=${memberId}): ${(err as Error).message}`,
+        );
+      }
     }
   }
 }

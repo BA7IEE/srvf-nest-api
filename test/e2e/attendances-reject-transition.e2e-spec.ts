@@ -106,7 +106,7 @@ describe('AttendancesService reject transition (characterization)', () => {
     });
 
     // Activity statusCode 用 'completed':reject 不依赖 activity status,任意非 cancelled 即可;
-    // 用 completed 避免和 submit D11 push 路径产生隐式语义混淆。
+    // 用 completed 锁定补录考勤仍允许的参与状态语义。
     const activity = await prisma.activity.create({
       data: {
         title: 'Reject Activity',

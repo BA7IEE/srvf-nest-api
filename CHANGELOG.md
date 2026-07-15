@@ -4,7 +4,28 @@
 
 ## Unreleased
 
-> 下一个 minor 候选(当前为空)。
+> 主题候选:**活动模块一致性收口（审计刀1–刀4）**。0 新端点 / 0 新权限码(仍 206) / 0 AuditLogEvent(仍 113) / +1 additive nullable migration(50→51) / +6 BizCode(232→238) / 2 组契约变更（publish body 强确认；响应字段 additive）。版本 bump 与 release 不在本批执行。
+
+### 行为变更对照（恰好 12 条）
+
+| # | 前 | 后 |
+|---:|---|---|
+| 1 | 首张考勤单提交会把活动从 published 直写 completed | 考勤提交只创建 pending Sheet；`POST :id/complete` 是唯一完结通路 |
+| 2 | cancel 除 cancelled 外均可进入 cancelled | cancel 仅允许 draft / published；completed / cancelled 均拒 |
+| 3 | completed 仍可改事实字段、cancelled 全部拒改 | completed / cancelled 均仅可改 description / coverImageUrl / galleryImageUrls / content / registrationNotes |
+| 4 | draft 活动可被管理员代报名、审批或提交考勤 | 三条参与写路径均要求活动已 published（考勤另允许 completed 补录） |
+| 5 | 非公开活动阻断管理员代报名，且仍可能出现在 App 可参加池 | 非公开活动允许管理员定向代报名；App 可参加池仅返回公开报名活动 |
+| 6 | publish 无请求体确认，且不复检活动结束/报名截止 | publish 必须传 `requiresInsuranceConfirmed:true`，并复检 `endAt > now` 与 deadline 未过 |
+| 7 | 考勤时间可脱离活动起止时段 | checkIn/checkOut 必须落在活动时间窗 ± `ATTENDANCE_WINDOW_TOLERANCE_HOURS`（默认 2） |
+| 8 | 活动性别要求只存不判 | admin / App 报名均按 MemberProfile.genderCode 执行 any/male/female 闸 |
+| 9 | 活动 cancel 不改变 pending 报名 | 同事务批量把 pending 报名置 cancelled（固定原因“活动已取消”）；pass 保留 |
+| 10 | approve 只看活动状态，不复检 endAt | approve 要求活动 published 且尚未结束 |
+| 11 | 单张考勤单 records 数量无显式上限 | create / edit DTO 均限制最多 200 条 |
+| 12 | update capacity 可缩到当前 pass 数以下 | capacity 更新先锁活动行并要求新值 ≥ 当前 pass 数 |
+
+- **正确性与批量校验**:新增报名截止≤活动结束、发布时点、软删参与数据、registrationId 三元一致性与考勤时间窗守卫；records 字典/成员/报名、重叠与贡献规则均批量预取，查询次数不随 records 数增长。
+- **生命周期读模型**:admin 活动列表/详情与 App 活动详情新增 `phase`；dashboard `activities` 新增 `pendingCompletion`；App detail 新增 `genderRequirementCode` / `requiresInsurance` / `passCount`。
+- **通知闭环**:新增 activity-published / activity-changed / registration-result / attendance-result 类型；公开活动发布、改期、退出、报名结果、考勤结果均走 commit 后站内通知。既有 09:00 expiry-reminder job 新增活动开始前 24h stage，以 `Activity.startReminderSentAt` 保证 at-most-once，不新增第三个 cron。
 
 ## v0.49.0 - 2026-07-14
 

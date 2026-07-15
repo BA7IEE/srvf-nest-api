@@ -5,8 +5,8 @@
 ## Scope
 
 - **活动主资源**:create / update / publish / cancel / complete 生命周期管理
-- **状态机 4 态**:`draft → published → completed`(分支)/ `* → cancelled`;**`completed` 有两条并存通路(v0.40.0 参与域生命周期收口③起)**:① [`/src/modules/attendances/`](../attendances/) 在首次 sheet 提交时**直写** completed(跨模块,沿 D11 / D-S10,**不经本状态机**);② 管理端 `complete` 端点(`POST admin/v1/activities/:id/complete`,新码 `activity.complete.record`)**经本状态机**(`published → completed`)。两者语义等价、并存不冲突(旧「completed 不进本状态机」措辞已 true-up,现管理端手动 complete 进状态机、attendances 直写通道并存)
-- **App 视角**:`AppActivitiesService` 暴露 published 活动池(全员相同);`AppMyActivitiesService` 暴露本人参与过的活动列表(按 `memberId` 锁定)
+- **状态机 4 态**:`draft → published → completed`，另有 `draft|published → cancelled`;`completed` 的**唯一推进通路**是管理端 `POST admin/v1/activities/:id/complete` 经本状态机执行。考勤提交只建 pending Sheet，禁止再直写 Activity 状态。
+- **App 视角**:`AppActivitiesService` 的可参加池仅含 published + 公开报名 + 未结束活动；detail 刻意仍以 published 可见。`AppMyActivitiesService` 暴露本人参与过的活动列表(按 `memberId` 锁定)
 - **不负责**:报名状态(`activity-registrations/`)、考勤(`attendances/`)、贡献值结算(`contribution-rules/` + `attendances/contribution-calculator.ts`)
 
 ## Local facts
@@ -28,7 +28,7 @@
 - ❌ **不**绕过 `activity-state-machine.ts` 在 service 内裸写状态变更
 - ❌ **不**改 audit event 名 `'activity.publish'`(6 处共用〔v0.40.0 +complete〕,characterization 已锁)
 - ❌ **不**把 `'activity.publish'` 拆成 `activity.create` / `activity.update` 等细分 event(沿现状)
-- ❌ **不**把 attendances 首提直写 `completed` 的通路(`attendances.service.ts:571-577`)挪进本状态机——那条**刻意**不经状态机(跨模块直写,沿 [`/docs/participation-bounded-context.md §5`](../../../docs/participation-bounded-context.md));v0.40.0 管理端 `complete` 端点则**经**状态机 `complete` action(`published → completed`),二者并存,改任一路径都别顺手合并另一路径
+- ❌ **不**从 attendances 或其它模块直写 `Activity.statusCode`;完结必须走本模块 `complete` action(`published → completed`)，取消仅允许 draft|published。
 - ❌ **不**把 Admin DTO 用 `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 派生为 App DTO(沿 [`/AGENTS.md §19.7 D-6`](../../../AGENTS.md));App DTO 进 `dto/app/`
 - ❌ **不**新增 Mixed Controller(class-level + 方法级双 `@ApiTags`);新 App endpoint 进 `controllers/app-*.controller.ts`
 - ❌ **不**主动拆 `activities.service.ts`(898L,沿 [`/docs/current-state.md §4 P2`](../../../docs/current-state.md);拆分需单独立项)

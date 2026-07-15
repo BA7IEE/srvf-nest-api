@@ -115,11 +115,13 @@ Certificate (不在 participation 图内)
 
 ### 5.2 允许 / 禁止的跨模块访问形式
 
+> **2026-07-15 当前规则**:本节取代本文件仍可能引用 D11/D-S10 的旧历史措辞；考勤提交不再推动 Activity.completed，活动完结唯一通路是 activities 模块 `complete` action。
+
 | 行为 | 是否允许 | 说明 |
 |---|---|---|
 | `attendances` 在事务内读 `tx.activity.findFirst` | ✅ 允许 | `assertActivityExists` / `findActivityForSubmissionFull` 多处使用;Activity 是 attendances 的前置依赖 |
-| `attendances` 在事务内**写** `tx.activity.update({ data: { statusCode: 'completed' }})` | ✅ 允许(唯一例外) | D11 / D-S10 推动:首张 Sheet 创建 → Activity.completed;**这是唯一已认定的跨 aggregate 写**,**不要再扩散** |
-| `attendances` 在事务内读 `tx.activityRegistration.findFirst` | ✅ 允许 | R23 校验 `registration.activityId === sheet.activityId` |
+| `attendances` 在事务内**写** `Activity.statusCode` | ❌ 禁止 | D2-a:考勤提交只建 pending Sheet；Activity.completed 只能由 activities 模块 `complete` action 推进 |
+| `attendances` 在事务内读 `tx.activityRegistration.findMany` | ✅ 允许 | 批量校验 `registration.activityId/memberId/statusCode(pass)` 与考勤记录一致 |
 | `attendances` 在事务内读 `tx.contributionRule.findMany` | ✅ 允许 | D14 5.B 系统预填;走 [`contribution-calculator.ts`](../src/modules/attendances/contribution-calculator.ts) |
 | `activities` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | Activity 是上游,不下探;若需要派生统计,通过 `attendance.recorded` 事件或独立 service |
 | `activity-registrations` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | 同上 |

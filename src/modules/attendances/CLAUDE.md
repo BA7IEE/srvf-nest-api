@@ -8,6 +8,7 @@
 - 响应序列化必须走 `attendance-presenter.ts`(Sheet 详情 / 列表项 / Record 含 member 摘要 / Decimal→string),**不**在 service 内重新手写字段映射;select 查询策略仍留 service(归未来 QueryService 议题,第二刀另行立项)。
 - `attendance_sheets` **5 态**(含终审);`attendance_records` 子表。
 - 状态变更必须经过 `attendance-sheet-state-machine.ts`,**不**在 service 内裸写态迁移。
+- `submit` 只创建 pending Sheet；**不得**跨 aggregate 直写 `Activity.statusCode='completed'`。活动完结唯一通路是 activities 模块的管理端 `complete` action。
 - 业务写路径必须走 `attendance-audit-recorder.ts` 写入 `AuditLogEvent`。
 - **时间重叠并发保护(v0.44.0 finding #7)**:submit/edit 在跨 Sheet 重叠查询前,由 `TimeOverlapPolicy.lockMembersForOverlapCheck` 按排序去重的 memberId 获取 PostgreSQL transaction advisory lock;同人并发写必须串行,不得移到事务外或删掉锁后只保留 read-before-write。
 - **受保护状态写(2026-07-13 finding #6;v0.47.0 F2)**:`edit`/`softDelete` 在读取或软删 `attendance_records` 前统一调用 [`/src/common/prisma/claim-at-status.util.ts`](../../common/prisma/claim-at-status.util.ts) `claimAtStatus`,确保 Sheet 仍处 `pending`;败者复用 `ATTENDANCE_SHEET_STATUS_INVALID`,且不得先破坏子行。`approve`/`reject`/`finalApprove`/`finalReject`/`reopen` 的内联 CAS 保留;合法迁移矩阵仍只在 `attendance-sheet-state-machine.ts`。

@@ -124,6 +124,8 @@ export interface RbacCacheConfig {
 // 只可放开「一级审核人 == 终审人」;自审禁止(submitter == 终审人)是域不变量,永不可配。
 export interface AttendanceConfig {
   allowSameReviewer: boolean;
+  // 考勤记录允许落在活动起止两侧的容差小时数；默认 2，供 submit/edit 时间窗校验。
+  windowToleranceHours: number;
 }
 
 // V2.x C-7.5 Provider 选型实施 PR #6:storage 凭证加密 key(沿 §6.6.1 + Q23 例外)。
@@ -422,6 +424,12 @@ export default registerAs('app', (): AppConfig => {
   // PR9:严格 === 'true'(沿 ENABLE_SWAGGER 范式,禁止 truthy 判断);未设 / 其它值一律 false=同人禁止。
   const attendance: AttendanceConfig = {
     allowSameReviewer: process.env.ATTENDANCE_ALLOW_SAME_REVIEWER === 'true',
+    windowToleranceHours: parsePositiveInt(
+      process.env.ATTENDANCE_WINDOW_TOLERANCE_HOURS,
+      2,
+      'ATTENDANCE_WINDOW_TOLERANCE_HOURS',
+      { min: 0, max: 168 },
+    ),
   };
 
   const storage: StorageConfig = {

@@ -170,13 +170,14 @@ describe('attendances 模块', () => {
         activityTypeCode: ti.code,
         organizationId: childOrg.id,
         startAt: '2099-06-01T08:00:00.000Z',
-        endAt: '2099-06-01T18:00:00.000Z',
+        endAt: '2099-07-31T18:00:00.000Z',
         location: '演示',
       });
     activityId = actCreate.body.data.id;
     await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activityId}/publish`)
-      .set('Authorization', adminAuth);
+      .set('Authorization', adminAuth)
+      .send({ requiresInsuranceConfirmed: true });
 
     // 已取消活动
     const actCancel = await request(httpServer(app))
@@ -193,7 +194,8 @@ describe('attendances 模块', () => {
     activityCancelledId = actCancel.body.data.id;
     await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activityCancelledId}/publish`)
-      .set('Authorization', adminAuth);
+      .set('Authorization', adminAuth)
+      .send({ requiresInsuranceConfirmed: true });
     await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activityCancelledId}/cancel`)
       .set('Authorization', adminAuth)
@@ -208,13 +210,14 @@ describe('attendances 模块', () => {
         activityTypeCode: ti.code,
         organizationId: childOrg.id,
         startAt: '2099-06-02T08:00:00.000Z',
-        endAt: '2099-06-02T18:00:00.000Z',
+        endAt: '2099-06-30T18:00:00.000Z',
         location: '演示',
       });
     activityOtherId = actOther.body.data.id;
     await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activityOtherId}/publish`)
-      .set('Authorization', adminAuth);
+      .set('Authorization', adminAuth)
+      .send({ requiresInsuranceConfirmed: true });
 
     // 报名 memberA 到 activityId(R23 正向)
     const reg1 = await request(httpServer(app))
@@ -222,6 +225,10 @@ describe('attendances 模块', () => {
       .set('Authorization', adminAuth)
       .send({ memberId: memberAId });
     registrationAId = reg1.body.data.id;
+    await request(httpServer(app))
+      .patch(`/api/admin/v1/activities/${activityId}/registrations/${registrationAId}/approve`)
+      .set('Authorization', adminAuth)
+      .send({});
 
     // 报名 memberA 到 activityOtherId(R23 反向:registration.activityId !== sheet.activityId)
     const reg2 = await request(httpServer(app))
@@ -612,6 +619,54 @@ describe('attendances 模块', () => {
           ],
         });
       expectBizError(res, BizCode.ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH);
+    });
+
+    it('registrationId 属于其他 member → ATTENDANCE_REGISTRATION_INVALID', async () => {
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
+        .set('Authorization', adminAuth)
+        .send({
+          records: [
+            baseRecord({
+              memberId: memberBId,
+              registrationId: registrationAId,
+            }),
+          ],
+        });
+      expectBizError(res, BizCode.ATTENDANCE_REGISTRATION_INVALID);
+    });
+
+    it('registrationId 对应报名非 pass → ATTENDANCE_REGISTRATION_INVALID', async () => {
+      const pending = await prisma.activityRegistration.create({
+        data: { activityId, memberId: memberBId, statusCode: 'pending' },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
+        .set('Authorization', adminAuth)
+        .send({
+          records: [baseRecord({ memberId: memberBId, registrationId: pending.id })],
+        });
+      expectBizError(res, BizCode.ATTENDANCE_REGISTRATION_INVALID);
+    });
+
+    it.each([
+      ['before tolerance', '2099-06-01T05:59:59.999Z', '2099-06-01T09:00:00.000Z'],
+      ['after tolerance', '2099-07-31T16:00:00.000Z', '2099-07-31T20:00:00.001Z'],
+    ])('%s → ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW', async (_label, checkInAt, checkOutAt) => {
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
+        .set('Authorization', adminAuth)
+        .send({ records: [baseRecord({ memberId: memberCId, checkInAt, checkOutAt })] });
+      expectBizError(res, BizCode.ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW);
+    });
+
+    it('records 201 条 → 400 DTO 上限', async () => {
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
+        .set('Authorization', adminAuth)
+        .send({ records: Array.from({ length: 201 }, () => baseRecord()) });
+      expect(res.status).toBe(400);
     });
 
     it('空 records 数组 → 400', async () => {
@@ -1591,8 +1646,8 @@ describe('attendances 模块', () => {
           baseRecord({
             memberId: memberCId,
             roleCode: 'member',
-            checkInAt: '2026-07-02T08:00:00.000Z',
-            checkOutAt: '2026-07-02T09:00:00.000Z', // 1h < 6h → 取 pointsBelow=0.5
+            checkInAt: '2099-07-02T08:00:00.000Z',
+            checkOutAt: '2099-07-02T09:00:00.000Z', // 1h < 6h → 取 pointsBelow=0.5
             // 不传 contributionPoints → 期望被预填
           }),
         ]);
@@ -1625,8 +1680,8 @@ describe('attendances 模块', () => {
           baseRecord({
             memberId: memberCId,
             roleCode: 'instructor',
-            checkInAt: '2026-07-02T10:00:00.000Z',
-            checkOutAt: '2026-07-02T18:00:00.000Z', // 8h >= 6h → pointsAbove=3;dailyCap 不再每条封顶
+            checkInAt: '2099-07-02T10:00:00.000Z',
+            checkOutAt: '2099-07-02T18:00:00.000Z', // 8h >= 6h → pointsAbove=3;dailyCap 不再每条封顶
           }),
         ]);
         const records = await prisma.attendanceRecord.findMany({
@@ -1645,8 +1700,8 @@ describe('attendances 模块', () => {
         baseRecord({
           memberId: memberCId,
           roleCode: 'coach', // 未配置规则
-          checkInAt: '2026-07-02T20:00:00.000Z',
-          checkOutAt: '2026-07-02T21:00:00.000Z',
+          checkInAt: '2099-07-02T20:00:00.000Z',
+          checkOutAt: '2099-07-02T21:00:00.000Z',
         }),
       ]);
       const records = await prisma.attendanceRecord.findMany({
@@ -1674,8 +1729,8 @@ describe('attendances 模块', () => {
           baseRecord({
             memberId: memberCId,
             roleCode: 'assistant',
-            checkInAt: '2026-07-03T08:00:00.000Z',
-            checkOutAt: '2026-07-03T09:00:00.000Z',
+            checkInAt: '2099-07-03T08:00:00.000Z',
+            checkOutAt: '2099-07-03T09:00:00.000Z',
             contributionPoints: 0.8, // 调用方明确传值
           }),
         ]);
@@ -1709,8 +1764,8 @@ describe('attendances 模块', () => {
           baseRecord({
             memberId: memberCId,
             roleCode: 'back_command',
-            checkInAt: '2026-07-03T10:00:00.000Z',
-            checkOutAt: '2026-07-03T11:00:00.000Z',
+            checkInAt: '2099-07-03T10:00:00.000Z',
+            checkOutAt: '2099-07-03T11:00:00.000Z',
             contributionPoints: null, // 显式 null:强制清空 / 不预填
           }),
         ]);
@@ -1758,8 +1813,8 @@ describe('attendances 模块', () => {
           baseRecord({
             memberId: memberCId,
             roleCode: 'front_command',
-            checkInAt: '2026-07-04T08:00:00.000Z',
-            checkOutAt: '2026-07-04T09:00:00.000Z',
+            checkInAt: '2099-07-04T08:00:00.000Z',
+            checkOutAt: '2099-07-04T09:00:00.000Z',
           }),
         ]);
         const records = await prisma.attendanceRecord.findMany({
@@ -1775,11 +1830,10 @@ describe('attendances 模块', () => {
     });
   });
 
-  // ============ 批次 4-B 新增:D11 Activity.completed 推动 ============
-  // 沿 D-S10 / D-A7 / 业务规则文档 §3
+  // ============ 审计刀1:考勤提交不再隐式推动 Activity.completed ============
 
-  describe('D11 Activity.completed 推动(批次 4-B)', () => {
-    it('首张 AttendanceSheet 创建 → Activity.statusCode 从 published 变为 completed', async () => {
+  describe('Activity.completed 只允许显式状态机推动', () => {
+    it('首张 AttendanceSheet 创建后 Activity 仍为 published', async () => {
       // 新建一个 published 状态的 activity(沿 fixture 风格)
       const ti = await prisma.dictItem.findFirstOrThrow({
         where: { code: 'att-demo' },
@@ -1814,10 +1868,10 @@ describe('attendances 模块', () => {
         where: { id: act.id },
         select: { statusCode: true },
       });
-      expect(after?.statusCode).toBe('completed');
+      expect(after?.statusCode).toBe('published');
     });
 
-    it('多张 Sheet 幂等:第二张 Sheet 创建,Activity 仍 completed', async () => {
+    it('多张 Sheet 创建后 Activity 仍为 published', async () => {
       const ti = await prisma.dictItem.findFirstOrThrow({
         where: { code: 'att-demo' },
         select: { code: true },
@@ -1858,10 +1912,10 @@ describe('attendances 模块', () => {
         where: { id: act.id },
         select: { statusCode: true },
       });
-      expect(after?.statusCode).toBe('completed');
+      expect(after?.statusCode).toBe('published');
     });
 
-    it('reject / final-reject 不回退 Activity.completed(状态机单向,沿 D11 / 业务规则文档 §3.3)', async () => {
+    it('reject / final-reject 不改变 Activity published 状态', async () => {
       const ti = await prisma.dictItem.findFirstOrThrow({
         where: { code: 'att-demo' },
         select: { code: true },
@@ -1890,16 +1944,16 @@ describe('attendances 模块', () => {
           checkOutAt: '2099-08-03T10:00:00.000Z',
         }),
       ]);
-      // 此时 activity 已 completed
+      // 考勤提交不再隐式改变活动状态。
       await fillContributionPoints(sheetId, 1);
       await approveThenFinalReject(sheetId, '强行驳回');
 
-      // Activity 仍 completed
+      // Activity 仍 published。
       const after = await prisma.activity.findUnique({
         where: { id: act.id },
         select: { statusCode: true },
       });
-      expect(after?.statusCode).toBe('completed');
+      expect(after?.statusCode).toBe('published');
     });
 
     it('Activity 已是 completed 时,POST Sheet 不报错(幂等)', async () => {

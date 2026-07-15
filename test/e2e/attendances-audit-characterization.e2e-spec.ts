@@ -28,14 +28,14 @@ import { createTestApp } from '../setup/test-app';
 //
 // 覆盖:
 //   A. submit:        extra = { operation, activityId, recordsCount, activityPushedToCompleted }
-//                     - A1 published Activity → 成功 + Activity push → completed + activityPushedToCompleted=true
+//                     - A1 published Activity → 成功 + Activity 保持 published + activityPushedToCompleted=false
 //                     - A2 completed Activity → 成功 + Activity 仍 completed + activityPushedToCompleted=false
 //   B. edit:          两条分支 extra 字段不同
 //                     - B1 records 分支:  { operation: 'edit', oldRecordsCount, newRecordsCount, newVersion }
 //                     - B2 no-records 分支: { operation: 'edit-no-records', recordsCount, newVersion }
 //   C. softDelete:    extra = { operation: 'delete', priorStatusCode, recordsCount }
 //   D. audit failure rollback: spy `AuditLogsService.log` 抛错
-//                     → Sheet / Records 不落库 + Activity D11 push 回滚 + 无 audit row
+//                     → Sheet / Records 不落库 + Activity 状态不变 + 无 audit row
 //
 // 不覆盖(已深锁,沿规约第 15 条不重复):
 //   - approve / reject(state-transition.e2e-spec.ts / reject-transition.e2e-spec.ts)
@@ -291,7 +291,7 @@ describe('AttendancesService audit characterization', () => {
   describe('A. submit audit extra', () => {
     beforeEach(isolateFixtures);
 
-    it('A1. published Activity → submit 成功 + audit extra.activityPushedToCompleted=true + Activity push → completed', async () => {
+    it('A1. published Activity → submit 成功 + audit extra.activityPushedToCompleted=false + Activity 保持 published', async () => {
       const activityId = await createActivity('published');
 
       const result = await ctx.service.submit(
@@ -301,12 +301,12 @@ describe('AttendancesService audit characterization', () => {
         AUDIT_META,
       );
 
-      // D11 推动副作用:Activity published → completed
+      // D2-a:首提不再推进活动；完结唯一入口是管理端 complete。
       const dbActivity = await ctx.prisma.activity.findUniqueOrThrow({
         where: { id: activityId },
         select: { statusCode: true },
       });
-      expect(dbActivity.statusCode).toBe('completed');
+      expect(dbActivity.statusCode).toBe('published');
 
       // 单条 audit
       const audits = await ctx.prisma.auditLog.findMany({
@@ -352,7 +352,7 @@ describe('AttendancesService audit characterization', () => {
         operation: 'submit',
         activityId,
         recordsCount: 2,
-        activityPushedToCompleted: true,
+        activityPushedToCompleted: false,
       });
     });
 
@@ -384,9 +384,7 @@ describe('AttendancesService audit characterization', () => {
         recordsCount?: number;
         activityPushedToCompleted?: boolean;
       }>;
-      // activityPushedToCompleted 始终是 boolean(沿 service.ts:494:
-      //   const activityPushedToCompleted = activity.statusCode === ACTIVITY_STATUS_PUBLISHED;
-      // 对 completed Activity 一律 false,不是 undefined)
+      // D2-a 保留兼容字段，但 submit 不再写 Activity，因此对所有状态恒 false。
       expect(c.extra).toEqual({
         operation: 'submit',
         activityId,
@@ -595,7 +593,7 @@ describe('AttendancesService audit characterization', () => {
   describe('D. audit failure rollback', () => {
     beforeEach(isolateFixtures);
 
-    it('D1. submit 路径 AuditLogsService.log 抛错 → 整个 $transaction 回滚:Sheet/Records/Activity D11 push/audit row 全部回滚', async () => {
+    it('D1. submit 路径 AuditLogsService.log 抛错 → 整个 $transaction 回滚:Sheet/Records/audit row 全部回滚，Activity 不变', async () => {
       const activityId = await createActivity('published');
 
       // spy:AttendancesService 通过 DI 注入的同一个 AuditLogsService 单例
@@ -623,7 +621,7 @@ describe('AttendancesService audit characterization', () => {
       const records = await ctx.prisma.attendanceRecord.findMany({});
       expect(records).toHaveLength(0);
 
-      // 事务回滚证据 3:Activity 仍是 published(D11 推动也被回滚;
+      // 事务回滚证据 3:Activity 仍是 published(D2-a 下 submit 本就不写 Activity;
       //   沿 service.ts:494-500,push 在 audit.log 之前,但同一 $transaction 内一并回滚)
       const dbActivity = await ctx.prisma.activity.findUniqueOrThrow({
         where: { id: activityId },

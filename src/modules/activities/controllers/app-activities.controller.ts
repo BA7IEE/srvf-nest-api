@@ -36,7 +36,7 @@ export class AppActivitiesController {
 
   @Get('available')
   @ApiOperation({
-    summary: 'App 视角可参加活动列表(分页;仅 statusCode=published 且未软删) [auth]',
+    summary: 'App 视角可参加活动列表(分页;仅 published + 公开报名 + 未结束 + 未软删) [auth]',
   })
   @ApiWrappedPageResponse(AppAvailableActivityListItemDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)

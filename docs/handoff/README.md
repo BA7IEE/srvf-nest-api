@@ -13,7 +13,7 @@
 | 你要什么 | 权威源(live / 机器校验) | 本目录做什么 |
 |---|---|---|
 | 端点清单 / 入参出参 / 字段 | **`/api/docs-json`**(live)· `test/contract/openapi.contract-spec.ts` 的 `EXPECTED_ROUTES` | 不复制;只在能力图里引用端点名 |
-| RBAC 权限码(191) | [`docs/ai-harness/RBAC_MAP.md`](../ai-harness/RBAC_MAP.md) · 各端点 `[rbac: x]` summary | 不复制;能力图里写"用哪个码门" |
+| RBAC 权限码(206) | [`docs/ai-harness/RBAC_MAP.md`](../ai-harness/RBAC_MAP.md) · 各端点 `[rbac: x]` summary | 不复制;能力图里写"用哪个码门" |
 | 当前版本 / surface 状态 / 债务 | [`docs/current-state.md`](../current-state.md) | 不复制 |
 
 **本目录只放契约表达不了的三样**(需要人/AI curate、且不会被 contract 测出来的):

@@ -29,7 +29,7 @@ interface ResBody {
   data: Record<string, unknown>;
 }
 
-// 字段集恰好 13 项(沿评审稿 §5.1 v0.1 锁定)。
+// 字段集在既有 13 项上加性补齐性别/保险/通过数/时间阶段。
 const APP_DETAIL_KEYS = [
   'activityTypeCode',
   'capacity',
@@ -37,10 +37,14 @@ const APP_DETAIL_KEYS = [
   'createdAt',
   'description',
   'endAt',
+  'genderRequirementCode',
   'id',
   'location',
+  'passCount',
+  'phase',
   'registrationDeadline',
   'registrationNotes',
+  'requiresInsurance',
   'startAt',
   'statusCode',
   'title',
@@ -55,7 +59,6 @@ const FORBIDDEN_KEYS_ON_DETAIL = [
   'locationLatitude',
   'updatedAt',
   'organizationId',
-  'genderRequirementCode',
   'isPublicRegistration',
   'deletedAt',
   'publishedBy',
@@ -233,6 +236,10 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
       expect(Object.keys(data).sort()).toEqual(APP_DETAIL_KEYS);
       expect(data.id).toBe(activity.id);
       expect(data.statusCode).toBe('published');
+      expect(data.genderRequirementCode).toBeNull();
+      expect(data.requiresInsurance).toBe(false);
+      expect(data.passCount).toBe(0);
+      expect(data.phase).toBe('ended');
 
       for (const forbiddenKey of FORBIDDEN_KEYS_ON_DETAIL) {
         expect(data).not.toHaveProperty(forbiddenKey);

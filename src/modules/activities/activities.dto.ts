@@ -4,6 +4,7 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  Equals,
   IsInt,
   IsNumber,
   IsObject,
@@ -15,6 +16,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { ACTIVITY_PHASE_VALUES, type ActivityPhase } from './activity-phase';
 
 // query boolean 从 GET query string 解析:原始值是字符串 'true'/'false',@Type(() => Boolean)
 // 会用 `Boolean(value)` 转换 —— 任何非空字符串(含 'false')都会变 true,是已知陷阱,
@@ -96,6 +98,12 @@ export class ActivityResponseDto {
     description: '活动状态字典 code(activity_status:draft / published / cancelled / completed)',
   })
   statusCode!: string;
+
+  @ApiProperty({
+    description: '按当前时间派生的阶段(upcoming / ongoing / ended)',
+    enum: ACTIVITY_PHASE_VALUES,
+  })
+  phase!: ActivityPhase;
 
   @ApiPropertyOptional({
     description: '发布人 User.id(发布前为 null)',
@@ -212,6 +220,12 @@ export class ActivityListItemDto {
 
   @ApiProperty({ description: '活动状态字典 code' })
   statusCode!: string;
+
+  @ApiProperty({
+    description: '按当前时间派生的阶段(upcoming / ongoing / ended)',
+    enum: ACTIVITY_PHASE_VALUES,
+  })
+  phase!: ActivityPhase;
 
   @ApiProperty({ description: '是否公开报名' })
   isPublicRegistration!: boolean;
@@ -531,6 +545,14 @@ export class CancelActivityDto {
   @IsString()
   @MaxLength(500)
   cancelReason?: string;
+}
+
+// 发布是高影响动作：调用方必须显式确认已核对保险要求，不能依赖缺省或 truthy 值。
+export class PublishActivityDto {
+  @ApiProperty({ description: '确认已核对本活动保险要求；只能为 true', example: true })
+  @IsBoolean()
+  @Equals(true)
+  requiresInsuranceConfirmed!: boolean;
 }
 
 // ============ 列表 query ============

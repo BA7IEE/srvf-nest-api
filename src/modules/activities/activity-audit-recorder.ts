@@ -267,6 +267,7 @@ export class ActivityAuditRecorder {
     priorStatusCode: string;
     nextStatusCode: string;
     cancelReason: string | null;
+    pendingRegistrationsCancelled: number;
     auditMeta: AuditMeta;
     tx: PrismaTx;
   }): Promise<void> {
@@ -284,6 +285,7 @@ export class ActivityAuditRecorder {
         priorStatusCode: args.priorStatusCode,
         nextStatusCode: args.nextStatusCode,
         cancelReason: args.cancelReason,
+        pendingRegistrationsCancelled: args.pendingRegistrationsCancelled,
       },
       tx: args.tx,
     });
@@ -293,7 +295,7 @@ export class ActivityAuditRecorder {
   // event: 'activity.publish'(第 6 处调用点,复用既有伞事件,event 名不动);
   // before + after = toAuditSnapshot(...);
   // extra 3 字段:{ operation: 'complete', priorStatusCode, nextStatusCode }
-  // 注:attendances 首提直写 completed 走 attendance-audit-recorder,**不**经本方法;
+  // 注:D2-a 起 attendances.submit 不再直写 completed；完结统一经本方法记录。
   //     本方法仅服务管理端 `complete` 端点(published → completed)。
   async logComplete(args: {
     activityId: string;

@@ -279,15 +279,16 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
         title: 'P26 Activity 1',
         activityTypeCode: ti.code,
         organizationId: childOrg.id,
-        startAt: '2026-06-01T08:00:00.000Z',
-        endAt: '2026-06-01T18:00:00.000Z',
+        startAt: '2099-06-01T08:00:00.000Z',
+        endAt: '2099-06-01T18:00:00.000Z',
         location: '梧桐山',
         coverImageUrl: 'https://example.com/cover-1.png',
       });
     activity1Id = a1.body.data.id;
     await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activity1Id}/publish`)
-      .set('Authorization', superAdminAuth);
+      .set('Authorization', superAdminAuth)
+      .send({ requiresInsuranceConfirmed: true });
 
     const a2 = await request(httpServer(app))
       .post('/api/admin/v1/activities')
@@ -296,14 +297,15 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
         title: 'P26 Activity 2',
         activityTypeCode: ti.code,
         organizationId: childOrg.id,
-        startAt: '2026-06-02T08:00:00.000Z',
-        endAt: '2026-06-02T18:00:00.000Z',
+        startAt: '2099-06-02T08:00:00.000Z',
+        endAt: '2099-06-02T18:00:00.000Z',
         location: '七娘山',
       });
     activity2Id = a2.body.data.id;
     await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activity2Id}/publish`)
-      .set('Authorization', superAdminAuth);
+      .set('Authorization', superAdminAuth)
+      .send({ requiresInsuranceConfirmed: true });
 
     const a3 = await request(httpServer(app))
       .post('/api/admin/v1/activities')
@@ -312,14 +314,15 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
         title: 'P26 Activity 3',
         activityTypeCode: ti.code,
         organizationId: childOrg.id,
-        startAt: '2026-06-03T08:00:00.000Z',
-        endAt: '2026-06-03T18:00:00.000Z',
+        startAt: '2099-06-03T08:00:00.000Z',
+        endAt: '2099-06-03T18:00:00.000Z',
         location: '南山',
       });
     activity3Id = a3.body.data.id;
     await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activity3Id}/publish`)
-      .set('Authorization', superAdminAuth);
+      .set('Authorization', superAdminAuth)
+      .send({ requiresInsuranceConfirmed: true });
 
     // ============ Sheets seed via admin path ============
     // 1) activity1:approved sheet with 3 records (memberA × 2 + 一个之后软删)
@@ -331,8 +334,8 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2026-06-01T08:00:00.000Z',
-            checkOutAt: '2026-06-01T10:00:00.000Z',
+            checkInAt: '2099-06-01T08:00:00.000Z',
+            checkOutAt: '2099-06-01T10:00:00.000Z',
             attendanceStatusCode: 'present',
             note: 'Record 1 — early',
             contributionPoints: 1.0,
@@ -340,8 +343,8 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'instructor',
-            checkInAt: '2026-06-01T14:00:00.000Z',
-            checkOutAt: '2026-06-01T18:00:00.000Z',
+            checkInAt: '2099-06-01T14:00:00.000Z',
+            checkOutAt: '2099-06-01T18:00:00.000Z',
             attendanceStatusCode: 'present',
             note: 'Record 2 — late slot',
             contributionPoints: 2.5,
@@ -349,8 +352,8 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2026-06-01T11:00:00.000Z',
-            checkOutAt: '2026-06-01T13:00:00.000Z',
+            checkInAt: '2099-06-01T11:00:00.000Z',
+            checkOutAt: '2099-06-01T13:00:00.000Z',
             attendanceStatusCode: 'present',
             contributionPoints: 0.5,
           },
@@ -367,16 +370,16 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2026-06-02T08:00:00.000Z',
-            checkOutAt: '2026-06-02T18:00:00.000Z',
+            checkInAt: '2099-06-02T08:00:00.000Z',
+            checkOutAt: '2099-06-02T18:00:00.000Z',
             attendanceStatusCode: 'present',
             contributionPoints: 3.0,
           },
           {
             memberId: memberBId,
             roleCode: 'member',
-            checkInAt: '2026-06-02T08:00:00.000Z',
-            checkOutAt: '2026-06-02T18:00:00.000Z',
+            checkInAt: '2099-06-02T08:00:00.000Z',
+            checkOutAt: '2099-06-02T18:00:00.000Z',
             attendanceStatusCode: 'present',
             contributionPoints: 3.0,
           },
@@ -393,8 +396,8 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2026-06-03T08:00:00.000Z',
-            checkOutAt: '2026-06-03T18:00:00.000Z',
+            checkInAt: '2099-06-03T08:00:00.000Z',
+            checkOutAt: '2099-06-03T18:00:00.000Z',
             attendanceStatusCode: 'present',
             contributionPoints: 2.0,
           },
@@ -451,8 +454,8 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2026-07-10T08:00:00.000Z',
-            checkOutAt: '2026-07-10T12:00:00.000Z',
+            checkInAt: '2099-06-01T06:00:00.000Z',
+            checkOutAt: '2099-06-01T07:00:00.000Z',
             attendanceStatusCode: 'present',
             contributionPoints: 1.0,
           },
@@ -469,8 +472,8 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2026-07-11T08:00:00.000Z',
-            checkOutAt: '2026-07-11T12:00:00.000Z',
+            checkInAt: '2099-06-01T07:00:00.000Z',
+            checkOutAt: '2099-06-01T08:00:00.000Z',
             attendanceStatusCode: 'present',
             contributionPoints: 1.0,
           },
@@ -491,8 +494,8 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2026-07-12T08:00:00.000Z',
-            checkOutAt: '2026-07-12T12:00:00.000Z',
+            checkInAt: '2099-06-01T10:00:00.000Z',
+            checkOutAt: '2099-06-01T11:00:00.000Z',
             attendanceStatusCode: 'present',
             contributionPoints: 1.0,
           },
@@ -513,8 +516,8 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2026-07-13T08:00:00.000Z',
-            checkOutAt: '2026-07-13T12:00:00.000Z',
+            checkInAt: '2099-06-01T13:00:00.000Z',
+            checkOutAt: '2099-06-01T14:00:00.000Z',
             attendanceStatusCode: 'present',
             contributionPoints: 1.0,
           },
@@ -540,8 +543,8 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2026-07-14T08:00:00.000Z',
-            checkOutAt: '2026-07-14T12:00:00.000Z',
+            checkInAt: '2099-06-01T18:00:00.000Z',
+            checkOutAt: '2099-06-01T19:00:00.000Z',
             attendanceStatusCode: 'present',
             contributionPoints: 1.5,
           },
@@ -616,8 +619,8 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
       for (const item of items) {
         expect(item.activityId).toBe(activity1Id);
         expect(item.activityTitle).toBe('P26 Activity 1');
-        expect(item.activityStartAt).toBe('2026-06-01T08:00:00.000Z');
-        expect(item.activityEndAt).toBe('2026-06-01T18:00:00.000Z');
+        expect(item.activityStartAt).toBe('2099-06-01T08:00:00.000Z');
+        expect(item.activityEndAt).toBe('2099-06-01T18:00:00.000Z');
         expect(item.activityCoverImageUrl).toBe('https://example.com/cover-1.png');
       }
     });
@@ -909,7 +912,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
       expect(id1).not.toBe(id2);
     });
 
-    it('排序:orderBy checkInAt desc — 第一条是 activity3(2026-06-03)', async () => {
+    it('排序:orderBy checkInAt desc — 第一条是 activity3(2099-06-03)', async () => {
       const res = await request(httpServer(app))
         .get('/api/app/v1/my/attendance-records?pageSize=100')
         .set('Authorization', userAAuth);
