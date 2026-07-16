@@ -233,8 +233,7 @@ describe('activity positions HTTP surface', () => {
       .set('Authorization', userAuth);
     expect(res.status).toBe(200);
     const frontCommand = res.body.data.find(
-      (item: { activityPositionId: string }) =>
-        item.activityPositionId === frontCommandPositionId,
+      (item: { activityPositionId: string }) => item.activityPositionId === frontCommandPositionId,
     );
     // capacity 2、已 1 条 pass → 余量 1,仍可报。
     expect(frontCommand).toMatchObject({
