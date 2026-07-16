@@ -36,9 +36,9 @@
 - 新 schema / migration / Permission seed / Role 扩展;**第 3 个及以后 cron**(终态恰 2);LLM / vector / Redis / queue / 多租户
 - 延后模型:events / event_participants / member_profiles 扩展敏感字段(沿 V2 红线 §4.3)
 - scoped 可见性余面(users / content / notifications / audit-logs / attachment self-scope);Recruitment 与 team-join 维持中央流程 + 显式授权,不入职务派生
-- 招新后续(退队/晋升/多部门归属/级别版本化/证书自动核验 gate/部门级细分);保险后续(理赔/核验流/保单图 attachments/App requiresInsurance);CMS 后续(已读回执/评论点赞/定时发布/UV/部门级权限)
-- Slow-5(入队同意书/退队清理 N 值)与 Slow-7(uploadToken 黑名单等 storage 深化)— 等业务/真实反馈
-- 运维侧真实通道(COS/微信小程序/腾讯云 OCR)— `docs/ops/` SOP 就绪,维护者执行
+- 招新后续(退队 / 晋升 / 多部门归属 / 级别版本化 / 证书自动核验 gate / 部门级细分);保险后续(理赔 / 核验流 / 保单图 attachments / App requiresInsurance);CMS 后续(已读回执 / 评论点赞 / 定时发布 / UV / 部门级权限)
+- Slow-5(入队同意书 / 退队清理 N 值)与 Slow-7(uploadToken 黑名单等 storage 深化)— 等业务 / 真实反馈
+- 运维侧真实通道(COS / 微信小程序 / 腾讯云 OCR)— `docs/ops/` SOP 就绪,维护者执行
 - god-service 重开拆分(P1-4 已收口,需 architecture-boundary §6 新触发 + 立项);repository 抽象层;未立项的 controller path / snapshot 变更
 - 数据清理自动化(SMS / 招新脱敏 = 手动 SOP,不上 cron);历史 handoff / 冻结评审稿不回改、不当当前事实
 - 招新身份证号 v1 明文入库(2026-06-18 拍板留审计痕迹;加密 / 哈希归 C-8 议题)
@@ -49,7 +49,7 @@
 |---|---|
 | P1 | 前端联调剩运维侧 P0-H 演练 + P0-I 排错 SOP(系统侧无动作) |
 | P1 | P1-22 专业队 gate 配置化;P1-23 isForeigner 历史列改名(对外已用 isNonMainlandDocument) |
-| P2 | scoped 余面(§3);god-service 体量观察(codemap 实时口径);v0.44 接受项(#8/#10#12/#19/#20#21)与到期提醒 at-most-once;单测占比刻意低(e2e 为主);Mixed 存量 2;snapshot 用 diff 勿整读 |
+| P2 | scoped 余面(§3);god-service 体量观察(codemap 实时口径);v0.44 接受项(#8 / #10#12 / #19 / #20#21)与到期提醒 at-most-once;单测占比刻意低(e2e 为主);Mixed 存量 2;snapshot 用 diff 勿整读 |
 | P3 | SMS / 招新脱敏 retention 手动 SOP(刻意);28003 同轮枚举面(v1 接受);首轮 review 接受 / 延后残项(F7/F8/F13/F18 等)在 NEXT_TASKS |
 
 ## 5. 开工门禁
