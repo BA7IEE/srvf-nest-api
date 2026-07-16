@@ -1,6 +1,6 @@
 # RBAC_MAP — 权限体系地图与对照表
 
-> **性质**:derived 地图,非规则源。权限**事实**权威源:权限码与绑定 → [`prisma/seed.ts`](../../prisma/seed.ts);判权实现 → [`src/modules/permissions/rbac.service.ts`](../../src/modules/permissions/rbac.service.ts);铁律 → [`AGENTS.md §8 / §13`](../../AGENTS.md)。
+> **性质**:derived 地图,非规则源。权限**事实**权威源:权限码与绑定 → [`prisma/seed.ts`](../../prisma/seed.ts);判权实现 → [`src/modules/permissions/rbac.service.ts`](../../src/modules/permissions/rbac.service.ts);铁律 → [`auth-jwt-refresh`](../reference/auth-jwt-refresh.md) / §13`。
 > 数据快照:2026-06-11,**Slow-4 权限双轨收口完成**(goal #314-#317,冻结评审稿 [`slow4-rbac-business-face-review.md`](../archive/reviews/slow4-rbac-business-face-review.md)):117 码 / 内置角色 ×3 / **全仓活跃 `@Roles` = 0**(原 G 模式 44 处全摘;RolesGuard 机制保留 Guard 链);`docs:rbacmap:check` 0 FAIL / 0 WARN(seed↔代码双向对齐)。**任何权限事实的变更本身是 D 档**(评审稿 + 用户拍板),本文件只能事后 true-up。
 > 2026-06-11 B 队列收口戳(goal #322-#328):**权限事实零变化**(117 码 / 绑定 / 内置角色不动);endpoint 157→**159**(OTP 登录两公开端点 `[public]`,零新权限码;生日批零端点);`docs:rbacmap:check` 仍 0 FAIL / 0 WARN。
 > 2026-06-12 v0.22.0 收口戳(goal「会议延期窗口」G2/G3 #345/#346):**权限事实零变化**(117 码 / 绑定 / 内置角色不动);endpoint **159** 不变(进程崩溃兜底 + SDK 超时均零新端点);`docs:rbacmap:check` 仍 0 FAIL / 0 WARN。
@@ -260,13 +260,13 @@
 
 | 不变式 | 实现位置 | 铁律 |
 |---|---|---|
-| 自我保护 | `users.service.ts` `assertCanManageUser`(删/禁/改角色拒绝 self) | AGENTS §13 |
-| 最后一个活跃 SUPER_ADMIN ≥ 1 | 同上,**事务内计数 + 更新** | AGENTS §12/§13;**禁止** AI 增加"SA 互不可操作"校验 |
+| 自我保护 | `users.service.ts` `assertCanManageUser`(删/禁/改角色拒绝 self) | [`roles-admin-protection`](../reference/roles-admin-protection.md) |
+| 最后一个活跃 SUPER_ADMIN ≥ 1 | 同上,**事务内计数 + 更新** | [`soft-delete-transactions`](../reference/soft-delete-transactions.md) / [`roles-admin-protection`](../reference/roles-admin-protection.md);**禁止** AI 增加"SA 互不可操作"校验 |
 | 最后一个 ops-admin 持有者 ≥ 1 | `user-roles.service.ts` revoke 路径 | seed bootstrap 强校验呼应 |
-| ADMIN 只能管 USER | `assertCanManageUser` 统一入口;**禁止** service 内散落 `role ===` 比较(已核实 0 处) | AGENTS §13 |
-| 身份有效性不缓存 | `JwtStrategy.validate` 每请求查库(`deletedAt + status`) | AGENTS §8;RbacCache 是唯一例外(权限解析缓存) |
-| 防账号枚举 | 登录四场景统一 10004 + dummy bcrypt timing 防御 | AGENTS §8 |
-| Guard 全局注册 | `app.module.ts` APP_GUARD ×3,顺序固定;**全仓 0 处 `@UseGuards`**(已核实) | AGENTS §8 |
+| ADMIN 只能管 USER | `assertCanManageUser` 统一入口;**禁止** service 内散落 `role ===` 比较(已核实 0 处) | [`roles-admin-protection`](../reference/roles-admin-protection.md) |
+| 身份有效性不缓存 | `JwtStrategy.validate` 每请求查库(`deletedAt + status`) | [`auth-jwt-refresh`](../reference/auth-jwt-refresh.md);RbacCache 是唯一例外(权限解析缓存) |
+| 防账号枚举 | 登录四场景统一 10004 + dummy bcrypt timing 防御 | [`auth-jwt-refresh`](../reference/auth-jwt-refresh.md) |
+| Guard 全局注册 | `app.module.ts` APP_GUARD ×3,顺序固定;**全仓 0 处 `@UseGuards`**(已核实) | [`auth-jwt-refresh`](../reference/auth-jwt-refresh.md) |
 
 ## 5. 缺口与冻结存量(AI 不得"顺手修")
 
@@ -286,7 +286,7 @@
 2. Slow-4 已完成(G 模式清零);**禁止**自行新增权限码 / 调整角色绑定 / 给端点重新挂 `@Roles`(均为 D 档,沿规则 1)。
 3. **禁止**绕过 / 弱化:`assertCanManageUser`、最后 SA/ops-admin 保护、防枚举四场景一致性、`@Public` 与 `@Roles` 互斥。
 4. 新管理面 endpoint 默认模式 = R 模式(沿既有模块范式);新 App endpoint 默认 self-scope,**禁止**用 `role` 短路 scope。
-5. 错误码:权限拒绝只允许既有 `UNAUTHORIZED(40100)` / `FORBIDDEN(40300)` / RBAC 拒绝码(30100 段)/ 业务护栏码;**禁止**自创 token 类 100xx 码(AGENTS §5)。
+5. 错误码:权限拒绝只允许既有 `UNAUTHORIZED(40100)` / `FORBIDDEN(40300)` / RBAC 拒绝码(30100 段)/ 业务护栏码;**禁止**自创 token 类 100xx 码([`response-pagination-errors`](../reference/response-pagination-errors.md))。
 6. 本文件对照表与代码不一致时:以代码为准,**先报告再 true-up**,不得据本表"纠正"代码。
 
 ## 7. 漂移检查与重新生成口径

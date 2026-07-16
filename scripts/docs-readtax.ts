@@ -18,9 +18,9 @@ import * as path from 'path';
 const ROOT = path.resolve(__dirname, '..');
 
 const BUDGETS: ReadonlyArray<{ file: string; maxChars: number; enforced: boolean }> = [
-  { file: 'AGENTS.md', maxChars: 18_000, enforced: false }, // PR4 收口后翻 true
+  { file: 'AGENTS.md', maxChars: 18_000, enforced: true }, // PR4 已收口(2.0 重写)
   { file: 'docs/current-state.md', maxChars: 4_500, enforced: true }, // PR3 已收口(全指针化)
-  { file: 'CLAUDE.md', maxChars: 2_500, enforced: false }, // PR4 收口后翻 true
+  { file: 'CLAUDE.md', maxChars: 2_500, enforced: true }, // PR4 已收口(2.0 重写)
 ];
 
 function main(): void {

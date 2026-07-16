@@ -1,5 +1,7 @@
 # ARCHITECTURE.md — SRVF API 顶层架构入口
 
+> **背景层(Harness 2.0,2026-07-16)**:本文件不在任何默认必读路径;仍生效的条款已由根 `AGENTS.md` §1/§2 与 `docs/reference/` 承接引用,正文冻结为设计背景与历史依据(T0:`docs/archive/reviews/harness-2.0-t0-review.md`)。
+
 > 本文是 SRVF API 的**顶层架构入口与升级路径权威源**。
 >
 > - **当前事实**(版本 / open PR / 已发能力 / surface 状态)见 [`docs/current-state.md`](./docs/current-state.md)

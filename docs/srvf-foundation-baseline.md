@@ -1,5 +1,7 @@
 # SRVF 基础数据底座 — V2 基线规范
 
+> **背景层(Harness 2.0,2026-07-16)**:本文件退出默认必读路径;13 项基线细则已由根 `AGENTS.md` §1/§2 与 `docs/reference/` 承接引用,正文保留为 V2 基线依据,按需查阅(T0:`docs/archive/reviews/harness-2.0-t0-review.md`)。
+
 > 派生项目:**srvf-nest-api**
 > 文档定位:V2 派生项目的"**基线规范**" — 锁定**不依赖业务调研**的通用约定;**长期 active**,13 项 A 档铁律(§2-§13)自 v0.2.0 起持续生效。
 > **状态注**(2026-05-23 Phase G1 校准):本文头部 §0 与 §1.1 的部分定性措辞源自 V2 设计期(初版 v0.1 / 2026-05-07,当时 Step 1 尚未启动)。**当前各模块实装状态以 §1.1 段位表 + [`docs/current-state.md §2`](current-state.md) + [`prisma/schema.prisma`](../prisma/schema.prisma) 为准**;头部"V2 设计阶段 / 不引入 schema / 不需要 D6/D7 gates"等措辞仅作历史背景,**不**作为当前节奏依据。
