@@ -2,9 +2,9 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
+## v0.55.0 - 2026-07-16
 
-> 主题:**活动岗位与时段（审计刀 6 · 第四件 / 收官）**。范围 = F0 T0 冻结 #643 + F1 schema #644 + F2 Admin CRUD #645 + F3 报名/候补/App #646 + F4 打卡/考勤/草稿 #647 + F5 收口。关闭审计项 #2，并完成审计刀 6。新增 `activity_positions` + `ActivityRegistration.activityPositionId` 与第 54 个 migration；Admin 5 + App 1 共 6 个 endpoint（354→360）、1 个 controller（73→74）、6 个 BizCode（244→250）。Permission 206 / AuditLogEvent 113 / cron 2 / module 36 / role 9 恒定，0 新依赖、0 新字典、0 Activity 列；本轮不 bump / tag / release。
+> 主题:**活动岗位与时段（审计刀 6 · 第四件 / 收官）**。范围 = F0 T0 冻结 #643 + F1 schema #644 + F2 Admin CRUD #645 + F3 报名/候补/App #646 + F4 打卡/考勤/草稿 #647 + F5 收口 #648 + **HTTP 层 e2e 补测 #649**（主会话元核验唯一缺口闭合:6 新端点的 401/30100/login-only 读/越窗/重名/禁删/App 余量/必选岗 21035 全走真实请求）。关闭审计项 #2，**29 问审计六刀全部收官**。新增 `activity_positions` + `ActivityRegistration.activityPositionId` 与第 54 个 migration；Admin 5 + App 1 共 6 个 endpoint（354→360）、1 个 controller（73→74）、6 个 BizCode（244→250）。Permission 206 / AuditLogEvent 113 / cron 2 / module 36 / role 9 恒定，0 新依赖、0 新字典、0 Activity 列。
 
 ### 行为变更对照（恰好 7 条）
 
