@@ -72,8 +72,10 @@ export class ActivityFeedbacksQueryService {
     await this.assertCanReadActivity(activityId, currentUser);
     await this.findActivityOrThrow(activityId);
 
-    // 正常路径固定 4 次业务读：Activity exists + aggregate + 1 次 groupBy + approved distinct members。
-    const [aggregate, grouped, approvedMembers] = await Promise.all([
+    // 正常路径固定 4 次业务读：Activity exists + aggregate + 1 次 groupBy + 分母 member 并集 count。
+    // 分母实时计算为「当前 approved distinct member ∪ 已提交 live feedback member」，使 reopen 后
+    // 历史评价仍同时留在分子和分母，feedbackRate 恒不超过 1；不落库、不改评价资格写侧。
+    const [aggregate, grouped, denominator] = await Promise.all([
       this.aggregateForActivity(activityId),
       this.prisma.activityFeedback.groupBy({
         by: ['rating'],
@@ -81,21 +83,27 @@ export class ActivityFeedbacksQueryService {
         _count: { _all: true },
         orderBy: { rating: 'asc' },
       }),
-      this.prisma.attendanceRecord.findMany({
+      this.prisma.member.count({
         where: {
-          deletedAt: null,
-          sheet: {
-            activityId,
-            deletedAt: null,
-            statusCode: ATTENDANCE_SHEET_STATUS.APPROVED,
-          },
+          OR: [
+            {
+              attendanceRecords: {
+                some: {
+                  deletedAt: null,
+                  sheet: {
+                    activityId,
+                    deletedAt: null,
+                    statusCode: ATTENDANCE_SHEET_STATUS.APPROVED,
+                  },
+                },
+              },
+            },
+            { activityFeedbacks: { some: { activityId, deletedAt: null } } },
+          ],
         },
-        select: { memberId: true },
-        distinct: ['memberId'],
       }),
     ]);
     const counts = new Map(grouped.map((row) => [row.rating, row._count._all]));
-    const denominator = approvedMembers.length;
 
     return {
       ...aggregate,

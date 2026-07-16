@@ -57,7 +57,7 @@ export class MetaController {
   @Get('dashboard-summary')
   @ApiOperation({
     summary:
-      '工作台/首页待办汇总(registrations 块需 activity-registration.read.record;attendanceSheets 块需 attendance.read.sheet;activities 块无码同 list 现状;缺码的块静默省略,响应恒 200) [auth]',
+      '工作台/首页待办汇总(registrations/attendanceSheets 按对应读码的三源授权组织范围统计;activities 块无码同 list 现状;缺码的块静默省略,响应恒 200) [auth]',
   })
   @ApiWrappedOkResponse(DashboardSummaryResponseDto)
   @ApiBizErrorResponse(BizCode.UNAUTHORIZED)

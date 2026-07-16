@@ -61,7 +61,8 @@ export class AdminActivityFeedbackSummaryDto extends ActivityFeedbackAggregateDt
   ratingDistribution!: ActivityFeedbackRatingBucketDto[];
 
   @ApiProperty({
-    description: '评价人数 / approved 考勤 distinct member 数；分母为 0 时为 0，四位小数',
+    description:
+      '评价人数 / (当前 approved 考勤 distinct member ∪ 已提交评价 member)去重数；分母为 0 时为 0，四位小数',
     minimum: 0,
     maximum: 1,
   })

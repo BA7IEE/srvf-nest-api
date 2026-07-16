@@ -25,12 +25,14 @@ describe('activity feedbacks F2-F4', () => {
   let submitterUserId: string;
   let organizationId: string;
   let mainActivityId: string;
+  let mainApprovedSheetId: string;
   let notCompletedActivityId: string;
   let boundaryActivityId: string;
   let closedActivityId: string;
   let concurrentActivityId: string;
   let approvedA: MemberUser;
   let approvedB: MemberUser;
+  let approvedWithoutFeedback: MemberUser;
   let passWithoutAttendance: MemberUser;
   let waitlistedWithoutAttendance: MemberUser;
   let unrelatedMember: MemberUser;
@@ -61,6 +63,10 @@ describe('activity feedbacks F2-F4', () => {
 
     approvedA = await createMemberUser('feedback-approved-a', '评价队员 A');
     approvedB = await createMemberUser('feedback-approved-b', '评价队员 B');
+    approvedWithoutFeedback = await createMemberUser(
+      'feedback-approved-no-submit',
+      '已到场未评价队员',
+    );
     passWithoutAttendance = await createMemberUser('feedback-pass-only', '仅报名通过');
     waitlistedWithoutAttendance = await createMemberUser('feedback-waitlisted', '仅候补');
     unrelatedMember = await createMemberUser('feedback-unrelated', '无关队员');
@@ -107,7 +113,7 @@ describe('activity feedbacks F2-F4', () => {
       ],
     });
 
-    await createAttendanceSheet(mainActivityId, 'approved', [
+    mainApprovedSheetId = await createAttendanceSheet(mainActivityId, 'approved', [
       approvedA.memberId,
       approvedB.memberId,
     ]);
@@ -291,6 +297,42 @@ describe('activity feedbacks F2-F4', () => {
     });
   });
 
+  it('终审撤回后分母取当前 approved 与历史评价 member 去重并集，feedbackRate 恒不超过 1', async () => {
+    await createAttendanceSheet(mainActivityId, 'approved', [approvedWithoutFeedback.memberId]);
+
+    const reopened = await request(httpServer(app))
+      .post(`/api/admin/v1/attendance-sheets/${mainApprovedSheetId}/reopen`)
+      .set('Authorization', adminAuth)
+      .send({ reason: '第四轮 review 评价率口径回归' });
+    expect(reopened.status).toBe(201);
+    expect(reopened.body.data.statusCode).toBe('pending');
+
+    const currentApprovedMembers = await prisma.attendanceRecord.findMany({
+      where: {
+        deletedAt: null,
+        sheet: { activityId: mainActivityId, statusCode: 'approved', deletedAt: null },
+      },
+      select: { memberId: true },
+      distinct: ['memberId'],
+    });
+    const submittedFeedbackMembers = await prisma.activityFeedback.findMany({
+      where: { activityId: mainActivityId, deletedAt: null },
+      select: { memberId: true },
+      distinct: ['memberId'],
+    });
+    expect(currentApprovedMembers.map((row) => row.memberId)).toEqual([
+      approvedWithoutFeedback.memberId,
+    ]);
+    expect(submittedFeedbackMembers).toHaveLength(2);
+
+    const summary = await request(httpServer(app))
+      .get(`/api/admin/v1/activities/${mainActivityId}/feedback-summary`)
+      .set('Authorization', adminAuth);
+    expect(summary.status).toBe(200);
+    expect(summary.body.data).toMatchObject({ count: 2, avgRating: 4, feedbackRate: 0.6667 });
+    expect(summary.body.data.feedbackRate).toBeLessThanOrEqual(1);
+  });
+
   it('participation-summary.feedback 与 feedback-summary 聚合严格一致', async () => {
     const [participation, feedback] = await Promise.all([
       request(httpServer(app))
@@ -371,7 +413,7 @@ describe('activity feedbacks F2-F4', () => {
     activityId: string,
     statusCode: string,
     memberIds: string[],
-  ): Promise<void> {
+  ): Promise<string> {
     const sheet = await prisma.attendanceSheet.create({
       data: { activityId, submitterUserId, statusCode },
       select: { id: true },
@@ -388,5 +430,6 @@ describe('activity feedbacks F2-F4', () => {
         contributionPoints: '1',
       })),
     });
+    return sheet.id;
   }
 });
