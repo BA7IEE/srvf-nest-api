@@ -150,6 +150,12 @@ export type AttendanceSheetDraftCheckInRow = Prisma.ActivityCheckInGetPayload<{
 export const ATTENDANCE_SHEET_DRAFT_REGISTRATION_SELECT = {
   id: true,
   memberId: true,
+  activityPosition: {
+    select: {
+      attendanceRoleCode: true,
+      endAt: true,
+    },
+  },
 } as const satisfies Prisma.ActivityRegistrationSelect;
 
 export type AttendanceSheetDraftRegistrationRow = Prisma.ActivityRegistrationGetPayload<{

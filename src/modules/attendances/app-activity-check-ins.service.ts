@@ -36,6 +36,12 @@ const REGISTRATION_GATE_SELECT = {
   activityId: true,
   memberId: true,
   statusCode: true,
+  activityPosition: {
+    select: {
+      startAt: true,
+      endAt: true,
+    },
+  },
 } as const satisfies Prisma.ActivityRegistrationSelect;
 
 type ActivityGateRow = Prisma.ActivityGetPayload<{ select: typeof ACTIVITY_GATE_SELECT }>;
@@ -90,7 +96,7 @@ export class AppActivityCheckInsService {
         this.assertAllowed(
           this.policy.canWriteByTime(
             'check-in',
-            context.activity,
+            this.resolveCheckInSchedule(context.activity, context.registration),
             context.now,
             this.config.attendance.windowToleranceHours,
           ),
@@ -143,7 +149,7 @@ export class AppActivityCheckInsService {
       this.assertAllowed(
         this.policy.canWriteByTime(
           'check-out',
-          context.activity,
+          this.resolveCheckInSchedule(context.activity, context.registration),
           context.now,
           this.config.attendance.windowToleranceHours,
           existing.checkInAt,
@@ -296,6 +302,18 @@ export class AppActivityCheckInsService {
       throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
     }
     return { activity, registration, now };
+  }
+
+  private resolveCheckInSchedule(
+    activity: Pick<ActivityGateRow, 'startAt' | 'endAt'>,
+    registration: RegistrationGateRow,
+  ): { startAt: Date; endAt: Date } {
+    const activityPosition = registration.activityPosition;
+    return activityPosition !== null &&
+      activityPosition.startAt !== null &&
+      activityPosition.endAt !== null
+      ? { startAt: activityPosition.startAt, endAt: activityPosition.endAt }
+      : activity;
   }
 
   private findCurrentEvidence(

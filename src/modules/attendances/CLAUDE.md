@@ -4,7 +4,7 @@
 
 ## 本地事实
 
-- `attendances.service.ts` 是 **god-service(1609 行,P1-4 第一刀后)**;`attendance-sheet-state-machine.ts` / `attendance-audit-recorder.ts` / `time-overlap-policy.ts` / `contribution-calculator.ts` / `attendance-presenter.ts`(P1-4 第一刀,2026-06-10)已抽离。
+- `attendances.service.ts` 是 **god-service(1746 行,P1-4 第一刀后)**;`attendance-sheet-state-machine.ts` / `attendance-audit-recorder.ts` / `time-overlap-policy.ts` / `contribution-calculator.ts` / `attendance-presenter.ts`(P1-4 第一刀,2026-06-10)已抽离。
 - 响应序列化必须走 `attendance-presenter.ts`(Sheet 详情 / 列表项 / Record 含 member 摘要 / Decimal→string),**不**在 service 内重新手写字段映射;select 查询策略仍留 service(归未来 QueryService 议题,第二刀另行立项)。
 - `attendance_sheets` **5 态**(含终审);`attendance_records` 子表。
 - 状态变更必须经过 `attendance-sheet-state-machine.ts`,**不**在 service 内裸写态迁移。
@@ -15,6 +15,7 @@
 - **已知边界(finding #8,接受记录)**:数据库层未加 `btree_gist` / range exclusion constraint;原因是本仓首个 DB 扩展、托管库可用性未验且触发极罕见。当前只承诺应用写路径的事务 advisory lock;直连 SQL 绕过应用不在此保证内。
 - **终审/撤回判权(终态 scoped-authz PR9 + v0.47.0 F2)**:`finalApprove`/`finalReject`/`reopen` 走 `assertFinalReviewAuthzOrThrow`(`authz.explain` 带 ref)。三动作的权限来源均为 scoped `attendance-final-reviewer` 或 SUPER_ADMIN,biz-admin 不持码;只有 `finalApprove` 咬合自审 22074 / 一级同人 22075,`finalReject`/`reopen` 不受这两条约束。sheet 不存在 → 回退 `rbac.can`(持码者进事务抛 22001,无码者 30100 防枚举),其余 deny → 30100。角色码集为 `attendance.{read,final-approve,final-reject,reopen}.sheet`;e2e 矩阵在 `test/e2e/attendances-final-review-authz.e2e-spec.ts`。
 - **其余调用位点判权(终态 scoped-authz PR12 + v0.49 部门范围)**:`submit`/`list`(嵌套 `:activityId`)带 `{type:'activity', id: activityId}`;`findOne`/`reviewDetail`/`edit`/`softDelete`/`approve`/`reject` 带 `{type:'attendance_sheet', id}`;`listRecordsForMemberAdmin`/`getMemberContributionSummary` 带 `{type:'member', id: memberId}`;`listAllSheetsForAdmin` 通过 `getVisibleOrganizationScope` 按 `activity.organizationId` 下推并与用户组织筛选取交集。`resource_not_found` 回退同 PR9 范式:持全局码者交回既有 NOT_FOUND,无码者 30100。scoped 生效 e2e 在 `test/e2e/participation-scoped-authz.e2e-spec.ts`。
+- **活动岗位时段接线(2026-07-16 F4)**:App 签到/签退在既有 Activity→Registration 锁序和锁后重读内，从 `registration.activityPosition` 选择岗位 `startAt/endAt`；无岗位或岗位未配置独立时段才回退活动窗，`ActivityCheckInPolicy` 纯函数签名不变。考勤 submit/edit 的批量 registration IN 预取同样按每条记录选择岗位窗；`registrationId=null` 的临时记录继续走活动窗。`attendance-sheet-draft` 从报名岗位带出 `attendanceRoleCode`，无岗位为 `member`；忘签退时岗位报名回退岗位 `endAt`，从而提交后继续由既有 `activityTypeCode × roleCode` 规则预填贡献值。不得改成逐条查询或重新堆一套贡献计算。
 
 ## 不要做(踩雷区)
 

@@ -73,12 +73,13 @@ export class ActivityCheckInPresenter {
   toAttendanceSheetDraftRecordDto(
     row: AttendanceSheetDraftCheckInRow,
     fallbackEndAt: Date,
+    roleCode: string,
   ): AttendanceSheetDraftMappedRecord {
     const noCheckOut = row.checkOutAt === null;
     const checkOutAt = row.checkOutAt ?? fallbackEndAt;
     const record: AttendanceSheetDraftRecordDto = {
       memberId: row.memberId,
-      roleCode: 'member',
+      roleCode,
       checkInAt: row.checkInAt,
       checkOutAt,
       serviceHours: this.spanHours(row.checkInAt, checkOutAt),

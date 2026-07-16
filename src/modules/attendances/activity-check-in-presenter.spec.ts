@@ -144,7 +144,7 @@ describe('ActivityCheckInFieldPolicy + Presenter', () => {
       outOfRange: true,
     };
 
-    const mapped = presenter.toAttendanceSheetDraftRecordDto(row, fallbackEndAt);
+    const mapped = presenter.toAttendanceSheetDraftRecordDto(row, fallbackEndAt, 'member');
     expect(Object.keys(mapped.record).sort()).toEqual(
       [...ATTENDANCE_SHEET_DRAFT_RECORD_RESPONSE_FIELDS].sort(),
     );
@@ -187,6 +187,7 @@ describe('ActivityCheckInFieldPolicy + Presenter', () => {
         outOfRange: false,
       },
       t1,
+      'member',
     );
 
     expect(mapped.record.checkOutAt).toBe(checkOutAt);
@@ -198,6 +199,7 @@ describe('ActivityCheckInFieldPolicy + Presenter', () => {
     const registration: AttendanceSheetDraftRegistrationRow = {
       id: 'registration-2',
       memberId: member.id,
+      activityPosition: null,
     };
     const absent = presenter.toAttendanceSheetDraftAbsentRegistrationDto(registration, member);
     expect(Object.keys(absent).sort()).toEqual(
@@ -220,6 +222,7 @@ describe('ActivityCheckInFieldPolicy + Presenter', () => {
         outOfRange: false,
       },
       t1,
+      'member',
     );
     const dto = presenter.toAttendanceSheetDraftDto('activity-1', [mapped], [absent]);
 
@@ -241,6 +244,7 @@ describe('ActivityCheckInFieldPolicy + Presenter', () => {
         outOfRange: false,
       },
       t1,
+      'member',
     );
     expect(() =>
       fieldPolicy.assertAttendanceSheetDraftResponse({
