@@ -26,7 +26,7 @@ SRVF Nest API 项目的 **release 收口 + PR squash merge + main 同步 + branc
 1. 用户本轮明确指令
 2. [`docs/process.md §5`](../../../docs/process.md) — release 收口分阶段(feature → CHANGELOG → landing → bump → handoff → tag → Release → current-state 回填 → 清理)
 3. [`docs/process.md §5.4`](../../../docs/process.md) — squash merge + main 同步 + 远端/worktree/本地分支清理 + patch-equivalence + 禁止动作 + 报告格式(§5.4.1–§5.4.8)
-4. [`AGENTS.md §20`](../../../AGENTS.md) — worktree / 并行协作硬约束(§5.4 是其展开版)
+4. [`AGENTS.md §1` git 安全行](../../../AGENTS.md) + `docs/process.md §5.4` — worktree / 并行协作硬约束(§5.4 是其展开版)
 5. [`docs/current-state.md §1`](../../../docs/current-state.md) — 版本 / tag / HEAD / open PR 当前事实
 6. [`CHANGELOG.md`](../../../CHANGELOG.md) — release notes 唯一来源(`## vX.Y.Z` 对应段)
 

@@ -56,6 +56,6 @@
 
 ## 4. 目录说明
 
-本目录恰 3 文件:**README.md**(本页)/ **RBAC_MAP.md**(权限地图:双轨现状、controller × 权限码对照、191 权限码全集〔review #484 G21 true-up:此前「76」〕、保护不变式、AI 硬规则;`pnpm docs:rbacmap:check` 守护)/ **NEXT_TASKS.md**(后续任务清单;逐项单独立项,AI 不自动启动)。
+本目录恰 4 文件:**README.md**(本页)/ **codex-review-sop.md**(跨模型评审 SOP,process §8.3)/ **RBAC_MAP.md**(权限地图:双轨现状、controller × 权限码对照、191 权限码全集〔review #484 G21 true-up:此前「76」〕、保护不变式、AI 硬规则;`pnpm docs:rbacmap:check` 守护)/ **NEXT_TASKS.md**(后续任务清单;逐项单独立项,AI 不自动启动)。
 
 2026-06-10 Review 总报告与底座设计两份冻结档已归档至 [`archive/ai-harness/`](../archive/ai-harness/)(不回改;其内指向旧操作层文件的链接为预期死链)。本目录更新一律走 A 档 PR(权限**事实**变更本身是 D 档,本目录只能事后 true-up);沿 [`process.md §6`](../process.md)"无守护不留"原则,不再新增无守护的派生地图。

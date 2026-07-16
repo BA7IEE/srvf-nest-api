@@ -11,12 +11,12 @@ SRVF Nest API 项目所有 auth / token / 密码 / 限流 / Guard / 审计跨模
 
 - [`src/modules/auth/CLAUDE.md`](../../../src/modules/auth/CLAUDE.md) — auth 模块本地铁律
 - [`src/modules/permissions/CLAUDE.md`](../../../src/modules/permissions/CLAUDE.md) — RBAC / capability vs raw permission
-- [`AGENTS.md §1 / §8 / §9 / §13 / §19.7`](../../../AGENTS.md) — auth/token/密码长期铁律与 D-series decision lock
+- [`AGENTS.md §2/§3`](../../../AGENTS.md) + `docs/reference/{auth-jwt-refresh,roles-admin-protection,api-client-boundary}.md` — auth/token/密码长期铁律与 D-series decision lock
 - [`docs/security.md`](../../../docs/security.md)
 - [`docs/process.md §3 / §4`](../../../docs/process.md) — PR 分级 / D 档降速
 - [`docs/current-state.md`](../../../docs/current-state.md)
 
-冲突时:用户本轮指令 → 模块本地 CLAUDE → `AGENTS.md §8 / §9 / §19.7` → `docs/security.md` → 其它。规则冲突**停止并报告**,不自行调和。
+冲突时:用户本轮指令 → 模块本地 CLAUDE → `docs/reference/auth-jwt-refresh.md` + `AGENTS.md §2` → `docs/security.md` → 其它。规则冲突**停止并报告**,不自行调和。
 
 ## When to use
 
@@ -103,5 +103,5 @@ SRVF Nest API 项目所有 auth / token / 密码 / 限流 / Guard / 审计跨模
 - 需要拆 refresh 失败码为多个子原因
 - 需要在 audit / log / client 暴露 token / password / hash / secret
 - 需要弱化 `JwtStrategy.validate` 每请求查库
-- 任务诉求与 `AGENTS.md §19.7` D-series decision lock 冲突
+- 任务诉求与 `AGENTS.md §2` D-series 决策锁冲突
 - 任务超出本 PR 白名单

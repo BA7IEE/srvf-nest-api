@@ -57,7 +57,7 @@ description: SRVF Nest API 项目内所有 Prisma / 数据模型 / migration / s
 - 是否影响 DTO / service / e2e / OpenAPI snapshot / contract test
 - 是否触及 soft-delete / partial unique / `P2002` 路径
 - 是否不可逆 / 是否影响历史数据
-- 是否需要新增或复用 `BizCode`(沿 `AGENTS.md §10` 段位)
+- 是否需要新增或复用 `BizCode`(沿 `docs/reference/response-pagination-errors.md` 段位)
 
 ### 2. 风险表(编辑前)
 
@@ -125,7 +125,7 @@ migration 命名必须沿 `prisma/CLAUDE.md`:`YYYYMMDDHHMMSS_<下划线分隔可
 - seed 改动可能破坏现有登录账号或测试基线数据
 - 需要删除字段 / 表 / enum value(数据丢失风险)
 - 需要 `migrate reset` / `db push` / `--force-reset` / `--accept-data-loss`
-- `P2002` / partial unique / 软删除唯一性预检查语义无法明确(沿 `AGENTS.md §10`)
+- `P2002` / partial unique / 软删除唯一性预检查语义无法明确(沿 `docs/reference/soft-delete-transactions.md`)
 - 发现 `docs/` 与代码 / schema 冲突且无法判断权威源
 - 任务超出本 PR 白名单(D 档"禁止顺手做")
-- 用户提到的 BizCode 段位 / 命名违反 `AGENTS.md §10`
+- 用户提到的 BizCode 段位 / 命名违反 `docs/reference/response-pagination-errors.md` 铁律

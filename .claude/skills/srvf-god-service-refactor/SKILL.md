@@ -30,7 +30,7 @@ SRVF Nest API 项目内所有 god-service / large-service **内部边界抽离**
 4. [`docs/api-surface-policy.md §7-§8`](../../../docs/api-surface-policy.md) — characterization-tests-before-refactor + 不引入 repository 抽象层
 5. [`docs/current-state.md §3-§4`](../../../docs/current-state.md) — god-service 债务条目与"不主动拆"条款
 6. [`docs/process.md`](../../../docs/process.md) — PR 分级 / D 档降速
-7. [`AGENTS.md §6 / §19.7 D-7`](../../../AGENTS.md) — 同模块内职责类抽出 + decision-lock
+7. [`docs/architecture-boundary.md`](../../../docs/architecture-boundary.md) + `AGENTS.md §2` D-7 — 同模块内职责类抽出 + decision-lock
 8. [`CODEMAP.md`](../../../CODEMAP.md) — 模块体量级与 god-service 标记
 
 规则冲突时**停止并报告**,不自行调和。
@@ -44,7 +44,7 @@ SRVF Nest API 项目内所有 god-service / large-service **内部边界抽离**
 - 已抽离的同模块边界类(state-machine / audit-recorder / policy / calculator)与已有 e2e characterization 覆盖
 - 本次任务到底是"补测试"还是"真的抽边界";若同一 PR 既补测试又抽边界 → **拆**
 - 是否触碰 DTO / controller / OpenAPI snapshot / schema / audit event 名 / RBAC / data scope(任一被动 → 升档)
-- 是否触发 [`AGENTS.md §19.7`](../../../AGENTS.md) 已有 D-series decision lock
+- 是否触发 [`AGENTS.md §2`](../../../AGENTS.md) 已有 D-series 决策锁 decision lock
 - 是否需要降速成 D 档(沿 [`docs/process.md §4`](../../../docs/process.md))
 
 ## Core invariants
@@ -56,7 +56,7 @@ SRVF Nest API 项目内所有 god-service / large-service **内部边界抽离**
 - **每个 PR 只抽一个边界**;一次只搬一类职责
 - **application service 保持 transaction owner**;`prisma.$transaction(...)` 持有权不下放,除非已有设计决议(沿 [`architecture-boundary.md §4`](../../../docs/architecture-boundary.md))
 - **不引入 `*.repository.ts` 抽象层**(沿 [`api-surface-policy.md §8`](../../../docs/api-surface-policy.md))
-- **不把业务逻辑塞 `common/utils/`** / `shared-services/` / 任何跨模块 grab-bag(沿 [`AGENTS.md §6`](../../../AGENTS.md))
+- **不把业务逻辑塞 `common/utils/`** / `shared-services/` / 任何跨模块 grab-bag(沿 [`AGENTS.md §1` 模块结构行](../../../AGENTS.md))
 - **抽离类留在 owning module**;未证明跨模块用例不外移(沿 [`architecture-boundary.md §7`](../../../docs/architecture-boundary.md))
 - **不顺手改** DTO / controller / OpenAPI snapshot / BizCode / audit event 名 / state-machine 错误码
 - **不顺手改** `prisma/schema.prisma` / migration / seed(归 [`srvf-prisma-change`](../srvf-prisma-change/SKILL.md))
@@ -112,4 +112,4 @@ worktree 缺 `node_modules` 或 `eslint command not found` 时:**不要** `pnpm 
 - 改 RBAC `@Roles(...)` / `rbac.can()` / `.self` ownership / storage provider
 - 跨模块把同模块边界挪到 shared abstraction
 - 单看 service 行数就动手大拆(无 boundary naming + 无 characterization)
-- 任务诉求与 [`AGENTS.md §19.7`](../../../AGENTS.md) 已有 D-series decision lock 冲突
+- 任务诉求与 [`AGENTS.md §2`](../../../AGENTS.md) 已有 D-series 决策锁 decision lock 冲突
