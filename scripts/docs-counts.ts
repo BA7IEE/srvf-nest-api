@@ -10,7 +10,7 @@
  *   Endpoint      = test/contract/openapi.contract-spec.ts 的 EXPECTED_ROUTES 条目数,
  *                   并与该 spec 自身 toHaveLength(N) 断言交叉核对,不一致 → exit 2
  *   Migration     = prisma/migrations 一级目录数(migration_lock.toml 为文件不计)
- *   BizCode       = biz-code.constant.ts 内 `httpStatus:` 出现次数(每码恰一处,见 AGENTS §5)
+ *   BizCode       = biz-code.constant.ts 内 `httpStatus:` 出现次数(每码恰一处,见 docs/reference/response-pagination-errors.md)
  *   权限码        = prisma/seed.ts 权限码集合大小;注释剥离 + code:'…' / *_CODE='…'
  *                   双正则镜像 scripts/check-rbac-map.ts(同一口径)
  *   AuditLogEvent = audit-logs.types.ts 联合类型成员数

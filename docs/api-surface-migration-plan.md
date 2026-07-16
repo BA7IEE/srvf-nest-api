@@ -2,7 +2,7 @@
 
 > **状态**:立项冻结(2026-06-01 用户拍板)+ 滚动执行追踪。
 > **档位**:**D 档**(surface 互转 / 删除 legacy / path alias / 前端联调口径变化);严格**分阶段、分 PR、串行**;每阶段先评审稿冻结再动代码。
-> **承接**:[`AGENTS.md §21 D-9`](../AGENTS.md)(2026-06-01 重开并取代 §19.7 D-2)、[`api-surface-policy.md §0`](api-surface-policy.md)。
+> **承接**:[`api-client-boundary`](reference/api-client-boundary.md) D-9`(2026-06-01 重开并取代 §19.7 D-2)、[`api-surface-policy.md §0`](api-surface-policy.md)。
 > **配套**:当前事实见 [`current-state.md`](current-state.md);PR 分级 / D 档降速见 [`process.md §3 / §4`](process.md)。
 > **本立项稿不改任何代码、不改 OpenAPI snapshot;仅冻结目标形态、原则、阶段顺序与禁止事项**。
 
@@ -22,8 +22,8 @@
 
 ## 2. 决策冻结(2026-06-01;不回改)
 
-- **放弃** `AGENTS.md §19.7 D-2` 的"方案 C(`/api/v2/*` 长期保留、不强制迁移)";**改为 Route B 全量物理迁移**。
-- **重开依据**:用户 2026-06-01 主动要求重开 D-2,已按 [`AGENTS.md §19.7` preamble](../AGENTS.md) "暂停说明本节存在后再讨论" 履行,拍板 Route B。
+- **放弃** [`api-client-boundary`](reference/api-client-boundary.md) D-2` 的"方案 C(`/api/v2/*` 长期保留、不强制迁移)";**改为 Route B 全量物理迁移**。
+- **重开依据**:用户 2026-06-01 主动要求重开 D-2,已按 [`api-client-boundary`](reference/api-client-boundary.md)` preamble "暂停说明本节存在后再讨论" 履行,拍板 Route B。
 - **冻结的不变式**(贯穿全部阶段):
   1. **alias 阶段只加不删**:新路径与老路径并存,保证零破坏;
   2. **删除老路径**只能在满足"deprecation 窗口 ≥ 2 release + 前端/移动端切流确认 + 单独 deprecated 公告"后执行(沿 [`api-surface-policy.md §6`](api-surface-policy.md) 既有铁律);

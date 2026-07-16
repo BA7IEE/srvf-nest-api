@@ -52,7 +52,7 @@
 | `src/database/` | `PrismaService` + `DatabaseModule` |
 | `src/modules/` | **业务模块权威位置**(平铺,**禁止**嵌套 `system/` / `business/` / `core/` 子目录) |
 
-**业务模块以 `src/modules/` 实际目录为准**(以 `ls -d src/modules/*/` 当下结果为权威清单);本文不再 inline 维护模块树。模块结构基线与已解锁例外(surface-specific Controller / DTO 子目录 / 6 类职责类抽离)沿 [`AGENTS.md §2`](../AGENTS.md) + [`api-surface-policy.md`](api-surface-policy.md) + [`architecture-boundary.md`](architecture-boundary.md)。
+**业务模块以 `src/modules/` 实际目录为准**(以 `ls -d src/modules/*/` 当下结果为权威清单);本文不再 inline 维护模块树。模块结构基线与已解锁例外(surface-specific Controller / DTO 子目录 / 6 类职责类抽离)沿 [`naming-dto-validation`](reference/naming-dto-validation.md)` + [`api-surface-policy.md`](api-surface-policy.md) + [`architecture-boundary.md`](architecture-boundary.md)。
 
 ---
 
@@ -81,7 +81,7 @@
 > **铁律**:
 > - 新移动端能力**只能**落 `/api/app/v1/*` surface(沿 [`api-surface-policy.md §0`](api-surface-policy.md));Route B 终态后已无 `/api/users/me/*` legacy 入口
 > - 新 PC 管理后台 endpoint 落 `/api/admin/v1/*`(Route B 终态;原 `/api/v2/*` 已迁移并删除)
-> - 鉴权细则(JWT payload zero drift / refresh token 安全策略 / 联动撤销 4 场景)详 [`AGENTS.md §8 / §9`](../AGENTS.md) + [`security.md`](security.md)
+> - 鉴权细则(JWT payload zero drift / refresh token 安全策略 / 联动撤销 4 场景)详 [`auth-jwt-refresh`](reference/auth-jwt-refresh.md) / §9` + [`security.md`](security.md)
 
 ---
 
@@ -98,9 +98,9 @@ TOKEN=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['
 curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/app/v1/me
 ```
 
-成功响应统一 `{ "code": 0, "message": "ok", "data": ... }`,错误响应 `{ "code": <BizCode>, "message": <提示>, "data": null }`(沿 [`AGENTS.md §4 / §5`](../AGENTS.md))。
+成功响应统一 `{ "code": 0, "message": "ok", "data": ... }`,错误响应 `{ "code": <BizCode>, "message": <提示>, "data": null }`(沿 [`response-pagination-errors`](reference/response-pagination-errors.md) / §5`)。
 
-`refresh` / `logout` / `logout-all` 语义(rotation always / family revoke / absolute expiration / 联动撤销 4 场景 / `JwtStrategy.validate` 每请求查库)详 [`AGENTS.md §9 P0-E 子节`](../AGENTS.md) + [`security.md`](security.md) `Token 吊销升级路径`。
+`refresh` / `logout` / `logout-all` 语义(rotation always / family revoke / absolute expiration / 联动撤销 4 场景 / `JwtStrategy.validate` 每请求查库)详 [`auth-jwt-refresh`](reference/auth-jwt-refresh.md) P0-E 子节` + [`security.md`](security.md) `Token 吊销升级路径`。
 
 ---
 
