@@ -2,9 +2,9 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
+## v0.54.0 - 2026-07-16
 
-> 主题:**活动评价（审计刀 6 · 第三件）**。F0–F4 串行关闭审计项 #1。纯 additive 新增 App self PUT/GET + Admin list/summary 共 4 个 endpoint（350→354）、2 个 controller（71→73）、1 个 module（35→36）与第 53 个 migration；BizCode 240→244。Permission 206 / AuditLogEvent 113 / cron 2 / 内置角色 9 恒定，0 新依赖，**0 既有行为变更**；仅 activity `participation-summary` additive 增加 `feedback:{count,avgRating}`。
+> 主题:**活动评价（审计刀 6 · 第三件）**。范围 = F0 冻结 #635 + F1 schema #636 + F2 App 自助面 #637 + F3 Admin 面 #638 + F4 收口 #639,关闭审计项 #1。纯 additive 新增 App self PUT/GET + Admin list/summary 共 4 个 endpoint（350→354）、2 个 controller（71→73）、1 个 module（35→36）与第 53 个 migration；BizCode 240→244。Permission 206 / AuditLogEvent 113 / cron 2 / 内置角色 9 恒定，0 新依赖，**0 既有行为变更**；仅 activity `participation-summary` additive 增加 `feedback:{count,avgRating}`。
 
 - **数据与资格**:新增 `activity_feedbacks` 空表，Activity/Member 两 FK 均 Restrict，5 个单列索引；手写 live `(activityId,memberId) WHERE deletedAt IS NULL` partial unique。评价只认 completed 活动、`Activity.endAt + ATTENDANCE_FEEDBACK_WINDOW_DAYS` 窗口与 approved Sheet 内未软删 AttendanceRecord；报名通过、候补、GPS 打卡、pending/rejected/final-review 状态记录都不构成资格。评价不写 AuditLog，不改报名/考勤/候补/打卡/贡献/结算。
 - **App self 面**:`PUT/GET /api/app/v1/my/activities/:activityId/feedback` 均由 `AppIdentityResolver.memberId` 锁本人。PUT 是窗口内 create-or-update，1–5 星、comment 至多 500 字；GET 对存在活动恒 200，未评时 `feedback=null`，并返回服务端 `canSubmit/windowClosesAt`。首次并发 create 的 P2002 映射 35002；未完结/窗口关闭/无 approved 到场分别为 35030/35031/35032。
