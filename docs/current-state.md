@@ -7,10 +7,10 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(六处一致) | **v0.54.0**(2026-07-16;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #641 squash `6ec9f50a`;GitHub Release「v0.54.0 — 活动评价（审计刀 6 · 第三件）」标 Latest。**纯 additive,0 既有行为变更**:App 本人评价 PUT/GET(仅「真到场者」= 有 approved 考勤记录者;窗口 = completed 且 `endAt + ATTENDANCE_FEEDBACK_WINDOW_DAYS`〔默认 30〕内可评可改)+ Admin 实名列表与聚合两端点;评价对队员不公开、不进 AuditLog、不影响任何结算) |
-| `main` HEAD | v0.54.0 release 回填点之上叠加 **Unreleased 活动岗位与时段**：F0 冻结 #643 → F1 schema/migration 54 #644 → F2 Admin 5 路 CRUD #645 → F3 报名/候补/App 岗位列表 #646 → F4 打卡/考勤/草稿 #647 → F5 文档与终验。本串关闭审计项 #2、完成刀 6；冻结稿 [`activity-positions-t0-review.md`](archive/reviews/activity-positions-t0-review.md)。不做版本 bump / tag / Release。 |
-| open PR / 工作树 / Unreleased | 合并终态 **0 open PR**；`## Unreleased` 为活动岗位与时段。终值:权限码 **206** / biz-admin **81** / org-admin 60 / org-readonly 10 / group-manager 22 / group-readonly 11 / org-supervisor 4 / ops-admin 96 / `EXPECTED_ROUTES` **360** / controller **74** / 模块 **36** / migration **54** / 角色 **9** / BizCode **250** / AuditLogEvent **113** / cron **2**；0 新字典、0 新依赖。 |
-| 最新 handoff | [`archive/handoff/v0.54.0.md`](archive/handoff/v0.54.0.md)(历史快照;tag 指向该 handoff #641 squash `6ec9f50a`;接续 [`v0.53.0.md`](archive/handoff/v0.53.0.md);合入后不回改) |
+| 版本(六处一致) | **v0.55.0**(2026-07-16;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #651 squash `4ddf8ba2`;GitHub Release「v0.55.0 — 活动岗位与时段（审计刀 6 · 收官）」标 Latest。**⚠️ 行为变更恰好 7 条,全部限定「有岗位」场景**(对照表见 CHANGELOG):名额真相源转岗位/候补域岗位级/打卡与考勤窗按岗位时段/草稿 roleCode 自动带岗位角色/岗位性别闸叠加/有岗位活动 capacity update 不递补;**无岗位活动零行为变更**。本版收官后 **29 问审计六刀(v0.50–v0.55)全部落地**) |
+| `main` HEAD | v0.55.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #651 `4ddf8ba2`;收口链 = 四拍板 P1-P4 + 方案 A 四修正(runner「合同矛盾即停」)→ goal 六 PR 全绿自合 #643–#648(migration 54)→ 主会话四点元核验三过一缺口 → HTTP 层 e2e 补测 #649 `b363baaa` 缺口闭合 → bump #650 → handoff #651 → tag/Release → 本回填 PR;冻结稿 [`activity-positions-t0-review.md`](archive/reviews/activity-positions-t0-review.md);审计收官台账见 handoff §4) |
+| open PR / 工作树 / Unreleased | **0 open PR**;`## Unreleased` 空。终值:权限码 **206** / biz-admin **81** / org-admin 60 / org-readonly 10 / group-manager 22 / group-readonly 11 / org-supervisor 4 / ops-admin 96 / `EXPECTED_ROUTES` **360** / controller **74** / 模块 **36** / migration **54** / 角色 **9** / BizCode **250** / AuditLogEvent **113** / cron **2**;0 新字典、0 新依赖。 |
+| 最新 handoff | [`archive/handoff/v0.55.0.md`](archive/handoff/v0.55.0.md)(历史快照;tag 指向该 handoff #651 squash `4ddf8ba2`;接续 [`v0.54.0.md`](archive/handoff/v0.54.0.md);合入后不回改;§4 为 29 问审计收官台账) |
 
 ## 2. 当前系统已具备能力
 
