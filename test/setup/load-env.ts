@@ -1,5 +1,6 @@
 import { config as loadDotenv } from 'dotenv';
 import * as path from 'path';
+import { applyTestDbDerivation } from './worktree-db';
 
 const ENV_TEST_PATH = path.resolve(__dirname, '../../.env.test');
 
@@ -19,4 +20,7 @@ export function loadTestEnv(): void {
       `加载 .env.test 失败,期望路径: ${ENV_TEST_PATH}\n原始错误: ${result.error.message}`,
     );
   }
+  // linked worktree 内把库名派生为 app_test_<slug>,并行 lane 的 e2e 互不打架;
+  // 主仓零变化,派生名仍含 'app_test' 子串,既有安全断言原样生效(worktree-db.ts)。
+  applyTestDbDerivation();
 }
