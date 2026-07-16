@@ -68,13 +68,18 @@ export class AttendanceSheetDraftRecordDto {
   @ApiProperty({ description: '队员 Member.id' })
   memberId!: string;
 
-  @ApiProperty({ description: '考勤角色字典 code；草稿固定为 member', example: 'member' })
-  roleCode!: 'member';
+  @ApiProperty({
+    description: '考勤角色字典 code；岗位报名取岗位绑定角色，无岗位报名为 member',
+    example: 'instructor',
+  })
+  roleCode!: string;
 
   @ApiProperty({ description: '签到时间(ISO 8601)' })
   checkInAt!: Date;
 
-  @ApiProperty({ description: '签退时间(ISO 8601；忘签退时固定回退到 Activity.endAt)' })
+  @ApiProperty({
+    description: '签退时间(ISO 8601；忘签退时岗位报名回退岗位 endAt，否则回退 Activity.endAt)',
+  })
   checkOutAt!: Date;
 
   @ApiProperty({

@@ -40,27 +40,29 @@ function makePresenterMock() {
         updatedAt: row.updatedAt,
       }),
     ),
-    toAttendanceSheetDraftRecordDto: jest.fn((row: Record<string, unknown>, endAt: Date) => {
-      const checkOutAt = (row.checkOutAt as Date | null) ?? endAt;
-      return {
-        record: {
-          memberId: row.memberId,
-          roleCode: 'member' as const,
-          checkInAt: row.checkInAt,
-          checkOutAt,
-          serviceHours: 1,
-          attendanceStatusCode: 'present' as const,
-          registrationId: row.registrationId,
-        },
-        flag: {
-          registrationId: row.registrationId,
-          memberId: row.memberId,
-          noCheckOut: row.checkOutAt === null,
-          outOfRange: row.outOfRange,
-          unverified: row.geoVerified === false,
-        },
-      };
-    }),
+    toAttendanceSheetDraftRecordDto: jest.fn(
+      (row: Record<string, unknown>, endAt: Date, roleCode: string) => {
+        const checkOutAt = (row.checkOutAt as Date | null) ?? endAt;
+        return {
+          record: {
+            memberId: row.memberId,
+            roleCode,
+            checkInAt: row.checkInAt,
+            checkOutAt,
+            serviceHours: 1,
+            attendanceStatusCode: 'present' as const,
+            registrationId: row.registrationId,
+          },
+          flag: {
+            registrationId: row.registrationId,
+            memberId: row.memberId,
+            noCheckOut: row.checkOutAt === null,
+            outOfRange: row.outOfRange,
+            unverified: row.geoVerified === false,
+          },
+        };
+      },
+    ),
     toAttendanceSheetDraftAbsentRegistrationDto: jest.fn(
       (registration: Record<string, unknown>, member: Record<string, unknown>) => ({
         registrationId: registration.id,
@@ -92,6 +94,7 @@ function makeService(prisma: PrismaMock, presenter = makePresenterMock()) {
 }
 
 const ACTIVITY = { id: 'activity-1', endAt: new Date('2026-07-15T12:00:00.000Z') };
+const ACTIVITY_POSITION_END = new Date('2026-07-15T10:30:00.000Z');
 const MEMBER_A = { id: 'member-a', memberNo: 'M-A', displayName: 'Member A' };
 const MEMBER_B = { id: 'member-b', memberNo: 'M-B', displayName: 'Member B' };
 
@@ -206,10 +209,21 @@ describe('ActivityCheckInQueryService', () => {
   });
 
   describe('attendanceSheetDraft', () => {
-    it('固定 4 次业务查询，以 current live pass 为基集生成 record/flag/absent，缺签退传 endAt fallback', async () => {
+    it('固定 4 次业务查询，岗位报名草稿带岗位 role/endAt，无岗位报名保持 absent 语义', async () => {
       const prisma = makePrismaMock();
-      const registrationA = { id: 'registration-a', memberId: MEMBER_A.id };
-      const registrationB = { id: 'registration-b', memberId: MEMBER_B.id };
+      const registrationA = {
+        id: 'registration-a',
+        memberId: MEMBER_A.id,
+        activityPosition: {
+          attendanceRoleCode: 'instructor',
+          endAt: ACTIVITY_POSITION_END,
+        },
+      };
+      const registrationB = {
+        id: 'registration-b',
+        memberId: MEMBER_B.id,
+        activityPosition: null,
+      };
       const evidenceA = {
         registrationId: registrationA.id,
         memberId: MEMBER_A.id,
@@ -232,7 +246,8 @@ describe('ActivityCheckInQueryService', () => {
           {
             memberId: MEMBER_A.id,
             registrationId: registrationA.id,
-            checkOutAt: ACTIVITY.endAt,
+            roleCode: 'instructor',
+            checkOutAt: ACTIVITY_POSITION_END,
           },
         ],
         flags: [
@@ -279,7 +294,8 @@ describe('ActivityCheckInQueryService', () => {
       });
       expect(presenter.toAttendanceSheetDraftRecordDto).toHaveBeenCalledWith(
         evidenceA,
-        ACTIVITY.endAt,
+        ACTIVITY_POSITION_END,
+        'instructor',
       );
       expect(presenter.toAttendanceSheetDraftAbsentRegistrationDto).toHaveBeenCalledWith(
         registrationB,

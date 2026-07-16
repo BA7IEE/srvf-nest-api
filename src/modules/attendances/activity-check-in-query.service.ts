@@ -115,7 +115,13 @@ export class ActivityCheckInQueryService {
 
       const checkIn = checkInByRegistrationId.get(registration.id);
       if (checkIn) {
-        mappedRecords.push(this.presenter.toAttendanceSheetDraftRecordDto(checkIn, activity.endAt));
+        mappedRecords.push(
+          this.presenter.toAttendanceSheetDraftRecordDto(
+            checkIn,
+            registration.activityPosition?.endAt ?? activity.endAt,
+            registration.activityPosition?.attendanceRoleCode ?? 'member',
+          ),
+        );
       } else {
         absentRegistrations.push(
           this.presenter.toAttendanceSheetDraftAbsentRegistrationDto(registration, member),

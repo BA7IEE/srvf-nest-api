@@ -522,7 +522,18 @@ export class AttendancesService {
       }),
       tx.activityRegistration.findMany({
         where: notDeletedWhere({ id: { in: registrationIds } }),
-        select: { id: true, activityId: true, memberId: true, statusCode: true },
+        select: {
+          id: true,
+          activityId: true,
+          memberId: true,
+          statusCode: true,
+          activityPosition: {
+            select: {
+              startAt: true,
+              endAt: true,
+            },
+          },
+        },
       }),
     ]);
 
@@ -542,8 +553,9 @@ export class AttendancesService {
       if (!existingMemberIds.has(input.memberId)) {
         throw new BizException(BizCode.MEMBER_NOT_FOUND);
       }
+      const registration =
+        input.registrationId === undefined ? undefined : registrationById.get(input.registrationId);
       if (input.registrationId !== undefined) {
-        const registration = registrationById.get(input.registrationId);
         if (!registration || registration.activityId !== activity.id) {
           throw new BizException(BizCode.ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH);
         }
@@ -553,7 +565,15 @@ export class AttendancesService {
       }
 
       const normalized = this.normalizeRecord(input);
-      this.assertRecordWithinActivityWindow(normalized, activity);
+      const activityPosition = registration?.activityPosition;
+      const schedule =
+        activityPosition !== undefined &&
+        activityPosition !== null &&
+        activityPosition.startAt !== null &&
+        activityPosition.endAt !== null
+          ? { startAt: activityPosition.startAt, endAt: activityPosition.endAt }
+          : activity;
+      this.assertRecordWithinActivityWindow(normalized, schedule);
       return normalized;
     });
   }
