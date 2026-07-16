@@ -2,6 +2,50 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+### Harness 2.0 · PR2 机器层(#654)
+
+- 新增 `pnpm docs:counts` / `docs:counts:check`:current-state §1 计数由脚本从真源生成与守护(模块 / 行首 `@Controller` 类 / EXPECTED_ROUTES / migration / BizCode / 权限码〔镜像 check-rbac-map 口径〕/ AuditLogEvent / 内建角色 / cron 共 9 项;锚未接线时宽限跳过,PR3 接线)
+- 新增 `pnpm docs:readtax:check`:恒读层字符预算守护(AGENTS 18,000 / current-state 4,500 / CLAUDE 2,500;本批全量 report-only,收口 PR 逐个翻 enforced)
+- 新增 `pnpm changelog:merge` + `changelog.d/` fragment 机制:lane 并行下 CHANGELOG 防冲突;单 lane 直接编辑旧路径不废除
+- `agent:preflight` 新增 lane 模式(`--lane` / env `SRVF_LANE`):clean tree 与未落后 origin/main 仍硬判,open-PR 降为清单打印供总控研判;global 模式行为逐字不变,E 档收口强制 global
+- e2e 测试库按 worktree 派生:linked worktree 自动使用 `app_test_<slug>`(实测 `app_test_harness_2_0` 54 migration 全量 deploy + health e2e 绿),主仓与 CI 恒 `app_test` 零变化,既有 `app_test` 子串安全断言原样生效
+- 新增 `.github/pull_request_template.md`(档位 / 写集声明 / 本次未做 / 验证骨架);CI Lint job 接线两项 docs 守护(docs-only 快速路径同样必跑);`.claude/settings.json`(+example)allow 白名单收录 5 条新命令
+
+
+### Harness 2.0 · PR3 current-state 全指针化(#655)
+
+- `docs/current-state.md` 重写为全指针形态(151 行 ≈8.9 万字符 → ≤4,500 字符):§1 计数块由 `pnpm docs:counts` 生成并接线锚点(`docs:counts:check` 转严格校验);§2 历史能力叙事全部删除,事实指向 CHANGELOG / handoff / live swagger / CODEMAP / RBAC_MAP;§3 暂不启动与 §4 债务保留全部条目、压缩叙事(来龙去脉见 `archive/harness-v1/current-state.md` 快照与各冻结评审稿)
+- `docs:readtax:check` 对 current-state 翻 `enforced=true`(首个硬判文件);counts 块行标签精简以适配预算
+
+
+### Harness 2.0 · PR4 AGENTS 重写与 reference 拆分(#656)
+
+- `AGENTS.md` 由 621 行 / 45,395 字符重写为 **2.0 形态 10,487 字符**(读取协议与权威冲突表唯一副本 §0 / 铁律速查 §1 / 决策锁与行为冻结索引 §2 / 红区与触发即停 §3 / lane 协议摘要 §4 / 流程指针 §5 / reference 索引与 v1 节号重定向表 §6);**决策语义零放宽**,教学细则逐字搬家至新 `docs/reference/` 九篇(唯一机械改写=相对链接前缀),v1 全文可在 `archive/harness-v1/` 找回
+- `CLAUDE.md` 重写为 1,037 字符纯入口;`docs:readtax:check` 三文件全部翻 `enforced=true`(恒读层 45,395+89,108+3,521 → **10,487+3,085+1,037 字符,合计 -89%**)
+- ARCHITECTURE / baseline / V2 红线顶部各加 3 行内背景层横幅(正文不动;V2 红线仍滚动维护)
+- 全仓活跃文档旧节号引用清扫 ~40 处(security / development / NEXT_TASKS / RBAC_MAP / CODEMAP / api-surface-migration-plan / V2 红线 / 6 个模块级 CLAUDE.md / prisma CLAUDE.md / docs-counts 头注);`src/**` 与 `test/**` 代码注释内引用**刻意不动**(0 改 src 红线;经 AGENTS §6 重定向表一跳可解析,沿"动到再顺手校准"惯例)
+
+
+### Harness 2.0 · PR5 process lane 协议(#657)
+
+- `docs/process.md` 新增 **§8 lane 并行协议**全文(总控/执行职责、写集声明排班、migration token、串行集成 SOP、跨模型互查、E 档强制 global preflight;收尾报告与流程之外顺延为 §9/§10);goal 四要素升**五要素**(+写集声明)并确立「C 档及以上 feature 默认以 goal 形态立项」;§5.2 增 bump 前 `changelog:merge` 步骤;§6 冲突优先级收敛为 AGENTS §0 唯一副本指针、权威源表补 harness-v1 快照行与恒读层守护说明。五档 §3 / D 档 §4 / squash 清理 §5.4 逐字不动。
+
+
+### Harness 2.0 · PR6 skills 与协作层(#658)
+
+- 新增 `srvf-lane-orchestrator` skill(总控行为清单:排班 / migration token / 集成 SOP / 唯一简报流)与 `docs/ai-harness/codex-review-sop.md`(跨模型评审 SOP:投放模板 / findings 落 PR 评论 / 分歧升级);ai-harness 目录约束 3 → 4 文件
+- 7 个存量 `srvf-*` skill 全量重审:goal-author 升五要素(+写集声明)并接 lane 语境;prisma-change 增 migration token 停条;api-surface / auth-security / god-service / release-closeout 旧节号引用全部重定向至 AGENTS 2.0 / reference(含一处历史误标节号校正);fe-be-handoff 复核零改动
+- `.claude/CLAUDE.md` 项目背景句接 AGENTS 读取协议口径
+
+### Harness 2.0 · PR7 收尾(#659;系列 T0 冻结与 v1 快照 #653)
+
+- `docs/ai-harness/README.md` 减薄为纯操作页(开工 / 守护命令 + 定位路径;铁律速查、三档、触发即停、读写分区职能已并入根 AGENTS 2.0)
+- `docs/system-foundation-governance.md` **退场归档** → `docs/archive/plans/system-foundation-governance-period.md`(发现①拍板落地;顶部横幅声明"暂停业务功能开发"等约束不再生效);docs/README 与 srvf-business-docs 引用同步
+- docs/README §1 补 `docs/reference/` 细则层登记、更新 ai-harness 行
+
+
 ## v0.55.0 - 2026-07-16
 
 > 主题:**活动岗位与时段（审计刀 6 · 第四件 / 收官）**。范围 = F0 T0 冻结 #643 + F1 schema #644 + F2 Admin CRUD #645 + F3 报名/候补/App #646 + F4 打卡/考勤/草稿 #647 + F5 收口 #648 + **HTTP 层 e2e 补测 #649**（主会话元核验唯一缺口闭合:6 新端点的 401/30100/login-only 读/越窗/重名/禁删/App 余量/必选岗 21035 全走真实请求）。关闭审计项 #2，**29 问审计六刀全部收官**。新增 `activity_positions` + `ActivityRegistration.activityPositionId` 与第 54 个 migration；Admin 5 + App 1 共 6 个 endpoint（354→360）、1 个 controller（73→74）、6 个 BizCode（244→250）。Permission 206 / AuditLogEvent 113 / cron 2 / module 36 / role 9 恒定，0 新依赖、0 新字典、0 Activity 列。

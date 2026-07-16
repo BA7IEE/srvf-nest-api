@@ -22,6 +22,11 @@ const FRAG_DIR = path.join(ROOT, 'changelog.d');
 const CHANGELOG = path.join(ROOT, 'CHANGELOG.md');
 
 function main(): void {
+  // 本脚本无参数;未知参数(如误传 --help)一律拒绝执行,防"冒烟即真跑"
+  if (process.argv.length > 2) {
+    process.stderr.write(`用法:pnpm changelog:merge(无参数;归并 changelog.d/*.md → CHANGELOG ## Unreleased)\n未知参数:${process.argv.slice(2).join(' ')}\n`);
+    process.exit(1);
+  }
   if (!fs.existsSync(FRAG_DIR)) {
     process.stdout.write('(changelog.d/ 不存在 — no-op)\n');
     return;
