@@ -7,6 +7,7 @@ import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
+import { waitFor } from '../helpers/wait-for';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -123,8 +124,22 @@ describe('Admin /api/admin/v1/me 本人身份只读 bootstrap(2026-06-14)', () =
       nickname: '超管小王',
     });
 
-    const res = await get(authHeader);
+    let res = await get(authHeader);
     expect(res.status).toBe(200);
+    await waitFor(
+      async () => {
+        if (typeof (res.body as ResBody).data.lastLoginAt === 'string') return true;
+        res = await get(authHeader);
+        expect(res.status).toBe(200);
+        return typeof (res.body as ResBody).data.lastLoginAt === 'string';
+      },
+      {
+        timeoutMs: 5_000,
+        intervalMs: 250,
+        message: 'GET /api/admin/v1/me 未在 5s 内返回 string lastLoginAt',
+      },
+    );
+
     const body = res.body as ResBody;
     expect(body.code).toBe(0);
     expect(body.message).toBe('ok');
@@ -136,7 +151,7 @@ describe('Admin /api/admin/v1/me 本人身份只读 bootstrap(2026-06-14)', () =
     expect(body.data.role).toBe('SUPER_ADMIN');
     expect(body.data.status).toBe('ACTIVE');
     expect(body.data.memberId).toBeNull(); // 未绑 member
-    // lastLoginAt:loginAs 走真实登录已写,应为 ISO 字符串
+    // lastLoginAt:loginAs 走真实登录旁路写;有界重取后终态必须为 ISO 字符串
     expect(typeof body.data.lastLoginAt).toBe('string');
     assertNoForbiddenKeys(body.data);
   });
