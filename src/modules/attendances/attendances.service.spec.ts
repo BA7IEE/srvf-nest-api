@@ -206,6 +206,9 @@ function makePrismaMock() {
   const member = { findMany: jest.fn<Promise<unknown[]>, [unknown]>() };
   const activityRegistration = { findMany: jest.fn<Promise<unknown[]>, [unknown]>() };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
+  // submit 的 Activity FOR SHARE 默认命中；活动不存在 / cancelled 仍由 findFirst fixture
+  // 驱动既有错误优先级，不放宽生产锁或业务守卫。
+  const $queryRaw = jest.fn().mockResolvedValue([{ id: 'act-1' }]);
   const prisma = {
     attendanceSheet,
     attendanceRecord,
@@ -215,6 +218,7 @@ function makePrismaMock() {
     member,
     activityRegistration,
     $transaction,
+    $queryRaw,
   };
   // 双模:回调式把 prisma mock 自身当 tx 传入(service 在 tx 与 this.prisma 上调同名方法);
   // 数组式($transaction([findMany, count]))走 Promise.all。

@@ -578,6 +578,24 @@ export class AttendancesService {
     });
   }
 
+  // submit 在普通批量校验后，以公共 CAS 原语锁住全部 pass registration。
+  // 排序去重保持多报名批次锁序稳定；并发 cancel 必须等到本事务提交，再由既有
+  // assertNoAttendanceRecords 拒绝，不能留下 cancelled registration + live record。
+  private async claimRegistrationsForSubmit(
+    registrationIds: readonly string[],
+    tx: PrismaTx,
+  ): Promise<void> {
+    const sortedRegistrationIds = [...new Set(registrationIds)].sort();
+    for (const registrationId of sortedRegistrationIds) {
+      await claimAtStatus(tx, {
+        target: 'activityRegistration',
+        id: registrationId,
+        expectedStatus: 'pass',
+        invalidStatusBiz: BizCode.ATTENDANCE_REGISTRATION_INVALID,
+      });
+    }
+  }
+
   // 时间不重叠校验(R16 / Q-S15)已抽至 `time-overlap-policy.ts` 的 `TimeOverlapPolicy`
   // (refactor PR;沿 PR #179 9 个 characterization case 锁定的现状行为零变化)。
   // submit(...) / edit(...) 内通过 `this.timeOverlapPolicy.assertNoInternalOverlap(...)` +
@@ -603,13 +621,30 @@ export class AttendancesService {
       id: activityId,
     });
     return this.prisma.$transaction(async (tx) => {
-      // 1. activity 存在 + 参与状态合法；同时取 activityTypeCode 与时间窗。
+      // 1. 与 pass cancel / GPS check-in 统一 Activity → Registration 锁序。
+      // FOR SHARE 允许同活动考勤提交并发，但会挡住取消/改窗等聚合写；锁后再读基线。
+      const lockedActivity = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "Activity"
+        WHERE id = ${activityId} AND "deletedAt" IS NULL
+        FOR SHARE
+      `;
+      if (lockedActivity.length === 0) {
+        throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+      }
+
+      // 2. activity 存在 + 参与状态合法；同时取 activityTypeCode 与时间窗。
       const activity = await this.findActivityForSubmissionFull(activityId, tx);
 
-      // 2. 固定 3 次 IN 批量预取 + 按输入顺序完成字典/队员/报名/时间窗/时长校验。
+      // 3. 固定 3 次 IN 批量预取 + 按输入顺序完成字典/队员/报名/时间窗/时长校验。
       const normalized = await this.validateAndNormalizeRecordsBatch(dto.records, activity, tx);
+      await this.claimRegistrationsForSubmit(
+        normalized
+          .map((record) => record.registrationId)
+          .filter((registrationId): registrationId is string => registrationId !== null),
+        tx,
+      );
 
-      // 3. 数组内部时间不重叠 + 与已有跨 Sheet 全局不重叠
+      // 4. 数组内部时间不重叠 + 与已有跨 Sheet 全局不重叠
       // 抽出至 TimeOverlapPolicy(refactor PR;算法 / 边界 / excludeSheetId 语义零变化)。
       this.timeOverlapPolicy.assertNoInternalOverlap(normalized);
       await this.timeOverlapPolicy.lockMembersForOverlapCheck(
@@ -618,7 +653,7 @@ export class AttendancesService {
       );
       await this.timeOverlapPolicy.assertNoTimeOverlapForRecords(normalized, undefined, tx);
 
-      // 4. D14 5.B 预填:仅当 record.contributionPoints === null 时按规则查表预填;
+      // 5. D14 5.B 预填:仅当 record.contributionPoints === null 时按规则查表预填;
       //    传值不覆盖(沿 D-A8);无匹配规则保持 null。
       // 抽出至 ContributionCalculator(refactor PR;算法 / 三态 / cap / 排序均零行为变化)。
       const prefilled = await this.contributionCalculator.applyContributionRulePrefill(
@@ -627,7 +662,7 @@ export class AttendancesService {
         tx,
       );
 
-      // 5. 事务内一次性 create Sheet + N records
+      // 6. 事务内一次性 create Sheet + N records
       const created = await tx.attendanceSheet.create({
         data: {
           activityId,

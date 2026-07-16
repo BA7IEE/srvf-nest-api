@@ -1,4 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -10,6 +11,7 @@ import { ActivityPositionsService } from '../../src/modules/activities/activity-
 import { AppActivitiesService } from '../../src/modules/activities/app-activities.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { AppActivityCheckInsService } from '../../src/modules/attendances/app-activity-check-ins.service';
+import { AttendancesService } from '../../src/modules/attendances/attendances.service';
 import { MetaService } from '../../src/modules/meta/meta.service';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
@@ -21,6 +23,70 @@ const AUDIT_META: AuditMeta = {
   ua: 'jest/activity-registration-waitlist',
 };
 
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+async function observeActivityLockWait(
+  prisma: PrismaService,
+  mutation: Promise<unknown>,
+): Promise<'blocked' | 'settled'> {
+  let settled = false;
+  void mutation.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (settled) return 'settled';
+    const waiting = await prisma.$queryRaw<Array<{ pid: number }>>`
+      SELECT pid
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND pid <> pg_backend_pid()
+        AND wait_event_type = 'Lock'
+        AND query LIKE '%FROM "Activity"%FOR UPDATE%'
+      LIMIT 1
+    `;
+    if (waiting.length > 0) return 'blocked';
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error('timed out waiting for concurrent Activity mutation state');
+}
+
+interface RegistrationCreateTestHooks {
+  resolveCreateStatusCode: (
+    activityId: string,
+    activityPositionId: string | null,
+    capacity: number | null,
+    tx: Prisma.TransactionClient,
+  ) => Promise<'pending' | 'waitlisted'>;
+  resolveActivityPositionForCreate: (
+    activityId: string,
+    activityPositionId: string | undefined,
+    tx: Prisma.TransactionClient,
+  ) => Promise<{
+    id: string;
+    capacity: number | null;
+    genderRequirementCode: string | null;
+  } | null>;
+}
+
+interface AttendanceSubmitTestHooks {
+  claimRegistrationsForSubmit: (
+    registrationIds: readonly string[],
+    tx: Prisma.TransactionClient,
+  ) => Promise<void>;
+}
+
 describe('activity registration waitlist', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -31,6 +97,7 @@ describe('activity registration waitlist', () => {
   let appActivities: AppActivitiesService;
   let dashboard: MetaService;
   let appCheckIns: AppActivityCheckInsService;
+  let attendances: AttendancesService;
   let organizationId: string;
   let admin: CurrentUserPayload;
   let sequence = 0;
@@ -46,6 +113,7 @@ describe('activity registration waitlist', () => {
     appActivities = app.get(AppActivitiesService);
     dashboard = app.get(MetaService);
     appCheckIns = app.get(AppActivityCheckInsService);
+    attendances = app.get(AttendancesService);
 
     const adminUser = await createTestUser(app, {
       username: 'waitlist-super-admin',
@@ -69,6 +137,21 @@ describe('activity registration waitlist', () => {
         select: { id: true },
       })
     ).id;
+
+    const attendanceRoleType = await prisma.dictType.create({
+      data: { code: 'attendance_role', label: '考勤角色' },
+      select: { id: true },
+    });
+    const attendanceStatusType = await prisma.dictType.create({
+      data: { code: 'attendance_status', label: '考勤状态' },
+      select: { id: true },
+    });
+    await prisma.dictItem.createMany({
+      data: [
+        { typeId: attendanceRoleType.id, code: 'member', label: '队员' },
+        { typeId: attendanceStatusType.id, code: 'present', label: '出勤' },
+      ],
+    });
   });
 
   afterAll(async () => {
@@ -815,6 +898,181 @@ describe('activity registration waitlist', () => {
     });
     expect(promoteAudits).toHaveLength(2);
     expect(new Set(promoteAudits.map((item) => item.resourceId)).size).toBe(2);
+  });
+
+  it('F1 真并发：create 与扩容互斥，锁后状态可被扩容递补而不永久滞留', async () => {
+    const activityId = await createActivity(1, 'create-capacity-race');
+    await seedRegistration(activityId, await createMember('create-capacity-pass'), 'pass');
+    const memberId = await createMember('create-capacity-new');
+    const hooks = registrations as unknown as RegistrationCreateTestHooks;
+    const originalResolve = hooks.resolveCreateStatusCode.bind(registrations);
+    const statusResolved = deferred();
+    const releaseCreate = deferred();
+    const resolveSpy = jest
+      .spyOn(hooks, 'resolveCreateStatusCode')
+      .mockImplementation(async (...args) => {
+        const statusCode = await originalResolve(...args);
+        statusResolved.resolve();
+        await releaseCreate.promise;
+        return statusCode;
+      });
+
+    let createPromise: ReturnType<ActivityRegistrationsService['create']> | undefined;
+    let updatePromise: ReturnType<ActivitiesService['update']> | undefined;
+    try {
+      createPromise = registrations.create(activityId, { memberId }, admin, AUDIT_META);
+      await statusResolved.promise;
+      updatePromise = activities.update(activityId, { capacity: 2 }, admin, AUDIT_META);
+      const observation = await observeActivityLockWait(prisma, updatePromise);
+      releaseCreate.resolve();
+      await Promise.all([createPromise, updatePromise]);
+
+      // 本测试杀死「create 锁前读满员 → 扩容看不到候补 → create 后插 waitlisted」错误；
+      // 正确实现让扩容等待 create 提交，再把刚插入的队首候补递补为 pending。
+      expect(observation).toBe('blocked');
+      expect(
+        await prisma.activityRegistration.findFirstOrThrow({
+          where: { activityId, memberId, deletedAt: null },
+          select: { statusCode: true },
+        }),
+      ).toEqual({ statusCode: 'pending' });
+    } finally {
+      releaseCreate.resolve();
+      await Promise.allSettled([createPromise, updatePromise].filter((item) => item !== undefined));
+      resolveSpy.mockRestore();
+    }
+  });
+
+  it('F1 真并发：createMy 与岗位软删互斥，删除方锁后看见 active registration 并拒绝', async () => {
+    const activityId = await createActivity(5, 'create-position-delete-race');
+    const activityPositionId = await createActivityPosition(activityId, 5, '并发删岗');
+    const self = await createMemberUser('position-delete-self');
+    const hooks = registrations as unknown as RegistrationCreateTestHooks;
+    const originalResolve = hooks.resolveActivityPositionForCreate.bind(registrations);
+    const positionResolved = deferred();
+    const releaseCreate = deferred();
+    const resolveSpy = jest
+      .spyOn(hooks, 'resolveActivityPositionForCreate')
+      .mockImplementation(async (...args) => {
+        const position = await originalResolve(...args);
+        positionResolved.resolve();
+        await releaseCreate.promise;
+        return position;
+      });
+
+    let createPromise: ReturnType<ActivityRegistrationsService['createMy']> | undefined;
+    let deletePromise: ReturnType<ActivityPositionsService['softDelete']> | undefined;
+    try {
+      createPromise = registrations.createMy(
+        activityId,
+        { activityPositionId },
+        self.user,
+        AUDIT_META,
+      );
+      await positionResolved.promise;
+      deletePromise = activityPositions.softDelete(
+        activityId,
+        activityPositionId,
+        admin,
+        AUDIT_META,
+      );
+      const observation = await observeActivityLockWait(prisma, deletePromise);
+      releaseCreate.resolve();
+      await createPromise;
+      const deletion = await Promise.allSettled([deletePromise]);
+
+      // 本测试杀死「create 先读到 live 岗位，岗位删除先提交，create 再插 active 报名」错误；
+      // 正确锁序让删除方后读到新报名，并复用 20031 拒绝软删。
+      expect(observation).toBe('blocked');
+      expect(deletion[0]).toEqual(
+        expect.objectContaining({
+          status: 'rejected',
+          reason: expect.objectContaining({
+            biz: BizCode.ACTIVITY_POSITION_HAS_ACTIVE_REGISTRATIONS,
+          }),
+        }),
+      );
+      expect(
+        await prisma.activityPosition.findUniqueOrThrow({
+          where: { id: activityPositionId },
+          select: { deletedAt: true },
+        }),
+      ).toEqual({ deletedAt: null });
+    } finally {
+      releaseCreate.resolve();
+      await Promise.allSettled([createPromise, deletePromise].filter((item) => item !== undefined));
+      resolveSpy.mockRestore();
+    }
+  });
+
+  it('F2 真并发：考勤提交 claim pass registration 后，并发取消被已有考勤守卫拒绝', async () => {
+    const activityId = await createActivity(5, 'attendance-cancel-race');
+    const memberId = await createMember('attendance-cancel-member');
+    const registration = await seedRegistration(activityId, memberId, 'pass');
+    const hooks = attendances as unknown as AttendanceSubmitTestHooks;
+    const originalClaim = hooks.claimRegistrationsForSubmit.bind(attendances);
+    const registrationClaimed = deferred();
+    const releaseSubmit = deferred();
+    const claimSpy = jest
+      .spyOn(hooks, 'claimRegistrationsForSubmit')
+      .mockImplementation(async (...args) => {
+        await originalClaim(...args);
+        registrationClaimed.resolve();
+        await releaseSubmit.promise;
+      });
+
+    let submitPromise: ReturnType<AttendancesService['submit']> | undefined;
+    let cancelPromise: ReturnType<ActivityRegistrationsService['cancelAdmin']> | undefined;
+    try {
+      submitPromise = attendances.submit(
+        activityId,
+        {
+          records: [
+            {
+              memberId,
+              roleCode: 'member',
+              checkInAt: '2099-07-15T09:00:00.000Z',
+              checkOutAt: '2099-07-15T10:00:00.000Z',
+              attendanceStatusCode: 'present',
+              registrationId: registration.id,
+            },
+          ],
+        },
+        admin,
+        AUDIT_META,
+      );
+      await registrationClaimed.promise;
+      cancelPromise = registrations.cancelAdmin(activityId, registration.id, {}, admin, AUDIT_META);
+      const observation = await observeActivityLockWait(prisma, cancelPromise);
+      releaseSubmit.resolve();
+      await submitPromise;
+      const cancellation = await Promise.allSettled([cancelPromise]);
+
+      // 本测试杀死「submit 普通读到 pass 后暂停，cancel 见 record=0 先提交，submit 再插 record」错误；
+      // 正确实现用 Activity→Registration + claimAtStatus 互斥，后到取消恒被 21033 拒绝。
+      expect(observation).toBe('blocked');
+      expect(cancellation[0]).toEqual(
+        expect.objectContaining({
+          status: 'rejected',
+          reason: expect.objectContaining({ biz: BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE }),
+        }),
+      );
+      expect(
+        await prisma.activityRegistration.findUniqueOrThrow({
+          where: { id: registration.id },
+          select: { statusCode: true },
+        }),
+      ).toEqual({ statusCode: 'pass' });
+      expect(
+        await prisma.attendanceRecord.count({
+          where: { registrationId: registration.id, deletedAt: null },
+        }),
+      ).toBe(1);
+    } finally {
+      releaseSubmit.resolve();
+      await Promise.allSettled([submitPromise, cancelPromise].filter((item) => item !== undefined));
+      claimSpy.mockRestore();
+    }
   });
 
   it('活动取消联动 pending+waitlisted→cancelled；waitlisted 仍不能签到', async () => {

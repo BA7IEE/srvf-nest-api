@@ -485,6 +485,20 @@ export class ActivityRegistrationsService {
     };
   }
 
+  // registration create 与 approve / pass cancel / 岗位写侧统一使用 Activity 聚合锁。
+  // 锁必须先于 Activity / ActivityPosition / passCount 基线读取，避免 create 使用陈旧容量
+  // 落入 waitlisted，或在岗位软删提交后继续插入指向已删岗位的 active registration。
+  private async lockActivityForRegistrationCreate(activityId: string, tx: PrismaTx): Promise<void> {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "Activity"
+      WHERE id = ${activityId} AND "deletedAt" IS NULL
+      FOR UPDATE
+    `;
+    if (locked.length === 0) {
+      throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+    }
+  }
+
   private async assertGenderRequirement(
     memberId: string,
     genderRequirementCode: string | null,
@@ -840,6 +854,7 @@ export class ActivityRegistrationsService {
   ): Promise<ActivityRegistrationResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity-registration.create.record');
     return this.prisma.$transaction(async (tx) => {
+      await this.lockActivityForRegistrationCreate(activityId, tx);
       const act = await this.assertActivityRegistrable(activityId, 'admin', tx);
       await this.assertMemberExists(dto.memberId, tx);
       await this.assertGenderRequirement(dto.memberId, act.genderRequirementCode, tx);
@@ -902,6 +917,7 @@ export class ActivityRegistrationsService {
   ): Promise<ActivityRegistrationResponseDto> {
     return this.prisma.$transaction(async (tx) => {
       const memberId = await this.resolveUserMemberIdOrThrow(currentUser.id, tx);
+      await this.lockActivityForRegistrationCreate(activityId, tx);
       const act = await this.assertActivityRegistrable(activityId, 'self', tx);
       await this.assertGenderRequirement(memberId, act.genderRequirementCode, tx);
       const activityPosition = await this.resolveActivityPositionForCreate(

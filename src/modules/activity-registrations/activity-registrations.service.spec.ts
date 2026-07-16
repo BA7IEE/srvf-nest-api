@@ -166,7 +166,9 @@ function makePrismaMock() {
     count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
   };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
-  const $queryRaw = jest.fn().mockResolvedValue([]);
+  // create / approve / pass cancel 的 Activity 聚合锁默认命中测试活动；不存在场景仍由
+  // activity.findFirst fixture 驱动既有 ACTIVITY_NOT_FOUND 断言。
+  const $queryRaw = jest.fn().mockResolvedValue([{ id: 'act-1' }]);
   const prisma = {
     activityRegistration,
     activity,

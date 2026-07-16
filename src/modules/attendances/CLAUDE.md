@@ -4,7 +4,7 @@
 
 ## 本地事实
 
-- `attendances.service.ts` 是 **god-service(1746 行,P1-4 第一刀后)**;`attendance-sheet-state-machine.ts` / `attendance-audit-recorder.ts` / `time-overlap-policy.ts` / `contribution-calculator.ts` / `attendance-presenter.ts`(P1-4 第一刀,2026-06-10)已抽离。
+- `attendances.service.ts` 是 **god-service(1781 行,P1-4 第一刀后)**;`attendance-sheet-state-machine.ts` / `attendance-audit-recorder.ts` / `time-overlap-policy.ts` / `contribution-calculator.ts` / `attendance-presenter.ts`(P1-4 第一刀,2026-06-10)已抽离。
 - 响应序列化必须走 `attendance-presenter.ts`(Sheet 详情 / 列表项 / Record 含 member 摘要 / Decimal→string),**不**在 service 内重新手写字段映射;select 查询策略仍留 service(归未来 QueryService 议题,第二刀另行立项)。
 - `attendance_sheets` **5 态**(含终审);`attendance_records` 子表。
 - 状态变更必须经过 `attendance-sheet-state-machine.ts`,**不**在 service 内裸写态迁移。
@@ -12,6 +12,7 @@
 - 业务写路径必须走 `attendance-audit-recorder.ts` 写入 `AuditLogEvent`。
 - **时间重叠并发保护(v0.44.0 finding #7)**:submit/edit 在跨 Sheet 重叠查询前,由 `TimeOverlapPolicy.lockMembersForOverlapCheck` 按排序去重的 memberId 获取 PostgreSQL transaction advisory lock;同人并发写必须串行,不得移到事务外或删掉锁后只保留 read-before-write。
 - **受保护状态写(2026-07-13 finding #6;v0.47.0 F2)**:`edit`/`softDelete` 在读取或软删 `attendance_records` 前统一调用 [`/src/common/prisma/claim-at-status.util.ts`](../../common/prisma/claim-at-status.util.ts) `claimAtStatus`,确保 Sheet 仍处 `pending`;败者复用 `ATTENDANCE_SHEET_STATUS_INVALID`,且不得先破坏子行。`approve`/`reject`/`finalApprove`/`finalReject`/`reopen` 的内联 CAS 保留;合法迁移矩阵仍只在 `attendance-sheet-state-machine.ts`。
+- **submit × registration 并发不变式**:submit 先对 Activity `FOR SHARE`，批量校验后按 registrationId 排序去重调用公共 `claimAtStatus(expected=pass)`；与 pass cancel 保持 Activity → Registration 锁序。submit 先认领时，后到取消必须在 records 提交后由既有 `ACTIVITY_REGISTRATION_HAS_ATTENDANCE=21033` 拒绝，禁止留下 cancelled + live record
 - **已知边界(finding #8,接受记录)**:数据库层未加 `btree_gist` / range exclusion constraint;原因是本仓首个 DB 扩展、托管库可用性未验且触发极罕见。当前只承诺应用写路径的事务 advisory lock;直连 SQL 绕过应用不在此保证内。
 - **终审/撤回判权(终态 scoped-authz PR9 + v0.47.0 F2)**:`finalApprove`/`finalReject`/`reopen` 走 `assertFinalReviewAuthzOrThrow`(`authz.explain` 带 ref)。三动作的权限来源均为 scoped `attendance-final-reviewer` 或 SUPER_ADMIN,biz-admin 不持码;只有 `finalApprove` 咬合自审 22074 / 一级同人 22075,`finalReject`/`reopen` 不受这两条约束。sheet 不存在 → 回退 `rbac.can`(持码者进事务抛 22001,无码者 30100 防枚举),其余 deny → 30100。角色码集为 `attendance.{read,final-approve,final-reject,reopen}.sheet`;e2e 矩阵在 `test/e2e/attendances-final-review-authz.e2e-spec.ts`。
 - **其余调用位点判权(终态 scoped-authz PR12 + v0.49 部门范围)**:`submit`/`list`(嵌套 `:activityId`)带 `{type:'activity', id: activityId}`;`findOne`/`reviewDetail`/`edit`/`softDelete`/`approve`/`reject` 带 `{type:'attendance_sheet', id}`;`listRecordsForMemberAdmin`/`getMemberContributionSummary` 带 `{type:'member', id: memberId}`;`listAllSheetsForAdmin` 通过 `getVisibleOrganizationScope` 按 `activity.organizationId` 下推并与用户组织筛选取交集。`resource_not_found` 回退同 PR9 范式:持全局码者交回既有 NOT_FOUND,无码者 30100。scoped 生效 e2e 在 `test/e2e/participation-scoped-authz.e2e-spec.ts`。

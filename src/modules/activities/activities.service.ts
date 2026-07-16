@@ -329,6 +329,29 @@ export class ActivitiesService {
     }
   }
 
+  private async assertLivePositionWindowsWithinActivity(
+    activityId: string,
+    activityStartAt: Date,
+    activityEndAt: Date,
+    tx: PrismaTx,
+  ): Promise<void> {
+    const positions = await tx.activityPosition.findMany({
+      where: { activityId, deletedAt: null },
+      select: { startAt: true, endAt: true },
+    });
+    const hasInvalidWindow = positions.some(({ startAt, endAt }) => {
+      if ((startAt === null) !== (endAt === null)) return true;
+      return (
+        startAt !== null &&
+        endAt !== null &&
+        (startAt.getTime() < activityStartAt.getTime() || endAt.getTime() > activityEndAt.getTime())
+      );
+    });
+    if (hasInvalidWindow) {
+      throw new BizException(BizCode.ACTIVITY_POSITION_TIME_RANGE_INVALID);
+    }
+  }
+
   private async findActivityOrThrow(id: string, tx?: PrismaTx): Promise<ActivityFullRow> {
     const client = tx ?? this.prisma;
     const found = await client.activity.findFirst({
@@ -591,6 +614,18 @@ export class ActivitiesService {
   ): Promise<ActivityResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity.update.record', { type: 'activity', id });
     const result = await this.prisma.$transaction(async (tx) => {
+      // ActivityPosition create/update/softDelete 均先锁 Activity；改活动窗或容量也从同一聚合锁
+      // 起步，确保后续 Activity / Position / passCount 基线全部是锁后新鲜读。
+      if (dto.startAt !== undefined || dto.endAt !== undefined || dto.capacity !== undefined) {
+        const locked = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM "Activity"
+          WHERE id = ${id} AND "deletedAt" IS NULL
+          FOR UPDATE
+        `;
+        if (locked.length === 0) {
+          throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+        }
+      }
       const current = await this.findActivityOrThrow(id, tx);
 
       // Q-A12:cancelled 拒改(沿 ActivityStateMachine update decision)。
@@ -642,15 +677,15 @@ export class ActivitiesService {
             : current.registrationDeadline;
         this.assertStartEndValid(nextStart, nextEnd);
         this.assertRegistrationDeadlineValid(nextDeadline, nextEnd);
+        if (dto.startAt !== undefined || dto.endAt !== undefined) {
+          await this.assertLivePositionWindowsWithinActivity(current.id, nextStart, nextEnd, tx);
+        }
       }
 
       let waitlistPromotionLimit: number | null | undefined;
       if (dto.capacity !== undefined) {
-        await tx.$queryRaw`SELECT id FROM "Activity" WHERE id = ${current.id} FOR UPDATE`;
-        // delta 基线必须在取锁**之后**重读:`current` 来自取锁前的无锁读,并发 / 重试的
-        // capacity update 会让它陈旧 —— 复用陈旧基线时两个 tx 各按 5→10 算出 delta=5,
-        // 合计递补 10 名(净增名额仅 5),缩容请求也可能被误判为扩容而递补(违反 W3)。
-        // passCount 同为取锁后的新鲜读,二者基线一致。
+        // delta / live 岗位 / passCount 基线都必须在 Activity 聚合锁后读取；否则并发 / 重试
+        // 可能各自按陈旧 capacity 计算递补 delta，或在岗位形态已变化时仍沿 Activity.capacity 判闸。
         const locked = await tx.activity.findUniqueOrThrow({
           where: { id: current.id },
           select: {

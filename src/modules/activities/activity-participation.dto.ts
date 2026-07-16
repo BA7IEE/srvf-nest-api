@@ -41,6 +41,9 @@ export class ActivityRegistrationCountsDto {
 
   @ApiProperty({ description: 'cancelled 报名数' })
   cancelled!: number;
+
+  @ApiProperty({ description: 'waitlisted 报名数' })
+  waitlisted!: number;
 }
 
 export class ActivityParticipationSummaryDto {
