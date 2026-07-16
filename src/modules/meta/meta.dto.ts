@@ -70,10 +70,14 @@ export class ResolveLabelsResponseDto {}
 // 可正常声明具体属性。
 
 export class DashboardRegistrationsSummaryDto {
-  @ApiProperty({ description: '全局待审报名数(registration_status=pending,未软删)' })
+  @ApiProperty({
+    description: '当前可见组织范围内待审报名数(registration_status=pending,未软删)',
+  })
   pending!: number;
 
-  @ApiProperty({ description: '全局候补报名数(registration_status=waitlisted,未软删)' })
+  @ApiProperty({
+    description: '当前可见组织范围内候补报名数(registration_status=waitlisted,未软删)',
+  })
   waitlisted!: number;
 }
 
@@ -98,13 +102,14 @@ export class DashboardActivitiesSummaryDto {
 export class DashboardSummaryResponseDto {
   @ApiPropertyOptional({
     type: DashboardRegistrationsSummaryDto,
-    description: '报名待办(需 activity-registration.read.record;无权省略本块,非报错)',
+    description:
+      '报名待办(需 activity-registration.read.record;按三源授权组织范围统计;无权省略本块,非报错)',
   })
   registrations?: DashboardRegistrationsSummaryDto;
 
   @ApiPropertyOptional({
     type: DashboardAttendanceSheetsSummaryDto,
-    description: '考勤待办(需 attendance.read.sheet;无权省略本块,非报错)',
+    description: '考勤待办(需 attendance.read.sheet;按三源授权组织范围统计;无权省略本块,非报错)',
   })
   attendanceSheets?: DashboardAttendanceSheetsSummaryDto;
 

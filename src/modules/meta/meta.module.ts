@@ -8,10 +8,10 @@ import { OrganizationsModule } from '../organizations/organizations.module';
 import { ParticipationOverviewQueryService } from './participation-overview-query.service';
 
 // F1/A7(路线图 §4 A7;net-new 模块):跨资源批量 id→label 解析(resolve-labels)。
-// imports PermissionsModule 供 MetaService 注入 RbacService(R 模式 rbac.can;沿
-// positions/contribution-rules 范式)。**只读查询各资源自身的表,不注入其它业务模块的
-// service**(镜像 authz 模块 ResourceResolverService 的自包含范式);无 AuditLogsModule
-// (诊断读,无 audit)。
+// imports PermissionsModule 供 MetaService 的 resolve-labels 继续走 GLOBAL RbacService；
+// AuthzModule 供 dashboard/participation-overview 汇合三源组织范围。**只读查询各资源自身的表,
+// 不注入其它业务模块 service**(镜像 authz 模块 ResourceResolverService 的自包含范式)；
+// 无 AuditLogsModule(诊断读,无 audit)。
 @Module({
   imports: [DatabaseModule, PermissionsModule, AuthzModule, OrganizationsModule],
   controllers: [MetaController],

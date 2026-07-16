@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { AssignmentStatus, BindingScopeType, PrincipalType, Role } from '@prisma/client';
 import { execSync } from 'child_process';
 import request from 'supertest';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -40,7 +40,10 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 //   ④ ops-admin(不持两码)只见 activities 裸块 —— 证实 codeless 设计意图,非缺口
 //   ⑤ 仅持 activity-registration.read.record 的自定义角色 → 只见 registrations + activities
 //   ⑥ 零权限 ADMIN(无任何角色绑定)→ 只见 activities(非字面空对象,见 codeless 说明)
-//   ⑦ 计数对账:registrations.{pending,waitlisted} / attendanceSheets.{pending,pendingFinalReview} /
+//   ⑦ org-readonly(副队长@SMRT)summary 与 scoped 扁平列表对账
+//   ⑧ group-readonly(副组长@SMRT 子组)summary 与 scoped 扁平列表对账
+//   ⑨ 有码但无组织范围返回两个零值块,不报错
+//   ⑩ GLOBAL 计数对账:registrations.{pending,waitlisted} / attendanceSheets.{pending,pendingFinalReview} /
 //      activities.published 与对应列表端点同条件 total 严格相等
 
 const SEED_ENV = {
@@ -71,9 +74,14 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
   let bizAdminAuth: string; // ADMIN + biz-admin(持 activity-registration.read.record + attendance.read.sheet)
   let opsAdminAuth: string; // ADMIN + ops-admin(运营面,不持业务面两码)
   let registrationOnlyAuth: string; // ADMIN + 自定义角色,仅 activity-registration.read.record
+  let orgReadonlyAuth: string; // USER + vice-captain@SMRT → org-readonly@TREE
+  let groupReadonlyAuth: string; // USER + deputy-group-leader@SMRT 子组 → group-readonly@TREE
+  let emptyScopeAuth: string; // USER + biz-admin@SELF,有码但无组织范围
   let zeroPermAuth: string; // 裸 ADMIN,零角色绑定
 
   let organizationId: string;
+  let groupOrganizationId: string;
+  let outsideOrganizationId: string;
   let submitterUserId: string;
 
   function getSummary(auth?: string) {
@@ -81,11 +89,86 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     return auth ? req.set('Authorization', auth) : req;
   }
 
+  async function expectScopedSummaryMatchesLists(
+    auth: string,
+    expected: {
+      registrations: { pending: number; waitlisted: number };
+      attendanceSheets: { pending: number; pendingFinalReview: number };
+    },
+  ): Promise<void> {
+    const [summary, pendingRegistrations, waitlistedRegistrations, pendingSheets, finalSheets] =
+      await Promise.all([
+        getSummary(auth),
+        request(httpServer(app))
+          .get('/api/admin/v1/registrations')
+          .query({ statusCode: 'pending' })
+          .set('Authorization', auth),
+        request(httpServer(app))
+          .get('/api/admin/v1/registrations')
+          .query({ statusCode: 'waitlisted' })
+          .set('Authorization', auth),
+        request(httpServer(app))
+          .get('/api/admin/v1/attendance-sheets')
+          .query({ statusCode: 'pending' })
+          .set('Authorization', auth),
+        request(httpServer(app))
+          .get('/api/admin/v1/attendance-sheets')
+          .query({ statusCode: 'pending_final_review' })
+          .set('Authorization', auth),
+      ]);
+
+    for (const res of [
+      summary,
+      pendingRegistrations,
+      waitlistedRegistrations,
+      pendingSheets,
+      finalSheets,
+    ]) {
+      expect(res.status).toBe(200);
+    }
+    expect(summary.body.data.registrations).toEqual(expected.registrations);
+    expect(summary.body.data.attendanceSheets).toEqual(expected.attendanceSheets);
+    expect(summary.body.data.activities).toEqual({ published: 3, pendingCompletion: 1 });
+    expect(pendingRegistrations.body.data.total).toBe(summary.body.data.registrations.pending);
+    expect(waitlistedRegistrations.body.data.total).toBe(
+      summary.body.data.registrations.waitlisted,
+    );
+    expect(pendingSheets.body.data.total).toBe(summary.body.data.attendanceSheets.pending);
+    expect(finalSheets.body.data.total).toBe(summary.body.data.attendanceSheets.pendingFinalReview);
+  }
+
   beforeAll(async () => {
     app = await createTestApp();
     await resetDb(app);
     runSeed();
     prisma = app.get(PrismaService);
+
+    organizationId = (
+      await prisma.organization.findFirstOrThrow({ where: { code: 'SMRT' }, select: { id: true } })
+    ).id;
+    outsideOrganizationId = (
+      await prisma.organization.findFirstOrThrow({ where: { code: 'SWRT' }, select: { id: true } })
+    ).id;
+    groupOrganizationId = (
+      await prisma.organization.create({
+        data: { name: 'dashboard scoped 对账组', nodeTypeCode: 'group', parentId: organizationId },
+        select: { id: true },
+      })
+    ).id;
+    const organizationAncestors = await prisma.organizationClosure.findMany({
+      where: { descendantId: organizationId },
+      select: { ancestorId: true, depth: true },
+    });
+    await prisma.organizationClosure.create({
+      data: { ancestorId: groupOrganizationId, descendantId: groupOrganizationId, depth: 0 },
+    });
+    await prisma.organizationClosure.createMany({
+      data: organizationAncestors.map((ancestor) => ({
+        ancestorId: ancestor.ancestorId,
+        descendantId: groupOrganizationId,
+        depth: ancestor.depth + 1,
+      })),
+    });
 
     const bizAdminRoleId = (
       await prisma.rbacRole.findFirstOrThrow({ where: { code: 'biz-admin' }, select: { id: true } })
@@ -120,16 +203,65 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     await grantOpsAdminToUser(app, regOnlyCaller.id, regOnlyRole.id);
     registrationOnlyAuth = (await loginAs(app, 'dashsum-regonly')).authHeader;
 
+    const createPositionScopedUser = async (
+      username: string,
+      memberNo: string,
+      positionCode: string,
+      scopedOrganizationId: string,
+    ): Promise<string> => {
+      const caller = await createTestUser(app, { username, role: Role.USER });
+      const member = await prisma.member.create({
+        data: { memberNo, displayName: `dashboard ${positionCode}` },
+        select: { id: true },
+      });
+      await prisma.user.update({ where: { id: caller.id }, data: { memberId: member.id } });
+      const position = await prisma.organizationPosition.findFirstOrThrow({
+        where: { code: positionCode, deletedAt: null },
+        select: { id: true },
+      });
+      await prisma.organizationPositionAssignment.create({
+        data: {
+          organizationId: scopedOrganizationId,
+          positionId: position.id,
+          memberId: member.id,
+          status: AssignmentStatus.ACTIVE,
+          startedAt: new Date('2020-01-01T00:00:00.000Z'),
+        },
+      });
+      return (await loginAs(app, username)).authHeader;
+    };
+    orgReadonlyAuth = await createPositionScopedUser(
+      'dashsum-org-readonly',
+      'dashsum-m-org-ro',
+      'vice-captain',
+      organizationId,
+    );
+    groupReadonlyAuth = await createPositionScopedUser(
+      'dashsum-group-readonly',
+      'dashsum-m-group-ro',
+      'deputy-group-leader',
+      groupOrganizationId,
+    );
+
+    const emptyScopeCaller = await createTestUser(app, {
+      username: 'dashsum-empty-scope',
+      role: Role.USER,
+    });
+    await prisma.roleBinding.create({
+      data: {
+        principalType: PrincipalType.USER,
+        principalId: emptyScopeCaller.id,
+        roleId: bizAdminRoleId,
+        scopeType: BindingScopeType.SELF,
+      },
+    });
+    emptyScopeAuth = (await loginAs(app, 'dashsum-empty-scope')).authHeader;
+
     await createTestUser(app, { username: 'dashsum-zero', role: Role.ADMIN });
     zeroPermAuth = (await loginAs(app, 'dashsum-zero')).authHeader;
 
     superAdminAuth = (await loginAs(app, SEED_ENV.SUPER_ADMIN_USERNAME)).authHeader;
 
-    const org = await prisma.organization.findFirstOrThrow({
-      where: { code: 'SRVF' },
-      select: { id: true },
-    });
-    organizationId = org.id;
     submitterUserId = (
       await prisma.user.findFirstOrThrow({
         where: { username: 'dashsum-zero' },
@@ -139,12 +271,16 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
 
     // ---- 计数对账用固定数据(reset-db 已清空 Activity/ActivityRegistration/AttendanceSheet,
     //      本文件独占计数,可精确断言绝对值)----
-    const mkActivity = (title: string, statusCode: string) =>
+    const mkActivity = (
+      title: string,
+      statusCode: string,
+      activityOrganizationId: string = organizationId,
+    ) =>
       prisma.activity.create({
         data: {
           title,
           activityTypeCode: 'dashsum-e2e-type',
-          organizationId,
+          organizationId: activityOrganizationId,
           startAt: new Date('2027-02-01T08:00:00.000Z'),
           endAt: new Date('2027-02-01T12:00:00.000Z'),
           location: 'e2e 测试地点',
@@ -154,8 +290,9 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
       });
 
     const actPublished1 = await mkActivity('dashsum活动·已发布1', 'published');
-    const actPublished2 = await mkActivity('dashsum活动·已发布2', 'published');
-    const actDraft = await mkActivity('dashsum活动·草稿', 'draft');
+    const actPublished2 = await mkActivity('dashsum活动·已发布2', 'published', groupOrganizationId);
+    const actDraft = await mkActivity('dashsum活动·草稿', 'draft', groupOrganizationId);
+    const actOutside = await mkActivity('dashsum活动·范围外', 'published', outsideOrganizationId);
     await prisma.activity.update({
       where: { id: actPublished1.id },
       data: {
@@ -163,15 +300,22 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
         endAt: new Date('2020-02-01T12:00:00.000Z'),
       },
     });
-    // 进行中活动数(published)期望 = 2(actPublished1 + actPublished2;actDraft 不计入)
+    // activities 块不按 scope 裁剪：published = 3；仅 actPublished1 已过 endAt。
 
     const mkMember = (memberNo: string) =>
       prisma.member.create({ data: { memberNo, displayName: `dashsum队员${memberNo}` } });
 
     const regMembers = await Promise.all(
-      ['dashsum-r1', 'dashsum-r2', 'dashsum-r3', 'dashsum-r4', 'dashsum-r5', 'dashsum-r6'].map(
-        mkMember,
-      ),
+      [
+        'dashsum-r1',
+        'dashsum-r2',
+        'dashsum-r3',
+        'dashsum-r4',
+        'dashsum-r5',
+        'dashsum-r6',
+        'dashsum-r7',
+        'dashsum-r8',
+      ].map(mkMember),
     );
     const mkRegistration = (activityId: string, memberId: string, statusCode: string) =>
       prisma.activityRegistration.create({ data: { activityId, memberId, statusCode } });
@@ -182,7 +326,9 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     await mkRegistration(actPublished1.id, regMembers[3].id, 'pass');
     await mkRegistration(actPublished2.id, regMembers[4].id, 'cancelled');
     await mkRegistration(actPublished2.id, regMembers[5].id, 'waitlisted');
-    // 待审报名数(pending)期望 = 3；候补(waitlisted)期望 = 1
+    await mkRegistration(actOutside.id, regMembers[6].id, 'pending');
+    await mkRegistration(actOutside.id, regMembers[7].id, 'waitlisted');
+    // GLOBAL pending=4/waitlisted=2；org-readonly pending=3/waitlisted=1；group-readonly 各 1。
 
     const mkSheet = (activityId: string, statusCode: string) =>
       prisma.attendanceSheet.create({ data: { activityId, submitterUserId, statusCode } });
@@ -192,7 +338,8 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     await mkSheet(actDraft.id, 'pending_final_review');
     await mkSheet(actPublished1.id, 'approved');
     await mkSheet(actPublished2.id, 'rejected');
-    // 一级待审(pending)期望 = 2;待终审(pending_final_review)期望 = 1
+    await mkSheet(actOutside.id, 'pending');
+    // GLOBAL pending=3/final=1；org-readonly pending=2/final=1；group-readonly 各 1。
   });
 
   afterAll(async () => {
@@ -209,18 +356,18 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     expect(res.status).toBe(200);
     expect(res.body.code).toBe(0);
     const data = res.body.data;
-    expect(data.registrations).toEqual({ pending: 3, waitlisted: 1 });
-    expect(data.attendanceSheets).toEqual({ pending: 2, pendingFinalReview: 1 });
-    expect(data.activities).toEqual({ published: 2, pendingCompletion: 1 });
+    expect(data.registrations).toEqual({ pending: 4, waitlisted: 2 });
+    expect(data.attendanceSheets).toEqual({ pending: 3, pendingFinalReview: 1 });
+    expect(data.activities).toEqual({ published: 3, pendingCompletion: 1 });
   });
 
   it('③ biz-admin(持 activity-registration.read.record + attendance.read.sheet)三块全见', async () => {
     const res = await getSummary(bizAdminAuth);
     expect(res.status).toBe(200);
     const data = res.body.data;
-    expect(data.registrations).toEqual({ pending: 3, waitlisted: 1 });
-    expect(data.attendanceSheets).toEqual({ pending: 2, pendingFinalReview: 1 });
-    expect(data.activities).toEqual({ published: 2, pendingCompletion: 1 });
+    expect(data.registrations).toEqual({ pending: 4, waitlisted: 2 });
+    expect(data.attendanceSheets).toEqual({ pending: 3, pendingFinalReview: 1 });
+    expect(data.activities).toEqual({ published: 3, pendingCompletion: 1 });
   });
 
   it('④ ops-admin(运营面,不持业务面两码)只见 activities 裸块——codeless 设计意图,非缺陷', async () => {
@@ -229,16 +376,16 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     const data = res.body.data;
     expect(data).not.toHaveProperty('registrations');
     expect(data).not.toHaveProperty('attendanceSheets');
-    expect(data.activities).toEqual({ published: 2, pendingCompletion: 1 });
+    expect(data.activities).toEqual({ published: 3, pendingCompletion: 1 });
   });
 
   it('⑤ 仅持 activity-registration.read.record 的自定义角色 → 只见 registrations + activities', async () => {
     const res = await getSummary(registrationOnlyAuth);
     expect(res.status).toBe(200);
     const data = res.body.data;
-    expect(data.registrations).toEqual({ pending: 3, waitlisted: 1 });
+    expect(data.registrations).toEqual({ pending: 4, waitlisted: 2 });
     expect(data).not.toHaveProperty('attendanceSheets');
-    expect(data.activities).toEqual({ published: 2, pendingCompletion: 1 });
+    expect(data.activities).toEqual({ published: 3, pendingCompletion: 1 });
   });
 
   it('⑥ 零权限 ADMIN(无任何角色绑定)→ 只见 activities(codeless 块恒在,非字面空对象)', async () => {
@@ -247,10 +394,31 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
     const data = res.body.data;
     expect(data).not.toHaveProperty('registrations');
     expect(data).not.toHaveProperty('attendanceSheets');
-    expect(data.activities).toEqual({ published: 2, pendingCompletion: 1 });
+    expect(data.activities).toEqual({ published: 3, pendingCompletion: 1 });
   });
 
-  it('⑦ 计数对账:三个数字与对应列表端点同条件 total 严格相等(唯一存在意义)', async () => {
+  it('⑦ org-readonly(副队长@SMRT)的 summary 与其 scoped 报名/考勤列表一致', async () => {
+    await expectScopedSummaryMatchesLists(orgReadonlyAuth, {
+      registrations: { pending: 3, waitlisted: 1 },
+      attendanceSheets: { pending: 2, pendingFinalReview: 1 },
+    });
+  });
+
+  it('⑧ group-readonly(副组长@子组)的 summary 与其 scoped 报名/考勤列表一致', async () => {
+    await expectScopedSummaryMatchesLists(groupReadonlyAuth, {
+      registrations: { pending: 1, waitlisted: 1 },
+      attendanceSheets: { pending: 1, pendingFinalReview: 1 },
+    });
+  });
+
+  it('⑨ 有码但无组织范围时保留两个零值块，且与 scoped 空列表一致', async () => {
+    await expectScopedSummaryMatchesLists(emptyScopeAuth, {
+      registrations: { pending: 0, waitlisted: 0 },
+      attendanceSheets: { pending: 0, pendingFinalReview: 0 },
+    });
+  });
+
+  it('⑩ GLOBAL 计数与对应列表端点同条件 total 严格相等', async () => {
     const summaryRes = await getSummary(superAdminAuth);
     expect(summaryRes.status).toBe(200);
     const data = summaryRes.body.data;
@@ -261,7 +429,7 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
       .set('Authorization', superAdminAuth);
     expect(regRes.status).toBe(200);
     expect(regRes.body.data.total).toBe(data.registrations.pending);
-    expect(regRes.body.data.total).toBe(3);
+    expect(regRes.body.data.total).toBe(4);
 
     const waitlistedRes = await request(httpServer(app))
       .get('/api/admin/v1/registrations')
@@ -269,7 +437,7 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
       .set('Authorization', superAdminAuth);
     expect(waitlistedRes.status).toBe(200);
     expect(waitlistedRes.body.data.total).toBe(data.registrations.waitlisted);
-    expect(waitlistedRes.body.data.total).toBe(1);
+    expect(waitlistedRes.body.data.total).toBe(2);
 
     const sheetPendingRes = await request(httpServer(app))
       .get('/api/admin/v1/attendance-sheets')
@@ -277,7 +445,7 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
       .set('Authorization', superAdminAuth);
     expect(sheetPendingRes.status).toBe(200);
     expect(sheetPendingRes.body.data.total).toBe(data.attendanceSheets.pending);
-    expect(sheetPendingRes.body.data.total).toBe(2);
+    expect(sheetPendingRes.body.data.total).toBe(3);
 
     const sheetFinalRes = await request(httpServer(app))
       .get('/api/admin/v1/attendance-sheets')
@@ -293,6 +461,6 @@ describe('GET admin/v1/meta/dashboard-summary(GAP-003 工作台/首页待办汇�
       .set('Authorization', superAdminAuth);
     expect(activitiesRes.status).toBe(200);
     expect(activitiesRes.body.data.total).toBe(data.activities.published);
-    expect(activitiesRes.body.data.total).toBe(2);
+    expect(activitiesRes.body.data.total).toBe(3);
   });
 });

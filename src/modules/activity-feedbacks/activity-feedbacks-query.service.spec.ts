@@ -34,13 +34,7 @@ function makeService() {
     { rating: 1, _count: { _all: 1 } },
     { rating: 4, _count: { _all: 1 } },
   ]);
-  const attendanceFindMany = jest
-    .fn()
-    .mockResolvedValue([
-      { memberId: 'member-1' },
-      { memberId: 'member-2' },
-      { memberId: 'member-3' },
-    ]);
+  const memberCount = jest.fn().mockResolvedValue(3);
   const prisma = {
     activity: { findFirst: activityFindFirst },
     activityFeedback: {
@@ -49,7 +43,7 @@ function makeService() {
       aggregate: feedbackAggregate,
       groupBy: feedbackGroupBy,
     },
-    attendanceRecord: { findMany: attendanceFindMany },
+    member: { count: memberCount },
   } as unknown as PrismaService;
   const authzExplain = jest.fn().mockResolvedValue({ allow: true, reason: 'allowed' });
   const authz = { explain: authzExplain } as unknown as AuthzService;
@@ -62,7 +56,7 @@ function makeService() {
     feedbackCount,
     feedbackAggregate,
     feedbackGroupBy,
-    attendanceFindMany,
+    memberCount,
     authzExplain,
     rbacCan,
   };
@@ -112,8 +106,8 @@ describe('ActivityFeedbacksQueryService Admin read model', () => {
     });
   });
 
-  it('汇总固定 4 次业务读，均分两位、五桶补零、评价率四位', async () => {
-    const { service, activityFindFirst, feedbackAggregate, feedbackGroupBy, attendanceFindMany } =
+  it('汇总固定 4 次业务读，均分两位、五桶补零、并集分母评价率四位', async () => {
+    const { service, activityFindFirst, feedbackAggregate, feedbackGroupBy, memberCount } =
       makeService();
 
     await expect(service.summary('activity-1', CURRENT_USER)).resolves.toEqual({
@@ -131,14 +125,25 @@ describe('ActivityFeedbacksQueryService Admin read model', () => {
     expect(activityFindFirst).toHaveBeenCalledTimes(1);
     expect(feedbackAggregate).toHaveBeenCalledTimes(1);
     expect(feedbackGroupBy).toHaveBeenCalledTimes(1);
-    expect(attendanceFindMany).toHaveBeenCalledTimes(1);
-    expect(attendanceFindMany).toHaveBeenCalledWith({
+    expect(memberCount).toHaveBeenCalledTimes(1);
+    expect(memberCount).toHaveBeenCalledWith({
       where: {
-        deletedAt: null,
-        sheet: { activityId: 'activity-1', deletedAt: null, statusCode: 'approved' },
+        OR: [
+          {
+            attendanceRecords: {
+              some: {
+                deletedAt: null,
+                sheet: { activityId: 'activity-1', deletedAt: null, statusCode: 'approved' },
+              },
+            },
+          },
+          {
+            activityFeedbacks: {
+              some: { activityId: 'activity-1', deletedAt: null },
+            },
+          },
+        ],
       },
-      select: { memberId: true },
-      distinct: ['memberId'],
     });
   });
 
@@ -149,7 +154,7 @@ describe('ActivityFeedbacksQueryService Admin read model', () => {
       _avg: { rating: null },
     });
     setup.feedbackGroupBy.mockResolvedValue([]);
-    setup.attendanceFindMany.mockResolvedValue([]);
+    setup.memberCount.mockResolvedValue(0);
 
     await expect(setup.service.summary('activity-1', CURRENT_USER)).resolves.toEqual({
       count: 0,

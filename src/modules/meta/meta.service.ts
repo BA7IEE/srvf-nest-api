@@ -5,6 +5,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuthzService } from '../authz/authz.service';
 import { RbacService } from '../permissions/rbac.service';
 import { DashboardSummaryResponseDto, ResolveLabelsDto } from './meta.dto';
 
@@ -57,6 +58,7 @@ export class MetaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
+    private readonly authz: AuthzService,
   ) {}
 
   // per-type(非 per-record)读权限过滤 + 静默省略(D5/R13 防枚举):调用者对某 type
@@ -89,19 +91,26 @@ export class MetaService {
   }
 
   // GAP-003:三块可省略聚合,块级权限裁剪(registrations/attendanceSheets 各凭对应读码,
-  // R 模式 rbac.can 不传 resource = GLOBAL 口径,与 admin/v1/registrations · admin/v1/
-  // attendance-sheets 两个扁平跨轴列表的 GLOBAL-only 边界刻意一致;scoped-only 持有者本
-  // 块不可见是既定边界,非缺陷)。activities 无码(沿 activities list/detail/options 现状,
-  // 任意已登录用户可见)。无权限的块整体省略、不报错——响应恒 200(镜像 resolve-labels 静默
-  // 省略哲学,唯一差异:本端点字段形状固定,可用具体 DTO 而非动态 key)。
+  // 并通过 getVisibleOrganizationScope 汇合 GLOBAL / 职务 / 分管三源,按 activity.organizationId
+  // 下推与两个扁平跨轴列表完全相同的可见范围)。有码但无组织范围时保留块并返回零值；无码
+  // 时整块省略、不报错。activities 无码(沿 activities list/detail/options 现状,任意已登录用户
+  // 可见),响应恒 200(镜像 resolve-labels 静默省略哲学,唯一差异:本端点字段形状固定)。
   //
-  // 5 个 prisma.count 与 2 个 rbac.can 同一个 Promise.all 内并发(结构性零 N+1,无缓存/
-  // 无物化——当前规模即时算);activities 块无条件计算,registrations/attendanceSheets
-  // 两块算完后按权限结果决定是否挂进返回对象。
+  // 先并发解析两码的三源组织范围，再并发执行 6 个 count(结构性零 N+1,无缓存/无物化——
+  // 当前规模即时算)。GLOBAL / SUPER_ADMIN 不下推 activity where,保持旧全量计数逐字一致。
   async dashboardSummary(user: CurrentUserPayload): Promise<DashboardSummaryResponseDto> {
+    const [registrationScope, attendanceScope] = await Promise.all([
+      this.authz.getVisibleOrganizationScope(user, 'activity-registration.read.record'),
+      this.authz.getVisibleOrganizationScope(user, 'attendance.read.sheet'),
+    ]);
+    const registrationActivityScope = registrationScope.global
+      ? {}
+      : { activity: { organizationId: { in: registrationScope.organizationIds } } };
+    const attendanceActivityScope = attendanceScope.global
+      ? {}
+      : { activity: { organizationId: { in: attendanceScope.organizationIds } } };
+
     const [
-      canReadRegistrations,
-      canReadAttendanceSheets,
       registrationsPending,
       registrationsWaitlisted,
       attendanceSheetsPending,
@@ -109,20 +118,28 @@ export class MetaService {
       activitiesPublished,
       activitiesPendingCompletion,
     ] = await Promise.all([
-      this.rbac.can(user, 'activity-registration.read.record'),
-      this.rbac.can(user, 'attendance.read.sheet'),
       this.prisma.activityRegistration.count({
-        where: notDeletedWhere({ statusCode: DASHBOARD_REGISTRATION_STATUS_PENDING }),
+        where: notDeletedWhere({
+          statusCode: DASHBOARD_REGISTRATION_STATUS_PENDING,
+          ...registrationActivityScope,
+        }),
       }),
       this.prisma.activityRegistration.count({
-        where: notDeletedWhere({ statusCode: DASHBOARD_REGISTRATION_STATUS_WAITLISTED }),
+        where: notDeletedWhere({
+          statusCode: DASHBOARD_REGISTRATION_STATUS_WAITLISTED,
+          ...registrationActivityScope,
+        }),
       }),
       this.prisma.attendanceSheet.count({
-        where: notDeletedWhere({ statusCode: DASHBOARD_ATTENDANCE_SHEET_STATUS_PENDING }),
+        where: notDeletedWhere({
+          statusCode: DASHBOARD_ATTENDANCE_SHEET_STATUS_PENDING,
+          ...attendanceActivityScope,
+        }),
       }),
       this.prisma.attendanceSheet.count({
         where: notDeletedWhere({
           statusCode: DASHBOARD_ATTENDANCE_SHEET_STATUS_PENDING_FINAL_REVIEW,
+          ...attendanceActivityScope,
         }),
       }),
       this.prisma.activity.count({
@@ -137,7 +154,7 @@ export class MetaService {
     ]);
 
     return {
-      ...(canReadRegistrations
+      ...(registrationScope.hasPermission
         ? {
             registrations: {
               pending: registrationsPending,
@@ -145,7 +162,7 @@ export class MetaService {
             },
           }
         : {}),
-      ...(canReadAttendanceSheets
+      ...(attendanceScope.hasPermission
         ? {
             attendanceSheets: {
               pending: attendanceSheetsPending,
