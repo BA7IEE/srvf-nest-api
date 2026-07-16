@@ -2,6 +2,27 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+> 主题:**活动岗位与时段（审计刀 6 · 第四件 / 收官）**。范围 = F0 T0 冻结 #643 + F1 schema #644 + F2 Admin CRUD #645 + F3 报名/候补/App #646 + F4 打卡/考勤/草稿 #647 + F5 收口。关闭审计项 #2，并完成审计刀 6。新增 `activity_positions` + `ActivityRegistration.activityPositionId` 与第 54 个 migration；Admin 5 + App 1 共 6 个 endpoint（354→360）、1 个 controller（73→74）、6 个 BizCode（244→250）。Permission 206 / AuditLogEvent 113 / cron 2 / module 36 / role 9 恒定，0 新依赖、0 新字典、0 Activity 列；本轮不 bump / tag / release。
+
+### 行为变更对照（恰好 7 条）
+
+| # | 前 | 后 |
+|---:|---|---|
+| 1 | 活动只有 `Activity.capacity` 一层名额 | 活动有 live 岗位时名额真相源转为岗位，活动 list/detail 的 capacity 读侧按岗位求和（任一不限则整体 null）；无岗位活动仍用 Activity.capacity |
+| 2 | 候补队列只按 activityId 排 FIFO | 有岗位报名按 `(activityId,activityPositionId)` 独立 FIFO、排名与递补，跨岗位不借位；无岗位队列显式使用 `activityPositionId=null` |
+| 3 | App 签到/签退只按活动时段 ± 既有容差 | 报名有岗位且岗位配置时段时按岗位窗；无岗位/无独立岗位时段仍按活动窗，锁序与 policy 签名不变 |
+| 4 | 考勤 record 只按活动时段 ± 既有容差 | 有 `registrationId` 且报名有岗位时按岗位窗；临时记录或无岗位报名仍按活动窗 |
+| 5 | `attendance-sheet-draft.roleCode` 固定 `'member'` | 岗位报名自动带出岗位 `attendanceRoleCode`，无岗位仍 `'member'`；忘签退同步回退岗位 endAt / 活动 endAt，贡献值继续命中既有 activityType × roleCode 规则 |
+| 6 | 报名只判活动级性别要求 | 岗位 `genderRequirementCode` 作为第二层叠加闸，活动级与岗位级均须通过 |
+| 7 | 更新 Activity.capacity 可能触发扩容递补 | 活动有 live 岗位时 Activity.capacity 不再判闸或递补；无岗位活动的缩容守卫与扩容递补逐字保留 |
+
+- **数据与命名**:`ActivityPosition` 13 列，表名 `activity_positions`；活动 FK Restrict，报名 nullable FK + 索引；live `(activityId,name)` partial unique。既有报名 partial unique `(activityId,memberId) WHERE deletedAt IS NULL AND statusCode != 'cancelled'` 逐字不动，一人一活动仍至多一条活跃报名。全链字段/参数/relation 使用 `activityPositionId` / `activityPosition`，只有嵌套 URL 子资源段保留 `/positions`，与组织职务 `organization_positions` 明确隔离。
+- **API 与权限**:Admin `POST/GET/GET detail/PATCH/DELETE activities/:activityId/positions`，App `GET activities/:activityId/positions` 返回岗位余量与本人是否可报；报名三路 body additive `activityPositionId`，Admin 报名列表 additive 岗位摘要。岗位读复用活动 login-only；写复用 `activity.update.record` + activity ref。岗位写审计复用既有 `activity.publish`，以 `extra.operation=activityPosition.{create,update,softDelete}` 区分，**未新增** AuditLogEvent。
+- **容量、候补与并发**:岗位满员沿 W2 落 waitlisted，不拒绝；approve/cancel/promote 继续固定 Activity→Registration 锁序且 `FOR UPDATE` 仍锁 Activity。岗位名额 read-modify-write 基线在 Activity 锁后重读，再与同快照 passCount 计算 delta。同岗并发 approve 不超额、并发 cancel 不双递补、跨岗不递补、并发同值扩容不超额；变异验证把基线读移到锁前时明确失败（期望 pending=2，实际 4），恢复锁后重读即绿。
+- **时段、角色与边界**:岗位时段必须同空同有、`startAt < endAt` 且落在活动窗内；岗位绑定既有 `attendance_role` 字典 code。App 打卡、考勤 record 与草稿只接线岗位窗口/角色，不改 `ActivityCheckInPolicy`、ContributionRule、两级审批、评价、reconciliation / participation-summary / participation-overview 的度量口径。岗位维度度量分组本期明确不做，留审计刀 6 收官后按需另立项。
+
 ## v0.54.0 - 2026-07-16
 
 > 主题:**活动评价（审计刀 6 · 第三件）**。范围 = F0 冻结 #635 + F1 schema #636 + F2 App 自助面 #637 + F3 Admin 面 #638 + F4 收口 #639,关闭审计项 #1。纯 additive 新增 App self PUT/GET + Admin list/summary 共 4 个 endpoint（350→354）、2 个 controller（71→73）、1 个 module（35→36）与第 53 个 migration；BizCode 240→244。Permission 206 / AuditLogEvent 113 / cron 2 / 内置角色 9 恒定，0 新依赖，**0 既有行为变更**；仅 activity `participation-summary` additive 增加 `feedback:{count,avgRating}`。

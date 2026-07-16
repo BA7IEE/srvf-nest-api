@@ -181,7 +181,7 @@ describe('activity registration waitlist', () => {
         genderCode,
         birthDate: new Date('1990-01-01T00:00:00.000Z'),
         documentTypeCode: 'id_card',
-        documentNumber: `position-gender-${sequence}`,
+        documentNumber: `activity-position-gender-${sequence}`,
         mobile: `139${String(sequence).padStart(8, '0')}`,
         joinedDate: new Date('2020-01-01T00:00:00.000Z'),
         joinSourceCode: 'recommend',
@@ -194,9 +194,9 @@ describe('activity registration waitlist', () => {
     const activityId = await createActivity(99, 'three-create-paths');
     const activityPositionAId = await createActivityPosition(activityId, null, '岗位-A');
     const activityPositionBId = await createActivityPosition(activityId, null, '岗位-B');
-    const adminMemberId = await createMember('position-admin');
-    const self = await createMemberUser('position-self');
-    const appSelf = await createMemberUser('position-app');
+    const adminMemberId = await createMember('activity-position-admin');
+    const self = await createMemberUser('activity-position-self');
+    const appSelf = await createMemberUser('activity-position-app');
 
     await expect(
       registrations.create(activityId, { memberId: adminMemberId }, admin, AUDIT_META),
@@ -250,7 +250,7 @@ describe('activity registration waitlist', () => {
   });
 
   it('活动性别闸先判、岗位性别闸叠加，二者均通过才创建', async () => {
-    const activityId = await createActivity(99, 'position-gender-gates');
+    const activityId = await createActivity(99, 'activity-position-gender-gates');
     await prisma.activity.update({
       where: { id: activityId },
       data: { genderRequirementCode: 'female' },
@@ -267,9 +267,9 @@ describe('activity registration waitlist', () => {
       '仅女性岗位',
       'female',
     );
-    const maleMemberId = await createMember('position-gender-male');
-    const femaleForMaleActivityPositionId = await createMember('position-gender-position-fail');
-    const femaleMemberId = await createMember('position-gender-pass');
+    const maleMemberId = await createMember('activity-position-gender-male');
+    const femaleForMaleActivityPositionId = await createMember('activity-position-gender-fail');
+    const femaleMemberId = await createMember('activity-position-gender-pass');
     await createMemberProfile(maleMemberId, 'male');
     await createMemberProfile(femaleForMaleActivityPositionId, 'female');
     await createMemberProfile(femaleMemberId, 'female');
@@ -304,26 +304,26 @@ describe('activity registration waitlist', () => {
   });
 
   it('岗位满员按岗位分别排位；App 岗位余量为 0 仍 canRegister；Activity capacity 读侧派生岗位和', async () => {
-    const activityId = await createActivity(99, 'position-capacity-read');
+    const activityId = await createActivity(99, 'activity-position-capacity-read');
     const activityPositionAId = await createActivityPosition(activityId, 1, '读侧-A');
     const activityPositionBId = await createActivityPosition(activityId, 2, '读侧-B');
     await seedRegistration(
       activityId,
-      await createMember('position-pass-a'),
+      await createMember('activity-position-pass-a'),
       'pass',
       undefined,
       activityPositionAId,
     );
     await seedRegistration(
       activityId,
-      await createMember('position-pass-b1'),
+      await createMember('activity-position-pass-b1'),
       'pass',
       undefined,
       activityPositionBId,
     );
     await seedRegistration(
       activityId,
-      await createMember('position-pass-b2'),
+      await createMember('activity-position-pass-b2'),
       'pass',
       undefined,
       activityPositionBId,
@@ -331,21 +331,21 @@ describe('activity registration waitlist', () => {
     const tiedAt = new Date('2026-07-16T01:00:00.000Z');
     const waitA1 = await seedRegistration(
       activityId,
-      await createMember('position-wait-a1'),
+      await createMember('activity-position-wait-a1'),
       'waitlisted',
       tiedAt,
       activityPositionAId,
     );
     const waitA2 = await seedRegistration(
       activityId,
-      await createMember('position-wait-a2'),
+      await createMember('activity-position-wait-a2'),
       'waitlisted',
       new Date('2026-07-16T02:00:00.000Z'),
       activityPositionAId,
     );
     const waitB1 = await seedRegistration(
       activityId,
-      await createMember('position-wait-b1'),
+      await createMember('activity-position-wait-b1'),
       'waitlisted',
       tiedAt,
       activityPositionBId,
@@ -361,7 +361,7 @@ describe('activity registration waitlist', () => {
     expect(waitlistById.get(waitA2.id)).toBe(2);
     expect(waitlistById.get(waitB1.id)).toBe(1);
 
-    const browsingMemberId = await createMember('position-browser');
+    const browsingMemberId = await createMember('activity-position-browser');
     const appPositionItems = await appActivities.listPositionsForMember(
       activityId,
       browsingMemberId,
@@ -388,26 +388,26 @@ describe('activity registration waitlist', () => {
   });
 
   it('同岗位 pass 取消只递补同岗队首，跨岗位候补保持不动', async () => {
-    const activityId = await createActivity(99, 'position-cancel-scope');
+    const activityId = await createActivity(99, 'activity-position-cancel-scope');
     const activityPositionAId = await createActivityPosition(activityId, 1, '取消-A');
     const activityPositionBId = await createActivityPosition(activityId, 1, '取消-B');
     const passA = await seedRegistration(
       activityId,
-      await createMember('position-cancel-pass-a'),
+      await createMember('activity-position-cancel-pass-a'),
       'pass',
       undefined,
       activityPositionAId,
     );
     const waitA = await seedRegistration(
       activityId,
-      await createMember('position-cancel-wait-a'),
+      await createMember('activity-position-cancel-wait-a'),
       'waitlisted',
       new Date('2026-07-16T01:00:00.000Z'),
       activityPositionAId,
     );
     const waitB = await seedRegistration(
       activityId,
-      await createMember('position-cancel-wait-b'),
+      await createMember('activity-position-cancel-wait-b'),
       'waitlisted',
       new Date('2026-07-16T00:00:00.000Z'),
       activityPositionBId,
@@ -429,13 +429,13 @@ describe('activity registration waitlist', () => {
   });
 
   it('同岗位并发 approve 由 Activity 锁串行化，pass 不超过岗位 capacity', async () => {
-    const activityId = await createActivity(99, 'position-concurrent-approve');
+    const activityId = await createActivity(99, 'activity-position-concurrent-approve');
     const activityPositionId = await createActivityPosition(activityId, 1, '并发审批');
     const pending = await Promise.all(
       [1, 2].map(async (n) =>
         seedRegistration(
           activityId,
-          await createMember(`position-approve-${n}`),
+          await createMember(`activity-position-approve-${n}`),
           'pending',
           undefined,
           activityPositionId,
@@ -458,13 +458,13 @@ describe('activity registration waitlist', () => {
   });
 
   it('同岗位并发取消两个 pass 不会双递补同一候补', async () => {
-    const activityId = await createActivity(99, 'position-concurrent-cancel');
+    const activityId = await createActivity(99, 'activity-position-concurrent-cancel');
     const activityPositionId = await createActivityPosition(activityId, 2, '并发取消');
     const pass = await Promise.all(
       [1, 2].map(async (n) =>
         seedRegistration(
           activityId,
-          await createMember(`position-cancel-pass-${n}`),
+          await createMember(`activity-position-cancel-pass-${n}`),
           'pass',
           undefined,
           activityPositionId,
@@ -473,7 +473,7 @@ describe('activity registration waitlist', () => {
     );
     const waiting = await seedRegistration(
       activityId,
-      await createMember('position-cancel-single-wait'),
+      await createMember('activity-position-cancel-single-wait'),
       'waitlisted',
       undefined,
       activityPositionId,
@@ -503,11 +503,11 @@ describe('activity registration waitlist', () => {
   });
 
   it('岗位 capacity 并发同值调大只按锁后真实 delta 递补；Activity capacity update 不递补', async () => {
-    const activityId = await createActivity(1, 'position-concurrent-capacity');
+    const activityId = await createActivity(1, 'activity-position-concurrent-capacity');
     const activityPositionId = await createActivityPosition(activityId, 1, '并发扩容');
     await seedRegistration(
       activityId,
-      await createMember('position-capacity-pass'),
+      await createMember('activity-position-capacity-pass'),
       'pass',
       undefined,
       activityPositionId,
@@ -516,7 +516,7 @@ describe('activity registration waitlist', () => {
       [1, 2, 3, 4].map(async (n) =>
         seedRegistration(
           activityId,
-          await createMember(`position-capacity-q${n}`),
+          await createMember(`activity-position-capacity-q${n}`),
           'waitlisted',
           new Date(`2026-07-16T0${n}:00:00.000Z`),
           activityPositionId,

@@ -26,7 +26,7 @@
 |---|---|---|
 | [`src/modules/activities/`](../src/modules/activities/) | `Activity` / `ActivityPosition` | 流程发起点与活动内嵌岗位；岗位不新建 NestJS module，与组织职务 `organization_positions` 无关 |
 | [`src/modules/activity-registrations/`](../src/modules/activity-registrations/) | `ActivityRegistration` | 报名 5 态(`pending/pass/reject/cancelled/waitlisted`);活动 ↔ 队员 关联 |
-| [`src/modules/attendances/`](../src/modules/attendances/) | `AttendanceSheet` / `AttendanceRecord` / `ActivityCheckIn` | 考勤、终审、贡献值落地；`ActivityCheckIn` 是 append-only 打卡证据，F2 提供 canonical App self 写/读，F3 提供 canonical Admin 证据列表与只读考勤草稿 |
+| [`src/modules/attendances/`](../src/modules/attendances/) | `AttendanceSheet` / `AttendanceRecord` / `ActivityCheckIn` | 考勤、终审、贡献值落地；`ActivityCheckIn` 是 append-only 打卡证据，F2 提供 canonical App self 写/读，F3 提供 canonical Admin 证据列表与只读考勤草稿，活动岗位 F4 把岗位时段/角色接入打卡、record 与草稿 |
 | [`src/modules/contribution-rules/`](../src/modules/contribution-rules/) | `ContributionRule` | 字典码键 lookup;配置实体而非流程实体 |
 | [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) | `ActivityFeedback` | 已完结活动评价；App 以 approved Sheet 下 live Record 判资格并锁本人；Admin 实名 list/summary；单次 aggregate 接入 activity participation-summary |
 
@@ -178,6 +178,11 @@ Certificate (不在 participation 图内)
 - **ActivityCheckIn F3**:Admin list/draft 只读 `Activity`、当前 pass `ActivityRegistration`、
   `ActivityCheckIn` 与 Member 摘要；两端点各固定 4 次业务查询（authz 查询分开计），不写
   `ActivityCheckIn`、Sheet、Record，也不扩散任何 cross-aggregate write。
+- **ActivityPosition F4 打卡/考勤接线**:App 打卡仍按 Activity → 当前 pass Registration 取锁，
+  只在锁后 authoritative registration relation 选择岗位窗；`ActivityCheckInPolicy` 签名不变。
+  Sheet submit/edit 的 registration 批量 IN 预取同步带岗位窗，按 record 逐条选择；草稿同一 relation
+  带出岗位 `attendanceRoleCode/endAt`。无岗位或无独立岗位时段回落活动窗 / `member`，不新增 N+1、
+  不改 ContributionRule 或任何度量口径。
 - **ActivityFeedback F2**:App PUT 在模块自有事务内固定读 Activity → approved attendance exists →
   live feedback，再 create/update `ActivityFeedback`；GET 同样固定三读、零写。不得把评价逻辑混入
   activities / attendances / activity-registrations god-service。
