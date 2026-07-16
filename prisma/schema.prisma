@@ -801,6 +801,7 @@ model Activity {
   publisher         User?                  @relation("ActivityPublisher", fields: [publishedBy], references: [id], onDelete: Restrict)
   canceller         User?                  @relation("ActivityCanceller", fields: [cancelledBy], references: [id], onDelete: Restrict)
   registrations     ActivityRegistration[]
+  activityPositions ActivityPosition[]
   activityCheckIns  ActivityCheckIn[]
   activityFeedbacks ActivityFeedback[]
   attendanceSheets  AttendanceSheet[]
@@ -814,6 +815,40 @@ model Activity {
   @@index([isPublicRegistration])
 }
 
+// ===== 活动岗位与时段 F1:activity_positions =====
+//
+// 活动岗位是 activities 模块内的嵌套子资源，与 organization_positions 组织职务无关。
+// attendanceRoleCode / genderRequirementCode 沿字典 code 业务校验，不加 FK。
+// live (activityId, name) partial unique 由 migration.sql 末尾手写；
+// Prisma DSL 6.x 无法表达 WHERE "deletedAt" IS NULL。
+// goal 明确要求物理表名 activity_positions，本模型使用 @@map 固定该名称。
+model ActivityPosition {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  activityId            String
+  name                  String
+  attendanceRoleCode    String
+  capacity              Int?
+  startAt               DateTime?
+  endAt                 DateTime?
+  genderRequirementCode String?
+  description           String?
+  sortOrder             Int       @default(0)
+
+  activity      Activity               @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  registrations ActivityRegistration[]
+
+  @@index([activityId])
+  @@index([attendanceRoleCode])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([sortOrder])
+  @@map("activity_positions")
+}
+
 // ===== V2 第一阶段批次 3:activity_registrations =====
 //
 // statusCode 字典 4 态(Q-D15 v0.3):pending / pass / reject / cancelled
@@ -823,6 +858,7 @@ model Activity {
 // - memberId           → Member.id             (NOT NULL)
 // - reviewedBy         → User.id               (可空,沿 Q-S4)
 // - cancelledByUserId  → User.id               (可空,Q-D16 v0.3)
+// - activityPositionId → activity_positions.id (可空,无岗位活动 / 存量报名)
 //
 // 业务唯一约束(partial unique;Q-D4 + Q-D17 v1.2 修订):
 // - (activityId, memberId) WHERE deleted_at IS NULL AND status_code != 'cancelled'
@@ -831,7 +867,7 @@ model Activity {
 //
 // extras Json?(D12 字段位预留)。
 //
-// 索引:6 单列(activityId / memberId / statusCode / deletedAt / createdAt / registeredAt)。
+// 索引:7 单列(activityId / activityPositionId / memberId / statusCode / deletedAt / createdAt / registeredAt)。
 
 model ActivityRegistration {
   id        String    @id @default(cuid())
@@ -839,14 +875,15 @@ model ActivityRegistration {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  activityId   String
-  memberId     String
-  statusCode   String
-  registeredAt DateTime  @default(now())
-  reviewedBy   String?
-  reviewedAt   DateTime?
-  reviewNote   String?
-  extras       Json?
+  activityId         String
+  activityPositionId String?
+  memberId           String
+  statusCode         String
+  registeredAt       DateTime  @default(now())
+  reviewedBy         String?
+  reviewedAt         DateTime?
+  reviewNote         String?
+  extras             Json?
 
   // v0.3 新增 取消留痕(Q-D16)
   cancelledByUserId String?
@@ -854,6 +891,7 @@ model ActivityRegistration {
   cancelReason      String?
 
   activity          Activity           @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  activityPosition  ActivityPosition?  @relation(fields: [activityPositionId], references: [id], onDelete: Restrict)
   member            Member             @relation(fields: [memberId], references: [id], onDelete: Restrict)
   reviewer          User?              @relation("RegistrationReviewer", fields: [reviewedBy], references: [id], onDelete: Restrict)
   canceller         User?              @relation("RegistrationCanceller", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
@@ -861,6 +899,7 @@ model ActivityRegistration {
   activityCheckIns  ActivityCheckIn[]
 
   @@index([activityId])
+  @@index([activityPositionId])
   @@index([memberId])
   @@index([statusCode])
   @@index([deletedAt])

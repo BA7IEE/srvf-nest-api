@@ -134,33 +134,74 @@ describe('Admin activity GPS check-in evidence and attendance draft (F3)', () =>
     );
     [memberAId, memberBId, memberCId] = members.map((member) => member.id);
 
+    // Promise.all 并发创建不会保证数据库默认 registeredAt 或 cuid 的相对顺序。
+    // 草稿接口契约按 registeredAt ASC + id ASC 稳定排序，fixture 显式错开时间，
+    // 避免把“数组提交顺序”误当成数据库排序事实。
+    const registrationTimes = [1, 2, 3, 4, 5, 6, 7].map(
+      (minute) => new Date(`2026-07-15T00:1${minute}:00.000Z`),
+    );
     const registrations = await Promise.all([
       prisma.activityRegistration.create({
-        data: { activityId, memberId: members[0].id, statusCode: 'pass' },
+        data: {
+          activityId,
+          memberId: members[0].id,
+          statusCode: 'pass',
+          registeredAt: registrationTimes[0],
+        },
         select: { id: true },
       }),
       prisma.activityRegistration.create({
-        data: { activityId, memberId: members[1].id, statusCode: 'pass' },
+        data: {
+          activityId,
+          memberId: members[1].id,
+          statusCode: 'pass',
+          registeredAt: registrationTimes[1],
+        },
         select: { id: true },
       }),
       prisma.activityRegistration.create({
-        data: { activityId, memberId: members[2].id, statusCode: 'pass' },
+        data: {
+          activityId,
+          memberId: members[2].id,
+          statusCode: 'pass',
+          registeredAt: registrationTimes[2],
+        },
         select: { id: true },
       }),
       prisma.activityRegistration.create({
-        data: { activityId, memberId: members[3].id, statusCode: 'pass' },
+        data: {
+          activityId,
+          memberId: members[3].id,
+          statusCode: 'pass',
+          registeredAt: registrationTimes[3],
+        },
         select: { id: true },
       }),
       prisma.activityRegistration.create({
-        data: { activityId, memberId: members[4].id, statusCode: 'cancelled' },
+        data: {
+          activityId,
+          memberId: members[4].id,
+          statusCode: 'cancelled',
+          registeredAt: registrationTimes[4],
+        },
         select: { id: true },
       }),
       prisma.activityRegistration.create({
-        data: { activityId, memberId: members[5].id, statusCode: 'pass' },
+        data: {
+          activityId,
+          memberId: members[5].id,
+          statusCode: 'pass',
+          registeredAt: registrationTimes[5],
+        },
         select: { id: true },
       }),
       prisma.activityRegistration.create({
-        data: { activityId: outsideActivityId, memberId: members[6].id, statusCode: 'pass' },
+        data: {
+          activityId: outsideActivityId,
+          memberId: members[6].id,
+          statusCode: 'pass',
+          registeredAt: registrationTimes[6],
+        },
         select: { id: true },
       }),
     ]);
