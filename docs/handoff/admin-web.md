@@ -43,6 +43,7 @@
 | 区块 | 端点 |
 |---|---|
 | 活动头部 + 发布/取消/完结 | `GET /api/admin/v1/activities/:id`(含派生 `phase`) · `PATCH .../:id/publish`(body 必填 `{requiresInsuranceConfirmed:true}`) · `PATCH .../:id/cancel`(仅 draft|published) · `POST .../:id/complete`(**唯一**完结通路 published→completed) |
+| 岗位 tab | `POST/GET /api/admin/v1/activities/:activityId/positions` · `GET/PATCH/DELETE .../positions/:activityPositionId`；读仅登录，写复用 `activity.update.record` + activity scope |
 | 报名 tab | `GET /api/admin/v1/activities/:id/registrations?statusCode=` · `POST` 代报名 · `PATCH .../:rid/{approve,reject,cancel}` · `POST .../:rid/reopen`(v0.40.0 审批后悔药 reject→pending)· `PATCH .../{bulk-approve,bulk-reject}`(1–100 条逐项结果) · `GET .../export`(CSV) |
 | 考勤 tab | `GET /api/admin/v1/activities/:id/attendance-sheets?statusCode=` · `POST` 提交单据 |
 | GPS 打卡证据 / 考勤草稿 | `GET /api/admin/v1/activities/:id/check-ins?page=&pageSize=` · `GET .../:id/attendance-sheet-draft`(只读、不落 Sheet/Record) |
@@ -58,6 +59,8 @@
 > **活动 GPS 打卡 → 考勤草稿(F3)**:`check-ins` 与 `attendance-sheet-draft` 都只提供安全复核视图，**不返回原始 longitude/latitude 或 accuracy**。前端读取草稿后在本地结合 `flags` 编辑 `records`，再向既有 `POST /api/admin/v1/activities/:id/attendance-sheets` 提交 `{ "records": editedRecords }`；两条 GET 需 `attendance.read.sheet`，真正提交另需 `attendance.create.sheet`，读权不等于创建权。`absentRegistrations` 仅提示当前 pass 且零打卡的报名，不能伪造成 record；`records=[]` 时不要提交；超过 200 条按既有 `ArrayMaxSize(200)` 分批创建多个 Sheet，不能静默截断。
 
 > **活动评价(F3–F4)**:`feedbacks` 默认按 `updatedAt DESC,id DESC` 分页，item 精确展示 `memberNo/displayName/rating/comment/createdAt/updatedAt`；`feedback-summary` 返回评价人数、两位均分（无评价为 null）、固定 1～5 星五桶和四位评价率。评价率分母是 approved Sheet 内未软删考勤记录的 distinct member 数，分母为 0 时为 0。`participation-summary` 尾部 additive `feedback:{count,avgRating}` 与完整汇总同源；不要在前端自行重算，也不要把 App 评价暴露给其他队员。F4 已用真实 DB E2E 对账两种汇总并锁定实名字段。
+
+> **活动岗位(F2)**:创建/更新 body 白名单为 `name/attendanceRoleCode/capacity/startAt/endAt/genderRequirementCode/description/sortOrder`；`capacity=null` 表示不限，岗位时段必须同空同有且落在活动窗内。列表固定 `sortOrder ASC,createdAt ASC,id ASC`。同活动 live 重名返 `20003`，软删/跨活动岗位详情统一 `20002`，存在 pending/pass/waitlisted 报名时删除返 `20031`。前端路由参数必须使用全称 `activityPositionId`，不要复用组织职务的 `positionId` 命名。
 
 > ⚠️ **报名审批生命周期新规(v0.40.0 参与域生命周期收口)**:
 > ① **未发布/取消/完结/已结束活动禁批报名** —— `approve` 仅在 activity=published 且 `endAt >= now` 时允许；draft 返 `20126`，cancelled/completed/已结束返 `20124`。`reject` / `cancel` 仍可用于清理残留队列。

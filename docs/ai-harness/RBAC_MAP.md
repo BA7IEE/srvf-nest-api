@@ -109,6 +109,8 @@
 > 2026-07-16 活动评价 F2 戳：**权限事实零变化**（权限码 **206** / 内置角色及绑定不动）；endpoint **350→352**（App self PUT/GET feedback）；controller **71→72**（新增 `AppActivityFeedbacksController`）；App endpoint **36→38**。两路只走 JwtAuthGuard + AppIdentityResolver，where 锁本人 memberId；正常路径 Activity + approved attendance exists + live feedback 固定三读，PUT 只写自有表；0 RBAC / 0 audit / 0 cron。module 36 / migration 53 / BizCode **240→244**。
 > 2026-07-16 活动评价 F3 戳：**权限事实零变化**（权限码 **206** / 内置角色及绑定不动）；endpoint **352→354**（Admin feedbacks + feedback-summary）；controller **72→73**（新增 `AdminActivityFeedbacksController`）。两路复用 `attendance.read.sheet`，`AuthzService.explain` 带 `{type:'activity',id}` ref，`resource_not_found` 仅在全局 `rbac.can` 持码时回退；列表/汇总业务查询固定 3/4，participation-summary additive 复用单次 aggregate。module 36 / migration 53 / BizCode 244 / AuditLogEvent 113 / cron 2 均不变。
 
+> 2026-07-16 活动岗位 F2 戳：**权限码 206 恒定**；endpoint **354→359**（Admin 岗位 create/list/detail/update/delete）；controller **73→74**（新增 `AdminActivityPositionsController`）。list/detail 复用活动读的 `[auth]` login-only；create/update/delete 复用 `activity.update.record` 并带 `{type:'activity',id:activityId}` ref，`resource_not_found` 仅在全局 `rbac.can` 持码时回退。0 新权限码 / 0 seed / 0 角色绑定变化。
+
 ---
 
 ## 1. 双轨架构现状(一句话版)
@@ -120,7 +122,7 @@
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
 - **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。`RbacCacheService` 只缓存 GLOBAL 权限解析(TTL 1800s,三档失效)，不是身份缓存；`AuthzService` 当前不缓存判权/可见范围结果。
 
-## 2. controller × 鉴权模式对照(73 个 controller class)
+## 2. controller × 鉴权模式对照(74 个 controller class)
 
 ### 2.1 R 模式 — Service 层 `rbac.can()`(管理面,已收紧)
 
@@ -161,7 +163,7 @@
 | `admin/v1/members/:memberId/profile`(Slow-4 T2;§F&A-3 敏感分级) | `member-profile.*.record`(3;入口 `read.record`)+ `member-profile.read.sensitive`(documentNumber/mobile 明文闸,无则掩码) |
 | `admin/v1/members/:memberId/emergency-contacts`(Slow-4 T2;刀D 出口按 `emergency-contact.read.sensitive` 分级掩码) | `emergency-contact.*.record`(4) |
 | `admin/v1/members/:memberId/certificates`(Slow-4 T2) | `certificate.*.record`(6;list/detail/qualification-flag 共用 read) |
-| `admin/v1/activities`(Slow-4 T3;v0.40.0 +complete;审计刀 5 F1/F2) | `activity.*.record`(6,6 个写端点含 `:id/complete`;**列表/详情无码仅登录 `[auth]`**;F1/A6 `GET /options` 同样 `[auth]`;list 增强过滤/批量 stats)。审计刀 5 新独立 `AdminActivityParticipationController` 两读端点 `:activityId/{reconciliation,participation-summary}` **同时**逐项判 `attendance.read.sheet` + `activity-registration.read.record`，均带 `{type:'activity',id}` ref；reconciliation 仅 completed；0 新码 |
+| `admin/v1/activities`(Slow-4 T3;v0.40.0 +complete;审计刀 5 F1/F2;活动岗位 F2) | `activity.*.record`(6；活动主资源 6 个写端点含 `:id/complete`)；**活动列表/详情/options 与岗位 list/detail 均无码仅登录 `[auth]`**。岗位 create/update/delete 复用 `activity.update.record` + activity ref；审计刀 5 `AdminActivityParticipationController` 两读端点 `:activityId/{reconciliation,participation-summary}` 同时逐项判 `attendance.read.sheet` + `activity-registration.read.record`，均带 `{type:'activity',id}` ref；0 新码 |
 | `admin/v1/activities/:activityId/{check-ins,attendance-sheet-draft}`(活动自助 GPS 签到 F3；`AdminActivityCheckInsController`) | `attendance.read.sheet`(2 个只读端点；均由 Admin application service 调 `AuthzService.explain` 并带 `{type:'activity',id:activityId}` ref；`resource_not_found` 仅在全局 `rbac.can` 为真时回退后继续真实 Activity 存在性检查；0 新码) |
 | `admin/v1/activities/:activityId/registrations`(Slow-4 T3;v0.40.0 +reopen;审计刀 5 F6) | `activity-registration.*.record`(6;list/export 共用 read;`:id/reopen` = `reopen.record`;新增字面段 `bulk-approve`/`bulk-reject` 分别复用 approve/reject 码，逐 id 点判 + 独立事务，失败入结果不回滚成功项) |
 | `admin/v1/registrations`(跨轴只读 2026-06-23) | `activity-registration.read.record`(1;跨活动报名横扫,审批工作台,复用 read 零新码) |

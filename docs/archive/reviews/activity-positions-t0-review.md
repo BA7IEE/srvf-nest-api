@@ -287,7 +287,10 @@ Activity → Registration 锁序。
 
 ### 6.5 audit
 
-不新增 AuditLogEvent。岗位 POST / PATCH / DELETE 复用现有 `activity.update` 事件，在 activity 资源下
+> 2026-07-16 维护者确认修正：本节原写 `activity.update` 为不存在的事件名笔误，代码事实与执行口径
+> 固定为既有伞事件 `activity.publish`，通过 `extra.operation` 区分岗位写操作。
+
+不新增 AuditLogEvent。岗位 POST / PATCH / DELETE 复用现有 `activity.publish` 事件，在 activity 资源下
 记录 `activityPositionId` 与岗位 before / after，禁止记录其他报名人信息或任何凭证字段。
 
 ## 7. 报名接线
