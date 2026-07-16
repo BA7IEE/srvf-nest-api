@@ -52,6 +52,13 @@ import { assertTestDatabaseUrl } from './test-db';
 //   - activity_feedbacks.memberId → Member.id
 // 作为参与域子表放在 Activity / Member 之前，防跨 spec 残留评价污染聚合与资格断言。
 //
+// 活动岗位与时段 F1 追加(2026-07-16):activity_positions(物理小写名,goal 指定 `@@map`);
+// 两条 FK 均 Restrict:
+//   - activity_positions.activityId → Activity.id
+//   - ActivityRegistration.activityPositionId → activity_positions.id(nullable)
+// 放在 ActivityRegistration 之后、Activity 之前；虽 CASCADE 可兜底，仍显式列出以防跨 spec
+// 残留岗位污染后续容量、重名与删除守卫断言。
+//
 // V2 第一阶段批次 4-A 追加(2026-05-12):ContributionRule 1 张表;
 // 仅持有 3 条审计 FK(createdByUserId / updatedByUserId / deletedByUserId)指向 User,
 // **不被任何其它表 FK 引用**;真实业务关联 activityTypeCode / attendanceRoleCode 是字典 code 字符串,
@@ -147,6 +154,6 @@ export async function resetDb(app: INestApplication): Promise<void> {
 
   const prisma = app.get(PrismaService);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "organization_position_role_policies", "role_bindings", "role_permissions", "roles", "permissions", "audit_logs", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "realname_verification_settings", "recruitment_applications", "recruitment_cycles", "recruitment_ocr_daily_counters", "team_join_applications", "team_join_cycles", "notification_reads", "notifications", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "team_insurance_coverages", "member_insurances", "team_insurance_policies", "ContributionRule", "activity_check_ins", "activity_feedbacks", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "member_organization_memberships", "organization_supervision_assignments", "organization_position_assignments", "organization_position_rules", "organization_positions", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "organization_position_role_policies", "role_bindings", "role_permissions", "roles", "permissions", "audit_logs", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "realname_verification_settings", "recruitment_applications", "recruitment_cycles", "recruitment_ocr_daily_counters", "team_join_applications", "team_join_cycles", "notification_reads", "notifications", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "attachments", "attachment_type_configs", "team_insurance_coverages", "member_insurances", "team_insurance_policies", "ContributionRule", "activity_check_ins", "activity_feedbacks", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "activity_positions", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "User", "member_organization_memberships", "organization_supervision_assignments", "organization_position_assignments", "organization_position_rules", "organization_positions", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }
