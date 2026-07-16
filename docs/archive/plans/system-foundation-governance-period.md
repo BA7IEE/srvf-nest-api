@@ -1,5 +1,7 @@
 # 系统底座治理期入口(System Foundation Governance)
 
+> **已退场归档**(2026-07-17,Harness 2.0 PR7;沿本文 §7 约定):治理期使命已随 v0.16+ 各批次与 Harness 2.0 完成;"暂停业务功能开发"等约束**不再生效**,当前约束入口 = 根 `AGENTS.md` + `docs/current-state.md`。本文自归档起为历史证据。
+
 > **状态**:active(2026-05-23 启动)
 > **定位**:SRVF 当前治理期的总入口 + 业务需求重新碰撞前置入口。
 > **本文不是**:架构铁律(见 [`AGENTS.md`](../AGENTS.md))、当前事实(见 [`current-state.md`](current-state.md))、流程制度(见 [`process.md`](process.md))。

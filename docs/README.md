@@ -10,12 +10,12 @@
 | 文件 | 用途 |
 |---|---|
 | [`current-state.md`](./current-state.md) | **当前事实唯一入口**:版本、open PR、最新 release、surface 状态、当前债务、不做清单 |
-| [`system-foundation-governance.md`](./system-foundation-governance.md) | **治理期入口 / 需求碰撞前置入口**(2026-05-23 启动):本阶段暂停项、G-1 ~ G-12 顶层规则缺口摘要、RCT 需求碰撞前置模板、Phase G0 → G4 治理路线图、退场条件 |
 | [`process.md`](./process.md) | 开发流程与协作制度:开工 checklist、PR 五档分级、release 收口、AI 协作纪律 |
 | [`api-surface-policy.md`](./api-surface-policy.md) | API surface 长期边界(active 单一权威源):Mobile App / Admin Legacy / Root Legacy 三层 + 新增/迁移规则;原设计期顶层规范 `api-client-boundary.md` 已归档至 `archive/plans/api-client-boundary-design-period.md` |
 | [`participation-bounded-context.md`](./participation-bounded-context.md) | Participation 业务上下文边界图:`activities` / `activity-registrations` / `attendances` / `contribution-rules` 4 模块的状态链条、跨模块耦合、API surface 与 governance;**不**含 `certificates`(独立 member-qualifications 上下文) |
 | [`attachment-config-boundary.md`](./attachment-config-boundary.md) | 附件配置三表(`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig`)的 override-with-default 边界说明:为什么不合表、为什么不抽 facade、新增规则落点 |
 | [`architecture-boundary.md`](./architecture-boundary.md) | 架构边界铁律 / active architecture boundary policy for Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect extraction decisions;承接 `AGENTS.md §19.7 D-7` |
+| [`reference/`](./reference/) | **Harness 2.0 细则层(触碰才读)**:承接 harness v1 AGENTS 教学细则的九篇(命名与 DTO / 返回与错误码 / Swagger / auth-token / 软删与事务 / 角色保护 / 配置 / 测试纪律 / API 边界与决策锁全文);恒读入口与索引在根 `AGENTS.md` §6 |
 | [`srvf-foundation-baseline.md`](./srvf-foundation-baseline.md) | V2 派生项目基线规范(BizCode 段位 / 命名 / DTO / 软删除 / 验收门槛 13 项) |
 | [`V2红线与复活路径.md`](./V2红线与复活路径.md) | V2 五档红线 A/B/C/D/E 与解锁触发条件 |
 | [`security.md`](./security.md) | 已落地安全策略、软删除策略、token 吊销升级路径 |
@@ -28,7 +28,7 @@
 | [`ops/sms-data-retention-sop.md`](./ops/sms-data-retention-sop.md) | SMS 数据 retention 手动清理 SOP(验证码 90 天 / 发送流水 1 年,数值可改;维护者手动 psql,**不**引入 cron 清理;SQL 已 app_test 实测冻结) |
 | [`ops/wechat-mini-production-rollout-checklist.md`](./ops/wechat-mini-production-rollout-checklist.md) | 运维侧微信小程序登录真实通道上线 SOP(注册小程序 → AppID/AppSecret → admin 录凭证〔仅 SA〕→ DevStub 全链 → 真实验收;系统侧已"正确但休眠") |
 | [`ops/scoped-authz-go-live-checklist.md`](./ops/scoped-authz-go-live-checklist.md) | 维护者/运营侧「组织职务 + 分管 + scoped RBAC + 统一鉴权」上线初始化 SOP(一次性动作:部署迁移+seed → 建管理账号 → 录入队员 → 公告 rows 导入 → BD-2 终审绑定 → authz/explain 验收 → env 项确认) |
-| [`ai-harness/README.md`](./ai-harness/README.md) | **AI Harness 操作层单页**(derived,**非规则源**,与权威源冲突时让步;必读三件套之一):铁律速查表 / AI 修改三档 + 触发即停 / 全仓读写分区;同目录另两文件 = `RBAC_MAP.md`(权限地图,`docs:rbacmap:check` 守护)+ `NEXT_TASKS.md`(后续任务清单);2026-06-10 Review 冻结档见 `archive/ai-harness/` |
+| [`ai-harness/README.md`](./ai-harness/README.md) | **AI Harness 操作页**(derived,非规则源;规则入口在根 `AGENTS.md`):开工与守护命令 / 定位路径;同目录 `codex-review-sop.md`(跨模型评审 SOP)+ `RBAC_MAP.md`(权限地图,`docs:rbacmap:check` 守护)+ `NEXT_TASKS.md`;2026-06-10 Review 冻结档见 `archive/ai-harness/`,harness v1 快照见 `archive/harness-v1/` |
 
 V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威源**):
 

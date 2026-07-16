@@ -81,7 +81,7 @@ SRVF/
 
 ## 双仓库协作规则占位（G-10 / Phase G2）
 
-> **本节是占位**，不展开完整规则。完整双仓库协作规则归 [`system-foundation-governance.md §4`](system-foundation-governance.md) G-10 缺口，按 Phase G2 优先级 P2 单独立项落地。
+> **本节是占位**，不展开完整规则。完整双仓库协作规则归 [`archive/plans/system-foundation-governance-period.md §4`](archive/plans/system-foundation-governance-period.md)(治理期已退场归档) G-10 缺口，按 Phase G2 优先级 P2 单独立项落地。
 
 - 本文档当前**仅**记录本仓库（`<repo-root>`）对业务文档库（`<business-docs-repo-root>`）的**引用边界与读取顺序**；
 - 业务文档库与代码仓库之间的**正式协作规则尚未在本阶段展开**；
