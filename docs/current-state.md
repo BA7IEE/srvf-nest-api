@@ -7,8 +7,8 @@
 
 | 项 | 当前值 / 何处看 |
 |---|---|
-| 版本(六处一致) | **v0.55.0**(2026-07-16;package.json = Swagger = CHANGELOG = tag = Release = handoff OpenAPI;最新 handoff `archive/handoff/v0.55.0.md`) |
-| main HEAD / open PR / Unreleased | 实时看 `gh pr list` · [`CHANGELOG.md`](../CHANGELOG.md) `## Unreleased` + `changelog.d/`;当前:Harness 2.0 系列进行中(T0 #653 起) |
+| 版本(六处一致) | **v0.56.0**(2026-07-17;package.json = Swagger = CHANGELOG = tag = GitHub Release;tag 指向 handoff #662 squash `9e62dfee`;最新 handoff `archive/handoff/v0.56.0.md`;本版为 harness 重构,`docs/handoff/openapi.json` 无 API 变更无需刷新) |
+| main HEAD / open PR / Unreleased | 实时看 `gh pr list` · [`CHANGELOG.md`](../CHANGELOG.md) `## Unreleased` + `changelog.d/`;当前:v0.56.0 回填点(Harness 2.0 #653–#662 全收口)|
 
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
