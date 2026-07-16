@@ -34,6 +34,7 @@ export interface ActivityParticipationMetrics {
     pass: number;
     reject: number;
     cancelled: number;
+    waitlisted: number;
   };
   attendeeCount: number;
   registeredAttendeeCount: number;
@@ -56,6 +57,7 @@ export function buildActivityParticipationMetrics(
     pass: 0,
     reject: 0,
     cancelled: 0,
+    waitlisted: 0,
   };
   for (const registration of registrations) {
     switch (registration.statusCode) {
@@ -70,6 +72,9 @@ export function buildActivityParticipationMetrics(
         break;
       case ACTIVITY_REGISTRATION_STATUS.CANCELLED:
         registrationCounts.cancelled += 1;
+        break;
+      case ACTIVITY_REGISTRATION_STATUS.WAITLISTED:
+        registrationCounts.waitlisted += 1;
         break;
     }
   }

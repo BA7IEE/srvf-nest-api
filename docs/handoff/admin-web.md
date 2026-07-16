@@ -54,7 +54,7 @@
 > 关键:报名/考勤接口**本来就按 activityId 嵌套**——作战室是它们的自然消费者。
 > `activityId` 从**路由参数**来,不要在页面顶部摆"选择活动"下拉。
 
-> **审计刀 5 参与口径**:`reconciliation` 的 no-show = completed 活动中 pass 报名且**零未软删考勤记录**；考勤 Sheet 即使仍 pending，只要已有 record 就算到场。cancelled 报名不计 no-show。`participation-summary` 的 `totalServiceHours` / `totalContributionPoints` / 四档时长 histogram 则只统计 approved Sheet records；不要把“是否到场”和“是否已审批生效”混成同一过滤条件。
+> **审计刀 5 参与口径**:`reconciliation` 的 no-show = completed 活动中 pass 报名且**零未软删考勤记录**；考勤 Sheet 即使仍 pending，只要已有 record 就算到场。cancelled 报名不计 no-show。`participation-summary.registrationCounts` 固定返回 `pending/pass/reject/cancelled/waitlisted` 五个分项，且五项和恒等于 `total`；候补规模直接读 `waitlisted`，不要用差值反推。`totalServiceHours` / `totalContributionPoints` / 四档时长 histogram 则只统计 approved Sheet records；不要把“是否到场”和“是否已审批生效”混成同一过滤条件。
 
 > **活动 GPS 打卡 → 考勤草稿(F3/F4)**:`check-ins` 与 `attendance-sheet-draft` 都只提供安全复核视图，**不返回原始 longitude/latitude 或 accuracy**。前端读取草稿后在本地结合 `flags` 编辑 `records`，再向既有 `POST /api/admin/v1/activities/:id/attendance-sheets` 提交 `{ "records": editedRecords }`；两条 GET 需 `attendance.read.sheet`，真正提交另需 `attendance.create.sheet`，读权不等于创建权。F4 起岗位报名的草稿 `roleCode` 自动带岗位 `attendanceRoleCode`，忘签退回退岗位 `endAt`；无岗位仍为 `member` + Activity.endAt。提交时后端按 record 对应报名的岗位窗校验并以该 roleCode 命中既有贡献规则，前端不要重写成 `member` 或自行算贡献。`absentRegistrations` 仅提示当前 pass 且零打卡的报名，不能伪造成 record；`records=[]` 时不要提交；超过 200 条按既有 `ArrayMaxSize(200)` 分批创建多个 Sheet，不能静默截断。
 

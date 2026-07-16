@@ -47,6 +47,7 @@ describe('participation metrics F1-F4', () => {
         ['pmx-e', 'Pending Registration'],
         ['pmx-f', 'Rejected Registration'],
         ['pmx-g', 'Cancelled Registration'],
+        ['pmx-h', 'Waitlisted Registration'],
       ].map(([memberNo, displayName]) =>
         prisma.member.create({
           data: { memberNo, displayName },
@@ -101,6 +102,7 @@ describe('participation metrics F1-F4', () => {
         { activityId, memberId: members[4].id, statusCode: 'pending' },
         { activityId, memberId: members[5].id, statusCode: 'reject' },
         { activityId, memberId: members[6].id, statusCode: 'cancelled' },
+        { activityId, memberId: members[7].id, statusCode: 'waitlisted' },
       ],
     });
     const [pendingSheet, approvedSheet] = await Promise.all([
@@ -251,7 +253,14 @@ describe('participation metrics F1-F4', () => {
     expect(res.body.data).toEqual({
       activityId,
       activityStatusCode: 'completed',
-      registrationCounts: { total: 6, pending: 1, pass: 3, reject: 1, cancelled: 1 },
+      registrationCounts: {
+        total: 7,
+        pending: 1,
+        pass: 3,
+        reject: 1,
+        cancelled: 1,
+        waitlisted: 1,
+      },
       attendeeCount: 3,
       registeredAttendeeCount: 2,
       temporaryAttendeeCount: 1,
@@ -267,6 +276,10 @@ describe('participation metrics F1-F4', () => {
       },
       feedback: { count: 0, avgRating: null },
     });
+    const counts = res.body.data.registrationCounts as Record<string, number>;
+    expect(
+      counts.pending + counts.pass + counts.reject + counts.cancelled + counts.waitlisted,
+    ).toBe(counts.total);
   });
 
   it('F3: 个人累计 approved-only，贡献值与既有 contribution-summary 严格等值', async () => {

@@ -757,6 +757,44 @@ describe('activities 模块', () => {
       expectBizError(res, BizCode.ACTIVITY_REGISTRATION_DEADLINE_INVALID);
     });
 
+    it('F3: 活动改窗若使任一 live 岗位越窗 → 复用 20017 且活动窗不变', async () => {
+      const created = await request(httpServer(app))
+        .post('/api/admin/v1/activities')
+        .set('Authorization', adminAuth)
+        .send(baseCreatePayload({ title: 'POSITION-WINDOW-PARENT' }));
+      const activityId = created.body.data.id as string;
+      await prisma.activityPosition.create({
+        data: {
+          activityId,
+          name: '岗位独立窗',
+          attendanceRoleCode: 'member',
+          startAt: new Date('2099-06-01T09:00:00.000Z'),
+          endAt: new Date('2099-06-01T11:00:00.000Z'),
+        },
+      });
+
+      const startOutside = await request(httpServer(app))
+        .patch(`/api/admin/v1/activities/${activityId}`)
+        .set('Authorization', adminAuth)
+        .send({ startAt: '2099-06-01T10:00:00.000Z' });
+      expectBizError(startOutside, BizCode.ACTIVITY_POSITION_TIME_RANGE_INVALID);
+
+      const endOutside = await request(httpServer(app))
+        .patch(`/api/admin/v1/activities/${activityId}`)
+        .set('Authorization', adminAuth)
+        .send({ endAt: '2099-06-01T10:00:00.000Z' });
+      expectBizError(endOutside, BizCode.ACTIVITY_POSITION_TIME_RANGE_INVALID);
+      expect(
+        await prisma.activity.findUniqueOrThrow({
+          where: { id: activityId },
+          select: { startAt: true, endAt: true },
+        }),
+      ).toEqual({
+        startAt: new Date('2099-06-01T08:00:00.000Z'),
+        endAt: new Date('2099-06-01T12:00:00.000Z'),
+      });
+    });
+
     it('capacity 不得缩到当前 pass 报名数以下', async () => {
       const created = await request(httpServer(app))
         .post('/api/admin/v1/activities')

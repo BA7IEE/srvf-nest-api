@@ -12,7 +12,7 @@
 
 ## Local facts
 
-- `activities.service.ts` **1206L**(偏厚,沿 CODEMAP 标 L 体量);活动岗位 CRUD/扩容递补已边界化为 `activity-positions.service.ts`(500L) + `activity-position-audit-recorder.ts`，不继续堆入主 service；`activity-state-machine.ts` / `activity-audit-recorder.ts` / App 两 service 已抽离
+- `activities.service.ts` **1241L**(偏厚,沿 CODEMAP 标 L 体量);活动岗位 CRUD/扩容递补已边界化为 `activity-positions.service.ts`(500L) + `activity-position-audit-recorder.ts`，不继续堆入主 service；`activity-state-machine.ts` / `activity-audit-recorder.ts` / App 两 service 已抽离
 - **判权(终态 scoped-authz PR12,2026-07-02;v0.40.0 +complete)**:6 个写方法(create/update/delete/publish/cancel/**complete**)判权走 `assertCanOrThrow` → `authz.explain`;`create` 无 ref(GLOBAL-only,scoped 创建留后续批);`update`/`delete`/`publish`/`cancel`/`complete` 带 `{type:'activity', id}` ref(scoped 持有者〔如 team-leader 经 policy→org-admin@TREE〕在其组织树内可用);`resource_not_found` 回退 `rbac.can` 全局码判定,持码者 return 交回 `findActivityOrThrow` 抛既有 `ACTIVITY_NOT_FOUND`,无码者 30100;`list`/`findOne`/`options`(F1/A6 新增)仍无码仅登录(Slow-4 现状不变;RBAC_MAP §2.4 BD-3 已决 won't-do 新增 `activity.read.*` 码)。e2e 见 `test/e2e/participation-scoped-authz.e2e-spec.ts`。
 - **App 可报名池 endAt 过滤(v0.40.0 参与域生命周期收口③)**:`AppActivitiesService.listAvailableForMember` where 追加 `endAt >= now`——已结束(endAt < now)的 published 活动退出可报名列表;`findVisibleByIdForMember`(detail)口径**刻意不动**(published 即可见,已报名者回看已结束活动无碍)。报名 endAt 闸在 `activity-registrations` 侧 `assertActivityRegistrable`(20125),不在本模块。
 - **F1/A6(2026-07-04,路线图 §4 A6)**:list 新增可选 `q`(模糊 title)/`dateFrom`+`dateTo`(startAt 区间)/`includeDescendants`(配合 organizationId,注入 `OrganizationsService.queryDescendantOrgIds()`)/`includeStats`(默认 false;true 时批量 `groupBy` 聚合 `registrationCount`/`attendanceSheetCount`,禁 N+1);新增 `GET /options`(`q?`/`statusCode?`/`organizationId?`/`limit?` → `{items:[{id,label,startAt,statusCode}]}`,USER 角色同样强制白名单状态防泄漏)。0 新权限码、0 schema。
@@ -25,6 +25,7 @@
   单次 aggregate、总业务查询固定 4 次；不在本模块复制评价统计，也不改既有度量字段算法。
 - Audit:主资源写路径走 `activity-audit-recorder.ts`；岗位写路径走 `activity-position-audit-recorder.ts`；**event 统一复用 `'activity.publish'`，不新增事件**，岗位以 `extra.operation=activityPosition.{create,update,softDelete}` 区分
 - **岗位容量并发基线**:PATCH capacity 必须事务内先锁 `Activity` 行，再重读 `ActivityPosition.capacity` 与本岗位 passCount；锁对象仍只有 Activity，不加岗位行锁
+- **活动窗父子不变式**:PATCH Activity `startAt/endAt` 与岗位 create/update/softDelete 共用 Activity 聚合锁；锁后校验全部 live 岗位独立窗仍落在新活动窗内，越窗复用 `ACTIVITY_POSITION_TIME_RANGE_INVALID=20017`，事务整体拒绝
 - **P4 effective capacity**:Admin/App 活动 list/detail 的 `capacity` 有 live 岗位时由岗位派生（任一不限→null，否则求和）；无岗位沿 `Activity.capacity`。有岗位时 PATCH Activity.capacity 不判闸、不递补；岗位扩容只递补同 `activityPositionId` 队列。
 - 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_STATUS_INVALID`
 - **受保护状态写(2026-07-13 finding #6)**:`update`/`softDelete`/`publish`/`cancel`/`complete` 在真实写前统一调用 [`/src/common/prisma/claim-at-status.util.ts`](../../common/prisma/claim-at-status.util.ts) `claimAtStatus` 做期望旧态 no-op CAS;并发败者复用 `ACTIVITY_STATUS_INVALID`。helper **只认领、不判断迁移合法性**;合法矩阵仍只在 `activity-state-machine.ts`。
