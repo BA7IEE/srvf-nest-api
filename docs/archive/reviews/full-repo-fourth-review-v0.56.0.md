@@ -1,5 +1,7 @@
 # 第四轮全仓 Review 报告（v0.56.0）
 
+> **✅ 修复落地状态(2026-07-17 回填,沿 v0.26.0 报告先例)**:六条 findings 已全部 review-then-fix 闭环——F4/F5 → PR #666(dashboard 三源 scope + feedbackRate 分母口径);F1/F2/F3/F6 → PR #667(Activity 聚合锁先于基线读 / `claimAtStatus` CAS 收口取消×考勤竞态 / 改窗校验岗位窗 / registrationCounts 补 waitlisted;含 F1×2 + F2×1 真并发测试)。双 lane 并行执行(process §8),正文冻结不回改。
+
 > 状态：**FROZEN / REPORT-ONLY**
 > 审查基线：`main@b276d5f3e30f66b8721f769ca70e1616636b3a76`（v0.56.0）
 > 审查日期：2026-07-17
