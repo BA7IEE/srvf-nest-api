@@ -1,12 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
+import {
+  NOTIFICATION_CHANNEL_IN_APP,
+  NOTIFICATION_TYPE_REGISTRATION_RESULT,
+} from '../notifications/notification.constants';
+import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { RbacService } from '../permissions/rbac.service';
 import { ActivityPositionAuditRecorder } from './activity-position-audit-recorder';
 import {
@@ -14,6 +20,7 @@ import {
   CreateActivityPositionDto,
   UpdateActivityPositionDto,
 } from './activity-positions.dto';
+import { promoteActivityWaitlist } from './activity-waitlist-promotion';
 
 const DICT_TYPE_ATTENDANCE_ROLE = 'attendance_role';
 const DICT_TYPE_GENDER_REQUIREMENT = 'gender_requirement';
@@ -48,11 +55,15 @@ interface ActivityWindow {
 
 @Injectable()
 export class ActivityPositionsService {
+  private readonly logger = new Logger(ActivityPositionsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditRecorder: ActivityPositionAuditRecorder,
+    private readonly auditLogs: AuditLogsService,
     private readonly rbac: RbacService,
     private readonly authz: AuthzService,
+    private readonly notificationDispatcher: NotificationDispatcher,
   ) {}
 
   async list(activityId: string): Promise<ActivityPositionResponseDto[]> {
@@ -155,10 +166,11 @@ export class ActivityPositionsService {
     });
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async (tx) => {
         // 岗位 capacity 的 read-modify-write 基线必须在 Activity 锁后读取；锁对象不扩到岗位行。
         const activity = await this.lockActivityOrThrow(tx, activityId);
         const current = await this.findActivityPositionOrThrow(tx, activityId, activityPositionId);
+        let waitlistPromotionLimit: number | null | undefined;
 
         if (dto.name !== undefined) {
           await this.assertNameAvailable(tx, activityId, dto.name, activityPositionId);
@@ -198,6 +210,13 @@ export class ActivityPositionsService {
           if (dto.capacity !== null && dto.capacity < passCount) {
             throw new BizException(BizCode.ACTIVITY_POSITION_CAPACITY_INVALID);
           }
+          if (current.capacity !== null) {
+            if (dto.capacity === null) {
+              waitlistPromotionLimit = null;
+            } else if (dto.capacity > current.capacity) {
+              waitlistPromotionLimit = dto.capacity - current.capacity;
+            }
+          }
         }
 
         const data: Prisma.ActivityPositionUncheckedUpdateInput = {};
@@ -228,8 +247,31 @@ export class ActivityPositionsService {
           auditMeta,
           tx,
         });
-        return this.toResponseDto(updated);
+        const promotion =
+          waitlistPromotionLimit !== undefined
+            ? await promoteActivityWaitlist({
+                activityId,
+                activityPositionId,
+                maxPromotions: waitlistPromotionLimit,
+                actorUserId: currentUser.id,
+                actorRoleSnap: currentUser.role,
+                auditMeta,
+                tx,
+                auditLogs: this.auditLogs,
+              })
+            : { activityTitle: '活动', promoted: [] };
+        return {
+          dto: this.toResponseDto(updated),
+          activityTitle: promotion.activityTitle,
+          promotedMemberIds: promotion.promoted.map((item) => item.memberId),
+        };
       });
+      await this.dispatchWaitlistPromotionNotifications(
+        activityId,
+        result.activityTitle,
+        result.promotedMemberIds,
+      );
+      return result.dto;
     } catch (error) {
       this.rethrowNameConflict(error);
     }
@@ -417,9 +459,31 @@ export class ActivityPositionsService {
     throw error;
   }
 
+  private async dispatchWaitlistPromotionNotifications(
+    activityId: string,
+    activityTitle: string,
+    memberIds: string[],
+  ): Promise<void> {
+    for (const memberId of memberIds) {
+      try {
+        await this.notificationDispatcher.dispatchTargeted({
+          recipientMemberId: memberId,
+          notificationTypeCode: NOTIFICATION_TYPE_REGISTRATION_RESULT,
+          title: '候补已递补',
+          body: `您报名的「${activityTitle}」已从候补递补，现已进入待审核。`,
+          channels: [NOTIFICATION_CHANNEL_IN_APP],
+        });
+      } catch (error) {
+        this.logger.error(
+          `waitlist promotion notification failed (activity=${activityId}, member=${memberId}): ${(error as Error).message}`,
+        );
+      }
+    }
+  }
+
   private toResponseDto(activityPosition: ActivityPositionRow): ActivityPositionResponseDto {
     return {
-      id: activityPosition.id,
+      activityPositionId: activityPosition.id,
       activityId: activityPosition.activityId,
       name: activityPosition.name,
       attendanceRoleCode: activityPosition.attendanceRoleCode,

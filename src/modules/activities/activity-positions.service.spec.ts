@@ -4,7 +4,9 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuthzService } from '../authz/authz.service';
+import type { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import type { RbacService } from '../permissions/rbac.service';
 import type { ActivityPositionAuditRecorder } from './activity-position-audit-recorder';
 import { ActivityPositionsService } from './activity-positions.service';
@@ -77,13 +79,17 @@ function makeMocks() {
   const authz = {
     explain: jest.fn().mockResolvedValue({ allow: true, reason: 'allowed' }),
   };
+  const auditLogs = { log: jest.fn().mockResolvedValue(undefined) };
+  const notificationDispatcher = { dispatchTargeted: jest.fn().mockResolvedValue(undefined) };
   const service = new ActivityPositionsService(
     prisma as unknown as PrismaService,
     auditRecorder as unknown as ActivityPositionAuditRecorder,
+    auditLogs as unknown as AuditLogsService,
     rbac as unknown as RbacService,
     authz as unknown as AuthzService,
+    notificationDispatcher as unknown as NotificationDispatcher,
   );
-  return { prisma, auditRecorder, rbac, authz, service };
+  return { prisma, auditRecorder, auditLogs, rbac, authz, notificationDispatcher, service };
 }
 
 describe('ActivityPositionsService', () => {
@@ -140,7 +146,7 @@ describe('ActivityPositionsService', () => {
       META,
     );
 
-    expect(result.id).toBe(ACTIVITY_POSITION_ID);
+    expect(result.activityPositionId).toBe(ACTIVITY_POSITION_ID);
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
     expect(prisma.dictItem.findFirst).toHaveBeenCalledTimes(2);
     expect(auditRecorder.logCreate).toHaveBeenCalledTimes(1);
@@ -256,7 +262,7 @@ describe('ActivityPositionsService', () => {
 
     const result = await service.softDelete(ACTIVITY_ID, ACTIVITY_POSITION_ID, USER, META);
 
-    expect(result.id).toBe(ACTIVITY_POSITION_ID);
+    expect(result.activityPositionId).toBe(ACTIVITY_POSITION_ID);
     expect(prisma.activityPosition.update).toHaveBeenCalledTimes(1);
     const updateArgs = prisma.activityPosition.update.mock.calls[0][0] as {
       where: { id: string };

@@ -37,6 +37,7 @@ jest.mock('../activities/activity-waitlist-promotion', () => ({
 interface RegRow {
   id: string;
   activityId: string;
+  activityPositionId: string | null;
   memberId: string;
   statusCode: string;
   registeredAt: Date;
@@ -50,6 +51,7 @@ interface RegRow {
   createdAt: Date;
   updatedAt: Date;
   member?: { memberNo: string; displayName: string } | null;
+  activityPosition?: { id: string; name: string } | null;
 }
 
 interface ActivityRow {
@@ -96,6 +98,7 @@ function makeRegRow(overrides: Partial<RegRow> = {}): RegRow {
   return {
     id: 'reg-1',
     activityId: 'act-1',
+    activityPositionId: null,
     memberId: 'mem-1',
     statusCode: 'pending',
     registeredAt: FIXED_DATE,
@@ -109,6 +112,7 @@ function makeRegRow(overrides: Partial<RegRow> = {}): RegRow {
     createdAt: FIXED_DATE,
     updatedAt: FIXED_DATE,
     member: null,
+    activityPosition: null,
     ...overrides,
   };
 }
@@ -149,6 +153,10 @@ function makePrismaMock() {
       .fn<Promise<{ title: string } | null>, [unknown]>()
       .mockResolvedValue({ title: '测试活动' }),
   };
+  const activityPosition = {
+    findMany: jest.fn().mockResolvedValue([]),
+    findFirst: jest.fn().mockResolvedValue(null),
+  };
   const member = { findFirst: jest.fn<Promise<MemberRow | null>, [unknown]>() };
   const memberProfile = { findFirst: jest.fn().mockResolvedValue({ genderCode: 'male' }) };
   const user = { findFirst: jest.fn<Promise<UserRow | null>, [unknown]>() };
@@ -162,6 +170,7 @@ function makePrismaMock() {
   const prisma = {
     activityRegistration,
     activity,
+    activityPosition,
     member,
     memberProfile,
     user,

@@ -60,7 +60,9 @@
 
 > **活动评价(F3–F4)**:`feedbacks` 默认按 `updatedAt DESC,id DESC` 分页，item 精确展示 `memberNo/displayName/rating/comment/createdAt/updatedAt`；`feedback-summary` 返回评价人数、两位均分（无评价为 null）、固定 1～5 星五桶和四位评价率。评价率分母是 approved Sheet 内未软删考勤记录的 distinct member 数，分母为 0 时为 0。`participation-summary` 尾部 additive `feedback:{count,avgRating}` 与完整汇总同源；不要在前端自行重算，也不要把 App 评价暴露给其他队员。F4 已用真实 DB E2E 对账两种汇总并锁定实名字段。
 
-> **活动岗位(F2)**:创建/更新 body 白名单为 `name/attendanceRoleCode/capacity/startAt/endAt/genderRequirementCode/description/sortOrder`；`capacity=null` 表示不限，岗位时段必须同空同有且落在活动窗内。列表固定 `sortOrder ASC,createdAt ASC,id ASC`。同活动 live 重名返 `20003`，软删/跨活动岗位详情统一 `20002`，存在 pending/pass/waitlisted 报名时删除返 `20031`。前端路由参数必须使用全称 `activityPositionId`，不要复用组织职务的 `positionId` 命名。
+> **活动岗位(F2/F3)**:创建/更新 body 白名单为 `name/attendanceRoleCode/capacity/startAt/endAt/genderRequirementCode/description/sortOrder`；响应主键字段为 `activityPositionId`。`capacity=null` 表示不限，岗位时段必须同空同有且落在活动窗内。列表固定 `sortOrder ASC,createdAt ASC,id ASC`。同活动 live 重名返 `20003`，软删/跨活动岗位详情统一 `20002`，存在 pending/pass/waitlisted 报名时删除返 `20031`。有 live 岗位时活动 list/detail 的 `capacity` 是岗位名额派生值（任一不限→null，否则求和），编辑 Activity.capacity 不再触发递补。前端路由参数必须使用全称 `activityPositionId`，不要复用组织职务的 `positionId` 命名。
+>
+> **报名岗位列(F3)**:Admin 报名列表 item additive 返回 `activityPosition:null|{activityPositionId,name}`；代报名 body 可传 `activityPositionId`。活动有 live 岗位未传返 `21035`，不存在/跨活动/已删返 `20002`，同人报第二岗位仍返 `21002`。候补排位、取消递补与岗位扩容递补均按 `(activityId,activityPositionId)` 隔离。
 
 > ⚠️ **报名审批生命周期新规(v0.40.0 参与域生命周期收口)**:
 > ① **未发布/取消/完结/已结束活动禁批报名** —— `approve` 仅在 activity=published 且 `endAt >= now` 时允许；draft 返 `20126`，cancelled/completed/已结束返 `20124`。`reject` / `cancel` 仍可用于清理残留队列。

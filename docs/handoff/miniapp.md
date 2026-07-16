@@ -21,8 +21,8 @@
 |---|---|
 | 登录 | `POST /api/auth/v1/login`(密码) · `login-sms`(验证码) · `login-wechat`(小程序 openid;未绑返 `bindingRequired`) |
 | 我的身份/资料/能力 | `GET /api/app/v1/me` · `me/account` · `PATCH me/profile` · `PUT me/password` · `GET me/capabilities` |
-| 活动池 / 我的活动 | `GET /api/app/v1/activities/available`(**仅 `public` 且未结束活动;详情 `GET /api/app/v1/activities/:id` 新增 `phase` / `genderRequirementCode` / `requiresInsurance` / `passCount`,已报名者仍能回看已结束活动**) · `GET /api/app/v1/my/activities` |
-| 我的报名(报名/查/取消) | `GET /api/app/v1/my/registrations` · `POST` 报名(**满员不再返 21031，而是成功创建 `statusCode='waitlisted'`；列表/详情以 `waitlistPosition` 展示排位**) · `PATCH` 取消(候补可随时退出)。活动已结束 `20125`、报名截止 `20123`、已有考勤不可取消 `21033` 等既有闸不变 |
+| 活动池 / 我的活动 | `GET /api/app/v1/activities/available`(**仅 `public` 且未结束活动;详情 `GET /api/app/v1/activities/:id` 含 `phase` / `genderRequirementCode` / `requiresInsurance` / `passCount`**) · `GET /api/app/v1/activities/:activityId/positions`（live 岗位，`remainingCapacity` / `canRegister`；余量 0 仍可进候补）· `GET /api/app/v1/my/activities`。活动 `capacity` 有岗位时为岗位总和，任一岗位不限则 null |
+| 我的报名(报名/查/取消) | `GET /api/app/v1/my/registrations` · `POST` 报名 body additive 接受 `activityPositionId`（活动有岗位时必填，缺失 21035；不存在/跨活动/已删 20002；同人报第二岗仍 21002；满员成功创建 `waitlisted`，排位按岗位队列）· `PATCH` 取消(候补可随时退出)。活动已结束 `20125`、报名截止 `20123`、已有考勤不可取消 `21033` 等既有闸不变 |
 | 我的考勤 / 参与汇总 / 证书 | `GET /api/app/v1/my/attendance-records` · `GET /api/app/v1/my/participation-summary` · `GET /api/app/v1/my/certificates`。参与汇总严格锁当前 `AppIdentityResolver.memberId`，只统计 approved Sheet：`totalServiceHours` / distinct `activityCount` / `recordCount`；`contributionPoints` 复用生涯累计封顶核，与 Admin 旧 `contribution-summary` 同源。**不返回 memberId / no-show / 他人数据**，前端直接展示，勿自行 SUM |
 | **活动 GPS 自助签到 / 签退(F2)** | `POST /api/app/v1/my/activities/:activityId/check-in` · `POST .../check-out` · `GET .../check-in`。只认本人当前 `pass` 报名；首次与合法网络重试都返回 200 同一证据。App 仅收到时间、距离与 `geoVerified/outOfRange`，**不返回原始经纬度、accuracy 或 memberId** |
 | **活动评价(F2–F4)** | `GET /api/app/v1/my/activities/:activityId/feedback` 初始化本人评价与 `canSubmit/windowClosesAt`；`PUT` 同路径提交 `{rating,comment?}`。只认 completed + 窗口内 + approved 到场，本人 scope；不返回他人评价/人数/均分 |

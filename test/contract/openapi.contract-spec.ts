@@ -114,6 +114,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 0 新 BizCode;0 schema 变更;行为契约沿 §11.4 锁定。
   ['get', '/api/app/v1/activities/available'],
 
+  // 活动岗位 F3：公开报名活动的岗位列表 + 余量 / 当前队员是否可报；login-only。
+  ['get', '/api/app/v1/activities/{activityId}/positions'],
+
   // Phase 2 P2-4b(2026-05-20):App /api/app/v1/activities/{id} 详情
   // 沿 docs/app-api-p2-4-activities-review.md §1 接口清单 + §5.1 字段集恰好 13 项;
   // 可见性沿 D-P2-4-1 = A:仅 statusCode='published' AND deletedAt IS NULL;
@@ -750,12 +753,14 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'CreateActivityPositionDto',
   'UpdateActivityPositionDto',
   'ActivityPositionResponseDto',
+  'AppActivityPositionDto',
   'CreateRegistrationDto',
   'ApproveRegistrationDto',
   'RejectRegistrationDto',
   'CancelRegistrationDto',
   'ActivityRegistrationResponseDto',
   'ActivityRegistrationListItemDto',
+  'ActivityRegistrationActivityPositionDto',
 
   // V2 第一阶段批次 3B attendances
   // 注:ListAttendanceSheetsQueryDto / MyAttendanceRecordsQueryDto / ActivityIdParamDto
@@ -948,7 +953,7 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'AppMyActivityListItemDto',
 
   // Phase 2 P2-5b(2026-05-20):App /my/registrations 2 入参 DTO
-  // 字段集严格沿 §8.2.4:CreateAppMyRegistrationDto 严格 2 字段(activityId + 可选 extras);
+  // 字段集 additive 增加可选 activityPositionId(activityId + activityPositionId + extras);
   // CancelAppMyRegistrationDto 严格 1 字段(可选 cancelReason;沿 D-P2-5-9 不必填)。
   // **禁止**继承 / Pick / Omit / IntersectionType / PartialType / OmitType / Mapped Types
   // admin CreateRegistrationDto / CreateMyRegistrationDto / CancelRegistrationDto
@@ -1257,8 +1262,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('活动评价 F3 后路由足迹精确为 354', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(359);
+  it('活动岗位 F3 后路由足迹精确为 360', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(360);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {
