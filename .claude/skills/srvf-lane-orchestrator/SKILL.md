@@ -5,7 +5,7 @@ description: 当本会话要充当 SRVF 并行开发「总控」时使用:为执
 
 # srvf-lane-orchestrator — 总控行为清单(Harness 2.0)
 
-> 协议权威源 [`docs/process.md §8`](../../docs/process.md);公理与设计 [`harness-2.0-t0-review.md`](../../docs/archive/reviews/harness-2.0-t0-review.md)。本 skill 是操作 checklist,**非规则源**,冲突时让步 process。
+> 协议权威源 [`docs/process.md §8`](../../../docs/process.md);公理与设计 [`harness-2.0-t0-review.md`](../../../docs/archive/reviews/harness-2.0-t0-review.md)。本 skill 是操作 checklist,**非规则源**,冲突时让步 process。
 
 ## 0. 角色边界
 
@@ -31,7 +31,7 @@ description: 当本会话要充当 SRVF 并行开发「总控」时使用:为执
 2. `gh pr diff --name-only` **逐文件核对落在该 lane 写集声明内**;越集 → 退回 lane。
 3. contract snapshot 有 diff → 逐行可解释才放行。
 4. `gh pr merge --squash --delete-branch`;合并后通知其余 lane rebase(lane preflight 会硬判落后)。
-5. Codex findings(PR 评论)逐条消化;分歧不调和,升级简报(沿 [`codex-review-sop`](../../docs/ai-harness/codex-review-sop.md))。
+5. Codex findings(PR 评论)逐条消化;分歧不调和,升级简报(沿 [`codex-review-sop`](../../../docs/ai-harness/codex-review-sop.md))。
 
 ## 4. 收口(E 档)
 
