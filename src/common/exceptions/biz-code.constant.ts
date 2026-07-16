@@ -4,7 +4,7 @@ import { HttpStatus } from '@nestjs/common';
 //
 // 当前状态(随实施滚动维护;每次新增模块码后校对):
 // - 招新证书闭环刀A(2026-07-13):28xxx +2(28054 已审核通过禁止重传 / 28055 未审核通过禁止标门槛)
-// - 249 个 BizCode(2026-07-16 亲核:Object.keys(BizCode).length;活动岗位 F2 新增 5 码)
+// - 250 个 BizCode(2026-07-16 亲核:Object.keys(BizCode).length;活动岗位 F2/F3 新增 6 码)
 // - 历史 2026-06-25 快照为 175 个 BizCode(彼时含 CMS content 290xx +5
 //   + 活动闭环硬化 20123 报名截止 +1 + 统一通知 310xx +5;2026-06-13 的「141」系彼时快照,此后 realname 27xxx
 //   + 招新·入队 28xxx(280xx/281xx/282xx)+ #399 review 错误码增量(13014 / 19010 / 30103)+ CMS content 290xx 5 码
@@ -654,6 +654,11 @@ export const BizCode = {
   ACTIVITY_REGISTRATION_GENDER_MISMATCH: {
     code: 21034,
     message: '报名者性别不符合活动要求',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_POSITION_REQUIRED: {
+    code: 21035,
+    message: '该活动报名必须选择活动岗位',
     httpStatus: HttpStatus.CONFLICT,
   },
 

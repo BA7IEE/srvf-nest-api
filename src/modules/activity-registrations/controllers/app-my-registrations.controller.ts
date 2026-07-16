@@ -111,7 +111,7 @@ export class AppMyRegistrationsController {
   @Post('registrations')
   @ApiOperation({
     summary:
-      '本人报名活动(入参 activityId + 可选 extras;前置 published 校验,非 published 统一返 404 防侧信道) [auth]',
+      '本人报名活动(入参 activityId + 可选 activityPositionId/extras;非 published 统一 404) [auth]',
   })
   @ApiWrappedOkResponse(AppMyRegistrationDto)
   @ApiBizErrorResponse(
@@ -122,6 +122,9 @@ export class AppMyRegistrationsController {
     BizCode.ACTIVITY_NOT_PUBLIC_REGISTRATION,
     BizCode.ACTIVITY_REGISTRATION_DEADLINE_PASSED,
     BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS,
+    BizCode.ACTIVITY_POSITION_NOT_FOUND,
+    BizCode.ACTIVITY_POSITION_REQUIRED,
+    BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH,
     BizCode.ACTIVITY_CAPACITY_EXCEEDED,
   )
   createMy(

@@ -2,6 +2,7 @@ import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   ApiBizErrorResponse,
+  ApiWrappedArrayResponse,
   ApiWrappedOkResponse,
   ApiWrappedPageResponse,
 } from '../../../common/decorators/api-response.decorator';
@@ -17,6 +18,10 @@ import { AppIdentityResolver } from '../../users/app-identity.resolver';
 import { AppActivitiesService } from '../app-activities.service';
 import { AppActivityDetailDto } from '../dto/app/app-activity-detail.dto';
 import { AppAvailableActivityListItemDto } from '../dto/app/app-available-activity-list-item.dto';
+import {
+  AppActivityPositionDto,
+  AppActivityPositionsParamsDto,
+} from '../dto/app/app-activity-position.dto';
 
 // Phase 2 P2-4a/P2-4b App /api/app/v1/activities/* Mobile Controller。
 // 沿 docs/app-api-p2-4-activities-review.md §1 + §6.1 + §11.3:
@@ -52,6 +57,28 @@ export class AppActivitiesController {
     }
 
     return this.appActivities.listAvailableForMember(access.member.id, query);
+  }
+
+  @Get(':activityId/positions')
+  @ApiOperation({
+    summary: 'App 视角公开报名活动岗位列表(含余量与当前队员是否可报) [auth]',
+  })
+  @ApiWrappedArrayResponse(AppActivityPositionDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+  )
+  async listPositions(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Param() params: AppActivityPositionsParamsDto,
+  ): Promise<AppActivityPositionDto[]> {
+    const access = await this.appIdentity.resolve(currentUser);
+    if (!access.canUseApp || access.member === null) {
+      throw new BizException(BizCode.FORBIDDEN);
+    }
+    return this.appActivities.listPositionsForMember(params.activityId, access.member.id);
   }
 
   @Get(':id')

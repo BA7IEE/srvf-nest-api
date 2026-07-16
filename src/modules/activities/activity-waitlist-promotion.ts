@@ -62,6 +62,7 @@ function toAuditSnapshot(row: WaitlistAuditRow): Record<string, unknown> {
 // participation 兄弟模块之间引入 Service-to-Service 依赖；通知仍由调用方在 commit 后派发。
 export async function promoteActivityWaitlist(args: {
   activityId: string;
+  activityPositionId?: string | null;
   maxPromotions: number | null;
   actorUserId: string;
   actorRoleSnap: Role;
@@ -95,6 +96,7 @@ export async function promoteActivityWaitlist(args: {
     const candidate = await args.tx.activityRegistration.findFirst({
       where: notDeletedWhere({
         activityId: args.activityId,
+        activityPositionId: args.activityPositionId ?? null,
         statusCode: ACTIVITY_REGISTRATION_STATUS.WAITLISTED,
       }),
       select: waitlistAuditSelect,

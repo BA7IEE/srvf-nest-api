@@ -38,6 +38,14 @@ const parseQueryBoolean = ({ value }: { value: unknown }): unknown =>
 
 // ============ 出参 ============
 
+export class ActivityRegistrationActivityPositionDto {
+  @ApiProperty({ description: '活动岗位 ActivityPosition.id' })
+  activityPositionId!: string;
+
+  @ApiProperty({ description: '活动岗位名称' })
+  name!: string;
+}
+
 export class ActivityRegistrationResponseDto {
   @ApiProperty({ description: '主键(cuid)', example: 'cl9z3a8b00000abcd1234efgh' })
   id!: string;
@@ -100,6 +108,13 @@ export class ActivityRegistrationListItemDto {
 
   @ApiProperty({ description: '活动外键' })
   activityId!: string;
+
+  @ApiProperty({
+    description: '活动岗位摘要(存量 / 无岗位报名为 null)',
+    nullable: true,
+    type: () => ActivityRegistrationActivityPositionDto,
+  })
+  activityPosition!: ActivityRegistrationActivityPositionDto | null;
 
   @ApiProperty({ description: '队员外键' })
   memberId!: string;
@@ -177,6 +192,13 @@ export class AdminRegistrationListItemDto {
   @ApiProperty({ description: '活动外键' })
   activityId!: string;
 
+  @ApiProperty({
+    description: '活动岗位摘要(存量 / 无岗位报名为 null)',
+    nullable: true,
+    type: () => ActivityRegistrationActivityPositionDto,
+  })
+  activityPosition!: ActivityRegistrationActivityPositionDto | null;
+
   @ApiPropertyOptional({ description: '活动标题(跨轴上下文;软删活动仍可读)', nullable: true })
   activityTitle!: string | null;
 
@@ -238,6 +260,16 @@ export class CreateRegistrationDto {
   memberId!: string;
 
   @ApiPropertyOptional({
+    description: '活动岗位 ActivityPosition.id(活动存在 live 岗位时必填)',
+    minLength: 8,
+    maxLength: 64,
+  })
+  @IsOptional()
+  @IsString()
+  @Length(8, 64)
+  activityPositionId?: string;
+
+  @ApiPropertyOptional({
     description: '扩展字段(Json;Q-A13 不做嵌套校验)',
     type: 'object',
     additionalProperties: true,
@@ -251,6 +283,16 @@ export class CreateRegistrationDto {
 
 // Q-A3 决议:USER 路径 service 强制注入 currentUser.member.id;DTO 不接 memberId。
 export class CreateMyRegistrationDto {
+  @ApiPropertyOptional({
+    description: '活动岗位 ActivityPosition.id(活动存在 live 岗位时必填)',
+    minLength: 8,
+    maxLength: 64,
+  })
+  @IsOptional()
+  @IsString()
+  @Length(8, 64)
+  activityPositionId?: string;
+
   @ApiPropertyOptional({
     description: '扩展字段(Json;Q-A13 不做嵌套校验)',
     type: 'object',

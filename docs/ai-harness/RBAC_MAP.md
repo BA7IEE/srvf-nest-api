@@ -111,6 +111,8 @@
 
 > 2026-07-16 活动岗位 F2 戳：**权限码 206 恒定**；endpoint **354→359**（Admin 岗位 create/list/detail/update/delete）；controller **73→74**（新增 `AdminActivityPositionsController`）。list/detail 复用活动读的 `[auth]` login-only；create/update/delete 复用 `activity.update.record` 并带 `{type:'activity',id:activityId}` ref，`resource_not_found` 仅在全局 `rbac.can` 持码时回退。0 新权限码 / 0 seed / 0 角色绑定变化。
 
+> 2026-07-16 活动岗位 F3 戳：**权限码 206 恒定**；endpoint **359→360**（App 公开报名活动岗位列表）；controller **74 恒定**（扩展既有 `AppActivitiesController`）。新 GET 复用 App 活动读的 JwtAuth + AppIdentityResolver login-only 口径，不新增 RBAC 码；不可见活动统一 `ACTIVITY_NOT_FOUND`。App endpoint **38→39**，0 seed / 0 角色绑定变化。
+
 ---
 
 ## 1. 双轨架构现状(一句话版)

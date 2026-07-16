@@ -33,6 +33,7 @@ import {
   UpdateActivityDto,
 } from './activities.dto';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
+import { deriveEffectiveActivityCapacity } from './activity-capacity';
 import { deriveActivityPhase } from './activity-phase';
 import { ActivityStateMachine } from './activity-state-machine';
 import { promoteActivityWaitlist } from './activity-waitlist-promotion';
@@ -111,6 +112,10 @@ const activitySafeSelect = {
   locationLatitude: true,
   createdAt: true,
   updatedAt: true,
+  activityPositions: {
+    where: { deletedAt: null },
+    select: { capacity: true },
+  },
 } as const satisfies Prisma.ActivitySelect;
 
 // 列表精简(评审稿 §5.1):不返 content / galleryImageUrls / registrationSchema /
@@ -135,6 +140,10 @@ const activityListItemSelect = {
   locationLatitude: true,
   createdAt: true,
   updatedAt: true,
+  activityPositions: {
+    where: { deletedAt: null },
+    select: { capacity: true },
+  },
 } as const satisfies Prisma.ActivitySelect;
 
 type ActivityFullRow = Prisma.ActivityGetPayload<{ select: typeof activitySafeSelect }>;
@@ -217,7 +226,7 @@ export class ActivitiesService {
       endAt: row.endAt,
       location: row.location,
       description: row.description,
-      capacity: row.capacity,
+      capacity: deriveEffectiveActivityCapacity(row.capacity, row.activityPositions),
       genderRequirementCode: row.genderRequirementCode,
       registrationDeadline: row.registrationDeadline,
       registrationNotes: row.registrationNotes,
@@ -251,7 +260,7 @@ export class ActivitiesService {
       endAt: row.endAt,
       location: row.location,
       description: row.description,
-      capacity: row.capacity,
+      capacity: deriveEffectiveActivityCapacity(row.capacity, row.activityPositions),
       genderRequirementCode: row.genderRequirementCode,
       registrationDeadline: row.registrationDeadline,
       statusCode: row.statusCode,
@@ -644,19 +653,33 @@ export class ActivitiesService {
         // passCount 同为取锁后的新鲜读,二者基线一致。
         const locked = await tx.activity.findUniqueOrThrow({
           where: { id: current.id },
-          select: { capacity: true },
+          select: {
+            capacity: true,
+            activityPositions: {
+              where: { deletedAt: null },
+              select: { id: true },
+              take: 1,
+            },
+          },
         });
-        const passCount = await tx.activityRegistration.count({
-          where: notDeletedWhere({ activityId: current.id, statusCode: 'pass' }),
-        });
-        if (dto.capacity !== null && dto.capacity < passCount) {
-          throw new BizException(BizCode.ACTIVITY_CAPACITY_INVALID);
-        }
-        if (locked.capacity !== null) {
-          if (dto.capacity === null) {
-            waitlistPromotionLimit = null;
-          } else if (dto.capacity > locked.capacity) {
-            waitlistPromotionLimit = dto.capacity - locked.capacity;
+        // P4：存在 live ActivityPosition 时，Activity.capacity 只保留兼容列，不再判闸或递补。
+        if (locked.activityPositions.length === 0) {
+          const passCount = await tx.activityRegistration.count({
+            where: notDeletedWhere({
+              activityId: current.id,
+              activityPositionId: null,
+              statusCode: 'pass',
+            }),
+          });
+          if (dto.capacity !== null && dto.capacity < passCount) {
+            throw new BizException(BizCode.ACTIVITY_CAPACITY_INVALID);
+          }
+          if (locked.capacity !== null) {
+            if (dto.capacity === null) {
+              waitlistPromotionLimit = null;
+            } else if (dto.capacity > locked.capacity) {
+              waitlistPromotionLimit = dto.capacity - locked.capacity;
+            }
           }
         }
       }
@@ -726,6 +749,7 @@ export class ActivitiesService {
         waitlistPromotionLimit !== undefined
           ? await promoteActivityWaitlist({
               activityId: current.id,
+              activityPositionId: null,
               maxPromotions: waitlistPromotionLimit,
               actorUserId: currentUser.id,
               actorRoleSnap: currentUser.role,

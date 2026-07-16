@@ -82,6 +82,7 @@ interface ActivityRow {
   locationLatitude: Prisma.Decimal | null;
   createdAt: Date;
   updatedAt: Date;
+  activityPositions: Array<{ capacity: number | null }>;
 }
 
 function makeActivityRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
@@ -113,6 +114,7 @@ function makeActivityRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
     locationLatitude: null,
     createdAt: FIXED_START,
     updatedAt: FIXED_START,
+    activityPositions: [],
     ...overrides,
   };
 }

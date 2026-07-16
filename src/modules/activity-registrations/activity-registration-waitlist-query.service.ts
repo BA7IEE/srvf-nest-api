@@ -6,21 +6,37 @@ import { ACTIVITY_REGISTRATION_STATUS } from './activity-registration-state-mach
 export interface WaitlistPositionInput {
   id: string;
   activityId: string;
+  activityPositionId?: string | null;
   statusCode: string;
   registeredAt: Date;
 }
 
-// 候补排位只读 QueryService。列表按页面内 activityId 一次批量取完整候补队列，禁止逐 item
-// 查询；详情用一个 count 计算当前行之前的 live 候补数。排序口径固定 registeredAt ASC,id ASC。
+function activityPositionQueueKey(activityId: string, activityPositionId: string | null): string {
+  return `${activityId}\u0000${activityPositionId ?? ''}`;
+}
+
+// 候补排位只读 QueryService。列表按页面内 activityId 一次批量取完整候补集，再按
+// (activityId,activityPositionId) 分队列编号，禁止逐 item 查询；详情 count 同样限定该组合键。
+// 排序口径固定 registeredAt ASC,id ASC；activityPositionId=null 是无岗位活动旧队列。
 @Injectable()
 export class ActivityRegistrationWaitlistQueryService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getPosition(row: WaitlistPositionInput): Promise<number | null> {
     if (row.statusCode !== ACTIVITY_REGISTRATION_STATUS.WAITLISTED) return null;
+    const activityPositionId =
+      row.activityPositionId === undefined
+        ? ((
+            await this.prisma.activityRegistration.findUnique({
+              where: { id: row.id },
+              select: { activityPositionId: true },
+            })
+          )?.activityPositionId ?? null)
+        : row.activityPositionId;
     const ahead = await this.prisma.activityRegistration.count({
       where: notDeletedWhere({
         activityId: row.activityId,
+        activityPositionId,
         statusCode: ACTIVITY_REGISTRATION_STATUS.WAITLISTED,
         OR: [
           { registeredAt: { lt: row.registeredAt } },
@@ -47,15 +63,24 @@ export class ActivityRegistrationWaitlistQueryService {
         activityId: { in: activityIds },
         statusCode: ACTIVITY_REGISTRATION_STATUS.WAITLISTED,
       }),
-      select: { id: true, activityId: true },
-      orderBy: [{ activityId: 'asc' }, { registeredAt: 'asc' }, { id: 'asc' }],
+      select: { id: true, activityId: true, activityPositionId: true },
+      orderBy: [
+        { activityId: 'asc' },
+        { activityPositionId: 'asc' },
+        { registeredAt: 'asc' },
+        { id: 'asc' },
+      ],
     });
 
-    const nextByActivity = new Map<string, number>();
+    const nextByActivityPosition = new Map<string, number>();
     for (const item of queue) {
-      const position = (nextByActivity.get(item.activityId) ?? 0) + 1;
-      nextByActivity.set(item.activityId, position);
-      if (result.has(item.id)) result.set(item.id, position);
+      const activityPositionKey = activityPositionQueueKey(
+        item.activityId,
+        item.activityPositionId,
+      );
+      const waitlistPosition = (nextByActivityPosition.get(activityPositionKey) ?? 0) + 1;
+      nextByActivityPosition.set(activityPositionKey, waitlistPosition);
+      if (result.has(item.id)) result.set(item.id, waitlistPosition);
     }
     return result;
   }

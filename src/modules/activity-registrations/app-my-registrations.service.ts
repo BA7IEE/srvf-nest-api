@@ -142,7 +142,12 @@ export class AppMyRegistrationsService {
     // thin-wrap 既有 createMy(沿 §6.2 不改签名);extras 可选透传
     const reg = await this.registrationsService.createMy(
       dto.activityId,
-      { ...(dto.extras !== undefined ? { extras: dto.extras } : {}) },
+      {
+        ...(dto.activityPositionId !== undefined
+          ? { activityPositionId: dto.activityPositionId }
+          : {}),
+        ...(dto.extras !== undefined ? { extras: dto.extras } : {}),
+      },
       currentUser,
       auditMeta,
     );

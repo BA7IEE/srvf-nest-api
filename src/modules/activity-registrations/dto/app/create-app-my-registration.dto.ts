@@ -24,6 +24,16 @@ export class CreateAppMyRegistrationDto {
   activityId!: string;
 
   @ApiPropertyOptional({
+    description: '活动岗位 ActivityPosition.id(活动存在 live 岗位时必填)',
+    minLength: 8,
+    maxLength: 64,
+  })
+  @IsOptional()
+  @IsString()
+  @Length(8, 64)
+  activityPositionId?: string;
+
+  @ApiPropertyOptional({
     description: '扩展字段(用户自定义 Json;沿 v2 Q-A13 不嵌套校验,沿 D-P2-5-12)',
     type: 'object',
     additionalProperties: true,

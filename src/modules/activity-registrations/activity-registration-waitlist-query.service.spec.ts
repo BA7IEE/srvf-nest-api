@@ -21,13 +21,20 @@ describe('ActivityRegistrationWaitlistQueryService', () => {
     expect(prisma.activityRegistration.count).not.toHaveBeenCalled();
 
     await expect(
-      service.getPosition({ id: 'r3', activityId: 'a1', statusCode: 'waitlisted', registeredAt }),
+      service.getPosition({
+        id: 'r3',
+        activityId: 'a1',
+        activityPositionId: null,
+        statusCode: 'waitlisted',
+        registeredAt,
+      }),
     ).resolves.toBe(3);
     const countArg = prisma.activityRegistration.count.mock.calls[0][0] as {
       where: Record<string, unknown>;
     };
     expect(countArg.where).toEqual({
       activityId: 'a1',
+      activityPositionId: null,
       statusCode: 'waitlisted',
       deletedAt: null,
       OR: [{ registeredAt: { lt: registeredAt } }, { registeredAt, id: { lt: 'r3' } }],
@@ -39,11 +46,15 @@ describe('ActivityRegistrationWaitlistQueryService', () => {
       activityRegistration: {
         count: jest.fn<Promise<number>, [unknown]>(),
         findMany: jest
-          .fn<Promise<Array<{ id: string; activityId: string }>>, [unknown]>()
+          .fn<
+            Promise<Array<{ id: string; activityId: string; activityPositionId: string | null }>>,
+            [unknown]
+          >()
           .mockResolvedValue([
-            { id: 'a1-r1', activityId: 'a1' },
-            { id: 'a1-r2', activityId: 'a1' },
-            { id: 'a2-r1', activityId: 'a2' },
+            { id: 'a1-r1', activityId: 'a1', activityPositionId: 'ap1' },
+            { id: 'a1-r2', activityId: 'a1', activityPositionId: 'ap1' },
+            { id: 'a1-r3', activityId: 'a1', activityPositionId: 'ap2' },
+            { id: 'a2-r1', activityId: 'a2', activityPositionId: null },
           ]),
       },
     };
@@ -52,20 +63,51 @@ describe('ActivityRegistrationWaitlistQueryService', () => {
     );
 
     const positions = await service.getPositions([
-      { id: 'a1-r2', activityId: 'a1', statusCode: 'waitlisted', registeredAt },
-      { id: 'a2-r1', activityId: 'a2', statusCode: 'waitlisted', registeredAt },
-      { id: 'pending', activityId: 'a1', statusCode: 'pending', registeredAt },
+      {
+        id: 'a1-r2',
+        activityId: 'a1',
+        activityPositionId: 'ap1',
+        statusCode: 'waitlisted',
+        registeredAt,
+      },
+      {
+        id: 'a1-r3',
+        activityId: 'a1',
+        activityPositionId: 'ap2',
+        statusCode: 'waitlisted',
+        registeredAt,
+      },
+      {
+        id: 'a2-r1',
+        activityId: 'a2',
+        activityPositionId: null,
+        statusCode: 'waitlisted',
+        registeredAt,
+      },
+      {
+        id: 'pending',
+        activityId: 'a1',
+        activityPositionId: 'ap1',
+        statusCode: 'pending',
+        registeredAt,
+      },
     ]);
 
     expect(prisma.activityRegistration.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.activityRegistration.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        orderBy: [{ activityId: 'asc' }, { registeredAt: 'asc' }, { id: 'asc' }],
+        orderBy: [
+          { activityId: 'asc' },
+          { activityPositionId: 'asc' },
+          { registeredAt: 'asc' },
+          { id: 'asc' },
+        ],
       }),
     );
     expect(positions).toEqual(
       new Map([
         ['a1-r2', 2],
+        ['a1-r3', 1],
         ['a2-r1', 1],
         ['pending', null],
       ]),

@@ -87,6 +87,7 @@ const REGISTRATION_STATUS_WAITLISTED = 'waitlisted';
 const registrationSafeSelect = {
   id: true,
   activityId: true,
+  activityPositionId: true,
   memberId: true,
   statusCode: true,
   registeredAt: true,
@@ -105,6 +106,7 @@ const registrationSafeSelect = {
 const registrationListSelect = {
   id: true,
   activityId: true,
+  activityPositionId: true,
   memberId: true,
   statusCode: true,
   registeredAt: true,
@@ -115,6 +117,12 @@ const registrationListSelect = {
     select: {
       memberNo: true,
       displayName: true,
+    },
+  },
+  activityPosition: {
+    select: {
+      id: true,
+      name: true,
     },
   },
 } as const satisfies Prisma.ActivityRegistrationSelect;
@@ -298,6 +306,13 @@ export class ActivityRegistrationsService {
     return {
       id: row.id,
       activityId: row.activityId,
+      activityPosition:
+        row.activityPosition == null
+          ? null
+          : {
+              activityPositionId: row.activityPosition.id,
+              name: row.activityPosition.name,
+            },
       memberId: row.memberId,
       memberNo: row.member?.memberNo ?? null,
       memberDisplayName: row.member?.displayName ?? null,
@@ -321,6 +336,13 @@ export class ActivityRegistrationsService {
     return {
       id: row.id,
       activityId: row.activityId,
+      activityPosition:
+        row.activityPosition == null
+          ? null
+          : {
+              activityPositionId: row.activityPosition.id,
+              name: row.activityPosition.name,
+            },
       activityTitle: row.activity?.title ?? null,
       memberId: row.memberId,
       memberNo: row.member?.memberNo ?? null,
@@ -478,15 +500,76 @@ export class ActivityRegistrationsService {
     }
   }
 
+  private async resolveActivityPositionForCreate(
+    activityId: string,
+    activityPositionId: string | undefined,
+    tx: PrismaTx,
+  ): Promise<{
+    id: string;
+    capacity: number | null;
+    genderRequirementCode: string | null;
+  } | null> {
+    const activityPositions = await tx.activityPosition.findMany({
+      where: { activityId, deletedAt: null },
+      select: { id: true, capacity: true, genderRequirementCode: true },
+    });
+    if (activityPositions.length === 0) {
+      if (activityPositionId !== undefined) {
+        throw new BizException(BizCode.ACTIVITY_POSITION_NOT_FOUND);
+      }
+      return null;
+    }
+    if (activityPositionId === undefined) {
+      throw new BizException(BizCode.ACTIVITY_POSITION_REQUIRED);
+    }
+    const activityPosition = activityPositions.find(
+      (candidateActivityPosition) => candidateActivityPosition.id === activityPositionId,
+    );
+    if (activityPosition === undefined) {
+      throw new BizException(BizCode.ACTIVITY_POSITION_NOT_FOUND);
+    }
+    return activityPosition;
+  }
+
+  private async resolveApproveCapacity(
+    activityId: string,
+    activityPositionId: string | null,
+    activityCapacity: number | null,
+    tx: PrismaTx,
+  ): Promise<number | null> {
+    if (activityPositionId !== null) {
+      const activityPosition = await tx.activityPosition.findFirst({
+        where: { id: activityPositionId, activityId, deletedAt: null },
+        select: { capacity: true },
+      });
+      if (activityPosition === null) {
+        throw new BizException(BizCode.ACTIVITY_POSITION_NOT_FOUND);
+      }
+      return activityPosition.capacity;
+    }
+
+    const liveActivityPosition = await tx.activityPosition.findFirst({
+      where: { activityId, deletedAt: null },
+      select: { id: true },
+    });
+    // P4：活动已存在岗位时，历史 null 岗位报名也不能再回退使用 Activity.capacity 判闸。
+    return liveActivityPosition === null ? activityCapacity : null;
+  }
+
   // capacity 复核(create / approve 共用)。pass 占名额(决议表 Q-D17)。
   private async assertCapacityNotExceeded(
     activityId: string,
+    activityPositionId: string | null,
     capacity: number | null,
     tx: PrismaTx,
   ): Promise<void> {
     if (capacity === null) return; // 不限名额
     const passCount = await tx.activityRegistration.count({
-      where: notDeletedWhere({ activityId, statusCode: REGISTRATION_STATUS_PASS }),
+      where: notDeletedWhere({
+        activityId,
+        activityPositionId,
+        statusCode: REGISTRATION_STATUS_PASS,
+      }),
     });
     if (passCount >= capacity) {
       throw new BizException(BizCode.ACTIVITY_CAPACITY_EXCEEDED);
@@ -497,12 +580,17 @@ export class ActivityRegistrationsService {
   // 刻意不复用 assertCapacityNotExceeded，确保 approve 的容量闸与 FOR UPDATE 调用逐字不动。
   private async resolveCreateStatusCode(
     activityId: string,
+    activityPositionId: string | null,
     capacity: number | null,
     tx: PrismaTx,
   ): Promise<typeof REGISTRATION_STATUS_PENDING | typeof REGISTRATION_STATUS_WAITLISTED> {
     if (capacity === null) return REGISTRATION_STATUS_PENDING;
     const passCount = await tx.activityRegistration.count({
-      where: notDeletedWhere({ activityId, statusCode: REGISTRATION_STATUS_PASS }),
+      where: notDeletedWhere({
+        activityId,
+        activityPositionId,
+        statusCode: REGISTRATION_STATUS_PASS,
+      }),
     });
     return passCount >= capacity ? REGISTRATION_STATUS_WAITLISTED : REGISTRATION_STATUS_PENDING;
   }
@@ -755,16 +843,32 @@ export class ActivityRegistrationsService {
       const act = await this.assertActivityRegistrable(activityId, 'admin', tx);
       await this.assertMemberExists(dto.memberId, tx);
       await this.assertGenderRequirement(dto.memberId, act.genderRequirementCode, tx);
+      const activityPosition = await this.resolveActivityPositionForCreate(
+        activityId,
+        dto.activityPositionId,
+        tx,
+      );
+      await this.assertGenderRequirement(
+        dto.memberId,
+        activityPosition?.genderRequirementCode ?? null,
+        tx,
+      );
       await this.assertNoActiveRegistration(activityId, dto.memberId, tx);
       // 保险 T3 报名门槛(admin 代报名同样拦截,C015 无旁路;requiresInsurance=false 零查询,
       // 既有断言零回归;评审稿 §4 / E-10:位于 assertNoActiveRegistration 之后、create 之前)
       await this.insuranceRequirement.assertMemberInsuredForActivity(dto.memberId, act, tx);
-      const initialStatusCode = await this.resolveCreateStatusCode(activityId, act.capacity, tx);
+      const initialStatusCode = await this.resolveCreateStatusCode(
+        activityId,
+        activityPosition?.id ?? null,
+        activityPosition === null ? act.capacity : activityPosition.capacity,
+        tx,
+      );
 
       const created = await this.runWithUniqueConstraintGuard(() =>
         tx.activityRegistration.create({
           data: {
             activityId,
+            activityPositionId: activityPosition?.id ?? null,
             memberId: dto.memberId,
             statusCode: initialStatusCode,
             ...(dto.extras !== undefined ? { extras: dto.extras as Prisma.InputJsonValue } : {}),
@@ -800,15 +904,31 @@ export class ActivityRegistrationsService {
       const memberId = await this.resolveUserMemberIdOrThrow(currentUser.id, tx);
       const act = await this.assertActivityRegistrable(activityId, 'self', tx);
       await this.assertGenderRequirement(memberId, act.genderRequirementCode, tx);
+      const activityPosition = await this.resolveActivityPositionForCreate(
+        activityId,
+        dto.activityPositionId,
+        tx,
+      );
+      await this.assertGenderRequirement(
+        memberId,
+        activityPosition?.genderRequirementCode ?? null,
+        tx,
+      );
       await this.assertNoActiveRegistration(activityId, memberId, tx);
       // 保险 T3 报名门槛(自助路径;App createMyForApp 薄壳经此同样拦截;评审稿 §4 / E-10)
       await this.insuranceRequirement.assertMemberInsuredForActivity(memberId, act, tx);
-      const initialStatusCode = await this.resolveCreateStatusCode(activityId, act.capacity, tx);
+      const initialStatusCode = await this.resolveCreateStatusCode(
+        activityId,
+        activityPosition?.id ?? null,
+        activityPosition === null ? act.capacity : activityPosition.capacity,
+        tx,
+      );
 
       const created = await this.runWithUniqueConstraintGuard(() =>
         tx.activityRegistration.create({
           data: {
             activityId,
+            activityPositionId: activityPosition?.id ?? null,
             memberId,
             statusCode: initialStatusCode,
             ...(dto.extras !== undefined ? { extras: dto.extras as Prisma.InputJsonValue } : {}),
@@ -863,6 +983,12 @@ export class ActivityRegistrationsService {
       if (!participationDecision.allowed) {
         throw new BizException(participationDecision.biz);
       }
+      const effectiveCapacity = await this.resolveApproveCapacity(
+        activityId,
+        reg.activityPositionId,
+        act.capacity,
+        tx,
+      );
       // Finding #3:条件式 no-op UPDATE 先锁定期望状态；并发 approve/reject 只有一方 count=1。
       // 锁持有到事务结束,后续实际 update 不再存在读写窗口；败者在 audit/通知前退出。
       const claimed = await tx.activityRegistration.updateMany({
@@ -877,7 +1003,12 @@ export class ActivityRegistrationsService {
       if (claimed.count === 0) {
         throw new BizException(BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID);
       }
-      await this.assertCapacityNotExceeded(activityId, act.capacity, tx);
+      await this.assertCapacityNotExceeded(
+        activityId,
+        reg.activityPositionId,
+        effectiveCapacity,
+        tx,
+      );
       const updated = await tx.activityRegistration.update({
         where: { id: reg.id },
         data: {
@@ -1089,6 +1220,7 @@ export class ActivityRegistrationsService {
         reg.statusCode === REGISTRATION_STATUS_PASS
           ? await promoteActivityWaitlist({
               activityId,
+              activityPositionId: reg.activityPositionId,
               maxPromotions: 1,
               actorUserId: currentUser.id,
               actorRoleSnap: currentUser.role,
@@ -1301,6 +1433,7 @@ export class ActivityRegistrationsService {
         reg.statusCode === REGISTRATION_STATUS_PASS
           ? await promoteActivityWaitlist({
               activityId: reg.activityId,
+              activityPositionId: reg.activityPositionId,
               maxPromotions: 1,
               actorUserId: currentUser.id,
               actorRoleSnap: currentUser.role,

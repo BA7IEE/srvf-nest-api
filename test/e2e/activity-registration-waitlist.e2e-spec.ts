@@ -6,6 +6,8 @@ import { PrismaService } from '../../src/database/prisma.service';
 import { ActivityRegistrationsService } from '../../src/modules/activity-registrations/activity-registrations.service';
 import { AppMyRegistrationsService } from '../../src/modules/activity-registrations/app-my-registrations.service';
 import { ActivitiesService } from '../../src/modules/activities/activities.service';
+import { ActivityPositionsService } from '../../src/modules/activities/activity-positions.service';
+import { AppActivitiesService } from '../../src/modules/activities/app-activities.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { AppActivityCheckInsService } from '../../src/modules/attendances/app-activity-check-ins.service';
 import { MetaService } from '../../src/modules/meta/meta.service';
@@ -25,6 +27,8 @@ describe('activity registration waitlist', () => {
   let registrations: ActivityRegistrationsService;
   let appRegistrations: AppMyRegistrationsService;
   let activities: ActivitiesService;
+  let activityPositions: ActivityPositionsService;
+  let appActivities: AppActivitiesService;
   let dashboard: MetaService;
   let appCheckIns: AppActivityCheckInsService;
   let organizationId: string;
@@ -38,6 +42,8 @@ describe('activity registration waitlist', () => {
     registrations = app.get(ActivityRegistrationsService);
     appRegistrations = app.get(AppMyRegistrationsService);
     activities = app.get(ActivitiesService);
+    activityPositions = app.get(ActivityPositionsService);
+    appActivities = app.get(AppActivitiesService);
     dashboard = app.get(MetaService);
     appCheckIns = app.get(AppActivityCheckInsService);
 
@@ -129,16 +135,413 @@ describe('activity registration waitlist', () => {
     memberId: string,
     statusCode: string,
     registeredAt?: Date,
+    activityPositionId?: string,
   ) {
     return prisma.activityRegistration.create({
       data: {
         activityId,
         memberId,
         statusCode,
+        ...(activityPositionId ? { activityPositionId } : {}),
         ...(registeredAt ? { registeredAt } : {}),
       },
     });
   }
+
+  async function createActivityPosition(
+    activityId: string,
+    capacity: number | null,
+    label: string,
+    genderRequirementCode: string | null = null,
+  ): Promise<string> {
+    sequence += 1;
+    return (
+      await prisma.activityPosition.create({
+        data: {
+          activityId,
+          name: `${label}-${sequence}`,
+          attendanceRoleCode: 'member',
+          capacity,
+          genderRequirementCode,
+        },
+        select: { id: true },
+      })
+    ).id;
+  }
+
+  async function createMemberProfile(
+    memberId: string,
+    genderCode: 'male' | 'female',
+  ): Promise<void> {
+    sequence += 1;
+    await prisma.memberProfile.create({
+      data: {
+        memberId,
+        realName: '岗位性别闸测试',
+        genderCode,
+        birthDate: new Date('1990-01-01T00:00:00.000Z'),
+        documentTypeCode: 'id_card',
+        documentNumber: `position-gender-${sequence}`,
+        mobile: `139${String(sequence).padStart(8, '0')}`,
+        joinedDate: new Date('2020-01-01T00:00:00.000Z'),
+        joinSourceCode: 'recommend',
+        privacyConsentSigned: true,
+      },
+    });
+  }
+
+  it('有岗位活动三路报名均写 activityPositionId；未选岗位 21035；跨岗位仍受一人一活动 21002', async () => {
+    const activityId = await createActivity(99, 'three-create-paths');
+    const activityPositionAId = await createActivityPosition(activityId, null, '岗位-A');
+    const activityPositionBId = await createActivityPosition(activityId, null, '岗位-B');
+    const adminMemberId = await createMember('position-admin');
+    const self = await createMemberUser('position-self');
+    const appSelf = await createMemberUser('position-app');
+
+    await expect(
+      registrations.create(activityId, { memberId: adminMemberId }, admin, AUDIT_META),
+    ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_POSITION_REQUIRED });
+
+    const adminCreated = await registrations.create(
+      activityId,
+      { memberId: adminMemberId, activityPositionId: activityPositionAId },
+      admin,
+      AUDIT_META,
+    );
+    const selfCreated = await registrations.createMy(
+      activityId,
+      { activityPositionId: activityPositionAId },
+      self.user,
+      AUDIT_META,
+    );
+    const appCreated = await appRegistrations.createMyForApp(
+      appSelf.user,
+      { activityId, activityPositionId: activityPositionBId },
+      AUDIT_META,
+    );
+
+    expect(
+      await prisma.activityRegistration.findMany({
+        where: { id: { in: [adminCreated.id, selfCreated.id, appCreated.id] } },
+        select: { id: true, activityPositionId: true },
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        { id: adminCreated.id, activityPositionId: activityPositionAId },
+        { id: selfCreated.id, activityPositionId: activityPositionAId },
+        { id: appCreated.id, activityPositionId: activityPositionBId },
+      ]),
+    );
+
+    await expect(
+      registrations.create(
+        activityId,
+        { memberId: adminMemberId, activityPositionId: activityPositionBId },
+        admin,
+        AUDIT_META,
+      ),
+    ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS });
+
+    const adminList = await registrations.list(activityId, { page: 1, pageSize: 20 }, admin);
+    expect(adminList.items.find((item) => item.id === adminCreated.id)?.activityPosition).toEqual({
+      activityPositionId: activityPositionAId,
+      name: expect.stringContaining('岗位-A'),
+    });
+  });
+
+  it('活动性别闸先判、岗位性别闸叠加，二者均通过才创建', async () => {
+    const activityId = await createActivity(99, 'position-gender-gates');
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: { genderRequirementCode: 'female' },
+    });
+    const maleActivityPositionId = await createActivityPosition(
+      activityId,
+      null,
+      '仅男性岗位',
+      'male',
+    );
+    const femaleActivityPositionId = await createActivityPosition(
+      activityId,
+      null,
+      '仅女性岗位',
+      'female',
+    );
+    const maleMemberId = await createMember('position-gender-male');
+    const femaleForMaleActivityPositionId = await createMember('position-gender-position-fail');
+    const femaleMemberId = await createMember('position-gender-pass');
+    await createMemberProfile(maleMemberId, 'male');
+    await createMemberProfile(femaleForMaleActivityPositionId, 'female');
+    await createMemberProfile(femaleMemberId, 'female');
+
+    await expect(
+      registrations.create(
+        activityId,
+        { memberId: maleMemberId, activityPositionId: femaleActivityPositionId },
+        admin,
+        AUDIT_META,
+      ),
+    ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH });
+    await expect(
+      registrations.create(
+        activityId,
+        {
+          memberId: femaleForMaleActivityPositionId,
+          activityPositionId: maleActivityPositionId,
+        },
+        admin,
+        AUDIT_META,
+      ),
+    ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_REGISTRATION_GENDER_MISMATCH });
+    await expect(
+      registrations.create(
+        activityId,
+        { memberId: femaleMemberId, activityPositionId: femaleActivityPositionId },
+        admin,
+        AUDIT_META,
+      ),
+    ).resolves.toMatchObject({ statusCode: 'pending' });
+  });
+
+  it('岗位满员按岗位分别排位；App 岗位余量为 0 仍 canRegister；Activity capacity 读侧派生岗位和', async () => {
+    const activityId = await createActivity(99, 'position-capacity-read');
+    const activityPositionAId = await createActivityPosition(activityId, 1, '读侧-A');
+    const activityPositionBId = await createActivityPosition(activityId, 2, '读侧-B');
+    await seedRegistration(
+      activityId,
+      await createMember('position-pass-a'),
+      'pass',
+      undefined,
+      activityPositionAId,
+    );
+    await seedRegistration(
+      activityId,
+      await createMember('position-pass-b1'),
+      'pass',
+      undefined,
+      activityPositionBId,
+    );
+    await seedRegistration(
+      activityId,
+      await createMember('position-pass-b2'),
+      'pass',
+      undefined,
+      activityPositionBId,
+    );
+    const tiedAt = new Date('2026-07-16T01:00:00.000Z');
+    const waitA1 = await seedRegistration(
+      activityId,
+      await createMember('position-wait-a1'),
+      'waitlisted',
+      tiedAt,
+      activityPositionAId,
+    );
+    const waitA2 = await seedRegistration(
+      activityId,
+      await createMember('position-wait-a2'),
+      'waitlisted',
+      new Date('2026-07-16T02:00:00.000Z'),
+      activityPositionAId,
+    );
+    const waitB1 = await seedRegistration(
+      activityId,
+      await createMember('position-wait-b1'),
+      'waitlisted',
+      tiedAt,
+      activityPositionBId,
+    );
+
+    const adminList = await registrations.list(
+      activityId,
+      { page: 1, pageSize: 20, statusCode: 'waitlisted' },
+      admin,
+    );
+    const waitlistById = new Map(adminList.items.map((item) => [item.id, item.waitlistPosition]));
+    expect(waitlistById.get(waitA1.id)).toBe(1);
+    expect(waitlistById.get(waitA2.id)).toBe(2);
+    expect(waitlistById.get(waitB1.id)).toBe(1);
+
+    const browsingMemberId = await createMember('position-browser');
+    const appPositionItems = await appActivities.listPositionsForMember(
+      activityId,
+      browsingMemberId,
+    );
+    expect(appPositionItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          activityPositionId: activityPositionAId,
+          remainingCapacity: 0,
+          canRegister: true,
+        }),
+        expect.objectContaining({
+          activityPositionId: activityPositionBId,
+          remainingCapacity: 0,
+          canRegister: true,
+        }),
+      ]),
+    );
+    const activityDetail = await appActivities.findVisibleByIdForMember(
+      activityId,
+      browsingMemberId,
+    );
+    expect(activityDetail.capacity).toBe(3);
+  });
+
+  it('同岗位 pass 取消只递补同岗队首，跨岗位候补保持不动', async () => {
+    const activityId = await createActivity(99, 'position-cancel-scope');
+    const activityPositionAId = await createActivityPosition(activityId, 1, '取消-A');
+    const activityPositionBId = await createActivityPosition(activityId, 1, '取消-B');
+    const passA = await seedRegistration(
+      activityId,
+      await createMember('position-cancel-pass-a'),
+      'pass',
+      undefined,
+      activityPositionAId,
+    );
+    const waitA = await seedRegistration(
+      activityId,
+      await createMember('position-cancel-wait-a'),
+      'waitlisted',
+      new Date('2026-07-16T01:00:00.000Z'),
+      activityPositionAId,
+    );
+    const waitB = await seedRegistration(
+      activityId,
+      await createMember('position-cancel-wait-b'),
+      'waitlisted',
+      new Date('2026-07-16T00:00:00.000Z'),
+      activityPositionBId,
+    );
+
+    await registrations.cancelAdmin(activityId, passA.id, {}, admin, AUDIT_META);
+
+    expect(
+      await prisma.activityRegistration.findMany({
+        where: { id: { in: [waitA.id, waitB.id] } },
+        select: { id: true, statusCode: true },
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        { id: waitA.id, statusCode: 'pending' },
+        { id: waitB.id, statusCode: 'waitlisted' },
+      ]),
+    );
+  });
+
+  it('同岗位并发 approve 由 Activity 锁串行化，pass 不超过岗位 capacity', async () => {
+    const activityId = await createActivity(99, 'position-concurrent-approve');
+    const activityPositionId = await createActivityPosition(activityId, 1, '并发审批');
+    const pending = await Promise.all(
+      [1, 2].map(async (n) =>
+        seedRegistration(
+          activityId,
+          await createMember(`position-approve-${n}`),
+          'pending',
+          undefined,
+          activityPositionId,
+        ),
+      ),
+    );
+
+    const results = await Promise.allSettled(
+      pending.map((registration) =>
+        registrations.approve(activityId, registration.id, {}, admin, AUDIT_META),
+      ),
+    );
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(
+      await prisma.activityRegistration.count({
+        where: { activityId, activityPositionId, statusCode: 'pass', deletedAt: null },
+      }),
+    ).toBe(1);
+  });
+
+  it('同岗位并发取消两个 pass 不会双递补同一候补', async () => {
+    const activityId = await createActivity(99, 'position-concurrent-cancel');
+    const activityPositionId = await createActivityPosition(activityId, 2, '并发取消');
+    const pass = await Promise.all(
+      [1, 2].map(async (n) =>
+        seedRegistration(
+          activityId,
+          await createMember(`position-cancel-pass-${n}`),
+          'pass',
+          undefined,
+          activityPositionId,
+        ),
+      ),
+    );
+    const waiting = await seedRegistration(
+      activityId,
+      await createMember('position-cancel-single-wait'),
+      'waitlisted',
+      undefined,
+      activityPositionId,
+    );
+
+    const results = await Promise.allSettled(
+      pass.map((registration) =>
+        registrations.cancelAdmin(activityId, registration.id, {}, admin, AUDIT_META),
+      ),
+    );
+    expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
+    expect(
+      await prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: waiting.id },
+        select: { statusCode: true },
+      }),
+    ).toEqual({ statusCode: 'pending' });
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          resourceId: waiting.id,
+          event: 'registration.review',
+          context: { path: ['extra', 'action'], equals: 'promote' },
+        },
+      }),
+    ).toBe(1);
+  });
+
+  it('岗位 capacity 并发同值调大只按锁后真实 delta 递补；Activity capacity update 不递补', async () => {
+    const activityId = await createActivity(1, 'position-concurrent-capacity');
+    const activityPositionId = await createActivityPosition(activityId, 1, '并发扩容');
+    await seedRegistration(
+      activityId,
+      await createMember('position-capacity-pass'),
+      'pass',
+      undefined,
+      activityPositionId,
+    );
+    const queue = await Promise.all(
+      [1, 2, 3, 4].map(async (n) =>
+        seedRegistration(
+          activityId,
+          await createMember(`position-capacity-q${n}`),
+          'waitlisted',
+          new Date(`2026-07-16T0${n}:00:00.000Z`),
+          activityPositionId,
+        ),
+      ),
+    );
+
+    await Promise.allSettled([
+      activityPositions.update(activityId, activityPositionId, { capacity: 3 }, admin, AUDIT_META),
+      activityPositions.update(activityId, activityPositionId, { capacity: 3 }, admin, AUDIT_META),
+    ]);
+    expect(
+      await prisma.activityRegistration.count({
+        where: { id: { in: queue.map((item) => item.id) }, statusCode: 'pending' },
+      }),
+    ).toBe(2);
+
+    await activities.update(activityId, { capacity: 99 }, admin, AUDIT_META);
+    expect(
+      await prisma.activityRegistration.count({
+        where: { id: { in: queue.map((item) => item.id) }, statusCode: 'pending' },
+      }),
+    ).toBe(2);
+    expect((await activities.findOne(activityId, admin)).capacity).toBe(3);
+  });
 
   it('满员 Admin/self/App 创建均进候补；App 详情/列表与 Admin 列表返回全局 FIFO 排位，候补占防重槽', async () => {
     const activityId = await createActivity(1, 'create-and-read');

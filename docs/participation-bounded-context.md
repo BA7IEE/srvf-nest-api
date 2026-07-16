@@ -168,6 +168,8 @@ Certificate (不在 participation 图内)
 
 ### 5.3 Transaction boundary
 
+- **岗位 capacity 更新**:事务内固定先锁 `Activity`，再重读 `ActivityPosition.capacity` 与同岗位 passCount；扩容递补只消费同 `activityPositionId` 候补队列，不增加第二把聚合行锁。
+- **报名 approve / cancel / promote**:锁序固定 `Activity → ActivityRegistration`；capacity 与 FIFO 域均显式包含 `activityPositionId`（无岗位为 null），跨岗位不借位、不递补。
 - **submit 路径**:Activity 检查 + ContributionRule 预填 + Sheet 创建 + N 条 Record 创建 + audit 写入,**全部在一个 `prisma.$transaction(...)` 内**；不写 Activity 状态。
 - **finalApprove 路径**:Sheet 状态翻转 + Record 复查 + `attendance.recorded` 事件 + audit 写入,**全部在一个 `prisma.$transaction(...)` 内**。
 - **ActivityCheckIn F2**:App 自助打卡写事务固定按 Activity → 当前 pass ActivityRegistration

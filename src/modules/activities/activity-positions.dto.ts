@@ -35,7 +35,7 @@ export class ActivityPositionParamsDto {
 
 export class ActivityPositionResponseDto {
   @ApiProperty({ description: '活动岗位 ActivityPosition.id' })
-  id!: string;
+  activityPositionId!: string;
 
   @ApiProperty({ description: '所属活动 Activity.id' })
   activityId!: string;
