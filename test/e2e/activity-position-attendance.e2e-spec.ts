@@ -10,7 +10,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-describe('Activity position attendance wiring (F4)', () => {
+describe('ActivityPosition attendance wiring (F4)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let adminAuth: string;
