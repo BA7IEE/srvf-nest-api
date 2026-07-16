@@ -17,6 +17,9 @@ import { AppMyActivitiesService } from './app-my-activities.service';
 import { AppActivitiesController } from './controllers/app-activities.controller';
 import { AdminActivityParticipationController } from './controllers/admin-activity-participation.controller';
 import { ActivityParticipationQueryService } from './activity-participation-query.service';
+import { AdminActivityPositionsController } from './controllers/admin-activity-positions.controller';
+import { ActivityPositionsService } from './activity-positions.service';
+import { ActivityPositionAuditRecorder } from './activity-position-audit-recorder';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -56,6 +59,7 @@ import { ActivityParticipationQueryService } from './activity-participation-quer
     ActivitiesController,
     AppActivitiesController,
     AdminActivityParticipationController,
+    AdminActivityPositionsController,
   ],
   providers: [
     ActivitiesService,
@@ -65,6 +69,8 @@ import { ActivityParticipationQueryService } from './activity-participation-quer
     ActivityParticipationQueryService,
     AppActivitiesService,
     AppMyActivitiesService,
+    ActivityPositionsService,
+    ActivityPositionAuditRecorder,
   ],
   exports: [ActivitiesService, AppMyActivitiesService, ActivityParticipationPolicy],
 })

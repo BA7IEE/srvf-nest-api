@@ -257,7 +257,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/system/v1/realname-settings'],
   ['post', '/api/system/v1/realname-settings/reset-credentials'],
 
-  // Admin surface(Admin-* tag;74 路由):终态前缀 /api/admin/v1/*
+  // Admin surface(Admin-* tag;79 路由):终态前缀 /api/admin/v1/*
   // (Route B 终态;v2 老前缀已于 Phase 4 删除,沿 docs/api-surface-migration-plan.md §3.4)。
   // 注:历史 mobile-like 自助端点已收口到 App surface(/api/app/v1/me|my/*);
   // 原 *-legacy controller 已于 Phase 4 删除,App 自助流由 app-me / app-my-* controller 承载。
@@ -358,6 +358,12 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/activities/{id}/publish'],
   ['patch', '/api/admin/v1/activities/{id}/cancel'],
   ['post', '/api/admin/v1/activities/{id}/complete'],
+  // 活动岗位与时段 F2:Admin 嵌套子资源 5 端点；两 GET login-only，三写复用 activity.update.record。
+  ['post', '/api/admin/v1/activities/{activityId}/positions'],
+  ['get', '/api/admin/v1/activities/{activityId}/positions'],
+  ['get', '/api/admin/v1/activities/{activityId}/positions/{activityPositionId}'],
+  ['patch', '/api/admin/v1/activities/{activityId}/positions/{activityPositionId}'],
+  ['delete', '/api/admin/v1/activities/{activityId}/positions/{activityPositionId}'],
   // 审计刀 5 F1/F2：活动报名×实到核对 + 活动参与合计；两项读码带 activity ref。
   ['get', '/api/admin/v1/activities/{activityId}/reconciliation'],
   ['get', '/api/admin/v1/activities/{activityId}/participation-summary'],
@@ -741,6 +747,9 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'PublishActivityDto',
   'ActivityResponseDto',
   'ActivityListItemDto',
+  'CreateActivityPositionDto',
+  'UpdateActivityPositionDto',
+  'ActivityPositionResponseDto',
   'CreateRegistrationDto',
   'ApproveRegistrationDto',
   'RejectRegistrationDto',
@@ -1249,7 +1258,7 @@ describe('OpenAPI 契约快照', () => {
   });
 
   it('活动评价 F3 后路由足迹精确为 354', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(354);
+    expect(EXPECTED_ROUTES).toHaveLength(359);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

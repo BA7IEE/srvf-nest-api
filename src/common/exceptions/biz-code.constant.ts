@@ -4,7 +4,7 @@ import { HttpStatus } from '@nestjs/common';
 //
 // 当前状态(随实施滚动维护;每次新增模块码后校对):
 // - 招新证书闭环刀A(2026-07-13):28xxx +2(28054 已审核通过禁止重传 / 28055 未审核通过禁止标门槛)
-// - 244 个 BizCode(2026-07-16 亲核:Object.keys(BizCode).length;活动评价新增 4 码)
+// - 249 个 BizCode(2026-07-16 亲核:Object.keys(BizCode).length;活动岗位 F2 新增 5 码)
 // - 历史 2026-06-25 快照为 175 个 BizCode(彼时含 CMS content 290xx +5
 //   + 活动闭环硬化 20123 报名截止 +1 + 统一通知 310xx +5;2026-06-13 的「141」系彼时快照,此后 realname 27xxx
 //   + 招新·入队 28xxx(280xx/281xx/282xx)+ #399 review 错误码增量(13014 / 19010 / 30103)+ CMS content 290xx 5 码
@@ -486,7 +486,7 @@ export const BizCode = {
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.7-1.12 + §6.1。
   // 段位选择:沿 baseline §1.1 预留 200xx 段给 activities。
   // 子段(对齐 baseline §1.3):
-  // - 20001:NOT_FOUND
+  // - 20001-20009:NOT_FOUND / 唯一冲突
   // - 20010-20019:业务级输入校验(根节点 / 字典 / capacity / 起止时间)
   // - 20030-20099:资源状态非法 / 状态机转移非法 / cancelled 拒改(Q-A12)
   // - 20120-20129:跨资源约束(报名时 Activity 状态 / isPublicRegistration 校验)
@@ -498,6 +498,16 @@ export const BizCode = {
     code: 20001,
     message: '活动不存在',
     httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_POSITION_NOT_FOUND: {
+    code: 20002,
+    message: '活动岗位不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_POSITION_NAME_ALREADY_EXISTS: {
+    code: 20003,
+    message: '同一活动已存在同名岗位',
+    httpStatus: HttpStatus.CONFLICT,
   },
   ACTIVITY_ORGANIZATION_ROOT_FORBIDDEN: {
     code: 20011,
@@ -533,9 +543,24 @@ export const BizCode = {
     message: '报名截止时间不得晚于活动结束时间',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+  ACTIVITY_POSITION_TIME_RANGE_INVALID: {
+    code: 20017,
+    message: '活动岗位时间范围无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_POSITION_CAPACITY_INVALID: {
+    code: 20018,
+    message: '活动岗位名额配置无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
   ACTIVITY_STATUS_INVALID: {
     code: 20030,
     message: '活动当前状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_POSITION_HAS_ACTIVE_REGISTRATIONS: {
+    code: 20031,
+    message: '活动岗位仍有活跃报名,不可删除',
     httpStatus: HttpStatus.CONFLICT,
   },
   ACTIVITY_NOT_PUBLIC_REGISTRATION: {
