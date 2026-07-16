@@ -133,16 +133,17 @@ function gather(): ReadonlyArray<readonly [string, number]> {
     // (实测 71 文件 / 93 全匹配 / 74 行首,与文档口径一致的是行首类数)
     controllers += (content.match(/^@Controller\(/gm) ?? []).length;
   }
+  // 标签刻意精简:current-state 恒读预算紧张;各项真源与口径见本文件头注
   return [
-    ['模块(src/modules 一级目录)', listDirs('src/modules').length],
-    ['Controller(行首 @Controller 类)', controllers],
-    ['Endpoint(EXPECTED_ROUTES)', countEndpoints()],
-    ['Migration(prisma/migrations 目录)', listDirs('prisma/migrations').length],
-    ['BizCode(biz-code.constant.ts)', countOccurrences(read('src/common/exceptions/biz-code.constant.ts'), 'httpStatus:')],
-    ['权限码(prisma/seed.ts)', countPermissions(seedSource)],
-    ['AuditLogEvent(audit-logs.types.ts)', countAuditEvents()],
-    ['内建角色(seed rbacRole.upsert)', countOccurrences(seedSource, 'rbacRole.upsert(')],
-    ['Cron(src/** @Cron)', cron],
+    ['模块', listDirs('src/modules').length],
+    ['Controller', controllers],
+    ['Endpoint', countEndpoints()],
+    ['Migration', listDirs('prisma/migrations').length],
+    ['BizCode', countOccurrences(read('src/common/exceptions/biz-code.constant.ts'), 'httpStatus:')],
+    ['权限码', countPermissions(seedSource)],
+    ['AuditLogEvent', countAuditEvents()],
+    ['内建角色', countOccurrences(seedSource, 'rbacRole.upsert(')],
+    ['Cron', cron],
   ];
 }
 
