@@ -1,7 +1,10 @@
 import { execSync } from 'child_process';
+import { deriveTestDbName } from './worktree-db';
 
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
-const TEST_DB_NAME = 'app_test';
+// 主仓恒 'app_test'(与 package.json#db:test:init 行为一致);linked worktree 内
+// 派生为 'app_test_<slug>',与 load-env.ts 对 DATABASE_URL 的重写同源(worktree-db.ts)。
+const TEST_DB_NAME = deriveTestDbName();
 
 // E2E 测试库的核心安全护栏。
 //

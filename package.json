@@ -33,6 +33,10 @@
     "agent:check:full": "pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm test:contract && pnpm test:e2e",
     "docs:codemap:check": "tsx scripts/check-codemap.ts",
     "docs:rbacmap:check": "tsx scripts/check-rbac-map.ts",
+    "docs:counts": "tsx scripts/docs-counts.ts --write",
+    "docs:counts:check": "tsx scripts/docs-counts.ts --check",
+    "docs:readtax:check": "tsx scripts/docs-readtax.ts",
+    "changelog:merge": "tsx scripts/changelog-merge.ts",
     "docs:handoff:openapi": "curl -fsS http://localhost:3000/api/docs-json -o docs/handoff/openapi.json && echo 'openapi → docs/handoff/openapi.json'"
   },
   "dependencies": {
