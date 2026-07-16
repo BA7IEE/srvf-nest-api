@@ -2,7 +2,9 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
+## v0.56.0 - 2026-07-17
+
+> 主题:**Harness 2.0 —— AI 协作底座全量重构**(T0 冻结 #653 → 机器层 #654 → current-state 全指针化 #655 → AGENTS 2.0 + reference 拆分 #656 → process §8 lane 并行协议 #657 → skills 与跨模型互查 #658 → 收尾归档 #659 → landing #660)。恒读层 137,824 → 14,609 字符(−89%)并入 `docs:readtax:check` / `docs:counts:check` 双守护;lane 并行协议与 Codex 互查 SOP 入法;`src/**` / `prisma/**` 零改动,endpoint 360 / migration 54 / BizCode 250 / 权限码 206 / AuditLogEvent 113 / cron 2 / 模块 36 / 角色 9 全恒。
 
 ### Harness 2.0 · PR2 机器层(#654)
 
