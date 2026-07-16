@@ -7,10 +7,10 @@
 
 | 项 | 当前值 |
 |---|---|
-| 版本(六处一致) | **v0.53.0**(2026-07-15;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #633 squash `b971cc5b`;GitHub Release「v0.53.0 — 活动报名候补与自动递补（审计刀 6 · 第二件）」标 Latest。**⚠️ 行为变更恰好 5 条**(对照表见 CHANGELOG `## v0.53.0`):满员报名不再拒 21031 改落 `waitlisted` 并给排位;取消 pass 同事务自动递补队首→pending+通知;capacity 调大/改 null 自动递补(缩容不递补);状态机 cancel/reject 扩含候补态(approve 仍仅 pending,不开候补直通 pass);活动 cancel 联动扩为 pending+waitlisted→cancelled) |
-| `main` HEAD | v0.53.0 后 Unreleased 开发线：候补与自动递补 #630 + 并发复核修复 #631；活动评价按 D 档串行完成 F0 冻结 #635 → F1 schema #636 → F2 App #637 → F3 Admin #638 → F4 E2E/文档收口本 PR。评价冻结稿 `docs/archive/reviews/activity-feedback-t0-review.md`；本轮不 bump / tag / release。 |
-| open PR / 工作树 / Unreleased | **0 open PR**（F4 合入清理后的目标态）；`## Unreleased` 含候补递补 + 活动评价。终值：权限码 **206** / biz-admin **81** / org-admin 60 / org-readonly 10 / group-manager 22 / group-readonly 11 / org-supervisor 4 / ops-admin 96 / `EXPECTED_ROUTES` **354** / controller **73** / 模块 **36** / migration **53** / 角色 **9** / BizCode **244** / AuditLogEvent **113** / cron **2**；`registration_status` 5 态，评价 0 新字典。 |
-| 最新 handoff | [`archive/handoff/v0.53.0.md`](archive/handoff/v0.53.0.md)(历史快照;tag 指向该 handoff #633 squash `b971cc5b`;接续 [`v0.52.0.md`](archive/handoff/v0.52.0.md);合入后不回改) |
+| 版本(六处一致) | **v0.54.0**(2026-07-16;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI `info.version`;tag 指向 handoff #641 squash `6ec9f50a`;GitHub Release「v0.54.0 — 活动评价（审计刀 6 · 第三件）」标 Latest。**纯 additive,0 既有行为变更**:App 本人评价 PUT/GET(仅「真到场者」= 有 approved 考勤记录者;窗口 = completed 且 `endAt + ATTENDANCE_FEEDBACK_WINDOW_DAYS`〔默认 30〕内可评可改)+ Admin 实名列表与聚合两端点;评价对队员不公开、不进 AuditLog、不影响任何结算) |
+| `main` HEAD | v0.54.0 release 回填点(本回填 PR 的 squash commit;发布/tag 代码点 = handoff #641 `6ec9f50a`;收口链 = 四拍板(真到场者/1-5 星+文字/对管理员实名/30 天可评可改)→ goal 五 PR 全绿自合 F0 冻结 #635 → F1 schema #636〔migration 53〕 → F2 App #637 → F3 Admin #638 → F4 收口 #639 → 主会话四维元核验 + 对抗复核(**0 存活 finding**,11 条候选全推翻)→ bump #640 `133a6fc3` → handoff #641 → tag/Release → 本回填 PR;冻结评审稿 `docs/archive/reviews/activity-feedback-t0-review.md`〔§2.4 记载「窗口基线用 endAt 而非新增 completedAt」代决偏离〕) |
+| open PR / 工作树 / Unreleased | **0 open PR**;`## Unreleased` 空。终值:权限码 **206** / biz-admin **81** / org-admin 60 / org-readonly 10 / group-manager 22 / group-readonly 11 / org-supervisor 4 / ops-admin 96 / `EXPECTED_ROUTES` **354** / controller **73** / 模块 **36** / migration **53** / 角色 **9** / BizCode **244** / AuditLogEvent **113** / cron **2**;`registration_status` 5 态,评价 0 新字典、0 新权限码。 |
+| 最新 handoff | [`archive/handoff/v0.54.0.md`](archive/handoff/v0.54.0.md)(历史快照;tag 指向该 handoff #641 squash `6ec9f50a`;接续 [`v0.53.0.md`](archive/handoff/v0.53.0.md);合入后不回改) |
 
 ## 2. 当前系统已具备能力
 
