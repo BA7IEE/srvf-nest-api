@@ -12,6 +12,7 @@ import {
   hashSmsVerificationCode,
   SmsCodePepperUnavailableError,
 } from './sms-code-hash.util';
+import { acquireSmsIssueLocks } from './sms-issue-lock';
 import { SmsProviderRouter } from './sms-provider.router';
 import {
   maskPhone,
@@ -53,10 +54,10 @@ export class SmsCodeService {
   }
 
   /**
-   * 签发验证码并发送(评审稿 §4 检查链:间隔 → 日限 → 通道 → 单活码 → 发送 → 落日志)。
+   * 签发验证码并发送(D-SMS:通道 → 双锁事务〔日限 / 间隔 / 单活码〕→ 发送 → 落日志)。
    * phone 占用检查由调用方(users.service)在调用前完成。
    *
-   * - 同号 <60s 再发 → SMS_SEND_INTERVAL_LIMIT(24120;跨 purpose 共享,本期单 purpose)
+   * - 同号 <60s 再发 → SMS_SEND_INTERVAL_LIMIT(24120;跨 purpose 共享)
    * - 同号自然日(UTC+8,E-10)≥10 条 → SMS_PHONE_DAILY_LIMIT(24121;
    *   按 sms_verification_codes 当日创建行数计,含发送失败行,保守防滥用,E-11)
    * - 通道不可用 → SMS_CHANNEL_NOT_CONFIGURED(24030)
@@ -68,30 +69,7 @@ export class SmsCodeService {
     userId: string | null; // 放宽 null:匿名 pre-auth 报名人(RECRUITMENT_BIND)无账号(E-P4-4;列本就可空)
     ip: string | null;
   }): Promise<{ expiresInSeconds: number }> {
-    const now = new Date();
-
-    // 1. 同号间隔(查 phone 最新一条 code;(phone, purpose) 复合索引前缀覆盖)
-    const latest = await this.prisma.smsVerificationCode.findFirst({
-      where: { phone: input.phone },
-      orderBy: { createdAt: 'desc' },
-      select: { createdAt: true },
-    });
-    if (
-      latest !== null &&
-      now.getTime() - latest.createdAt.getTime() < SMS_SEND_MIN_INTERVAL_SECONDS * 1000
-    ) {
-      throw new BizException(BizCode.SMS_SEND_INTERVAL_LIMIT);
-    }
-
-    // 2. 同号自然日上限(E-10 固定 UTC+8 日界;不引 tz 依赖)
-    const dailyCount = await this.prisma.smsVerificationCode.count({
-      where: { phone: input.phone, createdAt: { gte: startOfDayUtc8(now) } },
-    });
-    if (dailyCount >= SMS_PHONE_DAILY_LIMIT) {
-      throw new BizException(BizCode.SMS_PHONE_DAILY_LIMIT);
-    }
-
-    // 3. 通道解析(settings 缺失 / 未启用 / production-like DEV_STUB → 24030)。
+    // 1. 通道解析(settings 缺失 / 未启用 / production-like DEV_STUB → 24030)。
     //    先解析再建 code 行:通道不可用时不产生计数占用。
     let providerType: 'DEV_STUB' | 'TENCENT_SMS';
     try {
@@ -103,11 +81,34 @@ export class SmsCodeService {
       throw err;
     }
 
-    // 4. 生成明文码(E-29:CSPRNG;DEV_STUB 固定 888888,production-like 不可达)
+    // 2. 生成明文码(E-29:CSPRNG;DEV_STUB 固定 888888,production-like 不可达)
     const code = providerType === 'DEV_STUB' ? SMS_DEV_STUB_FIXED_CODE : generateNumericCode();
+    const codeHash = this.hashCode({ phone: input.phone, purpose: input.purpose, code });
 
-    // 5. 单活码:事务内作废同 phone+purpose 旧活码 + 建新码行(E-9)
+    // 3. D-SMS 原子临界区：phone → phone+purpose 固定双锁后，latest/count/旧码作废/create
+    //    全部在同一事务；任一检查不得外提。日限优先裁决，使 9→双并发的后到者稳定命中 24121。
     const codeRow = await this.prisma.$transaction(async (tx) => {
+      await acquireSmsIssueLocks(tx, input.phone, input.purpose);
+      const now = new Date();
+
+      const latest = await tx.smsVerificationCode.findFirst({
+        where: { phone: input.phone },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      });
+      const dailyCount = await tx.smsVerificationCode.count({
+        where: { phone: input.phone, createdAt: { gte: startOfDayUtc8(now) } },
+      });
+      if (dailyCount >= SMS_PHONE_DAILY_LIMIT) {
+        throw new BizException(BizCode.SMS_PHONE_DAILY_LIMIT);
+      }
+      if (
+        latest !== null &&
+        now.getTime() - latest.createdAt.getTime() < SMS_SEND_MIN_INTERVAL_SECONDS * 1000
+      ) {
+        throw new BizException(BizCode.SMS_SEND_INTERVAL_LIMIT);
+      }
+
       await tx.smsVerificationCode.updateMany({
         where: {
           phone: input.phone,
@@ -121,7 +122,7 @@ export class SmsCodeService {
         data: {
           phone: input.phone,
           purpose: input.purpose,
-          codeHash: this.hashCode({ phone: input.phone, purpose: input.purpose, code }),
+          codeHash,
           userId: input.userId,
           expiresAt: new Date(now.getTime() + SMS_CODE_TTL_SECONDS * 1000),
           ip: input.ip,
@@ -130,7 +131,7 @@ export class SmsCodeService {
       });
     });
 
-    // 6. 发送(事务外:外部调用不持事务)+ 落 send_log(append-only)
+    // 4. 发送(事务外:外部调用不持事务)+ 落 send_log(append-only)
     try {
       const result = await this.router.sendVerifyCode({
         phone: input.phone,

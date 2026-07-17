@@ -1,0 +1,1 @@
+- SMS 验证码签发改为 PostgreSQL phone → phone+purpose 双 transaction advisory lock 原子临界区，防止多实例并发穿透 60 秒/日限与产生多条 active code。
