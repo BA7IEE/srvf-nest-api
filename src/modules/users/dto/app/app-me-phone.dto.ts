@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, Length, Matches } from 'class-validator';
+import { IsNotEmpty, IsString, Length, Matches } from 'class-validator';
 
 import { MAINLAND_PHONE_PATTERN, SMS_CODE_LENGTH } from '../../../sms/sms.constants';
 
@@ -40,6 +40,11 @@ export class BindMyPhoneDto {
   @Length(SMS_CODE_LENGTH, SMS_CODE_LENGTH)
   @Matches(/^\d{6}$/, { message: 'code 必须是 6 位数字' })
   code!: string;
+
+  @ApiProperty({ description: 'Auth surface 签发、action=PHONE_BIND 的 5 分钟 step-up proof' })
+  @IsString()
+  @IsNotEmpty()
+  stepUpToken!: string;
 }
 
 export class AppMePhoneDto {

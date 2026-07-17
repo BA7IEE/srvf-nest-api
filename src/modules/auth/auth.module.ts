@@ -9,6 +9,7 @@ import { SmsModule } from '../sms/sms.module';
 import { WechatModule } from '../wechat/wechat.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { IdentityStepUpService } from './identity-step-up.service';
 import { LoginSmsService } from './login-sms.service';
 import { LoginWechatService } from './login-wechat.service';
 import { PasswordResetService } from './password-reset.service';
@@ -48,6 +49,14 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, PasswordResetService, LoginSmsService, LoginWechatService, JwtStrategy],
+  providers: [
+    AuthService,
+    PasswordResetService,
+    LoginSmsService,
+    LoginWechatService,
+    IdentityStepUpService,
+    JwtStrategy,
+  ],
+  exports: [IdentityStepUpService],
 })
 export class AuthModule {}

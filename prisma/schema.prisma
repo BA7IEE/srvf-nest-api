@@ -1702,6 +1702,7 @@ enum SmsPurpose {
   LOGIN // OTP 验证码登录(pre-auth;queue-b 评审稿 §5.1;通知用途不占 purpose——生日批走 send_logs.templateKey)
   WECHAT_BIND // 微信 openid 绑定锚点(pre-auth;wechat-mini-login 评审稿 D-W1)
   RECRUITMENT_BIND // H5 招新报名前手机身份链(pre-auth 匿名;recruitment-phase4 评审稿 §3.2 E-P4-3;userId 形参放宽 null,E-P4-4)
+  IDENTITY_STEP_UP // 当前绑定手机号作为高危身份换绑的 step-up 因子(identity-session P0 PR1)
 }
 
 model SmsSendLog {

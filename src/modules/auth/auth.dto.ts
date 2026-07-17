@@ -1,5 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, Length, Matches, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEnum,
+  IsNotEmpty,
+  IsString,
+  Length,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 import { MAINLAND_PHONE_PATTERN, SMS_CODE_LENGTH } from '../sms/sms.constants';
 
@@ -107,6 +115,66 @@ export class LogoutAllResponseDto {
     example: 3,
   })
   revokedCount!: number;
+}
+
+export enum StepUpAction {
+  PHONE_BIND = 'PHONE_BIND',
+  WECHAT_BIND = 'WECHAT_BIND',
+}
+
+export class StepUpPasswordDto {
+  @ApiProperty({ description: '本次 proof 允许执行的身份动作', enum: StepUpAction })
+  @IsEnum(StepUpAction)
+  action!: StepUpAction;
+
+  @ApiProperty({ description: '当前账号密码', format: 'password' })
+  @IsString()
+  @IsNotEmpty()
+  password!: string;
+}
+
+export class SendStepUpSmsCodeDto {
+  @ApiProperty({
+    description: '随后短信 step-up proof 允许执行的身份动作;验证码只发往当前绑定手机号',
+    enum: StepUpAction,
+  })
+  @IsEnum(StepUpAction)
+  action!: StepUpAction;
+}
+
+export class StepUpSmsDto {
+  @ApiProperty({ description: '本次 proof 允许执行的身份动作', enum: StepUpAction })
+  @IsEnum(StepUpAction)
+  action!: StepUpAction;
+
+  @ApiProperty({ description: '当前绑定手机号收到的 6 位数字验证码' })
+  @IsString()
+  @Length(SMS_CODE_LENGTH, SMS_CODE_LENGTH)
+  @Matches(/^\d{6}$/, { message: 'code 必须是 6 位数字' })
+  code!: string;
+}
+
+export class StepUpWechatDto {
+  @ApiProperty({ description: '本次 proof 允许执行的身份动作', enum: StepUpAction })
+  @IsEnum(StepUpAction)
+  action!: StepUpAction;
+
+  @ApiProperty({
+    description: '微信小程序 wx.login() 产出的一次性 code;解析出的 openid 必须等于当前绑定值',
+    maxLength: 128,
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  code!: string;
+}
+
+export class StepUpResponseDto {
+  @ApiProperty({ description: '5 分钟 action-bound step-up proof;仅用于身份绑定请求' })
+  stepUpToken!: string;
+
+  @ApiProperty({ description: 'proof 绝对过期时刻(ISO 8601 UTC)' })
+  expiresAt!: string;
 }
 
 // ===== 找回密码 T2(2026-06-11;冻结评审稿 password-reset-by-sms-review.md §3.2 / E-8/E-9)=====

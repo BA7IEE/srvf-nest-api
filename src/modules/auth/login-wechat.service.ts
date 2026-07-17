@@ -159,10 +159,15 @@ export class LoginWechatService {
       });
       try {
         await this.prisma.$transaction(async (tx) => {
+          const now = new Date();
           await tx.user.update({
             where: { id: user.id },
             data: { openid },
             select: { id: true },
+          });
+          await tx.refreshToken.updateMany({
+            where: { userId: user.id, revokedAt: null, expiresAt: { gt: now } },
+            data: { revokedAt: now, revokedReason: 'self-wechat-identity-change' },
           });
           // audit detail openid 一律掩码(E-23);禁 wx code / 完整 openid / session_key
           await this.auditLogs.log({

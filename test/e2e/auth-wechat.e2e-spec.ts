@@ -248,6 +248,10 @@ describe('微信登录 + 绑定全链(T3 e2e 组 A;IP 限流调大)', () => {
     });
 
     it('pre-auth 换绑:同账号绑新 openid(覆盖旧值)→ wechat.rebind.self audit', async () => {
+      const oldLogin = await loginWechat('wx-user-2');
+      expect(oldLogin.status).toBe(200);
+      const oldRefreshToken = oldLogin.body.data.session.refreshToken as string;
+
       await rewindInterval(PHONE_REBIND);
       await sendCode(PHONE_REBIND);
       const res = await bind('wx-user-2-new', PHONE_REBIND, FIXED_SMS_CODE);
@@ -264,6 +268,26 @@ describe('微信登录 + 绑定全链(T3 e2e 组 A;IP 限流调大)', () => {
       const s = JSON.stringify(rebindAudit);
       expect(s).not.toContain('dev-openid-wx-user-2-new');
       expect(s).not.toContain('dev-openid-wx-user-2');
+
+      // 身份真实变更在事务内撤销旧 family，提交后才签发新 family。
+      const oldRefresh = await request(httpServer(app))
+        .post(REFRESH_PATH)
+        .send({ refreshToken: oldRefreshToken });
+      expectBizError(oldRefresh, BizCode.REFRESH_TOKEN_INVALID);
+      const newRefresh = await request(httpServer(app))
+        .post(REFRESH_PATH)
+        .send({ refreshToken: res.body.data.refreshToken });
+      expect(newRefresh.status).toBe(200);
+      expect(newRefresh.body.data.accessToken).toBeDefined();
+      expect(
+        await prisma.refreshToken.count({
+          where: {
+            userId: uRebindId,
+            revokedAt: { not: null },
+            revokedReason: 'self-wechat-identity-change',
+          },
+        }),
+      ).toBeGreaterThan(0);
     });
 
     it('已绑本人 + 有效码 → 幂等成功(不重写 audit,直接签发)', async () => {

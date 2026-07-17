@@ -54,6 +54,12 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/auth/v1/refresh'],
   ['post', '/api/auth/v1/logout'],
   ['post', '/api/auth/v1/logout-all'],
+  // Identity session P0 PR1(2026-07-17):5 分钟 action-bound step-up proof;
+  // 四端点复用既有 AuthController 与 throttler，App 身份换绑消费 proof。
+  ['post', '/api/auth/v1/step-up/password'],
+  ['post', '/api/auth/v1/step-up/sms/send-code'],
+  ['post', '/api/auth/v1/step-up/sms'],
+  ['post', '/api/auth/v1/step-up/wechat'],
   // 找回密码 T2(2026-06-11;冻结评审稿 password-reset-by-sms-review.md §3.2):
   // pre-auth 两端点,155→157。
   ['post', '/api/auth/v1/password-reset/send-code'],
@@ -1262,8 +1268,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('活动岗位 F3 后路由足迹精确为 360', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(360);
+  it('Identity session P0 PR1 后路由足迹精确为 364', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(364);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

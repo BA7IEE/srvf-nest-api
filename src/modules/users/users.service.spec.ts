@@ -7,6 +7,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import type { IdentityStepUpService } from '../auth/identity-step-up.service';
 import type { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import type { RbacService } from '../permissions/rbac.service';
 import type { SmsCodeService } from '../sms/sms-code.service';
@@ -64,6 +65,16 @@ interface SafeUserRow {
   updatedAt: Date;
 }
 
+interface IdentityUserRow {
+  id: string;
+  passwordHash: string;
+  phone: string | null;
+  phoneVerifiedAt: Date | null;
+  openid: string | null;
+  status: UserStatus;
+  deletedAt: Date | null;
+}
+
 function makeSafeUser(overrides: Partial<SafeUserRow> = {}): SafeUserRow {
   return {
     id: 'u-1',
@@ -76,6 +87,19 @@ function makeSafeUser(overrides: Partial<SafeUserRow> = {}): SafeUserRow {
     createdAt: FIXED_DATE,
     lastLoginAt: null,
     updatedAt: FIXED_DATE,
+    ...overrides,
+  };
+}
+
+function makeIdentityUser(overrides: Partial<IdentityUserRow> = {}): IdentityUserRow {
+  return {
+    id: 'u-1',
+    passwordHash: 'hash-current',
+    phone: '13800000001',
+    phoneVerifiedAt: FIXED_DATE,
+    openid: null,
+    status: UserStatus.ACTIVE,
+    deletedAt: null,
     ...overrides,
   };
 }
@@ -132,7 +156,10 @@ function makePrismaMock() {
     updateMany: jest.fn<Promise<{ count: number }>, [unknown]>().mockResolvedValue({ count: 0 }),
   };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
-  const prisma = { user, refreshToken, $transaction };
+  const $queryRaw = jest
+    .fn<Promise<Array<{ id: string }>>, [unknown]>()
+    .mockResolvedValue([{ id: 'u-1' }]);
+  const prisma = { user, refreshToken, $transaction, $queryRaw };
   // 双模:回调式把 prisma mock 自身当 tx 传入;数组式($transaction([findMany, count]))走 Promise.all。
   $transaction.mockImplementation((arg: unknown) =>
     typeof arg === 'function'
@@ -186,6 +213,11 @@ function makeWechatMock() {
 }
 type WechatMock = ReturnType<typeof makeWechatMock>;
 
+function makeIdentityStepUpMock() {
+  return { verifyProof: jest.fn<void, [string, unknown, unknown]>() };
+}
+type IdentityStepUpMock = ReturnType<typeof makeIdentityStepUpMock>;
+
 function makeService(
   prisma: PrismaMock,
   opts: {
@@ -194,6 +226,7 @@ function makeService(
     lastAdminProtection?: LastAdminProtectionMock;
     smsCode?: SmsCodeMock;
     wechat?: WechatMock;
+    identityStepUp?: IdentityStepUpMock;
   } = {},
 ): UsersService {
   const auditLogs = opts.auditLogs ?? makeAuditLogsMock();
@@ -201,6 +234,7 @@ function makeService(
   const lastAdminProtection = opts.lastAdminProtection ?? makeLastAdminProtectionMock();
   const smsCode = opts.smsCode ?? makeSmsCodeMock();
   const wechat = opts.wechat ?? makeWechatMock();
+  const identityStepUp = opts.identityStepUp ?? makeIdentityStepUpMock();
   return new UsersService(
     prisma as unknown as PrismaService,
     auditLogs as unknown as AuditLogsService,
@@ -208,6 +242,7 @@ function makeService(
     lastAdminProtection as unknown as LastAdminProtectionPolicy,
     smsCode as unknown as SmsCodeService,
     wechat as unknown as WechatService,
+    identityStepUp as unknown as IdentityStepUpService,
   );
 }
 
@@ -914,6 +949,117 @@ describe('UsersService (characterization, scoped)', () => {
     });
   });
 
+  describe('bindMyPhone — step-up / OTP / User lock 时序', () => {
+    const currentUser = makeCurrentUser({ id: 'u-1', role: Role.USER });
+    const dto = {
+      phone: '13900000001',
+      code: '888888',
+      stepUpToken: 'proof',
+    };
+
+    it('invalid proof 在 transaction 前 fail-close，不消费 OTP', async () => {
+      const prisma = makePrismaMock();
+      const smsCode = makeSmsCodeMock();
+      const identityStepUp = makeIdentityStepUpMock();
+      const invalid = new BizException(BizCode.STEP_UP_PROOF_INVALID);
+      prisma.user.findFirst.mockResolvedValue(makeIdentityUser());
+      identityStepUp.verifyProof.mockImplementation(() => {
+        throw invalid;
+      });
+      const service = makeService(prisma, { smsCode, identityStepUp });
+
+      await expect(service.bindMyPhone(currentUser, dto, META)).rejects.toBe(invalid);
+
+      expect(smsCode.verifyAndConsume).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('direct same-target 在 transaction 前幂等返回，不消费 OTP', async () => {
+      const prisma = makePrismaMock();
+      const smsCode = makeSmsCodeMock();
+      const identityStepUp = makeIdentityStepUpMock();
+      prisma.user.findFirst.mockResolvedValue(makeIdentityUser({ phone: dto.phone }));
+      const service = makeService(prisma, { smsCode, identityStepUp });
+
+      await expect(service.bindMyPhone(currentUser, dto, META)).resolves.toEqual({
+        phone: dto.phone,
+        phoneVerifiedAt: FIXED_DATE.toISOString(),
+      });
+
+      expect(identityStepUp.verifyProof).toHaveBeenCalledTimes(1);
+      expect(smsCode.verifyAndConsume).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('true change 先锁外消费 OTP，再开 transaction 并在 User 锁内二次 verify proof', async () => {
+      const prisma = makePrismaMock();
+      const smsCode = makeSmsCodeMock();
+      const identityStepUp = makeIdentityStepUpMock();
+      const auditLogs = makeAuditLogsMock();
+      const user = makeIdentityUser();
+      prisma.user.findFirst.mockResolvedValueOnce(user).mockResolvedValueOnce(user);
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.update.mockResolvedValue({
+        phone: dto.phone,
+        phoneVerifiedAt: FIXED_DATE,
+      } as unknown as SafeUserRow);
+      let finishOtp!: (result: { codeId: string }) => void;
+      smsCode.verifyAndConsume.mockReturnValue(
+        new Promise((resolve) => {
+          finishOtp = resolve;
+        }),
+      );
+      const service = makeService(prisma, { auditLogs, smsCode, identityStepUp });
+
+      const binding = service.bindMyPhone(currentUser, dto, META);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(smsCode.verifyAndConsume).toHaveBeenCalledTimes(1);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+
+      finishOtp({ codeId: 'code-1' });
+      await binding;
+
+      expect(identityStepUp.verifyProof).toHaveBeenCalledTimes(2);
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(smsCode.verifyAndConsume.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.$transaction.mock.invocationCallOrder[0],
+      );
+      expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        identityStepUp.verifyProof.mock.invocationCallOrder[1],
+      );
+      expect(identityStepUp.verifyProof.mock.invocationCallOrder[1]).toBeLessThan(
+        prisma.user.update.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('锁内二次 verify 发现 snapshot stale 统一 10008，不写身份/不撤 refresh/不 audit', async () => {
+      const prisma = makePrismaMock();
+      const smsCode = makeSmsCodeMock();
+      const identityStepUp = makeIdentityStepUpMock();
+      const auditLogs = makeAuditLogsMock();
+      const initial = makeIdentityUser();
+      const locked = makeIdentityUser({ passwordHash: 'hash-changed' });
+      const stale = new BizException(BizCode.STEP_UP_PROOF_INVALID);
+      prisma.user.findFirst.mockResolvedValueOnce(initial).mockResolvedValueOnce(locked);
+      prisma.user.findUnique.mockResolvedValue(null);
+      smsCode.verifyAndConsume.mockResolvedValue({ codeId: 'code-1' });
+      identityStepUp.verifyProof.mockImplementationOnce(() => undefined);
+      identityStepUp.verifyProof.mockImplementationOnce(() => {
+        throw stale;
+      });
+      const service = makeService(prisma, { auditLogs, smsCode, identityStepUp });
+
+      await expect(service.bindMyPhone(currentUser, dto, META)).rejects.toBe(stale);
+
+      expect(smsCode.verifyAndConsume).toHaveBeenCalledTimes(1);
+      expect(identityStepUp.verifyProof).toHaveBeenCalledTimes(2);
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+      expect(auditLogs.log).not.toHaveBeenCalled();
+    });
+  });
+
   // 微信 T3 review 收口(2026-06-12 增量审计⑬):bindMyWechat P2002 兜底触达。
   // 上方既有用例不触达 wechat 方法;本组只锁兜底 catch(含 §5 数组判断铁律),
   // 主流程 / 掩码 / 幂等由 app-me-wechat e2e 锁定。
@@ -943,7 +1089,7 @@ describe('UsersService (characterization, scoped)', () => {
       await expect(
         service.bindMyWechat(
           makeCurrentUser({ id: 'u-1', role: Role.USER }),
-          { code: 'wx-c' },
+          { code: 'wx-c', stepUpToken: 'proof' },
           META,
         ),
       ).rejects.toEqual(new BizException(BizCode.WECHAT_ALREADY_BOUND));
@@ -964,7 +1110,7 @@ describe('UsersService (characterization, scoped)', () => {
       await expect(
         service.bindMyWechat(
           makeCurrentUser({ id: 'u-1', role: Role.USER }),
-          { code: 'wx-c' },
+          { code: 'wx-c', stepUpToken: 'proof' },
           META,
         ),
       ).rejects.toBe(otherConflict);

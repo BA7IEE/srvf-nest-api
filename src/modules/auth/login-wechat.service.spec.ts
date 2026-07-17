@@ -40,8 +40,11 @@ function makeMocks() {
     findUniqueOrThrow: jest.fn<Promise<{ openid: string | null }>, [unknown]>(), // ⑥ me.openid
     update: jest.fn<Promise<{ id: string }>, [unknown]>(), // ⑥ tx.user.update
   };
+  const refreshToken = {
+    updateMany: jest.fn<Promise<{ count: number }>, [unknown]>().mockResolvedValue({ count: 1 }),
+  };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
-  const prisma = { user, $transaction };
+  const prisma = { user, refreshToken, $transaction };
   // 回调式把 prisma mock 自身当 tx 传入(沿 users.service.spec 双模范式)
   $transaction.mockImplementation((arg: unknown) =>
     typeof arg === 'function'
