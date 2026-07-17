@@ -227,7 +227,7 @@ describe('AttendancesService contribution prefill (characterization)', () => {
     const span = args.spanHours ?? 10;
     const checkOut = new Date(checkIn.getTime() + span * 60 * 60 * 1000);
     // **三态构造**:undefined(omit key) / null(显式 null) / number;不能用 `?? undefined` 绕过。
-    const recordInput: AttendanceRecordInputDto = {
+    const recordInput: AttendanceRecordInputDto & { contributionPoints?: number | null } = {
       memberId: ctx.memberId,
       roleCode: args.roleCode ?? ROLE_MEMBER,
       checkInAt: checkIn.toISOString(),
@@ -264,7 +264,7 @@ describe('AttendancesService contribution prefill (characterization)', () => {
   describe('核心 case', () => {
     beforeEach(isolateFixtures);
 
-    it('Case 1:无匹配规则 → contributionPoints = null', async () => {
+    it('Case 1:无匹配规则 → contributionPoints = 0', async () => {
       // 未创建任何 ContributionRule
       const activityId = await createActivity(ACTIVITY_TYPE_DEMO);
 
@@ -276,7 +276,7 @@ describe('AttendancesService contribution prefill (characterization)', () => {
       });
 
       const rec = await getOnlyRecord(sheetId);
-      expect(rec.contributionPoints).toBeNull();
+      expect(decimalToNumberOrNull(rec.contributionPoints)).toBe(0);
     });
 
     it('Case 2:NULL 档位规则 → 取 pointsBelow(pointsAbove 不参与)', async () => {
@@ -444,12 +444,12 @@ describe('AttendancesService contribution prefill (characterization)', () => {
 
   // ============ 3 个额外覆盖 case ============
 
-  describe('额外覆盖(三态语义 + 不误匹配)', () => {
+  describe('额外覆盖(服务端权威重算 + 不误匹配)', () => {
     beforeEach(isolateFixtures);
 
-    it('Case 9:显式 contributionPoints = null 跳过预填(即使命中规则也保持 null)', async () => {
+    it('Case 9:绕过 HTTP DTO 传 null 也会被规则重算', async () => {
       const activityId = await createActivity(ACTIVITY_TYPE_DEMO);
-      // 命中规则会算出 1.0,但显式 null → service 跳过预填(沿 D-A8 / D14 三态)
+      // service 直调绕过 ValidationPipe 时,旧字段也不能改写权威结果。
       await createRule({
         activityTypeCode: ACTIVITY_TYPE_DEMO,
         attendanceRoleCode: ROLE_MEMBER,
@@ -463,16 +463,16 @@ describe('AttendancesService contribution prefill (characterization)', () => {
         activityId,
         roleCode: ROLE_MEMBER,
         serviceHours: 5,
-        contributionPoints: null, // 显式 null:强制清空
+        contributionPoints: null,
       });
 
       const rec = await getOnlyRecord(sheetId);
-      expect(rec.contributionPoints).toBeNull();
+      expect(decimalToNumberOrNull(rec.contributionPoints)).toBe(1);
     });
 
-    it('Case 10:显式手动 number 不被规则覆盖(沿 D-A8)', async () => {
+    it('Case 10:绕过 HTTP DTO 传 number 也会被规则重算', async () => {
       const activityId = await createActivity(ACTIVITY_TYPE_DEMO);
-      // 命中规则会算出 1.0,但调用方已传 0.7 → service 不覆盖
+      // 命中规则算出 1.0,旧手填 0.7 不能覆盖。
       await createRule({
         activityTypeCode: ACTIVITY_TYPE_DEMO,
         attendanceRoleCode: ROLE_MEMBER,
@@ -486,14 +486,14 @@ describe('AttendancesService contribution prefill (characterization)', () => {
         activityId,
         roleCode: ROLE_MEMBER,
         serviceHours: 5,
-        contributionPoints: 0.7, // 调用方明确传值
+        contributionPoints: 0.7,
       });
 
       const rec = await getOnlyRecord(sheetId);
-      expect(decimalToNumberOrNull(rec.contributionPoints)).toBe(0.7);
+      expect(decimalToNumberOrNull(rec.contributionPoints)).toBe(1);
     });
 
-    it('Case 11:activityTypeCode / roleCode 不匹配 → 不误匹配规则 → null', async () => {
+    it('Case 11:activityTypeCode / roleCode 不匹配 → 不误匹配规则 → 0', async () => {
       // 配规则:activityType=demo / role=member;但提交时 activityType=other / role=coach
       // 任一不匹配都应保持 null。本 case 同时改两个维度,保证规则查表 candidates 必为空。
       const activityIdOther = await createActivity(ACTIVITY_TYPE_OTHER);
@@ -513,7 +513,7 @@ describe('AttendancesService contribution prefill (characterization)', () => {
       });
 
       const rec = await getOnlyRecord(sheetId);
-      expect(rec.contributionPoints).toBeNull();
+      expect(decimalToNumberOrNull(rec.contributionPoints)).toBe(0);
     });
   });
 });

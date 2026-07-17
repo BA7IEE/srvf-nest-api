@@ -20,6 +20,11 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+
+const relativeIso = (yearOffset: number, suffix: string): string =>
+  `${new Date().getUTCFullYear() + yearOffset}-${suffix}`;
+const pastIso = (suffix: string): string => relativeIso(-1, suffix);
+const futureIso = (suffix: string): string => relativeIso(2, suffix);
 import { assertTestDatabaseUrl } from '../setup/test-db';
 
 // 终态 scoped-authz PR12(2026-07-02;冻结稿 §11 PR12+ 逐面迁移第一批;goal「PR12 —
@@ -248,8 +253,8 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
           title: `PR12 活动 @${organizationId}`,
           activityTypeCode: 'pr12-demo',
           organizationId,
-          startAt: new Date('2099-06-01T01:00:00.000Z'),
-          endAt: new Date('2099-06-01T05:00:00.000Z'),
+          startAt: new Date(pastIso('06-01T01:00:00.000Z')),
+          endAt: new Date(futureIso('06-01T05:00:00.000Z')),
           location: '训练场',
           statusCode,
           isPublicRegistration: true,
@@ -482,10 +487,9 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
             {
               memberId: attTargetMemberId,
               roleCode: 'member',
-              checkInAt: '2099-06-01T01:00:00.000Z',
-              checkOutAt: '2099-06-01T05:00:00.000Z',
+              checkInAt: pastIso('06-01T01:00:00.000Z'),
+              checkOutAt: pastIso('06-01T05:00:00.000Z'),
               attendanceStatusCode: 'present',
-              contributionPoints: 1,
             },
           ],
         });
@@ -508,10 +512,9 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
               {
                 memberId: attTargetMemberId,
                 roleCode: 'member',
-                checkInAt: '2099-06-01T01:00:00.000Z',
-                checkOutAt: '2099-06-01T05:00:00.000Z',
+                checkInAt: pastIso('06-01T01:00:00.000Z'),
+                checkOutAt: pastIso('06-01T05:00:00.000Z'),
                 attendanceStatusCode: 'present',
-                contributionPoints: 1,
               },
             ],
           }),

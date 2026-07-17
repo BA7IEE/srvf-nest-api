@@ -1009,6 +1009,16 @@ describe('activity registration waitlist', () => {
     const activityId = await createActivity(5, 'attendance-cancel-race');
     const memberId = await createMember('attendance-cancel-member');
     const registration = await seedRegistration(activityId, memberId, 'pass');
+    const serverNow = Date.now();
+    const checkInAt = new Date(serverNow - 2 * 3_600_000);
+    const checkOutAt = new Date(serverNow - 3_600_000);
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: {
+        startAt: new Date(serverNow - 3 * 3_600_000),
+        endAt: new Date(serverNow + 3_600_000),
+      },
+    });
     const hooks = attendances as unknown as AttendanceSubmitTestHooks;
     const originalClaim = hooks.claimRegistrationsForSubmit.bind(attendances);
     const registrationClaimed = deferred();
@@ -1031,8 +1041,8 @@ describe('activity registration waitlist', () => {
             {
               memberId,
               roleCode: 'member',
-              checkInAt: '2099-07-15T09:00:00.000Z',
-              checkOutAt: '2099-07-15T10:00:00.000Z',
+              checkInAt: checkInAt.toISOString(),
+              checkOutAt: checkOutAt.toISOString(),
               attendanceStatusCode: 'present',
               registrationId: registration.id,
             },

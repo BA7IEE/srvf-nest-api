@@ -13,7 +13,6 @@ import {
   MaxLength,
   Min,
   MinLength,
-  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
@@ -136,20 +135,6 @@ export class AttendanceRecordInputDto {
   @IsString()
   @Length(8, 64)
   registrationId?: string;
-
-  @ApiPropertyOptional({
-    description:
-      '贡献值(Decimal(5,2);字段层可空;Sheet approve 前所有 records 必填,R31)。' +
-      '入参语义:omit = 走 ContributionRule 系统预填(D14 5.B);显式传 null = 强制清空 / 不预填,' +
-      '由 APD 在 approve 前现场填入。',
-    nullable: true,
-    type: 'number',
-  })
-  @IsOptional()
-  @ValidateIf((_, value) => value !== null)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  contributionPoints?: number | null;
 }
 
 // ============ 入参:Create / Update Sheet ============
