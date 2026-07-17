@@ -1,4 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { Role, UserStatus } from '@prisma/client';
 import request from 'supertest';
 
@@ -43,6 +44,55 @@ interface Member {
   userId: string;
   memberId: string;
   auth: string;
+}
+
+interface RegistrationCreateTestHooks {
+  resolveCreateStatusCode: (
+    activityId: string,
+    activityPositionId: string | null,
+    capacity: number | null,
+    tx: Prisma.TransactionClient,
+  ) => Promise<'pending' | 'waitlisted'>;
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+async function observeBlockedByBackend(
+  prisma: PrismaService,
+  blockerPid: number,
+  mutation: Promise<unknown>,
+): Promise<'blocked' | 'settled'> {
+  let settled = false;
+  void mutation.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (settled) return 'settled';
+    const waiting = await prisma.$queryRaw<Array<{ pid: number }>>`
+      SELECT pid
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND wait_event_type = 'Lock'
+        AND CAST(${blockerPid} AS integer) = ANY(pg_blocking_pids(pid))
+        AND query LIKE '%"Activity"%'
+      LIMIT 1
+    `;
+    if (waiting.length > 0) return 'blocked';
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error('timed out waiting for activity cancellation to block on registration tx');
 }
 
 describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
@@ -472,6 +522,71 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
       // 各自 feed 仅见本人定向(交叉不可见)
       expect(await feedIds(alice.auth)).toEqual([aliceNotifs[0].id]);
       expect(await feedIds(bob.auth)).toEqual([bobNotifs[0].id]);
+    });
+
+    it('真并发:取消等待并发新报名提交后,联动取消的新报名者也收到取消通知', async () => {
+      const activityId = await seedActivity('并发海岸巡查');
+      const hooks = registrations as unknown as RegistrationCreateTestHooks;
+      const originalResolve = hooks.resolveCreateStatusCode.bind(registrations);
+      const createPaused = deferred<number>();
+      const releaseCreate = deferred<void>();
+      const resolveSpy = jest
+        .spyOn(hooks, 'resolveCreateStatusCode')
+        .mockImplementation(async (...args) => {
+          const statusCode = await originalResolve(...args);
+          const [backend] = await args[3].$queryRaw<Array<{ pid: number }>>`
+            SELECT pg_backend_pid() AS pid
+          `;
+          createPaused.resolve(backend.pid);
+          await releaseCreate.promise;
+          return statusCode;
+        });
+
+      let createPromise: ReturnType<ActivityRegistrationsService['create']> | undefined;
+      let cancelPromise: ReturnType<ActivitiesService['cancel']> | undefined;
+      try {
+        createPromise = registrations.create(
+          activityId,
+          { memberId: alice.memberId },
+          adminPayload,
+          AUDIT_META,
+        );
+        const blockerPid = await createPaused.promise;
+        cancelPromise = activities.cancel(
+          activityId,
+          { cancelReason: '风浪升级' },
+          adminPayload,
+          AUDIT_META,
+        );
+        const observation = await observeBlockedByBackend(prisma, blockerPid, cancelPromise);
+        releaseCreate.resolve();
+        const [created, cancelled] = await Promise.all([createPromise, cancelPromise]);
+
+        // 本测试杀死「Activity claim 前快照收件集」错误：旧实现会在 create 未提交时读到空集，
+        // 随后虽联动取消新报名，却不会给该 member 派发活动取消通知。
+        expect(observation).toBe('blocked');
+        expect(created.statusCode).toBe('pending');
+        expect(cancelled.statusCode).toBe('cancelled');
+        expect(
+          await prisma.activityRegistration.findFirstOrThrow({
+            where: { activityId, memberId: alice.memberId, deletedAt: null },
+            select: { statusCode: true },
+          }),
+        ).toEqual({ statusCode: 'cancelled' });
+        expect(await directedOf(alice.memberId)).toEqual([
+          expect.objectContaining({
+            notificationTypeCode: 'activity-changed',
+            title: '活动已取消',
+          }),
+        ]);
+      } finally {
+        releaseCreate.resolve();
+        const pending: Promise<unknown>[] = [];
+        if (createPromise !== undefined) pending.push(createPromise);
+        if (cancelPromise !== undefined) pending.push(cancelPromise);
+        await Promise.allSettled(pending);
+        resolveSpy.mockRestore();
+      }
     });
 
     it('已 reject / cancelled 报名者不在收件人列(只 pending + pass)', async () => {
