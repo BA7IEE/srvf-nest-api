@@ -25,6 +25,8 @@ import { createTestApp } from '../setup/test-app';
 const NODE_TYPE_CODE = 'org-topology-concurrency-type';
 const LOCK_POLL_DELAY_MS = 25;
 const LOCK_STATE_TIMEOUT_MS = 10_000;
+const LOCK_CLEANUP_TIMEOUT_MS = 3_000;
+const SNAPSHOT_CAPTURE_TIMEOUT_MS = 1_000;
 
 interface AdvisoryLockRow {
   pid: number;
@@ -36,6 +38,11 @@ interface AdvisoryLockSnapshot {
   granted: number;
   waiting: number;
   rows: AdvisoryLockRow[];
+}
+
+interface TerminatedBackendRow {
+  pid: number;
+  terminated: boolean;
 }
 
 interface TopologyDiffRow {
@@ -52,6 +59,7 @@ describe('organizations topology serialization', () => {
   let organizations: OrganizationsService;
   let actor: CurrentUserPayload;
   let requestSequence = 0;
+  let lastGoldenLockSnapshot: AdvisoryLockSnapshot | undefined;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -123,92 +131,237 @@ describe('organizations topology serialization', () => {
         AND objsubid = 1
       ORDER BY granted DESC, pid ASC
     `);
-    return {
+    const snapshot = {
       granted: rows.filter((row) => row.granted).length,
       waiting: rows.filter((row) => !row.granted).length,
       rows,
     };
+    lastGoldenLockSnapshot = snapshot;
+    return snapshot;
+  }
+
+  function asError(error: unknown): Error {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+
+  async function rawTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`timeout after ${timeoutMs}ms`)), timeoutMs);
+    });
+    try {
+      return await Promise.race([operation, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  async function captureGoldenLockSnapshotBestEffort(): Promise<void> {
+    try {
+      await rawTimeout(readGoldenLockSnapshot(), SNAPSHOT_CAPTURE_TIMEOUT_MS);
+    } catch {
+      // Stage error below still carries the last successfully observed exact-key snapshot.
+    }
+  }
+
+  async function awaitStage<T>(
+    stage: string,
+    operation: Promise<T>,
+    timeoutMs = LOCK_STATE_TIMEOUT_MS,
+  ): Promise<T> {
+    try {
+      return await rawTimeout(operation, timeoutMs);
+    } catch (error) {
+      await captureGoldenLockSnapshotBestEffort();
+      throw new Error(
+        `${stage} failed; exact advisory key classid=1620833402 ` +
+          `objid=2757511107 objsubid=1; ` +
+          `last=${JSON.stringify(lastGoldenLockSnapshot ?? null)}; ` +
+          `cause=${asError(error).message}`,
+      );
+    }
   }
 
   async function waitForGoldenLockState(
-    label: string,
+    stage: string,
     predicate: (snapshot: AdvisoryLockSnapshot) => boolean,
+    timeoutMs = LOCK_STATE_TIMEOUT_MS,
   ): Promise<AdvisoryLockSnapshot> {
     const startedAt = Date.now();
-    let last = await readGoldenLockSnapshot();
-    while (!predicate(last)) {
+    while (true) {
       const elapsedMs = Date.now() - startedAt;
-      if (elapsedMs >= LOCK_STATE_TIMEOUT_MS) {
+      const remainingMs = timeoutMs - elapsedMs;
+      if (remainingMs <= 0) {
         throw new Error(
-          `${label} timed out after ${elapsedMs}ms; exact advisory key ` +
+          `${stage} timed out after ${elapsedMs}ms; exact advisory key ` +
             `classid=1620833402 objid=2757511107 objsubid=1; ` +
-            `last=${JSON.stringify(last)}`,
+            `last=${JSON.stringify(lastGoldenLockSnapshot ?? null)}`,
         );
       }
+      const snapshot = await awaitStage(
+        `${stage}: pg_locks query`,
+        readGoldenLockSnapshot(),
+        remainingMs,
+      );
+      if (predicate(snapshot)) return snapshot;
       await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_DELAY_MS));
-      last = await readGoldenLockSnapshot();
     }
-    return last;
+  }
+
+  async function terminateExactGoldenLockBackends(): Promise<TerminatedBackendRow[]> {
+    const database = await rawTimeout(
+      prisma.$queryRaw<Array<{ databaseName: string }>>(Prisma.sql`
+        SELECT current_database() AS "databaseName"
+      `),
+      SNAPSHOT_CAPTURE_TIMEOUT_MS,
+    );
+    const databaseName = database[0]?.databaseName ?? '';
+    if (!databaseName.startsWith('app_test_')) {
+      throw new Error(`refusing advisory-lock cleanup outside derived test DB: ${databaseName}`);
+    }
+
+    return rawTimeout(
+      prisma.$queryRaw<TerminatedBackendRow[]>(Prisma.sql`
+        WITH targets AS (
+          SELECT DISTINCT pid
+          FROM pg_locks
+          WHERE locktype = 'advisory'
+            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+            AND classid = '1620833402'::oid
+            AND objid = '2757511107'::oid
+            AND objsubid = 1
+            AND pid <> pg_backend_pid()
+        )
+        SELECT pid, pg_terminate_backend(pid) AS terminated
+        FROM targets
+        ORDER BY pid ASC
+      `),
+      LOCK_CLEANUP_TIMEOUT_MS,
+    );
+  }
+
+  async function cleanupFailedPair(
+    holder: Promise<void> | undefined,
+    pending: Promise<unknown>[],
+  ): Promise<string> {
+    const report: Record<string, unknown> = {};
+    try {
+      report.before = await rawTimeout(readGoldenLockSnapshot(), SNAPSHOT_CAPTURE_TIMEOUT_MS);
+    } catch (error) {
+      report.snapshotError = asError(error).message;
+      report.before = lastGoldenLockSnapshot ?? null;
+    }
+
+    try {
+      report.terminated = await terminateExactGoldenLockBackends();
+    } catch (error) {
+      report.terminateError = asError(error).message;
+    }
+
+    try {
+      const drain = [holder, ...pending].filter(
+        (operation): operation is Promise<unknown> => operation !== undefined,
+      );
+      await rawTimeout(Promise.allSettled(drain), LOCK_CLEANUP_TIMEOUT_MS);
+      report.drained = true;
+    } catch (error) {
+      report.drained = false;
+      report.drainError = asError(error).message;
+    }
+
+    try {
+      report.after = await waitForGoldenLockState(
+        'failure cleanup residual zero',
+        (snapshot) => snapshot.granted === 0 && snapshot.waiting === 0,
+        LOCK_CLEANUP_TIMEOUT_MS,
+      );
+    } catch (error) {
+      report.residualError = asError(error).message;
+      report.after = lastGoldenLockSnapshot ?? null;
+    }
+    return JSON.stringify(report);
   }
 
   async function runBlockedPair<T>(
     left: () => Promise<T>,
     right: () => Promise<T>,
   ): Promise<PromiseSettledResult<T>[]> {
+    lastGoldenLockSnapshot = undefined;
+    let holder: Promise<void> | undefined;
+    let pending: Promise<T>[] = [];
     let releaseHolder: (() => void) | undefined;
-    const releaseSignal = new Promise<void>((resolve) => {
-      releaseHolder = resolve;
-    });
-    let markAcquired: (() => void) | undefined;
-    const lockAcquired = new Promise<void>((resolve) => {
-      markAcquired = resolve;
-    });
-
-    const holder = prisma.$transaction(async (tx) => {
-      await lockOrganizationTopology(tx);
-      markAcquired?.();
-      await releaseSignal;
-    });
-    await lockAcquired;
-
-    const pending = [left(), right()];
     let settled = 0;
-    for (const operation of pending) {
-      void operation.then(
-        () => {
-          settled += 1;
-        },
-        () => {
-          settled += 1;
-        },
-      );
-    }
-
-    let queueOracleError: Error | undefined;
     try {
-      const queued = await waitForGoldenLockState(
-        'waiting for one granted holder and two service waiters',
-        (snapshot) => snapshot.granted >= 1 && snapshot.waiting >= 2,
+      const baseline = await waitForGoldenLockState(
+        'baseline query',
+        (snapshot) => snapshot.granted === 0 && snapshot.waiting === 0,
       );
-      expect(queued.granted).toBeGreaterThanOrEqual(1);
-      expect(queued.waiting).toBeGreaterThanOrEqual(2);
-      expect(settled).toBe(0);
-    } catch (error) {
-      queueOracleError = error instanceof Error ? error : new Error(String(error));
-    } finally {
+      expect(baseline).toEqual({ granted: 0, waiting: 0, rows: [] });
+
+      const releaseSignal = new Promise<void>((resolve) => {
+        releaseHolder = resolve;
+      });
+      let markAcquired: (() => void) | undefined;
+      let markAcquireFailed: ((error: Error) => void) | undefined;
+      const lockAcquired = new Promise<void>((resolve, reject) => {
+        markAcquired = resolve;
+        markAcquireFailed = reject;
+      });
+
+      holder = prisma.$transaction(async (tx) => {
+        await lockOrganizationTopology(tx);
+        markAcquired?.();
+        await releaseSignal;
+      });
+      void holder.catch((error: unknown) => markAcquireFailed?.(asError(error)));
+      await awaitStage('holder acquired', lockAcquired);
+
+      pending = [left(), right()];
+      for (const operation of pending) {
+        void operation.then(
+          () => {
+            settled += 1;
+          },
+          () => {
+            settled += 1;
+          },
+        );
+      }
+
+      const queued = await waitForGoldenLockState(
+        'queue barrier',
+        (snapshot) => snapshot.granted === 1 && snapshot.waiting === 2,
+      );
+      expect(queued).toEqual({
+        granted: 1,
+        waiting: 2,
+        rows: expect.arrayContaining([
+          expect.objectContaining({ granted: true }),
+          expect.objectContaining({ granted: false }),
+        ]),
+      });
+      if (settled !== 0) {
+        throw new Error(
+          `queue barrier observed settled=${settled}; last=${JSON.stringify(queued)}`,
+        );
+      }
+
       releaseHolder?.();
-      await holder;
+      releaseHolder = undefined;
+      await awaitStage('holder transaction settle', holder);
+
+      const results = await awaitStage('pending settle', Promise.allSettled(pending));
+      const released = await waitForGoldenLockState(
+        'residual zero',
+        (snapshot) => snapshot.granted === 0 && snapshot.waiting === 0,
+      );
+      expect(released).toEqual({ granted: 0, waiting: 0, rows: [] });
+      return results;
+    } catch (error) {
+      releaseHolder?.();
+      const cleanup = await cleanupFailedPair(holder, pending);
+      throw new Error(`${asError(error).message}; cleanup=${cleanup}`);
     }
-
-    const results = await Promise.allSettled(pending);
-    const released = await waitForGoldenLockState(
-      'waiting for transaction-scoped topology lock release',
-      (snapshot) => snapshot.granted === 0 && snapshot.waiting === 0,
-    );
-    expect(released).toEqual({ granted: 0, waiting: 0, rows: [] });
-
-    if (queueOracleError) throw queueOracleError;
-    return results;
   }
 
   function fulfilledCount(results: PromiseSettledResult<unknown>[]): number {
