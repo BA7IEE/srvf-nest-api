@@ -109,7 +109,7 @@ const ATTENDANCE_EXPAND_WHITELIST = ['activity'] as const;
 // - serviceHours:未传自动 (checkOutAt-checkInAt)/3600;>0 且 ≤ 跨度(D14 / D45 / D51 / D46)
 // - contributionPoints:不接受输入值;submit/edit 均由 ContributionRule 权威计算,无规则保守为 0。
 // - registrationId 跨表:非空时 registration.activityId/memberId/statusCode(pass) 必须与 record 一致;
-//   requiresInsurance=true 时必填,借此继承报名创建时的保险门槛。
+//   requiresInsurance=true 时必填;该校验不证明报名创建时已开启保险门槛,也不独立核验保险。
 // - registrationId Restrict:删除 registration 时被 FK 阻断(Q-S21;不破坏历史追溯)
 // - audit:submit / edit / delete / read.other / review(approve+reject) / final-review(批次 4-B)
 // - event:**attendance.recorded 触发位置移到 final-approve**(沿 D-S7);submit / edit / delete /
@@ -475,12 +475,21 @@ export class AttendancesService {
     now: Date,
     tx: PrismaTx,
   ): Promise<Array<ReturnType<AttendancesService['normalizeRecord']>>> {
-    const roleCodes = [...new Set(inputs.map((input) => input.roleCode))];
+    // `@IsOptional()` 会放行运行时 null；contract 仍保持 string optional，但 service
+    // 在共享批校验入口将 null 规范化为“未传”，避免 null 进入 Prisma `in` 查询，
+    // 并确保 submit/edit 对保险活动使用同一缺失报名语义。
+    const canonicalInputs = inputs.map((input) => ({
+      ...input,
+      registrationId: input.registrationId ?? undefined,
+    }));
+    const roleCodes = [...new Set(canonicalInputs.map((input) => input.roleCode))];
     const attendanceStatusCodes = [...new Set(inputs.map((input) => input.attendanceStatusCode))];
     const memberIds = [...new Set(inputs.map((input) => input.memberId))];
     const registrationIds = [
       ...new Set(
-        inputs.map((input) => input.registrationId).filter((id): id is string => id !== undefined),
+        canonicalInputs
+          .map((input) => input.registrationId)
+          .filter((id): id is string => id !== undefined),
       ),
     ];
 
@@ -537,7 +546,7 @@ export class AttendancesService {
       registrations.map((registration) => [registration.id, registration]),
     );
 
-    return inputs.map((input) => {
+    return canonicalInputs.map((input) => {
       if (!dictKeys.has(`${DICT_TYPE_ATTENDANCE_ROLE}:${input.roleCode}`)) {
         throw new BizException(BizCode.ATTENDANCE_ROLE_CODE_INVALID);
       }

@@ -491,6 +491,28 @@ describe('attendances 模块', () => {
       expect(res.status).toBe(201);
     });
 
+    it('requiresInsurance=false 时 submit 显式 registrationId:null → 按未传处理并持久化 null', async () => {
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
+        .set('Authorization', adminAuth)
+        .send({
+          records: [
+            baseRecord({
+              memberId: memberBId,
+              checkInAt: pastIso('09-01T08:00:00.000Z'),
+              checkOutAt: pastIso('09-01T09:00:00.000Z'),
+              registrationId: null,
+            }),
+          ],
+        });
+      expect(res.status).toBe(201);
+      const record = await prisma.attendanceRecord.findFirstOrThrow({
+        where: { sheetId: res.body.data.id, deletedAt: null },
+        select: { registrationId: true },
+      });
+      expect(record.registrationId).toBeNull();
+    });
+
     it('当前时刻提交未来考勤记录 → 22079', async () => {
       const checkInAt = new Date(Date.now() + 3_600_000);
       const checkOutAt = new Date(checkInAt.getTime() + 3_600_000);
@@ -509,7 +531,7 @@ describe('attendances 模块', () => {
       expectBizError(res, BizCode.ATTENDANCE_CHECK_OUT_IN_FUTURE);
     });
 
-    it('requiresInsurance=true 时省略 registrationId 拒绝;同活动同成员 pass 报名放行', async () => {
+    it('requiresInsurance=true 时省略或显式 null registrationId 拒绝;同活动同成员 pass 报名放行', async () => {
       await prisma.activity.update({
         where: { id: activityId },
         data: { requiresInsurance: true },
@@ -528,6 +550,21 @@ describe('attendances 模块', () => {
             ],
           });
         expectBizError(withoutRegistration, BizCode.ATTENDANCE_REGISTRATION_INVALID);
+
+        const nullRegistration = await request(httpServer(app))
+          .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
+          .set('Authorization', adminAuth)
+          .send({
+            records: [
+              baseRecord({
+                memberId: memberAId,
+                checkInAt: pastIso('07-20T08:00:00.000Z'),
+                checkOutAt: pastIso('07-20T09:00:00.000Z'),
+                registrationId: null,
+              }),
+            ],
+          });
+        expectBizError(nullRegistration, BizCode.ATTENDANCE_REGISTRATION_INVALID);
 
         const withRegistration = await request(httpServer(app))
           .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
@@ -714,6 +751,14 @@ describe('attendances 模块', () => {
           records: [baseRecord({ memberId: memberBId, registrationId: pending.id })],
         });
       expectBizError(res, BizCode.ATTENDANCE_REGISTRATION_INVALID);
+    });
+
+    it('registrationId 空字符串 → ValidationPipe BAD_REQUEST', async () => {
+      const res = await request(httpServer(app))
+        .post(`/api/admin/v1/activities/${activityId}/attendance-sheets`)
+        .set('Authorization', adminAuth)
+        .send({ records: [baseRecord({ memberId: memberBId, registrationId: '' })] });
+      expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
     });
 
     it.each([
@@ -1064,6 +1109,70 @@ describe('attendances 模块', () => {
         where: { sheetId: pendingId },
       });
       expect(allRecords.length).toBe(2); // 1 旧软删 + 1 新
+    });
+
+    it('requiresInsurance=false 时 edit 显式 registrationId:null → 按未传处理并持久化 null', async () => {
+      const id = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberBId,
+          checkInAt: pastIso('09-02T08:00:00.000Z'),
+          checkOutAt: pastIso('09-02T09:00:00.000Z'),
+        }),
+      ]);
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/attendance-sheets/${id}`)
+        .set('Authorization', adminAuth)
+        .send({
+          records: [
+            baseRecord({
+              memberId: memberBId,
+              checkInAt: pastIso('09-02T08:00:00.000Z'),
+              checkOutAt: pastIso('09-02T09:00:00.000Z'),
+              registrationId: null,
+            }),
+          ],
+        });
+      expect(res.status).toBe(200);
+      const record = await prisma.attendanceRecord.findFirstOrThrow({
+        where: { sheetId: id, deletedAt: null },
+        select: { registrationId: true },
+      });
+      expect(record.registrationId).toBeNull();
+    });
+
+    it('requiresInsurance=true 时 edit 显式 registrationId:null → ATTENDANCE_REGISTRATION_INVALID', async () => {
+      const id = await createPendingSheet(activityId, [
+        baseRecord({
+          memberId: memberCId,
+          checkInAt: pastIso('09-03T08:00:00.000Z'),
+          checkOutAt: pastIso('09-03T09:00:00.000Z'),
+        }),
+      ]);
+      await prisma.activity.update({
+        where: { id: activityId },
+        data: { requiresInsurance: true },
+      });
+      try {
+        const res = await request(httpServer(app))
+          .patch(`/api/admin/v1/attendance-sheets/${id}`)
+          .set('Authorization', adminAuth)
+          .send({
+            records: [
+              baseRecord({
+                memberId: memberCId,
+                checkInAt: pastIso('09-03T08:00:00.000Z'),
+                checkOutAt: pastIso('09-03T09:00:00.000Z'),
+                registrationId: null,
+              }),
+            ],
+          });
+        expectBizError(res, BizCode.ATTENDANCE_REGISTRATION_INVALID);
+      } finally {
+        await prisma.activity.update({
+          where: { id: activityId },
+          data: { requiresInsurance: false },
+        });
+      }
     });
 
     it('edit 替换 records 时重新按 ContributionRule 计算最终分值', async () => {
