@@ -141,3 +141,5 @@
 - **P0-2 入口接线** ✅ PR #273(2026-06-10,用户拍板授权):`CLAUDE.md §1` 表追加 ai-harness 行;CLAUDE.md 66 行,仍 ≤80。
 - **P1-2 `docs/testing.md` 漂移 true-up** ✅(2026-06-10 用户立项,同日落地):覆盖表 `users-me` 行(死链,Route B Phase 4 删除)替换为 `app-me` / `app-me-password` 承接行;全文 20 个相对链接复核,其余 19 个均有效。
 - **P1-1 RBAC_MAP 自动漂移检查脚本** ✅ PR #274(2026-06-10 用户立项,同日落地):`scripts/check-rbac-map.ts` + `pnpm docs:rbacmap:check`(沿 check-codemap 范式,零新依赖;6 检查项:seed 码提取 / 码数对账 / controller 数对账 / canonical 前缀 / 直调码必在 seed / 孤码 WARN + 动态前缀 INFO)。验收达成:当前仓库 0 FAIL;负向测试(删 seed 码 → FAIL 75≠76;篡改声明数 → FAIL)通过。已知边界写在脚本头部(helper 间接调用走全源字面量扫描;仅剥 // 行注释)。**2026-06-10 追加检查项 G**(PR #288,P2-2 配套):summary 鉴权后缀 ↔ @Roles/@Public/seed 一致性校验,现共 7 检查项;负向 3 连(删后缀 / roles 不符 / 码不在 seed)均精确 FAIL。
+
+- **P3-R5-09 报名状态机对未来新态 fail-close**(第五轮 review R5-09,2026-07-17 拍板"随下次参与域演进顺手"):schema 注释仍称四态(现五态)+ 非穷尽 switch;下次动参与域状态机时顺手改注释并把 switch 改 fail-close,不单独立项。
