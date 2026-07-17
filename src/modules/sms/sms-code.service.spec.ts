@@ -10,6 +10,7 @@ import {
   hashSmsVerificationCode,
   SmsCodePepperUnavailableError,
 } from './sms-code-hash.util';
+import { deriveSmsIssueLockKeys } from './sms-issue-lock';
 import type { SmsProviderRouter } from './sms-provider.router';
 import { SmsCodeService } from './sms-code.service';
 import { SMS_DEV_STUB_FIXED_CODE } from './sms.constants';
@@ -38,6 +39,7 @@ interface PrismaMockShape {
     updateMany: jest.Mock;
   };
   smsSendLog: { create: jest.Mock };
+  $queryRaw: jest.Mock;
   $transaction: jest.Mock;
 }
 
@@ -51,6 +53,7 @@ function makePrismaMock(): PrismaMockShape {
       updateMany: jest.fn(),
     },
     smsSendLog: { create: jest.fn() },
+    $queryRaw: jest.fn().mockResolvedValue([{ locked: '' }]),
     $transaction: jest.fn(),
   };
   // $transaction(cb) 直接以 prisma 自身充当 tx(单测不验隔离性)
@@ -98,22 +101,25 @@ const ISSUE_INPUT = {
 };
 
 describe('SmsCodeService.issue', () => {
-  it('间隔内再发 → SMS_SEND_INTERVAL_LIMIT;不触发后续步骤', async () => {
+  it('间隔内再发 → SMS_SEND_INTERVAL_LIMIT;通道先解析但不触发写入/发送', async () => {
     const prisma = makePrismaMock();
     prisma.smsVerificationCode.findFirst.mockResolvedValue({
       createdAt: new Date(Date.now() - 10_000), // 10s 前
     });
+    prisma.smsVerificationCode.count.mockResolvedValue(1);
     const router = makeRouterMock({});
     const svc = makeService(prisma, router);
 
     await expect(svc.issue(ISSUE_INPUT)).rejects.toEqual(
       new BizException(BizCode.SMS_SEND_INTERVAL_LIMIT),
     );
-    expect(prisma.smsVerificationCode.count).not.toHaveBeenCalled();
+    expect(router.resolveProviderType).toHaveBeenCalledTimes(1);
+    expect(prisma.smsVerificationCode.count).toHaveBeenCalledTimes(1);
+    expect(prisma.smsVerificationCode.updateMany).not.toHaveBeenCalled();
     expect(router.sendVerifyCode).not.toHaveBeenCalled();
   });
 
-  it('日限命中 → SMS_PHONE_DAILY_LIMIT;不解析通道', async () => {
+  it('日限命中 → SMS_PHONE_DAILY_LIMIT;通道已解析但不写 code / 不发送', async () => {
     const prisma = makePrismaMock();
     prisma.smsVerificationCode.findFirst.mockResolvedValue(null);
     prisma.smsVerificationCode.count.mockResolvedValue(10);
@@ -123,30 +129,29 @@ describe('SmsCodeService.issue', () => {
     await expect(svc.issue(ISSUE_INPUT)).rejects.toEqual(
       new BizException(BizCode.SMS_PHONE_DAILY_LIMIT),
     );
-    expect(router.resolveProviderType).not.toHaveBeenCalled();
+    expect(router.resolveProviderType).toHaveBeenCalledTimes(1);
+    expect(prisma.smsVerificationCode.updateMany).not.toHaveBeenCalled();
+    expect(router.sendVerifyCode).not.toHaveBeenCalled();
   });
 
   it('通道不可用 → SMS_CHANNEL_NOT_CONFIGURED;不建 code 行(不产生计数占用)', async () => {
     const prisma = makePrismaMock();
-    prisma.smsVerificationCode.findFirst.mockResolvedValue(null);
-    prisma.smsVerificationCode.count.mockResolvedValue(0);
     const router = makeRouterMock({ resolveError: new SmsChannelUnavailableError('未配置') });
     const svc = makeService(prisma, router);
 
     await expect(svc.issue(ISSUE_INPUT)).rejects.toEqual(
       new BizException(BizCode.SMS_CHANNEL_NOT_CONFIGURED),
     );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(prisma.smsVerificationCode.create).not.toHaveBeenCalled();
   });
 
   it('dev/test env secret 缺失 → 运行时显式失败且不建 code 行', async () => {
     const prisma = makePrismaMock();
-    prisma.smsVerificationCode.findFirst.mockResolvedValue(null);
-    prisma.smsVerificationCode.count.mockResolvedValue(0);
-    prisma.smsVerificationCode.updateMany.mockResolvedValue({ count: 0 });
     const svc = makeService(prisma, makeRouterMock({ providerType: 'DEV_STUB' }), '');
 
     await expect(svc.issue(ISSUE_INPUT)).rejects.toThrow(SmsCodePepperUnavailableError);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(prisma.smsVerificationCode.create).not.toHaveBeenCalled();
   });
 
@@ -181,6 +186,31 @@ describe('SmsCodeService.issue', () => {
     );
     expect(createArg.data.codeHash).toMatch(/^[0-9a-f]{64}$/);
     expect(createArg.data.userId).toBe('user-1');
+    // 本测试杀死：删 phone 锁 / 删 purpose 锁 / 反序加锁 / 改 session lock。
+    const lockKeys = deriveSmsIssueLockKeys(ISSUE_INPUT.phone, ISSUE_INPUT.purpose);
+    const rawCalls = prisma.$queryRaw.mock.calls as Array<[TemplateStringsArray, bigint]>;
+    expect(rawCalls.map(([, key]) => key)).toEqual([lockKeys.phone, lockKeys.phonePurpose]);
+    for (const [sql] of rawCalls) {
+      const query = Array.from(sql).join('?');
+      expect(query).toContain('pg_advisory_xact_lock');
+      expect(query).not.toMatch(/pg_advisory_lock\s*\(/);
+    }
+    // provider resolve 必须在事务前；锁必须在 latest/count/旧码作废/create 之前。
+    expect(router.resolveProviderType.mock.invocationCallOrder[0]).toBeLessThan(
+      prisma.$transaction.mock.invocationCallOrder[0],
+    );
+    expect(prisma.$queryRaw.mock.invocationCallOrder[1]).toBeLessThan(
+      prisma.smsVerificationCode.findFirst.mock.invocationCallOrder[0],
+    );
+    expect(prisma.smsVerificationCode.count.mock.invocationCallOrder[0]).toBeLessThan(
+      prisma.smsVerificationCode.updateMany.mock.invocationCallOrder[0],
+    );
+    expect(prisma.$transaction.mock.invocationCallOrder[0]).toBeLessThan(
+      router.sendVerifyCode.mock.invocationCallOrder[0],
+    );
+    expect(router.sendVerifyCode.mock.invocationCallOrder[0]).toBeLessThan(
+      prisma.smsSendLog.create.mock.invocationCallOrder[0],
+    );
     // provider 收到明文码 + ttl 分钟
     expect(router.sendVerifyCode).toHaveBeenCalledWith({
       phone: ISSUE_INPUT.phone,
@@ -215,6 +245,19 @@ describe('SmsCodeService.issue', () => {
     });
     expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(TEST_ENV_SECRET);
     warnSpy.mockRestore();
+  });
+});
+
+describe('SMS issue advisory-lock protocol', () => {
+  it('固定 namespace + SHA-256 前 64 bit signed bigint golden vector', () => {
+    expect(deriveSmsIssueLockKeys('13800001234', 'PHONE_BIND')).toEqual({
+      phone: -5576935995228336407n,
+      phonePurpose: -1392771664796476507n,
+    });
+  });
+
+  it('锁 key 只接受既有 DTO/User 链保证的 canonical 11 位手机号', () => {
+    expect(() => deriveSmsIssueLockKeys(' 13800001234', 'PHONE_BIND')).toThrow(TypeError);
   });
 });
 
