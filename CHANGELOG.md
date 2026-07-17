@@ -2,7 +2,9 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
+## v0.58.0 - 2026-07-17
+
+> 主题:**第五轮全仓 review 修复闭环**(report #674〔P2=7/P3=2 全 CONFIRMED〕→ 双 lane 并行修复 #675〔R5-01 取消通知锁内收件集 + R5-07 openapi 版本〕∥ #676〔Harness 机器层六连:counts 改 AST 真源计数、changelog-merge 拒收清单、e2e 库名加仓路径哈希、恒读协议对齐、四守护全挂 CI、lane 门禁加固〕→ 状态回填 #677)。0 schema / 0 migration(54 恒)/ 0 权限码 / 0 新依赖。
 
 - 修复活动取消与新报名并发时的通知漏发：在 Activity 锁内确定取消通知收件集，确保被联动取消的新报名者也会收到取消通知。
 
