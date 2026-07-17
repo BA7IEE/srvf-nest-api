@@ -765,6 +765,11 @@ export const BizCode = {
     message: '请先完成签到再签退',
     httpStatus: HttpStatus.CONFLICT,
   },
+  ATTENDANCE_CHECK_OUT_IN_FUTURE: {
+    code: 22079,
+    message: '考勤签退时间不得晚于当前时间',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
 
   // V2 第一阶段批次 4-A 引入(2026-05-12)。详见 docs:批次4_贡献值业务规则_schema草案评审决议表 v1.0
   // D-S11 + 批次4_贡献值业务规则_API草案 v1.0 D-A13。

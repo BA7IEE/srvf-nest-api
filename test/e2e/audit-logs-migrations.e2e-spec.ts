@@ -1499,6 +1499,11 @@ describe('audit-logs 写入迁移', () => {
       await prisma.activity.deleteMany({});
     });
 
+    const attendanceRelativeIso = (yearOffset: number, suffix: string): string =>
+      `${new Date().getUTCFullYear() + yearOffset}-${suffix}`;
+    const attendancePastIso = (suffix: string): string => attendanceRelativeIso(-1, suffix);
+    const attendanceFutureIso = (suffix: string): string => attendanceRelativeIso(2, suffix);
+
     // 创建 published Activity,返回 id。直接 Prisma 写库(避免触发 activities audit log)。
     const createActivity = async (overrides: { capacity?: number } = {}): Promise<string> => {
       const a = await prisma.activity.create({
@@ -1506,8 +1511,8 @@ describe('audit-logs 写入迁移', () => {
           title: 'Att Mig Activity',
           activityTypeCode,
           organizationId: attChildOrgId,
-          startAt: new Date('2099-06-01T08:00:00.000Z'),
-          endAt: new Date('2099-06-01T18:00:00.000Z'),
+          startAt: new Date(attendancePastIso('06-01T08:00:00.000Z')),
+          endAt: new Date(attendanceFutureIso('06-01T18:00:00.000Z')),
           location: 'Demo',
           statusCode: 'published',
           ...(overrides.capacity !== undefined ? { capacity: overrides.capacity } : {}),
@@ -1532,13 +1537,15 @@ describe('audit-logs 写入迁移', () => {
       ...extras,
     });
 
-    // 提交一个 pending Sheet,返回 sheetId。Records 默认 1 条 contributionPoints=1.0(approve 不抛 R31)
+    // 提交一个 pending Sheet,返回 sheetId。无规则时服务端保守计算 contributionPoints=0。
     const submitPendingSheet = async (
       actId: string,
       records: Record<string, unknown>[] = [
-        buildRecord(attMemberAId, '2099-06-01T09:00:00.000Z', '2099-06-01T11:00:00.000Z', {
-          contributionPoints: 1.0,
-        }),
+        buildRecord(
+          attMemberAId,
+          attendancePastIso('06-01T09:00:00.000Z'),
+          attendancePastIso('06-01T11:00:00.000Z'),
+        ),
       ],
     ): Promise<string> => {
       const res = await request(httpServer(app))
@@ -1588,9 +1595,11 @@ describe('audit-logs 写入迁移', () => {
         .set('Authorization', adminAuth)
         .send({
           records: [
-            buildRecord(attMemberBId, '2099-06-01T10:00:00.000Z', '2099-06-01T12:00:00.000Z', {
-              contributionPoints: 1.0,
-            }),
+            buildRecord(
+              attMemberBId,
+              attendancePastIso('06-01T10:00:00.000Z'),
+              attendancePastIso('06-01T12:00:00.000Z'),
+            ),
           ],
         });
       expect(res.status).toBe(200);
@@ -1822,9 +1831,11 @@ describe('audit-logs 写入迁移', () => {
         .set('Authorization', adminAuth)
         .send({
           records: [
-            buildRecord(attMemberBId, '2099-06-01T10:00:00.000Z', '2099-06-01T12:00:00.000Z', {
-              contributionPoints: 1.0,
-            }),
+            buildRecord(
+              attMemberBId,
+              attendancePastIso('06-01T10:00:00.000Z'),
+              attendancePastIso('06-01T12:00:00.000Z'),
+            ),
           ],
         })
         .expect(200);
@@ -1897,10 +1908,12 @@ describe('audit-logs 写入迁移', () => {
         .set('Authorization', adminAuth)
         .send({
           records: [
-            buildRecord(attMemberAId, '2099-06-01T09:00:00.000Z', '2099-06-01T11:00:00.000Z', {
-              roleCode: 'invalid-role-code',
-              contributionPoints: 1.0,
-            }),
+            buildRecord(
+              attMemberAId,
+              attendancePastIso('06-01T09:00:00.000Z'),
+              attendancePastIso('06-01T11:00:00.000Z'),
+              { roleCode: 'invalid-role-code' },
+            ),
           ],
         });
       expect(res.status).toBe(400);
@@ -1911,12 +1924,12 @@ describe('audit-logs 写入迁移', () => {
 
     it('R31 失败回滚:approve 时 records.contributionPoints null → 22072 → audit 不入表 + 状态不变', async () => {
       const actId = await createActivity();
-      // submit records 时 contributionPoints 显式 null(R31 校验在 approve)
-      const sheetId = await submitPendingSheet(actId, [
-        buildRecord(attMemberAId, '2099-06-01T09:00:00.000Z', '2099-06-01T11:00:00.000Z', {
-          contributionPoints: null,
-        }),
-      ]);
+      const sheetId = await submitPendingSheet(actId);
+      // 历史/运维异常行仍可为 null;R31 在 approve 时保持兜底校验。
+      await prisma.attendanceRecord.updateMany({
+        where: { sheetId, deletedAt: null },
+        data: { contributionPoints: null },
+      });
       await truncateAuditLogsTestOnly(app);
 
       const res = await request(httpServer(app))

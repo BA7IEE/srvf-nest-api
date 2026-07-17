@@ -5,7 +5,7 @@ import { ContributionCalculator } from './contribution-calculator';
 // ContributionCalculator 组件级 unit 矩阵(B 档 test-only;沿 D14 5.B / D-A8 / D-S11)。
 // 行为权威仍是 attendances-contribution-prefill.e2e-spec.ts(真实 DB + ContributionRule 表);
 // 本 spec 不重复 DB 级断言,只锁三件事:
-//   1. 入参三态分发(undefined → 预填 / null → 显式清空跳过 / number → 不覆盖,含 0);
+//   1. 所有 records 均由规则权威计算,调用方携带的旧 contributionPoints 值也会被覆盖;
 //   2. 档位计算矩阵(threshold null / hours<=threshold / hours>threshold × pointsAbove 兜底);
 //      **无每条 dailyCap 钳制**(活动闭环硬化 2026-06-21:全局每日封顶改落汇总处 team-join
 //      computeContribution,calculator 预填回归原始规则分 pointsBelow/pointsAbove);
@@ -55,32 +55,32 @@ describe('ContributionCalculator', () => {
     calculator = new ContributionCalculator();
   });
 
-  describe('入参三态分发(D-A8 + v0.6 契约小修复)', () => {
-    it('number 已传值 → 原样保留,不查表', async () => {
+  describe('规则计算是最终分值唯一来源(C-QUAL)', () => {
+    it('旧 number 输入不能覆盖规则结果', async () => {
       const { tx, findMany } = makeTx([makeRule()]);
 
       const out = await calculator.applyContributionRulePrefill([rec(4, 0.8)], 'rescue', tx);
 
-      expect(out[0].contributionPoints).toBe(0.8);
-      expect(findMany).not.toHaveBeenCalled();
+      expect(out[0].contributionPoints).toBe(1);
+      expect(findMany).toHaveBeenCalledTimes(1);
     });
 
-    it('0 也是 number → 不覆盖(锁定 !== undefined 判定,防 truthy 回归)', async () => {
+    it('旧 0 输入也会被规则结果覆盖', async () => {
       const { tx, findMany } = makeTx([makeRule()]);
 
       const out = await calculator.applyContributionRulePrefill([rec(4, 0)], 'rescue', tx);
 
-      expect(out[0].contributionPoints).toBe(0);
-      expect(findMany).not.toHaveBeenCalled();
+      expect(out[0].contributionPoints).toBe(1);
+      expect(findMany).toHaveBeenCalledTimes(1);
     });
 
-    it('null 显式清空 → 跳过预填保持 null,不查表(APD approve 前现场填入)', async () => {
+    it('旧 null 输入不能清空规则结果', async () => {
       const { tx, findMany } = makeTx([makeRule()]);
 
       const out = await calculator.applyContributionRulePrefill([rec(4, null)], 'rescue', tx);
 
-      expect(out[0].contributionPoints).toBeNull();
-      expect(findMany).not.toHaveBeenCalled();
+      expect(out[0].contributionPoints).toBe(1);
+      expect(findMany).toHaveBeenCalledTimes(1);
     });
 
     it('undefined → 走预填(查表取值)', async () => {
@@ -92,7 +92,7 @@ describe('ContributionCalculator', () => {
       expect(findMany).toHaveBeenCalledTimes(1);
     });
 
-    it('mixed batch:仅 undefined 项查表;顺序 / 长度 / 泛型额外字段透传不变', async () => {
+    it('mixed batch:全部重算且顺序 / 长度 / 泛型额外字段透传不变', async () => {
       const { tx, findMany } = makeTx([makeRule({ pointsBelow: new Prisma.Decimal('1.20') })]);
       const records = [
         { ...rec(4, 0.5), memberId: 'm1' },
@@ -104,20 +104,20 @@ describe('ContributionCalculator', () => {
 
       expect(out).toHaveLength(3);
       expect(out.map((r) => r.memberId)).toEqual(['m1', 'm2', 'm3']);
-      expect(out[0].contributionPoints).toBe(0.5);
-      expect(out[1].contributionPoints).toBeNull();
+      expect(out[0].contributionPoints).toBe(1.2);
+      expect(out[1].contributionPoints).toBe(1.2);
       expect(out[2].contributionPoints).toBe(1.2);
       expect(findMany).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('规则匹配与档位(D14 5.B;无匹配规则不抛错沿 D-S11 22048 不开)', () => {
-    it('无匹配规则 → contributionPoints = null,不抛错', async () => {
+    it('无匹配规则 → contributionPoints = 0,不抛错', async () => {
       const { tx } = makeTx([]);
 
       const out = await calculator.applyContributionRulePrefill([rec(4)], 'rescue', tx);
 
-      expect(out[0].contributionPoints).toBeNull();
+      expect(out[0].contributionPoints).toBe(0);
     });
 
     // 档位矩阵:threshold / pointsAbove / serviceHours → 预期取值

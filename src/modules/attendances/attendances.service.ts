@@ -107,9 +107,9 @@ const ATTENDANCE_EXPAND_WHITELIST = ['activity'] as const;
 // - 时间不重叠:同 memberId × [checkInAt, checkOutAt) 左闭右开;跨 Sheet / 跨 Activity 全局
 //   (R16 / Q-S15);service 层校验(不做 PG EXCLUDE 约束)
 // - serviceHours:未传自动 (checkOutAt-checkInAt)/3600;>0 且 ≤ 跨度(D14 / D45 / D51 / D46)
-// - contributionPoints(批次 4-B 升级):**仅在 record.contributionPoints === null 时**由 ContributionRule
-//   预填;调用方传值不覆盖(沿 D-A8)。无匹配规则时 service 兜底 null(不抛错;沿 D-S11 22048 不开)。
-// - registrationId 跨表:非空时 registration.activityId === sheet.activityId(R23)
+// - contributionPoints:不接受输入值;submit/edit 均由 ContributionRule 权威计算,无规则保守为 0。
+// - registrationId 跨表:非空时 registration.activityId/memberId/statusCode(pass) 必须与 record 一致;
+//   requiresInsurance=true 时必填,借此继承报名创建时的保险门槛。
 // - registrationId Restrict:删除 registration 时被 FK 阻断(Q-S21;不破坏历史追溯)
 // - audit:submit / edit / delete / read.other / review(approve+reject) / final-review(批次 4-B)
 // - event:**attendance.recorded 触发位置移到 final-approve**(沿 D-S7);submit / edit / delete /
@@ -407,10 +407,6 @@ export class AttendancesService {
   // 规范化一条 record:校验时间 + 自动计算 / 校验 serviceHours。
   // 返回 normalize 后的入库形态(serviceHours 显式 number,后续在创建时转 Decimal)。
   //
-  // contributionPoints 入参三态(沿 D-A8 / D14 5.B):
-  //   omit / undefined → normalized 为 undefined → 走 ContributionRule 系统预填
-  //   显式 null        → normalized 为 null      → 跳过预填,落库为 null,APD 在 approve 前现场填入
-  //   number           → normalized 为 number    → 调用方已传值,不预填,不覆盖
   private normalizeRecord(input: AttendanceRecordInputDto): {
     memberId: string;
     roleCode: string;
@@ -420,7 +416,6 @@ export class AttendancesService {
     attendanceStatusCode: string;
     note: string | null;
     registrationId: string | null;
-    contributionPoints: number | null | undefined;
   } {
     const checkInAt = new Date(input.checkInAt);
     const checkOutAt = new Date(input.checkOutAt);
@@ -455,8 +450,6 @@ export class AttendancesService {
       attendanceStatusCode: input.attendanceStatusCode,
       note: input.note ?? null,
       registrationId: input.registrationId ?? null,
-      // 保留三态:undefined / null / number;由 applyContributionRulePrefill 区分处理。
-      contributionPoints: input.contributionPoints,
     };
   }
 
@@ -478,7 +471,8 @@ export class AttendancesService {
   // activityId、memberId 与 pass 状态。
   private async validateAndNormalizeRecordsBatch(
     inputs: AttendanceRecordInputDto[],
-    activity: { id: string; startAt: Date; endAt: Date },
+    activity: { id: string; startAt: Date; endAt: Date; requiresInsurance: boolean },
+    now: Date,
     tx: PrismaTx,
   ): Promise<Array<ReturnType<AttendancesService['normalizeRecord']>>> {
     const roleCodes = [...new Set(inputs.map((input) => input.roleCode))];
@@ -555,6 +549,9 @@ export class AttendancesService {
       }
       const registration =
         input.registrationId === undefined ? undefined : registrationById.get(input.registrationId);
+      if (activity.requiresInsurance && input.registrationId === undefined) {
+        throw new BizException(BizCode.ATTENDANCE_REGISTRATION_INVALID);
+      }
       if (input.registrationId !== undefined) {
         if (!registration || registration.activityId !== activity.id) {
           throw new BizException(BizCode.ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH);
@@ -574,6 +571,9 @@ export class AttendancesService {
           ? { startAt: activityPosition.startAt, endAt: activityPosition.endAt }
           : activity;
       this.assertRecordWithinActivityWindow(normalized, schedule);
+      if (normalized.checkOutAt.getTime() > now.getTime()) {
+        throw new BizException(BizCode.ATTENDANCE_CHECK_OUT_IN_FUTURE);
+      }
       return normalized;
     });
   }
@@ -605,10 +605,10 @@ export class AttendancesService {
   // ============ submit(POST 提交 Sheet)============
 
   // 批次 4-B 升级:
-  // - D14 5.B 系统预填 contributionPoints(若 record 未传值;沿 D-A8)
+  // - contributionPoints 不接受客户端输入,submit/edit 统一由 ContributionRule 计算。
   //   规则匹配维度:activityType × attendanceRole × durationThreshold;
   //   NULL durationThreshold 多条规则按 createdAt ASC LIMIT 1(明确选取策略,沿 §3.1 复核报告);
-  //   无匹配规则 → service 兜底 null,不抛错(沿 D-S11 22048 不开)。
+  //   无匹配规则 → service 保守落 0,不抛错(沿 D-S11 22048 不开)。
   // - D2-a:提交只创建 pending Sheet，不再隐式推动 Activity.completed。
   async submit(
     activityId: string,
@@ -636,7 +636,13 @@ export class AttendancesService {
       const activity = await this.findActivityForSubmissionFull(activityId, tx);
 
       // 3. 固定 3 次 IN 批量预取 + 按输入顺序完成字典/队员/报名/时间窗/时长校验。
-      const normalized = await this.validateAndNormalizeRecordsBatch(dto.records, activity, tx);
+      const now = new Date();
+      const normalized = await this.validateAndNormalizeRecordsBatch(
+        dto.records,
+        activity,
+        now,
+        tx,
+      );
       await this.claimRegistrationsForSubmit(
         normalized
           .map((record) => record.registrationId)
@@ -653,9 +659,7 @@ export class AttendancesService {
       );
       await this.timeOverlapPolicy.assertNoTimeOverlapForRecords(normalized, undefined, tx);
 
-      // 5. D14 5.B 预填:仅当 record.contributionPoints === null 时按规则查表预填;
-      //    传值不覆盖(沿 D-A8);无匹配规则保持 null。
-      // 抽出至 ContributionCalculator(refactor PR;算法 / 三态 / cap / 排序均零行为变化)。
+      // 5. contributionPoints 由 ContributionRule 权威计算;无匹配规则保守为 0。
       const prefilled = await this.contributionCalculator.applyContributionRulePrefill(
         normalized,
         activity.activityTypeCode,
@@ -722,6 +726,7 @@ export class AttendancesService {
     activityTypeCode: string;
     startAt: Date;
     endAt: Date;
+    requiresInsurance: boolean;
   }> {
     const act = await tx.activity.findFirst({
       where: notDeletedWhere({ id: activityId }),
@@ -731,6 +736,7 @@ export class AttendancesService {
         activityTypeCode: true,
         startAt: true,
         endAt: true,
+        requiresInsurance: true,
       },
     });
     if (!act) {
@@ -744,10 +750,22 @@ export class AttendancesService {
   private async findActivityWindowOrThrow(
     activityId: string,
     tx: PrismaTx,
-  ): Promise<{ id: string; startAt: Date; endAt: Date }> {
+  ): Promise<{
+    id: string;
+    activityTypeCode: string;
+    startAt: Date;
+    endAt: Date;
+    requiresInsurance: boolean;
+  }> {
     const activity = await tx.activity.findFirst({
       where: notDeletedWhere({ id: activityId }),
-      select: { id: true, startAt: true, endAt: true },
+      select: {
+        id: true,
+        activityTypeCode: true,
+        startAt: true,
+        endAt: true,
+        requiresInsurance: true,
+      },
     });
     if (!activity) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     return activity;
@@ -1106,7 +1124,13 @@ export class AttendancesService {
 
       // 1. 校验新 records；edit 同样按所属活动时间窗复核。
       const activity = await this.findActivityWindowOrThrow(sheet.activityId, tx);
-      const normalized = await this.validateAndNormalizeRecordsBatch(dto.records, activity, tx);
+      const now = new Date();
+      const normalized = await this.validateAndNormalizeRecordsBatch(
+        dto.records,
+        activity,
+        now,
+        tx,
+      );
 
       // 抽出至 TimeOverlapPolicy(refactor PR;edit 路径透传 excludeSheetId=id 语义不变)。
       this.timeOverlapPolicy.assertNoInternalOverlap(normalized);
@@ -1117,6 +1141,12 @@ export class AttendancesService {
       // edit 路径:排除本 Sheet 旧 records(它们将被软删)
       await this.timeOverlapPolicy.assertNoTimeOverlapForRecords(normalized, id, tx);
 
+      const computed = await this.contributionCalculator.applyContributionRulePrefill(
+        normalized,
+        activity.activityTypeCode,
+        tx,
+      );
+
       // 2. 生成 previousSnapshot(在旧 records 软删之前抓取)
       const currentRecords = await tx.attendanceRecord.findMany({
         where: notDeletedWhere({ sheetId: id }),
@@ -1125,13 +1155,12 @@ export class AttendancesService {
       const snapshot = this.attendanceAuditRecorder.buildPreviousSnapshot(sheet, currentRecords);
 
       // 3. 软删旧 records + 创建新 records(D38)
-      const now = new Date();
       await tx.attendanceRecord.updateMany({
         where: { sheetId: id, deletedAt: null },
         data: { deletedAt: now },
       });
       await tx.attendanceRecord.createMany({
-        data: normalized.map((r) => ({
+        data: computed.map((r) => ({
           sheetId: id,
           memberId: r.memberId,
           roleCode: r.roleCode,
