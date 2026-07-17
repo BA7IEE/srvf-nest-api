@@ -24,14 +24,14 @@ import { contributionRuleSafeSelect, type SafeContributionRule } from './contrib
 // - 字典常量内部 const 化(沿 batch 3 activities / attendances 范式;不抽公共工具)
 // - ACTIVE 唯一性:create / update 同事务按 activityTypeCode × attendanceRoleCode 预查;
 //   23002 优先;P2002 仅作并发兜底(M3)
-// - PATCH 禁改 activityTypeCode / attendanceRoleCode / durationThreshold(B3 + E8;
+// - PATCH 禁改 activityTypeCode / attendanceRoleCode / durationThreshold / dailyCap(B3 + E8;
 //   由 UpdateContributionRuleDto 白名单 + ValidationPipe forbidNonWhitelisted 兜底;不开 23030)
 // - softDelete 写 deletedAt + deletedByUserId(schema 已在 batch 4-A 含字段,见 E5);
 //   status 不强制改 INACTIVE
 // - audit hook 3 个写操作;list / detail 不 hook(E6)
 // - 排序契约:(activityTypeCode ASC, attendanceRoleCode ASC, durationThreshold ASC 辅助, createdAt ASC)
 //   durationThreshold NULL 顺位由 PG 默认行为决定,不作硬契约(D6 v1.1 §4.4 修订)
-// - dailyCap 是 deprecated 历史列;既有 CRUD 契约保留,attendance 预填与贡献聚合均不再读取
+// - dailyCap 是 deprecated 历史列;读取/审计快照兼容保留,新建/更新入口不再接受该字段
 //
 // V2 批次 6 PR #3(第二波第一步):3 处 write hook 从 `auditPlaceholder` 迁移到
 // `AuditLogsService.log()` 同事务落库;字段全部非敏感(无打码矩阵命中);
@@ -229,7 +229,6 @@ export class ContributionRulesService {
     const normalizedStatus = dto.status ?? ContributionRuleStatus.ACTIVE;
     const durationThreshold = dto.durationThreshold ?? null;
     const pointsAbove = dto.pointsAbove ?? null;
-    const dailyCap = dto.dailyCap ?? null;
 
     this.assertPointsCombinationValid({
       durationThreshold,
@@ -267,7 +266,6 @@ export class ContributionRulesService {
         durationThreshold,
         pointsBelow: dto.pointsBelow,
         pointsAbove,
-        dailyCap,
         status: normalizedStatus,
         remark: dto.remark ?? null,
         createdByUserId: currentUser.id,
@@ -353,7 +351,6 @@ export class ContributionRulesService {
       };
       if (dto.pointsBelow !== undefined) data.pointsBelow = dto.pointsBelow;
       if (dto.pointsAbove !== undefined) data.pointsAbove = dto.pointsAbove;
-      if (dto.dailyCap !== undefined) data.dailyCap = dto.dailyCap;
       if (dto.status !== undefined) data.status = dto.status;
       if (dto.remark !== undefined) data.remark = dto.remark;
 

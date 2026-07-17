@@ -124,6 +124,8 @@
 ### 2.4 其它资源管理页(CRUD,沿现状)
 活动列表 `GET /api/admin/v1/activities`(多字段过滤)· 队员列表 `GET /api/admin/v1/members`(memberNo/gradeCode/status)· 字典 `system/v1/dict-*` · 组织 · 贡献值**规则** `system/v1/contribution-rules`(注:是规则,不是队员的分)· 用户/RBAC/审计 `system/v1/*`。
 
+> ⚠️ **贡献规则 `dailyCap` 入参下线**:新建/PATCH 表单停止发送 `dailyCap`,继续传入会被 DTO 白名单拒绝为 HTTP 400 / `40000`。响应仍保留该历史字段供旧数据展示，更新其他字段不会改写存量 `dailyCap`；前端不得将它解读为生效中的每日上限。
+
 **队员账号闭环 v1(MVP,2026-07-07)— ✅ 已发 main**:给已存在队员(手动建档 / 未走招新 promote 的历史队员)开通登录账号。开号 = 建一个绑手机号的 `User`(`username=memberNo`、随机不可用密码、`role=USER`),队员**用手机验证码登录**(现有 `POST auth/v1/login-sms{,/send-code}`),**不设密码**。以后队员想自己设密码,走现有"手机验证码找回/设置密码"(`POST auth/v1/password-reset{,/send-code}`,用队员自己手机号)即可,**前端无需为此单独造页面**。
 
 **队员账号闭环 v2(完整生命周期,2026-07-07)— ✅ 已发 main**(冻结评审稿 [`member-account-loop-v2-review.md`](../archive/reviews/member-account-loop-v2-review.md)):`User.memberId` 根改造为 partial unique(软删旧号即释放槽位),补齐绑定既有悬空账号 / 解绑 / 退号重开 / 队员面启停账号四条能力,v1 单条"从零开号"闭环成完整生命周期。

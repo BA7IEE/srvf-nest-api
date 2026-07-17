@@ -676,6 +676,48 @@ describe('audit-logs 写入迁移', () => {
       expect(ctx.extra.changedFields).toEqual(expect.arrayContaining(['pointsBelow', 'remark']));
     });
 
+    it('历史 dailyCap 只读保留:GET/PATCH 响应与审计快照保值,更新不将其列为 changedFields', async () => {
+      const legacy = await prisma.contributionRule.create({
+        data: {
+          activityTypeCode,
+          attendanceRoleCode: roleCode,
+          pointsBelow: 1.5,
+          dailyCap: 2,
+        },
+        select: { id: true },
+      });
+
+      const detail = await request(httpServer(app))
+        .get(`/api/system/v1/contribution-rules/${legacy.id}`)
+        .set('Authorization', adminAuth)
+        .expect(200);
+      expect(detail.body.data.dailyCap).toBe(2);
+
+      const patched = await request(httpServer(app))
+        .patch(`/api/system/v1/contribution-rules/${legacy.id}`)
+        .set('Authorization', adminAuth)
+        .send({ remark: 'legacy cap preserved' })
+        .expect(200);
+      expect(patched.body.data.dailyCap).toBe(2);
+
+      const persisted = await prisma.contributionRule.findUniqueOrThrow({
+        where: { id: legacy.id },
+        select: { dailyCap: true },
+      });
+      expect(Number(persisted.dailyCap)).toBe(2);
+
+      const log = (await prisma.auditLog.findFirst({ where: { resourceId: legacy.id } }))!;
+      const ctx = log.context as {
+        before: Record<string, unknown>;
+        after: Record<string, unknown>;
+        extra: { changedFields: string[] };
+      };
+      expect(ctx.before.dailyCap).toBe(2);
+      expect(ctx.after.dailyCap).toBe(2);
+      expect(ctx.extra.changedFields).toContain('remark');
+      expect(ctx.extra.changedFields).not.toContain('dailyCap');
+    });
+
     it('delete:context 含 before 完整,不含 after;extra.priorStatus=ACTIVE', async () => {
       const r = await createRule({ remark: 'pre-delete' });
       await truncateAuditLogsTestOnly(app);
