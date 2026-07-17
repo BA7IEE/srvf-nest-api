@@ -116,7 +116,7 @@ Certificate (不在 participation 图内)
 | 4. 报名(admin / app) | activity-registrations | `create` / `createMy` → `pending \| waitlisted` | 全部前置闸通过后，`capacity=null` 或未满落 pending，已满落 waitlisted；partial unique 防重复;**报名截止生效**(`registrationDeadline` 非 null 且 `now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`;approve 不加此闸) |
 | 5. 报名审核 / 递补 | activity-registrations + activities | `approve: pending → pass`;`reject: pending\|waitlisted → reject`;`promote: waitlisted → pending` | promote 仅事务内 FIFO 引擎使用，不开手动端点，不开 waitlisted → pass 直通 |
 | 6. 报名取消 | activity-registrations | `cancelAdmin` / `cancelMy`: `pending\|pass\|waitlisted → cancelled` | 取消 pass 同事务 FIFO 递补队首一人至 pending；取消 pending/waitlisted 不递补；partial unique 允许同人再次报名 |
-| 7. 考勤表首次提交 | attendances | `submit` → `Sheet.statusCode='pending'` + 多条 `Record` 同事务建立 | **不再推动 Activity.completed**；用服务端 `now` 拒绝未来签退;`contributionPoints` 不接受输入,submit/edit 均读 `tx.contributionRule.findMany` 计算(无规则落 0,**不再 per-record dailyCap 钳制**);`requiresInsurance=true` 时每条 record 必须带同活动/同成员/pass 的 `registrationId` |
+| 7. 考勤表首次提交 | attendances | `submit` → `Sheet.statusCode='pending'` + 多条 `Record` 同事务建立 | **不再推动 Activity.completed**；用服务端 `now` 拒绝未来签退;`contributionPoints` 不接受输入,submit/edit 均读 `tx.contributionRule.findMany` 计算(无规则落 0,**不再 per-record dailyCap 钳制**);`requiresInsurance=true` 时每条 record 必须带同活动/同成员/pass 的 `registrationId`,但不证明报名创建时已开启该门槛 |
 | 8. APD 一级审核 | attendances | `approve` → `pending → pending_final_review`;`reject` → `pending → rejected` | **不**触发 `attendance.recorded`(沿 D-S7;触发点已移到 final-approve) |
 | 9. APD 终审通过 | attendances | `finalApprove` → `pending_final_review → approved` | **`contributionPoints` 在此刻语义上生效**;同事务内 `eventPlaceholder('attendance.recorded')` 发出([`attendances.service.ts:1003`](../src/modules/attendances/attendances.service.ts:1003));未来 contribution-points 聚合器从此事件消费 |
 | 10. APD 终审驳回 | attendances | `finalReject` → `pending_final_review → final_rejected` | 不触发 `attendance.recorded`;records 跟随软删 |
@@ -131,7 +131,7 @@ Certificate (不在 participation 图内)
 **关键 invariant**:
 
 - `AttendanceRecord.contributionPoints` 字段层为历史兼容仍可空;业务写路不接受人工最终分,submit/edit 一律从 ContributionRule 计算,无规则落 0;仅 approved 时"语义生效"。
-- `requiresInsurance=true` 的 attendance 通过 pass `registrationId` 继承报名创建时的保险门槛;该门槛是当时自购保险/队保覆盖 snapshot,不等于考勤提交时重新核验保险状态或有效期。
+- 当前 attendance 在 `requiresInsurance=true` 时只强制 `registrationId` 同活动/同成员且为 pass;它不能证明该报名创建时 `requiresInsurance=true`,不追溯旧报名,也不代表保险状态、有效期或活动时段经过独立核验。
 - **全局每日封顶在本 context 之外**(活动闭环硬化 2026-06-21;v0.48.0 上限调整):队员单个北京日历日的贡献值总分封顶 3(`GLOBAL_DAILY_CONTRIBUTION_CAP`),封顶**只**发生在 recruitment 侧 team-join `computeContribution`(按 `checkInAt` 北京日分组 → 每日封顶 → 加总),**不**在 participation 侧落库——`AttendanceRecord.contributionPoints` 仍存原始规则分。历史记录同样按当前上限读时实时重算;`ContributionRule.dailyCap` 列保留但已 deprecated、calculator 不再读。
 - `attendance.recorded` 事件是 participation context **向外的唯一已锁定出口语义**;其它消费方(未来 contribution 聚合 / 仪表盘 / 队员个人贡献值汇总)应当订阅它,**不应**直接读 `AttendanceSheet` / `AttendanceRecord` 表。
 - Activity → completed 的唯一通路是 activities 模块 `complete` action；attendances submit 不再执行该跨 aggregate 写。
