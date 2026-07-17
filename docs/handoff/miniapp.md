@@ -22,6 +22,7 @@
 | 任务 | 端点 |
 |---|---|
 | 登录 | `POST /api/auth/v1/login`(密码) · `login-sms`(验证码) · `login-wechat`(小程序 openid;未绑返 `bindingRequired`) |
+| 身份换绑 step-up | 换手机号/微信前先按当前可用因子调用 `POST /api/auth/v1/step-up/password`、`step-up/sms{,/send-code}` 或 `step-up/wechat`，body 的 `action` 固定为目标动作 `PHONE_BIND` / `WECHAT_BIND`；成功仅返 `{stepUpToken,expiresAt}`。随后分别把 proof 作为必填 `stepUpToken` 传给 `PUT /api/app/v1/me/phone` / `me/wechat` |
 | 我的身份/资料/能力 | `GET /api/app/v1/me` · `me/account` · `PATCH me/profile` · `PUT me/password` · `GET me/capabilities` |
 | 活动池 / 我的活动 | `GET /api/app/v1/activities/available`(**仅 `public` 且未结束活动;详情 `GET /api/app/v1/activities/:id` 含 `phase` / `genderRequirementCode` / `requiresInsurance` / `passCount`**) · `GET /api/app/v1/activities/:activityId/positions`（live 岗位，`remainingCapacity` / `canRegister`；余量 0 仍可进候补）· `GET /api/app/v1/my/activities`。活动 `capacity` 有岗位时为岗位总和，任一岗位不限则 null |
 | 我的报名(报名/查/取消) | `GET /api/app/v1/my/registrations` · `POST` 报名 body additive 接受 `activityPositionId`（活动有岗位时必填，缺失 21035；不存在/跨活动/已删 20002；同人报第二岗仍 21002；满员成功创建 `waitlisted`，排位按岗位队列）· `PATCH` 取消(候补可随时退出)。活动已结束 `20125`、报名截止 `20123`、已有考勤不可取消 `21033` 等既有闸不变 |
@@ -46,6 +47,7 @@
 | **活动域系统通知(已发 v0.50.0)** | **无新端点** —— 继续复用 S1 feed 4 端点、仅站内 `channels=['in-app']`:公开活动发布 → `activity-published` 会员广播;时间/地点变更、活动取消、队员取消已通过报名 → `activity-changed`;报名审批通过/驳回及候补自动递补进入待审 → `registration-result`;考勤终审 → `attendance-result`;开场前 24 小时仅向仍为 `pass` 的报名者发一次 `activity-reminder`。定向通知仅本人 feed 可见;广播按既有会员可见性展示。前端按 `notificationTypeCode` 选图标/文案即可,红点与已读复用 S1。|
 
 > 任务→端点的细化(注册流、入队流等)等建仓时按真实页面补,别提前臆造。
+> **登录态身份换绑**:step-up proof 固定 5 分钟且绑定 user + action + 当前 credential snapshot；换绑前 credentials 已变化、proof 过期/签名错/user 或 action 不匹配都统一 `10008`，前端应丢弃 proof 并重新 step-up。当前账号没有所选 phone/openid 因子返 `10009`，可切换 password 等可用因子。真实换绑会撤销该账号所有 refresh，当前旧 access 不主动吊销；成功后应重新登录建立新 refresh family。同目标 no-op 不撤 session。
 > **H5 链失败码**:验码错/过期统一 `24010`;token 无效/过期/已用 `28050`;无 open 轮 `28030`;换微信撞他人 `28051`;无报名 `28002`。
 > **⚠️ S5 语义变(v0.31.0)**:`GET /api/app/v1/me`(及任何回带 `Member.gradeCode` 的 app 出参)对**未入队志愿者**现返 `gradeCode='volunteer'`(S5 前恒 `null`)。前端**勿再用 `gradeCode==null` 等价"志愿者/未入队"**;"是否正式队员"应判 `gradeCode ∈ level-1..7`。历史(S5 前)发号的志愿者仍为 `null`,故"未入队志愿者"= `gradeCode ∈ {null, 'volunteer'}`。
 

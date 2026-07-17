@@ -17,6 +17,8 @@ import { PasswordChangeThrottle } from '../../common/decorators/password-change-
 import { PasswordResetThrottle } from '../../common/decorators/password-reset-throttle.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { RefreshThrottle } from '../../common/decorators/refresh-throttle.decorator';
+import { SmsSendThrottle } from '../../common/decorators/sms-send-throttle.decorator';
+import { SmsVerifyThrottle } from '../../common/decorators/sms-verify-throttle.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuthService } from './auth.service';
@@ -32,13 +34,19 @@ import {
   SendLoginSmsCodeDto,
   SendPasswordResetCodeDto,
   SendPasswordResetCodeResponseDto,
+  SendStepUpSmsCodeDto,
   SendWechatBindCodeDto,
+  StepUpPasswordDto,
+  StepUpResponseDto,
+  StepUpSmsDto,
+  StepUpWechatDto,
   WechatBindDto,
   WechatLoginResponseDto,
 } from './auth.dto';
 import { LoginSmsService } from './login-sms.service';
 import { LoginWechatService } from './login-wechat.service';
 import { PasswordResetService } from './password-reset.service';
+import { IdentityStepUpService } from './identity-step-up.service';
 
 @ApiTags('Auth')
 // Route B Phase 4(2026-06-01;沿 docs/api-surface-migration-plan.md §6 Phase 4):
@@ -50,6 +58,7 @@ export class AuthController {
     private readonly passwordReset: PasswordResetService,
     private readonly loginSms: LoginSmsService,
     private readonly loginWechat: LoginWechatService,
+    private readonly identityStepUp: IdentityStepUpService,
   ) {}
 
   // POST /api/auth/v1/login(@Public 跳过 JwtAuthGuard)。
@@ -129,6 +138,97 @@ export class AuthController {
     @Req() req: Request,
   ): Promise<LogoutAllResponseDto> {
     return this.authService.logoutAll(currentUser, this.buildAuditMeta(req));
+  }
+
+  @PasswordChangeThrottle()
+  @Post('step-up/password')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '使用当前密码签发 5 分钟身份绑定 step-up proof [auth]' })
+  @ApiWrappedOkResponse(StepUpResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.STEP_UP_PROOF_INVALID,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  stepUpWithPassword(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Body() dto: StepUpPasswordDto,
+    @Req() req: Request,
+  ): Promise<StepUpResponseDto> {
+    const safeDto: StepUpPasswordDto = { action: dto.action, password: dto.password };
+    return this.identityStepUp.stepUpWithPassword(currentUser, safeDto, this.buildAuditMeta(req));
+  }
+
+  @SmsSendThrottle()
+  @Post('step-up/sms/send-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '向当前绑定手机号发送 identity step-up 验证码 [auth]' })
+  @ApiWrappedOkResponse(SendPasswordResetCodeResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.STEP_UP_FACTOR_UNAVAILABLE,
+    BizCode.SMS_SEND_INTERVAL_LIMIT,
+    BizCode.SMS_PHONE_DAILY_LIMIT,
+    BizCode.SMS_CHANNEL_NOT_CONFIGURED,
+    BizCode.SMS_SEND_FAILED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  sendStepUpSmsCode(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Body() dto: SendStepUpSmsCodeDto,
+    @Req() req: Request,
+  ): Promise<SendPasswordResetCodeResponseDto> {
+    return this.identityStepUp.sendSmsCode(currentUser, dto.action, req.ip ?? null);
+  }
+
+  @SmsVerifyThrottle()
+  @Post('step-up/sms')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '使用当前手机号验证码签发 5 分钟身份绑定 step-up proof [auth]' })
+  @ApiWrappedOkResponse(StepUpResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.STEP_UP_FACTOR_UNAVAILABLE,
+    BizCode.SMS_CODE_INVALID,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  stepUpWithSms(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Body() dto: StepUpSmsDto,
+    @Req() req: Request,
+  ): Promise<StepUpResponseDto> {
+    const safeDto: StepUpSmsDto = { action: dto.action, code: dto.code };
+    return this.identityStepUp.stepUpWithSms(currentUser, safeDto, this.buildAuditMeta(req));
+  }
+
+  @LoginWechatThrottle()
+  @Post('step-up/wechat')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '使用当前微信 openid 签发 5 分钟身份绑定 step-up proof [auth]' })
+  @ApiWrappedOkResponse(StepUpResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.STEP_UP_FACTOR_UNAVAILABLE,
+    BizCode.WECHAT_CODE_INVALID,
+    BizCode.WECHAT_CHANNEL_NOT_CONFIGURED,
+    BizCode.WECHAT_API_FAILED,
+    BizCode.TOO_MANY_REQUESTS,
+  )
+  stepUpWithWechat(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Body() dto: StepUpWechatDto,
+    @Req() req: Request,
+  ): Promise<StepUpResponseDto> {
+    const safeDto: StepUpWechatDto = { action: dto.action, code: dto.code };
+    return this.identityStepUp.stepUpWithWechat(currentUser, safeDto, this.buildAuditMeta(req));
   }
 
   // 找回密码 T2(2026-06-11;冻结评审稿 password-reset-by-sms-review.md §3.2 ① / §4):

@@ -66,12 +66,14 @@ describe('LOG_REDACT_PATHS — v1 既有清单兜底', () => {
     'req.body.token',
     'req.body.accessToken',
     'req.body.refreshToken',
+    'req.body.stepUpToken',
     '*.password',
     '*.newPassword',
     '*.passwordHash',
     '*.token',
     '*.accessToken',
     '*.refreshToken',
+    '*.stepUpToken',
     '*.secret',
   ])('包含 v1 既有项 %s', (field) => {
     expect(paths).toContain(field);

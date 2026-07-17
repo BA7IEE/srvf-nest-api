@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { AuthModule } from '../auth/auth.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { SmsModule } from '../sms/sms.module';
 import { WechatModule } from '../wechat/wechat.module';
@@ -47,7 +48,14 @@ import { UsersService } from './users.service';
 // 供 bindMyWechat(me/wechat 换绑)使用;同款边界:wechat 模块对 User 无感知,
 // openid 占用 / 绑定落库 / audit 全部留在本模块。单向依赖 users → wechat,无环。
 @Module({
-  imports: [DatabaseModule, AuditLogsModule, PermissionsModule, SmsModule, WechatModule],
+  imports: [
+    DatabaseModule,
+    AuditLogsModule,
+    AuthModule,
+    PermissionsModule,
+    SmsModule,
+    WechatModule,
+  ],
   // admin/v1/me 本人身份只读 bootstrap(2026-06-14):AdminMeController 物理隔离于 Admin surface
   // (单一 @ApiTags('Admin - Me'),非 Mixed),复用 UsersService.getMyAdminIdentity 薄读路径。
   controllers: [UsersController, AppMeController, AdminMeController],

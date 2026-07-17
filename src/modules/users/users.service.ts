@@ -8,6 +8,8 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { StepUpAction } from '../auth/auth.dto';
+import { IdentityStepUpService } from '../auth/identity-step-up.service';
 import { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import { RbacService } from '../permissions/rbac.service';
 import { SmsCodeService } from '../sms/sms-code.service';
@@ -66,6 +68,7 @@ export class UsersService {
     private readonly lastAdminProtection: LastAdminProtectionPolicy,
     private readonly smsCode: SmsCodeService,
     private readonly wechat: WechatService,
+    private readonly identityStepUp: IdentityStepUpService,
   ) {}
 
   // ============ helpers ============
@@ -734,33 +737,62 @@ export class UsersService {
     dto: BindMyPhoneDto,
     auditMeta: AuditMeta,
   ): Promise<AppMePhoneDto> {
-    const occupied = await this.prisma.user.findUnique({
-      where: { phone: dto.phone },
-      select: { id: true },
-    });
-    if (occupied !== null) {
-      throw new BizException(BizCode.PHONE_ALREADY_BOUND);
-    }
-
-    const me = await this.prisma.user.findFirst({
-      where: this.notDeletedWhere({ id: currentUser.id }),
-      select: { id: true, phone: true },
-    });
-    if (!me) throw new BizException(BizCode.USER_NOT_FOUND);
-
-    const { codeId } = await this.smsCode.verifyAndConsume({
-      phone: dto.phone,
-      purpose: SmsPurpose.PHONE_BIND,
-      code: dto.code,
-      userId: currentUser.id,
-    });
-
     try {
-      const updated = await this.prisma.$transaction(async (tx) => {
+      return await this.prisma.$transaction(async (tx) => {
+        const locked = await tx.$queryRaw<Array<{ id: string }>>(
+          Prisma.sql`SELECT "id" FROM "User" WHERE "id" = ${currentUser.id} FOR UPDATE`,
+        );
+        if (locked.length === 0) {
+          throw new BizException(BizCode.USER_NOT_FOUND);
+        }
+
+        const me = await tx.user.findFirst({
+          where: this.notDeletedWhere({ id: currentUser.id, status: UserStatus.ACTIVE }),
+          select: {
+            id: true,
+            passwordHash: true,
+            phone: true,
+            phoneVerifiedAt: true,
+            openid: true,
+            status: true,
+            deletedAt: true,
+          },
+        });
+        if (!me) throw new BizException(BizCode.USER_NOT_FOUND);
+
+        this.identityStepUp.verifyProof(dto.stepUpToken, me, StepUpAction.PHONE_BIND);
+
+        if (me.phone === dto.phone) {
+          return {
+            phone: me.phone,
+            phoneVerifiedAt: me.phoneVerifiedAt?.toISOString() ?? null,
+          };
+        }
+
+        const occupied = await tx.user.findUnique({
+          where: { phone: dto.phone },
+          select: { id: true },
+        });
+        if (occupied !== null) {
+          throw new BizException(BizCode.PHONE_ALREADY_BOUND);
+        }
+
+        const { codeId } = await this.smsCode.verifyAndConsume({
+          phone: dto.phone,
+          purpose: SmsPurpose.PHONE_BIND,
+          code: dto.code,
+          userId: currentUser.id,
+        });
+        const now = new Date();
         const row = await tx.user.update({
           where: { id: currentUser.id },
-          data: { phone: dto.phone, phoneVerifiedAt: new Date() },
+          data: { phone: dto.phone, phoneVerifiedAt: now },
           select: { phone: true, phoneVerifiedAt: true },
+        });
+
+        await tx.refreshToken.updateMany({
+          where: { userId: currentUser.id, revokedAt: null, expiresAt: { gt: now } },
+          data: { revokedAt: now, revokedReason: 'self-phone-identity-change' },
         });
 
         // audit detail 手机号一律掩码(E-21/E-24);禁明文码 / codeHash / 完整号码
@@ -777,13 +809,11 @@ export class UsersService {
           tx,
         });
 
-        return row;
+        return {
+          phone: row.phone,
+          phoneVerifiedAt: row.phoneVerifiedAt?.toISOString() ?? null,
+        };
       });
-
-      return {
-        phone: updated.phone,
-        phoneVerifiedAt: updated.phoneVerifiedAt?.toISOString() ?? null,
-      };
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -827,30 +857,53 @@ export class UsersService {
   ): Promise<AppMeWechatDto> {
     const { openid } = await this.wechat.code2session(dto.code);
 
-    const me = await this.prisma.user.findFirst({
-      where: this.notDeletedWhere({ id: currentUser.id }),
-      select: { id: true, openid: true },
-    });
-    if (!me) throw new BizException(BizCode.USER_NOT_FOUND);
-
-    const occupied = await this.prisma.user.findUnique({
-      where: { openid },
-      select: { id: true },
-    });
-    if (occupied !== null) {
-      if (occupied.id === currentUser.id) {
-        // 幂等:同 openid 重复绑定,无状态变化不写 audit
-        return { bound: true, openidMasked: maskOpenid(openid) };
-      }
-      throw new BizException(BizCode.WECHAT_ALREADY_BOUND);
-    }
-
     try {
-      await this.prisma.$transaction(async (tx) => {
+      return await this.prisma.$transaction(async (tx) => {
+        const locked = await tx.$queryRaw<Array<{ id: string }>>(
+          Prisma.sql`SELECT "id" FROM "User" WHERE "id" = ${currentUser.id} FOR UPDATE`,
+        );
+        if (locked.length === 0) {
+          throw new BizException(BizCode.USER_NOT_FOUND);
+        }
+
+        const me = await tx.user.findFirst({
+          where: this.notDeletedWhere({ id: currentUser.id, status: UserStatus.ACTIVE }),
+          select: {
+            id: true,
+            passwordHash: true,
+            phone: true,
+            phoneVerifiedAt: true,
+            openid: true,
+            status: true,
+            deletedAt: true,
+          },
+        });
+        if (!me) throw new BizException(BizCode.USER_NOT_FOUND);
+
+        this.identityStepUp.verifyProof(dto.stepUpToken, me, StepUpAction.WECHAT_BIND);
+
+        if (me.openid === openid) {
+          return { bound: true, openidMasked: maskOpenid(openid) };
+        }
+
+        const occupied = await tx.user.findUnique({
+          where: { openid },
+          select: { id: true },
+        });
+        if (occupied !== null) {
+          throw new BizException(BizCode.WECHAT_ALREADY_BOUND);
+        }
+
+        const now = new Date();
         await tx.user.update({
           where: { id: currentUser.id },
           data: { openid },
           select: { id: true },
+        });
+
+        await tx.refreshToken.updateMany({
+          where: { userId: currentUser.id, revokedAt: null, expiresAt: { gt: now } },
+          data: { revokedAt: now, revokedReason: 'self-wechat-identity-change' },
         });
 
         // audit detail openid 一律掩码(E-23);禁 wx code / 完整 openid / session_key
@@ -866,9 +919,9 @@ export class UsersService {
           extra: { viaPath: 'me' },
           tx,
         });
-      });
 
-      return { bound: true, openidMasked: maskOpenid(openid) };
+        return { bound: true, openidMasked: maskOpenid(openid) };
+      });
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&

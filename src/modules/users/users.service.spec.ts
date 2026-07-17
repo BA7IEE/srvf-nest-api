@@ -7,6 +7,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import type { IdentityStepUpService } from '../auth/identity-step-up.service';
 import type { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import type { RbacService } from '../permissions/rbac.service';
 import type { SmsCodeService } from '../sms/sms-code.service';
@@ -132,7 +133,10 @@ function makePrismaMock() {
     updateMany: jest.fn<Promise<{ count: number }>, [unknown]>().mockResolvedValue({ count: 0 }),
   };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
-  const prisma = { user, refreshToken, $transaction };
+  const $queryRaw = jest
+    .fn<Promise<Array<{ id: string }>>, [unknown]>()
+    .mockResolvedValue([{ id: 'u-1' }]);
+  const prisma = { user, refreshToken, $transaction, $queryRaw };
   // 双模:回调式把 prisma mock 自身当 tx 传入;数组式($transaction([findMany, count]))走 Promise.all。
   $transaction.mockImplementation((arg: unknown) =>
     typeof arg === 'function'
@@ -186,6 +190,11 @@ function makeWechatMock() {
 }
 type WechatMock = ReturnType<typeof makeWechatMock>;
 
+function makeIdentityStepUpMock() {
+  return { verifyProof: jest.fn<void, [string, unknown, unknown]>() };
+}
+type IdentityStepUpMock = ReturnType<typeof makeIdentityStepUpMock>;
+
 function makeService(
   prisma: PrismaMock,
   opts: {
@@ -194,6 +203,7 @@ function makeService(
     lastAdminProtection?: LastAdminProtectionMock;
     smsCode?: SmsCodeMock;
     wechat?: WechatMock;
+    identityStepUp?: IdentityStepUpMock;
   } = {},
 ): UsersService {
   const auditLogs = opts.auditLogs ?? makeAuditLogsMock();
@@ -201,6 +211,7 @@ function makeService(
   const lastAdminProtection = opts.lastAdminProtection ?? makeLastAdminProtectionMock();
   const smsCode = opts.smsCode ?? makeSmsCodeMock();
   const wechat = opts.wechat ?? makeWechatMock();
+  const identityStepUp = opts.identityStepUp ?? makeIdentityStepUpMock();
   return new UsersService(
     prisma as unknown as PrismaService,
     auditLogs as unknown as AuditLogsService,
@@ -208,6 +219,7 @@ function makeService(
     lastAdminProtection as unknown as LastAdminProtectionPolicy,
     smsCode as unknown as SmsCodeService,
     wechat as unknown as WechatService,
+    identityStepUp as unknown as IdentityStepUpService,
   );
 }
 
@@ -943,7 +955,7 @@ describe('UsersService (characterization, scoped)', () => {
       await expect(
         service.bindMyWechat(
           makeCurrentUser({ id: 'u-1', role: Role.USER }),
-          { code: 'wx-c' },
+          { code: 'wx-c', stepUpToken: 'proof' },
           META,
         ),
       ).rejects.toEqual(new BizException(BizCode.WECHAT_ALREADY_BOUND));
@@ -964,7 +976,7 @@ describe('UsersService (characterization, scoped)', () => {
       await expect(
         service.bindMyWechat(
           makeCurrentUser({ id: 'u-1', role: Role.USER }),
-          { code: 'wx-c' },
+          { code: 'wx-c', stepUpToken: 'proof' },
           META,
         ),
       ).rejects.toBe(otherConflict);

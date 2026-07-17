@@ -36,6 +36,7 @@ const LOG_REDACT_PATHS: readonly string[] = [
   'req.body.token',
   'req.body.accessToken',
   'req.body.refreshToken',
+  'req.body.stepUpToken',
   // v1 通配:任意嵌套层级出现的同名字段(响应日志 / 自定义日志)
   '*.password',
   '*.oldPassword',
@@ -44,6 +45,7 @@ const LOG_REDACT_PATHS: readonly string[] = [
   '*.token',
   '*.accessToken',
   '*.refreshToken',
+  '*.stepUpToken',
   '*.secret',
 
   // V2 baseline §8.2 — 个人身份证类

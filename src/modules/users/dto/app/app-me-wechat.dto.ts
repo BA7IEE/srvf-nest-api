@@ -23,6 +23,11 @@ export class BindMyWechatDto {
   @IsNotEmpty()
   @MaxLength(WECHAT_CODE_MAX_LENGTH)
   code!: string;
+
+  @ApiProperty({ description: 'Auth surface 签发、action=WECHAT_BIND 的 5 分钟 step-up proof' })
+  @IsString()
+  @IsNotEmpty()
+  stepUpToken!: string;
 }
 
 export class AppMeWechatDto {

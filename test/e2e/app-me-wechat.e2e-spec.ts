@@ -5,7 +5,7 @@ import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
-import { createTestUser } from '../fixtures/users.fixture';
+import { createTestUser, TEST_PASSWORD } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -19,6 +19,7 @@ import { createTestApp } from '../setup/test-app';
 // openid 纪律:响应仅掩码;audit 一律掩码;admin 清除幂等。
 
 const ME_WECHAT_PATH = '/api/app/v1/me/wechat';
+process.env.PASSWORD_CHANGE_THROTTLE_LIMIT = '100';
 
 const WECHAT_CLEAR_PERMISSION = {
   code: 'user.wechat.clear',
@@ -41,8 +42,16 @@ describe('App 微信绑定查询/换绑 + admin 清除(T3 e2e 组 C)', () => {
     return request(httpServer(app)).get(ME_WECHAT_PATH).set('Authorization', header);
   }
 
-  function putWechat(header: string, code: string): Promise<request.Response> {
-    return request(httpServer(app)).put(ME_WECHAT_PATH).set('Authorization', header).send({ code });
+  async function putWechat(header: string, code: string): Promise<request.Response> {
+    const proof = await request(httpServer(app))
+      .post('/api/auth/v1/step-up/password')
+      .set('Authorization', header)
+      .send({ action: 'WECHAT_BIND', password: TEST_PASSWORD });
+    expect(proof.status).toBe(200);
+    return request(httpServer(app))
+      .put(ME_WECHAT_PATH)
+      .set('Authorization', header)
+      .send({ code, stepUpToken: proof.body.data.stepUpToken });
   }
 
   function adminClear(header: string, userId: string): Promise<request.Response> {
@@ -87,6 +96,7 @@ describe('App 微信绑定查询/换绑 + admin 清除(T3 e2e 组 C)', () => {
 
   afterAll(async () => {
     await app.close();
+    delete process.env.PASSWORD_CHANGE_THROTTLE_LIMIT;
   });
 
   it('GET 未绑定 → bound:false / openidMasked:null;无 token → 40100', async () => {

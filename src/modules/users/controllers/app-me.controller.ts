@@ -244,7 +244,8 @@ export class AppMeController {
   @Put('phone')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'App 验码绑定 / 换绑手机号(验证成功即消费;错 5 次作废;响应仅本人可见号码) [auth]',
+    summary:
+      'App 验码绑定 / 换绑手机号(需 PHONE_BIND step-up proof;真实变更撤销全部 refresh) [auth]',
   })
   @ApiWrappedOkResponse(AppMePhoneDto)
   @ApiBizErrorResponse(
@@ -253,6 +254,7 @@ export class AppMeController {
     BizCode.USER_NOT_FOUND,
     BizCode.SMS_CODE_INVALID,
     BizCode.PHONE_ALREADY_BOUND,
+    BizCode.STEP_UP_PROOF_INVALID,
     BizCode.TOO_MANY_REQUESTS,
   )
   bindMyPhone(
@@ -260,7 +262,11 @@ export class AppMeController {
     @Body() dto: BindMyPhoneDto,
     @Req() req: Request,
   ): Promise<AppMePhoneDto> {
-    const safeDto: BindMyPhoneDto = { phone: dto.phone, code: dto.code };
+    const safeDto: BindMyPhoneDto = {
+      phone: dto.phone,
+      code: dto.code,
+      stepUpToken: dto.stepUpToken,
+    };
     return this.usersService.bindMyPhone(currentUser, safeDto, this.buildAuditMeta(req));
   }
 
@@ -285,7 +291,8 @@ export class AppMeController {
   @Put('wechat')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'App 绑定 / 换绑本人微信(wx.login code 换 openid;无需短信;同 openid 幂等) [auth]',
+    summary:
+      'App 绑定 / 换绑本人微信(需 WECHAT_BIND step-up proof;真实变更撤销全部 refresh) [auth]',
   })
   @ApiWrappedOkResponse(AppMeWechatDto)
   @ApiBizErrorResponse(
@@ -296,13 +303,14 @@ export class AppMeController {
     BizCode.WECHAT_ALREADY_BOUND,
     BizCode.WECHAT_CHANNEL_NOT_CONFIGURED,
     BizCode.WECHAT_API_FAILED,
+    BizCode.STEP_UP_PROOF_INVALID,
   )
   bindMyWechat(
     @CurrentUser() currentUser: CurrentUserPayload,
     @Body() dto: BindMyWechatDto,
     @Req() req: Request,
   ): Promise<AppMeWechatDto> {
-    const safeDto: BindMyWechatDto = { code: dto.code };
+    const safeDto: BindMyWechatDto = { code: dto.code, stepUpToken: dto.stepUpToken };
     return this.usersService.bindMyWechat(currentUser, safeDto, this.buildAuditMeta(req));
   }
 

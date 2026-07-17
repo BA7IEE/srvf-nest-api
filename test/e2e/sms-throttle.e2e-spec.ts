@@ -3,7 +3,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
-import { createTestUser } from '../fixtures/users.fixture';
+import { createTestUser, TEST_PASSWORD } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -20,6 +20,15 @@ import { createTestApp } from '../setup/test-app';
 const SEND_PATH = '/api/app/v1/me/phone/send-code';
 const BIND_PATH = '/api/app/v1/me/phone';
 const FIXED_CODE = '888888';
+
+async function phoneBindProof(app: INestApplication, authHeader: string): Promise<string> {
+  const response = await request(httpServer(app))
+    .post('/api/auth/v1/step-up/password')
+    .set('Authorization', authHeader)
+    .send({ action: 'PHONE_BIND', password: TEST_PASSWORD });
+  expect(response.status).toBe(200);
+  return (response.body as { data: { stepUpToken: string } }).data.stepUpToken;
+}
 
 async function setupCommon(app: INestApplication, usernames: string[]): Promise<string[]> {
   const prisma = app.get(PrismaService);
@@ -54,11 +63,12 @@ describe('SMS 防刷 — 组 A:DB 层(间隔 / 日限 / 错 5 次 / 过期 / 单
     return request(httpServer(app)).post(SEND_PATH).set('Authorization', header).send({ phone });
   }
 
-  function bind(phone: string, code: string): Promise<request.Response> {
+  async function bind(phone: string, code: string): Promise<request.Response> {
+    const stepUpToken = await phoneBindProof(app, header);
     return request(httpServer(app))
       .put(BIND_PATH)
       .set('Authorization', header)
-      .send({ phone, code });
+      .send({ phone, code, stepUpToken });
   }
 
   async function rewindLatest(phone: string, ms: number): Promise<void> {
@@ -208,10 +218,11 @@ describe('SMS 防刷 — 组 B:IP throttler(send 5/60、verify 10/60;五实例�
   });
 
   it('物理隔离:send 配额已满,verify 端点仍走业务逻辑(24010 而非 42900),login 不受影响', async () => {
+    const stepUpToken = await phoneBindProof(app, header);
     const res = await request(httpServer(app))
       .put(BIND_PATH)
       .set('Authorization', header)
-      .send({ phone: '13700001088', code: '000000' });
+      .send({ phone: '13700001088', code: '000000', stepUpToken });
     expectBizError(res, BizCode.SMS_CODE_INVALID); // 无活码 → 统一 24010;证明未被 send 配额波及
 
     // default(login)throttler 同样隔离
@@ -223,16 +234,18 @@ describe('SMS 防刷 — 组 B:IP throttler(send 5/60、verify 10/60;五实例�
 
   it('verify 同 IP 第 11 次 → 42900(上面已消耗 1 次,这里再 9 次业务码 + 第 10 次触顶)', async () => {
     for (let i = 1; i <= 9; i++) {
+      const stepUpToken = await phoneBindProof(app, header);
       const res = await request(httpServer(app))
         .put(BIND_PATH)
         .set('Authorization', header)
-        .send({ phone: '13700001088', code: '000000' });
+        .send({ phone: '13700001088', code: '000000', stepUpToken });
       expectBizError(res, BizCode.SMS_CODE_INVALID);
     }
+    const stepUpToken = await phoneBindProof(app, header);
     const eleventh = await request(httpServer(app))
       .put(BIND_PATH)
       .set('Authorization', header)
-      .send({ phone: '13700001088', code: '000000' });
+      .send({ phone: '13700001088', code: '000000', stepUpToken });
     expectBizError(eleventh, BizCode.TOO_MANY_REQUESTS);
   });
 });

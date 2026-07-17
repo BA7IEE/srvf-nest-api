@@ -123,6 +123,16 @@ export const BizCode = {
     message: 'refresh token 无效或已过期',
     httpStatus: HttpStatus.UNAUTHORIZED,
   },
+  STEP_UP_PROOF_INVALID: {
+    code: 10008,
+    message: 'step-up proof 无效或已过期',
+    httpStatus: HttpStatus.UNAUTHORIZED,
+  },
+  STEP_UP_FACTOR_UNAVAILABLE: {
+    code: 10009,
+    message: '当前账号未绑定该验证因子',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // users 模块权限/操作边界(101xx)
   FORBIDDEN_ROLE_OPERATION: {

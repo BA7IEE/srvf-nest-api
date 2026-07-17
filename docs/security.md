@@ -20,12 +20,13 @@
 | 登录限流 | `@nestjs/throttler` 内存 storage | 仅 `POST /api/auth/v1/login`,IP 维度 5 次 / 60 秒(throttler `default` 实例;`LOGIN_THROTTLE_LIMIT` / `LOGIN_THROTTLE_TTL_SECONDS` 可配),不暴露阈值 |
 | 日志敏感字段 redact | `bootstrap/logger-options.ts` | 命中字段日志显示为 `[REDACTED]`,**不仅仅是长度截断** |
 | 启动强校验 | `config/app.config.ts` + `prisma/seed.ts` | `APP_ENV=production` 下拒绝默认值的 `JWT_SECRET` / `APP_CORS_ORIGIN=*` / `SUPER_ADMIN_PASSWORD` / `SUPER_ADMIN_USERNAME=admin` |
-| 本人自助改密 | `controllers/app-me.controller.ts` + `users.service.ts` + `audit-logs.service.ts` | `PUT /api/app/v1/me/password`(`ChangeMyPasswordDto { oldPassword, newPassword }`);严格事务内顺序:`bcrypt.compare(oldPassword)` → 严格 `===` 比较 oldPassword/newPassword → `bcrypt.hash(newPassword)` → 写 audit log `password.change.self`;响应 `userSafeSelect`(永不含 `passwordHash`);**不**主动吊销旧 token(沿 Token 吊销升级路径) |
+| 本人自助改密 | `controllers/app-me.controller.ts` + `users.service.ts` + `audit-logs.service.ts` | `PUT /api/app/v1/me/password`(`ChangeMyPasswordDto { oldPassword, newPassword }`);严格事务内顺序:`bcrypt.compare(oldPassword)` → 严格 `===` 比较 oldPassword/newPassword → `bcrypt.hash(newPassword)` → 撤销该 user 全部活跃 refresh(`self-password-change`)→ 写 audit log `password.change.self`;响应 `userSafeSelect`(永不含 `passwordHash`);旧 access 不主动吊销、≤15m 自然过期 |
 | 改密接口防爆破 | `@PasswordChangeThrottle` + `throttler-biz.guard.ts` | 独立 throttler 实例 `password-change`,与登录限流物理隔离;IP 维度 5 次 / 60 秒(`PASSWORD_CHANGE_THROTTLE_LIMIT` / `PASSWORD_CHANGE_THROTTLE_TTL_SECONDS` 可配);内存 storage(不引入 Redis);不暴露阈值 / `Retry-After` / `X-RateLimit-*` |
 | refresh token / logout / logout-all(P0-E PR-3) | `auth.service.ts` + `refresh-token.util.ts` + `audit-logs.service.ts` | `POST /api/auth/v1/refresh`(rotation always + family revoke + absolute expiration)/ `POST /api/auth/v1/logout`(幂等;只撤销当前 row)/ `POST /api/auth/v1/logout-all`(撤销该 user 全部 refresh);`refresh_tokens` 表只存 `sha256(raw).hex`,明文绝不入库;refresh 失败 4 子原因统一 `REFRESH_TOKEN_INVALID=10007`(不拆 EXPIRED/REVOKED/REPLAY);**access token 仍不主动吊销**(沿 D-4);TTL `access 15m / refresh 90d` |
 | refresh 接口防爆破 | `@RefreshThrottle` + `throttler-biz.guard.ts`(P0-E PR-3)| 独立 throttler 实例 `refresh`,与登录 / 改密物理隔离;IP 维度 30 次 / 60 秒(`REFRESH_THROTTLE_LIMIT` / `REFRESH_THROTTLE_TTL_SECONDS` 可配,放宽允许多 tab 并发 refresh);内存 storage;不暴露阈值头 |
 | 手机号绑定发码 / 验码防爆破(SMS 基础设施 T3,2026-06-10;冻结评审稿 [`sms-verification-infra-review.md`](archive/reviews/sms-verification-infra-review.md) D-SMS-6 / E-23) | `@SmsSendThrottle` / `@SmsVerifyThrottle` + `throttler-biz.guard.ts` | 第 4 / 5 throttler 实例 `sms-send` / `sms-verify`,与登录 / 改密 / refresh 物理隔离:`POST /api/app/v1/me/phone/send-code` IP 5 次 / 60 秒(`SMS_SEND_THROTTLE_LIMIT` / `SMS_SEND_THROTTLE_TTL_SECONDS` 可配);`PUT /api/app/v1/me/phone` IP 10 次 / 60 秒(`SMS_VERIFY_THROTTLE_LIMIT` / `SMS_VERIFY_THROTTLE_TTL_SECONDS` 可配);防刷三层的 IP 层(同号 60s 间隔 + 同号自然日上限在 SmsCodeService DB 层);内存 storage;不暴露阈值头 |
-| 改密 / 重置 / 禁用 / 软删联动撤销 refresh(P0-E PR-3;2026-06-11 +第 5 场景) | `users.service.ts` / `auth/password-reset.service.ts` 同事务 `tx.refreshToken.updateMany` | 本人改密 → `self-password-change` / 本人短信重置(找回密码)→ `self-password-reset`(+ audit `password.reset.by-sms`)/ 管理员重置 → `admin-password-reset`(+ audit `password.reset.by-admin`)/ 用户被禁用 → `admin-disable` / 用户软删 → `admin-delete`;**access token 仍不主动吊销**(沿 D-4;15m 自然过期 + `JwtStrategy.validate` 每请求查库阻断 DISABLED / 软删);**JWT payload 严格 zero drift** `{ sub, username }` |
+| 身份绑定 step-up + refresh 撤销(identity session P0 PR1,2026-07-17) | `auth/identity-step-up.service.ts` + `users.service.ts` | 现有 AuthController 新增 password/SMS/WeChat 三因子签发与 SMS 发码共 4 个 JWT-protected route；proof 固定 5 分钟、action 仅 `PHONE_BIND/WECHAT_BIND`，从 JWT secret 经 HKDF-SHA256 派生 signing/snapshot 两域并用专用 audience。两个 App PUT 在 parameterized `User FOR UPDATE` 锁内重算 snapshot；真实 phone/wechat 变更与 refresh 全撤销、既有 bind/rebind audit 同事务，reason 为 `self-phone-identity-change` / `self-wechat-identity-change`；同目标 no-op 不撤销不写变更 audit。proof 失败统一 10008，因子未绑定 10009；旧 access 不主动吊销 |
+| 改密 / 重置 / 身份换绑 / 禁用 / 软删联动撤销 refresh(P0-E PR-3 + identity session P0 PR1;共 7 场景) | `users.service.ts` / `auth/password-reset.service.ts` / `auth/login-wechat.service.ts` 同事务 `tx.refreshToken.updateMany` | 本人改密 → `self-password-change` / 本人短信重置 → `self-password-reset` / 管理员重置 → `admin-password-reset` / 本人换手机号 → `self-phone-identity-change` / 本人换微信(含 pre-auth bind/rebind)→ `self-wechat-identity-change` / 用户被禁用 → `admin-disable` / 用户软删 → `admin-delete`;**access token 仍不主动吊销**(15m 自然过期 + `JwtStrategy.validate` 每请求查库阻断 DISABLED / 软删);**JWT payload 严格 zero drift** `{ sub, username }` |
 | 找回密码防枚举(2026-06-11;冻结评审稿 [`password-reset-by-sms-review.md`](archive/reviews/password-reset-by-sms-review.md) §4) | `auth/password-reset.service.ts` + `@PasswordResetThrottle()` | `POST /api/auth/v1/password-reset{,/send-code}` 两公开端点:四种无效号码场景(不存在 / 未绑定 / 禁用 / 软删)send-code 返回**完全相同**泛化 200 且零留痕;reset 一切失败统一 `SMS_CODE_INVALID=24010`;10006 不消费验证码且仅对已验码者可达(防密码 oracle);第 6 throttler 实例 IP 3/60s(`PASSWORD_RESET_THROTTLE_LIMIT` / `PASSWORD_RESET_THROTTLE_TTL_SECONDS` 可配);残余侧信道与图形码重启条件见评审稿 R-1 / §9 |
 | OTP(验证码)登录防枚举(2026-06-11;冻结评审稿 [`queue-b-otp-birthday-infra-review.md`](archive/reviews/queue-b-otp-birthday-infra-review.md) §5) | `auth/login-sms.service.ts` + `@LoginSmsThrottle()` | `POST /api/auth/v1/login-sms{,/send-code}` 两公开端点(密码登录的**并行方式**,[`auth-jwt-refresh`](reference/auth-jwt-refresh.md) 行已解锁改写、密码登录契约零变化):send-code 四无效场景同泛化 200 零留痕;登录一切失败统一 24010(**不用 10004**,两套防枚举体系各自闭合);会话签发经 `AuthService.createSession` 与密码登录同构(同 refresh family / lastLoginAt;audit `auth.login.sms` 掩码);第 7 throttler 实例 IP 5/60s(`LOGIN_SMS_THROTTLE_LIMIT` / `LOGIN_SMS_THROTTLE_TTL_SECONDS` 可配) |
 | 短信验证码静态库防护(2026-07-14 第七刀) | `sms-code.service.ts` + `sms-code-hash.util.ts` | 入库值固定为 `HMAC-SHA256(pepperKey, phone:purpose:code)` 的 64 字符 hex;`pepperKey` 由既有 `SMS_ENCRYPTION_KEY` 经独立固定 salt + scrypt 派生,不新增 env、不直接复用凭据加密 key;同验证码跨手机号/用途不可关联,pepper / key 永不进入日志、audit、响应或 fixture,明文验证码不入库/audit/响应;dev/test 未配置 key 时发码/验码运行时拒绝且不留验证码 row;旧短效验证码不回填,按原 TTL 自然失效 |
@@ -47,6 +48,7 @@ req.body.newPassword
 req.body.token
 req.body.accessToken
 req.body.refreshToken
+req.body.stepUpToken
 *.password
 *.oldPassword
 *.newPassword
@@ -54,6 +56,7 @@ req.body.refreshToken
 *.token
 *.accessToken
 *.refreshToken
+*.stepUpToken
 *.secret
 *.idCard
 *.idCardNumber
@@ -141,7 +144,7 @@ req.body.refreshToken
 | `POST /api/auth/v1/logout-all` | 撤销该 user 全部未过期未撤销 refresh;返 `{ revokedCount }` |
 | `LoginResponseDto` 扩展 | `refreshToken`(256bit base64url opaque random)+ `refreshExpiresAt`(ISO 8601 UTC family absolute expiration 时刻);字段集恰好 5 项 |
 | **refresh_tokens 表** | `tokenHash @unique`(sha256 hex)+ `familyId` + `expiresAt` + `rotatedAt` + `revokedAt` + `revokedReason` + `replacedById` + `ipFirstSeen` / `uaFirstSeen`(后两者仅供审计不出对外 API) |
-| **联动撤销 5 场景**(2026-06-11 由 4 扩 5) | 本人改密 `self-password-change` / 本人短信重置 `self-password-reset`(找回密码,2026-06-11)/ 管理员重置 `admin-password-reset` / 用户禁用 `admin-disable` / 用户软删 `admin-delete`(同事务原子) |
+| **联动撤销 7 场景**(2026-07-17 identity session P0 PR1 由 5 扩 7) | 本人改密 `self-password-change` / 本人短信重置 `self-password-reset` / 管理员重置 `admin-password-reset` / 本人换手机号 `self-phone-identity-change` / 本人换微信 `self-wechat-identity-change` / 用户禁用 `admin-disable` / 用户软删 `admin-delete`(真实变更同事务原子；同目标 no-op 不撤销) |
 | TTL 锁定 | `JWT_EXPIRES_IN=15m`(由 7d 收敛)/ `JWT_REFRESH_EXPIRES_IN=90d` family **absolute expiration**;rotation 继承同一 `refreshExpiresAt` 不延长;**禁止** sliding expiration |
 | 限流 | 独立 throttler `refresh` 30/60 IP(与 `default` / `password-change` 物理隔离);`logout` **无限流**;`logout-all` 复用 `password-change` 5/60 IP |
 | audit | 新增 `auth.login` / `auth.refresh` / `auth.logout` / `auth.logout-all` / `password.reset.by-admin` 共 5 事件 |
@@ -149,7 +152,7 @@ req.body.refreshToken
 ### P0-E 仍不做(沿评审稿 v1 D-4 / D-9)
 
 - **`tokenVersion` 字段**(本期不做;`User` schema 不增字段):依靠 access TTL 15m 自然过期 + `JwtStrategy.validate` 每请求查库阻断 DISABLED / 软删 user
-- **access token 不主动吊销**:改密 / 禁用 / 删除后,access 在剩余 ≤ 15m TTL 内仍可用;`JwtStrategy.validate()` 只看 `deletedAt === null && status === UserStatus.ACTIVE`,**不读** `passwordHash` / `tokenVersion`
+- **access token 不主动吊销**:改密 / 手机或微信身份换绑 / 禁用 / 删除后不做 blacklist；ACTIVE 且未软删用户的旧 access 在剩余 ≤ 15m TTL 内仍可用，禁用 / 删除由 `JwtStrategy.validate()` 下一请求阻断；strategy 只看 `deletedAt === null && status === UserStatus.ACTIVE`,**不读** `passwordHash` / `tokenVersion`
 - access token blacklist / JWT revoke list / Redis / Queue / Cron(2026-06-11 注:cron 能力已按升级路径限定解锁**仅生日批**,见 current-state §3;**token 清理类 cron 仍不做**)/ 完整 OAuth tree / httpOnly cookie / refresh_tokens 查询接口 / 已登录设备列表 UI / 单设备管理 / device fingerprint / 微信小程序 OAuth(2026-06-12 注:微信小程序**登录**已解锁落地——code2session 第三认证端点,见上文速查表与 [`wechat-mini-login-review.md`](archive/reviews/wechat-mini-login-review.md);完整 OAuth 网页授权 / unionid 体系 / session_key 存储仍不做)
 
 ### refresh token 安全策略(P0-E PR-3 锁定;沿 [`auth-jwt-refresh`](reference/auth-jwt-refresh.md)` P0-E 子节)

@@ -11,7 +11,7 @@ import {
 } from '../../src/modules/sms/sms-code-hash.util';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
-import { createTestUser } from '../fixtures/users.fixture';
+import { createTestUser, TEST_PASSWORD } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -26,6 +26,7 @@ import { createTestApp } from '../setup/test-app';
 // 必须在 createTestApp 之前生效(app.config factory 注册时读取)
 process.env.SMS_SEND_THROTTLE_LIMIT = '100';
 process.env.SMS_VERIFY_THROTTLE_LIMIT = '100';
+process.env.PASSWORD_CHANGE_THROTTLE_LIMIT = '100';
 
 const SEND_PATH = '/api/app/v1/me/phone/send-code';
 const BIND_PATH = '/api/app/v1/me/phone';
@@ -65,10 +66,15 @@ describe('App 手机号绑定全链(T3 e2e 组 2)', () => {
   }
 
   async function bind(header: string, phone: string, code: string): Promise<request.Response> {
+    const proof = await request(httpServer(app))
+      .post('/api/auth/v1/step-up/password')
+      .set('Authorization', header)
+      .send({ action: 'PHONE_BIND', password: TEST_PASSWORD });
+    expect(proof.status).toBe(200);
     return request(httpServer(app))
       .put(BIND_PATH)
       .set('Authorization', header)
-      .send({ phone, code });
+      .send({ phone, code, stepUpToken: proof.body.data.stepUpToken });
   }
 
   beforeAll(async () => {
@@ -117,6 +123,7 @@ describe('App 手机号绑定全链(T3 e2e 组 2)', () => {
     // 还原 env(runInBand 下各 spec 文件共享进程;sms-throttle 组自行设值,这里只做卫生还原)
     delete process.env.SMS_SEND_THROTTLE_LIMIT;
     delete process.env.SMS_VERIFY_THROTTLE_LIMIT;
+    delete process.env.PASSWORD_CHANGE_THROTTLE_LIMIT;
   });
 
   describe('send-code 入参与准入', () => {
@@ -209,9 +216,18 @@ describe('App 手机号绑定全链(T3 e2e 组 2)', () => {
       expect(serialized).not.toContain(code.codeHash);
     });
 
-    it('绑定成功后重放(同号已被本人占用)→ 占用预检先拦 24002;纯"已消费码"场景见 sms-throttle 组', async () => {
+    it('绑定成功后同目标重放 → 幂等 200，不撤 refresh、不写第二条变更 audit', async () => {
+      const before = await prisma.auditLog.count({
+        where: { event: { in: ['phone.bind.self', 'phone.rebind.self'] }, resourceId: u1Id },
+      });
       const res = await bind(u1Header, PHONE_A, FIXED_CODE);
-      expectBizError(res, BizCode.PHONE_ALREADY_BOUND);
+      expect(res.status).toBe(200);
+      expect(res.body.data.phone).toBe(PHONE_A);
+      expect(
+        await prisma.auditLog.count({
+          where: { event: { in: ['phone.bind.self', 'phone.rebind.self'] }, resourceId: u1Id },
+        }),
+      ).toBe(before);
     });
 
     it('send-code 已被他人绑定的号(u2 → PHONE_A)→ 24002', async () => {

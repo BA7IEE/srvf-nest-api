@@ -4345,10 +4345,15 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "example": "13800001234",
         "type": "string",
       },
+      "stepUpToken": {
+        "description": "Auth surface 签发、action=PHONE_BIND 的 5 分钟 step-up proof",
+        "type": "string",
+      },
     },
     "required": [
       "phone",
       "code",
+      "stepUpToken",
     ],
     "type": "object",
   },
@@ -4359,9 +4364,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "maxLength": 128,
         "type": "string",
       },
+      "stepUpToken": {
+        "description": "Auth surface 签发、action=WECHAT_BIND 的 5 分钟 step-up proof",
+        "type": "string",
+      },
     },
     "required": [
       "code",
+      "stepUpToken",
     ],
     "type": "object",
   },
@@ -12703,6 +12713,22 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "SendStepUpSmsCodeDto": {
+    "properties": {
+      "action": {
+        "description": "随后短信 step-up proof 允许执行的身份动作;验证码只发往当前绑定手机号",
+        "enum": [
+          "PHONE_BIND",
+          "WECHAT_BIND",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "action",
+    ],
+    "type": "object",
+  },
   "SendWechatBindCodeDto": {
     "properties": {
       "phone": {
@@ -12900,6 +12926,88 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "credentialConfigured",
       "updatedAt",
       "createdAt",
+    ],
+    "type": "object",
+  },
+  "StepUpPasswordDto": {
+    "properties": {
+      "action": {
+        "description": "本次 proof 允许执行的身份动作",
+        "enum": [
+          "PHONE_BIND",
+          "WECHAT_BIND",
+        ],
+        "type": "string",
+      },
+      "password": {
+        "description": "当前账号密码",
+        "format": "password",
+        "type": "string",
+      },
+    },
+    "required": [
+      "action",
+      "password",
+    ],
+    "type": "object",
+  },
+  "StepUpResponseDto": {
+    "properties": {
+      "expiresAt": {
+        "description": "proof 绝对过期时刻(ISO 8601 UTC)",
+        "type": "string",
+      },
+      "stepUpToken": {
+        "description": "5 分钟 action-bound step-up proof;仅用于身份绑定请求",
+        "type": "string",
+      },
+    },
+    "required": [
+      "stepUpToken",
+      "expiresAt",
+    ],
+    "type": "object",
+  },
+  "StepUpSmsDto": {
+    "properties": {
+      "action": {
+        "description": "本次 proof 允许执行的身份动作",
+        "enum": [
+          "PHONE_BIND",
+          "WECHAT_BIND",
+        ],
+        "type": "string",
+      },
+      "code": {
+        "description": "当前绑定手机号收到的 6 位数字验证码",
+        "type": "string",
+      },
+    },
+    "required": [
+      "action",
+      "code",
+    ],
+    "type": "object",
+  },
+  "StepUpWechatDto": {
+    "properties": {
+      "action": {
+        "description": "本次 proof 允许执行的身份动作",
+        "enum": [
+          "PHONE_BIND",
+          "WECHAT_BIND",
+        ],
+        "type": "string",
+      },
+      "code": {
+        "description": "微信小程序 wx.login() 产出的一次性 code;解析出的 openid 必须等于当前绑定值",
+        "maxLength": 128,
+        "type": "string",
+      },
+    },
+    "required": [
+      "action",
+      "code",
     ],
     "type": "object",
   },
@@ -64117,9 +64225,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "40100: 未登录或登录已失效",
+                    "description": "40100: 未登录或登录已失效; 10008: step-up proof 无效或已过期",
                     "enum": [
                       40100,
+                      10008,
                     ],
                     "example": 40100,
                     "type": "integer",
@@ -64143,7 +64252,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "未登录或登录已失效(code=40100)",
+          "description": "未登录或登录已失效(code=40100) / step-up proof 无效或已过期(code=10008)",
         },
         "404": {
           "content": {
@@ -64253,7 +64362,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "App 验码绑定 / 换绑手机号(验证成功即消费;错 5 次作废;响应仅本人可见号码) [auth]",
+      "summary": "App 验码绑定 / 换绑手机号(需 PHONE_BIND step-up proof;真实变更撤销全部 refresh) [auth]",
       "tags": [
         "Mobile - Me",
       ],
@@ -65604,9 +65713,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "40100: 未登录或登录已失效",
+                    "description": "40100: 未登录或登录已失效; 10008: step-up proof 无效或已过期",
                     "enum": [
                       40100,
+                      10008,
                     ],
                     "example": 40100,
                     "type": "integer",
@@ -65630,7 +65740,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "未登录或登录已失效(code=40100)",
+          "description": "未登录或登录已失效(code=40100) / step-up proof 无效或已过期(code=10008)",
         },
         "404": {
           "content": {
@@ -65774,7 +65884,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "App 绑定 / 换绑本人微信(wx.login code 换 openid;无需短信;同 openid 幂等) [auth]",
+      "summary": "App 绑定 / 换绑本人微信(需 WECHAT_BIND step-up proof;真实变更撤销全部 refresh) [auth]",
       "tags": [
         "Mobile - Me",
       ],
@@ -70788,6 +70898,881 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       },
       "summary": "refresh access token(rotation always;family revoke;absolute expiration;返回新 access + 新 refresh) [public]",
+      "tags": [
+        "Auth",
+      ],
+    },
+  },
+  "/api/auth/v1/step-up/password": {
+    "post": {
+      "operationId": "AuthController_stepUpWithPassword",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/StepUpPasswordDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/StepUpResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效; 10008: step-up proof 无效或已过期",
+                    "enum": [
+                      40100,
+                      10008,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100) / step-up proof 无效或已过期(code=10008)",
+        },
+        "429": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "42900: 请求过于频繁，请稍后再试",
+                    "enum": [
+                      42900,
+                    ],
+                    "example": 42900,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求过于频繁，请稍后再试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求过于频繁，请稍后再试(code=42900)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "使用当前密码签发 5 分钟身份绑定 step-up proof [auth]",
+      "tags": [
+        "Auth",
+      ],
+    },
+  },
+  "/api/auth/v1/step-up/sms": {
+    "post": {
+      "operationId": "AuthController_stepUpWithSms",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/StepUpSmsDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/StepUpResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 24010: 验证码错误或已失效",
+                    "enum": [
+                      40000,
+                      24010,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 验证码错误或已失效(code=24010)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "10009: 当前账号未绑定该验证因子",
+                    "enum": [
+                      10009,
+                    ],
+                    "example": 10009,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "当前账号未绑定该验证因子",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "当前账号未绑定该验证因子(code=10009)",
+        },
+        "429": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "42900: 请求过于频繁，请稍后再试",
+                    "enum": [
+                      42900,
+                    ],
+                    "example": 42900,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求过于频繁，请稍后再试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求过于频繁，请稍后再试(code=42900)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "使用当前手机号验证码签发 5 分钟身份绑定 step-up proof [auth]",
+      "tags": [
+        "Auth",
+      ],
+    },
+  },
+  "/api/auth/v1/step-up/sms/send-code": {
+    "post": {
+      "operationId": "AuthController_sendStepUpSmsCode",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SendStepUpSmsCodeDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/SendPasswordResetCodeResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "10009: 当前账号未绑定该验证因子",
+                    "enum": [
+                      10009,
+                    ],
+                    "example": 10009,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "当前账号未绑定该验证因子",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "当前账号未绑定该验证因子(code=10009)",
+        },
+        "429": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "24120: 发送过于频繁,请稍后再试; 24121: 该手机号今日发送次数已达上限; 42900: 请求过于频繁，请稍后再试",
+                    "enum": [
+                      24120,
+                      24121,
+                      42900,
+                    ],
+                    "example": 24120,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "发送过于频繁,请稍后再试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "发送过于频繁,请稍后再试(code=24120) / 该手机号今日发送次数已达上限(code=24121) / 请求过于频繁，请稍后再试(code=42900)",
+        },
+        "502": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "24031: 短信发送失败,请稍后重试",
+                    "enum": [
+                      24031,
+                    ],
+                    "example": 24031,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "短信发送失败,请稍后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "短信发送失败,请稍后重试(code=24031)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "24030: 短信服务未配置或未启用",
+                    "enum": [
+                      24030,
+                    ],
+                    "example": 24030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "短信服务未配置或未启用",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "短信服务未配置或未启用(code=24030)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "向当前绑定手机号发送 identity step-up 验证码 [auth]",
+      "tags": [
+        "Auth",
+      ],
+    },
+  },
+  "/api/auth/v1/step-up/wechat": {
+    "post": {
+      "operationId": "AuthController_stepUpWithWechat",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/StepUpWechatDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/StepUpResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 25010: 微信登录凭证无效或已过期",
+                    "enum": [
+                      40000,
+                      25010,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 微信登录凭证无效或已过期(code=25010)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "10009: 当前账号未绑定该验证因子",
+                    "enum": [
+                      10009,
+                    ],
+                    "example": 10009,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "当前账号未绑定该验证因子",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "当前账号未绑定该验证因子(code=10009)",
+        },
+        "429": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "42900: 请求过于频繁，请稍后再试",
+                    "enum": [
+                      42900,
+                    ],
+                    "example": 42900,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求过于频繁，请稍后再试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求过于频繁，请稍后再试(code=42900)",
+        },
+        "502": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "25031: 微信服务调用失败,请稍后重试",
+                    "enum": [
+                      25031,
+                    ],
+                    "example": 25031,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "微信服务调用失败,请稍后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "微信服务调用失败,请稍后重试(code=25031)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "25030: 微信登录服务未配置或未启用",
+                    "enum": [
+                      25030,
+                    ],
+                    "example": 25030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "微信登录服务未配置或未启用",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "微信登录服务未配置或未启用(code=25030)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "使用当前微信 openid 签发 5 分钟身份绑定 step-up proof [auth]",
       "tags": [
         "Auth",
       ],

@@ -71,6 +71,7 @@ export type AuditLogEvent =
   // wechat.bind.self / wechat.rebind.self 双写入路径 extra.viaPath ∈ {'pre-auth','me'} 区分
   // (沿 registration.create viaPath 范式);pre-auth 路径另含 phone 掩码 + codeId。
   | 'auth.login.wechat' // T3 接入(AuthService.createSession 经 login-wechat 两调用方;extra.familyId + openid 掩码;登录失败不写,镜像密码登录)
+  | 'auth.step-up' // Identity Session P0 PR1:仅 password/SMS/WeChat proof 成功签发写;extra 恰好 action/factor
   | 'wechat.bind.self' // T3 接入(auth/login-wechat.service.bind 首绑 + users.service.bindMyWechat 首绑;after.openid 掩码;extra.viaPath)
   | 'wechat.rebind.self' // T3 接入(同上双路径换绑;before/after.openid 掩码;extra.viaPath)
   | 'wechat.clear.by-admin' // T3 接入(users.service.clearUserWechat;仅实际清除时写〔幂等空清不写〕;before.openid 掩码)
