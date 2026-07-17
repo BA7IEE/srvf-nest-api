@@ -729,14 +729,55 @@ export class UsersService {
   }
 
   // PUT /api/app/v1/me/phone(⑥):验码绑定 / 换绑一体(§7)。
-  // 流程:占用复查 → 取本人 before.phone → 验码即消费(独立于绑定事务,见
-  // SmsCodeService.verifyAndConsume 注释)→ 事务内 update + audit(bind/rebind 按 before 区分)。
+  // 流程:锁外读 active credential snapshot 并预验 proof → 同目标 no-op → 锁外占用预检
+  // → 锁外验码消费
+  // (SmsCodeService 明确使用根 Prisma client,不得在持 User 行锁时调用)→ binding transaction
+  // 内 User FOR UPDATE + snapshot/proof 二次权威校验 + final no-op/占用复查 →
+  // update + refresh revoke + audit。验码消费后遇并发 stale/占用是既有可接受窄窗口。
   // P2002 兜底竞态:落库撞 User_phone_key → PHONE_ALREADY_BOUND(沿 §5 数组判断铁律)。
   async bindMyPhone(
     currentUser: CurrentUserPayload,
     dto: BindMyPhoneDto,
     auditMeta: AuditMeta,
   ): Promise<AppMePhoneDto> {
+    const initial = await this.prisma.user.findFirst({
+      where: this.notDeletedWhere({ id: currentUser.id, status: UserStatus.ACTIVE }),
+      select: {
+        id: true,
+        passwordHash: true,
+        phone: true,
+        phoneVerifiedAt: true,
+        openid: true,
+        status: true,
+        deletedAt: true,
+      },
+    });
+    if (!initial) throw new BizException(BizCode.USER_NOT_FOUND);
+
+    this.identityStepUp.verifyProof(dto.stepUpToken, initial, StepUpAction.PHONE_BIND);
+
+    if (initial.phone === dto.phone) {
+      return {
+        phone: initial.phone,
+        phoneVerifiedAt: initial.phoneVerifiedAt?.toISOString() ?? null,
+      };
+    }
+
+    const occupiedBeforeConsume = await this.prisma.user.findUnique({
+      where: { phone: dto.phone },
+      select: { id: true },
+    });
+    if (occupiedBeforeConsume !== null) {
+      throw new BizException(BizCode.PHONE_ALREADY_BOUND);
+    }
+
+    const { codeId } = await this.smsCode.verifyAndConsume({
+      phone: dto.phone,
+      purpose: SmsPurpose.PHONE_BIND,
+      code: dto.code,
+      userId: currentUser.id,
+    });
+
     try {
       return await this.prisma.$transaction(async (tx) => {
         const locked = await tx.$queryRaw<Array<{ id: string }>>(
@@ -777,12 +818,6 @@ export class UsersService {
           throw new BizException(BizCode.PHONE_ALREADY_BOUND);
         }
 
-        const { codeId } = await this.smsCode.verifyAndConsume({
-          phone: dto.phone,
-          purpose: SmsPurpose.PHONE_BIND,
-          code: dto.code,
-          userId: currentUser.id,
-        });
         const now = new Date();
         const row = await tx.user.update({
           where: { id: currentUser.id },
