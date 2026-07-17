@@ -11,6 +11,8 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
+const pastIso = (suffix: string): string => `${new Date().getUTCFullYear() - 1}-08-${suffix}`;
+
 describe('Admin activity GPS check-in evidence and attendance draft (F3)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -60,13 +62,13 @@ describe('Admin activity GPS check-in evidence and attendance draft (F3)', () =>
       data: { name: 'ACF3 组织', nodeTypeCode: 'team' },
       select: { id: true },
     });
-    activityEndAt = new Date('2026-08-01T12:00:00.000Z');
+    activityEndAt = new Date(pastIso('01T12:00:00.000Z'));
     const activity = await prisma.activity.create({
       data: {
         title: 'ACF3 主活动',
         activityTypeCode: 'acf3-type',
         organizationId: organization.id,
-        startAt: new Date('2026-08-01T08:00:00.000Z'),
+        startAt: new Date(pastIso('01T08:00:00.000Z')),
         endAt: activityEndAt,
         location: 'ACF3 场地',
         statusCode: 'published',
@@ -81,8 +83,8 @@ describe('Admin activity GPS check-in evidence and attendance draft (F3)', () =>
           title: 'ACF3 范围外活动',
           activityTypeCode: 'acf3-type',
           organizationId: organization.id,
-          startAt: new Date('2026-08-02T08:00:00.000Z'),
-          endAt: new Date('2026-08-02T12:00:00.000Z'),
+          startAt: new Date(pastIso('02T08:00:00.000Z')),
+          endAt: new Date(pastIso('02T12:00:00.000Z')),
           location: 'ACF3 范围外场地',
           statusCode: 'published',
           isPublicRegistration: true,
@@ -224,8 +226,8 @@ describe('Admin activity GPS check-in evidence and attendance draft (F3)', () =>
           activityId,
           memberId: members[0].id,
           registrationId: registrationAId,
-          checkInAt: new Date('2026-08-01T08:00:00.000Z'),
-          checkOutAt: new Date('2026-08-01T09:30:00.000Z'),
+          checkInAt: new Date(pastIso('01T08:00:00.000Z')),
+          checkOutAt: new Date(pastIso('01T09:30:00.000Z')),
           checkInLongitude: new Prisma.Decimal('114.1234567'),
           checkInLatitude: new Prisma.Decimal('22.1234567'),
           checkInAccuracy: new Prisma.Decimal('5.00'),
@@ -243,7 +245,7 @@ describe('Admin activity GPS check-in evidence and attendance draft (F3)', () =>
           activityId,
           memberId: members[1].id,
           registrationId: registrationBId,
-          checkInAt: new Date('2026-08-01T09:00:00.000Z'),
+          checkInAt: new Date(pastIso('01T09:00:00.000Z')),
           checkInLongitude: new Prisma.Decimal('114.2234567'),
           checkInLatitude: new Prisma.Decimal('22.2234567'),
           checkInAccuracy: new Prisma.Decimal('7.00'),
@@ -257,8 +259,8 @@ describe('Admin activity GPS check-in evidence and attendance draft (F3)', () =>
           activityId,
           memberId: members[2].id,
           registrationId: registrationCId,
-          checkInAt: new Date('2026-08-01T10:00:00.000Z'),
-          checkOutAt: new Date('2026-08-01T10:00:36.000Z'),
+          checkInAt: new Date(pastIso('01T10:00:00.000Z')),
+          checkOutAt: new Date(pastIso('01T10:00:36.000Z')),
           checkInLongitude: new Prisma.Decimal('114.3234567'),
           checkInLatitude: new Prisma.Decimal('22.3234567'),
           checkInAccuracy: new Prisma.Decimal('8.00'),
@@ -274,8 +276,8 @@ describe('Admin activity GPS check-in evidence and attendance draft (F3)', () =>
           activityId,
           memberId: members[4].id,
           registrationId: cancelledRegistrationId,
-          checkInAt: new Date('2026-08-01T08:15:00.000Z'),
-          checkOutAt: new Date('2026-08-01T08:45:00.000Z'),
+          checkInAt: new Date(pastIso('01T08:15:00.000Z')),
+          checkOutAt: new Date(pastIso('01T08:45:00.000Z')),
           checkInDistance: new Prisma.Decimal('10.00'),
           checkOutDistance: new Prisma.Decimal('10.00'),
           geoVerified: true,
@@ -287,8 +289,8 @@ describe('Admin activity GPS check-in evidence and attendance draft (F3)', () =>
           activityId,
           memberId: members[5].id,
           registrationId: deletedMemberRegistrationId,
-          checkInAt: new Date('2026-08-01T11:00:00.000Z'),
-          checkOutAt: new Date('2026-08-01T11:30:00.000Z'),
+          checkInAt: new Date(pastIso('01T11:00:00.000Z')),
+          checkOutAt: new Date(pastIso('01T11:30:00.000Z')),
           checkInDistance: new Prisma.Decimal('15.00'),
           checkOutDistance: new Prisma.Decimal('15.00'),
           geoVerified: true,
@@ -461,8 +463,8 @@ describe('Admin activity GPS check-in evidence and attendance draft (F3)', () =>
     expect(recordsByRegistration.get(registrationAId)).toEqual({
       memberId: memberAId,
       roleCode: 'member',
-      checkInAt: '2026-08-01T08:00:00.000Z',
-      checkOutAt: '2026-08-01T09:30:00.000Z',
+      checkInAt: pastIso('01T08:00:00.000Z'),
+      checkOutAt: pastIso('01T09:30:00.000Z'),
       serviceHours: 1.5,
       attendanceStatusCode: 'present',
       registrationId: registrationAId,
@@ -474,7 +476,7 @@ describe('Admin activity GPS check-in evidence and attendance draft (F3)', () =>
     });
     expect(recordsByRegistration.get(registrationCId)).toMatchObject({
       memberId: memberCId,
-      checkOutAt: '2026-08-01T10:00:36.000Z',
+      checkOutAt: pastIso('01T10:00:36.000Z'),
       serviceHours: 0.01,
     });
     for (const record of data.records) {
@@ -569,6 +571,8 @@ describe('Admin activity GPS check-in evidence and attendance draft (F3)', () =>
       registrationCId,
     ]);
     expect(sheet.records.map((record) => record.serviceHours.toNumber())).toEqual([1.5, 3, 0.01]);
-    expect(sheet.records.every((record) => record.contributionPoints === null)).toBe(true);
+    expect(sheet.records.every((record) => record.contributionPoints?.toString() === '0')).toBe(
+      true,
+    );
   });
 });

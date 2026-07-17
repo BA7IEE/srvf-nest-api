@@ -93,6 +93,8 @@ export class AttendanceSheetsCollectionController {
     BizCode.ATTENDANCE_SERVICE_HOURS_INVALID,
     BizCode.ATTENDANCE_SERVICE_HOURS_EXCEEDS_SPAN,
     BizCode.ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH,
+    BizCode.ATTENDANCE_REGISTRATION_INVALID,
+    BizCode.ATTENDANCE_CHECK_OUT_IN_FUTURE,
   )
   submit(
     @Param() params: ActivityIdParamDto,
@@ -211,6 +213,8 @@ export class AttendanceSheetsResourceController {
     BizCode.ATTENDANCE_SERVICE_HOURS_INVALID,
     BizCode.ATTENDANCE_SERVICE_HOURS_EXCEEDS_SPAN,
     BizCode.ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH,
+    BizCode.ATTENDANCE_REGISTRATION_INVALID,
+    BizCode.ATTENDANCE_CHECK_OUT_IN_FUTURE,
   )
   edit(
     @Param() params: IdParamDto,

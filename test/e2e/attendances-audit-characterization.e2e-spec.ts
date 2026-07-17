@@ -264,8 +264,6 @@ describe('AttendancesService audit characterization', () => {
         checkInAt: `2026-03-10T${String(startHour).padStart(2, '0')}:00:00.000Z`,
         checkOutAt: `2026-03-10T${String(startHour + 4).padStart(2, '0')}:00:00.000Z`,
         attendanceStatusCode: ATTENDANCE_STATUS_PRESENT,
-        // 显式传值跳过 ContributionRule 预填路径(沿 D-A8 三态:number → 不预填、不覆盖)
-        contributionPoints: 1,
       });
     }
     return { records };
@@ -281,7 +279,6 @@ describe('AttendancesService audit characterization', () => {
         checkInAt: `2026-03-15T${String(startHour).padStart(2, '0')}:00:00.000Z`,
         checkOutAt: `2026-03-15T${String(startHour + 4).padStart(2, '0')}:00:00.000Z`,
         attendanceStatusCode: ATTENDANCE_STATUS_PRESENT,
-        contributionPoints: 1,
       });
     }
     return { records };
@@ -344,8 +341,8 @@ describe('AttendancesService audit characterization', () => {
       expect(after.sheet.statusCode).toBe('pending');
       expect(after.sheet.version).toBe(1);
       expect(after.records).toHaveLength(2);
-      // contributionPoints 序列化为 string(Decimal.toString;沿 toSheetAuditSnapshot 现状)
-      expect(after.records[0].contributionPoints).toBe('1');
+      // 无匹配 ContributionRule 时保守落 0,并在 audit snapshot 序列化为 string。
+      expect(after.records[0].contributionPoints).toBe('0');
 
       // extra:4 个字段(锁定形状)
       expect(c.extra).toEqual({

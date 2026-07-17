@@ -58,7 +58,7 @@
 
 release 收口(E 档,`srvf-release-closeout` 九阶段)末尾再统一核一次:**openapi 重导(`info.version` 须等于新版本号)+ gap-ledger 标"已发" + 按本表抽查**。
 
-> **已知漂移登记(2026-07-17,lane F 盘点发现,已报总控)**:当前 `openapi.json` 的 `info.version=0.56.0`,落后 v0.57.0(该版含 `registrationCounts` 增 `waitlisted` 的 additive 契约变更,收口时未重导;current-state §1「六处一致」句相应失真)。本 lane 无契约变更、按写集不手改生成物;待有 dev server 的会话跑 `pnpm docs:handoff:openapi` 补刷。
+> **刷新记录(2026-07-17,C-QUAL)**:`openapi.json` 已用 `pnpm docs:handoff:openapi` 从 v0.58.0 实时契约重导;本次变更仅包含 `AttendanceRecordInputDto` 移除 `contributionPoints` 及 submit/edit 新增 22076/22079 错误注解。
 
 ---
 

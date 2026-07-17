@@ -11,33 +11,27 @@ import { Prisma } from '@prisma/client';
 //   - 批次4_贡献值业务规则_API草案 v1.0(D-A8)
 //   - 批次4_贡献值业务规则_schema草案评审决议表 v1.0(D-S11)
 //
-// **职责边界(严守"搬家不优化")**:
-// - ✅ 三态分发 + ContributionRule 查表 + 档位 / cap 计算
+// **职责边界**:
+// - ✅ ContributionRule 查表 + 档位 / cap 计算
 // - ❌ 不写 audit / 不动 Activity / 不创建 Sheet / Record / 不做 dict 校验
 // - ❌ 不做时间重叠校验 / 不做 serviceHours normalization
 // - ❌ 不持有 PrismaService(沿调用方 tx,事务边界一致)
 
 type PrismaTx = Prisma.TransactionClient;
 
-// 计算器入参的最小结构性约束:只声明 prefill 真正读 / 写的 3 个字段。
+// 计算器入参的最小结构性约束:只声明计算真正读的 2 个字段。
 // 其余字段经泛型 T 整体透传(沿 service 原 normalized record 范式),
 // 避免把 NormalizedRecord 类型从 service 大规模导出(沿迁移要求第 5 条)。
 type PrefillRecordLike = {
   roleCode: string;
   serviceHours: number;
-  contributionPoints?: number | null;
 };
 
 @Injectable()
 export class ContributionCalculator {
   // 批次 4-B D14 5.B 预填(沿 D-S4 / D-A8 / 业务规则文档 §4)。
   // 输入:normalized records + activityTypeCode;
-  // 输出:applied records(contributionPoints 已按规则预填或保持调用方传入值)。
-  //
-  // 入参三态处理(沿 D-A8 + v0.6 契约小修复):
-  //   undefined → 走预填(匹配规则取值;无匹配规则 → null)
-  //   null      → 调用方显式清空,跳过预填,保持 null(APD 在 approve 前现场填入)
-  //   number    → 调用方已传值,不覆盖
+  // 输出:applied records(contributionPoints 必由规则计算;无匹配规则保守为 0)。
   //
   // 规则匹配维度:
   //   (activityTypeCode, attendanceRoleCode, durationThreshold) WHERE deletedAt IS NULL AND status='ACTIVE'
@@ -53,19 +47,13 @@ export class ContributionCalculator {
   // NULL durationThreshold 选取(沿 §3.1 复核报告):
   //   ORDER BY createdAt ASC LIMIT 1(明确,不随机)。
   //
-  // 无匹配规则:保持 contributionPoints = null(不抛错;沿 D-S11 22048 不开)。
+  // 无匹配规则:contributionPoints = 0(不抛错;沿 D-S11 22048 不开)。
   async applyContributionRulePrefill<T extends PrefillRecordLike>(
     records: T[],
     activityTypeCode: string,
     tx: PrismaTx,
-  ): Promise<T[]> {
-    const rolesNeedingPrefill = [
-      ...new Set(
-        records
-          .filter((record) => record.contributionPoints === undefined)
-          .map((record) => record.roleCode),
-      ),
-    ];
+  ): Promise<Array<T & { contributionPoints: number }>> {
+    const rolesNeedingPrefill = [...new Set(records.map((record) => record.roleCode))];
     const candidates =
       rolesNeedingPrefill.length === 0
         ? []
@@ -92,14 +80,8 @@ export class ContributionCalculator {
       }
     }
 
-    const result: T[] = [];
+    const result: Array<T & { contributionPoints: number }> = [];
     for (const r of records) {
-      // 显式 null = 跳过预填(v0.6 契约小修复);number = 已传值,不覆盖
-      if (r.contributionPoints !== undefined) {
-        result.push(r);
-        continue;
-      }
-      // undefined = 走预填
       const points = this.computePrefilledPoints(
         firstCandidateByRole.get(r.roleCode),
         r.serviceHours,
@@ -118,9 +100,9 @@ export class ContributionCalculator {
         }
       | undefined,
     serviceHours: number,
-  ): number | null {
+  ): number {
     if (!chosen) {
-      return null;
+      return 0;
     }
     const threshold = chosen.durationThreshold;
     let candidatePoints: number;

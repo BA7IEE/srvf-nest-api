@@ -174,6 +174,19 @@ describe('ActivityPosition attendance wiring (F4)', () => {
   });
 
   it('草稿带出岗位角色与岗位 endAt，提交后按既有岗位角色规则预填贡献值', async () => {
+    const serverNow = Date.now();
+    activityPositionEndAt = new Date(serverNow - 3_600_000);
+    await prisma.activityPosition.update({
+      where: { id: activityPositionId },
+      data: {
+        startAt: new Date(serverNow - 3 * 3_600_000),
+        endAt: activityPositionEndAt,
+      },
+    });
+    await prisma.activityCheckIn.updateMany({
+      where: { registrationId, deletedAt: null },
+      data: { checkInAt: new Date(serverNow - 2 * 3_600_000) },
+    });
     await prisma.contributionRule.create({
       data: {
         activityTypeCode: 'activity-position-f4',

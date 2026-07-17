@@ -11,6 +11,8 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
+const attendanceTestYear = new Date().getUTCFullYear() - 1;
+
 // Slow-4 T3(2026-06-11):attendances 模块(2 个 Admin class,10 端点)RBAC 权限边界 spec。
 // 沿冻结评审稿 slow4-rbac-business-face-review.md §7 零行为漂移验收
 // (① SA 短路 / ② ADMIN+biz-admin 照常 / ③ ADMIN 无 biz-admin 30100 / ④ USER 30100)。
@@ -104,8 +106,8 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
         title: 'ATRB Activity',
         activityTypeCode: 'atrb-type',
         organizationId: rootOrg.id,
-        startAt: new Date('2026-09-01T00:00:00.000Z'),
-        endAt: new Date('2026-09-03T00:00:00.000Z'),
+        startAt: new Date(Date.UTC(attendanceTestYear, 8, 1)),
+        endAt: new Date(Date.UTC(attendanceTestYear, 8, 3)),
         location: '边界演示',
         statusCode: 'published',
         isPublicRegistration: true,
@@ -153,8 +155,8 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
         {
           memberId,
           roleCode: attendanceRoleCode,
-          checkInAt: new Date(Date.UTC(2026, 8, 2, h, 0, 0)).toISOString(),
-          checkOutAt: new Date(Date.UTC(2026, 8, 2, h + 1, 0, 0)).toISOString(),
+          checkInAt: new Date(Date.UTC(attendanceTestYear, 8, 2, h, 0, 0)).toISOString(),
+          checkOutAt: new Date(Date.UTC(attendanceTestYear, 8, 2, h + 1, 0, 0)).toISOString(),
           attendanceStatusCode,
         },
       ],

@@ -10,6 +10,11 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
+const relativeIso = (yearOffset: number, suffix: string): string =>
+  `${new Date().getUTCFullYear() + yearOffset}-${suffix}`;
+const pastIso = (suffix: string): string => relativeIso(-1, suffix);
+const futureIso = (suffix: string): string => relativeIso(2, suffix);
+
 // Phase 2 P2-6 App /api/app/v1/my/attendance-records e2e。
 // 沿 docs/app-api-p2-6-attendance-records-review.md §10.2 13 类用例:
 //   1. 字段集恰好 14 / 不含 sensitive
@@ -279,8 +284,8 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
         title: 'P26 Activity 1',
         activityTypeCode: ti.code,
         organizationId: childOrg.id,
-        startAt: '2099-06-01T08:00:00.000Z',
-        endAt: '2099-06-01T18:00:00.000Z',
+        startAt: pastIso('06-01T08:00:00.000Z'),
+        endAt: futureIso('06-01T18:00:00.000Z'),
         location: '梧桐山',
         coverImageUrl: 'https://example.com/cover-1.png',
       });
@@ -297,8 +302,8 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
         title: 'P26 Activity 2',
         activityTypeCode: ti.code,
         organizationId: childOrg.id,
-        startAt: '2099-06-02T08:00:00.000Z',
-        endAt: '2099-06-02T18:00:00.000Z',
+        startAt: pastIso('06-02T08:00:00.000Z'),
+        endAt: futureIso('06-02T18:00:00.000Z'),
         location: '七娘山',
       });
     activity2Id = a2.body.data.id;
@@ -314,8 +319,8 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
         title: 'P26 Activity 3',
         activityTypeCode: ti.code,
         organizationId: childOrg.id,
-        startAt: '2099-06-03T08:00:00.000Z',
-        endAt: '2099-06-03T18:00:00.000Z',
+        startAt: pastIso('06-03T08:00:00.000Z'),
+        endAt: futureIso('06-03T18:00:00.000Z'),
         location: '南山',
       });
     activity3Id = a3.body.data.id;
@@ -334,28 +339,25 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2099-06-01T08:00:00.000Z',
-            checkOutAt: '2099-06-01T10:00:00.000Z',
+            checkInAt: pastIso('06-01T08:00:00.000Z'),
+            checkOutAt: pastIso('06-01T10:00:00.000Z'),
             attendanceStatusCode: 'present',
             note: 'Record 1 — early',
-            contributionPoints: 1.0,
           },
           {
             memberId: memberAId,
             roleCode: 'instructor',
-            checkInAt: '2099-06-01T14:00:00.000Z',
-            checkOutAt: '2099-06-01T18:00:00.000Z',
+            checkInAt: pastIso('06-01T14:00:00.000Z'),
+            checkOutAt: pastIso('06-01T18:00:00.000Z'),
             attendanceStatusCode: 'present',
             note: 'Record 2 — late slot',
-            contributionPoints: 2.5,
           },
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2099-06-01T11:00:00.000Z',
-            checkOutAt: '2099-06-01T13:00:00.000Z',
+            checkInAt: pastIso('06-01T11:00:00.000Z'),
+            checkOutAt: pastIso('06-01T13:00:00.000Z'),
             attendanceStatusCode: 'present',
-            contributionPoints: 0.5,
           },
         ],
       });
@@ -370,18 +372,16 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2099-06-02T08:00:00.000Z',
-            checkOutAt: '2099-06-02T18:00:00.000Z',
+            checkInAt: pastIso('06-02T08:00:00.000Z'),
+            checkOutAt: pastIso('06-02T18:00:00.000Z'),
             attendanceStatusCode: 'present',
-            contributionPoints: 3.0,
           },
           {
             memberId: memberBId,
             roleCode: 'member',
-            checkInAt: '2099-06-02T08:00:00.000Z',
-            checkOutAt: '2099-06-02T18:00:00.000Z',
+            checkInAt: pastIso('06-02T08:00:00.000Z'),
+            checkOutAt: pastIso('06-02T18:00:00.000Z'),
             attendanceStatusCode: 'present',
-            contributionPoints: 3.0,
           },
         ],
       });
@@ -396,10 +396,9 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2099-06-03T08:00:00.000Z',
-            checkOutAt: '2099-06-03T18:00:00.000Z',
+            checkInAt: pastIso('06-03T08:00:00.000Z'),
+            checkOutAt: pastIso('06-03T18:00:00.000Z'),
             attendanceStatusCode: 'present',
-            contributionPoints: 2.0,
           },
         ],
       });
@@ -454,10 +453,9 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2099-06-01T06:00:00.000Z',
-            checkOutAt: '2099-06-01T07:00:00.000Z',
+            checkInAt: pastIso('06-01T06:00:00.000Z'),
+            checkOutAt: pastIso('06-01T07:00:00.000Z'),
             attendanceStatusCode: 'present',
-            contributionPoints: 1.0,
           },
         ],
       });
@@ -472,10 +470,9 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2099-06-01T07:00:00.000Z',
-            checkOutAt: '2099-06-01T08:00:00.000Z',
+            checkInAt: pastIso('06-01T07:00:00.000Z'),
+            checkOutAt: pastIso('06-01T08:00:00.000Z'),
             attendanceStatusCode: 'present',
-            contributionPoints: 1.0,
           },
         ],
       });
@@ -494,10 +491,9 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2099-06-01T10:00:00.000Z',
-            checkOutAt: '2099-06-01T11:00:00.000Z',
+            checkInAt: pastIso('06-01T10:00:00.000Z'),
+            checkOutAt: pastIso('06-01T11:00:00.000Z'),
             attendanceStatusCode: 'present',
-            contributionPoints: 1.0,
           },
         ],
       });
@@ -516,10 +512,9 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2099-06-01T13:00:00.000Z',
-            checkOutAt: '2099-06-01T14:00:00.000Z',
+            checkInAt: pastIso('06-01T13:00:00.000Z'),
+            checkOutAt: pastIso('06-01T14:00:00.000Z'),
             attendanceStatusCode: 'present',
-            contributionPoints: 1.0,
           },
         ],
       });
@@ -543,10 +538,9 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
           {
             memberId: memberAId,
             roleCode: 'member',
-            checkInAt: '2099-06-01T18:00:00.000Z',
-            checkOutAt: '2099-06-01T19:00:00.000Z',
+            checkInAt: pastIso('06-01T18:00:00.000Z'),
+            checkOutAt: pastIso('06-01T19:00:00.000Z'),
             attendanceStatusCode: 'present',
-            contributionPoints: 1.5,
           },
         ],
       });
@@ -619,8 +613,8 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
       for (const item of items) {
         expect(item.activityId).toBe(activity1Id);
         expect(item.activityTitle).toBe('P26 Activity 1');
-        expect(item.activityStartAt).toBe('2099-06-01T08:00:00.000Z');
-        expect(item.activityEndAt).toBe('2099-06-01T18:00:00.000Z');
+        expect(item.activityStartAt).toBe(pastIso('06-01T08:00:00.000Z'));
+        expect(item.activityEndAt).toBe(futureIso('06-01T18:00:00.000Z'));
         expect(item.activityCoverImageUrl).toBe('https://example.com/cover-1.png');
       }
     });

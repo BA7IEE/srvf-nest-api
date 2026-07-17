@@ -268,7 +268,6 @@ describe('AttendancesService status guards (characterization)', () => {
       checkInAt: opts?.checkInAt ?? '2026-02-01T13:00:00.000Z',
       checkOutAt: opts?.checkOutAt ?? '2026-02-01T17:00:00.000Z',
       attendanceStatusCode: ATTENDANCE_STATUS_PRESENT,
-      contributionPoints: 1, // edit 不要求重填,但显式传值避免被预填污染断言
     };
     return { records: [record] };
   }
