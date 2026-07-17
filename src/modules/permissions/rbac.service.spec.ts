@@ -1,7 +1,6 @@
 import { Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { PrismaService } from '../../database/prisma.service';
-import { RbacCacheService } from './rbac-cache.service';
 import { RbacService } from './rbac.service';
 import type { RbacResource } from './rbac.service';
 
@@ -10,7 +9,7 @@ import type { RbacResource } from './rbac.service';
 //
 // **终态 scoped-authz PR6(2026-07-01;行为锁 white-box 适配)**:判权读源从 `user_roles` 重指向
 //   global `RoleBinding`。本白盒 spec 的**判权矩阵语义断言逐字不变**(SUPER_ADMIN 短路 / has_permission /
-//   no_permission / self_match / cache miss-hit / getMyPermissions 各分支),仅把被 mock 的 prisma 方法名从
+//   no_permission / self_match / 每请求 DB 解析 / getMyPermissions 各分支),仅把被 mock 的 prisma 方法名从
 //   `userRole.findMany` 换成 `roleBinding.findMany`(聚合行 shape 相同:role.rolePermissions.permission.code)。
 //   scoped 绑定零判权影响由 e2e(真库 WHERE scopeType=GLOBAL 过滤)证,非本 mock 单测粒度。
 //
@@ -23,10 +22,10 @@ import type { RbacResource } from './rbac.service';
 //    - ownerType=user + 自己 → self_match;ownerType=user + 他人 → no_permission
 //    - ownerType=member + user.memberId 匹配 → self_match
 //    - ownerType=member + user.memberId=null → no_permission(fail-close)
-// 5. cache 行为:miss → 查 DB + set;hit → 不查 DB
+// 5. DB-backed 行为:同一 user 每次调用都查 DB,下一请求读取最新 grant/revoke
 // 6. getMyPermissions:
 //    - SUPER_ADMIN → Permission.code 全集 + effectiveRoles 走 global RoleBinding
-//    - 非 SUPER_ADMIN → permissions 走 getUserPermissionCodes(走缓存)
+//    - 非 SUPER_ADMIN → permissions 走 getUserPermissionCodes(直读 DB)
 
 function makeUser(overrides: Partial<CurrentUserPayload> = {}): CurrentUserPayload {
   return {
@@ -63,29 +62,13 @@ function makePrismaMock() {
 
 type PrismaMock = ReturnType<typeof makePrismaMock>;
 
-// 极简 RbacCacheService 真实实例 + 注入 mock prisma(rbac-cache 自己有 prisma 但本测试不触发其方法)。
-// TTL 通过 ConfigService mock 提供。
-function makeRbacCache(prismaMock: PrismaMock): RbacCacheService {
-  const configServiceMock = {
-    get: jest.fn().mockReturnValue({
-      rbacCache: { ttlSeconds: 1800 },
-    }),
-  };
-  return new RbacCacheService(
-    prismaMock as unknown as PrismaService,
-    configServiceMock as unknown as ConstructorParameters<typeof RbacCacheService>[1],
-  );
-}
-
 function setupService(): {
   prisma: PrismaMock;
-  cache: RbacCacheService;
   service: RbacService;
 } {
   const prisma = makePrismaMock();
-  const cache = makeRbacCache(prisma);
-  const service = new RbacService(prisma as unknown as PrismaService, cache);
-  return { prisma, cache, service };
+  const service = new RbacService(prisma as unknown as PrismaService);
+  return { prisma, service };
 }
 
 describe('RbacService', () => {
@@ -246,36 +229,40 @@ describe('RbacService', () => {
     });
   });
 
-  describe('cache 行为', () => {
-    it('miss → 查 DB + set;同一 user 第二次调用直接 hit(不再查 DB)', async () => {
+  describe('DB-backed permission resolution', () => {
+    it('同一 user 每次调用都查 DB,第二次立即看到撤权', async () => {
       const { prisma, service } = setupService();
       const userRoleRows: RoleBindingAggregateRow[] = [
         { role: { rolePermissions: [{ permission: { code: 'rbac.role.read' } }] } },
       ];
-      prisma.roleBinding.findMany.mockResolvedValueOnce(userRoleRows);
+      prisma.roleBinding.findMany.mockResolvedValueOnce(userRoleRows).mockResolvedValueOnce([]);
 
-      const codes1 = await service.getUserPermissionCodes('user-cache-1');
+      const codes1 = await service.getUserPermissionCodes('user-db-1');
       expect(codes1.has('rbac.role.read')).toBe(true);
       expect(prisma.roleBinding.findMany).toHaveBeenCalledTimes(1);
 
-      const codes2 = await service.getUserPermissionCodes('user-cache-1');
-      expect(codes2.has('rbac.role.read')).toBe(true);
-      expect(prisma.roleBinding.findMany).toHaveBeenCalledTimes(1);
+      const codes2 = await service.getUserPermissionCodes('user-db-1');
+      expect(codes2.has('rbac.role.read')).toBe(false);
+      expect(prisma.roleBinding.findMany).toHaveBeenCalledTimes(2);
     });
 
-    it('invalidateUser 后再查 → cache miss → 重新查 DB', async () => {
-      const { prisma, cache, service } = setupService();
+    it('第二次 DB 查询失败时拒绝使用上次结果', async () => {
+      const { prisma, service } = setupService();
       const userRoleRows: RoleBindingAggregateRow[] = [
         { role: { rolePermissions: [{ permission: { code: 'rbac.role.read' } }] } },
       ];
-      prisma.roleBinding.findMany.mockResolvedValue(userRoleRows);
+      prisma.roleBinding.findMany
+        .mockResolvedValueOnce(userRoleRows)
+        .mockRejectedValueOnce(new Error('database unavailable'));
 
-      await service.getUserPermissionCodes('user-inv-1');
+      await expect(service.getUserPermissionCodes('user-db-error')).resolves.toEqual(
+        new Set(['rbac.role.read']),
+      );
       expect(prisma.roleBinding.findMany).toHaveBeenCalledTimes(1);
 
-      cache.invalidateUser('user-inv-1');
-
-      await service.getUserPermissionCodes('user-inv-1');
+      await expect(service.getUserPermissionCodes('user-db-error')).rejects.toThrow(
+        'database unavailable',
+      );
       expect(prisma.roleBinding.findMany).toHaveBeenCalledTimes(2);
     });
   });

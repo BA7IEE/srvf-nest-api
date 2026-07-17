@@ -10,7 +10,6 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { writeConfigAudit } from './config-audit.util';
 import { permissionSelect } from './permissions.select';
 import { PROTECTED_ROLE_CODE_SET } from './protected-role-codes';
-import { RbacCacheService } from './rbac-cache.service';
 import { RbacService } from './rbac.service';
 import {
   CreateRbacRoleDto,
@@ -39,7 +38,6 @@ export class RbacRolesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
-    private readonly cache: RbacCacheService,
   ) {}
 
   // ============ helpers ============
@@ -300,8 +298,6 @@ export class RbacRolesService {
       });
       return existing;
     });
-    // Finding #18:角色软删是对全部持有者的批量撤权；commit 后立即失效。
-    await this.cache.invalidateAllUsersWithRole(id);
     return result;
   }
 }

@@ -74,8 +74,7 @@ describe('permissions 模块', () => {
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    // P0-F PR-1:前一 it 触发 rbac.can() 时会把 admin 的空权限集写进 RbacCacheService;
-    // ADMIN 持 ops-admin 用例需先 invalidate 清掉(沿真实运行时:绑 ops-admin 后必须 reload)
+    // DB-backed 判权每次读取当前 GLOBAL 绑定,后续授予 ops-admin 无需 reload。
     it('USER 角色 GET → 403', async () => {
       const res = await request(httpServer(app))
         .get('/api/system/v1/permissions')

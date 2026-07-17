@@ -29,7 +29,6 @@ function makeCfg(encryptionKey: string): AppCfg {
     swaggerEnabled: false,
     logLevel: 'silent' as never,
     loginThrottle: { limit: 5, ttlSeconds: 60 },
-    rbacCache: { ttlSeconds: 1800 },
     storage: { encryptionKey: '', localRoot: './tmp/storage' },
     sms: { encryptionKey },
   } as unknown as AppCfg;

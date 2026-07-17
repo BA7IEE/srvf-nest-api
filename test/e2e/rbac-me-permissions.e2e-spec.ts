@@ -3,7 +3,6 @@ import { Role, UserStatus } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
-import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.service';
 import { RbacRolesService } from '../../src/modules/permissions/rbac-roles.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -23,7 +22,7 @@ import { createTestApp } from '../setup/test-app';
 //   (符合 D7 §8.2 描述:ADMIN 通过 seed 给 ADMIN 内置角色配 USER 级权限实现自动继承;
 //    本 PR seed 未实施,空集是正确行为)
 // - SUPER_ADMIN → permissions=Permission.code 全集(已排序)+ effectiveRoles 走 user_roles
-// - 缓存行为:第一次查 DB 后命中 cache;invalidate 后再查 → DB 重新聚合
+// - DB-backed 行为:RolePermission / role soft-delete 提交后下一请求立即读取当前事实
 //
 // P1-B characterization framing(2026-05-21 P1-B 第三单):
 //   本端点在 docs/api-surface-policy.md §6 项 7 中标记为"**必须保留**,不 deprecate,不拆分"。
@@ -34,14 +33,13 @@ import { createTestApp } from '../setup/test-app';
 //   PC 管理后台靠 me/permissions 显示按钮可见性;App 客户端靠 me/capabilities 控制 UI。
 //   本文件以下用例锁定 me/permissions 的现状契约,作为后续治理的回归保护;**不进入 P1-C
 //   拆分目标**(沿 docs/api-surface-policy.md §7 P1-C "暂不拆 rbac.controller.ts")。
-//   既有 6 个 describe(权限边界 / 权限点聚合 / 缓存行为 / JWT 状态校验)已锁定核心契约;
+//   既有 6 个 describe(权限边界 / 权限点聚合 / DB-backed 行为 / JWT 状态校验)已锁定核心契约;
 //   本次新增 2 个 describe 补 P1-B 缺口:① L3 凭证字段反向断言;② 与 me/capabilities
 //   响应形态的对比(静态 key 反向断言;不跨端点调用)。
 
 describe('rbac me/permissions', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let cache: RbacCacheService;
 
   let superAdminAuth: string;
   let adminAuth: string;
@@ -55,7 +53,6 @@ describe('rbac me/permissions', () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
-    cache = app.get(RbacCacheService);
 
     await createTestUser(app, { username: 'rbac-me-su', role: Role.SUPER_ADMIN });
     await createTestUser(app, { username: 'rbac-me-adm', role: Role.ADMIN });
@@ -169,42 +166,41 @@ describe('rbac me/permissions', () => {
     });
   });
 
-  describe('缓存行为(沿 D7 §9)', () => {
-    it('第一次查 → cache miss → set;invalidateUser 后再查 → 重新聚合', async () => {
-      // 第一次查:确保 cache 中有该 user 的条目
-      await request(httpServer(app))
+  describe('DB-backed permission resolution', () => {
+    it('RolePermission 撤销后,同一 user 下一请求立即读取最新权限', async () => {
+      const before = await request(httpServer(app))
         .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', userWithRolesAuth);
-      expect(cache.get(userWithRolesId)).not.toBeNull();
+      expect(before.body.data.permissions).toEqual([
+        'attachment.upload.cert',
+        'attachment.view.cert',
+      ]);
 
-      // 模拟 RolePermissionsService 撤权:invalidateUser
-      cache.invalidateUser(userWithRolesId);
-      expect(cache.get(userWithRolesId)).toBeNull();
+      const permission = await prisma.permission.findUniqueOrThrow({
+        where: { code: 'attachment.view.cert' },
+        select: { id: true },
+      });
+      await prisma.rolePermission.delete({
+        where: { roleId_permissionId: { roleId: roleAId, permissionId: permission.id } },
+      });
 
-      // 再查应当重新聚合
       const res = await request(httpServer(app))
         .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', userWithRolesAuth);
       expect(res.status).toBe(200);
-      expect(res.body.data.permissions).toEqual(['attachment.upload.cert', 'attachment.view.cert']);
-      // 重新聚合后 cache 应再次有条目
-      expect(cache.get(userWithRolesId)).not.toBeNull();
+      expect(res.body.data.permissions).toEqual(['attachment.upload.cert']);
+
+      await prisma.rolePermission.create({
+        data: { roleId: roleAId, permissionId: permission.id },
+      });
     });
 
-    it('SUPER_ADMIN 不走 user 权限缓存(走 Permission 全表查询)', async () => {
-      // SUPER_ADMIN getMyPermissions 走 getAllPermissionCodes,不会 set user cache
-      const superAdminUser = await prisma.user.findFirstOrThrow({
-        where: { username: 'rbac-me-su' },
-        select: { id: true },
-      });
-      cache.invalidateUser(superAdminUser.id);
-
-      await request(httpServer(app))
+    it('SUPER_ADMIN 仍走 Permission 全表查询并返回完整排序 code', async () => {
+      const res = await request(httpServer(app))
         .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', superAdminAuth);
-
-      // SUPER_ADMIN 路径不应 set cache(因为不走 getUserPermissionCodes)
-      expect(cache.get(superAdminUser.id)).toBeNull();
+      expect(res.status).toBe(200);
+      expect(res.body.data.permissions).toEqual(['attachment.upload.cert', 'attachment.view.cert']);
     });
   });
 
@@ -327,11 +323,10 @@ describe('rbac me/permissions', () => {
   });
 
   describe('finding #18:角色软删主动撤权', () => {
-    it('缓存命中后软删角色,持有者下一次请求立即失去旧权限', async () => {
+    it('软删角色后,持有者下一次请求立即失去旧权限', async () => {
       await request(httpServer(app))
         .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', userWithRolesAuth);
-      expect(cache.get(userWithRolesId)).not.toBeNull();
 
       const superAdmin = await prisma.user.findFirstOrThrow({
         where: { username: 'rbac-me-su' },
@@ -349,7 +344,6 @@ describe('rbac me/permissions', () => {
         { requestId: 'finding-18', ip: '127.0.0.1', ua: 'jest' },
       );
 
-      expect(cache.get(userWithRolesId)).toBeNull();
       const res = await request(httpServer(app))
         .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', userWithRolesAuth);

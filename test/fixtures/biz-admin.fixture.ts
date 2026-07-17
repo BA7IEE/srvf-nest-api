@@ -1,6 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
 import { PrismaService } from '../../src/database/prisma.service';
-import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.service';
 
 // Slow-4 T2/T3(2026-06-11):biz-admin 业务面角色 e2e fixture。
 // 沿冻结评审稿 docs/archive/reviews/slow4-rbac-business-face-review.md §8 + rbac.fixture.ts 范式。
@@ -11,8 +10,8 @@ import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.servi
 //   (`member.delete.record`〔D1=A 镜像,评审稿 §6〕+ 考勤终审/reopen 三码
 //   〔2026-07-03 摘码微刀:终审归 scoped 绑定 / SUPER_ADMIN 兜底〕进 Permission 表但**不**绑,
 //   与 prisma/seed.ts BIZ_ADMIN_EXCLUDED_CODES 同口径镜像)
-// - grantBizAdminToUser:给 user 绑 biz-admin + 主动 invalidateUser cache(模拟 reload)
-// - revokeBizAdminFromUser:撤回 + invalidateUser cache(对称范式)
+// - grantBizAdminToUser:给 user 绑 biz-admin
+// - revokeBizAdminFromUser:撤回 global 绑定
 //
 // **零漂移用法约定**(评审稿 §7/§8):既有业务 spec 的 ADMIN 测试用户在 beforeAll 统一
 // grant biz-admin(对应迁移前 @Roles(SUPER_ADMIN, ADMIN) 放行语义);"ADMIN 默认无
@@ -383,7 +382,7 @@ export async function seedBizAdminPermissionsAndRole(
   };
 }
 
-// 给 user 绑 biz-admin + 主动失效缓存(模拟运行时"绑角色后 POST /rbac/reload"流程)。
+// 给 user 绑 biz-admin；DB-backed 判权在下一请求直接读取该 GLOBAL 绑定。
 // 终态 scoped-authz PR6:判权唯一读源 = global RoleBinding,故 grant 写 RoleBinding(USER, GLOBAL, ACTIVE);
 //   无 Prisma 复合唯一键 → findFirst active 缺则 create(幂等)。旧 UserRole 表已 DROP,fixture 不写该表。
 export async function grantBizAdminToUser(
@@ -414,10 +413,9 @@ export async function grantBizAdminToUser(
       },
     });
   }
-  app.get(RbacCacheService).invalidateUser(userId);
 }
 
-// 撤回 biz-admin + 失效缓存(对称范式)。终态 scoped-authz PR6:清该 user+role 的 global 绑定(测试清理硬删即可)。
+// 撤回 biz-admin。终态 scoped-authz PR6:清该 user+role 的 global 绑定(测试清理硬删即可)。
 export async function revokeBizAdminFromUser(
   app: INestApplication,
   userId: string,
@@ -432,5 +430,4 @@ export async function revokeBizAdminFromUser(
       scopeType: 'GLOBAL',
     },
   });
-  app.get(RbacCacheService).invalidateUser(userId);
 }

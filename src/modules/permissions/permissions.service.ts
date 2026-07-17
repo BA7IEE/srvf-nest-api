@@ -14,7 +14,6 @@ import {
   UpdatePermissionDto,
 } from './permissions.dto';
 import { permissionSelect } from './permissions.select';
-import { RbacCacheService } from './rbac-cache.service';
 import { RbacService } from './rbac.service';
 
 // V2.x C-6 RBAC 实施 PR #2:permissions 模块业务逻辑。
@@ -34,14 +33,13 @@ export class PermissionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
-    private readonly cache: RbacCacheService,
   ) {}
 
   // ============ helpers ============
 
   // P0-F PR-1:RBAC 元接口判权(沿 attachments F5 v1.0 范本)。
   // 失败统一抛 BizException(BizCode.RBAC_FORBIDDEN)(30100);RbacService.can 内部
-  // 已实现 SUPER_ADMIN 短路 + cache + ownership(.self),元接口粗粒度无 resource。
+  // 已实现 SUPER_ADMIN 短路 + DB-backed permission resolution + ownership(.self),元接口粗粒度无 resource。
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
     if (!(await this.rbac.can(user, action))) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
@@ -201,11 +199,7 @@ export class PermissionsService {
 
     // 2. 物理删 + audit(单事务;D4 v1.0:Permission 物理删,无 deletedAt;
     //    RolePermission FK Cascade 自动联级清理 — 沿 schema 设计)
-    const result = await this.prisma.$transaction(async (tx) => {
-      const affectedRoles = await tx.rolePermission.findMany({
-        where: { permissionId: id },
-        select: { roleId: true },
-      });
+    return this.prisma.$transaction(async (tx) => {
       await tx.permission.delete({ where: { id } });
       await writeConfigAudit(tx, {
         event: 'permission.delete',
@@ -220,12 +214,7 @@ export class PermissionsService {
           resourceType: existing.resourceType,
         },
       });
-      return { deleted: existing, roleIds: [...new Set(affectedRoles.map((row) => row.roleId))] };
+      return existing;
     });
-    // Finding #18:permission 物理删会级联撤掉多个角色的 grant；commit 后逐角色失效持有人。
-    for (const roleId of result.roleIds) {
-      await this.cache.invalidateAllUsersWithRole(roleId);
-    }
-    return result.deleted;
   }
 }

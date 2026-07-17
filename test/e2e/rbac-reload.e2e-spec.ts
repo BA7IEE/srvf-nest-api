@@ -3,7 +3,6 @@ import { Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
-import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.service';
 import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -17,9 +16,8 @@ import { createTestApp } from '../setup/test-app';
 //
 // 覆盖:
 // - 权限边界:未登录 401 / USER 403 / ADMIN 200 / SUPER_ADMIN 200
-// - scope=all(默认 + 显式):清空全部 cache;后续 me/permissions 重新查 DB
-// - scope=user + userId:仅清空指定 user cache
-// - scope=role + roleId:清空所有持有该角色的 user cache
+// - scope=all(默认 + 显式):兼容返回 `{reloaded:true}`
+// - scope=user + userId / scope=role + roleId:保留既有输入与响应契约,内部无需清缓存
 // - scope=user 缺 userId → 400(沿用户决策方案 A)
 // - scope=role 缺 roleId → 400
 // - scope=user + userId 不存在 → 200 静默成功(沿用户决策方案 A)
@@ -28,7 +26,6 @@ import { createTestApp } from '../setup/test-app';
 describe('rbac reload (POST /api/system/v1/rbac/reload)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let cache: RbacCacheService;
 
   let superAdminAuth: string;
   let adminAuth: string;
@@ -42,7 +39,6 @@ describe('rbac reload (POST /api/system/v1/rbac/reload)', () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
-    cache = app.get(RbacCacheService);
 
     await createTestUser(app, { username: 'reload-su', role: Role.SUPER_ADMIN });
     await createTestUser(app, { username: 'reload-adm', role: Role.ADMIN });
@@ -64,7 +60,7 @@ describe('rbac reload (POST /api/system/v1/rbac/reload)', () => {
     const admin = await prisma.user.findUniqueOrThrow({ where: { username: 'reload-adm' } });
     await grantOpsAdminToUser(app, admin.id, seed.opsAdminRoleId);
 
-    // seed:1 RbacRole 给 user1 + user2(scope=role 测试需要 invalidateAllUsersWithRole 命中 2 个)
+    // seed:1 RbacRole 给 user1 + user2,用于验证 reload 不改变当前 DB-backed 角色摘要。
     const roleA = await prisma.rbacRole.create({
       data: { code: 'reload-role-a', displayName: '业务角色 A' },
       select: { id: true },
@@ -94,11 +90,6 @@ describe('rbac reload (POST /api/system/v1/rbac/reload)', () => {
   afterAll(async () => {
     await app.close();
   });
-
-  // 辅助:把指定 user 写入 cache,模拟 me/permissions 调用后 cache 已 set
-  function seedUserCache(userId: string): void {
-    cache.set(userId, new Set(['fake.code']));
-  }
 
   describe('权限边界', () => {
     it('未登录 → 401', async () => {
@@ -136,50 +127,41 @@ describe('rbac reload (POST /api/system/v1/rbac/reload)', () => {
   });
 
   describe('scope=all', () => {
-    it('入参为空 → 默认 scope=all → 清空全部 cache', async () => {
-      seedUserCache(user1Id);
-      seedUserCache(user2Id);
-      expect(cache.size()).toBeGreaterThanOrEqual(2);
-
+    it('入参为空 → 默认 scope=all → 兼容返回 reloaded=true', async () => {
       const res = await request(httpServer(app))
         .post('/api/system/v1/rbac/reload')
         .set('Authorization', superAdminAuth)
         .send({});
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual({ reloaded: true });
-      expect(cache.size()).toBe(0);
     });
 
     it('显式 scope=all → 同上', async () => {
-      seedUserCache(user1Id);
-      seedUserCache(user2Id);
-
       const res = await request(httpServer(app))
         .post('/api/system/v1/rbac/reload')
         .set('Authorization', superAdminAuth)
         .send({ scope: 'all' });
       expect(res.status).toBe(200);
-      expect(cache.size()).toBe(0);
+      expect(res.body.data).toEqual({ reloaded: true });
     });
   });
 
   describe('scope=user', () => {
-    it('scope=user + 已存在 userId → 仅清空该 user cache', async () => {
-      seedUserCache(user1Id);
-      seedUserCache(user2Id);
-      expect(cache.get(user1Id)).not.toBeNull();
-      expect(cache.get(user2Id)).not.toBeNull();
-
+    it('scope=user + 已存在 userId → 200 且不改变 DB-backed 角色摘要', async () => {
+      const { authHeader } = await loginAs(app, 'reload-target-1');
+      const before = await request(httpServer(app))
+        .get('/api/system/v1/rbac/me/permissions')
+        .set('Authorization', authHeader);
       const res = await request(httpServer(app))
         .post('/api/system/v1/rbac/reload')
         .set('Authorization', superAdminAuth)
         .send({ scope: 'user', userId: user1Id });
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual({ reloaded: true });
-
-      expect(cache.get(user1Id)).toBeNull();
-      expect(cache.get(user2Id)).not.toBeNull(); // 其他 user 不被波及
-      cache.invalidateAll(); // 清理
+      const after = await request(httpServer(app))
+        .get('/api/system/v1/rbac/me/permissions')
+        .set('Authorization', authHeader);
+      expect(after.body.data).toEqual(before.body.data);
     });
 
     it('scope=user 缺 userId → 400', async () => {
@@ -201,29 +183,17 @@ describe('rbac reload (POST /api/system/v1/rbac/reload)', () => {
   });
 
   describe('scope=role', () => {
-    it('scope=role + roleId 命中 2 个 holder → 全清', async () => {
-      seedUserCache(user1Id);
-      seedUserCache(user2Id);
-      // 再加一个不持 role-a 的 user(superAdmin),应当不被清
-      const superAdminId = (
-        await prisma.user.findFirstOrThrow({
-          where: { username: 'reload-su' },
-          select: { id: true },
-        })
-      ).id;
-      seedUserCache(superAdminId);
-
+    it('scope=role + roleId 命中 holder → 兼容返回且不改变绑定', async () => {
       const res = await request(httpServer(app))
         .post('/api/system/v1/rbac/reload')
         .set('Authorization', superAdminAuth)
         .send({ scope: 'role', roleId: roleAId });
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual({ reloaded: true });
-
-      expect(cache.get(user1Id)).toBeNull();
-      expect(cache.get(user2Id)).toBeNull();
-      expect(cache.get(superAdminId)).not.toBeNull(); // 不持 role-a 不波及
-      cache.invalidateAll();
+      const activeBindings = await prisma.roleBinding.count({
+        where: { roleId: roleAId, status: 'ACTIVE', deletedAt: null },
+      });
+      expect(activeBindings).toBe(2);
     });
 
     it('scope=role 缺 roleId → 400', async () => {
@@ -244,27 +214,22 @@ describe('rbac reload (POST /api/system/v1/rbac/reload)', () => {
     });
   });
 
-  describe('与 me/permissions 串联(端到端缓存失效)', () => {
-    it('me/permissions 后 cache 已 set → reload all → cache 清 → 再 me/permissions 重新查 DB', async () => {
-      // 1. user1 触发 me/permissions(loginAs 已在 beforeAll 完成,但本 it 直接复用 user1 的真实 login)
+  describe('与 me/permissions 串联(DB-backed 兼容)', () => {
+    it('reload all 前后 me/permissions 契约与当前 DB 事实保持一致', async () => {
       const { authHeader: user1Auth } = await loginAs(app, 'reload-target-1');
-      await request(httpServer(app))
+      const before = await request(httpServer(app))
         .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', user1Auth);
-      expect(cache.get(user1Id)).not.toBeNull();
 
-      // 2. ADMIN 触发 reload(scope=all)
       await request(httpServer(app))
         .post('/api/system/v1/rbac/reload')
         .set('Authorization', adminAuth)
         .send({});
-      expect(cache.get(user1Id)).toBeNull();
 
-      // 3. 再 me/permissions → cache miss → 重新聚合 + set
-      await request(httpServer(app))
+      const after = await request(httpServer(app))
         .get('/api/system/v1/rbac/me/permissions')
         .set('Authorization', user1Auth);
-      expect(cache.get(user1Id)).not.toBeNull();
+      expect(after.body.data).toEqual(before.body.data);
     });
   });
 

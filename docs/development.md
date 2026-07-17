@@ -120,7 +120,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/app/v1/me
 | Application | `APP_PORT` / `APP_ENV` / `APP_CORS_ORIGIN` / `ENABLE_SWAGGER` |
 | JWT(access + refresh) | `JWT_SECRET` / `JWT_EXPIRES_IN`(15m) / `JWT_REFRESH_EXPIRES_IN`(90d) |
 | Throttler 三实例(物理隔离) | `LOGIN_THROTTLE_*` / `PASSWORD_CHANGE_THROTTLE_*` / `REFRESH_THROTTLE_*` |
-| RBAC | `RBAC_CACHE_TTL_SECONDS` / `RBAC_INITIAL_OPS_ADMIN_USER_ID` |
+| RBAC | `RBAC_INITIAL_OPS_ADMIN_USER_ID`（GLOBAL permission resolution 每请求读 DB；`RBAC_CACHE_TTL_SECONDS` 已退役） |
 | Storage / COS | `STORAGE_ENCRYPTION_KEY` / `STORAGE_LOCAL_ROOT` 等(详 [`ops/cos-production-rollout-checklist.md`](ops/cos-production-rollout-checklist.md)) |
 | Seed / 日志 | `SUPER_ADMIN_*` / `LOG_LEVEL` |
 

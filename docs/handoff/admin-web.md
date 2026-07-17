@@ -403,7 +403,7 @@
 > - **证书 tab 含核验工作流**:`PATCH .../members/:id/certificates/:cid/{verify,reject}`(待核验→已核验 / 已拒绝,`reject` 须填 `verifyNote`)+ `GET .../qualification-flag`(资质标记)。不是"上传 + 表格"那么简单,要有 状态 + 核验通过 / 拒绝 动作。
 > - **队员列表是全 CRUD**:`members` 有 `POST`(手动建队员)/ `PATCH :id` / `PATCH :id/status` / `DELETE`(软删)。**招新发号是主路径**,但 admin 可手动建 / 改 / 改状态 / 软删(历史数据、纠错)——§5.1 funnel 别误读成"队员只能从招新来"。
 > - **活动作战室·概览** 摆出 `capacity` / `registrationDeadline` / `requiresInsurance` / 派生 `phase`；发布弹窗必须提交 `{requiresInsuranceConfirmed:true}`。报名/审批要求 published，考勤允许 published|completed；活动过时后用 dashboard `pendingCompletion` 提醒人工 complete。
-> - **角色 / 权限改完要刷缓存**:角色与权限页放一个"重载权限缓存"按钮(`system/v1/rbac` reload,`rbac.config.reload`),否则改完绑定不即时生效。
+> - **角色 / 权限 / 绑定提交后即时生效**:`RbacService` 下一请求直接读取当前 DB 权限事实,无需刷缓存；`system/v1/rbac` reload 与 `rbac.config.reload` 判权仅作兼容保留,内部 no-op。
 
 ### 5.4 工作台 / 首页
 

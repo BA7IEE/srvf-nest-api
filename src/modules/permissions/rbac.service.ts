@@ -10,15 +10,14 @@ import type {
   ReloadRbacDto,
   ReloadRbacResponseDto,
 } from './rbac.dto';
-import { RbacCacheService } from './rbac-cache.service';
 import { effectiveGlobalUserRoleBindingWhere } from './role-binding-validity';
 
 // V2.x C-6 RBAC 实施 PR #6:RbacService 判权核心。
-// 沿 D7 v1.1 §7.1 判权优先级 + §8 judge 函数 + §9 缓存策略 + 用户拍板三项决策。
+// 沿 D7 v1.1 §7.1 判权优先级 + §8 judge 函数 + D-RBAC DB-backed 决策。
 //
 // **本 PR 范围**(沿用户拍板任务边界):
-// - getUserPermissionCodes(userId) → Set<string>:走 RbacCacheService(get/set 闭环)
-// - can(user, action, resource?) → boolean:实装短路 / 缓存 / .self ownership
+// - getUserPermissionCodes(userId) → Set<string>:每次从 DB 解析当前权限
+// - can(user, action, resource?) → boolean:实装短路 / DB 判权 / .self ownership
 // - judge(user, action, resource?) → RbacJudgeResult:同 can 但返详细原因
 // - checkOwnership(user, resource):.self 路径 ownership 判定(沿 D7 §8.3 字段映射)
 // - getMyPermissions(user) → MyPermissionsResponseDto:GET /me/permissions 入口
@@ -60,14 +59,11 @@ export interface RbacJudgeResult {
 
 @Injectable()
 export class RbacService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly cache: RbacCacheService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   // ============ 公开 API ============
 
-  // 取当前用户的有效权限点集合(走缓存)。
+  // 取当前用户的有效权限点集合(每次直读 DB)。
   //
   // **判权唯一读源(终态 scoped-authz PR6 起)**:读当前在期的 RoleBinding
   //   (principalType=USER, scopeType=GLOBAL, status=ACTIVE, startedAt<=now<=endedAt〔null=不限〕,未软删)
@@ -77,12 +73,9 @@ export class RbacService {
   // **行为**:
   // - SUPER_ADMIN 不在此处特判:本函数总是返回 global RoleBinding 聚合后的实际权限点集
   //   (SUPER_ADMIN 的短路在 `can()` / `getMyPermissions()` 中各自实现,语义不同)
-  // - cache miss → 查 DB → set cache;cache hit → 直接返
+  // - 每次调用都按当前时刻查 DB,不跨请求缓存,确保多实例 grant/revoke 下一请求收敛
   // - 排除已软删的 RbacRole(沿 D7 §13 失效场景:RbacRole 软删时 role_bindings 不联动,join 过滤)
   async getUserPermissionCodes(userId: string, now: Date = new Date()): Promise<Set<string>> {
-    const cached = this.cache.get(userId);
-    if (cached !== null) return cached;
-
     const bindings = await this.prisma.roleBinding.findMany({
       where: effectiveGlobalUserRoleBindingWhere(userId, now),
       select: {
@@ -105,7 +98,6 @@ export class RbacService {
       }
     }
 
-    this.cache.set(userId, codes);
     return codes;
   }
 
@@ -126,7 +118,7 @@ export class RbacService {
       return { allowed: true, reason: 'super_admin_pass' };
     }
 
-    // 2. 取用户的有效权限点(走缓存;沿 D7 §8.2 step 2)。
+    // 2. 取用户的有效权限点(每次直读 DB;沿 D7 §8.2 step 2)。
     //    ADMIN 继承 USER 权限(D7 §7.1 step 2 / §8.2 step 3)由 seed PR #8 实装
     //    (给 ADMIN 内置角色配 USER 级权限点),本函数对 ADMIN 不特判 — 表里有什么就用什么。
     const permissions = await this.getUserPermissionCodes(user.id);
@@ -157,7 +149,7 @@ export class RbacService {
   // - `permissions`:返 DB 中 `Permission.code` 全集(短路语义实体化;不返 ["*"];不返空数组)
   // - `effectiveRoles`:仍按当前在期 global RoleBinding 查询(SUPER_ADMIN 通常未持任何 RBAC 角色,返空数组)
   //
-  // **非 SUPER_ADMIN**:`permissions` 走 getUserPermissionCodes(走缓存);`effectiveRoles` 查表。
+  // **非 SUPER_ADMIN**:`permissions` 走 getUserPermissionCodes(直读 DB);`effectiveRoles` 查表。
   async getMyPermissions(user: CurrentUserPayload): Promise<MyPermissionsResponseDto> {
     const now = new Date();
     const permissions =
@@ -172,10 +164,10 @@ export class RbacService {
 
   // PR #7:POST /api/system/v1/rbac/reload 入口(沿 D7 v1.1 §5.4 + 用户拍板四项决策)。
   //
-  // - scope 默认 'all';三档 all / user / role 与 RbacCacheService 三个 invalidate 方法 1:1
+  // - scope 默认 'all';兼容保留 all / user / role 三档输入与校验
   // - scope='user' 缺 userId / scope='role' 缺 roleId → BAD_REQUEST(40000;沿用户决策方案 A)
-  // - userId / roleId 不存在 → 静默成功(invalidateUser 是 Map.delete,no-op;
-  //     invalidateAllUsersWithRole 内部已 try-catch + logger.warn,不抛)
+  // - 不再存在跨请求权限缓存,故合法 scope/userId/roleId 均无需内部状态变更;
+  //   userId / roleId 不存在仍静默成功
   // - 出参恒为 `{ reloaded: true }`(沿用户决策方案 A;为未来扩展字段预留单对象包装)
   //
   // P0-F PR-1(2026-05-18):入口判权迁移到 RBAC `rbac.config.reload` permission;
@@ -188,14 +180,8 @@ export class RbacService {
 
     if (scope === 'user') {
       if (!dto.userId) throw new BizException(BizCode.BAD_REQUEST);
-      this.cache.invalidateUser(dto.userId);
     } else if (scope === 'role') {
       if (!dto.roleId) throw new BizException(BizCode.BAD_REQUEST);
-      // 沿用 invalidateAllUsersWithRole 内部 swallow + logger.warn 语义:
-      // DB 故障由 logger 暴露给运维,reload 对外恒返 reloaded=true
-      await this.cache.invalidateAllUsersWithRole(dto.roleId);
-    } else {
-      this.cache.invalidateAll();
     }
 
     return { reloaded: true };
@@ -207,8 +193,8 @@ export class RbacService {
   // - **仅供 AuthzService 三源虚拟 grant 的"角色含码"过滤**(RoleBinding / 职务 policy / 分管推导出的
   //   roleId 集 × action → 含码的 roleId 子集);RolePermission 有 roleId 索引,单 IN 查询
   // - 排除已软删 RbacRole(join 过滤,沿 getUserPermissionCodes 口径)
-  // - **不走 RbacCacheService**(那是 per-user 权限点缓存,键形不同;per-role 缓存留 PR8 性能优化口,
-  //   本刀每 decision 现查)。**can() / judge() 语义零变化**(本方法纯 additive,行为锁)。
+  // - 与 getUserPermissionCodes 一样每次直读 DB,不使用跨请求缓存。
+  //   **can() / judge() 语义零变化**(本方法纯 additive,行为锁)。
   async getRoleIdsWithPermission(
     roleIds: readonly string[],
     permissionCode: string,

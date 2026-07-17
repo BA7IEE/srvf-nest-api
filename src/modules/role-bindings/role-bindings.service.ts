@@ -17,7 +17,6 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
-import { RbacCacheService } from '../permissions/rbac-cache.service';
 import { RbacService } from '../permissions/rbac.service';
 import {
   isPrivilegedRole,
@@ -62,7 +61,6 @@ export class RoleBindingsService {
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
-    private readonly cache: RbacCacheService,
     private readonly roleDelegation: RoleDelegationPolicy,
     private readonly lastAdminProtection: LastAdminProtectionPolicy,
   ) {}
@@ -72,15 +70,6 @@ export class RoleBindingsService {
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
     if (!(await this.rbac.can(user, action))) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
-    }
-  }
-
-  // 终态 scoped-authz PR6:USER 主体的绑定变更影响其 global 判权(RbacService 读源),失效其权限缓存
-  //   (沿 UserRolesService.cache.invalidateUser 现范式;非 USER 主体无 user 缓存,no-op)。scoped 绑定虽不判权,
-  //   失效亦无害(缓存重建结果不变),故对 USER 主体一律失效,保证 GLOBAL 绑定即时生效、失效链不破。
-  private invalidateIfUser(principalType: PrincipalType, principalId: string | null): void {
-    if (principalType === PrincipalType.USER && principalId != null) {
-      this.cache.invalidateUser(principalId);
     }
   }
 
@@ -559,7 +548,7 @@ export class RoleBindingsService {
 
   // ============ F3/C1:POST /api/admin/v1/role-bindings/batch ============
 
-  // 批量建绑定:逐条独立复用 create()(校验 / audit / 缓存失效全走既有单条路径,零旁路),
+  // 批量建绑定:逐条独立复用 create()(校验 / audit 全走既有单条路径,零旁路),
   // 单条失败不影响其它条(镜像 announcement-import「deny/blocked 是数据」范式):
   //   ok = 已建;already-exists = 撞同维度 ACTIVE 唯一(34002,幂等 skip —— 重跑同一批不报错);
   //   blocked = 其它校验拒(带底层 BizCode + message)。
@@ -696,8 +685,6 @@ export class RoleBindingsService {
       return this.toResponseDto(created);
     });
 
-    // 事务提交后失效目标 user 缓存(USER 主体的 GLOBAL 绑定即时生效;非 USER no-op)。
-    this.invalidateIfUser(result.principalType, result.principalId);
     return result;
   }
 
@@ -807,8 +794,6 @@ export class RoleBindingsService {
       return this.toResponseDto(updated);
     });
 
-    // 状态/任期变更影响 USER 主体 GLOBAL 判权(如 status ACTIVE↔ENDED),失效其缓存。
-    this.invalidateIfUser(result.principalType, result.principalId);
     return result;
   }
 
@@ -850,8 +835,6 @@ export class RoleBindingsService {
       return this.toResponseDto(updated);
     });
 
-    // 软删移除 USER 主体的绑定,失效其缓存(GLOBAL 绑定即时撤销生效)。
-    this.invalidateIfUser(result.principalType, result.principalId);
     return result;
   }
 

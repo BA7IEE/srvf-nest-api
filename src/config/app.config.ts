@@ -110,14 +110,6 @@ export interface RefreshThrottleConfig {
   ttlSeconds: number;
 }
 
-// V2.x C-6 RBAC 实施 PR #6:RBAC 进程内缓存配置(沿 D7 v1.1 §9.1 / D6 v1.0 / F8 v1.0)。
-// TTL 默认 30 分钟(1800 秒);env `RBAC_CACHE_TTL_SECONDS` 可调;归 app.config.ts(沿 baseline §7)。
-// 推荐区间 [60, 86400](1 分钟到 1 天;过短会让 invalidate 失去意义,过长会让"撤角色"延迟生效);
-// 单实例(沿 V1.1 §17.3 不引入 Redis);多实例升级路径见 D7 §9.3。
-export interface RbacCacheConfig {
-  ttlSeconds: number;
-}
-
 // 终态 scoped-authz PR9(2026-07-02;冻结稿 §5.3 拍板「一级审核与终审同人默认禁止」):
 // 考勤终审 ActionConstraint 的同人开关。env `ATTENDANCE_ALLOW_SAME_REVIEWER`,严格 === 'true'
 // 才放开(沿 ENABLE_SWAGGER 布尔范式,默认 false=禁止);消费方 = authz 模块 same_reviewer 约束。
@@ -329,7 +321,6 @@ export interface AppConfig {
   loginThrottle: LoginThrottleConfig;
   passwordChangeThrottle: PasswordChangeThrottleConfig;
   refreshThrottle: RefreshThrottleConfig;
-  rbacCache: RbacCacheConfig;
   attendance: AttendanceConfig;
   storage: StorageConfig;
   sms: SmsConfig;
@@ -413,15 +404,6 @@ export default registerAs('app', (): AppConfig => {
       60,
       'REFRESH_THROTTLE_TTL_SECONDS',
       { min: 1, max: 3600 },
-    ),
-  };
-
-  const rbacCache: RbacCacheConfig = {
-    ttlSeconds: parsePositiveInt(
-      process.env.RBAC_CACHE_TTL_SECONDS,
-      1800,
-      'RBAC_CACHE_TTL_SECONDS',
-      { min: 60, max: 86400 },
     ),
   };
 
@@ -597,7 +579,6 @@ export default registerAs('app', (): AppConfig => {
     loginThrottle,
     passwordChangeThrottle,
     refreshThrottle,
-    rbacCache,
     attendance,
     storage,
     sms,

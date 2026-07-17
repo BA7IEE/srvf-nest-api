@@ -3,7 +3,6 @@ import { DatabaseModule } from '../../database/database.module';
 import { PermissionsController } from './permissions.controller';
 import { PermissionsService } from './permissions.service';
 import { LastAdminProtectionPolicy } from './last-admin-protection.policy';
-import { RbacCacheService } from './rbac-cache.service';
 import { RbacController } from './rbac.controller';
 import { RbacService } from './rbac.service';
 import { RbacRolesController } from './rbac-roles.controller';
@@ -21,13 +20,12 @@ import { UserRolesService } from './user-roles.service';
 // - PR #2(2026-05-14):Permission CRUD(端点 1-4;路径 /api/system/v1/permissions;BizCode 30001/30002/30008)
 // - PR #3(2026-05-14):RbacRole CRUD(端点 5-9;路径 /api/system/v1/roles;BizCode 30003/30004/30005/30009)
 // - PR #4(2026-05-14):RolePermission 关联表(端点 10-11;路径 /api/system/v1/roles/:id/permissions[/:permissionId];
-//   BizCode 30011)+ RbacCacheService skeleton(Map + TTL + invalidate 入口;
-//   完整 rbac.can() 留 PR #6)
+//   BizCode 30011)+ 当时的缓存骨架(现已退役;完整 rbac.can() 留 PR #6)
 // - PR #5(2026-05-14):UserRole CRUD(端点 12-14;路径 /api/system/v1/users/:userId/roles[/:roleId];
 //   BizCode 30006/30007/30101/30102)+ Q7 角色分级 C2 中庸 + 最后一个 ops-admin 保护 +
-//   接入 RbacCacheService.invalidateUser
+//   当时接入权限解析缓存失效(现已退役)
 // - PR #6(2026-05-14):RbacService + GET /api/system/v1/rbac/me/permissions(端点 15;
-//   BizCode 30100 段位预留)+ RbacCacheService 接入 RBAC_CACHE_TTL_SECONDS env +
+//   BizCode 30100 段位预留)+ 当时接入权限解析缓存 TTL(现已退役)+
 //   CurrentUserPayload.memberId 扩展
 // - PR #7(2026-05-14):POST /api/system/v1/rbac/reload(端点 16;沿 D7 §5.4 三档 scope
 //   all / user(+userId) / role(+roleId);入口 @Roles(SUPER_ADMIN, ADMIN),
@@ -46,8 +44,7 @@ import { UserRolesService } from './user-roles.service';
 //   RoleBinding 全量 CRUD 归口独立的 role-bindings/ 模块)
 //   (语义紧耦合,都是 RBAC 配置中心)
 // - 多 controller / 多 service:permissions.* + rbac-roles.* + role-permissions.* + user-roles.* + rbac.*
-// - RbacCacheService 是模块内共享 provider,被 RolePermissionsService + UserRolesService
-//   (PR #4-#5)+ RbacService(PR #6)+ ReloadController(PR #7)共同消费
+// - 权限解析现由 RbacService 每请求直读 DB,无跨请求缓存 provider
 @Module({
   imports: [DatabaseModule],
   controllers: [
@@ -62,15 +59,12 @@ import { UserRolesService } from './user-roles.service';
     RbacRolesService,
     RolePermissionsService,
     UserRolesService,
-    RbacCacheService,
     RbacService,
     RoleDelegationPolicy,
     LastAdminProtectionPolicy,
   ],
   // export RbacService 供业务模块在 Service 层接入 rbac.can()
   // (D7 v1.1 §8 / D7-attachments §6.2;首个消费方 AttachmentsModule,P0-F 后已扩展到管理面等多模块)。
-  // 终态 scoped-authz PR6:export RbacCacheService 供 role-bindings 模块在建/改/软删 USER 主体的 GLOBAL 绑定后
-  //   失效该 user 的权限缓存(判权读源 = global RoleBinding,失效链不破;沿 UserRolesService 现范式)。
-  exports: [RbacService, RbacCacheService, RoleDelegationPolicy, LastAdminProtectionPolicy],
+  exports: [RbacService, RoleDelegationPolicy, LastAdminProtectionPolicy],
 })
 export class PermissionsModule {}
