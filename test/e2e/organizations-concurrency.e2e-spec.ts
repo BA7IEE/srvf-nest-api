@@ -184,7 +184,7 @@ describe('organizations topology serialization', () => {
       );
     }
 
-    let queueOracleError: unknown;
+    let queueOracleError: Error | undefined;
     try {
       const queued = await waitForGoldenLockState(
         'waiting for one granted holder and two service waiters',
@@ -194,7 +194,7 @@ describe('organizations topology serialization', () => {
       expect(queued.waiting).toBeGreaterThanOrEqual(2);
       expect(settled).toBe(0);
     } catch (error) {
-      queueOracleError = error;
+      queueOracleError = error instanceof Error ? error : new Error(String(error));
     } finally {
       releaseHolder?.();
       await holder;
