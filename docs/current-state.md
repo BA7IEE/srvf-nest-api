@@ -7,8 +7,8 @@
 
 | 项 | 当前值 / 何处看 |
 |---|---|
-| 版本(六处一致) | **v0.57.0**(2026-07-17;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI;tag 指向 handoff #671 squash `7e1433c6`;最新 handoff `archive/handoff/v0.57.0.md`) |
-| main HEAD / open PR / Unreleased | 实时看 `gh pr list` · [`CHANGELOG.md`](../CHANGELOG.md) `## Unreleased` + `changelog.d/`;当前:v0.57.0 回填点(第四轮 review #665 + 双 lane 修复 #666/#667 + 回填 #668 + 收口 #669-#671)|
+| 版本(六处一致) | **v0.58.0**(2026-07-17;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI;tag 指向 handoff #680 squash `30675e28`;最新 handoff `archive/handoff/v0.58.0.md`) |
+| main HEAD / open PR / Unreleased | 实时看 `gh pr list` · [`CHANGELOG.md`](../CHANGELOG.md) `## Unreleased` + `changelog.d/`;当前:v0.58.0 回填点(第五轮 review #674 + 双 lane 修复 #675/#676 + 回填 #677 + 收口 #678-#680)|
 
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
