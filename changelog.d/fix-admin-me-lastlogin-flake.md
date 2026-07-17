@@ -1,1 +1,0 @@
-- 修复 Admin `/me` E2E 在登录 `lastLoginAt` 旁路写尚未落库时偶发失败的问题，以有界轮询保持终态 string 断言。
