@@ -828,7 +828,7 @@ export const BizCode = {
   //
   // 子段(对齐 baseline §1.3 紧凑使用):
   // - 23001:NOT_FOUND
-  // - 23002:唯一约束冲突(`(activityTypeCode, attendanceRoleCode, durationThreshold)` ACTIVE 维度)
+  // - 23002:唯一约束冲突(`(activityTypeCode, attendanceRoleCode)` ACTIVE pair 维度)
   // - 23010-23012:业务级输入校验(分值组合 / 活动类型字典 / 考勤角色字典)
   //
   // 不开的码(D6 v1.1 §5 明确):

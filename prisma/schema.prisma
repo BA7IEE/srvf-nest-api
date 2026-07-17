@@ -1110,7 +1110,7 @@ model AttendanceRecord {
 //
 // 每日上限(D-S3 / D-D5):
 // - dailyCap?:**已 deprecated(活动闭环硬化 2026-06-21)**。每日封顶语义由「每条记录各自封顶」
-//   改为「全局每日上限」(一人单个北京日历日总分封顶 GLOBAL_DAILY_CONTRIBUTION_CAP=1.5),封顶落在
+//   改为「全局每日上限」(一人单个北京日历日总分封顶 GLOBAL_DAILY_CONTRIBUTION_CAP=3),封顶落在
 //   汇总处 team-join `computeContribution`,ContributionCalculator 不再读此列。列保留不删(免 migration);
 //   旧值照旧存库、不参与计算。原行为:null 时由 service 兜底默认 1.5(Q-OPEN-7);R22 类填 0(D-S9 §6.3)。
 //
@@ -1119,8 +1119,9 @@ model AttendanceRecord {
 //
 // 审计字段:createdByUserId / updatedByUserId / deletedByUserId 可空 FK,运营后台维护时填入。
 //
-// 唯一约束(D-D5):(activityTypeCode, attendanceRoleCode, durationThreshold) 在
-// deletedAt IS NULL AND status = 'ACTIVE' 范围内唯一。Prisma DSL 至 6.x 不支持
+// 唯一约束(D-RULE-1):(activityTypeCode, attendanceRoleCode) 在 deletedAt IS NULL
+// AND status = 'ACTIVE' 范围内唯一；同一 type × role 只能有一条生效规则，
+// durationThreshold 是该规则内部的档位参数，不再参与 ACTIVE 槽位维度。Prisma DSL 至 6.x 不支持
 // @@unique 内表达 WHERE 子句的 partial unique;沿 batch 3 active_unique 范式手动
 // 追加 migration SQL(参见 migration.sql 末尾)。schema 仅声明普通 @@index。
 

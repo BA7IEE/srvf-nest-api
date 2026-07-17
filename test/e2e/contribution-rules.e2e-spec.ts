@@ -12,8 +12,7 @@ import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
 // V2 第一阶段批次 5-A contribution-rules 模块 e2e。
-// 覆盖 D6 v1.1 §7.1 矩阵:list(7) / detail(3) / create(17) / update(10) / delete(4) /
-// perm(2) = 43 条。
+// 覆盖 D6 v1.1 §7.1 CRUD / 权限矩阵，并由 D-RULE-1 增补 pair 维度 service/DB 唯一性。
 //
 // P0-F PR-2A(2026-05-18):入口切到 service 层 rbac.can();失败统一 RBAC_FORBIDDEN(30100)。
 // `adminAuth` 在 beforeAll 全局 grant ops-admin(沿 dict / org / member-dept e2e 范式);
@@ -247,12 +246,12 @@ describe('contribution-rules 模块', () => {
       });
       await seedRule({
         activityTypeCode: ACTIVITY_TYPE_ACTIVE,
-        attendanceRoleCode: ROLE_ACTIVE,
+        attendanceRoleCode: ROLE_ACTIVE_2,
         durationThreshold: 2,
       });
       await seedRule({
-        activityTypeCode: ACTIVITY_TYPE_ACTIVE,
-        attendanceRoleCode: ROLE_ACTIVE_2,
+        activityTypeCode: ACTIVITY_TYPE_ACTIVE_2,
+        attendanceRoleCode: ROLE_ACTIVE,
         durationThreshold: 1,
       });
       const p1 = await request(httpServer(app))
@@ -352,9 +351,9 @@ describe('contribution-rules 模块', () => {
       expect(res.body.data.pointsAbove).toBeNull();
     });
 
-    it('create-5 同维度第二条 ACTIVE → 23002', async () => {
+    it('create-5 同 type×role 不同 threshold 的第二条 ACTIVE → 23002', async () => {
       await seedRule({ durationThreshold: 1 });
-      const res = await postCreate(createRule({ durationThreshold: 1 }));
+      const res = await postCreate(createRule({ durationThreshold: 2 }));
       expectBizError(res, BizCode.CONTRIBUTION_RULE_ACTIVE_DUPLICATE);
     });
 
@@ -364,15 +363,15 @@ describe('contribution-rules 模块', () => {
       expectBizError(res, BizCode.CONTRIBUTION_RULE_ACTIVE_DUPLICATE);
     });
 
-    it('create-7 同维度 INACTIVE 重复 → 允许', async () => {
+    it('create-7 同 pair INACTIVE 不占 ACTIVE slot → 允许不同 threshold ACTIVE', async () => {
       await seedRule({ durationThreshold: 1, status: ContributionRuleStatus.INACTIVE });
-      const res = await postCreate(createRule({ durationThreshold: 1 }));
+      const res = await postCreate(createRule({ durationThreshold: 2 }));
       expect(res.status).toBe(201);
     });
 
-    it('create-8 同维度 ACTIVE 已软删 → 允许', async () => {
+    it('create-8 同 pair 已软删 ACTIVE 不占 slot → 允许不同 threshold ACTIVE', async () => {
       await seedRule({ durationThreshold: 1, deletedAt: new Date() });
-      const res = await postCreate(createRule({ durationThreshold: 1 }));
+      const res = await postCreate(createRule({ durationThreshold: 2 }));
       expect(res.status).toBe(201);
     });
 
@@ -457,11 +456,11 @@ describe('contribution-rules 模块', () => {
       expect(res.body.data.status).toBe('ACTIVE');
     });
 
-    it('update-4 改 status INACTIVE → ACTIVE 撞既有 ACTIVE → 23002', async () => {
-      // 维度相同的两条:一条 ACTIVE,一条 INACTIVE。把 INACTIVE 改回 ACTIVE → 撞唯一。
+    it('update-4 不同 threshold 的同 pair INACTIVE → ACTIVE 撞既有 ACTIVE → 23002', async () => {
+      // 同 pair 不同 threshold:一条 ACTIVE,一条 INACTIVE。把 INACTIVE 激活 → 撞 pair 唯一。
       await seedRule({ durationThreshold: 1, status: ContributionRuleStatus.ACTIVE });
       const inactiveId = await seedRule({
-        durationThreshold: 1,
+        durationThreshold: 2,
         status: ContributionRuleStatus.INACTIVE,
       });
       const res = await patch(inactiveId, { status: 'ACTIVE' });
@@ -503,6 +502,37 @@ describe('contribution-rules 模块', () => {
     it('update-10 不存在 → 23001', async () => {
       const res = await patch('cl0000000000000000000000', { pointsBelow: 1 });
       expectBizError(res, BizCode.CONTRIBUTION_RULE_NOT_FOUND);
+    });
+  });
+
+  describe('D-RULE-1 PostgreSQL partial unique', () => {
+    it('索引定义只含 type×role 且 direct DB 不允许不同 threshold 的第二条 ACTIVE', async () => {
+      const indexes = await prisma.$queryRaw<Array<{ indexdef: string }>>`
+        SELECT indexdef
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND indexname = 'contribution_rules_activity_role_active_unique'
+      `;
+      expect(indexes).toHaveLength(1);
+      const indexdef = indexes[0].indexdef.replace(/\s+/g, ' ');
+      expect(indexdef).toContain('UNIQUE INDEX');
+      expect(indexdef).toContain('"activityTypeCode", "attendanceRoleCode"');
+      expect(indexdef).not.toContain('"durationThreshold"');
+      expect(indexdef).toContain('"deletedAt" IS NULL');
+      expect(indexdef).toMatch(/status.*ACTIVE/);
+
+      await seedRule({ durationThreshold: 1 });
+      await expect(seedRule({ durationThreshold: 2 })).rejects.toMatchObject({ code: 'P2002' });
+      await expect(
+        prisma.contributionRule.count({
+          where: {
+            activityTypeCode: ACTIVITY_TYPE_ACTIVE,
+            attendanceRoleCode: ROLE_ACTIVE,
+            status: ContributionRuleStatus.ACTIVE,
+            deletedAt: null,
+          },
+        }),
+      ).resolves.toBe(1);
     });
   });
 

@@ -22,7 +22,7 @@ import { contributionRuleSafeSelect, type SafeContributionRule } from './contrib
 //
 // 关键约定:
 // - 字典常量内部 const 化(沿 batch 3 activities / attendances 范式;不抽公共工具)
-// - ACTIVE 唯一性:create / update 同事务 count + 含 NULL durationThreshold 维度(B2);
+// - ACTIVE 唯一性:create / update 同事务按 activityTypeCode × attendanceRoleCode 预查;
 //   23002 优先;P2002 仅作并发兜底(M3)
 // - PATCH 禁改 activityTypeCode / attendanceRoleCode / durationThreshold(B3 + E8;
 //   由 UpdateContributionRuleDto 白名单 + ValidationPipe forbidNonWhitelisted 兜底;不开 23030)
@@ -138,15 +138,13 @@ export class ContributionRulesService {
     }
   }
 
-  // ACTIVE 唯一性 service 兜底(B2):同 (activityTypeCode, attendanceRoleCode,
-  // durationThreshold) 在 deletedAt IS NULL AND status='ACTIVE' 范围最多 1 条;
-  // 含 durationThreshold = NULL 维度(PG partial unique 在 NULL 行为下不阻止多条 ACTIVE)。
-  // excludeId 用于 update 路径排除自身。
+  // ACTIVE 唯一性 service 预检查(D-RULE-1):同 (activityTypeCode, attendanceRoleCode)
+  // 在 deletedAt IS NULL AND status='ACTIVE' 范围最多 1 条；durationThreshold 是规则内部
+  // 档位参数，不参与 ACTIVE 槽位。excludeId 用于 update 路径排除自身。
   private async assertActiveUnique(
     args: {
       activityTypeCode: string;
       attendanceRoleCode: string;
-      durationThreshold: number | null;
       excludeId?: string;
     },
     tx: PrismaTx,
@@ -154,7 +152,6 @@ export class ContributionRulesService {
     const where: Prisma.ContributionRuleWhereInput = {
       activityTypeCode: args.activityTypeCode,
       attendanceRoleCode: args.attendanceRoleCode,
-      durationThreshold: args.durationThreshold,
       status: ContributionRuleStatus.ACTIVE,
       deletedAt: null,
     };
@@ -259,7 +256,6 @@ export class ContributionRulesService {
           {
             activityTypeCode: dto.activityTypeCode,
             attendanceRoleCode: dto.attendanceRoleCode,
-            durationThreshold,
           },
           tx,
         );
@@ -345,7 +341,6 @@ export class ContributionRulesService {
           {
             activityTypeCode: existing.activityTypeCode,
             attendanceRoleCode: existing.attendanceRoleCode,
-            durationThreshold: this.decimalToNumber(existing.durationThreshold),
             excludeId: id,
           },
           tx,
