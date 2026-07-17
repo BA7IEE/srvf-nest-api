@@ -2,7 +2,9 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
-## Unreleased
+## v0.57.0 - 2026-07-17
+
+> 主题:**第四轮全仓 review 修复闭环 + e2e 竞态加固**(report #665 → 双 lane 并行修复 #666 ∥ #667 → 状态回填 #668;flake 加固 #664)。参与域两个 P1 并发一致性缺口(报名聚合锁、考勤×取消竞态)堵死;`registrationCounts` additive 增 `waitlisted`;`src` 改动集中三模块,0 schema / 0 migration(54 恒)/ 0 权限码 / 0 新依赖。
 
 - 修复 Admin `/me` E2E 在登录 `lastLoginAt` 旁路写尚未落库时偶发失败的问题，以有界轮询保持终态 string 断言。(#664)
 
