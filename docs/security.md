@@ -22,7 +22,7 @@
 | 启动强校验 | `config/app.config.ts` + `prisma/seed.ts` | `APP_ENV=production` 下拒绝默认值的 `JWT_SECRET` / `APP_CORS_ORIGIN=*` / `SUPER_ADMIN_PASSWORD` / `SUPER_ADMIN_USERNAME=admin` |
 | 本人自助改密 | `controllers/app-me.controller.ts` + `users.service.ts` + `audit-logs.service.ts` | `PUT /api/app/v1/me/password`(`ChangeMyPasswordDto { oldPassword, newPassword }`);严格事务内顺序:`bcrypt.compare(oldPassword)` → 严格 `===` 比较 oldPassword/newPassword → `bcrypt.hash(newPassword)` → 撤销该 user 全部活跃 refresh(`self-password-change`)→ 写 audit log `password.change.self`;响应 `userSafeSelect`(永不含 `passwordHash`);旧 access 不主动吊销、≤15m 自然过期 |
 | 改密接口防爆破 | `@PasswordChangeThrottle` + `throttler-biz.guard.ts` | 独立 throttler 实例 `password-change`,与登录限流物理隔离;IP 维度 5 次 / 60 秒(`PASSWORD_CHANGE_THROTTLE_LIMIT` / `PASSWORD_CHANGE_THROTTLE_TTL_SECONDS` 可配);内存 storage(不引入 Redis);不暴露阈值 / `Retry-After` / `X-RateLimit-*` |
-| refresh token / logout / logout-all(P0-E PR-3) | `auth.service.ts` + `refresh-token.util.ts` + `audit-logs.service.ts` | `POST /api/auth/v1/refresh`(rotation always + family revoke + absolute expiration)/ `POST /api/auth/v1/logout`(幂等;只撤销当前 row)/ `POST /api/auth/v1/logout-all`(撤销该 user 全部 refresh);`refresh_tokens` 表只存 `sha256(raw).hex`,明文绝不入库;refresh 失败 4 子原因统一 `REFRESH_TOKEN_INVALID=10007`(不拆 EXPIRED/REVOKED/REPLAY);**access token 仍不主动吊销**(沿 D-4);TTL `access 15m / refresh 90d` |
+| refresh token / logout / logout-all(P0-E PR-3 + identity session P0 PR2) | `auth.service.ts` + `refresh-token.util.ts` + `audit-logs.service.ts` | `POST /api/auth/v1/refresh`(rotation always + family revoke + absolute expiration)/ `POST /api/auth/v1/logout`(任一可识别且未过期 row〔含 rotated ancestor〕幂等撤销所属 family 全部活跃未过期 token)/ `POST /api/auth/v1/logout-all`(撤销该 user 全部 refresh);`refresh_tokens` 表只存 `sha256(raw).hex`,明文绝不入库;refresh 失败 4 子原因统一 `REFRESH_TOKEN_INVALID=10007`(不拆 EXPIRED/REVOKED/REPLAY);**其他 family 与 access token 不受 logout 影响**,access 仍不主动吊销;TTL `access 15m / refresh 90d` |
 | refresh 接口防爆破 | `@RefreshThrottle` + `throttler-biz.guard.ts`(P0-E PR-3)| 独立 throttler 实例 `refresh`,与登录 / 改密物理隔离;IP 维度 30 次 / 60 秒(`REFRESH_THROTTLE_LIMIT` / `REFRESH_THROTTLE_TTL_SECONDS` 可配,放宽允许多 tab 并发 refresh);内存 storage;不暴露阈值头 |
 | 手机号绑定发码 / 验码防爆破(SMS 基础设施 T3,2026-06-10;冻结评审稿 [`sms-verification-infra-review.md`](archive/reviews/sms-verification-infra-review.md) D-SMS-6 / E-23) | `@SmsSendThrottle` / `@SmsVerifyThrottle` + `throttler-biz.guard.ts` | 第 4 / 5 throttler 实例 `sms-send` / `sms-verify`,与登录 / 改密 / refresh 物理隔离:`POST /api/app/v1/me/phone/send-code` IP 5 次 / 60 秒(`SMS_SEND_THROTTLE_LIMIT` / `SMS_SEND_THROTTLE_TTL_SECONDS` 可配);`PUT /api/app/v1/me/phone` IP 10 次 / 60 秒(`SMS_VERIFY_THROTTLE_LIMIT` / `SMS_VERIFY_THROTTLE_TTL_SECONDS` 可配);防刷三层的 IP 层(同号 60s 间隔 + 同号自然日上限在 SmsCodeService DB 层);内存 storage;不暴露阈值头 |
 | 身份绑定 step-up + refresh 撤销(identity session P0 PR1,2026-07-17) | `auth/identity-step-up.service.ts` + `users.service.ts` | 现有 AuthController 新增 password/SMS/WeChat 三因子签发与 SMS 发码共 4 个 JWT-protected route；proof 固定 5 分钟、action 仅 `PHONE_BIND/WECHAT_BIND`，从 JWT secret 经 HKDF-SHA256 派生 signing/snapshot 两域并用专用 audience。两个 App PUT 在 parameterized `User FOR UPDATE` 锁内重算 snapshot；真实 phone/wechat 变更与 refresh 全撤销、既有 bind/rebind audit 同事务，reason 为 `self-phone-identity-change` / `self-wechat-identity-change`；同目标 no-op 不撤销不写变更 audit。proof 失败统一 10008，因子未绑定 10009；旧 access 不主动吊销 |
@@ -140,14 +140,14 @@ req.body.stepUpToken
 | 能力 | 实施位置 |
 |---|---|
 | `POST /api/auth/v1/refresh` | rotation always + family revoke + absolute expiration;失败统一 `REFRESH_TOKEN_INVALID=10007` |
-| `POST /api/auth/v1/logout` | 幂等;只撤销当前 refresh row;不吊销 access |
+| `POST /api/auth/v1/logout` | 任一可识别且未过期 row(含 rotated ancestor)撤销所属 family 全部活跃未过期 refresh;未知 / row 过期 / family 已全撤均幂等 200;其他 family 与 access 不动 |
 | `POST /api/auth/v1/logout-all` | 撤销该 user 全部未过期未撤销 refresh;返 `{ revokedCount }` |
 | `LoginResponseDto` 扩展 | `refreshToken`(256bit base64url opaque random)+ `refreshExpiresAt`(ISO 8601 UTC family absolute expiration 时刻);字段集恰好 5 项 |
 | **refresh_tokens 表** | `tokenHash @unique`(sha256 hex)+ `familyId` + `expiresAt` + `rotatedAt` + `revokedAt` + `revokedReason` + `replacedById` + `ipFirstSeen` / `uaFirstSeen`(后两者仅供审计不出对外 API) |
 | **联动撤销 7 场景**(2026-07-17 identity session P0 PR1 由 5 扩 7) | 本人改密 `self-password-change` / 本人短信重置 `self-password-reset` / 管理员重置 `admin-password-reset` / 本人换手机号 `self-phone-identity-change` / 本人换微信 `self-wechat-identity-change` / 用户禁用 `admin-disable` / 用户软删 `admin-delete`(真实变更同事务原子；同目标 no-op 不撤销) |
 | TTL 锁定 | `JWT_EXPIRES_IN=15m`(由 7d 收敛)/ `JWT_REFRESH_EXPIRES_IN=90d` family **absolute expiration**;rotation 继承同一 `refreshExpiresAt` 不延长;**禁止** sliding expiration |
 | 限流 | 独立 throttler `refresh` 30/60 IP(与 `default` / `password-change` 物理隔离);`logout` **无限流**;`logout-all` 复用 `password-change` 5/60 IP |
-| audit | 新增 `auth.login` / `auth.refresh` / `auth.logout` / `auth.logout-all` / `password.reset.by-admin` 共 5 事件 |
+| audit | 沿用 `auth.login` / `auth.refresh` / `auth.logout` / `auth.logout-all` / `password.reset.by-admin` 5 事件;`auth.logout` 仅真实状态变化写一次,extra 恰好 `familyId/revokedCount`,no-op 零 audit |
 
 ### P0-E 仍不做(沿评审稿 v1 D-4 / D-9)
 
@@ -155,7 +155,7 @@ req.body.stepUpToken
 - **access token 不主动吊销**:改密 / 手机或微信身份换绑 / 禁用 / 删除后不做 blacklist；ACTIVE 且未软删用户的旧 access 在剩余 ≤ 15m TTL 内仍可用，禁用 / 删除由 `JwtStrategy.validate()` 下一请求阻断；strategy 只看 `deletedAt === null && status === UserStatus.ACTIVE`,**不读** `passwordHash` / `tokenVersion`
 - access token blacklist / JWT revoke list / Redis / Queue / Cron(2026-06-11 注:cron 能力已按升级路径限定解锁**仅生日批**,见 current-state §3;**token 清理类 cron 仍不做**)/ 完整 OAuth tree / httpOnly cookie / refresh_tokens 查询接口 / 已登录设备列表 UI / 单设备管理 / device fingerprint / 微信小程序 OAuth(2026-06-12 注:微信小程序**登录**已解锁落地——code2session 第三认证端点,见上文速查表与 [`wechat-mini-login-review.md`](archive/reviews/wechat-mini-login-review.md);完整 OAuth 网页授权 / unionid 体系 / session_key 存储仍不做)
 
-### refresh token 安全策略(P0-E PR-3 锁定;沿 [`auth-jwt-refresh`](reference/auth-jwt-refresh.md)` P0-E 子节)
+### refresh token 安全策略(P0-E PR-3 + [`identity session P0 PR2`](archive/reviews/identity-session-p0-step-up-logout-review.md) 锁定)
 
 | 维度 | 锁定值 |
 |---|---|
@@ -167,7 +167,7 @@ req.body.stepUpToken
 | TTL | refresh `90d` family **absolute expiration**;rotation 继承同一 `expiresAt` 不延长 |
 | rotation | **rotation always**(每次 refresh 必发新 raw + 旧 raw 同事务标 `rotatedAt + revokedAt + replacedById`) |
 | reuse detection | 旧 raw 重放命中(`rotatedAt != null`)→ 独立事务 family revoke(`updateMany where familyId data.revokedReason='family-revoked'`)+ audit `extra.replayDetected=true, familyRevoked=true` |
-| logout 行为 | 只撤销当前 row;同 family 其他 rotation 链不动;幂等;**不**吊销 access |
+| logout 行为 | hash 后查 row 不按 `revokedAt` 过滤;可识别且未过期 row(含 rotated ancestor)按 `familyId` 撤销全部 `revokedAt=null AND expiresAt>now`;未知 / row 过期 / family 已全撤幂等 200 且零 audit;`count>0` 才写 `auth.logout` + `familyId/revokedCount`;其他 family 与 access 不动 |
 | logout-all 行为 | `updateMany where userId revokedReason='logout'`;返 `{ revokedCount }`;**不**吊销 access |
 | 失败统一码 | `REFRESH_TOKEN_INVALID=10007`(refresh 失败 4 子原因:不存在 / 已撤销 / 已过期 / 重放命中,**统一**返;**不**拆 EXPIRED / REVOKED / REPLAY;沿 v1 §8 防账号枚举) |
 

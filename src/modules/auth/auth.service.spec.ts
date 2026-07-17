@@ -791,26 +791,30 @@ describe('AuthService (characterization, scoped)', () => {
     });
   });
 
-  // ============ 4. logout — 幂等撤销当前 refresh ============
-  describe('logout — 幂等撤销', () => {
-    it('撤当前:fresh 行 → update{revokedAt, revokedReason:logout};audit auth.logout extra.found=true;返 null', async () => {
+  // ============ 4. logout — 幂等撤销 refresh family ============
+  describe('logout — 幂等撤销 refresh family', () => {
+    it('fresh leaf → updateMany 撤销同 family 活跃未过期行;真实变化写 family audit;返 null', async () => {
       const prisma = makePrismaMock();
       const auditLogs = makeAuditLogsMock();
       prisma.refreshToken.findUnique.mockResolvedValue(makeRefreshRow());
+      prisma.refreshToken.updateMany.mockResolvedValue({ count: 2 });
       const service = makeService(prisma, { auditLogs });
 
       const res = await service.logout({ refreshToken: OLD_RAW }, META);
 
       expect(res).toBeNull();
-      expect(prisma.refreshToken.findUnique).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { tokenHash: OLD_HASH } }),
-      );
-      const revokeArg = prisma.refreshToken.update.mock.calls[0][0] as {
-        where: { id: string };
+      expect(prisma.refreshToken.findUnique).toHaveBeenCalledWith({
+        where: { tokenHash: OLD_HASH },
+        select: { id: true, userId: true, familyId: true, expiresAt: true },
+      });
+      const revokeArg = prisma.refreshToken.updateMany.mock.calls[0][0] as {
+        where: { familyId: string; revokedAt: null; expiresAt: { gt: Date } };
         data: { revokedAt: Date; revokedReason: string };
       };
-      expect(revokeArg.where).toEqual({ id: 'rt-1' });
-      expect(revokeArg.data.revokedAt).toBeInstanceOf(Date);
+      expect(revokeArg.where.familyId).toBe('fam-1');
+      expect(revokeArg.where.revokedAt).toBeNull();
+      expect(revokeArg.where.expiresAt.gt).toBeInstanceOf(Date);
+      expect(revokeArg.data.revokedAt).toBe(revokeArg.where.expiresAt.gt);
       expect(revokeArg.data.revokedReason).toBe('logout');
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(auditLogs.log).toHaveBeenCalledWith(
@@ -825,10 +829,38 @@ describe('AuthService (characterization, scoped)', () => {
         }),
       );
       const logArg = auditLogs.log.mock.calls[0][0] as { extra: Record<string, unknown> };
-      expect(logArg.extra).toEqual({ found: true });
+      expect(logArg.extra).toEqual({ familyId: 'fam-1', revokedCount: 2 });
     });
 
-    it('finding #9:token 不存在 → 不抛仍返 null;不 update;不写 audit', async () => {
+    it('rotated ancestor 仍定位 family 并显式撤销,不进入 refresh reuse detection', async () => {
+      const prisma = makePrismaMock();
+      const auditLogs = makeAuditLogsMock();
+      prisma.refreshToken.findUnique.mockResolvedValue(
+        makeRefreshRow({ rotatedAt: minutesFromNow(-5), revokedAt: minutesFromNow(-5) }),
+      );
+      prisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+      const service = makeService(prisma, { auditLogs });
+
+      const res = await service.logout({ refreshToken: OLD_RAW }, META);
+
+      expect(res).toBeNull();
+      const revokeArg = prisma.refreshToken.updateMany.mock.calls[0][0] as {
+        where: { familyId: string; revokedAt: null; expiresAt: { gt: Date } };
+        data: { revokedAt: Date; revokedReason: string };
+      };
+      expect(revokeArg.where.familyId).toBe('fam-1');
+      expect(revokeArg.where.revokedAt).toBeNull();
+      expect(revokeArg.data.revokedReason).toBe('logout');
+      expect(auditLogs.log).toHaveBeenCalledTimes(1);
+      expect(auditLogs.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'auth.logout',
+          extra: { familyId: 'fam-1', revokedCount: 1 },
+        }),
+      );
+    });
+
+    it('token 不存在 → 不抛仍返 null;不 updateMany;不写 audit', async () => {
       const prisma = makePrismaMock();
       const auditLogs = makeAuditLogsMock();
       prisma.refreshToken.findUnique.mockResolvedValue(null);
@@ -837,26 +869,27 @@ describe('AuthService (characterization, scoped)', () => {
       const res = await service.logout({ refreshToken: 'unknown-raw' }, META);
 
       expect(res).toBeNull();
-      expect(prisma.refreshToken.update).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
       expect(auditLogs.log).not.toHaveBeenCalled();
     });
 
-    it('finding #9:已撤销 → 不二次 update 仍返 null;不写 audit', async () => {
+    it('family 已全撤(updateMany count=0)→ 幂等返 null;不写 audit', async () => {
       const prisma = makePrismaMock();
       const auditLogs = makeAuditLogsMock();
       prisma.refreshToken.findUnique.mockResolvedValue(
         makeRefreshRow({ revokedAt: minutesFromNow(-5) }),
       );
+      prisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
       const service = makeService(prisma, { auditLogs });
 
       const res = await service.logout({ refreshToken: OLD_RAW }, META);
 
       expect(res).toBeNull();
-      expect(prisma.refreshToken.update).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledTimes(1);
       expect(auditLogs.log).not.toHaveBeenCalled();
     });
 
-    it('finding #9:已过期 → 不 update 仍返 null;不写 audit', async () => {
+    it('row 已过期 → 不 updateMany 仍返 null;不写 audit', async () => {
       const prisma = makePrismaMock();
       const auditLogs = makeAuditLogsMock();
       prisma.refreshToken.findUnique.mockResolvedValue(
@@ -867,7 +900,7 @@ describe('AuthService (characterization, scoped)', () => {
       const res = await service.logout({ refreshToken: OLD_RAW }, META);
 
       expect(res).toBeNull();
-      expect(prisma.refreshToken.update).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
       expect(auditLogs.log).not.toHaveBeenCalled();
     });
   });
