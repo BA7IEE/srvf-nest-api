@@ -1,4 +1,4 @@
-import type { ThrottlerModuleOptions } from '@nestjs/throttler';
+import type { ThrottlerModuleOptions, ThrottlerStorage } from '@nestjs/throttler';
 import { CONTENT_PUBLIC_THROTTLER_NAME } from '../common/decorators/content-public-throttle.decorator';
 import { LOGIN_SMS_THROTTLER_NAME } from '../common/decorators/login-sms-throttle.decorator';
 import { LOGIN_WECHAT_THROTTLER_NAME } from '../common/decorators/login-wechat-throttle.decorator';
@@ -17,13 +17,17 @@ import type { AppConfig } from '../config/app.config';
 // 沿 docs/first-release-p0e-refresh-token-review.md §3.7 D-7 + §5.8)。
 //
 // 设计要点:
-//   - 内存 storage(默认 ThrottlerStorageService),不引入 Redis(沿 V1.1 §17.2 / §17.3)
-//   - 三个 throttler 实例**物理隔离**:登录失败爆破不会消耗改密 / refresh 配额,反之亦然
-//   - ThrottlerBizGuard.shouldSkip 默认 true:仅 @LoginThrottle() / @PasswordChangeThrottle()
-//     / @RefreshThrottle() 标注的方法才走对应 throttler 的 limit/ttl 检查;按 metadata 决定走哪个 throttler
+//   - PostgreSQL shared storage,多实例共用一份额度;DB 异常严格 fail-closed,不回退本地 Map
+//   - 10 个命名 throttler 以 (throttlerName,key) **物理隔离**，任一业务面的爆破不串用其他配额
+//   - ThrottlerBizGuard.shouldSkip 默认 true:仅显式挂对应 throttle metadata 的方法才走
+//     该命名 throttler 的 limit/ttl 检查
 //   - setHeaders: false 完全关闭 X-RateLimit-* / Retry-After 头(任务卡 15.7 / 评审稿 §5.4 / §5.8)
-export function buildThrottlerOptions(appCfg: AppConfig): ThrottlerModuleOptions {
+export function buildThrottlerOptions(
+  appCfg: AppConfig,
+  storage: ThrottlerStorage,
+): ThrottlerModuleOptions {
   return {
+    storage,
     throttlers: [
       {
         name: 'default',

@@ -1,0 +1,1 @@
+- 10 个命名 throttler 改用 PostgreSQL shared storage，多实例共享同一 IP 配额并以 `(throttlerName,key)` 物理隔离；完整保留 6.5.0 rolling expiry/block、42900 与无 header 语义，数据库异常严格 fail-closed 50000，零本地 Map fallback、零新增 cron。

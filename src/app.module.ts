@@ -5,6 +5,7 @@ import { ThrottlerModule, type ThrottlerModuleOptions } from '@nestjs/throttler'
 import { LoggerModule } from 'nestjs-pino';
 import type { Params } from 'nestjs-pino';
 import { buildLoggerModuleParams } from './bootstrap/logger-options';
+import { PostgresqlThrottlerStorage } from './bootstrap/postgresql-throttler-storage';
 import { buildThrottlerOptions } from './bootstrap/throttle-options';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -15,6 +16,7 @@ import type { AppConfig } from './config/app.config';
 import databaseConfig from './config/database.config';
 import jwtConfig from './config/jwt.config';
 import { DatabaseModule } from './database/database.module';
+import { PrismaService } from './database/prisma.service';
 import { ActivitiesModule } from './modules/activities/activities.module';
 import { ActivityFeedbacksModule } from './modules/activity-feedbacks/activity-feedbacks.module';
 import { ActivityRegistrationsModule } from './modules/activity-registrations/activity-registrations.module';
@@ -78,10 +80,13 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     }),
     // V1.1 §11.4 / TASKS.md 15.7:登录接口限流。详见 bootstrap/throttle-options.ts。
     ThrottlerModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService): ThrottlerModuleOptions =>
-        buildThrottlerOptions(getAppConfigOrThrow(configService, 'ThrottlerModule')),
+      imports: [ConfigModule, DatabaseModule],
+      inject: [ConfigService, PrismaService],
+      useFactory: (configService: ConfigService, prisma: PrismaService): ThrottlerModuleOptions =>
+        buildThrottlerOptions(
+          getAppConfigOrThrow(configService, 'ThrottlerModule'),
+          new PostgresqlThrottlerStorage(prisma),
+        ),
     }),
     DatabaseModule,
     HealthModule,

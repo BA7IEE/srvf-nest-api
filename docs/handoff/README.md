@@ -60,6 +60,8 @@ release 收口(E 档,`srvf-release-closeout` 九阶段)末尾再统一核一次:
 
 > **刷新记录(2026-07-17,C-QUAL)**:`openapi.json` 已用 `pnpm docs:handoff:openapi` 从 v0.58.0 实时契约重导;本次变更仅包含 `AttendanceRecordInputDto` 移除 `contributionPoints` 及 submit/edit 新增 22076/22079 错误注解。
 
+> **Unreleased 基础设施说明(D-Throttle)**:10 个命名 throttler 的计数从每进程 Map 改为 PostgreSQL shared storage；IP/路由 key、阈值、TTL、blockDuration、42900 与无 header 契约逐字不变，前端无需适配，故本 PR 不刷新 `openapi.json`。
+
 ---
 
 ## 3. 双向怎么用

@@ -17,7 +17,7 @@
 | 模块 | 36 |
 | Controller | 74 |
 | Endpoint | 364 |
-| Migration | 55 |
+| Migration | 56 |
 | BizCode | 253 |
 | 权限码 | 206 |
 | AuditLogEvent | 114 |
@@ -31,6 +31,7 @@
 - **模块地图** `CODEMAP.md` · **权限地图** `ai-harness/RBAC_MAP.md`(各有 check 脚本守护)· **数据模型** `prisma/schema.prisma`
 - **API surface 终态**:5 canonical 前缀(admin / app / auth / system / open 各 `/v1`),contract 断言锁定;规则见 `api-surface-policy.md`;❌不新增 Mixed Controller(存量 2 冻结)❌App 永不返回 L3(content-* 签名 URL 过可见级后返是唯一范围例外)
 - **会话注销终态**:`POST /api/auth/v1/logout` 由任一可识别且未过期 row(含 rotated ancestor)幂等撤销所属 refresh family 全部活跃未过期 token;其他 family 与 access 不动;详见 `security.md`
+- **限流多实例一致性**:10 个命名 throttler 共用 PostgreSQL `throttler_buckets`，保留 IP tracker / 包 hash key / limit+ttl+block / 42900 / 无 header 语义；DB/storage 异常严格 fail-closed 50000，零本地 Map fallback；过期桶手动 retention，Cron 仍恰好 2
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
 

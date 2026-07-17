@@ -74,7 +74,7 @@
 | P0-E | refresh token 冻结:opaque random + sha256 入库;rotation always / family revoke / 90d absolute 不延期;失败统一 10007 不细分;logout 幂等无限流;access 15m 自然过期不主动吊销;联动撤销五场景同事务;`LoginDto` / `LoginResponseDto` / `JwtPayload` zero drift | [auth-jwt-refresh](docs/reference/auth-jwt-refresh.md) |
 | 判权单轨 | 全仓活跃 `@Roles` = 0;业务判权 Service 层 `rbac.can()`(SA 短路,拒权 30100);participation 三模块已切 authz(GLOBAL 语义逐字等价);`RolesGuard` 保留兜底不删;scope 不进权限码;`RbacService` 只读 GLOBAL | [auth-jwt-refresh](docs/reference/auth-jwt-refresh.md) |
 | 防枚举 | 登录失败四场景统一 10004 + dummy bcrypt 抗 timing;SMS / 微信绑定沿 24010 泛化 200;refresh 失败不细分;任何 message / 错误码 / 耗时差异都算枚举漏洞 | 同上 |
-| 身份不缓存 | `JwtStrategy.validate` 每请求查库(`deletedAt = null ∧ ACTIVE`);唯一例外 = `RbacCacheService`(权限解析缓存:TTL 注入 / 三档失效 / 保守降级) | 同上 |
+| 身份 / 权限不缓存 | `JwtStrategy.validate` 每请求查身份;`RbacService` 每次判权直读 PostgreSQL 当前 GLOBAL 权限,零跨请求 Map / TTL / invalidate 正确性链 | 同上 |
 | 永久铁律 | 不引入 `LocalStrategy`;不建 `*.entity.ts`;不用 Prisma 全局软删中间件 / client extension | — |
 | 基础设施冻结 | cron 全仓终态**恰好 2 个**,第 3 个起 = 新 D 档评审;Redis / queue / LLM / vector / 多租户不引入(评审解锁制,触发条件见 ARCHITECTURE §9);数据清理走手动 SOP 不上 cron | [current-state §3](docs/current-state.md) |
 | 敏感字段三问 | 入 schema / DTO / 草案前必答:业务用途?查看角色与掩码?保存期限与退队清理?"先占位以后再用"视作越权;不假设合规方案;字典真实内容私下提供不进公共仓库 | [api-client-boundary](docs/reference/api-client-boundary.md) §18.4 |
