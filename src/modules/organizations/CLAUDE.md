@@ -10,6 +10,7 @@
 
 ## Local facts
 
+- **拓扑写串行化(D-ORG,2026-07-17)**:`create/update/updateStatus/move/softDelete` 的事务在第一条 `Organization` / `OrganizationClosure` SQL 前调用 `lockOrganizationTopology(tx)`，共用固定 namespace `srvf:organizations:topology:v1` 派生的 signed 64-bit `pg_advisory_xact_lock`；`rbac.can()` 保持事务外，`announcement-import` 经 `create()` 自动继承。
 - **audit 留痕(review #484 G18 → NEXT_TASKS P1-16,2026-07-03)**:4 个写点 inline-in-transaction 接入 `AuditLogsService`(沿 `position-assignments`/`supervision-assignments` 范式,`resourceType='organization'`):
   - `create` → `organization.create`(after 快照,before 缺席;**写在 `DryRunAbort` 哨兵之前、同一事务内**——`announcement-import` 预览零写入靠事务整体回滚自动覆盖 audit,不需要为 dryRun 另写分支)
   - `move` → `organization.move`(before/after `parentId`;树结构 + scoped 判权范围变更;**同父幂等 no-op 分支不写**——无实际变更)
@@ -21,6 +22,7 @@
 
 ## Risk points(不要做)
 
+- ❌ **不**删除 topology xact lock、改成 session lock / 随机 hash / per-node 多锁，或把取锁移到任何 Organization/closure SQL 之后；否则并发 move/create/delete 会重新破坏无环、closure 等价与 live-child→live-parent 不变式。
 - ❌ **不**给 `update`(PATCH)加 audit,除非有新设计决议(见上"Local facts")。
 - ❌ **不**给 `move` 的同父幂等 no-op 分支(`target.parentId === dto.parentId` 直接 `return`)加 audit——该分支无 DB 写,加了就是记录"什么都没发生"的假事件。
 - ❌ **不**把 `create()` 的 audit 调用挪到 `DryRunAbort` 判断之后——必须在同一事务内、哨兵抛出之前,否则 `announcement-import` 预览会真实写入 audit 行(破坏零写入行为锁)。
@@ -29,6 +31,7 @@
 
 ## Validation
 
+- `pnpm test:e2e -- organizations-concurrency` —— 真实 PostgreSQL 七组并发交错 + 递归邻接/closure missing/extra/wrong-depth/cycle 等价；删除锁/错 key 由外部持锁门闩杀死，锁后移由五入口顺序单测杀死
 - `pnpm test:e2e -- organizations-audit-characterization` —— 4 写点 audit payload 形状 + update/幂等 no-op 零 audit + 4 处 audit 写失败 → `$transaction` 回滚
 - `pnpm test:e2e -- organizations\.e2e-spec` —— 既有 CRUD / 单根上限 / closure / move 主路径逐字不变
 - `pnpm test:e2e -- announcement-import\.e2e-spec` —— preview 零写入断言(含 `auditLog` count)零修改全绿 + execute 批量 audit 行数断言

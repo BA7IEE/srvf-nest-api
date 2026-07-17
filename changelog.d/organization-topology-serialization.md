@@ -1,0 +1,1 @@
+- 串行化全部组织拓扑写入：五个写入口在事务首条拓扑 SQL 前获取同一 PostgreSQL transaction advisory lock，并新增真实并发与 closure 递归等价回归证据。
