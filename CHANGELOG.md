@@ -2,6 +2,17 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## Unreleased
+
+- 修复 Admin `/me` E2E 在登录 `lastLoginAt` 旁路写尚未落库时偶发失败的问题，以有界轮询保持终态 string 断言。(#664)
+
+- 修复活动报名 create 与扩容/岗位删除的并发锁序，防止候补永久滞留及 active 报名指向已删岗位。(#667)
+- 修复考勤提交与 pass 报名取消的并发互斥，确保已有考勤的报名在竞态下仍不可取消。(#667)
+- 活动改窗现会拒绝导致任一 live 岗位越窗的更新；参与汇总 `registrationCounts` 新增 `waitlisted`，五态分项和恒等于 `total`。(#667)
+
+- 修复工作台报名/考勤待办汇总未接三源组织可见范围的问题，副职只读角色的数字现与 scoped 列表一致，有码但无范围返回零值。(#666)
+- 修复活动评价率在考勤终审撤回后可能超过 100% 的问题，分母实时按当前 approved 队员与已评价队员的去重并集计算。(#666)
+
 ## v0.56.0 - 2026-07-17
 
 > 主题:**Harness 2.0 —— AI 协作底座全量重构**(T0 冻结 #653 → 机器层 #654 → current-state 全指针化 #655 → AGENTS 2.0 + reference 拆分 #656 → process §8 lane 并行协议 #657 → skills 与跨模型互查 #658 → 收尾归档 #659 → landing #660)。恒读层 137,824 → 14,609 字符(−89%)并入 `docs:readtax:check` / `docs:counts:check` 双守护;lane 并行协议与 Codex 互查 SOP 入法;`src/**` / `prisma/**` 零改动,endpoint 360 / migration 54 / BizCode 250 / 权限码 206 / AuditLogEvent 113 / cron 2 / 模块 36 / 角色 9 全恒。
