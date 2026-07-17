@@ -62,6 +62,8 @@ Live 事实：
 2. 初始 `R→{A,B,D}`、`D→C`；并发 `A→B` 与 `C→A`。第 1 次尝试两者均成功，最终邻接树为 `R→B→A→C`，closure 缺 `B→C` 且 `R→C depth=2`（正确应为 3）。
 3. 并发 `softDelete(P)` 与 `move(C→P)`。第 1 次尝试两者均成功，最终 P 已软删但 live C 仍挂 P。
 
+**证据归属**：上述三项来自本轮只读 probe lane 在派生 test DB 上运行的临时并发脚本与输出；脚本/输出当前未作为仓内工件随 D0 提交。这个保管边界不改变已实际复现的 **CONFIRMED** 裁决；D-ORG 必须把等价交错固化为仓内真实 PostgreSQL 并发 E2E，作为以后重开本结论的可执行证据。
+
 边界：
 
 - **NOT REPRODUCIBLE：物理重复 closure pair。**复合主键会使竞争插入冲突回滚，不会保存两条相同 pair。
@@ -247,10 +249,9 @@ increment(
 
 ```text
 D0 review
-  ├─ D-ORG ─────┐
-  ├─ D-SMS ─────┼─ 串行集成
-  └─ D-RBAC 补位┘
-        ↓
+  ├─ D-ORG ───────────────────────────────────┐
+  └─ D-SMS ─→ 串行集成 main ─→ D-RBAC（从新 main 开工）─┤
+                                                       ↓ 串行集成
 D-Throttle（migration token #1）
         ↓
 D-Outbox core（migration token #2）
@@ -260,8 +261,10 @@ D-Outbox recruitment/team-join producers
 D-Outbox participation producers
 ```
 
-- D-ORG / D-SMS / D-RBAC 是互不相交 bounded context，可按 lane 槽位并发开发；**合入仍由总控逐 PR 串行**。
-- D-RBAC 在 D-ORG/D-SMS 任一 lane 释放后补位；不与 D-Throttle 混成一个 PR。
+- D-ORG 与 D-SMS 是唯一获准同时开工的一对；两者 bounded context 与写集不相交，**合入仍由总控逐 PR 串行**。
+- D-RBAC 不得仅因任一 lane 槽位释放就补位：必须等待 D-SMS 串行集成后，从包含 SMS `docs/deployment.md` true-up 的新 main 开工，再只修改 deployment 的 RBAC 段。它可与仍在飞但写集不相交的 D-ORG 共存。
+- 本链任一时刻最多占用 2 条 execution lane；连同仓级其他工作也必须遵守 process §8 的全局上限 **最多 3 条 execution lane**。
+- D-RBAC 不与 D-Throttle 混成一个 PR；D-Throttle 只在 D-ORG、D-SMS、D-RBAC 均串行集成后开工。
 - D-Throttle 与 D-Outbox core 各持一枚 migration token，绝不并行开发或集成。
 - participation producer 接入不得与 **C-QUAL / C-RULE** 并行；这些线共享 activities/registrations/attendances/contribution bounded context。
 - 任一在飞 lane 在前序 PR 合入后必须 rebase，再跑 lane preflight 与受影响门禁。
@@ -290,7 +293,7 @@ D-Outbox participation producers
 - `changelog.d/<lane>.md`
 - `CODEMAP.md`（仅 codemap 守护要求时 true-up）
 
-**DoD / 探针**：五个写入口在第一条 topology SQL 前获取同一 xact lock；移除 lock 变异会使真实并发测试失败；closure 递归等价审计为 0 差异；DryRunAbort/audit/announcement-import 行为不漂移。
+**DoD / 探针**：五个写入口在第一条 topology SQL 前获取同一 xact lock；把本轮临时 probe 的三个等价交错提交为仓内真实 PostgreSQL 并发 E2E，并保留为可重开证据；移除 lock 变异会使这些测试失败；closure 递归等价审计为 0 差异；DryRunAbort/audit/announcement-import 行为不漂移。
 
 **测试矩阵**：
 
@@ -312,7 +315,7 @@ D-Outbox participation producers
 - `src/modules/sms/sms-code.service.ts`
 - `src/modules/sms/sms-code.service.spec.ts`
 - `test/e2e/sms-code-concurrency.e2e-spec.ts`（新）
-- `docs/deployment.md`（修正“天然多实例安全”漂移）
+- `docs/deployment.md`（本 PR 只修正 SMS“天然多实例安全”漂移；D-RBAC 等本 PR 集成后再改 RBAC 段）
 - `src/modules/auth/CLAUDE.md`（仅本地事实需要 true-up 时）
 - `changelog.d/<lane>.md`
 
@@ -341,7 +344,8 @@ D-Outbox participation producers
 - `src/modules/permissions/{permissions,rbac-roles,role-permissions,user-roles}.service.ts`
 - `src/modules/role-bindings/role-bindings.service.ts`
 - `src/config/app.config.ts`、`.env.example`（退役 RBAC cache TTL）
-- `src/modules/permissions/CLAUDE.md`、`docs/deployment.md`
+- `src/modules/permissions/CLAUDE.md`
+- `docs/deployment.md`（必须从已包含 D-SMS true-up 的新 main 开工，只改 RBAC 段并保留 SMS 段）
 - `src/modules/permissions/rbac.service.spec.ts`
 - `test/e2e/rbac-multi-instance-consistency.e2e-spec.ts`（新）
 - 现有 RBAC/authz characterization；`changelog.d/<lane>.md`
@@ -401,11 +405,12 @@ D-Outbox participation producers
 - `src/modules/notifications/notification-wechat-dispatch.service.ts`
 - 对应 unit/e2e，`test/setup/reset-db.ts`
 - `package.json`（仅 worker 启动脚本确有需要时）
-- `docs/ops/notification-outbox-retention-sop.md`（新）、`docs/deployment.md`
+- `docs/ops/notification-outbox-retention-sop.md`（新）
+- `docs/deployment.md`（把“全仓唯一定时任务”修正为当前恰好两个 cron，并明确实施后仍恰好 2）
 - `src/modules/notifications/CLAUDE.md`、`prisma/CLAUDE.md`、`docs/current-state.md` 计数、必要时 `CODEMAP.md`
 - `changelog.d/<lane>.md`
 
-**DoD / 探针**：eventKey unique；payloadVersion 显式落库；静态 eventType+version handler allowlist；marker/status/audit+intent 同事务；两个现有 cron 只生产 intent；worker SKIP LOCKED+lease+retry/backoff+dead；provider 调用永不在 DB 事务内；进程 crash/lease reclaim 测试证明 durable+at-least-once；0 新 cron。
+**DoD / 探针**：eventKey unique；payloadVersion 显式落库；静态 eventType+version handler allowlist；marker/status/audit+intent 同事务；两个现有 cron 只生产 intent；`docs/deployment.md` 从错误的“唯一”口径 true-up 为全仓当前恰好 2 个 cron，实施后计数仍恰好 2；worker SKIP LOCKED+lease+retry/backoff+dead；provider 调用永不在 DB 事务内；进程 crash/lease reclaim 测试证明 durable+at-least-once；0 新 cron。
 
 **测试矩阵**：
 
