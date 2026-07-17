@@ -4,10 +4,7 @@ import type { CurrentUserPayload } from '../../src/common/decorators/current-use
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { BizException } from '../../src/common/exceptions/biz.exception';
 import { PrismaService } from '../../src/database/prisma.service';
-import {
-  lockOrganizationTopology,
-  ORGANIZATION_TOPOLOGY_LOCK_KEY,
-} from '../../src/modules/organizations/organization-topology-transaction';
+import { lockOrganizationTopology } from '../../src/modules/organizations/organization-topology-transaction';
 import { OrganizationsService } from '../../src/modules/organizations/organizations.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -15,17 +12,31 @@ import { createTestApp } from '../setup/test-app';
 // D-ORG 真实 PostgreSQL 并发证据。
 //
 // mutation kill points:
-// - 删除 service 中任一 topology lock（或换成不同 key）→ 外部持有同一 xact lock 时请求会提前完成，
-//   `runBlockedPair` 的 settledWhileHeld 断言失败。
+// - 删除 service 中任一 topology lock（或换成不同 key）→ pg_locks 永远等不到 exact golden key 上
+//   1 granted holder + 2 waiting service transactions，确定性超时并输出最后锁快照。
 // - 把 lock 移到第一条 Organization/OrganizationClosure SQL 之后 →
 //   organization-topology-transaction.spec.ts 的五入口顺序断言失败。
-// - 把 xact lock 改成 session lock → helper golden-vector/SQL 断言失败，且连接归池后会污染后续 case。
+// - 把 xact lock 改成 session lock / 泄漏锁 → pair settle 后 exact golden key 无法归零。
 //
 // 每个 pair 都先由第三条真实 PostgreSQL transaction 持有 topology lock，再并发启动两个 service
-// transaction。释放门闩后，两请求仍是同时在飞的独立 transaction，只能按 PostgreSQL lock 队列串行。
+// transaction。只有 pg_locks 证明两者都已排队后才释放门闩；随后两请求仍是同时在飞的独立
+// transaction，只能按 PostgreSQL lock 队列串行。
 
 const NODE_TYPE_CODE = 'org-topology-concurrency-type';
-const HOLD_WINDOW_MS = 100;
+const LOCK_POLL_DELAY_MS = 25;
+const LOCK_STATE_TIMEOUT_MS = 10_000;
+
+interface AdvisoryLockRow {
+  pid: number;
+  mode: string;
+  granted: boolean;
+}
+
+interface AdvisoryLockSnapshot {
+  granted: number;
+  waiting: number;
+  rows: AdvisoryLockRow[];
+}
 
 interface TopologyDiffRow {
   missing: bigint;
@@ -99,6 +110,47 @@ describe('organizations topology serialization', () => {
     );
   }
 
+  async function readGoldenLockSnapshot(): Promise<AdvisoryLockSnapshot> {
+    // 独立 hard-code 单 bigint advisory lock 的 PostgreSQL pg_locks 编码；刻意不复用生产 helper
+    // 的 key / 派生函数，防止生产与测试同错。0x609bf47a:a45c47c3，objsubid=1 表示 bigint 形态。
+    const rows = await prisma.$queryRaw<AdvisoryLockRow[]>(Prisma.sql`
+      SELECT pid, mode, granted
+      FROM pg_locks
+      WHERE locktype = 'advisory'
+        AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+        AND classid = '1620833402'::oid
+        AND objid = '2757511107'::oid
+        AND objsubid = 1
+      ORDER BY granted DESC, pid ASC
+    `);
+    return {
+      granted: rows.filter((row) => row.granted).length,
+      waiting: rows.filter((row) => !row.granted).length,
+      rows,
+    };
+  }
+
+  async function waitForGoldenLockState(
+    label: string,
+    predicate: (snapshot: AdvisoryLockSnapshot) => boolean,
+  ): Promise<AdvisoryLockSnapshot> {
+    const startedAt = Date.now();
+    let last = await readGoldenLockSnapshot();
+    while (!predicate(last)) {
+      const elapsedMs = Date.now() - startedAt;
+      if (elapsedMs >= LOCK_STATE_TIMEOUT_MS) {
+        throw new Error(
+          `${label} timed out after ${elapsedMs}ms; exact advisory key ` +
+            `classid=1620833402 objid=2757511107 objsubid=1; ` +
+            `last=${JSON.stringify(last)}`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_DELAY_MS));
+      last = await readGoldenLockSnapshot();
+    }
+    return last;
+  }
+
   async function runBlockedPair<T>(
     left: () => Promise<T>,
     right: () => Promise<T>,
@@ -132,17 +184,30 @@ describe('organizations topology serialization', () => {
       );
     }
 
-    await new Promise((resolve) => setTimeout(resolve, HOLD_WINDOW_MS));
-    const settledWhileHeld = settled;
-    releaseHolder?.();
-    await holder;
-    const results = await Promise.allSettled(pending);
+    let queueOracleError: unknown;
+    try {
+      const queued = await waitForGoldenLockState(
+        'waiting for one granted holder and two service waiters',
+        (snapshot) => snapshot.granted >= 1 && snapshot.waiting >= 2,
+      );
+      expect(queued.granted).toBeGreaterThanOrEqual(1);
+      expect(queued.waiting).toBeGreaterThanOrEqual(2);
+      expect(settled).toBe(0);
+    } catch (error) {
+      queueOracleError = error;
+    } finally {
+      releaseHolder?.();
+      await holder;
+    }
 
-    // Wrong/deleted lock key mutation completes here while the golden topology lock is still held.
-    expect({ lockKey: ORGANIZATION_TOPOLOGY_LOCK_KEY, settledWhileHeld }).toEqual({
-      lockKey: 6961426456611932099n,
-      settledWhileHeld: 0,
-    });
+    const results = await Promise.allSettled(pending);
+    const released = await waitForGoldenLockState(
+      'waiting for transaction-scoped topology lock release',
+      (snapshot) => snapshot.granted === 0 && snapshot.waiting === 0,
+    );
+    expect(released).toEqual({ granted: 0, waiting: 0, rows: [] });
+
+    if (queueOracleError) throw queueOracleError;
     return results;
   }
 
