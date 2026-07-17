@@ -339,25 +339,27 @@ export class AuthService {
     return result;
   }
 
-  // P0-E PR-3:POST /api/auth/v1/logout(沿评审稿 §4.3 + §7.1)。
-  // 幂等:不存在 / 已撤销 / 已过期 → 仍返 200;只撤销当前 row(同 family 其他链不动)。
-  // access token 不消费 / 不吊销(沿 D-4);仅真实撤销写 audit,未知/失效 token 零留痕(finding #9)。
+  // Identity Session P0 PR2:POST /api/auth/v1/logout(沿冻结评审稿 §4.8)。
+  // 幂等:不存在 / 已过期 / family 已全撤 → 仍返 200;可识别且未过期的 row(含 rotated
+  // ancestor)只用于定位 family,同事务撤销该 family 全部活跃未过期 token。
+  // access token 不消费 / 不吊销;仅真实状态变化写 audit,未知/失效 token 零留痕。
   async logout(dto: LogoutDto, meta: AuditMeta): Promise<null> {
     const tokenHash = hashRefreshToken(dto.refreshToken);
 
     await this.prisma.$transaction(async (tx) => {
       const row = await tx.refreshToken.findUnique({
         where: { tokenHash },
-        select: { id: true, userId: true, revokedAt: true, expiresAt: true },
+        select: { id: true, userId: true, familyId: true, expiresAt: true },
       });
 
       const now = new Date();
-      if (!row || row.revokedAt !== null || row.expiresAt <= now) return;
+      if (!row || row.expiresAt <= now) return;
 
-      await tx.refreshToken.update({
-        where: { id: row.id },
+      const updateResult = await tx.refreshToken.updateMany({
+        where: { familyId: row.familyId, revokedAt: null, expiresAt: { gt: now } },
         data: { revokedAt: now, revokedReason: 'logout' },
       });
+      if (updateResult.count === 0) return;
 
       await this.auditLogs.log({
         event: 'auth.logout',
@@ -366,7 +368,7 @@ export class AuthService {
         resourceType: 'refresh_token',
         resourceId: row.id,
         meta,
-        extra: { found: true },
+        extra: { familyId: row.familyId, revokedCount: updateResult.count },
         tx,
       });
     });

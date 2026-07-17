@@ -21,7 +21,7 @@
 - **refresh expiresAt absolute**:rotation 后继承原 family 首个 token 的 `expiresAt`,**不**延长(沿 [`auth.service.ts:278`](auth.service.ts:278))
 - **login 失败统一** `BizCode.LOGIN_FAILED = 10004`,5 类失败场景同响应体(防账号枚举);任一路径**必跑**一次 `bcrypt.compare`(命中走真 hash / 未命中走 `TIMING_DUMMY_HASH`)(沿 [`auth.service.ts:43`](auth.service.ts:43))
 - **refresh 失败统一** `BizCode.REFRESH_TOKEN_INVALID = 10007`,4 子原因(不存在 / 已撤销 / 已过期 / 重放)不区分;token 不存在时**不写 audit**
-- **logout 幂等 / 限流当前事实**:`/auth/logout` 不存在 / 已撤销 / 已过期均返 200,但 finding #9 加固后**仅真实命中并完成撤销时**写 `auth.logout`(`extra.found=true`),未知/失效 token 零 audit;当前**未挂限流装饰器**(沿评审稿 §3.7 D-7,避免攻击者吃光合法用户配额);保持当前 logout / logout-all 的幂等、撤销与限流语义,如需调整幂等或限流策略,必须先做安全评审并补测试
+- **logout family 幂等 / 限流当前事实**:`/auth/logout` 用任一可识别且未过期 row(含 rotated ancestor)定位 `familyId`,同事务 `updateMany` 撤销该 family 全部活跃未过期 token;未知 / row 已过期 / family 已全撤均返 200 且零 audit;仅 `revokedCount>0` 写 `auth.logout`,extra 恰好 `familyId/revokedCount`;当前**未挂限流装饰器**,其他 family 与 access 不动
 - **logout-all** 撤销该 user 全部未过期且未撤销的 refresh;当前复用 `@PasswordChangeThrottle()`
 - **access token 当前不主动吊销**(沿 D-4):由 `JWT_EXPIRES_IN` 自然过期 + JwtStrategy 每请求查库阻断 DISABLED / 软删用户;保持当前策略,如需引入 blacklist / Redis / tokenVersion 必须走设计决议
 - **password change**:本人改密在 [`users.service.ts:249`](../users/users.service.ts:249) 主动撤销该 user 全部未过期 refresh(`revokedReason='self-password-change'`);旧 access 仍可调直至自然过期(e2e 反向锁定)
@@ -31,7 +31,7 @@
 - **微信登录(pre-auth,2026-06-12)**:login-wechat = code2session → 已绑 `createSession` / 未绑 `{bindingRequired:true, session:null}`(非枚举面);命中但账号 DISABLED/软删 → 统一 25010(防侧写);wechat-bind **七步校验顺序冻结**(评审稿 §4.3)= code2session 最前(失败不烧 SMS 码)→ 解析手机号(四无效 → 24010)→ 码预检不消费 → openid 占用(他人 → 25002,仅对已证手机控制权者可达)→ 原子消费 → 绑定事务 + audit → createSession;openid 占用**含软删**;wx code / session_key / 完整 openid 三不入日志响应 audit
 - **identity step-up proof**:action 恰好 `PHONE_BIND/WECHAT_BIND`、factor 恰好 `PASSWORD/SMS/WECHAT`；JWT secret 经 HKDF-SHA256 派生 `signing.v1` / `snapshot.v1` 两把 32-byte key，audience 固定 `srvf.identity-step-up`、TTL 固定 300s；snapshot HMAC 输入固定覆盖 `id/passwordHash/phone/phoneVerifiedAt/openid/status/deletedAt`。签名/过期/audience/sub/action/snapshot 失败统一 10008，不细分；无当前 phone/openid 返 10009；`JwtPayload` 仍严格 `{sub,username}`。
 - **pre-auth 微信真实 bind/rebind 的会话顺序**:`user.update` + 旧 refresh 全撤销(`self-wechat-identity-change`) + bind/rebind audit 同一 transaction；提交后才 `createSession` 新 family。already-bound-to-self 仍 no-op，不撤旧 family、不写变更 audit。
-- **audit events 10 个**(本模块写路径,全部经 `AuditLogsService`):`auth.login` / `auth.login.sms`(extra `familyId` + `phone` 掩码 + `codeId`)/ `auth.login.wechat`(extra `familyId` + `openid` 掩码)/ `auth.refresh` / `auth.logout` / `auth.logout-all` / `password.reset.by-sms`(actor=本人;extra `refreshTokensRevoked` + `phone` 掩码 + `codeId`)/ `wechat.bind.self` / `wechat.rebind.self`(bind 路径,extra `viaPath:'pre-auth'` + `phone` 掩码 + `codeId`;users 模块 me/wechat 路径同名事件 `viaPath:'me'`)/ `auth.step-up`(仅成功签发；extra 恰好 `action/factor`);extra 字段**禁止**任何 proof、snapshot、明文 / hash / 完整号码 / 完整 openid
+- **audit events 10 个**(本模块写路径,全部经 `AuditLogsService`):`auth.login` / `auth.login.sms`(extra `familyId` + `phone` 掩码 + `codeId`)/ `auth.login.wechat`(extra `familyId` + `openid` 掩码)/ `auth.refresh` / `auth.logout`(仅真实 family 撤销;extra 恰好 `familyId/revokedCount`)/ `auth.logout-all` / `password.reset.by-sms`(actor=本人;extra `refreshTokensRevoked` + `phone` 掩码 + `codeId`)/ `wechat.bind.self` / `wechat.rebind.self`(bind 路径,extra `viaPath:'pre-auth'` + `phone` 掩码 + `codeId`;users 模块 me/wechat 路径同名事件 `viaPath:'me'`)/ `auth.step-up`(仅成功签发；extra 恰好 `action/factor`);extra 字段**禁止**任何 proof、snapshot、明文 / hash / 完整号码 / 完整 openid
 - **限流复用**:step-up password/SMS send/SMS verify/WeChat 分别复用 `password-change` / `sms-send` / `sms-verify` / `login-wechat` 既有实例；不新增 throttler、不改限额/storage/header。命中抛 `TOO_MANY_REQUESTS`，**不**返 `X-RateLimit-*` / `Retry-After` 头。
 - **AuthModule 唯一 strategy** 是 `JwtStrategy`;**无** LocalStrategy(沿 [`auth.module.ts:40`](auth.module.ts:40))
 
@@ -45,7 +45,7 @@
 - ❌ **不**弱化 refresh rotation / family revoke / reuse detection 语义;判断顺序 `rotatedAt → revokedAt → user inactive` 不可调换
 - ❌ **不**让 login 失败响应在 5 类场景间出现可区分 timing / message / status — 防账号枚举
 - ❌ **不**绕过 `TIMING_DUMMY_HASH`;命中或未命中都必须跑一次 `bcrypt.compare`
-- ❌ **不**在本 PR / 普通改动里调整 `/auth/logout` 幂等或限流策略;如需调整必须先做安全评审并补测试
+- ❌ **不**把 `/auth/logout` 改回 row-only 或扩大为 user-wide;不把 rotated ancestor 显式 logout 接入 refresh reuse detection;幂等 / 无限流 / access 不主动吊销均为冻结语义
 - ❌ **不**引入 LocalStrategy / OAuth / passport-\* 其他策略(无设计决议)
 - ❌ **不**改 `AuditMeta` 构造方式为隐式(cls-rs / AsyncLocalStorage);沿 controller `buildAuditMeta(req)` 显式传(沿 D6 v1.1 §11.2 / D8)
 - ❌ **不**破坏 password-reset 防枚举一致性:不为"号码不存在 / 禁用 / 软删"开任何可区分响应(字段 / message / 错误码细分);不在 send-code 写无效号侧痕;不把 10006 检查挪到码预检之前(密码 oracle);不让 reset 返回 token / 用户字段
