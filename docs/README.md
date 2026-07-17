@@ -16,6 +16,7 @@
 | [`attachment-config-boundary.md`](./attachment-config-boundary.md) | 附件配置三表(`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig`)的 override-with-default 边界说明:为什么不合表、为什么不抽 facade、新增规则落点 |
 | [`architecture-boundary.md`](./architecture-boundary.md) | 架构边界铁律 / active architecture boundary policy for Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect extraction decisions;承接 `AGENTS.md §19.7 D-7` |
 | [`reference/`](./reference/) | **Harness 2.0 细则层(触碰才读)**:承接 harness v1 AGENTS 教学细则的九篇(命名与 DTO / 返回与错误码 / Swagger / auth-token / 软删与事务 / 角色保护 / 配置 / 测试纪律 / API 边界与决策锁全文);恒读入口与索引在根 `AGENTS.md` §6 |
+| [`handoff/`](./handoff/) | **前后端交接层(canonical,两端对接文档唯一家)**:README(索引 + 维护协议 + **变更触发对照表**)+ `admin-web.md`(PC 后台)/ `miniapp.md`(小程序 + 招新 H5)+ `openapi.json` 便利快照;改契约同 PR 更新(AGENTS §0 反漂铁律) |
 | [`srvf-foundation-baseline.md`](./srvf-foundation-baseline.md) | V2 派生项目基线规范(BizCode 段位 / 命名 / DTO / 软删除 / 验收门槛 13 项) |
 | [`V2红线与复活路径.md`](./V2红线与复活路径.md) | V2 五档红线 A/B/C/D/E 与解锁触发条件 |
 | [`security.md`](./security.md) | 已落地安全策略、软删除策略、token 吊销升级路径 |
