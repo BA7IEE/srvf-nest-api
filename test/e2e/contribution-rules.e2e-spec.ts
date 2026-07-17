@@ -305,15 +305,14 @@ describe('contribution-rules 模块', () => {
     });
   });
 
-  // ============ create(17) ============
+  // ============ create(18) ============
 
   describe('POST /api/system/v1/contribution-rules', () => {
-    it('create-1 全字段', async () => {
+    it('create-1 全部可写字段;dailyCap 响应保留且新值固定 null', async () => {
       const res = await postCreate(
         createRule({
           durationThreshold: 2.5,
           pointsAbove: 1.5,
-          dailyCap: 2.0,
           status: ContributionRuleStatus.ACTIVE,
           remark: '主用规则',
         }),
@@ -323,7 +322,7 @@ describe('contribution-rules 模块', () => {
       expect(res.body.data.durationThreshold).toBe(2.5);
       expect(res.body.data.pointsBelow).toBe(1);
       expect(res.body.data.pointsAbove).toBe(1.5);
-      expect(res.body.data.dailyCap).toBe(2);
+      expect(res.body.data.dailyCap).toBeNull();
       expect(res.body.data.status).toBe('ACTIVE');
       expect(res.body.data.remark).toBe('主用规则');
       expect(res.body.data.createdByUserId).toBe(superAdminUserId);
@@ -423,9 +422,14 @@ describe('contribution-rules 模块', () => {
       const res = await postCreate(createRule({ durationThreshold: 0 }));
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
     });
+
+    it('create-18 传 dailyCap → ValidationPipe 400/40000', async () => {
+      const res = await postCreate(createRule({ dailyCap: 2 }));
+      expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
+    });
   });
 
-  // ============ update(10) ============
+  // ============ update(11) ============
 
   describe('PATCH /api/system/v1/contribution-rules/:id', () => {
     const patch = (id: string, body: Record<string, unknown>, auth = adminAuth) =>
@@ -502,6 +506,17 @@ describe('contribution-rules 模块', () => {
     it('update-10 不存在 → 23001', async () => {
       const res = await patch('cl0000000000000000000000', { pointsBelow: 1 });
       expectBizError(res, BizCode.CONTRIBUTION_RULE_NOT_FOUND);
+    });
+
+    it('update-11 传 dailyCap → ValidationPipe 400/40000', async () => {
+      const id = await seedRule({ dailyCap: 2 });
+      const res = await patch(id, { dailyCap: 3 });
+      expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
+      const row = await prisma.contributionRule.findUniqueOrThrow({
+        where: { id },
+        select: { dailyCap: true },
+      });
+      expect(Number(row.dailyCap)).toBe(2);
     });
   });
 

@@ -115,7 +115,7 @@ export class ContributionRulesController {
   @Patch(':id')
   @ApiOperation({
     summary:
-      '部分更新贡献值规则(白名单仅 pointsBelow / pointsAbove / dailyCap / status / remark;禁改 activityTypeCode / attendanceRoleCode / durationThreshold,由 ValidationPipe 拦截抛 40000) [rbac: contribution.update.rule]',
+      '部分更新贡献值规则(白名单仅 pointsBelow / pointsAbove / status / remark;禁改 activityTypeCode / attendanceRoleCode / durationThreshold,由 ValidationPipe 拦截抛 40000) [rbac: contribution.update.rule]',
   })
   @ApiWrappedOkResponse(ContributionRuleResponseDto)
   @ApiBizErrorResponse(

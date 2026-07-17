@@ -24,7 +24,7 @@ import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 //   id / createdAt / updatedAt / deletedAt / deletedByUserId / createdByUserId / updatedByUserId
 //
 // UpdateContributionRuleDto 额外禁止(决议 B3 + E8):
-//   activityTypeCode / attendanceRoleCode / durationThreshold
+//   activityTypeCode / attendanceRoleCode / durationThreshold / dailyCap
 //   PATCH 不在白名单 → ValidationPipe 抛 BAD_REQUEST(40000;不开 23030)
 
 // ============ 出参 ============
@@ -107,8 +107,8 @@ export class ContributionRuleResponseDto {
 // ============ 入参:Create ============
 
 // 必填 3 字段:activityTypeCode / attendanceRoleCode / pointsBelow。
-// durationThreshold / pointsAbove / dailyCap / status / remark 可省略;
-// durationThreshold / pointsAbove / dailyCap 三个字段支持显式 null(沿三态语义)。
+// durationThreshold / pointsAbove / status / remark 可省略;
+// durationThreshold / pointsAbove 两个字段支持显式 null(沿三态语义)。
 export class CreateContributionRuleDto {
   @ApiProperty({
     description: '活动类型字典 code(必填;typeCode=activity_type)',
@@ -160,18 +160,6 @@ export class CreateContributionRuleDto {
   pointsAbove?: number | null;
 
   @ApiPropertyOptional({
-    description:
-      '已废弃的历史每日上限字段(Decimal(5,2);可省略 / 显式 null;attendance 预填与贡献聚合均不读取)',
-    nullable: true,
-    type: 'number',
-  })
-  @IsOptional()
-  @ValidateIf((_, value) => value !== null)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0.01)
-  dailyCap?: number | null;
-
-  @ApiPropertyOptional({
     description: '规则状态(可省略,默认 ACTIVE)',
     enum: ContributionRuleStatus,
   })
@@ -188,8 +176,8 @@ export class CreateContributionRuleDto {
 
 // ============ 入参:Update ============
 
-// 决议 B3 + E8:PATCH 严格白名单仅 5 字段。
-// activityTypeCode / attendanceRoleCode / durationThreshold 不接受,
+// 决议 B3 + E8:PATCH 严格白名单仅 4 字段。
+// activityTypeCode / attendanceRoleCode / durationThreshold / dailyCap 不接受,
 // 改维度必须停用旧规则后新建(由全局 ValidationPipe forbidNonWhitelisted 兜底)。
 export class UpdateContributionRuleDto {
   @ApiPropertyOptional({
@@ -212,17 +200,6 @@ export class UpdateContributionRuleDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   pointsAbove?: number | null;
-
-  @ApiPropertyOptional({
-    description: '每日上限(显式 null = 清空)',
-    nullable: true,
-    type: 'number',
-  })
-  @IsOptional()
-  @ValidateIf((_, value) => value !== null)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0.01)
-  dailyCap?: number | null;
 
   @ApiPropertyOptional({
     description: '规则状态(ACTIVE ↔ INACTIVE 切换)',
