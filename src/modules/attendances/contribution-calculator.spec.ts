@@ -9,18 +9,15 @@ import { ContributionCalculator } from './contribution-calculator';
 //   2. 档位计算矩阵(threshold null / hours<=threshold / hours>threshold × pointsAbove 兜底);
 //      **无每条 dailyCap 钳制**(活动闭环硬化 2026-06-21:全局每日封顶改落汇总处 team-join
 //      computeContribution,calculator 预填回归原始规则分 pointsBelow/pointsAbove);
-//   3. 发往 tx 的批量查询形态(ACTIVE + deletedAt null + role IN + createdAt ASC，
-//      **不再 select dailyCap**;§3.1)。
+//   3. 发往 tx 的批量查询形态(ACTIVE + deletedAt null + role IN，无排序依赖，
+//      **不再 select dailyCap**)，以及数据库漂移出现重复 pair 时 fail-closed。
 // 与 attendances.service.spec.ts 的边界声明互补(该 spec 明确不复刻本组件内部矩阵)。
-
-const FIXED_DATE = new Date('2026-01-01T00:00:00.000Z');
 
 interface RuleRow {
   attendanceRoleCode: string;
   durationThreshold: Prisma.Decimal | null;
   pointsBelow: Prisma.Decimal;
   pointsAbove: Prisma.Decimal | null;
-  createdAt: Date;
 }
 
 // 活动闭环硬化(2026-06-21):calculator 不再读 dailyCap,RuleRow / makeRule 不再含该列。
@@ -30,7 +27,6 @@ function makeRule(overrides: Partial<RuleRow> = {}): RuleRow {
     durationThreshold: null,
     pointsBelow: new Prisma.Decimal('1.00'),
     pointsAbove: null,
-    createdAt: FIXED_DATE,
     ...overrides,
   };
 }
@@ -152,21 +148,18 @@ describe('ContributionCalculator', () => {
       expect(out[0].contributionPoints).toBe(expected);
     });
 
-    it('多条候选(NULL threshold 档位)取首条 —— DB 按 createdAt ASC 返回,选取明确不随机(§3.1)', async () => {
+    it('数据库漂移返回同 role 多条 ACTIVE → fail-closed，绝不按首条/末条覆盖', async () => {
       const { tx } = makeTx([
-        makeRule({ pointsBelow: new Prisma.Decimal('0.50'), createdAt: FIXED_DATE }),
-        makeRule({
-          pointsBelow: new Prisma.Decimal('2.50'),
-          createdAt: new Date('2026-02-01T00:00:00.000Z'),
-        }),
+        makeRule({ pointsBelow: new Prisma.Decimal('0.50') }),
+        makeRule({ pointsBelow: new Prisma.Decimal('2.50') }),
       ]);
 
-      const out = await calculator.applyContributionRulePrefill([rec(4)], 'rescue', tx);
-
-      expect(out[0].contributionPoints).toBe(0.5);
+      await expect(calculator.applyContributionRulePrefill([rec(4)], 'rescue', tx)).rejects.toThrow(
+        'ContributionRule ACTIVE pair invariant violated: rescue × volunteer',
+      );
     });
 
-    it('查询形态锁定:ACTIVE + deletedAt null + role IN 批量匹配 + createdAt ASC', async () => {
+    it('查询形态锁定:ACTIVE + deletedAt null + role IN 批量匹配，且不依赖排序', async () => {
       const { tx, findMany } = makeTx([]);
 
       await calculator.applyContributionRulePrefill([rec(4)], 'rescue', tx);
@@ -183,9 +176,7 @@ describe('ContributionCalculator', () => {
           durationThreshold: true,
           pointsBelow: true,
           pointsAbove: true,
-          createdAt: true,
         },
-        orderBy: { createdAt: 'asc' },
       });
     });
   });

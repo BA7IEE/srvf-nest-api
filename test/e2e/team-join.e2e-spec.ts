@@ -217,7 +217,8 @@ describe('招新三期(入队)admin 面 e2e', () => {
       .send({ organizationId });
   }
 
-  // 直建一条「approved」入队申请(8 通用 gate 全过 + 候选部门 + contribution≥5),用于 T4 一键入队测试。
+  // 直建一条「approved」入队申请(8 通用 gate 全过 + 候选部门),用于 T4 一键入队测试。
+  // contribution 默认 5，可由 opts 精确覆盖；fixture 直接创建 approved，不表达历史上曾达标。
   // gateMarks 可注入(过期等);默认全过(完成日 = now)。
   async function setupApproved(opts: {
     targets: string[];
@@ -789,6 +790,72 @@ describe('招新三期(入队)admin 面 e2e', () => {
       where: { event: 'team-join-application.join' },
     });
     expect(auditCount).toBe(1);
+  });
+
+  it('⑰a【T4】最终入队实时贡献复核拒绝 4.99 → 28241，且业务副作用为零', async () => {
+    // 杀死 mutation:删除最终入队时的 computeContribution 实时复核后，本例会错误 joined。
+    const org = await makeOrg();
+    const { appId, memberId } = await setupApproved({ targets: [org], contribution: '4.99' });
+
+    const before = await Promise.all([
+      prisma.teamJoinApplication.findUniqueOrThrow({
+        where: { id: appId },
+        select: {
+          statusCode: true,
+          selectedOrganizationId: true,
+          joinedAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.member.findUniqueOrThrow({
+        where: { id: memberId },
+        select: { gradeCode: true },
+      }),
+      prisma.memberOrganizationMembership.count({ where: { memberId, deletedAt: null } }),
+      prisma.auditLog.count({
+        where: {
+          event: 'team-join-application.join',
+          resourceType: 'team_join_application',
+          resourceId: appId,
+        },
+      }),
+      prisma.notification.count({ where: { recipientMemberId: memberId } }),
+    ]);
+    expect(before[0]).toMatchObject({
+      statusCode: 'approved',
+      selectedOrganizationId: null,
+      joinedAt: null,
+    });
+    expect(before[1].gradeCode).toBeNull();
+    expect(before[2]).toBe(0);
+
+    expectBizError(await join(appId, org), BizCode.TEAM_JOIN_GATES_NOT_SATISFIED);
+
+    const after = await Promise.all([
+      prisma.teamJoinApplication.findUniqueOrThrow({
+        where: { id: appId },
+        select: {
+          statusCode: true,
+          selectedOrganizationId: true,
+          joinedAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.member.findUniqueOrThrow({
+        where: { id: memberId },
+        select: { gradeCode: true },
+      }),
+      prisma.memberOrganizationMembership.count({ where: { memberId, deletedAt: null } }),
+      prisma.auditLog.count({
+        where: {
+          event: 'team-join-application.join',
+          resourceType: 'team_join_application',
+          resourceId: appId,
+        },
+      }),
+      prisma.notification.count({ where: { recipientMemberId: memberId } }),
+    ]);
+    expect(after).toEqual(before);
   });
 
   // ===== 统一通知 S3(评审稿 §6.4 / 招新 §9.1):入队 → 定向通知(仅站内)=====

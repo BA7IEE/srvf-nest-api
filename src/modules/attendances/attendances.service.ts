@@ -615,8 +615,8 @@ export class AttendancesService {
 
   // 批次 4-B 升级:
   // - contributionPoints 不接受客户端输入,submit/edit 统一由 ContributionRule 计算。
-  //   规则匹配维度:activityType × attendanceRole × durationThreshold;
-  //   NULL durationThreshold 多条规则按 createdAt ASC LIMIT 1(明确选取策略,沿 §3.1 复核报告);
+  //   规则匹配维度:activityType × attendanceRole；每个 pair 至多一条 ACTIVE，
+  //   数据库漂移返回多条时 calculator fail-closed，绝不按排序任取一条；
   //   无匹配规则 → service 保守落 0,不抛错(沿 D-S11 22048 不开)。
   // - D2-a:提交只创建 pending Sheet，不再隐式推动 Activity.completed。
   async submit(

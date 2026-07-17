@@ -75,7 +75,8 @@ Activity (statusCode: draft / published / completed / cancelled)
   └─ activityTypeCode ────┐
                           ├─ ContributionRule lookup
                           │   (NO FK;business-keyed by
-                          │    activityTypeCode × attendanceRoleCode × durationThreshold)
+                          │    activityTypeCode × attendanceRoleCode;
+                          │    durationThreshold is rule configuration,not identity)
                           │   consumed at AttendanceSheet.submit via
                           │   tx.contributionRule.findMany
 AttendanceRecord.roleCode ┘
@@ -122,7 +123,7 @@ Certificate (不在 participation 图内)
 | 10. APD 终审驳回 | attendances | `finalReject` → `pending_final_review → final_rejected` | 不触发 `attendance.recorded`;records 跟随软删 |
 | 11. 撤回终审通过 | attendances | `reopen` → `approved → pending` | 保留 records / previousSnapshot / version,清空一审与终审责任字段;所有 approved-only 贡献读模型立即不再计入,重新 edit → approve → finalApprove 后恢复。撤回本身不发通知、不回滚历史报名准入 / 招新入队晋级结果;再次 finalApprove 复用既有通知。 |
 | 12. 活动评价（F2 App） | activity-feedbacks | 本人 `PUT/GET feedback`；completed + `endAt + N 天` + approved AttendanceRecord 资格 | PUT 在模块自有事务内 create/update `ActivityFeedback`；GET 无评价恒 200/null；不改变 Attendance / Contribution / settlement 语义 |
-| —. ContributionRule 维护 | contribution-rules | ops 后台 CRUD;`status: ACTIVE / INACTIVE` | **不是流程状态实体**;仅作为预填配置,在 Step 7 被读取;`active_unique (activityTypeCode, attendanceRoleCode, durationThreshold) WHERE deletedAt IS NULL AND status = 'ACTIVE'` 由 migration SQL 加 partial unique |
+| —. ContributionRule 维护 | contribution-rules | ops 后台 CRUD;`status: ACTIVE / INACTIVE` | **不是流程状态实体**;仅作为预填配置,在 Step 7 被读取;`active_unique (activityTypeCode, attendanceRoleCode) WHERE deletedAt IS NULL AND status = 'ACTIVE'` 由 migration SQL 加 partial unique |
 
 > **F2/F3 当前事实**:`ActivityCheckIn` 已提供 App 本人签到/签退/当前状态 3 个 canonical 端点，
 > 以及 Admin 证据列表/只读考勤草稿 2 个 canonical 端点。写入仍仅为 App append-only create 与

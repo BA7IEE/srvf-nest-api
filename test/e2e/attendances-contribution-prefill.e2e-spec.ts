@@ -407,29 +407,27 @@ describe('AttendancesService contribution prefill (characterization)', () => {
       expect(decimalToNumberOrNull(rec.contributionPoints)).toBe(2.0);
     });
 
-    it('Case 8:多条 NULL 档位规则 → 按 createdAt ASC 取首条', async () => {
+    it('Case 8:数据库拒绝同 pair 第二条 ACTIVE；合法单规则仍按原分值预填', async () => {
       const activityId = await createActivity(ACTIVITY_TYPE_DEMO);
-      // 同维度(activityType × role × durationThreshold=null)下两条 ACTIVE 规则。
-      // PG partial unique 在 NULL durationThreshold 下不阻止多行 ACTIVE 并存(§3.1 复核);
-      // service 兜底:按 createdAt ASC 取首条。
+      // D-RULE-1:durationThreshold 不再扩展 ACTIVE slot；第二条即使 threshold 不同也由 DB 拒绝。
       await createRule({
         activityTypeCode: ACTIVITY_TYPE_DEMO,
         attendanceRoleCode: ROLE_MEMBER,
         durationThreshold: null,
-        pointsBelow: 0.4, // rule1:更早,期望被选中
+        pointsBelow: 0.4,
         pointsAbove: null,
         dailyCap: 3,
-        createdAt: new Date('2026-01-01T00:00:00.000Z'),
       });
-      await createRule({
-        activityTypeCode: ACTIVITY_TYPE_DEMO,
-        attendanceRoleCode: ROLE_MEMBER,
-        durationThreshold: null,
-        pointsBelow: 0.9, // rule2:更晚,若被选中则用例失败
-        pointsAbove: null,
-        dailyCap: 3,
-        createdAt: new Date('2026-03-01T00:00:00.000Z'),
-      });
+      await expect(
+        createRule({
+          activityTypeCode: ACTIVITY_TYPE_DEMO,
+          attendanceRoleCode: ROLE_MEMBER,
+          durationThreshold: 4,
+          pointsBelow: 0.9,
+          pointsAbove: 1.2,
+          dailyCap: 3,
+        }),
+      ).rejects.toMatchObject({ code: 'P2002' });
 
       const sheetId = await submitOne({
         activityId,

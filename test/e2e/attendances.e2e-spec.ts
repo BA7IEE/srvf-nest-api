@@ -2007,36 +2007,34 @@ describe('attendances 模块', () => {
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
     });
 
-    it('NULL durationThreshold 多条 ACTIVE 规则 → 按 createdAt ASC 取首条', async () => {
-      // 沿 §3.1 复核结论:NULL durationThreshold 在 partial unique 下不阻止多行 ACTIVE 并存(PG NULL 行为)。
-      // service 兜底:按 createdAt ASC 取首条。
+    it('同 type×role 第二条 ACTIVE 被 DB pair unique 拒绝；合法单规则 submit 分值保持', async () => {
       const rule1 = await prisma.contributionRule.create({
         data: {
           activityTypeCode: 'att-demo',
           attendanceRoleCode: 'front_command',
           durationThreshold: null,
-          pointsBelow: 1.0, // 首条
+          pointsBelow: 1.0,
           pointsAbove: null,
           dailyCap: null,
           status: 'ACTIVE',
-          createdAt: new Date('2026-01-01T00:00:00Z'), // 显式更早
-        },
-        select: { id: true },
-      });
-      const rule2 = await prisma.contributionRule.create({
-        data: {
-          activityTypeCode: 'att-demo',
-          attendanceRoleCode: 'front_command',
-          durationThreshold: null,
-          pointsBelow: 0.3, // 次条(若被选中将失败)
-          pointsAbove: null,
-          dailyCap: null,
-          status: 'ACTIVE',
-          createdAt: new Date('2026-02-01T00:00:00Z'),
         },
         select: { id: true },
       });
       try {
+        await expect(
+          prisma.contributionRule.create({
+            data: {
+              activityTypeCode: 'att-demo',
+              attendanceRoleCode: 'front_command',
+              durationThreshold: 2,
+              pointsBelow: 0.3,
+              pointsAbove: 0.6,
+              dailyCap: null,
+              status: 'ACTIVE',
+            },
+          }),
+        ).rejects.toMatchObject({ code: 'P2002' });
+
         const id = await createPendingSheet(activityId, [
           baseRecord({
             memberId: memberCId,
@@ -2049,11 +2047,10 @@ describe('attendances 模块', () => {
           where: { sheetId: id, deletedAt: null },
           select: { contributionPoints: true },
         });
-        // 取首条(rule1,createdAt 更早,pointsBelow=1.0)
+        // 合法单规则的既有 pointsBelow 计算保持。
         expect(records[0].contributionPoints?.toString()).toBe('1');
       } finally {
         await prisma.contributionRule.delete({ where: { id: rule1.id } });
-        await prisma.contributionRule.delete({ where: { id: rule2.id } });
       }
     });
   });

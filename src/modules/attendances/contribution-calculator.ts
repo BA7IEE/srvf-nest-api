@@ -34,7 +34,8 @@ export class ContributionCalculator {
   // 输出:applied records(contributionPoints 必由规则计算;无匹配规则保守为 0)。
   //
   // 规则匹配维度:
-  //   (activityTypeCode, attendanceRoleCode, durationThreshold) WHERE deletedAt IS NULL AND status='ACTIVE'
+  //   (activityTypeCode, attendanceRoleCode) WHERE deletedAt IS NULL AND status='ACTIVE'
+  //   合法状态下每个 pair 恰有 0 或 1 条；若数据库漂移返回多条，立即 fail-closed，绝不选首条/末条。
   // 服务时长档位(若规则 durationThreshold 非 null):
   //   record.serviceHours <= rule.durationThreshold → 取 rule.pointsBelow
   //   record.serviceHours >  rule.durationThreshold → 取 rule.pointsAbove ?? pointsBelow
@@ -43,9 +44,6 @@ export class ContributionCalculator {
   // 每日封顶(活动闭环硬化 2026-06-21):本计算器不再 per-record 钳制;预填 = candidatePoints 原始规则分。
   //   全局每日上限改落汇总处(team-join `computeContribution`:按北京日分组封顶
   //   GLOBAL_DAILY_CONTRIBUTION_CAP=3);ContributionRule.dailyCap 列保留但本计算器不再读。
-  //
-  // NULL durationThreshold 选取(沿 §3.1 复核报告):
-  //   ORDER BY createdAt ASC LIMIT 1(明确,不随机)。
   //
   // 无匹配规则:contributionPoints = 0(不抛错;沿 D-S11 22048 不开)。
   async applyContributionRulePrefill<T extends PrefillRecordLike>(
@@ -69,23 +67,21 @@ export class ContributionCalculator {
               durationThreshold: true,
               pointsBelow: true,
               pointsAbove: true,
-              createdAt: true,
             },
-            orderBy: { createdAt: 'asc' },
           });
-    const firstCandidateByRole = new Map<string, (typeof candidates)[number]>();
+    const candidateByRole = new Map<string, (typeof candidates)[number]>();
     for (const candidate of candidates) {
-      if (!firstCandidateByRole.has(candidate.attendanceRoleCode)) {
-        firstCandidateByRole.set(candidate.attendanceRoleCode, candidate);
+      if (candidateByRole.has(candidate.attendanceRoleCode)) {
+        throw new Error(
+          `ContributionRule ACTIVE pair invariant violated: ${activityTypeCode} × ${candidate.attendanceRoleCode}`,
+        );
       }
+      candidateByRole.set(candidate.attendanceRoleCode, candidate);
     }
 
     const result: Array<T & { contributionPoints: number }> = [];
     for (const r of records) {
-      const points = this.computePrefilledPoints(
-        firstCandidateByRole.get(r.roleCode),
-        r.serviceHours,
-      );
+      const points = this.computePrefilledPoints(candidateByRole.get(r.roleCode), r.serviceHours);
       result.push({ ...r, contributionPoints: points });
     }
     return result;
