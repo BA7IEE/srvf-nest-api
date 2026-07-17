@@ -54,8 +54,8 @@
 
 ## 5. 开工门禁
 
-`pnpm agent:preflight` 全过才开工(global 三硬判;lane 会话用 `--lane`);fresh worktree 先 `pnpm install --frozen-lockfile && pnpm prisma:generate`;D 档降速沿 process §4;拍板未到不动代码。
+`pnpm agent:preflight` 全过才开工(global 三硬判;lane 会话用 `--lane <lane名>`);fresh worktree 先 `pnpm install --frozen-lockfile && pnpm prisma:generate`;D 档降速沿 process §4;拍板未到不动代码。
 
 ## 6. 读取协议
 
-必读三件套 = **本文件** → `ai-harness/README.md` → `process.md §2/§3`;`AGENTS.md` 按主题选读;其余(baseline / V2 红线 / ARCHITECTURE / 边界图 / SOP / RBAC_MAP / archive)触碰才读。
+恒读三件套 = 根 `AGENTS.md` → **本文件** → `process.md §2/§3`(唯一权威表述在 AGENTS §0;Claude Code 另读 `CLAUDE.md`);`ai-harness/README.md` 与其余(baseline / V2 红线 / ARCHITECTURE / 边界图 / SOP / RBAC_MAP / archive)触碰才读。

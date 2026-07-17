@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -6,13 +7,33 @@ import * as path from 'path';
 // 并行 lane 各自在 git worktree 内跑全量 e2e 时,共享同一个 app_test 会互相 truncate
 // (已有竞态前科);本模块按"所在 checkout 是否为 linked worktree"派生独立库名:
 //   - 主仓(<root>/.git 是目录)      → 'app_test'(行为零变化)
-//   - linked worktree(.git 是文件) → 'app_test_<目录名 slug>'
+//   - linked worktree(.git 是文件) → 'app_test_<目录名 slug>_<路径哈希前 6 位>'
+//
+// 哈希段(第五轮 review R5-04):slug 折叠(lane-a 与 lane_a 同 slug)+ 40 字符截断
+// (长名共同前缀)使派生非单射,特殊目录名可跨 lane 共库;全非 [a-z0-9] 目录名(如中文)
+// slug 为空,曾回落主仓 app_test。追加"仓绝对路径 sha256 前 6 位"后不同 checkout 恒不同库;
+// 空 slug 也带哈希 —— **linked worktree 永不回落 'app_test'**。
 //
 // 派生名仍含 'app_test' 子串,test-db.ts 的 assertTestDatabaseUrl 安全护栏原样生效;
-// CI 在仓库根 checkout(.git 为目录)→ 恒为 'app_test',与 ci.yml env 一致。
+// 总长 ≤ 9+40+7=56 < PostgreSQL 标识符 63 上限。CI 在仓库根 checkout(.git 为目录)
+// → 恒为 'app_test',与 ci.yml env 一致。
 
 const BASE_TEST_DB = 'app_test';
 const REPO_ROOT = path.resolve(__dirname, '../..');
+
+// 纯派生核(导出供 scripts/harness-guards.selftest.ts 喂碰撞样例回归)
+export function deriveTestDbNameFrom(repoRootAbs: string, isLinkedWorktree: boolean): string {
+  if (!isLinkedWorktree) return BASE_TEST_DB;
+
+  const slug = path
+    .basename(repoRootAbs)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+  const pathHash = crypto.createHash('sha256').update(repoRootAbs).digest('hex').slice(0, 6);
+  return slug ? `${BASE_TEST_DB}_${slug}_${pathHash}` : `${BASE_TEST_DB}_${pathHash}`;
+}
 
 export function deriveTestDbName(): string {
   let isLinkedWorktree = false;
@@ -22,19 +43,11 @@ export function deriveTestDbName(): string {
   } catch {
     isLinkedWorktree = false;
   }
-  if (!isLinkedWorktree) return BASE_TEST_DB;
-
-  const slug = path
-    .basename(REPO_ROOT)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 40);
-  return slug ? `${BASE_TEST_DB}_${slug}` : BASE_TEST_DB;
+  return deriveTestDbNameFrom(REPO_ROOT, isLinkedWorktree);
 }
 
 // 把 DATABASE_URL 的库名从 app_test 重写为派生名;仅当:
-//   1. 处于 linked worktree(派生名 ≠ app_test),且
+//   1. 处于 linked worktree(R5-04 起派生名恒 ≠ app_test),且
 //   2. URL 库名恰为 '/app_test'(已被人工定制的 URL 不动)
 // 才生效。URL 解析失败时不派生,交由 assertTestDatabaseUrl 兜底拒绝。
 export function applyTestDbDerivation(): void {
