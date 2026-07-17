@@ -216,8 +216,8 @@ describe('organizations topology serialization', () => {
       SNAPSHOT_CAPTURE_TIMEOUT_MS,
     );
     const databaseName = database[0]?.databaseName ?? '';
-    if (!databaseName.startsWith('app_test_')) {
-      throw new Error(`refusing advisory-lock cleanup outside derived test DB: ${databaseName}`);
+    if (databaseName !== 'app_test' && !databaseName.startsWith('app_test_')) {
+      throw new Error(`refusing advisory-lock cleanup outside guarded test DB: ${databaseName}`);
     }
 
     return rawTimeout(
