@@ -709,6 +709,11 @@ describe('ActivitiesService (characterization)', () => {
       expect(findArg.where.statusCode.in).toEqual(['pending', 'pass', 'waitlisted']);
       expect(findArg.where.deletedAt).toBeNull();
 
+      // 收件集必须在 Activity claim 之后读取，锁定 R5-01 的事务内时序。
+      const claimOrder = prisma.activity.updateMany.mock.invocationCallOrder[0];
+      const recipientReadOrder = prisma.activityRegistration.findMany.mock.invocationCallOrder[0];
+      expect(recipientReadOrder).toBeGreaterThan(claimOrder);
+
       // 去重后 2 派发,各 directed in-app activity-changed + 活动名 + 原因
       expect(dispatcher.dispatchTargeted).toHaveBeenCalledTimes(2);
       const recipients = dispatcher.dispatchTargeted.mock.calls.map((c) => c[0].recipientMemberId);

@@ -994,14 +994,6 @@ export class ActivitiesService {
       }
       const { nextStatusCode } = transition;
 
-      const registrations = await tx.activityRegistration.findMany({
-        where: notDeletedWhere({
-          activityId: current.id,
-          statusCode: { in: [...ACTIVE_REGISTRATION_STATUS_CODES] },
-        }),
-        select: { memberId: true },
-      });
-      const notificationMemberIds = [...new Set(registrations.map((row) => row.memberId))];
       const cancelledAt = new Date();
 
       await claimAtStatus(tx, {
@@ -1010,6 +1002,18 @@ export class ActivitiesService {
         expectedStatus: current.statusCode,
         invalidStatusBiz: BizCode.ACTIVITY_STATUS_INVALID,
       });
+
+      // registration create 同样先锁 Activity；claim 后再取 active 收件集，确保等待期间提交、
+      // 且会被本事务联动取消的新报名者不会漏出 commit 后的取消通知。
+      const registrations = await tx.activityRegistration.findMany({
+        where: notDeletedWhere({
+          activityId: current.id,
+          statusCode: { in: [...ACTIVE_REGISTRATION_STATUS_CODES] },
+        }),
+        select: { memberId: true },
+      });
+      const notificationMemberIds = [...new Set(registrations.map((row) => row.memberId))];
+
       const updated = await tx.activity.update({
         where: { id: current.id },
         data: {
@@ -1048,7 +1052,7 @@ export class ActivitiesService {
         tx,
       });
 
-      // 携带通知要素(活动名 + 取消原因)出事务;dto 仍为对外返回体。收件人在 commit 后由 registration 解析。
+      // 携带锁后收件集与通知要素(活动名 + 取消原因)出事务;dto 仍为对外返回体。
       return {
         dto: this.toResponseDto(updated),
         activityId: current.id,
@@ -1120,7 +1124,7 @@ export class ActivitiesService {
   }
 
   // 派发「活动取消」定向通知(仅站内,goal:S4 站内为主、微信 opt-in 延后 —— 避免对 N 报名者微信 fan-out 延迟)。
-  // 收件人 = 该活动仍在册报名者(pending + pass;registration→member 解析,memberId 去重)。
+  // 收件人 = 该活动仍在册报名者(pending + pass + waitlisted;memberId 去重)。
   // **整体 try-catch 永不抛 + 单人派发再各自吞**:任一人派发失败只记日志,不阻断其余、不破坏已 commit 的取消(行为锁)。
   private async dispatchCancellationNotifications(
     activityId: string,
