@@ -8,7 +8,6 @@ import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { writeConfigAudit } from './config-audit.util';
 import { permissionSelect } from './permissions.select';
-import { RbacCacheService } from './rbac-cache.service';
 import { RbacService } from './rbac.service';
 import { RbacRoleDetailResponseDto } from './rbac-roles.dto';
 import { rbacRoleSelect } from './rbac-roles.select';
@@ -16,7 +15,7 @@ import { AssignRolePermissionsDto } from './role-permissions.dto';
 import { isControlPlanePermissionCode } from './role-delegation.policy';
 
 // V2.x C-6 RBAC 实施 PR #4:RolePermission 关联表业务逻辑。
-// 沿 D7 v1.1 §5.1 端点 10-11 + §6.1 + §9.4 缓存失效 + 用户拍板。
+// 沿 D7 v1.1 §5.1 端点 10-11 + §6.1 + 用户拍板。
 //
 // 2 个端点:
 //   POST   /api/system/v1/roles/:id/permissions       批量授权(幂等;入参 permissionCodes[])
@@ -42,7 +41,6 @@ import { isControlPlanePermissionCode } from './role-delegation.policy';
 export class RolePermissionsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly cache: RbacCacheService,
     private readonly rbac: RbacService,
   ) {}
 
@@ -154,11 +152,7 @@ export class RolePermissionsService {
       });
     });
 
-    // 5. 缓存失效(沿 D7 §9.4):所有持有该角色的 user cache 清掉。
-    //    失败仅 logger.warn(在 RbacCacheService 内),不阻断业务返回。
-    await this.cache.invalidateAllUsersWithRole(roleId);
-
-    // 6. 返回该角色当前完整 detail(含最新 permissions)
+    // 5. 返回该角色当前完整 detail(含最新 permissions)
     return this.buildDetailResponse(roleId);
   }
 
@@ -202,10 +196,7 @@ export class RolePermissionsService {
       });
     });
 
-    // 4. 缓存失效(沿 D7 §9.4)
-    await this.cache.invalidateAllUsersWithRole(roleId);
-
-    // 5. 返回该角色当前完整 detail(含最新 permissions)
+    // 4. 返回该角色当前完整 detail(含最新 permissions)
     return this.buildDetailResponse(roleId);
   }
 }

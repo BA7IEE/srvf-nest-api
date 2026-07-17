@@ -18,7 +18,6 @@ const fakeAppCfg: AppConfig = {
   // 本 unit test 不关心限流参数,仅满足 AppConfig 接口字段。
   passwordChangeThrottle: { limit: 5, ttlSeconds: 60 },
   refreshThrottle: { limit: 30, ttlSeconds: 60 },
-  rbacCache: { ttlSeconds: 1800 },
   // 终态 scoped-authz PR9:AppConfig 新增必填字段;本 unit test 不关心终审约束,仅满足接口
   attendance: {
     allowSameReviewer: false,

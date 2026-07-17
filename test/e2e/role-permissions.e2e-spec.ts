@@ -3,7 +3,7 @@ import { Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
-import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.service';
+import { RbacService } from '../../src/modules/permissions/rbac.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import {
   grantOpsAdminToUser,
@@ -16,26 +16,26 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// V2.x C-6 RBAC 实施 PR #4:RolePermission 关联表 + 缓存骨架 e2e。
-// 沿 D7 v1.1 §5.1 端点 10-11 + §9 缓存策略 + 用户拍板。
+// V2.x C-6 RBAC 实施 PR #4:RolePermission 关联表 e2e。
+// 沿 D7 v1.1 §5.1 端点 10-11 + 用户拍板。
 //
 // 覆盖(沿任务 #9):
 // - 批量授权(成功 / 含已存在的幂等 / role 不存在 / role 已软删 / permission 不存在)
 // - 撤权(成功 / 关系不存在 30011 / role 不存在 / role 已软删 / permission 不存在)
 // - role detail 返回真实 permissions
 // - 权限边界(未登录 / USER 403 / ADMIN 允许)
-// - cache invalidate 入口被调用(skeleton:用 RbacCacheService 内部测试方法验证)
+// - DB-backed permission resolution 在 role-permission grant/revoke/role soft-delete 后下一请求收敛
 //
 // 不覆盖(超本 PR 范围):
-// - 完整 rbac.can() / 缓存命中路径(留 PR #6)
+// - 完整 rbac.can() 判权矩阵(由 rbac.service.spec.ts / RBAC 相关 e2e 覆盖)
 // - reload 接口(留 PR #7)
 // - UserRole(留 PR #5)
 // - audit_logs 集成(留后续审计批次)
 
-describe('role-permissions 模块 + cache skeleton', () => {
+describe('role-permissions 模块', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let cache: RbacCacheService;
+  let rbac: RbacService;
   let superAdminAuth: string;
   let adminAuth: string;
   let userAuth: string;
@@ -46,7 +46,7 @@ describe('role-permissions 模块 + cache skeleton', () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
-    cache = app.get(RbacCacheService);
+    rbac = app.get(RbacService);
 
     await createTestUser(app, { username: 'rp-su', role: Role.SUPER_ADMIN });
     const adm = await createTestUser(app, { username: 'rp-adm', role: Role.ADMIN });
@@ -485,110 +485,95 @@ describe('role-permissions 模块 + cache skeleton', () => {
     });
   });
 
-  // ============ cache skeleton ============
+  // ============ DB-backed permission resolution ============
 
-  describe('RbacCacheService skeleton', () => {
-    it('cache get / set / invalidate 接口可用(未来 PR #6 接 rbac.can() 时复用)', () => {
-      const userId = 'test-user-skeleton';
-      // 初始 miss
-      expect(cache.get(userId)).toBeNull();
-      // set 后能 get 到
-      cache.set(userId, new Set(['x.y.z']));
-      expect(cache.get(userId)?.has('x.y.z')).toBe(true);
-      // invalidate 后再 miss
-      cache.invalidateUser(userId);
-      expect(cache.get(userId)).toBeNull();
-    });
-
-    it('POST 授权后 cache invalidate 被调用(skeleton 验证)', async () => {
-      const { roleId, perms } = await setupRoleAndPermissions({
-        roleCode: 'cache-invalidate-post',
-        permCodes: ['ci.a.x'],
-      });
-
-      // 先 seed 一个 fake cache entry,期望授权后清掉
-      // 注:本 PR cache 是 skeleton — 没人会真正 set(rbac.can() 留 PR #6);
-      // 但 invalidate 调用链在 POST/DELETE 完成后被触发是可验证的。
-      const fakeUserId = 'fake-user-with-role';
-      cache.set(fakeUserId, new Set(['old.cached.code']));
-      expect(cache.get(fakeUserId)).not.toBeNull();
-
-      // 让 role_bindings 表里存在真实 user 与本 role 的 global 绑定(否则 invalidateAllUsersWithRole 找不到)。
-      // 注:终态 scoped-authz PR6 起判权/失效读源 = global RoleBinding;这里用 prisma 直接插测试数据。
-      // user fixture 用 'rp-su' 已创建;用其真实 user.id 插 RoleBinding(principalId 多态无 FK,但仍用真实 id 保真)。
-      const realUser = await prisma.user.findUnique({
-        where: { username: 'rp-su' },
-        select: { id: true },
-      });
-      cache.set(realUser!.id, new Set(['old.cached.code']));
-      // 终态 scoped-authz PR6:invalidateAllUsersWithRole 现读 global RoleBinding,故插 RoleBinding(USER, GLOBAL, ACTIVE)。
+  describe('DB-backed permission resolution', () => {
+    async function createBoundUser(username: string, roleId: string) {
+      const user = await createTestUser(app, { username, role: Role.USER });
       await prisma.roleBinding.create({
         data: {
           principalType: 'USER',
-          principalId: realUser!.id,
+          principalId: user.id,
           roleId,
           scopeType: 'GLOBAL',
           status: 'ACTIVE',
         },
       });
+      return user;
+    }
 
-      // 触发授权
-      await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: [perms[0].code] });
+    it('同一 user 每次解析都查询当前 DB 事实', async () => {
+      const { roleId, perms } = await setupRoleAndPermissions({
+        roleCode: 'db-direct-read',
+        permCodes: ['db.direct.read'],
+      });
+      const user = await createBoundUser('rp-db-direct', roleId);
+      await expect(rbac.getUserPermissionCodes(user.id)).resolves.toEqual(new Set());
 
-      // realUser cache 应已被清(invalidateAllUsersWithRole 走的是 prisma 查 global role_bindings 然后清)
-      expect(cache.get(realUser!.id)).toBeNull();
-      // fakeUserId 因为没在 role_bindings 表里,不会被本次清掉(skeleton 验证粒度)
-      // — 但这是端到端测,fakeUserId 也未必残留;不强断言,只验证 realUser 被清的关键路径。
+      await prisma.rolePermission.create({
+        data: { roleId, permissionId: perms[0].id },
+      });
+
+      await expect(rbac.getUserPermissionCodes(user.id)).resolves.toEqual(
+        new Set(['db.direct.read']),
+      );
     });
 
-    it('DELETE 撤权后 cache invalidate 被调用', async () => {
+    it('POST 授权后持有者下一次解析立即获得权限', async () => {
       const { roleId, perms } = await setupRoleAndPermissions({
-        roleCode: 'cache-invalidate-delete',
-        permCodes: ['cid.a.x'],
+        roleCode: 'db-visible-post',
+        permCodes: ['db.post.visible'],
       });
+      const user = await createBoundUser('rp-db-post', roleId);
+      await expect(rbac.getUserPermissionCodes(user.id)).resolves.toEqual(new Set());
 
-      // 先授权
       await request(httpServer(app))
         .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: [perms[0].code] });
 
-      // 关联 rp-adm 到该 role + 给其 set cache
-      const realUser = await prisma.user.findUnique({
-        where: { username: 'rp-adm' },
-        select: { id: true },
-      });
-      // 终态 scoped-authz PR6:invalidateAllUsersWithRole 现读 global RoleBinding,故插 RoleBinding(USER, GLOBAL, ACTIVE)。
-      await prisma.roleBinding.create({
-        data: {
-          principalType: 'USER',
-          principalId: realUser!.id,
-          roleId,
-          scopeType: 'GLOBAL',
-          status: 'ACTIVE',
-        },
-      });
-      cache.set(realUser!.id, new Set(['some.cached.code']));
-      expect(cache.get(realUser!.id)).not.toBeNull();
+      await expect(rbac.getUserPermissionCodes(user.id)).resolves.toEqual(
+        new Set(['db.post.visible']),
+      );
+    });
 
-      // 撤权
+    it('DELETE 撤权后持有者下一次解析立即失去权限', async () => {
+      const { roleId, perms } = await setupRoleAndPermissions({
+        roleCode: 'db-visible-delete',
+        permCodes: ['db.delete.visible'],
+      });
+      await request(httpServer(app))
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
+        .set('Authorization', superAdminAuth)
+        .send({ permissionCodes: [perms[0].code] });
+      const user = await createBoundUser('rp-db-delete', roleId);
+      await expect(rbac.getUserPermissionCodes(user.id)).resolves.toEqual(
+        new Set(['db.delete.visible']),
+      );
+
       await request(httpServer(app))
         .delete(`/api/system/v1/roles/${roleId}/permissions/${perms[0].id}`)
         .set('Authorization', superAdminAuth);
 
-      // realUser cache 应已被清
-      expect(cache.get(realUser!.id)).toBeNull();
+      await expect(rbac.getUserPermissionCodes(user.id)).resolves.toEqual(new Set());
     });
 
-    it('invalidateAll 全量清', () => {
-      cache.set('u1', new Set(['a']));
-      cache.set('u2', new Set(['b']));
-      expect(cache.size()).toBeGreaterThanOrEqual(2);
-      cache.invalidateAll();
-      expect(cache.size()).toBe(0);
+    it('role 软删后持有者下一次解析立即忽略该角色', async () => {
+      const { roleId, perms } = await setupRoleAndPermissions({
+        roleCode: 'db-role-soft-delete',
+        permCodes: ['db.role.deleted'],
+      });
+      await prisma.rolePermission.create({
+        data: { roleId, permissionId: perms[0].id },
+      });
+      const user = await createBoundUser('rp-db-role-delete', roleId);
+      await expect(rbac.getUserPermissionCodes(user.id)).resolves.toEqual(
+        new Set(['db.role.deleted']),
+      );
+
+      await prisma.rbacRole.update({ where: { id: roleId }, data: { deletedAt: new Date() } });
+
+      await expect(rbac.getUserPermissionCodes(user.id)).resolves.toEqual(new Set());
     });
   });
 });

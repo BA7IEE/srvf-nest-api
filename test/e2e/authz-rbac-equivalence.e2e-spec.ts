@@ -4,7 +4,6 @@ import { execSync } from 'child_process';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { PrismaService } from '../../src/database/prisma.service';
 import { AuthzService } from '../../src/modules/authz/authz.service';
-import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.service';
 import { RbacService } from '../../src/modules/permissions/rbac.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -66,7 +65,6 @@ describe('authz ↔ rbac 等价矩阵(🔴 无 ref 行为锁)', () => {
   let prisma: PrismaService;
   let authz: AuthzService;
   let rbac: RbacService;
-  let cache: RbacCacheService;
 
   let saPayload: CurrentUserPayload;
   let bizAdminPayload: CurrentUserPayload;
@@ -114,7 +112,6 @@ describe('authz ↔ rbac 等价矩阵(🔴 无 ref 行为锁)', () => {
         ...tenure,
       },
     });
-    cache.invalidateUser(userId);
   }
 
   beforeAll(async () => {
@@ -125,7 +122,6 @@ describe('authz ↔ rbac 等价矩阵(🔴 无 ref 行为锁)', () => {
     prisma = app.get(PrismaService);
     authz = app.get(AuthzService);
     rbac = app.get(RbacService);
-    cache = app.get(RbacCacheService);
 
     rootOrgId = (
       await prisma.organization.findFirstOrThrow({ where: { code: 'SRVF' }, select: { id: true } })
@@ -293,7 +289,6 @@ describe('authz ↔ rbac 等价矩阵(🔴 无 ref 行为锁)', () => {
         status: BindingStatus.ACTIVE,
       },
     });
-    cache.invalidateUser(bareUserPayload.id);
 
     for (const action of MATRIX_ACTIONS) {
       const viaAuthz = await authz.can(bareUserPayload, action);

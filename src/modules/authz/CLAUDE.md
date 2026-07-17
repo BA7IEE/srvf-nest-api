@@ -15,7 +15,7 @@
 ## Local facts
 
 - **🔴 消费者接线进度(改本模块前先核对)**:**PR9(2026-07-02)起首个消费者 = attendances 终审两方法**(`finalApprove`/`finalReject` 走 `authz.explain` + deny→BizCode 映射〔22074/22075/30100,见 attendances/CLAUDE.md〕);**PR12(2026-07-02)起 activities / activity-registrations / attendances 三模块(participation 首批,共 24 处调用位点)全量切 `authz.can`/`authz.explain`**(ref 矩阵见各模块 CLAUDE.md;当前在期 GLOBAL 行为不变,未来/过期 GLOBAL 在 rbac/authz 两引擎均失效;scoped 持有者树内获新点动作能力);members / certificates / content / notifications 等其余业务面仍走 rbac.can,逐面迁移留后续批。**本模块行为调整自 PR9 起影响现网终审面,PR12 起影响 participation 三模块管理端全部动作**;等价矩阵行为锁必须始终成立
-- **🔴 无 ref 退化 = 行为锁(goal 决断①)**:`authz.can(user, action)`〔无 ref〕**逐字复用 `RbacService.judge`** —— 与 `rbac.can` 逐项一致(SUPER_ADMIN 短路 / GLOBAL 码集走缓存 / `.self` 无 resource fail-close);scoped grant 无 ref 一律不 covers。等价矩阵锁在 `test/e2e/authz-rbac-equivalence.e2e-spec.ts`,改判权流程必跑
+- **🔴 无 ref 退化 = 行为锁(goal 决断①)**:`authz.can(user, action)`〔无 ref〕**逐字复用 `RbacService.judge`** —— 与 `rbac.can` 逐项一致(SUPER_ADMIN 短路 / GLOBAL 码集每请求读当前 DB / `.self` 无 resource fail-close);scoped grant 无 ref 一律不 covers。等价矩阵锁在 `test/e2e/authz-rbac-equivalence.e2e-spec.ts`,改判权流程必跑
 - **GLOBAL 任期真值单一来源(2026-07-13 第二档安全收口)**:`AuthzService` 与 `RbacService` 共用 [`../permissions/role-binding-validity.ts`](../permissions/role-binding-validity.ts);`startedAt<=now` 且 `endedAt=null|>=now` 才有效,边界时刻有效。未来/过期/在期三族在 `authz-rbac-equivalence` 具名 e2e 中同时断言 `rbac.can` / `getEffectiveRoles` / `authz.explain`,禁止两套谓词再次漂移
 - **🔴 R5 v0.49 supersession**:副职(vice-captain / dept-deputy / deputy-group-leader)只允许通过 seed policy 自动推导 `org-readonly` / `group-readonly` 的动态只读投影；**不得推导 org-admin/group-manager 等管理写角色，不得在代码里按头衔 hardcode 兜底**。全部写码、`*.read.sensitive` 与 recruitment/team-join family 仍为零
 - **BD-2 终审中枢不 hardcode**:终审身份只认 `RoleBinding(principalType=POSITION_ASSIGNMENT, …)` 配置行;本模块禁止出现任何 "APD" / 部门字面量门控。分管监督角色锚点 = 常量 `SUPERVISOR_ROLE_CODE`('org-supervisor',BD-3)
@@ -23,7 +23,7 @@
 - **conditionJson 保守跳过**:`OrganizationPositionRolePolicy.conditionJson` 非 null 的行本刀不评估、直接跳过(fail-close 不越权;seed 全 null)。首个真实条件需求出现时再落评估器,禁止"忽略条件当无条件"的过渡实现
 - **ActionConstraint 对 SUPER_ADMIN 也生效**(域不变量非权限):注册表只有 `attendance.final-approve.sheet` 两条(自审禁止〔永不可配〕 + 同人终审禁止〔默认禁;PR9 起经 `ActionConstraintContext` 从 app.config 注入 env `ATTENDANCE_ALLOW_SAME_REVIEWER`,严格 === 'true' 才放开,PR8 代码常量已移除〕);**final-reject 不在注册表 = 无自审/同人约束(e2e 锁不对称语义,扩注册面是行为变更须 goal 授权)**——安全依据(review #484 §6 known-dup 补充论证,2026-07-03):驳回自己提交的单据不存在自肥式利益冲突方向(不像批准那样有直接得利动机),`test/e2e/attendances-final-review-authz.e2e-spec.ts` 已有具名用例锁定该不对称行为;未注册 action 零约束;`sensitive_denied` 是保留 reason(敏感分级由 §4.2 独立权限码承载,不在此双轨)
 - **resolver 口径**:member 的归属组织 = active PRIMARY membership;recruitment_application 恒无 org/owner(D-R-1);notification 广播态 org=null(多组织「任一覆盖」covers 留消费面迁移时扩展);attachment 仅委派 member/certificate/activity 三类 ownerType,其余(content-\*)null fail-close;链上父资源软删不阻断解析,scope org 的 ACTIVE 闸门在 `covers()`
-- **性能口径(goal 决断④)**:三源每 decision 现查、无新缓存层;`RbacService.getRoleIdsWithPermission` 是 PR8 additive(批量角色含码,RolePermission roleId 索引);优化留口 = 角色→码集合 TTL 缓存,做之前先看真实 QPS
+- **性能口径(goal 决断④)**:三源每 decision 现查、legacy GLOBAL 每请求现查;`RbacService.getRoleIdsWithPermission` 是 PR8 additive(批量角色含码,RolePermission roleId 索引);本地 Map/TTL/invalidate 已退役,性能优化不得恢复跨请求 permission cache
 - **deny reason 归因优先级**:resource*not_found > 约束否决 >(covers 失败后)inactive_org > expired_grant > out_of*[supervised_]scope > no_permission;失效 grant 只参与归因**绝不参与 allow**
 - **explain 端点契约(PR10 拍板)**:**deny 是数据不是错误** —— 入参合法即 200 返 decision,`resource_not_found` 亦是 decision reason;仅输入错误走异常(目标用户不存在/已软删 → 10001;type/action 白名单不过 → 通用 400,BizCode +0);DISABLED 目标可 explain(status 原样返,决断③);matchedGrant 内部 id 原样返 ops-admin 面(不脱敏);**无 audit**(决断④;deny 采样 = 冻结稿 §10.6 可选项,做须 goal)。`authz.dto.ts` 的 `AUTHZ_REASON_VALUES`(11 值)/`GRANT_SOURCE_VALUES`/`EXPLAINABLE_RESOURCE_TYPES`(= resolver 11 类)是 OpenAPI 契约锁:改 `authz.types` 联合或 resolver 支持面时**必须同步**(`satisfies` 编译锁 + authz-explain e2e Record 完备锁双向兜底)
 
@@ -35,7 +35,7 @@
 - ❌ **不**在本模块写 "APD" / 具体部门 / 具体职务的字面量判权门控(BD-2;配置行决定一切)
 - ❌ **不**在 AuthzService 内直接写业务列表查询；v0.49 consumers 只能消费统一 visible scope 后在各自模块下推过滤
 - ❌ **不**给 explain 端点加 audit / deny 采样(§10.6 可选项须 goal)/ **不**把 explain 的 deny 改成抛错(deny 是 200 数据 = PR10 决断②)/ **不**在 explain 薄编排里叠加自己的判权逻辑(它必须始终是 `AuthzService.explain` 的纯消费面)
-- ❌ **不**引入新缓存层 / 不把 `RbacCacheService`(per-user 权限点缓存)错用成 per-role 缓存
+- ❌ **不**为 GLOBAL permission resolution 重新引入跨请求 Map/TTL、no-op cache 或提交后 invalidate 正确性链
 - ❌ **不**让 ActionConstraint 豁免 SUPER_ADMIN(它是数据完整性不变量;场景 4「SA 亦拒自审」是拍板)
 - ❌ **不**把 resolver 的 fail-close(null → resource_not_found)改成"解析失败按无 scope 资源放行"
 - ❌ **不**在 legacy `.self` 后缀语义上创新:无 ref fail-close(镜像 rbac),带 ref 属主硬门;attachments 现网 `.self` 路径到 PR12 前仍走 rbac.can,不迁

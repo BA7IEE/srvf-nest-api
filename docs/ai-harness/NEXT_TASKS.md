@@ -90,7 +90,7 @@
 ### P2-8 v0.44.0 安全·并发·性能审计接受项 — **✅ 结论冻结,诉求/扩容触发再立项**
 - **finding #8 考勤 DB 排他约束**:不引 `btree_gist` / range exclusion constraint;本仓首个 DB 扩展、腾讯云托管库可用性未验、同人同时录两单触发极罕见。#7 已以事务 advisory lock 保护所有应用写路径;若出现绕过应用直写或真实冲突,再单独评审 DB 约束。
 - **findings #10/#12 附件全量扫描后内存分页**:`list` 与 `listByOwner` 仍先做 ownership 可见性过滤再分页,当前规模下是理论性能问题(#12 单 owner 更小);若命中总量达到万级或接口延迟/内存指标越线,再设计可见性下推/两阶段分页。#11 certificate N+1 已在 v0.44.0 单独修复为批量 Map。
-- **finding #19 RBAC 多实例缓存失效**:进程内 Map 无跨节点广播属实,但当前部署为单实例且 `deployment.md` 已列扩容 checklist;身份禁用/软删仍由 JwtStrategy 每请求查库即时生效。横向扩容前再选跨实例失效广播、共享缓存或缩短 TTL;本线不引 Redis/pub-sub。
+- **finding #19 RBAC 多实例缓存失效 — ✅ 运行时已关闭(D-RBAC)**:`RbacService` 的 GLOBAL permission resolution 已改为每请求读取 PostgreSQL 当前事实,不再保留进程内 Map/TTL 或依赖提交后 invalidate/reload,多实例 grant/revoke 在下一请求收敛。剩余 `rbac.controller.ts` / `rbac.dto.ts` / `prisma/seed.ts` 与 OpenAPI 派生描述一致性留后续 **D-contract true-up**（本刀不改 endpoint/DTO/BizCode/contract snapshot）。
 - **findings #20/#21 post-commit 通知可能永久丢失**:涉及活动报名审批与考勤终审两处仅站内、非权威提醒;业务结果已安全落库可另查。可靠补发需 outbox/queue/后台任务,与 no-cron/queue 红线冲突,收益不足,故不写补发代码。
 - **2026-07-14 第七刀编号回执**:#14「附件权限内存过滤后分页」维持接受项,规模/延迟越线后才单独设计下推；#12「通知 outbox」仍撞 queue/cron 红线,未获 waiver,本刀明确不做。该编号来自本轮安全收口清单,与上两条历史 review 编号不同,语义分别指向同一两类已登记债务。
 - **finding #16 不成立**:常规撤权路径均同步失效缓存,1800s TTL 仅兜底;真实残余已由 #17 查询失败退全清、#18 角色/权限删除失效、#19 多实例边界分别覆盖,不另改代码。

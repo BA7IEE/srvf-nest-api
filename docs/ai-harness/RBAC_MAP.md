@@ -122,7 +122,7 @@
 - **管理面 / 配置面 / System surface**:controller 不标 `@Roles`，入口仅要求登录；未接线面继续 Service 层 `rbac.can('<code>')`，SUPER_ADMIN 短路。授权诊断、考勤终审、participation 与 v0.49.0 队员轴/扁平列表改走 `AuthzService`；不能把“全仓判权入口”再简化成只有 `RbacService.can()`。
 - **业务面**:Slow-4 已摘清全部 `@Roles`；v0.49.0 当前 scoped 消费者 = participation 点动作 + 两条扁平列表 + 三条 member-axis 查询、members 列表/options/detail/写、certificates/member-profiles/emergency-contacts/member-insurances。列表级组织范围由 `getVisibleOrganizationScope` 下推；member/certificate 只认 active PRIMARY membership，participation 取 activity.organizationId。users/content/notifications/audit-logs、Recruitment、team-join 仍按各自既有 GLOBAL/显式授权语义。**全仓活跃 `@Roles` = 0**；`RolesGuard` 机制与装饰器保留 Guard 链。
 - **App surface:不走 RBAC**——仅 JwtAuthGuard + Service 层 `where: { memberId: currentUser.memberId }` self-scope + 准入语义(`memberId != null && User.ACTIVE && Member.ACTIVE`);capabilities 返回产品级能力而非 raw permission code(D-5.3)。
-- **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。`RbacCacheService` 只缓存 GLOBAL 权限解析(TTL 1800s,三档失效)，不是身份缓存；`AuthzService` 当前不缓存判权/可见范围结果。
+- **没有 `@Permissions` 装饰器 / PermissionsGuard**(已核实不存在)。`RbacService` 的 GLOBAL permission resolution 每请求从 PostgreSQL 解析当前在期 USER RoleBinding → RolePermission → Permission；`AuthzService` 同样不缓存判权/可见范围结果。
 
 ## 2. controller × 鉴权模式对照(74 个 controller class)
 
@@ -264,7 +264,7 @@
 | 最后一个活跃 SUPER_ADMIN ≥ 1 | 同上,**事务内计数 + 更新** | [`soft-delete-transactions`](../reference/soft-delete-transactions.md) / [`roles-admin-protection`](../reference/roles-admin-protection.md);**禁止** AI 增加"SA 互不可操作"校验 |
 | 最后一个 ops-admin 持有者 ≥ 1 | `user-roles.service.ts` revoke 路径 | seed bootstrap 强校验呼应 |
 | ADMIN 只能管 USER | `assertCanManageUser` 统一入口;**禁止** service 内散落 `role ===` 比较(已核实 0 处) | [`roles-admin-protection`](../reference/roles-admin-protection.md) |
-| 身份有效性不缓存 | `JwtStrategy.validate` 每请求查库(`deletedAt + status`) | [`auth-jwt-refresh`](../reference/auth-jwt-refresh.md);RbacCache 是唯一例外(权限解析缓存) |
+| 身份有效性不缓存 | `JwtStrategy.validate` 每请求查库(`deletedAt + status`) | [`auth-jwt-refresh`](../reference/auth-jwt-refresh.md);GLOBAL 权限解析亦由 `RbacService` 每请求读 DB，无缓存例外 |
 | 防账号枚举 | 登录四场景统一 10004 + dummy bcrypt timing 防御 | [`auth-jwt-refresh`](../reference/auth-jwt-refresh.md) |
 | Guard 全局注册 | `app.module.ts` APP_GUARD ×3,顺序固定;**全仓 0 处 `@UseGuards`**(已核实) | [`auth-jwt-refresh`](../reference/auth-jwt-refresh.md) |
 

@@ -1,6 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
 import { PrismaService } from '../../src/database/prisma.service';
-import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.service';
 
 // P0-F PR-1(2026-05-18)初版;P0-F PR-2A(2026-05-18)扩展至 33 条;
 // P0-F PR-2B(2026-05-18)扩展至 48 条(ops-admin 绑 47 条,凭证 reset 不绑;沿 PR-2 D2=A);
@@ -20,8 +19,8 @@ import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.servi
 // **设计**:
 // - seedRbacPermissionsAndOpsAdmin:幂等 upsert 56 条 + ops-admin 角色 + 54 条 RolePermission 绑定;
 //   返 { opsAdminRoleId, rbacPermissionCount } 便于 inline grant
-// - grantOpsAdminToUser:给 user 绑 ops-admin + 主动 invalidateUser cache(模拟 reload)
-// - revokeOpsAdminFromUser:撤回 + invalidateUser cache(沿对称范式)
+// - grantOpsAdminToUser:给 user 绑 ops-admin
+// - revokeOpsAdminFromUser:撤回 global 绑定
 //
 // **D2=A 凭证收紧验证**:storage-settings.e2e 单独断言
 // "ADMIN+ops-admin 调 reset-credentials → 30100" / "SUPER_ADMIN → 200"。
@@ -274,7 +273,7 @@ export async function seedRbacPermissionsAndOpsAdmin(
   };
 }
 
-// 给 user 绑 ops-admin + 主动失效缓存(模拟运行时"绑角色后 POST /rbac/reload"流程)。
+// 给 user 绑 ops-admin；DB-backed 判权在下一请求直接读取该 GLOBAL 绑定。
 // 终态 scoped-authz PR6:判权唯一读源 = global RoleBinding,故 grant 写 RoleBinding(USER, GLOBAL, ACTIVE);
 //   无 Prisma 复合唯一键 → findFirst active 缺则 create(幂等)。旧 UserRole 表已 DROP,fixture 不写该表。
 export async function grantOpsAdminToUser(
@@ -305,10 +304,9 @@ export async function grantOpsAdminToUser(
       },
     });
   }
-  app.get(RbacCacheService).invalidateUser(userId);
 }
 
-// 撤回 ops-admin + 失效缓存(对称范式)。终态 scoped-authz PR6:清该 user+role 的 global 绑定(测试清理硬删即可)。
+// 撤回 ops-admin。终态 scoped-authz PR6:清该 user+role 的 global 绑定(测试清理硬删即可)。
 export async function revokeOpsAdminFromUser(
   app: INestApplication,
   userId: string,
@@ -323,5 +321,4 @@ export async function revokeOpsAdminFromUser(
       scopeType: 'GLOBAL',
     },
   });
-  app.get(RbacCacheService).invalidateUser(userId);
 }

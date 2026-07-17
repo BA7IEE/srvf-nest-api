@@ -3,7 +3,6 @@ import { Role, UserStatus } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
-import { RbacCacheService } from '../../src/modules/permissions/rbac-cache.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -27,7 +26,7 @@ import { createTestApp } from '../setup/test-app';
 // - Q7 C2 中庸:SUPER_ADMIN 通过 / ADMIN 单独 30102 / ADMIN+持 ops-admin 通过 /
 //   ops-admin 自己不能被 ops-admin 分配 / 业务角色互不分配
 // - 最后一个 ops-admin 保护(30101)
-// - 缓存失效:invalidateUser(targetUserId)
+// - DB-backed 收敛:授予/撤销后同一 user 下一请求立即读取当前 GLOBAL 绑定
 // - 权限边界(USER 入口 403)
 
 // 终态 scoped-authz PR6 测试辅助:判权唯一读源 = global RoleBinding,故 e2e 内授予/查/清角色改用 RoleBinding。
@@ -81,7 +80,6 @@ async function deleteGlobalBindings(
 describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let cache: RbacCacheService;
   let superAdminAuth: string;
   let adminAuth: string;
   let userAuth: string;
@@ -97,7 +95,6 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
-    cache = app.get(RbacCacheService);
 
     const su = await createTestUser(app, { username: 'ur-su', role: Role.SUPER_ADMIN });
     const adm = await createTestUser(app, { username: 'ur-adm', role: Role.ADMIN });
@@ -120,6 +117,18 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
       select: { id: true },
     });
     bizRoleId = biz.id;
+    const immediatePermission = await prisma.permission.create({
+      data: {
+        code: 'test.user-role.immediate',
+        module: 'test',
+        action: 'user-role',
+        resourceType: 'immediate',
+      },
+      select: { id: true },
+    });
+    await prisma.rolePermission.create({
+      data: { roleId: bizRoleId, permissionId: immediatePermission.id },
+    });
   });
 
   afterAll(async () => {
@@ -322,9 +331,8 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
     });
 
     it('Q7 C2 — ADMIN 持 ops-admin 分配业务角色 → 201', async () => {
-      // 给 admin 配 ops-admin 角色;P0-F PR-1:必须 invalidateUser 让 cache 失效
+      // 给 admin 配 ops-admin 角色;DB-backed 判权下一请求直接可见。
       await grantGlobalBinding(prisma, adminId, opsAdminRoleId);
-      cache.invalidateUser(adminId);
       const target = await createTargetUser('q7-admin-with-ops');
       const res = await request(httpServer(app))
         .post(`/api/system/v1/users/${target.id}/roles`)
@@ -333,12 +341,10 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
       expect(res.status).toBe(201);
       // 清理:撤回 admin 的 ops-admin,避免影响后续测试
       await deleteGlobalBindings(prisma, { userId: adminId, roleId: opsAdminRoleId });
-      cache.invalidateUser(adminId);
     });
 
     it('Q7 C2 — ADMIN 持 ops-admin **分配 ops-admin** → 30102', async () => {
       await grantGlobalBinding(prisma, adminId, opsAdminRoleId);
-      cache.invalidateUser(adminId);
       const target = await createTargetUser('q7-admin-with-ops-assign-ops');
       const res = await request(httpServer(app))
         .post(`/api/system/v1/users/${target.id}/roles`)
@@ -346,21 +352,21 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
         .send({ roleCode: 'ops-admin' });
       expectBizError(res, BizCode.CANNOT_ASSIGN_HIGHER_ROLE);
       await deleteGlobalBindings(prisma, { userId: adminId, roleId: opsAdminRoleId });
-      cache.invalidateUser(adminId);
     });
 
-    it('缓存失效:POST 后 invalidateUser 被调用', async () => {
-      const target = await createTargetUser('cache-invalidate-post');
-      // 预先 set cache
-      cache.set(target.id, new Set(['some.cached.code']));
-      expect(cache.get(target.id)).not.toBeNull();
-
+    it('DB-backed:POST 授予后目标 user 下一请求立即获得角色权限', async () => {
+      const target = await createTargetUser('db-visible-post');
       await request(httpServer(app))
         .post(`/api/system/v1/users/${target.id}/roles`)
         .set('Authorization', superAdminAuth)
         .send({ roleCode: 'role-a' });
 
-      expect(cache.get(target.id)).toBeNull();
+      const { authHeader } = await loginAs(app, 'ur-target-db-visible-post');
+      const res = await request(httpServer(app))
+        .get('/api/system/v1/rbac/me/permissions')
+        .set('Authorization', authHeader);
+      expect(res.status).toBe(200);
+      expect(res.body.data.permissions).toContain('test.user-role.immediate');
     });
   });
 
@@ -464,17 +470,23 @@ describe('user-roles 模块 + Q7 角色分级 + ops-admin 保护', () => {
       await deleteGlobalBindings(prisma, { userId: t2.id, roleId: opsAdminRoleId });
     });
 
-    it('缓存失效:DELETE 后 invalidateUser 被调用', async () => {
-      const target = await createTargetUser('cache-invalidate-delete');
+    it('DB-backed:DELETE 撤销后目标 user 下一请求立即失去角色权限', async () => {
+      const target = await createTargetUser('db-visible-delete');
       await grantGlobalBinding(prisma, target.id, bizRoleId);
-      cache.set(target.id, new Set(['some.cached.code']));
-      expect(cache.get(target.id)).not.toBeNull();
+      const { authHeader } = await loginAs(app, 'ur-target-db-visible-delete');
+      const before = await request(httpServer(app))
+        .get('/api/system/v1/rbac/me/permissions')
+        .set('Authorization', authHeader);
+      expect(before.body.data.permissions).toContain('test.user-role.immediate');
 
       await request(httpServer(app))
         .delete(`/api/system/v1/users/${target.id}/roles/${bizRoleId}`)
         .set('Authorization', superAdminAuth);
 
-      expect(cache.get(target.id)).toBeNull();
+      const after = await request(httpServer(app))
+        .get('/api/system/v1/rbac/me/permissions')
+        .set('Authorization', authHeader);
+      expect(after.body.data.permissions).not.toContain('test.user-role.immediate');
     });
   });
 });

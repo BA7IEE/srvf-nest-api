@@ -26,6 +26,8 @@ describe('organizations 模块', () => {
   let adminAuth: string;
   let adminDefaultAuth: string;
   let userAuth: string;
+  let adminUserId: string;
+  let opsAdminRoleId: string;
 
   let activeNodeTypeCode: string;
   let inactiveNodeTypeCode: string;
@@ -48,6 +50,8 @@ describe('organizations 模块', () => {
     // P0-F PR-2A:seed 33 条 RBAC + ops-admin;给 org-adm 全局 grant ops-admin
     const seed = await seedRbacPermissionsAndOpsAdmin(app);
     await grantOpsAdminToUser(app, admin.id, seed.opsAdminRoleId);
+    adminUserId = admin.id;
+    opsAdminRoleId = seed.opsAdminRoleId;
 
     // 准备 node_type 字典 + 1 ACTIVE / 1 INACTIVE item(供 nodeTypeCode 校验测试)
     const nodeType = await prisma.dictType.create({
@@ -798,6 +802,8 @@ describe('organizations 模块', () => {
     beforeAll(async () => {
       // 自包含(沿"closure + reparent"块范式):清空 Organization 重建单根 + 一个子节点。
       await prisma.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
+      // CASCADE 会截断引用 Organization 的整张 RoleBinding；DB-per-request 下需重建本组的 GLOBAL grant。
+      await grantOpsAdminToUser(app, adminUserId, opsAdminRoleId);
       rootId = await createNode('F1选择器根', undefined, 'F1ROOT');
       childId = await createNode('F1选择器子节点唯一名XYZ', rootId, 'F1CHILDXYZ');
     });

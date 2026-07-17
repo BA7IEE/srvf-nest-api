@@ -153,7 +153,7 @@ curl -X POST https://<API_HOST>/api/admin/v1/authz/explain \
 
 - [ ] `ATTENDANCE_ALLOW_SAME_REVIEWER`:留空 / 非 `'true'`(默认,推荐)= 禁止"一级审核人 == 终审人";若运营规模小、终审人手不足,可显式设 `'true'` 放开同人限制——**但自审限制(提交人 == 终审人)不受此开关影响,永远禁止,`SUPER_ADMIN` 也不例外**
 - [ ] **单一终审人风险**:若 §5 只建了一条绑定(如仅部长,无副部长备份),该人请假 / 离职 / 换届期间终审链会中断到只剩 `SUPER_ADMIN` 可用;建议至少两人(正副部长)同时持有 `attendance-final-reviewer` 绑定
-- [ ] `RBAC_CACHE_TTL_SECONDS`:仅影响 `GLOBAL` 角色走的老 `RbacService` 判权缓存(默认 1800s);§5 建的是 `POSITION_ASSIGNMENT` 主体的 scoped 绑定,`AuthzService` 目前不缓存判权结果,与此 env 无关
+- [ ] `RBAC_CACHE_TTL_SECONDS` 已退役:`GLOBAL` 角色走的 `RbacService` 每请求读取当前 DB 权限事实,写后无需 invalidate / reload;§5 建的 `POSITION_ASSIGNMENT` scoped 绑定也由 `AuthzService` 实时查询
 
 ## 8. 排错速查
 

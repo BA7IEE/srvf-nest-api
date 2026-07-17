@@ -6,13 +6,12 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditContext, AuditLogEvent, AuditMeta } from '../audit-logs/audit-logs.types';
 import { LastAdminProtectionPolicy } from './last-admin-protection.policy';
-import { RbacCacheService } from './rbac-cache.service';
 import { RbacService } from './rbac.service';
 import { RoleDelegationPolicy, type RoleDelegationTarget } from './role-delegation.policy';
 import { AssignUserRoleDto, UserRoleResponseDto } from './user-roles.dto';
 
 // V2.x C-6 RBAC 实施 PR #5:UserRole 模块业务逻辑。
-// 沿 D7 v1.1 §5.1 端点 12-14 + §6.2 Q7 角色分级 + §6.3 最后一个 ops-admin 保护 + §9.4 缓存失效 + 用户拍板。
+// 沿 D7 v1.1 §5.1 端点 12-14 + §6.2 Q7 角色分级 + §6.3 最后一个 ops-admin 保护 + 用户拍板。
 //
 // **终态 scoped-authz PR6(2026-07-01;冻结稿 §8.2 行为锁):内部换存储,对外契约零变。**
 // - 全部读 / 写从旧 `user_roles` 重指向 `RoleBinding(principalType=USER, scopeType=GLOBAL, status=ACTIVE)`
@@ -49,7 +48,6 @@ type UserRoleDelegationTarget = RoleDelegationTarget & {
 export class UserRolesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly cache: RbacCacheService,
     private readonly rbac: RbacService,
     private readonly roleDelegation: RoleDelegationPolicy,
     private readonly lastAdminProtection: LastAdminProtectionPolicy,
@@ -251,9 +249,6 @@ export class UserRolesService {
       return row;
     });
 
-    // 6. 缓存失效(沿 D7 §9.4):单用户 cache 自动失效
-    this.cache.invalidateUser(targetUserId);
-
     return {
       id: created.id,
       roleId: created.roleId,
@@ -319,9 +314,6 @@ export class UserRolesService {
         after: { status: BindingStatus.ENDED, endedAt: now },
         extra: { viaPath: 'user-role', operation: 'revoke', targetUserId },
       });
-
-      // 4e. 缓存失效(事务内更精确;沿 D7 §9.4)
-      this.cache.invalidateUser(targetUserId);
 
       return {
         id: existing.id,
