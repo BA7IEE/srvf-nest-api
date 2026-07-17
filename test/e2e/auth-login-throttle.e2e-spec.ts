@@ -7,7 +7,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-// V1.1 TASKS.md 15.7:登录接口限流(@nestjs/throttler 内存 storage)。
+// V1.1 TASKS.md 15.7:登录接口限流(@nestjs/throttler + PostgreSQL shared storage)。
 //
 // 关键约束验证:
 //   1. POST /api/auth/v1/login 触发限流后返回 BizCode.TOO_MANY_REQUESTS(HTTP 429)
@@ -24,15 +24,15 @@ import { createTestApp } from '../setup/test-app';
 //   process.env 把 LIMIT 调到 5,createTestApp 时 app.config 重新读取生效;
 //   afterAll 还原 process.env,不影响后续 spec(jest --runInBand 单进程顺序执行)。
 //
-// storage 隔离:每个 spec 走 createTestApp() 新建 NestApplication,
-//             ThrottlerStorageService 是 module scope,实例独立,跨 spec 不共享计数器。
+// storage 隔离:resetDb() 显式清 throttler_buckets，避免跨 spec 遗留配额；同一 spec
+//             内所有 it 复用同一 app/DB bucket，继续验证 block 累积语义。
 describe('POST /api/auth/v1/login throttling (V1.1 §15.7)', () => {
   let app: INestApplication;
   // 保存 .env.test 加载后的原值,afterAll 还原,避免跨 spec 污染。
   const originalLimit = process.env.LOGIN_THROTTLE_LIMIT;
   const originalTtl = process.env.LOGIN_THROTTLE_TTL_SECONDS;
 
-  // beforeAll 单次建 app + seed 用户;所有 it 顺序复用同一 app(共享 storage 计数器,
+  // beforeAll 单次建 app + seed 用户;所有 it 顺序复用同一 app(共享 PostgreSQL bucket,
   // 这正是限流场景所需——it 之间累计触发 block)。
   beforeAll(async () => {
     process.env.LOGIN_THROTTLE_LIMIT = '5';

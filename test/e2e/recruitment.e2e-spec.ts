@@ -3643,3 +3643,35 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     await expect(prisma.recruitmentApplication.create({ data: secondData })).resolves.toBeTruthy();
   });
 });
+
+// D-Throttle:补齐第 9 个命名实例的真实 owner endpoint 回归。
+describe('公开招新 recruitment throttler', () => {
+  let throttleApp: INestApplication;
+  const originalLimit = process.env.RECRUITMENT_THROTTLE_LIMIT;
+  const originalTtl = process.env.RECRUITMENT_THROTTLE_TTL_SECONDS;
+
+  beforeAll(async () => {
+    process.env.RECRUITMENT_THROTTLE_LIMIT = '1';
+    process.env.RECRUITMENT_THROTTLE_TTL_SECONDS = '60';
+    throttleApp = await createTestApp();
+    await resetDb(throttleApp);
+  });
+
+  afterAll(async () => {
+    await throttleApp.close();
+    if (originalLimit === undefined) delete process.env.RECRUITMENT_THROTTLE_LIMIT;
+    else process.env.RECRUITMENT_THROTTLE_LIMIT = originalLimit;
+    if (originalTtl === undefined) delete process.env.RECRUITMENT_THROTTLE_TTL_SECONDS;
+    else process.env.RECRUITMENT_THROTTLE_TTL_SECONDS = originalTtl;
+  });
+
+  it('publicity 同 IP 第 2 次命中 recruitment 42900 且不暴露限流头', async () => {
+    const first = await request(httpServer(throttleApp)).get('/api/open/v1/recruitment/publicity');
+    expect(first.status).toBe(200);
+
+    const second = await request(httpServer(throttleApp)).get('/api/open/v1/recruitment/publicity');
+    expectBizError(second, BizCode.TOO_MANY_REQUESTS);
+    expect(second.headers).not.toHaveProperty('retry-after');
+    expect(Object.keys(second.headers).join(',')).not.toMatch(/x-ratelimit/i);
+  });
+});

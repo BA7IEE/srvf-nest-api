@@ -351,3 +351,35 @@ describe('CMS 内容发布模块(第 28 模块)open/v1 公开读取面 e2e', () 
     });
   });
 });
+
+// D-Throttle:补齐第 10 个命名实例的真实 owner endpoint 回归。
+describe('公开内容 content-public throttler', () => {
+  let throttleApp: INestApplication;
+  const originalLimit = process.env.CONTENT_PUBLIC_THROTTLE_LIMIT;
+  const originalTtl = process.env.CONTENT_PUBLIC_THROTTLE_TTL_SECONDS;
+
+  beforeAll(async () => {
+    process.env.CONTENT_PUBLIC_THROTTLE_LIMIT = '1';
+    process.env.CONTENT_PUBLIC_THROTTLE_TTL_SECONDS = '60';
+    throttleApp = await createTestApp();
+    await resetDb(throttleApp);
+  });
+
+  afterAll(async () => {
+    await throttleApp.close();
+    if (originalLimit === undefined) delete process.env.CONTENT_PUBLIC_THROTTLE_LIMIT;
+    else process.env.CONTENT_PUBLIC_THROTTLE_LIMIT = originalLimit;
+    if (originalTtl === undefined) delete process.env.CONTENT_PUBLIC_THROTTLE_TTL_SECONDS;
+    else process.env.CONTENT_PUBLIC_THROTTLE_TTL_SECONDS = originalTtl;
+  });
+
+  it('列表同 IP 第 2 次命中 content-public 42900 且不暴露限流头', async () => {
+    const first = await request(httpServer(throttleApp)).get(OPEN_CONTENTS);
+    expect(first.status).toBe(200);
+
+    const second = await request(httpServer(throttleApp)).get(OPEN_CONTENTS);
+    expectBizError(second, BizCode.TOO_MANY_REQUESTS);
+    expect(second.headers).not.toHaveProperty('retry-after');
+    expect(Object.keys(second.headers).join(',')).not.toMatch(/x-ratelimit/i);
+  });
+});

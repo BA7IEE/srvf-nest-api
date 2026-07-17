@@ -58,9 +58,9 @@
 
 **禁止**缓存"该 user 当前是否 ACTIVE / 是否被软删 / 是否被禁用"这层身份有效性状态。`JwtStrategy.validate()` 必须每请求查库确认 `deletedAt === null && status === ACTIVE`,确保**禁用 / 删除用户能在下一次请求即时失效**。每请求查库是有意设计:主键索引 sub-millisecond 级,远不是瓶颈;换来"被禁用户即时失效"。升级条件见 `ARCHITECTURE.md` §9(用户校验耗时 >20% 或单表 QPS > 1000 才考虑 Redis 短 TTL 缓存)。
 
-### RBAC permission resolution cache(不缓存身份原则的唯一例外)
+### RBAC permission resolution 每请求直读 PostgreSQL
 
-[`RbacCacheService`](../../src/modules/permissions/rbac-cache.service.ts) 是 **`rbac.can()` 权限解析缓存**(`RolePermission` join 结果),**不**属于身份有效性状态缓存。约束:显式 TTL `RBAC_CACHE_TTL_SECONDS=1800`(从 [`app.config.ts`](../../src/config/app.config.ts) 注入,**禁止**硬编码);三档显式失效路径 `invalidateAll` / `invalidateUser` / `invalidateRole` 与 `RolePermission` / `RoleBinding`(终态 scoped-authz PR6 起取代旧 `UserRole` 表,已 DROP)/ `RbacRole` 变更 1:1 绑定;缓存层故障**保守降级**,不阻断 `rbac.can()` 主路径;**不**替代 `JwtStrategy.validate` 每请求查库;**不**引入 Redis / 外部 KV(沿 §1 B 档),当前实现为进程内 Map + TTL。
+[`RbacService`](../../src/modules/permissions/rbac.service.ts) 的 `getUserPermissionCodes()` / `can()` / `judge()` 每次按当前时刻读取在期 GLOBAL `RoleBinding → RolePermission → Permission`，不保留跨请求 Map / TTL，也不依赖提交后 invalidate 正确性链；多实例在 grant / revoke 提交后的下一次请求直接读取当前数据库事实。`POST /api/system/v1/rbac/reload` 仅兼容保留 all / user / role 三档输入校验与 `{ reloaded: true }` 响应，不再清理内部缓存状态。该行为同样不替代 `JwtStrategy.validate` 每请求查身份有效性；禁止恢复跨请求 permission cache 或引入 Redis / 外部 KV。
 
 
 ## 9. 密码处理铁律
@@ -84,7 +84,7 @@
 - **本人自助改密只能通过独立接口** `PUT /api/app/v1/me/password`(原 `/api/users/me/password` 于 v0.13.0 落地、Route B 终态迁至 App surface;行为冻结于 [P0-D 评审稿](../archive/reviews/first-release-p0d-change-my-password-review.md));**不得**在 `PATCH /api/app/v1/me/profile` 或其他资料更新接口里夹带"顺手改密码"逻辑;管理员重置他人密码接口 `PUT /api/admin/v1/users/:id/password` 契约保持不变
 - 本人改密接口入参固定 `ChangeMyPasswordDto { oldPassword, newPassword }`(`oldPassword` 必填,与管理员重置无 `oldPassword` 的语义对称区分);`newPassword` 沿 `ResetUserPasswordDto.newPassword` 范式(至少 8 位 + 数字 + 字母);严格白名单,**禁止**夹带 `username` / `email` / `role` / `status` / `passwordHash` / `id` 任何其他字段
 - 本人改密新增 BizCode:`OLD_PASSWORD_INVALID = 10005`(HTTP 401)、`NEW_PASSWORD_SAME_AS_OLD = 10006`(HTTP 400);**禁止**复用 `LOGIN_FAILED` 或 `BAD_REQUEST` 兜底语义
-- 本人改密接口必须挂 `@PasswordChangeThrottle()`(IP 5/60 秒;沿 §17 `@nestjs/throttler` 内存 storage,**禁止** Redis;limit / ttl 从 `src/config/app.config.ts` 注入,**禁止**硬编码在装饰器)
+- 本人改密接口必须挂 `@PasswordChangeThrottle()`(IP 5/60 秒;沿 §17 `@nestjs/throttler` PostgreSQL shared storage,**禁止** Redis / 本地 Map fallback;limit / ttl 从 `src/config/app.config.ts` 注入,**禁止**硬编码在装饰器)
 - 本人改密成功必须写 audit `AuditLogEvent.UserPasswordChangedSelf`;**禁止**把 `oldPassword` / `newPassword` / `passwordHash` 任何明文或 hash 写入 audit
 - 本人改密成功后**不主动吊销 access token**;**必须主动撤销该用户全部 refresh token**(详 §9 P0-E 联动撤销五场景);`tokenVersion` **不做**,沿 §1 B 档
 - 用户被 `DISABLED`(`PATCH /api/admin/v1/users/:id/status` → `DISABLED`)或被软删(`DELETE /api/admin/v1/users/:id`)时,**必须**主动撤销目标用户全部 refresh token(详 §9 P0-E 联动撤销五场景);access token 由 `JwtStrategy.validate` 每请求查库即时失效
@@ -127,6 +127,7 @@
 - e2e `users-change-my-password.e2e-spec.ts §7.5` "改密后旧 access token 仍可调 `/me`" 反向锁定断言**保留不破**
 
 **限流契约**:
+- 全部 10 个命名 throttler 共用 PostgreSQL storage，并以 `(throttlerName,key)` 唯一行物理隔离；保留包默认 IP tracker / hash key，DB/storage 异常 fail-closed 为 50000，绝不回退进程内 Map
 - `POST /api/auth/v1/refresh`:独立 throttler `'refresh'`,IP **30 次 / 60 秒**;装饰器 `@RefreshThrottle()`(纯 metadata,limit / ttl 在 `throttle-options.ts` 从 `app.config.ts` 注入)
 - `POST /api/auth/v1/logout`:**无限流**(刻意;避免攻击者吃光合法 logout 配额)
 - `POST /api/auth/v1/logout-all`:复用 `'password-change'` throttler(IP 5/60);沿"高危操作低频限流"语义
@@ -149,4 +150,3 @@
 - ❌ 完整 OAuth 2.0 / OIDC / refresh token tree / httpOnly cookie 传 refresh token(多端 Web + 小程序 + APP 统一 body 传)
 - ❌ 改 `LoginDto` / `JwtPayload` / `JwtStrategy` 查库字段(沿 v2-api-contract §6.5 + 本节铁律)
 - ❌ refresh token 失败码细分 / OAuth 第三方登录(微信小程序登录已于 2026-06-12 解锁为第三个独立认证端点,见 §8「登录」;其余第三方登录仍不做)
-
