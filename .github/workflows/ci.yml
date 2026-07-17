@@ -120,10 +120,12 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      # Harness 2.0(T0 §1.4):恒读层预算 + 事实计数守护。纯文件读取,秒级;
-      # 不挂 docs-only 条件 —— md 变更正是这两项守护的对象。
-      - name: Docs guards (readtax + counts)
-        run: pnpm docs:readtax:check && pnpm docs:counts:check
+      # Harness 2.0(T0 §1.4):恒读层预算 + 事实计数守护;第五轮 review R5-06 起
+      # codemap / rbacmap 两 checker 同挂(四守护全上 CI,与 docs/ai-harness/README §2
+      # 声明对齐)。四项均纯文件解析、无 DB 依赖,秒级;
+      # 不挂 docs-only 条件 —— md 变更正是这些守护的对象。
+      - name: Docs guards (readtax + counts + codemap + rbacmap)
+        run: pnpm docs:readtax:check && pnpm docs:counts:check && pnpm docs:codemap:check && pnpm docs:rbacmap:check
 
       # 显式跑 nest build,验证 tsconfig.build.json 与构建产物链路;
       # 防止"typecheck 通过但 build 失败"的隐性回归(例如 nest-cli 配置漂移、

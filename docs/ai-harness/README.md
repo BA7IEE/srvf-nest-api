@@ -1,13 +1,13 @@
 # docs/ai-harness/ — AI Harness 操作页
 
 > **性质**:derived 操作层,**非规则源**;规则入口 / 铁律速查 / 决策锁 / 触发即停全部在根 [`AGENTS.md`](../../AGENTS.md)(冲突时本页让步并回头修本页)。
-> 恒读三件套 = [`current-state.md`](../current-state.md) → 根 `AGENTS.md` → [`process.md §2/§3`](../process.md)。v1 版本冻结于 [`../archive/harness-v1/ai-harness-README.md`](../archive/harness-v1/ai-harness-README.md)。
+> 恒读三件套 = 根 [`AGENTS.md`](../../AGENTS.md) → [`current-state.md`](../current-state.md) → [`process.md §2/§3`](../process.md)(唯一权威表述在 AGENTS §0)。v1 版本冻结于 [`../archive/harness-v1/ai-harness-README.md`](../archive/harness-v1/ai-harness-README.md)。
 
 ## 1. 开工命令
 
 - **global**:`pnpm agent:preflight`(clean tree / 0 open PR / 未落后 origin/main 三硬判;**E 档收口必须用本形态**)
-- **lane**:`pnpm agent:preflight --lane`(open PR 降为清单研判,写集冲突由总控裁;协议全文 [`process §8`](../process.md))
-- fresh worktree 先 `pnpm install --frozen-lockfile && pnpm prisma:generate`;e2e 测试库按 worktree 自动派生(`app_test_<slug>`,主仓恒 `app_test`)
+- **lane**:`pnpm agent:preflight --lane <lane名>`(lane 名必填,无名 / 非法名 exit 1;open PR 降为清单研判,写集冲突由总控裁;检测到 bump 特征硬拒走 global;协议全文 [`process §8`](../process.md))
+- fresh worktree 先 `pnpm install --frozen-lockfile && pnpm prisma:generate`;e2e 测试库按 worktree 自动派生(`app_test_<slug>_<hash6>`,主仓恒 `app_test`)
 
 ## 2. 守护命令(全部挂 CI)
 

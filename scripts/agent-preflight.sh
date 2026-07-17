@@ -9,22 +9,70 @@
 #   2. 存在 open PR(gh pr list --state open 非空;lane 模式降为清单打印,见下)
 #   3. 落后 origin/main(git rev-list --count HEAD..origin/main > 0;
 #      基于上次 fetch 的本地 ref,本脚本刻意不 fetch)
+#   4. (仅 lane 模式)检测到 E 档 bump 特征:package.json 与
+#      src/bootstrap/apply-swagger.ts 同时脏/暂存 → 硬拒,release 收口必须 global
 # 其余咨询项(版本三方一致 / handoff / Unreleased)仍只读打印,人工研判,不在此硬判。
 #
-# lane 模式(Harness 2.0 T0 §1.4/d3:`--lane` 参数或 SRVF_LANE 非空触发):
+# lane 模式(Harness 2.0 T0 §1.4/d3;第五轮 review R5-08 起 lane 名必填):
+#   触发形态:`--lane <name>` / `--lane=<name>` / 环境变量 SRVF_LANE=<name>。
+#   lane 名必须显式且合法([A-Za-z0-9_-]、至少一个字母、不以 - 开头);无名、纯数字
+#   (如 0)或 false/no/off/none 等"疑似想关闭"的值 → exit 1,不猜意图、不静默回落
+#   global(任意非空值都进 lane 模式曾是 E 档 open-PR 闸的机械绕过面)。
 #   并行 lane 开工门禁 —— 条 1 / 条 3 仍硬判;条 2 降为打印 open PR 清单,由总控
 #   研判写集是否冲突,不 exit 1。global 模式(无参)行为与 v1 逐字一致;
-#   E 档 release 收口必须用 global 模式。
+#   E 档 release 收口必须用 global 模式(条 4 对 bump 特征双保险)。
 # gh 未登录 / 未安装、或 origin/main 不可解析时:对应硬判跳过(打印原因)而非误杀——
 # 沿"只读门禁不硬失败"约定。本门禁仅供本地 pre-work;CI 不调用本脚本
 # (open-PR 判定假设本地语境;若日后接入 PR 触发的 CI,需为该判定加 `[ -z "$CI" ]` 守卫)。
+# 参数/环境校验样例回归:scripts/agent-preflight.selftest.sh。
 
 set -euo pipefail
 
+usage_fail() {
+  printf '用法:pnpm agent:preflight [--lane <lane名>]\n✗ %s\n' "$1" >&2
+  exit 1
+}
+
+# 合法 lane 名:[A-Za-z0-9_-] 且含至少一个字母,不以 - 开头;拒 false/no/off/none
+is_valid_lane_name() {
+  case "$1" in
+    '' | -*) return 1 ;;
+  esac
+  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_-]*$' || return 1
+  printf '%s' "$1" | grep -q '[A-Za-z]' || return 1
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    false | no | off | none) return 1 ;;
+  esac
+  return 0
+}
+
 LANE_MODE=0
-if [ "${1:-}" = "--lane" ] || [ -n "${SRVF_LANE:-}" ]; then
+LANE_NAME=""
+case "${1:-}" in
+  '') : ;;
+  --lane)
+    LANE_MODE=1
+    LANE_NAME="${2:-${SRVF_LANE:-}}"
+    ;;
+  --lane=*)
+    LANE_MODE=1
+    LANE_NAME="${1#--lane=}"
+    ;;
+  *)
+    usage_fail "未知参数:$1"
+    ;;
+esac
+if [ "$LANE_MODE" -eq 0 ] && [ -n "${SRVF_LANE:-}" ]; then
   LANE_MODE=1
-  printf '(lane 模式:open-PR 不硬判,写集冲突由总控研判;E 档收口必须用 global 模式)\n'
+  LANE_NAME="$SRVF_LANE"
+fi
+
+if [ "$LANE_MODE" -eq 1 ] && ! is_valid_lane_name "$LANE_NAME"; then
+  usage_fail "lane 模式必须带显式 lane 名(R5-08):--lane <name> / --lane=<name> / SRVF_LANE=<name>;当前值 '${LANE_NAME}' 非法(空 / 纯数字 / false 类值不接受,也不静默回落 global —— 想跑 global 请去掉 --lane 并 unset SRVF_LANE)"
+fi
+
+if [ "$LANE_MODE" -eq 1 ]; then
+  printf '(lane 模式:lane=%s;open-PR 不硬判,写集冲突由总控研判;E 档收口必须用 global 模式)\n' "$LANE_NAME"
 fi
 
 section() {
@@ -89,6 +137,13 @@ fail() { GATE_FAIL=1; FAIL_MSG="${FAIL_MSG}  ✗ $1"$'\n'; }
 if [ -n "$WORKTREE_DIRTY" ]; then
   fail "工作树非 clean(git status --short 非空)→ 先 commit / stash / 与维护者对齐"
 fi
+if [ "$LANE_MODE" -eq 1 ] && [ -n "$WORKTREE_DIRTY" ]; then
+  # E 档 bump 特征:版本双源同时在改 = release 收口动作,lane 模式硬拒(R5-08)
+  if printf '%s\n' "$WORKTREE_DIRTY" | grep -Eq '[[:space:]]package\.json$' \
+    && printf '%s\n' "$WORKTREE_DIRTY" | grep -qF 'src/bootstrap/apply-swagger.ts'; then
+    fail "lane 模式检测到 E 档 bump 特征(package.json 与 src/bootstrap/apply-swagger.ts 同时脏/暂存)→ release 收口必须 global 模式(process §8.4)"
+  fi
+fi
 if [ "$GH_OK" -eq 1 ] && [ -n "$PR_OPEN" ]; then
   if [ "$LANE_MODE" -eq 1 ]; then
     echo "ℹ lane 模式:存在 open PR(清单见上)— 不硬判;写集冲突由总控研判"
@@ -103,7 +158,7 @@ fi
 if [ "$GATE_FAIL" -ne 0 ]; then
   echo "preflight 门禁未过:"
   printf '%s' "$FAIL_MSG"
-  echo "(global 模式硬判 工作树 / open-PR / 落后 origin/main 三条;lane 模式 open-PR 降为研判;其余咨询项见上,人工研判)"
+  echo "(global 模式硬判 工作树 / open-PR / 落后 origin/main 三条;lane 模式 open-PR 降为研判、另硬拒 bump 特征;其余咨询项见上,人工研判)"
   exit 1
 fi
 
