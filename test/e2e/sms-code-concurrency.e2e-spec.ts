@@ -5,7 +5,7 @@ import type { BizCodeEntry } from '../../src/common/exceptions/biz-code.constant
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { BizException } from '../../src/common/exceptions/biz.exception';
 import { PrismaService } from '../../src/database/prisma.service';
-import { acquireSmsIssueLocks, deriveSmsIssueLockKeys } from '../../src/modules/sms/sms-issue-lock';
+import { acquireSmsIssueLocks } from '../../src/modules/sms/sms-issue-lock';
 import { SmsCodeService } from '../../src/modules/sms/sms-code.service';
 import { SMS_DEV_STUB_FIXED_CODE } from '../../src/modules/sms/sms.constants';
 import { SmsProviderRouter } from '../../src/modules/sms/sms-provider.router';
@@ -74,10 +74,11 @@ async function observeBlockedByBackend(
   throw new Error('timed out waiting for SMS issue advisory-lock contention');
 }
 
-function lockPair(key: bigint): string {
-  const unsigned = BigInt.asUintN(64, key);
-  return `${unsigned >> 32n}:${unsigned & 0xffffffffn}`;
-}
+const ISSUE_LOCK_GOLDEN = {
+  phone: '13600000006',
+  purpose: SmsPurpose.PHONE_BIND,
+  pgLockPairs: ['3987168973:3412456034', '115422025:3791586783'],
+} as const;
 
 describe('SMS issue / consume PostgreSQL concurrency', () => {
   let app: INestApplication;
@@ -273,24 +274,40 @@ describe('SMS issue / consume PostgreSQL concurrency', () => {
     expect(sendSpy).toHaveBeenCalledTimes(2);
   });
 
-  it('pg_locks 显示稳定 64-bit phone + phone-purpose 两把 xact lock', async () => {
-    const phone = '13600000006';
-    const keys = deriveSmsIssueLockKeys(phone, SmsPurpose.PHONE_BIND);
-    const held = await prisma.$transaction(async (tx) => {
-      await acquireSmsIssueLocks(tx, phone, SmsPurpose.PHONE_BIND);
-      return tx.$queryRaw<Array<{ classId: bigint; objectId: bigint }>>`
+  it('pg_locks 锁定独立 golden pair，且 transaction advisory lock 随 commit 释放', async () => {
+    const { holderPid, held } = await prisma.$transaction(async (tx) => {
+      await acquireSmsIssueLocks(tx, ISSUE_LOCK_GOLDEN.phone, ISSUE_LOCK_GOLDEN.purpose);
+      const [backend] = await tx.$queryRaw<Array<{ pid: number }>>`
+        SELECT pg_backend_pid() AS pid
+      `;
+      const locks = await tx.$queryRaw<Array<{ classId: bigint; objectId: bigint }>>`
         SELECT classid::bigint AS "classId", objid::bigint AS "objectId"
         FROM pg_locks
         WHERE locktype = 'advisory'
           AND pid = pg_backend_pid()
           AND granted = true
       `;
+      return { holderPid: backend.pid, held: locks };
     });
 
-    // 与 unit 的精确调用序断言合在一起，杀死删任一锁或反序加锁变异。
+    // expected 不调用 production derive：杀死 namespace / hash / key 漂移与删任一锁变异。
     expect(held.map(({ classId, objectId }) => `${classId}:${objectId}`).sort()).toEqual(
-      [lockPair(keys.phone), lockPair(keys.phonePurpose)].sort(),
+      [...ISSUE_LOCK_GOLDEN.pgLockPairs].sort(),
     );
+
+    const [postCommit] = await prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT count(*)::integer AS count
+      FROM pg_locks
+      WHERE locktype = 'advisory'
+        AND pid = CAST(${holderPid} AS integer)
+        AND granted = true
+        AND (
+          (classid::bigint = 3987168973 AND objid::bigint = 3412456034)
+          OR (classid::bigint = 115422025 AND objid::bigint = 3791586783)
+        )
+    `;
+    // 杀死 pg_advisory_xact_lock -> pg_advisory_lock：session lock 在 commit 后仍会残留。
+    expect(postCommit.count).toBe(0);
   });
 
   it('verifyAndConsume 真并发：两边都读到同一 active code，consumedAt CAS 仍仅一赢家', async () => {
