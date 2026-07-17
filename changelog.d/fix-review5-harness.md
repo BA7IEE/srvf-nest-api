@@ -1,4 +1,4 @@
-### Fixed(第五轮 review · Harness 机器层六连 R5-02/03/04/05/06/08)
+### Fixed(第五轮 review · Harness 机器层六连 R5-02/03/04/05/06/08,#676)
 
 - `docs:counts` 九提取器由词法 regex 改 TypeScript AST 真源计数:注释 / 字符串 / 模板字面量中的形似代码不再误计,`@Controller (` / 同行 union / 双引号字面量等合法书写不再漏计;`EXPECTED_ROUTES` 含 spread 时显式报错不静默漏计;权限码新增与 `check-rbac-map` 镜像正则的双口径交叉校验,分歧 exit 2;九项计数现值不变(R5-02)
 - **行为变更** `pnpm changelog:merge` 新增 fragment 拒收清单:非 UTF-8 / 空或纯空白 / 含一级或二级 heading(fragment 只允许 `###` 及以下,code fence 内不算)→ exit 1 且 CHANGELOG 与 changelog.d/ 均不动;先写 CHANGELOG 成功后才删源,任何失败不删(R5-03)
