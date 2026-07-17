@@ -20,6 +20,7 @@ import {
   buildReparentEdgesToInsert,
   isReparentCycle,
 } from './organization-closure.util';
+import { runOrganizationTopologyTransaction } from './organization-topology-transaction';
 import {
   CreateOrganizationDto,
   ListOrganizationsQueryDto,
@@ -286,7 +287,7 @@ export class OrganizationsService {
     await this.assertCanOrThrow(user, 'org.create.node');
     try {
       return await this.runCodeUniqueGuard(() =>
-        this.prisma.$transaction(async (tx) => {
+        runOrganizationTopologyTransaction(this.prisma, async (tx) => {
           // 1. nodeTypeCode 必须有效(6 项 AND 校验)
           await this.assertNodeTypeCodeValid(dto.nodeTypeCode, tx);
 
@@ -378,7 +379,7 @@ export class OrganizationsService {
   ): Promise<OrganizationResponseDto> {
     await this.assertCanOrThrow(user, 'org.update.node');
     return this.runCodeUniqueGuard(() =>
-      this.prisma.$transaction(async (tx) => {
+      runOrganizationTopologyTransaction(this.prisma, async (tx) => {
         await this.findOrganizationOrThrow(id, tx);
 
         if (dto.nodeTypeCode !== undefined) {
@@ -414,7 +415,7 @@ export class OrganizationsService {
     meta: AuditMeta,
   ): Promise<OrganizationResponseDto> {
     await this.assertCanOrThrow(user, 'org.update.node');
-    return this.prisma.$transaction(async (tx) => {
+    return runOrganizationTopologyTransaction(this.prisma, async (tx) => {
       const target = await this.findOrganizationOrThrow(id, tx);
 
       // last-root 保护:目标是根节点 + 改成 INACTIVE
@@ -458,7 +459,7 @@ export class OrganizationsService {
     meta: AuditMeta,
   ): Promise<OrganizationResponseDto> {
     await this.assertCanOrThrow(user, 'org.move.node');
-    return this.prisma.$transaction(async (tx) => {
+    return runOrganizationTopologyTransaction(this.prisma, async (tx) => {
       const target = await this.findOrganizationOrThrow(id, tx);
 
       // 受限位置:根节点父级不可改(移根 = 破坏单根结构)。
@@ -552,7 +553,7 @@ export class OrganizationsService {
     meta: AuditMeta,
   ): Promise<OrganizationResponseDto> {
     await this.assertCanOrThrow(user, 'org.delete.node');
-    return this.prisma.$transaction(async (tx) => {
+    return runOrganizationTopologyTransaction(this.prisma, async (tx) => {
       const target = await this.findOrganizationOrThrow(id, tx);
 
       const [childCount, memberCount] = await Promise.all([
