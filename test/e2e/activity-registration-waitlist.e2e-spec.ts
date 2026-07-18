@@ -66,7 +66,8 @@ interface RegistrationCreateTestHooks {
   resolveCreateStatusCode: (
     activityId: string,
     activityPositionId: string | null,
-    capacity: number | null,
+    activityCapacity: number | null,
+    activityPositionCapacity: number | null,
     tx: Prisma.TransactionClient,
   ) => Promise<'pending' | 'waitlisted'>;
   resolveActivityPositionForCreate: (
@@ -511,6 +512,100 @@ describe('activity registration waitlist', () => {
     );
   });
 
+  it('全局满员时 A pass 取消且 A 无候补 → 跨岗 fallback 递补 B 队首', async () => {
+    const activityId = await createActivity(1, 'activity-position-cancel-cross-fallback');
+    const activityPositionAId = await createActivityPosition(activityId, 1, '跨岗取消-A');
+    const activityPositionBId = await createActivityPosition(activityId, 1, '跨岗取消-B');
+    const passA = await seedRegistration(
+      activityId,
+      await createMember('cross-fallback-pass-a'),
+      'pass',
+      undefined,
+      activityPositionAId,
+    );
+    const waitB = await seedRegistration(
+      activityId,
+      await createMember('cross-fallback-wait-b'),
+      'waitlisted',
+      new Date('2026-07-16T00:00:00.000Z'),
+      activityPositionBId,
+    );
+
+    await registrations.cancelAdmin(activityId, passA.id, {}, admin, AUDIT_META);
+
+    expect(
+      await prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: waitB.id },
+        select: { statusCode: true },
+      }),
+    ).toEqual({ statusCode: 'pending' });
+  });
+
+  it('父容量 1→2 增加全局 headroom → 跨岗位 FIFO 递补 B 候补', async () => {
+    const activityId = await createActivity(1, 'activity-parent-capacity-cross-promotion');
+    const activityPositionAId = await createActivityPosition(activityId, 1, '父扩容-A');
+    const activityPositionBId = await createActivityPosition(activityId, 1, '父扩容-B');
+    await seedRegistration(
+      activityId,
+      await createMember('parent-capacity-pass-a'),
+      'pass',
+      undefined,
+      activityPositionAId,
+    );
+    const waitB = await seedRegistration(
+      activityId,
+      await createMember('parent-capacity-wait-b'),
+      'waitlisted',
+      new Date('2026-07-16T00:00:00.000Z'),
+      activityPositionBId,
+    );
+
+    await activities.update(activityId, { capacity: 2 }, admin, AUDIT_META);
+
+    expect(
+      await prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: waitB.id },
+        select: { statusCode: true },
+      }),
+    ).toEqual({ statusCode: 'pending' });
+  });
+
+  it('跨岗位 fallback 遇 child 已满 → 不错误递补该岗位候补', async () => {
+    const activityId = await createActivity(2, 'activity-position-child-full-fallback');
+    const activityPositionAId = await createActivityPosition(activityId, 1, 'child-full-A');
+    const activityPositionBId = await createActivityPosition(activityId, 1, 'child-full-B');
+    const passA = await seedRegistration(
+      activityId,
+      await createMember('child-full-pass-a'),
+      'pass',
+      undefined,
+      activityPositionAId,
+    );
+    await seedRegistration(
+      activityId,
+      await createMember('child-full-pass-b'),
+      'pass',
+      undefined,
+      activityPositionBId,
+    );
+    const waitB = await seedRegistration(
+      activityId,
+      await createMember('child-full-wait-b'),
+      'waitlisted',
+      new Date('2026-07-16T00:00:00.000Z'),
+      activityPositionBId,
+    );
+
+    await registrations.cancelAdmin(activityId, passA.id, {}, admin, AUDIT_META);
+
+    expect(
+      await prisma.activityRegistration.findUniqueOrThrow({
+        where: { id: waitB.id },
+        select: { statusCode: true },
+      }),
+    ).toEqual({ statusCode: 'waitlisted' });
+  });
+
   it('同岗位并发 approve 由 Activity 锁串行化，pass 不超过岗位 capacity', async () => {
     const activityId = await createActivity(99, 'activity-position-concurrent-approve');
     const activityPositionId = await createActivityPosition(activityId, 1, '并发审批');
@@ -585,7 +680,7 @@ describe('activity registration waitlist', () => {
     ).toBe(1);
   });
 
-  it('岗位 capacity 并发同值调大只按锁后真实 delta 递补；Activity capacity update 不递补', async () => {
+  it('岗位扩容先受活动总容量约束；总容量扩容不递补，随后岗位并发扩容只按锁后真实 delta 递补', async () => {
     const activityId = await createActivity(1, 'activity-position-concurrent-capacity');
     const activityPositionId = await createActivityPosition(activityId, 1, '并发扩容');
     await seedRegistration(
@@ -606,6 +701,16 @@ describe('activity registration waitlist', () => {
         ),
       ),
     );
+
+    await expect(
+      activityPositions.update(activityId, activityPositionId, { capacity: 3 }, admin, AUDIT_META),
+    ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_POSITION_CAPACITY_INVALID });
+    await activities.update(activityId, { capacity: 3 }, admin, AUDIT_META);
+    expect(
+      await prisma.activityRegistration.count({
+        where: { id: { in: queue.map((item) => item.id) }, statusCode: 'pending' },
+      }),
+    ).toBe(0);
 
     await Promise.allSettled([
       activityPositions.update(activityId, activityPositionId, { capacity: 3 }, admin, AUDIT_META),

@@ -9,11 +9,39 @@ export function deriveEffectiveActivityCapacity(
   activityPositions: readonly ActivityCapacityPositionInput[],
 ): number | null {
   if (activityPositions.length === 0) return activityCapacity;
-  if (activityPositions.some((activityPosition) => activityPosition.capacity === null)) {
-    return null;
-  }
-  return activityPositions.reduce(
-    (total, activityPosition) => total + (activityPosition.capacity ?? 0),
-    0,
-  );
+  const positionCapacity = activityPositions.some(
+    (activityPosition) => activityPosition.capacity === null,
+  )
+    ? null
+    : activityPositions.reduce(
+        (total, activityPosition) => total + (activityPosition.capacity ?? 0),
+        0,
+      );
+  if (activityCapacity === null) return positionCapacity;
+  if (positionCapacity === null) return activityCapacity;
+  return Math.min(activityCapacity, positionCapacity);
+}
+
+export interface ActivityCapacityAdmissionInput {
+  activityCapacity: number | null;
+  activityPassCount: number;
+  activityPositionCapacity: number | null;
+  activityPositionPassCount: number;
+}
+
+// Activity.capacity 始终是聚合硬上限；岗位 capacity 只会进一步收紧，不能替代父上限。
+export function hasActivityCapacity(input: ActivityCapacityAdmissionInput): boolean {
+  const activityHasRoom =
+    input.activityCapacity === null || input.activityPassCount < input.activityCapacity;
+  const activityPositionHasRoom =
+    input.activityPositionCapacity === null ||
+    input.activityPositionPassCount < input.activityPositionCapacity;
+  return activityHasRoom && activityPositionHasRoom;
+}
+
+export function getActivityCapacityHeadroom(
+  activityCapacity: number | null,
+  activityPassCount: number,
+): number | null {
+  return activityCapacity === null ? null : Math.max(activityCapacity - activityPassCount, 0);
 }

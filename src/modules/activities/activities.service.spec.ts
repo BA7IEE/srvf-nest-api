@@ -182,12 +182,14 @@ function makePrismaMock() {
     count: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
   };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
+  const $queryRaw = jest.fn().mockResolvedValue([{ id: 'act-1' }]);
   const prisma = {
     activity,
     dictItem,
     organization,
     activityRegistration,
     attendanceSheet,
+    $queryRaw,
     $transaction,
   };
   // 双模:回调式把 prisma mock 自身当 tx 传入(service 在 tx 与 this.prisma 上调同名方法);
@@ -789,7 +791,13 @@ describe('ActivitiesService (characterization)', () => {
       const recorder = makeRecorderMock();
       const dispatcher = makeNotificationDispatcherMock();
       const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'completed' });
-      prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ statusCode: 'published' }));
+      prisma.activity.findFirst.mockResolvedValue(
+        makeActivityRow({
+          statusCode: 'published',
+          startAt: new Date('2020-01-01T00:00:00.000Z'),
+          endAt: new Date('2020-01-02T00:00:00.000Z'),
+        }),
+      );
       prisma.activity.update.mockResolvedValue(makeActivityRow({ statusCode: 'completed' }));
       const service = makeService(prisma, { stateMachine, recorder, dispatcher });
 

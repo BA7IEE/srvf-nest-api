@@ -48,8 +48,12 @@ type ActivityPositionFixture = ReturnType<typeof activityPositionRow>;
 function makeMocks() {
   const prisma = {
     activity: {
-      findFirst: jest.fn().mockResolvedValue({ id: ACTIVITY_ID, startAt: START, endAt: END }),
-      findUnique: jest.fn().mockResolvedValue({ id: ACTIVITY_ID, startAt: START, endAt: END }),
+      findFirst: jest
+        .fn()
+        .mockResolvedValue({ id: ACTIVITY_ID, startAt: START, endAt: END, capacity: null }),
+      findUnique: jest
+        .fn()
+        .mockResolvedValue({ id: ACTIVITY_ID, startAt: START, endAt: END, capacity: null }),
     },
     activityPosition: {
       findMany: jest.fn<Promise<ActivityPositionFixture[]>, [unknown]>().mockResolvedValue([]),
@@ -102,7 +106,7 @@ describe('ActivityPositionsService', () => {
     expect(result).toHaveLength(1);
     expect(prisma.activity.findFirst).toHaveBeenCalledWith({
       where: { id: ACTIVITY_ID, deletedAt: null },
-      select: { id: true, startAt: true, endAt: true },
+      select: { id: true, startAt: true, endAt: true, capacity: true },
     });
     expect(prisma.activityPosition.findMany).toHaveBeenCalledWith(
       expect.objectContaining({

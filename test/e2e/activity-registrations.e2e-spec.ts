@@ -451,6 +451,15 @@ describe('activity-registrations 模块', () => {
       expect(regRes.status).toBe(201);
       const regId = regRes.body.data.id as string;
 
+      // pending 已创建后模拟活动自然跨过 endAt，再验证显式完结与后续审批闸。
+      await prisma.activity.update({
+        where: { id },
+        data: {
+          startAt: new Date('2020-01-01T08:00:00.000Z'),
+          endAt: new Date('2020-01-01T12:00:00.000Z'),
+        },
+      });
+
       // 经 complete 端点完结活动(published → completed)。
       const completeRes = await request(httpServer(app))
         .post(`/api/admin/v1/activities/${id}/complete`)
@@ -647,6 +656,58 @@ describe('activity-registrations 模块', () => {
         where: { activityId: id, statusCode: 'pass', deletedAt: null },
       });
       expect(passCount).toBe(1);
+    });
+
+    it('总容量=1、两个岗位各容量=1，并发跨岗位 approve → 恰一条 pass（杀死岗位子上限架空总上限）', async () => {
+      const id = await createActivityHelper({
+        title: 'CAP-POSITION-GLOBAL-CONCURRENT',
+        isPublicRegistration: true,
+        capacity: 1,
+        publish: true,
+      });
+      const [positionA, positionB] = await Promise.all([
+        prisma.activityPosition.create({
+          data: { activityId: id, name: '岗位A', attendanceRoleCode: 'member', capacity: 1 },
+          select: { id: true },
+        }),
+        prisma.activityPosition.create({
+          data: { activityId: id, name: '岗位B', attendanceRoleCode: 'member', capacity: 1 },
+          select: { id: true },
+        }),
+      ]);
+      const [r1, r2] = await Promise.all([
+        request(httpServer(app))
+          .post(`/api/admin/v1/activities/${id}/registrations`)
+          .set('Authorization', adminAuth)
+          .send({ memberId: memberCId, activityPositionId: positionA.id }),
+        request(httpServer(app))
+          .post(`/api/admin/v1/activities/${id}/registrations`)
+          .set('Authorization', adminAuth)
+          .send({ memberId: memberDId, activityPositionId: positionB.id }),
+      ]);
+      expect(r1.status).toBe(201);
+      expect(r2.status).toBe(201);
+
+      const approvals = await Promise.all([
+        request(httpServer(app))
+          .patch(`/api/admin/v1/activities/${id}/registrations/${r1.body.data.id}/approve`)
+          .set('Authorization', adminAuth)
+          .send({}),
+        request(httpServer(app))
+          .patch(`/api/admin/v1/activities/${id}/registrations/${r2.body.data.id}/approve`)
+          .set('Authorization', adminAuth)
+          .send({}),
+      ]);
+      expect(approvals.filter((response) => response.status === 200)).toHaveLength(1);
+      const rejected = approvals.find((response) => response.status !== 200);
+      expect(rejected).toBeDefined();
+      if (rejected === undefined) throw new Error('expected one rejected approval');
+      expectBizError(rejected, BizCode.ACTIVITY_CAPACITY_EXCEEDED);
+      expect(
+        await prisma.activityRegistration.count({
+          where: { activityId: id, statusCode: 'pass', deletedAt: null },
+        }),
+      ).toBe(1);
     });
   });
 

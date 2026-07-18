@@ -1,13 +1,22 @@
 import { Role } from '@prisma/client';
 import type { AuditLogInput } from '../audit-logs/audit-logs.service';
-import { promoteActivityWaitlist } from './activity-waitlist-promotion';
+import {
+  promoteActivityWaitlist,
+  promoteActivityWaitlistAcrossPositions,
+} from './activity-waitlist-promotion';
 
 const registeredAt = new Date('2026-07-15T00:00:00.000Z');
 
-function row(id: string, memberId: string, statusCode = 'waitlisted') {
+function row(
+  id: string,
+  memberId: string,
+  statusCode = 'waitlisted',
+  activityPositionId: string | null = null,
+) {
   return {
     id,
     activityId: 'activity-1',
+    activityPositionId,
     memberId,
     statusCode,
     registeredAt,
@@ -28,7 +37,9 @@ describe('promoteActivityWaitlist', () => {
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'activity-1' }]),
       activity: {
-        findFirst: jest.fn().mockResolvedValue({ title: '演练', statusCode: 'published' }),
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ title: '演练', statusCode: 'published', capacity: 2 }),
       },
       activityRegistration: {
         findFirst: jest.fn().mockResolvedValueOnce(r1).mockResolvedValueOnce(r2),
@@ -104,5 +115,57 @@ describe('promoteActivityWaitlist', () => {
     ).resolves.toEqual({ activityTitle: '演练', promoted: [] });
     expect(tx.activityRegistration.findFirst).not.toHaveBeenCalled();
     expect(auditLogs.log).not.toHaveBeenCalled();
+  });
+
+  it('同岗无候补时跨岗 fallback，并跳过 child 已满岗位', async () => {
+    const waitB = row('r-b', 'm-b', 'waitlisted', 'position-b');
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'activity-1' }]),
+      activity: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ title: '演练', statusCode: 'published', capacity: 2 }),
+      },
+      activityPosition: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'position-a', capacity: 1 },
+          { id: 'position-b', capacity: 1 },
+          { id: 'position-full', capacity: 1 },
+        ]),
+      },
+      activityRegistration: {
+        groupBy: jest.fn().mockResolvedValue([
+          { activityPositionId: 'position-full', _count: { _all: 1 } },
+        ]),
+        count: jest.fn().mockResolvedValue(0),
+        findFirst: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(waitB),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        update: jest.fn().mockResolvedValue({ ...waitB, statusCode: 'pending' }),
+      },
+    };
+    const auditLogs = {
+      log: jest.fn<Promise<void>, [AuditLogInput]>().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      promoteActivityWaitlistAcrossPositions({
+        activityId: 'activity-1',
+        preferredActivityPositionId: 'position-a',
+        maxPromotions: 1,
+        actorUserId: 'user-1',
+        actorRoleSnap: Role.ADMIN,
+        auditMeta: { requestId: 'req-1', ip: '127.0.0.1', ua: 'jest' },
+        tx: tx as never,
+        auditLogs,
+      }),
+    ).resolves.toEqual({
+      activityTitle: '演练',
+      promoted: [{ registrationId: 'r-b', memberId: 'm-b' }],
+    });
+    const globalWhere = tx.activityRegistration.findFirst.mock.calls[1][0].where;
+    expect(globalWhere.OR).toEqual([
+      { activityPositionId: null },
+      { activityPositionId: { in: ['position-a', 'position-b'] } },
+    ]);
   });
 });

@@ -15,6 +15,7 @@ import {
 import { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import { RbacService } from '../permissions/rbac.service';
 import { ActivityPositionAuditRecorder } from './activity-position-audit-recorder';
+import { getActivityCapacityHeadroom } from './activity-capacity';
 import {
   ActivityPositionResponseDto,
   CreateActivityPositionDto,
@@ -51,6 +52,7 @@ interface ActivityWindow {
   id: string;
   startAt: Date;
   endAt: Date;
+  capacity: number | null;
 }
 
 @Injectable()
@@ -123,6 +125,12 @@ export class ActivityPositionsService {
         const endAt = this.toNullableDate(dto.endAt);
         this.assertTimeRangeValid(activity, startAt, endAt);
         this.assertCapacityValid(dto.capacity ?? null);
+        await this.assertPositionCapacityWithinActivity(
+          tx,
+          activityId,
+          activity.capacity,
+          dto.capacity ?? null,
+        );
 
         const activityPosition = await tx.activityPosition.create({
           data: {
@@ -199,6 +207,13 @@ export class ActivityPositionsService {
 
         if (dto.capacity !== undefined) {
           this.assertCapacityValid(dto.capacity);
+          await this.assertPositionCapacityWithinActivity(
+            tx,
+            activityId,
+            activity.capacity,
+            dto.capacity,
+            activityPositionId,
+          );
           const passCount = await tx.activityRegistration.count({
             where: {
               activityId,
@@ -216,6 +231,19 @@ export class ActivityPositionsService {
             } else if (dto.capacity > current.capacity) {
               waitlistPromotionLimit = dto.capacity - current.capacity;
             }
+          }
+          const activityPassCount = await tx.activityRegistration.count({
+            where: { activityId, statusCode: 'pass', deletedAt: null },
+          });
+          const activityHeadroom = getActivityCapacityHeadroom(
+            activity.capacity,
+            activityPassCount,
+          );
+          if (activityHeadroom !== null && waitlistPromotionLimit !== undefined) {
+            waitlistPromotionLimit =
+              waitlistPromotionLimit === null
+                ? activityHeadroom
+                : Math.min(waitlistPromotionLimit, activityHeadroom);
           }
         }
 
@@ -343,7 +371,7 @@ export class ActivityPositionsService {
   ): Promise<ActivityWindow> {
     const activity = await client.activity.findFirst({
       where: { id: activityId, deletedAt: null },
-      select: { id: true, startAt: true, endAt: true },
+      select: { id: true, startAt: true, endAt: true, capacity: true },
     });
     if (activity === null) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     return activity;
@@ -358,10 +386,40 @@ export class ActivityPositionsService {
     if (locked.length === 0) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     const activity = await tx.activity.findUnique({
       where: { id: activityId },
-      select: { id: true, startAt: true, endAt: true },
+      select: { id: true, startAt: true, endAt: true, capacity: true },
     });
     if (activity === null) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     return activity;
+  }
+
+  private async assertPositionCapacityWithinActivity(
+    tx: PrismaTx,
+    activityId: string,
+    activityCapacity: number | null,
+    nextCapacity: number | null,
+    excludedActivityPositionId?: string,
+  ): Promise<void> {
+    if (activityCapacity === null) return;
+    const siblings = await tx.activityPosition.findMany({
+      where: {
+        activityId,
+        deletedAt: null,
+        ...(excludedActivityPositionId === undefined
+          ? {}
+          : { id: { not: excludedActivityPositionId } }),
+      },
+      select: { capacity: true },
+    });
+    if (nextCapacity === null || siblings.some((sibling) => sibling.capacity === null)) {
+      throw new BizException(BizCode.ACTIVITY_POSITION_CAPACITY_INVALID);
+    }
+    const positionCapacityTotal = siblings.reduce(
+      (total, sibling) => total + (sibling.capacity ?? 0),
+      nextCapacity,
+    );
+    if (positionCapacityTotal > activityCapacity) {
+      throw new BizException(BizCode.ACTIVITY_POSITION_CAPACITY_INVALID);
+    }
   }
 
   private async findActivityPositionOrThrow(
