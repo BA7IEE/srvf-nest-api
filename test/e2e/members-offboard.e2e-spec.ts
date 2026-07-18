@@ -388,5 +388,59 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
       });
       expect(revoked.status).toBe(SupervisionStatus.REVOKED);
     });
+
+    it('真并发:offboard vs enable 不得留下 Member INACTIVE + User ACTIVE', async () => {
+      const m = await newMember();
+      const userId = await grantAccount(m.id, '13800009301');
+      await prisma.user.update({ where: { id: userId }, data: { status: UserStatus.DISABLED } });
+
+      const [offboardRes, enableRes] = await Promise.all([
+        offboard(m.id, bizAdminAuth),
+        request(httpServer(app))
+          .patch(`/api/admin/v1/members/${m.id}/account/status`)
+          .set('Authorization', superAdminAuth)
+          .send({ status: UserStatus.ACTIVE }),
+      ]);
+
+      expect(offboardRes.status).toBe(201);
+      expect([200, 409]).toContain(enableRes.status);
+      const [member, user] = await Promise.all([
+        prisma.member.findUniqueOrThrow({ where: { id: m.id } }),
+        prisma.user.findUniqueOrThrow({ where: { id: userId } }),
+      ]);
+      expect(member.status).toBe(MemberStatus.INACTIVE);
+      expect(user.status).toBe(UserStatus.DISABLED);
+    });
+
+    it('真并发:offboard vs MEMBER direct-binding create 不得留下 active authz source', async () => {
+      const m = await newMember();
+
+      const [offboardRes, createRes] = await Promise.all([
+        offboard(m.id, bizAdminAuth),
+        request(httpServer(app))
+          .post('/api/admin/v1/role-bindings')
+          .set('Authorization', superAdminAuth)
+          .send({
+            principalType: PrincipalType.MEMBER,
+            principalId: m.id,
+            roleId: bizAdminRoleId,
+            scopeType: BindingScopeType.GLOBAL,
+          }),
+      ]);
+
+      expect(offboardRes.status).toBe(201);
+      expect([201, 409]).toContain(createRes.status);
+      const member = await prisma.member.findUniqueOrThrow({ where: { id: m.id } });
+      expect(member.status).toBe(MemberStatus.INACTIVE);
+      const activeBindings = await prisma.roleBinding.count({
+        where: {
+          principalType: PrincipalType.MEMBER,
+          principalId: m.id,
+          status: BindingStatus.ACTIVE,
+          deletedAt: null,
+        },
+      });
+      expect(activeBindings).toBe(0);
+    });
   });
 });
