@@ -10,6 +10,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { lockMemberLifecycle } from '../members/member-lifecycle-lock';
+import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 import { RbacService } from '../permissions/rbac.service';
 import {
   CreatePositionAssignmentDto,
@@ -218,9 +219,8 @@ export class PositionAssignmentsService {
           const scopeOrgIds = ancestorRows.map((r) => r.ancestorId);
           const membership = await tx.memberOrganizationMembership.findFirst({
             where: {
+              ...MembershipTermStateMachine.effectiveWhere(new Date()),
               memberId: dto.memberId,
-              status: 'ACTIVE',
-              deletedAt: null,
               organizationId: { in: scopeOrgIds },
             },
             select: { id: true },
@@ -580,9 +580,8 @@ export class PositionAssignmentsService {
       });
       const membership = await this.prisma.memberOrganizationMembership.findFirst({
         where: {
+          ...MembershipTermStateMachine.effectiveWhere(new Date()),
           memberId: dto.memberId,
-          status: 'ACTIVE',
-          deletedAt: null,
           organizationId: { in: ancestorRows.map((r) => r.ancestorId) },
         },
         select: { id: true },

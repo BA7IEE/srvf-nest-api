@@ -17,6 +17,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { MemberOptionsResponseDto } from '../members/members.dto';
 import { MembersService } from '../members/members.service';
+import { lockMemberLifecycle } from '../members/member-lifecycle-lock';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
 import {
@@ -34,6 +35,7 @@ import {
   TransferMembershipDto,
   UpdateMembershipDto,
 } from './memberships.dto';
+import { MembershipTermStateMachine } from './membership-term-state-machine';
 
 // 终态 scoped-authz PR2(2026-07-01;冻结稿 §3.1 / §7.1):组织归属(memberships)管理面。
 // 沿队员轴嵌套 admin/v1/members/:memberId/memberships;判权单轨 service 层 rbac.can(0 @Roles)。
@@ -151,6 +153,7 @@ export class MembershipsService {
   ): Promise<MembershipResponseDto> {
     await this.assertCanOrThrow(user, 'membership.set.record');
     return this.prisma.$transaction(async (tx) => {
+      await lockMemberLifecycle(tx, memberId);
       const member = await this.findMemberOrThrow(memberId, tx);
       if (member.status !== MemberStatus.ACTIVE) {
         throw new BizException(BizCode.MEMBER_INACTIVE);
@@ -159,6 +162,15 @@ export class MembershipsService {
       if (org.status !== OrganizationStatus.ACTIVE) {
         throw new BizException(BizCode.ORGANIZATION_INACTIVE);
       }
+      const startedAt = new Date();
+      MembershipTermStateMachine.assertValid(
+        {
+          status: MembershipStatus.ACTIVE,
+          startedAt,
+          endedAt: null,
+        },
+        startedAt,
+      );
       const created = await this.runWithUniqueConstraintGuard(() =>
         tx.memberOrganizationMembership.create({
           data: {
@@ -166,6 +178,7 @@ export class MembershipsService {
             organizationId: dto.organizationId,
             membershipType: dto.membershipType,
             status: MembershipStatus.ACTIVE,
+            startedAt,
             reason: dto.reason ?? null,
             createdByUserId: user.id,
           },
@@ -208,11 +221,19 @@ export class MembershipsService {
   ): Promise<MembershipResponseDto> {
     await this.assertCanOrThrow(user, 'membership.set.record');
     return this.prisma.$transaction(async (tx) => {
+      await lockMemberLifecycle(tx, memberId);
       const current = await tx.memberOrganizationMembership.findFirst({
         where: { id, memberId, deletedAt: null },
-        select: { id: true },
+        select: { id: true, status: true, startedAt: true, endedAt: true },
       });
       if (!current) throw new BizException(BizCode.MEMBERSHIP_NOT_FOUND);
+
+      const nextTerm = {
+        status: current.status,
+        startedAt: dto.startedAt !== undefined ? new Date(dto.startedAt) : current.startedAt,
+        endedAt: dto.endedAt !== undefined ? new Date(dto.endedAt) : current.endedAt,
+      };
+      MembershipTermStateMachine.assertValid(nextTerm, new Date());
 
       const data: Prisma.MemberOrganizationMembershipUpdateInput = {};
       if (dto.membershipType !== undefined) data.membershipType = dto.membershipType;
@@ -242,17 +263,20 @@ export class MembershipsService {
   ): Promise<MembershipResponseDto> {
     await this.assertCanOrThrow(user, 'membership.end.record');
     return this.prisma.$transaction(async (tx) => {
+      await lockMemberLifecycle(tx, memberId);
       const current = await tx.memberOrganizationMembership.findFirst({
         where: { id, memberId, deletedAt: null, status: MembershipStatus.ACTIVE },
-        select: { id: true, status: true },
+        select: { id: true, status: true, startedAt: true, endedAt: true },
       });
       if (!current) throw new BizException(BizCode.MEMBERSHIP_NOT_FOUND);
+
+      const ended = MembershipTermStateMachine.end(current, new Date());
 
       const updated = await tx.memberOrganizationMembership.update({
         where: { id },
         data: {
-          status: MembershipStatus.ENDED,
-          endedAt: new Date(),
+          status: ended.status,
+          endedAt: ended.endedAt,
           endedByUserId: user.id,
         },
         select: membershipSelect,
@@ -589,6 +613,7 @@ export class MembershipsService {
       throw new BizException(BizCode.BAD_REQUEST);
     }
     return this.prisma.$transaction(async (tx) => {
+      await lockMemberLifecycle(tx, dto.memberId);
       const member = await this.findMemberOrThrow(dto.memberId, tx);
       if (member.status !== MemberStatus.ACTIVE) {
         throw new BizException(BizCode.MEMBER_INACTIVE);
@@ -606,17 +631,26 @@ export class MembershipsService {
           status: MembershipStatus.ACTIVE,
           deletedAt: null,
         },
-        select: { id: true, status: true },
+        select: { id: true, status: true, startedAt: true, endedAt: true },
       });
       if (!current) throw new BizException(BizCode.MEMBERSHIP_NOT_FOUND);
 
       const now = new Date();
+      const ended = MembershipTermStateMachine.end(current, now);
       await tx.memberOrganizationMembership.update({
         where: { id: current.id },
-        data: { status: MembershipStatus.ENDED, endedAt: now, endedByUserId: user.id },
+        data: { status: ended.status, endedAt: ended.endedAt, endedByUserId: user.id },
         select: { id: true },
       });
 
+      MembershipTermStateMachine.assertValid(
+        {
+          status: MembershipStatus.ACTIVE,
+          startedAt: now,
+          endedAt: null,
+        },
+        now,
+      );
       const created = await this.runWithUniqueConstraintGuard(() =>
         tx.memberOrganizationMembership.create({
           data: {
@@ -624,6 +658,7 @@ export class MembershipsService {
             organizationId: dto.toOrganizationId,
             membershipType: dto.membershipType,
             status: MembershipStatus.ACTIVE,
+            startedAt: now,
             reason: dto.reason ?? null,
             createdByUserId: user.id,
           },

@@ -13,8 +13,10 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { lockMemberLifecycle } from '../members/member-lifecycle-lock';
 import { RbacService } from '../permissions/rbac.service';
 import { MemberDepartmentResponseDto, SetMemberDepartmentDto } from './member-departments.dto';
+import { MembershipTermStateMachine } from './membership-term-state-machine';
 
 // 终态 scoped-authz PR2(2026-07-01;冻结稿 §8.1 行为锁核心):本 service 由旧 `MemberDepartment` 表
 // **重指向**到 `member_organization_memberships` 的 **PRIMARY** 行(旧"单部门"语义 = 主归属)。
@@ -52,10 +54,9 @@ type PrismaTx = Prisma.TransactionClient;
 
 // 旧"单部门"= active PRIMARY membership 的 where 片段(重指向唯一入口)。
 const activePrimaryWhere = (memberId: string): Prisma.MemberOrganizationMembershipWhereInput => ({
+  ...MembershipTermStateMachine.effectiveWhere(new Date()),
   memberId,
-  deletedAt: null,
   membershipType: MembershipType.PRIMARY,
-  status: MembershipStatus.ACTIVE,
 });
 
 @Injectable()
@@ -152,6 +153,7 @@ export class MemberDepartmentsService {
   ): Promise<MemberDepartmentResponseDto> {
     await this.assertCanOrThrow(user, 'member-department.set.current');
     return this.prisma.$transaction(async (tx) => {
+      await lockMemberLifecycle(tx, memberId);
       // 1. member 校验
       const member = await this.findMemberOrThrow(memberId, tx);
       if (member.status !== MemberStatus.ACTIVE) {
@@ -180,17 +182,31 @@ export class MemberDepartmentsService {
         // ENDED 行不占槽故新 PRIMARY 可建)。**不再软删**:旧行留在 memberships 表做 ENDED 历史,
         // 新面 GET members/:id/memberships 可见;旧面对外契约不变(primaryMembershipSelect 不含
         // status/deletedAt/endedAt;activePrimaryWhere 同查 deletedAt=null AND status=ACTIVE,ENDED 行不匹配)。
+        const currentTerm = await tx.memberOrganizationMembership.findUniqueOrThrow({
+          where: { id: current.id },
+          select: { status: true, startedAt: true, endedAt: true },
+        });
+        const ended = MembershipTermStateMachine.end(currentTerm, new Date());
         await tx.memberOrganizationMembership.update({
           where: { id: current.id },
           data: {
-            status: MembershipStatus.ENDED,
-            endedAt: new Date(),
+            status: ended.status,
+            endedAt: ended.endedAt,
             endedByUserId: user.id,
           },
         });
       }
 
       // 4. 创建新 PRIMARY 归属(P2002 兜底防并发)
+      const startedAt = new Date();
+      MembershipTermStateMachine.assertValid(
+        {
+          status: MembershipStatus.ACTIVE,
+          startedAt,
+          endedAt: null,
+        },
+        startedAt,
+      );
       const created = await this.runWithUniqueConstraintGuard(() =>
         tx.memberOrganizationMembership.create({
           data: {
@@ -198,6 +214,7 @@ export class MemberDepartmentsService {
             organizationId: dto.organizationId,
             membershipType: MembershipType.PRIMARY,
             status: MembershipStatus.ACTIVE,
+            startedAt,
           },
           select: primaryMembershipSelect,
         }),
@@ -238,6 +255,7 @@ export class MemberDepartmentsService {
   ): Promise<MemberDepartmentResponseDto> {
     await this.assertCanOrThrow(user, 'member-department.clear.current');
     return this.prisma.$transaction(async (tx) => {
+      await lockMemberLifecycle(tx, memberId);
       await this.findMemberOrThrow(memberId, tx);
 
       const current = await tx.memberOrganizationMembership.findFirst({
@@ -251,11 +269,16 @@ export class MemberDepartmentsService {
       // status/deletedAt/endedAt;DELETE 后 GET 仍 NOT_FOUND(activePrimaryWhere 同查 deletedAt=null AND
       // status=ACTIVE,ENDED 行不匹配);partial unique 仅约束 ACTIVE 故槽位释放。新面 GET
       // members/:id/memberships 可见该 ENDED 历史行(本刀存在的理由)。
-      const endedAt = new Date();
+      const currentTerm = await tx.memberOrganizationMembership.findUniqueOrThrow({
+        where: { id: current.id },
+        select: { status: true, startedAt: true, endedAt: true },
+      });
+      const ended = MembershipTermStateMachine.end(currentTerm, new Date());
+      const endedAt = ended.endedAt as Date;
       const updated = await tx.memberOrganizationMembership.update({
         where: { id: current.id },
         data: {
-          status: MembershipStatus.ENDED,
+          status: ended.status,
           endedAt,
           endedByUserId: user.id,
         },

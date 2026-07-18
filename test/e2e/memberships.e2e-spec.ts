@@ -300,7 +300,7 @@ describe('memberships 组织归属 CRUD', () => {
       expectBizError(res, BizCode.MEMBERSHIP_NOT_FOUND);
     });
 
-    it('改类型 / 任期 / 原因 → 200 + 更新生效', async () => {
+    it('改类型 / 原因 → 200 + 更新生效', async () => {
       const memberId = await newMember('demo-ms-patch-ok');
       const created = await postMembership(superAdminAuth, memberId, {
         organizationId: activeOrgIdB,
@@ -310,13 +310,57 @@ describe('memberships 组织归属 CRUD', () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberId}/memberships/${id}`)
         .set('Authorization', superAdminAuth)
-        .send({ membershipType: 'TEMPORARY', endedAt: '2027-01-01T00:00:00.000Z', reason: '调整' });
+        .send({ membershipType: 'TEMPORARY', reason: '调整' });
       expect(res.status).toBe(200);
       expect(res.body.data.membershipType).toBe('TEMPORARY');
       expect(res.body.data.reason).toBe('调整');
-      expect(new Date(res.body.data.endedAt as string).toISOString()).toBe(
-        '2027-01-01T00:00:00.000Z',
-      );
+      expect(res.body.data.endedAt).toBeNull();
+    });
+
+    it('ACTIVE PATCH future startedAt 或任意 endedAt → BAD_REQUEST，且原行不变', async () => {
+      const memberId = await newMember('demo-ms-patch-term-invalid');
+      const created = await postMembership(superAdminAuth, memberId, {
+        organizationId: activeOrgIdB,
+        membershipType: 'SECONDARY',
+      });
+      const id = created.body.data.id as string;
+      for (const body of [
+        { startedAt: '2999-01-01T00:00:00.000Z' },
+        { endedAt: '2999-01-02T00:00:00.000Z' },
+      ]) {
+        const res = await request(httpServer(app))
+          .patch(`/api/admin/v1/members/${memberId}/memberships/${id}`)
+          .set('Authorization', superAdminAuth)
+          .send(body);
+        expectBizError(res, BizCode.BAD_REQUEST);
+      }
+      const row = await prisma.memberOrganizationMembership.findUniqueOrThrow({ where: { id } });
+      expect(row.status).toBe('ACTIVE');
+      expect(row.endedAt).toBeNull();
+      expect(row.startedAt.getTime()).toBeLessThanOrEqual(Date.now());
+    });
+
+    it('真并发创建同一 PRIMARY → 恰一 201，败者 HTTP/BizCode=17004', async () => {
+      const memberId = await newMember('demo-ms-concurrent-create');
+      const responses = await Promise.all([
+        postMembership(superAdminAuth, memberId, {
+          organizationId: activeOrgIdA,
+          membershipType: 'PRIMARY',
+        }),
+        postMembership(superAdminAuth, memberId, {
+          organizationId: activeOrgIdB,
+          membershipType: 'PRIMARY',
+        }),
+      ]);
+      expect(responses.filter((res) => res.status === 201)).toHaveLength(1);
+      const rejected = responses.find((res) => res.status !== 201);
+      expect(rejected).toBeDefined();
+      expectBizError(rejected!, BizCode.MEMBERSHIP_ALREADY_EXISTS);
+      expect(
+        await prisma.memberOrganizationMembership.count({
+          where: { memberId, status: 'ACTIVE', deletedAt: null },
+        }),
+      ).toBe(1);
     });
 
     it('改类型撞 PRIMARY 唯一 → MEMBERSHIP_ALREADY_EXISTS', async () => {
@@ -396,6 +440,32 @@ describe('memberships 组织归属 CRUD', () => {
         .delete(`/api/admin/v1/members/${memberId}/memberships/${id}`)
         .set('Authorization', superAdminAuth);
       expectBizError(second, BizCode.MEMBERSHIP_NOT_FOUND);
+    });
+
+    it('真并发结束同一 ACTIVE → 恰一 200，败者 HTTP/BizCode=17003，槽位可立即重建', async () => {
+      const memberId = await newMember('demo-ms-concurrent-end');
+      const created = await postMembership(superAdminAuth, memberId, {
+        organizationId: activeOrgIdA,
+        membershipType: 'PRIMARY',
+      });
+      const id = created.body.data.id as string;
+      const responses = await Promise.all([
+        request(httpServer(app))
+          .delete(`/api/admin/v1/members/${memberId}/memberships/${id}`)
+          .set('Authorization', superAdminAuth),
+        request(httpServer(app))
+          .delete(`/api/admin/v1/members/${memberId}/memberships/${id}`)
+          .set('Authorization', superAdminAuth),
+      ]);
+      expect(responses.filter((res) => res.status === 200)).toHaveLength(1);
+      const rejected = responses.find((res) => res.status !== 200);
+      expect(rejected).toBeDefined();
+      expectBizError(rejected!, BizCode.MEMBERSHIP_NOT_FOUND);
+      const replacement = await postMembership(superAdminAuth, memberId, {
+        organizationId: activeOrgIdB,
+        membershipType: 'PRIMARY',
+      });
+      expect(replacement.status).toBe(201);
     });
   });
 });

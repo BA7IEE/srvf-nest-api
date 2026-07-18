@@ -6,6 +6,7 @@ import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
+import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 import { RbacService } from '../permissions/rbac.service';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
 // 可见性**复用** content.visibility 纯函数(canSeeContent / buildVisibilityWhere),零第二套(评审稿 §5)。
@@ -65,10 +66,9 @@ export class NotificationReadService {
     // 终态 scoped-authz PR2:重指向 active PRIMARY membership(= 旧单部门)。
     const depts = await this.prisma.memberOrganizationMembership.findMany({
       where: {
+        ...MembershipTermStateMachine.effectiveWhere(new Date()),
         memberId,
-        deletedAt: null,
         membershipType: 'PRIMARY',
-        status: 'ACTIVE',
         organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
       },
       select: { organizationId: true },

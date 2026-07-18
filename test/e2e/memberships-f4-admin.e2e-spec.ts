@@ -160,6 +160,7 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
     mCarolId = carol.id;
     mDeletedId = del.id;
 
+    const termNow = new Date();
     const mkMs = (
       memberId: string,
       organizationId: string,
@@ -167,7 +168,14 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
       status: MembershipStatus = MembershipStatus.ACTIVE,
     ) =>
       prisma.memberOrganizationMembership.create({
-        data: { memberId, organizationId, membershipType, status },
+        data: {
+          memberId,
+          organizationId,
+          membershipType,
+          status,
+          startedAt: termNow,
+          endedAt: status === MembershipStatus.ENDED ? termNow : null,
+        },
         select: { id: true },
       });
     msAliceDeptId = (await mkMs(mAliceId, deptId, MembershipType.PRIMARY)).id;
@@ -576,6 +584,45 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
         select: { status: true },
       });
       expect(old!.status).toBe('ENDED');
+    });
+
+    it('真并发迁移同一源归属 → 恰一 201，败者 HTTP/BizCode=17003，且仅一个目标 ACTIVE', async () => {
+      const member = await prisma.member.create({
+        data: { memberNo: 'f4-transfer-race', displayName: 'F4 transfer race' },
+        select: { id: true },
+      });
+      await prisma.memberOrganizationMembership.create({
+        data: {
+          memberId: member.id,
+          organizationId: rootId,
+          membershipType: 'SECONDARY',
+        },
+      });
+
+      const responses = await Promise.all([
+        postTransfer(adminAuth, {
+          memberId: member.id,
+          fromOrganizationId: rootId,
+          toOrganizationId: deptId,
+          membershipType: 'SECONDARY',
+        }),
+        postTransfer(adminAuth, {
+          memberId: member.id,
+          fromOrganizationId: rootId,
+          toOrganizationId: groupId,
+          membershipType: 'SECONDARY',
+        }),
+      ]);
+      expect(responses.filter((res) => res.status === 201)).toHaveLength(1);
+      const rejected = responses.find((res) => res.status !== 201);
+      expect(rejected).toBeDefined();
+      expectBizError(rejected!, BizCode.MEMBERSHIP_NOT_FOUND);
+      const active = await prisma.memberOrganizationMembership.findMany({
+        where: { memberId: member.id, status: 'ACTIVE', deletedAt: null },
+        select: { organizationId: true },
+      });
+      expect(active).toHaveLength(1);
+      expect([deptId, groupId]).toContain(active[0]?.organizationId);
     });
   });
 

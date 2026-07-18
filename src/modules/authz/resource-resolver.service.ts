@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { AttachmentAccessLevel, MembershipStatus, MembershipType } from '@prisma/client';
+import { AttachmentAccessLevel, MembershipType } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 import type { ResolvedResource, ResourceRef, ResourceSensitivityLevel } from './authz.types';
 
 // 终态 scoped-authz PR8(2026-07-02;冻结稿 §5.1):ResourceResolver(资源归属解析)。
@@ -351,10 +352,9 @@ export class ResourceResolverService {
   private async primaryMembershipOrgId(memberId: string): Promise<string | null> {
     const row = await this.prisma.memberOrganizationMembership.findFirst({
       where: {
+        ...MembershipTermStateMachine.effectiveWhere(new Date()),
         memberId,
         membershipType: MembershipType.PRIMARY,
-        status: MembershipStatus.ACTIVE,
-        deletedAt: null,
       },
       select: { organizationId: true },
     });

@@ -23,6 +23,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { OrganizationsService } from '../organizations/organizations.service';
@@ -293,10 +294,9 @@ export class MembersService {
     return {
       memberOrganizationMemberships: {
         some: {
+          ...MembershipTermStateMachine.effectiveWhere(new Date()),
           organizationId: { in: orgIds },
           membershipType: MembershipType.PRIMARY,
-          status: MembershipStatus.ACTIVE,
-          deletedAt: null,
         },
       },
     };
@@ -513,7 +513,11 @@ export class MembersService {
       const [activeDeptCount, linkedUserCount] = await Promise.all([
         // 终态 scoped-authz PR2:重指向 active PRIMARY membership(= 旧单部门语义,行为逐字保持)。
         tx.memberOrganizationMembership.count({
-          where: { memberId: id, deletedAt: null, membershipType: 'PRIMARY', status: 'ACTIVE' },
+          where: {
+            ...MembershipTermStateMachine.effectiveWhere(new Date()),
+            memberId: id,
+            membershipType: 'PRIMARY',
+          },
         }),
         tx.user.count({
           where: { memberId: id, deletedAt: null },
@@ -1110,11 +1114,24 @@ export class MembersService {
         await tx.member.update({ where: { id }, data: { status: MemberStatus.INACTIVE } });
       }
 
-      // ② END 全部 ACTIVE memberships(全类型)。
-      const endedMemberships = await tx.memberOrganizationMembership.updateMany({
+      // ② END 全部 ACTIVE memberships(全类型)。Member 行锁下逐条走同一状态机；
+      // ACTIVE 恒为已开始且无 endedAt，故统一以当前时刻结束。
+      const activeMemberships = await tx.memberOrganizationMembership.findMany({
         where: { memberId: id, status: MembershipStatus.ACTIVE, deletedAt: null },
-        data: { status: MembershipStatus.ENDED, endedAt: now, endedByUserId: currentUser.id },
+        select: { id: true, status: true, startedAt: true, endedAt: true },
       });
+      for (const membership of activeMemberships) {
+        const ended = MembershipTermStateMachine.end(membership, now);
+        await tx.memberOrganizationMembership.update({
+          where: { id: membership.id },
+          data: {
+            status: ended.status,
+            endedAt: ended.endedAt,
+            endedByUserId: currentUser.id,
+          },
+        });
+      }
+      const endedMemberships = { count: activeMemberships.length };
 
       // ③ 停用 linked 账号 + 撤 refresh(幂等 skip:无 linked / 已 DISABLED)。
       let accountDisabled = false;

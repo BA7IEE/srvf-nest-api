@@ -2,6 +2,7 @@ import {
   AssignmentStatus,
   BindingStatus,
   MemberStatus,
+  MembershipStatus,
   Prisma,
   Role,
   SupervisionStatus,
@@ -189,7 +190,15 @@ describe('MembersService member lifecycle authorization closure', () => {
       },
       refreshToken: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) },
       memberOrganizationMembership: {
-        updateMany: jest.fn().mockResolvedValue({ count: 3 }),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'membership-1',
+            status: MembershipStatus.ACTIVE,
+            startedAt: new Date('2026-01-01T00:00:00.000Z'),
+            endedAt: null,
+          },
+        ]),
+        update: jest.fn().mockResolvedValue(undefined),
       },
       organizationPositionAssignment: {
         findMany: jest.fn().mockResolvedValue([{ id: 'pa-1' }, { id: 'pa-2' }]),

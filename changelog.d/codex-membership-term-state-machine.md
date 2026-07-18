@@ -1,0 +1,1 @@
+- 收口 Membership 任期状态机、并发槽位与当前有效组织来源；新 migration 对存量异常 fail-fast 且绝不自动修数。

@@ -499,6 +499,7 @@ model MemberOrganizationMembership {
   membershipType  MembershipType   @default(PRIMARY)
   status          MembershipStatus @default(ACTIVE)
   startedAt       DateTime         @default(now())
+  // DB CHECK (20260718230000):endedAt >= startedAt;且仅 ENDED 可有 endedAt。
   endedAt         DateTime?
   reason          String? // 编入 / 调出原因(自由短串)
   createdByUserId String?

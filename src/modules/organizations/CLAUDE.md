@@ -10,6 +10,7 @@
 
 ## Local facts
 
+- membership 计数与删除保护只接受当前有效任期(`ACTIVE + startedAt<=now + endedAt=null + 未软删`)；历史 ENDED / SUSPENDED 不占当前组织归属。
 - **拓扑写串行化(D-ORG,2026-07-17)**:`create/update/updateStatus/move/softDelete` 的事务在第一条 `Organization` / `OrganizationClosure` SQL 前调用 `lockOrganizationTopology(tx)`，共用固定 namespace `srvf:organizations:topology:v1` 派生的 signed 64-bit `pg_advisory_xact_lock`；`rbac.can()` 保持事务外。`announcement-import` 在 request-wide transaction 的第一条拓扑查询前先取同一把锁，随后 `create()` 在同一事务内重入该锁。
 - **audit 留痕(review #484 G18 → NEXT_TASKS P1-16,2026-07-03)**:4 个写点 inline-in-transaction 接入 `AuditLogsService`(沿 `position-assignments`/`supervision-assignments` 范式,`resourceType='organization'`):
   - `create` → `organization.create`(after 快照,before 缺席;写在返回之前、同一事务内——单行 `{ dryRun }` 与 announcement-import request-wide preview 都靠事务整体回滚覆盖 audit)
