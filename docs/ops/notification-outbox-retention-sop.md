@@ -83,4 +83,3 @@ COMMIT;
 - 观察 worker claim/ack/nack、oldest pending age、dead 增长率、provider 成功率至少一个完整业务高峰。
 - 误删 terminal intent 不得手写伪造状态；从备份恢复目标行，或按业务事实重新生成一个新 eventKey 的补偿 intent并留下维护记录。
 - 回退应用版本时保留 additive outbox 表，不执行 down migration、不 `DROP`。
-
