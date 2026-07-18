@@ -1,4 +1,12 @@
-import { Prisma, Role, UserStatus } from '@prisma/client';
+import {
+  AssignmentStatus,
+  BindingStatus,
+  MemberStatus,
+  Prisma,
+  Role,
+  SupervisionStatus,
+  UserStatus,
+} from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -32,6 +40,7 @@ const ACTIVE_MEMBER = { id: 'm1', memberNo: 'm-001', status: 'ACTIVE' };
 
 function makeTx() {
   return {
+    $queryRaw: jest.fn().mockResolvedValue([{ id: 'm1' }]),
     member: { findFirst: jest.fn().mockResolvedValue(ACTIVE_MEMBER) },
     user: {
       findFirst: jest.fn().mockResolvedValue(null), // existingLink 预检查未命中(竞态窗口)
@@ -155,5 +164,110 @@ describe('MembersService.grantAccount — runWithUniqueConstraintGuard P2002 兜
     await expect(service.grantAccount('m1', { phone: '13800000004' }, USER, META)).rejects.toBe(
       other,
     );
+  });
+});
+
+describe('MembersService member lifecycle authorization closure', () => {
+  function makeLifecycleTx() {
+    return {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'm1' }]),
+      member: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce({ ...ACTIVE_MEMBER, status: MemberStatus.ACTIVE })
+          .mockResolvedValue({ ...ACTIVE_MEMBER, status: MemberStatus.INACTIVE }),
+        update: jest.fn().mockResolvedValue(undefined),
+      },
+      user: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'linked-u1',
+          status: UserStatus.ACTIVE,
+          role: Role.USER,
+        }),
+        update: jest.fn().mockResolvedValue(undefined),
+      },
+      refreshToken: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) },
+      memberOrganizationMembership: {
+        updateMany: jest.fn().mockResolvedValue({ count: 3 }),
+      },
+      organizationPositionAssignment: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'pa-1' }, { id: 'pa-2' }]),
+        updateMany: jest.fn().mockResolvedValue({ count: 2 }),
+        count: jest.fn().mockResolvedValue(0),
+      },
+      organizationSupervisionAssignment: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        count: jest.fn().mockResolvedValue(0),
+      },
+      roleBinding: { updateMany: jest.fn().mockResolvedValue({ count: 4 }) },
+    };
+  }
+
+  it('offboard 同事务终止 assignments/supervisions/direct bindings，残留探针恒为 0', async () => {
+    const tx = makeLifecycleTx();
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const service = new MembersService(
+      makePrisma(tx as unknown as ReturnType<typeof makeTx>),
+      rbacAllow,
+      authzAllow,
+      lastAdminProtectionNoop,
+      organizationsStub,
+      audit as unknown as AuditLogsService,
+    );
+
+    const result = await service.offboard('m1', USER, META);
+
+    const positionUpdate = tx.organizationPositionAssignment.updateMany.mock.calls[0]?.[0] as
+      | Prisma.OrganizationPositionAssignmentUpdateManyArgs
+      | undefined;
+    expect(positionUpdate?.data.status).toBe(AssignmentStatus.REVOKED);
+    const supervisionUpdate = tx.organizationSupervisionAssignment.updateMany.mock.calls[0]?.[0] as
+      | Prisma.OrganizationSupervisionAssignmentUpdateManyArgs
+      | undefined;
+    expect(supervisionUpdate?.data.status).toBe(SupervisionStatus.REVOKED);
+    const bindingUpdate = tx.roleBinding.updateMany.mock.calls[0]?.[0] as
+      | Prisma.RoleBindingUpdateManyArgs
+      | undefined;
+    expect(bindingUpdate?.data.status).toBe(BindingStatus.ENDED);
+    expect(bindingUpdate?.data.deletedAt).toBeInstanceOf(Date);
+    const auditCall = audit.log.mock.calls[0]?.[0] as
+      | {
+          event: string;
+          extra: Record<string, unknown>;
+          tx: unknown;
+        }
+      | undefined;
+    expect(auditCall?.event).toBe('member.offboard');
+    expect(auditCall?.extra).toEqual(
+      expect.objectContaining({
+        positionAssignmentsRevoked: 2,
+        supervisionsRevoked: 1,
+        roleBindingsEnded: 4,
+      }) as Record<string, unknown>,
+    );
+    expect(auditCall?.tx).toBe(tx);
+    expect(result.residualActivePositionAssignments).toBe(0);
+    expect(result.residualActiveSupervisions).toBe(0);
+  });
+
+  it('member account status 不能把 INACTIVE Member 的 linked User 重新启用', async () => {
+    const tx = makeLifecycleTx();
+    tx.member.findFirst.mockReset().mockResolvedValue({
+      ...ACTIVE_MEMBER,
+      status: MemberStatus.INACTIVE,
+    });
+    const service = new MembersService(
+      makePrisma(tx as unknown as ReturnType<typeof makeTx>),
+      rbacAllow,
+      authzAllow,
+      lastAdminProtectionNoop,
+      organizationsStub,
+      auditNoop,
+    );
+
+    await expect(
+      service.updateAccountStatus('m1', { status: UserStatus.ACTIVE }, USER, META),
+    ).rejects.toEqual(new BizException(BizCode.MEMBER_INACTIVE));
+    expect(tx.user.update).not.toHaveBeenCalled();
   });
 });

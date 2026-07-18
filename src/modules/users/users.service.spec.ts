@@ -1,4 +1,4 @@
-import { Prisma, Role, UserStatus } from '@prisma/client';
+import { MemberStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -104,8 +104,8 @@ function makeIdentityUser(overrides: Partial<IdentityUserRow> = {}): IdentityUse
   };
 }
 
-// findRawByIdOrThrow 的精简 select(id/role/status)。
-type RawUserRow = { id: string; role: Role; status: UserStatus };
+// findRawByIdOrThrow 的精简 select(id/role/status/memberId)。
+type RawUserRow = { id: string; role: Role; status: UserStatus; memberId?: string | null };
 // changeMyPassword 的 passwordHash select。
 type PwUserRow = { id: string; passwordHash: string };
 
@@ -155,11 +155,14 @@ function makePrismaMock() {
   const refreshToken = {
     updateMany: jest.fn<Promise<{ count: number }>, [unknown]>().mockResolvedValue({ count: 0 }),
   };
+  const member = {
+    findFirst: jest.fn<Promise<{ status: MemberStatus } | null>, [unknown]>(),
+  };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
   const $queryRaw = jest
     .fn<Promise<Array<{ id: string }>>, [unknown]>()
     .mockResolvedValue([{ id: 'u-1' }]);
-  const prisma = { user, refreshToken, $transaction, $queryRaw };
+  const prisma = { user, member, refreshToken, $transaction, $queryRaw };
   // 双模:回调式把 prisma mock 自身当 tx 传入;数组式($transaction([findMany, count]))走 Promise.all。
   $transaction.mockImplementation((arg: unknown) =>
     typeof arg === 'function'
@@ -869,6 +872,31 @@ describe('UsersService (characterization, scoped)', () => {
         META,
       );
 
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('启用 linked account 但 Member=INACTIVE → MEMBER_INACTIVE；锁后拒绝且不写 User', async () => {
+      const prisma = makePrismaMock();
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'u-2',
+        role: Role.USER,
+        status: UserStatus.DISABLED,
+        memberId: 'm-2',
+      });
+      prisma.member.findFirst.mockResolvedValue({ status: MemberStatus.INACTIVE });
+      const service = makeService(prisma);
+
+      await expect(
+        service.updateStatus(
+          makeCurrentUser({ id: 'admin-1' }),
+          'u-2',
+          makeStatusDto(UserStatus.ACTIVE),
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.MEMBER_INACTIVE));
+
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+      expect(prisma.user.update).not.toHaveBeenCalled();
       expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
     });
   });

@@ -181,8 +181,9 @@ export class MembersController {
     @Param() params: IdParamDto,
     @Body() dto: UpdateMemberStatusDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<MemberResponseDto> {
-    return this.service.updateStatus(params.id, dto, currentUser);
+    return this.service.updateStatus(params.id, dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Delete(':id')

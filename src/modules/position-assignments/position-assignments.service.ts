@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AssignmentStatus, PolicyStatus, Prisma } from '@prisma/client';
+import { AssignmentStatus, MemberStatus, PolicyStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { PageResultDto } from '../../common/dto/pagination.dto';
 import { parseExpandQuery } from '../../common/dto/expand-query.util';
@@ -9,6 +9,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { lockMemberLifecycle } from '../members/member-lifecycle-lock';
 import { RbacService } from '../permissions/rbac.service';
 import {
   CreatePositionAssignmentDto,
@@ -86,10 +87,13 @@ export class PositionAssignmentsService {
     };
   }
 
-  private async findMemberOrThrow(memberId: string, tx: PrismaTx): Promise<{ id: string }> {
+  private async findMemberOrThrow(
+    memberId: string,
+    tx: PrismaTx,
+  ): Promise<{ id: string; status: MemberStatus }> {
     const member = await tx.member.findFirst({
       where: notDeletedWhere({ id: memberId }),
-      select: { id: true },
+      select: { id: true, status: true },
     });
     if (!member) throw new BizException(BizCode.MEMBER_NOT_FOUND);
     return member;
@@ -177,7 +181,11 @@ export class PositionAssignmentsService {
       return await this.prisma.$transaction(async (tx) => {
         const org = await this.findOrganizationOrThrow(organizationId, tx);
         const position = await this.findPositionOrThrow(dto.positionId, tx);
-        await this.findMemberOrThrow(dto.memberId, tx);
+        await lockMemberLifecycle(tx, dto.memberId);
+        const member = await this.findMemberOrThrow(dto.memberId, tx);
+        if (member.status !== MemberStatus.ACTIVE) {
+          throw new BizException(BizCode.MEMBER_INACTIVE);
+        }
 
         // 2. 职务适配 + 取 requireMembership(同一条规则)。(nodeTypeCode, positionId) 普通唯一 → 至多 1 active。
         const rule = await tx.organizationPositionRule.findFirst({
