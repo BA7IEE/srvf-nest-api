@@ -12,6 +12,7 @@ import {
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 import { SmsProviderRouter } from '../sms/sms-provider.router';
 import { SmsSettingsService } from '../sms/sms-settings.service';
 import {
@@ -375,10 +376,9 @@ export class NotificationSmsDispatchService {
     // 活跃部门(可见性 ctx;broadcast 用)。终态 scoped-authz PR2:重指向 active PRIMARY membership(= 旧单部门)。
     const depts = await client.memberOrganizationMembership.findMany({
       where: {
+        ...MembershipTermStateMachine.effectiveWhere(new Date()),
         memberId: { in: activeMemberIds },
-        deletedAt: null,
         membershipType: 'PRIMARY',
-        status: 'ACTIVE',
         organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
       },
       select: { memberId: true, organizationId: true },

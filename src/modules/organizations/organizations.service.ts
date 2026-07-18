@@ -1,11 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  DictItemStatus,
-  DictTypeStatus,
-  MembershipStatus,
-  OrganizationStatus,
-  Prisma,
-} from '@prisma/client';
+import { DictItemStatus, DictTypeStatus, OrganizationStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -14,6 +8,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 import { RbacService } from '../permissions/rbac.service';
 import {
   buildCreateClosureEdges,
@@ -580,10 +575,9 @@ export class OrganizationsService {
         // 收紧到"任意类型归属阻止删组织"是独立语义决策,非本刀)。
         tx.memberOrganizationMembership.count({
           where: {
+            ...MembershipTermStateMachine.effectiveWhere(new Date()),
             organizationId: id,
-            deletedAt: null,
             membershipType: 'PRIMARY',
-            status: 'ACTIVE',
           },
         }),
       ]);
@@ -677,7 +671,7 @@ export class OrganizationsService {
     const tree = await this.getTree(user, query);
     const counts = await this.prisma.memberOrganizationMembership.groupBy({
       by: ['organizationId'],
-      where: { deletedAt: null, status: MembershipStatus.ACTIVE },
+      where: MembershipTermStateMachine.effectiveWhere(new Date()),
       _count: { _all: true },
     });
     const directById = new Map(counts.map((c) => [c.organizationId, c._count._all]));

@@ -13,6 +13,8 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
+import { lockMemberLifecycle } from '../members/member-lifecycle-lock';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_TYPE_RECRUITMENT,
@@ -98,6 +100,7 @@ export class TeamJoinEnrollmentService {
       if (app.statusCode !== APP_STATUS_APPROVED) {
         throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
       }
+      await lockMemberLifecycle(tx, app.memberId);
 
       // 2. approved 资格不随轮关闭失效;有效期类 gate 与贡献值仍在后续步骤兜底重校验。
 
@@ -150,12 +153,17 @@ export class TeamJoinEnrollmentService {
       // 终态 scoped-authz PR2:重指向 member_organization_memberships 的 active PRIMARY 行(= 旧单部门)。
       const activeDepts = await tx.memberOrganizationMembership.findMany({
         where: {
+          ...MembershipTermStateMachine.effectiveWhere(now),
           memberId: app.memberId,
-          deletedAt: null,
           membershipType: 'PRIMARY',
-          status: 'ACTIVE',
         },
-        select: { id: true, organization: { select: { code: true } } },
+        select: {
+          id: true,
+          status: true,
+          startedAt: true,
+          endedAt: true,
+          organization: { select: { code: true } },
+        },
       });
       if (!isUnenrolledVolunteer({ gradeCode: member.gradeCode }, activeDepts)) {
         throw new BizException(BizCode.TEAM_JOIN_MEMBER_ALREADY_ENROLLED);
@@ -169,9 +177,10 @@ export class TeamJoinEnrollmentService {
       //    再 create 目标部门 PRIMARY → 设级别 level-1 → 状态 joined(全或无;失败回滚 → member 仍未入队)。
       const volDept = activeDepts.find((d) => d.organization.code === VOL_ORG_CODE);
       if (volDept) {
+        const ended = MembershipTermStateMachine.end(volDept, now);
         await tx.memberOrganizationMembership.update({
           where: { id: volDept.id },
-          data: { deletedAt: now },
+          data: { status: ended.status, endedAt: ended.endedAt, endedByUserId: user.id },
         });
       }
       try {

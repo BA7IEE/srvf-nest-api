@@ -7,6 +7,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
 import {
   CreateAppTeamJoinApplicationDto,
@@ -75,7 +76,11 @@ export class AppMeTeamJoinService {
     });
     // 终态 scoped-authz PR2:重指向 active PRIMARY membership(= 旧单部门)。
     const activeDepts = await tx.memberOrganizationMembership.findMany({
-      where: { memberId, deletedAt: null, membershipType: 'PRIMARY', status: 'ACTIVE' },
+      where: {
+        ...MembershipTermStateMachine.effectiveWhere(new Date()),
+        memberId,
+        membershipType: 'PRIMARY',
+      },
       select: { organization: { select: { code: true } } },
     });
     if (!isUnenrolledVolunteer({ gradeCode: member?.gradeCode ?? null }, activeDepts)) {

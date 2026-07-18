@@ -43,10 +43,16 @@ const arg0 = (m: jest.Mock): CallArg => (m.mock.calls as unknown[][])[0]?.[0] ??
 
 function makeTx() {
   return {
+    $queryRaw: jest.fn().mockResolvedValue([{ id: 'm1' }]),
     member: { findFirst: jest.fn().mockResolvedValue(ACTIVE_MEMBER) },
     organization: { findFirst: jest.fn().mockResolvedValue(ACTIVE_ORG) },
     memberOrganizationMembership: {
       findFirst: jest.fn().mockResolvedValue(null),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({
+        status: 'ACTIVE',
+        startedAt: new Date('2026-01-01T00:00:00.000Z'),
+        endedAt: null,
+      }),
       create: jest.fn().mockResolvedValue({ id: 'mom1', memberId: 'm1', organizationId: 'org1' }),
       update: jest.fn().mockResolvedValue({ id: 'mom1' }),
     },
@@ -269,7 +275,12 @@ describe('MembershipsService(终态全归属面)', () => {
 
   it('end 置 status=ENDED + endedAt + endedByUserId(仅 active 可结束)+ 写 audit(viaPath=membership)', async () => {
     const tx = makeTx();
-    tx.memberOrganizationMembership.findFirst.mockResolvedValue({ id: 'mom1', status: 'ACTIVE' });
+    tx.memberOrganizationMembership.findFirst.mockResolvedValue({
+      id: 'mom1',
+      status: 'ACTIVE',
+      startedAt: new Date('2026-01-01T00:00:00.000Z'),
+      endedAt: null,
+    });
     tx.memberOrganizationMembership.update.mockResolvedValue({
       id: 'mom1',
       status: 'ENDED',
@@ -342,7 +353,12 @@ describe('MembershipsService(终态全归属面)', () => {
 
   it('update(PATCH)成功路径不写 audit(沿 role-binding.update / supervision-assignment.update 先例)', async () => {
     const tx = makeTx();
-    tx.memberOrganizationMembership.findFirst.mockResolvedValue({ id: 'mom1' });
+    tx.memberOrganizationMembership.findFirst.mockResolvedValue({
+      id: 'mom1',
+      status: 'ACTIVE',
+      startedAt: new Date('2026-01-01T00:00:00.000Z'),
+      endedAt: null,
+    });
     tx.memberOrganizationMembership.update.mockResolvedValue({ id: 'mom1', reason: 'x' });
     const svc = new MembershipsService(
       makePrisma(tx),

@@ -8,6 +8,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import type { AttachmentOwnerType } from '../attachments/attachment-validation';
 import { AttachmentsService } from '../attachments/attachments.service';
+import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 import { RbacService } from '../permissions/rbac.service';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
 import {
@@ -65,10 +66,9 @@ export class ContentReadService {
       // 终态 scoped-authz PR2:重指向 active PRIMARY membership(= 旧单部门)。
       const depts = await this.prisma.memberOrganizationMembership.findMany({
         where: {
+          ...MembershipTermStateMachine.effectiveWhere(new Date()),
           memberId: access.member.id,
-          deletedAt: null,
           membershipType: 'PRIMARY',
-          status: 'ACTIVE',
           organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
         },
         select: { organizationId: true },
