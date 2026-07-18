@@ -1,8 +1,4 @@
-import {
-  HAVERSINE_EARTH_RADIUS_METERS,
-  haversineDistanceMeters,
-  isDistanceOutOfRange,
-} from './haversine-distance';
+import { HAVERSINE_EARTH_RADIUS_METERS, haversineDistanceMeters } from './haversine-distance';
 
 describe('haversineDistanceMeters', () => {
   it('同点为 0，且一度纬差与冻结半径计算一致', () => {
@@ -33,13 +29,7 @@ describe('haversineDistanceMeters', () => {
     expect(distance).toBeLessThan(30);
   });
 
-  it('geofence 使用未舍入值严格比较：等于半径不超，任意更大才超', () => {
-    expect(isDistanceOutOfRange(500, 500)).toBe(false);
-    expect(isDistanceOutOfRange(499.999_999, 500)).toBe(false);
-    expect(isDistanceOutOfRange(500.000_001, 500)).toBe(true);
-  });
-
-  it('非法坐标或非有限距离明确拒绝', () => {
+  it('非法坐标明确拒绝', () => {
     expect(() =>
       haversineDistanceMeters({ longitude: 181, latitude: 0 }, { longitude: 0, latitude: 0 }),
     ).toThrow(RangeError);
@@ -49,7 +39,5 @@ describe('haversineDistanceMeters', () => {
         { longitude: 0, latitude: 0 },
       ),
     ).toThrow(RangeError);
-    expect(() => isDistanceOutOfRange(Number.POSITIVE_INFINITY, 500)).toThrow(RangeError);
-    expect(() => isDistanceOutOfRange(1, -1)).toThrow(RangeError);
   });
 });

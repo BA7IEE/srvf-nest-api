@@ -47,16 +47,3 @@ export function haversineDistanceMeters(from: GeoPoint, to: GeoPoint): number {
   }
   return distance;
 }
-
-// geofence 判定必须使用未舍入 IEEE-754 结果并严格比较；展示用两位小数不得反写判定。
-export function isDistanceOutOfRange(distanceMeters: number, radiusMeters: number): boolean {
-  if (
-    !Number.isFinite(distanceMeters) ||
-    distanceMeters < 0 ||
-    !Number.isFinite(radiusMeters) ||
-    radiusMeters < 0
-  ) {
-    throw new RangeError('距离与半径必须是有限非负数');
-  }
-  return distanceMeters > radiusMeters;
-}

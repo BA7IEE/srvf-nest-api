@@ -677,7 +677,7 @@ export const BizCode = {
   // 子段(对齐 baseline §1.3):
   // - 22001-22009:Sheet / ActivityCheckIn NOT_FOUND
   // - 22030-22049:Sheet 状态机 / 资源状态(STATUS_INVALID / APPROVED_NOT_EDITABLE / REJECTED_NOT_EDITABLE)
-  // - 22050-22099:Record 实体级(字典 / 时间 / serviceHours / contributionPoints / registrationId 跨表)
+  // - 22050-22099:Record / ActivityCheckIn 实体级(字典 / 时间 / contribution / registration / GPS)
   // - 221xx:暂留(FORBIDDEN_ATTENDANCE_* 不开,沿 baseline;USER 越权 → 404 沿 §1.7)
   //
   // 不开的码:
@@ -768,6 +768,13 @@ export const BizCode = {
   ATTENDANCE_CHECK_OUT_IN_FUTURE: {
     code: 22079,
     message: '考勤签退时间不得晚于当前时间',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  // GPS 自助打卡 fail-closed：活动坐标缺失/非法、请求坐标绕过 DTO 后非法、原始
+  // Haversine 距离超半径统一收口，避免向 App 枚举具体是哪一侧配置异常。
+  ACTIVITY_CHECK_IN_LOCATION_VERIFICATION_FAILED: {
+    code: 22080,
+    message: '当前位置未通过活动打卡范围校验',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
 

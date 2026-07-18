@@ -27,7 +27,7 @@
 | 活动池 / 我的活动 | `GET /api/app/v1/activities/available`(**仅 `public` 且未结束活动;详情 `GET /api/app/v1/activities/:id` 含 `phase` / `genderRequirementCode` / `requiresInsurance` / `passCount`**) · `GET /api/app/v1/activities/:activityId/positions`（live 岗位，`remainingCapacity` / `canRegister`；余量 0 仍可进候补）· `GET /api/app/v1/my/activities`。活动 `capacity` 有岗位时为岗位总和，任一岗位不限则 null |
 | 我的报名(报名/查/取消) | `GET /api/app/v1/my/registrations` · `POST` 报名 body additive 接受 `activityPositionId`（活动有岗位时必填，缺失 21035；不存在/跨活动/已删 20002；同人报第二岗仍 21002；满员成功创建 `waitlisted`，排位按岗位队列）· `PATCH` 取消(候补可随时退出)。活动已结束 `20125`、报名截止 `20123`、已有考勤不可取消 `21033` 等既有闸不变 |
 | 我的考勤 / 参与汇总 / 证书 | `GET /api/app/v1/my/attendance-records` · `GET /api/app/v1/my/participation-summary` · `GET /api/app/v1/my/certificates`。参与汇总严格锁当前 `AppIdentityResolver.memberId`，只统计 approved Sheet：`totalServiceHours` / distinct `activityCount` / `recordCount`；`contributionPoints` 复用生涯累计封顶核，与 Admin 旧 `contribution-summary` 同源。**不返回 memberId / no-show / 他人数据**，前端直接展示，勿自行 SUM |
-| **活动 GPS 自助签到 / 签退(F2)** | `POST /api/app/v1/my/activities/:activityId/check-in` · `POST .../check-out` · `GET .../check-in`。只认本人当前 `pass` 报名；首次与合法网络重试都返回 200 同一证据。App 仅收到时间、距离与 `geoVerified/outOfRange`，**不返回原始经纬度、accuracy 或 memberId** |
+| **活动 GPS 自助签到 / 签退(F2)** | `POST /api/app/v1/my/activities/:activityId/check-in` · `POST .../check-out` · `GET .../check-in`。只认本人当前 `pass` 报名；⚠️ **首次写已收紧为 fail-closed**：活动/请求坐标完整合法且原始 Haversine 距离不超过配置半径才 200。已有合法 winner 的网络重试仍返回同一证据且不覆盖。App 仅收到时间、距离与历史兼容字段 `geoVerified/outOfRange`，**不返回原始经纬度、accuracy 或 memberId** |
 | **活动评价(F2–F4)** | `GET /api/app/v1/my/activities/:activityId/feedback` 初始化本人评价与 `canSubmit/windowClosesAt`；`PUT` 同路径提交 `{rating,comment?}`。只认 completed + 窗口内 + approved 到场，本人 scope；不返回他人评价/人数/均分 |
 | 公开(无账号) | `POST /api/open/v1/recruitment/applications/*`(招新报名) · `GET /api/open/v1/contents`(内容;`expireAt <= now` 的附件行不返回、过期封面 URL 为 null,未来时间/null 不变) |
 | 招新本人进度(无账号) | `POST /api/open/v1/recruitment/applications/query`(凭 wx.login code 换 openid;**返进度模型**:业务态 `stage` + 字典 `stageText` + `nextAction` + 门槛 `todoList` 真投影 + 临时编号;`memberNo` 恒 null——发号后经登录态 app 侧查,见 §3 GAP-006)。**F4(v0.41.0-pre)**:发号后(报名行 openid 已清)不再「查无 28002」——经账号 openid 锚 fall-through 返 **stage=volunteer 引导态**(「已转志愿者 / 待入队」+ `nextAction=apply-teamjoin`),前端见此态引导用户登录小程序/申请入队;已离队(INACTIVE)或非招新出身仍 28002 |
@@ -53,11 +53,11 @@
 
 ### 2.1 活动 GPS 自助打卡(F2)
 
-- **定位权限**：点击签到/签退后先请求定位权限；用户拒绝或客户端没有完整经纬度时，不发后端请求，展示重新授权指引。`accuracy` 可选且只作证据，不参与半径放大/缩小。
+- **定位权限**：点击签到/签退后先请求定位权限；用户拒绝或客户端没有完整经纬度时，不发后端请求，展示重新授权指引。`accuracy` 可选且只作证据，不参与半径放大/缩小；精度很差也不能让超范围请求通过。
 - **按钮初始化**：进入活动页先调 `GET .../check-in`。`22002` = 尚无当前报名打卡，显示“签到”；200 且 `checkOutAt=null` = 已签到，显示“签退”；200 且 `checkOutAt!=null` = 已完成。GET 不受活动四态额外阻断，但只读取当前 `pass` 报名。
-- **成功告警**：`outOfRange=true` 和 `geoVerified=false` 都是 200 成功态，不要自动重试或当作失败；分别提示“已记录，位置超出活动范围”和“已记录，活动位置暂未校验”。后端不会把原始定位值回显给 App。
-- **安全重试**：网络超时可重发同一动作；状态与当前 `pass` 闸仍合法时，重复/并发请求返回同一个 winner，首次签退位置不会被后续重试覆盖。
-- **错误提示**：`22076` 当前报名未通过/已取消；`22077` 超出有效打卡窗（有独立岗位时段则是岗位窗，否则是活动窗）；`22078` 尚未签到不可签退；`22070` 签到后不足 36 秒不可首次签退；`20030` completed 不可新签到；`20122` 活动已取消；`20126` 活动尚未发布。定位字段缺失、越界、小数位或夹带未知字段统一按 400 表单错误处理。
+- **⚠️ 成功态收紧**：新合法签到证据固定 `geoVerified=true/outOfRange=false`；`geoVerified=false` / `outOfRange=true` 只可能来自历史行，GET/Admin 展示仍保留。首次位置未通过不再返回 200，也不写异常证据。
+- **安全重试**：网络超时可重发同一动作；状态与当前 `pass` 闸仍合法时，重复/并发请求返回同一个合法 winner，首次位置不会被后续重试覆盖。winner 已存在后，即使重试位置本身超范围也会返回旧 winner 200；这代表幂等命中，不是接受了新位置。
+- **错误提示**：`22080` 活动定位缺失/非法或当前位置超出范围，统一提示“定位未通过，请确认已到活动范围内；持续失败请联系管理员核对活动定位”；`22076` 当前报名未通过/已取消；`22077` 超出有效打卡窗（有独立岗位时段则是岗位窗，否则是活动窗）；`22078` 尚未签到不可签退；`22070` 签到后不足 36 秒不可首次签退；`20030` completed 不可新签到；`20122` 活动已取消；`20126` 活动尚未发布。请求定位字段缺失、越界、小数位或夹带未知字段仍统一按 40000 表单错误处理。
 
 ### 2.2 活动报名候补与排位（审计刀 6 · 第二件）
 

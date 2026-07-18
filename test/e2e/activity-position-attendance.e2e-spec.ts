@@ -82,6 +82,8 @@ describe('ActivityPosition attendance wiring (F4)', () => {
           startAt: new Date(now.getTime() - 24 * 3_600_000),
           endAt: new Date(now.getTime() + 24 * 3_600_000),
           location: '活动岗位 F4 场地',
+          locationLongitude: '114.0000000',
+          locationLatitude: '22.0000000',
           statusCode: 'published',
           isPublicRegistration: true,
           publishedAt: new Date(now.getTime() - 60_000),

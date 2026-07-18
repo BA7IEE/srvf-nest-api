@@ -12,6 +12,7 @@ import {
   ActivityCheckInFieldPolicy,
   type AppActivityCheckInRow,
 } from './activity-check-in-field-policy';
+import { ActivityCheckInLocationPolicy } from './activity-check-in-location-policy';
 import {
   type ActivityCheckInAction,
   type ActivityCheckInDecision,
@@ -20,7 +21,6 @@ import {
 import { ActivityCheckInPresenter } from './activity-check-in-presenter';
 import { AppActivityCheckInDto } from './dto/app/app-activity-check-in.dto';
 import { ActivityCheckInLocationDto } from './dto/app/activity-check-in-location.dto';
-import { haversineDistanceMeters, isDistanceOutOfRange } from './haversine-distance';
 
 const ACTIVITY_GATE_SELECT = {
   id: true,
@@ -59,9 +59,9 @@ interface LocationEvidence {
   longitude: Prisma.Decimal;
   latitude: Prisma.Decimal;
   accuracy: Prisma.Decimal | null;
-  distance: Prisma.Decimal | null;
-  geoVerified: boolean;
-  outOfRange: boolean;
+  distance: Prisma.Decimal;
+  geoVerified: true;
+  outOfRange: false;
 }
 
 @Injectable()
@@ -70,6 +70,7 @@ export class AppActivityCheckInsService {
     private readonly prisma: PrismaService,
     private readonly appIdentity: AppIdentityResolver,
     private readonly policy: ActivityCheckInPolicy,
+    private readonly locationPolicy: ActivityCheckInLocationPolicy,
     private readonly fieldPolicy: ActivityCheckInFieldPolicy,
     private readonly presenter: ActivityCheckInPresenter,
     @Inject(appConfig.KEY)
@@ -331,29 +332,21 @@ export class AppActivityCheckInsService {
     activity: Pick<ActivityGateRow, 'locationLongitude' | 'locationLatitude'>,
     dto: ActivityCheckInLocationDto,
   ): LocationEvidence {
+    const decision = this.locationPolicy.evaluate(
+      {
+        longitude: this.decimalToNumber(activity.locationLongitude),
+        latitude: this.decimalToNumber(activity.locationLatitude),
+      },
+      dto,
+      this.config.attendance.checkInRadiusMeters,
+    );
+    if (!decision.allowed) throw new BizException(decision.biz);
+
     const longitude = new Prisma.Decimal(dto.longitude.toString());
     const latitude = new Prisma.Decimal(dto.latitude.toString());
     const accuracy =
       dto.accuracy === undefined ? null : new Prisma.Decimal(dto.accuracy.toString());
-    const activityLongitude = this.toValidCoordinate(activity.locationLongitude, -180, 180);
-    const activityLatitude = this.toValidCoordinate(activity.locationLatitude, -90, 90);
-
-    if (activityLongitude === null || activityLatitude === null) {
-      return {
-        longitude,
-        latitude,
-        accuracy,
-        distance: null,
-        geoVerified: false,
-        outOfRange: false,
-      };
-    }
-
-    const rawDistance = haversineDistanceMeters(
-      { longitude: dto.longitude, latitude: dto.latitude },
-      { longitude: activityLongitude, latitude: activityLatitude },
-    );
-    const distance = new Prisma.Decimal(rawDistance.toString()).toDecimalPlaces(
+    const distance = new Prisma.Decimal(decision.distanceMeters.toString()).toDecimalPlaces(
       2,
       Prisma.Decimal.ROUND_HALF_UP,
     );
@@ -362,15 +355,13 @@ export class AppActivityCheckInsService {
       latitude,
       accuracy,
       distance,
-      geoVerified: true,
-      outOfRange: isDistanceOutOfRange(rawDistance, this.config.attendance.checkInRadiusMeters),
+      geoVerified: decision.geoVerified,
+      outOfRange: decision.outOfRange,
     };
   }
 
-  private toValidCoordinate(value: Prisma.Decimal | null, min: number, max: number): number | null {
-    if (value === null) return null;
-    const numeric = Number(value.toString());
-    return Number.isFinite(numeric) && numeric >= min && numeric <= max ? numeric : null;
+  private decimalToNumber(value: Prisma.Decimal | null): number | null {
+    return value === null ? null : Number(value.toString());
   }
 
   private assertAllowed(decision: ActivityCheckInDecision): void {

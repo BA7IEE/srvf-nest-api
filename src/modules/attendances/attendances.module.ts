@@ -11,6 +11,7 @@ import { AdminActivityCheckInsService } from './admin-activity-check-ins.service
 import { ActivityCheckInQueryService } from './activity-check-in-query.service';
 import { AppMyAttendanceRecordsService } from './app-my-attendance-records.service';
 import { ActivityCheckInFieldPolicy } from './activity-check-in-field-policy';
+import { ActivityCheckInLocationPolicy } from './activity-check-in-location-policy';
 import { ActivityCheckInPolicy } from './activity-check-in-policy';
 import { ActivityCheckInPresenter } from './activity-check-in-presenter';
 import { AppActivityCheckInsService } from './app-activity-check-ins.service';
@@ -77,6 +78,7 @@ import { ParticipationSummaryQueryService } from './participation-summary-query.
     AppMyAttendanceRecordsService,
     AppActivityCheckInsService,
     ActivityCheckInPolicy,
+    ActivityCheckInLocationPolicy,
     ActivityCheckInFieldPolicy,
     ActivityCheckInPresenter,
     ContributionCalculator,
