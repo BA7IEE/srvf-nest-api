@@ -19,12 +19,14 @@
 - **role 护栏优先**:三条削权路径继续先拒 `role!==USER` 的关联账号；SUPER_ADMIN 不进入 last-ops-admin 检查，沿既有 `MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE` 行为。
 - **账号启停审计(2026-07-14 第七刀)**:`updateAccountStatus` 的 user status 写、禁用时 refresh token 撤销与 `member.account.status-change` 必须在同一事务；before/after 只含 status，extra 只含 linkedUserId/refreshTokensRevoked，禁止 phone/openid/secret。
 - **offboard/reopen 已覆盖**:`offboard` 用伞事件 `member.offboard` 记录账号停用腿与撤销计数；`reopenAccount` 用 `member.account-reopened` 记录旧号软删/新号创建结果，两者原本即与业务写同事务，第七刀不新增重复事件。
+- **Member lifecycle 线性化**:offboard、linked 账号启用/绑定/重开、任职/分管创建、USER/MEMBER/POSITION_ASSIGNMENT direct binding 创建或恢复都先锁同一 Member 行；跨资源锁序固定 Member → User。offboard 在该事务内同时结束 active memberships、任职、分管与三类 direct binding，响应中的 residual 任职/分管字段只为兼容保留且终态为 0；INACTIVE Member 不得经任一入口恢复账号或授权来源。
 
 ## Risk points
 
 - ❌ 不复用 `UsersService`、不引入模块环，也不把 policy 调用移到事务外。
 - ❌ 不因本保护改 endpoint、DTO、OpenAPI、Permission、Role、BizCode、schema 或 migration。
 - ❌ 不改变 offboard 幂等 skip、refresh 撤销 reason、reopen username 探测与软删/建号先后序。
+- ❌ 不绕开 `member-lifecycle-lock.ts` 另造生命周期锁，也不采用 User → Member 的反向锁序。
 
 ## Validation
 

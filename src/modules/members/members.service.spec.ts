@@ -192,20 +192,37 @@ describe('MembersService member lifecycle authorization closure', () => {
       },
       organizationPositionAssignment: {
         findMany: jest.fn().mockResolvedValue([{ id: 'pa-1' }, { id: 'pa-2' }]),
-        updateMany: jest.fn().mockResolvedValue({ count: 2 }),
+        updateMany: jest
+          .fn<Promise<{ count: number }>, [Prisma.OrganizationPositionAssignmentUpdateManyArgs]>()
+          .mockResolvedValue({ count: 2 }),
         count: jest.fn().mockResolvedValue(0),
       },
       organizationSupervisionAssignment: {
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        updateMany: jest
+          .fn<
+            Promise<{ count: number }>,
+            [Prisma.OrganizationSupervisionAssignmentUpdateManyArgs]
+          >()
+          .mockResolvedValue({ count: 1 }),
         count: jest.fn().mockResolvedValue(0),
       },
-      roleBinding: { updateMany: jest.fn().mockResolvedValue({ count: 4 }) },
+      roleBinding: {
+        updateMany: jest
+          .fn<Promise<{ count: number }>, [Prisma.RoleBindingUpdateManyArgs]>()
+          .mockResolvedValue({ count: 4 }),
+      },
     };
   }
 
   it('offboard 同事务终止 assignments/supervisions/direct bindings，残留探针恒为 0', async () => {
     const tx = makeLifecycleTx();
-    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const auditCalls: Array<{ event: string; extra?: Record<string, unknown>; tx?: unknown }> = [];
+    const audit = {
+      log: jest.fn((entry: { event: string; extra?: Record<string, unknown>; tx?: unknown }) => {
+        auditCalls.push(entry);
+        return Promise.resolve();
+      }),
+    };
     const service = new MembersService(
       makePrisma(tx as unknown as ReturnType<typeof makeTx>),
       rbacAllow,
@@ -217,26 +234,14 @@ describe('MembersService member lifecycle authorization closure', () => {
 
     const result = await service.offboard('m1', USER, META);
 
-    const positionUpdate = tx.organizationPositionAssignment.updateMany.mock.calls[0]?.[0] as
-      | Prisma.OrganizationPositionAssignmentUpdateManyArgs
-      | undefined;
+    const positionUpdate = tx.organizationPositionAssignment.updateMany.mock.calls[0]?.[0];
     expect(positionUpdate?.data.status).toBe(AssignmentStatus.REVOKED);
-    const supervisionUpdate = tx.organizationSupervisionAssignment.updateMany.mock.calls[0]?.[0] as
-      | Prisma.OrganizationSupervisionAssignmentUpdateManyArgs
-      | undefined;
+    const supervisionUpdate = tx.organizationSupervisionAssignment.updateMany.mock.calls[0]?.[0];
     expect(supervisionUpdate?.data.status).toBe(SupervisionStatus.REVOKED);
-    const bindingUpdate = tx.roleBinding.updateMany.mock.calls[0]?.[0] as
-      | Prisma.RoleBindingUpdateManyArgs
-      | undefined;
+    const bindingUpdate = tx.roleBinding.updateMany.mock.calls[0]?.[0];
     expect(bindingUpdate?.data.status).toBe(BindingStatus.ENDED);
     expect(bindingUpdate?.data.deletedAt).toBeInstanceOf(Date);
-    const auditCall = audit.log.mock.calls[0]?.[0] as
-      | {
-          event: string;
-          extra: Record<string, unknown>;
-          tx: unknown;
-        }
-      | undefined;
+    const auditCall = auditCalls[0];
     expect(auditCall?.event).toBe('member.offboard');
     expect(auditCall?.extra).toEqual(
       expect.objectContaining({
