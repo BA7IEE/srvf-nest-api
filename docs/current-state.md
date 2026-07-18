@@ -17,7 +17,7 @@
 | 模块 | 36 |
 | Controller | 74 |
 | Endpoint | 364 |
-| Migration | 57 |
+| Migration | 58 |
 | BizCode | 253 |
 | 权限码 | 206 |
 | AuditLogEvent | 114 |
@@ -33,6 +33,7 @@
 - **会话注销终态**:`POST /api/auth/v1/logout` 由任一可识别且未过期 row(含 rotated ancestor)幂等撤销所属 refresh family 全部活跃未过期 token;其他 family 与 access 不动;详见 `security.md`
 - **限流多实例一致性**:10 个命名 throttler 共用 PostgreSQL `throttler_buckets`，保留 IP tracker / 包 hash key / limit+ttl+block / 42900 / 无 header 语义；DB/storage 异常严格 fail-closed 50000，零本地 Map fallback；过期桶手动 retention，Cron 仍恰好 2
 - **贡献规则 ACTIVE 槽位**:`ContributionRule` 以 `activityTypeCode × attendanceRoleCode` 为未软删 ACTIVE partial unique；`durationThreshold` 仅是单规则内部档位参数。create/激活在事务内预查，真实并发由 DB unique + 23002 收口；calculator 若读到漂移重复 pair 立即 fail-closed，不按创建顺序任取。
+- **通知 durable outbox**:`notification_outbox_intents` 以 eventKey 幂等、PostgreSQL `SKIP LOCKED` + lease/fencing 支持独立多实例 worker；生日/到期两个既有 cron 只 enqueue，notifications-owned marker/状态/audit 与 intent 同事务。微信广播与 admin SMS 均按 generation 留历史，并以各自 active-slot partial unique 收敛同通知/会员的并发 child；admin 临时 skip 后可由新 confirmation 重试，只有 `NotificationDelivery SENT` 跨 generation 永久去重。known title/body 在 producer 入表前 canonical 脱敏，worker 对直插 raw row exact+strict fail-closed。provider 在事务外按 at-least-once 发送；SMS 本地 SENT log+delivery 同短事务，provider accepted 到本地 commit/ack 前仍允许重复；失败 intent 可退避重试，耗尽后 dead。
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
 
@@ -52,7 +53,7 @@
 |---|---|
 | P1 | 前端联调剩运维侧 P0-H 演练 + P0-I 排错 SOP(系统侧无动作) |
 | P1 | P1-22 专业队 gate 配置化;P1-23 isForeigner 历史列改名(对外已用 isNonMainlandDocument) |
-| P2 | scoped 余面(§3);god-service 体量观察(codemap 实时口径);v0.44 接受项(#8 / #10#12 / #19 / #20#21)与到期提醒 at-most-once;单测占比刻意低(e2e 为主);Mixed 存量 2;snapshot 用 diff 勿整读 |
+| P2 | scoped 余面(§3);god-service 体量观察(codemap 实时口径);v0.44 接受项(#8 / #10 / #19 / #20#21 中 notifications-owned producer 已由 outbox 收口，跨模块 producer 留后续接入);单测占比刻意低(e2e 为主);Mixed 存量 2;snapshot 用 diff 勿整读 |
 | P3 | SMS / 招新脱敏 retention 手动 SOP(刻意);28003 同轮枚举面(v1 接受);首轮 review 接受 / 延后残项(F7/F8/F13/F18 等)在 NEXT_TASKS |
 
 ## 5. 开工门禁

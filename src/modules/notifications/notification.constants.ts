@@ -119,3 +119,23 @@ export const NOTIFICATION_TYPE_CODE_MAX = 64;
 export const NOTIFICATION_VISIBILITY_CODE_MAX = 32;
 // 列表分页上限(镜像 content；比通用 100 更紧)
 export const NOTIFICATION_PAGE_SIZE_MAX = 50;
+
+// ===== PostgreSQL durable outbox(D-Outbox;String 常量，零 enum) =====
+export const OUTBOX_STATUS_PENDING = 'pending';
+export const OUTBOX_STATUS_PROCESSING = 'processing';
+export const OUTBOX_STATUS_SUCCEEDED = 'succeeded';
+export const OUTBOX_STATUS_DEAD = 'dead';
+
+export const OUTBOX_EVENT_TARGETED_NOTIFICATION = 'notification.targeted';
+export const OUTBOX_EVENT_SYSTEM_BROADCAST = 'notification.system-broadcast';
+export const OUTBOX_EVENT_WECHAT_BROADCAST = 'notification.wechat-broadcast';
+export const OUTBOX_EVENT_WECHAT_DELIVERY = 'notification.wechat-delivery';
+export const OUTBOX_EVENT_BIRTHDAY_SMS = 'notification.birthday-sms';
+export const OUTBOX_EVENT_ADMIN_SMS = 'notification.admin-sms';
+
+export const OUTBOX_PAYLOAD_VERSION = 1;
+export const OUTBOX_MAX_ATTEMPTS = 8;
+export const OUTBOX_LEASE_MS = 30_000;
+export const OUTBOX_CLAIM_BATCH = 20;
+export const OUTBOX_BACKOFF_BASE_MS = 1_000;
+export const OUTBOX_BACKOFF_MAX_MS = 15 * 60_000;

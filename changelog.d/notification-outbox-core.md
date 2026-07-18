@@ -1,0 +1,1 @@
+- 通知模块新增 PostgreSQL durable outbox 与独立多实例 worker：生日/到期 cron、admin publish 微信和显式短信改为事务内持久化 intent 后异步/首轮派发；支持 eventKey 幂等、generation 单 active、敏感文案 canonical 脱敏、SKIP LOCKED lease/fencing、指数重试与死信；SMS SENT log+delivery 同事务，外部 provider 明确为 at-least-once。

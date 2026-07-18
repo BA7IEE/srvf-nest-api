@@ -2374,6 +2374,53 @@ model WechatSubscribeTemplate {
   @@map("wechat_subscribe_templates")
 }
 
+// PostgreSQL durable notification outbox(D-Outbox;2026-07-18)。
+// status 使用代码常量而非 enum，worker 以 SKIP LOCKED + lease/fencing 多实例领取；
+// payload 只保存内部引用与安全文案，手机号/openid/token/secret/credential/signed URL
+// 及 provider 原始请求/响应均不得进入本表。成功/死信 retention 仅走人工 SOP。
+// migration 另有手写 partial unique：微信 delivery / admin SMS 各自同
+// aggregateId/destinationRef 同时至多一条 pending/processing；Prisma DSL 无法表达 partial
+// unique，勿用普通 @@unique 误伤 terminal generation history。
+model NotificationOutboxIntent {
+  id        String   @id @default(cuid())
+  eventKey  String   @unique
+  eventType String
+  payloadVersion Int
+  payload   Json
+
+  aggregateType String
+  aggregateId   String
+  destinationType String
+  destinationRef  String
+
+  status      String   @default("pending")
+  attempts    Int      @default(0)
+  availableAt DateTime @default(now()) @db.Timestamptz(3)
+
+  leaseOwner    String?
+  lockedAt      DateTime? @db.Timestamptz(3)
+  leaseExpiresAt DateTime? @db.Timestamptz(3)
+
+  preparedAt DateTime? @db.Timestamptz(3)
+  sentAt     DateTime? @db.Timestamptz(3)
+  completedAt DateTime? @db.Timestamptz(3)
+
+  lastErrorCode  String?
+  lastErrorClass String?
+  deadAt         DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([status, availableAt, leaseExpiresAt])
+  @@index([leaseExpiresAt])
+  @@index([aggregateType, aggregateId])
+  @@index([status, completedAt])
+  @@index([status, deadAt])
+  @@index([createdAt])
+  @@map("notification_outbox_intents")
+}
+
 // PostgreSQL shared throttler storage(D-Throttle;2026-07-18):10 个命名 throttler
 // 共用数据库桶，(throttlerName,key) 物理隔离。hitExpiresAt 保存每次未 blocked hit
 // 的独立滚动过期点；过期桶仅走手动 retention SOP，刻意不新增第 3 个 cron。

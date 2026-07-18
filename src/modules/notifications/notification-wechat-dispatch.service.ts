@@ -118,6 +118,33 @@ export class NotificationWechatDispatchService {
     }
   }
 
+  // D-Outbox 广播根 intent 只做安全 fan-out：解析当前模板 quota 候选与可见性，
+  // 返回 memberId 供每收件人 child intent 持久化；openid/templateId 不进入 outbox payload。
+  async resolveDurableBroadcastMemberIds(notification: Notification): Promise<string[]> {
+    const templateId = await this.templates.getEnabledTemplateId(notification.notificationTypeCode);
+    if (!templateId) return [];
+    const quotaRows = await this.prisma.wechatSubscriptionQuota.findMany({
+      where: { templateId, availableCount: { gt: 0 } },
+      select: { memberId: true },
+    });
+    if (quotaRows.length === 0) return [];
+    const alreadySent = await this.prisma.notificationDelivery.findMany({
+      where: {
+        notificationId: notification.id,
+        channel: NOTIFICATION_CHANNEL_WECHAT,
+        status: DELIVERY_STATUS_SENT,
+        memberId: { in: quotaRows.map((row) => row.memberId) },
+      },
+      select: { memberId: true },
+    });
+    const sent = new Set(alreadySent.map((row) => row.memberId));
+    const audience = await this.resolveAudience(
+      quotaRows.map((row) => row.memberId).filter((memberId) => !sent.has(memberId)),
+      notification,
+    );
+    return audience.map((member) => member.memberId);
+  }
+
   // 定向收件人 openid 解析:active member 的 active user.openid(单收件人,非批量 resolveAudience)。
   private async resolveMemberOpenid(memberId: string): Promise<string | null> {
     const member = await this.prisma.member.findFirst({

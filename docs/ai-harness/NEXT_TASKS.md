@@ -21,7 +21,7 @@
 - App activities DTO 暴露 `requiresInsurance`(评审稿 E-19:App 端拒报已经 26030 message 提示;列表/详情展示门槛标识等小程序前端真实需要再加,App DTO 字段集变更单独评审)
 
 ### P1-14 GAP-005 统一通知模块后续(S1–S5 已发,余项 ⏸ 诉求触发再立项)
-- **真·全员短信批处理异步**(S5 末位切片明确延后,评审稿 §4/§8.1/§8.3):当前短信兜底 = **admin 显式 confirmed=true 同步逐人发**,受众 = 通知可见且有手机者(团队百人级,同步可承受)。**若未来受众规模致同步 HTTP 延迟超阈** → 先在此**观察记录**,再评估是否引异步/批处理基建;**这是唯一可能触碰 R-5(no-cron 解锁范围仅生日批)的场景,须维护者拍 D 档评审**,**不自建 cron/queue/事件总线**(冻结决策)。S5 已 `log()` 派发汇总(notification/recipientCount/sent/failed/skipped)供观察。
+- **真·全员短信批处理异步**(S5 末位切片经 D-Outbox 收口):admin `confirmed=true` 现先持久化逐收件人 generation intent，再由 HTTP 做首轮、独立 worker 续跑失败项；跨进程 active-slot 防并发重复，真实 `NotificationDelivery SENT` 才是永久去重事实。实现未新增 cron/Redis/queue/事件总线；若未来受众规模需要分片、吞吐控制或专用队列，仍须另立 D 档，不在 durable outbox 基础能力中暗增。
 - **报名前 openid 非会员推送路**(S3/S5 均标注另立项):招新报名前 5 触发(报名受理/转人工/门槛/评定/公示)申请人**非队员**,站内/微信/短信(均需 member)够不着 → 现维持**查询进度 pull**;若需主动推送给未入队报名人(微信 openid 锚点),单独立项。
 - **短信 admin 投递查询端点**(可选):当前 `NotificationDelivery`(channel=sms)+ `sms_send_logs` 落库,admin 查投递成败靠 `sms-send-logs` 列表(已有)/ 运维看库;若需「按通知查短信投递明细」admin 端点,诉求触发再加(沿 S2 微信 delivery 无专属查询端点的口径)。
 
@@ -91,8 +91,8 @@
 - **finding #8 考勤 DB 排他约束**:不引 `btree_gist` / range exclusion constraint;本仓首个 DB 扩展、腾讯云托管库可用性未验、同人同时录两单触发极罕见。#7 已以事务 advisory lock 保护所有应用写路径;若出现绕过应用直写或真实冲突,再单独评审 DB 约束。
 - **findings #10/#12 附件全量扫描后内存分页**:`list` 与 `listByOwner` 仍先做 ownership 可见性过滤再分页,当前规模下是理论性能问题(#12 单 owner 更小);若命中总量达到万级或接口延迟/内存指标越线,再设计可见性下推/两阶段分页。#11 certificate N+1 已在 v0.44.0 单独修复为批量 Map。
 - **finding #19 RBAC 多实例缓存失效 — ✅ 运行时已关闭(D-RBAC)**:`RbacService` 的 GLOBAL permission resolution 已改为每请求读取 PostgreSQL 当前事实,不再保留进程内 Map/TTL 或依赖提交后 invalidate/reload,多实例 grant/revoke 在下一请求收敛。剩余 `rbac.controller.ts` / `rbac.dto.ts` / `prisma/seed.ts` 与 OpenAPI 派生描述一致性留后续 **D-contract true-up**（本刀不改 endpoint/DTO/BizCode/contract snapshot）。
-- **findings #20/#21 post-commit 通知可能永久丢失**:涉及活动报名审批与考勤终审两处仅站内、非权威提醒;业务结果已安全落库可另查。可靠补发需 outbox/queue/后台任务,与 no-cron/queue 红线冲突,收益不足,故不写补发代码。
-- **2026-07-14 第七刀编号回执**:#14「附件权限内存过滤后分页」维持接受项,规模/延迟越线后才单独设计下推；#12「通知 outbox」仍撞 queue/cron 红线,未获 waiver,本刀明确不做。该编号来自本轮安全收口清单,与上两条历史 review 编号不同,语义分别指向同一两类已登记债务。
+- **findings #20/#21 post-commit 通知可能永久丢失**:D-Outbox 已为 notifications-owned producer（生日、到期提醒、admin publish 微信、admin SMS）落 PostgreSQL durable intent + 独立 worker，且不新增 cron/queue；活动报名审批、考勤终审等外部 bounded-context producer 尚未迁入，本轮明确不扩写集，后续按消费者逐项接线。
+- **2026-07-14 第七刀编号回执**:#14「附件权限内存过滤后分页」维持接受项,规模/延迟越线后才单独设计下推；#12「通知 outbox」已获 D-Outbox goal waiver 并以 PostgreSQL intent + 独立 worker 落地，no-cron/queue 红线保持。该编号来自本轮安全收口清单,与上条历史 review 编号不同。
 - **finding #16 不成立**:常规撤权路径均同步失效缓存,1800s TTL 仅兜底;真实残余已由 #17 查询失败退全清、#18 角色/权限删除失效、#19 多实例边界分别覆盖,不另改代码。
 ---
 
