@@ -59,6 +59,7 @@ function fullRow(overrides: Record<string, unknown> = {}) {
 // 默认 happy-path tx:supervisor(active)/ org(active)均存在;count 恒 0(无 dup);create/update 回一行;closure 空。
 function makeTx() {
   return {
+    $queryRaw: jest.fn().mockResolvedValue([{ id: 'sup1memberid' }]),
     member: { findFirst: jest.fn().mockResolvedValue({ id: 'sup1', status: 'ACTIVE' }) },
     organization: { findFirst: jest.fn().mockResolvedValue({ id: 'org1', status: 'ACTIVE' }) },
     organizationClosure: { findMany: jest.fn().mockResolvedValue([]) },
@@ -106,6 +107,7 @@ describe('SupervisionAssignmentsService.create', () => {
     expect(data.status).toBe('ACTIVE');
     expect(data.appointedByUserId).toBe('u1');
     expect(res.status).toBe('ACTIVE');
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
     expect(auditLogMock).toHaveBeenCalled();
   });
 

@@ -324,10 +324,9 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
       // 即使 fixture 显式重启 Member/User（绕过业务 API），旧 direct bindings 也不会恢复。
       await prisma.member.update({ where: { id: m.id }, data: { status: MemberStatus.ACTIVE } });
       await prisma.user.update({ where: { id: userId }, data: { status: UserStatus.ACTIVE } });
-      const restarted = await loginMember(phone);
       const permissions = await request(httpServer(app))
         .get('/api/system/v1/rbac/me/permissions')
-        .set('Authorization', `Bearer ${restarted.accessToken}`);
+        .set('Authorization', `Bearer ${accessToken}`);
       expect(permissions.status).toBe(200);
       expect(permissions.body.data.permissions).not.toContain('member.offboard.record');
     });
