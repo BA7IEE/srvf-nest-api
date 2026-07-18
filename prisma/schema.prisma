@@ -1427,6 +1427,9 @@ model Attachment {
   // V2.x C-7.5 PR(attachment_key_unique):key 加 @unique(沿评审 §8.4.4 + PR #91 已知偏差修复)
   // confirm-upload 二次提交:findFirst 串行早返 13001 + P2002 catch 并发兜底(双层防御)
   key          String   @unique // Provider 侧文件唯一引用;长度由 DTO @MaxLength(256);@unique 全局唯一
+  // D-STORAGE-CONSISTENCY expand phase:新 binary 运行时强制同 tx 建立 StorageObject invariant；
+  // 本期刻意不声明 relation/FK，以兼容 migration 后尚未退场的旧 writer。backfill gate=0 且
+  // 新 binary 全量稳定后，另立 contract migration 加 Attachment.key -> StorageObject.key RESTRICT。
   originalName String // 原始文件名;长度由 DTO @MaxLength(255)
   mime         String // MIME 类型;长度由 DTO @MaxLength(128);走 attachment_mime_configs 白名单
   size         Int // 文件大小(字节);非负;走 attachment_size_limit_configs 上限
@@ -1460,6 +1463,114 @@ enum AttachmentAccessLevel {
   PUBLIC // 公开;沿 Q7 活动封面 / 培训资料
   INTERNAL // 内部;沿 Q7 活动现场照
   SENSITIVE // 敏感;沿 Q7 队员证件照
+}
+
+// Attachment namespace 的 durable provider-object ledger(D-STORAGE-CONSISTENCY Phase 1)。
+// state/source 使用 String + migration CHECK，避免把恢复态扩展变成 PostgreSQL enum DDL；
+// 运行时只允许 available 进入普通严格读取/签名。历史回填绝不直接写 available。
+// provider locator 只保存非秘密定位信息；credential/signed URL/token 永不入表。
+model StorageObject {
+  id  String @id @default(cuid())
+  key String @unique
+
+  // DB CHECK 见 20260718233000；integrity_mismatch 表示已固定对象的确定性 size/etag 冲突，
+  // JIT/STRICT 均不可读，只能走双人 manual relocate 恢复。
+  state  String @default("pending_upload")
+  source String
+
+  providerType  StorageProviderType?
+  bucket        String?
+  region        String?
+  localNamespace String?
+
+  // Provider/storage_settings 的对象上限是 BigInt；现有 Attachment.size 仍是 Int，写 ledger 时
+  // 显式 BigInt(size)。这样本期不改 API/DTO，同时 ledger 不把未来 >2 GiB provider metadata 截断。
+  expectedSize BigInt?
+  actualSize   BigInt?
+  expectedMime String?
+  actualMime   String?
+  etag         String?
+  checksum     String?
+
+  // available 后指向 Attachment 聚合；未绑定上传必须保持 null，供 orphan-delete 安全门判断。
+  resourceType String?
+  resourceId   String?
+  version      Int     @default(0)
+
+  unboundExpiresAt    DateTime? @db.Timestamptz(3)
+  lastProviderCheckedAt DateTime? @db.Timestamptz(3)
+  verifiedAt          DateTime? @db.Timestamptz(3)
+  presentAt           DateTime? @db.Timestamptz(3)
+  deleteRequestedAt   DateTime? @db.Timestamptz(3)
+  absentAt            DateTime? @db.Timestamptz(3)
+  missingAt           DateTime? @db.Timestamptz(3)
+
+  lastErrorCode  String?
+  lastErrorClass String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  operations StorageObjectOperation[]
+
+  @@index([state])
+  @@index([source, state])
+  @@index([resourceType, resourceId])
+  @@index([unboundExpiresAt])
+  @@index([createdAt])
+  @@map("storage_objects")
+}
+
+// Durable operation ledger。eventKey 幂等；leaseOwner + leaseGeneration 是 fencing token。
+// migration 的 partial unique 保证每个 object 同时至多一条 pending/processing operation。
+model StorageObjectOperation {
+  id              String @id @default(cuid())
+  eventKey        String @unique
+  storageObjectId String
+  replayOfId      String?
+
+  kind        String
+  status      String @default("pending")
+  effectState String @default("not_started")
+
+  payloadVersion Int
+  payload        Json
+  requestHash    String
+
+  attempts    Int      @default(0)
+  availableAt DateTime @default(now()) @db.Timestamptz(3)
+
+  leaseOwner      String?
+  leaseGeneration Int       @default(0)
+  leaseAcquiredAt DateTime?  @db.Timestamptz(3)
+  leaseRenewedAt  DateTime?  @db.Timestamptz(3)
+  leaseExpiresAt  DateTime?  @db.Timestamptz(3)
+
+  effectStartedAt   DateTime? @db.Timestamptz(3)
+  effectCompletedAt DateTime? @db.Timestamptz(3)
+  completedAt       DateTime? @db.Timestamptz(3)
+  deadAt            DateTime? @db.Timestamptz(3)
+
+  lastErrorCode  String?
+  lastErrorClass String?
+
+  responseSnapshotExpiresAt DateTime? @db.Timestamptz(3)
+  responsePurgedAt          DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  storageObject StorageObject @relation(fields: [storageObjectId], references: [id], onDelete: Restrict)
+  replayOf      StorageObjectOperation?  @relation("StorageObjectOperationReplay", fields: [replayOfId], references: [id], onDelete: Restrict)
+  replays       StorageObjectOperation[] @relation("StorageObjectOperationReplay")
+
+  @@index([status, availableAt, leaseExpiresAt])
+  @@index([storageObjectId, createdAt])
+  @@index([kind, status])
+  @@index([leaseExpiresAt])
+  @@index([responseSnapshotExpiresAt, responsePurgedAt])
+  @@index([createdAt])
+  @@map("storage_object_operations")
 }
 
 model AttachmentTypeConfig {

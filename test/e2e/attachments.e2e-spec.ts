@@ -83,7 +83,6 @@ describe('attachments 主模块', () => {
   let prisma: PrismaService;
   let localRoot: string;
   let envPrefix: string;
-  let superUserId: string;
 
   let superAuth: string;
   let adminAuth: string;
@@ -105,11 +104,10 @@ describe('attachments 主模块', () => {
     prisma = app.get(PrismaService);
 
     // ============ 1. 创建 User ============
-    const superUser = await createTestUser(app, {
+    await createTestUser(app, {
       username: SUPER_USERNAME,
       role: Role.SUPER_ADMIN,
     });
-    superUserId = superUser.id;
     await createTestUser(app, { username: ADMIN_USERNAME, role: Role.ADMIN });
     const selfUser = await createTestUser(app, { username: SELF_USERNAME });
     const otherUser = await createTestUser(app, { username: OTHER_USERNAME });
@@ -314,6 +312,25 @@ describe('attachments 主模块', () => {
       writeFileSync(filePath, attachmentBytesForMime(body.mime, body.size));
     }
     return body;
+  };
+
+  const createAvailableAttachmentViaApi = async (
+    overrides: Record<string, unknown> = {},
+  ): Promise<{ id: string; key: string }> => {
+    const res = await request(httpServer(app))
+      .post('/api/admin/v1/attachments')
+      .set('Authorization', superAuth)
+      .send(buildBody(overrides));
+    expect(res.status).toBe(201);
+    const created = res.body.data as { id: string; key: string };
+    await expect(
+      prisma.storageObject.findUnique({ where: { key: created.key } }),
+    ).resolves.toMatchObject({
+      state: 'available',
+      resourceType: 'attachment',
+      resourceId: created.id,
+    });
+    return created;
   };
 
   // ============ 权限边界 ============
@@ -593,31 +610,21 @@ describe('attachments 主模块', () => {
     beforeEach(truncateAttachments);
 
     it('getById/list:过去时间不发 accessUrl；未来 / 未设置正常发', async () => {
-      const rows = await Promise.all(
-        (
-          [
-            ['expired', new Date('2000-01-01T00:00:00.000Z')],
-            ['future', new Date('2286-01-01T00:00:00.000Z')],
-            ['unset', null],
-          ] as const
-        ).map(([label, expireAt]) =>
-          prisma.attachment.create({
-            data: {
-              key: conformingAttachmentKey(),
-              originalName: `${label}.jpg`,
-              mime: 'image/jpeg',
-              size: 100,
-              uploadedBy: superUserId,
-              ownerType: 'member',
-              ownerId: memberA.id,
-              tags: [],
-              originalUploaderName: SUPER_USERNAME,
-              expireAt,
-            },
-          }),
-        ),
-      );
-      const [expired, future, unset] = rows;
+      const expired = await createAvailableAttachmentViaApi({
+        originalName: 'expired.jpg',
+        size: 100,
+        expireAt: '2000-01-01T00:00:00.000Z',
+      });
+      const future = await createAvailableAttachmentViaApi({
+        originalName: 'future.jpg',
+        size: 100,
+        expireAt: '2286-01-01T00:00:00.000Z',
+      });
+      const unset = await createAvailableAttachmentViaApi({
+        originalName: 'unset.jpg',
+        size: 100,
+        expireAt: null,
+      });
 
       const detail = await request(httpServer(app))
         .get(`/api/admin/v1/attachments/${expired.id}`)
@@ -1013,30 +1020,17 @@ describe('attachments 主模块', () => {
 
     beforeEach(async () => {
       await truncateAttachments();
-      const superId = (await prisma.user.findFirst({ where: { username: SUPER_USERNAME } }))!.id;
-      memberAtt = await prisma.attachment.create({
-        data: {
-          key: conformingAttachmentKey(),
-          originalName: 'a.jpg',
-          mime: 'image/jpeg',
-          size: 100,
-          uploadedBy: superId,
-          ownerType: 'member',
-          ownerId: memberA.id,
-        },
-        select: { id: true },
+      memberAtt = await createAvailableAttachmentViaApi({
+        originalName: 'a.jpg',
+        size: 100,
+        ownerType: 'member',
+        ownerId: memberA.id,
       });
-      memberBAtt = await prisma.attachment.create({
-        data: {
-          key: conformingAttachmentKey(),
-          originalName: 'b.jpg',
-          mime: 'image/jpeg',
-          size: 100,
-          uploadedBy: superId,
-          ownerType: 'member',
-          ownerId: memberB.id,
-        },
-        select: { id: true },
+      memberBAtt = await createAvailableAttachmentViaApi({
+        originalName: 'b.jpg',
+        size: 100,
+        ownerType: 'member',
+        ownerId: memberB.id,
       });
     });
 
@@ -1097,30 +1091,17 @@ describe('attachments 主模块', () => {
 
     beforeEach(async () => {
       await truncateAttachments();
-      const superId = (await prisma.user.findFirst({ where: { username: SUPER_USERNAME } }))!.id;
-      memberAtt = await prisma.attachment.create({
-        data: {
-          key: conformingAttachmentKey(),
-          originalName: 'a.jpg',
-          mime: 'image/jpeg',
-          size: 100,
-          uploadedBy: superId,
-          ownerType: 'member',
-          ownerId: memberA.id,
-        },
-        select: { id: true },
+      memberAtt = await createAvailableAttachmentViaApi({
+        originalName: 'a.jpg',
+        size: 100,
+        ownerType: 'member',
+        ownerId: memberA.id,
       });
-      memberBAtt = await prisma.attachment.create({
-        data: {
-          key: conformingAttachmentKey(),
-          originalName: 'b.jpg',
-          mime: 'image/jpeg',
-          size: 100,
-          uploadedBy: superId,
-          ownerType: 'member',
-          ownerId: memberB.id,
-        },
-        select: { id: true },
+      memberBAtt = await createAvailableAttachmentViaApi({
+        originalName: 'b.jpg',
+        size: 100,
+        ownerType: 'member',
+        ownerId: memberB.id,
       });
     });
 

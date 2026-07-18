@@ -7,8 +7,8 @@
 
 | 项 | 当前值 / 何处看 |
 |---|---|
-| 版本(六处一致) | **v0.58.0**(2026-07-17;package.json = Swagger = CHANGELOG = tag = GitHub Release = handoff OpenAPI;tag 指向 handoff #680 squash `30675e28`;最新 handoff `archive/handoff/v0.58.0.md`) |
-| main HEAD / open PR / Unreleased | 实时看 `gh pr list` · [`CHANGELOG.md`](../CHANGELOG.md) `## Unreleased` + `changelog.d/`;当前:v0.58.0 回填点(第五轮 review #674 + 双 lane 修复 #675/#676 + 回填 #677 + 收口 #678-#680)|
+| 版本(六处一致) | **v0.58.0**(2026-07-17;tag/handoff #680=`30675e28`;`archive/handoff/v0.58.0.md`) |
+| main HEAD / open PR / Unreleased | 实时看 `gh pr list` · [`CHANGELOG.md`](../CHANGELOG.md) `## Unreleased` + `changelog.d/`;基线=v0.58.0 回填点(#674-#680)|
 
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
@@ -17,8 +17,8 @@
 | 模块 | 36 |
 | Controller | 74 |
 | Endpoint | 364 |
-| Migration | 59 |
-| BizCode | 254 |
+| Migration | 60 |
+| BizCode | 255 |
 | 权限码 | 206 |
 | AuditLogEvent | 122 |
 | 内建角色 | 9 |
@@ -29,11 +29,12 @@
 
 - **接口与字段真相**:live `/api/docs-json` + contract snapshot + `EXPECTED_ROUTES`;**逐版本叙事**:[`CHANGELOG.md`](../CHANGELOG.md) + `archive/handoff/`
 - **模块地图** `CODEMAP.md` · **权限地图** `ai-harness/RBAC_MAP.md`(各有 check 脚本守护)· **数据模型** `prisma/schema.prisma`
-- **API surface 终态**:5 canonical 前缀(admin / app / auth / system / open 各 `/v1`),contract 断言锁定;规则见 `api-surface-policy.md`;❌不新增 Mixed Controller(存量 2 冻结)❌App 永不返回 L3(content-* 签名 URL 过可见级后返是唯一范围例外)
+- **API surface 终态**:5 canonical `/v1` 前缀,contract 锁定;见 `api-surface-policy.md`;❌新增 Mixed Controller(存量 2)❌App 返回 L3(content-* 可见级后签名 URL 是唯一例外)
 - **会话注销终态**:`POST /api/auth/v1/logout` 由任一可识别且未过期 row(含 rotated ancestor)幂等撤销所属 refresh family 全部活跃未过期 token;其他 family 与 access 不动;详见 `security.md`
 - **限流多实例一致性**:10 个命名 throttler 共用 PostgreSQL `throttler_buckets`，保留 IP tracker / 包 hash key / limit+ttl+block / 42900 / 无 header 语义；DB/storage 异常严格 fail-closed 50000，零本地 Map fallback；过期桶手动 retention，Cron 仍恰好 2
 - **贡献规则 ACTIVE 槽位**:`ContributionRule` 以 `activityTypeCode × attendanceRoleCode` 为未软删 ACTIVE partial unique；`durationThreshold` 仅是单规则内部档位参数。create/激活在事务内预查，真实并发由 DB unique + 23002 收口；calculator 若读到漂移重复 pair 立即 fail-closed，不按创建顺序任取。
-- **通知 durable outbox**:`notification_outbox_intents` 以 eventKey 幂等，PG `SKIP LOCKED` + lease/fencing 支持多 worker；生日/到期 cron 仅 enqueue，notifications-owned marker/状态/audit 与 intent 同事务。微信广播/admin SMS 按 generation 留史，并以 active-slot partial unique 收敛并发 child；临时 skip 可由新 confirmation 重试，仅 `NotificationDelivery SENT` 跨代永久去重。producer 先 canonical 脱敏 known title/body，worker 对 raw row exact+strict fail-closed。provider 事务外 at-least-once；SMS SENT log+delivery 同短事务，accepted 至 commit/ack 窗口允许重复；失败退避至 dead。
+- **通知 durable outbox**:`notification_outbox_intents` 以 eventKey 幂等，PG `SKIP LOCKED` + lease/fencing；cron 仅 enqueue，notifications-owned marker/状态/audit 与 intent 同事务。微信/admin SMS 按 generation + active-slot 收敛，仅 SENT 跨代去重；worker 对 raw row strict fail-closed；provider 事务外 at-least-once，失败退避至 dead。
+- **Attachment storage Phase1**:仅 Attachment key namespace 由 `StorageObject`/`StorageObjectOperation` durable ledger 管理；locator 固定、凭证取当前 settings；JIT→STRICT 由 dedicated worker 收敛(非 cron/queue)。`20260718233000_attachment_storage_operations` 为旧 binary additive rollout 未加 `Attachment.key` FK，不代表 repo-wide closure；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)。
 - **敏感读审计(C-2,2026-07-19)**:`AuditLogEvent` 122，placeholder 退役；管理端敏感读鉴权/查询后、CSV 交 generator 前、签名 URL 调 provider 前 fail-closed 落库。extra 仅 operation/字段名/maskLevel/计数，禁 PII/filter 值/key/URL。
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)

@@ -1798,6 +1798,11 @@ export const BizCode = {
     message: '附件 MIME 类型在系统级黑名单中,不允许上传',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+  ATTACHMENT_STORAGE_OPERATION_PENDING: {
+    code: 13034,
+    message: '附件存储操作处理中,请稍后重试',
+    httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+  },
 
   // V2.x C-7 attachments 实施 PR #6b(2026-05-15):attachments 主模块业务级错误段位。
   //

@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import { AttachmentMimeConfigStatus, AttachmentTypeConfigStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -8,10 +8,9 @@ import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.d
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
-import { CosProviderUnavailableError } from '../storage/providers/cos.provider';
+import { STORAGE_UNBOUND_GRACE_MS } from '../storage/storage-consistency.types';
+import type { AttachmentDeleteReplayResponse } from '../storage/storage-operation-payload';
 import { StorageSettingsService } from '../storage/storage-settings.service';
-import { STORAGE_PROVIDER } from '../storage/storage.constants';
-import type { StorageProvider } from '../storage/storage.interface';
 import {
   signUploadToken,
   UploadTokenExpiredError,
@@ -22,8 +21,8 @@ import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
-import { AttachmentAuditRecorder } from './attachment-audit-recorder';
-import { AttachmentContentValidator } from './attachment-content-validator';
+import { AttachmentStorageOrchestrator } from './attachment-storage-orchestrator';
+import type { AttachmentUploadStorageIdentity } from './attachment-storage.types';
 import {
   ATTACHMENT_OWNER_TYPES,
   AttachmentOwnerType,
@@ -85,59 +84,48 @@ export interface OwnerAttachmentView {
 
 @Injectable()
 export class AttachmentsService {
-  private readonly logger = new Logger(AttachmentsService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
-    private readonly attachmentAuditRecorder: AttachmentAuditRecorder,
-    private readonly contentValidator: AttachmentContentValidator,
-    @Inject(STORAGE_PROVIDER) private readonly provider: StorageProvider,
+    private readonly storageConsistency: AttachmentStorageOrchestrator,
     private readonly storageSettings: StorageSettingsService,
     @Inject(appConfig.KEY)
     private readonly cfg: ConfigType<typeof appConfig>,
   ) {}
 
-  // Q14 v1.0 + PR #90:Provider 接通后 accessUrl 由 generateDownloadUrl 生成;
-  // Provider 不可用(凭证缺失 / 网络抖动 / settings invalid)→ 降级 null(沿 §6.6.3 信息泄漏防御)。
-  // toResponseDto 改为实例 async method(沿 Q-90-1;访问 this.provider / this.storageSettings)。
+  // accessUrl 只能经 durable ledger 的 pinned locator + HEAD 证明后生成；失败降级 null。
   private async toResponseDto(row: SafeAttachment): Promise<AttachmentResponseDto> {
     const accessUrl = await this.resolveAccessUrl(row.key, row.expireAt);
     return { ...row, accessUrl };
   }
 
-  // PR #90:accessUrl 解析失败统一降级 null;不向 client 抛凭证状态(沿 Q13 / §6.6 安全边界)。
-  // finding #11:expireAt 在本单点生效;调用方已持行时显式传值,仅 key 直签路径补查附件行。
-  private async resolveAccessUrl(key: string, expireAt?: Date | null): Promise<string | null> {
-    try {
-      const effectiveExpireAt =
-        expireAt === undefined
-          ? ((
-              await this.prisma.attachment.findUnique({
-                where: { key },
-                select: { expireAt: true },
-              })
-            )?.expireAt ?? null)
-          : expireAt;
-      if (effectiveExpireAt !== null && effectiveExpireAt.getTime() <= Date.now()) {
-        return null;
-      }
+  private deleteReplayToResponseDto(
+    response: AttachmentDeleteReplayResponse,
+  ): AttachmentResponseDto {
+    return {
+      ...response,
+      uploadedAt: new Date(response.uploadedAt),
+      createdAt: new Date(response.createdAt),
+      updatedAt: new Date(response.updatedAt),
+    };
+  }
 
-      // TTL 来源:storage_settings.downloadUrlTtlSeconds(沿 Q8 + Q-90-2);
-      // settings null(DB 空 / Router fallback Local)→ 兜底 300s
-      const settings = await this.storageSettings.getActiveSettings();
-      const expiresIn = settings?.downloadUrlTtlSeconds ?? 300;
-      const result = await this.provider.generateDownloadUrl({ key, expiresIn });
-      return result.url;
-    } catch (err) {
-      if (err instanceof CosProviderUnavailableError) {
-        // 不在日志中暴露凭证细节(err.message 已经按 §6.6.2 过滤;只透露状态名)
-        this.logger.warn(`accessUrl unavailable (cos): ${err.message}`);
-      } else {
-        this.logger.warn(`accessUrl generation failed: ${(err as Error).message}; key=${key}`);
-      }
+  // expireAt 在本单点生效；调用方只给 key 时补查 Attachment 行。
+  private async resolveAccessUrl(key: string, expireAt?: Date | null): Promise<string | null> {
+    const effectiveExpireAt =
+      expireAt === undefined
+        ? ((
+            await this.prisma.attachment.findUnique({
+              where: { key },
+              select: { expireAt: true },
+            })
+          )?.expireAt ?? null)
+        : expireAt;
+    if (effectiveExpireAt !== null && effectiveExpireAt.getTime() <= Date.now()) {
       return null;
     }
+    const settings = await this.storageSettings.getActiveSettings();
+    return this.storageConsistency.resolveDownloadUrl(key, settings?.downloadUrlTtlSeconds ?? 300);
   }
 
   // ===== CMS 内容模块可信只读(content-module-review §5.4;α 决议)=====
@@ -170,18 +158,19 @@ export class AttachmentsService {
       },
       orderBy: { createdAt: 'asc' },
     });
+    const readable = await this.storageConsistency.filterMetadataVisible(
+      rows.filter((row) => row.expireAt === null || row.expireAt.getTime() > Date.now()),
+    );
     return Promise.all(
-      rows
-        .filter((r) => r.expireAt === null || r.expireAt.getTime() > Date.now())
-        .map(async (r) => ({
-          id: r.id,
-          ownerType: r.ownerType,
-          mime: r.mime,
-          originalName: r.originalName,
-          size: r.size,
-          createdAt: r.createdAt,
-          accessUrl: await this.resolveAccessUrl(r.key, r.expireAt),
-        })),
+      readable.map(async (row) => ({
+        id: row.id,
+        ownerType: row.ownerType,
+        mime: row.mime,
+        originalName: row.originalName,
+        size: row.size,
+        createdAt: row.createdAt,
+        accessUrl: await this.resolveAccessUrl(row.key, row.expireAt),
+      })),
     );
   }
 
@@ -190,17 +179,6 @@ export class AttachmentsService {
   async resolveSignedUrlTrusted(key: string | null): Promise<string | null> {
     if (!key) return null;
     return this.resolveAccessUrl(key);
-  }
-
-  // PR #90:事务外同步尝试 Provider 删除(沿 F4 + Q3 路线 C);
-  // 失败 logger.warn,不回滚 DB / audit;依赖 Provider lifecycle 30 天兜底(沿 §6.4.5 / Q11)。
-  // Q3 audit extra.providerDeleteStatus 留 v1.1+ 评审(沿 Q-90-4)。
-  private async tryDeleteFromProvider(key: string): Promise<void> {
-    try {
-      await this.provider.deleteObject(key);
-    } catch (err) {
-      this.logger.warn(`provider deleteObject failed; key=${key}; ${(err as Error).message}`);
-    }
   }
 
   // ============ helpers:校验链(沿 D7 v1.0 §6.2 9 步)============
@@ -492,46 +470,47 @@ export class AttachmentsService {
       throw new BizException(BizCode.ATTACHMENT_KEY_INVALID);
     }
 
-    // 7.6. finding #9:旧 create 端点原地加固。对象必须真实存在,且实际 size / 魔数与声明一致。
-    await this.contentValidator.validateFromObject({
+    // 7.6. 旧 create 也必须先提交 durable intent，再按 pinned locator 证明对象存在。
+    const identity: AttachmentUploadStorageIdentity = {
       key: dto.key,
+      ownerType: dto.ownerType,
+      ownerId: dto.ownerId,
+      originalName: dto.originalName,
       mime: dto.mime,
       size: dto.size,
-    });
+      uploadedByUserId: user.id,
+    };
+    const prepared = await this.storageConsistency.prepareUpload(
+      identity,
+      'attachment_legacy',
+      new Date(Date.now() + STORAGE_UNBOUND_GRACE_MS),
+    );
+    await this.storageConsistency.verifyUpload(identity, 'attachment_legacy');
+    await this.assertOwnerExists(dto.ownerType as AttachmentOwnerType, dto.ownerId);
 
-    // 8. 事务内:写主表 + audit 落库(沿 D7 §7.2 同事务 fail-fast)。
-    //    校验链(步骤 1-7)留事务外(PR #6c Q7 拍板;读不需事务);
-    //    auditLogs.log 失败 → $transaction 自动回滚 attachment.create。
-    const row = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.attachment.create({
-        data: {
-          key: dto.key,
-          originalName: dto.originalName,
-          mime: dto.mime,
-          size: dto.size,
-          uploadedBy: user.id,
-          ownerType: dto.ownerType,
-          ownerId: dto.ownerId,
-          description: dto.description,
-          accessLevel: dto.accessLevel,
-          tags: dto.tags ?? [],
-          originalUploaderName: user.username,
-          expireAt: dto.expireAt ? new Date(dto.expireAt) : undefined,
-        },
-        select: attachmentSelect,
-      });
-
-      await this.attachmentAuditRecorder.logUpload({
-        created,
-        actorUserId: user.id,
-        actorRoleSnap: user.role,
-        scope,
-        ownerTable,
-        auditMeta,
-        tx,
-      });
-
-      return created;
+    // 8. Attachment + AVAILABLE + operation terminal + audit 同一事务；任一失败均可按 intent 重放。
+    const row = await this.storageConsistency.finalizeUpload({
+      identity,
+      requestHash: prepared.requestHash,
+      data: {
+        key: dto.key,
+        originalName: dto.originalName,
+        mime: dto.mime,
+        size: dto.size,
+        uploadedBy: user.id,
+        ownerType: dto.ownerType,
+        ownerId: dto.ownerId,
+        description: dto.description,
+        accessLevel: dto.accessLevel,
+        tags: dto.tags ?? [],
+        originalUploaderName: user.username,
+        expireAt: dto.expireAt ? new Date(dto.expireAt) : undefined,
+      },
+      auditKind: 'legacy',
+      actorRoleSnap: user.role,
+      scope,
+      ownerTable,
+      auditMeta,
     });
     return this.toResponseDto(row);
   }
@@ -560,12 +539,13 @@ export class AttachmentsService {
       select: attachmentSelect,
       orderBy: { createdAt: 'desc' },
     });
+    const readableRows = await this.storageConsistency.filterMetadataVisible(allRows);
     const certificateMemberById = await this.loadCertificateMemberMap(
-      allRows.filter((row) => row.ownerType === 'certificate').map((row) => row.ownerId),
+      readableRows.filter((row) => row.ownerType === 'certificate').map((row) => row.ownerId),
     );
 
     const visible: SafeAttachment[] = [];
-    for (const row of allRows) {
+    for (const row of readableRows) {
       if (await this.canViewAttachment(user, row, certificateMemberById)) {
         visible.push(row);
       }
@@ -582,6 +562,9 @@ export class AttachmentsService {
   async getById(id: string, user: CurrentUserPayload): Promise<AttachmentResponseDto> {
     // 1. 查活跃记录(不存在 → 13001)
     const row = await this.findByIdOrThrow(id);
+    if (!(await this.storageConsistency.isMetadataVisible(row.key))) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
 
     // 2. 判 view 权限(Q13:不存在 + 无权统一返 13001)
     const { resource, scope } = await this.buildRbacResourceAndScope(
@@ -603,6 +586,9 @@ export class AttachmentsService {
   ): Promise<AttachmentResponseDto> {
     // 1. 查活跃记录(不存在 → 13001)
     const row = await this.findByIdOrThrow(id);
+    if (!(await this.storageConsistency.isMetadataVisible(row.key))) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
 
     // 2. 判 update 权限(写路径;失败 → 30100 RBAC_FORBIDDEN)
     const { resource, scope } = await this.buildRbacResourceAndScope(
@@ -619,23 +605,76 @@ export class AttachmentsService {
       tags: dto.tags,
     });
 
-    // 4. 更新 4 字段(其余字段已经 DTO 白名单 + forbidNonWhitelisted 兜底);
-    //    expireAt: 显式 null → 清空;undefined → 不动;字符串 → new Date()
-    const updated = await this.prisma.attachment.update({
-      where: { id },
-      data: {
-        description: dto.description,
-        accessLevel: dto.accessLevel,
-        tags: dto.tags,
-        expireAt:
-          dto.expireAt === null
-            ? null
-            : dto.expireAt !== undefined
-              ? new Date(dto.expireAt)
-              : undefined,
-      },
-      select: attachmentSelect,
-    });
+    // 4. 全局写锁序 Attachment → StorageObject。锁内重读并只允许 identity-complete available
+    //    对象进入 PATCH；delete intent 先赢或 ledger 不安全时绝不修改 tombstone。
+    let updated: SafeAttachment;
+    try {
+      updated = await this.prisma.$transaction(async (tx) => {
+        const attachmentLocks = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT "id" FROM "attachments"
+          WHERE "id" = ${id}
+          FOR UPDATE
+        `);
+        if (attachmentLocks.length !== 1) {
+          throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+        }
+        const current = await tx.attachment.findUnique({
+          where: { id },
+          select: attachmentSelect,
+        });
+        if (!current) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+        if (
+          current.key !== row.key ||
+          current.ownerType !== row.ownerType ||
+          current.ownerId !== row.ownerId
+        ) {
+          throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+        }
+
+        await tx.$queryRaw(Prisma.sql`
+          SELECT "id" FROM "storage_objects"
+          WHERE "key" = ${current.key}
+          FOR UPDATE
+        `);
+        const object = await tx.storageObject.findUnique({ where: { key: current.key } });
+        if (
+          !object ||
+          object.key !== current.key ||
+          object.resourceType !== 'attachment' ||
+          object.resourceId !== current.id
+        ) {
+          throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+        }
+        if (object.state !== 'available' || object.deleteRequestedAt !== null) {
+          throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
+        }
+
+        // 更新 4 字段(其余字段已经 DTO 白名单 + forbidNonWhitelisted 兜底);
+        // expireAt:显式 null → 清空;undefined → 不动;字符串 → new Date()。
+        return tx.attachment.update({
+          where: { id: current.id },
+          data: {
+            description: dto.description,
+            accessLevel: dto.accessLevel,
+            tags: dto.tags,
+            expireAt:
+              dto.expireAt === null
+                ? null
+                : dto.expireAt !== undefined
+                  ? new Date(dto.expireAt)
+                  : undefined,
+          },
+          select: attachmentSelect,
+        });
+      });
+    } catch (error) {
+      // The row lock makes P2025 unreachable in normal PostgreSQL interleavings; retain a
+      // defensive anti-enumeration mapping for client/fixture drift instead of surfacing 500.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+      }
+      throw error;
+    }
     return this.toResponseDto(updated);
   }
 
@@ -645,8 +684,18 @@ export class AttachmentsService {
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttachmentResponseDto> {
-    // 1. 查活跃记录(不存在 → 13001)
-    const row = await this.findByIdOrThrow(id);
+    // 1. 物理删除后仅原 actor 可在 24h 窗口内重放最小 terminal representation。
+    const row = await this.prisma.attachment.findFirst({
+      where: { id },
+      select: attachmentSelect,
+    });
+    if (!row) {
+      const replay = await this.storageConsistency.getDeleteReplay(id, user.id);
+      if (replay?.state === 'succeeded' && replay.response) {
+        return this.deleteReplayToResponseDto(replay.response);
+      }
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
 
     // 2. 判 delete 权限(写路径;失败 → 30100)
     const { resource, scope } = await this.buildRbacResourceAndScope(
@@ -657,30 +706,25 @@ export class AttachmentsService {
     const action = `attachment.delete.${row.ownerType}${scope ? '.' + scope : ''}`;
     await this.assertRbacAllowed(user, action, resource);
 
-    // 3. 事务内:物理删主表 + audit 落库(沿 D7 §7.2 同事务 fail-fast)。
-    //    Q11 v1.0:不查跨表引用 IN_USE;Q15 挂起:Provider 文件删除留 Provider 评审。
-    //    deletedByPath:沿 Q5 PR #6c 拍板,以 uploadedBy 为基准(currentUser 删自己上传的 → 'owner',
-    //    否则 → 'admin';SUPER_ADMIN 删自己上传的也算 owner)。
-    await this.prisma.$transaction(async (tx) => {
-      await tx.attachment.delete({ where: { id } });
-
-      await this.attachmentAuditRecorder.logDelete({
-        attachmentId: row.id,
-        before: row,
-        actorUserId: user.id,
-        actorRoleSnap: user.role,
-        scope,
-        deletedByPath: user.id === row.uploadedBy ? 'owner' : 'admin',
-        auditMeta,
-        tx,
-      });
+    // 3. DB intent 先提交；Provider effect 后以 HEAD absent 证明，再将 Attachment 硬删、audit、
+    //    object absent 与 operation succeeded 同事务提交。任何不确定态都返回 13034。
+    const eventKey = await this.storageConsistency.prepareDelete({
+      attachmentId: row.id,
+      actorUserId: user.id,
+      actorRoleSnap: user.role,
+      allowAuthorizedJoin: true,
+      scope,
+      deletedByPath: user.id === row.uploadedBy ? 'owner' : 'admin',
+      auditMeta,
     });
-
-    // PR #90 + F4 + Q3 路线 C:事务外同步尝试 Provider 删除;失败不回滚 DB / audit
-    // 沿 Q-90-4:audit extra.providerDeleteStatus 不写(留 v1.1+);依赖 Provider lifecycle 兜底
-    await this.tryDeleteFromProvider(row.key);
-
-    return this.toResponseDto(row);
+    await this.storageConsistency.executeEventKey(eventKey);
+    const replay = await this.storageConsistency.getDeleteReplay(row.id, user.id, {
+      allowAuthorizedJoin: true,
+    });
+    if (replay?.state === 'succeeded' && replay.response) {
+      return this.deleteReplayToResponseDto(replay.response);
+    }
+    throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
   }
 
   // GET /api/admin/v1/attachments/by-owner?ownerType=&ownerId=
@@ -711,8 +755,9 @@ export class AttachmentsService {
       select: attachmentSelect,
       orderBy: { createdAt: 'desc' },
     });
+    const readableRows = await this.storageConsistency.filterMetadataVisible(allRows);
     const visible: SafeAttachment[] = [];
-    for (const row of allRows) {
+    for (const row of readableRows) {
       if (await this.canViewAttachment(user, row, certificateMemberById)) {
         visible.push(row);
       }
@@ -735,17 +780,17 @@ export class AttachmentsService {
     const { page, pageSize } = query;
     const where: Prisma.AttachmentWhereInput = { uploadedBy: user.id };
 
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.attachment.findMany({
-        where,
-        select: attachmentSelect,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.attachment.count({ where }),
-    ]);
-    const items = await Promise.all(rows.map((row) => this.toResponseDto(row)));
+    const rows = await this.prisma.attachment.findMany({
+      where,
+      select: attachmentSelect,
+      orderBy: { createdAt: 'desc' },
+    });
+    const readable = await this.storageConsistency.filterMetadataVisible(rows);
+    const total = readable.length;
+    const start = (page - 1) * pageSize;
+    const items = await Promise.all(
+      readable.slice(start, start + pageSize).map((row) => this.toResponseDto(row)),
+    );
     return {
       items,
       total,
@@ -779,7 +824,8 @@ export class AttachmentsService {
   // ============ V2.x C-7.5 PR #10:upload-url + confirm-upload ============
   //
   // 沿评审 §8.3 + §8.4 + Q-10-1 到 Q-10-15 拍板:
-  // - upload-url:校验 owner/RBAC/mime/size/PII → 生成 key + signed URL + uploadToken;**不落库 / 不审计**
+  // - upload-url:校验 owner/RBAC/mime/size/PII → 预写 durable storage intent → 生成 key + signed
+  //   URL + uploadToken;尚不创建 Attachment / 不写业务 audit
   // - confirm-upload:验 token + headObject + size + 受支持 MIME 魔数一致 → 落库 + audit `attachment.upload`
   // - v0.44.0 finding #23 唯一新增 13016(内容与声明 MIME 不符);其余继续复用既有码
   // - 0 新 AuditLogEvent(沿 B4)
@@ -829,13 +875,23 @@ export class AttachmentsService {
       this.cfg.storage.encryptionKey,
     );
 
-    // === Step 10:调 provider.generateUploadUrl ===
-    const uploadResult = await this.provider.generateUploadUrl({
+    // === Step 10:先提交 durable intent，再按 pinned locator 生成 signed URL ===
+    const identity: AttachmentUploadStorageIdentity = {
       key,
-      contentType: dto.mime,
-      sizeBytes: dto.sizeBytes,
-      expiresIn: uploadUrlTtlSeconds,
-    });
+      ownerType: dto.ownerType,
+      ownerId: dto.ownerId,
+      originalName: dto.originalName,
+      mime: dto.mime,
+      size: dto.sizeBytes,
+      uploadedByUserId: user.id,
+      iat,
+      exp,
+    };
+    const uploadResult = await this.storageConsistency.prepareUploadUrl(
+      identity,
+      new Date(exp * 1000 + STORAGE_UNBOUND_GRACE_MS),
+      uploadUrlTtlSeconds,
+    );
 
     return {
       key,
@@ -870,12 +926,28 @@ export class AttachmentsService {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
     }
 
-    // === Step 4-6:对象存在 + size + blocklist + 魔数统一走 AttachmentContentValidator ===
-    const head = await this.contentValidator.validateFromObject({
+    const identity: AttachmentUploadStorageIdentity = {
       key: claims.key,
+      ownerType: claims.ownerType,
+      ownerId: claims.ownerId,
+      originalName: claims.originalName,
       mime: claims.mime,
       size: claims.sizeBytes,
-    });
+      uploadedByUserId: claims.uploadedByUserId,
+      iat: claims.iat,
+      exp: claims.exp,
+    };
+
+    // === Step 4-6:确保 rollout token 也补 durable intent，再以 pinned locator 校验对象 ===
+    const prepared = await this.storageConsistency.prepareUpload(
+      identity,
+      'attachment_signed_upload',
+      new Date(claims.exp * 1000 + STORAGE_UNBOUND_GRACE_MS),
+    );
+    const { head } = await this.storageConsistency.verifyUpload(
+      identity,
+      'attachment_signed_upload',
+    );
 
     // === Step 7:PII 不重做(沿 §8.4 Q10 + Q-10-X) ===
 
@@ -893,60 +965,27 @@ export class AttachmentsService {
       user,
     );
 
-    let row: SafeAttachment;
-    try {
-      row = await this.prisma.$transaction(async (tx) => {
-        // 沿 Q-10-8 + attachment_key_unique migration:二次提交防御(同 key 重复 confirm)
-        // schema 已加 attachment.key @unique(沿评审 §8.4.4);双层防御:
-        // - 串行场景:findFirst 早返 13001(省一次 INSERT 尝试 + tx ROLLBACK 开销)
-        // - 并发 race:findFirst 都看不到对方时,由 P2002 catch 兜底返 13001(沿 catch 块)
-        const exists = await tx.attachment.findFirst({
-          where: { key: claims.key },
-          select: { id: true },
-        });
-        if (exists) {
-          throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
-        }
-
-        const created = await tx.attachment.create({
-          data: {
-            key: claims.key,
-            originalName: claims.originalName,
-            mime: claims.mime,
-            size: claims.sizeBytes,
-            uploadedBy: user.id,
-            ownerType: claims.ownerType,
-            ownerId: claims.ownerId,
-            originalUploaderName: user.username,
-            checksum: dto.checksum ?? null,
-            etag: head.etag ?? null,
-          },
-          select: attachmentSelect,
-        });
-
-        await this.attachmentAuditRecorder.logUploadConfirmed({
-          created,
-          actorUserId: user.id,
-          actorRoleSnap: user.role,
-          scope,
-          ownerTable,
-          auditMeta,
-          tx,
-        });
-
-        return created;
-      });
-    } catch (err) {
-      // 双层兜底:若未来 schema 加 @unique → P2002 也走信息泄漏防御
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002' &&
-        ((err.meta?.target as string[] | undefined) ?? []).includes('key')
-      ) {
-        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
-      }
-      throw err;
-    }
+    const row = await this.storageConsistency.finalizeUpload({
+      identity,
+      requestHash: prepared.requestHash,
+      data: {
+        key: claims.key,
+        originalName: claims.originalName,
+        mime: claims.mime,
+        size: claims.sizeBytes,
+        uploadedBy: user.id,
+        ownerType: claims.ownerType,
+        ownerId: claims.ownerId,
+        originalUploaderName: user.username,
+        checksum: dto.checksum ?? null,
+        etag: head.etag ?? null,
+      },
+      auditKind: 'confirmed',
+      actorRoleSnap: user.role,
+      scope,
+      ownerTable,
+      auditMeta,
+    });
 
     // === Step 9-10:返完整 dto(toResponseDto 内已调 generateDownloadUrl 填 accessUrl;沿 PR #90) ===
     return this.toResponseDto(row);

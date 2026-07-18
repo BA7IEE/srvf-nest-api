@@ -6,8 +6,10 @@ import { Role, UserStatus } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import { BizException } from '../../src/common/exceptions/biz.exception';
 import appConfig from '../../src/config/app.config';
 import { PrismaService } from '../../src/database/prisma.service';
+import { AttachmentStorageOrchestrator } from '../../src/modules/attachments/attachment-storage-orchestrator';
 import { AttachmentsService } from '../../src/modules/attachments/attachments.service';
 import type {
   ConfirmUploadDto,
@@ -16,6 +18,8 @@ import type {
 } from '../../src/modules/attachments/attachments.dto';
 import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
+import { STORAGE_PROVIDER } from '../../src/modules/storage/storage.constants';
+import type { PinnedStorageProvider } from '../../src/modules/storage/storage.interface';
 import { conformingAttachmentKey } from '../helpers/attachment-key';
 import { attachmentBytesForMime } from '../helpers/file-fixtures';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -27,11 +31,11 @@ import { createTestApp } from '../setup/test-app';
 // audit-characterization spec 范式)。
 //
 // 目标:在抽 `ActivityAuditRecorder`(下一单)之前,显式锁定
-// `attachments.service.ts` 中 3 处 `auditLogs.log(...)` 调用的当前 payload 形状:
+// Attachment 三条写路径的 audit payload 形状:
 //   - event name(`'attachment.upload'` ×2 create / confirmUpload 共用 +
 //     `'attachment.delete'` ×1)
 //   - resourceType(`'attachment'`)/ resourceId / actorUserId / actorRoleSnap / success
-//   - context.requestId / ip / ua / before / after / extra 完整字段集
+//   - context.requestId / ip / ua / before / after(固定最小 7 字段)/ extra 完整字段集
 //   - 5 处 wrong-path 失败 → 0 audit(沿 D6 F6 fail-fast)
 //   - 3 处 audit fail → tx rollback(沿 D-S7 红线)
 //
@@ -102,6 +106,8 @@ interface AuditContextShape {
 describe('AttachmentsService audit characterization', () => {
   let app: INestApplication;
   let service: AttachmentsService;
+  let storageConsistency: AttachmentStorageOrchestrator;
+  let storageProvider: PinnedStorageProvider;
   let prisma: PrismaService;
   let auditLogs: AuditLogsService;
 
@@ -120,6 +126,8 @@ describe('AttachmentsService audit characterization', () => {
 
     prisma = app.get(PrismaService);
     service = app.get(AttachmentsService);
+    storageConsistency = app.get(AttachmentStorageOrchestrator);
+    storageProvider = app.get<PinnedStorageProvider>(STORAGE_PROVIDER);
     auditLogs = app.get(AuditLogsService);
 
     const cfg = app.get<{ storage: { localRoot: string } }>(appConfig.KEY);
@@ -224,9 +232,11 @@ describe('AttachmentsService audit characterization', () => {
     jest.restoreAllMocks();
   });
 
-  // 每个 case 隔离 attachments + audit_logs;保留 User / Member / TypeConfig / RBAC seed
+  // 每个 case 隔离 durable storage ledger + attachments + audit_logs；保留业务 seed。
   async function isolateFixtures(): Promise<void> {
-    await prisma.$executeRawUnsafe('TRUNCATE TABLE "attachments" RESTART IDENTITY CASCADE');
+    await prisma.$executeRawUnsafe(
+      'TRUNCATE TABLE "storage_object_operations", "storage_objects", "attachments" RESTART IDENTITY CASCADE',
+    );
     await prisma.$executeRawUnsafe('TRUNCATE TABLE "audit_logs" RESTART IDENTITY CASCADE');
   }
 
@@ -302,11 +312,15 @@ describe('AttachmentsService audit characterization', () => {
       // before absent / after present(create 路径)
       expect(ctx.before).toBeUndefined();
       expect(ctx.after).toBeDefined();
-      const after = ctx.after as { ownerType: string; ownerId: string; mime: string; size: number };
-      expect(after.ownerType).toBe('member');
-      expect(after.ownerId).toBe(memberA.id);
-      expect(after.mime).toBe('image/jpeg');
-      expect(after.size).toBe(12345);
+      expect(ctx.after).toEqual({
+        key: result.key,
+        mime: 'image/jpeg',
+        size: 12345,
+        uploadedBy: selfId,
+        uploadedAt: result.uploadedAt.toISOString(),
+        ownerType: 'member',
+        ownerId: memberA.id,
+      });
 
       // extra 字段集逐字锁(8 字段;沿 service.create line 422-441)
       expect(ctx.extra).toEqual({
@@ -353,7 +367,7 @@ describe('AttachmentsService audit characterization', () => {
     beforeEach(isolateFixtures);
 
     it('B1. event=attachment.upload + extra 10 字段(8+uploadConfirmedAt+uploadVia:direct)toEqual 锁 + after present / before absent', async () => {
-      // 1. 通过 service.createUploadUrl 拿 key + uploadToken(不写 audit;沿 PR #10 设计)
+      // 1. 通过 service.createUploadUrl 拿 durable intent + key + uploadToken；此腿不写 audit。
       const tokenRes = await service.createUploadUrl(buildUploadUrlDto(), selfPayload);
 
       // 2. 写假文件到 LocalProvider 磁盘,让 provider.headObject 返 exists=true
@@ -387,18 +401,15 @@ describe('AttachmentsService audit characterization', () => {
       // before absent / after present(confirmUpload 路径与 create 同;沿 service line 831-853)
       expect(ctx.before).toBeUndefined();
       expect(ctx.after).toBeDefined();
-      const after = ctx.after as {
-        key: string;
-        ownerType: string;
-        ownerId: string;
-        mime: string;
-        size: number;
-      };
-      expect(after.key).toBe(tokenRes.key);
-      expect(after.ownerType).toBe('member');
-      expect(after.ownerId).toBe(memberA.id);
-      expect(after.mime).toBe('image/jpeg');
-      expect(after.size).toBe(1024);
+      expect(ctx.after).toEqual({
+        key: tokenRes.key,
+        mime: 'image/jpeg',
+        size: 1024,
+        uploadedBy: selfId,
+        uploadedAt: result.uploadedAt.toISOString(),
+        ownerType: 'member',
+        ownerId: memberA.id,
+      });
 
       // extra 字段集逐字锁(10 字段 = create 8 + 2 增量;沿 service line 839-851)
       // uploadConfirmedAt 是动态时间字符串,用 expect.any(String) 锁形状不锁值
@@ -457,15 +468,15 @@ describe('AttachmentsService audit characterization', () => {
       // before present / after absent(delete 路径;沿 service line 573-592)
       expect(ctx.before).toBeDefined();
       expect(ctx.after).toBeUndefined();
-      const before = ctx.before as {
-        ownerType: string;
-        ownerId: string;
-        mime: string;
-        size: number;
-      };
-      expect(before.ownerType).toBe('member');
-      expect(before.ownerId).toBe(memberA.id);
-      expect(before.size).toBe(2048);
+      expect(ctx.before).toEqual({
+        key: created.key,
+        mime: 'image/jpeg',
+        size: 2048,
+        uploadedBy: selfId,
+        uploadedAt: created.uploadedAt.toISOString(),
+        ownerType: 'member',
+        ownerId: memberA.id,
+      });
 
       // extra 字段集逐字锁(8 字段)
       expect(ctx.extra).toEqual({
@@ -547,26 +558,86 @@ describe('AttachmentsService audit characterization', () => {
       expect(await prisma.auditLog.count({ where: { event: UPLOAD_EVENT } })).toBe(0);
     });
 
-    it('D3. delete 路径 auditLogs.log 抛错 → $transaction 回滚:attachment 未物理删 + 无 delete audit', async () => {
+    it('D3. delete audit 失败保持 durable pending；同 eventKey replay 终结且原 actor 幂等重放', async () => {
       const created = await service.create(buildCreateDto(), selfPayload, AUDIT_META);
       // 清掉 create 路径的 upload audit,保证 D3 起始时 audit 表是干净的
       await prisma.$executeRawUnsafe('TRUNCATE TABLE "audit_logs" RESTART IDENTITY CASCADE');
 
+      const deleteObjectAtSpy = jest.spyOn(storageProvider, 'deleteObjectAt');
       const logSpy = jest
         .spyOn(auditLogs, 'log')
         .mockRejectedValueOnce(new Error('simulated audit failure'));
 
-      await expect(service.delete(created.id, selfPayload, AUDIT_META)).rejects.toThrow(
-        'simulated audit failure',
+      await expect(service.delete(created.id, selfPayload, AUDIT_META)).rejects.toEqual(
+        new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING),
       );
       expect(logSpy).toHaveBeenCalledTimes(1);
+      expect(deleteObjectAtSpy).toHaveBeenCalledTimes(1);
 
-      // 回滚证据 1:attachment 仍存在(tx 内 tx.attachment.delete 已发起但 $transaction 回滚)
+      // 首次最终腿 audit 失败：DB 四方保持可重放，Provider effect 已真实 absent。
       const stillThere = await prisma.attachment.findUnique({ where: { id: created.id } });
       expect(stillThere).not.toBeNull();
-
-      // 回滚证据 2:无 delete audit 落库
       expect(await prisma.auditLog.count({ where: { event: DELETE_EVENT } })).toBe(0);
+
+      const pendingObject = await prisma.storageObject.findUnique({ where: { key: created.key } });
+      expect(pendingObject).toMatchObject({
+        state: 'delete_pending',
+        resourceType: 'attachment',
+        resourceId: created.id,
+        absentAt: null,
+      });
+      if (!pendingObject) throw new Error('delete StorageObject fixture disappeared');
+      const pendingOperation = await prisma.storageObjectOperation.findFirst({
+        where: { storageObjectId: pendingObject.id, kind: 'attachment_delete' },
+      });
+      expect(pendingOperation).toMatchObject({
+        status: 'pending',
+        attempts: 1,
+        effectState: 'effect_started',
+        leaseOwner: null,
+        leaseAcquiredAt: null,
+        leaseRenewedAt: null,
+        leaseExpiresAt: null,
+        completedAt: null,
+        lastErrorCode: 'STORAGE_OPERATION_ERROR',
+        lastErrorClass: 'Error',
+      });
+      if (!pendingOperation) throw new Error('delete operation fixture disappeared');
+      await expect(fs.access(path.resolve(localRoot, created.key))).rejects.toThrow();
+
+      // Retry backoff 到期后只按同一 eventKey 重放；HEAD 已 absent，禁止第二次 Provider delete。
+      await prisma.storageObjectOperation.update({
+        where: { id: pendingOperation.id },
+        data: { availableAt: new Date(Date.now() - 1_000) },
+      });
+      await storageConsistency.executeEventKey(pendingOperation.eventKey);
+
+      await expect(prisma.attachment.findUnique({ where: { id: created.id } })).resolves.toBeNull();
+      await expect(
+        prisma.storageObject.findUnique({ where: { id: pendingObject.id } }),
+      ).resolves.toMatchObject({ state: 'absent', resourceId: created.id });
+      await expect(
+        prisma.storageObjectOperation.findUnique({ where: { id: pendingOperation.id } }),
+      ).resolves.toMatchObject({
+        eventKey: pendingOperation.eventKey,
+        status: 'succeeded',
+        attempts: 2,
+        effectState: 'effect_succeeded',
+        leaseOwner: null,
+        leaseAcquiredAt: null,
+        leaseRenewedAt: null,
+        leaseExpiresAt: null,
+        lastErrorCode: null,
+        lastErrorClass: null,
+      });
+      expect(logSpy).toHaveBeenCalledTimes(2);
+      expect(await prisma.auditLog.count({ where: { event: DELETE_EVENT } })).toBe(1);
+      expect(deleteObjectAtSpy).toHaveBeenCalledTimes(1);
+
+      const replay = await service.delete(created.id, selfPayload, AUDIT_META);
+      expect(replay).toMatchObject({ id: created.id, key: created.key, accessUrl: null });
+      expect(await prisma.auditLog.count({ where: { event: DELETE_EVENT } })).toBe(1);
+      expect(deleteObjectAtSpy).toHaveBeenCalledTimes(1);
     });
   });
 

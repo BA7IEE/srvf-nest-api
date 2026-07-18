@@ -3246,7 +3246,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "accessUrl": {
-        "description": "签名访问短链(由 storage Provider 生成;Provider 不可用时降级为 null)",
+        "description": "签名访问短链(需 durable ledger + Provider HEAD 证明;不确定时为 null)",
         "nullable": true,
         "type": "object",
       },
@@ -4755,6 +4755,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "客户端计算的 SHA-256 checksum(64 hex);可选;若提供则存 Attachment.checksum;沿 D7-attachments Q6 内部字段语义",
         "maxLength": 64,
         "minLength": 64,
+        "pattern": "^[0-9a-fA-F]{64}$",
         "type": "string",
       },
       "uploadToken": {
@@ -23210,13 +23211,47 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
           "description": "无权执行此操作(code=30100)",
         },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "13034: 附件存储操作处理中,请稍后重试",
+                    "enum": [
+                      13034,
+                    ],
+                    "example": 13034,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "附件存储操作处理中,请稍后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "附件存储操作处理中,请稍后重试(code=13034)",
+        },
       },
       "security": [
         {
           "bearer": [],
         },
       ],
-      "summary": "创建附件元数据(校验:ownerType 13010 / ownerId 13011 / RBAC 30100 / 系统级 MIME 黑名单 13033 / mime 白名单未命中 13012 / size 13013 / key 派生格式 13014 / PII 13015;V2.x L-1:系统级黑名单与白名单未命中拆码;F2:key 必须落在 attachments/<envPrefix>/ 派生格式,防客户端任意 key 签 URL) [rbac: attachment.upload.*]",
+      "summary": "创建附件元数据(先落 durable storage intent,按 pinned locator 校验对象,再将 Attachment + audit + storage available 原子提交;存储状态不确定返 13034;其余校验:ownerType 13010 / ownerId 13011 / RBAC 30100 / MIME 13033或13012 / size 13013 / key 13014 / PII 13015) [rbac: attachment.upload.*]",
       "tags": [
         "Admin - Attachments",
       ],
@@ -23590,13 +23625,47 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
           "description": "附件不存在(code=13001)",
         },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "13034: 附件存储操作处理中,请稍后重试",
+                    "enum": [
+                      13034,
+                    ],
+                    "example": 13034,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "附件存储操作处理中,请稍后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "附件存储操作处理中,请稍后重试(code=13034)",
+        },
       },
       "security": [
         {
           "bearer": [],
         },
       ],
-      "summary": "确认上传完成(模式 B;验 uploadToken + headObject + size + 文件签名一致 → 落库 + audit attachment.upload;findings #22/#23/#24) [rbac: attachment.upload.*]",
+      "summary": "确认上传完成(模式 B;验 uploadToken,按 intent 的 pinned locator 校验 HEAD/size/文件签名,再原子提交 Attachment + audit + available;同 token 幂等;不确定态返 13034) [rbac: attachment.upload.*]",
       "tags": [
         "Admin - Attachments",
       ],
@@ -23754,13 +23823,47 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
           "description": "无权执行此操作(code=30100)",
         },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "13034: 附件存储操作处理中,请稍后重试",
+                    "enum": [
+                      13034,
+                    ],
+                    "example": 13034,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "附件存储操作处理中,请稍后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "附件存储操作处理中,请稍后重试(code=13034)",
+        },
       },
       "security": [
         {
           "bearer": [],
         },
       ],
-      "summary": "申请 signed upload URL(模式 B;校验 ownerType/ownerId/mime/size/PII/RBAC;系统级 MIME 黑名单 → 13033 / 白名单未命中 → 13012;返 uploadUrl + uploadToken;不落库;不审计;沿 §8.3 v1.0 + V2.x L-1) [rbac: attachment.upload.*]",
+      "summary": "申请 signed upload URL(模式 B;先预写 durable storage intent,再按 pinned locator 签 URL;尚不创建 Attachment/不写业务 audit;存储状态不确定返 13034) [rbac: attachment.upload.*]",
       "tags": [
         "Admin - Attachments",
       ],
@@ -23949,13 +24052,47 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
           "description": "附件不存在(code=13001)",
         },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "13034: 附件存储操作处理中,请稍后重试",
+                    "enum": [
+                      13034,
+                    ],
+                    "example": 13034,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "附件存储操作处理中,请稍后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "附件存储操作处理中,请稍后重试(code=13034)",
+        },
       },
       "security": [
         {
           "bearer": [],
         },
       ],
-      "summary": "物理删附件(Q11 v1.0:不查跨表引用;Provider 文件删除 Q15 挂起待 Provider 评审) [rbac: attachment.delete.*]",
+      "summary": "删除附件(先提交 delete intent 并隐藏普通读取;Provider 删除后须 HEAD absent,再原子硬删 Attachment + 写 audit;未完成返 13034;原 actor 24h 内可幂等重放最小响应) [rbac: attachment.delete.*]",
       "tags": [
         "Admin - Attachments",
       ],

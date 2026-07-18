@@ -5,15 +5,18 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 
 import appConfig from '../../../config/app.config';
-import type { StorageProvider } from '../storage.interface';
+import { StoragePinnedLocatorError, type StorageProvider } from '../storage.interface';
 import type {
   DownloadUrlResult,
   GenerateDownloadUrlInput,
   GenerateUploadUrlInput,
   HeadObjectResult,
   PutObjectInput,
+  StorageObjectReadProgress,
   StorageBody,
   StoredObject,
+  StorageObjectLocator,
+  StorageObjectSha256Result,
   UploadUrlResult,
 } from '../storage.types';
 
@@ -43,8 +46,65 @@ export class LocalStorageProvider implements StorageProvider {
     this.root = path.resolve(cfg.storage.localRoot);
   }
 
-  async putObject(input: PutObjectInput): Promise<StoredObject> {
-    const filePath = this.resolveKey(input.key);
+  getPinnedLocator(): StorageObjectLocator {
+    return {
+      providerType: 'LOCAL',
+      bucket: null,
+      region: null,
+      localNamespace: this.root,
+    };
+  }
+
+  putObjectAt(locator: StorageObjectLocator, input: PutObjectInput): Promise<StoredObject> {
+    return this.putObjectInternal(input, this.pinnedRoot(locator));
+  }
+
+  deleteObjectAt(locator: StorageObjectLocator, key: string): Promise<void> {
+    return this.deleteObjectInternal(key, this.pinnedRoot(locator));
+  }
+
+  generateUploadUrlAt(
+    locator: StorageObjectLocator,
+    input: GenerateUploadUrlInput,
+  ): Promise<UploadUrlResult> {
+    this.assertSignedUrlUsesCurrentRoot(locator);
+    return this.generateUploadUrl(input);
+  }
+
+  generateDownloadUrlAt(
+    locator: StorageObjectLocator,
+    input: GenerateDownloadUrlInput,
+  ): Promise<DownloadUrlResult> {
+    this.assertSignedUrlUsesCurrentRoot(locator);
+    return this.generateDownloadUrl(input);
+  }
+
+  headObjectAt(locator: StorageObjectLocator, key: string): Promise<HeadObjectResult> {
+    return this.headObjectInternal(key, this.pinnedRoot(locator));
+  }
+
+  readObjectPrefixAt(
+    locator: StorageObjectLocator,
+    key: string,
+    maxBytes: number,
+  ): Promise<Buffer> {
+    return this.readObjectPrefixInternal(key, maxBytes, this.pinnedRoot(locator));
+  }
+
+  hashObjectSha256At(
+    locator: StorageObjectLocator,
+    key: string,
+    onProgress?: StorageObjectReadProgress,
+  ): Promise<StorageObjectSha256Result> {
+    return this.hashObjectSha256Internal(key, this.pinnedRoot(locator), onProgress);
+  }
+
+  putObject(input: PutObjectInput): Promise<StoredObject> {
+    return this.putObjectInternal(input, this.root);
+  }
+
+  private async putObjectInternal(input: PutObjectInput, root: string): Promise<StoredObject> {
+    const filePath = this.resolveKey(input.key, root);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     const body = await bufferize(input.body);
     await fs.writeFile(filePath, body);
@@ -58,8 +118,12 @@ export class LocalStorageProvider implements StorageProvider {
   }
 
   // ENOENT 视作成功(幂等;沿 COS / S3 删除契约)
-  async deleteObject(key: string): Promise<void> {
-    const filePath = this.resolveKey(key);
+  deleteObject(key: string): Promise<void> {
+    return this.deleteObjectInternal(key, this.root);
+  }
+
+  private async deleteObjectInternal(key: string, root: string): Promise<void> {
+    const filePath = this.resolveKey(key, root);
     try {
       await fs.unlink(filePath);
     } catch (err) {
@@ -91,8 +155,12 @@ export class LocalStorageProvider implements StorageProvider {
     return Promise.resolve({ url, expiresAt: new Date(expiresMs) });
   }
 
-  async headObject(key: string): Promise<HeadObjectResult> {
-    const filePath = this.resolveKey(key);
+  headObject(key: string): Promise<HeadObjectResult> {
+    return this.headObjectInternal(key, this.root);
+  }
+
+  private async headObjectInternal(key: string, root: string): Promise<HeadObjectResult> {
+    const filePath = this.resolveKey(key, root);
     try {
       const stat = await fs.stat(filePath);
       return {
@@ -109,8 +177,16 @@ export class LocalStorageProvider implements StorageProvider {
     }
   }
 
-  async readObjectPrefix(key: string, maxBytes: number): Promise<Buffer> {
-    const file = await fs.open(this.resolveKey(key), 'r');
+  readObjectPrefix(key: string, maxBytes: number): Promise<Buffer> {
+    return this.readObjectPrefixInternal(key, maxBytes, this.root);
+  }
+
+  private async readObjectPrefixInternal(
+    key: string,
+    maxBytes: number,
+    root: string,
+  ): Promise<Buffer> {
+    const file = await fs.open(this.resolveKey(key, root), 'r');
     try {
       const buffer = Buffer.alloc(maxBytes);
       const { bytesRead } = await file.read(buffer, 0, maxBytes, 0);
@@ -120,14 +196,61 @@ export class LocalStorageProvider implements StorageProvider {
     }
   }
 
+  private async hashObjectSha256Internal(
+    key: string,
+    root: string,
+    onProgress?: StorageObjectReadProgress,
+  ): Promise<StorageObjectSha256Result> {
+    const file = await fs.open(this.resolveKey(key, root), 'r');
+    const hash = createHash('sha256');
+    let size = 0;
+    try {
+      const stream = file.createReadStream({ autoClose: false, highWaterMark: 1024 * 1024 });
+      for await (const chunk of stream) {
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+        size += bytes.length;
+        hash.update(bytes);
+        await onProgress?.(size);
+      }
+    } finally {
+      await file.close();
+    }
+    return { size, checksum: hash.digest('hex') };
+  }
+
   // 安全拼接 + 防 `../` 逃逸 root(沿 Q-88-6)
-  private resolveKey(key: string): string {
-    const full = path.resolve(this.root, key);
-    const rootWithSep = this.root.endsWith(path.sep) ? this.root : this.root + path.sep;
-    if (full !== this.root && !full.startsWith(rootWithSep)) {
+  private resolveKey(key: string, root: string): string {
+    const full = path.resolve(root, key);
+    const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
+    if (full !== root && !full.startsWith(rootWithSep)) {
       throw new Error(`LocalProvider key path escape: ${key}`);
     }
     return full;
+  }
+
+  private pinnedRoot(locator: StorageObjectLocator): string {
+    if (
+      locator.providerType !== 'LOCAL' ||
+      locator.bucket !== null ||
+      locator.region !== null ||
+      !locator.localNamespace
+    ) {
+      throw new StoragePinnedLocatorError('LOCAL ledger locator 不完整');
+    }
+    const resolved = path.resolve(locator.localNamespace);
+    if (!path.isAbsolute(locator.localNamespace) || resolved !== locator.localNamespace) {
+      throw new StoragePinnedLocatorError('LOCAL namespace 必须是 canonical absolute path');
+    }
+    return resolved;
+  }
+
+  private assertSignedUrlUsesCurrentRoot(locator: StorageObjectLocator): void {
+    const pinnedRoot = this.pinnedRoot(locator);
+    if (pinnedRoot !== this.root) {
+      throw new StoragePinnedLocatorError(
+        'LOCAL signed URL 只能使用当前 canonical namespace；pinned namespace 已切换',
+      );
+    }
   }
 }
 

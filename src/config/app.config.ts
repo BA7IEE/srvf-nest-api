@@ -135,7 +135,10 @@ export interface AttendanceConfig {
 export interface StorageConfig {
   encryptionKey: string; // 空字符串 = 未配置(dev / test 允许;production 启动已 fail)
   localRoot: string; // LocalProvider 根目录(env STORAGE_LOCAL_ROOT;default './tmp/storage')
+  consistencyMode: StorageConsistencyMode;
 }
+
+export type StorageConsistencyMode = 'JIT' | 'STRICT';
 
 // SMS 基础设施 T3(2026-06-10):App 发码 / 验码绑定 IP 维度限流配置(评审稿 D-SMS-6 / E-23)。
 // 与既有三 throttler 结构相同但物理隔离:throttler.module 注册独立实例
@@ -229,6 +232,20 @@ export interface RealnameConfig {
 function parseStorageLocalRoot(raw: string | undefined): string {
   const trimmed = (raw ?? '').trim();
   return trimmed || './tmp/storage';
+}
+
+function parseStorageConsistencyMode(raw: string | undefined, env: AppEnv): StorageConsistencyMode {
+  const trimmed = raw?.trim().toUpperCase();
+  if (!trimmed) {
+    if (env === 'production') {
+      throw new Error('STORAGE_CONSISTENCY_MODE 不能为空(production 必须显式选择 JIT 或 STRICT)');
+    }
+    return 'JIT';
+  }
+  if (trimmed !== 'JIT' && trimmed !== 'STRICT') {
+    throw new Error(`STORAGE_CONSISTENCY_MODE 无效:"${raw}",必须是 JIT 或 STRICT`);
+  }
+  return trimmed;
 }
 
 // V2.x C-7.5 实施 PR #6:沿 Q-87-4(宽松校验)。
@@ -433,6 +450,7 @@ export default registerAs('app', (): AppConfig => {
   const storage: StorageConfig = {
     encryptionKey: parseStorageEncryptionKey(process.env.STORAGE_ENCRYPTION_KEY, env),
     localRoot: parseStorageLocalRoot(process.env.STORAGE_LOCAL_ROOT),
+    consistencyMode: parseStorageConsistencyMode(process.env.STORAGE_CONSISTENCY_MODE, env),
   };
 
   const sms: SmsConfig = {

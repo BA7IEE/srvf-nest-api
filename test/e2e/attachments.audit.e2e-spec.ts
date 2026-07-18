@@ -171,10 +171,12 @@ describe('attachments audit_logs 集成', () => {
     await app.close();
   });
 
-  // 每个 it 前清空 audit_logs + attachments,保证落库断言隔离。
+  // 每个 it 前清空 audit + durable storage ledger + attachments，保证 intent 不跨 case。
   beforeEach(async () => {
     await truncateAuditLogsTestOnly(app);
-    await prisma.$executeRawUnsafe('TRUNCATE TABLE "attachments" RESTART IDENTITY CASCADE');
+    await prisma.$executeRawUnsafe(
+      'TRUNCATE TABLE "storage_object_operations", "storage_objects", "attachments" RESTART IDENTITY CASCADE',
+    );
   });
 
   // ============ Helpers ============
@@ -225,7 +227,7 @@ describe('attachments audit_logs 集成', () => {
       expect(log.success).toBe(true);
     });
 
-    it('case 2: upload audit after snapshot 完整字段(含 originalUploaderName;不含 accessUrl / checksum / etag)', async () => {
+    it('case 2: upload audit after snapshot 固定为恢复/追责所需 7 字段', async () => {
       const res = await request(httpServer(app))
         .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
@@ -241,28 +243,15 @@ describe('attachments audit_logs 集成', () => {
       const log = (await prisma.auditLog.findFirst())!;
       const ctx = log.context as Record<string, unknown>;
       const after = ctx.after as Record<string, unknown>;
-      expect(after).toBeDefined();
-      expect(after.key).toBe(res.body.data.key);
-      expect(after.originalName).toBe('test.jpg');
-      expect(after.mime).toBe('image/jpeg');
-      expect(after.size).toBe(100_000);
-      expect(after.uploadedBy).toBe(superId);
-      expect(after.ownerType).toBe('member');
-      expect(after.ownerId).toBe(memberA.id);
-      expect(after.description).toBe('desc-after');
-      expect(after.accessLevel).toBe(AttachmentAccessLevel.SENSITIVE);
-      expect(after.tags).toEqual(['ta', 'tb']);
-      expect(after.originalUploaderName).toBe(SUPER_USERNAME);
-      expect(typeof after.uploadedAt).toBe('string'); // ISO8601 toISOString
-      expect(after.expireAt).toBeNull();
-      // 不含 accessUrl(非 DB 字段)/ checksum / etag(Q6 v1.0 不出参)
-      expect(after).not.toHaveProperty('accessUrl');
-      expect(after).not.toHaveProperty('checksum');
-      expect(after).not.toHaveProperty('etag');
-      // 不含 id / createdAt / updatedAt(audit_logs 自带 resourceId / createdAt)
-      expect(after).not.toHaveProperty('id');
-      expect(after).not.toHaveProperty('createdAt');
-      expect(after).not.toHaveProperty('updatedAt');
+      expect(after).toEqual({
+        key: res.body.data.key,
+        mime: 'image/jpeg',
+        size: 100_000,
+        uploadedBy: superId,
+        uploadedAt: res.body.data.uploadedAt,
+        ownerType: 'member',
+        ownerId: memberA.id,
+      });
       // 不含 before(create 场景)
       expect(ctx.before).toBeUndefined();
     });
@@ -350,7 +339,7 @@ describe('attachments audit_logs 集成', () => {
       expect(log.success).toBe(true);
     });
 
-    it('case 6: delete audit before snapshot 完整字段(物理删后留快照便于追溯)', async () => {
+    it('case 6: delete audit before snapshot 固定为恢复/追责所需 7 字段', async () => {
       const upload = await request(httpServer(app))
         .post('/api/admin/v1/attachments')
         .set('Authorization', superAuth)
@@ -366,19 +355,17 @@ describe('attachments audit_logs 集成', () => {
       const log = (await prisma.auditLog.findFirst())!;
       const ctx = log.context as Record<string, unknown>;
       const before = ctx.before as Record<string, unknown>;
-      expect(before).toBeDefined();
-      expect(before.key).toBe(uploadedKey);
-      expect(before.ownerType).toBe('member');
-      expect(before.ownerId).toBe(memberA.id);
-      expect(before.description).toBe('delete-before');
-      expect(before.tags).toEqual(['del']);
-      expect(before.originalUploaderName).toBe(SUPER_USERNAME);
+      expect(before).toEqual({
+        key: uploadedKey,
+        mime: 'image/jpeg',
+        size: 100_000,
+        uploadedBy: superId,
+        uploadedAt: upload.body.data.uploadedAt,
+        ownerType: 'member',
+        ownerId: memberA.id,
+      });
       // delete 不含 after(物理删后无 after)
       expect(ctx.after).toBeUndefined();
-      // 同 case 2:不含 accessUrl / checksum / etag / id / 时间戳
-      expect(before).not.toHaveProperty('accessUrl');
-      expect(before).not.toHaveProperty('checksum');
-      expect(before).not.toHaveProperty('id');
     });
 
     it('case 7a: delete extra deletedByPath=owner(currentUser = uploadedBy)', async () => {

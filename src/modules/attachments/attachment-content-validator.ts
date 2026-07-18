@@ -3,8 +3,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { STORAGE_PROVIDER } from '../storage/storage.constants';
-import type { StorageProvider } from '../storage/storage.interface';
-import type { HeadObjectResult } from '../storage/storage.types';
+import {
+  isPinnedStorageProvider,
+  StoragePinnedLocatorError,
+  type StorageProvider,
+} from '../storage/storage.interface';
+import type { HeadObjectResult, StorageObjectLocator } from '../storage/storage.types';
 import {
   ATTACHMENT_SIGNATURE_PREFIX_BYTES,
   matchesAttachmentSignature,
@@ -36,6 +40,30 @@ export class AttachmentContentValidator {
 
   async validateFromObject(input: ValidateAttachmentObjectInput): Promise<HeadObjectResult> {
     const head = await this.provider.headObject(input.key);
+    return this.validateHeadAndPrefix(input, head, (maxBytes) =>
+      this.provider.readObjectPrefix(input.key, maxBytes),
+    );
+  }
+
+  async validateFromObjectAt(
+    locator: StorageObjectLocator,
+    input: ValidateAttachmentObjectInput,
+  ): Promise<HeadObjectResult> {
+    const provider = this.provider;
+    if (!isPinnedStorageProvider(provider)) {
+      throw new StoragePinnedLocatorError('STORAGE_PROVIDER 未实现 pinned locator methods');
+    }
+    const head = await provider.headObjectAt(locator, input.key);
+    return this.validateHeadAndPrefix(input, head, (maxBytes) =>
+      provider.readObjectPrefixAt(locator, input.key, maxBytes),
+    );
+  }
+
+  private async validateHeadAndPrefix(
+    input: ValidateAttachmentObjectInput,
+    head: HeadObjectResult,
+    readPrefix: (maxBytes: number) => Promise<Buffer>,
+  ): Promise<HeadObjectResult> {
     if (!head.exists) {
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
@@ -46,10 +74,7 @@ export class AttachmentContentValidator {
     this.assertMimeNotBlocked(input.mime);
     if (!supportsAttachmentSignature(input.mime)) return head;
 
-    const prefix = await this.provider.readObjectPrefix(
-      input.key,
-      ATTACHMENT_SIGNATURE_PREFIX_BYTES,
-    );
+    const prefix = await readPrefix(ATTACHMENT_SIGNATURE_PREFIX_BYTES);
     this.assertSignatureMatches(input.mime, prefix);
     return head;
   }

@@ -1,4 +1,5 @@
-import { Readable } from 'node:stream';
+import { Readable, Writable } from 'node:stream';
+import { createHash } from 'node:crypto';
 
 import COS from 'cos-nodejs-sdk-v5';
 
@@ -260,6 +261,60 @@ describe('CosStorageProvider', () => {
       COSMock.__mockInstance.headObject.mockRejectedValue({ statusCode: 500 });
       const svc = new CosStorageProvider(service);
       await expect(svc.headObject('k')).rejects.toEqual({ statusCode: 500 });
+    });
+  });
+
+  describe('hashObjectSha256At', () => {
+    it('把旧 pinned bucket/region 流式写入 digest sink，不请求 Buffer Body', async () => {
+      const { service } = makeSettingsServiceMock(makeSettings());
+      const chunks = [Buffer.from('chunk-one-'), Buffer.from('chunk-two')];
+      COSMock.__mockInstance.getObject.mockImplementation(
+        ({ Output }: { Output: NodeJS.WritableStream }) =>
+          new Promise((resolve, reject) => {
+            Output.once('error', reject);
+            Output.write(chunks[0]);
+            Output.end(chunks[1], () => resolve({ ETag: '"stream-etag"' }));
+          }),
+      );
+      const locator = {
+        providerType: 'COS' as const,
+        bucket: 'old-pinned-bucket',
+        region: 'ap-old',
+        localNamespace: null,
+      };
+      const progress: number[] = [];
+      const svc = new CosStorageProvider(service);
+
+      const result = await svc.hashObjectSha256At(locator, 'same.bin', (bytesRead) => {
+        progress.push(bytesRead);
+        return Promise.resolve();
+      });
+
+      expect(COSMock.__mockInstance.getObject).toHaveBeenCalledTimes(1);
+      const calls = COSMock.__mockInstance.getObject.mock.calls as unknown as Array<
+        [
+          {
+            Bucket: string;
+            Region: string;
+            Key: string;
+            Output: NodeJS.WritableStream;
+          },
+        ]
+      >;
+      const call = calls[0]?.[0];
+      expect(call).toMatchObject({
+        Bucket: locator.bucket,
+        Region: locator.region,
+        Key: 'same.bin',
+      });
+      expect(call?.Output).toBeInstanceOf(Writable);
+      const body = Buffer.concat(chunks);
+      expect(result).toEqual({
+        size: body.length,
+        checksum: createHash('sha256').update(body).digest('hex'),
+        etag: 'stream-etag',
+      });
+      expect(progress).toEqual([chunks[0].length, body.length]);
     });
   });
 

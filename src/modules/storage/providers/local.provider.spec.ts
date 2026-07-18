@@ -2,10 +2,12 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
+import { createHash } from 'node:crypto';
 
 import type { ConfigType } from '@nestjs/config';
 
 import type appConfig from '../../../config/app.config';
+import { StoragePinnedLocatorError } from '../storage.interface';
 import { LocalStorageProvider } from './local.provider';
 
 // V2.x C-7.5 PR #7:LocalStorageProvider 单元测试(沿 Q-88-5 拍板 A 必须覆盖)
@@ -168,6 +170,54 @@ describe('LocalStorageProvider', () => {
     });
   });
 
+  describe('pinned locator root switch', () => {
+    it('旧 namespace 仍供 server-side I/O，但 upload/download URL fail-closed', async () => {
+      const oldRoot = path.join(tmpRoot, 'old-root');
+      const currentRoot = path.join(tmpRoot, 'current-root');
+      const current = new LocalStorageProvider(makeCfg(currentRoot));
+      const oldLocator = {
+        providerType: 'LOCAL' as const,
+        bucket: null,
+        region: null,
+        localNamespace: oldRoot,
+      };
+
+      await current.putObjectAt(oldLocator, { key: 'pinned.txt', body: Buffer.from('old') });
+      await expect(current.headObjectAt(oldLocator, 'pinned.txt')).resolves.toMatchObject({
+        exists: true,
+        size: 3,
+      });
+
+      // Mutation killed: validating oldRoot and then delegating to generate*Url(currentRoot).
+      expect(() =>
+        current.generateUploadUrlAt(oldLocator, {
+          key: 'pinned.txt',
+          contentType: 'text/plain',
+          expiresIn: 60,
+        }),
+      ).toThrow(StoragePinnedLocatorError);
+      expect(() =>
+        current.generateDownloadUrlAt(oldLocator, { key: 'pinned.txt', expiresIn: 60 }),
+      ).toThrow(StoragePinnedLocatorError);
+    });
+
+    it('当前 namespace 可签名，且公开 URL 不包含 absolute root', async () => {
+      const locator = svc.getPinnedLocator();
+      const upload = await svc.generateUploadUrlAt(locator, {
+        key: 'safe.txt',
+        contentType: 'text/plain',
+        expiresIn: 60,
+      });
+      const download = await svc.generateDownloadUrlAt(locator, {
+        key: 'safe.txt',
+        expiresIn: 60,
+      });
+
+      expect(upload.url).not.toContain(tmpRoot);
+      expect(download.url).not.toContain(tmpRoot);
+    });
+  });
+
   describe('headObject', () => {
     it('存在 → exists=true + size + lastModified', async () => {
       const before = Date.now();
@@ -199,6 +249,43 @@ describe('LocalStorageProvider', () => {
 
       await svc.putObject({ key: 'short.bin', body: Buffer.from('xy') });
       await expect(svc.readObjectPrefix('short.bin', 12)).resolves.toEqual(Buffer.from('xy'));
+    });
+  });
+
+  describe('hashObjectSha256At', () => {
+    it('按 pinned namespace 分块哈希，且不使用 whole-file readFile', async () => {
+      const oldRoot = path.join(tmpRoot, 'old-hash-root');
+      const currentRoot = path.join(tmpRoot, 'current-hash-root');
+      const current = new LocalStorageProvider(makeCfg(currentRoot));
+      const locator = {
+        providerType: 'LOCAL' as const,
+        bucket: null,
+        region: null,
+        localNamespace: oldRoot,
+      };
+      const oldBody = Buffer.alloc(2 * 1024 * 1024 + 17, 0x61);
+      await current.putObjectAt(locator, { key: 'same.bin', body: oldBody });
+      await current.putObject({ key: 'same.bin', body: Buffer.from('wrong-current-root') });
+      const readFileSpy = jest
+        .spyOn(fs, 'readFile')
+        .mockRejectedValue(new Error('whole-file reads are forbidden'));
+      const progress: number[] = [];
+
+      try {
+        const result = await current.hashObjectSha256At(locator, 'same.bin', (bytesRead) => {
+          progress.push(bytesRead);
+          return Promise.resolve();
+        });
+        expect(result).toEqual({
+          size: oldBody.length,
+          checksum: createHash('sha256').update(oldBody).digest('hex'),
+        });
+      } finally {
+        readFileSpy.mockRestore();
+      }
+      // Mutation killed: buffering the entire object yields only one progress boundary or calls
+      // readFile; the production implementation must keep bounded 1MiB chunks.
+      expect(progress.length).toBeGreaterThan(1);
     });
   });
 

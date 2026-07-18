@@ -98,7 +98,11 @@ describe('SmsCryptoService', () => {
     const { StorageCryptoService } = await import('../storage/storage-crypto.service');
     const storageCfg = {
       ...makeCfg(KEY_A),
-      storage: { encryptionKey: KEY_A, localRoot: './tmp/storage' },
+      storage: {
+        encryptionKey: KEY_A,
+        localRoot: './tmp/storage',
+        consistencyMode: 'JIT' as const,
+      },
     };
     const storageSvc = new StorageCryptoService(storageCfg);
     const smsSvc = new SmsCryptoService(makeCfg(KEY_A));
