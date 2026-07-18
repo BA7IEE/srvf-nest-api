@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   DictItemStatus,
   DictTypeStatus,
@@ -16,8 +16,10 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_TYPE_RECRUITMENT,
+  OUTBOX_EVENT_TARGETED_NOTIFICATION,
+  OUTBOX_PAYLOAD_VERSION,
 } from '../notifications/notification.constants';
-import { NotificationDispatcher } from '../notifications/notification-dispatcher';
+import { NotificationOutboxService } from '../notifications/notification-outbox.service';
 import { RbacService } from '../permissions/rbac.service';
 import {
   APP_STATUS_APPROVED,
@@ -49,14 +51,11 @@ type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
 export class TeamJoinEnrollmentService {
-  private readonly logger = new Logger(TeamJoinEnrollmentService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
-    // 统一通知 S3:入队结果定向通知(producer → notifications **单向**直调,D-N5 无事件总线;防环:绝不被回调)。
-    private readonly notificationDispatcher: NotificationDispatcher,
+    private readonly notificationOutbox: NotificationOutboxService,
   ) {}
 
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
@@ -88,7 +87,7 @@ export class TeamJoinEnrollmentService {
     now: Date,
   ): Promise<TeamJoinApplicationAdminDto> {
     await this.assertCanOrThrow(user, 'team-join-application.join.member');
-    // 业务事务由 producer 持有(全或无:设部门 + level-1 + joined);通知派发在 commit **之后**(事务外,§6.2)。
+    // 业务写与 durable notification intent 同一事务；任一失败均全部回滚。
     const result = await this.prisma.$transaction(async (tx) => {
       // 1. 申请存在 + approved(否则 28240;幂等:joined 重跑命中此闸,不重复设部门/级别)
       const app = await tx.teamJoinApplication.findFirst({
@@ -213,36 +212,28 @@ export class TeamJoinEnrollmentService {
         },
         tx,
       });
-      // 携带通知 payload 出事务(memberId 收件人 + orgName 部门名);DTO 仍为对外返回体。
-      return {
-        dto: buildAdminDto(updated, contribution, now),
-        memberId: app.memberId,
-        orgName: org.name,
-      };
+      await this.notificationOutbox.enqueue(
+        {
+          eventKey: `team-join-enrollment:${id}`,
+          eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION,
+          payloadVersion: OUTBOX_PAYLOAD_VERSION,
+          payload: {
+            recipientMemberId: app.memberId,
+            notificationTypeCode: NOTIFICATION_TYPE_RECRUITMENT,
+            title: '入队成功',
+            body: `恭喜!您的入队申请已通过,现已加入「${org.name}」,正式成为队员。`,
+            channels: [NOTIFICATION_CHANNEL_IN_APP],
+          },
+          aggregateType: 'team_join_application',
+          aggregateId: id,
+          destinationType: 'member',
+          destinationRef: app.memberId,
+        },
+        tx,
+      );
+      return buildAdminDto(updated, contribution, now);
     });
 
-    // 入队结果定向通知(统一通知 S3;评审稿 §6.4 + 招新 §9.1):**事务 commit 之后、事务外**派发。
-    // **绝不破坏入队行为锁**(单部门 partial unique / level-1 / 全或无已在事务内 commit);派发失败只记日志。
-    await this.dispatchEnrollmentNotification(result.memberId, result.orgName);
-
-    return result.dto;
-  }
-
-  // 派发「入队结果」定向通知(仅站内,§9.1 渠道倾向)。**try-catch 永不抛**:派发失败(含 dispatcher 内部异常)
-  // 只记日志,绝不回滚 / 阻断已 commit 的入队(行为锁)。payload(§9.1):部门 + 级别(正式队员 level-1)。
-  private async dispatchEnrollmentNotification(memberId: string, orgName: string): Promise<void> {
-    try {
-      await this.notificationDispatcher.dispatchTargeted({
-        recipientMemberId: memberId,
-        notificationTypeCode: NOTIFICATION_TYPE_RECRUITMENT,
-        title: '入队成功',
-        body: `恭喜!您的入队申请已通过,现已加入「${orgName}」,正式成为队员。`,
-        channels: [NOTIFICATION_CHANNEL_IN_APP],
-      });
-    } catch (err) {
-      this.logger.error(
-        `team-join notification dispatch failed (member=${memberId}): ${(err as Error).message}`,
-      );
-    }
+    return result;
   }
 }

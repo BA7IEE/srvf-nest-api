@@ -10,13 +10,15 @@
 - **到期提醒 job**(v0.47.0):每日 09:00(Asia/Shanghai)第二个 `@Cron`;证书 60 天提醒 + 到期 `verified→expired`、个人保险 30 天、队保单 30 天的 marker / 状态 / audit 与 outbox intent 同事务落库;独立 worker 后续执行站内与微信 Effect,marker + 状态条件更新保证二跑幂等。
 - **统一通知 S1 站内信渠道**(2026-06-25):admin 撰写/发布面(`NotificationAdminController` 8 端点)+ 会员 app 拉取面(`NotificationAppController` 4 端点);`Notification` 广播 + `NotificationRead` 已读;**站内 = pull 零发送**;可见性**复用 `content.visibility`**(去 public = 4 档)。
 - **统一通知 S2 微信订阅 quota 渠道**(2026-06-25):admin 勾微信渠道 → publish 事务内写 durable outbox intent,独立 worker 事务外派发(`NotificationWechatDispatchService`);quota ack/status(`NotificationSubscriptionService`)+ 模板配置(`WechatSubscribeTemplateService` + `NotificationWechatTemplateAdminController`);`NotificationDelivery` 投递态 + `WechatSubscriptionQuota` 配额 + `WechatSubscribeTemplate` 模板;发送能力 additive 在 `wechat/` 模块。
-- **统一通知 S3 producer 接入 + 派发器 Effect 正式化**(2026-06-25):`NotificationDispatcher`(architecture-boundary §3.6 **首个真实 Effect**;`dispatchTargeted` 建**已发布定向行** = directed/system/authorUserId=null/跳过 draft 直 published → 站内 + 微信〔复用 S2 `dispatchDirected` 单收件人〕)由 **producer**(招新发号 `recruitment-promotion` / 入队 `team-join-enrollment`)在业务事务 **commit 后**直调(D-N5 单向直调,无事件总线);`Notification.recipientMemberId`(定向收件人,FK→Member Restrict)+ feed 扩 `buildFeedWhere`(广播可见 ∪ 本人定向,广播分支按 audienceType 收窄防泄漏,他人 31001 防枚举)。
+- **统一通知 S3 producer 接入 + 派发器 Effect 正式化**(2026-06-25;D-Outbox 2026-07-18 收口):`NotificationDispatcher`(architecture-boundary §3.6 **首个真实 Effect**)由独立 outbox worker 调用，建立已发布定向行并执行站内/微信 Effect；招新发号与入队 producer 只在业务事务内 enqueue `notification.targeted@1`。`Notification.recipientMemberId` + feed `buildFeedWhere` 仍保证广播可见 ∪ 本人定向，定向他人 31001 防枚举。
 - **统一通知 S4 活动·考勤 producer 定向触发**(2026-06-25):报名审批(`approve`/`reject` → 报名本人)/ 活动取消(`cancel` → 遍历仍在册报名者 fan-out)/ 考勤终审(`finalApprove` → sheet 内逐 record 本人)三处 producer 在各自业务事务 **commit 后、事务外、`try-catch` 永不抛**直调 S3 `dispatchTargeted`(`activity-reminder` 类型,**仅站内**,微信 opt-in 延后);**0 schema / 0 端点 / 0 RBAC 码**(纯 producer 接入,复用 S3 派发器)。
-- **durable outbox 核心**(2026-07-18):`NotificationOutboxIntent` 由业务事务同写;独立 `notification-outbox-worker` 进程以 PostgreSQL `FOR UPDATE SKIP LOCKED` claim、lease/fencing、指数退避、最多 8 次与 dead letter 驱动 Effect。微信广播 child 按 publish root 留独立 generation 历史，手写 partial unique 保证同 notification/member 同时至多一条 pending/processing，terminal 后释放重试槽。payload/eventKey 禁手机号、openid、token、secret、credential、signed URL 和 provider 原始报文;未知 type/version 直接 dead 且零 Effect。当前仅 notifications-owned producer 接入;招新/team-join/participation 等外部 producer 仍保留旧 commit 后直调边界,由后续独立 PR 接入。
+- **durable outbox 核心**(2026-07-18):`NotificationOutboxIntent` 由业务事务同写;独立 `notification-outbox-worker` 进程以 PostgreSQL `FOR UPDATE SKIP LOCKED` claim、lease/fencing、指数退避、最多 8 次与 dead letter 驱动 Effect。微信广播 child 按 publish root 留独立 generation 历史，手写 partial unique 保证同 notification/member 同时至多一条 pending/processing，terminal 后释放重试槽。payload/eventKey 禁手机号、openid、token、secret、credential、signed URL 和 provider 原始报文;未知 type/version 直接 dead 且零 Effect。notifications-owned producer + 招新发号/入队已接入；participation producer 仍保留 commit 后直调边界，待后续独立 PR。
 - **统一通知 S5 短信兜底渠道**(2026-06-27):`NotificationSmsDispatchService` —— **admin 显式发起紧急召集短信**(`POST admin/v1/notifications/:id/send-sms`,新码 `notification.send.sms`;**计费确认必需** confirmed=true 才真发 / false 仅预览受众计数);confirmed=true 先做 channel readiness，再以随机 generation 为逐收件人预留 processing intent，并由 partial unique 保证同 notification/member 单 active；同事务写 `deliveryState=reserved` audit,提交后请求仅执行自己 fence 的 child 首轮并追加 `deliveryState=first-attempt` audit。临时 skip terminal 后释放槽位，下一次 confirmation 可新发；只有 `NotificationDelivery SENT` 是跨 generation 永久去重事实。失败 child 独立 nack 重试,HTTP 与首轮 audit 都不代表最终态。
 - **不负责**:验证码(`SmsCodeService`)/ wechat·sms settings 管理(各自模块)/ 报名前 5 触发(申请人非队员,维持查询 pull;openid 推送路另立项)/ 真·全员短信批处理异步(延后,未立项)/ 退订偏好(未立项)。
 
 ## Local facts
+
+- 招新发号与入队 producer 在各自业务 transaction 内 enqueue `notification.targeted@1`；worker commit 后执行 Effect。producer 不再 commit 后 best-effort 直调 dispatcher，enqueue 失败必须使业务回滚。
 
 - **本仓恰好两个 `@Cron`**:生日批 + v0.47.0 到期提醒;`ScheduleModule.forRoot()` 在 `app.module.ts` 全局装配。第三个 cron / interval / timeout 仍须独立 D 档评审
 - **选取六条件**(评审稿 E-B5,全部同时满足):`MemberProfile.birthDate` 月日=今天(固定 UTC+8 日界)/ profile 未软删 / Member ACTIVE 未软删 / User 存在 / `User.phone` 非空 / User ACTIVE 未软删;**仅发 `User.phone`**(拍板⑤,`MemberProfile.mobile` 永不使用);2/29 仅闰年当天发(不顺延)
@@ -49,7 +51,7 @@
 ### S3 producer 接入 + 派发器 Effect(2026-06-25)
 
 - ❌ **不**让 `NotificationDispatcher` import / 回调招新或 team-join(**防环**:producer → notifications **单向**;通知绝不反向触发业务)。
-- ❌ producer(promote / 入队)**不**把 `dispatchTargeted` 放进业务事务内,**只**在事务 **commit 之后**调,且 **`try-catch` 永不抛** —— 派发失败绝不破坏 promote 行为锁(号段连续/全或无/幂等)或入队行为锁(单部门 partial unique/level-1)。
+- ❌ 招新 promote / 入队**不**再 commit 后直调 `dispatchTargeted`；必须在业务 transaction 内 enqueue `notification.targeted@1`，enqueue 失败整体回滚，外部 Effect 只由 worker 在事务外执行。
 - ❌ **不**给定向 feed 的广播分支去掉 `audienceType=broadcast` 收窄 —— 定向行 `visibilityCode='member'`,不收窄会借广播 member 可见档泄漏给他人(越权);定向仅 `recipientMemberId=本人`可见,他人 `31001` 防枚举。
 - ❌ 系统定向通知**不**走 admin 状态机(直接建 published / sourceType=system / authorUserId=null;不污染 admin CRUD 路径,不入 audit,§13)。
 - ⚠️ **报名前 5 触发不做**(申请人非队员,S1/S2 够不着):报名受理/转人工/门槛/评定/公示维持**查询进度 pull**;openid 非会员推送路 = 另立项。
@@ -69,9 +71,9 @@
 
 - `pnpm test -- birthday` — 生日批:选取六条件 / 2-29 / 日界 / 失败继续 / 前置跳过(mock prisma + router)
 - `pnpm test -- wechat.provider wechat.service notification.wechat-data notification-subscription` — S2 单测:stable_token 缓存 / sendSubscribeMessage errcode + E-12 / token 刷新重试 / 字段映射截断 / quota 封顶
-- `pnpm test -- notification-dispatcher recruitment-promotion` — S3 单测:定向行形态(directed/system/published)+ 渠道编排 + 发号通知**事务外**顺序 + 派发失败不破坏 promote
+- `pnpm test -- notification-dispatcher recruitment-promotion` — S3 单测:定向行形态 + 渠道编排 + 发号 intent 与业务同事务 + enqueue 失败整体回滚
 - `pnpm test:e2e -- notifications-birthday notifications-admin notifications-app notifications-wechat notifications-directed` — 直调 / 全链:生日 + S1 站内信 + S2 微信 + S3 定向(收件人可见 / **他人 404 防枚举** / 微信 sent·no-quota·no-template)
-- `pnpm test:e2e -- recruitment.e2e team-join.e2e` — S3 producer:发号→定向通知 / 入队→定向通知 / **注入 dispatcher 抛错断言 promote·入队仍成功**
+- `pnpm test:e2e -- recruitment.e2e team-join.e2e` — S3 producer:同事务 intent / batch 中途失败整批回滚 / 重复请求与 worker drain 零重复 Effect
 - `pnpm test -- notification-sms-dispatch dev-stub.provider tencent-sms.provider` — S5 单测:通道未就绪 / 仅可见有手机者 / 同日同模板幂等·日封顶·间隔继承 / re-trigger 去重 / FAILED 不阻断 / maskPhone / 预览不发 / provider `sendNotification` + 行为锁
 - `pnpm test:e2e -- notifications-sms` — S5 全链:RBAC + 31001/31013 闸 + confirmed 缺失 400 + 预览不发 + 确认逐人 send_log/delivery/maskPhone/audit + 同日幂等 + re-trigger 去重 + 仅可见有手机者 + 24030
 - `pnpm test -- notification-outbox birthday-greeting expiry-reminder` — durable outbox:payload 安全 / enqueue 内容幂等 / claim lease / fencing / retry·dead / 未知 type-version 零 Effect + 两 cron 只入队

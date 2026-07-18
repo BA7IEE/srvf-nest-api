@@ -119,15 +119,13 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
     const rbac = { can: jest.fn().mockResolvedValue(true) };
     const auditLogs = { log: jest.fn().mockResolvedValue(undefined) };
 
-    // 统一通知 S3:派发器 mock —— 每次调用记 'dispatch' 事件(供「事务外」顺序断言:dispatch 全在 tx:end 之后);
-    // dispatchThrows=true 时拒绝(模拟派发失败,验证「失败不破坏 promote」行为锁)。
-    const dispatchTargeted = jest.fn().mockImplementation(() => {
-      events.push('dispatch');
+    const enqueue = jest.fn().mockImplementation(() => {
+      events.push('enqueue');
       return opts.dispatchThrows
-        ? Promise.reject(new Error('dispatch boom'))
-        : Promise.resolve({ id: 'notif' });
+        ? Promise.reject(new Error('enqueue boom'))
+        : Promise.resolve({ id: 'intent' });
     });
-    const notificationDispatcher = { dispatchTargeted };
+    const notificationOutbox = { enqueue };
 
     // 十项收口刀C:storage mock(promote commit 后 best-effort 删主体裁剪图 blob;失败不阻断)
     const storage = { deleteObject: jest.fn().mockResolvedValue(undefined) };
@@ -135,7 +133,7 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
       prisma as never,
       rbac as never,
       auditLogs as never,
-      notificationDispatcher as never,
+      notificationOutbox as never,
       storage as never,
     );
 
@@ -146,7 +144,7 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
       txMock,
       userFindMany,
       orgFindFirst,
-      dispatchTargeted,
+      enqueue,
       getTxOptions: () => txOptions,
     };
   }
@@ -308,51 +306,39 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
     expect(txMock.member.create).not.toHaveBeenCalled();
   });
 
-  // ===== 统一通知 S3(评审稿 §6.4 / §6.2):发号定向通知 = 事务外派发 + 失败不破坏行为锁 =====
+  // ===== durable outbox producer: 发号与 intent 同事务 =====
 
-  it('S3:发号通知逐个新建 member 派发,且**全部在事务 commit 之后**(事务外;dispatch 事件全在 tx:end 之后)', async () => {
+  it('发号逐项 enqueue targeted@1 intent，且全部在业务 transaction 内', async () => {
     const n = 3;
-    const { service, events, dispatchTargeted } = buildService(n);
+    const { service, events, enqueue, txMock } = buildService(n);
 
     const res = await service.promote('cyc1', user, meta, now);
     expect(res.promotedCount).toBe(n);
 
     // ① 派发次数 = 发号数;每次 payload = recruitment 类型 + 站内+微信 + recipientMemberId(= 新建 member)
-    expect(dispatchTargeted).toHaveBeenCalledTimes(n);
-    const calls = dispatchTargeted.mock.calls as Array<[Record<string, unknown>]>;
-    for (const [arg] of calls) {
+    expect(enqueue).toHaveBeenCalledTimes(n);
+    const calls = enqueue.mock.calls as Array<[Record<string, unknown>, unknown]>;
+    for (const [arg, tx] of calls) {
       expect(arg).toMatchObject({
-        notificationTypeCode: 'recruitment',
-        channels: ['in-app', 'wechat'],
+        eventType: 'notification.targeted',
+        payloadVersion: 1,
+        aggregateType: 'recruitment_application',
+        destinationType: 'member',
+        payload: { notificationTypeCode: 'recruitment', channels: ['in-app', 'wechat'] },
       });
-      expect(arg.recipientMemberId).toMatch(/^mem-/); // 桩 member.create 返 id=`mem-<memberNo>`
-      expect(typeof arg.title).toBe('string');
-      expect(arg.body).toContain('永久编号');
+      expect(tx).toBe(txMock);
     }
-
-    // ② 事务外硬证:首个 dispatch 事件严格在 tx:end 之后(派发绝不在 producer 事务内)
     const txEndIdx = events.indexOf('tx:end');
-    const firstDispatchIdx = events.indexOf('dispatch');
-    expect(txEndIdx).toBeGreaterThanOrEqual(0);
-    expect(firstDispatchIdx).toBeGreaterThan(txEndIdx);
-    expect(events.slice(0, txEndIdx + 1)).not.toContain('dispatch');
+    expect(events.indexOf('enqueue')).toBeLessThan(txEndIdx);
   });
 
-  it('S3:派发失败(dispatcher 抛错)**绝不破坏 promote**(号段已 commit;promotedCount 不变,不抛)', async () => {
+  it('intent enqueue 失败向外抛出，使业务 transaction 回滚', async () => {
     const n = 2;
-    const { service, txMock, dispatchTargeted } = buildService(n, undefined, {
+    const { service, enqueue } = buildService(n, undefined, {
       dispatchThrows: true,
     });
-
-    // 派发每次都抛,但 promote 仍成功返回(try-catch 永不外冒;行为锁未破)
-    const res = await service.promote('cyc1', user, meta, now);
-    expect(res.promotedCount).toBe(n);
-    expect(res.skippedCount).toBe(0);
-    // 业务写(建 member / 标 promoted)已在事务内 commit,不受派发失败影响
-    expect(txMock.member.create).toHaveBeenCalledTimes(n);
-    expect(txMock.recruitmentApplication.update).toHaveBeenCalledTimes(n);
-    // 派发确有被调用(且抛错被吞)
-    expect(dispatchTargeted).toHaveBeenCalledTimes(n);
+    await expect(service.promote('cyc1', user, meta, now)).rejects.toThrow('enqueue boom');
+    expect(enqueue).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -423,17 +409,17 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
     const rbac = { can: jest.fn().mockResolvedValue(opts.canResult ?? true) };
     const auditLogs = { log: jest.fn().mockResolvedValue(undefined) };
     // promotePrecheck 纯读不派发;dispatcher 注 no-op 仅满足构造签名(断言其零调用见 it 内)。
-    const notificationDispatcher = { dispatchTargeted: jest.fn().mockResolvedValue({ id: 'n' }) };
+    const notificationOutbox = { enqueue: jest.fn().mockResolvedValue({ id: 'intent' }) };
     // 十项收口刀C:storage mock(promote commit 后 best-effort 删主体裁剪图 blob;失败不阻断)
     const storage = { deleteObject: jest.fn().mockResolvedValue(undefined) };
     const service = new RecruitmentPromotionService(
       prisma as never,
       rbac as never,
       auditLogs as never,
-      notificationDispatcher as never,
+      notificationOutbox as never,
       storage as never,
     );
-    return { service, prisma, rbac, dispatchTargeted: notificationDispatcher.dispatchTargeted };
+    return { service, prisma, rbac, enqueue: notificationOutbox.enqueue };
   }
 
   const byId = (rows: Array<{ applicationId: string }>) =>

@@ -4,7 +4,8 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
-import { NotificationDispatcher } from '../../src/modules/notifications/notification-dispatcher';
+import { NotificationOutboxService } from '../../src/modules/notifications/notification-outbox.service';
+import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
@@ -307,6 +308,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
     await prisma.notificationDelivery.deleteMany({});
     await prisma.notificationRead.deleteMany({});
     await prisma.notification.deleteMany({});
+    await prisma.notificationOutboxIntent.deleteMany({});
     await prisma.member.deleteMany({});
     await prisma.auditLog.deleteMany({
       where: { resourceType: { in: ['team_join_cycle', 'team_join_application'] } },
@@ -860,47 +862,66 @@ describe('招新三期(入队)admin 面 e2e', () => {
 
   // ===== 统一通知 S3(评审稿 §6.4 / 招新 §9.1):入队 → 定向通知(仅站内)=====
 
-  it('⑰c【S3】入队成功 → member 收一条定向 system 通知(directed/recruitment/仅站内 + 部门名)', async () => {
+  it('⑰c【outbox】入队成功与 targeted@1 intent 同次 commit', async () => {
     const org = await makeOrg();
     const orgRow = await prisma.organization.findUniqueOrThrow({ where: { id: org } });
     const { appId, memberId } = await setupApproved({ targets: [org] });
 
     await join(appId, org).expect(200);
 
-    const notifs = await prisma.notification.findMany({ where: { recipientMemberId: memberId } });
-    expect(notifs).toHaveLength(1);
-    expect(notifs[0]).toMatchObject({
-      audienceType: 'directed',
-      sourceType: 'system',
-      statusCode: 'published',
-      notificationTypeCode: 'recruitment',
-      authorUserId: null,
+    const intents = await prisma.notificationOutboxIntent.findMany({
+      where: { destinationRef: memberId },
     });
-    expect(notifs[0].channels).toEqual(['in-app']); // 入队:仅站内(§9.1 渠道倾向)
-    expect(notifs[0].body).toContain(orgRow.name); // payload:部门名
+    expect(intents).toHaveLength(1);
+    expect(intents[0]).toMatchObject({
+      eventKey: `team-join-enrollment:${appId}`,
+      eventType: 'notification.targeted',
+      payloadVersion: 1,
+      aggregateType: 'team_join_application',
+      status: 'pending',
+    });
+    expect(intents[0].payload).toMatchObject({ channels: ['in-app'] });
+    const payload = intents[0].payload as Record<string, unknown>;
+    expect(Object.keys(payload).sort()).toEqual([
+      'body',
+      'channels',
+      'notificationTypeCode',
+      'recipientMemberId',
+      'title',
+    ]);
+    expect(JSON.stringify(payload)).toContain(orgRow.name);
+
+    // 重复 join 被状态机拒绝，稳定 event identity 只留一条 intent；worker 多跑仍只一条 Effect。
+    expectBizError(await join(appId, org), BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
+    expect(
+      await prisma.notificationOutboxIntent.count({ where: { destinationRef: memberId } }),
+    ).toBe(1);
+    const worker = app.get(NotificationOutboxWorker);
+    expect(await worker.drainOnce()).toMatchObject({ claimed: 1, succeeded: 1 });
+    expect(await worker.drainOnce()).toMatchObject({ claimed: 0 });
+    expect(await prisma.notification.count({ where: { recipientMemberId: memberId } })).toBe(1);
   });
 
-  it('⑰d【S3】派发失败注入(dispatcher 抛错)→ **入队仍成功**(level-1 + 单部门;行为锁未破)', async () => {
+  it('⑰d【outbox mutation】enqueue 失败→入队业务与 intent 同时回滚', async () => {
     const org = await makeOrg();
     const { appId, memberId } = await setupApproved({ targets: [org] });
 
-    // spy 同一 NotificationDispatcher 单例(producer 注入同实例)→ 派发抛
-    const dispatcher = app.get(NotificationDispatcher);
-    const spy = jest
-      .spyOn(dispatcher, 'dispatchTargeted')
-      .mockRejectedValue(new Error('dispatch boom'));
+    const outbox = app.get(NotificationOutboxService);
+    const spy = jest.spyOn(outbox, 'enqueue').mockRejectedValue(new Error('enqueue boom'));
     try {
-      const res = await join(appId, org).expect(200);
-      expect(res.body.data.statusCode).toBe('joined'); // 业务成功,派发失败被吞
+      await join(appId, org).expect(500);
       const after = await prisma.member.findUniqueOrThrow({
         where: { id: memberId },
         select: { gradeCode: true },
       });
-      expect(after.gradeCode).toBe('level-1'); // 入队产物完整
+      expect(after.gradeCode).not.toBe('level-1');
       const active = await prisma.memberOrganizationMembership.findMany({
         where: { memberId, deletedAt: null },
       });
-      expect(active).toHaveLength(1); // 单部门 partial unique 未破
+      expect(active).toHaveLength(0);
+      expect(
+        await prisma.notificationOutboxIntent.count({ where: { destinationRef: memberId } }),
+      ).toBe(0);
       expect(spy).toHaveBeenCalled();
     } finally {
       spy.mockRestore();
