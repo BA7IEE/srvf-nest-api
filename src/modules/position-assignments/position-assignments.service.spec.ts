@@ -245,6 +245,23 @@ describe('PositionAssignmentsService.create', () => {
     );
   });
 
+  it('transaction option:复用调用方 transaction client,不再开启内层事务', async () => {
+    const tx = makeTx();
+    const prisma = makePrisma(tx);
+    const svc = new PositionAssignmentsService(prisma, rbacAllow, auditNoop);
+
+    await expect(
+      svc.create(USER, 'org1', baseDto, META, {
+        transaction: tx as unknown as Prisma.TransactionClient,
+      }),
+    ).resolves.toMatchObject({ status: 'ACTIVE' });
+
+    const transactionMock = (prisma as unknown as { $transaction: jest.Mock }).$transaction;
+    expect(transactionMock).not.toHaveBeenCalled();
+    expect(tx.organizationPositionAssignment.create).toHaveBeenCalledTimes(1);
+    expect(auditLogMock).toHaveBeenLastCalledWith(expect.objectContaining({ tx }));
+  });
+
   it('省略 options(向后兼容):行为与显式 { dryRun: false } 逐字一致', async () => {
     const tx = makeTx();
     const res = await svcWith(tx).create(USER, 'org1', baseDto, META);

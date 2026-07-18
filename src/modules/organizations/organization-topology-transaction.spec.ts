@@ -75,7 +75,7 @@ function makeService() {
   const rbac = { can: jest.fn().mockResolvedValue(true) } as unknown as RbacService;
   const audit = { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogsService;
 
-  return { service: new OrganizationsService(prisma, rbac, audit), calls, tx };
+  return { service: new OrganizationsService(prisma, rbac, audit), calls, tx, prisma };
 }
 
 describe('organization topology transaction lock', () => {
@@ -128,5 +128,18 @@ describe('organization topology transaction lock', () => {
     expect(calls[0]).toBe('$queryRaw');
     expect(calls.filter((call) => call === '$queryRaw')).toHaveLength(1);
     expect(calls.slice(1).some((call) => call.startsWith('organization'))).toBe(true);
+  });
+
+  it('create transaction option:复用调用方事务且仍在首条 topology SQL 前取锁', async () => {
+    const { service, calls, tx, prisma } = makeService();
+
+    await service.create(USER, { name: 'Child', nodeTypeCode: 'test-type' }, META, {
+      transaction: tx as unknown as Prisma.TransactionClient,
+    });
+
+    const transactionMock = (prisma as unknown as { $transaction: jest.Mock }).$transaction;
+    expect(transactionMock).not.toHaveBeenCalled();
+    expect(calls[0]).toBe('$queryRaw');
+    expect(calls.filter((call) => call === '$queryRaw')).toHaveLength(1);
   });
 });

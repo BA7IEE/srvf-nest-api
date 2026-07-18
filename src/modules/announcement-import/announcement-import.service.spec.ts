@@ -1,4 +1,4 @@
-import { Role, UserStatus } from '@prisma/client';
+import { Prisma, Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -12,7 +12,8 @@ import { AnnouncementImportService } from './announcement-import.service';
 // 终态 scoped-authz PR11 service-level characterization spec(纯构造器注入 mock,不连库、不起 Nest)。
 //
 // **本 spec 只锁本模块自己的逻辑**(锚定解析 / 批内去重 / displayName 辅助解析 / 逐行结果聚合 /
-// dryRun 透传),**不**重新验证被复用三个 service 的 create() 内部校验(那些已在各自 spec 锁定)——
+// transaction client 透传),**不**重新验证被复用三个 service 的 create() 内部校验(那些已在各自
+// spec 锁定)——
 // 三个被复用 service 在这里全部是薄 jest.fn() mock,只关心"传参是否正确"与"抛出的 BizException
 // 是否被正确转译成行结果"。
 
@@ -26,14 +27,31 @@ const USER: CurrentUserPayload = {
 const META = { requestId: 'req-1', ip: null, ua: null };
 
 function makePrismaMock() {
-  return {
-    organization: { findFirst: jest.fn().mockResolvedValue(null) },
+  const calls: string[] = [];
+  const prisma = {
+    organization: {
+      findFirst: jest.fn().mockImplementation(() => {
+        calls.push('organization.findFirst');
+        return Promise.resolve(null);
+      }),
+    },
     organizationPosition: { findFirst: jest.fn().mockResolvedValue(null) },
     member: {
       findFirst: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
     },
+    $queryRaw: jest.fn().mockImplementation(() => {
+      calls.push('$queryRaw');
+      return Promise.resolve([{ locked: '' }]);
+    }),
+    $executeRaw: jest.fn().mockResolvedValue(0),
+    $transaction: jest.fn(),
+    calls,
   };
+  prisma.$transaction.mockImplementation((callback: (tx: typeof prisma) => Promise<unknown>) =>
+    callback(prisma),
+  );
+  return prisma;
 }
 
 function build(prismaMock: ReturnType<typeof makePrismaMock>) {
@@ -80,6 +98,51 @@ describe('AnnouncementImportService — 权限门 + 空请求', () => {
     ).rejects.toEqual(new BizException(BizCode.RBAC_FORBIDDEN));
     expect(rbac.can).toHaveBeenCalledWith(USER, 'announcement-import.execute.record');
   });
+
+  it('preview/execute 共用 request transaction；非 ok 行回滚到逐行 savepoint', async () => {
+    const prisma = makePrismaMock();
+    const { svc } = build(prisma);
+    const body = { organizations: [{ name: 'only-name' }] };
+
+    await expect(svc.preview(USER, body, META)).resolves.toMatchObject({
+      organizations: [{ status: 'blocked' }],
+    });
+    await expect(svc.execute(USER, body, META)).resolves.toMatchObject({
+      organizations: [{ status: 'blocked' }],
+    });
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    const transactionCalls = prisma.$transaction.mock.calls as unknown as Array<
+      [unknown, { timeout: number }]
+    >;
+    expect(transactionCalls[0][1]).toEqual({ timeout: 300_000 });
+    expect(transactionCalls[1][1]).toEqual({ timeout: 300_000 });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    const executeRawCalls = prisma.$executeRaw.mock.calls as unknown as Array<[Prisma.Sql]>;
+    const sql = executeRawCalls.map(([statement]) => statement.strings.join(' ').trim());
+    expect(sql).toEqual([
+      'SAVEPOINT announcement_import_row',
+      'ROLLBACK TO SAVEPOINT announcement_import_row',
+      'RELEASE SAVEPOINT announcement_import_row',
+      'SAVEPOINT announcement_import_row',
+      'ROLLBACK TO SAVEPOINT announcement_import_row',
+      'RELEASE SAVEPOINT announcement_import_row',
+    ]);
+  });
+
+  it('request-wide transaction 在第一条 Organization topology SQL 前取固定 advisory xact lock', async () => {
+    const prisma = makePrismaMock();
+    const { svc } = build(prisma);
+
+    await svc.preview(
+      USER,
+      { organizations: [{ code: 'G1', parentCode: 'PARENT', name: '新组' }] },
+      META,
+    );
+
+    expect(prisma.calls.slice(0, 2)).toEqual(['$queryRaw', 'organization.findFirst']);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('AnnouncementImportService — 组织行', () => {
@@ -103,7 +166,7 @@ describe('AnnouncementImportService — 组织行', () => {
     expect(organizations.create).not.toHaveBeenCalled();
   });
 
-  it('成功:nodeTypeCode 恒为 group,dryRun 透传,组 id 登记进 orgCodeMap 供后续行引用', async () => {
+  it('成功:nodeTypeCode 恒为 group,外层 transaction 透传,组 id 登记进 orgCodeMap 供后续行引用', async () => {
     const prisma = makePrismaMock();
     prisma.organization.findFirst.mockResolvedValue({
       id: 'parent-1',
@@ -138,11 +201,11 @@ describe('AnnouncementImportService — 组织行', () => {
         establishmentStatusCode: 'provisional',
       }),
       META,
-      { dryRun: true },
+      { transaction: prisma },
     );
   });
 
-  it('execute 时 dryRun:false 透传', async () => {
+  it('execute 同样透传外层 transaction', async () => {
     const prisma = makePrismaMock();
     prisma.organization.findFirst.mockResolvedValue({
       id: 'parent-1',
@@ -156,7 +219,7 @@ describe('AnnouncementImportService — 组织行', () => {
       META,
     );
     expect(organizations.create).toHaveBeenCalledWith(USER, expect.anything(), META, {
-      dryRun: false,
+      transaction: prisma,
     });
   });
 
@@ -567,7 +630,7 @@ describe('AnnouncementImportService — 任命行(双锚 + displayName 辅助解
         appointmentSource: 'announcement-2026',
       }),
       META,
-      { dryRun: false },
+      { transaction: prisma },
     );
   });
 
@@ -598,7 +661,7 @@ describe('AnnouncementImportService — 任命行(双锚 + displayName 辅助解
       'org-1',
       expect.objectContaining({ appointmentSource: 'manual-fixup' }),
       META,
-      { dryRun: true },
+      { transaction: prisma },
     );
   });
 
@@ -685,7 +748,7 @@ describe('AnnouncementImportService — 任命行(双锚 + displayName 辅助解
       'brand-new-org',
       expect.anything(),
       META,
-      { dryRun: false },
+      { transaction: prisma },
     );
   });
 });
@@ -737,7 +800,7 @@ describe('AnnouncementImportService — 分管行(镜像任命行的锚定解析
         scopeMode: 'EXACT',
       }),
       META,
-      { dryRun: false },
+      { transaction: prisma },
     );
   });
 

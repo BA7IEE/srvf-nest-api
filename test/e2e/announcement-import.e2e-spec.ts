@@ -3,6 +3,7 @@ import { Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { PositionAssignmentsService } from '../../src/modules/position-assignments/position-assignments.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -18,10 +19,10 @@ import { createTestApp } from '../setup/test-app';
 //   preview 标记族(goal DoD 2):memberNo 命中 ok / displayName 唯一命中回显建议 needs-manual /
 //     displayName 多义 needs-manual / member 不存在 blocked / orgCode 不存在 blocked /
 //     职务不适配该类别 blocked / 缺归属 blocked / 已任职 already-exists / 组织行 provisional ok
-//   preview 零写入断言(表 count 前后不变)
+//   preview 零写入断言(表 count 前后不变)+ 同请求新组织被后续任命/分管真实引用且与 execute 同结果
 //   execute(goal DoD 3):混合三类行一次落库(组节点含 provisional + 任职含字段/任期/isConcurrent/
 //     appointmentSource + audit 落 + 分管)/ 无 memberNo 行拒 / 重跑全 skipped(幂等)/
-//     部分失败不影响其它行 / 同批组织行可被后续行通过 orgCode 引用
+//     部分失败不影响其它行 / 同批组织行可被后续行通过 orgCode 引用 / 未声明异常整请求回滚
 //
 // R13 红线:全部用例使用合成占位数据(AIE2E- 前缀 memberNo / "测试X" 占位姓名),不含任何真实
 // 2026 任命公告姓名 / memberNo 对照。
@@ -359,6 +360,156 @@ describe('announcement-import 公告导入 preview/execute', () => {
         expect(countsAfter).toEqual(countsBefore);
       },
     );
+  });
+
+  // ============ preview / execute 同事务拓扑 + fatal rollback ============
+
+  describe('preview / execute 同事务拓扑', () => {
+    it('同请求新组织 + 引用它的任命/分管:preview 与 execute 同为 ok,preview 零写入', async () => {
+      const memberPos = await newMember('parity-pos');
+      await addMembership(memberPos.id, orgTeamId);
+      const memberSup = await newMember('parity-sup');
+      const body = {
+        organizations: [
+          { code: 'AIE2E-PARITY-GRP', parentCode: 'AIE2E-TEAM', name: '同事务拓扑组' },
+        ],
+        positions: [
+          {
+            memberNo: memberPos.memberNo,
+            orgCode: 'AIE2E-PARITY-GRP',
+            positionCode: 'ai-e2e-group-leader',
+            startedAt,
+          },
+        ],
+        supervisions: [
+          {
+            supervisorMemberNo: memberSup.memberNo,
+            orgCode: 'AIE2E-PARITY-GRP',
+            startedAt,
+          },
+        ],
+      };
+      const countsBefore = await Promise.all([
+        prisma.organization.count(),
+        prisma.organizationPositionAssignment.count(),
+        prisma.organizationSupervisionAssignment.count(),
+        prisma.auditLog.count(),
+      ]);
+
+      const previewRes = await preview(adminAuth, body);
+      expect(previewRes.status).toBe(200);
+      const previewData = previewRes.body.data as {
+        organizations: Array<{ status: string; reasons: unknown[] }>;
+        positions: Array<{ status: string; reasons: unknown[] }>;
+        supervisions: Array<{ status: string; reasons: unknown[] }>;
+      };
+      expect([
+        previewData.organizations[0].status,
+        previewData.positions[0].status,
+        previewData.supervisions[0].status,
+      ]).toEqual(['ok', 'ok', 'ok']);
+      expect(
+        await Promise.all([
+          prisma.organization.count(),
+          prisma.organizationPositionAssignment.count(),
+          prisma.organizationSupervisionAssignment.count(),
+          prisma.auditLog.count(),
+        ]),
+      ).toEqual(countsBefore);
+
+      const executeRes = await execute(adminAuth, body);
+      expect(executeRes.status).toBe(200);
+      const executeData = executeRes.body.data as typeof previewData;
+      expect([
+        executeData.organizations[0].status,
+        executeData.positions[0].status,
+        executeData.supervisions[0].status,
+      ]).toEqual(['ok', 'ok', 'ok']);
+      expect({
+        organizations: executeData.organizations.map(({ status, reasons }) => ({
+          status,
+          reasons,
+        })),
+        positions: executeData.positions.map(({ status, reasons }) => ({ status, reasons })),
+        supervisions: executeData.supervisions.map(({ status, reasons }) => ({ status, reasons })),
+      }).toEqual({
+        organizations: previewData.organizations.map(({ status, reasons }) => ({
+          status,
+          reasons,
+        })),
+        positions: previewData.positions.map(({ status, reasons }) => ({ status, reasons })),
+        supervisions: previewData.supervisions.map(({ status, reasons }) => ({ status, reasons })),
+      });
+
+      const persistedOrg = await prisma.organization.findFirst({
+        where: { code: 'AIE2E-PARITY-GRP' },
+        select: { id: true },
+      });
+      expect(persistedOrg).not.toBeNull();
+      expect(
+        await prisma.organizationPositionAssignment.count({
+          where: { organizationId: persistedOrg!.id, memberId: memberPos.id },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.organizationSupervisionAssignment.count({
+          where: { organizationId: persistedOrg!.id, supervisorMemberId: memberSup.id },
+        }),
+      ).toBe(1);
+    });
+
+    it('execute 未声明异常:更早成功的组织/closure/audit 随整请求回滚,不留半成品', async () => {
+      const member = await newMember('fatal-rollback');
+      await addMembership(member.id, orgTeamId);
+      const countsBefore = await Promise.all([
+        prisma.organization.count(),
+        prisma.organizationClosure.count(),
+        prisma.organizationPositionAssignment.count(),
+        prisma.auditLog.count(),
+      ]);
+      const assignments = app.get(PositionAssignmentsService);
+      const createSpy = jest
+        .spyOn(assignments, 'create')
+        .mockRejectedValueOnce(new Error('simulated announcement import failure'));
+
+      try {
+        const res = await execute(adminAuth, {
+          organizations: [
+            {
+              code: 'AIE2E-FATAL-ROLLBACK',
+              parentCode: 'AIE2E-TEAM',
+              name: '应整体回滚组',
+            },
+          ],
+          positions: [
+            {
+              memberNo: member.memberNo,
+              orgCode: 'AIE2E-FATAL-ROLLBACK',
+              positionCode: 'ai-e2e-group-leader',
+              startedAt,
+            },
+          ],
+        });
+        expectBizError(res, BizCode.INTERNAL_ERROR, { strictMessage: false });
+      } finally {
+        createSpy.mockRestore();
+      }
+
+      expect(
+        await Promise.all([
+          prisma.organization.count(),
+          prisma.organizationClosure.count(),
+          prisma.organizationPositionAssignment.count(),
+          prisma.auditLog.count(),
+        ]),
+      ).toEqual(countsBefore);
+      expect(
+        await prisma.organization.findFirst({
+          where: { code: 'AIE2E-FATAL-ROLLBACK' },
+          select: { id: true },
+        }),
+      ).toBeNull();
+    });
   });
 
   // ============ execute(goal DoD 3)============

@@ -20,7 +20,10 @@ import {
   buildReparentEdgesToInsert,
   isReparentCycle,
 } from './organization-closure.util';
-import { runOrganizationTopologyTransaction } from './organization-topology-transaction';
+import {
+  lockOrganizationTopology,
+  runOrganizationTopologyTransaction,
+} from './organization-topology-transaction';
 import {
   CreateOrganizationDto,
   ListOrganizationsQueryDto,
@@ -60,11 +63,15 @@ const organizationSelect = {
 
 type SafeOrganization = Prisma.OrganizationGetPayload<{ select: typeof organizationSelect }>;
 type PrismaTx = Prisma.TransactionClient;
+type CreateOrganizationOptions =
+  | { dryRun?: boolean; transaction?: never }
+  | { transaction: PrismaTx; dryRun?: never };
 
 // 终态 scoped-authz PR11(2026-07-02;冻结稿 §8.4 / §11 PR11):dry-run 沙箱哨兵,镜像
 // position-assignments/supervision-assignments 同名类(不共享,沿模块自包含范式)。create() 走满全部
 // 校验 + 真实 insert(+ closure 维护)后,若 options.dryRun,在事务提交前抛本类型强制整个事务一并回滚,
-// catch 后原样返回"本应创建"的响应体 —— 供 announcement-import 预览零写入复用同一份真实校验。
+// catch 后原样返回"本应创建"的响应体。announcement-import 的批量 preview/execute 改用互斥
+// transaction option 复用 request-wide 外层事务,同时仍在首条 topology SQL 前取得同一把 xact lock。
 class DryRunAbort<T> extends Error {
   constructor(public readonly value: T) {
     super('DRY_RUN_ABORT');
@@ -140,6 +147,17 @@ export class OrganizationsService {
     if (existing && existing.id !== excludeId) {
       throw new BizException(BizCode.ORGANIZATION_CODE_ALREADY_EXISTS);
     }
+  }
+
+  private async runCreateTransaction<T>(
+    transaction: PrismaTx | undefined,
+    operation: (tx: PrismaTx) => Promise<T>,
+  ): Promise<T> {
+    if (transaction) {
+      await lockOrganizationTopology(transaction);
+      return operation(transaction);
+    }
+    return runOrganizationTopologyTransaction(this.prisma, operation);
   }
 
   // P2002 兜底 — 预检查应已拦绝大多数,这层处理并发(两个写同时撞 code unique)。
@@ -282,12 +300,12 @@ export class OrganizationsService {
     user: CurrentUserPayload,
     dto: CreateOrganizationDto,
     meta: AuditMeta,
-    options?: { dryRun?: boolean },
+    options?: CreateOrganizationOptions,
   ): Promise<OrganizationResponseDto> {
     await this.assertCanOrThrow(user, 'org.create.node');
     try {
       return await this.runCodeUniqueGuard(() =>
-        runOrganizationTopologyTransaction(this.prisma, async (tx) => {
+        this.runCreateTransaction(options?.transaction, async (tx) => {
           // 1. nodeTypeCode 必须有效(6 项 AND 校验)
           await this.assertNodeTypeCodeValid(dto.nodeTypeCode, tx);
 
