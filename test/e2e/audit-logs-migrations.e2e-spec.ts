@@ -521,49 +521,159 @@ describe('audit-logs 写入迁移', () => {
     });
   });
 
-  // ============ 未迁移路径不入库(read 类继续 pino-only) ============
+  // ============ 敏感读取统一审计 ============
 
-  describe('未迁移路径不入库', () => {
-    it('GET emergency-contacts list:audit_logs 无新记录', async () => {
-      const before = await prisma.auditLog.count();
-      await request(httpServer(app))
+  describe('敏感读取统一审计', () => {
+    it('GET emergency-contacts list:恰好写入 1 条 emergency-contact.read.other', async () => {
+      await truncateAuditLogsTestOnly(app);
+      const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${memberId}/emergency-contacts`)
         .set('Authorization', adminAuth)
+        .set('User-Agent', 'audit-migrations-sensitive-read')
         .expect(200);
-      const after = await prisma.auditLog.count();
-      expect(after).toBe(before);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      const returnedCount = (res.body.data as unknown[]).length;
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatchObject({
+        event: 'emergency-contact.read.other',
+        actorUserId: adminId,
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'member',
+        resourceId: memberId,
+        success: true,
+      });
+      const context = logs[0].context as {
+        requestId: string;
+        ip: string | null;
+        ua: string | null;
+        extra: { operation: string; count: number; maskLevel: string };
+      };
+      expect(context).toEqual({
+        requestId: expect.any(String),
+        ip: expect.any(String),
+        ua: 'audit-migrations-sensitive-read',
+        extra: { operation: 'list', count: returnedCount, maskLevel: 'plain' },
+      });
+      expect(context.requestId.length).toBeGreaterThan(0);
+      expect(JSON.stringify(context)).not.toMatch(
+        /pii|name|phone|mobile|id.?card|policy|object.?key|signed.?url|url|token|credential/i,
+      );
     });
 
-    it('GET certificates list:audit_logs 无新记录', async () => {
-      const before = await prisma.auditLog.count();
-      await request(httpServer(app))
+    it('GET certificates list:恰好写入 1 条 certificate.read.other', async () => {
+      await truncateAuditLogsTestOnly(app);
+      const res = await request(httpServer(app))
         .get(`/api/admin/v1/members/${memberId}/certificates`)
         .set('Authorization', adminAuth)
+        .set('User-Agent', 'audit-migrations-sensitive-read')
         .expect(200);
-      const after = await prisma.auditLog.count();
-      expect(after).toBe(before);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      const returnedCount = (res.body.data as unknown[]).length;
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatchObject({
+        event: 'certificate.read.other',
+        actorUserId: adminId,
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'member',
+        resourceId: memberId,
+        success: true,
+      });
+      const context = logs[0].context as {
+        requestId: string;
+        ip: string | null;
+        ua: string | null;
+        extra: { operation: string; count: number };
+      };
+      expect(context).toEqual({
+        requestId: expect.any(String),
+        ip: expect.any(String),
+        ua: 'audit-migrations-sensitive-read',
+        extra: { operation: 'list', count: returnedCount },
+      });
+      expect(context.requestId.length).toBeGreaterThan(0);
+      expect(JSON.stringify(context)).not.toMatch(
+        /pii|name|phone|mobile|id.?card|policy|object.?key|signed.?url|url|token|credential/i,
+      );
     });
 
-    it('GET certificates qualification-flag:audit_logs 无新记录', async () => {
-      const before = await prisma.auditLog.count();
+    it('GET certificates qualification-flag:恰好写入 1 条最小化 read audit', async () => {
+      await truncateAuditLogsTestOnly(app);
       await request(httpServer(app))
         .get(`/api/admin/v1/members/${memberId}/certificates/qualification-flag`)
         .query({ certTypeCode })
         .set('Authorization', adminAuth)
+        .set('User-Agent', 'audit-migrations-sensitive-read')
         .expect(200);
-      const after = await prisma.auditLog.count();
-      expect(after).toBe(before);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatchObject({
+        event: 'certificate.read.qualification-flag',
+        actorUserId: adminId,
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'member',
+        resourceId: memberId,
+        success: true,
+      });
+      const context = logs[0].context as {
+        requestId: string;
+        ip: string | null;
+        ua: string | null;
+        extra: { operation: string; filterFields: string[] };
+      };
+      expect(context).toEqual({
+        requestId: expect.any(String),
+        ip: expect.any(String),
+        ua: 'audit-migrations-sensitive-read',
+        extra: { operation: 'qualification-flag', filterFields: ['certTypeCode'] },
+      });
+      expect(context.requestId.length).toBeGreaterThan(0);
+      const serializedContext = JSON.stringify(context);
+      expect(serializedContext).not.toContain(certTypeCode);
+      expect(serializedContext).not.toMatch(
+        /qualified|pii|name|phone|mobile|id.?card|policy|object.?key|signed.?url|url|token|credential/i,
+      );
     });
 
-    it('GET certificate detail:audit_logs 无新记录', async () => {
+    it('GET certificate detail:恰好写入 1 条 certificate.read.other', async () => {
       const c = await createCert();
       await truncateAuditLogsTestOnly(app);
       await request(httpServer(app))
         .get(`/api/admin/v1/members/${memberId}/certificates/${c.id}`)
         .set('Authorization', adminAuth)
+        .set('User-Agent', 'audit-migrations-sensitive-read')
         .expect(200);
-      const logs = await prisma.auditLog.count();
-      expect(logs).toBe(0);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatchObject({
+        event: 'certificate.read.other',
+        actorUserId: adminId,
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'certificate',
+        resourceId: c.id,
+        success: true,
+      });
+      const context = logs[0].context as {
+        requestId: string;
+        ip: string | null;
+        ua: string | null;
+        extra: { operation: string };
+      };
+      expect(context).toEqual({
+        requestId: expect.any(String),
+        ip: expect.any(String),
+        ua: 'audit-migrations-sensitive-read',
+        extra: { operation: 'detail' },
+      });
+      expect(context.requestId.length).toBeGreaterThan(0);
+      expect(JSON.stringify(context)).not.toMatch(
+        /pii|name|phone|mobile|id.?card|policy|object.?key|signed.?url|url|token|credential/i,
+      );
     });
   });
 
@@ -1414,7 +1524,7 @@ describe('audit-logs 写入迁移', () => {
       expect(await prisma.auditLog.count()).toBe(0);
     });
 
-    it('exportCsv 不入库(read/export 路径仍 pino-only,Q1=A)', async () => {
+    it('exportCsv:返回流前恰好写入 1 条 registration.review', async () => {
       const actId = await createPublishedActivity();
       await request(httpServer(app))
         .post(`/api/admin/v1/activities/${actId}/registrations`)
@@ -1426,10 +1536,38 @@ describe('audit-logs 写入迁移', () => {
       const res = await request(httpServer(app))
         .get(`/api/admin/v1/activities/${actId}/registrations/export`)
         .query({ scope: 'all' })
-        .set('Authorization', adminAuth);
+        .set('Authorization', adminAuth)
+        .set('User-Agent', 'audit-migrations-registration-export');
       expect(res.status).toBe(200);
 
-      expect(await prisma.auditLog.count()).toBe(0);
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatchObject({
+        event: 'registration.review',
+        actorUserId: adminId,
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'activity',
+        resourceId: actId,
+        success: true,
+      });
+      const context = logs[0].context as {
+        requestId: string;
+        ip: string | null;
+        ua: string | null;
+        extra: { operation: string; filterFields: string[] };
+      };
+      expect(context).toEqual({
+        requestId: expect.any(String),
+        ip: expect.any(String),
+        ua: 'audit-migrations-registration-export',
+        extra: { operation: 'export', filterFields: ['scope'] },
+      });
+      expect(context.requestId.length).toBeGreaterThan(0);
+      const serializedContext = JSON.stringify(context);
+      expect(serializedContext).not.toContain('all');
+      expect(serializedContext).not.toMatch(
+        /pii|name|phone|mobile|id.?card|policy|object.?key|signed.?url|url|token|credential/i,
+      );
     });
 
     it('GET list:audit_logs 无新记录(未迁移 read 路径)', async () => {
@@ -1989,7 +2127,7 @@ describe('audit-logs 写入迁移', () => {
       expect(await prisma.auditLog.count()).toBe(0);
     });
 
-    it('GET list:audit_logs 无新记录(read.other 仍 pino-only)', async () => {
+    it('GET list:恰好写入 1 条 attendance-sheet.read.other', async () => {
       const actId = await createActivity();
       await submitPendingSheet(actId);
       await truncateAuditLogsTestOnly(app);
@@ -1997,11 +2135,38 @@ describe('audit-logs 写入迁移', () => {
       await request(httpServer(app))
         .get(`/api/admin/v1/activities/${actId}/attendance-sheets`)
         .set('Authorization', adminAuth)
+        .set('User-Agent', 'audit-migrations-attendance-read')
         .expect(200);
-      expect(await prisma.auditLog.count()).toBe(0);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatchObject({
+        event: 'attendance-sheet.read.other',
+        actorUserId: adminId,
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'activity',
+        resourceId: actId,
+        success: true,
+      });
+      const context = logs[0].context as {
+        requestId: string;
+        ip: string | null;
+        ua: string | null;
+        extra: { operation: string; count: number; filterFields: string[] };
+      };
+      expect(context).toEqual({
+        requestId: expect.any(String),
+        ip: expect.any(String),
+        ua: 'audit-migrations-attendance-read',
+        extra: { operation: 'list', count: 1, filterFields: [] },
+      });
+      expect(context.requestId.length).toBeGreaterThan(0);
+      expect(JSON.stringify(context)).not.toMatch(
+        /pii|name|phone|mobile|id.?card|policy|object.?key|signed.?url|url|token|credential/i,
+      );
     });
 
-    it('GET detail:audit_logs 无新记录(read.other 仍 pino-only)', async () => {
+    it('GET detail:恰好写入 1 条 attendance-sheet.read.other', async () => {
       const actId = await createActivity();
       const sheetId = await submitPendingSheet(actId);
       await truncateAuditLogsTestOnly(app);
@@ -2009,11 +2174,38 @@ describe('audit-logs 写入迁移', () => {
       await request(httpServer(app))
         .get(`/api/admin/v1/attendance-sheets/${sheetId}`)
         .set('Authorization', adminAuth)
+        .set('User-Agent', 'audit-migrations-attendance-read')
         .expect(200);
-      expect(await prisma.auditLog.count()).toBe(0);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatchObject({
+        event: 'attendance-sheet.read.other',
+        actorUserId: adminId,
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'attendance_sheet',
+        resourceId: sheetId,
+        success: true,
+      });
+      const context = logs[0].context as {
+        requestId: string;
+        ip: string | null;
+        ua: string | null;
+        extra: { operation: string };
+      };
+      expect(context).toEqual({
+        requestId: expect.any(String),
+        ip: expect.any(String),
+        ua: 'audit-migrations-attendance-read',
+        extra: { operation: 'detail' },
+      });
+      expect(context.requestId.length).toBeGreaterThan(0);
+      expect(JSON.stringify(context)).not.toMatch(
+        /pii|name|phone|mobile|id.?card|policy|object.?key|signed.?url|url|token|credential/i,
+      );
     });
 
-    it('GET review-detail:audit_logs 无新记录(read.other 仍 pino-only)', async () => {
+    it('GET review-detail:恰好写入 1 条 attendance-sheet.read.other', async () => {
       const actId = await createActivity();
       const sheetId = await submitPendingSheet(actId);
       await truncateAuditLogsTestOnly(app);
@@ -2021,8 +2213,35 @@ describe('audit-logs 写入迁移', () => {
       await request(httpServer(app))
         .get(`/api/admin/v1/attendance-sheets/${sheetId}/review-detail`)
         .set('Authorization', adminAuth)
+        .set('User-Agent', 'audit-migrations-attendance-read')
         .expect(200);
-      expect(await prisma.auditLog.count()).toBe(0);
+
+      const logs = await prisma.auditLog.findMany();
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatchObject({
+        event: 'attendance-sheet.read.other',
+        actorUserId: adminId,
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'attendance_sheet',
+        resourceId: sheetId,
+        success: true,
+      });
+      const context = logs[0].context as {
+        requestId: string;
+        ip: string | null;
+        ua: string | null;
+        extra: { operation: string; count: number };
+      };
+      expect(context).toEqual({
+        requestId: expect.any(String),
+        ip: expect.any(String),
+        ua: 'audit-migrations-attendance-read',
+        extra: { operation: 'review-detail', count: 1 },
+      });
+      expect(context.requestId.length).toBeGreaterThan(0);
+      expect(JSON.stringify(context)).not.toMatch(
+        /pii|name|phone|mobile|id.?card|policy|object.?key|signed.?url|url|token|credential/i,
+      );
     });
 
     it('finalApprove 与 attendance.recorded 业务事件并存(eventPlaceholder 不入 audit 表;两套机制 OK)', async () => {
