@@ -8,6 +8,7 @@ import { TEST_PASSWORD, createTestUser } from '../fixtures/users.fixture';
 import { truncateAuditLogsTestOnly } from '../helpers/audit-logs-cleanup';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
+import { waitFor } from '../helpers/wait-for';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -79,6 +80,12 @@ describe('App 视角本人自助改密 PUT /api/app/v1/me/password (P2-3)', () =
       const user = await createTestUser(app, { username: 'appcmpuser1' });
       const { authHeader } = await loginAs(app, 'appcmpuser1');
 
+      // loginAs 的 lastLoginAt 写入是 fire-and-forget；先等登录副作用落库再取
+      // 基线，避免它在改密请求期间完成而被误判为 changeMyPassword 修改。
+      await waitFor(async () => {
+        const row = await prisma.user.findUnique({ where: { id: user.id } });
+        return row !== null && row.lastLoginAt !== null;
+      });
       const before = await prisma.user.findUnique({ where: { id: user.id } });
       expect(before).not.toBeNull();
 
