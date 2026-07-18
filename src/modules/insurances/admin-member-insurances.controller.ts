@@ -1,5 +1,6 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
@@ -9,6 +10,7 @@ import {
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { MemberInsuranceAdminResponseDto } from './insurances.dto';
 import { MemberInsurancesService } from './member-insurances.service';
 
@@ -22,6 +24,14 @@ import { MemberInsurancesService } from './member-insurances.service';
 @Controller('admin/v1/members/:memberId/insurances')
 export class AdminMemberInsurancesController {
   constructor(private readonly service: MemberInsurancesService) {}
+
+  private buildAuditMeta(req: Request): AuditMeta {
+    return {
+      requestId: req.id as string,
+      ip: req.ip ?? null,
+      ua: req.headers['user-agent'] ?? null,
+    };
+  }
 
   @Get()
   @ApiOperation({
@@ -38,7 +48,8 @@ export class AdminMemberInsurancesController {
   list(
     @Param('memberId') memberId: string,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<MemberInsuranceAdminResponseDto[]> {
-    return this.service.listForMember(memberId, currentUser);
+    return this.service.listForMember(memberId, currentUser, this.buildAuditMeta(req));
   }
 }

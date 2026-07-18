@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import { escapeCsvField } from '../../common/csv/csv.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
@@ -77,8 +76,8 @@ type RegistrationExpandKey = (typeof REGISTRATION_EXPAND_WHITELIST)[number];
 // 有意设计,D2 同值挪字符串);resourceType 固定 `activity_registration`,字段全部非敏感
 // (打码矩阵未命中,与 PR #3 / PR #4 范式一致;extras 字段是用户自定义 JSON,本次纯迁移
 // 不引入打码,若后续业务认为含敏感字段需独立批次评审)。
-// **`exportCsv` 的 `auditPlaceholder('registration.review', ...)` 调用保持 pino-only 不迁移**
-// (read/export 行为,无 DB mutation,沿 Q1=A 当前阶段不记录查看行为)。
+// `exportCsv` 复用 registration.review,并在返回 generator 前 fail-closed 落库;generator 内不再
+// 尾置审计,确保审计失败时 controller 尚未获得 stream、首字节尚未发送。
 
 const REGISTRATION_STATUS_PENDING = 'pending';
 const REGISTRATION_STATUS_PASS = 'pass';
@@ -1565,6 +1564,7 @@ export class ActivityRegistrationsService {
     activityId: string,
     query: ExportRegistrationsQueryDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<AsyncGenerator<string, void, undefined>> {
     await this.assertCanOrThrow(currentUser, 'activity-registration.read.record', {
       type: 'activity',
@@ -1579,20 +1579,27 @@ export class ActivityRegistrationsService {
     }
     const where = notDeletedWhere(filters);
 
-    return this.streamRowsAsCsv(where, currentUser.id, activityId, scope);
+    const filterFields: string[] = [];
+    if (query.format !== undefined) filterFields.push('format');
+    if (query.scope !== undefined) filterFields.push('scope');
+    await this.registrationAuditRecorder.logExport({
+      activityId,
+      actorUserId: currentUser.id,
+      actorRoleSnap: currentUser.role,
+      filterFields,
+      auditMeta,
+    });
+
+    return this.streamRowsAsCsv(where);
   }
 
   private async *streamRowsAsCsv(
     where: Prisma.ActivityRegistrationWhereInput,
-    operatorUserId: string,
-    activityId: string,
-    scope: string,
   ): AsyncGenerator<string, void, undefined> {
     yield '\uFEFF';
     yield REGISTRATION_CSV_HEADERS.join(',');
 
     let cursor: string | undefined;
-    let rowsCount = 0;
     while (true) {
       const rows: RegistrationCsvRow[] = await this.prisma.activityRegistration.findMany({
         where,
@@ -1603,19 +1610,10 @@ export class ActivityRegistrationsService {
       });
       for (const row of rows) {
         yield `\n${this.formatCsvRow(row)}`;
-        rowsCount += 1;
       }
       if (rows.length < CSV_EXPORT_BATCH_SIZE) break;
       cursor = rows.at(-1)!.id;
     }
-
-    auditPlaceholder('registration.review', {
-      operatorUserId,
-      activityId,
-      operation: 'export',
-      scope,
-      rowsCount,
-    });
   }
 
   private formatCsvRow(row: RegistrationCsvRow): string {

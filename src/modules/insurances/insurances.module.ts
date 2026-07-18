@@ -18,7 +18,8 @@ import { TeamInsurancePoliciesService } from './team-insurance-policies.service'
 // imports(沿 certificates.module 范式):
 //   - DatabaseModule:PrismaService
 //   - AuditLogsModule:写操作落 audit_logs(member-insurance.*.self / team-insurance-policy.* /
-//     team-insurance-coverage.*;评审稿 §3.5)
+//     team-insurance-coverage.*;评审稿 §3.5);admin 自购保险列表查询后 fail-closed 落
+//     member-insurance.read.other
 //   - PermissionsModule:admin 面 RbacService 判权(App 面不走 RBAC)
 //   - UsersModule:AppIdentityResolver(App 准入,P2-1 已 exports)
 //

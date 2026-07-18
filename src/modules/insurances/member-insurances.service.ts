@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuthzService } from '../authz/authz.service';
 import { RbacService } from '../permissions/rbac.service';
 import { MemberInsuranceAdminResponseDto } from './insurances.dto';
@@ -16,8 +17,8 @@ import { MemberInsuranceAdminResponseDto } from './insurances.dto';
 // 仅 1 个读端点:GET admin/v1/members/:memberId/insurances,返数组无分页
 // (镜像 admin certificates list 范式;每队员保险记录量小)。
 // 判权:rbac.can('member-insurance.read.other')(App 本人侧 self-scope 无码)。
-// audit:pino auditPlaceholder('member-insurance.read.other')——保单号/保险公司中敏感,
-// admin 视角读他人留痕(镜像 certificate.read.other;评审稿 E-9);不进 audit_logs DB。
+// audit:查询完成后 fail-closed 落 member-insurance.read.other;extra 只记 operation/count,
+// 不记录保单号、保险公司或 id 列表。
 
 const adminSelect = {
   id: true,
@@ -34,6 +35,7 @@ const adminSelect = {
 export class MemberInsurancesService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly auditLogs: AuditLogsService,
     private readonly rbac: RbacService,
     private readonly authz: AuthzService,
   ) {}
@@ -41,6 +43,7 @@ export class MemberInsurancesService {
   async listForMember(
     memberId: string,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<MemberInsuranceAdminResponseDto[]> {
     const action = 'member-insurance.read.other';
     const decision = await this.authz.explain(currentUser, action, {
@@ -66,11 +69,14 @@ export class MemberInsurancesService {
       orderBy: { coverageEnd: 'desc' },
     });
 
-    auditPlaceholder('member-insurance.read.other', {
-      operatorUserId: currentUser.id,
-      targetMemberId: memberId,
-      insuranceIds: items.map((i) => i.id),
-      operation: 'list',
+    await this.auditLogs.log({
+      event: 'member-insurance.read.other',
+      actorUserId: currentUser.id,
+      actorRoleSnap: currentUser.role,
+      resourceType: 'member',
+      resourceId: memberId,
+      meta: auditMeta,
+      extra: { operation: 'list', count: items.length },
     });
 
     return items;

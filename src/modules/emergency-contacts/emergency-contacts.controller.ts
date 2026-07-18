@@ -33,7 +33,7 @@ export class EmergencyContactsController {
   constructor(private readonly service: EmergencyContactsService) {}
 
   // V2 批次 6 PR #2:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
-  // 不引入 cls-rs / AsyncLocalStorage)。仅供本 controller 写操作内部复用。
+  // 不引入 cls-rs / AsyncLocalStorage)。供本 controller 读写操作复用。
   private buildAuditMeta(req: Request): AuditMeta {
     return {
       requestId: req.id as string,
@@ -57,8 +57,9 @@ export class EmergencyContactsController {
   list(
     @Param('memberId') memberId: string,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<EmergencyContactResponseDto[]> {
-    return this.service.list(memberId, currentUser);
+    return this.service.list(memberId, currentUser, this.buildAuditMeta(req));
   }
 
   @Post()

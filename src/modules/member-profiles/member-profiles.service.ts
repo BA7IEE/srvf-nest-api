@@ -1,13 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
-import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import { maskIdCard, maskPhone } from '../../common/audit/mask-pii.util';
 import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuthzService } from '../authz/authz.service';
 import { RbacService } from '../permissions/rbac.service';
 import { CreateMemberProfileDto } from './dto/create-member-profile.dto';
@@ -22,7 +23,7 @@ import { UpdateMemberProfileDto } from './dto/update-member-profile.dto';
 // - findOne member 存在但无 profile → 返 null(沿用 member-departments.findCurrent 风格)
 // - 字典 code 校验:5 个 NOT NULL + 5 个可空字典字段提供时校验(对应 BizCode 16010-16014)
 // - 日期字段 birthDate / joinedDate / privacyConsentSignedAt 入库前规范化为 UTC 00:00:00.000
-// - audit:findOne / update 调 A2 / A3-占位 hook;create 是首次写入,不打 read.other
+// - audit:findOne 查询完成后 fail-closed 落 profile.read.other;create/update 不扩本批次审计面
 
 // 集中定义对外 select。永不包含 deletedAt(软删除内部状态)。
 // 必须与 MemberProfileResponseDto 同步维护。
@@ -119,6 +120,7 @@ const DICT_TYPE_WORK_NATURE = 'work_nature';
 export class MemberProfilesService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly auditLogs: AuditLogsService,
     private readonly rbac: RbacService,
     private readonly authz: AuthzService,
   ) {}
@@ -251,14 +253,10 @@ export class MemberProfilesService {
   async findOne(
     memberId: string,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<MemberProfileResponseDto | null> {
     await this.assertCanOrThrow(currentUser, 'member-profile.read.record', memberId);
     await this.findMemberOrThrow(memberId);
-
-    auditPlaceholder('profile.read.other', {
-      operatorUserId: currentUser.id,
-      targetMemberId: memberId,
-    });
 
     // §F&A-3:无 read.sensitive 者见掩码(入口码仍是 read.record)。
     const masked = !(await this.authz.can(currentUser, 'member-profile.read.sensitive', {
@@ -270,6 +268,21 @@ export class MemberProfilesService {
       where: notDeletedWhere({ memberId }),
       select: memberProfileSafeSelect,
     });
+
+    await this.auditLogs.log({
+      event: 'profile.read.other',
+      actorUserId: currentUser.id,
+      actorRoleSnap: currentUser.role,
+      resourceType: 'member_profile',
+      resourceId: profile?.id ?? null,
+      meta: auditMeta,
+      extra: {
+        operation: 'detail',
+        targetMemberId: memberId,
+        maskLevel: masked ? 'masked' : 'plain',
+      },
+    });
+
     if (!profile) return null;
     return presentMemberProfile(profile as MemberProfileResponseDto, masked);
   }

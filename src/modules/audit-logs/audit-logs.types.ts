@@ -1,23 +1,27 @@
 // V2 第一阶段批次 6 audit_logs 模块类型契约(D6 v1.1 §8 / §10 / §11)。
 //
 // 本文件承载 3 个类型契约,与 audit-logs.service.ts 同进同退:
-//   1. AuditLogEvent  — 落库入口 union(首批 6 项起渐进迁入;v0.47.0 F2 后共 113 项)
+//   1. AuditLogEvent  — 落库入口 union(首批 6 项起渐进迁入;敏感读取统一落库后共 122 项)
 //   2. AuditContext   — Prisma AuditLog.context Json 字段的运行时锁形(6 字段:3 必填 + 3 可选)
 //   3. AuditMeta      — controller 层从 @Req() 构造,显式传给 service
 //
-// 与 src/common/audit/audit-placeholder.ts(AuditEvent,29 项)的关系(D-A 修订核心):
-// - 两套 union 物理隔离(D2):AuditEvent 留 pino-only 占位,AuditLogEvent 走 DB 落库
-// - 事件名同值:AuditLogEvent ⊆ AuditEvent(同字符串值,后续批次迁移时**仅是把字符串从一个 union 挪到另一个**)
+// 历史 `src/common/audit/audit-placeholder.ts` 已在敏感读取统一落库批次退役:
+// - 所有活跃 placeholder 调用均迁入 AuditLogsService,审计失败 fail-closed
+// - 流式导出在返回 generator 前审计,签名 URL 在 provider 调用前审计
 // - 第一波(PR #2)6 项落库:emergency-contact.write × 3 service 上下文 + certificate.{create,update,delete,verify,reject}
 // - 第二波第一步(PR #3)+3 项落库:contribution-rule.{create,update,delete};沿 D-A 修订渐进迁出
 // - 第二波第二步(PR #4)+1 项落库:activity.publish(activities.service: create / update / softDelete / publish / cancel 共 5 处共用同一事件名,operation 在 extra 区分,沿 batch3 草案有意设计)
-// - 第二波第三步(PR #5)+2 项落库:registration.create / registration.review(activity-registrations 写路径共用,extra.viaPath / extra.action 区分;候补递补复用 action=promote;exportCsv 仍 pino-only 不迁移)
-// - 第二波最后一批(PR #6)+5 项落库:attendance-sheet.{submit,edit,delete,review,final-review}(attendances.service: 8 处写;5 个事件名共用,extra.operation / extra.action 区分;3 处 read.other 仍 pino-only)
-// - 其余继续 pino-only,等后续批次按需迁出(D1 决议)
+// - 第二波第三步(PR #5)+2 项落库:registration.create / registration.review(activity-registrations 写路径共用,extra.viaPath / extra.action 区分;候补递补复用 action=promote;本批次 exportCsv 复用 registration.review)
+// - 第二波最后一批(PR #6)+5 项落库:attendance-sheet.{submit,edit,delete,review,final-review}(attendances.service: 8 处写;5 个事件名共用,extra.operation / extra.action 区分)
+// - 本批次 +8 个真实敏感读取事件;registration export 复用既有 registration.review
 // - **绝对禁止**:在本 union 自行新增字符串值;新增审计事件必须先经评审稿或 goal 显式预授权(D6 v1.1 §8.1 / §16)
 
 export type AuditLogEvent =
+  | 'profile.read.other' // admin 读他人扩展档案;extra 仅资源 id / operation / maskLevel
+  | 'emergency-contact.read.other' // admin 列出他人紧急联系人;extra 仅 count / operation / maskLevel
   | 'emergency-contact.write' // PR #2 接入(emergency-contacts.service: create / update / softDelete 共 3 处)
+  | 'certificate.read.other' // admin 读他人证书 list/detail
+  | 'certificate.read.qualification-flag' // admin 查他人资质布尔;不记录原始 certTypeCode
   | 'certificate.create' // PR #2 接入(certificates.service: create)
   | 'certificate.update' // PR #2 接入(certificates.service: update)
   | 'certificate.delete' // PR #2 接入(certificates.service: softDelete)
@@ -29,13 +33,14 @@ export type AuditLogEvent =
   | 'contribution-rule.delete' // PR #3 接入(contribution-rules.service: softDelete)
   | 'activity.publish' // PR #4 接入(activities.service: create / update / softDelete / publish / cancel 共 5 处;5 个 operation 通过 extra.operation 区分,沿 batch3 草案 §20.2 A1 同名设计)
   | 'registration.create' // PR #5 接入(activity-registrations.service: create [ADMIN 代报名] / createMy [USER 自助] 共 2 处;extra.viaPath ∈ {admin, self} 区分)
-  | 'registration.review' // PR #5 接入;approve/reject/cancel/reopen/promote 共用,extra.action 区分;cancel 再用 extra.cancelledByPath ∈ {admin, self} 细分;exportCsv 仍 pino-only,read 不迁移
+  | 'registration.review' // PR #5 接入;approve/reject/cancel/reopen/promote/export 共用,extra.action/operation 区分;cancel 再用 extra.cancelledByPath ∈ {admin, self} 细分
   | 'attendance-sheet.submit' // PR #6 接入；Sheet+N records 一次性入库，D2-a 起不再推动 Activity.completed
   | 'attendance-sheet.edit' // PR #6 接入(attendances.service: edit 2 处共用;extra.operation ∈ {edit, edit-no-records} 区分;version+1 + previousSnapshot)
   | 'attendance-sheet.delete' // PR #6 接入(attendances.service: softDelete 1 处;pending Sheet 软删 + records 级联软删)
   | 'attendance-sheet.review' // PR #6 接入(attendances.service: approve / reject 共 2 处;extra.action ∈ {approve, reject} 区分;approve 走 pending → pending_final_review)
   | 'attendance-sheet.final-review' // PR #6 接入(attendances.service: finalApprove / finalReject 共 2 处;extra.action ∈ {final-approve, final-reject} 区分;final-approve 触发 attendance.recorded 业务事件,final-reject records 跟随软删;APD 细分权限后置)
   | 'attendance-sheet.reopen' // v0.47.0 F2:撤回终审 approved → pending;同事务 before/after 含完整 records + extra.reason
+  | 'attendance-sheet.read.other' // admin 读他人考勤 list/detail/review-detail
   | 'attachment.upload' // V2.x C-7 PR #6c 接入(attachments.service: create 1 处;沿 D7-attachments v1.0 §7.1)
   | 'attachment.delete' // V2.x C-7 PR #6c 接入(attachments.service: delete 1 处;extra.deletedByPath ∈ {owner, admin} 区分;沿 D7-attachments v1.0 §7.1)
   | 'attachment.config.change' // V2.x C-7 PR #6d 接入(配置三表 11 处写共用单事件;沿 D7-attachments v1.0 §7.1 路线 A:extra.configType ∈ {type, mime, sizeLimit} + extra.operation ∈ {create, update, update-status, delete} 区分;updateStatus 沿 Q1 PR #6d 拍板细分独立 operation)
@@ -79,8 +84,8 @@ export type AuditLogEvent =
   // 8 项命名沿 kebab-case 既有范式(自助三事件 <resource>.<action>.self 对称 phone.bind.self;
   // 队保单三事件 <resource>.<action> 对称 certificate.create)。
   // snapshot 沿 certificates 全量不打码(保单号/保险公司中敏感非 L3,audit_logs 自身 RBAC 保护);
-  // 本域无 L3 字段。admin 读他人自购保险走 auditPlaceholder pino('member-insurance.read.other'),
-  // 不进本 union(镜像 certificate.read.other);App self 读不写 audit(D-P2-7-16)。
+  // 本域无 L3 字段。admin 读他人自购保险必须落 audit_logs;App self 读不写 audit(D-P2-7-16)。
+  | 'member-insurance.read.other' // admin 查队员自购保险 list;不记录保单号/保险公司
   | 'member-insurance.create.self' // T2 接入(app-me-insurances.service.create;after snapshot;extra.memberId)
   | 'member-insurance.update.self' // T2 接入(app-me-insurances.service.update;before/after;extra.memberId)
   | 'member-insurance.delete.self' // T2 接入(app-me-insurances.service.softDelete;before;extra.memberId)
@@ -96,6 +101,8 @@ export type AuditLogEvent =
   | 'recruitment-application.submit' // 公开提交(自助;actor 置空);after〔状态〕;手机/openid/身份证号一律掩码
   | 'recruitment-application.realname-verify' // 每次提交端付费 OCR 调用(OCR 改造 2026-06-22 语义重定;配套③;建终态记录同事务写;actor 置空);idCard/name 掩码 + documentType + outcome(matched/mismatch/forgery_warning/ocr_unclear/ocr_error)
   | 'recruitment-application.resolve-manual' // admin 人工 resolve;before/after status;extra tempNo?/eliminationStage?
+  | 'recruitment-application.read.other' // admin list/detail/export/certificate-images/promotion-precheck
+  | 'recruitment-application.id-card-image.read' // admin 取证件图;必须先审计后签 URL
   // 招新可用性收口 F2(2026-07-11;评审稿 recruitment-usability-closeout-review.md §3 R1):
   | 'recruitment-application.update' // admin 改报名资料(R1 白名单);before/after 仅身份字段掩码值;extra {changedFields, identityChanged}
   // 招新二期(后段)T2/T3(2026-06-19;评审稿 recruitment-phase2-review.md §3.5 / E-R2-12):

@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
-import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
@@ -40,7 +39,8 @@ import {
 // - 状态机 4 态闭集:create→pending、verify(pending→verified)、reject(pending→rejected);
 //   非闭集状态转移抛 CERTIFICATE_INVALID_STATE_TRANSITION
 // - 跨 member 校验:cert.memberId !== :memberId 抛 CERTIFICATE_NOT_BELONGS_TO_MEMBER
-// - audit:list / findOne / isQualified / create / update / softDelete / verify / reject 全部 hook
+// - audit:list / findOne / isQualified 查询完成后 fail-closed 落真实 audit_logs;
+//   create / update / softDelete / verify / reject 继续保持事务内写审计
 // - verifiedBy:取 currentUser.user.memberId(可空,Q-I2);user 无 memberId 时 verifiedBy=null
 // - isInternal:DTO 不接收;service 始终写 false(本批次零本会证书 API 路径,Q-A3)
 // - supersededByCertId / expireNotifyDueAt:本批次 zero API 写入
@@ -215,7 +215,11 @@ export class CertificatesService {
 
   // ============ list ============
 
-  async list(memberId: string, currentUser: CurrentUserPayload): Promise<CertificateListItemDto[]> {
+  async list(
+    memberId: string,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<CertificateListItemDto[]> {
     await this.assertCanOrThrow(currentUser, 'certificate.read.record', {
       type: 'member',
       id: memberId,
@@ -228,11 +232,14 @@ export class CertificatesService {
       orderBy: [{ certStatusCode: 'asc' }, { createdAt: 'desc' }],
     });
 
-    auditPlaceholder('certificate.read.other', {
-      operatorUserId: currentUser.id,
-      targetMemberId: memberId,
-      certificateIds: items.map((i) => i.id),
-      operation: 'list',
+    await this.auditLogs.log({
+      event: 'certificate.read.other',
+      actorUserId: currentUser.id,
+      actorRoleSnap: currentUser.role,
+      resourceType: 'member',
+      resourceId: memberId,
+      meta: auditMeta,
+      extra: { operation: 'list', count: items.length },
     });
 
     return items;
@@ -244,6 +251,7 @@ export class CertificatesService {
     memberId: string,
     certificateId: string,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<CertificateResponseDto> {
     await this.assertCanOrThrow(currentUser, 'certificate.read.record', {
       type: 'certificate',
@@ -260,11 +268,14 @@ export class CertificatesService {
       throw new BizException(BizCode.CERTIFICATE_NOT_BELONGS_TO_MEMBER);
     }
 
-    auditPlaceholder('certificate.read.other', {
-      operatorUserId: currentUser.id,
-      targetMemberId: memberId,
-      certificateId,
-      operation: 'detail',
+    await this.auditLogs.log({
+      event: 'certificate.read.other',
+      actorUserId: currentUser.id,
+      actorRoleSnap: currentUser.role,
+      resourceType: 'certificate',
+      resourceId: cert.id,
+      meta: auditMeta,
+      extra: { operation: 'detail' },
     });
 
     return cert;
@@ -593,6 +604,7 @@ export class CertificatesService {
     memberId: string,
     certTypeCode: string,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<QualificationFlagResponseDto> {
     await this.assertCanOrThrow(currentUser, 'certificate.read.record', {
       type: 'member',
@@ -618,11 +630,14 @@ export class CertificatesService {
 
     const qualified = found !== null;
 
-    auditPlaceholder('certificate.read.qualification-flag', {
-      operatorUserId: currentUser.id,
-      targetMemberId: memberId,
-      certTypeCode,
-      qualified,
+    await this.auditLogs.log({
+      event: 'certificate.read.qualification-flag',
+      actorUserId: currentUser.id,
+      actorRoleSnap: currentUser.role,
+      resourceType: 'member',
+      resourceId: memberId,
+      meta: auditMeta,
+      extra: { operation: 'qualification-flag', filterFields: ['certTypeCode'] },
     });
 
     return {

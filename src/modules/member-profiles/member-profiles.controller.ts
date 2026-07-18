@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
@@ -9,10 +10,19 @@ import {
   type CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { CreateMemberProfileDto } from './dto/create-member-profile.dto';
 import { MemberProfileResponseDto } from './dto/member-profile-response.dto';
 import { UpdateMemberProfileDto } from './dto/update-member-profile.dto';
 import { MemberProfilesService } from './member-profiles.service';
+
+function buildAuditMeta(req: Request): AuditMeta {
+  return {
+    requestId: req.id as string,
+    ip: req.ip ?? null,
+    ua: req.headers['user-agent'] ?? null,
+  };
+}
 
 // V2 第一阶段批次 1 member_profiles controller。
 // 路径嵌套在 members/:memberId/profile 下作为 1:1 子资源(单数,沿用 member-departments 风格)。
@@ -47,8 +57,9 @@ export class MemberProfilesController {
   findOne(
     @Param('memberId') memberId: string,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<MemberProfileResponseDto | null> {
-    return this.service.findOne(memberId, currentUser);
+    return this.service.findOne(memberId, currentUser, buildAuditMeta(req));
   }
 
   @Post()

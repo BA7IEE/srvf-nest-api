@@ -157,9 +157,15 @@ export class ActivityRegistrationsAdminController {
     @Param() params: ActivityIdParamDto,
     @Query() query: ExportRegistrationsQueryDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const csv = await this.service.exportCsv(params.activityId, query, currentUser);
+    const csv = await this.service.exportCsv(
+      params.activityId,
+      query,
+      currentUser,
+      buildAuditMeta(req),
+    );
     const fileName = `registrations-${params.activityId}.csv`;
     res.set({
       'Content-Type': 'text/csv; charset=utf-8',

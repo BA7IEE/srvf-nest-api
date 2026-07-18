@@ -197,8 +197,9 @@ export class RecruitmentCyclesController {
   promotePrecheck(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<PromotePrecheckResultDto> {
-    return this.promotionService.promotePrecheck(id, user);
+    return this.promotionService.promotePrecheck(id, user, buildAuditMeta(req));
   }
 
   @Post(':id/promote')

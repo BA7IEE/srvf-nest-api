@@ -1,7 +1,7 @@
 # SRVF API 当前状态入口
 
-> **第一入口,当前事实唯一权威源**。事实与蓝图冲突以本文件为准;遇冲突不擅自调和,先报告等拍板。
-> Harness 2.0 全指针形态(T0 `archive/reviews/harness-2.0-t0-review.md`):只留"现在是什么 + 往哪看",历史叙事在 CHANGELOG / `archive/handoff/`;§1 计数 `docs:counts(:check)` 生成守护,体积 `docs:readtax:check` 守护(≤4,500 字符);v1 快照 `archive/harness-v1/current-state.md`。
+> **当前事实唯一权威源**。冲突以本文件为准;先报告,不擅自调和。
+> Harness 2.0 指针版(T0 `archive/reviews/harness-2.0-t0-review.md`):只留当前事实与去向;历史见 CHANGELOG / `archive/handoff/`。§1 由 `docs:counts(:check)` 生成守护;全文 ≤4,500 字符;v1 快照 `archive/harness-v1/current-state.md`。
 
 ## 1. 当前版本状态
 
@@ -20,7 +20,7 @@
 | Migration | 59 |
 | BizCode | 254 |
 | 权限码 | 206 |
-| AuditLogEvent | 114 |
+| AuditLogEvent | 122 |
 | 内建角色 | 9 |
 | Cron | 2 |
 <!-- counts:end -->
@@ -33,7 +33,8 @@
 - **会话注销终态**:`POST /api/auth/v1/logout` 由任一可识别且未过期 row(含 rotated ancestor)幂等撤销所属 refresh family 全部活跃未过期 token;其他 family 与 access 不动;详见 `security.md`
 - **限流多实例一致性**:10 个命名 throttler 共用 PostgreSQL `throttler_buckets`，保留 IP tracker / 包 hash key / limit+ttl+block / 42900 / 无 header 语义；DB/storage 异常严格 fail-closed 50000，零本地 Map fallback；过期桶手动 retention，Cron 仍恰好 2
 - **贡献规则 ACTIVE 槽位**:`ContributionRule` 以 `activityTypeCode × attendanceRoleCode` 为未软删 ACTIVE partial unique；`durationThreshold` 仅是单规则内部档位参数。create/激活在事务内预查，真实并发由 DB unique + 23002 收口；calculator 若读到漂移重复 pair 立即 fail-closed，不按创建顺序任取。
-- **通知 durable outbox**:`notification_outbox_intents` 以 eventKey 幂等、PostgreSQL `SKIP LOCKED` + lease/fencing 支持独立多实例 worker；生日/到期两个既有 cron 只 enqueue，notifications-owned marker/状态/audit 与 intent 同事务。微信广播与 admin SMS 均按 generation 留历史，并以各自 active-slot partial unique 收敛同通知/会员的并发 child；admin 临时 skip 后可由新 confirmation 重试，只有 `NotificationDelivery SENT` 跨 generation 永久去重。known title/body 在 producer 入表前 canonical 脱敏，worker 对直插 raw row exact+strict fail-closed。provider 在事务外按 at-least-once 发送；SMS 本地 SENT log+delivery 同短事务，provider accepted 到本地 commit/ack 前仍允许重复；失败 intent 可退避重试，耗尽后 dead。
+- **通知 durable outbox**:`notification_outbox_intents` 以 eventKey 幂等，PG `SKIP LOCKED` + lease/fencing 支持多 worker；生日/到期 cron 仅 enqueue，notifications-owned marker/状态/audit 与 intent 同事务。微信广播/admin SMS 按 generation 留史，并以 active-slot partial unique 收敛并发 child；临时 skip 可由新 confirmation 重试，仅 `NotificationDelivery SENT` 跨代永久去重。producer 先 canonical 脱敏 known title/body，worker 对 raw row exact+strict fail-closed。provider 事务外 at-least-once；SMS SENT log+delivery 同短事务，accepted 至 commit/ack 窗口允许重复；失败退避至 dead。
+- **敏感读审计(C-2,2026-07-19)**:`AuditLogEvent` 122，placeholder 退役；管理端敏感读鉴权/查询后、CSV 交 generator 前、签名 URL 调 provider 前 fail-closed 落库。extra 仅 operation/字段名/maskLevel/计数，禁 PII/filter 值/key/URL。
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
 
@@ -62,4 +63,4 @@
 
 ## 6. 读取协议
 
-恒读三件套 = 根 `AGENTS.md` → **本文件** → `process.md §2/§3`(唯一权威表述在 AGENTS §0;Claude Code 另读 `CLAUDE.md`);`ai-harness/README.md` 与其余(baseline / V2 红线 / ARCHITECTURE / 边界图 / SOP / RBAC_MAP / archive)触碰才读。
+恒读:根 `AGENTS.md` → **本文件** → `process.md §2/§3`(权威见 AGENTS §0;Claude Code 加读 `CLAUDE.md`);其余 baseline / V2 红线 / ARCHITECTURE / 边界 / SOP / RBAC_MAP / archive 按触碰读取。

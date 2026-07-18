@@ -4,7 +4,6 @@ import { OrganizationStatus, Prisma, type RecruitmentApplication } from '@prisma
 import * as bcrypt from 'bcryptjs';
 
 import { normalizeDateOnly } from '../../common/datetime/date-only.util';
-import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -265,6 +264,7 @@ export class RecruitmentPromotionService {
   async promotePrecheck(
     cycleId: string,
     user: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<PromotePrecheckResultDto> {
     await this.assertCanOrThrow(user, 'recruitment-application.promote.member');
 
@@ -327,14 +327,14 @@ export class RecruitmentPromotionService {
 
     const promotableCount = rows.filter((r) => r.willIssue).length;
     const skipCount = rows.length - promotableCount;
-    // 纯读 placeholder 审计(复用既有 read.other pino 事件 + operation 区分;沿 registrations export 范式,
-    // 不扩 locked AuditEvent union)。含 admin / 范围(cycleId)/ 汇总。
-    auditPlaceholder('recruitment-application.read.other', {
-      adminId: user.id,
-      operation: 'promote-precheck',
-      cycleId,
-      promotableCount,
-      skipCount,
+    await this.auditLogs.log({
+      event: 'recruitment-application.read.other',
+      actorUserId: user.id,
+      actorRoleSnap: user.role,
+      resourceType: 'recruitment_cycle',
+      resourceId: cycle.id,
+      meta: auditMeta,
+      extra: { operation: 'promotion-precheck', count: rows.length },
     });
 
     return {

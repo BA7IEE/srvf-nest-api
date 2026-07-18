@@ -23,7 +23,8 @@ import { ActivityRegistrationWaitlistQueryService } from './activity-registratio
 
 // V2 批次 6 PR #5(D6 v1.1 §8 / 第二波第三步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activity-registrations 6 处写操作(create / createMy / approve / reject / cancelAdmin / cancelMy)
-// 调 log() 替代 auditPlaceholder;exportCsv 是 read/export,仍走 pino-only auditPlaceholder。
+// 调 log() 替代 auditPlaceholder;敏感读取统一批次起 exportCsv 在返回 generator 前复用
+// registration.review 落库,审计失败 fail-closed 且不会发送首字节。
 //
 // Phase 2 P2-5a(2026-05-20):追加 AppMyRegistrationsController(/api/app/v1/my/* 3
 // 只读 endpoint)+ AppMyRegistrationsService(薄壳)。沿

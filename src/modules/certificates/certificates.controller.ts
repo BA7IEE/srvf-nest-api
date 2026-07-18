@@ -49,7 +49,7 @@ export class CertificatesController {
   constructor(private readonly service: CertificatesService) {}
 
   // V2 批次 6 PR #2:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
-  // 不引入 cls-rs / AsyncLocalStorage)。仅供本 controller 写操作内部复用。
+  // 不引入 cls-rs / AsyncLocalStorage)。供本 controller 读写操作复用。
   private buildAuditMeta(req: Request): AuditMeta {
     return {
       requestId: req.id as string,
@@ -73,8 +73,9 @@ export class CertificatesController {
   list(
     @Param('memberId') memberId: string,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<CertificateListItemDto[]> {
-    return this.service.list(memberId, currentUser);
+    return this.service.list(memberId, currentUser, this.buildAuditMeta(req));
   }
 
   @Post()
@@ -120,8 +121,14 @@ export class CertificatesController {
     @Param('memberId') memberId: string,
     @Query() query: QualificationFlagQueryDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<QualificationFlagResponseDto> {
-    return this.service.isQualified(memberId, query.certTypeCode, currentUser);
+    return this.service.isQualified(
+      memberId,
+      query.certTypeCode,
+      currentUser,
+      this.buildAuditMeta(req),
+    );
   }
 
   @Get(':id')
@@ -141,8 +148,9 @@ export class CertificatesController {
     @Param('memberId') memberId: string,
     @Param('id') id: string,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<CertificateResponseDto> {
-    return this.service.findOne(memberId, id, currentUser);
+    return this.service.findOne(memberId, id, currentUser, this.buildAuditMeta(req));
   }
 
   @Patch(':id')

@@ -349,6 +349,7 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
 // ④ proposedMemberNo 从 memberNoSeq+1 依序;⑤ RBAC / 轮次守卫。「预检=实发」端到端一致性由 e2e 同库实跑断言。
 describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePromotionIssuance)', () => {
   const user = { id: 'admin1', role: 'SUPER_ADMIN' } as unknown as CurrentUserPayload;
+  const auditMeta: AuditMeta = { requestId: 'req-precheck-1', ip: null, ua: 'jest' };
 
   type PrecheckApp = {
     id: string;
@@ -419,7 +420,7 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
       notificationOutbox as never,
       storage as never,
     );
-    return { service, prisma, rbac, enqueue: notificationOutbox.enqueue };
+    return { service, prisma, rbac, auditLogs, enqueue: notificationOutbox.enqueue };
   }
 
   const byId = (rows: Array<{ applicationId: string }>) =>
@@ -438,8 +439,8 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
       papp({ id: 'nobirth', birthDate: null, genderCode: null }), // missing-derived-field
       papp({ id: 'noname', realName: null, phone: null }), // incomplete-data(有 openid,realName 缺)
     ];
-    const { service } = buildPrecheck(apps, { boundOpenids: ['op-bound'] });
-    const res = await service.promotePrecheck('cyc1', user);
+    const { service, auditLogs } = buildPrecheck(apps, { boundOpenids: ['op-bound'] });
+    const res = await service.promotePrecheck('cyc1', user, auditMeta);
 
     expect(res.total).toBe(7);
     expect(res.promotableCount).toBe(3); // ok1 + phoneok + 非大陆证件资料齐备
@@ -463,6 +464,15 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
     expect(m.nobirth.missingBirthDate).toBe(true);
     expect(m.nobirth.missingGender).toBe(true);
     expect(m.noname.missingPhone).toBe(true);
+    expect(auditLogs.log).toHaveBeenCalledWith({
+      event: 'recruitment-application.read.other',
+      actorUserId: 'admin1',
+      actorRoleSnap: 'SUPER_ADMIN',
+      resourceType: 'recruitment_cycle',
+      resourceId: 'cyc1',
+      meta: auditMeta,
+      extra: { operation: 'promotion-precheck', count: 7 },
+    });
   });
 
   it('v0.40.0 H5 手机通道:phone 被既有账号占用 → phone-already-bound;批内同 phone 仅次行 skip → duplicate-phone-in-batch', async () => {
@@ -472,7 +482,7 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
       papp({ id: 'pdupB', openid: null, phone: '13922220000', realName: '乙' }),
     ];
     const { service } = buildPrecheck(apps, { boundPhones: ['13911110000'] });
-    const res = await service.promotePrecheck('cyc1', user);
+    const res = await service.promotePrecheck('cyc1', user, auditMeta);
 
     const m = byId(res.rows);
     // phone 占用 → skip + flag。
@@ -495,7 +505,7 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
       papp({ id: 'dupB', openid: 'op-dup', realName: '乙' }),
     ];
     const { service } = buildPrecheck(apps);
-    const res = await service.promotePrecheck('cyc1', user);
+    const res = await service.promotePrecheck('cyc1', user, auditMeta);
 
     const m = byId(res.rows);
     // 高亮:两行共用 openid → 均 true(展示用)
@@ -517,7 +527,7 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
       papp({ id: 'p3', realName: '丙' }),
     ];
     const { service } = buildPrecheck(apps, { cycle: { id: 'cyc1', year: 2026, memberNoSeq: 5 } });
-    const res = await service.promotePrecheck('cyc1', user);
+    const res = await service.promotePrecheck('cyc1', user, auditMeta);
 
     expect(res.promotableCount).toBe(3);
     // 三行均可发 → 依发号序占 26006/26007/26008(集合断言,避开拼音序细节)
@@ -527,7 +537,7 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
 
   it('RBAC 拒绝 → RBAC_FORBIDDEN(不触库)', async () => {
     const { service, prisma } = buildPrecheck([], { canResult: false });
-    await expect(service.promotePrecheck('cyc1', user)).rejects.toMatchObject({
+    await expect(service.promotePrecheck('cyc1', user, auditMeta)).rejects.toMatchObject({
       biz: { code: BizCode.RBAC_FORBIDDEN.code },
     });
     expect(prisma.recruitmentCycle.findFirst).not.toHaveBeenCalled();
@@ -535,8 +545,17 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
 
   it('轮次不存在 / 已软删 → RECRUITMENT_CYCLE_NOT_FOUND', async () => {
     const { service } = buildPrecheck([], { cycle: null });
-    await expect(service.promotePrecheck('missing', user)).rejects.toMatchObject({
+    await expect(service.promotePrecheck('missing', user, auditMeta)).rejects.toMatchObject({
       biz: { code: BizCode.RECRUITMENT_CYCLE_NOT_FOUND.code },
     });
+  });
+
+  it('计算完成后的审计失败直接上抛,不返回预检结果', async () => {
+    const { service, auditLogs } = buildPrecheck([papp({ id: 'ok1' })]);
+    auditLogs.log.mockRejectedValue(new Error('audit unavailable'));
+
+    await expect(service.promotePrecheck('cyc1', user, auditMeta)).rejects.toThrow(
+      'audit unavailable',
+    );
   });
 });

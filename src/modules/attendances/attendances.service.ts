@@ -1,7 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
-import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { parseExpandQuery } from '../../common/dto/expand-query.util';
@@ -118,9 +117,10 @@ const ATTENDANCE_EXPAND_WHITELIST = ['activity'] as const;
 // V2 批次 6 PR #6(第二波最后一批):8 处 write hook 从 `auditPlaceholder` 迁移到
 // `AuditLogsService.log()` 同事务落库;5 个事件名(`attendance-sheet.{submit, edit, delete, review, final-review}`)
 // 共承担 8 处 operation,通过 `extra.operation` / `extra.action` 区分(沿 PR #4 / PR #5 范式,
-// D2 同值挪字符串);resourceType 固定 `attendance_sheet`;**3 处 read.other 调用保持 pino-only
-// 不迁移**(沿 Q1=A 当前阶段不记录查看行为);**`eventPlaceholder('attendance.recorded')` 与
-// audit 是两套独立机制,不动**(沿 D-S7;final-approve 同事务触发业务事件,audit 同事务记录;
+// D2 同值挪字符串);resourceType 固定 `attendance_sheet`;C-2 起 3 处 read.other 在查询完成后
+// 经 AttendanceAuditRecorder fail-closed 落库,extra 仅保留 operation/count/filterFields。
+// **`eventPlaceholder('attendance.recorded')` 与 audit 是两套独立机制,不动**(沿 D-S7;
+// final-approve 同事务触发业务事件,audit 同事务记录;
 // 若 audit 写失败 → 整个事务回滚 → 业务事件随之回滚,由 DB 事务原子性保证)。
 // records 全字段快照入 audit context:submit / edit × 2 / softDelete / finalReject / **reject**
 // (F4 #399:reject 也软删 records,审计含软删前快照,对称 finalReject)必含;
@@ -791,6 +791,7 @@ export class AttendancesService {
     activityId: string,
     query: ListAttendanceSheetsQueryDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<PageResultDto<AttendanceSheetListItemDto>> {
     await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
       type: 'activity',
@@ -816,11 +817,15 @@ export class AttendancesService {
       this.prisma.attendanceSheet.count({ where }),
     ]);
 
-    auditPlaceholder('attendance-sheet.read.other', {
-      operatorUserId: currentUser.id,
-      activityId,
+    await this.attendanceAuditRecorder.logRead({
+      actorUserId: currentUser.id,
+      actorRoleSnap: currentUser.role,
+      resourceType: 'activity',
+      resourceId: activityId,
       operation: 'list',
-      rowsCount: rows.length,
+      count: rows.length,
+      filterFields: statusCode === undefined ? [] : ['statusCode'],
+      auditMeta,
     });
 
     return {
@@ -1002,17 +1007,24 @@ export class AttendancesService {
 
   // ============ findOne(GET Sheet 简化详情)============
 
-  async findOne(id: string, currentUser: CurrentUserPayload): Promise<AttendanceSheetResponseDto> {
+  async findOne(
+    id: string,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<AttendanceSheetResponseDto> {
     await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
       type: 'attendance_sheet',
       id,
     });
     const sheet = await this.prisma.$transaction(async (tx) => this.findSheetOrThrow(id, tx));
 
-    auditPlaceholder('attendance-sheet.read.other', {
-      operatorUserId: currentUser.id,
-      sheetId: id,
+    await this.attendanceAuditRecorder.logRead({
+      actorUserId: currentUser.id,
+      actorRoleSnap: currentUser.role,
+      resourceType: 'attendance_sheet',
+      resourceId: id,
       operation: 'detail',
+      auditMeta,
     });
 
     return this.attendancePresenter.toSheetResponseDto(sheet);
@@ -1023,6 +1035,7 @@ export class AttendancesService {
   async reviewDetail(
     id: string,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<AttendanceSheetReviewDetailDto> {
     await this.assertCanOrThrow(currentUser, 'attendance.read.sheet', {
       type: 'attendance_sheet',
@@ -1055,10 +1068,14 @@ export class AttendancesService {
       return { sheet, activity, records };
     });
 
-    auditPlaceholder('attendance-sheet.read.other', {
-      operatorUserId: currentUser.id,
-      sheetId: id,
+    await this.attendanceAuditRecorder.logRead({
+      actorUserId: currentUser.id,
+      actorRoleSnap: currentUser.role,
+      resourceType: 'attendance_sheet',
+      resourceId: id,
       operation: 'review-detail',
+      count: result.records.length,
+      auditMeta,
     });
 
     return {

@@ -193,6 +193,7 @@ type PrismaMock = ReturnType<typeof makePrismaMock>;
 
 function makeAuditRecorderMock() {
   return {
+    logExport: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
     logCreate: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
     logReview: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
     logCancel: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
@@ -674,8 +675,8 @@ describe('ActivityRegistrationsService (characterization)', () => {
     });
   });
 
-  describe('exportCsv (no audit)', () => {
-    it('返回流式 CSV,且不调用 auditRecorder', async () => {
+  describe('exportCsv (audit before generator handoff)', () => {
+    it('先完成审计再返回流式 CSV generator', async () => {
       const prisma = makePrismaMock();
       const recorder = makeAuditRecorderMock();
       prisma.activity.findFirst.mockResolvedValue(makeActivityRow());
@@ -684,7 +685,15 @@ describe('ActivityRegistrationsService (characterization)', () => {
       ]);
       const service = makeService(prisma, recorder, makeStateMachineMock(DENY_DECISION));
 
-      const chunks = await service.exportCsv('act-1', {}, makeCurrentUser());
+      const chunks = await service.exportCsv('act-1', {}, makeCurrentUser(), META);
+      expect(recorder.logExport).toHaveBeenCalledWith({
+        activityId: 'act-1',
+        actorUserId: 'admin-1',
+        actorRoleSnap: Role.ADMIN,
+        filterFields: [],
+        auditMeta: META,
+      });
+      expect(prisma.activityRegistration.findMany).not.toHaveBeenCalled();
       let csv = '';
       for await (const chunk of chunks) csv += chunk;
 
@@ -698,6 +707,19 @@ describe('ActivityRegistrationsService (characterization)', () => {
       expect(recorder.logCreate).not.toHaveBeenCalled();
       expect(recorder.logReview).not.toHaveBeenCalled();
       expect(recorder.logCancel).not.toHaveBeenCalled();
+    });
+
+    it('审计失败时不返回 generator,也不执行任何 CSV 查询', async () => {
+      const prisma = makePrismaMock();
+      const recorder = makeAuditRecorderMock();
+      prisma.activity.findFirst.mockResolvedValue(makeActivityRow());
+      recorder.logExport.mockRejectedValue(new Error('audit unavailable'));
+      const service = makeService(prisma, recorder, makeStateMachineMock(DENY_DECISION));
+
+      await expect(service.exportCsv('act-1', {}, makeCurrentUser(), META)).rejects.toThrow(
+        'audit unavailable',
+      );
+      expect(prisma.activityRegistration.findMany).not.toHaveBeenCalled();
     });
 
     it('findings #13/#14:500 行后用 id cursor 拉下一批,常驻集合不超过 batch', async () => {
@@ -716,7 +738,7 @@ describe('ActivityRegistrationsService (characterization)', () => {
       );
 
       let csv = '';
-      for await (const chunk of await service.exportCsv('act-1', {}, makeCurrentUser())) {
+      for await (const chunk of await service.exportCsv('act-1', {}, makeCurrentUser(), META)) {
         csv += chunk;
       }
 

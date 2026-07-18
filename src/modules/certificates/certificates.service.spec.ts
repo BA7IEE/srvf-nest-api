@@ -1,4 +1,3 @@
-import { Logger } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -30,7 +29,7 @@ import { CertificatesService } from './certificates.service';
 // 边界(本 spec 只到 service 编排层;不改任何业务代码 / BizCode / audit event 名):
 // - **不**断言 `toCertSnapshot` 内部 before/after 快照结构(Date→ISO 等细节);只断言
 //   `auditLogs.log` 被调用 + event 名 + tx 接线(snapshot 归 certificates-audit-characterization e2e)。
-// - **不**测 `auditPlaceholder`(read hook,是 pino Logger 包装,无副作用 / 不抛;放任其执行)。
+// - 读审计只锁 event/resource/extra 与 fail-closed 编排,不复刻 AuditLogsService 内部写库。
 // - **不**复刻字典校验内部查询(mock `dictItem.findFirst` 返回值即可)。
 // - **不**测深事务 happy-path 全链(完整状态流 / 真实库写入归 certificates*.e2e)。
 // - **不**测 `app-my-certificates.service.ts`(App 视角独立类,非本 service)。
@@ -176,20 +175,11 @@ function makeService(
 }
 
 describe('CertificatesService (characterization, scoped)', () => {
-  // 静默 read hook `auditPlaceholder` 的 pino Logger 输出(放任其执行,但不污染测试输出;
-  // 沿 src/modules/storage/storage-settings.service.spec.ts 既有 Logger silence 范式)。
-  let logSpy: jest.SpyInstance;
-  beforeEach(() => {
-    logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
-  });
-  afterEach(() => {
-    logSpy.mockRestore();
-  });
-
   // ============ 1. read paths — list / findOne ============
   describe('read paths — list / findOne', () => {
     it('findOne → 安全字段透传(含 certNumber / verifiedBy / verifyNote)', async () => {
       const prisma = makePrismaMock();
+      const auditLogs = makeAuditLogsMock();
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
       prisma.certificate.findFirst.mockResolvedValue(
         makeCertRow({
@@ -201,15 +191,48 @@ describe('CertificatesService (characterization, scoped)', () => {
           verifyNote: 'ok',
         }),
       );
-      const service = makeService(prisma);
+      const service = makeService(prisma, { auditLogs });
 
-      const res = await service.findOne('mem-1', 'cert-1', makeCurrentUser());
+      const res = await service.findOne('mem-1', 'cert-1', makeCurrentUser(), META);
 
       expect(res.id).toBe('cert-1');
       expect(res.certStatusCode).toBe(CERT_STATUS_VERIFIED);
       expect(res.certNumber).toBe('CN-1');
       expect(res.verifiedBy).toBe('mem-9');
       expect(res.verifyNote).toBe('ok');
+      expect(auditLogs.log).toHaveBeenCalledWith({
+        event: 'certificate.read.other',
+        actorUserId: 'admin-1',
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'certificate',
+        resourceId: 'cert-1',
+        meta: META,
+        extra: { operation: 'detail' },
+      });
+    });
+
+    it('findOne:查询完成后审计失败原样上抛,调用方拿不到 DTO', async () => {
+      const prisma = makePrismaMock();
+      const auditLogs = makeAuditLogsMock();
+      const auditError = new Error('certificate detail audit unavailable');
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.certificate.findFirst.mockResolvedValue(makeCertRow());
+      auditLogs.log.mockRejectedValue(auditError);
+      const service = makeService(prisma, { auditLogs });
+      let receivedDto: unknown;
+
+      await expect(
+        service.findOne('mem-1', 'cert-1', makeCurrentUser(), META).then((dto) => {
+          receivedDto = dto;
+          return dto;
+        }),
+      ).rejects.toBe(auditError);
+
+      expect(prisma.certificate.findFirst).toHaveBeenCalledTimes(1);
+      expect(prisma.certificate.findFirst.mock.invocationCallOrder[0]).toBeLessThan(
+        auditLogs.log.mock.invocationCallOrder[0],
+      );
+      expect(receivedDto).toBeUndefined();
     });
 
     it('findOne 不存在 → CERTIFICATE_NOT_FOUND', async () => {
@@ -218,7 +241,7 @@ describe('CertificatesService (characterization, scoped)', () => {
       prisma.certificate.findFirst.mockResolvedValue(null);
       const service = makeService(prisma);
 
-      await expect(service.findOne('mem-1', 'missing', makeCurrentUser())).rejects.toEqual(
+      await expect(service.findOne('mem-1', 'missing', makeCurrentUser(), META)).rejects.toEqual(
         new BizException(BizCode.CERTIFICATE_NOT_FOUND),
       );
     });
@@ -229,7 +252,7 @@ describe('CertificatesService (characterization, scoped)', () => {
       prisma.certificate.findFirst.mockResolvedValue(makeCertRow({ memberId: 'mem-OTHER' }));
       const service = makeService(prisma);
 
-      await expect(service.findOne('mem-1', 'cert-1', makeCurrentUser())).rejects.toEqual(
+      await expect(service.findOne('mem-1', 'cert-1', makeCurrentUser(), META)).rejects.toEqual(
         new BizException(BizCode.CERTIFICATE_NOT_BELONGS_TO_MEMBER),
       );
     });
@@ -239,7 +262,7 @@ describe('CertificatesService (characterization, scoped)', () => {
       prisma.member.findFirst.mockResolvedValue(null);
       const service = makeService(prisma);
 
-      await expect(service.findOne('missing', 'cert-1', makeCurrentUser())).rejects.toEqual(
+      await expect(service.findOne('missing', 'cert-1', makeCurrentUser(), META)).rejects.toEqual(
         new BizException(BizCode.MEMBER_NOT_FOUND),
       );
       expect(prisma.certificate.findFirst).not.toHaveBeenCalled();
@@ -247,14 +270,15 @@ describe('CertificatesService (characterization, scoped)', () => {
 
     it('list → where{memberId, deletedAt:null};orderBy[status asc, createdAt desc];返回 items', async () => {
       const prisma = makePrismaMock();
+      const auditLogs = makeAuditLogsMock();
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
       prisma.certificate.findMany.mockResolvedValue([
         makeCertRow({ id: 'cert-1' }),
         makeCertRow({ id: 'cert-2' }),
       ]);
-      const service = makeService(prisma);
+      const service = makeService(prisma, { auditLogs });
 
-      const items = await service.list('mem-1', makeCurrentUser());
+      const items = await service.list('mem-1', makeCurrentUser(), META);
 
       expect(items).toHaveLength(2);
       const findManyArg = prisma.certificate.findMany.mock.calls[0][0] as {
@@ -264,6 +288,18 @@ describe('CertificatesService (characterization, scoped)', () => {
       expect(findManyArg.where.memberId).toBe('mem-1');
       expect(findManyArg.where.deletedAt).toBeNull();
       expect(findManyArg.orderBy).toEqual([{ certStatusCode: 'asc' }, { createdAt: 'desc' }]);
+      expect(auditLogs.log).toHaveBeenCalledWith({
+        event: 'certificate.read.other',
+        actorUserId: 'admin-1',
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'member',
+        resourceId: 'mem-1',
+        meta: META,
+        extra: { operation: 'list', count: 2 },
+      });
+      expect(prisma.certificate.findMany.mock.invocationCallOrder[0]).toBeLessThan(
+        auditLogs.log.mock.invocationCallOrder[0],
+      );
     });
 
     it('list:member 不存在 → MEMBER_NOT_FOUND;不查 certificate', async () => {
@@ -271,10 +307,23 @@ describe('CertificatesService (characterization, scoped)', () => {
       prisma.member.findFirst.mockResolvedValue(null);
       const service = makeService(prisma);
 
-      await expect(service.list('missing', makeCurrentUser())).rejects.toEqual(
+      await expect(service.list('missing', makeCurrentUser(), META)).rejects.toEqual(
         new BizException(BizCode.MEMBER_NOT_FOUND),
       );
       expect(prisma.certificate.findMany).not.toHaveBeenCalled();
+    });
+
+    it('list:审计失败直接上抛,不返回敏感读取结果', async () => {
+      const prisma = makePrismaMock();
+      const auditLogs = makeAuditLogsMock();
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.certificate.findMany.mockResolvedValue([makeCertRow()]);
+      auditLogs.log.mockRejectedValue(new Error('audit unavailable'));
+      const service = makeService(prisma, { auditLogs });
+
+      await expect(service.list('mem-1', makeCurrentUser(), META)).rejects.toThrow(
+        'audit unavailable',
+      );
     });
   });
 
@@ -658,19 +707,20 @@ describe('CertificatesService (characterization, scoped)', () => {
       prisma.dictItem.findFirst.mockResolvedValue(null);
       const service = makeService(prisma);
 
-      await expect(service.isQualified('mem-1', 'cert_unknown', makeCurrentUser())).rejects.toEqual(
-        new BizException(BizCode.CERTIFICATE_TYPE_CODE_INVALID),
-      );
+      await expect(
+        service.isQualified('mem-1', 'cert_unknown', makeCurrentUser(), META),
+      ).rejects.toEqual(new BizException(BizCode.CERTIFICATE_TYPE_CODE_INVALID));
     });
 
     it('命中 verified + 未过期 → qualified=true;where 锁 certStatusCode=verified', async () => {
       const prisma = makePrismaMock();
+      const auditLogs = makeAuditLogsMock();
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
       prisma.dictItem.findFirst.mockResolvedValue({ id: 'di-type' });
       prisma.certificate.findFirst.mockResolvedValue(makeCertRow({ id: 'cert-1' }));
-      const service = makeService(prisma);
+      const service = makeService(prisma, { auditLogs });
 
-      const res = await service.isQualified('mem-1', 'cert_first_aid', makeCurrentUser());
+      const res = await service.isQualified('mem-1', 'cert_first_aid', makeCurrentUser(), META);
 
       expect(res.qualified).toBe(true);
       expect(res.memberId).toBe('mem-1');
@@ -681,6 +731,18 @@ describe('CertificatesService (characterization, scoped)', () => {
       expect(findFirstArg.where.certStatusCode).toBe(CERT_STATUS_VERIFIED);
       expect(findFirstArg.where.memberId).toBe('mem-1');
       expect(findFirstArg.where.certTypeCode).toBe('cert_first_aid');
+      expect(auditLogs.log).toHaveBeenCalledWith({
+        event: 'certificate.read.qualification-flag',
+        actorUserId: 'admin-1',
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'member',
+        resourceId: 'mem-1',
+        meta: META,
+        extra: { operation: 'qualification-flag', filterFields: ['certTypeCode'] },
+      });
+      const auditInput = auditLogs.log.mock.calls[0][0] as { extra: Record<string, unknown> };
+      expect(auditInput.extra).not.toHaveProperty('certTypeCode');
+      expect(auditInput.extra).not.toHaveProperty('qualified');
     });
 
     it('无命中 → qualified=false', async () => {
@@ -690,7 +752,7 @@ describe('CertificatesService (characterization, scoped)', () => {
       prisma.certificate.findFirst.mockResolvedValue(null);
       const service = makeService(prisma);
 
-      const res = await service.isQualified('mem-1', 'cert_first_aid', makeCurrentUser());
+      const res = await service.isQualified('mem-1', 'cert_first_aid', makeCurrentUser(), META);
 
       expect(res.qualified).toBe(false);
     });
@@ -701,7 +763,7 @@ describe('CertificatesService (characterization, scoped)', () => {
       const service = makeService(prisma);
 
       await expect(
-        service.isQualified('missing', 'cert_first_aid', makeCurrentUser()),
+        service.isQualified('missing', 'cert_first_aid', makeCurrentUser(), META),
       ).rejects.toEqual(new BizException(BizCode.MEMBER_NOT_FOUND));
       expect(prisma.dictItem.findFirst).not.toHaveBeenCalled();
       expect(prisma.certificate.findFirst).not.toHaveBeenCalled();

@@ -11,6 +11,7 @@ import { AppMyCertificatesController } from './controllers/app-my-certificates.c
 
 // V2 批次 6 PR #2(D6 v1.1 §8.2):导入 AuditLogsModule 以注入 AuditLogsService,
 // certificates 写操作(create / update / softDelete / verify / reject)调 log() 替代 auditPlaceholder。
+// C-2 起 admin list/detail/qualification-flag 查询后也 fail-closed 落敏感读取审计。
 //
 // Phase 2 P2-7(2026-05-20):追加 AppMyCertificatesController
 // (/api/app/v1/my/certificates 1 endpoint)+ AppMyCertificatesService(独立 App service)。
