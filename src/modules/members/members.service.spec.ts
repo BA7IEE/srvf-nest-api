@@ -65,6 +65,7 @@ const authzAllow = {
   explain: jest.fn().mockResolvedValue({ allow: true, reason: 'matched' }),
 } as unknown as AuthzService;
 const lastAdminProtectionNoop = {
+  acquireOpsAdminInvariantLock: jest.fn().mockResolvedValue(undefined),
   assertCanDeactivateOpsAdminUser: jest.fn().mockResolvedValue(undefined),
 } as unknown as LastAdminProtectionPolicy;
 const auditNoop = { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogsService;
@@ -216,6 +217,11 @@ describe('MembersService member lifecycle authorization closure', () => {
 
   it('offboard 同事务终止 assignments/supervisions/direct bindings，残留探针恒为 0', async () => {
     const tx = makeLifecycleTx();
+    const acquireOpsAdminInvariantLock = jest.fn().mockResolvedValue(undefined);
+    const lastAdminProtection = {
+      acquireOpsAdminInvariantLock,
+      assertCanDeactivateOpsAdminUser: jest.fn().mockResolvedValue(undefined),
+    } as unknown as LastAdminProtectionPolicy;
     const auditCalls: Array<{ event: string; extra?: Record<string, unknown>; tx?: unknown }> = [];
     const audit = {
       log: jest.fn((entry: { event: string; extra?: Record<string, unknown>; tx?: unknown }) => {
@@ -227,7 +233,7 @@ describe('MembersService member lifecycle authorization closure', () => {
       makePrisma(tx as unknown as ReturnType<typeof makeTx>),
       rbacAllow,
       authzAllow,
-      lastAdminProtectionNoop,
+      lastAdminProtection,
       organizationsStub,
       audit as unknown as AuditLogsService,
     );
@@ -253,6 +259,10 @@ describe('MembersService member lifecycle authorization closure', () => {
     expect(auditCall?.tx).toBe(tx);
     expect(result.residualActivePositionAssignments).toBe(0);
     expect(result.residualActiveSupervisions).toBe(0);
+    expect(acquireOpsAdminInvariantLock).toHaveBeenCalledWith(tx);
+    expect(acquireOpsAdminInvariantLock.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.$queryRaw.mock.invocationCallOrder[0],
+    );
   });
 
   it('member account status 不能把 INACTIVE Member 的 linked User 重新启用', async () => {

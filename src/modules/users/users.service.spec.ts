@@ -196,6 +196,8 @@ type RbacMock = ReturnType<typeof makeRbacMock>;
 
 function makeLastAdminProtectionMock() {
   return {
+    acquireSuperAdminInvariantLock: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(),
+    acquireOpsAdminInvariantLock: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(),
     assertCanRemoveSuperAdmin: jest.fn<Promise<void>, [unknown, string]>().mockResolvedValue(),
     assertCanRemoveOpsAdminBinding: jest
       .fn<Promise<void>, [unknown, unknown]>()
@@ -830,6 +832,7 @@ describe('UsersService (characterization, scoped)', () => {
 
     it('禁用普通用户 → update status=DISABLED + 撤销目标 refresh(admin-disable)', async () => {
       const prisma = makePrismaMock();
+      const lastAdminProtection = makeLastAdminProtectionMock();
       prisma.user.findFirst.mockResolvedValue({
         id: 'u-2',
         role: Role.USER,
@@ -838,7 +841,7 @@ describe('UsersService (characterization, scoped)', () => {
       prisma.user.update.mockResolvedValue(
         makeSafeUser({ id: 'u-2', status: UserStatus.DISABLED }),
       );
-      const service = makeService(prisma);
+      const service = makeService(prisma, { lastAdminProtection });
 
       await service.updateStatus(
         makeCurrentUser({ id: 'admin-1' }),
@@ -853,6 +856,11 @@ describe('UsersService (characterization, scoped)', () => {
         data: { revokedReason: string };
       };
       expect(revokeArg.data.revokedReason).toBe('admin-disable');
+      expect(lastAdminProtection.acquireSuperAdminInvariantLock).not.toHaveBeenCalled();
+      expect(lastAdminProtection.acquireOpsAdminInvariantLock).toHaveBeenCalledWith(prisma);
+      expect(
+        lastAdminProtection.acquireOpsAdminInvariantLock.mock.invocationCallOrder[0],
+      ).toBeLessThan(prisma.$queryRaw.mock.invocationCallOrder[0]);
     });
 
     it('启用用户(ACTIVE)→ update status;**不**撤销 refresh', async () => {

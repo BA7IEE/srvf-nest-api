@@ -800,6 +800,7 @@ export class MembersService {
     await this.assertCanOrThrow(currentUser, 'member.grant.account', { type: 'member', id });
 
     return this.prisma.$transaction(async (tx) => {
+      await this.lastAdminProtection.acquireOpsAdminInvariantLock(tx);
       await lockMemberLifecycle(tx, id);
       const member = await tx.member.findFirst({
         where: notDeletedWhere({ id }),
@@ -921,6 +922,9 @@ export class MembersService {
     await this.assertCanOrThrow(currentUser, 'user.update.status', { type: 'member', id });
 
     return this.prisma.$transaction(async (tx) => {
+      if (dto.status === UserStatus.DISABLED) {
+        await this.lastAdminProtection.acquireOpsAdminInvariantLock(tx);
+      }
       await lockMemberLifecycle(tx, id);
       const member = await this.findMemberOrThrow(id, tx);
 
@@ -1070,6 +1074,7 @@ export class MembersService {
     auditMeta: AuditMeta,
   ): Promise<MemberOffboardResponseDto> {
     return this.prisma.$transaction(async (tx) => {
+      await this.lastAdminProtection.acquireOpsAdminInvariantLock(tx);
       await lockMemberLifecycle(tx, id);
       // 守卫:member 存在(不存在 / 软删 → 15001)。
       const member = await this.findMemberOrThrow(id, tx);

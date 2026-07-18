@@ -607,8 +607,16 @@ export class UsersService {
     }
 
     // linked account 的启停与 member offboard 共用 Member→User 行锁顺序。锁后重读既防
-    // offboard/enable 穿透，也保证审计 before 与实际被写行一致。
+    // offboard/enable 穿透，也保证审计 before 与实际被写行一致。削权时必须先按
+    // last-SUPER_ADMIN → last-ops-admin → Member → User 取锁，避免互禁事务在 audit actor
+    // 外键与 advisory lock 之间形成环。
     return this.prisma.$transaction(async (tx) => {
+      if (dto.status === UserStatus.DISABLED) {
+        if (target.role === Role.SUPER_ADMIN) {
+          await this.lastAdminProtection.acquireSuperAdminInvariantLock(tx);
+        }
+        await this.lastAdminProtection.acquireOpsAdminInvariantLock(tx);
+      }
       if (target.memberId) {
         await lockMemberLifecycle(tx, target.memberId);
       }

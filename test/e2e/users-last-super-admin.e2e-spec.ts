@@ -166,31 +166,40 @@ describe('最后管理员事务保护', () => {
     expect(dbB?.role).toBe(Role.ADMIN);
   });
 
-  it('并发互禁仅存的两个 SUPER_ADMIN → 恰一成功、一方 10103，最终仍有 1 名', async () => {
-    const a = await createTestUser(app, { username: 'lsa-concurrent-a', role: Role.SUPER_ADMIN });
-    const b = await createTestUser(app, { username: 'lsa-concurrent-b', role: Role.SUPER_ADMIN });
+  it('并发互禁仅存的两个 SUPER_ADMIN → 重复交错均恰一成功、一方 10103，且无 40P01', async () => {
+    for (let iteration = 1; iteration <= 5; iteration += 1) {
+      await resetDb(app);
+      const a = await createTestUser(app, {
+        username: `lsa-concurrent-a-${iteration}`,
+        role: Role.SUPER_ADMIN,
+      });
+      const b = await createTestUser(app, {
+        username: `lsa-concurrent-b-${iteration}`,
+        role: Role.SUPER_ADMIN,
+      });
 
-    const results = await Promise.allSettled([
-      usersService.updateStatus(
-        currentUserPayload(a),
-        b.id,
-        { status: UserStatus.DISABLED },
-        { requestId: 'last-sa-concurrency-a', ip: '127.0.0.1', ua: 'jest' },
-      ),
-      usersService.updateStatus(
-        currentUserPayload(b),
-        a.id,
-        { status: UserStatus.DISABLED },
-        { requestId: 'last-sa-concurrency-b', ip: '127.0.0.1', ua: 'jest' },
-      ),
-    ]);
+      const results = await Promise.allSettled([
+        usersService.updateStatus(
+          currentUserPayload(a),
+          b.id,
+          { status: UserStatus.DISABLED },
+          { requestId: `last-sa-concurrency-a-${iteration}`, ip: '127.0.0.1', ua: 'jest' },
+        ),
+        usersService.updateStatus(
+          currentUserPayload(b),
+          a.id,
+          { status: UserStatus.DISABLED },
+          { requestId: `last-sa-concurrency-b-${iteration}`, ip: '127.0.0.1', ua: 'jest' },
+        ),
+      ]);
 
-    expectOneSuccessOneProtected(results, BizCode.LAST_SUPER_ADMIN_PROTECTED);
-    expect(
-      await prisma.user.count({
-        where: { role: Role.SUPER_ADMIN, status: UserStatus.ACTIVE, deletedAt: null },
-      }),
-    ).toBe(1);
+      expectOneSuccessOneProtected(results, BizCode.LAST_SUPER_ADMIN_PROTECTED);
+      expect(
+        await prisma.user.count({
+          where: { role: Role.SUPER_ADMIN, status: UserStatus.ACTIVE, deletedAt: null },
+        }),
+      ).toBe(1);
+    }
   });
 
   it('禁用唯一 ops-admin 持有人 → 30101，用户与绑定均保持 ACTIVE', async () => {

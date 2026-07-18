@@ -30,8 +30,16 @@ export interface RemovableRoleBinding {
 // 调用方仍持有 transaction；本策略只负责同不变量共锁、锁后重算与拒绝。
 @Injectable()
 export class LastAdminProtectionPolicy {
-  async assertCanRemoveSuperAdmin(tx: PrismaTx, affectedUserId: string): Promise<void> {
+  async acquireSuperAdminInvariantLock(tx: PrismaTx): Promise<void> {
     await this.acquireInvariantLock(tx, LAST_SUPER_ADMIN_LOCK_KEY);
+  }
+
+  async acquireOpsAdminInvariantLock(tx: PrismaTx): Promise<void> {
+    await this.acquireInvariantLock(tx, LAST_OPS_ADMIN_LOCK_KEY);
+  }
+
+  async assertCanRemoveSuperAdmin(tx: PrismaTx, affectedUserId: string): Promise<void> {
+    await this.acquireSuperAdminInvariantLock(tx);
     const remaining = await tx.user.count({
       where: {
         role: Role.SUPER_ADMIN,
@@ -56,7 +64,7 @@ export class LastAdminProtectionPolicy {
       return;
     }
 
-    await this.acquireInvariantLock(tx, LAST_OPS_ADMIN_LOCK_KEY);
+    await this.acquireOpsAdminInvariantLock(tx);
     const activeHolderIds = await this.getActiveOpsAdminHolderIds(tx);
     if (!activeHolderIds.some((id) => id !== binding.principalId)) {
       throw new BizException(BizCode.LAST_OPS_ADMIN_PROTECTED);
@@ -65,7 +73,7 @@ export class LastAdminProtectionPolicy {
 
   async assertCanDeactivateOpsAdminUser(tx: PrismaTx, affectedUserId: string): Promise<void> {
     // 必须先锁再判断 target 是否持有 ops-admin：禁用与并发授予/撤销交错时也不能留下零可用管理员。
-    await this.acquireInvariantLock(tx, LAST_OPS_ADMIN_LOCK_KEY);
+    await this.acquireOpsAdminInvariantLock(tx);
     const activeHolderIds = await this.getActiveOpsAdminHolderIds(tx);
     if (
       activeHolderIds.includes(affectedUserId) &&
