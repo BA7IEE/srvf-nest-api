@@ -369,6 +369,15 @@ describe('ActivitiesService audit characterization', () => {
         ctx.adminPayload,
         AUDIT_META,
       );
+      // complete 只允许自然结束后的 published 活动；本用例只刻画 complete audit 形状，
+      // 因此在直调 complete 前把时间窗推进到过去，不绕过生产生命周期闸。
+      await ctx.prisma.activity.update({
+        where: { id: created.id },
+        data: {
+          startAt: new Date('2020-01-01T08:00:00.000Z'),
+          endAt: new Date('2020-01-01T12:00:00.000Z'),
+        },
+      });
       await ctx.prisma.auditLog.deleteMany({});
 
       await ctx.service.complete(created.id, ctx.adminPayload, AUDIT_META);
