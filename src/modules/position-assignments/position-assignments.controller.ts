@@ -31,11 +31,11 @@ import {
 } from './position-assignments.dto';
 import { PositionAssignmentsService } from './position-assignments.service';
 
-// 终态 scoped-authz PR4(2026-07-01;冻结稿 §7.3):任职(position-assignments)双轴管理面 controller(5 路由)。
+// 终态 scoped-authz PR4(2026-07-01;冻结稿 §7.3):任职(position-assignments)双轴管理面 controller(8 路由)。
 // 单 controller 跨 3 根路径(组织轴 organizations/:orgId/* + 队员轴 members/:memberId/* + 扁平 position-assignments/*),
 // 故 @Controller 取共同前缀 'admin/v1',各方法声明完整子路径(controller 计数 +1)。
 // 判权单轨 service 层 rbac.can(position-assignment.*);入口仅全局 JwtAuthGuard,**不**挂 @Roles。
-// **任职 = 数据 + 任命校验,绝不进判权路径**(判权是 PR8)。
+// AuthzService 动态读取任职；任命 policy 不参与 action 判权，只维护 assignment 数据合法性。
 
 // 从 @Req() 构造 AuditMeta(沿 content-admin / activity-registrations 范式;D8 拍板不引入 ALS)。
 function buildAuditMeta(req: Request): AuditMeta {
@@ -75,7 +75,7 @@ export class PositionAssignmentsController {
   @Post('organizations/:orgId/position-assignments')
   @ApiOperation({
     summary:
-      '任命(校验职务适配 / 单人独占 / 兼任 / 归属要求 / 任期) [rbac: position-assignment.create.record]',
+      '任命(校验 active 职务/规则、严格兼任交集、人数上限、归属要求、任期；锁后重算) [rbac: position-assignment.create.record]',
   })
   @ApiWrappedOkResponse(PositionAssignmentResponseDto)
   @ApiBizErrorResponse(
@@ -142,7 +142,7 @@ export class PositionAssignmentsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '预检任命(dry-run:任期 + 存在性 + 任命 5 校验逐项收集 violations,零写入;violations 是数据) [rbac: position-assignment.read.record]',
+      '预检任命(dry-run:任期 + 存在性/member ACTIVE + active 配置/归属/兼任/人数上限全量收集；只读时点建议) [rbac: position-assignment.read.record]',
   })
   @ApiWrappedOkResponse(PositionAssignmentPreviewResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -176,7 +176,7 @@ export class PositionAssignmentsController {
   @Post('position-assignments/:id/revoke')
   @ApiOperation({
     summary:
-      '撤销任职(status=REVOKED + 撤销人 + endedAt) [rbac: position-assignment.revoke.record]',
+      '撤销任职(status=REVOKED + 撤销人 + endedAt；required/minCount 不阻断) [rbac: position-assignment.revoke.record]',
   })
   @ApiWrappedOkResponse(PositionAssignmentResponseDto)
   @ApiBizErrorResponse(

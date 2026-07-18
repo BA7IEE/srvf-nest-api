@@ -5,10 +5,11 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { PrismaService } from '../../database/prisma.service';
 import type { RbacService } from '../permissions/rbac.service';
+import { PositionAssignmentPolicy } from './position-assignment-policy';
 import { PositionAssignmentsService } from './position-assignments.service';
 
 // 终态 scoped-authz PR4 service-level characterization spec(纯构造器注入 mock,不连库、不起 Nest)。
-// 锁定任命 5 校验纯逻辑 + 撤销状态守卫 + 历史锚定(DB 唯一约束 / partial unique 属 DB 层,由 migration 重放 + e2e 兜底):
+// 锁定任命 policy 编排 + 撤销状态守卫 + 历史锚定(DB 唯一约束 / partial unique 属 DB 层,由 migration 重放 + e2e 兜底):
 //   create:任期(TENURE_INVALID)/ 职务适配(RULE_NOT_MATCHED)/ requireMembership 祖先命中(MEMBERSHIP_REQUIRED)/
 //     兼任(CONCURRENT_FORBIDDEN)/ 防重(ALREADY_EXISTS)/ 单人独占(SINGLE_HOLDER)/ P2002 兜底;
 //   revoke:找不到 NOT_FOUND / 非 active ALREADY_ENDED / active 写 REVOKED + 撤销人 + endedAt;
@@ -33,8 +34,8 @@ const realP2002 = new Prisma.PrismaClientKnownRequestError('unique', {
 type CallArg = { where?: Record<string, unknown>; data?: Record<string, unknown> };
 const argN = (m: jest.Mock, n = 0): CallArg => (m.mock.calls as unknown[][])[n]?.[0] ?? {};
 
-// 默认 happy-path tx:org(rescue-team)/ position(单人独占关闭兼任开启)/ member 均存在;
-// 规则匹配 requireMembership=false;count 恒 0(无 dup / 无在任 / 无并发);create 回一行。
+// 默认 happy-path tx:org(rescue-team)/ position(允许多人+兼任)/ member 均存在;
+// 规则匹配 requireMembership=false/maxCount=null;active assignment 为空;create 回一行。
 function makeTx() {
   return {
     $queryRaw: jest.fn().mockResolvedValue([{ id: 'm1memberid0' }]),
@@ -42,13 +43,32 @@ function makeTx() {
       findFirst: jest.fn().mockResolvedValue({ id: 'org1', nodeTypeCode: 'rescue-team' }),
     },
     organizationPosition: {
-      findFirst: jest
-        .fn()
-        .mockResolvedValue({ id: 'p1', allowMultiple: true, allowConcurrent: true }),
+      findFirst: jest.fn().mockResolvedValue({
+        id: 'p1',
+        allowMultiple: true,
+        allowConcurrent: true,
+        status: 'ACTIVE',
+      }),
     },
     member: { findFirst: jest.fn().mockResolvedValue({ id: 'm1', status: 'ACTIVE' }) },
     organizationPositionRule: {
-      findFirst: jest.fn().mockResolvedValue({ requireMembership: false }),
+      findFirst: jest.fn().mockResolvedValue({
+        id: 'r1',
+        required: false,
+        minCount: null,
+        maxCount: null,
+        requireMembership: false,
+        allowConcurrent: true,
+        status: 'ACTIVE',
+      }),
+      findMany: jest.fn().mockResolvedValue([
+        {
+          nodeTypeCode: 'rescue-team',
+          positionId: 'p1',
+          allowConcurrent: true,
+          status: 'ACTIVE',
+        },
+      ]),
     },
     organizationClosure: { findMany: jest.fn().mockResolvedValue([{ ancestorId: 'org1' }]) },
     memberOrganizationMembership: { findFirst: jest.fn().mockResolvedValue({ id: 'ms1' }) },
@@ -112,7 +132,12 @@ const baseDto = {
 };
 
 function svcWith(tx: ReturnType<typeof makeTx>) {
-  return new PositionAssignmentsService(makePrisma(tx), rbacAllow, auditNoop);
+  return new PositionAssignmentsService(
+    makePrisma(tx),
+    rbacAllow,
+    auditNoop,
+    new PositionAssignmentPolicy(),
+  );
 }
 
 describe('PositionAssignmentsService.create', () => {
@@ -128,7 +153,7 @@ describe('PositionAssignmentsService.create', () => {
     expect(data.appointedByUserId).toBe('u1');
     expect(data.isConcurrent).toBe(true);
     expect(res.status).toBe('ACTIVE');
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(3);
     expect(auditLogMock).toHaveBeenCalled();
   });
 
@@ -151,7 +176,15 @@ describe('PositionAssignmentsService.create', () => {
 
   it('requireMembership=true 且无本组织/祖先 active 归属 → MEMBERSHIP_REQUIRED(读 closure 祖先集)', async () => {
     const tx = makeTx();
-    tx.organizationPositionRule.findFirst.mockResolvedValue({ requireMembership: true });
+    tx.organizationPositionRule.findFirst.mockResolvedValue({
+      id: 'r1',
+      required: false,
+      minCount: null,
+      maxCount: null,
+      requireMembership: true,
+      allowConcurrent: true,
+      status: 'ACTIVE',
+    });
     tx.organizationClosure.findMany.mockResolvedValue([
       { ancestorId: 'org1' },
       { ancestorId: 'parent1' },
@@ -168,7 +201,15 @@ describe('PositionAssignmentsService.create', () => {
 
   it('requireMembership=true 且祖先命中 active 归属 → 通过并创建', async () => {
     const tx = makeTx();
-    tx.organizationPositionRule.findFirst.mockResolvedValue({ requireMembership: true });
+    tx.organizationPositionRule.findFirst.mockResolvedValue({
+      id: 'r1',
+      required: false,
+      minCount: null,
+      maxCount: null,
+      requireMembership: true,
+      allowConcurrent: true,
+      status: 'ACTIVE',
+    });
     tx.organizationClosure.findMany.mockResolvedValue([
       { ancestorId: 'org1' },
       { ancestorId: 'parent1' },
@@ -186,8 +227,16 @@ describe('PositionAssignmentsService.create', () => {
       id: 'p1',
       allowMultiple: true,
       allowConcurrent: false,
+      status: 'ACTIVE',
     });
-    tx.organizationPositionAssignment.count.mockResolvedValueOnce(1); // concurrent 计数命中
+    tx.organizationPositionAssignment.findMany.mockResolvedValue([
+      {
+        organizationId: 'org-other',
+        positionId: 'p-other',
+        organization: { nodeTypeCode: 'rescue-team' },
+        position: { allowConcurrent: true, status: 'ACTIVE', deletedAt: null },
+      },
+    ]);
     await expect(svcWith(tx).create(USER, 'org1', baseDto, META)).rejects.toEqual(
       new BizException(BizCode.POSITION_ASSIGNMENT_CONCURRENT_FORBIDDEN),
     );
@@ -195,8 +244,14 @@ describe('PositionAssignmentsService.create', () => {
 
   it('防重:同人同组织同职务已有 active → ALREADY_EXISTS', async () => {
     const tx = makeTx();
-    // allowConcurrent=true → 跳过并发;dup 计数命中
-    tx.organizationPositionAssignment.count.mockResolvedValueOnce(1);
+    tx.organizationPositionAssignment.findMany.mockResolvedValue([
+      {
+        organizationId: 'org1',
+        positionId: 'p1',
+        organization: { nodeTypeCode: 'rescue-team' },
+        position: { allowConcurrent: true, status: 'ACTIVE', deletedAt: null },
+      },
+    ]);
     await expect(svcWith(tx).create(USER, 'org1', baseDto, META)).rejects.toEqual(
       new BizException(BizCode.POSITION_ASSIGNMENT_ALREADY_EXISTS),
     );
@@ -208,9 +263,9 @@ describe('PositionAssignmentsService.create', () => {
       id: 'p1',
       allowMultiple: false,
       allowConcurrent: true,
+      status: 'ACTIVE',
     });
-    // 调用序:dup(0)→ single-holder(1)
-    tx.organizationPositionAssignment.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+    tx.organizationPositionAssignment.count.mockResolvedValueOnce(1);
     await expect(svcWith(tx).create(USER, 'org1', baseDto, META)).rejects.toEqual(
       new BizException(BizCode.POSITION_ASSIGNMENT_SINGLE_HOLDER),
     );
@@ -248,7 +303,12 @@ describe('PositionAssignmentsService.create', () => {
   it('transaction option:复用调用方 transaction client,不再开启内层事务', async () => {
     const tx = makeTx();
     const prisma = makePrisma(tx);
-    const svc = new PositionAssignmentsService(prisma, rbacAllow, auditNoop);
+    const svc = new PositionAssignmentsService(
+      prisma,
+      rbacAllow,
+      auditNoop,
+      new PositionAssignmentPolicy(),
+    );
 
     await expect(
       svc.create(USER, 'org1', baseDto, META, {
@@ -290,6 +350,41 @@ describe('PositionAssignmentsService.create', () => {
   });
 });
 
+describe('PositionAssignmentsService.preview', () => {
+  // 杀死“preview 只查 member.id、与 create 的 ACTIVE 前置条件漂移”的变异；
+  // 同时用 maxCount=0 锁定非 ACTIVE member 不得截断后续 policy violations。
+  it('非 ACTIVE member 追加 MEMBER_INACTIVE 并继续收集全部 policy violations', async () => {
+    const tx = makeTx();
+    tx.member.findFirst.mockResolvedValue({ id: 'm1', status: 'INACTIVE' });
+    tx.organizationPositionRule.findFirst.mockResolvedValue({
+      id: 'r1',
+      required: false,
+      minCount: null,
+      maxCount: 0,
+      requireMembership: false,
+      allowConcurrent: true,
+      status: 'ACTIVE',
+    });
+
+    const result = await svcWith(tx).preview(USER, {
+      organizationId: 'org1',
+      positionId: 'p1',
+      memberId: 'm1',
+      startedAt: '2026-07-01T00:00:00.000Z',
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.violations.map(({ bizCode }) => bizCode)).toEqual([
+      BizCode.MEMBER_INACTIVE.code,
+      BizCode.POSITION_ASSIGNMENT_SINGLE_HOLDER.code,
+    ]);
+    expect(tx.member.findFirst).toHaveBeenCalledWith({
+      where: { id: 'm1', deletedAt: null },
+      select: { id: true, status: true },
+    });
+  });
+});
+
 describe('PositionAssignmentsService.revoke', () => {
   it('找不到 → NOT_FOUND', async () => {
     const tx = makeTx();
@@ -325,6 +420,7 @@ describe('PositionAssignmentsService.revoke', () => {
     expect(data.revokedByUserId).toBe('u1');
     expect(data.endedAt).toBeInstanceOf(Date);
     expect(res.status).toBe('REVOKED');
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
     expect(auditLogMock).toHaveBeenCalled();
   });
 });

@@ -18,7 +18,8 @@ import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 // 终态 scoped-authz PR3(2026-07-01;冻结稿 §3.2 / §7.2):职务定义(positions)CRUD DTO 集合。
 // 出参显式列字段(永不含 deletedAt);入参严格白名单(全局 ValidationPipe forbidNonWhitelisted 兜底)。
 // code 为长期稳定标识:**创建后不可改**(UpdatePositionDto 无 code;沿 org / dict / contribution 维度键不可改范式)。
-// **本模块纯配置定义,绝不被任何判权路径读**(消费它的 policy=PR7 / assignment=PR4 / authz=PR8)。
+// PositionAssignmentPolicy 在新任命时执行 status / allowMultiple / allowConcurrent;
+// 本配置不直接改写既有任职的 authz 口径。
 
 const POSITION_CODE_PATTERN = /^[a-z][a-z0-9-]*$/; // kebab-case,首字母小写
 
@@ -47,17 +48,23 @@ export class PositionResponseDto {
   @ApiProperty({ description: '是否领导职务', example: true })
   isLeadership!: boolean;
 
-  @ApiProperty({ description: '同组织同职务是否允许多人在任', example: false })
+  @ApiProperty({
+    description: '定义层多人开关(false 等价人数上限 1；与职务规则 maxCount 取更严格上限)',
+    example: false,
+  })
   allowMultiple!: boolean;
 
-  @ApiProperty({ description: '是否允许一人兼任多职务', example: true })
+  @ApiProperty({
+    description: '定义层兼任开关；任命时与匹配职务规则 allowConcurrent 取严格交集',
+    example: true,
+  })
   allowConcurrent!: boolean;
 
   @ApiProperty({ description: '显示排序', example: 1 })
   sortOrder!: number;
 
   @ApiProperty({
-    description: '状态(ACTIVE 启用 / INACTIVE 停用)',
+    description: '状态(ACTIVE 可新任命 / INACTIVE 禁止新任命；不追溯撤销既有任职)',
     enum: PolicyStatus,
     example: PolicyStatus.ACTIVE,
   })
@@ -112,12 +119,16 @@ export class CreatePositionDto {
   @IsBoolean()
   isLeadership?: boolean;
 
-  @ApiPropertyOptional({ description: '同组织同职务是否允许多人(可省略,默认 false)' })
+  @ApiPropertyOptional({
+    description: '定义层多人开关(false 等价上限 1；与规则 maxCount 取更严格上限；默认 false)',
+  })
   @IsOptional()
   @IsBoolean()
   allowMultiple?: boolean;
 
-  @ApiPropertyOptional({ description: '是否允许一人兼任多职务(可省略,默认 true)' })
+  @ApiPropertyOptional({
+    description: '定义层兼任开关(与匹配规则 allowConcurrent 取严格交集；默认 true)',
+  })
   @IsOptional()
   @IsBoolean()
   allowConcurrent?: boolean;
@@ -167,12 +178,16 @@ export class UpdatePositionDto {
   @IsBoolean()
   isLeadership?: boolean;
 
-  @ApiPropertyOptional({ description: '同组织同职务是否允许多人' })
+  @ApiPropertyOptional({
+    description: '定义层多人开关(false 等价上限 1；与规则 maxCount 取更严格上限)',
+  })
   @IsOptional()
   @IsBoolean()
   allowMultiple?: boolean;
 
-  @ApiPropertyOptional({ description: '是否允许一人兼任多职务' })
+  @ApiPropertyOptional({
+    description: '定义层兼任开关(与匹配规则 allowConcurrent 取严格交集)',
+  })
   @IsOptional()
   @IsBoolean()
   allowConcurrent?: boolean;
@@ -183,7 +198,10 @@ export class UpdatePositionDto {
   @Min(0)
   sortOrder?: number;
 
-  @ApiPropertyOptional({ description: '状态(ACTIVE ↔ INACTIVE)', enum: PolicyStatus })
+  @ApiPropertyOptional({
+    description: '状态(ACTIVE 可新任命 / INACTIVE 禁止新任命；不追溯既有任职)',
+    enum: PolicyStatus,
+  })
   @IsOptional()
   @IsEnum(PolicyStatus)
   status?: PolicyStatus;

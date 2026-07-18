@@ -57,7 +57,7 @@ export class PositionRulesController {
   @Post()
   @ApiOperation({
     summary:
-      '创建职务规则(校验 nodeTypeCode 字典有效 + positionId 存在;(nodeType,position) 唯一) [rbac: position-rule.create.record]',
+      '创建职务规则(校验字典/职务/唯一键 + required/min/max 一致性) [rbac: position-rule.create.record]',
   })
   @ApiWrappedOkResponse(PositionRuleResponseDto)
   @ApiBizErrorResponse(
@@ -78,7 +78,7 @@ export class PositionRulesController {
   @Patch(':id')
   @ApiOperation({
     summary:
-      '部分更新职务规则(白名单禁改 nodeTypeCode / positionId,由 ValidationPipe 拦截) [rbac: position-rule.update.record]',
+      '部分更新职务规则(合并现值校验 required/min/max；禁改 nodeTypeCode/positionId) [rbac: position-rule.update.record]',
   })
   @ApiWrappedOkResponse(PositionRuleResponseDto)
   @ApiBizErrorResponse(
