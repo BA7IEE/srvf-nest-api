@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Role, type Prisma } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -27,9 +27,9 @@ async function waitForLockWaiters(prisma: PrismaService, expected: number): Prom
 }
 
 // D-POSITION-RULE 真并发行为锁：两套独立 Nest app / Prisma pool 共用同一 PostgreSQL。
-// 测试持 SHARE table lock 让第一条 HTTP 事务在 INSERT 前停住；第二条请求必须在 Member 或 Position
-// aggregate lock 等待。释放后第二条在锁后重算并失败。若删除任一 aggregate lock，两条请求会同时通过
-// 旧 count 并阻塞于 INSERT，释放后双写成功，因此下面两个用例都会失败。
+// 前两例持 SHARE table lock 强制两个 HTTP 请求交错，锁定人数/同人生命周期聚合重算。
+// 后两例分别持有未提交的 Position / Rule 配置更新，任命必须在对应 FOR UPDATE 等待，提交后读取
+// 更严格新事实并拒绝；两条 barrier 分别杀死单删 Position 锁与单删 Rule 锁的变异。
 describe('PositionAssignment policy multi-instance concurrency', () => {
   let appA: INestApplication;
   let appB: INestApplication;
@@ -40,6 +40,8 @@ describe('PositionAssignment policy multi-instance concurrency', () => {
   let maxPositionId: string;
   let concurrentPositionAId: string;
   let concurrentPositionBId: string;
+  let positionBarrierId: string;
+  let ruleBarrierId: string;
   let memberSeq = 0;
 
   beforeAll(async () => {
@@ -61,41 +63,65 @@ describe('PositionAssignment policy multi-instance concurrency', () => {
     });
     organizationId = organization.id;
 
-    const [maxPosition, concurrentA, concurrentB] = await Promise.all([
-      prismaA.organizationPosition.create({
-        data: {
-          code: 'pa-policy-max',
-          name: '人数上限职务',
-          categoryCode: 'LEADER',
-          allowMultiple: true,
-          allowConcurrent: true,
-        },
-        select: { id: true },
-      }),
-      prismaA.organizationPosition.create({
-        data: {
-          code: 'pa-policy-concurrent-a',
-          name: '兼任限制职务 A',
-          categoryCode: 'LEADER',
-          allowMultiple: true,
-          allowConcurrent: true,
-        },
-        select: { id: true },
-      }),
-      prismaA.organizationPosition.create({
-        data: {
-          code: 'pa-policy-concurrent-b',
-          name: '兼任限制职务 B',
-          categoryCode: 'DEPUTY',
-          allowMultiple: true,
-          allowConcurrent: true,
-        },
-        select: { id: true },
-      }),
-    ]);
+    const [maxPosition, concurrentA, concurrentB, positionBarrier, ruleBarrier] = await Promise.all(
+      [
+        prismaA.organizationPosition.create({
+          data: {
+            code: 'pa-policy-max',
+            name: '人数上限职务',
+            categoryCode: 'LEADER',
+            allowMultiple: true,
+            allowConcurrent: true,
+          },
+          select: { id: true },
+        }),
+        prismaA.organizationPosition.create({
+          data: {
+            code: 'pa-policy-concurrent-a',
+            name: '兼任限制职务 A',
+            categoryCode: 'LEADER',
+            allowMultiple: true,
+            allowConcurrent: true,
+          },
+          select: { id: true },
+        }),
+        prismaA.organizationPosition.create({
+          data: {
+            code: 'pa-policy-concurrent-b',
+            name: '兼任限制职务 B',
+            categoryCode: 'DEPUTY',
+            allowMultiple: true,
+            allowConcurrent: true,
+          },
+          select: { id: true },
+        }),
+        prismaA.organizationPosition.create({
+          data: {
+            code: 'pa-policy-position-barrier',
+            name: 'Position 配置锁职务',
+            categoryCode: 'STAFF',
+            allowMultiple: true,
+            allowConcurrent: true,
+          },
+          select: { id: true },
+        }),
+        prismaA.organizationPosition.create({
+          data: {
+            code: 'pa-policy-rule-barrier',
+            name: 'Rule 配置锁职务',
+            categoryCode: 'STAFF',
+            allowMultiple: true,
+            allowConcurrent: true,
+          },
+          select: { id: true },
+        }),
+      ],
+    );
     maxPositionId = maxPosition.id;
     concurrentPositionAId = concurrentA.id;
     concurrentPositionBId = concurrentB.id;
+    positionBarrierId = positionBarrier.id;
+    ruleBarrierId = ruleBarrier.id;
 
     await prismaA.organizationPositionRule.createMany({
       data: [
@@ -116,6 +142,16 @@ describe('PositionAssignment policy multi-instance concurrency', () => {
           positionId: concurrentPositionBId,
           requireMembership: false,
           allowConcurrent: false,
+        },
+        {
+          nodeTypeCode: 'rescue-team',
+          positionId: positionBarrierId,
+          requireMembership: false,
+        },
+        {
+          nodeTypeCode: 'rescue-team',
+          positionId: ruleBarrierId,
+          requireMembership: false,
         },
       ],
     });
@@ -192,6 +228,44 @@ describe('PositionAssignment policy multi-instance concurrency', () => {
     return [firstResult, secondResult] as const;
   }
 
+  async function forceConfigUpdateInterleaving(
+    update: (tx: Prisma.TransactionClient) => Promise<void>,
+    attempt: () => request.Test,
+  ): Promise<request.Response> {
+    let signalUpdateReady!: () => void;
+    let releaseUpdate!: () => void;
+    const updateReady = new Promise<void>((resolve) => {
+      signalUpdateReady = resolve;
+    });
+    const updateRelease = new Promise<void>((resolve) => {
+      releaseUpdate = resolve;
+    });
+    const blocker = prismaA.$transaction(async (tx) => {
+      await update(tx);
+      signalUpdateReady();
+      await updateRelease;
+    });
+
+    await updateReady;
+    const attemptPromise = Promise.all([attempt()]).then(([response]) => response);
+    let interleavingError: unknown;
+    try {
+      await waitForLockWaiters(prismaB, 1);
+    } catch (error) {
+      interleavingError = error;
+    } finally {
+      releaseUpdate();
+      await blocker;
+    }
+
+    const response = await attemptPromise;
+    if (interleavingError instanceof Error) throw interleavingError;
+    if (interleavingError !== undefined) {
+      throw new Error('non-Error value thrown while forcing config update interleaving');
+    }
+    return response;
+  }
+
   // 杀死“maxCount 只做 count 后裸写”与“只锁 Member、不锁 Position aggregate”的变异。
   it('两个 app 不同成员抢 maxCount=1 → 恰一成功，DB 恰一 active', async () => {
     expect(prismaA).not.toBe(prismaB);
@@ -235,6 +309,66 @@ describe('PositionAssignment policy multi-instance concurrency', () => {
     await expect(
       prismaA.organizationPositionAssignment.count({
         where: { memberId, status: 'ACTIVE', deletedAt: null },
+      }),
+    ).resolves.toBe(1);
+  });
+
+  // 杀死“单删 Position FOR UPDATE，仍被 Rule 锁掩盖”的变异：这里只持有 Position 更新锁。
+  it('Position 收紧 allowMultiple 与任命交错 → 任命等待提交并按新上限拒绝', async () => {
+    const holderId = await newMember('position-barrier-holder');
+    const challengerId = await newMember('position-barrier-challenger');
+    const first = await appoint(appA, positionBarrierId, holderId);
+    expect(first.status).toBe(201);
+
+    const result = await forceConfigUpdateInterleaving(
+      async (tx) => {
+        await tx.organizationPosition.update({
+          where: { id: positionBarrierId },
+          data: { allowMultiple: false },
+        });
+      },
+      () => appoint(appB, positionBarrierId, challengerId),
+    );
+
+    expectBizError(result, BizCode.POSITION_ASSIGNMENT_SINGLE_HOLDER);
+    await expect(
+      prismaA.organizationPositionAssignment.count({
+        where: {
+          organizationId,
+          positionId: positionBarrierId,
+          status: 'ACTIVE',
+          deletedAt: null,
+        },
+      }),
+    ).resolves.toBe(1);
+  });
+
+  // 杀死“单删 Rule FOR UPDATE，仍被 Position 锁掩盖”的变异：这里只持有 Rule 更新锁。
+  it('Rule 收紧 maxCount 与任命交错 → 任命等待提交并按新上限拒绝', async () => {
+    const holderId = await newMember('rule-barrier-holder');
+    const challengerId = await newMember('rule-barrier-challenger');
+    const first = await appoint(appA, ruleBarrierId, holderId);
+    expect(first.status).toBe(201);
+
+    const result = await forceConfigUpdateInterleaving(
+      async (tx) => {
+        await tx.organizationPositionRule.updateMany({
+          where: { nodeTypeCode: 'rescue-team', positionId: ruleBarrierId },
+          data: { maxCount: 1 },
+        });
+      },
+      () => appoint(appB, ruleBarrierId, challengerId),
+    );
+
+    expectBizError(result, BizCode.POSITION_ASSIGNMENT_SINGLE_HOLDER);
+    await expect(
+      prismaA.organizationPositionAssignment.count({
+        where: {
+          organizationId,
+          positionId: ruleBarrierId,
+          status: 'ACTIVE',
+          deletedAt: null,
+        },
       }),
     ).resolves.toBe(1);
   });

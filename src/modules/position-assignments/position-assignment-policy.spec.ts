@@ -231,4 +231,63 @@ describe('PositionAssignmentPolicy', () => {
 
     expect(violationCodes(result)).toContain(BizCode.POSITION_ASSIGNMENT_CONCURRENT_FORBIDDEN.code);
   });
+
+  // 杀死“既有任职配置停用/软删后被扩成全局兼任禁令”的变异。
+  it('既有 Position/Rule 已停用或软删但 allowConcurrent=true 时仍允许新兼任', async () => {
+    const tx = makeTx();
+    tx.organizationPositionAssignment.findMany.mockResolvedValue([
+      {
+        organizationId: 'org-existing',
+        positionId: 'p-existing',
+        organization: { nodeTypeCode: 'rescue-team' },
+        position: {
+          allowConcurrent: true,
+          status: 'INACTIVE',
+          deletedAt: new Date('2026-07-18T00:00:00.000Z'),
+        },
+      },
+    ]);
+    tx.organizationPositionRule.findMany.mockResolvedValue([
+      {
+        nodeTypeCode: 'rescue-team',
+        positionId: 'p-existing',
+        allowConcurrent: true,
+        status: 'INACTIVE',
+        deletedAt: new Date('2026-07-18T00:00:00.000Z'),
+      },
+    ]);
+
+    const result = await evaluate(tx);
+
+    expect(violationCodes(result)).not.toContain(
+      BizCode.POSITION_ASSIGNMENT_CONCURRENT_FORBIDDEN.code,
+    );
+    expect(tx.organizationPositionRule.findMany).toHaveBeenCalledWith({
+      where: {
+        OR: [{ nodeTypeCode: 'rescue-team', positionId: 'p-existing' }],
+      },
+      select: {
+        nodeTypeCode: true,
+        positionId: true,
+        allowConcurrent: true,
+      },
+    });
+  });
+
+  it('既有任职 matching Rule 真缺失时继续 fail-close', async () => {
+    const tx = makeTx();
+    tx.organizationPositionAssignment.findMany.mockResolvedValue([
+      {
+        organizationId: 'org-existing',
+        positionId: 'p-existing',
+        organization: { nodeTypeCode: 'rescue-team' },
+        position: { allowConcurrent: true, status: 'ACTIVE', deletedAt: null },
+      },
+    ]);
+    tx.organizationPositionRule.findMany.mockResolvedValue([]);
+
+    const result = await evaluate(tx);
+
+    expect(violationCodes(result)).toContain(BizCode.POSITION_ASSIGNMENT_CONCURRENT_FORBIDDEN.code);
+  });
 });

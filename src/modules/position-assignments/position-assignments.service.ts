@@ -460,7 +460,7 @@ export class PositionAssignmentsService {
 
   // ============ POST /api/admin/v1/position-assignments/preview(dry-run 任命预检) ============
 
-  // 逐项收集全部违规(区别于 create() 的 first-failure 抛错):任期 / 存在性(org/position/member)/
+  // 逐项收集全部违规(区别于 create() 的 first-failure 抛错):任期 / 存在性(org/position/member)/member ACTIVE /
   // 任命 policy(职务适配 32022 / requireMembership 32025 / 兼任 32024 / 防重 32021 / 人数上限 32023)。
   // create/preview 共用 PositionAssignmentPolicy；preview 只读且不取写锁，结论是时点建议，最终以 create 为准。
   // 刻意**不**复用 create(dryRun) 沙箱:
@@ -496,7 +496,7 @@ export class PositionAssignmentsService {
       }),
       this.prisma.member.findFirst({
         where: notDeletedWhere({ id: dto.memberId }),
-        select: { id: true },
+        select: { id: true, status: true },
       }),
     ]);
     if (!org) push(BizCode.ORGANIZATION_NOT_FOUND);
@@ -505,6 +505,8 @@ export class PositionAssignmentsService {
     if (!org || !position || !member) {
       return { valid: false, violations };
     }
+    // create 会在进入 policy 前拒绝非 ACTIVE member；preview 继续跑 policy 以保留全量 violations。
+    if (member.status !== MemberStatus.ACTIVE) push(BizCode.MEMBER_INACTIVE);
 
     const policyResult = await this.policy.evaluate(
       this.prisma,

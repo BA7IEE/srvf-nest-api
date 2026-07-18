@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { MembershipStatus, PolicyStatus, Role } from '@prisma/client';
+import { MemberStatus, MembershipStatus, PolicyStatus, Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -238,6 +238,13 @@ describe('position-assignments 任职双轴管理', () => {
       .send(body);
   }
 
+  function preview(auth: string, body: Record<string, unknown>) {
+    return request(httpServer(app))
+      .post('/api/admin/v1/position-assignments/preview')
+      .set('Authorization', auth)
+      .send(body);
+  }
+
   // ============ RBAC 权限边界 ============
 
   describe('RBAC 权限边界', () => {
@@ -269,6 +276,39 @@ describe('position-assignments 任职双轴管理', () => {
         .get(`/api/admin/v1/organizations/${orgTeamId}/position-assignments`)
         .set('Authorization', adminDefaultAuth);
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
+    });
+  });
+
+  // ============ 任命预检 ============
+
+  describe('任命预检', () => {
+    // 杀死“preview 只查 member.id、漏掉 create 的 ACTIVE 前置条件”与“遇非 ACTIVE 后提前返回”。
+    it('非 ACTIVE member 返回 MEMBER_INACTIVE 且继续收集 maxCount violation', async () => {
+      const positionId = await newPolicyConfig('preview-inactive-member', {
+        rule: { maxCount: 0 },
+      });
+      memberSeq += 1;
+      const member = await prisma.member.create({
+        data: {
+          memberNo: `pa-e2e-preview-inactive-${memberSeq}`,
+          displayName: `PA-preview-inactive-${memberSeq}`,
+          status: MemberStatus.INACTIVE,
+        },
+        select: { id: true },
+      });
+
+      const res = await preview(adminAuth, {
+        organizationId: orgTeamId,
+        positionId,
+        memberId: member.id,
+        startedAt,
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.valid).toBe(false);
+      expect(
+        (res.body.data.violations as Array<{ bizCode: number }>).map(({ bizCode }) => bizCode),
+      ).toEqual([BizCode.MEMBER_INACTIVE.code, BizCode.POSITION_ASSIGNMENT_SINGLE_HOLDER.code]);
     });
   });
 
@@ -473,6 +513,48 @@ describe('position-assignments 任职双轴管理', () => {
       });
 
       expectBizError(res, BizCode.POSITION_ASSIGNMENT_CONCURRENT_FORBIDDEN);
+    });
+
+    // 杀死“既有任职配置停用/软删后被扩成全局兼任禁令”的变异。
+    it('既有 Position/Rule 停用软删后，permissive target 仍可任命且旧 ACTIVE 任职保留', async () => {
+      const retiredPositionId = await newPolicyConfig('retired-existing-config');
+      const memberId = await newMember('retired-existing-config');
+      const first = await appoint(adminAuth, orgTeamId, {
+        positionId: retiredPositionId,
+        memberId,
+        startedAt,
+      });
+      expect(first.status).toBe(201);
+      const firstId = first.body.data.id as string;
+
+      const retiredAt = new Date('2026-07-18T00:00:00.000Z');
+      await prisma.organizationPositionRule.updateMany({
+        where: { nodeTypeCode: 'rescue-team', positionId: retiredPositionId },
+        data: { status: PolicyStatus.INACTIVE, deletedAt: retiredAt },
+      });
+      await prisma.organizationPosition.update({
+        where: { id: retiredPositionId },
+        data: { status: PolicyStatus.INACTIVE, deletedAt: retiredAt },
+      });
+
+      const second = await appoint(adminAuth, orgTeamId, {
+        positionId: posViceId,
+        memberId,
+        startedAt,
+      });
+
+      expect(second.status).toBe(201);
+      await expect(
+        prisma.organizationPositionAssignment.findUnique({
+          where: { id: firstId },
+          select: { status: true },
+        }),
+      ).resolves.toEqual({ status: 'ACTIVE' });
+      await expect(
+        prisma.organizationPositionAssignment.count({
+          where: { memberId, status: 'ACTIVE', deletedAt: null },
+        }),
+      ).resolves.toBe(2);
     });
 
     // 杀死“只执行 allowMultiple、忽略 rule.maxCount”的变异。

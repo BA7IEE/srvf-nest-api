@@ -318,7 +318,7 @@ export class PreviewPositionAssignmentDto {
 export class PositionAssignmentViolationDto {
   @ApiProperty({
     description:
-      '底层 BizCode(镜像任命 policy:32022 inactive/规则不匹配 / 32025 归属 / 32024 严格兼任 / 32021 防重 / 32023 人数上限 / 32026 任期；存在性 11001/32001/15001)',
+      '底层 BizCode(镜像任命 policy:17030 member inactive / 32022 inactive/规则不匹配 / 32025 归属 / 32024 严格兼任 / 32021 防重 / 32023 人数上限 / 32026 任期；存在性 11001/32001/15001)',
   })
   bizCode!: number;
 

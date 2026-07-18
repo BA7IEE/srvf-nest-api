@@ -12,7 +12,7 @@
 
 - 新任命同时要求 Position 与 matching Rule 都是 `ACTIVE`;停用只禁止新任命,不追溯撤销已有 assignment,也不直接翻转 AuthzService 已有任职口径。
 - 人数上限是严格交集:`Position.allowMultiple=false` 等价于上限 1,再与 `Rule.maxCount` 取较小值;`maxCount=null` 表示规则层不限。上限命中保持既有 `32023`。
-- 兼任是严格交集:新任职的 `Position.allowConcurrent && Rule.allowConcurrent` 必须为真,且每个已有任职的 Position/Rule 也必须允许兼任;任一方禁止就返回既有 `32024`。
+- 兼任是严格交集:新任职的 `Position.allowConcurrent && Rule.allowConcurrent` 必须为真,且每个已有任职的 Position/Rule 也必须允许兼任;任一方禁止就返回既有 `32024`。既有任职只读其 allowConcurrent,Position/Rule 后续停用或软删不追溯扩成全局禁令;matching Rule 真缺失、无法判定时仍 fail-close。
 - `Rule.requireMembership=true` 按 MembershipTermStateMachine 的“当前有效”口径查本组织或 closure 祖先归属;SUSPENDED/ENDED/未生效归属不算。
 - `Rule.required/minCount` 当前是 advisory/reserved:写配置时校验语义一致,但不阻断 revoke/offboard 或人员安全。没有补位/合规工作流前不得伪造下限 enforcement。
 - Rule PATCH 在合并现值前先锁定该 Rule 行,避免并发局部更新各自校验通过后组合出非法基数。
@@ -22,9 +22,10 @@
 - 本收口不新增 endpoint、DTO 字段、BizCode、Permission、AuditEvent 或 schema/migration。`rank/isLeadership/categoryCode` 仍是排序/元数据;assignment 没有 update 端点。
 - `isConcurrent` 仍是公告回填标记,不能用它绕过 Position/Rule 的兼任约束。
 - 撤销必须先锁 Member 后重读 assignment;required/minCount 不得被加到撤销或 offboard 守卫。
+- preview 必须镜像 create 的 Member.ACTIVE 前置条件并继续收集完整 violations;不得只 select member.id 或因 inactive 提前返回。
 
 ## Validation
 
 - `pnpm test -- position-assignment-policy position-assignments positions`
 - `pnpm test:e2e -- positions\\.e2e-spec position-assignments\\.e2e-spec position-assignment-policy-concurrency members-offboard`
-- 真并发 spec 必须保持两套独立 Nest app/Prisma pool 与 PostgreSQL 锁等待编排;不得降级成串行 `Promise.all` 表演。
+- 真并发 spec 必须保持两套独立 Nest app/Prisma pool 与 PostgreSQL 锁等待编排;除 maxCount/同成员双请求外,还要分别保留 Position 更新-vs-任命、Rule 更新-vs-任命 barrier,确保单删任一配置行锁都会失败;不得降级成串行 `Promise.all` 表演。

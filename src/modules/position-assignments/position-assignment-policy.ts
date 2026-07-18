@@ -39,6 +39,8 @@ export type PositionAssignmentPolicyResult = {
 // - 写路径锁序固定 Member(调用方) → Position → matching PositionRule；锁后再读人数/兼任事实。
 // - allowMultiple=false 等价于 position 上限 1；与 rule.maxCount 取更严格的较小上限。
 // - allowConcurrent 取 Position && Rule 严格交集；新任职或任一既有任职禁止兼任都拒绝并存。
+//   既有任职只读取其 Position/Rule.allowConcurrent；配置停用/软删不追溯扩成全局兼任禁令，
+//   但 matching Rule 真缺失、无法判定既有规则口径时继续 fail-close。
 // - required/minCount 是配置一致性已校验的建议下限。没有补位/合规工作流前不在此阻断撤销、
 //   offboard 或任命；本 policy 只执行任命时可安全保证的上限、兼任与归属约束。
 @Injectable()
@@ -99,8 +101,6 @@ export class PositionAssignmentPolicy {
         position: {
           select: {
             allowConcurrent: true,
-            status: true,
-            deletedAt: true,
           },
         },
       },
@@ -123,14 +123,12 @@ export class PositionAssignmentPolicy {
         ];
         const existingRules = await tx.organizationPositionRule.findMany({
           where: {
-            deletedAt: null,
             OR: pairs,
           },
           select: {
             nodeTypeCode: true,
             positionId: true,
             allowConcurrent: true,
-            status: true,
           },
         });
         const ruleByPair = new Map(
@@ -144,12 +142,7 @@ export class PositionAssignmentPolicy {
             this.ruleKey(assignment.organization.nodeTypeCode, assignment.positionId),
           );
           return (
-            assignment.position.deletedAt !== null ||
-            assignment.position.status !== PolicyStatus.ACTIVE ||
-            !assignment.position.allowConcurrent ||
-            !existingRule ||
-            existingRule.status !== PolicyStatus.ACTIVE ||
-            !existingRule.allowConcurrent
+            !assignment.position.allowConcurrent || !existingRule || !existingRule.allowConcurrent
           );
         });
       }

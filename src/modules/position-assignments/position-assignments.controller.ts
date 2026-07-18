@@ -142,7 +142,7 @@ export class PositionAssignmentsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '预检任命(dry-run:任期 + 存在性 + active 配置/归属/兼任/人数上限逐项收集；只读时点建议) [rbac: position-assignment.read.record]',
+      '预检任命(dry-run:任期 + 存在性/member ACTIVE + active 配置/归属/兼任/人数上限全量收集；只读时点建议) [rbac: position-assignment.read.record]',
   })
   @ApiWrappedOkResponse(PositionAssignmentPreviewResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)

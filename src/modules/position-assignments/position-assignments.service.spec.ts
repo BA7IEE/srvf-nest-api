@@ -350,6 +350,41 @@ describe('PositionAssignmentsService.create', () => {
   });
 });
 
+describe('PositionAssignmentsService.preview', () => {
+  // 杀死“preview 只查 member.id、与 create 的 ACTIVE 前置条件漂移”的变异；
+  // 同时用 maxCount=0 锁定非 ACTIVE member 不得截断后续 policy violations。
+  it('非 ACTIVE member 追加 MEMBER_INACTIVE 并继续收集全部 policy violations', async () => {
+    const tx = makeTx();
+    tx.member.findFirst.mockResolvedValue({ id: 'm1', status: 'INACTIVE' });
+    tx.organizationPositionRule.findFirst.mockResolvedValue({
+      id: 'r1',
+      required: false,
+      minCount: null,
+      maxCount: 0,
+      requireMembership: false,
+      allowConcurrent: true,
+      status: 'ACTIVE',
+    });
+
+    const result = await svcWith(tx).preview(USER, {
+      organizationId: 'org1',
+      positionId: 'p1',
+      memberId: 'm1',
+      startedAt: '2026-07-01T00:00:00.000Z',
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.violations.map(({ bizCode }) => bizCode)).toEqual([
+      BizCode.MEMBER_INACTIVE.code,
+      BizCode.POSITION_ASSIGNMENT_SINGLE_HOLDER.code,
+    ]);
+    expect(tx.member.findFirst).toHaveBeenCalledWith({
+      where: { id: 'm1', deletedAt: null },
+      select: { id: true, status: true },
+    });
+  });
+});
+
 describe('PositionAssignmentsService.revoke', () => {
   it('找不到 → NOT_FOUND', async () => {
     const tx = makeTx();
