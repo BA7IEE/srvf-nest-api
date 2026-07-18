@@ -88,8 +88,7 @@ export class MemberResponseDto {
   updatedAt!: Date;
 }
 
-// 参与域生命周期收口⑤(v0.40.0):一键离队编排响应。四腿实际发生计数 + 残留 active 任职/分管
-// (advisory 只读,提醒管理员另走独立撤销端点;offboard 刻意不级联任职/分管/role-bindings)。
+// 一键离队响应保持既有字段兼容；残留计数现作为锁后不变式探针，正常终态恒为 0。
 export class MemberOffboardResponseDto {
   @ApiProperty({
     description: '离队后队员档案(status=INACTIVE;含账号信息)',
@@ -113,12 +112,12 @@ export class MemberOffboardResponseDto {
   linkedUserId!: string | null;
 
   @ApiProperty({
-    description: '残留 active 任职数(advisory;offboard 不级联撤职,须另走任职撤销端点)',
+    description: '离队事务提交前残留的 active 任职数(不变式探针;正常为 0)',
   })
   residualActivePositionAssignments!: number;
 
   @ApiProperty({
-    description: '残留 active 分管数(advisory;offboard 不级联撤分管,须另走分管撤销端点)',
+    description: '离队事务提交前残留的 active 分管数(不变式探针;正常为 0)',
   })
   residualActiveSupervisions!: number;
 }

@@ -1,5 +1,7 @@
 # RBAC_MAP — 权限体系地图与对照表
 
+> 2026-07-18 D-MEMBER-OFFBOARD-AUTHZ true-up:不改下方 T4 当时的历史戳与权限事实；现行离队事务在同一 Member lifecycle 锁下撤销 active 任职/分管，并结束 USER/MEMBER/POSITION_ASSIGNMENT 主体的 active RoleBinding。`PATCH .../members/:id/status` 置 `INACTIVE` 复用同一核心；两个 residual 字段仅保留为兼容不变式探针。0 新权限码 / endpoint / BizCode / AuditLogEvent / schema。
+
 > **性质**:derived 地图,非规则源。权限**事实**权威源:权限码与绑定 → [`prisma/seed.ts`](../../prisma/seed.ts);判权实现 → [`src/modules/permissions/rbac.service.ts`](../../src/modules/permissions/rbac.service.ts);铁律 → [`auth-jwt-refresh`](../reference/auth-jwt-refresh.md) / §13`。
 > 数据快照:2026-06-11,**Slow-4 权限双轨收口完成**(goal #314-#317,冻结评审稿 [`slow4-rbac-business-face-review.md`](../archive/reviews/slow4-rbac-business-face-review.md)):117 码 / 内置角色 ×3 / **全仓活跃 `@Roles` = 0**(原 G 模式 44 处全摘;RolesGuard 机制保留 Guard 链);`docs:rbacmap:check` 0 FAIL / 0 WARN(seed↔代码双向对齐)。**任何权限事实的变更本身是 D 档**(评审稿 + 用户拍板),本文件只能事后 true-up。
 > 2026-06-11 B 队列收口戳(goal #322-#328):**权限事实零变化**(117 码 / 绑定 / 内置角色不动);endpoint 157→**159**(OTP 登录两公开端点 `[public]`,零新权限码;生日批零端点);`docs:rbacmap:check` 仍 0 FAIL / 0 WARN。

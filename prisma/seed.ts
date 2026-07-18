@@ -2520,13 +2520,12 @@ const MEMBER_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
     description: '切换队员 status(ACTIVE↔INACTIVE;镜像 user.update.status 命名)',
   },
   {
-    // 参与域生命周期收口⑤(v0.40.0):一键离队(INACTIVE + 结束全部归属 + 停用关联账号)。绑 biz-admin。
+    // 一键离队关闭队员身份及全部当前授权来源。绑 biz-admin。
     code: 'member.offboard.record',
     module: 'member',
     action: 'offboard',
     resourceType: 'record',
-    description:
-      '一键离队(单事务:INACTIVE + 结束全部归属 + 停用关联账号并撤 refresh;不级联撤任职/分管)',
+    description: '一键离队(单事务关闭归属、关联账号/refresh、任职、分管与直接角色绑定)',
   },
   {
     code: 'member.delete.record',
