@@ -19,6 +19,7 @@
 ## Local facts
 
 - 招新发号与入队 producer 在各自业务 transaction 内 enqueue `notification.targeted@1`；worker commit 后执行 Effect。producer 不再 commit 后 best-effort 直调 dispatcher，enqueue 失败必须使业务回滚。
+- membership audience / 定向归属组织只接受当前有效 PRIMARY(`ACTIVE + startedAt<=now + endedAt=null + 未软删`)；本口径不改变 durable Outbox 的 enqueue 位置与事务顺序。
 
 - **本仓恰好两个 `@Cron`**:生日批 + v0.47.0 到期提醒;`ScheduleModule.forRoot()` 在 `app.module.ts` 全局装配。第三个 cron / interval / timeout 仍须独立 D 档评审
 - **选取六条件**(评审稿 E-B5,全部同时满足):`MemberProfile.birthDate` 月日=今天(固定 UTC+8 日界)/ profile 未软删 / Member ACTIVE 未软删 / User 存在 / `User.phone` 非空 / User ACTIVE 未软删;**仅发 `User.phone`**(拍板⑤,`MemberProfile.mobile` 永不使用);2/29 仅闰年当天发(不顺延)

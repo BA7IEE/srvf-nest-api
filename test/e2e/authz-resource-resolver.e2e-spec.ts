@@ -389,6 +389,52 @@ describe('authz ResourceResolver(§5.1 11 类资源归属解析)', () => {
     });
   });
 
+  it('member 归属 fail-close:future ACTIVE 不生效,当前 ACTIVE 结束后立即失效', async () => {
+    const futureMember = await prisma.member.create({
+      data: { memberNo: 'rr-m-future', displayName: 'RR Future Membership' },
+      select: { id: true },
+    });
+    await prisma.memberOrganizationMembership.create({
+      data: {
+        memberId: futureMember.id,
+        organizationId: deptId,
+        membershipType: MembershipType.PRIMARY,
+        status: MembershipStatus.ACTIVE,
+        startedAt: new Date('2999-01-01T00:00:00.000Z'),
+      },
+    });
+    await expect(resolver.resolve({ type: 'member', id: futureMember.id })).resolves.toMatchObject({
+      organizationId: null,
+      organizationPath: null,
+    });
+
+    const endingMember = await prisma.member.create({
+      data: { memberNo: 'rr-m-ending', displayName: 'RR Ending Membership' },
+      select: { id: true },
+    });
+    const endingMembership = await prisma.memberOrganizationMembership.create({
+      data: {
+        memberId: endingMember.id,
+        organizationId: deptId,
+        membershipType: MembershipType.PRIMARY,
+        status: MembershipStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    await expect(resolver.resolve({ type: 'member', id: endingMember.id })).resolves.toMatchObject({
+      organizationId: deptId,
+    });
+
+    await prisma.memberOrganizationMembership.update({
+      where: { id: endingMembership.id },
+      data: { status: MembershipStatus.ENDED, endedAt: new Date() },
+    });
+    await expect(resolver.resolve({ type: 'member', id: endingMember.id })).resolves.toMatchObject({
+      organizationId: null,
+      organizationPath: null,
+    });
+  });
+
   it('member_profile:org 经 member;sensitivityLevel=sensitive(PII)', async () => {
     const r = await resolver.resolve({ type: 'member_profile', id: profileId });
     expect(r).toMatchObject({

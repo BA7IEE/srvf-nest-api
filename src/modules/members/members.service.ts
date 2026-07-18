@@ -1114,8 +1114,8 @@ export class MembersService {
         await tx.member.update({ where: { id }, data: { status: MemberStatus.INACTIVE } });
       }
 
-      // ② END 全部 ACTIVE memberships(全类型)。Member 行锁下逐条走同一状态机，
-      // 未来任期撤销取 endedAt=startedAt，避免 endedAt 早于 startedAt。
+      // ② END 全部 ACTIVE memberships(全类型)。Member 行锁下逐条走同一状态机；
+      // ACTIVE 恒为已开始且无 endedAt，故统一以当前时刻结束。
       const activeMemberships = await tx.memberOrganizationMembership.findMany({
         where: { memberId: id, status: MembershipStatus.ACTIVE, deletedAt: null },
         select: { id: true, status: true, startedAt: true, endedAt: true },

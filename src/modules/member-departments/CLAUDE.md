@@ -15,6 +15,7 @@
 
 ## Local facts
 
+- **Membership 任期状态机(2026-07-18,原始风险 #8 收口)**:[`membership-term-state-machine.ts`](membership-term-state-machine.ts) 是唯一纯决策源。不支持定时生效/定时结束:ACTIVE 必须 `startedAt<=now AND endedAt=null`;ENDED 必须 `startedAt<=endedAt<=now`;SUSPENDED 必须 `endedAt=null` 且永不是当前有效源。结束仅 ACTIVE→ENDED，所有写入先锁 Member 行；第 59 migration 锁表审计后对存量异常 fail-fast，仅加 CHECK，零回填/零修数。
 - **audit 留痕(review #484 G5,2026-07-03)**:4 个写点 inline-in-transaction 接入 `AuditLogsService`(沿 `position-assignments`/`supervision-assignments` 范式,`resourceType='membership'`):
   - `memberships.create` → `membership.set`(`extra.viaPath='membership', operation='create'`)
   - `memberships.end` → `membership.end`(`extra.viaPath='membership', operation='end'`)
@@ -41,3 +42,4 @@
 - `pnpm test:e2e -- memberships\\.e2e-spec member-departments\\.e2e-spec` — 两面 HTTP 端点主成功 + 关键失败(权限边界 / NOT_FOUND / INACTIVE / 唯一约束)
 - `pnpm test:e2e -- memberships-audit-characterization` — 4 写点 audit payload 形状(event/viaPath/before-after)+ PATCH 与幂等分支零 audit + 4 处 audit 写失败 → `$transaction` 回滚
 - `pnpm test:e2e -- memberships-f4-admin` — F4 七端点(分页/detail/conflicts/transfer〔含 audit 落痕 + 17004 原子回滚〕/组织轴两路/tree-with-summary)
+- `pnpm test -- membership-term-state-machine member-departments` + `pnpm test:e2e -- memberships memberships-f4-admin authz-resource-resolver` — 任期不变式、真并发 create/transfer/end、槽位释放、权限来源即时失效与回滚

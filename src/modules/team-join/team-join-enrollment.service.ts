@@ -3,6 +3,8 @@ import {
   DictItemStatus,
   DictTypeStatus,
   MemberStatus,
+  MembershipStatus,
+  MembershipType,
   OrganizationStatus,
   Prisma,
 } from '@prisma/client';
@@ -143,7 +145,7 @@ export class TeamJoinEnrollmentService {
 
       // 6. member 仍 ACTIVE + 仍是「未入队志愿者」(招新闭环优化 S5;§5.2b:新口径 volunteer+VOL /
       //    legacy null+零部门;判定走共享 isUnenrolledVolunteer 与自助门禁零漂移)。activeDepts 含 org.code,
-      //    供步骤 8 定位 VOL 行软删(单部门 partial unique:绝不与目标部门同时 active)。
+      //    供步骤 8 定位并结束 VOL 任期(单部门 partial unique:绝不与目标部门同时 active)。
       const member = await tx.member.findFirst({
         where: { id: app.memberId, deletedAt: null },
         select: { status: true, gradeCode: true },
@@ -173,7 +175,7 @@ export class TeamJoinEnrollmentService {
       await this.assertGradeCodeValidTx(tx, JOIN_GRADE_CODE);
 
       // 8. 单事务原子写(招新闭环优化 S5;§5.2c):守 PRIMARY 单主归属 primary_active_unique ——
-      //    新志愿者先软删 VOL 归口 PRIMARY 行(绝不与目标部门同时 active),legacy(零部门)无 VOL 可删;
+      //    新志愿者先结束 VOL 归口 PRIMARY 任期(绝不与目标部门同时 active),legacy(零部门)无 VOL 可结束;
       //    再 create 目标部门 PRIMARY → 设级别 level-1 → 状态 joined(全或无;失败回滚 → member 仍未入队)。
       const volDept = activeDepts.find((d) => d.organization.code === VOL_ORG_CODE);
       if (volDept) {
@@ -183,9 +185,24 @@ export class TeamJoinEnrollmentService {
           data: { status: ended.status, endedAt: ended.endedAt, endedByUserId: user.id },
         });
       }
+      MembershipTermStateMachine.assertValid(
+        {
+          status: MembershipStatus.ACTIVE,
+          startedAt: now,
+          endedAt: null,
+        },
+        now,
+      );
       try {
         await tx.memberOrganizationMembership.create({
-          data: { memberId: app.memberId, organizationId: dto.organizationId },
+          data: {
+            memberId: app.memberId,
+            organizationId: dto.organizationId,
+            membershipType: MembershipType.PRIMARY,
+            status: MembershipStatus.ACTIVE,
+            startedAt: now,
+            endedAt: null,
+          },
         });
       } catch (err) {
         // primary_active_unique (memberId) WHERE deletedAt IS NULL AND status=ACTIVE AND type=PRIMARY 兜底并发重复入队

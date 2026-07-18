@@ -7,28 +7,43 @@ LOCK TABLE "member_organization_memberships" IN SHARE ROW EXCLUSIVE MODE;
 DO $$
 DECLARE
   invalid_range_count BIGINT;
-  ended_without_time_count BIGINT;
+  status_time_mismatch_count BIGINT;
+  active_future_start_count BIGINT;
+  ended_future_end_count BIGINT;
 BEGIN
   SELECT COUNT(*) INTO invalid_range_count
   FROM "member_organization_memberships"
   WHERE "endedAt" IS NOT NULL AND "endedAt" < "startedAt";
 
-  SELECT COUNT(*) INTO ended_without_time_count
+  SELECT COUNT(*) INTO status_time_mismatch_count
   FROM "member_organization_memberships"
-  WHERE "status" = 'ENDED' AND "endedAt" IS NULL;
+  WHERE ("status" = 'ENDED') <> ("endedAt" IS NOT NULL);
 
-  IF invalid_range_count > 0 OR ended_without_time_count > 0 THEN
+  SELECT COUNT(*) INTO active_future_start_count
+  FROM "member_organization_memberships"
+  WHERE "status" = 'ACTIVE' AND "startedAt" > CURRENT_TIMESTAMP;
+
+  SELECT COUNT(*) INTO ended_future_end_count
+  FROM "member_organization_memberships"
+  WHERE "status" = 'ENDED' AND "endedAt" > CURRENT_TIMESTAMP;
+
+  IF invalid_range_count > 0
+     OR status_time_mismatch_count > 0
+     OR active_future_start_count > 0
+     OR ended_future_end_count > 0 THEN
     RAISE EXCEPTION
-      'membership term invariant violation: invalid_range=%, ended_without_time=%',
+      'membership term invariant violation: invalid_range=%, status_time_mismatch=%, active_future_start=%, ended_future_end=%',
       invalid_range_count,
-      ended_without_time_count;
+      status_time_mismatch_count,
+      active_future_start_count,
+      ended_future_end_count;
   END IF;
 END $$;
 
 ALTER TABLE "member_organization_memberships"
   ADD CONSTRAINT "member_org_membership_term_range_check"
   CHECK ("endedAt" IS NULL OR "endedAt" >= "startedAt"),
-  ADD CONSTRAINT "member_org_membership_ended_time_check"
-  CHECK ("status" <> 'ENDED' OR "endedAt" IS NOT NULL);
+  ADD CONSTRAINT "member_org_membership_status_time_check"
+  CHECK (("status" = 'ENDED') = ("endedAt" IS NOT NULL));
 
 COMMIT;

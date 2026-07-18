@@ -955,7 +955,15 @@ describe('招新三期(入队)admin 面 e2e', () => {
       where: { memberId, deletedAt: null, status: 'ACTIVE' },
     });
     expect(active).toHaveLength(1);
-    expect(active[0].organizationId).toBe(target);
+    expect(active[0]).toMatchObject({
+      organizationId: target,
+      membershipType: 'PRIMARY',
+      status: 'ACTIVE',
+      endedAt: null,
+    });
+    expect(active[0].startedAt.toISOString()).toBe(
+      new Date(res.body.data.joinedAt as string).toISOString(),
+    );
     // VOL 任期走统一状态机结束，保留 ENDED 历史且不再制造 ACTIVE 软删痕。
     const vol = await prisma.memberOrganizationMembership.findUniqueOrThrow({
       where: { id: volDept.id },

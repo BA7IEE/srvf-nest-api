@@ -163,11 +163,14 @@ export class MembershipsService {
         throw new BizException(BizCode.ORGANIZATION_INACTIVE);
       }
       const startedAt = new Date();
-      MembershipTermStateMachine.assertValid({
-        status: MembershipStatus.ACTIVE,
+      MembershipTermStateMachine.assertValid(
+        {
+          status: MembershipStatus.ACTIVE,
+          startedAt,
+          endedAt: null,
+        },
         startedAt,
-        endedAt: null,
-      });
+      );
       const created = await this.runWithUniqueConstraintGuard(() =>
         tx.memberOrganizationMembership.create({
           data: {
@@ -230,7 +233,7 @@ export class MembershipsService {
         startedAt: dto.startedAt !== undefined ? new Date(dto.startedAt) : current.startedAt,
         endedAt: dto.endedAt !== undefined ? new Date(dto.endedAt) : current.endedAt,
       };
-      MembershipTermStateMachine.assertValid(nextTerm);
+      MembershipTermStateMachine.assertValid(nextTerm, new Date());
 
       const data: Prisma.MemberOrganizationMembershipUpdateInput = {};
       if (dto.membershipType !== undefined) data.membershipType = dto.membershipType;
@@ -640,11 +643,14 @@ export class MembershipsService {
         select: { id: true },
       });
 
-      MembershipTermStateMachine.assertValid({
-        status: MembershipStatus.ACTIVE,
-        startedAt: now,
-        endedAt: null,
-      });
+      MembershipTermStateMachine.assertValid(
+        {
+          status: MembershipStatus.ACTIVE,
+          startedAt: now,
+          endedAt: null,
+        },
+        now,
+      );
       const created = await this.runWithUniqueConstraintGuard(() =>
         tx.memberOrganizationMembership.create({
           data: {

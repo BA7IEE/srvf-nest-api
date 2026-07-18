@@ -199,11 +199,14 @@ export class MemberDepartmentsService {
 
       // 4. 创建新 PRIMARY 归属(P2002 兜底防并发)
       const startedAt = new Date();
-      MembershipTermStateMachine.assertValid({
-        status: MembershipStatus.ACTIVE,
+      MembershipTermStateMachine.assertValid(
+        {
+          status: MembershipStatus.ACTIVE,
+          startedAt,
+          endedAt: null,
+        },
         startedAt,
-        endedAt: null,
-      });
+      );
       const created = await this.runWithUniqueConstraintGuard(() =>
         tx.memberOrganizationMembership.create({
           data: {
