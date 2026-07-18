@@ -34,9 +34,12 @@ import {
 } from './activities.dto';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { deriveEffectiveActivityCapacity } from './activity-capacity';
-import { deriveActivityPhase } from './activity-phase';
+import { ACTIVITY_PHASE_ENDED, deriveActivityPhase } from './activity-phase';
 import { ActivityStateMachine } from './activity-state-machine';
-import { promoteActivityWaitlist } from './activity-waitlist-promotion';
+import {
+  promoteActivityWaitlist,
+  promoteActivityWaitlistAcrossPositions,
+} from './activity-waitlist-promotion';
 
 // V2 第一阶段批次 3A activities service。
 // 详见 docs:
@@ -362,6 +365,16 @@ export class ActivitiesService {
     return found;
   }
 
+  private async lockAndFindActivityOrThrow(id: string, tx: PrismaTx): Promise<ActivityFullRow> {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "Activity"
+      WHERE id = ${id} AND "deletedAt" IS NULL
+      FOR UPDATE
+    `;
+    if (locked.length === 0) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+    return this.findActivityOrThrow(id, tx);
+  }
+
   // ============ list ============
 
   // F1/A6(D7):批量聚合 registrationCount/attendanceSheetCount(includeStats=true 时),
@@ -614,19 +627,8 @@ export class ActivitiesService {
   ): Promise<ActivityResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity.update.record', { type: 'activity', id });
     const result = await this.prisma.$transaction(async (tx) => {
-      // ActivityPosition create/update/softDelete 均先锁 Activity；改活动窗或容量也从同一聚合锁
-      // 起步，确保后续 Activity / Position / passCount 基线全部是锁后新鲜读。
-      if (dto.startAt !== undefined || dto.endAt !== undefined || dto.capacity !== undefined) {
-        const locked = await tx.$queryRaw<Array<{ id: string }>>`
-          SELECT id FROM "Activity"
-          WHERE id = ${id} AND "deletedAt" IS NULL
-          FOR UPDATE
-        `;
-        if (locked.length === 0) {
-          throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
-        }
-      }
-      const current = await this.findActivityOrThrow(id, tx);
+      // 所有活动写入口统一先锁 Activity，再重读状态、时间窗、岗位与 passCount 基线。
+      const current = await this.lockAndFindActivityOrThrow(id, tx);
 
       // Q-A12:cancelled 拒改(沿 ActivityStateMachine update decision)。
       const transition = this.activityStateMachine.decide('update', current.statusCode);
@@ -683,6 +685,7 @@ export class ActivitiesService {
       }
 
       let waitlistPromotionLimit: number | null | undefined;
+      let promoteAcrossActivityPositions = false;
       if (dto.capacity !== undefined) {
         // delta / live 岗位 / passCount 基线都必须在 Activity 聚合锁后读取；否则并发 / 重试
         // 可能各自按陈旧 capacity 计算递补 delta，或在岗位形态已变化时仍沿 Activity.capacity 判闸。
@@ -697,24 +700,32 @@ export class ActivitiesService {
             },
           },
         });
-        // P4：存在 live ActivityPosition 时，Activity.capacity 只保留兼容列，不再判闸或递补。
-        if (locked.activityPositions.length === 0) {
-          const passCount = await tx.activityRegistration.count({
-            where: notDeletedWhere({
-              activityId: current.id,
-              activityPositionId: null,
-              statusCode: 'pass',
-            }),
-          });
-          if (dto.capacity !== null && dto.capacity < passCount) {
-            throw new BizException(BizCode.ACTIVITY_CAPACITY_INVALID);
-          }
-          if (locked.capacity !== null) {
-            if (dto.capacity === null) {
-              waitlistPromotionLimit = null;
-            } else if (dto.capacity > locked.capacity) {
-              waitlistPromotionLimit = dto.capacity - locked.capacity;
-            }
+        const passCount = await tx.activityRegistration.count({
+          where: notDeletedWhere({ activityId: current.id, statusCode: 'pass' }),
+        });
+        if (dto.capacity !== null && dto.capacity < passCount) {
+          throw new BizException(BizCode.ACTIVITY_CAPACITY_INVALID);
+        }
+        const livePositionCapacities = await tx.activityPosition.findMany({
+          where: { activityId: current.id, deletedAt: null },
+          select: { capacity: true },
+        });
+        if (
+          dto.capacity !== null &&
+          (livePositionCapacities.some((position) => position.capacity === null) ||
+            livePositionCapacities.reduce(
+              (total, position) => total + (position.capacity ?? 0),
+              0,
+            ) > dto.capacity)
+        ) {
+          throw new BizException(BizCode.ACTIVITY_CAPACITY_INVALID);
+        }
+        promoteAcrossActivityPositions = locked.activityPositions.length > 0;
+        if (locked.capacity !== null) {
+          if (dto.capacity === null) {
+            waitlistPromotionLimit = null;
+          } else if (dto.capacity > locked.capacity) {
+            waitlistPromotionLimit = dto.capacity - locked.capacity;
           }
         }
       }
@@ -782,16 +793,27 @@ export class ActivitiesService {
 
       const promotion =
         waitlistPromotionLimit !== undefined
-          ? await promoteActivityWaitlist({
-              activityId: current.id,
-              activityPositionId: null,
-              maxPromotions: waitlistPromotionLimit,
-              actorUserId: currentUser.id,
-              actorRoleSnap: currentUser.role,
-              auditMeta,
-              tx,
-              auditLogs: this.auditLogs,
-            })
+          ? promoteAcrossActivityPositions
+            ? await promoteActivityWaitlistAcrossPositions({
+                activityId: current.id,
+                maxPromotions: waitlistPromotionLimit,
+                previousActivityCapacity: current.capacity,
+                actorUserId: currentUser.id,
+                actorRoleSnap: currentUser.role,
+                auditMeta,
+                tx,
+                auditLogs: this.auditLogs,
+              })
+            : await promoteActivityWaitlist({
+                activityId: current.id,
+                activityPositionId: null,
+                maxPromotions: waitlistPromotionLimit,
+                actorUserId: currentUser.id,
+                actorRoleSnap: currentUser.role,
+                auditMeta,
+                tx,
+                auditLogs: this.auditLogs,
+              })
           : { activityTitle: updated.title, promoted: [] };
 
       const scheduleChanged =
@@ -854,7 +876,7 @@ export class ActivitiesService {
   ): Promise<ActivityResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity.delete.record', { type: 'activity', id });
     return this.prisma.$transaction(async (tx) => {
-      const current = await this.findActivityOrThrow(id, tx);
+      const current = await this.lockAndFindActivityOrThrow(id, tx);
 
       const [activeRegistrations, attendanceSheets] = await Promise.all([
         tx.activityRegistration.count({
@@ -911,7 +933,7 @@ export class ActivitiesService {
       throw new BizException(BizCode.BAD_REQUEST);
     }
     const result = await this.prisma.$transaction(async (tx) => {
-      const current = await this.findActivityOrThrow(id, tx);
+      const current = await this.lockAndFindActivityOrThrow(id, tx);
 
       const transition = this.activityStateMachine.decide('publish', current.statusCode);
       if (!transition.allowed) {
@@ -986,7 +1008,7 @@ export class ActivitiesService {
   ): Promise<ActivityResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity.cancel.record', { type: 'activity', id });
     const result = await this.prisma.$transaction(async (tx) => {
-      const current = await this.findActivityOrThrow(id, tx);
+      const current = await this.lockAndFindActivityOrThrow(id, tx);
 
       const transition = this.activityStateMachine.decide('cancel', current.statusCode);
       if (!transition.allowed) {
@@ -1087,13 +1109,16 @@ export class ActivitiesService {
   ): Promise<ActivityResponseDto> {
     await this.assertCanOrThrow(currentUser, 'activity.complete.record', { type: 'activity', id });
     return this.prisma.$transaction(async (tx) => {
-      const current = await this.findActivityOrThrow(id, tx);
+      const current = await this.lockAndFindActivityOrThrow(id, tx);
 
       const transition = this.activityStateMachine.decide('complete', current.statusCode);
       if (!transition.allowed) {
         throw new BizException(transition.biz);
       }
       const { nextStatusCode } = transition;
+      if (deriveActivityPhase(current.startAt, current.endAt) !== ACTIVITY_PHASE_ENDED) {
+        throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+      }
 
       await claimAtStatus(tx, {
         target: 'activity',

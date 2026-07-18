@@ -712,6 +712,13 @@ describe('ActivitiesService state transitions (characterization)', () => {
 
     it('G1. 成功:published → completed + audit activity.publish (operation=complete, priorStatusCode=published, nextStatusCode=completed)', async () => {
       const seed = await seedActivity({ statusCode: 'published' });
+      await ctx.prisma.activity.update({
+        where: { id: seed.id },
+        data: {
+          startAt: new Date('2020-01-01T08:00:00.000Z'),
+          endAt: new Date('2020-01-01T12:00:00.000Z'),
+        },
+      });
 
       const result = await ctx.service.complete(seed.id, ctx.adminPayload, AUDIT_META);
 
@@ -738,8 +745,24 @@ describe('ActivitiesService state transitions (characterization)', () => {
       expect(c.extra?.nextStatusCode).toBe('completed');
     });
 
+    it('G2. published 但尚未到 endAt → ACTIVITY_STATUS_INVALID，禁止提前 completed', async () => {
+      const seed = await seedActivity({ statusCode: 'published', titleSuffix: 'before-end' });
+
+      await expect(
+        ctx.service.complete(seed.id, ctx.adminPayload, AUDIT_META),
+      ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_STATUS_INVALID });
+
+      expect(
+        await ctx.prisma.activity.findUniqueOrThrow({
+          where: { id: seed.id },
+          select: { statusCode: true },
+        }),
+      ).toEqual({ statusCode: 'published' });
+      expect(await ctx.prisma.auditLog.count({ where: { resourceId: seed.id } })).toBe(0);
+    });
+
     it.each<ActivityStatus>(['draft', 'cancelled', 'completed'])(
-      'G2. wrong source %s → ACTIVITY_STATUS_INVALID,DB status 不变,无 audit',
+      'G3. wrong source %s → ACTIVITY_STATUS_INVALID,DB status 不变,无 audit',
       async (fromStatus) => {
         const seed = await seedActivity({ statusCode: fromStatus });
 

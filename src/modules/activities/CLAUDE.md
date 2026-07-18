@@ -26,7 +26,8 @@
 - Audit:主资源写路径走 `activity-audit-recorder.ts`；岗位写路径走 `activity-position-audit-recorder.ts`；**event 统一复用 `'activity.publish'`，不新增事件**，岗位以 `extra.operation=activityPosition.{create,update,softDelete}` 区分
 - **岗位容量并发基线**:PATCH capacity 必须事务内先锁 `Activity` 行，再重读 `ActivityPosition.capacity` 与本岗位 passCount；锁对象仍只有 Activity，不加岗位行锁
 - **活动窗父子不变式**:PATCH Activity `startAt/endAt` 与岗位 create/update/softDelete 共用 Activity 聚合锁；锁后校验全部 live 岗位独立窗仍落在新活动窗内，越窗复用 `ACTIVITY_POSITION_TIME_RANGE_INVALID=20017`，事务整体拒绝
-- **P4 effective capacity**:Admin/App 活动 list/detail 的 `capacity` 有 live 岗位时由岗位派生（任一不限→null，否则求和）；无岗位沿 `Activity.capacity`。有岗位时 PATCH Activity.capacity 不判闸、不递补；岗位扩容只递补同 `activityPositionId` 队列。
+- **容量父子不变量**:`Activity.capacity` 始终是全局硬上限；岗位 capacity 只会进一步收紧。Admin/App 活动 list/detail 的 effective capacity 取父上限与岗位合计的交集；有限总容量下岗位合计不得超过父上限。Activity/岗位 capacity 写均在 Activity 聚合锁后重读全部 pass 与 live 岗位容量；岗位扩容递补还必须受全局剩余量裁剪。父容量扩容/改无限时按全活动稳定 FIFO 跨岗位递补，只选择仍有 child headroom 的 live 岗位。
+- **完结时间闸**:`complete` 在 Activity 聚合锁后重读状态与时间，只有 `published` 且读侧 phase 已为 `ended`（严格晚于 `endAt`）才允许写 `completed`；未来/进行中活动复用 `ACTIVITY_STATUS_INVALID` fail-closed。
 - 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_STATUS_INVALID`
 - **受保护状态写(2026-07-13 finding #6)**:`update`/`softDelete`/`publish`/`cancel`/`complete` 在真实写前统一调用 [`/src/common/prisma/claim-at-status.util.ts`](../../common/prisma/claim-at-status.util.ts) `claimAtStatus` 做期望旧态 no-op CAS;并发败者复用 `ACTIVITY_STATUS_INVALID`。helper **只认领、不判断迁移合法性**;合法矩阵仍只在 `activity-state-machine.ts`。
 - E2E:`activities.e2e-spec.ts` / `activities-rbac-boundary.e2e-spec.ts` / `activities-state-transition.e2e-spec.ts` / `activities-audit-characterization.e2e-spec.ts` / `app-activities-available.e2e-spec.ts` / `app-activities-detail.e2e-spec.ts`;scoped 判权矩阵在 `participation-scoped-authz.e2e-spec.ts`(与 activity-registrations / attendances 共用一个文件)

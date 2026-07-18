@@ -18,7 +18,7 @@
 - App Controller:`controllers/app-my-registrations.controller.ts` `@Controller('app/v1/my')` `@ApiTags('Mobile - My Registrations')`;**方法级**追加 `@ApiTags('Mobile - My Activities')` 于 `GET /my/activities`(刻意保留)
 - DTO 隔离:Admin DTO 在 `activity-registrations.dto.ts`;App DTO 在 `dto/app/`(5 文件)
 - **Partial unique** `activity_registrations_activity_member_active_unique` 由 migration 直写(Prisma schema 上**不可见**);service 用 `P2002` 兜底转 `BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS = 21002`
-- Capacity:有岗位 create/approve 按 `(activityId,activityPositionId)` 的 passCount + 岗位 capacity 分流/复核；无岗位显式 `activityPositionId=null` 沿 Activity.capacity。approve 仍先锁 Activity，再重读岗位 capacity 与 passCount。取消 pass 递补同岗位 1 人；岗位 capacity 调大递补同岗 delta，改 null 递补同岗全部；有岗位时 Activity capacity 不递补
+- Capacity:`Activity.capacity` 永远先作为全局硬上限，有岗位时再叠加 `(activityId,activityPositionId)` 的 passCount + 岗位子上限；create/approve 均先锁 Activity，再同时重读全活动 passCount、岗位 passCount 与两层 capacity。取消 pass 优先递补同岗位 1 人，同岗无人时按全活动 FIFO 跨岗 fallback，但跳过 child 已满/已删岗位；岗位扩容递补同岗 delta 仍受全局剩余量裁剪。
 - Audit events(2 个):`registration.create` / `registration.review`(approve / reject / cancel / reopen / **promote** 共用；promote 固定 `extra.action='promote'`)
 - 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID`
 - **受保护状态写(2026-07-13 finding #6)**:`cancelAdmin`/`reopen`/`cancelMy` 在真实写前统一调用 [`/src/common/prisma/claim-at-status.util.ts`](../../common/prisma/claim-at-status.util.ts) `claimAtStatus`;并发败者复用 `ACTIVITY_REGISTRATION_STATUS_INVALID`。`approve`/`reject` 的 v0.44.0 内联 no-op CAS 保留;新路径不得再散落第二份 CAS。helper **不**改 `activity-registration-state-machine.ts` 的合法迁移矩阵。

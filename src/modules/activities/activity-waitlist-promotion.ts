@@ -15,6 +15,7 @@ type PrismaTx = Prisma.TransactionClient;
 const waitlistAuditSelect = {
   id: true,
   activityId: true,
+  activityPositionId: true,
   memberId: true,
   statusCode: true,
   registeredAt: true,
@@ -34,6 +35,16 @@ type WaitlistAuditRow = Prisma.ActivityRegistrationGetPayload<{
 export interface ActivityWaitlistPromotionResult {
   activityTitle: string;
   promoted: Array<{ registrationId: string; memberId: string }>;
+}
+
+interface ActivityWaitlistPromotionBaseArgs {
+  activityId: string;
+  maxPromotions: number | null;
+  actorUserId: string;
+  actorRoleSnap: Role;
+  auditMeta: AuditMeta;
+  tx: PrismaTx;
+  auditLogs: Pick<AuditLogsService, 'log'>;
 }
 
 function jsonAsObject(v: Prisma.JsonValue | null): Record<string, unknown> | null {
@@ -81,7 +92,7 @@ export async function promoteActivityWaitlist(args: {
 
   const activity = await args.tx.activity.findFirst({
     where: notDeletedWhere({ id: args.activityId }),
-    select: { title: true, statusCode: true },
+    select: { title: true, statusCode: true, capacity: true },
   });
   if (!activity) {
     throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
@@ -151,6 +162,219 @@ export async function promoteActivityWaitlist(args: {
       tx: args.tx,
     });
 
+    promoted.push({ registrationId: candidate.id, memberId: candidate.memberId });
+  }
+
+  return { activityTitle: activity.title, promoted };
+}
+
+// 父容量释放/扩容时的跨岗位递补：优先指定岗位（pass 取消保持既有同岗语义），
+// 无同岗候补时按全活动 FIFO fallback。岗位 child headroom 在本次调用内逐条扣减，
+// 避免 pending 不计 pass 导致同一轮循环透支岗位名额。
+export async function promoteActivityWaitlistAcrossPositions(
+  args: ActivityWaitlistPromotionBaseArgs & {
+    preferredActivityPositionId?: string | null;
+    previousActivityCapacity?: number | null;
+  },
+): Promise<ActivityWaitlistPromotionResult> {
+  const locked = await args.tx.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM "Activity"
+    WHERE id = ${args.activityId} AND "deletedAt" IS NULL
+    FOR UPDATE
+  `;
+  if (locked.length === 0) {
+    throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+  }
+
+  const activity = await args.tx.activity.findFirst({
+    where: notDeletedWhere({ id: args.activityId }),
+    select: { title: true, statusCode: true, capacity: true },
+  });
+  if (!activity) {
+    throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+  }
+
+  const promoted: ActivityWaitlistPromotionResult['promoted'] = [];
+  if (activity.statusCode !== 'published' || args.maxPromotions === 0) {
+    return { activityTitle: activity.title, promoted };
+  }
+
+  const [activityPositions, passCounts, nullPositionWaitlistCount] = await Promise.all([
+    args.tx.activityPosition.findMany({
+      where: { activityId: args.activityId, deletedAt: null },
+      select: { id: true, capacity: true },
+    }),
+    args.tx.activityRegistration.groupBy({
+      by: ['activityPositionId'],
+      where: notDeletedWhere({
+        activityId: args.activityId,
+        statusCode: ACTIVITY_REGISTRATION_STATUS.PASS,
+      }),
+      _count: { _all: true },
+    }),
+    args.tx.activityRegistration.count({
+      where: notDeletedWhere({
+        activityId: args.activityId,
+        activityPositionId: null,
+        statusCode: ACTIVITY_REGISTRATION_STATUS.WAITLISTED,
+      }),
+    }),
+  ]);
+  const passCountByActivityPositionId = new Map(
+    passCounts.map((row) => [row.activityPositionId, row._count._all]),
+  );
+  const activityPassCount = passCounts.reduce((total, row) => total + row._count._all, 0);
+  const remainingByActivityPositionId = new Map<string | null, number | null>();
+  // 历史无岗位队列没有 child cap，仍只受调用方传入的父容量 promotion budget。
+  remainingByActivityPositionId.set(null, null);
+  for (const activityPosition of activityPositions) {
+    remainingByActivityPositionId.set(
+      activityPosition.id,
+      activityPosition.capacity === null
+        ? null
+        : Math.max(
+            activityPosition.capacity -
+              (passCountByActivityPositionId.get(activityPosition.id) ?? 0),
+            0,
+          ),
+    );
+  }
+
+  const finiteActivityPositionHeadroom = activityPositions.reduce(
+    (total, activityPosition) =>
+      total + (remainingByActivityPositionId.get(activityPosition.id) ?? 0),
+    0,
+  );
+  const activityPositionHeadroom =
+    nullPositionWaitlistCount > 0 ||
+    activityPositions.some((activityPosition) => activityPosition.capacity === null)
+      ? null
+      : finiteActivityPositionHeadroom;
+  const effectiveHeadroom = (activityCapacity: number | null): number | null => {
+    const globalHeadroom =
+      activityCapacity === null ? null : Math.max(activityCapacity - activityPassCount, 0);
+    if (globalHeadroom === null) return activityPositionHeadroom;
+    if (activityPositionHeadroom === null) return globalHeadroom;
+    return Math.min(globalHeadroom, activityPositionHeadroom);
+  };
+  const currentEffectiveHeadroom = effectiveHeadroom(activity.capacity);
+  const incrementalHeadroom =
+    args.previousActivityCapacity === undefined
+      ? currentEffectiveHeadroom
+      : (() => {
+          const previousEffectiveHeadroom = effectiveHeadroom(args.previousActivityCapacity);
+          if (currentEffectiveHeadroom === null) return null;
+          if (previousEffectiveHeadroom === null) return 0;
+          return Math.max(currentEffectiveHeadroom - previousEffectiveHeadroom, 0);
+        })();
+  const promotionLimit =
+    incrementalHeadroom === null
+      ? args.maxPromotions
+      : args.maxPromotions === null
+        ? incrementalHeadroom
+        : Math.min(args.maxPromotions, incrementalHeadroom);
+  if (promotionLimit === 0) {
+    return { activityTitle: activity.title, promoted };
+  }
+
+  const hasRemaining = (activityPositionId: string | null): boolean => {
+    const remaining = remainingByActivityPositionId.get(activityPositionId);
+    return remaining === null || (remaining !== undefined && remaining > 0);
+  };
+  const consumeRemaining = (activityPositionId: string | null): void => {
+    const remaining = remainingByActivityPositionId.get(activityPositionId);
+    if (typeof remaining === 'number') {
+      remainingByActivityPositionId.set(activityPositionId, Math.max(remaining - 1, 0));
+    }
+  };
+
+  let tryPreferred = args.preferredActivityPositionId !== undefined;
+  while (promotionLimit === null || promoted.length < promotionLimit) {
+    let candidate: WaitlistAuditRow | null = null;
+    if (tryPreferred) {
+      const preferredActivityPositionId = args.preferredActivityPositionId ?? null;
+      if (hasRemaining(preferredActivityPositionId)) {
+        candidate = await args.tx.activityRegistration.findFirst({
+          where: notDeletedWhere({
+            activityId: args.activityId,
+            activityPositionId: preferredActivityPositionId,
+            statusCode: ACTIVITY_REGISTRATION_STATUS.WAITLISTED,
+          }),
+          select: waitlistAuditSelect,
+          orderBy: [{ registeredAt: 'asc' }, { id: 'asc' }],
+        });
+      }
+      if (candidate === null) tryPreferred = false;
+    }
+
+    if (candidate === null) {
+      const eligibleActivityPositionIds = [...remainingByActivityPositionId.entries()]
+        .filter(
+          (entry): entry is [string, number | null] =>
+            entry[0] !== null && (entry[1] === null || entry[1] > 0),
+        )
+        .map(([activityPositionId]) => activityPositionId);
+      candidate = await args.tx.activityRegistration.findFirst({
+        where: {
+          activityId: args.activityId,
+          statusCode: ACTIVITY_REGISTRATION_STATUS.WAITLISTED,
+          deletedAt: null,
+          OR: [
+            { activityPositionId: null },
+            ...(eligibleActivityPositionIds.length === 0
+              ? []
+              : [{ activityPositionId: { in: eligibleActivityPositionIds } }]),
+          ],
+        },
+        select: waitlistAuditSelect,
+        orderBy: [{ registeredAt: 'asc' }, { id: 'asc' }],
+      });
+    }
+    if (candidate === null) break;
+
+    const transition = decideActivityRegistrationTransition('promote', candidate.statusCode);
+    if (!transition.allowed) {
+      throw new BizException(transition.biz);
+    }
+    try {
+      await claimAtStatus(args.tx, {
+        target: 'activityRegistration',
+        id: candidate.id,
+        expectedStatus: ACTIVITY_REGISTRATION_STATUS.WAITLISTED,
+        invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
+      });
+    } catch (err) {
+      if (err instanceof BizException && err.biz === BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID) {
+        continue;
+      }
+      throw err;
+    }
+
+    const updated = await args.tx.activityRegistration.update({
+      where: { id: candidate.id },
+      data: { statusCode: transition.nextStatusCode },
+      select: waitlistAuditSelect,
+    });
+    await args.auditLogs.log({
+      event: 'registration.review',
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: 'activity_registration',
+      resourceId: candidate.id,
+      meta: args.auditMeta,
+      before: toAuditSnapshot(candidate),
+      after: toAuditSnapshot(updated),
+      extra: {
+        operation: 'review',
+        action: 'promote',
+        priorStatusCode: candidate.statusCode,
+        nextStatusCode: transition.nextStatusCode,
+        activityId: args.activityId,
+        targetMemberId: candidate.memberId,
+      },
+      tx: args.tx,
+    });
+    consumeRemaining(candidate.activityPositionId);
     promoted.push({ registrationId: candidate.id, memberId: candidate.memberId });
   }
 

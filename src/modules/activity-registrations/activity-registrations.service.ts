@@ -13,7 +13,8 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
-import { promoteActivityWaitlist } from '../activities/activity-waitlist-promotion';
+import { hasActivityCapacity } from '../activities/activity-capacity';
+import { promoteActivityWaitlistAcrossPositions } from '../activities/activity-waitlist-promotion';
 import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
@@ -574,18 +575,31 @@ export class ActivityRegistrationsService {
   private async assertCapacityNotExceeded(
     activityId: string,
     activityPositionId: string | null,
-    capacity: number | null,
+    activityCapacity: number | null,
+    activityPositionCapacity: number | null,
     tx: PrismaTx,
   ): Promise<void> {
-    if (capacity === null) return; // 不限名额
-    const passCount = await tx.activityRegistration.count({
-      where: notDeletedWhere({
-        activityId,
-        activityPositionId,
-        statusCode: REGISTRATION_STATUS_PASS,
+    if (activityCapacity === null && activityPositionCapacity === null) return;
+    const [activityPassCount, activityPositionPassCount] = await Promise.all([
+      tx.activityRegistration.count({
+        where: notDeletedWhere({ activityId, statusCode: REGISTRATION_STATUS_PASS }),
       }),
-    });
-    if (passCount >= capacity) {
+      tx.activityRegistration.count({
+        where: notDeletedWhere({
+          activityId,
+          activityPositionId,
+          statusCode: REGISTRATION_STATUS_PASS,
+        }),
+      }),
+    ]);
+    if (
+      !hasActivityCapacity({
+        activityCapacity,
+        activityPassCount,
+        activityPositionCapacity,
+        activityPositionPassCount,
+      })
+    ) {
       throw new BizException(BizCode.ACTIVITY_CAPACITY_EXCEEDED);
     }
   }
@@ -595,18 +609,33 @@ export class ActivityRegistrationsService {
   private async resolveCreateStatusCode(
     activityId: string,
     activityPositionId: string | null,
-    capacity: number | null,
+    activityCapacity: number | null,
+    activityPositionCapacity: number | null,
     tx: PrismaTx,
   ): Promise<typeof REGISTRATION_STATUS_PENDING | typeof REGISTRATION_STATUS_WAITLISTED> {
-    if (capacity === null) return REGISTRATION_STATUS_PENDING;
-    const passCount = await tx.activityRegistration.count({
-      where: notDeletedWhere({
-        activityId,
-        activityPositionId,
-        statusCode: REGISTRATION_STATUS_PASS,
+    if (activityCapacity === null && activityPositionCapacity === null) {
+      return REGISTRATION_STATUS_PENDING;
+    }
+    const [activityPassCount, activityPositionPassCount] = await Promise.all([
+      tx.activityRegistration.count({
+        where: notDeletedWhere({ activityId, statusCode: REGISTRATION_STATUS_PASS }),
       }),
-    });
-    return passCount >= capacity ? REGISTRATION_STATUS_WAITLISTED : REGISTRATION_STATUS_PENDING;
+      tx.activityRegistration.count({
+        where: notDeletedWhere({
+          activityId,
+          activityPositionId,
+          statusCode: REGISTRATION_STATUS_PASS,
+        }),
+      }),
+    ]);
+    return hasActivityCapacity({
+      activityCapacity,
+      activityPassCount,
+      activityPositionCapacity,
+      activityPositionPassCount,
+    })
+      ? REGISTRATION_STATUS_PENDING
+      : REGISTRATION_STATUS_WAITLISTED;
   }
 
   // partial unique 预检查:同 activity 同 member 已有 active(deletedAt=null AND
@@ -875,7 +904,8 @@ export class ActivityRegistrationsService {
       const initialStatusCode = await this.resolveCreateStatusCode(
         activityId,
         activityPosition?.id ?? null,
-        activityPosition === null ? act.capacity : activityPosition.capacity,
+        act.capacity,
+        activityPosition?.capacity ?? null,
         tx,
       );
 
@@ -936,7 +966,8 @@ export class ActivityRegistrationsService {
       const initialStatusCode = await this.resolveCreateStatusCode(
         activityId,
         activityPosition?.id ?? null,
-        activityPosition === null ? act.capacity : activityPosition.capacity,
+        act.capacity,
+        activityPosition?.capacity ?? null,
         tx,
       );
 
@@ -1022,6 +1053,7 @@ export class ActivityRegistrationsService {
       await this.assertCapacityNotExceeded(
         activityId,
         reg.activityPositionId,
+        act.capacity,
         effectiveCapacity,
         tx,
       );
@@ -1234,9 +1266,9 @@ export class ActivityRegistrationsService {
 
       const promotion =
         reg.statusCode === REGISTRATION_STATUS_PASS
-          ? await promoteActivityWaitlist({
+          ? await promoteActivityWaitlistAcrossPositions({
               activityId,
-              activityPositionId: reg.activityPositionId,
+              preferredActivityPositionId: reg.activityPositionId,
               maxPromotions: 1,
               actorUserId: currentUser.id,
               actorRoleSnap: currentUser.role,
@@ -1447,9 +1479,9 @@ export class ActivityRegistrationsService {
 
       const promotion =
         reg.statusCode === REGISTRATION_STATUS_PASS
-          ? await promoteActivityWaitlist({
+          ? await promoteActivityWaitlistAcrossPositions({
               activityId: reg.activityId,
-              activityPositionId: reg.activityPositionId,
+              preferredActivityPositionId: reg.activityPositionId,
               maxPromotions: 1,
               actorUserId: currentUser.id,
               actorRoleSnap: currentUser.role,
