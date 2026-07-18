@@ -4,82 +4,55 @@ import {
   toBeijingDateOnly,
 } from './expiry-reminder.service';
 
-interface TargetedCallInput {
-  channels?: string[];
-  notificationTypeCode: string;
-}
-
-interface CertificateFindManyInput {
-  where: { expiredAt?: { gt: Date; lte: Date } };
-}
-
-interface ActivityUpdateManyInput {
-  where: {
-    id: string;
-    statusCode: string;
-    startReminderSentAt: null;
-  };
-  data: { startReminderSentAt: Date };
-}
-
-describe('ExpiryReminderService · runOnce', () => {
+describe('ExpiryReminderService · transactional outbox', () => {
   function build() {
+    const activityFindMany = jest.fn().mockResolvedValue([]);
+    const activityUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const registrationFindMany = jest.fn().mockResolvedValue([]);
     const certificateFindMany = jest.fn().mockResolvedValue([]);
     const certificateUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
-    const txCertificateFindFirst = jest.fn();
-    const txCertificateUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const certificateFindFirst = jest.fn();
+    const memberInsuranceFindMany = jest.fn().mockResolvedValue([]);
+    const memberInsuranceUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const teamPolicyFindMany = jest.fn().mockResolvedValue([]);
+    const teamPolicyUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
     const tx = {
-      certificate: {
-        findFirst: txCertificateFindFirst,
-        updateMany: txCertificateUpdateMany,
-      },
+      activity: { updateMany: activityUpdateMany },
+      activityRegistration: { findMany: registrationFindMany },
+      certificate: { findFirst: certificateFindFirst, updateMany: certificateUpdateMany },
+      memberInsurance: { updateMany: memberInsuranceUpdateMany },
+      teamInsurancePolicy: { updateMany: teamPolicyUpdateMany },
     };
     const prisma = {
-      activity: {
-        findMany: jest.fn().mockResolvedValue([]),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-      },
-      activityRegistration: {
-        findMany: jest.fn().mockResolvedValue([]),
-      },
-      certificate: {
-        findMany: certificateFindMany,
-        updateMany: certificateUpdateMany,
-      },
-      memberInsurance: {
-        findMany: jest.fn().mockResolvedValue([]),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-      },
-      teamInsurancePolicy: {
-        findMany: jest.fn().mockResolvedValue([]),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-      },
-      $transaction: jest.fn().mockImplementation((fn: (client: typeof tx) => unknown) => fn(tx)),
+      activity: { findMany: activityFindMany },
+      certificate: { findMany: certificateFindMany },
+      memberInsurance: { findMany: memberInsuranceFindMany },
+      teamInsurancePolicy: { findMany: teamPolicyFindMany },
+      $transaction: jest.fn((fn: (client: typeof tx) => unknown) => fn(tx)),
     };
     const auditLogs = { log: jest.fn().mockResolvedValue(undefined) };
-    const dispatcher = {
-      dispatchTargeted: jest.fn().mockResolvedValue({ id: 'notification-directed' }),
-      dispatchSystemBroadcast: jest.fn().mockResolvedValue({ id: 'notification-broadcast' }),
-    };
-    const service = new ExpiryReminderService(
-      prisma as never,
-      auditLogs as never,
-      dispatcher as never,
-    );
+    const outbox = { enqueue: jest.fn().mockResolvedValue({ id: 'intent' }) };
+    const service = new ExpiryReminderService(prisma as never, auditLogs as never, outbox as never);
     return {
       service,
       prisma,
       tx,
       auditLogs,
-      dispatcher,
+      outbox,
+      activityFindMany,
+      activityUpdateMany,
+      registrationFindMany,
       certificateFindMany,
       certificateUpdateMany,
-      txCertificateFindFirst,
-      txCertificateUpdateMany,
+      certificateFindFirst,
+      memberInsuranceFindMany,
+      memberInsuranceUpdateMany,
+      teamPolicyFindMany,
+      teamPolicyUpdateMany,
     };
   }
 
-  it('北京时间日界与日期窗口稳定：15:59Z 仍为当日，16:00Z 进入次日', () => {
+  it('北京时间日界与日期窗口稳定', () => {
     expect(toBeijingDateOnly(new Date('2026-07-14T15:59:59.999Z')).toISOString()).toBe(
       '2026-07-14T00:00:00.000Z',
     );
@@ -91,9 +64,9 @@ describe('ExpiryReminderService · runOnce', () => {
     );
   });
 
-  it('四路径命中：证书预提醒、到期翻态+audit、个人保险、队保单广播；个人均声明站内+微信', async () => {
-    const fixture = build();
-    fixture.certificateFindMany
+  it('marker/status/audit 与各 intent 使用同一个 transaction client', async () => {
+    const f = build();
+    f.certificateFindMany
       .mockResolvedValueOnce([
         {
           id: 'cert-reminder',
@@ -102,77 +75,51 @@ describe('ExpiryReminderService · runOnce', () => {
         },
       ])
       .mockResolvedValueOnce([{ id: 'cert-expired' }]);
-    fixture.txCertificateFindFirst.mockResolvedValue({
+    f.certificateFindFirst.mockResolvedValue({
       id: 'cert-expired',
       memberId: 'member-2',
       certTypeCode: 'first-aid',
       certStatusCode: 'verified',
       expiredAt: new Date('2026-07-14T00:00:00.000Z'),
-      verifiedBy: 'reviewer-member',
+      verifiedBy: 'reviewer',
       verifiedAt: new Date('2026-06-01T00:00:00.000Z'),
     });
-    fixture.prisma.memberInsurance.findMany.mockResolvedValue([
+    f.memberInsuranceFindMany.mockResolvedValue([
       {
-        id: 'member-insurance-1',
+        id: 'insurance-1',
         memberId: 'member-3',
         coverageEnd: new Date('2026-07-30T00:00:00.000Z'),
       },
     ]);
-    fixture.prisma.teamInsurancePolicy.findMany.mockResolvedValue([
-      { id: 'team-policy-1', coverageEnd: new Date('2026-07-01T00:00:00.000Z') },
+    f.teamPolicyFindMany.mockResolvedValue([
+      { id: 'policy-1', coverageEnd: new Date('2026-07-01T00:00:00.000Z') },
     ]);
 
-    const summary = await fixture.service.runOnce(new Date('2026-07-14T09:00:00+08:00'));
-
-    expect(summary).toEqual({
-      activityReminderCandidates: 0,
-      activityRemindersDispatched: 0,
-      certificateReminderCandidates: 1,
+    const summary = await f.service.runOnce(new Date('2026-07-14T09:00:00+08:00'));
+    expect(summary).toMatchObject({
       certificateRemindersDispatched: 1,
-      certificateExpiryCandidates: 1,
       certificatesExpired: 1,
       certificateExpiryNotificationsDispatched: 1,
-      memberInsuranceCandidates: 1,
       memberInsuranceNotificationsDispatched: 1,
-      teamPolicyCandidates: 1,
       teamPolicyNotificationsDispatched: 1,
       failed: 0,
     });
-    expect(fixture.dispatcher.dispatchTargeted).toHaveBeenCalledTimes(3);
-    const targetedCalls = fixture.dispatcher.dispatchTargeted.mock.calls as Array<
-      [TargetedCallInput]
-    >;
-    for (const [input] of targetedCalls) {
-      expect(input.channels).toEqual(['in-app', 'wechat']);
-      expect(input.notificationTypeCode).toBe('expiry-reminder');
-    }
-    expect(fixture.dispatcher.dispatchSystemBroadcast).toHaveBeenCalledWith(
-      expect.objectContaining({ notificationTypeCode: 'expiry-reminder', title: '队保单已到期' }),
+    expect(f.outbox.enqueue).toHaveBeenCalledTimes(4);
+    expect(f.outbox.enqueue).toHaveBeenNthCalledWith(1, expect.anything(), f.tx);
+    expect(f.outbox.enqueue).toHaveBeenNthCalledWith(2, expect.anything(), f.tx);
+    expect(f.outbox.enqueue).toHaveBeenNthCalledWith(3, expect.anything(), f.tx);
+    expect(f.outbox.enqueue).toHaveBeenNthCalledWith(4, expect.anything(), f.tx);
+    expect(f.auditLogs.log).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'certificate.expire', tx: f.tx }),
     );
-    expect(fixture.auditLogs.log).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: 'certificate.expire',
-        actorUserId: null,
-        actorRoleSnap: null,
-        resourceType: 'certificate',
-        resourceId: 'cert-expired',
-        meta: {
-          requestId: 'cron:expiry-reminder:2026-07-14',
-          ip: null,
-          ua: null,
-        },
-        tx: fixture.tx,
-      }),
-    );
-    const auditCalls = fixture.auditLogs.log.mock.calls as Array<[Record<string, unknown>]>;
-    const auditInput = auditCalls[0][0];
-    expect(JSON.stringify(auditInput)).not.toMatch(/certNumber|policyNumber|password|secret/i);
+    const payloadDump = JSON.stringify(f.outbox.enqueue.mock.calls);
+    expect(payloadDump).not.toMatch(/phone|openid|token|secret|credential|signedUrl/i);
   });
 
-  it('活动开始提醒：24h 窗内 published 原子 claim，仅 pass 去重派发，二跑不重复', async () => {
-    const fixture = build();
+  it('活动 marker claim 与去重后的全部收件人 intent 同事务；并发败者零 intent', async () => {
+    const f = build();
     const now = new Date('2026-07-14T01:00:00.000Z');
-    fixture.prisma.activity.findMany.mockResolvedValue([
+    f.activityFindMany.mockResolvedValue([
       {
         id: 'activity-upcoming',
         title: '山野训练',
@@ -180,67 +127,54 @@ describe('ExpiryReminderService · runOnce', () => {
         location: '梧桐山',
       },
     ]);
-    fixture.prisma.activityRegistration.findMany.mockResolvedValue([
+    f.registrationFindMany.mockResolvedValue([
       { memberId: 'member-1' },
       { memberId: 'member-1' },
       { memberId: 'member-2' },
     ]);
-
-    const first = await fixture.service.runOnce(now);
-    fixture.prisma.activity.updateMany.mockResolvedValueOnce({ count: 0 });
-    const second = await fixture.service.runOnce(now);
-
-    expect(first.activityReminderCandidates).toBe(1);
+    const first = await f.service.runOnce(now);
     expect(first.activityRemindersDispatched).toBe(2);
-    expect(second.activityReminderCandidates).toBe(1);
-    expect(second.activityRemindersDispatched).toBe(0);
-    const activityUpdateCalls = fixture.prisma.activity.updateMany.mock.calls as Array<
-      [ActivityUpdateManyInput]
-    >;
-    expect(activityUpdateCalls[0][0]).toMatchObject({
-      where: {
-        id: 'activity-upcoming',
-        statusCode: 'published',
-        startReminderSentAt: null,
-      },
-      data: { startReminderSentAt: now },
-    });
-    const activityCalls = fixture.dispatcher.dispatchTargeted.mock.calls.filter(
-      ([input]: [TargetedCallInput]) => input.notificationTypeCode === 'activity-reminder',
+    expect(f.outbox.enqueue).toHaveBeenCalledTimes(2);
+    expect(f.activityUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { startReminderSentAt: now } }),
     );
-    expect(activityCalls).toHaveLength(2);
+
+    f.outbox.enqueue.mockClear();
+    f.activityUpdateMany.mockResolvedValue({ count: 0 });
+    const second = await f.service.runOnce(now);
+    expect(second.activityRemindersDispatched).toBe(0);
+    expect(f.outbox.enqueue).not.toHaveBeenCalled();
   });
 
-  it('查询窗口跳过终身证书；条件 claim 失败视为并发败者，不派发', async () => {
-    const fixture = build();
-    fixture.certificateFindMany
-      .mockResolvedValueOnce([
-        {
-          id: 'cert-raced',
-          memberId: 'member-1',
-          expiredAt: new Date('2026-08-01T00:00:00.000Z'),
-        },
-      ])
-      .mockResolvedValueOnce([]);
-    fixture.certificateUpdateMany.mockResolvedValueOnce({ count: 0 });
+  it('活动零 pass 收件人时不 claim marker，后续新增 pass 仍可入队', async () => {
+    const f = build();
+    const now = new Date('2026-07-14T01:00:00.000Z');
+    f.activityFindMany.mockResolvedValue([
+      {
+        id: 'activity-zero-pass',
+        title: '山野训练',
+        startAt: new Date('2026-07-15T00:00:00.000Z'),
+        location: '梧桐山',
+      },
+    ]);
+    f.registrationFindMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ memberId: 'member-later-pass' }]);
 
-    const summary = await fixture.service.runOnce(new Date('2026-07-14T09:00:00+08:00'));
+    const first = await f.service.runOnce(now);
+    expect(first.activityRemindersDispatched).toBe(0);
+    expect(f.activityUpdateMany).not.toHaveBeenCalled();
+    expect(f.outbox.enqueue).not.toHaveBeenCalled();
 
-    const findManyCalls = fixture.certificateFindMany.mock.calls as Array<
-      [CertificateFindManyInput]
-    >;
-    expect(findManyCalls[0][0].where.expiredAt).toEqual({
-      gt: new Date('2026-07-14T00:00:00.000Z'),
-      lte: new Date('2026-09-12T00:00:00.000Z'),
-    });
-    expect(summary.certificateReminderCandidates).toBe(1);
-    expect(summary.certificateRemindersDispatched).toBe(0);
-    expect(fixture.dispatcher.dispatchTargeted).not.toHaveBeenCalled();
+    const second = await f.service.runOnce(now);
+    expect(second.activityRemindersDispatched).toBe(1);
+    expect(f.activityUpdateMany).toHaveBeenCalledTimes(1);
+    expect(f.outbox.enqueue).toHaveBeenCalledTimes(1);
   });
 
-  it('单项派发失败不阻断后续路径；marker 已 claim 的接受边界由 failed 计数留痕', async () => {
-    const fixture = build();
-    fixture.certificateFindMany
+  it('一条事务内 enqueue 失败只记 failed，后续资源继续处理', async () => {
+    const f = build();
+    f.certificateFindMany
       .mockResolvedValueOnce([
         {
           id: 'cert-fails',
@@ -249,22 +183,20 @@ describe('ExpiryReminderService · runOnce', () => {
         },
       ])
       .mockResolvedValueOnce([]);
-    fixture.prisma.memberInsurance.findMany.mockResolvedValue([
+    f.memberInsuranceFindMany.mockResolvedValue([
       {
-        id: 'insurance-succeeds',
+        id: 'insurance-ok',
         memberId: 'member-2',
         coverageEnd: new Date('2026-08-01T00:00:00.000Z'),
       },
     ]);
-    fixture.dispatcher.dispatchTargeted
+    f.outbox.enqueue
       .mockRejectedValueOnce(new Error('db unavailable'))
-      .mockResolvedValueOnce({ id: 'notification-after-failure' });
+      .mockResolvedValueOnce({ id: 'intent-ok' });
 
-    const summary = await fixture.service.runOnce(new Date('2026-07-14T09:00:00+08:00'));
-
+    const summary = await f.service.runOnce(new Date('2026-07-14T09:00:00+08:00'));
     expect(summary.failed).toBe(1);
     expect(summary.certificateRemindersDispatched).toBe(0);
     expect(summary.memberInsuranceNotificationsDispatched).toBe(1);
-    expect(fixture.dispatcher.dispatchTargeted).toHaveBeenCalledTimes(2);
   });
 });

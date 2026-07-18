@@ -4,7 +4,11 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { NotificationOutboxHandlers } from '../../src/modules/notifications/notification-outbox.handlers';
+import { NotificationOutboxService } from '../../src/modules/notifications/notification-outbox.service';
+import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import { WechatSettingsService } from '../../src/modules/wechat/wechat-settings.service';
+import { WechatService } from '../../src/modules/wechat/wechat.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -18,7 +22,7 @@ import { createTestApp } from '../setup/test-app';
 // 覆盖:
 // - ack:逐模板 quota +1 累积 + 封顶 5(D-N2);additive 非去重;canUseApp 准入。
 // - status:逐模板返剩余配额(无行=0)。
-// - 派发(publish 勾 wechat,事务外同步):订阅+可见会员 sent + 原子扣 1;43101→failed need-resubscribe + 回补;
+// - 派发(publish 勾 wechat,durable enqueue→独立 worker):订阅+可见会员 sent + 原子扣 1;43101→failed need-resubscribe + 回补;
 //   no-openid→skipped(不扣);no-quota 会员不 fan-out;不可见会员不在受众;未配置模板整渠道跳过;re-publish 去重。
 // - 并发不越扣:同会员 quota=1 两通知并发 publish → 恰 1 sent + 1 no-quota,quota 落 0(不为负)。
 // - 模板配置 admin:list + upsert(运营可配)+ RBAC 边界 + 类型校验。
@@ -48,6 +52,9 @@ interface Caller {
 describe('统一通知 S2 微信订阅 quota 渠道 e2e', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let outbox: NotificationOutboxService;
+  let worker: NotificationOutboxWorker;
+  let secondWorker: NotificationOutboxWorker;
 
   let adminAuth: string; // biz-admin(承载 notification.* + update.template)
   let userAuth: string; // 普通 USER(RBAC 边界)
@@ -100,13 +107,22 @@ describe('统一通知 S2 微信订阅 quota 渠道 e2e', () => {
     });
   }
 
+  async function drainAll(): Promise<number> {
+    let claimed = 0;
+    for (;;) {
+      const result = await worker.drainOnce();
+      claimed += result.claimed;
+      if (result.claimed === 0) return claimed;
+    }
+  }
+
   function adminPost(body: Record<string, unknown>, path = ''): request.Test {
     return request(httpServer(app))
       .post(`${ADMIN_NOTIFICATIONS}${path}`)
       .set('Authorization', adminAuth)
       .send(body);
   }
-  // 建草稿(默认 general + 勾 wechat + member 可见)→ publish(触发事务外派发),返通知 id。
+  // 建草稿(默认 general + 勾 wechat + member 可见)→ publish 入队 → drain root/child，返通知 id。
   async function createAndPublish(over: Record<string, unknown> = {}): Promise<string> {
     const created = await adminPost({
       title: '微信通知',
@@ -122,12 +138,16 @@ describe('统一通知 S2 微信订阅 quota 渠道 e2e', () => {
       .post(`${ADMIN_NOTIFICATIONS}/${id}/publish`)
       .set('Authorization', adminAuth);
     expect(pub.status).toBe(200);
+    await drainAll();
     return id;
   }
 
   beforeAll(async () => {
     app = await createTestApp();
     prisma = app.get(PrismaService);
+    outbox = app.get(NotificationOutboxService);
+    worker = app.get(NotificationOutboxWorker);
+    secondWorker = new NotificationOutboxWorker(outbox, app.get(NotificationOutboxHandlers));
     await resetDb(app);
 
     // RBAC:biz-admin + notification.* 6 码
@@ -191,6 +211,7 @@ describe('统一通知 S2 微信订阅 quota 渠道 e2e', () => {
   beforeEach(async () => {
     await prisma.notificationDelivery.deleteMany({});
     await prisma.notificationRead.deleteMany({});
+    await prisma.notificationOutboxIntent.deleteMany({});
     await prisma.notification.deleteMany({});
     await prisma.wechatSubscriptionQuota.deleteMany({});
     await setTemplate('general', TMPL_GENERAL, true);
@@ -274,7 +295,7 @@ describe('统一通知 S2 微信订阅 quota 渠道 e2e', () => {
     });
   });
 
-  // ============ 派发(publish 勾 wechat → 事务外同步) ============
+  // ============ 派发(publish 勾 wechat → durable root/child worker) ============
   describe('微信派发(发送三态 + 43101 回补 + 原子扣减)', () => {
     it('订阅 + 可见会员 → delivery sent + 原子扣 1', async () => {
       await setQuota(alice.memberId, TMPL_GENERAL, 3);
@@ -332,6 +353,59 @@ describe('统一通知 S2 微信订阅 quota 渠道 e2e', () => {
       expect(await getQuota(dave.memberId, TMPL_GENERAL)).toBe(3); // 不扣
     });
 
+    it('首次 no-openid 后补绑并 re-publish 可重试；sent 后再 publish 仍零重复', async () => {
+      const providerSpy = jest.spyOn(app.get(WechatService), 'sendSubscribeMessage');
+      const member = await makeMember('s2_republish_recover', null);
+      await setQuota(member.memberId, TMPL_GENERAL, 3);
+      const created = await adminPost({
+        title: '重发恢复',
+        body: 'b',
+        notificationTypeCode: 'general',
+        visibilityCode: 'member',
+        channels: ['wechat'],
+      });
+      const id = created.body.data.id as string;
+
+      await request(httpServer(app))
+        .post(`${ADMIN_NOTIFICATIONS}/${id}/publish`)
+        .set('Authorization', adminAuth);
+      await drainAll();
+      expect((await deliveriesOf(id)).filter((d) => d.memberId === member.memberId)).toEqual([
+        expect.objectContaining({ status: 'skipped', reasonCode: 'no-openid' }),
+      ]);
+      expect(await getQuota(member.memberId, TMPL_GENERAL)).toBe(3);
+      expect(providerSpy).not.toHaveBeenCalled();
+
+      await prisma.user.update({
+        where: { id: member.userId },
+        data: { openid: 'dev-openid-republish-recover' },
+      });
+      await request(httpServer(app))
+        .post(`${ADMIN_NOTIFICATIONS}/${id}/unpublish`)
+        .set('Authorization', adminAuth);
+      await request(httpServer(app))
+        .post(`${ADMIN_NOTIFICATIONS}/${id}/publish`)
+        .set('Authorization', adminAuth);
+      await drainAll();
+      let memberDeliveries = (await deliveriesOf(id)).filter((d) => d.memberId === member.memberId);
+      expect(memberDeliveries.filter((d) => d.status === 'sent')).toHaveLength(1);
+      expect(await getQuota(member.memberId, TMPL_GENERAL)).toBe(2);
+      expect(providerSpy).toHaveBeenCalledTimes(1);
+
+      await request(httpServer(app))
+        .post(`${ADMIN_NOTIFICATIONS}/${id}/unpublish`)
+        .set('Authorization', adminAuth);
+      await request(httpServer(app))
+        .post(`${ADMIN_NOTIFICATIONS}/${id}/publish`)
+        .set('Authorization', adminAuth);
+      await drainAll();
+      memberDeliveries = (await deliveriesOf(id)).filter((d) => d.memberId === member.memberId);
+      expect(memberDeliveries.filter((d) => d.status === 'sent')).toHaveLength(1);
+      expect(await getQuota(member.memberId, TMPL_GENERAL)).toBe(2);
+      expect(providerSpy).toHaveBeenCalledTimes(1);
+      providerSpy.mockRestore();
+    });
+
     it('无 quota 会员 → 不 fan-out(无 delivery 行)', async () => {
       // alice 无 quota 行
       const id = await createAndPublish();
@@ -379,6 +453,7 @@ describe('统一通知 S2 微信订阅 quota 渠道 e2e', () => {
       await request(httpServer(app))
         .post(`${ADMIN_NOTIFICATIONS}/${id}/publish`)
         .set('Authorization', adminAuth);
+      await drainAll();
       expect(await getQuota(alice.memberId, TMPL_GENERAL)).toBe(2);
       // 撤回 → 再发布:alice 已有 sent delivery → 不重复推(quota 不再扣)
       await request(httpServer(app))
@@ -387,6 +462,7 @@ describe('统一通知 S2 微信订阅 quota 渠道 e2e', () => {
       await request(httpServer(app))
         .post(`${ADMIN_NOTIFICATIONS}/${id}/publish`)
         .set('Authorization', adminAuth);
+      await drainAll();
       const sent = (await deliveriesOf(id)).filter((d) => d.status === 'sent');
       expect(sent).toHaveLength(1); // 仍 1 条
       expect(await getQuota(alice.memberId, TMPL_GENERAL)).toBe(2); // 未二次扣
@@ -412,6 +488,29 @@ describe('统一通知 S2 微信订阅 quota 渠道 e2e', () => {
         request(httpServer(app))
           .post(`${ADMIN_NOTIFICATIONS}/${id2}/publish`)
           .set('Authorization', adminAuth),
+      ]);
+      const roots = await prisma.notificationOutboxIntent.findMany({
+        where: { aggregateId: { in: [id1, id2] }, eventType: 'notification.wechat-broadcast' },
+        orderBy: { aggregateId: 'asc' },
+      });
+      expect(roots).toHaveLength(2);
+      await Promise.all([
+        worker.drainEventKey(roots[0].eventKey),
+        secondWorker.drainEventKey(roots[1].eventKey),
+      ]);
+      const children = await prisma.notificationOutboxIntent.findMany({
+        where: {
+          aggregateId: { in: [id1, id2] },
+          eventType: 'notification.wechat-delivery',
+          destinationRef: alice.memberId,
+        },
+        orderBy: { aggregateId: 'asc' },
+      });
+      // 两条不同 notification 各有自己的 active slot；并发扣同一 quota 仍只能一条 sent。
+      expect(children).toHaveLength(2);
+      await Promise.all([
+        worker.drainEventKey(children[0].eventKey),
+        secondWorker.drainEventKey(children[1].eventKey),
       ]);
       const all = [...(await deliveriesOf(id1)), ...(await deliveriesOf(id2))].filter(
         (d) => d.memberId === alice.memberId,

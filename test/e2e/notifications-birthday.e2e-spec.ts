@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { PrismaService } from '../../src/database/prisma.service';
 import { BirthdayGreetingService } from '../../src/modules/notifications/birthday-greeting.service';
+import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import { SmsSettingsService } from '../../src/modules/sms/sms-settings.service';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
@@ -17,6 +18,7 @@ import { createTestApp } from '../setup/test-app';
 
 const PHONE_HIT = '13920000001';
 const PHONE_HIT2 = '13920000007';
+const PHONE_FAILED_HISTORY = '13920000008';
 
 // 用固定 UTC+8 日界口径构造"今天生日"(出生年任意取 1990;UTC 04:00 = UTC+8 12:00 稳居当日)
 function birthDateTodayUtc8(): Date {
@@ -33,6 +35,7 @@ describe('生日祝福 job(直调 runOnce;不等真实定时)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let job: BirthdayGreetingService;
+  let worker: NotificationOutboxWorker;
   let settings: SmsSettingsService;
   let seq = 0;
 
@@ -78,10 +81,20 @@ describe('生日祝福 job(直调 runOnce;不等真实定时)', () => {
     });
   }
 
+  async function drainAll(): Promise<number> {
+    let claimed = 0;
+    for (;;) {
+      const result = await worker.drainOnce();
+      claimed += result.claimed;
+      if (result.claimed === 0) return claimed;
+    }
+  }
+
   beforeAll(async () => {
     app = await createTestApp();
     prisma = app.get(PrismaService);
     job = app.get(BirthdayGreetingService);
+    worker = app.get(NotificationOutboxWorker);
     settings = app.get(SmsSettingsService);
     await resetDb(app);
   });
@@ -93,7 +106,7 @@ describe('生日祝福 job(直调 runOnce;不等真实定时)', () => {
   it('前置检查:settings 未配置 → 整批跳过零行;配置但 templateIdBirthday 空 → 同跳过', async () => {
     expect(await job.runOnce()).toEqual({
       selected: 0,
-      sent: 0,
+      enqueued: 0,
       skippedIdempotent: 0,
       failed: 0,
     });
@@ -102,7 +115,7 @@ describe('生日祝福 job(直调 runOnce;不等真实定时)', () => {
     settings.invalidate();
     expect(await job.runOnce()).toEqual({
       selected: 0,
-      sent: 0,
+      enqueued: 0,
       skippedIdempotent: 0,
       failed: 0,
     });
@@ -141,7 +154,10 @@ describe('生日祝福 job(直调 runOnce;不等真实定时)', () => {
     }); // ⑥ profile 软删
 
     const summary = await job.runOnce();
-    expect(summary).toEqual({ selected: 1, sent: 1, skippedIdempotent: 0, failed: 0 });
+    expect(summary).toEqual({ selected: 1, enqueued: 1, skippedIdempotent: 0, failed: 0 });
+    expect(await prisma.smsSendLog.count()).toBe(0);
+    expect(await prisma.notificationOutboxIntent.count({ where: { status: 'pending' } })).toBe(1);
+    expect(await drainAll()).toBe(1);
 
     const rows = await prisma.smsSendLog.findMany();
     expect(rows).toHaveLength(1);
@@ -156,16 +172,32 @@ describe('生日祝福 job(直调 runOnce;不等真实定时)', () => {
 
   it('幂等:立即二跑零新增(skippedIdempotent);重启语义 = 以 DB 为准,直调即模拟重启后再跑', async () => {
     const second = await job.runOnce();
-    expect(second).toEqual({ selected: 1, sent: 0, skippedIdempotent: 1, failed: 0 });
+    expect(second).toEqual({ selected: 1, enqueued: 0, skippedIdempotent: 1, failed: 0 });
+    expect(await drainAll()).toBe(0);
     expect(await prisma.smsSendLog.count({ where: { templateKey: 'birthday-greeting' } })).toBe(1); // 仍只有一行,未重发
 
-    // FAILED 行不挡重试边界(E-B6):把唯一 SENT 行改为 FAILED → 三跑会再发
-    await prisma.smsSendLog.updateMany({
-      where: { phone: PHONE_HIT },
-      data: { status: 'FAILED' },
+    // FAILED 历史行不挡一个尚未成功过的 durable intent：新命中者仍会入队并发送。
+    await createMemberWithProfile({
+      username: 'bd_failed_history',
+      birthDate: birthDateTodayUtc8(),
+      userPhone: PHONE_FAILED_HISTORY,
+    });
+    await prisma.smsSendLog.create({
+      data: {
+        phone: PHONE_FAILED_HISTORY,
+        templateKey: 'birthday-greeting',
+        providerType: 'DEV_STUB',
+        status: 'FAILED',
+      },
     });
     const third = await job.runOnce();
-    expect(third).toEqual({ selected: 1, sent: 1, skippedIdempotent: 0, failed: 0 });
+    expect(third).toEqual({ selected: 2, enqueued: 1, skippedIdempotent: 1, failed: 0 });
+    expect(await drainAll()).toBe(1);
+    expect(
+      await prisma.smsSendLog.count({
+        where: { phone: PHONE_FAILED_HISTORY, status: 'SENT' },
+      }),
+    ).toBe(1);
   });
 
   it('当日新增命中者:已发者跳过、新者照发(幂等按号隔离)', async () => {
@@ -175,7 +207,8 @@ describe('生日祝福 job(直调 runOnce;不等真实定时)', () => {
       userPhone: PHONE_HIT2,
     });
     const summary = await job.runOnce();
-    expect(summary).toEqual({ selected: 2, sent: 1, skippedIdempotent: 1, failed: 0 });
+    expect(summary).toEqual({ selected: 3, enqueued: 1, skippedIdempotent: 2, failed: 0 });
+    expect(await drainAll()).toBe(1);
     expect(
       await prisma.smsSendLog.count({
         where: { phone: PHONE_HIT2, templateKey: 'birthday-greeting', status: 'SENT' },

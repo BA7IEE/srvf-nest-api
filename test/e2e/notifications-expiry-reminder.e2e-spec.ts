@@ -2,6 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 
 import { PrismaService } from '../../src/database/prisma.service';
 import { ExpiryReminderService } from '../../src/modules/notifications/expiry-reminder.service';
+import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -11,11 +12,22 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let job: ExpiryReminderService;
+  let worker: NotificationOutboxWorker;
+
+  async function drainAll(): Promise<number> {
+    let claimed = 0;
+    for (;;) {
+      const result = await worker.drainOnce();
+      claimed += result.claimed;
+      if (result.claimed === 0) return claimed;
+    }
+  }
 
   beforeAll(async () => {
     app = await createTestApp();
     prisma = app.get(PrismaService);
     job = app.get(ExpiryReminderService);
+    worker = app.get(NotificationOutboxWorker);
     await resetDb(app);
 
     // templateId 保持 null：个人提醒站内成功，微信 best-effort 记 no-template，不阻断主链。
@@ -106,12 +118,12 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
     });
     const upcomingActivity = await prisma.activity.create({
       data: {
-        title: '24 小时内活动提醒',
+        title: '24 小时内活动提醒 13900000001',
         activityTypeCode: 'demo-activity-type',
         organizationId: organization.id,
         startAt: new Date(NOW.getTime() + 12 * 3_600_000),
         endAt: new Date(NOW.getTime() + 14 * 3_600_000),
-        location: '测试地点',
+        location: 'https://cos.example/x?q-signature=abc&q-ak=AKID123',
         statusCode: 'published',
       },
     });
@@ -156,18 +168,8 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
     expect(insurance.expireNotifiedAt?.toISOString()).toBe(NOW.toISOString());
     expect(policy.expireNotifiedAt?.toISOString()).toBe(NOW.toISOString());
     expect(activity.startReminderSentAt?.toISOString()).toBe(NOW.toISOString());
-
-    const activityNotifications = await prisma.notification.findMany({
-      where: { notificationTypeCode: 'activity-reminder' },
-    });
-    expect(activityNotifications).toEqual([
-      expect.objectContaining({
-        title: '活动即将开始',
-        audienceType: 'directed',
-        recipientMemberId: members[0].id,
-        channels: ['in-app'],
-      }),
-    ]);
+    expect(activity.title).toBe('24 小时内活动提醒 13900000001');
+    expect(activity.location).toBe('https://cos.example/x?q-signature=abc&q-ak=AKID123');
 
     const audit = await prisma.auditLog.findFirstOrThrow({
       where: { event: 'certificate.expire', resourceId: certificateExpired.id },
@@ -182,6 +184,26 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
       after: { certStatusCode: 'expired' },
     });
     expect(JSON.stringify(audit.context)).not.toMatch(/certNumber|policyNumber|password|secret/i);
+
+    // 五个业务 marker/status/audit 与五个 root intents 已原子提交；worker 尚未执行任何 Effect。
+    expect(await prisma.notification.count()).toBe(0);
+    expect(await prisma.notificationOutboxIntent.count({ where: { status: 'pending' } })).toBe(5);
+    expect(await drainAll()).toBe(8); // 5 root + 3 targeted 微信 child(no-template)
+
+    const activityNotifications = await prisma.notification.findMany({
+      where: { notificationTypeCode: 'activity-reminder' },
+    });
+    expect(activityNotifications).toEqual([
+      expect.objectContaining({
+        title: '活动即将开始',
+        body: expect.stringContaining('[REDACTED]'),
+        audienceType: 'directed',
+        recipientMemberId: members[0].id,
+        channels: ['in-app'],
+      }),
+    ]);
+    expect(activityNotifications[0].body).not.toContain('13900000001');
+    expect(activityNotifications[0].body).not.toContain('q-signature');
 
     const notifications = await prisma.notification.findMany({
       where: { notificationTypeCode: 'expiry-reminder' },
@@ -205,6 +227,7 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
       3,
     );
 
+    const intentCountBeforeSecondRun = await prisma.notificationOutboxIntent.count();
     const second = await job.runOnce(NOW);
     expect(second).toEqual({
       activityReminderCandidates: 0,
@@ -220,6 +243,8 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
       teamPolicyNotificationsDispatched: 0,
       failed: 0,
     });
+    expect(await drainAll()).toBe(0);
+    expect(await prisma.notificationOutboxIntent.count()).toBe(intentCountBeforeSecondRun);
     expect(
       await prisma.notification.count({ where: { notificationTypeCode: 'expiry-reminder' } }),
     ).toBe(4);
@@ -227,5 +252,60 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
       await prisma.notification.count({ where: { notificationTypeCode: 'activity-reminder' } }),
     ).toBe(1);
     expect(await prisma.auditLog.count({ where: { event: 'certificate.expire' } })).toBe(1);
+  });
+
+  it('活动零 pass 首跑不写 marker/intent，新增 pass 后二跑才原子写 marker+intent', async () => {
+    const member = await prisma.member.create({
+      data: { memberNo: 'ER-ZERO-PASS', displayName: '后续通过者', status: 'ACTIVE' },
+    });
+    const organization = await prisma.organization.create({
+      data: { name: '零收件人提醒组织', nodeTypeCode: 'test-root' },
+    });
+    const activity = await prisma.activity.create({
+      data: {
+        title: '先无通过报名的活动',
+        activityTypeCode: 'demo-activity-type',
+        organizationId: organization.id,
+        startAt: new Date(NOW.getTime() + 10 * 3_600_000),
+        endAt: new Date(NOW.getTime() + 12 * 3_600_000),
+        location: '测试地点',
+        statusCode: 'published',
+      },
+    });
+
+    const first = await job.runOnce(NOW);
+    expect(first.activityReminderCandidates).toBe(1);
+    expect(first.activityRemindersDispatched).toBe(0);
+    expect(
+      (await prisma.activity.findUniqueOrThrow({ where: { id: activity.id } })).startReminderSentAt,
+    ).toBeNull();
+    expect(
+      await prisma.notificationOutboxIntent.count({
+        where: { aggregateType: 'activity', aggregateId: activity.id },
+      }),
+    ).toBe(0);
+
+    await prisma.activityRegistration.create({
+      data: { activityId: activity.id, memberId: member.id, statusCode: 'pass' },
+    });
+    const second = await job.runOnce(NOW);
+    expect(second.activityReminderCandidates).toBe(1);
+    expect(second.activityRemindersDispatched).toBe(1);
+    expect(
+      (
+        await prisma.activity.findUniqueOrThrow({ where: { id: activity.id } })
+      ).startReminderSentAt?.toISOString(),
+    ).toBe(NOW.toISOString());
+    expect(
+      await prisma.notificationOutboxIntent.count({
+        where: { aggregateType: 'activity', aggregateId: activity.id },
+      }),
+    ).toBe(1);
+    expect(await drainAll()).toBe(1);
+    expect(
+      await prisma.notification.count({
+        where: { notificationTypeCode: 'activity-reminder', recipientMemberId: member.id },
+      }),
+    ).toBe(1);
   });
 });

@@ -40,11 +40,24 @@ function build(opts: {
     },
     user: {
       findMany: jest.fn().mockResolvedValue(usersRows),
+      findFirst: jest.fn().mockImplementation(({ where }: { where: { memberId?: string } }) => {
+        const user = usersRows.find(({ memberId }) => memberId === where.memberId);
+        return Promise.resolve(user ? { phone: user.phone } : null);
+      }),
     },
     memberOrganizationMembership: {
       findMany: jest.fn().mockResolvedValue([]),
     },
     notificationDelivery: {
+      findFirst: jest
+        .fn()
+        .mockImplementation(({ where }: { where: { memberId?: string } }) =>
+          Promise.resolve(
+            (opts.alreadySentMemberIds ?? []).includes(where.memberId ?? '')
+              ? { id: 'sent-evidence', recipientRef: '139****0001' }
+              : null,
+          ),
+        ),
       findMany: jest
         .fn()
         .mockResolvedValue((opts.alreadySentMemberIds ?? []).map((memberId) => ({ memberId }))),
@@ -75,6 +88,20 @@ function build(opts: {
       }),
     },
   };
+  const transaction = jest.fn(
+    async (fn: (client: typeof prisma) => Promise<unknown>): Promise<unknown> => {
+      const deliveryLength = deliveries.length;
+      const sendLogLength = sendLogs.length;
+      try {
+        return await fn(prisma);
+      } catch (error) {
+        deliveries.splice(deliveryLength);
+        sendLogs.splice(sendLogLength);
+        throw error;
+      }
+    },
+  );
+  Object.assign(prisma, { $transaction: transaction });
 
   const router = {
     resolveProviderType: jest.fn().mockResolvedValue('DEV_STUB'),
@@ -113,7 +140,7 @@ function build(opts: {
     recipientMemberId: null,
   } as never;
 
-  return { service, notification, prisma, router, deliveries, sendLogs };
+  return { service, notification, prisma, router, settings, transaction, deliveries, sendLogs };
 }
 
 describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () => {
@@ -128,7 +155,7 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
   });
 
   it('仅可见且有手机者发送:SENT 落 send_log(templateKey=notification)+ delivery sent;无手机者不计入', async () => {
-    const { service, notification, sendLogs, deliveries } = build({
+    const { service, notification, transaction, sendLogs, deliveries } = build({
       members: [
         { memberId: 'm1', phone: '13900000001' },
         { memberId: 'm2', phone: null }, // 无手机 → 不计入可计费受众
@@ -142,6 +169,7 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
       true,
     );
     expect(deliveries.every((d) => d.channel === 'sms' && d.status === 'sent')).toBe(true);
+    expect(transaction).toHaveBeenCalledTimes(2);
   });
 
   it('recipientRef = maskPhone(138****1234)', async () => {
@@ -256,6 +284,59 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
     expect(count).toBe(2);
     expect(router.sendNotification).not.toHaveBeenCalled();
     expect(router.resolveProviderType).not.toHaveBeenCalled();
+    expect(sendLogs).toHaveLength(0);
+  });
+
+  it('outbox 单收件人 provider 失败必须外抛，FAILED 流水保留供该 child 重试', async () => {
+    const { service, notification, sendLogs, deliveries } = build({
+      members: [{ memberId: 'm1', phone: '13900000001' }],
+      sendImpl: () => Promise.reject(new SmsProviderSendError('Transient', 'retry me')),
+    });
+    await expect(service.dispatchRecipient(notification, 'm1')).rejects.toBeInstanceOf(
+      SmsProviderSendError,
+    );
+    expect(sendLogs).toContainEqual(expect.objectContaining({ status: 'FAILED' }));
+    expect(deliveries).toContainEqual(expect.objectContaining({ status: 'failed' }));
+  });
+
+  it('outbox provider成功后 sendLog+Delivery 同一短事务；delivery 失败两者均回滚并外抛', async () => {
+    const { service, notification, prisma, transaction, sendLogs, deliveries } = build({
+      members: [{ memberId: 'm1', phone: '13900000001' }],
+    });
+    prisma.notificationDelivery.create.mockRejectedValueOnce(new Error('delivery db unavailable'));
+    await expect(service.dispatchRecipient(notification, 'm1')).rejects.toThrow(
+      'delivery db unavailable',
+    );
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(sendLogs).not.toContainEqual(expect.objectContaining({ status: 'SENT' }));
+    expect(deliveries).toHaveLength(0);
+  });
+
+  it('SENT evidence 检查早于 disabled settings/audience，ack-crash reclaim 只记 already-sent', async () => {
+    const { service, notification, router, settings, deliveries } = build({
+      members: [{ memberId: 'm1', phone: '13900000001' }],
+      ready: false,
+      alreadySentMemberIds: ['m1'],
+    });
+    await expect(service.dispatchRecipient(notification, 'm1')).resolves.toEqual({
+      outcome: 'skipped',
+    });
+    expect(settings.getActiveSettings).not.toHaveBeenCalled();
+    expect(router.resolveProviderType).not.toHaveBeenCalled();
+    expect(router.sendNotification).not.toHaveBeenCalled();
+    expect(deliveries).toContainEqual(
+      expect.objectContaining({ status: 'skipped', reasonCode: 'already-sent' }),
+    );
+  });
+
+  it('outbox 单收件人通道关闭直接外抛，零 FAILED 流水并由 worker nack', async () => {
+    const { service, notification, sendLogs } = build({
+      members: [{ memberId: 'm1', phone: '13900000001' }],
+      sendImpl: () => Promise.reject(new SmsChannelUnavailableError('closed')),
+    });
+    await expect(service.dispatchRecipient(notification, 'm1')).rejects.toBeInstanceOf(
+      SmsChannelUnavailableError,
+    );
     expect(sendLogs).toHaveLength(0);
   });
 });

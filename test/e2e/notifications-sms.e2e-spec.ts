@@ -4,6 +4,7 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import { SmsSettingsService } from '../../src/modules/sms/sms-settings.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
@@ -57,6 +58,7 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let settings: SmsSettingsService;
+  let worker: NotificationOutboxWorker;
   let adminAuth: string;
   let userAuth: string;
   let seq = 0;
@@ -173,10 +175,20 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
       .send(body);
   }
 
+  async function drainAll(): Promise<number> {
+    let claimed = 0;
+    for (;;) {
+      const result = await worker.drainOnce();
+      claimed += result.claimed;
+      if (result.claimed === 0) return claimed;
+    }
+  }
+
   beforeAll(async () => {
     app = await createTestApp();
     prisma = app.get(PrismaService);
     settings = app.get(SmsSettingsService);
+    worker = app.get(NotificationOutboxWorker);
     await resetDb(app);
 
     const { bizAdminRoleId } = await seedBizAdminPermissionsAndRole(app);
@@ -316,18 +328,43 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
       expect(deliveries.every((d) => d.status === 'sent')).toBe(true);
       expect(deliveries.map((d) => d.recipientRef).sort()).toEqual(['139****0001', '139****0002']);
 
-      // audit:复用 notification.publish 伞事件,operation=send-sms + recipientCount(手机号不入 audit)
+      // audit:reserved 与 durable intents 同事务；first-attempt 记录同步首轮真实计数，且不冒充最终态。
       const audits = await prisma.auditLog.findMany({
         where: { event: 'notification.publish', resourceId: id },
       });
-      const sendAudit = audits.find(
+      const sendAudits = audits.filter(
         (a) => (a.context as { extra?: { operation?: string } })?.extra?.operation === 'send-sms',
       );
-      expect(sendAudit).toBeDefined();
-      const extra = (sendAudit!.context as { extra: Record<string, unknown> }).extra;
-      expect(extra).toMatchObject({ operation: 'send-sms', recipientCount: 2, sent: 2 });
+      expect(sendAudits).toHaveLength(2);
+      const extraByState = Object.fromEntries(
+        sendAudits.map((row) => {
+          const extra = (row.context as { extra: Record<string, unknown> }).extra;
+          return [extra.deliveryState, extra];
+        }),
+      );
+      expect(extraByState.reserved).toMatchObject({
+        operation: 'send-sms',
+        deliveryState: 'reserved',
+        recipientCount: 2,
+        reserved: 2,
+        busy: 0,
+        completed: 0,
+        dead: 0,
+        firstAttemptIsFinal: false,
+      });
+      expect(extraByState['first-attempt']).toMatchObject({
+        operation: 'send-sms',
+        deliveryState: 'first-attempt',
+        recipientCount: 2,
+        sent: 2,
+        failed: 0,
+        skipped: 0,
+        firstAttemptIsFinal: false,
+      });
+      expect(extraByState.reserved.generationId).toMatch(/^[0-9a-f]{8}-[0-9a-f-]{27}$/);
+      expect(extraByState['first-attempt'].generationId).toBe(extraByState.reserved.generationId);
       // 审计 context 不含明文手机号
-      expect(JSON.stringify(sendAudit!.context)).not.toContain('13912340001');
+      expect(JSON.stringify(sendAudits)).not.toContain('13912340001');
     });
 
     it('re-trigger 去重:同通知二次确认发送 → 全 skipped already-sent(不重复计费)', async () => {
@@ -346,25 +383,54 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
         where: { notificationId: id, status: 'skipped' },
       });
       expect(skipDelivery?.reasonCode).toBe('already-sent');
+      const generations = await prisma.notificationOutboxIntent.findMany({
+        where: { eventType: 'notification.admin-sms', aggregateId: id },
+        select: { eventKey: true, status: true },
+      });
+      expect(generations).toHaveLength(2);
+      expect(new Set(generations.map(({ eventKey }) => eventKey))).toHaveProperty('size', 2);
+      expect(generations.every(({ status }) => status === 'succeeded')).toBe(true);
     });
 
-    it('同号同日同模板幂等继承:已收过当日 notification 短信的号 → 新通知 skipped idempotent', async () => {
-      const org = await createOrg();
-      const phone = '13912360001';
-      await createMemberInOrg(org, phone);
-      // 预置:该号今日已 SENT 一条 notification 短信(模拟另一通知已发)
-      await prisma.smsSendLog.create({
-        data: { phone, templateKey: 'notification', providerType: 'DEV_STUB', status: 'SENT' },
-      });
+    it.each([
+      ['idempotent', 'notification', 1, '13912360001'],
+      ['daily-limit', 'birthday-greeting', 10, '13912360002'],
+      ['interval', 'birthday-greeting', 1, '13912360003'],
+    ])(
+      '%s 临时 skip terminal 后窗口跨越，新 confirmation generation 可真实发送',
+      async (reasonCode: string, templateKey: string, logCount: number, phone: string) => {
+        const org = await createOrg();
+        await createMemberInOrg(org, phone);
+        await prisma.smsSendLog.createMany({
+          data: Array.from({ length: logCount }, () => ({
+            phone,
+            templateKey,
+            providerType: 'DEV_STUB',
+            status: 'SENT',
+          })),
+        });
 
-      const id = await createDeptNotification(org);
-      const res = await sendSms(adminAuth, id, { confirmed: true });
-      expect(res.body.data).toMatchObject({ recipientCount: 1, sent: 0, skipped: 1 });
-      const delivery = await prisma.notificationDelivery.findFirst({
-        where: { notificationId: id, status: 'skipped' },
-      });
-      expect(delivery?.reasonCode).toBe('idempotent');
-    });
+        const id = await createDeptNotification(org);
+        const first = await sendSms(adminAuth, id, { confirmed: true });
+        expect(first.body.data).toMatchObject({ recipientCount: 1, sent: 0, skipped: 1 });
+        const delivery = await prisma.notificationDelivery.findFirst({
+          where: { notificationId: id, status: 'skipped' },
+        });
+        expect(delivery?.reasonCode).toBe(reasonCode);
+
+        await prisma.smsSendLog.updateMany({
+          where: { phone },
+          data: { createdAt: new Date(Date.now() - 2 * 86_400_000) },
+        });
+        const second = await sendSms(adminAuth, id, { confirmed: true });
+        expect(second.body.data).toMatchObject({ recipientCount: 1, sent: 1, skipped: 0 });
+        expect(
+          await prisma.notificationOutboxIntent.count({
+            where: { eventType: 'notification.admin-sms', aggregateId: id },
+          }),
+        ).toBe(2);
+      },
+    );
   });
 
   // ============ 通道未配置 ============
@@ -384,11 +450,19 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
           await sendSms(adminAuth, id, { confirmed: true }),
           BizCode.SMS_CHANNEL_NOT_CONFIGURED,
         );
+        expect(
+          await prisma.notificationOutboxIntent.count({
+            where: { eventType: 'notification.admin-sms', aggregateId: id },
+          }),
+        ).toBe(0);
         expect(await prisma.notificationDelivery.count({ where: { notificationId: id } })).toBe(0);
         expect(await prisma.smsSendLog.count({ where: { phone: '13900099001' } })).toBe(0);
       } finally {
         await setSmsSettings(); // 还原
       }
+      expect(await drainAll()).toBe(0);
+      expect(await prisma.notificationDelivery.count({ where: { notificationId: id } })).toBe(0);
+      expect(await prisma.smsSendLog.count({ where: { phone: '13900099001' } })).toBe(0);
     });
   });
 });

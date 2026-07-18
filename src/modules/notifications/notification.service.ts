@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import {
   DictItemStatus,
   DictTypeStatus,
@@ -28,9 +29,16 @@ import {
   NOTIFICATION_STATUS_PUBLISHED,
   NOTIFICATION_TYPE_DICT_CODE,
   NOTIFICATION_VISIBILITY_DEPARTMENT,
+  OUTBOX_EVENT_ADMIN_SMS,
+  OUTBOX_EVENT_WECHAT_BROADCAST,
+  OUTBOX_PAYLOAD_VERSION,
 } from './notification.constants';
 import { NotificationSmsDispatchService } from './notification-sms-dispatch.service';
-import { NotificationWechatDispatchService } from './notification-wechat-dispatch.service';
+import {
+  type ClaimedNotificationOutboxIntent,
+  NotificationOutboxService,
+} from './notification-outbox.service';
+import { NotificationOutboxWorker } from './notification-outbox.worker';
 import type {
   CreateNotificationDto,
   ListNotificationAdminQueryDto,
@@ -57,8 +65,9 @@ export class NotificationService {
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
-    private readonly wechatDispatch: NotificationWechatDispatchService,
     private readonly smsDispatch: NotificationSmsDispatchService,
+    private readonly outbox: NotificationOutboxService,
+    private readonly outboxWorker: NotificationOutboxWorker,
   ) {}
 
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
@@ -314,14 +323,6 @@ export class NotificationService {
     meta: AuditMeta,
   ): Promise<NotificationAdminDetailDto> {
     const row = await this.transition(id, user, meta, 'publish');
-    // 微信渠道:在 publish DB 事务**之外**同步派发(§6.2:8s HTTP 绝不拖事务)。
-    // 仅广播勾微信走;派发器永不抛(失败落 delivery 不阻断 publish 响应,§8.3)。
-    if (
-      row.channels.includes(NOTIFICATION_CHANNEL_WECHAT) &&
-      row.audienceType === NOTIFICATION_AUDIENCE_BROADCAST
-    ) {
-      await this.wechatDispatch.dispatchBroadcast(row);
-    }
     return this.toDetailDto(row);
   }
 
@@ -344,7 +345,8 @@ export class NotificationService {
   // ============ 端点:admin 显式发起短信兜底(紧急召集;统一通知 S5,评审稿 §4 / D-N4)============
   // **计费确认必需**:confirmed=true 才真发(每收件人 1 条计费);confirmed=false = 预览受众计数零发送零计费。
   // **前置闸**:通知须 published 且 channels 声明含 'sms'(否则 31013);通道未配置 → 24030(发送前抛,零计费)。
-  // **短信外发在任何 DB 事务之外**(§6.2;dispatch 逐人 send_log/delivery 非事务,FAILED 逐人不阻断)。
+  // **provider 外发在 DB 事务之外**；accepted 后 sms_send_logs SENT + NotificationDelivery SENT
+  // 同一短事务提交。provider accepted→本地 commit 与本地 commit→outbox ack 窗口均为 at-least-once。
   // **审计**:仅 confirmed 真发记 audit(admin 显式管理动作 + 收件人计数;复用 notification.publish 伞事件
   // operation='send-sms',§13.2 admin 入 audit / 逐条投递不入 audit;手机号经 delivery/send_log 掩码,audit 仅计数无明文)。
   async sendSms(
@@ -370,18 +372,82 @@ export class NotificationService {
       return { confirmed: false, recipientCount, sent: 0, failed: 0, skipped: 0 };
     }
 
-    // 确认发送:外部 SMS 在任何 DB 事务之外;通道未就绪 → 24030(发送前抛,零计费零 delivery)。
-    let summary;
-    try {
-      summary = await this.smsDispatch.dispatch(notification);
-    } catch (err) {
-      if (err instanceof SmsChannelUnavailableError) {
-        throw new BizException(BizCode.SMS_CHANNEL_NOT_CONFIGURED);
+    // 24030 必须发生在任何 durable reservation 前：HTTP 报失败后不能在恢复配置时迟到补发。
+    await this.smsDispatch.assertChannelReady();
+    const generationId = randomUUID();
+    const leaseOwner = `admin-sms-request:${generationId}`;
+    const reservation = await this.prisma.$transaction(async (tx) => {
+      const memberIds = await this.smsDispatch.resolveRecipientMemberIds(notification, tx);
+      const intents: ClaimedNotificationOutboxIntent[] = [];
+      let busy = 0;
+      let completed = 0;
+      let dead = 0;
+      for (const memberId of memberIds) {
+        const result = await this.outbox.reserveAdminSmsAttempt(
+          {
+            eventKey: `admin-sms:${notification.id}:${generationId}:${memberId}`,
+            eventType: OUTBOX_EVENT_ADMIN_SMS,
+            payloadVersion: OUTBOX_PAYLOAD_VERSION,
+            payload: { notificationId: notification.id, memberId },
+            aggregateType: 'notification',
+            aggregateId: notification.id,
+            destinationType: 'member',
+            destinationRef: memberId,
+          },
+          leaseOwner,
+          tx,
+        );
+        if (result.intent) intents.push(result.intent);
+        else if (result.state === 'busy') busy += 1;
+        else if (result.state === 'completed') completed += 1;
+        else dead += 1;
       }
-      throw err;
+      // durable command 与 reserved 审计同事务：commit 后即使进程在首个 provider 前崩溃，
+      // 仍能证明谁发起了这批命令；首轮真实结果由事务外第二条 audit 补记。
+      await this.auditLogs.log({
+        event: 'notification.publish',
+        actorUserId: user.id,
+        actorRoleSnap: user.role,
+        resourceType: AUDIT_RESOURCE_TYPE,
+        resourceId: notification.id,
+        meta,
+        extra: {
+          operation: 'send-sms',
+          deliveryState: 'reserved',
+          firstAttemptIsFinal: false,
+          generationId,
+          recipientCount: memberIds.length,
+          reserved: intents.length,
+          busy,
+          completed,
+          dead,
+        },
+        tx,
+      });
+      return { recipientCount: memberIds.length, intents, busy, completed, dead };
+    });
+
+    const summary = {
+      recipientCount: reservation.recipientCount,
+      sent: 0,
+      failed: reservation.busy + reservation.dead,
+      skipped: reservation.completed,
+    };
+    let channelUnavailable = false;
+    for (const intent of reservation.intents) {
+      try {
+        const result = (await this.outboxWorker.executeReserved(intent)) as
+          | { outcome: 'sent' | 'skipped' }
+          | undefined;
+        if (result?.outcome === 'sent') summary.sent += 1;
+        else summary.skipped += 1;
+      } catch (error) {
+        summary.failed += 1;
+        if (error instanceof SmsChannelUnavailableError) channelUnavailable = true;
+      }
     }
 
-    // 审计 admin 显式管理动作 + 收件人计数(复用 publish 伞事件,无新 audit 串;手机号不入 audit,仅计数)。
+    // 该 audit 是同步 HTTP 首轮结果，不冒充最终投递态；失败 child 仍由 durable worker 重试。
     await this.auditLogs.log({
       event: 'notification.publish',
       actorUserId: user.id,
@@ -391,14 +457,24 @@ export class NotificationService {
       meta,
       extra: {
         operation: 'send-sms',
-        recipientCount: summary.recipientCount,
-        sent: summary.sent,
-        failed: summary.failed,
-        skipped: summary.skipped,
+        deliveryState: 'first-attempt',
+        firstAttemptIsFinal: false,
+        generationId,
+        reserved: reservation.intents.length,
+        busy: reservation.busy,
+        completed: reservation.completed,
+        dead: reservation.dead,
+        ...summary,
       },
     });
+    if (channelUnavailable && summary.sent === 0 && summary.skipped === 0) {
+      throw new BizException(BizCode.SMS_CHANNEL_NOT_CONFIGURED);
+    }
 
-    return { confirmed: true, ...summary };
+    return {
+      confirmed: true,
+      ...summary,
+    };
   }
 
   // 状态机内嵌(镜像 content;立即生效无 cron)。非法跃迁 → 31030。返原始 row(publish 据 channels 派发)。
@@ -448,6 +524,25 @@ export class NotificationService {
         extra: { operation },
         tx,
       });
+      if (
+        operation === 'publish' &&
+        updated.channels.includes(NOTIFICATION_CHANNEL_WECHAT) &&
+        updated.audienceType === NOTIFICATION_AUDIENCE_BROADCAST
+      ) {
+        await this.outbox.enqueue(
+          {
+            eventKey: `wechat-broadcast:${updated.id}:${updated.publishedAt?.toISOString() ?? 'now'}`,
+            eventType: OUTBOX_EVENT_WECHAT_BROADCAST,
+            payloadVersion: OUTBOX_PAYLOAD_VERSION,
+            payload: { notificationId: updated.id },
+            aggregateType: 'notification',
+            aggregateId: updated.id,
+            destinationType: 'broadcast',
+            destinationRef: updated.id,
+          },
+          tx,
+        );
+      }
       return updated;
     });
     return row;

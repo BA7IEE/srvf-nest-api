@@ -3,10 +3,8 @@ import { Cron } from '@nestjs/schedule';
 import { MemberStatus, UserStatus } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
-import { SmsProviderRouter } from '../sms/sms-provider.router';
-import { SmsSettingsService } from '../sms/sms-settings.service';
-import { maskPhone, SMS_TEMPLATE_KEY_BIRTHDAY } from '../sms/sms.constants';
-import { SmsChannelUnavailableError, SmsProviderSendError } from '../sms/sms.types';
+import { OUTBOX_EVENT_BIRTHDAY_SMS, OUTBOX_PAYLOAD_VERSION } from './notification.constants';
+import { NotificationOutboxService } from './notification-outbox.service';
 
 // B 队列 F5-T2(2026-06-11):生日祝福短信 job——G-7(通知/短信/推送)首个落地点
 // (冻结评审稿 docs/archive/reviews/queue-b-otp-birthday-infra-review.md §6,下称"评审稿")。
@@ -20,18 +18,15 @@ import { SmsChannelUnavailableError, SmsProviderSendError } from '../sms/sms.typ
 //   && User 存在 && User.phone 非空 && User ACTIVE 未软删(MemberProfile.mobile 永不使用)
 //   2/29 仅闰年当天发(非闰年不发,不顺延;KISS 成文 §6.4)。
 //
-// 幂等防重发(E-B6):发前查 sms_send_logs 当日(UTC+8)同模板同号 SENT 已存在则跳过;
-// 重启不重发(以 DB 为准,无内存状态);FAILED 行不挡同日重跑(FAILED ≠ 已触达)。
-//
-// 失败语义(E-B7):单条 provider 失败 → 写 FAILED 行,不重试不阻断,继续下一人;
-// 通道整体不可用(settings 缺失 / production-like DEV_STUB / 运维中途关闭)→ 整批跳过零成本。
+// durable outbox(D-Outbox):cron 只以「北京时间日期 + memberId」稳定 eventKey 入队;
+// 独立 worker 执行时才解析 User.phone、复用既有 sms_send_logs 幂等并在事务外调用 provider。
+// claim / lease / retry / dead 均落 PostgreSQL,多实例不依赖进程内状态。
 // 隐私(E-B8):不进 audit_logs(运营触达,send_logs 流水足够);应用日志一律 maskPhone;
 // 首版模板零变量,无个人信息出仓。
-// 单实例前提(E-B12):@Cron 进程级触发即全局唯一;多实例横向扩容前必须先加分布式锁。
 
 export interface BirthdayRunSummary {
   selected: number;
-  sent: number;
+  enqueued: number;
   skippedIdempotent: number;
   failed: number;
 }
@@ -42,8 +37,7 @@ export class BirthdayGreetingService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly router: SmsProviderRouter,
-    private readonly settings: SmsSettingsService,
+    private readonly outbox: NotificationOutboxService,
   ) {}
 
   // 每日 09:00 Asia/Shanghai(评审稿 §6.3;name 供 SchedulerRegistry 识别)。
@@ -59,20 +53,15 @@ export class BirthdayGreetingService {
   }
 
   async runOnce(now: Date = new Date()): Promise<BirthdayRunSummary> {
-    const summary: BirthdayRunSummary = { selected: 0, sent: 0, skippedIdempotent: 0, failed: 0 };
-
-    // 前置检查(E-B7):settings 缺失 / 未启用 / templateIdBirthday 空 → 整批跳过零行。
-    // production-like 下 DEV_STUB 的禁用由 router.resolve 第二重保证(发送时抛,整批跳过)。
-    const settings = await this.settings.getActiveSettings();
-    if (!settings || !settings.enabled || !settings.templateIdBirthday) {
-      this.logger.warn(
-        'birthday job skipped: sms settings 未配置 / 未启用 / templateIdBirthday 为空',
-      );
-      return summary;
-    }
+    const summary: BirthdayRunSummary = {
+      selected: 0,
+      enqueued: 0,
+      skippedIdempotent: 0,
+      failed: 0,
+    };
 
     const { month, day } = utc8MonthDay(now);
-    const dayStart = startOfDayUtc8(now);
+    const dateKey = utc8DateKey(now);
 
     // 选取(E-B5):JOIN 链一次取回,月日匹配在内存判定(Prisma 无月日函数;
     // 候选集 = 全部活跃队员 profile,内部系统百人级量级可承受)
@@ -89,6 +78,7 @@ export class BirthdayGreetingService {
         birthDate: true,
         member: {
           select: {
+            id: true,
             users: {
               where: { deletedAt: null },
               select: { phone: true, status: true },
@@ -106,68 +96,36 @@ export class BirthdayGreetingService {
       const user = row.member.users[0];
       if (!user || user.phone === null) continue;
       if (user.status !== UserStatus.ACTIVE) continue;
-      targets.push(user.phone);
+      targets.push(row.member.id);
     }
     summary.selected = targets.length;
 
-    for (const phone of targets) {
-      // 幂等防重发(E-B6):当日同模板同号 SENT 已存在 → 跳过
-      const already = await this.prisma.smsSendLog.count({
-        where: {
-          phone,
-          templateKey: SMS_TEMPLATE_KEY_BIRTHDAY,
-          status: 'SENT',
-          createdAt: { gte: dayStart },
-        },
-      });
-      if (already > 0) {
-        summary.skippedIdempotent += 1;
-        continue;
-      }
-
-      let providerType: 'DEV_STUB' | 'TENCENT_SMS';
+    for (const memberId of targets) {
+      const eventKey = `birthday-sms:${dateKey}:${memberId}`;
       try {
-        providerType = await this.router.resolveProviderType();
-      } catch (err) {
-        // 通道整体不可用(如运维并发关闭 / production-like DEV_STUB):剩余整批跳过,零成本不写 FAILED
-        this.logger.warn(
-          `birthday job aborted: channel unavailable (${err instanceof Error ? err.message : String(err)})`,
-        );
-        break;
-      }
-
-      try {
-        const result = await this.router.sendBirthdayGreeting({ phone });
-        await this.prisma.smsSendLog.create({
-          data: {
-            phone,
-            templateKey: SMS_TEMPLATE_KEY_BIRTHDAY,
-            providerType,
-            status: 'SENT',
-            providerMsgId: result.providerMsgId,
-          },
+        const existing = await this.outbox.findByEventKey(eventKey);
+        await this.outbox.enqueue({
+          eventKey,
+          eventType: OUTBOX_EVENT_BIRTHDAY_SMS,
+          payloadVersion: OUTBOX_PAYLOAD_VERSION,
+          payload: { memberId, dateKey },
+          aggregateType: 'member',
+          aggregateId: memberId,
+          destinationType: 'member',
+          destinationRef: memberId,
         });
-        summary.sent += 1;
-      } catch (err) {
-        // 单条失败:FAILED 落流水(errCode/errMsg 不含 secret),不重试不阻断(E-B7)
-        const { errCode, errMsg } = normalizeSendError(err);
-        await this.prisma.smsSendLog.create({
-          data: {
-            phone,
-            templateKey: SMS_TEMPLATE_KEY_BIRTHDAY,
-            providerType,
-            status: 'FAILED',
-            errCode,
-            errMsg,
-          },
-        });
+        if (existing) summary.skippedIdempotent += 1;
+        else summary.enqueued += 1;
+      } catch (error) {
         summary.failed += 1;
-        this.logger.warn(`birthday send failed phone=${maskPhone(phone)} errCode=${errCode}`);
+        this.logger.warn(
+          `birthday enqueue failed member=${memberId} errorClass=${errorClass(error)}`,
+        );
       }
     }
 
     this.logger.log(
-      `birthday job done: selected=${summary.selected} sent=${summary.sent} ` +
+      `birthday job done: selected=${summary.selected} enqueued=${summary.enqueued} ` +
         `skippedIdempotent=${summary.skippedIdempotent} failed=${summary.failed}`,
     );
     return summary;
@@ -178,23 +136,16 @@ export class BirthdayGreetingService {
 // 该函数未导出且语义独立,这里模块级实现,不抽共享 util——AGENTS §2 grab-bag 禁令)
 const UTC8_OFFSET_MS = 8 * 3600 * 1000;
 
-function startOfDayUtc8(now: Date): Date {
-  const shifted = now.getTime() + UTC8_OFFSET_MS;
-  const dayStartShifted = Math.floor(shifted / 86_400_000) * 86_400_000;
-  return new Date(dayStartShifted - UTC8_OFFSET_MS);
-}
-
 function utc8MonthDay(d: Date): { month: number; day: number } {
   const shifted = new Date(d.getTime() + UTC8_OFFSET_MS);
   return { month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate() };
 }
 
-function normalizeSendError(err: unknown): { errCode: string; errMsg: string } {
-  if (err instanceof SmsProviderSendError) {
-    return { errCode: err.errCode, errMsg: err.errMsg };
-  }
-  if (err instanceof SmsChannelUnavailableError) {
-    return { errCode: 'CHANNEL_UNAVAILABLE', errMsg: err.message };
-  }
-  return { errCode: 'UNKNOWN', errMsg: err instanceof Error ? err.message : String(err) };
+function utc8DateKey(now: Date): string {
+  const shifted = new Date(now.getTime() + UTC8_OFFSET_MS);
+  return shifted.toISOString().slice(0, 10);
+}
+
+function errorClass(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error;
 }

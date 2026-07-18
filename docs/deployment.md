@@ -3,7 +3,7 @@
 > V1.1 起仅交付应用镜像本身;`docker-compose.yml` 仅供本地起 PostgreSQL,生产部署形态由部署环境决定。
 > **多实例检查清单(2026-06-11 B 队列起;2026-07-18 D-Throttle 把第 2 项改为已支持)**:当前部署形态仍是单实例；横向扩成多副本前必须逐项核对下列 7 项，不能因限流已共享就推断其余进程内任务/缓存也已具备多实例一致性:
 >
-> 1. **生日祝福定时任务(扩容前必须处理)**:`@nestjs/schedule` 进程级 `@Cron`,每日 09:00 Asia/Shanghai(全仓唯一定时任务;`ScheduleModule.forRoot()` 在 [`app.module.ts`](../src/app.module.ts),job 在 [`birthday-greeting.service.ts`](../src/modules/notifications/birthday-greeting.service.ts);[`queue-b 评审稿 §6.8`](archive/reviews/queue-b-otp-birthday-infra-review.md))。多副本 → 每副本各自触发,同一天重复发送(双副本即双发)→ 扩容前必须先为该 job 加分布式锁(DB advisory lock / 任务表)。
+> 1. **生日/到期通知任务(已支持多实例 durable enqueue)**:两个进程级 `@Cron` 仍会在每个应用副本 09:00 Asia/Shanghai 触发，但只向 PostgreSQL outbox enqueue；稳定 eventKey unique 使多副本同一业务意图只保留一行。marker/证书状态/audit 与 intent 同事务，独立 worker 用 `FOR UPDATE SKIP LOCKED` + lease/fencing 竞争领取。provider 调用为 at-least-once，effect 成功后、ack 前崩溃可能重复触达；下游模板与运营文案须容忍重复。
 > 2. **10 个 PostgreSQL shared 限流器(已支持多实例)**:`@nestjs/throttler@6.5.0` 的 login(`default`)/ password-change / refresh / sms-send / sms-verify / password-reset / login-sms / login-wechat / recruitment / content-public 全部注入 [`PostgresqlThrottlerStorage`](../src/bootstrap/postgresql-throttler-storage.ts)。`(throttlerName,key)` 唯一行在同一事务内原子更新，副本间共享一份 IP 配额；阈值、TTL、blockDuration、包生成的 hash key、42900 与无 header 行为不变。数据库/storage 异常严格走 50000，绝不回退进程内 Map；无 Redis、无第 3 个 cron。
 > 3. **RBAC 权限解析(已支持多实例即时一致)**:`RbacService` 每次判权都从 PostgreSQL 解析当前在期 GLOBAL USER RoleBinding → RolePermission → Permission,不保留跨请求权限缓存；grant/revoke、role-permission 变更与角色软删在任一实例提交后,其他实例下一次请求直接读取当前 DB 事实。`POST /api/system/v1/rbac/reload` 的 endpoint、三档入参与 `{reloaded:true}` 响应保持兼容,内部无需清理状态。用户禁用 / 软删仍由 JwtStrategy 每请求查库校验 `status` / `deletedAt`,职责不变。
 > 4. **storage-settings 60 秒进程内缓存(影响小,知悉即可)**:[`storage-settings.service.ts`](../src/modules/storage/storage-settings.service.ts) `CACHE_TTL_MS = 60_000`。多副本 → 存储(COS)配置变更在其他实例最多滞后 60s 生效 → 一般可接受;需要更快收敛时缩短 TTL 或改共享缓存。
@@ -77,6 +77,14 @@ docker run --rm -p 3000:3000 \
 3. **运行中故障语义**：PostgreSQL/storage 报错时业务 handler 不执行；所有副本继续 fail-closed。禁止动态切回每进程 Map，否则会静默恢复多实例额度穿透。
 4. **回退**：increment p99、锁等待、DB CPU/连接池或 429 比例异常时，先停止/替换新部署并缩到单实例，再显式恢复上一应用版本；回退完成前保持 fail-closed。additive `throttler_buckets` 表保留，不做 down migration、不立即 `DROP`。
 5. **retention**：过期桶只按 [`postgresql-throttler-retention-sop.md`](ops/postgresql-throttler-retention-sop.md) 在维护窗手工小批清理；零自动 cron。
+
+### D-Outbox 部署、观测与回退
+
+1. **先 migration，再应用与 worker**：先审查并执行 `20260718210000_notification_outbox_intents`，确认 migration 总数 58、无 pending；再部署应用，最后至少启动一个独立 `pnpm start:notification-outbox-worker` 进程。worker 与 API 使用同一 `DATABASE_URL` 及既有 SMS/WeChat 配置，但不监听 HTTP、不 import `AppModule`/`ScheduleModule`。
+2. **可用性底线**：API 已开始写 outbox 而 worker 未运行时不会丢 intent，但通知会积压。上线探针至少覆盖 pending oldest age、processing lease 超时、attempts 分布、dead 增长率、claim/ack/nack latency、provider 成功率和数据库连接池。
+3. **交付语义**：worker 在 provider 事务外发送；admin SMS 的 `sms_send_logs SENT` 与 `NotificationDelivery sent` 同一短事务提交后才 ack，微信成功证据同样先落库再 ack。provider accepted 到本地证据事务 commit 前、或证据已提交但 ack 前崩溃仍属于明确的 at-least-once 窗口，不宣称 exactly-once。微信 quota 的条件扣减与 `preparedAt` 同短事务只执行一次。
+4. **回退**：异常时先停止 worker，再回退 API；保留 outbox 表和 pending/dead 证据。不得把 intent 手工改成 succeeded、不得修改 `_prisma_migrations`、不得切进程内 fallback。
+5. **retention**：succeeded 30 天、dead 90 天后只按 [`notification-outbox-retention-sop.md`](ops/notification-outbox-retention-sop.md) 人工小批清理；零自动清理、cron 仍恰好 2。
 
 ---
 

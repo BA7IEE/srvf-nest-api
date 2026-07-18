@@ -1,15 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_CHANNEL_WECHAT,
+  NOTIFICATION_VISIBILITY_MANAGEMENT,
   NOTIFICATION_TYPE_ACTIVITY_REMINDER,
   NOTIFICATION_TYPE_EXPIRY_REMINDER,
+  OUTBOX_EVENT_SYSTEM_BROADCAST,
+  OUTBOX_EVENT_TARGETED_NOTIFICATION,
+  OUTBOX_PAYLOAD_VERSION,
 } from './notification.constants';
-import { NotificationDispatcher } from './notification-dispatcher';
+import { NotificationOutboxService } from './notification-outbox.service';
 
 const CERT_STATUS_VERIFIED = 'verified';
 const CERT_STATUS_EXPIRED = 'expired';
@@ -38,7 +43,7 @@ export class ExpiryReminderService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
-    private readonly dispatcher: NotificationDispatcher,
+    private readonly outbox: NotificationOutboxService,
   ) {}
 
   // v0.47.0 解锁的第二个且唯一新增 cron。薄壳；测试与人工补跑只调用 runOnce()。
@@ -93,37 +98,40 @@ export class ExpiryReminderService {
 
     for (const row of rows) {
       try {
-        const claimed = await this.prisma.activity.updateMany({
-          where: {
-            id: row.id,
-            deletedAt: null,
-            statusCode: 'published',
-            startAt: { gt: now, lte: reminderEnd },
-            startReminderSentAt: null,
-          },
-          data: { startReminderSentAt: now },
-        });
-        if (claimed.count !== 1) continue;
-
-        const registrations = await this.prisma.activityRegistration.findMany({
-          where: { activityId: row.id, statusCode: 'pass', deletedAt: null },
-          select: { memberId: true },
-        });
-        for (const memberId of new Set(registrations.map((item) => item.memberId))) {
-          try {
-            await this.dispatcher.dispatchTargeted({
-              recipientMemberId: memberId,
+        const enqueued = await this.prisma.$transaction(async (tx) => {
+          const registrations = await tx.activityRegistration.findMany({
+            where: { activityId: row.id, statusCode: 'pass', deletedAt: null },
+            select: { memberId: true },
+          });
+          const memberIds = [...new Set(registrations.map((item) => item.memberId))];
+          // 零收件人不 claim marker：后续新增 pass registration 时，下一轮仍必须能提醒。
+          if (memberIds.length === 0) return 0;
+          const claimed = await tx.activity.updateMany({
+            where: {
+              id: row.id,
+              deletedAt: null,
+              statusCode: 'published',
+              startAt: { gt: now, lte: reminderEnd },
+              startReminderSentAt: null,
+            },
+            data: { startReminderSentAt: now },
+          });
+          if (claimed.count !== 1) return 0;
+          for (const memberId of memberIds) {
+            await this.enqueueTargeted(tx, {
+              eventKey: `expiry-activity:${row.id}:${memberId}`,
+              aggregateType: 'activity',
+              aggregateId: row.id,
+              memberId,
               notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_REMINDER,
               title: '活动即将开始',
               body: `您报名的「${row.title}」将于 ${row.startAt.toISOString()} 开始，地点 ${row.location}。`,
               channels: [NOTIFICATION_CHANNEL_IN_APP],
             });
-            summary.activityRemindersDispatched += 1;
-          } catch (error) {
-            summary.failed += 1;
-            this.logItemFailure('activity-reminder-recipient', `${row.id}:${memberId}`, error);
           }
-        }
+          return memberIds.length;
+        });
+        summary.activityRemindersDispatched += enqueued;
       } catch (error) {
         summary.failed += 1;
         this.logItemFailure('activity-reminder', row.id, error);
@@ -150,26 +158,33 @@ export class ExpiryReminderService {
 
     for (const row of rows) {
       try {
-        const claimed = await this.prisma.certificate.updateMany({
-          where: {
-            id: row.id,
-            deletedAt: null,
-            certStatusCode: CERT_STATUS_VERIFIED,
-            expiredAt: { gt: today, lte: reminderEnd },
-            expireNotifyDueAt: null,
-          },
-          data: { expireNotifyDueAt: claimedAt },
+        if (row.expiredAt === null) continue;
+        const expiredAt = row.expiredAt;
+        const enqueued = await this.prisma.$transaction(async (tx) => {
+          const claimed = await tx.certificate.updateMany({
+            where: {
+              id: row.id,
+              deletedAt: null,
+              certStatusCode: CERT_STATUS_VERIFIED,
+              expiredAt: { gt: today, lte: reminderEnd },
+              expireNotifyDueAt: null,
+            },
+            data: { expireNotifyDueAt: claimedAt },
+          });
+          if (claimed.count !== 1) return false;
+          await this.enqueueTargeted(tx, {
+            eventKey: `expiry-certificate-reminder:${row.id}`,
+            aggregateType: 'certificate',
+            aggregateId: row.id,
+            memberId: row.memberId,
+            notificationTypeCode: NOTIFICATION_TYPE_EXPIRY_REMINDER,
+            title: '证书即将到期',
+            body: `您的证书将于 ${formatDateOnly(expiredAt)} 到期，请及时办理续期。`,
+            channels: [NOTIFICATION_CHANNEL_IN_APP, NOTIFICATION_CHANNEL_WECHAT],
+          });
+          return true;
         });
-        if (claimed.count !== 1 || row.expiredAt === null) continue;
-
-        await this.dispatcher.dispatchTargeted({
-          recipientMemberId: row.memberId,
-          notificationTypeCode: NOTIFICATION_TYPE_EXPIRY_REMINDER,
-          title: '证书即将到期',
-          body: `您的证书将于 ${formatDateOnly(row.expiredAt)} 到期，请及时办理续期。`,
-          channels: [NOTIFICATION_CHANNEL_IN_APP, NOTIFICATION_CHANNEL_WECHAT],
-        });
-        summary.certificateRemindersDispatched += 1;
+        if (enqueued) summary.certificateRemindersDispatched += 1;
       } catch (error) {
         summary.failed += 1;
         this.logItemFailure('certificate-reminder', row.id, error);
@@ -239,18 +254,22 @@ export class ExpiryReminderService {
             tx,
           });
 
+          await this.enqueueTargeted(tx, {
+            eventKey: `expiry-certificate-expired:${before.id}`,
+            aggregateType: 'certificate',
+            aggregateId: before.id,
+            memberId: before.memberId,
+            notificationTypeCode: NOTIFICATION_TYPE_EXPIRY_REMINDER,
+            title: '证书已到期',
+            body: `您的证书已于 ${formatDateOnly(before.expiredAt)} 到期。`,
+            channels: [NOTIFICATION_CHANNEL_IN_APP, NOTIFICATION_CHANNEL_WECHAT],
+          });
+
           return { memberId: before.memberId, expiredAt: before.expiredAt };
         });
         if (!transitioned) continue;
 
         summary.certificatesExpired += 1;
-        await this.dispatcher.dispatchTargeted({
-          recipientMemberId: transitioned.memberId,
-          notificationTypeCode: NOTIFICATION_TYPE_EXPIRY_REMINDER,
-          title: '证书已到期',
-          body: `您的证书已于 ${formatDateOnly(transitioned.expiredAt)} 到期。`,
-          channels: [NOTIFICATION_CHANNEL_IN_APP, NOTIFICATION_CHANNEL_WECHAT],
-        });
         summary.certificateExpiryNotificationsDispatched += 1;
       } catch (error) {
         summary.failed += 1;
@@ -273,28 +292,33 @@ export class ExpiryReminderService {
 
     for (const row of rows) {
       try {
-        const claimed = await this.prisma.memberInsurance.updateMany({
-          where: {
-            id: row.id,
-            deletedAt: null,
-            coverageEnd: { lte: reminderEnd },
-            expireNotifiedAt: null,
-          },
-          data: { expireNotifiedAt: claimedAt },
-        });
-        if (claimed.count !== 1) continue;
-
         const expired = row.coverageEnd < today;
-        await this.dispatcher.dispatchTargeted({
-          recipientMemberId: row.memberId,
-          notificationTypeCode: NOTIFICATION_TYPE_EXPIRY_REMINDER,
-          title: expired ? '个人保险已到期' : '个人保险即将到期',
-          body: expired
-            ? `您的个人保险已于 ${formatDateOnly(row.coverageEnd)} 到期，请及时续保。`
-            : `您的个人保险将于 ${formatDateOnly(row.coverageEnd)} 到期，请及时续保。`,
-          channels: [NOTIFICATION_CHANNEL_IN_APP, NOTIFICATION_CHANNEL_WECHAT],
+        const enqueued = await this.prisma.$transaction(async (tx) => {
+          const claimed = await tx.memberInsurance.updateMany({
+            where: {
+              id: row.id,
+              deletedAt: null,
+              coverageEnd: { lte: reminderEnd },
+              expireNotifiedAt: null,
+            },
+            data: { expireNotifiedAt: claimedAt },
+          });
+          if (claimed.count !== 1) return false;
+          await this.enqueueTargeted(tx, {
+            eventKey: `expiry-member-insurance:${row.id}`,
+            aggregateType: 'member-insurance',
+            aggregateId: row.id,
+            memberId: row.memberId,
+            notificationTypeCode: NOTIFICATION_TYPE_EXPIRY_REMINDER,
+            title: expired ? '个人保险已到期' : '个人保险即将到期',
+            body: expired
+              ? `您的个人保险已于 ${formatDateOnly(row.coverageEnd)} 到期，请及时续保。`
+              : `您的个人保险将于 ${formatDateOnly(row.coverageEnd)} 到期，请及时续保。`,
+            channels: [NOTIFICATION_CHANNEL_IN_APP, NOTIFICATION_CHANNEL_WECHAT],
+          });
+          return true;
         });
-        summary.memberInsuranceNotificationsDispatched += 1;
+        if (enqueued) summary.memberInsuranceNotificationsDispatched += 1;
       } catch (error) {
         summary.failed += 1;
         this.logItemFailure('member-insurance-reminder', row.id, error);
@@ -316,26 +340,41 @@ export class ExpiryReminderService {
 
     for (const row of rows) {
       try {
-        const claimed = await this.prisma.teamInsurancePolicy.updateMany({
-          where: {
-            id: row.id,
-            deletedAt: null,
-            coverageEnd: { lte: reminderEnd },
-            expireNotifiedAt: null,
-          },
-          data: { expireNotifiedAt: claimedAt },
-        });
-        if (claimed.count !== 1) continue;
-
         const expired = row.coverageEnd < today;
-        await this.dispatcher.dispatchSystemBroadcast({
-          notificationTypeCode: NOTIFICATION_TYPE_EXPIRY_REMINDER,
-          title: expired ? '队保单已到期' : '队保单即将到期',
-          body: expired
-            ? `一张队保单已于 ${formatDateOnly(row.coverageEnd)} 到期，请管理人员及时处理。`
-            : `一张队保单将于 ${formatDateOnly(row.coverageEnd)} 到期，请管理人员及时处理。`,
+        const enqueued = await this.prisma.$transaction(async (tx) => {
+          const claimed = await tx.teamInsurancePolicy.updateMany({
+            where: {
+              id: row.id,
+              deletedAt: null,
+              coverageEnd: { lte: reminderEnd },
+              expireNotifiedAt: null,
+            },
+            data: { expireNotifiedAt: claimedAt },
+          });
+          if (claimed.count !== 1) return false;
+          await this.outbox.enqueue(
+            {
+              eventKey: `expiry-team-policy:${row.id}`,
+              eventType: OUTBOX_EVENT_SYSTEM_BROADCAST,
+              payloadVersion: OUTBOX_PAYLOAD_VERSION,
+              payload: {
+                notificationTypeCode: NOTIFICATION_TYPE_EXPIRY_REMINDER,
+                title: expired ? '队保单已到期' : '队保单即将到期',
+                body: expired
+                  ? `一张队保单已于 ${formatDateOnly(row.coverageEnd)} 到期，请管理人员及时处理。`
+                  : `一张队保单将于 ${formatDateOnly(row.coverageEnd)} 到期，请管理人员及时处理。`,
+                visibilityCode: NOTIFICATION_VISIBILITY_MANAGEMENT,
+              },
+              aggregateType: 'team-insurance-policy',
+              aggregateId: row.id,
+              destinationType: 'management',
+              destinationRef: 'management',
+            },
+            tx,
+          );
+          return true;
         });
-        summary.teamPolicyNotificationsDispatched += 1;
+        if (enqueued) summary.teamPolicyNotificationsDispatched += 1;
       } catch (error) {
         summary.failed += 1;
         this.logItemFailure('team-insurance-policy-reminder', row.id, error);
@@ -347,6 +386,40 @@ export class ExpiryReminderService {
     // 不打印保单号 / 证书号 / openid / secret；仅保留资源 id、阶段与错误类。
     this.logger.warn(
       `expiry reminder item failed stage=${stage} resourceId=${resourceId} errorClass=${errorClass(error)}`,
+    );
+  }
+
+  private async enqueueTargeted(
+    tx: Prisma.TransactionClient,
+    input: {
+      eventKey: string;
+      aggregateType: string;
+      aggregateId: string;
+      memberId: string;
+      notificationTypeCode: string;
+      title: string;
+      body: string;
+      channels: string[];
+    },
+  ): Promise<void> {
+    await this.outbox.enqueue(
+      {
+        eventKey: input.eventKey,
+        eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION,
+        payloadVersion: OUTBOX_PAYLOAD_VERSION,
+        payload: {
+          recipientMemberId: input.memberId,
+          notificationTypeCode: input.notificationTypeCode,
+          title: input.title,
+          body: input.body,
+          channels: input.channels,
+        },
+        aggregateType: input.aggregateType,
+        aggregateId: input.aggregateId,
+        destinationType: 'member',
+        destinationRef: input.memberId,
+      },
+      tx,
     );
   }
 }
