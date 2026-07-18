@@ -12,7 +12,7 @@ import { PositionsService } from './positions.service';
 //   PositionsService:create P2002 → POSITION_CODE_DUPLICATE;update / softDelete 找不到 → POSITION_NOT_FOUND;
 //     **删除守卫**:职务被未软删规则引用(count>0)→ POSITION_IN_USE;无引用 → 写 deletedAt。
 //   PositionRulesService:create 校验 nodeType 字典有效 + positionId 存在;P2002 → POSITION_RULE_ALREADY_EXISTS;
-//     update / softDelete 找不到 → POSITION_RULE_NOT_FOUND。
+//     required/min/max 基数语义一致;update / softDelete 找不到 → POSITION_RULE_NOT_FOUND。
 // 边界:rbac.can 恒 true(判权归 e2e)。
 
 const USER: CurrentUserPayload = {
@@ -33,6 +33,7 @@ const arg0 = (m: jest.Mock): CallArg => (m.mock.calls as unknown[][])[0]?.[0] ??
 
 function makeTx() {
   return {
+    $queryRaw: jest.fn().mockResolvedValue([{ id: 'r1' }]),
     organizationPosition: {
       findFirst: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
@@ -159,6 +160,96 @@ describe('PositionRulesService', () => {
     expect(data.positionId).toBe('p1');
   });
 
+  it('create 透传一致的 required/minCount/maxCount 配置', async () => {
+    const tx = makeTx();
+    tx.organizationPosition.findFirst.mockResolvedValue({ id: 'p1' });
+    const svc = new PositionRulesService(makePrisma(tx), rbacAllow);
+
+    await svc.create(USER, {
+      nodeTypeCode: 'rescue-team',
+      positionId: 'p1',
+      required: true,
+      minCount: 2,
+      maxCount: 3,
+    });
+
+    const data = arg0(tx.organizationPositionRule.create).data ?? {};
+    expect(data.required).toBe(true);
+    expect(data.minCount).toBe(2);
+    expect(data.maxCount).toBe(3);
+  });
+
+  // 杀死“仅依赖 DTO @Min、service 接受负数”的变异(内部调用同样守住)。
+  it('create 拒绝负数 minCount/maxCount', async () => {
+    const tx = makeTx();
+    tx.organizationPosition.findFirst.mockResolvedValue({ id: 'p1' });
+    const svc = new PositionRulesService(makePrisma(tx), rbacAllow);
+
+    await expect(
+      svc.create(USER, {
+        nodeTypeCode: 'rescue-team',
+        positionId: 'p1',
+        minCount: -1,
+      }),
+    ).rejects.toEqual(new BizException(BizCode.BAD_REQUEST));
+    await expect(
+      svc.create(USER, {
+        nodeTypeCode: 'rescue-team',
+        positionId: 'p1',
+        maxCount: -1,
+      }),
+    ).rejects.toEqual(new BizException(BizCode.BAD_REQUEST));
+    expect(tx.organizationPositionRule.create).not.toHaveBeenCalled();
+  });
+
+  // 杀死“required=false 与正 minCount 冲突仍入库”的变异。
+  it('create 拒绝 required=false 但 minCount>0', async () => {
+    const tx = makeTx();
+    tx.organizationPosition.findFirst.mockResolvedValue({ id: 'p1' });
+    const svc = new PositionRulesService(makePrisma(tx), rbacAllow);
+
+    await expect(
+      svc.create(USER, {
+        nodeTypeCode: 'rescue-team',
+        positionId: 'p1',
+        required: false,
+        minCount: 1,
+      }),
+    ).rejects.toEqual(new BizException(BizCode.BAD_REQUEST));
+  });
+
+  it('create 拒绝 required=true 但 minCount=0', async () => {
+    const tx = makeTx();
+    tx.organizationPosition.findFirst.mockResolvedValue({ id: 'p1' });
+    const svc = new PositionRulesService(makePrisma(tx), rbacAllow);
+
+    await expect(
+      svc.create(USER, {
+        nodeTypeCode: 'rescue-team',
+        positionId: 'p1',
+        required: true,
+        minCount: 0,
+      }),
+    ).rejects.toEqual(new BizException(BizCode.BAD_REQUEST));
+  });
+
+  // 杀死“未比较建议下限与硬上限”的变异。
+  it('create 拒绝 minCount>maxCount', async () => {
+    const tx = makeTx();
+    tx.organizationPosition.findFirst.mockResolvedValue({ id: 'p1' });
+    const svc = new PositionRulesService(makePrisma(tx), rbacAllow);
+
+    await expect(
+      svc.create(USER, {
+        nodeTypeCode: 'rescue-team',
+        positionId: 'p1',
+        required: true,
+        minCount: 2,
+        maxCount: 1,
+      }),
+    ).rejects.toEqual(new BizException(BizCode.BAD_REQUEST));
+  });
+
   it('create 撞 P2002 → POSITION_RULE_ALREADY_EXISTS', async () => {
     const tx = makeTx();
     tx.dictItem.findFirst.mockResolvedValue({ id: 'dt1' });
@@ -175,6 +266,42 @@ describe('PositionRulesService', () => {
     await expect(svc.update(USER, 'nope', { required: true })).rejects.toEqual(
       new BizException(BizCode.POSITION_RULE_NOT_FOUND),
     );
+  });
+
+  // 杀死“update 只验证 DTO 局部字段、不与已有配置合并”的变异。
+  it('update 合并已有基数后拒绝新 maxCount 低于 minCount', async () => {
+    const tx = makeTx();
+    tx.organizationPositionRule.findFirst.mockResolvedValue({
+      id: 'r1',
+      required: true,
+      minCount: 2,
+      maxCount: 3,
+    });
+    const svc = new PositionRulesService(makePrisma(tx), rbacAllow);
+
+    await expect(svc.update(USER, 'r1', { maxCount: 1 })).rejects.toEqual(
+      new BizException(BizCode.BAD_REQUEST),
+    );
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(tx.organizationPositionRule.update).not.toHaveBeenCalled();
+  });
+
+  it('update required=false 时必须同时清空原有正 minCount', async () => {
+    const tx = makeTx();
+    tx.organizationPositionRule.findFirst.mockResolvedValue({
+      id: 'r1',
+      required: true,
+      minCount: 2,
+      maxCount: 3,
+    });
+    const svc = new PositionRulesService(makePrisma(tx), rbacAllow);
+
+    await expect(svc.update(USER, 'r1', { required: false })).rejects.toEqual(
+      new BizException(BizCode.BAD_REQUEST),
+    );
+    await expect(
+      svc.update(USER, 'r1', { required: false, minCount: null }),
+    ).resolves.toBeDefined();
   });
 
   it('softDelete 找不到 → POSITION_RULE_NOT_FOUND', async () => {

@@ -1,0 +1,1 @@
+- 收口 PositionRule 任命执行：锁后严格合并人数/兼任/归属约束，停用配置禁止新任命，required/minCount 保持 advisory 且不阻断撤销或离队。

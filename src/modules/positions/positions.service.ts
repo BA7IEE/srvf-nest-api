@@ -20,7 +20,8 @@ import { positionSafeSelect, type SafePosition } from './positions.select';
 
 // 终态 scoped-authz PR3(2026-07-01;冻结稿 §3.2 / §7.2):职务定义(positions)管理面 service。
 // 判权单轨 service 层 rbac.can(0 @Roles;沿 contribution-rules / memberships 范式)。配置面不落 audit
-// (沿 dictionaries / memberships 配置面范式)。**本表纯配置定义,绝不被任何判权路径读**(AuthzService 是 PR8)。
+// (沿 dictionaries / memberships 配置面范式)。PositionAssignmentPolicy 在新任命时读 status /
+// allowMultiple / allowConcurrent;既有任职的 AuthzService 口径不因配置停用而追溯改变。
 
 @Injectable()
 export class PositionsService {

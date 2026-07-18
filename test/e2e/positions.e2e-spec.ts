@@ -15,7 +15,7 @@ import { createTestApp } from '../setup/test-app';
 //   - 权限边界(R 模式 rbac.can;USER / ADMIN 默认无 ops-admin → 30100;功能路径走 SUPER_ADMIN 短路,沿 PR2 memberships)
 //   - positions:code 唯一(POSITION_CODE_DUPLICATE)/ 详情软删 404 / PATCH 禁改 code(400)/ **删除守卫**(被规则引用 → POSITION_IN_USE)
 //   - position-rules:nodeTypeCode 字典校验(POSITION_RULE_NODE_TYPE_INVALID)/ positionId 存在(POSITION_NOT_FOUND)/
-//     (nodeType,position) 唯一(POSITION_RULE_ALREADY_EXISTS)
+//     (nodeType,position) 唯一(POSITION_RULE_ALREADY_EXISTS)/ required-min-max 基数一致性
 //   - R6 行为:同一 nodeType 可登记多个领导职务规则(team-leader + dept-leader 均 201)
 //   - R8 行为:requireMembership=false 可落库
 // position.* / position-rule.* 绑 ops-admin 由 seed-rbac.e2e-spec 对账;本 spec 功能路径走 SUPER_ADMIN 短路。
@@ -340,6 +340,62 @@ describe('positions / position-rules CRUD', () => {
       expect(res.body.data).not.toHaveProperty('deletedAt');
     });
 
+    it('POST 拒绝负数 minCount/maxCount', async () => {
+      const negativeMin = await postRule(superAdminAuth, {
+        nodeTypeCode: nodeTypeRescue,
+        positionId: await newPosition(),
+        minCount: -1,
+      });
+      const negativeMax = await postRule(superAdminAuth, {
+        nodeTypeCode: nodeTypeRescue,
+        positionId: await newPosition(),
+        maxCount: -1,
+      });
+
+      // DTO @Min(0) 拦截的 ValidationPipe 文案不是 BizCode 固定 message。
+      expectBizError(negativeMin, BizCode.BAD_REQUEST, { strictMessage: false });
+      expectBizError(negativeMax, BizCode.BAD_REQUEST, { strictMessage: false });
+    });
+
+    // 杀死“required/min 语义冲突可入库”的变异。
+    it('POST 拒绝 required=false/minCount>0 与 required=true/minCount=0', async () => {
+      const falseWithPositiveMin = await postRule(superAdminAuth, {
+        nodeTypeCode: nodeTypeRescue,
+        positionId: await newPosition(),
+        required: false,
+        minCount: 1,
+      });
+      const trueWithZeroMin = await postRule(superAdminAuth, {
+        nodeTypeCode: nodeTypeRescue,
+        positionId: await newPosition(),
+        required: true,
+        minCount: 0,
+      });
+
+      expectBizError(falseWithPositiveMin, BizCode.BAD_REQUEST);
+      expectBizError(trueWithZeroMin, BizCode.BAD_REQUEST);
+    });
+
+    // 杀死“min/max 不比较”与“required=true 不隐含建议下限 1”的变异。
+    it('POST 拒绝 minCount>maxCount 以及 required=true/maxCount=0', async () => {
+      const inverted = await postRule(superAdminAuth, {
+        nodeTypeCode: nodeTypeRescue,
+        positionId: await newPosition(),
+        required: true,
+        minCount: 2,
+        maxCount: 1,
+      });
+      const requiredButZeroMax = await postRule(superAdminAuth, {
+        nodeTypeCode: nodeTypeRescue,
+        positionId: await newPosition(),
+        required: true,
+        maxCount: 0,
+      });
+
+      expectBizError(inverted, BizCode.BAD_REQUEST);
+      expectBizError(requiredButZeroMax, BizCode.BAD_REQUEST);
+    });
+
     it('POST nodeTypeCode 非字典项 → POSITION_RULE_NODE_TYPE_INVALID', async () => {
       const positionId = await newPosition();
       const res = await postRule(superAdminAuth, {
@@ -395,6 +451,40 @@ describe('positions / position-rules CRUD', () => {
         .set('Authorization', superAdminAuth)
         .send({ required: true });
       expectBizError(missing, BizCode.POSITION_RULE_NOT_FOUND);
+    });
+
+    // 杀死“PATCH 只看局部 DTO、不与现有基数合并校验”的变异。
+    it('PATCH 基于合并后配置校验,冲突不落库且可显式解决', async () => {
+      const positionId = await newPosition();
+      const created = await postRule(superAdminAuth, {
+        nodeTypeCode: nodeTypeRescue,
+        positionId,
+        required: true,
+        minCount: 2,
+        maxCount: 3,
+      });
+      const id = created.body.data.id as string;
+
+      const tooSmallMax = await request(httpServer(app))
+        .patch(`/api/admin/v1/position-rules/${id}`)
+        .set('Authorization', superAdminAuth)
+        .send({ maxCount: 1 });
+      const requiredFalseOnly = await request(httpServer(app))
+        .patch(`/api/admin/v1/position-rules/${id}`)
+        .set('Authorization', superAdminAuth)
+        .send({ required: false });
+
+      expectBizError(tooSmallMax, BizCode.BAD_REQUEST);
+      expectBizError(requiredFalseOnly, BizCode.BAD_REQUEST);
+
+      const resolved = await request(httpServer(app))
+        .patch(`/api/admin/v1/position-rules/${id}`)
+        .set('Authorization', superAdminAuth)
+        .send({ required: false, minCount: null });
+      expect(resolved.status).toBe(200);
+      expect(resolved.body.data.required).toBe(false);
+      expect(resolved.body.data.minCount).toBeNull();
+      expect(resolved.body.data.maxCount).toBe(3);
     });
 
     it('DELETE :id → 204', async () => {

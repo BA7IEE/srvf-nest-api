@@ -34,6 +34,7 @@ import { createTestApp } from '../setup/test-app';
 //    role 必非 USER,而 linked===self 要求 currentUser 即那条 USER 行,矛盾;不单测,由 15036 覆盖近似面)
 // - 成功闭环:member INACTIVE + END 全部 active 归属 + REVOKE 任职/分管 + END direct bindings
 //   + 停用 linked 账号并撤 refresh + 1 条 member.offboard audit;
+//   PositionRule.required/minCount 是 advisory,不得阻断人员安全 offboard;
 //   offboard 后该账号 access(jwt 每请求查库拦 DISABLED)与 refresh 双双 401
 // - 幂等:已 offboard 重跑 200,各腿 skip(memberDeactivated/accountDisabled false,membershipsEnded 0)
 // - 无 linked 账号:账号腿跳过,仍 200
@@ -150,6 +151,16 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
       select: { id: true },
     });
     positionId = position.id;
+    await prisma.organizationPositionRule.create({
+      data: {
+        nodeTypeCode: 'off-root',
+        positionId,
+        required: true,
+        minCount: 2,
+        maxCount: 5,
+        requireMembership: false,
+      },
+    });
   });
 
   afterAll(async () => {
@@ -204,7 +215,8 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
 
   // ============ 成功完整闭环 + access/refresh 401 ============
   describe('成功:全部权限来源终止 + 离队后 access/refresh 双双 401', () => {
-    it('member+account+归属+任职+分管+三类 direct binding → 全部终止且旧 authz 不恢复', async () => {
+    // 杀死“required/minCount 低于下限时拦 offboard”的变异。
+    it('required/minCount 低于建议下限仍可完整 offboard 并终止旧 authz', async () => {
       const m = await newMember();
       const phone = '13800009101';
       const userId = await grantAccount(m.id, phone);

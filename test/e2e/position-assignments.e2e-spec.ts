@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { MembershipStatus, PolicyStatus, Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -65,6 +65,7 @@ describe('position-assignments 任职双轴管理', () => {
   let orgGrpId: string; // group,parent=orgTeam
 
   let memberSeq = 0;
+  let configSeq = 0;
   async function newMember(tag: string): Promise<string> {
     memberSeq += 1;
     const m = await prisma.member.create({
@@ -72,6 +73,53 @@ describe('position-assignments 任职双轴管理', () => {
       select: { id: true },
     });
     return m.id;
+  }
+
+  async function newPolicyConfig(
+    tag: string,
+    options: {
+      position?: {
+        allowMultiple?: boolean;
+        allowConcurrent?: boolean;
+        status?: PolicyStatus;
+      };
+      rule?: {
+        required?: boolean;
+        minCount?: number | null;
+        maxCount?: number | null;
+        requireMembership?: boolean;
+        allowConcurrent?: boolean;
+        status?: PolicyStatus;
+      };
+    } = {},
+  ): Promise<string> {
+    configSeq += 1;
+    const position = await prisma.organizationPosition.create({
+      data: {
+        code: `pa-policy-${tag}-${configSeq}`,
+        name: `PA policy ${tag} ${configSeq}`,
+        categoryCode: 'STAFF',
+        allowMultiple: true,
+        allowConcurrent: true,
+        status: PolicyStatus.ACTIVE,
+        ...options.position,
+      },
+      select: { id: true },
+    });
+    await prisma.organizationPositionRule.create({
+      data: {
+        nodeTypeCode: 'rescue-team',
+        positionId: position.id,
+        required: false,
+        minCount: null,
+        maxCount: null,
+        requireMembership: false,
+        allowConcurrent: true,
+        status: PolicyStatus.ACTIVE,
+        ...options.rule,
+      },
+    });
+    return position.id;
   }
 
   const startedAt = '2026-07-01T00:00:00.000Z';
@@ -327,6 +375,42 @@ describe('position-assignments 任职双轴管理', () => {
       expect(res.body.data.status).toBe('ACTIVE');
     });
 
+    it('requireMembership 本组织命中:active 归属在子组自身 → 成功', async () => {
+      const memberId = await newMember('self-membership');
+      await prisma.memberOrganizationMembership.create({
+        data: { memberId, organizationId: orgGrpId },
+      });
+
+      const res = await appoint(adminAuth, orgGrpId, {
+        positionId: posGroupLeaderId,
+        memberId,
+        startedAt,
+      });
+
+      expect(res.status).toBe(201);
+    });
+
+    // 杀死“requireMembership 只看行存在、忽略 MembershipTermStateMachine 有效口径”。
+    it('requireMembership 不把 SUSPENDED 祖先归属当作当前有效', async () => {
+      const memberId = await newMember('suspended-membership');
+      await prisma.memberOrganizationMembership.create({
+        data: {
+          memberId,
+          organizationId: orgTeamId,
+          status: MembershipStatus.SUSPENDED,
+          startedAt: new Date('2026-07-01T00:00:00.000Z'),
+        },
+      });
+
+      const res = await appoint(adminAuth, orgGrpId, {
+        positionId: posGroupLeaderId,
+        memberId,
+        startedAt,
+      });
+
+      expectBizError(res, BizCode.POSITION_ASSIGNMENT_MEMBERSHIP_REQUIRED);
+    });
+
     it('兼任:allowConcurrent=false 且已有其它 active 任职 → CONCURRENT_FORBIDDEN', async () => {
       const memberId = await newMember('conc-forbid');
       // 先给一条 active(vice allowConcurrent=true,不触发)
@@ -343,6 +427,125 @@ describe('position-assignments 任职双轴管理', () => {
         startedAt,
       });
       expectBizError(res, BizCode.POSITION_ASSIGNMENT_CONCURRENT_FORBIDDEN);
+    });
+
+    // 杀死“只看 Position.allowConcurrent、忽略目标 Rule”的变异。
+    it('Position 允许但目标 Rule 禁止兼任 → CONCURRENT_FORBIDDEN', async () => {
+      const restrictivePositionId = await newPolicyConfig('target-rule-no-concurrent', {
+        position: { allowConcurrent: true },
+        rule: { allowConcurrent: false },
+      });
+      const memberId = await newMember('target-rule-no-concurrent');
+      const first = await appoint(adminAuth, orgTeamId, {
+        positionId: posViceId,
+        memberId,
+        startedAt,
+      });
+      expect(first.status).toBe(201);
+
+      const res = await appoint(adminAuth, orgTeamId, {
+        positionId: restrictivePositionId,
+        memberId,
+        startedAt,
+      });
+
+      expectBizError(res, BizCode.POSITION_ASSIGNMENT_CONCURRENT_FORBIDDEN);
+    });
+
+    // 杀死“只看新任职、忽略已有任职 Rule”的变异。
+    it('已有 Rule 禁止兼任时也拒绝新的 permissive 任职', async () => {
+      const restrictivePositionId = await newPolicyConfig('existing-rule-no-concurrent', {
+        position: { allowConcurrent: true },
+        rule: { allowConcurrent: false },
+      });
+      const memberId = await newMember('existing-rule-no-concurrent');
+      const first = await appoint(adminAuth, orgTeamId, {
+        positionId: restrictivePositionId,
+        memberId,
+        startedAt,
+      });
+      expect(first.status).toBe(201);
+
+      const res = await appoint(adminAuth, orgTeamId, {
+        positionId: posViceId,
+        memberId,
+        startedAt,
+      });
+
+      expectBizError(res, BizCode.POSITION_ASSIGNMENT_CONCURRENT_FORBIDDEN);
+    });
+
+    // 杀死“只执行 allowMultiple、忽略 rule.maxCount”的变异。
+    it('allowMultiple=true 时 rule.maxCount=2 仍硬限第 3 人', async () => {
+      const cappedPositionId = await newPolicyConfig('rule-max-two', {
+        position: { allowMultiple: true },
+        rule: { maxCount: 2 },
+      });
+      const first = await appoint(adminAuth, orgTeamId, {
+        positionId: cappedPositionId,
+        memberId: await newMember('max-first'),
+        startedAt,
+      });
+      const second = await appoint(adminAuth, orgTeamId, {
+        positionId: cappedPositionId,
+        memberId: await newMember('max-second'),
+        startedAt,
+      });
+      expect(first.status).toBe(201);
+      expect(second.status).toBe(201);
+
+      const third = await appoint(adminAuth, orgTeamId, {
+        positionId: cappedPositionId,
+        memberId: await newMember('max-third'),
+        startedAt,
+      });
+
+      expectBizError(third, BizCode.POSITION_ASSIGNMENT_SINGLE_HOLDER);
+    });
+
+    // 杀死“rule.maxCount 放宽 Position.allowMultiple=false”的变异。
+    it('allowMultiple=false 与 rule.maxCount=6 冲突时仍取上限 1', async () => {
+      const cappedPositionId = await newPolicyConfig('position-max-one', {
+        position: { allowMultiple: false },
+        rule: { maxCount: 6 },
+      });
+      const first = await appoint(adminAuth, orgTeamId, {
+        positionId: cappedPositionId,
+        memberId: await newMember('strict-first'),
+        startedAt,
+      });
+      expect(first.status).toBe(201);
+
+      const second = await appoint(adminAuth, orgTeamId, {
+        positionId: cappedPositionId,
+        memberId: await newMember('strict-second'),
+        startedAt,
+      });
+
+      expectBizError(second, BizCode.POSITION_ASSIGNMENT_SINGLE_HOLDER);
+    });
+
+    it('INACTIVE position 与 INACTIVE rule 都禁止新任命', async () => {
+      const inactivePositionId = await newPolicyConfig('inactive-position', {
+        position: { status: PolicyStatus.INACTIVE },
+      });
+      const inactiveRulePositionId = await newPolicyConfig('inactive-rule', {
+        rule: { status: PolicyStatus.INACTIVE },
+      });
+
+      const inactivePosition = await appoint(adminAuth, orgTeamId, {
+        positionId: inactivePositionId,
+        memberId: await newMember('inactive-position'),
+        startedAt,
+      });
+      const inactiveRule = await appoint(adminAuth, orgTeamId, {
+        positionId: inactiveRulePositionId,
+        memberId: await newMember('inactive-rule'),
+        startedAt,
+      });
+
+      expectBizError(inactivePosition, BizCode.POSITION_ASSIGNMENT_RULE_NOT_MATCHED);
+      expectBizError(inactiveRule, BizCode.POSITION_ASSIGNMENT_RULE_NOT_MATCHED);
     });
 
     it('单人独占:allowMultiple=false 且已有在任者(他人)→ SINGLE_HOLDER', async () => {
@@ -409,6 +612,35 @@ describe('position-assignments 任职双轴管理', () => {
   // ============ 撤销 + 历史 ============
 
   describe('撤销 + 历史', () => {
+    it('required/minCount 是 advisory:低于建议下限仍可撤销', async () => {
+      const advisoryPositionId = await newPolicyConfig('advisory-lower-bound', {
+        rule: { required: true, minCount: 2, maxCount: 3 },
+      });
+      const memberId = await newMember('advisory-revoke');
+      const created = await appoint(adminAuth, orgTeamId, {
+        positionId: advisoryPositionId,
+        memberId,
+        startedAt,
+      });
+      expect(created.status).toBe(201);
+
+      const revoked = await request(httpServer(app))
+        .post(`/api/admin/v1/position-assignments/${created.body.data.id}/revoke`)
+        .set('Authorization', adminAuth);
+
+      expect(revoked.status).toBe(201);
+      expect(revoked.body.data.status).toBe('REVOKED');
+      const activeCount = await prisma.organizationPositionAssignment.count({
+        where: {
+          organizationId: orgTeamId,
+          positionId: advisoryPositionId,
+          status: 'ACTIVE',
+          deletedAt: null,
+        },
+      });
+      expect(activeCount).toBe(0);
+    });
+
     it('撤销 active → 201 + REVOKED + revokedByUserId + endedAt;org 轴不再 active,队员轴仍可见', async () => {
       const memberId = await newMember('revoke');
       const created = await appoint(adminAuth, orgTeamId, {

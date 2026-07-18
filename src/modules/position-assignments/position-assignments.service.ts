@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AssignmentStatus, MemberStatus, PolicyStatus, Prisma } from '@prisma/client';
+import { AssignmentStatus, MemberStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { PageResultDto } from '../../common/dto/pagination.dto';
 import { parseExpandQuery } from '../../common/dto/expand-query.util';
@@ -10,8 +10,8 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { lockMemberLifecycle } from '../members/member-lifecycle-lock';
-import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 import { RbacService } from '../permissions/rbac.service';
+import { PositionAssignmentPolicy } from './position-assignment-policy';
 import {
   CreatePositionAssignmentDto,
   POSITION_ASSIGNMENT_EXPAND_TOKENS,
@@ -63,6 +63,7 @@ export class PositionAssignmentsService {
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
+    private readonly policy: PositionAssignmentPolicy,
   ) {}
 
   // ============ helpers(自包含;沿 memberships / positions 范式,不抽共享类)============
@@ -116,18 +117,6 @@ export class PositionAssignmentsService {
     return org;
   }
 
-  private async findPositionOrThrow(
-    positionId: string,
-    tx: PrismaTx,
-  ): Promise<{ id: string; allowMultiple: boolean; allowConcurrent: boolean }> {
-    const position = await tx.organizationPosition.findFirst({
-      where: notDeletedWhere({ id: positionId }),
-      select: { id: true, allowMultiple: true, allowConcurrent: true },
-    });
-    if (!position) throw new BizException(BizCode.POSITION_NOT_FOUND);
-    return position;
-  }
-
   // ============ GET /api/admin/v1/organizations/:orgId/position-assignments ============
 
   // 组织轴:列某组织当前"在任"职务(status=ACTIVE;不含历史)。
@@ -161,11 +150,12 @@ export class PositionAssignmentsService {
   // 任命。校验顺序(各自独立 BizCode,便于精确定位失败):
   //   0. 存在性:org / position / member(NOT_FOUND)
   //   1. 任期:endedAt 有值须 > startedAt(TENURE_INVALID)
-  //   2. 职务适配:org.nodeType × position 须有 active OrganizationPositionRule(RULE_NOT_MATCHED)
+  //   2. 职务适配:position 与 org.nodeType × position rule 均须 active(RULE_NOT_MATCHED)
   //   3. requireMembership(匹配规则要求时):member 须在本组织 O 或其任一祖先有 active membership(MEMBERSHIP_REQUIRED)
-  //   4. 兼任:position.allowConcurrent=false 时,member 不得已有其它 active 任职(CONCURRENT_FORBIDDEN)
+  //   4. 兼任:新旧任职各自 position.allowConcurrent && rule.allowConcurrent 取严格交集
   //   5. 防重:同人同组织同职务已有 active(ALREADY_EXISTS;partial unique 兜底)
-  //   6. 单人独占:position.allowMultiple=false 时,(org,position) 已有 active 在任者(SINGLE_HOLDER)
+  //   6. 人数上限:min(position.allowMultiple=false ? 1 : ∞, rule.maxCount)(SINGLE_HOLDER)
+  // policy 是 2-6 唯一执行点；写路径锁序 Member → Position → Rule，锁后重算再 insert。
   async create(
     user: CurrentUserPayload,
     organizationId: string,
@@ -189,85 +179,33 @@ export class PositionAssignmentsService {
     try {
       return await runInTransaction(async (tx) => {
         const org = await this.findOrganizationOrThrow(organizationId, tx);
-        const position = await this.findPositionOrThrow(dto.positionId, tx);
         await lockMemberLifecycle(tx, dto.memberId);
         const member = await this.findMemberOrThrow(dto.memberId, tx);
         if (member.status !== MemberStatus.ACTIVE) {
           throw new BizException(BizCode.MEMBER_INACTIVE);
         }
 
-        // 2. 职务适配 + 取 requireMembership(同一条规则)。(nodeTypeCode, positionId) 普通唯一 → 至多 1 active。
-        const rule = await tx.organizationPositionRule.findFirst({
-          where: {
-            nodeTypeCode: org.nodeTypeCode,
-            positionId: position.id,
-            status: PolicyStatus.ACTIVE,
-            deletedAt: null,
-          },
-          select: { requireMembership: true },
-        });
-        if (!rule) throw new BizException(BizCode.POSITION_ASSIGNMENT_RULE_NOT_MATCHED);
-
-        // 3. requireMembership(冻结稿 R8 + goal「重要说明」BD-4 解读:本组织 O 或其任一祖先有 active membership)。
-        //    读 organization_closure(descendantId=O → 祖先集,含 depth-0 自身)+ memberships active 判定。
-        //    **纯任命业务合法性,绝非判权;closure 不进 rbac.can / AuthzService**。
-        if (rule.requireMembership) {
-          const ancestorRows = await tx.organizationClosure.findMany({
-            where: { descendantId: organizationId },
-            select: { ancestorId: true },
-          });
-          const scopeOrgIds = ancestorRows.map((r) => r.ancestorId);
-          const membership = await tx.memberOrganizationMembership.findFirst({
-            where: {
-              ...MembershipTermStateMachine.effectiveWhere(new Date()),
-              memberId: dto.memberId,
-              organizationId: { in: scopeOrgIds },
-            },
-            select: { id: true },
-          });
-          if (!membership) throw new BizException(BizCode.POSITION_ASSIGNMENT_MEMBERSHIP_REQUIRED);
-        }
-
-        // 4. 兼任:position.allowConcurrent=false → member 不得已有其它 active 任职(多数职务 true,允许兼任如副队长甲)。
-        if (!position.allowConcurrent) {
-          const otherActive = await tx.organizationPositionAssignment.count({
-            where: { memberId: dto.memberId, status: AssignmentStatus.ACTIVE, deletedAt: null },
-          });
-          if (otherActive > 0) {
-            throw new BizException(BizCode.POSITION_ASSIGNMENT_CONCURRENT_FORBIDDEN);
-          }
-        }
-
-        // 5. 防重:同人同组织同职务已有 active(service 预检 + partial unique 兜底)。
-        const dup = await tx.organizationPositionAssignment.count({
-          where: {
+        const policyResult = await this.policy.evaluate(
+          tx,
+          {
             organizationId,
-            positionId: position.id,
+            nodeTypeCode: org.nodeTypeCode,
+            positionId: dto.positionId,
             memberId: dto.memberId,
-            status: AssignmentStatus.ACTIVE,
-            deletedAt: null,
+            now: new Date(),
           },
-        });
-        if (dup > 0) throw new BizException(BizCode.POSITION_ASSIGNMENT_ALREADY_EXISTS);
-
-        // 6. 单人独占:position.allowMultiple=false → (org,position) 不得有第二条 active(此人已在步骤 5 排除)。
-        if (!position.allowMultiple) {
-          const holders = await tx.organizationPositionAssignment.count({
-            where: {
-              organizationId,
-              positionId: position.id,
-              status: AssignmentStatus.ACTIVE,
-              deletedAt: null,
-            },
-          });
-          if (holders > 0) throw new BizException(BizCode.POSITION_ASSIGNMENT_SINGLE_HOLDER);
-        }
+          { lock: true },
+        );
+        const firstViolation = policyResult.violations[0];
+        if (firstViolation) throw new BizException(firstViolation);
+        const positionId = policyResult.positionId;
+        if (!positionId) throw new BizException(BizCode.POSITION_NOT_FOUND);
 
         const created = await this.runWithUniqueGuard(() =>
           tx.organizationPositionAssignment.create({
             data: {
               organizationId,
-              positionId: position.id,
+              positionId,
               memberId: dto.memberId,
               status: AssignmentStatus.ACTIVE,
               startedAt,
@@ -318,9 +256,17 @@ export class PositionAssignmentsService {
   // ============ POST /api/admin/v1/position-assignments/:id/revoke ============
 
   // 撤销:仅可撤 active 任职 → status=REVOKED + revokedByUserId + endedAt=now(保留行做历史,不软删)。
+  // required/minCount 是 advisory，不接撤销守卫；Member 锁后复读，与 offboard/create 同一生命周期序列。
   async revoke(user: CurrentUserPayload, id: string, meta: AuditMeta) {
     await this.assertCanOrThrow(user, 'position-assignment.revoke.record');
     return this.prisma.$transaction(async (tx) => {
+      const anchor = await tx.organizationPositionAssignment.findFirst({
+        where: notDeletedWhere({ id }),
+        select: { id: true, memberId: true },
+      });
+      if (!anchor) throw new BizException(BizCode.POSITION_ASSIGNMENT_NOT_FOUND);
+
+      await lockMemberLifecycle(tx, anchor.memberId);
       const current = await tx.organizationPositionAssignment.findFirst({
         where: notDeletedWhere({ id }),
         select: { id: true, status: true, memberId: true },
@@ -515,9 +461,9 @@ export class PositionAssignmentsService {
   // ============ POST /api/admin/v1/position-assignments/preview(dry-run 任命预检) ============
 
   // 逐项收集全部违规(区别于 create() 的 first-failure 抛错):任期 / 存在性(org/position/member)/
-  // 任命 5 校验(职务适配 32022 / requireMembership 32025 / 兼任 32024 / 防重 32021 / 单人独占 32023)。
-  // **校验逐项镜像 create() 编号 0-6 的同一批查询**(那边在事务内 first-failure 抛,这边只读逐项收集;
-  // 改 create 校验时必须同步本方法 —— e2e 双向矩阵为锁)。刻意**不**复用 create(dryRun) 沙箱:
+  // 任命 policy(职务适配 32022 / requireMembership 32025 / 兼任 32024 / 防重 32021 / 人数上限 32023)。
+  // create/preview 共用 PositionAssignmentPolicy；preview 只读且不取写锁，结论是时点建议，最终以 create 为准。
+  // 刻意**不**复用 create(dryRun) 沙箱:
   //   ① dryRun 只能报第一个违规,preview 契约要 violations[] 全量;② dryRun 走 create.record 码,
   //   goal 拍板 preview 复用 read 码(dry-run 只读;可见面 = 持 read 码本可 list 到的任职行,无越面泄露);
   //   ③ 沙箱含真实 insert+audit+回滚,纯预检不必付事务成本。零写入。
@@ -546,7 +492,7 @@ export class PositionAssignmentsService {
       }),
       this.prisma.organizationPosition.findFirst({
         where: notDeletedWhere({ id: dto.positionId }),
-        select: { id: true, allowMultiple: true, allowConcurrent: true },
+        select: { id: true },
       }),
       this.prisma.member.findFirst({
         where: notDeletedWhere({ id: dto.memberId }),
@@ -560,67 +506,18 @@ export class PositionAssignmentsService {
       return { valid: false, violations };
     }
 
-    // 2. 职务适配(镜像 create 步骤 2)
-    const rule = await this.prisma.organizationPositionRule.findFirst({
-      where: {
+    const policyResult = await this.policy.evaluate(
+      this.prisma,
+      {
+        organizationId: dto.organizationId,
         nodeTypeCode: org.nodeTypeCode,
         positionId: position.id,
-        status: PolicyStatus.ACTIVE,
-        deletedAt: null,
-      },
-      select: { requireMembership: true },
-    });
-    if (!rule) push(BizCode.POSITION_ASSIGNMENT_RULE_NOT_MATCHED);
-
-    // 3. requireMembership(镜像 create 步骤 3;规则缺席时判不了,跳过)
-    if (rule?.requireMembership) {
-      const ancestorRows = await this.prisma.organizationClosure.findMany({
-        where: { descendantId: dto.organizationId },
-        select: { ancestorId: true },
-      });
-      const membership = await this.prisma.memberOrganizationMembership.findFirst({
-        where: {
-          ...MembershipTermStateMachine.effectiveWhere(new Date()),
-          memberId: dto.memberId,
-          organizationId: { in: ancestorRows.map((r) => r.ancestorId) },
-        },
-        select: { id: true },
-      });
-      if (!membership) push(BizCode.POSITION_ASSIGNMENT_MEMBERSHIP_REQUIRED);
-    }
-
-    // 4. 兼任(镜像 create 步骤 4)
-    if (!position.allowConcurrent) {
-      const otherActive = await this.prisma.organizationPositionAssignment.count({
-        where: { memberId: dto.memberId, status: AssignmentStatus.ACTIVE, deletedAt: null },
-      });
-      if (otherActive > 0) push(BizCode.POSITION_ASSIGNMENT_CONCURRENT_FORBIDDEN);
-    }
-
-    // 5. 防重(镜像 create 步骤 5)
-    const dup = await this.prisma.organizationPositionAssignment.count({
-      where: {
-        organizationId: dto.organizationId,
-        positionId: position.id,
         memberId: dto.memberId,
-        status: AssignmentStatus.ACTIVE,
-        deletedAt: null,
+        now: new Date(),
       },
-    });
-    if (dup > 0) push(BizCode.POSITION_ASSIGNMENT_ALREADY_EXISTS);
-
-    // 6. 单人独占(镜像 create 步骤 6;此人已由步骤 5 报重,这里报"坑已有他人")
-    if (!position.allowMultiple && dup === 0) {
-      const holders = await this.prisma.organizationPositionAssignment.count({
-        where: {
-          organizationId: dto.organizationId,
-          positionId: position.id,
-          status: AssignmentStatus.ACTIVE,
-          deletedAt: null,
-        },
-      });
-      if (holders > 0) push(BizCode.POSITION_ASSIGNMENT_SINGLE_HOLDER);
-    }
+      { lock: false },
+    );
+    for (const violation of policyResult.violations) push(violation);
 
     return { valid: violations.length === 0, violations };
   }

@@ -18,7 +18,8 @@ import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 // 规则按"组织类别(node_type)× 职务"声明,运营自治。唯一键 (nodeTypeCode, positionId) **创建后不可改**
 // (UpdatePositionRuleDto 无此二字段;改键 = 删旧建新;沿 contribution-rules 维度键不可改范式)。
 // minCount / maxCount 三态:omit → null;显式 null → null;number → 落库(沿 contribution-rules 三态)。
-// **本模块纯配置定义,绝不被任何判权路径读**(消费它的 policy=PR7 / assignment=PR4 / authz=PR8)。
+// required/minCount 是 advisory 下限；maxCount、requireMembership、allowConcurrent 与 status
+// 由 PositionAssignmentPolicy 在新任命时执行。Position 与 Rule 同名约束取严格交集。
 
 // ============ 出参 ============
 
@@ -36,13 +37,24 @@ export class PositionRuleResponseDto {
   @ApiProperty({ description: '职务定义外键(指向 organization_positions.id)' })
   positionId!: string;
 
-  @ApiProperty({ description: '该类组织是否必须有此职务', example: false })
+  @ApiProperty({
+    description: '建议下限标记(true 表示建议至少 1 人；无补位工作流前不阻断撤销/offboard)',
+    example: false,
+  })
   required!: boolean;
 
-  @ApiPropertyOptional({ description: '最少在任人数(null=不限)', nullable: true, type: 'integer' })
+  @ApiPropertyOptional({
+    description: '建议最少在任人数(null=未配置；当前 advisory/reserved，不做撤销下限 enforcement)',
+    nullable: true,
+    type: 'integer',
+  })
   minCount!: number | null;
 
-  @ApiPropertyOptional({ description: '最多在任人数(null=不限)', nullable: true, type: 'integer' })
+  @ApiPropertyOptional({
+    description: '硬性最多在任人数(null=不限；与 Position.allowMultiple 取更严格上限)',
+    nullable: true,
+    type: 'integer',
+  })
   maxCount!: number | null;
 
   @ApiProperty({
@@ -51,11 +63,14 @@ export class PositionRuleResponseDto {
   })
   requireMembership!: boolean;
 
-  @ApiProperty({ description: '该类组织内是否允许兼任', example: true })
+  @ApiProperty({
+    description: '规则层兼任开关；任命时与 Position.allowConcurrent 取严格交集',
+    example: true,
+  })
   allowConcurrent!: boolean;
 
   @ApiProperty({
-    description: '状态(ACTIVE 启用 / INACTIVE 停用)',
+    description: '状态(ACTIVE 可用于新任命 / INACTIVE 禁止新任命；不追溯既有任职)',
     enum: PolicyStatus,
     example: PolicyStatus.ACTIVE,
   })
@@ -89,13 +104,16 @@ export class CreatePositionRuleDto {
   @Length(8, 64)
   positionId!: string;
 
-  @ApiPropertyOptional({ description: '该类组织是否必须有此职务(可省略,默认 false)' })
+  @ApiPropertyOptional({
+    description: '建议下限标记(true 表示建议至少 1 人；默认 false；不阻断撤销/offboard)',
+  })
   @IsOptional()
   @IsBoolean()
   required?: boolean;
 
   @ApiPropertyOptional({
-    description: '最少在任人数(可省略 / 显式 null = 不限)',
+    description:
+      '建议最少在任人数(可省略/显式 null=未配置；须与 required 一致；当前 advisory/reserved)',
     nullable: true,
     type: 'integer',
   })
@@ -106,7 +124,7 @@ export class CreatePositionRuleDto {
   minCount?: number | null;
 
   @ApiPropertyOptional({
-    description: '最多在任人数(可省略 / 显式 null = 不限)',
+    description: '硬性最多在任人数(可省略/显式 null=不限；须 ≥ 建议下限)',
     nullable: true,
     type: 'integer',
   })
@@ -121,12 +139,17 @@ export class CreatePositionRuleDto {
   @IsBoolean()
   requireMembership?: boolean;
 
-  @ApiPropertyOptional({ description: '该类组织内是否允许兼任(可省略,默认 true)' })
+  @ApiPropertyOptional({
+    description: '规则层兼任开关(与 Position.allowConcurrent 取严格交集；默认 true)',
+  })
   @IsOptional()
   @IsBoolean()
   allowConcurrent?: boolean;
 
-  @ApiPropertyOptional({ description: '状态(可省略,默认 ACTIVE)', enum: PolicyStatus })
+  @ApiPropertyOptional({
+    description: '状态(默认 ACTIVE；INACTIVE 禁止新任命但不追溯既有任职)',
+    enum: PolicyStatus,
+  })
   @IsOptional()
   @IsEnum(PolicyStatus)
   status?: PolicyStatus;
@@ -136,13 +159,15 @@ export class CreatePositionRuleDto {
 
 // 白名单不含 nodeTypeCode / positionId(唯一键创建后不可改;改键 = 删旧建新)。全字段可选(至少一项)。
 export class UpdatePositionRuleDto {
-  @ApiPropertyOptional({ description: '该类组织是否必须有此职务' })
+  @ApiPropertyOptional({
+    description: '建议下限标记(true 表示建议至少 1 人；不阻断撤销/offboard)',
+  })
   @IsOptional()
   @IsBoolean()
   required?: boolean;
 
   @ApiPropertyOptional({
-    description: '最少在任人数(显式 null = 清空)',
+    description: '建议最少在任人数(显式 null=清空；须与 required 一致；当前 advisory/reserved)',
     nullable: true,
     type: 'integer',
   })
@@ -153,7 +178,7 @@ export class UpdatePositionRuleDto {
   minCount?: number | null;
 
   @ApiPropertyOptional({
-    description: '最多在任人数(显式 null = 清空)',
+    description: '硬性最多在任人数(显式 null=清空；须 ≥ 建议下限)',
     nullable: true,
     type: 'integer',
   })
@@ -168,12 +193,17 @@ export class UpdatePositionRuleDto {
   @IsBoolean()
   requireMembership?: boolean;
 
-  @ApiPropertyOptional({ description: '该类组织内是否允许兼任' })
+  @ApiPropertyOptional({
+    description: '规则层兼任开关(与 Position.allowConcurrent 取严格交集)',
+  })
   @IsOptional()
   @IsBoolean()
   allowConcurrent?: boolean;
 
-  @ApiPropertyOptional({ description: '状态(ACTIVE ↔ INACTIVE)', enum: PolicyStatus })
+  @ApiPropertyOptional({
+    description: '状态(ACTIVE 可新任命 / INACTIVE 禁止新任命；不追溯既有任职)',
+    enum: PolicyStatus,
+  })
   @IsOptional()
   @IsEnum(PolicyStatus)
   status?: PolicyStatus;
