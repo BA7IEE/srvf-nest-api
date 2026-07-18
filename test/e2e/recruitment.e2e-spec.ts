@@ -892,6 +892,14 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     // 幂等重跑:promoted 已离开 publicity → 28041,members 零增长(DoD「幂等重跑 0」)
     expectBizError(await promoteSingle(foreign.id), BizCode.RECRUITMENT_APPLICATION_WRONG_STATE);
     expect(await prisma.member.count()).toBe(membersBefore + 2);
+    const singleEventKey = `recruitment-promotion:${foreign.id}`;
+    expect(
+      await prisma.notificationOutboxIntent.count({ where: { eventKey: singleEventKey } }),
+    ).toBe(1);
+    const worker = app.get(NotificationOutboxWorker);
+    expect(await worker.drainEventKey(singleEventKey)).toMatchObject({ claimed: 1, succeeded: 1 });
+    expect(await worker.drainEventKey(singleEventKey)).toMatchObject({ claimed: 0 });
+    expect(await prisma.notification.count({ where: { recipientMemberId: member.id } })).toBe(1);
   });
 
   it('F3-③ 锚点择优(E-U-4):openid 被占 + phone 空闲 → 手机通道;双占 → 28046;双缺 → 28046', async () => {
