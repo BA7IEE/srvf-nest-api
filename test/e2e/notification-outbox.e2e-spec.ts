@@ -264,12 +264,11 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       destinationRef: memberId,
     };
     const created = await outbox.enqueue(enqueueInput);
-    const firstNow = new Date(Date.now());
     const first = await runChild([
       'execute-no-ack',
       'os-provider-before-crash',
-      firstNow.toISOString(),
-      '1000',
+      '',
+      '30000',
       enqueueInput.eventKey,
     ]);
     expect(first).toMatchObject({ ids: [created.id], effectPerformed: true });
@@ -284,12 +283,18 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
         where: { memberId_templateId: { memberId, templateId: 'outbox-os-template' } },
       }),
     ).toMatchObject({ availableCount: 1 });
+    // 精确制造“Effect 已提交、ack 未发生、lease 已到期”的 crash 窗口；杀死 reclaim
+    // 重复调用 provider / 重复扣 quota 的 mutation，同时避免 OS child 冷启动污染业务时钟。
+    await prisma.notificationOutboxIntent.update({
+      where: { id: created.id },
+      data: { leaseExpiresAt: new Date(Date.now() - 1) },
+    });
 
     const second = await runChild([
       'execute-and-ack',
       'os-provider-after-crash',
-      new Date(firstNow.getTime() + 1001).toISOString(),
-      '1000',
+      '',
+      '30000',
       enqueueInput.eventKey,
     ]);
     expect(second.ids).toEqual([created.id]);
@@ -326,7 +331,7 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     const firstNow = new Date();
     const reservation = await prisma.$transaction((tx) =>
       outbox.reserveAdminSmsAttempt(enqueueInput, 'crashed-http-request', tx, {
-        now: new Date(firstNow.getTime() - 1001),
+        now: new Date(firstNow.getTime() - 30_001),
         leaseMs: 1000,
       }),
     );
@@ -334,8 +339,8 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     const first = await runChild([
       'execute-no-ack',
       'os-sms-before-ack-crash',
-      firstNow.toISOString(),
-      '1000',
+      '',
+      '30000',
       enqueueInput.eventKey,
     ]);
     expect(first).toMatchObject({ ids: [reservation.intent!.id], effectPerformed: true });
@@ -347,14 +352,20 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
         where: { notificationId: refs.notificationId, memberId, status: 'sent' },
       }),
     ).toBe(1);
+    // SENT evidence 已落库后只推进 lease 到期；杀死 reclaim 先查 channel readiness
+    // 或再次调用 provider 的 mutation（通道已关闭时仍必须凭 SENT evidence ack）。
+    await prisma.notificationOutboxIntent.update({
+      where: { id: reservation.intent!.id },
+      data: { leaseExpiresAt: new Date(Date.now() - 1) },
+    });
 
     await prisma.smsSettings.updateMany({ data: { enabled: false } });
     app.get(SmsSettingsService).invalidate();
     const second = await runChild([
       'execute-and-ack',
       'os-sms-after-ack-crash',
-      new Date(firstNow.getTime() + 1001).toISOString(),
-      '1000',
+      '',
+      '30000',
       enqueueInput.eventKey,
     ]);
     expect(second.ids).toEqual([reservation.intent!.id]);
