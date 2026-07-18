@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import { maskAddress, maskName, maskPhone } from '../../common/audit/mask-pii.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -28,7 +27,7 @@ import { assertEmergencyRelationCodeValid } from './emergency-relation.validatio
 // - relationCode 字典校验(emergency_relation type)
 // - 跨 member 校验:contact 属于其他 member 时抛 EMERGENCY_CONTACT_NOT_BELONGS_TO_MEMBER
 // - audit:
-//   - list  → auditPlaceholder('emergency-contact.read.other', ...)  pino-only(批次 6 PR #2 未迁移,沿 F2)
+//   - list  → 查询完成后 fail-closed 落 emergency-contact.read.other,extra 只记计数/掩码级
 //   - create / update / softDelete → AuditLogsService.log({ event: 'emergency-contact.write', ... })
 //     批次 6 PR #2 迁移(D-A 修订 / D6 v1.1 §8.2),敏感字段经 maskName / maskPhone / maskAddress 打码
 // - 十项收口刀D(2026-07-11;⚠️ 行为变更):read.record 语义收窄为脱敏——4 个响应出口(list /
@@ -148,10 +147,11 @@ export class EmergencyContactsService {
 
   // 决策:返完整数组(无分页;演示规模 ≤ 5 / 人)。排序 priority ASC, createdAt ASC。
   // hook A5 emergency-contact.read.other:本批次仅 ADMIN/SUPER_ADMIN 路由,记一次"看他人"。
-  // 注:本调用是 pino-only 占位(批次 6 PR #2 未迁移,沿 F2)。
+  // C-2:查询完成后 fail-closed 落 audit_logs,extra 仅保留 operation/count/maskLevel。
   async list(
     memberId: string,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<EmergencyContactResponseDto[]> {
     await this.assertCanOrThrow(currentUser, 'emergency-contact.read.record', memberId);
     // 十项收口刀D:脱敏随码(masked = 无 sensitive 码;零第二套口径)
@@ -167,10 +167,18 @@ export class EmergencyContactsService {
       orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
     });
 
-    auditPlaceholder('emergency-contact.read.other', {
-      operatorUserId: currentUser.id,
-      targetMemberId: memberId,
-      contactIds: items.map((i) => i.id),
+    await this.auditLogs.log({
+      event: 'emergency-contact.read.other',
+      actorUserId: currentUser.id,
+      actorRoleSnap: currentUser.role,
+      resourceType: 'member',
+      resourceId: memberId,
+      meta: auditMeta,
+      extra: {
+        operation: 'list',
+        count: items.length,
+        maskLevel: masked ? 'masked' : 'plain',
+      },
     });
 
     return items.map((c) => presentEmergencyContact(c, masked));

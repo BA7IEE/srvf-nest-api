@@ -1,5 +1,8 @@
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RecruitmentApplicationsQueryService } from './recruitment-applications-query.service';
+
+const META: AuditMeta = { requestId: 'req-recruitment-read-1', ip: '127.0.0.1', ua: 'jest' };
 
 // god-service 拆分(2026-06-28):admin 读面脱敏 + CSV 导出 characterization 随方法从
 // RecruitmentApplicationsService 迁来(断言不变,仅构造目标类改为 QueryService)。
@@ -33,6 +36,9 @@ describe('RecruitmentApplicationsQueryService · S3 敏感字段分级判权', (
     verifyOutcome: null,
     eliminationStage: null,
     idCardImageKey: 'recruitment/id-card/cyc-1/app-1.jpg',
+    idCardCropImageKey: null,
+    idCardPortraitImageKey: null,
+    certificateImages: null,
     thresholdMarks: null,
     evaluationNote: null,
     promotedMemberId: null,
@@ -47,12 +53,15 @@ describe('RecruitmentApplicationsQueryService · S3 敏感字段分级判权', (
     memberId: null,
   } as never;
 
-  function buildReadService(canMap: Record<string, boolean>) {
+  function buildReadService(canMap: Record<string, boolean>, row: Record<string, unknown> = ROW) {
     const prisma = {
-      recruitmentApplication: { findFirst: jest.fn().mockResolvedValue(ROW) },
+      recruitmentApplication: { findFirst: jest.fn().mockResolvedValue(row) },
     };
     const rbac = {
       can: jest.fn((_user: unknown, code: string) => Promise.resolve(canMap[code] ?? false)),
+    };
+    const auditLogs = {
+      log: jest.fn<Promise<void>, [Record<string, unknown>]>().mockResolvedValue(undefined),
     };
     const storage = {
       putObject: jest.fn(),
@@ -67,23 +76,33 @@ describe('RecruitmentApplicationsQueryService · S3 敏感字段分级判权', (
     const service = new RecruitmentApplicationsQueryService(
       prisma as never,
       rbac as never,
+      auditLogs as never,
       storage,
     );
-    return { service, rbac, storage };
+    return { service, prisma, rbac, auditLogs, storage };
   }
 
   // ── 详情:read.record + read.sensitive → 明文 ──
   it('详情 · 持 read.record + read.sensitive → 明文证件号/手机', async () => {
-    const { service } = buildReadService({ [RECORD]: true, [SENSITIVE]: true });
-    const dto = await service.detailForAdmin('app-1', ADMIN_USER);
+    const { service, auditLogs } = buildReadService({ [RECORD]: true, [SENSITIVE]: true });
+    const dto = await service.detailForAdmin('app-1', ADMIN_USER, META);
     expect(dto.idCardNumber).toBe(RAW_ID);
     expect(dto.phone).toBe(RAW_PHONE);
+    expect(auditLogs.log).toHaveBeenCalledWith({
+      event: 'recruitment-application.read.other',
+      actorUserId: 'admin-1',
+      actorRoleSnap: 'ADMIN',
+      resourceType: 'recruitment_application',
+      resourceId: 'app-1',
+      meta: META,
+      extra: { operation: 'detail', maskLevel: 'plain' },
+    });
   });
 
   // ── 详情:仅 read.record(无 read.sensitive)→ 脱敏(字段集不变,值掩码)──
   it('详情 · 仅 read.record(无 sensitive)→ 脱敏证件号/手机,字段集不变', async () => {
     const { service } = buildReadService({ [RECORD]: true, [SENSITIVE]: false });
-    const dto = await service.detailForAdmin('app-1', ADMIN_USER);
+    const dto = await service.detailForAdmin('app-1', ADMIN_USER, META);
     expect(dto.idCardNumber).not.toBe(RAW_ID);
     expect(dto.idCardNumber).toContain('*');
     expect(dto.phone).not.toBe(RAW_PHONE);
@@ -94,30 +113,163 @@ describe('RecruitmentApplicationsQueryService · S3 敏感字段分级判权', (
     expect(dto.hasIdCardImage).toBe(true);
   });
 
+  it('详情 · 业务查询完成后审计失败原样上抛,调用方拿不到 DTO', async () => {
+    const { service, prisma, auditLogs } = buildReadService({
+      [RECORD]: true,
+      [SENSITIVE]: true,
+    });
+    const auditError = new Error('recruitment detail audit unavailable');
+    auditLogs.log.mockRejectedValue(auditError);
+    let receivedDto: unknown;
+
+    await expect(
+      service.detailForAdmin('app-1', ADMIN_USER, META).then((dto) => {
+        receivedDto = dto;
+        return dto;
+      }),
+    ).rejects.toBe(auditError);
+
+    expect(prisma.recruitmentApplication.findFirst).toHaveBeenCalledTimes(1);
+    expect(prisma.recruitmentApplication.findFirst.mock.invocationCallOrder[0]).toBeLessThan(
+      auditLogs.log.mock.invocationCallOrder[0],
+    );
+    expect(receivedDto).toBeUndefined();
+  });
+
   // ── 详情:无 read.record → 30100(闸优先,sensitive 不影响)──
   it('详情 · 无 read.record → RBAC_FORBIDDEN(30100)', async () => {
     const { service } = buildReadService({ [RECORD]: false, [SENSITIVE]: true });
-    await expect(service.detailForAdmin('app-1', ADMIN_USER)).rejects.toMatchObject({
+    await expect(service.detailForAdmin('app-1', ADMIN_USER, META)).rejects.toMatchObject({
       biz: { code: BizCode.RBAC_FORBIDDEN.code },
     });
   });
 
   // ── 证件照 signed-URL:持 read.sensitive → 200 url ──
   it('证件照 signed-URL · 持 read.sensitive → 返 url + expiresAt', async () => {
-    const { service, storage } = buildReadService({ [RECORD]: true, [SENSITIVE]: true });
-    const res = await service.getIdCardImageUrl('app-1', ADMIN_USER);
+    const { service, auditLogs, storage } = buildReadService({
+      [RECORD]: true,
+      [SENSITIVE]: true,
+    });
+    const res = await service.getIdCardImageUrl('app-1', ADMIN_USER, META);
     expect(res.url).toBe('https://signed-url');
     expect(res.expiresAt).toBeDefined();
     expect(storage.generateDownloadUrl).toHaveBeenCalledTimes(1);
+    expect(auditLogs.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'recruitment-application.id-card-image.read',
+        resourceType: 'recruitment_application',
+        resourceId: 'app-1',
+        extra: { operation: 'id-card-image', fields: ['idCardImage'] },
+      }),
+    );
+    expect(auditLogs.log.mock.invocationCallOrder[0]).toBeLessThan(
+      storage.generateDownloadUrl.mock.invocationCallOrder[0],
+    );
   });
 
   // ── 证件照 signed-URL:仅 read.record(无 sensitive)→ 30100(闸已从 read.record 收紧为 read.sensitive)──
   it('证件照 signed-URL · 仅 read.record(无 sensitive)→ RBAC_FORBIDDEN(30100)', async () => {
     const { service, storage } = buildReadService({ [RECORD]: true, [SENSITIVE]: false });
-    await expect(service.getIdCardImageUrl('app-1', ADMIN_USER)).rejects.toMatchObject({
+    await expect(service.getIdCardImageUrl('app-1', ADMIN_USER, META)).rejects.toMatchObject({
       biz: { code: BizCode.RBAC_FORBIDDEN.code },
     });
     expect(storage.generateDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it('证件照审计失败 → provider 调用次数为 0', async () => {
+    const { service, auditLogs, storage } = buildReadService({ [SENSITIVE]: true });
+    auditLogs.log.mockRejectedValue(new Error('audit unavailable'));
+
+    await expect(service.getIdCardImageUrl('app-1', ADMIN_USER, META)).rejects.toThrow(
+      'audit unavailable',
+    );
+    expect(storage.generateDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it('证书图先按安全计数审计,再调用 provider', async () => {
+    const { service, auditLogs, storage } = buildReadService(
+      { [SENSITIVE]: true },
+      { ...ROW, certificateImages: { firstAid: ['secret-object-key'] } },
+    );
+
+    const result = await service.getCertificateImageUrls('app-1', ADMIN_USER, META);
+
+    expect(result.items).toHaveLength(1);
+    expect(auditLogs.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'recruitment-application.read.other',
+        resourceId: 'app-1',
+        extra: { operation: 'certificate-images', count: 1 },
+      }),
+    );
+    expect(JSON.stringify(auditLogs.log.mock.calls[0][0])).not.toContain('secret-object-key');
+    expect(auditLogs.log.mock.invocationCallOrder[0]).toBeLessThan(
+      storage.generateDownloadUrl.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('证书图审计失败 → provider 调用次数为 0', async () => {
+    const { service, auditLogs, storage } = buildReadService(
+      { [SENSITIVE]: true },
+      { ...ROW, certificateImages: { firstAid: ['secret-object-key'] } },
+    );
+    auditLogs.log.mockRejectedValue(new Error('audit unavailable'));
+
+    await expect(service.getCertificateImageUrls('app-1', ADMIN_USER, META)).rejects.toThrow(
+      'audit unavailable',
+    );
+    expect(storage.generateDownloadUrl).not.toHaveBeenCalled();
+  });
+});
+
+describe('RecruitmentApplicationsQueryService.listForAdmin read audit', () => {
+  it('audits after the page query with filter names, mask level and safe count only', async () => {
+    const rows: unknown[] = [];
+    const findMany = jest.fn().mockResolvedValue(rows);
+    const prisma = {
+      recruitmentApplication: {
+        findMany,
+        count: jest.fn().mockResolvedValue(0),
+      },
+      $transaction: jest.fn((promises: Array<Promise<unknown>>) => Promise.all(promises)),
+    };
+    const rbac = { can: jest.fn().mockResolvedValue(true) };
+    const auditLogs = {
+      log: jest.fn<Promise<void>, [Record<string, unknown>]>().mockResolvedValue(undefined),
+    };
+    const service = new RecruitmentApplicationsQueryService(
+      prisma as never,
+      rbac as never,
+      auditLogs as never,
+      {} as never,
+    );
+    const user = { id: 'admin-1', role: 'ADMIN' } as never;
+
+    await service.listForAdmin(
+      { page: 1, pageSize: 20 },
+      { cycleId: 'cycle-1', statusCode: 'verified' },
+      user,
+      META,
+    );
+
+    expect(auditLogs.log).toHaveBeenCalledWith({
+      event: 'recruitment-application.read.other',
+      actorUserId: 'admin-1',
+      actorRoleSnap: 'ADMIN',
+      resourceType: 'recruitment_cycle',
+      resourceId: 'cycle-1',
+      meta: META,
+      extra: {
+        operation: 'list',
+        filterFields: ['cycleId', 'statusCode'],
+        maskLevel: 'masked',
+        count: 0,
+      },
+    });
+    expect(findMany.mock.invocationCallOrder[0]).toBeLessThan(
+      auditLogs.log.mock.invocationCallOrder[0],
+    );
+    expect(JSON.stringify(auditLogs.log.mock.calls[0][0])).not.toContain('verified');
   });
 });
 
@@ -165,12 +317,16 @@ describe('RecruitmentApplicationsQueryService.exportApplicationsCsv · S3 脱敏
     const rbac = {
       can: jest.fn((_u: unknown, code: string) => Promise.resolve(canMap[code] ?? false)),
     };
+    const auditLogs = {
+      log: jest.fn<Promise<void>, [Record<string, unknown>]>().mockResolvedValue(undefined),
+    };
     const service = new RecruitmentApplicationsQueryService(
       prisma as never,
       rbac as never,
+      auditLogs as never,
       {} as never,
     );
-    return { service, findMany };
+    return { service, findMany, auditLogs };
   }
 
   async function collectCsv(source: AsyncIterable<string>): Promise<string> {
@@ -180,8 +336,22 @@ describe('RecruitmentApplicationsQueryService.exportApplicationsCsv · S3 脱敏
   }
 
   it('持 read.sensitive → CSV 明文列(id_card_number/phone 原值)', async () => {
-    const { service } = buildExportService({ [RECORD]: true, [SENSITIVE]: true }, [row()]);
-    const csv = await collectCsv(await service.exportApplicationsCsv({}, ADMIN_USER));
+    const { service, findMany, auditLogs } = buildExportService(
+      { [RECORD]: true, [SENSITIVE]: true },
+      [row()],
+    );
+    const generator = await service.exportApplicationsCsv({}, ADMIN_USER, META);
+    expect(auditLogs.log).toHaveBeenCalledWith({
+      event: 'recruitment-application.read.other',
+      actorUserId: 'admin-1',
+      actorRoleSnap: 'ADMIN',
+      resourceType: 'recruitment_application',
+      resourceId: null,
+      meta: META,
+      extra: { operation: 'export', filterFields: [], maskLevel: 'plain' },
+    });
+    expect(findMany).not.toHaveBeenCalled();
+    const csv = await collectCsv(generator);
     const [header, line1] = csv.split('\n');
     expect(header.split(',')).toContain('id_card_number');
     expect(header.split(',')).toContain('is_non_mainland_document');
@@ -190,9 +360,22 @@ describe('RecruitmentApplicationsQueryService.exportApplicationsCsv · S3 脱敏
     expect(line1).toContain(RAW_PHONE);
   });
 
+  it('审计失败时不返回 generator,CSV 查询保持 0 次', async () => {
+    const { service, findMany, auditLogs } = buildExportService(
+      { [RECORD]: true, [SENSITIVE]: false },
+      [row()],
+    );
+    auditLogs.log.mockRejectedValue(new Error('audit unavailable'));
+
+    await expect(service.exportApplicationsCsv({}, ADMIN_USER, META)).rejects.toThrow(
+      'audit unavailable',
+    );
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
   it('仅 read.record(无 sensitive)→ CSV 脱敏列(掩码,绝不出明文)', async () => {
     const { service } = buildExportService({ [RECORD]: true, [SENSITIVE]: false }, [row()]);
-    const csv = await collectCsv(await service.exportApplicationsCsv({}, ADMIN_USER));
+    const csv = await collectCsv(await service.exportApplicationsCsv({}, ADMIN_USER, META));
     expect(csv).not.toContain(RAW_ID); // 明文绝不泄露
     expect(csv).not.toContain(RAW_PHONE);
     expect(csv).toContain('*'); // 掩码(复用 toAdminApplicationDto)
@@ -201,7 +384,7 @@ describe('RecruitmentApplicationsQueryService.exportApplicationsCsv · S3 脱敏
 
   it('无 read.record → RBAC_FORBIDDEN(不触库)', async () => {
     const { service, findMany } = buildExportService({ [RECORD]: false }, [row()]);
-    await expect(service.exportApplicationsCsv({}, ADMIN_USER)).rejects.toMatchObject({
+    await expect(service.exportApplicationsCsv({}, ADMIN_USER, META)).rejects.toMatchObject({
       biz: { code: BizCode.RBAC_FORBIDDEN.code },
     });
     expect(findMany).not.toHaveBeenCalled();
@@ -216,7 +399,7 @@ describe('RecruitmentApplicationsQueryService.exportApplicationsCsv · S3 脱敏
   it('filter=manual → where.statusCode=manual_review;filter 缺省 all → 无 statusCode 约束', async () => {
     const { service, findMany } = buildExportService({ [RECORD]: true }, []);
     await collectCsv(
-      await service.exportApplicationsCsv({ filter: 'manual', cycleId: 'cyc-9' }, ADMIN_USER),
+      await service.exportApplicationsCsv({ filter: 'manual', cycleId: 'cyc-9' }, ADMIN_USER, META),
     );
     expect(whereOfCall(findMany)).toMatchObject({
       deletedAt: null,
@@ -225,7 +408,7 @@ describe('RecruitmentApplicationsQueryService.exportApplicationsCsv · S3 脱敏
     });
 
     findMany.mockClear();
-    await collectCsv(await service.exportApplicationsCsv({}, ADMIN_USER));
+    await collectCsv(await service.exportApplicationsCsv({}, ADMIN_USER, META));
     expect(whereOfCall(findMany).statusCode).toBeUndefined(); // all:无态约束
   });
 
@@ -242,7 +425,7 @@ describe('RecruitmentApplicationsQueryService.exportApplicationsCsv · S3 脱敏
       row({ id: 'done', thresholdMarks: complete }),
     ]);
     const csv = await collectCsv(
-      await service.exportApplicationsCsv({ filter: 'threshold-incomplete' }, ADMIN_USER),
+      await service.exportApplicationsCsv({ filter: 'threshold-incomplete' }, ADMIN_USER, META),
     );
     // DB where 仍按 verified 取(post-filter 在内存)
     expect(whereOfCall(findMany)).toMatchObject({ statusCode: 'verified' });
@@ -257,7 +440,7 @@ describe('RecruitmentApplicationsQueryService.exportApplicationsCsv · S3 脱敏
       .mockResolvedValueOnce(Array.from({ length: 500 }, (_, index) => row({ id: `app-${index}` })))
       .mockResolvedValueOnce([row({ id: 'app-tail' })]);
 
-    const csv = await collectCsv(await service.exportApplicationsCsv({}, ADMIN_USER));
+    const csv = await collectCsv(await service.exportApplicationsCsv({}, ADMIN_USER, META));
 
     expect(findMany).toHaveBeenCalledTimes(2);
     const calls = findMany.mock.calls as unknown as Array<

@@ -6,11 +6,11 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 
 // V2 第一阶段批次 6 attendance audit assembly 单一职责类(沿 PR #176 / #177 / #182 /
 // PR #184 characterization 锁定的 8 处 audit 行为 + audit failure rollback 零变化抽出;
-// v0.47.0 F2 additive 承接第 9 处 reopen audit)。
+// v0.47.0 F2 additive 承接第 9 处 reopen audit;敏感读取统一批次再承接 3 处 read audit)。
 //
 // 三抽完成后(PR #178 ContributionCalculator / PR #180 TimeOverlapPolicy /
 // PR #183 AttendanceSheetStateMachine),`attendances.service.ts` 剩余最大单一职责是
-// audit snapshot / log payload assembly(~200/1270 LOC、8 处 `auditLogs.log` 调用、
+// audit snapshot / log payload assembly(~200/1270 LOC、写审计 + 敏感读审计、
 // 2 个 snapshot helper)。本类极小抽出,只"搬家"不优化:
 //
 // **职责边界(严守"搬家不优化")**:
@@ -121,6 +121,32 @@ export class AttendanceAuditRecorder {
 
   private decimalToString(d: Prisma.Decimal | null): string | null {
     return d === null ? null : d.toString();
+  }
+
+  // ============ sensitive read ============
+  // 读审计无业务事务可加入;调用方完成判权与全部业务查询后 await 本方法,再返回数据。
+  async logRead(args: {
+    actorUserId: string;
+    actorRoleSnap: Role;
+    resourceType: 'activity' | 'attendance_sheet';
+    resourceId: string;
+    operation: 'list' | 'detail' | 'review-detail';
+    count?: number;
+    filterFields?: string[];
+    auditMeta: AuditMeta;
+  }): Promise<void> {
+    const extra: Record<string, unknown> = { operation: args.operation };
+    if (args.count !== undefined) extra.count = args.count;
+    if (args.filterFields !== undefined) extra.filterFields = args.filterFields;
+    await this.auditLogs.log({
+      event: 'attendance-sheet.read.other',
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: args.resourceType,
+      resourceId: args.resourceId,
+      meta: args.auditMeta,
+      extra,
+    });
   }
 
   // ============ submit ============

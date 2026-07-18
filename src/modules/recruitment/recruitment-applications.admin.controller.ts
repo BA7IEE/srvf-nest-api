@@ -49,7 +49,7 @@ import { RecruitmentApplicationsService } from './recruitment-applications.servi
 import { RecruitmentPromotionService } from './recruitment-promotion.service';
 
 // 招新一期 T3(2026-06-18):招新报名 admin surface(评审稿 §3.2 端点 10-13)。
-// 入口仅 JwtAuthGuard,判权全在 service rbac.can();读 PII 记 placeholder 审计。
+// 入口仅 JwtAuthGuard,判权全在 service rbac.can();读 PII fail-closed 落真实审计。
 // 证件照取图走短 TTL signed-URL + L3 不入日志(配套②);人工 resolve 走 manual_review / pending_verification 闸
 // (分叉④A + 核验中断卡死态恢复,FM-A;系统性审查 §1;2026-06-19 收紧:仅 verifyOutcome 已落的真卡死行可解,
 // 核验在途行不可碰、mismatch 卡死行只能 reject)。
@@ -91,6 +91,7 @@ export class RecruitmentApplicationsAdminController {
   list(
     @Query() query: RecruitmentApplicationListQueryDto,
     @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
   ) {
     // 过滤参 cycleId/statusCode/riskLevel 改由 query DTO 白名单承载(去掉旧 loose @Query('x') 旁路:
     // 它绕开 DTO,触发全局 forbidNonWhitelisted 误拒文档化过滤参);过滤语义不变,仍由 queryService 接收 filters。
@@ -98,6 +99,7 @@ export class RecruitmentApplicationsAdminController {
       query,
       { cycleId: query.cycleId, statusCode: query.statusCode, riskLevel: query.riskLevel },
       user,
+      buildAuditMeta(req),
     );
   }
 
@@ -130,9 +132,10 @@ export class RecruitmentApplicationsAdminController {
   async export(
     @Body() dto: ExportRecruitmentApplicationsDto,
     @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const csv = await this.queryService.exportApplicationsCsv(dto, user);
+    const csv = await this.queryService.exportApplicationsCsv(dto, user, buildAuditMeta(req));
     res.set({
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': 'attachment; filename="recruitment-applications.csv"',
@@ -154,8 +157,9 @@ export class RecruitmentApplicationsAdminController {
   detail(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<RecruitmentApplicationAdminDto> {
-    return this.queryService.detailForAdmin(id, user);
+    return this.queryService.detailForAdmin(id, user, buildAuditMeta(req));
   }
 
   // 招新可用性收口 F2(评审稿 recruitment-usability-closeout-review.md §3 R1):admin 改报名资料。
@@ -199,8 +203,9 @@ export class RecruitmentApplicationsAdminController {
   idCardImageUrl(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<IdCardImageUrlResponseDto> {
-    return this.queryService.getIdCardImageUrl(id, user);
+    return this.queryService.getIdCardImageUrl(id, user, buildAuditMeta(req));
   }
 
   // 招新可用性收口 F7(评审稿 §2.9):admin 取证书图 signed-URL(镜像 id-card-image-url;0 新码)。
@@ -218,8 +223,9 @@ export class RecruitmentApplicationsAdminController {
   certificateImageUrls(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<RecruitmentCertificateImageUrlsResponseDto> {
-    return this.queryService.getCertificateImageUrls(id, user);
+    return this.queryService.getCertificateImageUrls(id, user, buildAuditMeta(req));
   }
 
   @Post(':id/certificates/:category/review')

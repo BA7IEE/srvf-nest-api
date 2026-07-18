@@ -242,6 +242,7 @@ type StateMachineMock = ReturnType<typeof makeStateMachineMock>;
 
 function makeRecorderMock() {
   return {
+    logRead: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
     logSubmit: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
     logEdit: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
     logEditNoRecords: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
@@ -372,15 +373,24 @@ describe('AttendancesService (characterization, scoped)', () => {
           finalReviewNote: 'ok',
         }),
       );
-      const service = makeService(prisma);
+      const recorder = makeRecorderMock();
+      const service = makeService(prisma, { recorder });
 
-      const res = await service.findOne('sheet-1', makeCurrentUser());
+      const res = await service.findOne('sheet-1', makeCurrentUser(), META);
 
       expect(res.id).toBe('sheet-1');
       expect(res.statusCode).toBe(ATTENDANCE_SHEET_STATUS.APPROVED);
       expect(res.reviewerUserId).toBe('rev-1');
       expect(res.finalReviewerUserId).toBe('fr-1');
       expect(res.finalReviewNote).toBe('ok');
+      expect(recorder.logRead).toHaveBeenCalledWith({
+        actorUserId: 'admin-1',
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'attendance_sheet',
+        resourceId: 'sheet-1',
+        operation: 'detail',
+        auditMeta: META,
+      });
     });
 
     it('findOne 不存在 → ATTENDANCE_SHEET_NOT_FOUND', async () => {
@@ -388,9 +398,88 @@ describe('AttendancesService (characterization, scoped)', () => {
       prisma.attendanceSheet.findFirst.mockResolvedValue(null);
       const service = makeService(prisma);
 
-      await expect(service.findOne('missing', makeCurrentUser())).rejects.toEqual(
+      await expect(service.findOne('missing', makeCurrentUser(), META)).rejects.toEqual(
         new BizException(BizCode.ATTENDANCE_SHEET_NOT_FOUND),
       );
+    });
+
+    it('findOne:read audit rejection is fail-closed', async () => {
+      const prisma = makePrismaMock();
+      const recorder = makeRecorderMock();
+      prisma.attendanceSheet.findFirst.mockResolvedValue(makeSheetRow());
+      recorder.logRead.mockRejectedValue(new Error('audit unavailable'));
+      const service = makeService(prisma, { recorder });
+
+      await expect(service.findOne('sheet-1', makeCurrentUser(), META)).rejects.toThrow(
+        'audit unavailable',
+      );
+    });
+
+    it('reviewDetail audits the completed query with a safe record count', async () => {
+      const prisma = makePrismaMock();
+      const recorder = makeRecorderMock();
+      prisma.attendanceSheet.findFirst.mockResolvedValue(makeSheetRow());
+      prisma.activity.findFirst.mockResolvedValue({
+        id: 'act-1',
+        title: 'Activity',
+        activityTypeCode: 'rescue',
+        organizationId: 'org-1',
+        startAt: FIXED_IN,
+        endAt: FIXED_OUT,
+        location: 'Location',
+        statusCode: 'published',
+      });
+      prisma.attendanceRecord.findMany.mockResolvedValue([makeRecordRow()]);
+      const service = makeService(prisma, { recorder });
+
+      const result = await service.reviewDetail('sheet-1', makeCurrentUser(), META);
+
+      expect(result.records).toHaveLength(1);
+      expect(recorder.logRead).toHaveBeenCalledWith({
+        actorUserId: 'admin-1',
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'attendance_sheet',
+        resourceId: 'sheet-1',
+        operation: 'review-detail',
+        count: 1,
+        auditMeta: META,
+      });
+    });
+
+    it('reviewDetail:完整查询后审计失败原样上抛,调用方拿不到 DTO', async () => {
+      const prisma = makePrismaMock();
+      const recorder = makeRecorderMock();
+      const auditError = new Error('attendance review detail audit unavailable');
+      prisma.attendanceSheet.findFirst.mockResolvedValue(makeSheetRow());
+      prisma.activity.findFirst.mockResolvedValue({
+        id: 'act-1',
+        title: 'Activity',
+        activityTypeCode: 'rescue',
+        organizationId: 'org-1',
+        startAt: FIXED_IN,
+        endAt: FIXED_OUT,
+        location: 'Location',
+        statusCode: 'published',
+      });
+      prisma.attendanceRecord.findMany.mockResolvedValue([makeRecordRow()]);
+      recorder.logRead.mockRejectedValue(auditError);
+      const service = makeService(prisma, { recorder });
+      let receivedDto: unknown;
+
+      await expect(
+        service.reviewDetail('sheet-1', makeCurrentUser(), META).then((dto) => {
+          receivedDto = dto;
+          return dto;
+        }),
+      ).rejects.toBe(auditError);
+
+      expect(prisma.attendanceSheet.findFirst).toHaveBeenCalledTimes(1);
+      expect(prisma.activity.findFirst).toHaveBeenCalledTimes(1);
+      expect(prisma.attendanceRecord.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.attendanceRecord.findMany.mock.invocationCallOrder[0]).toBeLessThan(
+        recorder.logRead.mock.invocationCallOrder[0],
+      );
+      expect(receivedDto).toBeUndefined();
     });
 
     it('listMyRecords → toRecordResponseDto:serviceHours/contributionPoints Decimal→string,member 映射', async () => {
@@ -1060,12 +1149,14 @@ describe('AttendancesService (characterization, scoped)', () => {
       prisma.activity.findFirst.mockResolvedValue({ id: 'act-1', statusCode: 'published' });
       prisma.attendanceSheet.findMany.mockResolvedValue([makeSheetRow()]);
       prisma.attendanceSheet.count.mockResolvedValue(1);
-      const service = makeService(prisma);
+      const recorder = makeRecorderMock();
+      const service = makeService(prisma, { recorder });
 
       const page = await service.list(
         'act-1',
         makeListQuery(ATTENDANCE_SHEET_STATUS.PENDING),
         makeCurrentUser(),
+        META,
       );
 
       expect(page.total).toBe(1);
@@ -1075,6 +1166,16 @@ describe('AttendancesService (characterization, scoped)', () => {
       };
       expect(findManyArg.where.activityId).toBe('act-1');
       expect(findManyArg.where.statusCode).toBe(ATTENDANCE_SHEET_STATUS.PENDING);
+      expect(recorder.logRead).toHaveBeenCalledWith({
+        actorUserId: 'admin-1',
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'activity',
+        resourceId: 'act-1',
+        operation: 'list',
+        count: 1,
+        filterFields: ['statusCode'],
+        auditMeta: META,
+      });
     });
 
     it('list:activity 不存在 → ACTIVITY_NOT_FOUND;不查 sheets', async () => {
@@ -1082,7 +1183,7 @@ describe('AttendancesService (characterization, scoped)', () => {
       prisma.activity.findFirst.mockResolvedValue(null);
       const service = makeService(prisma);
 
-      await expect(service.list('act-x', makeListQuery(), makeCurrentUser())).rejects.toEqual(
+      await expect(service.list('act-x', makeListQuery(), makeCurrentUser(), META)).rejects.toEqual(
         new BizException(BizCode.ACTIVITY_NOT_FOUND),
       );
       expect(prisma.attendanceSheet.findMany).not.toHaveBeenCalled();

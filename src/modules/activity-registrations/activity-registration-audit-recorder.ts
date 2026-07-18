@@ -14,7 +14,7 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 //
 // **职责边界(严守"搬家不优化")**:
 // - ✅ snapshot 组装(`toAuditSnapshot`)+ `jsonAsObject` JSON-safe 转换
-// - ✅ `AuditLogsService.log()` payload assembly(6 处写路径,3 个 method 分组)
+// - ✅ `AuditLogsService.log()` payload assembly(写路径 3 个 method 分组 + CSV export 读审计)
 // - ❌ 不开事务 / 不读 DB / 不写业务表
 // - ❌ 不做 state machine 判断 / 不做 capacity / unique / ownership / RBAC
 // - ❌ 不改 audit event 名 / `resourceType` / `actorUserId` / `actorRoleSnap` / `meta` /
@@ -76,6 +76,25 @@ export class ActivityRegistrationAuditRecorder {
       cancelledAt: row.cancelledAt,
       cancelReason: row.cancelReason,
     };
+  }
+
+  // ============ logExport(CSV read;before returning generator) ============
+  async logExport(args: {
+    activityId: string;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    filterFields: string[];
+    auditMeta: AuditMeta;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: 'registration.review',
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: 'activity',
+      resourceId: args.activityId,
+      meta: args.auditMeta,
+      extra: { operation: 'export', filterFields: args.filterFields },
+    });
   }
 
   // ============ logCreate(create admin / createMy self 共用) ============

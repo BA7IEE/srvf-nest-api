@@ -2,12 +2,13 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Prisma, type RecruitmentApplication, type RecruitmentCycle } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
-import { auditPlaceholder } from '../../common/audit/audit-placeholder';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import type { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
 import { STORAGE_PROVIDER } from '../storage/storage.constants';
 import type { StorageProvider } from '../storage/storage.interface';
@@ -69,21 +70,23 @@ type RecruitmentCsvRow = Prisma.RecruitmentApplicationGetPayload<{
 // 招新报名 admin 读面 QueryService(god-service 拆分 2026-06-28,沿 architecture-boundary §3.2 QueryService)。
 // 从 RecruitmentApplicationsService 抽出读侧查询构造 + 脱敏分级读取 + CSV 导出 + 公示预览,
 // 严守 §3.2「不做业务状态突变 / 不审计写 / 不持有写事务」。脱敏复用 presenter(单一真相源)。
-// 入口闸仍 rbac.can(本仓 R 模式,无 @RequirePermissions);读 PII 记 placeholder 审计。
+// 入口闸仍 rbac.can(本仓 R 模式,无 @RequirePermissions);读 PII fail-closed 落真实 audit_logs。
 
 @Injectable()
 export class RecruitmentApplicationsQueryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
+    private readonly auditLogs: AuditLogsService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
-  // ============ admin 列表(PII 掩码;读 PII placeholder 审计)============
+  // ============ admin 列表(PII 掩码;读 PII fail-closed 落真实审计)============
   async listForAdmin(
     query: PaginationQueryDto,
     filters: { cycleId?: string; statusCode?: string; riskLevel?: string },
     user: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<PageResultDto<RecruitmentApplicationAdminDto>> {
     await this.assertCanOrThrow(user, 'recruitment-application.read.record');
     const where: Prisma.RecruitmentApplicationWhereInput = {
@@ -102,9 +105,17 @@ export class RecruitmentApplicationsQueryService {
       }),
       this.prisma.recruitmentApplication.count({ where }),
     ]);
-    auditPlaceholder('recruitment-application.read.other', {
-      adminId: user.id,
-      count: rows.length,
+    const filterFields = (['cycleId', 'statusCode', 'riskLevel'] as const).filter(
+      (field) => filters[field] !== undefined,
+    );
+    await this.auditLogs.log({
+      event: 'recruitment-application.read.other',
+      actorUserId: user.id,
+      actorRoleSnap: user.role,
+      resourceType: filters.cycleId === undefined ? 'recruitment_application' : 'recruitment_cycle',
+      resourceId: filters.cycleId ?? null,
+      meta: auditMeta,
+      extra: { operation: 'list', filterFields, maskLevel: 'masked', count: rows.length },
     });
     return {
       items: rows.map((r) => toAdminApplicationDto(r, true)),
@@ -120,23 +131,33 @@ export class RecruitmentApplicationsQueryService {
   async detailForAdmin(
     id: string,
     user: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<RecruitmentApplicationAdminDto> {
     await this.assertCanOrThrow(user, 'recruitment-application.read.record');
     const row = await this.findAppOrThrow(id);
     const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
-    auditPlaceholder('recruitment-application.read.other', { adminId: user.id, applicationId: id });
+    await this.auditLogs.log({
+      event: 'recruitment-application.read.other',
+      actorUserId: user.id,
+      actorRoleSnap: user.role,
+      resourceType: 'recruitment_application',
+      resourceId: id,
+      meta: auditMeta,
+      extra: { operation: 'detail', maskLevel: canSensitive ? 'plain' : 'masked' },
+    });
     return toAdminApplicationDto(row, !canSensitive);
   }
 
   // ============ 招新闭环优化 S6:批量导出 CSV(评审稿 §8.1;脱敏随码复用 S3 toAdminDto,零第二套)============
   // 入口闸 = read.record(同 list/detail);**持 read.sensitive → 明文列 / 仅 read.record → 脱敏列**
   //(S3 §11.1 分级):脱敏单一真相源在 presenter(masked = !canSensitive),CSV 仅消费已脱敏 DTO —— 明文
-  // 绝不在无 read.sensitive 时出列。读操作 export placeholder 审计(含 admin / 范围 filter / 脱敏级;
-  // 复用既有 read.other pino 事件 + operation 区分,沿 registrations export 范式,不扩 locked AuditEvent union)。
+  // 绝不在无 read.sensitive 时出列。读操作 export 真实审计(含 admin / 范围 filter / 脱敏级;
+  // 复用 read.other DB 事件 + operation 区分,沿 registrations export 范式)。
   // 返回游标分页 async generator(controller 用 Readable.from 包 StreamableFile;不引新依赖)。
   async exportApplicationsCsv(
     dto: ExportRecruitmentApplicationsDto,
     user: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<AsyncGenerator<string, void, undefined>> {
     await this.assertCanOrThrow(user, 'recruitment-application.read.record');
     const canSensitive = await this.rbac.can(user, 'recruitment-application.read.sensitive');
@@ -147,20 +168,34 @@ export class RecruitmentApplicationsQueryService {
       ...(dto.cycleId ? { cycleId: dto.cycleId } : {}),
       ...recruitmentExportStatusWhere(filter),
     };
-    return this.streamApplicationsCsv(where, filter, !canSensitive, user.id);
+    const filterFields = (['cycleId', 'filter'] as const).filter(
+      (field) => dto[field] !== undefined,
+    );
+    await this.auditLogs.log({
+      event: 'recruitment-application.read.other',
+      actorUserId: user.id,
+      actorRoleSnap: user.role,
+      resourceType: dto.cycleId === undefined ? 'recruitment_application' : 'recruitment_cycle',
+      resourceId: dto.cycleId ?? null,
+      meta: auditMeta,
+      extra: {
+        operation: 'export',
+        filterFields,
+        maskLevel: canSensitive ? 'plain' : 'masked',
+      },
+    });
+    return this.streamApplicationsCsv(where, filter, !canSensitive);
   }
 
   private async *streamApplicationsCsv(
     where: Prisma.RecruitmentApplicationWhereInput,
     filter: string,
     masked: boolean,
-    adminId: string,
   ): AsyncGenerator<string, void, undefined> {
     yield '\uFEFF';
     yield RECRUITMENT_APPLICATION_CSV_HEADERS.join(',');
 
     let cursor: string | undefined;
-    let rowsCount = 0;
     while (true) {
       const rows: RecruitmentCsvRow[] = await this.prisma.recruitmentApplication.findMany({
         where,
@@ -178,19 +213,10 @@ export class RecruitmentApplicationsQueryService {
           continue;
         }
         yield `\n${formatApplicationCsvRow(row, masked)}`;
-        rowsCount += 1;
       }
       if (rows.length < RECRUITMENT_CSV_BATCH_SIZE) break;
       cursor = rows.at(-1)!.id;
     }
-
-    auditPlaceholder('recruitment-application.read.other', {
-      adminId,
-      operation: 'export',
-      filter,
-      maskLevel: masked ? 'masked' : 'plain',
-      rowsCount,
-    });
   }
 
   // ============ admin 取证件照 signed-URL(配套②;L3;短 TTL;S3:敏感查看 read.sensitive)============
@@ -199,12 +225,27 @@ export class RecruitmentApplicationsQueryService {
   async getIdCardImageUrl(
     id: string,
     user: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<IdCardImageUrlResponseDto> {
     await this.assertCanOrThrow(user, 'recruitment-application.read.sensitive');
     const row = await this.findAppOrThrow(id);
     if (!row.idCardImageKey) {
       throw new BizException(BizCode.RECRUITMENT_APPLICATION_NOT_FOUND);
     }
+    const fields = [
+      'idCardImage',
+      ...(row.idCardCropImageKey ? ['idCardCropImage'] : []),
+      ...(row.idCardPortraitImageKey ? ['idCardPortraitImage'] : []),
+    ];
+    await this.auditLogs.log({
+      event: 'recruitment-application.id-card-image.read',
+      actorUserId: user.id,
+      actorRoleSnap: user.role,
+      resourceType: 'recruitment_application',
+      resourceId: id,
+      meta: auditMeta,
+      extra: { operation: 'id-card-image', fields },
+    });
     const result = await this.storage.generateDownloadUrl({
       key: row.idCardImageKey,
       expiresIn: ID_CARD_IMAGE_SIGNED_URL_TTL_SECONDS,
@@ -212,10 +253,6 @@ export class RecruitmentApplicationsQueryService {
     // 裁剪图 key 存在才生成签名 URL(键缺 → null);TTL 同原图。
     const cropImageUrl = await this.maybeSignedUrl(row.idCardCropImageKey);
     const portraitImageUrl = await this.maybeSignedUrl(row.idCardPortraitImageKey);
-    auditPlaceholder('recruitment-application.id-card-image.read', {
-      adminId: user.id,
-      applicationId: id,
-    });
     // url 是 L3,不入日志/snapshot;仅出参回显
     return { url: result.url, expiresAt: result.expiresAt, cropImageUrl, portraitImageUrl };
   }
@@ -226,10 +263,24 @@ export class RecruitmentApplicationsQueryService {
   async getCertificateImageUrls(
     id: string,
     user: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<RecruitmentCertificateImageUrlsResponseDto> {
     await this.assertCanOrThrow(user, 'recruitment-application.read.sensitive');
     const row = await this.findAppOrThrow(id);
     const images = (row.certificateImages as Record<string, string[]> | null) ?? {};
+    const imageCount = Object.values(images).reduce(
+      (sum, keys) => sum + (Array.isArray(keys) ? keys.length : 0),
+      0,
+    );
+    await this.auditLogs.log({
+      event: 'recruitment-application.read.other',
+      actorUserId: user.id,
+      actorRoleSnap: user.role,
+      resourceType: 'recruitment_application',
+      resourceId: id,
+      meta: auditMeta,
+      extra: { operation: 'certificate-images', count: imageCount },
+    });
     const expiresAt = new Date(Date.now() + ID_CARD_IMAGE_SIGNED_URL_TTL_SECONDS * 1000);
     const items: RecruitmentCertificateImagesItemDto[] = [];
     for (const [category, keys] of Object.entries(images)) {
@@ -244,12 +295,6 @@ export class RecruitmentApplicationsQueryService {
       }
       items.push({ category, urls });
     }
-    auditPlaceholder('recruitment-application.read.other', {
-      adminId: user.id,
-      operation: 'certificate-images',
-      applicationId: id,
-      categories: items.map((i) => i.category),
-    });
     return { items, expiresAt };
   }
 

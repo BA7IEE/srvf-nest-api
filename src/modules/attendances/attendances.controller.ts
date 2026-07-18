@@ -120,8 +120,9 @@ export class AttendanceSheetsCollectionController {
     @Param() params: ActivityIdParamDto,
     @Query() query: ListAttendanceSheetsQueryDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<PageResultDto<AttendanceSheetListItemDto>> {
-    return this.service.list(params.activityId, query, currentUser);
+    return this.service.list(params.activityId, query, currentUser, buildAuditMeta(req));
   }
 }
 
@@ -167,8 +168,9 @@ export class AttendanceSheetsResourceController {
   reviewDetail(
     @Param() params: IdParamDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AttendanceSheetReviewDetailDto> {
-    return this.service.reviewDetail(params.id, currentUser);
+    return this.service.reviewDetail(params.id, currentUser, buildAuditMeta(req));
   }
 
   @Get(':id')
@@ -186,8 +188,9 @@ export class AttendanceSheetsResourceController {
   findOne(
     @Param() params: IdParamDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<AttendanceSheetResponseDto> {
-    return this.service.findOne(params.id, currentUser);
+    return this.service.findOne(params.id, currentUser, buildAuditMeta(req));
   }
 
   @Patch(':id')

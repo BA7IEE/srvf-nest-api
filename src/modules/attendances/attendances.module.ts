@@ -34,8 +34,8 @@ import { ParticipationSummaryQueryService } from './participation-summary-query.
 
 // V2 批次 6 PR #6(D6 v1.1 §8 / 第二波最后一批):导入 AuditLogsModule 以注入 AuditLogsService,
 // attendances 9 处写操作(submit / edit × 2 / softDelete / approve / reject / finalApprove / finalReject / reopen)
-// 调 log() 替代 auditPlaceholder;3 处 read.other(list / findOne / reviewDetail)仍走 pino-only
-// auditPlaceholder(沿 Q1=A 当前阶段不记录查看行为)。
+// 调 log() 落库;2026-07-19 C-2 起 3 处 read.other(list / findOne / reviewDetail)也经
+// AttendanceAuditRecorder 在查询完成后 fail-closed 落库,不再存在 pino-only placeholder。
 //
 // Phase 2 P2-6(2026-05-20):追加 AppMyAttendanceRecordsController
 // (/api/app/v1/my/attendance-records 1 endpoint)+ AppMyAttendanceRecordsService(薄壳)。

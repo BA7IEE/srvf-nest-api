@@ -2,6 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { PrismaService } from '../../src/database/prisma.service';
+import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { MemberProfilesService } from '../../src/modules/member-profiles/member-profiles.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -20,6 +21,11 @@ const PLAIN_ID = '110101199001011234'; // 18 位合成证件号
 const PLAIN_MOBILE = '13800000001';
 const MASKED_ID = '110101********1234'; // maskIdCard(18 位):前 6 + 8*'*' + 后 4
 const MASKED_MOBILE = '138****0001'; // maskPhone(11 位)
+const READ_AUDIT_META: AuditMeta = {
+  requestId: 'e2e-member-profile-read',
+  ip: null,
+  ua: 'jest',
+};
 
 describe('member-profiles sensitive masking (F&A-3)', () => {
   let app: INestApplication;
@@ -160,7 +166,7 @@ describe('member-profiles sensitive masking (F&A-3)', () => {
     it('A1. 无 read.sensitive → documentNumber / mobile 掩码;其余字段明文', async () => {
       const memberId = await newMember();
       await seedProfile(memberId);
-      const dto = await service.findOne(memberId, recordOnlyPayload);
+      const dto = await service.findOne(memberId, recordOnlyPayload, READ_AUDIT_META);
       expect(dto).not.toBeNull();
       expect(dto!.documentNumber).toBe(MASKED_ID);
       expect(dto!.mobile).toBe(MASKED_MOBILE);
@@ -175,7 +181,7 @@ describe('member-profiles sensitive masking (F&A-3)', () => {
     it('A2. 持 read.sensitive → documentNumber / mobile 明文', async () => {
       const memberId = await newMember();
       await seedProfile(memberId);
-      const dto = await service.findOne(memberId, sensitivePayload);
+      const dto = await service.findOne(memberId, sensitivePayload, READ_AUDIT_META);
       expect(dto!.documentNumber).toBe(PLAIN_ID);
       expect(dto!.mobile).toBe(PLAIN_MOBILE);
       // 刀D:持 sensitive 者生日/邮箱等全明文
@@ -186,14 +192,14 @@ describe('member-profiles sensitive masking (F&A-3)', () => {
     it('A3. SUPER_ADMIN → 明文(rbac.can 短路)', async () => {
       const memberId = await newMember();
       await seedProfile(memberId);
-      const dto = await service.findOne(memberId, saPayload);
+      const dto = await service.findOne(memberId, saPayload, READ_AUDIT_META);
       expect(dto!.documentNumber).toBe(PLAIN_ID);
       expect(dto!.mobile).toBe(PLAIN_MOBILE);
     });
 
     it('A4. member 有但无 profile → null(不因掩码报错)', async () => {
       const memberId = await newMember();
-      const dto = await service.findOne(memberId, recordOnlyPayload);
+      const dto = await service.findOne(memberId, recordOnlyPayload, READ_AUDIT_META);
       expect(dto).toBeNull();
     });
   });

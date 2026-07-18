@@ -220,3 +220,27 @@ req.body.stepUpToken
 | **dictionaries(字典类型 / 字典项)** | 分类字典,变更不改授权事实;属 v2 早期「4 模型写不接 audit」的原始范围,保持不写 |
 
 > 变更本表任一归属(把某 config 面从「不写」挪到「写」或反之)= 判权 / 审计事实变更,按 D 档降速,先与维护者对齐。
+
+## 敏感读取审计
+
+Admin 读取他人档案、紧急联系人、自购保险、证书、考勤与招新材料时必须写入 `audit_logs`。本批次新增 8 个读取事件；活动报名 CSV 导出复用既有 `registration.review`。App 本人 self-scope 读取不在本批次扩面。
+
+| 读取面 | 事件 | resource 锚点 |
+|---|---|---|
+| 队员扩展档案 | `profile.read.other` | `member_profile` / profile id(无档案时 nullable) |
+| 紧急联系人 | `emergency-contact.read.other` | `member` / member id |
+| 队员自购保险 | `member-insurance.read.other` | `member` / member id |
+| 证书列表 / 详情 | `certificate.read.other` | list=`member`;detail=`certificate` |
+| 资质布尔查询 | `certificate.read.qualification-flag` | `member` / member id |
+| 考勤单列表 / 详情 / 审核详情 | `attendance-sheet.read.other` | list=`activity`;detail=`attendance_sheet` |
+| 活动报名 CSV | `registration.review` + `extra.operation='export'` | `activity` / activity id |
+| 招新列表 / 详情 / CSV / 证书图 / 发号预检 | `recruitment-application.read.other` | `recruitment_application` 或 `recruitment_cycle` |
+| 招新证件图 | `recruitment-application.id-card-image.read` | `recruitment_application` / application id |
+
+顺序与失败语义固定如下：
+
+- 普通读取：鉴权与业务查询成功后 `await` 审计，再返回数据；审计拒绝直接上抛，fail-closed。
+- CSV：必须在 controller 获得 generator / stream 前完成审计；不得在 generator 尾部补记，审计失败时不得发送首字节。
+- 签名 URL：完成资源与 key 存在性守卫后、任何 `generateDownloadUrl` 调用前完成审计；审计失败时 provider 调用次数必须为 0。
+- 每条记录显式保存 `actorUserId` / `actorRoleSnap` 与 controller 构造的 `AuditMeta(requestId/ip/ua)`。
+- `extra` 只允许 operation、filterFields 字段名、maskLevel、字段名和安全计数；禁止姓名、手机号、身份证号、保单号、object key、URL、token、credential、原始 filter 值与自由文本。
