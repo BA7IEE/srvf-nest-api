@@ -50,7 +50,8 @@ interface RegistrationCreateTestHooks {
   resolveCreateStatusCode: (
     activityId: string,
     activityPositionId: string | null,
-    capacity: number | null,
+    activityCapacity: number | null,
+    activityPositionCapacity: number | null,
     tx: Prisma.TransactionClient,
   ) => Promise<'pending' | 'waitlisted'>;
 }
@@ -534,7 +535,7 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
         .spyOn(hooks, 'resolveCreateStatusCode')
         .mockImplementation(async (...args) => {
           const statusCode = await originalResolve(...args);
-          const [backend] = await args[3].$queryRaw<Array<{ pid: number }>>`
+          const [backend] = await args[4].$queryRaw<Array<{ pid: number }>>`
             SELECT pg_backend_pid() AS pid
           `;
           createPaused.resolve(backend.pid);
