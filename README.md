@@ -4,32 +4,28 @@
 
 承载内容:队员档案、任务派遣、训练 / 出勤、装备、值班排班等公益救援队内部管理能力。
 
-> **Derived from [`u-nest-api-starter`](https://github.com/BA7IEE/u-nest-api-starter) `v0.1.6`** (派生日期 2026-05-04)。
-> 长期 AI 协作规则以 [`AGENTS.md`](./AGENTS.md) 为主入口;[`CLAUDE.md`](./CLAUDE.md) 仅作为 Claude Code 转发入口。架构背景以 [`ARCHITECTURE.md`](./ARCHITECTURE.md) 为准(请先读其顶部"§0 当前阶段说明"),**当前事实以 [`docs/current-state.md`](./docs/current-state.md) 为准**。模板沉淀的工程基础设施(认证 / 用户 / 健康检查 / 错误码 / 日志 / 限流)继续生效;SRVF 业务模块在 `src/modules/` 下平铺新增,不修改模板已锁定的 `auth/` 与 `users/` 路由契约。
->
+> **Derived from [`u-nest-api-starter`](https://github.com/BA7IEE/u-nest-api-starter) `v0.1.6`**(派生日期 2026-05-04)。
+> 模板沉淀的工程基础设施(认证 / 用户 / 健康检查 / 错误码 / 日志 / 限流)继续生效;SRVF 业务模块在 `src/modules/` 下平铺新增。
 > 工程基础设施(Docker 容器名、CI workflow、测试数据库脚本)沿用模板的 `u-nest-api-*` 命名,这是稳定的工程契约,**不要改名**。
 
 ---
 
-## 文档地图(2026-05-21 治理收口后)
+## 文档入口 / 阅读协议
 
-| 文档 | 作用 | 权威等级 |
-|---|---|---|
-| [`docs/current-state.md`](./docs/current-state.md) | **当前事实唯一入口**:版本、open PR、最新 release、surface 状态、当前债务 | 当前事实 |
-| [`AGENTS.md`](./AGENTS.md) | **长期 AI 协作铁律主入口**:命名 / 目录 / 错误码 / Guard / 软删除 / RBAC / refresh token / App API 边界 / §19 决策 | 长期铁律 |
-| [`CLAUDE.md`](./CLAUDE.md) | Claude Code 入口转发(≤80 行;不复制 `AGENTS.md` 全文) | 入口转发 |
-| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | v1 / V1.1 / V2 架构蓝图与设计背景;**请先读顶部"当前阶段说明"** | 设计背景 |
-| [`docs/process.md`](./docs/process.md) | 开发流程与协作制度:开工 checklist、PR 五档分级、D 档降速与人话简报、release 收口、goal 协作模式 | 流程制度 |
-| [`docs/ai-harness/README.md`](./docs/ai-harness/README.md) | AI Harness 操作层单页(必读三件套之一):铁律速查 / AI 修改三档 + 触发即停 / 全仓读写分区;同目录 `RBAC_MAP.md` + `NEXT_TASKS.md` | 操作层(derived,非规则源) |
-| [`docs/api-surface-policy.md`](./docs/api-surface-policy.md) · [`docs/api-surface-migration-plan.md`](./docs/api-surface-migration-plan.md) | API surface 长期边界:**Route B 四分**(Admin `/api/admin/v1` · App `/api/app/v1` · Auth `/api/auth/v1` · System `/api/system/v1`,预留 Open)+ 全量迁移计划(2026-06-01 立项;取代旧"方案 C / 三层") | 长期铁律 |
-| [`docs/srvf-foundation-baseline.md`](./docs/srvf-foundation-baseline.md) | V2 派生项目基线规范(13 项 A 档) | 长期铁律 |
-| [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) | V2 五档红线(A/B/C/D/E)与解锁触发条件 | 长期铁律 |
-| [`docs/security.md`](./docs/security.md) / [`docs/deployment.md`](./docs/deployment.md) / [`docs/development.md`](./docs/development.md) / [`docs/testing.md`](./docs/testing.md) | 安全 / 部署 / 排错 / 测试 SOP | 运行指引 |
-| [`docs/archive/`](./docs/archive/) | 历史 handoff / 评审稿 / 批次 / first-release 过程档案 | 历史证据 |
+> 本 README 只保留「怎么把项目跑起来」。所有**会随版本变化的事实**(版本号、模块清单、端点、权限码、当前债务)都由下面的权威源维护,README 不再复制——避免二次漂移。
 
-详细分层与冲突处理见 [`docs/README.md`](./docs/README.md)。
+| 我想看 | 去哪看 |
+|---|---|
+| **当前事实**(版本 / 模块 / 端点 / surface 状态 / 债务)——唯一权威源 | [`docs/current-state.md`](./docs/current-state.md) |
+| **完整接口 / 字段 / 错误码 / 权限矩阵** | 运行时 `/api/docs`(Swagger UI)+ `/api/docs-json` |
+| **文档总索引**(baseline / V2 红线 / security / deployment / testing / handoff 等) | [`docs/README.md`](./docs/README.md) |
+| **长期 AI 协作铁律**主入口 | [`AGENTS.md`](./AGENTS.md)(Claude Code 另读 [`CLAUDE.md`](./CLAUDE.md)) |
+| **架构背景与设计蓝图** | [`ARCHITECTURE.md`](./ARCHITECTURE.md)(先读顶部「§0 当前阶段说明」;除非用户明确要求,AI 不修改此文件) |
+| **API surface 长期边界** | [`docs/api-surface-policy.md`](./docs/api-surface-policy.md) |
 
-**冲突处理**:当前事实 > 长期铁律 > 流程 > 设计背景 > 历史证据。历史 handoff、批次评审稿、Phase reviews 已统一归档至 `docs/archive/**`,**不再作为当前执行约束**。除非用户明确要求,AI 不得修改 `ARCHITECTURE.md`。
+**恒读三件套**(每会话开工必读):[`AGENTS.md`](./AGENTS.md) → [`docs/current-state.md`](./docs/current-state.md) → [`docs/process.md §2/§3`](./docs/process.md)(Claude Code 另读 `CLAUDE.md`)。
+
+**冲突处理**:当前事实 > 长期铁律 > 流程 > 设计背景 > 历史证据。历史 handoff / 评审稿 / 批次已归档至 [`docs/archive/**`](./docs/archive/),**不再作为当前执行约束**。
 
 ---
 
@@ -79,47 +75,17 @@ pnpm start:dev
 
 ---
 
-## 路由总览
+## API 总览
 
-> 全仓 API 落 **4 surface 前缀**(Route B 终态,2026-06-01):`/api/admin/v1`(管理面)· `/api/app/v1`(移动端队员自助)· `/api/auth/v1`(认证)· `/api/system/v1`(系统 / ops);`/api/open/v1` 预留未实现。长期边界见 [`docs/api-surface-policy.md`](./docs/api-surface-policy.md);**完整端点以 `/api/docs` Swagger UI 与 [`docs/current-state.md`](./docs/current-state.md) §2.1 为准**,下表仅列核心端点速览。
+> 全仓 API 落在 **5 个 canonical surface 前缀**(Route B 终态):`/api/admin/v1`(管理面)· `/api/app/v1`(移动端队员自助)· `/api/auth/v1`(认证)· `/api/system/v1`(系统 / ops)· `/api/open/v1`(预留)。长期边界见 [`docs/api-surface-policy.md`](./docs/api-surface-policy.md);**完整端点、字段、错误码、权限矩阵一律以 `/api/docs` 与 [`docs/current-state.md`](./docs/current-state.md) 为准,README 不维护路由表**。
 
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| `GET` | `/api/system/v1/health` | 公开 | 服务健康检查 |
-| `GET` | `/api/system/v1/health/live` | 公开 | K8s liveness — 进程存活 |
-| `GET` | `/api/system/v1/health/ready` | 公开 | K8s readiness — DB 连通 |
-| `POST` | `/api/auth/v1/login` | 公开 | `username + password` 登录,返回 JWT;**默认 IP 维度限流 5 次 / 60 秒**(`/refresh` · `/logout` · `/logout-all` 见 Auth surface) |
-| `GET` `PATCH` | `/api/app/v1/me` · `/api/app/v1/me/profile` | 登录队员(App) | 本人身份 / 资料读取 / 修改(仅 nickname / avatarKey) |
-| `GET` `POST` | `/api/admin/v1/users` | super admin / admin | 用户列表(分页) / 创建用户 |
-| `GET` `PATCH` `DELETE` | `/api/admin/v1/users/:id` | super admin / admin | 详情 / 改资料 / 软删除 |
-| `PUT` | `/api/admin/v1/users/:id/password` | super admin / admin | 重置用户密码 |
-| `PATCH` | `/api/admin/v1/users/:id/role` | **super admin only** | 修改用户角色 |
-| `PATCH` | `/api/admin/v1/users/:id/status` | super admin / admin | 启用/禁用用户 |
-| `GET` | `/api/docs` | 开发环境默认开启 | Swagger UI(生产需 `ENABLE_SWAGGER=true`) |
+装好后可用这几个稳定入口做冒烟自检:
 
-完整字段、错误码归属与示例详见 [`docs/development.md`](./docs/development.md) 与 [`docs/archive/legacy/architecture-v1-blueprint.md §6`](./docs/archive/legacy/architecture-v1-blueprint.md)(原 `ARCHITECTURE.md §6`,PR-6 已归档)。
-
-### V2 第一阶段(srvf-foundation)
-
-V2 第一阶段开发已完成并随 v0.13.0 发布;v0.14.0(P0-E refresh / logout 闭环)与 v0.15.0(P0-F RBAC 收紧 + App API Phase 2 完整 15 endpoint)随后续 release 落地。完整起步包 / P1 后接 / 暂不接的历史口径见 [`docs/archive/plans/first-release-frontend-scope.md`](./docs/archive/plans/first-release-frontend-scope.md);**当前事实以 [`docs/current-state.md`](./docs/current-state.md) §2 为准**,不在 README 维护详细路由表。本表下方按模块列出 V2 第一阶段已实装接口,**v1 14 接口契约严格 zero drift**(`LoginDto` / `UserResponseDto` 不漂移)。
-
-| 模块 | 路径前缀 | 接口数 | 关键能力 |
-|---|---|---|---|
-| dictionaries | `/api/system/v1/dict-types` + `/api/system/v1/dict-items` | 13 | 双表字典 + 父子树形 + 软删显式封装 |
-| organizations | `/api/admin/v1/organizations` | 7 | 组织树形 + 单根上限 + last-root 保护 + nodeTypeCode 走字典 |
-| members | `/api/admin/v1/members` | 6 | `memberNo` 全局唯一不复用 + `gradeCode` 字典校验 + 严禁敏感字段 |
-| member-departments | `/api/admin/v1/members/:memberId/department` | 3 | 一人一部门 + partial unique index + PUT 幂等 |
-| member-profiles(批次 1) | `/api/admin/v1/members/:memberId/profile` | 3 | 1:1 子资源 + 5 字典字段校验 + auditPlaceholder hook |
-| emergency-contacts(批次 1) | `/api/admin/v1/members/:memberId/emergency-contacts` | 4 | N:1 子资源 + priority ASC 排序 + 软删 + auditPlaceholder hook |
-| certificates(批次 2) | `/api/admin/v1/members/:memberId/certificates` | 8 | N:1 + 4 态闭集状态机(pending/verified/expired/rejected)+ verify/reject/qualification-flag 动作 + 列表精简 + 跨 member 校验 |
-| activities(批次 3A) | `/api/admin/v1/activities` | 7 | 活动状态机(draft/published/cancelled/completed)+ Q-A7 USER 与 ADMIN 同路由 service 按 Role 过滤 + Q-A12 cancelled 拒改 + 经纬度 `Decimal(10,7)` |
-| activity-registrations(批次 3A) | Admin `/api/admin/v1/activities/:activityId/registrations` + App 队员自助 `/api/app/v1/my/registrations` | 10 | Q-A3 USER 自助 vs ADMIN 代报名拆开 + 4 态闭集(pending/pass/reject/cancelled)+ capacity 仅统计 pass + partial unique 取消后允许重报 + Q-A6 CSV 名单导出(StreamableFile,scope=pass 默认/scope=all 可选,不做 XLSX,0 副作用)|
-| attendances(批次 3B + 批次 4-B) | Admin `/api/admin/v1/activities/:activityId/attendance-sheets` + `/api/admin/v1/attendance-sheets/:id`(含 `/review-detail` / `/approve` / `/reject` / `/final-approve` / `/final-reject`)+ App 队员自助 `/api/app/v1/my/attendance-records` | 11 | Sheet + Record 双 model;**5 态闭集**(pending / pending_final_review / approved / rejected / final_rejected;**approved 语义升级为"终审通过"**,沿批次 4-B / D-S6)+ APD 完整审核视图(R25 Activity+Sheet+Records[含 Member])+ 编辑 pending 后端生成 previousSnapshot+version+1(D38 / R28 / Q-S16 完整快照)+ 同 memberId 跨 Sheet/Activity 时间不重叠[左闭右开,R16 / Q-S15]+ serviceHours 未传自动计算 / <=0 / 超跨度三档校验(D14 / D45 / D46 / D51)+ registrationId 跨表校验 activity 一致(R23)+ approve 前 contributionPoints 必填(R31)+ **批次 4-B 升级**:`attendance.recorded` 触发位置从 `approve` 移到 `final-approve`(Q-S13 / D-S7;final-reject / approve / reject / submit / edit / delete 均不触发)+ **D14 ContributionRule 预填**(POST 时按 `(activityType, attendanceRole, durationMinutes)` 匹配规则预填 contributionPoints;调用方传值不覆盖;无匹配规则保持 null;dailyCap 默认 1.5;不暴露 CRUD,不引流水表)+ **D11 Activity.completed 推动**(首张 Sheet 提交时事务内 Activity `published → completed`,单向不可逆;reject / final-reject 不回退;completed 语义 = "已进入考勤提交阶段",不代表全部终审通过)+ pending_final_review / final_rejected 不可 edit / softDelete(22030 / 22043)+ finalReviewNote 终审驳回必填(22046)+ /me 仅 approved Sheet 内 records(Q-A14;approved 已升级为终审通过)+ 终审权限当前沿 ADMIN / SUPER_ADMIN(沿 D-S2 不开 22044,APD 部门部长 / 副部长细分权限留后续 RBAC 批次)|
-| auth memberNo 登录回退 | `POST /api/auth/v1/login`(契约不变) | — | `username` 字段服务端语义扩展为 username 或 memberNo |
-
-完整字段、错误码、权限矩阵以 `/api/docs` Swagger UI 与 [`docs/current-state.md`](./docs/current-state.md) §2 为准(`docs/v2-api-contract.md` 为 V2 设计期 draft,非当前执行依据)。
-
-`member_profiles` / `emergency_contacts`(批次 1)+ `certificates`(批次 2)+ `activities` / `activity_registrations`(批次 3A)+ **`attendance_sheets` / `attendance_records`(批次 3B)**+ **`ContributionRule` schema + AttendanceSheet 终审 3 字段(批次 4-A)**+ **终审 / D14 ContributionRule 预填 / D11 Activity.completed 推动(批次 4-B)**已全部落地(详见上表)。批次 3 schema 含 4 model 已 commit(`31c8187`);批次 3A API(`6a9339b`)+ 批次 3B API(`5dbd230`)+ 批次 4-A schema(`2190803`)+ 批次 4-B service/API(`6812db9`)接续交付。**当前 V2.x 复活路径与当前解锁状态以 [`docs/current-state.md`](./docs/current-state.md) 与 [`docs/V2红线与复活路径.md`](./docs/V2红线与复活路径.md) 为准**;READ ME 不再维护批次级累计接口数与逐版本快照。
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/system/v1/health`(`/live` · `/ready`) | 服务健康检查 / K8s 存活 · 就绪探针,公开 |
+| `POST` | `/api/auth/v1/login` | `username`(或 `memberNo`)+ `password` 登录,返回 JWT;带 IP 维度登录限流(阈值见 [`docs/security.md`](./docs/security.md)) |
+| `GET` | `/api/docs` | Swagger UI(生产需 `ENABLE_SWAGGER=true`) |
 
 ---
 
@@ -144,7 +110,7 @@ pnpm prisma:studio     # 图形化数据库 GUI
 
 # 测试(三档,均为护栏,合并前都应通过)
 pnpm test              # unit:不启动 Nest、不连数据库,纯函数 / 类单测,毫秒级反馈
-pnpm test:contract     # contract:OpenAPI 契约快照,锁住 14 个接口的 schema,防止误改入参 / 出参 / 错误码
+pnpm test:contract     # contract:OpenAPI 契约快照,锁住 EXPECTED_ROUTES 的 schema,防止误改入参 / 出参 / 错误码
 pnpm test:e2e          # e2e:端到端 API 测试,启动真实 Nest + 真实 Postgres(app_test 库)
 
 # E2E 测试库管理
