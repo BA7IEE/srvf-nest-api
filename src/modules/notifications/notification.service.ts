@@ -373,7 +373,14 @@ export class NotificationService {
     }
 
     // 24030 必须发生在任何 durable reservation 前：HTTP 报失败后不能在恢复配置时迟到补发。
-    await this.smsDispatch.assertChannelReady();
+    try {
+      await this.smsDispatch.assertChannelReady();
+    } catch (error) {
+      if (error instanceof SmsChannelUnavailableError) {
+        throw new BizException(BizCode.SMS_CHANNEL_NOT_CONFIGURED);
+      }
+      throw error;
+    }
     const generationId = randomUUID();
     const leaseOwner = `admin-sms-request:${generationId}`;
     const reservation = await this.prisma.$transaction(async (tx) => {
