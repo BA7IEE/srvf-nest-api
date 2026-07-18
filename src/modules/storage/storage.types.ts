@@ -1,3 +1,5 @@
+import type { StorageProviderType } from '@prisma/client';
+
 // v1 极简版定义"写入 / 删除"两组动作所需类型;
 // C-7.5 实施 PR #5 沿 F5 + Q5 新增"upload / download signed URL + head"类型
 // (详见 docs/批次7_provider选型_API前评审.md §7.4)。
@@ -62,4 +64,23 @@ export interface HeadObjectResult {
   etag?: string;
   contentType?: string;
   lastModified?: Date;
+}
+
+// Manual-only reconciliation evidence. The Provider must hash incrementally and return only the
+// digest/byte count; object bytes, streams, credentials, and URLs never cross this boundary.
+export interface StorageObjectSha256Result {
+  size: number;
+  checksum: string;
+  etag?: string;
+}
+
+export type StorageObjectReadProgress = (bytesRead: number) => Promise<void>;
+
+// D-STORAGE-CONSISTENCY:provider effect 必须使用对象创建时固定的非秘密 locator。
+// credential 不属于 locator；same-account credential rotation 继续由 StorageSettingsService 提供。
+export interface StorageObjectLocator {
+  providerType: StorageProviderType;
+  bucket: string | null;
+  region: string | null;
+  localNamespace: string | null;
 }

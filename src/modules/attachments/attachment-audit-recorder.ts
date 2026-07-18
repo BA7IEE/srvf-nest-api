@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { AttachmentAccessLevel, Prisma, Role } from '@prisma/client';
+import type { Prisma, Role } from '@prisma/client';
 
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -15,15 +15,15 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 //   事务边界仍由 `AttachmentsService` 持有,audit 写失败仍由 Prisma `$transaction`
 //   隐式回滚(沿 D-S7 红线 + PR #202 D1/D2/D3 audit-failure-rollback cases)
 //
-// **职责边界(严守"搬家不优化")**:
-// - ✅ snapshot 组装(`toAttachmentAuditSnapshot`,沿 service 原 13 字段输出零变化)
+// **职责边界**:
+// - ✅ snapshot 组装(D-STORAGE-CONSISTENCY 起未来写入固定最小 7 字段；历史 audit append-only 不回改)
 // - ✅ `AuditLogsService.log()` payload assembly(3 处写路径,3 个 method 分组)
 // - ❌ 不开事务 / 不读 DB / 不写业务表
 // - ❌ 不做 RBAC / dictionary / mime / size / PII 校验
 // - ❌ 不接触 Provider(generateUploadUrl / headObject / deleteObject 等)
 // - ❌ 不改 audit event 名 / `resourceType` / `actorUserId` / `actorRoleSnap` / `meta` /
-//      `before` / `after` / `extra` 字段名 / 字段值;沿 PR #202 audit-characterization
-//      锁定的 3 路径形状逐字保留:
+//      `extra` 字段名 / 字段值。D-STORAGE-CONSISTENCY 只把未来 `before`/`after`
+//      收紧为下方固定 7 字段；历史 audit append-only，不回改。三条事件路径继续是:
 //        - `attachment.upload` ×2(create / confirmUpload 共用,extra.uploadVia 区分;
 //          沿 batch3 草案 §20.2 A1 + audit-logs.types.ts:29 有意设计)
 //        - `attachment.delete` ×1
@@ -40,22 +40,16 @@ const ATTACHMENT_DELETE_EVENT = 'attachment.delete';
 
 // 最小结构性输入类型(沿 PR #198 / #201 范式;TypeScript structural typing 允许调用方
 // 传入更大的 payload 类型,如 service 内 `SafeAttachment` 含 id / createdAt / updatedAt
-// 等额外字段)。本类型只声明 `toAttachmentAuditSnapshot` 实际读取的 13 字段子集,
+// 等额外字段)。本类型只声明 `toAttachmentAuditSnapshot` 实际读取的最小字段子集,
 // 避免 service ↔ recorder 双向 import 类型。
 type AuditAttachmentSnapshotInput = {
   key: string;
-  originalName: string;
   mime: string;
   size: number;
   uploadedBy: string;
   uploadedAt: Date;
   ownerType: string;
   ownerId: string;
-  description: string | null;
-  accessLevel: AttachmentAccessLevel | null;
-  tags: string[];
-  originalUploaderName: string | null;
-  expireAt: Date | null;
 };
 
 @Injectable()
@@ -64,26 +58,18 @@ export class AttachmentAuditRecorder {
 
   // ============ snapshot helper(private;沿 service `toAttachmentAuditSnapshot` 字面值零变化) ============
 
-  // 沿 service 原 `toAttachmentAuditSnapshot` 13 字段输出零变化(沿 PR #6c Q3 audit
-  // snapshot 字段集 = `attachmentSelect` 剔除 `id` / `createdAt` / `updatedAt`;
-  // Date 字段经 `toISOString()`;`tags` / `accessLevel` 透传;沿 D6 §R5 Prisma
-  // InputJsonValue 拒绝 Date 对象)。
-  // 字段全部非敏感(D7 §9.4 / §9.2;身份证号在 PII 检测 Service 层已拒);不打码。
+  // D-STORAGE-CONSISTENCY 敏感最小化：未来 upload/delete audit snapshot 只保留
+  // provider/owner 恢复与追责所需 7 字段。originalName/description/tags/
+  // originalUploaderName/accessLevel/expireAt 不再进入新 audit；历史行 append-only 不回改。
   private toAttachmentAuditSnapshot(row: AuditAttachmentSnapshotInput): Record<string, unknown> {
     return {
       key: row.key,
-      originalName: row.originalName,
       mime: row.mime,
       size: row.size,
       uploadedBy: row.uploadedBy,
       uploadedAt: row.uploadedAt.toISOString(),
       ownerType: row.ownerType,
       ownerId: row.ownerId,
-      description: row.description,
-      accessLevel: row.accessLevel,
-      tags: row.tags,
-      originalUploaderName: row.originalUploaderName,
-      expireAt: row.expireAt ? row.expireAt.toISOString() : null,
     };
   }
 

@@ -13,7 +13,7 @@ import { StorageProviderRouter } from './storage-provider.router';
 // 2. providerType=LOCAL → Local
 // 3. providerType=COS → Cos
 // 4. 未知 providerType → fallback Local + WARN(防御)
-// 5. 6 方法各自路由到对应 Provider
+// 5. 6 个动态方法各自路由；manual-only SHA-256 严格按 pinned locator 直达
 // 6. 每次方法调用都 resolve(确保 settings invalidate 后能拿到新 provider)
 
 function makeSettings(overrides: Partial<StorageSettingsResolved> = {}): StorageSettingsResolved {
@@ -59,6 +59,7 @@ interface MockProvider<T> {
   generateDownloadUrl: jest.Mock;
   headObject: jest.Mock;
   readObjectPrefix: jest.Mock;
+  hashObjectSha256At: jest.Mock;
 }
 
 function makeLocalMock(): MockProvider<LocalStorageProvider> {
@@ -68,6 +69,7 @@ function makeLocalMock(): MockProvider<LocalStorageProvider> {
   const generateDownloadUrl = jest.fn().mockResolvedValue({});
   const headObject = jest.fn().mockResolvedValue({ exists: false });
   const readObjectPrefix = jest.fn().mockResolvedValue(Buffer.from('prefix'));
+  const hashObjectSha256At = jest.fn().mockResolvedValue({ size: 1, checksum: 'a'.repeat(64) });
   const instance = {
     putObject,
     deleteObject,
@@ -75,6 +77,7 @@ function makeLocalMock(): MockProvider<LocalStorageProvider> {
     generateDownloadUrl,
     headObject,
     readObjectPrefix,
+    hashObjectSha256At,
   } as unknown as LocalStorageProvider;
   return {
     instance,
@@ -84,6 +87,7 @@ function makeLocalMock(): MockProvider<LocalStorageProvider> {
     generateDownloadUrl,
     headObject,
     readObjectPrefix,
+    hashObjectSha256At,
   };
 }
 
@@ -94,6 +98,7 @@ function makeCosMock(): MockProvider<CosStorageProvider> {
   const generateDownloadUrl = jest.fn().mockResolvedValue({});
   const headObject = jest.fn().mockResolvedValue({ exists: false });
   const readObjectPrefix = jest.fn().mockResolvedValue(Buffer.from('prefix'));
+  const hashObjectSha256At = jest.fn().mockResolvedValue({ size: 1, checksum: 'b'.repeat(64) });
   const instance = {
     putObject,
     deleteObject,
@@ -101,6 +106,7 @@ function makeCosMock(): MockProvider<CosStorageProvider> {
     generateDownloadUrl,
     headObject,
     readObjectPrefix,
+    hashObjectSha256At,
   } as unknown as CosStorageProvider;
   return {
     instance,
@@ -110,6 +116,7 @@ function makeCosMock(): MockProvider<CosStorageProvider> {
     generateDownloadUrl,
     headObject,
     readObjectPrefix,
+    hashObjectSha256At,
   };
 }
 
@@ -242,5 +249,24 @@ describe('StorageProviderRouter', () => {
       await router.putObject({ key: 'k2', body: Buffer.from('x') });
       expect(getActiveSettings).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it('pinned SHA-256 按 locator 类型直达 Provider，不重新 resolve 当前 settings', async () => {
+    const { service, getActiveSettings } = makeSettingsServiceMock(makeSettings());
+    const localMock = makeLocalMock();
+    const cosMock = makeCosMock();
+    const router = new StorageProviderRouter(service, localMock.instance, cosMock.instance);
+    const locator = {
+      providerType: 'COS' as const,
+      bucket: 'old-pinned-bucket',
+      region: 'ap-old',
+      localNamespace: null,
+    };
+
+    await router.hashObjectSha256At(locator, 'k');
+
+    expect(cosMock.hashObjectSha256At).toHaveBeenCalledWith(locator, 'k', undefined);
+    expect(localMock.hashObjectSha256At).not.toHaveBeenCalled();
+    expect(getActiveSettings).not.toHaveBeenCalled();
   });
 });

@@ -25,7 +25,7 @@ const fakeAppCfg: AppConfig = {
     checkInRadiusMeters: 500,
     feedbackWindowDays: 30,
   },
-  storage: { encryptionKey: '', localRoot: './tmp/storage' },
+  storage: { encryptionKey: '', localRoot: './tmp/storage', consistencyMode: 'JIT' },
   // SMS 基础设施 T2/T3:AppConfig 新增必填字段;本 unit test 不关心 SMS,仅满足接口
   sms: { encryptionKey: '' },
   // 微信小程序登录 T2:AppConfig 新增必填字段;本 unit test 不关心微信,仅满足接口

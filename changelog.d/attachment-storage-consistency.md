@@ -1,0 +1,1 @@
+- Attachment 存储新增 PostgreSQL durable object/operation ledger、pinned non-secret locator、独立 worker 与 JIT→STRICT fail-closed 门；删除重放限 24h 并人工 purge；manual relocate 以 pinned locator 分块 SHA-256/ETag 证据恢复，size-only 继续 fail-closed；Phase 1 明确不宣称 PG/Provider 原子性，且 `Attachment.key` FK 留待旧 writer 全退场后的独立 contract migration。

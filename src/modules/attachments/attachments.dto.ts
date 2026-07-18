@@ -10,6 +10,7 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
   MaxLength,
   Min,
   MinLength,
@@ -108,9 +109,9 @@ export class AttachmentResponseDto {
   @ApiProperty({ description: '更新时间' })
   updatedAt!: Date;
 
-  // Q14 v1.0 + PR #90:由 storage Provider 生成的签名短链;Provider 不可用时降级为 null
+  // 仅在 ledger 可读且 pinned locator HEAD 证明对象存在后签发；任一不确定态降级 null。
   @ApiPropertyOptional({
-    description: '签名访问短链(由 storage Provider 生成;Provider 不可用时降级为 null)',
+    description: '签名访问短链(需 durable ledger + Provider HEAD 证明;不确定时为 null)',
     nullable: true,
   })
   accessUrl?: string | null;
@@ -306,10 +307,12 @@ export class ConfirmUploadDto {
       '客户端计算的 SHA-256 checksum(64 hex);可选;若提供则存 Attachment.checksum;沿 D7-attachments Q6 内部字段语义',
     minLength: 64,
     maxLength: 64,
+    pattern: '^[0-9a-fA-F]{64}$',
   })
   @IsOptional()
   @IsString()
   @Length(64, 64)
+  @Matches(/^[0-9a-fA-F]{64}$/, { message: 'checksum 必须是 SHA-256 64 位十六进制' })
   checksum?: string;
 
   // 🔒 Q9 锁:不接受 key(已在 token claims;客户端不可篡改)

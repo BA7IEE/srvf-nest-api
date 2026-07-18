@@ -15,6 +15,7 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
     "start:notification-outbox-worker": "node dist/notification-outbox-worker",
+    "start:storage-consistency-worker": "node dist/storage-consistency-worker",
     "lint": "eslint --max-warnings 0 \"src/**/*.ts\" \"test/**/*.ts\" \"prisma/**/*.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p test/tsconfig.test.json",
     "test": "jest --config test/jest-unit.config.ts",

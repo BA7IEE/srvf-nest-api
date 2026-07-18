@@ -6,6 +6,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
 import { CosStorageProvider } from './providers/cos.provider';
 import { LocalStorageProvider } from './providers/local.provider';
 import { StorageCryptoService } from './storage-crypto.service';
+import { StorageObjectLedgerService } from './storage-object-ledger.service';
 import { StorageProviderRouter } from './storage-provider.router';
 import { STORAGE_PROVIDER } from './storage.constants';
 import { StorageSettingsController } from './storage-settings.controller';
@@ -35,8 +36,15 @@ import { StorageSettingsService } from './storage-settings.service';
     LocalStorageProvider,
     CosStorageProvider,
     StorageProviderRouter,
+    StorageObjectLedgerService,
     { provide: STORAGE_PROVIDER, useExisting: StorageProviderRouter },
   ],
-  exports: [StorageSettingsService, StorageCryptoService, STORAGE_PROVIDER],
+  exports: [
+    StorageSettingsService,
+    StorageCryptoService,
+    StorageProviderRouter,
+    StorageObjectLedgerService,
+    STORAGE_PROVIDER,
+  ],
 })
 export class StorageModule {}

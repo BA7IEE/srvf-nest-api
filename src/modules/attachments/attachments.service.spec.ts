@@ -1,19 +1,18 @@
-import { Role, UserStatus, type AttachmentAccessLevel } from '@prisma/client';
+import { Prisma, Role, UserStatus, type AttachmentAccessLevel } from '@prisma/client';
 import type { ConfigType } from '@nestjs/config';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { CosProviderUnavailableError } from '../storage/providers/cos.provider';
-import type { StorageProvider } from '../storage/storage.interface';
 import type { StorageSettingsService } from '../storage/storage-settings.service';
 import { signUploadToken, type UploadTokenClaims } from '../storage/upload-token.util';
 import appConfig from '../../config/app.config';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { RbacService } from '../permissions/rbac.service';
-import type { AttachmentAuditRecorder } from './attachment-audit-recorder';
-import { AttachmentContentValidator } from './attachment-content-validator';
+import type { AttachmentStorageOrchestrator } from './attachment-storage-orchestrator';
+import type { FinalizeAttachmentStorageUploadInput } from './attachment-storage.types';
 import type {
   ConfirmUploadDto,
   CreateAttachmentDto,
@@ -93,6 +92,28 @@ function makeAttachmentRow(overrides: Partial<AttachmentRow> = {}): AttachmentRo
   };
 }
 
+function makeDeleteReplayResponse(row: AttachmentRow = makeAttachmentRow()) {
+  return {
+    id: row.id,
+    key: row.key,
+    originalName: row.originalName,
+    mime: row.mime,
+    size: row.size,
+    uploadedBy: row.uploadedBy,
+    uploadedAt: row.uploadedAt.toISOString(),
+    ownerType: row.ownerType,
+    ownerId: row.ownerId,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    description: null,
+    accessLevel: null,
+    tags: [] as [],
+    originalUploaderName: null,
+    expireAt: null,
+    accessUrl: null,
+  };
+}
+
 // attachment_type_configs 行(assertOwnerTypeAllowed / assertMimeAllowed / assertSizeAllowed 三处 select 的并集)。
 function makeTypeConfig(
   overrides: {
@@ -104,7 +125,7 @@ function makeTypeConfig(
 ) {
   return {
     id: 'tc-member',
-    ownerTable: 'members',
+    ownerTable: 'member',
     defaultMimeWhitelist: ['image/png', 'image/jpeg', 'application/pdf'],
     defaultMaxSizeBytes: null,
     ...overrides,
@@ -196,6 +217,16 @@ function makePrismaMock() {
   const attachmentTypeConfig = { findFirst: jest.fn<Promise<unknown>, [unknown]>() };
   const attachmentMimeConfig = { findFirst: jest.fn<Promise<unknown>, [unknown]>() };
   const attachmentSizeLimitConfig = { findFirst: jest.fn<Promise<unknown>, [unknown]>() };
+  const storageObject = {
+    findUnique: jest.fn<Promise<unknown>, [unknown]>().mockResolvedValue({
+      id: 'storage-object-1',
+      key: makeAttachmentRow().key,
+      state: 'available',
+      resourceType: 'attachment',
+      resourceId: 'att-1',
+      deleteRequestedAt: null,
+    }),
+  };
   const member = { findFirst: jest.fn<Promise<{ id: string } | null>, [unknown]>() };
   const certificate = {
     findFirst: jest.fn<Promise<{ id: string; memberId: string } | null>, [unknown]>(),
@@ -203,8 +234,12 @@ function makePrismaMock() {
   };
   const activity = { findFirst: jest.fn<Promise<{ id: string } | null>, [unknown]>() };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
+  const $queryRaw = jest
+    .fn<Promise<Array<{ id: string }>>, [unknown]>()
+    .mockResolvedValue([{ id: 'locked-row' }]);
   const prisma = {
     attachment,
+    storageObject,
     attachmentTypeConfig,
     attachmentMimeConfig,
     attachmentSizeLimitConfig,
@@ -212,6 +247,7 @@ function makePrismaMock() {
     certificate,
     activity,
     $transaction,
+    $queryRaw,
   };
   // 双模:回调式把 prisma mock 自身当 tx 传入(service 在 tx 与 this.prisma 上调同名方法);
   // 数组式($transaction([findMany, count]))走 Promise.all。
@@ -271,12 +307,78 @@ function makeRecorderMock() {
 }
 type RecorderMock = ReturnType<typeof makeRecorderMock>;
 
+function makeStorageConsistencyMock(provider: ProviderMock, recorder: RecorderMock) {
+  return {
+    provider,
+    recorder,
+    resolveDownloadUrl: jest.fn(async (key: string, expiresIn: number) => {
+      try {
+        return (await provider.generateDownloadUrl({ key, expiresIn })).url;
+      } catch {
+        return null;
+      }
+    }),
+    filterMetadataVisible: jest.fn((rows: readonly AttachmentRow[]) => Promise.resolve([...rows])),
+    isMetadataVisible: jest.fn<Promise<boolean>, [string]>().mockResolvedValue(true),
+    prepareUpload: jest.fn().mockResolvedValue({
+      objectId: 'storage-object-fixture',
+      operationId: 'storage-operation-fixture',
+      eventKey: 'storage.fixture:upload',
+      requestHash: '0'.repeat(64),
+      locator: {
+        providerType: 'LOCAL',
+        bucket: null,
+        region: null,
+        localNamespace: '/fixture/storage',
+      },
+    }),
+    prepareUploadUrl: jest.fn(
+      async (
+        identity: { key: string; mime: string; size: number },
+        _unboundExpiresAt: Date,
+        expiresIn: number,
+      ) =>
+        provider.generateUploadUrl({
+          key: identity.key,
+          contentType: identity.mime,
+          sizeBytes: identity.size,
+          expiresIn,
+        }),
+    ),
+    verifyUpload: jest.fn(async (identity: { key: string; mime: string; size: number }) => {
+      const head = await provider.headObject(identity.key);
+      if (!head.exists) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+      if (identity.mime === 'image/svg+xml') {
+        throw new BizException(BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED);
+      }
+      if (head.size !== identity.size) {
+        throw new BizException(BizCode.ATTACHMENT_SIZE_EXCEEDED);
+      }
+      if (identity.mime === 'image/jpeg') {
+        const prefix = await provider.readObjectPrefix(identity.key, 32);
+        if (!prefix.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) {
+          throw new BizException(BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH);
+        }
+      }
+      return { object: {}, operation: {}, head };
+    }),
+    finalizeUpload: jest
+      .fn<Promise<AttachmentRow>, [FinalizeAttachmentStorageUploadInput]>()
+      .mockResolvedValue(makeAttachmentRow()),
+    getDeleteReplay: jest.fn().mockResolvedValue(null),
+    prepareDelete: jest.fn().mockResolvedValue('storage.fixture:delete'),
+    executeEventKey: jest.fn<Promise<void>, [string]>().mockResolvedValue(undefined),
+  };
+}
+type StorageConsistencyMock = ReturnType<typeof makeStorageConsistencyMock>;
+
 function makeService(
   prisma: PrismaMock,
   opts: {
     rbac?: RbacMock;
     recorder?: RecorderMock;
     provider?: ProviderMock;
+    storageConsistency?: StorageConsistencyMock;
     settings?: SettingsMock;
     env?: string;
   } = {},
@@ -284,6 +386,8 @@ function makeService(
   const rbac = opts.rbac ?? makeRbacMock(true);
   const recorder = opts.recorder ?? makeRecorderMock();
   const provider = opts.provider ?? makeProviderMock();
+  const storageConsistency =
+    opts.storageConsistency ?? makeStorageConsistencyMock(provider, recorder);
   const settings = opts.settings ?? makeSettingsMock();
   const cfg = {
     env: opts.env ?? 'test',
@@ -292,9 +396,7 @@ function makeService(
   return new AttachmentsService(
     prisma as unknown as PrismaService,
     rbac as unknown as RbacService,
-    recorder as unknown as AttachmentAuditRecorder,
-    new AttachmentContentValidator(provider as unknown as StorageProvider),
-    provider as unknown as StorageProvider,
+    storageConsistency as unknown as AttachmentStorageOrchestrator,
     settings as unknown as StorageSettingsService,
     cfg,
   );
@@ -538,7 +640,7 @@ describe('AttachmentsService (characterization)', () => {
 
       expect(prisma.attachment.create).toHaveBeenCalledTimes(1);
       expect(recorder.logUpload).toHaveBeenCalledWith(
-        expect.objectContaining({ scope: 'self', ownerTable: 'members', tx: prisma }),
+        expect.objectContaining({ scope: 'self', ownerTable: 'member', tx: prisma }),
       );
       expect(res.id).toBe('att-1');
       expect(res.accessUrl).toBe('https://signed.example/download');
@@ -586,6 +688,7 @@ describe('AttachmentsService (characterization)', () => {
       const prisma = makePrismaMock();
       const recorder = makeRecorderMock();
       prisma.attachment.findFirst.mockResolvedValue(makeAttachmentRow({ ownerId: 'mem-1' }));
+      prisma.attachment.findUnique.mockResolvedValue(makeAttachmentRow({ ownerId: 'mem-1' }));
       prisma.attachment.update.mockResolvedValue(makeAttachmentRow({ description: 'updated' }));
       const service = makeService(prisma, { recorder });
 
@@ -596,6 +699,7 @@ describe('AttachmentsService (characterization)', () => {
       );
 
       expect(prisma.attachment.update).toHaveBeenCalledTimes(1);
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
       expect(recorder.logUpload).not.toHaveBeenCalled();
       expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
       expect(recorder.logDelete).not.toHaveBeenCalled();
@@ -639,66 +743,137 @@ describe('AttachmentsService (characterization)', () => {
       ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_PII_DETECTED));
       expect(prisma.attachment.update).not.toHaveBeenCalled();
     });
+
+    it('锁内 StorageObject 已进入 delete_pending → 13034 且字段不变', async () => {
+      const prisma = makePrismaMock();
+      const row = makeAttachmentRow({ ownerId: 'mem-1' });
+      prisma.attachment.findFirst.mockResolvedValue(row);
+      prisma.attachment.findUnique.mockResolvedValue(row);
+      prisma.storageObject.findUnique.mockResolvedValue({
+        id: 'storage-object-1',
+        key: row.key,
+        state: 'delete_pending',
+        resourceType: 'attachment',
+        resourceId: row.id,
+        deleteRequestedAt: new Date(),
+      });
+      const service = makeService(prisma);
+
+      await expect(
+        service.update('att-1', makeUpdateDto(), makeCurrentUser({ memberId: 'mem-1' })),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING));
+      expect(prisma.attachment.update).not.toHaveBeenCalled();
+    });
+
+    it('防御性 P2025 映射为 13001，不泄露 Prisma 500', async () => {
+      const prisma = makePrismaMock();
+      const row = makeAttachmentRow({ ownerId: 'mem-1' });
+      prisma.attachment.findFirst.mockResolvedValue(row);
+      prisma.attachment.findUnique.mockResolvedValue(row);
+      prisma.attachment.update.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('record disappeared', {
+          code: 'P2025',
+          clientVersion: 'test',
+        }),
+      );
+      const service = makeService(prisma);
+
+      await expect(
+        service.update('att-1', makeUpdateDto(), makeCurrentUser({ memberId: 'mem-1' })),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+    });
   });
 
-  // ============ F. delete:owner/admin path + 事务外 best-effort provider 删除 ============
-  describe('delete — owner/admin path & best-effort provider', () => {
-    it('删自己上传的 → logDelete deletedByPath=owner;事务外 provider.deleteObject(key) 被调用', async () => {
+  // ============ F. delete:durable intent + fail-closed replay ============
+  describe('delete — durable intent and authorized replay', () => {
+    it('删自己上传的 → 显式授权 join，执行 intent 后返回 terminal replay', async () => {
       const prisma = makePrismaMock();
       const recorder = makeRecorderMock();
       const provider = makeProviderMock();
-      prisma.attachment.findFirst.mockResolvedValue(
-        makeAttachmentRow({ uploadedBy: 'u1', key: 'k-owner', ownerId: 'mem-1' }),
-      );
-      prisma.attachment.delete.mockResolvedValue(makeAttachmentRow({ key: 'k-owner' }));
-      const service = makeService(prisma, { recorder, provider });
+      const row = makeAttachmentRow({ uploadedBy: 'u1', key: 'k-owner', ownerId: 'mem-1' });
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+      prisma.attachment.findFirst.mockResolvedValue(row);
+      storageConsistency.getDeleteReplay.mockResolvedValue({
+        state: 'succeeded',
+        eventKey: 'storage.fixture:delete',
+        response: makeDeleteReplayResponse(row),
+      });
+      const service = makeService(prisma, { recorder, provider, storageConsistency });
 
-      await service.delete('att-1', makeCurrentUser({ id: 'u1', memberId: 'mem-1' }), META);
-
-      expect(recorder.logDelete).toHaveBeenCalledWith(
-        expect.objectContaining({ deletedByPath: 'owner', tx: prisma }),
+      const result = await service.delete(
+        'att-1',
+        makeCurrentUser({ id: 'u1', memberId: 'mem-1' }),
+        META,
       );
-      expect(provider.deleteObject).toHaveBeenCalledWith('k-owner');
+
+      expect(storageConsistency.prepareDelete).toHaveBeenCalledWith(
+        expect.objectContaining({
+          attachmentId: 'att-1',
+          actorUserId: 'u1',
+          allowAuthorizedJoin: true,
+          deletedByPath: 'owner',
+          auditMeta: META,
+        }),
+      );
+      expect(storageConsistency.executeEventKey).toHaveBeenCalledWith('storage.fixture:delete');
+      expect(storageConsistency.getDeleteReplay).toHaveBeenCalledWith('att-1', 'u1', {
+        allowAuthorizedJoin: true,
+      });
+      expect(result).toMatchObject({ id: 'att-1', accessUrl: null });
     });
 
-    it('删他人上传的 → logDelete deletedByPath=admin', async () => {
+    it('删他人上传的 → durable payload 标记 deletedByPath=admin', async () => {
       const prisma = makePrismaMock();
       const recorder = makeRecorderMock();
-      prisma.attachment.findFirst.mockResolvedValue(makeAttachmentRow({ uploadedBy: 'u1' }));
-      prisma.attachment.delete.mockResolvedValue(makeAttachmentRow());
-      const service = makeService(prisma, { recorder });
+      const provider = makeProviderMock();
+      const row = makeAttachmentRow({ uploadedBy: 'u1' });
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+      prisma.attachment.findFirst.mockResolvedValue(row);
+      storageConsistency.getDeleteReplay.mockResolvedValue({
+        state: 'succeeded',
+        eventKey: 'storage.fixture:delete',
+        response: makeDeleteReplayResponse(row),
+      });
+      const service = makeService(prisma, { recorder, provider, storageConsistency });
 
       await service.delete('att-1', makeCurrentUser({ id: 'admin-9' }), META);
 
-      expect(recorder.logDelete).toHaveBeenCalledWith(
-        expect.objectContaining({ deletedByPath: 'admin' }),
+      expect(storageConsistency.prepareDelete).toHaveBeenCalledWith(
+        expect.objectContaining({ deletedByPath: 'admin', allowAuthorizedJoin: true }),
       );
     });
 
-    it('provider.deleteObject 抛错 → 仍成功返回 dto(best-effort,不回滚 / 不抛)', async () => {
+    it('effect 未形成 terminal replay → 13034，不把 provider 不确定态伪装成成功', async () => {
       const prisma = makePrismaMock();
       const provider = makeProviderMock();
-      provider.deleteObject.mockRejectedValue(new Error('provider down'));
+      const recorder = makeRecorderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
       prisma.attachment.findFirst.mockResolvedValue(makeAttachmentRow({ uploadedBy: 'u1' }));
-      prisma.attachment.delete.mockResolvedValue(makeAttachmentRow());
-      const service = makeService(prisma, { provider });
+      storageConsistency.getDeleteReplay.mockResolvedValue({
+        state: 'pending',
+        eventKey: 'storage.fixture:delete',
+        response: null,
+      });
+      const service = makeService(prisma, { provider, recorder, storageConsistency });
 
-      const res = await service.delete('att-1', makeCurrentUser({ id: 'u1' }), META);
-
-      expect(res.id).toBe('att-1');
+      await expect(service.delete('att-1', makeCurrentUser({ id: 'u1' }), META)).rejects.toEqual(
+        new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING),
+      );
     });
 
-    it('不存在 → 13001;不删 / 不审计', async () => {
+    it('不存在且非原 actor 无 replay → 13001；不会设置 authorized join', async () => {
       const prisma = makePrismaMock();
       const recorder = makeRecorderMock();
+      const provider = makeProviderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
       prisma.attachment.findFirst.mockResolvedValue(null);
-      const service = makeService(prisma, { recorder });
+      const service = makeService(prisma, { recorder, provider, storageConsistency });
 
       await expect(service.delete('missing', makeCurrentUser(), META)).rejects.toEqual(
         new BizException(BizCode.ATTACHMENT_NOT_FOUND),
       );
-      expect(prisma.attachment.delete).not.toHaveBeenCalled();
-      expect(recorder.logDelete).not.toHaveBeenCalled();
+      expect(storageConsistency.getDeleteReplay).toHaveBeenCalledWith('missing', 'u1');
+      expect(storageConsistency.prepareDelete).not.toHaveBeenCalled();
     });
   });
 
@@ -809,15 +984,18 @@ describe('AttachmentsService (characterization)', () => {
       expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
     });
 
-    it('同 key 二次提交(tx 内 findFirst 命中)→ 13001;不写库 / 不审计', async () => {
+    it('同 key 二次提交由 durable finalizer 拒绝 → 13001', async () => {
       const prisma = makePrismaMock();
       const provider = makeProviderMock();
       const recorder = makeRecorderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
       provider.headObject.mockResolvedValue({ exists: true, size: 1024 });
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' }); // F10:owner 存活(过 Step 7.5)→ 进 tx 撞 dedup
       prisma.attachmentTypeConfig.findFirst.mockResolvedValue(makeTypeConfig());
-      prisma.attachment.findFirst.mockResolvedValue(makeAttachmentRow({ id: 'dup' }));
-      const service = makeService(prisma, { provider, recorder });
+      storageConsistency.finalizeUpload.mockRejectedValue(
+        new BizException(BizCode.ATTACHMENT_NOT_FOUND),
+      );
+      const service = makeService(prisma, { provider, recorder, storageConsistency });
 
       await expect(
         service.confirmUpload(
@@ -826,20 +1004,20 @@ describe('AttachmentsService (characterization)', () => {
           META,
         ),
       ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
-      expect(prisma.attachment.create).not.toHaveBeenCalled();
-      expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
+      expect(storageConsistency.finalizeUpload).toHaveBeenCalledTimes(1);
+      expect(storageConsistency.resolveDownloadUrl).not.toHaveBeenCalled();
     });
 
-    it('happy → 事务内 create + logUploadConfirmed;返 dto', async () => {
+    it('happy → durable finalizer 收到 audit envelope；成功后才签 download URL', async () => {
       const prisma = makePrismaMock();
       const provider = makeProviderMock();
       const recorder = makeRecorderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
       provider.headObject.mockResolvedValue({ exists: true, size: 1024, etag: 'etag-1' });
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' }); // F10:owner 存活复校(Step 7.5)
       prisma.attachmentTypeConfig.findFirst.mockResolvedValue(makeTypeConfig());
-      prisma.attachment.findFirst.mockResolvedValue(null);
-      prisma.attachment.create.mockResolvedValue(makeAttachmentRow({ ownerId: 'mem-1' }));
-      const service = makeService(prisma, { provider, recorder });
+      storageConsistency.finalizeUpload.mockResolvedValue(makeAttachmentRow({ ownerId: 'mem-1' }));
+      const service = makeService(prisma, { provider, recorder, storageConsistency });
 
       const res = await service.confirmUpload(
         makeConfirmDto(makeUploadToken(), 'sha256:abc'),
@@ -847,28 +1025,61 @@ describe('AttachmentsService (characterization)', () => {
         META,
       );
 
-      expect(prisma.attachment.create).toHaveBeenCalledTimes(1);
-      expect(recorder.logUploadConfirmed).toHaveBeenCalledWith(
-        expect.objectContaining({ scope: 'self', ownerTable: 'members', tx: prisma }),
+      expect(storageConsistency.finalizeUpload).toHaveBeenCalledWith(
+        expect.objectContaining({
+          auditKind: 'confirmed',
+          scope: 'self',
+          ownerTable: 'member',
+          auditMeta: META,
+        }),
       );
+      const finalizeInput = storageConsistency.finalizeUpload.mock.calls[0]?.[0];
+      expect(finalizeInput?.data).toMatchObject({ etag: 'etag-1', checksum: 'sha256:abc' });
+      expect(storageConsistency.resolveDownloadUrl).toHaveBeenCalledTimes(1);
       expect(res.id).toBe('att-1');
       expect(res.accessUrl).toBe('https://signed.example/download');
     });
-  });
 
-  // ============ H. createUploadUrl:不落库 / 不审计 ============
-  describe('createUploadUrl — no persist / no audit', () => {
-    it('happy → 返 key(结构化)+ uploadToken;不写库 / 不审计;provider.generateUploadUrl 调用一次', async () => {
+    it('durable finalizer/audit 失败 → 不签 URL、不返回成功', async () => {
       const prisma = makePrismaMock();
       const provider = makeProviderMock();
       const recorder = makeRecorderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+      prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
+      prisma.attachmentTypeConfig.findFirst.mockResolvedValue(makeTypeConfig());
+      storageConsistency.finalizeUpload.mockRejectedValue(new Error('audit transaction failed'));
+      const service = makeService(prisma, { provider, recorder, storageConsistency });
+
+      await expect(
+        service.confirmUpload(
+          makeConfirmDto(makeUploadToken()),
+          makeCurrentUser({ id: 'u1', memberId: 'mem-1' }),
+          META,
+        ),
+      ).rejects.toThrow('audit transaction failed');
+      expect(storageConsistency.resolveDownloadUrl).not.toHaveBeenCalled();
+    });
+  });
+
+  // ============ H. createUploadUrl:durable intent / 不创建 Attachment / 不写业务 audit ============
+  describe('createUploadUrl — durable intent before signing', () => {
+    it('happy → 先预写 intent 再返 signed URL；不创建 Attachment / 不写业务 audit', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      const recorder = makeRecorderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
       prisma.attachmentTypeConfig.findFirst.mockResolvedValue(
         makeTypeConfig({ defaultMimeWhitelist: ['image/png'], defaultMaxSizeBytes: null }),
       );
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
       prisma.attachmentMimeConfig.findFirst.mockResolvedValue(null);
       prisma.attachmentSizeLimitConfig.findFirst.mockResolvedValue(null);
-      const service = makeService(prisma, { provider, recorder, env: 'test' });
+      const service = makeService(prisma, {
+        provider,
+        recorder,
+        storageConsistency,
+        env: 'test',
+      });
 
       const res = await service.createUploadUrl(
         makeUploadUrlDto({ ownerType: 'member', ownerId: 'mem-1', mime: 'image/png' }),
@@ -879,6 +1090,18 @@ describe('AttachmentsService (characterization)', () => {
       expect(res.key).toMatch(/^attachments\/test\/\d{4}\/\d{2}\/\d{2}\/.+\.png$/);
       expect(res.uploadToken.split('.')).toHaveLength(2);
       expect(res.uploadUrl).toBe('https://signed.example/upload');
+      expect(storageConsistency.prepareUploadUrl).toHaveBeenCalledTimes(1);
+      expect(storageConsistency.prepareUploadUrl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          key: res.key,
+          ownerType: 'member',
+          ownerId: 'mem-1',
+          mime: 'image/png',
+          size: 1024,
+        }),
+        expect.any(Date),
+        600,
+      );
       expect(provider.generateUploadUrl).toHaveBeenCalledTimes(1);
       expect(prisma.attachment.create).not.toHaveBeenCalled();
       expect(recorder.logUpload).not.toHaveBeenCalled();

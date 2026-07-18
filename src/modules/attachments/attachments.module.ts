@@ -5,6 +5,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AttachmentAuditRecorder } from './attachment-audit-recorder';
 import { AttachmentContentValidator } from './attachment-content-validator';
+import { AttachmentStorageOrchestrator } from './attachment-storage-orchestrator';
 import { AttachmentsController } from './attachments.controller';
 import { AttachmentsService } from './attachments.service';
 
@@ -13,9 +14,9 @@ import { AttachmentsService } from './attachments.service';
 // **依赖**:
 // - DatabaseModule:PrismaService(主表 + 配置三表查询 + 业务表 ownerId 校验)
 // - PermissionsModule:RbacService(Service 层 rbac.can();PermissionsModule export RbacService)
-// - AuditLogsModule(PR #6c):AuditLogsService(create / delete 同事务 fail-fast 落 audit;
-//     沿 cert / emergency-contacts / activities 范式)
-// - StorageModule(PR #90):STORAGE_PROVIDER + StorageSettingsService;接通 accessUrl + delete 事务外删 Provider
+// - AuditLogsModule:Attachment create/delete 的业务终态与 audit 同事务提交
+// - StorageModule:durable object/operation ledger + pinned provider locator；Provider effect 永远在
+//   已提交 intent 之后，download 先 HEAD，delete 仅在 HEAD absent 后提交业务终态
 //
 // Route B Phase 4e(2026-06-01):`AttachmentsMeLegacyController`(`GET /api/v2/attachments/me/uploaded`)
 // 已删除(无生产消费者,未建 app/v1 替代;`listMyUploaded` service 保留为未来 app/v1/my/attachments
@@ -24,7 +25,12 @@ import { AttachmentsService } from './attachments.service';
 @Module({
   imports: [DatabaseModule, PermissionsModule, AuditLogsModule, StorageModule],
   controllers: [AttachmentsController],
-  providers: [AttachmentsService, AttachmentAuditRecorder, AttachmentContentValidator],
+  providers: [
+    AttachmentsService,
+    AttachmentAuditRecorder,
+    AttachmentContentValidator,
+    AttachmentStorageOrchestrator,
+  ],
   // CMS 内容模块(2026-06-21,评审稿 §5.2):导出 AttachmentsService 供 content 模块复用
   // 上传/确认/删(写路径 rbac.can)+ listOwnerAttachmentsTrusted / resolveSignedUrlTrusted(可信只读)。
   exports: [AttachmentsService, AttachmentContentValidator],

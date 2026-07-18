@@ -3,14 +3,21 @@ import { Injectable, Logger } from '@nestjs/common';
 import { CosStorageProvider } from './providers/cos.provider';
 import { LocalStorageProvider } from './providers/local.provider';
 import { StorageSettingsService } from './storage-settings.service';
-import type { StorageProvider } from './storage.interface';
+import {
+  StoragePinnedLocatorError,
+  type PinnedStorageProvider,
+  type StorageProvider,
+} from './storage.interface';
 import type {
   DownloadUrlResult,
   GenerateDownloadUrlInput,
   GenerateUploadUrlInput,
   HeadObjectResult,
   PutObjectInput,
+  StorageObjectReadProgress,
   StoredObject,
+  StorageObjectLocator,
+  StorageObjectSha256Result,
   UploadUrlResult,
 } from './storage.types';
 
@@ -32,7 +39,7 @@ import type {
 // - STORAGE_PROVIDER DI token = useExisting StorageProviderRouter(沿 PR #88 范式)
 
 @Injectable()
-export class StorageProviderRouter implements StorageProvider {
+export class StorageProviderRouter implements PinnedStorageProvider {
   private readonly logger = new Logger(StorageProviderRouter.name);
 
   constructor(
@@ -51,6 +58,83 @@ export class StorageProviderRouter implements StorageProvider {
       `Unknown providerType=${String(r.providerType)};fallback to LocalStorageProvider`,
     );
     return this.local;
+  }
+
+  async getCurrentLocator(): Promise<StorageObjectLocator> {
+    const settings = await this.settings.getActiveSettings();
+    if (!settings) return this.local.getPinnedLocator();
+    if (!settings.enabled) {
+      throw new StoragePinnedLocatorError('storage_settings.enabled=false');
+    }
+    if (settings.providerType === 'LOCAL') return this.local.getPinnedLocator();
+    if (settings.providerType === 'COS') {
+      if (!settings.bucket || !settings.region) {
+        throw new StoragePinnedLocatorError('COS bucket/region 未配置');
+      }
+      return {
+        providerType: 'COS',
+        bucket: settings.bucket,
+        region: settings.region,
+        localNamespace: null,
+      };
+    }
+    throw new StoragePinnedLocatorError(`未知 providerType=${String(settings.providerType)}`);
+  }
+
+  putObjectAt(locator: StorageObjectLocator, input: PutObjectInput): Promise<StoredObject> {
+    return locator.providerType === 'COS'
+      ? this.cos.putObjectAt(locator, input)
+      : this.local.putObjectAt(locator, input);
+  }
+
+  deleteObjectAt(locator: StorageObjectLocator, key: string): Promise<void> {
+    return locator.providerType === 'COS'
+      ? this.cos.deleteObjectAt(locator, key)
+      : this.local.deleteObjectAt(locator, key);
+  }
+
+  generateUploadUrlAt(
+    locator: StorageObjectLocator,
+    input: GenerateUploadUrlInput,
+  ): Promise<UploadUrlResult> {
+    return locator.providerType === 'COS'
+      ? this.cos.generateUploadUrlAt(locator, input)
+      : this.local.generateUploadUrlAt(locator, input);
+  }
+
+  generateDownloadUrlAt(
+    locator: StorageObjectLocator,
+    input: GenerateDownloadUrlInput,
+  ): Promise<DownloadUrlResult> {
+    return locator.providerType === 'COS'
+      ? this.cos.generateDownloadUrlAt(locator, input)
+      : this.local.generateDownloadUrlAt(locator, input);
+  }
+
+  headObjectAt(locator: StorageObjectLocator, key: string): Promise<HeadObjectResult> {
+    return locator.providerType === 'COS'
+      ? this.cos.headObjectAt(locator, key)
+      : this.local.headObjectAt(locator, key);
+  }
+
+  readObjectPrefixAt(
+    locator: StorageObjectLocator,
+    key: string,
+    maxBytes: number,
+  ): Promise<Buffer> {
+    return locator.providerType === 'COS'
+      ? this.cos.readObjectPrefixAt(locator, key, maxBytes)
+      : this.local.readObjectPrefixAt(locator, key, maxBytes);
+  }
+
+  hashObjectSha256At(
+    locator: StorageObjectLocator,
+    key: string,
+    onProgress?: StorageObjectReadProgress,
+  ): Promise<StorageObjectSha256Result> {
+    return locator.providerType === 'COS'
+      ? this.cos.hashObjectSha256At(locator, key, onProgress)
+      : this.local.hashObjectSha256At(locator, key, onProgress);
   }
 
   async putObject(input: PutObjectInput): Promise<StoredObject> {

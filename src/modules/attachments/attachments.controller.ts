@@ -68,7 +68,7 @@ export class AttachmentsController {
   @Post()
   @ApiOperation({
     summary:
-      '创建附件元数据(校验:ownerType 13010 / ownerId 13011 / RBAC 30100 / 系统级 MIME 黑名单 13033 / mime 白名单未命中 13012 / size 13013 / key 派生格式 13014 / PII 13015;V2.x L-1:系统级黑名单与白名单未命中拆码;F2:key 必须落在 attachments/<envPrefix>/ 派生格式,防客户端任意 key 签 URL) [rbac: attachment.upload.*]',
+      '创建附件元数据(先落 durable storage intent,按 pinned locator 校验对象,再将 Attachment + audit + storage available 原子提交;存储状态不确定返 13034;其余校验:ownerType 13010 / ownerId 13011 / RBAC 30100 / MIME 13033或13012 / size 13013 / key 13014 / PII 13015) [rbac: attachment.upload.*]',
   })
   @ApiWrappedOkResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(
@@ -82,6 +82,7 @@ export class AttachmentsController {
     BizCode.ATTACHMENT_SIZE_EXCEEDED,
     BizCode.ATTACHMENT_KEY_INVALID,
     BizCode.ATTACHMENT_PII_DETECTED,
+    BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING,
   )
   create(
     @Body() dto: CreateAttachmentDto,
@@ -110,7 +111,7 @@ export class AttachmentsController {
   @Post('upload-url')
   @ApiOperation({
     summary:
-      '申请 signed upload URL(模式 B;校验 ownerType/ownerId/mime/size/PII/RBAC;系统级 MIME 黑名单 → 13033 / 白名单未命中 → 13012;返 uploadUrl + uploadToken;不落库;不审计;沿 §8.3 v1.0 + V2.x L-1) [rbac: attachment.upload.*]',
+      '申请 signed upload URL(模式 B;先预写 durable storage intent,再按 pinned locator 签 URL;尚不创建 Attachment/不写业务 audit;存储状态不确定返 13034) [rbac: attachment.upload.*]',
   })
   @ApiWrappedOkResponse(UploadUrlResponseDto)
   @ApiBizErrorResponse(
@@ -123,6 +124,7 @@ export class AttachmentsController {
     BizCode.ATTACHMENT_MIME_NOT_ALLOWED,
     BizCode.ATTACHMENT_SIZE_EXCEEDED,
     BizCode.ATTACHMENT_PII_DETECTED,
+    BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING,
   )
   createUploadUrl(
     @Body() dto: GenerateUploadUrlDto,
@@ -134,7 +136,7 @@ export class AttachmentsController {
   @Post('confirm-upload')
   @ApiOperation({
     summary:
-      '确认上传完成(模式 B;验 uploadToken + headObject + size + 文件签名一致 → 落库 + audit attachment.upload;findings #22/#23/#24) [rbac: attachment.upload.*]',
+      '确认上传完成(模式 B;验 uploadToken,按 intent 的 pinned locator 校验 HEAD/size/文件签名,再原子提交 Attachment + audit + available;同 token 幂等;不确定态返 13034) [rbac: attachment.upload.*]',
   })
   @ApiWrappedOkResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(
@@ -146,6 +148,7 @@ export class AttachmentsController {
     BizCode.ATTACHMENT_SIZE_EXCEEDED,
     BizCode.ATTACHMENT_SYSTEM_MIME_BLOCKED,
     BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH,
+    BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING,
   )
   confirmUpload(
     @Body() dto: ConfirmUploadDto,
@@ -211,7 +214,7 @@ export class AttachmentsController {
   @Delete(':id')
   @ApiOperation({
     summary:
-      '物理删附件(Q11 v1.0:不查跨表引用;Provider 文件删除 Q15 挂起待 Provider 评审) [rbac: attachment.delete.*]',
+      '删除附件(先提交 delete intent 并隐藏普通读取;Provider 删除后须 HEAD absent,再原子硬删 Attachment + 写 audit;未完成返 13034;原 actor 24h 内可幂等重放最小响应) [rbac: attachment.delete.*]',
   })
   @ApiWrappedOkResponse(AttachmentResponseDto)
   @ApiBizErrorResponse(
@@ -219,6 +222,7 @@ export class AttachmentsController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.ATTACHMENT_NOT_FOUND,
+    BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING,
   )
   delete(
     @Param() params: IdParamDto,

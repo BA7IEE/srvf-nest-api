@@ -1,17 +1,23 @@
 import { Injectable, Logger } from '@nestjs/common';
 import COS from 'cos-nodejs-sdk-v5';
+import { createHash } from 'node:crypto';
+import { Writable } from 'node:stream';
+import { finished } from 'node:stream/promises';
 
 import { StorageSettingsService } from '../storage-settings.service';
 import { CredentialStatus, type StorageSettingsResolved } from '../storage-settings.types';
-import type { StorageProvider } from '../storage.interface';
+import { StoragePinnedLocatorError, type StorageProvider } from '../storage.interface';
 import type {
   DownloadUrlResult,
   GenerateDownloadUrlInput,
   GenerateUploadUrlInput,
   HeadObjectResult,
   PutObjectInput,
+  StorageObjectReadProgress,
   StorageBody,
   StoredObject,
+  StorageObjectLocator,
+  StorageObjectSha256Result,
   UploadUrlResult,
 } from '../storage.types';
 
@@ -62,8 +68,19 @@ export class CosStorageProvider implements StorageProvider {
 
   constructor(private readonly settings: StorageSettingsService) {}
 
-  async putObject(input: PutObjectInput): Promise<StoredObject> {
-    const ctx = await this.requireCosContext();
+  putObject(input: PutObjectInput): Promise<StoredObject> {
+    return this.putObjectInternal(input);
+  }
+
+  putObjectAt(locator: StorageObjectLocator, input: PutObjectInput): Promise<StoredObject> {
+    return this.putObjectInternal(input, locator);
+  }
+
+  private async putObjectInternal(
+    input: PutObjectInput,
+    locator?: StorageObjectLocator,
+  ): Promise<StoredObject> {
+    const ctx = await this.requireCosContext(locator);
     const Body = await bufferize(input.body);
     const result = await ctx.cos.putObject({
       Bucket: ctx.bucket,
@@ -82,8 +99,16 @@ export class CosStorageProvider implements StorageProvider {
   }
 
   // COS / S3 协议对不存在 key 也返 204(沿 Q-89-6);不显式 catch 404
-  async deleteObject(key: string): Promise<void> {
-    const ctx = await this.requireCosContext();
+  deleteObject(key: string): Promise<void> {
+    return this.deleteObjectInternal(key);
+  }
+
+  deleteObjectAt(locator: StorageObjectLocator, key: string): Promise<void> {
+    return this.deleteObjectInternal(key, locator);
+  }
+
+  private async deleteObjectInternal(key: string, locator?: StorageObjectLocator): Promise<void> {
+    const ctx = await this.requireCosContext(locator);
     await ctx.cos.deleteObject({
       Bucket: ctx.bucket,
       Region: ctx.region,
@@ -94,7 +119,21 @@ export class CosStorageProvider implements StorageProvider {
   // PUT signed URL(沿 F2 + Q5c v1.0 锁 method 'PUT')
   // getObjectUrl 同步路径:Sign=true + 不依赖 GetAuthorization 异步选项 → 直接返 URL
   generateUploadUrl(input: GenerateUploadUrlInput): Promise<UploadUrlResult> {
-    return this.requireCosContext().then((ctx) => {
+    return this.generateUploadUrlInternal(input);
+  }
+
+  generateUploadUrlAt(
+    locator: StorageObjectLocator,
+    input: GenerateUploadUrlInput,
+  ): Promise<UploadUrlResult> {
+    return this.generateUploadUrlInternal(input, locator);
+  }
+
+  private generateUploadUrlInternal(
+    input: GenerateUploadUrlInput,
+    locator?: StorageObjectLocator,
+  ): Promise<UploadUrlResult> {
+    return this.requireCosContext(locator).then((ctx) => {
       const url = ctx.cos.getObjectUrl({
         Bucket: ctx.bucket,
         Region: ctx.region,
@@ -116,7 +155,21 @@ export class CosStorageProvider implements StorageProvider {
   // GET signed URL(沿 §6.4.1)
   // contentDisposition 通过 response-content-disposition query 参数附加(COS / S3 标准)
   generateDownloadUrl(input: GenerateDownloadUrlInput): Promise<DownloadUrlResult> {
-    return this.requireCosContext().then((ctx) => {
+    return this.generateDownloadUrlInternal(input);
+  }
+
+  generateDownloadUrlAt(
+    locator: StorageObjectLocator,
+    input: GenerateDownloadUrlInput,
+  ): Promise<DownloadUrlResult> {
+    return this.generateDownloadUrlInternal(input, locator);
+  }
+
+  private generateDownloadUrlInternal(
+    input: GenerateDownloadUrlInput,
+    locator?: StorageObjectLocator,
+  ): Promise<DownloadUrlResult> {
+    return this.requireCosContext(locator).then((ctx) => {
       const baseUrl = ctx.cos.getObjectUrl({
         Bucket: ctx.bucket,
         Region: ctx.region,
@@ -135,8 +188,19 @@ export class CosStorageProvider implements StorageProvider {
     });
   }
 
-  async headObject(key: string): Promise<HeadObjectResult> {
-    const ctx = await this.requireCosContext();
+  headObject(key: string): Promise<HeadObjectResult> {
+    return this.headObjectInternal(key);
+  }
+
+  headObjectAt(locator: StorageObjectLocator, key: string): Promise<HeadObjectResult> {
+    return this.headObjectInternal(key, locator);
+  }
+
+  private async headObjectInternal(
+    key: string,
+    locator?: StorageObjectLocator,
+  ): Promise<HeadObjectResult> {
+    const ctx = await this.requireCosContext(locator);
     try {
       const result = await ctx.cos.headObject({
         Bucket: ctx.bucket,
@@ -161,8 +225,24 @@ export class CosStorageProvider implements StorageProvider {
     }
   }
 
-  async readObjectPrefix(key: string, maxBytes: number): Promise<Buffer> {
-    const ctx = await this.requireCosContext();
+  readObjectPrefix(key: string, maxBytes: number): Promise<Buffer> {
+    return this.readObjectPrefixInternal(key, maxBytes);
+  }
+
+  readObjectPrefixAt(
+    locator: StorageObjectLocator,
+    key: string,
+    maxBytes: number,
+  ): Promise<Buffer> {
+    return this.readObjectPrefixInternal(key, maxBytes, locator);
+  }
+
+  private async readObjectPrefixInternal(
+    key: string,
+    maxBytes: number,
+    locator?: StorageObjectLocator,
+  ): Promise<Buffer> {
+    const ctx = await this.requireCosContext(locator);
     const result = await ctx.cos.getObject({
       Bucket: ctx.bucket,
       Region: ctx.region,
@@ -174,21 +254,66 @@ export class CosStorageProvider implements StorageProvider {
       : Buffer.from(result.Body as unknown as Uint8Array);
   }
 
+  async hashObjectSha256At(
+    locator: StorageObjectLocator,
+    key: string,
+    onProgress?: StorageObjectReadProgress,
+  ): Promise<StorageObjectSha256Result> {
+    const ctx = await this.requireCosContext(locator);
+    const hash = createHash('sha256');
+    let size = 0;
+    const output = new Writable({
+      write(chunk, _encoding, callback) {
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+        size += bytes.length;
+        hash.update(bytes);
+        if (!onProgress) {
+          callback();
+          return;
+        }
+        void onProgress(size).then(
+          () => callback(),
+          (error: unknown) => callback(asError(error)),
+        );
+      },
+    });
+    // Wait for both the SDK result and the digest sink. This proves every async progress/lease
+    // callback completed before digest(), and observes COS's mirrored Output error path.
+    const [result] = await Promise.all([
+      ctx.cos.getObject({
+        Bucket: ctx.bucket,
+        Region: ctx.region,
+        Key: key,
+        Output: output,
+      }),
+      finished(output),
+    ]);
+    return { size, checksum: hash.digest('hex'), etag: stripQuotes(result.ETag) };
+  }
+
   // 解析 settings + 构造 COS 实例 + 4 档守护
   // 每次方法调用都查 settings;StorageSettingsService 内部 60s 缓存(沿 PR #87)
-  private async requireCosContext(): Promise<CosContext> {
+  private async requireCosContext(expected?: StorageObjectLocator): Promise<CosContext> {
     const settings = await this.settings.getActiveSettings();
     if (!settings) {
       throw new CosProviderUnavailableError('storage_settings 未配置');
     }
-    if (settings.providerType !== 'COS') {
+    if (!expected && settings.providerType !== 'COS') {
       throw new CosProviderUnavailableError(`providerType=${settings.providerType} 不是 COS`);
+    }
+    if (expected && expected.providerType !== 'COS') {
+      throw new StoragePinnedLocatorError('非 COS locator 不能路由到 CosStorageProvider');
     }
     if (settings.credentialStatus !== CredentialStatus.CONFIGURED || !settings.credentials) {
       throw new CosProviderUnavailableError(`credentialStatus=${settings.credentialStatus}`);
     }
-    if (!settings.bucket || !settings.region) {
-      throw new CosProviderUnavailableError('storage_settings.bucket / region 未配置');
+    const bucket = expected?.bucket ?? settings.bucket;
+    const region = expected?.region ?? settings.region;
+    if (!bucket || !region) {
+      throw new CosProviderUnavailableError('COS bucket / region 未配置');
+    }
+    if (expected && expected.localNamespace !== null) {
+      throw new StoragePinnedLocatorError('COS locator 不允许 localNamespace');
     }
     const cos = new COS({
       SecretId: settings.credentials.secretId,
@@ -197,8 +322,8 @@ export class CosStorageProvider implements StorageProvider {
     });
     return {
       cos,
-      bucket: settings.bucket,
-      region: settings.region,
+      bucket,
+      region,
       settings,
     };
   }
@@ -238,4 +363,8 @@ function isNotFoundError(err: unknown): boolean {
     return e.statusCode === 404 || e.code === 'NoSuchKey';
   }
   return false;
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error('storage object hash progress failed');
 }

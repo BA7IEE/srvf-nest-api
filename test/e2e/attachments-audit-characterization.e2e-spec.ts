@@ -27,11 +27,11 @@ import { createTestApp } from '../setup/test-app';
 // audit-characterization spec 范式)。
 //
 // 目标:在抽 `ActivityAuditRecorder`(下一单)之前,显式锁定
-// `attachments.service.ts` 中 3 处 `auditLogs.log(...)` 调用的当前 payload 形状:
+// Attachment 三条写路径的 audit payload 形状:
 //   - event name(`'attachment.upload'` ×2 create / confirmUpload 共用 +
 //     `'attachment.delete'` ×1)
 //   - resourceType(`'attachment'`)/ resourceId / actorUserId / actorRoleSnap / success
-//   - context.requestId / ip / ua / before / after / extra 完整字段集
+//   - context.requestId / ip / ua / before / after(固定最小 7 字段)/ extra 完整字段集
 //   - 5 处 wrong-path 失败 → 0 audit(沿 D6 F6 fail-fast)
 //   - 3 处 audit fail → tx rollback(沿 D-S7 红线)
 //
@@ -224,9 +224,11 @@ describe('AttachmentsService audit characterization', () => {
     jest.restoreAllMocks();
   });
 
-  // 每个 case 隔离 attachments + audit_logs;保留 User / Member / TypeConfig / RBAC seed
+  // 每个 case 隔离 durable storage ledger + attachments + audit_logs；保留业务 seed。
   async function isolateFixtures(): Promise<void> {
-    await prisma.$executeRawUnsafe('TRUNCATE TABLE "attachments" RESTART IDENTITY CASCADE');
+    await prisma.$executeRawUnsafe(
+      'TRUNCATE TABLE "storage_object_operations", "storage_objects", "attachments" RESTART IDENTITY CASCADE',
+    );
     await prisma.$executeRawUnsafe('TRUNCATE TABLE "audit_logs" RESTART IDENTITY CASCADE');
   }
 
@@ -302,11 +304,15 @@ describe('AttachmentsService audit characterization', () => {
       // before absent / after present(create 路径)
       expect(ctx.before).toBeUndefined();
       expect(ctx.after).toBeDefined();
-      const after = ctx.after as { ownerType: string; ownerId: string; mime: string; size: number };
-      expect(after.ownerType).toBe('member');
-      expect(after.ownerId).toBe(memberA.id);
-      expect(after.mime).toBe('image/jpeg');
-      expect(after.size).toBe(12345);
+      expect(ctx.after).toEqual({
+        key: result.key,
+        mime: 'image/jpeg',
+        size: 12345,
+        uploadedBy: selfId,
+        uploadedAt: result.uploadedAt.toISOString(),
+        ownerType: 'member',
+        ownerId: memberA.id,
+      });
 
       // extra 字段集逐字锁(8 字段;沿 service.create line 422-441)
       expect(ctx.extra).toEqual({
@@ -353,7 +359,7 @@ describe('AttachmentsService audit characterization', () => {
     beforeEach(isolateFixtures);
 
     it('B1. event=attachment.upload + extra 10 字段(8+uploadConfirmedAt+uploadVia:direct)toEqual 锁 + after present / before absent', async () => {
-      // 1. 通过 service.createUploadUrl 拿 key + uploadToken(不写 audit;沿 PR #10 设计)
+      // 1. 通过 service.createUploadUrl 拿 durable intent + key + uploadToken；此腿不写 audit。
       const tokenRes = await service.createUploadUrl(buildUploadUrlDto(), selfPayload);
 
       // 2. 写假文件到 LocalProvider 磁盘,让 provider.headObject 返 exists=true
@@ -387,18 +393,15 @@ describe('AttachmentsService audit characterization', () => {
       // before absent / after present(confirmUpload 路径与 create 同;沿 service line 831-853)
       expect(ctx.before).toBeUndefined();
       expect(ctx.after).toBeDefined();
-      const after = ctx.after as {
-        key: string;
-        ownerType: string;
-        ownerId: string;
-        mime: string;
-        size: number;
-      };
-      expect(after.key).toBe(tokenRes.key);
-      expect(after.ownerType).toBe('member');
-      expect(after.ownerId).toBe(memberA.id);
-      expect(after.mime).toBe('image/jpeg');
-      expect(after.size).toBe(1024);
+      expect(ctx.after).toEqual({
+        key: tokenRes.key,
+        mime: 'image/jpeg',
+        size: 1024,
+        uploadedBy: selfId,
+        uploadedAt: result.uploadedAt.toISOString(),
+        ownerType: 'member',
+        ownerId: memberA.id,
+      });
 
       // extra 字段集逐字锁(10 字段 = create 8 + 2 增量;沿 service line 839-851)
       // uploadConfirmedAt 是动态时间字符串,用 expect.any(String) 锁形状不锁值
@@ -457,15 +460,15 @@ describe('AttachmentsService audit characterization', () => {
       // before present / after absent(delete 路径;沿 service line 573-592)
       expect(ctx.before).toBeDefined();
       expect(ctx.after).toBeUndefined();
-      const before = ctx.before as {
-        ownerType: string;
-        ownerId: string;
-        mime: string;
-        size: number;
-      };
-      expect(before.ownerType).toBe('member');
-      expect(before.ownerId).toBe(memberA.id);
-      expect(before.size).toBe(2048);
+      expect(ctx.before).toEqual({
+        key: created.key,
+        mime: 'image/jpeg',
+        size: 2048,
+        uploadedBy: selfId,
+        uploadedAt: created.uploadedAt.toISOString(),
+        ownerType: 'member',
+        ownerId: memberA.id,
+      });
 
       // extra 字段集逐字锁(8 字段)
       expect(ctx.extra).toEqual({
