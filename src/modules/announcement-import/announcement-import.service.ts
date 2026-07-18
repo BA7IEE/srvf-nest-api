@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { MemberStatus } from '@prisma/client';
+import { MemberStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { BizCodeEntry } from '../../common/exceptions/biz-code.constant';
@@ -7,6 +7,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { lockOrganizationTopology } from '../organizations/organization-topology-transaction';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { RbacService } from '../permissions/rbac.service';
 import { PositionAssignmentsService } from '../position-assignments/position-assignments.service';
@@ -29,22 +30,21 @@ import {
 //
 // **决断②:绝不绕过 —— 本文件只做锚定解析 + 编排 + 逐行结果聚合。**
 // 任命 5 校验 / 分管校验 / closure 维护 / audit 写入,全部只存在于 OrganizationsService /
-// PositionAssignmentsService / SupervisionAssignmentsService 的 create()(见各自 dryRun 沙箱哨兵注释)。
+// PositionAssignmentsService / SupervisionAssignmentsService 的 create()(见各自 transaction option 注释)。
 // 本文件唯一新增的"判断逻辑"是:①code/memberNo/positionCode → id 的锚定读(单表 findFirst,
 // 非业务规则)②仅本请求内可见的批内重复行哨兵 ③displayName 唯一命中辅助解析(仅 preview,决断③)。
 //
-// **preview 零写入靠 dryRun,而非另一套只读校验**:preview 与 execute 调用完全相同的编排代码,
-// 唯一差异是把 `dryRun: true` 透传给三个被复用 service 的 create() —— 校验/写入语句真实执行后,
-// 由被复用 service 在提交前抛内部沙箱哨兵整体回滚事务(含 audit),两段式因此复用同一份真实校验,
-// 不会出现"preview 说 ok,execute 却因为preview 没走到的校验分支而失败"的两套逻辑漂移。
+// **preview / execute 共用同一个 request-wide 事务编排**:三个被复用 service 的 create() 接受本请求
+// transaction client,因此同请求新建组织及其 closure/audit 对后续任命/分管真实可见。逐行 SAVEPOINT
+// 保留既有 blocked/already-exists best-effort 聚合；未声明异常则整请求回滚。preview 在完整结果生成后抛
+// PreviewAbort 回滚整批，execute 提交整批，二者除最终 commit/rollback 决策外没有事务拓扑分叉。
 //
 // **组织行处理顺序 = 请求内声明顺序,父必须先于子**:orgCodeMap 在处理 organizations[] 时逐行建立
-// (dry-run 下也可用,因为 cuid 由 Prisma 客户端侧生成,回滚前已产生);positions[] / supervisions[]
-// 的 orgCode 解析先查 orgCodeMap 再查库,因此可引用同请求内更早声明的组织行。
+// (外层 transaction 内未提交写对后续行真实可见);positions[] / supervisions[] 的 orgCode 解析先查
+// orgCodeMap 再查当前 transaction,因此可引用同请求内更早声明的组织行。
 //
-// **批内重复检测(seenXxx 系列)只在本文件存在**:这不是重复业务校验,而是 dry-run 的固有盲区 ——
-// 同一批内两行都引用同一个"即将创建"的资源时,各自的 dry-run 都会各自独立回滚,互相看不见对方,
-// 单靠被复用 service 的 DB 级防重查询无法在 preview 阶段发现批内冲突,必须在编排层显式去重。
+// **批内重复检测(seenXxx 系列)只在本文件存在**:这不是重复业务校验,而是稳定逐行诊断 ——
+// 在调用被复用 service 前给出确定的本批重复原因,避免结果依赖数据库约束错误的触发时序。
 //
 // **already-exists 一致性校验 + 毒丸传播(review #484 G8)**:组织行撞 ORGANIZATION_CODE_ALREADY_EXISTS
 // 时不再无条件"视为就是这个组"——先核对既有组织 nodeTypeCode=group 且 parentId 与本行已解析的
@@ -56,6 +56,14 @@ import {
 
 const DEFAULT_APPOINTMENT_SOURCE = 'announcement-2026';
 const GROUP_NODE_TYPE_CODE = 'group';
+const ANNOUNCEMENT_IMPORT_TRANSACTION_TIMEOUT_MS = 300_000;
+type PrismaTx = Prisma.TransactionClient;
+
+class PreviewAbort extends Error {
+  constructor(public readonly value: AnnouncementImportResultDto) {
+    super('ANNOUNCEMENT_IMPORT_PREVIEW_ABORT');
+  }
+}
 
 interface OrgAnchor {
   id: string;
@@ -153,6 +161,42 @@ export class AnnouncementImportService {
       throw new BizException(BizCode.BAD_REQUEST);
     }
 
+    try {
+      return await this.prisma.$transaction(
+        async (tx) => {
+          const result = await this.runInTransaction(
+            user,
+            organizationRows,
+            positionRows,
+            supervisionRows,
+            meta,
+            dryRun,
+            tx,
+          );
+          if (dryRun) throw new PreviewAbort(result);
+          return result;
+        },
+        { timeout: ANNOUNCEMENT_IMPORT_TRANSACTION_TIMEOUT_MS },
+      );
+    } catch (err) {
+      if (err instanceof PreviewAbort) return err.value;
+      throw err;
+    }
+  }
+
+  private async runInTransaction(
+    user: CurrentUserPayload,
+    organizationRows: ImportOrganizationRowDto[],
+    positionRows: ImportPositionRowDto[],
+    supervisionRows: ImportSupervisionRowDto[],
+    meta: AuditMeta,
+    dryRun: boolean,
+    tx: PrismaTx,
+  ): Promise<AnnouncementImportResultDto> {
+    // parentCode/orgCode 解析也是 topology SQL；因此必须在 request-wide transaction
+    // 入口取锁，不能等到随后 OrganizationsService.create() 内才首次取锁。
+    await lockOrganizationTopology(tx);
+
     // organizations[] 必须先于 positions[]/supervisions[] 处理完毕,后两者才能引用本批新建组织。
     const orgCodeMap = new Map<string, OrgAnchor>();
     const seenOrgCodes = new Set<string>();
@@ -162,14 +206,16 @@ export class AnnouncementImportService {
     const organizations: ImportOrganizationRowResultDto[] = [];
     for (const row of organizationRows) {
       organizations.push(
-        await this.processOrganizationRow(
-          user,
-          row,
-          orgCodeMap,
-          seenOrgCodes,
-          poisonedOrgCodes,
-          meta,
-          dryRun,
+        await this.processRowInSavepoint(tx, () =>
+          this.processOrganizationRow(
+            user,
+            row,
+            orgCodeMap,
+            seenOrgCodes,
+            poisonedOrgCodes,
+            meta,
+            tx,
+          ),
         ),
       );
     }
@@ -178,14 +224,17 @@ export class AnnouncementImportService {
     const positions: ImportPositionRowResultDto[] = [];
     for (const row of positionRows) {
       positions.push(
-        await this.processPositionRow(
-          user,
-          row,
-          orgCodeMap,
-          poisonedOrgCodes,
-          seenPositionKeys,
-          meta,
-          dryRun,
+        await this.processRowInSavepoint(tx, () =>
+          this.processPositionRow(
+            user,
+            row,
+            orgCodeMap,
+            poisonedOrgCodes,
+            seenPositionKeys,
+            meta,
+            dryRun,
+            tx,
+          ),
         ),
       );
     }
@@ -194,14 +243,17 @@ export class AnnouncementImportService {
     const supervisions: ImportSupervisionRowResultDto[] = [];
     for (const row of supervisionRows) {
       supervisions.push(
-        await this.processSupervisionRow(
-          user,
-          row,
-          orgCodeMap,
-          poisonedOrgCodes,
-          seenSupervisionKeys,
-          meta,
-          dryRun,
+        await this.processRowInSavepoint(tx, () =>
+          this.processSupervisionRow(
+            user,
+            row,
+            orgCodeMap,
+            poisonedOrgCodes,
+            seenSupervisionKeys,
+            meta,
+            dryRun,
+            tx,
+          ),
         ),
       );
     }
@@ -214,15 +266,39 @@ export class AnnouncementImportService {
     };
   }
 
+  private async processRowInSavepoint<T extends { status: ImportRowStatus }>(
+    tx: PrismaTx,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    await tx.$executeRaw(Prisma.sql`SAVEPOINT announcement_import_row`);
+    let result: T;
+    try {
+      result = await operation();
+    } catch (err) {
+      await tx.$executeRaw(Prisma.sql`ROLLBACK TO SAVEPOINT announcement_import_row`);
+      await tx.$executeRaw(Prisma.sql`RELEASE SAVEPOINT announcement_import_row`);
+      throw err;
+    }
+
+    if (result.status === 'ok') {
+      await tx.$executeRaw(Prisma.sql`RELEASE SAVEPOINT announcement_import_row`);
+    } else {
+      await tx.$executeRaw(Prisma.sql`ROLLBACK TO SAVEPOINT announcement_import_row`);
+      await tx.$executeRaw(Prisma.sql`RELEASE SAVEPOINT announcement_import_row`);
+    }
+    return result;
+  }
+
   // ============ 锚定解析(只读;非业务校验)============
 
   private async resolveOrg(
     code: string,
     orgCodeMap: Map<string, OrgAnchor>,
+    tx: PrismaTx,
   ): Promise<OrgAnchor | null> {
     const cached = orgCodeMap.get(code);
     if (cached) return cached;
-    return this.prisma.organization.findFirst({
+    return tx.organization.findFirst({
       where: notDeletedWhere({ code }),
       select: { id: true, nodeTypeCode: true },
     });
@@ -234,9 +310,10 @@ export class AnnouncementImportService {
     memberNo: string | undefined,
     displayName: string | undefined,
     dryRun: boolean,
+    tx: PrismaTx,
   ): Promise<MemberAnchorResult> {
     if (memberNo) {
-      const member = await this.prisma.member.findFirst({
+      const member = await tx.member.findFirst({
         where: notDeletedWhere({ memberNo }),
         select: { id: true, status: true },
       });
@@ -260,7 +337,7 @@ export class AnnouncementImportService {
       return { kind: 'blocked', issue: synthetic('缺 memberNo 与 displayName,无法解析队员身份') };
     }
 
-    const matches = await this.prisma.member.findMany({
+    const matches = await tx.member.findMany({
       where: notDeletedWhere({ displayName, status: MemberStatus.ACTIVE }),
       select: { memberNo: true },
       take: 2,
@@ -295,7 +372,7 @@ export class AnnouncementImportService {
     seenCodes: Set<string>,
     poisonedOrgCodes: Set<string>,
     meta: AuditMeta,
-    dryRun: boolean,
+    tx: PrismaTx,
   ): Promise<ImportOrganizationRowResultDto> {
     if (!row.code || !row.parentCode || !row.name) {
       return {
@@ -313,7 +390,7 @@ export class AnnouncementImportService {
     }
     seenCodes.add(row.code);
 
-    const parent = await this.resolveOrg(row.parentCode, orgCodeMap);
+    const parent = await this.resolveOrg(row.parentCode, orgCodeMap, tx);
     if (!parent) {
       return {
         row,
@@ -337,7 +414,7 @@ export class AnnouncementImportService {
           sortOrder: row.sortOrder,
         },
         meta,
-        { dryRun },
+        { transaction: tx },
       );
       orgCodeMap.set(row.code, { id: created.id, nodeTypeCode: GROUP_NODE_TYPE_CODE });
       return { row, status: 'ok', reasons: [], organizationId: created.id };
@@ -347,7 +424,7 @@ export class AnnouncementImportService {
         // 幂等(决断⑤,已收窄见 review #484 G8):code 已被占用 → 先核对锚点一致性(nodeType=group
         // 且父级 = 本行已解析的 parent.id)才"视为就是这个组"。名称/设立状态/组功能差异不纳入比对
         // (名称漂移合法;锚 = 类型 + 父级)。
-        const existing = await this.prisma.organization.findFirst({
+        const existing = await tx.organization.findFirst({
           where: notDeletedWhere({ code: row.code }),
           select: { id: true, nodeTypeCode: true, parentId: true },
         });
@@ -395,6 +472,7 @@ export class AnnouncementImportService {
     seenKeys: Set<string>,
     meta: AuditMeta,
     dryRun: boolean,
+    tx: PrismaTx,
   ): Promise<ImportPositionRowResultDto> {
     const missing: string[] = [];
     if (!row.orgCode) missing.push('orgCode');
@@ -417,7 +495,7 @@ export class AnnouncementImportService {
       };
     }
 
-    const anchor = await this.resolveMemberAnchor(row.memberNo, row.displayName, dryRun);
+    const anchor = await this.resolveMemberAnchor(row.memberNo, row.displayName, dryRun, tx);
     if (anchor.kind === 'needs-manual') {
       return {
         row,
@@ -440,12 +518,12 @@ export class AnnouncementImportService {
     }
     seenKeys.add(dedupeKey);
 
-    const org = await this.resolveOrg(row.orgCode!, orgCodeMap);
+    const org = await this.resolveOrg(row.orgCode!, orgCodeMap, tx);
     if (!org) {
       return { row, status: 'blocked', reasons: [fromBizCode(BizCode.ORGANIZATION_NOT_FOUND)] };
     }
 
-    const position = await this.prisma.organizationPosition.findFirst({
+    const position = await tx.organizationPosition.findFirst({
       where: notDeletedWhere({ code: row.positionCode }),
       select: { id: true },
     });
@@ -467,7 +545,7 @@ export class AnnouncementImportService {
           appointmentSource: row.appointmentSource ?? DEFAULT_APPOINTMENT_SOURCE,
         },
         meta,
-        { dryRun },
+        { transaction: tx },
       );
       return { row, status: 'ok', reasons: [], positionAssignmentId: created.id };
     } catch (err) {
@@ -489,6 +567,7 @@ export class AnnouncementImportService {
     seenKeys: Set<string>,
     meta: AuditMeta,
     dryRun: boolean,
+    tx: PrismaTx,
   ): Promise<ImportSupervisionRowResultDto> {
     const missing: string[] = [];
     if (!row.orgCode) missing.push('orgCode');
@@ -510,7 +589,12 @@ export class AnnouncementImportService {
       };
     }
 
-    const anchor = await this.resolveMemberAnchor(row.supervisorMemberNo, row.displayName, dryRun);
+    const anchor = await this.resolveMemberAnchor(
+      row.supervisorMemberNo,
+      row.displayName,
+      dryRun,
+      tx,
+    );
     if (anchor.kind === 'needs-manual') {
       return {
         row,
@@ -533,7 +617,7 @@ export class AnnouncementImportService {
     }
     seenKeys.add(dedupeKey);
 
-    const org = await this.resolveOrg(row.orgCode!, orgCodeMap);
+    const org = await this.resolveOrg(row.orgCode!, orgCodeMap, tx);
     if (!org) {
       return { row, status: 'blocked', reasons: [fromBizCode(BizCode.ORGANIZATION_NOT_FOUND)] };
     }
@@ -550,7 +634,7 @@ export class AnnouncementImportService {
           note: row.note,
         },
         meta,
-        { dryRun },
+        { transaction: tx },
       );
       return { row, status: 'ok', reasons: [], supervisionAssignmentId: created.id };
     } catch (err) {

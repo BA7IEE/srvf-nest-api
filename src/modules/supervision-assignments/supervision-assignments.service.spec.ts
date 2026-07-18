@@ -190,6 +190,23 @@ describe('SupervisionAssignmentsService.create', () => {
       new BizException(BizCode.SUPERVISION_ALREADY_EXISTS),
     );
   });
+
+  it('transaction option:复用调用方 transaction client,不再开启内层事务', async () => {
+    const tx = makeTx();
+    const prisma = makePrisma(tx);
+    const svc = new SupervisionAssignmentsService(prisma, rbacAllow, auditNoop);
+
+    await expect(
+      svc.create(USER, baseDto, META, {
+        transaction: tx as unknown as Prisma.TransactionClient,
+      }),
+    ).resolves.toMatchObject({ status: 'ACTIVE' });
+
+    const transactionMock = (prisma as unknown as { $transaction: jest.Mock }).$transaction;
+    expect(transactionMock).not.toHaveBeenCalled();
+    expect(tx.organizationSupervisionAssignment.create).toHaveBeenCalledTimes(1);
+    expect(auditLogMock).toHaveBeenLastCalledWith(expect.objectContaining({ tx }));
+  });
 });
 
 describe('SupervisionAssignmentsService.getSupervisionScope', () => {

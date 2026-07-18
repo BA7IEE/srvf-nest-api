@@ -48,11 +48,15 @@ import {
 const AUDIT_RESOURCE_TYPE = 'supervision_assignment';
 
 type PrismaTx = Prisma.TransactionClient;
+type CreateSupervisionAssignmentOptions =
+  | { dryRun?: boolean; transaction?: never }
+  | { transaction: PrismaTx; dryRun?: never };
 
 // 终态 scoped-authz PR11(2026-07-02;冻结稿 §8.4 / §11 PR11):dry-run 沙箱哨兵,镜像
 // position-assignments.service.ts 同名类(不共享,沿模块自包含范式)。create() 走满全部校验 + 真实
 // insert + audit 写入后,若 options.dryRun,在事务提交前抛本类型强制整个事务(含 audit)一并回滚,
-// catch 后原样返回"本应创建"的响应体 —— 供 announcement-import 预览零写入复用同一份真实校验。
+// catch 后原样返回"本应创建"的响应体。announcement-import 的批量 preview/execute 改用互斥
+// transaction option 复用 request-wide 外层事务。
 class DryRunAbort<T> extends Error {
   constructor(public readonly value: T) {
     super('DRY_RUN_ABORT');
@@ -140,7 +144,7 @@ export class SupervisionAssignmentsService {
     user: CurrentUserPayload,
     dto: CreateSupervisionAssignmentDto,
     meta: AuditMeta,
-    options?: { dryRun?: boolean },
+    options?: CreateSupervisionAssignmentOptions,
   ) {
     await this.assertCanOrThrow(user, 'supervision-assignment.create.record');
 
@@ -151,8 +155,12 @@ export class SupervisionAssignmentsService {
       throw new BizException(BizCode.SUPERVISION_ASSIGNMENT_TENURE_INVALID);
     }
 
+    const transaction = options?.transaction;
+    const runInTransaction = <T>(operation: (tx: PrismaTx) => Promise<T>) =>
+      transaction ? operation(transaction) : this.prisma.$transaction(operation);
+
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      return await runInTransaction(async (tx) => {
         await lockMemberLifecycle(tx, dto.supervisorMemberId);
         const supervisor = await this.findMemberOrThrow(dto.supervisorMemberId, tx);
         if (supervisor.status !== MemberStatus.ACTIVE) {
