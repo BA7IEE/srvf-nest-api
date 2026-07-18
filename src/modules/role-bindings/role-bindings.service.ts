@@ -3,6 +3,7 @@ import {
   AssignmentStatus,
   BindingScopeType,
   BindingStatus,
+  MemberStatus,
   PrincipalType,
   Prisma,
   UserStatus,
@@ -16,6 +17,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { lockMemberLifecycle, lockLiveUserLifecycle } from '../members/member-lifecycle-lock';
 import { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import { RbacService } from '../permissions/rbac.service';
 import {
@@ -103,6 +105,7 @@ export class RoleBindingsService {
     tx: PrismaTx,
     principalType: PrincipalType,
     principalId: string | null,
+    options?: { lockLifecycle?: boolean },
   ): Promise<void> {
     if (principalType === PrincipalType.SYSTEM) {
       if (principalId != null) throw new BizException(BizCode.ROLE_BINDING_PRINCIPAL_INVALID);
@@ -110,24 +113,63 @@ export class RoleBindingsService {
     }
     if (principalId == null) throw new BizException(BizCode.ROLE_BINDING_PRINCIPAL_INVALID);
     if (principalType === PrincipalType.USER) {
+      const initial = await tx.user.findFirst({
+        where: { id: principalId, deletedAt: null },
+        select: { memberId: true },
+      });
+      if (!initial) throw new BizException(BizCode.USER_NOT_FOUND);
+      if (options?.lockLifecycle && initial.memberId !== null) {
+        await lockMemberLifecycle(tx, initial.memberId);
+      }
+      if (options?.lockLifecycle) {
+        await lockLiveUserLifecycle(tx, principalId);
+      }
       const u = await tx.user.findFirst({
         where: { id: principalId, deletedAt: null, status: UserStatus.ACTIVE },
-        select: { id: true },
+        select: { id: true, memberId: true },
       });
       if (!u) throw new BizException(BizCode.USER_NOT_FOUND);
+      if (u.memberId !== null) {
+        const member = await tx.member.findFirst({
+          where: { id: u.memberId, deletedAt: null },
+          select: { status: true },
+        });
+        if (!member || member.status !== MemberStatus.ACTIVE) {
+          throw new BizException(BizCode.MEMBER_INACTIVE);
+        }
+      }
     } else if (principalType === PrincipalType.MEMBER) {
+      if (options?.lockLifecycle) {
+        await lockMemberLifecycle(tx, principalId);
+      }
       const m = await tx.member.findFirst({
         where: notDeletedWhere({ id: principalId }),
-        select: { id: true },
+        select: { id: true, status: true },
       });
       if (!m) throw new BizException(BizCode.MEMBER_NOT_FOUND);
+      if (m.status !== MemberStatus.ACTIVE) throw new BizException(BizCode.MEMBER_INACTIVE);
     } else {
       // POSITION_ASSIGNMENT
+      const initial = await tx.organizationPositionAssignment.findFirst({
+        where: notDeletedWhere({ id: principalId }),
+        select: { memberId: true },
+      });
+      if (!initial) throw new BizException(BizCode.POSITION_ASSIGNMENT_NOT_FOUND);
+      if (options?.lockLifecycle) {
+        await lockMemberLifecycle(tx, initial.memberId);
+      }
       const pa = await tx.organizationPositionAssignment.findFirst({
         where: notDeletedWhere({ id: principalId, status: AssignmentStatus.ACTIVE }),
-        select: { id: true },
+        select: { id: true, memberId: true },
       });
       if (!pa) throw new BizException(BizCode.POSITION_ASSIGNMENT_NOT_FOUND);
+      const member = await tx.member.findFirst({
+        where: { id: pa.memberId, deletedAt: null },
+        select: { status: true },
+      });
+      if (!member || member.status !== MemberStatus.ACTIVE) {
+        throw new BizException(BizCode.MEMBER_INACTIVE);
+      }
     }
   }
 
@@ -615,7 +657,9 @@ export class RoleBindingsService {
     const rawPrincipalId = dto.principalId ?? null;
 
     const result = await this.prisma.$transaction(async (tx) => {
-      await this.validatePrincipalOrThrow(tx, dto.principalType, rawPrincipalId);
+      await this.validatePrincipalOrThrow(tx, dto.principalType, rawPrincipalId, {
+        lockLifecycle: true,
+      });
       const role = await this.findRoleOrThrow(tx, dto.roleId);
       await this.roleDelegation.assertActorMayConferRole(user, role, tx);
 
@@ -742,6 +786,15 @@ export class RoleBindingsService {
         dto.endedAt !== undefined &&
         current.endedAt !== null &&
         new Date(dto.endedAt).getTime() > current.endedAt.getTime();
+      const effectiveStatus = dto.status ?? current.status;
+      if (
+        effectiveStatus === BindingStatus.ACTIVE &&
+        (dto.status !== undefined || dto.startedAt !== undefined || dto.endedAt !== undefined)
+      ) {
+        await this.validatePrincipalOrThrow(tx, current.principalType, current.principalId, {
+          lockLifecycle: true,
+        });
+      }
       if ((reactivatesBinding || startsEarlier || endsLater) && isPrivilegedRole(current.role)) {
         await this.roleDelegation.assertActorMayConferRole(user, current.role, tx);
       }

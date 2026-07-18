@@ -1,10 +1,18 @@
 import { Injectable } from '@nestjs/common';
-import { BindingScopeType, BindingStatus, PrincipalType, Prisma, UserStatus } from '@prisma/client';
+import {
+  BindingScopeType,
+  BindingStatus,
+  MemberStatus,
+  PrincipalType,
+  Prisma,
+  UserStatus,
+} from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditContext, AuditLogEvent, AuditMeta } from '../audit-logs/audit-logs.types';
+import { lockMemberLifecycle, lockLiveUserLifecycle } from '../members/member-lifecycle-lock';
 import { LastAdminProtectionPolicy } from './last-admin-protection.policy';
 import { RbacService } from './rbac.service';
 import { RoleDelegationPolicy, type RoleDelegationTarget } from './role-delegation.policy';
@@ -221,6 +229,30 @@ export class UserRolesService {
 
     // 5. 写入 global RoleBinding + audit(事务内原子;createdByUserId 记 actor;沿 D11 audit 字段)。
     const created = await this.prisma.$transaction(async (tx) => {
+      const initialUser = await tx.user.findFirst({
+        where: { id: targetUserId, deletedAt: null },
+        select: { memberId: true },
+      });
+      if (!initialUser) throw new BizException(BizCode.USER_NOT_FOUND);
+      if (initialUser.memberId !== null) {
+        await lockMemberLifecycle(tx, initialUser.memberId);
+      }
+      await lockLiveUserLifecycle(tx, targetUserId);
+      const lockedUser = await tx.user.findFirst({
+        where: { id: targetUserId, deletedAt: null, status: UserStatus.ACTIVE },
+        select: { memberId: true },
+      });
+      if (!lockedUser) throw new BizException(BizCode.USER_NOT_FOUND);
+      if (lockedUser.memberId !== null) {
+        const member = await tx.member.findFirst({
+          where: { id: lockedUser.memberId, deletedAt: null },
+          select: { status: true },
+        });
+        if (!member || member.status !== MemberStatus.ACTIVE) {
+          throw new BizException(BizCode.MEMBER_INACTIVE);
+        }
+      }
+
       const row = await tx.roleBinding.create({
         data: {
           principalType: PrincipalType.USER,

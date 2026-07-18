@@ -15,6 +15,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { lockMemberLifecycle } from '../members/member-lifecycle-lock';
 import { RbacService } from '../permissions/rbac.service';
 import {
   CreateSupervisionAssignmentDto,
@@ -152,6 +153,7 @@ export class SupervisionAssignmentsService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await lockMemberLifecycle(tx, dto.supervisorMemberId);
         const supervisor = await this.findMemberOrThrow(dto.supervisorMemberId, tx);
         if (supervisor.status !== MemberStatus.ACTIVE) {
           throw new BizException(BizCode.MEMBER_INACTIVE);

@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import {
+  AssignmentStatus,
+  BindingStatus,
   DictItemStatus,
   DictTypeStatus,
   MemberStatus,
   MembershipStatus,
   MembershipType,
+  PrincipalType,
   Prisma,
   Role,
+  SupervisionStatus,
   UserStatus,
 } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
@@ -44,6 +48,11 @@ import {
   UpdateMemberDto,
   UpdateMemberStatusDto,
 } from './members.dto';
+import {
+  lockLinkedUserLifecycle,
+  lockMemberLifecycle,
+  lockLiveUserLifecycle,
+} from './member-lifecycle-lock';
 
 // 队员账号闭环 v1(MVP,2026-07-07):BCRYPT_SALT_ROUNDS 与 users.service / recruitment-promotion.service
 // 同值(各模块级声明,沿既有惯例)。
@@ -469,16 +478,25 @@ export class MembersService {
     id: string,
     dto: UpdateMemberStatusDto,
     currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
   ): Promise<MemberResponseDto> {
     await this.assertCanOrThrow(currentUser, 'member.update.status', { type: 'member', id });
-    await this.findMemberOrThrow(id);
-    const updated = await this.prisma.member.update({
-      where: { id },
-      data: { status: dto.status },
-      select: memberSafeSelect,
+    if (dto.status === MemberStatus.INACTIVE) {
+      const result = await this.offboardCore(id, currentUser, auditMeta);
+      return result.member;
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await lockMemberLifecycle(tx, id);
+      await this.findMemberOrThrow(id, tx);
+      const updated = await tx.member.update({
+        where: { id },
+        data: { status: MemberStatus.ACTIVE },
+        select: memberSafeSelect,
+      });
+      const linked = await this.findLinkedUser(id, tx);
+      return this.attachAccountInfo(updated, linked);
     });
-    const linked = await this.findLinkedUser(id);
-    return this.attachAccountInfo(updated, linked);
   }
 
   // ============ softDelete ============
@@ -553,6 +571,7 @@ export class MembersService {
     auditMeta: AuditMeta,
   ): Promise<GrantMemberAccountResponseDto> {
     return this.prisma.$transaction(async (tx) => {
+      await lockMemberLifecycle(tx, id);
       const member = await tx.member.findFirst({
         where: notDeletedWhere({ id }),
         select: { id: true, memberNo: true, status: true },
@@ -651,6 +670,7 @@ export class MembersService {
     await this.assertCanOrThrow(currentUser, 'member.bind.account', { type: 'member', id });
 
     return this.prisma.$transaction(async (tx) => {
+      await lockMemberLifecycle(tx, id);
       const member = await this.findMemberOrThrow(id, tx);
       if (member.status !== MemberStatus.ACTIVE) {
         throw new BizException(BizCode.MEMBER_INACTIVE);
@@ -667,17 +687,23 @@ export class MembersService {
         select: { id: true, memberId: true, status: true, role: true },
       });
       if (!target) throw new BizException(BizCode.USER_NOT_FOUND);
-      if (target.memberId !== null) {
+      await lockLiveUserLifecycle(tx, target.id);
+      const lockedTarget = await tx.user.findFirst({
+        where: notDeletedWhere({ id: target.id }),
+        select: { id: true, memberId: true, status: true, role: true },
+      });
+      if (!lockedTarget) throw new BizException(BizCode.USER_NOT_FOUND);
+      if (lockedTarget.memberId !== null) {
         throw new BizException(BizCode.MEMBER_ACCOUNT_TARGET_ALREADY_LINKED);
       }
       // 第三轮 review 护栏收口(§F&A-1/A-4):只认领 role=USER 且 status=ACTIVE 的悬空账号。
       // 否则可把特权账号(ADMIN/SUPER_ADMIN)经队员轴挂到队员,此后经 updateAccountStatus /
       // reopenAccount 停用/软删它,绕过用户轴 assertNotLastSuperAdmin + assertCanManageUser
       // 两道刻意写死的护栏(报告 §F&A-1 攻击序列)。role 先于 status 判,诊断更精确。
-      if (target.role !== Role.USER) {
+      if (lockedTarget.role !== Role.USER) {
         throw new BizException(BizCode.MEMBER_ACCOUNT_TARGET_ROLE_NOT_ALLOWED);
       }
-      if (target.status !== UserStatus.ACTIVE) {
+      if (lockedTarget.status !== UserStatus.ACTIVE) {
         throw new BizException(BizCode.MEMBER_ACCOUNT_TARGET_NOT_ACTIVE);
       }
 
@@ -716,8 +742,10 @@ export class MembersService {
     await this.assertCanOrThrow(currentUser, 'member.bind.account', { type: 'member', id });
 
     return this.prisma.$transaction(async (tx) => {
+      await lockMemberLifecycle(tx, id);
       const member = await this.findMemberOrThrow(id, tx);
 
+      await lockLinkedUserLifecycle(tx, id);
       const linked = await tx.user.findFirst({
         where: { memberId: id, deletedAt: null },
         select: { id: true },
@@ -772,6 +800,8 @@ export class MembersService {
     await this.assertCanOrThrow(currentUser, 'member.grant.account', { type: 'member', id });
 
     return this.prisma.$transaction(async (tx) => {
+      await this.lastAdminProtection.acquireOpsAdminInvariantLock(tx);
+      await lockMemberLifecycle(tx, id);
       const member = await tx.member.findFirst({
         where: notDeletedWhere({ id }),
         select: { id: true, memberNo: true, status: true },
@@ -781,6 +811,7 @@ export class MembersService {
         throw new BizException(BizCode.MEMBER_INACTIVE);
       }
 
+      await lockLinkedUserLifecycle(tx, id);
       const oldLink = await tx.user.findFirst({
         where: { memberId: id, deletedAt: null },
         select: { id: true, role: true },
@@ -891,8 +922,13 @@ export class MembersService {
     await this.assertCanOrThrow(currentUser, 'user.update.status', { type: 'member', id });
 
     return this.prisma.$transaction(async (tx) => {
+      if (dto.status === UserStatus.DISABLED) {
+        await this.lastAdminProtection.acquireOpsAdminInvariantLock(tx);
+      }
+      await lockMemberLifecycle(tx, id);
       const member = await this.findMemberOrThrow(id, tx);
 
+      await lockLinkedUserLifecycle(tx, id);
       const linked = await tx.user.findFirst({
         where: { memberId: id, deletedAt: null },
         select: { id: true, status: true, role: true },
@@ -905,6 +941,10 @@ export class MembersService {
       // "此账号不归本轴管理"是更根本的判定。
       if (linked.role !== Role.USER) {
         throw new BizException(BizCode.MEMBER_ACCOUNT_ROLE_NOT_MANAGEABLE);
+      }
+
+      if (dto.status === UserStatus.ACTIVE && member.status !== MemberStatus.ACTIVE) {
+        throw new BizException(BizCode.MEMBER_INACTIVE);
       }
 
       if (dto.status === UserStatus.DISABLED) {
@@ -1003,20 +1043,21 @@ export class MembersService {
 
   // ============ 参与域生命周期收口⑤:一键离队编排(member offboard)============
 
-  // POST admin/v1/members/:id/offboard(v0.40.0):单事务四腿编排,一步完成"离队"。
+  // POST admin/v1/members/:id/offboard:单事务关闭队员身份与全部当前授权来源。
   // **直连 prisma、不复用 member-departments/members 其它 service 方法**(Prisma 嵌套交互事务不支持 +
-  // 防环,镜像 team-join-enrollment.service 一键入队先例)。四腿:
+  // 防环,镜像 team-join-enrollment.service 一键入队先例)。事务腿:
   //   ① member.status=INACTIVE(已 INACTIVE → skip,幂等);
   //   ② END 该队员**全部** ACTIVE memberships(全类型 PRIMARY/SECONDARY/TEMPORARY/SUPPORT,
   //      status=ENDED + endedAt + endedByUserId;无 active → 0 条,幂等);
   //   ③ 若有 linked live User(role=USER)且非 DISABLED → status=DISABLED + 撤销全部未撤销未过期
   //      refresh(revokedReason='admin-disable',镜像 updateAccountStatus 唯一必要副作用);无 linked
   //      账号 → 跳过账号腿正常完成;
-  //   ④ 写 **1 条**伞 audit `member.offboard`(resourceType='member',extra 记各腿实际发生计数)。
+  //   ④ REVOKE active 任职与分管，并 END+软删 USER/MEMBER/active assignment 主体的 active RoleBinding；
+  //   ⑤ 写 **1 条**伞 audit `member.offboard`(resourceType='member',extra 记各腿实际发生计数)。
   // 守卫(复用现成码,0 新 BizCode):member 不存在 → 15001;linked 账号 role≠USER → 15036
   // (先走用户轴处理,堵经队员轴绕过 last-SA / manage-user 护栏的提权,沿第三轮 review §F&A-1);
-  // linked 是操作者本人 → CANNOT_OPERATE_SELF。**不级联**任职/分管/role-bindings(账号已停无越权风险,
-  // 各有独立撤销端点);响应体回显残留 active 任职数 / 分管数(advisory 只读,提醒管理员)。
+  // linked 是操作者本人 → CANNOT_OPERATE_SELF。Member 行锁是跨实例 lifecycle 线性化点；所有可重新引入
+  // 账号/任职/分管/直接绑定的写路径先取同一锁，因此提交后不会残留旧授权来源。
   // 幂等:已 INACTIVE / 已 DISABLED / 无 active 归属重跑返 200,各腿 skip、extra 计数如实。
   async offboard(
     id: string,
@@ -1024,11 +1065,22 @@ export class MembersService {
     auditMeta: AuditMeta,
   ): Promise<MemberOffboardResponseDto> {
     await this.assertCanOrThrow(currentUser, 'member.offboard.record', { type: 'member', id });
+    return this.offboardCore(id, currentUser, auditMeta);
+  }
+
+  private async offboardCore(
+    id: string,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<MemberOffboardResponseDto> {
     return this.prisma.$transaction(async (tx) => {
+      await this.lastAdminProtection.acquireOpsAdminInvariantLock(tx);
+      await lockMemberLifecycle(tx, id);
       // 守卫:member 存在(不存在 / 软删 → 15001)。
       const member = await this.findMemberOrThrow(id, tx);
 
       // linked live 账号(含 role 用于护栏)。
+      await lockLinkedUserLifecycle(tx, id);
       const linked = await tx.user.findFirst({
         where: { memberId: id, deletedAt: null },
         select: { id: true, status: true, role: true },
@@ -1077,7 +1129,61 @@ export class MembersService {
         refreshTokensRevoked = revoked.count;
       }
 
-      // 残留 active 任职 / 分管(advisory 只读;不级联,提醒管理员另走独立撤销端点)。
+      // ④ 关闭全部当前授权来源。先锁后枚举 assignment ids，令 POSITION_ASSIGNMENT 主体绑定与
+      // 底层任职在同一事务终止；历史行全部保留。
+      const activeAssignments = await tx.organizationPositionAssignment.findMany({
+        where: { memberId: id, status: AssignmentStatus.ACTIVE, deletedAt: null },
+        select: { id: true },
+      });
+      const activeAssignmentIds = activeAssignments.map(({ id: assignmentId }) => assignmentId);
+
+      const revokedPositionAssignments = await tx.organizationPositionAssignment.updateMany({
+        where: {
+          id: { in: activeAssignmentIds },
+          status: AssignmentStatus.ACTIVE,
+          deletedAt: null,
+        },
+        data: {
+          status: AssignmentStatus.REVOKED,
+          revokedByUserId: currentUser.id,
+          endedAt: now,
+        },
+      });
+      const revokedSupervisions = await tx.organizationSupervisionAssignment.updateMany({
+        where: {
+          supervisorMemberId: id,
+          status: SupervisionStatus.ACTIVE,
+          deletedAt: null,
+        },
+        data: {
+          status: SupervisionStatus.REVOKED,
+          revokedByUserId: currentUser.id,
+          endedAt: now,
+        },
+      });
+
+      const principalOr: Prisma.RoleBindingWhereInput[] = [
+        { principalType: PrincipalType.MEMBER, principalId: id },
+      ];
+      if (linked) {
+        principalOr.push({ principalType: PrincipalType.USER, principalId: linked.id });
+      }
+      if (activeAssignmentIds.length > 0) {
+        principalOr.push({
+          principalType: PrincipalType.POSITION_ASSIGNMENT,
+          principalId: { in: activeAssignmentIds },
+        });
+      }
+      const endedRoleBindings = await tx.roleBinding.updateMany({
+        where: {
+          OR: principalOr,
+          status: BindingStatus.ACTIVE,
+          deletedAt: null,
+        },
+        data: { status: BindingStatus.ENDED, endedAt: now, deletedAt: now },
+      });
+
+      // 锁后残留探针：响应字段保持兼容，终态应恒为 0。
       const [residualActivePositionAssignments, residualActiveSupervisions] = await Promise.all([
         tx.organizationPositionAssignment.count({
           where: { memberId: id, status: 'ACTIVE', deletedAt: null },
@@ -1101,6 +1207,9 @@ export class MembersService {
           accountDisabled,
           refreshTokensRevoked,
           linkedUserId: linked?.id ?? null,
+          positionAssignmentsRevoked: revokedPositionAssignments.count,
+          supervisionsRevoked: revokedSupervisions.count,
+          roleBindingsEnded: endedRoleBindings.count,
           residualActivePositionAssignments,
           residualActiveSupervisions,
         },

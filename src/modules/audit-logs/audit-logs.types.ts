@@ -192,8 +192,8 @@ export type AuditLogEvent =
   // 仅含账号 status;extra 仅含 linkedUserId / refreshTokensRevoked,不含 phone/openid/secret。
   | 'member.account.status-change' // admin 从队员面启停关联 USER 账号(members.service:updateAccountStatus;与 user status 写 / refresh 撤销同事务)
   // 参与域生命周期收口⑤(v0.40.0;goal「参与域生命周期收口…」T4 显式预授权的唯一 +1 AuditLogEvent)。
-  // resourceType='member' / resourceId=memberId;一键离队单事务四腿的伞事件(一条留痕记各腿实际计数)。
-  | 'member.offboard' // admin 一键离队(members.service: offboard 1 处;extra.{memberDeactivated,membershipsEnded,accountDisabled,refreshTokensRevoked,linkedUserId,residualActivePositionAssignments,residualActiveSupervisions})
+  // resourceType='member' / resourceId=memberId;一键离队关闭全部当前授权来源的伞事件。
+  | 'member.offboard' // admin 一键离队(members.service: offboard/offboardCore;extra 含 member/归属/账号/refresh/任职/分管/绑定实际计数与锁后残留探针)
   // RBAC 授权配置写面审计留痕补齐(2026-07-10;第三轮全仓 review v0.38.0 §F&A-2 →
   // NEXT_TASKS P1-19;冻结报告 docs/archive/reviews/full-repo-first-principles-adversarial-review-v0.38.0.md)。
   // 此前 RBAC 授权模型自身的运行时变更(RbacRole 建/改/软删、RolePermission 授予/撤销、Permission CRUD)

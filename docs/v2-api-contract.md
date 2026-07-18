@@ -538,7 +538,7 @@ PATCH /api/v2/members/:id/status
   入参:UpdateMemberStatusDto { status: 'ACTIVE' | 'INACTIVE' }
   出参:MemberResponseDto
   权限:ADMIN / SUPER_ADMIN
-  备注:切换为 INACTIVE 不自动解除部门归属(由运营人工 DELETE /:memberId/department)
+  备注:切换为 INACTIVE 时与一键离队共用同一事务核心，结束全部 active 归属、停用关联账号并撤 refresh、撤销任职/分管并结束 USER/MEMBER/POSITION_ASSIGNMENT 的 active RoleBinding；切回 ACTIVE 不自动恢复任何历史授权来源
   错误码:MEMBER_NOT_FOUND
 
 DELETE /api/v2/members/:id

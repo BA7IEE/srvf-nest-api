@@ -168,7 +168,7 @@ export class MembersController {
 
   @Patch(':id/status')
   @ApiOperation({
-    summary: '切换队员 status(ACTIVE↔INACTIVE);不自动解除部门归属 [rbac: member.update.status]',
+    summary: '切换队员 status；置 INACTIVE 时同步结束全部当前授权来源 [rbac: member.update.status]',
   })
   @ApiWrappedOkResponse(MemberResponseDto)
   @ApiBizErrorResponse(
@@ -181,8 +181,9 @@ export class MembersController {
     @Param() params: IdParamDto,
     @Body() dto: UpdateMemberStatusDto,
     @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
   ): Promise<MemberResponseDto> {
-    return this.service.updateStatus(params.id, dto, currentUser);
+    return this.service.updateStatus(params.id, dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Delete(':id')
@@ -334,12 +335,12 @@ export class MembersController {
   }
 
   // 参与域生命周期收口⑤(v0.40.0):一键离队编排。POST(action 非幂等更新语义);无 body;
-  // 单事务四腿(member INACTIVE + END 全部 active 归属 + 停用/撤 refresh linked 账号 + 1 条伞 audit);
-  // 响应回显各腿计数 + 残留 active 任职/分管(advisory)。
+  // 单事务关闭 member、全部 active 归属、linked 账号/refresh、任职、分管与直接 RoleBinding，
+  // 并写 1 条伞 audit；响应中的残留数是锁后不变式探针，正常终态恒为 0。
   @Post(':id/offboard')
   @ApiOperation({
     summary:
-      '一键离队(INACTIVE + 结束全部归属 + 停用关联账号并撤 refresh;不级联撤任职/分管,残留数回显) [rbac: member.offboard.record]',
+      '一键离队并结束全部当前授权来源(归属/账号/任职/分管/直接绑定) [rbac: member.offboard.record]',
   })
   @ApiWrappedOkResponse(MemberOffboardResponseDto)
   @ApiBizErrorResponse(

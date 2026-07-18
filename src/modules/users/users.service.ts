@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, Role, SmsPurpose, User, UserStatus } from '@prisma/client';
+import { MemberStatus, Prisma, Role, SmsPurpose, User, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
@@ -10,6 +10,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { StepUpAction } from '../auth/auth.dto';
 import { IdentityStepUpService } from '../auth/identity-step-up.service';
+import { lockMemberLifecycle, lockLiveUserLifecycle } from '../members/member-lifecycle-lock';
 import { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
 import { RbacService } from '../permissions/rbac.service';
 import { SmsCodeService } from '../sms/sms-code.service';
@@ -195,11 +196,13 @@ export class UsersService {
     return user;
   }
 
-  // 同上,但只返回管理校验所需字段(role/status),少一次完整 select 拷贝。
-  private async findRawByIdOrThrow(id: string): Promise<Pick<User, 'id' | 'role' | 'status'>> {
+  // 同上,但只返回管理校验与 linked-member lifecycle 锁所需字段。
+  private async findRawByIdOrThrow(
+    id: string,
+  ): Promise<Pick<User, 'id' | 'role' | 'status' | 'memberId'>> {
     const user = await this.prisma.user.findFirst({
       where: this.notDeletedWhere({ id }),
-      select: { id: true, role: true, status: true },
+      select: { id: true, role: true, status: true, memberId: true },
     });
     if (!user) throw new BizException(BizCode.USER_NOT_FOUND);
     return user;
@@ -603,9 +606,39 @@ export class UsersService {
       this.assertNotSelf(currentUser, id);
     }
 
-    // 最后一个保护:目标当前是 SUPER_ADMIN 且新 status === DISABLED
+    // linked account 的启停与 member offboard 共用 Member→User 行锁顺序。锁后重读既防
+    // offboard/enable 穿透，也保证审计 before 与实际被写行一致。削权时必须先按
+    // last-SUPER_ADMIN → last-ops-admin → Member → User 取锁，避免互禁事务在 audit actor
+    // 外键与 advisory lock 之间形成环。
     return this.prisma.$transaction(async (tx) => {
-      if (target.role === Role.SUPER_ADMIN && dto.status === UserStatus.DISABLED) {
+      if (dto.status === UserStatus.DISABLED) {
+        if (target.role === Role.SUPER_ADMIN) {
+          await this.lastAdminProtection.acquireSuperAdminInvariantLock(tx);
+        }
+        await this.lastAdminProtection.acquireOpsAdminInvariantLock(tx);
+      }
+      if (target.memberId) {
+        await lockMemberLifecycle(tx, target.memberId);
+      }
+      await lockLiveUserLifecycle(tx, id);
+      const lockedTarget = await tx.user.findFirst({
+        where: this.notDeletedWhere({ id }),
+        select: { id: true, role: true, status: true, memberId: true },
+      });
+      if (!lockedTarget) throw new BizException(BizCode.USER_NOT_FOUND);
+      this.assertCanManageUser(currentUser, lockedTarget);
+
+      if (dto.status === UserStatus.ACTIVE && lockedTarget.memberId) {
+        const member = await tx.member.findFirst({
+          where: { id: lockedTarget.memberId, deletedAt: null },
+          select: { status: true },
+        });
+        if (!member || member.status !== MemberStatus.ACTIVE) {
+          throw new BizException(BizCode.MEMBER_INACTIVE);
+        }
+      }
+
+      if (lockedTarget.role === Role.SUPER_ADMIN && dto.status === UserStatus.DISABLED) {
         await this.lastAdminProtection.assertCanRemoveSuperAdmin(tx, id);
       }
       if (dto.status === UserStatus.DISABLED) {
@@ -636,7 +669,7 @@ export class UsersService {
         resourceType: 'user',
         resourceId: id,
         meta: auditMeta,
-        before: { status: target.status },
+        before: { status: lockedTarget.status },
         after: { status: updated.status },
         tx,
       });

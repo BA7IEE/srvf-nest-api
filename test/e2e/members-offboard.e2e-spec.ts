@@ -1,5 +1,17 @@
 import type { INestApplication } from '@nestjs/common';
-import { MemberStatus, MembershipStatus, MembershipType, Role, UserStatus } from '@prisma/client';
+import {
+  AssignmentStatus,
+  BindingScopeType,
+  BindingStatus,
+  MemberStatus,
+  MembershipStatus,
+  MembershipType,
+  PositionCategory,
+  PrincipalType,
+  Role,
+  SupervisionStatus,
+  UserStatus,
+} from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -20,11 +32,12 @@ import { createTestApp } from '../setup/test-app';
 // - 守卫:member 不存在 15001 / linked 账号 role≠USER(提权后)15036
 //   (CANNOT_OPERATE_SELF 防御性守卫:role 前置校验使其在正常 RBAC 流程下不可达 —— 持 offboard 码者
 //    role 必非 USER,而 linked===self 要求 currentUser 即那条 USER 行,矛盾;不单测,由 15036 覆盖近似面)
-// - 成功四腿:member INACTIVE + END 全部 active 归属 + 停用 linked 账号并撤 refresh + 1 条 member.offboard audit;
+// - 成功闭环:member INACTIVE + END 全部 active 归属 + REVOKE 任职/分管 + END direct bindings
+//   + 停用 linked 账号并撤 refresh + 1 条 member.offboard audit;
 //   offboard 后该账号 access(jwt 每请求查库拦 DISABLED)与 refresh 双双 401
 // - 幂等:已 offboard 重跑 200,各腿 skip(memberDeactivated/accountDisabled false,membershipsEnded 0)
 // - 无 linked 账号:账号腿跳过,仍 200
-// - residual advisory:残留 active 分管回显(不级联撤分管)
+// - lifecycle terminal:残留任职/分管恒 0，旧 direct authz 在显式重启 member/account 后也不恢复
 
 const FIXED_CODE = '888888'; // DEV_STUB 固定验证码
 
@@ -36,6 +49,8 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
   let opsAdminOnlyAuth: string;
   let userAuth: string;
   let orgId: string;
+  let positionId: string;
+  let bizAdminRoleId: string;
 
   let memberSeq = 0;
   async function newMember(
@@ -109,6 +124,7 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
 
     // biz-admin 持 offboard 码;ops-admin 不持(反向绑定自证)。
     const bizSeed = await seedBizAdminPermissionsAndRole(app);
+    bizAdminRoleId = bizSeed.bizAdminRoleId;
     await grantBizAdminToUser(app, bizAdmin.id, bizSeed.bizAdminRoleId);
     const rbacSeed = await seedRbacPermissionsAndOpsAdmin(app);
     await grantOpsAdminToUser(app, opsAdmin.id, rbacSeed.opsAdminRoleId);
@@ -124,6 +140,16 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
       select: { id: true },
     });
     orgId = org.id;
+    const position = await prisma.organizationPosition.create({
+      data: {
+        code: 'offboard-position',
+        name: '离队测试职务',
+        categoryCode: PositionCategory.LEADER,
+        allowMultiple: true,
+      },
+      select: { id: true },
+    });
+    positionId = position.id;
   });
 
   afterAll(async () => {
@@ -176,13 +202,48 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
     });
   });
 
-  // ============ 成功四腿 + access/refresh 401 ============
-  describe('成功:四腿 + 离队后 access/refresh 双双 401', () => {
-    it('member+account+归属 → offboard → INACTIVE/ENDED/DISABLED + 撤 refresh + audit;access/refresh 401', async () => {
+  // ============ 成功完整闭环 + access/refresh 401 ============
+  describe('成功:全部权限来源终止 + 离队后 access/refresh 双双 401', () => {
+    it('member+account+归属+任职+分管+三类 direct binding → 全部终止且旧 authz 不恢复', async () => {
       const m = await newMember();
       const phone = '13800009101';
       const userId = await grantAccount(m.id, phone);
       await seedPrimaryMembership(m.id);
+      const assignment = await prisma.organizationPositionAssignment.create({
+        data: {
+          organizationId: orgId,
+          positionId,
+          memberId: m.id,
+          startedAt: new Date(),
+        },
+        select: { id: true },
+      });
+      await prisma.organizationSupervisionAssignment.create({
+        data: { supervisorMemberId: m.id, organizationId: orgId, startedAt: new Date() },
+      });
+      await prisma.roleBinding.createMany({
+        data: [
+          {
+            principalType: PrincipalType.USER,
+            principalId: userId,
+            roleId: bizAdminRoleId,
+            scopeType: BindingScopeType.GLOBAL,
+          },
+          {
+            principalType: PrincipalType.MEMBER,
+            principalId: m.id,
+            roleId: bizAdminRoleId,
+            scopeType: BindingScopeType.SELF,
+          },
+          {
+            principalType: PrincipalType.POSITION_ASSIGNMENT,
+            principalId: assignment.id,
+            roleId: bizAdminRoleId,
+            scopeType: BindingScopeType.ORGANIZATION_TREE,
+            scopeOrgId: orgId,
+          },
+        ],
+      });
       const { accessToken, refreshToken } = await loginMember(phone);
 
       // 离队前 access 可用。
@@ -218,6 +279,29 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
       });
       expect(endedMembership.status).toBe(MembershipStatus.ENDED);
       expect(endedMembership.endedAt).not.toBeNull();
+      const assignments = await prisma.organizationPositionAssignment.findMany({
+        where: { memberId: m.id },
+      });
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0].status).toBe(AssignmentStatus.REVOKED);
+      expect(assignments[0].revokedByUserId).not.toBeNull();
+      const supervisions = await prisma.organizationSupervisionAssignment.findMany({
+        where: { supervisorMemberId: m.id },
+      });
+      expect(supervisions).toHaveLength(1);
+      expect(supervisions[0].status).toBe(SupervisionStatus.REVOKED);
+      const bindings = await prisma.roleBinding.findMany({
+        where: {
+          OR: [
+            { principalType: PrincipalType.USER, principalId: userId },
+            { principalType: PrincipalType.MEMBER, principalId: m.id },
+            { principalType: PrincipalType.POSITION_ASSIGNMENT, principalId: assignment.id },
+          ],
+        },
+      });
+      expect(bindings).toHaveLength(3);
+      expect(bindings.every((binding) => binding.status === BindingStatus.ENDED)).toBe(true);
+      expect(bindings.every((binding) => binding.deletedAt !== null)).toBe(true);
 
       // audit member.offboard 一条。
       const audits = await prisma.auditLog.findMany({
@@ -236,6 +320,15 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
         .post('/api/auth/v1/refresh')
         .send({ refreshToken });
       expect(refreshRes.status).toBe(401);
+
+      // 即使 fixture 显式重启 Member/User（绕过业务 API），旧 direct bindings 也不会恢复。
+      await prisma.member.update({ where: { id: m.id }, data: { status: MemberStatus.ACTIVE } });
+      await prisma.user.update({ where: { id: userId }, data: { status: UserStatus.ACTIVE } });
+      const permissions = await request(httpServer(app))
+        .get('/api/system/v1/rbac/me/permissions')
+        .set('Authorization', `Bearer ${accessToken}`);
+      expect(permissions.status).toBe(200);
+      expect(permissions.body.data.permissions).not.toContain('member.offboard.record');
     });
   });
 
@@ -276,21 +369,78 @@ describe('参与域生命周期收口⑤:POST /api/admin/v1/members/:id/offboard
     });
   });
 
-  // ============ residual advisory ============
-  describe('residual advisory(不级联)', () => {
-    it('残留 active 分管 → residualActiveSupervisions 回显 > 0(offboard 不级联撤分管)', async () => {
+  // ============ lifecycle terminal ============
+  describe('lifecycle terminal(级联结束授权来源)', () => {
+    it('active 分管 → offboard 后 REVOKED，兼容 residual 字段回显 0', async () => {
       const m = await newMember();
       await prisma.organizationSupervisionAssignment.create({
         data: { supervisorMemberId: m.id, organizationId: orgId, startedAt: new Date() },
       });
       const res = await offboard(m.id, bizAdminAuth);
       expect(res.status).toBe(201);
-      expect(res.body.data.residualActiveSupervisions).toBeGreaterThanOrEqual(1);
-      // 分管行未被级联撤销(仍 active)。
+      expect(res.body.data.residualActiveSupervisions).toBe(0);
       const stillActive = await prisma.organizationSupervisionAssignment.count({
         where: { supervisorMemberId: m.id, status: 'ACTIVE', deletedAt: null },
       });
-      expect(stillActive).toBeGreaterThanOrEqual(1);
+      expect(stillActive).toBe(0);
+      const revoked = await prisma.organizationSupervisionAssignment.findFirstOrThrow({
+        where: { supervisorMemberId: m.id },
+      });
+      expect(revoked.status).toBe(SupervisionStatus.REVOKED);
+    });
+
+    it('真并发:offboard vs enable 不得留下 Member INACTIVE + User ACTIVE', async () => {
+      const m = await newMember();
+      const userId = await grantAccount(m.id, '13800009301');
+      await prisma.user.update({ where: { id: userId }, data: { status: UserStatus.DISABLED } });
+
+      const [offboardRes, enableRes] = await Promise.all([
+        offboard(m.id, bizAdminAuth),
+        request(httpServer(app))
+          .patch(`/api/admin/v1/members/${m.id}/account/status`)
+          .set('Authorization', superAdminAuth)
+          .send({ status: UserStatus.ACTIVE }),
+      ]);
+
+      expect(offboardRes.status).toBe(201);
+      expect([200, 409]).toContain(enableRes.status);
+      const [member, user] = await Promise.all([
+        prisma.member.findUniqueOrThrow({ where: { id: m.id } }),
+        prisma.user.findUniqueOrThrow({ where: { id: userId } }),
+      ]);
+      expect(member.status).toBe(MemberStatus.INACTIVE);
+      expect(user.status).toBe(UserStatus.DISABLED);
+    });
+
+    it('真并发:offboard vs MEMBER direct-binding create 不得留下 active authz source', async () => {
+      const m = await newMember();
+
+      const [offboardRes, createRes] = await Promise.all([
+        offboard(m.id, bizAdminAuth),
+        request(httpServer(app))
+          .post('/api/admin/v1/role-bindings')
+          .set('Authorization', superAdminAuth)
+          .send({
+            principalType: PrincipalType.MEMBER,
+            principalId: m.id,
+            roleId: bizAdminRoleId,
+            scopeType: BindingScopeType.GLOBAL,
+          }),
+      ]);
+
+      expect(offboardRes.status).toBe(201);
+      expect([201, 409]).toContain(createRes.status);
+      const member = await prisma.member.findUniqueOrThrow({ where: { id: m.id } });
+      expect(member.status).toBe(MemberStatus.INACTIVE);
+      const activeBindings = await prisma.roleBinding.count({
+        where: {
+          principalType: PrincipalType.MEMBER,
+          principalId: m.id,
+          status: BindingStatus.ACTIVE,
+          deletedAt: null,
+        },
+      });
+      expect(activeBindings).toBe(0);
     });
   });
 });

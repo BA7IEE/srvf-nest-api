@@ -37,6 +37,7 @@ const argN = (m: jest.Mock, n = 0): CallArg => (m.mock.calls as unknown[][])[n]?
 // 规则匹配 requireMembership=false;count 恒 0(无 dup / 无在任 / 无并发);create 回一行。
 function makeTx() {
   return {
+    $queryRaw: jest.fn().mockResolvedValue([{ id: 'm1memberid0' }]),
     organization: {
       findFirst: jest.fn().mockResolvedValue({ id: 'org1', nodeTypeCode: 'rescue-team' }),
     },
@@ -45,7 +46,7 @@ function makeTx() {
         .fn()
         .mockResolvedValue({ id: 'p1', allowMultiple: true, allowConcurrent: true }),
     },
-    member: { findFirst: jest.fn().mockResolvedValue({ id: 'm1' }) },
+    member: { findFirst: jest.fn().mockResolvedValue({ id: 'm1', status: 'ACTIVE' }) },
     organizationPositionRule: {
       findFirst: jest.fn().mockResolvedValue({ requireMembership: false }),
     },
@@ -127,6 +128,7 @@ describe('PositionAssignmentsService.create', () => {
     expect(data.appointedByUserId).toBe('u1');
     expect(data.isConcurrent).toBe(true);
     expect(res.status).toBe('ACTIVE');
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
     expect(auditLogMock).toHaveBeenCalled();
   });
 
