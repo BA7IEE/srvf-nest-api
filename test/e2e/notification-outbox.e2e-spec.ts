@@ -173,7 +173,7 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
   it('expired lease 可回收且旧 fence 不能 ack 新 owner', async () => {
     const refs = await createRefs();
     await outbox.enqueue(input(refs));
-    const firstNow = new Date('2026-07-18T00:00:00.000Z');
+    const firstNow = new Date();
     const [first] = await outbox.claim('worker-a', { now: firstNow, leaseMs: 1000 });
     const [second] = await outbox.claim('worker-b', {
       now: new Date(firstNow.getTime() + 1001),
@@ -210,7 +210,7 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
   it('provider 成功后 ack 前崩溃会在 lease reclaim 后重复 Effect，随后新 fence 才可 ack', async () => {
     const refs = await createRefs();
     await outbox.enqueue(input(refs));
-    const firstNow = new Date('2026-07-18T00:00:00.000Z');
+    const firstNow = new Date();
     const [first] = await outbox.claim('worker-before-crash', {
       now: firstNow,
       leaseMs: 1000,
@@ -385,7 +385,7 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       data: { memberId: refs.memberIds[0], templateId, availableCount: 2 },
     });
     await outbox.enqueue(input(refs));
-    const firstNow = new Date('2026-07-18T00:00:00.000Z');
+    const firstNow = new Date();
     const [first] = await outbox.claim('prepare-a', { now: firstNow, leaseMs: 1000 });
     await expect(
       outbox.markPrepared(first, async (tx) => {
