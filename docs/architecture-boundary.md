@@ -159,8 +159,8 @@ Use an Effect when a business action triggers an **external or deferred side eff
 - DTO presentation
 
 **Current status**:
-- **First real Effect class is now active**: [`src/modules/notifications/notification-dispatcher.ts`](../src/modules/notifications/notification-dispatcher.ts)(`NotificationDispatcher`,统一通知 GAP-005 S3,2026-06-25)—— 真实副作用路径 = 微信订阅消息外部 API。`dispatchTargeted(...)` 由 producer(招新发号 / 入队)在业务事务 **commit 之后**直调,建已发布定向通知行 + 派站内/微信渠道;外部 HTTP 在 producer 事务之外(§6.2),Effect 不持有主事务、不做核心状态跃迁、不做 DTO 呈现。
-- `eventPlaceholder('attendance.recorded')` remains a placeholder inside the current attendance flow(沿 [`docs/participation-bounded-context.md §4`](participation-bounded-context.md) finalApprove step 9 描述);活动/考勤触发接入派发器 = 通知模块 S4(待立项)。
+- **First real Effect class is now active**: [`src/modules/notifications/notification-dispatcher.ts`](../src/modules/notifications/notification-dispatcher.ts)(`NotificationDispatcher`,统一通知 GAP-005 S3,2026-06-25)—— 真实副作用路径 = 微信订阅消息外部 API。招新发号/入队只在主业务 transaction 内写 `notification.targeted@1` intent，独立 outbox worker 提交后调用 `dispatchTargeted(...)`；外部 HTTP 始终在主业务事务之外(§6.2)，Effect 不持有主事务、不做核心状态跃迁、不做 DTO 呈现。
+- `eventPlaceholder('attendance.recorded')` remains a domain marker inside the attendance flow；participation 通知 producer 已接 S4 dispatcher，但仍是 commit 后 best-effort，属于下一批 outbox 接线范围。
 - **Do not** introduce *additional* Effect classes until a real side-effect path exists(短信 / 跨系统集成等);新通知类型先回评审,不在模块内自由生长。
 
 ---
@@ -203,7 +203,7 @@ The service should **not** become a dumping ground for:
 | Calculator | [`src/modules/attendances/contribution-calculator.ts`](../src/modules/attendances/contribution-calculator.ts) | **active**:accepted adjacent pattern;not one of the six D-7 names but follows the same extraction discipline(纯计算、无 Prisma 写、无 audit) |
 | Presenter | [`src/modules/attendances/attendance-presenter.ts`](../src/modules/attendances/attendance-presenter.ts) | **active**(P1-4 第一刀,2026-06-10 方案 A 拍板抽出;select 查询策略不随迁,留 service) |
 | QueryService | none required yet | **deferred** |
-| Effect | [`src/modules/notifications/notification-dispatcher.ts`](../src/modules/notifications/notification-dispatcher.ts) | **active**(GAP-005 S3 抽出;首个真实 Effect = 微信外部 API;`eventPlaceholder` 仍占位 attendance 待 S4) |
+| Effect | [`src/modules/notifications/notification-dispatcher.ts`](../src/modules/notifications/notification-dispatcher.ts) | **active**(GAP-005 S3 抽出;首个真实 Effect = 微信外部 API;招新/入队 targeted intent 由 outbox worker 驱动) |
 
 ---
 

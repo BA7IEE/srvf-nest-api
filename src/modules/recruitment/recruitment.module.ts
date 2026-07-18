@@ -35,7 +35,7 @@ import { RecruitmentStatsService } from './recruitment-stats.service';
     RealnameModule,
     StorageModule,
     SmsModule, // 招新四期 S4a:复用 SmsCodeService(RECRUITMENT_BIND 发码/验码)
-    NotificationsModule, // 统一通知 S3:发号定向通知(NotificationDispatcher;producer → notifications 单向)
+    NotificationsModule, // durable outbox producer: 发号事务与 targeted intent 同事务
   ],
   controllers: [
     RecruitmentPublicController,

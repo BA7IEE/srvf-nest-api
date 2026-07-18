@@ -13,4 +13,5 @@
 
 - 证件图、签名图、OCR 字段与裁剪图均按 L3/PII 既有分级处理,不得写日志、audit、fixture 明文或公开响应。
 - 不因文件校验收口改变既有 OCR 六分流、验证码消费、报名状态机、证书审核状态或留存/清理语义。
+- batch promote 与 promote-single 必须把 `notification.targeted@1` intent 与发号/建档/清敏/audit 放在同一 PostgreSQL transaction；eventKey 绑定 recruitment application id，enqueue 失败必须整个业务回滚。
 - 新 mobile/open DTO 不得从 Admin DTO 派生;Open 入口只做已冻结公开契约内的能力,不得顺手扩大 surface。

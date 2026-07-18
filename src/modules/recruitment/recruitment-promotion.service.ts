@@ -16,8 +16,10 @@ import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_CHANNEL_WECHAT,
   NOTIFICATION_TYPE_RECRUITMENT,
+  OUTBOX_EVENT_TARGETED_NOTIFICATION,
+  OUTBOX_PAYLOAD_VERSION,
 } from '../notifications/notification.constants';
-import { NotificationDispatcher } from '../notifications/notification-dispatcher';
+import { NotificationOutboxService } from '../notifications/notification-outbox.service';
 import { RbacService } from '../permissions/rbac.service';
 import { maskPhone } from '../sms/sms.constants';
 import { STORAGE_PROVIDER } from '../storage/storage.constants';
@@ -92,8 +94,8 @@ export class RecruitmentPromotionService {
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
-    // 统一通知 S3:发号定向通知(producer → notifications **单向**直调,D-N5 无事件总线;防环:绝不被 notifications 回调)。
-    private readonly notificationDispatcher: NotificationDispatcher,
+    // Durable outbox producer: intent 与发号业务写共用同一 PostgreSQL transaction。
+    private readonly notificationOutbox: NotificationOutboxService,
     // 十项收口刀C:主体裁剪图 blob 无档案落点,promote commit 后 best-effort 删(safeDeleteCropBlob)
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
@@ -194,6 +196,7 @@ export class RecruitmentPromotionService {
               meta,
               now,
             );
+            await this.enqueuePromotionNotification(tx, a.id, item);
             out.push(item);
           } catch (err) {
             // memberNo / openid / username @unique 冲突(撞既有号 or 并发竞态)→ 整批回滚不跳号(28042)
@@ -212,10 +215,6 @@ export class RecruitmentPromotionService {
       `recruitment promote cycle=${cycleId} promoted=${promoted.length} skipped=${skipped.length}`,
     );
 
-    // 发号定向通知(统一通知 S3;评审稿 §6.4 + 招新 §9.1):**事务 commit 之后、事务外**对每个新建 member 派发。
-    // **绝不破坏 promote 行为锁**(号段连续无空洞 / 全或无 / 幂等已在事务内完成并 commit);派发失败只记日志。
-    await this.dispatchPromotionNotifications(promoted);
-
     // 十项收口刀C:主体裁剪图 blob 无档案落点,commit 后按事务前快照 key best-effort 删
     // (行内 key 已在事务中清空;失败仅告警,不阻断已 commit 的发号)。
     for (const a of promotable) {
@@ -231,25 +230,32 @@ export class RecruitmentPromotionService {
     };
   }
 
-  // 逐个新建 member 派发「已发号(已转志愿者 / 待入队)」定向通知(站内 + 微信)。
-  // **try-catch 永不抛**:任一 member 派发失败(含 dispatcher 内部异常)只记日志,不阻断其余、不破坏 promote 既有行为。
-  // payload(§9.1):memberNo + 发起入队入口;渠道 = 站内恒达 + 微信(新志愿者通常无 quota → 微信 skipped no-quota)。
-  private async dispatchPromotionNotifications(promoted: PromotedItemDto[]): Promise<void> {
-    for (const item of promoted) {
-      try {
-        await this.notificationDispatcher.dispatchTargeted({
+  // 稳定事件身份绑定 recruitment application：重试或重复请求只能得到同一 intent。
+  // payload 仅含收件 memberId 与已冻结模板数据；enqueue 内部复用中心 sanitizer / exact parser。
+  private async enqueuePromotionNotification(
+    tx: Prisma.TransactionClient,
+    applicationId: string,
+    item: PromotedItemDto,
+  ): Promise<void> {
+    await this.notificationOutbox.enqueue(
+      {
+        eventKey: `recruitment-promotion:${applicationId}`,
+        eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION,
+        payloadVersion: OUTBOX_PAYLOAD_VERSION,
+        payload: {
           recipientMemberId: item.memberId,
           notificationTypeCode: NOTIFICATION_TYPE_RECRUITMENT,
           title: '已发放永久编号',
           body: `您已转为志愿者,永久编号 ${item.memberNo}。请进入小程序「申请入队」完成入队。`,
           channels: [NOTIFICATION_CHANNEL_IN_APP, NOTIFICATION_CHANNEL_WECHAT],
-        });
-      } catch (err) {
-        this.logger.error(
-          `promote notification dispatch failed (member=${item.memberId}): ${(err as Error).message}`,
-        );
-      }
-    }
+        },
+        aggregateType: 'recruitment_application',
+        aggregateId: applicationId,
+        destinationType: 'member',
+        destinationRef: item.memberId,
+      },
+      tx,
+    );
   }
 
   // 招新闭环优化 S6(评审稿 §8.2):一键发号前预检 —— **纯读**,不写、不改 promote 结论。
@@ -423,7 +429,7 @@ export class RecruitmentPromotionService {
         }
         const memberNo = formatMemberNo(bumped.year, bumped.memberNoSeq);
         try {
-          return await this.buildOnePromotion(
+          const item = await this.buildOnePromotion(
             tx,
             app,
             memberNo,
@@ -435,6 +441,8 @@ export class RecruitmentPromotionService {
             now,
             'promote-single',
           );
+          await this.enqueuePromotionNotification(tx, app.id, item);
+          return item;
         } catch (err) {
           // 撞既有 memberNo / openid / phone / username @unique → 回滚不跳号(28042,与批量同码)
           if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -449,8 +457,6 @@ export class RecruitmentPromotionService {
     this.logger.log(
       `recruitment promote-single app=${app.id} member=${promoted.memberId} channel=${channel}`,
     );
-    // 通知派发沿批量语义(commit 后事务外;失败只记日志不阻断)
-    await this.dispatchPromotionNotifications([promoted]);
     // 十项收口刀C:主体裁剪图 blob 清理沿批量语义(commit 后按事务前快照 key)
     await this.safeDeleteCropBlob(app.idCardCropImageKey);
 

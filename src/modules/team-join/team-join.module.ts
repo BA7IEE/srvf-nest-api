@@ -24,7 +24,7 @@ import { TeamJoinEnrollmentService } from './team-join-enrollment.service';
     PermissionsModule,
     AuditLogsModule,
     UsersModule,
-    NotificationsModule, // 统一通知 S3:入队结果定向通知(NotificationDispatcher;producer → notifications 单向)
+    NotificationsModule, // durable outbox producer: 入队业务与 targeted intent 同事务
   ],
   controllers: [
     TeamJoinCyclesController,

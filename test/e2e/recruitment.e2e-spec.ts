@@ -6,7 +6,8 @@ import {
   ID_CARD_IMAGE_MAX_BYTES,
   hashPhoneVerificationToken,
 } from '../../src/modules/recruitment/recruitment.constants';
-import { NotificationDispatcher } from '../../src/modules/notifications/notification-dispatcher';
+import { NotificationOutboxService } from '../../src/modules/notifications/notification-outbox.service';
+import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -304,6 +305,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     await prisma.notificationDelivery.deleteMany({});
     await prisma.notificationRead.deleteMany({});
     await prisma.notification.deleteMany({});
+    await prisma.notificationOutboxIntent.deleteMany({});
     // F7:promote 现为证书图类别建 pending Certificate(FK→Member Restrict,须先于 member 清)
     await prisma.certificate.deleteMany({});
     await prisma.member.deleteMany({});
@@ -2560,48 +2562,93 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
 
   // ===== 统一通知 S3(评审稿 §6.4 / 招新 §9.1):发号 → 定向通知(站内 + 微信)=====
 
-  it('㉖d(S3) 发号 → 每个新建 member 收一条定向 system 通知(directed/recruitment/含 wechat + memberNo)', async () => {
+  it('㉖d(outbox) 发号与每个 targeted@1 intent 同次 commit', async () => {
     const cycle = await openCycle();
     await toPublicity('s3-z', ID_MATCH_A, '张三');
     await toPublicity('s3-l', ID_MATCH_B, '李四');
 
     const res = await promote(cycle.id);
     expect(res.body.data.promotedCount).toBe(2);
-    const promoted = res.body.data.promoted as { memberId: string; memberNo: string }[];
+    const promoted = res.body.data.promoted as Array<{
+      applicationId: string;
+      memberId: string;
+      memberNo: string;
+    }>;
 
     for (const p of promoted) {
-      const notifs = await prisma.notification.findMany({
-        where: { recipientMemberId: p.memberId },
+      const intents = await prisma.notificationOutboxIntent.findMany({
+        where: { destinationRef: p.memberId },
       });
-      expect(notifs).toHaveLength(1);
-      expect(notifs[0]).toMatchObject({
-        audienceType: 'directed',
-        sourceType: 'system',
-        statusCode: 'published',
-        notificationTypeCode: 'recruitment',
-        authorUserId: null,
+      expect(intents).toHaveLength(1);
+      expect(intents[0]).toMatchObject({
+        eventKey: `recruitment-promotion:${p.applicationId}`,
+        eventType: 'notification.targeted',
+        payloadVersion: 1,
+        aggregateType: 'recruitment_application',
+        destinationRef: p.memberId,
+        status: 'pending',
       });
-      expect(notifs[0].channels).toEqual(['in-app', 'wechat']); // 发号:站内 + 微信
-      expect(notifs[0].body).toContain(p.memberNo); // payload:memberNo
+      expect(intents[0].payload).toMatchObject({
+        recipientMemberId: p.memberId,
+        channels: ['in-app', 'wechat'],
+      });
+      const payload = intents[0].payload as Record<string, unknown>;
+      expect(Object.keys(payload).sort()).toEqual([
+        'body',
+        'channels',
+        'notificationTypeCode',
+        'recipientMemberId',
+        'title',
+      ]);
+      const serialized = JSON.stringify(payload);
+      expect(serialized).toContain(p.memberNo);
+      expect(serialized).not.toContain('dev-openid');
+      expect(serialized).not.toMatch(/1[3-9]\d{9}/);
+      expect(serialized).not.toContain('张三');
+      expect(serialized).not.toContain('李四');
+      expect(serialized).not.toContain(ID_MATCH_A);
+      expect(serialized).not.toContain(ID_MATCH_B);
+    }
+
+    // 重复 HTTP 请求不得生成新 intent；worker 反复 drain 只能为每个 member 建一条站内 Effect。
+    const repeated = await promote(cycle.id);
+    expect(repeated.status).toBe(200);
+    expect(repeated.body.data.promotedCount).toBe(0);
+    expect(await prisma.notificationOutboxIntent.count()).toBe(2);
+    const worker = app.get(NotificationOutboxWorker);
+    expect(await worker.drainOnce()).toMatchObject({ claimed: 2, succeeded: 2 });
+    await worker.drainOnce(); // 消费 targeted handler 派生的 wechat child，不得重复建站内行。
+    for (const p of promoted) {
+      expect(await prisma.notification.count({ where: { recipientMemberId: p.memberId } })).toBe(1);
     }
   });
 
-  it('㉖e(S3) 派发失败注入(dispatcher 抛错)→ **promote 仍成功**(号段连续 + member 建出;行为锁未破)', async () => {
+  it('㉖e(outbox mutation) batch 第二个 enqueue 失败→前一个 intent 与整批发号同时回滚', async () => {
     const cycle = await openCycle();
-    await toPublicity('s3-err', ID_MATCH_A, '张三');
+    await toPublicity('s3-err-a', ID_MATCH_A, '张三');
+    await toPublicity('s3-err-b', ID_MATCH_B, '李四');
 
-    // spy 同一 NotificationDispatcher 单例(producer 注入同实例)→ 派发每次抛
-    const dispatcher = app.get(NotificationDispatcher);
+    const outbox = app.get(NotificationOutboxService);
+    const originalEnqueue = outbox.enqueue.bind(outbox);
     const spy = jest
-      .spyOn(dispatcher, 'dispatchTargeted')
-      .mockRejectedValue(new Error('dispatch boom'));
+      .spyOn(outbox, 'enqueue')
+      .mockImplementationOnce((input, client) => originalEnqueue(input, client))
+      .mockRejectedValueOnce(new Error('enqueue boom'));
     try {
       const res = await promote(cycle.id);
-      expect(res.status).toBe(200);
-      expect(res.body.data.promotedCount).toBe(1); // 业务成功,派发失败被吞
-      const member = await prisma.member.findFirstOrThrow({ where: { memberNo: '26001' } });
-      expect(member.gradeCode).toBe('volunteer'); // 发号产物完整
-      expect(spy).toHaveBeenCalled(); // 确有尝试派发(且抛错被吞)
+      expect(res.status).toBe(500);
+      expect(await prisma.member.count({ where: { memberNo: '26001' } })).toBe(0);
+      expect(await prisma.member.count({ where: { memberNo: '26002' } })).toBe(0);
+      expect(await prisma.notificationOutboxIntent.count()).toBe(0);
+      const rows = await prisma.recruitmentApplication.findMany({
+        where: { openid: { in: ['dev-openid-s3-err-a', 'dev-openid-s3-err-b'] } },
+      });
+      expect(rows).toHaveLength(2);
+      expect(rows.every((row) => row.statusCode === 'publicity')).toBe(true);
+      expect(
+        await prisma.recruitmentCycle.findUniqueOrThrow({ where: { id: cycle.id } }),
+      ).toMatchObject({ memberNoSeq: 0 });
+      expect(spy).toHaveBeenCalledTimes(2);
     } finally {
       spy.mockRestore();
     }
@@ -2924,6 +2971,19 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       ['李四', '26001'],
       ['张三', '26002'],
     ]);
+    const promotedMemberIds = (res.body.data.promoted as Array<{ memberId: string }>).map(
+      (item) => item.memberId,
+    );
+    expect(
+      await prisma.notificationOutboxIntent.count({
+        where: { destinationRef: { in: promotedMemberIds } },
+      }),
+    ).toBe(2);
+    expect(
+      await prisma.notificationOutboxIntent.count({
+        where: { aggregateId: res.body.data.skipped[0].applicationId },
+      }),
+    ).toBe(0);
   });
 
   // =====================================================================
