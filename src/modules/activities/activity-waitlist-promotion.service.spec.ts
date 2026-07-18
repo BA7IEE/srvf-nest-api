@@ -119,6 +119,10 @@ describe('promoteActivityWaitlist', () => {
 
   it('同岗无候补时跨岗 fallback，并跳过 child 已满岗位', async () => {
     const waitB = row('r-b', 'm-b', 'waitlisted', 'position-b');
+    const findFirst = jest
+      .fn<Promise<ReturnType<typeof row> | null>, [{ where: { OR?: unknown } }]>()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(waitB);
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'activity-1' }]),
       activity: {
@@ -134,11 +138,11 @@ describe('promoteActivityWaitlist', () => {
         ]),
       },
       activityRegistration: {
-        groupBy: jest.fn().mockResolvedValue([
-          { activityPositionId: 'position-full', _count: { _all: 1 } },
-        ]),
+        groupBy: jest
+          .fn()
+          .mockResolvedValue([{ activityPositionId: 'position-full', _count: { _all: 1 } }]),
         count: jest.fn().mockResolvedValue(0),
-        findFirst: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(waitB),
+        findFirst,
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         update: jest.fn().mockResolvedValue({ ...waitB, statusCode: 'pending' }),
       },
@@ -162,8 +166,8 @@ describe('promoteActivityWaitlist', () => {
       activityTitle: '演练',
       promoted: [{ registrationId: 'r-b', memberId: 'm-b' }],
     });
-    const globalWhere = tx.activityRegistration.findFirst.mock.calls[1][0].where;
-    expect(globalWhere.OR).toEqual([
+    const globalWhere = findFirst.mock.calls[1]?.[0].where;
+    expect(globalWhere?.OR).toEqual([
       { activityPositionId: null },
       { activityPositionId: { in: ['position-a', 'position-b'] } },
     ]);
