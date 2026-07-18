@@ -6,8 +6,10 @@ import { Role, UserStatus } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import { BizException } from '../../src/common/exceptions/biz.exception';
 import appConfig from '../../src/config/app.config';
 import { PrismaService } from '../../src/database/prisma.service';
+import { AttachmentStorageOrchestrator } from '../../src/modules/attachments/attachment-storage-orchestrator';
 import { AttachmentsService } from '../../src/modules/attachments/attachments.service';
 import type {
   ConfirmUploadDto,
@@ -16,6 +18,8 @@ import type {
 } from '../../src/modules/attachments/attachments.dto';
 import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
+import { STORAGE_PROVIDER } from '../../src/modules/storage/storage.constants';
+import type { PinnedStorageProvider } from '../../src/modules/storage/storage.interface';
 import { conformingAttachmentKey } from '../helpers/attachment-key';
 import { attachmentBytesForMime } from '../helpers/file-fixtures';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -102,6 +106,8 @@ interface AuditContextShape {
 describe('AttachmentsService audit characterization', () => {
   let app: INestApplication;
   let service: AttachmentsService;
+  let storageConsistency: AttachmentStorageOrchestrator;
+  let storageProvider: PinnedStorageProvider;
   let prisma: PrismaService;
   let auditLogs: AuditLogsService;
 
@@ -120,6 +126,8 @@ describe('AttachmentsService audit characterization', () => {
 
     prisma = app.get(PrismaService);
     service = app.get(AttachmentsService);
+    storageConsistency = app.get(AttachmentStorageOrchestrator);
+    storageProvider = app.get<PinnedStorageProvider>(STORAGE_PROVIDER);
     auditLogs = app.get(AuditLogsService);
 
     const cfg = app.get<{ storage: { localRoot: string } }>(appConfig.KEY);
@@ -550,26 +558,86 @@ describe('AttachmentsService audit characterization', () => {
       expect(await prisma.auditLog.count({ where: { event: UPLOAD_EVENT } })).toBe(0);
     });
 
-    it('D3. delete 路径 auditLogs.log 抛错 → $transaction 回滚:attachment 未物理删 + 无 delete audit', async () => {
+    it('D3. delete audit 失败保持 durable pending；同 eventKey replay 终结且原 actor 幂等重放', async () => {
       const created = await service.create(buildCreateDto(), selfPayload, AUDIT_META);
       // 清掉 create 路径的 upload audit,保证 D3 起始时 audit 表是干净的
       await prisma.$executeRawUnsafe('TRUNCATE TABLE "audit_logs" RESTART IDENTITY CASCADE');
 
+      const deleteObjectAtSpy = jest.spyOn(storageProvider, 'deleteObjectAt');
       const logSpy = jest
         .spyOn(auditLogs, 'log')
         .mockRejectedValueOnce(new Error('simulated audit failure'));
 
-      await expect(service.delete(created.id, selfPayload, AUDIT_META)).rejects.toThrow(
-        'simulated audit failure',
+      await expect(service.delete(created.id, selfPayload, AUDIT_META)).rejects.toEqual(
+        new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING),
       );
       expect(logSpy).toHaveBeenCalledTimes(1);
+      expect(deleteObjectAtSpy).toHaveBeenCalledTimes(1);
 
-      // 回滚证据 1:attachment 仍存在(tx 内 tx.attachment.delete 已发起但 $transaction 回滚)
+      // 首次最终腿 audit 失败：DB 四方保持可重放，Provider effect 已真实 absent。
       const stillThere = await prisma.attachment.findUnique({ where: { id: created.id } });
       expect(stillThere).not.toBeNull();
-
-      // 回滚证据 2:无 delete audit 落库
       expect(await prisma.auditLog.count({ where: { event: DELETE_EVENT } })).toBe(0);
+
+      const pendingObject = await prisma.storageObject.findUnique({ where: { key: created.key } });
+      expect(pendingObject).toMatchObject({
+        state: 'delete_pending',
+        resourceType: 'attachment',
+        resourceId: created.id,
+        absentAt: null,
+      });
+      if (!pendingObject) throw new Error('delete StorageObject fixture disappeared');
+      const pendingOperation = await prisma.storageObjectOperation.findFirst({
+        where: { storageObjectId: pendingObject.id, kind: 'attachment_delete' },
+      });
+      expect(pendingOperation).toMatchObject({
+        status: 'pending',
+        attempts: 1,
+        effectState: 'effect_started',
+        leaseOwner: null,
+        leaseAcquiredAt: null,
+        leaseRenewedAt: null,
+        leaseExpiresAt: null,
+        completedAt: null,
+        lastErrorCode: 'STORAGE_OPERATION_ERROR',
+        lastErrorClass: 'Error',
+      });
+      if (!pendingOperation) throw new Error('delete operation fixture disappeared');
+      await expect(fs.access(path.resolve(localRoot, created.key))).rejects.toThrow();
+
+      // Retry backoff 到期后只按同一 eventKey 重放；HEAD 已 absent，禁止第二次 Provider delete。
+      await prisma.storageObjectOperation.update({
+        where: { id: pendingOperation.id },
+        data: { availableAt: new Date(Date.now() - 1_000) },
+      });
+      await storageConsistency.executeEventKey(pendingOperation.eventKey);
+
+      await expect(prisma.attachment.findUnique({ where: { id: created.id } })).resolves.toBeNull();
+      await expect(
+        prisma.storageObject.findUnique({ where: { id: pendingObject.id } }),
+      ).resolves.toMatchObject({ state: 'absent', resourceId: created.id });
+      await expect(
+        prisma.storageObjectOperation.findUnique({ where: { id: pendingOperation.id } }),
+      ).resolves.toMatchObject({
+        eventKey: pendingOperation.eventKey,
+        status: 'succeeded',
+        attempts: 2,
+        effectState: 'effect_succeeded',
+        leaseOwner: null,
+        leaseAcquiredAt: null,
+        leaseRenewedAt: null,
+        leaseExpiresAt: null,
+        lastErrorCode: null,
+        lastErrorClass: null,
+      });
+      expect(logSpy).toHaveBeenCalledTimes(2);
+      expect(await prisma.auditLog.count({ where: { event: DELETE_EVENT } })).toBe(1);
+      expect(deleteObjectAtSpy).toHaveBeenCalledTimes(1);
+
+      const replay = await service.delete(created.id, selfPayload, AUDIT_META);
+      expect(replay).toMatchObject({ id: created.id, key: created.key, accessUrl: null });
+      expect(await prisma.auditLog.count({ where: { event: DELETE_EVENT } })).toBe(1);
+      expect(deleteObjectAtSpy).toHaveBeenCalledTimes(1);
     });
   });
 

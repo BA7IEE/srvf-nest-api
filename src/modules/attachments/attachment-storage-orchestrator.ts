@@ -16,6 +16,7 @@ import {
 import {
   StorageObjectLedgerService,
   storageFenceWhere,
+  type PreparedStorageUpload,
 } from '../storage/storage-object-ledger.service';
 import {
   parseStorageOperationPayload,
@@ -32,6 +33,7 @@ import {
   type ClaimedStorageOperationWithObject,
   StorageConsistencyInvariantError,
   StorageConsistencyLeaseLostError,
+  StorageUploadIdentityConflictError,
   bigintSize,
   sameStorageLocator,
   storageLocatorFromObject,
@@ -126,16 +128,24 @@ export class AttachmentStorageOrchestrator {
     }
     const requestHash = this.uploadRequestHash(identity, source);
     const eventKey = `storage.attachment-upload-verify:${requestHash}`;
-    const prepared = await this.ledger.prepareUpload({
-      key: identity.key,
-      source,
-      locator,
-      expectedSize: identity.size,
-      expectedMime: identity.mime,
-      unboundExpiresAt,
-      eventKey,
-      requestHash,
-    });
+    let prepared: PreparedStorageUpload;
+    try {
+      prepared = await this.ledger.prepareUpload({
+        key: identity.key,
+        source,
+        locator,
+        expectedSize: identity.size,
+        expectedMime: identity.mime,
+        unboundExpiresAt,
+        eventKey,
+        requestHash,
+      });
+    } catch (error) {
+      if (error instanceof StorageUploadIdentityConflictError) {
+        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+      }
+      throw error;
+    }
     return {
       objectId: prepared.object.id,
       operationId: prepared.operation.id,
@@ -294,7 +304,7 @@ export class AttachmentStorageOrchestrator {
           currentOperation.status !== 'succeeded' ||
           currentOperation.effectState !== 'provider_present'
         ) {
-          throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
+          throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
         }
         const existing = await tx.attachment.findUnique({
           where: { id: object.resourceId },

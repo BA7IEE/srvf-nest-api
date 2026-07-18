@@ -13,6 +13,7 @@ import {
   STORAGE_OPERATION_PAYLOAD_VERSION,
   StorageConsistencyInvariantError,
   StorageConsistencyLeaseLostError,
+  StorageUploadIdentityConflictError,
   normalizeStorageError,
   storageLocatorFromObject,
   storageRequestHash,
@@ -207,9 +208,47 @@ export class StorageObjectLedgerService implements OnApplicationBootstrap {
         ],
         skipDuplicates: true,
       });
-      const object = await tx.storageObject.findUnique({ where: { key: input.key } });
-      if (!object) {
+      const candidate = await tx.storageObject.findUnique({ where: { key: input.key } });
+      if (!candidate) {
         throw new StorageConsistencyInvariantError(`prepared object disappeared key=${input.key}`);
+      }
+      await tx.$queryRaw(Prisma.sql`
+        SELECT "id" FROM "storage_objects"
+        WHERE "id" = ${candidate.id}
+        FOR UPDATE
+      `);
+      const object = await tx.storageObject.findUnique({ where: { key: input.key } });
+      if (!object || object.id !== candidate.id) {
+        throw new StorageConsistencyInvariantError(`prepared object disappeared key=${input.key}`);
+      }
+
+      if (
+        object.state === 'available' &&
+        object.resourceType !== null &&
+        object.resourceId !== null
+      ) {
+        const replay = await tx.storageObjectOperation.findFirst({
+          where: {
+            eventKey: input.eventKey,
+            storageObjectId: object.id,
+            kind: 'attachment_upload_verify',
+            requestHash: input.requestHash,
+            status: 'succeeded',
+            effectState: 'provider_present',
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (!replay) throw new StorageUploadIdentityConflictError();
+        assertPreparedObjectMatches(object, input);
+        const replayPayload = parseStorageOperationPayload(
+          'attachment_upload_verify',
+          replay.payloadVersion,
+          replay.payload,
+        );
+        if (!('source' in replayPayload) || replayPayload.source !== object.source) {
+          throw new StorageConsistencyInvariantError('upload replay source drifted');
+        }
+        return { object, operation: replay };
       }
       assertPreparedObjectMatches(object, input);
 

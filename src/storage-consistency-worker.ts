@@ -7,10 +7,13 @@ import {
   STORAGE_OPERATION_KINDS,
   type StorageOperationKind,
 } from './modules/storage/storage-consistency.types';
-import { StorageObjectLedgerService } from './modules/storage/storage-object-ledger.service';
+import {
+  isStorageConsistencyWorkerEntrypoint,
+  StorageObjectLedgerService,
+} from './modules/storage/storage-object-ledger.service';
 import type { StorageObjectLocator } from './modules/storage/storage.types';
 
-interface WorkerCliArgs {
+export interface WorkerCliArgs {
   once: boolean;
   strictGate: boolean;
   purgeReplays: boolean;
@@ -31,7 +34,7 @@ interface WorkerCliArgs {
 }
 
 async function bootstrap(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
+  const args = parseStorageConsistencyWorkerArgs(process.argv.slice(2));
   const app = await NestFactory.createApplicationContext(StorageConsistencyWorkerModule);
   app.enableShutdownHooks();
   try {
@@ -56,7 +59,7 @@ async function bootstrap(): Promise<void> {
         reviewerUserId: required(args.reviewerUserId, 'reviewer-user-id'),
         reasonCode: required(args.reasonCode, 'reason-code'),
         evidenceRef: required(args.evidenceRef, 'evidence-ref'),
-        verifiedAt: args.verifiedAt ?? new Date(),
+        verifiedAt: required(args.verifiedAt, 'verified-at'),
         targetLocator: targetLocator(args),
       });
       await orchestrator.executeEventKey(eventKey);
@@ -71,7 +74,7 @@ async function bootstrap(): Promise<void> {
         reviewerUserId: required(args.reviewerUserId, 'reviewer-user-id'),
         reasonCode: required(args.reasonCode, 'reason-code'),
         evidenceRef: required(args.evidenceRef, 'evidence-ref'),
-        verifiedAt: args.verifiedAt ?? new Date(),
+        verifiedAt: required(args.verifiedAt, 'verified-at'),
       });
       await orchestrator.executeEventKey(eventKey);
       const operation = await ledger.findOperationByEventKey(eventKey);
@@ -100,7 +103,7 @@ async function bootstrap(): Promise<void> {
   }
 }
 
-function parseArgs(tokens: string[]): WorkerCliArgs {
+export function parseStorageConsistencyWorkerArgs(tokens: readonly string[]): WorkerCliArgs {
   const values = new Map<string, string>();
   const switches = new Set<string>();
   for (const token of tokens) {
@@ -180,7 +183,104 @@ function parseArgs(tokens: string[]): WorkerCliArgs {
     Boolean(args.attestAbsentOperationId),
   ].filter(Boolean).length;
   if (selectedModes > 1) throw new Error('worker mode 参数互斥');
+  assertModeArguments(args, switches, values);
   return args;
+}
+
+function assertModeArguments(
+  args: WorkerCliArgs,
+  switches: ReadonlySet<string>,
+  values: ReadonlyMap<string, string>,
+): void {
+  if (args.once) {
+    assertOnlyArguments('once', switches, values, ['once', 'manual-only'], ['key', 'kind']);
+    return;
+  }
+  if (args.strictGate) {
+    assertOnlyArguments('strict-gate', switches, values, ['strict-gate'], []);
+    return;
+  }
+  if (args.purgeReplays) {
+    assertOnlyArguments('purge-replays', switches, values, ['purge-replays'], []);
+    return;
+  }
+  if (args.relocateOperationId) {
+    assertOnlyArguments(
+      'relocate',
+      switches,
+      values,
+      [],
+      [
+        'relocate',
+        'operator-user-id',
+        'reviewer-user-id',
+        'reason-code',
+        'evidence-ref',
+        'verified-at',
+        'target-provider',
+        'target-bucket',
+        'target-region',
+        'target-local-namespace',
+      ],
+    );
+    required(args.operatorUserId, 'operator-user-id');
+    required(args.reviewerUserId, 'reviewer-user-id');
+    required(args.reasonCode, 'reason-code');
+    required(args.evidenceRef, 'evidence-ref');
+    required(args.verifiedAt, 'verified-at');
+    const locator = targetLocator(args);
+    if (locator.providerType === 'COS' && args.targetLocalNamespace !== undefined) {
+      throw new Error('--target-local-namespace 不能用于 COS relocate');
+    }
+    if (
+      locator.providerType === 'LOCAL' &&
+      (args.targetBucket !== undefined || args.targetRegion !== undefined)
+    ) {
+      throw new Error('--target-bucket/--target-region 不能用于 LOCAL relocate');
+    }
+    return;
+  }
+  if (args.attestAbsentOperationId) {
+    assertOnlyArguments(
+      'attest-absent',
+      switches,
+      values,
+      [],
+      [
+        'attest-absent',
+        'operator-user-id',
+        'reviewer-user-id',
+        'reason-code',
+        'evidence-ref',
+        'verified-at',
+      ],
+    );
+    required(args.operatorUserId, 'operator-user-id');
+    required(args.reviewerUserId, 'reviewer-user-id');
+    required(args.reasonCode, 'reason-code');
+    required(args.evidenceRef, 'evidence-ref');
+    required(args.verifiedAt, 'verified-at');
+    return;
+  }
+  assertOnlyArguments('daemon', switches, values, [], []);
+}
+
+function assertOnlyArguments(
+  mode: string,
+  switches: ReadonlySet<string>,
+  values: ReadonlyMap<string, string>,
+  allowedSwitches: readonly string[],
+  allowedValues: readonly string[],
+): void {
+  const allowedSwitchSet = new Set(allowedSwitches);
+  const allowedValueSet = new Set(allowedValues);
+  const unexpected = [
+    ...[...switches].filter((name) => !allowedSwitchSet.has(name)),
+    ...[...values.keys()].filter((name) => !allowedValueSet.has(name)),
+  ];
+  if (unexpected.length !== 0) {
+    throw new Error(`${mode} mode 不允许 --${unexpected.sort().join('/--')}`);
+  }
 }
 
 function targetLocator(args: WorkerCliArgs): StorageObjectLocator {
@@ -210,4 +310,4 @@ function writeResult(value: Record<string, unknown>): void {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
-void bootstrap();
+if (isStorageConsistencyWorkerEntrypoint()) void bootstrap();

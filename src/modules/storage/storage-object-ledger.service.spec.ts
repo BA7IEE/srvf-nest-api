@@ -2,7 +2,10 @@ import type { ConfigType } from '@nestjs/config';
 
 import appConfig from '../../config/app.config';
 import type { PrismaService } from '../../database/prisma.service';
-import { STORAGE_OPERATION_MAX_ATTEMPTS } from './storage-consistency.types';
+import {
+  STORAGE_OPERATION_MAX_ATTEMPTS,
+  StorageUploadIdentityConflictError,
+} from './storage-consistency.types';
 import {
   isStorageConsistencyWorkerEntrypoint,
   StorageObjectLedgerService,
@@ -339,5 +342,130 @@ describe('StorageObjectLedgerService targeted exhausted claim', () => {
     expect(data).not.toHaveProperty('region');
     expect(data).not.toHaveProperty('localNamespace');
     expect(operationCreateMany).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('StorageObjectLedgerService available upload replay identity', () => {
+  const requestHash = 'a'.repeat(64);
+  const key = 'attachments/test/2026/07/19/exact-replay.txt';
+  const locator = {
+    providerType: 'COS' as const,
+    bucket: 'unit-bucket',
+    region: 'ap-unit',
+    localNamespace: null,
+  };
+  const object = {
+    id: 'object_available',
+    key,
+    state: 'available',
+    source: 'attachment_signed_upload',
+    ...locator,
+    expectedSize: 7n,
+    expectedMime: 'text/plain',
+    resourceType: 'attachment',
+    resourceId: 'attachment_available',
+  };
+  const operation = {
+    id: 'operation_succeeded',
+    eventKey: `storage.attachment-upload-verify:${requestHash}`,
+    storageObjectId: object.id,
+    kind: 'attachment_upload_verify',
+    status: 'succeeded',
+    effectState: 'provider_present',
+    payloadVersion: 1,
+    payload: { source: 'attachment_signed_upload' },
+    requestHash,
+  };
+
+  function prepareHarness(replay: typeof operation | null) {
+    const objectFindUnique = jest.fn().mockResolvedValue(object);
+    const operationCreateMany = jest.fn();
+    const operationFindFirst = jest.fn().mockResolvedValue(replay);
+    const tx = {
+      storageObject: {
+        createMany: jest.fn().mockResolvedValue({ count: 0 }),
+        findUnique: objectFindUnique,
+      },
+      storageObjectOperation: {
+        createMany: operationCreateMany,
+        findFirst: operationFindFirst,
+        findUnique: jest.fn(),
+      },
+      $queryRaw: jest.fn().mockResolvedValue([{ id: object.id }]),
+    };
+    const prisma = {
+      $transaction: jest.fn(async (callback: (client: typeof tx) => Promise<unknown>) =>
+        callback(tx),
+      ),
+    } as unknown as PrismaService;
+    const cfg = {
+      env: 'test',
+      storage: { consistencyMode: 'JIT' },
+    } as unknown as ConfigType<typeof appConfig>;
+    return {
+      ledger: new StorageObjectLedgerService(prisma, cfg),
+      objectFindUnique,
+      operationCreateMany,
+      operationFindFirst,
+      tx,
+    };
+  }
+
+  function input(overrides: Record<string, unknown> = {}) {
+    return {
+      key,
+      source: 'attachment_signed_upload' as const,
+      locator,
+      expectedSize: 7,
+      expectedMime: 'text/plain',
+      unboundExpiresAt: new Date('2026-07-19T08:00:00.000Z'),
+      requestHash,
+      eventKey: operation.eventKey,
+      ...overrides,
+    };
+  }
+
+  it('reuses only the exact succeeded/provider_present upload operation after a locked reread', async () => {
+    const harness = prepareHarness(operation);
+
+    await expect(harness.ledger.prepareUpload(input())).resolves.toEqual({ object, operation });
+
+    expect(harness.objectFindUnique).toHaveBeenCalledTimes(2);
+    expect(harness.tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(harness.operationFindFirst).toHaveBeenCalledWith({
+      where: {
+        eventKey: operation.eventKey,
+        storageObjectId: object.id,
+        kind: 'attachment_upload_verify',
+        requestHash,
+        status: 'succeeded',
+        effectState: 'provider_present',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    // Mutation killed: exact replay must not append a second operation to the bound object.
+    expect(harness.operationCreateMany).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['different originalName claims hash', { requestHash: 'b'.repeat(64) }],
+    ['different size', { expectedSize: 8, requestHash: 'c'.repeat(64) }],
+    ['different mime', { expectedMime: 'image/png', requestHash: 'd'.repeat(64) }],
+  ])('rejects %s before any operation insert', async (_label, overrides) => {
+    const harness = prepareHarness(null);
+    const changedHash = overrides.requestHash;
+
+    await expect(
+      harness.ledger.prepareUpload(
+        input({
+          ...overrides,
+          eventKey: `storage.attachment-upload-verify:${changedHash}`,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(StorageUploadIdentityConflictError);
+
+    // Mutation killed: asserting object size/mime first would throw an invariant; inserting first
+    // would leave a pending ledger row for a valid but different upload identity.
+    expect(harness.operationCreateMany).not.toHaveBeenCalled();
   });
 });

@@ -1,12 +1,18 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+
 import type { INestApplication } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import appConfig from '../../src/config/app.config';
 import { PrismaService } from '../../src/database/prisma.service';
+import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { conformingAttachmentKey } from '../helpers/attachment-key';
 import { expectBizError } from '../helpers/biz-code.assert';
+import { attachmentBytesForMime } from '../helpers/file-fixtures';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -23,11 +29,13 @@ import { createTestApp } from '../setup/test-app';
 // open/v1 = @Public,无需登录;reset-db 已清 contents,本 spec 直接 prisma.content.create 造数据。
 
 const OPEN_CONTENTS = '/api/open/v1/contents';
+const CONTENT_UPLOADER_USERNAME = 'content-public-uploader';
 
 describe('CMS 内容发布模块(第 28 模块)open/v1 公开读取面 e2e', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let uploaderUserId: string;
+  let superAuth: string;
+  let localRoot: string;
 
   // 直接造一条内容(绕过 admin 写路径;读取面不校验 contentTypeCode 字典)。
   async function makeContent(over: {
@@ -67,13 +75,61 @@ describe('CMS 内容发布模块(第 28 模块)open/v1 公开读取面 e2e', () 
     return request(httpServer(app)).get(`${OPEN_CONTENTS}/${id}`);
   }
 
+  async function createAvailableContentAttachment(input: {
+    key: string;
+    originalName: string;
+    mime: string;
+    size: number;
+    ownerType: 'content-image' | 'content-file';
+    ownerId: string;
+    expireAt: Date | null;
+  }): Promise<void> {
+    const filePath = resolve(localRoot, input.key);
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, attachmentBytesForMime(input.mime, input.size));
+    const response = await request(httpServer(app))
+      .post('/api/admin/v1/attachments')
+      .set('Authorization', superAuth)
+      .send(input);
+    expect(response.status).toBe(201);
+    await expect(
+      prisma.storageObject.findUnique({ where: { key: input.key } }),
+    ).resolves.toMatchObject({
+      state: 'available',
+      resourceType: 'attachment',
+      resourceId: response.body.data.id,
+    });
+  }
+
   beforeAll(async () => {
     app = await createTestApp();
     prisma = app.get(PrismaService);
     await resetDb(app);
-    uploaderUserId = (
-      await createTestUser(app, { username: 'content-public-uploader', role: Role.SUPER_ADMIN })
-    ).id;
+    await prisma.attachmentTypeConfig.createMany({
+      data: [
+        {
+          code: 'content-image',
+          displayName: '内容图片',
+          ownerTable: 'contents',
+          defaultMaxSizeBytes: 10 * 1024 * 1024,
+          defaultMimeWhitelist: ['image/jpeg', 'image/png', 'image/webp'],
+        },
+        {
+          code: 'content-file',
+          displayName: '内容文件附件',
+          ownerTable: 'contents',
+          defaultMaxSizeBytes: 20 * 1024 * 1024,
+          defaultMimeWhitelist: [
+            'application/pdf',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          ],
+        },
+      ],
+    });
+    await createTestUser(app, { username: CONTENT_UPLOADER_USERNAME, role: Role.SUPER_ADMIN });
+    superAuth = (await loginAs(app, CONTENT_UPLOADER_USERNAME)).authHeader;
+    localRoot = app.get<{ storage: { localRoot: string } }>(appConfig.KEY).storage.localRoot;
   });
 
   afterAll(async () => {
@@ -186,65 +242,55 @@ describe('CMS 内容发布模块(第 28 模块)open/v1 公开读取面 e2e', () 
       const unsetFileKey = conformingAttachmentKey();
       const expiredFileKey = conformingAttachmentKey();
 
-      await prisma.attachment.createMany({
-        data: [
-          {
-            key: expiredCoverKey,
-            originalName: 'expired-cover.jpg',
-            mime: 'image/jpeg',
-            size: 100,
-            uploadedBy: uploaderUserId,
-            ownerType: 'content-image',
-            ownerId: expiredContentId,
-            tags: [],
-            expireAt: new Date('2000-01-01T00:00:00.000Z'),
-          },
-          {
-            key: futureCoverKey,
-            originalName: 'future-cover.jpg',
-            mime: 'image/jpeg',
-            size: 100,
-            uploadedBy: uploaderUserId,
-            ownerType: 'content-image',
-            ownerId: activeContentId,
-            tags: [],
-            expireAt: new Date('2286-01-01T00:00:00.000Z'),
-          },
-          {
-            key: expiredFileKey,
-            originalName: 'expired.pdf',
-            mime: 'application/pdf',
-            size: 100,
-            uploadedBy: uploaderUserId,
-            ownerType: 'content-file',
-            ownerId: activeContentId,
-            tags: [],
-            expireAt: new Date('2000-01-01T00:00:00.000Z'),
-          },
-          {
-            key: futureFileKey,
-            originalName: 'future.pdf',
-            mime: 'application/pdf',
-            size: 100,
-            uploadedBy: uploaderUserId,
-            ownerType: 'content-file',
-            ownerId: activeContentId,
-            tags: [],
-            expireAt: new Date('2286-01-01T00:00:00.000Z'),
-          },
-          {
-            key: unsetFileKey,
-            originalName: 'unset.pdf',
-            mime: 'application/pdf',
-            size: 100,
-            uploadedBy: uploaderUserId,
-            ownerType: 'content-file',
-            ownerId: activeContentId,
-            tags: [],
-            expireAt: null,
-          },
-        ],
-      });
+      for (const attachment of [
+        {
+          key: expiredCoverKey,
+          originalName: 'expired-cover.jpg',
+          mime: 'image/jpeg',
+          size: 100,
+          ownerType: 'content-image',
+          ownerId: expiredContentId,
+          expireAt: new Date('2000-01-01T00:00:00.000Z'),
+        },
+        {
+          key: futureCoverKey,
+          originalName: 'future-cover.jpg',
+          mime: 'image/jpeg',
+          size: 100,
+          ownerType: 'content-image',
+          ownerId: activeContentId,
+          expireAt: new Date('2286-01-01T00:00:00.000Z'),
+        },
+        {
+          key: expiredFileKey,
+          originalName: 'expired.pdf',
+          mime: 'application/pdf',
+          size: 100,
+          ownerType: 'content-file',
+          ownerId: activeContentId,
+          expireAt: new Date('2000-01-01T00:00:00.000Z'),
+        },
+        {
+          key: futureFileKey,
+          originalName: 'future.pdf',
+          mime: 'application/pdf',
+          size: 100,
+          ownerType: 'content-file',
+          ownerId: activeContentId,
+          expireAt: new Date('2286-01-01T00:00:00.000Z'),
+        },
+        {
+          key: unsetFileKey,
+          originalName: 'unset.pdf',
+          mime: 'application/pdf',
+          size: 100,
+          ownerType: 'content-file',
+          ownerId: activeContentId,
+          expireAt: null,
+        },
+      ] as const) {
+        await createAvailableContentAttachment(attachment);
+      }
 
       const expiredDetail = await detailOpen(expiredContentId);
       expect(expiredDetail.status).toBe(200);

@@ -89,6 +89,13 @@ export class StorageConsistencyInvariantError extends Error {
   }
 }
 
+export class StorageUploadIdentityConflictError extends Error {
+  constructor() {
+    super('STORAGE_UPLOAD_IDENTITY_CONFLICT');
+    this.name = 'StorageUploadIdentityConflictError';
+  }
+}
+
 export class StorageConsistencyLeaseLostError extends Error {
   constructor(id: string, generation: number) {
     super(`STORAGE_CONSISTENCY_LEASE_LOST: ${id}@${generation}`);

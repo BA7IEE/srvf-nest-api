@@ -3,7 +3,7 @@ import { Role } from '@prisma/client';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
-import { signUploadToken } from '../../src/modules/storage/upload-token.util';
+import { signUploadToken, verifyUploadToken } from '../../src/modules/storage/upload-token.util';
 import appConfig from '../../src/config/app.config';
 import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
@@ -558,20 +558,63 @@ describe('attachments upload-url + confirm-upload', () => {
       expect(await prisma.attachment.count({ where: { key } })).toBe(0);
     });
 
-    it('25. confirm 二次提交(同 token 撞 attachment.key UNIQUE)→ 13001(沿 Q-10-8)', async () => {
+    it('25. exact token confirm 幂等；异 originalName 的有效重签 claims 返 13001 且 ledger 零污染', async () => {
       const { token, key } = await getValidToken();
       await fakeUploadToLocal(key, 1024);
-      await request(httpServer(app))
+      const first = await request(httpServer(app))
         .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
         .send({ uploadToken: token })
         .expect(201);
 
-      const res2 = await request(httpServer(app))
+      const replay = await request(httpServer(app))
         .post('/api/admin/v1/attachments/confirm-upload')
         .set('Authorization', selfAuth)
-        .send({ uploadToken: token });
-      expectBizError(res2, BizCode.ATTACHMENT_NOT_FOUND);
+        .send({ uploadToken: token })
+        .expect(201);
+      expect(replay.body.data).toMatchObject({ id: first.body.data.id, key });
+
+      const object = await prisma.storageObject.findUniqueOrThrow({ where: { key } });
+      const operations = await prisma.storageObjectOperation.findMany({
+        where: { storageObjectId: object.id, kind: 'attachment_upload_verify' },
+      });
+      expect(object).toMatchObject({ state: 'available', resourceId: first.body.data.id });
+      expect(operations).toHaveLength(1);
+      expect(operations[0]).toMatchObject({
+        status: 'succeeded',
+        effectState: 'provider_present',
+      });
+      const beforeConflict = await Promise.all([
+        prisma.attachment.count({ where: { key } }),
+        prisma.storageObject.count({ where: { key } }),
+        prisma.storageObjectOperation.count({ where: { storageObjectId: object.id } }),
+        prisma.auditLog.count({
+          where: { event: 'attachment.upload', resourceId: first.body.data.id },
+        }),
+      ]);
+      expect(beforeConflict).toEqual([1, 1, 1, 1]);
+
+      const claims = verifyUploadToken(token, encryptionKey);
+      const conflictingToken = signUploadToken(
+        { ...claims, originalName: 'different-valid-name.jpg' },
+        encryptionKey,
+      );
+      const conflict = await request(httpServer(app))
+        .post('/api/admin/v1/attachments/confirm-upload')
+        .set('Authorization', selfAuth)
+        .send({ uploadToken: conflictingToken });
+      expectBizError(conflict, BizCode.ATTACHMENT_NOT_FOUND);
+
+      await expect(
+        Promise.all([
+          prisma.attachment.count({ where: { key } }),
+          prisma.storageObject.count({ where: { key } }),
+          prisma.storageObjectOperation.count({ where: { storageObjectId: object.id } }),
+          prisma.auditLog.count({
+            where: { event: 'attachment.upload', resourceId: first.body.data.id },
+          }),
+        ]),
+      ).resolves.toEqual(beforeConflict);
     });
 
     it('26. confirm 含可选 checksum → 落库 attachment.checksum 非空', async () => {

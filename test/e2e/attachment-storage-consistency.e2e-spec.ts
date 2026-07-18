@@ -445,7 +445,7 @@ describe('Attachment durable storage consistency (real PostgreSQL barriers)', ()
           AND pid <> pg_backend_pid()
           AND state = 'active'
           AND wait_event_type = 'Lock'
-          AND query LIKE ${`%FROM "${relation}"%`}
+          AND query LIKE ${`%"${relation}"%`}
       `);
       if ((rows[0]?.count ?? 0n) > 0n) return;
       await new Promise((resolve) => setTimeout(resolve, 25));
@@ -826,6 +826,66 @@ describe('Attachment durable storage consistency (real PostgreSQL barriers)', ()
     });
   });
 
+  it('same-key different upload hash waits on the object lock, then returns 13001 without a ledger row', async () => {
+    const { attachment, object } = await createAttachmentObject();
+    const identity: AttachmentUploadStorageIdentity = {
+      key: attachment.key,
+      ownerType: attachment.ownerType,
+      ownerId: attachment.ownerId,
+      originalName: attachment.originalName,
+      mime: attachment.mime,
+      size: attachment.size,
+      uploadedByUserId: attachment.uploadedBy,
+    };
+    const requestHash = orchestrator.uploadRequestHash(identity, 'attachment_signed_upload');
+    const exactOperation = await prisma.storageObjectOperation.create({
+      data: {
+        eventKey: `storage.attachment-upload-verify:${requestHash}`,
+        storageObjectId: object.id,
+        kind: 'attachment_upload_verify',
+        status: 'succeeded',
+        effectState: 'provider_present',
+        payloadVersion: STORAGE_OPERATION_PAYLOAD_VERSION,
+        payload: { source: 'attachment_signed_upload' },
+        requestHash,
+        completedAt: new Date(),
+      },
+    });
+
+    const holderReady = deferred();
+    const holderRelease = deferred();
+    const holder = prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`
+        SELECT "id" FROM "storage_objects" WHERE "id" = ${object.id} FOR UPDATE
+      `);
+      holderReady.resolve();
+      await holderRelease.promise;
+    });
+    await holderReady.promise;
+
+    const conflictingIdentity = { ...identity, originalName: 'different-valid-name.txt' };
+    const preparingOutcome = orchestrator
+      .prepareUpload(conflictingIdentity, 'attachment_signed_upload', new Date(Date.now() + 60_000))
+      .catch((error: unknown) => error);
+
+    try {
+      await waitForRelationLockWait('storage_objects');
+      await expect(
+        prisma.storageObjectOperation.count({ where: { storageObjectId: object.id } }),
+      ).resolves.toBe(1);
+    } finally {
+      holderRelease.resolve();
+      await withTimeout(holder, 'upload identity object lock holder');
+    }
+
+    await expect(withTimeout(preparingOutcome, 'conflicting upload prepare')).resolves.toEqual(
+      new BizException(BizCode.ATTACHMENT_NOT_FOUND),
+    );
+    await expect(
+      prisma.storageObjectOperation.findMany({ where: { storageObjectId: object.id } }),
+    ).resolves.toEqual([expect.objectContaining({ id: exactOperation.id, status: 'succeeded' })]);
+  });
+
   it('locks and rereads the owner before binding a verified upload', async () => {
     const owner = await createActiveMember();
     const identity: AttachmentUploadStorageIdentity = {
@@ -1159,7 +1219,7 @@ describe('Attachment durable storage consistency (real PostgreSQL barriers)', ()
       operatorUserId: actorId,
       reviewerUserId: actorTwoId,
       reasonCode: 'etag_only_recovery',
-      evidenceRef: 'OPS-ETAG-FAIL-CLOSED',
+      evidenceRef: 'OPS-13035',
       verifiedAt: new Date(),
       targetLocator: NEW_LOCATOR,
     });
@@ -1220,7 +1280,7 @@ describe('Attachment durable storage consistency (real PostgreSQL barriers)', ()
       operatorUserId: actorId,
       reviewerUserId: actorTwoId,
       reasonCode: 'checksum_mismatch',
-      evidenceRef: 'OPS-CHECKSUM-FAIL-CLOSED',
+      evidenceRef: 'OPS-13036',
       verifiedAt: new Date(),
       targetLocator: NEW_LOCATOR,
     });

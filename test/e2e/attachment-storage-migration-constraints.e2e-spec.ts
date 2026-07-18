@@ -383,4 +383,19 @@ describe('attachment storage migration constraints', () => {
       });
     },
   );
+
+  it('resetDb clears a partial COS locator so later specs cannot inherit fail-closed routing', async () => {
+    await prisma.storageSettings.create({
+      data: {
+        providerType: StorageProviderType.COS,
+        bucket: null,
+        region: 'partial-region',
+      },
+    });
+    await expect(prisma.storageSettings.count()).resolves.toBe(1);
+
+    await resetDb(app);
+
+    await expect(prisma.storageSettings.count()).resolves.toBe(0);
+  });
 });

@@ -618,9 +618,11 @@ describe('AttachmentsService (characterization)', () => {
       expect(prisma.attachment.create).not.toHaveBeenCalled();
     });
 
-    it('happy path → 事务内 create + logUpload({scope,ownerTable,tx});返 dto 带 accessUrl', async () => {
+    it('happy path → durable intent + verify + finalize({scope,ownerTable,audit});返 dto 带 accessUrl', async () => {
       const prisma = makePrismaMock();
       const recorder = makeRecorderMock();
+      const provider = makeProviderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
       prisma.attachmentTypeConfig.findFirst.mockResolvedValue(
         makeTypeConfig({ defaultMimeWhitelist: ['image/png'], defaultMaxSizeBytes: null }),
       );
@@ -630,7 +632,10 @@ describe('AttachmentsService (characterization)', () => {
       prisma.attachment.create.mockResolvedValue(
         makeAttachmentRow({ ownerType: 'member', ownerId: 'mem-1' }),
       );
-      const service = makeService(prisma, { recorder });
+      storageConsistency.finalizeUpload.mockResolvedValue(
+        makeAttachmentRow({ ownerType: 'member', ownerId: 'mem-1' }),
+      );
+      const service = makeService(prisma, { recorder, provider, storageConsistency });
 
       const res = await service.create(
         makeCreateDto({ ownerType: 'member', ownerId: 'mem-1' }),
@@ -638,10 +643,34 @@ describe('AttachmentsService (characterization)', () => {
         META,
       );
 
-      expect(prisma.attachment.create).toHaveBeenCalledTimes(1);
-      expect(recorder.logUpload).toHaveBeenCalledWith(
-        expect.objectContaining({ scope: 'self', ownerTable: 'member', tx: prisma }),
+      const identity = {
+        key: makeCreateDto().key,
+        ownerType: 'member',
+        ownerId: 'mem-1',
+        uploadedByUserId: 'u1',
+      };
+      expect(storageConsistency.prepareUpload).toHaveBeenCalledWith(
+        expect.objectContaining(identity),
+        'attachment_legacy',
+        expect.any(Date),
       );
+      expect(storageConsistency.verifyUpload).toHaveBeenCalledWith(
+        expect.objectContaining(identity),
+        'attachment_legacy',
+      );
+      expect(storageConsistency.finalizeUpload).toHaveBeenCalledWith(
+        expect.objectContaining({
+          identity: expect.objectContaining(identity) as unknown,
+          requestHash: '0'.repeat(64),
+          auditKind: 'legacy',
+          actorRoleSnap: Role.ADMIN,
+          scope: 'self',
+          ownerTable: 'member',
+          auditMeta: META,
+        }),
+      );
+      expect(prisma.attachment.create).not.toHaveBeenCalled();
+      expect(recorder.logUpload).not.toHaveBeenCalled();
       expect(res.id).toBe('att-1');
       expect(res.accessUrl).toBe('https://signed.example/download');
     });
