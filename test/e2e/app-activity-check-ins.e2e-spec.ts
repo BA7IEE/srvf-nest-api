@@ -3,6 +3,7 @@ import { MemberStatus, Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { computeContribution } from '../../src/modules/team-join/team-join-progress';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
@@ -228,6 +229,16 @@ describe('App activity GPS self check-in (F2)', () => {
     return body.data;
   }
 
+  async function mutationFootprint(activityId: string) {
+    const [checkIns, sheets, records, audits] = await Promise.all([
+      prisma.activityCheckIn.count({ where: { activityId } }),
+      prisma.attendanceSheet.count({ where: { activityId } }),
+      prisma.attendanceRecord.count({ where: { sheet: { activityId } } }),
+      prisma.auditLog.count(),
+    ]);
+    return { checkIns, sheets, records, audits };
+  }
+
   it.each([
     ['POST check-in', 'post', '/api/app/v1/my/activities/cmissing000000/check-in'],
     ['POST check-out', 'post', '/api/app/v1/my/activities/cmissing000000/check-out'],
@@ -287,27 +298,26 @@ describe('App activity GPS self check-in (F2)', () => {
   ])('%s 由严格 DTO 返回 BAD_REQUEST', async (_label, body) => {
     const activity = await createActivity();
     await createRegistration(activity.id, main.memberId);
-    expectBizError(
-      await post(checkInPath(activity.id), body, main.authHeader),
-      BizCode.BAD_REQUEST,
-      {
-        strictMessage: false,
-      },
-    );
+    const before = await mutationFootprint(activity.id);
+    const response = await post(checkInPath(activity.id), body, main.authHeader);
+    expectBizError(response, BizCode.BAD_REQUEST, { strictMessage: false });
+    expect(await mutationFootprint(activity.id)).toEqual(before);
   });
 
-  it('DTO 接受经纬度闭区间端点与 accuracy 最大值，短 activityId 仍为 400', async () => {
-    const activity = await createActivity();
+  it('DTO 接受经纬度闭区间端点与 accuracy 最大值，accuracy 不缩小半径', async () => {
+    const activity = await createActivity({ longitude: '180', latitude: '-90' });
     await createRegistration(activity.id, main.memberId);
-    expect(
-      (
-        await post(
-          checkInPath(activity.id),
-          { longitude: 180, latitude: -90, accuracy: 99_999_999.99 },
-          main.authHeader,
-        )
-      ).status,
-    ).toBe(200);
+    const accepted = await post(
+      checkInPath(activity.id),
+      { longitude: 180, latitude: -90, accuracy: 99_999_999.99 },
+      main.authHeader,
+    );
+    expect(accepted.status).toBe(200);
+    expect(expectSafeSuccess(accepted.body as SuccessBody)).toMatchObject({
+      checkInDistance: '0',
+      geoVerified: true,
+      outOfRange: false,
+    });
     expectBizError(
       await post('/api/app/v1/my/activities/short/check-in', location, main.authHeader),
       BizCode.BAD_REQUEST,
@@ -601,26 +611,19 @@ describe('App activity GPS self check-in (F2)', () => {
     ['无坐标', null, null],
     ['只有经度', '114.0000000', null],
     ['历史非法经度', '181.0000000', '22.0000000'],
-  ] as const)('%s 宽进为 unverified，且仍保存客户端原始证据', async (_label, lon, lat) => {
+  ] as const)('%s 时首次签到 fail closed，且所有派生表零写', async (_label, lon, lat) => {
     const activity = await createActivity({ longitude: lon, latitude: lat });
-    const registration = await createRegistration(activity.id, main.memberId);
-    const res = await post(checkInPath(activity.id), location, main.authHeader);
-    expect(res.status).toBe(200);
-    expect(expectSafeSuccess(res.body as SuccessBody)).toMatchObject({
-      registrationId: registration.id,
-      checkInDistance: null,
-      geoVerified: false,
-      outOfRange: false,
-    });
-    const stored = await prisma.activityCheckIn.findFirstOrThrow({
-      where: { registrationId: registration.id },
-    });
-    expect(stored.checkInLongitude?.toString()).toBe('114');
-    expect(stored.checkInLatitude?.toString()).toBe('22');
-    expect(stored.checkInAccuracy?.toString()).toBe('5.5');
+    await createRegistration(activity.id, main.memberId);
+    const before = await mutationFootprint(activity.id);
+
+    expectBizError(
+      await post(checkInPath(activity.id), location, main.authHeader),
+      BizCode.ACTIVITY_CHECK_IN_LOCATION_VERIFICATION_FAILED,
+    );
+    expect(await mutationFootprint(activity.id)).toEqual(before);
   });
 
-  it('Haversine 生产调用点覆盖同点、500m 原始边界两侧与超距宽进', async () => {
+  it('Haversine 生产调用点覆盖同点、500m 原始边界两侧，略超即零写拒绝', async () => {
     const same = await createActivity({ longitude: '0', latitude: '0' });
     await createRegistration(same.id, main.memberId);
     const sameData = expectSafeSuccess(
@@ -640,21 +643,68 @@ describe('App activity GPS self check-in (F2)', () => {
         .body as SuccessBody,
     );
     expect(withinData.checkInDistance).toBe('500');
+    expect(withinData.geoVerified).toBe(true);
     expect(withinData.outOfRange).toBe(false);
 
     const outside = await createActivity({ longitude: '0', latitude: '0' });
     await createRegistration(outside.id, main.memberId);
-    const outsideData = expectSafeSuccess(
-      (
-        await post(
-          checkInPath(outside.id),
-          { longitude: 0, latitude: 0.0044967, accuracy: 999.99 },
-          main.authHeader,
-        )
-      ).body as SuccessBody,
+    const before = await mutationFootprint(outside.id);
+    expectBizError(
+      await post(
+        checkInPath(outside.id),
+        { longitude: 0, latitude: 0.0044967, accuracy: 99_999_999.99 },
+        main.authHeader,
+      ),
+      BizCode.ACTIVITY_CHECK_IN_LOCATION_VERIFICATION_FAILED,
     );
-    expect(outsideData.checkInDistance).toBe('500.01');
-    expect(outsideData.outOfRange).toBe(true);
+    expect(await mutationFootprint(outside.id)).toEqual(before);
+  });
+
+  it.each([
+    ['活动坐标缺失', { longitude: null, latitude: null }, location],
+    ['原始距离超半径', {}, { longitude: 115, latitude: 22, accuracy: 99_999_999.99 }],
+  ] as const)('%s 时首次签退沿同一 location policy fail closed', async (_label, opts, body) => {
+    const activity = await createActivity(opts);
+    const registration = await createRegistration(activity.id, main.memberId);
+    const evidence = await seedEvidence(activity.id, main.memberId, registration.id, {
+      checkInAt: new Date(Date.now() - 60_000),
+    });
+    const before = await mutationFootprint(activity.id);
+
+    expectBizError(
+      await post(checkOutPath(activity.id), body, main.authHeader),
+      BizCode.ACTIVITY_CHECK_IN_LOCATION_VERIFICATION_FAILED,
+    );
+    expect(await mutationFootprint(activity.id)).toEqual(before);
+    expect(
+      (
+        await prisma.activityCheckIn.findUniqueOrThrow({
+          where: { id: evidence.id },
+          select: { checkOutAt: true },
+        })
+      ).checkOutAt,
+    ).toBeNull();
+  });
+
+  it('定位拒绝不会产生考勤、贡献或审计派生写，也不能满足入队贡献 gate', async () => {
+    const isolated = await setupLinkedUser(`rejected${next()}`, `F2-R-${next()}`);
+    const activity = await createActivity();
+    await createRegistration(activity.id, isolated.memberId);
+    const before = await mutationFootprint(activity.id);
+
+    expectBizError(
+      await post(checkInPath(activity.id), { longitude: 115, latitude: 22 }, isolated.authHeader),
+      BizCode.ACTIVITY_CHECK_IN_LOCATION_VERIFICATION_FAILED,
+    );
+    expect(await mutationFootprint(activity.id)).toEqual(before);
+
+    const contribution = await computeContribution(
+      prisma,
+      isolated.memberId,
+      new Date().getUTCFullYear() + 1,
+    );
+    expect(contribution.points.toString()).toBe('0');
+    expect(contribution.satisfied).toBe(false);
   });
 
   it('重复签到和签退均返回首次 winner，后续位置不得覆盖 snapshot', async () => {
@@ -705,7 +755,7 @@ describe('App activity GPS self check-in (F2)', () => {
       Array.from({ length: 8 }, (_, index) =>
         post(
           checkInPath(activity.id),
-          { longitude: 114 + index / 1000, latitude: 22, accuracy: index },
+          { longitude: 114 + index / 100_000, latitude: 22, accuracy: index },
           main.authHeader,
         ),
       ),
@@ -722,6 +772,66 @@ describe('App activity GPS self check-in (F2)', () => {
     ).toBe(1);
   });
 
+  it('真实 PG 并发中非法请求不能成为 winner；合法/非法混跑只留下合法唯一行', async () => {
+    const rejectedActivity = await createActivity();
+    const rejectedRegistration = await createRegistration(rejectedActivity.id, main.memberId);
+    const rejected = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        post(
+          checkInPath(rejectedActivity.id),
+          { longitude: 115, latitude: 22, accuracy: 99_999_999.99 },
+          main.authHeader,
+        ),
+      ),
+    );
+    for (const response of rejected) {
+      expectBizError(response, BizCode.ACTIVITY_CHECK_IN_LOCATION_VERIFICATION_FAILED);
+    }
+    expect(
+      await prisma.activityCheckIn.count({
+        where: { registrationId: rejectedRegistration.id, deletedAt: null },
+      }),
+    ).toBe(0);
+
+    const mixedActivity = await createActivity();
+    const mixedRegistration = await createRegistration(mixedActivity.id, main.memberId);
+    const mixed = await Promise.all(
+      Array.from({ length: 8 }, (_, index) =>
+        post(
+          checkInPath(mixedActivity.id),
+          index % 2 === 0
+            ? { longitude: 114, latitude: 22, accuracy: index }
+            : { longitude: 115, latitude: 22, accuracy: index },
+          main.authHeader,
+        ),
+      ),
+    );
+    const successes = mixed.filter((response) => response.status === 200);
+    const failures = mixed.filter((response) => response.status !== 200);
+    expect(successes.length).toBeGreaterThan(0);
+    expect(
+      new Set(
+        successes.map((response) => expectSafeSuccess(response.body as SuccessBody).id as string),
+      ).size,
+    ).toBe(1);
+    for (const response of failures) {
+      expectBizError(response, BizCode.ACTIVITY_CHECK_IN_LOCATION_VERIFICATION_FAILED);
+    }
+
+    const winner = await prisma.activityCheckIn.findFirstOrThrow({
+      where: { registrationId: mixedRegistration.id, deletedAt: null },
+    });
+    expect(winner.checkInLongitude?.toString()).toBe('114');
+    expect(winner.checkInLatitude?.toString()).toBe('22');
+    expect(winner.geoVerified).toBe(true);
+    expect(winner.outOfRange).toBe(false);
+    expect(
+      await prisma.activityCheckIn.count({
+        where: { registrationId: mixedRegistration.id, deletedAt: null },
+      }),
+    ).toBe(1);
+  });
+
   it('并发 check-out 只有一个 CAS winner，全部重读同一首次签退', async () => {
     const activity = await createActivity();
     const registration = await createRegistration(activity.id, main.memberId);
@@ -732,7 +842,7 @@ describe('App activity GPS self check-in (F2)', () => {
       Array.from({ length: 8 }, (_, index) =>
         post(
           checkOutPath(activity.id),
-          { longitude: 114 + index / 1000, latitude: 22 },
+          { longitude: 114 + index / 100_000, latitude: 22 },
           main.authHeader,
         ),
       ),
@@ -813,7 +923,7 @@ describe('App activity GPS self check-in (F2)', () => {
     },
   );
 
-  it('签退前无签到返回 22078；打卡写入不产生 AuditLog 且 raw GPS 只在 DB', async () => {
+  it('签退前无签到返回 22078；合法打卡不产生 AuditLog 且 raw GPS 只在 DB', async () => {
     const activity = await createActivity();
     const registration = await createRegistration(activity.id, main.memberId);
     expectBizError(
@@ -824,7 +934,7 @@ describe('App activity GPS self check-in (F2)', () => {
     const beforeAudit = await prisma.auditLog.count();
     const checkIn = await post(
       checkInPath(activity.id),
-      { longitude: 113.1234567, latitude: 23.7654321, accuracy: 12.34 },
+      { longitude: 114.0012345, latitude: 22.0012345, accuracy: 12.34 },
       main.authHeader,
     );
     const checkInData = expectSafeSuccess(checkIn.body as SuccessBody);
@@ -834,7 +944,7 @@ describe('App activity GPS self check-in (F2)', () => {
     });
     const checkOut = await post(
       checkOutPath(activity.id),
-      { longitude: 112.1111111, latitude: 24.2222222, accuracy: 56.78 },
+      { longitude: 113.9988889, latitude: 21.9997778, accuracy: 56.78 },
       main.authHeader,
     );
     expectSafeSuccess(checkOut.body as SuccessBody);
@@ -843,11 +953,11 @@ describe('App activity GPS self check-in (F2)', () => {
     const stored = await prisma.activityCheckIn.findFirstOrThrow({
       where: { registrationId: registration.id },
     });
-    expect(stored.checkInLongitude?.toString()).toBe('113.1234567');
-    expect(stored.checkInLatitude?.toString()).toBe('23.7654321');
+    expect(stored.checkInLongitude?.toString()).toBe('114.0012345');
+    expect(stored.checkInLatitude?.toString()).toBe('22.0012345');
     expect(stored.checkInAccuracy?.toString()).toBe('12.34');
-    expect(stored.checkOutLongitude?.toString()).toBe('112.1111111');
-    expect(stored.checkOutLatitude?.toString()).toBe('24.2222222');
+    expect(stored.checkOutLongitude?.toString()).toBe('113.9988889');
+    expect(stored.checkOutLatitude?.toString()).toBe('21.9997778');
     expect(stored.checkOutAccuracy?.toString()).toBe('56.78');
   });
 });

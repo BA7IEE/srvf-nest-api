@@ -163,8 +163,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 审计刀 5 F4：App self-scope 个人参与累计，只返正向 approved 时长/次数/封顶贡献。
   ['get', '/api/app/v1/my/participation-summary'],
 
-  // 活动自助 GPS 签到 F2：canonical App self surface；当前 pass registration 锚定，
-  // POST 首次/合法重试均 200，GET 只读本人当前报名证据。无 legacy alias / raw GPS 回显。
+  // 活动自助 GPS 签到 F2 + D-GPS fail-closed：canonical App self surface；当前 pass
+  // registration 锚定，首次 POST 仅合法范围内位置写入，合法 winner 重试仍 200；GET 只读本人
+  // 当前报名证据。无 legacy alias / raw GPS 回显。
   ['post', '/api/app/v1/my/activities/{activityId}/check-in'],
   ['post', '/api/app/v1/my/activities/{activityId}/check-out'],
   ['get', '/api/app/v1/my/activities/{activityId}/check-in'],

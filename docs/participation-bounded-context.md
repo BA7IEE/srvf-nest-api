@@ -26,7 +26,7 @@
 |---|---|---|
 | [`src/modules/activities/`](../src/modules/activities/) | `Activity` / `ActivityPosition` | 流程发起点与活动内嵌岗位；岗位不新建 NestJS module，与组织职务 `organization_positions` 无关 |
 | [`src/modules/activity-registrations/`](../src/modules/activity-registrations/) | `ActivityRegistration` | 报名 5 态(`pending/pass/reject/cancelled/waitlisted`);活动 ↔ 队员 关联 |
-| [`src/modules/attendances/`](../src/modules/attendances/) | `AttendanceSheet` / `AttendanceRecord` / `ActivityCheckIn` | 考勤、终审、贡献值落地；`ActivityCheckIn` 是 append-only 打卡证据，F2 提供 canonical App self 写/读，F3 提供 canonical Admin 证据列表与只读考勤草稿，活动岗位 F4 把岗位时段/角色接入打卡、record 与草稿 |
+| [`src/modules/attendances/`](../src/modules/attendances/) | `AttendanceSheet` / `AttendanceRecord` / `ActivityCheckIn` | 考勤、终审、贡献值落地；`ActivityCheckIn` 是 append-only 打卡证据，F2 提供 canonical App self 写/读且首次位置校验 fail-closed，F3 提供 canonical Admin 证据列表与只读考勤草稿，活动岗位 F4 把岗位时段/角色接入打卡、record 与草稿 |
 | [`src/modules/contribution-rules/`](../src/modules/contribution-rules/) | `ContributionRule` | 字典码键 lookup;配置实体而非流程实体 |
 | [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) | `ActivityFeedback` | 已完结活动评价；App 以 approved Sheet 下 live Record 判资格并锁本人；Admin 实名 list/summary；单次 aggregate 接入 activity participation-summary |
 
@@ -126,8 +126,10 @@ Certificate (不在 participation 图内)
 | —. ContributionRule 维护 | contribution-rules | ops 后台 CRUD;`status: ACTIVE / INACTIVE` | **不是流程状态实体**;仅作为预填配置,在 Step 7 被读取;`active_unique (activityTypeCode, attendanceRoleCode) WHERE deletedAt IS NULL AND status = 'ACTIVE'` 由 migration SQL 加 partial unique |
 
 > **F2/F3 当前事实**:`ActivityCheckIn` 已提供 App 本人签到/签退/当前状态 3 个 canonical 端点，
-> 以及 Admin 证据列表/只读考勤草稿 2 个 canonical 端点。写入仍仅为 App append-only create 与
-> 同一行 `checkOutAt null → value` 单向 CAS；Admin 两端点不写 `ActivityCheckIn`、Sheet 或 Record。
+> 以及 Admin 证据列表/只读考勤草稿 2 个 canonical 端点。首次 App create / checkout CAS 统一先过
+> `ActivityCheckInLocationPolicy`：活动坐标与通过 DTO 的请求坐标完整合法且原始 Haversine 距离不超过配置半径才写。
+> 活动定位异常/策略层非法坐标/超范围返回 22080，请求 DTO 缺失或非法沿 40000，均零派生写；已有合法 winner 的幂等重试仍 200。Admin 两端点不写
+> `ActivityCheckIn`、Sheet 或 Record，历史 `geoVerified/outOfRange` 异常证据继续可读。
 
 **关键 invariant**:
 
@@ -175,8 +177,11 @@ Certificate (不在 participation 图内)
 - **submit/edit 路径**:同一事务内固定一个服务端 `now`,校验活动/报名/时间窗与未来签退,再由 ContributionRule 计算并写入 records;submit 不写 Activity 状态。
 - **finalApprove 路径**:Sheet 状态翻转 + Record 复查 + `attendance.recorded` 事件 + audit 写入,**全部在一个 `prisma.$transaction(...)` 内**。
 - **ActivityCheckIn F2**:App 自助打卡写事务固定按 Activity → 当前 pass ActivityRegistration
-  取共享锁并在锁后重跑状态/pass 闸，只写 attendances 自有的 `ActivityCheckIn`（create / 单向
-  checkout CAS），不扩散任何 cross-aggregate write。
+  取共享锁并在锁后重跑状态/pass/时间闸；首次 create / checkout CAS 再统一调用
+  `ActivityCheckInLocationPolicy`，只有合法活动坐标 + 通过 DTO 的合法请求坐标 + 原始距离 `<=` 半径才只写
+  attendances 自有的 `ActivityCheckIn`。活动定位异常/策略层非法坐标/超范围返回 22080，请求 DTO
+  缺失或非法沿 40000，均零 Sheet/Record/Audit/贡献派生写；
+  `accuracy` 仅作证据，既有合法 winner 在位置闸前幂等返回且不覆盖，不扩散任何 cross-aggregate write。
 - **ActivityCheckIn F3**:Admin list/draft 只读 `Activity`、当前 pass `ActivityRegistration`、
   `ActivityCheckIn` 与 Member 摘要；两端点各固定 4 次业务查询（authz 查询分开计），不写
   `ActivityCheckIn`、Sheet、Record，也不扩散任何 cross-aggregate write。
