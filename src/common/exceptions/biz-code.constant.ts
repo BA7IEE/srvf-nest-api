@@ -965,7 +965,8 @@ export const BizCode = {
   // - 26004:唯一约束冲突(覆盖名单 partial unique 单加重复;P2002 兜底同码,镜像 21002)
   // - 26010:业务级输入校验(coverageStart > coverageEnd 跨字段;自购与队保单共用)
   // - 26011-26012:自购保险 CAS / 审核状态冲突(D-INSURANCE v3 PR2)
-  // - 26030:报名门槛(T3 实装 INSURANCE_REQUIRED;409 沿 20120/21030 报名业务态冲突家族)
+  // - 26030:活动报名门槛(INSURANCE_REQUIRED)
+  // - 26031:Team Join final join 门槛(TEAM_JOIN_INSURANCE_REQUIRED)
   //
   // 不开的码(评审稿 §3.3 明确):
   // - 261xx FORBIDDEN_*:权限拒绝走通用 30100 / 40100 / 40300(RBAC_MAP §6 规则 5)
@@ -1010,6 +1011,11 @@ export const BizCode = {
   INSURANCE_REQUIRED: {
     code: 26030,
     message: '该活动要求保险,当前队员无覆盖活动日期的有效保险,不可报名',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  TEAM_JOIN_INSURANCE_REQUIRED: {
+    code: 26031,
+    message: '本轮入队要求保险,当前队员无覆盖入队日期的有效保险,无法入队',
     httpStatus: HttpStatus.CONFLICT,
   },
 

@@ -18,7 +18,7 @@
 - App Controller:`controllers/app-my-registrations.controller.ts` `@Controller('app/v1/my')` `@ApiTags('Mobile - My Registrations')`;**方法级**追加 `@ApiTags('Mobile - My Activities')` 于 `GET /my/activities`(刻意保留)
 - DTO 隔离:Admin DTO 在 `activity-registrations.dto.ts`;App DTO 在 `dto/app/`(5 文件)
 - **Partial unique** `activity_registrations_activity_member_active_unique` 由 migration 直写(Prisma schema 上**不可见**);service 用 `P2002` 兜底转 `BizCode.ACTIVITY_REGISTRATION_ALREADY_EXISTS = 21002`
-- **D-INSURANCE v3 PR1 expand**:`ActivityRegistration` 仅新增 `InsuranceEligibilityEvidence[]` 反向 relation；Evidence owner FK 可空且 `ON DELETE RESTRICT`。PR1 不创建/读取 evidence，现有 `InsuranceRequirementService` 与报名资格语义逐字不变。
+- **D-INSURANCE v3 PR3**:single gate=true 且 Activity.requiresInsurance=true 时，Admin/App create 共用 `Activity→source→Registration→Evidence→Audit` 根事务；source 只认覆盖活动北京日闭区间的 verified self，随后才尝试 live Team Policy+Coverage。成功恰一条最小 evidence，任一腿失败全回滚；pending/rejected/软删/不覆盖均 26030。gate=false 保留旧 consumer 且 0 evidence。
 - Capacity:`Activity.capacity` 永远先作为全局硬上限，有岗位时再叠加 `(activityId,activityPositionId)` 的 passCount + 岗位子上限；create/approve 均先锁 Activity，再同时重读全活动 passCount、岗位 passCount 与两层 capacity。取消 pass 优先递补同岗位 1 人，同岗无人时按全活动 FIFO 跨岗 fallback，但跳过 child 已满/已删岗位；岗位扩容递补同岗 delta 仍受全局剩余量裁剪。
 - Audit events(2 个):`registration.create` / `registration.review`(approve / reject / cancel / reopen / **promote** / export 共用；promote 固定 `extra.action='promote'`;export 固定 `extra.operation='export'`,在返回 generator 前 fail-closed 落库)
 - 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID`
@@ -37,7 +37,7 @@
 - ❌ **不**绕过 partial unique 防护 / `P2002` 兜底直接 `prisma.activityRegistration.create`(`assertNoActiveDuplicate` 路径必须命中)
 - ❌ **不**恢复 create 满员报错；**不**移除 approve 内对 `Activity` 行的 `FOR UPDATE` + capacity 复核
 - ❌ **不**改 audit event 名 `registration.create` / `registration.review`(characterization 已锁)
-- ❌ PR3 单 gate cutover 前不把现有 insurance consumer 改为 verified-only、不生成 evidence；PR4 前不加入 evidence 最终 CHECK/trigger
+- ❌ 不拆 `INSURANCE_ENFORCEMENT_ENABLED` 单 gate，不在 Activity 锁前查/选 source，不把 evidence/audit 移出 create 根事务；PR4 前不加入 evidence CHECK/partial unique/member-match/immutable trigger
 - ❌ **不**把 `cancelAdmin` / `cancelMy` 路径区分挪进 StateMachine(只通过 `extra.cancelledByPath` 在 audit 记录)
 - ❌ **不**改 Admin Controller path `admin/v1/activities/:activityId/registrations`(`export` 字面段必须**先**于 `:id/<action>` 路由声明,Q-A6 锁定;调换顺序会被 Nest 路由解析为 `:id=export`)
 - ❌ **不**把 Admin DTO 用 `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 派生为 App DTO(沿 `harness reference/api-client-boundary.md` D-6`);App `dto/app/` 字段集**刻意删除** `memberId` / `memberNo` / `memberDisplayName`(沿 §16.B.2)

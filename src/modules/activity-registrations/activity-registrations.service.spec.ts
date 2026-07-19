@@ -236,13 +236,12 @@ function makeAuthzMock(
 type AuthzMock = ReturnType<typeof makeAuthzMock>;
 
 // 保险 T3(2026-06-13,评审稿 insurance-module-review.md E-10):构造函数注入门槛 mock,
-// assert 恒通过(本 spec fixture 活动 requiresInsurance 走 Prisma default=false,门槛语义
+// decision 恒通过且 evidence no-op(本 spec fixture 活动 requiresInsurance 走 Prisma default=false,门槛语义
 // 由 e2e activity-registrations-insurance-gate 锁定)。既有断言零修改,仅机械补第 5 参。
 function makeInsuranceRequirementMock() {
   return {
-    assertMemberInsuredForActivity: jest
-      .fn<Promise<void>, [string, unknown, unknown]>()
-      .mockResolvedValue(undefined),
+    requireForActivityRegistration: jest.fn().mockResolvedValue(null),
+    createActivityRegistrationEvidence: jest.fn().mockResolvedValue(undefined),
   };
 }
 

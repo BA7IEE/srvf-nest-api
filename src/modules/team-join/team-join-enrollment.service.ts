@@ -16,7 +16,8 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
-import { lockMemberLifecycle } from '../members/member-lifecycle-lock';
+import { lockLinkedUserLifecycle, lockMemberLifecycle } from '../members/member-lifecycle-lock';
+import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_TYPE_RECRUITMENT,
@@ -53,6 +54,17 @@ import type { JoinTeamJoinApplicationDto, TeamJoinApplicationAdminDto } from './
 const AUDIT_RESOURCE_TYPE = 'team_join_application';
 type PrismaTx = Prisma.TransactionClient;
 
+interface LockedTeamJoinApplicationRow {
+  id: string;
+  cycleId: string;
+  memberId: string;
+}
+
+interface LockedTeamJoinCycleRow {
+  id: string;
+  requiresInsurance: boolean;
+}
+
 @Injectable()
 export class TeamJoinEnrollmentService {
   constructor(
@@ -60,6 +72,7 @@ export class TeamJoinEnrollmentService {
     private readonly rbac: RbacService,
     private readonly auditLogs: AuditLogsService,
     private readonly notificationOutbox: NotificationOutboxService,
+    private readonly insuranceRequirement: InsuranceRequirementService,
   ) {}
 
   private async assertCanOrThrow(user: CurrentUserPayload, action: string): Promise<void> {
@@ -94,6 +107,26 @@ export class TeamJoinEnrollmentService {
     // 业务写与 durable notification intent 同一事务；任一失败均全部回滚。
     const result = await this.prisma.$transaction(async (tx) => {
       // 1. 申请存在 + approved(否则 28240;幂等:joined 重跑命中此闸,不重复设部门/级别)
+      const applicationRows = await tx.$queryRaw<LockedTeamJoinApplicationRow[]>(Prisma.sql`
+        SELECT "id", "cycleId", "memberId"
+        FROM "team_join_applications"
+        WHERE "id" = ${id}
+          AND "deletedAt" IS NULL
+        FOR UPDATE
+      `);
+      const lockedApplication = applicationRows[0];
+      if (!lockedApplication) throw new BizException(BizCode.TEAM_JOIN_APPLICATION_NOT_FOUND);
+
+      const cycleRows = await tx.$queryRaw<LockedTeamJoinCycleRow[]>(Prisma.sql`
+        SELECT "id", "requiresInsurance"
+        FROM "team_join_cycles"
+        WHERE "id" = ${lockedApplication.cycleId}
+          AND "deletedAt" IS NULL
+        FOR SHARE
+      `);
+      const lockedCycle = cycleRows[0];
+      if (!lockedCycle) throw new BizException(BizCode.TEAM_JOIN_APPLICATION_NOT_FOUND);
+
       const app = await tx.teamJoinApplication.findFirst({
         where: { id, deletedAt: null },
         include: TEAM_JOIN_APPLICATION_INCLUDE,
@@ -102,7 +135,11 @@ export class TeamJoinEnrollmentService {
       if (app.statusCode !== APP_STATUS_APPROVED) {
         throw new BizException(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE);
       }
+      const insuranceEligibility = lockedCycle.requiresInsurance
+        ? await this.insuranceRequirement.requireForTeamJoin(app.memberId, now, tx)
+        : null;
       await lockMemberLifecycle(tx, app.memberId);
+      await lockLinkedUserLifecycle(tx, app.memberId);
 
       // 2. approved 资格不随轮关闭失效;有效期类 gate 与贡献值仍在后续步骤兜底重校验。
 
@@ -221,6 +258,13 @@ export class TeamJoinEnrollmentService {
         },
         include: TEAM_JOIN_APPLICATION_INCLUDE,
       });
+
+      await this.insuranceRequirement.createTeamJoinApplicationEvidence(
+        id,
+        app.memberId,
+        insuranceEligibility,
+        tx,
+      );
 
       await this.auditLogs.log({
         event: 'team-join-application.join',

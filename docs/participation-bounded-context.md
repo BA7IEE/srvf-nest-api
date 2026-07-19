@@ -34,8 +34,8 @@
 
 | 模块 | Prisma 模型 | 边界关系 |
 |---|---|---|
-| [`src/modules/insurances/`](../src/modules/insurances/) | `MemberInsurance` / `TeamInsuranceCoverage` / `InsuranceEligibilityEvidence` | 保险是报名资格的上游上下文。D-INSURANCE v3 PR1 仅增加 nullable evidence 双 source/双 owner FK 骨架；现有报名 consumer 语义不变，PR1 不生成 evidence |
-| [`src/modules/team-join/`](../src/modules/team-join/) | `TeamJoinCycle` / `TeamJoinApplication` | 入队是 evidence 的另一 owner 上下文。PR1 的 `requiresInsurance=false` 是 dormant schema flag，不参与现有入队判断 |
+| [`src/modules/insurances/`](../src/modules/insurances/) | `MemberInsurance` / `TeamInsuranceCoverage` / `InsuranceEligibilityEvidence` | 保险是报名资格的上游上下文。D-INSURANCE v3 PR3 single gate=true 时，`requiresInsurance` 活动只认覆盖完整北京日区间的 verified self，随后才尝试 live Team Policy+Coverage；报名 create 根事务按 `Activity→source→Registration→Evidence→Audit` 固化唯一最小 evidence。gate=false 保留旧 consumer/0 evidence |
+| [`src/modules/team-join/`](../src/modules/team-join/) | `TeamJoinCycle` / `TeamJoinApplication` | 入队是 evidence 的另一 owner 上下文。`requiresInsurance` 可配置/返回；仅 single gate=true 时在 final join 按同一来源规则消费北京入队日并生成 application evidence，无来源 26031。申请创建/评估阶段不提前生成 evidence |
 
 ### 2.3 Explicitly excluded(明确不在 participation 范围内)
 

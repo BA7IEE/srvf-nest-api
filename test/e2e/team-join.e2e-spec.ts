@@ -3,7 +3,10 @@ import { Prisma, Role } from '@prisma/client';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import { normalizeDateOnly } from '../../src/common/datetime/date-only.util';
 import { PrismaService } from '../../src/database/prisma.service';
+import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
+import { InsuranceRequirementService } from '../../src/modules/insurances/insurance-requirement.service';
 import { NotificationOutboxService } from '../../src/modules/notifications/notification-outbox.service';
 import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import { loginAs } from '../fixtures/auth.fixture';
@@ -40,10 +43,13 @@ const GENERAL_GATES = [
 
 describe('招新三期(入队)admin 面 e2e', () => {
   let app: INestApplication;
+  let appB: INestApplication;
   let prisma: PrismaService;
+  let prismaB: PrismaService;
   let adminAuth: string; // SUPER_ADMIN(rbac.can 短路)
   let userAuth: string; // 普通 USER(RBAC 边界)
   let adminUserId: string; // attendance sheet submitterUserId
+  let previousGate: string | undefined;
   let memberSeq = 0;
 
   function markGate(
@@ -211,11 +217,80 @@ describe('招新三期(入队)admin 面 e2e', () => {
     return org.id;
   }
 
-  function join(appId: string, organizationId: string, auth = adminAuth): request.Test {
-    return request(httpServer(app))
+  function joinVia(
+    targetApp: INestApplication,
+    appId: string,
+    organizationId: string,
+    auth = adminAuth,
+  ): request.Test {
+    return request(httpServer(targetApp))
       .post(`${ADMIN_APPS}/${appId}/join`)
       .set('Authorization', auth)
       .send({ organizationId });
+  }
+
+  function join(appId: string, organizationId: string, auth = adminAuth): request.Test {
+    return joinVia(app, appId, organizationId, auth);
+  }
+
+  async function waitForBlockedQuery(blockerPid: number, queryPattern: string): Promise<void> {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      const rows = await prisma.$queryRaw<Array<{ pid: number }>>(Prisma.sql`
+        SELECT pid
+        FROM pg_stat_activity
+        WHERE CAST(${blockerPid} AS integer) = ANY(pg_blocking_pids(pid))
+          AND query LIKE ${queryPattern}
+      `);
+      if (rows.length > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`未观察到 PostgreSQL blocked query: ${queryPattern}`);
+  }
+
+  async function readBackendIdentity(client: PrismaService): Promise<{
+    pid: number;
+    databaseName: string;
+  }> {
+    const rows = await client.$queryRaw<Array<{ pid: number; databaseName: string }>>(Prisma.sql`
+      SELECT pg_backend_pid() AS pid, current_database() AS "databaseName"
+    `);
+    return rows[0];
+  }
+
+  async function waitForBlockedQueryCount(
+    queryPattern: string,
+    expectedCount: number,
+  ): Promise<Array<{ pid: number; blockers: number[] }>> {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      const rows = await prisma.$queryRaw<Array<{ pid: number; blockers: number[] }>>(Prisma.sql`
+        SELECT pid, pg_blocking_pids(pid) AS blockers
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND wait_event_type = 'Lock'
+          AND cardinality(pg_blocking_pids(pid)) > 0
+          AND query LIKE ${queryPattern}
+        ORDER BY pid ASC
+      `);
+      if (rows.length >= expectedCount) return rows;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`未观察到 ${expectedCount} 条 PostgreSQL blocked query: ${queryPattern}`);
+  }
+
+  async function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error(`${label} timeout`)), 5_000);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   // 直建一条「approved」入队申请(8 通用 gate 全过 + 候选部门),用于 T4 一键入队测试。
@@ -227,6 +302,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
     gateMarks?: Record<string, unknown>;
     evaluationExtendedUntil?: Date;
     cycleStatus?: 'open' | 'closed';
+    requiresInsurance?: boolean;
   }): Promise<{ appId: string; memberId: string; cycleId: string }> {
     // 十项收口刀B:DB 级「至多一个 open 轮」partial unique 落地——夹具先关旧 open 再开新
     // (此前夹具可堆多个 open 轮,靠"最新创建"侥幸;现与生产语义一致)。
@@ -240,6 +316,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
         name: '2026 年度入队',
         statusCode: opts.cycleStatus ?? 'open',
         openedAt: new Date(),
+        requiresInsurance: opts.requiresInsurance ?? false,
       },
     });
     const memberId = await createMember();
@@ -270,9 +347,44 @@ describe('招新三期(入队)admin 面 e2e', () => {
     return { appId: a.id, memberId, cycleId: cycle.id };
   }
 
+  async function giveVerifiedSelfInsurance(memberId: string) {
+    return prisma.memberInsurance.create({
+      data: {
+        memberId,
+        insurerName: '入队自购保险',
+        policyNumber: `TJ-SELF-${memberId}`,
+        coverageStart: new Date('2020-01-01T00:00:00.000Z'),
+        coverageEnd: new Date('2099-12-31T00:00:00.000Z'),
+        reviewStatusCode: 'verified',
+        version: 4,
+        reviewedByUserId: adminUserId,
+        reviewedAt: new Date('2026-07-01T01:02:03.000Z'),
+      },
+    });
+  }
+
+  async function giveTeamInsurance(memberId: string) {
+    const policy = await prisma.teamInsurancePolicy.create({
+      data: {
+        insurerName: '入队队保',
+        policyNumber: `TJ-TEAM-${memberId}`,
+        coverageStart: new Date('2020-01-01T00:00:00.000Z'),
+        coverageEnd: new Date('2099-12-31T00:00:00.000Z'),
+      },
+    });
+    const coverage = await prisma.teamInsuranceCoverage.create({
+      data: { policyId: policy.id, memberId },
+    });
+    return { policy, coverage };
+  }
+
   beforeAll(async () => {
+    previousGate = process.env.INSURANCE_ENFORCEMENT_ENABLED;
+    process.env.INSURANCE_ENFORCEMENT_ENABLED = 'true';
     app = await createTestApp();
+    appB = await createTestApp();
     prisma = app.get(PrismaService);
+    prismaB = appB.get(PrismaService);
     await resetDb(app);
     await createTestUser(app, { username: 'tj_admin', role: Role.SUPER_ADMIN });
     adminAuth = (await loginAs(app, 'tj_admin')).authHeader;
@@ -293,13 +405,16 @@ describe('招新三期(入队)admin 面 e2e', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await Promise.all([app.close(), appB.close()]);
+    if (previousGate === undefined) delete process.env.INSURANCE_ENFORCEMENT_ENABLED;
+    else process.env.INSURANCE_ENFORCEMENT_ENABLED = previousGate;
   });
 
   beforeEach(async () => {
     await prisma.attendanceRecord.deleteMany({});
     await prisma.attendanceSheet.deleteMany({});
     await prisma.activity.deleteMany({});
+    await prisma.insuranceEligibilityEvidence.deleteMany({});
     await prisma.teamJoinApplication.deleteMany({});
     await prisma.memberOrganizationMembership.deleteMany({}); // T4 一键入队建的归属(FK 顺序:先于 org/member)
     await prisma.teamJoinCycle.deleteMany({});
@@ -309,6 +424,9 @@ describe('招新三期(入队)admin 面 e2e', () => {
     await prisma.notificationRead.deleteMany({});
     await prisma.notification.deleteMany({});
     await prisma.notificationOutboxIntent.deleteMany({});
+    await prisma.teamInsuranceCoverage.deleteMany({});
+    await prisma.teamInsurancePolicy.deleteMany({});
+    await prisma.memberInsurance.deleteMany({});
     await prisma.member.deleteMany({});
     await prisma.auditLog.deleteMany({
       where: { resourceType: { in: ['team_join_cycle', 'team_join_application'] } },
@@ -323,6 +441,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
       .send({ year: CYCLE_YEAR, name: '2026 年度入队' })
       .expect(201);
     expect(created.body.data.statusCode).toBe('closed');
+    expect(created.body.data.requiresInsurance).toBe(false);
     const id = created.body.data.id as string;
 
     const opened = await request(httpServer(app))
@@ -338,6 +457,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
       .set('Authorization', adminAuth)
       .expect(200);
     expect(detail.body.data.statusCode).toBe('open');
+    expect(detail.body.data.requiresInsurance).toBe(false);
 
     // 第二个轮开 open → 至多一个 open 守
     const c2 = await request(httpServer(app))
@@ -360,7 +480,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
     expectBizError(res, BizCode.TEAM_JOIN_CYCLE_NOT_FOUND);
   });
 
-  it('H 入队轮配置:创建/更新回显开放部门与候选上限;清单 org 必须存在且 ACTIVE', async () => {
+  it('H 入队轮配置:创建/更新回显保险、开放部门与候选上限;审计同步保险开关', async () => {
     const active = await prisma.organization.create({
       data: { name: '开放部门', nodeTypeCode: 'demo-node-type-1', status: 'ACTIVE' },
     });
@@ -375,10 +495,12 @@ describe('招新三期(入队)admin 面 e2e', () => {
         name: '配置化入队轮',
         openOrganizationIds: [active.id, active.id],
         maxTargetOrgs: 2,
+        requiresInsurance: true,
       })
       .expect(201);
     expect(created.body.data.openOrganizationIds).toEqual([active.id]);
     expect(created.body.data.maxTargetOrgs).toBe(2);
+    expect(created.body.data.requiresInsurance).toBe(true);
 
     const overLimit = await request(httpServer(app))
       .patch(`${ADMIN_CYCLES}/${created.body.data.id}`)
@@ -389,10 +511,26 @@ describe('招新三期(入队)admin 面 e2e', () => {
     const cleared = await request(httpServer(app))
       .patch(`${ADMIN_CYCLES}/${created.body.data.id}`)
       .set('Authorization', adminAuth)
-      .send({ openOrganizationIds: [], maxTargetOrgs: null })
+      .send({ openOrganizationIds: [], maxTargetOrgs: null, requiresInsurance: false })
       .expect(200);
     expect(cleared.body.data.openOrganizationIds).toBeNull();
     expect(cleared.body.data.maxTargetOrgs).toBeNull();
+    expect(cleared.body.data.requiresInsurance).toBe(false);
+
+    const audits = await prisma.auditLog.findMany({
+      where: {
+        resourceType: 'team_join_cycle',
+        resourceId: created.body.data.id as string,
+        event: { in: ['team-join-cycle.create', 'team-join-cycle.update'] },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(audits).toHaveLength(2);
+    expect(audits[0].context).toMatchObject({ after: { requiresInsurance: true } });
+    expect(audits[1].context).toMatchObject({
+      before: { requiresInsurance: true },
+      after: { requiresInsurance: false },
+    });
 
     expectBizError(
       await request(httpServer(app))
@@ -774,7 +912,11 @@ describe('招新三期(入队)admin 面 e2e', () => {
     });
     expect(beforeDept).toBe(0);
 
+    const insuranceRequirement = app.get(InsuranceRequirementService);
+    const insuranceQuery = jest.spyOn(insuranceRequirement, 'requireForTeamJoin');
     const res = await join(appId, org).expect(200);
+    expect(insuranceQuery).not.toHaveBeenCalled();
+    insuranceQuery.mockRestore();
     expect(res.body.data.statusCode).toBe('joined');
     expect(res.body.data.selectedOrganizationId).toBe(org);
     expect(res.body.data.joinedAt).not.toBeNull();
@@ -792,6 +934,491 @@ describe('招新三期(入队)admin 面 e2e', () => {
       where: { event: 'team-join-application.join' },
     });
     expect(auditCount).toBe(1);
+    expect(
+      await prisma.insuranceEligibilityEvidence.count({
+        where: { teamJoinApplicationId: appId },
+      }),
+    ).toBe(0);
+  });
+
+  it('⑰-ins-1 requiresInsurance=true 且无来源 → 26031，final join 副作用全为零', async () => {
+    const org = await makeOrg();
+    const { appId, memberId } = await setupApproved({
+      targets: [org],
+      requiresInsurance: true,
+    });
+    expect(
+      await prisma.insuranceEligibilityEvidence.count({
+        where: { teamJoinApplicationId: appId },
+      }),
+    ).toBe(0);
+
+    expectBizError(await join(appId, org), BizCode.TEAM_JOIN_INSURANCE_REQUIRED);
+    expect(
+      await prisma.teamJoinApplication.findUniqueOrThrow({ where: { id: appId } }),
+    ).toMatchObject({ statusCode: 'approved', selectedOrganizationId: null, joinedAt: null });
+    expect(await prisma.member.findUniqueOrThrow({ where: { id: memberId } })).toMatchObject({
+      gradeCode: null,
+    });
+    expect(
+      await prisma.memberOrganizationMembership.count({ where: { memberId, deletedAt: null } }),
+    ).toBe(0);
+    expect(
+      await prisma.insuranceEligibilityEvidence.count({
+        where: { teamJoinApplicationId: appId },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.auditLog.count({
+        where: { event: 'team-join-application.join', resourceId: appId },
+      }),
+    ).toBe(0);
+    expect(await prisma.notificationOutboxIntent.count({ where: { aggregateId: appId } })).toBe(0);
+  });
+
+  it('⑰-ins-2 verified self → final join 成功并生成唯一、最小 owner evidence', async () => {
+    const org = await makeOrg();
+    const { appId, memberId } = await setupApproved({
+      targets: [org],
+      requiresInsurance: true,
+    });
+    const source = await giveVerifiedSelfInsurance(memberId);
+    expect(
+      await prisma.insuranceEligibilityEvidence.count({
+        where: { teamJoinApplicationId: appId },
+      }),
+    ).toBe(0);
+
+    const res = await join(appId, org).expect(200);
+    const requiredDay = normalizeDateOnly(new Date(res.body.data.joinedAt as string).toISOString());
+    const evidence = await prisma.insuranceEligibilityEvidence.findMany({
+      where: { teamJoinApplicationId: appId },
+    });
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toMatchObject({
+      sourceKind: 'member_insurance',
+      memberInsuranceId: source.id,
+      teamInsuranceCoverageId: null,
+      ownerKind: 'team_join_application',
+      activityRegistrationId: null,
+      teamJoinApplicationId: appId,
+      sourceRevision: 4,
+      sourceReviewedByUserId: adminUserId,
+      sourceCoverageStart: new Date('2020-01-01T00:00:00.000Z'),
+      sourceCoverageEnd: new Date('2099-12-31T00:00:00.000Z'),
+    });
+    expect(evidence[0].sourceReviewedAt?.toISOString()).toBe('2026-07-01T01:02:03.000Z');
+    expect(evidence[0].requiredFrom?.getTime()).toBe(requiredDay.getTime());
+    expect(evidence[0].requiredThrough?.getTime()).toBe(requiredDay.getTime());
+    expect(JSON.stringify(evidence[0])).not.toMatch(
+      /insurer|policyNumber|note|reason|image|attachment|key|url/i,
+    );
+  });
+
+  it('⑰-ins-3 live team Policy+Coverage → final join 成功并生成 team evidence', async () => {
+    const org = await makeOrg();
+    const { appId, memberId } = await setupApproved({
+      targets: [org],
+      requiresInsurance: true,
+    });
+    const { coverage } = await giveTeamInsurance(memberId);
+    const res = await join(appId, org).expect(200);
+    const requiredDay = normalizeDateOnly(new Date(res.body.data.joinedAt as string).toISOString());
+    const evidence = await prisma.insuranceEligibilityEvidence.findMany({
+      where: { teamJoinApplicationId: appId },
+    });
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toMatchObject({
+      sourceKind: 'team_insurance_coverage',
+      memberInsuranceId: null,
+      teamInsuranceCoverageId: coverage.id,
+      ownerKind: 'team_join_application',
+      activityRegistrationId: null,
+      teamJoinApplicationId: appId,
+      sourceRevision: null,
+      sourceReviewedByUserId: null,
+      sourceReviewedAt: null,
+      sourceCoverageStart: new Date('2020-01-01T00:00:00.000Z'),
+      sourceCoverageEnd: new Date('2099-12-31T00:00:00.000Z'),
+    });
+    expect(evidence[0].requiredFrom?.getTime()).toBe(requiredDay.getTime());
+    expect(evidence[0].requiredThrough?.getTime()).toBe(requiredDay.getTime());
+  });
+
+  it.each(['rejected', 'deleted'] as const)(
+    '⑰-ins-4 verified self 在 final join 前变为 %s → 26031，不消费旧资格',
+    async (mutation) => {
+      const org = await makeOrg();
+      const { appId, memberId } = await setupApproved({
+        targets: [org],
+        requiresInsurance: true,
+      });
+      const source = await giveVerifiedSelfInsurance(memberId);
+      await prisma.memberInsurance.update({
+        where: { id: source.id },
+        data:
+          mutation === 'rejected'
+            ? { reviewStatusCode: 'rejected', version: { increment: 1 } }
+            : { deletedAt: new Date(), version: { increment: 1 } },
+      });
+
+      expectBizError(await join(appId, org), BizCode.TEAM_JOIN_INSURANCE_REQUIRED);
+      expect(
+        await prisma.teamJoinApplication.findUniqueOrThrow({ where: { id: appId } }),
+      ).toMatchObject({ statusCode: 'approved', joinedAt: null });
+      expect(
+        await prisma.insuranceEligibilityEvidence.count({
+          where: { teamJoinApplicationId: appId },
+        }),
+      ).toBe(0);
+    },
+  );
+
+  it('⑰-ins-5 wrong-member preexisting evidence 不能穿透 final join，业务写全部回滚', async () => {
+    const org = await makeOrg();
+    const { appId, memberId } = await setupApproved({
+      targets: [org],
+      requiresInsurance: true,
+    });
+    await giveVerifiedSelfInsurance(memberId);
+    const otherMemberId = await createMember();
+    const wrongSource = await giveVerifiedSelfInsurance(otherMemberId);
+    await prisma.insuranceEligibilityEvidence.create({
+      data: {
+        sourceKind: 'member_insurance',
+        memberInsuranceId: wrongSource.id,
+        ownerKind: 'team_join_application',
+        teamJoinApplicationId: appId,
+        sourceRevision: wrongSource.version,
+        sourceReviewedByUserId: wrongSource.reviewedByUserId,
+        sourceReviewedAt: wrongSource.reviewedAt,
+        requiredFrom: new Date(),
+        requiredThrough: new Date(),
+        sourceCoverageStart: wrongSource.coverageStart,
+        sourceCoverageEnd: wrongSource.coverageEnd,
+      },
+    });
+
+    expectBizError(await join(appId, org), BizCode.TEAM_JOIN_INSURANCE_REQUIRED);
+    expect(
+      await prisma.teamJoinApplication.findUniqueOrThrow({ where: { id: appId } }),
+    ).toMatchObject({ statusCode: 'approved', selectedOrganizationId: null, joinedAt: null });
+    expect(
+      await prisma.memberOrganizationMembership.count({ where: { memberId, deletedAt: null } }),
+    ).toBe(0);
+    expect(
+      await prisma.insuranceEligibilityEvidence.count({
+        where: { teamJoinApplicationId: appId },
+      }),
+    ).toBe(1);
+  });
+
+  it('并发夹具自证:两 Nest server/Prisma pool 独立且共用同一派生 app_test_* PostgreSQL', async () => {
+    expect(app.getHttpServer()).not.toBe(appB.getHttpServer());
+    expect(prisma).not.toBe(prismaB);
+    const [identityA, identityB] = await Promise.all([
+      readBackendIdentity(prisma),
+      readBackendIdentity(prismaB),
+    ]);
+    expect(identityA.pid).not.toBe(identityB.pid);
+    expect(identityA.databaseName).toBe(identityB.databaseName);
+    expect(identityA.databaseName).toMatch(/^app_test(?:_|$)/);
+  });
+
+  it('两 Nest/两 pool barrier:cycle flag update 锁 Application→Cycle 后提交 true，Final join 重读并拒 26031', async () => {
+    const org = await makeOrg();
+    const { appId, memberId, cycleId } = await setupApproved({
+      targets: [org],
+      requiresInsurance: false,
+    });
+    const auditLogsB = appB.get(AuditLogsService);
+    const originalLog = auditLogsB.log.bind(auditLogsB);
+    let release!: () => void;
+    let reached!: (pid: number) => void;
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const reachedPromise = new Promise<number>((resolve) => {
+      reached = resolve;
+    });
+    const barrier = jest.spyOn(auditLogsB, 'log').mockImplementation(async (input) => {
+      if (input.event === 'team-join-cycle.update' && input.resourceId === cycleId && input.tx) {
+        const rows = await input.tx.$queryRaw<Array<{ pid: number }>>(
+          Prisma.sql`SELECT pg_backend_pid() AS pid`,
+        );
+        reached(rows[0].pid);
+        await releasePromise;
+      }
+      return originalLog(input);
+    });
+    const update = request(httpServer(appB))
+      .patch(`${ADMIN_CYCLES}/${cycleId}`)
+      .set('Authorization', adminAuth)
+      .send({ requiresInsurance: true })
+      .then((res) => res);
+    let joining: Promise<request.Response> | undefined;
+
+    try {
+      const blockerPid = await withTimeout(reachedPromise, 'cycle flag audit barrier');
+      joining = join(appId, org).then((res) => res);
+      await waitForBlockedQuery(blockerPid, '%FROM "team_join_applications"%FOR UPDATE%');
+      release();
+      const [updateRes, joinRes] = await Promise.all([update, joining]);
+      expect(updateRes.status).toBe(200);
+      expect(updateRes.body.data.requiresInsurance).toBe(true);
+      expectBizError(joinRes, BizCode.TEAM_JOIN_INSURANCE_REQUIRED);
+    } finally {
+      release();
+      await Promise.allSettled([update, ...(joining === undefined ? [] : [joining])]);
+      barrier.mockRestore();
+    }
+
+    expect(await prisma.teamJoinCycle.findUniqueOrThrow({ where: { id: cycleId } })).toMatchObject({
+      requiresInsurance: true,
+    });
+    expect(
+      await prisma.teamJoinApplication.findUniqueOrThrow({ where: { id: appId } }),
+    ).toMatchObject({ statusCode: 'approved', joinedAt: null });
+    expect(
+      await prisma.memberOrganizationMembership.count({ where: { memberId, deletedAt: null } }),
+    ).toBe(0);
+    expect(
+      await prisma.insuranceEligibilityEvidence.count({
+        where: { teamJoinApplicationId: appId },
+      }),
+    ).toBe(0);
+  });
+
+  it('两 Nest/两 pool barrier:review↔Final join self source，review NOWAIT 快速 26011 且无死锁', async () => {
+    const org = await makeOrg();
+    const { appId, memberId } = await setupApproved({
+      targets: [org],
+      requiresInsurance: true,
+    });
+    const source = await giveVerifiedSelfInsurance(memberId);
+    let releaseMember!: () => void;
+    let memberLocked!: (pid: number) => void;
+    const releaseMemberPromise = new Promise<void>((resolve) => {
+      releaseMember = resolve;
+    });
+    const memberLockedPromise = new Promise<number>((resolve) => {
+      memberLocked = resolve;
+    });
+    const holder = prismaB.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`
+        SELECT "id"
+        FROM "Member"
+        WHERE "id" = ${memberId}
+        FOR UPDATE
+      `);
+      const rows = await tx.$queryRaw<Array<{ pid: number }>>(
+        Prisma.sql`SELECT pg_backend_pid() AS pid`,
+      );
+      memberLocked(rows[0].pid);
+      await releaseMemberPromise;
+    });
+    let reviewPromise: Promise<request.Response> | undefined;
+    let joinPromise: Promise<request.Response> | undefined;
+
+    try {
+      const holderPid = await withTimeout(memberLockedPromise, 'external Member lock');
+      reviewPromise = request(httpServer(appB))
+        .post(`/api/admin/v1/members/${memberId}/insurances/${source.id}/review`)
+        .set('Authorization', adminAuth)
+        .send({ decision: 'rejected', expectedVersion: 4 })
+        .then((res) => res);
+      await waitForBlockedQuery(holderPid, '%FROM "Member"%FOR UPDATE%');
+
+      // review 已先进入 Member 锁队列；Final join 随后持 self source FOR SHARE 后等待 Member。
+      // 释放外部锁后 review 先拿 Member，再对 source 使用 NOWAIT 快速 26011；若改为等待锁，
+      // 将与持 source 等 Member 的 Final join 形成死锁。
+      joinPromise = join(appId, org).then((res) => res);
+      const waiters = await waitForBlockedQueryCount('%FROM "Member"%FOR UPDATE%', 2);
+      expect(new Set(waiters.map((row) => row.pid)).size).toBeGreaterThanOrEqual(2);
+      expect(waiters.every((row) => row.blockers.length > 0)).toBe(true);
+      releaseMember();
+      const [reviewRes, joinRes] = await Promise.all([
+        withTimeout(reviewPromise, 'review NOWAIT result'),
+        withTimeout(joinPromise, 'Final join result'),
+      ]);
+      expectBizError(reviewRes, BizCode.MEMBER_INSURANCE_VERSION_CONFLICT);
+      expect(joinRes.status).toBe(200);
+    } finally {
+      releaseMember();
+      await Promise.allSettled([
+        holder,
+        ...(reviewPromise === undefined ? [] : [reviewPromise]),
+        ...(joinPromise === undefined ? [] : [joinPromise]),
+      ]);
+    }
+
+    expect(
+      await prisma.memberInsurance.findUniqueOrThrow({ where: { id: source.id } }),
+    ).toMatchObject({ reviewStatusCode: 'verified', version: 4 });
+    expect(
+      await prisma.insuranceEligibilityEvidence.count({
+        where: { teamJoinApplicationId: appId, memberInsuranceId: source.id },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.auditLog.count({
+        where: { event: 'member-insurance.review', resourceId: source.id },
+      }),
+    ).toBe(0);
+  });
+
+  it('Final join audit 失败回滚 membership/member/application/evidence/outbox', async () => {
+    const org = await makeOrg();
+    const { appId, memberId } = await setupApproved({
+      targets: [org],
+      requiresInsurance: true,
+    });
+    await giveVerifiedSelfInsurance(memberId);
+    const auditLogs = app.get(AuditLogsService);
+    const originalLog = auditLogs.log.bind(auditLogs);
+    const failure = jest.spyOn(auditLogs, 'log').mockImplementation(async (input) => {
+      if (input.event === 'team-join-application.join' && input.resourceId === appId) {
+        throw new Error('simulated final join audit failure');
+      }
+      return originalLog(input);
+    });
+    try {
+      await join(appId, org).expect(500);
+    } finally {
+      failure.mockRestore();
+    }
+
+    expect(
+      await prisma.teamJoinApplication.findUniqueOrThrow({ where: { id: appId } }),
+    ).toMatchObject({ statusCode: 'approved', selectedOrganizationId: null, joinedAt: null });
+    expect(await prisma.member.findUniqueOrThrow({ where: { id: memberId } })).toMatchObject({
+      gradeCode: null,
+    });
+    expect(
+      await prisma.memberOrganizationMembership.count({ where: { memberId, deletedAt: null } }),
+    ).toBe(0);
+    expect(
+      await prisma.insuranceEligibilityEvidence.count({
+        where: { teamJoinApplicationId: appId },
+      }),
+    ).toBe(0);
+    expect(await prisma.notificationOutboxIntent.count({ where: { aggregateId: appId } })).toBe(0);
+    expect(
+      await prisma.auditLog.count({
+        where: { event: 'team-join-application.join', resourceId: appId },
+      }),
+    ).toBe(0);
+  });
+
+  it('两 Nest/两 pool barrier:remove 按 Policy→Coverage→Member 等待 Final join，无 40P01', async () => {
+    const org = await makeOrg();
+    const { appId, memberId } = await setupApproved({
+      targets: [org],
+      requiresInsurance: true,
+    });
+    const { policy, coverage } = await giveTeamInsurance(memberId);
+    const requirement = app.get(InsuranceRequirementService);
+    const original = requirement.createTeamJoinApplicationEvidence.bind(requirement);
+    let release!: () => void;
+    let reached!: (pid: number) => void;
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const reachedPromise = new Promise<number>((resolve) => {
+      reached = resolve;
+    });
+    const barrier = jest
+      .spyOn(requirement, 'createTeamJoinApplicationEvidence')
+      .mockImplementation(async (...args) => {
+        const rows = await args[3].$queryRaw<Array<{ pid: number }>>(
+          Prisma.sql`SELECT pg_backend_pid() AS pid`,
+        );
+        reached(rows[0].pid);
+        await releasePromise;
+        return original(...args);
+      });
+
+    try {
+      const joining = join(appId, org).then((res) => res);
+      const blockerPid = await withTimeout(reachedPromise, 'final join evidence barrier');
+      const removal = request(httpServer(appB))
+        .delete(`/api/admin/v1/team-insurance-policies/${policy.id}/members/${memberId}`)
+        .set('Authorization', adminAuth)
+        .then((res) => res);
+      await waitForBlockedQuery(blockerPid, '%FROM "team_insurance_policies"%FOR UPDATE%');
+      release();
+      const [joinRes, removeRes] = await Promise.all([joining, removal]);
+      expect(joinRes.status).toBe(200);
+      expect(removeRes.status).toBe(200);
+      expect(removeRes.body.code).toBe(0);
+    } finally {
+      release();
+      barrier.mockRestore();
+    }
+    expect(
+      await prismaB.insuranceEligibilityEvidence.count({
+        where: { teamJoinApplicationId: appId, teamInsuranceCoverageId: coverage.id },
+      }),
+    ).toBe(1);
+    expect(
+      await prismaB.teamInsuranceCoverage.findUniqueOrThrow({ where: { id: coverage.id } }),
+    ).toMatchObject({ deletedAt: expect.any(Date) });
+  });
+
+  it('两 Nest/两 pool barrier:同 Team Join owner 双请求仅一条 evidence/归属/outbox', async () => {
+    const org = await makeOrg();
+    const { appId, memberId } = await setupApproved({
+      targets: [org],
+      requiresInsurance: true,
+    });
+    await giveVerifiedSelfInsurance(memberId);
+    const requirement = app.get(InsuranceRequirementService);
+    const original = requirement.createTeamJoinApplicationEvidence.bind(requirement);
+    let release!: () => void;
+    let reached!: (pid: number) => void;
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const reachedPromise = new Promise<number>((resolve) => {
+      reached = resolve;
+    });
+    const barrier = jest
+      .spyOn(requirement, 'createTeamJoinApplicationEvidence')
+      .mockImplementation(async (...args) => {
+        const rows = await args[3].$queryRaw<Array<{ pid: number }>>(
+          Prisma.sql`SELECT pg_backend_pid() AS pid`,
+        );
+        reached(rows[0].pid);
+        await releasePromise;
+        return original(...args);
+      });
+
+    try {
+      const winner = join(appId, org).then((res) => res);
+      const blockerPid = await withTimeout(reachedPromise, 'team join duplicate barrier');
+      const loser = joinVia(appB, appId, org).then((res) => res);
+      await waitForBlockedQuery(blockerPid, '%FROM "team_join_applications"%FOR UPDATE%');
+      release();
+      const [winnerRes, loserRes] = await Promise.all([winner, loser]);
+      expect(winnerRes.status).toBe(200);
+      expect(loserRes.status).toBe(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE.httpStatus);
+      expect(loserRes.body.code).toBe(BizCode.TEAM_JOIN_APPLICATION_WRONG_STATE.code);
+    } finally {
+      release();
+      barrier.mockRestore();
+    }
+
+    expect(
+      await prismaB.insuranceEligibilityEvidence.count({
+        where: { teamJoinApplicationId: appId },
+      }),
+    ).toBe(1);
+    expect(
+      await prismaB.memberOrganizationMembership.count({
+        where: { memberId, status: 'ACTIVE', deletedAt: null },
+      }),
+    ).toBe(1);
+    expect(await prismaB.notificationOutboxIntent.count({ where: { aggregateId: appId } })).toBe(1);
   });
 
   it('⑰a【T4】最终入队实时贡献复核拒绝 4.99 → 28241，且业务副作用为零', async () => {

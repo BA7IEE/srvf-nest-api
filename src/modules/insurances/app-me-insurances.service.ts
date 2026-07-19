@@ -1,10 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
@@ -53,6 +55,8 @@ export class AppMeInsurancesService {
     private readonly appIdentity: AppIdentityResolver,
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
+    @Inject(appConfig.KEY)
+    private readonly config: ConfigType<typeof appConfig>,
   ) {}
 
   // ============ helpers ============
@@ -112,6 +116,16 @@ export class AppMeInsurancesService {
   ): void {
     if (expectedVersion !== undefined && expectedVersion !== actualVersion) {
       throw new BizException(BizCode.MEMBER_INSURANCE_VERSION_CONFLICT);
+    }
+  }
+
+  private normalizeExpectedVersion(expectedVersion: number | null | undefined): number | undefined {
+    return expectedVersion == null ? undefined : expectedVersion;
+  }
+
+  private assertExpectedVersionPresent(expectedVersion: number | undefined): void {
+    if (this.config.insurance.enforcementEnabled && expectedVersion === undefined) {
+      throw new BizException(BizCode.BAD_REQUEST);
     }
   }
 
@@ -223,12 +237,14 @@ export class AppMeInsurancesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AppMyInsuranceDto> {
+    const expectedVersion = this.normalizeExpectedVersion(dto.expectedVersion);
+    this.assertExpectedVersionPresent(expectedVersion);
     const memberId = await this.assertCanUseAppOrThrow(currentUser);
-    this.recordExpectedVersionUsage(dto.expectedVersion, 'update');
+    this.recordExpectedVersionUsage(expectedVersion, 'update');
 
     return this.prisma.$transaction(async (tx) => {
       const before = await this.lockMyInsuranceOrThrow(id, memberId, tx);
-      this.assertExpectedVersionMatches(dto.expectedVersion, before.version);
+      this.assertExpectedVersionMatches(expectedVersion, before.version);
 
       // 合并后的终态日期参与跨字段校验(只改其一也不能造成 start > end)。
       const nextStart =
@@ -301,12 +317,14 @@ export class AppMeInsurancesService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AppMyInsuranceDto> {
+    const normalizedExpectedVersion = this.normalizeExpectedVersion(expectedVersion);
+    this.assertExpectedVersionPresent(normalizedExpectedVersion);
     const memberId = await this.assertCanUseAppOrThrow(currentUser);
-    this.recordExpectedVersionUsage(expectedVersion, 'delete');
+    this.recordExpectedVersionUsage(normalizedExpectedVersion, 'delete');
 
     return this.prisma.$transaction(async (tx) => {
       const before = await this.lockMyInsuranceOrThrow(id, memberId, tx);
-      this.assertExpectedVersionMatches(expectedVersion, before.version);
+      this.assertExpectedVersionMatches(normalizedExpectedVersion, before.version);
 
       const deleted = await tx.memberInsurance.update({
         where: { id: before.id },

@@ -60,6 +60,11 @@ type CoverageWithMember = Prisma.TeamInsuranceCoverageGetPayload<{
 
 type PrismaTx = Prisma.TransactionClient;
 
+interface LockedCoverageRow {
+  id: string;
+  memberId: string;
+}
+
 @Injectable()
 export class TeamInsurancePoliciesService {
   constructor(
@@ -84,6 +89,64 @@ export class TeamInsurancePoliciesService {
     });
     if (!policy) throw new BizException(BizCode.TEAM_INSURANCE_POLICY_NOT_FOUND);
     return policy;
+  }
+
+  private async lockPolicyOrThrow(policyId: string, tx: PrismaTx): Promise<SafePolicy> {
+    const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id"
+      FROM "team_insurance_policies"
+      WHERE "id" = ${policyId}
+        AND "deletedAt" IS NULL
+      FOR UPDATE
+    `);
+    if (!rows[0]) throw new BizException(BizCode.TEAM_INSURANCE_POLICY_NOT_FOUND);
+    return this.findPolicyOrThrow(policyId, tx);
+  }
+
+  private async lockCoverageSet(policyId: string, tx: PrismaTx): Promise<LockedCoverageRow[]> {
+    return tx.$queryRaw<LockedCoverageRow[]>(Prisma.sql`
+      SELECT "id", "memberId"
+      FROM "team_insurance_coverages"
+      WHERE "policyId" = ${policyId}
+        AND "deletedAt" IS NULL
+      ORDER BY "id"
+      FOR UPDATE
+    `);
+  }
+
+  private async lockMemberOrThrow(
+    memberId: string,
+    requireActive: boolean,
+    tx: PrismaTx,
+  ): Promise<void> {
+    const rows = requireActive
+      ? await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT "id"
+          FROM "Member"
+          WHERE "id" = ${memberId}
+            AND "deletedAt" IS NULL
+            AND CAST("status" AS TEXT) = ${MemberStatus.ACTIVE}
+          FOR SHARE
+        `)
+      : await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT "id"
+          FROM "Member"
+          WHERE "id" = ${memberId}
+            AND "deletedAt" IS NULL
+          FOR SHARE
+        `);
+    if (!rows[0]) throw new BizException(BizCode.MEMBER_NOT_FOUND);
+  }
+
+  private async lockActiveMembers(tx: PrismaTx): Promise<Array<{ id: string }>> {
+    return tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id"
+      FROM "Member"
+      WHERE "deletedAt" IS NULL
+        AND CAST("status" AS TEXT) = ${MemberStatus.ACTIVE}
+      ORDER BY "id"
+      FOR SHARE
+    `);
   }
 
   // 跨字段日期校验(E-18):起保 > 到期 → 26010;自购与队保单共用语义。
@@ -200,7 +263,7 @@ export class TeamInsurancePoliciesService {
     await this.assertCanOrThrow(currentUser, 'team-insurance-policy.update.record');
 
     return this.prisma.$transaction(async (tx) => {
-      const before = await this.findPolicyOrThrow(policyId, tx);
+      const before = await this.lockPolicyOrThrow(policyId, tx);
 
       // 合并后的终态日期参与跨字段校验(只改其一也不能造成 start > end)。
       const nextStart =
@@ -250,7 +313,7 @@ export class TeamInsurancePoliciesService {
     await this.assertCanOrThrow(currentUser, 'team-insurance-policy.delete.record');
 
     return this.prisma.$transaction(async (tx) => {
-      const before = await this.findPolicyOrThrow(policyId, tx);
+      const before = await this.lockPolicyOrThrow(policyId, tx);
 
       // E-4:不级联软删覆盖行——门槛查询 join p.deletedAt IS NULL,被删保单下覆盖行自然失效。
       const deleted = await tx.teamInsurancePolicy.update({
@@ -315,20 +378,14 @@ export class TeamInsurancePoliciesService {
     await this.assertCanOrThrow(currentUser, 'team-insurance-policy.add.member');
 
     return this.prisma.$transaction(async (tx) => {
-      await this.findPolicyOrThrow(policyId, tx);
+      await this.lockPolicyOrThrow(policyId, tx);
+      const coverages = await this.lockCoverageSet(policyId, tx);
 
       // 单加要求 member 存在且未软删(status 不限,管理员显式意图;评审稿 E-17)。
-      const member = await tx.member.findFirst({
-        where: notDeletedWhere({ id: dto.memberId }),
-        select: { id: true },
-      });
-      if (!member) throw new BizException(BizCode.MEMBER_NOT_FOUND);
+      await this.lockMemberOrThrow(dto.memberId, false, tx);
 
       // 串行预检查(活跃行重复 → 26004);并发兜底由 partial unique P2002 同码(E-16)。
-      const existing = await tx.teamInsuranceCoverage.findFirst({
-        where: notDeletedWhere({ policyId, memberId: dto.memberId }),
-        select: { id: true },
-      });
+      const existing = coverages.find((coverage) => coverage.memberId === dto.memberId);
       if (existing) throw new BizException(BizCode.TEAM_INSURANCE_COVERAGE_ALREADY_EXISTS);
 
       let created: CoverageWithMember;
@@ -369,17 +426,13 @@ export class TeamInsurancePoliciesService {
     await this.assertCanOrThrow(currentUser, 'team-insurance-policy.add.member');
 
     return this.prisma.$transaction(async (tx) => {
-      await this.findPolicyOrThrow(policyId, tx);
+      await this.lockPolicyOrThrow(policyId, tx);
+      const coverages = await this.lockCoverageSet(policyId, tx);
 
       // 选取:Member ACTIVE + 未软删,且当前不在本保单活跃覆盖中(幂等核心,D-INS-6)。
-      const candidates = await tx.member.findMany({
-        where: {
-          deletedAt: null,
-          status: MemberStatus.ACTIVE,
-          teamInsuranceCoverages: { none: { policyId, deletedAt: null } },
-        },
-        select: { id: true },
-      });
+      const members = await this.lockActiveMembers(tx);
+      const coveredMemberIds = new Set(coverages.map((coverage) => coverage.memberId));
+      const candidates = members.filter((member) => !coveredMemberIds.has(member.id));
 
       if (candidates.length > 0) {
         // createMany + skipDuplicates:partial unique 兜底并发(重复行静默跳过,保持幂等)。
@@ -416,10 +469,13 @@ export class TeamInsurancePoliciesService {
     await this.assertCanOrThrow(currentUser, 'team-insurance-policy.remove.member');
 
     return this.prisma.$transaction(async (tx) => {
-      await this.findPolicyOrThrow(policyId, tx);
-
-      const coverage = await tx.teamInsuranceCoverage.findFirst({
-        where: notDeletedWhere({ policyId, memberId }),
+      await this.lockPolicyOrThrow(policyId, tx);
+      const coverages = await this.lockCoverageSet(policyId, tx);
+      const lockedCoverage = coverages.find((coverage) => coverage.memberId === memberId);
+      if (!lockedCoverage) throw new BizException(BizCode.TEAM_INSURANCE_COVERAGE_NOT_FOUND);
+      await this.lockMemberOrThrow(memberId, false, tx);
+      const coverage = await tx.teamInsuranceCoverage.findUnique({
+        where: { id: lockedCoverage.id },
         select: coverageWithMemberSelect,
       });
       if (!coverage) throw new BizException(BizCode.TEAM_INSURANCE_COVERAGE_NOT_FOUND);

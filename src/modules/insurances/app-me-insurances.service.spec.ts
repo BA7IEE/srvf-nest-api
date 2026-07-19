@@ -1,3 +1,8 @@
+import type { ConfigType } from '@nestjs/config';
+import { Role, UserStatus } from '@prisma/client';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
+import { BizException } from '../../common/exceptions/biz.exception';
+import appConfig from '../../config/app.config';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AppIdentityResolver } from '../users/app-identity.resolver';
@@ -17,6 +22,7 @@ describe('AppMeInsurancesService expectedVersion telemetry', () => {
       {} as AppIdentityResolver,
       {} as PrismaService,
       {} as AuditLogsService,
+      { insurance: { enforcementEnabled: false } } as ConfigType<typeof appConfig>,
     );
     const harness = service as unknown as TelemetryHarness;
     const log = jest.fn<void, [Record<string, unknown>]>();
@@ -46,4 +52,57 @@ describe('AppMeInsurancesService expectedVersion telemetry', () => {
       expect(JSON.stringify(payload)).not.toMatch(/member|insuranceId|user|policy|insurer/i);
     }
   });
+});
+
+describe('AppMeInsurancesService PR3 cutover gate', () => {
+  function makeService(enforcementEnabled: boolean) {
+    const appIdentity = { resolve: jest.fn() };
+    const prisma = { $transaction: jest.fn() };
+    const auditLogs = { log: jest.fn() };
+    const service = new AppMeInsurancesService(
+      appIdentity as unknown as AppIdentityResolver,
+      prisma as unknown as PrismaService,
+      auditLogs as unknown as AuditLogsService,
+      { insurance: { enforcementEnabled } } as ConfigType<typeof appConfig>,
+    );
+    return { service, appIdentity, prisma, auditLogs };
+  }
+
+  it.each(['update', 'delete'] as const)(
+    'gate=true rejects missing expectedVersion before identity/transaction/audit (%s)',
+    async (operation) => {
+      const { service, appIdentity, prisma, auditLogs } = makeService(true);
+      const call =
+        operation === 'update'
+          ? service.updateMy(
+              'insurance-1',
+              { insurerName: 'updated' },
+              {
+                id: 'user-1',
+                username: 'u',
+                role: Role.USER,
+                status: UserStatus.ACTIVE,
+                memberId: null,
+              },
+              { requestId: 'req-1', ip: null, ua: null },
+            )
+          : service.softDeleteMy(
+              'insurance-1',
+              undefined,
+              {
+                id: 'user-1',
+                username: 'u',
+                role: Role.USER,
+                status: UserStatus.ACTIVE,
+                memberId: null,
+              },
+              { requestId: 'req-1', ip: null, ua: null },
+            );
+
+      await expect(call).rejects.toEqual(new BizException(BizCode.BAD_REQUEST));
+      expect(appIdentity.resolve).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(auditLogs.log).not.toHaveBeenCalled();
+    },
+  );
 });
