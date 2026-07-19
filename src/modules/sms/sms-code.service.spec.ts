@@ -266,8 +266,6 @@ describe('SmsCodeService.verifyAndConsume', () => {
     id: 'code-9',
     codeHash: hmacCode('13800001234', 'PHONE_BIND', '654321'),
     userId: 'user-1',
-    expiresAt: new Date(Date.now() + 60_000),
-    attempts: 0,
   };
   const VERIFY_INPUT = {
     phone: '13800001234',
@@ -277,16 +275,16 @@ describe('SmsCodeService.verifyAndConsume', () => {
   };
 
   it.each([
-    ['活码不存在', null, VERIFY_INPUT],
-    ['已过期', { ...ACTIVE, expiresAt: new Date(Date.now() - 1000) }, VERIFY_INPUT],
-    ['错 5 次已作废', { ...ACTIVE, attempts: 5 }, VERIFY_INPUT],
-    ['归属不符(E-8)', { ...ACTIVE, userId: 'user-2' }, VERIFY_INPUT],
-  ])('%s → 统一 SMS_CODE_INVALID(防枚举)', async (_label, row, input) => {
+    ['活码不存在', []],
+    ['DB 时钟已过期', []],
+    ['错 5 次已作废', []],
+    ['归属不符(E-8)', [{ ...ACTIVE, userId: 'user-2' }]],
+  ])('%s → 统一 SMS_CODE_INVALID(防枚举)', async (_label, rows) => {
     const prisma = makePrismaMock();
-    prisma.smsVerificationCode.findFirst.mockResolvedValue(row);
+    prisma.$queryRaw.mockResolvedValue(rows);
     const svc = makeService(prisma, makeRouterMock({}));
 
-    await expect(svc.verifyAndConsume(input)).rejects.toEqual(
+    await expect(svc.verifyAndConsume(VERIFY_INPUT)).rejects.toEqual(
       new BizException(BizCode.SMS_CODE_INVALID),
     );
     // 这些路径不产生 attempts 计数写
@@ -295,35 +293,68 @@ describe('SmsCodeService.verifyAndConsume', () => {
 
   it('码值不符 → attempts+1 独立提交 + SMS_CODE_INVALID', async () => {
     const prisma = makePrismaMock();
-    prisma.smsVerificationCode.findFirst.mockResolvedValue(ACTIVE);
-    prisma.smsVerificationCode.update.mockResolvedValue({});
+    prisma.$queryRaw.mockResolvedValueOnce([ACTIVE]).mockResolvedValueOnce([{ id: 'code-9' }]);
     const svc = makeService(prisma, makeRouterMock({}));
 
     await expect(svc.verifyAndConsume({ ...VERIFY_INPUT, code: '000000' })).rejects.toEqual(
       new BizException(BizCode.SMS_CODE_INVALID),
     );
-    expect(prisma.smsVerificationCode.update).toHaveBeenCalledWith({
-      where: { id: 'code-9' },
-      data: { attempts: { increment: 1 } },
-    });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    const rawCalls = prisma.$queryRaw.mock.calls as Array<[TemplateStringsArray, ...unknown[]]>;
+    const [sql, codeId, maxAttempts] = rawCalls[1];
+    const query = Array.from(sql).join('?');
+    expect([codeId, maxAttempts]).toEqual(['code-9', 5]);
+    expect(query).toContain('locked_code AS MATERIALIZED');
+    expect(query).toContain('FOR UPDATE');
+    expect(query).toContain('FROM locked_code');
+    expect(query.indexOf('FOR UPDATE')).toBeLessThan(query.indexOf('clock_timestamp()'));
+    expect(query).toContain('SET "attempts" = target."attempts" + 1');
+    expect(query).toContain('target."expiresAt" > db_clock.captured_at');
+    expect(prisma.smsVerificationCode.update).not.toHaveBeenCalled();
   });
 
-  it('命中 → 原子抢占消费(consumedAt: null 条件)并返 codeId', async () => {
+  it('命中 → 参数化单条 UPDATE ... RETURNING 以同一 DB UTC 时钟重查并消费', async () => {
     const prisma = makePrismaMock();
-    prisma.smsVerificationCode.findFirst.mockResolvedValue(ACTIVE);
-    prisma.smsVerificationCode.updateMany.mockResolvedValue({ count: 1 });
+    prisma.$queryRaw.mockResolvedValueOnce([ACTIVE]).mockResolvedValueOnce([{ id: 'code-9' }]);
     const svc = makeService(prisma, makeRouterMock({}));
 
     await expect(svc.verifyAndConsume(VERIFY_INPUT)).resolves.toEqual({ codeId: 'code-9' });
-    expect(prisma.smsVerificationCode.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'code-9', consumedAt: null } }),
-    );
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    const rawCalls = prisma.$queryRaw.mock.calls as Array<[TemplateStringsArray, ...unknown[]]>;
+    const [precheckSql, phone, purpose, precheckMaxAttempts] = rawCalls[0];
+    const precheckQuery = Array.from(precheckSql).join('?');
+    expect([phone, purpose, precheckMaxAttempts]).toEqual([VERIFY_INPUT.phone, 'PHONE_BIND', 5]);
+    expect(precheckQuery).toContain('latest_code AS MATERIALIZED');
+    expect(precheckQuery).toContain('candidate."purpose" = CAST(? AS "SmsPurpose")');
+    expect(precheckQuery).toContain('ORDER BY candidate."createdAt" DESC');
+    expect(precheckQuery).toContain('LIMIT 1');
+    expect(precheckQuery).toContain('latest_code."attempts" < ?');
+    expect(precheckQuery).toContain('latest_code."expiresAt" > db_clock.captured_at');
+    expect(precheckQuery).toContain("clock_timestamp() AT TIME ZONE 'UTC'");
+
+    const [sql, codeId, maxAttempts] = rawCalls[1];
+    const query = Array.from(sql).join('?');
+    expect([codeId, maxAttempts]).toEqual(['code-9', 5]);
+    expect(query).toContain('locked_code AS MATERIALIZED');
+    expect(query).toContain('WHERE candidate."id" = ?');
+    expect(query).toContain('FOR UPDATE');
+    expect(query).toContain('FROM locked_code');
+    expect(query.indexOf('FOR UPDATE')).toBeLessThan(query.indexOf('clock_timestamp()'));
+    expect(query).toContain('UPDATE "sms_verification_codes" AS target');
+    expect(query).toContain('SET "consumedAt" = db_clock.captured_at');
+    expect(query).toContain('target."consumedAt" IS NULL');
+    expect(query).toContain('target."supersededAt" IS NULL');
+    expect(query).toContain('target."attempts" < ?');
+    expect(query).toContain('target."expiresAt" > db_clock.captured_at');
+    expect(query).toContain('RETURNING target."id" AS "id"');
+    expect(query.match(/clock_timestamp\(\)/g)).toHaveLength(1);
+    expect(query).toContain("clock_timestamp() AT TIME ZONE 'UTC'");
+    expect(prisma.smsVerificationCode.updateMany).not.toHaveBeenCalled();
   });
 
-  it('并发重放输家(updateMany count=0)→ SMS_CODE_INVALID', async () => {
+  it('最终 UPDATE ... RETURNING 0 行 → 统一 SMS_CODE_INVALID', async () => {
     const prisma = makePrismaMock();
-    prisma.smsVerificationCode.findFirst.mockResolvedValue(ACTIVE);
-    prisma.smsVerificationCode.updateMany.mockResolvedValue({ count: 0 });
+    prisma.$queryRaw.mockResolvedValueOnce([ACTIVE]).mockResolvedValueOnce([]);
     const svc = makeService(prisma, makeRouterMock({}));
 
     await expect(svc.verifyAndConsume(VERIFY_INPUT)).rejects.toEqual(
@@ -339,8 +370,6 @@ describe('SmsCodeService.assertValid(只验不消费;PASSWORD_RESET 接线)', ()
     id: 'code-pr-1',
     codeHash: hmacCode('13800001234', 'PASSWORD_RESET', '654321'),
     userId: 'user-1',
-    expiresAt: new Date(Date.now() + 60_000),
-    attempts: 0,
   };
   const INPUT = {
     phone: '13800001234',
@@ -351,37 +380,35 @@ describe('SmsCodeService.assertValid(只验不消费;PASSWORD_RESET 接线)', ()
 
   it('有效码 → resolve 且**不**消费(零 updateMany / 零 update)', async () => {
     const prisma = makePrismaMock();
-    prisma.smsVerificationCode.findFirst.mockResolvedValue(ACTIVE);
+    prisma.$queryRaw.mockResolvedValueOnce([ACTIVE]);
     const svc = makeService(prisma, makeRouterMock({}));
 
     await expect(svc.assertValid(INPUT)).resolves.toBeUndefined();
     expect(prisma.smsVerificationCode.updateMany).not.toHaveBeenCalled();
     expect(prisma.smsVerificationCode.update).not.toHaveBeenCalled();
-    // purpose 透传进 where(PHONE_BIND / PASSWORD_RESET 活码互不可见);
-    // toHaveBeenCalledWith 深度严格相等(不嵌套 objectContaining,规避 no-unsafe-assignment)
-    expect(prisma.smsVerificationCode.findFirst).toHaveBeenCalledWith({
-      where: {
-        phone: INPUT.phone,
-        purpose: 'PASSWORD_RESET',
-        consumedAt: null,
-        supersededAt: null,
-      },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, codeHash: true, userId: true, expiresAt: true, attempts: true },
-    });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    const [[sql, phone, purpose, maxAttempts]] = prisma.$queryRaw.mock.calls as Array<
+      [TemplateStringsArray, string, string, number]
+    >;
+    const query = Array.from(sql).join('?');
+    expect([phone, purpose, maxAttempts]).toEqual([INPUT.phone, 'PASSWORD_RESET', 5]);
+    expect(query).toContain('latest_code AS MATERIALIZED');
+    expect(query).toContain('latest_code."attempts" < ?');
+    expect(query).toContain('latest_code."expiresAt" > db_clock.captured_at');
+    expect(prisma.smsVerificationCode.findFirst).not.toHaveBeenCalled();
   });
 
   it.each([
-    ['活码不存在', null],
-    ['已过期', { ...ACTIVE, expiresAt: new Date(Date.now() - 1000) }],
-    ['错 5 次已作废', { ...ACTIVE, attempts: 5 }],
-    ['归属不符(E-8)', { ...ACTIVE, userId: 'user-2' }],
-  ])('%s → 统一 SMS_CODE_INVALID(防枚举,与 verifyAndConsume 一致)', async (_label, row) => {
+    ['活码不存在', [], INPUT],
+    ['DB 已过期的错码(不增加 attempts)', [], { ...INPUT, code: '000000' }],
+    ['错 5 次已作废', [], INPUT],
+    ['归属不符(E-8)', [{ ...ACTIVE, userId: 'user-2' }], INPUT],
+  ])('%s → 统一 SMS_CODE_INVALID(防枚举,与 verifyAndConsume 一致)', async (_label, rows, input) => {
     const prisma = makePrismaMock();
-    prisma.smsVerificationCode.findFirst.mockResolvedValue(row);
+    prisma.$queryRaw.mockResolvedValue(rows);
     const svc = makeService(prisma, makeRouterMock({}));
 
-    await expect(svc.assertValid(INPUT)).rejects.toEqual(
+    await expect(svc.assertValid(input)).rejects.toEqual(
       new BizException(BizCode.SMS_CODE_INVALID),
     );
     expect(prisma.smsVerificationCode.update).not.toHaveBeenCalled();
@@ -390,17 +417,20 @@ describe('SmsCodeService.assertValid(只验不消费;PASSWORD_RESET 接线)', ()
 
   it('码值不符 → attempts+1 独立提交(防爆破不因预检弱化)+ SMS_CODE_INVALID;仍不消费', async () => {
     const prisma = makePrismaMock();
-    prisma.smsVerificationCode.findFirst.mockResolvedValue(ACTIVE);
-    prisma.smsVerificationCode.update.mockResolvedValue({});
+    prisma.$queryRaw.mockResolvedValueOnce([ACTIVE]).mockResolvedValueOnce([{ id: 'code-pr-1' }]);
     const svc = makeService(prisma, makeRouterMock({}));
 
     await expect(svc.assertValid({ ...INPUT, code: '000000' })).rejects.toEqual(
       new BizException(BizCode.SMS_CODE_INVALID),
     );
-    expect(prisma.smsVerificationCode.update).toHaveBeenCalledWith({
-      where: { id: 'code-pr-1' },
-      data: { attempts: { increment: 1 } },
-    });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    const rawCalls = prisma.$queryRaw.mock.calls as Array<[TemplateStringsArray, ...unknown[]]>;
+    const [sql, codeId, maxAttempts] = rawCalls[1];
+    const query = Array.from(sql).join('?');
+    expect([codeId, maxAttempts]).toEqual(['code-pr-1', 5]);
+    expect(query).toContain('SET "attempts" = target."attempts" + 1');
+    expect(query.indexOf('FOR UPDATE')).toBeLessThan(query.indexOf('clock_timestamp()'));
+    expect(prisma.smsVerificationCode.update).not.toHaveBeenCalled();
     expect(prisma.smsVerificationCode.updateMany).not.toHaveBeenCalled();
   });
 });
