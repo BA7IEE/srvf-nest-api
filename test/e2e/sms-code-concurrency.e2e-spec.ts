@@ -5,10 +5,12 @@ import type { BizCodeEntry } from '../../src/common/exceptions/biz-code.constant
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { BizException } from '../../src/common/exceptions/biz.exception';
 import { PrismaService } from '../../src/database/prisma.service';
+import { DevStubSmsProvider } from '../../src/modules/sms/providers/dev-stub.provider';
 import { acquireSmsIssueLocks } from '../../src/modules/sms/sms-issue-lock';
 import { SmsCodeService } from '../../src/modules/sms/sms-code.service';
 import { SMS_DEV_STUB_FIXED_CODE } from '../../src/modules/sms/sms.constants';
 import { SmsProviderRouter } from '../../src/modules/sms/sms-provider.router';
+import { SmsSettingsService } from '../../src/modules/sms/sms-settings.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -168,7 +170,11 @@ describe('SMS issue / consume PostgreSQL concurrency', () => {
   let smsCodeA: SmsCodeService;
   let smsCodeB: SmsCodeService;
   let routerA: SmsProviderRouter;
-  let sendSpy: jest.SpiedFunction<SmsProviderRouter['sendVerifyCode']>;
+  let routerB: SmsProviderRouter;
+  let settingsA: SmsSettingsService;
+  let settingsB: SmsSettingsService;
+  let devSendSpyA: jest.SpiedFunction<DevStubSmsProvider['sendVerifyCode']>;
+  let devSendSpyB: jest.SpiedFunction<DevStubSmsProvider['sendVerifyCode']>;
 
   beforeAll(async () => {
     process.env.SMS_SEND_THROTTLE_LIMIT = '100';
@@ -180,17 +186,25 @@ describe('SMS issue / consume PostgreSQL concurrency', () => {
     smsCodeA = appA.get(SmsCodeService);
     smsCodeB = appB.get(SmsCodeService);
     routerA = appA.get(SmsProviderRouter);
-    sendSpy = jest.spyOn(routerA, 'sendVerifyCode');
+    routerB = appB.get(SmsProviderRouter);
+    settingsA = appA.get(SmsSettingsService);
+    settingsB = appB.get(SmsSettingsService);
+    devSendSpyA = jest.spyOn(appA.get(DevStubSmsProvider), 'sendVerifyCode');
+    devSendSpyB = jest.spyOn(appB.get(DevStubSmsProvider), 'sendVerifyCode');
   });
 
   beforeEach(async () => {
     await resetDb(appA);
     await prismaA.smsSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
-    sendSpy.mockClear();
+    settingsA.invalidate();
+    settingsB.invalidate();
+    devSendSpyA.mockClear();
+    devSendSpyB.mockClear();
   });
 
   afterAll(async () => {
-    sendSpy.mockRestore();
+    devSendSpyA.mockRestore();
+    devSendSpyB.mockRestore();
     await Promise.all([appA.close(), appB.close()]);
     delete process.env.SMS_SEND_THROTTLE_LIMIT;
     delete process.env.SMS_VERIFY_THROTTLE_LIMIT;
@@ -209,14 +223,14 @@ describe('SMS issue / consume PostgreSQL concurrency', () => {
     second: { phone: string; purpose: SmsPurpose },
   ): Promise<PromiseSettledResult<unknown>[]> {
     const bothResolved = deferred<void>();
-    const originalResolve = routerA.resolveProviderType.bind(routerA);
+    const originalResolve = routerA.resolveRoute.bind(routerA);
     let resolvedCount = 0;
-    const resolveSpy = jest.spyOn(routerA, 'resolveProviderType').mockImplementation(async () => {
-      const providerType = await originalResolve();
+    const resolveSpy = jest.spyOn(routerA, 'resolveRoute').mockImplementation(async () => {
+      const route = await originalResolve();
       resolvedCount += 1;
       if (resolvedCount === 2) bothResolved.resolve();
       await bothResolved.promise;
-      return providerType;
+      return route;
     });
     try {
       return await Promise.allSettled([
@@ -275,7 +289,7 @@ describe('SMS issue / consume PostgreSQL concurrency', () => {
       }),
     ).toBe(1);
     expect(await prismaA.smsVerificationCode.count({ where: { phone } })).toBe(1);
-    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(devSendSpyA).toHaveBeenCalledTimes(1);
     expect(await prismaA.smsSendLog.count({ where: { phone, status: 'SENT' } })).toBe(1);
   });
 
@@ -289,7 +303,7 @@ describe('SMS issue / consume PostgreSQL concurrency', () => {
     // 杀死「删除 phone 锁、只留 purpose 锁」：两种 purpose 会各拿一把不同锁并双成功。
     expectOneSuccessOneBizError(results, BizCode.SMS_SEND_INTERVAL_LIMIT);
     expect(await prismaA.smsVerificationCode.count({ where: { phone } })).toBe(1);
-    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(devSendSpyA).toHaveBeenCalledTimes(1);
   });
 
   it('自然日 9 条 → 双并发：最终恰 10 条，后到者 24121，只发送一次', async () => {
@@ -346,7 +360,7 @@ describe('SMS issue / consume PostgreSQL concurrency', () => {
     // 杀死「日计数锁外读」：两边若共同读到 9，会双插到 11；锁后重读让第二方见 10。
     expectOneSuccessOneBizError(results, BizCode.SMS_PHONE_DAILY_LIMIT);
     expect(await prismaA.smsVerificationCode.count({ where: { phone } })).toBe(10);
-    expect(sendSpy).toHaveBeenCalledTimes(1);
+    expect(devSendSpyA).toHaveBeenCalledTimes(1);
   });
 
   it('不同 phone 不互阻：phone A 被真实 advisory lock 挡住时，phone B 仍先完成', async () => {
@@ -382,13 +396,99 @@ describe('SMS issue / consume PostgreSQL concurrency', () => {
         if (timeout !== undefined) clearTimeout(timeout);
       });
       expect(independent).toEqual({ expiresInSeconds: 300 });
-      expect(sendSpy).toHaveBeenCalledTimes(1);
+      expect(devSendSpyA).toHaveBeenCalledTimes(1);
     } finally {
       releaseBlocker.resolve();
       await blocker;
       if (blockedIssue !== undefined) await blockedIssue;
     }
-    expect(sendSpy).toHaveBeenCalledTimes(2);
+    expect(devSendSpyA).toHaveBeenCalledTimes(2);
+  });
+
+  it('单 route 快照：issue 取到 DEV 后阻塞，配置禁用仍以 888888 / DEV 发送记账；下一 route 24030', async () => {
+    const phone = '13600000014';
+    const nextPhone = '13600000015';
+    const userId = 'route-snapshot-user';
+    const blockerReady = deferred<number>();
+    const releaseBlocker = deferred<void>();
+    const blocker = prismaA.$transaction(async (tx) => {
+      await acquireSmsIssueLocks(tx, phone, SmsPurpose.PHONE_BIND);
+      const [backend] = await tx.$queryRaw<Array<{ pid: number }>>`
+        SELECT pg_backend_pid()::integer AS pid
+      `;
+      if (backend === undefined) throw new Error('SMS issue blocker backend pid missing');
+      blockerReady.resolve(backend.pid);
+      await releaseBlocker.promise;
+    });
+    void blocker.catch((error: unknown) => {
+      blockerReady.reject(error);
+    });
+    const routeResolved = deferred<'DEV_STUB' | 'TENCENT_SMS'>();
+    const originalResolve = routerB.resolveRoute.bind(routerB);
+    const resolveSpy = jest.spyOn(routerB, 'resolveRoute').mockImplementation(async () => {
+      try {
+        const route = await originalResolve();
+        routeResolved.resolve(route.providerType);
+        return route;
+      } catch (error) {
+        routeResolved.reject(error);
+        throw error;
+      }
+    });
+    const blockerPid = await blockerReady.promise;
+    const issueAttempt = smsCodeB.issue({
+      phone,
+      purpose: SmsPurpose.PHONE_BIND,
+      userId,
+      ip: '127.0.0.1',
+    });
+    void issueAttempt.catch(() => undefined);
+
+    try {
+      expect(await routeResolved.promise).toBe('DEV_STUB');
+      expect(await observeBlockedByBackend(prismaA, blockerPid, issueAttempt)).toBe('blocked');
+
+      // 真实 DB 配置改变并显式失效发起 app 的 60s cache；不触碰已取得的在途 route。
+      await prismaA.smsSettings.updateMany({ data: { enabled: false } });
+      settingsB.invalidate();
+      releaseBlocker.resolve();
+      await blocker;
+
+      await expect(issueAttempt).resolves.toEqual({ expiresInSeconds: 300 });
+    } finally {
+      releaseBlocker.resolve();
+      await blocker;
+      await issueAttempt.catch(() => undefined);
+      resolveSpy.mockRestore();
+    }
+
+    expect(devSendSpyB).toHaveBeenCalledTimes(1);
+    expect(devSendSpyB).toHaveBeenCalledWith({
+      phone,
+      code: SMS_DEV_STUB_FIXED_CODE,
+      ttlMinutes: 5,
+    });
+    const codeRow = await prismaA.smsVerificationCode.findFirstOrThrow({
+      where: { phone, purpose: SmsPurpose.PHONE_BIND },
+      select: { id: true },
+    });
+    const sendLog = await prismaA.smsSendLog.findFirstOrThrow({
+      where: { codeId: codeRow.id },
+      select: { providerType: true, status: true, providerMsgId: true },
+    });
+    expect(sendLog).toEqual({ providerType: 'DEV_STUB', status: 'SENT', providerMsgId: null });
+    await expect(verify(smsCodeA, phone, userId)).resolves.toEqual({ codeId: codeRow.id });
+
+    await expect(
+      smsCodeB.issue({
+        phone: nextPhone,
+        purpose: SmsPurpose.PHONE_BIND,
+        userId,
+        ip: '127.0.0.1',
+      }),
+    ).rejects.toEqual(new BizException(BizCode.SMS_CHANNEL_NOT_CONFIGURED));
+    expect(await prismaA.smsVerificationCode.count({ where: { phone: nextPhone } })).toBe(0);
+    expect(devSendSpyB).toHaveBeenCalledTimes(1);
   });
 
   it('pg_locks 锁定独立 golden pair，且 transaction advisory lock 随 commit 释放', async () => {
