@@ -87,6 +87,11 @@ model User {
   // User 软删走 deletedAt 不物理删除,refresh_tokens.userId FK Restrict 仅理论风险。
   refreshTokens RefreshToken[]
 
+  // D-INSURANCE v3 PR1 expand:审核人与 eligibility evidence 快照审核人的反向关系。
+  // 仅增加 schema/FK 骨架；审核与 evidence 生成行为在后续 PR 启用。
+  memberInsurancesReviewed          MemberInsurance[]             @relation("MemberInsuranceReviewer")
+  insuranceEvidenceSourcesReviewed InsuranceEligibilityEvidence[] @relation("InsuranceEvidenceSourceReviewer")
+
   @@index([deletedAt])
   @@index([status])
   @@index([memberId])
@@ -898,6 +903,7 @@ model ActivityRegistration {
   canceller         User?              @relation("RegistrationCanceller", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
   attendanceRecords AttendanceRecord[]
   activityCheckIns  ActivityCheckIn[]
+  insuranceEligibilityEvidences InsuranceEligibilityEvidence[]
 
   @@index([activityId])
   @@index([activityPositionId])
@@ -1912,9 +1918,19 @@ model MemberInsurance {
   coverageEnd   DateTime // 到期时间(必填;有效性唯一依据,D-INS-5)
   expireNotifiedAt DateTime? // v0.47.0 到期提醒幂等 marker;首次命中 30 天窗口后置 now,不因改期自动清空
 
-  member Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  // D-INSURANCE v3 PR1 expand。legacy(含软删)统一 pending/v0，不推断 verified。
+  reviewStatusCode String @default("pending") // pending / verified / rejected；PR1 runtime 尚不消费
+  version          Int    @default(0)
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+
+  member                       Member                         @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  reviewer                     User?                          @relation("MemberInsuranceReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  insuranceEligibilityEvidences InsuranceEligibilityEvidence[]
 
   @@index([memberId])
+  @@index([reviewStatusCode])
+  @@index([reviewedByUserId])
   @@index([coverageEnd])
   @@index([deletedAt])
   @@index([createdAt])
@@ -1953,6 +1969,7 @@ model TeamInsuranceCoverage {
 
   policy TeamInsurancePolicy @relation(fields: [policyId], references: [id], onDelete: Restrict)
   member Member              @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  insuranceEligibilityEvidences InsuranceEligibilityEvidence[]
 
   // 业务唯一约束(partial unique;E-3):
   // - (policyId, memberId) WHERE "deletedAt" IS NULL
@@ -1963,6 +1980,43 @@ model TeamInsuranceCoverage {
   @@index([deletedAt])
   @@index([createdAt])
   @@map("team_insurance_coverages")
+}
+
+// D-INSURANCE v3 PR1 expand-only compatibility skeleton.
+// 双 source / 双 owner FK 与快照字段在兼容期全部可空；PR4 才加入 exactly-one、
+// kind 对齐、区间、审核快照、跨 member、全局单 owner 与 immutable 约束。
+// 本表刻意不含 updatedAt/deletedAt，也不存保单号、图片/附件/key/URL 或自由文本。
+model InsuranceEligibilityEvidence {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  sourceKind              String?
+  memberInsuranceId       String?
+  teamInsuranceCoverageId String?
+  ownerKind               String?
+  activityRegistrationId  String?
+  teamJoinApplicationId   String?
+  sourceRevision          Int?
+  sourceReviewedByUserId  String?
+  sourceReviewedAt        DateTime?
+  requiredFrom            DateTime?
+  requiredThrough         DateTime?
+  sourceCoverageStart     DateTime?
+  sourceCoverageEnd       DateTime?
+
+  memberInsurance       MemberInsurance?       @relation(fields: [memberInsuranceId], references: [id], onDelete: Restrict)
+  teamInsuranceCoverage TeamInsuranceCoverage? @relation(fields: [teamInsuranceCoverageId], references: [id], onDelete: Restrict)
+  activityRegistration  ActivityRegistration?  @relation(fields: [activityRegistrationId], references: [id], onDelete: Restrict)
+  teamJoinApplication   TeamJoinApplication?    @relation(fields: [teamJoinApplicationId], references: [id], onDelete: Restrict)
+  sourceReviewer        User?                   @relation("InsuranceEvidenceSourceReviewer", fields: [sourceReviewedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([memberInsuranceId])
+  @@index([teamInsuranceCoverageId])
+  @@index([activityRegistrationId])
+  @@index([teamJoinApplicationId])
+  @@index([sourceReviewedByUserId])
+  @@index([createdAt])
+  @@map("insurance_eligibility_evidences")
 }
 
 // =============================================================================
@@ -2251,6 +2305,7 @@ model TeamJoinCycle {
   statusCode String // open / closed(后台开关;至多一个 open:service 预检 + partial unique DB 兜底)
   openedAt   DateTime?
   closedAt   DateTime?
+  requiresInsurance Boolean @default(false) // PR1 dormant flag；PR3 gate cutover 前不参与入队判断
 
   // 入队候选部门配置(PR-4 才接业务):null/空=全部 ACTIVE;max null=默认 8。
   openOrganizationIds Json?
@@ -2294,6 +2349,7 @@ model TeamJoinApplication {
   cycle        TeamJoinCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict)
   member       Member        @relation(fields: [memberId], references: [id], onDelete: Restrict)
   organization Organization? @relation(fields: [selectedOrganizationId], references: [id], onDelete: Restrict)
+  insuranceEligibilityEvidences InsuranceEligibilityEvidence[]
 
   // 业务唯一约束(partial unique;migration.sql 末尾手写,E-J-2;Prisma DSL 不支持带 WHERE):
   // - team_join_applications_member_cycle_active_unique ON (memberId, cycleId)

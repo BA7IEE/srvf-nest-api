@@ -1,0 +1,1 @@
+- D-INSURANCE v3 PR1 以 expand-only migration 为 `MemberInsurance` 增加 pending/v0/nullable reviewer 骨架并将全部 legacy（含软删）统一回填 pending/v0/null reviewer，新增 nullable 双 source/双 owner `InsuranceEligibilityEvidence` RESTRICT FK 骨架与默认关闭的 Team Join 保险标志；本 PR 不启用审核、CAS、verified-only、evidence producer、入队保险闸或最终数据库约束。
