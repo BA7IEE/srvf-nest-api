@@ -11,18 +11,30 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { STORAGE_UNBOUND_GRACE_MS } from '../storage/storage-consistency.types';
 import type { AttachmentDeleteReplayResponse } from '../storage/storage-operation-payload';
 import { StorageSettingsService } from '../storage/storage-settings.service';
+import type { HeadObjectResult, StorageObjectLocator } from '../storage/storage.types';
 import {
   signUploadToken,
   UploadTokenExpiredError,
   UploadTokenInvalidError,
   verifyUploadToken,
+  type UploadTokenClaims,
 } from '../storage/upload-token.util';
 import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
 import { AttachmentStorageOrchestrator } from './attachment-storage-orchestrator';
-import type { AttachmentUploadStorageIdentity } from './attachment-storage.types';
+import type {
+  AttachmentUploadStorageIdentity,
+  ContentAttachmentOwnerType,
+  ContentPublishStorageBoundaryInput,
+  ContentUploadConfirmExpectedOwner,
+  ContentUploadConfirmFinalized,
+  ContentUploadConfirmGuard,
+  ContentUploadConfirmPrepared,
+  ContentUploadConfirmVerified,
+  PreparedAttachmentStorageUpload,
+} from './attachment-storage.types';
 import {
   ATTACHMENT_OWNER_TYPES,
   AttachmentOwnerType,
@@ -82,8 +94,35 @@ export interface OwnerAttachmentView {
   accessUrl: string | null;
 }
 
+interface UploadConfirmContextBase {
+  identity: AttachmentUploadStorageIdentity;
+  checksum: string | null;
+  user: CurrentUserPayload;
+  contentFacade: boolean;
+}
+
+type UploadConfirmContextState =
+  | (UploadConfirmContextBase & { stage: 'guarded' })
+  | (UploadConfirmContextBase & {
+      stage: 'prepared';
+      prepared: PreparedAttachmentStorageUpload;
+    })
+  | (UploadConfirmContextBase & {
+      stage: 'verified';
+      prepared: PreparedAttachmentStorageUpload;
+      head: HeadObjectResult;
+    })
+  | (UploadConfirmContextBase & {
+      stage: 'finalized';
+      prepared: PreparedAttachmentStorageUpload;
+      head: HeadObjectResult;
+      row: SafeAttachment;
+    });
+
 @Injectable()
 export class AttachmentsService {
+  private readonly uploadConfirmContexts = new WeakMap<object, UploadConfirmContextState>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
@@ -179,6 +218,86 @@ export class AttachmentsService {
   async resolveSignedUrlTrusted(key: string | null): Promise<string | null> {
     if (!key) return null;
     return this.resolveAccessUrl(key);
+  }
+
+  /**
+   * Content-only storage facade. The caller must already hold the Content root FOR UPDATE lock and
+   * must have completed its scoped authorization. This method performs no Provider or audit work.
+   */
+  async lockContentPublishStorageBoundaryTrusted(
+    tx: Prisma.TransactionClient,
+    input: ContentPublishStorageBoundaryInput,
+  ): Promise<void> {
+    return this.storageConsistency.lockContentPublishBoundary(tx, input);
+  }
+
+  /**
+   * Content confirm early guard. This is intentionally the only public token decoder for a
+   * Content wrapper: invalid/expired/foreign/non-content/route-mismatched claims all collapse to
+   * 13001 before Content, storage ledger, Provider, or audit work. The returned handle is opaque
+   * and is valid only on this service instance.
+   */
+  async guardContentUploadConfirm(
+    dto: { uploadToken: string; checksum?: string | null },
+    user: CurrentUserPayload,
+    expectedOwner: ContentUploadConfirmExpectedOwner,
+  ): Promise<ContentUploadConfirmGuard> {
+    return this.issueUploadConfirmGuard(
+      dto,
+      user,
+      expectedOwner,
+    ) as Promise<ContentUploadConfirmGuard>;
+  }
+
+  /**
+   * The caller already holds and has reread the expected Content root in `tx`. No Provider call
+   * or nested transaction is permitted here. The owner-v1 intent must already exist after the
+   * PR-A rollout; ownerless compatibility is read-only and remains gated before PR-B deployment.
+   */
+  async prepareContentUploadConfirmInTransactionTrusted(
+    tx: Prisma.TransactionClient,
+    context: ContentUploadConfirmGuard,
+  ): Promise<ContentUploadConfirmPrepared> {
+    return this.prepareUploadConfirmInTransaction(
+      tx,
+      context,
+      undefined,
+      true,
+    ) as Promise<ContentUploadConfirmPrepared>;
+  }
+
+  /** Provider evidence only; callers must invoke this between, never inside, aggregate txs. */
+  async verifyContentUploadConfirmEvidenceOutsideTransaction(
+    context: ContentUploadConfirmPrepared,
+  ): Promise<ContentUploadConfirmVerified> {
+    return this.verifyUploadConfirmEvidence(context, true) as Promise<ContentUploadConfirmVerified>;
+  }
+
+  /**
+   * Final bind/audit core for a caller-owned Content transaction. The verified handle binds the
+   * exact token identity, request hash, Provider evidence, actor, and route owner; it cannot be
+   * forged or reused through another AttachmentsService instance/owner.
+   */
+  async finalizeContentUploadConfirmInTransactionTrusted(
+    tx: Prisma.TransactionClient,
+    context: ContentUploadConfirmVerified,
+    auditMeta: AuditMeta,
+  ): Promise<ContentUploadConfirmFinalized> {
+    return this.finalizeUploadConfirmInTransaction(
+      tx,
+      context,
+      auditMeta,
+      { ownerTable: 'contents', scope: null },
+      true,
+    ) as Promise<ContentUploadConfirmFinalized>;
+  }
+
+  /** Resolve the download URL only after the caller-owned transaction has committed. */
+  async resolveContentUploadConfirmResponseTrusted(
+    context: ContentUploadConfirmFinalized,
+  ): Promise<AttachmentResponseDto> {
+    const state = this.requireUploadConfirmContext(context, 'finalized', true);
+    return this.toResponseDto(state.row);
   }
 
   // ============ helpers:校验链(沿 D7 v1.0 §6.2 9 步)============
@@ -425,6 +544,223 @@ export class AttachmentsService {
     }
   }
 
+  private async issueUploadConfirmGuard(
+    dto: { uploadToken: string; checksum?: string | null },
+    user: CurrentUserPayload,
+    expectedOwner?: ContentUploadConfirmExpectedOwner,
+  ): Promise<object> {
+    let claims: UploadTokenClaims;
+    try {
+      claims = verifyUploadToken(dto.uploadToken, this.cfg.storage.encryptionKey);
+    } catch (error) {
+      if (error instanceof UploadTokenInvalidError || error instanceof UploadTokenExpiredError) {
+        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+      }
+      throw error;
+    }
+
+    const contentOwner = isContentAttachmentOwnerType(claims.ownerType);
+    if (expectedOwner) {
+      const expectedOwnerTypes: readonly ContentAttachmentOwnerType[] = Array.isArray(
+        expectedOwner.ownerType,
+      )
+        ? expectedOwner.ownerType
+        : [expectedOwner.ownerType];
+      if (
+        !contentOwner ||
+        claims.ownerId !== expectedOwner.ownerId ||
+        !expectedOwnerTypes.includes(claims.ownerType as ContentAttachmentOwnerType)
+      ) {
+        // Route/token mismatch must not reach RBAC, Content, ledger, Provider, or audit.
+        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+      }
+    }
+
+    if (claims.uploadedByUserId !== user.id) {
+      throw new BizException(contentOwner ? BizCode.ATTACHMENT_NOT_FOUND : BizCode.RBAC_FORBIDDEN);
+    }
+    if (contentOwner) {
+      const allowed = await this.rbac.can(user, `attachment.upload.${claims.ownerType}`);
+      if (!allowed) {
+        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+      }
+    }
+
+    const identity: AttachmentUploadStorageIdentity = {
+      key: claims.key,
+      ownerType: claims.ownerType,
+      ownerId: claims.ownerId,
+      originalName: claims.originalName,
+      mime: claims.mime,
+      size: claims.sizeBytes,
+      uploadedByUserId: claims.uploadedByUserId,
+      iat: claims.iat,
+      exp: claims.exp,
+    };
+    return this.issueUploadConfirmContext({
+      stage: 'guarded',
+      identity,
+      checksum: dto.checksum ?? null,
+      user: { ...user },
+      contentFacade: expectedOwner !== undefined,
+    });
+  }
+
+  private issueUploadConfirmContext(state: UploadConfirmContextState): object {
+    const context = Object.freeze(Object.create(null)) as object;
+    this.uploadConfirmContexts.set(context, state);
+    return context;
+  }
+
+  private requireUploadConfirmContext<Stage extends UploadConfirmContextState['stage']>(
+    context: object,
+    stage: Stage,
+    contentFacade: boolean = false,
+  ): Extract<UploadConfirmContextState, { stage: Stage }> {
+    const state = this.uploadConfirmContexts.get(context);
+    if (!state || state.stage !== stage || (contentFacade && !state.contentFacade)) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
+    return state as Extract<UploadConfirmContextState, { stage: Stage }>;
+  }
+
+  private consumeUploadConfirmContext<Stage extends UploadConfirmContextState['stage']>(
+    context: object,
+    stage: Stage,
+    contentFacade: boolean = false,
+  ): Extract<UploadConfirmContextState, { stage: Stage }> {
+    const state = this.requireUploadConfirmContext(context, stage, contentFacade);
+    // Consume synchronously before the transaction/Provider transition. A failed transition still
+    // requires a freshly guarded HTTP retry, so an old capability can never replay an effect.
+    this.uploadConfirmContexts.delete(context);
+    return state;
+  }
+
+  private async prepareUploadConfirmInTransaction(
+    tx: Prisma.TransactionClient,
+    context: object,
+    resolvedLocator?: StorageObjectLocator,
+    contentFacade: boolean = false,
+  ): Promise<object> {
+    const state = this.consumeUploadConfirmContext(context, 'guarded', contentFacade);
+    const unboundExpiresAt = new Date(
+      requireUploadTokenExpiry(state.identity) * 1000 + STORAGE_UNBOUND_GRACE_MS,
+    );
+    const prepared = resolvedLocator
+      ? await this.storageConsistency.prepareUploadInTransaction(
+          tx,
+          state.identity,
+          'attachment_signed_upload',
+          unboundExpiresAt,
+          resolvedLocator,
+        )
+      : await this.storageConsistency.prepareUploadInTransaction(
+          tx,
+          state.identity,
+          'attachment_signed_upload',
+          unboundExpiresAt,
+        );
+    return this.issueUploadConfirmContext({
+      stage: 'prepared',
+      identity: state.identity,
+      checksum: state.checksum,
+      user: state.user,
+      contentFacade: state.contentFacade,
+      prepared,
+    });
+  }
+
+  private async verifyUploadConfirmEvidence(
+    context: object,
+    contentFacade: boolean = false,
+  ): Promise<object> {
+    const state = this.consumeUploadConfirmContext(context, 'prepared', contentFacade);
+    const head = await this.storageConsistency.verifyUploadEvidence(
+      state.identity,
+      'attachment_signed_upload',
+    );
+    return this.issueUploadConfirmContext({
+      stage: 'verified',
+      identity: state.identity,
+      checksum: state.checksum,
+      user: state.user,
+      contentFacade: state.contentFacade,
+      prepared: state.prepared,
+      head,
+    });
+  }
+
+  private async finalizeUploadConfirmInTransaction(
+    tx: Prisma.TransactionClient,
+    context: object,
+    auditMeta: AuditMeta,
+    owner: { ownerTable: string; scope: 'self' | 'other' | null },
+    contentFacade: boolean = false,
+  ): Promise<object> {
+    const state = this.consumeUploadConfirmContext(context, 'verified', contentFacade);
+    const row = await this.storageConsistency.finalizeUploadInTransaction(
+      tx,
+      {
+        identity: state.identity,
+        requestHash: state.prepared.requestHash,
+        data: {
+          key: state.identity.key,
+          originalName: state.identity.originalName,
+          mime: state.identity.mime,
+          size: state.identity.size,
+          uploadedBy: state.identity.uploadedByUserId,
+          ownerType: state.identity.ownerType,
+          ownerId: state.identity.ownerId,
+          originalUploaderName: state.user.username,
+          checksum: state.checksum,
+          etag: state.head.etag ?? null,
+        },
+        auditKind: 'confirmed',
+        actorRoleSnap: state.user.role,
+        scope: owner.scope,
+        ownerTable: owner.ownerTable,
+        auditMeta,
+      },
+      state.head,
+    );
+    return this.issueUploadConfirmContext({
+      stage: 'finalized',
+      identity: state.identity,
+      checksum: state.checksum,
+      user: state.user,
+      contentFacade: state.contentFacade,
+      prepared: state.prepared,
+      head: state.head,
+      row,
+    });
+  }
+
+  private async lockVirginContentForUploadConfirm(
+    tx: Prisma.TransactionClient,
+    contentId: string,
+  ): Promise<void> {
+    const rows = await tx.$queryRaw<
+      Array<{
+        id: string;
+        deletedAt: Date | null;
+        statusCode: string;
+        publishedAt: Date | null;
+      }>
+    >(Prisma.sql`
+      SELECT "id", "deletedAt", "statusCode", "publishedAt"
+      FROM "contents"
+      WHERE "id" = ${contentId}
+      FOR UPDATE
+    `);
+    const content = rows[0];
+    if (rows.length !== 1 || !content || content.deletedAt !== null) {
+      throw new BizException(BizCode.ATTACHMENT_OWNER_NOT_FOUND);
+    }
+    if (content.statusCode !== 'draft' || content.publishedAt !== null) {
+      throw new BizException(BizCode.CONTENT_INVALID_STATUS_TRANSITION);
+    }
+  }
+
   // ============ 7 端点业务逻辑 ============
 
   // POST /api/admin/v1/attachments
@@ -485,33 +821,36 @@ export class AttachmentsService {
       'attachment_legacy',
       new Date(Date.now() + STORAGE_UNBOUND_GRACE_MS),
     );
-    await this.storageConsistency.verifyUpload(identity, 'attachment_legacy');
+    const head = await this.storageConsistency.verifyUploadEvidence(identity, 'attachment_legacy');
     await this.assertOwnerExists(dto.ownerType as AttachmentOwnerType, dto.ownerId);
 
     // 8. Attachment + AVAILABLE + operation terminal + audit 同一事务；任一失败均可按 intent 重放。
-    const row = await this.storageConsistency.finalizeUpload({
-      identity,
-      requestHash: prepared.requestHash,
-      data: {
-        key: dto.key,
-        originalName: dto.originalName,
-        mime: dto.mime,
-        size: dto.size,
-        uploadedBy: user.id,
-        ownerType: dto.ownerType,
-        ownerId: dto.ownerId,
-        description: dto.description,
-        accessLevel: dto.accessLevel,
-        tags: dto.tags ?? [],
-        originalUploaderName: user.username,
-        expireAt: dto.expireAt ? new Date(dto.expireAt) : undefined,
+    const row = await this.storageConsistency.finalizeUpload(
+      {
+        identity,
+        requestHash: prepared.requestHash,
+        data: {
+          key: dto.key,
+          originalName: dto.originalName,
+          mime: dto.mime,
+          size: dto.size,
+          uploadedBy: user.id,
+          ownerType: dto.ownerType,
+          ownerId: dto.ownerId,
+          description: dto.description,
+          accessLevel: dto.accessLevel,
+          tags: dto.tags ?? [],
+          originalUploaderName: user.username,
+          expireAt: dto.expireAt ? new Date(dto.expireAt) : undefined,
+        },
+        auditKind: 'legacy',
+        actorRoleSnap: user.role,
+        scope,
+        ownerTable,
+        auditMeta,
       },
-      auditKind: 'legacy',
-      actorRoleSnap: user.role,
-      scope,
-      ownerTable,
-      auditMeta,
-    });
+      head,
+    );
     return this.toResponseDto(row);
   }
 
@@ -909,86 +1248,59 @@ export class AttachmentsService {
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AttachmentResponseDto> {
-    // === Step 1-3:验 token + exp + uploadedByUserId === user.id(沿 §8.4.3 + Q-10-7) ===
-    let claims;
-    try {
-      claims = verifyUploadToken(dto.uploadToken, this.cfg.storage.encryptionKey);
-    } catch (err) {
-      if (err instanceof UploadTokenInvalidError || err instanceof UploadTokenExpiredError) {
-        // 沿 Q13 信息泄漏防御 + Q-10-11 不新增 BizCode → 统一返 13001
-        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
-      }
-      throw err;
+    // Generic direct-confirm remains a public wrapper, but it now shares the exact guard,
+    // transaction-aware prepare, Provider evidence, and transaction-aware finalizer used by the
+    // Content facade. Only this wrapper owns its two short transactions.
+    const guarded = await this.issueUploadConfirmGuard(dto, user);
+    const guardedState = this.requireUploadConfirmContext(guarded, 'guarded');
+    let prepared: object;
+    if (isContentAttachmentOwnerType(guardedState.identity.ownerType)) {
+      prepared = await this.prisma.$transaction(async (tx) => {
+        await this.lockVirginContentForUploadConfirm(tx, guardedState.identity.ownerId);
+        return this.prepareUploadConfirmInTransaction(tx, guarded);
+      });
+    } else {
+      const locator = await this.storageConsistency.resolveUploadLocatorForTransaction(
+        guardedState.identity.key,
+      );
+      prepared = await this.prisma.$transaction((tx) =>
+        this.prepareUploadConfirmInTransaction(tx, guarded, locator),
+      );
     }
-    if (claims.uploadedByUserId !== user.id) {
-      // 沿 §8.4.5 + Q-10-7:claims 已携 uploadedByUserId,不重做 RBAC;
-      // 只校验 user 比对;不一致返 30100(写路径)
-      throw new BizException(BizCode.RBAC_FORBIDDEN);
-    }
-
-    const identity: AttachmentUploadStorageIdentity = {
-      key: claims.key,
-      ownerType: claims.ownerType,
-      ownerId: claims.ownerId,
-      originalName: claims.originalName,
-      mime: claims.mime,
-      size: claims.sizeBytes,
-      uploadedByUserId: claims.uploadedByUserId,
-      iat: claims.iat,
-      exp: claims.exp,
-    };
-
-    // === Step 4-6:确保 rollout token 也补 durable intent，再以 pinned locator 校验对象 ===
-    const prepared = await this.storageConsistency.prepareUpload(
-      identity,
-      'attachment_signed_upload',
-      new Date(claims.exp * 1000 + STORAGE_UNBOUND_GRACE_MS),
-    );
-    const { head } = await this.storageConsistency.verifyUpload(
-      identity,
-      'attachment_signed_upload',
-    );
+    const verified = await this.verifyUploadConfirmEvidence(prepared);
+    const verifiedState = this.requireUploadConfirmContext(verified, 'verified');
 
     // === Step 7:PII 不重做(沿 §8.4 Q10 + Q-10-X) ===
 
     // === Step 7.5(F10 #399):owner 仍存活复校 —— upload-url 签发后 owner 可能软删,confirm 落库前
     //     与 create() / createUploadUrl() 对齐补 assertOwnerExists,杜绝 owner 软删窗口内落悬空附件行。 ===
-    await this.assertOwnerExists(claims.ownerType as AttachmentOwnerType, claims.ownerId);
+    if (!isContentAttachmentOwnerType(verifiedState.identity.ownerType)) {
+      await this.assertOwnerExists(
+        verifiedState.identity.ownerType as AttachmentOwnerType,
+        verifiedState.identity.ownerId,
+      );
+    }
 
     // === Step 8:落库 + audit(同事务 fail-fast;沿 §8.4.3 Step 5 + PR #6c F6) ===
     // 需要 ownerTable 进 audit extra(沿现有 create);重查 typeConfig 拿 ownerTable
-    const { ownerTable } = await this.assertOwnerTypeAllowed(claims.ownerType);
+    const { ownerTable } = await this.assertOwnerTypeAllowed(verifiedState.identity.ownerType);
     // 重新 build scope 给 audit(沿 §8.4.3 Step 5 extra.scope)
     const { scope } = await this.buildRbacResourceAndScope(
-      claims.ownerType as AttachmentOwnerType,
-      claims.ownerId,
+      verifiedState.identity.ownerType as AttachmentOwnerType,
+      verifiedState.identity.ownerId,
       user,
     );
 
-    const row = await this.storageConsistency.finalizeUpload({
-      identity,
-      requestHash: prepared.requestHash,
-      data: {
-        key: claims.key,
-        originalName: claims.originalName,
-        mime: claims.mime,
-        size: claims.sizeBytes,
-        uploadedBy: user.id,
-        ownerType: claims.ownerType,
-        ownerId: claims.ownerId,
-        originalUploaderName: user.username,
-        checksum: dto.checksum ?? null,
-        etag: head.etag ?? null,
-      },
-      auditKind: 'confirmed',
-      actorRoleSnap: user.role,
-      scope,
-      ownerTable,
-      auditMeta,
-    });
+    const finalized = await this.prisma.$transaction((tx) =>
+      this.finalizeUploadConfirmInTransaction(tx, verified, auditMeta, {
+        ownerTable,
+        scope,
+      }),
+    );
+    const finalizedState = this.requireUploadConfirmContext(finalized, 'finalized');
 
     // === Step 9-10:返完整 dto(toResponseDto 内已调 generateDownloadUrl 填 accessUrl;沿 PR #90) ===
-    return this.toResponseDto(row);
+    return this.toResponseDto(finalizedState.row);
   }
 
   // 沿 §6.4.2 + Q-10-3 + Q-10-4:`attachments/<env>/<yyyy>/<mm>/<dd>/<random>.<ext>`
@@ -1003,4 +1315,15 @@ export class AttachmentsService {
     const ext = mimeToExt(mime);
     return `attachments/${envPrefix}/${yyyy}/${mm}/${dd}/${random}${ext}`;
   }
+}
+
+function isContentAttachmentOwnerType(ownerType: string): ownerType is ContentAttachmentOwnerType {
+  return ownerType === 'content-image' || ownerType === 'content-file';
+}
+
+function requireUploadTokenExpiry(identity: AttachmentUploadStorageIdentity): number {
+  if (identity.exp === undefined || !Number.isSafeInteger(identity.exp)) {
+    throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+  }
+  return identity.exp;
 }

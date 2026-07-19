@@ -38,6 +38,53 @@ export interface FinalizeAttachmentStorageUploadInput {
   auditMeta: AuditMeta;
 }
 
+/**
+ * Trusted input from Content after coarse authorization and while its root row is already locked.
+ * The facade validates every current binding plus body/cover references without reading Content.
+ */
+export interface ContentPublishStorageBoundaryInput {
+  contentId: string;
+  referencedAttachmentIds: readonly string[];
+  coverAttachmentId: string | null;
+  coverImageKey: string | null;
+}
+
+export type ContentAttachmentOwnerType = 'content-image' | 'content-file';
+
+/**
+ * Expected route owner supplied before Content is read. A Content wrapper that accepts either
+ * attachment kind passes both allowlisted owner types; a kind-specific caller passes one.
+ */
+export interface ContentUploadConfirmExpectedOwner {
+  ownerType: ContentAttachmentOwnerType | readonly ContentAttachmentOwnerType[];
+  ownerId: string;
+}
+
+// These handles intentionally expose no claims, key, owner id, Provider evidence, or audit data.
+// Only the AttachmentsService instance that issued a handle can advance it exactly once; runtime
+// WeakMap checks reject consumed/forged/cross-instance handles in addition to these compile-time
+// brands. A failed transition also consumes its input, so callers must restart from the guard.
+declare const contentUploadConfirmGuardBrand: unique symbol;
+declare const contentUploadConfirmPreparedBrand: unique symbol;
+declare const contentUploadConfirmVerifiedBrand: unique symbol;
+declare const contentUploadConfirmFinalizedBrand: unique symbol;
+
+export type ContentUploadConfirmGuard = Readonly<{
+  [contentUploadConfirmGuardBrand]: never;
+}>;
+
+export type ContentUploadConfirmPrepared = Readonly<{
+  [contentUploadConfirmPreparedBrand]: never;
+}>;
+
+export type ContentUploadConfirmVerified = Readonly<{
+  [contentUploadConfirmVerifiedBrand]: never;
+}>;
+
+export type ContentUploadConfirmFinalized = Readonly<{
+  [contentUploadConfirmFinalizedBrand]: never;
+}>;
+
 export interface PrepareAttachmentDeleteInput {
   attachmentId: string;
   actorUserId: string;

@@ -59,7 +59,7 @@ describe('CMS 内容发布模块(第 28 模块)open/v1 公开读取面 e2e', () 
         visibilityCode: over.visibilityCode ?? 'public',
         visibleOrganizationIds: over.visibleOrganizationIds ?? [],
         tags: over.tags ?? [],
-        publishedAt: over.publishedAt ?? new Date(),
+        publishedAt: over.publishedAt === undefined ? new Date() : over.publishedAt,
         authorUserId: over.authorUserId ?? null,
         coverImageKey: over.coverImageKey ?? null,
       },
@@ -236,8 +236,16 @@ describe('CMS 内容发布模块(第 28 模块)open/v1 公开读取面 e2e', () 
     it('finding #11:public 内容过滤过期附件/封面；未来与未设置仍返回 URL', async () => {
       const expiredCoverKey = conformingAttachmentKey();
       const futureCoverKey = conformingAttachmentKey();
-      const expiredContentId = await makeContent({ coverImageKey: expiredCoverKey });
-      const activeContentId = await makeContent({ coverImageKey: futureCoverKey });
+      const expiredContentId = await makeContent({
+        coverImageKey: expiredCoverKey,
+        statusCode: 'draft',
+        publishedAt: null,
+      });
+      const activeContentId = await makeContent({
+        coverImageKey: futureCoverKey,
+        statusCode: 'draft',
+        publishedAt: null,
+      });
       const futureFileKey = conformingAttachmentKey();
       const unsetFileKey = conformingAttachmentKey();
       const expiredFileKey = conformingAttachmentKey();
@@ -291,6 +299,10 @@ describe('CMS 内容发布模块(第 28 模块)open/v1 公开读取面 e2e', () 
       ] as const) {
         await createAvailableContentAttachment(attachment);
       }
+      await prisma.content.updateMany({
+        where: { id: { in: [expiredContentId, activeContentId] } },
+        data: { statusCode: 'published', publishedAt: new Date() },
+      });
 
       const expiredDetail = await detailOpen(expiredContentId);
       expect(expiredDetail.status).toBe(200);

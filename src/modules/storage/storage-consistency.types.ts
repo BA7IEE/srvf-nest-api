@@ -64,6 +64,8 @@ export const STORAGE_OPERATION_BACKOFF_MAX_MS = 300_000;
 export const STORAGE_UNBOUND_GRACE_MS = 15 * 60 * 1000;
 export const STORAGE_DELETE_REPLAY_TTL_MS = 24 * 60 * 60 * 1000;
 export const STORAGE_DELETE_REPLAY_PHYSICAL_LIMIT_MS = 48 * 60 * 60 * 1000;
+export const STORAGE_ATTACHMENT_UPLOAD_EVENT_PREFIX = 'storage.attachment-upload-verify';
+export const STORAGE_ATTACHMENT_UPLOAD_OWNER_EVENT_VERSION = 'owner-v1';
 
 export type ClaimedStorageObjectOperation = StorageObjectOperation & {
   status: 'processing';
@@ -112,6 +114,38 @@ export function bigintSize(value: number): bigint {
 
 export function storageRequestHash(value: unknown): string {
   return createHash('sha256').update(canonicalJson(value)).digest('hex');
+}
+
+/**
+ * Stable, non-PII owner correlation for attachment upload intents.
+ *
+ * ownerId is intentionally kept out of operation payloads and event keys. The canonical hash
+ * still distinguishes ownerType so polymorphic ids cannot be attributed across owner domains.
+ */
+export function storageOwnerIntentRef(ownerType: string, ownerId: string): string {
+  return storageRequestHash({ ownerType, ownerId });
+}
+
+export function storageOwnerUploadEventKeyPrefix(ownerType: string, ownerId: string): string {
+  return `${STORAGE_ATTACHMENT_UPLOAD_EVENT_PREFIX}:${STORAGE_ATTACHMENT_UPLOAD_OWNER_EVENT_VERSION}:${storageOwnerIntentRef(ownerType, ownerId)}:`;
+}
+
+export function storageOwnerUploadEventKey(
+  ownerType: string,
+  ownerId: string,
+  requestHash: string,
+): string {
+  if (!/^[0-9a-f]{64}$/.test(requestHash)) {
+    throw new StorageConsistencyInvariantError('requestHash must be sha256 hex');
+  }
+  return `${storageOwnerUploadEventKeyPrefix(ownerType, ownerId)}${requestHash}`;
+}
+
+export function storageOwnerlessUploadEventKey(requestHash: string): string {
+  if (!/^[0-9a-f]{64}$/.test(requestHash)) {
+    throw new StorageConsistencyInvariantError('requestHash must be sha256 hex');
+  }
+  return `${STORAGE_ATTACHMENT_UPLOAD_EVENT_PREFIX}:${requestHash}`;
 }
 
 export function storageRetryDelayMs(attempts: number): number {

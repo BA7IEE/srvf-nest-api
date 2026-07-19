@@ -28,6 +28,7 @@ import {
 } from '../storage/storage-operation-payload';
 import {
   STORAGE_DELETE_REPLAY_TTL_MS,
+  STORAGE_ATTACHMENT_UPLOAD_EVENT_PREFIX,
   STORAGE_OPERATION_LEASE_MS,
   STORAGE_OPERATION_PAYLOAD_VERSION,
   type ClaimedStorageOperationWithObject,
@@ -37,6 +38,9 @@ import {
   bigintSize,
   sameStorageLocator,
   storageLocatorFromObject,
+  storageOwnerlessUploadEventKey,
+  storageOwnerUploadEventKey,
+  storageOwnerUploadEventKeyPrefix,
   storageRequestHash,
   type StorageOperationKind,
 } from '../storage/storage-consistency.types';
@@ -52,6 +56,7 @@ import {
   deleteAuditEnvelope,
   type AttachmentDeleteReplay,
   type AttachmentUploadStorageIdentity,
+  type ContentPublishStorageBoundaryInput,
   type FinalizeAttachmentStorageUploadInput,
   type PrepareManualStorageAttestAbsentInput,
   type PrepareManualStorageRelocateInput,
@@ -117,20 +122,54 @@ export class AttachmentStorageOrchestrator {
     source: 'attachment_signed_upload' | 'attachment_legacy',
     unboundExpiresAt: Date,
   ): Promise<PreparedAttachmentStorageUpload> {
-    let locator: StorageObjectLocator;
-    try {
-      const existing = await this.ledger.findObjectByKey(identity.key);
-      locator = existing
-        ? storageLocatorFromObject(existing)
-        : await this.pinnedProvider().getCurrentLocator();
-    } catch {
-      throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
+    const locator = await this.resolveUploadLocatorForTransaction(identity.key);
+    return this.prisma.$transaction((tx) =>
+      this.prepareUploadWithLocatorInTransaction(tx, identity, source, unboundExpiresAt, locator),
+    );
+  }
+
+  async prepareUploadInTransaction(
+    tx: Prisma.TransactionClient,
+    identity: AttachmentUploadStorageIdentity,
+    source: 'attachment_signed_upload' | 'attachment_legacy',
+    unboundExpiresAt: Date,
+    resolvedLocator?: StorageObjectLocator,
+  ): Promise<PreparedAttachmentStorageUpload> {
+    // A caller-owned root transaction must never consult a Provider. Returned upload tokens from
+    // the current/legacy ledger binaries already have a durable Object; a missing Object is an
+    // invalid storage identity and is not recreated in a second side channel.
+    let locator = resolvedLocator ?? null;
+    if (!locator) {
+      let existing: StorageObject | null;
+      try {
+        existing = await this.ledger.findObjectByKey(identity.key, tx);
+        locator = existing ? storageLocatorFromObject(existing) : null;
+      } catch {
+        throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
+      }
+      if (!existing || !locator) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
+    return this.prepareUploadWithLocatorInTransaction(
+      tx,
+      identity,
+      source,
+      unboundExpiresAt,
+      locator,
+    );
+  }
+
+  private async prepareUploadWithLocatorInTransaction(
+    tx: Prisma.TransactionClient,
+    identity: AttachmentUploadStorageIdentity,
+    source: 'attachment_signed_upload' | 'attachment_legacy',
+    unboundExpiresAt: Date,
+    locator: StorageObjectLocator,
+  ): Promise<PreparedAttachmentStorageUpload> {
     const requestHash = this.uploadRequestHash(identity, source);
-    const eventKey = `storage.attachment-upload-verify:${requestHash}`;
+    const eventKey = storageOwnerUploadEventKey(identity.ownerType, identity.ownerId, requestHash);
     let prepared: PreparedStorageUpload;
     try {
-      prepared = await this.ledger.prepareUpload({
+      prepared = await this.ledger.prepareUploadInTransaction(tx, {
         key: identity.key,
         source,
         locator,
@@ -149,10 +188,22 @@ export class AttachmentStorageOrchestrator {
     return {
       objectId: prepared.object.id,
       operationId: prepared.operation.id,
-      eventKey,
+      eventKey: prepared.operation.eventKey,
       requestHash,
       locator,
     };
+  }
+
+  /** Resolve routing before a caller acquires its business root transaction. */
+  async resolveUploadLocatorForTransaction(key: string): Promise<StorageObjectLocator> {
+    try {
+      const existing = await this.ledger.findObjectByKey(key);
+      return existing
+        ? storageLocatorFromObject(existing)
+        : await this.pinnedProvider().getCurrentLocator();
+    } catch {
+      throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
+    }
   }
 
   async prepareUploadUrl(
@@ -177,22 +228,32 @@ export class AttachmentStorageOrchestrator {
     }
   }
 
-  async verifyUpload(
+  async verifyUploadEvidence(
     identity: AttachmentUploadStorageIdentity,
     source: 'attachment_signed_upload' | 'attachment_legacy',
-  ): Promise<{ object: StorageObject; operation: StorageObjectOperation; head: HeadObjectResult }> {
+  ): Promise<HeadObjectResult> {
     const requestHash = this.uploadRequestHash(identity, source);
-    const object = await this.ledger.findObjectByKey(identity.key);
-    if (!object || object.source !== source) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
-    const operation = await this.prisma.storageObjectOperation.findFirst({
-      where: {
-        storageObjectId: object.id,
-        kind: 'attachment_upload_verify',
-        requestHash,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!operation) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    let context: PreparedStorageUpload;
+    try {
+      context = await this.ledger.findUploadContext(identity.key, requestHash);
+    } catch {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
+    const { object, operation } = context;
+    if (object.source !== source) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    const ownerEventKey = storageOwnerUploadEventKey(
+      identity.ownerType,
+      identity.ownerId,
+      requestHash,
+    );
+    if (
+      operation.eventKey !== ownerEventKey &&
+      operation.eventKey !== storageOwnerlessUploadEventKey(requestHash)
+    ) {
+      // requestHash is already owner-bound; the explicit key check additionally prevents a
+      // corrupted/malformed owner-v1 operation from being attributed to this Content owner.
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
     parseStorageOperationPayload(
       'attachment_upload_verify',
       operation.payloadVersion,
@@ -201,30 +262,32 @@ export class AttachmentStorageOrchestrator {
 
     if (object.state === 'available' && object.resourceId) {
       return {
-        object,
-        operation,
-        head: {
-          exists: true,
-          size: safeNumber(object.actualSize ?? object.expectedSize),
-          etag: object.etag ?? undefined,
-          contentType: object.actualMime ?? object.expectedMime ?? undefined,
-        },
+        exists: true,
+        size: safeNumber(object.actualSize ?? object.expectedSize),
+        etag: object.etag ?? undefined,
+        contentType: object.actualMime ?? object.expectedMime ?? undefined,
       };
     }
-    if (!['pending_upload', 'present_unbound', 'provider_unknown'].includes(object.state)) {
+    const publishCancelledContentIntent =
+      isContentAttachmentOwnerType(identity.ownerType) && object.state === 'delete_pending';
+    if (
+      !publishCancelledContentIntent &&
+      !['pending_upload', 'present_unbound', 'provider_unknown'].includes(object.state)
+    ) {
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
     const locator = await this.locatorForObject(object);
     try {
-      const head = await this.contentValidator.validateFromObjectAt(locator, {
+      return await this.contentValidator.validateFromObjectAt(locator, {
         key: identity.key,
         mime: identity.mime,
         size: identity.size,
       });
-      await this.ledger.recordPresentUnbound(object.id, operation.id, head);
-      return { object: await this.requireObject(object.id), operation, head };
     } catch (error) {
       if (!(error instanceof BizException)) {
+        // Provider/network uncertainty is durable evidence, not a transient HTTP-only error.
+        // This intentionally runs outside the caller's aggregate transaction, after Provider
+        // evidence failed, preserving #704 diagnostics and worker retry semantics.
         await this.ledger.noteProviderUnknown(object.id, operation.id, error);
         throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
       }
@@ -232,143 +295,501 @@ export class AttachmentStorageOrchestrator {
     }
   }
 
-  async finalizeUpload(input: FinalizeAttachmentStorageUploadInput): Promise<SafeAttachment> {
+  async finalizeUpload(
+    input: FinalizeAttachmentStorageUploadInput,
+    head: HeadObjectResult,
+  ): Promise<SafeAttachment> {
+    return this.prisma.$transaction((tx) => this.finalizeUploadInTransaction(tx, input, head));
+  }
+
+  async finalizeUploadInTransaction(
+    tx: Prisma.TransactionClient,
+    input: FinalizeAttachmentStorageUploadInput,
+    head: HeadObjectResult,
+  ): Promise<SafeAttachment> {
     const now = new Date();
-    return this.prisma.$transaction(async (tx) => {
-      // Polymorphic owner rows cannot be represented by a single FK. Lock the allowlisted owner
-      // before the storage ledger so an owner soft-delete and Attachment bind have one order.
-      await this.lockActiveUploadOwner(
-        tx,
-        input.identity.ownerType,
-        input.ownerTable,
-        input.identity.ownerId,
-      );
-      await tx.$queryRaw(Prisma.sql`
+    // Polymorphic owner rows cannot be represented by a single FK. Lock the allowlisted owner
+    // before the storage ledger so an owner soft-delete and Attachment bind have one order.
+    await this.lockActiveUploadOwner(
+      tx,
+      input.identity.ownerType,
+      input.ownerTable,
+      input.identity.ownerId,
+    );
+    await tx.$queryRaw(Prisma.sql`
         SELECT "id" FROM "storage_objects"
         WHERE "key" = ${input.identity.key}
         FOR UPDATE
       `);
-      const object = await tx.storageObject.findUnique({ where: { key: input.identity.key } });
-      if (!object) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
-      const operation = await tx.storageObjectOperation.findFirst({
-        where: {
-          storageObjectId: object.id,
-          kind: 'attachment_upload_verify',
-          requestHash: input.requestHash,
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-      if (!operation) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
-      await tx.$queryRaw(Prisma.sql`
-        SELECT "id" FROM "storage_object_operations"
-        WHERE "id" = ${operation.id}
-        FOR UPDATE
-      `);
-      const currentOperation = await tx.storageObjectOperation.findUnique({
-        where: { id: operation.id },
-      });
-      if (
-        !currentOperation ||
-        currentOperation.kind !== 'attachment_upload_verify' ||
-        currentOperation.storageObjectId !== object.id ||
-        currentOperation.requestHash !== input.requestHash
-      ) {
-        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
-      }
-      const currentUploadPayload = parseStorageOperationPayload(
-        'attachment_upload_verify',
-        currentOperation.payloadVersion,
-        currentOperation.payload,
-      );
-      if (!('source' in currentUploadPayload) || currentUploadPayload.source !== object.source) {
-        throw new StorageConsistencyInvariantError('upload operation source drifted');
-      }
-      const activeOrphans = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    const object = await tx.storageObject.findUnique({ where: { key: input.identity.key } });
+    if (!object) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    // Lock every operation for this object in the global id order, then reread the upload and
+    // orphan state. This is shared by the public wrapper and parent-transaction callers.
+    await tx.$queryRaw(Prisma.sql`
         SELECT "id" FROM "storage_object_operations"
         WHERE "storageObjectId" = ${object.id}
-          AND "kind" = 'orphan_delete'
-          AND "status" IN ('pending', 'processing')
         ORDER BY "id"
         FOR UPDATE
       `);
-      if (activeOrphans.length !== 0) {
-        throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
-      }
+    const currentOperation = await tx.storageObjectOperation.findFirst({
+      where: {
+        storageObjectId: object.id,
+        kind: 'attachment_upload_verify',
+        requestHash: input.requestHash,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (
+      !currentOperation ||
+      currentOperation.kind !== 'attachment_upload_verify' ||
+      currentOperation.storageObjectId !== object.id ||
+      currentOperation.requestHash !== input.requestHash
+    ) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
+    const ownerEventKey = storageOwnerUploadEventKey(
+      input.identity.ownerType,
+      input.identity.ownerId,
+      input.requestHash,
+    );
+    if (
+      currentOperation.eventKey !== ownerEventKey &&
+      currentOperation.eventKey !== storageOwnerlessUploadEventKey(input.requestHash)
+    ) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
+    const currentUploadPayload = parseStorageOperationPayload(
+      'attachment_upload_verify',
+      currentOperation.payloadVersion,
+      currentOperation.payload,
+    );
+    if (!('source' in currentUploadPayload) || currentUploadPayload.source !== object.source) {
+      throw new StorageConsistencyInvariantError('upload operation source drifted');
+    }
+    const activeOrphans = await tx.storageObjectOperation.findMany({
+      where: {
+        storageObjectId: object.id,
+        kind: 'orphan_delete',
+        status: { in: ['pending', 'processing'] },
+      },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+    if (activeOrphans.length !== 0) {
+      throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
+    }
 
+    if (object.state === 'available' && object.resourceType === 'attachment' && object.resourceId) {
       if (
-        object.state === 'available' &&
-        object.resourceType === 'attachment' &&
-        object.resourceId
+        currentOperation.status !== 'succeeded' ||
+        currentOperation.effectState !== 'provider_present'
       ) {
-        if (
-          currentOperation.status !== 'succeeded' ||
-          currentOperation.effectState !== 'provider_present'
-        ) {
-          throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
-        }
-        const existing = await tx.attachment.findUnique({
-          where: { id: object.resourceId },
-          select: attachmentSelect,
-        });
-        if (!existing || !sameUploadIdentity(existing, input.identity)) {
-          throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
-        }
-        return existing;
-      }
-      if (
-        ['delete_pending', 'delete_failed', 'provider_unknown', 'integrity_mismatch'].includes(
-          object.state,
-        )
-      ) {
-        throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
-      }
-      if (currentOperation.status === 'dead') {
-        throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
-      }
-      if (currentOperation.effectState !== 'provider_present') {
-        throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
-      }
-      if (object.state !== 'present_unbound' || object.resourceId !== null) {
         throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
       }
-      if (
-        input.data.key !== input.identity.key ||
-        input.data.ownerType !== input.identity.ownerType ||
-        input.data.ownerId !== input.identity.ownerId ||
-        input.data.originalName !== input.identity.originalName ||
-        input.data.mime !== input.identity.mime ||
-        input.data.size !== input.identity.size ||
-        input.data.uploadedBy !== input.identity.uploadedByUserId
-      ) {
-        throw new StorageConsistencyInvariantError('Attachment create identity drifted');
-      }
-
-      const created = await tx.attachment.create({
-        data: input.data,
+      const existing = await tx.attachment.findUnique({
+        where: { id: object.resourceId },
         select: attachmentSelect,
       });
-      await tx.storageObject.update({
-        where: { id: object.id },
+      if (!existing || !sameUploadIdentity(existing, input.identity)) {
+        throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+      }
+      return existing;
+    }
+    if (['delete_pending', 'delete_failed', 'integrity_mismatch'].includes(object.state)) {
+      throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
+    }
+    if (currentOperation.status === 'dead') {
+      throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
+    }
+    if (
+      !['pending_upload', 'present_unbound', 'provider_unknown'].includes(object.state) ||
+      object.resourceId !== null
+    ) {
+      throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    }
+    if (!head.exists) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
+    assertExpectedSizeMatchesHead(object, head);
+    if (
+      input.data.key !== input.identity.key ||
+      input.data.ownerType !== input.identity.ownerType ||
+      input.data.ownerId !== input.identity.ownerId ||
+      input.data.originalName !== input.identity.originalName ||
+      input.data.mime !== input.identity.mime ||
+      input.data.size !== input.identity.size ||
+      input.data.uploadedBy !== input.identity.uploadedByUserId
+    ) {
+      throw new StorageConsistencyInvariantError('Attachment create identity drifted');
+    }
+
+    const created = await tx.attachment.create({
+      data: input.data,
+      select: attachmentSelect,
+    });
+    await tx.storageObject.update({
+      where: { id: object.id },
+      data: {
+        state: 'available',
+        resourceType: 'attachment',
+        resourceId: created.id,
+        verifiedAt: now,
+        presentAt: object.presentAt ?? now,
+        actualSize: bigintSize(requireHeadSize(head)),
+        actualMime: head.contentType,
+        etag: head.etag,
+        checksum: typeof input.data.checksum === 'string' ? input.data.checksum : object.checksum,
+        lastProviderCheckedAt: now,
+        lastErrorCode: null,
+        lastErrorClass: null,
+        version: { increment: 1 },
+      },
+    });
+    await tx.storageObjectOperation.update({
+      where: { id: currentOperation.id },
+      data: {
+        status: 'succeeded',
+        effectState: 'provider_present',
+        completedAt: now,
+        deadAt: null,
+        leaseOwner: null,
+        leaseAcquiredAt: null,
+        leaseRenewedAt: null,
+        leaseExpiresAt: null,
+        lastErrorCode: null,
+        lastErrorClass: null,
+      },
+    });
+    const auditArgs = {
+      created,
+      actorUserId: input.identity.uploadedByUserId,
+      actorRoleSnap: input.actorRoleSnap,
+      scope: input.scope,
+      ownerTable: input.ownerTable,
+      auditMeta: input.auditMeta,
+      tx,
+    };
+    if (input.auditKind === 'confirmed') {
+      await this.auditRecorder.logUploadConfirmed(auditArgs);
+    } else {
+      await this.auditRecorder.logUpload(auditArgs);
+    }
+    return created;
+  }
+
+  async lockContentPublishBoundary(
+    tx: Prisma.TransactionClient,
+    input: ContentPublishStorageBoundaryInput,
+  ): Promise<void> {
+    try {
+      await this.lockContentPublishBoundaryUnsafe(tx, input);
+    } catch (error) {
+      if (
+        error instanceof BizException &&
+        error.biz === BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING
+      ) {
+        throw error;
+      }
+      // The public Content facade has one fail-closed storage contract. Raw invariant/Prisma
+      // details must not escape or create a new externally observable error surface.
+      throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
+    }
+  }
+
+  private async lockContentPublishBoundaryUnsafe(
+    tx: Prisma.TransactionClient,
+    input: ContentPublishStorageBoundaryInput,
+  ): Promise<void> {
+    const ownerPrefixes = [
+      {
+        ownerType: 'content-image',
+        prefix: storageOwnerUploadEventKeyPrefix('content-image', input.contentId),
+      },
+      {
+        ownerType: 'content-file',
+        prefix: storageOwnerUploadEventKeyPrefix('content-file', input.contentId),
+      },
+    ] as const;
+    const ownerless = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT op."id"
+      FROM "storage_object_operations" op
+      JOIN "storage_objects" obj ON obj."id" = op."storageObjectId"
+      WHERE op."kind" = 'attachment_upload_verify'
+        AND op."status" IN ('pending', 'processing', 'succeeded')
+        AND obj."resourceId" IS NULL
+        AND obj."state" IN ('pending_upload', 'present_unbound', 'provider_unknown')
+        AND op."eventKey" LIKE ${`${STORAGE_ATTACHMENT_UPLOAD_EVENT_PREFIX}:%`}
+        AND op."eventKey" NOT LIKE ${`${STORAGE_ATTACHMENT_UPLOAD_EVENT_PREFIX}:owner-v1:%`}
+      LIMIT 1
+    `);
+    if (ownerless.length !== 0) throwStorageBoundaryUnsafe();
+
+    const attachmentLocks = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id" FROM "attachments"
+      WHERE "ownerId" = ${input.contentId}
+        AND "ownerType" IN ('content-image', 'content-file')
+      ORDER BY "id"
+      FOR UPDATE
+    `);
+    const attachmentIds = attachmentLocks.map((row) => row.id).sort();
+    const attachments = await tx.attachment.findMany({
+      where: {
+        ownerId: input.contentId,
+        ownerType: { in: ['content-image', 'content-file'] },
+      },
+      select: { id: true, key: true, ownerType: true, ownerId: true },
+      orderBy: { id: 'asc' },
+    });
+    if (
+      !sameSortedStrings(
+        attachmentIds,
+        attachments.map((row) => row.id),
+      )
+    ) {
+      throwStorageBoundaryUnsafe();
+    }
+
+    const ownerIntentCandidates = await tx.storageObjectOperation.findMany({
+      where: {
+        kind: 'attachment_upload_verify',
+        OR: ownerPrefixes.map(({ prefix }) => ({ eventKey: { startsWith: prefix } })),
+      },
+      select: { storageObjectId: true },
+    });
+    const attachmentKeys = attachments.map((row) => row.key);
+    const candidateObjects = await tx.storageObject.findMany({
+      where: {
+        OR: [
+          ...(attachmentKeys.length === 0 ? [] : [{ key: { in: attachmentKeys } }]),
+          ...(ownerIntentCandidates.length === 0
+            ? []
+            : [
+                {
+                  id: {
+                    in: ownerIntentCandidates.map((row) => row.storageObjectId),
+                  },
+                },
+              ]),
+        ],
+      },
+      select: { id: true },
+    });
+    const objectIds = [...new Set(candidateObjects.map((row) => row.id))].sort();
+    if (objectIds.length > 0) {
+      await tx.$queryRaw(Prisma.sql`
+        SELECT "id" FROM "storage_objects"
+        WHERE "id" IN (${Prisma.join(objectIds)})
+        ORDER BY "id"
+        FOR UPDATE
+      `);
+      await tx.$queryRaw(Prisma.sql`
+        SELECT "id" FROM "storage_object_operations"
+        WHERE "storageObjectId" IN (${Prisma.join(objectIds)})
+        ORDER BY "id"
+        FOR UPDATE
+      `);
+    }
+
+    const [currentAttachments, objects, operations, currentOwnerIntents] = await Promise.all([
+      tx.attachment.findMany({
+        where: {
+          ownerId: input.contentId,
+          ownerType: { in: ['content-image', 'content-file'] },
+        },
+        select: { id: true, key: true, ownerType: true, ownerId: true },
+        orderBy: { id: 'asc' },
+      }),
+      objectIds.length === 0
+        ? Promise.resolve([])
+        : tx.storageObject.findMany({ where: { id: { in: objectIds } } }),
+      objectIds.length === 0
+        ? Promise.resolve([])
+        : tx.storageObjectOperation.findMany({
+            where: { storageObjectId: { in: objectIds } },
+            orderBy: { id: 'asc' },
+          }),
+      tx.storageObjectOperation.findMany({
+        where: {
+          kind: 'attachment_upload_verify',
+          OR: ownerPrefixes.map(({ prefix }) => ({ eventKey: { startsWith: prefix } })),
+        },
+        select: { id: true, storageObjectId: true },
+      }),
+    ]);
+    if (
+      !sameSortedStrings(
+        attachmentIds,
+        currentAttachments.map((row) => row.id),
+      )
+    ) {
+      throwStorageBoundaryUnsafe();
+    }
+    if (currentOwnerIntents.some((operation) => !objectIds.includes(operation.storageObjectId))) {
+      // A writer that did not serialize on the already-held Content root added a new intent after
+      // candidate discovery. Fail closed; never acquire a late Object lock out of global order.
+      throwStorageBoundaryUnsafe();
+    }
+    const lockedOperationIds = new Set(operations.map((operation) => operation.id));
+    if (currentOwnerIntents.some((operation) => !lockedOperationIds.has(operation.id))) {
+      // Do not trust an intent discovered after the related Operation lock set was frozen.
+      throwStorageBoundaryUnsafe();
+    }
+
+    const objectByKey = new Map(objects.map((object) => [object.key, object]));
+    const operationsByObject = new Map<string, StorageObjectOperation[]>();
+    for (const operation of operations) {
+      const rows = operationsByObject.get(operation.storageObjectId) ?? [];
+      rows.push(operation);
+      operationsByObject.set(operation.storageObjectId, rows);
+    }
+    const attachmentById = new Map(currentAttachments.map((row) => [row.id, row]));
+    const attachmentByObjectId = new Map<string, (typeof currentAttachments)[number]>();
+    for (const attachment of currentAttachments) {
+      const object = objectByKey.get(attachment.key);
+      if (
+        !object ||
+        object.state !== 'available' ||
+        object.key !== attachment.key ||
+        object.resourceType !== 'attachment' ||
+        object.resourceId !== attachment.id ||
+        object.deleteRequestedAt !== null
+      ) {
+        throwStorageBoundaryUnsafe();
+      }
+      if (activeOperations(operationsByObject.get(object.id) ?? []).length !== 0) {
+        throwStorageBoundaryUnsafe();
+      }
+      attachmentByObjectId.set(object.id, attachment);
+    }
+
+    const referencedAttachmentIds = [...new Set(input.referencedAttachmentIds)].sort();
+    for (const attachmentId of referencedAttachmentIds) {
+      const attachment = attachmentById.get(attachmentId);
+      if (!attachment || attachment.ownerType !== 'content-image') {
+        throwStorageBoundaryUnsafe();
+      }
+    }
+    const coverPairIsComplete =
+      (input.coverAttachmentId === null) === (input.coverImageKey === null);
+    if (!coverPairIsComplete) throwStorageBoundaryUnsafe();
+    if (input.coverAttachmentId !== null && input.coverImageKey !== null) {
+      const cover = attachmentById.get(input.coverAttachmentId);
+      if (!cover || cover.ownerType !== 'content-image' || cover.key !== input.coverImageKey) {
+        throwStorageBoundaryUnsafe();
+      }
+    }
+
+    const now = new Date();
+    for (const object of objects) {
+      const objectOperations = operationsByObject.get(object.id) ?? [];
+      const ownerUploadOperations = objectOperations.flatMap((operation) => {
+        if (operation.kind !== 'attachment_upload_verify') return [];
+        const owner = ownerPrefixes.find(({ prefix }) => operation.eventKey.startsWith(prefix));
+        if (!owner) return [];
+        if (operation.eventKey !== `${owner.prefix}${operation.requestHash}`) {
+          throwStorageBoundaryUnsafe();
+        }
+        return [{ operation, ownerType: owner.ownerType }];
+      });
+      if (ownerUploadOperations.length === 0) continue;
+      const boundAttachment = attachmentByObjectId.get(object.id);
+      if (boundAttachment) {
+        if (
+          ownerUploadOperations.some(
+            ({ ownerType, operation }) =>
+              ownerType !== boundAttachment.ownerType ||
+              operation.status !== 'succeeded' ||
+              operation.effectState !== 'provider_present',
+          )
+        ) {
+          throwStorageBoundaryUnsafe();
+        }
+        continue;
+      }
+
+      if (object.resourceType !== null || object.resourceId !== null) {
+        throwStorageBoundaryUnsafe();
+      }
+      if (object.state === 'absent') {
+        if (activeOperations(objectOperations).length !== 0) throwStorageBoundaryUnsafe();
+        continue;
+      }
+      if (object.state === 'delete_pending') {
+        const active = activeOperations(objectOperations);
+        const orphan = active[0];
+        const expectedOrphanRequestHash = storageRequestHash({
+          kind: 'orphan_delete',
+          objectId: object.id,
+        });
+        const replayedUpload = ownerUploadOperations.find(
+          ({ operation }) => operation.id === orphan?.replayOfId,
+        )?.operation;
+        if (
+          active.length !== 1 ||
+          !orphan ||
+          orphan.kind !== 'orphan_delete' ||
+          orphan.eventKey !== `storage.orphan-delete:${object.id}` ||
+          orphan.storageObjectId !== object.id ||
+          orphan.requestHash !== expectedOrphanRequestHash ||
+          !replayedUpload ||
+          !['dead', 'succeeded'].includes(replayedUpload.status) ||
+          !object.unboundExpiresAt ||
+          orphan.availableAt.getTime() < object.unboundExpiresAt.getTime()
+        ) {
+          throwStorageBoundaryUnsafe();
+        }
+        parseStorageOperationPayload('orphan_delete', orphan.payloadVersion, orphan.payload);
+        continue;
+      }
+      if (
+        !['pending_upload', 'present_unbound', 'provider_unknown'].includes(object.state) ||
+        object.deleteRequestedAt !== null ||
+        !object.unboundExpiresAt ||
+        (object.source !== 'attachment_signed_upload' && object.source !== 'attachment_legacy')
+      ) {
+        throwStorageBoundaryUnsafe();
+      }
+      const active = activeOperations(objectOperations);
+      if (
+        active.length !== 1 ||
+        active[0]?.kind !== 'attachment_upload_verify' ||
+        !ownerUploadOperations.some(({ operation }) => operation.id === active[0]?.id)
+      ) {
+        throwStorageBoundaryUnsafe();
+      }
+      const uploadOperation = active[0];
+      const uploadPayload = parseStorageOperationPayload(
+        'attachment_upload_verify',
+        uploadOperation.payloadVersion,
+        uploadOperation.payload,
+      );
+      if (!('source' in uploadPayload) || uploadPayload.source !== object.source) {
+        throwStorageBoundaryUnsafe();
+      }
+
+      const objectUpdated = await tx.storageObject.updateMany({
+        where: {
+          id: object.id,
+          state: object.state,
+          resourceId: null,
+          deleteRequestedAt: null,
+        },
         data: {
-          state: 'available',
-          resourceType: 'attachment',
-          resourceId: created.id,
-          verifiedAt: now,
-          presentAt: object.presentAt ?? now,
-          checksum: typeof input.data.checksum === 'string' ? input.data.checksum : object.checksum,
-          lastProviderCheckedAt: now,
-          lastErrorCode: null,
-          lastErrorClass: null,
+          state: 'delete_pending',
+          deleteRequestedAt: now,
           version: { increment: 1 },
         },
       });
-      await tx.storageObjectOperation.update({
-        where: { id: currentOperation.id },
+      if (objectUpdated.count !== 1) throwStorageBoundaryUnsafe();
+      const uploadUpdated = await tx.storageObjectOperation.updateMany({
+        where: {
+          id: uploadOperation.id,
+          status: uploadOperation.status,
+          storageObjectId: object.id,
+          kind: 'attachment_upload_verify',
+        },
         data: {
-          status: 'succeeded',
-          effectState: 'provider_present',
+          status: 'dead',
           completedAt: now,
-          deadAt: null,
+          deadAt: now,
           leaseOwner: null,
           leaseAcquiredAt: null,
           leaseRenewedAt: null,
@@ -377,22 +798,51 @@ export class AttachmentStorageOrchestrator {
           lastErrorClass: null,
         },
       });
-      const auditArgs = {
-        created,
-        actorUserId: input.identity.uploadedByUserId,
-        actorRoleSnap: input.actorRoleSnap,
-        scope: input.scope,
-        ownerTable: input.ownerTable,
-        auditMeta: input.auditMeta,
-        tx,
-      };
-      if (input.auditKind === 'confirmed') {
-        await this.auditRecorder.logUploadConfirmed(auditArgs);
+      if (uploadUpdated.count !== 1) throwStorageBoundaryUnsafe();
+
+      const orphanEventKey = `storage.orphan-delete:${object.id}`;
+      const orphanRequestHash = storageRequestHash({
+        kind: 'orphan_delete',
+        objectId: object.id,
+      });
+      const availableAt =
+        object.unboundExpiresAt.getTime() > now.getTime() ? object.unboundExpiresAt : now;
+      const existingOrphan = objectOperations.find(
+        (operation) => operation.eventKey === orphanEventKey,
+      );
+      if (existingOrphan) {
+        if (
+          existingOrphan.kind !== 'orphan_delete' ||
+          existingOrphan.storageObjectId !== object.id ||
+          existingOrphan.replayOfId !== uploadOperation.id ||
+          existingOrphan.requestHash !== orphanRequestHash ||
+          !['pending', 'processing'].includes(existingOrphan.status)
+        ) {
+          throwStorageBoundaryUnsafe();
+        }
+        if (existingOrphan.availableAt.getTime() < availableAt.getTime()) {
+          await tx.storageObjectOperation.update({
+            where: { id: existingOrphan.id },
+            data: { availableAt },
+          });
+        }
       } else {
-        await this.auditRecorder.logUpload(auditArgs);
+        await tx.storageObjectOperation.create({
+          data: {
+            eventKey: orphanEventKey,
+            storageObjectId: object.id,
+            replayOfId: uploadOperation.id,
+            kind: 'orphan_delete',
+            status: 'pending',
+            effectState: 'not_started',
+            payloadVersion: STORAGE_OPERATION_PAYLOAD_VERSION,
+            payload: toStorageJson({}),
+            requestHash: orphanRequestHash,
+            availableAt,
+          },
+        });
       }
-      return created;
-    });
+    }
   }
 
   async filterMetadataVisible<T extends { key: string }>(rows: readonly T[]): Promise<T[]> {
@@ -1621,6 +2071,32 @@ export class AttachmentStorageOrchestrator {
     ownerTable: string,
     ownerId: string,
   ): Promise<void> {
+    if (
+      (ownerType === 'content-image' || ownerType === 'content-file') &&
+      ownerTable === 'contents'
+    ) {
+      const contentRows = await tx.$queryRaw<
+        Array<{
+          id: string;
+          deletedAt: Date | null;
+          statusCode: string;
+          publishedAt: Date | null;
+        }>
+      >(Prisma.sql`
+        SELECT "id", "deletedAt", "statusCode", "publishedAt"
+        FROM "contents"
+        WHERE "id" = ${ownerId}
+        FOR UPDATE
+      `);
+      const content = contentRows[0];
+      if (contentRows.length !== 1 || !content || content.deletedAt !== null) {
+        throw new BizException(BizCode.ATTACHMENT_OWNER_NOT_FOUND);
+      }
+      if (content.statusCode !== 'draft' || content.publishedAt !== null) {
+        throw new BizException(BizCode.CONTENT_INVALID_STATUS_TRANSITION);
+      }
+      return;
+    }
     let rows: Array<{ id: string; deletedAt: Date | null }>;
     switch (`${ownerType}:${ownerTable}`) {
       case 'member:member':
@@ -1636,12 +2112,6 @@ export class AttachmentStorageOrchestrator {
       case 'activity:activity':
         rows = await tx.$queryRaw(Prisma.sql`
           SELECT "id", "deletedAt" FROM "Activity" WHERE "id" = ${ownerId} FOR UPDATE
-        `);
-        break;
-      case 'content-image:contents':
-      case 'content-file:contents':
-        rows = await tx.$queryRaw(Prisma.sql`
-          SELECT "id", "deletedAt" FROM "contents" WHERE "id" = ${ownerId} FOR UPDATE
         `);
         break;
       default:
@@ -1751,12 +2221,6 @@ export class AttachmentStorageOrchestrator {
     }
     return this.provider;
   }
-
-  private async requireObject(id: string): Promise<StorageObject> {
-    const object = await this.prisma.storageObject.findUnique({ where: { id } });
-    if (!object) throw new StorageConsistencyInvariantError(`object=${id} disappeared`);
-    return object;
-  }
 }
 
 function storageLocatorData(locator: StorageObjectLocator): {
@@ -1825,6 +2289,27 @@ function sameUploadIdentity(
     attachment.size === identity.size &&
     attachment.uploadedBy === identity.uploadedByUserId
   );
+}
+
+function isContentAttachmentOwnerType(ownerType: string): boolean {
+  return ownerType === 'content-image' || ownerType === 'content-file';
+}
+
+function activeOperations(operations: readonly StorageObjectOperation[]): StorageObjectOperation[] {
+  return operations.filter(
+    (operation) => operation.status === 'pending' || operation.status === 'processing',
+  );
+}
+
+function sameSortedStrings(left: readonly string[], right: readonly string[]): boolean {
+  const sortedRight = [...right].sort();
+  return (
+    left.length === sortedRight.length && left.every((value, index) => value === sortedRight[index])
+  );
+}
+
+function throwStorageBoundaryUnsafe(): never {
+  throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
 }
 
 function deleteReplayResponse(row: SafeAttachment): AttachmentDeleteReplayResponse {

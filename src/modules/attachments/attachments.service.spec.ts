@@ -6,13 +6,17 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { CosProviderUnavailableError } from '../storage/providers/cos.provider';
 import type { StorageSettingsService } from '../storage/storage-settings.service';
+import type { HeadObjectResult } from '../storage/storage.types';
 import { signUploadToken, type UploadTokenClaims } from '../storage/upload-token.util';
 import appConfig from '../../config/app.config';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type { RbacService } from '../permissions/rbac.service';
 import type { AttachmentStorageOrchestrator } from './attachment-storage-orchestrator';
-import type { FinalizeAttachmentStorageUploadInput } from './attachment-storage.types';
+import type {
+  ContentUploadConfirmGuard,
+  FinalizeAttachmentStorageUploadInput,
+} from './attachment-storage.types';
 import type {
   ConfirmUploadDto,
   CreateAttachmentDto,
@@ -235,7 +239,7 @@ function makePrismaMock() {
   const activity = { findFirst: jest.fn<Promise<{ id: string } | null>, [unknown]>() };
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
   const $queryRaw = jest
-    .fn<Promise<Array<{ id: string }>>, [unknown]>()
+    .fn<Promise<Array<Record<string, unknown>>>, [unknown]>()
     .mockResolvedValue([{ id: 'locked-row' }]);
   const prisma = {
     attachment,
@@ -332,6 +336,24 @@ function makeStorageConsistencyMock(provider: ProviderMock, recorder: RecorderMo
         localNamespace: '/fixture/storage',
       },
     }),
+    prepareUploadInTransaction: jest.fn().mockResolvedValue({
+      objectId: 'storage-object-fixture',
+      operationId: 'storage-operation-fixture',
+      eventKey: 'storage.fixture:upload',
+      requestHash: '0'.repeat(64),
+      locator: {
+        providerType: 'LOCAL',
+        bucket: null,
+        region: null,
+        localNamespace: '/fixture/storage',
+      },
+    }),
+    resolveUploadLocatorForTransaction: jest.fn().mockResolvedValue({
+      providerType: 'LOCAL',
+      bucket: null,
+      region: null,
+      localNamespace: '/fixture/storage',
+    }),
     prepareUploadUrl: jest.fn(
       async (
         identity: { key: string; mime: string; size: number },
@@ -345,7 +367,7 @@ function makeStorageConsistencyMock(provider: ProviderMock, recorder: RecorderMo
           expiresIn,
         }),
     ),
-    verifyUpload: jest.fn(async (identity: { key: string; mime: string; size: number }) => {
+    verifyUploadEvidence: jest.fn(async (identity: { key: string; mime: string; size: number }) => {
       const head = await provider.headObject(identity.key);
       if (!head.exists) throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
       if (identity.mime === 'image/svg+xml') {
@@ -360,11 +382,18 @@ function makeStorageConsistencyMock(provider: ProviderMock, recorder: RecorderMo
           throw new BizException(BizCode.ATTACHMENT_CONTENT_TYPE_MISMATCH);
         }
       }
-      return { object: {}, operation: {}, head };
+      return head;
     }),
     finalizeUpload: jest
-      .fn<Promise<AttachmentRow>, [FinalizeAttachmentStorageUploadInput]>()
+      .fn<Promise<AttachmentRow>, [FinalizeAttachmentStorageUploadInput, HeadObjectResult]>()
       .mockResolvedValue(makeAttachmentRow()),
+    finalizeUploadInTransaction: jest
+      .fn<
+        Promise<AttachmentRow>,
+        [Prisma.TransactionClient, FinalizeAttachmentStorageUploadInput, HeadObjectResult]
+      >()
+      .mockResolvedValue(makeAttachmentRow()),
+    lockContentPublishBoundary: jest.fn().mockResolvedValue(undefined),
     getDeleteReplay: jest.fn().mockResolvedValue(null),
     prepareDelete: jest.fn().mockResolvedValue('storage.fixture:delete'),
     executeEventKey: jest.fn<Promise<void>, [string]>().mockResolvedValue(undefined),
@@ -654,7 +683,7 @@ describe('AttachmentsService (characterization)', () => {
         'attachment_legacy',
         expect.any(Date),
       );
-      expect(storageConsistency.verifyUpload).toHaveBeenCalledWith(
+      expect(storageConsistency.verifyUploadEvidence).toHaveBeenCalledWith(
         expect.objectContaining(identity),
         'attachment_legacy',
       );
@@ -668,6 +697,7 @@ describe('AttachmentsService (characterization)', () => {
           ownerTable: 'member',
           auditMeta: META,
         }),
+        expect.objectContaining({ exists: true, size: 1024 }),
       );
       expect(prisma.attachment.create).not.toHaveBeenCalled();
       expect(recorder.logUpload).not.toHaveBeenCalled();
@@ -906,29 +936,706 @@ describe('AttachmentsService (characterization)', () => {
     });
   });
 
-  // ============ G. confirmUpload:token / owner / headObject / size / dedup 分支 ============
-  describe('confirmUpload — token / owner / headObject / size / dedup branches', () => {
-    it('token 非法 → 13001(信息泄漏防御);不调 headObject', async () => {
+  describe('trusted Content publish storage facade', () => {
+    it('forwards the caller transaction without opening another tx or invoking Provider/audit', async () => {
       const prisma = makePrismaMock();
       const provider = makeProviderMock();
-      const service = makeService(prisma, { provider });
+      const recorder = makeRecorderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+      const service = makeService(prisma, { provider, recorder, storageConsistency });
+      const input = {
+        contentId: 'content-publish-1',
+        referencedAttachmentIds: ['attachment-body-1'],
+        coverAttachmentId: 'attachment-cover-1',
+        coverImageKey: 'attachments/test/cover.png',
+      } as const;
 
-      await expect(
-        service.confirmUpload(makeConfirmDto('not-a-valid-token'), makeCurrentUser(), META),
-      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+      await service.lockContentPublishStorageBoundaryTrusted(
+        prisma as unknown as Prisma.TransactionClient,
+        input,
+      );
+
+      expect(storageConsistency.lockContentPublishBoundary).toHaveBeenCalledWith(prisma, input);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
       expect(provider.headObject).not.toHaveBeenCalled();
+      expect(provider.deleteObject).not.toHaveBeenCalled();
+      expect(recorder.logUpload).not.toHaveBeenCalled();
+      expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
+      expect(recorder.logDelete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('opaque Content upload-confirm facade', () => {
+    it.each(['invalid', 'expired', 'foreign', 'owner-id-mismatch', 'owner-type-mismatch'] as const)(
+      '%s → exact 13001 before Content/ledger/Provider/audit',
+      async (scenario) => {
+        const prisma = makePrismaMock();
+        const provider = makeProviderMock();
+        const recorder = makeRecorderMock();
+        const rbac = makeRbacMock(true);
+        const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+        const service = makeService(prisma, { provider, recorder, rbac, storageConsistency });
+        const uploadToken =
+          scenario === 'invalid'
+            ? 'invalid-content-upload-token'
+            : makeUploadToken({
+                ownerType: scenario === 'owner-type-mismatch' ? 'content-file' : 'content-image',
+                ownerId: scenario === 'owner-id-mismatch' ? 'content-token-owner' : 'content-route',
+                uploadedByUserId: scenario === 'foreign' ? 'foreign-uploader' : 'u1',
+                ...(scenario === 'expired' ? { iat: 1_700_000_000, exp: 1_700_000_001 } : {}),
+              });
+
+        await expect(
+          service.guardContentUploadConfirm({ uploadToken }, makeCurrentUser({ id: 'u1' }), {
+            ownerType: 'content-image',
+            ownerId: 'content-route',
+          }),
+        ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+
+        expect(rbac.can).not.toHaveBeenCalled();
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(prisma.$queryRaw).not.toHaveBeenCalled();
+        expect(storageConsistency.resolveUploadLocatorForTransaction).not.toHaveBeenCalled();
+        expect(storageConsistency.prepareUpload).not.toHaveBeenCalled();
+        expect(storageConsistency.prepareUploadInTransaction).not.toHaveBeenCalled();
+        expect(storageConsistency.verifyUploadEvidence).not.toHaveBeenCalled();
+        expect(storageConsistency.finalizeUpload).not.toHaveBeenCalled();
+        expect(storageConsistency.finalizeUploadInTransaction).not.toHaveBeenCalled();
+        expect(provider.headObject).not.toHaveBeenCalled();
+        expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['content-image', 'content-file'] as const)(
+      'public guard %s coarse RBAC denial → exact 404/13001/附件不存在 with zero downstream work',
+      async (ownerType) => {
+        const prisma = makePrismaMock();
+        const provider = makeProviderMock();
+        const recorder = makeRecorderMock();
+        const rbac = makeRbacMock(false);
+        const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+        const service = makeService(prisma, { provider, recorder, rbac, storageConsistency });
+        const uploadToken = makeUploadToken({
+          ownerType,
+          ownerId: 'content-route',
+          uploadedByUserId: 'u1',
+        });
+
+        const rejection = service.guardContentUploadConfirm(
+          { uploadToken },
+          makeCurrentUser({ id: 'u1' }),
+          { ownerType, ownerId: 'content-route' },
+        );
+        await expect(rejection).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+        await rejection.catch((error: unknown) => {
+          expect(error).toBeInstanceOf(BizException);
+          expect((error as BizException).biz).toEqual({
+            code: 13001,
+            message: '附件不存在',
+            httpStatus: 404,
+          });
+        });
+
+        expect(rbac.can).toHaveBeenCalledTimes(1);
+        expect(rbac.can).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'u1' }),
+          `attachment.upload.${ownerType}`,
+        );
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(prisma.$queryRaw).not.toHaveBeenCalled();
+        expect(prisma.attachment.create).not.toHaveBeenCalled();
+        expect(storageConsistency.resolveUploadLocatorForTransaction).not.toHaveBeenCalled();
+        expect(storageConsistency.prepareUpload).not.toHaveBeenCalled();
+        expect(storageConsistency.prepareUploadInTransaction).not.toHaveBeenCalled();
+        expect(storageConsistency.verifyUploadEvidence).not.toHaveBeenCalled();
+        expect(storageConsistency.finalizeUpload).not.toHaveBeenCalled();
+        expect(storageConsistency.finalizeUploadInTransaction).not.toHaveBeenCalled();
+        expect(provider.headObject).not.toHaveBeenCalled();
+        expect(provider.readObjectPrefix).not.toHaveBeenCalled();
+        expect(recorder.logUpload).not.toHaveBeenCalled();
+        expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
+        expect(recorder.logDelete).not.toHaveBeenCalled();
+      },
+    );
+
+    it('advances only opaque same-service handles and never opens a nested transaction', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      const recorder = makeRecorderMock();
+      const rbac = makeRbacMock(true);
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+      storageConsistency.finalizeUploadInTransaction.mockResolvedValue(
+        makeAttachmentRow({ ownerType: 'content-image', ownerId: 'content-route' }),
+      );
+      const service = makeService(prisma, { provider, recorder, rbac, storageConsistency });
+      const token = makeUploadToken({
+        ownerType: 'content-image',
+        ownerId: 'content-route',
+      });
+
+      const guarded = await service.guardContentUploadConfirm(
+        { uploadToken: token, checksum: 'sha256:content' },
+        makeCurrentUser({ id: 'u1' }),
+        { ownerType: ['content-image', 'content-file'], ownerId: 'content-route' },
+      );
+      expect(Object.keys(guarded)).toEqual([]);
+      expect(JSON.stringify(guarded)).not.toContain('content-route');
+
+      const prepared = await service.prepareContentUploadConfirmInTransactionTrusted(
+        prisma as unknown as Prisma.TransactionClient,
+        guarded,
+      );
+      await expect(
+        service.prepareContentUploadConfirmInTransactionTrusted(
+          prisma as unknown as Prisma.TransactionClient,
+          guarded,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+      expect(storageConsistency.prepareUploadInTransaction).toHaveBeenCalledTimes(1);
+      expect(storageConsistency.verifyUploadEvidence).not.toHaveBeenCalled();
+      expect(provider.headObject).not.toHaveBeenCalled();
+
+      const verified = await service.verifyContentUploadConfirmEvidenceOutsideTransaction(prepared);
+      const finalized = await service.finalizeContentUploadConfirmInTransactionTrusted(
+        prisma as unknown as Prisma.TransactionClient,
+        verified,
+        META,
+      );
+      await expect(
+        service.finalizeContentUploadConfirmInTransactionTrusted(
+          prisma as unknown as Prisma.TransactionClient,
+          verified,
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+      const response = await service.resolveContentUploadConfirmResponseTrusted(finalized);
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(storageConsistency.prepareUpload).not.toHaveBeenCalled();
+      expect(storageConsistency.prepareUploadInTransaction).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({
+          ownerType: 'content-image',
+          ownerId: 'content-route',
+          uploadedByUserId: 'u1',
+        }),
+        'attachment_signed_upload',
+        expect.any(Date),
+      );
+      expect(storageConsistency.verifyUploadEvidence).toHaveBeenCalledTimes(1);
+      expect(storageConsistency.finalizeUpload).not.toHaveBeenCalled();
+      expect(storageConsistency.finalizeUploadInTransaction).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({
+          auditKind: 'confirmed',
+          ownerTable: 'contents',
+          scope: null,
+          auditMeta: META,
+          data: expect.objectContaining({
+            ownerType: 'content-image',
+            ownerId: 'content-route',
+            checksum: 'sha256:content',
+          }) as unknown,
+        }),
+        expect.objectContaining({ exists: true, size: 1024 }),
+      );
+      expect(storageConsistency.finalizeUploadInTransaction).toHaveBeenCalledTimes(1);
+      expect(response).toMatchObject({
+        ownerType: 'content-image',
+        ownerId: 'content-route',
+        accessUrl: 'https://signed.example/download',
+      });
+
+      const anotherService = makeService(makePrismaMock());
+      await expect(
+        anotherService.prepareContentUploadConfirmInTransactionTrusted(
+          prisma as unknown as Prisma.TransactionClient,
+          guarded,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
     });
 
-    it('token.uploadedByUserId !== user.id → 30100;不调 headObject', async () => {
-      const prisma = makePrismaMock();
-      const provider = makeProviderMock();
-      const token = makeUploadToken({ uploadedByUserId: 'someone-else' });
-      const service = makeService(prisma, { provider });
+    it('rejects an unconsumed guard on another service without consuming the issuer capability', async () => {
+      const issuerPrisma = makePrismaMock();
+      const issuerProvider = makeProviderMock();
+      const issuerRecorder = makeRecorderMock();
+      const issuerStorage = makeStorageConsistencyMock(issuerProvider, issuerRecorder);
+      const issuerService = makeService(issuerPrisma, {
+        provider: issuerProvider,
+        recorder: issuerRecorder,
+        storageConsistency: issuerStorage,
+      });
+      const foreignPrisma = makePrismaMock();
+      const foreignProvider = makeProviderMock();
+      const foreignRecorder = makeRecorderMock();
+      const foreignStorage = makeStorageConsistencyMock(foreignProvider, foreignRecorder);
+      const foreignService = makeService(foreignPrisma, {
+        provider: foreignProvider,
+        recorder: foreignRecorder,
+        storageConsistency: foreignStorage,
+      });
+      const guarded = await issuerService.guardContentUploadConfirm(
+        {
+          uploadToken: makeUploadToken({
+            ownerType: 'content-image',
+            ownerId: 'content-route',
+          }),
+        },
+        makeCurrentUser(),
+        { ownerType: 'content-image', ownerId: 'content-route' },
+      );
+
+      const foreignAttempt = foreignService.prepareContentUploadConfirmInTransactionTrusted(
+        foreignPrisma as unknown as Prisma.TransactionClient,
+        guarded,
+      );
+      await expect(foreignAttempt).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+      await foreignAttempt.catch((error: unknown) => {
+        expect(error).toBeInstanceOf(BizException);
+        expect((error as BizException).biz).toEqual({
+          code: 13001,
+          message: '附件不存在',
+          httpStatus: 404,
+        });
+      });
+
+      expect(foreignPrisma.$transaction).not.toHaveBeenCalled();
+      expect(foreignPrisma.$queryRaw).not.toHaveBeenCalled();
+      expect(foreignPrisma.attachment.create).not.toHaveBeenCalled();
+      expect(foreignStorage.resolveUploadLocatorForTransaction).not.toHaveBeenCalled();
+      expect(foreignStorage.prepareUpload).not.toHaveBeenCalled();
+      expect(foreignStorage.prepareUploadInTransaction).not.toHaveBeenCalled();
+      expect(foreignStorage.verifyUploadEvidence).not.toHaveBeenCalled();
+      expect(foreignStorage.finalizeUpload).not.toHaveBeenCalled();
+      expect(foreignStorage.finalizeUploadInTransaction).not.toHaveBeenCalled();
+      expect(foreignProvider.headObject).not.toHaveBeenCalled();
+      expect(foreignProvider.readObjectPrefix).not.toHaveBeenCalled();
+      expect(foreignRecorder.logUpload).not.toHaveBeenCalled();
+      expect(foreignRecorder.logUploadConfirmed).not.toHaveBeenCalled();
+      expect(foreignRecorder.logDelete).not.toHaveBeenCalled();
 
       await expect(
-        service.confirmUpload(makeConfirmDto(token), makeCurrentUser({ id: 'u1' }), META),
-      ).rejects.toEqual(new BizException(BizCode.RBAC_FORBIDDEN));
+        issuerService.prepareContentUploadConfirmInTransactionTrusted(
+          issuerPrisma as unknown as Prisma.TransactionClient,
+          guarded,
+        ),
+      ).resolves.toEqual(expect.any(Object));
+      expect(issuerStorage.prepareUploadInTransaction).toHaveBeenCalledTimes(1);
+      expect(issuerPrisma.$transaction).not.toHaveBeenCalled();
+      expect(issuerProvider.headObject).not.toHaveBeenCalled();
+      expect(issuerRecorder.logUploadConfirmed).not.toHaveBeenCalled();
+    });
+
+    it('rejects forged capability shapes without consuming a real guard', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      const recorder = makeRecorderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+      const service = makeService(prisma, { provider, recorder, storageConsistency });
+      const guarded = await service.guardContentUploadConfirm(
+        {
+          uploadToken: makeUploadToken({
+            ownerType: 'content-file',
+            ownerId: 'content-route',
+          }),
+        },
+        makeCurrentUser(),
+        { ownerType: 'content-file', ownerId: 'content-route' },
+      );
+      const forgedCapabilities = [
+        {} as ContentUploadConfirmGuard,
+        Object.freeze(Object.create(null)) as ContentUploadConfirmGuard,
+      ];
+
+      for (const forged of forgedCapabilities) {
+        const forgedAttempt = service.prepareContentUploadConfirmInTransactionTrusted(
+          prisma as unknown as Prisma.TransactionClient,
+          forged,
+        );
+        await expect(forgedAttempt).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+        await forgedAttempt.catch((error: unknown) => {
+          expect(error).toBeInstanceOf(BizException);
+          expect((error as BizException).biz).toEqual({
+            code: 13001,
+            message: '附件不存在',
+            httpStatus: 404,
+          });
+        });
+      }
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(prisma.attachment.create).not.toHaveBeenCalled();
+      expect(storageConsistency.resolveUploadLocatorForTransaction).not.toHaveBeenCalled();
+      expect(storageConsistency.prepareUpload).not.toHaveBeenCalled();
+      expect(storageConsistency.prepareUploadInTransaction).not.toHaveBeenCalled();
+      expect(storageConsistency.verifyUploadEvidence).not.toHaveBeenCalled();
+      expect(storageConsistency.finalizeUpload).not.toHaveBeenCalled();
+      expect(storageConsistency.finalizeUploadInTransaction).not.toHaveBeenCalled();
       expect(provider.headObject).not.toHaveBeenCalled();
+      expect(provider.readObjectPrefix).not.toHaveBeenCalled();
+      expect(recorder.logUpload).not.toHaveBeenCalled();
+      expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
+      expect(recorder.logDelete).not.toHaveBeenCalled();
+
+      await expect(
+        service.prepareContentUploadConfirmInTransactionTrusted(
+          prisma as unknown as Prisma.TransactionClient,
+          guarded,
+        ),
+      ).resolves.toEqual(expect.any(Object));
+      expect(storageConsistency.prepareUploadInTransaction).toHaveBeenCalledTimes(1);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(provider.headObject).not.toHaveBeenCalled();
+      expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
+    });
+
+    it('consumes a guarded handle before a failing prepare effect', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      const recorder = makeRecorderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+      storageConsistency.prepareUploadInTransaction.mockRejectedValueOnce(
+        new Error('PREPARE_EFFECT_FAILED'),
+      );
+      const service = makeService(prisma, { provider, recorder, storageConsistency });
+      const guarded = await service.guardContentUploadConfirm(
+        {
+          uploadToken: makeUploadToken({
+            ownerType: 'content-file',
+            ownerId: 'content-route',
+          }),
+        },
+        makeCurrentUser(),
+        { ownerType: 'content-file', ownerId: 'content-route' },
+      );
+
+      await expect(
+        service.prepareContentUploadConfirmInTransactionTrusted(
+          prisma as unknown as Prisma.TransactionClient,
+          guarded,
+        ),
+      ).rejects.toThrow('PREPARE_EFFECT_FAILED');
+      await expect(
+        service.prepareContentUploadConfirmInTransactionTrusted(
+          prisma as unknown as Prisma.TransactionClient,
+          guarded,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+
+      expect(storageConsistency.prepareUploadInTransaction).toHaveBeenCalledTimes(1);
+      expect(storageConsistency.verifyUploadEvidence).not.toHaveBeenCalled();
+      expect(storageConsistency.finalizeUploadInTransaction).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.attachment.create).not.toHaveBeenCalled();
+      expect(provider.headObject).not.toHaveBeenCalled();
+      expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
+    });
+
+    it('consumes a prepared handle before a failing Provider evidence effect', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      const recorder = makeRecorderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+      storageConsistency.verifyUploadEvidence.mockRejectedValueOnce(
+        new Error('PROVIDER_EVIDENCE_FAILED'),
+      );
+      const service = makeService(prisma, { provider, recorder, storageConsistency });
+      const guarded = await service.guardContentUploadConfirm(
+        {
+          uploadToken: makeUploadToken({
+            ownerType: 'content-image',
+            ownerId: 'content-route',
+          }),
+        },
+        makeCurrentUser(),
+        { ownerType: 'content-image', ownerId: 'content-route' },
+      );
+      const prepared = await service.prepareContentUploadConfirmInTransactionTrusted(
+        prisma as unknown as Prisma.TransactionClient,
+        guarded,
+      );
+
+      await expect(
+        service.verifyContentUploadConfirmEvidenceOutsideTransaction(prepared),
+      ).rejects.toThrow('PROVIDER_EVIDENCE_FAILED');
+      await expect(
+        service.verifyContentUploadConfirmEvidenceOutsideTransaction(prepared),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+
+      expect(storageConsistency.verifyUploadEvidence).toHaveBeenCalledTimes(1);
+      expect(storageConsistency.finalizeUploadInTransaction).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.attachment.create).not.toHaveBeenCalled();
+      expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
+    });
+
+    it('consumes a verified handle before a failing finalization effect', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      const recorder = makeRecorderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+      storageConsistency.finalizeUploadInTransaction.mockRejectedValueOnce(
+        new Error('FINALIZATION_EFFECT_FAILED'),
+      );
+      const service = makeService(prisma, { provider, recorder, storageConsistency });
+      const guarded = await service.guardContentUploadConfirm(
+        {
+          uploadToken: makeUploadToken({
+            ownerType: 'content-image',
+            ownerId: 'content-route',
+          }),
+        },
+        makeCurrentUser(),
+        { ownerType: 'content-image', ownerId: 'content-route' },
+      );
+      const prepared = await service.prepareContentUploadConfirmInTransactionTrusted(
+        prisma as unknown as Prisma.TransactionClient,
+        guarded,
+      );
+      const verified = await service.verifyContentUploadConfirmEvidenceOutsideTransaction(prepared);
+
+      await expect(
+        service.finalizeContentUploadConfirmInTransactionTrusted(
+          prisma as unknown as Prisma.TransactionClient,
+          verified,
+          META,
+        ),
+      ).rejects.toThrow('FINALIZATION_EFFECT_FAILED');
+      await expect(
+        service.finalizeContentUploadConfirmInTransactionTrusted(
+          prisma as unknown as Prisma.TransactionClient,
+          verified,
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+
+      expect(storageConsistency.finalizeUploadInTransaction).toHaveBeenCalledTimes(1);
+      expect(storageConsistency.verifyUploadEvidence).toHaveBeenCalledTimes(1);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.attachment.create).not.toHaveBeenCalled();
+      expect(provider.headObject).toHaveBeenCalledTimes(1);
+      expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
+    });
+  });
+
+  // ============ G. confirmUpload:token / owner / headObject / size / dedup 分支 ============
+  describe('confirmUpload — token / owner / headObject / size / dedup branches', () => {
+    it.each([
+      ['invalid', 'not-a-valid-token'],
+      [
+        'expired',
+        makeUploadToken({
+          iat: 1_700_000_000,
+          exp: 1_700_000_001,
+        }),
+      ],
+    ])('%s token → exact 404/13001/附件不存在且零副作用', async (_label, token) => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      const recorder = makeRecorderMock();
+      const rbac = makeRbacMock(true);
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+      const service = makeService(prisma, {
+        provider,
+        recorder,
+        rbac,
+        storageConsistency,
+      });
+
+      const rejection = service.confirmUpload(makeConfirmDto(token), makeCurrentUser(), META);
+      await expect(rejection).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+      await rejection.catch((error: unknown) => {
+        expect(error).toBeInstanceOf(BizException);
+        expect((error as BizException).biz).toEqual({
+          code: 13001,
+          message: '附件不存在',
+          httpStatus: 404,
+        });
+      });
+      expect(rbac.can).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+      expect(storageConsistency.prepareUpload).not.toHaveBeenCalled();
+      expect(storageConsistency.prepareUploadInTransaction).not.toHaveBeenCalled();
+      expect(storageConsistency.verifyUploadEvidence).not.toHaveBeenCalled();
+      expect(storageConsistency.finalizeUpload).not.toHaveBeenCalled();
+      expect(storageConsistency.finalizeUploadInTransaction).not.toHaveBeenCalled();
+      expect(provider.headObject).not.toHaveBeenCalled();
+      expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
+    });
+
+    it.each(['member', 'certificate', 'activity'] as const)(
+      '%s foreign uploader → 保持 30100且不进入 storage/Provider',
+      async (ownerType) => {
+        const prisma = makePrismaMock();
+        const provider = makeProviderMock();
+        const recorder = makeRecorderMock();
+        const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+        const token = makeUploadToken({ ownerType, uploadedByUserId: 'someone-else' });
+        const service = makeService(prisma, { provider, recorder, storageConsistency });
+
+        await expect(
+          service.confirmUpload(makeConfirmDto(token), makeCurrentUser({ id: 'u1' }), META),
+        ).rejects.toEqual(new BizException(BizCode.RBAC_FORBIDDEN));
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(storageConsistency.prepareUpload).not.toHaveBeenCalled();
+        expect(storageConsistency.prepareUploadInTransaction).not.toHaveBeenCalled();
+        expect(storageConsistency.verifyUploadEvidence).not.toHaveBeenCalled();
+        expect(provider.headObject).not.toHaveBeenCalled();
+        expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['content-image', 'content-file'] as const)(
+      '%s foreign uploader → 与 invalid token 同为 13001，且零 Content/storage/Provider/audit',
+      async (ownerType) => {
+        const prisma = makePrismaMock();
+        const provider = makeProviderMock();
+        const recorder = makeRecorderMock();
+        const rbac = makeRbacMock(true);
+        const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+        const token = makeUploadToken({
+          ownerType,
+          ownerId: 'content-private-1',
+          uploadedByUserId: 'foreign-uploader',
+        });
+        const service = makeService(prisma, {
+          provider,
+          recorder,
+          rbac,
+          storageConsistency,
+        });
+
+        await expect(
+          service.confirmUpload(makeConfirmDto(token), makeCurrentUser({ id: 'u1' }), META),
+        ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+
+        // Mutation killed: changing the content-* branch back to 30100 fails the exact exception.
+        expect(rbac.can).not.toHaveBeenCalled();
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(prisma.$queryRaw).not.toHaveBeenCalled();
+        expect(storageConsistency.prepareUpload).not.toHaveBeenCalled();
+        expect(storageConsistency.prepareUploadInTransaction).not.toHaveBeenCalled();
+        expect(storageConsistency.verifyUploadEvidence).not.toHaveBeenCalled();
+        expect(storageConsistency.finalizeUpload).not.toHaveBeenCalled();
+        expect(storageConsistency.finalizeUploadInTransaction).not.toHaveBeenCalled();
+        expect(provider.headObject).not.toHaveBeenCalled();
+        expect(provider.readObjectPrefix).not.toHaveBeenCalled();
+        expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['content-image', 'content-file'] as const)(
+      '%s coarse RBAC denial → 13001 before Content/storage/Provider/audit',
+      async (ownerType) => {
+        const prisma = makePrismaMock();
+        const provider = makeProviderMock();
+        const recorder = makeRecorderMock();
+        const rbac = makeRbacMock(false);
+        const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+        const service = makeService(prisma, {
+          provider,
+          recorder,
+          rbac,
+          storageConsistency,
+        });
+
+        await expect(
+          service.confirmUpload(
+            makeConfirmDto(makeUploadToken({ ownerType, ownerId: 'content-private-1' })),
+            makeCurrentUser({ id: 'u1' }),
+            META,
+          ),
+        ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
+
+        expect(rbac.can).toHaveBeenCalledWith(expect.anything(), `attachment.upload.${ownerType}`);
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(storageConsistency.prepareUploadInTransaction).not.toHaveBeenCalled();
+        expect(storageConsistency.verifyUploadEvidence).not.toHaveBeenCalled();
+        expect(provider.headObject).not.toHaveBeenCalled();
+        expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
+      },
+    );
+
+    it('content confirm locks virgin Content and prepares owner intent in that same transaction', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      const recorder = makeRecorderMock();
+      const rbac = makeRbacMock(true);
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+      prisma.$queryRaw.mockResolvedValue([
+        {
+          id: 'content-private-1',
+          deletedAt: null,
+          statusCode: 'draft',
+          publishedAt: null,
+        },
+      ]);
+      prisma.attachmentTypeConfig.findFirst.mockResolvedValue(
+        makeTypeConfig({ ownerTable: 'contents' }),
+      );
+      storageConsistency.finalizeUploadInTransaction.mockResolvedValue(
+        makeAttachmentRow({ ownerType: 'content-image', ownerId: 'content-private-1' }),
+      );
+      const service = makeService(prisma, {
+        provider,
+        recorder,
+        rbac,
+        storageConsistency,
+      });
+
+      await service.confirmUpload(
+        makeConfirmDto(
+          makeUploadToken({ ownerType: 'content-image', ownerId: 'content-private-1' }),
+        ),
+        makeCurrentUser({ id: 'u1' }),
+        META,
+      );
+
+      expect(storageConsistency.prepareUploadInTransaction).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({
+          ownerType: 'content-image',
+          ownerId: 'content-private-1',
+        }),
+        'attachment_signed_upload',
+        expect.any(Date),
+      );
+      expect(storageConsistency.prepareUpload).not.toHaveBeenCalled();
+      expect(storageConsistency.verifyUploadEvidence).toHaveBeenCalledTimes(1);
+      expect(storageConsistency.finalizeUpload).not.toHaveBeenCalled();
+      expect(storageConsistency.finalizeUploadInTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('published Content wins before prepare → 29030 and zero storage/Provider/audit', async () => {
+      const prisma = makePrismaMock();
+      const provider = makeProviderMock();
+      const recorder = makeRecorderMock();
+      const storageConsistency = makeStorageConsistencyMock(provider, recorder);
+      prisma.$queryRaw.mockResolvedValue([
+        {
+          id: 'content-private-1',
+          deletedAt: null,
+          statusCode: 'published',
+          publishedAt: new Date('2026-07-19T08:00:00.000Z'),
+        },
+      ]);
+      const service = makeService(prisma, { provider, recorder, storageConsistency });
+
+      await expect(
+        service.confirmUpload(
+          makeConfirmDto(
+            makeUploadToken({ ownerType: 'content-file', ownerId: 'content-private-1' }),
+          ),
+          makeCurrentUser({ id: 'u1' }),
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.CONTENT_INVALID_STATUS_TRANSITION));
+      expect(storageConsistency.prepareUploadInTransaction).not.toHaveBeenCalled();
+      expect(storageConsistency.verifyUploadEvidence).not.toHaveBeenCalled();
+      expect(provider.headObject).not.toHaveBeenCalled();
+      expect(recorder.logUploadConfirmed).not.toHaveBeenCalled();
     });
 
     it('headObject.exists=false → 13001;不写库', async () => {
@@ -1021,7 +1728,7 @@ describe('AttachmentsService (characterization)', () => {
       provider.headObject.mockResolvedValue({ exists: true, size: 1024 });
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' }); // F10:owner 存活(过 Step 7.5)→ 进 tx 撞 dedup
       prisma.attachmentTypeConfig.findFirst.mockResolvedValue(makeTypeConfig());
-      storageConsistency.finalizeUpload.mockRejectedValue(
+      storageConsistency.finalizeUploadInTransaction.mockRejectedValue(
         new BizException(BizCode.ATTACHMENT_NOT_FOUND),
       );
       const service = makeService(prisma, { provider, recorder, storageConsistency });
@@ -1033,7 +1740,8 @@ describe('AttachmentsService (characterization)', () => {
           META,
         ),
       ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_NOT_FOUND));
-      expect(storageConsistency.finalizeUpload).toHaveBeenCalledTimes(1);
+      expect(storageConsistency.finalizeUpload).not.toHaveBeenCalled();
+      expect(storageConsistency.finalizeUploadInTransaction).toHaveBeenCalledTimes(1);
       expect(storageConsistency.resolveDownloadUrl).not.toHaveBeenCalled();
     });
 
@@ -1045,7 +1753,9 @@ describe('AttachmentsService (characterization)', () => {
       provider.headObject.mockResolvedValue({ exists: true, size: 1024, etag: 'etag-1' });
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' }); // F10:owner 存活复校(Step 7.5)
       prisma.attachmentTypeConfig.findFirst.mockResolvedValue(makeTypeConfig());
-      storageConsistency.finalizeUpload.mockResolvedValue(makeAttachmentRow({ ownerId: 'mem-1' }));
+      storageConsistency.finalizeUploadInTransaction.mockResolvedValue(
+        makeAttachmentRow({ ownerId: 'mem-1' }),
+      );
       const service = makeService(prisma, { provider, recorder, storageConsistency });
 
       const res = await service.confirmUpload(
@@ -1054,15 +1764,17 @@ describe('AttachmentsService (characterization)', () => {
         META,
       );
 
-      expect(storageConsistency.finalizeUpload).toHaveBeenCalledWith(
+      expect(storageConsistency.finalizeUploadInTransaction).toHaveBeenCalledWith(
+        prisma,
         expect.objectContaining({
           auditKind: 'confirmed',
           scope: 'self',
           ownerTable: 'member',
           auditMeta: META,
         }),
+        expect.objectContaining({ exists: true, size: 1024, etag: 'etag-1' }),
       );
-      const finalizeInput = storageConsistency.finalizeUpload.mock.calls[0]?.[0];
+      const finalizeInput = storageConsistency.finalizeUploadInTransaction.mock.calls[0]?.[1];
       expect(finalizeInput?.data).toMatchObject({ etag: 'etag-1', checksum: 'sha256:abc' });
       expect(storageConsistency.resolveDownloadUrl).toHaveBeenCalledTimes(1);
       expect(res.id).toBe('att-1');
@@ -1076,7 +1788,9 @@ describe('AttachmentsService (characterization)', () => {
       const storageConsistency = makeStorageConsistencyMock(provider, recorder);
       prisma.member.findFirst.mockResolvedValue({ id: 'mem-1' });
       prisma.attachmentTypeConfig.findFirst.mockResolvedValue(makeTypeConfig());
-      storageConsistency.finalizeUpload.mockRejectedValue(new Error('audit transaction failed'));
+      storageConsistency.finalizeUploadInTransaction.mockRejectedValue(
+        new Error('audit transaction failed'),
+      );
       const service = makeService(prisma, { provider, recorder, storageConsistency });
 
       await expect(
