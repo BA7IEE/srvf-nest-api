@@ -15,6 +15,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { assertTestDatabaseUrl } from '../setup/test-db';
 
 // 招新三期(入队:志愿者→队员)T2 admin 面 e2e(冻结评审稿 docs/archive/reviews/recruitment-phase3-review.md §7)。
 // 覆盖:入队轮 CRUD + 至多一个 open / RBAC 边界 / 标 gate 全链 + 自动推进 / 贡献值两路 + 过滤 /
@@ -414,7 +415,10 @@ describe('招新三期(入队)admin 面 e2e', () => {
     await prisma.attendanceRecord.deleteMany({});
     await prisma.attendanceSheet.deleteMany({});
     await prisma.activity.deleteMany({});
-    await prisma.insuranceEligibilityEvidence.deleteMany({});
+    // PR4 evidence is immutable for UPDATE/DELETE. Test isolation intentionally uses the same
+    // guarded TRUNCATE mechanism as resetDb; the trigger does not and must not block TRUNCATE.
+    assertTestDatabaseUrl(process.env.DATABASE_URL);
+    await prisma.$executeRawUnsafe('TRUNCATE TABLE "insurance_eligibility_evidences"');
     await prisma.teamJoinApplication.deleteMany({});
     await prisma.memberOrganizationMembership.deleteMany({}); // T4 一键入队建的归属(FK 顺序:先于 org/member)
     await prisma.teamJoinCycle.deleteMany({});
@@ -1010,9 +1014,42 @@ describe('招新三期(入队)admin 面 e2e', () => {
     expect(evidence[0].sourceReviewedAt?.toISOString()).toBe('2026-07-01T01:02:03.000Z');
     expect(evidence[0].requiredFrom?.getTime()).toBe(requiredDay.getTime());
     expect(evidence[0].requiredThrough?.getTime()).toBe(requiredDay.getTime());
-    expect(JSON.stringify(evidence[0])).not.toMatch(
-      /insurer|policyNumber|note|reason|image|attachment|key|url/i,
+    expect(Object.keys(evidence[0]).sort()).toEqual(
+      [
+        'id',
+        'createdAt',
+        'sourceKind',
+        'memberInsuranceId',
+        'teamInsuranceCoverageId',
+        'ownerKind',
+        'activityRegistrationId',
+        'teamJoinApplicationId',
+        'sourceRevision',
+        'sourceReviewedByUserId',
+        'sourceReviewedAt',
+        'requiredFrom',
+        'requiredThrough',
+        'sourceCoverageStart',
+        'sourceCoverageEnd',
+      ].sort(),
     );
+    for (const forbiddenKey of [
+      'insurerName',
+      'policyNumber',
+      'note',
+      'reason',
+      'rejectionReason',
+      'image',
+      'images',
+      'attachment',
+      'attachmentId',
+      'key',
+      'url',
+      'signedUrl',
+      'reviewerName',
+    ]) {
+      expect(Object.prototype.hasOwnProperty.call(evidence[0], forbiddenKey)).toBe(false);
+    }
   });
 
   it('⑰-ins-3 live team Policy+Coverage → final join 成功并生成 team evidence', async () => {
@@ -1074,28 +1111,27 @@ describe('招新三期(入队)admin 面 e2e', () => {
     },
   );
 
-  it('⑰-ins-5 wrong-member preexisting evidence 不能穿透 final join，业务写全部回滚', async () => {
+  it('⑰-ins-5 same-member same-owner preexisting evidence 不能穿透 final join，业务写全部回滚', async () => {
     const org = await makeOrg();
     const { appId, memberId } = await setupApproved({
       targets: [org],
       requiresInsurance: true,
     });
-    await giveVerifiedSelfInsurance(memberId);
-    const otherMemberId = await createMember();
-    const wrongSource = await giveVerifiedSelfInsurance(otherMemberId);
+    const source = await giveVerifiedSelfInsurance(memberId);
+    const requiredAt = new Date();
     await prisma.insuranceEligibilityEvidence.create({
       data: {
         sourceKind: 'member_insurance',
-        memberInsuranceId: wrongSource.id,
+        memberInsuranceId: source.id,
         ownerKind: 'team_join_application',
         teamJoinApplicationId: appId,
-        sourceRevision: wrongSource.version,
-        sourceReviewedByUserId: wrongSource.reviewedByUserId,
-        sourceReviewedAt: wrongSource.reviewedAt,
-        requiredFrom: new Date(),
-        requiredThrough: new Date(),
-        sourceCoverageStart: wrongSource.coverageStart,
-        sourceCoverageEnd: wrongSource.coverageEnd,
+        sourceRevision: source.version,
+        sourceReviewedByUserId: source.reviewedByUserId,
+        sourceReviewedAt: source.reviewedAt,
+        requiredFrom: requiredAt,
+        requiredThrough: requiredAt,
+        sourceCoverageStart: source.coverageStart,
+        sourceCoverageEnd: source.coverageEnd,
       },
     });
 

@@ -7,7 +7,7 @@ import { PrismaService } from '../../src/database/prisma.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
-describe('D-INSURANCE resetDb regression', () => {
+describe('D-INSURANCE v3 PR4 constrained resetDb regression', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -163,6 +163,7 @@ describe('D-INSURANCE resetDb regression', () => {
     const dependencies = [
       '"member_insurances"',
       '"team_insurance_coverages"',
+      '"team_insurance_policies"',
       '"ActivityRegistration"',
       '"team_join_applications"',
       '"User"',

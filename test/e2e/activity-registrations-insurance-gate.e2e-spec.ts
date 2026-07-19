@@ -754,19 +754,76 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
 
   it('evidence PostgreSQL 写失败使报名根事务全回滚', async () => {
     const me = await setupLinkedUser('gate-evidence-failure');
-    await giveSelfInsurance(me.memberId, {
+    const source = await giveSelfInsurance(me.memberId, {
       coverageStart: '2099-01-01',
       coverageEnd: '2099-12-31',
     });
     const act = await createPublishedActivity(true);
     const sentinelId = `evidence-failure-${nextSeq()}`;
-    await prisma.insuranceEligibilityEvidence.create({ data: { id: sentinelId } });
+    const sourceSnapshot = await prisma.memberInsurance.findUniqueOrThrow({
+      where: { id: source.id },
+      select: {
+        version: true,
+        reviewedByUserId: true,
+        reviewedAt: true,
+        coverageStart: true,
+        coverageEnd: true,
+      },
+    });
+    const sentinelActivity = await createPublishedActivity(false);
+    const sentinelOwner = await prisma.activityRegistration.create({
+      data: {
+        activityId: sentinelActivity.id,
+        memberId: me.memberId,
+        statusCode: 'pending',
+      },
+      select: { id: true },
+    });
+    await prisma.insuranceEligibilityEvidence.create({
+      data: {
+        id: sentinelId,
+        sourceKind: 'member_insurance',
+        memberInsuranceId: source.id,
+        ownerKind: 'activity_registration',
+        activityRegistrationId: sentinelOwner.id,
+        sourceRevision: sourceSnapshot.version,
+        sourceReviewedByUserId: sourceSnapshot.reviewedByUserId,
+        sourceReviewedAt: sourceSnapshot.reviewedAt,
+        requiredFrom: new Date('2099-07-01T00:00:00.000Z'),
+        requiredThrough: new Date('2099-07-01T00:00:00.000Z'),
+        sourceCoverageStart: sourceSnapshot.coverageStart,
+        sourceCoverageEnd: sourceSnapshot.coverageEnd,
+      },
+    });
 
     const requirement = app.get(InsuranceRequirementService);
     const failure = jest
       .spyOn(requirement, 'createActivityRegistrationEvidence')
-      .mockImplementation(async (_registrationId, _memberId, _decision, tx) => {
-        await tx.insuranceEligibilityEvidence.create({ data: { id: sentinelId } });
+      .mockImplementation(async (registrationId, _memberId, decision, tx) => {
+        if (!decision) throw new Error('insurance decision unexpectedly missing');
+        const decisionSource = decision.source;
+        await tx.insuranceEligibilityEvidence.create({
+          data: {
+            id: sentinelId,
+            sourceKind: decisionSource.kind,
+            memberInsuranceId:
+              decisionSource.kind === 'member_insurance' ? decisionSource.memberInsuranceId : null,
+            teamInsuranceCoverageId:
+              decisionSource.kind === 'team_insurance_coverage'
+                ? decisionSource.teamInsuranceCoverageId
+                : null,
+            ownerKind: 'activity_registration',
+            activityRegistrationId: registrationId,
+            teamJoinApplicationId: null,
+            sourceRevision: decisionSource.sourceRevision,
+            sourceReviewedByUserId: decisionSource.sourceReviewedByUserId,
+            sourceReviewedAt: decisionSource.sourceReviewedAt,
+            requiredFrom: decision.requiredFrom,
+            requiredThrough: decision.requiredThrough,
+            sourceCoverageStart: decisionSource.coverageStart,
+            sourceCoverageEnd: decisionSource.coverageEnd,
+          },
+        });
       });
     try {
       await registerSelf(me.authHeader, act.id).expect(500);
@@ -779,6 +836,12 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
         where: { activityId: act.id, memberId: me.memberId },
       }),
     ).toBe(0);
+    expect(
+      await prisma.insuranceEligibilityEvidence.count({
+        where: { activityRegistration: { activityId: act.id, memberId: me.memberId } },
+      }),
+    ).toBe(0);
+    expect(await prisma.insuranceEligibilityEvidence.count({ where: { id: sentinelId } })).toBe(1);
     expect(
       await prisma.auditLog.count({
         where: {

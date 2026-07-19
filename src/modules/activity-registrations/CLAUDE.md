@@ -37,7 +37,7 @@
 - ❌ **不**绕过 partial unique 防护 / `P2002` 兜底直接 `prisma.activityRegistration.create`(`assertNoActiveDuplicate` 路径必须命中)
 - ❌ **不**恢复 create 满员报错；**不**移除 approve 内对 `Activity` 行的 `FOR UPDATE` + capacity 复核
 - ❌ **不**改 audit event 名 `registration.create` / `registration.review`(characterization 已锁)
-- ❌ 不拆 `INSURANCE_ENFORCEMENT_ENABLED` 单 gate，不在 Activity 锁前查/选 source，不把 evidence/audit 移出 create 根事务；PR4 前不加入 evidence CHECK/partial unique/member-match/immutable trigger
+- ❌ 不拆 `INSURANCE_ENFORCEMENT_ENABLED` 单 gate，不在 Activity 锁前查/选 source，不把 evidence/audit 移出 create 根事务；PR4 migration/约束代码已交付于本 PR但尚未 deploy、生产未生效，禁止新增 Evidence 改删路径或绕过 `InsuranceRequirementService`
 - ❌ **不**把 `cancelAdmin` / `cancelMy` 路径区分挪进 StateMachine(只通过 `extra.cancelledByPath` 在 audit 记录)
 - ❌ **不**改 Admin Controller path `admin/v1/activities/:activityId/registrations`(`export` 字面段必须**先**于 `:id/<action>` 路由声明,Q-A6 锁定;调换顺序会被 Nest 路由解析为 `:id=export`)
 - ❌ **不**把 Admin DTO 用 `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 派生为 App DTO(沿 `harness reference/api-client-boundary.md` D-6`);App `dto/app/` 字段集**刻意删除** `memberId` / `memberNo` / `memberDisplayName`(沿 §16.B.2)

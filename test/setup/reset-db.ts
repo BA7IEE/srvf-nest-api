@@ -155,9 +155,10 @@ import { assertTestDatabaseUrl } from './test-db';
 // D-STORAGE-CONSISTENCY Phase 1:storage_object_operations → storage_objects 是 durable
 // provider ledger，且刻意尚未由 Attachment FK 承接；必须显式列在 attachments 前清理。
 // storage_settings 决定 pinned provider 路由；必须清理，避免 partial COS fixture 污染后续 spec。
-// D-INSURANCE v3 PR1:insurance_eligibility_evidences 同时引用 MemberInsurance、
+// D-INSURANCE v3 PR4:insurance_eligibility_evidences 同时引用 MemberInsurance、
 // TeamInsuranceCoverage、ActivityRegistration、TeamJoinApplication 与 User，必须在五者及
-// TeamInsurancePolicy 之前显式清理，保证 reset 后可用同类唯一键重建 source/owner/evidence。
+// TeamInsurancePolicy 之前显式清理。immutable trigger 不阻止 TRUNCATE；reset 后必须能用
+// 同类唯一键重建 source/owner/evidence，证明 FK/partial unique/trigger 无跨 spec 残留。
 export async function resetDb(app: INestApplication): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
 

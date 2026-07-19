@@ -333,7 +333,7 @@ ${failingMigration}`;
     }
   });
 
-  it('keeps new defaults additive and the evidence compatibility skeleton nullable', async () => {
+  it('keeps the PR1 MemberInsurance and TeamJoinCycle defaults additive', async () => {
     const memberId = await createMember('defaults');
     const insurance = await prisma.memberInsurance.create({
       data: {
@@ -358,24 +358,6 @@ ${failingMigration}`;
       },
     });
     expect(cycle.requiresInsurance).toBe(false);
-
-    // Mutation killed:premature PR4 NOT NULL/CHECK constraints would reject this row.
-    const evidence = await prisma.insuranceEligibilityEvidence.create({ data: {} });
-    expect(evidence).toMatchObject({
-      sourceKind: null,
-      memberInsuranceId: null,
-      teamInsuranceCoverageId: null,
-      ownerKind: null,
-      activityRegistrationId: null,
-      teamJoinApplicationId: null,
-      sourceRevision: null,
-      sourceReviewedByUserId: null,
-      sourceReviewedAt: null,
-      requiredFrom: null,
-      requiredThrough: null,
-      sourceCoverageStart: null,
-      sourceCoverageEnd: null,
-    });
   });
 
   it('installs only nullable RESTRICT evidence/reviewer FKs in PR1', async () => {
@@ -407,128 +389,122 @@ ${failingMigration}`;
     expect(constraints.map((row) => row.delete_action)).toEqual(Array(6).fill('RESTRICT'));
   });
 
-  it('does not install PR4 owner uniqueness, business CHECKs, or user triggers', async () => {
-    const uniqueIndexes = await prisma.$queryRaw<
-      Array<{ index_name: string; is_primary: boolean }>
-    >`
-      SELECT index_class.relname AS index_name, index_meta.indisprimary AS is_primary
-      FROM pg_index index_meta
-      JOIN pg_class index_class ON index_class.oid = index_meta.indexrelid
-      WHERE index_meta.indrelid = '"insurance_eligibility_evidences"'::regclass
-        AND index_meta.indisunique
-      ORDER BY index_class.relname
-    `;
-    expect(uniqueIndexes).toEqual([
-      {
-        index_name: 'insurance_eligibility_evidences_pkey',
-        is_primary: true,
-      },
-    ]);
+  it('executes frozen PR1 in isolation and proves its expand-only runtime surface', async () => {
+    sequence += 1;
+    const schemaName = `insurance_expand_pr1_only_${process.pid}_${Date.now()}_${sequence}`;
+    if (!/^insurance_expand_pr1_only_[a-z0-9_]+$/.test(schemaName)) {
+      throw new Error(`unsafe PR1 characterization schema name: ${schemaName}`);
+    }
 
-    const businessChecks = await prisma.$queryRaw<Array<{ constraint_name: string }>>`
-      SELECT conname AS constraint_name
-      FROM pg_constraint
-      WHERE conrelid = '"insurance_eligibility_evidences"'::regclass
-        AND contype = 'c'
-      ORDER BY conname
-    `;
-    expect(businessChecks).toEqual([]);
+    const migration = await readFile(path.resolve(process.cwd(), MIGRATION_PATH), 'utf8');
 
-    const userTriggers = await prisma.$queryRaw<Array<{ trigger_name: string }>>`
-      SELECT tgname AS trigger_name
-      FROM pg_trigger
-      WHERE tgrelid = '"insurance_eligibility_evidences"'::regclass
-        AND NOT tgisinternal
-      ORDER BY tgname
-    `;
-    expect(userTriggers).toEqual([]);
+    for (const nullableColumn of [
+      '"sourceKind" TEXT,',
+      '"memberInsuranceId" TEXT,',
+      '"teamInsuranceCoverageId" TEXT,',
+      '"ownerKind" TEXT,',
+      '"activityRegistrationId" TEXT,',
+      '"teamJoinApplicationId" TEXT,',
+      '"sourceRevision" INTEGER,',
+      '"sourceReviewedByUserId" TEXT,',
+      '"sourceReviewedAt" TIMESTAMP(3),',
+      '"requiredFrom" TIMESTAMP(3),',
+      '"requiredThrough" TIMESTAMP(3),',
+      '"sourceCoverageStart" TIMESTAMP(3),',
+      '"sourceCoverageEnd" TIMESTAMP(3),',
+    ]) {
+      expect(migration).toContain(nullableColumn);
+    }
 
-    const reviewer = await prisma.user.create({
-      data: {
-        username: 'insurance-expand-no-pr4-trigger',
-        passwordHash: '$2a$10$insurance-expand-no-pr4-trigger',
-        role: Role.ADMIN,
-        status: UserStatus.ACTIVE,
-      },
-      select: { id: true },
-    });
-    const memberId = await createMember('no-pr4-constraints');
-    const memberInsurance = await prisma.memberInsurance.create({
-      data: {
-        memberId,
-        insurerName: 'no-pr4-constraint-insurer',
-        policyNumber: 'no-pr4-constraint-policy',
-        coverageStart: new Date('2027-01-01T00:00:00.000Z'),
-        coverageEnd: new Date('2027-12-31T00:00:00.000Z'),
-        reviewStatusCode: 'verified',
-        version: 1,
-        reviewedByUserId: reviewer.id,
-        reviewedAt: new Date('2027-01-02T00:00:00.000Z'),
-      },
-      select: { id: true },
-    });
-    const organization = await prisma.organization.create({
-      data: {
-        name: 'Insurance Expand No PR4 Organization',
-        nodeTypeCode: 'insurance-expand',
-      },
-      select: { id: true },
-    });
-    const activity = await prisma.activity.create({
-      data: {
-        title: 'Insurance Expand No PR4 Activity',
-        activityTypeCode: 'insurance-expand',
-        organizationId: organization.id,
-        startAt: new Date('2027-01-10T00:00:00.000Z'),
-        endAt: new Date('2027-01-10T08:00:00.000Z'),
-        location: 'insurance-expand',
-        statusCode: 'published',
-      },
-      select: { id: true },
-    });
-    const registration = await prisma.activityRegistration.create({
-      data: {
-        activityId: activity.id,
-        memberId,
-        statusCode: 'pass',
-      },
-      select: { id: true },
-    });
-    const evidenceData = {
-      sourceKind: 'member_insurance',
-      memberInsuranceId: memberInsurance.id,
-      ownerKind: 'activity_registration',
-      activityRegistrationId: registration.id,
-      sourceRevision: 1,
-      sourceReviewedByUserId: reviewer.id,
-      sourceReviewedAt: new Date('2027-01-02T00:00:00.000Z'),
-      requiredFrom: new Date('2027-01-10T00:00:00.000Z'),
-      requiredThrough: new Date('2027-01-10T00:00:00.000Z'),
-      sourceCoverageStart: new Date('2027-01-01T00:00:00.000Z'),
-      sourceCoverageEnd: new Date('2027-12-31T00:00:00.000Z'),
-    };
+    for (const pr4OnlyName of [
+      'member_insurances_version_nonnegative_ck',
+      'member_insurances_review_snapshot_ck',
+      'insurance_evidence_exactly_one_source_ck',
+      'insurance_evidence_source_kind_ck',
+      'insurance_evidence_exactly_one_owner_ck',
+      'insurance_evidence_owner_kind_ck',
+      'insurance_evidence_required_interval_ck',
+      'insurance_evidence_source_interval_ck',
+      'insurance_evidence_review_snapshot_ck',
+      'insurance_evidence_activity_registration_unique',
+      'insurance_evidence_team_join_application_unique',
+      'trg_insurance_evidence_10_member_match',
+      'trg_insurance_evidence_20_immutable',
+    ]) {
+      expect(migration).not.toContain(pr4OnlyName);
+    }
+    expect(migration).not.toMatch(/CREATE\s+TRIGGER/i);
 
-    const first = await prisma.insuranceEligibilityEvidence.create({
-      data: evidenceData,
-      select: { id: true },
-    });
-    // Mutation killed:a premature partial unique owner index rejects this second row.
-    const second = await prisma.insuranceEligibilityEvidence.create({
-      data: evidenceData,
-      select: { id: true },
-    });
-    expect(first.id).not.toBe(second.id);
+    const fixtureSql = `
+CREATE SCHEMA "${schemaName}";
+SET search_path TO "${schemaName}";
 
-    // Mutation killed:premature immutable UPDATE/DELETE triggers reject either operation.
-    const updated = await prisma.insuranceEligibilityEvidence.update({
-      where: { id: first.id },
-      data: { requiredThrough: new Date('2027-01-11T00:00:00.000Z') },
-      select: { requiredThrough: true },
-    });
-    expect(updated.requiredThrough?.toISOString()).toBe('2027-01-11T00:00:00.000Z');
+CREATE TABLE "User" ("id" TEXT PRIMARY KEY);
+CREATE TABLE "member_insurances" ("id" TEXT PRIMARY KEY);
+CREATE TABLE "team_join_cycles" ("id" TEXT PRIMARY KEY);
+CREATE TABLE "team_insurance_coverages" ("id" TEXT PRIMARY KEY);
+CREATE TABLE "ActivityRegistration" ("id" TEXT PRIMARY KEY);
+CREATE TABLE "team_join_applications" ("id" TEXT PRIMARY KEY);
 
-    await expect(
-      prisma.insuranceEligibilityEvidence.delete({ where: { id: second.id } }),
-    ).resolves.toMatchObject({ id: second.id });
+${migration}
+
+INSERT INTO "ActivityRegistration" ("id") VALUES ('pr1-owner');
+INSERT INTO "insurance_eligibility_evidences" ("id", "activityRegistrationId") VALUES
+  ('pr1-evidence-1', 'pr1-owner'),
+  ('pr1-evidence-2', 'pr1-owner');
+UPDATE "insurance_eligibility_evidences"
+SET "sourceKind" = 'arbitrary-pr1-update'
+WHERE "id" = 'pr1-evidence-1';
+DELETE FROM "insurance_eligibility_evidences" WHERE "id" = 'pr1-evidence-2';
+`;
+
+    try {
+      runPsqlInDerivedTestDatabase(fixtureSql);
+
+      const relationName = `${schemaName}.insurance_eligibility_evidences`;
+      const checks = await prisma.$queryRawUnsafe<Array<{ constraint_name: string }>>(
+        `SELECT conname AS constraint_name
+         FROM pg_constraint
+         WHERE conrelid = to_regclass($1)
+           AND contype = 'c'
+         ORDER BY conname`,
+        relationName,
+      );
+      expect(checks).toEqual([]);
+
+      const ownerUniques = await prisma.$queryRawUnsafe<Array<{ index_name: string }>>(
+        `SELECT index_class.relname AS index_name
+         FROM pg_index index_meta
+         JOIN pg_class index_class ON index_class.oid = index_meta.indexrelid
+         WHERE index_meta.indrelid = to_regclass($1)
+           AND index_meta.indisunique
+           AND NOT index_meta.indisprimary
+         ORDER BY index_class.relname`,
+        relationName,
+      );
+      expect(ownerUniques).toEqual([]);
+
+      const userTriggers = await prisma.$queryRawUnsafe<Array<{ trigger_name: string }>>(
+        `SELECT tgname AS trigger_name
+         FROM pg_trigger
+         WHERE tgrelid = to_regclass($1)
+           AND NOT tgisinternal
+         ORDER BY tgname`,
+        relationName,
+      );
+      expect(userTriggers).toEqual([]);
+
+      const survivingRows = await prisma.$queryRawUnsafe<
+        Array<{ id: string; sourceKind: string | null }>
+      >(
+        `SELECT "id", "sourceKind"
+         FROM "${schemaName}"."insurance_eligibility_evidences"
+         ORDER BY "id"`,
+      );
+      expect(survivingRows).toEqual([{ id: 'pr1-evidence-1', sourceKind: 'arbitrary-pr1-update' }]);
+    } finally {
+      assertTestDatabaseUrl(process.env.DATABASE_URL);
+      await prisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
+    }
   });
 });
