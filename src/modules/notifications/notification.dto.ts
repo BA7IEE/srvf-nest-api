@@ -173,19 +173,26 @@ export class SendNotificationSmsDto {
   confirmed!: boolean;
 }
 
-// 短信兜底发起回执:recipientCount = 可见且有手机的可计费受众(= sent + failed + skipped,confirmed=true 时);
+// 短信兜底发起回执:confirmed=true 只表示本请求已确认并创建 / 尝试任务，不代表 durable final；
 // confirmed=false 预览时 sent/failed/skipped 恒 0(零发送)。
 export class NotificationSmsSendResultDto {
-  @ApiProperty({ description: '本次是否实际发送(false = 仅预览计数,未发送)' })
+  @ApiProperty({
+    description:
+      '是否已确认并发起短信任务(false = 仅预览;true = 已确认并创建 / 尝试任务,不代表全部最终完成)',
+  })
   confirmed!: boolean;
-  @ApiProperty({ description: '可计费受众数(可见且有手机;= 将发短信条数,N 人 = N 条计费)' })
+  @ApiProperty({ description: '受众快照 / 预估数(可见且有手机;不保证最终计费条数)' })
   recipientCount!: number;
-  @ApiProperty({ description: '实际发送成功条数(预览恒 0)' })
+  @ApiProperty({ description: '本请求同步首轮观测为成功的条数(预览恒 0;不等于 durable final)' })
   sent!: number;
-  @ApiProperty({ description: '发送失败条数(FAILED 落 delivery 不阻断;预览恒 0)' })
+  @ApiProperty({
+    description:
+      '本请求同步首轮观测为失败或 not-claimed 的条数(预览恒 0;not-claimed 的 durable final 可能随后成功)',
+  })
   failed!: number;
   @ApiProperty({
-    description: '跳过条数(已发送 / 同日同模板幂等 / 日封顶 / 间隔;不计费;预览恒 0)',
+    description:
+      '本请求同步首轮观测为跳过的条数(已发送 / 同日同模板幂等 / 日封顶 / 间隔;预览恒 0;不等于 durable final)',
   })
   skipped!: number;
 }

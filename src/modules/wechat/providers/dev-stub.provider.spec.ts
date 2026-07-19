@@ -43,9 +43,44 @@ describe('DevStubWechatProvider', () => {
 
   // 统一通知 S2:订阅消息发送 stub(确定性回执 + 失败注入)。
   describe('getAccessToken / sendSubscribeMessage (S2)', () => {
+    it('无 guard 时 Promise 返回前已同步进入 debug/假 Effect（零 microtask 漂移）', async () => {
+      const debugSpy = jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
+      try {
+        const provider = new DevStubWechatProvider();
+        const tokenPending = provider.getAccessToken();
+        expect(debugSpy).toHaveBeenCalledWith('[DEV_STUB] getAccessToken called');
+        await expect(tokenPending).resolves.toBe('dev-stub-access-token');
+
+        debugSpy.mockClear();
+        const sendPending = provider.sendSubscribeMessage('tok', {
+          openid: 'dev-openid-alice',
+          templateId: 't',
+          data: {},
+        });
+        expect(debugSpy).toHaveBeenCalledWith('[DEV_STUB] sendSubscribeMessage called');
+        await expect(sendPending).resolves.toEqual({ ok: true, msgId: 'dev-msgid-id-alice' });
+      } finally {
+        debugSpy.mockRestore();
+      }
+    });
+
     it('getAccessToken 返确定性假 token', async () => {
       const provider = new DevStubWechatProvider();
       expect(await provider.getAccessToken()).toBe('dev-stub-access-token');
+    });
+
+    it('getAccessToken guard 失败时 debug/假 token Effect=0 且原错误冒泡', async () => {
+      const debugSpy = jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
+      const leaseLost = new Error('lease lost before stub token');
+      try {
+        const provider = new DevStubWechatProvider();
+        await expect(provider.getAccessToken(false, () => Promise.reject(leaseLost))).rejects.toBe(
+          leaseLost,
+        );
+        expect(debugSpy).not.toHaveBeenCalled();
+      } finally {
+        debugSpy.mockRestore();
+      }
     });
 
     it('sendSubscribeMessage 默认成功 + 确定性 msgid', async () => {
@@ -56,6 +91,24 @@ describe('DevStubWechatProvider', () => {
         data: {},
       });
       expect(r).toEqual({ ok: true, msgId: 'dev-msgid-id-alice' });
+    });
+
+    it('sendSubscribeMessage guard 失败时 debug/假回执 Effect=0 且原错误冒泡', async () => {
+      const debugSpy = jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
+      const leaseLost = new Error('lease lost before stub send');
+      try {
+        const provider = new DevStubWechatProvider();
+        await expect(
+          provider.sendSubscribeMessage(
+            'tok',
+            { openid: 'dev-openid-alice', templateId: 't', data: {} },
+            () => Promise.reject(leaseLost),
+          ),
+        ).rejects.toBe(leaseLost);
+        expect(debugSpy).not.toHaveBeenCalled();
+      } finally {
+        debugSpy.mockRestore();
+      }
     });
 
     it('openid 含 wxerr-<errcode> → 注入该 errcode 失败(e2e 多态)', async () => {

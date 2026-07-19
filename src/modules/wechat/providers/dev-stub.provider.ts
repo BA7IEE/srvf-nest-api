@@ -6,6 +6,7 @@ import type {
   Code2SessionResult,
   SendSubscribeMessageInput,
   SendSubscribeMessageResult,
+  WechatBeforeEffect,
   WechatMiniProvider,
 } from '../wechat.types';
 
@@ -39,25 +40,31 @@ export class DevStubWechatProvider implements WechatMiniProvider {
   }
 
   // 确定性假 access_token(不调外部;forceRefresh 对 stub 无意义故省略,接口可选参允许)
-  getAccessToken(): Promise<string> {
+  async getAccessToken(
+    _forceRefresh?: boolean,
+    beforeEffect?: WechatBeforeEffect,
+  ): Promise<string> {
+    if (beforeEffect) await beforeEffect();
     this.logger.debug('[DEV_STUB] getAccessToken called');
-    return Promise.resolve(DEV_STUB_ACCESS_TOKEN);
+    return DEV_STUB_ACCESS_TOKEN;
   }
 
   // 确定性假发送回执:默认成功;openid 含 wxerr-<errcode> → 注入该 errcode 失败(仅 e2e 多态)
-  sendSubscribeMessage(
+  async sendSubscribeMessage(
     _accessToken: string,
     input: SendSubscribeMessageInput,
+    beforeEffect?: WechatBeforeEffect,
   ): Promise<SendSubscribeMessageResult> {
+    if (beforeEffect) await beforeEffect();
     this.logger.debug('[DEV_STUB] sendSubscribeMessage called');
     const inject = DEV_STUB_ERR_INJECT.exec(input.openid);
     if (inject) {
-      return Promise.resolve({
+      return {
         ok: false,
         errCode: inject[1],
         errMsg: `dev-stub injected ${inject[1]}`,
-      });
+      };
     }
-    return Promise.resolve({ ok: true, msgId: `dev-msgid-${input.openid.slice(-8)}` });
+    return { ok: true, msgId: `dev-msgid-${input.openid.slice(-8)}` };
   }
 }

@@ -6,6 +6,7 @@ import {
   OrganizationStatus,
   Prisma,
   type Notification,
+  type NotificationOutboxIntent,
 } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -34,10 +35,7 @@ import {
   OUTBOX_PAYLOAD_VERSION,
 } from './notification.constants';
 import { NotificationSmsDispatchService } from './notification-sms-dispatch.service';
-import {
-  type ClaimedNotificationOutboxIntent,
-  NotificationOutboxService,
-} from './notification-outbox.service';
+import { NotificationOutboxService } from './notification-outbox.service';
 import { NotificationOutboxWorker } from './notification-outbox.worker';
 import type {
   CreateNotificationDto,
@@ -382,10 +380,9 @@ export class NotificationService {
       throw error;
     }
     const generationId = randomUUID();
-    const leaseOwner = `admin-sms-request:${generationId}`;
     const reservation = await this.prisma.$transaction(async (tx) => {
       const memberIds = await this.smsDispatch.resolveRecipientMemberIds(notification, tx);
-      const intents: ClaimedNotificationOutboxIntent[] = [];
+      const intents: NotificationOutboxIntent[] = [];
       let busy = 0;
       let completed = 0;
       let dead = 0;
@@ -401,7 +398,6 @@ export class NotificationService {
             destinationType: 'member',
             destinationRef: memberId,
           },
-          leaseOwner,
           tx,
         );
         if (result.intent) intents.push(result.intent);
@@ -409,8 +405,8 @@ export class NotificationService {
         else if (result.state === 'completed') completed += 1;
         else dead += 1;
       }
-      // durable command 与 reserved 审计同事务：commit 后即使进程在首个 provider 前崩溃，
-      // 仍能证明谁发起了这批命令；首轮真实结果由事务外第二条 audit 补记。
+      // pending/attempts=0 durable command 与 reserved 审计同事务：commit 后即使进程在
+      // 首个 JIT claim/provider 前崩溃，仍能证明谁发起了命令；首轮结果由事务外 audit 补记。
       await this.auditLogs.log({
         event: 'notification.publish',
         actorUserId: user.id,
@@ -443,9 +439,12 @@ export class NotificationService {
     let channelUnavailable = false;
     for (const intent of reservation.intents) {
       try {
-        const result = (await this.outboxWorker.executeReserved(intent)) as
-          | { outcome: 'sent' | 'skipped' }
-          | undefined;
+        const attempt = await this.outboxWorker.drainEventKeyOrThrow(intent.eventKey);
+        if (attempt.state === 'not-claimed') {
+          summary.failed += 1;
+          continue;
+        }
+        const result = attempt.value as { outcome: 'sent' | 'skipped' } | undefined;
         if (result?.outcome === 'sent') summary.sent += 1;
         else summary.skipped += 1;
       } catch (error) {
@@ -454,7 +453,8 @@ export class NotificationService {
       }
     }
 
-    // 该 audit 是同步 HTTP 首轮结果，不冒充最终投递态；失败 child 仍由 durable worker 重试。
+    // 该 audit 是同步 HTTP 首轮结果，不冒充最终投递态；not-claimed 表示其它 worker
+    // 已抢领，首轮计 failed 而非 skipped，durable final state 仍由持有 lease 的 worker 推进。
     await this.auditLogs.log({
       event: 'notification.publish',
       actorUserId: user.id,

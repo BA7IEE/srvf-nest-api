@@ -59,6 +59,10 @@ export type SendSubscribeMessageResult =
   | { ok: true; msgId: string | null }
   | { ok: false; errCode: string; errMsg: string };
 
+// Durable Effect caller 可在每次真实外部调用紧前重验自己的 lease/fence。
+// Provider 不解释 guard 错误；必须按原值向调用方冒泡，且无 guard 的既有路径零行为变化。
+export type WechatBeforeEffect = () => Promise<void>;
+
 // 微信 Provider 统一接口(评审稿 §5 文件计划;镜像 SmsProvider 范式)。
 // S2 additive 扩订阅消息发送两能力(getAccessToken / sendSubscribeMessage);code2session 登录链路零改。
 export interface WechatMiniProvider {
@@ -66,13 +70,14 @@ export interface WechatMiniProvider {
 
   // 取 access_token(stable_token;进程内缓存 ~7000s)。forceRefresh=true 跳过缓存强刷
   // (token 失效 40001/42001 重试场景)。失败抛 WechatApiError / WechatChannelUnavailableError。
-  getAccessToken(forceRefresh?: boolean): Promise<string>;
+  getAccessToken(forceRefresh?: boolean, beforeEffect?: WechatBeforeEffect): Promise<string>;
 
   // 下发订阅消息(单次 POST,不重试、不管理 token——token 由调用方传入)。
   // 结果归一为 SendSubscribeMessageResult(不抛业务异常;供派发器逐人记账)。
   sendSubscribeMessage(
     accessToken: string,
     input: SendSubscribeMessageInput,
+    beforeEffect?: WechatBeforeEffect,
   ): Promise<SendSubscribeMessageResult>;
 }
 

@@ -15,6 +15,7 @@ import {
   type Code2SessionResult,
   type SendSubscribeMessageInput,
   type SendSubscribeMessageResult,
+  type WechatBeforeEffect,
   type WechatMiniProvider,
 } from './wechat.types';
 
@@ -75,25 +76,47 @@ export class WechatService {
    */
   async sendSubscribeMessage(
     input: SendSubscribeMessageInput,
+    beforeEffect?: WechatBeforeEffect,
   ): Promise<SendSubscribeMessageResult> {
     let provider: WechatMiniProvider;
     let accessToken: string;
+    const guardState: { failure?: { error: unknown } } = {};
+    const guardedBeforeEffect = beforeEffect
+      ? async (): Promise<void> => {
+          try {
+            await beforeEffect();
+          } catch (error) {
+            guardState.failure ??= { error };
+            throw error;
+          }
+        }
+      : undefined;
     try {
       provider = await this.resolve();
-      accessToken = await provider.getAccessToken();
+      accessToken = guardedBeforeEffect
+        ? await provider.getAccessToken(false, guardedBeforeEffect)
+        : await provider.getAccessToken();
     } catch (err) {
+      if (guardState.failure) throw guardState.failure.error;
       return this.tokenFailureResult(err);
     }
 
-    let result = await provider.sendSubscribeMessage(accessToken, input);
+    let result = guardedBeforeEffect
+      ? await provider.sendSubscribeMessage(accessToken, input, guardedBeforeEffect)
+      : await provider.sendSubscribeMessage(accessToken, input);
     if (!result.ok && WECHAT_ERRCODE_TOKEN_INVALID.includes(Number(result.errCode))) {
       // token 失效:强刷一次 + 重发一次(非业务重试)
       try {
-        accessToken = await provider.getAccessToken(true);
+        accessToken = guardedBeforeEffect
+          ? await provider.getAccessToken(true, guardedBeforeEffect)
+          : await provider.getAccessToken(true);
       } catch (err) {
+        if (guardState.failure) throw guardState.failure.error;
         return this.tokenFailureResult(err);
       }
-      result = await provider.sendSubscribeMessage(accessToken, input);
+      result = guardedBeforeEffect
+        ? await provider.sendSubscribeMessage(accessToken, input, guardedBeforeEffect)
+        : await provider.sendSubscribeMessage(accessToken, input);
     }
     return result;
   }

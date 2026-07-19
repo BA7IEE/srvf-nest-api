@@ -271,11 +271,43 @@ describe('WechatMiniRealProvider.getAccessToken (S2)', () => {
     expect((init.signal as AbortSignal) instanceof AbortSignal).toBe(true);
   });
 
+  it('context resolve 完成后 guard 失败：stable_token fetch=0 且原错误冒泡', async () => {
+    const leaseLost = new Error('lease lost after context');
+    let releaseContext!: (settings: WechatSettingsResolved) => void;
+    const contextReady = new Promise<WechatSettingsResolved>((resolve) => {
+      releaseContext = resolve;
+    });
+    const settings = {
+      getActiveSettings: jest.fn().mockReturnValue(contextReady),
+    } as unknown as WechatSettingsService;
+    const provider = new WechatMiniRealProvider(settings);
+    const beforeEffect = jest.fn().mockRejectedValue(leaseLost);
+
+    const pending = provider.getAccessToken(false, beforeEffect);
+    expect(beforeEffect).not.toHaveBeenCalled();
+    releaseContext(makeResolved());
+
+    await expect(pending).rejects.toBe(leaseLost);
+    expect(beforeEffect).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('进程内缓存:两次调用仅 1 次 fetch', async () => {
     fetchSpy.mockResolvedValue(jsonResponse({ access_token: 'at-cache', expires_in: 7200 }));
     const provider = makeProvider(makeResolved());
     await provider.getAccessToken();
     await provider.getAccessToken();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('access_token cache hit 无外部 Effect，不调用 guard', async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ access_token: 'at-cache', expires_in: 7200 }));
+    const provider = makeProvider(makeResolved());
+    await provider.getAccessToken();
+    const beforeEffect = jest.fn().mockRejectedValue(new Error('must not run for cache hit'));
+
+    await expect(provider.getAccessToken(false, beforeEffect)).resolves.toBe('at-cache');
+    expect(beforeEffect).not.toHaveBeenCalled();
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -291,6 +323,18 @@ describe('WechatMiniRealProvider.getAccessToken (S2)', () => {
       (fetchSpy.mock.calls[1] as [string, RequestInit])[1].body as string,
     ) as { force_refresh?: boolean };
     expect(secondBody.force_refresh).toBe(true);
+  });
+
+  it('forceRefresh guard 失败：已缓存 token 也不启动第二次 stable_token fetch', async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ access_token: 'at-1', expires_in: 7200 }));
+    const provider = makeProvider(makeResolved());
+    await provider.getAccessToken();
+    const leaseLost = new Error('lease lost before forced token fetch');
+    const beforeEffect = jest.fn().mockRejectedValue(leaseLost);
+
+    await expect(provider.getAccessToken(true, beforeEffect)).rejects.toBe(leaseLost);
+    expect(beforeEffect).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
   it('errcode 非 0 → WechatApiError(errmsg 不含 secret;E-12)', async () => {
@@ -365,6 +409,25 @@ describe('WechatMiniRealProvider.sendSubscribeMessage (S2)', () => {
       data: INPUT.data,
     });
     expect((init.signal as AbortSignal) instanceof AbortSignal).toBe(true);
+  });
+
+  it('无 guard 时 Promise 返回前已同步启动 subscribe fetch（零 microtask 漂移）', async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ errcode: 0, errmsg: 'ok', msgid: 999 }));
+    const provider = makeProvider(makeResolved());
+
+    const pending = provider.sendSubscribeMessage('at-xyz', INPUT);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    await expect(pending).resolves.toEqual({ ok: true, msgId: '999' });
+  });
+
+  it('subscribe guard 失败：fetch=0 且不归一为 FETCH_ERROR', async () => {
+    const leaseLost = new Error('lease lost before subscribe fetch');
+    const provider = makeProvider(makeResolved());
+    const beforeEffect = jest.fn().mockRejectedValue(leaseLost);
+
+    await expect(provider.sendSubscribeMessage('at', INPUT, beforeEffect)).rejects.toBe(leaseLost);
+    expect(beforeEffect).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it.each([[43101], [40003], [47003], [40001]])(

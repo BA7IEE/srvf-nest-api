@@ -19,6 +19,7 @@ import {
   type Code2SessionResult,
   type SendSubscribeMessageInput,
   type SendSubscribeMessageResult,
+  type WechatBeforeEffect,
   type WechatMiniProvider,
 } from '../wechat.types';
 
@@ -146,11 +147,14 @@ export class WechatMiniRealProvider implements WechatMiniProvider {
    * 失败抛 WechatApiError / WechatChannelUnavailableError(调用方 WechatService catch 归一)。
    * E-12:请求体含 appid + secret;**禁止 body / URL / access_token 入日志**。
    */
-  async getAccessToken(forceRefresh = false): Promise<string> {
+  async getAccessToken(forceRefresh = false, beforeEffect?: WechatBeforeEffect): Promise<string> {
     if (!forceRefresh && this.accessTokenCache && this.accessTokenCache.expiresAt > Date.now()) {
       return this.accessTokenCache.token;
     }
     const ctx = await this.requireWechatContext();
+    // Context/settings 已准备完成后才重验 fence；guard rejection 不是 provider 失败，
+    // 必须留在 fetch catch 外按原值冒泡，且 fetch 绝不能启动。
+    if (beforeEffect) await beforeEffect();
 
     let res: Response;
     try {
@@ -209,9 +213,12 @@ export class WechatMiniRealProvider implements WechatMiniProvider {
   async sendSubscribeMessage(
     accessToken: string,
     input: SendSubscribeMessageInput,
+    beforeEffect?: WechatBeforeEffect,
   ): Promise<SendSubscribeMessageResult> {
     const url = new URL(WECHAT_SUBSCRIBE_SEND_URL);
     url.searchParams.set('access_token', accessToken);
+    // 每次订阅消息 POST（含 token-invalid 后第二次）都是独立 Effect。
+    if (beforeEffect) await beforeEffect();
 
     let res: Response;
     try {

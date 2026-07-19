@@ -143,8 +143,32 @@ describe('WechatService.sendSubscribeMessage (S2 编排)', () => {
     const getToken = jest.fn().mockResolvedValue('at-1');
     const service = makeS2Service({ getAccessToken: getToken, sendSubscribeMessage: send });
     await expect(service.sendSubscribeMessage(INPUT)).resolves.toEqual({ ok: true, msgId: 'm1' });
-    expect(getToken).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(getToken.mock.calls).toEqual([[]]);
+    expect(send.mock.calls).toEqual([['at-1', INPUT]]);
+  });
+
+  it('首次 token Effect guard 失败按原对象冒泡，不被归一为 TOKEN_FAILED', async () => {
+    const leaseLost = new Error('lease lost before token fetch');
+    const tokenEffect = jest.fn();
+    const sendEffect = jest.fn();
+    const getToken = jest.fn(
+      async (_forceRefresh?: boolean, guard?: () => Promise<void>): Promise<string> => {
+        await guard?.();
+        tokenEffect();
+        return 'at-1';
+      },
+    );
+    const send = jest.fn((): Promise<{ ok: true; msgId: string }> => {
+      sendEffect();
+      return Promise.resolve({ ok: true, msgId: 'm1' });
+    });
+    const service = makeS2Service({ getAccessToken: getToken, sendSubscribeMessage: send });
+
+    await expect(service.sendSubscribeMessage(INPUT, () => Promise.reject(leaseLost))).rejects.toBe(
+      leaseLost,
+    );
+    expect(tokenEffect).not.toHaveBeenCalled();
+    expect(sendEffect).not.toHaveBeenCalled();
   });
 
   it('token 失效 40001 → 强刷 + 重发一次成功', async () => {
@@ -158,6 +182,79 @@ describe('WechatService.sendSubscribeMessage (S2 编排)', () => {
     expect(getToken).toHaveBeenCalledTimes(2);
     expect(getToken).toHaveBeenLastCalledWith(true); // forceRefresh
     expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('token-invalid 后 force-refresh guard 失败：refresh Effect=0 且不启动第二次 send', async () => {
+    const leaseLost = new Error('lease lost before force refresh');
+    const refreshEffect = jest.fn();
+    const sendEffect = jest.fn();
+    const beforeEffect = jest
+      .fn<Promise<void>, []>()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(leaseLost);
+    const getToken = jest.fn(
+      async (forceRefresh?: boolean, guard?: () => Promise<void>): Promise<string> => {
+        await guard?.();
+        if (forceRefresh) refreshEffect();
+        return forceRefresh ? 'at-new' : 'at-old';
+      },
+    );
+    const send = jest.fn(
+      async (
+        _token: string,
+        _input: typeof INPUT,
+        guard?: () => Promise<void>,
+      ): Promise<{ ok: false; errCode: string; errMsg: string }> => {
+        await guard?.();
+        sendEffect();
+        return { ok: false, errCode: '40001', errMsg: 'expired' };
+      },
+    );
+    const service = makeS2Service({ getAccessToken: getToken, sendSubscribeMessage: send });
+
+    await expect(service.sendSubscribeMessage(INPUT, beforeEffect)).rejects.toBe(leaseLost);
+    expect(beforeEffect).toHaveBeenCalledTimes(3);
+    expect(refreshEffect).not.toHaveBeenCalled();
+    expect(sendEffect).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('force-refresh 成功后第二次 send guard 失败：第二次真实 send Effect=0', async () => {
+    const leaseLost = new Error('lease lost before retry send');
+    const refreshEffect = jest.fn();
+    const sendEffect = jest.fn();
+    const beforeEffect = jest
+      .fn<Promise<void>, []>()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(leaseLost);
+    const getToken = jest.fn(
+      async (forceRefresh?: boolean, guard?: () => Promise<void>): Promise<string> => {
+        await guard?.();
+        if (forceRefresh) refreshEffect();
+        return forceRefresh ? 'at-new' : 'at-old';
+      },
+    );
+    const send = jest.fn(
+      async (
+        _token: string,
+        _input: typeof INPUT,
+        guard?: () => Promise<void>,
+      ): Promise<{ ok: false; errCode: string; errMsg: string }> => {
+        await guard?.();
+        sendEffect();
+        return { ok: false, errCode: '40001', errMsg: 'expired' };
+      },
+    );
+    const service = makeS2Service({ getAccessToken: getToken, sendSubscribeMessage: send });
+
+    await expect(service.sendSubscribeMessage(INPUT, beforeEffect)).rejects.toBe(leaseLost);
+    expect(beforeEffect).toHaveBeenCalledTimes(4);
+    expect(refreshEffect).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(sendEffect).toHaveBeenCalledTimes(1);
   });
 
   it('token 失效重试仍败 → 最终 ok:false(非业务重试,只一次)', async () => {

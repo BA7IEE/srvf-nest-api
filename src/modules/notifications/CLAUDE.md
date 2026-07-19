@@ -12,8 +12,8 @@
 - **统一通知 S2 微信订阅 quota 渠道**(2026-06-25):admin 勾微信渠道 → publish 事务内写 durable outbox intent,独立 worker 事务外派发(`NotificationWechatDispatchService`);quota ack/status(`NotificationSubscriptionService`)+ 模板配置(`WechatSubscribeTemplateService` + `NotificationWechatTemplateAdminController`);`NotificationDelivery` 投递态 + `WechatSubscriptionQuota` 配额 + `WechatSubscribeTemplate` 模板;发送能力 additive 在 `wechat/` 模块。
 - **统一通知 S3 producer 接入 + 派发器 Effect 正式化**(2026-06-25;D-Outbox 2026-07-18 收口):`NotificationDispatcher`(architecture-boundary §3.6 **首个真实 Effect**)由独立 outbox worker 调用，建立已发布定向行并执行站内/微信 Effect；招新发号与入队 producer 只在业务事务内 enqueue `notification.targeted@1`。`Notification.recipientMemberId` + feed `buildFeedWhere` 仍保证广播可见 ∪ 本人定向，定向他人 31001 防枚举。
 - **统一通知 S4 活动·考勤 producer 定向触发**(2026-06-25):报名审批(`approve`/`reject` → 报名本人)/ 活动取消(`cancel` → 遍历仍在册报名者 fan-out)/ 考勤终审(`finalApprove` → sheet 内逐 record 本人)三处 producer 在各自业务事务 **commit 后、事务外、`try-catch` 永不抛**直调 S3 `dispatchTargeted`(`activity-reminder` 类型,**仅站内**,微信 opt-in 延后);**0 schema / 0 端点 / 0 RBAC 码**(纯 producer 接入,复用 S3 派发器)。
-- **durable outbox 核心**(2026-07-18):`NotificationOutboxIntent` 由业务事务同写;独立 `notification-outbox-worker` 进程以 PostgreSQL `FOR UPDATE SKIP LOCKED` claim、lease/fencing、指数退避、最多 8 次与 dead letter 驱动 Effect。微信广播 child 按 publish root 留独立 generation 历史，手写 partial unique 保证同 notification/member 同时至多一条 pending/processing，terminal 后释放重试槽。payload/eventKey 禁手机号、openid、token、secret、credential、signed URL 和 provider 原始报文;未知 type/version 直接 dead 且零 Effect。notifications-owned producer + 招新发号/入队已接入；participation producer 仍保留 commit 后直调边界，待后续独立 PR。
-- **统一通知 S5 短信兜底渠道**(2026-06-27):`NotificationSmsDispatchService` —— **admin 显式发起紧急召集短信**(`POST admin/v1/notifications/:id/send-sms`,新码 `notification.send.sms`;**计费确认必需** confirmed=true 才真发 / false 仅预览受众计数);confirmed=true 先做 channel readiness，再以随机 generation 为逐收件人预留 processing intent，并由 partial unique 保证同 notification/member 单 active；同事务写 `deliveryState=reserved` audit,提交后请求仅执行自己 fence 的 child 首轮并追加 `deliveryState=first-attempt` audit。临时 skip terminal 后释放槽位，下一次 confirmation 可新发；只有 `NotificationDelivery SENT` 是跨 generation 永久去重事实。失败 child 独立 nack 重试,HTTP 与首轮 audit 都不代表最终态。
+- **durable outbox 核心**(2026-07-18):`NotificationOutboxIntent` 由业务事务同写;独立 `notification-outbox-worker` 进程以 PostgreSQL `FOR UPDATE SKIP LOCKED` claim、lease/fencing、指数退避、最多 8 次与 dead letter 驱动 Effect。每条 intent JIT claim，稳定 `lockedAt` 下的 heartbeat 与 provider 最终 Effect 紧邻 `beforeEffect` guard 共享单一在途 renew；WeChat cache hit 不执行 guard，cache miss 的 stable-token fetch、首次订阅发送、token-invalid force-refresh、第二次订阅发送各自在真实 fetch 紧前独立 guard。sticky lease failure 后不再启动新 provider，也不 ack/nack/dead。worker 单轮 lease/DB 异常只记安全 errorClass 并退避续跑；`OnModuleDestroy` 先 stop 新 claim、唤醒空闲等待，再 drain 在途 attempt/heartbeat。微信广播 child 按 publish root 留独立 generation 历史，手写 partial unique 保证同 notification/member 同时至多一条 pending/processing，terminal 后释放重试槽。payload/eventKey 禁手机号、openid、token、secret、credential、signed URL 和 provider 原始报文;未知 type/version 直接 dead 且零 Effect。notifications-owned producer + 招新发号/入队已接入；participation producer 仍保留 commit 后直调边界，待后续独立 PR。
+- **统一通知 S5 短信兜底渠道**(2026-06-27):`NotificationSmsDispatchService` —— **admin 显式发起紧急召集短信**(`POST admin/v1/notifications/:id/send-sms`,新码 `notification.send.sms`;**计费确认必需** confirmed=true 才真发 / false 仅预览受众计数);confirmed=true 先做 channel readiness，再以随机 generation 为逐收件人在事务内创建 `pending/attempts=0/lease=null` intent，并由 partial unique 保证同 notification/member 单 active；同事务写 `deliveryState=reserved` audit，提交后请求逐 eventKey JIT claim + execute 并追加 `deliveryState=first-attempt` audit。执行 child 时重读父通知，非 published / 已移除 sms / 已删除一律 terminal skip、provider=0；这是 Wave1 最小 current-state gate，不宣称关闭检查后并发撤回竞态，完整 generation fence 留 Wave2。另一 worker 已抢领时首轮显式计 failed(不是 skipped)，但 durable final state 仍由持 lease worker 推进。临时 skip terminal 后释放槽位，下一次 confirmation 可新发；只有 `NotificationDelivery SENT` 是跨 generation 永久去重事实。失败 child 独立 nack 重试,HTTP 与首轮 audit 都不代表最终态。
 - **不负责**:验证码(`SmsCodeService`)/ wechat·sms settings 管理(各自模块)/ 报名前 5 触发(申请人非队员,维持查询 pull;openid 推送路另立项)/ 真·全员短信批处理异步(延后,未立项)/ 退订偏好(未立项)。
 
 ## Local facts
@@ -21,7 +21,7 @@
 - 招新发号与入队 producer 在各自业务 transaction 内 enqueue `notification.targeted@1`；worker commit 后执行 Effect。producer 不再 commit 后 best-effort 直调 dispatcher，enqueue 失败必须使业务回滚。
 - membership audience / 定向归属组织只接受当前有效 PRIMARY(`ACTIVE + startedAt<=now + endedAt=null + 未软删`)；本口径不改变 durable Outbox 的 enqueue 位置与事务顺序。
 
-- **本仓恰好两个 `@Cron`**:生日批 + v0.47.0 到期提醒;`ScheduleModule.forRoot()` 在 `app.module.ts` 全局装配。第三个 cron / interval / timeout 仍须独立 D 档评审
+- **本仓恰好两个 `@Cron`**:生日批 + v0.47.0 到期提醒;`ScheduleModule.forRoot()` 在 `app.module.ts` 全局装配。第三个 cron / 独立业务调度 interval/timeout 仍须独立 D 档评审；随单 intent 启停并等待在途续租的 outbox lease heartbeat 是本 D 档已拍板的 worker 正确性循环，不是新调度器
 - **选取六条件**(评审稿 E-B5,全部同时满足):`MemberProfile.birthDate` 月日=今天(固定 UTC+8 日界)/ profile 未软删 / Member ACTIVE 未软删 / User 存在 / `User.phone` 非空 / User ACTIVE 未软删;**仅发 `User.phone`**(拍板⑤,`MemberProfile.mobile` 永不使用);2/29 仅闰年当天发(不顺延)
 - **幂等防重发**(E-B6):生日 cron 的 eventKey 固定为「北京时间日期 + memberId」;outbox unique 防重复 intent,handler 仍以 `sms_send_logs` SENT 记录防重复触达;所有跨进程正确性均以 PostgreSQL 为准
 - **失败语义**(D-Outbox):provider/临时 DB 失败由 intent 退避重试,最多 8 次后 dead;通道整体不可用(settings 缺失 / templateIdBirthday 空 / production-like DEV_STUB)同样只 nack/retry、耗尽后 dead，不在 cron 事务内外发
@@ -32,7 +32,7 @@
 
 ## Risk points (不要做)
 
-- ❌ **不**在本模块新增第三个 `@Cron` / interval / timeout(v0.47.0 只解锁第二个到期扫描;后续新定时任务 = 新 D 档评审)
+- ❌ **不**在本模块新增第三个 `@Cron` / 独立业务调度 interval / timeout(v0.47.0 只解锁第二个到期扫描;后续新定时任务 = 新 D 档评审；仅允许本轮随 intent 生命周期启停、停止时等待在途 renew 的 lease heartbeat)
 - ❌ **不**把 retention 清理做成定时任务(拍板③:永走 [`/docs/ops/sms-data-retention-sop.md`](../../../docs/ops/sms-data-retention-sop.md) 手动 SOP)
 - ❌ **不**改发 `MemberProfile.mobile` / 不加模板变量(姓名等)/ 不做群发、退订、农历生日、2-29 顺延(goal 禁止域;需变更先回评审)
 - ❌ **不**给生日批写 audit_logs / 不在日志输出完整手机号
@@ -62,7 +62,7 @@
 - ❌ **不**让短信随 publish 自动发 / 不默认 / 不强制(站内+微信优先;**短信只由 admin 显式 confirmed=true 端点触发**,成本动作显式 gating;`NotificationService.publish` 绝不调短信派发)。
 - ❌ **不**在无 `confirmed=true` 时发任何短信(预览 confirmed=false 零发送零计费;缺 confirmed 走通用 400)——防误触发资费。
 - ❌ **不**改 `SmsProviderRouter` / 两 provider 的 `sendVerifyCode` / `sendBirthdayGreeting` 既有发送(行为锁;S5 仅 **additive** `sendNotification`)。
-- ❌ 外部 SMS API **在任何 DB 事务之外**;每收件人一个 reserved child,provider accepted 后 `sms_send_logs SENT` + `NotificationDelivery sent` 在同一短事务提交；任一步失败都外抛给 worker nack。provider accepted 到本地事务 commit 前的进程崩溃仍是不可消除的 at-least-once 窗口，不宣称 exactly-once；通道关闭不 ack。
+- ❌ 外部 SMS API **在任何 DB 事务之外**;每收件人一个 pending child，claim 后才进入 Effect；provider accepted 后 `sms_send_logs SENT` + `NotificationDelivery sent` 在同一短事务提交，任一步失败都外抛给 worker nack。worker 在 Effect 前续租并以稳定 `lockedAt` fence 做单路 heartbeat；admin `dispatchRecipient` 必须在 `router.sendNotification` 紧邻处执行同一 `beforeEffect` guard。续租失败绝不 ack/nack/dead，也不再启动尚未开始的 provider；已经在途/accepted 后丢 lease 仍保留 at-least-once 窗口，不宣称取消或 exactly-once；通道关闭不 ack。
 - ❌ **不**引第三个 cron / Redis / BullMQ / 外部 queue / 事件总线;admin SMS 只复用 PostgreSQL outbox 的同一 worker,不再另建异步基建。
 - ❌ **不**输出明文手机号(响应/日志/审计一律 `maskPhone`;`NotificationDelivery.recipientRef` 存掩码;audit 仅收件人计数无明文)。
 - ⚠️ 短信模板 `sms_settings.templateIdNotification` **须运维填真实零变量模板 ID 并先过审**(空 = 该渠道未配置,confirmed 发送返 24030;DevStub 忽略其值但须非空,对齐生日批口径)。
@@ -76,7 +76,7 @@
 - `pnpm test:e2e -- notifications-birthday notifications-admin notifications-app notifications-wechat notifications-directed` — 直调 / 全链:生日 + S1 站内信 + S2 微信 + S3 定向(收件人可见 / **他人 404 防枚举** / 微信 sent·no-quota·no-template)
 - `pnpm test:e2e -- recruitment.e2e team-join.e2e` — S3 producer:同事务 intent / batch 中途失败整批回滚 / 重复请求与 worker drain 零重复 Effect
 - `pnpm test -- notification-sms-dispatch dev-stub.provider tencent-sms.provider` — S5 单测:通道未就绪 / 仅可见有手机者 / 同日同模板幂等·日封顶·间隔继承 / re-trigger 去重 / FAILED 不阻断 / maskPhone / 预览不发 / provider `sendNotification` + 行为锁
-- `pnpm test:e2e -- notifications-sms` — S5 全链:RBAC + 31001/31013 闸 + confirmed 缺失 400 + 预览不发 + 确认逐人 send_log/delivery/maskPhone/audit + 同日幂等 + re-trigger 去重 + 仅可见有手机者 + 24030
+- `pnpm exec jest --config test/jest-e2e.config.ts --runInBand --no-cache --runTestsByPath test/e2e/notifications-sms.e2e-spec.ts` — S5 全链:RBAC + 31001/31013 闸 + confirmed 缺失 400 + 预览不发 + 确认逐人 send_log/delivery/maskPhone/audit + 同日幂等 + re-trigger 去重 + 仅可见有手机者 + 24030
 - `pnpm test -- notification-outbox birthday-greeting expiry-reminder` — durable outbox:payload 安全 / enqueue 内容幂等 / claim lease / fencing / retry·dead / 未知 type-version 零 Effect + 两 cron 只入队
-- `pnpm test:e2e -- notification-outbox` — 独立 worker + 真 PostgreSQL 并发 claim / 崩溃租约回收 / Effect 幂等 / admin SMS 首轮非最终(须在静态 migration review P0-P3=0 后运行派生测试库)
+- `pnpm exec jest --config test/jest-e2e.config.ts --runInBand --no-cache --runTestsByPath test/e2e/notification-outbox.e2e-spec.ts` — 独立 worker + 真 PostgreSQL 并发 claim / 崩溃租约回收 / Effect 幂等 / admin SMS 首轮非最终(精确 path 可避免 worktree 绝对路径被 Jest regex 误展开；须在静态 migration review P0-P3=0 后运行派生测试库)
 - 改启动锚行文案 → 必须同步 docker-smoke workflow 并跑该 workflow

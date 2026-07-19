@@ -287,35 +287,59 @@ describe('NotificationOutboxService', () => {
     expect(prepare).not.toHaveBeenCalled();
   });
 
-  it('request transaction 创建 processing child 并持有 fence，后台无需再 claim', async () => {
+  it('admin SMS transaction 只创建 pending/attempts=0 且 lease 全空的 durable command', async () => {
     const f = build();
-    f.findUnique.mockResolvedValue(
-      row({
-        status: 'processing',
-        attempts: 1,
-        leaseOwner: 'request-1',
-        lockedAt: NOW,
-        leaseExpiresAt: new Date(NOW.getTime() + 30_000),
-      }),
-    );
-    await expect(
-      f.service.reserveAdminSmsAttempt(input(), 'request-1', f.tx as never, { now: NOW }),
-    ).resolves.toMatchObject({
+    await expect(f.service.reserveAdminSmsAttempt(input(), f.tx as never)).resolves.toMatchObject({
       state: 'reserved',
-      intent: { leaseOwner: 'request-1', attempts: 1 },
+      intent: {
+        status: 'pending',
+        attempts: 0,
+        leaseOwner: null,
+        lockedAt: null,
+        leaseExpiresAt: null,
+      },
     });
     expect(f.createMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: [
           expect.objectContaining({
-            status: 'processing',
-            attempts: 1,
-            leaseOwner: 'request-1',
-            lockedAt: NOW,
+            status: 'pending',
+            attempts: 0,
+            leaseOwner: null,
+            lockedAt: null,
+            leaseExpiresAt: null,
           }),
         ],
       }),
     );
+  });
+
+  it('renewLease 保留终身 lockedAt fence，只在完整 CAS 下延长 leaseExpiresAt', async () => {
+    const f = build();
+    const intent = row({
+      status: 'processing',
+      attempts: 1,
+      leaseOwner: 'worker-1',
+      lockedAt: NOW,
+      leaseExpiresAt: new Date(NOW.getTime() + 30_000),
+    }) as ClaimedNotificationOutboxIntent;
+    const renewAt = new Date(NOW.getTime() + 10_000);
+    const nextExpiry = new Date(renewAt.getTime() + 30_000);
+
+    await expect(f.service.renewLease(intent, renewAt, 30_000)).resolves.toMatchObject({
+      lockedAt: NOW,
+      leaseExpiresAt: nextExpiry,
+    });
+    const [renew] = (f.updateMany.mock.calls as Array<[UpdateManyCall]>).at(-1)!;
+    expect(renew.where).toMatchObject({
+      id: intent.id,
+      status: 'processing',
+      leaseOwner: 'worker-1',
+      lockedAt: NOW,
+      leaseExpiresAt: { not: null, gt: renewAt },
+    });
+    expect(renew.data).toEqual({ leaseExpiresAt: nextExpiry });
+    expect(renew.data).not.toHaveProperty('lockedAt');
   });
 
   it('第 8 次失败直接 dead；此前失败清 lease 并指数退避回 pending', async () => {

@@ -27,10 +27,11 @@ type OutboxClient = PrismaService | Prisma.TransactionClient;
 export interface ClaimedNotificationOutboxIntent extends NotificationOutboxIntent {
   leaseOwner: string;
   lockedAt: Date;
+  leaseExpiresAt: Date;
 }
 
 export interface NotificationOutboxReservation {
-  intent: ClaimedNotificationOutboxIntent | null;
+  intent: NotificationOutboxIntent | null;
   state: 'reserved' | 'busy' | 'completed' | 'dead';
 }
 
@@ -134,14 +135,12 @@ export class NotificationOutboxService {
     );
   }
 
-  // admin SMS 每次 confirmation 使用新 generation eventKey；partial unique 保证同一
-  // notification/member 任一时刻只有一条 pending/processing。createMany skipDuplicates
-  // 在 transaction 内吸收 unique race，再区分 own key 与 foreign active slot，禁止 catch P2002 续跑。
+  // admin SMS 每次 confirmation 使用新 generation eventKey；request transaction 只落
+  // pending/attempts=0 的 durable command，不提前持有 lease。commit 后 HTTP 与后台 worker
+  // 通过同一 JIT claim 路径竞争；partial unique 仍保证同 notification/member 单 active slot。
   async reserveAdminSmsAttempt(
     input: NotificationOutboxEnqueueInput,
-    leaseOwner: string,
     client: Prisma.TransactionClient,
-    options: { now?: Date; leaseMs?: number } = {},
   ): Promise<NotificationOutboxReservation> {
     const normalized = normalizeNotificationOutboxInput(input);
     if (normalized.eventType !== OUTBOX_EVENT_ADMIN_SMS) {
@@ -149,9 +148,6 @@ export class NotificationOutboxService {
         `eventType=${normalized.eventType} cannot use admin SMS active slot`,
       );
     }
-    const now = options.now ?? new Date();
-    const leaseExpiresAt = new Date(now.getTime() + (options.leaseMs ?? OUTBOX_LEASE_MS));
-    const lockedAt = now;
     const created = await client.notificationOutboxIntent.createMany({
       data: [
         {
@@ -163,11 +159,11 @@ export class NotificationOutboxService {
           aggregateId: normalized.aggregateId,
           destinationType: normalized.destinationType,
           destinationRef: normalized.destinationRef,
-          status: OUTBOX_STATUS_PROCESSING,
-          attempts: 1,
-          leaseOwner,
-          lockedAt,
-          leaseExpiresAt,
+          status: OUTBOX_STATUS_PENDING,
+          attempts: 0,
+          leaseOwner: null,
+          lockedAt: null,
+          leaseExpiresAt: null,
         },
       ],
       skipDuplicates: true,
@@ -181,17 +177,22 @@ export class NotificationOutboxService {
       );
     }
     if (created.count === 1) {
-      if (!sameKey || !hasFence(sameKey)) {
-        throw new NotificationOutboxInvariantError(`eventKey=${normalized.eventKey} lost fence`);
+      if (
+        !sameKey ||
+        sameKey.status !== OUTBOX_STATUS_PENDING ||
+        sameKey.attempts !== 0 ||
+        sameKey.leaseOwner !== null ||
+        sameKey.lockedAt !== null ||
+        sameKey.leaseExpiresAt !== null
+      ) {
+        throw new NotificationOutboxInvariantError(
+          `eventKey=${normalized.eventKey} lost pending reservation`,
+        );
       }
       return { intent: sameKey, state: 'reserved' };
     }
     if (sameKey) {
-      if (
-        sameKey.status === OUTBOX_STATUS_PROCESSING &&
-        sameKey.leaseOwner === leaseOwner &&
-        hasFence(sameKey)
-      ) {
+      if (sameKey.status === OUTBOX_STATUS_PENDING) {
         return { intent: sameKey, state: 'reserved' };
       }
       if (sameKey.status === OUTBOX_STATUS_SUCCEEDED) {
@@ -310,28 +311,23 @@ export class NotificationOutboxService {
     if (updated.count !== 1) throw new NotificationOutboxLeaseLostError(intent.id);
   }
 
-  // 每个 child 在任何 handler/provider 前 just-in-time 续租。CAS 同时校验旧 fence 与租约尚未
-  // 过期，并旋转 lockedAt；失败表示已过期或被其它 worker reclaim，调用方必须零 Effect。
+  // 每个 child 在任何 handler/provider 前 just-in-time 续租。lockedAt 是 intent 终身稳定
+  // fence；续租 CAS 校验完整旧 fence + leaseExpiresAt>now，只延长 expiry，绝不旋转 fence。
   async renewLease(
     intent: ClaimedNotificationOutboxIntent,
     now: Date = new Date(),
     leaseMs: number = OUTBOX_LEASE_MS,
   ): Promise<ClaimedNotificationOutboxIntent> {
-    const lockedAt = now;
     const leaseExpiresAt = new Date(now.getTime() + leaseMs);
     const updated = await this.prisma.notificationOutboxIntent.updateMany({
       where: {
         ...fenceWhere(intent),
         leaseExpiresAt: { not: null, gt: now },
       },
-      data: { lockedAt, leaseExpiresAt },
+      data: { leaseExpiresAt },
     });
     if (updated.count !== 1) throw new NotificationOutboxLeaseLostError(intent.id);
-    const row = await this.prisma.notificationOutboxIntent.findFirst({
-      where: { id: intent.id, leaseOwner: intent.leaseOwner, lockedAt },
-    });
-    if (!row || !hasFence(row)) throw new NotificationOutboxLeaseLostError(intent.id);
-    return row;
+    return { ...intent, leaseExpiresAt };
   }
 
   async nack(
@@ -420,7 +416,7 @@ export class NotificationOutboxService {
 }
 
 function hasFence(row: NotificationOutboxIntent): row is ClaimedNotificationOutboxIntent {
-  return row.leaseOwner !== null && row.lockedAt !== null;
+  return row.leaseOwner !== null && row.lockedAt !== null && row.leaseExpiresAt !== null;
 }
 
 function fenceWhere(
