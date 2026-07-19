@@ -756,24 +756,27 @@ describe('Attachment durable storage consistency (real PostgreSQL barriers)', ()
 
     try {
       await expect(
-        orchestrator.finalizeUpload({
-          identity,
-          requestHash,
-          data: {
-            key: identity.key,
-            originalName: identity.originalName,
-            mime: identity.mime,
-            size: identity.size,
-            uploadedBy: actorId,
-            ownerType: identity.ownerType,
-            ownerId: identity.ownerId,
+        orchestrator.finalizeUpload(
+          {
+            identity,
+            requestHash,
+            data: {
+              key: identity.key,
+              originalName: identity.originalName,
+              mime: identity.mime,
+              size: identity.size,
+              uploadedBy: actorId,
+              ownerType: identity.ownerType,
+              ownerId: identity.ownerId,
+            },
+            auditKind: 'confirmed',
+            actorRoleSnap: Role.ADMIN,
+            scope: 'other',
+            ownerTable: 'member',
+            auditMeta: { requestId: 'confirm-vs-orphan', ip: null, ua: null },
           },
-          auditKind: 'confirmed',
-          actorRoleSnap: Role.ADMIN,
-          scope: 'other',
-          ownerTable: 'member',
-          auditMeta: { requestId: 'confirm-vs-orphan', ip: null, ua: null },
-        }),
+          { exists: true, size: identity.size },
+        ),
       ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING));
     } finally {
       provider.deleteRelease.resolve();
@@ -796,17 +799,18 @@ describe('Attachment durable storage consistency (real PostgreSQL barriers)', ()
       iat: 1_784_435_200,
       exp: 1_784_435_800,
     };
+    const unboundExpiresAt = new Date(Date.now() + 60_000);
     provider.currentLocator = OLD_LOCATOR;
     const first = await orchestrator.prepareUpload(
       identity,
       'attachment_signed_upload',
-      new Date(Date.now() + 60_000),
+      unboundExpiresAt,
     );
     provider.currentLocator = NEW_LOCATOR;
     const replay = await orchestrator.prepareUpload(
       identity,
       'attachment_signed_upload',
-      new Date(Date.now() + 60_000),
+      unboundExpiresAt,
     );
 
     expect(replay).toMatchObject({
@@ -824,6 +828,55 @@ describe('Attachment durable storage consistency (real PostgreSQL barriers)', ()
       region: OLD_LOCATOR.region,
       localNamespace: null,
     });
+  });
+
+  it('Provider HEAD uncertainty durably records Object/Operation evidence and returns 13034', async () => {
+    const identity: AttachmentUploadStorageIdentity = {
+      key: `attachments/storage-e2e/provider-unknown-${++sequence}.txt`,
+      ownerType: 'member',
+      ownerId: `member_${sequence}`,
+      originalName: 'provider-unknown.txt',
+      mime: 'text/plain',
+      size: 7,
+      uploadedByUserId: actorId,
+      iat: 1_784_435_200,
+      exp: 1_784_435_800,
+    };
+    const prepared = await orchestrator.prepareUpload(
+      identity,
+      'attachment_signed_upload',
+      new Date('2026-07-19T06:30:00.000Z'),
+    );
+    const providerError = Object.assign(new Error('provider HEAD timed out'), {
+      name: 'ProviderHeadTimeoutError',
+      code: 'ETIMEDOUT',
+    });
+    provider.headFailureOnce = providerError;
+
+    await expect(
+      orchestrator.verifyUploadEvidence(identity, 'attachment_signed_upload'),
+    ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING));
+
+    await expect(
+      prisma.attachment.findUnique({ where: { key: identity.key } }),
+    ).resolves.toBeNull();
+    await expect(
+      prisma.storageObject.findUnique({ where: { id: prepared.objectId } }),
+    ).resolves.toMatchObject({
+      state: 'provider_unknown',
+      resourceId: null,
+      lastErrorCode: 'ETIMEDOUT',
+      lastErrorClass: 'ProviderHeadTimeoutError',
+    });
+    await expect(
+      prisma.storageObjectOperation.findUnique({ where: { id: prepared.operationId } }),
+    ).resolves.toMatchObject({
+      status: 'pending',
+      effectState: 'provider_unknown',
+      lastErrorCode: 'ETIMEDOUT',
+      lastErrorClass: 'ProviderHeadTimeoutError',
+    });
+    await expect(prisma.auditLog.count()).resolves.toBe(0);
   });
 
   it('same-key different upload hash waits on the object lock, then returns 13001 without a ledger row', async () => {
@@ -935,24 +988,27 @@ describe('Attachment durable storage consistency (real PostgreSQL barriers)', ()
       await deleteRelease.promise;
     });
     await deleteReady.promise;
-    const confirming = orchestrator.finalizeUpload({
-      identity,
-      requestHash,
-      data: {
-        key: identity.key,
-        originalName: identity.originalName,
-        mime: identity.mime,
-        size: identity.size,
-        uploadedBy: actorId,
-        ownerType: identity.ownerType,
-        ownerId: identity.ownerId,
+    const confirming = orchestrator.finalizeUpload(
+      {
+        identity,
+        requestHash,
+        data: {
+          key: identity.key,
+          originalName: identity.originalName,
+          mime: identity.mime,
+          size: identity.size,
+          uploadedBy: actorId,
+          ownerType: identity.ownerType,
+          ownerId: identity.ownerId,
+        },
+        auditKind: 'confirmed',
+        actorRoleSnap: Role.ADMIN,
+        scope: 'other',
+        ownerTable: 'member',
+        auditMeta: { requestId: 'owner-delete-wins-confirm', ip: null, ua: null },
       },
-      auditKind: 'confirmed',
-      actorRoleSnap: Role.ADMIN,
-      scope: 'other',
-      ownerTable: 'member',
-      auditMeta: { requestId: 'owner-delete-wins-confirm', ip: null, ua: null },
-    });
+      { exists: true, size: identity.size },
+    );
 
     try {
       await waitForRelationLockWait('Member');

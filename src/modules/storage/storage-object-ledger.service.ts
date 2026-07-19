@@ -16,6 +16,7 @@ import {
   StorageUploadIdentityConflictError,
   normalizeStorageError,
   storageLocatorFromObject,
+  storageOwnerlessUploadEventKey,
   storageRequestHash,
   storageRetryDelayMs,
   type ClaimedStorageObjectOperation,
@@ -186,6 +187,13 @@ export class StorageObjectLedgerService implements OnApplicationBootstrap {
   }
 
   async prepareUpload(input: PrepareStorageUploadInput): Promise<PreparedStorageUpload> {
+    return this.prisma.$transaction((tx) => this.prepareUploadInTransaction(tx, input));
+  }
+
+  async prepareUploadInTransaction(
+    tx: Prisma.TransactionClient,
+    input: PrepareStorageUploadInput,
+  ): Promise<PreparedStorageUpload> {
     validateHash(input.requestHash);
     const payload = { source: input.source } as const;
     parseStorageOperationPayload(
@@ -193,99 +201,123 @@ export class StorageObjectLedgerService implements OnApplicationBootstrap {
       STORAGE_OPERATION_PAYLOAD_VERSION,
       payload,
     );
-    return this.prisma.$transaction(async (tx) => {
-      await tx.storageObject.createMany({
-        data: [
-          {
-            key: input.key,
-            state: 'pending_upload',
-            source: input.source,
-            ...locatorData(input.locator),
-            expectedSize: BigInt(input.expectedSize),
-            expectedMime: input.expectedMime,
-            unboundExpiresAt: input.unboundExpiresAt,
-          },
-        ],
-        skipDuplicates: true,
-      });
-      const candidate = await tx.storageObject.findUnique({ where: { key: input.key } });
-      if (!candidate) {
-        throw new StorageConsistencyInvariantError(`prepared object disappeared key=${input.key}`);
-      }
-      await tx.$queryRaw(Prisma.sql`
-        SELECT "id" FROM "storage_objects"
-        WHERE "id" = ${candidate.id}
-        FOR UPDATE
-      `);
-      const object = await tx.storageObject.findUnique({ where: { key: input.key } });
-      if (!object || object.id !== candidate.id) {
-        throw new StorageConsistencyInvariantError(`prepared object disappeared key=${input.key}`);
-      }
-
-      if (
-        object.state === 'available' &&
-        object.resourceType !== null &&
-        object.resourceId !== null
-      ) {
-        const replay = await tx.storageObjectOperation.findFirst({
-          where: {
-            eventKey: input.eventKey,
-            storageObjectId: object.id,
-            kind: 'attachment_upload_verify',
-            requestHash: input.requestHash,
-            status: 'succeeded',
-            effectState: 'provider_present',
-          },
-          orderBy: { createdAt: 'desc' },
-        });
-        if (!replay) throw new StorageUploadIdentityConflictError();
-        assertPreparedObjectMatches(object, input);
-        const replayPayload = parseStorageOperationPayload(
-          'attachment_upload_verify',
-          replay.payloadVersion,
-          replay.payload,
-        );
-        if (!('source' in replayPayload) || replayPayload.source !== object.source) {
-          throw new StorageConsistencyInvariantError('upload replay source drifted');
-        }
-        return { object, operation: replay };
-      }
-      assertPreparedObjectMatches(object, input);
-
-      await tx.storageObjectOperation.createMany({
-        data: [
-          {
-            eventKey: input.eventKey,
-            storageObjectId: object.id,
-            kind: 'attachment_upload_verify',
-            status: 'pending',
-            effectState: 'not_started',
-            payloadVersion: STORAGE_OPERATION_PAYLOAD_VERSION,
-            payload,
-            requestHash: input.requestHash,
-          },
-        ],
-        skipDuplicates: true,
-      });
-      const operation = await tx.storageObjectOperation.findUnique({
-        where: { eventKey: input.eventKey },
-      });
-      if (!operation || operation.storageObjectId !== object.id) {
-        throw new StorageConsistencyInvariantError(
-          `prepared operation disappeared key=${input.key}`,
-        );
-      }
-      if (
-        operation.kind !== 'attachment_upload_verify' ||
-        operation.requestHash !== input.requestHash
-      ) {
-        throw new StorageConsistencyInvariantError(
-          `eventKey reused with different upload identity`,
-        );
-      }
-      parseStorageOperationPayload(operation.kind, operation.payloadVersion, operation.payload);
-      return { object, operation };
+    await tx.storageObject.createMany({
+      data: [
+        {
+          key: input.key,
+          state: 'pending_upload',
+          source: input.source,
+          ...locatorData(input.locator),
+          expectedSize: BigInt(input.expectedSize),
+          expectedMime: input.expectedMime,
+          unboundExpiresAt: input.unboundExpiresAt,
+        },
+      ],
+      skipDuplicates: true,
     });
+    const candidate = await tx.storageObject.findUnique({ where: { key: input.key } });
+    if (!candidate) {
+      throw new StorageConsistencyInvariantError(`prepared object disappeared key=${input.key}`);
+    }
+    await tx.$queryRaw(Prisma.sql`
+      SELECT "id" FROM "storage_objects"
+      WHERE "id" = ${candidate.id}
+      FOR UPDATE
+    `);
+    const object = await tx.storageObject.findUnique({ where: { key: input.key } });
+    if (!object || object.id !== candidate.id) {
+      throw new StorageConsistencyInvariantError(`prepared object disappeared key=${input.key}`);
+    }
+
+    if (
+      object.state === 'available' &&
+      object.resourceType !== null &&
+      object.resourceId !== null
+    ) {
+      const replay = await tx.storageObjectOperation.findFirst({
+        where: {
+          storageObjectId: object.id,
+          kind: 'attachment_upload_verify',
+          requestHash: input.requestHash,
+          status: 'succeeded',
+          effectState: 'provider_present',
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!replay) throw new StorageUploadIdentityConflictError();
+      assertPreparedObjectMatches(object, input);
+      assertCompatibleUploadEventKey(replay, input);
+      const replayPayload = parseStorageOperationPayload(
+        'attachment_upload_verify',
+        replay.payloadVersion,
+        replay.payload,
+      );
+      if (!('source' in replayPayload) || replayPayload.source !== object.source) {
+        throw new StorageConsistencyInvariantError('upload replay source drifted');
+      }
+      return { object, operation: replay };
+    }
+    assertPreparedObjectMatches(object, input);
+
+    const compatible = await tx.storageObjectOperation.findFirst({
+      where: {
+        storageObjectId: object.id,
+        kind: 'attachment_upload_verify',
+        requestHash: input.requestHash,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (compatible) {
+      assertCompatibleUploadEventKey(compatible, input);
+      const compatiblePayload = parseStorageOperationPayload(
+        'attachment_upload_verify',
+        compatible.payloadVersion,
+        compatible.payload,
+      );
+      if (!('source' in compatiblePayload) || compatiblePayload.source !== object.source) {
+        throw new StorageConsistencyInvariantError('upload replay source drifted');
+      }
+      return { object, operation: compatible };
+    }
+
+    await tx.storageObjectOperation.createMany({
+      data: [
+        {
+          eventKey: input.eventKey,
+          storageObjectId: object.id,
+          kind: 'attachment_upload_verify',
+          status: 'pending',
+          effectState: 'not_started',
+          payloadVersion: STORAGE_OPERATION_PAYLOAD_VERSION,
+          payload,
+          requestHash: input.requestHash,
+        },
+      ],
+      skipDuplicates: true,
+    });
+    const operation = await tx.storageObjectOperation.findFirst({
+      where: {
+        storageObjectId: object.id,
+        kind: 'attachment_upload_verify',
+        requestHash: input.requestHash,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!operation) {
+      // A different upload identity may own the one-active-operation slot for this key. This is
+      // an anti-enumeration identity conflict, not an invariant that should surface as HTTP 500.
+      throw new StorageUploadIdentityConflictError();
+    }
+    assertCompatibleUploadEventKey(operation, input);
+    const operationPayload = parseStorageOperationPayload(
+      'attachment_upload_verify',
+      operation.payloadVersion,
+      operation.payload,
+    );
+    if (!('source' in operationPayload) || operationPayload.source !== object.source) {
+      throw new StorageConsistencyInvariantError('upload operation source drifted');
+    }
+    return { object, operation };
   }
 
   async ensureRuntimeBackfill(
@@ -1412,12 +1444,26 @@ function assertPreparedObjectMatches(
     object.source !== input.source ||
     object.expectedSize !== BigInt(input.expectedSize) ||
     object.expectedMime !== input.expectedMime ||
+    object.unboundExpiresAt?.getTime() !== input.unboundExpiresAt.getTime() ||
     object.providerType !== input.locator.providerType ||
     object.bucket !== input.locator.bucket ||
     object.region !== input.locator.region ||
     object.localNamespace !== input.locator.localNamespace
   ) {
     throw new StorageConsistencyInvariantError(`key reused with different object identity`);
+  }
+}
+
+function assertCompatibleUploadEventKey(
+  operation: Pick<StorageObjectOperation, 'eventKey' | 'requestHash'>,
+  input: PrepareStorageUploadInput,
+): void {
+  const legacyEventKey = storageOwnerlessUploadEventKey(input.requestHash);
+  if (
+    operation.requestHash !== input.requestHash ||
+    (operation.eventKey !== input.eventKey && operation.eventKey !== legacyEventKey)
+  ) {
+    throw new StorageConsistencyInvariantError('upload eventKey identity drifted');
   }
 }
 

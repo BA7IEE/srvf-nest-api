@@ -5,6 +5,10 @@ import type { PrismaService } from '../../database/prisma.service';
 import {
   STORAGE_OPERATION_MAX_ATTEMPTS,
   StorageUploadIdentityConflictError,
+  storageOwnerIntentRef,
+  storageOwnerUploadEventKey,
+  storageOwnerlessUploadEventKey,
+  storageRequestHash,
 } from './storage-consistency.types';
 import {
   isStorageConsistencyWorkerEntrypoint,
@@ -290,7 +294,9 @@ describe('StorageObjectLedgerService targeted exhausted claim', () => {
     const objectCreateMany = jest
       .fn<Promise<{ count: number }>, [StorageCreateManyArgs]>()
       .mockResolvedValue({ count: 1 });
-    const operationCreateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const operationCreateMany = jest
+      .fn<Promise<{ count: number }>, [StorageCreateManyArgs]>()
+      .mockResolvedValue({ count: 1 });
     const createdObject = {
       id: 'runtime_backfill_object',
       key: 'attachments/unit/runtime-backfill.txt',
@@ -345,9 +351,117 @@ describe('StorageObjectLedgerService targeted exhausted claim', () => {
   });
 });
 
+describe('attachment upload owner-v1 identity', () => {
+  it('hashes canonical owner identity without exposing ownerId in the event key', () => {
+    const ownerType = 'content-image';
+    const ownerId = 'content_private_owner_0001';
+    const requestHash = 'f'.repeat(64);
+
+    expect(storageOwnerIntentRef(ownerType, ownerId)).toBe(
+      storageRequestHash({ ownerType, ownerId }),
+    );
+    const eventKey = storageOwnerUploadEventKey(ownerType, ownerId, requestHash);
+    expect(eventKey).toBe(
+      `storage.attachment-upload-verify:owner-v1:${storageOwnerIntentRef(ownerType, ownerId)}:${requestHash}`,
+    );
+    expect(eventKey).not.toContain(ownerId);
+    expect(eventKey).not.toContain(ownerType);
+  });
+
+  it('tx-aware prepare emits owner-v1 while persisting the exact source-only payload', async () => {
+    const requestHash = '9'.repeat(64);
+    const eventKey = storageOwnerUploadEventKey(
+      'content-file',
+      'content_private_owner_0002',
+      requestHash,
+    );
+    const unboundExpiresAt = new Date('2026-07-19T09:00:00.000Z');
+    const object = {
+      id: 'object_owner_v1',
+      key: 'attachments/unit/owner-v1.pdf',
+      state: 'pending_upload',
+      source: 'attachment_signed_upload',
+      providerType: 'COS',
+      bucket: 'unit-bucket',
+      region: 'ap-unit',
+      localNamespace: null,
+      expectedSize: 17n,
+      expectedMime: 'application/pdf',
+      resourceType: null,
+      resourceId: null,
+      unboundExpiresAt,
+    };
+    const operation = {
+      id: 'operation_owner_v1',
+      eventKey,
+      storageObjectId: object.id,
+      kind: 'attachment_upload_verify',
+      status: 'pending',
+      effectState: 'not_started',
+      payloadVersion: 1,
+      payload: { source: 'attachment_signed_upload' },
+      requestHash,
+    };
+    const operationCreateMany = jest
+      .fn<Promise<{ count: number }>, [StorageCreateManyArgs]>()
+      .mockResolvedValue({ count: 1 });
+    const tx = {
+      storageObject: {
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUnique: jest.fn().mockResolvedValue(object),
+      },
+      storageObjectOperation: {
+        findFirst: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(operation),
+        createMany: operationCreateMany,
+      },
+      $queryRaw: jest.fn().mockResolvedValue([{ id: object.id }]),
+    };
+    const transaction = jest.fn();
+    const prisma = { $transaction: transaction } as unknown as PrismaService;
+    const cfg = {
+      env: 'test',
+      storage: { consistencyMode: 'JIT' },
+    } as unknown as ConfigType<typeof appConfig>;
+    const ledger = new StorageObjectLedgerService(prisma, cfg);
+
+    await expect(
+      ledger.prepareUploadInTransaction(tx as never, {
+        key: object.key,
+        source: 'attachment_signed_upload',
+        locator: {
+          providerType: 'COS',
+          bucket: 'unit-bucket',
+          region: 'ap-unit',
+          localNamespace: null,
+        },
+        expectedSize: 17,
+        expectedMime: 'application/pdf',
+        unboundExpiresAt,
+        eventKey,
+        requestHash,
+      }),
+    ).resolves.toEqual({ object, operation });
+
+    expect(transaction).not.toHaveBeenCalled();
+    const inserted = operationCreateMany.mock.calls[0]?.[0].data[0];
+    if (!inserted) throw new Error('owner-v1 operation insert was not captured');
+    expect(inserted).toMatchObject({
+      eventKey,
+      kind: 'attachment_upload_verify',
+      payloadVersion: 1,
+      payload: { source: 'attachment_signed_upload' },
+      requestHash,
+    });
+    expect(inserted.payload).toEqual({ source: 'attachment_signed_upload' });
+    expect(inserted.payload).not.toHaveProperty('ownerType');
+    expect(inserted.payload).not.toHaveProperty('ownerId');
+  });
+});
+
 describe('StorageObjectLedgerService available upload replay identity', () => {
   const requestHash = 'a'.repeat(64);
   const key = 'attachments/test/2026/07/19/exact-replay.txt';
+  const unboundExpiresAt = new Date('2026-07-19T08:00:00.000Z');
   const locator = {
     providerType: 'COS' as const,
     bucket: 'unit-bucket',
@@ -362,6 +476,7 @@ describe('StorageObjectLedgerService available upload replay identity', () => {
     ...locator,
     expectedSize: 7n,
     expectedMime: 'text/plain',
+    unboundExpiresAt,
     resourceType: 'attachment',
     resourceId: 'attachment_available',
   };
@@ -418,9 +533,9 @@ describe('StorageObjectLedgerService available upload replay identity', () => {
       locator,
       expectedSize: 7,
       expectedMime: 'text/plain',
-      unboundExpiresAt: new Date('2026-07-19T08:00:00.000Z'),
+      unboundExpiresAt,
       requestHash,
-      eventKey: operation.eventKey,
+      eventKey: storageOwnerUploadEventKey('member', 'member_exact_replay', requestHash),
       ...overrides,
     };
   }
@@ -434,7 +549,6 @@ describe('StorageObjectLedgerService available upload replay identity', () => {
     expect(harness.tx.$queryRaw).toHaveBeenCalledTimes(1);
     expect(harness.operationFindFirst).toHaveBeenCalledWith({
       where: {
-        eventKey: operation.eventKey,
         storageObjectId: object.id,
         kind: 'attachment_upload_verify',
         requestHash,
@@ -443,6 +557,7 @@ describe('StorageObjectLedgerService available upload replay identity', () => {
       },
       orderBy: { createdAt: 'desc' },
     });
+    expect(operation.eventKey).toBe(storageOwnerlessUploadEventKey(requestHash));
     // Mutation killed: exact replay must not append a second operation to the bound object.
     expect(harness.operationCreateMany).not.toHaveBeenCalled();
   });
