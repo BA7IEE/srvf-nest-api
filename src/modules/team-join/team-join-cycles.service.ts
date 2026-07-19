@@ -53,6 +53,7 @@ export class TeamJoinCyclesService {
           year: dto.year,
           name: dto.name,
           statusCode: CYCLE_STATUS_CLOSED,
+          requiresInsurance: dto.requiresInsurance ?? false,
           openOrganizationIds: openOrganizationIds === null ? Prisma.DbNull : openOrganizationIds,
           maxTargetOrgs: dto.maxTargetOrgs ?? null,
         },
@@ -68,6 +69,7 @@ export class TeamJoinCyclesService {
           year: row.year,
           name: row.name,
           statusCode: row.statusCode,
+          requiresInsurance: row.requiresInsurance,
           openOrganizationCount: openOrganizationIds?.length ?? 0,
           maxTargetOrgs: row.maxTargetOrgs,
         },
@@ -114,10 +116,13 @@ export class TeamJoinCyclesService {
   ): Promise<TeamJoinCycleResponseDto> {
     await this.assertCanOrThrow(user, 'team-join-cycle.update.record');
     return this.prisma.$transaction(async (tx) => {
-      const existing = await this.findOrThrow(id, tx);
+      const existing = await this.lockApplicationsThenCycleForUpdate(id, tx);
 
       const data: Prisma.TeamJoinCycleUpdateInput = {};
       if (dto.name !== undefined) data.name = dto.name;
+      if (dto.requiresInsurance !== undefined) {
+        data.requiresInsurance = dto.requiresInsurance;
+      }
       if (dto.openOrganizationIds !== undefined) {
         const openOrganizationIds = await this.validateOpenOrganizationIds(
           dto.openOrganizationIds,
@@ -168,12 +173,14 @@ export class TeamJoinCyclesService {
         meta,
         before: {
           statusCode: existing.statusCode,
+          requiresInsurance: existing.requiresInsurance,
           name: existing.name,
           openOrganizationCount: ((existing.openOrganizationIds as string[] | null) ?? []).length,
           maxTargetOrgs: existing.maxTargetOrgs,
         },
         after: {
           statusCode: row.statusCode,
+          requiresInsurance: row.requiresInsurance,
           name: row.name,
           openOrganizationCount: ((row.openOrganizationIds as string[] | null) ?? []).length,
           maxTargetOrgs: row.maxTargetOrgs,
@@ -187,6 +194,37 @@ export class TeamJoinCyclesService {
   private async findOrThrow(id: string, client: PrismaService | Prisma.TransactionClient) {
     const row = await client.teamJoinCycle.findFirst({ where: { id, deletedAt: null } });
     if (!row) {
+      throw new BizException(BizCode.TEAM_JOIN_CYCLE_NOT_FOUND);
+    }
+    return row;
+  }
+
+  private async lockApplicationsThenCycleForUpdate(
+    id: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<TeamJoinCycle> {
+    // 与 final join 的 Application→Cycle 根锁序同向。稳定锁住本轮全部 live application，
+    // 再锁并重读 cycle，避免 requiresInsurance 更新与最终消费形成反向锁边或读到旧 flag。
+    await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id"
+      FROM "team_join_applications"
+      WHERE "cycleId" = ${id}
+        AND "deletedAt" IS NULL
+      ORDER BY "id" ASC
+      FOR UPDATE
+    `);
+    const lockedCycles = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id"
+      FROM "team_join_cycles"
+      WHERE "id" = ${id}
+        AND "deletedAt" IS NULL
+      FOR UPDATE
+    `);
+    if (!lockedCycles[0]) {
+      throw new BizException(BizCode.TEAM_JOIN_CYCLE_NOT_FOUND);
+    }
+    const row = await tx.teamJoinCycle.findUnique({ where: { id } });
+    if (!row || row.deletedAt !== null) {
       throw new BizException(BizCode.TEAM_JOIN_CYCLE_NOT_FOUND);
     }
     return row;
@@ -217,6 +255,7 @@ export class TeamJoinCyclesService {
       year: row.year,
       name: row.name,
       statusCode: row.statusCode,
+      requiresInsurance: row.requiresInsurance,
       openedAt: row.openedAt,
       closedAt: row.closedAt,
       openOrganizationIds: (row.openOrganizationIds as string[] | null) ?? null,

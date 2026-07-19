@@ -70,6 +70,16 @@ docker run --rm -p 3000:3000 \
 - 应用 runner 镜像不保证包含 Prisma CLI(runner 阶段已裁掉 devDependencies)。如需在容器环境执行迁移,应使用 CI/CD 的源码工作区(直接 `pnpm prisma:deploy`),或单独构建 migrator 镜像
 - 不在容器启动时自动 migrate 的原因:连库失败会触发反复重启(K8s rollback 行为不可控);多副本同时启动会让多个 `migrate deploy` 并发,Prisma migration_lock 不保证安全。详见 [`Dockerfile`](../Dockerfile) 文末注释
 
+### D-INSURANCE v3 PR3 single gate 上线与回退 SOP（本次未部署）
+
+> 本节只定义未来 production cutover；代码/PR 交付不表示已 release、deploy 或 enable。维护者“旧客户端都没上线”的确认不等于旧 server=0，后者必须在实际维护窗重新验证。
+
+1. **先铺同一 PR3 binary、显式 false**：所有新实例必须显式设置 `INSURANCE_ENFORCEMENT_ENABLED=false`；production 缺失/空值/非法值会启动 fail-fast。确认健康检查、数据库连接及保险 focused smoke 全绿，期间不得启动 true 实例承接流量。
+2. **停相关写并排空**：暂停 App 自购保险 PATCH/DELETE、Activity 报名、Team Join final join 与 Cycle 保险 flag 更新入口；等待所有 in-flight 事务结束。下线全部旧 binary，按实例/连接/流量证据确认旧 server=0，不能用客户端未上线代替。
+3. **建立全绿 true 池后原子切流**：以同一 PR3 binary、显式 true 启动完整新池，先在不承接用户写流量时完成 readiness；随后一次性把流量从已排空的 false 池切到全绿 true 池。任何时刻都禁止 true/false 或旧/新 binary 混合承接相关写。
+4. **切后验证再恢复写**：确认缺失/null/空白 expectedVersion→40000 且零写/审计、stale→26011、活动 26030、入队 26031、成功路径恰一 evidence 与 rollback smoke 后，才恢复相关写并持续观察错误率、锁等待与 40P01。
+5. **回退只回同 binary false**：异常时再次停相关写，排空 true 事务；用同一 PR3 binary 的显式 false 完整替换/切回，确认所有承流实例同档且无 true/旧 binary 后才恢复写。不得在相关写继续流入时改档，也不得用 true/false 混跑作为渐进回退。
+
 ### D-Throttle 部署、观测与回退
 
 1. **先 migration，后应用副本**：先审查并执行 `20260718090000_postgresql_throttler_buckets`，确认 migration 总数 56、无 pending；再启动使用 PostgreSQL storage 的应用。表未就绪时启动新代码会按设计 fail-closed 为 50000。

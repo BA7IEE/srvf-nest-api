@@ -151,6 +151,7 @@ export class TeamJoinApplicationsAdminController {
     BizCode.TEAM_JOIN_MEMBER_ALREADY_ENROLLED,
     BizCode.TEAM_JOIN_GATES_NOT_SATISFIED,
     BizCode.TEAM_JOIN_DEPARTMENT_NOT_ELIGIBLE,
+    BizCode.TEAM_JOIN_INSURANCE_REQUIRED,
   )
   join(
     @Param('id') id: string,

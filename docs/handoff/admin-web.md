@@ -80,7 +80,7 @@
 | tab | 端点 | 状态 |
 |---|---|---|
 | 基本信息 | `GET /api/admin/v1/members/:id` | ✅ |
-| 证书 / 档案 / 紧急联系人 / 保险 | `GET /api/admin/v1/members/:id/{certificates,profile,emergency-contacts,insurances}`；保险审核见下方 PR2 兼容窗口 | ✅ |
+| 证书 / 档案 / 紧急联系人 / 保险 | `GET /api/admin/v1/members/:id/{certificates,profile,emergency-contacts,insurances}`；保险审核与 PR3 gate 见下方 | ✅ |
 | **组织归属(memberships)** — 主/兼/临时/支援多归属 + 任期 | `GET/POST .../members/:id/memberships` · `PATCH/DELETE .../members/:id/memberships/:id`(**终态 scoped-authz PR2**,已发 main)| ✅(旧 `/department` 单部门面 deprecated,见下备注)|
 | **任职(position-assignments)** — 该队员在组织体系内担任的职务,含撤销历史 | `GET .../members/:id/position-assignments`(**终态 scoped-authz PR4**,已发 main;含 ACTIVE/REVOKED 全量,任命/撤销动作在组织架构侧发起,见 §2.6)| ✅ |
 | 活动履历 / 考勤记录 / 参与汇总 / 贡献值 | `GET .../members/:id/registrations?statusCode=` · `GET .../members/:id/attendance-records` · `GET .../members/:id/participation-summary` · `GET .../members/:id/contribution-summary` | ✅ |
@@ -89,9 +89,11 @@
 
 > **新增 `participation-summary`** 把 approved-only 的 `totalServiceHours` / distinct `activityCount` / `recordCount` 与生涯 capped `contributionPoints` 合成一个卡片 DTO；贡献字段和旧 `contribution-summary` 都调用同一 `computeCappedContribution(memberId, null)`，可做等值迁移但旧端点保留。该个人端点刻意不返回 no-show。
 
-> **自购保险审核(D-INSURANCE v3 PR2 compatibility)**：保险列表/审核成功响应 additive 增加 `reviewStatusCode`(`pending|verified|rejected`)、`version`、`reviewedAt`，不返回 reviewer 身份。仅对 `pending` 行展示“核验通过 / 驳回”动作；调用唯一新端点 `POST /api/admin/v1/members/:memberId/insurances/:insuranceId/review`，body **只能**是 `{decision:'verified'|'rejected',expectedVersion:number}`，`expectedVersion` 永远必填，不得设计 note/reason 输入。权限码为 `member-insurance.review.record`。`26011` 表示版本冲突：刷新该行、重新展示当前状态并由用户确认后再提交；`26012` 表示已非 pending，刷新后关闭审核动作。审核响应的新 `version` 必须写回前端状态。
+> **自购保险审核(D-INSURANCE v3 PR3 cutover)**：保险列表/审核成功响应包含 `reviewStatusCode`(`pending|verified|rejected`)、`version`、`reviewedAt`，不返回 reviewer 身份。仅对 `pending` 行展示“核验通过 / 驳回”动作；调用唯一 review 端点 `POST /api/admin/v1/members/:memberId/insurances/:insuranceId/review`，body **只能**是 `{decision:'verified'|'rejected',expectedVersion:number}`，`expectedVersion` 永远必填，不得设计 note/reason 输入。权限码仍为 `member-insurance.review.record`。`26011` 表示版本/并发冲突：刷新该行、重新展示当前状态并由用户确认后再提交；`26012` 表示已非 pending，刷新后关闭审核动作。审核响应的新 `version` 必须写回前端状态。
 >
-> **PR2 风险与 PR3 gate**：App PATCH/DELETE 在 PR2 暂时仍允许旧客户端缺 `expectedVersion`，Admin review 从出现起即 required；现有活动/队保 consumer 仍按旧语义，不读审核态、不生成 evidence，`TeamJoinCycle.requiresInsurance` 仍不生效，因此本 PR **不宣称资格风险关闭**。PR3 才会在单 gate 切 App required CAS、verified-only、evidence 与 Team Join，缺版本将返 `40000` 且 0 write。进入 PR3 前须归档：① Admin release SHA/build id；② 抓包/自动化证明 review 始终携带列表返回的当前 `expectedVersion`；③ 一次带版本成功审核与一次 `26011 → 刷新 → 用户确认 → 重试` smoke；④ App release/build id 及 PATCH/DELETE 版本回传证据；⑤ 服务端旧实例数为 0、`insurance_expected_version_present` 可查询、missing 次数与受影响客户端版本已知。App 侧细节见 [`miniapp.md §1.2`](miniapp.md)。
+> **单 gate 与 Team Join final join**：`Create/UpdateTeamJoinCycleDto` 可配置 `requiresInsurance`（create 缺省 false），response 始终回显。只有 `INSURANCE_ENFORCEMENT_ENABLED=true && cycle.requiresInsurance=true` 时，admin final join 才按 verified self → live team policy coverage 固定优先级校验入队北京日，并在根事务生成绑定 application 的恰一条最小 evidence；无来源返 `26031`（“本轮入队要求保险,当前队员无覆盖入队日期的有效保险,无法入队”），不得复用活动的 `26030`。gate=false 时字段仍可配置/展示，但不查资格、不写 evidence；活动保险失败继续 `26030`。
+>
+> **rollout 边界**：维护者于 2026-07-19 逐字确认“旧客户端都没上线，放心操作执行”，这只解除客户端兼容等待，**不代表旧 server=0 已验证**。本 PR 不 release/deploy/启用；production 配置必须显式 true/false，切 true 前先 drain 旧 server/旧事务，且整个 fleet 必须同档位，禁止 true/false 混跑。App expectedVersion 与活动 consumer 细节见 [`miniapp.md §1.2`](miniapp.md)。
 
 > **v0.49.0 队员轴 scoped-authz 已接通**:members 列表/options 只返回调用者可见组织树内、具有 active **PRIMARY** membership 的队员；SECONDARY/TEMPORARY/SUPPORT 不扩大鉴权范围。显式 `organizationId` + `includeDescendants` 是用户筛选条件，服务端会再与鉴权范围求交，绝不越界。队员 detail/全部写动作、证书、档案、紧急联系人、个人保险以及本节三条跨轴查询都对 member/resource ref 重做 authz 判定：范围外 detail/写返 `30100`；有读码但有效范围为空时列表返回 200 空集。队长/部长沿 `org-admin` 可读可管本树，组长沿 `group-manager` 管本组；副职 `org-readonly`/`group-readonly` 与分管 `org-supervisor` 只读，写动作恒 `30100`。敏感明文码仍不随派生角色下放。
 

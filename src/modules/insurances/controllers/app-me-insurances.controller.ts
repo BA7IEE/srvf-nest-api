@@ -81,7 +81,7 @@ export class AppMeInsurancesController {
   @Patch(':id')
   @ApiOperation({
     summary:
-      '部分更新自购保险(PR2 expectedVersion 可选;显式旧版本 26011;实质变更重置审核为 pending;等值为空操作) [auth]',
+      '部分更新自购保险(expectedVersion 必填;旧版本 26011;实质变更重置审核为 pending;等值为空操作) [auth]',
   })
   @ApiWrappedOkResponse(AppMyInsuranceDto)
   @ApiBizErrorResponse(
@@ -103,8 +103,7 @@ export class AppMeInsurancesController {
 
   @Delete(':id')
   @ApiOperation({
-    summary:
-      '删除自购保险(软删;PR2 expectedVersion query 可选;显式旧版本 26011;保留原审核结论) [auth]',
+    summary: '删除自购保险(软删;expectedVersion query 必填;旧版本 26011;保留原审核结论) [auth]',
   })
   @ApiWrappedOkResponse(AppMyInsuranceDto)
   @ApiBizErrorResponse(

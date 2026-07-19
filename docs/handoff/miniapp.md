@@ -51,13 +51,13 @@
 > **H5 链失败码**:验码错/过期统一 `24010`;token 无效/过期/已用 `28050`;无 open 轮 `28030`;换微信撞他人 `28051`;无报名 `28002`。
 > **⚠️ S5 语义变(v0.31.0)**:`GET /api/app/v1/me`(及任何回带 `Member.gradeCode` 的 app 出参)对**未入队志愿者**现返 `gradeCode='volunteer'`(S5 前恒 `null`)。前端**勿再用 `gradeCode==null` 等价"志愿者/未入队"**;"是否正式队员"应判 `gradeCode ∈ level-1..7`。历史(S5 前)发号的志愿者仍为 `null`,故"未入队志愿者"= `gradeCode ∈ {null, 'volunteer'}`。
 
-### 1.2 自购保险版本兼容窗口(D-INSURANCE v3 PR2)
+### 1.2 自购保险 PR3 cutover 契约(D-INSURANCE v3)
 
 - `app/v1/me/insurances` 的保险响应 additive 增加 `reviewStatusCode`(`pending|verified|rejected`)、`version`、`reviewedAt`;不返回 reviewer 身份。客户端应保存每次成功响应中的新 `version`。
-- `PATCH /api/app/v1/me/insurances/:id` 在 body 回传 `expectedVersion`;`DELETE` 同路径在 query 回传 `expectedVersion`。PR2 为旧客户端保留 optional 兼容,但新 build 必须开始传：显式旧版本返 `26011`，先刷新该保险、保留用户输入并让用户确认后再重试，禁止拿旧版本盲重放。
+- `PATCH /api/app/v1/me/insurances/:id` 在 body 回传 `expectedVersion`;`DELETE` 同路径在 query 回传 `expectedVersion`。OpenAPI/客户端契约自 PR3 起均为**必填**；single gate=true 时缺失、`null`、空串或纯空白统一 `40000`，并保证 0 mutation/0 audit。显式旧版本仍返 `26011`：先刷新该保险、保留用户输入并让用户确认后再重试，禁止拿旧版本盲重放。
 - 实质 PATCH 会 `version + 1` 并把审核态重置为 `pending`、清空审核责任时间；空 body、仅 `expectedVersion`、trim 后相同字符串或北京 date-only 相同都是真 no-op，`version/status/updatedAt` 不变。DELETE 会 `version + 1`，但保留删除前审核态与审核责任时间。
-- **PR2 风险仍未关闭**：缺 `expectedVersion` 仍可写；资格 consumer 仍以任意 live 本人保险或既有 live 队保覆盖满足活动要求，不读取审核态/证据；不生成 evidence，`TeamJoinCycle.requiresInsurance` 仍不生效。PR3 才会在单一 gate 同时切 required CAS、verified-only、evidence 与 Team Join；届时缺版本将按 DTO 错误 `40000` 且 0 write。
-- **进入 PR3 前的 App 证据模板**：记录 App release/build id；抓包或自动化证明确认 PATCH body、DELETE query 都传当前 `expectedVersion`；提供一次带版本成功写和一次 `26011 → 刷新 → 用户确认 → 重试` smoke；服务端同时证明旧 server 实例数为 0、`insurance_expected_version_present` 可查询、missing 次数及受影响客户端版本已知。Admin 与全局 gate 证据见 [`admin-web.md §2.2`](admin-web.md)。
+- single gate=true 后，`requiresInsurance=true` 的活动只接受覆盖完整北京日区间的 **verified 自购保险**，否则再尝试 live 团队保单覆盖；pending/rejected/软删/日期不覆盖都返既有 `26030`。报名成功会在同一事务生成恰一条最小 evidence，前端无新字段可消费；evidence 不保存保险公司、保单号、note/reason、图片/key/URL。
+- gate=false 保留 PR2 运行时兼容（缺版本仍可接受、活动 consumer 旧语义、0 evidence）；这只是 rollout 档位，不改变客户端“expectedVersion 必填”的终态契约。维护者于 2026-07-19 仅确认“旧客户端都没上线，放心操作执行”，**没有验证旧 server=0**；本 PR 不部署/启用。production 切 true 前必须 drain 全部旧 server/旧事务，并确保 fleet 不出现 true/false 混跑。Admin final join 与配置细节见 [`admin-web.md §2.2`](admin-web.md)。
 
 ### 2.1 活动 GPS 自助打卡(F2)
 

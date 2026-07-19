@@ -899,7 +899,11 @@ export class ActivityRegistrationsService {
       await this.assertNoActiveRegistration(activityId, dto.memberId, tx);
       // 保险 T3 报名门槛(admin 代报名同样拦截,C015 无旁路;requiresInsurance=false 零查询,
       // 既有断言零回归;评审稿 §4 / E-10:位于 assertNoActiveRegistration 之后、create 之前)
-      await this.insuranceRequirement.assertMemberInsuredForActivity(dto.memberId, act, tx);
+      const insuranceEligibility = await this.insuranceRequirement.requireForActivityRegistration(
+        dto.memberId,
+        act,
+        tx,
+      );
       const initialStatusCode = await this.resolveCreateStatusCode(
         activityId,
         activityPosition?.id ?? null,
@@ -919,6 +923,13 @@ export class ActivityRegistrationsService {
           },
           select: registrationSafeSelect,
         }),
+      );
+
+      await this.insuranceRequirement.createActivityRegistrationEvidence(
+        created.id,
+        dto.memberId,
+        insuranceEligibility,
+        tx,
       );
 
       await this.registrationAuditRecorder.logCreate({
@@ -961,7 +972,11 @@ export class ActivityRegistrationsService {
       );
       await this.assertNoActiveRegistration(activityId, memberId, tx);
       // 保险 T3 报名门槛(自助路径;App createMyForApp 薄壳经此同样拦截;评审稿 §4 / E-10)
-      await this.insuranceRequirement.assertMemberInsuredForActivity(memberId, act, tx);
+      const insuranceEligibility = await this.insuranceRequirement.requireForActivityRegistration(
+        memberId,
+        act,
+        tx,
+      );
       const initialStatusCode = await this.resolveCreateStatusCode(
         activityId,
         activityPosition?.id ?? null,
@@ -981,6 +996,13 @@ export class ActivityRegistrationsService {
           },
           select: registrationSafeSelect,
         }),
+      );
+
+      await this.insuranceRequirement.createActivityRegistrationEvidence(
+        created.id,
+        memberId,
+        insuranceEligibility,
+        tx,
       );
 
       await this.registrationAuditRecorder.logCreate({

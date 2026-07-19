@@ -124,6 +124,27 @@ export interface AttendanceConfig {
   feedbackWindowDays: number;
 }
 
+// D-INSURANCE v3 PR3 single cutover gate. This one switch owns the App CAS
+// requirement, verified-only consumers, and both evidence write paths so a
+// process can never enter a mixed enforcement state.
+export interface InsuranceConfig {
+  enforcementEnabled: boolean;
+}
+
+export function parseInsuranceEnforcementEnabled(raw: string | undefined, env: AppEnv): boolean {
+  if (raw === undefined || raw === '') {
+    if (env === 'production') {
+      throw new Error(
+        'INSURANCE_ENFORCEMENT_ENABLED 不能为空(production 必须显式设置 true 或 false)',
+      );
+    }
+    return false;
+  }
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  throw new Error('INSURANCE_ENFORCEMENT_ENABLED 无效,必须严格为小写 true 或 false');
+}
+
 // V2.x C-7.5 Provider 选型实施 PR #6:storage 凭证加密 key(沿 §6.6.1 + Q23 例外)。
 // AES-256-GCM 需 32 字节 key;运行时由 StorageCryptoService 派生(scrypt)。
 // production 严禁默认值 / 严禁留空(沿 v1 §14 JWT_SECRET 范式)。
@@ -339,6 +360,7 @@ export interface AppConfig {
   passwordChangeThrottle: PasswordChangeThrottleConfig;
   refreshThrottle: RefreshThrottleConfig;
   attendance: AttendanceConfig;
+  insurance: InsuranceConfig;
   storage: StorageConfig;
   sms: SmsConfig;
   wechat: WechatConfig;
@@ -377,6 +399,13 @@ export default registerAs('app', (): AppConfig => {
   const swaggerEnabled = !isProductionLike(env) || process.env.ENABLE_SWAGGER === 'true';
 
   const logLevel = parseLogLevel(process.env.LOG_LEVEL, env);
+
+  const insurance: InsuranceConfig = {
+    enforcementEnabled: parseInsuranceEnforcementEnabled(
+      process.env.INSURANCE_ENFORCEMENT_ENABLED,
+      env,
+    ),
+  };
 
   const loginThrottle: LoginThrottleConfig = {
     limit: parsePositiveInt(process.env.LOGIN_THROTTLE_LIMIT, 5, 'LOGIN_THROTTLE_LIMIT', {
@@ -598,6 +627,7 @@ export default registerAs('app', (): AppConfig => {
     passwordChangeThrottle,
     refreshThrottle,
     attendance,
+    insurance,
     storage,
     sms,
     wechat,

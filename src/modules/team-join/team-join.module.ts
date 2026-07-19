@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { DatabaseModule } from '../../database/database.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { InsurancesModule } from '../insurances/insurances.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { UsersModule } from '../users/users.module';
@@ -23,6 +24,7 @@ import { TeamJoinEnrollmentService } from './team-join-enrollment.service';
     DatabaseModule,
     PermissionsModule,
     AuditLogsModule,
+    InsurancesModule,
     UsersModule,
     NotificationsModule, // durable outbox producer: 入队业务与 targeted intent 同事务
   ],

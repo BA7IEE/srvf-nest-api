@@ -18,7 +18,7 @@
 | Controller | 74 |
 | Endpoint | 365 |
 | Migration | 61 |
-| BizCode | 257 |
+| BizCode | 258 |
 | 权限码 | 207 |
 | AuditLogEvent | 123 |
 | 内建角色 | 9 |
@@ -35,7 +35,7 @@
 - **贡献规则 ACTIVE 槽位**:`ContributionRule` 以 `activityTypeCode × attendanceRoleCode` 为未软删 ACTIVE partial unique；`durationThreshold` 仅是单规则内部档位参数。create/激活在事务内预查，真实并发由 DB unique + 23002 收口；calculator 若读到漂移重复 pair 立即 fail-closed，不按创建顺序任取。
 - **通知 durable outbox**:eventKey 幂等，PG `SKIP LOCKED` + lease/fencing；marker/状态/audit 与 intent 同事务，provider 事务外 at-least-once，失败退避至 dead；cron 仅 enqueue。
 - **Attachment storage Phase1**:Attachment key namespace 已接 durable ledger；locator 固定、凭证取当前 settings；旧 binary expand 未加 `Attachment.key` FK，repo-wide closure 未完成；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)。
-- **保险 v3 PR2 compatibility**:唯一 Admin review + required expectedVersion；App PATCH/DELETE 保留 optional CAS，响应增 reviewStatusCode/version/reviewedAt；consumer 仍认任意 live self/team，不生成 evidence，Team Join flag dormant，风险待 PR3。
+- **保险 v3 PR3 可切换 cutover**:单 gate 控制 App CAS、verified-only、Activity/Team Join evidence 与入队闸；true 时缺/null/空白 expectedVersion→40000 且零写/审计，stale 仍 26011。Cycle 保险 flag 可配置/返回，仅 final join 以 26031 拒绝。非生产默认 false、production 必须显式；本次未部署，启用须 drain 旧 server 且禁混档。
 - **敏感读审计(C-2,2026-07-19)**:`AuditLogEvent` 123，placeholder 退役；管理端敏感读鉴权/查询后、CSV 交 generator 前、签名 URL 调 provider 前 fail-closed 落库。extra 仅 operation/字段名/maskLevel/计数，禁 PII/filter 值/key/URL。
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
@@ -43,7 +43,7 @@
 - 新 schema / migration / Permission seed / Role 扩展;**第 3 个及以后 cron**(终态恰 2);LLM / vector / Redis / queue / 多租户
 - 延后模型:events / event_participants / member_profiles 扩展敏感字段(沿 V2 红线 §4.3)
 - scoped 可见性余面(users / content / notifications / audit-logs / attachment self-scope);Recruitment 与 team-join 维持中央流程 + 显式授权,不入职务派生
-- 招新后续(退队 / 晋升 / 多部门归属 / 级别版本化 / 证书自动核验 gate / 部门级细分);保险 PR3–4 暂不启动、等待客户端与旧 server 证据(PR3 前风险未关闭)，以及理赔/保单图/App 展示;CMS 后续(已读回执 / 评论点赞 / 定时发布 / UV / 部门级权限)
+- 招新后续(退队 / 晋升 / 多部门归属 / 级别版本化 / 证书自动核验 gate / 部门级细分);保险 PR3 enable/deploy(drain 旧 server、禁混档)、PR4 约束及理赔/保单图/App 展示;CMS 后续(已读回执 / 评论点赞 / 定时发布 / UV / 部门级权限)
 - Slow-5(入队同意书 / 退队清理 N 值)与 Slow-7(uploadToken 黑名单等 storage 深化)— 等业务 / 真实反馈
 - 运维侧真实通道(COS / 微信小程序 / 腾讯云 OCR)— `docs/ops/` SOP 就绪,维护者执行
 - god-service 重开拆分(P1-4 已收口,需 architecture-boundary §6 新触发 + 立项);repository 抽象层;未立项的 controller path / snapshot 变更
@@ -55,6 +55,7 @@
 | 等级 | 债务 |
 |---|---|
 | P1 | 前端联调剩运维侧 P0-H 演练 + P0-I 排错 SOP(系统侧无动作) |
+| P1 | 保险 PR3 未启用；旧 server=0 未验证，须 drain/同档；PR4 约束未落 |
 | P1 | P1-22 专业队 gate 配置化;P1-23 isForeigner 历史列改名(对外已用 isNonMainlandDocument) |
 | P2 | scoped 余面(§3);god-service 体量观察(codemap 实时口径);v0.44 接受项(#8 / #10 / #19 / #20#21 已收口 notifications-owned + 招新/入队，participation producer 待接);单测占比刻意低(e2e 为主);Mixed 存量 2;snapshot 用 diff 勿整读 |
 | P3 | SMS / 招新脱敏 retention 手动 SOP(刻意);28003 同轮枚举面(v1 接受);首轮 review 接受 / 延后残项(F7/F8/F13/F18 等)在 NEXT_TASKS |

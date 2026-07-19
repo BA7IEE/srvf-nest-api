@@ -62,6 +62,14 @@ export class CreateTeamJoinCycleDto {
   name!: string;
 
   @ApiPropertyOptional({
+    default: false,
+    description: '本轮 final join 是否要求保险(single enforcement gate 开启后生效)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  requiresInsurance?: boolean;
+
+  @ApiPropertyOptional({
     type: [String],
     nullable: true,
     maxItems: OPEN_ORGANIZATION_IDS_MAX,
@@ -103,6 +111,13 @@ export class UpdateTeamJoinCycleDto {
   name?: string;
 
   @ApiPropertyOptional({
+    description: '本轮 final join 是否要求保险(single enforcement gate 开启后生效)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  requiresInsurance?: boolean;
+
+  @ApiPropertyOptional({
     type: [String],
     nullable: true,
     maxItems: OPEN_ORGANIZATION_IDS_MAX,
@@ -134,6 +149,7 @@ export class TeamJoinCycleResponseDto {
   @ApiProperty() year!: number;
   @ApiProperty() name!: string;
   @ApiProperty() statusCode!: string;
+  @ApiProperty() requiresInsurance!: boolean;
   @ApiPropertyOptional({ nullable: true }) openedAt!: Date | null;
   @ApiPropertyOptional({ nullable: true }) closedAt!: Date | null;
   @ApiPropertyOptional({ type: [String], nullable: true }) openOrganizationIds!: string[] | null;

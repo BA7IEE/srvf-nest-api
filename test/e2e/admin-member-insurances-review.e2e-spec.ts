@@ -326,6 +326,17 @@ describe('POST /api/admin/v1/members/:memberId/insurances/:insuranceId/review', 
       .send(body);
   }
 
+  function deleteVia(
+    targetApp: INestApplication,
+    auth: string,
+    insuranceId: string,
+    expectedVersion: number,
+  ): request.Test {
+    return request(httpServer(targetApp))
+      .delete(`/api/app/v1/me/insurances/${insuranceId}?expectedVersion=${expectedVersion}`)
+      .set('Authorization', auth);
+  }
+
   it('DTO 白名单:expectedVersion 必填 Int；decision 仅 verified|rejected；note/reason 禁止', async () => {
     const member = await createMember();
     const insurance = await createInsurance(member.id);
@@ -695,6 +706,118 @@ describe('POST /api/admin/v1/members/:memberId/insurances/:insuranceId/review', 
     expect(
       await prisma.auditLog.count({
         where: { event: 'member-insurance.update.self', resourceId: insurance.id },
+      }),
+    ).toBe(0);
+  });
+
+  it('双 Nest App DELETE→review：delete 持保险锁时 review NOWAIT 快速 26011', async () => {
+    const owner = await setupLinkedAppUser('insurance-review-delete-winner');
+    const insurance = await createInsurance(owner.memberId);
+    const barrier = pauseAuditInTransaction(
+      auditLogsB,
+      'member-insurance.delete.self',
+      insurance.id,
+    );
+    const deletePromise = deleteVia(appB, owner.authHeader, insurance.id, 0).then(
+      (response) => response,
+    );
+    let reviewPromise: Promise<Response> | undefined;
+    let reviewResponse: Response | undefined;
+
+    try {
+      const deletePid = await withTimeout(barrier.reached, 'App DELETE audit barrier');
+      expect(await waitForPausedTransaction(prisma, deletePid)).toMatchObject({
+        pid: deletePid,
+        state: 'idle in transaction',
+        waitEventType: 'Client',
+        waitEvent: 'ClientRead',
+      });
+
+      reviewPromise = reviewVia(appA, reviewerAuthA, owner.memberId, insurance.id, {
+        decision: 'verified',
+        expectedVersion: 0,
+      }).then((response) => response);
+      reviewResponse = await withTimeout(reviewPromise, 'delete versus review NOWAIT response');
+      expectBizError(reviewResponse, BizCode.MEMBER_INSURANCE_VERSION_CONFLICT);
+    } finally {
+      barrier.release();
+      await Promise.allSettled([
+        deletePromise,
+        ...(reviewPromise === undefined ? [] : [reviewPromise]),
+      ]);
+      barrier.restore();
+    }
+
+    expect((await deletePromise).status).toBe(200);
+    const row = await prisma.memberInsurance.findUniqueOrThrow({ where: { id: insurance.id } });
+    expect(row.deletedAt).not.toBeNull();
+    expect(row.version).toBe(1);
+    expect(
+      await prisma.auditLog.count({
+        where: { event: 'member-insurance.delete.self', resourceId: insurance.id },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.auditLog.count({
+        where: { event: 'member-insurance.review', resourceId: insurance.id },
+      }),
+    ).toBe(0);
+  });
+
+  it('双 Nest review→App DELETE：DELETE 等待保险锁后重读 stale=26011', async () => {
+    const owner = await setupLinkedAppUser('insurance-review-delete-loser');
+    const insurance = await createInsurance(owner.memberId);
+    const barrier = pauseAuditInTransaction(auditLogs, 'member-insurance.review', insurance.id);
+    const reviewPromise = reviewVia(appA, reviewerAuthA, owner.memberId, insurance.id, {
+      decision: 'verified',
+      expectedVersion: 0,
+    }).then((response) => response);
+    let deletePromise: Promise<Response> | undefined;
+
+    try {
+      const reviewPid = await withTimeout(barrier.reached, 'review before DELETE barrier');
+      expect(await waitForPausedTransaction(prismaB, reviewPid)).toMatchObject({
+        pid: reviewPid,
+        state: 'idle in transaction',
+        waitEventType: 'Client',
+        waitEvent: 'ClientRead',
+      });
+
+      deletePromise = deleteVia(appB, owner.authHeader, insurance.id, 0).then(
+        (response) => response,
+      );
+      const waiting = await waitForBlockedBackend(
+        prismaB,
+        reviewPid,
+        deletePromise,
+        '%FROM "member_insurances"%FOR UPDATE%',
+      );
+      expect(waiting.state).toBe('active');
+      expect(waiting.waitEventType).toBe('Lock');
+    } finally {
+      barrier.release();
+      await Promise.allSettled([
+        reviewPromise,
+        ...(deletePromise === undefined ? [] : [deletePromise]),
+      ]);
+      barrier.restore();
+    }
+
+    if (deletePromise === undefined) throw new Error('App DELETE contender was not started');
+    expect((await reviewPromise).status).toBe(200);
+    expectBizError(await deletePromise, BizCode.MEMBER_INSURANCE_VERSION_CONFLICT);
+    const row = await prisma.memberInsurance.findUniqueOrThrow({ where: { id: insurance.id } });
+    expect(row.deletedAt).toBeNull();
+    expect(row.reviewStatusCode).toBe('verified');
+    expect(row.version).toBe(1);
+    expect(
+      await prisma.auditLog.count({
+        where: { event: 'member-insurance.review', resourceId: insurance.id },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.auditLog.count({
+        where: { event: 'member-insurance.delete.self', resourceId: insurance.id },
       }),
     ).toBe(0);
   });
