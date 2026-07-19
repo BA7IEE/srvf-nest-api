@@ -964,6 +964,7 @@ export const BizCode = {
   //   统一 26001 防侧信道,沿 P2-5 findMy 范式,评审稿 E-14)
   // - 26004:唯一约束冲突(覆盖名单 partial unique 单加重复;P2002 兜底同码,镜像 21002)
   // - 26010:业务级输入校验(coverageStart > coverageEnd 跨字段;自购与队保单共用)
+  // - 26011-26012:自购保险 CAS / 审核状态冲突(D-INSURANCE v3 PR2)
   // - 26030:报名门槛(T3 实装 INSURANCE_REQUIRED;409 沿 20120/21030 报名业务态冲突家族)
   //
   // 不开的码(评审稿 §3.3 明确):
@@ -993,6 +994,16 @@ export const BizCode = {
     code: 26010,
     message: '起保日期不得晚于到期日期',
     httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  MEMBER_INSURANCE_VERSION_CONFLICT: {
+    code: 26011,
+    message: '保险记录已更新,请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  MEMBER_INSURANCE_REVIEW_STATE_INVALID: {
+    code: 26012,
+    message: '当前保险审核状态不允许重复审核',
+    httpStatus: HttpStatus.CONFLICT,
   },
   // T3 报名门槛(评审稿 §3.3 落点表;过期与无保险不细分,前端提示价值无差,E-8;
   // 409 沿 20120/21030 报名业务态冲突家族;requiresInsurance=false 活动零查询不触发)。

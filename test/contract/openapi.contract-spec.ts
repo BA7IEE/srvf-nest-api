@@ -105,9 +105,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/me/wechat'],
   ['put', '/api/app/v1/me/wechat'],
 
-  // 保险模块 T2(2026-06-13;insurance-module-review.md §3.2 端点 1-4):App 自助自购保险
+  // 保险模块 T2 + D-INSURANCE v3 PR2:App 自助自购保险
   // CRUD,self-scope 锁 currentUser.memberId 不接 RBAC(D-INS-3);无 :id 详情端点(E-14);
-  // 他人/不存在/已删统一 26001 防侧信道;新 BizCode 260xx 段 5 码(26030 门槛随 T3)。
+  // PR2 PATCH body / DELETE query expectedVersion 可选；显式 stale=26011；response additive
+  // reviewStatusCode/version/reviewedAt。PR3 才切 required，不提前改变 consumer。
   ['get', '/api/app/v1/me/insurances'],
   ['post', '/api/app/v1/me/insurances'],
   ['patch', '/api/app/v1/me/insurances/{id}'],
@@ -344,10 +345,11 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/members/{memberId}/certificates/{id}/verify'],
   ['patch', '/api/admin/v1/members/{memberId}/certificates/{id}/reject'],
 
-  // 保险模块 T2(2026-06-13;insurance-module-review.md §3.2 端点 5-14):队统一保单 CRUD +
+  // 保险模块 T2 + D-INSURANCE v3 PR2:队统一保单 CRUD +
   // 覆盖名单管理(单加/一键加幂等/移除)+ admin 查队员自购保险(read.other,镜像 certificates
   // N:1 子资源数组无分页)。判权全部 service 层 rbac.can(team-insurance-policy 6 码 +
-  // member-insurance.read.other),biz-admin 全绑(T1 seed)。
+  // member-insurance.read.other)。PR2 唯一新增 review route 走
+  // member-insurance.review.record，body 仅 decision + required expectedVersion。
   ['get', '/api/admin/v1/team-insurance-policies'],
   ['post', '/api/admin/v1/team-insurance-policies'],
   ['get', '/api/admin/v1/team-insurance-policies/{id}'],
@@ -358,6 +360,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/admin/v1/team-insurance-policies/{id}/members/add-all-active'],
   ['delete', '/api/admin/v1/team-insurance-policies/{id}/members/{memberId}'],
   ['get', '/api/admin/v1/members/{memberId}/insurances'],
+  ['post', '/api/admin/v1/members/{memberId}/insurances/{insuranceId}/review'],
   ['get', '/api/admin/v1/activities'],
   // F1/A6(admin-api-fe-integration-roadmap.md §4 A6)。
   ['get', '/api/admin/v1/activities/options'],
@@ -691,6 +694,12 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'LoginResponseDto',
   'HealthResponseDto',
   'PageResultDto',
+
+  // D-INSURANCE v3 PR2:App/Admin 独立出参 + optional/required CAS 入参。
+  'AppMyInsuranceDto',
+  'UpdateAppMeInsuranceDto',
+  'MemberInsuranceAdminResponseDto',
+  'ReviewMemberInsuranceDto',
 
   // V2 dictionaries (Step 3)
   'CreateDictTypeDto',
@@ -1269,8 +1278,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(item[method]?.responses ?? {}).length).toBeGreaterThan(0);
   });
 
-  it('Identity session P0 PR1 后路由足迹精确为 364', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(364);
+  it('D-INSURANCE v3 PR2 后路由足迹精确为 365', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(365);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

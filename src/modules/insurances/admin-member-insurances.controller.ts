@@ -1,9 +1,10 @@
-import { Controller, Get, Param, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
   ApiBizErrorResponse,
   ApiWrappedArrayResponse,
+  ApiWrappedOkResponse,
 } from '../../common/decorators/api-response.decorator';
 import {
   CurrentUser,
@@ -11,7 +12,7 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
-import { MemberInsuranceAdminResponseDto } from './insurances.dto';
+import { MemberInsuranceAdminResponseDto, ReviewMemberInsuranceDto } from './insurances.dto';
 import { MemberInsurancesService } from './member-insurances.service';
 
 // 保险模块 T2:admin 查队员自购保险 controller(2026-06-13)。
@@ -51,5 +52,36 @@ export class AdminMemberInsurancesController {
     @Req() req: Request,
   ): Promise<MemberInsuranceAdminResponseDto[]> {
     return this.service.listForMember(memberId, currentUser, this.buildAuditMeta(req));
+  }
+
+  @Post(':insuranceId/review')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '记录队员自购保险审核结论(expectedVersion 必填;仅 pending 可审) [rbac: member-insurance.review.record]',
+  })
+  @ApiWrappedOkResponse(MemberInsuranceAdminResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.MEMBER_INSURANCE_NOT_FOUND,
+    BizCode.MEMBER_INSURANCE_VERSION_CONFLICT,
+    BizCode.MEMBER_INSURANCE_REVIEW_STATE_INVALID,
+  )
+  review(
+    @Param('memberId') memberId: string,
+    @Param('insuranceId') insuranceId: string,
+    @Body() dto: ReviewMemberInsuranceDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<MemberInsuranceAdminResponseDto> {
+    return this.service.reviewForMember(
+      memberId,
+      insuranceId,
+      dto,
+      currentUser,
+      this.buildAuditMeta(req),
+    );
   }
 }

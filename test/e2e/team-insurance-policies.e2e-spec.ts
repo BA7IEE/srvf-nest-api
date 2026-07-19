@@ -415,6 +415,13 @@ describe('Admin team-insurance-policies + member insurances(保险 T2)', () => {
     expect(items).toHaveLength(1);
     expect(items[0].insurerName).toBe('平安保险');
     expect(items[0].memberId).toBe(member.id);
+    expect(items[0]).toMatchObject({
+      reviewStatusCode: 'pending',
+      version: 0,
+      reviewedAt: null,
+    });
+    expect(items[0]).not.toHaveProperty('reviewedByUserId');
+    expect(items[0]).not.toHaveProperty('reviewer');
 
     const resPlain = await request(httpServer(app))
       .get(`/api/admin/v1/members/${member.id}/insurances`)

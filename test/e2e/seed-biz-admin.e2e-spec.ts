@@ -20,13 +20,14 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // 2026-07-11 参与域生命周期收口⑤(v0.40.0):member.offboard.record +1(全绑 biz-admin)→ **80 码绑 77**。
 // 2026-07-11 招新可用性收口 F2/F3:recruitment-application +update.record/+promote.single(全绑)→ **82 码绑 79**。
 // 2026-07-11 十项收口刀D:emergency-contact.read.sensitive +1(全绑 biz-admin)→ **83 码绑 80**。
+// 2026-07-19 D-INSURANCE v3 PR2:member-insurance.review.record +1(全绑)→ **86 码绑 82**。
 // 沿冻结评审稿 docs/archive/reviews/slow4-rbac-business-face-review.md §5 + D-S4-7
 // + seed-attachment-permissions.e2e-spec.ts 子进程范式。
 //
 // 覆盖(评审稿 §5 验收项):
-// 1. 跑 seed 后存在 85 条业务面 permission(17 域,byModule 逐码一致)
+// 1. 跑 seed 后存在 86 条业务面 permission(17 域,byModule 逐码一致)
 // 2. 存在 biz-admin RbacRole(displayName / description 正确)
-// 3. biz-admin 绑定 81 条 RolePermission;member.delete.record 与终审/reopen 三码 **不**在绑定中
+// 3. biz-admin 绑定 82 条 RolePermission;member.delete.record 与终审/reopen 三码 **不**在绑定中
 // 4. 幂等补挂:seed 前已存在的 ADMIN 用户(含 DISABLED)跑 seed 后持有 biz-admin;
 //    SUPER_ADMIN / USER 不被挂;软删 ADMIN 不补挂(D-S4-7)
 // 5. 零变化项:ops-admin 绑定数(96;WECHAT T2 58→61 + 招新 T1 REALNAME settings 61→63 授权 true-up
@@ -126,7 +127,7 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   'attendance.final-approve.sheet',
   'attendance.final-reject.sheet',
   'attendance.reopen.sheet',
-  // 保险模块 +7(2026-06-13;评审稿 insurance-module-review.md §3.4,全绑无例外)
+  // 保险模块 +8(2026-06-13 基线 + D-INSURANCE v3 PR2 review.record,全绑无例外)
   'team-insurance-policy.read.record',
   'team-insurance-policy.create.record',
   'team-insurance-policy.update.record',
@@ -134,6 +135,7 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   'team-insurance-policy.add.member',
   'team-insurance-policy.remove.member',
   'member-insurance.read.other',
+  'member-insurance.review.record',
   // 招新一期 +5(2026-06-18;评审稿 recruitment-phase1-review.md §3.4,全绑无例外)
   'recruitment-cycle.read.record',
   'recruitment-cycle.create.record',
@@ -184,7 +186,7 @@ const EXPECTED_BIZ_PERMISSION_CODES = [
   // membership.{list,read,set,end} 4 条 ops-admin 管理面码,module 同为 'membership' 但归业务面 seed)
   'membership.transfer.record',
 ] as const;
-const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 85(v0.47.0 +reopen)
+const EXPECTED_BIZ_PERMISSION_COUNT = EXPECTED_BIZ_PERMISSION_CODES.length; // 86(D-INSURANCE PR2 +review.record)
 
 // D1=A 镜像:不绑 biz-admin(评审稿 §6)
 const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
@@ -196,7 +198,7 @@ const BIZ_ADMIN_UNBOUND_CODES: ReadonlyArray<string> = [
   'attendance.final-reject.sheet',
   'attendance.reopen.sheet',
 ];
-const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 4; // 81(85 - 4 excluded)
+const EXPECTED_BIZ_ADMIN_BINDING_COUNT = EXPECTED_BIZ_PERMISSION_COUNT - 4; // 82(86 - 4 excluded)
 
 // 零变化基线(评审稿 §6):本断言意图 = 业务面 seed 不改 ops-admin / member 绑定;
 // 基线数跟随 ops-admin 当前合法总数(2026-06-12 WECHAT T2 +3 → 58→61;
@@ -242,7 +244,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     await resetDb(app);
   });
 
-  it('1. 空 db → seed 跑完后 85 条业务面 permission 全部存在(17 域分布一致)', async () => {
+  it('1. 空 db → seed 跑完后 86 条业务面 permission 全部存在(17 域分布一致)', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-1' });
     expect(result.code).toBe(0);
 
@@ -266,7 +268,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
       'activity-registration': 6,
       attendance: 9,
       'team-insurance-policy': 6,
-      'member-insurance': 1,
+      'member-insurance': 2,
       'recruitment-cycle': 3,
       'recruitment-application': 9, // 十三项收口刀G +review.certificate(2026-07-12)
       'team-join-cycle': 3,
@@ -278,7 +280,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     });
   });
 
-  it('2 + 3. biz-admin RbacRole 存在;绑定恰 81 条;member.delete.record 与终审/reopen 三码不在绑定中', async () => {
+  it('2 + 3. biz-admin RbacRole 存在;绑定恰 82 条且含 insurance review;保留四码不绑定', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-2' });
     expect(result.code).toBe(0);
 
@@ -302,6 +304,7 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
     for (const code of BIZ_ADMIN_UNBOUND_CODES) {
       expect(boundCodes).not.toContain(code);
     }
+    expect(boundCodes).toContain('member-insurance.review.record');
     expect(boundCodes).toEqual(
       [...EXPECTED_BIZ_PERMISSION_CODES].filter((c) => !BIZ_ADMIN_UNBOUND_CODES.includes(c)).sort(),
     );

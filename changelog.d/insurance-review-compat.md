@@ -1,0 +1,1 @@
+- 增加队员自购保险的版本化审核与 PR2 客户端兼容窗口：Admin 以必填 expectedVersion 记录 verified/rejected，App 自助修改/删除支持可选 CAS、等值 no-op 与审核态复位；现有资格 consumer 继续保持旧语义，verified-only、evidence 与 Team Join gate 留待 PR3。

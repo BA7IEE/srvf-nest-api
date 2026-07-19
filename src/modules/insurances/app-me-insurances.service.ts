@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -25,8 +25,8 @@ import { UpdateAppMeInsuranceDto } from './dto/app/update-app-me-insurance.dto';
 //   3. update/delete 按 id + 本人 memberId 查;他人 / 不存在 / 已删统一
 //      MEMBER_INSURANCE_NOT_FOUND=26001 防侧信道(E-14)。
 // 不接 RBAC(goal §1 拍板;入口仅全局 JwtAuthGuard)。
-// 自报即可,v1 无核验(D-INS-5);写操作进 audit_logs(member-insurance.{create,update,delete}.self,
-// E-9);读不写 audit(D-P2-7-16)。
+// PR2 已开放审核/CAS compatibility，但 consumer 仍沿「任意 live self」旧语义；
+// 写操作进 audit_logs(member-insurance.{create,update,delete}.self,E-9)，读不写 audit(D-P2-7-16)。
 // 日期:normalizeDateOnly 归一北京日;coverageStart > coverageEnd → 26010(E-18)。
 
 const appSelect = {
@@ -36,6 +36,9 @@ const appSelect = {
   coverageStart: true,
   coverageEnd: true,
   createdAt: true,
+  reviewStatusCode: true,
+  version: true,
+  reviewedAt: true,
 } as const satisfies Prisma.MemberInsuranceSelect;
 
 type AppInsuranceRow = Prisma.MemberInsuranceGetPayload<{ select: typeof appSelect }>;
@@ -44,6 +47,8 @@ type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
 export class AppMeInsurancesService {
+  private readonly logger = new Logger(AppMeInsurancesService.name);
+
   constructor(
     private readonly appIdentity: AppIdentityResolver,
     private readonly prisma: PrismaService,
@@ -60,18 +65,54 @@ export class AppMeInsurancesService {
     return access.member.id;
   }
 
-  // 本人 + 未软删锁定查找;他人 / 不存在 / 已删统一 26001(防侧信道,E-14)。
-  private async findMyInsuranceOrThrow(
+  // 本人 + 未软删行锁查找;他人 / 不存在 / 已删统一 26001(防侧信道,E-14)。
+  private async lockMyInsuranceOrThrow(
     id: string,
     memberId: string,
     tx: PrismaTx,
   ): Promise<AppInsuranceRow> {
-    const row = await tx.memberInsurance.findFirst({
-      where: { id, memberId, deletedAt: null },
-      select: appSelect,
+    const rows = await tx.$queryRaw<AppInsuranceRow[]>(Prisma.sql`
+      SELECT
+        "id",
+        "insurerName",
+        "policyNumber",
+        "coverageStart",
+        "coverageEnd",
+        "createdAt",
+        "reviewStatusCode",
+        "version",
+        "reviewedAt"
+      FROM "member_insurances"
+      WHERE "id" = ${id}
+        AND "memberId" = ${memberId}
+        AND "deletedAt" IS NULL
+      FOR UPDATE
+    `);
+    if (!rows[0]) throw new BizException(BizCode.MEMBER_INSURANCE_NOT_FOUND);
+    return rows[0];
+  }
+
+  private recordExpectedVersionUsage(
+    expectedVersion: number | undefined,
+    operation: 'update' | 'delete',
+  ): void {
+    this.logger.log({
+      event:
+        expectedVersion === undefined
+          ? 'insurance_expected_version_missing'
+          : 'insurance_expected_version_present',
+      surface: 'app',
+      operation,
     });
-    if (!row) throw new BizException(BizCode.MEMBER_INSURANCE_NOT_FOUND);
-    return row;
+  }
+
+  private assertExpectedVersionMatches(
+    expectedVersion: number | undefined,
+    actualVersion: number,
+  ): void {
+    if (expectedVersion !== undefined && expectedVersion !== actualVersion) {
+      throw new BizException(BizCode.MEMBER_INSURANCE_VERSION_CONFLICT);
+    }
   }
 
   private assertCoverageRangeValid(coverageStart: Date | null, coverageEnd: Date): void {
@@ -98,6 +139,9 @@ export class AppMeInsurancesService {
       coverageStart: row.coverageStart,
       coverageEnd: row.coverageEnd,
       createdAt: row.createdAt,
+      reviewStatusCode: row.reviewStatusCode,
+      version: row.version,
+      reviewedAt: row.reviewedAt,
     };
   }
 
@@ -180,9 +224,11 @@ export class AppMeInsurancesService {
     auditMeta: AuditMeta,
   ): Promise<AppMyInsuranceDto> {
     const memberId = await this.assertCanUseAppOrThrow(currentUser);
+    this.recordExpectedVersionUsage(dto.expectedVersion, 'update');
 
     return this.prisma.$transaction(async (tx) => {
-      const before = await this.findMyInsuranceOrThrow(id, memberId, tx);
+      const before = await this.lockMyInsuranceOrThrow(id, memberId, tx);
+      this.assertExpectedVersionMatches(dto.expectedVersion, before.version);
 
       // 合并后的终态日期参与跨字段校验(只改其一也不能造成 start > end)。
       const nextStart =
@@ -193,11 +239,36 @@ export class AppMeInsurancesService {
         dto.coverageEnd !== undefined ? normalizeDateOnly(dto.coverageEnd) : before.coverageEnd;
       this.assertCoverageRangeValid(nextStart, nextEnd);
 
-      const data: Prisma.MemberInsuranceUpdateInput = {};
-      if (dto.insurerName !== undefined) data.insurerName = dto.insurerName;
-      if (dto.policyNumber !== undefined) data.policyNumber = dto.policyNumber;
-      if (dto.coverageStart !== undefined) data.coverageStart = nextStart;
-      if (dto.coverageEnd !== undefined) data.coverageEnd = nextEnd;
+      const data: Prisma.MemberInsuranceUncheckedUpdateInput = {};
+      if (dto.insurerName !== undefined && dto.insurerName.trim() !== before.insurerName.trim()) {
+        data.insurerName = dto.insurerName;
+      }
+      if (
+        dto.policyNumber !== undefined &&
+        dto.policyNumber.trim() !== before.policyNumber.trim()
+      ) {
+        data.policyNumber = dto.policyNumber;
+      }
+      if (
+        dto.coverageStart !== undefined &&
+        nextStart?.getTime() !== before.coverageStart?.getTime()
+      ) {
+        data.coverageStart = nextStart;
+      }
+      if (dto.coverageEnd !== undefined && nextEnd.getTime() !== before.coverageEnd.getTime()) {
+        data.coverageEnd = nextEnd;
+      }
+
+      // expectedVersion 自身、trim 等值字符串、北京 date-only 等值日期都不构成实质变更。
+      // 真 no-op 必须保持 version/status/updatedAt/audit 全部不动。
+      if (Object.keys(data).length === 0) {
+        return this.toAppDto(before);
+      }
+
+      data.version = { increment: 1 };
+      data.reviewStatusCode = 'pending';
+      data.reviewedByUserId = null;
+      data.reviewedAt = null;
 
       const updated = await tx.memberInsurance.update({
         where: { id: before.id },
@@ -226,17 +297,21 @@ export class AppMeInsurancesService {
 
   async softDeleteMy(
     id: string,
+    expectedVersion: number | undefined,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<AppMyInsuranceDto> {
     const memberId = await this.assertCanUseAppOrThrow(currentUser);
+    this.recordExpectedVersionUsage(expectedVersion, 'delete');
 
     return this.prisma.$transaction(async (tx) => {
-      const before = await this.findMyInsuranceOrThrow(id, memberId, tx);
+      const before = await this.lockMyInsuranceOrThrow(id, memberId, tx);
+      this.assertExpectedVersionMatches(expectedVersion, before.version);
 
       const deleted = await tx.memberInsurance.update({
         where: { id: before.id },
-        data: { deletedAt: new Date() },
+        // 软删只推进 version；原审核状态 / reviewer / reviewedAt 必须保留。
+        data: { deletedAt: new Date(), version: { increment: 1 } },
         select: appSelect,
       });
 

@@ -9,7 +9,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuthzService } from '../authz/authz.service';
 import { RbacService } from '../permissions/rbac.service';
-import { MemberInsuranceAdminResponseDto } from './insurances.dto';
+import { MemberInsuranceAdminResponseDto, ReviewMemberInsuranceDto } from './insurances.dto';
 
 // 保险模块 T2:admin 查队员自购保险 service(2026-06-13)。
 // 冻结评审稿 docs/archive/reviews/insurance-module-review.md §3.2 端点 14 / E-15。
@@ -29,7 +29,17 @@ const adminSelect = {
   coverageEnd: true,
   createdAt: true,
   updatedAt: true,
+  reviewStatusCode: true,
+  version: true,
+  reviewedAt: true,
 } as const satisfies Prisma.MemberInsuranceSelect;
+
+type LockedReviewInsuranceRow = {
+  id: string;
+  memberId: string;
+  reviewStatusCode: string;
+  version: number;
+};
 
 @Injectable()
 export class MemberInsurancesService {
@@ -39,6 +49,20 @@ export class MemberInsurancesService {
     private readonly rbac: RbacService,
     private readonly authz: AuthzService,
   ) {}
+
+  private isNowaitConflict(error: unknown): boolean {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2010') {
+      return false;
+    }
+    const meta = error.meta as { code?: unknown; message?: unknown } | undefined;
+    const metaCode = typeof meta?.code === 'string' ? meta.code : '';
+    const metaMessage = typeof meta?.message === 'string' ? meta.message : '';
+    return (
+      metaCode === '55P03' ||
+      metaMessage.includes('55P03') ||
+      error.message.includes('could not obtain lock on row')
+    );
+  }
 
   async listForMember(
     memberId: string,
@@ -80,5 +104,102 @@ export class MemberInsurancesService {
     });
 
     return items;
+  }
+
+  async reviewForMember(
+    memberId: string,
+    insuranceId: string,
+    dto: ReviewMemberInsuranceDto,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<MemberInsuranceAdminResponseDto> {
+    const action = 'member-insurance.review.record';
+
+    // 冻结锁序第 1 步:判权必须在任何目标存在性查询之前，且新入口只走 rbac.can 单轨。
+    if (!(await this.rbac.can(currentUser, action))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // 冻结锁序第 2 步:先锁 Member aggregate；不存在/软删统一 26001。
+        const members = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT "id"
+          FROM "Member"
+          WHERE "id" = ${memberId} AND "deletedAt" IS NULL
+          FOR UPDATE
+        `);
+        if (!members[0]) {
+          throw new BizException(BizCode.MEMBER_INSURANCE_NOT_FOUND);
+        }
+
+        // 冻结锁序第 3 步:保险行 NOWAIT。归属不匹配/不存在/软删统一 26001；
+        // 已被并发写者持锁则快速失败并映射 26011，不等待形成反向锁边。
+        const rows = await tx.$queryRaw<LockedReviewInsuranceRow[]>(Prisma.sql`
+          SELECT "id", "memberId", "reviewStatusCode", "version"
+          FROM "member_insurances"
+          WHERE "id" = ${insuranceId}
+            AND "memberId" = ${memberId}
+            AND "deletedAt" IS NULL
+          FOR UPDATE NOWAIT
+        `);
+        const before = rows[0];
+        if (!before) {
+          throw new BizException(BizCode.MEMBER_INSURANCE_NOT_FOUND);
+        }
+
+        // stale 优先于状态冲突，客户端始终先刷新再判断下一步。
+        if (dto.expectedVersion !== before.version) {
+          throw new BizException(BizCode.MEMBER_INSURANCE_VERSION_CONFLICT);
+        }
+        if (before.reviewStatusCode !== 'pending') {
+          throw new BizException(BizCode.MEMBER_INSURANCE_REVIEW_STATE_INVALID);
+        }
+
+        const reviewedAt = new Date();
+        const updated = await tx.memberInsurance.update({
+          where: { id: before.id },
+          data: {
+            reviewStatusCode: dto.decision,
+            version: { increment: 1 },
+            reviewedByUserId: currentUser.id,
+            reviewedAt,
+          },
+          select: adminSelect,
+        });
+
+        // 冻结锁序第 4 步:mutation 后同事务 audit；失败必须让业务写整体回滚。
+        // context 严格最小化，禁止保单号、保险公司、备注、图片/key/url 或任意自由文本。
+        await this.auditLogs.log({
+          event: 'member-insurance.review',
+          actorUserId: currentUser.id,
+          actorRoleSnap: currentUser.role,
+          resourceType: 'member-insurance',
+          resourceId: before.id,
+          meta: auditMeta,
+          before: {
+            reviewStatusCode: before.reviewStatusCode,
+            version: before.version,
+          },
+          after: {
+            reviewStatusCode: updated.reviewStatusCode,
+            version: updated.version,
+          },
+          extra: {
+            memberId,
+            insuranceId,
+            decision: dto.decision,
+          },
+          tx,
+        });
+
+        return updated;
+      });
+    } catch (error) {
+      if (this.isNowaitConflict(error)) {
+        throw new BizException(BizCode.MEMBER_INSURANCE_VERSION_CONFLICT);
+      }
+      throw error;
+    }
   }
 }

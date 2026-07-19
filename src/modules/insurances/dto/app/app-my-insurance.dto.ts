@@ -22,4 +22,13 @@ export class AppMyInsuranceDto {
 
   @ApiProperty({ description: '创建时间' })
   createdAt!: Date;
+
+  @ApiProperty({ description: '审核状态(pending / verified / rejected)' })
+  reviewStatusCode!: string;
+
+  @ApiProperty({ description: '并发控制版本号' })
+  version!: number;
+
+  @ApiPropertyOptional({ description: '最近审核时间', nullable: true })
+  reviewedAt!: Date | null;
 }
