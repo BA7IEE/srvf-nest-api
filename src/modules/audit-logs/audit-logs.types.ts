@@ -1,7 +1,7 @@
 // V2 第一阶段批次 6 audit_logs 模块类型契约(D6 v1.1 §8 / §10 / §11)。
 //
 // 本文件承载 3 个类型契约,与 audit-logs.service.ts 同进同退:
-//   1. AuditLogEvent  — 落库入口 union(首批 6 项起渐进迁入;敏感读取统一落库后共 122 项)
+//   1. AuditLogEvent  — 落库入口 union(首批 6 项起渐进迁入;D-INSURANCE PR2 后共 123 项)
 //   2. AuditContext   — Prisma AuditLog.context Json 字段的运行时锁形(6 字段:3 必填 + 3 可选)
 //   3. AuditMeta      — controller 层从 @Req() 构造,显式传给 service
 //
@@ -81,11 +81,12 @@ export type AuditLogEvent =
   | 'wechat.rebind.self' // T3 接入(同上双路径换绑;before/after.openid 掩码;extra.viaPath)
   | 'wechat.clear.by-admin' // T3 接入(users.service.clearUserWechat;仅实际清除时写〔幂等空清不写〕;before.openid 掩码)
   // 保险模块 T2(2026-06-13)接入(冻结评审稿 insurance-module-review.md §3.5 / E-9)。
-  // 8 项命名沿 kebab-case 既有范式(自助三事件 <resource>.<action>.self 对称 phone.bind.self;
+  // 10 项命名沿 kebab-case 既有范式(自助三事件 <resource>.<action>.self 对称 phone.bind.self;
   // 队保单三事件 <resource>.<action> 对称 certificate.create)。
   // snapshot 沿 certificates 全量不打码(保单号/保险公司中敏感非 L3,audit_logs 自身 RBAC 保护);
   // 本域无 L3 字段。admin 读他人自购保险必须落 audit_logs;App self 读不写 audit(D-P2-7-16)。
   | 'member-insurance.read.other' // admin 查队员自购保险 list;不记录保单号/保险公司
+  | 'member-insurance.review' // D-INSURANCE PR2 admin 审核;before/after 仅 reviewStatusCode+version;extra 仅 memberId/insuranceId/decision
   | 'member-insurance.create.self' // T2 接入(app-me-insurances.service.create;after snapshot;extra.memberId)
   | 'member-insurance.update.self' // T2 接入(app-me-insurances.service.update;before/after;extra.memberId)
   | 'member-insurance.delete.self' // T2 接入(app-me-insurances.service.softDelete;before;extra.memberId)

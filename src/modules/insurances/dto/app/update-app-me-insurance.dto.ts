@@ -1,10 +1,27 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsDateString,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 // 保险模块 T2 App 入参 DTO(PATCH /api/app/v1/me/insurances/:id)。
 // 全字段可选,白名单同 Create 4 字段;**不**从 CreateAppMeInsuranceDto 派生
 // (PartialType 等映射工具越权,沿 AGENTS §2 / §19.7 D-6,显式平铺)。
 export class UpdateAppMeInsuranceDto {
+  @ApiPropertyOptional({
+    description: '客户端最后读取到的版本号(PR2 可选,PR3 起必填)',
+    minimum: 0,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  expectedVersion?: number;
+
   @ApiPropertyOptional({ description: '保险公司', maxLength: 128 })
   @IsOptional()
   @IsString()

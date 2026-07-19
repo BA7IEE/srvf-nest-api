@@ -1,5 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 
 // 保险模块 T2 admin DTO(2026-06-13;冻结评审稿 docs/archive/reviews/insurance-module-review.md §3.2)。
@@ -92,6 +101,34 @@ export class MemberInsuranceAdminResponseDto {
 
   @ApiProperty({ description: '更新时间' })
   updatedAt!: Date;
+
+  @ApiProperty({ description: '审核状态(pending / verified / rejected)' })
+  reviewStatusCode!: string;
+
+  @ApiProperty({ description: '并发控制版本号' })
+  version!: number;
+
+  @ApiPropertyOptional({ description: '最近审核时间', nullable: true })
+  reviewedAt!: Date | null;
+}
+
+// ============ 入参:队员自购保险审核(admin;expectedVersion 永远必填)============
+
+export const MEMBER_INSURANCE_REVIEW_DECISIONS = ['verified', 'rejected'] as const;
+export type MemberInsuranceReviewDecision = (typeof MEMBER_INSURANCE_REVIEW_DECISIONS)[number];
+
+export class ReviewMemberInsuranceDto {
+  @ApiProperty({
+    description: '审核决定',
+    enum: MEMBER_INSURANCE_REVIEW_DECISIONS,
+  })
+  @IsIn(MEMBER_INSURANCE_REVIEW_DECISIONS)
+  decision!: MemberInsuranceReviewDecision;
+
+  @ApiProperty({ description: '客户端最后读取到的版本号(必填)', minimum: 0 })
+  @IsInt()
+  @Min(0)
+  expectedVersion!: number;
 }
 
 // ============ 入参:队保单 Create ============

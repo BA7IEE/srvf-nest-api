@@ -16,6 +16,7 @@ import type { AuditMeta } from '../../audit-logs/audit-logs.types';
 import { AppMeInsurancesService } from '../app-me-insurances.service';
 import { AppMyInsuranceDto } from '../dto/app/app-my-insurance.dto';
 import { CreateAppMeInsuranceDto } from '../dto/app/create-app-me-insurance.dto';
+import { DeleteAppMeInsuranceQueryDto } from '../dto/app/delete-app-me-insurance-query.dto';
 import { ListAppMeInsurancesQueryDto } from '../dto/app/list-app-me-insurances-query.dto';
 import { UpdateAppMeInsuranceDto } from '../dto/app/update-app-me-insurance.dto';
 
@@ -80,7 +81,7 @@ export class AppMeInsurancesController {
   @Patch(':id')
   @ApiOperation({
     summary:
-      '部分更新自购保险(仅本人;他人/不存在/已删统一 26001 防侧信道;终态起保 ≤ 到期否则 26010) [auth]',
+      '部分更新自购保险(PR2 expectedVersion 可选;显式旧版本 26011;实质变更重置审核为 pending;等值为空操作) [auth]',
   })
   @ApiWrappedOkResponse(AppMyInsuranceDto)
   @ApiBizErrorResponse(
@@ -89,6 +90,7 @@ export class AppMeInsurancesController {
     BizCode.FORBIDDEN,
     BizCode.MEMBER_INSURANCE_NOT_FOUND,
     BizCode.INSURANCE_COVERAGE_DATE_RANGE_INVALID,
+    BizCode.MEMBER_INSURANCE_VERSION_CONFLICT,
   )
   update(
     @Param('id') id: string,
@@ -101,7 +103,8 @@ export class AppMeInsurancesController {
 
   @Delete(':id')
   @ApiOperation({
-    summary: '删除自购保险(软删;仅本人;他人/不存在/已删统一 26001 防侧信道) [auth]',
+    summary:
+      '删除自购保险(软删;PR2 expectedVersion query 可选;显式旧版本 26011;保留原审核结论) [auth]',
   })
   @ApiWrappedOkResponse(AppMyInsuranceDto)
   @ApiBizErrorResponse(
@@ -109,12 +112,19 @@ export class AppMeInsurancesController {
     BizCode.UNAUTHORIZED,
     BizCode.FORBIDDEN,
     BizCode.MEMBER_INSURANCE_NOT_FOUND,
+    BizCode.MEMBER_INSURANCE_VERSION_CONFLICT,
   )
   softDelete(
     @Param('id') id: string,
+    @Query() query: DeleteAppMeInsuranceQueryDto,
     @CurrentUser() currentUser: CurrentUserPayload,
     @Req() req: Request,
   ): Promise<AppMyInsuranceDto> {
-    return this.service.softDeleteMy(id, currentUser, this.buildAuditMeta(req));
+    return this.service.softDeleteMy(
+      id,
+      query.expectedVersion,
+      currentUser,
+      this.buildAuditMeta(req),
+    );
   }
 }

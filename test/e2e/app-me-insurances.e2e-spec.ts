@@ -18,7 +18,10 @@ import { createTestApp } from '../setup/test-app';
 //   - 26010 日期跨字段校验(create + update 终态)
 //   - 软删后 list 不可见;再操作同 id → 26001
 //   - audit:member-insurance.{create,update,delete}.self 落 audit_logs(评审稿 §3.5)
-//   - App 字段集恰好 6 项,不返 memberId / deletedAt / updatedAt(字段集纪律)
+//   - PR2 additive response 恰好 9 项,新增 reviewStatusCode/version/reviewedAt；
+//     不返 memberId / reviewer / deletedAt / updatedAt(字段集纪律)
+//   - PR2 optional CAS:显式 stale=26011；缺 version 仍可写且持锁推进版本
+//   - empty/equal PATCH 是 version/status/updatedAt/audit 均不变的真 no-op
 
 interface ResBody {
   code: number;
@@ -26,7 +29,7 @@ interface ResBody {
   data: Record<string, unknown>;
 }
 
-// AppMyInsuranceDto 恰好 6 项(评审稿 §3.2 端点 1-4;不含 memberId)
+// AppMyInsuranceDto PR2 恰好 9 项(不含 memberId/reviewer)
 const APP_INSURANCE_KEYS = [
   'coverageEnd',
   'coverageStart',
@@ -34,9 +37,19 @@ const APP_INSURANCE_KEYS = [
   'id',
   'insurerName',
   'policyNumber',
+  'reviewedAt',
+  'reviewStatusCode',
+  'version',
 ].sort();
 
-const FORBIDDEN_KEYS = ['memberId', 'deletedAt', 'updatedAt', 'member'];
+const FORBIDDEN_KEYS = [
+  'memberId',
+  'reviewedByUserId',
+  'reviewer',
+  'deletedAt',
+  'updatedAt',
+  'member',
+];
 
 describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
   let app: INestApplication;
@@ -161,7 +174,7 @@ describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
 
   // ============== create ==============
 
-  it('create 成功:字段集恰好 6 项,无 memberId 等禁返字段;audit create.self 落库', async () => {
+  it('create 成功:字段集恰好 9 项且 pending/v0,无 memberId/reviewer;audit create.self 落库', async () => {
     const me = await setupLinkedUser({ username: 'ins-create-ok' });
     const res = await createInsurance(me.authHeader, validBody()).expect(201);
     const body = res.body as ResBody;
@@ -170,6 +183,9 @@ describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
     for (const k of FORBIDDEN_KEYS) {
       expect(body.data).not.toHaveProperty(k);
     }
+    expect(body.data.reviewStatusCode).toBe('pending');
+    expect(body.data.version).toBe(0);
+    expect(body.data.reviewedAt).toBeNull();
 
     const audit = await prisma.auditLog.findFirst({
       where: { event: 'member-insurance.create.self', resourceId: body.data.id as string },
@@ -238,7 +254,7 @@ describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
 
   // ============== update ==============
 
-  it('update 本人成功(audit update.self 含 before/after);终态 start > end → 26010', async () => {
+  it('update 显式 current version 成功并 v+1；复用旧 version → 26011；日期终态仍守 26010', async () => {
     const me = await setupLinkedUser({ username: 'ins-update-ok' });
     const created = await createInsurance(me.authHeader, validBody()).expect(201);
     const id = (created.body as ResBody).data.id as string;
@@ -246,9 +262,10 @@ describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
     const res = await request(httpServer(app))
       .patch(`/api/app/v1/me/insurances/${id}`)
       .set('Authorization', me.authHeader)
-      .send({ coverageEnd: '2027-06-30' })
+      .send({ coverageEnd: '2027-06-30', expectedVersion: 0 })
       .expect(200);
     expect(String((res.body as ResBody).data.coverageEnd)).toContain('2027-06-30');
+    expect((res.body as ResBody).data.version).toBe(1);
 
     const audit = await prisma.auditLog.findFirst({
       where: { event: 'member-insurance.update.self', resourceId: id },
@@ -261,12 +278,115 @@ describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
     expect(String(ctx.before?.coverageEnd)).toContain('2026-12-31');
     expect(String(ctx.after?.coverageEnd)).toContain('2027-06-30');
 
+    const stale = await request(httpServer(app))
+      .patch(`/api/app/v1/me/insurances/${id}`)
+      .set('Authorization', me.authHeader)
+      .send({ insurerName: 'stale overwrite', expectedVersion: 0 });
+    expectBizError(stale, BizCode.MEMBER_INSURANCE_VERSION_CONFLICT);
+
+    const afterStale = await prisma.memberInsurance.findUniqueOrThrow({ where: { id } });
+    expect(afterStale.version).toBe(1);
+    expect(afterStale.insurerName).toBe('平安保险');
+    expect(
+      await prisma.auditLog.count({
+        where: { event: 'member-insurance.update.self', resourceId: id },
+      }),
+    ).toBe(1);
+
     // 只改 coverageStart 也不能造成终态 start > end
     const bad = await request(httpServer(app))
       .patch(`/api/app/v1/me/insurances/${id}`)
       .set('Authorization', me.authHeader)
-      .send({ coverageStart: '2027-12-31' });
+      .send({ coverageStart: '2027-12-31', expectedVersion: 1 });
     expectBizError(bad, BizCode.INSURANCE_COVERAGE_DATE_RANGE_INVALID);
+  });
+
+  it('PR2 缺 version 仍允许实质 PATCH：持锁 v+1、重置 pending、清 reviewer/time', async () => {
+    const me = await setupLinkedUser({ username: 'ins-update-legacy' });
+    const created = await createInsurance(me.authHeader, validBody()).expect(201);
+    const id = (created.body as ResBody).data.id as string;
+    const reviewedAt = new Date('2026-03-01T02:03:04.000Z');
+
+    await prisma.memberInsurance.update({
+      where: { id },
+      data: {
+        reviewStatusCode: 'verified',
+        version: 4,
+        reviewedByUserId: me.userId,
+        reviewedAt,
+      },
+    });
+
+    const res = await request(httpServer(app))
+      .patch(`/api/app/v1/me/insurances/${id}`)
+      .set('Authorization', me.authHeader)
+      .send({ insurerName: '人保财险' })
+      .expect(200);
+
+    expect((res.body as ResBody).data).toMatchObject({
+      insurerName: '人保财险',
+      reviewStatusCode: 'pending',
+      version: 5,
+      reviewedAt: null,
+    });
+    const row = await prisma.memberInsurance.findUniqueOrThrow({ where: { id } });
+    expect(row.reviewStatusCode).toBe('pending');
+    expect(row.version).toBe(5);
+    expect(row.reviewedByUserId).toBeNull();
+    expect(row.reviewedAt).toBeNull();
+  });
+
+  it('empty/equal PATCH 是真 no-op：trim/北京 date-only 等值均不改 version/status/updatedAt/audit', async () => {
+    const me = await setupLinkedUser({ username: 'ins-update-noop' });
+    const created = await createInsurance(me.authHeader, validBody()).expect(201);
+    const id = (created.body as ResBody).data.id as string;
+    const reviewedAt = new Date('2026-04-01T02:03:04.000Z');
+
+    await prisma.memberInsurance.update({
+      where: { id },
+      data: {
+        reviewStatusCode: 'verified',
+        version: 7,
+        reviewedByUserId: me.userId,
+        reviewedAt,
+      },
+    });
+    const before = await prisma.memberInsurance.findUniqueOrThrow({ where: { id } });
+    const auditCountBefore = await prisma.auditLog.count({
+      where: { event: 'member-insurance.update.self', resourceId: id },
+    });
+
+    const noOps: Array<Record<string, unknown>> = [
+      {},
+      { expectedVersion: 7 },
+      { expectedVersion: 7, insurerName: '  平安保险  ' },
+      { expectedVersion: 7, coverageStart: '2026-01-01T23:30:00+08:00' },
+      { expectedVersion: 7, coverageEnd: '2026-12-31T08:00:00+08:00' },
+    ];
+    for (const body of noOps) {
+      const res = await request(httpServer(app))
+        .patch(`/api/app/v1/me/insurances/${id}`)
+        .set('Authorization', me.authHeader)
+        .send(body)
+        .expect(200);
+      expect((res.body as ResBody).data).toMatchObject({
+        reviewStatusCode: 'verified',
+        version: 7,
+      });
+      expect((res.body as ResBody).data.reviewedAt).toBe(reviewedAt.toISOString());
+    }
+
+    const after = await prisma.memberInsurance.findUniqueOrThrow({ where: { id } });
+    expect(after.version).toBe(before.version);
+    expect(after.reviewStatusCode).toBe(before.reviewStatusCode);
+    expect(after.reviewedByUserId).toBe(before.reviewedByUserId);
+    expect(after.reviewedAt?.getTime()).toBe(before.reviewedAt?.getTime());
+    expect(after.updatedAt.getTime()).toBe(before.updatedAt.getTime());
+    expect(
+      await prisma.auditLog.count({
+        where: { event: 'member-insurance.update.self', resourceId: id },
+      }),
+    ).toBe(auditCountBefore);
   });
 
   // ============== softDelete ==============
@@ -276,10 +396,15 @@ describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
     const created = await createInsurance(me.authHeader, validBody()).expect(201);
     const id = (created.body as ResBody).data.id as string;
 
-    await request(httpServer(app))
+    const deleted = await request(httpServer(app))
       .delete(`/api/app/v1/me/insurances/${id}`)
       .set('Authorization', me.authHeader)
       .expect(200);
+    expect((deleted.body as ResBody).data).toMatchObject({
+      reviewStatusCode: 'pending',
+      version: 1,
+      reviewedAt: null,
+    });
 
     const audit = await prisma.auditLog.findFirst({
       where: { event: 'member-insurance.delete.self', resourceId: id },
@@ -290,6 +415,7 @@ describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
     const row = await prisma.memberInsurance.findUnique({ where: { id } });
     expect(row).not.toBeNull();
     expect(row!.deletedAt).not.toBeNull();
+    expect(row!.version).toBe(1);
 
     const list = await request(httpServer(app))
       .get('/api/app/v1/me/insurances')
@@ -302,6 +428,44 @@ describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
       .delete(`/api/app/v1/me/insurances/${id}`)
       .set('Authorization', me.authHeader);
     expectBizError(again, BizCode.MEMBER_INSURANCE_NOT_FOUND);
+  });
+
+  it('DELETE 显式 version 做 CAS；成功 v+1 且保留 status/reviewer/time', async () => {
+    const me = await setupLinkedUser({ username: 'ins-delete-versioned' });
+    const created = await createInsurance(me.authHeader, validBody()).expect(201);
+    const id = (created.body as ResBody).data.id as string;
+    const reviewedAt = new Date('2026-05-01T02:03:04.000Z');
+    await prisma.memberInsurance.update({
+      where: { id },
+      data: {
+        reviewStatusCode: 'rejected',
+        version: 6,
+        reviewedByUserId: me.userId,
+        reviewedAt,
+      },
+    });
+
+    const stale = await request(httpServer(app))
+      .delete(`/api/app/v1/me/insurances/${id}?expectedVersion=5`)
+      .set('Authorization', me.authHeader);
+    expectBizError(stale, BizCode.MEMBER_INSURANCE_VERSION_CONFLICT);
+
+    const res = await request(httpServer(app))
+      .delete(`/api/app/v1/me/insurances/${id}?expectedVersion=6`)
+      .set('Authorization', me.authHeader)
+      .expect(200);
+    expect((res.body as ResBody).data).toMatchObject({
+      reviewStatusCode: 'rejected',
+      version: 7,
+      reviewedAt: reviewedAt.toISOString(),
+    });
+
+    const row = await prisma.memberInsurance.findUniqueOrThrow({ where: { id } });
+    expect(row.deletedAt).not.toBeNull();
+    expect(row.version).toBe(7);
+    expect(row.reviewStatusCode).toBe('rejected');
+    expect(row.reviewedByUserId).toBe(me.userId);
+    expect(row.reviewedAt?.getTime()).toBe(reviewedAt.getTime());
   });
 
   // ============== admin-as-member(linked-member self perspective)==============
