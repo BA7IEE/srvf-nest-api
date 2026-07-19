@@ -128,7 +128,7 @@ export class LocalStorageProvider implements StorageProvider {
       await fs.unlink(filePath);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-      this.logger.warn(`LocalProvider deleteObject: key not found (idempotent): ${key}`);
+      this.logger.warn('LocalProvider deleteObject: object already absent (idempotent)');
     }
   }
 

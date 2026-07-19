@@ -95,7 +95,7 @@ export class RecruitmentPromotionService {
     private readonly auditLogs: AuditLogsService,
     // Durable outbox producer: intent 与发号业务写共用同一 PostgreSQL transaction。
     private readonly notificationOutbox: NotificationOutboxService,
-    // 十项收口刀C:主体裁剪图 blob 无档案落点,promote commit 后 best-effort 删(safeDeleteCropBlob)
+    // 主体裁剪图 blob 无档案落点；发号前经当前 provider fail-closed 删除。
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
   ) {}
 
@@ -153,6 +153,15 @@ export class RecruitmentPromotionService {
     // Organization.code='VOL' 解析(≠ VOD)、守 ACTIVE;缺失/非 ACTIVE → 在建任何 member 之前清晰失败
     //(不留半成品 member,沿「失败可恢复」)。仅有可发号项时才要求 VOL 存在(空公示批不触发)。
     const volOrgId = promotable.length > 0 ? await this.resolveVolOrgIdOrThrow() : null;
+
+    // 主体框裁剪图没有建档落点：全部读/排序/skip 分区、bcrypt 与 VOL 校验成功后，紧贴业务
+    // transaction 前按已冻结发号序逐条删除。只处理 promotable，不碰 skip 行或头像裁剪图；任一
+    // provider 删除失败统一抛安全 500，transaction 根本不进入，杜绝任何业务/audit/outbox 写。
+    // 已成功删除后若 transaction 失败，报名行 key 会暂指向不存在对象；修复 DB 阻断后重试依赖
+    // provider 的 absent-delete 幂等契约，不恢复 blob、不引入 ledger。
+    for (const a of promotable) {
+      await this.deleteCropBlobBeforeTransactionOrThrow(a.idCardCropImageKey);
+    }
 
     // 单一事务:发号 + 建 User/Member(+VOL 部门)/profile/contacts + 标 promoted + 清敏感(全或无)
     const promoted = await this.prisma.$transaction(
@@ -213,12 +222,6 @@ export class RecruitmentPromotionService {
     this.logger.log(
       `recruitment promote cycle=${cycleId} promoted=${promoted.length} skipped=${skipped.length}`,
     );
-
-    // 十项收口刀C:主体裁剪图 blob 无档案落点,commit 后按事务前快照 key best-effort 删
-    // (行内 key 已在事务中清空;失败仅告警,不阻断已 commit 的发号)。
-    for (const a of promotable) {
-      await this.safeDeleteCropBlob(a.idCardCropImageKey);
-    }
 
     return {
       cycleId,
@@ -416,6 +419,10 @@ export class RecruitmentPromotionService {
     const passwordHash = await bcrypt.hash(randomBytes(48).toString('base64'), BCRYPT_SALT_ROUNDS);
     const volOrgId = await this.resolveVolOrgIdOrThrow();
 
+    // 与 batch 同一删除顺序：所有事务前校验成功后、紧贴业务 transaction 前 fail-closed 删除主体
+    // 裁剪图。头像裁剪图继续在 transaction 内转为 User.avatarKey，不在此删除。
+    await this.deleteCropBlobBeforeTransactionOrThrow(app.idCardCropImageKey);
+
     const promoted = await this.prisma.$transaction(
       async (tx) => {
         // 与批量共享同一原子号段:cycle 行锁自增 1(失败回滚撤销自增,号段连续无空洞)
@@ -457,8 +464,6 @@ export class RecruitmentPromotionService {
     this.logger.log(
       `recruitment promote-single app=${app.id} member=${promoted.memberId} channel=${channel}`,
     );
-    // 十项收口刀C:主体裁剪图 blob 清理沿批量语义(commit 后按事务前快照 key)
-    await this.safeDeleteCropBlob(app.idCardCropImageKey);
 
     return { ...promoted, loginChannel: channel };
   }
@@ -470,17 +475,15 @@ export class RecruitmentPromotionService {
   // MemberProfile + EmergencyContact + 标 promoted 清敏感 + audit。**不含** try/catch(P2002 处理
   // 留在调用方,批量整批回滚语义不变)。channel 由调用方决定:批量 = openid 有无派生(v0.40.0 逐字);
   // 单人 = E-U-4 锚点择优(可在 openid 被占时强制手机通道)。viaPath 仅单人传(audit extra additive)。
-  // 十项收口刀C:promote commit 后删主体框裁剪图 blob(镜像 applications.service
-  // safeDeleteOrphanImage 的 best-effort 语义;失败仅告警——key 已随行清空,不阻断已 commit 的发号)。
-  // 头像裁剪图 blob 不走此路:已随刀E 转为 User.avatarKey(属主转移,同一 storage 对象)。
-  private async safeDeleteCropBlob(key: string | null): Promise<void> {
+  // promote 的主体框裁剪图必须在业务 transaction 前删。provider 原始异常可能含 key / bucket /
+  // 凭证状态，故不记录、不透传，统一收敛为安全 INTERNAL_ERROR；调用方据此保证删除失败零业务写。
+  // 头像裁剪图不走此路：它会在 buildOnePromotion 内转为 User.avatarKey(同一 storage 对象)。
+  private async deleteCropBlobBeforeTransactionOrThrow(key: string | null): Promise<void> {
     if (!key) return;
     try {
       await this.storage.deleteObject(key);
-    } catch (e) {
-      this.logger.warn(
-        `promote crop-image blob cleanup failed key=${key}: ${e instanceof Error ? e.message : String(e)}`,
-      );
+    } catch {
+      throw new BizException(BizCode.INTERNAL_ERROR);
     }
   }
 
@@ -617,8 +620,8 @@ export class RecruitmentPromotionService {
     // F12(#399):openid + reviewNote 亦属留存 SOP §1 须置 NULL 的敏感字段;promote 即时清后
     // SOP「WHERE sensitivePurgedAt IS NULL」永久跳过本行 —— 漏清则再识别字段在「已脱敏」行永久残留。
     // 十项收口刀C:补清 OCR 4 列 + 两裁剪图 key + 换绑史/原因(此前全部漏清 = promoted 行永久残留
-    // 高敏 PII;民族/OCR 住址属敏感个人信息,换绑史含明文手机)。主体裁剪图 blob 在 commit 后
-    // best-effort 删(safeDeleteCropBlob);头像裁剪图 blob 已转 User.avatarKey(刀E)仅清 key。
+    // 高敏 PII;民族/OCR 住址属敏感个人信息,换绑史含明文手机)。主体裁剪图 blob 已在 transaction
+    // 前 fail-closed 删除；头像裁剪图 blob 已转 User.avatarKey(刀E)仅清 key。
     await tx.recruitmentApplication.update({
       where: { id: a.id },
       data: {
@@ -642,7 +645,7 @@ export class RecruitmentPromotionService {
         certificateImages: Prisma.DbNull,
         certificateReviewStatus: Prisma.DbNull,
         certificateIssuanceInfo: Prisma.DbNull,
-        // 十项收口刀C:OCR 产物与换绑轨迹一并即时清
+        // transaction 成功后两列一并清空；若 transaction 失败，key 暂留供 absent-delete 幂等重试。
         ocrAddress: null,
         ocrNation: null,
         ocrAuthority: null,

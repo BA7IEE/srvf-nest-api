@@ -1,4 +1,4 @@
-import type { INestApplication } from '@nestjs/common';
+import { Logger, type INestApplication } from '@nestjs/common';
 import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -9,6 +9,8 @@ import {
 import { NotificationOutboxService } from '../../src/modules/notifications/notification-outbox.service';
 import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import { PrismaService } from '../../src/database/prisma.service';
+import { STORAGE_PROVIDER } from '../../src/modules/storage/storage.constants';
+import type { StorageProvider } from '../../src/modules/storage/storage.interface';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { Prisma, Role } from '@prisma/client';
@@ -48,6 +50,7 @@ const ID_INVALID = '110101199003070010';
 describe('招新一期(招新前段)报名全链 e2e', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let storage: StorageProvider;
   let adminAuth: string; // SUPER_ADMIN(rbac.can 短路通过)
   let userAuth: string; // 普通 USER(RBAC 边界)
   let sensitiveAuth: string; // 非 SA:read.record + read.sensitive(S3 敏感查看)
@@ -212,6 +215,7 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     process.env.RECRUITMENT_THROTTLE_LIMIT = '100'; // 配额上限(评审稿 max 100);全链测试不触限流
     app = await createTestApp();
     prisma = app.get(PrismaService);
+    storage = app.get<StorageProvider>(STORAGE_PROVIDER);
     await resetDb(app);
 
     // 双 DevStub 通道:wechat(确定性假 openid)+ realname(校验位奇偶定 matched)
@@ -2457,6 +2461,66 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       .send({});
   }
 
+  async function promotionWriteSnapshot(cycleId: string, applicationIds: string[]) {
+    const [
+      cycle,
+      applications,
+      memberCount,
+      userCount,
+      profileCount,
+      contactCount,
+      membershipCount,
+      outboxCount,
+      auditCount,
+    ] = await Promise.all([
+      prisma.recruitmentCycle.findUniqueOrThrow({
+        where: { id: cycleId },
+        select: { memberNoSeq: true },
+      }),
+      prisma.recruitmentApplication.findMany({
+        where: { id: { in: applicationIds } },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          statusCode: true,
+          promotedMemberId: true,
+          sensitivePurgedAt: true,
+          realName: true,
+          idCardNumber: true,
+          phone: true,
+          openid: true,
+          idCardCropImageKey: true,
+          idCardPortraitImageKey: true,
+        },
+      }),
+      prisma.member.count(),
+      prisma.user.count(),
+      prisma.memberProfile.count(),
+      prisma.emergencyContact.count(),
+      prisma.memberOrganizationMembership.count(),
+      prisma.notificationOutboxIntent.count({
+        where: { aggregateId: { in: applicationIds } },
+      }),
+      prisma.auditLog.count({
+        where: {
+          event: 'recruitment-application.promote',
+          resourceId: { in: applicationIds },
+        },
+      }),
+    ]);
+    return {
+      memberNoSeq: cycle.memberNoSeq,
+      applications,
+      memberCount,
+      userCount,
+      profileCount,
+      contactCount,
+      membershipCount,
+      outboxCount,
+      auditCount,
+    };
+  }
+
   it('㉖(二期) 一键发号:公示→建 User+Member+档案+紧急联系人;{YY}{NNN} 拼音序;两层身份(无部门无级别);报名敏感清', async () => {
     const cycle = await openCycle();
     const membersBefore = await prisma.member.count();
@@ -2466,6 +2530,18 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
 
     // 十项收口刀C/E fixture:给「李四」行预置 OCR 产物/裁剪图/换绑轨迹——promote 须即时清
     // (刀C,此前漏清=永久残留),头像裁剪图须转 User.avatarKey(刀E)。
+    const liCropKey = 'recruitment-id-card-crop/test/li-crop.jpg';
+    const liPortraitKey = 'recruitment-id-card-portrait/test/li-portrait.jpg';
+    await storage.putObject({
+      key: liCropKey,
+      body: Buffer.from('crop'),
+      contentType: 'image/jpeg',
+    });
+    await storage.putObject({
+      key: liPortraitKey,
+      body: Buffer.from('portrait'),
+      contentType: 'image/jpeg',
+    });
     await prisma.recruitmentApplication.updateMany({
       where: { cycleId: cycle.id, realName: '李四' },
       data: {
@@ -2473,8 +2549,8 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
         ocrNation: '汉',
         ocrAuthority: '某某公安局',
         ocrValidDate: '2020.01.01-2040.01.01',
-        idCardCropImageKey: 'recruitment-id-card-crop/test/li-crop.jpg',
-        idCardPortraitImageKey: 'recruitment-id-card-portrait/test/li-portrait.jpg',
+        idCardCropImageKey: liCropKey,
+        idCardPortraitImageKey: liPortraitKey,
         phoneChangeReason: '换机',
         phoneBindingHistory: [{ from: '13800000000', to: '13800000001', at: '2026-07-01' }],
       },
@@ -2536,7 +2612,9 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     expect(li.memberProfile?.residenceArea).toBeTruthy();
     expect(li.memberProfile?.detailedAddress).toBeTruthy();
     expect(li.memberProfile?.profileExtra).toBeNull();
-    expect(li.users[0]?.avatarKey).toBe('recruitment-id-card-portrait/test/li-portrait.jpg');
+    expect(li.users[0]?.avatarKey).toBe(liPortraitKey);
+    expect(await storage.headObject(liCropKey)).toMatchObject({ exists: false });
+    expect(await storage.headObject(liPortraitKey)).toMatchObject({ exists: true });
     // 紧急联系人迁移(2 个,priority 0/1)
     expect(li.emergencyContacts.length).toBe(2);
     // 报名行:promoted + 链 + 敏感清 + blob 归 member + 脱敏统计留存
@@ -2566,6 +2644,203 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     // cycle.memberNoSeq 自增到 3
     const cy = await prisma.recruitmentCycle.findFirstOrThrow({ where: { id: cycle.id } });
     expect(cy.memberNoSeq).toBe(3);
+    await storage.deleteObject(liPortraitKey);
+  });
+
+  it('㉖-crop-fail batch/single 删除异常安全失败：按序只删 promotable，业务/audit/outbox/号段/清敏字段零写', async () => {
+    const cycle = await openCycle();
+    const occupiedOpenid = 'crop-fail-bound-openid';
+    const occupier = await prisma.user.create({
+      data: {
+        username: 'crop-fail-bound-user',
+        passwordHash: 'x',
+        role: 'USER',
+        openid: occupiedOpenid,
+      },
+    });
+    const liKey = 'recruitment/crop/e2e-li-raw-sensitive.jpg';
+    const wangSkipKey = 'recruitment/crop/e2e-wang-skip-raw-sensitive.jpg';
+    const zhangKey = 'recruitment/crop/e2e-zhang-raw-sensitive.jpg';
+    const zhang = await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        realName: '张三',
+        idCardNumber: 'CROPFAIL0001',
+        openid: 'crop-fail-zhang-openid',
+        idCardCropImageKey: zhangKey,
+        idCardPortraitImageKey: 'recruitment/portrait/e2e-zhang-sensitive.jpg',
+      }) as never,
+    });
+    const wang = await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        realName: '王五',
+        idCardNumber: 'CROPFAIL0002',
+        openid: occupiedOpenid,
+        idCardCropImageKey: wangSkipKey,
+        idCardPortraitImageKey: 'recruitment/portrait/e2e-wang-sensitive.jpg',
+      }) as never,
+    });
+    const li = await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        realName: '李四',
+        idCardNumber: 'CROPFAIL0003',
+        openid: 'crop-fail-li-openid',
+        idCardCropImageKey: liKey,
+        idCardPortraitImageKey: 'recruitment/portrait/e2e-li-sensitive.jpg',
+      }) as never,
+    });
+    const applicationIds = [zhang.id, wang.id, li.id];
+    const before = await promotionWriteSnapshot(cycle.id, applicationIds);
+    const batchProviderMessage = `COS secret bucket failed for ${zhangKey}`;
+    const singleProviderMessage = `provider credential leaked for ${liKey}`;
+    const deleteSpy = jest
+      .spyOn(storage, 'deleteObject')
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error(batchProviderMessage))
+      .mockRejectedValueOnce(new Error(singleProviderMessage));
+
+    try {
+      const batch = await promote(cycle.id);
+      expectBizError(batch, BizCode.INTERNAL_ERROR);
+      expect(JSON.stringify(batch.body)).not.toContain(zhangKey);
+      expect(JSON.stringify(batch.body)).not.toContain(batchProviderMessage);
+      expect(deleteSpy.mock.calls.map(([key]) => key)).toEqual([liKey, zhangKey]);
+      expect(deleteSpy).not.toHaveBeenCalledWith(wangSkipKey);
+      expect(deleteSpy).not.toHaveBeenCalledWith(expect.stringContaining('/portrait/'));
+      expect(await promotionWriteSnapshot(cycle.id, applicationIds)).toEqual(before);
+
+      const single = await promoteSingle(li.id);
+      expectBizError(single, BizCode.INTERNAL_ERROR);
+      expect(JSON.stringify(single.body)).not.toContain(liKey);
+      expect(JSON.stringify(single.body)).not.toContain(singleProviderMessage);
+      expect(deleteSpy.mock.calls.map(([key]) => key)).toEqual([liKey, zhangKey, liKey]);
+      expect(await promotionWriteSnapshot(cycle.id, applicationIds)).toEqual(before);
+    } finally {
+      deleteSpy.mockRestore();
+      await prisma.user.delete({ where: { id: occupier.id } });
+    }
+  });
+
+  it('㉖-crop-retry batch/single 删除成功后 DB 失败：key 暂留、对象已缺失，修复后 absent-delete 幂等重试成功', async () => {
+    const cycle = await openCycle({ memberNoSeq: 999 });
+    const batchKey = 'recruitment/crop/e2e-batch-db-retry.jpg';
+    const singleKey = 'recruitment/crop/e2e-single-db-retry.jpg';
+    const batchRow = await prisma.recruitmentApplication.create({
+      data: publicityRow({
+        cycleId: cycle.id,
+        realName: '李四',
+        idCardNumber: 'CROPRETRY0001',
+        openid: 'crop-retry-batch-openid',
+        idCardCropImageKey: batchKey,
+      }) as never,
+    });
+    await storage.putObject({
+      key: batchKey,
+      body: Buffer.from('batch crop'),
+      contentType: 'image/jpeg',
+    });
+
+    const originalDelete = storage.deleteObject.bind(storage);
+    const deleteSpy = jest
+      .spyOn(storage, 'deleteObject')
+      .mockImplementation((key) => originalDelete(key));
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+    try {
+      const batchBefore = await promotionWriteSnapshot(cycle.id, [batchRow.id]);
+      expectBizError(await promote(cycle.id), BizCode.RECRUITMENT_MEMBER_NO_EXHAUSTED);
+      expect(await storage.headObject(batchKey)).toMatchObject({ exists: false });
+      expect(await promotionWriteSnapshot(cycle.id, [batchRow.id])).toEqual(batchBefore);
+      expect(
+        await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: batchRow.id } }),
+      ).toMatchObject({
+        statusCode: 'publicity',
+        idCardCropImageKey: batchKey,
+        promotedMemberId: null,
+        sensitivePurgedAt: null,
+      });
+
+      await prisma.recruitmentCycle.update({
+        where: { id: cycle.id },
+        data: { memberNoSeq: 0 },
+      });
+      const batchRetry = await promote(cycle.id);
+      expect(batchRetry.status).toBe(200);
+      expect(batchRetry.body.data.promoted[0].memberNo).toBe('26001');
+      expect(await storage.headObject(batchKey)).toMatchObject({ exists: false });
+      expect(
+        await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: batchRow.id } }),
+      ).toMatchObject({
+        statusCode: 'promoted',
+        idCardCropImageKey: null,
+        sensitivePurgedAt: expect.any(Date),
+      });
+
+      const singleRow = await prisma.recruitmentApplication.create({
+        data: publicityRow({
+          cycleId: cycle.id,
+          realName: '张三',
+          idCardNumber: 'CROPRETRY0002',
+          openid: 'crop-retry-single-openid',
+          idCardCropImageKey: singleKey,
+        }) as never,
+      });
+      await storage.putObject({
+        key: singleKey,
+        body: Buffer.from('single crop'),
+        contentType: 'image/jpeg',
+      });
+      await prisma.recruitmentCycle.update({
+        where: { id: cycle.id },
+        data: { memberNoSeq: 999 },
+      });
+      const singleBefore = await promotionWriteSnapshot(cycle.id, [singleRow.id]);
+      expectBizError(await promoteSingle(singleRow.id), BizCode.RECRUITMENT_MEMBER_NO_EXHAUSTED);
+      expect(await storage.headObject(singleKey)).toMatchObject({ exists: false });
+      expect(await promotionWriteSnapshot(cycle.id, [singleRow.id])).toEqual(singleBefore);
+      expect(
+        await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: singleRow.id } }),
+      ).toMatchObject({
+        statusCode: 'publicity',
+        idCardCropImageKey: singleKey,
+        promotedMemberId: null,
+        sensitivePurgedAt: null,
+      });
+
+      await prisma.recruitmentCycle.update({
+        where: { id: cycle.id },
+        data: { memberNoSeq: 1 },
+      });
+      const singleRetry = await promoteSingle(singleRow.id);
+      expect(singleRetry.status).toBe(200);
+      expect(singleRetry.body.data.memberNo).toBe('26002');
+      expect(await storage.headObject(singleKey)).toMatchObject({ exists: false });
+      expect(
+        await prisma.recruitmentApplication.findUniqueOrThrow({ where: { id: singleRow.id } }),
+      ).toMatchObject({
+        statusCode: 'promoted',
+        idCardCropImageKey: null,
+        sensitivePurgedAt: expect.any(Date),
+      });
+      expect(deleteSpy.mock.calls.map(([key]) => key)).toEqual([
+        batchKey,
+        batchKey,
+        singleKey,
+        singleKey,
+      ]);
+      const safeAbsentWarning = 'LocalProvider deleteObject: object already absent (idempotent)';
+      expect(warnSpy.mock.calls.filter(([message]) => message === safeAbsentWarning)).toHaveLength(
+        2,
+      );
+      const warningText = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(warningText).not.toContain(batchKey);
+      expect(warningText).not.toContain(singleKey);
+    } finally {
+      warnSpy.mockRestore();
+      deleteSpy.mockRestore();
+    }
   });
 
   // ===== 统一通知 S3(评审稿 §6.4 / 招新 §9.1):发号 → 定向通知(站内 + 微信)=====

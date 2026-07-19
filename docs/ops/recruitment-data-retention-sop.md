@@ -34,7 +34,7 @@
 | `phoneChangeReason` | 换手机原因自由短串(可含 PII;刀C true-up) |
 | `phoneBindingHistory` | 换绑历史 JSON(含明文手机;刀C true-up) |
 
-> **刀C true-up(2026-07-11)**:上表后 10 行为 F5/F7/S4a/鉴伪版加列后的补登——此前 SOP 只列了 phase-1 的 10 字段,新列一直不在清理范围(留存承诺悬空)。同日起 **promote 也即时清同一集合**(`recruitment-promotion.service.ts`;promoted 行仍由 `sensitivePurgedAt` 跳过,不重复清)。
+> **刀C true-up(2026-07-11)**:上表后 10 行为 F5/F7/S4a/鉴伪版加列后的补登——此前 SOP 只列了 phase-1 的 10 字段,新列一直不在清理范围(留存承诺悬空)。同日起 **promote 也即时清同一集合**(`recruitment-promotion.service.ts`;promoted 行仍由 `sensitivePurgedAt` 跳过,不重复清);其中主体框裁剪图的 promote 物理删除顺序见 §1.1。
 
 **保留(脱敏统计维度,招新漏斗分析)**:`cycleId`(轮次)/ `ageGroup`(年龄段)/ `genderCode`(性别)/ `cityDistrict`(城市到区)/ `sourceChannel`(来源渠道)/ `eliminationStage`(淘汰环节)/ `isForeigner`(历史 DB 列,语义=非大陆证件)/ `documentTypeCode` / `statusCode` / `verifyOutcome` / `createdAt`。`certificateReviewStatus` 只存类别审核态、时间、审核人 id 与审核备注(约束为不写 PII),不是证书图或申请人身份数据;未发号脱敏行可保留为流程证据,**promote 会与 `certificateImages` 同时清空**避免搬档后双份状态。
 
@@ -46,7 +46,19 @@
 | 轮次 **结束**(`recruitment_cycles.statusCode='closed'`)且申请**不在 phase-2 在途/已转正**(`statusCode NOT IN ('verified','pending_evaluation','publicity','promoted')`) | 轮次 `closedAt` **30 天**后 | 轮次结束 = 该批招新收口,未通过 / 未进 phase-2 者一并脱敏 |
 
 > **数值可改**:维护者可按需调整 30 天窗口(如合规要求延长),直接改本文件数值并在 §5 记录;无需重新评审。**禁止** < 7 天。
-> **不在清理范围(phase-2 落地后 2026-06-19 true-up)**:① **phase-2 在途行** `statusCode IN ('verified','pending_evaluation','publicity')`(门槛 / 待综合评定 / 公示中,正流转中,数据保留至 promote 消费或被淘汰转 rejected)——含**外籍 publicity 行**(一键发号 skip,待 admin 手动建档,详 [`recruitment-phase2-review.md §10`](../archive/reviews/recruitment-phase2-review.md));② **`promoted` 行**——promote 时 PII 已**即时清**(`sensitivePurgedAt` 已置 + 敏感字段已 NULL + 证件照 blob 归 member),本 SOP 的 `sensitivePurgedAt IS NULL` 自动跳过,**无需也不应再清**;转正后 PII 由 `member_profiles` / `emergency_contacts` 承载,归既有成员数据治理(C-8 议题)。
+> **不在清理范围(phase-2 落地后 2026-06-19 true-up)**:① **phase-2 在途行** `statusCode IN ('verified','pending_evaluation','publicity')`(门槛 / 待综合评定 / 公示中,正流转中,数据保留至 promote 消费或被淘汰转 rejected)——非大陆证件不构成独立 batch skip:资料与登录锚齐备的 publicity 行可直接批量发号,仍缺派生字段/锚点的行才留在 publicity 补录或走单人建档;② **`promoted` 行**——promote 时 PII 已**即时清**(`sensitivePurgedAt` 已置 + 敏感字段已 NULL + 证件照 blob 归 member),本 SOP 的 `sensitivePurgedAt IS NULL` 自动跳过,**无需也不应再清**;转正后 PII 由 `member_profiles` / `emergency_contacts` 承载,归既有成员数据治理(C-8 议题)。
+
+### 1.1 Promote 主体裁剪图即时清理顺序(batch / single)
+
+`idCardCropImageKey` 的 blob 没有成员档案落点,因此 promote 必须使用以下固定顺序;本节只约束清理时序,**不改变** `decidePromotionIssuance` 的资格判断:
+
+1. **batch**:完成报名读取 → `comparePromotionOrder` 排序 → promotable/skip 分区 → 全部 bcrypt → VOL 组织校验后,按已排序 promotable **逐条顺序**调用现有 `STORAGE_PROVIDER.deleteObject(key)`;全部删除成功后才进入发号业务 transaction。禁止 `Promise.all`。
+2. **single**:完成状态/资料/年龄/登录锚校验 → bcrypt → VOL 组织校验后,紧贴业务 transaction 前删除该行主体裁剪图。
+3. 两条路径都**只删** promotable 的 `idCardCropImageKey`;skip 行不删,`idCardPortraitImageKey` 不删(成功发号时转 `User.avatarKey`),原证件图/签名图/证书图也不走此删除步骤。
+4. 任一 delete 异常统一返回安全 `50000`,不记录或回传 raw key / provider 原始消息;该次业务 transaction 根本不进入,所以 Member/User/Profile/Contact/outbox/audit/号段/报名清敏均零写。batch 在失败点之前已成功删除的 crop 不恢复,整批重试同样依赖 absent-delete 幂等。
+5. delete 全成功后若 DB transaction 失败,报名行仍为 publicity 且 key 可能暂指向已不存在对象;先修复 DB 阻断再原请求重试,provider 对 absent delete 视作成功。**不**恢复 blob、**不**为此增加 ledger/schema。
+
+> 边界:本顺序沿现有 raw key + 当前 `STORAGE_PROVIDER` 路由执行,不宣称解决跨 provider 历史 locator、Attachment ledger 或 repo-wide raw-key Phase 2。
 
 ## 2. 触发条件
 
@@ -215,7 +227,7 @@ DELETE FROM recruitment_identity_sessions WHERE "expiresAt" < now() - interval '
 ## 4. 边界与禁止
 
 - ❌ **不**删行(`DELETE` / 软删):脱敏维度留作招新漏斗统计;只清敏感字段
-- ❌ **不**清 phase-2 在途行 `statusCode IN ('verified','pending_evaluation','publicity')`(正流转中,含外籍待手动建档的 publicity 行;§1 注);`promoted` 行 promote 已即时清(`sensitivePurgedAt` 已置,WHERE 自动跳过,不重复清)
+- ❌ **不**清 phase-2 在途行 `statusCode IN ('verified','pending_evaluation','publicity')`(正流转中;非大陆证件资料齐备时可 batch,缺资料/锚点时继续留 publicity 补录或单人建档;§1 注);`promoted` 行 promote 已即时清(`sensitivePurgedAt` 已置,WHERE 自动跳过,不重复清)
 - ❌ **不**碰 `members` / `users` / `MemberProfile`(队员档案)/ 任何非招新表(§3x 身份会话表除外)
 - ❌ **不**先清 DB 后删 blob(次序反 = blob 孤儿);**不**用 `TRUNCATE`
 - ❌ **不**改 §1 触发 `WHERE` 列(`statusCode` / `createdAt` / 轮次 `closedAt` 为窗口锚)
