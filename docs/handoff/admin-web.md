@@ -93,6 +93,8 @@
 >
 > **单 gate 与 Team Join final join**：`Create/UpdateTeamJoinCycleDto` 可配置 `requiresInsurance`（create 缺省 false），response 始终回显。只有 `INSURANCE_ENFORCEMENT_ENABLED=true && cycle.requiresInsurance=true` 时，admin final join 才按 verified self → live team policy coverage 固定优先级校验入队北京日，并在根事务生成绑定 application 的恰一条最小 evidence；无来源返 `26031`（“本轮入队要求保险,当前队员无覆盖入队日期的有效保险,无法入队”），不得复用活动的 `26030`。gate=false 时字段仍可配置/展示，但不查资格、不写 evidence；活动保险失败继续 `26030`。
 >
+> **PR4 migration 终态**：约束代码已交付但本 PR 未 deploy、生产尚未生效；deploy 后 Evidence 的单 source/owner、kind/区间/review snapshot、同 member、owner 全局唯一与 immutable 才由 PostgreSQL 兜底，source/owner 后续编辑或软删不改历史 snapshot。该收口没有新增 route、DTO、权限、审核动作或前端字段，Admin 契约 0 diff。
+>
 > **rollout 边界**：维护者于 2026-07-19 逐字确认“旧客户端都没上线，放心操作执行”，这只解除客户端兼容等待，**不代表旧 server=0 已验证**。本 PR 不 release/deploy/启用；production 配置必须显式 true/false，切 true 前先 drain 旧 server/旧事务，且整个 fleet 必须同档位，禁止 true/false 混跑。App expectedVersion 与活动 consumer 细节见 [`miniapp.md §1.2`](miniapp.md)。
 
 > **v0.49.0 队员轴 scoped-authz 已接通**:members 列表/options 只返回调用者可见组织树内、具有 active **PRIMARY** membership 的队员；SECONDARY/TEMPORARY/SUPPORT 不扩大鉴权范围。显式 `organizationId` + `includeDescendants` 是用户筛选条件，服务端会再与鉴权范围求交，绝不越界。队员 detail/全部写动作、证书、档案、紧急联系人、个人保险以及本节三条跨轴查询都对 member/resource ref 重做 authz 判定：范围外 detail/写返 `30100`；有读码但有效范围为空时列表返回 200 空集。队长/部长沿 `org-admin` 可读可管本树，组长沿 `group-manager` 管本组；副职 `org-readonly`/`group-readonly` 与分管 `org-supervisor` 只读，写动作恒 `30100`。敏感明文码仍不随派生角色下放。

@@ -57,6 +57,7 @@
 - `PATCH /api/app/v1/me/insurances/:id` 在 body 回传 `expectedVersion`;`DELETE` 同路径在 query 回传 `expectedVersion`。OpenAPI/客户端契约自 PR3 起均为**必填**；single gate=true 时缺失、`null`、空串或纯空白统一 `40000`，并保证 0 mutation/0 audit。显式旧版本仍返 `26011`：先刷新该保险、保留用户输入并让用户确认后再重试，禁止拿旧版本盲重放。
 - 实质 PATCH 会 `version + 1` 并把审核态重置为 `pending`、清空审核责任时间；空 body、仅 `expectedVersion`、trim 后相同字符串或北京 date-only 相同都是真 no-op，`version/status/updatedAt` 不变。DELETE 会 `version + 1`，但保留删除前审核态与审核责任时间。
 - single gate=true 后，`requiresInsurance=true` 的活动只接受覆盖完整北京日区间的 **verified 自购保险**，否则再尝试 live 团队保单覆盖；pending/rejected/软删/日期不覆盖都返既有 `26030`。报名成功会在同一事务生成恰一条最小 evidence，前端无新字段可消费；evidence 不保存保险公司、保单号、note/reason、图片/key/URL。
+- PR4 migration/约束代码已交付但本 PR 未 deploy、生产尚未生效；deploy 后单 source/owner、kind/区间/review snapshot、同 member、owner 全局唯一与 immutable 才由数据库兜底，source/owner 后续编辑或软删不改历史 evidence。**没有新增 route、DTO、字段或前端动作，客户端契约 0 diff**。
 - gate=false 保留 PR2 运行时兼容（缺版本仍可接受、活动 consumer 旧语义、0 evidence）；这只是 rollout 档位，不改变客户端“expectedVersion 必填”的终态契约。维护者于 2026-07-19 仅确认“旧客户端都没上线，放心操作执行”，**没有验证旧 server=0**；本 PR 不部署/启用。production 切 true 前必须 drain 全部旧 server/旧事务，并确保 fleet 不出现 true/false 混跑。Admin final join 与配置细节见 [`admin-web.md §2.2`](admin-web.md)。
 
 ### 2.1 活动 GPS 自助打卡(F2)

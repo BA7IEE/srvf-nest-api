@@ -14,7 +14,7 @@
 - ❌ 不拆 single gate、不在 final join 之前生成/消费 evidence、不改变 Application→Cycle→source→Member 锁图；gate=false 不得留下资格查询或 evidence。
 - ❌ 不新增 route/permission/AuditLogEvent/schema/seed/RBAC；26031 只用于 Team Join final join 无合格保险。
 - ❌ Evidence 不得出现保单号、图片/附件、key/URL、note/reason 或自由文本。
-- ❌ PR4 前不得加入 exactly-one、kind/interval/review snapshot、同 member、single-owner、immutable trigger 等最终 DB 约束；应用层仍须 fail-closed。
+- ❌ PR4 最终 exactly-one、kind/interval/review snapshot、同 member、single-owner、immutable migration 代码已交付于本 PR但尚未 deploy、生产未生效；应用层 fail-closed 仍保留，禁止新增 Evidence 改删路径或把约束错误映射成新 BizCode。
 
 ## Validation
 

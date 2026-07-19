@@ -1918,8 +1918,9 @@ model MemberInsurance {
   coverageEnd   DateTime // 到期时间(必填;有效性唯一依据,D-INS-5)
   expireNotifiedAt DateTime? // v0.47.0 到期提醒幂等 marker;首次命中 30 天窗口后置 now,不因改期自动清空
 
-  // D-INSURANCE v3 PR1 expand。legacy(含软删)统一 pending/v0，不推断 verified。
-  reviewStatusCode String @default("pending") // pending / verified / rejected；PR1 runtime 尚不消费
+  // D-INSURANCE v3 PR4 final。legacy(含软删)仍沿 PR1 统一 pending/v0，不推断 verified；
+  // version 非负且 pending/reviewed snapshot 组合由 migration CHECK 兜底。
+  reviewStatusCode String @default("pending") // pending / verified / rejected
   version          Int    @default(0)
   reviewedByUserId String?
   reviewedAt       DateTime?
@@ -1982,27 +1983,28 @@ model TeamInsuranceCoverage {
   @@map("team_insurance_coverages")
 }
 
-// D-INSURANCE v3 PR1 expand-only compatibility skeleton.
-// 双 source / 双 owner FK 与快照字段在兼容期全部可空；PR4 才加入 exactly-one、
-// kind 对齐、区间、审核快照、跨 member、全局单 owner 与 immutable 约束。
+// D-INSURANCE v3 PR4 final evidence model.
+// exactly-one、kind 对齐、区间、审核快照、跨 member、全局单 owner 与 immutable
+// 约束定义于 20260719160335_insurance_constraints migration，deploy 后才在 DB 生效；
+// Prisma DSL 仅表达最终必填列与关系，CHECK/partial unique/trigger 以 migration source 为准。
 // 本表刻意不含 updatedAt/deletedAt，也不存保单号、图片/附件/key/URL 或自由文本。
 model InsuranceEligibilityEvidence {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
 
-  sourceKind              String?
+  sourceKind              String
   memberInsuranceId       String?
   teamInsuranceCoverageId String?
-  ownerKind               String?
+  ownerKind               String
   activityRegistrationId  String?
   teamJoinApplicationId   String?
   sourceRevision          Int?
   sourceReviewedByUserId  String?
   sourceReviewedAt        DateTime?
-  requiredFrom            DateTime?
-  requiredThrough         DateTime?
+  requiredFrom            DateTime
+  requiredThrough         DateTime
   sourceCoverageStart     DateTime?
-  sourceCoverageEnd       DateTime?
+  sourceCoverageEnd       DateTime
 
   memberInsurance       MemberInsurance?       @relation(fields: [memberInsuranceId], references: [id], onDelete: Restrict)
   teamInsuranceCoverage TeamInsuranceCoverage? @relation(fields: [teamInsuranceCoverageId], references: [id], onDelete: Restrict)
@@ -2305,7 +2307,7 @@ model TeamJoinCycle {
   statusCode String // open / closed(后台开关;至多一个 open:service 预检 + partial unique DB 兜底)
   openedAt   DateTime?
   closedAt   DateTime?
-  requiresInsurance Boolean @default(false) // PR1 dormant flag；PR3 gate cutover 前不参与入队判断
+  requiresInsurance Boolean @default(false) // PR3 single gate=true 时参与 final join；默认 false
 
   // 入队候选部门配置(PR-4 才接业务):null/空=全部 ACTIVE;max null=默认 8。
   openOrganizationIds Json?

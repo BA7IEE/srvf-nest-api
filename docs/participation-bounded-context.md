@@ -65,7 +65,7 @@ Activity (statusCode: draft / published / completed / cancelled)
   │     │                       NULLABLE, Restrict(Q-S21:不是 SetNull)]
   │     └─ InsuranceEligibilityEvidence[]
   │                            [nullable owner FK activityRegistrationId, Restrict;
-  │                             PR1 compatibility skeleton only,0 runtime write]
+  │                             PR3 producer + PR4 migration single-owner/immutable]
   ├─ ActivityCheckIn[]         [FK activityId → Activity.id, Restrict;
   │     ├─ FK registrationId → ActivityRegistration.id, Restrict;
   │     │  partial unique registrationId WHERE deletedAt IS NULL
@@ -91,11 +91,12 @@ Activity (statusCode: draft / published / completed / cancelled)
                           │   tx.contributionRule.findMany
 AttendanceRecord.roleCode ┘
 
-InsuranceEligibilityEvidence (D-INSURANCE v3 PR1 expand-only)
+InsuranceEligibilityEvidence (D-INSURANCE v3 PR4 migration source;未 deploy)
   ├─ source: memberInsuranceId? / teamInsuranceCoverageId? [均 Restrict]
   └─ owner: activityRegistrationId? / teamJoinApplicationId? [均 Restrict]
-  PR1 四列与 kind/snapshot 均可空；exactly-one、kind 对齐、区间、同 member、
-  global single-owner 与 immutable 约束留 PR4，owner 表不增加 evidenceId。
+  source/owner FK 各自可空但同行 exactly-one + kind 对齐；required interval 必填，
+  review snapshot 按 self/team 条件冻结；7 CHECK + global single-owner + 四组合同 member +
+  immutable，owner 表不增加 evidenceId。
 
 Certificate (不在 participation 图内)
   └─ FK memberId → Member.id
@@ -116,11 +117,11 @@ Certificate (不在 participation 图内)
 | `Activity` ← `AttendanceSheet.activityId` | FK NOT NULL | Restrict | 1 Activity 多 Sheet |
 | `AttendanceSheet` ← `AttendanceRecord.sheetId` | FK NOT NULL | Restrict | 记录必须挂在 Sheet 上 |
 | `ActivityRegistration` ← `AttendanceRecord.registrationId` | FK **NULLABLE** | Restrict(Q-S21 明确**不**是 SetNull) | 临时参加 / 非公开报名时为 null |
-| `MemberInsurance` ← `InsuranceEligibilityEvidence.memberInsuranceId` | FK **NULLABLE** | Restrict | self source；PR1 不要求 exactly-one，不生成 evidence |
-| `TeamInsuranceCoverage` ← `InsuranceEligibilityEvidence.teamInsuranceCoverageId` | FK **NULLABLE** | Restrict | team source；PR1 不要求 exactly-one，不生成 evidence |
+| `MemberInsurance` ← `InsuranceEligibilityEvidence.memberInsuranceId` | FK **NULLABLE** | Restrict | self source；同行必须与 team source exactly-one，snapshot 必含 version/reviewer/time |
+| `TeamInsuranceCoverage` ← `InsuranceEligibilityEvidence.teamInsuranceCoverageId` | FK **NULLABLE** | Restrict | team source；同行必须与 self source exactly-one，review snapshot 三字段固定 null |
 | `ActivityRegistration` ← `InsuranceEligibilityEvidence.activityRegistrationId` | FK **NULLABLE** | Restrict | registration owner；Evidence 必须先于 Registration reset |
-| `TeamJoinApplication` ← `InsuranceEligibilityEvidence.teamJoinApplicationId` | FK **NULLABLE** | Restrict | join owner；PR1 `requiresInsurance` 不生效 |
-| `User` ← `InsuranceEligibilityEvidence.sourceReviewedByUserId` | FK **NULLABLE** | Restrict | 审核快照 reviewer；兼容期可空 |
+| `TeamJoinApplication` ← `InsuranceEligibilityEvidence.teamJoinApplicationId` | FK **NULLABLE** | Restrict | join owner；仅 single gate=true + cycle requiresInsurance final join 生成 |
+| `User` ← `InsuranceEligibilityEvidence.sourceReviewedByUserId` | FK **NULLABLE** | Restrict | self reviewer 快照必填；team source 固定 null |
 | `Activity` ← `ActivityFeedback.activityId` | FK NOT NULL | Restrict | 评价稳定锚定活动；不级联删除 |
 | `Member` ← `ActivityFeedback.memberId` | FK NOT NULL | Restrict | 评价稳定锚定实名队员；live `(activityId,memberId)` partial unique |
 | `ContributionRule` ↔ `AttendanceRecord` | **不是 FK** | — | 业务键 lookup,仅在 submit 事务内查表预填 `contributionPoints` |
@@ -146,7 +147,7 @@ Certificate (不在 participation 图内)
 | 12. 活动评价（F2 App） | activity-feedbacks | 本人 `PUT/GET feedback`；completed + `endAt + N 天` + approved AttendanceRecord 资格 | PUT 在模块自有事务内 create/update `ActivityFeedback`；GET 无评价恒 200/null；不改变 Attendance / Contribution / settlement 语义 |
 | —. ContributionRule 维护 | contribution-rules | ops 后台 CRUD;`status: ACTIVE / INACTIVE` | **不是流程状态实体**;仅作为预填配置,在 Step 7 被读取;`active_unique (activityTypeCode, attendanceRoleCode) WHERE deletedAt IS NULL AND status = 'ACTIVE'` 由 migration SQL 加 partial unique |
 
-> **D-INSURANCE v3 PR1 当前事实**：上述生命周期零行为变化。`MemberInsurance` legacy（含软删）只被统一回填为 pending/v0/null reviewer；Evidence 表可为空且 runtime 0 producer；`TeamJoinCycle.requiresInsurance` 默认 false 且不被消费。审核/CAS 在 PR2，verified-only/evidence/join gate 在 PR3，最终数据库约束在 PR4。
+> **D-INSURANCE v3 PR4 当前事实**：migration/约束代码已交付于本 PR，尚未 deploy、生产未生效。deploy 后 INSERT 的结构非法/缺 FK/跨 member 分别由 CHECK 23514/FK 23503/`insurance_evidence_member_match` 23514 拒绝；对已命中 Evidence 的 UPDATE，仅结构合法、目标存在且跨 member 先得 23514/`insurance_evidence_member_match`，结构非法、缺 FK、同 member 任意字段及 DELETE 均得 55000/`insurance_evidence_immutable`。source/owner 后续软删或编辑不改历史 snapshot；gate=false 仍 0 evidence。
 
 > **F2/F3 当前事实**:`ActivityCheckIn` 已提供 App 本人签到/签退/当前状态 3 个 canonical 端点，
 > 以及 Admin 证据列表/只读考勤草稿 2 个 canonical 端点。首次 App create / checkout CAS 统一先过
@@ -158,7 +159,7 @@ Certificate (不在 participation 图内)
 
 - `AttendanceRecord.contributionPoints` 字段层为历史兼容仍可空;业务写路不接受人工最终分,submit/edit 一律从 ContributionRule 计算,无规则落 0;仅 approved 时"语义生效"。
 - 当前 attendance 在 `requiresInsurance=true` 时只强制 `registrationId` 同活动/同成员且为 pass;它不能证明该报名创建时 `requiresInsurance=true`,不追溯旧报名,也不代表保险状态、有效期或活动时段经过独立核验。
-- PR1 的 `InsuranceEligibilityEvidence` 只是 nullable FK 骨架，不能被当作资格事实；现有任意 live self 可满足门槛的风险尚未关闭，pending/rejected 也尚未由 consumer 排除。
+- `InsuranceEligibilityEvidence` 是 PR3 gate=true 根事务生成的最小资格事实；PR4 migration deploy 后再由 PostgreSQL 拒绝 source/owner mismatch、重复 owner 与事后改删。pending/rejected 不生成，gate=false 兼容档仍不生成 Evidence。
 - **全局每日封顶在本 context 之外**(活动闭环硬化 2026-06-21;v0.48.0 上限调整):队员单个北京日历日的贡献值总分封顶 3(`GLOBAL_DAILY_CONTRIBUTION_CAP`),封顶**只**发生在 recruitment 侧 team-join `computeContribution`(按 `checkInAt` 北京日分组 → 每日封顶 → 加总),**不**在 participation 侧落库——`AttendanceRecord.contributionPoints` 仍存原始规则分。历史记录同样按当前上限读时实时重算;`ContributionRule.dailyCap` 列保留但已 deprecated、calculator 不再读。
 - `attendance.recorded` 事件是 participation context **向外的唯一已锁定出口语义**;其它消费方(未来 contribution 聚合 / 仪表盘 / 队员个人贡献值汇总)应当订阅它,**不应**直接读 `AttendanceSheet` / `AttendanceRecord` 表。
 - Activity → completed 的唯一通路是 activities 模块 `complete` action；attendances submit 不再执行该跨 aggregate 写。
@@ -187,7 +188,7 @@ Certificate (不在 participation 图内)
 | `activities` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | Activity 是上游,不下探;若需要派生统计,通过 `attendance.recorded` 事件或独立 service |
 | `activities` / `activity-registrations` 在调用方事务内执行 `promoteActivityWaitlist` | ✅ 限定例外 | 纯函数入口，固定 Activity → Registration 锁序，只写 waitlisted → pending + 同事务 `registration.review(action=promote)`；不引入兄弟 Service 依赖 |
 | `activity-registrations` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | 同上 |
-| `activity-registrations` 读 / 写 `InsuranceEligibilityEvidence` | ❌ PR1 禁止 | PR1 只有反向 relation；PR3 单 gate cutover 前 consumer 保持旧语义、0 evidence producer |
+| `activity-registrations` 读 / 写 `InsuranceEligibilityEvidence` | ✅ 限定例外 | 只允许 create 根事务调用 `InsuranceRequirementService` 在 Registration 后、Audit 前生成一条；禁止本模块直接 Prisma 改删，PR4 migration deploy 后由 immutable + owner unique 兜底 |
 | `contribution-rules` 在事务内读 / 写其它 participation 表 | ❌ 不允许 | ContributionRule 是配置实体,只被读,不读人 |
 | `activity-feedbacks` 读取 `Activity` / `AttendanceSheet` / `AttendanceRecord` | ✅ 限定例外 | 只为 completed/window、approved-only 到场资格与 Admin 评价率分母；直接读 Prisma，不 import 三个兄弟 god-service |
 | `activity-feedbacks` 写其它 participation 表 | ❌ 不允许 | 评价写只落 `ActivityFeedback`；不得改 Attendance / Contribution / settlement |
