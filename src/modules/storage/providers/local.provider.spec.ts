@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
 
+import { Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 
 import type appConfig from '../../../config/app.config';
@@ -99,8 +100,23 @@ describe('LocalStorageProvider', () => {
       });
     });
 
-    it('不存在 → ENOENT 幂等不抛', async () => {
-      await expect(svc.deleteObject('never-existed.txt')).resolves.toBeUndefined();
+    it('不存在 → ENOENT 幂等成功且 WARN 不含 raw key/path', async () => {
+      const rawKey = 'recruitment/crop/never-existed-sensitive-key.jpg';
+      const rawPath = path.join(tmpRoot, rawKey);
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+      try {
+        await expect(svc.deleteObject(rawKey)).resolves.toBeUndefined();
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        expect(warnSpy).toHaveBeenCalledWith(
+          'LocalProvider deleteObject: object already absent (idempotent)',
+        );
+        const warningText = warnSpy.mock.calls.flat().map(String).join(' ');
+        expect(warningText).not.toContain(rawKey);
+        expect(warningText).not.toContain(rawPath);
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
 
     it('嵌套目录文件删除', async () => {

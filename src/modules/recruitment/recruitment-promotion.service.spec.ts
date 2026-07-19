@@ -27,6 +27,9 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
   function buildApps(n: number) {
     return Array.from({ length: n }, (_, i) => ({
       id: `app-${i}`,
+      cycleId: 'cyc1',
+      statusCode: 'publicity',
+      deletedAt: null,
       openid: `openid-${i}`,
       realName: `报名${String(i).padStart(2, '0')}`,
       genderCode: i % 2 === 0 ? 'male' : 'female',
@@ -36,6 +39,8 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
       idCardNumber: `IDCARD${String(i).padStart(4, '0')}`,
       phone: `1390000${String(i).padStart(4, '0')}`,
       idCardImageKey: null,
+      idCardCropImageKey: null as string | null,
+      idCardPortraitImageKey: null as string | null,
       emergencyContacts: null,
       profileExtra: null,
       detailedAddress: '北京市朝阳区某街道 1 号',
@@ -96,9 +101,10 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
       },
       recruitmentApplication: {
         findMany: jest.fn().mockResolvedValue(apps),
+        findFirst: jest.fn().mockResolvedValue(apps[0] ?? null),
       },
       organization: { findFirst: orgFindFirst },
-      user: { findMany: userFindMany },
+      user: { findMany: userFindMany, findFirst: jest.fn().mockResolvedValue(null) },
       // $transaction:记录进出事件 + 第二参(超时选项),在回调内运行桩 tx
       $transaction: jest
         .fn()
@@ -127,8 +133,9 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
     });
     const notificationOutbox = { enqueue };
 
-    // 十项收口刀C:storage mock(promote commit 后 best-effort 删主体裁剪图 blob;失败不阻断)
-    const storage = { deleteObject: jest.fn().mockResolvedValue(undefined) };
+    // 主体裁剪图在业务 transaction 前经 provider fail-closed 删除；默认无 key / 删除成功。
+    const storageDelete = jest.fn<Promise<void>, [string]>().mockResolvedValue(undefined);
+    const storage = { deleteObject: storageDelete };
     const service = new RecruitmentPromotionService(
       prisma as never,
       rbac as never,
@@ -142,9 +149,12 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
       events,
       hashSpy,
       txMock,
+      prisma,
       userFindMany,
       orgFindFirst,
       enqueue,
+      auditLog: auditLogs.log,
+      storageDelete,
       getTxOptions: () => txOptions,
     };
   }
@@ -306,6 +316,163 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
     expect(txMock.member.create).not.toHaveBeenCalled();
   });
 
+  // ===== D-sensitive crop purge:事务前顺序 fail-closed =====
+
+  it('batch 仅按发号序逐条删除 promotable 的主体 crop；skip/portrait 不删，且在 bcrypt+VOL 后、transaction 前', async () => {
+    const apps = buildApps(3);
+    Object.assign(apps[0], {
+      realName: '张三',
+      idCardCropImageKey: 'recruitment/crop/zhang-sensitive.jpg',
+      idCardPortraitImageKey: 'recruitment/portrait/zhang.jpg',
+    });
+    Object.assign(apps[1], {
+      realName: '王五',
+      idCardCropImageKey: 'recruitment/crop/wang-skip-sensitive.jpg',
+      idCardPortraitImageKey: 'recruitment/portrait/wang.jpg',
+    });
+    Object.assign(apps[2], {
+      realName: '李四',
+      idCardCropImageKey: 'recruitment/crop/li-sensitive.jpg',
+      idCardPortraitImageKey: 'recruitment/portrait/li.jpg',
+    });
+    const { service, hashSpy, orgFindFirst, prisma, storageDelete, userFindMany } = buildService(
+      0,
+      apps,
+    );
+    // 王五的 openid 已被既有 User 占用 → skip；仍带 crop key，用于锁定 skip 行绝不删除。
+    userFindMany.mockResolvedValue([{ openid: apps[1].openid }]);
+
+    let activeDeletes = 0;
+    let maxActiveDeletes = 0;
+    storageDelete.mockImplementation(async () => {
+      activeDeletes += 1;
+      maxActiveDeletes = Math.max(maxActiveDeletes, activeDeletes);
+      await Promise.resolve();
+      activeDeletes -= 1;
+    });
+
+    const result = await service.promote('cyc1', user, meta, now);
+
+    expect(result.promoted.map((item) => item.realName)).toEqual(['李四', '张三']);
+    expect(result.skipped).toEqual([
+      expect.objectContaining({ realName: '王五', reason: 'openid-already-bound' }),
+    ]);
+    expect(storageDelete.mock.calls.map(([key]) => key)).toEqual([
+      'recruitment/crop/li-sensitive.jpg',
+      'recruitment/crop/zhang-sensitive.jpg',
+    ]);
+    expect(storageDelete).not.toHaveBeenCalledWith('recruitment/crop/wang-skip-sensitive.jpg');
+    expect(storageDelete).not.toHaveBeenCalledWith(expect.stringContaining('/portrait/'));
+    expect(maxActiveDeletes).toBe(1); // 若误用 Promise.all，这里会 >1。
+
+    const firstDeleteOrder = storageDelete.mock.invocationCallOrder[0];
+    const lastDeleteOrder = storageDelete.mock.invocationCallOrder[1];
+    expect(Math.max(...hashSpy.mock.invocationCallOrder)).toBeLessThan(firstDeleteOrder);
+    expect(orgFindFirst.mock.invocationCallOrder[0]).toBeLessThan(firstDeleteOrder);
+    expect(lastDeleteOrder).toBeLessThan(prisma.$transaction.mock.invocationCallOrder[0]);
+  });
+
+  it('batch crop 删除异常收敛为安全 500，transaction 根本不进入且全部业务/audit/outbox 零写', async () => {
+    const rawKeyA = 'recruitment/crop/li-raw-sensitive.jpg';
+    const rawKeyB = 'recruitment/crop/zhang-raw-sensitive.jpg';
+    const rawProviderMessage = `COS bucket=private-bucket delete failed for ${rawKeyB}`;
+    const apps = buildApps(2);
+    Object.assign(apps[0], { realName: '张三', idCardCropImageKey: rawKeyB });
+    Object.assign(apps[1], { realName: '李四', idCardCropImageKey: rawKeyA });
+    const { service, prisma, txMock, enqueue, auditLog, storageDelete } = buildService(0, apps);
+    storageDelete
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error(rawProviderMessage));
+    const warnSpy = jest.spyOn(
+      (service as unknown as { logger: { warn(message: unknown): void } }).logger,
+      'warn',
+    );
+
+    let caught: unknown;
+    try {
+      await service.promote('cyc1', user, meta, now);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({ biz: BizCode.INTERNAL_ERROR });
+    expect((caught as Error).message).toBe(BizCode.INTERNAL_ERROR.message);
+    expect((caught as Error).message).not.toContain(rawKeyB);
+    expect((caught as Error).message).not.toContain(rawProviderMessage);
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(storageDelete.mock.calls.map(([key]) => key)).toEqual([rawKeyA, rawKeyB]);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(txMock.recruitmentCycle.update).not.toHaveBeenCalled();
+    expect(txMock.member.create).not.toHaveBeenCalled();
+    expect(txMock.user.create).not.toHaveBeenCalled();
+    expect(txMock.memberProfile.create).not.toHaveBeenCalled();
+    expect(txMock.emergencyContact.create).not.toHaveBeenCalled();
+    expect(txMock.memberOrganizationMembership.create).not.toHaveBeenCalled();
+    expect(txMock.recruitmentApplication.update).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(auditLog).not.toHaveBeenCalled();
+  });
+
+  it('promote-single crop 删除异常同样安全 fail-closed，transaction 未进入且零业务写', async () => {
+    const rawKey = 'recruitment/crop/single-raw-sensitive.jpg';
+    const rawProviderMessage = `provider credential error: ${rawKey}`;
+    const apps = buildApps(1);
+    Object.assign(apps[0], { realName: '单人甲', idCardCropImageKey: rawKey });
+    const { service, prisma, txMock, enqueue, auditLog, storageDelete } = buildService(0, apps);
+    storageDelete.mockRejectedValueOnce(new Error(rawProviderMessage));
+    const warnSpy = jest.spyOn(
+      (service as unknown as { logger: { warn(message: unknown): void } }).logger,
+      'warn',
+    );
+
+    let caught: unknown;
+    try {
+      await service.promoteSingle(apps[0].id, user, meta, now);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({ biz: BizCode.INTERNAL_ERROR });
+    expect((caught as Error).message).toBe(BizCode.INTERNAL_ERROR.message);
+    expect((caught as Error).message).not.toContain(rawKey);
+    expect((caught as Error).message).not.toContain(rawProviderMessage);
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(storageDelete).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(txMock.recruitmentCycle.update).not.toHaveBeenCalled();
+    expect(txMock.member.create).not.toHaveBeenCalled();
+    expect(txMock.user.create).not.toHaveBeenCalled();
+    expect(txMock.memberProfile.create).not.toHaveBeenCalled();
+    expect(txMock.emergencyContact.create).not.toHaveBeenCalled();
+    expect(txMock.recruitmentApplication.update).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(auditLog).not.toHaveBeenCalled();
+  });
+
+  it('crop 已删后 transaction 失败可按同 key 重试，absent-delete 幂等后正常发号', async () => {
+    const key = 'recruitment/crop/retry-sensitive.jpg';
+    const apps = buildApps(1);
+    Object.assign(apps[0], { realName: '重试甲', idCardCropImageKey: key });
+    const { service, prisma, storageDelete } = buildService(0, apps);
+    const presentBeforeDelete: boolean[] = [];
+    let objectPresent = true;
+    storageDelete.mockImplementation(() => {
+      presentBeforeDelete.push(objectPresent);
+      objectPresent = false;
+      return Promise.resolve();
+    });
+    prisma.$transaction.mockRejectedValueOnce(new Error('database transaction failed'));
+
+    await expect(service.promote('cyc1', user, meta, now)).rejects.toThrow(
+      'database transaction failed',
+    );
+    const retry = await service.promote('cyc1', user, meta, now);
+
+    expect(retry.promotedCount).toBe(1);
+    expect(storageDelete.mock.calls.map(([calledKey]) => calledKey)).toEqual([key, key]);
+    expect(presentBeforeDelete).toEqual([true, false]);
+  });
+
   // ===== durable outbox producer: 发号与 intent 同事务 =====
 
   it('发号逐项 enqueue targeted@1 intent，且全部在业务 transaction 内', async () => {
@@ -411,7 +578,7 @@ describe('RecruitmentPromotionService.promotePrecheck · 预检(同源 decidePro
     const auditLogs = { log: jest.fn().mockResolvedValue(undefined) };
     // promotePrecheck 纯读不派发;dispatcher 注 no-op 仅满足构造签名(断言其零调用见 it 内)。
     const notificationOutbox = { enqueue: jest.fn().mockResolvedValue({ id: 'intent' }) };
-    // 十项收口刀C:storage mock(promote commit 后 best-effort 删主体裁剪图 blob;失败不阻断)
+    // promotePrecheck 纯读，不触发 transaction 前主体裁剪图删除。
     const storage = { deleteObject: jest.fn().mockResolvedValue(undefined) };
     const service = new RecruitmentPromotionService(
       prisma as never,
