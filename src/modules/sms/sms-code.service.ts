@@ -179,7 +179,8 @@ export class SmsCodeService {
    *
    * 设计(E-8 + 评审稿 §10):本方法**不**参与调用方事务——
    * - 错码的 attempts+1 必须独立提交(若挂在外层事务里,抛错回滚会丢计数,错 5 次作废失效);
-   * - 命中走原子 updateMany({ consumedAt: null } → now)抢占消费,并发重放只有一个赢家;
+   * - 命中走单条 PostgreSQL UPDATE ... RETURNING,以同语句 DB 实时时钟校验并写入,
+   *   且重查消费 / 作废 / 尝试上限,并发重放只有一个赢家;
    * - "已消费但外层绑定事务失败"的窗口极窄(P2002 占用竞态),接受重新发码,
    *   优于"先绑后消费"(后者在 audit 失败时允许码重用)。
    */
@@ -189,19 +190,39 @@ export class SmsCodeService {
     code: string;
     userId: string | null; // 放宽 null:匿名报名人(E-P4-4);归属校验 null === null 天然放行(phone+purpose 为锚)
   }): Promise<{ codeId: string }> {
-    const now = new Date();
-    const active = await this.loadValidActiveCodeOrThrow(input, now);
+    const active = await this.loadValidActiveCodeOrThrow(input);
 
-    // 原子抢占消费:并发重放只有一个请求能把 consumedAt 从 null 置为 now
-    const consumed = await this.prisma.smsVerificationCode.updateMany({
-      where: { id: active.id, consumedAt: null },
-      data: { consumedAt: now },
-    });
-    if (consumed.count === 0) {
+    // 最终抢占以数据库实时 UTC 为唯一裁决时钟。locked_code 必须先完成 FOR UPDATE，
+    // db_clock 才能从其产出的 row 捕获 clock_timestamp()；热行等待不能冻结旧时钟。
+    // 同一 UPDATE 随后重查消费 / 作废 / attempts / expiry；0 行仍统一 24010。
+    const [consumed] = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      WITH locked_code AS MATERIALIZED (
+        SELECT candidate."id"
+        FROM "sms_verification_codes" AS candidate
+        WHERE candidate."id" = ${active.id}
+        FOR UPDATE
+      ),
+      db_clock AS MATERIALIZED (
+        SELECT
+          locked_code."id",
+          clock_timestamp() AT TIME ZONE 'UTC' AS captured_at
+        FROM locked_code
+      )
+      UPDATE "sms_verification_codes" AS target
+      SET "consumedAt" = db_clock.captured_at
+      FROM db_clock
+      WHERE target."id" = db_clock."id"
+        AND target."consumedAt" IS NULL
+        AND target."supersededAt" IS NULL
+        AND target."attempts" < ${SMS_CODE_MAX_ATTEMPTS}
+        AND target."expiresAt" > db_clock.captured_at
+      RETURNING target."id" AS "id"
+    `;
+    if (consumed === undefined) {
       throw new BizException(BizCode.SMS_CODE_INVALID);
     }
 
-    return { codeId: active.id };
+    return { codeId: consumed.id };
   }
 
   /**
@@ -218,46 +239,85 @@ export class SmsCodeService {
     code: string;
     userId: string | null; // 放宽 null:匿名报名人(E-P4-4)
   }): Promise<void> {
-    await this.loadValidActiveCodeOrThrow(input, new Date());
+    await this.loadValidActiveCodeOrThrow(input);
   }
 
   // 校验链(评审稿 §4;**统一 24010 防枚举**,禁止细分;E-6 抽出供
   // verifyAndConsume / assertValid 共用,verifyAndConsume 行为零漂移):
   // 取 phone+purpose 最新活码 → 不存在 / 已过期 / 已作废(错 5 次)/ 归属不符(E-8)
   // → 统一无效;码值不符 → attempts+1(独立提交,见 verifyAndConsume 方法注释)后统一无效。
-  private async loadValidActiveCodeOrThrow(
-    input: { phone: string; purpose: SmsPurpose; code: string; userId: string | null },
-    now: Date,
-  ): Promise<{ id: string }> {
-    const active = await this.prisma.smsVerificationCode.findFirst({
-      where: {
-        phone: input.phone,
-        purpose: input.purpose,
-        consumedAt: null,
-        supersededAt: null,
-      },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, codeHash: true, userId: true, expiresAt: true, attempts: true },
-    });
+  private async loadValidActiveCodeOrThrow(input: {
+    phone: string;
+    purpose: SmsPurpose;
+    code: string;
+    userId: string | null;
+  }): Promise<{ id: string }> {
+    // 先固定 phone+purpose 最新活码，再由同一只读 SQL 的数据库 UTC 时钟裁决
+    // attempts / expiry；不能把 eligibility 条件放进 latest_code，否则异常数据会跳回旧码。
+    const [active] = await this.prisma.$queryRaw<
+      Array<{ id: string; codeHash: string; userId: string | null }>
+    >`
+      WITH db_clock AS MATERIALIZED (
+        SELECT clock_timestamp() AT TIME ZONE 'UTC' AS captured_at
+      ),
+      latest_code AS MATERIALIZED (
+        SELECT
+          candidate."id",
+          candidate."codeHash",
+          candidate."userId",
+          candidate."expiresAt",
+          candidate."attempts"
+        FROM "sms_verification_codes" AS candidate
+        WHERE candidate."phone" = ${input.phone}
+          AND candidate."purpose" = CAST(${input.purpose} AS "SmsPurpose")
+          AND candidate."consumedAt" IS NULL
+          AND candidate."supersededAt" IS NULL
+        ORDER BY candidate."createdAt" DESC
+        LIMIT 1
+      )
+      SELECT
+        latest_code."id",
+        latest_code."codeHash",
+        latest_code."userId"
+      FROM latest_code
+      CROSS JOIN db_clock
+      WHERE latest_code."attempts" < ${SMS_CODE_MAX_ATTEMPTS}
+        AND latest_code."expiresAt" > db_clock.captured_at
+    `;
 
-    // 统一无效:不存在 / 已过期 / 已作废(错 5 次)/ 归属不符(E-8)
-    if (
-      active === null ||
-      active.expiresAt.getTime() <= now.getTime() ||
-      active.attempts >= SMS_CODE_MAX_ATTEMPTS ||
-      active.userId !== input.userId
-    ) {
+    // 统一无效:不存在 / DB 时钟已过期 / DB 行 attempts≥5 / 归属不符(E-8)
+    if (active === undefined || active.userId !== input.userId) {
       throw new BizException(BizCode.SMS_CODE_INVALID);
     }
 
     // 码值比对(timingSafeEqual 卫生习惯;两侧均为 64 字符 HMAC-SHA256 hex 定长)
     const candidateHash = this.hashCode(input);
     if (!hashEquals(candidateHash, active.codeHash)) {
-      // 错码计数独立提交(见 verifyAndConsume 方法注释);达到上限后续走上面的 attempts>=MAX 统一无效
-      await this.prisma.smsVerificationCode.update({
-        where: { id: active.id },
-        data: { attempts: { increment: 1 } },
-      });
+      // 错码计数独立提交(见 verifyAndConsume 方法注释)，且同样只认拿到行锁后的 DB UTC。
+      // 排队期间已过期 / 已消费 / 已作废 / 达上限时 0 行，不得再增加 attempts；对外仍统一 24010。
+      await this.prisma.$queryRaw<Array<{ id: string }>>`
+        WITH locked_code AS MATERIALIZED (
+          SELECT candidate."id"
+          FROM "sms_verification_codes" AS candidate
+          WHERE candidate."id" = ${active.id}
+          FOR UPDATE
+        ),
+        db_clock AS MATERIALIZED (
+          SELECT
+            locked_code."id",
+            clock_timestamp() AT TIME ZONE 'UTC' AS captured_at
+          FROM locked_code
+        )
+        UPDATE "sms_verification_codes" AS target
+        SET "attempts" = target."attempts" + 1
+        FROM db_clock
+        WHERE target."id" = db_clock."id"
+          AND target."consumedAt" IS NULL
+          AND target."supersededAt" IS NULL
+          AND target."attempts" < ${SMS_CODE_MAX_ATTEMPTS}
+          AND target."expiresAt" > db_clock.captured_at
+        RETURNING target."id" AS "id"
+      `;
       throw new BizException(BizCode.SMS_CODE_INVALID);
     }
 
