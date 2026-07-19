@@ -30,7 +30,14 @@
 | [`src/modules/contribution-rules/`](../src/modules/contribution-rules/) | `ContributionRule` | 字典码键 lookup;配置实体而非流程实体 |
 | [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) | `ActivityFeedback` | 已完结活动评价；App 以 approved Sheet 下 live Record 判资格并锁本人；Admin 实名 list/summary；单次 aggregate 接入 activity participation-summary |
 
-### 2.2 Explicitly excluded(明确不在 participation 范围内)
+### 2.2 Adjacent contexts(相邻上下文，不并入 participation module)
+
+| 模块 | Prisma 模型 | 边界关系 |
+|---|---|---|
+| [`src/modules/insurances/`](../src/modules/insurances/) | `MemberInsurance` / `TeamInsuranceCoverage` / `InsuranceEligibilityEvidence` | 保险是报名资格的上游上下文。D-INSURANCE v3 PR1 仅增加 nullable evidence 双 source/双 owner FK 骨架；现有报名 consumer 语义不变，PR1 不生成 evidence |
+| [`src/modules/team-join/`](../src/modules/team-join/) | `TeamJoinCycle` / `TeamJoinApplication` | 入队是 evidence 的另一 owner 上下文。PR1 的 `requiresInsurance=false` 是 dormant schema flag，不参与现有入队判断 |
+
+### 2.3 Explicitly excluded(明确不在 participation 范围内)
 
 | 模块 | Prisma 模型 | 排除理由 |
 |---|---|---|
@@ -54,8 +61,11 @@ Activity (statusCode: draft / published / completed / cancelled)
   │     │                      statusCode: pending/pass/reject/cancelled/waitlisted;
   │     │                      partial unique (activityId, memberId)
   │     │                      WHERE deletedAt IS NULL AND statusCode != 'cancelled']
-  │     └─ AttendanceRecord[]  [FK registrationId → ActivityRegistration.id,
-  │                             NULLABLE, Restrict(Q-S21:不是 SetNull)]
+  │     ├─ AttendanceRecord[]  [FK registrationId → ActivityRegistration.id,
+  │     │                       NULLABLE, Restrict(Q-S21:不是 SetNull)]
+  │     └─ InsuranceEligibilityEvidence[]
+  │                            [nullable owner FK activityRegistrationId, Restrict;
+  │                             PR1 compatibility skeleton only,0 runtime write]
   ├─ ActivityCheckIn[]         [FK activityId → Activity.id, Restrict;
   │     ├─ FK registrationId → ActivityRegistration.id, Restrict;
   │     │  partial unique registrationId WHERE deletedAt IS NULL
@@ -81,6 +91,12 @@ Activity (statusCode: draft / published / completed / cancelled)
                           │   tx.contributionRule.findMany
 AttendanceRecord.roleCode ┘
 
+InsuranceEligibilityEvidence (D-INSURANCE v3 PR1 expand-only)
+  ├─ source: memberInsuranceId? / teamInsuranceCoverageId? [均 Restrict]
+  └─ owner: activityRegistrationId? / teamJoinApplicationId? [均 Restrict]
+  PR1 四列与 kind/snapshot 均可空；exactly-one、kind 对齐、区间、同 member、
+  global single-owner 与 immutable 约束留 PR4，owner 表不增加 evidenceId。
+
 Certificate (不在 participation 图内)
   └─ FK memberId → Member.id
   └─ FK verifiedBy → Member.id(自校验链)
@@ -100,6 +116,11 @@ Certificate (不在 participation 图内)
 | `Activity` ← `AttendanceSheet.activityId` | FK NOT NULL | Restrict | 1 Activity 多 Sheet |
 | `AttendanceSheet` ← `AttendanceRecord.sheetId` | FK NOT NULL | Restrict | 记录必须挂在 Sheet 上 |
 | `ActivityRegistration` ← `AttendanceRecord.registrationId` | FK **NULLABLE** | Restrict(Q-S21 明确**不**是 SetNull) | 临时参加 / 非公开报名时为 null |
+| `MemberInsurance` ← `InsuranceEligibilityEvidence.memberInsuranceId` | FK **NULLABLE** | Restrict | self source；PR1 不要求 exactly-one，不生成 evidence |
+| `TeamInsuranceCoverage` ← `InsuranceEligibilityEvidence.teamInsuranceCoverageId` | FK **NULLABLE** | Restrict | team source；PR1 不要求 exactly-one，不生成 evidence |
+| `ActivityRegistration` ← `InsuranceEligibilityEvidence.activityRegistrationId` | FK **NULLABLE** | Restrict | registration owner；Evidence 必须先于 Registration reset |
+| `TeamJoinApplication` ← `InsuranceEligibilityEvidence.teamJoinApplicationId` | FK **NULLABLE** | Restrict | join owner；PR1 `requiresInsurance` 不生效 |
+| `User` ← `InsuranceEligibilityEvidence.sourceReviewedByUserId` | FK **NULLABLE** | Restrict | 审核快照 reviewer；兼容期可空 |
 | `Activity` ← `ActivityFeedback.activityId` | FK NOT NULL | Restrict | 评价稳定锚定活动；不级联删除 |
 | `Member` ← `ActivityFeedback.memberId` | FK NOT NULL | Restrict | 评价稳定锚定实名队员；live `(activityId,memberId)` partial unique |
 | `ContributionRule` ↔ `AttendanceRecord` | **不是 FK** | — | 业务键 lookup,仅在 submit 事务内查表预填 `contributionPoints` |
@@ -125,6 +146,8 @@ Certificate (不在 participation 图内)
 | 12. 活动评价（F2 App） | activity-feedbacks | 本人 `PUT/GET feedback`；completed + `endAt + N 天` + approved AttendanceRecord 资格 | PUT 在模块自有事务内 create/update `ActivityFeedback`；GET 无评价恒 200/null；不改变 Attendance / Contribution / settlement 语义 |
 | —. ContributionRule 维护 | contribution-rules | ops 后台 CRUD;`status: ACTIVE / INACTIVE` | **不是流程状态实体**;仅作为预填配置,在 Step 7 被读取;`active_unique (activityTypeCode, attendanceRoleCode) WHERE deletedAt IS NULL AND status = 'ACTIVE'` 由 migration SQL 加 partial unique |
 
+> **D-INSURANCE v3 PR1 当前事实**：上述生命周期零行为变化。`MemberInsurance` legacy（含软删）只被统一回填为 pending/v0/null reviewer；Evidence 表可为空且 runtime 0 producer；`TeamJoinCycle.requiresInsurance` 默认 false 且不被消费。审核/CAS 在 PR2，verified-only/evidence/join gate 在 PR3，最终数据库约束在 PR4。
+
 > **F2/F3 当前事实**:`ActivityCheckIn` 已提供 App 本人签到/签退/当前状态 3 个 canonical 端点，
 > 以及 Admin 证据列表/只读考勤草稿 2 个 canonical 端点。首次 App create / checkout CAS 统一先过
 > `ActivityCheckInLocationPolicy`：活动坐标与通过 DTO 的请求坐标完整合法且原始 Haversine 距离不超过配置半径才写。
@@ -135,6 +158,7 @@ Certificate (不在 participation 图内)
 
 - `AttendanceRecord.contributionPoints` 字段层为历史兼容仍可空;业务写路不接受人工最终分,submit/edit 一律从 ContributionRule 计算,无规则落 0;仅 approved 时"语义生效"。
 - 当前 attendance 在 `requiresInsurance=true` 时只强制 `registrationId` 同活动/同成员且为 pass;它不能证明该报名创建时 `requiresInsurance=true`,不追溯旧报名,也不代表保险状态、有效期或活动时段经过独立核验。
+- PR1 的 `InsuranceEligibilityEvidence` 只是 nullable FK 骨架，不能被当作资格事实；现有任意 live self 可满足门槛的风险尚未关闭，pending/rejected 也尚未由 consumer 排除。
 - **全局每日封顶在本 context 之外**(活动闭环硬化 2026-06-21;v0.48.0 上限调整):队员单个北京日历日的贡献值总分封顶 3(`GLOBAL_DAILY_CONTRIBUTION_CAP`),封顶**只**发生在 recruitment 侧 team-join `computeContribution`(按 `checkInAt` 北京日分组 → 每日封顶 → 加总),**不**在 participation 侧落库——`AttendanceRecord.contributionPoints` 仍存原始规则分。历史记录同样按当前上限读时实时重算;`ContributionRule.dailyCap` 列保留但已 deprecated、calculator 不再读。
 - `attendance.recorded` 事件是 participation context **向外的唯一已锁定出口语义**;其它消费方(未来 contribution 聚合 / 仪表盘 / 队员个人贡献值汇总)应当订阅它,**不应**直接读 `AttendanceSheet` / `AttendanceRecord` 表。
 - Activity → completed 的唯一通路是 activities 模块 `complete` action；attendances submit 不再执行该跨 aggregate 写。
@@ -163,6 +187,7 @@ Certificate (不在 participation 图内)
 | `activities` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | Activity 是上游,不下探;若需要派生统计,通过 `attendance.recorded` 事件或独立 service |
 | `activities` / `activity-registrations` 在调用方事务内执行 `promoteActivityWaitlist` | ✅ 限定例外 | 纯函数入口，固定 Activity → Registration 锁序，只写 waitlisted → pending + 同事务 `registration.review(action=promote)`；不引入兄弟 Service 依赖 |
 | `activity-registrations` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | 同上 |
+| `activity-registrations` 读 / 写 `InsuranceEligibilityEvidence` | ❌ PR1 禁止 | PR1 只有反向 relation；PR3 单 gate cutover 前 consumer 保持旧语义、0 evidence producer |
 | `contribution-rules` 在事务内读 / 写其它 participation 表 | ❌ 不允许 | ContributionRule 是配置实体,只被读,不读人 |
 | `activity-feedbacks` 读取 `Activity` / `AttendanceSheet` / `AttendanceRecord` | ✅ 限定例外 | 只为 completed/window、approved-only 到场资格与 Admin 评价率分母；直接读 Prisma，不 import 三个兄弟 god-service |
 | `activity-feedbacks` 写其它 participation 表 | ❌ 不允许 | 评价写只落 `ActivityFeedback`；不得改 Attendance / Contribution / settlement |
@@ -204,7 +229,7 @@ Certificate (不在 participation 图内)
 
 ### 5.4 ContributionRule 是配置,不是流程
 
-- `contribution-rules` 没有 mobile / app surface,只在 ops 管理面([`v2/contribution-rules`](../src/modules/contribution-rules/contribution-rules.controller.ts))。
+- `contribution-rules` 没有 mobile / app surface,只在 System 管理面([`system/v1/contribution-rules`](../src/modules/contribution-rules/contribution-rules.controller.ts))。
 - 其状态 `ACTIVE / INACTIVE` 是**配置启停**,与 participation 业务流程的状态机**正交**。
 - 当 ContributionRule 在 submit 时找不到匹配规则,**service 兜底默认值,不抛错**(沿 BizCode 注释段 `22048` 的设计;参见 [`biz-code.constant.ts`](../src/common/exceptions/biz-code.constant.ts))。
 
@@ -218,12 +243,12 @@ Certificate (不在 participation 图内)
 
 | Surface | 路径前缀 | 文件 |
 |---|---|---|
-| Admin Activities | `v2/activities` | [`activities.controller.ts`](../src/modules/activities/activities.controller.ts) |
-| Admin Registrations | `v2/activities/:activityId/registrations` | [`activity-registrations.controller.ts`](../src/modules/activity-registrations/activity-registrations.controller.ts) |
-| Admin Attendances | `v2/activities/:activityId/attendance-sheets` + `v2/attendance-sheets` | [`attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts) |
+| Admin Activities | `admin/v1/activities` | [`activities.controller.ts`](../src/modules/activities/activities.controller.ts) |
+| Admin Registrations | `admin/v1/activities/:activityId/registrations` | [`activity-registrations.controller.ts`](../src/modules/activity-registrations/activity-registrations.controller.ts) |
+| Admin Attendances | `admin/v1/activities/:activityId/attendance-sheets` + `admin/v1/attendance-sheets` | [`attendances.controller.ts`](../src/modules/attendances/attendances.controller.ts) |
 | Admin ActivityCheckIns | `GET /api/admin/v1/activities/:activityId/check-ins` + `GET /api/admin/v1/activities/:activityId/attendance-sheet-draft`（`attendance.read.sheet` + activity ref；只读） | [`controllers/admin-activity-check-ins.controller.ts`](../src/modules/attendances/controllers/admin-activity-check-ins.controller.ts) |
 | ActivityFeedbacks | App self PUT/GET + Admin `GET /api/admin/v1/activities/:activityId/{feedbacks,feedback-summary}` | [`src/modules/activity-feedbacks/`](../src/modules/activity-feedbacks/) |
-| Ops ContributionRules | `v2/contribution-rules` | [`contribution-rules.controller.ts`](../src/modules/contribution-rules/contribution-rules.controller.ts) |
+| System ContributionRules | `system/v1/contribution-rules` | [`contribution-rules.controller.ts`](../src/modules/contribution-rules/contribution-rules.controller.ts) |
 
 ### 6.2 App surface(participation 视角的 mobile 路径)
 
@@ -267,7 +292,7 @@ Certificate (不在 participation 图内)
 
 5. **新增 ContributionRule 消费方**:**必须**说明是否复用 `attendances` 现有的 `applyContributionRulePrefill` 语义;如果新消费方走自己的 lookup 路径,**必须**说明为什么不复用以及如何保持语义一致(档位 / cap / 默认值兜底)。
 
-6. **新增 App `/my/*` 端点**:**必须**说明与 legacy `v2/users/me/*` 路径的关系(覆盖 / 并存 / 替代);默认沿 [`api-surface-policy.md`](api-surface-policy.md) "新移动端能力只在 `/api/app/v1/*` 落地"。
+6. **新增 App `/my/*` 端点**:只允许落 canonical `/api/app/v1/*`；已删除的 legacy `v2/users/me/*` 不得复活。
 
 7. **状态机扩展**:对 `Activity` / `ActivityRegistration` / `AttendanceSheet` 任意一个 `statusCode` 集合做扩展时,**必须**同步更新本文 §4 表;BizCode 仍按现行段位(沿 [`biz-code.constant.ts`](../src/common/exceptions/biz-code.constant.ts) 与 [`docs/current-state.md`](current-state.md))。
 
@@ -278,14 +303,14 @@ Certificate (不在 participation 图内)
 明确**不**在本 PR 范围内,需要时各自单独立项:
 
 - 不立即重组 5 个模块,**不**创建 `src/modules/participation/<sub>/` 目录树。
-- 不删除 legacy `v2/users/me/*` / `v2/users/me/attendance-records`(沿 [`api-surface-policy.md`](api-surface-policy.md) "只维护兼容、不扩展")。
+- 不复活已删除的 legacy `v2/users/me/*` / `v2/users/me/attendance-records`。
 - 不抽 `participation/` 共享 module / 共享 service / 共享 DTO 基座。
 - 不移动既有 Prisma model 在 [`prisma/schema.prisma`](../prisma/schema.prisma) 内的位置,不改既有 FK / 字段；`ActivityCheckIn`、`ActivityFeedback` 与本批 `ActivityPosition` / `ActivityRegistration.activityPositionId` 及各自 FK 是已冻结的 additive 例外。
 - 不改 [`src/modules/permissions/`](../src/modules/permissions/) / RBAC 权限点(沿现行 P0-F 收紧范围)。
 - 不改 BizCode 段位(沿现行 [`biz-code.constant.ts`](../src/common/exceptions/biz-code.constant.ts) 与 BizCode range index)。
 - 不动 [`src/modules/certificates/`](../src/modules/certificates/) — 它是独立的 member-qualifications 上下文,本文只是把它从 participation 排除。
 - 不引入新业务 event 主题;`attendance.recorded` 仍然是唯一对外事件出口。v0.47.0 F2 仅新增内部审计事件 `attendance-sheet.reopen`,与业务 event 分层。
-- 不对 `app/v1/*` ↔ `v2/users/me/*` 两路径做合并或迁移。
+- 不新增 canonical `app/v1/*` 之外的第二套移动端路径。
 - 不动 [`src/common/exceptions/biz-code.constant.ts`](../src/common/exceptions/biz-code.constant.ts) 中跨 participation 的共享 BizCode 命名(`ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN` / `ATTENDANCE_REGISTRATION_ACTIVITY_MISMATCH` / `CONTRIBUTION_RULE_*` 等)。
 
 ---

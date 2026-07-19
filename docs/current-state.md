@@ -17,7 +17,7 @@
 | 模块 | 36 |
 | Controller | 74 |
 | Endpoint | 364 |
-| Migration | 60 |
+| Migration | 61 |
 | BizCode | 255 |
 | 权限码 | 206 |
 | AuditLogEvent | 122 |
@@ -33,8 +33,9 @@
 - **会话注销终态**:`POST /api/auth/v1/logout` 由任一可识别且未过期 row(含 rotated ancestor)幂等撤销所属 refresh family 全部活跃未过期 token;其他 family 与 access 不动;详见 `security.md`
 - **限流多实例一致性**:10 个命名 throttler 共用 PostgreSQL `throttler_buckets`，保留 IP tracker / 包 hash key / limit+ttl+block / 42900 / 无 header 语义；DB/storage 异常严格 fail-closed 50000，零本地 Map fallback；过期桶手动 retention，Cron 仍恰好 2
 - **贡献规则 ACTIVE 槽位**:`ContributionRule` 以 `activityTypeCode × attendanceRoleCode` 为未软删 ACTIVE partial unique；`durationThreshold` 仅是单规则内部档位参数。create/激活在事务内预查，真实并发由 DB unique + 23002 收口；calculator 若读到漂移重复 pair 立即 fail-closed，不按创建顺序任取。
-- **通知 durable outbox**:`notification_outbox_intents` 以 eventKey 幂等，PG `SKIP LOCKED` + lease/fencing；cron 仅 enqueue，notifications-owned marker/状态/audit 与 intent 同事务。微信/admin SMS 按 generation + active-slot 收敛，仅 SENT 跨代去重；worker 对 raw row strict fail-closed；provider 事务外 at-least-once，失败退避至 dead。
-- **Attachment storage Phase1**:仅 Attachment key namespace 由 `StorageObject`/`StorageObjectOperation` durable ledger 管理；locator 固定、凭证取当前 settings；JIT→STRICT 由 dedicated worker 收敛(非 cron/queue)。`20260718233000_attachment_storage_operations` 为旧 binary additive rollout 未加 `Attachment.key` FK，不代表 repo-wide closure；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)。
+- **通知 durable outbox**:eventKey 幂等，PG `SKIP LOCKED` + lease/fencing；marker/状态/audit 与 intent 同事务，provider 事务外 at-least-once，失败退避至 dead；cron 仅 enqueue。
+- **Attachment storage Phase1**:Attachment key namespace 已接 durable ledger；locator 固定、凭证取当前 settings；旧 binary expand 未加 `Attachment.key` FK，repo-wide closure 未完成；见 [`runbook`](ops/attachment-storage-consistency-rollout.md)。
+- **保险 v3 PR1 expand**:`MemberInsurance` 增 pending/v0/reviewer；legacy(含软删)全 pending/v0/null reviewer；新增 nullable Evidence 双 source/owner RESTRICT 骨架与 dormant Team Join flag。0 runtime；审核/CAS/verified-only/evidence/join 闸/最终约束仍待 PR2–4。
 - **敏感读审计(C-2,2026-07-19)**:`AuditLogEvent` 122，placeholder 退役；管理端敏感读鉴权/查询后、CSV 交 generator 前、签名 URL 调 provider 前 fail-closed 落库。extra 仅 operation/字段名/maskLevel/计数，禁 PII/filter 值/key/URL。
 
 ## 3. 暂不启动清单(AI 不得自行启动;评审解锁制;详见 harness-v1 快照 §3 与各评审稿)
@@ -42,7 +43,7 @@
 - 新 schema / migration / Permission seed / Role 扩展;**第 3 个及以后 cron**(终态恰 2);LLM / vector / Redis / queue / 多租户
 - 延后模型:events / event_participants / member_profiles 扩展敏感字段(沿 V2 红线 §4.3)
 - scoped 可见性余面(users / content / notifications / audit-logs / attachment self-scope);Recruitment 与 team-join 维持中央流程 + 显式授权,不入职务派生
-- 招新后续(退队 / 晋升 / 多部门归属 / 级别版本化 / 证书自动核验 gate / 部门级细分);保险后续(理赔 / 核验流 / 保单图 attachments / App requiresInsurance);CMS 后续(已读回执 / 评论点赞 / 定时发布 / UV / 部门级权限)
+- 招新后续(退队 / 晋升 / 多部门归属 / 级别版本化 / 证书自动核验 gate / 部门级细分);保险 PR2–4 与理赔/保单图/App 展示;CMS 后续(已读回执 / 评论点赞 / 定时发布 / UV / 部门级权限)
 - Slow-5(入队同意书 / 退队清理 N 值)与 Slow-7(uploadToken 黑名单等 storage 深化)— 等业务 / 真实反馈
 - 运维侧真实通道(COS / 微信小程序 / 腾讯云 OCR)— `docs/ops/` SOP 就绪,维护者执行
 - god-service 重开拆分(P1-4 已收口,需 architecture-boundary §6 新触发 + 立项);repository 抽象层;未立项的 controller path / snapshot 变更

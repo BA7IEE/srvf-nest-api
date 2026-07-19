@@ -13,12 +13,12 @@
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,见文末归档区;P1-4 已于 2026-06-10 调研收口,见文末归档区。)
 
-### P1-10 保险模块后续(理赔 / 提醒 / 核验 / 保单图接线 / App 展示) — **⏸ 不自动启动,诉求触发再立项**
-- 理赔记录(顶层设计 §8 余项;业务真实诉求触发,单独 D 档立项)
-- 到期主动提醒(`coverageEnd` 字段已留;**新定时任务 = 新 D 档评审**,cron 解锁范围仍仅生日批,沿 R-5)
-- 保险核验工作流(v1 自报即可;若需保真核验,沿 certificates verify/reject 范式单独立项)
-- **保单图 attachments 接线**(评审稿 E-20:`ownerType='member-insurance'` 语义已预留,多态机制零 schema 改动;接线 = `AttachmentOwnerType` enum + `assertOwnerExists`/scope 分支 + `attachment.{upload,view,update,delete}.member-insurance.{self,other}` 8 权限码 seed + 配置三表运行时行——超出原 goal DoD 权限码清单,需单独授权)
-- App activities DTO 暴露 `requiresInsurance`(评审稿 E-19:App 端拒报已经 26030 message 提示;列表/详情展示门槛标识等小程序前端真实需要再加,App DTO 字段集变更单独评审)
+### P1-10 D-INSURANCE v3 顺序四 PR 收口 — **PR1 expand-only；PR2–4 禁止提前启动**
+- **PR1(本分支)**:`MemberInsurance` 增 pending/v0/nullable reviewer；所有 legacy(含软删)统一 pending/v0/null reviewer；新增兼容期 nullable 双 source/双 owner Evidence + RESTRICT FK；`TeamJoinCycle.requiresInsurance=false`。0 route/DTO/permission/BizCode/AuditEvent/config/seed/RBAC/runtime/contract；独立 migration review 与 DB/Jest probes 尚待放行。
+- **PR2 compatibility window**:review route + optional App expectedVersion + telemetry；consumer 仍旧语义、0 evidence，明确不宣称风险关闭。
+- **PR3 enforcement cutover**:仅在 App/Admin 客户端证据齐、旧 server=0、telemetry 可查后，以 `app.config.ts` 单 gate 同时启用 required CAS、verified-only、Activity evidence 与 Team Join 保险闸。
+- **PR4 DB closeout**:完整性扫描为 0 后才加 exactly-one/kind/interval/review snapshot、全局单 owner、同 member 与 immutable trigger。
+- 理赔、到期主动提醒(新增 cron 须 D 档)、保单图 attachments 接线与 App 展示仍不在 v3 PR1–4 自动范围，真实诉求触发后另立项。
 
 ### P1-14 GAP-005 统一通知模块后续(S1–S5 已发,余项 ⏸ 诉求触发再立项)
 - **真·全员短信批处理异步**(S5 末位切片经 D-Outbox 收口):admin `confirmed=true` 现先持久化逐收件人 generation intent，再由 HTTP 做首轮、独立 worker 续跑失败项；跨进程 active-slot 防并发重复，真实 `NotificationDelivery SENT` 才是永久去重事实。实现未新增 cron/Redis/queue/事件总线；若未来受众规模需要分片、吞吐控制或专用队列，仍须另立 D 档，不在 durable outbox 基础能力中暗增。
