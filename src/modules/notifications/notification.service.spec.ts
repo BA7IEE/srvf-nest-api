@@ -7,8 +7,10 @@ import { NOTIFICATION_CHANNEL_SMS, NOTIFICATION_STATUS_PUBLISHED } from './notif
 import { NotificationService } from './notification.service';
 
 const NOTIFICATION_ID = 'cm00000000000000000000001';
+const MEMBER_ID = 'cm00000000000000000000003';
 const USER = { id: 'cm00000000000000000000002', role: 'ADMIN' } as never;
 const META = {} as never;
+type AuditEntry = { extra?: Record<string, unknown> };
 const NOTIFICATION = {
   id: NOTIFICATION_ID,
   statusCode: NOTIFICATION_STATUS_PUBLISHED,
@@ -66,5 +68,59 @@ describe('NotificationService.sendSms readiness mapping', () => {
     expect(f.prisma.$transaction).not.toHaveBeenCalled();
     expect(f.outbox.reserveAdminSmsAttempt).not.toHaveBeenCalled();
     expect(f.auditLogs.log).not.toHaveBeenCalled();
+  });
+
+  it('其它 worker 抢走 pending intent 时首轮显式计 failed，不得误算 skipped', async () => {
+    const tx = {};
+    const prisma = {
+      notification: { findFirst: jest.fn().mockResolvedValue(NOTIFICATION) },
+      $transaction: jest.fn((fn: (client: typeof tx) => unknown) => fn(tx)),
+    };
+    const rbac = { can: jest.fn().mockResolvedValue(true) };
+    const auditLogs = { log: jest.fn().mockResolvedValue(undefined) };
+    const smsDispatch = {
+      assertChannelReady: jest.fn().mockResolvedValue(undefined),
+      countRecipients: jest.fn(),
+      resolveRecipientMemberIds: jest.fn().mockResolvedValue([MEMBER_ID]),
+    };
+    const eventKey = `admin-sms:${NOTIFICATION_ID}:generation:${MEMBER_ID}`;
+    const outbox = {
+      reserveAdminSmsAttempt: jest.fn().mockResolvedValue({
+        state: 'reserved',
+        intent: { eventKey },
+      }),
+    };
+    const outboxWorker = {
+      drainEventKeyOrThrow: jest.fn().mockResolvedValue({ state: 'not-claimed' }),
+    };
+    const service = new NotificationService(
+      prisma as never,
+      rbac as never,
+      auditLogs as never,
+      smsDispatch as never,
+      outbox as never,
+      outboxWorker as never,
+    );
+
+    await expect(
+      service.sendSms(NOTIFICATION_ID, { confirmed: true }, USER, META),
+    ).resolves.toEqual({
+      confirmed: true,
+      recipientCount: 1,
+      sent: 0,
+      failed: 1,
+      skipped: 0,
+    });
+    expect(outboxWorker.drainEventKeyOrThrow).toHaveBeenCalledWith(eventKey);
+    const auditCalls = auditLogs.log.mock.calls as Array<[AuditEntry]>;
+    const firstAttempt = auditCalls.find(
+      ([entry]) => entry.extra?.deliveryState === 'first-attempt',
+    )?.[0];
+    expect(firstAttempt?.extra).toMatchObject({
+      deliveryState: 'first-attempt',
+      sent: 0,
+      failed: 1,
+      skipped: 0,
+    });
   });
 });

@@ -1,5 +1,30 @@
+import { Logger } from '@nestjs/common';
+import { sms } from 'tencentcloud-sdk-nodejs-sms';
+
+import { DevStubSmsProvider } from '../sms/providers/dev-stub.provider';
+import { TencentSmsProvider } from '../sms/providers/tencent-sms.provider';
+import type { SmsSettingsService } from '../sms/sms-settings.service';
+import {
+  type PreparedSmsEffect,
+  SmsChannelUnavailableError,
+  SmsCredentialStatus,
+  SmsProviderSendError,
+  type SmsSettingsResolved,
+} from '../sms/sms.types';
 import { NotificationSmsDispatchService } from './notification-sms-dispatch.service';
-import { SmsChannelUnavailableError, SmsProviderSendError } from '../sms/sms.types';
+
+jest.mock('tencentcloud-sdk-nodejs-sms', () => {
+  const mockInstance = { SendSms: jest.fn() };
+  const Constructor = jest.fn().mockImplementation(() => mockInstance);
+  (Constructor as unknown as { __mockInstance: typeof mockInstance }).__mockInstance = mockInstance;
+  return { __esModule: true, sms: { v20210111: { Client: Constructor } } };
+});
+
+const TencentClientMock = sms.v20210111.Client as unknown as jest.Mock & {
+  __mockInstance: { SendSms: jest.Mock };
+};
+
+const ALLOW_EFFECT = () => Promise.resolve();
 
 // 统一通知 S5:NotificationSmsDispatchService 单测(评审稿 §4 / §8.3;纯 unit,mock prisma + router + settings + rbac)。
 // 锁:① 通道未就绪 → 抛 SmsChannelUnavailableError(零计费);② 仅可见且有手机者计入受众;
@@ -18,12 +43,33 @@ interface SmsLogState {
   lastSentAgoMsByPhone?: Record<string, number>;
 }
 
+function makeTencentSettings(): SmsSettingsResolved {
+  return {
+    id: 'sms-settings-tencent',
+    providerType: 'TENCENT_SMS',
+    enabled: true,
+    sdkAppId: '1400000000',
+    signName: '某救援队',
+    region: 'ap-guangzhou',
+    templateIdVerifyCode: 'verify-template',
+    templateIdBirthday: 'birthday-template',
+    templateIdNotification: 'notification-template',
+    credentials: { secretId: 'test-secret-id', secretKey: 'test-secret-key' },
+    credentialStatus: SmsCredentialStatus.CONFIGURED,
+    remarks: null,
+    updatedBy: null,
+    updatedAt: new Date('2026-07-19T00:00:00.000Z'),
+    createdAt: new Date('2026-07-19T00:00:00.000Z'),
+  };
+}
+
 function build(opts: {
   members: MemberSpec[];
   ready?: boolean; // settings 就绪(默认 true)
   alreadySentMemberIds?: string[]; // 本通知已 sent 短信的 member(re-trigger 去重)
   smsLog?: SmsLogState;
   sendImpl?: (phone: string) => Promise<{ providerMsgId: string | null }>;
+  prepareImpl?: (phone: string) => PreparedSmsEffect | Promise<PreparedSmsEffect>;
 }) {
   const smsLog = opts.smsLog ?? {};
   const deliveries: Record<string, unknown>[] = [];
@@ -103,13 +149,26 @@ function build(opts: {
   );
   Object.assign(prisma, { $transaction: transaction });
 
+  const invoke = jest
+    .fn<Promise<{ providerMsgId: string | null }>, [string]>()
+    .mockImplementation((phone: string) =>
+      (opts.sendImpl ?? (() => Promise.resolve({ providerMsgId: 'sn-x' })))(phone),
+    );
+  const prepareNotification = jest.fn<
+    PreparedSmsEffect | Promise<PreparedSmsEffect>,
+    [{ phone: string }]
+  >(({ phone }) =>
+    opts.prepareImpl
+      ? opts.prepareImpl(phone)
+      : Promise.resolve({
+          providerType: 'DEV_STUB' as const,
+          invoke: () => invoke(phone),
+        }),
+  );
   const router = {
     resolveProviderType: jest.fn().mockResolvedValue('DEV_STUB'),
-    sendNotification: jest
-      .fn()
-      .mockImplementation(({ phone }: { phone: string }) =>
-        (opts.sendImpl ?? (() => Promise.resolve({ providerMsgId: 'sn-x' })))(phone),
-      ),
+    prepareNotification,
+    invoke,
   };
 
   const settings = {
@@ -144,13 +203,19 @@ function build(opts: {
 }
 
 describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () => {
+  beforeEach(() => {
+    TencentClientMock.mockClear();
+    TencentClientMock.__mockInstance.SendSms.mockReset();
+  });
+
   it('通道未就绪(templateIdNotification 空)→ 抛 SmsChannelUnavailableError,零发送零 delivery', async () => {
     const { service, notification, router, deliveries } = build({
       members: [{ memberId: 'm1', phone: '13900000001' }],
       ready: false,
     });
     await expect(service.dispatch(notification)).rejects.toBeInstanceOf(SmsChannelUnavailableError);
-    expect(router.sendNotification).not.toHaveBeenCalled();
+    expect(router.prepareNotification).not.toHaveBeenCalled();
+    expect(router.invoke).not.toHaveBeenCalled();
     expect(deliveries).toHaveLength(0);
   });
 
@@ -187,7 +252,8 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
     });
     const summary = await service.dispatch(notification);
     expect(summary).toEqual({ recipientCount: 1, sent: 0, failed: 0, skipped: 1 });
-    expect(router.sendNotification).not.toHaveBeenCalled();
+    expect(router.prepareNotification).not.toHaveBeenCalled();
+    expect(router.invoke).not.toHaveBeenCalled();
     expect(deliveries[0]).toMatchObject({ status: 'skipped', reasonCode: 'idempotent' });
   });
 
@@ -198,7 +264,8 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
     });
     const summary = await service.dispatch(notification);
     expect(summary.skipped).toBe(1);
-    expect(router.sendNotification).not.toHaveBeenCalled();
+    expect(router.prepareNotification).not.toHaveBeenCalled();
+    expect(router.invoke).not.toHaveBeenCalled();
     expect(deliveries[0]).toMatchObject({ status: 'skipped', reasonCode: 'daily-limit' });
   });
 
@@ -209,7 +276,8 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
     });
     const summary = await service.dispatch(notification);
     expect(summary.skipped).toBe(1);
-    expect(router.sendNotification).not.toHaveBeenCalled();
+    expect(router.prepareNotification).not.toHaveBeenCalled();
+    expect(router.invoke).not.toHaveBeenCalled();
     expect(deliveries[0]).toMatchObject({ status: 'skipped', reasonCode: 'interval' });
   });
 
@@ -220,7 +288,59 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
     });
     const summary = await service.dispatch(notification);
     expect(summary.sent).toBe(1);
-    expect(router.sendNotification).toHaveBeenCalledTimes(1);
+    expect(router.prepareNotification).toHaveBeenCalledTimes(1);
+    expect(router.invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('legacy 无 guard 时 prepare resolve 后不额外让出 microtask，invoke 同步启动 Effect', async () => {
+    let registerProbe!: (registered: { probe: Promise<boolean> }) => void;
+    const probeRegistered = new Promise<{ probe: Promise<boolean> }>((resolve) => {
+      registerProbe = resolve;
+    });
+    const { service, notification, router } = build({
+      members: [{ memberId: 'm1', phone: '13900000001' }],
+    });
+    router.prepareNotification.mockImplementationOnce(({ phone }: { phone: string }) => {
+      const prepared = {
+        providerType: 'DEV_STUB' as const,
+        invoke: () => router.invoke(phone),
+      };
+      const resolved = Promise.resolve(prepared);
+      const probe = new Promise<boolean>((resolve) => {
+        void resolved.then(() => {
+          queueMicrotask(() => resolve(router.invoke.mock.calls.length === 1));
+        });
+      });
+      registerProbe({ probe });
+      return resolved;
+    });
+
+    const pending = service.dispatch(notification);
+    const { probe } = await probeRegistered;
+    await expect(probe).resolves.toBe(true);
+    await expect(pending).resolves.toMatchObject({ sent: 1, failed: 0 });
+  });
+
+  it('发送证据 providerType 只取 prepared snapshot，不拼 assertChannelReady 的旧 route', async () => {
+    const { service, notification, sendLogs, router } = build({
+      members: [{ memberId: 'm1', phone: '13900000001' }],
+      prepareImpl: () => ({
+        providerType: 'TENCENT_SMS',
+        invoke: () => Promise.resolve({ providerMsgId: 'tencent-snapshot-msg' }),
+      }),
+    });
+
+    await expect(service.dispatchRecipient(notification, 'm1', ALLOW_EFFECT)).resolves.toEqual({
+      outcome: 'sent',
+    });
+    expect(router.resolveProviderType).toHaveBeenCalledTimes(1);
+    expect(sendLogs).toContainEqual(
+      expect.objectContaining({
+        providerType: 'TENCENT_SMS',
+        providerMsgId: 'tencent-snapshot-msg',
+        status: 'SENT',
+      }),
+    );
   });
 
   it('re-trigger 去重:本通知已 sent 过的 member → skipped already-sent', async () => {
@@ -230,7 +350,8 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
     });
     const summary = await service.dispatch(notification);
     expect(summary).toEqual({ recipientCount: 1, sent: 0, failed: 0, skipped: 1 });
-    expect(router.sendNotification).not.toHaveBeenCalled();
+    expect(router.prepareNotification).not.toHaveBeenCalled();
+    expect(router.invoke).not.toHaveBeenCalled();
     expect(deliveries[0]).toMatchObject({ status: 'skipped', reasonCode: 'already-sent' });
   });
 
@@ -282,7 +403,8 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
     });
     const count = await service.countRecipients(notification);
     expect(count).toBe(2);
-    expect(router.sendNotification).not.toHaveBeenCalled();
+    expect(router.prepareNotification).not.toHaveBeenCalled();
+    expect(router.invoke).not.toHaveBeenCalled();
     expect(router.resolveProviderType).not.toHaveBeenCalled();
     expect(sendLogs).toHaveLength(0);
   });
@@ -292,9 +414,9 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
       members: [{ memberId: 'm1', phone: '13900000001' }],
       sendImpl: () => Promise.reject(new SmsProviderSendError('Transient', 'retry me')),
     });
-    await expect(service.dispatchRecipient(notification, 'm1')).rejects.toBeInstanceOf(
-      SmsProviderSendError,
-    );
+    await expect(
+      service.dispatchRecipient(notification, 'm1', ALLOW_EFFECT),
+    ).rejects.toBeInstanceOf(SmsProviderSendError);
     expect(sendLogs).toContainEqual(expect.objectContaining({ status: 'FAILED' }));
     expect(deliveries).toContainEqual(expect.objectContaining({ status: 'failed' }));
   });
@@ -304,11 +426,82 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
       members: [{ memberId: 'm1', phone: '13900000001' }],
     });
     prisma.notificationDelivery.create.mockRejectedValueOnce(new Error('delivery db unavailable'));
-    await expect(service.dispatchRecipient(notification, 'm1')).rejects.toThrow(
+    await expect(service.dispatchRecipient(notification, 'm1', ALLOW_EFFECT)).rejects.toThrow(
       'delivery db unavailable',
     );
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(sendLogs).not.toContainEqual(expect.objectContaining({ status: 'SENT' }));
+    expect(deliveries).toHaveLength(0);
+  });
+
+  it('outbox beforeEffect guard 失败时 provider=0 且不伪造 FAILED/SENT evidence', async () => {
+    const debugSpy = jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
+    const devStub = new DevStubSmsProvider();
+    const invoke = jest.fn((phone: string) => devStub.sendNotification({ phone }));
+    const { service, notification, router, sendLogs, deliveries } = build({
+      members: [{ memberId: 'm1', phone: '13900000001' }],
+      prepareImpl: (phone) => ({ providerType: 'DEV_STUB', invoke: () => invoke(phone) }),
+    });
+    const leaseLost = new Error('lease lost at provider boundary');
+    const beforeEffect = jest.fn().mockRejectedValue(leaseLost);
+
+    try {
+      await expect(service.dispatchRecipient(notification, 'm1', beforeEffect)).rejects.toBe(
+        leaseLost,
+      );
+      expect(router.prepareNotification).toHaveBeenCalledWith({ phone: '13900000001' });
+      expect(beforeEffect).toHaveBeenCalledTimes(1);
+      expect(invoke).not.toHaveBeenCalled();
+      expect(debugSpy).not.toHaveBeenCalled();
+      expect(sendLogs).toHaveLength(0);
+      expect(deliveries).toHaveLength(0);
+    } finally {
+      debugSpy.mockRestore();
+    }
+  });
+
+  it('outbox guard 失败时真实 Tencent prepared Effect 不 invoke 且 SDK SendSms=0', async () => {
+    const tencent = new TencentSmsProvider({
+      getActiveSettings: jest.fn(),
+    } as unknown as SmsSettingsService);
+    const invoke = jest.fn<Promise<{ providerMsgId: string | null }>, []>();
+    const { service, notification, router, sendLogs, deliveries } = build({
+      members: [{ memberId: 'm1', phone: '13900000001' }],
+      prepareImpl: (phone) => {
+        const prepared = tencent.prepareNotification(makeTencentSettings(), { phone });
+        invoke.mockImplementation(() => prepared.invoke());
+        return { providerType: prepared.providerType, invoke };
+      },
+    });
+    const leaseLost = new Error('lease lost before Tencent SendSms');
+    const beforeEffect = jest.fn().mockRejectedValue(leaseLost);
+
+    await expect(service.dispatchRecipient(notification, 'm1', beforeEffect)).rejects.toBe(
+      leaseLost,
+    );
+    expect(router.prepareNotification).toHaveBeenCalledTimes(1);
+    expect(beforeEffect).toHaveBeenCalledTimes(1);
+    expect(invoke).not.toHaveBeenCalled();
+    expect(TencentClientMock.__mockInstance.SendSms).not.toHaveBeenCalled();
+    expect(sendLogs).toHaveLength(0);
+    expect(deliveries).toHaveLength(0);
+  });
+
+  it('outbox prepare rejection 原样外抛，guard/provider/evidence 均为 0', async () => {
+    const prepareError = new Error('prepared route unavailable');
+    const beforeEffect = jest.fn().mockResolvedValue(undefined);
+    const { service, notification, router, sendLogs, deliveries } = build({
+      members: [{ memberId: 'm1', phone: '13900000001' }],
+      prepareImpl: () => Promise.reject(prepareError),
+    });
+
+    await expect(service.dispatchRecipient(notification, 'm1', beforeEffect)).rejects.toBe(
+      prepareError,
+    );
+    expect(router.prepareNotification).toHaveBeenCalledTimes(1);
+    expect(beforeEffect).not.toHaveBeenCalled();
+    expect(router.invoke).not.toHaveBeenCalled();
+    expect(sendLogs).toHaveLength(0);
     expect(deliveries).toHaveLength(0);
   });
 
@@ -318,12 +511,13 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
       ready: false,
       alreadySentMemberIds: ['m1'],
     });
-    await expect(service.dispatchRecipient(notification, 'm1')).resolves.toEqual({
+    await expect(service.dispatchRecipient(notification, 'm1', ALLOW_EFFECT)).resolves.toEqual({
       outcome: 'skipped',
     });
     expect(settings.getActiveSettings).not.toHaveBeenCalled();
     expect(router.resolveProviderType).not.toHaveBeenCalled();
-    expect(router.sendNotification).not.toHaveBeenCalled();
+    expect(router.prepareNotification).not.toHaveBeenCalled();
+    expect(router.invoke).not.toHaveBeenCalled();
     expect(deliveries).toContainEqual(
       expect.objectContaining({ status: 'skipped', reasonCode: 'already-sent' }),
     );
@@ -334,9 +528,9 @@ describe('NotificationSmsDispatchService · dispatch(短信兜底派发)', () =>
       members: [{ memberId: 'm1', phone: '13900000001' }],
       sendImpl: () => Promise.reject(new SmsChannelUnavailableError('closed')),
     });
-    await expect(service.dispatchRecipient(notification, 'm1')).rejects.toBeInstanceOf(
-      SmsChannelUnavailableError,
-    );
+    await expect(
+      service.dispatchRecipient(notification, 'm1', ALLOW_EFFECT),
+    ).rejects.toBeInstanceOf(SmsChannelUnavailableError);
     expect(sendLogs).toHaveLength(0);
   });
 });

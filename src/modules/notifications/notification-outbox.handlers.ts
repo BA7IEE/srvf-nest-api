@@ -35,6 +35,7 @@ import {
   NOTIFICATION_AUDIENCE_BROADCAST,
   NOTIFICATION_AUDIENCE_DIRECTED,
   NOTIFICATION_CHANNEL_IN_APP,
+  NOTIFICATION_CHANNEL_SMS,
   NOTIFICATION_CHANNEL_WECHAT,
   NOTIFICATION_DIRECTED_VISIBILITY,
   NOTIFICATION_SOURCE_SYSTEM,
@@ -87,6 +88,10 @@ class TransientNotificationProviderError extends Error {
   }
 }
 
+export interface NotificationOutboxEffectGuard {
+  beforeEffect: () => Promise<void>;
+}
+
 @Injectable()
 export class NotificationOutboxHandlers {
   constructor(
@@ -100,7 +105,10 @@ export class NotificationOutboxHandlers {
     private readonly wechatDispatch: NotificationWechatDispatchService,
   ) {}
 
-  async execute(intent: ClaimedNotificationOutboxIntent): Promise<OutboxExecutionResult> {
+  async execute(
+    intent: ClaimedNotificationOutboxIntent,
+    guard: NotificationOutboxEffectGuard,
+  ): Promise<OutboxExecutionResult> {
     try {
       assertStoredNotificationOutboxIntentSafe(intent);
     } catch {
@@ -114,11 +122,11 @@ export class NotificationOutboxHandlers {
       case OUTBOX_EVENT_WECHAT_BROADCAST:
         return this.expandWechatBroadcast(intent);
       case OUTBOX_EVENT_WECHAT_DELIVERY:
-        return this.deliverWechat(intent);
+        return this.deliverWechat(intent, guard);
       case OUTBOX_EVENT_BIRTHDAY_SMS:
-        return this.deliverBirthdaySms(intent);
+        return this.deliverBirthdaySms(intent, guard);
       case OUTBOX_EVENT_ADMIN_SMS:
-        return this.deliverAdminSms(intent);
+        return this.deliverAdminSms(intent, guard);
       default:
         throw new UnsupportedNotificationOutboxEventError(intent.eventType, intent.payloadVersion);
     }
@@ -223,6 +231,7 @@ export class NotificationOutboxHandlers {
 
   private async deliverWechat(
     intent: ClaimedNotificationOutboxIntent,
+    guard: NotificationOutboxEffectGuard,
   ): Promise<OutboxExecutionResult> {
     const payload = parsePayload<WechatDeliveryOutboxPayload>(intent);
     const notification = await this.requireNotification(payload.notificationId);
@@ -299,11 +308,14 @@ export class NotificationOutboxHandlers {
     });
     if (quotaUnavailable || preparedSkip) return { effectPerformed: false };
 
-    const result = await this.wechat.sendSubscribeMessage({
-      openid,
-      templateId,
-      data: buildWechatSubscribeData(notification),
-    });
+    const result = await this.wechat.sendSubscribeMessage(
+      {
+        openid,
+        templateId,
+        data: buildWechatSubscribeData(notification),
+      },
+      guard.beforeEffect,
+    );
     if (result.ok) {
       await this.prisma.notificationDelivery.createMany({
         data: [
@@ -376,6 +388,7 @@ export class NotificationOutboxHandlers {
 
   private async deliverBirthdaySms(
     intent: ClaimedNotificationOutboxIntent,
+    guard: NotificationOutboxEffectGuard,
   ): Promise<OutboxExecutionResult> {
     const payload = parsePayload<BirthdaySmsOutboxPayload>(intent);
     const user = await this.prisma.user.findFirst({
@@ -403,26 +416,19 @@ export class NotificationOutboxHandlers {
     if (!settings || !settings.enabled || !settings.templateIdBirthday) {
       throw new SmsChannelUnavailableError('birthday 短信渠道未配置 / 未启用');
     }
-    const providerType = await this.smsRouter.resolveProviderType();
+    const prepared = await this.smsRouter.prepareBirthdayGreeting({ phone: user.phone });
+    await guard.beforeEffect();
+    let providerMsgId: string | null;
     try {
-      const result = await this.smsRouter.sendBirthdayGreeting({ phone: user.phone });
-      await this.prisma.smsSendLog.create({
-        data: {
-          phone: user.phone,
-          templateKey: SMS_TEMPLATE_KEY_BIRTHDAY,
-          providerType,
-          status: 'SENT',
-          providerMsgId: result.providerMsgId,
-        },
-      });
-      return { effectPerformed: true };
+      const pending = prepared.invoke();
+      ({ providerMsgId } = await pending);
     } catch (error) {
       const normalized = normalizeSmsError(error);
       await this.prisma.smsSendLog.create({
         data: {
           phone: user.phone,
           templateKey: SMS_TEMPLATE_KEY_BIRTHDAY,
-          providerType,
+          providerType: prepared.providerType,
           status: 'FAILED',
           errCode: normalized.errCode,
           errMsg: normalized.errMsg,
@@ -430,14 +436,38 @@ export class NotificationOutboxHandlers {
       });
       throw error;
     }
+    await this.prisma.smsSendLog.create({
+      data: {
+        phone: user.phone,
+        templateKey: SMS_TEMPLATE_KEY_BIRTHDAY,
+        providerType: prepared.providerType,
+        status: 'SENT',
+        providerMsgId,
+      },
+    });
+    return { effectPerformed: true };
   }
 
   private async deliverAdminSms(
     intent: ClaimedNotificationOutboxIntent,
+    guard: NotificationOutboxEffectGuard,
   ): Promise<OutboxExecutionResult> {
     const payload = parsePayload<AdminSmsOutboxPayload>(intent);
-    const notification = await this.requireNotification(payload.notificationId);
-    const result = await this.smsDispatch.dispatchRecipient(notification, payload.memberId);
+    const notification = await this.prisma.notification.findFirst({
+      where: { id: payload.notificationId, deletedAt: null },
+    });
+    if (
+      !notification ||
+      notification.statusCode !== NOTIFICATION_STATUS_PUBLISHED ||
+      !notification.channels.includes(NOTIFICATION_CHANNEL_SMS)
+    ) {
+      return { effectPerformed: false, value: { outcome: 'skipped' } };
+    }
+    const result = await this.smsDispatch.dispatchRecipient(
+      notification,
+      payload.memberId,
+      guard.beforeEffect,
+    );
     return {
       effectPerformed: result.outcome === 'sent',
       value: result,

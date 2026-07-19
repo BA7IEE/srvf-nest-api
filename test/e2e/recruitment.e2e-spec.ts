@@ -2893,14 +2893,15 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
       expect(serialized).not.toContain(ID_MATCH_B);
     }
 
-    // 重复 HTTP 请求不得生成新 intent；worker 反复 drain 只能为每个 member 建一条站内 Effect。
+    // 重复 HTTP 请求不得生成新 intent；JIT drain 在单轮上限内连续消费 2 parent + 2 wechat child，
+    // 且只能为每个 member 建一条站内 Effect。
     const repeated = await promote(cycle.id);
     expect(repeated.status).toBe(200);
     expect(repeated.body.data.promotedCount).toBe(0);
     expect(await prisma.notificationOutboxIntent.count()).toBe(2);
     const worker = app.get(NotificationOutboxWorker);
-    expect(await worker.drainOnce()).toMatchObject({ claimed: 2, succeeded: 2 });
-    await worker.drainOnce(); // 消费 targeted handler 派生的 wechat child，不得重复建站内行。
+    expect(await worker.drainOnce()).toMatchObject({ claimed: 4, succeeded: 4 });
+    expect(await worker.drainOnce()).toMatchObject({ claimed: 0 });
     for (const p of promoted) {
       expect(await prisma.notification.count({ where: { recipientMemberId: p.memberId } })).toBe(1);
     }

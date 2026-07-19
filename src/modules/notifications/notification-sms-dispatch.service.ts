@@ -133,6 +133,7 @@ export class NotificationSmsDispatchService {
   async dispatchRecipient(
     notification: Notification,
     memberId: string,
+    beforeEffect: () => Promise<void>,
   ): Promise<SmsRecipientDispatchResult> {
     // 永久幂等事实必须先于通道/受众解析：provider 已成功但 ack 前崩溃后，即使通道随后
     // disabled，reclaim 也只能记 already-sent skip，绝不能再次调用 provider。
@@ -149,12 +150,12 @@ export class NotificationSmsDispatchService {
       await this.recordAlreadySentSkip(notification.id, memberId);
       return { outcome: 'skipped' };
     }
-    const providerType = await this.assertChannelReady();
+    await this.assertChannelReady();
     const recipient = (await this.resolveSmsAudience(notification)).find(
       (candidate) => candidate.memberId === memberId,
     );
     if (!recipient) return { outcome: 'skipped' };
-    return this.dispatchResolvedRecipient(notification, recipient, providerType);
+    return this.dispatchResolvedRecipient(notification, recipient, beforeEffect);
   }
 
   // HTTP confirmed path 在任何 durable reservation 前调用，确保 24030 = 零 intent / 零迟到补发。
@@ -172,8 +173,9 @@ export class NotificationSmsDispatchService {
   async dispatch(notification: Notification): Promise<SmsDispatchSummary> {
     // 通道就绪前置(镜像生日批 :64-72:templateId 空整批跳过零成本);templateIdNotification 是「该渠道已配置」闸,
     // DEV_STUB 忽略其值但须非空(对齐生日批口径,e2e 同设)。
-    // providerType:落 sms_send_logs.providerType + production-like DEV_STUB 第②重守护(router.resolve)。
-    const providerType = await this.assertChannelReady();
+    // production-like DEV_STUB 第②重守护(router.resolve);实际发送证据的 providerType
+    // 只取随后每个 prepared Effect 绑定的同一 route snapshot。
+    await this.assertChannelReady();
 
     const audience = await this.resolveSmsAudience(notification);
     const summary: SmsDispatchSummary = {
@@ -184,7 +186,7 @@ export class NotificationSmsDispatchService {
     };
     for (const recipient of audience) {
       try {
-        const result = await this.dispatchResolvedRecipient(notification, recipient, providerType);
+        const result = await this.dispatchResolvedRecipient(notification, recipient);
         if (result.outcome === 'sent') summary.sent += 1;
         else summary.skipped += 1;
       } catch (err) {
@@ -216,7 +218,7 @@ export class NotificationSmsDispatchService {
   private async dispatchResolvedRecipient(
     notification: Notification,
     recipient: SmsRecipient,
-    providerType: SmsProviderType,
+    beforeEffect?: () => Promise<void>,
   ): Promise<SmsRecipientDispatchResult> {
     const alreadySentRows = await this.prisma.notificationDelivery.findMany({
       where: {
@@ -243,9 +245,12 @@ export class NotificationSmsDispatchService {
       return { outcome: 'skipped' };
     }
 
+    const prepared = await this.router.prepareNotification({ phone: recipient.phone });
+    if (beforeEffect) await beforeEffect();
     let providerMsgId: string | null;
     try {
-      ({ providerMsgId } = await this.router.sendNotification({ phone: recipient.phone }));
+      const pending = prepared.invoke();
+      ({ providerMsgId } = await pending);
     } catch (error) {
       if (error instanceof SmsChannelUnavailableError) throw error;
       const { errCode, errMsg } = normalizeSendError(error);
@@ -253,7 +258,7 @@ export class NotificationSmsDispatchService {
         data: {
           phone: recipient.phone,
           templateKey: SMS_TEMPLATE_KEY_NOTIFICATION,
-          providerType,
+          providerType: prepared.providerType,
           status: 'FAILED',
           errCode,
           errMsg,
@@ -280,7 +285,7 @@ export class NotificationSmsDispatchService {
         data: {
           phone: recipient.phone,
           templateKey: SMS_TEMPLATE_KEY_NOTIFICATION,
-          providerType,
+          providerType: prepared.providerType,
           status: 'SENT',
           providerMsgId,
         },

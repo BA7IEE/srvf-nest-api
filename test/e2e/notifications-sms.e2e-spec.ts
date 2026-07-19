@@ -5,6 +5,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
+import { DevStubSmsProvider } from '../../src/modules/sms/providers/dev-stub.provider';
 import { SmsSettingsService } from '../../src/modules/sms/sms-settings.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
@@ -59,6 +60,7 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
   let prisma: PrismaService;
   let settings: SmsSettingsService;
   let worker: NotificationOutboxWorker;
+  let devStub: DevStubSmsProvider;
   let adminAuth: string;
   let userAuth: string;
   let seq = 0;
@@ -189,6 +191,7 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
     prisma = app.get(PrismaService);
     settings = app.get(SmsSettingsService);
     worker = app.get(NotificationOutboxWorker);
+    devStub = app.get(DevStubSmsProvider);
     await resetDb(app);
 
     const { bizAdminRoleId } = await seedBizAdminPermissionsAndRole(app);
@@ -303,7 +306,34 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
       await createMemberInOrg(org, '13912340002');
       const id = await createDeptNotification(org);
 
-      const res = await sendSms(adminAuth, id, { confirmed: true });
+      const preClaimRows: Array<{
+        status: string;
+        attempts: number;
+        leaseOwner: string | null;
+        lockedAt: Date | null;
+        leaseExpiresAt: Date | null;
+      }> = [];
+      const originalDrain = worker.drainEventKeyOrThrow.bind(worker);
+      const drainSpy = jest
+        .spyOn(worker, 'drainEventKeyOrThrow')
+        .mockImplementation(async (eventKey) => {
+          const row = await prisma.notificationOutboxIntent.findUniqueOrThrow({
+            where: { eventKey },
+          });
+          preClaimRows.push(row);
+          return originalDrain(eventKey);
+        });
+      const providerSpy = jest.spyOn(devStub, 'sendNotification');
+      const res = await (async () => {
+        try {
+          const response = await sendSms(adminAuth, id, { confirmed: true });
+          expect(providerSpy).toHaveBeenCalledTimes(2);
+          return response;
+        } finally {
+          drainSpy.mockRestore();
+          providerSpy.mockRestore();
+        }
+      })();
       expect(res.status).toBe(200);
       expect(res.body.data).toEqual({
         confirmed: true,
@@ -312,6 +342,17 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
         failed: 0,
         skipped: 0,
       });
+      expect(preClaimRows).toHaveLength(2);
+      expect(
+        preClaimRows.every(
+          (row) =>
+            row.status === 'pending' &&
+            row.attempts === 0 &&
+            row.leaseOwner === null &&
+            row.lockedAt === null &&
+            row.leaseExpiresAt === null,
+        ),
+      ).toBe(true);
 
       // send_logs:templateKey=notification / status SENT / providerType DEV_STUB
       const logs = await prisma.smsSendLog.findMany({

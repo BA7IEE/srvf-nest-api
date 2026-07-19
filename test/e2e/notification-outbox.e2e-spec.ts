@@ -1,10 +1,13 @@
-import type { INestApplication } from '@nestjs/common';
+import { Logger, type INestApplication } from '@nestjs/common';
+import type { NotificationOutboxIntent } from '@prisma/client';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 
 import { PrismaService } from '../../src/database/prisma.service';
 import {
   OUTBOX_EVENT_ADMIN_SMS,
+  OUTBOX_EVENT_BIRTHDAY_SMS,
+  OUTBOX_EVENT_SYSTEM_BROADCAST,
   OUTBOX_EVENT_TARGETED_NOTIFICATION,
   OUTBOX_EVENT_WECHAT_DELIVERY,
   OUTBOX_PAYLOAD_VERSION,
@@ -14,11 +17,16 @@ import {
   type ClaimedNotificationOutboxIntent,
   NotificationOutboxService,
 } from '../../src/modules/notifications/notification-outbox.service';
-import type { NotificationOutboxEnqueueInput } from '../../src/modules/notifications/notification-outbox.types';
+import {
+  type NotificationOutboxEnqueueInput,
+  NotificationOutboxLeaseLostError,
+} from '../../src/modules/notifications/notification-outbox.types';
 import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
 import { SmsSettingsService } from '../../src/modules/sms/sms-settings.service';
 import { SmsChannelUnavailableError } from '../../src/modules/sms/sms.types';
+import { DevStubSmsProvider } from '../../src/modules/sms/providers/dev-stub.provider';
 import { WechatSettingsService } from '../../src/modules/wechat/wechat-settings.service';
+import { DevStubWechatProvider } from '../../src/modules/wechat/providers/dev-stub.provider';
 import { WechatService } from '../../src/modules/wechat/wechat.service';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
@@ -31,9 +39,24 @@ interface Refs {
 
 interface ChildResult {
   booted?: boolean;
+  phase?: 'claimed' | 'not-claimed' | 'evidence-persisted' | 'effect-persisted-before-return';
   ids?: string[];
   effectPerformed?: boolean;
 }
+
+interface ChildExit {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+}
+
+interface RunningChild {
+  result: Promise<ChildResult>;
+  exited: Promise<ChildExit>;
+  sendSignal: (signal: NodeJS.Signals) => void;
+  kill: () => Promise<NodeJS.Signals | null>;
+}
+
+const ALLOW_EFFECT = { beforeEffect: () => Promise.resolve() };
 
 // D-Outbox 真 PostgreSQL杀伤矩阵：本 spec 只使用当前 worktree 派生的 app_test_* 库；
 // 双 OS 进程通过独立 Nest application context / Prisma pool claim，非 Promise mock 并发。
@@ -91,6 +114,19 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       select: { id: true },
     });
     return { notificationId: notification.id, memberIds };
+  }
+
+  async function configureDevSms(): Promise<void> {
+    await prisma.smsSettings.create({
+      data: {
+        providerType: 'DEV_STUB',
+        enabled: true,
+        templateIdBirthday: 'outbox-birthday-template',
+        templateIdNotification: 'outbox-notification-template',
+      },
+    });
+    app.get(SmsSettingsService).invalidate();
+    appB.get(SmsSettingsService).invalidate();
   }
 
   function input(
@@ -170,6 +206,126 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     ).toMatchObject({ attempts: 2, leaseOwner: 'os-reclaim-owner' });
   });
 
+  it('真实 OS child claimed-before-effect 后 SIGKILL，expiry 后第二 child 仅执行一次 Effect', async () => {
+    const refs = await createRefs();
+    const memberId = refs.memberIds[0];
+    const created = await outbox.enqueue({
+      eventKey: `targeted-sigkill-before-effect:${memberId}`,
+      eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION,
+      payloadVersion: OUTBOX_PAYLOAD_VERSION,
+      payload: {
+        recipientMemberId: memberId,
+        notificationTypeCode: 'expiry-reminder',
+        title: 'SIGKILL claimed window',
+        body: 'Effect must start only after reclaim',
+        channels: ['in-app'],
+      },
+      aggregateType: 'member',
+      aggregateId: memberId,
+      destinationType: 'member',
+      destinationRef: memberId,
+    });
+    const crashed = startChild([
+      'claim-and-wait',
+      'os-sigkill-before-effect',
+      '',
+      '1000',
+      created.eventKey,
+    ]);
+    try {
+      await expect(crashed.result).resolves.toMatchObject({
+        phase: 'claimed',
+        ids: [created.id],
+      });
+    } finally {
+      await expect(crashed.kill()).resolves.toBe('SIGKILL');
+    }
+
+    const abandoned = await prisma.notificationOutboxIntent.findUniqueOrThrow({
+      where: { id: created.id },
+    });
+    expect(abandoned).toMatchObject({ status: 'processing', attempts: 1 });
+    expect(await prisma.notification.findUnique({ where: { id: created.id } })).toBeNull();
+    await waitUntilExpired(abandoned.leaseExpiresAt!);
+
+    const recovered = await runChild([
+      'execute-and-ack',
+      'os-after-sigkill-before-effect',
+      '',
+      '30000',
+      created.eventKey,
+    ]);
+    expect(recovered.ids).toEqual([created.id]);
+    expect(await prisma.notification.findUnique({ where: { id: created.id } })).toMatchObject({
+      id: created.id,
+      recipientMemberId: memberId,
+    });
+    expect(
+      await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: created.id } }),
+    ).toMatchObject({ status: 'succeeded', attempts: 2 });
+  });
+
+  it('真实 OS child 收到 SIGTERM 后 stop-and-drain 当前 attempt/heartbeat，且不 claim 下一条', async () => {
+    const refs = await createRefs();
+    const created: NotificationOutboxIntent[] = [];
+    for (let index = 0; index < 2; index += 1) {
+      created.push(
+        await outbox.enqueue({
+          eventKey: `targeted-sigterm-drain:${refs.memberIds[0]}:${index}`,
+          eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION,
+          payloadVersion: OUTBOX_PAYLOAD_VERSION,
+          payload: {
+            recipientMemberId: refs.memberIds[0],
+            notificationTypeCode: 'expiry-reminder',
+            title: `SIGTERM drain ${index}`,
+            body: 'finish current attempt before process exit',
+            channels: ['in-app'],
+          },
+          aggregateType: 'member',
+          aggregateId: refs.memberIds[0],
+          destinationType: 'member',
+          destinationRef: refs.memberIds[0],
+        }),
+      );
+    }
+    const child = startChild(['run-slow-sigterm', 'os-sigterm-drain', '', '750']);
+    let observedExit = false;
+    let activeId = '';
+    try {
+      const barrier = await child.result;
+      expect(barrier).toMatchObject({ phase: 'effect-persisted-before-return' });
+      activeId = barrier.ids?.[0] ?? '';
+      expect(created.map(({ id }) => id)).toContain(activeId);
+      expect(await prisma.notification.findUnique({ where: { id: activeId } })).not.toBeNull();
+
+      child.sendSignal('SIGTERM');
+      await expect(
+        Promise.race([child.exited.then(() => 'exited'), pause(100).then(() => 'still-draining')]),
+      ).resolves.toBe('still-draining');
+      const exit = await child.exited;
+      observedExit = true;
+      expect(exit.signal === 'SIGTERM' || exit.code === 0).toBe(true);
+    } finally {
+      if (!observedExit) await child.kill();
+    }
+
+    const active = await prisma.notificationOutboxIntent.findUniqueOrThrow({
+      where: { id: activeId },
+    });
+    const untouchedId = created.find(({ id }) => id !== activeId)!.id;
+    const untouched = await prisma.notificationOutboxIntent.findUniqueOrThrow({
+      where: { id: untouchedId },
+    });
+    expect(active).toMatchObject({ status: 'succeeded', attempts: 1 });
+    expect(untouched).toMatchObject({
+      status: 'pending',
+      attempts: 0,
+      leaseOwner: null,
+      lockedAt: null,
+      leaseExpiresAt: null,
+    });
+  });
+
   it('expired lease 可回收且旧 fence 不能 ack 新 owner', async () => {
     const refs = await createRefs();
     await outbox.enqueue(input(refs));
@@ -207,6 +363,92 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     });
   });
 
+  it('首条慢 Effect 时 20 条批尾零预消耗，且本轮最多 JIT 处理 20 条', async () => {
+    const refs = await createRefs();
+    for (let index = 0; index < 21; index += 1) {
+      await outbox.enqueue({
+        eventKey: `batch-tail:${refs.notificationId}:${index}`,
+        eventType: OUTBOX_EVENT_SYSTEM_BROADCAST,
+        payloadVersion: OUTBOX_PAYLOAD_VERSION,
+        payload: {
+          notificationTypeCode: 'expiry-reminder',
+          title: `batch ${index}`,
+          body: 'JIT claim envelope',
+          visibilityCode: 'member',
+        },
+        aggregateType: 'batch-test',
+        aggregateId: refs.notificationId,
+        destinationType: 'audience',
+        destinationRef: `batch-${index}`,
+      });
+    }
+    let markFirstStarted!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
+    let releaseFirst!: () => void;
+    const firstReleased = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let handlerCalls = 0;
+    const handlers = {
+      execute: jest.fn(async () => {
+        handlerCalls += 1;
+        if (handlerCalls === 1) {
+          markFirstStarted();
+          await firstReleased;
+        }
+        return { effectPerformed: false };
+      }),
+    };
+    const worker = new NotificationOutboxWorker(outbox, handlers as never);
+    const execution = worker.drainOnce();
+    let processing: NotificationOutboxIntent[] = [];
+    let pending: NotificationOutboxIntent[] = [];
+
+    try {
+      await firstStarted;
+      [processing, pending] = await Promise.all([
+        prisma.notificationOutboxIntent.findMany({ where: { status: 'processing' } }),
+        prisma.notificationOutboxIntent.findMany({ where: { status: 'pending' } }),
+      ]);
+    } finally {
+      releaseFirst();
+      await execution;
+    }
+
+    expect(processing).toHaveLength(1);
+    expect(processing[0]).toMatchObject({ attempts: 1, leaseOwner: expect.any(String) });
+    expect(pending).toHaveLength(20);
+    expect(
+      pending.every(
+        (row) =>
+          row.attempts === 0 &&
+          row.leaseOwner === null &&
+          row.lockedAt === null &&
+          row.leaseExpiresAt === null,
+      ),
+    ).toBe(true);
+
+    await expect(execution).resolves.toMatchObject({
+      claimed: 20,
+      succeeded: 20,
+      failed: 0,
+    });
+    expect(handlers.execute).toHaveBeenCalledTimes(20);
+    expect(await prisma.notificationOutboxIntent.count({ where: { status: 'succeeded' } })).toBe(
+      20,
+    );
+    expect(
+      await prisma.notificationOutboxIntent.findFirstOrThrow({ where: { status: 'pending' } }),
+    ).toMatchObject({
+      attempts: 0,
+      leaseOwner: null,
+      lockedAt: null,
+      leaseExpiresAt: null,
+    });
+  });
+
   it('provider 成功后 ack 前崩溃会在 lease reclaim 后重复 Effect，随后新 fence 才可 ack', async () => {
     const refs = await createRefs();
     await outbox.enqueue(input(refs));
@@ -219,7 +461,7 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       execute: jest.fn().mockResolvedValue({ effectPerformed: true }),
     };
     // 模拟 provider 已成功但进程在 ack 前退出：Effect 发生一次，intent 仍 processing。
-    await handlers.execute(first);
+    await handlers.execute(first, ALLOW_EFFECT);
     const [reclaimed] = await outbox.claim('worker-after-crash', {
       now: new Date(firstNow.getTime() + 1001),
       leaseMs: 1000,
@@ -235,7 +477,7 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     });
   });
 
-  it('真实 OS worker 完成微信 provider/DB effect 后退出未 ack，第二 OS worker 重领且零重复 effect', async () => {
+  it('真实 OS child evidence-before-ack 后 SIGKILL，reclaim 依 evidence 零重复 quota/provider', async () => {
     const refs = await createRefs();
     const memberId = refs.memberIds[0];
     const user = await createTestUser(app, { username: `outbox_os_crash_${Date.now()}` });
@@ -264,17 +506,26 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       destinationRef: memberId,
     };
     const created = await outbox.enqueue(enqueueInput);
-    const first = await runChild([
-      'execute-no-ack',
+    const crashed = startChild([
+      'execute-effect-and-wait',
       'os-provider-before-crash',
       '',
-      '30000',
+      '1000',
       enqueueInput.eventKey,
     ]);
-    expect(first).toMatchObject({ ids: [created.id], effectPerformed: true });
-    expect(
-      await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: created.id } }),
-    ).toMatchObject({ status: 'processing', attempts: 1 });
+    try {
+      await expect(crashed.result).resolves.toMatchObject({
+        phase: 'evidence-persisted',
+        ids: [created.id],
+        effectPerformed: true,
+      });
+    } finally {
+      await expect(crashed.kill()).resolves.toBe('SIGKILL');
+    }
+    const abandoned = await prisma.notificationOutboxIntent.findUniqueOrThrow({
+      where: { id: created.id },
+    });
+    expect(abandoned).toMatchObject({ status: 'processing', attempts: 1 });
     expect(await prisma.notificationDelivery.findMany({ where: { id: created.id } })).toHaveLength(
       1,
     );
@@ -283,12 +534,8 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
         where: { memberId_templateId: { memberId, templateId: 'outbox-os-template' } },
       }),
     ).toMatchObject({ availableCount: 1 });
-    // 精确制造“Effect 已提交、ack 未发生、lease 已到期”的 crash 窗口；杀死 reclaim
-    // 重复调用 provider / 重复扣 quota 的 mutation，同时避免 OS child 冷启动污染业务时钟。
-    await prisma.notificationOutboxIntent.update({
-      where: { id: created.id },
-      data: { leaseExpiresAt: new Date(Date.now() - 1) },
-    });
+    // SIGKILL 发生在 evidence commit 与 ack 之间；等待真实短租约到期，不手改 fence/expiry。
+    await waitUntilExpired(abandoned.leaseExpiresAt!);
 
     const second = await runChild([
       'execute-and-ack',
@@ -328,14 +575,17 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     });
     app.get(SmsSettingsService).invalidate();
     const enqueueInput = input(refs, memberId, '00000000-0000-4000-8000-000000000077');
-    const firstNow = new Date();
     const reservation = await prisma.$transaction((tx) =>
-      outbox.reserveAdminSmsAttempt(enqueueInput, 'crashed-http-request', tx, {
-        now: new Date(firstNow.getTime() - 30_001),
-        leaseMs: 1000,
-      }),
+      outbox.reserveAdminSmsAttempt(enqueueInput, tx),
     );
     expect(reservation.state).toBe('reserved');
+    expect(reservation.intent).toMatchObject({
+      status: 'pending',
+      attempts: 0,
+      leaseOwner: null,
+      lockedAt: null,
+      leaseExpiresAt: null,
+    });
     const first = await runChild([
       'execute-no-ack',
       'os-sms-before-ack-crash',
@@ -386,7 +636,7 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       await prisma.notificationOutboxIntent.findUniqueOrThrow({
         where: { id: reservation.intent!.id },
       }),
-    ).toMatchObject({ status: 'succeeded', attempts: 3 });
+    ).toMatchObject({ status: 'succeeded', attempts: 2 });
   });
 
   it('preparedAt 与 quota decrement 同短事务，崩溃重领也只扣一次', async () => {
@@ -418,6 +668,395 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
         where: { memberId_templateId: { memberId: refs.memberIds[0], templateId } },
       }),
     ).toMatchObject({ availableCount: 1 });
+  });
+
+  it('双 app/双 pool 短租约慢 Effect 由 heartbeat 护航，lockedAt 稳定且 quota 只扣一次', async () => {
+    const refs = await createRefs();
+    const memberId = refs.memberIds[0];
+    const user = await createTestUser(app, { username: `outbox_heartbeat_${Date.now()}` });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { memberId, openid: 'dev-openid-outbox-heartbeat' },
+    });
+    await prisma.wechatSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
+    app.get(WechatSettingsService).invalidate();
+    await prisma.wechatSubscribeTemplate.upsert({
+      where: { notificationTypeCode: 'general' },
+      create: { notificationTypeCode: 'general', templateId: 'outbox-heartbeat', enabled: true },
+      update: { templateId: 'outbox-heartbeat', enabled: true },
+    });
+    await prisma.wechatSubscriptionQuota.create({
+      data: { memberId, templateId: 'outbox-heartbeat', availableCount: 2 },
+    });
+    const enqueueInput: NotificationOutboxEnqueueInput = {
+      eventKey: `wechat-heartbeat:${refs.notificationId}:${memberId}`,
+      eventType: OUTBOX_EVENT_WECHAT_DELIVERY,
+      payloadVersion: OUTBOX_PAYLOAD_VERSION,
+      payload: { notificationId: refs.notificationId, memberId },
+      aggregateType: 'notification',
+      aggregateId: refs.notificationId,
+      destinationType: 'member',
+      destinationRef: memberId,
+    };
+    await outbox.enqueue(enqueueInput);
+    const provider = app.get(DevStubWechatProvider);
+    const send = provider.sendSubscribeMessage.bind(provider);
+    let markProviderStarted!: () => void;
+    const providerStarted = new Promise<void>((resolve) => {
+      markProviderStarted = resolve;
+    });
+    let releaseProvider!: () => void;
+    const providerReleased = new Promise<void>((resolve) => {
+      releaseProvider = resolve;
+    });
+    const providerSpy = jest
+      .spyOn(provider, 'sendSubscribeMessage')
+      .mockImplementation(async (accessToken, request, beforeEffect) => {
+        markProviderStarted();
+        await providerReleased;
+        return send(accessToken, request, beforeEffect);
+      });
+    const worker = new NotificationOutboxWorker(outbox, app.get(NotificationOutboxHandlers));
+    const [claimed] = await outbox.claim('heartbeat-worker-a', {
+      eventKey: enqueueInput.eventKey,
+      leaseMs: 300,
+    });
+    const initialLockedAt = claimed.lockedAt;
+    const initialExpiry = claimed.leaseExpiresAt;
+    const execution = worker.executeReserved(claimed);
+    let providerCallCount = 0;
+
+    try {
+      await providerStarted;
+      await waitForCondition(async () => {
+        const row = await prisma.notificationOutboxIntent.findUniqueOrThrow({
+          where: { id: claimed.id },
+        });
+        return row.leaseExpiresAt!.getTime() > initialExpiry.getTime();
+      });
+      await waitUntilExpired(initialExpiry);
+      expect(
+        await outboxB.claim('heartbeat-worker-b', {
+          eventKey: enqueueInput.eventKey,
+          leaseMs: 300,
+        }),
+      ).toEqual([]);
+      expect(
+        await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: claimed.id } }),
+      ).toMatchObject({
+        status: 'processing',
+        lockedAt: initialLockedAt,
+        preparedAt: expect.any(Date),
+      });
+      expect(
+        await prisma.wechatSubscriptionQuota.findUniqueOrThrow({
+          where: { memberId_templateId: { memberId, templateId: 'outbox-heartbeat' } },
+        }),
+      ).toMatchObject({ availableCount: 1 });
+    } finally {
+      releaseProvider();
+      try {
+        await execution;
+        providerCallCount = providerSpy.mock.calls.length;
+      } finally {
+        providerSpy.mockRestore();
+      }
+    }
+
+    expect(providerCallCount).toBe(1);
+    expect(
+      await prisma.wechatSubscriptionQuota.findUniqueOrThrow({
+        where: { memberId_templateId: { memberId, templateId: 'outbox-heartbeat' } },
+      }),
+    ).toMatchObject({ availableCount: 1 });
+    expect(
+      await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: claimed.id } }),
+    ).toMatchObject({ status: 'succeeded', attempts: 1 });
+  });
+
+  it('WeChat deep provider guard renew 失败：stub Effect=0、delivery evidence=0、零 terminal', async () => {
+    const refs = await createRefs();
+    const memberId = refs.memberIds[0];
+    const user = await createTestUser(app, { username: `outbox_deep_guard_${Date.now()}` });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { memberId, openid: 'dev-openid-outbox-deep-guard' },
+    });
+    await prisma.wechatSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
+    app.get(WechatSettingsService).invalidate();
+    const templateId = 'outbox-deep-guard-template';
+    await prisma.wechatSubscribeTemplate.upsert({
+      where: { notificationTypeCode: 'general' },
+      create: { notificationTypeCode: 'general', templateId, enabled: true },
+      update: { templateId, enabled: true },
+    });
+    await prisma.wechatSubscriptionQuota.create({
+      data: { memberId, templateId, availableCount: 2 },
+    });
+    const created = await outbox.enqueue({
+      eventKey: `wechat-deep-guard:${refs.notificationId}:${memberId}`,
+      eventType: OUTBOX_EVENT_WECHAT_DELIVERY,
+      payloadVersion: OUTBOX_PAYLOAD_VERSION,
+      payload: { notificationId: refs.notificationId, memberId },
+      aggregateType: 'notification',
+      aggregateId: refs.notificationId,
+      destinationType: 'member',
+      destinationRef: memberId,
+    });
+    const [claimed] = await outbox.claim('deep-guard-worker', {
+      eventKey: created.eventKey,
+      leaseMs: 30_000,
+    });
+    const leaseLost = new NotificationOutboxLeaseLostError(claimed.id);
+    const renew = outbox.renewLease.bind(outbox);
+    let renewCalls = 0;
+    const renewSpy = jest.spyOn(outbox, 'renewLease').mockImplementation((...args) => {
+      renewCalls += 1;
+      return renewCalls === 1 ? renew(...args) : Promise.reject(leaseLost);
+    });
+    const debugSpy = jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
+    let debugText = '';
+    try {
+      await expect(
+        new NotificationOutboxWorker(outbox, app.get(NotificationOutboxHandlers)).executeReserved(
+          claimed,
+        ),
+      ).rejects.toBe(leaseLost);
+      debugText = (debugSpy.mock.calls as unknown[][]).map((call) => String(call[0])).join('\n');
+    } finally {
+      renewSpy.mockRestore();
+      debugSpy.mockRestore();
+    }
+
+    expect(renewCalls).toBe(2);
+    expect(debugText).not.toContain('[DEV_STUB] getAccessToken called');
+    expect(debugText).not.toContain('[DEV_STUB] sendSubscribeMessage called');
+    expect(
+      await prisma.notificationDelivery.count({ where: { notificationId: refs.notificationId } }),
+    ).toBe(0);
+    expect(
+      await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: claimed.id } }),
+    ).toMatchObject({
+      status: 'processing',
+      attempts: 1,
+      preparedAt: expect.any(Date),
+      completedAt: null,
+      deadAt: null,
+    });
+    expect(
+      await prisma.wechatSubscriptionQuota.findUniqueOrThrow({
+        where: { memberId_templateId: { memberId, templateId } },
+      }),
+    ).toMatchObject({ availableCount: 1 });
+  });
+
+  it.each([
+    ['birthday', OUTBOX_EVENT_BIRTHDAY_SMS, 'sendBirthdayGreeting'],
+    ['admin', OUTBOX_EVENT_ADMIN_SMS, 'sendNotification'],
+  ] as const)(
+    '%s SMS deep guard renew 失败：DevStub 最终 Effect=0、SENT/FAILED evidence=0、零 terminal',
+    async (kind, eventType, providerMethod) => {
+      const refs = await createRefs();
+      const memberId = refs.memberIds[0];
+      const phone = kind === 'birthday' ? '13988000001' : '13988000002';
+      const user = await createTestUser(app, {
+        username: `outbox_sms_guard_${kind}_${Date.now()}`,
+      });
+      await prisma.user.update({ where: { id: user.id }, data: { memberId, phone } });
+      await configureDevSms();
+
+      const created = await outbox.enqueue(
+        kind === 'birthday'
+          ? {
+              eventKey: `birthday-sms:2026-07-19:${memberId}`,
+              eventType,
+              payloadVersion: OUTBOX_PAYLOAD_VERSION,
+              payload: { memberId, dateKey: '2026-07-19' },
+              aggregateType: 'member',
+              aggregateId: memberId,
+              destinationType: 'member',
+              destinationRef: memberId,
+            }
+          : input(refs),
+      );
+      const [claimed] = await outbox.claim(`sms-deep-guard-${kind}`, {
+        eventKey: created.eventKey,
+        leaseMs: 30_000,
+      });
+      const leaseLost = new NotificationOutboxLeaseLostError(claimed.id);
+      const renew = outbox.renewLease.bind(outbox);
+      let renewCalls = 0;
+      const renewSpy = jest.spyOn(outbox, 'renewLease').mockImplementation((...args) => {
+        renewCalls += 1;
+        return renewCalls === 1 ? renew(...args) : Promise.reject(leaseLost);
+      });
+      const devStub = app.get(DevStubSmsProvider);
+      const providerSpy =
+        providerMethod === 'sendBirthdayGreeting'
+          ? jest.spyOn(devStub, 'sendBirthdayGreeting')
+          : jest.spyOn(devStub, 'sendNotification');
+      const debugSpy = jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
+      let debugText = '';
+      try {
+        await expect(
+          new NotificationOutboxWorker(outbox, app.get(NotificationOutboxHandlers)).executeReserved(
+            claimed,
+          ),
+        ).rejects.toBe(leaseLost);
+        expect(providerSpy).not.toHaveBeenCalled();
+        debugText = (debugSpy.mock.calls as unknown[][]).map((call) => String(call[0])).join('\n');
+      } finally {
+        renewSpy.mockRestore();
+        providerSpy.mockRestore();
+        debugSpy.mockRestore();
+      }
+
+      expect(renewCalls).toBe(2);
+      expect(debugText).not.toContain(`[DEV_STUB] ${providerMethod}`);
+      expect(await prisma.smsSendLog.count({ where: { phone } })).toBe(0);
+      expect(
+        await prisma.notificationDelivery.count({
+          where: { notificationId: refs.notificationId, channel: 'sms' },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: claimed.id } }),
+      ).toMatchObject({
+        status: 'processing',
+        attempts: 1,
+        completedAt: null,
+        deadAt: null,
+      });
+    },
+  );
+
+  it('birthday provider accepted 后 SENT evidence DB 写失败只 nack，绝不伪造 FAILED', async () => {
+    const refs = await createRefs();
+    const memberId = refs.memberIds[0];
+    const phone = '13988000004';
+    const user = await createTestUser(app, {
+      username: `outbox_birthday_evidence_${Date.now()}`,
+    });
+    await prisma.user.update({ where: { id: user.id }, data: { memberId, phone } });
+    await configureDevSms();
+
+    const created = await outbox.enqueue({
+      eventKey: `birthday-sms:2026-07-20:${memberId}`,
+      eventType: OUTBOX_EVENT_BIRTHDAY_SMS,
+      payloadVersion: OUTBOX_PAYLOAD_VERSION,
+      payload: { memberId, dateKey: '2026-07-20' },
+      aggregateType: 'member',
+      aggregateId: memberId,
+      destinationType: 'member',
+      destinationRef: memberId,
+    });
+    const [claimed] = await outbox.claim('birthday-evidence-db-failure', {
+      eventKey: created.eventKey,
+      leaseMs: 30_000,
+    });
+    const dbError = new Error('birthday SENT evidence unavailable');
+    const devStub = app.get(DevStubSmsProvider);
+    const providerSpy = jest.spyOn(devStub, 'sendBirthdayGreeting');
+    const createSpy = jest.spyOn(prisma.smsSendLog, 'create').mockRejectedValueOnce(dbError);
+
+    try {
+      await expect(
+        new NotificationOutboxWorker(outbox, app.get(NotificationOutboxHandlers)).executeReserved(
+          claimed,
+        ),
+      ).rejects.toBe(dbError);
+      expect(providerSpy).toHaveBeenCalledTimes(1);
+      expect(createSpy).toHaveBeenCalledTimes(1);
+      expect(createSpy.mock.calls[0][0].data).toMatchObject({ phone, status: 'SENT' });
+    } finally {
+      providerSpy.mockRestore();
+      createSpy.mockRestore();
+    }
+
+    expect(await prisma.smsSendLog.count({ where: { phone } })).toBe(0);
+    expect(
+      await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: claimed.id } }),
+    ).toMatchObject({
+      status: 'pending',
+      attempts: 1,
+      completedAt: null,
+      deadAt: null,
+    });
+  });
+
+  it('双 app/双 pool：admin SMS 短租约慢 DevStub Effect 由 heartbeat 护航并 terminal', async () => {
+    const refs = await createRefs();
+    const memberId = refs.memberIds[0];
+    const phone = '13988000003';
+    const user = await createTestUser(app, { username: `outbox_sms_slow_${Date.now()}` });
+    await prisma.user.update({ where: { id: user.id }, data: { memberId, phone } });
+    await configureDevSms();
+    const created = await outbox.enqueue(input(refs));
+    const devStub = app.get(DevStubSmsProvider);
+    const send = devStub.sendNotification.bind(devStub);
+    let markEffectStarted!: () => void;
+    const effectStarted = new Promise<void>((resolve) => {
+      markEffectStarted = resolve;
+    });
+    let releaseEffect!: () => void;
+    const effectReleased = new Promise<void>((resolve) => {
+      releaseEffect = resolve;
+    });
+    const providerSpy = jest
+      .spyOn(devStub, 'sendNotification')
+      .mockImplementation(async (request) => {
+        markEffectStarted();
+        await effectReleased;
+        return send(request);
+      });
+    const worker = new NotificationOutboxWorker(outbox, app.get(NotificationOutboxHandlers));
+    const [claimed] = await outbox.claim('sms-heartbeat-worker-a', {
+      eventKey: created.eventKey,
+      leaseMs: 300,
+    });
+    const initialLockedAt = claimed.lockedAt;
+    const initialExpiry = claimed.leaseExpiresAt;
+    const execution = worker.executeReserved(claimed);
+    let providerCallCount = 0;
+
+    try {
+      await effectStarted;
+      await waitForCondition(async () => {
+        const row = await prisma.notificationOutboxIntent.findUniqueOrThrow({
+          where: { id: claimed.id },
+        });
+        return row.leaseExpiresAt!.getTime() > initialExpiry.getTime();
+      });
+      await waitUntilExpired(initialExpiry);
+      await expect(
+        outboxB.claim('sms-heartbeat-worker-b', {
+          eventKey: created.eventKey,
+          leaseMs: 300,
+        }),
+      ).resolves.toEqual([]);
+      expect(
+        await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: claimed.id } }),
+      ).toMatchObject({ status: 'processing', lockedAt: initialLockedAt });
+    } finally {
+      releaseEffect();
+      try {
+        await execution;
+        providerCallCount = providerSpy.mock.calls.length;
+      } finally {
+        providerSpy.mockRestore();
+      }
+    }
+
+    expect(providerCallCount).toBe(1);
+    expect(
+      await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: claimed.id } }),
+    ).toMatchObject({ status: 'succeeded', attempts: 1 });
+    expect(await prisma.smsSendLog.count({ where: { phone, status: 'SENT' } })).toBe(1);
+    expect(
+      await prisma.notificationDelivery.count({
+        where: { notificationId: refs.notificationId, memberId, channel: 'sms', status: 'sent' },
+      }),
+    ).toBe(1);
   });
 
   it('43101 terminal delivery/refund 以 intent.id 幂等，ack crash 重领不重复 provider/refund', async () => {
@@ -462,7 +1101,9 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       leaseMs: 1000,
       eventKey: enqueueInput.eventKey,
     });
-    await expect(handlers.execute(first)).resolves.toMatchObject({ effectPerformed: true });
+    await expect(handlers.execute(first, ALLOW_EFFECT)).resolves.toMatchObject({
+      effectPerformed: true,
+    });
     expect(providerSpy).toHaveBeenCalledTimes(1);
     expect(await prisma.notificationDelivery.findUnique({ where: { id: first.id } })).toMatchObject(
       { status: 'failed', reasonCode: 'need-resubscribe', errCode: '43101' },
@@ -478,7 +1119,9 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       leaseMs: 1000,
       eventKey: enqueueInput.eventKey,
     });
-    await expect(handlers.execute(second)).resolves.toMatchObject({ effectPerformed: false });
+    await expect(handlers.execute(second, ALLOW_EFFECT)).resolves.toMatchObject({
+      effectPerformed: false,
+    });
     expect(providerSpy).toHaveBeenCalledTimes(1);
     expect(
       await prisma.wechatSubscriptionQuota.findUniqueOrThrow({
@@ -543,14 +1186,12 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       prisma.$transaction((tx) =>
         outbox.reserveAdminSmsAttempt(
           input(refs, refs.memberIds[0], '00000000-0000-4000-8000-000000000021'),
-          'admin-generation-left',
           tx,
         ),
       ),
       prismaB.$transaction((tx) =>
         outboxB.reserveAdminSmsAttempt(
           input(refs, refs.memberIds[0], '00000000-0000-4000-8000-000000000022'),
-          'admin-generation-right',
           tx,
         ),
       ),
@@ -634,22 +1275,105 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     expect(await prisma.notification.count()).toBe(before);
   });
 
-  it('admin per-recipient reservation 防后台抢领，partial/channel/DB失败只重试失败 child', async () => {
+  it('显式替换旧 HTTP 防抢锁：admin commit 后 pending，后台可抢且 HTTP 返回 not-claimed', async () => {
+    const refs = await createRefs();
+    const reservation = await prisma.$transaction(async (tx) => {
+      const result = await outbox.reserveAdminSmsAttempt(input(refs), tx);
+      // 未提交 command 对另一个 app/pool 不可见。
+      expect(await outboxB.claim('background-before-commit', { limit: 1 })).toEqual([]);
+      return result;
+    });
+    expect(reservation.intent).toMatchObject({
+      status: 'pending',
+      attempts: 0,
+      leaseOwner: null,
+      lockedAt: null,
+      leaseExpiresAt: null,
+    });
+
+    const [stolen] = await outboxB.claim('background-after-commit', {
+      limit: 1,
+      eventKey: reservation.intent!.eventKey,
+    });
+    expect(stolen).toMatchObject({ status: 'processing', attempts: 1 });
+    const httpHandlers = { execute: jest.fn() };
+    const httpWorker = new NotificationOutboxWorker(outbox, httpHandlers as never);
+    await expect(httpWorker.drainEventKeyOrThrow(stolen.eventKey)).resolves.toEqual({
+      state: 'not-claimed',
+    });
+    expect(httpHandlers.execute).not.toHaveBeenCalled();
+
+    const backgroundHandlers = {
+      execute: jest.fn().mockResolvedValue({
+        effectPerformed: true,
+        value: { outcome: 'sent' },
+      }),
+    };
+    await new NotificationOutboxWorker(outboxB, backgroundHandlers as never).executeReserved(
+      stolen,
+    );
+    expect(
+      await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: stolen.id } }),
+    ).toMatchObject({ status: 'succeeded', attempts: 1 });
+  });
+
+  it.each([
+    ['reservation 后撤回', { statusCode: 'draft' }],
+    ['reservation 后移除 sms', { channels: ['in-app'] }],
+  ])(
+    '双 app/双 pool %s：另一 worker 重验父状态后 terminal skip 且 provider=0',
+    async (_name, data) => {
+      const refs = await createRefs();
+      const reservation = await prisma.$transaction((tx) =>
+        outbox.reserveAdminSmsAttempt(input(refs), tx),
+      );
+      expect(reservation.intent).toMatchObject({ status: 'pending', attempts: 0 });
+      await prisma.notification.update({
+        where: { id: refs.notificationId },
+        data,
+      });
+
+      const providerSpy = jest.spyOn(appB.get(DevStubSmsProvider), 'sendNotification');
+      try {
+        const [claimed] = await outboxB.claim('parent-state-worker-b', {
+          eventKey: reservation.intent!.eventKey,
+          limit: 1,
+        });
+        await expect(
+          new NotificationOutboxWorker(
+            outboxB,
+            appB.get(NotificationOutboxHandlers),
+          ).executeReserved(claimed),
+        ).resolves.toEqual({ outcome: 'skipped' });
+        expect(providerSpy).not.toHaveBeenCalled();
+      } finally {
+        providerSpy.mockRestore();
+      }
+
+      expect(
+        await prisma.notificationOutboxIntent.findUniqueOrThrow({
+          where: { id: reservation.intent!.id },
+        }),
+      ).toMatchObject({ status: 'succeeded', attempts: 1, sentAt: null });
+    },
+  );
+
+  it('admin per-recipient JIT 首轮 partial/channel/DB 失败只重试失败 child', async () => {
     const refs = await createRefs(3);
-    const requestOwner = 'admin-request-owner';
     const reserved = await prisma.$transaction(async (tx) => {
-      const rows: ClaimedNotificationOutboxIntent[] = [];
+      const rows: NotificationOutboxIntent[] = [];
       for (const memberId of refs.memberIds) {
-        const result = await outbox.reserveAdminSmsAttempt(input(refs, memberId), requestOwner, tx);
+        const result = await outbox.reserveAdminSmsAttempt(input(refs, memberId), tx);
         if (result.intent) rows.push(result.intent);
       }
-      // 另一个 pool 在 request transaction commit 前看不到未提交 rows。
-      expect(await outbox.claim('background-before-commit')).toEqual([]);
       return rows;
     });
     expect(reserved).toHaveLength(3);
-    // commit 后 rows 已是 request-owned processing，后台同样抢不到。
-    expect(await outbox.claim('background-after-commit')).toEqual([]);
+    expect(reserved).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: 'pending', attempts: 0, leaseOwner: null }),
+      ]),
+    );
 
     const firstAttempts = new Map<string, number>();
     const handlers = {
@@ -667,9 +1391,17 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       }),
     };
     const worker = new NotificationOutboxWorker(outbox, handlers as never);
-    const firstResults = await Promise.allSettled(
-      reserved.map((intent) => worker.executeReserved(intent)),
-    );
+    const firstResults: PromiseSettledResult<unknown>[] = [];
+    for (const intent of reserved) {
+      try {
+        firstResults.push({
+          status: 'fulfilled',
+          value: await worker.drainEventKeyOrThrow(intent.eventKey),
+        });
+      } catch (reason) {
+        firstResults.push({ status: 'rejected', reason });
+      }
+    }
     expect(firstResults.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
     expect(firstResults.filter(({ status }) => status === 'rejected')).toHaveLength(2);
     expect(await prisma.notificationOutboxIntent.count({ where: { status: 'succeeded' } })).toBe(1);
@@ -682,9 +1414,14 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     const retryAt = new Date(
       Math.max(...pending.map(({ availableAt }) => availableAt.getTime())) + 1,
     );
-    const retry = await outbox.claim('background-retry', { now: retryAt });
-    expect(retry).toHaveLength(2);
-    await Promise.all(retry.map((intent) => worker.executeReserved(intent)));
+    for (const row of pending) {
+      const [retry] = await outbox.claim('background-retry', {
+        now: retryAt,
+        limit: 1,
+        eventKey: row.eventKey,
+      });
+      await worker.executeReserved(retry);
+    }
     expect(await prisma.notificationOutboxIntent.count({ where: { status: 'succeeded' } })).toBe(3);
     expect(firstAttempts.get(refs.memberIds[0])).toBe(1);
     expect(firstAttempts.get(refs.memberIds[1])).toBe(2);
@@ -693,32 +1430,37 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
 
   it('短 lease 被后台 reclaim 后 stale HTTP re-fence 失败且 provider 零调用', async () => {
     const refs = await createRefs();
-    const firstNow = new Date(Date.now() - 2000);
     const reservation = await prisma.$transaction((tx) =>
-      outbox.reserveAdminSmsAttempt(input(refs), 'stale-http-request', tx, {
-        now: firstNow,
-        leaseMs: 1000,
-      }),
+      outbox.reserveAdminSmsAttempt(input(refs), tx),
     );
     expect(reservation.intent).not.toBeNull();
+    const firstNow = new Date();
+    const [staleIntent] = await outbox.claim('stale-http-request', {
+      now: firstNow,
+      leaseMs: 1000,
+      limit: 1,
+      eventKey: reservation.intent!.eventKey,
+    });
     await expect(
       prismaB.$transaction((tx) =>
         outboxB.reserveAdminSmsAttempt(
           input(refs, refs.memberIds[0], '00000000-0000-4000-8000-000000000099'),
-          'new-http-generation',
           tx,
         ),
       ),
     ).resolves.toMatchObject({ state: 'busy', intent: null });
     const provider = { execute: jest.fn() };
     const staleHttp = new NotificationOutboxWorker(outbox, provider as never);
-    const [reclaimResult, staleResult] = await Promise.allSettled([
-      outboxB.claim('background-reclaimer', { now: new Date(), leaseMs: 30_000 }),
-      staleHttp.executeReserved(reservation.intent!),
-    ]);
-    expect(reclaimResult.status).toBe('fulfilled');
-    if (reclaimResult.status === 'fulfilled') expect(reclaimResult.value).toHaveLength(1);
-    expect(staleResult.status).toBe('rejected');
+    const reclaimed = await outboxB.claim('background-reclaimer', {
+      now: new Date(firstNow.getTime() + 1001),
+      leaseMs: 30_000,
+      limit: 1,
+      eventKey: reservation.intent!.eventKey,
+    });
+    expect(reclaimed).toHaveLength(1);
+    await expect(staleHttp.executeReserved(staleIntent)).rejects.toThrow(
+      'NOTIFICATION_OUTBOX_LEASE_LOST',
+    );
     expect(provider.execute).not.toHaveBeenCalled();
   });
 
@@ -802,35 +1544,8 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
 });
 
 function runChild(args: string[]): Promise<ChildResult> {
-  const fixture = join(process.cwd(), 'test', 'fixtures', 'notification-outbox-worker-child.ts');
-  const tsNodeRegister = join(
-    process.cwd(),
-    'node_modules',
-    'ts-node',
-    'register',
-    'transpile-only.js',
-  );
-  const tsconfigPathsRegister = join(
-    process.cwd(),
-    'node_modules',
-    'tsconfig-paths',
-    'register.js',
-  );
   return new Promise((resolve, reject) => {
-    // tsx/esbuild 不生成 Nest 依赖注入所需的 decorator metadata；真 OS child 必须复用
-    // TypeScript compiler + 本仓 tsconfig 的 emitDecoratorMetadata，才能等价启动生产 module。
-    const child = spawn(
-      process.execPath,
-      ['-r', tsNodeRegister, '-r', tsconfigPathsRegister, fixture, ...args],
-      {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          TS_NODE_PROJECT: join(process.cwd(), 'test', 'tsconfig.test.json'),
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
+    const child = spawnWorkerChild(args);
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8');
@@ -859,4 +1574,106 @@ function runChild(args: string[]): Promise<ChildResult> {
       resolve(JSON.parse(line) as ChildResult);
     });
   });
+}
+
+function startChild(args: string[]): RunningChild {
+  const child = spawnWorkerChild(args);
+  let stdout = '';
+  let stderr = '';
+  let resultSettled = false;
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  const result = new Promise<ChildResult>((resolve, reject) => {
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+      const completeLines = stdout.split('\n').slice(0, -1);
+      const line = completeLines.find((candidate) => candidate.trim().startsWith('{'));
+      if (!line || resultSettled) return;
+      resultSettled = true;
+      resolve(JSON.parse(line) as ChildResult);
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once('error', (error) => {
+      if (resultSettled) return;
+      resultSettled = true;
+      reject(error);
+    });
+    child.once('exit', (code, signal) => {
+      if (resultSettled) return;
+      resultSettled = true;
+      reject(
+        new Error(
+          `outbox child exited before barrier code=${code ?? 'null'} signal=${signal ?? 'null'} ` +
+            `stdout=${stdout.trim()} stderr=${stderr.trim()}`,
+        ),
+      );
+    });
+  });
+  const exited = new Promise<ChildExit>((resolve) => {
+    child.once('exit', (code, signal) => resolve({ code, signal }));
+  });
+  return {
+    result,
+    exited,
+    sendSignal: (signal) => {
+      child.kill(signal);
+    },
+    kill: async () => {
+      child.kill('SIGKILL');
+      return (await exited).signal;
+    },
+  };
+}
+
+function spawnWorkerChild(args: string[]) {
+  const fixture = join(process.cwd(), 'test', 'fixtures', 'notification-outbox-worker-child.ts');
+  const tsNodeRegister = join(
+    process.cwd(),
+    'node_modules',
+    'ts-node',
+    'register',
+    'transpile-only.js',
+  );
+  const tsconfigPathsRegister = join(
+    process.cwd(),
+    'node_modules',
+    'tsconfig-paths',
+    'register.js',
+  );
+  // tsx/esbuild 不生成 Nest 依赖注入所需的 decorator metadata；真 OS child 必须复用
+  // TypeScript compiler + 本仓 tsconfig 的 emitDecoratorMetadata，才能等价启动生产 module。
+  return spawn(
+    process.execPath,
+    ['-r', tsNodeRegister, '-r', tsconfigPathsRegister, fixture, ...args],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        TS_NODE_PROJECT: join(process.cwd(), 'test', 'tsconfig.test.json'),
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
+}
+
+async function waitUntilExpired(expiresAt: Date): Promise<void> {
+  const remainingMs = expiresAt.getTime() - Date.now() + 25;
+  if (remainingMs > 0) await pause(remainingMs);
+}
+
+async function waitForCondition(
+  predicate: () => Promise<boolean>,
+  timeoutMs = 3000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await predicate())) {
+    if (Date.now() >= deadline) throw new Error('timed out waiting for outbox condition');
+    await pause(20);
+  }
+}
+
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
