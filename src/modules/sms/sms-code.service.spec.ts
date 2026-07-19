@@ -61,19 +61,39 @@ function makePrismaMock(): PrismaMockShape {
   return prisma;
 }
 
+interface RouterMockShape {
+  resolveRoute: jest.Mock;
+  route: {
+    providerType: 'DEV_STUB' | 'TENCENT_SMS';
+    prepareVerifyCode: jest.Mock;
+  };
+  prepareVerifyCode: jest.Mock;
+  invoke: jest.Mock;
+}
+
 function makeRouterMock(opts: {
   providerType?: 'DEV_STUB' | 'TENCENT_SMS';
   resolveError?: Error;
+  prepareError?: Error;
   sendError?: Error;
   providerMsgId?: string | null;
-}): { resolveProviderType: jest.Mock; sendVerifyCode: jest.Mock } {
-  const resolveProviderType = opts.resolveError
-    ? jest.fn().mockRejectedValue(opts.resolveError)
-    : jest.fn().mockResolvedValue(opts.providerType ?? 'DEV_STUB');
-  const sendVerifyCode = opts.sendError
+}): RouterMockShape {
+  const providerType = opts.providerType ?? 'DEV_STUB';
+  const invoke = opts.sendError
     ? jest.fn().mockRejectedValue(opts.sendError)
     : jest.fn().mockResolvedValue({ providerMsgId: opts.providerMsgId ?? null });
-  return { resolveProviderType, sendVerifyCode };
+  const prepared = { providerType, invoke };
+  const prepareError = opts.prepareError;
+  const prepareVerifyCode = prepareError
+    ? jest.fn().mockImplementation(() => {
+        throw prepareError;
+      })
+    : jest.fn().mockReturnValue(prepared);
+  const route = { providerType, prepareVerifyCode };
+  const resolveRoute = opts.resolveError
+    ? jest.fn().mockRejectedValue(opts.resolveError)
+    : jest.fn().mockResolvedValue(route);
+  return { resolveRoute, route, prepareVerifyCode, invoke };
 }
 
 function makeService(
@@ -113,10 +133,11 @@ describe('SmsCodeService.issue', () => {
     await expect(svc.issue(ISSUE_INPUT)).rejects.toEqual(
       new BizException(BizCode.SMS_SEND_INTERVAL_LIMIT),
     );
-    expect(router.resolveProviderType).toHaveBeenCalledTimes(1);
+    expect(router.resolveRoute).toHaveBeenCalledTimes(1);
     expect(prisma.smsVerificationCode.count).toHaveBeenCalledTimes(1);
     expect(prisma.smsVerificationCode.updateMany).not.toHaveBeenCalled();
-    expect(router.sendVerifyCode).not.toHaveBeenCalled();
+    expect(router.prepareVerifyCode).not.toHaveBeenCalled();
+    expect(router.invoke).not.toHaveBeenCalled();
   });
 
   it('日限命中 → SMS_PHONE_DAILY_LIMIT;通道已解析但不写 code / 不发送', async () => {
@@ -129,9 +150,10 @@ describe('SmsCodeService.issue', () => {
     await expect(svc.issue(ISSUE_INPUT)).rejects.toEqual(
       new BizException(BizCode.SMS_PHONE_DAILY_LIMIT),
     );
-    expect(router.resolveProviderType).toHaveBeenCalledTimes(1);
+    expect(router.resolveRoute).toHaveBeenCalledTimes(1);
     expect(prisma.smsVerificationCode.updateMany).not.toHaveBeenCalled();
-    expect(router.sendVerifyCode).not.toHaveBeenCalled();
+    expect(router.prepareVerifyCode).not.toHaveBeenCalled();
+    expect(router.invoke).not.toHaveBeenCalled();
   });
 
   it('通道不可用 → SMS_CHANNEL_NOT_CONFIGURED;不建 code 行(不产生计数占用)', async () => {
@@ -196,7 +218,7 @@ describe('SmsCodeService.issue', () => {
       expect(query).not.toMatch(/pg_advisory_lock\s*\(/);
     }
     // provider resolve 必须在事务前；锁必须在 latest/count/旧码作废/create 之前。
-    expect(router.resolveProviderType.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(router.resolveRoute.mock.invocationCallOrder[0]).toBeLessThan(
       prisma.$transaction.mock.invocationCallOrder[0],
     );
     expect(prisma.$queryRaw.mock.invocationCallOrder[1]).toBeLessThan(
@@ -206,20 +228,124 @@ describe('SmsCodeService.issue', () => {
       prisma.smsVerificationCode.updateMany.mock.invocationCallOrder[0],
     );
     expect(prisma.$transaction.mock.invocationCallOrder[0]).toBeLessThan(
-      router.sendVerifyCode.mock.invocationCallOrder[0],
+      router.prepareVerifyCode.mock.invocationCallOrder[0],
     );
-    expect(router.sendVerifyCode.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(router.prepareVerifyCode.mock.invocationCallOrder[0]).toBeLessThan(
+      router.invoke.mock.invocationCallOrder[0],
+    );
+    expect(router.invoke.mock.invocationCallOrder[0]).toBeLessThan(
       prisma.smsSendLog.create.mock.invocationCallOrder[0],
     );
     // provider 收到明文码 + ttl 分钟
-    expect(router.sendVerifyCode).toHaveBeenCalledWith({
+    expect(router.prepareVerifyCode).toHaveBeenCalledWith({
       phone: ISSUE_INPUT.phone,
       code: SMS_DEV_STUB_FIXED_CODE,
       ttlMinutes: 5,
     });
+    expect(router.invoke).toHaveBeenCalledTimes(1);
     // send_log SENT + codeId 关联
     const sentLogArg = firstArgOf<{ data: Record<string, unknown> }>(prisma.smsSendLog.create);
-    expect(sentLogArg.data).toMatchObject({ status: 'SENT', codeId: 'code-1' });
+    expect(sentLogArg.data).toMatchObject({
+      providerType: 'DEV_STUB',
+      status: 'SENT',
+      codeId: 'code-1',
+    });
+  });
+
+  it('事务期间 router 当前配置改变：已取得 DEV route 仍固定码 / invoke / evidence 全为 DEV', async () => {
+    const prisma = makePrismaMock();
+    prisma.smsVerificationCode.findFirst.mockResolvedValue(null);
+    prisma.smsVerificationCode.count.mockResolvedValue(0);
+    prisma.smsVerificationCode.updateMany.mockResolvedValue({ count: 0 });
+    prisma.smsVerificationCode.create.mockResolvedValue({ id: 'code-stable-route' });
+    const router = makeRouterMock({ providerType: 'DEV_STUB' });
+    const nextRouter = makeRouterMock({ providerType: 'TENCENT_SMS' });
+    prisma.$transaction.mockImplementation((cb: (tx: unknown) => unknown) => {
+      router.resolveRoute.mockResolvedValue(nextRouter.route);
+      return cb(prisma);
+    });
+    const svc = makeService(prisma, router);
+
+    await expect(svc.issue(ISSUE_INPUT)).resolves.toEqual({ expiresInSeconds: 300 });
+
+    expect(router.resolveRoute).toHaveBeenCalledTimes(1);
+    expect(router.prepareVerifyCode).toHaveBeenCalledWith({
+      phone: ISSUE_INPUT.phone,
+      code: SMS_DEV_STUB_FIXED_CODE,
+      ttlMinutes: 5,
+    });
+    expect(router.invoke).toHaveBeenCalledTimes(1);
+    expect(nextRouter.prepareVerifyCode).not.toHaveBeenCalled();
+    const createArg = firstArgOf<{ data: { codeHash: string } }>(prisma.smsVerificationCode.create);
+    expect(createArg.data.codeHash).toBe(
+      hmacCode(ISSUE_INPUT.phone, ISSUE_INPUT.purpose, SMS_DEV_STUB_FIXED_CODE),
+    );
+    const sentLogArg = firstArgOf<{ data: Record<string, unknown> }>(prisma.smsSendLog.create);
+    expect(sentLogArg.data).toMatchObject({
+      providerType: 'DEV_STUB',
+      status: 'SENT',
+      codeId: 'code-stable-route',
+    });
+  });
+
+  it('TENCENT route：同一六位码用于 hash / prepare send / SENT evidence', async () => {
+    const prisma = makePrismaMock();
+    prisma.smsVerificationCode.findFirst.mockResolvedValue(null);
+    prisma.smsVerificationCode.count.mockResolvedValue(0);
+    prisma.smsVerificationCode.updateMany.mockResolvedValue({ count: 0 });
+    prisma.smsVerificationCode.create.mockResolvedValue({ id: 'code-tencent' });
+    const router = makeRouterMock({ providerType: 'TENCENT_SMS', providerMsgId: 'tx-msg-1' });
+    const svc = makeService(prisma, router);
+
+    await expect(svc.issue(ISSUE_INPUT)).resolves.toEqual({ expiresInSeconds: 300 });
+
+    const sendInput = firstArgOf<{ phone: string; code: string; ttlMinutes: number }>(
+      router.prepareVerifyCode,
+    );
+    expect(sendInput).toMatchObject({ phone: ISSUE_INPUT.phone, ttlMinutes: 5 });
+    expect(sendInput.code).toMatch(/^\d{6}$/);
+    const createArg = firstArgOf<{ data: { codeHash: string } }>(prisma.smsVerificationCode.create);
+    expect(createArg.data.codeHash).toBe(
+      hmacCode(ISSUE_INPUT.phone, ISSUE_INPUT.purpose, sendInput.code),
+    );
+    expect(router.invoke).toHaveBeenCalledTimes(1);
+    const sentLogArg = firstArgOf<{ data: Record<string, unknown> }>(prisma.smsSendLog.create);
+    expect(sentLogArg.data).toMatchObject({
+      providerType: 'TENCENT_SMS',
+      status: 'SENT',
+      providerMsgId: 'tx-msg-1',
+      codeId: 'code-tencent',
+    });
+  });
+
+  it('TENCENT prepare 通道失败 → code 行保留 + FAILED evidence + 24030', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const prisma = makePrismaMock();
+    prisma.smsVerificationCode.findFirst.mockResolvedValue(null);
+    prisma.smsVerificationCode.count.mockResolvedValue(0);
+    prisma.smsVerificationCode.updateMany.mockResolvedValue({ count: 0 });
+    prisma.smsVerificationCode.create.mockResolvedValue({ id: 'code-prepare-failed' });
+    const router = makeRouterMock({
+      providerType: 'TENCENT_SMS',
+      prepareError: new SmsChannelUnavailableError('credentialStatus=missing'),
+    });
+    const svc = makeService(prisma, router);
+
+    await expect(svc.issue(ISSUE_INPUT)).rejects.toEqual(
+      new BizException(BizCode.SMS_CHANNEL_NOT_CONFIGURED),
+    );
+
+    expect(prisma.smsVerificationCode.create).toHaveBeenCalledTimes(1);
+    expect(router.prepareVerifyCode).toHaveBeenCalledTimes(1);
+    expect(router.invoke).not.toHaveBeenCalled();
+    const failedLogArg = firstArgOf<{ data: Record<string, unknown> }>(prisma.smsSendLog.create);
+    expect(failedLogArg.data).toMatchObject({
+      providerType: 'TENCENT_SMS',
+      status: 'FAILED',
+      errCode: 'CHANNEL_UNAVAILABLE',
+      codeId: 'code-prepare-failed',
+    });
+    warnSpy.mockRestore();
   });
 
   it('TENCENT_SMS 发送失败 → send_log FAILED(errCode/errMsg)+ SMS_SEND_FAILED;code 行保留', async () => {
@@ -238,11 +364,14 @@ describe('SmsCodeService.issue', () => {
     await expect(svc.issue(ISSUE_INPUT)).rejects.toEqual(new BizException(BizCode.SMS_SEND_FAILED));
     const failedLogArg = firstArgOf<{ data: Record<string, unknown> }>(prisma.smsSendLog.create);
     expect(failedLogArg.data).toMatchObject({
+      providerType: 'TENCENT_SMS',
       status: 'FAILED',
       errCode: 'LimitExceeded',
       errMsg: 'provider daily limit',
       codeId: 'code-2',
     });
+    expect(router.prepareVerifyCode).toHaveBeenCalledTimes(1);
+    expect(router.invoke).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(TEST_ENV_SECRET);
     warnSpy.mockRestore();
   });

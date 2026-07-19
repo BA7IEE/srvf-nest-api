@@ -47,6 +47,14 @@ export interface SendVerifyCodeResult {
   providerMsgId: string | null; // provider 回执 ID(腾讯云 SerialNo;DevStub 为 null)
 }
 
+// 短生命周期 prepared Effect：payload / settings / credentials 仅由闭包持有，
+// 不暴露、不序列化、不落 DB / 日志 / audit。invoke 必须是非 async 薄入口，
+// 调用后同步进入已绑定 provider，再把其 Promise 原样交给调用方。
+export interface PreparedSmsEffect {
+  readonly providerType: SmsProviderType;
+  invoke(): Promise<SendVerifyCodeResult>;
+}
+
 // 生日祝福发送入参(B 队列 F5-T2,queue-b 评审稿 §6.5):首版模板零变量,仅 phone;
 // 回执形状复用 SendVerifyCodeResult(通用 provider 回执:providerMsgId)
 export interface SendBirthdayGreetingInput {

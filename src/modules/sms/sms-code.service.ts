@@ -13,7 +13,7 @@ import {
   SmsCodePepperUnavailableError,
 } from './sms-code-hash.util';
 import { acquireSmsIssueLocks } from './sms-issue-lock';
-import { SmsProviderRouter } from './sms-provider.router';
+import { SmsProviderRouter, type SmsProviderRoute } from './sms-provider.router';
 import {
   maskPhone,
   SMS_CODE_MAX_ATTEMPTS,
@@ -71,9 +71,9 @@ export class SmsCodeService {
   }): Promise<{ expiresInSeconds: number }> {
     // 1. 通道解析(settings 缺失 / 未启用 / production-like DEV_STUB → 24030)。
     //    先解析再建 code 行:通道不可用时不产生计数占用。
-    let providerType: 'DEV_STUB' | 'TENCENT_SMS';
+    let route: SmsProviderRoute;
     try {
-      providerType = await this.router.resolveProviderType();
+      route = await this.router.resolveRoute();
     } catch (err) {
       if (err instanceof SmsChannelUnavailableError) {
         throw new BizException(BizCode.SMS_CHANNEL_NOT_CONFIGURED);
@@ -82,7 +82,8 @@ export class SmsCodeService {
     }
 
     // 2. 生成明文码(E-29:CSPRNG;DEV_STUB 固定 888888,production-like 不可达)
-    const code = providerType === 'DEV_STUB' ? SMS_DEV_STUB_FIXED_CODE : generateNumericCode();
+    const code =
+      route.providerType === 'DEV_STUB' ? SMS_DEV_STUB_FIXED_CODE : generateNumericCode();
     const codeHash = this.hashCode({ phone: input.phone, purpose: input.purpose, code });
 
     // 3. D-SMS 原子临界区：phone → phone+purpose 固定双锁后，latest/count/旧码作废/create
@@ -132,17 +133,20 @@ export class SmsCodeService {
     });
 
     // 4. 发送(事务外:外部调用不持事务)+ 落 send_log(append-only)
+    let evidenceProviderType = route.providerType;
     try {
-      const result = await this.router.sendVerifyCode({
+      const prepared = route.prepareVerifyCode({
         phone: input.phone,
         code,
         ttlMinutes: SMS_CODE_TTL_SECONDS / 60,
       });
+      evidenceProviderType = prepared.providerType;
+      const result = await prepared.invoke();
       await this.prisma.smsSendLog.create({
         data: {
           phone: input.phone,
           templateKey: SMS_TEMPLATE_KEY_VERIFY_CODE,
-          providerType,
+          providerType: evidenceProviderType,
           status: 'SENT',
           providerMsgId: result.providerMsgId,
           codeId: codeRow.id,
@@ -155,7 +159,7 @@ export class SmsCodeService {
         data: {
           phone: input.phone,
           templateKey: SMS_TEMPLATE_KEY_VERIFY_CODE,
-          providerType,
+          providerType: evidenceProviderType,
           status: 'FAILED',
           errCode,
           errMsg,
