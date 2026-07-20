@@ -25,6 +25,7 @@ function claimed(): ClaimedNotificationOutboxIntent {
     lockedAt: now,
     leaseExpiresAt: new Date(now.getTime() + 30_000),
     preparedAt: null,
+    preparedTemplateId: null,
     sentAt: null,
     completedAt: null,
     lastErrorCode: null,

@@ -28,6 +28,7 @@ function intent(payload: unknown): ClaimedNotificationOutboxIntent {
     lockedAt: NOW,
     leaseExpiresAt: new Date(NOW.getTime() + 30_000),
     preparedAt: null,
+    preparedTemplateId: null,
     sentAt: null,
     completedAt: null,
     lastErrorCode: null,
