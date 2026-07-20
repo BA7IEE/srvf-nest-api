@@ -3,6 +3,7 @@ import {
   MemberStatus,
   type Notification,
   OrganizationStatus,
+  Prisma,
   Role,
   UserStatus,
 } from '@prisma/client';
@@ -11,6 +12,8 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
+import { lockMemberLifecycle } from '../members/member-lifecycle-lock';
+import { ORGANIZATION_TOPOLOGY_LOCK_KEY } from '../organizations/organization-topology-transaction';
 import {
   maskOpenid,
   WECHAT_ERRCODE_INVALID_OPENID,
@@ -45,6 +48,18 @@ import { WechatSubscribeTemplateService } from './wechat-subscribe-template.serv
 interface AudienceMember {
   memberId: string;
   openid: string | null;
+}
+
+export interface DurableBroadcastRecipientAuthorization {
+  openid: string | null;
+}
+
+interface LockedDurableBroadcastUser {
+  id: string;
+  memberId: string | null;
+  openid: string | null;
+  role: Role;
+  status: UserStatus;
 }
 
 // 统一通知 S2:微信渠道派发(广播勾微信 → 对可见且有 quota 的会员逐人下发)。
@@ -117,6 +132,128 @@ export class NotificationWechatDispatchService {
         `wechat directed dispatch failed for notification=${notification.id}: ${(err as Error).message}`,
       );
     }
+  }
+
+  // G2 provider 前的单收件人资格与 destination 快照闸。调用方必须把本 callback 放在已持有
+  // Notification parent → outbox intent 锁的同一事务内，故完整锁序固定为 Notification → intent
+  // → Member → shared organization topology → User；User/RBAC 链使用 shared row lock，management
+  // 细粒度判权继续锁
+  // RoleBinding → RbacRole → Permission → RolePermission。openid 只从这次 User 锁内快照返回，
+  // provider 永远在事务外且不得回读 destination。
+  async authorizeDurableBroadcastRecipient(
+    tx: Prisma.TransactionClient,
+    notification: Notification,
+    memberId: string,
+    now: Date = new Date(),
+  ): Promise<DurableBroadcastRecipientAuthorization | null> {
+    await lockMemberLifecycle(tx, memberId);
+    await tx.$queryRaw<Array<{ locked: string }>>(Prisma.sql`
+      SELECT pg_advisory_xact_lock_shared(
+        CAST(${ORGANIZATION_TOPOLOGY_LOCK_KEY} AS bigint)
+      )::text AS locked
+    `);
+
+    const member = await tx.member.findFirst({
+      where: notDeletedWhere({ id: memberId, status: MemberStatus.ACTIVE }),
+      select: { id: true },
+    });
+    if (!member) return null;
+
+    const [user] = await tx.$queryRaw<LockedDurableBroadcastUser[]>(Prisma.sql`
+      SELECT
+        "id",
+        "memberId",
+        "openid",
+        "role"::text AS "role",
+        "status"::text AS "status"
+      FROM "User"
+      WHERE "memberId" = ${memberId}
+        AND "deletedAt" IS NULL
+      ORDER BY "id"
+      FOR SHARE
+    `);
+    if (!user || user.status !== UserStatus.ACTIVE) return null;
+
+    const memberships = await tx.memberOrganizationMembership.findMany({
+      where: {
+        ...MembershipTermStateMachine.effectiveWhere(now),
+        memberId,
+        membershipType: 'PRIMARY',
+        organization: { status: OrganizationStatus.ACTIVE, deletedAt: null },
+      },
+      select: { organizationId: true },
+    });
+    const activeOrgIds = memberships.map(({ organizationId }) => organizationId);
+    const isManagement =
+      notification.visibilityCode === NOTIFICATION_VISIBILITY_MANAGEMENT
+        ? await this.isDurableManagementRecipient(tx, user, now)
+        : false;
+    const ctx: CallerVisibilityContext = {
+      isMember: true,
+      isFormalMember: activeOrgIds.length > 0,
+      activeOrgIds,
+      isManagement,
+    };
+    return canSeeContent(ctx, notification) ? { openid: user.openid } : null;
+  }
+
+  // Durable management 判权必须完全留在调用方 transaction client 内，禁止回到 root
+  // Prisma/RbacService。只锁当前已存在的 grant 链；writer-first 撤权/软删自然先被读到，
+  // permission-first 则以真实行锁阻塞既有 UPDATE/DELETE 写面。未来新 grant 不属于拒权快照闭包。
+  private async isDurableManagementRecipient(
+    tx: Prisma.TransactionClient,
+    user: LockedDurableBroadcastUser,
+    now: Date,
+  ): Promise<boolean> {
+    if (user.role === Role.SUPER_ADMIN || user.role === Role.ADMIN) return true;
+
+    const bindings = await tx.$queryRaw<Array<{ id: string; roleId: string }>>(Prisma.sql`
+      SELECT "id", "roleId"
+      FROM "role_bindings"
+      WHERE "principalType"::text = 'USER'
+        AND "principalId" = ${user.id}
+        AND "scopeType"::text = 'GLOBAL'
+        AND "status"::text = 'ACTIVE'
+        AND "deletedAt" IS NULL
+        AND "startedAt" <= ${now}
+        AND ("endedAt" IS NULL OR "endedAt" >= ${now})
+      ORDER BY "id"
+      FOR SHARE
+    `);
+    const roleIds = [...new Set(bindings.map(({ roleId }) => roleId))].sort();
+    if (roleIds.length === 0) return false;
+
+    const roles = await tx.$queryRaw<Array<{ id: string; deletedAt: Date | null }>>(Prisma.sql`
+      SELECT "id", "deletedAt"
+      FROM "roles"
+      WHERE "id" IN (${Prisma.join(roleIds)})
+      ORDER BY "id"
+      FOR SHARE
+    `);
+    const activeRoleIds = roles
+      .filter(({ deletedAt }) => deletedAt === null)
+      .map(({ id }) => id)
+      .sort();
+    if (activeRoleIds.length === 0) return false;
+
+    const [permission] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id"
+      FROM "permissions"
+      WHERE "code" = 'notification.read.record'
+      ORDER BY "id"
+      FOR SHARE
+    `);
+    if (!permission) return false;
+
+    const rolePermissions = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id"
+      FROM "role_permissions"
+      WHERE "roleId" IN (${Prisma.join(activeRoleIds)})
+        AND "permissionId" = ${permission.id}
+      ORDER BY "id"
+      FOR SHARE
+    `);
+    return rolePermissions.length > 0;
   }
 
   // D-Outbox 广播根 intent 只做安全 fan-out：解析当前模板 quota 候选与可见性，

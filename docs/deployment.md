@@ -90,18 +90,44 @@ docker run --rm -p 3000:3000 \
 
 ### D-Outbox 部署、观测与回退
 
-1. **先 migration，再应用与 worker**：先审查并执行 `20260718210000_notification_outbox_intents`，确认 migration 总数 58、无 pending；再部署应用，最后至少启动一个独立 `pnpm start:notification-outbox-worker` 进程。worker 与 API 使用同一 `DATABASE_URL` 及既有 SMS/WeChat 配置，但不监听 HTTP、不 import `AppModule`/`ScheduleModule`。
+1. **先 migration，再应用与 worker**：先审查并执行 `20260718210000_notification_outbox_intents` 至 `20260720193621_notification_prepared_template` 的 additive migrations，确认 migration 总数 64、无 pending；再部署应用，最后至少启动一个独立 `pnpm start:notification-outbox-worker` 进程。worker 与 API 使用同一 `DATABASE_URL` 及既有 SMS/WeChat 配置，但不监听 HTTP、不 import `AppModule`/`ScheduleModule`。
 2. **可用性底线**：API 已开始写 outbox 而 worker 未运行时不会丢 intent，但通知会积压。上线探针至少覆盖 pending oldest age、processing lease 超时、attempts 分布、dead 增长率、claim/ack/nack latency、provider 成功率和数据库连接池。
-3. **交付语义**：worker 在 provider 事务外发送；admin SMS 的 `sms_send_logs SENT` 与 `NotificationDelivery sent` 同一短事务提交后才 ack，微信成功证据同样先落库再 ack。provider accepted 到本地证据事务 commit 前、或证据已提交但 ack 前崩溃仍属于明确的 at-least-once 窗口，不宣称 exactly-once。微信 quota 的条件扣减与 `preparedAt` 同短事务只执行一次。
+3. **交付语义**：worker 在 provider 事务外发送；admin SMS 的 `sms_send_logs SENT` 与 `NotificationDelivery sent` 同一短事务提交后才 ack，微信成功证据同样先落库再 ack。provider accepted 到本地证据事务 commit 前、或证据已提交但 ack 前崩溃仍属于明确的 at-least-once 窗口，不宣称 exactly-once。微信 quota 的首次条件扣减与 `preparedAt + preparedTemplateId` 同短事务提交；重领只用持久模板。仅同进程同 attempt 正向扣减后拿到的临时 capability，可在 final permission 拒绝且 provider 尚未开始时原子精确退款并清双 marker；崩溃、重领或 provider 结果未知时绝不退款。
 4. **回退**：异常时先停止 worker，再回退 API；保留 outbox 表和 pending/dead 证据。不得把 intent 手工改成 succeeded、不得修改 `_prisma_migrations`、不得切进程内 fallback。
 5. **retention**：succeeded 30 天、dead 90 天后只按 [`notification-outbox-retention-sop.md`](ops/notification-outbox-retention-sop.md) 人工小批清理；零自动清理、cron 仍恰好 2。
 
 #### Notification publish-generation G2 切换（禁止混跑）
 
-1. **前置**：先确认 expand-only `Notification.publishGeneration` migration 已部署；暂停 notification publish/update/delete/send-sms 写入口并排空旧 API 事务。
-2. **清场**：确认旧 API server=0；等待所有 v1 admin wechat root/child/admin-SMS intent 不再处于 pending/processing，再确认旧 worker=0、旧事务=0。v1 system-directed child 不属于该清场集合，仍由新 worker 兼容。
-3. **同 binary 切入**：只启动同一 G2 binary 的 API 与 worker，禁止旧 producer/new worker、new producer/old worker或任意新旧混跑。恢复写前验证：publish generation +1、v2 payload、撤回先赢时 provider=0、system-directed admin mutation=31030/send-sms=31013。
-4. **回退**：先停新 worker，再停新 API。若已有 v2 active intent，只能由新 worker drain 完成；旧 worker在 v2 active 归零前不得启动。不得手改 payload/status/generation 绕过清场。
+1. **前置**：先确认 expand-only `Notification.publishGeneration` 与 nullable `NotificationOutboxIntent.preparedTemplateId` migrations 均已部署；暂停 notification publish/update/delete/send-sms 写入口并排空旧 API 事务。
+2. **清场**：确认旧 API server=0；等待所有 v1 admin wechat root/child/admin-SMS intent 不再处于 pending/processing，再确认旧 worker=0、旧事务=0。另执行下列 gate，结果必须为 `0`；任何 active v1 WeChat child 出现单边 prepare marker 都禁止切换（尤其旧 worker 可形成的 `preparedAt!=null + preparedTemplateId=null`），G2 不会回退读取当前模板：
+   ```sql
+   SELECT count(*) AS incompatible_partial_v1_wechat_children
+   FROM "notification_outbox_intents"
+   WHERE "status" IN ('pending', 'processing')
+     AND "eventType" = 'notification.wechat-delivery'
+     AND "payloadVersion" = 1
+     AND (
+       ("preparedAt" IS NOT NULL AND "preparedTemplateId" IS NULL)
+       OR ("preparedAt" IS NULL AND "preparedTemplateId" IS NOT NULL)
+     );
+   ```
+   切换时唯一可留给新 worker 兼容的 v1 intent 是**尚未 prepare**（双 marker 均为 null）、对应 published system-directed 通知、payload member 与通知收件人一致且 channels 含 `wechat` 的 WeChat child；其余 v1 均须先清零。G2 运行后由这类 child 形成的 complete 双 marker 可安全重领；`preparedAt!=null + preparedTemplateId=null` 永远 fail-closed。
+3. **同 binary 切入**：只启动同一 G2 binary 的 API 与 worker，禁止旧 producer/new worker、new producer/old worker或任意新旧混跑。恢复写前验证：publish generation +1、v2 payload、parent/recipient 撤销先赢时 provider=0 且仅 same-attempt reservation 精确退款清 marker、permission 先赢时只允许该 attempt 完成、system-directed admin mutation=31030/send-sms=31013。
+4. **回退**：先停新 API 以阻止继续生产，再由 G2 worker 单向 drain；旧 worker 不得接管。下列只读 gate 必须为 `0` 后，才能停止 G2 worker并启动旧 worker：它同时清点全部 active v2，以及旧 worker 无法安全重领的、已有完整 prepare marker 的 active v1 WeChat child。
+   ```sql
+   SELECT count(*) AS incompatible_active_for_old_worker
+   FROM "notification_outbox_intents"
+   WHERE "status" IN ('pending', 'processing')
+     AND (
+       "payloadVersion" = 2
+       OR (
+         "eventType" = 'notification.wechat-delivery'
+         AND "payloadVersion" = 1
+         AND "preparedTemplateId" IS NOT NULL
+       )
+     );
+   ```
+   不得手改 payload/status/generation/prepare marker 绕过 gate；不得让旧 worker 抢占上述 intent。若 drain 失败，保持 G2 worker 停线并排障，不以旧 binary 接管。
 5. **保留数据**：回退不删除 `publishGeneration` 字段、不做 down migration；provider permission 已赢锁后的在途 attempt 仍允许完成，继续遵守 at-least-once 而非 exactly-once。
 
 ---

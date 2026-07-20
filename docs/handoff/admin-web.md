@@ -322,7 +322,7 @@
 
 > **GAP-007 v0.49.0 扩展关账（#604–#608）**:冻结评审 #604 → 副职只读派生角色 #605 → 可见组织集 + FE 有效权限出口 #606 → members/certificates/profile/contacts/insurance 队员轴 #607 → participation 五个扁平/member-axis 入口 #608，已全部合入 main。上方 GAP-007 历史行末尾的“扁平列表仍 GLOBAL-only / members、certificates 待迁移”是 v0.34.0 序列闭幕时口径，**自 v0.49.0 起由本段取代**。当前后续候选只保留 users/content/notifications/audit-logs、attachment self-scope 等未接线面；Recruitment/team-join 是明确维持中央流程，不列为自动派生迁移 TODO。
 
-> **通知发布代次 G2（Unreleased）**：admin 列表/详情仍可读取 system-directed 通知，但 PATCH/DELETE/publish/unpublish/archive 只允许 admin+broadcast；system-directed mutation 统一 `31030`。published 通知的 `title/body/notificationTypeCode/visibilityCode/visibleOrganizationIds/channels` 真实变化会自动回 draft，`pinned` 或 channels/org 集合语义等价更新保持 published。send-sms 对 system-directed 复用 `31013`。端点、DTO 字段、权限码均不变，前端只需按新错误面和自动回 draft 状态刷新。
+> **通知发布代次 G2（Unreleased）**：admin 列表/详情仍可读取 system-directed 通知，但 PATCH/DELETE/publish/unpublish/archive 只允许 admin+broadcast；system-directed mutation 统一 `31030`。published 通知的 `title/body/notificationTypeCode/visibilityCode/visibleOrganizationIds/channels` 真实变化会自动回 draft，`pinned` 或 channels/org 集合语义等价更新保持 published。send-sms 对 system-directed 复用 `31013`。微信 worker 内部现按 publish generation 做 final permission，并把首次 quota reservation 与稳定模板绑定；这些都是后端运行时/部署约束，**没有新增或变更 admin API 字段**。端点、DTO 字段、权限码均不变，前端只需按新错误面和自动回 draft 状态刷新。
 
 > **GAP-005 活动域扩展关账（2026-07-15;已随 v0.50.0 发版）**:上方历史行中的“三处 producer 共用 `activity-reminder`”仅代表 v0.32.0 发布时口径，现由独立类型 `activity-published` / `activity-changed` / `registration-result` / `attendance-result` 承接对应事件，`activity-reminder` 收窄为开场前 24 小时提醒；同时补齐公开发布广播、时间/地点变更、队员取消已通过报名与一次性提醒。无新端点/RBAC 码，前端继续消费既有 feed。
 
