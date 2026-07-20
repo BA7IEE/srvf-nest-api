@@ -138,7 +138,7 @@ Certificate (不在 participation 图内)
 | 3. 活动取消 | activities | `cancel` → `* → cancelled` | 同事务联动 live `pending + waitlisted → cancelled`(pass 保留历史审批结果);阻断所有下游写;attendances 在 `findActivityForSubmissionFull` 内会拒绝 `ACTIVITY_CANCELLED_ATTENDANCE_FORBIDDEN` |
 | 4. 报名(admin / app) | activity-registrations | `create` / `createMy` → `pending \| waitlisted` | 全部前置闸通过后，`capacity=null` 或未满落 pending，已满落 waitlisted；partial unique 防重复;**报名截止生效**(`registrationDeadline` 非 null 且 `now > deadline` → `ACTIVITY_REGISTRATION_DEADLINE_PASSED=20123`;approve 不加此闸) |
 | 5. 报名审核 / 递补 | activity-registrations + activities | `approve: pending → pass`;`reject: pending\|waitlisted → reject`;`promote: waitlisted → pending` | promote 仅事务内 FIFO 引擎使用，不开手动端点，不开 waitlisted → pass 直通 |
-| 6. 报名取消 | activity-registrations | `cancelAdmin` / `cancelMy`: `pending\|pass\|waitlisted → cancelled` | 取消 pass 同事务 FIFO 递补队首一人至 pending；取消 pending/waitlisted 不递补；partial unique 允许同人再次报名 |
+| 6. 报名取消 | activity-registrations | `cancelAdmin` / `cancelMy`: `pending\|pass\|waitlisted → cancelled` | live `AttendanceRecord` 或 `ActivityCheckIn` 已引用报名时复用 21033 拒绝取消；否则取消 pass 同事务 FIFO 递补队首一人至 pending；取消 pending/waitlisted 不递补；partial unique 允许同人再次报名 |
 | 7. 考勤表首次提交 | attendances | `submit` → `Sheet.statusCode='pending'` + 多条 `Record` 同事务建立 | **不再推动 Activity.completed**；用服务端 `now` 拒绝未来签退;`contributionPoints` 不接受输入,submit/edit 均读 `tx.contributionRule.findMany` 计算(无规则落 0,**不再 per-record dailyCap 钳制**);`requiresInsurance=true` 时每条 record 必须带同活动/同成员/pass 的 `registrationId`,但不证明报名创建时已开启该门槛 |
 | 8. APD 一级审核 | attendances | `approve` → `pending → pending_final_review`;`reject` → `pending → rejected` | **不**触发 `attendance.recorded`(沿 D-S7;触发点已移到 final-approve) |
 | 9. APD 终审通过 | attendances | `finalApprove` → `pending_final_review → approved` | **`contributionPoints` 在此刻语义上生效**;同事务内 `eventPlaceholder('attendance.recorded')` 发出([`attendances.service.ts:1003`](../src/modules/attendances/attendances.service.ts:1003));未来 contribution-points 聚合器从此事件消费 |
@@ -187,7 +187,8 @@ Certificate (不在 participation 图内)
 | `attendances` 在事务内读 `tx.contributionRule.findMany` | ✅ 允许 | D14 5.B 系统预填;走 [`contribution-calculator.ts`](../src/modules/attendances/contribution-calculator.ts) |
 | `activities` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | Activity 是上游,不下探;若需要派生统计,通过 `attendance.recorded` 事件或独立 service |
 | `activities` / `activity-registrations` 在调用方事务内执行 `promoteActivityWaitlist` | ✅ 限定例外 | 纯函数入口，固定 Activity → Registration 锁序，只写 waitlisted → pending + 同事务 `registration.review(action=promote)`；不引入兄弟 Service 依赖 |
-| `activity-registrations` 在事务内读 / 写 `tx.attendanceSheet` / `tx.attendanceRecord` | ❌ 不允许 | 同上 |
+| `activity-registrations` 在事务内读 `tx.attendanceRecord` / `tx.activityCheckIn` | ✅ 仅限取消证据守卫 | pass cancel 在已取得 Activity → Registration 锁后按 `registrationId + deletedAt:null` 计数；pending/waitlisted cancel 也执行相同 live 计数，但不宣称持有 Activity 锁。任一 live 证据存在即复用 21033；禁止写/删考勤证据、禁止引入 attendances service |
+| `activity-registrations` 在事务内写 `tx.attendanceSheet` / `tx.attendanceRecord` / `tx.activityCheckIn` | ❌ 不允许 | 上游报名不得改删下游参与历史 |
 | `activity-registrations` 读 / 写 `InsuranceEligibilityEvidence` | ✅ 限定例外 | 只允许 create 根事务调用 `InsuranceRequirementService` 在 Registration 后、Audit 前生成一条；禁止本模块直接 Prisma 改删，PR4 migration deploy 后由 immutable + owner unique 兜底 |
 | `contribution-rules` 在事务内读 / 写其它 participation 表 | ❌ 不允许 | ContributionRule 是配置实体,只被读,不读人 |
 | `activity-feedbacks` 读取 `Activity` / `AttendanceSheet` / `AttendanceRecord` | ✅ 限定例外 | 只为 completed/window、approved-only 到场资格与 Admin 评价率分母；直接读 Prisma，不 import 三个兄弟 god-service |
@@ -199,7 +200,7 @@ Certificate (不在 participation 图内)
 ### 5.3 Transaction boundary
 
 - **岗位 capacity 更新**:事务内固定先锁 `Activity`，再重读 `ActivityPosition.capacity` 与同岗位 passCount；扩容递补只消费同 `activityPositionId` 候补队列，不增加第二把聚合行锁。
-- **报名 approve / cancel / promote**:锁序固定 `Activity → ActivityRegistration`；capacity 与 FIFO 域均显式包含 `activityPositionId`（无岗位为 null），跨岗位不借位、不递补。
+- **报名 approve / cancel / promote**:锁序固定 `Activity → ActivityRegistration`；pass cancel 在锁内检查同报名 live `AttendanceRecord` / `ActivityCheckIn`，与 App 打卡共享的 Activity → Registration 锁序串行收敛，任一证据存在复用 21033 且不取消、不审计、不递补；capacity 与 FIFO 域均显式包含 `activityPositionId`（无岗位为 null），跨岗位不借位、不递补。
 - **submit/edit 路径**:同一事务内固定一个服务端 `now`,校验活动/报名/时间窗与未来签退,再由 ContributionRule 计算并写入 records;submit 不写 Activity 状态。
 - **finalApprove 路径**:Sheet 状态翻转 + Record 复查 + `attendance.recorded` 事件 + audit 写入,**全部在一个 `prisma.$transaction(...)` 内**。
 - **ActivityCheckIn F2**:App 自助打卡写事务固定按 Activity → 当前 pass ActivityRegistration
