@@ -70,6 +70,12 @@ export class PostgresqlThrottlerStorage implements ThrottlerStorage {
               ORDER BY active."expiresAt"
             ) AS "activeHits",
             CASE
+              WHEN cardinality(locked."hitExpiresAt") = 0
+                AND (
+                  locked."blockedUntil" IS NULL
+                  OR locked."blockedUntil" <= locked."capturedAt"
+                )
+                THEN locked."capturedAt" + (${ttl}::double precision * INTERVAL '1 millisecond')
               WHEN locked."windowExpiresAt" <= locked."capturedAt"
                 THEN locked."capturedAt" + (${ttl}::double precision * INTERVAL '1 millisecond')
               ELSE locked."windowExpiresAt"
