@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import { PrismaService } from '../../src/database/prisma.service';
 import {
+  OUTBOX_ADMIN_PAYLOAD_VERSION,
   OUTBOX_EVENT_ADMIN_SMS,
   OUTBOX_EVENT_BIRTHDAY_SMS,
   OUTBOX_EVENT_SYSTEM_BROADCAST,
@@ -15,6 +16,7 @@ import {
 import { NotificationOutboxHandlers } from '../../src/modules/notifications/notification-outbox.handlers';
 import {
   type ClaimedNotificationOutboxIntent,
+  NotificationOutboxGenerationConflictError,
   NotificationOutboxService,
 } from '../../src/modules/notifications/notification-outbox.service';
 import {
@@ -37,7 +39,13 @@ interface Refs {
 
 interface ChildResult {
   booted?: boolean;
-  phase?: 'claimed' | 'not-claimed' | 'evidence-persisted' | 'effect-persisted-before-return';
+  phase?:
+    | 'claimed'
+    | 'not-claimed'
+    | 'permission-granted'
+    | 'permission-denied'
+    | 'evidence-persisted'
+    | 'effect-persisted-before-return';
   ids?: string[];
   effectPerformed?: boolean;
 }
@@ -133,8 +141,8 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     return {
       eventKey: `admin-sms:${refs.notificationId}:${generation}:${memberId}`,
       eventType: OUTBOX_EVENT_ADMIN_SMS,
-      payloadVersion: OUTBOX_PAYLOAD_VERSION,
-      payload: { notificationId: refs.notificationId, memberId },
+      payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
+      payload: { notificationId: refs.notificationId, memberId, publishGeneration: 0 },
       aggregateType: 'notification',
       aggregateId: refs.notificationId,
       destinationType: 'member',
@@ -493,8 +501,8 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     const enqueueInput: NotificationOutboxEnqueueInput = {
       eventKey: `wechat-delivery:${refs.notificationId}:${memberId}`,
       eventType: OUTBOX_EVENT_WECHAT_DELIVERY,
-      payloadVersion: OUTBOX_PAYLOAD_VERSION,
-      payload: { notificationId: refs.notificationId, memberId },
+      payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
+      payload: { notificationId: refs.notificationId, memberId, publishGeneration: 0 },
       aggregateType: 'notification',
       aggregateId: refs.notificationId,
       destinationType: 'member',
@@ -683,8 +691,8 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     const enqueueInput: NotificationOutboxEnqueueInput = {
       eventKey: `wechat-heartbeat:${refs.notificationId}:${memberId}`,
       eventType: OUTBOX_EVENT_WECHAT_DELIVERY,
-      payloadVersion: OUTBOX_PAYLOAD_VERSION,
-      payload: { notificationId: refs.notificationId, memberId },
+      payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
+      payload: { notificationId: refs.notificationId, memberId, publishGeneration: 0 },
       aggregateType: 'notification',
       aggregateId: refs.notificationId,
       destinationType: 'member',
@@ -787,8 +795,8 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     const created = await outbox.enqueue({
       eventKey: `wechat-deep-guard:${refs.notificationId}:${memberId}`,
       eventType: OUTBOX_EVENT_WECHAT_DELIVERY,
-      payloadVersion: OUTBOX_PAYLOAD_VERSION,
-      payload: { notificationId: refs.notificationId, memberId },
+      payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
+      payload: { notificationId: refs.notificationId, memberId, publishGeneration: 0 },
       aggregateType: 'notification',
       aggregateId: refs.notificationId,
       destinationType: 'member',
@@ -1074,8 +1082,8 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     const enqueueInput: NotificationOutboxEnqueueInput = {
       eventKey: `wechat-delivery:${refs.notificationId}:${memberId}`,
       eventType: OUTBOX_EVENT_WECHAT_DELIVERY,
-      payloadVersion: OUTBOX_PAYLOAD_VERSION,
-      payload: { notificationId: refs.notificationId, memberId },
+      payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
+      payload: { notificationId: refs.notificationId, memberId, publishGeneration: 0 },
       aggregateType: 'notification',
       aggregateId: refs.notificationId,
       destinationType: 'member',
@@ -1454,28 +1462,34 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     expect(provider.execute).not.toHaveBeenCalled();
   });
 
-  it('微信 child 仍 processing（ack-crash 窗口）时新 publish generation 复用 active slot', async () => {
+  it('微信 child 仍 processing（ack-crash 窗口）时新 publish generation 显式冲突供 root defer', async () => {
     const refs = await createRefs();
     const memberId = refs.memberIds[0];
-    const attempt = (rootId: string): NotificationOutboxEnqueueInput => ({
+    const attempt = (
+      rootId: string,
+      publishGeneration: number,
+    ): NotificationOutboxEnqueueInput => ({
       eventKey: `wechat-delivery:${refs.notificationId}:${rootId}:${memberId}`,
       eventType: OUTBOX_EVENT_WECHAT_DELIVERY,
-      payloadVersion: OUTBOX_PAYLOAD_VERSION,
-      payload: { notificationId: refs.notificationId, memberId },
+      payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
+      payload: { notificationId: refs.notificationId, memberId, publishGeneration },
       aggregateType: 'notification',
       aggregateId: refs.notificationId,
       destinationType: 'member',
       destinationRef: memberId,
     });
-    const first = await outbox.enqueueWechatDeliveryAttempt(attempt('cm00000000000000000000007'));
+    const first = await outbox.enqueueWechatDeliveryAttempt(
+      attempt('cm00000000000000000000007', 1),
+    );
     const [processing] = await outbox.claim('wechat-ack-crash', {
       eventKey: first.eventKey,
       leaseMs: 30_000,
     });
     expect(processing.id).toBe(first.id);
 
-    const reused = await outbox.enqueueWechatDeliveryAttempt(attempt('cm00000000000000000000008'));
-    expect(reused.id).toBe(first.id);
+    await expect(
+      outbox.enqueueWechatDeliveryAttempt(attempt('cm00000000000000000000008', 2)),
+    ).rejects.toBeInstanceOf(NotificationOutboxGenerationConflictError);
     expect(
       await prisma.notificationOutboxIntent.count({
         where: {
@@ -1491,21 +1505,32 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
   it('同一 notification/member 两 generation 真并发 enqueue 收敛单 active，terminal 后新 generation 获得新 id', async () => {
     const refs = await createRefs();
     const memberId = refs.memberIds[0];
-    const attempt = (rootId: string): NotificationOutboxEnqueueInput => ({
+    const attempt = (
+      rootId: string,
+      publishGeneration: number,
+    ): NotificationOutboxEnqueueInput => ({
       eventKey: `wechat-delivery:${refs.notificationId}:${rootId}:${memberId}`,
       eventType: OUTBOX_EVENT_WECHAT_DELIVERY,
-      payloadVersion: OUTBOX_PAYLOAD_VERSION,
-      payload: { notificationId: refs.notificationId, memberId },
+      payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
+      payload: { notificationId: refs.notificationId, memberId, publishGeneration },
       aggregateType: 'notification',
       aggregateId: refs.notificationId,
       destinationType: 'member',
       destinationRef: memberId,
     });
-    const [left, right] = await Promise.all([
-      outbox.enqueueWechatDeliveryAttempt(attempt('cm00000000000000000000011')),
-      outbox.enqueueWechatDeliveryAttempt(attempt('cm00000000000000000000012')),
+    const settled = await Promise.allSettled([
+      outbox.enqueueWechatDeliveryAttempt(attempt('cm00000000000000000000011', 1)),
+      outbox.enqueueWechatDeliveryAttempt(attempt('cm00000000000000000000012', 2)),
     ]);
-    expect(left.id).toBe(right.id);
+    const fulfilled = settled.find(
+      (result): result is PromiseFulfilledResult<NotificationOutboxIntent> =>
+        result.status === 'fulfilled',
+    );
+    const rejected = settled.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    expect(fulfilled).toBeDefined();
+    expect(rejected?.reason).toBeInstanceOf(NotificationOutboxGenerationConflictError);
     expect(
       await prisma.notificationOutboxIntent.count({
         where: {
@@ -1517,15 +1542,71 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       }),
     ).toBe(1);
 
+    const left = fulfilled!.value;
     const [claimed] = await outbox.claim('wechat-generation-terminal', {
       eventKey: left.eventKey,
     });
     await outbox.ack(claimed, false);
     const nextGeneration = await outbox.enqueueWechatDeliveryAttempt(
-      attempt('cm00000000000000000000013'),
+      attempt('cm00000000000000000000013', 3),
     );
     expect(nextGeneration.id).not.toBe(left.id);
     expect(nextGeneration.status).toBe('pending');
+  });
+
+  it('OS child permission 后崩溃，撤回先于 reclaim permission 时第二次零 Effect', async () => {
+    const refs = await createRefs();
+    const memberId = refs.memberIds[0];
+    await prisma.notification.update({
+      where: { id: refs.notificationId },
+      data: { channels: ['in-app', 'wechat'] },
+    });
+    const created = await outbox.enqueue({
+      eventKey: `wechat-permission-crash:${refs.notificationId}:${memberId}`,
+      eventType: OUTBOX_EVENT_WECHAT_DELIVERY,
+      payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
+      payload: { notificationId: refs.notificationId, memberId, publishGeneration: 0 },
+      aggregateType: 'notification',
+      aggregateId: refs.notificationId,
+      destinationType: 'member',
+      destinationRef: memberId,
+    });
+    const firstNow = new Date();
+    const first = startChild([
+      'authorize-admin-and-wait',
+      'permission-crash-owner',
+      firstNow.toISOString(),
+      '1000',
+      created.eventKey,
+    ]);
+    try {
+      await expect(first.result).resolves.toMatchObject({ phase: 'permission-granted' });
+      expect(await first.kill()).toBe('SIGKILL');
+    } finally {
+      await first.kill().catch(() => undefined);
+    }
+    await prisma.notification.update({
+      where: { id: refs.notificationId },
+      data: { statusCode: 'draft' },
+    });
+    await expect(
+      runChild([
+        'execute-and-ack',
+        'permission-reclaim-owner',
+        new Date(firstNow.getTime() + 1001).toISOString(),
+        '30000',
+        created.eventKey,
+      ]),
+    ).resolves.toMatchObject({ ids: [created.id] });
+    expect(
+      await prisma.notificationDelivery.count({ where: { notificationId: refs.notificationId } }),
+    ).toBe(0);
+    expect(
+      await prisma.notificationOutboxIntent.findUniqueOrThrow({ where: { id: created.id } }),
+    ).toMatchObject({
+      status: 'succeeded',
+      sentAt: null,
+    });
   });
 
   it('独立 worker module 可由 child application context 启动且不依赖 AppModule/ScheduleModule', async () => {

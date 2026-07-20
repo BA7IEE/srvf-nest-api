@@ -4,6 +4,8 @@ import { NotificationOutboxHandlers } from '../../src/modules/notifications/noti
 import { NotificationOutboxWorkerModule } from '../../src/modules/notifications/notification-outbox-worker.module';
 import { NotificationOutboxService } from '../../src/modules/notifications/notification-outbox.service';
 import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
+import type { WechatDeliveryOutboxPayload } from '../../src/modules/notifications/notification-outbox.types';
+import { parseKnownNotificationOutboxPayload } from '../../src/modules/notifications/notification-outbox.types';
 
 async function main(): Promise<void> {
   const [command, owner = `child-${process.pid}`, nowIso, leaseMsText, eventKey] =
@@ -54,6 +56,31 @@ async function main(): Promise<void> {
       const [intent] = await claim();
       write({ phase: 'claimed', owner, ids: intent ? [intent.id] : [] });
       if (intent) await waitForever();
+      return;
+    }
+    if (command === 'authorize-admin-and-wait') {
+      const [intent] = await claim();
+      if (!intent) {
+        write({ phase: 'not-claimed', owner, ids: [] });
+        return;
+      }
+      const payload = parseKnownNotificationOutboxPayload(
+        intent.eventType,
+        intent.payloadVersion,
+        intent.payload,
+      ) as WechatDeliveryOutboxPayload;
+      const notification = await outbox.authorizeAdminNotificationEffect(
+        intent,
+        payload.notificationId,
+        payload.publishGeneration!,
+        'wechat',
+      );
+      write({
+        phase: notification ? 'permission-granted' : 'permission-denied',
+        owner,
+        ids: [intent.id],
+      });
+      await waitForever();
       return;
     }
     if (command === 'execute-no-ack') {

@@ -106,7 +106,7 @@ export class NotificationAdminController {
   @Patch(':id')
   @ApiOperation({
     summary:
-      '更新通知(draft/published 可改,archived 冻结 → 31030) [rbac: notification.update.record]',
+      '更新 admin 广播通知(published 的 Effect 字段真实变化自动回 draft;pinned/语义等价更新不撤回;archived/system-directed → 31030) [rbac: notification.update.record]',
   })
   @ApiWrappedOkResponse(NotificationAdminDetailDto)
   @ApiBizErrorResponse(
@@ -129,9 +129,16 @@ export class NotificationAdminController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: '软删通知(任意态) [rbac: notification.delete.record]' })
+  @ApiOperation({
+    summary: '软删 admin 广播通知(system-directed → 31030) [rbac: notification.delete.record]',
+  })
   @ApiWrappedNullResponse()
-  @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN, BizCode.NOTIFICATION_NOT_FOUND)
+  @ApiBizErrorResponse(
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.NOTIFICATION_NOT_FOUND,
+    BizCode.NOTIFICATION_INVALID_STATUS_TRANSITION,
+  )
   @HttpCode(HttpStatus.OK)
   async remove(
     @Param('id') id: string,
@@ -146,7 +153,7 @@ export class NotificationAdminController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '发布通知(draft → published,置 publishedAt = 推送时刻) [rbac: notification.publish.record]',
+      '发布 admin 广播通知(draft → published,publishGeneration 原子 +1,置 publishedAt = 推送时刻;system-directed → 31030) [rbac: notification.publish.record]',
   })
   @ApiWrappedOkResponse(NotificationAdminDetailDto)
   @ApiBizErrorResponse(
@@ -166,7 +173,8 @@ export class NotificationAdminController {
   @Post(':id/unpublish')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: '撤回通知(published → draft,保留 publishedAt) [rbac: notification.publish.record]',
+    summary:
+      '撤回 admin 广播通知(published → draft,保留 publishedAt;system-directed → 31030) [rbac: notification.publish.record]',
   })
   @ApiWrappedOkResponse(NotificationAdminDetailDto)
   @ApiBizErrorResponse(
@@ -186,7 +194,8 @@ export class NotificationAdminController {
   @Post(':id/archive')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: '归档通知(published → archived,终态不可逆) [rbac: notification.publish.record]',
+    summary:
+      '归档 admin 广播通知(published → archived,终态不可逆;system-directed → 31030) [rbac: notification.publish.record]',
   })
   @ApiWrappedOkResponse(NotificationAdminDetailDto)
   @ApiBizErrorResponse(
@@ -207,7 +216,7 @@ export class NotificationAdminController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      '显式发起短信兜底(紧急召集;计费确认必需:confirmed=true 才真发,false 仅预览受众计数;须已发布且声明短信渠道) [rbac: notification.send.sms]',
+      '显式发起 admin 广播短信兜底(计费确认必需:confirmed=true 才真发,false 仅预览;须已发布且声明短信渠道;system-directed → 31013) [rbac: notification.send.sms]',
   })
   @ApiWrappedOkResponse(NotificationSmsSendResultDto)
   @ApiBizErrorResponse(

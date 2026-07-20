@@ -13,6 +13,7 @@ import {
 } from './notification-outbox.handlers';
 import {
   type ClaimedNotificationOutboxIntent,
+  NotificationOutboxGenerationConflictError,
   NotificationOutboxService,
 } from './notification-outbox.service';
 
@@ -30,6 +31,7 @@ export type NotificationOutboxEventDrainResult =
 
 type NotificationOutboxAttemptResult =
   | { state: 'succeeded'; value: unknown }
+  | { state: 'deferred' }
   | { state: 'failed'; dead: boolean; error: unknown };
 
 @Injectable()
@@ -79,7 +81,7 @@ export class NotificationOutboxWorker implements OnApplicationShutdown, OnModule
   async executeReserved(intent: ClaimedNotificationOutboxIntent): Promise<unknown> {
     const result = await this.executeAttempt(intent);
     if (result.state === 'failed') throw result.error;
-    return result.value;
+    return result.state === 'succeeded' ? result.value : undefined;
   }
 
   private executeAttempt(
@@ -114,6 +116,10 @@ export class NotificationOutboxWorker implements OnApplicationShutdown, OnModule
     if (heartbeatFailure) throw heartbeatFailure.error;
 
     if (handlerFailed) {
+      if (handlerError instanceof NotificationOutboxGenerationConflictError) {
+        await this.outbox.deferWechatBroadcast(refreshed, handlerError);
+        return { state: 'deferred' };
+      }
       if (handlerError instanceof UnsupportedNotificationOutboxEventError) {
         await this.outbox.deadLetter(refreshed, handlerError);
         return { state: 'failed', dead: true, error: handlerError };
@@ -140,7 +146,7 @@ export class NotificationOutboxWorker implements OnApplicationShutdown, OnModule
     if (!intent) return { state: 'not-claimed' };
     const result = await this.executeAttempt(intent);
     if (result.state === 'failed') throw result.error;
-    const value = result.value;
+    const value = result.state === 'succeeded' ? result.value : undefined;
     return { state: 'executed', value };
   }
 
@@ -168,6 +174,7 @@ export class NotificationOutboxWorker implements OnApplicationShutdown, OnModule
         if (eventKey) summary.value = result.value;
         continue;
       }
+      if (result.state === 'deferred') continue;
 
       summary.failed += 1;
       if (result.dead) summary.dead += 1;

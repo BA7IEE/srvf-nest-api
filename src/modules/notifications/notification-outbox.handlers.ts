@@ -40,6 +40,7 @@ import {
   NOTIFICATION_DIRECTED_VISIBILITY,
   NOTIFICATION_SOURCE_SYSTEM,
   NOTIFICATION_STATUS_PUBLISHED,
+  OUTBOX_ADMIN_PAYLOAD_VERSION,
   OUTBOX_EVENT_ADMIN_SMS,
   OUTBOX_EVENT_BIRTHDAY_SMS,
   OUTBOX_EVENT_SYSTEM_BROADCAST,
@@ -205,7 +206,16 @@ export class NotificationOutboxHandlers {
     intent: ClaimedNotificationOutboxIntent,
   ): Promise<OutboxExecutionResult> {
     const payload = parsePayload<WechatBroadcastOutboxPayload>(intent);
-    const notification = await this.requireNotification(payload.notificationId);
+    if (intent.payloadVersion !== OUTBOX_ADMIN_PAYLOAD_VERSION) {
+      throw new UnsupportedNotificationOutboxEventError(intent.eventType, intent.payloadVersion);
+    }
+    const notification = await this.outbox.authorizeAdminNotificationEffect(
+      intent,
+      payload.notificationId,
+      payload.publishGeneration,
+      NOTIFICATION_CHANNEL_WECHAT,
+    );
+    if (!notification) return { effectPerformed: false, value: { expanded: 0 } };
     const memberIds = await this.wechatDispatch.resolveDurableBroadcastMemberIds(notification);
     await this.prisma.$transaction(async (tx) => {
       for (const memberId of memberIds) {
@@ -215,8 +225,12 @@ export class NotificationOutboxHandlers {
             // 同一 child，terminal 后新 generation 才获得新 attempt。SENT guard 继续跨 generation 去重。
             eventKey: `wechat-delivery:${notification.id}:${intent.id}:${memberId}`,
             eventType: OUTBOX_EVENT_WECHAT_DELIVERY,
-            payloadVersion: OUTBOX_PAYLOAD_VERSION,
-            payload: { notificationId: notification.id, memberId },
+            payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
+            payload: {
+              notificationId: notification.id,
+              memberId,
+              publishGeneration: payload.publishGeneration,
+            },
             aggregateType: 'notification',
             aggregateId: notification.id,
             destinationType: 'member',
@@ -234,7 +248,16 @@ export class NotificationOutboxHandlers {
     guard: NotificationOutboxEffectGuard,
   ): Promise<OutboxExecutionResult> {
     const payload = parsePayload<WechatDeliveryOutboxPayload>(intent);
-    const notification = await this.requireNotification(payload.notificationId);
+    const notification =
+      intent.payloadVersion === OUTBOX_ADMIN_PAYLOAD_VERSION
+        ? await this.outbox.authorizeAdminNotificationEffect(
+            intent,
+            payload.notificationId,
+            payload.publishGeneration!,
+            NOTIFICATION_CHANNEL_WECHAT,
+          )
+        : await this.requireLegacySystemNotification(intent, payload.notificationId);
+    if (!notification) return { effectPerformed: false };
     const existingIntentDelivery = await this.prisma.notificationDelivery.findUnique({
       where: { id: intent.id },
       select: { id: true },
@@ -453,14 +476,16 @@ export class NotificationOutboxHandlers {
     guard: NotificationOutboxEffectGuard,
   ): Promise<OutboxExecutionResult> {
     const payload = parsePayload<AdminSmsOutboxPayload>(intent);
-    const notification = await this.prisma.notification.findFirst({
-      where: { id: payload.notificationId, deletedAt: null },
-    });
-    if (
-      !notification ||
-      notification.statusCode !== NOTIFICATION_STATUS_PUBLISHED ||
-      !notification.channels.includes(NOTIFICATION_CHANNEL_SMS)
-    ) {
+    if (intent.payloadVersion !== OUTBOX_ADMIN_PAYLOAD_VERSION) {
+      throw new UnsupportedNotificationOutboxEventError(intent.eventType, intent.payloadVersion);
+    }
+    const notification = await this.outbox.authorizeAdminNotificationEffect(
+      intent,
+      payload.notificationId,
+      payload.publishGeneration!,
+      NOTIFICATION_CHANNEL_SMS,
+    );
+    if (!notification) {
       return { effectPerformed: false, value: { outcome: 'skipped' } };
     }
     const result = await this.smsDispatch.dispatchRecipient(
@@ -477,6 +502,22 @@ export class NotificationOutboxHandlers {
   private async requireNotification(id: string): Promise<Notification> {
     const row = await this.prisma.notification.findFirst({ where: { id, deletedAt: null } });
     if (!row) throw new Error(`notification missing for outbox aggregate=${id}`);
+    return row;
+  }
+
+  private async requireLegacySystemNotification(
+    intent: ClaimedNotificationOutboxIntent,
+    id: string,
+  ): Promise<Notification> {
+    const row = await this.prisma.notification.findUnique({ where: { id } });
+    if (
+      !row ||
+      row.deletedAt !== null ||
+      row.sourceType !== NOTIFICATION_SOURCE_SYSTEM ||
+      row.statusCode !== NOTIFICATION_STATUS_PUBLISHED
+    ) {
+      throw new UnsupportedNotificationOutboxEventError(intent.eventType, intent.payloadVersion);
+    }
     return row;
   }
 

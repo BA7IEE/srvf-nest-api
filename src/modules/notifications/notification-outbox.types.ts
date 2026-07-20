@@ -10,6 +10,7 @@ import {
   OUTBOX_EVENT_TARGETED_NOTIFICATION,
   OUTBOX_EVENT_WECHAT_BROADCAST,
   OUTBOX_EVENT_WECHAT_DELIVERY,
+  OUTBOX_ADMIN_PAYLOAD_VERSION,
   OUTBOX_PAYLOAD_VERSION,
 } from './notification.constants';
 
@@ -45,11 +46,13 @@ export interface SystemBroadcastOutboxPayload {
 
 export interface WechatBroadcastOutboxPayload {
   notificationId: string;
+  publishGeneration: number;
 }
 
 export interface WechatDeliveryOutboxPayload {
   notificationId: string;
   memberId: string;
+  publishGeneration?: number;
 }
 
 export interface BirthdaySmsOutboxPayload {
@@ -60,6 +63,7 @@ export interface BirthdaySmsOutboxPayload {
 export interface AdminSmsOutboxPayload {
   notificationId: string;
   memberId: string;
+  publishGeneration?: number;
 }
 
 export interface OutboxExecutionResult {
@@ -94,11 +98,12 @@ export function parseKnownNotificationOutboxPayload(
   payloadVersion: number,
   value: unknown,
 ): KnownNotificationOutboxPayload {
-  if (payloadVersion !== OUTBOX_PAYLOAD_VERSION || !isRecord(value)) {
+  if (!isRecord(value)) {
     throw new NotificationOutboxPayloadError(eventType, payloadVersion);
   }
   switch (eventType) {
     case OUTBOX_EVENT_TARGETED_NOTIFICATION:
+      requireVersion(payloadVersion, OUTBOX_PAYLOAD_VERSION, eventType);
       exactKeys(value, ['recipientMemberId', 'notificationTypeCode', 'title', 'body', 'channels']);
       return {
         recipientMemberId: cuid(value.recipientMemberId),
@@ -108,6 +113,7 @@ export function parseKnownNotificationOutboxPayload(
         channels: channelList(value.channels),
       };
     case OUTBOX_EVENT_SYSTEM_BROADCAST:
+      requireVersion(payloadVersion, OUTBOX_PAYLOAD_VERSION, eventType);
       exactKeys(value, ['notificationTypeCode', 'title', 'body', 'visibilityCode']);
       return {
         notificationTypeCode: shortString(value.notificationTypeCode, 64),
@@ -116,29 +122,70 @@ export function parseKnownNotificationOutboxPayload(
         visibilityCode: enumString(value.visibilityCode, NOTIFICATION_VISIBILITIES),
       };
     case OUTBOX_EVENT_WECHAT_BROADCAST:
-      exactKeys(value, ['notificationId']);
-      return { notificationId: resourceRef(value.notificationId) };
+      if (payloadVersion === OUTBOX_PAYLOAD_VERSION) {
+        exactKeys(value, ['notificationId']);
+        return { notificationId: resourceRef(value.notificationId), publishGeneration: 0 };
+      }
+      requireVersion(payloadVersion, OUTBOX_ADMIN_PAYLOAD_VERSION, eventType);
+      exactKeys(value, ['notificationId', 'publishGeneration']);
+      return {
+        notificationId: resourceRef(value.notificationId),
+        publishGeneration: generation(value.publishGeneration),
+      };
     case OUTBOX_EVENT_WECHAT_DELIVERY:
-      exactKeys(value, ['notificationId', 'memberId']);
+      if (payloadVersion === OUTBOX_PAYLOAD_VERSION) {
+        exactKeys(value, ['notificationId', 'memberId']);
+        return {
+          notificationId: resourceRef(value.notificationId),
+          memberId: cuid(value.memberId),
+        };
+      }
+      requireVersion(payloadVersion, OUTBOX_ADMIN_PAYLOAD_VERSION, eventType);
+      exactKeys(value, ['notificationId', 'memberId', 'publishGeneration']);
       return {
         notificationId: resourceRef(value.notificationId),
         memberId: cuid(value.memberId),
+        publishGeneration: generation(value.publishGeneration),
       };
     case OUTBOX_EVENT_BIRTHDAY_SMS:
+      requireVersion(payloadVersion, OUTBOX_PAYLOAD_VERSION, eventType);
       exactKeys(value, ['memberId', 'dateKey']);
       return {
         memberId: cuid(value.memberId),
         dateKey: dateKey(value.dateKey),
       };
     case OUTBOX_EVENT_ADMIN_SMS:
-      exactKeys(value, ['notificationId', 'memberId']);
+      if (payloadVersion === OUTBOX_PAYLOAD_VERSION) {
+        exactKeys(value, ['notificationId', 'memberId']);
+        return {
+          notificationId: resourceRef(value.notificationId),
+          memberId: cuid(value.memberId),
+        };
+      }
+      requireVersion(payloadVersion, OUTBOX_ADMIN_PAYLOAD_VERSION, eventType);
+      exactKeys(value, ['notificationId', 'memberId', 'publishGeneration']);
       return {
         notificationId: resourceRef(value.notificationId),
         memberId: cuid(value.memberId),
+        publishGeneration: generation(value.publishGeneration),
       };
     default:
       throw new NotificationOutboxPayloadError(eventType, payloadVersion);
   }
+}
+
+function requireVersion(actual: number, expected: number, eventType: string): void {
+  if (actual !== expected) throw new NotificationOutboxPayloadError(eventType, actual);
+}
+
+function generation(value: unknown): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new NotificationOutboxPayloadError(
+      'invalid-publish-generation',
+      OUTBOX_ADMIN_PAYLOAD_VERSION,
+    );
+  }
+  return value as number;
 }
 
 export class NotificationOutboxPayloadError extends Error {

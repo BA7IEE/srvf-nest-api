@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, type NotificationOutboxIntent } from '@prisma/client';
+import { Prisma, type Notification, type NotificationOutboxIntent } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import {
+  NOTIFICATION_AUDIENCE_BROADCAST,
+  NOTIFICATION_SOURCE_ADMIN,
+  NOTIFICATION_STATUS_PUBLISHED,
   OUTBOX_BACKOFF_BASE_MS,
   OUTBOX_BACKOFF_MAX_MS,
   OUTBOX_CLAIM_BATCH,
@@ -10,6 +13,7 @@ import {
   OUTBOX_LEASE_MS,
   OUTBOX_MAX_ATTEMPTS,
   OUTBOX_EVENT_WECHAT_DELIVERY,
+  OUTBOX_EVENT_WECHAT_BROADCAST,
   OUTBOX_STATUS_DEAD,
   OUTBOX_STATUS_PENDING,
   OUTBOX_STATUS_PROCESSING,
@@ -33,6 +37,13 @@ export interface ClaimedNotificationOutboxIntent extends NotificationOutboxInten
 export interface NotificationOutboxReservation {
   intent: NotificationOutboxIntent | null;
   state: 'reserved' | 'busy' | 'completed' | 'dead';
+}
+
+export class NotificationOutboxGenerationConflictError extends Error {
+  constructor(readonly activeIntent: NotificationOutboxIntent) {
+    super(`NOTIFICATION_OUTBOX_GENERATION_CONFLICT: ${activeIntent.id}`);
+    this.name = 'NotificationOutboxGenerationConflictError';
+  }
 }
 
 @Injectable()
@@ -128,7 +139,7 @@ export class NotificationOutboxService {
           status: { in: [OUTBOX_STATUS_PENDING, OUTBOX_STATUS_PROCESSING] },
         },
       });
-      if (active) return active;
+      if (active) throw new NotificationOutboxGenerationConflictError(active);
     }
     throw new NotificationOutboxInvariantError(
       `wechat delivery active slot churned for aggregate=${normalized.aggregateId}`,
@@ -328,6 +339,100 @@ export class NotificationOutboxService {
     });
     if (updated.count !== 1) throw new NotificationOutboxLeaseLostError(intent.id);
     return { ...intent, leaseExpiresAt };
+  }
+
+  // Provider permission point：固定锁序 Notification parent → outbox intent。事务提交即是
+  // admin publish-generation 与撤回/删除之间的线性化点；外部 Effect 只消费本次锁内快照。
+  async authorizeAdminNotificationEffect(
+    intent: ClaimedNotificationOutboxIntent,
+    notificationId: string,
+    publishGeneration: number,
+    requiredChannel: string,
+    now?: Date,
+  ): Promise<Notification | null> {
+    return this.prisma.$transaction(async (tx) => {
+      const [notification] = await tx.$queryRaw<Notification[]>(Prisma.sql`
+        SELECT n.*
+        FROM "notifications" n
+        WHERE n."id" = ${notificationId}
+        FOR UPDATE
+      `);
+      await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id"
+        FROM "notification_outbox_intents"
+        WHERE "id" = ${intent.id}
+        FOR UPDATE
+      `);
+      const fenceNow = now ?? new Date();
+      const currentIntent = await tx.notificationOutboxIntent.findFirst({
+        where: {
+          ...fenceWhere(intent),
+          leaseExpiresAt: { not: null, gt: fenceNow },
+        },
+        select: { id: true },
+      });
+      if (!currentIntent) throw new NotificationOutboxLeaseLostError(intent.id);
+      if (
+        !notification ||
+        notification.deletedAt !== null ||
+        notification.statusCode !== NOTIFICATION_STATUS_PUBLISHED ||
+        notification.sourceType !== NOTIFICATION_SOURCE_ADMIN ||
+        notification.audienceType !== NOTIFICATION_AUDIENCE_BROADCAST ||
+        notification.publishGeneration !== publishGeneration ||
+        !notification.channels.includes(requiredChannel)
+      ) {
+        return null;
+      }
+      return notification;
+    });
+  }
+
+  // 新 publish generation 的 root 若撞到旧 generation active child，只允许 root 自身
+  // 无损 defer：停止 heartbeat 后以原 fence CAS 回 pending，并恢复本轮 claim 消耗的 attempt。
+  async deferWechatBroadcast(
+    intent: ClaimedNotificationOutboxIntent,
+    conflict: NotificationOutboxGenerationConflictError,
+    now: Date = new Date(),
+  ): Promise<void> {
+    if (intent.eventType !== OUTBOX_EVENT_WECHAT_BROADCAST || intent.preparedAt !== null) {
+      throw new NotificationOutboxInvariantError(`intent=${intent.id} cannot generation-defer`);
+    }
+    const active = conflict.activeIntent;
+    let lowerBound: Date;
+    if (active.status === OUTBOX_STATUS_PROCESSING) {
+      if (!active.leaseExpiresAt) {
+        throw new NotificationOutboxInvariantError(
+          `active=${active.id} processing without lease expiry`,
+        );
+      }
+      lowerBound = new Date(active.leaseExpiresAt.getTime() + OUTBOX_BACKOFF_BASE_MS);
+    } else if (active.status === OUTBOX_STATUS_PENDING) {
+      lowerBound = new Date(
+        Math.max(active.availableAt.getTime(), now.getTime()) + OUTBOX_BACKOFF_BASE_MS,
+      );
+    } else {
+      throw new NotificationOutboxInvariantError(`active=${active.id} is not active`);
+    }
+    const availableAt = new Date(Math.max(lowerBound.getTime(), now.getTime() + 1));
+    if (availableAt.getTime() > now.getTime() + OUTBOX_BACKOFF_MAX_MS) {
+      throw new NotificationOutboxInvariantError(`active=${active.id} defer horizon is invalid`);
+    }
+    const updated = await this.prisma.notificationOutboxIntent.updateMany({
+      where: {
+        ...fenceWhere(intent),
+        preparedAt: null,
+        attempts: { gt: 0 },
+      },
+      data: {
+        status: OUTBOX_STATUS_PENDING,
+        attempts: { decrement: 1 },
+        availableAt,
+        leaseOwner: null,
+        lockedAt: null,
+        leaseExpiresAt: null,
+      },
+    });
+    if (updated.count !== 1) throw new NotificationOutboxLeaseLostError(intent.id);
   }
 
   async nack(

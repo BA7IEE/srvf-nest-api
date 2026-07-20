@@ -39,6 +39,17 @@ function intent(payload: unknown): ClaimedNotificationOutboxIntent {
   };
 }
 
+function adminIntent(payload: {
+  notificationId: string;
+  memberId: string;
+}): ClaimedNotificationOutboxIntent {
+  return {
+    ...intent({ ...payload, publishGeneration: 1 }),
+    payloadVersion: 2,
+    payload: { ...payload, publishGeneration: 1 },
+  };
+}
+
 describe('NotificationOutboxHandlers exact payload gate', () => {
   const handlers = new NotificationOutboxHandlers(
     {} as never,
@@ -69,6 +80,32 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
     await expect(handlers.execute(intent(payload), ALLOW_EFFECT)).rejects.toBeInstanceOf(
       UnsupportedNotificationOutboxEventError,
     );
+  });
+
+  it('合法形状 v1 admin SMS 仍 fail-closed terminal，绝不进入 permission/provider', async () => {
+    const outbox = { authorizeAdminNotificationEffect: jest.fn() };
+    const smsDispatch = { dispatchRecipient: jest.fn() };
+    const guarded = new NotificationOutboxHandlers(
+      {} as never,
+      outbox as never,
+      {} as never,
+      {} as never,
+      smsDispatch as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await expect(
+      guarded.execute(
+        intent({
+          notificationId: 'cm00000000000000000000001',
+          memberId: 'cm00000000000000000000002',
+        }),
+        ALLOW_EFFECT,
+      ),
+    ).rejects.toBeInstanceOf(UnsupportedNotificationOutboxEventError);
+    expect(outbox.authorizeAdminNotificationEffect).not.toHaveBeenCalled();
+    expect(smsDispatch.dispatchRecipient).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -156,12 +193,15 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
     const beforeEffect = jest.fn().mockRejectedValue(leaseLost);
     const prisma = {
       notification: {
-        findFirst: jest.fn().mockResolvedValue({
+        findUnique: jest.fn().mockResolvedValue({
           id: 'cm00000000000000000000001',
           notificationTypeCode: 'general',
           title: 'guarded title',
           body: 'guarded body',
           publishedAt: NOW,
+          deletedAt: null,
+          sourceType: 'system',
+          statusCode: 'published',
         }),
       },
       notificationDelivery: {
@@ -414,23 +454,13 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
     ['已撤回', { statusCode: 'draft', channels: ['in-app', 'sms'] }],
     ['已移除 sms', { statusCode: 'published', channels: ['in-app'] }],
     ['已删除或不存在', null],
-  ])('admin SMS 父通知%s时 terminal skip 且不进入收件人派发', async (_name, state) => {
+  ])('admin SMS 父通知%s时 terminal skip 且不进入收件人派发', async () => {
     const smsDispatch = { dispatchRecipient: jest.fn() };
-    const prisma = {
-      notification: {
-        findFirst: jest.fn().mockResolvedValue(
-          state
-            ? {
-                id: 'cm00000000000000000000001',
-                ...state,
-              }
-            : null,
-        ),
-      },
-    };
+    const prisma = {};
+    const outbox = { authorizeAdminNotificationEffect: jest.fn().mockResolvedValue(null) };
     const guarded = new NotificationOutboxHandlers(
       prisma as never,
-      {} as never,
+      outbox as never,
       {} as never,
       {} as never,
       smsDispatch as never,
@@ -442,7 +472,7 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
 
     await expect(
       guarded.execute(
-        intent({
+        adminIntent({
           notificationId: 'cm00000000000000000000001',
           memberId: 'cm00000000000000000000002',
         }),
@@ -466,9 +496,10 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
     const smsDispatch = {
       dispatchRecipient: jest.fn().mockResolvedValue({ outcome: 'sent' }),
     };
+    const outbox = { authorizeAdminNotificationEffect: jest.fn().mockResolvedValue(notification) };
     const guarded = new NotificationOutboxHandlers(
-      { notification: { findFirst: jest.fn().mockResolvedValue(notification) } } as never,
       {} as never,
+      outbox as never,
       {} as never,
       {} as never,
       smsDispatch as never,
@@ -479,7 +510,7 @@ describe('NotificationOutboxHandlers exact payload gate', () => {
 
     await expect(
       guarded.execute(
-        intent({
+        adminIntent({
           notificationId: notification.id,
           memberId: 'cm00000000000000000000002',
         }),

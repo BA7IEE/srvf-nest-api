@@ -96,6 +96,14 @@ docker run --rm -p 3000:3000 \
 4. **回退**：异常时先停止 worker，再回退 API；保留 outbox 表和 pending/dead 证据。不得把 intent 手工改成 succeeded、不得修改 `_prisma_migrations`、不得切进程内 fallback。
 5. **retention**：succeeded 30 天、dead 90 天后只按 [`notification-outbox-retention-sop.md`](ops/notification-outbox-retention-sop.md) 人工小批清理；零自动清理、cron 仍恰好 2。
 
+#### Notification publish-generation G2 切换（禁止混跑）
+
+1. **前置**：先确认 expand-only `Notification.publishGeneration` migration 已部署；暂停 notification publish/update/delete/send-sms 写入口并排空旧 API 事务。
+2. **清场**：确认旧 API server=0；等待所有 v1 admin wechat root/child/admin-SMS intent 不再处于 pending/processing，再确认旧 worker=0、旧事务=0。v1 system-directed child 不属于该清场集合，仍由新 worker 兼容。
+3. **同 binary 切入**：只启动同一 G2 binary 的 API 与 worker，禁止旧 producer/new worker、new producer/old worker或任意新旧混跑。恢复写前验证：publish generation +1、v2 payload、撤回先赢时 provider=0、system-directed admin mutation=31030/send-sms=31013。
+4. **回退**：先停新 worker，再停新 API。若已有 v2 active intent，只能由新 worker drain 完成；旧 worker在 v2 active 归零前不得启动。不得手改 payload/status/generation 绕过清场。
+5. **保留数据**：回退不删除 `publishGeneration` 字段、不做 down migration；provider permission 已赢锁后的在途 attempt 仍允许完成，继续遵守 at-least-once 而非 exactly-once。
+
 ---
 
 ## 数据备份与恢复

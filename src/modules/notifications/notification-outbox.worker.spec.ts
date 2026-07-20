@@ -1,4 +1,7 @@
-import type { ClaimedNotificationOutboxIntent } from './notification-outbox.service';
+import {
+  type ClaimedNotificationOutboxIntent,
+  NotificationOutboxGenerationConflictError,
+} from './notification-outbox.service';
 import { NotificationOutboxWorker } from './notification-outbox.worker';
 import {
   type NotificationOutboxEffectGuard,
@@ -45,6 +48,7 @@ describe('NotificationOutboxWorker', () => {
       ack: jest.fn().mockResolvedValue(undefined),
       nack: jest.fn().mockResolvedValue('pending'),
       deadLetter: jest.fn().mockResolvedValue(undefined),
+      deferWechatBroadcast: jest.fn().mockResolvedValue(undefined),
     };
     const handlers = {
       execute: jest.fn().mockResolvedValue({ effectPerformed: true, value: { sent: 1 } }),
@@ -103,6 +107,20 @@ describe('NotificationOutboxWorker', () => {
     });
     expect(f.outbox.deadLetter).toHaveBeenCalledWith(f.intent, error);
     expect(f.outbox.nack).not.toHaveBeenCalled();
+  });
+
+  it('cross-generation root 停 heartbeat 后只 defer，不 ack/nack/dead', async () => {
+    const f = build();
+    f.intent.eventType = 'notification.wechat-broadcast';
+    const active = { ...f.intent, id: 'active-child', eventType: 'notification.wechat-delivery' };
+    const conflict = new NotificationOutboxGenerationConflictError(active);
+    f.handlers.execute.mockRejectedValue(conflict);
+
+    await expect(f.worker.executeReserved(f.intent)).resolves.toBeUndefined();
+    expect(f.outbox.deferWechatBroadcast).toHaveBeenCalledWith(f.intent, conflict);
+    expect(f.outbox.ack).not.toHaveBeenCalled();
+    expect(f.outbox.nack).not.toHaveBeenCalled();
+    expect(f.outbox.deadLetter).not.toHaveBeenCalled();
   });
 
   it('claim DB 故障时 handler/provider 零调用', async () => {

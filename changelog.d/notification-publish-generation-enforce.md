@@ -1,0 +1,3 @@
+- 通知 admin 发布链启用 `publishGeneration` 运行时 fence：draft→published 原子递增代次，WeChat root/child 与 admin SMS 使用 v2 payload；provider permission 以 Notification parent→outbox intent 固定锁序重验状态、渠道、代次、lease，并只消费锁内快照。
+- published 的真实 Effect 字段变化自动回 draft；system-directed 通知保持 admin 可读但禁止 mutation/send-sms。跨代 active WeChat child 令新 root 无损 defer，保留既有 lease heartbeat、shutdown drain 与 at-least-once/evidence 语义。
+- 部署必须先排空旧 API/worker 与 v1 admin intent，再以同一 G2 binary 启动 API+worker；禁止混合 producer/worker。未执行 release、tag、version bump 或生产部署。

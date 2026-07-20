@@ -133,7 +133,9 @@ export const OUTBOX_EVENT_WECHAT_DELIVERY = 'notification.wechat-delivery';
 export const OUTBOX_EVENT_BIRTHDAY_SMS = 'notification.birthday-sms';
 export const OUTBOX_EVENT_ADMIN_SMS = 'notification.admin-sms';
 
+// 系统 producer 继续使用 v1；admin 发布链从 G2 起只写带 publishGeneration 的 v2。
 export const OUTBOX_PAYLOAD_VERSION = 1;
+export const OUTBOX_ADMIN_PAYLOAD_VERSION = 2;
 export const OUTBOX_MAX_ATTEMPTS = 8;
 export const OUTBOX_LEASE_MS = 30_000;
 export const OUTBOX_CLAIM_BATCH = 20;

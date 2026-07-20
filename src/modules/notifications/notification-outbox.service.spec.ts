@@ -1,4 +1,4 @@
-import type { NotificationOutboxIntent } from '@prisma/client';
+import { Prisma, type NotificationOutboxIntent } from '@prisma/client';
 
 import {
   normalizeNotificationOutboxInput,
@@ -10,6 +10,7 @@ import {
 } from './notification-outbox.types';
 import {
   type ClaimedNotificationOutboxIntent,
+  NotificationOutboxGenerationConflictError,
   NotificationOutboxService,
 } from './notification-outbox.service';
 
@@ -25,12 +26,16 @@ interface UpdateManyCall {
 }
 
 function input(
-  payload: Record<string, string> = { notificationId: NOTIFICATION_1, memberId: MEMBER_1 },
+  payload: Record<string, string | number> = {
+    notificationId: NOTIFICATION_1,
+    memberId: MEMBER_1,
+    publishGeneration: 1,
+  },
 ): NotificationOutboxEnqueueInput {
   return {
     eventKey: `admin-sms:${NOTIFICATION_1}:${GENERATION_1}:${MEMBER_1}`,
     eventType: 'notification.admin-sms',
-    payloadVersion: 1,
+    payloadVersion: 2,
     payload,
     aggregateType: 'notification',
     aggregateId: NOTIFICATION_1,
@@ -39,12 +44,15 @@ function input(
   };
 }
 
-function wechatInput(rootId: string): NotificationOutboxEnqueueInput {
+function wechatInput(
+  rootId: string,
+  publishGeneration: number = 1,
+): NotificationOutboxEnqueueInput {
   return {
     eventKey: `wechat-delivery:${NOTIFICATION_1}:${rootId}:${MEMBER_1}`,
     eventType: 'notification.wechat-delivery',
-    payloadVersion: 1,
-    payload: { notificationId: NOTIFICATION_1, memberId: MEMBER_1 },
+    payloadVersion: 2,
+    payload: { notificationId: NOTIFICATION_1, memberId: MEMBER_1, publishGeneration },
     aggregateType: 'notification',
     aggregateId: NOTIFICATION_1,
     destinationType: 'member',
@@ -57,8 +65,8 @@ function row(overrides: Partial<NotificationOutboxIntent> = {}): NotificationOut
     id: 'intent-1',
     eventKey: `admin-sms:${NOTIFICATION_1}:${GENERATION_1}:${MEMBER_1}`,
     eventType: 'notification.admin-sms',
-    payloadVersion: 1,
-    payload: { notificationId: NOTIFICATION_1, memberId: MEMBER_1 },
+    payloadVersion: 2,
+    payload: { notificationId: NOTIFICATION_1, memberId: MEMBER_1, publishGeneration: 1 },
     aggregateType: 'notification',
     aggregateId: NOTIFICATION_1,
     destinationType: 'member',
@@ -89,7 +97,9 @@ describe('NotificationOutboxService', () => {
     const updateMany = jest.fn().mockResolvedValue({ count: 1 });
     const findFirst = jest.fn().mockResolvedValue({ preparedAt: null });
     const findMany = jest.fn().mockResolvedValue([]);
-    const queryRaw = jest.fn().mockResolvedValue([]);
+    const queryRaw = jest
+      .fn<Promise<Array<Record<string, unknown>>>, [Prisma.Sql]>()
+      .mockResolvedValue([]);
     const tx = {
       notificationOutboxIntent: { createMany, findUnique, updateMany, findFirst, findMany },
       $queryRaw: queryRaw,
@@ -121,7 +131,7 @@ describe('NotificationOutboxService', () => {
     ).rejects.toBeInstanceOf(NotificationOutboxInvariantError);
   });
 
-  it('微信广播不同 generation 撞 active partial unique 时复用既有 child', async () => {
+  it('微信广播不同 generation 撞 active partial unique 时显式要求 root defer', async () => {
     const f = build();
     const firstGeneration = wechatInput('cm00000000000000000000007');
     const active = row({
@@ -129,7 +139,7 @@ describe('NotificationOutboxService', () => {
       eventKey: firstGeneration.eventKey,
       eventType: firstGeneration.eventType,
       payloadVersion: firstGeneration.payloadVersion,
-      payload: { notificationId: NOTIFICATION_1, memberId: MEMBER_1 },
+      payload: { notificationId: NOTIFICATION_1, memberId: MEMBER_1, publishGeneration: 1 },
       aggregateType: firstGeneration.aggregateType,
       aggregateId: firstGeneration.aggregateId,
       destinationType: firstGeneration.destinationType,
@@ -145,8 +155,8 @@ describe('NotificationOutboxService', () => {
     f.findFirst.mockResolvedValue(active);
 
     await expect(
-      f.service.enqueueWechatDeliveryAttempt(wechatInput('cm00000000000000000000008')),
-    ).resolves.toBe(active);
+      f.service.enqueueWechatDeliveryAttempt(wechatInput('cm00000000000000000000008', 2)),
+    ).rejects.toEqual(new NotificationOutboxGenerationConflictError(active));
     expect(f.createMany).toHaveBeenCalledTimes(1);
     const [findFirstInput] = f.findFirst.mock.calls.at(-1) as unknown as [
       { where: Record<string, unknown> },
@@ -156,6 +166,83 @@ describe('NotificationOutboxService', () => {
       destinationRef: MEMBER_1,
       status: { in: ['pending', 'processing'] },
     });
+  });
+
+  it('cross-generation root 只以稳定 fence 回 pending、恢复 attempt 且排到 active lease 之后', async () => {
+    const f = build();
+    const root = row({
+      id: 'cm00000000000000000000010',
+      eventType: 'notification.wechat-broadcast',
+      status: 'processing',
+      attempts: 1,
+      leaseOwner: 'root-worker',
+      lockedAt: NOW,
+      leaseExpiresAt: new Date(NOW.getTime() + 30_000),
+      preparedAt: null,
+    }) as ClaimedNotificationOutboxIntent;
+    const active = row({
+      id: 'cm00000000000000000000011',
+      eventType: 'notification.wechat-delivery',
+      status: 'processing',
+      attempts: 2,
+      leaseOwner: 'child-worker',
+      lockedAt: NOW,
+      leaseExpiresAt: new Date(NOW.getTime() + 5_000),
+    });
+
+    await expect(
+      f.service.deferWechatBroadcast(
+        root,
+        new NotificationOutboxGenerationConflictError(active),
+        NOW,
+      ),
+    ).resolves.toBeUndefined();
+    const [call] = f.updateMany.mock.calls.at(-1) as unknown as [UpdateManyCall];
+    expect(call.where).toMatchObject({
+      id: root.id,
+      status: 'processing',
+      leaseOwner: 'root-worker',
+      lockedAt: NOW,
+      preparedAt: null,
+      attempts: { gt: 0 },
+    });
+    expect(call.data).toMatchObject({
+      status: 'pending',
+      attempts: { decrement: 1 },
+      leaseOwner: null,
+      lockedAt: null,
+      leaseExpiresAt: null,
+    });
+    expect((call.data.availableAt as Date).getTime()).toBe(NOW.getTime() + 6_000);
+  });
+
+  it('provider permission 固定先锁 parent 再锁 intent，并返回同一 generation 快照', async () => {
+    const f = build();
+    const claimed = row({
+      status: 'processing',
+      attempts: 1,
+      leaseOwner: 'worker',
+      lockedAt: NOW,
+      leaseExpiresAt: new Date(NOW.getTime() + 30_000),
+    }) as ClaimedNotificationOutboxIntent;
+    const notification = {
+      id: NOTIFICATION_1,
+      deletedAt: null,
+      statusCode: 'published',
+      sourceType: 'admin',
+      audienceType: 'broadcast',
+      publishGeneration: 3,
+      channels: ['in-app', 'wechat'],
+    };
+    f.queryRaw.mockResolvedValueOnce([notification]).mockResolvedValueOnce([{ id: claimed.id }]);
+    f.findFirst.mockResolvedValueOnce({ id: claimed.id });
+
+    await expect(
+      f.service.authorizeAdminNotificationEffect(claimed, NOTIFICATION_1, 3, 'wechat', NOW),
+    ).resolves.toBe(notification);
+    const sql = f.queryRaw.mock.calls.map(([query]) => query.strings.join(' '));
+    expect(sql[0]).toContain('FROM "notifications"');
+    expect(sql[1]).toContain('FROM "notification_outbox_intents"');
   });
 
   it.each([
