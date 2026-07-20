@@ -2437,10 +2437,11 @@ model Notification {
   // feed 仅本人可见(notification-read.service 扩 where:广播可见 ∪ 本人定向;他人 → 31001 防枚举)。
   recipientMemberId String?
 
-  readCount    Int       @default(0) // 反范式已读人数(首次 mark-read 原子 increment;镜像 content.viewCount)
-  pinned       Boolean   @default(false) // 置顶
-  publishedAt  DateTime? // publish 时置 now;unpublish 保留;draft 从未发布为 null
-  authorUserId String? // 发布 admin;不建外键(沿 content.authorUserId / reviewedByUserId);system 定向为 null
+  readCount         Int       @default(0) // 反范式已读人数(首次 mark-read 原子 increment;镜像 content.viewCount)
+  pinned            Boolean   @default(false) // 置顶
+  publishedAt       DateTime? // publish 时置 now;unpublish 保留;draft 从未发布为 null
+  publishGeneration Int       @default(0) // 发布代次骨架(G1 expand-only;runtime 尚未读写)
+  authorUserId      String? // 发布 admin;不建外键(沿 content.authorUserId / reviewedByUserId);system 定向为 null
 
   reads      NotificationRead[]
   deliveries NotificationDelivery[] // 推送渠道(微信/短信)per-recipient 投递态(S2 起;站内不落)
