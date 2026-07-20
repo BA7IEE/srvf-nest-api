@@ -658,15 +658,22 @@ export class ActivityRegistrationsService {
     }
   }
 
-  // 参与域生命周期收口⑦(v0.40.0):已考勤报名禁取消守卫。cancelAdmin + cancelMy 两路共用。
-  // 直连 prisma 查 AttendanceRecord.registrationId 反向引用(未软删)——**不引 attendances service**
-  // (防跨模块环:attendances → activity-registration 是既有单向依赖,反向会成环)。存在即拒;
+  // 参与域生命周期收口⑦(v0.40.0):已有参与证据的报名禁取消守卫。cancelAdmin + cancelMy 两路共用。
+  // 直连 prisma 查 AttendanceRecord / ActivityCheckIn 的 registrationId 反向引用(未软删)
+  // ——**不引 attendances service**(防跨模块环:attendances → activity-registration 是既有单向依赖,
+  // 反向会成环)。任一存在即拒;
   // 不做贡献值回滚(贡献值属考勤域;撤销参与先走考勤面处理记录,报名取消自然解锁)。
-  private async assertNoAttendanceRecords(registrationId: string, tx: PrismaTx): Promise<void> {
+  private async assertNoParticipationEvidence(registrationId: string, tx: PrismaTx): Promise<void> {
     const attendanceCount = await tx.attendanceRecord.count({
       where: { registrationId, deletedAt: null },
     });
     if (attendanceCount > 0) {
+      throw new BizException(BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE);
+    }
+    const checkInCount = await tx.activityCheckIn.count({
+      where: { registrationId, deletedAt: null },
+    });
+    if (checkInCount > 0) {
       throw new BizException(BizCode.ACTIVITY_REGISTRATION_HAS_ATTENDANCE);
     }
   }
@@ -1260,8 +1267,8 @@ export class ActivityRegistrationsService {
         expectedStatus: reg.statusCode,
         invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
       });
-      // 参与域生命周期收口⑦(v0.40.0):已考勤报名禁取消(状态机放行后、写库前拦)。
-      await this.assertNoAttendanceRecords(reg.id, tx);
+      // 参与域生命周期收口⑦:已有 live 考勤记录或签到证据的报名禁取消。
+      await this.assertNoParticipationEvidence(reg.id, tx);
 
       const updated = await tx.activityRegistration.update({
         where: { id: reg.id },
@@ -1473,8 +1480,8 @@ export class ActivityRegistrationsService {
         expectedStatus: reg.statusCode,
         invalidStatusBiz: BizCode.ACTIVITY_REGISTRATION_STATUS_INVALID,
       });
-      // 参与域生命周期收口⑦(v0.40.0):已考勤报名禁取消(队员自助路径同样拦)。
-      await this.assertNoAttendanceRecords(reg.id, tx);
+      // 参与域生命周期收口⑦:队员自助路径共用 live 考勤记录 / 签到证据守卫。
+      await this.assertNoParticipationEvidence(reg.id, tx);
 
       const updated = await tx.activityRegistration.update({
         where: { id: reg.id },
