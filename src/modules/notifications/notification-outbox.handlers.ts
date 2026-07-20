@@ -38,8 +38,10 @@ import {
   NOTIFICATION_CHANNEL_SMS,
   NOTIFICATION_CHANNEL_WECHAT,
   NOTIFICATION_DIRECTED_VISIBILITY,
+  NOTIFICATION_SOURCE_ADMIN,
   NOTIFICATION_SOURCE_SYSTEM,
   NOTIFICATION_STATUS_PUBLISHED,
+  OUTBOX_ADMIN_PAYLOAD_VERSION,
   OUTBOX_EVENT_ADMIN_SMS,
   OUTBOX_EVENT_BIRTHDAY_SMS,
   OUTBOX_EVENT_SYSTEM_BROADCAST,
@@ -67,6 +69,7 @@ import type {
 } from './notification-outbox.types';
 import {
   assertStoredNotificationOutboxIntentSafe,
+  extractWechatDeliveryRootId,
   NotificationOutboxPayloadError,
   parseKnownNotificationOutboxPayload,
 } from './notification-outbox.types';
@@ -205,7 +208,16 @@ export class NotificationOutboxHandlers {
     intent: ClaimedNotificationOutboxIntent,
   ): Promise<OutboxExecutionResult> {
     const payload = parsePayload<WechatBroadcastOutboxPayload>(intent);
-    const notification = await this.requireNotification(payload.notificationId);
+    if (intent.payloadVersion !== OUTBOX_ADMIN_PAYLOAD_VERSION) {
+      throw new UnsupportedNotificationOutboxEventError(intent.eventType, intent.payloadVersion);
+    }
+    const notification = await this.outbox.authorizeAdminNotificationEffect(
+      intent,
+      payload.notificationId,
+      payload.publishGeneration,
+      NOTIFICATION_CHANNEL_WECHAT,
+    );
+    if (!notification) return { effectPerformed: false, value: { expanded: 0 } };
     const memberIds = await this.wechatDispatch.resolveDurableBroadcastMemberIds(notification);
     await this.prisma.$transaction(async (tx) => {
       for (const memberId of memberIds) {
@@ -215,8 +227,12 @@ export class NotificationOutboxHandlers {
             // 同一 child，terminal 后新 generation 才获得新 attempt。SENT guard 继续跨 generation 去重。
             eventKey: `wechat-delivery:${notification.id}:${intent.id}:${memberId}`,
             eventType: OUTBOX_EVENT_WECHAT_DELIVERY,
-            payloadVersion: OUTBOX_PAYLOAD_VERSION,
-            payload: { notificationId: notification.id, memberId },
+            payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
+            payload: {
+              notificationId: notification.id,
+              memberId,
+              publishGeneration: payload.publishGeneration,
+            },
             aggregateType: 'notification',
             aggregateId: notification.id,
             destinationType: 'member',
@@ -234,7 +250,22 @@ export class NotificationOutboxHandlers {
     guard: NotificationOutboxEffectGuard,
   ): Promise<OutboxExecutionResult> {
     const payload = parsePayload<WechatDeliveryOutboxPayload>(intent);
-    const notification = await this.requireNotification(payload.notificationId);
+    const preparedTemplateId = requireCompletePreparedTemplate(intent);
+    if (intent.payloadVersion === OUTBOX_ADMIN_PAYLOAD_VERSION) {
+      await this.requireAdminWechatRoot(intent, payload);
+    }
+    const notification =
+      intent.payloadVersion === OUTBOX_ADMIN_PAYLOAD_VERSION
+        ? await this.readAdminNotificationCandidate(
+            payload.notificationId,
+            payload.publishGeneration!,
+          )
+        : await this.requireLegacySystemNotification(
+            intent,
+            payload.notificationId,
+            payload.memberId,
+          );
+    if (!notification) return { effectPerformed: false };
     const existingIntentDelivery = await this.prisma.notificationDelivery.findUnique({
       where: { id: intent.id },
       select: { id: true },
@@ -251,10 +282,10 @@ export class NotificationOutboxHandlers {
     });
     if (existingSent) return { effectPerformed: false };
 
-    const templateId = await this.wechatTemplates.getEnabledTemplateId(
-      notification.notificationTypeCode,
-    );
-    if (!templateId) {
+    const requestedTemplateId =
+      preparedTemplateId ??
+      (await this.wechatTemplates.getEnabledTemplateId(notification.notificationTypeCode));
+    if (!requestedTemplateId) {
       await this.recordWechatDeliveryOnce(intent.id, {
         notificationId: notification.id,
         memberId: payload.memberId,
@@ -265,8 +296,11 @@ export class NotificationOutboxHandlers {
       return { effectPerformed: false };
     }
 
-    const openid = await this.resolveMemberOpenid(payload.memberId);
-    if (!openid) {
+    let openid =
+      intent.payloadVersion === OUTBOX_ADMIN_PAYLOAD_VERSION
+        ? undefined
+        : await this.resolveMemberOpenid(payload.memberId);
+    if (!openid && intent.payloadVersion !== OUTBOX_ADMIN_PAYLOAD_VERSION) {
       await this.recordWechatDeliveryOnce(intent.id, {
         notificationId: notification.id,
         memberId: payload.memberId,
@@ -278,29 +312,42 @@ export class NotificationOutboxHandlers {
     }
 
     let quotaUnavailable = false;
-    await this.outbox.markPrepared(intent, async (tx) => {
-      const decremented = await tx.wechatSubscriptionQuota.updateMany({
-        where: { memberId: payload.memberId, templateId, availableCount: { gt: 0 } },
-        data: { availableCount: { decrement: 1 } },
-      });
-      if (decremented.count === 0) {
-        quotaUnavailable = true;
-        await tx.notificationDelivery.createMany({
-          data: [
-            {
-              id: intent.id,
-              notificationId: notification.id,
-              channel: NOTIFICATION_CHANNEL_WECHAT,
-              memberId: payload.memberId,
-              recipientRef: maskOpenid(openid),
-              status: DELIVERY_STATUS_SKIPPED,
-              reasonCode: DELIVERY_REASON_NO_QUOTA,
-            },
-          ],
-          skipDuplicates: true,
+    let quotaReserved = false;
+    const preparation = await this.outbox.markPrepared(
+      intent,
+      requestedTemplateId,
+      async (tx, templateId) => {
+        const decremented = await tx.wechatSubscriptionQuota.updateMany({
+          where: { memberId: payload.memberId, templateId, availableCount: { gt: 0 } },
+          data: { availableCount: { decrement: 1 } },
         });
-      }
-    });
+        if (decremented.count === 0) {
+          quotaUnavailable = true;
+          const hasFinalDestination =
+            intent.payloadVersion !== OUTBOX_ADMIN_PAYLOAD_VERSION && openid !== undefined;
+          await tx.notificationDelivery.createMany({
+            data: [
+              {
+                id: intent.id,
+                notificationId: notification.id,
+                channel: NOTIFICATION_CHANNEL_WECHAT,
+                memberId: payload.memberId,
+                recipientRef: hasFinalDestination && openid ? maskOpenid(openid) : '-',
+                status: DELIVERY_STATUS_SKIPPED,
+                reasonCode:
+                  intent.payloadVersion === OUTBOX_ADMIN_PAYLOAD_VERSION || hasFinalDestination
+                    ? DELIVERY_REASON_NO_QUOTA
+                    : DELIVERY_REASON_NO_OPENID,
+              },
+            ],
+            skipDuplicates: true,
+          });
+        } else {
+          quotaReserved = true;
+        }
+      },
+    );
+    const templateId = preparation.templateId;
 
     const preparedSkip = await this.prisma.notificationDelivery.findUnique({
       where: { id: intent.id },
@@ -308,11 +355,66 @@ export class NotificationOutboxHandlers {
     });
     if (quotaUnavailable || preparedSkip) return { effectPerformed: false };
 
+    const refundSameAttemptReservation = async (): Promise<void> => {
+      if (!preparation.preparedNow || !quotaReserved) return;
+      await this.outbox.refundPrepared(intent, preparation, async (tx, preparedTemplateId) => {
+        const restored = await tx.wechatSubscriptionQuota.updateMany({
+          where: {
+            memberId: payload.memberId,
+            templateId: preparedTemplateId,
+            availableCount: { lt: WECHAT_SUBSCRIPTION_QUOTA_CAP },
+          },
+          data: { availableCount: { increment: 1 } },
+        });
+        return restored.count === 1;
+      });
+    };
+
+    let authorizedOpenid: string | null | undefined;
+    const finalNotification =
+      intent.payloadVersion === OUTBOX_ADMIN_PAYLOAD_VERSION
+        ? await this.outbox.authorizeAdminNotificationEffect(
+            intent,
+            payload.notificationId,
+            payload.publishGeneration!,
+            NOTIFICATION_CHANNEL_WECHAT,
+            undefined,
+            async (tx, lockedNotification) => {
+              const authorization = await this.wechatDispatch.authorizeDurableBroadcastRecipient(
+                tx,
+                lockedNotification,
+                payload.memberId,
+              );
+              if (!authorization) return false;
+              authorizedOpenid = authorization.openid;
+              return true;
+            },
+          )
+        : notification;
+    if (!finalNotification) {
+      await refundSameAttemptReservation();
+      return { effectPerformed: false };
+    }
+    if (intent.payloadVersion === OUTBOX_ADMIN_PAYLOAD_VERSION) {
+      openid = authorizedOpenid;
+    }
+    if (!openid) {
+      await refundSameAttemptReservation();
+      await this.recordWechatDeliveryOnce(intent.id, {
+        notificationId: notification.id,
+        memberId: payload.memberId,
+        recipientRef: '-',
+        status: DELIVERY_STATUS_SKIPPED,
+        reasonCode: DELIVERY_REASON_NO_OPENID,
+      });
+      return { effectPerformed: false };
+    }
+
     const result = await this.wechat.sendSubscribeMessage(
       {
         openid,
         templateId,
-        data: buildWechatSubscribeData(notification),
+        data: buildWechatSubscribeData(finalNotification),
       },
       guard.beforeEffect,
     );
@@ -453,14 +555,16 @@ export class NotificationOutboxHandlers {
     guard: NotificationOutboxEffectGuard,
   ): Promise<OutboxExecutionResult> {
     const payload = parsePayload<AdminSmsOutboxPayload>(intent);
-    const notification = await this.prisma.notification.findFirst({
-      where: { id: payload.notificationId, deletedAt: null },
-    });
-    if (
-      !notification ||
-      notification.statusCode !== NOTIFICATION_STATUS_PUBLISHED ||
-      !notification.channels.includes(NOTIFICATION_CHANNEL_SMS)
-    ) {
+    if (intent.payloadVersion !== OUTBOX_ADMIN_PAYLOAD_VERSION) {
+      throw new UnsupportedNotificationOutboxEventError(intent.eventType, intent.payloadVersion);
+    }
+    const notification = await this.outbox.authorizeAdminNotificationEffect(
+      intent,
+      payload.notificationId,
+      payload.publishGeneration!,
+      NOTIFICATION_CHANNEL_SMS,
+    );
+    if (!notification) {
       return { effectPerformed: false, value: { outcome: 'skipped' } };
     }
     const result = await this.smsDispatch.dispatchRecipient(
@@ -478,6 +582,84 @@ export class NotificationOutboxHandlers {
     const row = await this.prisma.notification.findFirst({ where: { id, deletedAt: null } });
     if (!row) throw new Error(`notification missing for outbox aggregate=${id}`);
     return row;
+  }
+
+  private async requireLegacySystemNotification(
+    intent: ClaimedNotificationOutboxIntent,
+    id: string,
+    memberId: string,
+  ): Promise<Notification> {
+    const row = await this.prisma.notification.findUnique({ where: { id } });
+    if (
+      !row ||
+      row.deletedAt !== null ||
+      row.sourceType !== NOTIFICATION_SOURCE_SYSTEM ||
+      row.statusCode !== NOTIFICATION_STATUS_PUBLISHED ||
+      row.audienceType !== NOTIFICATION_AUDIENCE_DIRECTED ||
+      row.recipientMemberId !== memberId ||
+      !row.channels.includes(NOTIFICATION_CHANNEL_WECHAT)
+    ) {
+      throw new UnsupportedNotificationOutboxEventError(intent.eventType, intent.payloadVersion);
+    }
+    return row;
+  }
+
+  private async readAdminNotificationCandidate(
+    id: string,
+    publishGeneration: number,
+  ): Promise<Notification | null> {
+    const row = await this.prisma.notification.findUnique({ where: { id } });
+    if (
+      !row ||
+      row.deletedAt !== null ||
+      row.sourceType !== NOTIFICATION_SOURCE_ADMIN ||
+      row.audienceType !== NOTIFICATION_AUDIENCE_BROADCAST ||
+      row.statusCode !== NOTIFICATION_STATUS_PUBLISHED ||
+      row.publishGeneration !== publishGeneration ||
+      !row.channels.includes(NOTIFICATION_CHANNEL_WECHAT)
+    ) {
+      return null;
+    }
+    return row;
+  }
+
+  private async requireAdminWechatRoot(
+    intent: ClaimedNotificationOutboxIntent,
+    payload: WechatDeliveryOutboxPayload,
+  ): Promise<void> {
+    const rootId = extractWechatDeliveryRootId(intent.eventKey, intent.payloadVersion);
+    const canonicalEventKey = `wechat-broadcast:${payload.notificationId}:${payload.publishGeneration}`;
+    const root = await this.outbox.findByEventKey(canonicalEventKey);
+    try {
+      if (
+        !rootId ||
+        !root ||
+        root.id !== rootId ||
+        root.eventType !== OUTBOX_EVENT_WECHAT_BROADCAST ||
+        root.payloadVersion !== OUTBOX_ADMIN_PAYLOAD_VERSION ||
+        root.eventKey !== canonicalEventKey ||
+        root.aggregateType !== 'notification' ||
+        root.aggregateId !== payload.notificationId ||
+        root.destinationType !== 'broadcast' ||
+        root.destinationRef !== payload.notificationId
+      ) {
+        throw new Error('wechat root identity mismatch');
+      }
+      assertStoredNotificationOutboxIntentSafe(root);
+      const rootPayload = parseKnownNotificationOutboxPayload(
+        root.eventType,
+        root.payloadVersion,
+        root.payload,
+      ) as WechatBroadcastOutboxPayload;
+      if (
+        rootPayload.notificationId !== payload.notificationId ||
+        rootPayload.publishGeneration !== payload.publishGeneration
+      ) {
+        throw new Error('wechat root payload mismatch');
+      }
+    } catch {
+      throw new UnsupportedNotificationOutboxEventError(intent.eventType, intent.payloadVersion);
+    }
   }
 
   private async resolveMemberOpenid(memberId: string): Promise<string | null> {
@@ -508,6 +690,13 @@ export class NotificationOutboxHandlers {
       skipDuplicates: true,
     });
   }
+}
+
+function requireCompletePreparedTemplate(intent: NotificationOutboxIntent): string | null {
+  if ((intent.preparedAt === null) !== (intent.preparedTemplateId === null)) {
+    throw new UnsupportedNotificationOutboxEventError(intent.eventType, intent.payloadVersion);
+  }
+  return intent.preparedTemplateId;
 }
 
 function parsePayload<T>(intent: NotificationOutboxIntent): T {

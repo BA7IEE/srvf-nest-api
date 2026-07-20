@@ -149,7 +149,8 @@ export class UpdateNotificationDto {
   pinned?: boolean;
 
   @ApiPropertyOptional({
-    description: '目标渠道(可改;站内恒发,服务端强制含 in-app;published 也可改,下次 publish 生效)',
+    description:
+      '目标渠道(可改;站内恒发,服务端强制含 in-app;published 的真实集合变化会自动回 draft,重发后生效)',
     enum: NOTIFICATION_CHANNELS_ALLOWED as unknown as string[],
     isArray: true,
   })

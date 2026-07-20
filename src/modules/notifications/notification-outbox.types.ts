@@ -10,6 +10,7 @@ import {
   OUTBOX_EVENT_TARGETED_NOTIFICATION,
   OUTBOX_EVENT_WECHAT_BROADCAST,
   OUTBOX_EVENT_WECHAT_DELIVERY,
+  OUTBOX_ADMIN_PAYLOAD_VERSION,
   OUTBOX_PAYLOAD_VERSION,
 } from './notification.constants';
 
@@ -45,11 +46,13 @@ export interface SystemBroadcastOutboxPayload {
 
 export interface WechatBroadcastOutboxPayload {
   notificationId: string;
+  publishGeneration: number;
 }
 
 export interface WechatDeliveryOutboxPayload {
   notificationId: string;
   memberId: string;
+  publishGeneration?: number;
 }
 
 export interface BirthdaySmsOutboxPayload {
@@ -60,6 +63,7 @@ export interface BirthdaySmsOutboxPayload {
 export interface AdminSmsOutboxPayload {
   notificationId: string;
   memberId: string;
+  publishGeneration?: number;
 }
 
 export interface OutboxExecutionResult {
@@ -77,6 +81,7 @@ export type KnownNotificationOutboxPayload =
 
 const CUID = /^c[a-z0-9]{20,31}$/;
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 export function isKnownNotificationOutboxEvent(eventType: string): boolean {
   return [
@@ -94,11 +99,12 @@ export function parseKnownNotificationOutboxPayload(
   payloadVersion: number,
   value: unknown,
 ): KnownNotificationOutboxPayload {
-  if (payloadVersion !== OUTBOX_PAYLOAD_VERSION || !isRecord(value)) {
+  if (!isRecord(value)) {
     throw new NotificationOutboxPayloadError(eventType, payloadVersion);
   }
   switch (eventType) {
     case OUTBOX_EVENT_TARGETED_NOTIFICATION:
+      requireVersion(payloadVersion, OUTBOX_PAYLOAD_VERSION, eventType);
       exactKeys(value, ['recipientMemberId', 'notificationTypeCode', 'title', 'body', 'channels']);
       return {
         recipientMemberId: cuid(value.recipientMemberId),
@@ -108,6 +114,7 @@ export function parseKnownNotificationOutboxPayload(
         channels: channelList(value.channels),
       };
     case OUTBOX_EVENT_SYSTEM_BROADCAST:
+      requireVersion(payloadVersion, OUTBOX_PAYLOAD_VERSION, eventType);
       exactKeys(value, ['notificationTypeCode', 'title', 'body', 'visibilityCode']);
       return {
         notificationTypeCode: shortString(value.notificationTypeCode, 64),
@@ -116,29 +123,70 @@ export function parseKnownNotificationOutboxPayload(
         visibilityCode: enumString(value.visibilityCode, NOTIFICATION_VISIBILITIES),
       };
     case OUTBOX_EVENT_WECHAT_BROADCAST:
-      exactKeys(value, ['notificationId']);
-      return { notificationId: resourceRef(value.notificationId) };
+      if (payloadVersion === OUTBOX_PAYLOAD_VERSION) {
+        exactKeys(value, ['notificationId']);
+        return { notificationId: resourceRef(value.notificationId), publishGeneration: 0 };
+      }
+      requireVersion(payloadVersion, OUTBOX_ADMIN_PAYLOAD_VERSION, eventType);
+      exactKeys(value, ['notificationId', 'publishGeneration']);
+      return {
+        notificationId: resourceRef(value.notificationId),
+        publishGeneration: generation(value.publishGeneration),
+      };
     case OUTBOX_EVENT_WECHAT_DELIVERY:
-      exactKeys(value, ['notificationId', 'memberId']);
+      if (payloadVersion === OUTBOX_PAYLOAD_VERSION) {
+        exactKeys(value, ['notificationId', 'memberId']);
+        return {
+          notificationId: resourceRef(value.notificationId),
+          memberId: cuid(value.memberId),
+        };
+      }
+      requireVersion(payloadVersion, OUTBOX_ADMIN_PAYLOAD_VERSION, eventType);
+      exactKeys(value, ['notificationId', 'memberId', 'publishGeneration']);
       return {
         notificationId: resourceRef(value.notificationId),
         memberId: cuid(value.memberId),
+        publishGeneration: generation(value.publishGeneration),
       };
     case OUTBOX_EVENT_BIRTHDAY_SMS:
+      requireVersion(payloadVersion, OUTBOX_PAYLOAD_VERSION, eventType);
       exactKeys(value, ['memberId', 'dateKey']);
       return {
         memberId: cuid(value.memberId),
         dateKey: dateKey(value.dateKey),
       };
     case OUTBOX_EVENT_ADMIN_SMS:
-      exactKeys(value, ['notificationId', 'memberId']);
+      if (payloadVersion === OUTBOX_PAYLOAD_VERSION) {
+        exactKeys(value, ['notificationId', 'memberId']);
+        return {
+          notificationId: resourceRef(value.notificationId),
+          memberId: cuid(value.memberId),
+        };
+      }
+      requireVersion(payloadVersion, OUTBOX_ADMIN_PAYLOAD_VERSION, eventType);
+      exactKeys(value, ['notificationId', 'memberId', 'publishGeneration']);
       return {
         notificationId: resourceRef(value.notificationId),
         memberId: cuid(value.memberId),
+        publishGeneration: generation(value.publishGeneration),
       };
     default:
       throw new NotificationOutboxPayloadError(eventType, payloadVersion);
   }
+}
+
+function requireVersion(actual: number, expected: number, eventType: string): void {
+  if (actual !== expected) throw new NotificationOutboxPayloadError(eventType, actual);
+}
+
+function generation(value: unknown): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new NotificationOutboxPayloadError(
+      'invalid-publish-generation',
+      OUTBOX_ADMIN_PAYLOAD_VERSION,
+    );
+  }
+  return value as number;
 }
 
 export class NotificationOutboxPayloadError extends Error {
@@ -301,6 +349,7 @@ export function normalizeNotificationOutboxInput(
       `eventType=${input.eventType}@${input.payloadVersion} payload shape is invalid`,
     );
   }
+  assertEnvelopePayloadCoherence(input, payload);
   walkPayload(payload, '$');
   return { ...input, payload: payload as unknown as Prisma.InputJsonValue };
 }
@@ -314,8 +363,111 @@ export function assertStoredNotificationOutboxIntentSafe(
   if (!isKnownNotificationOutboxEvent(input.eventType)) {
     throw new NotificationOutboxPayloadError(input.eventType, input.payloadVersion);
   }
-  parseKnownNotificationOutboxPayload(input.eventType, input.payloadVersion, input.payload);
+  const payload = parseKnownNotificationOutboxPayload(
+    input.eventType,
+    input.payloadVersion,
+    input.payload,
+  );
+  assertEnvelopePayloadCoherence(input, payload);
   walkPayload(input.payload, '$');
+}
+
+// Envelope 字段参与 active-slot unique / claim 与运维检索，handler Effect 则消费 payload。
+// 两侧重复的内部身份必须逐字一致，否则直插脏行可用假 envelope 绕过单 active 槽。
+function assertEnvelopePayloadCoherence(
+  input: NotificationOutboxSafetyInput,
+  payload: KnownNotificationOutboxPayload,
+): void {
+  let coherent = true;
+  switch (input.eventType) {
+    case OUTBOX_EVENT_TARGETED_NOTIFICATION:
+      coherent =
+        input.destinationRef === (payload as TargetedNotificationOutboxPayload).recipientMemberId;
+      break;
+    case OUTBOX_EVENT_WECHAT_BROADCAST: {
+      const broadcast = payload as WechatBroadcastOutboxPayload;
+      coherent =
+        input.aggregateType === 'notification' &&
+        input.aggregateId === broadcast.notificationId &&
+        input.destinationType === 'broadcast' &&
+        input.destinationRef === broadcast.notificationId &&
+        input.eventKey ===
+          `wechat-broadcast:${broadcast.notificationId}:${broadcast.publishGeneration}`;
+      break;
+    }
+    case OUTBOX_EVENT_WECHAT_DELIVERY: {
+      const delivery = payload as WechatDeliveryOutboxPayload;
+      coherent =
+        input.aggregateType === 'notification' &&
+        input.aggregateId === delivery.notificationId &&
+        input.destinationType === 'member' &&
+        input.destinationRef === delivery.memberId &&
+        isWechatDeliveryEventKey(input, delivery);
+      break;
+    }
+    case OUTBOX_EVENT_BIRTHDAY_SMS: {
+      const birthday = payload as BirthdaySmsOutboxPayload;
+      coherent =
+        input.aggregateType === 'member' &&
+        input.aggregateId === birthday.memberId &&
+        input.destinationType === 'member' &&
+        input.destinationRef === birthday.memberId &&
+        input.eventKey === `birthday-sms:${birthday.dateKey}:${birthday.memberId}`;
+      break;
+    }
+    case OUTBOX_EVENT_ADMIN_SMS: {
+      const sms = payload as AdminSmsOutboxPayload;
+      coherent =
+        input.aggregateType === 'notification' &&
+        input.aggregateId === sms.notificationId &&
+        input.destinationType === 'member' &&
+        input.destinationRef === sms.memberId &&
+        isAdminSmsEventKey(input.eventKey, sms);
+      break;
+    }
+    default:
+      break;
+  }
+  if (!coherent) {
+    throw new NotificationOutboxInvariantError(
+      `eventType=${input.eventType}@${input.payloadVersion} envelope does not match payload`,
+    );
+  }
+}
+
+function isWechatDeliveryEventKey(
+  input: NotificationOutboxSafetyInput,
+  payload: WechatDeliveryOutboxPayload,
+): boolean {
+  if (input.payloadVersion === OUTBOX_PAYLOAD_VERSION) {
+    return input.eventKey === `wechat-delivery:${payload.notificationId}:${payload.memberId}`;
+  }
+  const rootId = extractWechatDeliveryRootId(input.eventKey, input.payloadVersion);
+  const parts = input.eventKey.split(':');
+  return rootId !== null && parts[1] === payload.notificationId && parts[3] === payload.memberId;
+}
+
+export function extractWechatDeliveryRootId(
+  eventKey: string,
+  payloadVersion: number,
+): string | null {
+  if (payloadVersion !== OUTBOX_ADMIN_PAYLOAD_VERSION) return null;
+  const parts = eventKey.split(':');
+  if (parts.length !== 4 || parts[0] !== 'wechat-delivery' || !CUID.test(parts[2] ?? '')) {
+    return null;
+  }
+  return parts[2] ?? null;
+}
+
+function isAdminSmsEventKey(eventKey: string, payload: AdminSmsOutboxPayload): boolean {
+  const parts = eventKey.split(':');
+  return (
+    parts.length === 4 &&
+    parts[0] === 'admin-sms' &&
+    parts[1] === payload.notificationId &&
+    UUID_V4.test(parts[2] ?? '') &&
+    parts[3] === payload.memberId
+  );
 }
 
 function assertSafeMetadata(input: NotificationOutboxSafetyInput): void {

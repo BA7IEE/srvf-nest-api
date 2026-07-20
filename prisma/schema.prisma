@@ -2440,7 +2440,7 @@ model Notification {
   readCount         Int       @default(0) // 反范式已读人数(首次 mark-read 原子 increment;镜像 content.viewCount)
   pinned            Boolean   @default(false) // 置顶
   publishedAt       DateTime? // publish 时置 now;unpublish 保留;draft 从未发布为 null
-  publishGeneration Int       @default(0) // 发布代次骨架(G1 expand-only;runtime 尚未读写)
+  publishGeneration Int       @default(0) // 发布代次(G1 expand-only;G2 runtime 已读写,生产 migration 未 deploy)
   authorUserId      String? // 发布 admin;不建外键(沿 content.authorUserId / reviewedByUserId);system 定向为 null
 
   reads      NotificationRead[]

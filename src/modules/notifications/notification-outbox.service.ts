@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, type NotificationOutboxIntent } from '@prisma/client';
+import { Prisma, type Notification, type NotificationOutboxIntent } from '@prisma/client';
 
 import { PrismaService } from '../../database/prisma.service';
 import {
+  NOTIFICATION_AUDIENCE_BROADCAST,
+  NOTIFICATION_SOURCE_ADMIN,
+  NOTIFICATION_STATUS_PUBLISHED,
   OUTBOX_BACKOFF_BASE_MS,
   OUTBOX_BACKOFF_MAX_MS,
   OUTBOX_CLAIM_BATCH,
@@ -10,6 +13,7 @@ import {
   OUTBOX_LEASE_MS,
   OUTBOX_MAX_ATTEMPTS,
   OUTBOX_EVENT_WECHAT_DELIVERY,
+  OUTBOX_EVENT_WECHAT_BROADCAST,
   OUTBOX_STATUS_DEAD,
   OUTBOX_STATUS_PENDING,
   OUTBOX_STATUS_PROCESSING,
@@ -23,6 +27,10 @@ import {
 } from './notification-outbox.types';
 
 type OutboxClient = PrismaService | Prisma.TransactionClient;
+export type NotificationOutboxRecipientPermission = (
+  tx: Prisma.TransactionClient,
+  notification: Notification,
+) => Promise<boolean>;
 
 export interface ClaimedNotificationOutboxIntent extends NotificationOutboxIntent {
   leaseOwner: string;
@@ -35,8 +43,26 @@ export interface NotificationOutboxReservation {
   state: 'reserved' | 'busy' | 'completed' | 'dead';
 }
 
+export interface NotificationOutboxPreparation {
+  templateId: string;
+  preparedNow: boolean;
+  refundCapability: object | null;
+}
+
+export class NotificationOutboxGenerationConflictError extends Error {
+  constructor(readonly activeIntent: NotificationOutboxIntent) {
+    super(`NOTIFICATION_OUTBOX_GENERATION_CONFLICT: ${activeIntent.id}`);
+    this.name = 'NotificationOutboxGenerationConflictError';
+  }
+}
+
 @Injectable()
 export class NotificationOutboxService {
+  private readonly refundCapabilities = new WeakMap<
+    object,
+    { intentId: string; leaseOwner: string; lockedAtMs: number; templateId: string }
+  >();
+
   constructor(private readonly prisma: PrismaService) {}
 
   async enqueue(
@@ -128,7 +154,7 @@ export class NotificationOutboxService {
           status: { in: [OUTBOX_STATUS_PENDING, OUTBOX_STATUS_PROCESSING] },
         },
       });
-      if (active) return active;
+      if (active) throw new NotificationOutboxGenerationConflictError(active);
     }
     throw new NotificationOutboxInvariantError(
       `wechat delivery active slot churned for aggregate=${normalized.aggregateId}`,
@@ -330,6 +356,110 @@ export class NotificationOutboxService {
     return { ...intent, leaseExpiresAt };
   }
 
+  // Provider permission point：固定锁序 Notification parent(FOR SHARE) → outbox intent
+  // (FOR UPDATE)。同代不同 child 可共享 parent 快照；admin publish-generation 与撤回/删除的
+  // 写锁仍被所有 permission shared locks 阻塞。事务提交即线性化点，外部 Effect 只消费锁内快照。
+  async authorizeAdminNotificationEffect(
+    intent: ClaimedNotificationOutboxIntent,
+    notificationId: string,
+    publishGeneration: number,
+    requiredChannel: string,
+    now?: Date,
+    authorizeRecipient?: NotificationOutboxRecipientPermission,
+  ): Promise<Notification | null> {
+    return this.prisma.$transaction(async (tx) => {
+      const [notification] = await tx.$queryRaw<Notification[]>(Prisma.sql`
+        SELECT n.*
+        FROM "notifications" n
+        WHERE n."id" = ${notificationId}
+        FOR SHARE
+      `);
+      await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id"
+        FROM "notification_outbox_intents"
+        WHERE "id" = ${intent.id}
+        FOR UPDATE
+      `);
+      const fenceNow = now ?? new Date();
+      const currentIntent = await tx.notificationOutboxIntent.findFirst({
+        where: {
+          ...fenceWhere(intent),
+          leaseExpiresAt: { not: null, gt: fenceNow },
+        },
+        select: { id: true },
+      });
+      if (!currentIntent) throw new NotificationOutboxLeaseLostError(intent.id);
+      if (
+        !notification ||
+        notification.deletedAt !== null ||
+        notification.statusCode !== NOTIFICATION_STATUS_PUBLISHED ||
+        notification.sourceType !== NOTIFICATION_SOURCE_ADMIN ||
+        notification.audienceType !== NOTIFICATION_AUDIENCE_BROADCAST ||
+        notification.publishGeneration !== publishGeneration ||
+        !notification.channels.includes(requiredChannel)
+      ) {
+        return null;
+      }
+      if (authorizeRecipient && !(await authorizeRecipient(tx, notification))) return null;
+      return notification;
+    });
+  }
+
+  // 新 publish generation 的 root 若撞到旧 generation active child，只允许 root 自身
+  // 无损 defer：停止 heartbeat 后以原 fence CAS 回 pending，并恢复本轮 claim 消耗的 attempt。
+  async deferWechatBroadcast(
+    intent: ClaimedNotificationOutboxIntent,
+    conflict: NotificationOutboxGenerationConflictError,
+    now: Date = new Date(),
+  ): Promise<void> {
+    if (
+      intent.eventType !== OUTBOX_EVENT_WECHAT_BROADCAST ||
+      intent.preparedAt !== null ||
+      intent.preparedTemplateId !== null
+    ) {
+      throw new NotificationOutboxInvariantError(`intent=${intent.id} cannot generation-defer`);
+    }
+    const active = conflict.activeIntent;
+    let lowerBound: Date;
+    if (active.status === OUTBOX_STATUS_PROCESSING) {
+      if (!active.leaseExpiresAt) {
+        throw new NotificationOutboxInvariantError(
+          `active=${active.id} processing without lease expiry`,
+        );
+      }
+      lowerBound = new Date(
+        Math.max(active.leaseExpiresAt.getTime(), now.getTime()) + OUTBOX_BACKOFF_BASE_MS,
+      );
+    } else if (active.status === OUTBOX_STATUS_PENDING) {
+      lowerBound = new Date(
+        Math.max(active.availableAt.getTime(), now.getTime()) + OUTBOX_BACKOFF_BASE_MS,
+      );
+    } else {
+      throw new NotificationOutboxInvariantError(`active=${active.id} is not active`);
+    }
+    const availableAt = new Date(Math.max(lowerBound.getTime(), now.getTime() + 1));
+    if (availableAt.getTime() > now.getTime() + OUTBOX_BACKOFF_MAX_MS) {
+      throw new NotificationOutboxInvariantError(`active=${active.id} defer horizon is invalid`);
+    }
+    const updated = await this.prisma.notificationOutboxIntent.updateMany({
+      where: {
+        ...fenceWhere(intent),
+        preparedAt: null,
+        preparedTemplateId: null,
+        attempts: { gt: 0 },
+      },
+      data: {
+        status: OUTBOX_STATUS_PENDING,
+        attempts: { decrement: 1 },
+        availableAt,
+        leaseOwner: null,
+        lockedAt: null,
+        leaseExpiresAt: null,
+      },
+    });
+    if (updated.count !== 1) throw new NotificationOutboxLeaseLostError(intent.id);
+  }
+
   async nack(
     intent: ClaimedNotificationOutboxIntent,
     error: unknown,
@@ -389,25 +519,98 @@ export class NotificationOutboxService {
 
   async markPrepared(
     intent: ClaimedNotificationOutboxIntent,
-    prepare: (tx: Prisma.TransactionClient) => Promise<void>,
+    requestedTemplateId: string,
+    prepare: (tx: Prisma.TransactionClient, templateId: string) => Promise<void>,
     now: Date = new Date(),
-  ): Promise<boolean> {
-    return this.prisma.$transaction(async (tx) => {
+  ): Promise<NotificationOutboxPreparation> {
+    if (requestedTemplateId.trim() === '') {
+      throw new NotificationOutboxInvariantError(`intent=${intent.id} prepared template is empty`);
+    }
+    const result = await this.prisma.$transaction(async (tx) => {
       const current = await tx.notificationOutboxIntent.findFirst({
         where: fenceWhere(intent),
-        select: { preparedAt: true },
+        select: { preparedAt: true, preparedTemplateId: true },
       });
       if (!current) throw new NotificationOutboxLeaseLostError(intent.id);
-      if (current.preparedAt) return false;
+      if ((current.preparedAt === null) !== (current.preparedTemplateId === null)) {
+        throw new NotificationOutboxInvariantError(`intent=${intent.id} has partial prepare state`);
+      }
+      if (current.preparedAt) {
+        return { templateId: current.preparedTemplateId!, preparedNow: false };
+      }
 
-      await prepare(tx);
+      await prepare(tx, requestedTemplateId);
       const updated = await tx.notificationOutboxIntent.updateMany({
-        where: { ...fenceWhere(intent), preparedAt: null },
-        data: { preparedAt: now },
+        where: { ...fenceWhere(intent), preparedAt: null, preparedTemplateId: null },
+        data: { preparedAt: now, preparedTemplateId: requestedTemplateId },
       });
       if (updated.count !== 1) throw new NotificationOutboxLeaseLostError(intent.id);
-      return true;
+      return { templateId: requestedTemplateId, preparedNow: true };
     });
+    if (!result.preparedNow) return { ...result, refundCapability: null };
+    const refundCapability = {};
+    this.refundCapabilities.set(refundCapability, {
+      intentId: intent.id,
+      leaseOwner: intent.leaseOwner,
+      lockedAtMs: intent.lockedAt.getTime(),
+      templateId: result.templateId,
+    });
+    return { ...result, refundCapability };
+  }
+
+  async refundPrepared(
+    intent: ClaimedNotificationOutboxIntent,
+    preparation: NotificationOutboxPreparation,
+    refund: (tx: Prisma.TransactionClient, templateId: string) => Promise<boolean>,
+  ): Promise<void> {
+    const capability = preparation.refundCapability
+      ? this.refundCapabilities.get(preparation.refundCapability)
+      : undefined;
+    if (
+      !preparation.preparedNow ||
+      !preparation.refundCapability ||
+      !capability ||
+      capability.intentId !== intent.id ||
+      capability.leaseOwner !== intent.leaseOwner ||
+      capability.lockedAtMs !== intent.lockedAt.getTime() ||
+      capability.templateId !== preparation.templateId
+    ) {
+      throw new NotificationOutboxInvariantError(
+        `intent=${intent.id} has no current-attempt refund capability`,
+      );
+    }
+    const templateId = preparation.templateId;
+    await this.prisma.$transaction(async (tx) => {
+      const current = await tx.notificationOutboxIntent.findFirst({
+        where: fenceWhere(intent),
+        select: { preparedAt: true, preparedTemplateId: true },
+      });
+      if (!current) throw new NotificationOutboxLeaseLostError(intent.id);
+      if (!current.preparedAt || !current.preparedTemplateId) {
+        throw new NotificationOutboxInvariantError(
+          `intent=${intent.id} has no complete prepare state`,
+        );
+      }
+      if (current.preparedTemplateId !== templateId) {
+        throw new NotificationOutboxInvariantError(`intent=${intent.id} prepared template changed`);
+      }
+
+      if (!(await refund(tx, templateId))) {
+        throw new NotificationOutboxInvariantError(
+          `intent=${intent.id} quota refund was not exact`,
+        );
+      }
+      const updated = await tx.notificationOutboxIntent.updateMany({
+        where: {
+          ...fenceWhere(intent),
+          preparedAt: current.preparedAt,
+          preparedTemplateId: templateId,
+        },
+        data: { preparedAt: null, preparedTemplateId: null },
+      });
+      if (updated.count !== 1) throw new NotificationOutboxLeaseLostError(intent.id);
+    });
+    this.refundCapabilities.delete(preparation.refundCapability);
   }
 
   async findByEventKey(eventKey: string): Promise<NotificationOutboxIntent | null> {

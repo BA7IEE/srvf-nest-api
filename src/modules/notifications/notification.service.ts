@@ -30,9 +30,9 @@ import {
   NOTIFICATION_STATUS_PUBLISHED,
   NOTIFICATION_TYPE_DICT_CODE,
   NOTIFICATION_VISIBILITY_DEPARTMENT,
+  OUTBOX_ADMIN_PAYLOAD_VERSION,
   OUTBOX_EVENT_ADMIN_SMS,
   OUTBOX_EVENT_WECHAT_BROADCAST,
-  OUTBOX_PAYLOAD_VERSION,
 } from './notification.constants';
 import { NotificationSmsDispatchService } from './notification-sms-dispatch.service';
 import { NotificationOutboxService } from './notification-outbox.service';
@@ -98,8 +98,11 @@ export class NotificationService {
   }
 
   // ===== 校验:notificationTypeCode 须为 notification_type 字典 ACTIVE item(评审稿 §9.4)=====
-  private async assertNotificationTypeValid(code: string): Promise<void> {
-    const item = await this.prisma.dictItem.findFirst({
+  private async assertNotificationTypeValid(
+    code: string,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    const item = await client.dictItem.findFirst({
       where: notDeletedWhere({
         code,
         status: DictItemStatus.ACTIVE,
@@ -117,6 +120,7 @@ export class NotificationService {
   private async resolveVisibleOrgIds(
     visibilityCode: string,
     visibleOrganizationIds: string[] | undefined,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
   ): Promise<string[]> {
     if (visibilityCode !== NOTIFICATION_VISIBILITY_DEPARTMENT) {
       if (visibleOrganizationIds && visibleOrganizationIds.length > 0) {
@@ -129,7 +133,7 @@ export class NotificationService {
       throw new BizException(BizCode.NOTIFICATION_VISIBLE_ORG_INVALID);
     }
     const uniqueIds = [...new Set(ids)];
-    const found = await this.prisma.organization.findMany({
+    const found = await client.organization.findMany({
       where: notDeletedWhere({ id: { in: uniqueIds }, status: OrganizationStatus.ACTIVE }),
       select: { id: true },
     });
@@ -137,6 +141,33 @@ export class NotificationService {
       throw new BizException(BizCode.NOTIFICATION_VISIBLE_ORG_INVALID);
     }
     return uniqueIds;
+  }
+
+  private async lockNotification(id: string, tx: Prisma.TransactionClient): Promise<Notification> {
+    await tx.$queryRaw<Array<{ id: string }>>(
+      Prisma.sql`SELECT "id" FROM "notifications" WHERE "id" = ${id} FOR UPDATE`,
+    );
+    return this.findOrThrow(id, tx);
+  }
+
+  private assertAdminBroadcastMutable(notification: Notification): void {
+    if (
+      notification.sourceType !== NOTIFICATION_SOURCE_ADMIN ||
+      notification.audienceType !== NOTIFICATION_AUDIENCE_BROADCAST
+    ) {
+      throw new BizException(BizCode.NOTIFICATION_INVALID_STATUS_TRANSITION);
+    }
+  }
+
+  private assertSmsSendable(notification: Notification): void {
+    if (
+      notification.sourceType !== NOTIFICATION_SOURCE_ADMIN ||
+      notification.audienceType !== NOTIFICATION_AUDIENCE_BROADCAST ||
+      notification.statusCode !== NOTIFICATION_STATUS_PUBLISHED ||
+      !notification.channels.includes(NOTIFICATION_CHANNEL_SMS)
+    ) {
+      throw new BizException(BizCode.NOTIFICATION_SMS_NOT_SENDABLE);
+    }
   }
 
   // ============ 端点 1:建草稿 ============
@@ -244,14 +275,15 @@ export class NotificationService {
     await this.assertCanOrThrow(user, 'notification.update.record');
 
     const row = await this.prisma.$transaction(async (tx) => {
-      const existing = await this.findOrThrow(id, tx);
+      const existing = await this.lockNotification(id, tx);
+      this.assertAdminBroadcastMutable(existing);
       // 更新仅 draft / published 可改;archived 冻结(镜像 content)
       if (existing.statusCode === NOTIFICATION_STATUS_ARCHIVED) {
         throw new BizException(BizCode.NOTIFICATION_INVALID_STATUS_TRANSITION);
       }
 
       if (dto.notificationTypeCode !== undefined) {
-        await this.assertNotificationTypeValid(dto.notificationTypeCode);
+        await this.assertNotificationTypeValid(dto.notificationTypeCode, tx);
       }
 
       const data: Prisma.NotificationUpdateInput = {};
@@ -267,15 +299,31 @@ export class NotificationService {
       // 可见档 + 可见部门:visibilityCode 改了要重算 visibleOrganizationIds;
       // 只改 visibleOrganizationIds(visibilityCode 沿用旧值)也按当前(新或旧)可见档校验(镜像 content)。
       const nextVisibility = dto.visibilityCode ?? existing.visibilityCode;
+      let normalizedNextOrgIds = existing.visibleOrganizationIds;
       if (dto.visibilityCode !== undefined || dto.visibleOrganizationIds !== undefined) {
-        const nextOrgIds = await this.resolveVisibleOrgIds(
+        normalizedNextOrgIds = await this.resolveVisibleOrgIds(
           nextVisibility,
           dto.visibleOrganizationIds !== undefined
             ? dto.visibleOrganizationIds
             : existing.visibleOrganizationIds,
+          tx,
         );
         if (dto.visibilityCode !== undefined) data.visibilityCode = dto.visibilityCode;
-        data.visibleOrganizationIds = nextOrgIds;
+        data.visibleOrganizationIds = normalizedNextOrgIds;
+      }
+
+      const nextChannels =
+        dto.channels === undefined ? existing.channels : this.normalizeChannels(dto.channels);
+      const effectChanged =
+        (dto.title !== undefined && dto.title !== existing.title) ||
+        (dto.body !== undefined && dto.body !== existing.body) ||
+        (dto.notificationTypeCode !== undefined &&
+          dto.notificationTypeCode !== existing.notificationTypeCode) ||
+        (dto.visibilityCode !== undefined && dto.visibilityCode !== existing.visibilityCode) ||
+        !sameStringSet(normalizedNextOrgIds, existing.visibleOrganizationIds) ||
+        !sameStringSet(nextChannels, existing.channels);
+      if (existing.statusCode === NOTIFICATION_STATUS_PUBLISHED && effectChanged) {
+        data.statusCode = NOTIFICATION_STATUS_DRAFT;
       }
 
       const updated = await tx.notification.update({ where: { id }, data });
@@ -299,7 +347,8 @@ export class NotificationService {
   async softDelete(id: string, user: CurrentUserPayload, meta: AuditMeta): Promise<void> {
     await this.assertCanOrThrow(user, 'notification.delete.record');
     await this.prisma.$transaction(async (tx) => {
-      const existing = await this.findOrThrow(id, tx);
+      const existing = await this.lockNotification(id, tx);
+      this.assertAdminBroadcastMutable(existing);
       await tx.notification.update({ where: { id }, data: { deletedAt: new Date() } });
       await this.auditLogs.log({
         event: 'notification.delete',
@@ -354,19 +403,15 @@ export class NotificationService {
     meta: AuditMeta,
   ): Promise<NotificationSmsSendResultDto> {
     await this.assertCanOrThrow(user, 'notification.send.sms');
-    const notification = await this.findOrThrow(id, this.prisma);
-
-    // 前置闸:须已发布 + 声明含 sms 渠道(紧急召集兜底意图;排除草稿 / 未声明短信的通知)。
-    if (
-      notification.statusCode !== NOTIFICATION_STATUS_PUBLISHED ||
-      !notification.channels.includes(NOTIFICATION_CHANNEL_SMS)
-    ) {
-      throw new BizException(BizCode.NOTIFICATION_SMS_NOT_SENDABLE);
-    }
+    const checked = await this.prisma.$transaction(async (tx) => {
+      const notification = await this.lockNotification(id, tx);
+      this.assertSmsSendable(notification);
+      return notification;
+    });
 
     // 预览(未确认):返回可计费受众计数,零发送零计费零审计(供前端二次确认「将向 N 人发短信 = N 条计费」)。
     if (!dto.confirmed) {
-      const recipientCount = await this.smsDispatch.countRecipients(notification);
+      const recipientCount = await this.smsDispatch.countRecipients(checked);
       return { confirmed: false, recipientCount, sent: 0, failed: 0, skipped: 0 };
     }
 
@@ -381,6 +426,8 @@ export class NotificationService {
     }
     const generationId = randomUUID();
     const reservation = await this.prisma.$transaction(async (tx) => {
+      const notification = await this.lockNotification(id, tx);
+      this.assertSmsSendable(notification);
       const memberIds = await this.smsDispatch.resolveRecipientMemberIds(notification, tx);
       const intents: NotificationOutboxIntent[] = [];
       let busy = 0;
@@ -391,8 +438,12 @@ export class NotificationService {
           {
             eventKey: `admin-sms:${notification.id}:${generationId}:${memberId}`,
             eventType: OUTBOX_EVENT_ADMIN_SMS,
-            payloadVersion: OUTBOX_PAYLOAD_VERSION,
-            payload: { notificationId: notification.id, memberId },
+            payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
+            payload: {
+              notificationId: notification.id,
+              memberId,
+              publishGeneration: notification.publishGeneration,
+            },
             aggregateType: 'notification',
             aggregateId: notification.id,
             destinationType: 'member',
@@ -412,7 +463,7 @@ export class NotificationService {
         actorUserId: user.id,
         actorRoleSnap: user.role,
         resourceType: AUDIT_RESOURCE_TYPE,
-        resourceId: notification.id,
+        resourceId: id,
         meta,
         extra: {
           operation: 'send-sms',
@@ -460,7 +511,7 @@ export class NotificationService {
       actorUserId: user.id,
       actorRoleSnap: user.role,
       resourceType: AUDIT_RESOURCE_TYPE,
-      resourceId: notification.id,
+      resourceId: id,
       meta,
       extra: {
         operation: 'send-sms',
@@ -494,7 +545,8 @@ export class NotificationService {
     await this.assertCanOrThrow(user, 'notification.publish.record');
 
     const row = await this.prisma.$transaction(async (tx) => {
-      const existing = await this.findOrThrow(id, tx);
+      const existing = await this.lockNotification(id, tx);
+      this.assertAdminBroadcastMutable(existing);
       const data: Prisma.NotificationUpdateInput = {};
 
       if (operation === 'publish') {
@@ -504,6 +556,7 @@ export class NotificationService {
         }
         data.statusCode = NOTIFICATION_STATUS_PUBLISHED;
         data.publishedAt = new Date();
+        data.publishGeneration = { increment: 1 };
       } else if (operation === 'unpublish') {
         // 仅 published → draft;publishedAt 保留(撤回;已读会员留存已读痕)
         if (existing.statusCode !== NOTIFICATION_STATUS_PUBLISHED) {
@@ -538,10 +591,13 @@ export class NotificationService {
       ) {
         await this.outbox.enqueue(
           {
-            eventKey: `wechat-broadcast:${updated.id}:${updated.publishedAt?.toISOString() ?? 'now'}`,
+            eventKey: `wechat-broadcast:${updated.id}:${updated.publishGeneration}`,
             eventType: OUTBOX_EVENT_WECHAT_BROADCAST,
-            payloadVersion: OUTBOX_PAYLOAD_VERSION,
-            payload: { notificationId: updated.id },
+            payloadVersion: OUTBOX_ADMIN_PAYLOAD_VERSION,
+            payload: {
+              notificationId: updated.id,
+              publishGeneration: updated.publishGeneration,
+            },
             aggregateType: 'notification',
             aggregateId: updated.id,
             destinationType: 'broadcast',
@@ -596,4 +652,10 @@ export class NotificationService {
       updatedAt: row.updatedAt,
     };
   }
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((value) => rightSet.has(value));
 }

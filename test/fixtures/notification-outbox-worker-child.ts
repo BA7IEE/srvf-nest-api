@@ -4,6 +4,9 @@ import { NotificationOutboxHandlers } from '../../src/modules/notifications/noti
 import { NotificationOutboxWorkerModule } from '../../src/modules/notifications/notification-outbox-worker.module';
 import { NotificationOutboxService } from '../../src/modules/notifications/notification-outbox.service';
 import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
+import type { WechatDeliveryOutboxPayload } from '../../src/modules/notifications/notification-outbox.types';
+import { parseKnownNotificationOutboxPayload } from '../../src/modules/notifications/notification-outbox.types';
+import { DevStubWechatProvider } from '../../src/modules/wechat/providers/dev-stub.provider';
 
 async function main(): Promise<void> {
   const [command, owner = `child-${process.pid}`, nowIso, leaseMsText, eventKey] =
@@ -56,6 +59,46 @@ async function main(): Promise<void> {
       if (intent) await waitForever();
       return;
     }
+    if (command === 'authorize-admin-and-wait') {
+      const [intent] = await claim();
+      if (!intent) {
+        write({ phase: 'not-claimed', owner, ids: [] });
+        return;
+      }
+      const payload = parseKnownNotificationOutboxPayload(
+        intent.eventType,
+        intent.payloadVersion,
+        intent.payload,
+      ) as WechatDeliveryOutboxPayload;
+      const notification = await outbox.authorizeAdminNotificationEffect(
+        intent,
+        payload.notificationId,
+        payload.publishGeneration!,
+        'wechat',
+      );
+      write({
+        phase: notification ? 'permission-granted' : 'permission-denied',
+        owner,
+        ids: [intent.id],
+      });
+      await waitForever();
+      return;
+    }
+    if (command === 'execute-before-final-permission-and-wait') {
+      const authorize = outbox.authorizeAdminNotificationEffect.bind(outbox);
+      outbox.authorizeAdminNotificationEffect = async (...args) => {
+        write({ phase: 'prepared-before-final-permission', owner, ids: [args[0].id] });
+        await waitForever();
+        return authorize(...args);
+      };
+      const [intent] = await claim();
+      if (!intent) {
+        write({ phase: 'not-claimed', owner, ids: [] });
+        return;
+      }
+      await app.get(NotificationOutboxWorker).executeReserved(intent);
+      return;
+    }
     if (command === 'execute-no-ack') {
       const [intent] = await claim();
       if (!intent) {
@@ -100,6 +143,23 @@ async function main(): Promise<void> {
         effectPerformed: result.effectPerformed,
       });
       await waitForever();
+      return;
+    }
+    if (command === 'execute-provider-returned-and-wait') {
+      const [intent] = await claim();
+      if (!intent) {
+        write({ phase: 'not-claimed', owner, ids: [] });
+        return;
+      }
+      const provider = app.get(DevStubWechatProvider);
+      const send = provider.sendSubscribeMessage.bind(provider);
+      provider.sendSubscribeMessage = async (...args) => {
+        const result = await send(...args);
+        write({ phase: 'provider-returned-before-evidence', owner, ids: [intent.id] });
+        await waitForever();
+        return result;
+      };
+      await app.get(NotificationOutboxWorker).executeReserved(intent);
       return;
     }
     if (command === 'execute-and-ack') {
