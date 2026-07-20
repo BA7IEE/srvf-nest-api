@@ -18,9 +18,9 @@ import {
 
 // SMS 基础设施 T2(2026-06-10):SMS Provider 动态路由(评审稿 E-16;镜像 storage-provider.router)
 //
-// 每次 resolveRoute() 只读取一次 SmsSettingsService(其 60s per-process 缓存削减 DB 压力),
-// 并把同一 settings snapshot 绑定到短生命周期 route。配置变化只影响下一次 resolveRoute；
-// 已取得 route 的在途操作继续使用原 snapshot，不宣称跨实例撤销即时生效。
+// 每次 resolveRoute() 只通过 SmsSettingsService live-read 一次 PostgreSQL 当前事实，
+// 并把同一 settings snapshot 绑定到短生命周期 route。已提交的配置变化影响任一实例的
+// 下一次 resolveRoute；已取得 route 的在途操作继续使用原 snapshot。
 //
 // 与 StorageProviderRouter 的**拍板差异**:settings 缺失 / 未启用时**不**静默 fallback
 // (storage fallback Local 是 dev 文件存储,无外部副作用;SMS 发送有真实资费与用户触达,

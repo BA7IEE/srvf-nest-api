@@ -58,7 +58,7 @@ export class StorageSettingsController {
   @Patch()
   @ApiOperation({
     summary:
-      'upsert 更新 Storage Settings(沿 Q-11-1 + Q-11-17:不存在则创建 default;providerType 缺省 LOCAL;**拒绝**任何凭证字段;成功后 invalidate cache) [rbac: storage-setting.update.singleton]',
+      'upsert 更新 Storage Settings(沿 Q-11-1 + Q-11-17:不存在则创建 default;providerType 缺省 LOCAL;**拒绝**任何凭证字段;事务提交后任一实例下一次调用直读 PostgreSQL 新值,无需 invalidate/reload/restart) [rbac: storage-setting.update.singleton]',
   })
   @ApiWrappedOkResponse(StorageSettingsResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
@@ -73,7 +73,7 @@ export class StorageSettingsController {
   @Post('reset-credentials')
   @ApiOperation({
     summary:
-      '重置 SecretId / SecretKey(沿 §6.6.2 / Q-11-1 / Q-11-5 + P0-F PR-2B D2=A:**仅 SUPER_ADMIN 短路通过**;ADMIN+ops-admin 调用 → 30100;AES-256-GCM 加密落库;响应不回显;不存在则 upsert 创建 default providerType=COS;成功后 invalidate cache) [rbac: storage-setting.reset.credentials]',
+      '重置 SecretId / SecretKey(沿 §6.6.2 / Q-11-1 / Q-11-5 + P0-F PR-2B D2=A:**仅 SUPER_ADMIN 短路通过**;ADMIN+ops-admin 调用 → 30100;AES-256-GCM 加密落库;响应不回显;不存在则 upsert 创建 default providerType=COS;事务提交后任一实例下一次调用直读 PostgreSQL 新值,无需 invalidate/reload/restart) [rbac: storage-setting.reset.credentials]',
   })
   @ApiWrappedOkResponse(StorageSettingsResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)

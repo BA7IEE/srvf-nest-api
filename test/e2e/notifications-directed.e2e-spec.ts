@@ -5,7 +5,6 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { NotificationDispatcher } from '../../src/modules/notifications/notification-dispatcher';
-import { WechatSettingsService } from '../../src/modules/wechat/wechat-settings.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
@@ -94,7 +93,6 @@ describe('统一通知 S3 定向派发 + feed 可见性 e2e', () => {
 
     // wechat DEV_STUB(test 非 production-like;派发走确定性假回执)
     await prisma.wechatSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
-    app.get(WechatSettingsService).invalidate();
 
     alice = await makeMember('s3_alice', 'dev-openid-s3-alice');
     bob = await makeMember('s3_bob', 'dev-openid-s3-bob');

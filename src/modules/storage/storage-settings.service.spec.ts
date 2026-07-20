@@ -13,13 +13,12 @@ import { CredentialStatus } from './storage-settings.types';
 // V2.x C-7.5 PR #6:storage-settings.service 单元测试(沿 Q-87-5 拍板 A 必须覆盖)
 //
 // 覆盖矩阵:
-// 1. DB 空 → 返 null + 缓存 null
+// 1. DB 空 → 返 null
 // 2. DB 1 条 + credentialConfigured=false → CONFIGURED 字段为 null + credentialStatus=MISSING
 // 3. DB 1 条 + credentialConfigured=true + 解密成功 → CONFIGURED + credentials 含明文
 // 4. DB 1 条 + credentialConfigured=true + 解密失败 → INVALID + credentials=null
 // 5. DB 1 条 + credentialConfigured=true + 加密列为 null(数据不一致防御)→ MISSING
-// 6. 缓存命中(60s 内不再调 prisma)
-// 7. invalidate() 主动清缓存
+// 6. 连续调用每次直读 DB,包含有↔空与值变化
 // singleton 多行已由第 49 migration 的 DB constant unique 约束消除,不再保留取最早分支。
 
 function makePrismaMock(rows: StorageSettingsRow[]): {
@@ -228,9 +227,12 @@ describe('StorageSettingsService', () => {
     });
   });
 
-  describe('缓存', () => {
-    it('60s 内第二次调用不查 DB', async () => {
+  describe('PostgreSQL live-read', () => {
+    it('连续调用每次查 DB，并直接返回下一代配置', async () => {
       const { prisma, findFirstMock } = makePrismaMock([makeRow()]);
+      findFirstMock
+        .mockResolvedValueOnce(makeRow({ bucket: 'bucket-old' }))
+        .mockResolvedValueOnce(makeRow({ bucket: 'bucket-new' }));
       const crypto = makeCryptoMock({});
       const svc = new StorageSettingsService(
         prisma,
@@ -240,45 +242,46 @@ describe('StorageSettingsService', () => {
         DEV_CFG,
       );
 
-      await svc.getActiveSettings();
-      await svc.getActiveSettings();
-      await svc.getActiveSettings();
-      expect(findFirstMock).toHaveBeenCalledTimes(1);
-    });
-
-    it('DB 空时也缓存 null', async () => {
-      const { prisma, findFirstMock } = makePrismaMock([]);
-      const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(
-        prisma,
-        crypto,
-        makeRbacMock(),
-        makeAuditLogsMock(),
-        DEV_CFG,
-      );
-
-      const r1 = await svc.getActiveSettings();
-      const r2 = await svc.getActiveSettings();
-      expect(r1).toBeNull();
-      expect(r2).toBeNull();
-      expect(findFirstMock).toHaveBeenCalledTimes(1);
-    });
-
-    it('invalidate() 后再查 DB', async () => {
-      const { prisma, findFirstMock } = makePrismaMock([makeRow()]);
-      const crypto = makeCryptoMock({});
-      const svc = new StorageSettingsService(
-        prisma,
-        crypto,
-        makeRbacMock(),
-        makeAuditLogsMock(),
-        DEV_CFG,
-      );
-
-      await svc.getActiveSettings();
-      svc.invalidate();
-      await svc.getActiveSettings();
+      await expect(svc.getActiveSettings()).resolves.toMatchObject({ bucket: 'bucket-old' });
+      await expect(svc.getActiveSettings()).resolves.toMatchObject({ bucket: 'bucket-new' });
       expect(findFirstMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('空→有不等待、不 reload、不 invalidate', async () => {
+      const { prisma, findFirstMock } = makePrismaMock([]);
+      findFirstMock
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(makeRow({ providerType: 'LOCAL' }));
+      const crypto = makeCryptoMock({});
+      const svc = new StorageSettingsService(
+        prisma,
+        crypto,
+        makeRbacMock(),
+        makeAuditLogsMock(),
+        DEV_CFG,
+      );
+
+      await expect(svc.getActiveSettings()).resolves.toBeNull();
+      await expect(svc.getActiveSettings()).resolves.toMatchObject({ providerType: 'LOCAL' });
+      expect(findFirstMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('有→空由下一次 DB 读取直接生效，且不再暴露 invalidate API', async () => {
+      const { prisma, findFirstMock } = makePrismaMock([makeRow()]);
+      findFirstMock.mockResolvedValueOnce(makeRow()).mockResolvedValueOnce(null);
+      const crypto = makeCryptoMock({});
+      const svc = new StorageSettingsService(
+        prisma,
+        crypto,
+        makeRbacMock(),
+        makeAuditLogsMock(),
+        DEV_CFG,
+      );
+
+      await expect(svc.getActiveSettings()).resolves.toMatchObject({ id: 'cuid-storage-1' });
+      await expect(svc.getActiveSettings()).resolves.toBeNull();
+      expect(findFirstMock).toHaveBeenCalledTimes(2);
+      expect('invalidate' in svc).toBe(false);
     });
   });
 

@@ -7,7 +7,6 @@ import { PrismaService } from '../../src/database/prisma.service';
 import { NotificationOutboxHandlers } from '../../src/modules/notifications/notification-outbox.handlers';
 import { NotificationOutboxService } from '../../src/modules/notifications/notification-outbox.service';
 import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
-import { WechatSettingsService } from '../../src/modules/wechat/wechat-settings.service';
 import { WechatService } from '../../src/modules/wechat/wechat.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
@@ -187,7 +186,6 @@ describe('统一通知 S2 微信订阅 quota 渠道 e2e', () => {
 
     // wechat_settings DEV_STUB(test 非 production-like,允许 stub;派发走确定性假回执)
     await prisma.wechatSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
-    app.get(WechatSettingsService).invalidate();
 
     const adminUser = await createTestUser(app, { username: 's2_admin', role: Role.ADMIN });
     await grantBizAdminToUser(app, adminUser.id, bizAdminRoleId);

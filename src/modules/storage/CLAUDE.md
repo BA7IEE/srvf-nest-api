@@ -5,8 +5,8 @@
 ## Scope
 
 - **storage 抽象层**:`StorageProvider` 接口(6 方法:putObject / deleteObject / generateUploadUrl / generateDownloadUrl / headObject / `readObjectPrefix`)+ `LocalStorageProvider` + `CosStorageProvider`(腾讯云 COS);`readObjectPrefix` 仅供 confirm-upload 魔数校验,固定小前缀,COS 必须 ranged getObject,不得扩成通用下载面(finding #23)
-- **动态路由** `StorageProviderRouter`:每次方法调用 `resolve()` 根据 `storage_settings.providerType` 切换 provider;`STORAGE_PROVIDER` DI token = `useExisting StorageProviderRouter`(沿 [`storage.module.ts:37`](storage.module.ts:37))
-- **配置 singleton** `storage_settings` row(沿 §6.5.4)+ 第 49 migration constant unique DB 约束 + `StorageSettingsService` 60s 缓存 + 主动 invalidate
+- **动态路由** `StorageProviderRouter`:每次方法调用 live-read 一次 `storage_settings`，并把同一 snapshot 绑定到本次 Effect;`STORAGE_PROVIDER` DI token = `useExisting StorageProviderRouter`(沿 [`storage.module.ts:37`](storage.module.ts:37))
+- **配置 singleton** `storage_settings` row(沿 §6.5.4)+ 第 49 migration constant unique DB 约束 + `StorageSettingsService` 每次直读 PostgreSQL 当前已提交事实
 - **凭证加密** `StorageCryptoService`(AES-256-GCM)+ **uploadToken HMAC-SHA256**(`upload-token.util.ts`,签名 key 由 `STORAGE_ENCRYPTION_KEY` scrypt 派生)
 - **Storage Settings admin**:`GET / PATCH / POST reset-credentials` 三端点,经 `rbac.can()` 判权
 - **不负责**:附件业务流(在 [`/src/modules/attachments/`](../../modules/attachments/));附件配置三表(在 [`/src/modules/attachment-configs/`](../../modules/attachment-configs/))
@@ -14,9 +14,10 @@
 ## Local facts
 
 - **production fail-fast 5 项严格校验**(`onApplicationBootstrap`,仅 `env === 'production'` 触发 — smoke / dev / test 全部跳过):settings 存在 / `enabled=true` / `providerType='COS'`(production 拒绝 LOCAL) / `bucket+region` 非空 / `credentialStatus=CONFIGURED`(沿 [`storage-settings.service.ts:84`](storage-settings.service.ts:84))
+- **`enabled` 现存边界**:`getCurrentLocator()` 与 production bootstrap 会拒绝 `enabled=false`；legacy non-pinned `StorageProvider` 调用尚未统一执行该开关，属后续 Storage 生命周期 D 切片，本次 live-read 不改变其行为/错误语义
 - **凭证加密 算法/key 派生**:AES-256-GCM + `scrypt(envKey, fixedSalt, 32)` 派生 32 字节 key;序列化 `base64(iv:12B || authTag:16B || ciphertext)`(沿 [`storage-crypto.service.ts:19`](storage-crypto.service.ts:19))
 - **`credentialStatus` 三档**:`MISSING`(无凭证字段)/ `CONFIGURED`(解密成功)/ `INVALID`(解密失败 / `STORAGE_ENCRYPTION_KEY` 被轮换)
-- **`StorageSettingsService` 是凭证读取唯一出口**:`getActiveSettings()` 60s 内存缓存;第 49 migration 的 `storage_settings_singleton_key ON ((true))` 在 DB 层保证至多一行,首配并发 P2002 后重跑事务命中既有单行,不再有“取最早 + WARN”分支
+- **`StorageSettingsService` 是凭证读取唯一出口**:`getActiveSettings()` 每次直读 PostgreSQL,无跨请求 Map/TTL/invalidate 正确性链;第 49 migration 的 `storage_settings_singleton_key ON ((true))` 在 DB 层保证至多一行,首配并发 P2002 后重跑事务命中既有单行,不再有“取最早 + WARN”分支
 - **`CosStorageProvider` 4 档守护**(每次方法调用):settings null / providerType ≠ COS / credentialStatus ≠ CONFIGURED / bucket+region 缺失 → 抛 `CosProviderUnavailableError`(沿 [`providers/cos.provider.ts:158`](providers/cos.provider.ts:158))
 - **`LocalStorageProvider.resolveKey`** 防 `../` 逃逸 root(沿 Q-88-6;[`providers/local.provider.ts:113`](providers/local.provider.ts:113));dev/test 默认 fallback,production 启动期被 fail-fast 拒绝
 - **signed URL**:COS PUT 上传约定客户端必须带 `Content-Type` 与签名一致;`response-content-disposition` 通过 query 参数附加(沿 §6.4.6 CORS);Local provider 返非路由 stub URL(`/internal/storage/local-stub-upload/...`;接口对称用,不会被实际命中)
@@ -36,7 +37,7 @@
 - ❌ **不**自动引入 multipart upload(Q13)/ STS(Q19)/ 跨 provider migration / test-connection 端点 / queue/cron 清理任务 — 任一需独立设计决议
 - ❌ **不**对 COS / Local 行为差异做"对称化"假定:Local `generateUploadUrl` 返 stub URL 不会被实际命中;Local `headObject` 不返 etag / contentType(未持久化)
 - ❌ **不**给 `storage-settings` GET / PATCH response **回显**任何凭证字段(`secretIdEncrypted` / `secretKeyEncrypted` / `credentials` 均不出参,沿 §6.6.2 / §6.6.5)
-- ❌ **不**缓存 COS 客户端实例(沿 Q-89-2 A;每次方法调用新建 SDK 实例,settings cache 已削减 DB 压力)
+- ❌ **不**缓存 COS 客户端实例(沿 Q-89-2 A;每次 Effect 从单份 settings snapshot 新建 SDK 实例)
 - ❌ **不**新建非 `app.config.ts` 的 storage env 读取点 — 唯一入口是 `appConfig.storage.encryptionKey` / `appConfig.storage.localRoot`
 - ❌ 改 storage 行为通常影响 attachments / attachment-configs / production safety,按 D 档降速;**任何凭证 / 加密 / fail-fast 改动都不是 docs-only**
 

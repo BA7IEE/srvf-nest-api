@@ -14,7 +14,7 @@ import { StorageProviderRouter } from './storage-provider.router';
 // 3. providerType=COS → Cos
 // 4. 未知 providerType → fallback Local + WARN(防御)
 // 5. 6 个动态方法各自路由；manual-only SHA-256 严格按 pinned locator 直达
-// 6. 每次方法调用都 resolve(确保 settings invalidate 后能拿到新 provider)
+// 6. 每次方法调用都 live-read；一次 Effect 只把同一 snapshot 交给 prepared COS route
 
 function makeSettings(overrides: Partial<StorageSettingsResolved> = {}): StorageSettingsResolved {
   return {
@@ -53,6 +53,7 @@ function makeSettingsServiceMock(settings: StorageSettingsResolved | null): {
 
 interface MockProvider<T> {
   instance: T;
+  prepare?: jest.Mock;
   putObject: jest.Mock;
   deleteObject: jest.Mock;
   generateUploadUrl: jest.Mock;
@@ -99,17 +100,23 @@ function makeCosMock(): MockProvider<CosStorageProvider> {
   const headObject = jest.fn().mockResolvedValue({ exists: false });
   const readObjectPrefix = jest.fn().mockResolvedValue(Buffer.from('prefix'));
   const hashObjectSha256At = jest.fn().mockResolvedValue({ size: 1, checksum: 'b'.repeat(64) });
-  const instance = {
+  const prepared = {
     putObject,
     deleteObject,
     generateUploadUrl,
     generateDownloadUrl,
     headObject,
     readObjectPrefix,
+  };
+  const prepare = jest.fn().mockReturnValue(prepared);
+  const instance = {
+    ...prepared,
+    prepare,
     hashObjectSha256At,
   } as unknown as CosStorageProvider;
   return {
     instance,
+    prepare,
     putObject,
     deleteObject,
     generateUploadUrl,
@@ -239,7 +246,7 @@ describe('StorageProviderRouter', () => {
     });
   });
 
-  describe('每次调用都 resolve(确保 invalidate 后能拿到新 provider)', () => {
+  describe('每次调用都 live-read', () => {
     it('两次 putObject → getActiveSettings 调用 2 次', async () => {
       const { service, getActiveSettings } = makeSettingsServiceMock(makeSettings());
       const localMock = makeLocalMock();
@@ -248,6 +255,26 @@ describe('StorageProviderRouter', () => {
       await router.putObject({ key: 'k1', body: Buffer.from('x') });
       await router.putObject({ key: 'k2', body: Buffer.from('x') });
       expect(getActiveSettings).toHaveBeenCalledTimes(2);
+    });
+
+    it('COS Effect 只读一次 settings，并把该 snapshot 传给 prepare', async () => {
+      const oldSettings = makeSettings({ bucket: 'bucket-old', region: 'region-old' });
+      const newSettings = makeSettings({ bucket: 'bucket-new', region: 'region-new' });
+      const getActiveSettings = jest
+        .fn()
+        .mockResolvedValueOnce(oldSettings)
+        .mockResolvedValueOnce(newSettings);
+      const service = { getActiveSettings } as unknown as StorageSettingsService;
+      const localMock = makeLocalMock();
+      const cosMock = makeCosMock();
+      const router = new StorageProviderRouter(service, localMock.instance, cosMock.instance);
+
+      await router.putObject({ key: 'k', body: Buffer.from('x') });
+
+      expect(getActiveSettings).toHaveBeenCalledTimes(1);
+      expect(cosMock.prepare).toHaveBeenCalledTimes(1);
+      expect(cosMock.prepare).toHaveBeenCalledWith(oldSettings);
+      expect(cosMock.putObject).toHaveBeenCalledTimes(1);
     });
   });
 

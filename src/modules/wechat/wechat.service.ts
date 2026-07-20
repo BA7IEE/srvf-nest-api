@@ -52,7 +52,7 @@ export class WechatService {
    */
   async code2session(code: string): Promise<Code2SessionResult> {
     try {
-      const provider = await this.resolve();
+      const provider = await this.resolveRoute();
       return await provider.code2session({ code });
     } catch (err) {
       if (err instanceof WechatCodeInvalidError) {
@@ -92,7 +92,7 @@ export class WechatService {
         }
       : undefined;
     try {
-      provider = await this.resolve();
+      provider = await this.resolveRoute();
       accessToken = guardedBeforeEffect
         ? await provider.getAccessToken(false, guardedBeforeEffect)
         : await provider.getAccessToken();
@@ -136,7 +136,8 @@ export class WechatService {
     };
   }
 
-  private async resolve(): Promise<WechatMiniProvider> {
+  /** 每次只读取一次 PostgreSQL settings，并返回绑定该 snapshot 的短生命周期 route。 */
+  async resolveRoute(): Promise<WechatMiniProvider> {
     const r = await this.settings.getActiveSettings();
     if (!r) {
       throw new WechatChannelUnavailableError('wechat_settings 未配置');
@@ -151,7 +152,7 @@ export class WechatService {
       return this.devStub;
     }
     if (r.providerType === 'WECHAT') {
-      return this.real;
+      return this.real.prepare(r);
     }
     // 防御:enum 未来扩展;与 sms 同款不静默 fallback
     throw new WechatChannelUnavailableError(`未知 providerType=${String(r.providerType)}`);

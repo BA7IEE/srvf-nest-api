@@ -20,6 +20,9 @@ export enum WechatCredentialStatus {
 // `credentials` 明文仅在 Service / Provider 内部传递,**不进任何 API 出参 / 日志 / audit**。
 export interface WechatSettingsResolved {
   id: string;
+  // 仅供进程内 token cache 等值比较；由 row identity + token 身份相关密文字段生成。
+  // 不得进入日志 / audit / response / error，也不替代 PostgreSQL 当前事实读取。
+  configurationGeneration: string;
   providerType: WechatProviderType;
   enabled: boolean;
   appId: string | null;

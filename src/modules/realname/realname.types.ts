@@ -108,6 +108,13 @@ export interface RealnameProvider {
   recognize(input: RealnameOcrInput): Promise<RealnameOcrResult>;
 }
 
+// 短生命周期 prepared OCR Effect；settings/credentials/image 只由闭包持有，
+// 不暴露、不序列化、不落日志/audit/DB。
+export interface PreparedRealnameEffect {
+  readonly providerType: RealnameProviderType;
+  invoke(): Promise<RealnameOcrResult>;
+}
+
 // 通道不可用(settings 缺失 / 未启用 / 凭证未配置 / region 缺失 / production-like 下 DEV_STUB)。
 // RealnameVerificationService 映射为 BizCode.REALNAME_CHANNEL_NOT_CONFIGURED(27030)。
 export class RealnameChannelUnavailableError extends Error {

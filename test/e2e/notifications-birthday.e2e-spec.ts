@@ -2,7 +2,6 @@ import type { INestApplication } from '@nestjs/common';
 import { PrismaService } from '../../src/database/prisma.service';
 import { BirthdayGreetingService } from '../../src/modules/notifications/birthday-greeting.service';
 import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
-import { SmsSettingsService } from '../../src/modules/sms/sms-settings.service';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -12,7 +11,7 @@ import { createTestApp } from '../setup/test-app';
 // **直调范式**(评审稿 E-B11):app.get(BirthdayGreetingService).runOnce()——不等真实定时;
 // 选取 / 幂等 / 前置检查 / 流水落库语义全部经直调 + 真实 DB 锁定;
 // @Cron 注册本身由 docker-smoke 启动锚行验证(E-B10),不在本文件覆盖。
-// settings 60s 缓存:直插 settings 行后调 SmsSettingsService.invalidate()(公开方法)。
+// settings 每次直读 PostgreSQL；直插/更新提交后下一次 job 调用直接看到新值。
 //
 // 单条失败路径(provider 抛错)在 unit 经 mock router 锁定,e2e 走 DevStub 恒成功链路。
 
@@ -36,7 +35,6 @@ describe('生日祝福 job(直调 runOnce;不等真实定时)', () => {
   let prisma: PrismaService;
   let job: BirthdayGreetingService;
   let worker: NotificationOutboxWorker;
-  let settings: SmsSettingsService;
   let seq = 0;
 
   async function createMemberWithProfile(input: {
@@ -95,7 +93,6 @@ describe('生日祝福 job(直调 runOnce;不等真实定时)', () => {
     prisma = app.get(PrismaService);
     job = app.get(BirthdayGreetingService);
     worker = app.get(NotificationOutboxWorker);
-    settings = app.get(SmsSettingsService);
     await resetDb(app);
   });
 
@@ -112,7 +109,6 @@ describe('生日祝福 job(直调 runOnce;不等真实定时)', () => {
     });
 
     await prisma.smsSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
-    settings.invalidate();
     expect(await job.runOnce()).toEqual({
       selected: 0,
       enqueued: 0,
@@ -124,7 +120,6 @@ describe('生日祝福 job(直调 runOnce;不等真实定时)', () => {
 
   it('六类造数:仅全链命中者发送;send_logs 行字段正确(templateKey/providerType/codeId=null);summary 与 DB 一致', async () => {
     await prisma.smsSettings.updateMany({ data: { templateIdBirthday: 'tpl-bd-001' } });
-    settings.invalidate();
 
     const today = birthDateTodayUtc8();
     await createMemberWithProfile({ username: 'bd_hit', birthDate: today, userPhone: PHONE_HIT }); // ① 应发

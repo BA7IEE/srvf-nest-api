@@ -20,6 +20,7 @@ import {
 function makeResolved(overrides: Partial<WechatSettingsResolved> = {}): WechatSettingsResolved {
   return {
     id: 'ws1',
+    configurationGeneration: 'generation-1',
     providerType: 'WECHAT',
     enabled: true,
     appId: 'wx-appid',
@@ -47,7 +48,8 @@ function makeService(
       .mockResolvedValue(resolved ?? null),
   };
   const devStub = { code2session: jest.fn() };
-  const real = { code2session: opts.realCode2Session ?? jest.fn() };
+  const prepared = { code2session: opts.realCode2Session ?? jest.fn() };
+  const real = { prepare: jest.fn().mockReturnValue(prepared) };
   const cfg = { env: opts.env ?? 'development' };
   return new WechatService(
     settings as unknown as WechatSettingsService,
@@ -125,11 +127,12 @@ describe('WechatService.sendSubscribeMessage (S2 编排)', () => {
     const settings = {
       getActiveSettings: jest.fn().mockResolvedValue(makeResolved()),
     };
-    const realProvider = {
+    const preparedProvider = {
       code2session: jest.fn(),
       getAccessToken: real.getAccessToken ?? jest.fn().mockResolvedValue('at-1'),
       sendSubscribeMessage: real.sendSubscribeMessage ?? jest.fn(),
     };
+    const realProvider = { prepare: jest.fn().mockReturnValue(preparedProvider) };
     return new WechatService(
       settings as unknown as WechatSettingsService,
       { code2session: jest.fn() } as unknown as DevStubWechatProvider,
@@ -182,6 +185,54 @@ describe('WechatService.sendSubscribeMessage (S2 编排)', () => {
     expect(getToken).toHaveBeenCalledTimes(2);
     expect(getToken).toHaveBeenLastCalledWith(true); // forceRefresh
     expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('一次 delivery 只解析一次 route，配置切换不撕裂 token-invalid refresh/retry', async () => {
+    const oldSettings = makeResolved({
+      appId: 'wx-old',
+      configurationGeneration: 'generation-old',
+    });
+    const newSettings = makeResolved({
+      appId: 'wx-new',
+      configurationGeneration: 'generation-new',
+    });
+    const getActiveSettings = jest
+      .fn()
+      .mockResolvedValueOnce(oldSettings)
+      .mockResolvedValueOnce(newSettings);
+    const getAccessToken = jest
+      .fn()
+      .mockResolvedValueOnce('at-old')
+      .mockResolvedValueOnce('at-old-refreshed');
+    const sendSubscribeMessage = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: false, errCode: '40001', errMsg: 'expired' })
+      .mockResolvedValueOnce({ ok: true, msgId: 'm-old-generation' });
+    const preparedProvider = {
+      code2session: jest.fn(),
+      getAccessToken,
+      sendSubscribeMessage,
+    };
+    const prepare = jest.fn().mockReturnValue(preparedProvider);
+    const service = new WechatService(
+      { getActiveSettings } as unknown as WechatSettingsService,
+      { code2session: jest.fn() } as unknown as DevStubWechatProvider,
+      { prepare } as unknown as WechatMiniRealProvider,
+      { env: 'development' } as unknown as ConstructorParameters<typeof WechatService>[3],
+    );
+
+    await expect(service.sendSubscribeMessage(INPUT)).resolves.toEqual({
+      ok: true,
+      msgId: 'm-old-generation',
+    });
+    expect(getActiveSettings).toHaveBeenCalledTimes(1);
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(prepare).toHaveBeenCalledWith(oldSettings);
+    expect(getAccessToken.mock.calls).toEqual([[], [true]]);
+    expect(sendSubscribeMessage.mock.calls).toEqual([
+      ['at-old', INPUT],
+      ['at-old-refreshed', INPUT],
+    ]);
   });
 
   it('token-invalid 后 force-refresh guard 失败：refresh Effect=0 且不启动第二次 send', async () => {

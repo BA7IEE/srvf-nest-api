@@ -14,13 +14,15 @@ export const WECHAT_ERRCODE_CODE_INVALID: ReadonlyArray<number> = [40029, 40163]
 
 // ===== 订阅消息发送(统一通知 S2;评审稿 §3.1)=====
 // access_token 取用 stable_token(非 legacy /cgi-bin/token):后者新 token 使旧失效、多调用方互踩;
-// stable_token 不互斥(单实例进程内缓存安全)。请求体含 appid + secret,**禁止整 body / URL 入日志**(E-12)。
+// stable_token 不互斥；进程内缓存按配置 generation 隔离。请求体含 appid + secret,
+// **禁止整 body / URL 入日志**(E-12)。
 export const WECHAT_STABLE_TOKEN_URL = 'https://api.weixin.qq.com/cgi-bin/stable_token';
 // 订阅消息下发端点;query 含 access_token,**禁止整 URL / access_token 入日志**(E-12,镜像 code2session secret 纪律)。
 export const WECHAT_SUBSCRIBE_SEND_URL = 'https://api.weixin.qq.com/cgi-bin/message/subscribe/send';
 
 // access_token 进程内缓存上限(微信 access_token 有效期 7200s;7000s 过期前主动刷新留 200s 余量)。
-// 单实例部署前提(沿 wechat 60s settings 缓存 / 生日批 E-B12);多实例横向扩容前须改共享缓存(挂边界条款 R-5/E-B12)。
+// 每进程缓存允许重复取 token；generation 只由 row identity + token 身份相关配置/密文决定，
+// 配置切换后下一操作不会命中旧代 token，同一 delivery 的 refresh/retry 仍固定原代快照。
 export const WECHAT_ACCESS_TOKEN_CACHE_MS = 7_000_000;
 
 // 订阅消息发送失败 errcode 语义(评审稿 §3.4):

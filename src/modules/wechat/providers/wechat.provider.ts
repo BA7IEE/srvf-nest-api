@@ -21,13 +21,15 @@ import {
   type SendSubscribeMessageResult,
   type WechatBeforeEffect,
   type WechatMiniProvider,
+  type WechatSettingsResolved,
 } from '../wechat.types';
 
 // 微信小程序登录 T2(2026-06-12):真实微信 Provider(评审稿 E-2/E-11/E-12;
 // 结构镜像 tencent-sms.provider,传输层差异 = 原生 fetch 替代 SDK,零新依赖)
 //
-// - appId / appSecret 从 WechatSettingsService.getActiveSettings() 读(60s 缓存;不依赖 env)
-// - 每次调用 requireWechatContext() 做 4 档守护(镜像 requireTencentContext):
+// - 既有直接 code2session/getAccessToken 各自 live-read 一次 settings；prepare(settings)
+//   接受调用方 supplied snapshot，整次 delivery 不再读取 settings
+// - prepare 时 requireWechatContext() 做 4 档守护(镜像 requireTencentContext):
 //   settings null·未启用 / providerType ≠ WECHAT / credentialStatus ≠ CONFIGURED / appId 缺失
 // - 原生 fetch + AbortSignal.timeout 8s(沿 #346 外部请求超时上限先例;Node 22 全局可用)
 // - errcode 映射(E-11):40029 / 40163 → WechatCodeInvalidError(25010);
@@ -66,19 +68,43 @@ interface SubscribeSendWireResponse {
   msgid?: number | string;
 }
 
+interface WechatContext {
+  appId: string;
+  appSecret: string;
+  configurationGeneration: string;
+}
+
 @Injectable()
 export class WechatMiniRealProvider implements WechatMiniProvider {
   private readonly logger = new Logger(WechatMiniRealProvider.name);
 
-  // access_token 进程内缓存(单实例前提;~7000s,沿 WECHAT_ACCESS_TOKEN_CACHE_MS)。
-  // **永不入日志 / 出参 / audit**(L3,镜像 appSecret 纪律)。
-  private accessTokenCache: { token: string; expiresAt: number } | null = null;
+  // access_token 进程内缓存按 opaque configuration generation 隔离(~7000s)。
+  // token / generation **永不入日志 / 出参 / audit**(L3,镜像 appSecret 纪律)。
+  private accessTokenCache: { generation: string; token: string; expiresAt: number } | null = null;
 
   constructor(private readonly settings: WechatSettingsService) {}
 
   async code2session(input: Code2SessionInput): Promise<Code2SessionResult> {
-    const ctx = await this.requireWechatContext();
+    const settings = await this.settings.getActiveSettings();
+    return this.prepare(settings).code2session(input);
+  }
 
+  /** supplied settings snapshot 的同步 prepare；返回对象不会再次读取 settings。 */
+  prepare(settings: WechatSettingsResolved | null): WechatMiniProvider {
+    const ctx = this.requireWechatContext(settings);
+    return {
+      code2session: (input) => this.code2sessionWithContext(ctx, input),
+      getAccessToken: (forceRefresh, beforeEffect) =>
+        this.getAccessTokenWithContext(ctx, forceRefresh, beforeEffect),
+      sendSubscribeMessage: (accessToken, input, beforeEffect) =>
+        this.sendSubscribeMessage(accessToken, input, beforeEffect),
+    };
+  }
+
+  private async code2sessionWithContext(
+    ctx: WechatContext,
+    input: Code2SessionInput,
+  ): Promise<Code2SessionResult> {
     const url = new URL(WECHAT_CODE2SESSION_URL);
     url.searchParams.set('appid', ctx.appId);
     url.searchParams.set('secret', ctx.appSecret);
@@ -142,16 +168,30 @@ export class WechatMiniRealProvider implements WechatMiniProvider {
   // ===== 统一通知 S2:订阅消息发送能力(净新建,镜像 code2session 传输层 + E-12 纪律)=====
 
   /**
-   * 取 access_token(stable_token;进程内缓存 ~7000s,单实例前提)。
+   * 取 access_token(stable_token;每进程缓存 ~7000s，按 configuration generation 隔离)。
+   * 多实例可各自持 token；配置代次变化后下一操作不会命中旧代 token。
    * forceRefresh=true → 跳过缓存强刷(token 失效 40001/42001 重试场景)。
    * 失败抛 WechatApiError / WechatChannelUnavailableError(调用方 WechatService catch 归一)。
    * E-12:请求体含 appid + secret;**禁止 body / URL / access_token 入日志**。
    */
   async getAccessToken(forceRefresh = false, beforeEffect?: WechatBeforeEffect): Promise<string> {
-    if (!forceRefresh && this.accessTokenCache && this.accessTokenCache.expiresAt > Date.now()) {
+    const settings = await this.settings.getActiveSettings();
+    return this.prepare(settings).getAccessToken(forceRefresh, beforeEffect);
+  }
+
+  private async getAccessTokenWithContext(
+    ctx: WechatContext,
+    forceRefresh = false,
+    beforeEffect?: WechatBeforeEffect,
+  ): Promise<string> {
+    if (
+      !forceRefresh &&
+      this.accessTokenCache &&
+      this.accessTokenCache.generation === ctx.configurationGeneration &&
+      this.accessTokenCache.expiresAt > Date.now()
+    ) {
       return this.accessTokenCache.token;
     }
-    const ctx = await this.requireWechatContext();
     // Context/settings 已准备完成后才重验 fence；guard rejection 不是 provider 失败，
     // 必须留在 fetch catch 外按原值冒泡，且 fetch 绝不能启动。
     if (beforeEffect) await beforeEffect();
@@ -199,6 +239,7 @@ export class WechatMiniRealProvider implements WechatMiniProvider {
     }
 
     this.accessTokenCache = {
+      generation: ctx.configurationGeneration,
       token: body.access_token,
       expiresAt: Date.now() + WECHAT_ACCESS_TOKEN_CACHE_MS,
     };
@@ -267,10 +308,8 @@ export class WechatMiniRealProvider implements WechatMiniProvider {
     return { ok: true, msgId: body.msgid !== undefined ? String(body.msgid) : null };
   }
 
-  // 解析 settings + 4 档守护(镜像 tencent-sms requireTencentContext;
-  // 第 1/2 档在 WechatService.resolve 已挡,此处防御性重查)
-  private async requireWechatContext(): Promise<{ appId: string; appSecret: string }> {
-    const settings = await this.settings.getActiveSettings();
+  // 解析 supplied settings snapshot + 4 档守护；不读取 WechatSettingsService。
+  private requireWechatContext(settings: WechatSettingsResolved | null): WechatContext {
     if (!settings || !settings.enabled) {
       throw new WechatChannelUnavailableError('wechat_settings 未配置或未启用');
     }
@@ -283,6 +322,10 @@ export class WechatMiniRealProvider implements WechatMiniProvider {
     if (!settings.appId) {
       throw new WechatChannelUnavailableError('wechat_settings.appId 未配置');
     }
-    return { appId: settings.appId, appSecret: settings.credentials.appSecret };
+    return {
+      appId: settings.appId,
+      appSecret: settings.credentials.appSecret,
+      configurationGeneration: settings.configurationGeneration,
+    };
   }
 }

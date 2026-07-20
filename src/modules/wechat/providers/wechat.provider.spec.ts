@@ -34,6 +34,7 @@ const APP_SECRET = 'test-app-secret-value';
 function makeResolved(overrides: Partial<WechatSettingsResolved> = {}): WechatSettingsResolved {
   return {
     id: 'ws1',
+    configurationGeneration: 'generation-1',
     providerType: 'WECHAT',
     enabled: true,
     appId: APP_ID,
@@ -298,6 +299,79 @@ describe('WechatMiniRealProvider.getAccessToken (S2)', () => {
     await provider.getAccessToken();
     await provider.getAccessToken();
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('cache 按 configuration generation 隔离：appId/密文代次变化后下一调用强制取新 token', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(jsonResponse({ access_token: 'at-old', expires_in: 7200 }))
+      .mockResolvedValueOnce(jsonResponse({ access_token: 'at-new', expires_in: 7200 }));
+    const settings = {
+      getActiveSettings: jest
+        .fn()
+        .mockResolvedValueOnce(
+          makeResolved({
+            appId: 'wx-old',
+            credentials: { appSecret: 'secret-old' },
+            configurationGeneration: 'generation-old',
+          }),
+        )
+        .mockResolvedValueOnce(
+          makeResolved({
+            appId: 'wx-new',
+            credentials: { appSecret: 'secret-new' },
+            configurationGeneration: 'generation-new',
+          }),
+        ),
+    } as unknown as WechatSettingsService;
+    const provider = new WechatMiniRealProvider(settings);
+
+    await expect(provider.getAccessToken()).resolves.toBe('at-old');
+    await expect(provider.getAccessToken()).resolves.toBe('at-new');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const fetchCalls = fetchSpy.mock.calls as Array<[RequestInfo | URL, RequestInit?]>;
+    const firstBody = JSON.parse(fetchCalls[0]?.[1]?.body as string) as {
+      appid: string;
+      secret: string;
+    };
+    const secondBody = JSON.parse(fetchCalls[1]?.[1]?.body as string) as {
+      appid: string;
+      secret: string;
+    };
+    expect(firstBody).toMatchObject({ appid: 'wx-old', secret: 'secret-old' });
+    expect(secondBody).toMatchObject({ appid: 'wx-new', secret: 'secret-new' });
+  });
+
+  it('supplied snapshot prepare 不读 settings，cache hit 无 guard，force-refresh 仍绑定同一代', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(jsonResponse({ access_token: 'at-old', expires_in: 7200 }))
+      .mockResolvedValueOnce(jsonResponse({ access_token: 'at-old-refreshed', expires_in: 7200 }));
+    const getActiveSettings = jest.fn();
+    const provider = new WechatMiniRealProvider({
+      getActiveSettings,
+    } as unknown as WechatSettingsService);
+    const prepared = provider.prepare(
+      makeResolved({
+        appId: 'wx-snapshot',
+        credentials: { appSecret: 'secret-snapshot' },
+        configurationGeneration: 'generation-snapshot',
+      }),
+    );
+
+    const firstPending = prepared.getAccessToken();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    await expect(firstPending).resolves.toBe('at-old');
+    const cacheGuard = jest.fn().mockRejectedValue(new Error('cache hit must not fence'));
+    await expect(prepared.getAccessToken(false, cacheGuard)).resolves.toBe('at-old');
+    expect(cacheGuard).not.toHaveBeenCalled();
+
+    await expect(prepared.getAccessToken(true)).resolves.toBe('at-old-refreshed');
+    expect(getActiveSettings).not.toHaveBeenCalled();
+    const fetchCalls = fetchSpy.mock.calls as Array<[RequestInfo | URL, RequestInit?]>;
+    const refreshBody = JSON.parse(fetchCalls[1]?.[1]?.body as string) as {
+      appid: string;
+      secret: string;
+    };
+    expect(refreshBody).toMatchObject({ appid: 'wx-snapshot', secret: 'secret-snapshot' });
   });
 
   it('access_token cache hit 无外部 Effect，不调用 guard', async () => {

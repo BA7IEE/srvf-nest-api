@@ -304,16 +304,11 @@ describe('微信登录 + 绑定全链(T3 e2e 组 A;IP 限流调大)', () => {
       expect(after).toBe(before); // 幂等:绑定类 audit 零新增
     });
 
-    it('通道未配置 → 25030(settings 禁用即时生效经 invalidate;恢复后还原)', async () => {
+    it('通道未配置 → 25030(settings 提交后下一调用即时生效;恢复后还原)', async () => {
       await prisma.wechatSettings.updateMany({ data: { enabled: false } });
-      // 60s 缓存:直接清 service 内缓存比等待更稳——用 app 内实例 invalidate
-      const { WechatSettingsService } =
-        await import('../../src/modules/wechat/wechat-settings.service');
-      app.get(WechatSettingsService).invalidate();
       const res = await loginWechat('any');
       expectBizError(res, BizCode.WECHAT_CHANNEL_NOT_CONFIGURED);
       await prisma.wechatSettings.updateMany({ data: { enabled: true } });
-      app.get(WechatSettingsService).invalidate();
     });
   });
 

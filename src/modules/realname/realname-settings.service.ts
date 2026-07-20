@@ -26,22 +26,15 @@ import { RealnameCredentialStatus, type RealnameSettingsResolved } from './realn
 // - region 替 appId(腾讯云运行参数,非 secret)
 // - reset-credentials upsert 缺省 TENCENT_CLOUD(录凭证即意味着真实通道;镜像 sms/wechat 语义)
 //
-// 共性(沿 wechat/sms):60s 内存缓存(单实例前提)+ production-like 禁 DEV_STUB(写入口第①重,
+// 共性(沿 wechat/sms):每次调用直读 PostgreSQL 当前事实 + production-like 禁 DEV_STUB(写入口第①重,
 // 运行时第②重在 RealnameVerificationService)。第七刀 #13 起 singleton 由第 49 migration 的
 // unique index on constant((true)) 在 DB 层强制;并发首配 P2002 后重跑事务命中既有单行。
 // 凭证安全(L3 红线):response / 日志 / audit 永不含 secretId / secretKey 明文或密文;
 // 第六刀已补 update/reset-credentials 同事务 audit;reset audit 仅记动作,不含任何凭证值。
 
-const CACHE_TTL_MS = 60_000;
-
 @Injectable()
 export class RealnameSettingsService {
   private readonly logger = new Logger(RealnameSettingsService.name);
-
-  private cache: {
-    resolved: RealnameSettingsResolved | null;
-    expiresAt: number;
-  } | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -62,30 +55,13 @@ export class RealnameSettingsService {
   }
 
   /**
-   * 读取当前生效配置(singleton row;60s 缓存,单实例部署前提)
+   * 读取 PostgreSQL 当前生效配置(singleton row;每次调用直读)
    * - DB 空 → null(调用路径由 RealnameVerificationService 映射 27030)
    * - 第 49 migration 后 DB 层保证至多一条
    */
   async getActiveSettings(): Promise<RealnameSettingsResolved | null> {
-    if (this.cache !== null && this.cache.expiresAt > Date.now()) {
-      return this.cache.resolved;
-    }
-
     const row = await this.prisma.realnameVerificationSettings.findFirst();
-
-    if (row === null) {
-      this.setCache(null);
-      return null;
-    }
-
-    const resolved = this.toResolved(row);
-    this.setCache(resolved);
-    return resolved;
-  }
-
-  /** 主动失效缓存(PATCH / reset-credentials 写后调用) */
-  invalidate(): void {
-    this.cache = null;
+    return row === null ? null : this.toResolved(row);
   }
 
   // ============ admin 三端点(评审稿 §3.2 ①-③) ============
@@ -150,7 +126,6 @@ export class RealnameSettingsService {
       return updated;
     });
 
-    this.invalidate();
     return this.toResponseDto(row);
   }
 
@@ -212,7 +187,6 @@ export class RealnameSettingsService {
       `realname_verification_settings credentials reset by user.id=${user.id}; row.id=${row.id}`,
     );
 
-    this.invalidate();
     return this.toResponseDto(row);
   }
 
@@ -230,10 +204,6 @@ export class RealnameSettingsService {
       }
       return execute();
     }
-  }
-
-  private setCache(resolved: RealnameSettingsResolved | null): void {
-    this.cache = { resolved, expiresAt: Date.now() + CACHE_TTL_MS };
   }
 
   private buildUpdateData(

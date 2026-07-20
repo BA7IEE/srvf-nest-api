@@ -22,10 +22,8 @@ import {
   NotificationOutboxLeaseLostError,
 } from '../../src/modules/notifications/notification-outbox.types';
 import { NotificationOutboxWorker } from '../../src/modules/notifications/notification-outbox.worker';
-import { SmsSettingsService } from '../../src/modules/sms/sms-settings.service';
 import { SmsChannelUnavailableError } from '../../src/modules/sms/sms.types';
 import { DevStubSmsProvider } from '../../src/modules/sms/providers/dev-stub.provider';
-import { WechatSettingsService } from '../../src/modules/wechat/wechat-settings.service';
 import { DevStubWechatProvider } from '../../src/modules/wechat/providers/dev-stub.provider';
 import { WechatService } from '../../src/modules/wechat/wechat.service';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -125,8 +123,6 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
         templateIdNotification: 'outbox-notification-template',
       },
     });
-    app.get(SmsSettingsService).invalidate();
-    appB.get(SmsSettingsService).invalidate();
   }
 
   function input(
@@ -486,7 +482,6 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       data: { memberId, openid: 'dev-openid-outbox-os-crash' },
     });
     await prisma.wechatSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
-    app.get(WechatSettingsService).invalidate();
     await prisma.wechatSubscribeTemplate.upsert({
       where: { notificationTypeCode: 'general' },
       create: { notificationTypeCode: 'general', templateId: 'outbox-os-template', enabled: true },
@@ -573,7 +568,6 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
         templateIdNotification: 'outbox-sms-template',
       },
     });
-    app.get(SmsSettingsService).invalidate();
     const enqueueInput = input(refs, memberId, '00000000-0000-4000-8000-000000000077');
     const reservation = await prisma.$transaction((tx) =>
       outbox.reserveAdminSmsAttempt(enqueueInput, tx),
@@ -610,7 +604,6 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
     });
 
     await prisma.smsSettings.updateMany({ data: { enabled: false } });
-    app.get(SmsSettingsService).invalidate();
     const second = await runChild([
       'execute-and-ack',
       'os-sms-after-ack-crash',
@@ -679,7 +672,6 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       data: { memberId, openid: 'dev-openid-outbox-heartbeat' },
     });
     await prisma.wechatSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
-    app.get(WechatSettingsService).invalidate();
     await prisma.wechatSubscribeTemplate.upsert({
       where: { notificationTypeCode: 'general' },
       create: { notificationTypeCode: 'general', templateId: 'outbox-heartbeat', enabled: true },
@@ -783,7 +775,6 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       data: { memberId, openid: 'dev-openid-outbox-deep-guard' },
     });
     await prisma.wechatSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
-    app.get(WechatSettingsService).invalidate();
     const templateId = 'outbox-deep-guard-template';
     await prisma.wechatSubscribeTemplate.upsert({
       where: { notificationTypeCode: 'general' },
@@ -1068,7 +1059,6 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       data: { memberId, openid: 'dev-openid-wxerr-43101' },
     });
     await prisma.wechatSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
-    app.get(WechatSettingsService).invalidate();
     await prisma.wechatSubscribeTemplate.upsert({
       where: { notificationTypeCode: 'general' },
       create: {
