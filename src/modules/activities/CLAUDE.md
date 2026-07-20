@@ -26,6 +26,7 @@
 - Audit:主资源写路径走 `activity-audit-recorder.ts`；岗位写路径走 `activity-position-audit-recorder.ts`；**event 统一复用 `'activity.publish'`，不新增事件**，岗位以 `extra.operation=activityPosition.{create,update,softDelete}` 区分
 - **岗位容量并发基线**:PATCH capacity 必须事务内先锁 `Activity` 行，再重读 `ActivityPosition.capacity` 与本岗位 passCount；锁对象仍只有 Activity，不加岗位行锁
 - **活动窗父子不变式**:PATCH Activity `startAt/endAt` 与岗位 create/update/softDelete 共用 Activity 聚合锁；锁后校验全部 live 岗位独立窗仍落在新活动窗内，越窗复用 `ACTIVITY_POSITION_TIME_RANGE_INVALID=20017`，事务整体拒绝
+- **保险生命周期 PR-A**:`INSURANCE_ENFORCEMENT_ENABLED=false` 时 update 保持旧查询图；gate=true 时必须在既有 Activity `FOR UPDATE` 根事务内、真实写前检查 live(`deletedAt=null`)且 `statusCode!='cancelled'` 的报名。已有此类报名后，`requiresInsurance` 真值变化一律复用 `ACTIVITY_STATUS_INVALID`；current `requiresInsurance=true` 时 `startAt/endAt` 的实际变化同码拒绝；current false 且仍 false 的改期保持旧行为。策略归 `InsuranceRequirementService`，本模块只持根事务/锁并传当前与合并后值。
 - **容量父子不变量**:`Activity.capacity` 始终是全局硬上限；岗位 capacity 只会进一步收紧。Admin/App 活动 list/detail 的 effective capacity 取父上限与岗位合计的交集；有限总容量下岗位合计不得超过父上限。Activity/岗位 capacity 写均在 Activity 聚合锁后重读全部 pass 与 live 岗位容量；岗位扩容递补还必须受全局剩余量裁剪。父容量扩容/改无限时按全活动稳定 FIFO 跨岗位递补，只选择仍有 child headroom 的 live 岗位。
 - **完结时间闸**:`complete` 在 Activity 聚合锁后重读状态与时间，只有 `published` 且读侧 phase 已为 `ended`（严格晚于 `endAt`）才允许写 `completed`；未来/进行中活动复用 `ACTIVITY_STATUS_INVALID` fail-closed。
 - 状态机错误码:wrong state 统一抛 `BizCode.ACTIVITY_STATUS_INVALID`
@@ -39,6 +40,7 @@
 - ❌ **不**把 `'activity.publish'` 拆成 `activity.create` / `activity.update` 等细分 event(沿现状)
 - ❌ 活动岗位链路不得用裸 `positionId` / `position` 命名；字段、参数、relation 一律 `activityPositionId` / `activityPosition`，仅 URL 子资源段保留 `/positions`
 - ❌ **不**从 attendances 或其它模块直写 `Activity.statusCode`;完结必须走本模块 `complete` action(`published → completed`)，取消仅允许 draft|published。
+- ❌ **不**把保险生命周期查询移到 Activity 聚合锁前，不拆第二 insurance gate；首签到/考勤 submit/edit、offboard 与其它 participation producer 的重验属于后续 PR-B。
 - ❌ **不**把 Admin DTO 用 `extends` / `Pick` / `Omit` / `IntersectionType` / `PartialType` / `OmitType` 派生为 App DTO(沿 `harness reference/api-client-boundary.md` D-6`);App DTO 进 `dto/app/`
 - ❌ **不**新增 Mixed Controller(class-level + 方法级双 `@ApiTags`);新 App endpoint 进 `controllers/app-*.controller.ts`
 - ❌ **不**主动拆 `activities.service.ts`(898L,沿 [`/docs/current-state.md §4 P2`](../../../docs/current-state.md);拆分需单独立项)

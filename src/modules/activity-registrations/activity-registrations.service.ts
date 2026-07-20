@@ -1051,6 +1051,11 @@ export class ActivityRegistrationsService {
       if (!participationDecision.allowed) {
         throw new BizException(participationDecision.biz);
       }
+      await this.insuranceRequirement.revalidateActivityRegistrationApproval(
+        { id: reg.id, memberId: reg.memberId },
+        act,
+        tx,
+      );
       const effectiveCapacity = await this.resolveApproveCapacity(
         activityId,
         reg.activityPositionId,

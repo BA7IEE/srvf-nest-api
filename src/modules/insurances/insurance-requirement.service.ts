@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import { MemberStatus, Prisma } from '@prisma/client';
 
 import { normalizeDateOnly } from '../../common/datetime/date-only.util';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -68,6 +68,10 @@ interface LockedTeamCoverageRow {
 interface LockedOwnerRow {
   id: string;
   memberId: string;
+}
+
+interface LockedMemberRow {
+  id: string;
 }
 
 @Injectable()
@@ -242,6 +246,205 @@ export class InsuranceRequirementService {
       (await this.lockVerifiedSelfSource(memberId, requiredFrom, requiredThrough, tx)) ??
       this.lockTeamSource(memberId, requiredFrom, requiredThrough, tx)
     );
+  }
+
+  async assertActivityInsuranceLifecycleMutable(
+    current: {
+      id: string;
+      requiresInsurance: boolean;
+      startAt: Date;
+      endAt: Date;
+    },
+    next: { requiresInsurance: boolean; startAt: Date; endAt: Date },
+    tx: PrismaTx,
+  ): Promise<void> {
+    // Rollout gate is the sole activation switch. In compatibility mode this method must not
+    // touch registration storage, preserving the pre-enforcement update query graph exactly.
+    if (!this.isEnforcementEnabled()) return;
+
+    const requirementChanged = current.requiresInsurance !== next.requiresInsurance;
+    const insuredIntervalChanged =
+      current.requiresInsurance &&
+      (current.startAt.getTime() !== next.startAt.getTime() ||
+        current.endAt.getTime() !== next.endAt.getTime());
+    if (!requirementChanged && !insuredIntervalChanged) return;
+
+    const registration = await tx.activityRegistration.findFirst({
+      where: {
+        activityId: current.id,
+        deletedAt: null,
+        statusCode: { not: 'cancelled' },
+      },
+      select: { id: true },
+    });
+    if (registration) throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+  }
+
+  private sameDate(left: Date | null, right: Date | null): boolean {
+    if (left === null || right === null) return left === right;
+    return this.isValidDate(left) && this.isValidDate(right) && left.getTime() === right.getTime();
+  }
+
+  private async lockActiveMember(memberId: string, tx: PrismaTx): Promise<boolean> {
+    const rows = await tx.$queryRaw<LockedMemberRow[]>(Prisma.sql`
+      SELECT "id"
+      FROM "Member"
+      WHERE "id" = ${memberId}
+        AND "deletedAt" IS NULL
+        AND CAST("status" AS TEXT) = ${MemberStatus.ACTIVE}
+      FOR SHARE
+    `);
+    return rows.length === 1;
+  }
+
+  async revalidateActivityRegistrationApproval(
+    registration: { id: string; memberId: string },
+    activity: { requiresInsurance: boolean; startAt: Date; endAt: Date },
+    tx: PrismaTx,
+  ): Promise<void> {
+    // Approval keeps its legacy query/eligibility behavior unless both rollout and activity
+    // requirement are active. Callers may invoke this unconditionally after locking Activity.
+    if (!this.isEnforcementEnabled() || !activity.requiresInsurance) return;
+
+    const fail = (): never => {
+      throw new BizException(BizCode.INSURANCE_REQUIRED);
+    };
+    const { requiredFrom, requiredThrough } = this.activityInterval(activity);
+    const evidences = await tx.insuranceEligibilityEvidence.findMany({
+      where: { activityRegistrationId: registration.id },
+      select: {
+        id: true,
+        sourceKind: true,
+        memberInsuranceId: true,
+        teamInsuranceCoverageId: true,
+        ownerKind: true,
+        activityRegistrationId: true,
+        teamJoinApplicationId: true,
+        sourceRevision: true,
+        sourceReviewedByUserId: true,
+        sourceReviewedAt: true,
+        requiredFrom: true,
+        requiredThrough: true,
+        sourceCoverageStart: true,
+        sourceCoverageEnd: true,
+        activityRegistration: {
+          select: { id: true, memberId: true, deletedAt: true },
+        },
+      },
+      orderBy: { id: 'asc' },
+      take: 2,
+    });
+    if (evidences.length !== 1) fail();
+    const evidence = evidences[0];
+    if (
+      evidence.ownerKind !== 'activity_registration' ||
+      evidence.activityRegistrationId !== registration.id ||
+      evidence.teamJoinApplicationId !== null ||
+      evidence.activityRegistration?.id !== registration.id ||
+      evidence.activityRegistration.memberId !== registration.memberId ||
+      evidence.activityRegistration.deletedAt !== null ||
+      !this.sameDate(evidence.requiredFrom, requiredFrom) ||
+      !this.sameDate(evidence.requiredThrough, requiredThrough)
+    ) {
+      fail();
+    }
+
+    if (evidence.sourceKind === 'member_insurance') {
+      if (
+        !evidence.memberInsuranceId ||
+        evidence.teamInsuranceCoverageId !== null ||
+        !Number.isInteger(evidence.sourceRevision) ||
+        (evidence.sourceRevision ?? -1) < 0 ||
+        !evidence.sourceReviewedByUserId ||
+        !this.isValidDate(evidence.sourceReviewedAt) ||
+        (evidence.sourceCoverageStart !== null &&
+          !this.isValidDate(evidence.sourceCoverageStart)) ||
+        !this.isValidDate(evidence.sourceCoverageEnd)
+      ) {
+        fail();
+      }
+
+      // This Member -> MemberInsurance order matches admin review; app self writers lock only
+      // MemberInsurance and never acquire Member afterwards, so they introduce no reverse edge.
+      if (!(await this.lockActiveMember(registration.memberId, tx))) fail();
+      const sources = await tx.$queryRaw<LockedSelfInsuranceRow[]>(Prisma.sql`
+        SELECT
+          "id",
+          "memberId",
+          "coverageStart",
+          "coverageEnd",
+          "version",
+          "reviewedByUserId",
+          "reviewedAt"
+        FROM "member_insurances"
+        WHERE "id" = ${evidence.memberInsuranceId}
+          AND "memberId" = ${registration.memberId}
+          AND "deletedAt" IS NULL
+          AND "reviewStatusCode" = 'verified'
+          AND "version" = ${evidence.sourceRevision}
+          AND "reviewedByUserId" = ${evidence.sourceReviewedByUserId}
+          AND "reviewedAt" = ${evidence.sourceReviewedAt}
+          AND "coverageStart" IS NOT DISTINCT FROM ${evidence.sourceCoverageStart}
+          AND "coverageEnd" = ${evidence.sourceCoverageEnd}
+          AND "coverageEnd" >= ${requiredThrough}
+          AND ("coverageStart" IS NULL OR "coverageStart" <= ${requiredFrom})
+        FOR SHARE
+      `);
+      if (sources.length !== 1) fail();
+      return;
+    }
+
+    if (evidence.sourceKind === 'team_insurance_coverage') {
+      if (
+        evidence.memberInsuranceId !== null ||
+        !evidence.teamInsuranceCoverageId ||
+        evidence.sourceRevision !== null ||
+        evidence.sourceReviewedByUserId !== null ||
+        evidence.sourceReviewedAt !== null ||
+        !this.isValidDate(evidence.sourceCoverageStart) ||
+        !this.isValidDate(evidence.sourceCoverageEnd)
+      ) {
+        fail();
+      }
+
+      const candidates = await tx.$queryRaw<TeamInsuranceCandidateRow[]>(Prisma.sql`
+        SELECT "policyId", "id" AS "coverageId"
+        FROM "team_insurance_coverages"
+        WHERE "id" = ${evidence.teamInsuranceCoverageId}
+      `);
+      const candidate = candidates[0];
+      if (!candidate || candidates.length !== 1) fail();
+
+      // Team coverage writers use Policy -> Coverage -> Member. Lock that exact source chain;
+      // never call lockEligibilitySource(), which could silently substitute a newer source.
+      const policies = await tx.$queryRaw<LockedTeamPolicyRow[]>(Prisma.sql`
+        SELECT "id", "coverageStart", "coverageEnd"
+        FROM "team_insurance_policies"
+        WHERE "id" = ${candidate.policyId}
+          AND "deletedAt" IS NULL
+          AND "coverageStart" = ${evidence.sourceCoverageStart}
+          AND "coverageEnd" = ${evidence.sourceCoverageEnd}
+          AND "coverageStart" <= ${requiredFrom}
+          AND "coverageEnd" >= ${requiredThrough}
+        FOR SHARE
+      `);
+      if (policies.length !== 1) fail();
+
+      const coverages = await tx.$queryRaw<LockedTeamCoverageRow[]>(Prisma.sql`
+        SELECT "id", "memberId"
+        FROM "team_insurance_coverages"
+        WHERE "id" = ${evidence.teamInsuranceCoverageId}
+          AND "policyId" = ${candidate.policyId}
+          AND "memberId" = ${registration.memberId}
+          AND "deletedAt" IS NULL
+        FOR SHARE
+      `);
+      if (coverages.length !== 1) fail();
+      if (!(await this.lockActiveMember(registration.memberId, tx))) fail();
+      return;
+    }
+
+    fail();
   }
 
   async isMemberInsuredForActivity(

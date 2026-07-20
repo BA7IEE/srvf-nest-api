@@ -28,7 +28,7 @@ import { createTestApp } from '../setup/test-app';
 //   - 队保单软删 → 拒(覆盖行不级联但 join p.deletedAt IS NULL 失效,E-4)
 //   - **双路径同拦截**:admin 代报名(POST admin/v1/activities/:id/registrations)与
 //     App 自助(POST app/v1/my/registrations,薄壳经 createMy)同语义(C015 无旁路)
-//   - 快照:门槛只在 create 时校验;报名成功后保险删除不回溯(报名仍 pending)
+//   - 快照:create 固化 exact source evidence；PR-A 在 approve 前重验同一来源，来源失效时报名仍 pending
 
 interface ResBody {
   code: number;
@@ -227,6 +227,17 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
       .send({ memberId });
   }
 
+  function approveRegistration(
+    activityId: string,
+    registrationId: string,
+    targetApp: INestApplication = app,
+  ): request.Test {
+    return request(httpServer(targetApp))
+      .patch(`/api/admin/v1/activities/${activityId}/registrations/${registrationId}/approve`)
+      .set('Authorization', adminAuth)
+      .send({});
+  }
+
   async function waitForBlockedQuery(blockerPid: number, queryPattern: string): Promise<void> {
     const deadline = Date.now() + 5_000;
     while (Date.now() < deadline) {
@@ -265,6 +276,442 @@ describe('报名保险门槛(保险 T3;requiresInsurance gate)', () => {
       if (timer) clearTimeout(timer);
     }
   }
+
+  async function expectApprovalFailureHasZeroEffects(
+    registrationId: string,
+    memberId: string,
+  ): Promise<void> {
+    expect(
+      await prisma.activityRegistration.findUniqueOrThrow({ where: { id: registrationId } }),
+    ).toMatchObject({
+      statusCode: 'pending',
+      reviewedBy: null,
+      reviewedAt: null,
+    });
+    expect(
+      await prisma.auditLog.count({
+        where: { resourceId: registrationId, event: 'registration.review' },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.notification.count({
+        where: {
+          recipientMemberId: memberId,
+          notificationTypeCode: 'registration-result',
+        },
+      }),
+    ).toBe(0);
+  }
+
+  describe('PR-A Activity 保险生命周期冻结', () => {
+    it('gate=true：live rejected 也冻结 requiresInsurance 真值变化，写入与 audit 均为 0', async () => {
+      const me = await setupLinkedUser('lifecycle-rejected');
+      const act = await createPublishedActivity(false);
+      await prisma.activityRegistration.create({
+        data: { activityId: act.id, memberId: me.memberId, statusCode: 'reject' },
+      });
+
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/activities/${act.id}`)
+        .set('Authorization', adminAuth)
+        .send({ requiresInsurance: true });
+
+      expectBizError(res, BizCode.ACTIVITY_STATUS_INVALID);
+      expect(
+        await prisma.activity.findUniqueOrThrow({
+          where: { id: act.id },
+          select: { requiresInsurance: true },
+        }),
+      ).toEqual({ requiresInsurance: false });
+      expect(
+        await prisma.auditLog.count({
+          where: { resourceId: act.id, event: 'activity.publish' },
+        }),
+      ).toBe(0);
+    });
+
+    it('gate=true：仅 cancelled 报名不冻结 flag；current=false 且仍 false 可按旧行为改时段', async () => {
+      const cancelledMember = await setupLinkedUser('lifecycle-cancelled');
+      const cancelledOnly = await createPublishedActivity(false);
+      await prisma.activityRegistration.create({
+        data: {
+          activityId: cancelledOnly.id,
+          memberId: cancelledMember.memberId,
+          statusCode: 'cancelled',
+        },
+      });
+      const flagUpdate = await request(httpServer(app))
+        .patch(`/api/admin/v1/activities/${cancelledOnly.id}`)
+        .set('Authorization', adminAuth)
+        .send({ requiresInsurance: true });
+      expect(flagUpdate.status).toBe(200);
+      expect(flagUpdate.body.data.requiresInsurance).toBe(true);
+
+      const pendingMember = await setupLinkedUser('lifecycle-false-schedule');
+      const uninsured = await createPublishedActivity(false);
+      await prisma.activityRegistration.create({
+        data: { activityId: uninsured.id, memberId: pendingMember.memberId, statusCode: 'pending' },
+      });
+      const scheduleUpdate = await request(httpServer(app))
+        .patch(`/api/admin/v1/activities/${uninsured.id}`)
+        .set('Authorization', adminAuth)
+        .send({ startAt: '2099-07-01T07:00:00.000Z' });
+      expect(scheduleUpdate.status).toBe(200);
+      expect(scheduleUpdate.body.data).toMatchObject({
+        requiresInsurance: false,
+        startAt: '2099-07-01T07:00:00.000Z',
+      });
+    });
+
+    it('gate=true：current requiresInsurance=true 且有 live 报名时，实际活动窗变化被拒', async () => {
+      const me = await setupLinkedUser('lifecycle-insured-window');
+      await giveSelfInsurance(me.memberId, {
+        coverageStart: '2099-01-01',
+        coverageEnd: '2099-12-31',
+      });
+      const act = await createPublishedActivity(true);
+      await registerSelf(me.authHeader, act.id).expect(201);
+
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/activities/${act.id}`)
+        .set('Authorization', adminAuth)
+        .send({ endAt: '2099-07-01T13:00:00.000Z' });
+
+      expectBizError(res, BizCode.ACTIVITY_STATUS_INVALID);
+      expect(
+        await prisma.activity.findUniqueOrThrow({
+          where: { id: act.id },
+          select: { endAt: true },
+        }),
+      ).toEqual({ endAt: ACT_END });
+    });
+
+    it('两 Nest/两 pool barrier：报名先持 Activity 锁并提交后，flag update 重读 live registration 后拒绝', async () => {
+      const me = await setupLinkedUser('lifecycle-concurrent-reg');
+      await giveSelfInsurance(me.memberId, {
+        coverageStart: '2099-01-01',
+        coverageEnd: '2099-12-31',
+      });
+      const act = await createPublishedActivity(true);
+      const requirement = app.get(InsuranceRequirementService);
+      const original = requirement.createActivityRegistrationEvidence.bind(requirement);
+      let release!: () => void;
+      let reached!: (pid: number) => void;
+      const releasePromise = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const reachedPromise = new Promise<number>((resolve) => {
+        reached = resolve;
+      });
+      const barrier = jest
+        .spyOn(requirement, 'createActivityRegistrationEvidence')
+        .mockImplementation(async (...args) => {
+          await original(...args);
+          const rows = await args[3].$queryRaw<Array<{ pid: number }>>(
+            Prisma.sql`SELECT pg_backend_pid() AS pid`,
+          );
+          reached(rows[0].pid);
+          await releasePromise;
+        });
+      const requests: Array<Promise<request.Response>> = [];
+
+      try {
+        const registration = registerSelf(me.authHeader, act.id).then((res) => res);
+        requests.push(registration);
+        const blockerPid = await withTimeout(reachedPromise, 'lifecycle registration barrier');
+        const update = request(httpServer(appB))
+          .patch(`/api/admin/v1/activities/${act.id}`)
+          .set('Authorization', adminAuth)
+          .send({ requiresInsurance: false })
+          .then((res) => res);
+        requests.push(update);
+        await waitForBlockedQuery(blockerPid, '%FROM "Activity"%FOR UPDATE%');
+        release();
+        const [registrationRes, updateRes] = await Promise.all([registration, update]);
+        expect(registrationRes.status).toBe(201);
+        expectBizError(updateRes, BizCode.ACTIVITY_STATUS_INVALID);
+      } finally {
+        release();
+        await Promise.allSettled(requests);
+        barrier.mockRestore();
+      }
+      expect(
+        await prisma.activity.findUniqueOrThrow({
+          where: { id: act.id },
+          select: { requiresInsurance: true },
+        }),
+      ).toEqual({ requiresInsurance: true });
+      expect(
+        await prisma.activityRegistration.count({
+          where: { activityId: act.id, memberId: me.memberId, statusCode: 'pending' },
+        }),
+      ).toBe(1);
+    });
+  });
+
+  describe('PR-A approve exact-evidence 重验', () => {
+    it('requiresInsurance=false：无 evidence 的 pending 报名保持旧 approve 行为', async () => {
+      const me = await setupLinkedUser('approve-uninsured-activity');
+      const act = await createPublishedActivity(false);
+      const registration = await prisma.activityRegistration.create({
+        data: { activityId: act.id, memberId: me.memberId, statusCode: 'pending' },
+        select: { id: true },
+      });
+
+      const res = await approveRegistration(act.id, registration.id);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.statusCode).toBe('pass');
+    });
+
+    it('verified self evidence 与当前 Activity/Member/source 全匹配时 approve 成功', async () => {
+      const me = await setupLinkedUser('approve-self-valid');
+      await giveSelfInsurance(me.memberId, {
+        coverageStart: '2099-01-01',
+        coverageEnd: '2099-12-31',
+      });
+      const act = await createPublishedActivity(true);
+      const created = await registerSelf(me.authHeader, act.id).expect(201);
+      const registrationId = (created.body as ResBody).data.id as string;
+
+      const res = await approveRegistration(act.id, registrationId);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.statusCode).toBe('pass');
+    });
+
+    it('requiresInsurance=true 但 registration 无 evidence → 26030 且零 terminal/audit/notification', async () => {
+      const me = await setupLinkedUser('approve-missing-evidence');
+      const act = await createPublishedActivity(true);
+      const registration = await prisma.activityRegistration.create({
+        data: { activityId: act.id, memberId: me.memberId, statusCode: 'pending' },
+        select: { id: true },
+      });
+
+      const res = await approveRegistration(act.id, registration.id);
+
+      expectBizError(res, BizCode.INSURANCE_REQUIRED);
+      await expectApprovalFailureHasZeroEffects(registration.id, me.memberId);
+    });
+
+    it('原 self source revision/review snapshot 失效时，即使有另一份 verified source 也不重选', async () => {
+      const me = await setupLinkedUser('approve-self-exact-source');
+      const source = await giveSelfInsurance(me.memberId, {
+        coverageStart: '2099-01-01',
+        coverageEnd: '2099-12-31',
+      });
+      const act = await createPublishedActivity(true);
+      const created = await registerSelf(me.authHeader, act.id).expect(201);
+      const registrationId = (created.body as ResBody).data.id as string;
+      await giveSelfInsurance(me.memberId, {
+        coverageStart: '2099-01-01',
+        coverageEnd: '2100-12-31',
+      });
+      await prisma.memberInsurance.update({
+        where: { id: source.id },
+        data: {
+          reviewStatusCode: 'pending',
+          version: { increment: 1 },
+          reviewedByUserId: null,
+          reviewedAt: null,
+        },
+      });
+
+      const res = await approveRegistration(act.id, registrationId);
+
+      expectBizError(res, BizCode.INSURANCE_REQUIRED);
+      await expectApprovalFailureHasZeroEffects(registrationId, me.memberId);
+    });
+
+    it('原 team Policy+Coverage 链失效时，即使有另一条有效 team source 也不重选', async () => {
+      const me = await setupLinkedUser('approve-team-exact-source');
+      const source = await givePolicyCoverage(me.memberId, {
+        coverageStart: '2099-01-01',
+        coverageEnd: '2099-12-31',
+      });
+      const act = await createPublishedActivity(true);
+      const created = await registerSelf(me.authHeader, act.id).expect(201);
+      const registrationId = (created.body as ResBody).data.id as string;
+      await givePolicyCoverage(me.memberId, {
+        coverageStart: '2098-01-01',
+        coverageEnd: '2100-12-31',
+      });
+      await prisma.teamInsuranceCoverage.update({
+        where: { id: source.coverageId },
+        data: { deletedAt: new Date() },
+      });
+
+      const res = await approveRegistration(act.id, registrationId);
+
+      expectBizError(res, BizCode.INSURANCE_REQUIRED);
+      await expectApprovalFailureHasZeroEffects(registrationId, me.memberId);
+    });
+
+    it('Member 不再 live+ACTIVE → exact source 仍在也拒 26030', async () => {
+      const me = await setupLinkedUser('approve-inactive-member');
+      await giveSelfInsurance(me.memberId, {
+        coverageStart: '2099-01-01',
+        coverageEnd: '2099-12-31',
+      });
+      const act = await createPublishedActivity(true);
+      const created = await registerSelf(me.authHeader, act.id).expect(201);
+      const registrationId = (created.body as ResBody).data.id as string;
+      await prisma.member.update({
+        where: { id: me.memberId },
+        data: { status: MemberStatus.INACTIVE },
+      });
+
+      const res = await approveRegistration(act.id, registrationId);
+
+      expectBizError(res, BizCode.INSURANCE_REQUIRED);
+      await expectApprovalFailureHasZeroEffects(registrationId, me.memberId);
+    });
+
+    it('evidence required interval 不再等于当前 Activity 时拒绝，即使 source 仍覆盖新时段', async () => {
+      const me = await setupLinkedUser('approve-activity-interval-drift');
+      await giveSelfInsurance(me.memberId, {
+        coverageStart: '2099-01-01',
+        coverageEnd: '2100-12-31',
+      });
+      const act = await createPublishedActivity(true);
+      const created = await registerSelf(me.authHeader, act.id).expect(201);
+      const registrationId = (created.body as ResBody).data.id as string;
+      // 仅模拟旁路/旧版本漂移；正常 service 更新已由本 PR 的生命周期冻结拒绝。
+      await prisma.activity.update({
+        where: { id: act.id },
+        data: { endAt: new Date('2099-07-02T12:00:00.000Z') },
+      });
+
+      const res = await approveRegistration(act.id, registrationId);
+
+      expectBizError(res, BizCode.INSURANCE_REQUIRED);
+      await expectApprovalFailureHasZeroEffects(registrationId, me.memberId);
+    });
+
+    it('两 Nest/两 pool barrier：self edit 先持 exact source，approve 等待提交后按 pending snapshot 拒绝', async () => {
+      const me = await setupLinkedUser('approve-concurrent-self-edit');
+      const source = await giveSelfInsurance(me.memberId, {
+        coverageStart: '2099-01-01',
+        coverageEnd: '2099-12-31',
+      });
+      const act = await createPublishedActivity(true);
+      const created = await registerSelf(me.authHeader, act.id).expect(201);
+      const registrationId = (created.body as ResBody).data.id as string;
+      const auditLogsB = appB.get(AuditLogsService);
+      const originalLog = auditLogsB.log.bind(auditLogsB);
+      let release!: () => void;
+      let reached!: (pid: number) => void;
+      const releasePromise = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const reachedPromise = new Promise<number>((resolve) => {
+        reached = resolve;
+      });
+      const barrier = jest.spyOn(auditLogsB, 'log').mockImplementation(async (...args) => {
+        const input = args[0];
+        if (
+          input.event === 'member-insurance.update.self' &&
+          input.resourceId === source.id &&
+          input.tx
+        ) {
+          const rows = await input.tx.$queryRaw<Array<{ pid: number }>>(
+            Prisma.sql`SELECT pg_backend_pid() AS pid`,
+          );
+          reached(rows[0].pid);
+          await releasePromise;
+        }
+        return originalLog(...args);
+      });
+      const requests: Array<Promise<request.Response>> = [];
+
+      try {
+        const edit = request(httpServer(appB))
+          .patch(`/api/app/v1/me/insurances/${source.id}`)
+          .set('Authorization', me.authHeader)
+          .send({ insurerName: '审批前并发编辑', expectedVersion: 0 })
+          .then((res) => res);
+        requests.push(edit);
+        const blockerPid = await withTimeout(reachedPromise, 'approval self edit barrier');
+        const approval = approveRegistration(act.id, registrationId).then((res) => res);
+        requests.push(approval);
+        await waitForBlockedQuery(blockerPid, '%FROM "member_insurances"%FOR SHARE%');
+        release();
+        const [editRes, approvalRes] = await Promise.all([edit, approval]);
+        expect(editRes.status).toBe(200);
+        expectBizError(approvalRes, BizCode.INSURANCE_REQUIRED);
+      } finally {
+        release();
+        await Promise.allSettled(requests);
+        barrier.mockRestore();
+      }
+      await expectApprovalFailureHasZeroEffects(registrationId, me.memberId);
+    });
+
+    it('两 Nest/两 pool barrier：team policy delete 持 exact Policy，approve 阻塞后按 deleted 事实拒绝且不替代', async () => {
+      const me = await setupLinkedUser('approve-concurrent-team-delete');
+      const source = await givePolicyCoverage(me.memberId, {
+        coverageStart: '2099-01-01',
+        coverageEnd: '2099-12-31',
+      });
+      const act = await createPublishedActivity(true);
+      const created = await registerSelf(me.authHeader, act.id).expect(201);
+      const registrationId = (created.body as ResBody).data.id as string;
+      await givePolicyCoverage(me.memberId, {
+        coverageStart: '2098-01-01',
+        coverageEnd: '2100-12-31',
+      });
+      const auditLogsB = appB.get(AuditLogsService);
+      const originalLog = auditLogsB.log.bind(auditLogsB);
+      let release!: () => void;
+      let reached!: (pid: number) => void;
+      const releasePromise = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const reachedPromise = new Promise<number>((resolve) => {
+        reached = resolve;
+      });
+      const barrier = jest.spyOn(auditLogsB, 'log').mockImplementation(async (...args) => {
+        const input = args[0];
+        if (
+          input.event === 'team-insurance-policy.delete' &&
+          input.resourceId === source.policyId &&
+          input.tx
+        ) {
+          const rows = await input.tx.$queryRaw<Array<{ pid: number }>>(
+            Prisma.sql`SELECT pg_backend_pid() AS pid`,
+          );
+          reached(rows[0].pid);
+          await releasePromise;
+        }
+        return originalLog(...args);
+      });
+      const requests: Array<Promise<request.Response>> = [];
+
+      try {
+        const deletion = request(httpServer(appB))
+          .delete(`/api/admin/v1/team-insurance-policies/${source.policyId}`)
+          .set('Authorization', adminAuth)
+          .then((res) => res);
+        requests.push(deletion);
+        const blockerPid = await withTimeout(reachedPromise, 'approval team delete barrier');
+        const approval = approveRegistration(act.id, registrationId).then((res) => res);
+        requests.push(approval);
+        await waitForBlockedQuery(blockerPid, '%FROM "team_insurance_policies"%FOR SHARE%');
+        release();
+        const [deletionRes, approvalRes] = await Promise.all([deletion, approval]);
+        expect(deletionRes.status).toBe(200);
+        expectBizError(approvalRes, BizCode.INSURANCE_REQUIRED);
+      } finally {
+        release();
+        await Promise.allSettled(requests);
+        barrier.mockRestore();
+      }
+      expect(
+        await prisma.teamInsurancePolicy.findUniqueOrThrow({ where: { id: source.policyId } }),
+      ).toMatchObject({ deletedAt: expect.any(Date) });
+      await expectApprovalFailureHasZeroEffects(registrationId, me.memberId);
+    });
+  });
 
   // ============== ① 开关关 → 不校验(零回归证据)==============
 
