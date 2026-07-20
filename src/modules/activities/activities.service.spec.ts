@@ -14,6 +14,7 @@ import type {
 import { ActivitiesService } from './activities.service';
 import type { ActivityAuditRecorder } from './activity-audit-recorder';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import type { ActivityStateDecision } from './activity-state-machine';
 import type { NotificationDispatcher } from '../notifications/notification-dispatcher';
 import type { OrganizationsService } from '../organizations/organizations.service';
@@ -74,6 +75,7 @@ interface ActivityRow {
   cancelledAt: Date | null;
   cancelReason: string | null;
   isPublicRegistration: boolean;
+  requiresInsurance: boolean;
   registrationSchema: Prisma.JsonValue | null;
   coverImageUrl: string | null;
   galleryImageUrls: Prisma.JsonValue | null;
@@ -106,6 +108,7 @@ function makeActivityRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
     cancelledAt: null,
     cancelReason: null,
     isPublicRegistration: false,
+    requiresInsurance: false,
     registrationSchema: null,
     coverImageUrl: null,
     galleryImageUrls: null,
@@ -265,6 +268,15 @@ function makeOrganizationsMock() {
 }
 type OrganizationsMock = ReturnType<typeof makeOrganizationsMock>;
 
+function makeInsuranceRequirementMock() {
+  return {
+    assertActivityInsuranceLifecycleMutable: jest
+      .fn<Promise<void>, [unknown, unknown, unknown]>()
+      .mockResolvedValue(undefined),
+  };
+}
+type InsuranceRequirementMock = ReturnType<typeof makeInsuranceRequirementMock>;
+
 function makeService(
   prisma: PrismaMock,
   opts: {
@@ -273,6 +285,7 @@ function makeService(
     dispatcher?: NotificationDispatcherMock;
     authz?: AuthzMock;
     organizations?: OrganizationsMock;
+    insuranceRequirement?: InsuranceRequirementMock;
   } = {},
 ): ActivitiesService {
   const stateMachine = opts.stateMachine ?? makeStateMachineMock(DENY_DECISION);
@@ -280,6 +293,7 @@ function makeService(
   const dispatcher = opts.dispatcher ?? makeNotificationDispatcherMock();
   const authz = opts.authz ?? makeAuthzMock();
   const organizations = opts.organizations ?? makeOrganizationsMock();
+  const insuranceRequirement = opts.insuranceRequirement ?? makeInsuranceRequirementMock();
   return new ActivitiesService(
     prisma as unknown as PrismaService,
     stateMachine,
@@ -289,6 +303,7 @@ function makeService(
     authz as unknown as AuthzService,
     dispatcher as unknown as NotificationDispatcher,
     organizations as unknown as OrganizationsService,
+    insuranceRequirement as unknown as InsuranceRequirementService,
   );
 }
 
@@ -576,6 +591,46 @@ describe('ActivitiesService (characterization)', () => {
         }),
       );
       expect(res.title).toBe('Updated Title');
+    });
+
+    it('保险生命周期守卫在 Activity 锁后、写入前失败 → 零 update / audit', async () => {
+      const prisma = makePrismaMock();
+      const recorder = makeRecorderMock();
+      const insuranceRequirement = makeInsuranceRequirementMock();
+      insuranceRequirement.assertActivityInsuranceLifecycleMutable.mockRejectedValue(
+        new BizException(BizCode.ACTIVITY_STATUS_INVALID),
+      );
+      prisma.activity.findFirst.mockResolvedValue(
+        makeActivityRow({ statusCode: 'published', requiresInsurance: true }),
+      );
+      const service = makeService(prisma, {
+        stateMachine: makeStateMachineMock({ allowed: true, nextStatusCode: 'published' }),
+        recorder,
+        insuranceRequirement,
+      });
+
+      await expect(
+        service.update(
+          'act-1',
+          makeUpdateDto({ requiresInsurance: false }),
+          makeCurrentUser(),
+          META,
+        ),
+      ).rejects.toEqual(new BizException(BizCode.ACTIVITY_STATUS_INVALID));
+
+      expect(insuranceRequirement.assertActivityInsuranceLifecycleMutable).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'act-1', requiresInsurance: true }),
+        expect.objectContaining({
+          requiresInsurance: false,
+          startAt: FIXED_START,
+        }),
+        prisma,
+      );
+      expect(
+        insuranceRequirement.assertActivityInsuranceLifecycleMutable.mock.invocationCallOrder[0],
+      ).toBeGreaterThan(prisma.$queryRaw.mock.invocationCallOrder[0]);
+      expect(prisma.activity.update).not.toHaveBeenCalled();
+      expect(recorder.logUpdate).not.toHaveBeenCalled();
     });
   });
 

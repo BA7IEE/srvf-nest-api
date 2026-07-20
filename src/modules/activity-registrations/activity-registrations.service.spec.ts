@@ -59,6 +59,8 @@ interface ActivityRow {
   statusCode: string;
   isPublicRegistration: boolean;
   capacity: number | null;
+  requiresInsurance: boolean;
+  startAt: Date;
   registrationDeadline: Date | null;
   endAt: Date;
   genderRequirementCode: string | null;
@@ -123,6 +125,8 @@ function makeActivityRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
     statusCode: 'published',
     isPublicRegistration: true,
     capacity: null,
+    requiresInsurance: false,
+    startAt: new Date('2098-12-31T00:00:00.000Z'),
     registrationDeadline: null,
     endAt: new Date('2099-01-01T00:00:00.000Z'),
     genderRequirementCode: null,
@@ -242,8 +246,12 @@ function makeInsuranceRequirementMock() {
   return {
     requireForActivityRegistration: jest.fn().mockResolvedValue(null),
     createActivityRegistrationEvidence: jest.fn().mockResolvedValue(undefined),
+    revalidateActivityRegistrationApproval: jest
+      .fn<Promise<void>, [unknown, unknown, unknown]>()
+      .mockResolvedValue(undefined),
   };
 }
+type InsuranceRequirementMock = ReturnType<typeof makeInsuranceRequirementMock>;
 
 // 统一通知 S4:派发器 mock —— dispatchTargeted 默认 resolve(派发成功);新 S4 用例可注入 reject
 // 验证「派发失败不破坏审批」,或断言入参(recipientMemberId / type / channels)。
@@ -282,6 +290,7 @@ function makeService(
   dispatcher: NotificationDispatcherMock = makeNotificationDispatcherMock(),
   authz: AuthzMock = makeAuthzMock(),
   organizations: OrganizationsMock = makeOrganizationsMock(),
+  insuranceRequirement: InsuranceRequirementMock = makeInsuranceRequirementMock(),
 ): ActivityRegistrationsService {
   // stateMachine mock 仅含 decide,结构上可直接赋给 ActivityRegistrationStateMachine,无需断言。
   return new ActivityRegistrationsService(
@@ -291,7 +300,7 @@ function makeService(
     { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogsService,
     makeRbacMock() as unknown as RbacService,
     authz as unknown as AuthzService,
-    makeInsuranceRequirementMock() as unknown as InsuranceRequirementService,
+    insuranceRequirement as unknown as InsuranceRequirementService,
     dispatcher as unknown as NotificationDispatcher,
     organizations as unknown as OrganizationsService,
     new ActivityParticipationPolicy(),
@@ -457,6 +466,7 @@ describe('ActivityRegistrationsService (characterization)', () => {
     it('approve allowed → update 写 nextStatusCode;logReview action=approve,tx 透传', async () => {
       const prisma = makePrismaMock();
       const recorder = makeAuditRecorderMock();
+      const insuranceRequirement = makeInsuranceRequirementMock();
       const stateMachine = makeStateMachineMock({ allowed: true, nextStatusCode: 'pass' });
       prisma.activityRegistration.findFirst.mockResolvedValue(
         makeRegRow({ statusCode: 'pending', activityId: 'act-1' }),
@@ -465,7 +475,15 @@ describe('ActivityRegistrationsService (characterization)', () => {
       prisma.activityRegistration.update.mockResolvedValue(
         makeRegRow({ statusCode: 'pass', reviewedBy: 'admin-1', reviewedAt: FIXED_DATE }),
       );
-      const service = makeService(prisma, recorder, stateMachine);
+      const service = makeService(
+        prisma,
+        recorder,
+        stateMachine,
+        undefined,
+        undefined,
+        undefined,
+        insuranceRequirement,
+      );
 
       const result = await service.approve(
         'act-1',
@@ -485,7 +503,52 @@ describe('ActivityRegistrationsService (characterization)', () => {
       expect(recorder.logReview).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'approve', nextStatusCode: 'pass', tx: prisma }),
       );
+      expect(insuranceRequirement.revalidateActivityRegistrationApproval).toHaveBeenCalledWith(
+        { id: 'reg-1', memberId: 'mem-1' },
+        expect.objectContaining({ id: 'act-1', requiresInsurance: false }),
+        prisma,
+      );
+      expect(
+        insuranceRequirement.revalidateActivityRegistrationApproval.mock.invocationCallOrder[0],
+      ).toBeGreaterThan(prisma.$queryRaw.mock.invocationCallOrder[0]);
+      expect(prisma.activityRegistration.updateMany.mock.invocationCallOrder[0]).toBeGreaterThan(
+        insuranceRequirement.revalidateActivityRegistrationApproval.mock.invocationCallOrder[0],
+      );
       expect(result.statusCode).toBe('pass');
+    });
+
+    it('approve 保险重验失败 → registration 仍 pending，零 claim / update / audit / notification', async () => {
+      const prisma = makePrismaMock();
+      const recorder = makeAuditRecorderMock();
+      const dispatcher = makeNotificationDispatcherMock();
+      const insuranceRequirement = makeInsuranceRequirementMock();
+      insuranceRequirement.revalidateActivityRegistrationApproval.mockRejectedValue(
+        new BizException(BizCode.INSURANCE_REQUIRED),
+      );
+      prisma.activityRegistration.findFirst.mockResolvedValue(
+        makeRegRow({ statusCode: 'pending', activityId: 'act-1', memberId: 'mem-1' }),
+      );
+      prisma.activity.findFirst.mockResolvedValue(
+        makeActivityRow({ capacity: null, requiresInsurance: true }),
+      );
+      const service = makeService(
+        prisma,
+        recorder,
+        makeStateMachineMock({ allowed: true, nextStatusCode: 'pass' }),
+        dispatcher,
+        undefined,
+        undefined,
+        insuranceRequirement,
+      );
+
+      await expect(service.approve('act-1', 'reg-1', {}, makeCurrentUser(), META)).rejects.toEqual(
+        new BizException(BizCode.INSURANCE_REQUIRED),
+      );
+
+      expect(prisma.activityRegistration.updateMany).not.toHaveBeenCalled();
+      expect(prisma.activityRegistration.update).not.toHaveBeenCalled();
+      expect(recorder.logReview).not.toHaveBeenCalled();
+      expect(dispatcher.dispatchTargeted).not.toHaveBeenCalled();
     });
   });
 

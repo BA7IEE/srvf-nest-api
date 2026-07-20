@@ -9,6 +9,7 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import {
   NOTIFICATION_CHANNEL_IN_APP,
   NOTIFICATION_TYPE_ACTIVITY_CHANGED,
@@ -178,6 +179,9 @@ export class ActivitiesService {
     // F1/A6(路线图 §4;D7 拍板):供 queryDescendantOrgIds() 只读 helper 展开 includeDescendants
     // (closure 非判权)。
     private readonly organizations: OrganizationsService,
+    // Insurance lifecycle PR-A:Activity 仍持有根事务与聚合锁；保险策略只在 rollout gate
+    // 开启且受保护字段真实变化时查询报名事实。
+    private readonly insuranceRequirement: InsuranceRequirementService,
   ) {}
 
   // ============ helpers ============
@@ -666,13 +670,13 @@ export class ActivitiesService {
       }
 
       // 起止时间 + 报名截止复校(任一字段变化时,用合并后值)
+      const nextStart = dto.startAt !== undefined ? new Date(dto.startAt) : current.startAt;
+      const nextEnd = dto.endAt !== undefined ? new Date(dto.endAt) : current.endAt;
       if (
         dto.startAt !== undefined ||
         dto.endAt !== undefined ||
         dto.registrationDeadline !== undefined
       ) {
-        const nextStart = dto.startAt !== undefined ? new Date(dto.startAt) : current.startAt;
-        const nextEnd = dto.endAt !== undefined ? new Date(dto.endAt) : current.endAt;
         const nextDeadline =
           dto.registrationDeadline !== undefined
             ? new Date(dto.registrationDeadline)
@@ -683,6 +687,21 @@ export class ActivitiesService {
           await this.assertLivePositionWindowsWithinActivity(current.id, nextStart, nextEnd, tx);
         }
       }
+
+      await this.insuranceRequirement.assertActivityInsuranceLifecycleMutable(
+        {
+          id: current.id,
+          requiresInsurance: current.requiresInsurance,
+          startAt: current.startAt,
+          endAt: current.endAt,
+        },
+        {
+          requiresInsurance: dto.requiresInsurance ?? current.requiresInsurance,
+          startAt: nextStart,
+          endAt: nextEnd,
+        },
+        tx,
+      );
 
       let waitlistPromotionLimit: number | null | undefined;
       let promoteAcrossActivityPositions = false;

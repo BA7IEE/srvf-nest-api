@@ -3,6 +3,7 @@ import { DictItemStatus, Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
+import { InsuranceRequirementService } from '../../src/modules/insurances/insurance-requirement.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -739,6 +740,44 @@ describe('activities 模块', () => {
       expect(res.status).toBe(200);
       expect(res.body.data.title).toBe('新标题');
       expect(res.body.data.location).toBe('新地点');
+    });
+
+    it('保险 rollout gate=false：已有 live 报名仍保持旧行为，可改保险标记与活动时段', async () => {
+      expect(app.get(InsuranceRequirementService).isEnforcementEnabled()).toBe(false);
+      const created = await request(httpServer(app))
+        .post('/api/admin/v1/activities')
+        .set('Authorization', adminAuth)
+        .send(
+          baseCreatePayload({
+            title: 'INSURANCE-LIFECYCLE-GATE-OFF',
+            requiresInsurance: true,
+          }),
+        );
+      const activityId = created.body.data.id as string;
+      const member = await prisma.member.create({
+        data: {
+          memberNo: `insurance-lifecycle-off-${Date.now()}`,
+          displayName: '保险生命周期兼容态',
+        },
+        select: { id: true },
+      });
+      await prisma.activityRegistration.create({
+        data: { activityId, memberId: member.id, statusCode: 'pending' },
+      });
+
+      const res = await request(httpServer(app))
+        .patch(`/api/admin/v1/activities/${activityId}`)
+        .set('Authorization', adminAuth)
+        .send({
+          requiresInsurance: false,
+          startAt: '2099-06-01T07:00:00.000Z',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toMatchObject({
+        requiresInsurance: false,
+        startAt: '2099-06-01T07:00:00.000Z',
+      });
     });
 
     it('更新 startAt 但 endAt 不变 → 起止合并复校(失败 → 20015)', async () => {

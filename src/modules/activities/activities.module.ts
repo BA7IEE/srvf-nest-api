@@ -5,6 +5,7 @@ import { AuthzModule } from '../authz/authz.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { InsurancesModule } from '../insurances/insurances.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { ActivitiesController } from './activities.controller';
@@ -51,6 +52,7 @@ import { ActivityPositionAuditRecorder } from './activity-position-audit-recorde
     PermissionsModule,
     AuthzModule,
     UsersModule,
+    InsurancesModule,
     NotificationsModule,
     OrganizationsModule,
     ActivityFeedbacksModule,
