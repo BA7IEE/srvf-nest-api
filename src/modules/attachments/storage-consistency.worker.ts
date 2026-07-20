@@ -55,21 +55,24 @@ export class StorageConsistencyWorker implements OnApplicationShutdown {
   ): Promise<StorageConsistencyDrainResult> {
     const runReconcile = options.runReconcile ?? true;
     const backfilled = runReconcile ? await this.orchestrator.reconcileRolloutAttachments(100) : 0;
-    const claimed = await this.ledger.claim(this.workerId, {
-      limit: options.limit ?? STORAGE_OPERATION_CLAIM_BATCH,
-      objectKey: options.objectKey,
-      kind: options.kind,
-      manualOnly: options.manualOnly,
-    });
+    const limit = Math.min(Math.max(options.limit ?? STORAGE_OPERATION_CLAIM_BATCH, 1), 100);
     const result: StorageConsistencyDrainResult = {
       backfilled,
-      claimed: claimed.length,
+      claimed: 0,
       succeeded: 0,
       pending: 0,
       dead: 0,
     };
 
-    for (const operation of claimed) {
+    while (!this.stopping && result.claimed < limit) {
+      const [operation] = await this.ledger.claim(this.workerId, {
+        limit: 1,
+        objectKey: options.objectKey,
+        kind: options.kind,
+        manualOnly: options.manualOnly,
+      });
+      if (!operation) break;
+      result.claimed += 1;
       await this.orchestrator.executeClaimed(operation);
       const current = await this.ledger.findOperationByEventKey(operation.eventKey);
       if (current?.status === 'succeeded') result.succeeded += 1;
