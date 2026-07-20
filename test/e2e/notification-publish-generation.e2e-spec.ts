@@ -118,6 +118,56 @@ async function waitForBlockedBackend(
   throw new Error(`no PostgreSQL lock waiter observed for ${queryPattern}`);
 }
 
+async function waitForBlockedBackendByAny(
+  observer: PrismaService,
+  blockers: BackendIdentity[],
+  mutation: Promise<unknown>,
+  queryPattern: string,
+): Promise<BlockedBackend> {
+  if (blockers.length === 0) throw new Error('known PostgreSQL blockers required');
+  const databaseName = blockers[0].databaseName;
+  expect(blockers.every((blocker) => blocker.databaseName === databaseName)).toBe(true);
+  const knownPids = blockers.map(({ pid }) => pid);
+  const knownPidSql = Prisma.join(knownPids.map((pid) => Prisma.sql`CAST(${pid} AS integer)`));
+  let settled = false;
+  void mutation.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (settled) throw new Error('mutation settled before the expected PostgreSQL lock wait');
+    const rows = await observer.$queryRaw<BlockedBackend[]>(Prisma.sql`
+      SELECT
+        pid,
+        datname AS "databaseName",
+        pg_blocking_pids(pid) AS "blockingPids",
+        wait_event_type AS "waitEventType"
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND NOT (pid = ANY(ARRAY[${knownPidSql}]::integer[]))
+        AND wait_event_type = 'Lock'
+        AND pg_blocking_pids(pid) && ARRAY[${knownPidSql}]::integer[]
+        AND query LIKE ${queryPattern}
+      LIMIT 1
+    `);
+    const waiter = rows[0];
+    if (waiter) {
+      expect(knownPids).not.toContain(waiter.pid);
+      expect(waiter.databaseName).toBe(databaseName);
+      expect(waiter.blockingPids.some((pid) => knownPids.includes(pid))).toBe(true);
+      expect(waiter.waitEventType).toBe('Lock');
+      return waiter;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`no PostgreSQL lock waiter observed for ${queryPattern}`);
+}
+
 describe('notification publishGeneration · two-app PostgreSQL fence', () => {
   let appA: INestApplication;
   let appB: INestApplication;
@@ -879,9 +929,9 @@ describe('notification publishGeneration · two-app PostgreSQL fence', () => {
           .set('Authorization', auth)
           .send({ title: 'writer waits for both shared permissions' }),
       );
-      await waitForBlockedBackend(
+      await waitForBlockedBackendByAny(
         prismaB,
-        blockers[0],
+        blockers,
         mutation,
         '%FROM "notifications"%FOR UPDATE%',
       );
